@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>isaacsim_bridge</name>
+  <version>0.1.0</version>
+  <description>ROS 2 bridge between Isaac Sim command topics and OpenArm/Tesollo real controllers.</description>
+
+  <maintainer email="user@example.com">user</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>trajectory_msgs</depend>
+  <depend>control_msgs</depend>
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

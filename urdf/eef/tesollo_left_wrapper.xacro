@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<robot name="tesollo_left_wrapper" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Wrapper macro around Tesollo 5-DoF left hand.
+       - Includes upstream dg5f_left.xacro (path configurable)
+       - Adds a stable palm alias frame and a palm EE frame
+       - Exposes stable link names:
+           root/mount link:  left_base_link (child side of mount)
+           palm link:        left_palm_link (or prefixed equivalent)
+           palm EE frame:    left_palm_ee (or prefixed equivalent)
+  -->
+
+  <xacro:macro name="tesollo_left_with_frames" params="prefix:='left_' tesollo_xacro:='$(find dg_description)/urdf/dg5f_left.xacro' upstream_palm_link:='ll_dg_palm' palm_com_xyz:='0 0 0' palm_com_rpy:='0 0 0'">
+    <!-- Bring in Tesollo hand definition -->
+    <xacro:include filename="${tesollo_xacro}"/>
+
+    <!-- Alias the upstream palm to a stable name for downstream tooling. -->
+    <link name="${prefix}palm_link"/>
+    <joint name="${prefix}upstream_palm_to_palm_link" type="fixed">
+      <parent link="${upstream_palm_link}"/>
+      <child  link="${prefix}palm_link"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </joint>
+
+    <!-- Add palm EE helper frame -->
+    <link name="${prefix}palm_ee"/>
+    <joint name="${prefix}palm_link_to_ee" type="fixed">
+      <parent link="${prefix}palm_link"/>
+      <child  link="${prefix}palm_ee"/>
+      <origin xyz="${palm_com_xyz}" rpy="${palm_com_rpy}"/>
+    </joint>
+  </xacro:macro>
+
+</robot>
