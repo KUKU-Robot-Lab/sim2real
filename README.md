@@ -145,6 +145,69 @@ ros2 topic echo /joint_states
 ros2 control list_controllers
 ```
 
+### GUI로 좌우 팔/그리퍼 제어
+
+현재 `test_gui`는 실제 제어 경로에 연결되어 있습니다.
+
+- 왼쪽 `ARM` 패널:
+  - EEF target -> `/openarm/left_arm/eef_target`
+  - Gripper -> `/left_gripper_controller/gripper_cmd`
+- 오른쪽 `ARM2` 패널:
+  - EEF target -> `/openarm/right_arm/eef_target`
+  - Right hand -> `/dg5f_right/dg5f_right_controller/joint_trajectory`
+
+EEF target은 별도 IK 노드가 trajectory로 변환합니다.
+
+- 왼팔 IK 노드: `openarm_eef_control left_arm_eef_control.launch.py`
+- 오른팔 IK 노드: `openarm_eef_control right_arm_eef_control.launch.py`
+
+실행 순서:
+
+```bash
+source /opt/ros/humble/setup.bash
+REPO_DIR="/path/to/sim2real_control"
+source "${REPO_DIR}/install/setup.bash"
+
+ros2 launch "${REPO_DIR}/integrated_control/launch/openarm_left_gripper_right_dg5_real.launch.py" \
+  left_can_interface:=can1 \
+  right_can_interface:=can0 \
+  dg5f_right_ip:=169.254.186.72 \
+  dg5f_right_port:=502
+```
+
+다른 터미널:
+
+```bash
+source /opt/ros/humble/setup.bash
+REPO_DIR="/path/to/sim2real_control"
+source "${REPO_DIR}/install/setup.bash"
+ros2 launch openarm_eef_control left_arm_eef_control.launch.py
+```
+
+다른 터미널:
+
+```bash
+source /opt/ros/humble/setup.bash
+REPO_DIR="/path/to/sim2real_control"
+source "${REPO_DIR}/install/setup.bash"
+ros2 launch openarm_eef_control right_arm_eef_control.launch.py
+```
+
+다른 터미널:
+
+```bash
+source /opt/ros/humble/setup.bash
+REPO_DIR="/path/to/sim2real_control"
+source "${REPO_DIR}/install/setup.bash"
+ros2 launch test_gui gui.launch.py
+```
+
+주의:
+
+- 왼팔 EEF tip은 `openarm_left_hand_tcp`
+- 오른팔 EEF tip은 Tesollo palm 기준 `palm_ee`
+- GUI에서 EEF와 그리퍼는 실제 제어 경로에 연결되어 있음
+
 ## 2. Isaac Sim 연결 및 ROS 2 노드 사용법
 
 ### 사용 중인 USD / URDF
