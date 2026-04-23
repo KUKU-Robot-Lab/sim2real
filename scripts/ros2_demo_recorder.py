@@ -31,6 +31,9 @@ CURL_MAX = np.array([0.0, 2.007, 1.955, 1.902, math.pi / 2.0], dtype=np.float64)
 
 CONTROL_HZ = 60.0
 ACTION_DIM = 18
+RIGHT_PALM_DELTA_XYZ_SCALE = 0.30
+RIGHT_PALM_DELTA_ROT_SCALE = 0.30
+LEFT_ARM_DELTA_JOINT_SCALE = 0.10
 
 PoseFk = Callable[[np.ndarray], np.ndarray]
 PoseProvider = Callable[[], np.ndarray]
@@ -162,9 +165,11 @@ def build_pour_mimic_action(
     target_palm_pose = _as_vector("target_palm_pose", right_palm_fk(target_right_arm), 7)
 
     action = np.zeros(ACTION_DIM, dtype=np.float32)
-    action[:6] = pose7_xyzw_delta(current_palm_pose, target_palm_pose).astype(np.float32)
+    palm_delta = pose7_xyzw_delta(current_palm_pose, target_palm_pose)
+    action[:3] = (palm_delta[:3] / RIGHT_PALM_DELTA_XYZ_SCALE).astype(np.float32)
+    action[3:6] = (palm_delta[3:6] / RIGHT_PALM_DELTA_ROT_SCALE).astype(np.float32)
     action[6:11] = normalize_curl_joints(target_right_hand).astype(np.float32)
-    action[11:18] = (target_left_arm - current_left_arm).astype(np.float32)
+    action[11:18] = ((target_left_arm - current_left_arm) / LEFT_ARM_DELTA_JOINT_SCALE).astype(np.float32)
     return action
 
 

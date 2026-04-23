@@ -7,3 +7,5 @@ __pycache__/
 *.swp
 *.tmp
 
+# Local upstream checkout; keep it on disk but never add it to this repo.
+vendor/openarm/openarm_teleop/

@@ -12,6 +12,10 @@
 
 - `/isaacsim/right_arm_cmd`, `/isaacsim/right_hand_cmd`, `/isaacsim/left_arm_cmd`, `/isaacsim/left_gripper_cmd` 토픽 계약
 - right arm 7D, right hand 20D, left arm 7D 입력을 `Pour-Mimic-V1` 18D action으로 변환하는 코어
+- recorder와 env/Mimic math의 action scale 계약 통일
+  - right palm xyz: action 1.0 = 0.30 m
+  - right palm rot: action 1.0 = 0.30 rad
+  - left arm joint: action 1.0 = 0.10 rad
 - ROS2 없이 import 가능한 dry test path
 - `Se3ROS2Device` dry path
 - `ros2_demo_recorder.py`의 실제 ROS2 subscriber loop
@@ -22,6 +26,7 @@
 
 남은 acceptance:
 
+- `/isaacsim/*_cmd`가 실제 teleop/adapter에서 같은 dimension과 단위로 publish되는지 확인
 - GPU/Isaac Sim이 정상인 환경에서 1개 demo 저장
 - `annotate_demos.py --auto`로 1개 demo 통과
 - `generate_dataset.py`로 최소 1개 generated demo export 확인
@@ -54,7 +59,7 @@ env.step(action)
 ## 목표 데이터 흐름
 
 ```text
-실제 로봇 제어 또는 GUI
+실제 로봇 제어 또는 GUI / sim2real command publisher
   -> /isaacsim/right_arm_cmd     Float64MultiArray, 7D
   -> /isaacsim/right_hand_cmd    Float64MultiArray, 20D
   -> /isaacsim/left_arm_cmd      Float64MultiArray, 7D
@@ -77,7 +82,45 @@ ros2_demo_recorder.py
 
 ---
 
+## 실기 연결 전 gate
+
+실제 로봇을 붙이기 전에 아래 항목을 먼저 통과시킨다.
+
+```bash
+python3 -m pytest \
+  /home/user/rl_ws/hdgp/source/openarm/openarm/tasks/manager_based/openarm_manipulation/pipeline/hand/both/pour_v1_mimic/tests/test_phase2_ros2_bridge_contract.py \
+  /home/user/rl_ws/hdgp/source/openarm/openarm/tasks/manager_based/openarm_manipulation/pipeline/hand/both/pour_v1_mimic/tests/test_pour_mimic_contract.py \
+  /home/user/rl_ws/hdgp/source/openarm/openarm/tasks/manager_based/openarm_manipulation/pipeline/hand/both/pour_v1_mimic/tests/test_managed_contract.py
+```
+
+그 다음 ROS2 command publisher/adapter만 띄운 상태에서 토픽 계약을 확인한다.
+
+```bash
+ros2 topic echo /isaacsim/right_arm_cmd --once      # Float64MultiArray, 7D rad
+ros2 topic echo /isaacsim/right_hand_cmd --once     # Float64MultiArray, 20D rad
+ros2 topic echo /isaacsim/left_arm_cmd --once       # Float64MultiArray, 7D rad
+ros2 topic echo /isaacsim/left_gripper_cmd --once   # Float64 scalar
+ros2 topic hz /isaacsim/right_arm_cmd
+```
+
+`openarm_teleop`만 실행해서는 이 토픽이 나오지 않는다. 실제 수집 전에는 `integrated_control`/`isaacsim_bridge` 경로 또는 별도 adapter가 `/isaacsim/*_cmd`를 publish하는지 먼저 확인한다.
+
+---
+
 ## 터미널 1: 실기 제어 스택 실행
+
+원본 OpenArm teleop 레포는 아래 vendor 경로에 있다.
+
+```text
+/home/user/rl_ws/sim2real/vendor/openarm/openarm_teleop
+```
+
+주의할 점은 `openarm_teleop` 자체는 ROS2 `/isaacsim/*_cmd` publisher가 아니라 CAN 기반 OpenArm leader/follower teleop/control 실행부라는 것이다. demo recorder는 `/isaacsim/*_cmd`를 구독하므로, 실기 teleop에서 바로 recorder로 넣으려면 아래 둘 중 하나가 필요하다.
+
+- 기존 `integrated_control`/`isaacsim_bridge` 경로를 사용해 controller topic과 `/isaacsim/*_cmd` 계약을 연결한다.
+- `openarm_teleop`의 leader/follower state 또는 command를 읽어서 `/isaacsim/right_arm_cmd`, `/isaacsim/right_hand_cmd`, `/isaacsim/left_arm_cmd`, `/isaacsim/left_gripper_cmd`로 publish하는 별도 adapter를 둔다.
+
+현재 sim2real 쪽에서 준비된 ROS2 제어 스택을 쓰는 경우:
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -101,6 +144,8 @@ source install/setup.bash
 ros2 launch integrated_control openarm_left_gripper_right_dg5_real.launch.py \
   use_fake_hardware:=true
 ```
+
+원본 OpenArm teleop을 직접 실행할 때는 vendor 레포의 C++ binary/script 경로를 확인한다. 이 경로는 upstream 기본 workspace(`~/openarm_ros2_ws`, `~/openarm_teleop`)를 가정하는 스크립트를 포함하므로, local vendor build를 쓰면 script 안의 `BIN_PATH`/`WS_DIR` 또는 symlink를 맞춰야 한다.
 
 ---
 
