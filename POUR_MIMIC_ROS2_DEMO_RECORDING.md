@@ -14,16 +14,19 @@
 - right arm 7D, right hand 20D, left arm 7D 입력을 `Pour-Mimic-V1` 18D action으로 변환하는 코어
 - ROS2 없이 import 가능한 dry test path
 - `Se3ROS2Device` dry path
+- `ros2_demo_recorder.py`의 실제 ROS2 subscriber loop
+- IsaacLab `EpisodeData`/`HDF5DatasetFileHandler` 우선 export (`h5py` fallback 포함)
+- `S` 저장, `R` 폐기/reset, `Q` 종료 UX
+- headless 모드의 `--save_on_success`, `--max_steps`, `--num_demos` 기반 저장
+- FABRICS 기반 target right palm FK와 env articulation 기반 current right palm pose 읽기
 
-아직 완료되어야 하는 것:
+남은 acceptance:
 
-- `ros2_demo_recorder.py`가 IsaacLab `env.recorder_manager` 또는 `EpisodeData`/`HDF5DatasetFileHandler` 포맷으로 `initial_state + actions`를 저장하도록 연결
-- 실제 ROS2 subscriber loop
-- 저장/폐기 UX
-- right palm FK provider 연결
-- `annotate_demos.py`로 1개 demo가 통과하는 acceptance
+- GPU/Isaac Sim이 정상인 환경에서 1개 demo 저장
+- `annotate_demos.py --auto`로 1개 demo 통과
+- `generate_dataset.py`로 최소 1개 generated demo export 확인
 
-따라서 이 문서는 **최종 사용 절차와 acceptance 기준**이다. 현재 코드가 이 절차를 끝까지 만족하지 못하면 Phase 2는 “action 변환 코어 완료, IsaacLab native recorder 연동 미완료”로 봐야 한다.
+따라서 이 문서는 **최종 사용 절차와 acceptance 기준**이다. 현재 코드의 lightweight import/HDF5 smoke는 통과했지만, Isaac Sim runtime acceptance는 GPU/driver가 정상인 상태에서 다시 확인해야 한다.
 
 ---
 
@@ -129,7 +132,9 @@ TERM=xterm ./isaaclab.sh -p /home/user/rl_ws/sim2real/scripts/ros2_demo_recorder
   --output_file /tmp/pour_one_demo.hdf5 \
   --num_demos 1 \
   --headless \
-  --device cuda:0
+  --device cuda:0 \
+  --save_on_success \
+  --max_steps 600
 ```
 
 현재 머신처럼 GPU/driver가 불안정한 경우 CPU smoke:
@@ -142,13 +147,16 @@ TERM=xterm ./isaaclab.sh -p /home/user/rl_ws/sim2real/scripts/ros2_demo_recorder
   --output_file /tmp/pour_one_demo.hdf5 \
   --num_demos 1 \
   --headless \
-  --device cpu
+  --device cpu \
+  --dry_commands \
+  --save_on_success \
+  --max_steps 30
 ```
 
 주의:
 
-- 위 명령이 성공하려면 `ros2_demo_recorder.py`가 IsaacLab native recorder export를 구현해야 한다.
-- 현재 action 변환 코어만으로는 Mimic용 HDF5 acceptance를 통과하지 못할 수 있다.
+- `--dry_commands`는 ROS2 없이 reset 시점의 arm command를 유지하는 smoke 용도다. 실제 수집에서는 빼야 한다.
+- `--save_on_success`는 headless horizon 도달 시 episode를 성공 demo로 저장한다. 실제 성공 판정은 annotation/generation smoke로 확인한다.
 - `Pour-Mimic-V1-Mimic-v0` env reset/step 자체가 실패하면 먼저 IsaacLab scene/CUDA/asset 문제를 해결해야 한다.
 
 ---
@@ -311,4 +319,3 @@ TERM=xterm ./isaaclab.sh -p scripts/imitation_learning/isaaclab_mimic/generate_d
 - 실패 episode를 폐기할 수 있는 조작이 있음
 
 이 기준 전에는 35개를 모아도 Mimic 파이프라인에서 다시 막힐 수 있다.
-

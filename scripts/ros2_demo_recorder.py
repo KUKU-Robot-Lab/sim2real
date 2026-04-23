@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import select
 import sys
 import time
 from pathlib import Path
@@ -32,6 +33,7 @@ CONTROL_HZ = 60.0
 ACTION_DIM = 18
 
 PoseFk = Callable[[np.ndarray], np.ndarray]
+PoseProvider = Callable[[], np.ndarray]
 
 
 def _as_vector(name: str, values: np.ndarray | list[float] | tuple[float, ...], size: int) -> np.ndarray:
@@ -143,6 +145,7 @@ def build_pour_mimic_action(
     current_left_arm: np.ndarray | list[float],
     target_left_arm: np.ndarray | list[float],
     right_palm_fk: PoseFk,
+    current_right_palm_pose: np.ndarray | list[float] | None = None,
 ) -> np.ndarray:
     """Convert ROS2 joint teleop commands to Pour-Mimic-V1's 18D action."""
 
@@ -151,7 +154,11 @@ def build_pour_mimic_action(
     current_left_arm = _as_vector("current_left_arm", current_left_arm, 7)
     target_left_arm = _as_vector("target_left_arm", target_left_arm, 7)
 
-    current_palm_pose = _as_vector("current_palm_pose", right_palm_fk(current_right_arm), 7)
+    current_palm_pose = _as_vector(
+        "current_palm_pose",
+        right_palm_fk(current_right_arm) if current_right_palm_pose is None else current_right_palm_pose,
+        7,
+    )
     target_palm_pose = _as_vector("target_palm_pose", right_palm_fk(target_right_arm), 7)
 
     action = np.zeros(ACTION_DIM, dtype=np.float32)
@@ -242,20 +249,42 @@ class HDF5DemoWriter:
             raise RuntimeError("h5py is required to write demonstration datasets") from exc
 
         self._h5py = h5py
-        self.output_file = Path(output_file)
+        self.output_file = Path(output_file).expanduser().resolve()
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
         self._env_name = env_name
         self._next_index = 0
         # env_args written lazily on first episode flush
         self._env_args: dict | None = None
+        self._native_handler = None
+        self._native_episode_cls = None
+        self._torch = None
+        try:
+            from isaaclab.utils.datasets import EpisodeData, HDF5DatasetFileHandler
+            import torch
+
+            handler = HDF5DatasetFileHandler()
+            if self.output_file.exists():
+                handler.open(str(self.output_file), mode="a")
+                handler.set_env_name(env_name)
+            else:
+                handler.create(str(self.output_file), env_name)
+            self._native_handler = handler
+            self._native_episode_cls = EpisodeData
+            self._torch = torch
+        except Exception:
+            self._native_handler = None
 
     def set_env_args(self, sim_args: dict) -> None:
         """Set the sim_args sub-dict written to data.attrs['env_args']."""
         self._env_args = {"env_name": self._env_name, "type": 2, "sim_args": sim_args}
+        if self._native_handler is not None:
+            self._native_handler.add_env_args({"sim_args": sim_args})
 
     def write_episode(self, episode: EpisodeBuffer, *, success: bool) -> str:
         if len(episode) == 0:
             raise ValueError("cannot write an empty episode")
+        if self._native_handler is not None:
+            return self._write_episode_native(episode, success=success)
 
         with self._h5py.File(self.output_file, "a") as handle:
             data = handle.require_group("data")
@@ -314,6 +343,34 @@ class HDF5DemoWriter:
             self._next_index += 1
             return name
 
+    def close(self) -> None:
+        if self._native_handler is not None:
+            self._native_handler.close()
+
+    def _write_episode_native(self, episode: EpisodeBuffer, *, success: bool) -> str:
+        torch = self._torch
+        episode_cls = self._native_episode_cls
+        assert torch is not None and episode_cls is not None and self._native_handler is not None
+
+        native_episode = episode_cls()
+        native_episode.success = bool(success)
+        native_episode.data = {
+            "actions": torch.as_tensor(np.stack(episode.actions, axis=0), dtype=torch.float32),
+            "rewards": torch.as_tensor(np.asarray(episode.rewards, dtype=np.float32)),
+            "dones": torch.as_tensor(np.asarray(episode.dones, dtype=np.bool_)),
+        }
+        if episode.obs:
+            native_episode.data["obs"] = {
+                "actor_obs": torch.as_tensor(np.stack(episode.obs, axis=0), dtype=torch.float32)
+            }
+        if episode.initial_state is not None:
+            native_episode.data["initial_state"] = _torch_state(episode.initial_state, torch)
+
+        demo_id = self._native_handler.demo_count
+        self._native_handler.write_episode(native_episode)
+        self._native_handler.flush()
+        return f"demo_{demo_id}"
+
 
 def _write_nested_dict(parent_group, key: str, value) -> None:
     """Recursively write a dict-of-arrays as nested HDF5 groups/datasets."""
@@ -326,11 +383,83 @@ def _write_nested_dict(parent_group, key: str, value) -> None:
         parent_group.create_dataset(key, data=arr, compression="gzip")
 
 
+def _torch_state(state: dict, torch_module) -> dict:
+    """Recursively convert a numpy scene state dict to CPU torch tensors."""
+    out = {}
+    for k, v in state.items():
+        if isinstance(v, dict):
+            out[k] = _torch_state(v, torch_module)
+        else:
+            out[k] = torch_module.as_tensor(np.asarray(v), dtype=torch_module.float32)
+    return out
+
+
+def _to_numpy(value) -> np.ndarray:
+    if hasattr(value, "detach"):
+        return value.detach().cpu().numpy()
+    return np.asarray(value)
+
+
 def _identity_right_palm_fk(joints: np.ndarray) -> np.ndarray:
     """Fallback FK for dry import tests; real recording must pass env FK."""
 
     del joints
     return np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0], dtype=np.float64)
+
+
+class FabricsRightPalmFK:
+    """FABRICS FK provider for target right-palm pose from 7D right arm joints."""
+
+    def __init__(self, *, device: str = "cpu", repo_root: Path | None = None) -> None:
+        root = repo_root or Path(__file__).resolve().parents[2]
+        fabrics_src = root / "hdgp" / "source" / "FABRICS" / "src"
+        if fabrics_src.exists() and str(fabrics_src) not in sys.path:
+            sys.path.insert(0, str(fabrics_src))
+
+        import torch
+        from fabrics_sim.fabrics.openarm_tesollo_pose_fabric import OpenArmTeoslloPoseFabric
+        from fabrics_sim.utils.utils import initialize_warp
+        from fabrics_sim.worlds.world_mesh_model import WorldMeshesModel
+
+        initialize_warp()
+        self._torch = torch
+        self._device = device
+        world = WorldMeshesModel(num_envs=1, max_objects_per_env=0, device=device)
+        self._fabric = OpenArmTeoslloPoseFabric(num_envs=1, world=world, use_hand_fabric=False, device=device)
+        self._q = torch.zeros(1, 27, dtype=torch.float32, device=device)
+
+    def __call__(self, joints: np.ndarray) -> np.ndarray:
+        joints = _as_vector("right_arm_fk_joints", joints, 7)
+        with self._torch.inference_mode():
+            self._q[0, :7] = self._torch.as_tensor(joints, dtype=self._torch.float32, device=self._device)
+            pose = self._fabric.get_palm_pose(self._q, "quaternion")[0]
+        return pose.detach().cpu().numpy().astype(np.float64)
+
+
+class EnvRightPalmPoseProvider:
+    """Read current right palm pose from the live IsaacLab articulation."""
+
+    def __init__(self, env, *, body_name: str = "rl_dg_palm") -> None:
+        self.env = env
+        self.body_name = body_name
+        self._body_index: int | None = None
+
+    def __call__(self) -> np.ndarray:
+        robot = self.env.scene["robot"]
+        if self._body_index is None:
+            self._body_index = robot.data.body_names.index(self.body_name)
+        pos = robot.data.body_pos_w[0, self._body_index, :]
+        if hasattr(self.env.scene, "env_origins"):
+            pos = pos - self.env.scene.env_origins[0]
+        quat_wxyz = robot.data.body_quat_w[0, self._body_index, :]
+        pose = self._torch_cat_pose(pos, quat_wxyz[[1, 2, 3, 0]])
+        return pose.detach().cpu().numpy().astype(np.float64)
+
+    @staticmethod
+    def _torch_cat_pose(pos, quat_xyzw):
+        import torch
+
+        return torch.cat([pos, quat_xyzw], dim=-1)
 
 
 class ROS2DemoRecorder:
@@ -349,6 +478,7 @@ class ROS2DemoRecorder:
         *,
         task_name: str = "Pour-Mimic-V1-Mimic-v0",
         right_palm_fk: PoseFk | None = None,
+        current_right_palm_pose: PoseProvider | None = None,
         control_hz: float = CONTROL_HZ,
     ) -> None:
         self.env = env
@@ -356,10 +486,12 @@ class ROS2DemoRecorder:
         self.current_right_arm = np.zeros(7, dtype=np.float64)
         self.current_left_arm = np.zeros(7, dtype=np.float64)
         self.right_palm_fk = right_palm_fk or _identity_right_palm_fk
+        self.current_right_palm_pose = current_right_palm_pose
         self.control_hz = float(control_hz)
         self.episode = EpisodeBuffer()
         self.writer = HDF5DemoWriter(output_file, env_name=task_name)
         self._sim_args_registered = False
+        self._saved_count = 0
 
     def _register_sim_args(self) -> None:
         """Write sim_args to env_args once, after env is ready."""
@@ -385,6 +517,9 @@ class ROS2DemoRecorder:
         """
         self._register_sim_args()
         self.episode.clear()
+        self._sync_current_joints_from_env()
+        self.command.update_right_arm(self.current_right_arm)
+        self.command.update_left_arm(self.current_left_arm)
         scene = getattr(self.env, "scene", None)
         if scene is not None and hasattr(scene, "get_state"):
             try:
@@ -394,6 +529,7 @@ class ROS2DemoRecorder:
                 print(f"[ROS2DemoRecorder] Warning: get_state failed: {exc}")
 
     def make_action(self) -> np.ndarray:
+        current_palm_pose = self.current_right_palm_pose() if self.current_right_palm_pose is not None else None
         return build_pour_mimic_action(
             current_right_arm=self.current_right_arm,
             target_right_arm=self.command.right_arm,
@@ -401,6 +537,7 @@ class ROS2DemoRecorder:
             current_left_arm=self.current_left_arm,
             target_left_arm=self.command.left_arm,
             right_palm_fk=self.right_palm_fk,
+            current_right_palm_pose=current_palm_pose,
         )
 
     def _get_subtask_signals(self) -> dict[str, bool]:
@@ -415,13 +552,20 @@ class ROS2DemoRecorder:
 
     def step_once(self) -> tuple[np.ndarray, float, bool]:
         action = self.make_action()
-        obs, reward, terminated, truncated, _info = self.env.step(action[None, :])
-        done = bool(np.asarray(terminated).any() or np.asarray(truncated).any())
+        action_batch = action[None, :]
+        try:
+            import torch
 
-        obs_np = np.asarray(
+            action_batch = torch.as_tensor(action_batch, dtype=torch.float32, device=getattr(self.env, "device", "cpu"))
+        except Exception:
+            pass
+        obs, reward, terminated, truncated, _info = self.env.step(action_batch)
+        done = bool(_to_numpy(terminated).any() or _to_numpy(truncated).any())
+
+        obs_np = _to_numpy(
             obs["policy"] if isinstance(obs, dict) and "policy" in obs else obs
         ).reshape(-1)
-        reward_f = float(np.asarray(reward).reshape(-1)[0])
+        reward_f = float(_to_numpy(reward).reshape(-1)[0])
         subtask_signals = self._get_subtask_signals()
 
         self.episode.append(obs_np, action, reward_f, done, subtask_signals=subtask_signals)
@@ -431,11 +575,170 @@ class ROS2DemoRecorder:
 
     def save_success(self) -> str:
         name = self.writer.write_episode(self.episode, success=True)
+        self._saved_count += 1
         self.episode.clear()
         return name
 
     def discard_episode(self) -> None:
         self.episode.clear()
+
+    @property
+    def saved_count(self) -> int:
+        return self._saved_count
+
+    def close(self) -> None:
+        self.writer.close()
+
+    def _sync_current_joints_from_env(self) -> None:
+        try:
+            robot = self.env.scene["robot"]
+            names = robot.joint_names
+            joint_pos = robot.data.joint_pos[0].detach().cpu().numpy()
+            right_names = [f"openarm_right_joint{i}" for i in range(1, 8)]
+            left_names = [f"openarm_left_joint{i}" for i in range(1, 8)]
+            self.current_right_arm = np.asarray([joint_pos[names.index(name)] for name in right_names], dtype=np.float64)
+            self.current_left_arm = np.asarray([joint_pos[names.index(name)] for name in left_names], dtype=np.float64)
+        except Exception:
+            pass
+
+
+class _NonBlockingKeyboard:
+    def __init__(self, enabled: bool) -> None:
+        self.enabled = enabled and sys.stdin.isatty()
+        self._termios = None
+        self._old_attrs = None
+
+    def __enter__(self):
+        if self.enabled:
+            import termios
+            import tty
+
+            self._termios = termios
+            self._old_attrs = termios.tcgetattr(sys.stdin)
+            tty.setcbreak(sys.stdin.fileno())
+        return self
+
+    def __exit__(self, _exc_type, _exc, _tb) -> None:
+        if self.enabled and self._termios is not None and self._old_attrs is not None:
+            self._termios.tcsetattr(sys.stdin, self._termios.TCSADRAIN, self._old_attrs)
+
+    def poll(self) -> str | None:
+        if not self.enabled:
+            return None
+        readable, _, _ = select.select([sys.stdin], [], [], 0.0)
+        if readable:
+            return sys.stdin.read(1).lower()
+        return None
+
+
+def _parse_env_kwargs(items: list[str]) -> dict:
+    if len(items) % 2 != 0:
+        raise ValueError(f"unknown env args must be --key value pairs, got: {items}")
+    out = {}
+    for key, value in zip(items[0::2], items[1::2]):
+        if not key.startswith("--"):
+            raise ValueError(f"unknown env arg key must start with '--', got {key!r}")
+        out[key[2:]] = value
+    return out
+
+
+def _make_ros2_subscriber(recorder: ROS2DemoRecorder):
+    import rclpy
+    from rclpy.node import Node
+    from std_msgs.msg import Float64, Float64MultiArray
+
+    class ROS2CommandSubscriber(Node):
+        def __init__(self) -> None:
+            super().__init__("pour_mimic_demo_recorder")
+            self.create_subscription(Float64MultiArray, RIGHT_ARM_TOPIC, self._right_arm_cb, 10)
+            self.create_subscription(Float64MultiArray, RIGHT_HAND_TOPIC, self._right_hand_cb, 10)
+            self.create_subscription(Float64MultiArray, LEFT_ARM_TOPIC, self._left_arm_cb, 10)
+            self.create_subscription(Float64, LEFT_GRIPPER_TOPIC, self._left_gripper_cb, 10)
+
+        def _right_arm_cb(self, msg) -> None:
+            recorder.command.update_right_arm(list(msg.data))
+
+        def _right_hand_cb(self, msg) -> None:
+            recorder.command.update_right_hand(list(msg.data))
+
+        def _left_arm_cb(self, msg) -> None:
+            recorder.command.update_left_arm(list(msg.data))
+
+        def _left_gripper_cb(self, msg) -> None:
+            recorder.command.update_left_gripper(float(msg.data))
+
+    if not rclpy.ok():
+        rclpy.init(args=None)
+    return rclpy, ROS2CommandSubscriber()
+
+
+def _reset_env_and_episode(env, recorder: ROS2DemoRecorder) -> None:
+    env.reset()
+    recorder.reset_episode()
+
+
+def _run_recording_loop(args, env, recorder: ROS2DemoRecorder) -> None:
+    rclpy = None
+    node = None
+    if not args.dry_commands:
+        rclpy, node = _make_ros2_subscriber(recorder)
+
+    _reset_env_and_episode(env, recorder)
+    print(
+        "[ros2_demo_recorder] Recording. "
+        "Interactive keys: S save, R discard/reset, Q quit."
+        if not args.headless
+        else "[ros2_demo_recorder] Headless recording."
+    )
+
+    step_in_episode = 0
+    period = 1.0 / float(args.control_hz)
+    try:
+        with _NonBlockingKeyboard(enabled=not args.headless) as keyboard:
+            while recorder.saved_count < args.num_demos:
+                t0 = time.monotonic()
+                if node is not None:
+                    rclpy.spin_once(node, timeout_sec=0.0)
+                _action, _reward, done = recorder.step_once()
+                step_in_episode += 1
+
+                key = keyboard.poll()
+                if key == "s":
+                    name = recorder.save_success()
+                    print(f"[ros2_demo_recorder] Saved {name} ({recorder.saved_count}/{args.num_demos})")
+                    if recorder.saved_count >= args.num_demos:
+                        break
+                    _reset_env_and_episode(env, recorder)
+                    step_in_episode = 0
+                elif key == "r":
+                    recorder.discard_episode()
+                    _reset_env_and_episode(env, recorder)
+                    step_in_episode = 0
+                    print("[ros2_demo_recorder] Discarded episode and reset.")
+                elif key in ("q", "\x03"):
+                    break
+
+                reached_horizon = step_in_episode >= args.max_steps or done
+                if args.headless and reached_horizon:
+                    if args.save_on_success:
+                        name = recorder.save_success()
+                        print(f"[ros2_demo_recorder] Saved {name} ({recorder.saved_count}/{args.num_demos})")
+                    else:
+                        recorder.discard_episode()
+                        print("[ros2_demo_recorder] Discarded headless episode; pass --save_on_success to export.")
+                    if recorder.saved_count >= args.num_demos:
+                        break
+                    _reset_env_and_episode(env, recorder)
+                    step_in_episode = 0
+
+                sleep_s = period - (time.monotonic() - t0)
+                if sleep_s > 0.0:
+                    time.sleep(sleep_s)
+    finally:
+        if node is not None:
+            node.destroy_node()
+        if rclpy is not None and rclpy.ok():
+            rclpy.shutdown()
 
 
 def _main() -> None:
@@ -445,22 +748,46 @@ def _main() -> None:
     parser.add_argument("--num_demos", type=int, default=35)
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--control_hz", type=float, default=CONTROL_HZ)
+    parser.add_argument("--max_steps", type=int, default=600)
+    parser.add_argument("--save_on_success", action="store_true")
+    parser.add_argument("--dry_commands", action="store_true", help="Run without ROS2 and hold reset command targets.")
     args, unknown = parser.parse_known_args()
 
     repo_root = Path(__file__).resolve().parents[2]
     openarm_src = repo_root / "hdgp" / "source" / "openarm"
     sys.path.insert(0, str(openarm_src))
 
+    from isaaclab.app import AppLauncher
+
+    app_launcher = AppLauncher(headless=args.headless)
+    simulation_app = app_launcher.app
+
     import gymnasium as gym
     import openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.both.pour_v1_mimic  # noqa: F401
 
-    env = gym.make(args.task, device=args.device, headless=args.headless, **dict(zip(unknown[0::2], unknown[1::2])))
-    recorder = ROS2DemoRecorder(env.unwrapped, args.output_file, task_name=args.task)
-    print(
-        "[ros2_demo_recorder] Core recorder is ready. "
-        "Interactive ROS2 keyboard save/discard controls are pending integration."
-    )
-    print(f"[ros2_demo_recorder] task={args.task} output={args.output_file} num_demos={args.num_demos}")
+    env = None
+    recorder = None
+    try:
+        env_kwargs = _parse_env_kwargs(unknown)
+        env = gym.make(args.task, device=args.device, headless=args.headless, **env_kwargs)
+        unwrapped = env.unwrapped
+        recorder = ROS2DemoRecorder(
+            unwrapped,
+            args.output_file,
+            task_name=args.task,
+            right_palm_fk=FabricsRightPalmFK(device=args.device, repo_root=repo_root),
+            current_right_palm_pose=EnvRightPalmPoseProvider(unwrapped),
+            control_hz=args.control_hz,
+        )
+        print(f"[ros2_demo_recorder] task={args.task} output={args.output_file} num_demos={args.num_demos}")
+        _run_recording_loop(args, unwrapped, recorder)
+    finally:
+        if recorder is not None:
+            recorder.close()
+        if env is not None:
+            env.close()
+        simulation_app.close()
 
 
 if __name__ == "__main__":
