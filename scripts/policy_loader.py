@@ -151,6 +151,51 @@ class RLGamesActorPolicy:
         return mu.clamp(-1.0, 1.0)
 
 
+class RLGamesLstmActorPolicy(RLGamesActorPolicy):
+    """rl_games LSTM actor policy (pour-v1 lstm_* 체크포인트용).
+
+    RLGamesActorPolicy와 로드 경로는 같고, forward에 rnn_states를 유지한다.
+    에피소드 시작 시 reset_states()를 호출해야 한다 (sim의 zero_rnn_on_done 대응).
+
+    사용:
+        policy = RLGamesLstmActorPolicy(agent_yaml, ckpt, obs_dim=55, action_dim=12)
+        policy.reset_states()
+        action = policy.get_action(obs)   # hidden은 내부에서 스텝 간 유지
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        self._rnn_states: list[torch.Tensor] | None = None
+        super().__init__(*args, **kwargs)
+        if not self.model.is_rnn():
+            raise ValueError(
+                "checkpoint/agent.yaml is not RNN — use RLGamesActorPolicy instead"
+            )
+        self.reset_states()
+
+    def reset_states(self) -> None:
+        """hidden/cell state를 0으로 초기화 (에피소드 시작마다 호출)."""
+        self._rnn_states = [
+            s.to(self.device) for s in self.model.get_default_rnn_state()
+        ]
+
+    def _forward(self, obs: torch.Tensor) -> torch.Tensor:
+        # 부모 __init__의 warmup dummy forward가 reset 전에 불리므로 방어 초기화
+        if self._rnn_states is None:
+            self._rnn_states = [
+                s.to(self.device) for s in self.model.get_default_rnn_state()
+            ]
+        batch_dict = {
+            "is_train": False,
+            "obs": obs,
+            "rnn_states": self._rnn_states,
+            "seq_length": 1,
+            "rnn_masks": None,
+        }
+        res = self.model(batch_dict)
+        self._rnn_states = res["rnn_states"]
+        return res["mus"]
+
+
 # ---------------------------------------------------------------------------
 # 단독 테스트
 # ---------------------------------------------------------------------------
