@@ -1,0 +1,30 @@
+# 글로벌 D435i 카메라 extrinsics + 컵 CAD 프레임 정합
+#
+# cup_pose_relay.py 가 읽는다. Isaac ROS FoundationPose 출력(카메라 optical
+# 프레임의 컵 CAD 프레임 pose)을 robot base 프레임의 sim body 프레임 pose로
+# 변환해 /cup_pose 로 발행하기 위한 두 고정 변환:
+#
+#   T_base_body = T_base_cam ∘ T_cam_cad(FoundationPose 출력) ∘ T_cad_body
+#
+# 쿼터니언은 전부 wxyz 순서.
+
+# ── T_base_cam: robot base ← camera_color_optical_frame ────────────────────
+# FoundationPose 출력 프레임 = 입력 컬러 이미지의 optical 프레임
+# (RealSense: camera_color_optical_frame, x우/y하/z전방).
+# TODO(calibration): 실물 글로벌 카메라 장착 후 1회 캘리브레이션으로 교체.
+#                    아래 값은 PLACEHOLDER — 이 상태로 실기 구동 금지.
+camera:
+  frame: camera_color_optical_frame
+  position: [0.0, 0.0, 0.0]
+  orientation_wxyz: [1.0, 0.0, 0.0, 0.0]
+
+# ── T_cad_body: 컵 CAD 메시 프레임 → sim body 프레임 ───────────────────────
+# FoundationPose에 넣는 CAD 메시의 원점/축이 sim의 컵 body 프레임
+# (원점=컵 바닥 중심, +z=위, rim=+z 0.100)과 다르면 여기서 보정.
+# TODO(calibration): 컵 CAD 확보 후 정합 확인 — 계획서상 P5 최대 난관.
+cad_to_body:
+  position: [0.0, 0.0, 0.0]
+  orientation_wxyz: [1.0, 0.0, 0.0, 0.0]
+
+# /cup_pose 헤더에 기록할 base 프레임 이름 (소비자는 값만 사용, 정보성)
+base_frame: base_link

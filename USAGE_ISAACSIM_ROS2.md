@@ -264,6 +264,85 @@ ros2 topic pub --once /isaacsim/emergency_stop std_msgs/msg/Bool "{data: true}"
 
 ---
 
+## 7. 비전 노드 — Isaac ROS FoundationPose → `/cup_pose` (pour s2r P1)
+
+D435i 글로벌 카메라 영상에서 소스 컵 6-DOF pose를 추정해 `/cup_pose`
+(PoseStamped, robot base 프레임)로 발행한다. grasp 단계 + pour 시작 시
+grasp offset 캡처 1회에만 쓰이고, pour 루프는 FK라 이 노드 없이도 돈다.
+
+> **Isaac Sim과 무관.** Isaac ROS는 실물용 ROS2 지각 패키지 모음이다
+> (x86_64 + Ubuntu 22.04 + ROS2 Humble). Docker(Isaac ROS dev 컨테이너)로 실행.
+
+### 7-1. 설치 (1회)
+
+```bash
+# [호스트] Docker + nvidia-container-toolkit 필요
+# Isaac ROS 공통 dev 환경
+mkdir -p ~/workspaces/isaac_ros-dev/src && cd ~/workspaces/isaac_ros-dev/src
+git clone -b main https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_common.git
+git clone -b main https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_pose_estimation.git
+
+# dev 컨테이너 진입 (이후 명령은 전부 컨테이너 안)
+cd ~/workspaces/isaac_ros-dev/src/isaac_ros_common && ./scripts/run_dev.sh
+
+# [컨테이너] FoundationPose + RealSense 패키지
+sudo apt-get update && sudo apt-get install -y \
+    ros-humble-isaac-ros-foundationpose \
+    ros-humble-isaac-ros-examples \
+    ros-humble-realsense2-camera
+
+# 모델(TensorRT 변환용 onnx) 다운로드 — quickstart 자산 스크립트 사용
+# https://nvidia-isaac-ros.github.io/robots/foundationpose 의 quickstart 참조
+```
+
+준비물(설치와 별개):
+- **컵 CAD 메시** (textured .obj) — FoundationPose model-based 입력.
+- CAD 원점/축이 sim body 프레임(원점=바닥 중심, +z=위)과 다르면
+  `config/global_camera_extrinsics.yaml`의 `cad_to_body`로 보정.
+
+### 7-2. 캘리브레이션 (1회)
+
+```bash
+# 글로벌 카메라 extrinsics(T_base ← camera_color_optical_frame)를 실측 후
+# config/global_camera_extrinsics.yaml 의 camera.position/orientation_wxyz 교체.
+# ⚠ 기본값은 PLACEHOLDER(identity) — 교체 전 실기 구동 금지.
+```
+
+### 7-3. 실행
+
+```bash
+# [컨테이너 터미널 1] D435i + FoundationPose (컵 메시 경로 지정)
+ros2 launch isaac_ros_examples isaac_ros_examples.launch.py \
+    launch_fragments:=realsense_mono_rect_depth,foundationpose \
+    mesh_file_path:=/path/to/cup.obj \
+    texture_path:=/path/to/cup_texture.png
+
+# [호스트 터미널 2] 릴레이 (Detection3DArray → /cup_pose, base 프레임)
+cd $RL_WS/sim2real/scripts
+python3 cup_pose_relay.py --in-topic /poses --min-score 0.0
+```
+
+컨테이너↔호스트는 같은 `ROS_DOMAIN_ID`면 DDS로 바로 통신된다.
+
+### 7-4. test
+
+```bash
+# pose 수신 확인 (컵을 카메라 앞에서 움직이며 값 추종 확인)
+ros2 topic echo /cup_pose --once
+ros2 topic hz /poses            # FoundationPose 추론 주기 확인
+
+# 릴레이 순수 로직 회귀 (ROS 불필요)
+python3 -m pytest scripts/test_cup_pose_relay.py -q
+```
+
+| 증상 | 확인 |
+|---|---|
+| `/poses` 안 나옴 | 메시/텍스처 경로, 모델 변환(TensorRT 엔진 생성 수 분 소요) |
+| `/cup_pose` 값이 이상함 | extrinsics PLACEHOLDER 그대로 아닌가 / `cad_to_body` 정합 |
+| 컨테이너↔호스트 안 보임 | 양쪽 `ROS_DOMAIN_ID`·RMW 구현 동일한가 |
+
+---
+
 ## 관련 문서
 
 | 문서 | 내용 |
