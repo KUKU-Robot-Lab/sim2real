@@ -347,6 +347,7 @@ python3 -m pytest scripts/test_cup_pose_relay.py -q
 
 | 문서 | 내용 |
 |---|---|
+| `INSTALL.md` | 새 PC 세팅 (step-by-step 설치, `scripts/setup_check.sh` 진단) |
 | `ROBOT_ISAACSIM_CONNECTION.md` | 로봇별 연동 상세, 토픽 표, 설계 배경 |
 | `isaacsim_bridge/README.md` | 브리지 파라미터·튜닝·Action Graph |
 | `SIM2REAL_INFERENCE.md` | 정책 배포 전체 절차(OpenArm+Tesollo) |

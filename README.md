@@ -2,6 +2,10 @@
 
 OpenArm + Tesollo DG5 + Isaac Sim 연동을 위한 최소 워크스페이스입니다.
 
+> **처음 세팅하는 PC라면 → [INSTALL.md](INSTALL.md)** (step-by-step 설치, 역할별 Step 표)
+> 현재 PC에 뭐가 준비됐는지 진단 → `./scripts/setup_check.sh [control|vision|policy]`
+> 설치 후 로봇별 실행 절차 → [USAGE_ISAACSIM_ROS2.md](USAGE_ISAACSIM_ROS2.md)
+
 이 저장소는 다음 용도를 기준으로 정리되어 있습니다.
 
 1. 실제 OpenArm 제어
