@@ -90,6 +90,10 @@ class IsaacSimBridgeNode(Node):
         self.declare_parameter(
             "merged_joint_states_topic", "/isaacsim/joint_states"
         )
+        # RH56F1 세팅에서는 Tesollo 손 경로를 끄고(false) 팔만 브리지한다.
+        self.declare_parameter("right_hand_enabled", True)
+        # 외부(예: rh56f1_hand_bridge)가 발행하는 손 상태를 병합할 추가 토픽들.
+        self.declare_parameter("extra_joint_state_topics", [""])
         self.declare_parameter("left_arm_min", DEFAULT_LEFT_ARM_MIN)
         self.declare_parameter("left_arm_max", DEFAULT_LEFT_ARM_MAX)
         self.declare_parameter("right_arm_min", DEFAULT_RIGHT_ARM_MIN)
@@ -110,6 +114,12 @@ class IsaacSimBridgeNode(Node):
         self._right_hand_max = list(self.get_parameter("right_hand_max").value)
         self._left_gripper_min = float(self.get_parameter("left_gripper_min").value)
         self._left_gripper_max = float(self.get_parameter("left_gripper_max").value)
+        self._right_hand_enabled = bool(self.get_parameter("right_hand_enabled").value)
+        self._extra_joint_state_topics = [
+            topic
+            for topic in self.get_parameter("extra_joint_state_topics").value
+            if topic
+        ]
         self._emergency_stop_active = False
 
         self._left_arm_pub = self.create_publisher(
@@ -118,9 +128,11 @@ class IsaacSimBridgeNode(Node):
         self._right_arm_pub = self.create_publisher(
             JointTrajectory, self.get_parameter("right_arm_topic").value, 10
         )
-        self._right_hand_pub = self.create_publisher(
-            JointTrajectory, self.get_parameter("right_hand_topic").value, 10
-        )
+        self._right_hand_pub = None
+        if self._right_hand_enabled:
+            self._right_hand_pub = self.create_publisher(
+                JointTrajectory, self.get_parameter("right_hand_topic").value, 10
+            )
         self._merged_joint_states_pub = self.create_publisher(
             JointState, self.get_parameter("merged_joint_states_topic").value, 10
         )
@@ -151,12 +163,13 @@ class IsaacSimBridgeNode(Node):
             self._right_arm_cmd_cb,
             10,
         )
-        self.create_subscription(
-            Float64MultiArray,
-            "/isaacsim/right_hand_cmd",
-            self._right_hand_cmd_cb,
-            10,
-        )
+        if self._right_hand_enabled:
+            self.create_subscription(
+                Float64MultiArray,
+                "/isaacsim/right_hand_cmd",
+                self._right_hand_cmd_cb,
+                10,
+            )
         self.create_subscription(
             Float64,
             "/isaacsim/left_gripper_cmd",
@@ -170,9 +183,12 @@ class IsaacSimBridgeNode(Node):
             10,
         )
         self.create_subscription(JointState, "/joint_states", self._joint_state_cb, 20)
-        self.create_subscription(
-            JointState, "/dg5f_right/joint_states", self._joint_state_cb, 20
-        )
+        if self._right_hand_enabled:
+            self.create_subscription(
+                JointState, "/dg5f_right/joint_states", self._joint_state_cb, 20
+            )
+        for topic in self._extra_joint_state_topics:
+            self.create_subscription(JointState, topic, self._joint_state_cb, 20)
 
         self.get_logger().info(
             "Isaac Sim bridge ready. Input topics: "

@@ -1,10 +1,21 @@
 # Isaac Sim Bridge
 
-이 패키지는 Isaac Sim 쪽 제어 입력 토픽을 실제 OpenArm / Tesollo 제어기로 전달하는 ROS 2 브리지입니다.
+이 패키지는 Isaac Sim 쪽 제어 입력 토픽을 실제 OpenArm / Tesollo / RH56F1 제어기로 전달하는 ROS 2 브리지입니다.
 
 현재 실제 제어 흐름은 아래와 같습니다.
 
-`FABRICS (또는 다른 Python 제어루프) -> /isaacsim/* ROS 2 토픽 -> isaacsim_bridge -> ros2_control -> 실제 하드웨어`
+`FABRICS (또는 다른 Python 제어루프) -> /isaacsim/* ROS 2 토픽 -> isaacsim_bridge -> ros2_control / inspire_control_ros2 -> 실제 하드웨어`
+
+손 인터페이스가 서로 달라 노드가 둘로 나뉩니다.
+
+- `bridge_node` — OpenArm 팔(양) + Tesollo 오른손 + 왼쪽 gripper (`JointTrajectory`, 라디안).
+- `rh56f1_hand_bridge` — RH56F1 양손 (`SetAngle1`, 레지스터 정수). 순수 변환은 `rh56f1_hand.py`,
+  캘리브레이션은 `config/rh56f1_hand_calibration.yaml`. 로봇별 연동 상세는
+  `../ROBOT_ISAACSIM_CONNECTION.md` 참조.
+
+RH56F1 세팅에서는 `bridge_node`를 `right_hand_enabled:=false`(Tesollo 경로 끔) +
+`extra_joint_state_topics:=[/rh56f1/joint_states]`(손 상태 병합)로 띄우고, `rh56f1_hand_bridge`를
+함께 실행합니다.
 
 ## 역할
 

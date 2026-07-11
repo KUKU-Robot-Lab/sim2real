@@ -11,7 +11,17 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
-        ("share/" + package_name + "/launch", ["launch/isaacsim_bridge.launch.py"]),
+        (
+            "share/" + package_name + "/launch",
+            [
+                "launch/isaacsim_bridge.launch.py",
+                "launch/rh56f1_hand_bridge.launch.py",
+            ],
+        ),
+        (
+            "share/" + package_name + "/config",
+            ["config/rh56f1_hand_calibration.yaml"],
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -22,6 +32,7 @@ setup(
     entry_points={
         "console_scripts": [
             "bridge_node = isaacsim_bridge.bridge_node:main",
+            "rh56f1_hand_bridge = isaacsim_bridge.rh56f1_hand_bridge_node:main",
             "joint_error_recorder = isaacsim_bridge.joint_error_recorder:main",
             "joint_tuning_report = isaacsim_bridge.joint_tuning_report:main",
             "joint_tuning_cycle = isaacsim_bridge.joint_tuning_cycle:main",
