@@ -205,6 +205,44 @@ ros2 pkg list | grep foundationpose
 
 ---
 
+## 부록. 멀티 PC 상호 접속 — Tailscale (선택)
+
+여러 PC(로컬 GPU·서버·비전 PC)가 기관 WiFi ↔ 핫스팟을 오가면 DHCP IP가
+계속 바뀐다. Tailscale을 깔면 머신마다 **네트워크와 무관한 고정 가상
+IP(100.x)와 고정 이름**이 생겨, 어느 WiFi에 있든(서로 다른 망이어도)
+`ssh <머신이름>` 하나로 접속된다.
+
+```bash
+# [각 PC에서 1회]
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up                        # URL 열어 같은 계정으로 로그인
+sudo tailscale set --hostname=<이름>     # 예: pc5090, server
+
+# 확인
+tailscale status                         # 머신 목록·가상 IP
+tailscale ping <이름>                    # 터널 연결 확인
+```
+
+`~/.ssh/config`에 등록하면 한 단어로 접속:
+
+```
+Host server
+    HostName server        # MagicDNS 이름 (또는 100.x 가상 IP)
+    User <서버 계정>
+    ServerAliveInterval 30
+```
+
+```bash
+ssh-copy-id server         # 최초 1회 (비밀번호 입력) → 이후 무비밀번호
+ssh server
+```
+
+> ⚠ ROS2 DDS는 별개다 — Tailscale 위에서는 멀티캐스트가 안 돼서 PC 간
+> DDS 통신은 같은 LAN(같은 WiFi + `ROS_DOMAIN_ID`)을 쓰거나 discovery
+> server/unicast peer 설정이 따로 필요하다. SSH·scp·rsync·모니터링은 바로 된다.
+
+---
+
 ## 트러블슈팅
 
 | 증상 | 확인 |
