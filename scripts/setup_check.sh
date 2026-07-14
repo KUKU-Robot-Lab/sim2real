@@ -169,14 +169,14 @@ import fabrics_sim" >/dev/null 2>&1; then
     miss "FABRICS" "hdgp/source/FABRICS 또는 repo/FABRICS 필요 (INSTALL.md Step 4-B)"
   fi
 
-  # ROS 소스된 셸에서 humble launch_testing 플러그인이 최신 pytest와 충돌하므로 비활성화
-  if (cd "${REPO_DIR}/scripts" && python3 -m pytest -q \
-      -p no:launch_testing -p no:launch_testing_ros \
+  # ROS 소스된 셸에서 humble launch_testing 계열 플러그인이 최신 pytest와
+  # 충돌하므로 외부 플러그인 자동로드 자체를 끈다 (순수 테스트라 무영향)
+  if (cd "${REPO_DIR}/scripts" && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q \
       test_pour_obs_geometry.py test_pour_obs_builder.py test_palm_fk.py \
       test_pour_action_decoder.py test_cup_pose_relay.py >/dev/null 2>&1); then
     ok "pour s2r 회귀 테스트 (46 pass)"
   else
-    miss "pour s2r 회귀 테스트 실패" "cd scripts && python3 -m pytest -p no:launch_testing -p no:launch_testing_ros test_pour_*.py test_palm_fk.py test_cup_pose_relay.py -q 로 원인 확인"
+    miss "pour s2r 회귀 테스트 실패" "cd scripts && PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest test_pour_*.py test_palm_fk.py test_cup_pose_relay.py -q 로 원인 확인"
   fi
 fi
 
