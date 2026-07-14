@@ -124,7 +124,7 @@ ros2 topic echo /isaacsim/joint_states --once
 
 ```bash
 # [터미널 1] RH56F1 드라이버 (485/CANFD). 단일 손 예:
-cd $INSPIRE_WS && colcon build --symlink-install   # 최초 1회
+cd $INSPIRE_WS && colcon build --symlink-install --base-paths src/ros2/src   # 최초 1회 (ROS2 패키지는 src/ros2/src 아래)
 source install/setup.bash
 ros2 launch inspire_control_ros2 inspire_control_single_device.launch.py \
     device_name:=hand_right

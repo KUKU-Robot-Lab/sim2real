@@ -30,8 +30,15 @@ PC 역할은 자유롭게 합칠 수 있다 (한 대에 전부도 가능). DDS(�
 
 ```bash
 # NVIDIA 드라이버 (vision/policy PC만)
-sudo ubuntu-drivers install   # 또는 원하는 버전 명시
+ubuntu-drivers devices                 # GPU와 후보 드라이버 확인
+sudo apt install -y nvidia-driver-580  # 이 프로젝트 표준: 580 계열로 통일
+sudo reboot
 ```
+
+> 버전 지침: Isaac ROS(FoundationPose)는 드라이버 ≥535면 되지만, 최신
+> CUDA 컨테이너 호환을 위해 **580 계열로 전 머신 통일**을 권장한다.
+> 호스트에 CUDA 툴킷은 설치하지 말 것 — 컨테이너가 자체 포함하며,
+> 호스트 요건은 드라이버 + nvidia-container-toolkit(Step 6)뿐이다.
 
 **확인**
 ```bash
@@ -53,6 +60,9 @@ http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME
 sudo apt update && sudo apt install -y \
     ros-humble-desktop \
     ros-humble-vision-msgs \
+    ros-humble-ros2-control \
+    ros-humble-ros2-controllers \
+    ros-humble-xacro \
     python3-colcon-common-extensions
 
 # 모든 PC에서 동일한 도메인 ID (이 프로젝트 관례: 126)
