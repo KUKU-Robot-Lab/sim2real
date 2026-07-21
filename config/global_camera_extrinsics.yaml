@@ -23,7 +23,7 @@ camera:
 # 여기서 보정. sim body 프레임은 "바닥 중심"이 아니라 mesh 원점 그대로다
 # (+z=위, bottom=-0.077m, rim=+0.100m).
 # cad_body_alignment.py 도출: cup.obj Y-up→sim body Z-up 회전만.
-# 원점=mesh 원점(hdgp pour_v1/pour_sensor bottom=-0.077/rim=+0.100 ==
+# 원점=mesh 원점(hdgp pour_v5/pour_right_env_cfg.py:198 bottom=-0.077/rim=+0.100 ==
 # cup.obj Y-AABB 근거).
 cad_to_body:
   position: [0.0, 0.0, 0.0]
