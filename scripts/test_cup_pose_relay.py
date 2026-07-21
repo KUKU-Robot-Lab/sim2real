@@ -108,3 +108,23 @@ def test_select_best_filters_min_score_and_handles_empty():
     a = (0.4, np.zeros(3), IDENT)
     assert select_best_detection([a], min_score=0.5) is None
     assert select_best_detection([], min_score=0.0) is None
+
+
+# ── camera-frame PoseStamped 입력 ────────────────────────────────────────────
+
+def test_posestamped_to_candidate_maps_fields():
+    from cup_pose_relay import posestamped_to_candidate
+    # camera-frame pose (pos, quat wxyz), score 기본 1.0
+    score, pos, quat = posestamped_to_candidate(0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0)
+    assert score == 1.0
+    assert np.allclose(pos, [0.1, 0.2, 0.3])
+    assert np.allclose(quat, [1.0, 0.0, 0.0, 0.0])
+
+
+def test_posestamped_candidate_feeds_same_transform_as_detection():
+    # 같은 camera-frame pose면 Detection3DArray 경로와 동일한 base 결과여야 한다
+    from cup_pose_relay import posestamped_to_candidate, cad_pose_to_base_body
+    ext = _ident_ext(cam_pos=np.array([1.0, 0.0, 0.5]), cam_quat=ROT_Z_90)
+    _, pos_c, quat_c = posestamped_to_candidate(0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0)
+    pos, quat = cad_pose_to_base_body(ext, pos_c, quat_c)
+    assert np.allclose(pos, [1.0, 0.2, 0.5], atol=1e-12)

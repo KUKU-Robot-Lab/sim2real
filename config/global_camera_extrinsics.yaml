@@ -19,12 +19,15 @@ camera:
   orientation_wxyz: [1.0, 0.0, 0.0, 0.0]
 
 # ── T_cad_body: 컵 CAD 메시 프레임 → sim body 프레임 ───────────────────────
-# FoundationPose에 넣는 CAD 메시의 원점/축이 sim의 컵 body 프레임
-# (원점=컵 바닥 중심, +z=위, rim=+z 0.100)과 다르면 여기서 보정.
-# TODO(calibration): 컵 CAD 확보 후 정합 확인 — 계획서상 P5 최대 난관.
+# FoundationPose에 넣는 CAD 메시의 원점/축이 sim의 컵 body 프레임과 다르면
+# 여기서 보정. sim body 프레임은 "바닥 중심"이 아니라 mesh 원점 그대로다
+# (+z=위, bottom=-0.077m, rim=+0.100m).
+# cad_body_alignment.py 도출: cup.obj Y-up→sim body Z-up 회전만.
+# 원점=mesh 원점(hdgp pour_v5/pour_right_env_cfg.py:198 bottom=-0.077/rim=+0.100 ==
+# cup.obj Y-AABB 근거).
 cad_to_body:
   position: [0.0, 0.0, 0.0]
-  orientation_wxyz: [1.0, 0.0, 0.0, 0.0]
+  orientation_wxyz: [0.707107, 0.707107, 0.0, 0.0]
 
 # /cup_pose 헤더에 기록할 base 프레임 이름 (소비자는 값만 사용, 정보성)
 base_frame: base_link

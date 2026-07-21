@@ -91,7 +91,14 @@ Tesollo dg5f ─▶ /dg5f_right/joint_states (20D)     ├─▶ sim2real_infere
 - 정책 재학습(hdgp READ-ONLY).
 - 24.04/Jazzy 이식(현재 22.04/Humble 배포 기준; Jazzy는 별도 브랜치 작업).
 
-## 8. 성공 기준 (①단계 완료 정의)
+## 8. 연계 토폴로지 (카메라 무관)
+- vision PC(arm3070 현행 → vision-3090 향후)와 로봇 제어 PC는 **ROS_DOMAIN_ID=126** 공유.
+  둘 다 `scripts/check_cup_pose_link.sh 126` 로 도메인·`/cup_pose` 가시성 점검.
+- `/cup_pose` 계약: geometry_msgs/PoseStamped, base 프레임. 생산자 = `cup_pose_relay.py`
+  (`--in-type detection3d`=Isaac ROS FP / `--in-type posestamped`=FP++). 소비자 무수정.
+- Tailscale 은 SSH 용(멀티캐스트 불가) — DDS 통신은 동일 LAN/DDS 설정에 의존.
+
+## 9. 성공 기준 (①단계 완료 정의)
 
 FoundationPose로 인식한 컵을 grasp-v1 정책이 실기에서 **반복적으로 잡고 들어**,
 Stage 4의 held/성공 판정이 안정적으로 뜬다(= pour 핸드오프 준비 완료).

@@ -115,6 +115,23 @@ def select_best_detection(
     return max(passing, key=lambda c: c[0])
 
 
+def posestamped_to_candidate(
+    px: float, py: float, pz: float,
+    qw: float, qx: float, qy: float, qz: float,
+    score: float = 1.0,
+) -> tuple[float, np.ndarray, np.ndarray]:
+    """camera-frame PoseStamped 필드 → relay 후보 (score, pos, quat_wxyz).
+
+    FP++ 라이브 노드가 낼 camera optical 프레임 컵 pose 입력 경로.
+    Detection3DArray 경로와 동일한 (score, pos, quat) 포맷을 반환한다.
+    """
+    return (
+        float(score),
+        np.array([px, py, pz], dtype=np.float64),
+        np.array([qw, qx, qy, qz], dtype=np.float64),
+    )
+
+
 # ---------------------------------------------------------------------------
 # ROS 노드
 # ---------------------------------------------------------------------------
@@ -124,6 +141,9 @@ def main() -> None:
     parser.add_argument("--extrinsics", default=str(DEFAULT_EXTRINSICS))
     parser.add_argument("--in-topic", default="/poses",
                         help="Isaac ROS FoundationPose Detection3DArray 출력 토픽")
+    parser.add_argument("--in-type", choices=["detection3d", "posestamped"],
+                        default="detection3d",
+                        help="입력 메시지 타입: Isaac ROS FP=detection3d, FP++=posestamped")
     parser.add_argument("--out-topic", default="/cup_pose")
     parser.add_argument("--min-score", type=float, default=0.0)
     args = parser.parse_args()
@@ -133,19 +153,23 @@ def main() -> None:
     import rclpy
     from rclpy.node import Node
     from geometry_msgs.msg import PoseStamped
-    from vision_msgs.msg import Detection3DArray
 
     class CupPoseRelay(Node):
         def __init__(self) -> None:
             super().__init__("cup_pose_relay")
             self._pub = self.create_publisher(PoseStamped, args.out_topic, 10)
-            self.create_subscription(
-                Detection3DArray, args.in_topic, self._detections_cb, 10
-            )
+            if args.in_type == "posestamped":
+                self.create_subscription(
+                    PoseStamped, args.in_topic, self._posestamped_cb, 10)
+            else:
+                from vision_msgs.msg import Detection3DArray
+                self.create_subscription(
+                    Detection3DArray, args.in_topic, self._detections_cb, 10)
             self._published = 0
             self.get_logger().info(
                 f"relay: {args.in_topic} → {args.out_topic} "
-                f"(extrinsics={args.extrinsics}, min_score={args.min_score})"
+                f"(in_type={args.in_type}, extrinsics={args.extrinsics}, "
+                f"min_score={args.min_score})"
             )
 
         def _detections_cb(self, msg) -> None:
@@ -164,9 +188,21 @@ def main() -> None:
                 return
             _, cad_pos, cad_quat = best
             pos, quat = cad_pose_to_base_body(ext, cad_pos, cad_quat)
+            self._publish(msg.header.stamp, pos, quat)
 
+        def _posestamped_cb(self, msg) -> None:
+            p, q = msg.pose.position, msg.pose.orientation  # ROS xyzw
+            cand = posestamped_to_candidate(p.x, p.y, p.z, q.w, q.x, q.y, q.z)
+            best = select_best_detection([cand], args.min_score)
+            if best is None:
+                return
+            _, cad_pos, cad_quat = best
+            pos, quat = cad_pose_to_base_body(ext, cad_pos, cad_quat)
+            self._publish(msg.header.stamp, pos, quat)
+
+        def _publish(self, stamp, pos, quat) -> None:
             out = PoseStamped()
-            out.header.stamp = msg.header.stamp
+            out.header.stamp = stamp
             out.header.frame_id = ext.base_frame
             out.pose.position.x, out.pose.position.y, out.pose.position.z = pos
             out.pose.orientation.w = quat[0]
