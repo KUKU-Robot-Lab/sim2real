@@ -485,6 +485,82 @@ git commit -m "feat(dryrun): 합성 /cup_pose 발행 노드 (카메라 무관 gr
 
 ---
 
+### Task 5: 로봇 자료 매니페스트 + 디렉토리 연계 문서
+
+로봇 PC·카메라 연결 시 "바로 사용"하도록, 필요한 **로봇용 자료**(정책 체크포인트, 드라이버/vendor, launch)와 **perception ↔ sim2real ↔ hdgp/log 디렉토리 연계**를 문서 하나로 정리한다. 사용자가 나중에 찾아 sim2real에 clone/배치할 목록이 된다. (문서 태스크 — 코드 없음. hdgp READ-ONLY 탐색.)
+
+**Files:**
+- Create: `sim2real/docs/ROBOT_MATERIALS.md`
+- Read-only 참조: `hdgp/log`, `hdgp/outputs`, `hdgp/source/openarm/openarm/tesollo/right/grasp_v1/`, `sim2real/scripts/sim2real_inference.py`, `sim2real_dryrun.py`, `policy_loader.py`
+
+**Interfaces:**
+- Consumes: 없음(문서). Produces: 사용자용 clone/배치 체크리스트.
+
+- [ ] **Step 1: 정책 산출물 위치 조사 (hdgp READ-ONLY)**
+
+Run:
+```bash
+find hdgp/log hdgp/outputs -name "*.pth" 2>/dev/null | grep -i "grasp.*right\|5g_grasp" | head
+find hdgp -name "agent.yaml" 2>/dev/null | grep -i grasp | head
+grep -n "ckpt\|agent\|\.pth\|load" sim2real/scripts/policy_loader.py | head
+```
+grasp-v1(=5g_grasp_right-v7) 체크포인트(.pth) + agent.yaml(params) 경로를 확정한다.
+
+- [ ] **Step 2: 로봇 드라이버/vendor 목록 조사**
+
+Run:
+```bash
+grep -rn "isaacsim_bridge\|openarm_control\|dg5f_right\|contact_forces\|/joint_states" \
+  sim2real/scripts/sim2real_inference.py sim2real/scripts/sim2real_dryrun.py | head -20
+```
+sim2real가 의존하는 ROS2 패키지(openarm 팔 드라이버, Tesollo dg5f_right, isaacsim_bridge,
+openarm_control launch)와 구독/발행 토픽을 목록화.
+
+- [ ] **Step 3: `ROBOT_MATERIALS.md` 작성**
+
+다음 4개 절로 구성:
+```markdown
+# 로봇용 자료 매니페스트 (연결 시 바로 사용)
+
+## 1. 정책 산출물 (hdgp/log → sim2real)
+- grasp-v1 체크포인트: <Step1에서 확정한 .pth 경로> → sim2real 실행 시 --ckpt 로 지정
+- agent.yaml(params): <경로> → --agent
+- **연계**: hdgp 학습 산출물. sim2real_inference/dryrun 이 로드. sim2real 로 복사 or 절대경로 참조.
+
+## 2. 로봇 드라이버/vendor (로봇 제어 PC, clone 대상)
+- OpenArm 팔 드라이버 + openarm_control (launch: openarm_..._real.launch.py)
+- Tesollo dg5f_right 드라이버 (/dg5f_right/joint_states, /dg5f_right/contact_forces 발행)
+- isaacsim_bridge (/isaacsim/right_arm_cmd, right_hand_cmd 소비 → 컨트롤러)
+- **위치**: 로봇제어 레포(사용자 보유). sim2real 단일 디렉토리 원칙에서 vendor 는 예외.
+
+## 3. 비전 (perception → sim2real)
+- perception 이 /cup_pose 생산(FP++ 베이스 / Isaac ROS FP 현행) → cup_pose_relay → sim2real.
+- ROS_DOMAIN_ID=126 공유. check_cup_pose_link.sh 로 점검.
+
+## 4. 디렉토리 유기적 연계 (데이터 흐름)
+    perception(/cup_pose) ─┐
+    hdgp/log(정책 .pth) ───┼─▶ sim2real (relay·inference·dryrun) ─▶ 로봇 드라이버(vendor)
+    hdgp(READ-ONLY 규약) ──┘
+- sim2real = 런타임 글루. 코드는 sim2real 단일 디렉토리. 정책은 hdgp/log, 비전은 perception,
+  드라이버는 vendor 레포에서 온다.
+
+## 5. 연결 시 체크리스트
+- [ ] 정책 .pth/agent.yaml 을 sim2real 에 배치(or 경로 지정)
+- [ ] 로봇 드라이버 vendor clone + 기동
+- [ ] perception /cup_pose 기동 + ROS_DOMAIN_ID=126 확인(check_cup_pose_link.sh)
+- [ ] extrinsics 캘리브(T_base_cam) — 카메라 장착 후
+```
+각 <경로>는 Step 1~2 실측값으로 채운다(빈칸/TBD 금지).
+
+- [ ] **Step 4: 커밋**
+
+```bash
+cd sim2real && git add docs/ROBOT_MATERIALS.md
+git commit -m "docs: 로봇 자료 매니페스트 + perception/sim2real/hdgp-log 디렉토리 연계"
+```
+
+---
+
 ## 범위 밖 (하드웨어 대기)
 - T_base_cam extrinsics **캘리브레이션** (perception `tools/calibrate_extrinsics.py`, ArUco) — 카메라 장착 후.
 - FP++ **라이브 ROS 노드**(camera→/cup_pose) — vision-3090 D435i + py3.8↔Humble rclpy 브리지(별도 결정).
