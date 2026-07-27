@@ -316,7 +316,7 @@ EOF
 | stiffness / p | 30.0 | **1.5** | 추후 확인 후 조정 |
 | damping / d | 5.0 | **0.0** | 추후 확인 후 조정 |
 
-게인 변경 시: `vendor/tesollo/dg5f_driver/config/dg5f_right_controller.yaml`의 `gains` 섹션 수정.
+게인 변경 시: `robot_control/ros_ws/src/delto_m_ros2/dg5f_driver/config/dg5f_right_controller.yaml`의 `gains` 섹션 수정(드라이버는 robot_control 소유).
 
 ---
 

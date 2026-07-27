@@ -137,9 +137,10 @@ cd sim2real
 - `vendor/openarm/openarm_description`
 - `vendor/openarm/openarm_bringup`
 - `vendor/openarm/openarm_hardware`
-- `vendor/tesollo/dg5f_driver`
-- `vendor/tesollo/dg_description`
-- `vendor/tesollo/dg_msgs`
+
+Tesollo 드라이버(`dg5f_driver`, `dg_description`, `dg_msgs`,
+`delto_hardware`, `delto_tcp_comm`)는 robot_control 소유이며
+`ros_ws/install` 을 오버레이로 source 한다.
 
 추가로 `openarm_eef_control` 패키지가 있어야 합니다.
 

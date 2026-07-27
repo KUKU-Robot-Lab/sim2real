@@ -238,6 +238,10 @@ ros2 launch test_gui gui.launch.py
 - OpenArm mesh 경로를 `../vendor/openarm/openarm_description/meshes/...` 로 변경
 - Tesollo xacro 원본(`vendor/tesollo/dg_description/urdf/*.xacro`)도 `file://$(find ...)` 대신 `package://dg_description/...` 로 변경
 
+> 2026-07-27: Tesollo 드라이버는 robot_control 로 일원화되어 `vendor/tesollo/`
+> 가 제거됐다. 위 xacro 수정은 그 사본에 대한 것이므로 더 이상 적용되지
+> 않는다(이 저장소의 URDF 는 그 xacro 를 참조하지 않는다).
+
 따라서 URDF 파일은 저장소 루트 기준 상대경로로 mesh를 찾습니다.
 
 ### Isaac Sim 브리지 빌드 및 실행
