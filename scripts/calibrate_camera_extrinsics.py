@@ -42,22 +42,40 @@ def _fmt(vals):
 
 
 def update_camera_extrinsics_yaml(path: str, pos, quat_wxyz) -> str:
-    """`camera:` 블록의 position/orientation_wxyz 두 줄만 교체, 나머지 보존."""
+    """`camera:` 블록의 position/orientation_wxyz 두 줄만 교체, 나머지 보존.
+
+    두 치환이 모두 일어나지 않으면(`camera:` 블록 부재 또는 필드 누락)
+    조용히 원문을 반환하지 않고 ValueError를 낸다.
+    """
     text = Path(path).read_text()
     lines = text.splitlines(keepends=True)
     out, in_camera = [], False
+    position_replaced = False
+    orientation_replaced = False
     for line in lines:
         stripped = line.rstrip("\n")
-        # 최상위 키 시작 판정 (들여쓰기 없음 + `key:`)
-        if re.match(r"^\S.*:\s*$", stripped):
+        # 최상위 키 시작 판정 (들여쓰기 없음 + `key:`). 주석 줄(#로 시작)은
+        # `key:`로 끝나도 블록 경계로 취급하지 않는다.
+        if not stripped.lstrip().startswith("#") and re.match(r"^\S.*:\s*$", stripped):
             in_camera = stripped.strip() == "camera:"
         if in_camera and re.match(r"^\s+position:\s*\[", line):
-            out.append(re.sub(r"\[.*\]", _fmt(pos), line))
+            out.append(re.sub(r"\[[^\]]*\]", _fmt(pos), line))
+            position_replaced = True
             continue
         if in_camera and re.match(r"^\s+orientation_wxyz:\s*\[", line):
-            out.append(re.sub(r"\[.*\]", _fmt(quat_wxyz), line))
+            out.append(re.sub(r"\[[^\]]*\]", _fmt(quat_wxyz), line))
+            orientation_replaced = True
             continue
         out.append(line)
+    if not position_replaced or not orientation_replaced:
+        missing = []
+        if not position_replaced:
+            missing.append("camera.position")
+        if not orientation_replaced:
+            missing.append("camera.orientation_wxyz")
+        raise ValueError(
+            f"'camera:' 블록에서 다음 항목을 찾지 못해 갱신 불가: {', '.join(missing)}"
+        )
     return "".join(out)
 
 
@@ -69,10 +87,19 @@ def _load_t_base_qr(arg: str) -> np.ndarray:
         pos = d["position"]; rpy = d["rpy"]
     else:
         vals = [float(v) for v in arg.split(",")]
+        if len(vals) != 6:
+            raise ValueError(
+                f"--t-base-qr 값은 정확히 6개(x,y,z,r,p,y)여야 함, 받은 개수: {len(vals)}"
+            )
         pos, rpy = vals[:3], vals[3:6]
     R, _ = cv2.Rodrigues(np.array(rpy))   # 근사(작은각) — 정밀 필요시 yaml에 quat 사용
     T = np.eye(4); T[:3, :3] = R; T[:3, 3] = pos
     return T
+
+
+def average_corners(corners_list: list) -> np.ndarray:
+    """유효 검출된 (4,2) QR 코너 배열들의 평균 (4,2)."""
+    return np.mean(np.stack([np.asarray(c, np.float64) for c in corners_list], axis=0), axis=0)
 
 
 def _frame_from_npz(path: str):
@@ -80,22 +107,28 @@ def _frame_from_npz(path: str):
     return np.asarray(d["rgb"]), np.asarray(d["K"], np.float64)
 
 
-def _frame_from_ros(rgb_topic, info_topic):
+def _frame_from_ros(rgb_topic, info_topic, n_frames: int = 1):
+    """ROS에서 n_frames개의 (rgb, K) 프레임을 캡처해 리스트로 반환."""
     import rclpy
     from cv_bridge import CvBridge
     from sensor_msgs.msg import CameraInfo, Image
     rclpy.init()
     node = rclpy.create_node("extrinsics_calib_capture")
     bridge = CvBridge()
-    got = {}
-    def rgb_cb(m): got["rgb"] = np.asarray(bridge.imgmsg_to_cv2(m, "rgb8"))
-    def info_cb(m): got["K"] = np.array([[m.k[0], 0, m.k[2]], [0, m.k[4], m.k[5]], [0, 0, 1]])
-    node.create_subscription(Image, rgb_topic, rgb_cb, 10)
-    node.create_subscription(CameraInfo, info_topic, info_cb, 10)
-    while rclpy.ok() and ("rgb" not in got or "K" not in got):
-        rclpy.spin_once(node, timeout_sec=1.0)
+    frames = []
+    while rclpy.ok() and len(frames) < n_frames:
+        got = {}
+        def rgb_cb(m): got["rgb"] = np.asarray(bridge.imgmsg_to_cv2(m, "rgb8"))
+        def info_cb(m): got["K"] = np.array([[m.k[0], 0, m.k[2]], [0, m.k[4], m.k[5]], [0, 0, 1]])
+        sub_rgb = node.create_subscription(Image, rgb_topic, rgb_cb, 10)
+        sub_info = node.create_subscription(CameraInfo, info_topic, info_cb, 10)
+        while rclpy.ok() and ("rgb" not in got or "K" not in got):
+            rclpy.spin_once(node, timeout_sec=1.0)
+        node.destroy_subscription(sub_rgb)
+        node.destroy_subscription(sub_info)
+        frames.append((got["rgb"], got["K"]))
     node.destroy_node(); rclpy.shutdown()
-    return got["rgb"], got["K"]
+    return frames
 
 
 def main(argv=None) -> int:
@@ -109,14 +142,31 @@ def main(argv=None) -> int:
                     help="QR의 base 기준 pose: 'x,y,z,r,p,y'(m,rad) 또는 yaml 경로")
     ap.add_argument("--extrinsics", default=str(DEFAULT_EXTRINSICS))
     ap.add_argument("--write", action="store_true", help="yaml 실제 갱신(없으면 dry-run)")
+    ap.add_argument("--frames", type=int, default=1, help="ROS 캡처 시 평균낼 프레임 수(코너 평균)")
     args = ap.parse_args(argv)
 
-    rgb, K = (_frame_from_npz(args.npz) if args.source == "npz"
-              else _frame_from_ros(args.rgb_topic, args.info_topic))
-    corners = detect_qr_corners(rgb)
-    if corners is None:
-        print("QR 미검출 — 조명/거리/크기 확인", file=sys.stderr)
-        return 1
+    if args.source == "npz" and not args.npz:
+        ap.error("--source npz 사용 시 --npz 가 필수입니다")
+
+    if args.source == "npz":
+        if args.frames > 1:
+            print("참고: --source npz 는 저장된 단일 프레임만 사용함(--frames 무시)",
+                  file=sys.stderr)
+        rgb, K = _frame_from_npz(args.npz)
+        corners = detect_qr_corners(rgb)
+        if corners is None:
+            print("QR 미검출 — 조명/거리/크기 확인", file=sys.stderr)
+            return 1
+    else:
+        frames = _frame_from_ros(args.rgb_topic, args.info_topic, args.frames)
+        K = frames[0][1]  # K는 프레임 간 고정
+        corners_list = [c for rgb, _ in frames if (c := detect_qr_corners(rgb)) is not None]
+        if not corners_list:
+            print(f"QR 미검출 — {len(frames)}개 프레임 전부 실패(조명/거리/크기 확인)",
+                  file=sys.stderr)
+            return 1
+        corners = average_corners(corners_list)
+
     T_cam_qr = solve_qr_pose(corners, args.qr_size, K, None)
     residual = reprojection_residual_px(corners, T_cam_qr, args.qr_size, K, None)
     T_base_qr = _load_t_base_qr(args.t_base_qr)
