@@ -923,15 +923,23 @@ git commit -m "feat: QR extrinsics 캘리브 CLI(QR 검출·yaml 갱신·잔차 
 
 - [ ] **Step 6: 라이브 캘리브(실기, 하드웨어 필요 — 문서화 게이트)**
 
-QR을 카메라 home 자세에서 크게 보이게 두고, 테이블 QR의 base 기준 pose 실측 후:
+**카메라·QR은 vision-3090에 연결됨.** T_base_cam yaml은 pc5090 sim2real가 소비하므로,
+프레임은 vision-3090에서 캡처(NPZ) → pc5090으로 scp → pc5090에서 `--source npz`로 calib.
+목 home 자세에서 QR을 크게 보이게 두고, 테이블 QR의 base 기준 pose 실측 후:
 ```bash
+# 1) vision-3090: RGB+K 1프레임 NPZ 캡처(기존 capture_frame.py 재사용)
+ssh vision-3090 'cd ~/rl_ws/perception_plus_plus && \
+    python scripts/capture_frame.py --out /tmp/qr_frame.npz'   # rgb, K 포함
+scp vision-3090:/tmp/qr_frame.npz /tmp/qr_frame.npz
+# 2) pc5090: NPZ로 calib → sim2real yaml 갱신
 cd ~/rl_ws/sim2real/scripts
-python calibrate_camera_extrinsics.py --source ros --qr-size 0.10 \
-    --t-base-qr "0.5,0.0,0.0,0,0,0" --write
+python calibrate_camera_extrinsics.py --source npz --npz /tmp/qr_frame.npz \
+    --qr-size 0.10 --t-base-qr "0.5,0.0,0.0,0,0,0" --write
 ```
 Expected: 재투영 잔차 < 2px, `global_camera_extrinsics.yaml`의 `camera` 블록만 갱신. 이후
 `cup_pose_relay.py --in-type posestamped --in-topic /perception_plus_plus/cup/pose` 기동 →
-`/cup_pose`가 테이블 위 그럴듯한 base 좌표에 떨어지는지 sanity. (하드웨어 미가용 시 보류 표시.)
+`/cup_pose`가 테이블 위 그럴듯한 base 좌표에 떨어지는지 sanity. (라이브 `--source ros`는
+카메라 토픽이 DDS로 pc5090까지 보일 때만 대안. 기본은 NPZ 핸드오프.) 하드웨어 미가용 시 보류 표시.
 
 ---
 
