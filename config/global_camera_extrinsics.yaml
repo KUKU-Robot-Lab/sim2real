@@ -11,12 +11,14 @@
 # ── T_base_cam: robot base ← camera_color_optical_frame ────────────────────
 # FoundationPose 출력 프레임 = 입력 컬러 이미지의 optical 프레임
 # (RealSense: camera_color_optical_frame, x우/y하/z전방).
-# TODO(calibration): 실물 글로벌 카메라 장착 후 1회 캘리브레이션으로 교체.
-#                    아래 값은 PLACEHOLDER — 이 상태로 실기 구동 금지.
+# 캘리브(2026-07-27, calibrate_camera_extrinsics.py): ArUco DICT_6X6 id0,
+# 검은사각형 0.12m, T_base_qr=(0.75,0.075,0)·rpy(0,0,0), 재투영잔차 0.062px.
+# ★1차값 — 마커 yaw=0(면내 정렬) 가정. 목 관절은 캘리브 home 자세 고정 전제.
+#   목/마커 자세가 바뀌면 재캘리브 필요. 라이브 /cup_pose sanity 검증 권장.
 camera:
   frame: camera_color_optical_frame
-  position: [0.0, 0.0, 0.0]
-  orientation_wxyz: [1.0, 0.0, 0.0, 0.0]
+  position: [0.162562967, 0.108778199, 0.594579819]
+  orientation_wxyz: [0.259377855, -0.651773938, 0.657866209, -0.274091066]
 
 # ── T_cad_body: 컵 CAD 메시 프레임 → sim body 프레임 ───────────────────────
 # FoundationPose에 넣는 CAD 메시의 원점/축이 sim의 컵 body 프레임과 다르면
