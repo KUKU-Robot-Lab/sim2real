@@ -38,8 +38,8 @@ def test_reprojection_residual_small_for_true_pose():
 
 
 def test_compose_base_cam():
-    # base=qr(단위), camera가 qr를 z=0.7에서 봄 → base_cam translation = -inv 적용 결과
-    T_base_qr = np.eye(4)
+    # T_base_qr는 비-단위 변환(회전+평행이동)으로 고정해 합성 순서를 못박는다.
+    T_base_qr = _rt([0.1, 0.2, -0.3], [0.5, -0.4, 1.2])
     T_cam_qr = _rt([0, 0, 0], [0.0, 0.0, 0.7])
     T_base_cam = compose_base_cam(T_base_qr, T_cam_qr)
     # T_base_cam ∘ T_cam_qr == T_base_qr

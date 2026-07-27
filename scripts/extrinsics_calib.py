@@ -1,7 +1,9 @@
 """QR 정적 extrinsics 캘리브 순수 수학 (ROS 비의존).
 
 T_base_cam = T_base_qr ∘ inv(T_cam_qr),  T_cam_qr = solvePnP(QR 코너).
-쿼터니언은 wxyz. 코너 순서는 TL,TR,BR,BL (OpenCV QRCodeDetector 순서).
+쿼터니언은 wxyz. 코너 순서는 TL,TR,BR,BL (OpenCV QRCodeDetector 순서, 이미지 y하).
+객체 좌표계는 cv2.SOLVEPNP_IPPE_SQUARE가 요구하는 y상(canonical) 규약을 따른다
+(2D 코너 TL,TR,BR,BL ↔ 이미지 y하, 객체 y상).
 """
 from __future__ import annotations
 
@@ -9,9 +11,13 @@ import numpy as np
 
 
 def qr_object_points(qr_size: float) -> np.ndarray:
-    """QR 중심 원점, 평면 z=0, 코너 TL,TR,BR,BL (x우/y하)."""
+    """QR 중심 원점, 평면 z=0, cv2.SOLVEPNP_IPPE_SQUARE canonical 순서 (y상).
+
+    2D 코너 TL,TR,BR,BL (이미지 y하)에 대응하는 객체점은 y상 규약이므로
+    TL→(-h,h), TR→(h,h), BR→(h,-h), BL→(-h,-h) 순서가 된다.
+    """
     h = qr_size / 2.0
-    return np.array([[-h, -h, 0.0], [h, -h, 0.0], [h, h, 0.0], [-h, h, 0.0]])
+    return np.array([[-h, h, 0.0], [h, h, 0.0], [h, -h, 0.0], [-h, -h, 0.0]])
 
 
 def solve_qr_pose(corners_2d: np.ndarray, qr_size: float, K: np.ndarray,
@@ -20,7 +26,8 @@ def solve_qr_pose(corners_2d: np.ndarray, qr_size: float, K: np.ndarray,
     obj = qr_object_points(qr_size).astype(np.float64)
     img = np.asarray(corners_2d, np.float64).reshape(-1, 1, 2)
     d = np.zeros(5) if dist is None else np.asarray(dist, np.float64).ravel()
-    ok, rvec, tvec = cv2.solvePnP(obj, img, K.astype(np.float64), d)
+    ok, rvec, tvec = cv2.solvePnP(obj, img, K.astype(np.float64), d,
+                                   flags=cv2.SOLVEPNP_IPPE_SQUARE)
     if not ok:
         raise ValueError("solvePnP failed for QR corners")
     R, _ = cv2.Rodrigues(rvec)
