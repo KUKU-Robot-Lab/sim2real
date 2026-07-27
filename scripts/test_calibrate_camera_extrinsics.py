@@ -3,7 +3,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from calibrate_camera_extrinsics import average_corners, update_camera_extrinsics_yaml
+from calibrate_camera_extrinsics import (
+    average_corners, quat_wxyz_to_matrix, rpy_to_matrix, update_camera_extrinsics_yaml,
+)
 
 SAMPLE = """\
 # 주석 헤더 보존 확인
@@ -126,3 +128,85 @@ camera:
     # verify the comments are preserved
     assert "[rig A]" in out, "Comment '[rig A]' should be preserved in position line"
     assert "[baseline]" in out, "Comment '[baseline]' should be preserved in orientation_wxyz line"
+
+
+def test_rpy_to_matrix_single_axis_matches_elementary_rotation():
+    # roll only == Rx
+    roll = 0.4
+    R = rpy_to_matrix(roll, 0.0, 0.0)
+    cr, sr = np.cos(roll), np.sin(roll)
+    Rx = np.array([[1.0, 0.0, 0.0], [0.0, cr, -sr], [0.0, sr, cr]])
+    assert np.allclose(R, Rx)
+
+    # pitch only == Ry
+    pitch = -0.6
+    R = rpy_to_matrix(0.0, pitch, 0.0)
+    cp, sp = np.cos(pitch), np.sin(pitch)
+    Ry = np.array([[cp, 0.0, sp], [0.0, 1.0, 0.0], [-sp, 0.0, cp]])
+    assert np.allclose(R, Ry)
+
+    # yaw only == Rz
+    yaw = 0.3
+    R = rpy_to_matrix(0.0, 0.0, yaw)
+    cy, sy = np.cos(yaw), np.sin(yaw)
+    Rz = np.array([[cy, -sy, 0.0], [sy, cy, 0.0], [0.0, 0.0, 1.0]])
+    assert np.allclose(R, Rz)
+
+
+def test_rpy_to_matrix_compound_matches_rz_ry_rx_composition():
+    """regression test for the axis-angle (cv2.Rodrigues) bug: a compound rpy
+    (roll, pitch, yaw all nonzero) must equal the ROS/URDF fixed-axis
+    composition R = Rz(yaw) @ Ry(pitch) @ Rx(roll), built independently here."""
+    roll, pitch, yaw = 0.1, -0.6, 0.3
+
+    cr, sr = np.cos(roll), np.sin(roll)
+    cp, sp = np.cos(pitch), np.sin(pitch)
+    cy, sy = np.cos(yaw), np.sin(yaw)
+    Rx = np.array([[1.0, 0.0, 0.0], [0.0, cr, -sr], [0.0, sr, cr]])
+    Ry = np.array([[cp, 0.0, sp], [0.0, 1.0, 0.0], [-sp, 0.0, cp]])
+    Rz = np.array([[cy, -sy, 0.0], [sy, cy, 0.0], [0.0, 0.0, 1.0]])
+    expected = Rz @ Ry @ Rx
+
+    R = rpy_to_matrix(roll, pitch, yaw)
+    assert np.allclose(R, expected)
+
+    # sanity: must actually differ from the buggy axis-angle interpretation of
+    # the same 3-vector (single rotation about axis (roll,pitch,yaw))
+    theta = np.linalg.norm([roll, pitch, yaw])
+    axis = np.array([roll, pitch, yaw]) / theta
+    K = np.array([[0, -axis[2], axis[1]],
+                  [axis[2], 0, -axis[0]],
+                  [-axis[1], axis[0], 0]])
+    axis_angle_R = np.eye(3) + np.sin(theta) * K + (1 - np.cos(theta)) * (K @ K)
+    assert not np.allclose(R, axis_angle_R)
+
+
+def test_rpy_to_matrix_is_valid_rotation():
+    R = rpy_to_matrix(0.1, -0.6, 0.3)
+    assert np.allclose(R @ R.T, np.eye(3), atol=1e-9)
+    assert np.isclose(np.linalg.det(R), 1.0)
+
+
+def test_quat_wxyz_to_matrix_identity():
+    R = quat_wxyz_to_matrix([1.0, 0.0, 0.0, 0.0])
+    assert np.allclose(R, np.eye(3))
+
+
+def test_quat_wxyz_to_matrix_known_90deg_about_z():
+    # 90 deg about z: w=cos(45deg), z=sin(45deg)
+    half = np.pi / 4.0
+    q = [np.cos(half), 0.0, 0.0, np.sin(half)]
+    R = quat_wxyz_to_matrix(q)
+    expected = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    assert np.allclose(R, expected, atol=1e-9)
+    # valid rotation
+    assert np.allclose(R @ R.T, np.eye(3), atol=1e-9)
+    assert np.isclose(np.linalg.det(R), 1.0)
+
+
+def test_quat_wxyz_to_matrix_roundtrip_orthonormal_for_nonunit_input():
+    # not pre-normalized input should still yield a valid rotation matrix
+    q = [2.0, 0.0, 2.0, 0.0]
+    R = quat_wxyz_to_matrix(q)
+    assert np.allclose(R @ R.T, np.eye(3), atol=1e-9)
+    assert np.isclose(np.linalg.det(R), 1.0)

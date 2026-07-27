@@ -41,6 +41,36 @@ def _fmt(vals):
     return "[" + ", ".join(f"{v:.9g}" for v in vals) + "]"
 
 
+def rpy_to_matrix(roll: float, pitch: float, yaw: float) -> np.ndarray:
+    """ROS/URDF 고정축(fixed-axis) roll-pitch-yaw(rad) → 3x3 회전행렬.
+
+    R = Rz(yaw) @ Ry(pitch) @ Rx(roll). 단일 축만 0이 아니면 해당 기본
+    회전행렬과 일치하지만, 복합(roll·pitch·yaw 동시 nonzero) 회전에서는
+    `cv2.Rodrigues`(단일 축각 표현)와 다르다 — 항상 이 합성 규약을 따른다.
+    """
+    cr, sr = np.cos(roll), np.sin(roll)
+    cp, sp = np.cos(pitch), np.sin(pitch)
+    cy, sy = np.cos(yaw), np.sin(yaw)
+    Rx = np.array([[1.0, 0.0, 0.0], [0.0, cr, -sr], [0.0, sr, cr]])
+    Ry = np.array([[cp, 0.0, sp], [0.0, 1.0, 0.0], [-sp, 0.0, cp]])
+    Rz = np.array([[cy, -sy, 0.0], [sy, cy, 0.0], [0.0, 0.0, 1.0]])
+    return Rz @ Ry @ Rx
+
+
+def quat_wxyz_to_matrix(quat_wxyz) -> np.ndarray:
+    """단위 쿼터니언(wxyz) → 3x3 회전행렬. 복합 회전의 정확한 표현."""
+    w, x, y, z = (float(v) for v in quat_wxyz)
+    n = np.sqrt(w * w + x * x + y * y + z * z)
+    if n == 0.0:
+        raise ValueError("orientation_wxyz는 영벡터일 수 없음")
+    w, x, y, z = w / n, x / n, y / n, z / n
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+    ])
+
+
 def update_camera_extrinsics_yaml(path: str, pos, quat_wxyz) -> str:
     """`camera:` 블록의 position/orientation_wxyz 두 줄만 교체, 나머지 보존.
 
@@ -80,11 +110,23 @@ def update_camera_extrinsics_yaml(path: str, pos, quat_wxyz) -> str:
 
 
 def _load_t_base_qr(arg: str) -> np.ndarray:
-    """xyzrpy(6값, m·rad) 또는 yaml 경로 → 4x4."""
-    import cv2
+    """xyzrpy(6값, m·rad) 또는 yaml 경로 → 4x4.
+
+    콤마 문자열은 항상 `rpy_to_matrix`(ROS/URDF 고정축 R=Rz(yaw)@Ry(pitch)@Rx(roll))로
+    회전을 구성한다. yaml 파일은 `orientation_wxyz`(쿼터니언, 정확 — 복합 회전 권장)가
+    있으면 그것을, 없고 `rpy`만 있으면 `rpy_to_matrix`를 사용한다.
+    """
     if Path(arg).exists():
         d = yaml.safe_load(Path(arg).read_text())
-        pos = d["position"]; rpy = d["rpy"]
+        pos = d["position"]
+        if "orientation_wxyz" in d:
+            R = quat_wxyz_to_matrix(d["orientation_wxyz"])
+        elif "rpy" in d:
+            R = rpy_to_matrix(*d["rpy"])
+        else:
+            raise ValueError(
+                f"{arg}: 'orientation_wxyz'(쿼터니언, 권장) 또는 'rpy' 필드가 필요함"
+            )
     else:
         vals = [float(v) for v in arg.split(",")]
         if len(vals) != 6:
@@ -92,7 +134,7 @@ def _load_t_base_qr(arg: str) -> np.ndarray:
                 f"--t-base-qr 값은 정확히 6개(x,y,z,r,p,y)여야 함, 받은 개수: {len(vals)}"
             )
         pos, rpy = vals[:3], vals[3:6]
-    R, _ = cv2.Rodrigues(np.array(rpy))   # 근사(작은각) — 정밀 필요시 yaml에 quat 사용
+        R = rpy_to_matrix(*rpy)
     T = np.eye(4); T[:3, :3] = R; T[:3, 3] = pos
     return T
 
@@ -139,7 +181,10 @@ def main(argv=None) -> int:
     ap.add_argument("--info-topic", default="/camera/camera/color/camera_info")
     ap.add_argument("--qr-size", type=float, required=True, help="QR 한 변(m)")
     ap.add_argument("--t-base-qr", required=True,
-                    help="QR의 base 기준 pose: 'x,y,z,r,p,y'(m,rad) 또는 yaml 경로")
+                    help="QR의 base 기준 pose: 'x,y,z,r,p,y'(m,rad, ROS/URDF 고정축 "
+                         "Euler: R=Rz(yaw)*Ry(pitch)*Rx(roll)) 또는 yaml 경로. "
+                         "yaml에 orientation_wxyz(쿼터니언)가 있으면 그것을 사용하며, "
+                         "pitch+yaw 등 복합 회전에서는 이 쪽이 정확함")
     ap.add_argument("--extrinsics", default=str(DEFAULT_EXTRINSICS))
     ap.add_argument("--write", action="store_true", help="yaml 실제 갱신(없으면 dry-run)")
     ap.add_argument("--frames", type=int, default=1, help="ROS 캡처 시 평균낼 프레임 수(코너 평균)")
