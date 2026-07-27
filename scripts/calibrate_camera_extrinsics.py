@@ -59,11 +59,11 @@ def update_camera_extrinsics_yaml(path: str, pos, quat_wxyz) -> str:
         if not stripped.lstrip().startswith("#") and re.match(r"^\S.*:\s*$", stripped):
             in_camera = stripped.strip() == "camera:"
         if in_camera and re.match(r"^\s+position:\s*\[", line):
-            out.append(re.sub(r"\[[^\]]*\]", _fmt(pos), line))
+            out.append(re.sub(r"\[[^\]]*\]", _fmt(pos), line, count=1))
             position_replaced = True
             continue
         if in_camera and re.match(r"^\s+orientation_wxyz:\s*\[", line):
-            out.append(re.sub(r"\[[^\]]*\]", _fmt(quat_wxyz), line))
+            out.append(re.sub(r"\[[^\]]*\]", _fmt(quat_wxyz), line, count=1))
             orientation_replaced = True
             continue
         out.append(line)

@@ -99,3 +99,30 @@ def test_average_corners_mean_of_two():
     expected = np.array([[1.0, 1.0], [11.0, 1.0], [11.0, 11.0], [1.0, 11.0]])
     assert avg.shape == (4, 2)
     assert np.allclose(avg, expected)
+
+
+def test_update_preserves_comments_with_brackets(tmp_path):
+    """verify that inline comments containing brackets are preserved during update.
+
+    regression test for: re.sub without count=1 was replacing all bracket groups,
+    including those in trailing comments, e.g., '# calibrated [rig A]'.
+    """
+    sample_with_comment = """\
+camera:
+  frame: camera_color_optical_frame
+  position: [0.0, 0.0, 0.0]  # calibrated [rig A]
+  orientation_wxyz: [1.0, 0.0, 0.0, 0.0]  # quat from [baseline]
+"""
+    p = tmp_path / "ext.yaml"
+    p.write_text(sample_with_comment)
+    out = update_camera_extrinsics_yaml(str(p), [1.5, 2.5, 3.5], [0.7, 0.7, 0.0, 0.0])
+
+    # verify the values are updated
+    import yaml
+    data = yaml.safe_load(out)
+    assert np.allclose(data["camera"]["position"], [1.5, 2.5, 3.5])
+    assert np.allclose(data["camera"]["orientation_wxyz"], [0.7, 0.7, 0.0, 0.0])
+
+    # verify the comments are preserved
+    assert "[rig A]" in out, "Comment '[rig A]' should be preserved in position line"
+    assert "[baseline]" in out, "Comment '[baseline]' should be preserved in orientation_wxyz line"
