@@ -47,9 +47,12 @@
 
 ## 2. 로봇 드라이버/vendor (로봇 제어 PC, clone 대상)
 
-**실측 결과 — 브리프 가정과 다름**: OpenArm/Tesollo 드라이버 vendor 소스는
-별도의 "로봇제어 레포"가 아니라 **이미 이 sim2real 저장소 안에 git 추적
-파일로 커밋되어 있다**(`vendor/openarm`, `vendor/tesollo`, 서브모듈 아님,
+**2026-07-27 갱신**: Tesollo 드라이버는 robot_control 로 일원화되어 이
+저장소에서 제거됐다. OpenArm 드라이버는 아직 여기 남아 있다 — 아래 §
+"OpenArm 이관 보류" 참고.
+
+OpenArm vendor 소스는 별도의 "로봇제어 레포"가 아니라 **이 sim2real 저장소
+안에 git 추적 파일로 커밋되어 있다**(`vendor/openarm`, 서브모듈 아님,
 `git ls-files vendor | wc -l` → 887개 추적 파일; 예외로
 `vendor/openarm/openarm_teleop/` 만 `.gitignore` 처리). 즉 로봇 제어 PC에는
 별도 레포를 clone 할 필요 없이 **이 sim2real 저장소 자체를 배치하고
@@ -64,8 +67,10 @@ Step 1~3,5 = control 역할).
   `sim2real/integrated_control/launch/openarm_left_gripper_right_dg5_real.launch.py`.
   - 발행: `/joint_states` (arm 7D, `openarm_right_joint1~7`)
   - 구독(명령): `/right_joint_trajectory_controller/joint_trajectory`
-- **Tesollo dg5f_right 드라이버**: `vendor/tesollo/{dg_description, dg_msgs,
-  delto_tcp_comm, delto_hardware, dg5f_driver}`.
+- **Tesollo dg5f_right 드라이버**: `robot_control/ros_ws/src/delto_m_ros2/`
+  (`dg_description`, `dg_msgs`, `delto_tcp_comm`, `delto_hardware`,
+  `dg5f_driver`). robot_control이 canonical 스냅샷을 소유하며, 여기서는
+  빌드된 install을 오버레이한다 — `ROBOT_CONTROL_INSTALL` 로 경로 지정 가능.
   Launch: `sim2real/tesollo_control/launch/dg5f_right_real.launch.py`
   (기본 `dg5f_right_ip=169.254.186.72`, `dg5f_right_port=502`, Ethernet/Modbus).
   - 발행: `/dg5f_right/joint_states` (hand 20D, `rj_dg_1_1~rj_dg_5_4`),
@@ -79,16 +84,15 @@ Step 1~3,5 = control 역할).
     `/isaacsim/right_hand_cmd` (Float64MultiArray 20D) — `sim2real_inference.py`
     / `sim2real_dryrun.py` 가 `Sim2RealCommandPublisher` 로 발행하는 것을
     받아 위 컨트롤러 토픽으로 중계.
-- **빌드**: `scripts/build_vendor_pkgs.sh` 가 정확히 이 목록을
-  `colcon build --base-paths ...` 로 빌드(`--bridge-only` 옵션은
-  isaacsim_bridge 만). `scripts/setup_check.sh control` 로 사전 점검
-  (vendor 디렉토리 존재, CAN 인터페이스 감지 등).
-- **위치**: 위 내용대로 로봇제어 PC에는 **이 sim2real 저장소 전체**(또는 최소
-  `vendor/`, `openarm_control/`, `tesollo_control/`, `integrated_control/`,
-  `isaacsim_bridge/`, `scripts/`)를 배치한다. 브리프에서 가정한 "별도
-  로봇제어 레포 clone" 은 실측상 불필요 — vendor 는 이미 sim2real 안에
-  존재하므로 "sim2real 단일 디렉토리 원칙" 의 예외가 아니라 그 원칙을
-  그대로 만족한다(vendor 코드도 sim2real 안에 있음).
+- **빌드**: robot_control `ros_ws/build.sh` 를 먼저 돌린 뒤
+  `scripts/build_vendor_pkgs.sh` 가 `vendor/openarm` 4개와 `isaacsim_bridge`
+  를 빌드한다(`--bridge-only` 옵션은 isaacsim_bridge 만). 스크립트는
+  robot_control install 을 오버레이로 source 하며, 없으면 무엇을 해야 하는지
+  말하고 종료한다. `scripts/setup_check.sh control` 로 사전 점검.
+- **위치**: 로봇제어 PC 에는 **sim2real 과 robot_control 을 나란히** 배치한다
+  (기본 탐색 경로 `../robot_control/ros_ws/install`, `ROBOT_CONTROL_INSTALL`
+  로 변경 가능). Tesollo 드라이버가 robot_control 로 옮겨간 만큼 sim2real 은
+  더 이상 자기 완결적이지 않다.
 
 ---
 
@@ -136,12 +140,12 @@ tesollo_control/ + isaacsim_bridge (sim2real 내부) ─────┘     sim2
                                         via isaacsim_bridge → ros2_control 컨트롤러
 ```
 
-- **sim2real = 단일 런타임 글루 디렉토리.** 정책은 `hdgp/log`(READ-ONLY,
+- **sim2real = 런타임 글루 디렉토리.** 정책은 `hdgp/log`(READ-ONLY,
   실측상 `hdgp/log/rl_games/open-tesol/right/grasp-v1/lstm_test1/`), 비전은
-  `perception`(`/cup_pose` 계약), 로봇 드라이버는 **vendor 소스가 이미
-  sim2real 내부**(`sim2real/vendor/`)에 있고 그 위에 얹힌 control 패키지
-  (`openarm_control`, `tesollo_control`, `integrated_control`,
-  `isaacsim_bridge`)도 전부 sim2real 안에서 colcon build 된다.
+  `perception`(`/cup_pose` 계약), **Tesollo 드라이버는 robot_control**
+  (오버레이로 source), OpenArm 드라이버는 아직 `sim2real/vendor/openarm`.
+  그 위에 얹힌 control 패키지(`openarm_control`, `tesollo_control`,
+  `integrated_control`, `isaacsim_bridge`)는 sim2real 안에서 colcon build.
 - 세 디렉토리(perception / hdgp / sim2real)는 서로 다른 PC 에 있을 수
   있으나 **ROS_DOMAIN_ID=126 공유 DDS** 하나로 연결된다(perception →
   `/cup_pose`, sim2real → 컨트롤러 명령 토픽). hdgp 는 네트워크 연결이
@@ -156,8 +160,9 @@ tesollo_control/ + isaacsim_bridge (sim2real 내부) ─────┘     sim2
       FINAL_frozen_ep1000_abd600.pth`) + `agent.yaml`(같은 트리 `params/`)을
       sim2real 실행 커맨드의 `--ckpt`/`--agent` 로 지정(경로 그대로 참조
       가능, 복사 불필요).
-- [ ] 로봇 드라이버: 로봇제어 PC 에 sim2real 저장소 배치 →
-      `scripts/build_vendor_pkgs.sh` 로 `vendor/openarm`, `vendor/tesollo`,
+- [ ] 로봇 드라이버: 로봇제어 PC 에 sim2real 과 robot_control 을 나란히 배치 →
+      robot_control `ros_ws/build.sh` 먼저 →
+      `scripts/build_vendor_pkgs.sh` 로 `vendor/openarm`,
       `isaacsim_bridge` colcon build → `scripts/setup_check.sh control` 로
       CAN 인터페이스/vendor 빌드 확인 → `openarm_control` +
       `tesollo_control`(또는 `integrated_control` 통합) + `isaacsim_bridge`
@@ -178,3 +183,26 @@ tesollo_control/ + isaacsim_bridge (sim2real 내부) ─────┘     sim2
   py3.8 ↔ Humble rclpy 브리지(별도 결정 대기).
 - 감독 하 **라이브 grasp 동작** 자체(grasp-v1 실기 실행) — 이 문서는 자료
   위치 매니페스트일 뿐, 실행 검증은 하드웨어 연결 후 별도 태스크.
+
+## OpenArm 이관 보류 (2026-07-27)
+
+Tesollo 5개 패키지는 robot_control 사본과 `diff -rq` 차이 0줄로 완전
+동일했고(`dg_description` 만 mesh URI 표기가 달랐으나 이 저장소의 비-vendor
+코드가 참조하지 않음), 제거 후 robot_control install 오버레이로 대체했다.
+
+OpenArm 4개는 같이 옮기지 않았다. 두 사본이 각자 진화했고, 특히
+**ros2_control 하드웨어 플러그인 클래스명이 다르다**:
+
+| | 플러그인 |
+|---|---|
+| sim2real | `openarm_hardware/OpenArm_v10HW` |
+| robot_control | `openarm_hardware/OpenArmHW` |
+
+robot_control 로 넘어가려면 실물 bringup 이 쓰는 xacro 가 새 이름을 지목해야
+한다. 그런데 `integrated_control/launch/openarm_left_gripper_right_dg5_real.launch.py`
+가 참조하는 `urdf/openarm_left_gripper_bimanual_real.xacro` 는 현재
+**존재하지 않는다**(`urdf/` 를 `*_rl` 구조로 재편할 때 갱신되지 않음). 이
+경로를 복구하면서 플러그인 이름을 함께 맞추는 것이 이관의 선행 조건이다.
+
+`openarm_can` 의 `set_temp_param` 시그니처도 `int`→`double` 로 바뀌었으나,
+호출부는 vendor 내부 2곳뿐이라 패키지를 통째로 교체하면 함께 이동한다.

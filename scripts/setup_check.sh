@@ -81,13 +81,22 @@ fi
 if want control; then
   section "control — 실물 로봇 드라이버"
 
-  for d in vendor/openarm vendor/tesollo vendor/inspire_ws; do
+  for d in vendor/openarm vendor/inspire_ws; do
     if [[ -d "${REPO_DIR}/${d}" ]]; then
       ok "${d}/"
     else
       miss "${d}/ 없음" "레포 클론 불완전 — git status 확인 (INSTALL.md Step 3)"
     fi
   done
+
+  # Tesollo 드라이버는 robot_control 소유. 여기서는 빌드된 install을 오버레이한다.
+  ROBOT_CONTROL_INSTALL="${ROBOT_CONTROL_INSTALL:-${REPO_DIR}/../robot_control/ros_ws/install}"
+  if [[ -f "${ROBOT_CONTROL_INSTALL}/dg5f_driver/share/dg5f_driver/package.xml" ]]; then
+    ok "robot_control ros_ws/install (Tesollo 드라이버)"
+  else
+    miss "robot_control ROS 워크스페이스 미빌드" \
+         "robot_control/ros_ws/build.sh 실행 (ROBOT_CONTROL_INSTALL 로 경로 지정 가능)"
+  fi
 
   if [[ -d "${REPO_DIR}/vendor/inspire_ws/install" ]]; then
     ok "inspire_ws 빌드됨 (RH56F1)"
