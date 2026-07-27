@@ -4,7 +4,8 @@ import numpy as np
 import pytest
 
 from calibrate_camera_extrinsics import (
-    average_corners, quat_wxyz_to_matrix, rpy_to_matrix, update_camera_extrinsics_yaml,
+    average_corners, detect_aruco_corners, quat_wxyz_to_matrix, rpy_to_matrix,
+    update_camera_extrinsics_yaml,
 )
 
 SAMPLE = """\
@@ -210,3 +211,43 @@ def test_quat_wxyz_to_matrix_roundtrip_orthonormal_for_nonunit_input():
     R = quat_wxyz_to_matrix(q)
     assert np.allclose(R @ R.T, np.eye(3), atol=1e-9)
     assert np.isclose(np.linalg.det(R), 1.0)
+
+
+def _make_synthetic_aruco_rgb(marker_id: int = 0, marker_px: int = 200,
+                               border_px: int = 40):
+    """DICT_6X6_250 마커(marker_id)를 생성해 흰 여백으로 패딩한 3채널 RGB 반환."""
+    import cv2
+    adict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_250)
+    try:                                              # OpenCV >= 4.7
+        marker_img = cv2.aruco.generateImageMarker(adict, marker_id, marker_px)
+    except AttributeError:                            # OpenCV <= 4.6
+        marker_img = cv2.aruco.drawMarker(adict, marker_id, marker_px)
+
+    canvas_size = marker_px + 2 * border_px
+    canvas = np.full((canvas_size, canvas_size), 255, dtype=np.uint8)
+    canvas[border_px:border_px + marker_px, border_px:border_px + marker_px] = marker_img
+    return cv2.cvtColor(canvas, cv2.COLOR_GRAY2RGB)
+
+
+def test_detect_aruco_corners_finds_synthetic_marker():
+    cv2 = pytest.importorskip("cv2")
+    pytest.importorskip("cv2.aruco")
+    rgb = _make_synthetic_aruco_rgb(marker_id=0)
+
+    corners = detect_aruco_corners(rgb, "DICT_6X6_250", 0)
+
+    assert corners is not None
+    assert corners.shape == (4, 2)
+    h, w = rgb.shape[:2]
+    assert np.all(corners[:, 0] >= 0) and np.all(corners[:, 0] <= w)
+    assert np.all(corners[:, 1] >= 0) and np.all(corners[:, 1] <= h)
+
+
+def test_detect_aruco_corners_returns_none_for_wrong_marker_id():
+    pytest.importorskip("cv2")
+    pytest.importorskip("cv2.aruco")
+    rgb = _make_synthetic_aruco_rgb(marker_id=0)
+
+    corners = detect_aruco_corners(rgb, "DICT_6X6_250", 5)
+
+    assert corners is None

@@ -1,6 +1,6 @@
-"""QR 정적 extrinsics 캘리브 CLI.
+"""ArUco 정적 extrinsics 캘리브 CLI.
 
-카메라 1프레임(라이브 ROS 또는 NPZ) → QR 4모서리 → solvePnP → T_cam_qr →
+카메라 1프레임(라이브 ROS 또는 NPZ) → ArUco 마커 4모서리 → solvePnP → T_cam_qr →
 T_base_cam = T_base_qr ∘ inv(T_cam_qr) → global_camera_extrinsics.yaml 의
 camera.position/orientation_wxyz 갱신(다른 블록·주석 보존).
 
@@ -26,15 +26,30 @@ from extrinsics_calib import (  # noqa: E402
 DEFAULT_EXTRINSICS = _DIR.parent / "config" / "global_camera_extrinsics.yaml"
 
 
-def detect_qr_corners(rgb: np.ndarray):
-    """cv2.QRCodeDetector로 QR 4모서리 (4,2). 실패 시 None."""
+def detect_aruco_corners(rgb: np.ndarray, dict_name: str = "DICT_6X6_250",
+                          marker_id: int = 0):
+    """cv2.aruco로 지정 dict/id의 마커 4모서리 (4,2). 실패 시 None.
+
+    OpenCV 4.7+(ArucoDetector 클래스)와 4.6 이하(cv2.aruco.detectMarkers 함수형
+    API) 양쪽을 지원한다. 반환 코너 순서(TL,TR,BR,BL, 이미지 y하)는
+    `qr_object_points`의 IPPE_SQUARE y상 규약과 이미 일치하므로 재정렬하지 않고
+    `solve_qr_pose`에 그대로 넘긴다.
+    """
     import cv2
     gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY) if rgb.ndim == 3 else rgb
-    detector = cv2.QRCodeDetector()
-    ok, points = detector.detect(gray)
-    if not ok or points is None:
+    adict = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, dict_name))
+    try:                       # OpenCV >= 4.7
+        detector = cv2.aruco.ArucoDetector(adict, cv2.aruco.DetectorParameters())
+        corners, ids, _ = detector.detectMarkers(gray)
+    except AttributeError:     # OpenCV <= 4.6
+        corners, ids, _ = cv2.aruco.detectMarkers(gray, adict)
+    if ids is None:
         return None
-    return np.asarray(points, np.float64).reshape(4, 2)
+    ids = ids.ravel()
+    for i, mid in enumerate(ids):
+        if int(mid) == marker_id:
+            return np.asarray(corners[i], np.float64).reshape(4, 2)
+    return None
 
 
 def _fmt(vals):
@@ -140,7 +155,7 @@ def _load_t_base_qr(arg: str) -> np.ndarray:
 
 
 def average_corners(corners_list: list) -> np.ndarray:
-    """유효 검출된 (4,2) QR 코너 배열들의 평균 (4,2)."""
+    """유효 검출된 (4,2) ArUco 마커 코너 배열들의 평균 (4,2)."""
     return np.mean(np.stack([np.asarray(c, np.float64) for c in corners_list], axis=0), axis=0)
 
 
@@ -174,14 +189,18 @@ def _frame_from_ros(rgb_topic, info_topic, n_frames: int = 1):
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="QR 정적 extrinsics 캘리브")
+    ap = argparse.ArgumentParser(description="ArUco 정적 extrinsics 캘리브")
     ap.add_argument("--source", choices=["npz", "ros"], default="ros")
     ap.add_argument("--npz", help="--source npz 일 때 rgb+K NPZ")
     ap.add_argument("--rgb-topic", default="/camera/camera/color/image_raw")
     ap.add_argument("--info-topic", default="/camera/camera/color/camera_info")
-    ap.add_argument("--qr-size", type=float, required=True, help="QR 한 변(m)")
+    ap.add_argument("--marker-size", type=float, required=True,
+                    help="ArUco 마커 한 변(m)")
+    ap.add_argument("--dict", default="DICT_6X6_250",
+                    help="ArUco dictionary 이름(cv2.aruco 속성명, 예: DICT_6X6_250)")
+    ap.add_argument("--marker-id", type=int, default=0, help="검출할 ArUco 마커 id")
     ap.add_argument("--t-base-qr", required=True,
-                    help="QR의 base 기준 pose: 'x,y,z,r,p,y'(m,rad, ROS/URDF 고정축 "
+                    help="ArUco 마커의 base 기준 pose: 'x,y,z,r,p,y'(m,rad, ROS/URDF 고정축 "
                          "Euler: R=Rz(yaw)*Ry(pitch)*Rx(roll)) 또는 yaml 경로. "
                          "yaml에 orientation_wxyz(쿼터니언)가 있으면 그것을 사용하며, "
                          "pitch+yaw 등 복합 회전에서는 이 쪽이 정확함")
@@ -198,22 +217,25 @@ def main(argv=None) -> int:
             print("참고: --source npz 는 저장된 단일 프레임만 사용함(--frames 무시)",
                   file=sys.stderr)
         rgb, K = _frame_from_npz(args.npz)
-        corners = detect_qr_corners(rgb)
+        corners = detect_aruco_corners(rgb, args.dict, args.marker_id)
         if corners is None:
-            print("QR 미검출 — 조명/거리/크기 확인", file=sys.stderr)
+            print("ArUco 마커 미검출 — 조명/거리/크기/dict/id 확인", file=sys.stderr)
             return 1
     else:
         frames = _frame_from_ros(args.rgb_topic, args.info_topic, args.frames)
         K = frames[0][1]  # K는 프레임 간 고정
-        corners_list = [c for rgb, _ in frames if (c := detect_qr_corners(rgb)) is not None]
+        corners_list = [
+            c for rgb, _ in frames
+            if (c := detect_aruco_corners(rgb, args.dict, args.marker_id)) is not None
+        ]
         if not corners_list:
-            print(f"QR 미검출 — {len(frames)}개 프레임 전부 실패(조명/거리/크기 확인)",
-                  file=sys.stderr)
+            print(f"ArUco 마커 미검출 — {len(frames)}개 프레임 전부 실패"
+                  "(조명/거리/크기/dict/id 확인)", file=sys.stderr)
             return 1
         corners = average_corners(corners_list)
 
-    T_cam_qr = solve_qr_pose(corners, args.qr_size, K, None)
-    residual = reprojection_residual_px(corners, T_cam_qr, args.qr_size, K, None)
+    T_cam_qr = solve_qr_pose(corners, args.marker_size, K, None)
+    residual = reprojection_residual_px(corners, T_cam_qr, args.marker_size, K, None)
     T_base_qr = _load_t_base_qr(args.t_base_qr)
     T_base_cam = compose_base_cam(T_base_qr, T_cam_qr)
     pos, quat = mat_to_pos_quat_wxyz(T_base_cam)
@@ -221,7 +243,7 @@ def main(argv=None) -> int:
     print(f"T_base_cam position: {pos}")
     print(f"T_base_cam orientation_wxyz: {quat}")
     if residual > 2.0:
-        print("경고: 잔차 큼(>2px) — QR 검출/크기 확인", file=sys.stderr)
+        print("경고: 잔차 큼(>2px) — ArUco 검출/크기 확인", file=sys.stderr)
     if args.write:
         updated = update_camera_extrinsics_yaml(args.extrinsics, pos, quat)
         Path(args.extrinsics).write_text(updated)
