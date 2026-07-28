@@ -11,14 +11,15 @@
 # ── T_base_cam: robot base ← camera_color_optical_frame ────────────────────
 # FoundationPose 출력 프레임 = 입력 컬러 이미지의 optical 프레임
 # (RealSense: camera_color_optical_frame, x우/y하/z전방).
-# 캘리브(2026-07-27, calibrate_camera_extrinsics.py): ArUco DICT_6X6 id0,
-# 검은사각형 0.12m, T_base_qr=(0.75,0.075,0)·rpy(0,0,0), 재투영잔차 0.062px.
-# ★1차값 — 마커 yaw=0(면내 정렬) 가정. 목 관절은 캘리브 home 자세 고정 전제.
-#   목/마커 자세가 바뀌면 재캘리브 필요. 라이브 /cup_pose sanity 검증 권장.
+# 캘리브(2026-07-28, ChArUco): 7x5 DICT_6X6, square 0.030/marker 0.022,
+# 보드원점 base=(0.600,0,-0.015), yaw는 카메라위치 (0,0,0.6) 실측으로 역산(≈275°).
+# ChArUco pose 재투영 0.2px(안정, 모호성無). ★정확도 ~6cm(카메라위치·칸크기 실측한계).
+#   목 고정 전제 static값. 회전 운영엔 hand-eye(T_neck_cam)+목 엔코더/FK 필요(별도).
+#   재캘리브: vision-3090서 charuco_calib.py로 보드+컵 검출→pc5090서 yaw역산→relay검증.
 camera:
   frame: camera_color_optical_frame
-  position: [0.162562967, 0.108778199, 0.594579819]
-  orientation_wxyz: [0.259377855, -0.651773938, 0.657866209, -0.274091066]
+  position: [0.0553973312, 0.00069890475, 0.575586926]
+  orientation_wxyz: [-0.258627624, 0.685917178, -0.623389164, 0.272057583]
 
 # ── T_cad_body: 컵 CAD 메시 프레임 → sim body 프레임 ───────────────────────
 # FoundationPose에 넣는 CAD 메시의 원점/축이 sim의 컵 body 프레임과 다르면
