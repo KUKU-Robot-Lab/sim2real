@@ -1,0 +1,13 @@
+port: /dev/ttyUSB0
+baud: 1000000
+motors:
+  pan:
+    id: 1
+    min_deg: 180.0
+    max_deg: 360.0
+    inverted: false
+  tilt:
+    id: 2
+    min_deg: 69.5
+    max_deg: 290.0
+    inverted: false
