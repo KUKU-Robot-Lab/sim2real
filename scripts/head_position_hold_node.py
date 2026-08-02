@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""ROS 2 node for absolute-position hold of two DYNAMIXEL XC330 motors.
+"""ROS 2 node for unwrapped signed absolute-position hold of two DYNAMIXEL XC330 motors.
 
 Angle frame:
-  0.0 deg   -> raw encoder tick 0
-  180.0 deg -> raw encoder tick ~2048
-  360.0 deg -> raw encoder tick 4095
+  -180.0 deg -> unwrapped encoder tick 0
+     0.0 deg -> raw encoder tick ~2048
+  +180.0 deg -> unwrapped encoder tick 4095
+  +215.0 deg -> unwrapped encoder tick >4095, same physical position as -145.0 deg
 
 This is intentionally different from `head_goto_hold.py`, which uses a
-centered joint frame. This node is for absolute DYNAMIXEL encoder positioning.
+URDF joint frame. This node is for unwrapped signed absolute DYNAMIXEL encoder
+positioning with Extended Position Mode, so a range like 145..215 can move
+monotonically across the encoder seam.
 """
 
 from __future__ import annotations
@@ -27,7 +30,7 @@ ADDR_PROFILE_VELOCITY = 112
 ADDR_GOAL_POSITION = 116
 ADDR_PRESENT_POSITION = 132
 
-OP_MODE_POSITION = 3
+OP_MODE_EXTENDED_POSITION = 4
 TORQUE_OFF = 0
 TORQUE_ON = 1
 
@@ -37,17 +40,13 @@ DEFAULT_CALIBRATION_PATH = (
 
 
 def deg_to_tick(deg: float) -> int:
-    """Convert absolute DYNAMIXEL encoder degrees in 0..360 to 0..4095 ticks."""
-    if not 0.0 <= deg <= 360.0:
-        raise ValueError(f"absolute angle must be in 0..360 degrees: {deg}")
-    return round(deg / 360.0 * TICK_MAX)
+    """Convert unwrapped signed encoder degrees to an extended-position tick."""
+    return round((float(deg) + 180.0) / 360.0 * TICK_MAX)
 
 
 def tick_to_deg(tick: int) -> float:
-    """Convert raw DYNAMIXEL encoder ticks to absolute degrees."""
-    if not 0 <= int(tick) <= TICK_MAX:
-        raise ValueError(f"encoder tick must be in 0..{TICK_MAX}: {tick}")
-    return int(tick) / TICK_MAX * 360.0
+    """Convert an extended-position tick to unwrapped signed absolute degrees."""
+    return int(tick) / TICK_MAX * 360.0 - 180.0
 
 
 def parse_ids(text: str) -> tuple[int, ...]:
@@ -68,9 +67,69 @@ def parse_angle_targets(ids: tuple[int, ...], text: str) -> dict[int, float]:
         raise ValueError(
             f"angles_deg count must match ids count: ids={ids}, angles={text!r}"
         )
-    for angle in angles:
-        deg_to_tick(angle)
     return dict(zip(ids, angles))
+
+
+def unwrap_calibrated_range(min_deg: float, max_deg: float) -> tuple[float, float]:
+    """Return the directed min->max arc as monotonically increasing degrees."""
+    start = float(min_deg)
+    end = float(max_deg)
+    if end < start:
+        end += 360.0
+    if end - start > 360.0:
+        raise ValueError(
+            f"calibrated range must fit within one directed turn: "
+            f"{min_deg:.1f}..{max_deg:.1f}"
+        )
+    return start, end
+
+
+def unwrap_target_into_range(target_deg: float, min_deg: float, max_deg: float) -> float:
+    start, end = unwrap_calibrated_range(min_deg, max_deg)
+    target = float(target_deg)
+    while target < start:
+        target += 360.0
+    while target > end:
+        target -= 360.0
+    if not start <= target <= end:
+        raise ValueError(
+            f"target {target_deg:+.1f}deg is outside calibrated range "
+            f"{min_deg:.1f}..{max_deg:.1f}"
+        )
+    return target
+
+
+def unwrap_range_copy_for_current(
+    current_deg: float, min_deg: float, max_deg: float
+) -> tuple[float, float]:
+    start, end = unwrap_calibrated_range(min_deg, max_deg)
+    current = float(current_deg)
+    for turn in range(-20, 21):
+        copy_start = start + 360.0 * turn
+        copy_end = end + 360.0 * turn
+        if copy_start <= current <= copy_end:
+            return copy_start, copy_end
+    turn = round((current - start) / 360.0)
+    return start + 360.0 * turn, end + 360.0 * turn
+
+
+def unwrap_target_for_current(
+    current_deg: float, target_deg: float, min_deg: float, max_deg: float
+) -> float:
+    copy_start, copy_end = unwrap_range_copy_for_current(
+        current_deg, min_deg, max_deg
+    )
+    target = float(target_deg)
+    while target < copy_start:
+        target += 360.0
+    while target > copy_end:
+        target -= 360.0
+    if not copy_start <= target <= copy_end:
+        raise ValueError(
+            f"target {target_deg:+.1f}deg is outside current directed range "
+            f"{copy_start:.1f}..{copy_end:.1f}"
+        )
+    return target
 
 
 @dataclass(frozen=True)
@@ -90,27 +149,18 @@ class CalibrationFile:
 
 
 def motor_deg_from_center_offset(calibration: MotorCalibration, offset_deg: float) -> float:
-    """Map a signed UI offset to an absolute encoder degree within min/max.
-
-    The calibrated midpoint is the logical zero:
-      motor_deg = midpoint + offset_deg
-
-    When inverted is true, positive UI offsets decrease motor absolute degrees.
-    """
-    if calibration.min_deg > calibration.max_deg:
-        raise ValueError(
-            f"{calibration.name} min_deg must be <= max_deg: "
-            f"{calibration.min_deg} > {calibration.max_deg}"
+    """Validate a signed absolute encoder target within the calibrated range."""
+    try:
+        motor_deg = unwrap_target_into_range(
+            float(offset_deg),
+            calibration.min_deg,
+            calibration.max_deg,
         )
-    midpoint = (calibration.min_deg + calibration.max_deg) / 2.0
-    direction = -1.0 if calibration.inverted else 1.0
-    motor_deg = midpoint + direction * float(offset_deg)
-    if not calibration.min_deg <= motor_deg <= calibration.max_deg:
+    except ValueError as exc:
         raise ValueError(
-            f"{calibration.name} command {offset_deg:+.1f}deg maps to "
-            f"{motor_deg:.1f}deg outside calibrated range "
-            f"{calibration.min_deg:.1f}..{calibration.max_deg:.1f}"
-        )
+            f"{calibration.name} command {offset_deg:+.1f}deg is outside "
+            f"calibrated range {calibration.min_deg:.1f}..{calibration.max_deg:.1f}"
+        ) from exc
     deg_to_tick(motor_deg)
     return motor_deg
 
@@ -171,6 +221,7 @@ class HoldConfig:
     port: str
     baud: int
     targets_deg: dict[int, float]
+    ranges_deg: dict[int, tuple[float, float]] | None
     hold: bool
     profile_acceleration: int
     profile_velocity: int
@@ -230,7 +281,12 @@ class DynamixelPositionController:
         self, dxl_id: int, profile_acceleration: int, profile_velocity: int
     ) -> None:
         self.write1(dxl_id, ADDR_TORQUE_ENABLE, TORQUE_OFF, "torque off")
-        self.write1(dxl_id, ADDR_OPERATING_MODE, OP_MODE_POSITION, "operating mode")
+        self.write1(
+            dxl_id,
+            ADDR_OPERATING_MODE,
+            OP_MODE_EXTENDED_POSITION,
+            "operating mode",
+        )
         self.write4(
             dxl_id,
             ADDR_PROFILE_ACCELERATION,
@@ -260,9 +316,6 @@ class DynamixelPositionController:
 
 def goto_absolute_hold(config: HoldConfig, controller: DynamixelPositionController) -> bool:
     ids = tuple(config.targets_deg)
-    target_ticks = {
-        dxl_id: deg_to_tick(angle) for dxl_id, angle in config.targets_deg.items()
-    }
     tolerance_tick = max(1, deg_to_tick(config.tolerance_deg) - deg_to_tick(0.0))
 
     for dxl_id in ids:
@@ -271,6 +324,13 @@ def goto_absolute_hold(config: HoldConfig, controller: DynamixelPositionControll
         controller.configure_position_mode(
             dxl_id, config.profile_acceleration, config.profile_velocity
         )
+    target_ticks = {}
+    for dxl_id, angle in config.targets_deg.items():
+        if config.ranges_deg and dxl_id in config.ranges_deg:
+            min_deg, max_deg = config.ranges_deg[dxl_id]
+            current_deg = tick_to_deg(controller.read_present_tick(dxl_id))
+            angle = unwrap_target_for_current(current_deg, angle, min_deg, max_deg)
+        target_ticks[dxl_id] = deg_to_tick(angle)
     for dxl_id, tick in target_ticks.items():
         controller.write_goal_tick(dxl_id, tick)
 
@@ -314,21 +374,29 @@ def main() -> None:
         calibration_file = str(node.get_parameter("calibration_file").value)
         if calibration_file:
             calibration = load_calibration_yaml(Path(calibration_file))
-            targets = targets_from_calibration_offsets(
-                calibration,
-                str(node.get_parameter("offsets_deg").value),
-            )
+            names = tuple(calibration.motors)
+            offsets = parse_offsets(names, str(node.get_parameter("offsets_deg").value))
+            targets = {}
+            ranges = {}
+            for name in names:
+                motor = calibration.motors[name]
+                targets[motor.dxl_id] = motor_deg_from_center_offset(
+                    motor, offsets[name]
+                )
+                ranges[motor.dxl_id] = (motor.min_deg, motor.max_deg)
             port = calibration.port
             baud = calibration.baud
         else:
             ids = parse_ids(node.get_parameter("ids").value)
             targets = parse_angle_targets(ids, node.get_parameter("angles_deg").value)
+            ranges = None
             port = str(node.get_parameter("port").value)
             baud = int(node.get_parameter("baud").value)
         config = HoldConfig(
             port=port,
             baud=baud,
             targets_deg=targets,
+            ranges_deg=ranges,
             hold=bool(node.get_parameter("hold").value),
             profile_acceleration=int(node.get_parameter("profile_acceleration").value),
             profile_velocity=int(node.get_parameter("profile_velocity").value),

@@ -9,27 +9,28 @@ from head_position_hold_node import (
     parse_angle_targets,
     parse_ids,
     tick_to_deg,
+    unwrap_calibrated_range,
+    unwrap_target_for_current,
 )
 
 
-def test_absolute_degrees_map_to_encoder_ticks():
-    assert deg_to_tick(0.0) == 0
-    assert deg_to_tick(90.0) == 1024
-    assert deg_to_tick(180.0) == 2048
-    assert deg_to_tick(270.0) == 3071
-    assert deg_to_tick(360.0) == TICK_MAX
+def test_signed_absolute_degrees_map_to_encoder_ticks():
+    assert deg_to_tick(-180.0) == 0
+    assert deg_to_tick(-90.0) == 1024
+    assert deg_to_tick(0.0) == 2048
+    assert deg_to_tick(90.0) == 3071
+    assert deg_to_tick(179.9) == 4094
+
+
+def test_unwrapped_degrees_wrap_to_same_single_turn_tick():
+    assert deg_to_tick(215.0) > TICK_MAX
+    assert deg_to_tick(215.0) - deg_to_tick(-145.0) == TICK_MAX
 
 
 def test_tick_to_degrees_uses_absolute_encoder_frame():
-    assert tick_to_deg(0) == pytest.approx(0.0)
-    assert tick_to_deg(2048) == pytest.approx(180.04, abs=0.05)
-    assert tick_to_deg(TICK_MAX) == pytest.approx(360.0)
-
-
-def test_rejects_angles_outside_absolute_range():
-    for angle in (-0.1, 360.1):
-        with pytest.raises(ValueError):
-            deg_to_tick(angle)
+    assert tick_to_deg(0) == pytest.approx(-180.0)
+    assert tick_to_deg(2048) == pytest.approx(0.04, abs=0.05)
+    assert tick_to_deg(TICK_MAX) == pytest.approx(180.0)
 
 
 def test_parse_ids_requires_unique_motor_ids():
@@ -41,37 +42,69 @@ def test_parse_ids_requires_unique_motor_ids():
 
 
 def test_parse_angle_targets_pairs_ids_with_absolute_degrees():
-    assert parse_angle_targets((1, 2), "45,180") == {1: 45.0, 2: 180.0}
+    assert parse_angle_targets((1, 2), "-45,215") == {1: -45.0, 2: 215.0}
     with pytest.raises(ValueError):
         parse_angle_targets((1, 2), "45")
-    with pytest.raises(ValueError):
-        parse_angle_targets((1, 2), "45,361")
 
 
-def test_center_offset_uses_midpoint_as_zero():
-    pan = MotorCalibration("pan", 1, 45.0, 135.0, False)
-    tilt = MotorCalibration("tilt", 2, 105.0, 325.0, False)
+def test_calibration_offsets_are_signed_absolute_targets():
+    pan = MotorCalibration("pan", 1, -45.0, 45.0, False)
+    tilt = MotorCalibration("tilt", 2, -75.0, 145.0, False)
 
-    assert motor_deg_from_center_offset(pan, 0.0) == pytest.approx(90.0)
-    assert motor_deg_from_center_offset(pan, -30.0) == pytest.approx(60.0)
-    assert motor_deg_from_center_offset(pan, 30.0) == pytest.approx(120.0)
-    assert motor_deg_from_center_offset(tilt, 0.0) == pytest.approx(215.0)
+    assert motor_deg_from_center_offset(pan, 0.0) == pytest.approx(0.0)
+    assert motor_deg_from_center_offset(pan, -30.0) == pytest.approx(-30.0)
+    assert motor_deg_from_center_offset(pan, 30.0) == pytest.approx(30.0)
+    assert motor_deg_from_center_offset(tilt, 145.0) == pytest.approx(145.0)
 
 
-def test_center_offset_respects_inverted_direction():
-    calibration = MotorCalibration("tilt", 2, 105.0, 325.0, True)
+def test_calibration_offset_ignores_inverted_for_absolute_targets():
+    calibration = MotorCalibration("tilt", 2, -75.0, 145.0, True)
 
-    assert motor_deg_from_center_offset(calibration, 30.0) == pytest.approx(185.0)
-    assert motor_deg_from_center_offset(calibration, -30.0) == pytest.approx(245.0)
+    assert motor_deg_from_center_offset(calibration, 30.0) == pytest.approx(30.0)
+    assert motor_deg_from_center_offset(calibration, -30.0) == pytest.approx(-30.0)
 
 
 def test_center_offset_rejects_commands_outside_calibrated_range():
-    calibration = MotorCalibration("pan", 1, 45.0, 135.0, False)
+    calibration = MotorCalibration("pan", 1, -45.0, 45.0, False)
 
     with pytest.raises(ValueError):
         motor_deg_from_center_offset(calibration, 46.0)
     with pytest.raises(ValueError):
         motor_deg_from_center_offset(calibration, -46.0)
+
+
+def test_calibration_range_can_cross_encoder_seam_when_unwrapped():
+    calibration = MotorCalibration("tilt", 2, 145.0, 215.0, False)
+
+    assert motor_deg_from_center_offset(calibration, 145.0) == pytest.approx(145.0)
+    assert motor_deg_from_center_offset(calibration, 215.0) == pytest.approx(215.0)
+    assert deg_to_tick(215.0) > TICK_MAX
+    assert deg_to_tick(215.0) - deg_to_tick(-145.0) == TICK_MAX
+
+
+def test_min_greater_than_max_means_directed_wrap_across_encoder_seam():
+    calibration = MotorCalibration("tilt", 2, 90.0, -90.0, False)
+
+    assert unwrap_calibrated_range(90.0, -90.0) == pytest.approx((90.0, 270.0))
+    assert motor_deg_from_center_offset(calibration, 90.0) == pytest.approx(90.0)
+    assert motor_deg_from_center_offset(calibration, 180.0) == pytest.approx(180.0)
+    assert motor_deg_from_center_offset(calibration, -90.0) == pytest.approx(270.0)
+    assert deg_to_tick(270.0) > deg_to_tick(180.0)
+
+
+def test_target_uses_current_range_copy_instead_of_nearest_angle():
+    assert unwrap_target_for_current(
+        current_deg=-90.0,
+        target_deg=90.0,
+        min_deg=90.0,
+        max_deg=-90.0,
+    ) == pytest.approx(-270.0)
+    assert unwrap_target_for_current(
+        current_deg=120.0,
+        target_deg=-100.0,
+        min_deg=-120.0,
+        max_deg=120.0,
+    ) == pytest.approx(-100.0)
 
 
 def test_load_calibration_yaml_reads_saved_ui_format(tmp_path):
@@ -87,8 +120,8 @@ def test_load_calibration_yaml_reads_saved_ui_format(tmp_path):
         "    inverted: false\n"
         "  tilt:\n"
         "    id: 2\n"
-        "    min_deg: 105.0\n"
-        "    max_deg: 325.0\n"
+        "    min_deg: -75.0\n"
+        "    max_deg: 145.0\n"
         "    inverted: true\n"
     )
 
@@ -98,5 +131,5 @@ def test_load_calibration_yaml_reads_saved_ui_format(tmp_path):
     assert config.baud == 1_000_000
     assert config.motors == {
         "pan": MotorCalibration("pan", 1, 45.0, 135.0, False),
-        "tilt": MotorCalibration("tilt", 2, 105.0, 325.0, True),
+        "tilt": MotorCalibration("tilt", 2, -75.0, 145.0, True),
     }

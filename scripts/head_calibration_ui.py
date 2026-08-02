@@ -22,11 +22,12 @@ ADDR_PROFILE_VELOCITY = 112
 ADDR_GOAL_POSITION = 116
 ADDR_PRESENT_POSITION = 132
 
-OP_MODE_POSITION = 3
+OP_MODE_EXTENDED_POSITION = 4
 TORQUE_OFF = 0
 TORQUE_ON = 1
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "head_dynamixel_calibration.yaml"
+DEFAULT_PORT_CANDIDATES = ("/dev/ttyACM0", "/dev/ttyUSB0")
 
 
 @dataclass
@@ -39,16 +40,25 @@ class MotorCalibration:
 
 
 def deg_to_tick(deg: float) -> int:
-    if not 0.0 <= deg <= 360.0:
-        raise ValueError(f"absolute angle must be in 0..360 degrees: {deg}")
-    return round(deg / 360.0 * TICK_MAX)
+    return round((float(deg) + 180.0) / 360.0 * TICK_MAX)
 
 
 def tick_to_deg(tick: int) -> float:
-    tick = int(tick)
-    if not 0 <= tick <= TICK_MAX:
-        raise ValueError(f"encoder tick must be in 0..{TICK_MAX}: {tick}")
-    return tick / TICK_MAX * 360.0
+    return int(tick) / TICK_MAX * 360.0 - 180.0
+
+
+def equivalent_signed_deg(deg: float) -> float:
+    wrapped = ((float(deg) + 180.0) % 360.0) - 180.0
+    if wrapped == -180.0 and float(deg) > 0:
+        return 180.0
+    return wrapped
+
+
+def format_deg_with_equivalent(deg: float) -> str:
+    equivalent = equivalent_signed_deg(deg)
+    if abs(equivalent - float(deg)) < 0.05:
+        return f"{deg:.1f}"
+    return f"{deg:.1f} (={equivalent:.1f})"
 
 
 def parse_motor_ids(text: str) -> tuple[int, int]:
@@ -67,18 +77,127 @@ def parse_motor_ids(text: str) -> tuple[int, int]:
 
 
 def motor_deg_from_ui_percent(calibration: MotorCalibration, percent: float) -> float:
-    if calibration.min_deg > calibration.max_deg:
-        raise ValueError(
-            f"{calibration.name} min_deg must be <= max_deg: "
-            f"{calibration.min_deg} > {calibration.max_deg}"
-        )
     if not 0.0 <= percent <= 100.0:
         raise ValueError(f"ui percent must be in 0..100: {percent}")
-    span = calibration.max_deg - calibration.min_deg
+    start, end = unwrap_calibrated_range(calibration.min_deg, calibration.max_deg)
+    span = end - start
     fraction = percent / 100.0
     if calibration.inverted:
         fraction = 1.0 - fraction
-    return calibration.min_deg + span * fraction
+    return start + span * fraction
+
+
+def unwrap_calibrated_range(min_deg: float, max_deg: float) -> tuple[float, float]:
+    start = float(min_deg)
+    end = float(max_deg)
+    if end < start:
+        end += 360.0
+    if end - start > 360.0:
+        raise ValueError(
+            f"calibrated range must fit within one directed turn: "
+            f"{min_deg:.1f}..{max_deg:.1f}"
+        )
+    return start, end
+
+
+def unwrap_target_into_range(target_deg: float, min_deg: float, max_deg: float) -> float:
+    start, end = unwrap_calibrated_range(min_deg, max_deg)
+    target = float(target_deg)
+    while target < start:
+        target += 360.0
+    while target > end:
+        target -= 360.0
+    if not start <= target <= end:
+        raise ValueError(
+            f"target {target_deg:+.1f}deg is outside calibrated range "
+            f"{min_deg:.1f}..{max_deg:.1f}"
+        )
+    return target
+
+
+def unwrap_range_copy_for_current(
+    current_deg: float, min_deg: float, max_deg: float
+) -> tuple[float, float]:
+    start, end = unwrap_calibrated_range(min_deg, max_deg)
+    current = float(current_deg)
+    for turn in range(-20, 21):
+        copy_start = start + 360.0 * turn
+        copy_end = end + 360.0 * turn
+        if copy_start <= current <= copy_end:
+            return copy_start, copy_end
+    turn = round((current - start) / 360.0)
+    return start + 360.0 * turn, end + 360.0 * turn
+
+
+def unwrap_target_for_current(
+    current_deg: float, target_deg: float, min_deg: float, max_deg: float
+) -> float:
+    copy_start, copy_end = unwrap_range_copy_for_current(
+        current_deg, min_deg, max_deg
+    )
+    target = float(target_deg)
+    while target < copy_start:
+        target += 360.0
+    while target > copy_end:
+        target -= 360.0
+    if not copy_start <= target <= copy_end:
+        raise ValueError(
+            f"target {target_deg:+.1f}deg is outside current directed range "
+            f"{copy_start:.1f}..{copy_end:.1f}"
+        )
+    return target
+
+
+def load_calibration_yaml(path: Path) -> dict[str, MotorCalibration]:
+    if not path.exists():
+        return {}
+    text = path.read_text()
+    try:
+        import yaml
+    except ModuleNotFoundError:
+        data = _load_saved_calibration_without_yaml(text)
+    else:
+        data = yaml.safe_load(text)
+    if not isinstance(data, dict) or not isinstance(data.get("motors"), dict):
+        return {}
+
+    motors: dict[str, MotorCalibration] = {}
+    for name, raw in data["motors"].items():
+        if not isinstance(raw, dict):
+            continue
+        motors[str(name)] = MotorCalibration(
+            name=str(name),
+            dxl_id=int(raw["id"]),
+            min_deg=float(raw["min_deg"]),
+            max_deg=float(raw["max_deg"]),
+            inverted=bool(raw.get("inverted", False)),
+        )
+    return motors
+
+
+def _load_saved_calibration_without_yaml(text: str) -> dict[str, object]:
+    """Read the simple YAML shape written by save_calibration_yaml."""
+    motors: dict[str, dict[str, object]] = {}
+    current: dict[str, object] | None = None
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        if not line or line.lstrip().startswith("#"):
+            continue
+        if line.startswith("  ") and line.endswith(":"):
+            name = line.strip()[:-1]
+            current = {}
+            motors[name] = current
+            continue
+        if current is not None and line.startswith("    ") and ":" in line:
+            key, value = line.strip().split(":", 1)
+            value = value.strip()
+            if value.lower() in ("true", "false"):
+                current[key] = value.lower() == "true"
+            elif key == "id":
+                current[key] = int(value)
+            else:
+                current[key] = float(value)
+    return {"motors": motors}
 
 
 def save_calibration_yaml(
@@ -155,7 +274,12 @@ class DynamixelUiBus:
 
     def configure_position_mode(self, dxl_id: int) -> None:
         self.write1(dxl_id, ADDR_TORQUE_ENABLE, TORQUE_OFF, "torque off")
-        self.write1(dxl_id, ADDR_OPERATING_MODE, OP_MODE_POSITION, "operating mode")
+        self.write1(
+            dxl_id,
+            ADDR_OPERATING_MODE,
+            OP_MODE_EXTENDED_POSITION,
+            "operating mode",
+        )
         self.write4(dxl_id, ADDR_PROFILE_ACCELERATION, 20, "profile acceleration")
         self.write4(dxl_id, ADDR_PROFILE_VELOCITY, 50, "profile velocity")
         self.write4(
@@ -189,20 +313,20 @@ class MotorFrame:
         self.frame.pack(fill="x", padx=8, pady=6)
 
         self.present_var = tk.StringVar(value="present: not connected")
-        self.target_var = tk.DoubleVar(value=0.0)
         self.min_var = tk.DoubleVar(value=default_min)
         self.max_var = tk.DoubleVar(value=default_max)
+        self.target_var = tk.DoubleVar(value=default_min)
         self.inverted_var = tk.BooleanVar(value=False)
 
         tk.Label(self.frame, textvariable=self.present_var, anchor="w").pack(fill="x")
         self.slider = tk.Scale(
             self.frame,
-            from_=0.0,
-            to=100.0,
+            from_=default_min,
+            to=default_max,
             orient="horizontal",
             resolution=0.1,
             variable=self.target_var,
-            label="UI position percent within calibrated range",
+            label="signed absolute encoder target deg",
         )
         self.slider.pack(fill="x")
 
@@ -226,21 +350,82 @@ class MotorFrame:
         )
 
     def target_motor_deg(self) -> float:
-        return motor_deg_from_ui_percent(self.calibration(), float(self.target_var.get()))
+        target_deg = float(self.target_var.get())
+        calibration = self.calibration()
+        try:
+            return unwrap_target_into_range(
+                target_deg,
+                calibration.min_deg,
+                calibration.max_deg,
+            )
+        except ValueError as exc:
+            raise ValueError(
+                f"{self.name} target {target_deg:+.1f}deg is outside "
+                f"{calibration.min_deg:.1f}..{calibration.max_deg:.1f}"
+            ) from exc
+
+    def target_motor_deg_for_current(self, current_tick: int) -> float:
+        target_deg = float(self.target_var.get())
+        calibration = self.calibration()
+        try:
+            return unwrap_target_for_current(
+                tick_to_deg(current_tick),
+                target_deg,
+                calibration.min_deg,
+                calibration.max_deg,
+            )
+        except ValueError as exc:
+            raise ValueError(
+                f"{self.name} target {target_deg:+.1f}deg is outside "
+                f"{calibration.min_deg:.1f}..{calibration.max_deg:.1f}"
+            ) from exc
 
     def set_present(self, tick: int) -> None:
-        self.present_var.set(f"present: tick={tick} deg={tick_to_deg(tick):.1f}")
+        deg = tick_to_deg(tick)
+        self.present_var.set(
+            f"present: tick={tick} deg={format_deg_with_equivalent(deg)}"
+        )
 
     def set_current_as_min(self, tick: int) -> None:
-        self.min_var.set(round(tick_to_deg(tick), 1))
+        self.set_min_deg(round(tick_to_deg(tick), 1))
 
     def set_current_as_max(self, tick: int) -> None:
-        self.max_var.set(round(tick_to_deg(tick), 1))
+        self.set_max_deg(round(tick_to_deg(tick), 1))
+
+    def set_min_deg(self, value: float) -> None:
+        self.min_var.set(value)
+        start, end = unwrap_calibrated_range(value, float(self.max_var.get()))
+        self.slider.configure(from_=start, to=end)
+        if float(self.target_var.get()) < value:
+            self.target_var.set(start)
+
+    def set_max_deg(self, value: float) -> None:
+        self.max_var.set(value)
+        start, end = unwrap_calibrated_range(float(self.min_var.get()), value)
+        self.slider.configure(from_=start, to=end)
+        if float(self.target_var.get()) > end:
+            self.target_var.set(end)
+
+    def load_calibration(self, calibration: MotorCalibration) -> None:
+        self.min_var.set(calibration.min_deg)
+        self.max_var.set(calibration.max_deg)
+        start, end = unwrap_calibrated_range(calibration.min_deg, calibration.max_deg)
+        self.slider.configure(from_=start, to=end)
+        self.slider.configure(
+            label=(
+                "signed absolute encoder target deg "
+                f"({format_deg_with_equivalent(start)} -> "
+                f"{format_deg_with_equivalent(end)})"
+            )
+        )
+        self.inverted_var.set(calibration.inverted)
+        self.target_var.set(start)
 
 
 class CalibrationApp:
     def __init__(self, args: argparse.Namespace):
         ids = parse_motor_ids(args.ids)
+        args.port = resolve_port(args.port)
         self.args = args
         self.bus: DynamixelUiBus | None = None
 
@@ -254,21 +439,25 @@ class CalibrationApp:
         tk.Label(top, text=f"port={args.port} baud={args.baud}").pack(anchor="w")
         tk.Label(top, textvariable=self.status_var).pack(anchor="w")
 
+        saved = load_calibration_yaml(Path(args.output))
         self.pan = MotorFrame(
             self.root,
             name="pan",
             dxl_id=ids[0],
-            default_min=0.0,
-            default_max=360.0,
+            default_min=-180.0,
+            default_max=180.0,
         )
         self.tilt = MotorFrame(
             self.root,
             name="tilt",
             dxl_id=ids[1],
-            default_min=0.0,
+            default_min=-180.0,
             default_max=180.0,
         )
         self.frames = [self.pan, self.tilt]
+        for motor_frame in self.frames:
+            if motor_frame.name in saved:
+                motor_frame.load_calibration(saved[motor_frame.name])
 
         buttons = tk.Frame(self.root, padx=8, pady=8)
         buttons.pack(fill="x")
@@ -328,7 +517,8 @@ class CalibrationApp:
         try:
             bus = self.require_bus()
             for motor_frame in self.frames:
-                target_deg = motor_frame.target_motor_deg()
+                current_tick = bus.read_present_tick(motor_frame.dxl_id)
+                target_deg = motor_frame.target_motor_deg_for_current(current_tick)
                 bus.move_absolute_deg(motor_frame.dxl_id, target_deg)
             self.status_var.set("move command sent; torque remains on")
             self.root.after(250, self.refresh_present)
@@ -378,17 +568,47 @@ class CalibrationApp:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="DYNAMIXEL head calibration UI")
-    parser.add_argument("--port", default="/dev/ttyUSB0")
+    parser.add_argument(
+        "--port",
+        default="auto",
+        help="serial port path, or 'auto' to use /dev/serial/by-id, ttyACM0, ttyUSB0",
+    )
     parser.add_argument("--baud", type=int, default=1_000_000)
     parser.add_argument("--ids", default="1,2", help="pan_id,tilt_id")
     parser.add_argument("--output", default=str(DEFAULT_CONFIG_PATH))
     return parser
 
 
+def resolve_port(port: str) -> str:
+    if port and port != "auto":
+        path = Path(port)
+        if not path.exists():
+            raise ValueError(
+                f"port does not exist: {port}. "
+                "Run `ls -l /dev/serial/by-id/ /dev/ttyACM0 /dev/ttyUSB0` "
+                "and pass the path that exists."
+            )
+        return port
+
+    by_id_dir = Path("/dev/serial/by-id")
+    if by_id_dir.exists():
+        for path in sorted(by_id_dir.iterdir()):
+            if path.exists():
+                return str(path)
+    for candidate in DEFAULT_PORT_CANDIDATES:
+        if Path(candidate).exists():
+            return candidate
+    raise ValueError(
+        "no DYNAMIXEL serial port found. Checked /dev/serial/by-id, "
+        "/dev/ttyACM0, and /dev/ttyUSB0. Replug U2D2/OpenRB and check power/USB."
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     try:
         parse_motor_ids(args.ids)
+        args.port = resolve_port(args.port)
     except ValueError as exc:
         print(f"input error: {exc}", file=sys.stderr)
         return 2
