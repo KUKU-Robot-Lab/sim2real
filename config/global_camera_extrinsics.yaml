@@ -11,15 +11,19 @@
 # ── T_base_cam: robot base ← camera_color_optical_frame ────────────────────
 # FoundationPose 출력 프레임 = 입력 컬러 이미지의 optical 프레임
 # (RealSense: camera_color_optical_frame, x우/y하/z전방).
-# 캘리브(2026-07-28, ChArUco): 7x5 DICT_6X6, square 0.030/marker 0.022,
-# 보드원점 base=(0.600,0,-0.015), yaw는 카메라위치 (0,0,0.6) 실측으로 역산(≈275°).
-# ChArUco pose 재투영 0.2px(안정, 모호성無). ★정확도 ~6cm(카메라위치·칸크기 실측한계).
-#   목 고정 전제 static값. 회전 운영엔 hand-eye(T_neck_cam)+목 엔코더/FK 필요(별도).
-#   재캘리브: vision-3090서 charuco_calib.py로 보드+컵 검출→pc5090서 yaw역산→relay검증.
+# 캘리브(2026-08-02, head 카메라 ChArUco): 7x5 DICT_6X6, square 0.030/marker 0.022.
+# 보드 CAD 고정 배치(base): 중앙 (0.420,-0.050,0.200), yaw=0, 긴변 +y, 인쇄면 위.
+# T_base_cam = T_base_board(CAD) ∘ inv(T_cam_board) — 카메라위치 가정/yaw역산 불필요.
+# 검출 24/24 corners, 재투영 0.274px. 교차검증: tilt 290 독립교정과 카메라위치 ~1cm 일치.
+# ★교정 목 자세(head_v1.yaml, unwrapped 인코더 deg): pan=-90 / tilt=280.
+#   이 extrinsics는 이 목 자세에서만 유효 — 배포 시 head_position_hold_node 로 동일 자세 재현.
+#   회전 운영엔 hand-eye(T_neck_cam)+목 엔코더/FK 필요(별도).
+#   재캘리브: 보드 CAD 위치 배치 + 목 pan=-90/tilt=280 고정 →
+#   find_head_tilt.py(또는 다중프레임 캡처) → charuco_calib.py → recompute_from_cad.py --write.
 camera:
   frame: camera_color_optical_frame
-  position: [0.0553973312, 0.00069890475, 0.575586926]
-  orientation_wxyz: [-0.258627624, 0.685917178, -0.623389164, 0.272057583]
+  position: [0.0638473958, 0.0405343559, 0.827139699]
+  orientation_wxyz: [-0.137367707, 0.697932932, -0.688537236, 0.14119565]
 
 # ── T_cad_body: 컵 CAD 메시 프레임 → sim body 프레임 ───────────────────────
 # FoundationPose에 넣는 CAD 메시의 원점/축이 sim의 컵 body 프레임과 다르면
