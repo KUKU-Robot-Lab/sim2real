@@ -57,6 +57,35 @@ def load_frames(args) -> tuple[np.ndarray, float]:
     return q[:, : len(args.joints)], dt
 
 
+# 되짚기 진입 램프가 메워도 되는 최대 간극 [rad]. 이 램프만이 관절공간 직선이고,
+# 되짚기는 "왔던 자리에 서 있다"가 전제라 간극이 크면 전제가 깨진 것이다(2026-09-07 실기).
+REVERSE_MAX_RAMP_RAD = 0.35
+
+
+def build_plan(frames: np.ndarray, start: np.ndarray, pub_dt: float, reverse: bool,
+               max_ramp_rad: float = REVERSE_MAX_RAMP_RAD) -> tuple[np.ndarray, np.ndarray, int]:
+    """(발행할 관절목표, 속도 전향, 램프 프레임 수).
+
+    ★preset 에서 내려올 때는 goto_home 이 아니라 이 함수의 reverse 를 쓴다. goto_home 은
+    계약 홈을 향한 관절공간 직선이라 손이 지나는 곳을 계산하지 않는다 — 2026-09-07 에
+    그걸로 테이블을 향해 내려가 사용자가 모터를 강제 종료했다. 올라온 길을 거꾸로 가면
+    지나온 공간만 지난다.
+    """
+    frames = frames[::-1] if reverse else frames
+    gap = float(np.abs(np.asarray(start) - frames[0]).max())
+    if reverse and gap > max_ramp_rad:
+        raise SystemExit(
+            f"[replay] --reverse 거부: 실측이 기록 끝에서 {gap:.3f} rad 떨어져 있다 "
+            f"(한계 {max_ramp_rad}). 되짚기는 왔던 자리에서만 안전하다 — 진입 램프는 "
+            f"관절공간 직선이라 그 간극을 테이블을 모른 채 지난다.")
+    ramp = approach_ramp(np.asarray(start, dtype=float), frames[0],
+                         speed=PARK_SPEED_RAD_PER_SEC, dt=pub_dt)
+    plan = np.vstack([ramp, frames])
+    vel = np.vstack([np.zeros((1, plan.shape[1])), np.diff(plan, axis=0) / pub_dt])
+    vel[: len(ramp)] = 0.0                                   # 램프 구간은 속도 전향 없음
+    return plan, vel, len(ramp)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     src = ap.add_mutually_exclusive_group(required=True)
@@ -70,6 +99,11 @@ def main() -> int:
     ap.add_argument("--dt", type=float, default=0.02, help="기록 주기 fallback (s)")
     ap.add_argument("--rate-scale", type=float, default=0.25)
     ap.add_argument("--frames", type=int, default=0, help="0 = 전부")
+    ap.add_argument("--reverse", action="store_true",
+                    help="기록을 거꾸로 재생한다 — preset 에서 차렷으로 **내려올 때**. "
+                         "goto_home 은 관절공간 직선이라 테이블을 모른다(2026-09-07 실기)")
+    ap.add_argument("--max-ramp-rad", type=float, default=REVERSE_MAX_RAMP_RAD,
+                    help="되짚기 진입 램프가 메워도 되는 최대 간극 [rad]")
     ap.add_argument("--execute", action="store_true")
     args = ap.parse_args()
     args.joints = [j.strip() for j in args.joints.split(",")]
@@ -83,7 +117,8 @@ def main() -> int:
         raise SystemExit("[replay] 기록에 비유한 값 — 보간하지 않고 거부한다")
     pub_dt = dt / args.rate_scale
     print(f"[replay] {frames.shape[0]} 프레임 × {len(args.joints)} 관절 · 기록 dt {dt:.4f} s → "
-          f"발행 {pub_dt * 1000:.1f} ms ({args.rate_scale:g}×) · {'★발행' if args.execute else '무발행'}")
+          f"발행 {pub_dt * 1000:.1f} ms ({args.rate_scale:g}×) · "
+          f"{'되짚기(역재생)' if args.reverse else '정방향'} · {'★발행' if args.execute else '무발행'}")
     if not args.execute:
         return 0
 
@@ -106,10 +141,7 @@ def main() -> int:
     # canonical → source 이름은 pd 가 처리한다; 여기서는 실측을 이름으로 찾는다(l_aj_i ↔ openarm_left_jointi)
     side = "left" if args.joints[0].startswith("l_") else "right"
     start = np.array([meas[f"openarm_{side}_joint{j.split('_')[-1]}"] for j in args.joints])
-    ramp = approach_ramp(start, frames[0], speed=PARK_SPEED_RAD_PER_SEC, dt=pub_dt)
-    plan = np.vstack([ramp, frames])
-    vel = np.vstack([np.zeros((1, plan.shape[1])), np.diff(plan, axis=0) / pub_dt])
-    vel[: len(ramp)] = 0.0                                   # 램프 구간은 속도 전향 없음
+    plan, vel, n_ramp = build_plan(frames, start, pub_dt, args.reverse, args.max_ramp_rad)
     for k, (q, qd) in enumerate(zip(plan, vel)):
         msg = JointState()
         msg.header.stamp = node.get_clock().now().to_msg()
@@ -118,7 +150,8 @@ def main() -> int:
         pub.publish(msg)
         rclpy.spin_once(node, timeout_sec=0.0)
         time.sleep(pub_dt)
-    print(f"[replay] 완료 · 램프 {len(ramp)} + 기록 {len(frames)} 프레임")
+    print(f"[replay] 완료 · 램프 {n_ramp} + 기록 {len(frames)} 프레임"
+          f"{' (되짚기)' if args.reverse else ''}")
     node.destroy_node()
     rclpy.shutdown()
     return 0

@@ -152,6 +152,14 @@ run:
       execute_args: [--execute]
     - note: "[right] 도착 후 처짐 확인 — pd 가 잡고 있으면 20 s 에 0.00° (2026-09-07 실측)"
       argv: [echo, "ros2 topic echo /policy_control/status/pd --once  ·  phase TRACKING · ok true"]
+  preset_return_right:
+    - note: "[right] ★preset 에서 내려올 때는 goto_home 을 쓰지 않는다 — 관절공간 직선이라
+        테이블을 모른다(2026-09-07 실기에서 손이 테이블로 향해 사용자가 모터 강제 종료).
+        올라온 궤적을 --reverse 로 되짚는다. 진입 램프 간극이 0.35 rad 를 넘으면 거부된다."
+      argv: [python3, "{repo}/policy_control/tools/replay_to_pd.py",
+             --npz, "{repo}/logs/shadow/reset_both/reset_right.npz", --reverse,
+             --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7", --rate-scale, "0.5"]
+      execute_args: [--execute]
   fabric_direct_right:
     - note: "[right] fabric 노드 direct 모드 (계약이 control_only 라 obs/policy 는 안 뜬다).
         ★use_source:=true 필수 — 설치된 콘솔 스크립트는 시스템 python 이라 warp(venv)를 import 못 한다.
