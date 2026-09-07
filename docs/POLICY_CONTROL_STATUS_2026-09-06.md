@@ -51,7 +51,7 @@ fake 플랜트의 **파지 성공은 미달**: MockArm(관절별 2차 PD+마찰+
 - **자산 레지스트리 + 제어 전용 계약**(`contract_assets.py`): 기본 자산 `openarm_dg5f-m_bi_rl`. `build_deploy_contract.py --asset …` → `logs/policy/asset_openarm_dg5f-m_bi_rl/deploy_contract.json`(정책 없음, 홈 차렷 0 + 손 open pose(좌는 `_HAND_SIGN` 미러), 게인 = control_gains.yaml, 중력 model_tau_ff 양팔). `--run … --asset …` 은 런 계약을 새 자산에 재기반(fabric dir/params·soft limit·fk urdf 만) → `right_g1/deploy_contract.dg5f-m.json`.
 - **fabric 자산**: `openarm_dg5f-m_bi_{left,right}` URDF 에 손가락 구 52개 패치, params `openarm_dg5f-m_{left,right}_pose_params.yaml`, meshes 심링크(`gen_fabric_urdfs.sync_hdgp` 자동). 좌 fabric 도 내부 관절명은 우측 → `fabric_core` 가 l/r 무시 인덱스 매핑(`joint_key`) + 실제 URDF 순서 검증.
 - **robot yaml**: `dg5f_m_{right,left,bi}_{real,fake}.yaml` — `joint_profiles:` 병합(좌손은 `config/openarm_tesollo_left_hand.yaml`), 양팔 yaml 은 역할 접미사(`arm_left`…), `sources.select_side()`.
-- **노드**: obs/fabric `side` 파라미터, obs `urdf_chain` FK(자산 URDF, CPU), fabric `mode=direct`(control_only: `/policy_control/palm_cmd`·`hand_cmd` 구독, `palm_pose` 발행), **episode_master**(제어 전용 계약의 에피소드 서비스/이벤트 — obs 노드가 없으니), pd 팔 그룹 N개(`sides` 파라미터, 이름 기반 joint_target 분배, 좌 dg5f ns `dg5f_left` PID 4.5 적용 경로), fake 플랜트 양팔(`fake_arm_bridge --sides`, CM 스텁 양팔, 손/팁 fake 네임스페이스별).
+- **노드**: obs/fabric `side` 파라미터, obs `urdf_chain` FK(자산 URDF, CPU), fabric `mode=direct`(control_only: `/policy_control/palm_cmd`·`hand_cmd` 구독, `palm_pose` 발행), **episode_master**(제어 전용 계약의 에피소드 서비스/이벤트 — obs 노드가 없으니), pd 팔 그룹 N개(`sides` 파라미터, 이름 기반 joint_target 분배, 좌 dg5f ns `dg5f_left` PID 적용 경로(벤더 1.5)), fake 플랜트 양팔(`fake_arm_bridge --sides`, CM 스텁 양팔, 손/팁 fake 네임스페이스별).
 - **도구**: `palm_cmd.py`(상대/절대 palm 목표), `hand_cmd.py`(open→grip 보간·좌 미러·관절 덮어쓰기), `fake_direct_run.sh`(제어 전용 direct 폐루프 한 팔), `fake_plant_run.sh MODE=pd`(pd 전용 selftest), `chain_recorder` 손 목표·제어 전용 seq 정렬, `contract_doc` sides 표.
 - **단계표**: `config/mission_dg5f_m_control.yaml`(12단계, 우·좌 독립: pd_load → selftest → goto_home(차렷) → fabric direct(palm ±2 cm·hand 0.3) → release).
 
@@ -104,3 +104,144 @@ fake 플랜트의 **파지 성공은 미달**: MockArm(관절별 2차 PD+마찰+
 - `right_g1` 은 이제 계약 게이트를 통과하지 못한다(r2s kd, 그중 4개는 MIT 상한 5.0 밖). **의도된 실패** — 재학습 대상이며 계약·골든 픽스처용으로만 남는다. `left_v2B25` 와 자산 제어 전용 계약은 통과한다.
 - ⚠벤더 손 p=1.5 는 4 s 주먹 램프에서 지령의 82 % 까지만 간다(4.5 는 98~101 %). sim 도 1.5 라 정합은 좋아지지만 **파지력·도달률 재확인이 필요**하다.
 - ⚠게인이 바뀌면 동특성이 바뀐다 ⇒ 모든 재학습은 **FRESH**. 기존 체크포인트와 비호환.
+
+## 8. 우팔 첫 실기 (2026-09-07) — pd 아래 사슬 확인, 결함 8건 정정
+
+**목적**: `fabric → pd → 컨트롤러 → CAN → 모터` 에서 pd 아래가 실제로 동작하는가. 지금까지
+가짜 플랜트(중력·마찰·접촉 없음)에서만 검증됐다. 정책 절반(obs/policy)은 계약이 `control_only`
+라 아예 안 뜬다 — 재학습 뒤 열린다.
+
+### 8.1 확인된 수치
+| 항목 | 결과 | 기준 |
+|---|---|---|
+| 명령 추종 (r_aj_1, +0.05 rad) | Δq* +0.0500 → Δq **+0.0557** (111 %) | — |
+| 컨트롤러 교대 점프 | **0.197°** | <0.5° |
+| preset 왕복 추종오차 | 올림 max **2.55°** / 내림 **2.63°** | 보상 0 이면 12.76° |
+| pd 중력모델 vs 검증모델(실기 실측 자세) | **0.99~1.01 전 관절** | 수정 전 j6 0.40 · j7 0.38 |
+| pd 인계 후 20 s 처짐 | **0.00°** | 수정 전 j7 −33.7° · j4 −15.1° |
+| 셀프테스트 정지 드리프트(preset) | **0.18°** | ≤4° |
+| 셀프테스트 부호 | **7/7** | 7/7 |
+| ±0.10 rad 비율 | 0.52~1.14 전 관절 대역 내 | 0.4~1.6 |
+| 손 PID (실기 파라미터 실측) | **1.5** (벤더) | 1.5 |
+
+### 8.2 정정한 결함
+1. **CAN** `fd on` 에 `dbitrate` 누락 → `Operation not supported`. 미션 yaml 3개.
+2. **손 네트워크** 단계 누락 — DG-5F 는 Modbus TCP(169.254.186.72:502). eno1 에 IPv4 가 없으면
+   경로가 tailscale0 로 새고 controller_manager 가 접속 대기로 멈춘다.
+3. **손 PID 4.5 잔존** — `dg5f_right_controller.yaml` 만 미커밋 4.5. 벤더 1.5 로 정정(실기 확인).
+4. **pd helper 노드 이름 충돌** — launch 의 전역 `-r __node:=` 가 helper 까지 덮어 rosout 퍼블리셔를
+   공유했다. engage 의 `read_jtc_reference` 가 helper 를 destroy 하면 **pd 로그가 죽는다**.
+   `use_global_arguments=False`.
+5. **셀프테스트 dwell 미준수(19배)** — `spin_once(timeout_sec=dt)` 를 sleep 처럼 썼다. 실기
+   `/joint_states` 745 Hz 라 한 번도 안 기다려 "2.0 s" 가 0.106 s. **팔이 움직일 시간이 없었다** —
+   추종률 15~44 % 는 로봇이 아니라 하네스 탓. `spin_until()` 로 벽시계 고정.
+6. **pd 중력 payload 이중계상 + 프레임 오류** → 별도 메모리 참조. 손목 τ_ff 40 %.
+7. **옛 도구 3종 사망** — `load_builtin_profile` 이 09.05 에 삭제된 manifest 요구.
+   `scripts/profile_yaml.py` 로 통일.
+8. **판정식** — 간섭이 최초 기준 대비라 상수 오프셋을 매 스텝 간섭으로 셌다(→ `prev_q`);
+   비율 대역이 작은 진폭에서 도달 불가(→ 관절별 잔류 허용치 = 2·마찰/kp).
+
+### 8.3 확정된 방침
+- **자세 이동은 pd 가 소유한다**(사용자 결정). 옛 경로(gravity_comp_node + shadow_replay + JTC)는
+  pd 인계 시 무보상 공백에서 8° 내려앉고, pd 가 실측을 시드로 잡아 그 처짐이 새 목표가 된다.
+  pd 중력이 검증모델과 같아졌으므로 차렷에서 engage → `replay_to_pd.py` 로 궤적을 흘린다.
+  단계표에 `preset_right` 신설.
+- **차렷은 시험 자세로 부적합하다.** `r_aj_4` 하한이 정확히 0 이라 −방향이 막히고(pd 가 HOLD),
+  손가락이 마운트 플레이트보다 7 cm 아래라 몸통에 걸린다(실기 확인 — 08.27 sim 예측이 맞았다).
+- **팔 게인 튜닝은 없다.** 벤더 고정. 튜닝 대상은 중력 τ_ff 뿐이고 `scale` 은 1.0(구 자산의 1.1 은
+  URDF 손 질량 6.4 % 과소를 덮던 값 — 새 자산은 실측과 맞다).
+
+### 8.4 남은 것
+- **fabric direct 미실시** — 손바닥 지령 → IK → 관절목표 경로가 사슬의 마지막 조각.
+- 셀프테스트 ±0.05 에서 j4·j7 이 물리 유도 허용치로도 미달(잔류 0.034/0.047 vs 0.016/0.030).
+- 역재생 `--rate-scale` 0.25 → 0.5 로 올릴 근거 확보(올림·내림 오차가 2.55/2.63 로 같다).
+
+## 9. 우팔 2차 실기 (2026-09-07 오후) — pd 가 자세를 소유, fabric direct 는 미완
+
+### 9.1 성공
+- **pd 소유 자세 이동 검증**: 차렷 engage → `replay_to_pd.py` 로 preset 궤적 스트림 → 도착 오차
+  최대 **1.03°**(j4), 15 s 처짐 **0.000°**. 인계 공백이 없으니 옛 경로의 8° 처짐이 사라졌다.
+- pd 중력모델이 실기 실측 자세에서 검증모델과 **0.99~1.01** (오전에 고친 payload 확인).
+
+### 9.2 새로 드러난 결함 4건
+1. **HOLD 가 종점이었다.** engage↔스트림 공백으로 워치독 HOLD → 104 s 재생이 목표 2612 개를
+   전부 보내고 pd 도 다 받았는데(seq 2611) 세트포인트가 얼어 팔이 안 움직였다. **실패 신호도 없었다.**
+   → 워치독**만**이 사유면 목표 복귀 시 RAMPING 으로 자동 재개(`pd_state._target_fresh`).
+   추종오차·발열·estop 등은 그대로 남긴다.
+2. **발열 HOLD 가 내려올 길까지 막는다.** preset 유지 중 `thermal r_aj_7` 로 HOLD → pd 로는 팔을
+   내릴 수 없다(engage 해도 즉시 재HOLD). 팔을 든 채 release 하고 옛 JTC+중력보상 경로로 내렸다.
+   **미해결** — 발열 HOLD 에서도 "쉬는 자세로 내려가기"는 허용해야 한다.
+3. **fabric direct 의 홈이 계약값(차렷)이었다.** 팔이 preset 인데 fabric 의 palm_pose 가 차렷을
+   가리켰고 joint_target 이 실측과 **최대 96.5°** 어긋났다(pd 가 HOLD 라 안 끌려갔을 뿐).
+   → control_only 계약에서는 홈을 **실측 팔 자세**로 잡는다(`home_from_event(measured_arm_q=…)`).
+   정책 계약은 학습된 default_config 를 그대로 쓴다.
+4. **launch 가 두 번 죽었다.** `episode_master` 미설치(09.06 추가 후 colcon build 안 함) ·
+   설치 콘솔 스크립트는 시스템 python 이라 `warp` 를 import 못 한다(→ `use_source:=true` 필수).
+   → 선언↔설치 대조 테스트 추가, 미션 yaml 의 fabric 단계에 `use_source:=true` 명시.
+
+### 9.3 fabric direct 결과
+**미완.** 에피소드 reset/start 까지 정상(fabric running, 34.5 Hz, seq 313)이었으나 위 ③ 때문에
+palm_cmd 를 넣지 못하고 중단했다. ③을 고쳤으므로 다음 실기에서 preset 자세 그대로 재시도한다.
+
+### 9.4 운용 규약(실기에서 배운 것)
+- **engage 직후 끊김 없이 목표를 흘린다.** 사이에 상태 확인을 넣으면 워치독 HOLD 로 간다
+  (자동 재개가 생겼지만 순서를 지키는 편이 낫다).
+- **모터 강제 종료 뒤에는 전원 재투입이 필요하다.** CAN 은 살아 있고 하드웨어 인터페이스도
+  active 로 뜨지만 토크 출력이 비활성이다. 판별: 관절값이 8 s 동안 고유값 1개 + 지령에 0.000° 반응.
+- **preset 체류를 최소화한다.** j7 이 2.7 N·m 연속이라 pd 발열 가드(1.5 N·m/300 s)가 5 분에 걸린다.
+
+## 10. 손 PD 제어 (2026-09-07 저녁) — 완성, 도달률 89 %
+
+**팔 없이 손만.** `config/robots/dg5f_m_right_hand_only.yaml`(팔 그룹 제거) + pd 수정으로
+**팔 브링업 없이 손 드라이버만 띄운 채** 시험했다. pd 는 팔 백엔드가 없으면 팔 지령·컨트롤러
+교대·팔 관절 상태 요구를 모두 생략한다. `side_groups` 는 계약 pd_groups 의 부분집합을 허용하고
+계약이 모르는 그룹만 거부한다(양팔 yaml 은 `groups.<g>.side` 로 이 팔 소속만 본다).
+
+**결과** — 주먹(110°) → open → grip 45° → open 전부 추종.
+
+| 지령 | thumb | index | middle | ring | pinky |
+|---|---|---|---|---|---|
+| open 오차 | 1.2° | 0.6° | 1.1° | 2.5~3.4° | 1.3~2.1° |
+| grip 45° 도달률 | 102 % | 94 % | 94 % | 93 % | **74 %** |
+
+전체 **89 %**, 5 초에 평형에 도달해 **25 초 유지해도 소수점까지 불변** — 느린 게 아니라
+**벤더 p=1.5 의 정상상태 편차**다(09.06 에 남겨둔 "파지력·도달률 재확인"의 답).
+open 방향은 오차가 작다 — 편차는 부하가 걸리는 굴곡에서만 크다. ⚠소지만 74 % 로 유독 낮다.
+
+**발열 가드 임시 완화**: `r_aj_7`/`l_aj_7` 을 1.5 N·m/300 s → 6.5/3600 으로 올렸다(사용자 지시).
+→ §11 에서 근거 자체를 교체했으므로 이 완화값은 되돌릴 대상이 아니라 **폐기**됐다.
+
+## 11. 발열 가드 = 실제 모터 온도 (2026-09-07)
+
+"1.5 N·m/300 s 를 원복해야 한다"를 확인하다가 **그 값이 벤더 기준이 아니라 우리가 지어낸 값**임을
+확인했다. 출처는 09.02 고장 한 건(우 j7 을 preset 에 18 분 두자 3.17 N·m 연속 → 고장)이고,
+09.05 계획 §4.4 → 커밋 e2f7bda 로 들어왔다. 같은 관절인데 **좌 5.0 / 우 1.5** 로 갈려 있던 것이
+그 임의성의 증거다. 벤더가 주는 열 관련 수치는 **없다**(joint_limits 7 N·m, CAN tMax 10 N·m 은
+둘 다 순간 한계이고 연속정격이 아니다; `openarm_description`·`robot_control` 에 thermal/continuous
+언급 0 건).
+
+**★그런데 진짜 온도가 이미 오고 있었다.** DM4310(j5~j7)은 MIT 피드백 프레임마다 `t_rotor`/`t_mos`
+를 싣고 `dm_motor_control.cpp:101-110` 이 이미 디코딩해 `Motor::update_state()` 까지 넣는데,
+`openarm_simple_hardware.cpp` 의 `export_state_interfaces()` 가 position/velocity/effort 셋만
+내보내서 CAN 계층에서 끝나고 있었다. 토크×시간 대리지표는 **온도계가 있는데도 못 써서 만든 대용품**이었다.
+
+| 층 | 변경 |
+|---|---|
+| `openarm_simple_hardware.{hpp,cpp}` | `temperature_rotor`/`temperature_mos` state interface export + `read()` 에서 채움(팔 7 + 그리퍼) |
+| `openarm.ros2_control.xacro`·**`openarm.bimanual.ros2_control.xacro`** | 두 인터페이스 선언. ★양팔 브링업이 쓰는 것은 **bimanual 쪽**이다 — 단일팔 파일만 고치면 URDF 에 안 나온다 |
+| 전달 | 별도 broadcaster 불필요 — joint_state_broadcaster 가 비표준 인터페이스를 `/dynamic_joint_states` 로 전부 보낸다 |
+| `pd_state.ThermalRule` | 근거 2 갈래(`temp_act_c/temp_clear_c/temp_warn_c` ↔ 옛 `effort_nm/act_sec`). 정확히 하나만 |
+| 판정 | 히스테리시스 래치: act 에서 걸고 clear 아래로 내려가야 풀린다 |
+| `unknown` vs `stale` | 한 번도 안 온 것 = **engage 거부**(구형 브링업·fake 플랜트), 오다 끊긴 것 = HOLD |
+| 자기해제 | `clear_reasons(fsm, kinds)` 로 일반화 — 워치독·발열이 조건 소멸 시 스스로 풀린다 |
+| **교착 탈출** | 자기해제형만 남은 HOLD 에서 `goto_home` 이 후퇴를 수행하고, 후퇴 중에는 발열 사유가 HOLD 를 다시 걸지 않는다 |
+
+검증: fake 하드웨어 브링업(도메인 99)에서 `/dynamic_joint_states` 가 16 관절 전부에 두 인터페이스를
+싣는 것을 확인. `mock_components/GenericSystem` 도 비표준 인터페이스를 그대로 받는다.
+pytest `tests/policy_control` 508 통과(신규 온도 테스트 13 + 노드 4 포함).
+
+⚠**임계값 70/60/55 °C 는 아직 잠정값이다.** 이제 온도가 기록되므로 preset 체류 승온곡선을 한 번
+재서 확정할 것 — 그 측정이 이 변경의 목적이다. 모터 자체 OT 보호(RID `OT_Value`)보다 아래로 둔다.
+
+⚠**실기 반영에는 브링업 재기동이 필요하다**(하드웨어 인터페이스가 바뀌었다). 구형 브링업에
+붙으면 pd 는 engage 를 거부한다 — 가드가 조용히 죽는 것보다 낫다는 판단이다.
