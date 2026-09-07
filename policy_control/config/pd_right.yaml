@@ -30,7 +30,8 @@ gains:
   yaml: urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml
   accept_sim_mismatch: false
 thermal:                       # 우 j7 과열: preset 대기 3.17 N·m 연속이 관절을 태운다
-  - {joint: r_aj_7, effort_nm: 1.5, act_sec: 300}
+  # ★2026-09-07 실제 모터 온도로 교체 — 근거와 잠정성은 pd_dg5f_m.yaml 주석 참조.
+  - {joint: r_aj_7, temp_act_c: 70.0, temp_clear_c: 55.0, temp_warn_c: 60.0}
 gripper: null
 hand:
   pid_p: 1.5   # 2026-09-06 사용자 확정: DG-5F 손도 벤더 기본값만(구 실기 튜닝 4.5 폐기)

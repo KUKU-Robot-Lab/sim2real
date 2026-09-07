@@ -153,8 +153,13 @@ def build_model_gravity(cfg: ModelGravityCfg) -> ModelGravity:
     if not urdf.is_file():
         raise GravityConfigError(f"gravity urdf missing: {urdf}")
     try:
-        chain = chain_from_urdf(urdf.read_text(), list(cfg.joints), cfg.tip_link)
+        text = urdf.read_text()
+        chain = chain_from_urdf(text, list(cfg.joints), cfg.tip_link)
         if cfg.payload is not None:
+            # ★payload COM 은 `with_payload` 규약대로 **체인 마지막 링크 프레임**이다
+            #   (chain_from_urdf 가 고정 링크를 그리로 접는다 — tip_link 프레임이 아니다).
+            #   2026-09-07 우팔 실기: palm_ee 프레임 값을 그대로 넣어 손 질량이 손목에서
+            #   4.8 cm 에 얹혔고(실제 22.4 cm) j7 이 33.7° 내려앉았다.
             chain = with_payload(chain, float(cfg.payload[0]), [float(v) for v in cfg.payload[1:]])
     except KinematicsError as exc:
         raise GravityConfigError(f"{urdf.name}: {exc}") from exc

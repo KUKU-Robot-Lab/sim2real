@@ -85,7 +85,7 @@ run:
       argv: [grep, -c, "left_forward_", "/home/user/rl_ws/robot_control/ros_ws/src/openarm_ros2/openarm_bringup/config/controllers/openarm_bimanual_controllers.yaml"]
   bringup:
     - note: ★CAN 설정 — sudo 필요, 사용자 셸에서
-      argv: [sudo, ip, link, set, can1, up, type, can, bitrate, "1000000", fd, "on"]
+      argv: [bash, -lc, "sudo ip link set can1 down && sudo ip link set can1 type can bitrate 1000000 dbitrate 5000000 fd on && sudo ip link set can1 up"]
       manual: true
     - note: ★모터 전원을 먼저 켠 뒤 launch (robot_control bringup — forward 컨트롤러 선언 포함)
       argv: [ros2, launch, openarm_bringup, openarm.bimanual.launch.py, "use_fake_hardware:=false",

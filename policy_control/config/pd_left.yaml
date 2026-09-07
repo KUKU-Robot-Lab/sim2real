@@ -24,8 +24,8 @@ gravity:
 gains:
   yaml: urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml
   accept_sim_mismatch: false
-thermal:                       # |effort| > effort_nm 인 시간이 act_sec 누적되면 HOLD
-  - {joint: l_aj_7, effort_nm: 5.0, act_sec: 300}
+thermal:                       # ★2026-09-07 실제 모터 온도로 교체(옛 5.0 N·m/300 s 는 근거 없는 값이었다)
+  - {joint: l_aj_7, temp_act_c: 70.0, temp_clear_c: 55.0, temp_warn_c: 60.0}
 gripper:
   close_overtravel_m: 0.008    # 닫기 지령 = 현재 개구 − 여유(과압착 가드)
   max_vel: 0.2                 # [m/s]

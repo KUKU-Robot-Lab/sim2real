@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, replace
+from typing import Mapping
 
 import numpy as np
 
@@ -25,8 +26,9 @@ from .pd_gains import GainsError, expected_hand_gains, load_and_check
 from .pd_gravity import make_gravity
 from .pd_law import (PdCommand, PdConfig, blend_engage, blend_fraction, blend_release, law_cfg_from_config,
                      limits_from_profile)
-from .pd_state import (EngageCheck, Phase, engage_refusals, thermal_act_joints, thermal_init, thermal_levels,
-                       thermal_step)
+from .pd_state import (EngageCheck, Phase, engage_refusals, hold_is_self_clearing, thermal_act_joints,
+                       thermal_init, thermal_levels, thermal_stale_joints, thermal_step,
+                       thermal_unknown_joints)
 from .sources import RobotCfg, SourceSet, select_side
 
 from jtc_bridge_core import JointRemap  # noqa: E402  (scripts/)
@@ -108,16 +110,31 @@ def hand_command_joints(side_cfg: SideCfg) -> list[str]:
 
 
 def side_groups(robot_cfg: RobotCfg, side_cfg: SideCfg) -> dict:
-    """계약 `sides.<side>.pd_groups` 가 이름 대는 robot yaml 그룹들."""
-    missing = [g for g in side_cfg.pd_groups if g not in robot_cfg.groups]
-    if missing:
-        raise PdArmError(f"robot yaml groups lacks {missing} (contract sides.{side_cfg.side}.pd_groups)")
-    return {g: robot_cfg.groups[g] for g in side_cfg.pd_groups}
+    """계약 `sides.<side>.pd_groups` ∩ robot yaml 그룹.
+
+    yaml 이 선언된 그룹의 **부분집합**만 들고 있어도 된다 — 일부만 제어하겠다는 의도적 선택이다
+    (2026-09-07: 손 PD 시험 동안 팔 그룹을 뺀 `*_hand_only.yaml`). 위험한 방향은 그 반대다:
+    계약이 모르는 그룹을 yaml 이 들고 오면 pd 가 계약 밖 하드웨어를 움직이게 되므로 거부한다.
+    """
+    known = set(side_cfg.pd_groups)
+    # 양팔 yaml 은 반대편 팔의 그룹도 담는다 — **이 팔 소속**(groups.<g>.side)만 본다.
+    extra = [g for g, cfg in robot_cfg.groups.items()
+             if str((cfg or {}).get("side") or "") == side_cfg.side and g not in known]
+    if extra:
+        raise PdArmError(f"robot yaml groups {extra} 는 계약 sides.{side_cfg.side}.pd_groups "
+                         f"{sorted(known)} 에 없다")
+    picked = {g: robot_cfg.groups[g] for g in side_cfg.pd_groups if g in robot_cfg.groups}
+    if not picked:
+        raise PdArmError(f"robot yaml 에 sides.{side_cfg.side}.pd_groups {sorted(known)} 중 아무것도 없다")
+    return picked
 
 
 def build_side_backends(node, groups: dict, cfg: PdConfig, side_cfg: SideCfg, hand_joints: list[str],
                         profile: dict, *, execute: bool) -> SideBackends:
-    """robot yaml groups(한 팔 몫) → 백엔드. 팔 그룹은 필수, 그리퍼/손은 pd yaml 블록과 맞아야 한다."""
+    """robot yaml groups(한 팔 몫) → 백엔드. 그리퍼/손은 pd yaml 블록과 맞아야 한다.
+
+    팔 그룹은 **선택**이다 — 없으면 손만 제어한다(2026-09-07: 손 PD 시험 동안 팔을 끈다).
+    그때 arm·switch 는 None 이고 팔 지령·컨트롤러 교대가 생략된다."""
     arm = switch = gripper = hand = gains = None
     hand_joint = None
     for name, g in groups.items():
@@ -135,8 +152,10 @@ def build_side_backends(node, groups: dict, cfg: PdConfig, side_cfg: SideCfg, ha
             hand, gains = _hand_backend(node, name, g, cfg, hand_joints, profile, execute)
         else:
             raise PdArmError(f"groups.{name}: unknown backend {kind!r}")
-    if arm is None or switch is None:
-        raise PdArmError(f"side {side_cfg.side}: no arm_forward group among {sorted(groups)}")
+    if (arm is None) != (switch is None):
+        raise PdArmError(f"side {side_cfg.side}: arm_forward group is half-built ({sorted(groups)})")
+    if arm is None and gripper is None and hand is None:
+        raise PdArmError(f"side {side_cfg.side}: no controllable group among {sorted(groups)}")
     return SideBackends(arm=arm, switch=switch, gripper=gripper, hand=hand, hand_gains=gains, hand_joint=hand_joint)
 
 
@@ -193,12 +212,16 @@ class ArmUnit:
         self.sources = SourceSet(self.robot_cfg)
         self.thermal_rules = _side_thermal(cfg, self.side)
         self.thermal = thermal_init(self.thermal_rules)
+        self.t_ee_recv: float | None = None
         self.target: PdTarget | None = None
         self.hand_target: np.ndarray | None = None
         self.hold: Hold | None = None
         self.blend: Blend | None = None
         self.switch_failed = False
+        self.thermal_retreat = False   # 발열 HOLD 에서 저부하 자세로 내려가는 중
         self.efforts: dict[str, float] = {}
+        self.temps: dict[str, float] = {}   # 관절 → 모터 온도 [°C] (없으면 키가 없다)
+        self.t_temp_recv: float | None = None
         self.t_arm_recv: float | None = None
 
     # ---------------------------------------------------------------- setup
@@ -248,7 +271,8 @@ class ArmUnit:
         return out
 
     def close(self) -> None:
-        self.backends.switch.close()
+        if self.backends.switch is not None:
+            self.backends.switch.close()
         if self.backends.hand_gains is not None:
             self.backends.hand_gains.close()
 
@@ -259,6 +283,25 @@ class ArmUnit:
         if "arm" in roles:
             self.t_arm_recv = now
             self.efforts = self._arm_efforts(sample)
+        if "ee" in roles:
+            self.t_ee_recv = now
+
+    def on_temperatures(self, by_source: Mapping[str, float], now: float) -> None:
+        """드라이버가 올린 모터 서미스터(°C)를 canonical 관절 이름으로 옮긴다.
+
+        `/dynamic_joint_states` 의 `temperature_rotor`/`temperature_mos` 에서 온다. 관절당
+        더 뜨거운 쪽을 쓴다 — 로터가 먼저 뜨는 경우도, 드라이버가 먼저 뜨는 경우도 있다.
+        """
+        self.temps = {c: float(by_source[self.profile[c]["source"]]) for c in self.arm_joints
+                      if self.profile[c]["source"] in by_source}
+        self.t_temp_recv = now
+
+    def _fresh_temps(self, now: float) -> dict[str, float]:
+        """온도가 끊기면 **빈 dict** 를 돌려준다 — 마지막 값을 계속 믿으면 보호가 조용히 꺼진다."""
+        stale = self.robot_cfg.sources["arm"].stale_sec
+        if self.t_temp_recv is None or (now - self.t_temp_recv) > stale:
+            return {}
+        return self.temps
 
     def _arm_efforts(self, sample: JointSample) -> dict[str, float]:
         if sample.effort is None:
@@ -302,24 +345,40 @@ class ArmUnit:
         target = self._select_target(now, q_m)
         out = self.stage.tick(target, q_m, qd_m, now, estop=estop,
                               thermal_act=thermal_act_joints(self.thermal, self.thermal_rules),
-                              switch_failed=self.switch_failed)
+                              switch_failed=self.switch_failed,
+                              thermal_stale=thermal_stale_joints(self.thermal, self.thermal_rules),
+                              thermal_retreat=self.thermal_retreat)
         cmd = self._blend_cmd(out.cmd, q_m, now)
         hand_written = self._write(cmd, out.state.fsm.phase, state)
         self.thermal = thermal_step(self.thermal, self.thermal_rules,
-                                    {r.joint: self.efforts.get(r.joint, 0.0) for r in self.thermal_rules}, self.dt)
+                                    {r.joint: self.efforts.get(r.joint, 0.0) for r in self.thermal_rules}, self.dt,
+                                    temps=self._fresh_temps(now))
+        if self.thermal_retreat and self.home_settled():
+            self.thermal_retreat = False     # 저부하 자세에 닿았다 — 가드를 다시 켠다
         return TickResult(cmd=cmd, hand_written=hand_written, status=out.status)
 
     def measured_q(self, now: float) -> np.ndarray | None:
         return self._measured(self.sources.snapshot(now))[0]
 
     def _measured(self, state):
-        """pd 는 arm/ee 만 쓴다(object 등 다른 필수 소스의 결손은 obs 노드 몫)."""
-        missing = [r for r in ("arm", "ee") if r in state.missing]
-        stale = [r for r in ("arm", "ee") if r in state.stale]
+        """pd 는 arm/ee 만 쓴다(object 등 다른 필수 소스의 결손은 obs 노드 몫).
+
+        ★손 단독(팔 백엔드 없음)이면 **arm 을 요구하지 않는다**. 팔은 우리 지령을 안 받으므로
+        그 추종오차는 우리가 판정할 대상이 아니다(2026-09-07: 손 드라이버만 띄운 시험에서
+        `joint state missing ['arm']` 으로 손 지령까지 막혔다). q_meas 는 직전 목표를 그대로 써
+        팔 법칙을 무해한 통과로 만든다 — 어디에도 발행되지 않는다.
+        """
+        roles = ("arm", "ee") if self.backends.arm is not None else ("ee",)
+        missing = [r for r in roles if r in state.missing]
+        stale = [r for r in roles if r in state.stale]
         if missing:
             return None, None, f"{self.side}: joint state missing {missing}"
         if stale:
             return None, None, f"{self.side}: joint state stale {stale}"
+        if self.backends.arm is None:
+            n = len(self.arm_joints)
+            q = self.target.q if self.target is not None else np.zeros(n)
+            return np.asarray(q, dtype=float).reshape(-1)[:n], np.zeros(n), None
         return state.arm_q, state.arm_qd, None
 
     def _select_target(self, now: float, q_m: np.ndarray) -> PdTarget | None:
@@ -367,7 +426,8 @@ class ArmUnit:
     def _write(self, cmd: PdCommand | None, phase: Phase, state):
         if cmd is None:
             return None
-        self.backends.arm.write(cmd)
+        if self.backends.arm is not None:            # ★손 단독(팔 그룹 없음)에서는 팔 지령이 없다
+            self.backends.arm.write(cmd)
         if phase not in _MOVING:
             return None
         hand = self.hold.hand if (self.hold is not None and self.hold.hand is not None) else self.hand_target
@@ -406,15 +466,21 @@ class ArmUnit:
     # ---------------------------------------------------------------- services
     def list_controllers(self) -> dict:
         """블로킹 — 락 밖."""
+        if self.backends.switch is None:            # 손 단독: 팔 컨트롤러 교대가 없다
+            return {}
         return self.backends.switch.list() if self.execute else {}
 
     def engage_refusals(self, states: dict, estop: bool, now: float) -> list[str]:
-        age = None if self.t_arm_recv is None else now - self.t_arm_recv
+        # 손 단독이면 팔 상태가 안 온다 — 신선도는 손(ee) 수신으로 판정한다.
+        recv = self.t_arm_recv if self.backends.arm is not None else self.t_ee_recv
+        age = None if recv is None else now - recv
         check = EngageCheck(execute=self.execute, state_age_sec=age, stale_sec=self.robot_cfg.sources["arm"].stale_sec,
                             gains_ok=self.gains_ok, accept_sim_mismatch=self.cfg.gains.accept_sim_mismatch,
                             gravity_conflict=None,
-                            effort_controller_active=states.get(self.backends.switch.forward[2]) == "active",
-                            estop_latched=estop, phase=self.phase)
+                            effort_controller_active=(self.backends.switch is not None
+                                                      and states.get(self.backends.switch.forward[2]) == "active"),
+                            estop_latched=estop, phase=self.phase,
+                            thermal_unknown=thermal_unknown_joints(self.thermal, self.thermal_rules))
         return engage_refusals(check)
 
     def apply_hand_gains(self) -> tuple[bool, list[str]]:
@@ -425,8 +491,13 @@ class ArmUnit:
         return self.backends.hand_gains.check_and_apply(hg.pid_p, hg.pid_d)
 
     def switch_engage(self) -> tuple[bool, list[str]]:
-        """블로킹 — 락 밖: forward 3종 load+configure → STRICT switch."""
+        """블로킹 — 락 밖: forward 3종 load+configure → STRICT switch.
+
+        손 단독(팔 그룹 없음)이면 교대할 팔 컨트롤러가 없다 — 손은 자기 controller_manager
+        (Modbus TCP)에서 JTC 로 돌기 때문이다."""
         sw = self.backends.switch
+        if sw is None:
+            return True, ["hand-only: no arm controller switch"]
         ok, notes = sw.ensure_loaded_inactive(sw.forward)
         if not ok:
             return False, notes
@@ -462,6 +533,19 @@ class ArmUnit:
         self.hold = Hold(q=self.home_arm.copy(), hand=self.home_hand, bias=np.zeros(len(self.home_arm)), settle=True)
         self.target = None
 
+    def start_thermal_retreat(self) -> bool:
+        """자기해제형 HOLD(발열·워치독)에서 홈으로 내려가는 것을 허용한다.
+
+        ★09.07 교착: 발열 HOLD 는 세트포인트를 얼려 팔을 **내리는 것까지** 막았다. 식으려면
+        내려야 하는데 내릴 수가 없어, 팔을 든 채 release 하고 옛 JTC 경로로 내려야 했다.
+        후퇴 중에는 발열 사유가 HOLD 를 다시 걸지 않는다(`FaultInputs.thermal_retreat`).
+        """
+        if not hold_is_self_clearing(self.stage.state.fsm):
+            return False
+        self.thermal_retreat = True
+        self.start_home()
+        return True
+
     def home_settled(self) -> bool:
         return self.hold is None or self.hold.settled
 
@@ -470,11 +554,14 @@ class ArmUnit:
             self.blend = Blend("release", now)
 
     def zero_release(self) -> None:
-        self.backends.arm.zero_release()
+        if self.backends.arm is not None:
+            self.backends.arm.zero_release()
         for b in (self.backends.gripper, self.backends.hand):
             if b is not None:
                 b.zero_release()
 
     def switch_release(self) -> tuple[bool, list[str]]:
-        """블로킹 — 락 밖."""
+        """블로킹 — 락 밖. 손 단독이면 교대할 팔 컨트롤러가 없다."""
+        if self.backends.switch is None:
+            return True, ["hand-only: no arm controller switch"]
         return self.backends.switch.release()

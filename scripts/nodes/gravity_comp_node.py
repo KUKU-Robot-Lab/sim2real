@@ -45,6 +45,9 @@ DEFAULT_URDF = Path("/home/user/rl_ws/urdf/generated/rl/openarm_tesollo_sensor_r
 #: 08.31 관절별 스윕 결과. 1 을 넘는 값은 URDF 손 질량이 실제보다 가벼워서였다 —
 #  페이로드를 실질량에 맞추면 1.0 근처로 내려와야 한다(검증 대기).
 DEFAULT_SCALE = "1.0"
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from profile_yaml import DEFAULT_PROFILE, load_profile_group  # noqa: E402,F401
 PUBLISH_HZ = 50.0
 #: 모델이 미친 값을 내면 팔에 그대로 간다. 관절별 상한을 넘으면 발행을 멈춘다.
 TORQUE_CAP_NM = 20.0
@@ -74,7 +77,10 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--robot", default="tesollo_sensor__right")
     parser.add_argument("--group", default="openarm_right_arm")
-    parser.add_argument("--profile", default="openarm_tesollo")
+    parser.add_argument("--profile", default="openarm_tesollo",
+                        help="(참고용 이름) 실제로는 --profile-yaml 을 읽는다")
+    parser.add_argument("--profile-yaml", type=Path, default=DEFAULT_PROFILE,
+                        help="robot_control 프로필 yaml — 자산 manifest 없이 읽는다")
     parser.add_argument("--urdf", type=Path, default=DEFAULT_URDF)
     parser.add_argument("--payload", help="MASS,X,Y,Z — 중력 모델이 빠뜨린 손 몫")
     parser.add_argument("--scale", default=DEFAULT_SCALE,
@@ -84,17 +90,16 @@ def main() -> int:
     args = parser.parse_args()
 
     from robot_control.kinematics import chain_from_urdf, with_payload
-    from robot_control.profile import load_builtin_profile
 
-    profile = load_builtin_profile(args.profile)
-    group = profile.groups[args.group]
-    canonical = list(group.joints)
-    source_of = {j.canonical: j.source for j in profile.joints}
-    sources = [source_of[c] for c in canonical]
-    sign_of = {j.canonical: j.sign for j in profile.joints}
+    # ★robot_control.profile.load_builtin_profile 은 09.05 에 삭제된 자산 manifest 를
+    #   요구해 죽는다(2026-09-07 우팔 실기에서 발견). 프로필 yaml 을 직접 읽는다.
+    group = load_profile_group(args.profile_yaml, args.group)
+    canonical = list(group.canonical)
+    sources = list(group.sources)
+    sign_of = dict(zip(group.canonical, group.signs))
 
     urdf = args.urdf.read_text()
-    tip = group.asset_tip_link or group.tip_link
+    tip = group.tip
     chain = chain_from_urdf(urdf, canonical, tip)
     payload = _parse_payload(args.payload)
     if payload is not None:

@@ -104,8 +104,20 @@ def evaluate_step(
     spec: StepSpec,
     ratio_tolerance: tuple[float, float] = RATIO_TOLERANCE,
     crosstalk_limit: float = CROSSTALK_LIMIT_RAD,
+    prev_q=None,
+    residual_tol_rad: float | None = None,
 ) -> JointVerdict:
-    """한 스텝의 결과를 판정. 실패 사유는 부호 → 크기 → 간섭 순으로 확정한다."""
+    """한 스텝의 결과를 판정. 실패 사유는 부호 → 크기 → 간섭 순으로 확정한다.
+
+    ``base_q``    스텝 목표의 기준(= 명령 진폭이 더해진 자세). 크기 판정은 이것 대비.
+    ``prev_q``    **이 스텝 직전** 자세. 간섭 판정은 이것 대비 — 기본값은 ``base_q``(구 동작).
+                  ★둘을 나누지 않으면, 초반에 한 번 옮겨가 머무는 상수 오프셋이 이후 모든
+                  스텝에서 간섭으로 잡힌다(2026-09-07 우팔 실기: r_aj_5 가 28스텝 내내
+                  +0.0286 rad 로 동일 보고).
+    ``residual_tol_rad``  주면 비율 대역 대신 **잔류 편차 |실측 − 명령|** 로도 통과할 수 있다.
+                  마찰·중력모델 오차의 정상상태 편차는 진폭과 무관한 상수라(실측 j1 ≈ 0.014 rad),
+                  작은 진폭에서는 비율 대역이 원리상 도달 불가능하다. 부호는 여전히 강제한다.
+    """
     if spec.phase != "step" or spec.joint is None:
         raise ValueError(f"step 구간이 아니다: phase={spec.phase}")
     joints = list(joints)
@@ -114,13 +126,17 @@ def evaluate_step(
     if base_q.shape != end_q.shape or base_q.shape[0] != len(joints):
         raise ValueError("차원 불일치: base_q/end_q/관절")
 
+    prev = base_q if prev_q is None else np.asarray(prev_q, dtype=np.float64)
+    if prev.shape != base_q.shape:
+        raise ValueError("차원 불일치: prev_q")
+
     idx = joints.index(spec.joint)
     delta = end_q - base_q
     measured = float(delta[idx])
     commanded = float(spec.amplitude)
     ratio = measured / commanded if commanded else float("nan")
 
-    others = np.abs(np.delete(delta, idx))
+    others = np.abs(np.delete(end_q - prev, idx))      # 간섭은 **직전 자세** 기준
     if others.size:
         k = int(np.argmax(others))
         ct_joint = [j for j in joints if j != spec.joint][k]
@@ -131,8 +147,10 @@ def evaluate_step(
     reason = ""
     if measured == 0.0 or np.sign(measured) != np.sign(commanded):
         reason = f"부호 불일치: 명령 {commanded:+.3f} → 실측 {measured:+.4f}"
-    elif not (ratio_tolerance[0] <= ratio <= ratio_tolerance[1]):
-        reason = f"크기 불일치: 비율 {ratio:.2f} (허용 {ratio_tolerance})"
+    elif not (ratio_tolerance[0] <= ratio <= ratio_tolerance[1]) and not (
+            residual_tol_rad is not None and abs(measured - commanded) <= residual_tol_rad):
+        extra = "" if residual_tol_rad is None else f" · 잔류 {abs(measured - commanded):.4f} > {residual_tol_rad}"
+        reason = f"크기 불일치: 비율 {ratio:.2f} (허용 {ratio_tolerance}){extra}"
     elif ct > crosstalk_limit:
         reason = f"간섭: {ct_joint} 가 {ct:+.4f} rad 움직임"
 

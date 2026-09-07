@@ -25,18 +25,33 @@ gravity:
   urdf: hdgp/assets/robot/openarm_dg5f-m_bi_rl/openarm_dg5f-m_bi_rl.urdf   # 계약 asset.urdf (양팔, canonical 이름)
   tip_link: {left: l_hl_palm_ee, right: r_hl_palm_ee}                       # 체인 끝 = 손바닥 EE 프레임(팔별)
   scale: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]   # 이 자산은 관절별 스윕 전 — 1.0 (구 자산의 1.1 은 URDF 질량 6.4% 과소 보정)
-  # 손가락 질량: 체인은 revolute 손가락 관절 너머 링크를 안 싣는다(고정 링크만 합친다). 자산 URDF 의 손가락 링크
-  # 합 1.763 kg, 무게중심(열린 손 자세, palm_ee 프레임)을 페이로드로 얹는다 — 값은 URDF 에서 계산(tests 가 재계산 대조).
+  # 손 질량: 체인은 revolute 손가락 관절 **너머** 링크를 안 싣는다(고정 링크만 합친다).
+  # ★2026-09-07 정정. 손 전체는 1.763 kg 이지만 그중 mount·adapter·base·palm 0.889 kg 은
+  #   **고정 링크라 체인이 이미 싣고 있다**. 페이로드는 가동 관절 너머 손가락 25개 = 0.8737 kg 뿐이다.
+  #   전체를 얹으면 0.889 kg 을 이중으로 세어 중력토크가 1.3배가 된다.
+  # ★COM 프레임 = 체인 **마지막 링크**(r_al_7 / l_al_7). with_payload 규약이며 palm_ee 가 아니다.
+  #   손 자세는 계약의 home_hand(열린 손). 손목 기준 22.15 cm — 실기 검증된 gravity_comp_node 의
+  #   payload COM [-0.00450,-0.01723,0.22147] 과 소수점 5자리까지 같다.
   payload:
-    left:  [1.763, -0.02144, 0.00191, 0.00653]
-    right: [1.763, -0.02148, -0.00189, 0.00653]
+    left:  [0.8736532, -0.004534, 0.017302, 0.221470]
+    right: [0.8736532, -0.004498, -0.017228, 0.221470]
   cap_nm: 20.0                 # gravity_comp_node TORQUE_CAP_NM
 gains:
   yaml: urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml
   accept_sim_mismatch: false
-thermal:                       # j7 과열: preset 자세 대기 3.17 N·m 연속이 관절을 태운다(우 09.05) — 양팔 같은 규칙
-  - {joint: r_aj_7, effort_nm: 1.5, act_sec: 300}
-  - {joint: l_aj_7, effort_nm: 1.5, act_sec: 300}
+thermal:                       # j7 과열: preset 자세 대기 3.17 N·m 연속이 관절을 태운다(우 09.05)
+  # ★2026-09-07 근거 교체 — 토크×시간 대리지표를 은퇴시키고 **실제 모터 온도**로 판정한다.
+  #   DM4310 은 MIT 피드백 프레임마다 t_rotor/t_mos 를 보내고 openarm_can 이 이미 디코딩하고
+  #   있었는데, 하드웨어 인터페이스가 pos/vel/eff 만 export 해서 ROS 로 안 올라왔다. 그래서
+  #   09.05 에는 고장 사례 한 건("3.17 N·m 18 분")에서 1.5 N·m/300 s 를 지어내야 했다.
+  #   같은 관절인데 좌 5.0 / 우 1.5 로 갈려 있던 것이 그 임의성의 증거다.
+  #   벤더가 주는 열 관련 수치는 **없다**(joint_limits 7 N·m·CAN tMax 10 N·m 은 순간 한계).
+  # ★act/clear/warn 은 아직 잠정값이다. 이제 온도가 기록되므로, preset 체류 승온곡선을
+  #   한 번 재서 확정할 것(그 측정이 이 변경의 목적이다). 모터 자체 OT 보호보다 아래로 둔다.
+  # 히스테리시스: act 에서 걸고 clear 아래로 내려가야 풀린다 — 조건이 사라지면 **스스로** 풀린다.
+  # 교착 탈출: 발열 HOLD 에서도 goto_home 이 저부하 자세로 내려가는 것을 허용한다(후퇴 중 가드 억제).
+  - {joint: r_aj_7, temp_act_c: 70.0, temp_clear_c: 55.0, temp_warn_c: 60.0}
+  - {joint: l_aj_7, temp_act_c: 70.0, temp_clear_c: 55.0, temp_warn_c: 60.0}
 gripper: null
 hand:
   pid_p: 1.5   # 2026-09-06 사용자 확정: DG-5F 손도 벤더 기본값만(구 실기 튜닝 4.5 폐기)

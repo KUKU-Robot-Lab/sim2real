@@ -126,11 +126,31 @@ def obs_slot(obs: np.ndarray, seq: int, contract: DeployContract) -> ObsSlot:
                    object_pos=None if obj_seg is None else np.asarray(segs[obj_seg], dtype=float).reshape(3))
 
 
-def home_from_event(event: dict, contract: DeployContract, side: str | None = None) -> np.ndarray:
-    """fabric 리셋 q = **계약 side fabric.home_q**(액션의 default_config). 이벤트의 home_q 는 로봇 리셋 홈(pd 몫)이라
-    여기서는 쓰지 않는다 — 좌 v2 는 둘이 다르다(fabric J147 vs 로봇 LEFT_ARM_HOME_LOW, j4 21°·j7 28.6°)."""
-    del event
-    return np.array(contract.side(side or contract.primary_side).fabric.home_q, dtype=float)
+def home_from_event(event: dict, contract: DeployContract, side: str | None = None,
+                    measured_arm_q=None) -> np.ndarray:
+    """fabric 리셋 q.
+
+    **정책 계약**: 계약 `side.fabric.home_q` — 액션의 default_config 이자 cspace rest 다.
+    정책이 그 자세에서 출발하도록 학습됐으므로 실측으로 바꾸면 안 된다. 이벤트의 home_q 는
+    로봇 리셋 홈(pd 몫)이라 여기서 쓰지 않는다.
+
+    **제어 전용 계약(direct)**: 정책이 없으니 default_config 가 의미를 갖지 않는다. 팔 몫은
+    ``measured_arm_q`` 로 덮어 **실측 자세**를 홈으로 삼는다(손 몫은 계약값 유지).
+    ★2026-09-07 우팔 실기: 팔이 preset(팔꿈치 113.6°)인데 홈을 계약값(차렷)으로 잡아 fabric 이
+    차렷 기준으로 IK 를 풀었고, joint_target 이 실측과 **최대 96.5°** 어긋났다. pd 가 워치독
+    HOLD 라 안 끌려갔을 뿐 engage 상태였다면 팔꿈치가 96° 스윙했다.
+    """
+    s = contract.side(side or contract.primary_side)
+    home = np.array(s.fabric.home_q, dtype=float)
+    if contract.control_only and measured_arm_q is not None:
+        q = np.asarray(measured_arm_q, dtype=float).reshape(-1)
+        n = len(s.arm_joints)
+        if q.shape[0] != n:
+            raise ValueError(f"measured_arm_q 는 {n} 개여야 한다, got {q.shape[0]}")
+        if list(s.fabric.joint_order[:n]) != list(s.arm_joints):
+            raise ValueError("fabric joint_order 앞부분이 arm_joints 와 다르다 — 실측을 얹을 수 없다")
+        home[:n] = q
+    return home
 
 
 class FabricNode(Node):
@@ -299,7 +319,8 @@ class FabricNode(Node):
             self._check_state(state, need_object=False)
             anchor = ev.get("object_anchor")
             rs = self.stage.reset(state.arm_q, state.ee_names, state.ee_q, object_anchor=anchor,
-                                  home_q=home_from_event(ev, self.contract, self.side), episode=episode)
+                                  home_q=home_from_event(ev, self.contract, self.side,
+                                                         measured_arm_q=state.arm_q), episode=episode)
         except _HANDLED as exc:
             self._armed = self._running = False
             self._status_error(f"episode reset {episode} failed: {exc}", t0)

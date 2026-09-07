@@ -41,7 +41,11 @@ class ServiceCaller:
         if timeout_sec <= 0.0:
             raise ValueError("timeout_sec 는 양수여야 한다")
         self.timeout_sec = float(timeout_sec)
-        self._node = Node(f"{node.get_name()}_{suffix}", context=node.context)
+        # use_global_arguments=False: launch 의 전역 ``-r __node:=…`` 가 helper 까지
+        # 이름을 덮으면 rosout 퍼블리셔를 공유하고, helper 가 destroy 될 때
+        # 본 노드의 로그가 함께 죽는다(test_pc_helper_node_names).
+        self._node = Node(f"{node.get_name()}_{suffix}", context=node.context,
+                          use_global_arguments=False)
         self._exec = SingleThreadedExecutor(context=node.context)
         self._exec.add_node(self._node)
         self._clients: dict[str, Any] = {}

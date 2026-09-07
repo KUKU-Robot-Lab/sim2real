@@ -1,4 +1,8 @@
-# right 팔 + Tesollo DG-5F-M (hdgp/assets/robot/openarm_dg5f-m_bi_rl, 09.05 기본 자산) — 실기.
+# right 손(DG-5F-M) **단독** — 팔 지령 경로 없이 손만 pd 로 제어한다.
+# ★2026-09-07 사용자 지시: 손 PD 제어를 완성하는 동안 팔은 필요 없으니 팔 제어를 끄고 진행한다.
+#   `groups` 에서 right_arm 만 뺀다. `sources` 는 그대로 둔다 — pd 는 q_meas 로 FSM·워치독·
+#   추종오차를 계산하고, 그게 없으면 손 지령도 안 나간다.
+#   손은 자기 controller_manager(Modbus TCP)라 컨트롤러 교대(switch)가 없다.
 # 손은 자기 namespace(dg5f_right)의 controller_manager 에서 돌아 손 관절은 전역 /joint_states 에 나오지 않는다.
 # 손 관절 순서는 드라이버/프로필 순(finger-major). 한 팔씩 시험한다(플랜 §7).
 robot: dg5f_m_right_real
@@ -54,11 +58,6 @@ sources:
     required: false
     stale_sec: 1.0
 groups:
-  right_arm:
-    backend: arm_forward
-    side: right
-    jtc: right_joint_trajectory_controller
-    forward: [right_forward_position_controller, right_forward_velocity_controller, right_forward_effort_controller]
   right_hand:
     backend: dg5f_jtc
     side: right                                  # ★손만 있는 구성에서도 팔을 식별할 수 있게(RobotCfg.sides)

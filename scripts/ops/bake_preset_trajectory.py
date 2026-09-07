@@ -47,11 +47,10 @@ def tcp_clearance(qs: np.ndarray) -> tuple:
     """붙인 구간의 TCP z 최저값과 그 프레임 — 테이블 여유의 근거."""
     sys.path.insert(0, ROBOT_CONTROL_SRC)
     from robot_control.kinematics import chain_from_urdf
-    from robot_control.profile import load_builtin_profile
+    from profile_yaml import load_profile_group   # ★삭제된 manifest 를 요구하지 않는 로더
 
-    prof = load_builtin_profile("openarm_tesollo")
-    grp = prof.groups["openarm_left_arm"]
-    chain = chain_from_urdf(DEFAULT_URDF.read_text(), list(grp.joints), grp.asset_tip_link)
+    grp = load_profile_group(group="openarm_left_arm")
+    chain = chain_from_urdf(DEFAULT_URDF.read_text(), list(grp.canonical), grp.tip)
     zs = np.array([chain.pose(q)[2, 3] for q in qs])
     k = int(np.argmin(zs))
     return float(zs[k]), k, zs

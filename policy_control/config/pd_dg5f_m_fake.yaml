@@ -23,14 +23,14 @@ gravity:
   urdf: hdgp/assets/robot/openarm_dg5f-m_bi_rl/openarm_dg5f-m_bi_rl.urdf
   tip_link: {left: l_hl_palm_ee, right: r_hl_palm_ee}
   scale: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-  payload:                     # 손가락 링크 합 1.763 kg @ palm_ee 프레임(열린 손) — pd_dg5f_m.yaml 과 동일
-    left:  [1.763, -0.02144, 0.00191, 0.00653]
-    right: [1.763, -0.02148, -0.00189, 0.00653]
+  payload:                     # ★2026-09-07 정정 — pd_dg5f_m.yaml 과 동일해야 한다(가동 손가락 0.8737 kg 만).
+    left:  [0.8736532, -0.004534, 0.017302, 0.221470]
+    right: [0.8736532, -0.004498, -0.017228, 0.221470]
   cap_nm: 20.0
 gains:
   yaml: urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml
   accept_sim_mismatch: false
-thermal:
+thermal:                       # fake 플랜트는 서미스터가 없다 — 옛 effort 근거를 유지한다
   - {joint: r_aj_7, effort_nm: 1.5, act_sec: 300}
   - {joint: l_aj_7, effort_nm: 1.5, act_sec: 300}
 gripper: null

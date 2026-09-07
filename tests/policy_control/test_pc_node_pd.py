@@ -14,6 +14,8 @@ import numpy as np
 import pytest
 import yaml
 
+from policy_control import pd_state as S
+
 pytestmark = pytest.mark.ros
 
 SIM2REAL = Path(__file__).resolve().parents[2]
@@ -63,10 +65,17 @@ class Plant:
         from std_msgs.msg import Float64MultiArray
         from std_msgs.msg import String
 
+        from control_msgs.msg import DynamicJointState
+
         self.node = Node("fake_plant", context=context)
         self.q = np.asarray(q0, dtype=float).copy()
         self.grip = 0.044
         self.running = True
+        # ★2026-09-07: 발열 가드가 실제 모터 서미스터를 읽으므로 플랜트도 온도를 낸다.
+        #   드라이버가 온도를 안 주면 pd 는 engage 를 거부한다(가드가 조용히 죽는 것보다 낫다).
+        self.temp_c = 30.0
+        self.temps_on = True
+        self.pub_temp = self.node.create_publisher(DynamicJointState, "/dynamic_joint_states", 10)
         self.fwd = {k: [] for k in FWD}
         self.applied = []
         self.status = []
@@ -92,6 +101,18 @@ class Plant:
         msg = codec.encode_joint_state(ARM_SRC + [GRIP_SRC], np.concatenate([self.q, [self.grip]]),
                                        velocity=np.zeros(8), effort=np.zeros(8), stamp=time.time())
         self.pub.publish(msg)
+        if self.temps_on:
+            self.pub_temp.publish(self._temp_msg())
+
+    def _temp_msg(self):
+        from control_msgs.msg import DynamicJointState, InterfaceValue
+
+        msg = DynamicJointState()
+        msg.joint_names = list(ARM_SRC)
+        msg.interface_values = [InterfaceValue(interface_names=["temperature_rotor", "temperature_mos"],
+                                               values=[float(self.temp_c), float(self.temp_c) - 3.0])
+                                for _ in ARM_SRC]
+        return msg
 
     def last_status(self) -> dict | None:
         return json.loads(self.status[-1].data) if self.status else None
@@ -654,3 +675,67 @@ def test_bi_sides_param_selects_one_arm(ros, bi_cm, bi_hand_ctrls):
         assert caller.trigger("release")[0] and plant.wait_phase(("IDLE",))["phase"] == "IDLE"
     finally:
         _close_rig(node, plant, caller, spin)
+
+
+# ================================================================== 09.07 발열 가드 = 실제 모터 온도
+@needs_left
+def test_no_thermistor_refuses_engage_instead_of_silently_disarming_the_guard(rig):
+    """드라이버가 온도를 안 주면 engage 를 거부한다 — 0 °C 를 '차갑다'로 읽으면 보호가 죽는다."""
+    node, plant, caller, stub = rig
+    plant.temps_on = False
+    node.units["left"].thermal = S.thermal_init(node.units["left"].thermal_rules)   # 받은 적 없는 상태로
+    ok, reasons = caller.trigger("engage")
+    assert ok is False
+    assert any("temperature" in r for r in reasons), reasons
+
+
+@needs_left
+def test_hot_joint_holds_and_cooling_releases_it_without_a_human(rig):
+    """온도 히스테리시스: act 에서 걸고, clear 아래로 내려가면 **스스로** 풀린다."""
+    node, plant, caller, stub = rig
+    assert caller.trigger("engage")[0]
+    plant.wait_phase(("RAMPING", "TRACKING"))
+
+    plant.temp_c = 72.0                                  # temp_act_c 70 초과
+    st = plant.wait_phase(("HOLD",))
+    assert any("thermal" in r for r in st["reasons"]), st["reasons"]
+
+    plant.temp_c = 62.0                                  # act 아래지만 clear(55) 위 — 걸린 채 유지
+    time.sleep(0.4)
+    assert plant.last_status()["phase"] == "HOLD"
+
+    plant.temp_c = 50.0                                  # clear 아래 — 사람 개입 없이 재개
+    st = plant.wait_phase(("RAMPING", "TRACKING"))
+    assert st["phase"] in ("RAMPING", "TRACKING") and not st["reasons"]
+
+
+@needs_left
+def test_a_thermal_hold_can_still_come_down_to_the_low_load_pose(rig, left):
+    """★09.07 교착: 발열 HOLD 가 팔을 **내리는 것까지** 막아, 든 채로 release 해야 했다.
+
+    식으려면 내려야 하는데 내릴 수가 없다. 이제 자기해제형 HOLD 에서는 goto_home 이 후퇴를
+    수행하고, 후퇴 중에는 발열 사유가 HOLD 를 다시 걸지 않는다(그래야 실제로 내려간다).
+    """
+    node, plant, caller, stub = rig
+    assert caller.trigger("engage")[0]
+    plant.wait_phase(("RAMPING", "TRACKING"))
+    plant.temp_c = 75.0                                  # 뜨거운 채로 유지 — 저절로 식지 않는다
+    plant.wait_phase(("HOLD",))
+
+    ok, reasons = caller.trigger("goto_home")
+    assert ok, reasons
+    assert any("retreat" in r for r in reasons), reasons
+    home = np.asarray(left.pd.home_arm)
+    assert np.abs(plant.q - home).max() < 0.011          # 뜨거워도 내려왔다
+
+
+@needs_left
+def test_a_judged_hold_may_not_retreat(rig):
+    """estop 같은 사람이 판단할 HOLD 는 후퇴로 빠져나갈 수 없다."""
+    node, plant, caller, stub = rig
+    assert caller.trigger("engage")[0]
+    plant.wait_phase(("RAMPING", "TRACKING"))
+    caller.estop(True)
+    plant.wait_phase(("HOLD",))
+    ok, reasons = caller.trigger("goto_home")
+    assert ok is False and any("HOLD" in r for r in reasons), reasons

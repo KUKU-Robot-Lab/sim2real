@@ -25,6 +25,8 @@ from policy_control import _paths  # noqa: E402,F401
 from shadow_replay_core import PARK_SPEED_RAD_PER_SEC, approach_ramp  # noqa: E402
 
 TOPIC = "/policy_control/joint_target"
+# npz 안 관절목표 열 후보 — 앞에서부터 있는 것을 쓴다
+NPZ_JOINT_KEYS = ("fabric_q", "arm_target", "arm_q_cmd")
 STATE_TOPIC = "/joint_states"
 
 
@@ -32,12 +34,20 @@ def load_frames(args) -> tuple[np.ndarray, float]:
     """(N, J) 관절 목표와 기록 주기 dt."""
     if args.npz:
         d = np.load(args.npz)
-        q = np.asarray(d["fabric_q"])
+        # 기록마다 관절목표 열 이름이 다르다: 정책 shadow 는 fabric_q, 자세 이동 궤적
+        # (reset_*.npz)은 arm_target. 하나를 박아두면 다른 쪽을 못 읽는다(2026-09-07).
+        wanted = getattr(args, "npz_key", None)
+        keys = [wanted] if wanted else [k for k in NPZ_JOINT_KEYS if k in d]
+        if not keys or keys[0] not in d:
+            raise SystemExit(
+                f"{args.npz.name}: 관절목표 열을 못 찾았다 (찾은 이름 {wanted or NPZ_JOINT_KEYS}). "
+                f"파일에 있는 키: {sorted(d.keys())}")
+        q = np.asarray(d[keys[0]])
         if q.ndim == 3:
             q = q[:, args.env, :]
         # 프레임 하나 = 정책 스텝 하나(벽시계 step_dt). fabric 내부 서브스텝 수는 관계없다.
-        dt = float(d["meta_step_dt"]) if "meta_step_dt" in d else (
-            float(d["meta_fabric_dt"]) if "meta_fabric_dt" in d else args.dt)
+        dt = float(d["meta_step_dt"].item()) if "meta_step_dt" in d else (
+            float(d["meta_fabric_dt"].item()) if "meta_fabric_dt" in d else args.dt)
         return q[:, : len(args.joints)], dt
     import h5py
 
@@ -53,6 +63,8 @@ def main() -> int:
     src.add_argument("--npz", type=Path)
     src.add_argument("--hdf5", type=Path)
     ap.add_argument("--key", default="arm_q_cmd", help="hdf5 dataset (기본 arm_q_cmd)")
+    ap.add_argument("--npz-key", default=None,
+                    help=f"npz 관절목표 열 이름 (기본: {NPZ_JOINT_KEYS} 중 있는 것)")
     ap.add_argument("--env", type=int, default=0)
     ap.add_argument("--joints", required=True, help="canonical 관절 이름 CSV (기록 열 순서)")
     ap.add_argument("--dt", type=float, default=0.02, help="기록 주기 fallback (s)")

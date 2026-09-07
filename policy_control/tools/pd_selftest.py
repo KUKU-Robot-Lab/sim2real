@@ -39,6 +39,40 @@ STREAM_HZ = 50.0
 PARK_SPEED = 0.1          # rad/s — robotctl/shadow_replay 와 같은 값·이유
 ABORT_DEVIATION_RAD = 0.45
 
+# 관절별 잔류 편차 허용치 [rad] = (정지마찰 + 중력모델 오차) / kp.
+# 마찰은 r2s 실측(R2S_FRICTION), kp 는 벤더 control_gains.yaml. 손목(kp 10)은 같은 마찰에
+# 7배 큰 편차가 남는다 — 2026-09-07 실기에서 ±0.05 가 손목에서만 대역을 못 채운 이유다.
+# 여유 계수 2.0 은 중력모델 잔차 몫(실측 j1 잔류 0.014 vs 마찰만이면 0.003).
+FRICTION_NM = {1: 0.213, 2: 0.213, 3: 0.213, 4: 0.493, 5: 0.151, 6: 0.151, 7: 0.151}
+RESIDUAL_MARGIN = 2.0
+
+
+def residual_tolerance(joint: str, kp: float) -> float:
+    """이 관절에서 진폭과 무관하게 남는 정상상태 편차의 허용치."""
+    idx = int(joint.split("_")[-1])
+    return RESIDUAL_MARGIN * FRICTION_NM[idx] / max(kp, 1e-6)
+
+
+def spin_until(node, deadline: float, spin=None) -> None:
+    """벽시계 *deadline*(time.monotonic 기준) 까지 콜백을 돌린다.
+
+    ★``rclpy.spin_once(timeout_sec=dt)`` 를 sleep 대신 쓰면 안 된다 — 처리할 메시지가 있으면
+    즉시 반환한다. 실기 ``/joint_states`` 는 745 Hz 라 한 번도 기다리지 않아, 2026-09-07
+    우팔 점검에서 "2.0 s dwell" 이 실제 0.106 s(946 Hz 루프)로 끝났다. 팔이 움직일 시간이
+    없어 추종률이 15~44 % 로 측정됐고 셀프테스트가 로봇을 오판했다. 시간은 벽시계로만 잰다.
+    """
+    if spin is None:
+        import rclpy as _rclpy
+        spin = _rclpy.spin_once
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0.0:
+            return
+        t0 = time.monotonic()
+        spin(node, timeout_sec=min(remaining, 0.02))
+        if time.monotonic() - t0 < 1e-3:                 # spin 이 즉시 반환했다 — 바쁜 대기 방지
+            time.sleep(min(1e-3, max(0.0, deadline - time.monotonic())))
+
 
 def plan_text(joints, plan) -> str:
     lines = [f"[selftest] joints {joints}", f"[selftest] {len(plan)} segments:"]
@@ -66,6 +100,8 @@ def main() -> int:
     contract = C.load_contract(args.contract)
     cfg = load_robot_cfg(args.robot)
     joints = list(contract.side(args.side).arm_joints if args.side else contract.obs.joint_orders["arm"])
+    _side = contract.side(args.side) if args.side else None
+    sim_kp = list(_side.sim_gains.kp) if _side is not None and _side.sim_gains else None
     step_joints = [j.strip() for j in args.joints.split(",")] if args.joints else list(joints)
     unknown = [j for j in step_joints if j not in joints]
     if unknown:
@@ -133,12 +169,16 @@ def main() -> int:
         seq += 1
 
     def stream(target: np.ndarray, duration_s: float, sp: np.ndarray) -> tuple[list, np.ndarray]:
+        """*duration_s* 동안 dt 간격으로 목표를 흘린다. 길이는 벽시계로 지킨다(spin_until 참고)."""
         samples = []
-        n = max(1, int(duration_s / dt))
-        for _ in range(n):
+        start = time.monotonic()
+        deadline = start + duration_s
+        tick = 0
+        while time.monotonic() < deadline:
             sp = velocity_limited_target(target, sp, PARK_SPEED, dt)
             send(sp)
-            rclpy.spin_once(node, timeout_sec=dt)
+            tick += 1
+            spin_until(node, min(start + tick * dt, deadline))
             q = measured()
             if float(np.abs(q - sp).max()) > ABORT_DEVIATION_RAD:
                 raise SystemExit(f"[selftest] 추종 편차 {float(np.abs(q - sp).max()):.3f} rad > {ABORT_DEVIATION_RAD} — 중단")
@@ -156,9 +196,12 @@ def main() -> int:
             print(f"[selftest] hold drift worst: " + ", ".join(f"{j} {v:+.4f}" for j, v in report["hold"].items()))
             continue
         target = base.copy()
+        prev = measured()                                  # 간섭 판정 기준(직전 자세)
         target[joints.index(spec.joint)] += spec.amplitude
         samples, sp = stream(target, spec.duration_s, sp)
-        v = evaluate_step(joints, base, samples[-1], spec)
+        kp = float(sim_kp[joints.index(spec.joint)]) if sim_kp is not None else 70.0
+        v = evaluate_step(joints, base, samples[-1], spec, prev_q=prev,
+                          residual_tol_rad=residual_tolerance(spec.joint, kp))
         verdicts.append(v)
         report["steps"].append(v.__dict__)
         print(f"[selftest] {spec.joint} {spec.amplitude:+.2f}: measured {v.measured:+.4f} ratio {v.ratio:.2f} "

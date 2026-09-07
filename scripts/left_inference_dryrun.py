@@ -44,11 +44,10 @@ def over_table(p) -> bool:
 
 def joint_limits() -> tuple:
     sys.path.insert(0, ROBOT_CONTROL_SRC)
-    from robot_control.profile import load_builtin_profile
-    prof = load_builtin_profile("openarm_tesollo")
-    lim = {j.canonical: (j.lower, j.upper) for j in prof.joints}
-    lo = np.array([lim[f"l_aj_{i}"][0] for i in range(1, 8)])
-    hi = np.array([lim[f"l_aj_{i}"][1] for i in range(1, 8)])
+    from profile_yaml import load_profile_group   # ★삭제된 manifest 를 요구하지 않는 로더
+    grp = load_profile_group(group="openarm_left_arm")
+    lo = np.array(grp.lower)
+    hi = np.array(grp.upper)
     return lo, hi
 
 

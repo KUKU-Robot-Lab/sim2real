@@ -40,7 +40,8 @@ from .fabric_core import FabricCore, name_permutation
 from .obs_core import ObsCore, ObsOut
 from .pd_law import PdCommand, PdInputs, PdLawCfg, PdState, initial_state, reset_droop
 from .pd_law import step as pd_law_step
-from .pd_state import FaultInputs, FsmState, Phase, detect_faults, initial_fsm, law_flags, transition
+from .pd_state import (FaultInputs, FsmState, Phase, clear_reasons, detect_faults, initial_fsm,
+                       law_flags, transition)
 from .policy_core import PolicyCore
 from .sources import RobotCfg, RobotState, TableCfg
 
@@ -449,6 +450,25 @@ class PdTarget:
     t_recv: float
 
 
+def _resolved_thermal(fsm: FsmState, thermal_act: Sequence[str], thermal_stale: Sequence[str],
+                      thermal_retreat: bool = False) -> tuple:
+    """HOLD 에 걸려 있는 발열 사유 중 **이번 tick 에 조건이 사라진** 것들의 kind.
+
+    관절이 temp_clear_c 아래로 식으면 `thermal <joint>` 가, 센서가 돌아오면
+    `thermal sensor <joint>` 가 여기에 실려 `clear_reasons` 로 빠진다. 사람이 판단할
+    사유(추종오차·estop 등)가 함께 걸려 있으면 HOLD 는 그대로 유지된다.
+
+    후퇴 중(`thermal_retreat`)에는 아직 뜨겁더라도 발열 사유를 뺀다 — 안 그러면 HOLD 가
+    세트포인트를 얼려 **내려가지 못하고**, 그게 09.07 교착 그 자체다.
+    """
+    if fsm.phase is not Phase.HOLD or not fsm.hold_reason:
+        return ()
+    live = (set() if thermal_retreat else
+            {f"thermal {j}" for j in thermal_act} | {f"thermal sensor {j}" for j in thermal_stale})
+    kinds = {r.split(":", 1)[0].strip() for r in fsm.hold_reason.split("; ")}
+    return tuple(k for k in kinds if k.startswith("thermal") and k not in live)
+
+
 @dataclass(frozen=True)
 class PdStageState:
     fsm: FsmState
@@ -503,7 +523,8 @@ class PdStage:
 
     # ---------------------------------------------------------------- tick
     def tick(self, target: PdTarget | None, q_meas, qd_meas, now: float, *, estop: bool = False,
-             thermal_act: Sequence[str] = (), switch_failed: bool = False) -> PdOut:
+             thermal_act: Sequence[str] = (), switch_failed: bool = False,
+             thermal_stale: Sequence[str] = (), thermal_retreat: bool = False) -> PdOut:
         t0 = time.perf_counter()
         st, new_step = self._accept(target)
         if st.fsm.phase is Phase.IDLE:
@@ -512,8 +533,12 @@ class PdStage:
         q_m = _vec(q_meas, self.n, "q_meas")
         qd_m = _vec(qd_meas, self.n, "qd_meas")
         age = None if st.target is None else float(now) - st.target.t_recv
-        faults = self._pre_faults(st, q_m, age, estop, thermal_act, switch_failed)
-        fsm = self._apply_faults(st.fsm, faults)
+        faults = self._pre_faults(st, q_m, age, estop, thermal_act, switch_failed,
+                                  thermal_stale, thermal_retreat)
+        fresh = age is not None and age <= self.watchdog_sec
+        fsm = self._apply_faults(st.fsm, faults, target_fresh=fresh,
+                                 resolved=_resolved_thermal(st.fsm, thermal_act, thermal_stale,
+                                                            thermal_retreat))
         if fsm.phase is Phase.RELEASING:
             cmd = PdCommand(q=st.law.q_setpoint.copy(), qd=np.zeros(self.n), tau=np.zeros(self.n),
                             limited=(), effort_fault=False)
@@ -540,17 +565,31 @@ class PdStage:
         # 내부 목표(goto_home 의 홈+settle bias, seq 고정)가 tick 마다 갱신되는 것을 법칙이 봐야 한다.
         return replace(st, target=replace(target, seq=st.target.seq)), False
 
-    def _pre_faults(self, st, q_m, age, estop, thermal_act, switch_failed) -> list[str]:
+    def _pre_faults(self, st, q_m, age, estop, thermal_act, switch_failed,
+                    thermal_stale=(), thermal_retreat=False) -> list[str]:
         err = float(np.abs(st.law.q_setpoint - q_m).max())
         return detect_faults(FaultInputs(target_age_sec=age, watchdog_sec=self.watchdog_sec, tracking_err=err,
                                          abort_tracking=self.abort_tracking, target_clipped=False,
                                          effort_fault=False, estop_latched=bool(estop),
-                                         thermal_act=tuple(thermal_act), switch_failed=bool(switch_failed)))
+                                         thermal_act=tuple(thermal_act), switch_failed=bool(switch_failed),
+                                         thermal_stale=tuple(thermal_stale),
+                                         thermal_retreat=bool(thermal_retreat)))
 
     @staticmethod
-    def _apply_faults(fsm: FsmState, faults: Sequence[str]) -> FsmState:
-        if not faults or fsm.phase not in _ENGAGED:
+    def _apply_faults(fsm: FsmState, faults: Sequence[str], target_fresh: bool = False,
+                      resolved: Sequence[str] = ()) -> FsmState:
+        """이번 tick 의 사유를 반영한다. 사유가 없고 목표가 신선하면 워치독 HOLD 는 풀린다.
+
+        ★2026-09-07 우팔 실기: engage↔스트림 공백으로 워치독 HOLD 에 들어간 뒤, 104 초짜리 자세
+        이동이 목표 2612 개를 다 보냈고 pd 도 다 받았는데(seq 2611) 세트포인트가 얼어 팔이 안
+        움직였다. 워치독만이 사유면 조건이 사라진 것이므로 재개한다(`pd_state._target_fresh`).
+        """
+        if fsm.phase not in _ENGAGED:
             return fsm
+        if resolved:
+            fsm = clear_reasons(fsm, resolved)
+        if not faults:
+            return transition(fsm, "target_fresh") if target_fresh else fsm
         for reason in faults:
             fsm = transition(fsm, "fault", reason)
         return fsm

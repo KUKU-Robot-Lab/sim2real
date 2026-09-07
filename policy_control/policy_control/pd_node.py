@@ -151,6 +151,7 @@ class PdNode(Node):
         self.declare_parameter("stage", "reduced")
         self.declare_parameter("sides", "")
         self.declare_parameter("goto_home_timeout_sec", 30.0)
+        self.declare_parameter("temperature_topic", "/dynamic_joint_states")
 
     def _path(self, name: str) -> Path:
         p = Path(str(self.get_parameter(name).value)).expanduser()
@@ -177,10 +178,44 @@ class PdNode(Node):
                 topics.setdefault(topic, []).append((unit, roles))
         for topic, targets in topics.items():
             self.create_subscription(JointState, topic, self._joint_cb(targets), _qos_sensor(), callback_group=main)
+        self._wire_temperature(main)
         services = (("engage", self._srv_engage), ("goto_home", self._srv_goto_home), ("release", self._srv_release))
         for name, fn in services:
             self.create_service(Trigger, f"{NS}/pd/{name}", fn, callback_group=self.cb_srv)
         self.create_timer(self.dt, self._on_timer, callback_group=main)
+
+    def _wire_temperature(self, group) -> None:
+        """모터 서미스터를 `/dynamic_joint_states` 에서 받는다 — 발열 가드의 근거.
+
+        joint_state_broadcaster 는 `/joint_states` 에 position/velocity/effort 만 싣고,
+        나머지 state interface 는 전부 `/dynamic_joint_states` 로 보낸다. 하드웨어 인터페이스가
+        `temperature_rotor`/`temperature_mos` 를 export 하면 별도 broadcaster 없이 여기로 온다.
+        토픽이 없으면 구독만 조용히 비어 있고, 발열 규칙이 temp 근거이면 pd 가 stale 로 HOLD 한다.
+        """
+        try:
+            from control_msgs.msg import DynamicJointState
+        except ImportError:                       # control_msgs 없는 최소 설치
+            self.get_logger().warn("control_msgs 없음 — 모터 온도를 못 읽는다(발열 규칙은 effort 근거만)")
+            return
+        topic = str(self.get_parameter("temperature_topic").value)
+        self.create_subscription(DynamicJointState, topic, self._on_dynamic_joint_state,
+                                 _qos_sensor(), callback_group=group)
+
+    _TEMP_FIELDS = ("temperature_rotor", "temperature_mos")
+
+    def _on_dynamic_joint_state(self, msg) -> None:
+        """관절당 서미스터 중 **더 뜨거운 쪽**을 취해 각 팔에 넘긴다."""
+        by_source: dict[str, float] = {}
+        for name, iface in zip(msg.joint_names, msg.interface_values):
+            hot = [float(v) for k, v in zip(iface.interface_names, iface.values) if k in self._TEMP_FIELDS]
+            if hot:
+                by_source[name] = max(hot)
+        if not by_source:
+            return
+        now = time.monotonic()
+        with self._lock:
+            for unit in self.units.values():
+                unit.on_temperatures(by_source, now)
 
     # ---------------------------------------------------------------- subscriptions
     def _joint_cb(self, targets: list):
@@ -318,18 +353,30 @@ class PdNode(Node):
         notes: list[str] = []
         timeout = float(self.get_parameter("goto_home_timeout_sec").value)
         for unit in self.units.values():
+            retreat = False
             with self._lock:
                 phase = unit.phase
-                if phase not in _MOVING:
+                if phase is Phase.HOLD and unit.start_thermal_retreat():
+                    # 발열·워치독처럼 **조건이 사라지면 풀리는** HOLD 에서는 저부하 자세로 내려간다.
+                    # 09.07 교착: 발열 HOLD 가 팔을 내리는 것까지 막아 든 채로 release 해야 했다.
+                    retreat = True
+                    notes.append(self._tag(unit, "self-clearing HOLD — retreating to home"))
+                elif phase not in _MOVING:
                     why = (f"phase {phase.value} is not RAMPING/TRACKING (engage first)" if phase is Phase.IDLE
                            else f"phase {phase.value} — release first")
                     return trigger_reply(resp, False, notes + [self._tag(unit, why)])
-                unit.start_home()
-            settled, why = self._wait(unit.home_settled, timeout, self._tag(unit, "settle"), hold_units=(unit,))
+                else:
+                    unit.start_home()
+            # 후퇴 중에는 HOLD 를 중단 사유로 보지 않는다 — 이 goto_home 자체가 그 HOLD 에 대한
+            # 대응이고, FSM 이 HOLD 를 벗는 것은 **다음 tick** 이라 여기서 보면 항상 HOLD 다.
+            watch = () if retreat else (unit,)
+            settled, why = self._wait(unit.home_settled, timeout, self._tag(unit, "settle"), hold_units=watch)
             with self._lock:
                 phase, err = unit.phase.value, (None if unit.hold is None else unit.hold.err)
             notes += [*why, self._tag(unit, f"phase {phase}"), self._tag(unit, f"home err {err}")]
-            if not (settled and phase == "TRACKING"):
+            # 후퇴는 **도착 여부**로 판정한다. 아직 뜨거워서 도착 직후 다시 HOLD 로 가는 것은
+            # 정상이며 실패가 아니다 — "내려왔다"와 "아직 뜨겁다"는 다른 사실이라 따로 싣는다.
+            if not (settled and (retreat or phase == "TRACKING")):
                 return trigger_reply(resp, False, notes)
         return trigger_reply(resp, True, notes)
 

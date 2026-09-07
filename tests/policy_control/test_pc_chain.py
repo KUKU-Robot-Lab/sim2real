@@ -434,10 +434,13 @@ def test_pd_stage_watchdog_holds_and_freezes_setpoint():
     assert any("watchdog" in r for r in late.faults) and not late.status.ok
     np.testing.assert_array_equal(late.cmd.q, q_frozen)
     np.testing.assert_array_equal(late.cmd.qd, np.zeros(N))
-    # HOLD 는 새 목표가 와도 풀리지 않는다
+    # ★2026-09-07 정정. **워치독** HOLD 는 목표가 다시 들어오면 풀린다 — 사유("목표가 없다")가
+    #   사라졌기 때문이다. 실기에서 이게 종점이라 104 초짜리 자세 이동이 목표 2612 개를 다 보내고도
+    #   팔이 안 움직였다(seq 2611 수신, 세트포인트 동결). 추종오차·발열 등 사람이 판단할 사유는
+    #   여전히 안 풀린다(test_pc_pd_hold_recovery).
     again = pd.tick(_target(1.0, seq=2, t=0.35), np.zeros(N), np.zeros(N), now=0.35)
-    assert again.state.fsm.phase is Phase.HOLD
-    np.testing.assert_array_equal(again.cmd.q, q_frozen)
+    assert again.state.fsm.phase is Phase.RAMPING and again.state.fsm.hold_reason is None
+    assert again.cmd.q[0] > q_frozen[0], "재개하면 세트포인트가 다시 전진해야 한다"
 
 
 def test_pd_stage_estop_and_tracking_error_hold():

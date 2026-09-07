@@ -249,21 +249,30 @@ def test_make_gravity_per_side_from_dg5f_m_yaml_matches_chain_math():
 
 
 @needs_asset
-def test_dg5f_m_payload_equals_the_urdf_finger_lump():
-    """pd_dg5f_m.yaml 의 payload = 체인이 못 싣는 손가락 링크(revolute 너머) 질량·무게중심(열린 손, palm_ee 프레임)."""
+def test_dg5f_m_payload_is_only_what_the_chain_cannot_carry():
+    """payload = 체인이 못 싣는 몫 = **가동 관절 너머** 링크뿐. 프레임은 체인 마지막 링크(al_7).
+
+    ★2026-09-07 정정. 이 테스트는 원래 `{p}_hj_` 로 시작하는 **모든** 관절의 하위 링크를
+    모았는데, 거기엔 고정 관절 mount·adapter·base·palm 이 섞여 있다. 그래서 "손가락 질량"이
+    손 전체 1.763 kg 으로 나왔고, 설정도 같은 값을 담고 있어 **둘이 서로를 확인해 줬다**.
+    실제로는 고정 링크 0.889 kg 을 체인이 이미 싣고 있어 이중 계상이었다 — 중력토크가
+    1.3배가 되고, 프레임까지 palm_ee 로 잘못 잡혀 손목은 되레 40 % 로 줄었다. 실기에서
+    j7 이 33.7° 내려앉아 손이 테이블에 닿고서야 드러났다.
+    """
     from arm_inertia import _link_transforms, _subtree_links, parse_urdf
 
     contract = C.load_contract(ASSET_CONTRACT)
     cfg = L.load_pd_config(CONFIG / "pd_dg5f_m.yaml")
     model = parse_urdf(str(ASSET_URDF))
+    movable = {"revolute", "continuous", "prismatic"}
     for side in ("left", "right"):
         s = contract.side(side)
         p = side[0]
         q = {**{j: 0.0 for j in s.arm_joints}, **s.home_hand}
         tf = _link_transforms(model, q)
         links = set()
-        for jn in model["joints"]:
-            if jn.startswith(f"{p}_hj_"):
+        for jn, info in model["joints"].items():
+            if jn.startswith(f"{p}_hj_") and info.get("type") in movable:
                 links |= set(_subtree_links(model, jn))
         mass, com = 0.0, np.zeros(3)
         for ln in links:
@@ -274,10 +283,12 @@ def test_dg5f_m_payload_equals_the_urdf_finger_lump():
             mass += info["mass"]
             com += info["mass"] * (t + R @ info["com"])
         com /= mass
-        R_tip, t_tip = tf[f"{p}_hl_palm_ee"]
+        R_tip, t_tip = tf[f"{p}_al_7"]            # ★with_payload 가 읽는 프레임 = 체인 마지막 링크
         local = R_tip.T @ (com - t_tip)
         payload = G.block_for_side(cfg.gravity, side).payload
         assert abs(payload[0] - mass) < 5e-4 and np.allclose(payload[1:], local, atol=2e-5), (side, mass, local)
+        assert 0.15 < np.linalg.norm(local) < 0.30, (
+            f"{side}: 손 무게중심이 손목에서 {np.linalg.norm(local)*100:.1f} cm — 손이 달린 팔에서 나올 수 없다")
 
 
 @needs_asset

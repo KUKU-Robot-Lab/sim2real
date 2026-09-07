@@ -344,7 +344,11 @@ def test_load_pd_config_rejects_bad_shapes(tmp_path):
         "gravity_unknown_key": base.replace("  mode: integral_droop", "  mode: integral_droop\n  warp: 1"),
         "gravity_droop_with_urdf": base.replace("  mode: integral_droop", "  mode: integral_droop\n  urdf: x.urdf"),
         "accept_not_bool": base.replace("accept_sim_mismatch: false", "accept_sim_mismatch: nope"),
-        "thermal_bad": base.replace("act_sec: 300}", "act_sec: 0}"),
+        # ★2026-09-07: 발열 규칙이 온도 근거로 바뀌었다. 옛 문자열 치환은 pd_left.yaml 에서
+        #   아무것도 안 맞아 **조용히 통과하는 no-op 케이스**가 됐었다 — 지금 값으로 다시 잡는다.
+        "thermal_no_basis": base.replace(", temp_act_c: 70.0, temp_clear_c: 55.0, temp_warn_c: 60.0", ""),
+        "thermal_backwards_hysteresis": base.replace("temp_clear_c: 55.0", "temp_clear_c: 75.0"),
+        "thermal_mixed_bases": base.replace("temp_warn_c: 60.0", "temp_warn_c: 60.0, effort_nm: 1.5"),
     }
     for name, text in cases.items():
         p = tmp_path / f"{name}.yaml"

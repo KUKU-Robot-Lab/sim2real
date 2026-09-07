@@ -152,7 +152,7 @@ run:
 
   bringup:
     - note: ★CAN 설정 — sudo 필요, 사용자 셸에서
-      argv: [sudo, ip, link, set, can0, up, type, can, bitrate, "1000000", fd, "on"]
+      argv: [bash, -lc, "sudo ip link set can0 down && sudo ip link set can0 type can bitrate 1000000 dbitrate 5000000 fd on && sudo ip link set can0 up"]
       manual: true
     - note: ★모터 전원을 먼저 켠 뒤 launch. 순서가 바뀌면 enable 을 못 받아 무동작한다
       argv:

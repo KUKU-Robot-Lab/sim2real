@@ -29,13 +29,17 @@ stages:
 
   # ---------------------------------------------------------------- RIGHT 팔
   - id: pd_load_right
-    title: "[right] pd 노드 무발행 기동 (sides:=right, execute:=false) — forward 3종 load(inactive), 손 PID 4.5 확인"
+    title: "[right] pd 노드 무발행 기동 (sides:=right, execute:=false) — forward 3종 load(inactive), 손 PID 1.5(벤더) 확인"
     needs: [bringup]
     artifacts: [contract, robot_right, pd]
     touches_real: true
 
   - id: pd_selftest_right
     title: "[right] engage → hold 10 s → 단일관절 ±0.02/0.05/0.10 rad → release (드리프트·부호·교대 점프)"
+    # ★r_aj_4 는 프로필 하한이 정확히 0 이라 차렷(실측 0.006 rad)에서 −0.02 가 한계 밖 → pd 가 HOLD.
+    #   팔꿈치는 --joints 에서 빼고 따로 본다(굽힌 자세에서). 2026-09-07 실기.
+    # ★손목 r_aj_5/6/7 은 kp 10 이라 ±0.02(=0.2 N·m)이 관절 마찰과 비슷해 비율이 안 나온다.
+    #   판정은 ±0.05 이상으로 본다.
     needs: [pd_load_right]
     touches_real: true
 
@@ -44,9 +48,21 @@ stages:
     needs: [pd_selftest_right]
     touches_real: true
 
+  - id: preset_right
+    title: "[right] 차렷 → preset(팔꿈치 114.6°)로 pd 가 직접 이동 — 손이 몸통·판에서 자유로운 자세"
+    needs: [goto_home_right]
+    needs_why: >
+      ★2026-09-07 확정. 자세 이동을 pd 가 소유한다. 옛 경로(gravity_comp_node + shadow_replay + JTC)는
+      pd 로 인계할 때 무보상 공백이 생겨 8° 내려앉고, pd 는 engage 때 실측을 시드로 잡아 그 처짐이
+      새 목표가 됐다. pd 의 model_tau_ff 가 검증모델과 0.99~1.01 로 일치하므로 두 시스템을 쓸 이유가 없다.
+      ★차렷은 셀프테스트·fabric 시험 자세로 부적합하다 — r_aj_4 하한이 정확히 0 이라 −방향이 막히고,
+      손가락이 마운트 플레이트보다 7 cm 아래라 몸통에 걸린다(실기 확인).
+    artifacts: [contract, robot_right]
+    touches_real: true
+
   - id: fabric_direct_right
     title: "[right] fabric 노드 direct 모드 + palm_cmd ±2 cm · hand_cmd open→close 0.3 (작은 델타만)"
-    needs: [goto_home_right]
+    needs: [preset_right]
     artifacts: [contract, robot_right]
     touches_real: true
 
@@ -57,7 +73,7 @@ stages:
 
   # ---------------------------------------------------------------- LEFT 팔
   - id: pd_load_left
-    title: "[left] pd 노드 무발행 기동 (sides:=left, execute:=false) — forward 3종 load(inactive), 손 PID 4.5 확인"
+    title: "[left] pd 노드 무발행 기동 (sides:=left, execute:=false) — forward 3종 load(inactive), 손 PID 1.5(벤더) 확인"
     needs: [bringup]
     artifacts: [contract, robot_left, pd]
     touches_real: true
@@ -90,18 +106,23 @@ run:
     - note: 자산 제어 전용 계약 재생성 + control_gains.yaml 대조 (MISMATCH 면 rc 3)
       argv: [python3, "{repo}/policy_control/tools/build_deploy_contract.py", --asset, openarm_dg5f-m_bi_rl,
              --home, zero, --gains, "{artifact:gains_yaml}", --out, "{artifact:contract}"]
-    - note: forward 컨트롤러가 양팔 모두 bringup 설정에 선언돼 있는지 (grep, 좌 3 + 우 3)
+    - note: forward 컨트롤러가 양팔 모두 bringup 설정에 선언돼 있는지 (grep -c 12 = CM 목록 6 + 파라미터 블록 6)
       argv: [grep, -c, "_forward_", "/home/user/rl_ws/robot_control/ros_ws/src/openarm_ros2/openarm_bringup/config/controllers/openarm_bimanual_controllers.yaml"]
   bringup:
-    - note: ★CAN 설정 — sudo 필요, 사용자 셸에서 (can0 우 / can1 좌)
-      argv: [sudo, ip, link, set, can0, up, type, can, bitrate, "1000000", fd, "on"]
+    - note: ★CAN 설정 — sudo 필요, 사용자 셸에서 (can0 우 / can1 좌). ★fd on 은 dbitrate 를 같이 줘야 한다 — 빼면 Operation not supported. 설정은 링크 DOWN 상태에서, up 은 따로
+      argv: [bash, -lc, "sudo ip link set can0 down && sudo ip link set can0 type can bitrate 1000000 dbitrate 5000000 fd on && sudo ip link set can0 up"]
       manual: true
     - note: ★모터 전원을 먼저 켠 뒤 launch (forward 컨트롤러 선언 포함)
       argv: [ros2, launch, openarm_bringup, openarm.bimanual.launch.py, "use_fake_hardware:=false",
              "right_can_interface:=can0", "left_can_interface:=can1"]
       manual: true
-    - note: ★DG-5F 드라이버 — 우 dg5f_right / 좌 dg5f_left 네임스페이스 (좌 PID 기본 1.5 는 pd engage 가 4.5 로 올린다)
-      argv: [echo, "ros2 launch <dg5f driver> namespace:=dg5f_left / dg5f_right — 사용자 셸에서"]
+    - note: ★손 링크로컬 주소 — 손은 CAN 이 아니라 Modbus TCP(169.254.186.72:502) 다. eno1 에 IPv4 가 없으면
+        경로가 tailscale0 로 새고 controller_manager 가 접속 대기로 멈춘다(2026-09-07 실기에서 겪음)
+      argv: [bash, -lc, "sudo ip addr add 169.254.186.1/16 dev eno1; ping -c2 169.254.186.72"]
+      manual: true
+    - note: ★DG-5F 드라이버 — 우 dg5f_right_driver / 좌 dg5f_left_driver. config 의 PID p 는 벤더 1.5 여야
+        한다 — pd engage 는 같은 값인지 확인만 하고 올리지 않는다
+      argv: [ros2, launch, dg5f_driver, dg5f_right_driver.launch.py, "delto_ip:=169.254.186.72"]
       manual: true
     - note: 목 기준자세 + I게인 재적용
       argv: [python3, "{repo}/scripts/head_home.py"]
@@ -123,10 +144,21 @@ run:
       argv: [python3, "{repo}/policy_control/tools/episode_ctl.py", --steps, "0",
              --approve, pd_engage, --approve, pd_goto_home]
       execute_args: [--execute]
+  preset_right:
+    - note: "[right] pd engage 상태에서 preset 궤적을 pd 의 joint_target 으로 흘린다 (104 s @0.5)"
+      argv: [python3, "{repo}/policy_control/tools/replay_to_pd.py",
+             --npz, "{repo}/logs/shadow/reset_both/reset_right.npz",
+             --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7", --rate-scale, "0.5"]
+      execute_args: [--execute]
+    - note: "[right] 도착 후 처짐 확인 — pd 가 잡고 있으면 20 s 에 0.00° (2026-09-07 실측)"
+      argv: [echo, "ros2 topic echo /policy_control/status/pd --once  ·  phase TRACKING · ok true"]
   fabric_direct_right:
-    - note: "[right] fabric 노드 direct 모드 (계약이 control_only 라 obs/policy 는 안 뜬다)"
-      argv: [ros2, launch, "{repo}/policy_control/launch/policy_chain.launch.py",
-             "contract:={artifact:contract}", "robot:={artifact:robot_right}", "side:=right", "device:=cuda:0"]
+    - note: "[right] fabric 노드 direct 모드 (계약이 control_only 라 obs/policy 는 안 뜬다).
+        ★use_source:=true 필수 — 설치된 콘솔 스크립트는 시스템 python 이라 warp(venv)를 import 못 한다.
+        ★fabric 은 direct 모드에서 홈을 **실측**으로 잡는다(control_only) — 어느 자세에서 시작해도 된다"
+      argv: [ros2, launch, policy_control, policy_chain.launch.py,
+             "contract:={artifact:contract}", "robot:={artifact:robot_right}", "side:=right", "device:=cuda:0",
+             "use_source:=true"]
       background: true
     - note: "[right] 에피소드 reset (fabric 이 armed 가 될 때까지 status/fabric 확인)"
       argv: [ros2, service, call, /policy_control/episode/reset, std_srvs/srv/Trigger]
@@ -160,9 +192,11 @@ run:
              --approve, pd_engage, --approve, pd_goto_home]
       execute_args: [--execute]
   fabric_direct_left:
-    - note: "[left] fabric 노드 direct 모드 (계약이 control_only 라 obs/policy 는 안 뜬다)"
-      argv: [ros2, launch, "{repo}/policy_control/launch/policy_chain.launch.py",
-             "contract:={artifact:contract}", "robot:={artifact:robot_left}", "side:=left", "device:=cuda:0"]
+    - note: "[left] fabric 노드 direct 모드 — ★use_source:=true 필수(설치 콘솔 스크립트는 시스템 python
+        이라 warp 를 import 못 한다). fabric 은 control_only 에서 홈을 실측으로 잡는다"
+      argv: [ros2, launch, policy_control, policy_chain.launch.py,
+             "contract:={artifact:contract}", "robot:={artifact:robot_left}", "side:=left", "device:=cuda:0",
+             "use_source:=true"]
       background: true
     - note: "[left] 에피소드 reset (fabric 이 armed 가 될 때까지 status/fabric 확인)"
       argv: [ros2, service, call, /policy_control/episode/reset, std_srvs/srv/Trigger]
