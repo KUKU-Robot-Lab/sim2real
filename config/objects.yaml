@@ -6,13 +6,19 @@ objects:
   shaker_closed:
     real: "파란 열린 shaker (무광, 뚜껑 없음)"
     fpp:
-      mesh_path: assets/meshes/shaker_sim.ply     # hdgp/scripts/tools/export_shaker_sim_mesh.py 산출
+      mesh_path: assets/meshes/shaker_cad.obj     # ★2026-09-07 사용자 지정 CAD
+      # hdgp/assets/simulation_setting/shaker/meshes/visual/shaker.obj 사본.
+      # 크기는 sim 자산과 같은 물체다(175 mm × ⌀88 mm) — 09.03 에 문제였던 238 mm 조립본이 아니다.
+      # ⚠단일 회색(102,102,102)이라 외관 신호가 없다. 색을 가진 shaker_sim.ply 로 되돌리려면
+      #   mesh_path 를 assets/meshes/shaker_sim.ply 로, cad_to_body.position 을 [0,0,0] 으로.
       mesh_scale_to_meters: 1.0
       cup_class_id: 41
       detection_pick: blue
       yolo_confidence: 0.35
     cad_to_body:
-      position: [0.0, 0.0, 0.0]
+      # CAD 원점은 물체 **중심**(바닥+87.5 mm), sim body 원점은 바닥+92.1 mm →
+      # body 원점은 CAD 프레임에서 +z 로 4.6 mm 위. 축 방향은 둘 다 Z-up 이라 회전은 항등.
+      position: [0.0, 0.0, 0.0046]
       orientation_wxyz: [1.0, 0.0, 0.0, 0.0]
     sim:
       usd: hdgp/assets/cup/shaker_closed_rl.usd
