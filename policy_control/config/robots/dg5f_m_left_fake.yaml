@@ -1,9 +1,8 @@
 # left 팔 + DG-5F-M — fake 플랜트: /dg5f_left/joint_states ← fake_hand_state_pub(--echo-topic /policy_control/joint_target),
 # /dg5f_left/tip_forces_xyz ← fake_tip_contact_pub, /joint_states ← fake_arm_bridge. 토픽 계약은 실기와 같다.
 robot: dg5f_m_left_fake
-joint_profiles:                          # 본 프로필(양팔 + 우손) + 좌손 보충(upstream 에 좌손이 들어오면 삭제)
+joint_profiles:                          # 본 프로필(양팔 + 양손). 좌손 보충은 09.14 upstream 에 들어와 삭제
   - robot_control/src/robot_control/profiles/openarm_tesollo.yaml
-  - sim2real/config/openarm_tesollo_left_hand.yaml
 sources:
   arm:
     type: joint_state

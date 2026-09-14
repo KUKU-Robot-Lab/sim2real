@@ -3,7 +3,6 @@
 robot: dg5f_m_bi_real
 joint_profiles:
   - robot_control/src/robot_control/profiles/openarm_tesollo.yaml
-  - sim2real/config/openarm_tesollo_left_hand.yaml
 sources:
   arm_right:
     type: joint_state

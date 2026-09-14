@@ -1,7 +1,9 @@
 # 좌팔 + 스톡 그리퍼 — fake 플랜트 (scripts/fakes). 실기 yaml 과 토픽 계약이 같다:
 #   /joint_states ← fake_arm_bridge, /objects/cup_big_s100/pose ← fake_cup_pose_pub (출력 토픽 인자, M8)
 robot: gripper_left_fake
-joint_profile: robot_control/src/robot_control/profiles/openarm_tesollo.yaml
+joint_profiles:                          # 본 프로필 + 그리퍼 보충(09.14 본 프로필 좌 EE 가 DG-5F 로 바뀜)
+  - robot_control/src/robot_control/profiles/openarm_tesollo.yaml
+  - sim2real/config/openarm_left_gripper.yaml
 sources:
   arm:
     type: joint_state

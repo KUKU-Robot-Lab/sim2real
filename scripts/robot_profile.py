@@ -350,7 +350,7 @@ def load_robot_profile(name_or_path: str | Path) -> RobotProfile:
     if missing:
         raise ValueError(
             f"{path}: joint profile 에 없는 관절 {len(missing)}개 — {missing[:6]}"
-            f"\n  (좌 Tesollo 라면 config/openarm_tesollo_left_hand.yaml 보충이 필요하다)"
+            f"\n  (좌 그리퍼라면 config/openarm_left_gripper.yaml 보충이 필요하다 — 09.14 본 프로필 좌 EE 는 DG-5F)"
         )
 
     convention = d.get("action", {}).get("convention")

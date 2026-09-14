@@ -39,9 +39,7 @@ topics:
   tip_force_norm: /dg5f_left/contact_forces
 
 joint_profiles:
-  - ~/rl_ws/robot_control/src/robot_control/profiles/openarm_tesollo.yaml
-  # 좌 Tesollo 보충 — upstream 반영 시 이 줄과 파일을 함께 삭제
-  - config/openarm_tesollo_left_hand.yaml
+  - ~/rl_ws/robot_control/src/robot_control/profiles/openarm_tesollo.yaml   # 09.14 부터 좌손 포함(보충 삭제)
 
 tip_sensor:
   frame_rotation: identity

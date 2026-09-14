@@ -2,7 +2,9 @@
 # 리더 타입은 3종뿐: joint_state | float_array | pose. 값은 전부 여기(또는 계약)에서 온다.
 robot: gripper_left
 # canonical↔source 이름·부호·한계의 출처 (rl_ws 기준 상대 경로 또는 절대 경로)
-joint_profile: robot_control/src/robot_control/profiles/openarm_tesollo.yaml
+joint_profiles:                          # 본 프로필 + 그리퍼 보충(09.14 본 프로필 좌 EE 가 DG-5F 로 바뀜)
+  - robot_control/src/robot_control/profiles/openarm_tesollo.yaml
+  - sim2real/config/openarm_left_gripper.yaml
 sources:
   arm:
     type: joint_state

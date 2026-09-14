@@ -80,7 +80,7 @@ def _left_set() -> sources.SourceSet:
 
 
 def _left_joint_msg(q7, grip, stamp=0.0):
-    prof = sources.load_profile(PROFILE)
+    prof = sources.load_profile([PROFILE, GRIPPER_PROFILE])   # 그리퍼 관절은 09.14 부터 보충 프로필에 있다
     names = [prof[j]["source"] for j in LEFT_ARM] + [prof["l_hj_gripper_1"]["source"]]
     vals = list(q7) + [grip]
     # 실기 /joint_states 는 우팔도 같이 실린다 — 여분 관절은 무시돼야 한다
@@ -187,14 +187,16 @@ def test_profile_limits_exposed():
 
 # ---------------------------------------------------------------- 09.06 양팔 DG-5F-M yaml (joint_profiles + 팔 접미사)
 ROBOTS = SIM2REAL / "policy_control/config/robots"
-LEFT_HAND_PROFILE = SIM2REAL / "config/openarm_tesollo_left_hand.yaml"
+#: 옛 좌팔 그리퍼 구성 전용 보충. 09.14 본 프로필 좌 EE 가 DG-5F 로 바뀌며 그리퍼 관절이 여기로 옮겨졌다
+#: (좌손 20관절은 반대로 보충 파일에서 본 프로필로 들어갔다).
+GRIPPER_PROFILE = SIM2REAL / "config/openarm_left_gripper.yaml"
 
 
 @pytest.mark.parametrize("name", ["dg5f_m_right_real", "dg5f_m_right_fake", "dg5f_m_left_real", "dg5f_m_left_fake"])
 def test_dg5f_m_single_arm_yamls_load(name):
     cfg = sources.load_robot_cfg(ROBOTS / f"{name}.yaml")
     side = "left" if "left" in name else "right"
-    assert cfg.joint_profiles == (PROFILE, LEFT_HAND_PROFILE) and cfg.joint_profile == PROFILE
+    assert cfg.joint_profiles == (PROFILE,) and cfg.joint_profile == PROFILE
     assert cfg.sides == (side,)
     assert cfg.sources["arm"].joints == tuple(f"{side[0]}_aj_{i}" for i in range(1, 8))
     assert len(cfg.sources["ee"].joints) == 20 and cfg.sources["ee"].topic == f"/dg5f_{side}/joint_states"
@@ -217,13 +219,16 @@ def test_dg5f_m_bimanual_yaml_has_sided_roles(name):
     assert set(cfg.groups) == {"left_arm", "left_hand", "right_arm", "right_hand"}
 
 
-def test_merged_profile_has_both_hands_and_refuses_duplicates(tmp_path):
-    prof = sources.load_profile([PROFILE, LEFT_HAND_PROFILE])
+def test_profile_has_both_hands_and_merging_refuses_duplicates(tmp_path):
+    prof = sources.load_profile(PROFILE)
     assert prof["l_hj_thumb_2"]["source"] == "lj_dg_1_2" and prof["r_hj_thumb_2"]["source"] == "rj_dg_1_2"
     assert prof["l_hj_thumb_2"]["lower"] == pytest.approx(0.0) and prof["r_hj_thumb_2"]["upper"] == pytest.approx(0.0)
+    assert "l_hj_gripper_1" not in prof
     with pytest.raises(sources.RobotCfgError):
         sources.load_profile([PROFILE, PROFILE])
     assert sources.load_profile(PROFILE) == sources.load_profile([PROFILE])
+    gripper = sources.load_profile([PROFILE, GRIPPER_PROFILE])
+    assert gripper["l_hj_gripper_1"]["source"] == "openarm_left_finger_joint1"
 
 
 #: 장착된 손(DG-5F-M short)의 Tesollo CAD 릴리스 — 학습 자산의 출처이자 매뉴얼과 일치하는 한계표.
@@ -231,7 +236,7 @@ def test_merged_profile_has_both_hands_and_refuses_duplicates(tmp_path):
 CAD_DG5F = SIM2REAL.parent / "repo/tesollo/tesollo_model/dg5f"
 
 
-@pytest.mark.parametrize("side,profile_path", [("left", LEFT_HAND_PROFILE), ("right", PROFILE)])
+@pytest.mark.parametrize("side,profile_path", [("left", PROFILE), ("right", PROFILE)])
 def test_hand_profile_limits_are_the_cad_release(side, profile_path):
     from xml.etree import ElementTree
 

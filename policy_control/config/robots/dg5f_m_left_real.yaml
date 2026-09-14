@@ -2,9 +2,8 @@
 # 손은 자기 namespace(dg5f_left)의 controller_manager 에서 돌아 손 관절은 전역 /joint_states 에 나오지 않는다.
 # 손 관절 순서는 드라이버/프로필 순(finger-major). 한 팔씩 시험한다(플랜 §7).
 robot: dg5f_m_left_real
-joint_profiles:                          # 본 프로필(양팔 + 우손) + 좌손 보충(upstream 에 좌손이 들어오면 삭제)
+joint_profiles:                          # 본 프로필(양팔 + 양손). 좌손 보충은 09.14 upstream 에 들어와 삭제
   - robot_control/src/robot_control/profiles/openarm_tesollo.yaml
-  - sim2real/config/openarm_tesollo_left_hand.yaml
 sources:
   arm:
     type: joint_state

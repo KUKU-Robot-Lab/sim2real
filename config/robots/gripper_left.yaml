@@ -74,6 +74,7 @@ topics:
 
 joint_profiles:
   - ~/rl_ws/robot_control/src/robot_control/profiles/openarm_tesollo.yaml
+  - config/openarm_left_gripper.yaml       # 09.14 본 프로필에서 그리퍼가 빠져 보충
 
 # 이 구성에는 손끝 F/T 가 없다 — 2지 그리퍼에 wrench broadcaster 가 없다.
 # 정책 obs 도 접촉력을 쓰지 않으므로(위 36D 내역 참조) tip_sensor 항목 자체를 두지 않는다.

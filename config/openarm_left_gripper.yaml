@@ -1,0 +1,13 @@
+# 좌 스톡 2지 그리퍼 canonical↔source 보충 프로필 (옛 좌팔 그리퍼 구성 전용).
+#
+# 왜 있는가: 2026-09-14 robot_control 프로필(openarm_tesollo.yaml)이 실기 그대로 양팔 DG-5F-M short 로
+# 바뀌어 좌측 EE 가 그리퍼 → DG-5F 좌손이 됐고 `l_hj_gripper_1` 이 거기서 빠졌다. 그리퍼는 더 이상
+# 장착돼 있지 않지만, 좌 v2B25 계열(left_gripper_{real,fake}.yaml · config/robots/gripper_left.yaml)
+# 의 골든 테스트·도구가 이 관절 매핑을 쓴다. 그 스택을 지울 때 이 파일도 같이 지운다.
+#
+# 값은 robot_control 프로필에 있던 항목 그대로다. 행정은 openarm_hand.xacro finger_joint1 의 0.044
+# (브리지가 프로필로 clamp 하므로 좁으면 조용히 덜 쥔다). `l_hj_gripper_2` 는 실기 URDF 가 mimic 이라 없다.
+# 단위는 m 인데 로더가 rad 만 받아 rad 로 적는다.
+name: openarm_left_gripper
+joints:
+  - {canonical: l_hj_gripper_1, source: openarm_left_finger_joint1, sign: 1, unit: rad, lower: 0.0, upper: 0.044, velocity: 0.2, effort: 20}
