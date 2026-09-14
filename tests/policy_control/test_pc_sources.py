@@ -226,6 +226,29 @@ def test_merged_profile_has_both_hands_and_refuses_duplicates(tmp_path):
     assert sources.load_profile(PROFILE) == sources.load_profile([PROFILE])
 
 
+#: 장착된 손(DG-5F-M short)의 Tesollo CAD 릴리스 — 학습 자산의 출처이자 매뉴얼과 일치하는 한계표.
+#: 드라이버 패키지(dg_description·dg5f_ros2 의 dg5f_description)의 URDF 는 9관절이 옛 값이다.
+CAD_DG5F = SIM2REAL.parent / "repo/tesollo/tesollo_model/dg5f"
+
+
+@pytest.mark.parametrize("side,profile_path", [("left", LEFT_HAND_PROFILE), ("right", PROFILE)])
+def test_hand_profile_limits_are_the_cad_release(side, profile_path):
+    from xml.etree import ElementTree
+
+    urdf = CAD_DG5F / f"dg5f_{side}_short.urdf"
+    if not urdf.exists():
+        pytest.skip(f"CAD 릴리스 없음: {urdf}")
+    described = {j.get("name"): j.find("limit") for j in ElementTree.parse(urdf).getroot().findall("joint")
+                 if j.find("limit") is not None}
+    prof = sources.load_profile(profile_path)
+    hand = {c: e for c, e in prof.items() if c.startswith(f"{side[0]}_hj_") and "gripper" not in c}
+    assert len(hand) == 20
+    for canonical, entry in hand.items():
+        limit = described[entry["source"]]
+        want = (float(limit.get("lower")), float(limit.get("upper")))
+        assert (entry["lower"], entry["upper"]) == pytest.approx(want, abs=1e-6), (canonical, want)
+
+
 def test_sided_yaml_rejects_bare_roles_and_object_suffix(tmp_path):
     base = (ROBOTS / "dg5f_m_bi_fake.yaml").read_text()
     bad = tmp_path / "bad.yaml"

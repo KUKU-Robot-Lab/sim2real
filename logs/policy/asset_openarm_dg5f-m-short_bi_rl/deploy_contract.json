@@ -2,7 +2,7 @@
  "schema": "policy_control/deploy_contract/v2",
  "run": {
   "dir": "",
-  "task": "asset:openarm_dg5f-m_bi_rl",
+  "task": "asset:openarm_dg5f-m-short_bi_rl",
   "experiment": "control_only",
   "checkpoint": "",
   "checkpoint_md5": "",
@@ -66,7 +66,7 @@
   },
   "fk": {
    "kind": "urdf_chain",
-   "urdf": "hdgp/assets/robot/openarm_dg5f-m_bi_rl/openarm_dg5f-m_bi_rl.urdf"
+   "urdf": "hdgp/assets/robot/openarm_dg5f-m-short_bi_rl/openarm_dg5f-m-short_bi_rl.urdf"
   },
   "segments": []
  },
@@ -77,8 +77,8 @@
  },
  "fabric": {
   "class_name": "OpenArmTeoslloPoseFabric",
-  "robot_dir": "openarm_dg5f-m_bi_right",
-  "params": "openarm_dg5f-m_right_pose_params.yaml",
+  "robot_dir": "openarm_dg5f-m-short_bi_right",
+  "params": "openarm_dg5f-m-short_right_pose_params.yaml",
   "world": {
    "filename": "open_tesollo_boxes_no_table"
   },
@@ -339,8 +339,8 @@
    },
    "fabric": {
     "class_name": "OpenArmTeoslloPoseFabric",
-    "robot_dir": "openarm_dg5f-m_bi_right",
-    "params": "openarm_dg5f-m_right_pose_params.yaml",
+    "robot_dir": "openarm_dg5f-m-short_bi_right",
+    "params": "openarm_dg5f-m-short_right_pose_params.yaml",
     "world": {
      "filename": "open_tesollo_boxes_no_table"
     },
@@ -532,8 +532,8 @@
    },
    "fabric": {
     "class_name": "OpenArmTeoslloLeftPoseFabric",
-    "robot_dir": "openarm_dg5f-m_bi_left",
-    "params": "openarm_dg5f-m_left_pose_params.yaml",
+    "robot_dir": "openarm_dg5f-m-short_bi_left",
+    "params": "openarm_dg5f-m-short_left_pose_params.yaml",
     "world": {
      "filename": "open_tesollo_left_boxes_no_table"
     },
@@ -614,10 +614,10 @@
  },
  "primary_side": "right",
  "asset": {
-  "name": "openarm_dg5f-m_bi_rl",
-  "urdf": "hdgp/assets/robot/openarm_dg5f-m_bi_rl/openarm_dg5f-m_bi_rl.urdf",
-  "manifest": "hdgp/assets/robot/openarm_dg5f-m_bi_rl/openarm_dg5f-m_bi_rl_manifest.yaml",
-  "manifest_sha1": "944944ab8d51f75aa1ed993264f328e1a5d1b38a",
+  "name": "openarm_dg5f-m-short_bi_rl",
+  "urdf": "hdgp/assets/robot/openarm_dg5f-m-short_bi_rl/openarm_dg5f-m-short_bi_rl.urdf",
+  "manifest": "hdgp/assets/robot/openarm_dg5f-m-short_bi_rl/openarm_dg5f-m-short_bi_rl_manifest.yaml",
+  "manifest_sha1": "9c9897185b61e4cd8284705881097efc27d7294b",
   "ee_kind": "dg5f"
  },
  "control_only": true

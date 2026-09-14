@@ -128,6 +128,24 @@ def test_gains_are_the_driver_gains(ctl):
     assert C.require_gains(ctl, A.GAINS_YAML).ok
 
 
+@pytest.mark.parametrize("name", sorted(A.ASSETS))
+def test_committed_asset_contract_matches_the_current_manifest(name):
+    """디스크의 제어 전용 계약이 **지금** 자산으로 만든 것이어야 한다.
+
+    ★2026-09-14. short 계약을 09.08 에 만들어 두었는데 09.10 에 자산(어댑터 판)이 바뀌어
+    manifest 가 달라진 뒤에도 그대로 남아 있었다. 계약에 sha 가 적혀 있어도 대조하는 곳이 없었다.
+    """
+    import hashlib
+
+    path = SIM2REAL / f"logs/policy/asset_{name}/deploy_contract.json"
+    spec = A.ASSETS[name]
+    if not (path.exists() and spec.manifest.exists()):
+        pytest.skip(f"계약 또는 자산 없음: {name}")
+    recorded = json.loads(path.read_text())["asset"]["manifest_sha1"]
+    assert recorded == hashlib.sha1(spec.manifest.read_bytes()).hexdigest(), (
+        f"{path} 는 옛 자산으로 만든 계약이다 — build_deploy_contract.py --asset {name} --home zero 로 재생성")
+
+
 @needs_asset
 def test_roundtrip_and_tool(ctl, tmp_path):
     out = tmp_path / "c.json"

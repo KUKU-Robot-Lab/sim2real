@@ -1,0 +1,71 @@
+# pd 노드 설정 — 양팔 OpenArm + Tesollo DG-5F-M (자산 hdgp/assets/robot/openarm_dg5f-m_bi_rl, 09.05 기본 자산). 플랜 §4.4.
+# ★DG-5F **short base** 판(자산 openarm_dg5f-m-short_bi_rl). pd_dg5f_m.yaml 과 다른 것은
+#   gravity.urdf 와 payload 둘뿐이다 — 게인·발열·손 PID·리미터는 같은 손·같은 팔이라 그대로다.
+# 한 파일이 두 팔을 다 덮는다: pd 노드는 ROS 파라미터 `sides`(기본 = robot yaml ∩ 계약의 팔 전부, 우 → 좌)로
+# 팔을 고르고, 팔별 값(tip_link·payload)은 {left: …, right: …} 매핑이다. 태스크 값(홈·게인·vel_ff_scale)은 계약에서 읽는다.
+# 상대 경로는 rl_ws 루트 기준. 실기용 — execute false (승인 후 launch execute:=true 로만 켠다).
+side: both
+execute: false                 # true 여야 컨트롤러 토픽·controller_manager 를 건드린다
+pd_hz: 100.0                   # 재발행 주기
+ramp_speed: 0.1                # RAMPING(첫 목표까지) / goto_home 램프 [rad/s]
+watchdog_sec: 0.25             # joint_target 두절 → HOLD (CommandGate 와 동일)
+lead_sec: 0.1                  # max_lead = lead_vel·lead_sec (세트포인트가 실측을 앞서는 상한)
+lead_vel: 2.0                  # 프로필 관절 velocity 한계(openarm_tesollo.yaml)
+max_vel:                       # TRACKING 세트포인트 전진 상한 [rad/s], 단계 승인
+  reduced: 0.25
+  full: 2.0
+vel_ff_cap: 0.0                # q̇* 전향 상한 [rad/s], 단계 승인 0 → 0.5 → 2.0
+effort_cap: 20.0               # τ 합 상한 [N·m]; 초과 시 0 송출 + HOLD
+abort_tracking: 0.5            # max|세트포인트 − 실측| [rad] → HOLD (sim 도 fabric 목표에 0.42 rad 뒤처진다)
+release_zero_ticks: 5          # RELEASING 에서 q̇*=0·τ=0 송출 횟수
+blend_sec: 1.0                 # engage/release 토크 블렌드 시간
+settle:
+  clamp: 0.12                  # goto_home 정착 bias 상한 [rad]
+  tol: 0.01                    # 정착 판정 [rad]
+gravity:
+  mode: model_tau_ff           # 계약(sides.*.gravity)과 같아야 한다 — 제어 전용 자산 계약은 model_tau_ff
+  urdf: hdgp/assets/robot/openarm_dg5f-m-short_bi_rl/openarm_dg5f-m-short_bi_rl.urdf   # 계약 asset.urdf (양팔, canonical 이름)
+  tip_link: {left: l_hl_palm_ee, right: r_hl_palm_ee}                       # 체인 끝 = 손바닥 EE 프레임(팔별)
+  scale: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]   # 이 자산은 관절별 스윕 전 — 1.0 (구 자산의 1.1 은 URDF 질량 6.4% 과소 보정)
+  # 손 질량: 체인은 revolute 손가락 관절 **너머** 링크를 안 싣는다(고정 링크만 합친다).
+  # ★2026-09-07 정정. 손 전체는 1.763 kg 이지만 그중 mount·adapter·base·palm 0.889 kg 은
+  #   **고정 링크라 체인이 이미 싣고 있다**. 페이로드는 가동 관절 너머 손가락 25개 = 0.8737 kg 뿐이다.
+  #   전체를 얹으면 0.889 kg 을 이중으로 세어 중력토크가 1.3배가 된다.
+  # ★COM 프레임 = 체인 **마지막 링크**(r_al_7 / l_al_7). with_payload 규약이며 palm_ee 가 아니다.
+  #   손 자세는 계약의 home_hand(열린 손). 손목 기준 22.15 cm — 실기 검증된 gravity_comp_node 의
+  #   payload COM [-0.00450,-0.01723,0.22147] 과 소수점 5자리까지 같다.
+  # ★short 판 재계산(2026-09-08). 손이 47.8mm 짧아 COM 이 손목 쪽으로 당겨지고(0.221470 →
+  #   0.171734) CAD 릴리스의 손가락 질량이 달라 총질량도 0.8736532 → 0.8128000 이 된다.
+  #   계산법은 dg5f-m 값과 동일하며(가동관절 너머 손가락 25링크, 계약 home_hand 자세,
+  #   COM 프레임 = 체인 마지막 링크 *_al_7), 같은 코드로 dg5f-m 값을 소수점 6자리까지
+  #   재현해 검산했다.
+  # ★2026-09-14 정정: COM z 0.171734 → 0.181734. 09.10 에 링크7 과 손 사이에 어댑터 판(10 mm,
+  #   `*_hl_flange_adapter`)이 들어가 손가락이 손목에서 10 mm 멀어졌는데 이 값은 09.08 그대로였다.
+  #   질량·x·y 는 불변(어댑터는 고정 링크라 체인이 싣는다). test_pc_pd_gravity 가 URDF 로 대조한다.
+  payload:
+    left:  [0.8128000, -0.005295, 0.016481, 0.181734]
+    right: [0.8128000, -0.005267, -0.016409, 0.181734]
+  cap_nm: 20.0                 # gravity_comp_node TORQUE_CAP_NM
+gains:
+  yaml: urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml
+  accept_sim_mismatch: false
+thermal:                       # j7 과열: preset 자세 대기 3.17 N·m 연속이 관절을 태운다(우 09.05)
+  # ★2026-09-07 근거 교체 — 토크×시간 대리지표를 은퇴시키고 **실제 모터 온도**로 판정한다.
+  #   DM4310 은 MIT 피드백 프레임마다 t_rotor/t_mos 를 보내고 openarm_can 이 이미 디코딩하고
+  #   있었는데, 하드웨어 인터페이스가 pos/vel/eff 만 export 해서 ROS 로 안 올라왔다. 그래서
+  #   09.05 에는 고장 사례 한 건("3.17 N·m 18 분")에서 1.5 N·m/300 s 를 지어내야 했다.
+  #   같은 관절인데 좌 5.0 / 우 1.5 로 갈려 있던 것이 그 임의성의 증거다.
+  #   벤더가 주는 열 관련 수치는 **없다**(joint_limits 7 N·m·CAN tMax 10 N·m 은 순간 한계).
+  # ★2026-09-07 승온 실측(우 j7, preset 2.88 N·m 연속): 26 → 42 °C(100 s) → 52 °C(313 s)
+  #   → 54 °C(416 s) 로 상승이 완만해졌다. 이 부하의 평형은 55~60 °C 근처로 보이며(평형
+  #   도달은 미확인) 로터가 MOS 보다 먼저·크게 오른다. **act 70 °C 로 확정**(사용자 판단).
+  #   clear 55 / warn 60 은 그 곡선 위에 놓인 값이라 유지한다. 모터 자체 OT 보호보다 아래다.
+  # 히스테리시스: act 에서 걸고 clear 아래로 내려가야 풀린다 — 조건이 사라지면 **스스로** 풀린다.
+  # 교착 탈출: 발열 HOLD 에서도 goto_home 이 저부하 자세로 내려가는 것을 허용한다(후퇴 중 가드 억제).
+  - {joint: r_aj_7, temp_act_c: 70.0, temp_clear_c: 55.0, temp_warn_c: 60.0}
+  - {joint: l_aj_7, temp_act_c: 70.0, temp_clear_c: 55.0, temp_warn_c: 60.0}
+gripper: null
+hand:
+  pid_p: 1.5   # 2026-09-06 사용자 확정: DG-5F 손도 벤더 기본값만(구 실기 튜닝 4.5 폐기)
+  pid_d: 0.0
+  max_vel: 1.0                 # [rad/s]

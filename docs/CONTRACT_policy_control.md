@@ -187,3 +187,39 @@ fk: {'kind': 'urdf_chain', 'urdf': 'hdgp/assets/robot/openarm_dg5f-m_bi_rl/opena
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | left | dg5f | 20 | `l_hl_palm` | 5 | ['left_arm', 'left_hand'] | OpenArmTeoslloLeftPoseFabric / openarm_dg5f-m_bi_left | [] | model_tau_ff |
 | right | dg5f | 20 | `r_hl_palm` | 5 | ['right_arm', 'right_hand'] | OpenArmTeoslloPoseFabric / openarm_dg5f-m_bi_right | [] | model_tau_ff |
+
+## asset:openarm_dg5f-m-short_bi_rl — ``
+
+- checkpoint `` md5 `` · experiment `control_only`
+- rate: policy 60 Hz (step_dt 0.01667 s) · episode 0 steps
+- policy: obs 0 / action 0 · rnn none · mlp [] · action_clip None · obs_clip None
+
+### obs segments
+| # | name | dim [offset] | builder | params |
+| --- | --- | --- | --- | --- |
+
+joint orders: arm=7, hand_profile=20, tips=5
+fk: {'kind': 'urdf_chain', 'urdf': 'hdgp/assets/robot/openarm_dg5f-m-short_bi_rl/openarm_dg5f-m-short_bi_rl.urdf'}
+
+### action
+| group | slice |
+| --- | --- |
+
+- control-only contract: no policy, no action decoders (fabric takes palm_cmd / hand_cmd)
+
+### fabric
+- OpenArmTeoslloPoseFabric · openarm_dg5f-m-short_bi_right · openarm_dg5f-m-short_right_pose_params.yaml · world {'filename': 'open_tesollo_boxes_no_table'}
+- dt 0.01667 × decimation 2 · damping 10.0 · vel_ff 1.0 · hand_sync syn_target · table_z None · body_repulsion_pairs True
+
+### pd
+- groups ['right_arm', 'right_hand'] · gravity `model_tau_ff` · sim gravity disabled False
+- trained gains kp [70.0, 70.0, 70.0, 60.0, 10.0, 10.0, 10.0] / kd [2.75, 2.5, 2.0, 2.0, 0.7, 0.6, 0.5]
+- home arm [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+### sides (v2)
+- asset `openarm_dg5f-m-short_bi_rl` (dg5f) urdf `hdgp/assets/robot/openarm_dg5f-m-short_bi_rl/openarm_dg5f-m-short_bi_rl.urdf` · primary `right` · control_only True
+
+| side | ee | hand joints | palm body | tips | pd groups | fabric | action groups | gravity |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| left | dg5f | 20 | `l_hl_palm` | 5 | ['left_arm', 'left_hand'] | OpenArmTeoslloLeftPoseFabric / openarm_dg5f-m-short_bi_left | [] | model_tau_ff |
+| right | dg5f | 20 | `r_hl_palm` | 5 | ['right_arm', 'right_hand'] | OpenArmTeoslloPoseFabric / openarm_dg5f-m-short_bi_right | [] | model_tau_ff |

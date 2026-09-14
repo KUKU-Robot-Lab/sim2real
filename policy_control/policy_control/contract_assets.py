@@ -73,6 +73,11 @@ def _tesollo(side: str, family: str) -> FabricSpec:
 ASSETS = {
     "openarm_dg5f-m_bi_rl": AssetSpec("openarm_dg5f-m_bi_rl", "dg5f",
                                       {"right": _tesollo("right", "dg5f-m"), "left": _tesollo("left", "dg5f-m")}),
+    # DG-5F short base: same hand, mount/base 47.8mm shorter. Identical joint names and
+    # control_joint_order, so ee_kind "dg5f" and every name-derived field carry over.
+    "openarm_dg5f-m-short_bi_rl": AssetSpec(
+        "openarm_dg5f-m-short_bi_rl", "dg5f",
+        {"right": _tesollo("right", "dg5f-m-short"), "left": _tesollo("left", "dg5f-m-short")}),
     "openarm_dg5f-s_bi_rl": AssetSpec("openarm_dg5f-s_bi_rl", "dg5f",
                                       {"right": _tesollo("right", "dg5f-s"), "left": _tesollo("left", "dg5f-s")}),
     "openarm_gripper_bi_rl": AssetSpec("openarm_gripper_bi_rl", "gripper", {

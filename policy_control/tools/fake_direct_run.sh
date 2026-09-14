@@ -28,7 +28,10 @@ call() {   # ros2 CLI 가 가끔 응답을 못 받고 끝난다(요청은 처리
   echo "$out" | grep -q "success=True"
 }
 echo "[run] direct · domain $ROS_DOMAIN_ID · side $SIDE · robot $ROBOT · pd_config $PD_CONFIG · log $LOG"
-launch_bg ros2 launch policy_control/launch/fake_plant.launch.py side:=$SIDE robot:=$ROBOT contract:=$CONTRACT plant_model:=${PLANT_MODEL:-pd} > "$LOG/fake_plant.log" 2>&1
+# 플랜트도 pd 와 같은 중력 모델을 써야 한다 — 안 넘기면 fake_plant 기본값(pd_dg5f_m_fake)이라 short 계약에서 어긋난다.
+# fake_plant.launch 는 이름을 풀지 않고 경로만 받는다.
+case "$PD_CONFIG" in *.yaml) PLANT_PD="$PD_CONFIG" ;; *) PLANT_PD="policy_control/config/pd_${PD_CONFIG}.yaml" ;; esac
+launch_bg ros2 launch policy_control/launch/fake_plant.launch.py side:=$SIDE robot:=$ROBOT contract:=$CONTRACT pd_config:=$PLANT_PD plant_model:=${PLANT_MODEL:-pd} > "$LOG/fake_plant.log" 2>&1
 sleep 3
 launch_bg ros2 launch policy_control/launch/pd_controller.launch.py contract:=$CONTRACT robot:=$ROBOT pd_config:=$PD_CONFIG sides:=$SIDE execute:=true stage:=${PD_STAGE:-full} fake:=true use_source:=true > "$LOG/pd.log" 2>&1
 launch_bg ros2 launch policy_control/launch/policy_chain.launch.py contract:=$CONTRACT robot:=$ROBOT side:=$SIDE device:=cuda:0 fake:=true use_source:=true > "$LOG/chain.log" 2>&1

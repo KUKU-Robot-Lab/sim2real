@@ -1,4 +1,6 @@
-# policy_control — 양팔 DG-5F-M(hdgp/assets/robot/openarm_dg5f-m_bi_rl) 제어 전용 실기 점검, 한 팔씩.
+# policy_control — 양팔 DG-5F-M **short base**(hdgp/assets/robot/openarm_dg5f-m-short_bi_rl) 제어 전용 실기 점검, 한 팔씩.
+#   ★2026-09-14 실기 손을 short 로 교체(어댑터 판 10 mm 장착). 계약·pd 설정을 short 로 바꿨다 — 구 dg5f-m
+#   계약(asset_openarm_dg5f-m_bi_rl)은 손 길이·payload 가 달라 이 로봇에 쓰면 안 된다.
 #   python3 scripts/ops/mission_run.py --mission config/mission_dg5f_m_control.yaml --plan
 #   실기 단계(touches_real)는 --execute 에 더해 --approve <id> 가 필수다(단계당 1회).
 # 정책은 없다(제어 전용 계약): pd(engage/selftest/goto_home) → fabric direct 모드(palm_cmd/hand_cmd) 까지가 목표.
@@ -7,11 +9,11 @@
 name: policy_control 양팔 DG-5F-M 제어 전용 점검 (한 팔씩)
 
 artifacts:
-  contract: logs/policy/asset_openarm_dg5f-m_bi_rl/deploy_contract.json
+  contract: logs/policy/asset_openarm_dg5f-m-short_bi_rl/deploy_contract.json
   robot_right: policy_control/config/robots/dg5f_m_right_real.yaml
   robot_left: policy_control/config/robots/dg5f_m_left_real.yaml
   robot_bi: policy_control/config/robots/dg5f_m_bi_real.yaml
-  pd: policy_control/config/pd_dg5f_m.yaml
+  pd: policy_control/config/pd_dg5f_m_short.yaml
   gains_yaml: ../urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml
 
 checkpoints: {}
@@ -60,6 +62,13 @@ stages:
     artifacts: [contract, robot_right]
     touches_real: true
 
+  - id: preset_return_right
+    title: "[right] preset → 올라온 궤적을 --reverse 로 되짚어 복귀 (goto_home 금지 — 관절공간 직선은 테이블을 모른다)"
+    # ★09.07 커밋 958476a 가 run 블록만 넣고 단계를 빠뜨려 --plan 이 통째로 실패했다(09.14 보강).
+    needs: [preset_right]
+    artifacts: [contract, robot_right]
+    touches_real: true
+
   - id: fabric_direct_right
     title: "[right] fabric 노드 direct 모드 + palm_cmd ±2 cm · hand_cmd open→close 0.3 (작은 델타만)"
     needs: [preset_right]
@@ -104,7 +113,7 @@ run:
     - note: policy_control 비GPU 테스트 전부
       argv: [python3, -m, pytest, "{repo}/tests/policy_control", -q, -m, "not gpu", -p, "no:cacheprovider"]
     - note: 자산 제어 전용 계약 재생성 + control_gains.yaml 대조 (MISMATCH 면 rc 3)
-      argv: [python3, "{repo}/policy_control/tools/build_deploy_contract.py", --asset, openarm_dg5f-m_bi_rl,
+      argv: [python3, "{repo}/policy_control/tools/build_deploy_contract.py", --asset, openarm_dg5f-m-short_bi_rl,
              --home, zero, --gains, "{artifact:gains_yaml}", --out, "{artifact:contract}"]
     - note: forward 컨트롤러가 양팔 모두 bringup 설정에 선언돼 있는지 (grep -c 12 = CM 목록 6 + 파라미터 블록 6)
       argv: [grep, -c, "_forward_", "/home/user/rl_ws/robot_control/ros_ws/src/openarm_ros2/openarm_bringup/config/controllers/openarm_bimanual_controllers.yaml"]
@@ -116,13 +125,18 @@ run:
       argv: [ros2, launch, openarm_bringup, openarm.bimanual.launch.py, "use_fake_hardware:=false",
              "right_can_interface:=can0", "left_can_interface:=can1"]
       manual: true
-    - note: ★손 링크로컬 주소 — 손은 CAN 이 아니라 Modbus TCP(169.254.186.72:502) 다. eno1 에 IPv4 가 없으면
-        경로가 tailscale0 로 새고 controller_manager 가 접속 대기로 멈춘다(2026-09-07 실기에서 겪음)
-      argv: [bash, -lc, "sudo ip addr add 169.254.186.1/16 dev eno1; ping -c2 169.254.186.72"]
+    - note: ★손 네트워크 — 손은 CAN 이 아니라 Modbus TCP(우 169.254.186.72 · 좌 .73, :502) 다. 09.14 배선은
+        우 = 본체 eno1, 좌 = USB-C 허브 enx00e04c6806e1 로 NIC 이 둘이고, 169.254.0.0/16 경로가 wifi 에 먼저 잡혀 있다.
+        서브넷 주소만 주면 패킷이 엉뚱한 NIC 로 새므로(09.07 tailscale0 로 새서 controller_manager 대기) 손마다
+        /32 호스트 경로를 고정한다. 최초 1회 --apply(NetworkManager 프로필), 이후엔 인자 없이 점검만. rc 0 이어야 진행
+      argv: [bash, "{repo}/scripts/setup/hand_net_dual.sh", --apply]
       manual: true
-    - note: ★DG-5F 드라이버 — 우 dg5f_right_driver / 좌 dg5f_left_driver. config 의 PID p 는 벤더 1.5 여야
-        한다 — pd engage 는 같은 값인지 확인만 하고 올리지 않는다
+    - note: ★DG-5F 드라이버(우) — 벤더 dg5f_ros2 로 교체(09.14, robot_control ros_ws/src/dg5f_ros2). config 의 PID p 는
+        벤더 1.5 여야 한다 — pd engage 는 같은 값인지 확인만 하고 올리지 않는다
       argv: [ros2, launch, dg5f_driver, dg5f_right_driver.launch.py, "delto_ip:=169.254.186.72"]
+      manual: true
+    - note: ★DG-5F 드라이버(좌) — 별도 셸. namespace dg5f_left
+      argv: [ros2, launch, dg5f_driver, dg5f_left_driver.launch.py, "delto_ip:=169.254.186.73"]
       manual: true
     - note: 목 기준자세 + I게인 재적용
       argv: [python3, "{repo}/scripts/head_home.py"]

@@ -248,8 +248,19 @@ def test_make_gravity_per_side_from_dg5f_m_yaml_matches_chain_math():
         G.make_gravity(cfg.gravity, contract)                          # 팔별 매핑인데 팔을 안 골랐다
 
 
-@needs_asset
-def test_dg5f_m_payload_is_only_what_the_chain_cannot_carry():
+SHORT_CONTRACT = SIM2REAL / "logs/policy/asset_openarm_dg5f-m-short_bi_rl/deploy_contract.json"
+SHORT_URDF = RL_WS / "hdgp/assets/robot/openarm_dg5f-m-short_bi_rl/openarm_dg5f-m-short_bi_rl.urdf"
+#: (pd yaml, 계약, URDF) — pd yaml 마다 payload 가 **자기 자산 URDF** 에서 나와야 한다.
+PAYLOAD_CASES = [
+    pytest.param("pd_dg5f_m.yaml", ASSET_CONTRACT, ASSET_URDF, id="dg5f-m"),
+    pytest.param("pd_dg5f_m_fake.yaml", ASSET_CONTRACT, ASSET_URDF, id="dg5f-m-fake"),
+    pytest.param("pd_dg5f_m_short.yaml", SHORT_CONTRACT, SHORT_URDF, id="dg5f-m-short"),
+    pytest.param("pd_dg5f_m_short_fake.yaml", SHORT_CONTRACT, SHORT_URDF, id="dg5f-m-short-fake"),
+]
+
+
+@pytest.mark.parametrize("pd_yaml,contract_path,urdf", PAYLOAD_CASES)
+def test_payload_is_only_what_the_chain_cannot_carry(pd_yaml, contract_path, urdf):
     """payload = 체인이 못 싣는 몫 = **가동 관절 너머** 링크뿐. 프레임은 체인 마지막 링크(al_7).
 
     ★2026-09-07 정정. 이 테스트는 원래 `{p}_hj_` 로 시작하는 **모든** 관절의 하위 링크를
@@ -258,12 +269,18 @@ def test_dg5f_m_payload_is_only_what_the_chain_cannot_carry():
     실제로는 고정 링크 0.889 kg 을 체인이 이미 싣고 있어 이중 계상이었다 — 중력토크가
     1.3배가 되고, 프레임까지 palm_ee 로 잘못 잡혀 손목은 되레 40 % 로 줄었다. 실기에서
     j7 이 33.7° 내려앉아 손이 테이블에 닿고서야 드러났다.
+
+    ★2026-09-14 short 판 추가. 09.08 에 손으로 계산해 넣은 short payload 가 09.10 어댑터 판(10 mm)
+    삽입 뒤에도 그대로 남아 COM z 가 10 mm 틀려 있었다 — 이 테스트가 dg5f-m 만 봤기 때문이다.
     """
+    if not contract_path.exists():
+        pytest.skip(f"계약 없음: {contract_path}")
     from arm_inertia import _link_transforms, _subtree_links, parse_urdf
 
-    contract = C.load_contract(ASSET_CONTRACT)
-    cfg = L.load_pd_config(CONFIG / "pd_dg5f_m.yaml")
-    model = parse_urdf(str(ASSET_URDF))
+    contract = C.load_contract(contract_path)
+    cfg = L.load_pd_config(CONFIG / pd_yaml)
+    assert (RL_WS / cfg.gravity.urdf).resolve() == urdf.resolve(), f"{pd_yaml} 의 gravity.urdf 가 자산과 다르다"
+    model = parse_urdf(str(urdf))
     movable = {"revolute", "continuous", "prismatic"}
     for side in ("left", "right"):
         s = contract.side(side)
