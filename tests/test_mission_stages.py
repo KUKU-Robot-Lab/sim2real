@@ -190,3 +190,33 @@ def test_commands_are_run_by_the_runner_unless_marked_manual():
     cmd = commands_for(book, _mission(), "preset_right", repo=REPO, execute=False)[0]
 
     assert cmd.manual is False
+
+
+# ── 정지 명령 (09.22 재구성) ────────────────────────────────────────────────
+def _stop_mission() -> Mission:
+    return Mission(name="t", stages=(Stage(id="up", title="u"), Stage(id="down", title="d")))
+
+
+def test_a_stop_step_loads_without_argv_and_resolves_to_a_stop_command():
+    book = load_runbook({"up": [{"argv": ["sleep", "9"], "background": True}],
+                         "down": [{"note": "내린다", "stop": ["up#0"]}]}, _stop_mission())
+    (cmd,) = commands_for(book, _stop_mission(), "down", repo=REPO, execute=True)
+    assert cmd.stop == ("up#0",) and cmd.argv == ()
+
+
+@pytest.mark.parametrize("down, why", [
+    ([{"stop": ["up#3"]}], "명령이 아니다"),                                   # 없는 번호
+    ([{"stop": ["nope#0"]}], "명령이 아니다"),                                  # 없는 단계
+    ([{"stop": ["up#1"]}], "배경 명령이 아니다"),                               # 전경 명령은 떠 있지 않다
+    ([{"stop": ["up#0"], "argv": ["true"]}], "같이 쓰지 않는다"),
+])
+def test_stop_targets_are_checked_at_load(down, why):
+    raw = {"up": [{"argv": ["sleep", "9"], "background": True}, {"argv": ["true"]}], "down": down}
+    with pytest.raises(ValueError, match=why):
+        load_runbook(raw, _stop_mission())
+
+
+def test_a_stop_may_not_reach_forward_to_a_later_stage():
+    raw = {"up": [{"stop": ["down#0"]}], "down": [{"argv": ["sleep", "9"], "background": True}]}
+    with pytest.raises(ValueError, match="뒤에서 띄우는"):
+        load_runbook(raw, _stop_mission())

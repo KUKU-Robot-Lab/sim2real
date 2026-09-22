@@ -216,13 +216,31 @@ def test_a_lock_reason_wraps_to_two_lines_instead_of_hiding_behind_hover():
 
 
 # ── "노드를 어떻게 켜나" 를 화면이 답한다 (09.22 실기 첫 세션) ────────────
-def test_there_is_a_next_step_line_under_the_banner():
-    assert re.search(r'id="nextstep"', HTML)
-    assert "function renderNext" in JS and "renderNext(" in JS.split("function renderNext")[0]   # render() 가 부른다
+def test_one_control_panel_under_the_banner_carries_every_stage_action():
+    # 09.22 사용자: "메인 status 화면 창에서 승인 및 진행" — 카드를 줄줄이 내려가며 버튼을 찾지 않는다.
+    assert re.search(r'<section id="control"[^>]*>\s*<ol id="gb"', HTML), "진행 막대가 조작판 맨 위"
+    assert HTML.index('id="control"') < HTML.index('id="work"')
+    assert "function renderControl" in JS and "renderControl(" in JS.split("function renderControl")[0]
+    panel = re.search(r"function renderControl[\s\S]*?\n}\n", JS).group(0)
+    for act in ("approve", "run", "skip", "abort-stage"):
+        assert f'data-act="{act}"' in panel, act
+    assert "cmdsHtml(cur, mine, can, true)" in panel, "수동 확인 버튼도 조작판에"
+
+
+def test_the_full_stage_list_is_folded_and_read_only():
+    assert re.search(r'<details id="all-stages"', HTML) and 'id="all-stages" class="panel all-stages" open' not in HTML
+    listing = re.search(r"function renderStages[\s\S]*?\n}\n", JS).group(0)
+    for act in ('data-act="approve"', 'data-act="run"', 'data-act="skip"', 'data-act="ack"'):
+        assert act not in listing, act
+    assert "cmdsHtml(r, steps, can, false)" in listing and "stage-group" in listing
 
 
 def test_each_stage_card_has_an_anchor_to_jump_to():
     assert re.search(r'<li id="stage-\$\{esc\(r\.id\)\}"', JS)
+
+
+def test_stop_steps_say_what_they_bring_down():
+    assert 'stop: "■ 정지"' in JS and "정지 → " in JS
 
 
 def test_a_lock_line_takes_you_to_the_stage_that_turns_the_node_on():

@@ -56,6 +56,8 @@ def index_units(mission, commands_by_stage: Mapping[str, tuple]) -> dict[str, Un
     out: dict[str, UnitCmd] = {}
     for stage in mission.stages:
         for i, c in enumerate(commands_by_stage.get(stage.id, ())):
+            if getattr(c, "stop", ()):
+                continue                         # 정지 명령은 켜 둘 것이 아니다
             kind = "manual" if c.manual else ("background" if c.background else "foreground")
             if kind == "foreground":
                 continue
@@ -109,9 +111,32 @@ def stack_end_reason(*, real: bool, stack_keys: Collection[str], procs: Mapping[
             "팔을 받침·안전 자세에 둔 뒤 '강제 종료' 로 끝낼 것")
 
 
-def keep_children_on_exit(*, real: bool, procs: Mapping[str, Mapping]) -> bool:
-    """콘솔 프로세스가 내려갈 때 자식을 남길 것인가. 실기에서 뭔가 떠 있으면 남긴다 — 고아가 떨어진 팔보다 낫다."""
-    return real and any((p or {}).get("alive") for p in procs.values())
+def keep_on_exit(*, real: bool, stack_keys: Collection[str], procs: Mapping[str, Mapping]) -> list[str]:
+    """콘솔 프로세스가 내려갈 때 **남길** 자식 키. 실기의 팔·손 드라이버만 — 끄면 팔이 떨어진다.
+
+    나머지(인지 런처·목 퍼블리셔·무발행 pd …)는 정지한다. 09.22: 전부 남겼더니 다시 띄운 콘솔이 목 퍼블리셔를
+    한 번 더 띄워 시리얼 포트를 둘이 잡았고, bringup 의 head_home 이 그 충돌로 실패했다.
+    """
+    if not real:
+        return []
+    return sorted(k for k in stack_keys if (procs.get(k) or {}).get("alive"))
+
+
+def skip_reasons(*, skippable: bool, busy: bool, pd_phase: str | None) -> list[str]:
+    """이 단계를 실행하지 않고 넘길 수 없는 이유. 비어 있으면 넘겨도 된다.
+
+    pd 가 팔을 잡고 있으면 아무것도 넘기지 않는다 — 넘긴 단계가 release 였다면 잡힌 팔을 두고 지나가게 된다.
+    """
+    out = []
+    if not skippable:
+        out.append("이 단계는 건너뛸 수 없게 선언됐다")
+    if busy:
+        out.append("단계가 실행 중이다")
+    if pd_phase == PD_UNKNOWN:
+        out.append("pd 상태를 모른다 — 팔이 잡혀 있을 수 있어 건너뛰지 않는다")
+    elif pd_phase not in PD_FREE:
+        out.append(f"pd 가 {pd_phase} 다 — 팔을 잡은 동안에는 건너뛰지 않는다")
+    return out
 
 
 def off_reasons(unit: UnitCmd, *, alive: bool, busy_stage: str | None, pd_phase: str | None,

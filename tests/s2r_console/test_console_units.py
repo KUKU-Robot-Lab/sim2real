@@ -305,9 +305,21 @@ def test_ending_a_real_run_with_the_arm_bringup_alive_is_refused_with_the_reason
     assert stack_end_reason(real=True, stack_keys={"bringup#3"}, procs={"bringup#3": {"alive": False}}) is None
 
 
-def test_quitting_the_console_leaves_live_real_robot_processes_running():
-    # 콘솔 터미널의 Ctrl+C 는 보호 없이 전부 내렸다. 실기에서는 고아 프로세스가 떨어진 팔보다 낫다.
-    from s2r_console.units import keep_children_on_exit
-    assert keep_children_on_exit(real=True, procs={"bringup#3": {"alive": True}}) is True
-    assert keep_children_on_exit(real=True, procs={"bringup#3": {"alive": False}}) is False
-    assert keep_children_on_exit(real=False, procs={"plant#0": {"alive": True}}) is False
+def test_quitting_the_console_keeps_only_the_real_arm_and_hand_drivers():
+    # 콘솔 터미널의 Ctrl+C 는 보호 없이 전부 내렸다(팔이 떨어진다). 그렇다고 전부 남기면 09.22 처럼 다시 띄운 콘솔이
+    # 목 퍼블리셔를 한 번 더 띄워 시리얼 포트를 둘이 잡는다 — 드라이버만 남기고 나머지는 정지한다.
+    from s2r_console.units import keep_on_exit
+    procs = {"bringup#3": {"alive": True}, "bringup#5": {"alive": False}, "sensors#1": {"alive": True}, "pd_load_right#0": {"alive": True}}
+    assert keep_on_exit(real=True, stack_keys={"bringup#3", "bringup#5"}, procs=procs) == ["bringup#3"]
+    assert keep_on_exit(real=True, stack_keys={"bringup#5"}, procs=procs) == []
+    assert keep_on_exit(real=False, stack_keys={"bringup#3"}, procs=procs) == []
+
+
+def test_skipping_is_refused_while_the_arm_may_be_held():
+    from s2r_console.units import PD_UNKNOWN, skip_reasons
+    assert skip_reasons(skippable=True, busy=False, pd_phase=None) == []
+    assert skip_reasons(skippable=True, busy=False, pd_phase="IDLE") == []
+    assert any("건너뛸 수 없게" in r for r in skip_reasons(skippable=False, busy=False, pd_phase=None))
+    assert any("실행 중" in r for r in skip_reasons(skippable=True, busy=True, pd_phase=None))
+    assert any("TRACKING" in r for r in skip_reasons(skippable=True, busy=False, pd_phase="TRACKING"))
+    assert any("모른다" in r for r in skip_reasons(skippable=True, busy=False, pd_phase=PD_UNKNOWN))

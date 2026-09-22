@@ -6,6 +6,9 @@
     python3 deploy/policy_control/tools/episode_ctl.py --steps 250                       # 계획만 출력
     python3 deploy/policy_control/tools/episode_ctl.py --steps 250 --execute \\
         --approve pd_engage --approve pd_goto_home --approve ep_start              # 실행
+    python3 deploy/policy_control/tools/episode_ctl.py --only pd_engage --hold-s 10 --execute --approve pd_engage
+    python3 deploy/policy_control/tools/episode_ctl.py --only pd_goto_home --execute --approve pd_goto_home
+                                                                                  # 일부만 — 성공하면 engage 를 유지한다
 
 규약(scripts/ops/mission_run.py 와 동일)
   ① ``--execute`` 없이는 아무 서비스도 부르지 않는다 — 계획표만 출력.
@@ -59,8 +62,23 @@ def stage_by_id(stage_id: str) -> Stage:
     raise KeyError(f"unknown stage {stage_id!r}; known: {[s.id for s in STAGES]}")
 
 
-def missing_approvals(approvals: frozenset[str]) -> list[str]:
-    return [s.id for s in STAGES if s.touches_real and s.id not in approvals]
+def selected(only: tuple[str, ...] = ()) -> tuple[Stage, ...]:
+    """실행할 단계 — 비어 있으면 전부. 순서는 항상 STAGES 의 순서다(인자 순서로 뒤집지 않는다)."""
+    if not only:
+        return STAGES
+    unknown = [o for o in only if o not in {s.id for s in STAGES}]
+    if unknown:
+        raise KeyError(f"unknown --only {unknown}; known: {[s.id for s in STAGES]}")
+    return tuple(s for s in STAGES if s.id in only)
+
+
+def missing_approvals(approvals: frozenset[str], only: tuple[str, ...] = ()) -> list[str]:
+    return [s.id for s in selected(only) if s.touches_real and s.id not in approvals]
+
+
+def hold_ok(status: dict | None) -> bool:
+    """engage 뒤 제자리 유지 중 — pd 가 여전히 잡고 있는가(HOLD·IDLE 로 떨어지면 아니다)."""
+    return status is not None and status.get("phase") in ("RAMPING", "TRACKING")
 
 
 def parse_trigger(success: bool, message: str) -> tuple[bool, list[str]]:
@@ -82,9 +100,10 @@ def phase_ok(status: dict | None, stage: Stage) -> bool:
     return status is not None and status.get("phase") in stage.expect_pd
 
 
-def print_plan(steps: int, approvals: frozenset[str], execute: bool) -> None:
-    print(f"episode_ctl 계획 · steps {steps} · execute {execute}")
-    for s in STAGES:
+def print_plan(steps: int, approvals: frozenset[str], execute: bool, only: tuple[str, ...] = (), hold_s: float = 0.0) -> None:
+    print(f"episode_ctl 계획 · steps {steps} · execute {execute}" + (f" · only {list(only)}" if only else "")
+          + (f" · engage 뒤 제자리 {hold_s:g} s" if hold_s else ""))
+    for s in selected(only):
         real = "실기" if s.touches_real else "    "
         appr = ("승인" if s.id in approvals else "미승인") if s.touches_real else "  "
         svc = s.service or "(wait)"
@@ -175,6 +194,19 @@ class Runner:
         print("    ✗ step wait timeout")
         return False
 
+    def hold(self, seconds: float) -> bool:
+        """engage 뒤 제자리 유지. pd 가 RAMPING/TRACKING 을 벗어나면(HOLD 등) 곧바로 실패."""
+        print(f"    … 제자리 {seconds:g} s — 팔이 처지거나 떨리면 비상정지")
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            self.spin(0.1)
+            if not hold_ok(self.pd_status):
+                got = None if self.pd_status is None else self.pd_status.get("phase")
+                print(f"    ✗ 제자리 유지 중 pd phase {got!r}: {(self.pd_status or {}).get('reasons')}")
+                return False
+        print(f"    ✓ 제자리 {seconds:g} s 유지")
+        return True
+
     def close(self) -> None:
         self.node.destroy_node()
         self.rclpy.shutdown()
@@ -210,21 +242,29 @@ def safe_tail(runner: Runner, done: set[str], steps: int) -> None:
             run_stage(runner, stage_by_id(sid), steps)
 
 
-def execute(steps: int, service_timeout: float, phase_timeout: float) -> int:
+def execute(steps: int, service_timeout: float, phase_timeout: float, only: tuple[str, ...] = (), hold_s: float = 0.0) -> int:
     runner = Runner(service_timeout, phase_timeout)
     done: set[str] = set()
     rc = 0
     try:
-        for stage in STAGES:
+        for stage in selected(only):
             if not run_stage(runner, stage, steps):
                 rc = 2
                 break
             done.add(stage.id)
+            if stage.id == "pd_engage" and hold_s > 0 and not runner.hold(hold_s):
+                rc = 2
+                break
     except KeyboardInterrupt:
         print("\nCtrl-C → stop/release")
         rc = 130
     finally:
-        if "pd_engage" in done:
+        if only:
+            # 일부만 부를 때: 성공이면 engage 를 **유지**한다(다음 단계가 이어 쓴다). 실패·중단이면 pd 를 풀어 둔다 —
+            # 이 호출 전에 이미 engage 돼 있었을 수 있으므로(goto_home 만 부른 경우) engage 여부와 무관하게 release 한다.
+            if rc != 0:
+                run_stage(runner, stage_by_id("pd_release"), steps)
+        elif "pd_engage" in done:
             safe_tail(runner, done, steps)
         runner.close()
     return rc
@@ -238,6 +278,8 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     ap.add_argument("--approve", action="append", default=[], help="실기 단계 승인 (반복)")
     ap.add_argument("--service-timeout", type=float, default=DEFAULT_SERVICE_TIMEOUT)
     ap.add_argument("--phase-timeout", type=float, default=DEFAULT_PHASE_TIMEOUT)
+    ap.add_argument("--only", default="", help="쉼표로 단계 id — 그 단계만 (예: pd_engage). 성공하면 engage 를 유지한다")
+    ap.add_argument("--hold-s", type=float, default=0.0, help="pd_engage 뒤 제자리 유지 시간 [s] — 그동안 HOLD 로 가면 실패")
     return ap.parse_args(argv)
 
 
@@ -251,14 +293,23 @@ def main(argv: list[str] | None = None) -> int:
     if unknown:
         print(f"unknown --approve {unknown}", file=sys.stderr)
         return 2
-    print_plan(args.steps, approvals, args.execute)
+    only = tuple(o.strip() for o in args.only.split(",") if o.strip())
+    try:
+        selected(only)
+    except KeyError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if args.hold_s < 0 or (args.hold_s and "pd_engage" not in {s.id for s in selected(only)}):
+        print("--hold-s 는 pd_engage 를 부를 때만, 0 이상", file=sys.stderr)
+        return 2
+    print_plan(args.steps, approvals, args.execute, only, args.hold_s)
     if not args.execute:
         return 0
-    missing = missing_approvals(approvals)
+    missing = missing_approvals(approvals, only)
     if missing:
         print(f"\n✗ 실기 단계 승인이 없다 — --approve {' --approve '.join(missing)}", file=sys.stderr)
         return 3
-    return execute(args.steps, args.service_timeout, args.phase_timeout)
+    return execute(args.steps, args.service_timeout, args.phase_timeout, only, args.hold_s)
 
 
 if __name__ == "__main__":

@@ -43,6 +43,9 @@ class CommandSpec:
     #: 받는다. sudo 가 필요하거나(CAN), 다른 PC 에서 돌거나(vision-3090), venv 없는
     #: 셸이어야 하는(Isaac) 명령들이다. 여기서 대신 돌리면 조용히 엉뚱한 데서 돈다.
     manual: bool = False
+    #: 비어 있지 않으면 **실행이 아니라 정지**다 — 앞 단계가 띄운 배경 명령(`단계#번호`)을 내린다.
+    #: argv 가 없다. 무발행 pd 를 내리고 발행 pd 로 바꿀 때, 안전 종료에서 pd → 손 → 팔 순서로 내릴 때 쓴다.
+    stop: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,7 @@ class Command:
     note: str = ""
     background: bool = False
     manual: bool = False
+    stop: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -96,12 +100,18 @@ def commands_for(
         argv = [resolve(a, mission, repo=repo) for a in spec.argv]
         if execute:
             argv += [resolve(a, mission, repo=repo) for a in spec.execute_args]
-        out.append(Command(argv=tuple(argv), note=spec.note, background=spec.background, manual=spec.manual))
+        out.append(Command(argv=tuple(argv), note=spec.note, background=spec.background, manual=spec.manual,
+                           stop=spec.stop))
     return tuple(out)
 
 
 def _spec_from_raw(raw: Mapping, stage_id: str) -> CommandSpec:
     argv = tuple(str(a) for a in raw.get("argv", ()) or ())
+    stop = tuple(str(k) for k in raw.get("stop", ()) or ())
+    if stop:
+        if argv or raw.get("background") or raw.get("manual") or raw.get("execute_args"):
+            raise ValueError(f"단계 '{stage_id}' 의 정지 명령(stop)에는 argv·background·manual·execute_args 를 같이 쓰지 않는다")
+        return CommandSpec(argv=(), note=str(raw.get("note", "")), stop=stop)
     if not argv:
         raise ValueError(f"단계 '{stage_id}' 의 명령에 argv 가 비어 있다")
     return CommandSpec(
@@ -121,4 +131,20 @@ def load_runbook(raw: Mapping, mission: Mission) -> Runbook:
         if stage_id not in known:
             raise ValueError(f"명령이 붙은 '{stage_id}' 가 미션의 단계가 아니다")
         commands[stage_id] = tuple(_spec_from_raw(s, stage_id) for s in specs or ())
+    _validate_stops(commands, mission)
     return Runbook(commands=commands)
+
+
+def _validate_stops(commands: Mapping[str, tuple[CommandSpec, ...]], mission: Mission) -> None:
+    """정지 대상은 **이 단계보다 앞에서** 띄운 배경 명령이어야 한다 — 오타나 순서 착오가 조용히 아무것도 안 끄는 일을 막는다."""
+    order = [s.id for s in mission.stages]
+    for stage_id, specs in commands.items():
+        for i, spec in enumerate(specs):
+            for key in spec.stop:
+                target, _, idx = key.partition("#")
+                if target not in commands or not idx.isdigit() or int(idx) >= len(commands[target]):
+                    raise ValueError(f"단계 '{stage_id}' 의 정지 대상 '{key}' 가 미션의 명령이 아니다")
+                if not commands[target][int(idx)].background:
+                    raise ValueError(f"단계 '{stage_id}' 의 정지 대상 '{key}' 는 배경 명령이 아니다")
+                if order.index(target) > order.index(stage_id) or (target == stage_id and int(idx) >= i):
+                    raise ValueError(f"단계 '{stage_id}' 가 뒤에서 띄우는 '{key}' 를 먼저 정지하려 한다")

@@ -467,3 +467,28 @@ def test_load_mission_rejects_a_checkpoint_entry_missing_its_digest():
 
     with pytest.raises(ValueError, match="md5"):
         load_mission(raw)
+
+
+# ── 묶음 (09.22 재구성) ─────────────────────────────────────────────────────
+def _raw_grouped(**over) -> dict:
+    raw = {"stages": [{"id": "a", "group": "g1"}, {"id": "b", "group": "g2", "skippable": True}],
+           "groups": [{"id": "g1", "title": "하나"}, {"id": "g2", "title": "둘", "motion": True}]}
+    raw.update(over)
+    return raw
+
+
+def test_groups_load_in_declared_order_with_motion_and_skip_flags():
+    from mission_core import load_mission
+    m = load_mission(_raw_grouped())
+    assert [(g.id, g.motion) for g in m.groups] == [("g1", False), ("g2", True)]
+    assert [s.skippable for s in m.stages] == [False, True]
+
+
+def test_a_half_grouped_mission_is_refused():
+    from mission_core import load_mission
+    with pytest.raises(ValueError, match="groups 에 없다"):
+        load_mission(_raw_grouped(stages=[{"id": "a", "group": "g1"}, {"id": "b"}]))
+    with pytest.raises(ValueError, match="groups 를 선언하지 않았는데"):
+        load_mission({"stages": [{"id": "a", "group": "g1"}]})
+    with pytest.raises(ValueError, match="중복"):
+        load_mission(_raw_grouped(groups=[{"id": "g1", "title": "x"}, {"id": "g1", "title": "y"}]))

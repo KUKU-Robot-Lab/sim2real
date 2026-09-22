@@ -148,8 +148,8 @@ def print_plan(mission: Mission, runbook: Runbook, state: MissionState, ev: Evid
         for reason in row.result.reasons:
             print(f"        └ {reason}")
         for cmd in commands_for(runbook, mission, row.stage.id, repo=REPO, execute=False):
-            kind = "수동" if cmd.manual else ("배경" if cmd.background else "실행")
-            print(f"          [{kind}] {cmd.note or ' '.join(cmd.argv[:3])}")
+            kind = "정지" if cmd.stop else "수동" if cmd.manual else ("배경" if cmd.background else "실행")
+            print(f"          [{kind}] {cmd.note or ' '.join(cmd.argv[:3]) or ', '.join(cmd.stop)}")
     print("\n  실기 단계는 실행할 때 --approve <id> 를 따로 받는다 (이 표에서는 묻지 않는다).")
     if blocked:
         print(f"\n막힌 {len(blocked)}단계가 다음에 만들 것이다 — 위의 이유와 근거 파일을 볼 것.")
@@ -161,9 +161,9 @@ def print_commands(mission: Mission, runbook: Runbook, stage_id: str, execute: b
         print("  (명령 없음 — 산출물 확인만 하는 단계다)")
         return
     for i, cmd in enumerate(cmds, 1):
-        kind = "★수동" if cmd.manual else ("배경" if cmd.background else "실행")
+        kind = "정지" if cmd.stop else "★수동" if cmd.manual else ("배경" if cmd.background else "실행")
         print(f"  {i}. [{kind}] {cmd.note}")
-        print(f"     {' '.join(cmd.argv)}")
+        print(f"     {' '.join(cmd.argv) or '정지: ' + ', '.join(cmd.stop)}")
 
 
 # ── 실행 ───────────────────────────────────────────────────────────────────
@@ -212,6 +212,10 @@ def run_stage(
     background: list[subprocess.Popen] = []
     try:
         for cmd in commands_for(runbook, mission, stage_id, repo=REPO, execute=True):
+            if cmd.stop:
+                # CLI 는 단계마다 제 자식을 정지한다 — 앞 단계의 프로세스는 이미 없다. 콘솔만 단계를 넘어 들고 있다.
+                print(f"\n  ■ 정지 {', '.join(cmd.stop)} — CLI 에서는 앞 단계의 자식이 이미 정지돼 있다 (넘어간다)")
+                continue
             if cmd.manual:
                 print(f"\n  ★수동 — 다른 셸에서 직접 실행할 것: {cmd.note}")
                 print(f"    {' '.join(cmd.argv)}")

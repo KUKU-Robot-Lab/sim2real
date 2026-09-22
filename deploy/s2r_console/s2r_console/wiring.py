@@ -217,7 +217,9 @@ def _pd(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
     sides = [s for s in SIDE_ORDER if s in (asked or _robot_sides(robot)) and s in (contract.get("sides") or {})]
     execute = cmd.args.get("execute", "false").lower() in ("true", "1", "yes")
     muted = "" if execute else "pd 가 execute:=false 로 떠 있다 — 구동 토픽을 내지 않는다(무발행)"
-    pd = g.box("pd", "pd_node · PD 제어", L_PD, status="pd", ros=["/pd_node"], unit=key,
+    # 같은 팔의 pd 가 무발행 → 발행으로 두 번 뜨는 미션이 있다 — 제목만 보고도 어느 쪽 상자인지 알게 한다
+    label = " · ".join([f"{SIDE_KO.get(sd, sd)}팔" for sd in sides] + ([] if execute else ["무발행"]))
+    pd = g.box("pd", f"pd_node · PD 제어 ({label})" if label else "pd_node · PD 제어", L_PD, status="pd", ros=["/pd_node"], unit=key,
                stages=["PD 법칙", "컨트롤러 교대", "발행" if execute else "무발행"])
     drives = 0
     for side in sides:

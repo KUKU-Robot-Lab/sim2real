@@ -59,6 +59,21 @@ class Stage:
     blocked: str = ""
     #: 그 판정의 근거 파일. 사용자가 직접 확인할 수 있어야 한다.
     evidence: str = ""
+    #: 화면의 묶음(`Mission.groups` 의 id). 비어 있으면 묶음 없이 보인다.
+    group: str = ""
+    #: 참이면 운영자가 실행하지 않고 넘길 수 있다(예: 오른팔만 할 때 왼팔 단계). 넘겨도 되는지는 호출자가
+    #: 실기 상태로 한 번 더 판정한다 — 여기서는 "넘길 수 있게 선언됐다" 만 안다.
+    skippable: bool = False
+
+
+@dataclass(frozen=True)
+class Group:
+    """단계 묶음 — 점검 · 연결 · 준비 · 자세 이동 · 정책 동작 · 정리. 화면이 이 순서로 진행 막대를 그린다."""
+
+    id: str
+    title: str
+    #: 이 묶음의 단계가 팔·목을 움직이는가. 화면이 색과 경고로 구분한다.
+    motion: bool = False
 
 
 @dataclass(frozen=True)
@@ -69,6 +84,7 @@ class Mission:
     loop_to: str = ""
     artifacts: Mapping[str, str] = field(default_factory=dict)
     checkpoints: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    groups: tuple[Group, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -276,7 +292,35 @@ def _stage_from_raw(raw: Mapping) -> Stage:
         touches_real=bool(raw.get("touches_real", False)),
         blocked=str(raw.get("blocked", "")),
         evidence=str(raw.get("evidence", "")),
+        group=str(raw.get("group", "")),
+        skippable=bool(raw.get("skippable", False)),
     )
+
+
+def _groups_from_raw(raw) -> tuple[Group, ...]:
+    groups = []
+    for g in raw or ():
+        if not g.get("id") or not g.get("title"):
+            raise ValueError(f"묶음에는 id 와 title 이 있어야 한다: {g}")
+        groups.append(Group(id=str(g["id"]), title=str(g["title"]), motion=bool(g.get("motion", False))))
+    ids = [g.id for g in groups]
+    dupes = sorted({gid for gid in ids if ids.count(gid) > 1})
+    if dupes:
+        raise ValueError(f"묶음 id 가 중복이다: {dupes}")
+    return tuple(groups)
+
+
+def _validate_groups(mission: Mission) -> None:
+    """묶음을 선언했으면 모든 단계가 선언된 묶음 하나에 속한다 — 반만 묶인 화면은 빠진 단계를 숨긴다."""
+    if not mission.groups:
+        stray = [s.id for s in mission.stages if s.group]
+        if stray:
+            raise ValueError(f"groups 를 선언하지 않았는데 group 을 단 단계가 있다: {stray}")
+        return
+    known = {g.id for g in mission.groups}
+    for stage in mission.stages:
+        if stage.group not in known:
+            raise ValueError(f"단계 '{stage.id}' 의 묶음 '{stage.group}' 가 groups 에 없다")
 
 
 def _validate_checkpoints(checkpoints: Mapping[str, Mapping[str, str]]) -> None:
@@ -327,6 +371,8 @@ def load_mission(raw: Mapping) -> Mission:
         loop_to=loop_to,
         artifacts=dict(raw.get("artifacts", {}) or {}),
         checkpoints=checkpoints,
+        groups=_groups_from_raw(raw.get("groups")),
     )
     _validate_stage_refs(mission)
+    _validate_groups(mission)
     return mission

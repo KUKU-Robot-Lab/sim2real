@@ -80,9 +80,9 @@ function render() {
   $("landing").hidden = !!s;
   $("work").hidden = !s;
   $("stopbar").hidden = !s;
-  $("nextstep").hidden = !s;
+  $("control").hidden = !s;
   if (!s) return renderLanding();
-  renderNext(s);
+  renderControl(s);
   renderStages(s);
   renderDiagram(s);
   renderLinks(s);
@@ -115,28 +115,93 @@ function renderTop(s) {
 }
 
 // 지금 무엇을 하면 되는가 — 노드는 상자 스위치가 아니라 미션 단계의 ▶ 실행으로 켜진다(09.22 실기 첫 세션에서 못 찾았다)
-let flashStage = null, flashUntil = 0;                                       // 단계로 간 뒤 잠깐 강조 — 다시 그려도 유지
-const goBtn = (id) => ` <button class="btn btn-sm" data-act="goto-stage" data-arg="${esc(id)}">${esc(id)} 단계로 가기 ↓</button>`;
-function renderNext(s) {
-  const m = s.mission, R = s.runner;
+// ── 조작판: 지금 할 단계 하나 + 묶음 진행 막대 ─────────────────────────────
+// 승인 · 실행 · 수동 확인 · 건너뛰기는 전부 여기서 한다. 아래 '전체 단계' 목록은 읽기용이다(09.22 사용자 요청 —
+// 카드를 줄줄이 내려가며 찾지 않는다). 무엇을 할 수 있는지는 전부 서버가 정한다(can_run · can_skip …).
+let flashStage = null, flashUntil = 0;                                       // 목록의 단계로 간 뒤 잠깐 강조 — 다시 그려도 유지
+const KIND_LABEL = { manual: "✋ 수동", background: "⟳ 배경", foreground: "▶ 실행", stop: "■ 정지" };
+const cmdLine = (c) => (c.kind === "stop" ? `정지 → ${(c.stop || []).join(", ")}` : shellLine(c.argv));
+const stageGroups = (m) => (m.groups && m.groups.length ? m.groups : [{ id: "", title: "미션", motion: false }]);
+
+function groupBar(m) {
   const cur = m.rows.find((r) => r.current);
-  let msg, go = "";
-  if (!holding()) {
-    msg = `<b>먼저 조작 권한을 잡을 것</b> — 오른쪽 위에 이름을 넣고 <b>조작 권한 잡기</b>. 노드는 아래 미션 단계의 <b>▶ 실행</b>으로 켜진다.`;
-  } else if (R && R.active) {
-    const w = (R.steps || []).find((st) => st.status === "waiting");
-    msg = w ? `<b>✋ 확인을 기다린다</b> — ${esc(R.stage)} 단계: 다른 셸에서 명령을 실행한 뒤 카드의 <b>실행했고 정상이다</b>를 누를 것.`
-      : `<b>${esc(R.stage)}</b> 단계 실행 중…`;
-    go = goBtn(R.stage);
-  } else if (cur) {
-    const how = cur.touches_real && !cur.approved ? "<b>승인…</b> 뒤 <b>▶ 실행</b>" : "<b>▶ 실행</b>";
-    msg = `<b>다음: ${esc(cur.id)}</b> — ${esc(cur.title)}. 카드의 ${how}.`
-      + (cur.reasons.length ? ` <span class="warn">막힘: ${esc(cur.reasons[0])}</span>` : "");
-    go = goBtn(cur.id);
-  } else {
-    msg = `모든 단계가 끝났다 — 끝낼 때는 정지 바의 <b>PD 해제</b> → 오른쪽 아래 <b>run 끝내기</b>.`;
+  return stageGroups(m).map((g, i) => {
+    const rows = m.rows.filter((r) => (r.group || "") === g.id);
+    const done = rows.filter((r) => r.done).length;
+    const here = !!cur && (cur.group || "") === g.id;
+    const state = here ? "now" : rows.length && done === rows.length ? "done" : "todo";
+    return `<li class="gb-step ${state}${g.motion ? " motion" : ""}"${here ? ' aria-current="step"' : ""}>
+      <span class="gb-num">${state === "done" ? "✓" : i + 1}</span><span class="gb-title">${esc(g.title)}</span><span class="gb-count">${done}/${rows.length}</span></li>`;
+  }).join("");
+}
+
+function groupChips(m, cur) {
+  const rows = m.rows.filter((r) => (r.group || "") === (cur.group || ""));
+  return rows.map((r) => `<span class="gc${r.current ? " now" : r.done ? " done" : ""}" title="${esc(r.title)}">${r.done ? "✓ " : r.current ? "● " : ""}${esc(r.id)}</span>`).join("");
+}
+
+// 한 단계의 명령 목록. live = 조작판(수동 확인 버튼을 단다) · 아니면 목록(읽기용)
+function cmdsHtml(r, steps, can, live) {
+  return r.commands.map((c, k) => {
+    const st = steps ? steps[k] : null;
+    const chip = st && st.status !== "pending" ? `<span class="chip ${esc(st.status)}">${esc(stepLabel(st))}</span>` : "";
+    const logBtn = st && !["manual", "stop"].includes(st.kind) && st.status !== "pending" && st.status !== "kept" ? `<button class="btn btn-sm btn-ghost" data-act="log" data-arg="${esc(st.key)}">로그</button>` : "";
+    const waiting = live && st && st.status === "waiting";
+    const manual = waiting ? `<div class="manual-box"><b>다른 셸에서 직접 실행할 것</b> — 콘솔은 이 명령을 실행하지 않는다.
+        <div class="cmd-copy"><pre>${esc(shellLine(c.argv))}</pre>${copyBtn(shellLine(c.argv))}</div>
+        <div class="actions"><button class="btn btn-primary btn-sm" data-act="ack" data-arg="${k}:1" ${can ? "" : "disabled"}>실행했고 정상이다 → 다음</button>
+        <button class="btn btn-sm" data-act="ack" data-arg="${k}:0" ${can ? "" : "disabled"}>정상이 아니다 → 중단</button></div></div>` : "";
+    const detail = st && st.detail ? `<span class="cmd-argv" style="color:var(--warn)">${esc(st.detail)}</span>` : "";
+    const copy = c.kind === "manual" && !manual ? copyBtn(shellLine(c.argv)) : "";
+    return `<li class="cmd${waiting ? " waiting" : ""}"><span class="cmd-kind ${esc(c.kind)}">${KIND_LABEL[c.kind] || esc(c.kind)}</span><span>${esc(c.note || cmdLine(c))}${detail}<span class="cmd-argv">${esc(cmdLine(c))}</span></span><span>${chip} ${logBtn}${copy}</span>${manual}</li>`;
+  }).join("");
+}
+
+function renderControl(s) {
+  const can = holding(), m = s.mission, R = s.runner;
+  const cur = m.rows.find((r) => r.current);
+  put("gb", groupBar(m));
+  if (!cur) {
+    return put("cp", `<div class="cp-head"><span class="cp-title">모든 단계가 끝났다</span></div>
+      <p class="cp-note">정리가 끝났으면 오른쪽 아래 <b>run 끝내기</b>로 닫는다.</p>`);
   }
-  put("nextstep", `<span class="ns-text">${msg}</span>${go}`);   // 문장은 한 덩어리 — flex 간격이 굵은 글자 사이에 끼지 않게
+  const g = stageGroups(m).find((x) => x.id === (cur.group || "")) || stageGroups(m)[0];
+  const running = m.status === "RUNNING", failed = m.status === "FAILED" || m.status === "ABORTED";
+  const mine = R && R.stage === cur.id ? R.steps : null;
+  const waiting = mine && mine.some((st) => st.status === "waiting");
+  const tags = [
+    cur.touches_real ? `<span class="badge real">실기</span>` : "",
+    g.motion ? `<span class="badge bad">팔·목이 움직인다</span>` : `<span class="badge">움직임 없음</span>`,
+    cur.touches_real && cur.approved ? `<span class="badge ok">승인됨</span>` : "",
+    failed ? `<span class="badge bad">${esc(m.status)}</span>` : "",
+  ].join("");
+  let say;
+  if (!can) say = `<b>먼저 조작 권한을 잡을 것</b> — 오른쪽 위에 이름을 넣고 <b>조작 권한 잡기</b>.`;
+  else if (waiting) say = `<b>✋ 확인을 기다린다</b> — 아래 명령을 다른 셸에서 실행하거나 확인한 뒤 <b>실행했고 정상이다</b>.`;
+  else if (running) say = `실행 중… 명령이 끝나는 대로 다음 단계로 넘어간다.`;
+  else if (failed) say = `<span class="warn">${esc(m.note || "실패했다")}</span> — 원인을 고친 뒤 다시 실행하거나, 건너뛸 수 있으면 건너뛴다.`;
+  else if (cur.reasons.length) say = `<span class="warn">막힘: ${esc(cur.reasons[0])}</span>`;
+  else say = cur.touches_real && !cur.approved ? `실기 단계다 — <b>승인…</b> 뒤 <b>▶ 실행</b>.` : `<b>▶ 실행</b>으로 시작한다.`;
+  let actions = "";
+  if (running) actions = `<button class="btn btn-sm" data-act="abort-stage" ${can ? "" : "disabled"}>■ 이 단계 중단</button>`;
+  else {
+    if (cur.touches_real && !cur.approved) actions += `<button class="btn btn-real" data-act="approve" data-arg="${esc(cur.id)}" ${can && cur.can_approve ? "" : "disabled"}>승인…</button>`;
+    actions += `<button class="btn ${cur.touches_real ? "btn-real" : "btn-primary"}" data-act="run" data-arg="${esc(cur.id)}" ${can && cur.can_run ? "" : "disabled"}>▶ ${failed ? "다시 실행" : "실행"}</button>`;
+    if (cur.skippable) {
+      const why = (cur.skip_why || []).join(" · ");
+      actions += `<button class="btn btn-ghost" data-act="skip" data-arg="${esc(cur.id)}" ${can && cur.can_skip ? "" : "disabled"} title="${esc(why || "실행하지 않고 다음 단계로")}">이 단계 건너뛰기</button>`;
+    }
+  }
+  const reasons = cur.reasons.length > 1 ? `<ul class="reasons">${cur.reasons.slice(1).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
+  const stale = cur.approval_stale.length ? `<ul class="reasons bad"><li><b>이전 승인이 무효가 됐다</b> — 승인한 뒤 파일이 바뀌었다</li>${cur.approval_stale.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
+  const cmds = cur.commands.length ? (mine || waiting || cur.commands.length <= 3
+    ? `<ul class="cmds">${cmdsHtml(cur, mine, can, true)}</ul>`
+    : det(`cp:${cur.id}`, `실행할 명령 ${cur.commands.length}개`, `<ul class="cmds">${cmdsHtml(cur, mine, can, true)}</ul>`)) : "";
+  put("cp", `<div class="cp-head"><span class="cp-where">${esc(g.title)} ›</span><span class="cp-title">${esc(cur.id)}</span>${tags}</div>
+    <div class="cp-desc">${esc(cur.title)}</div>
+    <div class="cp-chips">${groupChips(m, cur)}</div>
+    <p class="cp-note">${say}</p>${reasons}${stale}${cmds}
+    <div class="actions cp-actions">${actions}<span class="spacer"></span><button class="btn btn-sm btn-ghost" data-act="show-all">전체 단계 ▾</button></div>`);
 }
 
 function renderBanner(s) {
@@ -182,53 +247,26 @@ function renderLanding() {
 const rel = (p) => String(p).replace(/^.*\/sim2real\//, "");
 
 function renderStages(s) {
-  const can = holding();
-  const R = s.runner;
-  const m = s.mission;
-  put("mission-meta", `${esc(m.name)}`);
+  const R = s.runner, m = s.mission, can = holding();
+  put("mission-meta", `${esc(m.name)} · ${m.rows.filter((r) => r.done).length}/${m.rows.length}`);
+  let lastGroup = null;
   const rows = m.rows.map((r, i) => {
-    const running = r.current && m.status === "RUNNING";
+    const g = stageGroups(m).find((x) => x.id === (r.group || ""));
+    const header = g && g.id !== lastGroup ? `<li class="stage-group${g.motion ? " motion" : ""}">${esc(g.title)}</li>` : "";
+    lastGroup = g ? g.id : lastGroup;
     const failed = r.current && (m.status === "FAILED" || m.status === "ABORTED");
+    const running = r.current && m.status === "RUNNING";
     const flash = r.id === flashStage && Date.now() < flashUntil ? "flash" : "";
     const cls = ["stage", r.done ? "done" : "", r.current ? "current" : "", running ? "running" : "", failed ? "failed" : "", r.reasons.length ? "blocked" : "", flash].join(" ");
     const badges = [
       r.touches_real ? `<span class="badge real">실기</span>` : "",
-      r.touches_real && r.approved ? `<span class="badge ok">승인됨</span>` : "",
-      failed ? `<span class="badge bad">${esc(m.status)}</span>` : "",
-      r.reasons.length ? `<span class="badge warn">막힘</span>` : "",
+      r.current ? `<button class="badge now" data-act="goto-stage" data-arg="${esc(r.id)}">지금 — 조작판 ↑</button>` : "",
+      r.skipped ? `<span class="badge">건너뜀</span>` : "",
     ].join("");
-    const mine = R && R.stage === r.id;
-    const steps = mine ? R.steps : null;
-    const cmds = r.commands.map((c, k) => {
-      const st = steps ? steps[k] : null;
-      const chip = st && st.status !== "pending" ? `<span class="chip ${esc(st.status)}">${esc(stepLabel(st))}</span>` : "";
-      const kind = { manual: "✋ 수동", background: "⟳ 배경", foreground: "▶ 실행" }[c.kind];
-      const logBtn = st && st.kind !== "manual" && st.status !== "pending" && st.status !== "kept" ? `<button class="btn btn-sm btn-ghost" data-act="log" data-arg="${esc(st.key)}">로그</button>` : "";
-      const manual = st && st.status === "waiting" ? `<div class="manual-box"><b>다른 셸에서 직접 실행할 것</b> — 콘솔은 이 명령을 실행하지 않는다.
-          <div class="cmd-copy"><pre>${esc(shellLine(c.argv))}</pre>${copyBtn(shellLine(c.argv))}</div>
-          <div class="actions"><button class="btn btn-primary btn-sm" data-act="ack" data-arg="${k}:1" ${can ? "" : "disabled"}>실행했고 정상이다 → 다음</button>
-          <button class="btn btn-sm" data-act="ack" data-arg="${k}:0" ${can ? "" : "disabled"}>정상이 아니다 → 중단</button></div></div>` : "";
-      const detail = st && st.detail ? `<span class="cmd-argv" style="color:var(--warn)">${esc(st.detail)}</span>` : "";
-      return `<li class="cmd"><span class="cmd-kind ${esc(c.kind)}">${kind}</span><span>${esc(c.note || c.argv.slice(0, 3).join(" "))}${detail}<span class="cmd-argv">${esc(shellLine(c.argv))}</span></span><span>${chip} ${logBtn}${c.kind === "manual" && !manual ? copyBtn(shellLine(c.argv)) : ""}</span>${manual}</li>`;
-    }).join("");
-    const reasons = r.reasons.length ? `<ul class="reasons">${r.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
-    const stale = r.approval_stale.length ? `<ul class="reasons bad"><li><b>이전 승인이 무효가 됐다</b> — 승인한 뒤 파일이 바뀌었다</li>${r.approval_stale.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
-    const note = failed && m.note ? `<ul class="reasons bad"><li>${esc(m.note)}</li></ul>` : "";
-    let actions = "";
-    if (r.current) {
-      if (running) actions = `<button class="btn btn-sm" data-act="abort-stage" ${can ? "" : "disabled"}>■ 이 단계 중단</button><span class="hint">실행 중…</span>`;
-      else {
-        if (r.touches_real && !r.approved) actions += `<button class="btn btn-real" data-act="approve" data-arg="${esc(r.id)}" ${can && r.can_approve ? "" : "disabled"}>승인…</button>`;
-        actions += `<button class="btn ${r.touches_real ? "btn-real" : "btn-primary"}" data-act="run" data-arg="${esc(r.id)}" ${can && r.can_run ? "" : "disabled"}>▶ ${failed ? "다시 실행" : "실행"}</button>`;
-        if (!can) actions += `<span class="hint">조작 권한이 없다</span>`;
-        else if (r.touches_real && !r.approved && !r.reasons.length) actions += `<span class="hint">실기를 움직이는 단계다 — 승인이 먼저다</span>`;
-      }
-      actions = `<div class="actions">${actions}</div>`;
-    }
-    const body = r.current || mine ? `<ul class="cmds">${cmds}</ul>` : det(`cmds:${r.id}`, `명령 ${r.commands.length}개`, `<ul class="cmds">${cmds}</ul>`);
-    return `<li id="stage-${esc(r.id)}" class="${cls}"><div class="stage-rail"><span class="dot">${r.done ? "✓" : ""}</span></div><div class="stage-body">
-      <div class="stage-line"><span class="stage-id">${i + 1}. ${esc(r.id)}</span>${badges}</div><div class="stage-title">${esc(r.title)}</div>
-      ${reasons}${stale}${note}${r.commands.length ? body : ""}${actions}</div></li>`;
+    const steps = R && R.stage === r.id ? R.steps : null;
+    const body = r.commands.length ? det(`cmds:${r.id}`, `명령 ${r.commands.length}개`, `<ul class="cmds">${cmdsHtml(r, steps, can, false)}</ul>`) : "";
+    return `${header}<li id="stage-${esc(r.id)}" class="${cls}"><div class="stage-rail"><span class="dot">${r.done ? "✓" : ""}</span></div><div class="stage-body">
+      <div class="stage-line"><span class="stage-id">${i + 1}. ${esc(r.id)}</span>${badges}</div><div class="stage-title">${esc(r.title)}</div>${body}</div></li>`;
   });
   const loop = m.loop_to ? `<li class="stage"><div class="stage-rail"></div><div class="stage-body"><span class="hint">↺ 마지막 단계 뒤에는 <b>${esc(m.loop_to)}</b> 로 돌아간다</span></div></li>` : "";
   put("stages", rows.join("") + loop);
@@ -575,15 +613,36 @@ const acts = {
     toast("복사했다 — 다른 셸에 붙여넣어 실행할 것", [], true);
   },
   "layout-reset"() { layout = {}; saveLayout(); applyLayout(); drawWires(); },
-  "goto-stage"(id) {                                                         // 잠금 줄·다음 할 일 → 그 단계 카드
+  "goto-stage"(id) {                                                         // 잠금 줄 · 목록 → 지금 단계면 조작판, 아니면 목록의 그 줄
+    const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const cur = S && S.session && S.session.mission.rows.find((r) => r.current);
+    if (cur && cur.id === id) {
+      const cp = $("control");
+      cp.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
+      cp.classList.remove("flash"); void cp.offsetWidth; cp.classList.add("flash");
+      cp.querySelector('[data-act="ack"],[data-act="approve"]:not([disabled]),[data-act="run"]')?.focus({ preventScroll: true });
+      return;
+    }
+    $("all-stages").open = true;
     const li = $(`stage-${id}`);
     if (!li) return;
-    const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
     li.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "center" });
     flashStage = id; flashUntil = Date.now() + 2000;
     li.classList.remove("flash"); void li.offsetWidth; li.classList.add("flash");
-    li.querySelector('[data-act="ack"],[data-act="approve"]:not([disabled]),[data-act="run"]')?.focus({ preventScroll: true });
   },
+  "show-all"() {
+    const d = $("all-stages");
+    d.open = true;
+    d.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  },
+  skip(id) {
+    const r = S.session.mission.rows.find((x) => x.id === id);
+    modal(`<h3>건너뛰기 — ${esc(id)}</h3><p>${esc(r ? r.title : "")}</p>
+      <p>이 단계를 <b>실행하지 않고</b> 완료로 친다. 되돌릴 수 없다 — 다시 하려면 새 run 을 연다.</p>
+      <div class="modal-actions"><button class="btn btn-ghost" data-act="modal-close">취소</button>
+      <button class="btn btn-primary" data-act="skip-go" data-arg="${esc(id)}">건너뛴다</button></div>`);
+  },
+  async "skip-go"(id) { await call("POST", "/api/stage/skip", { stage: id }); closeModal(); refresh(); },
 };
 
 document.addEventListener("click", (e) => {

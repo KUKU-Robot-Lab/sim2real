@@ -15,7 +15,10 @@
 </header>
 
 <section id="banner" class="banner tone-mute"></section>
-<section id="nextstep" class="nextstep" hidden aria-live="polite"></section>
+<section id="control" class="control" hidden aria-label="지금 할 단계">
+  <ol id="gb" class="gb" aria-label="진행 묶음"></ol>
+  <div id="cp" class="cp" aria-live="polite"></div>
+</section>
 
 <main id="landing" class="landing" hidden></main>
 
@@ -26,13 +29,6 @@
     <details id="dg-extra" class="links-table" hidden><summary id="dg-extra-sum">그림 밖 연결</summary><div id="dg-extra-body" class="dg-extra"></div></details>
     <details id="links-table" class="links-table"><summary>표로 보기</summary><div id="links" class="links"></div></details>
   </section>
-  <section class="col col-mission">
-    <div class="panel">
-      <div class="panel-head"><h2>미션</h2><span id="mission-meta" class="meta"></span></div>
-      <ol id="stages" class="stages"></ol>
-    </div>
-  </section>
-
   <section class="col col-live">
     <div class="panel">
       <div class="panel-head"><h2>노드</h2><span id="bridge-meta" class="meta"></span></div>
@@ -58,6 +54,10 @@
       <ul id="events" class="events"></ul>
     </div>
   </section>
+  <details id="all-stages" class="panel all-stages">
+    <summary class="panel-head"><h2>전체 단계</h2><span id="mission-meta" class="meta"></span><span class="hint">읽기용 — 조작은 위 조작판에서</span></summary>
+    <ol id="stages" class="stages"></ol>
+  </details>
 </main>
 
 <footer id="stopbar" class="stopbar" hidden>

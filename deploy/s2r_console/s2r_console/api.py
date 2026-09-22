@@ -101,6 +101,9 @@ def _write(console: Console, method: str, path: str, data: dict, token: str | No
     if path == "/api/stage/run":
         console.run_stage(str(data.get("stage", "")), operator=who)
         return 202, ok
+    if path == "/api/stage/skip":
+        console.skip_stage(str(data.get("stage", "")), operator=who)
+        return 200, ok
     if path == "/api/stage/ack":
         console.ack(int(data.get("index", -1)), bool(data.get("ok")))
         return 200, ok

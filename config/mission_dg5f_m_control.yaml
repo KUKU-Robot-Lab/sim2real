@@ -1,12 +1,18 @@
-# policy_control — 양팔 DG-5F-M **short base**(hdgp/assets/robot/openarm_dg5f-m-short_bi_rl) 제어 전용 실기 점검, 한 팔씩.
-#   ★2026-09-14 실기 손을 short 로 교체(어댑터 판 10 mm 장착). 계약·pd 설정을 short 로 바꿨다 — 구 dg5f-m
-#   계약(asset_openarm_dg5f-m_bi_rl)은 손 길이·payload 가 달라 이 로봇에 쓰면 안 된다.
+# policy_control — 양팔 DG-5F-M **short base**(hdgp/assets/robot/openarm_dg5f-m-short_bi_rl) 제어 전용 실기 점검.
+#   ★2026-09-14 실기 손을 short 로 교체(어댑터 판 10 mm). 구 dg5f-m 계약(asset_openarm_dg5f-m_bi_rl)은 이 로봇에 쓰지 않는다.
 #   python3 scripts/ops/mission_run.py --mission config/mission_dg5f_m_control.yaml --plan
 #   실기 단계(touches_real)는 --execute 에 더해 --approve <id> 가 필수다(단계당 1회).
-# 정책은 없다(제어 전용 계약): pd(engage/selftest/goto_home) → fabric direct 모드(palm_cmd/hand_cmd) 까지가 목표.
-# 우·좌 단계는 bringup 뒤 서로 독립이라 어느 팔을 먼저 해도 된다. 반대 팔은 차렷(전원만)으로 둔다.
 # ★모든 노드/도구는 --execute / execute:=true 없이는 아무것도 발행하지 않는다.
-name: policy_control 양팔 DG-5F-M 제어 전용 점검 (한 팔씩)
+#
+# 2026-09-22 재구성 — 단계를 **하는 일**로 묶었다(화면의 진행 막대가 이 묶음이다):
+#   ① 점검 → ② 연결(드라이버·센서) → ③ 준비(pd 무발행 → 발행) → ④ 자세 이동 → ⑤ 정책 동작 → ⑥ 정리(안전 종료)
+#   오른팔 ③~⑥ 뒤에 왼팔 ③~⑥ 이 온다. 한 팔만 할 때는 반대 팔 단계를 '건너뛰기' 한다(pd 가 팔을 잡은 동안은 막힌다).
+#   고친 것(09.22 실기에서 드러났다):
+#     · selftest 가 engage 보다 앞에 있었고, execute:=true pd 를 띄우는 단계가 없었다 → ③ 발행 전환 신설, ④ engage·홈 뒤 selftest
+#     · goto_home 이 episode_ctl --steps 0 을 불렀다(episode_ctl 이 거부하는 값) → --only pd_engage/pd_goto_home
+#     · 목 퍼블리셔(sensors)가 포트를 잡은 채 head_home 이 같은 포트에 써서 실패 → 목 퍼블리셔는 head_home 뒤에 뜬다
+#     · 끄는 길이 없어 kill 로 내렸다 → ⑥ 안전 종료: 팔 받침 확인 → pd → 손 → 팔 순서로 콘솔이 내린다
+name: policy_control 양팔 DG-5F-M 제어 전용 점검
 
 artifacts:
   contract: logs/policy/asset_openarm_dg5f-m-short_bi_rl/deploy_contract.json
@@ -18,101 +24,173 @@ artifacts:
 
 checkpoints: {}
 
+groups:
+  - {id: check, title: 점검}
+  - {id: connect, title: 연결}
+  - {id: prepare, title: 준비}
+  - {id: motion, title: 자세 이동, motion: true}
+  - {id: policy, title: 정책 동작, motion: true}
+  - {id: finish, title: 정리}
+
 stages:
+  # ────────────────────────────────────────────── ① 점검 · ② 연결 (팔이 움직이지 않는다)
   - id: preflight
-    title: 테스트·자산 계약 재생성↔게인 대조·forward 컨트롤러 양팔 선언 확인 (읽기 전용)
+    group: check
+    title: 테스트 · 자산 계약 재생성↔게인 대조 · forward 컨트롤러 양팔 선언 확인 (읽기 전용)
     artifacts: [contract, gains_yaml]
 
-  - id: sensors
-    title: 인지 켜기(vision-3090 카메라·FP++) + 목 상태 퍼블리셔 — 실기를 움직이지 않는다
-    needs: [preflight]
-
-  - id: sensors_off
-    title: 인지 끄기 — vision-3090 의 FP++ 컨테이너와 카메라를 내린다(읽기 전용 쪽만, 실기와 무관)
-
-  - id: bringup
-    title: 모터 전원 → CAN ×2 → openarm_bringup (robot_control) → DG-5F 드라이버 ×2 → head_home
+  - id: drivers
+    group: connect
+    title: 모터 전원 → CAN ×2 → 팔 브링업 → 손 네트워크 → DG-5F 손 드라이버 ×2 (토크는 들어가지만 팔은 제자리)
     needs: [preflight]
     needs_why: 점검 전에 띄우면 오배선 상태로 모터가 돈다
     touches_real: true
 
-  # ---------------------------------------------------------------- RIGHT 팔
+  - id: sensors
+    group: connect
+    title: 인지 켜기 — vision-3090 카메라 · FP++ (로봇을 움직이지 않는다)
+    needs: [preflight]
+    skippable: true
+
+  # ────────────────────────────────────────────── 오른팔 ③ 준비 · ④ 자세 이동 · ⑤ 정책 동작 · ⑥ 해제
   - id: pd_load_right
-    title: "[right] pd 노드 무발행 기동 (sides:=right, execute:=false) — forward 3종 load(inactive), 손 PID 1.5(벤더) 확인"
-    needs: [bringup]
+    group: prepare
+    title: "[right] pd 무발행 기동 (execute:=false) — 게인 · 입력 · forward 컨트롤러 load(inactive) · 손 PID 1.5 확인만"
+    needs: [drivers]
     artifacts: [contract, robot_right, pd]
     touches_real: true
+    skippable: true
 
-  - id: pd_selftest_right
-    title: "[right] engage → hold 10 s → 단일관절 ±0.02/0.05/0.10 rad → release (드리프트·부호·교대 점프)"
-    # ★r_aj_4 는 프로필 하한이 정확히 0 이라 차렷(실측 0.006 rad)에서 −0.02 가 한계 밖 → pd 가 HOLD.
-    #   팔꿈치는 --joints 에서 빼고 따로 본다(굽힌 자세에서). 2026-09-07 실기.
-    # ★손목 r_aj_5/6/7 은 kp 10 이라 ±0.02(=0.2 N·m)이 관절 마찰과 비슷해 비율이 안 나온다.
-    #   판정은 ±0.05 이상으로 본다.
+  - id: pd_arm_right
+    group: prepare
+    title: "[right] pd 발행 모드 전환 — 무발행 pd 를 내리고 execute:=true 로 다시 띄운다. engage 는 하지 않는다(팔은 JTC 가 잡는다)"
     needs: [pd_load_right]
+    needs_why: 무발행 상태에서 게인·입력이 맞는지 본 뒤에만 발행 권한을 준다
+    artifacts: [contract, robot_right, pd]
     touches_real: true
+    skippable: true
 
-  - id: goto_home_right
-    title: "[right] 계약 홈(차렷 0)으로 0.1 rad/s 램프 후 정착 — τ_ff 는 model_tau_ff"
-    needs: [pd_selftest_right]
+  - id: head_home
+    group: motion
+    title: 목 기준자세 + I게인 재적용 → 목 상태 퍼블리셔 (목이 조금 움직인다)
+    needs: [drivers]
     touches_real: true
+    skippable: true
+
+  - id: home_right
+    group: motion
+    title: "[right] engage → 제자리 10 s(처짐·떨림 확인) → 계약 홈(차렷 0)으로 0.1 rad/s 램프 — 팔의 첫 움직임"
+    needs: [pd_arm_right]
+    artifacts: [contract, robot_right]
+    touches_real: true
+    skippable: true
+
+  - id: selftest_right
+    group: motion
+    title: "[right] 셀프테스트 — 홈에서 hold 10 s → 관절별 ±0.02/0.05/0.10 rad (r_aj_4 제외)"
+    # ★r_aj_4 는 프로필 하한이 정확히 0 이라 차렷에서 −방향이 한계 밖 → pd 가 HOLD 한다(2026-09-07 실기). 굽힌 자세에서 따로 본다.
+    # ★손목 r_aj_5/6/7 은 kp 10 이라 ±0.02(=0.2 N·m)이 관절 마찰과 비슷해 비율이 안 나온다 — 판정은 ±0.05 이상으로.
+    needs: [home_right]
+    artifacts: [contract, robot_right]
+    touches_real: true
+    skippable: true
 
   - id: preset_right
-    title: "[right] 차렷 → preset(팔꿈치 114.6°)로 pd 가 직접 이동 — 손이 몸통·판에서 자유로운 자세"
-    needs: [goto_home_right]
+    group: motion
+    title: "[right] 차렷 → preset(팔꿈치 114.6°) — pd 가 직접 이동, 손이 몸통 · 판에서 자유로운 자세"
+    needs: [home_right]
     needs_why: >
-      ★2026-09-07 확정. 자세 이동을 pd 가 소유한다. 옛 경로(gravity_comp_node + shadow_replay + JTC)는
-      pd 로 인계할 때 무보상 공백이 생겨 8° 내려앉고, pd 는 engage 때 실측을 시드로 잡아 그 처짐이
-      새 목표가 됐다. pd 의 model_tau_ff 가 검증모델과 0.99~1.01 로 일치하므로 두 시스템을 쓸 이유가 없다.
-      ★차렷은 셀프테스트·fabric 시험 자세로 부적합하다 — r_aj_4 하한이 정확히 0 이라 −방향이 막히고,
-      손가락이 마운트 플레이트보다 7 cm 아래라 몸통에 걸린다(실기 확인).
+      ★2026-09-07 확정. 자세 이동을 pd 가 소유한다. 옛 경로(gravity_comp_node + shadow_replay + JTC)는 pd 로 인계할 때
+      무보상 공백이 생겨 8° 내려앉았다. pd 의 model_tau_ff 가 검증모델과 0.99~1.01 로 일치하므로 두 시스템을 쓸 이유가 없다.
     artifacts: [contract, robot_right]
     touches_real: true
+    skippable: true
 
   - id: preset_return_right
+    group: motion
     title: "[right] preset → 올라온 궤적을 --reverse 로 되짚어 복귀 (goto_home 금지 — 관절공간 직선은 테이블을 모른다)"
-    # ★09.07 커밋 958476a 가 run 블록만 넣고 단계를 빠뜨려 --plan 이 통째로 실패했다(09.14 보강).
     needs: [preset_right]
     artifacts: [contract, robot_right]
     touches_real: true
+    skippable: true
 
   - id: fabric_direct_right
-    title: "[right] fabric 노드 direct 모드 + palm_cmd ±2 cm · hand_cmd open→close 0.3 (작은 델타만)"
-    needs: [preset_right]
+    group: policy
+    title: "[right] fabric direct 모드 — 에피소드 시작 → palm +2 cm · 손 30 % 폐쇄 → 에피소드 정지 (작은 델타만)"
+    needs: [home_right]
     artifacts: [contract, robot_right]
     touches_real: true
+    skippable: true
 
   - id: release_right
-    title: "[right] pd release (역블렌드 → JTC 복귀) — robotctl pose 동작 확인"
-    needs: [fabric_direct_right]
+    group: finish
+    title: "[right] pd 해제(역블렌드 → JTC 복귀) → 이 팔의 pd · fabric 프로세스 정지 — 팔은 JTC 가 계속 잡는다"
+    needs: [pd_arm_right]
     touches_real: true
+    skippable: true
 
-  # ---------------------------------------------------------------- LEFT 팔
+  # ────────────────────────────────────────────── 왼팔 ③ 준비 · ④ 자세 이동 · ⑤ 정책 동작 · ⑥ 해제
   - id: pd_load_left
-    title: "[left] pd 노드 무발행 기동 (sides:=left, execute:=false) — forward 3종 load(inactive), 손 PID 1.5(벤더) 확인"
-    needs: [bringup]
+    group: prepare
+    title: "[left] pd 무발행 기동 (execute:=false) — 게인 · 입력 · forward 컨트롤러 load(inactive) · 손 PID 1.5 확인만"
+    needs: [drivers]
     artifacts: [contract, robot_left, pd]
     touches_real: true
+    skippable: true
 
-  - id: pd_selftest_left
-    title: "[left] engage → hold 10 s → 단일관절 ±0.02/0.05/0.10 rad → release (드리프트·부호·교대 점프)"
+  - id: pd_arm_left
+    group: prepare
+    title: "[left] pd 발행 모드 전환 — 무발행 pd 를 내리고 execute:=true 로 다시 띄운다. engage 는 하지 않는다(팔은 JTC 가 잡는다)"
     needs: [pd_load_left]
+    needs_why: 무발행 상태에서 게인·입력이 맞는지 본 뒤에만 발행 권한을 준다
+    artifacts: [contract, robot_left, pd]
     touches_real: true
+    skippable: true
 
-  - id: goto_home_left
-    title: "[left] 계약 홈(차렷 0)으로 0.1 rad/s 램프 후 정착 — τ_ff 는 model_tau_ff"
-    needs: [pd_selftest_left]
-    touches_real: true
-
-  - id: fabric_direct_left
-    title: "[left] fabric 노드 direct 모드 + palm_cmd ±2 cm · hand_cmd open→close 0.3 (작은 델타만)"
-    needs: [goto_home_left]
+  - id: home_left
+    group: motion
+    title: "[left] engage → 제자리 10 s(처짐·떨림 확인) → 계약 홈(차렷 0)으로 0.1 rad/s 램프 — 팔의 첫 움직임"
+    needs: [pd_arm_left]
     artifacts: [contract, robot_left]
     touches_real: true
+    skippable: true
+
+  - id: selftest_left
+    group: motion
+    title: "[left] 셀프테스트 — 홈에서 hold 10 s → 관절별 ±0.02/0.05/0.10 rad (l_aj_4 제외)"
+    # ★l_aj_4 는 프로필 하한이 정확히 0 이라 차렷에서 −방향이 한계 밖 → pd 가 HOLD 한다(2026-09-07 실기). 굽힌 자세에서 따로 본다.
+    # ★손목 l_aj_5/6/7 은 kp 10 이라 ±0.02(=0.2 N·m)이 관절 마찰과 비슷해 비율이 안 나온다 — 판정은 ±0.05 이상으로.
+    needs: [home_left]
+    artifacts: [contract, robot_left]
+    touches_real: true
+    skippable: true
+
+
+  - id: fabric_direct_left
+    group: policy
+    title: "[left] fabric direct 모드 — 에피소드 시작 → palm +2 cm · 손 30 % 폐쇄 → 에피소드 정지 (작은 델타만)"
+    needs: [home_left]
+    artifacts: [contract, robot_left]
+    touches_real: true
+    skippable: true
 
   - id: release_left
-    title: "[left] pd release (역블렌드 → JTC 복귀) — robotctl pose 동작 확인"
-    needs: [fabric_direct_left]
+    group: finish
+    title: "[left] pd 해제(역블렌드 → JTC 복귀) → 이 팔의 pd · fabric 프로세스 정지 — 팔은 JTC 가 계속 잡는다"
+    needs: [pd_arm_left]
+    touches_real: true
+    skippable: true
+
+  # ────────────────────────────────────────────── ⑥ 정리
+  - id: sensors_off
+    group: finish
+    title: 인지 끄기 — vision-3090 의 FP++ 컨테이너 · 카메라와 로컬 런처를 내린다
+    skippable: true
+
+  - id: shutdown
+    group: finish
+    title: 안전 종료 — 팔 받침 확인 → 남은 pd · 목 퍼블리셔 → 손 드라이버 → 팔 브링업 순서로 내린다 (★팔 토크가 풀린다)
+    needs: [drivers]
     touches_real: true
 
 run:
@@ -127,7 +205,7 @@ run:
              --home, zero, --gains, "{artifact:gains_yaml}", --out, "{artifact:contract}"]
     - note: forward 컨트롤러가 양팔 모두 bringup 설정에 선언돼 있는지 (grep -c 12 = CM 목록 6 + 파라미터 블록 6)
       argv: [grep, -c, "_forward_", "/home/user/rl_ws/robot_control/ros_ws/src/openarm_ros2/openarm_bringup/config/controllers/openarm_bimanual_controllers.yaml"]
-  bringup:
+  drivers:
     - note: ★모터 전원(양팔) ON — 물리 스위치. 켠 뒤 확인한다. 전원 없이 브링업을 띄우면 CAN 응답이 없어 실패한다
       argv: [bash, -lc, "true"]
       manual: true
@@ -154,37 +232,48 @@ run:
     - note: DG-5F 드라이버(좌) — namespace dg5f_left. 콘솔이 띄우고 감독한다
       argv: [ros2, launch, dg5f_driver, dg5f_left_driver.launch.py, "delto_ip:=169.254.186.73"]
       background: true
-    - note: 목 기준자세 + I게인 재적용
-      argv: [python3, "{repo}/scripts/head_home.py"]
-      execute_args: [--execute]
   sensors:
     - note: 인지 런처 — vision-3090 의 카메라·FP++ 컨테이너를 ssh 로 보고 켜고 끈다(스스로는 아무것도 켜지 않는다)
       argv: [python3, "{repo}/scripts/nodes/perception_launcher_node.py", --host, vision-3090]
       background: true
-    - note: 목 상태 퍼블리셔 — /head/joint_states 20 Hz. 읽기 전용(토크·게인·목표를 건드리지 않는다)
-      argv: [python3, "{repo}/scripts/nodes/head_joint_publisher.py"]
-      background: true
     - note: 카메라 + FP++(cup_big_s100) 켜기 — vision-3090 에서. 런처가 받을 때까지 최대 3 s 기다리고, 없으면 실패로 끝난다
       argv: [python3, "{repo}/scripts/ops/perception_ctl.py", start, cup_big_s100]
-  sensors_off:
-    - note: FP++ 컨테이너 + 카메라 내리기. 로컬 런처·목 퍼블리셔는 스위치로 끈다
-      argv: [python3, "{repo}/scripts/ops/perception_ctl.py", stop, --camera]
   pd_load_right:
-    - note: "[right] pd 노드 무발행 기동 — 별도 launch"
+    - note: "[right] pd 노드 무발행 기동 — status 의 gains ok · 입력 신선도를 본다"
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",
              "contract:={artifact:contract}", "robot:={artifact:robot_right}", "pd_config:={artifact:pd}",
              "sides:=right", "execute:=false"]
       background: true
-  pd_selftest_right:
-    - note: "[right] 셀프테스트 (pd 를 execute:=true 로 재기동한 뒤). 진폭 0.02→0.05→0.10 rad"
-      argv: [python3, "{repo}/deploy/policy_control/tools/pd_selftest.py", --contract, "{artifact:contract}",
-             --robot, "{artifact:robot_right}", --side, right, --amplitudes, "0.02,0.05,0.10",
-             --out, "{repo}/logs/policy_control/real_dg5fm_right_selftest.json"]
+  pd_arm_right:
+    - note: "[right] 무발행 pd 정지"
+      stop: ["pd_load_right#0"]
+    - note: "[right] pd 발행 모드 기동 (execute:=true) — IDLE 로 뜬다. engage 전까지 팔은 JTC 가 잡는다"
+      argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",
+             "contract:={artifact:contract}", "robot:={artifact:robot_right}", "pd_config:={artifact:pd}",
+             "sides:=right", "execute:=true"]
+      background: true
+  head_home:
+    - note: 목 기준자세 + I게인 재적용 (I 게인은 RAM 이라 전원을 끄면 사라진다 — 드라이버를 올릴 때마다)
+      argv: [python3, "{repo}/scripts/head_home.py"]
       execute_args: [--execute]
-  goto_home_right:
-    - note: "[right] pd engage + goto_home (episode_ctl 단계 — 승인 pd_engage·pd_goto_home)"
-      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --steps, "0",
-             --approve, pd_engage, --approve, pd_goto_home]
+    - note: 목 상태 퍼블리셔 — /head/joint_states 20 Hz. 읽기 전용. ★head_home 이 포트를 놓은 뒤에 뜬다(09.22 포트 충돌)
+      argv: [python3, "{repo}/scripts/nodes/head_joint_publisher.py"]
+      background: true
+  home_right:
+    - note: "[right] engage → 제자리 10 s. pd 가 HOLD 로 가면 실패하고 pd 를 해제한다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_engage, --hold-s, "10"]
+      execute_args: [--execute, --approve, pd_engage]
+    - note: "[right] ★10 s 동안 팔이 제자리였는가(처짐 · 떨림 · 소리 없음). 아니면 '정상이 아니다' 후 정지 바의 PD 해제"
+      argv: [bash, -lc, "true"]
+      manual: true
+    - note: "[right] 계약 홈(차렷 0)으로 0.1 rad/s 램프 + 정착. 실패하면 pd 를 해제한다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_goto_home]
+      execute_args: [--execute, --approve, pd_goto_home]
+  selftest_right:
+    - note: "[right] 셀프테스트 — 진폭 0.02→0.05→0.10 rad, r_aj_4 제외(차렷에서 하한 0)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/pd_selftest.py", --contract, "{artifact:contract}",
+             --robot, "{artifact:robot_right}", --side, right, --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_5,r_aj_6,r_aj_7", --amplitudes, "0.02,0.05,0.10",
+             --out, "{repo}/logs/policy_control/real_dg5fm_right_selftest.json"]
       execute_args: [--execute]
   preset_right:
     - note: "[right] pd engage 상태에서 preset 궤적을 pd 의 joint_target 으로 흘린다 (104 s @0.5)"
@@ -195,9 +284,9 @@ run:
     - note: "[right] 도착 후 처짐 확인 — pd 가 잡고 있으면 20 s 에 0.00° (2026-09-07 실측)"
       argv: [echo, "ros2 topic echo /policy_control/status/pd --once  ·  phase TRACKING · ok true"]
   preset_return_right:
-    - note: "[right] ★preset 에서 내려올 때는 goto_home 을 쓰지 않는다 — 관절공간 직선이라
-        테이블을 모른다(2026-09-07 실기에서 손이 테이블로 향해 사용자가 모터 강제 종료).
-        올라온 궤적을 --reverse 로 되짚는다. 진입 램프 간극이 0.35 rad 를 넘으면 거부된다."
+    - note: "[right] ★preset 에서 내려올 때는 goto_home 을 쓰지 않는다 — 관절공간 직선이라 테이블을 모른다
+        (2026-09-07 실기에서 손이 테이블로 향해 사용자가 모터 강제 종료). 올라온 궤적을 --reverse 로 되짚는다.
+        진입 램프 간극이 0.35 rad 를 넘으면 거부된다."
       argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py",
              --npz, "{repo}/logs/shadow/reset_both/reset_right.npz", --reverse,
              --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7", --rate-scale, "0.5"]
@@ -210,55 +299,98 @@ run:
              "contract:={artifact:contract}", "robot:={artifact:robot_right}", "side:=right", "device:=cuda:0",
              "use_source:=true"]
       background: true
-    - note: "[right] 에피소드 reset (fabric 이 armed 가 될 때까지 status/fabric 확인)"
-      argv: [ros2, service, call, /policy_control/episode/reset, std_srvs/srv/Trigger]
-    - note: "[right] 에피소드 start — fabric 이 홈 palm 을 유지하며 적분 시작(팔은 홈에 머문다)"
-      argv: [ros2, service, call, /policy_control/episode/start, std_srvs/srv/Trigger]
-    - note: "[right] palm +2 cm z (실기 기본 도메인이면 --allow-domain-0 가 필요 — 승인 후 사용자가 붙인다)"
+    - note: "[right] 에피소드 reset → start — fabric 이 armed 인지 확인하고 시작한다(팔은 홈 palm 에 머문다).
+        ros2 service call 은 거부돼도 rc 0 이라 episode_ctl 로 부른다 — 거부 · 타임아웃이면 실패하고 pd 를 해제한다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, "ep_reset,ep_start"]
+      execute_args: [--execute, --approve, ep_start]
+    - note: "[right] palm +2 cm z"
       argv: [python3, "{repo}/deploy/policy_control/tools/palm_cmd.py", --rel, "0", "0", "0.02", --hold, "1.0"]
     - note: "[right] 손 30 % 폐쇄 후 다시 open"
       argv: [python3, "{repo}/deploy/policy_control/tools/hand_cmd.py", --contract, "{artifact:contract}", --side, right,
              --close, "0.3", --hold, "1.0"]
+    - note: "[right] 에피소드 stop — pd 는 계속 잡고 있다(해제는 ⑥)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, ep_stop]
+      execute_args: [--execute]
   release_right:
-    - note: "[right] 에피소드 stop 후 pd release — 역블렌드 → 0 송출 → JTC 복귀"
-      argv: [ros2, service, call, /policy_control/episode/stop, std_srvs/srv/Trigger]
-    - note: "[right] pd release 서비스 (실패 시 복구 CLI: tools/pd_release.py --side right --execute)"
-      argv: [ros2, service, call, /policy_control/pd/release, std_srvs/srv/Trigger]
+    - note: "[right] pd release — 역블렌드 → 0 송출 → JTC 복귀 (실패 시 복구 CLI: tools/pd_release.py --side right --execute)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_release]
+      execute_args: [--execute]
+    - note: "[right] 이 팔의 fabric · pd 정지 — pd 가 IDLE 이라 토크는 JTC 가 그대로 잡는다"
+      stop: ["fabric_direct_right#0", "pd_arm_right#1"]
   pd_load_left:
-    - note: "[left] pd 노드 무발행 기동 — 별도 launch"
+    - note: 반대 팔의 pd · fabric 이 남아 있으면 먼저 내린다 — 같은 노드 이름(/pd_node)을 두 번 띄우지 않는다
+      stop: ["fabric_direct_right#0", "pd_arm_right#1", "pd_load_right#0"]
+    - note: "[left] pd 노드 무발행 기동 — status 의 gains ok · 입력 신선도를 본다"
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",
              "contract:={artifact:contract}", "robot:={artifact:robot_left}", "pd_config:={artifact:pd}",
              "sides:=left", "execute:=false"]
       background: true
-  pd_selftest_left:
-    - note: "[left] 셀프테스트 (pd 를 execute:=true 로 재기동한 뒤). 진폭 0.02→0.05→0.10 rad"
+  pd_arm_left:
+    - note: "[left] 무발행 pd 정지"
+      stop: ["pd_load_left#1"]
+    - note: "[left] pd 발행 모드 기동 (execute:=true) — IDLE 로 뜬다. engage 전까지 팔은 JTC 가 잡는다"
+      argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",
+             "contract:={artifact:contract}", "robot:={artifact:robot_left}", "pd_config:={artifact:pd}",
+             "sides:=left", "execute:=true"]
+      background: true
+  home_left:
+    - note: "[left] engage → 제자리 10 s. pd 가 HOLD 로 가면 실패하고 pd 를 해제한다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_engage, --hold-s, "10"]
+      execute_args: [--execute, --approve, pd_engage]
+    - note: "[left] ★10 s 동안 팔이 제자리였는가(처짐 · 떨림 · 소리 없음). 아니면 '정상이 아니다' 후 정지 바의 PD 해제"
+      argv: [bash, -lc, "true"]
+      manual: true
+    - note: "[left] 계약 홈(차렷 0)으로 0.1 rad/s 램프 + 정착. 실패하면 pd 를 해제한다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_goto_home]
+      execute_args: [--execute, --approve, pd_goto_home]
+  selftest_left:
+    - note: "[left] 셀프테스트 — 진폭 0.02→0.05→0.10 rad, l_aj_4 제외(차렷에서 하한 0)"
       argv: [python3, "{repo}/deploy/policy_control/tools/pd_selftest.py", --contract, "{artifact:contract}",
-             --robot, "{artifact:robot_left}", --side, left, --amplitudes, "0.02,0.05,0.10",
+             --robot, "{artifact:robot_left}", --side, left, --joints, "l_aj_1,l_aj_2,l_aj_3,l_aj_5,l_aj_6,l_aj_7", --amplitudes, "0.02,0.05,0.10",
              --out, "{repo}/logs/policy_control/real_dg5fm_left_selftest.json"]
       execute_args: [--execute]
-  goto_home_left:
-    - note: "[left] pd engage + goto_home (episode_ctl 단계 — 승인 pd_engage·pd_goto_home)"
-      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --steps, "0",
-             --approve, pd_engage, --approve, pd_goto_home]
-      execute_args: [--execute]
   fabric_direct_left:
-    - note: "[left] fabric 노드 direct 모드 — ★use_source:=true 필수(설치 콘솔 스크립트는 시스템 python
-        이라 warp 를 import 못 한다). fabric 은 control_only 에서 홈을 실측으로 잡는다"
+    - note: "[left] fabric 노드 direct 모드 (계약이 control_only 라 obs/policy 는 안 뜬다).
+        ★use_source:=true 필수 — 설치된 콘솔 스크립트는 시스템 python 이라 warp(venv)를 import 못 한다.
+        ★fabric 은 direct 모드에서 홈을 **실측**으로 잡는다(control_only) — 어느 자세에서 시작해도 된다"
       argv: [ros2, launch, policy_control, policy_chain.launch.py,
              "contract:={artifact:contract}", "robot:={artifact:robot_left}", "side:=left", "device:=cuda:0",
              "use_source:=true"]
       background: true
-    - note: "[left] 에피소드 reset (fabric 이 armed 가 될 때까지 status/fabric 확인)"
-      argv: [ros2, service, call, /policy_control/episode/reset, std_srvs/srv/Trigger]
-    - note: "[left] 에피소드 start — fabric 이 홈 palm 을 유지하며 적분 시작(팔은 홈에 머문다)"
-      argv: [ros2, service, call, /policy_control/episode/start, std_srvs/srv/Trigger]
-    - note: "[left] palm +2 cm z (실기 기본 도메인이면 --allow-domain-0 가 필요 — 승인 후 사용자가 붙인다)"
+    - note: "[left] 에피소드 reset → start — fabric 이 armed 인지 확인하고 시작한다(팔은 홈 palm 에 머문다).
+        ros2 service call 은 거부돼도 rc 0 이라 episode_ctl 로 부른다 — 거부 · 타임아웃이면 실패하고 pd 를 해제한다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, "ep_reset,ep_start"]
+      execute_args: [--execute, --approve, ep_start]
+    - note: "[left] palm +2 cm z"
       argv: [python3, "{repo}/deploy/policy_control/tools/palm_cmd.py", --rel, "0", "0", "0.02", --hold, "1.0"]
     - note: "[left] 손 30 % 폐쇄 후 다시 open"
       argv: [python3, "{repo}/deploy/policy_control/tools/hand_cmd.py", --contract, "{artifact:contract}", --side, left,
              --close, "0.3", --hold, "1.0"]
+    - note: "[left] 에피소드 stop — pd 는 계속 잡고 있다(해제는 ⑥)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, ep_stop]
+      execute_args: [--execute]
   release_left:
-    - note: "[left] 에피소드 stop 후 pd release — 역블렌드 → 0 송출 → JTC 복귀"
-      argv: [ros2, service, call, /policy_control/episode/stop, std_srvs/srv/Trigger]
-    - note: "[left] pd release 서비스 (실패 시 복구 CLI: tools/pd_release.py --side left --execute)"
-      argv: [ros2, service, call, /policy_control/pd/release, std_srvs/srv/Trigger]
+    - note: "[left] pd release — 역블렌드 → 0 송출 → JTC 복귀 (실패 시 복구 CLI: tools/pd_release.py --side left --execute)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_release]
+      execute_args: [--execute]
+    - note: "[left] 이 팔의 fabric · pd 정지 — pd 가 IDLE 이라 토크는 JTC 가 그대로 잡는다"
+      stop: ["fabric_direct_left#0", "pd_arm_left#1"]
+  sensors_off:
+    - note: FP++ 컨테이너 + 카메라 내리기 (vision-3090)
+      argv: [python3, "{repo}/scripts/ops/perception_ctl.py", stop, --camera]
+    - note: 로컬 인지 런처 정지
+      stop: ["sensors#0"]
+  shutdown:
+    - note: "★양팔을 받침 위 · 안전 자세에 두었는가. 두 팔 모두 pd 해제(⑥ release)를 끝냈는가. 다음 스텝부터 토크가 풀린다"
+      argv: [bash, -lc, "true"]
+      manual: true
+    - note: 남은 pd · fabric · 목 퍼블리셔 정지
+      stop: ["fabric_direct_right#0", "pd_arm_right#1", "pd_load_right#0",
+             "fabric_direct_left#0", "pd_arm_left#1", "pd_load_left#1", "head_home#1", "sensors#0"]
+    - note: DG-5F 손 드라이버 정지 (우 → 좌) — 손가락 토크가 풀린다
+      stop: ["drivers#5", "drivers#6"]
+    - note: ★팔 브링업 정지 — OpenArm 하드웨어가 disable_all() 로 모든 모터를 끈다(팔이 받침으로 내려앉는다)
+      stop: ["drivers#3"]
+    - note: 모터 전원(양팔) OFF — 물리 스위치
+      argv: [bash, -lc, "true"]
+      manual: true

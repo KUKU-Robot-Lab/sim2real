@@ -31,7 +31,7 @@ from .lease import Lease
 from .links import chain
 from .profiles import Profile, scan
 from .rosgraph import REPEAT_S as GRAPH_REPEAT_S
-from .runner import SETTLE_S, StageRunner
+from .runner import SETTLE_S, StageRunner, step_kind
 from .supervisor import Supervisor, SupervisorError, child_env
 from .wiring import generate as generate_diagram
 from .wiring import PERCEPTION_STATUS as PERCEPT_STATUS
@@ -194,6 +194,7 @@ class Session:
         self.run_dir = mission_run.MISSION_LOG_DIR / self.run_id
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.state = MC.initial_state(self.mission)
+        self.skipped: frozenset[str] = frozenset()          # 실행하지 않고 넘긴 단계 — 목록에 "건너뜀" 으로 보인다
         self.cache = survey.DigestCache()
         self.ledger_path = self.run_dir / "approvals.jsonl"
         self.intents_path = self.run_dir / "intents.jsonl"
@@ -300,22 +301,28 @@ class Console:
     def shutdown(self) -> list[str]:
         """콘솔 프로세스가 내려갈 때. fake 는 자식을 모두 정지한다.
 
-        실기에서 뭔가 떠 있으면 **남긴다** — 팔 브링업을 내리면 모터가 전부 풀린다(Ctrl+C 한 번에 팔이 떨어졌다).
-        구독 전용 브리지·프로브만 내린다. 남긴 키를 돌려준다(없으면 빈 목록).
+        실기에서는 팔·손 드라이버만 **남긴다** — 팔 브링업을 내리면 모터가 전부 풀린다(Ctrl+C 한 번에 팔이 떨어졌다).
+        그 밖의 자식(인지 런처·목 퍼블리셔·pd …)과 브리지·프로브는 정지한다. 남긴 키를 돌려준다(없으면 빈 목록).
         """
         with self._lock:
             s = self.session
             if s is None:
                 return []
             procs = {p["key"]: p for p in s.supervisor.table()}
-            if not U.keep_children_on_exit(real=s.profile.is_real, procs=procs):
+            kept = U.keep_on_exit(real=s.profile.is_real, stack_keys=self._stack_keys(s), procs=procs)
+            if not kept:
                 self.end(force=True)
                 return []
-            kept = sorted(k for k, p in procs.items() if p.get("alive"))
+            if s.runner is not None and s.runner.active:
+                s.runner.abort()
+                s.runner.join(timeout=8)
+            others = [k for k, p in procs.items() if p.get("alive") and k not in kept]
+            if others:
+                s.supervisor.stop(others)
             for pipe in (s.bridge, s.probe):
                 if pipe is not None:
                     pipe.stop()
-            self._intent(s, "run/detach", {"kept": kept})
+            self._intent(s, "run/detach", {"kept": kept, "stopped": others})
             self.session = None
             return kept
 
@@ -361,6 +368,29 @@ class Console:
                                           "argv": [list(c.argv) for c in commands]})
             s.runner = StageRunner(stage_id, commands, s.supervisor, on_done=self._stage_done)
             s.runner.start()
+
+    def skip_stage(self, stage_id: str, *, operator: str) -> None:
+        """지금 단계를 실행하지 않고 넘긴다 — 오른팔만 할 때 왼팔 단계처럼 미션이 `skippable` 로 선언한 것만.
+
+        넘긴 단계는 완료로 친다(뒤 단계의 선행 조건이 풀린다). 원장·기록에 "건너뜀" 으로 남는다.
+        """
+        with self._lock:
+            s = self._need()
+            stage = self._current_stage(s, stage_id)
+            reasons = self._skip_reasons(s, stage)
+            if reasons:
+                raise ConsoleError(f"{stage_id} 를 건너뛸 수 없다", reasons=tuple(reasons))
+            s.state = MC.advance(s.mission, MC.begin(s.state), MC.STATUS_DONE, note=f"건너뜀 ({operator})")
+            s.skipped = s.skipped | {stage_id}
+            mission_run.save_state(s.run_id, s.state)
+            s.event("stage", f"» {stage_id} 건너뜀 — {operator}")
+            self._intent(s, "stage/skip", {"stage": stage_id, "operator": operator})
+
+    def _skip_reasons(self, s: Session, stage) -> list[str]:
+        with s.feed_lock:
+            obs = s.feed.observed()
+        phase = self._pd_phase(s, obs, {p["key"]: p for p in s.supervisor.table()})
+        return U.skip_reasons(skippable=stage.skippable, busy=s.runner is not None and s.runner.active, pd_phase=phase)
 
     def ack(self, index: int, ok: bool) -> None:
         with self._lock:
@@ -550,6 +580,7 @@ class Console:
         rows_struct = MC.plan(s.mission, s.state, mission_run.plan_evidence(s.mission, ev))
         busy = s.runner is not None and s.runner.active
         finished = s.state.status == MC.STATUS_DONE
+        skip_why = None if finished else self._skip_reasons(s, MC.stage_by_id(s.mission, s.state.stage))
         rows = []
         for row in rows_struct:
             st = row.stage
@@ -564,11 +595,13 @@ class Console:
                 "reasons": structural, "approved": approved, "approval_stale": stale.get(st.id, []),
                 "can_approve": current and st.touches_real and not approved and not structural and not busy,
                 "can_run": current and not structural and (approved or not st.touches_real) and not busy,
-                "commands": [{"note": c.note, "argv": list(c.argv),
-                              "kind": "manual" if c.manual else ("background" if c.background else "foreground")} for c in cmds],
+                "group": st.group, "skippable": st.skippable, "skipped": st.id in s.skipped,
+                "can_skip": current and st.skippable and not skip_why, "skip_why": skip_why if current and st.skippable else [],
+                "commands": [{"note": c.note, "argv": list(c.argv), "kind": step_kind(c), "stop": list(c.stop)} for c in cmds],
             })
+        groups = [{"id": g.id, "title": g.title, "motion": g.motion} for g in s.mission.groups]
         return {"name": s.mission.name, "stage": s.state.stage, "status": s.state.status, "cycle": s.state.cycle,
-                "note": s.state.note, "loop_to": s.mission.loop_to, "rows": rows}
+                "note": s.state.note, "loop_to": s.mission.loop_to, "rows": rows, "groups": groups}
 
     @staticmethod
     def _policy_view(s: Session) -> dict | None:

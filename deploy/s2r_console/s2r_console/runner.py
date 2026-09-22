@@ -32,15 +32,24 @@ class Step:
     index: int
     note: str
     argv: tuple[str, ...]
-    kind: str                       # background | foreground | manual
+    kind: str                       # background | foreground | manual | stop
     status: str = "pending"         # pending | running | waiting | up | done | failed | aborted | kept
     rc: int | None = None
     key: str = ""
     detail: str = ""
+    targets: tuple[str, ...] = ()   # stop 이 내릴 배경 명령 키
 
     def as_dict(self) -> dict:
         return {"index": self.index, "note": self.note, "argv": list(self.argv), "kind": self.kind,
-                "status": self.status, "rc": self.rc, "key": self.key, "detail": self.detail}
+                "status": self.status, "rc": self.rc, "key": self.key, "detail": self.detail,
+                "targets": list(self.targets)}
+
+
+def step_kind(c) -> str:
+    """명령 하나의 종류. `stop` 은 실행이 아니라 앞 단계가 띄운 배경 명령을 내린다."""
+    if getattr(c, "stop", ()):
+        return "stop"
+    return "manual" if c.manual else ("background" if c.background else "foreground")
 
 
 @dataclass
@@ -54,9 +63,8 @@ class StageRunner:
                  on_done: Callable[[str, str, str], None], settle_s: float = SETTLE_S) -> None:
         self.stage_id = stage_id
         self._sup, self._on_done, self._settle = supervisor, on_done, settle_s
-        self.steps = [Step(index=i, note=c.note or " ".join(c.argv[:3]), argv=tuple(c.argv),
-                           kind="manual" if c.manual else ("background" if c.background else "foreground"),
-                           key=f"{stage_id}#{i}")
+        self.steps = [Step(index=i, note=c.note or " ".join(c.argv[:3]) or "정지 " + ", ".join(c.stop), argv=tuple(c.argv),
+                           kind=step_kind(c), key=f"{stage_id}#{i}", targets=tuple(getattr(c, "stop", ()) or ()))
                       for i, c in enumerate(commands)]
         self.outcome: str | None = None
         self.note = ""
@@ -157,6 +165,22 @@ class StageRunner:
                 return ABORTED, "운영자가 중단했다"
             time.sleep(_POLL_S)
         self._set(step, status="up")
+        return None
+
+    def _do_stop(self, step: Step):
+        """앞 단계가 띄운 배경 명령을 **적힌 순서대로** 하나씩 내린다(pd → 손 → 팔). 이미 없는 것은 넘어간다."""
+        self._set(step, status="running")
+        gone = []
+        for key in step.targets:
+            if self._aborting():
+                return ABORTED, "운영자가 중단했다"
+            if self._sup.is_alive(key):
+                self._sup.stop([key])
+                if self._sup.is_alive(key):
+                    self._set(step, status="failed", detail=f"{key} 가 정지되지 않았다")
+                    return FAILED, f"{step.note}: {key} 가 정지되지 않았다 — PID 를 확인할 것"
+                gone.append(key)
+        self._set(step, status="done", detail=f"정지: {', '.join(gone) or '이미 모두 내려가 있었다'}")
         return None
 
     def _do_foreground(self, step: Step):
