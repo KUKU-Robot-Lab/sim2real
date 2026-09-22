@@ -179,6 +179,23 @@ class Peer:
         assert len(got) > mark, "status 미수신"
         return json.loads(got[mark].data)
 
+    def status_where(self, mark: int, pred, timeout: float = 3.0):
+        """mark 이후 status 중 pred 를 만족하는 첫 건. 명령을 보낸 직후의 status 는 노드가 그 명령을 처리하기 **전에**
+        나갔을 수 있다 — 첫 건만 보면 부하가 걸린 전체 스위트에서 가끔 틀린다(09.22 preflight). 끝내 없으면 마지막 건."""
+        t0 = time.monotonic()
+        seen = mark
+        while time.monotonic() - t0 < timeout:
+            got = list(self.got["status"])
+            for msg in got[seen:]:
+                body = json.loads(msg.data)
+                if pred(body):
+                    return body
+            seen = len(got)
+            time.sleep(0.01)
+        got = list(self.got["status"])
+        assert len(got) > mark, "status 미수신"
+        return json.loads(got[-1].data)
+
     def close(self):
         self.node.destroy_node()
 
@@ -595,13 +612,13 @@ def test_control_only_bad_palm_cmd_and_hand_cmd_are_reported_not_applied(ros, as
         before = peer.pose_xyz("palm_target")
         m = peer.mark()
         peer.palm_cmd(np.array([0.3, 0.1, 0.4, 0.0, 0.0, 0.0]), frame="odom")
-        st = peer.status_after(m)
+        st = peer.status_where(m, lambda b: not b["ok"])
         assert st["ok"] is False and any("palm_cmd" in r and "frame" in r for r in st["reasons"])
         _pump(peer, 0.2)
         np.testing.assert_allclose(peer.pose_xyz("palm_target"), before, atol=1e-9)   # 목표 불변
         m = peer.mark()
         peer.hand_cmd(("l_hj_thumb_1",), [0.3])                                      # 손 관절 결손
-        st = peer.status_after(m)
+        st = peer.status_where(m, lambda b: any("hand_cmd" in r for r in b["reasons"]))
         assert st["ok"] is False and any("hand_cmd" in r for r in st["reasons"])
         _pump(peer, 0.2)
         np.testing.assert_allclose(peer.got["joint_target"][-1].position[7:], peer.hand_home["left"])
