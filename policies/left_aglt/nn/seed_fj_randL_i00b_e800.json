@@ -1,0 +1,46 @@
+{
+ "policy": "seed_fj_randL_i00b_e800.pth",
+ "task": "cup_pick",
+ "arm": "left",
+ "stage": "approach(입력 시드 — manip 보상으로 얻은 접근 정책)",
+ "interface": {
+  "obs": 133,
+  "critic_state": 157,
+  "action": 26,
+  "action_layout": "arm 7 joint increments + hand 19 absolute (full-joint, no synergy)",
+  "profile": "tesollo_left_short_tl",
+  "asset": "openarm_dg5f-m-short-tl_bi_rl",
+  "hand_driven_joints": 19,
+  "hand_movable_joints": 13,
+  "algo": "PPO-LSTM (rl_games, vendor rl_games_sapg on PYTHONPATH)"
+ },
+ "env": {
+  "gym_id_at_training": "open-short_l_grasp_fj_t2r_rand-lstm",
+  "cup_spawn": "x 0.10-0.40, y 0.00-0.30 uniform",
+  "episode_s": 15.0,
+  "num_envs": 4096,
+  "tol": 0.1125
+ },
+ "reward": {
+  "file": "reward_gen/cup_pick_l_manip/iter_00/compute_reward.py (당시 reward_gen/grasp_fj_rand_left/iter_00)",
+  "lineage": "right grasp_fj_rand/iter_01 → mirror"
+ },
+ "metrics_at_save": {
+  "epoch": 800,
+  "far_approach_gate_ep": 0.88,
+  "far_envelope_gate_ep": 0.0,
+  "fingers_touching": 1.9,
+  "palm_touching": 0.37,
+  "lift_ep": 0.055,
+  "far_success_ep": 0.0
+ },
+ "provenance": {
+  "parent": "fj_randL_i00 best pre-crash (e~2400)",
+  "run": "fj_randL_i00b",
+  "host": "local RTX 5090",
+  "commit": "e12baa18",
+  "saved": "2026-09-20T14:27:19"
+ },
+ "note": "접근만 쓸 수 있는 시드. 인벨롭은 서지 않는다 — 1단계(approach) 보상 학습의 출발점으로만 쓴다.",
+ "sha256": "c6fb9ee9b0143af5"
+}

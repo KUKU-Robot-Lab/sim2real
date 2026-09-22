@@ -1,0 +1,12 @@
+# 왼팔 cup_pick 접근 계열 한 벌 — params/ 가 런별로 갈라져 있다(params/<체크포인트 이름>/).
+id: left_aglt
+status: candidate
+task: open-short_l_cup_pick-lstm
+side: left
+checkpoint: cup_pick_l_approach_hold_e4280.pth
+note: >-
+  세 체크포인트 한 벌(접근 e3400 · 접근+C자 유지 e4280 · 입력 시드 i00b). 후보는 가장 나중 단계인
+  e4280 으로 적어 뒀다 — 다른 것을 쓰려면 이 checkpoint: 한 줄만 바꾸면 된다.
+  인터페이스는 오른팔과 같다(obs 133 / action 26, 팔 7 증분 + 손 19 절대, 프로파일 tesollo_left_short_tl).
+  계약 없음 — right_aglt 와 같은 이유(새 family 필요).
+  seed_fj_randL_i00b_e800 의 gym id 는 s2r 동결 트랙이다 — 재생만 하고 그 트랙에 쓰지 않는다.

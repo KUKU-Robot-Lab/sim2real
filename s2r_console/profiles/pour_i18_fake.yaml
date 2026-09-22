@@ -4,7 +4,7 @@ id: pour_i18_fake
 title: 양팔 물붓기 · fake 체인 (pour_i18)
 mission: config/mission_pour_fake.yaml
 domain: {id: 97, class: fake}
-policy: policies/pour_i18
+policy: policies/both_pour_i18
 policy_dt: 0.016667            # 60 Hz
 status_nodes: [pour_node, pd, pour_guard]
 latency: {from: pour_node, to: pd}   # 가드는 seq 를 내지 않는다

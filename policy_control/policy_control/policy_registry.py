@@ -4,10 +4,18 @@
 여기는 그 질문 하나에만 답한다. 정책 하나 = 디렉터리 하나:
 
     policies/<id>/
-      policy.yaml            사람이 쓰는 카드 — id · status · task · side · note   (도구가 덮어쓰지 않는다)
+      policy.yaml            사람이 쓰는 카드 — id · status · task · side · checkpoint · note  (도구가 덮어쓰지 않는다)
       params/env.yaml, agent.yaml                                                 (계약의 모든 숫자의 원천)
-      nn/<하나>.pth          정확히 1 개 — contract_build 의 "exactly one .pth" 규칙
+      nn/<하나>.pth          한 개면 그것이 후보다
       fetch.json             출처 매니페스트 (호스트 · 원격 경로 · sha256 · 학습 커밋)
+
+**한 벌(bundle)** — 한 팔의 정책 묶음도 디렉터리 하나다(09.22 사용자 배치). 체크포인트가 여럿이면
+카드의 `checkpoint:` 가 **후보 하나**를 가리켜야 한다. `build_deploy_contract.py --checkpoint` 가 그것을 받는다.
+그때 `params/` 는 런별로 갈라져 있어도 된다 — `params/<체크포인트 이름>/{env,agent}.yaml` 을 먼저 보고
+없으면 `params/{env,agent}.yaml` 을 본다.
+
+손으로 옮긴 한 벌에는 `fetch.json` 이 없다. 그것은 `candidate` 까지만 봐준다 — `verified`·`deployed` 는
+출처를 모르면 안 된다.
       deploy_contract.json | pour_contract.json                                   (만들어졌으면)
       trace_meta.json, trace.npz                                                  (pour 계열)
 
@@ -93,10 +101,35 @@ def _load_card(path: Path, issues: list[str]) -> dict:
     return card
 
 
-def _check_manifest(path: Path, issues: list[str], deep: bool) -> None:
+def _pick_checkpoint(path: Path, card: Mapping, issues: list[str]) -> str:
+    """쓸 가중치 하나. 여럿이면 카드가 골라야 한다 — 도구가 추측하지 않는다."""
+    pths = sorted(p.name for p in (path / "nn").glob("*.pth")) if (path / "nn").is_dir() else []
+    named = str(card.get("checkpoint") or "").strip()
+    if named:
+        if named in pths:
+            return named
+        issues.append(f"카드의 checkpoint {named!r} 가 nn/ 에 없다" + (f" (있는 것: {', '.join(pths)})" if pths else ""))
+        return ""
+    if len(pths) == 1:
+        return pths[0]
+    issues.append(f"nn/ 에 .pth 가 {len(pths)} 개다 — 카드의 `checkpoint:` 로 하나를 고르라"
+                  + (f": {', '.join(pths)}" if pths else ""))
+    return ""
+
+
+def _params_of(path: Path, checkpoint: str) -> tuple[str, ...]:
+    """런별로 갈라 둔 한 벌이면 그 체크포인트의 폴더를 본다. 아니면 공통 params/."""
+    run = checkpoint[:-4] if checkpoint.endswith(".pth") else checkpoint
+    if run and (path / "params" / run).is_dir():
+        return tuple(f"params/{run}/{Path(rel).name}" for rel in PARAMS)
+    return PARAMS
+
+
+def _check_manifest(path: Path, issues: list[str], deep: bool, *, needed: bool = True) -> None:
     p = path / MANIFEST
     if not p.is_file():
-        issues.append(f"{MANIFEST} 가 없다 — 출처를 모른다 (fetch_run.py 로 받아라)")
+        if needed:
+            issues.append(f"{MANIFEST} 가 없다 — 출처를 모른다 (fetch_run.py 로 받아라)")
         return
     try:
         files = json.loads(p.read_text()).get("files") or []
@@ -117,13 +150,9 @@ def check(path: Path, *, deep: bool = True) -> Entry:
     issues: list[str] = []
     card = _load_card(path, issues)
 
-    pths = sorted(p.name for p in (path / "nn").glob("*.pth")) if (path / "nn").is_dir() else []
-    if len(pths) != 1:
-        issues.append(f"nn/ 에 .pth 가 {len(pths)} 개다 — 정확히 1 개여야 한다" + (f": {', '.join(pths)}" if pths else ""))
-    checkpoint = pths[0] if len(pths) == 1 else ""
-
-    issues += [f"{rel} 가 없다" for rel in PARAMS if not (path / rel).is_file()]
-    _check_manifest(path, issues, deep)
+    checkpoint = _pick_checkpoint(path, card, issues)
+    issues += [f"{rel} 가 없다" for rel in _params_of(path, checkpoint) if not (path / rel).is_file()]
+    _check_manifest(path, issues, deep, needed=card.get("status") in NEEDS_CONTRACT)
 
     found = [c for c in CONTRACTS if (path / c).is_file()]
     if len(found) > 1:

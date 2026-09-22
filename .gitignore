@@ -42,6 +42,7 @@ logs/policy/**/trace.npz
 # policies/ — 배포 후보 정책 등록소 (policy_control/tools/fetch_run.py 가 채운다).
 #   카드(policy.yaml)·fetch.json·params·계약은 추적하고, 무거운 산출물만 뺀다.
 policies/**/nn/*.pth
-policies/**/trace.npz
+policies/**/*.npz
+policies/**/summaries/
 policies/**/.staging_*/
 tests/fixtures/policy_control/**/trace.npz

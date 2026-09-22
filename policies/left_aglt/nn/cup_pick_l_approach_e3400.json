@@ -1,0 +1,54 @@
+{
+ "policy": "cup_pick_l_approach_e3400.pth",
+ "task": "cup_pick",
+ "arm": "left",
+ "stage": "approach (접근 + 인벨롭 파지)",
+ "interface": {
+  "obs": 133,
+  "critic_state": 157,
+  "action": 26,
+  "action_layout": "arm 7 joint increments + hand 19 absolute (full-joint, no synergy; 13 movable)",
+  "profile": "tesollo_left_short_tl",
+  "asset": "openarm_dg5f-m-short-tl_bi_rl",
+  "algo": "PPO-LSTM (rl_games; vendor/rl_games_sapg on PYTHONPATH)"
+ },
+ "env": {
+  "gym_id": "open-short_l_grasp_fj_ab-lstm (= open-short_l_cup_pick-lstm, 이름 변경 전 런)",
+  "cup_spawn": "x 0.10-0.40, y 0.00-0.30 uniform",
+  "episode_s": 15.0,
+  "num_envs": 4096,
+  "tol": 0.1125
+ },
+ "reward": {
+  "file": "reward_gen/cup_pick_l_approach/iter_00/compute_reward.py",
+  "lineage": "grasp_fj_stage/iter_08 → grasp_fj_rand/iter_00 → mirror_reward.py --to l"
+ },
+ "metrics_at_save": {
+  "epoch": 3433,
+  "far_approach_gate_ep": 0.895,
+  "far_envelope_gate_ep": 0.812,
+  "grasp_ep": 0.869,
+  "fingers_touching": 2.96,
+  "palm_touching": 0.536,
+  "finger_contact": {
+   "thumb": 0.742,
+   "index": 0.696,
+   "middle": 0.726,
+   "ring": 0.0016,
+   "pinky": 0.71
+  },
+  "lift_ep": 0.194,
+  "lifted_frac": 0.094,
+  "far_success_ep": 0.0
+ },
+ "provenance": {
+  "parent": "policy_zoo/cup_pick/left/approach/seed_fj_randL_i00b_e800.pth",
+  "run": "fj_abL_a00",
+  "host": "local RTX 5090",
+  "commit": "ee81f4b4",
+  "saved": "2026-09-20T18:44:20",
+  "source_file": "log/rl_games/open-short/left/grasp-fj-ab/fj_abL_a00/nn/open-short_l_grasp_fj_ab-lstm.pth"
+ },
+ "note": "1단계 완료 정책: 접근 0.90 · 인벨롭 0.81. 리프트는 0.19 로 낮다(1단계 보상이 들기를 거의 가르치지 않는다). ★약지는 여전히 거의 닿지 않는다(0.002) — 엄지·검지·중지·새끼 4지로 인벨롭 요건을 채운다.",
+ "sha256": "aa662899dd1284e2"
+}

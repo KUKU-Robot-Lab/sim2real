@@ -1,0 +1,47 @@
+{
+ "policy": "cup_pick_l_approach_hold_e4280.pth",
+ "task": "cup_pick",
+ "arm": "left",
+ "stage": "approach (접근 + C자 사전파지 자세로 정지·유지, 무접촉)",
+ "interface": {
+  "obs": 133,
+  "critic_state": 157,
+  "action": 26,
+  "action_layout": "arm 7 joint increments + hand 19 absolute (full-joint, no synergy; 13 movable)",
+  "profile": "tesollo_left_short_tl",
+  "asset": "openarm_dg5f-m-short-tl_bi_rl",
+  "algo": "PPO-LSTM (rl_games; vendor/rl_games_sapg on PYTHONPATH)"
+ },
+ "env": {
+  "gym_id": "open-short_l_cup_pick-lstm",
+  "cup_spawn": "x 0.10-0.40, y 0.00-0.30 uniform",
+  "episode_s": 15.0,
+  "num_envs": 4096,
+  "tol": 0.1125
+ },
+ "reward": {
+  "file": "reward_gen/cup_pick_l_approach/iter_01/compute_reward.py",
+  "lineage": "t2r 생성(09.20 1단계 재설계 — 접근·정지·무접촉, 파지/들기 항 없음)"
+ },
+ "metrics_at_save": {
+  "epoch": 4284,
+  "far_approach_gate_ep": 0.943,
+  "cup_contact_fingers": 0.0,
+  "cup_contact_palm": 0.0,
+  "cup_tilt_deg": 0.029,
+  "palm_cup_gap_m": 0.059,
+  "hold_still_term": 0.565,
+  "envelope_gate_ep": 0.0,
+  "lift_ep": 0.0,
+  "far_success_ep": 0.0
+ },
+ "provenance": {
+  "parent": "policy_zoo/cup_pick/left/approach/seed_fj_randL_i00b_e800.pth",
+  "run": "cp_l_a01",
+  "host": "local RTX 5090",
+  "commit": "0fce5124",
+  "saved": "2026-09-21T02:47:01"
+ },
+ "note": "2단계(파지·리프트·추종)의 출발점. 컵을 건드리지 않고 사전파지 자리에 멈춘다 — 접근 0.94 · 컵 접촉 0 · 컵 기울기 0.03°.",
+ "sha256": "aa6e29b9c18739a3"
+}

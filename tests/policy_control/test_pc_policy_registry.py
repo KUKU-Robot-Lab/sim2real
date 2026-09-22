@@ -86,8 +86,9 @@ def test_a_file_changed_after_fetch_is_caught(tmp_path):
     assert R.check(d, deep=False).ok                        # 얕은 점검은 크기만 본다
 
 
-def test_missing_manifest_is_an_issue(tmp_path):
-    d = make(tmp_path)
+def test_missing_manifest_is_an_issue_once_the_policy_claims_to_be_verified(tmp_path):
+    # 손으로 옮긴 한 벌에는 매니페스트가 없다 — candidate 까지는 봐주고, verified 부터는 출처를 따진다.
+    d = make(tmp_path, status="verified", contract="deploy_contract.json")
     (d / R.MANIFEST).unlink()
     assert any(R.MANIFEST in i for i in R.check(d).issues)
 
@@ -139,3 +140,57 @@ def test_the_real_policies_directory_is_clean():
         pytest.skip("policies/ 가 아직 없다")
     bad = {e.id: e.issues for e in R.scan(root, deep=False) if not e.ok}
     assert not bad, bad
+
+
+# ── 한 벌(bundle): 한 팔의 정책 묶음 — 체크포인트 여러 개 + 사이드카 (09.22 사용자 배치) ──
+def bundle(root: Path, pid: str = "left_aglt", *, chosen: str = "b.pth", per_run_params: bool = True,
+           manifest: bool = False, status: str = "candidate") -> Path:
+    d = root / pid
+    (d / "nn").mkdir(parents=True)
+    for name in ("a.pth", "b.pth"):
+        (d / "nn" / name).write_bytes(PTH if name == chosen else b"other")
+        (d / "nn" / name.replace(".pth", ".json")).write_text(json.dumps(
+            {"policy": name, "task": "cup_pick", "arm": "left", "interface": {"obs": 133, "action": 26}}))
+        if per_run_params:
+            (d / "params" / name.replace(".pth", "")).mkdir(parents=True, exist_ok=True)
+            for rel in ("env.yaml", "agent.yaml"):
+                (d / "params" / name.replace(".pth", "") / rel).write_text("x: 1\n")
+    if not per_run_params:
+        (d / "params").mkdir(exist_ok=True)
+        for rel in R.PARAMS:
+            (d / rel).write_text("x: 1\n")
+    if manifest:
+        (d / R.MANIFEST).write_text(json.dumps({"host": "server", "files": []}))
+    (d / R.CARD).write_text(yaml.safe_dump({"id": pid, "status": status, "task": "cup_pick", "side": "left",
+                                            "checkpoint": chosen, "note": "손으로 옮긴 한 벌"}))
+    return d
+
+
+def test_a_bundle_names_its_candidate_checkpoint_and_that_is_not_an_issue(tmp_path):
+    e = R.check(bundle(tmp_path))
+    assert e.ok, e.issues
+    assert e.checkpoint == "b.pth"
+
+
+def test_a_bundle_must_name_one_of_the_checkpoints_it_actually_has(tmp_path):
+    d = bundle(tmp_path)
+    (d / R.CARD).write_text(yaml.safe_dump({"id": d.name, "status": "candidate", "checkpoint": "nope.pth"}))
+    assert any("nope.pth" in i for i in R.check(d).issues)
+
+
+def test_several_checkpoints_without_a_named_one_is_still_an_issue(tmp_path):
+    d = bundle(tmp_path)
+    (d / R.CARD).write_text(yaml.safe_dump({"id": d.name, "status": "candidate"}))
+    assert any(".pth 가 2 개" in i for i in R.check(d).issues)
+
+
+def test_a_bundle_takes_params_from_the_chosen_runs_folder(tmp_path):
+    d = bundle(tmp_path)
+    (d / "params" / "b" / "env.yaml").unlink()
+    assert any("env.yaml" in i for i in R.check(d).issues)
+
+
+def test_a_hand_copied_bundle_needs_provenance_only_once_it_is_verified(tmp_path):
+    assert R.check(bundle(tmp_path, "c1")).ok                       # candidate — 출처는 아직 안 따진다
+    d = bundle(tmp_path, "c2", status="verified")
+    assert any(R.MANIFEST in i for i in R.check(d).issues)

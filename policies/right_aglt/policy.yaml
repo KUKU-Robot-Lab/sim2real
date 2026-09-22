@@ -1,0 +1,11 @@
+# 오른팔 grasp_fj 한 벌 — 체크포인트 3개 중 후보 하나를 여기서 고른다(README.md 에 지표).
+id: right_aglt
+status: candidate
+task: open-short_r_grasp_fj_t2r_rand-lstm
+side: right
+checkpoint: fj_rand_i01_best_ep5000.pth
+note: >-
+  s2r 후보. 먼 출발 성공 0.85 · 공차 0.019 · 컵 기울기 4.3°. sha256 앞 16자리 e76f9c6079663b61.
+  계약 없음 — obs 133 / action 26(팔 7 관절 증분 + 손 19 절대)은 기존 세 family 어디에도 안 맞는다.
+  build_deploy_contract 가 grasp_s2r 로 판정했다가 인터페이스 차이로 거절한다. 새 family 가 필요하다.
+  같은 한 벌의 fj_rand_i01_final.pth 는 공차 바닥 뒤 열화(성공 0.61)라 쓰지 않는다.
