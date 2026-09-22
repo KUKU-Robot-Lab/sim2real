@@ -76,7 +76,9 @@ run:
     - '0.02'
     - --hold
     - '1.0'
-    note: '[left] palm +2 cm z'
+    - --timeout
+    - '15'
+    note: '[left] palm +2 cm z (palm_pose 대기 15 s — fabric 첫 계산은 warp 커널 컴파일로 늦다, 09.22 fake 에서 3 s 초과)'
   - argv:
     - python3
     - '{repo}/deploy/policy_control/tools/hand_cmd.py'
@@ -132,7 +134,9 @@ run:
     - '0.02'
     - --hold
     - '1.0'
-    note: '[right] palm +2 cm z'
+    - --timeout
+    - '15'
+    note: '[right] palm +2 cm z (palm_pose 대기 15 s — fabric 첫 계산은 warp 커널 컴파일로 늦다, 09.22 fake 에서 3 s 초과)'
   - argv:
     - python3
     - '{repo}/deploy/policy_control/tools/hand_cmd.py'

@@ -315,8 +315,8 @@ run:
         ros2 service call 은 거부돼도 rc 0 이라 episode_ctl 로 부른다 — 거부 · 타임아웃이면 실패하고 pd 를 해제한다"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, "ep_reset,ep_start"]
       execute_args: [--execute, --approve, ep_start]
-    - note: "[right] palm +2 cm z"
-      argv: [python3, "{repo}/deploy/policy_control/tools/palm_cmd.py", --rel, "0", "0", "0.02", --hold, "1.0"]
+    - note: "[right] palm +2 cm z (palm_pose 대기 15 s — fabric 첫 계산은 warp 커널 컴파일로 늦다, 09.22 fake 에서 3 s 초과)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/palm_cmd.py", --rel, "0", "0", "0.02", --hold, "1.0", --timeout, "15"]
     - note: "[right] 손 30 % 폐쇄 후 다시 open"
       argv: [python3, "{repo}/deploy/policy_control/tools/hand_cmd.py", --contract, "{artifact:contract}", --side, right,
              --close, "0.3", --hold, "1.0"]
@@ -397,8 +397,8 @@ run:
         ros2 service call 은 거부돼도 rc 0 이라 episode_ctl 로 부른다 — 거부 · 타임아웃이면 실패하고 pd 를 해제한다"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, "ep_reset,ep_start"]
       execute_args: [--execute, --approve, ep_start]
-    - note: "[left] palm +2 cm z"
-      argv: [python3, "{repo}/deploy/policy_control/tools/palm_cmd.py", --rel, "0", "0", "0.02", --hold, "1.0"]
+    - note: "[left] palm +2 cm z (palm_pose 대기 15 s — fabric 첫 계산은 warp 커널 컴파일로 늦다, 09.22 fake 에서 3 s 초과)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/palm_cmd.py", --rel, "0", "0", "0.02", --hold, "1.0", --timeout, "15"]
     - note: "[left] 손 30 % 폐쇄 후 다시 open"
       argv: [python3, "{repo}/deploy/policy_control/tools/hand_cmd.py", --contract, "{artifact:contract}", --side, left,
              --close, "0.3", --hold, "1.0"]
