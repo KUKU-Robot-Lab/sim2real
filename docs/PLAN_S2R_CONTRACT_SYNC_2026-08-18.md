@@ -1,5 +1,13 @@
 # grasp_v1 sim2real 계약 동기화 계획서
 
+> **[완료 · 아카이브] 2026-09-21.** 이 계획은 끝났고 그 역할은 `logs/policy/<run>/deploy_contract.json`
+> + `policy_control/policy_control/contract.py`(schema v2)로 **대체**됐다. 아래 본문의 경로 다수가
+> 현재 레이아웃과 다르다 — `scripts/test_*.py` 는 `tests/` 로, `scripts/grasp_inference.py` 는
+> `scripts/nodes/` 로 옮겨졌고, "배포 현재 114D" 는 해소됐다(`scripts/grasp_obs_builder.py:2`
+> `ACTOR_OBS_DIM = 154`). 이력으로만 읽어라.
+
+
+
 **작성 2026-08-18 · 대상 저장소 `/home/user/rl_ws/sim2real` · 참조 sim `/home/user/rl_ws/hdgp`**
 
 ---

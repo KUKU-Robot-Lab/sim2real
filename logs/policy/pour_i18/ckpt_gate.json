@@ -1,0 +1,83 @@
+{
+ "trace": "logs/policy/pour_i18/trace.npz",
+ "rows": [
+  {
+   "name": "success_ever",
+   "value": 0.828125,
+   "limit": 0.7,
+   "ok": true,
+   "kind": "gate"
+  },
+  {
+   "name": "in_target_max",
+   "value": 0.9067074060440063,
+   "limit": 0.8,
+   "ok": true,
+   "kind": "gate"
+  },
+  {
+   "name": "spill_last",
+   "value": 0.009765625,
+   "limit": 0.1,
+   "ok": true,
+   "kind": "gate"
+  },
+  {
+   "name": "min_cup_dist_m",
+   "value": 0.1814923733472824,
+   "limit": 0.12,
+   "ok": true,
+   "kind": "gate"
+  },
+  {
+   "name": "pour_dir_neg_x",
+   "value": 0.999822431358622,
+   "limit": 0.99,
+   "ok": true,
+   "kind": "gate"
+  },
+  {
+   "name": "src_tilt_peak_deg",
+   "value": 155.14834594726562,
+   "limit": 120.0,
+   "ok": false,
+   "kind": "gate"
+  },
+  {
+   "name": "src_xy_excursion_m",
+   "value": 0.34432369470596313,
+   "limit": 0.25,
+   "ok": false,
+   "kind": "gate"
+  },
+  {
+   "name": "src_crosses_centre",
+   "value": 1.0,
+   "limit": 0.0,
+   "ok": false,
+   "kind": "gate"
+  },
+  {
+   "name": "envs",
+   "value": 64.0,
+   "limit": 0.0,
+   "ok": true,
+   "kind": "context"
+  },
+  {
+   "name": "steps",
+   "value": 900.0,
+   "limit": 0.0,
+   "ok": true,
+   "kind": "context"
+  },
+  {
+   "name": "fill_level_med",
+   "value": 0.699999988079071,
+   "limit": 0.0,
+   "ok": true,
+   "kind": "context"
+  }
+ ],
+ "ok": false
+}

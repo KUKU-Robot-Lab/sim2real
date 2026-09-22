@@ -1,5 +1,12 @@
 # policy_control — obs → policy → fabric → pd 4노드 제어 모듈 (2026-09-06 상태)
 
+> **테스트 수 주의(2026-09-21 확인).** 이 문서 안의 "340 / 451 / 508 통과"는 각각 09-06·09-07·09-08 시점의
+> 숫자이고 서로 충돌한다. 어느 것도 현재가 아니다. 현재 기준선은
+> `pytest tests/policy_control -m "not gpu"` → **2 failed · 593 passed · 3 skipped**
+> (실패 2건은 구 자산 `openarm_dg5f-m_bi_rl.urdf` 에 `*_alias` 링크가 없어서 나는 기존 결함,
+> `tests/policy_control/test_pc_fk_urdf.py:110`). 숫자가 필요하면 문서를 믿지 말고 직접 돌려라.
+
+
 계획: `~/.claude/plans/shiny-foraging-hamming.md` (09.05 승인). 목표 = Isaac 없이 ROS2 제어만으로 학습 정책 실현, 노드 4단 구조.
 
 ## 1. 구성(모두 `sim2real/policy_control`, ament_python, `colcon build --symlink-install --packages-select policy_control` 통과)
@@ -53,7 +60,7 @@ fake 플랜트의 **파지 성공은 미달**: MockArm(관절별 2차 PD+마찰+
 - **robot yaml**: `dg5f_m_{right,left,bi}_{real,fake}.yaml` — `joint_profiles:` 병합(좌손은 `config/openarm_tesollo_left_hand.yaml`), 양팔 yaml 은 역할 접미사(`arm_left`…), `sources.select_side()`.
 - **노드**: obs/fabric `side` 파라미터, obs `urdf_chain` FK(자산 URDF, CPU), fabric `mode=direct`(control_only: `/policy_control/palm_cmd`·`hand_cmd` 구독, `palm_pose` 발행), **episode_master**(제어 전용 계약의 에피소드 서비스/이벤트 — obs 노드가 없으니), pd 팔 그룹 N개(`sides` 파라미터, 이름 기반 joint_target 분배, 좌 dg5f ns `dg5f_left` PID 적용 경로(벤더 1.5)), fake 플랜트 양팔(`fake_arm_bridge --sides`, CM 스텁 양팔, 손/팁 fake 네임스페이스별).
 - **도구**: `palm_cmd.py`(상대/절대 palm 목표), `hand_cmd.py`(open→grip 보간·좌 미러·관절 덮어쓰기), `fake_direct_run.sh`(제어 전용 direct 폐루프 한 팔), `fake_plant_run.sh MODE=pd`(pd 전용 selftest), `chain_recorder` 손 목표·제어 전용 seq 정렬, `contract_doc` sides 표.
-- **단계표**: `config/mission_dg5f_m_control.yaml`(12단계, 우·좌 독립: pd_load → selftest → goto_home(차렷) → fabric direct(palm ±2 cm·hand 0.3) → release).
+- **단계표**: `config/mission_dg5f_m_control.yaml`(14단계 — 09-07 에 `preset_right`·`preset_return_right` 가 늘었다, 우·좌 독립: pd_load → selftest → goto_home(차렷) → fabric direct(palm ±2 cm·hand 0.3) → release).
 
 ### 6.2 검증 수치(fake, 도메인 96/97 — 실기 아님)
 | 항목 | 좌 | 우 |
@@ -94,7 +101,7 @@ fake 플랜트의 **파지 성공은 미달**: MockArm(관절별 2차 PD+마찰+
 | sim2real 계약 게이트 | kp 만 대조, kd 는 정보 | **kp·kd 둘 다** 대조 |
 | 실기 손 PID | bringup 마다 4.5 재적용 | 벤더 1.5(드라이버 기본과 같음) |
 
-- 단일 출처 `hdgp/…/agnostic/modules/vendor_gains.py` + 패키지 안 yaml 사본 2개(★학습 서버에는 `rl_ws/urdf` 가 없다). 강제 테스트 `tests/test_vendor_gains.py` 20개가 값·소비처·드리프트 3축을 잠근다. 폐지 트랙 13개는 `LEGACY_ALLOWED` 로 동결.
+- 단일 출처 `hdgp/…/agnostic/modules/vendor_gains.py` + 패키지 안 yaml 사본 2개(★학습 서버에는 `rl_ws/urdf` 가 없다). 강제 테스트 hdgp 쪽 `source/openarm/openarm/agnostic/modules/tests/test_vendor_gains.py` 20개 (이 저장소 파일이 아니다)가 값·소비처·드리프트 3축을 잠근다. 폐지 트랙 13개는 `LEGACY_ALLOWED` 로 동결.
 - `test_pc_pd_gains.py` 가 워크스페이스 `control_gains.yaml` 사본 6개 일치와 손 PID ↔ 벤더 파일 일치를 잠근다.
 - 자산 USD 는 이미 벤더값이라 **재빌드 불필요**(build_usd.py 가 벤더 파일에서 이식: 팔 14 + 손 40 관절).
 

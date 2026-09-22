@@ -1,51 +1,39 @@
 #!/usr/bin/env python3
-"""4 노드의 /policy_control/status/* (JSON) 와 /policy_control/pd/applied 를 seq 로 join → CSV.
+"""4 노드의 /policy_control/status/* (JSON) 를 seq 로 join → CSV.
 
 지연(obs 발행 → pd 적용), 홉별 proc_ms, seq 결손, HOLD 사유가 한 표에 남는다.
 라이브 구독 또는 rosbag2 재생 어느 쪽이든 같은 토픽이므로 같은 코드다.
 
+join·요약 자체는 `policy_control.status_join` 에 있다 — 상태판도 같은 코드를 쓴다.
+이 파일은 그 코어의 ROS 껍질일 뿐이고, CLI 와 출력 포맷은 예전과 같다.
+
     python3 policy_control/tools/status_to_csv.py --seconds 60 --out logs/policy_control/run.csv
+    # 기록해 둔 덤프를 다시 표로 (ROS 불필요)
+    python3 policy_control/tools/status_to_csv.py --from-jsonl logs/.../status.jsonl --out /tmp/run.csv
 """
 from __future__ import annotations
 
 import argparse
 import csv
 import json
+import sys
 import time
-from collections import defaultdict
 from pathlib import Path
 
-NODES = ("obs", "policy", "fabric", "pd")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from policy_control.status_join import NODES, StatusJoiner, join_jsonl, row_fields, summarize  # noqa: E402
 
 
-def summarize(rows: list[dict], policy_dt: float | None) -> str:
-    if not rows:
-        return "no rows"
-    lat = sorted(r["latency_ms"] for r in rows if r.get("latency_ms") is not None)
-    seqs = sorted(r["seq"] for r in rows)
-    missing = (seqs[-1] - seqs[0] + 1 - len(seqs)) if seqs else 0
-    p50 = lat[len(lat) // 2] if lat else float("nan")
-    p95 = lat[int(0.95 * (len(lat) - 1))] if lat else float("nan")
-    budget = "" if policy_dt is None else f" · budget 0.5·dt = {500 * policy_dt:.1f} ms"
-    return f"rows {len(rows)} · latency p50 {p50:.2f} / p95 {p95:.2f} ms{budget} · seq missing {missing}"
-
-
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--seconds", type=float, default=60.0)
-    ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--policy-dt", type=float, default=None, help="예산 표시용 (s)")
-    ap.add_argument("--jsonl", type=Path, default=None, help="모든 status 메시지를 그대로(한 줄 JSON) 남긴다 — 디버그용")
-    args = ap.parse_args()
-
+def _collect_live(seconds: float, jsonl: Path | None, nodes=NODES) -> StatusJoiner:
     import rclpy
     from rclpy.node import Node
     from std_msgs.msg import String
 
+    joiner = StatusJoiner()
     rclpy.init()
     node = Node("status_to_csv")
-    by_seq: dict[int, dict] = defaultdict(dict)
-    raw = open(args.jsonl, "w") if args.jsonl else None
+    raw = open(jsonl, "w") if jsonl else None
 
     def on_status(name):
         def cb(msg):
@@ -55,38 +43,41 @@ def main() -> int:
                 return
             if raw is not None:
                 raw.write(json.dumps({"topic": name, **d}, ensure_ascii=False) + "\n")
-            seq = d.get("seq")
-            if seq is None:
-                return
-            by_seq[int(seq)][name] = d
+            joiner.offer(name, d)
         return cb
 
-    for n in NODES:
+    for n in nodes:
         node.create_subscription(String, f"/policy_control/status/{n}", on_status(n), 50)
     t0 = time.time()
-    while time.time() - t0 < args.seconds:
+    while time.time() - t0 < seconds:
         rclpy.spin_once(node, timeout_sec=0.1)
     node.destroy_node()
     rclpy.shutdown()
     if raw is not None:
         raw.close()
+    return joiner
 
-    rows = []
-    for seq in sorted(by_seq):
-        d = by_seq[seq]
-        row = {"seq": seq}
-        for n in NODES:
-            s = d.get(n, {})
-            row[f"{n}_ok"] = s.get("ok")
-            row[f"{n}_proc_ms"] = s.get("proc_ms")
-            row[f"{n}_t_pub_ns"] = s.get("t_pub_ns")
-            row[f"{n}_reasons"] = "|".join(s.get("reasons", []))
-        t_obs, t_pd = d.get("obs", {}).get("t_pub_ns"), d.get("pd", {}).get("t_pub_ns")
-        row["latency_ms"] = None if (t_obs is None or t_pd is None) else (t_pd - t_obs) * 1e-6
-        rows.append(row)
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
+    ap.add_argument("--seconds", type=float, default=60.0)
+    ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--policy-dt", type=float, default=None, help="예산 표시용 (s)")
+    ap.add_argument("--jsonl", type=Path, default=None, help="모든 status 메시지를 그대로(한 줄 JSON) 남긴다 — 디버그용")
+    ap.add_argument("--from-jsonl", type=Path, default=None, help="구독 대신 기록된 덤프에서 표를 만든다")
+    ap.add_argument("--nodes", default=",".join(NODES),
+                    help="join 할 status 노드 (쉼표). pour 체인은 한 노드다: --nodes pour_node")
+    args = ap.parse_args(argv)
+
+    nodes = tuple(n.strip() for n in args.nodes.split(",") if n.strip())
+    if args.from_jsonl is not None:
+        rows = join_jsonl(args.from_jsonl.read_text(errors="replace").splitlines(), nodes)
+    else:
+        rows = _collect_live(args.seconds, args.jsonl, nodes).rows(nodes)
+
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()) if rows else ["seq"])
+        w = csv.DictWriter(f, fieldnames=row_fields(rows))
         w.writeheader()
         w.writerows(rows)
     print(summarize(rows, args.policy_dt), "→", args.out)

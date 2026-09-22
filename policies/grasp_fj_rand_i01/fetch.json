@@ -1,0 +1,36 @@
+{
+ "host": "local",
+ "remote_dir": "/home/user/rl_ws/our_source/s2r_init_right",
+ "hdgp_head_at_fetch": "d47e8d6476747408420b4bbeb813fee1de237189",
+ "run_commit": "",
+ "files": [
+  {
+   "local_rel": "params/env.yaml",
+   "remote_rel": "params/env.yaml",
+   "sha256": "7df0f43e2e3f87a8b218414a6d7a9b23b826bdbd165842f078e0a157d055ab04",
+   "md5": "41cdaf21f16ead9323a77bbcfdd1325f",
+   "size": 43361
+  },
+  {
+   "local_rel": "params/agent.yaml",
+   "remote_rel": "params/agent.yaml",
+   "sha256": "f57d25e1e39aefe39850a036979df2076e431d4762d3941d99bec8b917cf17af",
+   "md5": "2ed6adfe0a3f0bd47cc84403897bddd8",
+   "size": 2493
+  },
+  {
+   "local_rel": "nn/fj_rand_i01_best_ep5000.pth",
+   "remote_rel": "nn/fj_rand_i01_best_ep5000.pth",
+   "sha256": "e76f9c6079663b61530418747a57011ed35477c696b928ecf6a6688476ae2058",
+   "md5": "558356d0127cb64174dc9c0021d5d8b2",
+   "size": 138202010
+  },
+  {
+   "local_rel": "SOURCE_README.md",
+   "remote_rel": "README.md",
+   "sha256": "c035c132ec9a8570cc4d768c4f14e3db79689c2b06bbb47a65db1aab1c8ec1f9",
+   "md5": "ab519b2bbf90155c8ed1a910ce5cc5f3",
+   "size": 2150
+  }
+ ]
+}

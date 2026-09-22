@@ -1,0 +1,12 @@
+# 정책 카드 — 사람이 쓴다. fetch_run.py 는 이 파일을 다시 쓰지 않는다.
+id: grasp_fj_rand_i01
+status: candidate        # candidate | verified | deployed | hold
+task: open-short_r_grasp_fj_t2r_rand-lstm
+side: right
+source: 'local:~/rl_ws/our_source/s2r_init_right  (원본: oem@server our_source/fj_t2r_init)'
+checkpoint: fj_rand_i01_best_ep5000.pth  (sha256 e76f9c6079663b61…, 서버 원본과 일치 — SOURCE_README.md)
+note: >-
+  계약 없음 — 빌더가 아직 없다. obs 133 / act 26 (팔 7 관절 증분 + 손 19 관절 절대, 시너지·fabric 디코더 아님),
+  자산 tesollo_right_short_tl (thumb_1 용접). grasp_s2r 의 설정 키를 물려받아 그 family 로 판정되지만
+  인터페이스가 달라 build_deploy_contract 가 거절한다. 새 family(obs 133 세그먼트 + 관절공간 디코더)를
+  만들어야 verified 로 올릴 수 있다. 학습 커밋은 test_history.md 가 없어 미상.

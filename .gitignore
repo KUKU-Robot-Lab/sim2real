@@ -35,3 +35,13 @@ logs/bags/
 
 # 정책 가중치 — 배포 스냅샷은 md5 로 문서에 못 박고 파일은 커밋하지 않는다
 logs/policy/**/nn/*.pth
+
+# 학습 런의 골든 트레이스 (수백 MB). 계약·해시는 커밋하고 트레이스는 fetch_run.py 로 다시 받는다:
+#   policy_control/tools/fetch_run.py --run <label> --checkpoint ep:NNNN --trace auto --out logs/policy/<run>
+logs/policy/**/trace.npz
+# policies/ — 배포 후보 정책 등록소 (policy_control/tools/fetch_run.py 가 채운다).
+#   카드(policy.yaml)·fetch.json·params·계약은 추적하고, 무거운 산출물만 뺀다.
+policies/**/nn/*.pth
+policies/**/trace.npz
+policies/**/.staging_*/
+tests/fixtures/policy_control/**/trace.npz
