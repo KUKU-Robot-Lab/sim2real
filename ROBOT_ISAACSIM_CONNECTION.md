@@ -185,7 +185,7 @@ ros2 launch inspire_control_ros2 inspire_control_single_device.launch.py device_
 
 명령 6개는 sim canonical drive 관절 순서 `[thumb_1, thumb_2, index_1, middle_1,
 ring_1, pinky_1]`(정책 action 순서)를 따른다. 라디안↔레지스터 선형 변환과 관절↔슬롯
-순열은 `rh56f1_hand.py`(순수 로직)가 처리하고, 값은 `config/rh56f1_hand_calibration.yaml`로
+순열은 `rh56f1_hand.py`(순수 로직)가 처리하고, 값은 `sim/isaacsim_bridge/config/rh56f1_hand_calibration.yaml`로
 노출된다. 손가락↔액추에이터 ID 순서와 레지스터 증가 방향은 하드웨어별로 다르므로
 실물에서 이 yaml만 보정하면 된다(코드 수정 불필요).
 
@@ -231,9 +231,13 @@ ros2 launch openarm_bringup openarm.bimanual.launch.py use_fake_hardware:=true
 # 터미널 2: isaacsim_bridge
 ros2 run isaacsim_bridge bridge_node
 
-# 터미널 3: dry-run 노드 (하드웨어 대신 RViz로 확인)
-python3 sim2real/scripts/deprecated/sim2real_dryrun.py
+# 터미널 3: dry-run 노드 (하드웨어 대신 RViz로 확인) — 옛 정책별 노드, archive 로 옮겨졌다
+python3 sim2real/archive/scripts/deprecated/sim2real_dryrun.py
 ```
+
+> 정책을 하드웨어 없이 돌려 보는 **현행 방법은 fake 플랜트 폐루프**다 —
+> [docs/USAGE_DEPLOY.md §3](docs/USAGE_DEPLOY.md#3-하드웨어-없이-리허설--fake-플랜트)
+> (`pour_fake_run.sh` · `fake_plant_run.sh`). 위 터미널 1·2(브리지 배선 확인)는 그대로 쓴다.
 
 로봇별 정책·체크포인트를 바꿔가며 이 골격을 재사용한다.
 
