@@ -1,0 +1,29 @@
+# 양팔 DG-5F-M short — **실기**. 도메인 126. 지금 로봇의 실제 구성(2026-09-14 손 교체 이후).
+# 정책 없는 제어 전용 점검: pd(engage · selftest · goto_home) → fabric direct(palm_cmd · hand_cmd) 까지, 한 팔씩.
+schema: s2r_console/profile/v1
+id: dg5f_m_real
+title: 양팔 DG-5F-M · 실기 제어 점검
+mission: config/mission_dg5f_m_control.yaml
+domain: {id: 126, class: real}
+policy_dt: 0.02
+status_nodes: [episode_master, fabric, pd]
+
+# 이름은 launch 에서 읽었다 — 실기에서 관측한 값은 아니다.
+#   팔: robot_control 의 openarm.bimanual.launch.py (arm_prefix 기본값 "" → 네임스페이스 없음)
+#   손: robot_control/ros_ws/src/dg5f_ros2/dg5f_driver/launch/dg5f_{right,left}_driver.launch.py
+#       ns = dg5f_right / dg5f_left, 각자 controller_manager 에 joint_state_broadcaster + dg5f_<side>_controller
+# managers.active 는 **실행 내내** active 여야 하는 것만. 팔 JTC 는 pd 가 engage 때 끄므로 판정하지 않는다.
+stack:
+  title: robot_control (openarm bringup) + DG-5F 드라이버 ×2
+  nodes: [/controller_manager, /robot_state_publisher]
+  topics:
+    - {name: /joint_states, stale_ms: 500}
+    - {name: /dg5f_right/joint_states, stale_ms: 500}
+    - {name: /dg5f_left/joint_states, stale_ms: 500}
+    - {name: /head/joint_states}              # 선택 입력 — 끊겨도 판정하지 않는다
+  managers:
+    - {name: /controller_manager, active: [joint_state_broadcaster]}
+    - {name: /dg5f_right/controller_manager, active: [joint_state_broadcaster, dg5f_right_controller]}
+    - {name: /dg5f_left/controller_manager, active: [joint_state_broadcaster, dg5f_left_controller]}
+
+# 연결 그림은 적지 않는다 — 콘솔이 미션의 명령(argv) · 계약 json · robot yaml 에서 만든다.

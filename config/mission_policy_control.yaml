@@ -23,6 +23,10 @@ stages:
     title: 테스트·계약↔게인 대조·forward 컨트롤러 선언 확인 (읽기 전용)
     artifacts: [contract_left, gains_yaml]
 
+  - id: sensors
+    title: 인지 런처(vision-3090) + 목 상태 퍼블리셔 — 읽기 전용, 실기를 움직이지 않는다
+    needs: [preflight]
+
   - id: bringup
     title: 모터 전원 → CAN → openarm_bringup (robot_control) → head_home
     needs: [preflight]
@@ -91,8 +95,12 @@ run:
     - note: 목 기준자세 + I게인 재적용
       argv: [python3, "{repo}/scripts/head_home.py"]
       execute_args: [--execute]
+  sensors:
     - note: 인지 런처 — vision-3090 의 카메라·FP++ 컨테이너를 ssh 로 보고 켜고 끈다(스스로는 아무것도 켜지 않는다)
       argv: [python3, "{repo}/scripts/nodes/perception_launcher_node.py", --host, vision-3090]
+      background: true
+    - note: 목 상태 퍼블리셔 — /head/joint_states 20 Hz. 읽기 전용(토크·게인·목표를 건드리지 않는다)
+      argv: [python3, "{repo}/scripts/nodes/head_joint_publisher.py"]
       background: true
   pd_load:
     - note: pd 노드 무발행 기동 (execute:=false 기본). 별도 launch — 상류 크래시가 pd 를 끌고 내려가지 않게

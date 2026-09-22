@@ -50,6 +50,7 @@ L_LAUNCH = -1                                    # 인지 런처는 카메라보
 #: 카메라와 FP++ 컨테이너가 도는 PC. 런처가 tailscale ssh 로 `scripts/vision/*.sh` 를 부른다.
 VISION_HOST = "vision-3090"
 PERCEPTION_STATUS = "/perception/status"
+HEAD_TOPIC = "/head/joint_states"                # scripts/nodes/head_joint_publisher.py 의 DEFAULT_TOPIC
 _POUR_INPUT = {"arm": "arm", "ee": "hand", "tip_force": "force"}       # robot yaml 역할 → pour_node 가 status 로 부르는 이름
 
 
@@ -338,8 +339,23 @@ def _perception_launcher(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
 
 _HANDLERS = {"policy_chain.launch.py": _policy_chain, "pour_chain.launch.py": _pour_chain, "pour_guard_node.py": _pour_guard,
              "pd_controller.launch.py": _pd, "perception_launcher_node.py": _perception_launcher}
+def _head_publisher(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
+    """목 상태 퍼블리셔(읽기 전용) — 받는 노드가 없어도 상자로 둔다. 콘솔에서 head 까지 관리한다."""
+    topic = cmd.args.get("topic") or HEAD_TOPIC
+    box = g.box("head", "목 상태 (head)", L_SENSE, ros=["/head_joint_publisher"], unit=key,
+                note="읽기 전용 — 토크·게인·목표를 건드리지 않는다")
+    g.providers.setdefault(topic, box)
+
+
 _PROVIDERS = {"fake_plant.launch.py": _fake_plant, "fake_cup_pose_pub.py": _fake_cup, "openarm.bimanual.launch.py": _bringup,
-              "dg5f_right_driver.launch.py": _hand_driver, "dg5f_left_driver.launch.py": _hand_driver}
+              "dg5f_right_driver.launch.py": _hand_driver, "dg5f_left_driver.launch.py": _hand_driver,
+              "head_joint_publisher.py": _head_publisher}
+
+
+def _shell_step(u: UnitCmd) -> bool:
+    """전원 확인·sudo CAN·NIC 설정 같은 수동 셸 단계 — 노드가 아니라 사람이 하는 일이다.
+    미션 패널이 메모와 함께 보여 주므로 그림에는 그리지 않는다(모르는 ROS·python 명령은 계속 상자로 남긴다)."""
+    return u.kind == "manual" and bool(u.argv) and Path(str(u.argv[0])).name in ("bash", "sh")
 
 
 def _unknown(g: _Graph, key: str, cmd: Cmd, why: str = "", note: str = "") -> None:
@@ -417,7 +433,7 @@ def generate(units: Mapping[str, UnitCmd], *, repo: Path, status_nodes: Sequence
                     _unknown(g, key, cmd, f"읽지 못했다: {exc}", units[key].note)
     known = set(_PROVIDERS) | set(_HANDLERS)
     for key, cmd in parsed:
-        if cmd.name not in known:
+        if cmd.name not in known and not _shell_step(units[key]):
             _unknown(g, key, cmd, note=units[key].note)
     _finish(g)
     used = sorted({b["col"] for b in g.boxes.values()})

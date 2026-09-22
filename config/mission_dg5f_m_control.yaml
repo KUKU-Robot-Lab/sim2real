@@ -23,6 +23,10 @@ stages:
     title: 테스트·자산 계약 재생성↔게인 대조·forward 컨트롤러 양팔 선언 확인 (읽기 전용)
     artifacts: [contract, gains_yaml]
 
+  - id: sensors
+    title: 인지 런처(vision-3090) + 목 상태 퍼블리셔 — 읽기 전용, 실기를 움직이지 않는다
+    needs: [preflight]
+
   - id: bringup
     title: 모터 전원 → CAN ×2 → openarm_bringup (robot_control) → DG-5F 드라이버 ×2 → head_home
     needs: [preflight]
@@ -118,13 +122,19 @@ run:
     - note: forward 컨트롤러가 양팔 모두 bringup 설정에 선언돼 있는지 (grep -c 12 = CM 목록 6 + 파라미터 블록 6)
       argv: [grep, -c, "_forward_", "/home/user/rl_ws/robot_control/ros_ws/src/openarm_ros2/openarm_bringup/config/controllers/openarm_bimanual_controllers.yaml"]
   bringup:
+    - note: ★모터 전원(양팔) ON — 물리 스위치. 켠 뒤 확인한다. 전원 없이 브링업을 띄우면 CAN 응답이 없어 실패한다
+      argv: [bash, -lc, "true"]
+      manual: true
     - note: ★CAN 설정 — sudo 필요, 사용자 셸에서 (can0 우 / can1 좌). ★fd on 은 dbitrate 를 같이 줘야 한다 — 빼면 Operation not supported. 설정은 링크 DOWN 상태에서, up 은 따로
       argv: [bash, -lc, "sudo ip link set can0 down && sudo ip link set can0 type can bitrate 1000000 dbitrate 5000000 fd on && sudo ip link set can0 up"]
       manual: true
-    - note: ★모터 전원을 먼저 켠 뒤 launch (forward 컨트롤러 선언 포함)
+    - note: ★CAN 설정(좌 can1) — 팔 브링업이 left_can_interface:=can1 을 쓴다(2026-09-22 전까지 이 단계에 can0 만 있었다)
+      argv: [bash, -lc, "sudo ip link set can1 down && sudo ip link set can1 type can bitrate 1000000 dbitrate 5000000 fd on && sudo ip link set can1 up"]
+      manual: true
+    - note: 팔 브링업(robot_control, forward 컨트롤러 선언 포함) — 콘솔이 띄우고 감독한다. 위 전원·CAN 확인이 끝나야 뜬다
       argv: [ros2, launch, openarm_bringup, openarm.bimanual.launch.py, "use_fake_hardware:=false",
              "right_can_interface:=can0", "left_can_interface:=can1"]
-      manual: true
+      background: true
     - note: ★손 네트워크 — 손은 CAN 이 아니라 Modbus TCP(우 169.254.186.72 · 좌 .73, :502) 다. 09.14 배선은
         우 = 본체 eno1, 좌 = USB-C 허브 enx00e04c6806e1 로 NIC 이 둘이고, 169.254.0.0/16 경로가 wifi 에 먼저 잡혀 있다.
         서브넷 주소만 주면 패킷이 엉뚱한 NIC 로 새므로(09.07 tailscale0 로 새서 controller_manager 대기) 손마다
@@ -134,13 +144,20 @@ run:
     - note: ★DG-5F 드라이버(우) — 벤더 dg5f_ros2 로 교체(09.14, robot_control ros_ws/src/dg5f_ros2). config 의 PID p 는
         벤더 1.5 여야 한다 — pd engage 는 같은 값인지 확인만 하고 올리지 않는다
       argv: [ros2, launch, dg5f_driver, dg5f_right_driver.launch.py, "delto_ip:=169.254.186.72"]
-      manual: true
-    - note: ★DG-5F 드라이버(좌) — 별도 셸. namespace dg5f_left
+      background: true
+    - note: DG-5F 드라이버(좌) — namespace dg5f_left. 콘솔이 띄우고 감독한다
       argv: [ros2, launch, dg5f_driver, dg5f_left_driver.launch.py, "delto_ip:=169.254.186.73"]
-      manual: true
+      background: true
     - note: 목 기준자세 + I게인 재적용
       argv: [python3, "{repo}/scripts/head_home.py"]
       execute_args: [--execute]
+  sensors:
+    - note: 인지 런처 — vision-3090 의 카메라·FP++ 컨테이너를 ssh 로 보고 켜고 끈다(스스로는 아무것도 켜지 않는다)
+      argv: [python3, "{repo}/scripts/nodes/perception_launcher_node.py", --host, vision-3090]
+      background: true
+    - note: 목 상태 퍼블리셔 — /head/joint_states 20 Hz. 읽기 전용(토크·게인·목표를 건드리지 않는다)
+      argv: [python3, "{repo}/scripts/nodes/head_joint_publisher.py"]
+      background: true
   pd_load_right:
     - note: "[right] pd 노드 무발행 기동 — 별도 launch"
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",

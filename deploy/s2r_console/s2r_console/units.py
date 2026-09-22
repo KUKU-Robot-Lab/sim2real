@@ -79,10 +79,10 @@ def on_reasons(unit: UnitCmd, *, alive: bool, busy_stage: str | None, completed:
     if alive:
         return ["이미 떠 있다"]
     if unit.touches_real:
-        return [f"실기를 건드리는 단계({unit.stage})의 명령이다 — 미션에서 승인하고 그 단계를 실행할 것"]
+        return [f"{unit.stage} 단계를 승인·실행하면 켜진다"]     # 실기 단계 — 스위치로는 켜지 않는다
     waiting = [n for n in unit.needs if n not in completed]
     if waiting:
-        return [f"선행 단계 {', '.join(waiting)} 가 아직 끝나지 않았다", *_busy(unit, busy_stage)]
+        return [f"먼저 {', '.join(waiting)} 단계를 끝낼 것", *_busy(unit, busy_stage)]
     return _busy(unit, busy_stage)
 
 

@@ -1,7 +1,7 @@
 :root {
   --bg: #0d1117; --panel: #151b23; --panel-2: #1c232d; --line: #2a323d; --line-2: #384250;
-  --text: #e6edf3; --dim: #9aa6b2; --faint: #6b7785;
-  --ok: #3fb950; --live: #4da3ff; --warn: #e3a008; --bad: #ff5d52; --mute: #7d8793; --real: #ff5d52; --fake: #a78bfa;
+  --text: #e6edf3; --dim: #9aa6b2; --faint: #818d9a;
+  --ok: #3fb950; --live: #4da3ff; --warn: #e3a008; --bad: #ff5d52; --mute: #8a939d; --real: #ff5d52; --fake: #a78bfa;
   --mono: ui-monospace, "JetBrains Mono", "D2Coding", SFMono-Regular, Menlo, Consolas, monospace;
   --sans: "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -231,17 +231,25 @@ canvas { width: 100%; height: 84px; display: block; }
 .dg-port.tone-warn .dg-val { color: var(--warn); } .dg-port.tone-bad .dg-val { color: var(--bad); }
 .dg-note { color: var(--faint); font-size: 10.5px; padding-left: 12px; }
 /* 스위치 — 상태 없는 버튼. 모양은 서버가 말한 alive 만 따른다 */
-.sw { position: relative; flex: 0 0 auto; width: 32px; height: 17px; border-radius: 9px; border: 1px solid var(--line-2); background: #232a33; cursor: pointer; padding: 0; }
+.sw { position: relative; margin: 0 4px; flex: 0 0 auto; width: 32px; height: 17px; border-radius: 9px; border: 1px solid var(--line-2); background: #232a33; cursor: pointer; padding: 0; }
 .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--dim); transition: left .12s; }
 .sw.on { background: rgba(63,185,80,.25); border-color: var(--ok); } .sw.on::after { left: 17px; background: var(--ok); }
 .sw:disabled { opacity: .45; cursor: not-allowed; }
+/* 눈에 보이는 크기는 그대로, 누르는 영역만 24×24 이상으로 — WCAG 2.2 대상 크기. 드라이버를 끄는 스위치다 */
+.sw::before { content: ""; position: absolute; inset: -4px -2px; }
 /* 전선 */
 .wire { fill: none; stroke: var(--mute); stroke-width: 1.4; opacity: .55; }
 .wire.tone-ok { stroke: var(--ok); opacity: .8; } .wire.tone-warn { stroke: var(--warn); opacity: .9; } .wire.tone-bad { stroke: var(--bad); opacity: .9; }
 .wire.tone-mute { stroke-dasharray: 2 5; }
 .wire.flow { stroke-dasharray: 5 7; animation: dg-flow .7s linear infinite; }
 @keyframes dg-flow { from { stroke-dashoffset: 12; } to { stroke-dashoffset: 0; } }
-@media (prefers-reduced-motion: reduce) { .wire.flow { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .wire.flow, .stage.current.running .dot, .chip.waiting { animation: none; }
+  .sw::after { transition: none; }
+}
+/* 키보드로 조작해도 지금 어디에 있는지 보인다 — 정지 바까지 탭으로 닿는다 */
+button:focus-visible, .sw:focus-visible, summary:focus-visible, a:focus-visible, input:focus-visible {
+  outline: 2px solid var(--live); outline-offset: 2px; }
 .links-table > summary { cursor: pointer; padding: 6px 12px; color: var(--faint); font-size: 12px; border-top: 1px solid var(--line); }
 
 /* 상자 안의 단계 칩 · 촘촘한 모양 · 그림 밖 연결 */
@@ -266,6 +274,7 @@ canvas { width: 100%; height: 84px; display: block; }
 .dim { color: var(--dim); }
 .dg-extra .tone-warn { color: var(--warn); }
 /* 촘촘한 모양에서는 잠금 사유·수동 명령을 한 줄로 접는다 — 전문은 마우스를 올리면 보인다 */
-.dg-tight .dg-lock, .dg-tight .dg-manual { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }
+.dg-tight .dg-lock, .dg-tight .dg-manual { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+  overflow: hidden; cursor: help; }   /* 잘려서 hover 해야만 읽히던 사유 — 두 줄까지는 그대로 보인다 */
 .dg-tight .dg-manual code { word-break: normal; }
 .dg-topic, .dg-stage { line-height: 1.5; }   /* 밑줄(_)이 overflow:hidden 에 잘리지 않게 */

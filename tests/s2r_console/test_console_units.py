@@ -265,3 +265,15 @@ def test_every_pd_unit_is_guarded_when_a_mission_launches_more_than_one():
     out = views(units, procs, stopped=(), busy_stage=None, completed=(), pd_phase="TRACKING",
                 robot_keys={"pd_l", "pd_r"}, real=False)
     assert all(any("PD 해제" in r for r in v["why_off"]) for v in out.values()), out
+
+
+def test_a_locked_switch_says_what_to_do_in_few_words():
+    # 좁은 상자에서 사유가 잘려 hover 해야만 읽혔다. 실기 중 운영자가 스위치 앞에서 묻는 것은 "뭘 해야 켜지나" 다.
+    real = UnitCmd(key="bringup#3", stage="bringup", index=3, note="", argv=("ros2", "launch", "x.launch.py"),
+                   kind="background", touches_real=True, needs=("preflight",))
+    waiting = UnitCmd(key="sensors#0", stage="sensors", index=0, note="", argv=("python3", "a.py"),
+                      kind="background", touches_real=False, needs=("preflight",))
+    (why_real,) = on_reasons(real, alive=False, busy_stage=None, completed=())
+    (why_wait,) = on_reasons(waiting, alive=False, busy_stage=None, completed=())
+    assert "bringup" in why_real and "실행" in why_real and len(why_real) <= 28, why_real
+    assert "preflight" in why_wait and len(why_wait) <= 28, why_wait

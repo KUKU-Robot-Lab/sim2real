@@ -167,3 +167,48 @@ def test_many_columns_fit_by_tightening_both_the_gap_and_the_floor():
     # 인지 런처까지 붙으면 실기 체인은 9~10열이다 — 간격만 줄여서는 1500 px 창을 넘는다(실측).
     assert re.search(r"\.dg-tight \{[^}]*--dg-gap:[^}]*--dg-min:", CSS)
     assert "clamp(var(--dg-min" in CSS
+
+
+# ── 접근성 바닥(ui-ux-pro-max 1·2순위: 대비 4.5:1 · 보이는 포커스 · 클릭 대상 · 모션 줄이기) ──
+def _token(name):
+    return re.search(rf"--{name}\s*:\s*(#[0-9a-fA-F]{{6}})", CSS).group(1)
+
+
+def _contrast(a, b):
+    def lum(h):
+        rgb = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        r, g, bl = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+        return 0.2126 * r + 0.7152 * g + 0.0722 * bl
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+@pytest.mark.parametrize("fg", ["text", "dim", "faint", "mute", "ok", "warn", "bad", "live"])
+def test_every_text_colour_reads_at_4_5_to_1_on_every_surface(fg):
+    # 상태 낱말(모름·꺼짐)이 --mute 로, 상자 안 메모가 --faint 로 나온다. 흐리면 상태를 잘못 읽는다.
+    for bg in ("bg", "panel", "panel-2"):
+        assert _contrast(_token(fg), _token(bg)) >= 4.5, (fg, bg, round(_contrast(_token(fg), _token(bg)), 2))
+
+
+def test_keyboard_focus_is_drawn_on_every_control():
+    rule = re.search(r"([^{}]*:focus-visible[^{]*)\{([^}]*)\}", CSS)
+    assert rule and "outline" in rule.group(2)
+    for sel in ("button", ".sw", "summary", "a"):
+        assert sel in rule.group(1), sel
+
+
+def test_the_process_switch_has_at_least_a_24px_target():
+    # 32×17 px 였다 — WCAG 2.2 최소 대상(24×24)에 못 미친다. 드라이버를 끄는 스위치다.
+    hit = re.search(r"\.sw::before\s*\{([^}]*)\}", CSS)
+    assert hit and "inset" in hit.group(1)
+
+
+def test_reduced_motion_stops_every_looping_animation():
+    block = re.search(r"@media \(prefers-reduced-motion: reduce\)\s*\{(.*?)\}\s*\n", CSS, re.S).group(1)
+    for sel in (".wire.flow", ".stage.current.running .dot", ".chip.waiting"):
+        assert sel in block, sel
+
+
+def test_a_lock_reason_wraps_to_two_lines_instead_of_hiding_behind_hover():
+    rule = re.search(r"\.dg-tight \.dg-lock, \.dg-tight \.dg-manual \{([^}]*)\}", CSS).group(1)
+    assert "line-clamp: 2" in rule and "nowrap" not in rule

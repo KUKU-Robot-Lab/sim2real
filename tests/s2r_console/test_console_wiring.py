@@ -392,8 +392,30 @@ def test_camera_and_tracker_say_which_machine_they_run_on(repo):
 
 def test_an_unknown_command_is_named_by_what_the_mission_calls_it(repo):
     # "bash" 라고만 적힌 상자는 운영자에게 아무 말도 하지 않는다 — 미션이 붙인 설명이 이름이다.
-    u = unit("bringup#0", "bash", "-lc", "sudo ip link set can1 up", kind="manual")
-    u = u.__class__(**{**u.__dict__, "note": "★CAN 설정 — sudo 필요, 사용자 셸에서"})
+    # (수동 셸 단계는 그림에 그리지 않는다 — 그래서 예시는 모르는 python 노드다)
+    u = unit("bringup#0", "python3", "/r/some_calib_probe.py", kind="manual")
+    u = u.__class__(**{**u.__dict__, "note": "★보정 프로브 — 사용자 셸에서"})
     d = generate({u.key: u}, repo=repo, status_nodes=())
-    assert "CAN 설정" in d.boxes[0].note, d.boxes[0].note     # 미션이 붙인 설명이 상자 안에 남는다
+    assert "보정 프로브" in d.boxes[0].note, d.boxes[0].note     # 미션이 붙인 설명이 상자 안에 남는다
     assert d.boxes[0].col == max(b.col for b in d.boxes)     # 체인 사이에 끼지 않는다
+
+
+# ── 실기 브링업 그림: head 는 상자, 수동 셸 단계는 상자가 아니다 ────────
+def test_the_head_publisher_is_drawn_as_the_head_state_box(repo):
+    # 사용자는 콘솔에서 head 까지 관리한다 — 이름 없는 "모르는 명령" 상자로 두면 무엇인지 모른다.
+    units = {u.key: u for u in (unit("sensors#1", "python3", f"{repo}/scripts/nodes/head_joint_publisher.py"),)}
+    d = generate(units, repo=repo, status_nodes=())
+    head = next(b for b in d.boxes if b.id == "head")
+    assert head.unit == "sensors#1" and head.ros == ("/head_joint_publisher",)
+
+
+def test_manual_shell_steps_are_steps_not_boxes(repo):
+    # 전원 확인·sudo CAN·NIC 설정은 노드가 아니다 — 미션 패널이 메모와 함께 보여 준다. 그림에 두면 "bash" 상자만 늘어난다.
+    units = {u.key: u for u in (
+        unit("bringup#0", "bash", "-lc", "true", kind="manual"),
+        unit("bringup#1", "bash", "-lc", "sudo ip link set can0 up", kind="manual"),
+        unit("bringup#2", "bash", f"{repo}/scripts/setup/hand_net_dual.sh", "--apply", kind="manual"),
+        unit("misc#0", "python3", "/r/some_probe.py", kind="manual"),
+    )}
+    d = generate(units, repo=repo, status_nodes=())
+    assert [b.unit for b in d.boxes] == ["misc#0"]          # 모르는 python 명령은 여전히 상자로 남는다
