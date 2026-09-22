@@ -512,6 +512,19 @@ def resolve_goal(text: str, contract: dict, env: dict, side: str) -> tuple[np.nd
     return parse_q(text), "cli"
 
 
+def abduction_box(lo: np.ndarray, hi: np.ndarray, side: str, cap: float, start, goal) -> tuple[np.ndarray, np.ndarray]:
+    """RRT 샘플 범위를 좁힌다 — j2(옆 벌림) ≤ cap, j3 ∈ [-0.3, 0.6] (좌팔은 부호 반대). 시작·목표는 늘 범위 안에 둔다."""
+    lo, hi = lo.copy(), hi.copy()
+    sgn = 1.0 if side == "right" else -1.0
+    box = {1: (-np.inf, cap), 2: (-0.3, 0.6)}
+    for j, (a, b) in box.items():
+        a, b = (a, b) if sgn > 0 else (-b, -a)
+        a = min(a, start[j], goal[j]) if np.isfinite(a) else lo[j]
+        b = max(b, start[j], goal[j]) if np.isfinite(b) else hi[j]
+        lo[j], hi[j] = max(lo[j], a), min(hi[j], b)
+    return lo, hi
+
+
 def fmt_pair(k) -> str:
     return f"{k[0]}<->{k[1]}"
 
@@ -539,6 +552,9 @@ def main(argv=None) -> int:
     ap.add_argument("--escape-radius", type=float, default=ESCAPE_RADIUS,
                     help="시작 자세 탈출 영역 L-inf 반경 [rad] — 시작에서 이미 margin 미달인 쌍만 이 안에서 완화")
     ap.add_argument("--force-rrt", action="store_true", help="직선이 통과해도 RRT 로 계획(시험용)")
+    ap.add_argument("--max-abduction", type=float, default=None,
+                    help="어깨 옆 벌림(j2) 상한 [rad] — 손이 옆으로 크게 나가지 않게(09.22 사용자: 옆이 아니라 j1·j4 로). "
+                         "j3(상완 회전)도 [-0.3, 0.6] 으로 묶는다. 좌팔은 부호를 뒤집는다. 없으면 관절한계 전부")
     ap.add_argument("--check-only", action="store_true", help="계획하지 않고 직선(또는 --npz)만 검사")
     ap.add_argument("--npz", type=Path, default=None, help="--check-only 대상 npz(arm_target)")
     ap.add_argument("--out", type=Path, default=None)
@@ -569,6 +585,8 @@ def main(argv=None) -> int:
         if bad:
             raise SystemExit(f"{name} 가 관절한계 밖: {bad}")
 
+    if args.max_abduction is not None:
+        lo, hi = abduction_box(lo, hi, args.side, args.max_abduction, start, goal)
     chk = Checker(world, scenes, args.margin, start, (lo, hi), args.escape_radius, args.seed)
     print(f"[plan] 세계: 로봇 {args.urdf.name} (메쉬 볼록 껍질, 몸통 {world.mesh_notes.get('body_link:body_link0_symp_cut_nohousing_top730.stl')}) "
           f"· 테이블 상자 {len(world.table_boxes)} · 컵 {'있음' if world.cup_box else '없음'} · 반대팔 {args.other_arm} "

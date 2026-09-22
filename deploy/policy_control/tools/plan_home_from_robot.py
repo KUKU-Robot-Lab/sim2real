@@ -23,7 +23,8 @@ from pathlib import Path
 SIM2REAL = Path(__file__).resolve().parents[3]
 SAMPLE = SIM2REAL / "deploy" / "s2r_console" / "tools" / "sample_joints.py"
 PLANNER = Path(__file__).resolve().parent / "plan_home_path.py"
-SEEDS = (0, 1, 2, 3, 4)
+SEEDS = tuple(range(12))    # 옆 벌림을 묶으면 RRT 성공률이 낮다(09.22 실측 8 번 중 1 번) — 시드를 넉넉히
+MAX_ABDUCTION = 0.9         # j2 상한 [rad] — 팔을 옆으로 크게 벌리지 않고 j1·j4 위주로(09.22 사용자). 이전 경로는 약 1.0
 ARGPARSE_ERROR = 2          # argparse 가 인자 오류로 끝낼 때의 코드
 
 
@@ -55,7 +56,8 @@ def main() -> int:
     out = current_path(args.side)
     # `--start=` 로 붙인다 — 음수로 시작하면 argparse 가 값이 아니라 옵션으로 읽는다(09.22 왼팔 fake 에서 밟았다)
     base = [sys.executable, str(PLANNER), "--side", args.side, "--start=" + ",".join(f"{v:.6f}" for v in start),
-            "--goal", "contract", "--hand-start", "both", "--other-arm", "both", "--out", str(out)]
+            "--goal", "contract", "--hand-start", "both", "--other-arm", "both", "--out", str(out),
+            f"--max-abduction={MAX_ABDUCTION}"]
     if args.with_cup:
         base.append("--with-cup")
     for seed in SEEDS:

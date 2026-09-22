@@ -27,6 +27,15 @@ if nvidia-smi --query-compute-apps=pid,process_name --format=csv,noheader 2>/dev
     [[ "${VIEWER_FORCE:-0}" == "1" ]] || exit 3
 fi
 
+# 이름에 python 이 없는 큰 GPU 사용자(09.22: VLLM::EngineCore 28 GB)도 있다 — 여유 메모리로도 본다.
+MIN_FREE_MIB="${VIEWER_MIN_FREE_MIB:-8000}"
+FREE_MIB="$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')"
+if [[ -n "${FREE_MIB}" && "${FREE_MIB}" -lt "${MIN_FREE_MIB}" ]]; then
+    echo "[run_viewer] GPU 여유 메모리 ${FREE_MIB} MiB < ${MIN_FREE_MIB} MiB — 뷰어를 띄우지 않는다(다른 작업을 밀어낼 수 있다):" >&2
+    nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader >&2
+    [[ "${VIEWER_FORCE:-0}" == "1" ]] || exit 4
+fi
+
 # 1) relay — ROS Humble 환경(서브셸에서만 source)
 (
     set +u

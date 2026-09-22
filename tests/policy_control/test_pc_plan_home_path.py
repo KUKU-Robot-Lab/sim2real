@@ -138,3 +138,18 @@ def test_straight_line_to_home_hits_table(checker):
     rep = checker.check_path(np.stack([np.zeros(7), HOME]))
     assert not rep["ok"]
     assert any("table_8" in f["pair"] for f in rep["fails"])
+
+
+def test_abduction_box_caps_the_sideways_swing_and_keeps_start_and_goal_inside():
+    # 09.22 사용자: "옆으로 가지 말고 … j1,4 를 동시에" — j2(옆 벌림) 상한, j3 묶음. 좌팔은 부호 반대.
+    import numpy as np
+    lo, hi = np.full(7, -3.0), np.full(7, 3.0)
+    start, goal = np.zeros(7), np.array([-1.2, 0.67, 0.19, 1.73, 0.69, 0.04, 0.95])
+    lo2, hi2 = P.abduction_box(lo, hi, "right", 0.9, start, goal)
+    assert hi2[1] == 0.9 and lo2[1] == -3.0 and (lo2[2], hi2[2]) == (-0.3, 0.6)
+    assert np.all(lo2 <= np.minimum(start, goal)) and np.all(hi2 >= np.maximum(start, goal))
+    lg = np.array([-0.36, -0.64, 0.03, 0.43, -0.27, -0.58, -0.73])
+    lo3, hi3 = P.abduction_box(lo, hi, "left", 0.9, start, lg)
+    assert lo3[1] == -0.9 and hi3[1] == 3.0 and (lo3[2], hi3[2]) == (-0.6, 0.3)
+    wide = np.array([0.0, 1.2, 0.0, 0.0, 0.0, 0.0, 0.0])                            # 목표가 상한 밖이면 목표까지는 넓힌다
+    assert P.abduction_box(lo, hi, "right", 0.9, start, wide)[1][1] == 1.2
