@@ -12,7 +12,7 @@
 실제 하드웨어 상태  →  /joint_states, /dg5f_right/joint_states  →  병합  →  /isaacsim/joint_states
 ```
 
-핵심 노드는 `isaacsim_bridge/isaacsim_bridge/bridge_node.py` 하나다. 이 노드가
+핵심 노드는 `sim/isaacsim_bridge/isaacsim_bridge/bridge_node.py` 하나다. 이 노드가
 `/isaacsim/*_cmd` 다섯 토픽을 구독해 각 하드웨어 컨트롤러로 전달한다.
 
 | 구독 (입력) | 타입 | 전달 대상 (출력) |
@@ -174,7 +174,7 @@ ros2 launch inspire_control_ros2 inspire_control_single_device.launch.py device_
 ### Isaac Sim 브리지 (`rh56f1_hand_bridge`)
 
 손 인터페이스가 Tesollo(`JointTrajectory`, 라디안)와 완전히 달라, RH56F1은 기존
-`bridge_node`가 아니라 전용 노드 `isaacsim_bridge/rh56f1_hand_bridge_node.py`가 담당한다.
+`bridge_node`가 아니라 전용 노드 `sim/isaacsim_bridge/isaacsim_bridge/rh56f1_hand_bridge_node.py`가 담당한다.
 
 ```
 /isaacsim/{right,left}_hand_cmd (Float64MultiArray[6], 라디안)
@@ -243,8 +243,8 @@ python3 sim2real/scripts/deprecated/sim2real_dryrun.py
 
 | 문서 | 내용 |
 |---|---|
-| `isaacsim_bridge/README.md` | 브리지 패키지 상세, 튜닝 리포트 |
-| `isaacsim_bridge/ISAACSIM_ACTION_GRAPH.md` | Isaac Sim 쪽 Action Graph로 5토픽 발행 |
-| `isaacsim_bridge/ISAACSIM_POLICY_WIRING.md` | Action Graph에 정책 출력 연결 |
+| `sim/isaacsim_bridge/README.md` | 브리지 패키지 상세, 튜닝 리포트 |
+| `sim/isaacsim_bridge/ISAACSIM_ACTION_GRAPH.md` | Isaac Sim 쪽 Action Graph로 5토픽 발행 |
+| `sim/isaacsim_bridge/ISAACSIM_POLICY_WIRING.md` | Action Graph에 정책 출력 연결 |
 | `SIM2REAL_INFERENCE.md` | OpenArm+Tesollo `5g_grasp_right_v7` 배포 전체 절차 |
 | `hdgp/scripts/r2s_autotune/README.md` | 실물 응답으로 sim actuator 보정 (반대 방향) |

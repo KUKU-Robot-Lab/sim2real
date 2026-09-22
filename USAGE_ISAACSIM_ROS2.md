@@ -2,7 +2,7 @@
 
 OpenArm · Tesollo · RH56F1 각각을 **제어(bringup) → Isaac Sim 연결(bridge) → 동작 test**
 순서로 실행하는 런북이다. 개념·토픽 표·설계 배경은 `ROBOT_ISAACSIM_CONNECTION.md`,
-브리지 내부는 `isaacsim_bridge/README.md`를 본다. 이 문서는 "무슨 명령을 어떤 순서로
+브리지 내부는 `sim/isaacsim_bridge/README.md`를 본다. 이 문서는 "무슨 명령을 어떤 순서로
 치는가"만 다룬다.
 
 명령은 별도 터미널에서 계속 떠 있어야 하는 것(드라이버·브리지)과 일회성(test)이 섞여
@@ -25,7 +25,7 @@ export BRIDGE_WS=$RL_WS/sim2real                        # isaacsim_bridge (colco
 ```
 
 - Isaac Sim 쪽은 Action Graph로 `/isaacsim/*` 토픽을 주고받는다
-  (`isaacsim_bridge/ISAACSIM_ACTION_GRAPH.md`). 실물 없이 배선만 볼 때는 §5 dry-run.
+  (`sim/isaacsim_bridge/ISAACSIM_ACTION_GRAPH.md`). 실물 없이 배선만 볼 때는 §5 dry-run.
 - 상태 확인 상시 명령: `ros2 node list`, `ros2 topic list`, `ros2 topic hz <topic>`.
 
 ---
@@ -168,7 +168,7 @@ ros2 launch isaacsim_bridge rh56f1_hand_bridge.launch.py
 # 오른손만: ros2 launch isaacsim_bridge rh56f1_hand_bridge.launch.py hands:="[right]"
 ```
 
-라디안↔레지스터 변환값은 `isaacsim_bridge/config/rh56f1_hand_calibration.yaml`.
+라디안↔레지스터 변환값은 `sim/isaacsim_bridge/config/rh56f1_hand_calibration.yaml`.
 `rh56f1_interfaces`가 빌드/소스되지 않으면 손 브리지는 경고만 내고 명령/상태 채널을 끈다.
 
 ### 3-3. test
@@ -349,6 +349,6 @@ python3 -m pytest tests/test_cup_pose_relay.py -q
 |---|---|
 | `INSTALL.md` | 새 PC 세팅 (step-by-step 설치, `scripts/setup/setup_check.sh` 진단) |
 | `ROBOT_ISAACSIM_CONNECTION.md` | 로봇별 연동 상세, 토픽 표, 설계 배경 |
-| `isaacsim_bridge/README.md` | 브리지 파라미터·튜닝·Action Graph |
+| `sim/isaacsim_bridge/README.md` | 브리지 파라미터·튜닝·Action Graph |
 | `SIM2REAL_INFERENCE.md` | 정책 배포 전체 절차(OpenArm+Tesollo) |
 | `hdgp/scripts/r2s_autotune/README.md` | 실물 응답으로 sim actuator 보정(반대 방향) |

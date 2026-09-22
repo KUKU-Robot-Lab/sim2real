@@ -31,10 +31,10 @@ cd "${REPO_DIR}"
 
 if [[ "${BUILD_BRIDGE_ONLY}" -eq 1 ]]; then
   colcon build --base-paths \
-    "${REPO_DIR}/isaacsim_bridge"
+    "${REPO_DIR}/sim/isaacsim_bridge"
 else
   colcon build --base-paths \
-    "${REPO_DIR}/isaacsim_bridge" \
+    "${REPO_DIR}/sim/isaacsim_bridge" \
     "${REPO_DIR}/vendor/openarm/openarm_description" \
     "${REPO_DIR}/vendor/openarm/openarm_can" \
     "${REPO_DIR}/vendor/openarm/openarm_hardware" \

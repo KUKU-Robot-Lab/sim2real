@@ -79,7 +79,7 @@ Step 1~3,5 = control 역할).
     (position target → 내부 PD `p=1.5, d=0.0` 로 effort 변환 — 시뮬 게인과
     다르므로 실기에서 게인 재조정 필요할 수 있음, `SIM2REAL_INFERENCE.md` 참고)
 - **isaacsim_bridge**: `sim2real/isaacsim_bridge/` (colcon 패키지,
-  `package.xml` 보유). Launch: `isaacsim_bridge/launch/isaacsim_bridge.launch.py`.
+  `package.xml` 보유). Launch: `sim/isaacsim_bridge/launch/isaacsim_bridge.launch.py`.
   - 구독: `/isaacsim/right_arm_cmd` (Float64MultiArray 7D),
     `/isaacsim/right_hand_cmd` (Float64MultiArray 20D) — `sim2real_inference.py`
     / `sim2real_dryrun.py` 가 `Sim2RealCommandPublisher` 로 발행하는 것을

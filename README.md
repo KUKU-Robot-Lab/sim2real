@@ -20,13 +20,18 @@ OpenArm + Tesollo DG5 + Isaac Sim 연동을 위한 최소 워크스페이스입�
 
 ## 디렉토리 구성
 
-- `openarm_control/`: OpenArm 전용 런치 래퍼
-- `tesollo_control/`: Tesollo DG5 전용 런치 래퍼
+- `policy_control/`: **정책 배포 체인** — 계약·obs/policy/fabric/pd 노드·launch·도구 ([배포 사용법](docs/USAGE_DEPLOY.md))
+- `s2r_console/`: 실기 세션 운영 콘솔(브라우저)
+- `policies/`: 쓸 정책 등록소 (카드 `policy.yaml` + 가중치 + params)
+- `config/`: 미션 yaml(`mission_*.yaml`) · 로봇 프로필 · 물체 레지스트리
+- `scripts/`: 역할별 도구 — `ops/`(운영) · `nodes/`(ROS 노드) · `vision/`(인지 PC) · `calib/` · `probes/` · `setup/`, 최상위는 라이브러리
+- `tests/`: 비GPU 회귀(`pytest tests -q -m "not gpu"`)
+- `sim/isaacsim_bridge/`: Isaac Sim ROS 2 브리지, 상태 로거, 튜닝 도구 (렌더링 기준으로 계속 쓴다)
 - `integrated_control/`: OpenArm + Tesollo 통합 런치
-- `isaacsim_bridge/`: Isaac Sim ROS 2 브리지, 상태 로거, 튜닝 도구
 - `urdf/`: OpenArm/Tesollo 조합용 xacro, urdf, usd
 - `vendor/`: 이 저장소에 포함된 upstream 의존 패키지
-- `scripts/`: 빌드 및 보조 스크립트
+- `logs/`: 배포 입력 일부(`logs/policy/*` 계약)와 실험 기록 — 새 정책은 `policies/` 로
+- `legacy/`: 더는 쓰지 않는 ROS 패키지(`COLCON_IGNORE`) · `archive/`: 참조 0 으로 확인된 스크립트
 
 ## 외부 의존성
 
@@ -78,7 +83,14 @@ source "${REPO_DIR}/install/setup.bash"
 
 ## 1. OpenArm, Tesollo 연결 및 ROS 2 사용법
 
-### OpenArm만 실행
+> **현행 실기 브링업은 `robot_control` 의 `openarm_bringup` 이다** — 미션이 부르는 그대로:
+> `ros2 launch openarm_bringup openarm.bimanual.launch.py use_fake_hardware:=false right_can_interface:=can0 left_can_interface:=can1`
+> (`config/mission_policy_control.yaml` 의 bringup 단계). 손은 `robot_control` 의 `dg5f_<side>_driver.launch.py`.
+>
+> 아래 "OpenArm만 / Tesollo만" 절은 **옛 하드웨어 구성**(왼손 그리퍼 + 오른팔만, 2026-03)의 래퍼이고
+> `legacy/ros_pkgs/` 로 옮겨졌다. 배선을 손으로 확인할 때만 쓴다.
+
+### OpenArm만 실행 (legacy)
 
 현재 구성:
 
@@ -92,7 +104,7 @@ source "${REPO_DIR}/install/setup.bash"
 source /opt/ros/humble/setup.bash
 REPO_DIR="/path/to/sim2real_control"
 source "${REPO_DIR}/install/setup.bash"
-ros2 launch "${REPO_DIR}/openarm_control/launch/openarm_left_gripper_bimanual_real.launch.py" \
+ros2 launch "${REPO_DIR}/legacy/ros_pkgs/openarm_control/launch/openarm_left_gripper_bimanual_real.launch.py" \
   left_can_interface:=can1 \
   right_can_interface:=can0
 ```
@@ -103,17 +115,17 @@ ros2 launch "${REPO_DIR}/openarm_control/launch/openarm_left_gripper_bimanual_re
 source /opt/ros/humble/setup.bash
 REPO_DIR="/path/to/sim2real_control"
 source "${REPO_DIR}/install/setup.bash"
-ros2 launch "${REPO_DIR}/openarm_control/launch/openarm_left_gripper_bimanual_real.launch.py" \
+ros2 launch "${REPO_DIR}/legacy/ros_pkgs/openarm_control/launch/openarm_left_gripper_bimanual_real.launch.py" \
   use_fake_hardware:=true
 ```
 
-### Tesollo DG5 오른손만 실행
+### Tesollo DG5 오른손만 실행 (legacy)
 
 ```bash
 source /opt/ros/humble/setup.bash
 REPO_DIR="/path/to/sim2real_control"
 source "${REPO_DIR}/install/setup.bash"
-ros2 launch "${REPO_DIR}/tesollo_control/launch/dg5f_right_real.launch.py" \
+ros2 launch "${REPO_DIR}/legacy/ros_pkgs/tesollo_control/launch/dg5f_right_real.launch.py" \
   dg5f_right_ip:=169.254.186.72 \
   dg5f_right_port:=502
 ```
@@ -157,7 +169,8 @@ ros2 control list_controllers
 
 > ⚠ `test_gui` 는 upstream 예제 포크이고 **게이트 없이 실손 컨트롤러로 발행**한다.
 > 정책 배포·실기 세션의 운영 화면은 `s2r_console` 이다 → [배포 사용법](docs/USAGE_DEPLOY.md).
-> 아래는 하드웨어 배선을 손으로 확인할 때만 쓴다.
+> 아래는 하드웨어 배선을 손으로 확인할 때만 쓴다. `test_gui` · `openarm_eef_control` 은 `legacy/ros_pkgs/` 에 있고
+> `COLCON_IGNORE` 로 빌드에서 빠진다 — 쓰려면 `colcon build --base-paths legacy/ros_pkgs/test_gui legacy/ros_pkgs/openarm_eef_control` 로 따로 빌드한다.
 
 - 왼쪽 `ARM` 패널:
   - EEF target -> `/openarm/left_arm/eef_target`
@@ -298,12 +311,12 @@ ros2 launch isaacsim_bridge isaacsim_bridge.launch.py \
 
 ### Isaac Sim Action Graph 스크립트
 
-세부 내용은 `isaacsim_bridge/README.md` 참고.
+세부 내용은 `sim/isaacsim_bridge/README.md` 참고.
 
-- 명령 입력 그래프 생성: `isaacsim_bridge/scripts/create_action_graph.py`
-- Sim shadow joint state 퍼블리시 그래프 생성: `isaacsim_bridge/scripts/create_sim_joint_state_publish_graph.py`
-- 기본 강한 drive 세팅: `isaacsim_bridge/scripts/tune_shadow_joint_drives.py`
-- 생성된 drive config 적용: `isaacsim_bridge/scripts/apply_joint_drive_config.py`
+- 명령 입력 그래프 생성: `sim/isaacsim_bridge/scripts/create_action_graph.py`
+- Sim shadow joint state 퍼블리시 그래프 생성: `sim/isaacsim_bridge/scripts/create_sim_joint_state_publish_graph.py`
+- 기본 강한 drive 세팅: `sim/isaacsim_bridge/scripts/tune_shadow_joint_drives.py`
+- 생성된 drive config 적용: `sim/isaacsim_bridge/scripts/apply_joint_drive_config.py`
 
 Isaac Sim Script Editor에서는 `exec(open(...).read())` 대신, 해당 스크립트 파일 내용을 직접 열어서 붙여넣는 방식이 가장 이식성이 좋습니다.
 
@@ -390,7 +403,7 @@ ros2 run isaacsim_bridge joint_tuning_cycle -- \
 
 #### 4) Isaac Sim에 새 drive 값 적용
 
-`isaacsim_bridge/scripts/apply_joint_drive_config.py` 를 Isaac Sim Script Editor에서 실행합니다.
+`sim/isaacsim_bridge/scripts/apply_joint_drive_config.py` 를 Isaac Sim Script Editor에서 실행합니다.
 
 이 스크립트는 기본적으로 `/tmp/isaacsim_next_joint_drive_config.json` 을 읽습니다.
 
@@ -435,7 +448,6 @@ ros2 run isaacsim_bridge joint_tuning_cycle -- \
 
 **하드웨어·시뮬레이터**
 
-- `openarm_control/README.md`
-- `tesollo_control/README.md`
 - `integrated_control/README.md`
-- `isaacsim_bridge/README.md`
+- `sim/isaacsim_bridge/README.md`
+- `legacy/README.md` — 옮겨진 옛 패키지(openarm_control · tesollo_control · openarm_eef_control · test_gui)
