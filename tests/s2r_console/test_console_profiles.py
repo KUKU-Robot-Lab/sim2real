@@ -70,7 +70,7 @@ def test_every_committed_profile_loads_and_its_mission_parses():
     from mission_core import load_mission
     from mission_stages import load_runbook
 
-    good, bad = scan(SIM2REAL / "s2r_console" / "profiles", repo=SIM2REAL)
+    good, bad = scan(SIM2REAL / "deploy" / "s2r_console" / "profiles", repo=SIM2REAL)
     assert bad == {} and good
     for p in good:
         doc = yaml.safe_load(p.mission.read_text())
@@ -83,7 +83,7 @@ def test_fake_profiles_never_point_at_a_mission_that_touches_real():
     import yaml
     from mission_core import load_mission
 
-    good, _ = scan(SIM2REAL / "s2r_console" / "profiles", repo=SIM2REAL)
+    good, _ = scan(SIM2REAL / "deploy" / "s2r_console" / "profiles", repo=SIM2REAL)
     for p in good:
         if p.domain_class == "fake":
             mission = load_mission(yaml.safe_load(p.mission.read_text()))

@@ -28,7 +28,7 @@ def trace(run: Path | None = None):
     npz = run / "trace.npz"
     if not npz.is_file():
         import pytest
-        pytest.skip(f"{npz} 가 없다. 받는 법: policy_control/tools/fetch_run.py "
+        pytest.skip(f"{npz} 가 없다. 받는 법: deploy/policy_control/tools/fetch_run.py "
                     f"--run <label> --checkpoint <ep:NNNN> --trace auto --out {run}")
     return np.load(npz), json.loads((run / "trace_meta.json").read_text())
 

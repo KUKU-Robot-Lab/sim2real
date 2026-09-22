@@ -88,7 +88,7 @@ def test_every_shipped_diagram_unit_is_a_background_command_of_its_mission():
     # 그림은 이제 미션에서 만든다(`wiring.generate`) — 상자에 붙는 스위치는 여전히 그 미션의 배경·수동 명령이어야 한다.
     from s2r_console.console import diagram_of, mission_units
 
-    good, bad = scan(SIM2REAL / "s2r_console" / "profiles", repo=SIM2REAL)
+    good, bad = scan(SIM2REAL / "deploy" / "s2r_console" / "profiles", repo=SIM2REAL)
     assert bad == {}
     for p in good:
         units = mission_units(p, repo=SIM2REAL)

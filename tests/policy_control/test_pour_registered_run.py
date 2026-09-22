@@ -8,7 +8,7 @@
   2. 디코더가 trace 의 palm/hand 목표를 재현하는가 (액션 해석이 맞는가)
 
 런 디렉터리가 없으면 통째로 skip — 이 저장소는 143 MB trace 를 담지 않는다.
-받는 법: `policy_control/tools/fetch_run.py --run t2r_i18 --checkpoint ep:2500 --trace auto
+받는 법: `deploy/policy_control/tools/fetch_run.py --run t2r_i18 --checkpoint ep:2500 --trace auto
           --out logs/policy/pour_i18`
 """
 from __future__ import annotations

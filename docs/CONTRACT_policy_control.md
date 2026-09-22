@@ -5,7 +5,7 @@ obs → policy → fabric → pd 4노드가 읽는 계약을 사람이 읽을 �
 이 문서를 만든 명령(그대로 다시 치면 재생성된다):
 
 ```bash
-python3 policy_control/tools/contract_doc.py \
+python3 deploy/policy_control/tools/contract_doc.py \
     logs/policy/left_v2B25/deploy_contract.json \
     logs/policy/right_g1/deploy_contract.json \
     logs/policy/right_g1/deploy_contract.dg5f-m.json \

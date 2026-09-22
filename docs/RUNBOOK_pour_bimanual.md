@@ -18,8 +18,8 @@ across the centre line). See `docs/PLAN_S2R_CONSOLE_2026-09-21.md` section 5.
 **Use `fetch_run.py`** — it pulls exactly these from the training host, puts **one** `.pth` under `nn/`
 (so the builder never has to guess) and records sha256/md5 plus the hdgp commit in `fetch.json`:
 
-    policy_control/tools/fetch_run.py --run t2r_i18 --list                    # what is there
-    policy_control/tools/fetch_run.py --run t2r_i18 --checkpoint ep:2500 --out logs/policy/pour_i18
+    deploy/policy_control/tools/fetch_run.py --run t2r_i18 --list                    # what is there
+    deploy/policy_control/tools/fetch_run.py --run t2r_i18 --checkpoint ep:2500 --out logs/policy/pour_i18
     #   add --trace auto for the 143 MB golden npz (needed by tests/policy_control/test_pour_registered_run.py)
 
 Re-running it transfers 0 bytes when the hashes still match; with no route to the host it verifies what is
@@ -64,7 +64,7 @@ The npz is also the golden trace for the parity tests (section 5).
 
 ## 2. Build the contract
 
-    .venv/bin/python policy_control/tools/build_deploy_contract.py \
+    .venv/bin/python deploy/policy_control/tools/build_deploy_contract.py \
         --run logs/policy/pour_i18 --sim-meta logs/policy/pour_i18/trace_meta.json [--checkpoint <pth>] [--fill-default 0.6]
     # -> logs/policy/pour_i18/pour_contract.json
 
@@ -76,7 +76,7 @@ them changed since the build.
 pd_node does not read the pour contract. It needs a control-only DeployContract of the same asset whose home
 is the pour reset pose (arms and hands of both sides):
 
-    .venv/bin/python policy_control/tools/build_deploy_contract.py \
+    .venv/bin/python deploy/policy_control/tools/build_deploy_contract.py \
         --asset openarm_dg5f-m-short_bi_rl --sides right,left --home pour:logs/policy/pour_i18/pour_contract.json \
         --out logs/policy/asset_pour_i18/deploy_contract.json
 
@@ -84,7 +84,7 @@ is the pour reset pose (arms and hands of both sides):
 
 Do not read the numbers out of `LOOP_STATE.json` — count them again from the trace:
 
-    python3 policy_control/tools/ckpt_gate.py --trace logs/policy/<run>/trace.npz \
+    python3 deploy/policy_control/tools/ckpt_gate.py --trace logs/policy/<run>/trace.npz \
         --json logs/policy/<run>/ckpt_gate.json          # exit 0 pass, 4 reject, 2 unreadable
 
 It checks success_ever, in_target_max, spill, min cup distance, pour direction, source-cup peak tilt,

@@ -1,4 +1,4 @@
-"""policies/ 규약 — 정책 하나가 '쓸 수 있는 한 벌'인지 점검하는 순수 로직."""
+"""deploy/policies/ 규약 — 정책 하나가 '쓸 수 있는 한 벌'인지 점검하는 순수 로직."""
 from __future__ import annotations
 
 import hashlib
@@ -135,9 +135,9 @@ def test_index_lists_every_policy_with_its_issues_and_notes(tmp_path):
 
 
 def test_the_real_policies_directory_is_clean():
-    root = SIM2REAL / "policies"
+    root = SIM2REAL / "deploy" / "policies"
     if not root.is_dir():
-        pytest.skip("policies/ 가 아직 없다")
+        pytest.skip("deploy/policies/ 가 아직 없다")
     bad = {e.id: e.issues for e in R.scan(root, deep=False) if not e.ok}
     assert not bad, bad
 

@@ -25,10 +25,10 @@ from pathlib import Path
 
 SIM2REAL = Path(__file__).resolve().parents[2]
 CONTRACT = SIM2REAL / "logs/policy/asset_openarm_dg5f-m_bi_rl/deploy_contract.json"
-PD_YAML = SIM2REAL / "policy_control/config/pd_dg5f_m.yaml"
+PD_YAML = SIM2REAL / "deploy/policy_control/config/pd_dg5f_m.yaml"
 needs = pytest.mark.skipif(not (CONTRACT.exists() and PD_YAML.exists()), reason="계약/pd 설정 없음")
 SHORT_CONTRACT = SIM2REAL / "logs/policy/asset_openarm_dg5f-m-short_bi_rl/deploy_contract.json"
-CONFIG = SIM2REAL / "policy_control/config"
+CONFIG = SIM2REAL / "deploy/policy_control/config"
 #: (실기 pd yaml, fake pd yaml, 계약) — 자산별로 같은 규약을 검사한다.
 ASSET_CASES = [
     pytest.param("pd_dg5f_m.yaml", "pd_dg5f_m_fake.yaml", CONTRACT, id="dg5f-m"),

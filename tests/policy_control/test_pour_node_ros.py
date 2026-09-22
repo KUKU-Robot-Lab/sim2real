@@ -17,7 +17,7 @@ from policy_control.pour_contract import save_contract
 from pour_trace_util import contract, make_fk, trace
 
 SIM2REAL = Path(__file__).resolve().parents[2]
-ROBOT = SIM2REAL / "policy_control/config/robots/dg5f_m_bi_real.yaml"
+ROBOT = SIM2REAL / "deploy/policy_control/config/robots/dg5f_m_bi_real.yaml"
 NS = "/policy_control"
 ENV = 0
 

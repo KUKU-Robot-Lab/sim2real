@@ -10,10 +10,10 @@ name: policy_control 양팔 DG-5F-M 제어 전용 점검 (한 팔씩)
 
 artifacts:
   contract: logs/policy/asset_openarm_dg5f-m-short_bi_rl/deploy_contract.json
-  robot_right: policy_control/config/robots/dg5f_m_right_real.yaml
-  robot_left: policy_control/config/robots/dg5f_m_left_real.yaml
-  robot_bi: policy_control/config/robots/dg5f_m_bi_real.yaml
-  pd: policy_control/config/pd_dg5f_m_short.yaml
+  robot_right: deploy/policy_control/config/robots/dg5f_m_right_real.yaml
+  robot_left: deploy/policy_control/config/robots/dg5f_m_left_real.yaml
+  robot_bi: deploy/policy_control/config/robots/dg5f_m_bi_real.yaml
+  pd: deploy/policy_control/config/pd_dg5f_m_short.yaml
   gains_yaml: ../urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml
 
 checkpoints: {}
@@ -113,7 +113,7 @@ run:
     - note: policy_control 비GPU 테스트 전부
       argv: [python3, -m, pytest, "{repo}/tests/policy_control", -q, -m, "not gpu", -p, "no:cacheprovider"]
     - note: 자산 제어 전용 계약 재생성 + control_gains.yaml 대조 (MISMATCH 면 rc 3)
-      argv: [python3, "{repo}/policy_control/tools/build_deploy_contract.py", --asset, openarm_dg5f-m-short_bi_rl,
+      argv: [python3, "{repo}/deploy/policy_control/tools/build_deploy_contract.py", --asset, openarm_dg5f-m-short_bi_rl,
              --home, zero, --gains, "{artifact:gains_yaml}", --out, "{artifact:contract}"]
     - note: forward 컨트롤러가 양팔 모두 bringup 설정에 선언돼 있는지 (grep -c 12 = CM 목록 6 + 파라미터 블록 6)
       argv: [grep, -c, "_forward_", "/home/user/rl_ws/robot_control/ros_ws/src/openarm_ros2/openarm_bringup/config/controllers/openarm_bimanual_controllers.yaml"]
@@ -143,24 +143,24 @@ run:
       execute_args: [--execute]
   pd_load_right:
     - note: "[right] pd 노드 무발행 기동 — 별도 launch"
-      argv: [ros2, launch, "{repo}/policy_control/launch/pd_controller.launch.py",
+      argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",
              "contract:={artifact:contract}", "robot:={artifact:robot_right}", "pd_config:={artifact:pd}",
              "sides:=right", "execute:=false"]
       background: true
   pd_selftest_right:
     - note: "[right] 셀프테스트 (pd 를 execute:=true 로 재기동한 뒤). 진폭 0.02→0.05→0.10 rad"
-      argv: [python3, "{repo}/policy_control/tools/pd_selftest.py", --contract, "{artifact:contract}",
+      argv: [python3, "{repo}/deploy/policy_control/tools/pd_selftest.py", --contract, "{artifact:contract}",
              --robot, "{artifact:robot_right}", --side, right, --amplitudes, "0.02,0.05,0.10",
              --out, "{repo}/logs/policy_control/real_dg5fm_right_selftest.json"]
       execute_args: [--execute]
   goto_home_right:
     - note: "[right] pd engage + goto_home (episode_ctl 단계 — 승인 pd_engage·pd_goto_home)"
-      argv: [python3, "{repo}/policy_control/tools/episode_ctl.py", --steps, "0",
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --steps, "0",
              --approve, pd_engage, --approve, pd_goto_home]
       execute_args: [--execute]
   preset_right:
     - note: "[right] pd engage 상태에서 preset 궤적을 pd 의 joint_target 으로 흘린다 (104 s @0.5)"
-      argv: [python3, "{repo}/policy_control/tools/replay_to_pd.py",
+      argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py",
              --npz, "{repo}/logs/shadow/reset_both/reset_right.npz",
              --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7", --rate-scale, "0.5"]
       execute_args: [--execute]
@@ -170,7 +170,7 @@ run:
     - note: "[right] ★preset 에서 내려올 때는 goto_home 을 쓰지 않는다 — 관절공간 직선이라
         테이블을 모른다(2026-09-07 실기에서 손이 테이블로 향해 사용자가 모터 강제 종료).
         올라온 궤적을 --reverse 로 되짚는다. 진입 램프 간극이 0.35 rad 를 넘으면 거부된다."
-      argv: [python3, "{repo}/policy_control/tools/replay_to_pd.py",
+      argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py",
              --npz, "{repo}/logs/shadow/reset_both/reset_right.npz", --reverse,
              --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7", --rate-scale, "0.5"]
       execute_args: [--execute]
@@ -187,9 +187,9 @@ run:
     - note: "[right] 에피소드 start — fabric 이 홈 palm 을 유지하며 적분 시작(팔은 홈에 머문다)"
       argv: [ros2, service, call, /policy_control/episode/start, std_srvs/srv/Trigger]
     - note: "[right] palm +2 cm z (실기 기본 도메인이면 --allow-domain-0 가 필요 — 승인 후 사용자가 붙인다)"
-      argv: [python3, "{repo}/policy_control/tools/palm_cmd.py", --rel, "0", "0", "0.02", --hold, "1.0"]
+      argv: [python3, "{repo}/deploy/policy_control/tools/palm_cmd.py", --rel, "0", "0", "0.02", --hold, "1.0"]
     - note: "[right] 손 30 % 폐쇄 후 다시 open"
-      argv: [python3, "{repo}/policy_control/tools/hand_cmd.py", --contract, "{artifact:contract}", --side, right,
+      argv: [python3, "{repo}/deploy/policy_control/tools/hand_cmd.py", --contract, "{artifact:contract}", --side, right,
              --close, "0.3", --hold, "1.0"]
   release_right:
     - note: "[right] 에피소드 stop 후 pd release — 역블렌드 → 0 송출 → JTC 복귀"
@@ -198,19 +198,19 @@ run:
       argv: [ros2, service, call, /policy_control/pd/release, std_srvs/srv/Trigger]
   pd_load_left:
     - note: "[left] pd 노드 무발행 기동 — 별도 launch"
-      argv: [ros2, launch, "{repo}/policy_control/launch/pd_controller.launch.py",
+      argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",
              "contract:={artifact:contract}", "robot:={artifact:robot_left}", "pd_config:={artifact:pd}",
              "sides:=left", "execute:=false"]
       background: true
   pd_selftest_left:
     - note: "[left] 셀프테스트 (pd 를 execute:=true 로 재기동한 뒤). 진폭 0.02→0.05→0.10 rad"
-      argv: [python3, "{repo}/policy_control/tools/pd_selftest.py", --contract, "{artifact:contract}",
+      argv: [python3, "{repo}/deploy/policy_control/tools/pd_selftest.py", --contract, "{artifact:contract}",
              --robot, "{artifact:robot_left}", --side, left, --amplitudes, "0.02,0.05,0.10",
              --out, "{repo}/logs/policy_control/real_dg5fm_left_selftest.json"]
       execute_args: [--execute]
   goto_home_left:
     - note: "[left] pd engage + goto_home (episode_ctl 단계 — 승인 pd_engage·pd_goto_home)"
-      argv: [python3, "{repo}/policy_control/tools/episode_ctl.py", --steps, "0",
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --steps, "0",
              --approve, pd_engage, --approve, pd_goto_home]
       execute_args: [--execute]
   fabric_direct_left:
@@ -225,9 +225,9 @@ run:
     - note: "[left] 에피소드 start — fabric 이 홈 palm 을 유지하며 적분 시작(팔은 홈에 머문다)"
       argv: [ros2, service, call, /policy_control/episode/start, std_srvs/srv/Trigger]
     - note: "[left] palm +2 cm z (실기 기본 도메인이면 --allow-domain-0 가 필요 — 승인 후 사용자가 붙인다)"
-      argv: [python3, "{repo}/policy_control/tools/palm_cmd.py", --rel, "0", "0", "0.02", --hold, "1.0"]
+      argv: [python3, "{repo}/deploy/policy_control/tools/palm_cmd.py", --rel, "0", "0", "0.02", --hold, "1.0"]
     - note: "[left] 손 30 % 폐쇄 후 다시 open"
-      argv: [python3, "{repo}/policy_control/tools/hand_cmd.py", --contract, "{artifact:contract}", --side, left,
+      argv: [python3, "{repo}/deploy/policy_control/tools/hand_cmd.py", --contract, "{artifact:contract}", --side, left,
              --close, "0.3", --hold, "1.0"]
   release_left:
     - note: "[left] 에피소드 stop 후 pd release — 역블렌드 → 0 송출 → JTC 복귀"

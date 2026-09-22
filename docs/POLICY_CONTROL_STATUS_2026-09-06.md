@@ -9,7 +9,7 @@
 
 계획: `~/.claude/plans/shiny-foraging-hamming.md` (09.05 승인). 목표 = Isaac 없이 ROS2 제어만으로 학습 정책 실현, 노드 4단 구조.
 
-## 1. 구성(모두 `sim2real/policy_control`, ament_python, `colcon build --symlink-install --packages-select policy_control` 통과)
+## 1. 구성(모두 `sim2real/deploy/policy_control`, ament_python, `colcon build --symlink-install --packages-select policy_control` 통과)
 
 ```
 sensors ─▶ obs_node ─/policy_control/obs─▶ policy_node ─/policy_control/action─▶ fabric_node ─/policy_control/joint_target─▶ pd_node ─▶ forward_{position,velocity,effort}_controller
@@ -20,7 +20,7 @@ sensors ─▶ obs_node ─/policy_control/obs─▶ policy_node ─/policy_cont
 - launch: `policy_chain.launch.py`(obs/policy/fabric), `pd_controller.launch.py`(pd 단독, `execute:=false` 기본), `fake_plant.launch.py`(도메인 0 거부).
 - 도구: `episode_ctl.py` — 시나리오는 engage→goto_home→reset→start→run→stop→release 이고,
   **로봇을 움직이는 세 단계만 승인이 필요하다**: `--approve pd_engage --approve pd_goto_home --approve ep_start`
-  (전체: `python3 policy_control/tools/episode_ctl.py --execute --approve pd_engage --approve pd_goto_home --approve ep_start [--steps N]`), `pd_selftest.py`, `replay_to_pd.py`, `pd_release.py`, `status_to_csv.py`, `chain_recorder.py`, `episode_judge.py`, `contract_doc.py`, `fake_plant_run.sh`.
+  (전체: `python3 deploy/policy_control/tools/episode_ctl.py --execute --approve pd_engage --approve pd_goto_home --approve ep_start [--steps N]`), `pd_selftest.py`, `replay_to_pd.py`, `pd_release.py`, `status_to_csv.py`, `chain_recorder.py`, `episode_judge.py`, `contract_doc.py`, `fake_plant_run.sh`.
 - 미션: `config/mission_policy_control.yaml` (`scripts/ops/mission_run.py --mission … --plan`).
 
 ## 2. 검증 결과

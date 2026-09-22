@@ -15,7 +15,7 @@ SIM2REAL = Path(__file__).resolve().parents[2]
 
 
 def _load(name: str):
-    path = SIM2REAL / f"policy_control/tools/{name}.py"
+    path = SIM2REAL / f"deploy/policy_control/tools/{name}.py"
     spec = importlib.util.spec_from_file_location(f"{name}_tool", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

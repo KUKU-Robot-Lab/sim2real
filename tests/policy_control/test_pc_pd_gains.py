@@ -17,7 +17,7 @@ from policy_control import pd_law as L
 
 SIM2REAL = Path(__file__).resolve().parents[2]
 RL_WS = SIM2REAL.parent
-CONFIG = SIM2REAL / "policy_control" / "config"
+CONFIG = SIM2REAL / "deploy" / "policy_control" / "config"
 LEFT_CONTRACT = SIM2REAL / "logs/policy/left_v2B25/deploy_contract.json"
 RIGHT_CONTRACT = SIM2REAL / "logs/policy/right_g1/deploy_contract.json"
 D3_RUN = SIM2REAL / "logs/policy/right_d3"

@@ -230,7 +230,7 @@ def test_malformed_stack_is_a_load_error(repo, stack):
 
 
 def test_shipped_profiles_declare_a_stack():
-    good, bad = scan(SIM2REAL / "s2r_console" / "profiles", repo=SIM2REAL)
+    good, bad = scan(SIM2REAL / "deploy" / "s2r_console" / "profiles", repo=SIM2REAL)
     assert bad == {}
     assert all(p.stack is not None and p.stack.topics for p in good)
 
@@ -238,7 +238,7 @@ def test_shipped_profiles_declare_a_stack():
 # ── 콘솔이 자식에게 넘기는 인자 ─────────────────────────────────────────
 def _profile(name: str):
     from s2r_console.profiles import scan
-    good, bad = scan(SIM2REAL / "s2r_console" / "profiles", repo=SIM2REAL)
+    good, bad = scan(SIM2REAL / "deploy" / "s2r_console" / "profiles", repo=SIM2REAL)
     assert not bad
     return next(p for p in good if p.id == name)
 
@@ -295,7 +295,7 @@ def test_the_bridge_listens_to_the_perception_launcher_only_when_the_picture_has
     from s2r_console.console import bridge_argv, diagram_of, mission_units
     from s2r_console.profiles import scan
     repo = Path(__file__).resolve().parents[2]
-    profiles = {p.id: p for p in scan(repo / "s2r_console/profiles", repo=repo)[0]}
+    profiles = {p.id: p for p in scan(repo / "deploy/s2r_console/profiles", repo=repo)[0]}
     pour = profiles["pour_i18_fake"]
     argv = bridge_argv(pour, diagram_of(pour, mission_units(pour, repo=repo), repo=repo))
     assert "--perception" not in argv                      # fake 미션에는 인지 런처가 없다

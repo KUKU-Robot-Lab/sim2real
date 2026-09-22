@@ -9,7 +9,7 @@ from policy_control.pour_contract import save_contract
 from pour_trace_util import contract
 
 SIM2REAL = Path(__file__).resolve().parents[2]
-TOOL = SIM2REAL / "policy_control/tools/contract_doc.py"
+TOOL = SIM2REAL / "deploy/policy_control/tools/contract_doc.py"
 RIGHT_JSON = SIM2REAL / "logs/policy/right_g1/deploy_contract.json"
 HAND_DOC = "RUNBOOK_pour_bimanual.md"
 

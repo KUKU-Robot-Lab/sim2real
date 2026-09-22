@@ -430,7 +430,7 @@ sim 주석이 배포 요구사항을 명시하고 있다 — *"실기 미러: gr
   과거에 이 벽을 만나 우회를 시도한 흔적이 있다. 다만 그건 **명령 방향 단방향**이라
   60 Hz 센서 수신(관절·컵·tip)은 못 덮는다.
 
-**해소**: `scripts/setup_deploy_env.sh` — ROS 의 python3.10 위에
+**해소**: `scripts/setup/setup_deploy_env.sh` — ROS 의 python3.10 위에
 `--system-site-packages` venv 를 만들어 rclpy 를 상속하고, torch(cu128)·warp·rl_games·
 fabrics_sim 만 venv 안에서 덮어쓴다. 시스템은 건드리지 않는다.
 

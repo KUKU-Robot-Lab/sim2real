@@ -16,7 +16,7 @@ from policy_control import codec, sources
 pytestmark = pytest.mark.unit
 
 SIM2REAL = Path(__file__).resolve().parents[2]
-ROBOTS = SIM2REAL / "policy_control/config/robots"
+ROBOTS = SIM2REAL / "deploy/policy_control/config/robots"
 PROFILE = SIM2REAL.parent / "robot_control/src/robot_control/profiles/openarm_tesollo.yaml"
 
 LEFT_ARM = [f"l_aj_{i}" for i in range(1, 8)]
@@ -196,7 +196,7 @@ def test_profile_limits_exposed():
 
 
 # ---------------------------------------------------------------- 09.06 양팔 DG-5F-M yaml (joint_profiles + 팔 접미사)
-ROBOTS = SIM2REAL / "policy_control/config/robots"
+ROBOTS = SIM2REAL / "deploy/policy_control/config/robots"
 #: 옛 좌팔 그리퍼 구성 전용 보충. 09.14 본 프로필 좌 EE 가 DG-5F 로 바뀌며 그리퍼 관절이 여기로 옮겨졌다
 #: (좌손 20관절은 반대로 보충 파일에서 본 프로필로 들어갔다).
 GRIPPER_PROFILE = SIM2REAL / "config/openarm_left_gripper.yaml"

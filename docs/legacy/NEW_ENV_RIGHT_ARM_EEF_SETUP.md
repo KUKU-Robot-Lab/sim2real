@@ -179,7 +179,7 @@ cd /home/user/rl_ws/sim2real
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
-ros2 launch /home/user/rl_ws/sim2real/integrated_control/launch/openarm_left_gripper_right_dg5_real.launch.py \
+ros2 launch /home/user/rl_ws/sim2real/robot/integrated_control/launch/openarm_left_gripper_right_dg5_real.launch.py \
   left_can_interface:=can1 \
   right_can_interface:=can0 \
   dg5f_right_ip:=169.254.186.72 \
@@ -394,7 +394,7 @@ source install/setup.bash
 실기 bringup:
 
 ```bash
-ros2 launch /home/user/rl_ws/sim2real/integrated_control/launch/openarm_left_gripper_right_dg5_real.launch.py \
+ros2 launch /home/user/rl_ws/sim2real/robot/integrated_control/launch/openarm_left_gripper_right_dg5_real.launch.py \
   left_can_interface:=can1 \
   right_can_interface:=can0 \
   dg5f_right_ip:=169.254.186.72 \

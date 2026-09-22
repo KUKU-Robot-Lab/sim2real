@@ -138,6 +138,6 @@ def test_the_node_file_runs_as_a_script():
     import runpy
     from pathlib import Path
 
-    node = Path(__file__).resolve().parents[2] / "policy_control" / "policy_control" / "pour_guard_node.py"
+    node = Path(__file__).resolve().parents[2] / "deploy" / "policy_control" / "policy_control" / "pour_guard_node.py"
     ns = runpy.run_path(str(node), run_name="not_main")
     assert "PourGuardNode" in ns and callable(ns["main"])

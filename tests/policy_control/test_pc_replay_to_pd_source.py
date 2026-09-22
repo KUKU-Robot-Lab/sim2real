@@ -24,7 +24,7 @@ needs_preset = pytest.mark.skipif(not PRESET.exists(), reason="preset npz 없음
 
 
 def _tool():
-    path = SIM2REAL / "policy_control/tools/replay_to_pd.py"
+    path = SIM2REAL / "deploy/policy_control/tools/replay_to_pd.py"
     spec = importlib.util.spec_from_file_location("replay_to_pd_tool", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

@@ -19,7 +19,7 @@ pytestmark = pytest.mark.ros
 
 SIM2REAL = Path(__file__).resolve().parents[2]
 CONTRACT = SIM2REAL / "logs" / "policy" / "left_v2B25" / "deploy_contract.json"
-ROBOT = SIM2REAL / "policy_control" / "config" / "robots" / "left_gripper_fake.yaml"
+ROBOT = SIM2REAL / "deploy" / "policy_control" / "config" / "robots" / "left_gripper_fake.yaml"
 NS = "/policy_control"
 ARM_SRC = [f"openarm_left_joint{i}" for i in range(1, 8)]
 GRIP_SRC = "openarm_left_finger_joint1"

@@ -9,7 +9,7 @@ from policy_control import contract_build as B
 from policy_control.pour_contract import FAMILY, PourContract, PourContractError, load_contract
 from pour_trace_util import FIX, contract
 
-TOOL = Path(__file__).resolve().parents[2] / "policy_control/tools/build_deploy_contract.py"
+TOOL = Path(__file__).resolve().parents[2] / "deploy/policy_control/tools/build_deploy_contract.py"
 
 
 def _tool():

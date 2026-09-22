@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-TOOLS = Path(__file__).resolve().parents[2] / "policy_control" / "tools"
+TOOLS = Path(__file__).resolve().parents[2] / "deploy" / "policy_control" / "tools"
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 

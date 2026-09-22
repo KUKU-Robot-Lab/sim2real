@@ -14,7 +14,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 SIM2REAL = Path(__file__).resolve().parents[2]
-SETUP = SIM2REAL / "policy_control/setup.py"
+SETUP = SIM2REAL / "deploy/policy_control/setup.py"
 LIBEXEC = SIM2REAL / "install/policy_control/lib/policy_control"
 
 

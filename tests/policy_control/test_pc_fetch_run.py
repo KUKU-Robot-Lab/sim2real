@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-TOOLS = Path(__file__).resolve().parents[2] / "policy_control" / "tools"
+TOOLS = Path(__file__).resolve().parents[2] / "deploy" / "policy_control" / "tools"
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
@@ -288,7 +288,7 @@ def test_the_server_is_only_ever_read(tmp_path):
         assert not any(b in joined.split() or f" {b} " in joined for b in banned), joined
 
 
-# ------------------------------------------------------------------ policies/ 등록 (09.21)
+# ------------------------------------------------------------------ deploy/policies/ 등록 (09.21)
 
 def _hashes_for(plan):
     return {f.remote_rel: "aa" for f in plan}

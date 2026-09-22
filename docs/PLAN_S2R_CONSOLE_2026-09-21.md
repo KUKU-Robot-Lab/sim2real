@@ -7,7 +7,7 @@
 
 ## Context
 
-**왜 지금 이것을 하는가.** 오늘부터 s2r 를 본격 진행한다. `hdgp/source/openarm/openarm/agnostic` 학습 구조는 어느 정도 완성됐고, 실기 쪽 `sim2real/policy_control` 도 계약 v2 + 노드 6개 + 테스트 593개로 성숙했다. 그런데 **정책 하나를 실기에 올리는 경로가 아직 한 번도 끝까지 통과된 적이 없다.** 양팔 물붓기(pour) 정책은 별도 스키마·전용 노드로 갈라져 미커밋 상태이고, 학습 산출물을 서버에서 로컬로 가져오는 도구가 없다.
+**왜 지금 이것을 하는가.** 오늘부터 s2r 를 본격 진행한다. `hdgp/source/openarm/openarm/agnostic` 학습 구조는 어느 정도 완성됐고, 실기 쪽 `sim2real/deploy/policy_control` 도 계약 v2 + 노드 6개 + 테스트 593개로 성숙했다. 그런데 **정책 하나를 실기에 올리는 경로가 아직 한 번도 끝까지 통과된 적이 없다.** 양팔 물붓기(pour) 정책은 별도 스키마·전용 노드로 갈라져 미커밋 상태이고, 학습 산출물을 서버에서 로컬로 가져오는 도구가 없다.
 
 **목표.** 정책마다 `*_inference_node.py`·전용 GUI·전용 launch 를 새로 만들지 않고, **계약과 프로파일을 등록하는 것만으로** 배포할 수 있게 한다. 그 위에 실기 세션에서 터미널 4개를 오가지 않아도 되는 운영 화면을 얹는다.
 
@@ -29,11 +29,11 @@
 
 | MD 전제 | 실제 | 근거 |
 |---|---|---|
-| 계약 스키마 v1 | **v2 가 현행**. v1 은 로드 호환용 레거시 | `policy_control/policy_control/contract.py:29-30` |
+| 계약 스키마 v1 | **v2 가 현행**. v1 은 로드 호환용 레거시 | `deploy/policy_control/policy_control/contract.py:29-30` |
 | `deploy_contract.json` 이 단일 진실원천 | pour 는 **별도 스키마** `policy_control/pour_contract/v1`. 게다가 pd 용 control-only 계약이 **하나 더** 필요 — 정책 1개에 계약 파일 2개 | `pour_contract.py:22`, `contract_build.py:263-266` |
-| 정책별 전용 노드 금지 | **이미 깨져 있다.** `pour_node.py` 301줄 + `pour_chain.launch.py` + `setup.py` 엔트리포인트 | `policy_control/setup.py` entry_points |
+| 정책별 전용 노드 금지 | **이미 깨져 있다.** `pour_node.py` 301줄 + `pour_chain.launch.py` + `setup.py` 엔트리포인트 | `deploy/policy_control/setup.py` entry_points |
 | `test_gui` 를 수동 조작 도구로 유지 | 유지해도 되나 **배포 체계에서 배제**. PickNik 예제 포크이고, `/openarm/*/eef_target` 은 구독자 0인 죽은 토픽이며, **게이트 없이 실손 JTC 를 발행**한다 | `test_gui/src/ros2node.cpp:113-131`, `README.md:1-30` |
-| `config/mission_policy_control.yaml` 이 유효 | **낡아서 좌팔 미션이 죽어 있다.** `pd_selftest` 의 `blocked` 문구가 "도구가 아직 없다"인데 `policy_control/tools/pd_selftest.py` 는 09-07 부터 실재 → `goto_home` 이후 전 단계 영구 차단 | `config/mission_policy_control.yaml:43-45`, `scripts/mission_core.py:138-141` |
+| `config/mission_policy_control.yaml` 이 유효 | **낡아서 좌팔 미션이 죽어 있다.** `pd_selftest` 의 `blocked` 문구가 "도구가 아직 없다"인데 `deploy/policy_control/tools/pd_selftest.py` 는 09-07 부터 실재 → `goto_home` 이후 전 단계 영구 차단 | `config/mission_policy_control.yaml:43-45`, `scripts/mission_core.py:138-141` |
 | `docs/measure/S2R_INTERFACE_EQUIVALENCE.md` | 존재하나 낡음. 대상이 구 자산 `openarm_tesollo_sensor_rl`, 대부분 행 미측정 | 파일 헤더 |
 | 웹 스택 도입이 자연스럽다 | 저장소에 웹 스택 **0**. `~/.local` 에 `pydantic 2.13.3`·`flask 3.1.3` 누수 있음 + `.venv` 는 `include-system-site-packages=true` + 거기에 `torch 2.7.1+cu128`·`fabrics_sim.pth` 가 산다 → **venv 에 pydantic 계열 설치는 실질 위험**. node v22·PyPI 접속은 가능 | `.venv/pyvenv.cfg`, `pip index versions fastapi` rc=0 |
 | 브라우저 UI 가 새 종류의 물건 | **전례가 이미 있다.** `scripts/vision/stream_head_view.py`(162줄)·`cup_view_stream.py`(215줄)가 stdlib `ThreadingHTTPServer` + `127.0.0.1` + ssh 터널로 운영 중 | 두 파일 |
@@ -58,8 +58,8 @@
 - `scripts/mission_core.py` — `gate()` 가 차단·선행·산출물·체크포인트·승인 사유를 **한 번에 모아** 반환. 사유 문자열의 저작권자.
 - `scripts/mission_stages.py` — 단계 → argv 조립, `{repo}`/`{artifact:}`/`{checkpoint:}`/`{params:}`, `manual`/`background` 구분.
 - `scripts/ops/mission_run.py` — `--approve` · `--execute` · `start_new_session` + `pids` + `--abort` → `killpg` · append-only `state.jsonl`. **함정: `plan_evidence()` 는 "승인이 다 있다"고 가정한다 — 실행 가능 신호로 쓰면 안 된다.**
-- `policy_control/tools/episode_ctl.py` — 7단계 시나리오 + `touches_real` 3개 승인 필수 + `parse_trigger()`.
-- `policy_control/tools/status_to_csv.py` — 4노드 status 를 `seq` 로 join, `latency_ms`, p50/p95, seq 결손, `--jsonl`. **단 "N초 구독 후 종료" 형이라 상주 fan-out 이 없다.**
+- `deploy/policy_control/tools/episode_ctl.py` — 7단계 시나리오 + `touches_real` 3개 승인 필수 + `parse_trigger()`.
+- `deploy/policy_control/tools/status_to_csv.py` — 4노드 status 를 `seq` 로 join, `latency_ms`, p50/p95, seq 결손, `--jsonl`. **단 "N초 구독 후 종료" 형이라 상주 fan-out 이 없다.**
 - fake 플랜트 완비: `scripts/fakes/*` 6개 + `launch/fake_plant.launch.py`(`plant_model: pd|rate`) + `tools/fake_plant_run.sh`/`fake_direct_run.sh`. **한계: MockArm 에 커플링·테이블 접촉이 없어 파지 성공은 fake 로 검증되지 않는다 — 배관만 증명한다.**
 
 **테스트 현황 (실측)**: `pytest tests/policy_control -m "not gpu"` → **2 failed, 593 passed, 3 skipped**. 실패 2건은 구 자산 `openarm_dg5f-m_bi_rl.urdf` 에 `*_alias` 링크가 없어서 나는 기존 결함(`test_pc_fk_urdf.py:110`)이며 pour 와 무관. pour 만 `-k pour` → **70 passed**.
@@ -100,7 +100,7 @@
 
 검증: `python3 scripts/ops/mission_run.py --mission config/mission_policy_control.yaml --plan` 이 `goto_home` 이후 단계를 더 이상 차단하지 않는다. 발행 0건.
 
-### P1 — `policy_control/tools/fetch_run.py` 신규 (hdgp 무수정)
+### P1 — `deploy/policy_control/tools/fetch_run.py` 신규 (hdgp 무수정)
 
 hdgp 의 미러 스크립트는 건드리지 않고, sim2real 이 필요한 것만 따로 당긴다.
 
@@ -151,14 +151,14 @@ RUNBOOK §2 의 두 명령을 i18 로 실행한다.
 
 ### P4 — 읽기전용 상태판 (의존성 0, 버튼 없음)
 
-`policy_control/tools/status_board.py`. `scripts/vision/stream_head_view.py` 패턴 그대로 — stdlib `ThreadingHTTPServer`, 기본 바인딩 `127.0.0.1`, 원격 열람은 기존 ssh 터널.
+`deploy/policy_control/tools/status_board.py`. `scripts/vision/stream_head_view.py` 패턴 그대로 — stdlib `ThreadingHTTPServer`, 기본 바인딩 `127.0.0.1`, 원격 열람은 기존 ssh 터널.
 
 내용은 세 덩어리뿐이고 **전부 기존 출처의 문자열을 그대로 옮긴다**:
 - ⓐ `mission_core.plan()`/`gate()` 의 단계별 판정과 사유 — 콘솔이 사유를 새로 쓰지 않는다
 - ⓑ 4노드 `status/*` 의 `phase`/`ok`/`reasons` 원문 + pd 의 `execute`/`estop`/`thermal`
 - ⓒ `sources` stale · seq 결손 · 지연 p50/p95 — `status_to_csv.summarize()` 재사용
 
-동시에 `status_to_csv.py` 의 구독·join·요약을 `policy_control/policy_control/status_join.py` 로 승격한다. **CLI 와 CSV 출력 포맷은 한 글자도 바꾸지 않는다**(`fake_plant_run.sh` 가 파싱한다).
+동시에 `status_to_csv.py` 의 구독·join·요약을 `deploy/policy_control/policy_control/status_join.py` 로 승격한다. **CLI 와 CSV 출력 포맷은 한 글자도 바꾸지 않는다**(`fake_plant_run.sh` 가 파싱한다).
 
 **금지 사항 (스스로 거는 제약)**: 새 상태기계 금지 · 버튼 금지 · 새 의존성 금지 · `plan_evidence()` 호출 금지 · **250줄 넘으면 멈추고 재검토**.
 
@@ -195,7 +195,7 @@ MD 의 아래 기능은 이 환경(로봇 PC 1대, 운영자 1명, 정책 2~3개
 |---|---|
 | ROS2 Node Graph 시각화 / 노드별 7상태 | 노드 4~6개다. expected graph 를 콘솔 설정에 적는 순간 원천이 launch 파일에서 UI 로 복제된다 — MD 자신의 원칙 위반. status 의 `reasons` 는 가변 길이라 7칸에 넣으면 정보가 준다 |
 | 실시간 그래프 12종 | 운영자 1명은 12개를 못 본다. 라이브로 필요한 건 지연·seq 결손·HOLD 사유 3개이고 텍스트가 낫다 |
-| 프로파일 복제 Wizard | 프로파일은 이미 갈라진 게 문제다(`config/robots/` vs `policy_control/config/robots/` 두 디렉터리). 필요한 건 복제가 아니라 참조 |
+| 프로파일 복제 Wizard | 프로파일은 이미 갈라진 게 문제다(`config/robots/` vs `deploy/policy_control/config/robots/` 두 디렉터리). 필요한 건 복제가 아니라 참조 |
 | 역할 기반 권한 / 웹 세션 승인 | **안전 회귀다.** 현 승인은 `--approve <id>` 로 argv 에 있고 프로세스와 함께 사라진다. 세션 쿠키로 옮기면 "단계당 1회"가 "로그인 1회"가 된다 |
 | 런타임 `execute` 토글 | `pd_node.py:127` 이 `__init__` 에서 한 번 읽고 `add_on_set_parameters_callback` 이 없다. **발행 허가가 프로세스 수명에 묶여 있는 것이 안전장치다.** 토글을 만들면 그 보증이 메모리 안 bool 하나로 내려온다 |
 | 콘솔 소프트 estop 버튼 | 웹서버→소켓→DDS 는 건물에서 가장 느린 estop 이고, 큰 빨간 버튼을 주면 운영자가 틀린 것에 손을 뻗도록 훈련된다. 콘솔은 estop **상태만** 배너로 표시하고 물리 estop 위치를 적는다 |
@@ -252,11 +252,11 @@ MD 의 아래 기능은 이 환경(로봇 PC 1대, 운영자 1명, 정책 2~3개
 
 **새로 만든다**
 ```
-policy_control/tools/fetch_run.py                 P1  서버 산출물 수집
-policy_control/tools/status_board.py              P4  읽기전용 상태판 (stdlib, ≤250줄)
-policy_control/policy_control/status_join.py      P4  status 구독·join·summarize 승격
-policy_control/tools/ckpt_gate.py                 P6  §5 게이트를 trace npz 에 적용
-policy_control/policy_control/pour_guard.py       P6  기울기 워치독 + cross-arm guard
+deploy/policy_control/tools/fetch_run.py                 P1  서버 산출물 수집
+deploy/policy_control/tools/status_board.py              P4  읽기전용 상태판 (stdlib, ≤250줄)
+deploy/policy_control/policy_control/status_join.py      P4  status 구독·join·summarize 승격
+deploy/policy_control/tools/ckpt_gate.py                 P6  §5 게이트를 trace npz 에 적용
+deploy/policy_control/policy_control/pour_guard.py       P6  기울기 워치독 + cross-arm guard
 tests/policy_control/test_pc_status_join.py       P4  골든 — 승격 전후 동등성
 tests/policy_control/test_pc_fetch_run.py         P1  멱등성·오프라인·해시 불일치
 ```
@@ -264,9 +264,9 @@ tests/policy_control/test_pc_fetch_run.py         P1  멱등성·오프라인·�
 **수정한다**
 ```
 config/mission_policy_control.yaml                P0  pd_selftest 의 낡은 blocked 제거
-policy_control/tools/status_to_csv.py             P4  status_join 호출자로 (CLI·출력 포맷 불변)
-policy_control/policy_control/pour_build.py       P3  upper 가드
-policy_control/policy_control/pour_node.py        P3  feed_inbox 반환값 status 로
+deploy/policy_control/tools/status_to_csv.py             P4  status_join 호출자로 (CLI·출력 포맷 불변)
+deploy/policy_control/policy_control/pour_build.py       P3  upper 가드
+deploy/policy_control/policy_control/pour_node.py        P3  feed_inbox 반환값 status 로
 tests/policy_control/test_pour_fabric.py          P3  @pytest.mark.gpu
 tests/policy_control/conftest.py                  P3  GPU 마커 누락 수집 훅
 docs/CONTRACT_policy_control.md                   P2  재생성 (+ 생성 명령 머리에 명시)
@@ -351,15 +351,15 @@ fabric 에 넘긴다.** fj 는 팔을 **관절 증분 7** 로 직접 지령한�
 - 보고는 끝난 뒤 한 번, 요약으로.
 
 
-## policies/ 등록소 (09.21)
+## deploy/policies/ 등록소 (09.21)
 
-쓸 정책을 `sim2real/policies/<id>/` 한 곳에 모은다. `logs/policy/` 는 실험 기록으로 그대로 둔다(옮기지 않았다 — 테스트·RUNBOOK 이 그 경로를 가리킨다).
+쓸 정책을 `sim2real/deploy/policies/<id>/` 한 곳에 모은다. `logs/policy/` 는 실험 기록으로 그대로 둔다(옮기지 않았다 — 테스트·RUNBOOK 이 그 경로를 가리킨다).
 
 | 무엇 | 어디 |
 |---|---|
-| 규약·점검 (순수) | `policy_control/policy_control/policy_registry.py` — 카드 `policy.yaml`, `fetch.json`, 계약 md5 == 받은 체크포인트 md5 |
-| 등록 | `policy_control/tools/fetch_run.py` — 기본 `--out` 이 `policies/<run>`, `--host local` 로 이 PC 의 디렉터리도 출처가 된다, 출처 `README.md` 는 `SOURCE_README.md` 로 따라온다, 카드 초안은 **없을 때만** 쓴다 |
-| 목록·점검 | `policy_control/tools/policies.py [--write-index] [--shallow]` — 문제가 있으면 rc 1 |
+| 규약·점검 (순수) | `deploy/policy_control/policy_control/policy_registry.py` — 카드 `policy.yaml`, `fetch.json`, 계약 md5 == 받은 체크포인트 md5 |
+| 등록 | `deploy/policy_control/tools/fetch_run.py` — 기본 `--out` 이 `deploy/policies/<run>`, `--host local` 로 이 PC 의 디렉터리도 출처가 된다, 출처 `README.md` 는 `SOURCE_README.md` 로 따라온다, 카드 초안은 **없을 때만** 쓴다 |
+| 목록·점검 | `deploy/policy_control/tools/policies.py [--write-index] [--shallow]` — 문제가 있으면 rc 1 |
 | git | 카드·fetch.json·params·계약은 추적, `nn/*.pth` · `trace.npz` 는 `.gitignore` |
 
 등록된 것:
@@ -396,7 +396,7 @@ fabric 에 넘긴다.** fj 는 팔을 **관절 증분 7** 로 직접 지령한�
 | 런타임 `execute` 토글 | **여전히 없다.** 스위치는 프로세스를 띄우고 내릴 뿐이고 pd 의 `execute` 는 argv 로만 정해진다 |
 | 콘솔 소프트 estop | **여전히 없다.** estop 은 pd 상자가 fault 로 표시할 뿐이다 |
 
-**프로세스 구조**는 P7 에 적어 둔 그대로다: `bridge.py` 는 구독만 하는 별도 프로세스(우리 코드의 publisher 0 · service client 0, rosout·parameter 서비스 끔 — 단 rclpy 가 만드는 `/parameter_events` publisher 는 못 막는다: 기동마다 use_sim_time 선언 이벤트 1건, `ROS_DOMAIN_ID` 불일치면 init 전에 거부)이고 NDJSON 을 stdout 으로 낸다. API 프로세스는 rclpy 를 import 하지 않는다. 기동은 `s2r_console/tools/console.sh`(PYTHONPATH 를 덮어쓰지 않고 앞에 붙인다 — 덮어쓰면 브리지가 `No module named rclpy` 로 죽는다).
+**프로세스 구조**는 P7 에 적어 둔 그대로다: `bridge.py` 는 구독만 하는 별도 프로세스(우리 코드의 publisher 0 · service client 0, rosout·parameter 서비스 끔 — 단 rclpy 가 만드는 `/parameter_events` publisher 는 못 막는다: 기동마다 use_sim_time 선언 이벤트 1건, `ROS_DOMAIN_ID` 불일치면 init 전에 거부)이고 NDJSON 을 stdout 으로 낸다. API 프로세스는 rclpy 를 import 하지 않는다. 기동은 `deploy/s2r_console/tools/console.sh`(PYTHONPATH 를 덮어쓰지 않고 앞에 붙인다 — 덮어쓰면 브리지가 `No module named rclpy` 로 죽는다).
 
 | 모듈 | 하는 일 |
 |---|---|

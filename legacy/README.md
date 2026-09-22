@@ -1,4 +1,8 @@
-# legacy — 더는 빌드하지 않는 ROS 패키지
+# legacy — 더는 쓰지 않는 것
+
+두 갈래다: `ros_pkgs/`(빌드하지 않는 ROS 패키지) · `scripts/`(참조 0 으로 확인된 스크립트).
+
+## ros_pkgs/ — 더는 빌드하지 않는 ROS 패키지
 
 `COLCON_IGNORE` 가 있어 저장소 루트에서 `colcon build` 를 해도 여기는 빌드되지 않는다.
 지우지 않은 이유는 배선을 손으로 확인할 때 아직 쓸 수 있고, 경위가 남아 있기 때문이다.
@@ -20,3 +24,23 @@ source install/setup.bash
 
 옛 런치 래퍼(openarm_control · tesollo_control)는 빌드 없이 경로로 부른다:
 `ros2 launch legacy/ros_pkgs/openarm_control/launch/openarm_left_gripper_bimanual_real.launch.py`
+
+## scripts/ — 참조 0 으로 확인된 스크립트
+
+2026-09-22 감사(4관점 → 반증 검증)에서 **참조가 0** 인 것을 확인한 뒤 옮겼다. 다시 쓰려면 원래 자리로 되돌린다.
+
+**왜 `scripts/` 안이 아닌가** — `tests/conftest.py` 와 `deploy/policy_control/policy_control/_paths.py` 는
+`scripts/` 의 **모든 하위 디렉터리를 sys.path 에 얹는다**(`_SKIP` 은 `__pycache__` 계열뿐). 죽은 코드를
+`scripts/deprecated/` 에 두면 모든 테스트와 policy_control import 가 그것을 import 경로에 달고 다닌다.
+그리고 `legacy/` 에는 `COLCON_IGNORE` 가 있어 colcon 도 여기를 보지 않는다.
+
+| 경로 | 무엇 | 대체된 것 |
+|---|---|---|
+| `scripts/deprecated/` | `sim2real_inference.py` · `sim2real_dryrun.py` | policy_control 체인 + `scripts/ops/mission_run.py` |
+| `scripts/probes/` | `probe_head_push_response` · `probe_policy_on_sim_states` · `probe_s2r_right_record` | — (`probe_policy_on_sim_states` 는 parity 하네스였지만 테스트가 없어 계약 변경에 조용히 썩었다) |
+| `scripts/analysis/` | `hand_status_monitor` · `monitor_left_side` · `monitor_right_side` | `deploy/policy_control/tools/status_board.py` · `deploy/s2r_console` |
+| `scripts/calib/` | `cup_touch_survey` · `touch_probe_left` | — |
+| `scripts/nodes/` | `npz_udp_feed` · `ros2_teleop_device` · `shaker_centroid_node` | shaker 과제 자체가 폐기 |
+| `scripts/vision/` | `grab_frame` · `pose_stats_recorder` | `scripts/vision/grab_rgbd.py` · 인지 런처 |
+
+(처음엔 최상위 `archive/` 에 두었다가 2026-09-22 계층 정리에서 여기로 합쳤다.)

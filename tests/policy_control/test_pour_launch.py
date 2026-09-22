@@ -9,7 +9,7 @@ import pytest
 
 pytestmark = pytest.mark.unit
 SIM2REAL = Path(__file__).resolve().parents[2]
-LAUNCH = SIM2REAL / "policy_control" / "launch" / "pour_chain.launch.py"
+LAUNCH = SIM2REAL / "deploy" / "policy_control" / "launch" / "pour_chain.launch.py"
 
 
 @pytest.fixture(scope="module")

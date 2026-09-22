@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 SIM2REAL = Path(__file__).resolve().parents[2]
-PKG_ROOT = SIM2REAL / "s2r_console"
+PKG_ROOT = SIM2REAL / "deploy" / "s2r_console"
 if str(PKG_ROOT) not in sys.path:
     sys.path.insert(0, str(PKG_ROOT))
 

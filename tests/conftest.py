@@ -19,6 +19,6 @@ for _d in [SCRIPTS, *(d for d in sorted(SCRIPTS.iterdir())
         sys.path.insert(0, str(_d))
 
 # policy_control 패키지(ament_python)도 이름으로 임포트할 수 있게 한다 — tests/policy_control/ 이 쓴다.
-_PKG = Path(__file__).resolve().parents[1] / "policy_control"
+_PKG = Path(__file__).resolve().parents[1] / "deploy" / "policy_control"
 if str(_PKG) not in sys.path:
     sys.path.insert(0, str(_PKG))

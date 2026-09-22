@@ -15,7 +15,7 @@ from typing import Callable
 import numpy as np
 
 _SIM2REAL = Path(__file__).resolve().parents[2]
-for _p in (_SIM2REAL / "scripts", _SIM2REAL / "policy_control"):
+for _p in (_SIM2REAL / "scripts", _SIM2REAL / "deploy" / "policy_control"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 

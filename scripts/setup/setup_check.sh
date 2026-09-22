@@ -54,7 +54,7 @@ fi
 if [[ -f "${REPO_DIR}/install/setup.bash" ]]; then
   ok "레포 colcon 빌드됨 (install/setup.bash)"
 else
-  miss "레포 미빌드" "./scripts/build_vendor_pkgs.sh (INSTALL.md Step 3)"
+  miss "레포 미빌드" "./scripts/setup/build_vendor_pkgs.sh (INSTALL.md Step 3)"
 fi
 
 if [[ -n "${ROS_DOMAIN_ID:-}" ]]; then
@@ -81,7 +81,7 @@ fi
 if want control; then
   section "control — 실물 로봇 드라이버"
 
-  for d in vendor/openarm vendor/inspire_ws; do
+  for d in robot/vendor/openarm robot/vendor/inspire_ws; do
     if [[ -d "${REPO_DIR}/${d}" ]]; then
       ok "${d}/"
     else
@@ -98,7 +98,7 @@ if want control; then
          "robot_control/ros_ws/build.sh 실행 (ROBOT_CONTROL_INSTALL 로 경로 지정 가능)"
   fi
 
-  if [[ -d "${REPO_DIR}/vendor/inspire_ws/install" ]]; then
+  if [[ -d "${REPO_DIR}/robot/vendor/inspire_ws/install" ]]; then
     ok "inspire_ws 빌드됨 (RH56F1)"
   else
     miss "inspire_ws 미빌드 (RH56F1 쓸 때만 필요)" "INSTALL.md Step 3-B"
@@ -107,7 +107,7 @@ if want control; then
   if ip link show 2>/dev/null | grep -q "can"; then
     ok "CAN 인터페이스 감지 (OpenArm)"
   else
-    miss "CAN 인터페이스 없음 (OpenArm 연결 PC만 해당)" "sim/USAGE_ISAACSIM_ROS2.md §1"
+    miss "CAN 인터페이스 없음 (OpenArm 연결 PC만 해당)" "robot/USAGE_ISAACSIM_ROS2.md §1"
   fi
 fi
 

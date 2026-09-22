@@ -19,7 +19,7 @@ pytestmark = pytest.mark.ros
 
 SIM2REAL = Path(__file__).resolve().parents[2]
 LEFT_JSON = SIM2REAL / "logs/policy/left_v2B25/deploy_contract.json"
-LEFT_ROBOT = SIM2REAL / "policy_control/config/robots/left_gripper_fake.yaml"
+LEFT_ROBOT = SIM2REAL / "deploy/policy_control/config/robots/left_gripper_fake.yaml"
 needs_left = pytest.mark.skipif(not LEFT_JSON.exists(), reason="left_v2B25 contract 없음")
 
 NS = "/policy_control"
@@ -401,9 +401,9 @@ from policy_control import sources
 from policy_control.fabric_node import palm6_to_quat
 
 ASSET_JSON = SIM2REAL / "logs/policy/asset_openarm_dg5f-m_bi_rl/deploy_contract.json"
-BI_ROBOT = SIM2REAL / "policy_control/config/robots/dg5f_m_bi_fake.yaml"
-LEFT_DG5F_ROBOT = SIM2REAL / "policy_control/config/robots/dg5f_m_left_fake.yaml"
-PALM_CMD_TOOL = SIM2REAL / "policy_control/tools/palm_cmd.py"
+BI_ROBOT = SIM2REAL / "deploy/policy_control/config/robots/dg5f_m_bi_fake.yaml"
+LEFT_DG5F_ROBOT = SIM2REAL / "deploy/policy_control/config/robots/dg5f_m_left_fake.yaml"
+PALM_CMD_TOOL = SIM2REAL / "deploy/policy_control/tools/palm_cmd.py"
 needs_asset = pytest.mark.skipif(not ASSET_JSON.exists(), reason="asset_openarm_dg5f-m_bi_rl contract 없음")
 SIDES = ("left", "right")
 PUMP_PERIOD = 0.1

@@ -1,6 +1,6 @@
 """Fixtures for the policy_control package tests.
 
-``sim2real/policy_control`` is put on ``sys.path`` so ``import policy_control``
+``sim2real/deploy/policy_control`` is put on ``sys.path`` so ``import policy_control``
 works without a colcon install; ``policy_control._paths`` then exposes the
 sibling trees. The ``ros`` fixture creates a **private rclpy Context on an
 isolated domain** (``PC_TEST_DOMAIN``, default 99) so a test can never talk to a
@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 SIM2REAL = Path(__file__).resolve().parents[2]
-PKG_DIR = SIM2REAL / "policy_control"
+PKG_DIR = SIM2REAL / "deploy" / "policy_control"
 FIXTURES = SIM2REAL / "tests" / "fixtures" / "policy_control"
 if str(PKG_DIR) not in sys.path:
     sys.path.insert(0, str(PKG_DIR))

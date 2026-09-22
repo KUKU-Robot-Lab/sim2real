@@ -171,7 +171,7 @@ docker run --rm --gpus all ubuntu nvidia-smi   # 컨테이너 안에서 GPU 표�
 > FoundationPose 신경망 추론이 여기서 돌고, 우리 레포의
 > `scripts/cup_pose_relay.py`가 그 출력을 `/cup_pose`로 변환한다.
 
-설치·모델 다운로드·실행 상세는 **`sim/USAGE_ISAACSIM_ROS2.md` §7-1** 참조. 요약:
+설치·모델 다운로드·실행 상세는 **`robot/USAGE_ISAACSIM_ROS2.md` §7-1** 참조. 요약:
 
 ```bash
 mkdir -p ~/workspaces/isaac_ros-dev/src && cd ~/workspaces/isaac_ros-dev/src
@@ -203,7 +203,7 @@ ros2 pkg list | grep foundationpose
 
 ## Step 9. 실행
 
-역할별 브링업·테스트 절차는 **`sim/USAGE_ISAACSIM_ROS2.md`** 를 따른다:
+역할별 브링업·테스트 절차는 **`robot/USAGE_ISAACSIM_ROS2.md`** 를 따른다:
 
 | 하고 싶은 것 | 문서 |
 |---|---|

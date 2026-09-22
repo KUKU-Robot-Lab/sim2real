@@ -13,11 +13,11 @@
 
 실기 통합 런치:
 
-- [openarm_left_gripper_right_dg5_real.launch.py](/home/user/rl_ws/sim2real/integrated_control/launch/openarm_left_gripper_right_dg5_real.launch.py)
+- [openarm_left_gripper_right_dg5_real.launch.py](/home/user/rl_ws/sim2real/robot/integrated_control/launch/openarm_left_gripper_right_dg5_real.launch.py)
 
 OpenArm 컨트롤러 설정:
 
-- [openarm_left_gripper_bimanual_controllers.yaml](/home/user/rl_ws/sim2real/integrated_control/config/openarm_left_gripper_bimanual_controllers.yaml)
+- [openarm_left_gripper_bimanual_controllers.yaml](/home/user/rl_ws/sim2real/robot/integrated_control/config/openarm_left_gripper_bimanual_controllers.yaml)
 
 실제 팔 제어 토픽:
 
@@ -179,8 +179,8 @@ UR16e 문서는 사실상 UR16e 체인과 UR 조인트 순서를 가정합니다
 
 현재 저장소에서 손 쪽 wrapper에 `palm_ee` 보조 프레임이 있습니다.
 
-- [tesollo_left_wrapper.xacro](/home/user/rl_ws/sim2real/urdf/eef/tesollo_left_wrapper.xacro)
-- [tesollo_right_wrapper.xacro](/home/user/rl_ws/sim2real/urdf/eef/tesollo_right_wrapper.xacro)
+- [tesollo_left_wrapper.xacro](../../robot/urdf/eef/tesollo_left_wrapper.xacro)
+- [tesollo_right_wrapper.xacro](../../robot/urdf/eef/tesollo_right_wrapper.xacro)
 
 손 기준 EE를 쓸 경우 `left_palm_ee` 또는 prefix가 붙은 palm frame을 tip 후보로 검토하는 게 맞습니다.
 
@@ -190,7 +190,7 @@ UR16e 문서는 사실상 UR16e 체인과 UR 조인트 순서를 가정합니다
 
 현재 저장소에는 이미 `JointTrajectory` 퍼블리시 패턴이 구현돼 있습니다.
 
-- [bridge_node.py](../../sim/isaacsim_bridge/isaacsim_bridge/bridge_node.py)
+- [bridge_node.py](../../robot/isaacsim_bridge/isaacsim_bridge/bridge_node.py)
 
 여기서 확인 가능한 점:
 

@@ -21,7 +21,7 @@ import importlib.util
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location(
-    "replay_to_pd", Path(__file__).resolve().parents[2] / "policy_control/tools/replay_to_pd.py")
+    "replay_to_pd", Path(__file__).resolve().parents[2] / "deploy/policy_control/tools/replay_to_pd.py")
 R = importlib.util.module_from_spec(spec)
 import sys
 sys.modules["replay_to_pd"] = R

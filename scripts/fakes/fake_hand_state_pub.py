@@ -34,7 +34,7 @@ from std_msgs.msg import Float64MultiArray
 
 _HERE = Path(__file__).resolve().parent
 _SIM2REAL = _HERE.parents[1]
-for _p in (_SIM2REAL / "scripts", _SIM2REAL / "policy_control"):   # ★`scripts/` 는 한 단계 위, policy_control 은 계약 모드용
+for _p in (_SIM2REAL / "scripts", _SIM2REAL / "deploy" / "policy_control"):   # ★`scripts/` 는 한 단계 위, policy_control 은 계약 모드용
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
@@ -161,7 +161,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--robot", default=None, help="레거시: config/robots 의 구성 프로필 이름 (기본 tesollo_bi_s__right)")
     parser.add_argument("--contract", type=Path, default=None, help="계약 모드: deploy_contract.json")
-    parser.add_argument("--robot-yaml", type=Path, default=None, help="계약 모드: policy_control/config/robots/*.yaml")
+    parser.add_argument("--robot-yaml", type=Path, default=None, help="계약 모드: deploy/policy_control/config/robots/*.yaml")
     parser.add_argument("--side", choices=("left", "right"), default=None, help="계약 모드: 어느 손")
     parser.add_argument("--rate", type=float, default=30.0)
     parser.add_argument("--echo-topic", default=None, help="policy_control 의 /policy_control/joint_target(JointState)을 반사")

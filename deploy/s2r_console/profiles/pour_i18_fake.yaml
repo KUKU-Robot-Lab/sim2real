@@ -1,0 +1,27 @@
+# 양팔 물붓기 — fake 체인. 실기를 건드리는 단계가 하나도 없다. 콘솔 자체를 검증할 때 쓴다.
+schema: s2r_console/profile/v1
+id: pour_i18_fake
+title: 양팔 물붓기 · fake 체인 (pour_i18)
+mission: config/mission_pour_fake.yaml
+domain: {id: 97, class: fake}
+policy: deploy/policies/both_pour_i18
+policy_dt: 0.016667            # 60 Hz
+status_nodes: [pour_node, pd, pour_guard]
+latency: {from: pour_node, to: pd}   # 가드는 seq 를 내지 않는다
+
+# robot_control 대역 — fake_plant.launch.py (side:=both, 계약 모드) 가 띄우는 것. 09.21 도메인 97 그래프 실측.
+# managers.active 는 **실행 내내** active 여야 하는 것만. 팔 JTC 는 pd 가 engage 때 끄므로 판정하지 않는다.
+stack:
+  title: fake 플랜트 (robot_control 대역)
+  nodes: [/fake_arm_bridge, /dg5f_left/dg5f_left_controller, /dg5f_right/dg5f_right_controller]
+  topics:
+    - {name: /joint_states, stale_ms: 500}
+    - {name: /dg5f_left/joint_states, stale_ms: 500}
+    - {name: /dg5f_right/joint_states, stale_ms: 500}
+    - {name: /dg5f_left/tip_forces_xyz, stale_ms: 500}
+    - {name: /dg5f_right/tip_forces_xyz, stale_ms: 500}
+  managers:
+    - {name: /controller_manager, active: [joint_state_broadcaster]}
+
+# 연결 그림은 적지 않는다 — 콘솔이 미션의 명령(argv) · 계약 json · robot yaml 에서 만든다(`s2r_console/wiring.py`).
+# 정책을 바꾸면(미션이 다른 계약·launch 를 가리키면) 노드와 전선이 따라 바뀐다. 손으로 적은 `diagram:` 절을 두면 그것이 이긴다.

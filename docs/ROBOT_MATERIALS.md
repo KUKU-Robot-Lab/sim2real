@@ -27,7 +27,7 @@
   action_dim=11` 로 맞춰야 한다(문서/코드에 있는 `obs_dim=55, action_dim=12`
   예시는 다른 태스크용 예시이므로 grasp-v1 에는 적용하지 말 것).
 - **⚠️ 기존 문서 경로 불일치 발견**: 저장소 내 기존 `docs/legacy/SIM2REAL_INFERENCE.md` 와
-  `scripts/deprecated/sim2real_inference.py` 상단 docstring 은 체크포인트 경로를
+  `legacy/scripts/deprecated/sim2real_inference.py` 상단 docstring 은 체크포인트 경로를
   `hdgp/log/rl_games/pipeline/right/5g_grasp_right_v7/test4/{nn/5g_grasp_right-v7.pth,
   params/agent.yaml}` 로 기술하고 있으나, 이 경로는 **현재 hdgp 에 존재하지
   않는다**(`hdgp/log/rl_games/pipeline/` 디렉토리 자체가 없음 — 실측 확인
@@ -64,7 +64,7 @@ Step 1~3,5 = control 역할).
   Launch: `sim2real/openarm_control/launch/openarm_left_gripper_bimanual_real.launch.py`
   (내부적으로 `openarm_description`/`robot_state_publisher`/
   `ros2_control_node` 기동). 양팔 통합 launch는
-  `sim2real/integrated_control/launch/openarm_left_gripper_right_dg5_real.launch.py`.
+  `sim2real/robot/integrated_control/launch/openarm_left_gripper_right_dg5_real.launch.py`.
   - 발행: `/joint_states` (arm 7D, `openarm_right_joint1~7`)
   - 구독(명령): `/right_joint_trajectory_controller/joint_trajectory`
 - **Tesollo dg5f_right 드라이버**: `robot_control/ros_ws/src/delto_m_ros2/`
@@ -79,7 +79,7 @@ Step 1~3,5 = control 역할).
     (position target → 내부 PD `p=1.5, d=0.0` 로 effort 변환 — 시뮬 게인과
     다르므로 실기에서 게인 재조정 필요할 수 있음, `docs/legacy/SIM2REAL_INFERENCE.md` 참고)
 - **isaacsim_bridge**: `sim2real/isaacsim_bridge/` (colcon 패키지,
-  `package.xml` 보유). Launch: `sim/isaacsim_bridge/launch/isaacsim_bridge.launch.py`.
+  `package.xml` 보유). Launch: `robot/isaacsim_bridge/launch/isaacsim_bridge.launch.py`.
   - 구독: `/isaacsim/right_arm_cmd` (Float64MultiArray 7D),
     `/isaacsim/right_hand_cmd` (Float64MultiArray 20D) — `sim2real_inference.py`
     / `sim2real_dryrun.py` 가 `Sim2RealCommandPublisher` 로 발행하는 것을
@@ -168,7 +168,7 @@ tesollo_control/ + isaacsim_bridge (sim2real 내부) ─────┘     sim2
       `tesollo_control`(또는 `integrated_control` 통합) + `isaacsim_bridge`
       launch 기동.
 - [ ] perception `/cup_pose` 기동(FoundationPose 현행 모드 or FP++) +
-      모든 PC `ROS_DOMAIN_ID=126` 확인 (`scripts/check_cup_pose_link.sh`).
+      모든 PC `ROS_DOMAIN_ID=126` 확인 (`scripts/setup/check_cup_pose_link.sh`).
 - [ ] extrinsics 캘리브(`T_base_cam`, 현재 `config/global_camera_extrinsics.yaml`
       은 PLACEHOLDER) — 카메라 장착 후 perception `tools/calibrate_extrinsics.py`
       (ArUco)로 1회 수행, 이전에는 실기 구동 금지.
@@ -199,7 +199,7 @@ OpenArm 4개는 같이 옮기지 않았다. 두 사본이 각자 진화했고, �
 | robot_control | `openarm_hardware/OpenArmHW` |
 
 robot_control 로 넘어가려면 실물 bringup 이 쓰는 xacro 가 새 이름을 지목해야
-한다. 그런데 `integrated_control/launch/openarm_left_gripper_right_dg5_real.launch.py`
+한다. 그런데 `robot/integrated_control/launch/openarm_left_gripper_right_dg5_real.launch.py`
 가 참조하는 `urdf/openarm_left_gripper_bimanual_real.xacro` 는 현재
 **존재하지 않는다**(`urdf/` 를 `*_rl` 구조로 재편할 때 갱신되지 않음). 이
 경로를 복구하면서 플러그인 이름을 함께 맞추는 것이 이관의 선행 조건이다.

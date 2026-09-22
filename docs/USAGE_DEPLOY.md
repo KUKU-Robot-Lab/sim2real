@@ -23,18 +23,18 @@ python3 -m pytest tests -q -m "not gpu"    # 실패 0 이어야 한다. GPU 를 
 | 실기 도메인은 `ROS_DOMAIN_ID=126` | fake 는 97/99 등. launch 가 0/미설정을 거부한다 |
 | 비상정지는 **물리 버튼** | 콘솔에는 estop 버튼이 없다(웹서버→DDS 는 가장 느린 경로다) |
 
-## 1. 정책 등록 — `policies/`
+## 1. 정책 등록 — `deploy/policies/`
 
-무엇을 쓸 수 있는지에 답하는 곳은 `policies/` 하나다(`logs/` 에는 옛 기록이 섞여 있다).
+무엇을 쓸 수 있는지에 답하는 곳은 `deploy/policies/` 하나다(`logs/` 에는 옛 기록이 섞여 있다).
 
 ```bash
 # 서버에서 계약 생성 입력만 받아온다(가중치·params·trace_meta). GPU 접촉 0, 읽기만 한다
-python3 policy_control/tools/fetch_run.py --run t2r_i18 --checkpoint ep:2500 --list
-python3 policy_control/tools/fetch_run.py --run t2r_i18 --checkpoint ep:2500
+python3 deploy/policy_control/tools/fetch_run.py --run t2r_i18 --checkpoint ep:2500 --list
+python3 deploy/policy_control/tools/fetch_run.py --run t2r_i18 --checkpoint ep:2500
 
 # 지금 등록된 것과 그 상태
-python3 policy_control/tools/policies.py --shallow         # sha256 재해시 없이 빠르게
-python3 policy_control/tools/policies.py --write-index      # policies/INDEX.md 갱신
+python3 deploy/policy_control/tools/policies.py --shallow         # sha256 재해시 없이 빠르게
+python3 deploy/policy_control/tools/policies.py --write-index      # deploy/policies/INDEX.md 갱신
 ```
 
 정책 하나 = 디렉터리 하나. 한 팔의 묶음(체크포인트 여럿)이면 카드 `policy.yaml` 의 `checkpoint:` 가
@@ -46,23 +46,23 @@ python3 policy_control/tools/policies.py --write-index      # policies/INDEX.md 
 
 ```bash
 # 정책 계약 (학습 런에서)
-python3 policy_control/tools/build_deploy_contract.py \
-    --run policies/<id> --checkpoint policies/<id>/nn/<선택>.pth \
-    --sim-meta policies/<id>/trace_meta.json --out policies/<id>/deploy_contract.json
+python3 deploy/policy_control/tools/build_deploy_contract.py \
+    --run deploy/policies/<id> --checkpoint deploy/policies/<id>/nn/<선택>.pth \
+    --sim-meta deploy/policies/<id>/trace_meta.json --out deploy/policies/<id>/deploy_contract.json
 
 # pd 용 control-only 계약 (자산에서). 정책 1개에 계약 파일 2개인 이유다
-python3 policy_control/tools/build_deploy_contract.py \
+python3 deploy/policy_control/tools/build_deploy_contract.py \
     --asset openarm_dg5f-m-short_bi_rl --sides right,left \
-    --home pour:policies/<id>/pour_contract.json --out logs/policy/asset_<id>/deploy_contract.json
+    --home pour:deploy/policies/<id>/pour_contract.json --out logs/policy/asset_<id>/deploy_contract.json
 
 # 사람이 읽는 문서로 (생성물이지 원본이 아니다)
-python3 policy_control/tools/contract_doc.py --out docs/CONTRACT_policy_control.md <계약들...>
+python3 deploy/policy_control/tools/contract_doc.py --out docs/CONTRACT_policy_control.md <계약들...>
 ```
 
 pour 계열은 체크포인트가 실기에 나갈 자격이 있는지 먼저 본다:
 
 ```bash
-python3 policy_control/tools/ckpt_gate.py --trace policies/<id>/trace.npz --json /tmp/gate.json
+python3 deploy/policy_control/tools/ckpt_gate.py --trace deploy/policies/<id>/trace.npz --json /tmp/gate.json
 ```
 
 ## 3. 하드웨어 없이 리허설 — fake 플랜트
@@ -70,10 +70,10 @@ python3 policy_control/tools/ckpt_gate.py --trace policies/<id>/trace.npz --json
 배관을 증명한다(계약 로드·관측 조립·60 Hz 루프·에피소드 서비스·seq 결손). **파지/붓기 성공은 증명하지 않는다** — MockArm 에는 접촉이 없다.
 
 ```bash
-ROS_DOMAIN_ID=97 policy_control/tools/pour_fake_run.sh 30 logs/policy_control/pour_fake1
-ROS_DOMAIN_ID=99 policy_control/tools/fake_plant_run.sh 900 logs/policy_control/fake1
-MODE=pd SIDE=left ROS_DOMAIN_ID=97 policy_control/tools/fake_plant_run.sh 0 logs/policy_control/fake_pd_left
-SIDE=left ROS_DOMAIN_ID=96 policy_control/tools/fake_direct_run.sh logs/policy_control/direct_left
+ROS_DOMAIN_ID=97 deploy/policy_control/tools/pour_fake_run.sh 30 logs/policy_control/pour_fake1
+ROS_DOMAIN_ID=99 deploy/policy_control/tools/fake_plant_run.sh 900 logs/policy_control/fake1
+MODE=pd SIDE=left ROS_DOMAIN_ID=97 deploy/policy_control/tools/fake_plant_run.sh 0 logs/policy_control/fake_pd_left
+SIDE=left ROS_DOMAIN_ID=96 deploy/policy_control/tools/fake_direct_run.sh logs/policy_control/direct_left
 ```
 
 ## 4. 미션 — 순서와 게이트
@@ -92,7 +92,7 @@ python3 scripts/ops/mission_run.py --abort  20260922_101500
 에피소드 한 판(로봇이 움직인다 — 승인 3개가 전부 있어야 시작한다):
 
 ```bash
-python3 policy_control/tools/episode_ctl.py --steps 250 --execute \
+python3 deploy/policy_control/tools/episode_ctl.py --steps 250 --execute \
     --approve pd_engage --approve pd_goto_home --approve ep_start
 ```
 
@@ -101,7 +101,7 @@ python3 policy_control/tools/episode_ctl.py --steps 250 --execute \
 터미널 네 개를 오가지 않기 위한 화면. 판정을 새로 만들지 않고 미션·계약·상태 토픽의 문자열을 옮긴다.
 
 ```bash
-s2r_console/tools/console.sh --profile left_v2B25_real --port 8091 --operator <이름>
+deploy/s2r_console/tools/console.sh --profile left_v2B25_real --port 8091 --operator <이름>
 ssh -L 8091:127.0.0.1:8091 <이 PC>      # 원격은 터널로만. 127.0.0.1 바인딩이고 인증이 없다
 ```
 
@@ -128,20 +128,20 @@ python3 scripts/ops/perception_ctl.py stop --camera
 ## 7. 판정·기록
 
 ```bash
-python3 policy_control/tools/status_to_csv.py --seconds 60 --out /tmp/run.csv --policy-dt 0.02
-python3 policy_control/tools/status_board.py            # 버튼 없는 읽기전용 상태판(127.0.0.1)
-python3 policy_control/tools/episode_judge.py --contract <계약> --seconds 30
+python3 deploy/policy_control/tools/status_to_csv.py --seconds 60 --out /tmp/run.csv --policy-dt 0.02
+python3 deploy/policy_control/tools/status_board.py            # 버튼 없는 읽기전용 상태판(127.0.0.1)
+python3 deploy/policy_control/tools/episode_judge.py --contract <계약> --seconds 30
 ```
 
 ## 정리
 
 | 하고 싶은 것 | 명령 |
 |---|---|
-| 지금 쓸 수 있는 정책 | `policy_control/tools/policies.py --shallow` |
-| 서버에서 정책 받기 | `policy_control/tools/fetch_run.py --run <런> --checkpoint <선택>` |
-| 계약 만들기 | `policy_control/tools/build_deploy_contract.py --run policies/<id> …` |
-| 하드웨어 없이 한 판 | `ROS_DOMAIN_ID=97 policy_control/tools/pour_fake_run.sh` |
+| 지금 쓸 수 있는 정책 | `deploy/policy_control/tools/policies.py --shallow` |
+| 서버에서 정책 받기 | `deploy/policy_control/tools/fetch_run.py --run <런> --checkpoint <선택>` |
+| 계약 만들기 | `deploy/policy_control/tools/build_deploy_contract.py --run deploy/policies/<id> …` |
+| 하드웨어 없이 한 판 | `ROS_DOMAIN_ID=97 deploy/policy_control/tools/pour_fake_run.sh` |
 | 미션 판정만 보기 | `scripts/ops/mission_run.py --mission <yaml> --plan` |
-| 실기 세션 화면 | `s2r_console/tools/console.sh --profile <id> --operator <이름>` |
+| 실기 세션 화면 | `deploy/s2r_console/tools/console.sh --profile <id> --operator <이름>` |
 | 인지 켜기 | `scripts/ops/perception_ctl.py start <물체>` |
-| 지연·seq 기록 | `policy_control/tools/status_to_csv.py --seconds 60 --out <csv>` |
+| 지연·seq 기록 | `deploy/policy_control/tools/status_to_csv.py --seconds 60 --out <csv>` |

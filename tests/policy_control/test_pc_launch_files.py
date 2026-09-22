@@ -10,8 +10,8 @@ import pytest
 pytestmark = pytest.mark.unit
 
 SIM2REAL = Path(__file__).resolve().parents[2]
-LAUNCH = SIM2REAL / "policy_control" / "launch"
-TOOLS = SIM2REAL / "policy_control" / "tools"
+LAUNCH = SIM2REAL / "deploy" / "policy_control" / "launch"
+TOOLS = SIM2REAL / "deploy" / "policy_control" / "tools"
 CONTRACT = SIM2REAL / "logs" / "policy" / "left_v2B25" / "deploy_contract.json"
 
 

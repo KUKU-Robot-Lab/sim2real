@@ -8,7 +8,7 @@ __pycache__/
 *.tmp
 
 # Local upstream checkout; keep it on disk but never add it to this repo.
-vendor/openarm/openarm_teleop/
+robot/vendor/openarm/openarm_teleop/
 
 # 배포 파이썬 환경(setup_deploy_env.sh 로 재생성)
 .venv/
@@ -37,18 +37,18 @@ logs/bags/
 logs/policy/**/nn/*.pth
 
 # 학습 런의 골든 트레이스 (수백 MB). 계약·해시는 커밋하고 트레이스는 fetch_run.py 로 다시 받는다:
-#   policy_control/tools/fetch_run.py --run <label> --checkpoint ep:NNNN --trace auto --out logs/policy/<run>
+#   deploy/policy_control/tools/fetch_run.py --run <label> --checkpoint ep:NNNN --trace auto --out logs/policy/<run>
 logs/policy/**/trace.npz
-# policies/ — 배포 후보 정책 등록소 (policy_control/tools/fetch_run.py 가 채운다).
+# deploy/policies/ — 배포 후보 정책 등록소 (deploy/policy_control/tools/fetch_run.py 가 채운다).
 #   카드(policy.yaml)·fetch.json·params·계약은 추적하고, 무거운 산출물만 뺀다.
-policies/**/nn/*.pth
-policies/**/*.npz
-policies/**/summaries/
-policies/**/.staging_*/
+deploy/policies/**/nn/*.pth
+deploy/policies/**/*.npz
+deploy/policies/**/summaries/
+deploy/policies/**/.staging_*/
 tests/fixtures/policy_control/**/trace.npz
 
 # 2026-09-22 구조 정리 — 파일은 디스크에 남기고 추적만 뗀다
-#   checkpoints/: 참조 0 인 옛 grasp_v1 가중치(LFS). 가중치의 집은 policies/ 다
+#   checkpoints/: 참조 0 인 옛 grasp_v1 가중치(LFS). 가중치의 집은 deploy/policies/ 다
 checkpoints/
 #   pour_entry 리허설 GIF: README 가 '정본' 이라 부르는 폐루프 기록 하나만 추적한다
 logs/shadow/pour_entry/*.gif

@@ -36,7 +36,7 @@ pytestmark = [pytest.mark.golden, pytest.mark.unit]
 
 SIM2REAL = Path(__file__).resolve().parents[2]
 RL_WS = SIM2REAL.parent
-ROBOTS = SIM2REAL / "policy_control/config/robots"
+ROBOTS = SIM2REAL / "deploy/policy_control/config/robots"
 LEFT_CONTRACT = SIM2REAL / "logs/policy/left_v2B25/deploy_contract.json"
 RIGHT_E1_RUN = SIM2REAL / "logs/policy/right_e1"
 

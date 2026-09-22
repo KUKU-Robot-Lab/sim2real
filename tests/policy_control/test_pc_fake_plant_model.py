@@ -83,8 +83,8 @@ from pathlib import Path
 
 SIM2REAL = Path(__file__).resolve().parents[2]
 ASSET_CONTRACT = SIM2REAL / "logs/policy/asset_openarm_dg5f-m_bi_rl/deploy_contract.json"
-BI_ROBOT = SIM2REAL / "policy_control/config/robots/dg5f_m_bi_fake.yaml"
-PD_FAKE = SIM2REAL / "policy_control/config/pd_dg5f_m_fake.yaml"
+BI_ROBOT = SIM2REAL / "deploy/policy_control/config/robots/dg5f_m_bi_fake.yaml"
+PD_FAKE = SIM2REAL / "deploy/policy_control/config/pd_dg5f_m_fake.yaml"
 needs_asset = pytest.mark.skipif(not ASSET_CONTRACT.exists(), reason="asset contract 없음")
 
 

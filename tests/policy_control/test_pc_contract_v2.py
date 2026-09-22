@@ -33,7 +33,7 @@ needs_asset = pytest.mark.skipif(not ASSET.manifest.exists(), reason="dg5f-m 자
 def _load_tool():
     import importlib.util
 
-    path = SIM2REAL / "policy_control/tools/build_deploy_contract.py"
+    path = SIM2REAL / "deploy/policy_control/tools/build_deploy_contract.py"
     spec = importlib.util.spec_from_file_location("build_deploy_contract_tool", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

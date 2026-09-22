@@ -269,14 +269,14 @@ def test_the_gripper_is_switched_with_the_arm_bringup(repo):
 def test_the_fake_plants_object_topic_is_the_one_its_launch_file_publishes():
     from s2r_console.wiring import FAKE_PLANT_OBJECT_TOPIC
 
-    text = (SIM2REAL / "policy_control" / "launch" / "fake_plant.launch.py").read_text(encoding="utf-8")
+    text = (SIM2REAL / "deploy" / "policy_control" / "launch" / "fake_plant.launch.py").read_text(encoding="utf-8")
     assert f'OBJECT_TOPIC = "{FAKE_PLANT_OBJECT_TOPIC}"' in text
 
 
 def test_shipped_profiles_do_not_hand_write_the_picture():
     from s2r_console.profiles import scan
 
-    good, _ = scan(SIM2REAL / "s2r_console" / "profiles", repo=SIM2REAL)
+    good, _ = scan(SIM2REAL / "deploy" / "s2r_console" / "profiles", repo=SIM2REAL)
     assert [p.id for p in good if p.diagram is not None] == []           # 적어 두면 정책을 바꿔도 그림이 안 따라온다
 
 
@@ -284,7 +284,7 @@ def test_every_shipped_profile_generates_a_valid_diagram():
     from s2r_console.console import mission_units
     from s2r_console.profiles import scan
 
-    good, bad = scan(SIM2REAL / "s2r_console" / "profiles", repo=SIM2REAL)
+    good, bad = scan(SIM2REAL / "deploy" / "s2r_console" / "profiles", repo=SIM2REAL)
     assert not bad and good
     for p in good:
         d = generate(mission_units(p, repo=SIM2REAL), repo=SIM2REAL, status_nodes=p.status_nodes)

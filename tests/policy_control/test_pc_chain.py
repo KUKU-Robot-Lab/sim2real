@@ -31,7 +31,7 @@ pytestmark = pytest.mark.unit
 
 SIM2REAL = Path(__file__).resolve().parents[2]
 RL_WS = SIM2REAL.parent
-ROBOTS = SIM2REAL / "policy_control/config/robots"
+ROBOTS = SIM2REAL / "deploy/policy_control/config/robots"
 LEFT_JSON = SIM2REAL / "logs/policy/left_v2B25/deploy_contract.json"
 RIGHT_JSON = SIM2REAL / "logs/policy/right_g1/deploy_contract.json"
 RIGHT_E1_RUN = SIM2REAL / "logs/policy/right_e1"
@@ -526,7 +526,7 @@ def test_run_lockstep_with_fake_fabric_records_every_stage(left, left_cfg, fixtu
     policy = LS.recorded_policy(left, stream.actions[:8])
     lower, upper, _ = pd_law.limits_from_profile(RL_WS / "robot_control/src/robot_control/profiles/openarm_tesollo.yaml",
                                                  left.pd.sim_gains.joints)
-    cfg = pd_law.load_pd_config(SIM2REAL / "policy_control/config/pd_left.yaml")
+    cfg = pd_law.load_pd_config(SIM2REAL / "deploy/policy_control/config/pd_left.yaml")
     pd = CH.PdStage(ramp_cfg=pd_law.law_cfg_from_config(cfg, left, "ramp", lower, upper),
                     track_cfg=pd_law.law_cfg_from_config(cfg, left, "full", lower, upper),
                     watchdog_sec=cfg.watchdog_sec, abort_tracking=cfg.abort_tracking, ramp_tol=cfg.settle.tol,

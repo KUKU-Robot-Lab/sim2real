@@ -38,8 +38,8 @@ pytestmark = [pytest.mark.golden]
 
 SIM2REAL = Path(__file__).resolve().parents[2]
 RL_WS = SIM2REAL.parent
-ROBOTS = SIM2REAL / "policy_control/config/robots"
-CONFIG = SIM2REAL / "policy_control/config"
+ROBOTS = SIM2REAL / "deploy/policy_control/config/robots"
+CONFIG = SIM2REAL / "deploy/policy_control/config"
 PROFILE = RL_WS / "robot_control/src/robot_control/profiles/openarm_tesollo.yaml"
 LEFT_JSON = SIM2REAL / "logs/policy/left_v2B25/deploy_contract.json"
 RIGHT_E1_RUN = SIM2REAL / "logs/policy/right_e1"

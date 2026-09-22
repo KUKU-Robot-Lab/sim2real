@@ -14,7 +14,7 @@ needs_contract = pytest.mark.skipif(not CONTRACT.exists(), reason="자산 계약
 
 
 def _load(name: str):
-    path = SIM2REAL / f"policy_control/tools/{name}.py"
+    path = SIM2REAL / f"deploy/policy_control/tools/{name}.py"
     spec = importlib.util.spec_from_file_location(f"{name}_tool", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -24,7 +24,7 @@ def _load(name: str):
 @pytest.fixture(scope="module")
 def H():
     import sys
-    sys.path.insert(0, str(SIM2REAL / "policy_control/tools"))     # `from palm_cmd import check_domain`
+    sys.path.insert(0, str(SIM2REAL / "deploy/policy_control/tools"))     # `from palm_cmd import check_domain`
     return _load("hand_cmd")
 
 

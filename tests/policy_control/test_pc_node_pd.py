@@ -20,8 +20,8 @@ pytestmark = pytest.mark.ros
 
 SIM2REAL = Path(__file__).resolve().parents[2]
 LEFT_JSON = SIM2REAL / "logs/policy/left_v2B25/deploy_contract.json"
-LEFT_ROBOT = SIM2REAL / "policy_control/config/robots/left_gripper_fake.yaml"
-PD_YAML = SIM2REAL / "policy_control/config/pd_left.yaml"
+LEFT_ROBOT = SIM2REAL / "deploy/policy_control/config/robots/left_gripper_fake.yaml"
+PD_YAML = SIM2REAL / "deploy/policy_control/config/pd_left.yaml"
 needs_left = pytest.mark.skipif(not LEFT_JSON.exists(), reason="left_v2B25 contract 없음")
 
 NS = "/policy_control"
@@ -400,9 +400,9 @@ def test_goto_home_refused_when_idle(rig_dry):
 
 # ================================================================== 09.06 양팔 DG-5F-M — asset 계약 + dg5f_m_bi_fake.yaml + pd_dg5f_m*.yaml
 ASSET_JSON = SIM2REAL / "logs/policy/asset_openarm_dg5f-m_bi_rl/deploy_contract.json"
-BI_ROBOT = SIM2REAL / "policy_control/config/robots/dg5f_m_bi_fake.yaml"
-PD_BI = SIM2REAL / "policy_control/config/pd_dg5f_m.yaml"
-PD_BI_FAKE = SIM2REAL / "policy_control/config/pd_dg5f_m_fake.yaml"
+BI_ROBOT = SIM2REAL / "deploy/policy_control/config/robots/dg5f_m_bi_fake.yaml"
+PD_BI = SIM2REAL / "deploy/policy_control/config/pd_dg5f_m.yaml"
+PD_BI_FAKE = SIM2REAL / "deploy/policy_control/config/pd_dg5f_m_fake.yaml"
 needs_asset = pytest.mark.skipif(not ASSET_JSON.exists(), reason="asset contract 없음")
 BI_SIDES = ("right", "left")
 FINGERS = ("thumb", "index", "middle", "ring", "pinky")

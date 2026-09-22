@@ -7,7 +7,7 @@
 >
 > **그 뒤 배포 경로 자체가 바뀌었다** — 정책별 추론 노드 대신 policy_control 체인 + 미션 + 운영 콘솔이다.
 > 지금 정책을 실기에 올리려면 [docs/USAGE_DEPLOY.md](../USAGE_DEPLOY.md) 에서 시작한다.
-> 아래 명령이 부르는 `sim2real_inference.py` · `sim2real_dryrun.py` 는 `archive/scripts/deprecated/` 로 옮겨졌다.
+> 아래 명령이 부르는 `sim2real_inference.py` · `sim2real_dryrun.py` 는 `legacy/scripts/deprecated/` 로 옮겨졌다.
 
 # sim2real Inference — 5g_grasp_right_v7
 
@@ -19,8 +19,8 @@
 
 | 파일 | 역할 |
 |------|------|
-| `archive/scripts/deprecated/sim2real_inference.py` | ROS2 추론 노드 (실물 하드웨어용) |
-| `archive/scripts/deprecated/sim2real_dryrun.py` | ROS2 시각화 노드 (하드웨어 없이 RViz 확인용) |
+| `legacy/scripts/deprecated/sim2real_inference.py` | ROS2 추론 노드 (실물 하드웨어용) |
+| `legacy/scripts/deprecated/sim2real_dryrun.py` | ROS2 시각화 노드 (하드웨어 없이 RViz 확인용) |
 | `scripts/policy_loader.py` | rl_games actor MLP 로더 (Isaac Sim 의존성 없음) |
 | `scripts/fabrics_ros_interface.py` | ROS2 명령 퍼블리셔 (`Sim2RealCommandPublisher`) |
 
@@ -216,7 +216,7 @@ ros2 launch openarm_control openarm_left_gripper_bimanual_real.launch.py use_fak
 ros2 launch isaacsim_bridge isaacsim_bridge.launch.py
 
 # 터미널 3: dry-run 노드
-python3 /home/user/rl_ws/sim2real/archive/scripts/deprecated/sim2real_dryrun.py \
+python3 /home/user/rl_ws/sim2real/legacy/scripts/deprecated/sim2real_dryrun.py \
     --agent  $AGENT \
     --ckpt   $CKPT \
     --cup_x 0.40 --cup_y -0.15 --cup_z 0.38
@@ -240,7 +240,7 @@ ros2 launch integrated_control openarm_left_gripper_right_dg5_real.launch.py
 ros2 launch isaacsim_bridge isaacsim_bridge.launch.py
 
 # 터미널 3: 추론 노드
-python3 /home/user/rl_ws/sim2real/archive/scripts/deprecated/sim2real_inference.py \
+python3 /home/user/rl_ws/sim2real/legacy/scripts/deprecated/sim2real_inference.py \
     --agent  $AGENT \
     --ckpt   $CKPT \
     --settle_time 4.0

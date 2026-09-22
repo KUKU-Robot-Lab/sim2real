@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-WEB = Path(__file__).resolve().parents[2] / "s2r_console" / "s2r_console" / "web"
+WEB = Path(__file__).resolve().parents[2] / "deploy" / "s2r_console" / "s2r_console" / "web"
 CSS = re.sub(r"/\*.*?\*/", "", (WEB / "console.css").read_text(encoding="utf-8"), flags=re.S)   # 주석은 셀렉터가 아니다
 JS = (WEB / "console.js").read_text(encoding="utf-8")
 HTML = (WEB / "index.html").read_text(encoding="utf-8")

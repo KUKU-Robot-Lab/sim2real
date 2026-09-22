@@ -20,8 +20,8 @@ import yaml
 pytestmark = pytest.mark.unit
 
 SIM2REAL = Path(__file__).resolve().parents[2]
-FULL = SIM2REAL / "policy_control/config/robots/dg5f_m_right_real.yaml"
-HAND_ONLY = SIM2REAL / "policy_control/config/robots/dg5f_m_right_hand_only.yaml"
+FULL = SIM2REAL / "deploy/policy_control/config/robots/dg5f_m_right_real.yaml"
+HAND_ONLY = SIM2REAL / "deploy/policy_control/config/robots/dg5f_m_right_hand_only.yaml"
 
 
 def test_hand_only_robot_yaml_exists_and_drops_only_the_arm_group():
@@ -42,7 +42,7 @@ def test_backends_build_without_an_arm_group(ros):
     from policy_control.sources import load_profile, load_robot_cfg
 
     contract = load_contract(SIM2REAL / "logs/policy/asset_openarm_dg5f-m_bi_rl/deploy_contract.json")
-    cfg = load_pd_config(SIM2REAL / "policy_control/config/pd_dg5f_m.yaml")
+    cfg = load_pd_config(SIM2REAL / "deploy/policy_control/config/pd_dg5f_m.yaml")
     robot = load_robot_cfg(HAND_ONLY)
     side_cfg = contract.side("right")
     from rclpy.node import Node
@@ -110,7 +110,7 @@ def test_hand_only_does_not_require_arm_joint_state(ros):
         contract = load_contract(SIM2REAL / "logs/policy/asset_openarm_dg5f-m_bi_rl/deploy_contract.json")
         robot = load_robot_cfg(HAND_ONLY)
         unit = ArmUnit(node, side_cfg=contract.side("right"), robot_cfg=robot,
-                       cfg=load_pd_config(SIM2REAL / "policy_control/config/pd_dg5f_m.yaml"),
+                       cfg=load_pd_config(SIM2REAL / "deploy/policy_control/config/pd_dg5f_m.yaml"),
                        contract=contract, profile=load_profile(robot.joint_profiles),
                        stage_name="reduced", execute=False)
         state = unit.sources.snapshot(0.0)

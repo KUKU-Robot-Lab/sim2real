@@ -25,8 +25,8 @@
     source /opt/ros/humble/setup.bash && . .venv/bin/activate
     python3 scripts/fakes/fake_arm_bridge.py --robot gripper_left --model pd --forward --gravity
     python3 scripts/fakes/fake_arm_bridge.py --contract logs/policy/asset_openarm_dg5f-m_bi_rl/deploy_contract.json \
-        --robot-yaml policy_control/config/robots/dg5f_m_bi_fake.yaml --sides right,left \
-        --pd-config policy_control/config/pd_dg5f_m_fake.yaml --rate-hz 100
+        --robot-yaml deploy/policy_control/config/robots/dg5f_m_bi_fake.yaml --sides right,left \
+        --pd-config deploy/policy_control/config/pd_dg5f_m_fake.yaml --rate-hz 100
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ import numpy as np
 
 _HERE = Path(__file__).resolve().parent
 _SIM2REAL = _HERE.parents[1]
-for _p in (_SIM2REAL / "scripts", _HERE, _SIM2REAL / "policy_control"):
+for _p in (_SIM2REAL / "scripts", _HERE, _SIM2REAL / "deploy" / "policy_control"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
@@ -265,7 +265,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--robot", default=None, help="레거시 프로필 이름(config/robots, scripts/robot_profile)")
     parser.add_argument("--contract", default=None, help="계약 모드: deploy_contract.json (asset 포함 v2)")
-    parser.add_argument("--robot-yaml", default=None, help="계약 모드: policy_control/config/robots/*.yaml")
+    parser.add_argument("--robot-yaml", default=None, help="계약 모드: deploy/policy_control/config/robots/*.yaml")
     parser.add_argument("--sides", default="", help="계약 모드: 명령을 받는 팔(쉼표). 기본 = 계약의 팔 전부")
     parser.add_argument("--pd-config", default=None,
                         help="계약 모드: pd yaml — 그 gravity 블록으로 g(q) 를 만든다(pd 노드 τ_ff 와 같은 식)")
