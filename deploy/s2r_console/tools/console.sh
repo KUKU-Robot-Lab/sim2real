@@ -21,6 +21,19 @@ else
 fi
 [ -x "$PY" ] || PY="$(command -v python3)"
 
+# 미션의 `ros2 launch openarm_bringup|dg5f_driver|policy_control` 는 워크스페이스 오버레이에 산다. /opt/ros 만 올리면
+# "Package 'openarm_bringup' not found" 로 2 s 안에 죽는다(2026-09-22 실기 bringup). 자식은 이 셸의 환경을 받는다.
+# 순서: 벤더 드라이버(robot_control) 위에 sim2real — 같은 이름이면 뒤가 이긴다.
+ROBOT_CONTROL_INSTALL="${ROBOT_CONTROL_INSTALL:-$SIM2REAL/../robot_control/ros_ws/install}"
+for overlay in "$ROBOT_CONTROL_INSTALL" "$SIM2REAL/install"; do
+  if [ -f "$overlay/local_setup.bash" ]; then
+    # shellcheck disable=SC1091
+    source "$overlay/local_setup.bash"
+  else
+    echo "[console.sh] ★오버레이 없음: $overlay — 그 안의 패키지를 쓰는 단계는 실패한다" >&2
+  fi
+done
+
 cd "$SIM2REAL"
 # 미션 명령의 `python3` 는 venv 여야 한다 — 콘솔은 자식에게 이 셸의 환경을 그대로 넘긴다. venv 를 활성화하지 않은
 # 셸에서 띄우면 시스템 파이썬(torch 2.2 · rl_games 없음)이 잡혀 preflight 테스트가 떨어진다(2026-09-22 실측).
