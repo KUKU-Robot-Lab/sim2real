@@ -392,3 +392,12 @@ def thermal_stale_joints(state: ThermalState, rules: Sequence[ThermalRule]) -> t
 
 def thermal_unknown_joints(state: ThermalState, rules: Sequence[ThermalRule]) -> tuple[str, ...]:
     return tuple(j for j, lvl in thermal_levels(state, rules).items() if lvl == "unknown")
+
+
+def recv_ages_ms(now: float, **recv: float | None) -> dict[str, float | None]:
+    """Age [ms] of the last message per robot source; None until the first one arrives.
+
+    Goes into status so a screen can tell "robot state is flowing" from "pd is ticking on nothing" —
+    `ok`/`reasons` only say so once a tick is refused, and an IDLE pd never refuses.
+    """
+    return {k: None if t is None else max(0.0, (float(now) - float(t)) * 1e3) for k, t in recv.items()}

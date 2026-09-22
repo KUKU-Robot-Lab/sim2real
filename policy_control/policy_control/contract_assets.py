@@ -145,12 +145,44 @@ def _mirror_signs() -> tuple[list, list]:
     return [float(s) for s in P._ARM_SIGN], [float(s) for s in P._HAND_SIGN]
 
 
+POUR_HOME = "pour:"
+
+
+def _load_pour(mode: str):
+    """The pour contract behind a ``pour:<pour_contract.json>`` home (path relative to sim2real)."""
+    from . import pour_contract as PC
+    path = Path(mode[len(POUR_HOME):])
+    if not path.is_absolute():
+        path = _paths.SIM2REAL / path
+    if not path.is_file():
+        raise ContractError(f"pour home: pour contract not found ({path})")
+    try:
+        return PC.load_contract(path), path
+    except PC.PourContractError as exc:
+        raise ContractError(f"pour home: {path} is not a pour contract: {exc}") from exc
+
+
+def pour_homes(pour, sides: tuple) -> tuple[dict, dict]:
+    """(arm homes, hand homes) per side = the pour contract's reset pose (``arm_reset`` / ``hand_open``)."""
+    by_side = {s.side: s for s in pour.sides}
+    missing = [s for s in sides if s not in by_side]
+    if missing:
+        raise ContractError(f"pour contract has no side {missing}; has {sorted(by_side)}")
+    arm = {s: [float(v) for v in by_side[s].arm_reset] for s in sides}
+    hand = {s: {j: float(v) for j, v in zip(by_side[s].hand_joints, by_side[s].hand_open)} for s in sides}
+    return arm, hand
+
+
 def arm_homes(mode: str, sides: tuple) -> tuple[dict, str]:
-    """``zero`` (차렷, all joints 0) or ``run:<dir>`` (that run's init_state, mirrored to the other arm)."""
+    """``zero`` (차렷, all joints 0), ``run:<dir>`` (that run's init_state, mirrored to the other arm) or
+    ``pour:<pour_contract.json>`` (the bimanual pour reset pose, both arms explicit)."""
     if mode == "zero":
         return {s: [0.0] * 7 for s in sides}, "zero (차렷)"
+    if mode.startswith(POUR_HOME):
+        pour, path = _load_pour(mode)
+        return pour_homes(pour, sides)[0], f"pour:{path.name} arm_reset ({pour.run_dir})"
     if not mode.startswith("run:"):
-        raise ContractError(f"home must be 'zero' or 'run:<run dir>', got {mode!r}")
+        raise ContractError(f"home must be 'zero', 'run:<run dir>' or 'pour:<pour_contract.json>', got {mode!r}")
     from .contract_build import _home_values, _text, detect_family
     run = Path(mode[4:])
     if not run.is_absolute():
@@ -209,11 +241,28 @@ def _side_fabric(spec: AssetSpec, side: str, arm: list, hand: list, home_arm: li
                      use_body_repulsion_pairs=bool(fabric_hand), home_source=home_source)
 
 
+def _hand_override(home_hand: dict, hand_joints: list) -> dict:
+    missing = [j for j in hand_joints if j not in home_hand]
+    if missing:
+        raise ContractError(f"pour hand_open lacks {missing}")
+    return {j: float(home_hand[j]) for j in hand_joints}
+
+
+def _pour_hand_homes(home: str, asset: str, sides: tuple) -> dict:
+    """Hand homes of a ``pour:`` home (same asset only); {} for every other home mode."""
+    if not home.startswith(POUR_HOME):
+        return {}
+    pour, path = _load_pour(home)
+    if pour.asset != asset:
+        raise ContractError(f"pour contract {path.name} is for asset {pour.asset!r}, not {asset!r}")
+    return pour_homes(pour, sides)[1]
+
+
 def _control_side(spec: AssetSpec, manifest: dict, side: str, home_arm: list, home_source: str,
-                  gains_yaml: Path) -> SideCfg:
+                  gains_yaml: Path, home_hand: dict | None = None) -> SideCfg:
     arm, hand = side_joints(manifest, side)
     palm, tips = side_bodies(manifest, side, spec.ee_kind)
-    home_h = hand_home(spec.ee_kind, side, hand)
+    home_h = hand_home(spec.ee_kind, side, hand) if home_hand is None else _hand_override(home_hand, hand)
     return SideCfg(side=side, arm_joints=arm, hand_joints=hand, ee_kind=spec.ee_kind, palm_body=palm,
                    tip_bodies=tips, home_arm=list(home_arm), home_hand=home_h,
                    pd_groups=pd_groups_for(side, spec.ee_kind),
@@ -237,7 +286,9 @@ def build_asset_contract(asset: str = DEFAULT_ASSET, sides: tuple = ("right", "l
     if primary not in sides:
         raise ContractError(f"primary {primary!r} not in sides {sides}")
     homes, home_source = arm_homes(home, tuple(sides))
-    side_cfgs = {s: _control_side(spec, manifest, s, homes[s], home_source, gains_yaml) for s in sides}
+    hands = _pour_hand_homes(home, asset, tuple(sides))
+    side_cfgs = {s: _control_side(spec, manifest, s, homes[s], home_source, gains_yaml, hands.get(s))
+                 for s in sides}
     main = side_cfgs[primary]
     if main.fabric is None:
         raise ContractError(f"asset {asset}: primary side {primary} has no fabric — pick the other side")

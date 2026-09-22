@@ -28,6 +28,8 @@ setup(
             "fabric_node = policy_control.fabric_node:main",
             "pd_node = policy_control.pd_node:main",
             "episode_master = policy_control.episode_master:main",
+            "pour_node = policy_control.pour_node:main",
+            "pour_guard_node = policy_control.pour_guard_node:main",
         ],
     },
 )

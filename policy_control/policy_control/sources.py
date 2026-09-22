@@ -410,6 +410,22 @@ class SourceSet:
         idx = [list(s.joints).index(s.mirror[m]) for m in s.mirror]
         return names, np.concatenate([pos, pos[idx]]), np.concatenate([vel, vel[idx]])
 
+    def inputs(self, now: float) -> list[dict]:
+        """모든 소스의 수신 상태(status 용) — snapshot 의 stale/missing 은 고장 난 것만 말한다.
+
+        행 형식은 pour_node 의 inputs 와 같다: state 는 live·stale·missing·off(선택 소스가 한 번도 안 옴).
+        선택 소스도 한 번 온 뒤 늙으면 stale 이다 — snapshot 은 그 값을 그대로 쓰기 때문이다.
+        """
+        rows = []
+        for s in self.cfg.sources.values():
+            r = self._latest.get(s.name)
+            if r is None:
+                rows.append({"name": s.name, "state": "missing" if s.required else "off", "age_ms": None})
+                continue
+            age = float(now) - r.t_recv
+            rows.append({"name": s.name, "state": "stale" if age > s.stale_sec else "live", "age_ms": age * 1e3})
+        return rows
+
     def snapshot(self, now: float) -> RobotState:
         stale, missing, stamps = [], [], {}
         for s in self.cfg.sources.values():

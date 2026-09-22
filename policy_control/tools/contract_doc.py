@@ -7,19 +7,29 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from policy_control import contract as C  # noqa: E402
+from policy_control import pour_contract as PC  # noqa: E402
+from contract_doc_pour import RUNBOOK, render_pour  # noqa: E402
+
+HAND_WRITTEN = ["## hand-written companions (not generated, never overwritten by this tool)", "",
+                f"- [{RUNBOOK}]({RUNBOOK}): bimanual pour (`pour_bimanual`), files to drop in, commands, "
+                "fill_level meaning, remaining hardware calibrations", ""]
 
 
 def _row(cells) -> str:
     return "| " + " | ".join(str(c) for c in cells) + " |"
 
 
-def render(c: C.DeployContract) -> str:
-    out = [f"## {c.run.task} — `{c.run.dir}`", "",
+def render(c: C.DeployContract, src: str = "") -> str:
+    # 제목은 계약 **파일** 로 구분한다. run.task/run.dir 만 쓰면 같은 런의 변종 계약
+    # (right_g1 의 deploy_contract.json vs .dg5f-m.json)과 asset 계약들이 같은 제목으로 겹친다.
+    out = [f"## {c.run.task} — `{src or c.run.dir}`", "",
            f"- checkpoint `{c.run.checkpoint}` md5 `{c.run.checkpoint_md5}` · experiment `{c.run.experiment}`",
            f"- rate: policy {c.rate.policy_hz:.0f} Hz (step_dt {c.rate.step_dt:.5f} s) · episode {c.rate.episode_steps} steps",
            f"- policy: obs {c.policy.obs_dim} / action {c.policy.action_dim} · rnn {c.policy.rnn or 'none'} · "
@@ -75,15 +85,40 @@ def _sides_lines(c: C.DeployContract) -> list:
     return out + [""]
 
 
-def main() -> int:
+def _rel(path: Path) -> str:
+    """저장소 기준 상대 경로 — 제목의 유일 키이자 재생성 명령에 그대로 쓸 수 있는 인자."""
+    repo = Path(__file__).resolve().parents[2]
+    try:
+        return str(Path(path).resolve().relative_to(repo))
+    except ValueError:
+        return str(path)
+
+
+def render_any(path: Path) -> str:
+    """Dispatch on the JSON `schema`: pour_contract/v1 -> pour section, anything else -> single-arm contract."""
+    path = Path(path)
+    try:
+        schema = json.loads(path.read_text()).get("schema")
+    except (OSError, json.JSONDecodeError, AttributeError) as exc:
+        raise SystemExit(f"[contract_doc] cannot read {path}: {exc}") from exc
+    src = _rel(path)
+    if schema == PC.SCHEMA:
+        return render_pour(PC.load_contract(path), src)
+    return render(C.load_contract(path), src)
+
+
+def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("contracts", nargs="+", type=Path)
     ap.add_argument("--out", type=Path, required=True)
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
+    cmd = "python3 policy_control/tools/contract_doc.py \\\n    " + " \\\n    ".join(
+        _rel(p) for p in args.contracts) + f" \\\n    --out {_rel(args.out)}"
     parts = ["# policy_control 배포 계약(생성물 — 원본은 deploy_contract.json)", "",
              "obs → policy → fabric → pd 4노드가 읽는 계약을 사람이 읽을 수 있게 펼친 것. "
-             "수정은 `tools/build_deploy_contract.py` 로 계약을 다시 만들고 이 문서를 재생성한다.", ""]
-    parts += [render(C.load_contract(p)) for p in args.contracts]
+             "수정은 `tools/build_deploy_contract.py` 로 계약을 다시 만들고 이 문서를 재생성한다.", "",
+             "이 문서를 만든 명령(그대로 다시 치면 재생성된다):", "", "```bash", cmd, "```", ""]
+    parts += [render_any(p) for p in args.contracts] + HAND_WRITTEN
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text("\n".join(parts))
     print(f"[contract_doc] {len(args.contracts)} contracts → {args.out}")

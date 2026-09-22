@@ -306,7 +306,7 @@ class PdNode(Node):
         body = r.status.as_dict()
         body["reasons"] = compact_reasons("; ".join(r.status.reasons)) + ([r.error] if r.error else [])
         body["ok"] = bool(r.status.ok) and r.error is None
-        body.update(unit.extras())
+        body.update(unit.extras(time.monotonic()))                       # 수신 시각(on_joint_state)과 같은 시계
         return body
 
     def _publish_status(self, results: list, t0: float, reasons: tuple = ()) -> None:

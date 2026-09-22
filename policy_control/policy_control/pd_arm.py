@@ -10,7 +10,6 @@ engage_stage·start_home·start_release·zero_release·engage_refusals) 과 **�
 """
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, replace
 from typing import Mapping
 
@@ -26,8 +25,8 @@ from .pd_gains import GainsError, expected_hand_gains, load_and_check
 from .pd_gravity import make_gravity
 from .pd_law import (PdCommand, PdConfig, blend_engage, blend_fraction, blend_release, law_cfg_from_config,
                      limits_from_profile)
-from .pd_state import (EngageCheck, Phase, engage_refusals, hold_is_self_clearing, thermal_act_joints,
-                       thermal_init, thermal_levels, thermal_stale_joints, thermal_step,
+from .pd_state import (EngageCheck, Phase, engage_refusals, hold_is_self_clearing, recv_ages_ms,
+                       thermal_act_joints, thermal_init, thermal_levels, thermal_stale_joints, thermal_step,
                        thermal_unknown_joints)
 from .sources import RobotCfg, SourceSet, select_side
 
@@ -455,9 +454,12 @@ class ArmUnit:
                            reasons=() if st.fsm.hold_reason is None else tuple(st.fsm.hold_reason.split("; ")),
                            proc_ms=0.0)
 
-    def extras(self) -> dict:
-        """status 의 팔별 부가 필드."""
+    def extras(self, now: float) -> dict:
+        """status 의 팔별 부가 필드. now 는 t_arm_recv 와 같은 시계(time.monotonic)."""
         return {"side": self.side, "gains": self.gains_report, "thermal": thermal_levels(self.thermal, self.thermal_rules),
+                "state_age_ms": recv_ages_ms(now, arm=self.t_arm_recv, ee=self.t_ee_recv),
+                # engage 가 쓰는 것과 같은 문턱 — 화면이 제 기준을 따로 만들지 않게 같이 싣는다
+                "state_stale_ms": self.robot_cfg.sources["arm"].stale_sec * 1e3,
                 "blend": None if self.blend is None else self.blend.kind,
                 "hold": None if self.hold is None else {"settle": self.hold.settle, "settled": self.hold.settled,
                                                         "err": self.hold.err},

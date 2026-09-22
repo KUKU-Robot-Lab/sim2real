@@ -125,6 +125,16 @@ def test_snapshot_reports_stale_and_missing_required_sources():
     assert "arm" in st2.stale
 
 
+def test_inputs_lists_every_source_with_its_liveness_not_only_the_broken_ones():
+    ss = _left_set()
+    ss.update_from_joint_state("arm", _left_joint_msg(np.zeros(7), 0.0), now=0.0)
+    rows = {r["name"]: r for r in ss.inputs(now=0.1)}
+    assert rows["arm"]["state"] == "live" and rows["arm"]["age_ms"] == pytest.approx(100.0)
+    assert (rows["ee"]["state"], rows["ee"]["age_ms"]) == ("missing", None)
+    assert rows["head"]["state"] == "off"                     # optional and never seen: not a fault
+    assert {r["name"]: r for r in ss.inputs(now=5.0)}["arm"]["state"] == "stale"
+
+
 def test_snapshot_returns_new_arrays_each_time():
     ss = _left_set()
     ss.update_from_joint_state("arm", _left_joint_msg(np.zeros(7), 0.0), now=0.0)

@@ -97,6 +97,11 @@ def _inertia_q(text: str | None) -> np.ndarray | None:
 
 
 def _friction(args) -> np.ndarray:
+    """실측 마찰. **pd 모델만 쓴다** — `MockArm` 은 rate 경로에서 fc 를 보지 않고
+    (`arm_pd_model.py:98` 검증도 pd 한정, `:163` rate 분기), 그런데도 캘리브를 읽으면
+    배선 검증용 rate 모델이 실측 파일 없이는 아예 못 뜬다. 값은 그대로, 요구만 좁힌다."""
+    if args.model != "pd":
+        return np.zeros(NUM_ARM, dtype=float)
     _, _, fc, _ = load_arm_pd(CALIBRATION)
     return np.asarray(fc, dtype=float) * float(args.friction_scale)
 

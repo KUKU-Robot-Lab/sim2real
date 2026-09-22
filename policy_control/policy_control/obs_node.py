@@ -283,7 +283,9 @@ class ObsNode(Node):
         body = {**status.as_dict(), "stage_ms": status.proc_ms, "proc_ms": _ms(t0),
                 "t_pub_ns": self.get_clock().now().nanoseconds, "started": self._started,
                 "action_seq": None if self._action is None else self._action[1],
-                "action_matched": self._action_matched, "source_errors": dict(self._source_errors)}
+                "action_matched": self._action_matched, "source_errors": dict(self._source_errors),
+                # IDLE 에서도 싣는다 — 에피소드를 열기 전에 입력이 들어오는지 화면에서 보여야 한다
+                "inputs": self.sources.inputs(time.monotonic())}
         self._pub_status.publish(encode_status(body))
 
     def _publish_event(self, event: EpisodeEvent) -> None:

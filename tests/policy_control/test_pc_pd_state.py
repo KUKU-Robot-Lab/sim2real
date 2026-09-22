@@ -228,3 +228,13 @@ def test_thermal_rules_from_config_dicts():
         S.thermal_rules_from_config([{"joint": "l_aj_7", "effort_nm": 5.0}])
     with pytest.raises(ValueError):
         S.thermal_rules_from_config([{"joint": "l_aj_7", "effort_nm": 5.0, "act_sec": 1, "x": 1}])
+
+
+# ---------------------------------------------------------------- recv ages (status 의 실기 수신 나이)
+def test_recv_ages_are_ms_since_each_source_and_none_until_first_message():
+    ages = S.recv_ages_ms(10.0, arm=9.75, ee=None)
+    assert ages == {"arm": pytest.approx(250.0), "ee": None}
+
+
+def test_recv_ages_never_go_negative_when_the_stamp_is_the_same_tick():
+    assert S.recv_ages_ms(5.0, arm=5.0) == {"arm": 0.0}

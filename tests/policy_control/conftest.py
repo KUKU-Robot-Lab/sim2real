@@ -23,6 +23,24 @@ if str(PKG_DIR) not in sys.path:
 import policy_control._paths  # noqa: E402,F401  (side effect: sibling trees on sys.path)
 
 
+@pytest.fixture(autouse=True)
+def _cuda_off_without_gpu_marker(request, monkeypatch):
+    """``-m "not gpu"`` 가 실제로 GPU 를 건드리지 못하게 한다.
+
+    GPU 를 마커가 아니라 런타임 가드(``torch.cuda.is_available()``)로만 막던 테스트가 있어
+    ``-m "not gpu"`` 로 돌려도 학습 중인 GPU 에 fabrics_sim 이 올라간 적이 있다(09.21,
+    ``test_pour_fabric.py`` parity). 마커가 없는 테스트에서는 가용 장치를 숨겨
+    그 가드들이 원래대로 skip 하게 만든다 — torch 가 아직 import 되지 않았어도
+    ``CUDA_VISIBLE_DEVICES`` 가 warp/fabrics_sim 까지 함께 막는다.
+    """
+    if request.node.get_closest_marker("gpu"):
+        return
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    torch = sys.modules.get("torch")
+    if torch is not None and getattr(torch, "cuda", None) is not None:
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+
 @pytest.fixture(scope="session")
 def fixtures_dir() -> Path:
     return FIXTURES

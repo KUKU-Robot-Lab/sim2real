@@ -1,0 +1,116 @@
+# 양팔 물붓기 — **fake 체인** (S2R 콘솔 통합 검증용). 실기를 건드리는 단계가 하나도 없다.
+#   python3 scripts/ops/mission_run.py --mission config/mission_pour_fake.yaml --plan
+#   s2r_console/run_console.sh pour_i18_fake           # 콘솔에서 단계별로
+# ★도메인은 콘솔 프로파일(s2r_console/profiles/pour_i18_fake.yaml)이 자식 env 에 넣는다(97).
+#   launch 들은 fake:=true 일 때 도메인 ""/"0" 을 스스로 거부한다.
+# 순서는 policy_control/tools/pour_fake_run.sh 와 같다 — 그 스크립트가 한 번에 하는 일을 단계로 쪼갠 것이다.
+# 컵 위치는 pour_i18 trace 첫 행의 값이다(스크립트는 trace 에서 읽지만 yaml 은 코드를 못 돌리므로 적어 둔다).
+name: 양팔 물붓기 fake 체인 (pour_i18)
+loop_to: pd_home   # release 뒤에는 pd 가 IDLE 이다 — 다시 engage 부터. 떠 있는 체인은 그대로 둔다
+
+artifacts:
+  contract_pour: logs/policy/pour_i18/pour_contract.json
+  contract_pd: logs/policy/asset_pour_i18/deploy_contract.json
+  robot_fake: policy_control/config/robots/dg5f_m_bi_fake.yaml
+  pd_fake: policy_control/config/pd_dg5f_m_short_fake.yaml
+
+checkpoints:
+  pour:
+    path: logs/policy/pour_i18/nn/last_open-short_b_pour_fab_ep_2500_rew_36408.105.pth
+    md5: "f50b09a6"
+    params: logs/policy/pour_i18/params
+
+stages:
+  - id: preflight
+    title: 정책 등록부 검사 (카드·매니페스트·계약↔체크포인트 md5)
+    artifacts: [contract_pour, contract_pd]
+    checkpoints: [pour]
+
+  - id: plant
+    title: fake 플랜트(양팔 MockArm + 손) + 컵 포즈 2개
+    needs: [preflight]
+    artifacts: [contract_pd, robot_fake]
+
+  - id: pd_load
+    title: pd 노드 기동 (fake 플랜트 상대 — execute:=true 가 안전하다)
+    needs: [plant]
+    artifacts: [contract_pd, robot_fake, pd_fake]
+
+  - id: pd_home
+    title: pd engage → goto_home (차렷 0 → 계약 리셋 자세)
+    needs: [pd_load]
+
+  - id: chain
+    title: pour 체인(obs→policy→decoder) + 안전 가드 노드
+    needs: [pd_home]
+    artifacts: [contract_pour, robot_fake]
+    checkpoints: [pour]
+
+  - id: episode
+    title: fill_level 입력 → reset → start → 20 s → stop
+    needs: [chain]
+    needs_why: 체인이 떠 있어야 reset 이 소스 스냅샷을 검사할 수 있다
+
+  - id: release
+    title: pd release (역블렌드 → IDLE)
+    needs: [episode]
+
+run:
+  preflight:
+    - note: policies/ 등록부 검사 (sha256 재해시 없이)
+      argv: [python3, "{repo}/policy_control/tools/policies.py", --shallow]
+  plant:
+    - note: fake 플랜트 (양팔, rate 모델)
+      argv: [ros2, launch, "{repo}/policy_control/launch/fake_plant.launch.py", "side:=both",
+             "robot:=dg5f_m_bi_fake", "contract:={artifact:contract_pd}", "plant_model:=rate"]
+      background: true
+    - note: 소스 컵 포즈
+      argv: [python3, "{repo}/scripts/fakes/fake_cup_pose_pub.py", --topic, /objects/pour_src_cup/pose,
+             --x, "0.3653", --y, "-0.1686", --z, "0.2823"]
+      background: true
+    - note: 리시버 컵 포즈
+      argv: [python3, "{repo}/scripts/fakes/fake_cup_pose_pub.py", --topic, /objects/pour_rcv_cup/pose,
+             --x, "0.3630", --y, "0.1680", --z, "0.2853"]
+      background: true
+  pd_load:
+    - note: pd 노드 (양팔, fake)
+      argv: [ros2, launch, "{repo}/policy_control/launch/pd_controller.launch.py",
+             "contract:={artifact:contract_pd}", "robot:=dg5f_m_bi_fake", "pd_config:=dg5f_m_short_fake",
+             "sides:=right,left", "execute:=true", "fake:=true", "use_source:=true"]
+      background: true
+  pd_home:
+    - note: pd engage
+      argv: [python3, "{repo}/policy_control/tools/trigger.py", pd/engage, --expect-pd, RAMPING, TRACKING]
+      execute_args: [--execute]
+    - note: pd goto_home
+      argv: [python3, "{repo}/policy_control/tools/trigger.py", pd/goto_home, --expect-pd, TRACKING]
+      execute_args: [--execute]
+  chain:
+    - note: pour 체인 (cpu, fabric 끔)
+      argv: [ros2, launch, "{repo}/policy_control/launch/pour_chain.launch.py",
+             "contract:={artifact:contract_pour}", "robot:=dg5f_m_bi_fake",
+             "src_cup_topic:=/objects/pour_src_cup/pose", "rcv_cup_topic:=/objects/pour_rcv_cup/pose",
+             "device:=cpu", "use_fabric:=false", "fake:=true", "use_source:=true"]
+      background: true
+    - note: 안전 가드 (기울기 상한 · 중앙선 · 손바닥 거리)
+      argv: [python3, "{repo}/policy_control/policy_control/pour_guard_node.py", --ros-args,
+             -p, "src_cup_topic:=/objects/pour_src_cup/pose", -p, "rcv_cup_topic:=/objects/pour_rcv_cup/pose"]
+      background: true
+  episode:
+    - note: fill_level 0.85 (소스 컵이 얼마나 차 있는가 — 실기에서는 사람이 넣는 값)
+      argv: [ros2, topic, pub, --times, "5", /policy_control/pour/fill_level, std_msgs/msg/Float64, "data: 0.85"]   # 중괄호는 미션 자리표시자 문법과 부딪힌다
+    - note: episode reset
+      argv: [python3, "{repo}/policy_control/tools/trigger.py", episode/reset]
+      execute_args: [--execute]
+    - note: episode start
+      argv: [python3, "{repo}/policy_control/tools/trigger.py", episode/start]
+      execute_args: [--execute]
+    - note: 20 s 동안 돌린다
+      argv: [sleep, "20"]
+    - note: episode stop
+      argv: [python3, "{repo}/policy_control/tools/trigger.py", episode/stop]
+      execute_args: [--execute]
+  release:
+    - note: pd release
+      argv: [python3, "{repo}/policy_control/tools/trigger.py", pd/release, --expect-pd, IDLE]
+      execute_args: [--execute]

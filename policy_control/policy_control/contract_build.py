@@ -206,7 +206,25 @@ def _agent(agent_yaml: Path) -> dict:
 
 
 # ------------------------------------------------------------------ family detection
+def _declared_dim(env_text: str, key: str) -> int | None:
+    m = re.search(rf"^{key}:\s*(\d+)\s*$", env_text, re.M)
+    return int(m[1]) if m else None
+
+
+def _refuse_other_interface(env_text: str, env_yaml: Path, *, obs: int, act: int) -> None:
+    """grasp_s2r 을 **상속한** 다른 과제(grasp_fj_t2r 등)는 같은 키를 물려받아 이 family 로 판정된다.
+    차원이 다르면 다른 인터페이스다 — 관절 이름에서 우연히 걸리게 두지 말고 여기서 이유를 말한다."""
+    got = (_declared_dim(env_text, "observation_space"), _declared_dim(env_text, "action_space"))
+    if None not in got and got != (obs, act):
+        raise SystemExit(f"[contract] {env_yaml} declares obs {got[0]} / act {got[1]} but the grasp_s2r "
+                         f"family is obs {obs} / act {act} — this run inherits grasp_s2r's config keys "
+                         f"but is a different task interface, and no contract builder exists for it yet")
+
+
 def detect_family(env_yaml: Path) -> str:
+    from .pour_build import is_pour_run
+    if is_pour_run(Path(env_yaml)):
+        return "pour_bimanual"
     text = _text(env_yaml)
     if "FabricPalmAction" in text and "joint_pos_rel" in text:
         return "gripper_left"
@@ -216,6 +234,36 @@ def detect_family(env_yaml: Path) -> str:
 
 
 # ------------------------------------------------------------------ public entry
+SIM_META_HOWTO = ("the sim meta dump is the '<trace_out>_meta.json' written by hdgp "
+                  "scripts/reinforcement_learning/rl_games/play.py --trace_steps N --trace_out <path> "
+                  "(anchors, fab_to_env, PhysX DOF orders); pass it as --sim-meta")
+
+
+def _pour_asset(env_yaml: Path) -> str:
+    m = re.search(r"usd_path:\s*\S*/assets/robot/([^/\s]+)/", _text(env_yaml))
+    if not m:
+        raise SystemExit(f"[contract] no assets/robot usd_path in {env_yaml}; pass asset explicitly")
+    return m.group(1)
+
+
+def build_pour(run_dir: Path, sim_meta: Path | None, checkpoint: Path | None = None,
+               asset: str | None = None, fill_default: float | None = None):
+    """pour_bimanual entry: run dump + REQUIRED sim meta -> PourContract (pour_build does the work).
+
+    checkpoint=None picks the only ``<run>/nn/*.pth`` (none -> obs/control-only contract, several -> refuse)."""
+    from .contract_assets import ASSETS, RL_WS
+    from .pour_build import build_pour_contract
+    from .pour_contract import PourContractError
+    if sim_meta is None or not Path(sim_meta).is_file():
+        raise PourContractError(f"sim meta is required and was not found ({sim_meta}): {SIM_META_HOWTO}")
+    run = Path(run_dir)
+    name = asset or _pour_asset(run / "params/env.yaml")
+    if name not in ASSETS:
+        raise PourContractError(f"unknown asset {name!r}; known: {sorted(ASSETS)}")
+    return build_pour_contract(run, Path(sim_meta), RL_WS / "hdgp", ASSETS[name].urdf, name,
+                               checkpoint=_pick_checkpoint(run, checkpoint), fill_default=fill_default)
+
+
 def build_contract(run_dir: Path, checkpoint: Path | None = None, grasp_band: str | None = None,
                    asset: str | None = None) -> DeployContract:
     """grasp_band (gripper_left only): 'v1' | 'v2' | 'lo,hi' (table-height m). Required for that family —
@@ -227,6 +275,10 @@ def build_contract(run_dir: Path, checkpoint: Path | None = None, grasp_band: st
     run = Path(run_dir)
     env_yaml, agent_yaml = run / "params/env.yaml", run / "params/agent.yaml"
     family = detect_family(env_yaml)
+    if family == "pour_bimanual":
+        from .pour_contract import PourContractError
+        raise PourContractError("pour_bimanual has its own contract schema: use contract_build.build_pour"
+                                "(run_dir, sim_meta) / build_deploy_contract.py --sim-meta")
     if family == "gripper_left":
         body = _build_left(_text(env_yaml), agent_yaml, grasp_band)
     else:
@@ -402,6 +454,7 @@ def _goal_center(env_text: str) -> list[float]:
 def _build_right(env_text: str, agent_yaml: Path) -> dict:
     import grasp_s2r_fabric as F
     from grasp_s2r_core import _norm_from_run
+    from grasp_s2r_obs_builder import NUM_ACTIONS as F_NUM_ACTIONS
     from grasp_s2r_obs_builder import SEGMENTS, hand_dof_order, tip_body_order
     from grasp_s2r_palm_command import (HOME_PALM, PALM_BOX_MAX, PALM_BOX_MIN, PALM_ROT_CENTER_DEG,
                                         PALM_ROT_HALF_DEG)
@@ -410,6 +463,7 @@ def _build_right(env_text: str, agent_yaml: Path) -> dict:
     from grasp_s2r_synergy import cfg_from_run as syn_cfg_from_run
 
     env_yaml = agent_yaml.parent / "env.yaml"
+    _refuse_other_interface(env_text, env_yaml, obs=sum(d for _, d in SEGMENTS), act=F_NUM_ACTIONS)
     agent = _agent(agent_yaml)
     hand_profile = list(HAND_JOINT_NAMES)
     home_arm = _home_values(env_text, RIGHT_ARM)
