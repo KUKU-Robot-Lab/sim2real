@@ -390,15 +390,22 @@ run:
     - python3
     - -m
     - pytest
-    - '{repo}/tests/policy_control'
     - -q
     - -m
     - not gpu
     - -p
     - no:cacheprovider
-    - --deselect
-    - tests/policy_control/test_pc_fk_urdf.py::test_canonical_palm_is_the_alias_frame_and_the_kinematics_chain
-    note: policy_control 비GPU 테스트 전부
+    - '{repo}/tests/policy_control/test_pc_contract_v2.py'
+    - '{repo}/tests/policy_control/test_pc_pd_exec_config.py'
+    - '{repo}/tests/policy_control/test_pc_pd_gravity.py'
+    - '{repo}/tests/policy_control/test_pc_pd_gains.py'
+    - '{repo}/tests/policy_control/test_pc_plan_home_path.py'
+    - '{repo}/tests/policy_control/test_pc_episode_ctl.py'
+    - '{repo}/tests/policy_control/test_pc_launch_files.py'
+    - '{repo}/tests/policy_control/test_pc_replay_reverse.py'
+    - '{repo}/tests/s2r_console/test_real_mission_structure.py'
+    note: 실기에 직접 쓰는 것만 확인하는 테스트(수 초) — 계약 · pd 설정(게인 · payload · 발행 사본) · 미션 구조 · 홈 경로 계획기 · episode_ctl · launch. ★전체 테스트(785
+      개, 5 분 반)는 코드를 고칠 때 돌린다 — 실기를 켤 때마다 돌릴 일이 아니다(09.22 사용자)
   - argv:
     - python3
     - '{repo}/deploy/policy_control/tools/build_deploy_contract.py'

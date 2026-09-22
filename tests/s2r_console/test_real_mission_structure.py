@@ -85,7 +85,7 @@ def test_only_the_arm_stage_launches_pd_with_the_exec_config():
         assert "pd_config:={artifact:pd_exec}" in arm and "execute:=true" in arm
         assert "pd_exec" in MISSION.stages[IDS.index(f"pd_arm_{side}")].artifacts      # 승인 근거 해시에 들어간다
     others = [s for s in IDS if not s.startswith("pd_arm_")]
-    assert not any("pd_exec" in a for s in others for c in _cmds(s) for a in c.argv)
+    assert not any("{artifact:pd_exec}" in a for s in others for c in _cmds(s) for a in c.argv)
 
 
 def test_the_home_is_the_right_policy_initial_state_and_rviz_stays_off():
@@ -123,3 +123,13 @@ def test_the_fake_mission_is_generated_from_the_real_one_and_walks_the_same_stag
     assert launches and all("fake:=true" in c.argv for c in launches)     # fake_plant 는 스스로 도메인 0 을 거부한다
     plant = book.commands["drivers"][0]
     assert "hand_follow:=jtc" in plant.argv and "hand_start:=zero" in plant.argv   # 손은 pd 의 JTC 를 따른다
+
+
+def test_preflight_runs_only_the_real_deployment_tests_not_the_whole_suite():
+    # 09.22 사용자: "preflight 는 쓸데없이 오래 걸리게 만든 것 같다" — 전체 785 개(5 분 반)를 실기 켤 때마다 돌렸다.
+    argv = _cmds("preflight")[0].argv
+    files = [a for a in argv if a.endswith(".py")]
+    assert files and all("/tests/" in f for f in files)
+    assert not any(a.rstrip("/").endswith("tests/policy_control") for a in argv)      # 디렉터리 통째가 아니다
+    for f in files:
+        assert Path(f.replace("{repo}", str(PATH.parents[1]))).is_file(), f
