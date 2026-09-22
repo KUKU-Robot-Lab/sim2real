@@ -248,7 +248,7 @@ canvas { width: 100%; height: 84px; display: block; }
   .sw::after { transition: none; }
 }
 /* 키보드로 조작해도 지금 어디에 있는지 보인다 — 정지 바까지 탭으로 닿는다 */
-button:focus-visible, .sw:focus-visible, summary:focus-visible, a:focus-visible, input:focus-visible {
+button:focus-visible, .sw:focus-visible, summary:focus-visible, a:focus-visible, input:focus-visible, .dg-head:focus-visible {
   outline: 2px solid var(--live); outline-offset: 2px; }
 .links-table > summary { cursor: pointer; padding: 6px 12px; color: var(--faint); font-size: 12px; border-top: 1px solid var(--line); }
 
@@ -294,3 +294,14 @@ button:focus-visible, .sw:focus-visible, summary:focus-visible, a:focus-visible,
 /* 잠금 줄이 버튼이 됐다 — 모양은 그대로, 누르면 그 단계로 간다 */
 .dg-goto { display: block; width: 100%; padding: 0; border: 0; background: none; text-align: left; font: inherit; cursor: pointer; color: var(--live); }
 .dg-goto:hover { text-decoration: underline; }
+
+/* 수동 명령 복사 */
+.cmd-copy { display: flex; align-items: flex-start; gap: 8px; }
+.cmd-copy pre { flex: 1 1 auto; min-width: 0; }
+.btn-copy { flex: 0 0 auto; }
+.dg-manual .btn-copy { padding: 0 6px; font-size: 10.5px; margin-right: 2px; }
+/* 연결 그림 배치 — 상자 머리를 끌어 옮긴다 */
+.dg-head { cursor: grab; touch-action: none; border-radius: 3px; }
+.dg.dragging, .dg.dragging .dg-head { cursor: grabbing; user-select: none; }
+.dg-box.moved { position: relative; z-index: 2; box-shadow: 0 2px 10px rgba(0,0,0,.35); }
+.panel-head #dg-reset { margin-left: 8px; }

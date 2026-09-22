@@ -12,6 +12,9 @@ const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const SHELL_SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/;
 const shq = (a) => (a !== "" && SHELL_SAFE.test(a) ? a : `'${String(a).replace(/'/g, `'\\''`)}'`);
 const shellLine = (argv) => (argv.length === 3 && /^(ba)?sh$/.test(argv[0]) && /^-l?c$/.test(argv[1]) ? argv[2] : argv.map(shq).join(" "));
+// 수동 명령 복사 — 붙여넣을 한 줄(shellLine)을 그대로 클립보드로. 콘솔은 여전히 실행하지 않는다.
+// 물리 확인만 하는 스텝(`bash -lc true` — 모터 전원 등)은 붙여넣을 명령이 없다.
+const copyBtn = (text) => text === "true" ? "" : `<button class="btn btn-sm btn-ghost btn-copy" data-act="copy" data-arg="${esc(text)}" title="클립보드로 복사 — 다른 셸에 붙여넣어 실행">복사</button>`;
 const fmt = (v, d = 2) => (v === null || v === undefined || Number.isNaN(v) ? "—" : Number(v).toFixed(d));
 
 let S = null;                 // 마지막 스냅샷
@@ -202,11 +205,11 @@ function renderStages(s) {
       const kind = { manual: "✋ 수동", background: "⟳ 배경", foreground: "▶ 실행" }[c.kind];
       const logBtn = st && st.kind !== "manual" && st.status !== "pending" && st.status !== "kept" ? `<button class="btn btn-sm btn-ghost" data-act="log" data-arg="${esc(st.key)}">로그</button>` : "";
       const manual = st && st.status === "waiting" ? `<div class="manual-box"><b>다른 셸에서 직접 실행할 것</b> — 콘솔은 이 명령을 실행하지 않는다.
-          <pre>${esc(shellLine(c.argv))}</pre>
+          <div class="cmd-copy"><pre>${esc(shellLine(c.argv))}</pre>${copyBtn(shellLine(c.argv))}</div>
           <div class="actions"><button class="btn btn-primary btn-sm" data-act="ack" data-arg="${k}:1" ${can ? "" : "disabled"}>실행했고 정상이다 → 다음</button>
           <button class="btn btn-sm" data-act="ack" data-arg="${k}:0" ${can ? "" : "disabled"}>정상이 아니다 → 중단</button></div></div>` : "";
       const detail = st && st.detail ? `<span class="cmd-argv" style="color:var(--warn)">${esc(st.detail)}</span>` : "";
-      return `<li class="cmd"><span class="cmd-kind ${esc(c.kind)}">${kind}</span><span>${esc(c.note || c.argv.slice(0, 3).join(" "))}${detail}<span class="cmd-argv">${esc(shellLine(c.argv))}</span></span><span>${chip} ${logBtn}</span>${manual}</li>`;
+      return `<li class="cmd"><span class="cmd-kind ${esc(c.kind)}">${kind}</span><span>${esc(c.note || c.argv.slice(0, 3).join(" "))}${detail}<span class="cmd-argv">${esc(shellLine(c.argv))}</span></span><span>${chip} ${logBtn}${c.kind === "manual" && !manual ? copyBtn(shellLine(c.argv)) : ""}</span>${manual}</li>`;
     }).join("");
     const reasons = r.reasons.length ? `<ul class="reasons">${r.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
     const stale = r.approval_stale.length ? `<ul class="reasons bad"><li><b>이전 승인이 무효가 됐다</b> — 승인한 뒤 파일이 바뀌었다</li>${r.approval_stale.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
@@ -244,7 +247,7 @@ function unitHtml(b) {
   const locked = !holding() ? "조작 권한이 없다" : can ? "" : why;
   const meta = u.alive ? `pid ${esc(u.pid)} · ${fmt(u.age_s, 0)} s` : u.started ? `rc ${esc(u.rc)}` : "—";
   const share = b.shares.length ? `<span class="dg-share" title="같이 켜지고 꺼진다: ${esc(b.shares.join(" · "))}">⛓ ${b.shares.length + 1}개 묶음</span>` : "";
-  const manual = u.kind === "manual" ? `<div class="dg-why dg-manual" title="${esc(shellLine(u.argv))}">운영자 셸에서 직접: <code>${esc(shellLine(u.argv))}</code></div>` : "";
+  const manual = u.kind === "manual" ? `<div class="dg-why dg-manual" title="${esc(shellLine(u.argv))}">${copyBtn(shellLine(u.argv))} 운영자 셸에서 직접: <code>${esc(shellLine(u.argv))}</code></div>` : "";
   return `<div class="dg-unit"><button class="sw ${u.alive ? "on" : "off"}" role="switch" data-act="unit" data-arg="${esc(u.key)}:${u.alive ? "0" : "1"}"
       aria-checked="${u.alive}" aria-label="${esc(b.title)} 켜기/끄기" title="${esc(locked || (u.alive ? "끄기" : "켜기"))}"${locked ? " disabled" : ""}></button>
     <span>${esc(u.key)} · ${meta}</span>${share}${u.started ? `<button class="btn btn-sm btn-ghost" data-act="log" data-arg="${esc(u.key)}">로그</button>` : ""}</div>
@@ -262,7 +265,7 @@ function boxHtml(b) {
   const stages = (b.stages || []).length ? `<div class="dg-stages">${b.stages.map((s) => `<span class="dg-stage">${esc(s)}</span>`).join('<span class="dg-stage-arrow">›</span>')}</div>` : "";
   // 다른 PC 에서 도는 것(인지: vision-3090)은 그렇다고 적는다 — 어디로 가서 고칠지가 달라진다
   const host = b.host ? `<span class="dg-host" title="이 프로세스는 ${esc(b.host)} 에서 돈다">${esc(b.host)}</span>` : "";
-  return `<div class="dg-box tone-${esc(b.tone)}" id="dg-box-${esc(b.id)}"><div class="dg-head"><span class="lamp ${esc(b.tone)}"></span><b>${esc(b.title)}</b>
+  return `<div class="dg-box tone-${esc(b.tone)}" id="dg-box-${esc(b.id)}" data-box="${esc(b.id)}"><div class="dg-head" tabindex="0" title="끌어서 옮긴다 · 방향키 8 px · Shift 32 px"><span class="lamp ${esc(b.tone)}"></span><b>${esc(b.title)}</b>
       <span class="dg-state">${esc(LINK_WORD[b.state] || b.state)}</span></div>${host}
     ${b.detail ? `<div class="dg-detail">${esc(b.detail)}</div>` : ""}${stages}${lines}${unitHtml(b)}${ports ? `<div class="dg-ports">${ports}</div>` : ""}</div>`;
 }
@@ -277,6 +280,8 @@ function renderDiagram(s) {
   $("diagram").style.setProperty("--dg-n", D.cols.length);
   $("diagram").classList.toggle("dg-tight", D.cols.length >= TIGHT_FROM_COLS);
   put("dg-cols", D.cols.map((col) => `<div class="dg-col">${col.map(boxHtml).join("")}</div>`).join(""));
+  layoutFor(s.profile.id);
+  applyLayout();
   renderExtra(D.extra);
   drawWires();
 }
@@ -313,6 +318,72 @@ function drawWires() {
   svg.setAttribute("height", root.scrollHeight);
   if (paths !== lastWires) { lastWires = paths; svg.innerHTML = paths; }      // 같으면 건드리지 않는다 — 흐름 애니메이션이 끊기지 않게
 }
+
+// ── 연결 그림 배치 ─────────────────────────────────────────────────────
+// 상자 머리를 끌어 옮긴다(방향키도). 위치는 이 브라우저에만 프로파일별로 남는다 — 서버·미션·다른 화면과 무관하다.
+// 오프셋은 HTML 에 넣지 않고 그린 뒤에 입힌다: 끄는 도중 상태가 바뀌어 상자가 다시 그려져도 끊기지 않게.
+const LAYOUT_STEP = 8, LAYOUT_STEP_BIG = 32;
+let layout = {}, layoutKey = "", drag = null;
+function layoutFor(profileId) {
+  const key = `s2r.layout.${profileId}`;
+  if (key === layoutKey) return;
+  layoutKey = key;
+  try { layout = JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch { layout = {}; }
+}
+function saveLayout() {
+  try { localStorage.setItem(layoutKey, JSON.stringify(layout)); } catch { /* 저장이 막혀도 이 화면에서는 유지된다 */ }
+}
+function applyLayout() {
+  const cols = $("dg-cols"), boxes = [...cols.querySelectorAll(".dg-box")];
+  boxes.forEach((el) => {
+    const o = layout[el.dataset.box];
+    el.style.translate = o ? `${o.x}px ${o.y}px` : "";
+    el.classList.toggle("moved", !!o);
+  });
+  cols.style.paddingBottom = "";                                             // 아래로 끌어낸 만큼 그림을 늘린다
+  const bottom = cols.getBoundingClientRect().bottom;
+  const over = Math.max(0, ...boxes.filter((el) => el.classList.contains("moved")).map((el) => el.getBoundingClientRect().bottom - bottom));
+  cols.style.paddingBottom = over > 0 ? `${Math.ceil(over) + 8}px` : "";
+  $("dg-reset").hidden = !Object.keys(layout).length;
+}
+function moveBox(id, x, y) {
+  const el = document.getElementById(`dg-box-${id}`);
+  if (!el) return;
+  const o = layout[id] || { x: 0, y: 0 }, r = el.getBoundingClientRect(), c = $("dg-cols").getBoundingClientRect();
+  const nx = Math.round(Math.max(x, c.left - (r.left - o.x))), ny = Math.round(Math.max(y, c.top - (r.top - o.y)));   // 그림 위·왼쪽 밖으로는 못 나간다
+  const { [id]: _old, ...rest } = layout;
+  layout = nx || ny ? { ...rest, [id]: { x: nx, y: ny } } : rest;
+  applyLayout();
+  drawWires();
+}
+$("diagram").addEventListener("pointerdown", (e) => {
+  const head = e.target.closest(".dg-head");
+  if (!head || e.button !== 0 || e.target.closest("button, a, input")) return;
+  const id = head.closest(".dg-box").dataset.box, o = layout[id] || { x: 0, y: 0 };
+  drag = { id, pid: e.pointerId, px: e.clientX, py: e.clientY, x0: o.x, y0: o.y };
+  $("diagram").setPointerCapture(e.pointerId);
+  $("diagram").classList.add("dragging");
+  e.preventDefault();
+});
+$("diagram").addEventListener("pointermove", (e) => {
+  if (drag && e.pointerId === drag.pid) moveBox(drag.id, drag.x0 + e.clientX - drag.px, drag.y0 + e.clientY - drag.py);
+});
+const endDrag = (e) => {
+  if (!drag || e.pointerId !== drag.pid) return;
+  drag = null;
+  $("diagram").classList.remove("dragging");
+  saveLayout();
+};
+$("diagram").addEventListener("pointerup", endDrag);
+$("diagram").addEventListener("pointercancel", endDrag);
+$("diagram").addEventListener("keydown", (e) => {
+  const head = e.target.closest(".dg-head"), dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+  if (!head || !dir) return;
+  const id = head.closest(".dg-box").dataset.box, o = layout[id] || { x: 0, y: 0 }, step = e.shiftKey ? LAYOUT_STEP_BIG : LAYOUT_STEP;
+  moveBox(id, o.x + dir[0] * step, o.y + dir[1] * step);
+  saveLayout();
+  e.preventDefault();
+});
 
 function unitModal(key) {
   const u = S.session.units[key], boxes = S.session.diagram.cols.flat().filter((b) => b.unit && b.unit.key === key);
@@ -490,6 +561,20 @@ const acts = {
   "end-run"() { endModal(); },
   async "end-go"() { await call("POST", "/api/run/end", { force: !!$("end-force")?.checked }); closeModal(); $("logdrawer").hidden = true; logKey = null; refresh(); },
   "modal-close"() { closeModal(); },
+  async copy(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {                                                                // 클립보드 API 가 막힌 브라우저
+      const t = Object.assign(document.createElement("textarea"), { value: text });
+      document.body.append(t);
+      t.select();
+      const ok = document.execCommand("copy");
+      t.remove();
+      if (!ok) return toast("복사하지 못했다 — 명령을 직접 선택해 복사할 것");
+    }
+    toast("복사했다 — 다른 셸에 붙여넣어 실행할 것", [], true);
+  },
+  "layout-reset"() { layout = {}; saveLayout(); applyLayout(); drawWires(); },
   "goto-stage"(id) {                                                         // 잠금 줄·다음 할 일 → 그 단계 카드
     const li = $(`stage-${id}`);
     if (!li) return;

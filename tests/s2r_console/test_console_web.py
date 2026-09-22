@@ -273,3 +273,24 @@ def test_shown_commands_paste_into_a_shell_as_is():
     assert out[1] == "ros2 launch p x.launch.py a:=1"
     echoed = subprocess.run(["bash", "-c", f"printf '%s\\n' {out[2]}"], capture_output=True, text=True, check=True).stdout
     assert echoed.split("\n")[:-1] == cases[2]
+
+
+def test_manual_commands_have_a_copy_button_but_the_console_never_runs_them():
+    """수동 명령은 복사만 된다 — 복사 동작은 클립보드에만 쓰고 서버를 부르지 않는다."""
+    assert JS.count("copyBtn(shellLine(") >= 3, "단계 카드 목록 · 확인 대기 상자 · 연결 그림의 수동 줄"
+    body = re.search(r"async copy\(text\) \{([\s\S]*?)\n  \},", JS).group(1)
+    assert "clipboard.writeText" in body and "call(" not in body
+
+
+def test_diagram_boxes_can_be_moved_and_the_layout_stays_in_this_browser():
+    """상자 배치는 localStorage(프로파일별)에만 — 서버로 가지 않고, 저장이 막혀도 화면은 돈다."""
+    assert 'data-act="layout-reset"' in HTML and 'id="dg-reset"' in HTML
+    assert "`s2r.layout.${profileId}`" in JS
+    layout = JS[JS.index("// ── 연결 그림 배치"):JS.index("function unitModal")]
+    assert "call(" not in layout, "배치는 서버와 무관하다"
+    assert layout.count("localStorage") == 2 and layout.count("try {") >= 2, "읽기·쓰기 모두 try 로 감싼다"
+    assert 'addEventListener("keydown"' in layout, "끌기만이 아니라 방향키로도 옮긴다"
+    # 오프셋은 HTML 이 아니라 그린 뒤에 입힌다 — 끄는 도중 다시 그려져도 끊기지 않게
+    assert "translate" not in re.search(r"function boxHtml[\s\S]*?\n}", JS).group(0)
+    assert re.search(r'put\("dg-cols"[^\n]*\n\s*layoutFor\(s\.profile\.id\);\n\s*applyLayout\(\);', JS)
+    assert re.search(r"\.dg-head\s*\{[^}]*touch-action:\s*none", CSS)
