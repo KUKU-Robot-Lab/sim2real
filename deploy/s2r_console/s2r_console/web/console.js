@@ -71,7 +71,9 @@ function render() {
   $("landing").hidden = !!s;
   $("work").hidden = !s;
   $("stopbar").hidden = !s;
+  $("nextstep").hidden = !s;
   if (!s) return renderLanding();
+  renderNext(s);
   renderStages(s);
   renderDiagram(s);
   renderLinks(s);
@@ -101,6 +103,31 @@ function renderTop(s) {
   }
   // 입력 중인 이름 칸을 2 Hz 로 갈아엎지 않는다
   if (!(document.activeElement && document.activeElement.id === "op-name")) put("lease", m);
+}
+
+// 지금 무엇을 하면 되는가 — 노드는 상자 스위치가 아니라 미션 단계의 ▶ 실행으로 켜진다(09.22 실기 첫 세션에서 못 찾았다)
+let flashStage = null, flashUntil = 0;                                       // 단계로 간 뒤 잠깐 강조 — 다시 그려도 유지
+const goBtn = (id) => ` <button class="btn btn-sm" data-act="goto-stage" data-arg="${esc(id)}">${esc(id)} 단계로 가기 ↓</button>`;
+function renderNext(s) {
+  const m = s.mission, R = s.runner;
+  const cur = m.rows.find((r) => r.current);
+  let msg, go = "";
+  if (!holding()) {
+    msg = `<b>먼저 조작 권한을 잡을 것</b> — 오른쪽 위에 이름을 넣고 <b>조작 권한 잡기</b>. 노드는 아래 미션 단계의 <b>▶ 실행</b>으로 켜진다.`;
+  } else if (R && R.active) {
+    const w = (R.steps || []).find((st) => st.status === "waiting");
+    msg = w ? `<b>✋ 확인을 기다린다</b> — ${esc(R.stage)} 단계: 다른 셸에서 명령을 실행한 뒤 카드의 <b>실행했고 정상이다</b>를 누를 것.`
+      : `<b>${esc(R.stage)}</b> 단계 실행 중…`;
+    go = goBtn(R.stage);
+  } else if (cur) {
+    const how = cur.touches_real && !cur.approved ? "<b>승인…</b> 뒤 <b>▶ 실행</b>" : "<b>▶ 실행</b>";
+    msg = `<b>다음: ${esc(cur.id)}</b> — ${esc(cur.title)}. 카드의 ${how}.`
+      + (cur.reasons.length ? ` <span class="warn">막힘: ${esc(cur.reasons[0])}</span>` : "");
+    go = goBtn(cur.id);
+  } else {
+    msg = `모든 단계가 끝났다 — 끝낼 때는 정지 바의 <b>PD 해제</b> → 오른쪽 아래 <b>run 끝내기</b>.`;
+  }
+  put("nextstep", `<span class="ns-text">${msg}</span>${go}`);   // 문장은 한 덩어리 — flex 간격이 굵은 글자 사이에 끼지 않게
 }
 
 function renderBanner(s) {
@@ -153,7 +180,8 @@ function renderStages(s) {
   const rows = m.rows.map((r, i) => {
     const running = r.current && m.status === "RUNNING";
     const failed = r.current && (m.status === "FAILED" || m.status === "ABORTED");
-    const cls = ["stage", r.done ? "done" : "", r.current ? "current" : "", running ? "running" : "", failed ? "failed" : "", r.reasons.length ? "blocked" : ""].join(" ");
+    const flash = r.id === flashStage && Date.now() < flashUntil ? "flash" : "";
+    const cls = ["stage", r.done ? "done" : "", r.current ? "current" : "", running ? "running" : "", failed ? "failed" : "", r.reasons.length ? "blocked" : "", flash].join(" ");
     const badges = [
       r.touches_real ? `<span class="badge real">실기</span>` : "",
       r.touches_real && r.approved ? `<span class="badge ok">승인됨</span>` : "",
@@ -189,7 +217,7 @@ function renderStages(s) {
       actions = `<div class="actions">${actions}</div>`;
     }
     const body = r.current || mine ? `<ul class="cmds">${cmds}</ul>` : det(`cmds:${r.id}`, `명령 ${r.commands.length}개`, `<ul class="cmds">${cmds}</ul>`);
-    return `<li class="${cls}"><div class="stage-rail"><span class="dot">${r.done ? "✓" : ""}</span></div><div class="stage-body">
+    return `<li id="stage-${esc(r.id)}" class="${cls}"><div class="stage-rail"><span class="dot">${r.done ? "✓" : ""}</span></div><div class="stage-body">
       <div class="stage-line"><span class="stage-id">${i + 1}. ${esc(r.id)}</span>${badges}</div><div class="stage-title">${esc(r.title)}</div>
       ${reasons}${stale}${note}${r.commands.length ? body : ""}${actions}</div></li>`;
   });
@@ -214,7 +242,9 @@ function unitHtml(b) {
   return `<div class="dg-unit"><button class="sw ${u.alive ? "on" : "off"}" role="switch" data-act="unit" data-arg="${esc(u.key)}:${u.alive ? "0" : "1"}"
       aria-checked="${u.alive}" aria-label="${esc(b.title)} 켜기/끄기" title="${esc(locked || (u.alive ? "끄기" : "켜기"))}"${locked ? " disabled" : ""}></button>
     <span>${esc(u.key)} · ${meta}</span>${share}${u.started ? `<button class="btn btn-sm btn-ghost" data-act="log" data-arg="${esc(u.key)}">로그</button>` : ""}</div>
-    ${!can && why ? `<div class="dg-why dg-lock" title="${esc(why)}">🔒 ${esc(why)}</div>` : ""}${manual}`;
+    ${!can && why ? (u.goto
+        ? `<button class="dg-why dg-lock dg-goto" data-act="goto-stage" data-arg="${esc(u.goto)}" title="${esc(why)} — 누르면 그 단계로 간다">🔒 ${esc(why)} ↓</button>`
+        : `<div class="dg-why dg-lock" title="${esc(why)}">🔒 ${esc(why)}</div>`) : ""}${manual}`;
 }
 
 function boxHtml(b) {
@@ -454,6 +484,15 @@ const acts = {
   "end-run"() { endModal(); },
   async "end-go"() { await call("POST", "/api/run/end", { force: !!$("end-force")?.checked }); closeModal(); $("logdrawer").hidden = true; logKey = null; refresh(); },
   "modal-close"() { closeModal(); },
+  "goto-stage"(id) {                                                         // 잠금 줄·다음 할 일 → 그 단계 카드
+    const li = $(`stage-${id}`);
+    if (!li) return;
+    const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    li.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "center" });
+    flashStage = id; flashUntil = Date.now() + 2000;
+    li.classList.remove("flash"); void li.offsetWidth; li.classList.add("flash");
+    li.querySelector('[data-act="ack"],[data-act="approve"]:not([disabled]),[data-act="run"]')?.focus({ preventScroll: true });
+  },
 };
 
 document.addEventListener("click", (e) => {

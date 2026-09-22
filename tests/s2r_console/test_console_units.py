@@ -277,3 +277,37 @@ def test_a_locked_switch_says_what_to_do_in_few_words():
     (why_wait,) = on_reasons(waiting, alive=False, busy_stage=None, completed=())
     assert "bringup" in why_real and "실행" in why_real and len(why_real) <= 28, why_real
     assert "preflight" in why_wait and len(why_wait) <= 28, why_wait
+
+
+def test_a_locked_switch_names_the_stage_that_turns_it_on():
+    # 운영자가 "노드를 어떻게 켜나" 를 못 찾았다(09.22 실기). 잠금 줄이 그 단계로 데려가려면 서버가 단계를 알려 줘야 한다.
+    from s2r_console.units import views
+    real = UnitCmd(key="bringup#3", stage="bringup", index=3, note="", argv=("ros2", "launch", "x.launch.py"),
+                   kind="background", touches_real=True, needs=("preflight",))
+    head = UnitCmd(key="sensors#1", stage="sensors", index=1, note="", argv=("python3", "h.py"),
+                   kind="background", touches_real=False, needs=("preflight",))
+    kw = dict(stopped=(), busy_stage=None, pd_phase=None, robot_keys=set(), real=True)
+    v = views({u.key: u for u in (real, head)}, {}, completed=(), **kw)
+    assert v["bringup#3"]["goto"] == "bringup"          # 실기 단계의 명령 — 그 단계를 실행해야 켜진다
+    assert v["sensors#1"]["goto"] == "preflight"        # 선행 단계가 먼저다
+    v = views({head.key: head}, {}, completed=("preflight",), **kw)
+    assert v["sensors#1"]["goto"] is None               # 스위치로 바로 켤 수 있다
+
+
+# ── 끝낼 때 팔을 떨어뜨리지 않는다 (OpenArm on_deactivate → disable_all) ──────
+def test_ending_a_real_run_with_the_arm_bringup_alive_is_refused_with_the_reason():
+    # 브링업을 콘솔이 감독하게 된 뒤(09.22) "run 끝내기" 가 PD 해제 뒤 브링업까지 내렸다 — 모터 토크가 전부 풀린다.
+    from s2r_console.units import stack_end_reason
+    procs = {"bringup#3": {"alive": True}, "bringup#5": {"alive": False}}
+    why = stack_end_reason(real=True, stack_keys={"bringup#3", "bringup#5"}, procs=procs)
+    assert why and "bringup#3" in why and "토크" in why and "bringup#5" not in why
+    assert stack_end_reason(real=False, stack_keys={"bringup#3"}, procs=procs) is None      # fake 플랜트는 떨어질 팔이 없다
+    assert stack_end_reason(real=True, stack_keys={"bringup#3"}, procs={"bringup#3": {"alive": False}}) is None
+
+
+def test_quitting_the_console_leaves_live_real_robot_processes_running():
+    # 콘솔 터미널의 Ctrl+C 는 보호 없이 전부 내렸다. 실기에서는 고아 프로세스가 떨어진 팔보다 낫다.
+    from s2r_console.units import keep_children_on_exit
+    assert keep_children_on_exit(real=True, procs={"bringup#3": {"alive": True}}) is True
+    assert keep_children_on_exit(real=True, procs={"bringup#3": {"alive": False}}) is False
+    assert keep_children_on_exit(real=False, procs={"plant#0": {"alive": True}}) is False

@@ -269,7 +269,16 @@ class Console:
             out.append("pd 상태를 모른다 — 브리지 복구 후 PD 해제를 확인할 것 (그래도 끝내려면 강제 종료)")
         elif phase not in U.PD_FREE:
             out.append(f"pd 가 {phase} 다 — 프로세스를 죽이기 전에 먼저 PD 해제(release)를 할 것")
+        stack = U.stack_end_reason(real=s.profile.is_real, stack_keys=self._stack_keys(s),
+                                   procs={p["key"]: p for p in s.supervisor.table()})
+        if stack:
+            out.append(stack)
         return out
+
+    @staticmethod
+    def _stack_keys(s: "Session") -> set[str]:
+        """팔·손 드라이버를 띄운 단위 — 그림에서 controller_manager 를 가진 구동 상자의 단위."""
+        return set() if s.diagram is None else {b.unit for b in s.diagram.boxes if b.manager and b.unit}
 
     def end(self, *, force: bool = False) -> int:
         with self._lock:
@@ -288,11 +297,27 @@ class Console:
             self.session = None
             return n
 
-    def shutdown(self) -> None:
-        """콘솔 프로세스가 내려갈 때 — 띄운 자식을 남기지 않는다."""
+    def shutdown(self) -> list[str]:
+        """콘솔 프로세스가 내려갈 때. fake 는 자식을 모두 정지한다.
+
+        실기에서 뭔가 떠 있으면 **남긴다** — 팔 브링업을 내리면 모터가 전부 풀린다(Ctrl+C 한 번에 팔이 떨어졌다).
+        구독 전용 브리지·프로브만 내린다. 남긴 키를 돌려준다(없으면 빈 목록).
+        """
         with self._lock:
-            if self.session is not None:
+            s = self.session
+            if s is None:
+                return []
+            procs = {p["key"]: p for p in s.supervisor.table()}
+            if not U.keep_children_on_exit(real=s.profile.is_real, procs=procs):
                 self.end(force=True)
+                return []
+            kept = sorted(k for k, p in procs.items() if p.get("alive"))
+            for pipe in (s.bridge, s.probe):
+                if pipe is not None:
+                    pipe.stop()
+            self._intent(s, "run/detach", {"kept": kept})
+            self.session = None
+            return kept
 
     # ── 승인 ────────────────────────────────────────────────────────────
     def approve(self, stage_id: str, *, operator: str, typed: str, note: str = "") -> None:

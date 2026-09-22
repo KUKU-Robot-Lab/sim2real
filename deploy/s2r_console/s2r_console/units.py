@@ -86,6 +86,34 @@ def on_reasons(unit: UnitCmd, *, alive: bool, busy_stage: str | None, completed:
     return _busy(unit, busy_stage)
 
 
+def goto_stage(unit: UnitCmd, *, alive: bool, completed: Collection[str]) -> str | None:
+    """이 스위치를 켜려면 어느 단계로 가야 하나 — 화면의 잠금 줄이 그 단계 카드로 데려간다. 바로 켤 수 있으면 None."""
+    if alive or unit.kind != "background":
+        return None
+    if unit.touches_real:
+        return unit.stage                  # 실기 단계의 명령은 그 단계를 승인·실행해야 뜬다
+    waiting = [n for n in unit.needs if n not in completed]
+    return waiting[0] if waiting else None
+
+
+def stack_end_reason(*, real: bool, stack_keys: Collection[str], procs: Mapping[str, Mapping]) -> str | None:
+    """실기 run 을 끝내면 팔·손 드라이버까지 내려간다 — 팔은 떨어진다. 떠 있으면 그 사유, 아니면 None.
+
+    OpenArm 하드웨어는 on_deactivate 에서 disable_all() 로 모든 모터를 끈다
+    (robot_control/ros_ws/src/openarm_ros2/openarm_hardware/src/openarm_simple_hardware.cpp).
+    """
+    live = sorted(k for k in stack_keys if (procs.get(k) or {}).get("alive"))
+    if not real or not live:
+        return None
+    return (f"팔·손 드라이버가 떠 있다({', '.join(live)}) — 끝내면 모터 토크가 전부 풀린다(팔이 떨어진다). "
+            "팔을 받침·안전 자세에 둔 뒤 '강제 종료' 로 끝낼 것")
+
+
+def keep_children_on_exit(*, real: bool, procs: Mapping[str, Mapping]) -> bool:
+    """콘솔 프로세스가 내려갈 때 자식을 남길 것인가. 실기에서 뭔가 떠 있으면 남긴다 — 고아가 떨어진 팔보다 낫다."""
+    return real and any((p or {}).get("alive") for p in procs.values())
+
+
 def off_reasons(unit: UnitCmd, *, alive: bool, busy_stage: str | None, pd_phase: str | None,
                 robot_unit: bool, real: bool) -> list[str]:
     """왜 지금 끌 수 없는가. `robot_unit` = 이 단위가 pd 노드를 띄운 것인가."""
@@ -127,5 +155,6 @@ def views(units: Mapping[str, UnitCmd], procs: Mapping[str, Mapping], *, stopped
         why_on = on_reasons(u, alive=alive, busy_stage=busy_stage, completed=completed)
         why_off = off_reasons(u, alive=alive, busy_stage=busy_stage, pd_phase=pd_phase,
                               robot_unit=robot_keys is None or key in robot_keys, real=real)
-        out[key] = view(u, procs.get(key), stopped=key in stopped, why_on=why_on, why_off=why_off)
+        out[key] = {**view(u, procs.get(key), stopped=key in stopped, why_on=why_on, why_off=why_off),
+                    "goto": goto_stage(u, alive=alive, completed=completed)}
     return out

@@ -154,7 +154,8 @@ def test_narrow_box_titles_get_the_whole_line_to_themselves():
     assert re.search(r"\.dg-tight \.dg-head \{[^}]*flex-wrap: wrap", CSS)
     assert re.search(r"\.dg-tight \.dg-state \{[^}]*flex: 1 0 100%", CSS)
     assert re.search(r"\.dg-tight \.dg-head b \{[^}]*overflow-wrap: break-word", CSS)
-    assert "overflow-wrap: anywhere" not in CSS
+    title = re.search(r"\.dg-tight \.dg-head b \{([^}]*)\}", CSS).group(1)
+    assert "anywhere" not in title                      # 제목은 낱자로 쪼개지 않는다(노드 이름 표는 따로 — 줄바꿈이 낫다)
 
 
 def test_a_box_that_runs_on_another_machine_says_so():
@@ -212,3 +213,38 @@ def test_reduced_motion_stops_every_looping_animation():
 def test_a_lock_reason_wraps_to_two_lines_instead_of_hiding_behind_hover():
     rule = re.search(r"\.dg-tight \.dg-lock, \.dg-tight \.dg-manual \{([^}]*)\}", CSS).group(1)
     assert "line-clamp: 2" in rule and "nowrap" not in rule
+
+
+# ── "노드를 어떻게 켜나" 를 화면이 답한다 (09.22 실기 첫 세션) ────────────
+def test_there_is_a_next_step_line_under_the_banner():
+    assert re.search(r'id="nextstep"', HTML)
+    assert "function renderNext" in JS and "renderNext(" in JS.split("function renderNext")[0]   # render() 가 부른다
+
+
+def test_each_stage_card_has_an_anchor_to_jump_to():
+    assert re.search(r'<li id="stage-\$\{esc\(r\.id\)\}"', JS)
+
+
+def test_a_lock_line_takes_you_to_the_stage_that_turns_the_node_on():
+    assert re.search(r'data-act="goto-stage" data-arg="\$\{esc\(u\.goto\)\}"', JS)
+    assert re.search(r'"goto-stage"\s*\(', JS) or re.search(r'async "goto-stage"', JS)
+
+
+def test_jumping_to_a_stage_does_not_land_under_the_sticky_stop_bar():
+    assert re.search(r"\.stage \{[^}]*scroll-margin-bottom", CSS) or re.search(r"\.stage\s*\{[^}]*scroll-margin", CSS)
+
+
+def test_long_node_names_wrap_instead_of_being_cut():
+    assert re.search(r"\.node-name \{[^}]*overflow-wrap: anywhere", CSS)
+
+
+def test_the_stop_bar_is_not_trapped_inside_a_one_screen_body():
+    # body 가 height:100% 로 화면 한 장에 묶여 있었다 — sticky 정지 바가 스크롤하면 화면 중간에 떠서 내용을 덮다가
+    # 위로 사라졌다(09.22 실기 첫 세션 사진). 단계를 실행하러 미션 패널로 내려가면 정지 버튼이 없었다.
+    assert not re.search(r"html\s*,\s*body\s*\{[^}]*height:\s*100%", CSS)
+    body = re.search(r"(?m)^body \{([^}]*)\}", CSS).group(1)
+    assert "min-height: 100vh" in body and not re.search(r"(?<!min-)height:\s*100%", body)
+
+
+def test_the_jump_highlight_survives_a_re_render():
+    assert "flashStage" in JS and re.search(r'r\.id === flashStage', JS)

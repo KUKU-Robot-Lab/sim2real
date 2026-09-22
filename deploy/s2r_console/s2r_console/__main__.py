@@ -45,8 +45,11 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\n[s2r_console] 내려간다 — 띄운 자식을 정지한다", flush=True)
     finally:
-        console.shutdown()
+        kept = console.shutdown()
         server.server_close()
+        if kept:
+            print("[s2r_console] ★실기 프로세스는 남겼다 — 끄면 모터 토크가 풀린다: " + ", ".join(kept), flush=True)
+            print("[s2r_console]   콘솔을 다시 띄워도 이 프로세스들을 넘겨받지 않는다. 팔을 안전 자세에 둔 뒤 PID 로 정리할 것", flush=True)
     return 0
 
 
