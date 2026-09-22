@@ -109,8 +109,21 @@ def main() -> int:
     return rc
 
 
+IDLE_AFTER_S = 3.0     # 보낸 뒤 이만큼 지났는데 busy 가 아니면 끝난 것(이미 켜져 있어 "변경 없음" 이면 busy 가 켜지지 않는다)
+
+
+def wait_verdict(seen_busy: bool, busy: bool, elapsed: float, error: str | None) -> str | None:
+    """'ok' · 'fail' · None(계속 기다린다). 09.22 fake: 런처가 '변경 없음' 으로 즉시 끝나 busy 를 한 번도 안 켰는데
+    busy→끝 전환만 기다리다 150 s 를 넘겼다."""
+    if busy:
+        return None
+    if seen_busy or elapsed >= IDLE_AFTER_S:
+        return "fail" if error else "ok"
+    return None
+
+
 def _wait_done(node, box: list, wait: float) -> int:
-    """busy 가 True 였다가 False 가 될 때까지(또는 wait 초). 끝난 상태에 error 가 있으면 1."""
+    """런처가 일을 끝낼 때까지(또는 wait 초). 끝난 상태에 error 가 있으면 1."""
     import rclpy
 
     t0, seen_busy = time.monotonic(), False
@@ -120,16 +133,14 @@ def _wait_done(node, box: list, wait: float) -> int:
             continue
         st = json.loads(box[-1])
         seen_busy |= bool(st.get("busy"))
-        if seen_busy and not st.get("busy"):
-            print_status(st)
-            if st.get("error"):
-                print(f"✗ 인지 기동 실패: {st['error']}", file=sys.stderr)
-                return 1
-            return 0
-        if not seen_busy and time.monotonic() - t0 > 5.0 and st.get("error"):
-            print_status(st)
+        v = wait_verdict(seen_busy, bool(st.get("busy")), time.monotonic() - t0, st.get("error"))
+        if v is None:
+            continue
+        print_status(st)
+        if v == "fail":
             print(f"✗ 인지 기동 실패: {st['error']}", file=sys.stderr)
             return 1
+        return 0
     print(f"✗ {wait:.0f} s 안에 런처가 끝나지 않았다", file=sys.stderr)
     if box:
         print_status(json.loads(box[-1]))

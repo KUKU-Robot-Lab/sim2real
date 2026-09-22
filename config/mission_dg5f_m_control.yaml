@@ -306,7 +306,7 @@ run:
       argv: [bash, -lc, "true"]
       manual: true
     - note: "[right] 손을 정책 초기 손 자세로 (pd/hand_home — 팔이 홈에 정착했을 때만 받는다)"
-      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_hand_home]
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_hand_home, --service-timeout, "15"]
       execute_args: [--execute, --approve, pd_hand_home]
   selftest_right:
     - note: "[right] 셀프테스트 — 진폭 0.02→0.05→0.10 rad, 7관절"
@@ -335,8 +335,12 @@ run:
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, ep_stop]
       execute_args: [--execute]
   return_right:
+    - note: "[right] 정책 시작 자세에서 정착 — fabric 뒤 pd 는 스트림 두절 HOLD 다. goto_home 이 그 HOLD 를 풀고 추종으로 되돌린다
+        (HOLD 에서는 손 명령이 나가지 않는다). 이미 홈 근처라 남은 오차만 움직인다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_goto_home, --service-timeout, "45"]
+      execute_args: [--execute, --approve, pd_goto_home]
     - note: "[right] 손을 engage 때 자세로 되돌린다(pd/hand_rest) — 홈 경로는 그 손 자세로 충돌 검사했다(편 손으로 되짚으면 검사 밖이다)"
-      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_hand_rest]
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_hand_rest, --service-timeout, "15"]
       execute_args: [--execute, --approve, pd_hand_rest]
     - note: "[right] 홈 경로 되짚기(최대 0.1 rad/s). 진입 램프 간극이 0.35 rad 를 넘으면 거부된다(정책 시작 자세 근처에서만)"
       argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py", --npz, "{artifact:path_right}", --reverse, --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7",
@@ -391,7 +395,7 @@ run:
       argv: [bash, -lc, "true"]
       manual: true
     - note: "[left] 손을 정책 초기 손 자세로 (pd/hand_home — 팔이 홈에 정착했을 때만 받는다)"
-      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_hand_home]
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_hand_home, --service-timeout, "15"]
       execute_args: [--execute, --approve, pd_hand_home]
   selftest_left:
     - note: "[left] 셀프테스트 — 진폭 0.02→0.05→0.10 rad, 7관절"
@@ -420,8 +424,12 @@ run:
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, ep_stop]
       execute_args: [--execute]
   return_left:
+    - note: "[left] 정책 시작 자세에서 정착 — fabric 뒤 pd 는 스트림 두절 HOLD 다. goto_home 이 그 HOLD 를 풀고 추종으로 되돌린다
+        (HOLD 에서는 손 명령이 나가지 않는다). 이미 홈 근처라 남은 오차만 움직인다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_goto_home, --service-timeout, "45"]
+      execute_args: [--execute, --approve, pd_goto_home]
     - note: "[left] 손을 engage 때 자세로 되돌린다(pd/hand_rest) — 홈 경로는 그 손 자세로 충돌 검사했다(편 손으로 되짚으면 검사 밖이다)"
-      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_hand_rest]
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_hand_rest, --service-timeout, "15"]
       execute_args: [--execute, --approve, pd_hand_rest]
     - note: "[left] 홈 경로 되짚기(최대 0.1 rad/s). 진입 램프 간극이 0.35 rad 를 넘으면 거부된다(정책 시작 자세 근처에서만)"
       argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py", --npz, "{artifact:path_left}", --reverse, --joints, "l_aj_1,l_aj_2,l_aj_3,l_aj_4,l_aj_5,l_aj_6,l_aj_7",

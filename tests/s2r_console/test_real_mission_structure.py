@@ -47,8 +47,9 @@ def test_each_arm_is_readied_engaged_and_homed_before_the_selftest():
         assert "--only pd_goto_home" in home[6] and "--service-timeout 45" in home[6]      # 정착만 — 도착은 재생이 했다
         assert cmds[7].manual and "--only pd_hand_home" in home[8]
         ret = _cmds(f"return_{side}")
-        assert "--only pd_hand_rest" in " ".join(ret[0].argv)                               # 손을 출발 자세로 먼저
-        back = " ".join(ret[1].argv)
+        assert "--only pd_goto_home" in " ".join(ret[0].argv)                               # fabric 뒤 HOLD 를 풀고
+        assert "--only pd_hand_rest" in " ".join(ret[1].argv)                               # 손을 출발 자세로 먼저
+        back = " ".join(ret[2].argv)
         assert "--reverse" in back and f"{{artifact:path_{side}}}" in back                    # 같은 경로를 되짚는다
         assert f"path_{side}" in MISSION.stages[IDS.index(f"home_{side}")].artifacts          # 승인 근거 해시에 들어간다
         assert IDS.index(f"return_{side}") < IDS.index(f"release_{side}")

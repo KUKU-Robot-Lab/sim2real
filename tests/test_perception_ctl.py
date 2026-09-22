@@ -28,3 +28,14 @@ def test_start_with_viewer_flag_and_stop_payloads():
     assert build_payload(Namespace(op="stop", camera=True), REG) == {"op": "stop", "camera": True}
     assert build_payload(Namespace(op="viewer", on="off"), REG) == {"op": "viewer", "on": False}
     assert build_payload(Namespace(op="status"), REG) is None
+
+
+def test_wait_verdict_accepts_an_immediate_no_change_and_catches_errors():
+    # 09.22 fake: 런처가 "변경 없음" 으로 즉시 끝나 busy 가 안 켜졌는데 150 s 를 기다렸다 · 실기에서는 실패를 못 보고 통과했다
+    from perception_ctl import wait_verdict
+    assert wait_verdict(False, False, 1.0, None) is None                 # 아직 이르다
+    assert wait_verdict(False, False, 3.5, None) == "ok"                 # 변경 없음 — 끝
+    assert wait_verdict(True, True, 30.0, None) is None                  # 일하는 중
+    assert wait_verdict(True, False, 12.0, None) == "ok"
+    assert wait_verdict(True, False, 12.0, "camera did not publish") == "fail"
+    assert wait_verdict(False, False, 4.0, "ssh rc=1") == "fail"
