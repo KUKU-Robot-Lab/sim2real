@@ -1,5 +1,8 @@
 # 배포 사용법 — 학습한 정책을 실기에 올린다
 
+> **평소 운영은 운영 콘솔 한 화면에서 한다** → [README](../README.md) (드라이버 · 비전 · head · 관절 상태 · 미션 · 정지).
+> 이 문서는 **콘솔 밖에서 하는 일**(정책 등록 · 계약 만들기)과, 콘솔이 안에서 부르는 명령의 참고표다.
+
 이 문서가 배포 경로의 **시작점**이다. README.md 는 하드웨어 브링업과 Isaac Sim 연동까지만 다룬다.
 
 여기 적힌 명령은 전부 그 도구의 `--help` / argparse 에서 확인한 것이다(2026-09-22).
@@ -101,7 +104,7 @@ python3 deploy/policy_control/tools/episode_ctl.py --steps 250 --execute \
 터미널 네 개를 오가지 않기 위한 화면. 판정을 새로 만들지 않고 미션·계약·상태 토픽의 문자열을 옮긴다.
 
 ```bash
-deploy/s2r_console/tools/console.sh --profile left_v2B25_real --port 8091 --operator <이름>
+deploy/s2r_console/tools/console.sh --profile dg5f_m_real --port 8091 --operator <이름>   # 지금 로봇(DG-5F-M)
 ssh -L 8091:127.0.0.1:8091 <이 PC>      # 원격은 터널로만. 127.0.0.1 바인딩이고 인증이 없다
 ```
 

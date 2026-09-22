@@ -24,8 +24,11 @@ stages:
     artifacts: [contract_left, gains_yaml]
 
   - id: sensors
-    title: 인지 런처(vision-3090) + 목 상태 퍼블리셔 — 읽기 전용, 실기를 움직이지 않는다
+    title: 인지 켜기(vision-3090 카메라·FP++) + 목 상태 퍼블리셔 — 실기를 움직이지 않는다
     needs: [preflight]
+
+  - id: sensors_off
+    title: 인지 끄기 — vision-3090 의 FP++ 컨테이너와 카메라를 내린다(읽기 전용 쪽만, 실기와 무관)
 
   - id: bringup
     title: 모터 전원 → CAN → openarm_bringup (robot_control) → head_home
@@ -102,6 +105,11 @@ run:
     - note: 목 상태 퍼블리셔 — /head/joint_states 20 Hz. 읽기 전용(토크·게인·목표를 건드리지 않는다)
       argv: [python3, "{repo}/scripts/nodes/head_joint_publisher.py"]
       background: true
+    - note: 카메라 + FP++(cup_big_s100) 켜기 — vision-3090 에서. 런처가 받을 때까지 최대 3 s 기다리고, 없으면 실패로 끝난다
+      argv: [python3, "{repo}/scripts/ops/perception_ctl.py", start, cup_big_s100]
+  sensors_off:
+    - note: FP++ 컨테이너 + 카메라 내리기. 로컬 런처·목 퍼블리셔는 스위치로 끈다
+      argv: [python3, "{repo}/scripts/ops/perception_ctl.py", stop, --camera]
   pd_load:
     - note: pd 노드 무발행 기동 (execute:=false 기본). 별도 launch — 상류 크래시가 pd 를 끌고 내려가지 않게
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",
