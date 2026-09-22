@@ -107,7 +107,7 @@ if want control; then
   if ip link show 2>/dev/null | grep -q "can"; then
     ok "CAN 인터페이스 감지 (OpenArm)"
   else
-    miss "CAN 인터페이스 없음 (OpenArm 연결 PC만 해당)" "USAGE_ISAACSIM_ROS2.md §1"
+    miss "CAN 인터페이스 없음 (OpenArm 연결 PC만 해당)" "sim/USAGE_ISAACSIM_ROS2.md §1"
   fi
 fi
 

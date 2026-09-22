@@ -1,6 +1,6 @@
 # OpenArm_Tesollo 기반 EEF control 적용 방법
 
-이 문서는 [ROS2 기반 ur16e EEF control 방법](/home/user/rl_ws/sim2real/reference%20files/ROS2%20기반%20ur16e%20EEF%20control%20방법.md) 을 현재 저장소의 실제 로봇 구성에 맞게 바꿔서 적용할 때 기준으로 사용합니다.
+이 문서는 [ROS2 기반 ur16e EEF control 방법](ros2_ur16e_eef_control.md) 을 현재 저장소의 실제 로봇 구성에 맞게 바꿔서 적용할 때 기준으로 사용합니다.
 
 핵심은 다음입니다.
 
@@ -190,7 +190,7 @@ UR16e 문서는 사실상 UR16e 체인과 UR 조인트 순서를 가정합니다
 
 현재 저장소에는 이미 `JointTrajectory` 퍼블리시 패턴이 구현돼 있습니다.
 
-- [bridge_node.py](/home/user/rl_ws/sim2real/isaacsim_bridge/isaacsim_bridge/bridge_node.py)
+- [bridge_node.py](../../sim/isaacsim_bridge/isaacsim_bridge/bridge_node.py)
 
 여기서 확인 가능한 점:
 

@@ -5,7 +5,7 @@ OpenArm + Tesollo DG5 + Isaac Sim 연동을 위한 최소 워크스페이스입�
 > **학습한 정책을 실기에 올리려면 → [docs/USAGE_DEPLOY.md](docs/USAGE_DEPLOY.md)** (정책 등록 → 계약 → fake 검증 → 미션 → 콘솔 → 인지)
 > **처음 세팅하는 PC라면 → [INSTALL.md](INSTALL.md)** (step-by-step 설치, 역할별 Step 표)
 > 현재 PC에 뭐가 준비됐는지 진단 → `./scripts/setup/setup_check.sh [control|vision|policy]`
-> 설치 후 로봇별 실행 절차 → [USAGE_ISAACSIM_ROS2.md](USAGE_ISAACSIM_ROS2.md)
+> 설치 후 로봇별 실행 절차 → [sim/USAGE_ISAACSIM_ROS2.md](sim/USAGE_ISAACSIM_ROS2.md)
 
 이 README 는 **하드웨어 브링업과 Isaac Sim 연동**까지만 다룬다.
 그 위에 얹힌 정책 배포(policy_control · 미션 · s2r_console · 인지)는 위 배포 문서에 있다.

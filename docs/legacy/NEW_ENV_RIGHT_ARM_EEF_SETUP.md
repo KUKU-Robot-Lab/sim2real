@@ -5,8 +5,8 @@
 기준 제어 방식:
 
 - 모델 기준: `/home/user/rl_ws/sim2real/urdf/openarm_tesollo_sensor/openarm_tesollo_sensor.urdf`
-- 오른팔 노드: [right_arm_eef_controller.cpp](/home/user/rl_ws/sim2real/openarm_eef_control/src/right_arm_eef_controller.cpp)
-- 왼팔 노드: [left_arm_eef_controller.cpp](/home/user/rl_ws/sim2real/openarm_eef_control/src/left_arm_eef_controller.cpp)
+- 오른팔 노드: [right_arm_eef_controller.cpp](../../legacy/ros_pkgs/openarm_eef_control/src/right_arm_eef_controller.cpp)
+- 왼팔 노드: [left_arm_eef_controller.cpp](../../legacy/ros_pkgs/openarm_eef_control/src/left_arm_eef_controller.cpp)
 - 오른팔 입력: `/openarm/right_arm/eef_target` (`geometry_msgs/msg/PoseStamped`)
 - 왼팔 입력: `/openarm/left_arm/eef_target` (`geometry_msgs/msg/PoseStamped`)
 - 오른팔 출력: `/right_joint_trajectory_controller/joint_trajectory` (`trajectory_msgs/msg/JointTrajectory`)
@@ -16,8 +16,8 @@
 
 참고한 문서:
 
-- [Install pyKDL_5.1.0.md](/home/user/rl_ws/sim2real/reference%20files/Install%20pyKDL_5.1.0.md)
-- [OpenArm_Tesollo 기반 EEF control 적용 방법.md](/home/user/rl_ws/sim2real/reference%20files/OpenArm_Tesollo%20기반%20EEF%20control%20적용%20방법.md)
+- [Install pyKDL_5.1.0.md](../reference/install_pykdl_5.1.0.md)
+- [OpenArm_Tesollo 기반 EEF control 적용 방법.md](../reference/openarm_tesollo_eef_control.md)
 
 ## 1. 먼저 이해할 점
 
@@ -144,7 +144,7 @@ Tesollo 드라이버(`dg5f_driver`, `dg_description`, `dg_msgs`,
 
 추가로 `openarm_eef_control` 패키지가 있어야 합니다.
 
-- [openarm_eef_control](/home/user/rl_ws/sim2real/openarm_eef_control)
+- [openarm_eef_control](../../legacy/ros_pkgs/openarm_eef_control)
 
 ## 7. 빌드
 
@@ -323,7 +323,7 @@ Isaac Sim 5.1.0 내부 Python에서 KDL을 직접 써야 한다면 `PyKDL`을 �
 
 자세한 절차는 아래 문서를 기준으로 진행합니다.
 
-- [Install pyKDL_5.1.0.md](/home/user/rl_ws/sim2real/reference%20files/Install%20pyKDL_5.1.0.md)
+- [Install pyKDL_5.1.0.md](../reference/install_pykdl_5.1.0.md)
 
 핵심 요약:
 

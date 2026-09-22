@@ -26,7 +26,7 @@
   (palm 6D + finger lerp 5D). `policy_loader.py` 호출 시 `obs_dim=106,
   action_dim=11` 로 맞춰야 한다(문서/코드에 있는 `obs_dim=55, action_dim=12`
   예시는 다른 태스크용 예시이므로 grasp-v1 에는 적용하지 말 것).
-- **⚠️ 기존 문서 경로 불일치 발견**: 저장소 내 기존 `SIM2REAL_INFERENCE.md` 와
+- **⚠️ 기존 문서 경로 불일치 발견**: 저장소 내 기존 `docs/legacy/SIM2REAL_INFERENCE.md` 와
   `scripts/deprecated/sim2real_inference.py` 상단 docstring 은 체크포인트 경로를
   `hdgp/log/rl_games/pipeline/right/5g_grasp_right_v7/test4/{nn/5g_grasp_right-v7.pth,
   params/agent.yaml}` 로 기술하고 있으나, 이 경로는 **현재 hdgp 에 존재하지
@@ -77,7 +77,7 @@ Step 1~3,5 = control 역할).
     `/dg5f_right/contact_forces` (FT force 5D, `Float64MultiArray`)
   - 구독(명령): `/dg5f_right/dg5f_right_controller/joint_trajectory`
     (position target → 내부 PD `p=1.5, d=0.0` 로 effort 변환 — 시뮬 게인과
-    다르므로 실기에서 게인 재조정 필요할 수 있음, `SIM2REAL_INFERENCE.md` 참고)
+    다르므로 실기에서 게인 재조정 필요할 수 있음, `docs/legacy/SIM2REAL_INFERENCE.md` 참고)
 - **isaacsim_bridge**: `sim2real/isaacsim_bridge/` (colcon 패키지,
   `package.xml` 보유). Launch: `sim/isaacsim_bridge/launch/isaacsim_bridge.launch.py`.
   - 구독: `/isaacsim/right_arm_cmd` (Float64MultiArray 7D),

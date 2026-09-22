@@ -6,7 +6,7 @@
 > `docs/RUNBOOK_GRASP_V1_LIVE.md` 를 보라. 이 문서는 이력 보존용이다.
 >
 > **그 뒤 배포 경로 자체가 바뀌었다** — 정책별 추론 노드 대신 policy_control 체인 + 미션 + 운영 콘솔이다.
-> 지금 정책을 실기에 올리려면 [docs/USAGE_DEPLOY.md](docs/USAGE_DEPLOY.md) 에서 시작한다.
+> 지금 정책을 실기에 올리려면 [docs/USAGE_DEPLOY.md](../USAGE_DEPLOY.md) 에서 시작한다.
 > 아래 명령이 부르는 `sim2real_inference.py` · `sim2real_dryrun.py` 는 `archive/scripts/deprecated/` 로 옮겨졌다.
 
 # sim2real Inference — 5g_grasp_right_v7

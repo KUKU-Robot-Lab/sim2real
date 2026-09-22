@@ -222,7 +222,7 @@ rosbag 경로를 그대로 쓴다. `angle_set` + `angle_actual`을 녹화해 변
 ## 4. dry-run (하드웨어 없이 검증)
 
 실물 없이 브리지 배선과 정책 출력을 확인하려면 fake hardware + RViz를 쓴다.
-`SIM2REAL_INFERENCE.md`의 4-터미널 절차가 `5g_grasp_right_v7` 정책 기준의 완결된 예다.
+`docs/legacy/SIM2REAL_INFERENCE.md`의 4-터미널 절차가 `5g_grasp_right_v7` 정책 기준의 완결된 예다.
 
 ```bash
 # 터미널 1: fake hardware + RViz
@@ -236,7 +236,7 @@ python3 sim2real/archive/scripts/deprecated/sim2real_dryrun.py
 ```
 
 > 정책을 하드웨어 없이 돌려 보는 **현행 방법은 fake 플랜트 폐루프**다 —
-> [docs/USAGE_DEPLOY.md §3](docs/USAGE_DEPLOY.md#3-하드웨어-없이-리허설--fake-플랜트)
+> [docs/USAGE_DEPLOY.md §3](../docs/USAGE_DEPLOY.md#3-하드웨어-없이-리허설--fake-플랜트)
 > (`pour_fake_run.sh` · `fake_plant_run.sh`). 위 터미널 1·2(브리지 배선 확인)는 그대로 쓴다.
 
 로봇별 정책·체크포인트를 바꿔가며 이 골격을 재사용한다.
@@ -250,5 +250,5 @@ python3 sim2real/archive/scripts/deprecated/sim2real_dryrun.py
 | `sim/isaacsim_bridge/README.md` | 브리지 패키지 상세, 튜닝 리포트 |
 | `sim/isaacsim_bridge/ISAACSIM_ACTION_GRAPH.md` | Isaac Sim 쪽 Action Graph로 5토픽 발행 |
 | `sim/isaacsim_bridge/ISAACSIM_POLICY_WIRING.md` | Action Graph에 정책 출력 연결 |
-| `SIM2REAL_INFERENCE.md` | OpenArm+Tesollo `5g_grasp_right_v7` 배포 전체 절차 |
+| `docs/legacy/SIM2REAL_INFERENCE.md` | OpenArm+Tesollo `5g_grasp_right_v7` 배포 절차(옛 경로 — 현행은 `docs/USAGE_DEPLOY.md`) |
 | `hdgp/scripts/r2s_autotune/README.md` | 실물 응답으로 sim actuator 보정 (반대 방향) |

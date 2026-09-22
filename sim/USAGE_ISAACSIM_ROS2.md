@@ -1,7 +1,7 @@
 # 사용설명서 — 실물 로봇 ↔ Isaac Sim (ROS 2)
 
 OpenArm · Tesollo · RH56F1 각각을 **제어(bringup) → Isaac Sim 연결(bridge) → 동작 test**
-순서로 실행하는 런북이다. 개념·토픽 표·설계 배경은 `ROBOT_ISAACSIM_CONNECTION.md`,
+순서로 실행하는 런북이다. 개념·토픽 표·설계 배경은 `sim/ROBOT_ISAACSIM_CONNECTION.md`,
 브리지 내부는 `sim/isaacsim_bridge/README.md`를 본다. 이 문서는 "무슨 명령을 어떤 순서로
 치는가"만 다룬다.
 
@@ -243,7 +243,7 @@ python3 $BRIDGE_WS/scripts/nodes/manual_command_pub.py right-arm 0 0 0 0 0 0 0.3
 ```
 
 Tesollo/RH56F1은 fake hardware가 없어 실물 시리얼/CAN이 필요하다. 정책 배포 전체
-예시는 `SIM2REAL_INFERENCE.md`(OpenArm+Tesollo `5g_grasp_right_v7`).
+예시는 `docs/legacy/SIM2REAL_INFERENCE.md`(OpenArm+Tesollo `5g_grasp_right_v7`, 옛 경로).
 
 ---
 
@@ -348,7 +348,7 @@ python3 -m pytest tests/test_cup_pose_relay.py -q
 | 문서 | 내용 |
 |---|---|
 | `INSTALL.md` | 새 PC 세팅 (step-by-step 설치, `scripts/setup/setup_check.sh` 진단) |
-| `ROBOT_ISAACSIM_CONNECTION.md` | 로봇별 연동 상세, 토픽 표, 설계 배경 |
+| `sim/ROBOT_ISAACSIM_CONNECTION.md` | 로봇별 연동 상세, 토픽 표, 설계 배경 |
 | `sim/isaacsim_bridge/README.md` | 브리지 파라미터·튜닝·Action Graph |
-| `SIM2REAL_INFERENCE.md` | 정책 배포 전체 절차(OpenArm+Tesollo) |
+| `docs/USAGE_DEPLOY.md` | **정책 배포 전체 절차(현행)** — 옛 `docs/legacy/SIM2REAL_INFERENCE.md` 를 대체 |
 | `hdgp/scripts/r2s_autotune/README.md` | 실물 응답으로 sim actuator 보정(반대 방향) |
