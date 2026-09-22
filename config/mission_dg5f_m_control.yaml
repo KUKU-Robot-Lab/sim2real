@@ -20,6 +20,7 @@ artifacts:
   robot_left: deploy/policy_control/config/robots/dg5f_m_left_real.yaml
   robot_bi: deploy/policy_control/config/robots/dg5f_m_bi_real.yaml
   pd: deploy/policy_control/config/pd_dg5f_m_short.yaml
+  pd_exec: deploy/policy_control/config/pd_dg5f_m_short_exec.yaml   # execute 한 줄만 다른 발행 사본 — pd_arm 단계만
   gains_yaml: ../urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml
 
 checkpoints: {}
@@ -66,7 +67,7 @@ stages:
     title: "[right] pd 발행 모드 전환 — 무발행 pd 를 내리고 execute:=true 로 다시 띄운다. engage 는 하지 않는다(팔은 JTC 가 잡는다)"
     needs: [pd_load_right]
     needs_why: 무발행 상태에서 게인·입력이 맞는지 본 뒤에만 발행 권한을 준다
-    artifacts: [contract, robot_right, pd]
+    artifacts: [contract, robot_right, pd_exec]
     touches_real: true
     skippable: true
 
@@ -143,7 +144,7 @@ stages:
     title: "[left] pd 발행 모드 전환 — 무발행 pd 를 내리고 execute:=true 로 다시 띄운다. engage 는 하지 않는다(팔은 JTC 가 잡는다)"
     needs: [pd_load_left]
     needs_why: 무발행 상태에서 게인·입력이 맞는지 본 뒤에만 발행 권한을 준다
-    artifacts: [contract, robot_left, pd]
+    artifacts: [contract, robot_left, pd_exec]
     touches_real: true
     skippable: true
 
@@ -249,7 +250,7 @@ run:
       stop: ["pd_load_right#0"]
     - note: "[right] pd 발행 모드 기동 (execute:=true) — IDLE 로 뜬다. engage 전까지 팔은 JTC 가 잡는다"
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",
-             "contract:={artifact:contract}", "robot:={artifact:robot_right}", "pd_config:={artifact:pd}",
+             "contract:={artifact:contract}", "robot:={artifact:robot_right}", "pd_config:={artifact:pd_exec}",
              "sides:=right", "execute:=true"]
       background: true
   head_home:
@@ -330,7 +331,7 @@ run:
       stop: ["pd_load_left#1"]
     - note: "[left] pd 발행 모드 기동 (execute:=true) — IDLE 로 뜬다. engage 전까지 팔은 JTC 가 잡는다"
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",
-             "contract:={artifact:contract}", "robot:={artifact:robot_left}", "pd_config:={artifact:pd}",
+             "contract:={artifact:contract}", "robot:={artifact:robot_left}", "pd_config:={artifact:pd_exec}",
              "sides:=left", "execute:=true"]
       background: true
   home_left:

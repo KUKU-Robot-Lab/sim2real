@@ -65,3 +65,15 @@ def test_shutdown_is_last_confirms_support_first_and_drops_the_arm_last():
 def test_only_side_stages_and_optional_sensors_can_be_skipped():
     fixed = {s.id for s in MISSION.stages if not s.skippable}
     assert fixed == {"preflight", "drivers", "shutdown"}
+
+
+def test_only_the_arm_stage_launches_pd_with_the_exec_config():
+    # 발행 = launch execute:=true AND yaml execute. 무발행 단계는 원본(false), 발행 전환 단계만 사본(true).
+    for side in ("right", "left"):
+        load = " ".join(a for c in _cmds(f"pd_load_{side}") for a in c.argv)
+        arm = " ".join(a for c in _cmds(f"pd_arm_{side}") for a in c.argv)
+        assert "pd_config:={artifact:pd}" in load and "execute:=false" in load
+        assert "pd_config:={artifact:pd_exec}" in arm and "execute:=true" in arm
+        assert "pd_exec" in MISSION.stages[IDS.index(f"pd_arm_{side}")].artifacts      # 승인 근거 해시에 들어간다
+    others = [s for s in IDS if not s.startswith("pd_arm_")]
+    assert not any("pd_exec" in a for s in others for c in _cmds(s) for a in c.argv)

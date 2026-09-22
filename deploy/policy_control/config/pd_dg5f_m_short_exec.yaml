@@ -1,3 +1,6 @@
+# ★실기 **발행 전용** 사본 — pd_dg5f_m_short.yaml 과 `execute` 한 줄만 다르다(tests/policy_control/test_pc_pd_exec_config.py 가 잠근다).
+#   콘솔 미션의 pd_arm_<side> 단계(승인 필요)만 이 파일을 쓴다. 무발행 단계(pd_load_<side>)는 원본(execute: false)을 쓴다.
+#   pd_node 의 발행 = launch `execute:=true` AND 이 yaml `execute: true` — 원본이 false 라 launch 인자만으로는 켜지지 않았다(09.22 실기).
 # pd 노드 설정 — 양팔 OpenArm + Tesollo DG-5F-M (자산 hdgp/assets/robot/openarm_dg5f-m_bi_rl, 09.05 기본 자산). 플랜 §4.4.
 # ★DG-5F **short base** 판(자산 openarm_dg5f-m-short_bi_rl). pd_dg5f_m.yaml 과 다른 것은
 #   gravity.urdf 와 payload 둘뿐이다 — 게인·발열·손 PID·리미터는 같은 손·같은 팔이라 그대로다.
@@ -6,7 +9,7 @@
 # 상대 경로는 rl_ws 루트 기준. 실기용 — execute false. 발행 = launch execute:=true AND yaml execute — 이 파일로는 켜지지 않는다.
 #   발행은 사본 pd_dg5f_m_short_exec.yaml(execute 한 줄만 다름)로만, 콘솔 미션의 pd_arm_<side> 단계(승인)에서 띄운다.
 side: both
-execute: false                 # true 여야 컨트롤러 토픽·controller_manager 를 건드린다
+execute: true                  # true 여야 컨트롤러 토픽·controller_manager 를 건드린다
 pd_hz: 100.0                   # 재발행 주기
 ramp_speed: 0.1                # RAMPING(첫 목표까지) / goto_home 램프 [rad/s]
 watchdog_sec: 0.25             # joint_target 두절 → HOLD (CommandGate 와 동일)
