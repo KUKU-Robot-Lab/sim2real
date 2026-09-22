@@ -145,10 +145,10 @@ run:
     - note: >-
         ★제어 PC(5070ti)에서 — 배선/IP 교차 사전검사. 두 NIC 이 교차되면 손으로 갈
         패킷이 카메라 랜선으로 나간다. 다른 기계에서 돌리면 항상 FAIL 이므로 수동이다
-      argv: [bash, "{repo}/scripts/net_preflight.sh"]
+      argv: [bash, "{repo}/scripts/setup/net_preflight.sh"]
       manual: true
     - note: 이 기계의 환경 진단 (읽기 전용 — 설치는 하지 않는다)
-      argv: [bash, "{repo}/scripts/setup_check.sh"]
+      argv: [bash, "{repo}/scripts/setup/setup_check.sh"]
 
   bringup:
     - note: ★CAN 설정 — sudo 필요, 사용자 셸에서
