@@ -248,3 +248,28 @@ def test_the_stop_bar_is_not_trapped_inside_a_one_screen_body():
 
 def test_the_jump_highlight_survives_a_re_render():
     assert "flashStage" in JS and re.search(r'r\.id === flashStage', JS)
+
+
+def test_shown_commands_paste_into_a_shell_as_is():
+    """09.22 실기: 수동 스텝 `bash -lc "<스크립트>"` 를 공백으로 이어 보여줘서, 붙여넣으면 bash -lc 가
+    `sudo` 한 단어만 받아 사용법만 찍었다. 화면의 명령은 셸에 그대로 붙여넣어 같은 일을 해야 한다."""
+    import json
+    import shutil
+    import subprocess
+
+    assert 'argv.join(" ")' not in JS, "명령 표시는 shellLine() 으로만"
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node 없음")
+    helper = re.search(r"const SHELL_SAFE[\s\S]*?const shellLine[^\n]*\n", JS).group(0)
+    cases = [
+        ["bash", "-lc", "sudo ip link set can0 down && sudo ip link set can0 up"],
+        ["ros2", "launch", "p", "x.launch.py", "a:=1"],
+        ["python3", "-c", "print('it''s')", "a b", ""],
+    ]
+    out = subprocess.run([node, "-e", helper + f"for (const a of {json.dumps(cases)}) console.log(shellLine(a));"],
+                         capture_output=True, text=True, check=True).stdout.splitlines()
+    assert out[0] == cases[0][2]
+    assert out[1] == "ros2 launch p x.launch.py a:=1"
+    echoed = subprocess.run(["bash", "-c", f"printf '%s\\n' {out[2]}"], capture_output=True, text=True, check=True).stdout
+    assert echoed.split("\n")[:-1] == cases[2]

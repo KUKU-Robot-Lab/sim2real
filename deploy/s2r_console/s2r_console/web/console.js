@@ -6,6 +6,12 @@
  */
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// argv 를 셸에 그대로 붙여넣을 수 있는 한 줄로. ["bash","-lc","<스크립트>"] 는 스크립트만 보여준다 —
+// 공백으로 이어 붙이면 bash -lc 가 첫 단어(sudo)만 명령으로 받아 사용법만 찍고 끝난다(09.22 실기).
+const SHELL_SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/;
+const shq = (a) => (a !== "" && SHELL_SAFE.test(a) ? a : `'${String(a).replace(/'/g, `'\\''`)}'`);
+const shellLine = (argv) => (argv.length === 3 && /^(ba)?sh$/.test(argv[0]) && /^-l?c$/.test(argv[1]) ? argv[2] : argv.map(shq).join(" "));
 const fmt = (v, d = 2) => (v === null || v === undefined || Number.isNaN(v) ? "—" : Number(v).toFixed(d));
 
 let S = null;                 // 마지막 스냅샷
@@ -196,11 +202,11 @@ function renderStages(s) {
       const kind = { manual: "✋ 수동", background: "⟳ 배경", foreground: "▶ 실행" }[c.kind];
       const logBtn = st && st.kind !== "manual" && st.status !== "pending" && st.status !== "kept" ? `<button class="btn btn-sm btn-ghost" data-act="log" data-arg="${esc(st.key)}">로그</button>` : "";
       const manual = st && st.status === "waiting" ? `<div class="manual-box"><b>다른 셸에서 직접 실행할 것</b> — 콘솔은 이 명령을 실행하지 않는다.
-          <pre>${esc(c.argv.join(" "))}</pre>
+          <pre>${esc(shellLine(c.argv))}</pre>
           <div class="actions"><button class="btn btn-primary btn-sm" data-act="ack" data-arg="${k}:1" ${can ? "" : "disabled"}>실행했고 정상이다 → 다음</button>
           <button class="btn btn-sm" data-act="ack" data-arg="${k}:0" ${can ? "" : "disabled"}>정상이 아니다 → 중단</button></div></div>` : "";
       const detail = st && st.detail ? `<span class="cmd-argv" style="color:var(--warn)">${esc(st.detail)}</span>` : "";
-      return `<li class="cmd"><span class="cmd-kind ${esc(c.kind)}">${kind}</span><span>${esc(c.note || c.argv.slice(0, 3).join(" "))}${detail}<span class="cmd-argv">${esc(c.argv.join(" "))}</span></span><span>${chip} ${logBtn}</span>${manual}</li>`;
+      return `<li class="cmd"><span class="cmd-kind ${esc(c.kind)}">${kind}</span><span>${esc(c.note || c.argv.slice(0, 3).join(" "))}${detail}<span class="cmd-argv">${esc(shellLine(c.argv))}</span></span><span>${chip} ${logBtn}</span>${manual}</li>`;
     }).join("");
     const reasons = r.reasons.length ? `<ul class="reasons">${r.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
     const stale = r.approval_stale.length ? `<ul class="reasons bad"><li><b>이전 승인이 무효가 됐다</b> — 승인한 뒤 파일이 바뀌었다</li>${r.approval_stale.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
@@ -238,7 +244,7 @@ function unitHtml(b) {
   const locked = !holding() ? "조작 권한이 없다" : can ? "" : why;
   const meta = u.alive ? `pid ${esc(u.pid)} · ${fmt(u.age_s, 0)} s` : u.started ? `rc ${esc(u.rc)}` : "—";
   const share = b.shares.length ? `<span class="dg-share" title="같이 켜지고 꺼진다: ${esc(b.shares.join(" · "))}">⛓ ${b.shares.length + 1}개 묶음</span>` : "";
-  const manual = u.kind === "manual" ? `<div class="dg-why dg-manual" title="${esc(u.argv.join(" "))}">운영자 셸에서 직접: <code>${esc(u.argv.join(" "))}</code></div>` : "";
+  const manual = u.kind === "manual" ? `<div class="dg-why dg-manual" title="${esc(shellLine(u.argv))}">운영자 셸에서 직접: <code>${esc(shellLine(u.argv))}</code></div>` : "";
   return `<div class="dg-unit"><button class="sw ${u.alive ? "on" : "off"}" role="switch" data-act="unit" data-arg="${esc(u.key)}:${u.alive ? "0" : "1"}"
       aria-checked="${u.alive}" aria-label="${esc(b.title)} 켜기/끄기" title="${esc(locked || (u.alive ? "끄기" : "켜기"))}"${locked ? " disabled" : ""}></button>
     <span>${esc(u.key)} · ${meta}</span>${share}${u.started ? `<button class="btn btn-sm btn-ghost" data-act="log" data-arg="${esc(u.key)}">로그</button>` : ""}</div>
@@ -428,7 +434,7 @@ const closeModal = () => { $("modal").hidden = true; };
 
 function approveModal(stageId) {
   const r = S.session.mission.rows.find((x) => x.id === stageId);
-  const cmds = r.commands.map((c) => `<li class="cmd"><span class="cmd-kind ${esc(c.kind)}">${esc(c.kind)}</span><span>${esc(c.note)}<span class="cmd-argv">${esc(c.argv.join(" "))}</span></span><span></span></li>`).join("");
+  const cmds = r.commands.map((c) => `<li class="cmd"><span class="cmd-kind ${esc(c.kind)}">${esc(c.kind)}</span><span>${esc(c.note)}<span class="cmd-argv">${esc(shellLine(c.argv))}</span></span><span></span></li>`).join("");
   modal(`<h3>실기 단계 승인 — ${esc(stageId)}</h3>
     <p>${esc(r.title)}</p>
     <p>이 승인은 아래 명령을 <b>한 번</b> 실행하는 것에 대한 것이다. 승인한 뒤 계약이나 체크포인트 파일이 바뀌면 승인은 무효가 된다.</p>
