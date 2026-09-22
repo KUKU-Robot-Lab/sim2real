@@ -110,9 +110,16 @@ def contract_nodes(cfg: dict, sides: tuple) -> list:
     if cfg.get("inertia_q"):
         plant.append("--inertia-q=" + cfg["inertia_q"])
     nodes = [_script("fake_arm_bridge", *plant), _cup(cfg)]
+    follow = str(cfg.get("hand_follow") or "joint_target")
+    if follow not in ("joint_target", "jtc"):
+        raise RuntimeError(f"hand_follow must be joint_target|jtc, got {follow!r}")
     for side in sides:
-        nodes.append(_script("fake_hand_state_pub", *common, "--side", side, "--rate", HAND_HZ,
-                             "--echo-topic", "/policy_control/joint_target", "--controller-node"))
+        # jtc = 실기 손과 같은 입력(pd 의 드라이버 JTC) — pd → 손 경로를 확인한다. joint_target = 옛 반사(기본)
+        feed = (["--jtc-topic", f"/dg5f_{side}/dg5f_{side}_controller/joint_trajectory"] if follow == "jtc"
+                else ["--echo-topic", "/policy_control/joint_target"])
+        start = ["--start-zero"] if str(cfg.get("hand_start") or "home") == "zero" else []
+        nodes.append(_script("fake_hand_state_pub", *common, "--side", side, "--rate", HAND_HZ, *feed, *start,
+                             "--controller-node"))
         nodes.append(_script("fake_tip_contact_pub", "--namespace", f"dg5f_{side}", "--rate", HAND_HZ))
     return nodes
 
@@ -158,6 +165,9 @@ def generate_launch_description() -> LaunchDescription:
                               description="pd = 실측 게인 PD+마찰+중력 모델 | rate = 속도제한만(이상 추종, 배선 검증용)"),
         # 좌 v2B25 학습 스폰 중심(x 0.38, y 0.19) · 컵 원점 z = **학습 sim 테이블 0.200** + 0.09209 = 0.29209
         # (정책이 본 유일한 z — left_inference_node TRAIN_CUP_Z). 실기 datum 0.205 는 실기 FP++ 가 준다.
+        DeclareLaunchArgument("hand_follow", default_value="joint_target",
+                              description="joint_target (옛 반사) | jtc (실기처럼 pd 의 드라이버 JTC 를 따른다)"),
+        DeclareLaunchArgument("hand_start", default_value="home", description="home (계약 home_hand) | zero"),
         DeclareLaunchArgument("cup_x", default_value="0.38"),
         DeclareLaunchArgument("cup_y", default_value="0.19"),
         DeclareLaunchArgument("cup_z", default_value="0.29209"),

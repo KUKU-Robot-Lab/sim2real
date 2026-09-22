@@ -130,7 +130,8 @@ def test_home_from_run_takes_the_hand_from_init_state_too():
     c = A.build_asset_contract(home="run:deploy/policies/right_aglt")
     right = c.side("right").home_hand
     assert right["r_hj_thumb_2"] == pytest.approx(-1.57) and right["r_hj_thumb_3"] == pytest.approx(0.0)   # open pose 는 −0.5
-    assert c.side("right").home_arm == pytest.approx([0.2667, 0.4487, 0.4923, 0.7184, -0.046, 0.6496, 0.4762])
+    # 정책 팔은 에피소드 리셋 자세(arm_reset_joint_pos_override, grasp_fj_env.py:115) — init_state 가 아니다(09.22 사용자 결정)
+    assert c.side("right").home_arm == pytest.approx([-1.1974, 0.6707, 0.1866, 1.731, 0.692, 0.0416, 0.946])
     assert c.side("left").home_arm == pytest.approx([-0.361, -0.6357, 0.0322, 0.433, -0.2661, -0.5842, -0.7274])
 
 

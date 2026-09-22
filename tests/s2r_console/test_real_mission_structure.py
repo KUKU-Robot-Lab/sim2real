@@ -37,9 +37,15 @@ def test_each_arm_is_readied_engaged_and_homed_before_the_selftest():
         assert arm[0].stop and any(a == "execute:=true" for a in arm[1].argv)          # 무발행을 내린 뒤 발행을 띄운다
         cmds = _cmds(f"home_{side}")
         home = [" ".join(c.argv) for c in cmds]
-        # 팔 → 손 순서(09.22 차렷에서 손가락이 펴졌다): engage·제자리 → 확인 → 팔만 홈 → 도착 확인 → 손 홈
+        # engage·제자리 → 확인 → 실측 재계획 → Isaac 미리보기 → 확인 → 경로 재생 → 정착 → 도착 확인 → 손(09.22)
         assert "--only pd_engage --hold-s 10" in home[0] and cmds[1].manual
-        assert "--only pd_goto_home" in home[2] and cmds[3].manual and "--only pd_hand_home" in home[4]
+        assert "plan_home_from_robot.py" in home[2] and "preview_path_in_viewer.py" in home[3] and cmds[4].manual
+        assert "replay_to_pd.py" in home[5] and f"home_path_{side}_current.npz" in home[5] and "--reverse" not in home[5]
+        assert "--only pd_goto_home" in home[6] and "--service-timeout 45" in home[6]      # 정착만 — 도착은 재생이 했다
+        assert cmds[7].manual and "--only pd_hand_home" in home[8]
+        back = " ".join(_cmds(f"return_{side}")[0].argv)
+        assert "--reverse" in back and f"home_path_{side}_current.npz" in back               # 같은 경로를 되짚는다
+        assert IDS.index(f"return_{side}") < IDS.index(f"release_{side}")
         assert "--joints" not in " ".join(_cmds(f"selftest_{side}")[0].argv)          # 초기 자세는 팔꿈치가 굽어 7관절 모두
 
 
@@ -96,3 +102,24 @@ def test_the_isaac_viewer_comes_before_anything_that_uses_the_gpu():
     (cmd,) = _cmds("viewer")
     assert cmd.background and cmd.argv[-1].endswith("robot/isaacsim_bridge/viewer/run_viewer.sh")
     assert MISSION.stages[IDS.index("viewer")].skippable and not MISSION.stages[IDS.index("viewer")].touches_real
+
+
+def test_the_fake_mission_is_generated_from_the_real_one_and_walks_the_same_stages():
+    # 오른팔 · 오른손 · 왼팔 · 왼손을 fake 로 먼저 확인한다(09.22). fake 가 실기와 어긋나면 확인한 것이 실기가 아니다.
+    import subprocess
+    import sys
+
+    root = PATH.parents[1]
+    rc = subprocess.run([sys.executable, str(root / "scripts/ops/make_fake_mission.py"), "--check"],
+                        capture_output=True, text=True)
+    assert rc.returncode == 0, rc.stdout + rc.stderr
+    fake_raw = yaml.safe_load((root / "config/mission_dg5f_m_fake.yaml").read_text(encoding="utf-8"))
+    fake = load_mission(fake_raw)
+    book = load_runbook(fake_raw["run"], fake)
+    assert [(s.id, s.group, s.skippable) for s in fake.stages] == [(s.id, s.group, s.skippable) for s in MISSION.stages]
+    assert not any(s.touches_real for s in fake.stages)                          # fake 는 승인 없이 — 실기가 아니다
+    assert all("fake" in v for k, v in fake_raw["artifacts"].items() if k.startswith(("robot_", "pd")))
+    launches = [c for st, cmds in book.commands.items() if st != "drivers" for c in cmds if c.argv[:2] == ("ros2", "launch")]
+    assert launches and all("fake:=true" in c.argv for c in launches)     # fake_plant 는 스스로 도메인 0 을 거부한다
+    plant = book.commands["drivers"][0]
+    assert "hand_follow:=jtc" in plant.argv and "hand_start:=zero" in plant.argv   # 손은 pd 의 JTC 를 따른다

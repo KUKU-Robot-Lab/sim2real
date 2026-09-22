@@ -30,6 +30,7 @@ OBS_STATUS = f"{NS}/status/obs"
 FABRIC_STATUS = f"{NS}/status/fabric"
 DEFAULT_PHASE_TIMEOUT = 30.0
 DEFAULT_SERVICE_TIMEOUT = 5.0
+RESET_RETRY_S = 4.0            # fabric 이 armed 가 안 되면 reset 을 다시 보내는 간격
 
 
 @dataclass(frozen=True)
@@ -146,14 +147,35 @@ class Runner:
     def _on_fabric(self, msg) -> None:
         self.fabric_status = _loads(msg.data)
 
-    def wait_fabric_armed(self) -> bool:
+    def wait_fabric_armed(self, timeout: float | None = None) -> bool:
         """reset 뒤 fabric 노드가 실제로 arm 됐는지(status.armed) 보고 start 한다 — 이벤트 유실 방어(run15)."""
-        deadline = time.monotonic() + self.phase_timeout
+        deadline = time.monotonic() + (self.phase_timeout if timeout is None else timeout)
         while time.monotonic() < deadline:
             self.spin(0.1)
             if self.fabric_status is not None and self.fabric_status.get("armed") is True:
                 return True
-        print("    ✗ fabric not armed after reset (status.armed)")
+        return False
+
+    def reset_until_armed(self, service: str) -> bool:
+        """reset 을 fabric 이 armed 가 될 때까지 RESET_RETRY_S 마다 다시 보낸다(최대 phase_timeout).
+
+        09.22 fake: fabric 노드는 warp/CUDA 초기화로 뜨는 데 16 s 가 걸렸고, 그 전에 보낸 reset 을 뒤늦게 받았을 때는
+        손 상태가 아직 없어(`sources missing ['ee']`) 실패했다 — 한 번만 보내면 영영 armed 가 되지 않는다.
+        """
+        deadline = time.monotonic() + self.phase_timeout
+        tries = 0
+        while time.monotonic() < deadline:
+            if tries:
+                ok, reasons = self.call(service)
+                if not ok:
+                    print(f"    ✗ refused: {reasons}")
+                    return False
+            tries += 1
+            if self.wait_fabric_armed(min(RESET_RETRY_S, max(0.1, deadline - time.monotonic()))):
+                if tries > 1:
+                    print(f"    · fabric armed after {tries} resets")
+                return True
+        print(f"    ✗ fabric not armed after reset (status.armed) — {tries} tries in {self.phase_timeout:.0f}s")
         return False
 
     def spin(self, seconds: float) -> None:
@@ -234,7 +256,7 @@ def run_stage(runner: Runner, stage: Stage, steps: int) -> bool:
         return False
     if reasons:
         print(f"    note: {reasons}")
-    if stage.id == "ep_reset" and not runner.wait_fabric_armed():
+    if stage.id == "ep_reset" and not runner.reset_until_armed(stage.service):
         return False
     return runner.wait_phase(stage)
 

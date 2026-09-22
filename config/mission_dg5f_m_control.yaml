@@ -86,7 +86,7 @@ stages:
 
   - id: home_right
     group: motion
-    title: "[right] engage → 제자리 10 s → 팔만 정책 초기 자세로(0.1 rad/s) → 도착 확인 → 손을 정책 초기 손 자세로"
+    title: "[right] engage → 제자리 10 s → 실측 자세에서 충돌 없는 경로 재계획 → Isaac 미리보기 → 경로 재생으로 정책 시작 자세 → 손"
     needs: [pd_arm_right]
     artifacts: [contract, robot_right]
     touches_real: true
@@ -105,6 +105,14 @@ stages:
   - id: fabric_direct_right
     group: policy
     title: "[right] fabric direct 모드 — 에피소드 시작 → palm +2 cm · 손 30 % 폐쇄 → 에피소드 정지 (작은 델타만)"
+    needs: [home_right]
+    artifacts: [contract, robot_right]
+    touches_real: true
+    skippable: true
+
+  - id: return_right
+    group: finish
+    title: "[right] 같은 경로를 거꾸로 따라 시작 자세(차렷)로 — pd 가 잡은 채. 해제 · 종료 전에 팔을 내려 둔다"
     needs: [home_right]
     artifacts: [contract, robot_right]
     touches_real: true
@@ -137,7 +145,7 @@ stages:
 
   - id: home_left
     group: motion
-    title: "[left] engage → 제자리 10 s → 팔만 정책 초기 자세로(0.1 rad/s) → 도착 확인 → 손을 정책 초기 손 자세로"
+    title: "[left] engage → 제자리 10 s → 실측 자세에서 충돌 없는 경로 재계획 → Isaac 미리보기 → 경로 재생으로 정책 시작 자세 → 손"
     needs: [pd_arm_left]
     artifacts: [contract, robot_left]
     touches_real: true
@@ -156,6 +164,14 @@ stages:
   - id: fabric_direct_left
     group: policy
     title: "[left] fabric direct 모드 — 에피소드 시작 → palm +2 cm · 손 30 % 폐쇄 → 에피소드 정지 (작은 델타만)"
+    needs: [home_left]
+    artifacts: [contract, robot_left]
+    touches_real: true
+    skippable: true
+
+  - id: return_left
+    group: finish
+    title: "[left] 같은 경로를 거꾸로 따라 시작 자세(차렷)로 — pd 가 잡은 채. 해제 · 종료 전에 팔을 내려 둔다"
     needs: [home_left]
     artifacts: [contract, robot_left]
     touches_real: true
@@ -259,11 +275,23 @@ run:
     - note: "[right] ★10 s 동안 팔이 제자리였는가(처짐 · 떨림 · 소리 없음). 아니면 '정상이 아니다' 후 정지 바의 PD 해제"
       argv: [bash, -lc, "true"]
       manual: true
-    - note: "[right] ★팔만 정책 초기 자세(right_aglt init_state)로 0.1 rad/s 관절공간 직선 — 손은 그대로(pd home_hand: keep).
-        경로가 테이블 · 몸통에 닿을 것 같으면 즉시 비상정지. 실패하면 pd 를 해제한다"
-      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_goto_home]
+    - note: "[right] 지금 팔 관절을 재서 그 자리부터 정책 시작 자세까지 충돌 없는 경로를 계획(테이블 · 몸통 · 반대 팔 2 cm 여유,
+        손 두 자세 · 반대 팔 두 자세 모두 통과). 못 찾으면 여기서 멈춘다 — 팔은 움직이지 않는다.
+        ★관절공간 직선(goto_home)은 테이블 상판을 지난다(09.22 계산) — 쓰지 않는다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/plan_home_from_robot.py", --side, right]
+    - note: "[right] 계획한 경로를 Isaac 화면에 4배속으로 미리 보여 준다(viewer 가 떠 있을 때. 로봇은 움직이지 않는다)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/preview_path_in_viewer.py", --npz, "{repo}/logs/policy_control/home_path_right_current.npz", --speed, "4"]
+    - note: "[right] ★Isaac 에서 경로를 확인했는가 · 실물 경로 주변(로봇 옆 약 0.7 m · 높이 약 0.8 m)이 비어 있는가. 아니면 '정상이 아니다'"
+      argv: [bash, -lc, "true"]
+      manual: true
+    - note: "[right] 계획한 경로를 pd 로 재생(최대 0.1 rad/s, 약 25 s). 끝나면 episode stop 으로 pd 가 마지막 자세를 붙든다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py", --npz, "{repo}/logs/policy_control/home_path_right_current.npz", --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7",
+             --rate-scale, "1.0"]
+      execute_args: [--execute]
+    - note: "[right] 정책 시작 자세에서 정착(이미 도착 — 남은 오차만). 실패하면 pd 를 해제한다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_goto_home, --service-timeout, "45"]
       execute_args: [--execute, --approve, pd_goto_home]
-    - note: "[right] ★팔이 초기 자세에 도착했는가. 손가락을 펴도 테이블 · 몸통 · 컵에 닿지 않는가. 아니면 '정상이 아니다' 후 PD 해제"
+    - note: "[right] ★팔이 정책 시작 자세에 도착했는가. 손가락을 펴도 테이블 · 몸통 · 컵에 닿지 않는가. 아니면 '정상이 아니다' 후 PD 해제"
       argv: [bash, -lc, "true"]
       manual: true
     - note: "[right] 손을 정책 초기 손 자세로 (pd/hand_home — 팔이 홈에 정착했을 때만 받는다)"
@@ -295,6 +323,11 @@ run:
     - note: "[right] 에피소드 stop — pd 는 계속 잡고 있다(해제는 ⑥)"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, ep_stop]
       execute_args: [--execute]
+  return_right:
+    - note: "[right] 홈 경로 되짚기(최대 0.1 rad/s). 진입 램프 간극이 0.35 rad 를 넘으면 거부된다(정책 시작 자세 근처에서만)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py", --npz, "{repo}/logs/policy_control/home_path_right_current.npz", --reverse, --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7",
+             --rate-scale, "1.0"]
+      execute_args: [--execute]
   release_right:
     - note: "[right] pd release — 역블렌드 → 0 송출 → JTC 복귀 (실패 시 복구 CLI: tools/pd_release.py --side right --execute)"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_release]
@@ -324,11 +357,23 @@ run:
     - note: "[left] ★10 s 동안 팔이 제자리였는가(처짐 · 떨림 · 소리 없음). 아니면 '정상이 아니다' 후 정지 바의 PD 해제"
       argv: [bash, -lc, "true"]
       manual: true
-    - note: "[left] ★팔만 정책 초기 자세(right_aglt init_state)로 0.1 rad/s 관절공간 직선 — 손은 그대로(pd home_hand: keep).
-        경로가 테이블 · 몸통에 닿을 것 같으면 즉시 비상정지. 실패하면 pd 를 해제한다"
-      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_goto_home]
+    - note: "[left] 지금 팔 관절을 재서 그 자리부터 정책 시작 자세까지 충돌 없는 경로를 계획(테이블 · 몸통 · 반대 팔 2 cm 여유,
+        손 두 자세 · 반대 팔 두 자세 모두 통과). 못 찾으면 여기서 멈춘다 — 팔은 움직이지 않는다.
+        ★관절공간 직선(goto_home)은 테이블 상판을 지난다(09.22 계산) — 쓰지 않는다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/plan_home_from_robot.py", --side, left]
+    - note: "[left] 계획한 경로를 Isaac 화면에 4배속으로 미리 보여 준다(viewer 가 떠 있을 때. 로봇은 움직이지 않는다)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/preview_path_in_viewer.py", --npz, "{repo}/logs/policy_control/home_path_left_current.npz", --speed, "4"]
+    - note: "[left] ★Isaac 에서 경로를 확인했는가 · 실물 경로 주변(로봇 옆 약 0.7 m · 높이 약 0.8 m)이 비어 있는가. 아니면 '정상이 아니다'"
+      argv: [bash, -lc, "true"]
+      manual: true
+    - note: "[left] 계획한 경로를 pd 로 재생(최대 0.1 rad/s, 약 25 s). 끝나면 episode stop 으로 pd 가 마지막 자세를 붙든다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py", --npz, "{repo}/logs/policy_control/home_path_left_current.npz", --joints, "l_aj_1,l_aj_2,l_aj_3,l_aj_4,l_aj_5,l_aj_6,l_aj_7",
+             --rate-scale, "1.0"]
+      execute_args: [--execute]
+    - note: "[left] 정책 시작 자세에서 정착(이미 도착 — 남은 오차만). 실패하면 pd 를 해제한다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_goto_home, --service-timeout, "45"]
       execute_args: [--execute, --approve, pd_goto_home]
-    - note: "[left] ★팔이 초기 자세에 도착했는가. 손가락을 펴도 테이블 · 몸통 · 컵에 닿지 않는가. 아니면 '정상이 아니다' 후 PD 해제"
+    - note: "[left] ★팔이 정책 시작 자세에 도착했는가. 손가락을 펴도 테이블 · 몸통 · 컵에 닿지 않는가. 아니면 '정상이 아니다' 후 PD 해제"
       argv: [bash, -lc, "true"]
       manual: true
     - note: "[left] 손을 정책 초기 손 자세로 (pd/hand_home — 팔이 홈에 정착했을 때만 받는다)"
@@ -359,6 +404,11 @@ run:
              --close, "0.3", --hold, "1.0"]
     - note: "[left] 에피소드 stop — pd 는 계속 잡고 있다(해제는 ⑥)"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, ep_stop]
+      execute_args: [--execute]
+  return_left:
+    - note: "[left] 홈 경로 되짚기(최대 0.1 rad/s). 진입 램프 간극이 0.35 rad 를 넘으면 거부된다(정책 시작 자세 근처에서만)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py", --npz, "{repo}/logs/policy_control/home_path_left_current.npz", --reverse, --joints, "l_aj_1,l_aj_2,l_aj_3,l_aj_4,l_aj_5,l_aj_6,l_aj_7",
+             --rate-scale, "1.0"]
       execute_args: [--execute]
   release_left:
     - note: "[left] pd release — 역블렌드 → 0 송출 → JTC 복귀 (실패 시 복구 CLI: tools/pd_release.py --side left --execute)"

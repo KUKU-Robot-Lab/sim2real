@@ -1,0 +1,20 @@
+# 양팔 DG-5F-M short — **fake**. 도메인 97. 실기 미션(config/mission_dg5f_m_control.yaml)과 같은 단계를 fake 플랜트에서 밟는다.
+# 미션은 scripts/ops/make_fake_mission.py 가 실기 미션에서 생성한다 — 오른팔 · 오른손 · 왼팔 · 왼손을 실기 전에 확인하는 용도.
+schema: s2r_console/profile/v1
+id: dg5f_m_fake
+title: 양팔 DG-5F-M · fake 제어 점검 (실기 미션과 같은 단계)
+mission: config/mission_dg5f_m_fake.yaml
+domain: {id: 97, class: fake}
+policy_dt: 0.02
+status_nodes: [episode_master, fabric, pd]
+
+# robot_control 대역 — fake_plant.launch.py (side:=both, 계약 모드). pour_i18_fake 와 같은 플랜트다.
+stack:
+  title: fake 플랜트 (robot_control 대역)
+  nodes: [/fake_arm_bridge, /dg5f_left/dg5f_left_controller, /dg5f_right/dg5f_right_controller]
+  topics:
+    - {name: /joint_states, stale_ms: 500}
+    - {name: /dg5f_left/joint_states, stale_ms: 500}
+    - {name: /dg5f_right/joint_states, stale_ms: 500}
+  managers:
+    - {name: /controller_manager, active: [joint_state_broadcaster]}

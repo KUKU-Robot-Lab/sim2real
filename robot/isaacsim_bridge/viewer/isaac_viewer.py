@@ -32,6 +32,8 @@ import packet  # noqa: E402
 parser = argparse.ArgumentParser(description="읽기 전용 실기 미러 뷰어(정책 학습 장면)")
 parser.add_argument("--policy_dir", default=str(DEFAULT_POLICY_DIR), help="policy.yaml + params/env.yaml 이 있는 번들")
 parser.add_argument("--port", type=int, default=packet.DEFAULT_PORT, help="UDP 수신 포트(127.0.0.1)")
+parser.add_argument("--preview-port", type=int, default=packet.DEFAULT_PORT + 1,
+                    help="경로 미리보기 포트 — 여기로 패킷이 오는 동안(1 s)은 실기 관절 값보다 우선한다")
 parser.add_argument("--cup", default="cup_big_s100",
                     help="장면에 둘 컵 종(env.yaml 의 cup_family 8종 중 하나). 실물 빨간 컵 = cup_big_s100(config/objects.yaml)")
 parser.add_argument("--max_hz", type=float, default=60.0, help="렌더 루프 상한 Hz")
@@ -238,6 +240,8 @@ def main() -> None:
     pin_cup(env, cup_pose)
     mirror = RobotMirror(env)
     udp = UdpLatest(args.port)
+    preview = UdpLatest(args.preview_port)          # 계획 경로 미리보기(preview_path_in_viewer.py) — 실기 값과 섞이지 않게 따로
+    last_preview = -1e9
     _log(f"준비 — task {task} · 관절 {len(mirror.index)} 개 · udp://127.0.0.1:{args.port} 대기 · 물리 스텝 없음")
 
     palm_idx = int(env.palm_idx)
@@ -247,7 +251,10 @@ def main() -> None:
     first_applied_at = None
     while simulation_app.is_running():
         tick = time.monotonic()
-        pkt = udp.poll()
+        live, pre = udp.poll(), preview.poll()
+        if pre is not None:
+            last_preview = tick
+        pkt = pre if pre is not None else (live if tick - last_preview > 1.0 else None)
         if pkt is not None:
             applied = mirror.apply(pkt)
             last_pkt_t = pkt.t

@@ -116,13 +116,13 @@
    "r_hj_pinky_4"
   ],
   "home_q": [
-   0.2667,
-   0.4487,
-   0.4923,
-   0.7184,
-   -0.046,
-   0.6496,
-   0.4762,
+   -1.1974,
+   0.6707,
+   0.1866,
+   1.731,
+   0.692,
+   0.0416,
+   0.946,
    0.0,
    -1.57,
    0.0,
@@ -150,7 +150,7 @@
   "table_z": null,
   "use_hand_repulsion": false,
   "use_body_repulsion_pairs": true,
-  "home_source": "run:right_aglt init_state (right; left = init_state)"
+  "home_source": "run:right_aglt (right = arm_reset_joint_pos_override; left = init_state)"
  },
  "pd": {
   "groups": [
@@ -158,13 +158,13 @@
    "right_hand"
   ],
   "home_arm": [
-   0.2667,
-   0.4487,
-   0.4923,
-   0.7184,
-   -0.046,
-   0.6496,
-   0.4762
+   -1.1974,
+   0.6707,
+   0.1866,
+   1.731,
+   0.692,
+   0.0416,
+   0.946
   ],
   "home_hand": {
    "r_hj_thumb_1": 0.0,
@@ -268,13 +268,13 @@
     "r_hl_pinky_tip"
    ],
    "home_arm": [
-    0.2667,
-    0.4487,
-    0.4923,
-    0.7184,
-    -0.046,
-    0.6496,
-    0.4762
+    -1.1974,
+    0.6707,
+    0.1866,
+    1.731,
+    0.692,
+    0.0416,
+    0.946
    ],
    "home_hand": {
     "r_hj_thumb_1": 0.0,
@@ -378,13 +378,13 @@
      "r_hj_pinky_4"
     ],
     "home_q": [
-     0.2667,
-     0.4487,
-     0.4923,
-     0.7184,
-     -0.046,
-     0.6496,
-     0.4762,
+     -1.1974,
+     0.6707,
+     0.1866,
+     1.731,
+     0.692,
+     0.0416,
+     0.946,
      0.0,
      -1.57,
      0.0,
@@ -412,7 +412,7 @@
     "table_z": null,
     "use_hand_repulsion": false,
     "use_body_repulsion_pairs": true,
-    "home_source": "run:right_aglt init_state (right; left = init_state)"
+    "home_source": "run:right_aglt (right = arm_reset_joint_pos_override; left = init_state)"
    },
    "palm": null,
    "hand": null,
@@ -605,7 +605,7 @@
     "table_z": null,
     "use_hand_repulsion": false,
     "use_body_repulsion_pairs": true,
-    "home_source": "run:right_aglt init_state (right; left = init_state)"
+    "home_source": "run:right_aglt (right = arm_reset_joint_pos_override; left = init_state)"
    },
    "palm": null,
    "hand": null,

@@ -3,6 +3,7 @@
 # 팔별 값은 {left: …, right: …} 매핑. dg5f-m fake 판과 다른 것은 gravity.urdf 와 payload 둘뿐이다.
 side: both
 execute: true                  # ★fake 플랜트 전용 사본 — 실기 yaml(pd_dg5f_m.yaml)은 false
+home_hand: keep                # 실기 설정과 같게 — goto_home 은 팔만, 손은 pd/hand_home 으로
 pd_hz: 100.0
 ramp_speed: 0.1
 watchdog_sec: 0.25

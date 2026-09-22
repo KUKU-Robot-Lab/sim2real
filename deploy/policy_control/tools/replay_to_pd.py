@@ -13,6 +13,7 @@ velocity 인터페이스를 처음 쓰는 지점이다. 시작은 실측에서 �
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -25,6 +26,9 @@ from policy_control import _paths  # noqa: E402,F401
 from shadow_replay_core import PARK_SPEED_RAD_PER_SEC, approach_ramp  # noqa: E402
 
 TOPIC = "/policy_control/joint_target"
+EPISODE_TOPIC = "/policy_control/episode"
+PD_STATUS = "/policy_control/status/pd"
+STOP_WAIT_S = 1.0          # episode stop 이 pd 에 닿을 때까지(pd_selftest 와 같은 값)
 # npz 안 관절목표 열 후보 — 앞에서부터 있는 것을 쓴다
 NPZ_JOINT_KEYS = ("fabric_q", "arm_target", "arm_q_cmd")
 STATE_TOPIC = "/joint_states"
@@ -105,6 +109,8 @@ def main() -> int:
     ap.add_argument("--max-ramp-rad", type=float, default=REVERSE_MAX_RAMP_RAD,
                     help="되짚기 진입 램프가 메워도 되는 최대 간극 [rad]")
     ap.add_argument("--execute", action="store_true")
+    ap.add_argument("--no-stop-event", action="store_true", default=False,
+                    help="끝에 episode stop 을 내지 않는다(그러면 스트림 두절로 pd 가 watchdog HOLD 로 간다)")
     args = ap.parse_args()
     args.joints = [j.strip() for j in args.joints.split(",")]
     if not 0.0 < args.rate_scale <= 1.0:
@@ -124,15 +130,21 @@ def main() -> int:
 
     import rclpy
     from rclpy.node import Node
-    from rclpy.qos import qos_profile_sensor_data
+    from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
     from sensor_msgs.msg import JointState
+    from std_msgs.msg import String
 
     rclpy.init()
     node = Node("replay_to_pd")
     meas: dict = {}
+    pd = {"target": None}
     node.create_subscription(JointState, STATE_TOPIC,
                              lambda m: meas.update(zip(m.name, m.position)), qos_profile_sensor_data)
+    node.create_subscription(String, PD_STATUS, lambda m: pd.update(target=_target_of(m.data)), 10)
     pub = node.create_publisher(JointState, TOPIC, 10)
+    # episode stop 발행자는 **지금** 만든다 — 끝에 만들면 discovery 전에 끝나 latched 메시지가 사라진다(pd_selftest 와 같은 이유)
+    latched = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+    ep_pub = node.create_publisher(String, EPISODE_TOPIC, latched)
     t0 = time.time()
     while time.time() - t0 < 5.0 and not meas:
         rclpy.spin_once(node, timeout_sec=0.1)
@@ -142,19 +154,39 @@ def main() -> int:
     side = "left" if args.joints[0].startswith("l_") else "right"
     start = np.array([meas[f"openarm_{side}_joint{j.split('_')[-1]}"] for j in args.joints])
     plan, vel, n_ramp = build_plan(frames, start, pub_dt, args.reverse, args.max_ramp_rad)
-    for k, (q, qd) in enumerate(zip(plan, vel)):
+    def send(k, q, qd):
         msg = JointState()
         msg.header.stamp = node.get_clock().now().to_msg()
         msg.header.frame_id = f"replay:{k}"
         msg.name, msg.position, msg.velocity, msg.effort = list(args.joints), q.tolist(), qd.tolist(), [0.0] * len(q)
         pub.publish(msg)
         rclpy.spin_once(node, timeout_sec=0.0)
+
+    for k, (q, qd) in enumerate(zip(plan, vel)):
+        send(k, q, qd)
         time.sleep(pub_dt)
+    if not args.no_stop_event:
+        # 재생이 끝났다는 뜻으로 episode stop — pd 가 마지막 세트포인트를 내부 목표로 붙든다(스트림 두절 HOLD 가 아니라).
+        # 그래야 뒤의 goto_home 정착 · pd/hand_home 이 받아들여진다(09.22 홈 경로 재생).
+        ep_pub.publish(String(data=json.dumps({"episode": 0, "event": "stop", "object_anchor": None, "home_q": {},
+                                               "reasons": ["replay_to_pd done"], "t_ns": time.time_ns()})))
+        t1 = time.time()
+        while time.time() - t1 < STOP_WAIT_S and pd["target"] != "internal":
+            send(len(plan), plan[-1], np.zeros_like(plan[-1]))
+            time.sleep(pub_dt)
+        print(f"[replay] episode stop → pd target {pd['target']!r}")
     print(f"[replay] 완료 · 램프 {n_ramp} + 기록 {len(frames)} 프레임"
           f"{' (되짚기)' if args.reverse else ''}")
     node.destroy_node()
     rclpy.shutdown()
     return 0
+
+
+def _target_of(text: str):
+    try:
+        return json.loads(text).get("target")
+    except ValueError:
+        return None
 
 
 if __name__ == "__main__":

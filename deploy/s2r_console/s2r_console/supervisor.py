@@ -26,6 +26,10 @@ class SupervisorError(RuntimeError):
     pass
 
 
+#: ros2 launch 가 자식이 죽었을 때 찍는 문구(launch/actions/execute_local.py).
+CHILD_DIED = "process has died"
+
+
 def child_env(base: Mapping[str, str], *, domain: int, run_id: str) -> dict[str, str]:
     """부모 env 에 도메인과 run id 를 덮어쓴다. 순수."""
     env = dict(base)
@@ -121,6 +125,16 @@ class Supervisor:
             size = fh.tell()
             fh.seek(max(0, size - n_bytes))
             return fh.read().decode("utf-8", errors="replace")
+
+    def child_deaths(self, key: str) -> list[str]:
+        """이 프로세스의 로그에서 `ros2 launch` 가 알린 자식 죽음 줄. launch 는 자식이 죽어도 살아 있어서
+        `is_alive` 만 보면 "떠 있음" 이다 — 09.22 fake 플랜트의 팔 브리지가 뜨자마자 죽었는데 drivers 가 완료로 넘어갔다."""
+        with self._lock:
+            proc = self._procs.get(key)
+        if proc is None:
+            return []
+        text = proc.log.read_text(encoding="utf-8", errors="replace")
+        return [ln.strip() for ln in text.splitlines() if CHILD_DIED in ln]
 
     # ── 정지 ────────────────────────────────────────────────────────────
     def stop(self, keys: Sequence[str] | None = None) -> int:

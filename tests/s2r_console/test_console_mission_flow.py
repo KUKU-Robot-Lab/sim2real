@@ -137,3 +137,24 @@ def test_rewind_is_refused_while_a_stage_runs(flow, tiny_repo):
     with pytest.raises(ConsoleError, match="실행 중"):
         flow.rewind("up", operator="pytest")
     flow.session.runner = None
+
+
+DYING = """
+name: 자식이 죽는 launch
+stages:
+  - id: up
+    title: launch 흉내 — 자식이 죽었다고 찍고 자기는 산다
+run:
+  up:
+    - note: 반쯤 죽은 launch
+      argv: [bash, -c, "echo '[ERROR] [fake_arm_bridge-1]: process has died [pid 1, exit code 1]'; sleep 30"]
+      background: true
+"""
+
+
+def test_a_launch_whose_child_died_fails_the_stage(console, tiny_repo):
+    # 09.22 fake: 팔 브리지가 뜨자마자 죽었는데 ros2 launch 는 살아 있어 drivers 가 완료로 넘어갔다.
+    (tiny_repo / "mission.yaml").write_text(textwrap.dedent(DYING))
+    console.open("t_fake", operator="pytest")
+    _run(console, "up", outcome="FAILED")
+    assert "process has died" in console.session.state.note

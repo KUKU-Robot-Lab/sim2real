@@ -190,7 +190,8 @@ def arm_homes(mode: str, sides: tuple) -> tuple[dict, str]:
         run = _paths.SIM2REAL / run
     env_text = _text(run / "params/env.yaml")
     src_side = "left" if detect_family(run / "params/env.yaml") == "gripper_left" else "right"
-    home = _home_values(env_text, [f"{src_side[0]}_aj_{i}" for i in range(1, 8)])
+    home = _reset_override(env_text) or _home_values(env_text, [f"{src_side[0]}_aj_{i}" for i in range(1, 8)])
+    src_how = "arm_reset_joint_pos_override" if _reset_override(env_text) else "init_state"
     sign, _ = _mirror_signs()
     out, how = {}, []
     for s in sides:
@@ -203,7 +204,24 @@ def arm_homes(mode: str, sides: tuple) -> tuple[dict, str]:
         except SystemExit:
             out[s] = [g * v for g, v in zip(sign, home)]
             how.append(f"{s} = _ARM_SIGN mirror")
-    return out, f"run:{run.name} init_state ({src_side}; {', '.join(how) or 'one arm'})"
+    return out, f"run:{run.name} ({src_side} = {src_how}; {', '.join(how) or 'one arm'})"
+
+
+def _reset_override(env_text: str) -> list[float] | None:
+    """정책 팔의 **에피소드 시작 자세** — env 가 리셋마다 쓰는 `arm_reset_joint_pos_override`(7개). 없거나 비면 None.
+
+    09.22: 계약 홈을 init_state 로 잡았더니 정책이 실제로 본 시작 자세(grasp_fj_env.py:115)와 달랐다. 사용자 결정 —
+    팔이 먼저 갈 곳은 에피소드 리셋 자세다. 반대 팔은 리셋에서 건드리지 않으므로 init_state 그대로다.
+    """
+    m = re.search(r"^arm_reset_joint_pos_override:[^\n]*\n((?:- [^\n]+\n)+)", env_text, re.M)
+    if m is None:
+        return None
+    vals = [float(v) for v in re.findall(r"^- (-?[0-9.eE+]+)\s*$", m.group(1), re.M)]
+    if not vals:
+        return None
+    if len(vals) != 7:
+        raise ContractError(f"arm_reset_joint_pos_override 가 7개가 아니다: {vals}")
+    return vals
 
 
 def hand_home(ee_kind: str, side: str, hand_joints: list) -> dict:

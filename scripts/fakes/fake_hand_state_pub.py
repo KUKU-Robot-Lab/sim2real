@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import rclpy
@@ -104,23 +104,31 @@ class FakeHandController(Node):
 
 class FakeHandState(Node):
     def __init__(self, spec: HandSpec, rate_hz: float, echo_topic: str | None = None,
-                 cmd_topic: str | None = None) -> None:
+                 cmd_topic: str | None = None, jtc_topic: str | None = None, start_zero: bool = False) -> None:
         super().__init__("fake_hand_state_pub")
+        if start_zero:                                   # 손 홈 동작이 보이게 — 실기처럼 손가락을 편 0 자세에서 시작
+            spec = replace(spec, pose=tuple(0.0 for _ in spec.pose))
         self.spec = spec
-        self.echo = bool(echo_topic or cmd_topic)
+        self.echo = bool(echo_topic or cmd_topic or jtc_topic)
         self.rate_hz = rate_hz
         self.js_pub = self.create_publisher(JointState, spec.js_topic, 10)
         self.xyz_pub = self.create_publisher(Float64MultiArray, spec.xyz_topic, 10)
         self.ct_pub = self.create_publisher(Float64MultiArray, spec.norm_topic, 10)
         self._last_cmd: list[float] = list(spec.pose)
         self._prev_pub: list[float] = list(spec.pose)
-        if echo_topic:
+        if jtc_topic:
+            # 실기 손과 같은 입력 — pd 가 드라이버 JTC 로 내는 단일 포인트 궤적(source 이름)을 그대로 따른다.
+            # joint_target 반사로는 "pd → 손" 경로(hand_home · 속도 제한 · PID 게인)를 확인할 수 없다(09.22).
+            from trajectory_msgs.msg import JointTrajectory
+
+            self.create_subscription(JointTrajectory, jtc_topic, self._jtc_cb, 10)
+        elif echo_topic:
             # policy_control: fabric/pd 의 JointState 목표(canonical 이름)를 이름으로 반사
             self.create_subscription(JointState, echo_topic, self._joint_target_cb, 10)
         elif cmd_topic:
             self.create_subscription(Float64MultiArray, cmd_topic, self._cmd_cb, 10)
         self.create_timer(1.0 / rate_hz, self._tick)
-        mode = f"echo({echo_topic or cmd_topic} 반사)" if self.echo else "정적 자세"
+        mode = f"echo({jtc_topic or echo_topic or cmd_topic} 반사)" if self.echo else "정적 자세"
         self.get_logger().info(
             f"fake 손 상태 발행[{spec.name} · {mode}]: {spec.js_topic}, {spec.xyz_topic} (15×0) + "
             f"{spec.norm_topic} (5×0), {rate_hz:g}Hz\n  ⚠️ 손 분리 상태 플러밍 검증용 — 실제 손 구동 아님")
@@ -131,6 +139,16 @@ class FakeHandState(Node):
         if not all(c in idx for c in self.spec.canonical):
             return
         self._last_cmd = [float(msg.position[idx[c]]) for c in self.spec.canonical]
+
+    def _jtc_cb(self, msg) -> None:
+        """드라이버 JTC 한 건: 마지막 포인트의 위치를 source 이름으로 받아 이 손의 순서로. 이 손의 관절이 빠지면 무시."""
+        if not msg.points:
+            return
+        idx = {n: i for i, n in enumerate(msg.joint_names)}
+        if not all(n in idx for n in self.spec.source):
+            return
+        pos = msg.points[-1].positions
+        self._last_cmd = [float(pos[idx[n]]) for n in self.spec.source]
 
     def _cmd_cb(self, msg: Float64MultiArray) -> None:
         if len(msg.data) >= len(self.spec.source):
@@ -165,6 +183,9 @@ def main() -> None:
     parser.add_argument("--side", choices=("left", "right"), default=None, help="계약 모드: 어느 손")
     parser.add_argument("--rate", type=float, default=30.0)
     parser.add_argument("--echo-topic", default=None, help="policy_control 의 /policy_control/joint_target(JointState)을 반사")
+    parser.add_argument("--jtc-topic", default=None,
+                        help="실기 손과 같은 입력: pd 가 내는 드라이버 JTC(JointTrajectory)를 따른다 — --echo-topic 보다 우선")
+    parser.add_argument("--start-zero", action="store_true", default=False, help="계약 home_hand 가 아니라 0 자세에서 시작")
     parser.add_argument("--echo", action="store_true", default=False,
                         help="레거시: 정책 손 명령(<ee_cmd>)을 관절상태로 반사 — 진화하는 손 obs 재현")
     parser.add_argument("--controller-node", action="store_true", default=False,
@@ -181,7 +202,8 @@ def main() -> None:
         spec = spec_from_profile(name)
         cmd_topic = load_robot_profile(name).topics["ee_cmd"] if args.echo and not args.echo_topic else None
     rclpy.init()
-    node = FakeHandState(spec, args.rate, echo_topic=args.echo_topic, cmd_topic=cmd_topic)
+    node = FakeHandState(spec, args.rate, echo_topic=args.echo_topic, cmd_topic=cmd_topic, jtc_topic=args.jtc_topic,
+                         start_zero=args.start_zero)
     nodes = [node]
     if args.controller_node:
         nodes.append(FakeHandController(spec.js_topic.rsplit("/", 1)[0], spec.source))

@@ -24,6 +24,8 @@ DONE, FAILED, ABORTED = "DONE", "FAILED", "ABORTED"   # mission_core.STATUS_* �
 
 #: 배경 프로세스를 띄운 뒤 살아 있는지 지켜보는 시간 [s].
 SETTLE_S = 2.0
+#: `ros2 launch` 는 자식 노드가 import 하다 죽는 데 몇 초 걸린다 — 그만큼 더 지켜본다(09.22 fake 팔 브리지 사례).
+LAUNCH_SETTLE_S = 5.0
 _POLL_S = 0.1
 
 
@@ -120,6 +122,8 @@ class StageRunner:
                 if result is not None:
                     outcome, note = result
                     break
+            else:
+                outcome, note = self._late_deaths() or (DONE, "")
         except Exception as exc:  # noqa: BLE001 — 실행 스레드가 조용히 죽으면 화면이 영원히 "실행 중" 이다
             outcome, note = FAILED, f"러너 오류: {exc}"
         with self._lock:
@@ -128,6 +132,16 @@ class StageRunner:
                     s.status = "aborted" if s.status != "pending" else "pending"
             self.outcome, self.note = outcome, note
         self._on_done(self.stage_id, outcome, note)
+
+    def _late_deaths(self):
+        """단계가 끝나는 시점에 이 단계가 띄운 launch 의 자식이 죽어 있으면 실패 — 뜬 뒤에 죽은 것도 잡는다."""
+        for step in self.steps:
+            if step.kind == "background" and step.status == "up":
+                died = self._sup.child_deaths(step.key)
+                if died:
+                    self._set(step, status="failed", detail=died[0][-240:])
+                    return FAILED, f"{step.note}: launch 안의 노드가 죽었다 — {died[0][-200:]}"
+        return None
 
     def _do_manual(self, step: Step):
         self._set(step, status="waiting")
@@ -155,15 +169,21 @@ class StageRunner:
             self._set(step, status="failed", detail=str(exc))
             return FAILED, f"{step.note}: {exc}"
         self._set(step, status="running")
-        deadline = time.monotonic() + self._settle
+        settle = max(self._settle, LAUNCH_SETTLE_S) if tuple(step.argv[:2]) == ("ros2", "launch") and self._settle > 0.5 \
+            else self._settle
+        deadline = time.monotonic() + settle
         while time.monotonic() < deadline:
             if not self._sup.is_alive(step.key):
                 rc = self._sup.rc(step.key)
-                self._set(step, status="failed", rc=rc, detail=f"띄운 지 {self._settle:.0f} s 안에 끝났다 (rc={rc})")
+                self._set(step, status="failed", rc=rc, detail=f"띄운 지 {settle:.0f} s 안에 끝났다 (rc={rc})")
                 return FAILED, f"{step.note}: 뜨자마자 끝났다 (rc={rc}) — 로그를 볼 것"
             if self._aborting():
                 return ABORTED, "운영자가 중단했다"
             time.sleep(_POLL_S)
+        died = self._sup.child_deaths(step.key)
+        if died:
+            self._set(step, status="failed", detail=died[0][-240:])
+            return FAILED, f"{step.note}: launch 안의 노드가 죽었다 — {died[0][-200:]}"
         self._set(step, status="up")
         return None
 
