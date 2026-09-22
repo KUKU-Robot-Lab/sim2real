@@ -22,5 +22,9 @@ fi
 [ -x "$PY" ] || PY="$(command -v python3)"
 
 cd "$SIM2REAL"
+# 미션 명령의 `python3` 는 venv 여야 한다 — 콘솔은 자식에게 이 셸의 환경을 그대로 넘긴다. venv 를 활성화하지 않은
+# 셸에서 띄우면 시스템 파이썬(torch 2.2 · rl_games 없음)이 잡혀 preflight 테스트가 떨어진다(2026-09-22 실측).
+# venv 는 include-system-site-packages 라 ROS 경로(위 source 가 넣은 PYTHONPATH)도 그대로 보인다.
+[ -d "$SIM2REAL/.venv/bin" ] && export PATH="$SIM2REAL/.venv/bin:$PATH"
 export PYTHONPATH="$SIM2REAL/deploy/s2r_console${PYTHONPATH:+:$PYTHONPATH}"
 exec "$PY" -m s2r_console "$@"
