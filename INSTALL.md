@@ -5,8 +5,8 @@
 
 ```bash
 # 지금 이 PC에 뭐가 준비됐는지부터 확인 (설치는 안 함)
-./scripts/setup_check.sh            # 전체
-./scripts/setup_check.sh vision     # 역할별: control | vision | policy
+./scripts/setup/setup_check.sh            # 전체
+./scripts/setup/setup_check.sh vision     # 역할별: control | vision | policy
 ```
 
 ## 어떤 PC에 어떤 Step이 필요한가
@@ -82,7 +82,7 @@ echo $ROS_DOMAIN_ID               # 126
 ```bash
 git clone https://github.com/divingyoon/sim2real.git
 cd sim2real
-./scripts/build_vendor_pkgs.sh    # isaacsim_bridge + OpenArm/Tesollo vendor 전체
+./scripts/setup/build_vendor_pkgs.sh    # isaacsim_bridge + OpenArm/Tesollo vendor 전체
 source install/setup.bash
 ```
 
@@ -132,11 +132,11 @@ sim 학습 코드와의 정합(drift-guard 포함)을 확인하는 순수 로직
 **하나라도 실패하면 실기 구동 금지.**
 
 ```bash
-cd scripts
-python3 -m pytest test_pour_obs_geometry.py test_pour_obs_builder.py \
-    test_palm_fk.py test_pour_action_decoder.py test_cup_pose_relay.py -q
-# → 46 passed
+python3 -m pytest tests -q -m "not gpu"      # 저장소 루트에서. 실패 0 이어야 한다
 ```
+
+> 테스트는 `tests/` 에 있다(옛 문서의 `cd scripts` 는 2026-09 이동 전 경로다).
+> GPU 를 쓰는 것은 `-m "not gpu"` 로 뺀다 — 학습이 도는 GPU 를 건드리지 않기 위해서다.
 
 > drift-guard 테스트 일부는 형제 디렉토리 `hdgp/`(학습 레포)가 있으면 학습
 > 코드와 직접 대조하고, 없으면 skip된다. 학습 코드를 변경한 PC에서는 hdgp를

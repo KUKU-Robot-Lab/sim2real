@@ -65,8 +65,8 @@ The npz is also the golden trace for the parity tests (section 5).
 ## 2. Build the contract
 
     .venv/bin/python policy_control/tools/build_deploy_contract.py \
-        --run logs/policy/pour_i11 --sim-meta logs/policy/pour_i11/trace_meta.json [--checkpoint <pth>] [--fill-default 0.6]
-    # -> logs/policy/pour_i11/pour_contract.json
+        --run logs/policy/pour_i18 --sim-meta logs/policy/pour_i18/trace_meta.json [--checkpoint <pth>] [--fill-default 0.6]
+    # -> logs/policy/pour_i18/pour_contract.json
 
 `detect_family` recognises the run dump as `pour_bimanual` and dispatches to `build_pour`.
 Without `--sim-meta` the tool exits with a message that names the play.py flags above.
@@ -77,8 +77,8 @@ pd_node does not read the pour contract. It needs a control-only DeployContract 
 is the pour reset pose (arms and hands of both sides):
 
     .venv/bin/python policy_control/tools/build_deploy_contract.py \
-        --asset openarm_dg5f-m-short_bi_rl --sides right,left --home pour:logs/policy/pour_i11/pour_contract.json \
-        --out logs/policy/asset_pour_i11/deploy_contract.json
+        --asset openarm_dg5f-m-short_bi_rl --sides right,left --home pour:logs/policy/pour_i18/pour_contract.json \
+        --out logs/policy/asset_pour_i18/deploy_contract.json
 
 ### Is this checkpoint allowed on the real robot?
 
@@ -110,11 +110,11 @@ Real-robot motion needs explicit operator approval each time. Start with `execut
 
     # 1) pd (both sides), control-only contract
     ros2 launch policy_control pd_controller.launch.py \
-        contract:=logs/policy/asset_pour_i11/deploy_contract.json robot:=dg5f_m_bi_real \
+        contract:=logs/policy/asset_pour_i18/deploy_contract.json robot:=dg5f_m_bi_real \
         pd_config:=dg5f_m_short sides:=right,left execute:=false use_source:=true
 
     # 2) pour chain: ONE node does obs -> policy -> decoder -> two fabrics. Do NOT start episode_master next to it.
-    ros2 launch policy_control pour_chain.launch.py contract:=logs/policy/pour_i11/pour_contract.json \
+    ros2 launch policy_control pour_chain.launch.py contract:=logs/policy/pour_i18/pour_contract.json \
         robot:=dg5f_m_bi_real src_cup_topic:=/objects/<src>/pose rcv_cup_topic:=/objects/<rcv>/pose use_source:=true
 
     # 3) source-cup fill level (section 4), then the episode services

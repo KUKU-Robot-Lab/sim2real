@@ -8,7 +8,7 @@
     TEST2  단일 관절 스텝      — 관절 하나만 ±Δ → 그 관절만/방향/크기 → sign·offset 표
 
 실행 (robot PC):
-    python3 lowlevel_check.py --robot tesollo_sensor__right --group arm --dry-run
+    python3 lowlevel_check.py --robot tesollo_sensor__right --group arm (--execute 없이 = dry run)
     python3 lowlevel_check.py --robot tesollo_sensor__right --group arm --execute
 
 `--execute` 없으면 **아무것도 발행하지 않는다**(계획만 출력). 실기 스택 기동 순서·주의는

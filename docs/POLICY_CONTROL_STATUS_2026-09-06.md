@@ -18,7 +18,9 @@ sensors ─▶ obs_node ─/policy_control/obs─▶ policy_node ─/policy_cont
 - 계약 = `logs/policy/<run>/deploy_contract.json` (`tools/build_deploy_contract.py --run … --grasp-band v1`), 로봇/센서 배선 = `config/robots/*.yaml`, pd knob = `config/pd_{left,right}.yaml`.
 - 노드 = `chain.py` 스테이지(순수) + 얇은 rclpy 껍질. 골든 오라클 = 기존 `LeftPolicyCore`/`GraspS2RCore`.
 - launch: `policy_chain.launch.py`(obs/policy/fabric), `pd_controller.launch.py`(pd 단독, `execute:=false` 기본), `fake_plant.launch.py`(도메인 0 거부).
-- 도구: `episode_ctl.py`(engage→goto_home→reset→start→run→stop→release, `--execute --approve`), `pd_selftest.py`, `replay_to_pd.py`, `pd_release.py`, `status_to_csv.py`, `chain_recorder.py`, `episode_judge.py`, `contract_doc.py`, `fake_plant_run.sh`.
+- 도구: `episode_ctl.py` — 시나리오는 engage→goto_home→reset→start→run→stop→release 이고,
+  **로봇을 움직이는 세 단계만 승인이 필요하다**: `--approve pd_engage --approve pd_goto_home --approve ep_start`
+  (전체: `python3 policy_control/tools/episode_ctl.py --execute --approve pd_engage --approve pd_goto_home --approve ep_start [--steps N]`), `pd_selftest.py`, `replay_to_pd.py`, `pd_release.py`, `status_to_csv.py`, `chain_recorder.py`, `episode_judge.py`, `contract_doc.py`, `fake_plant_run.sh`.
 - 미션: `config/mission_policy_control.yaml` (`scripts/ops/mission_run.py --mission … --plan`).
 
 ## 2. 검증 결과

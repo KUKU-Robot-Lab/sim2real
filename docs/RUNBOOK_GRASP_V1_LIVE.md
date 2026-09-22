@@ -74,7 +74,7 @@ export FASTRTPS_DEFAULT_PROFILES_FILE=$HOME/fastdds_wired.xml
 | `enxb0386cf2c43a` (USB 허브) | 손 DG-5F | 169.254.186.100/24 | `hand-link` |
 
 ```bash
-bash ~/rl_ws/sim2real/scripts/net_preflight.sh   # PASS 전까지 스택 기동 금지
+bash ~/rl_ws/sim2real/scripts/setup/net_preflight.sh   # PASS 전까지 스택 기동 금지
 ```
 
 교차/IP 교차 검사 + 인터페이스 강제 ping(정방향·역방향)으로 배선 정합을 판정한다.

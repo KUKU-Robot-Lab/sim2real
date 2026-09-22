@@ -2,9 +2,13 @@
 
 OpenArm + Tesollo DG5 + Isaac Sim 연동을 위한 최소 워크스페이스입니다.
 
+> **학습한 정책을 실기에 올리려면 → [docs/USAGE_DEPLOY.md](docs/USAGE_DEPLOY.md)** (정책 등록 → 계약 → fake 검증 → 미션 → 콘솔 → 인지)
 > **처음 세팅하는 PC라면 → [INSTALL.md](INSTALL.md)** (step-by-step 설치, 역할별 Step 표)
-> 현재 PC에 뭐가 준비됐는지 진단 → `./scripts/setup_check.sh [control|vision|policy]`
+> 현재 PC에 뭐가 준비됐는지 진단 → `./scripts/setup/setup_check.sh [control|vision|policy]`
 > 설치 후 로봇별 실행 절차 → [USAGE_ISAACSIM_ROS2.md](USAGE_ISAACSIM_ROS2.md)
+
+이 README 는 **하드웨어 브링업과 Isaac Sim 연동**까지만 다룬다.
+그 위에 얹힌 정책 배포(policy_control · 미션 · s2r_console · 인지)는 위 배포 문서에 있다.
 
 이 저장소는 다음 용도를 기준으로 정리되어 있습니다.
 
@@ -50,7 +54,7 @@ OpenArm + Tesollo DG5 + Isaac Sim 연동을 위한 최소 워크스페이스입�
 source /opt/ros/humble/setup.bash
 REPO_DIR="/path/to/sim2real_control"
 cd "${REPO_DIR}"
-./scripts/build_vendor_pkgs.sh
+./scripts/setup/build_vendor_pkgs.sh
 source "${REPO_DIR}/install/setup.bash"
 ```
 
@@ -60,7 +64,7 @@ source "${REPO_DIR}/install/setup.bash"
 source /opt/ros/humble/setup.bash
 REPO_DIR="/path/to/sim2real_control"
 cd "${REPO_DIR}"
-./scripts/build_vendor_pkgs.sh --bridge-only
+./scripts/setup/build_vendor_pkgs.sh --bridge-only
 source "${REPO_DIR}/install/setup.bash"
 ```
 
@@ -149,9 +153,11 @@ ros2 topic echo /joint_states
 ros2 control list_controllers
 ```
 
-### GUI로 좌우 팔/그리퍼 제어
+### 수동 조작 GUI (`test_gui`) — 배포 경로에서는 쓰지 않는다
 
-현재 `test_gui`는 실제 제어 경로에 연결되어 있습니다.
+> ⚠ `test_gui` 는 upstream 예제 포크이고 **게이트 없이 실손 컨트롤러로 발행**한다.
+> 정책 배포·실기 세션의 운영 화면은 `s2r_console` 이다 → [배포 사용법](docs/USAGE_DEPLOY.md).
+> 아래는 하드웨어 배선을 손으로 확인할 때만 쓴다.
 
 - 왼쪽 `ARM` 패널:
   - EEF target -> `/openarm/left_arm/eef_target`
@@ -250,7 +256,7 @@ ros2 launch test_gui gui.launch.py
 source /opt/ros/humble/setup.bash
 REPO_DIR="/path/to/sim2real_control"
 cd "${REPO_DIR}"
-./scripts/build_vendor_pkgs.sh --bridge-only
+./scripts/setup/build_vendor_pkgs.sh --bridge-only
 source "${REPO_DIR}/install/setup.bash"
 ```
 
@@ -420,6 +426,14 @@ ros2 run isaacsim_bridge joint_tuning_cycle -- \
 - 임시 출력 경로 (`/tmp/*.csv`, `/tmp/*.json`)
 
 ## 관련 문서
+
+**정책 배포 (이 README 의 범위 밖)**
+
+- [docs/USAGE_DEPLOY.md](docs/USAGE_DEPLOY.md) — 정책 하나를 실기에 올리는 전 과정 (여기서 시작)
+- [docs/RUNBOOK_pour_bimanual.md](docs/RUNBOOK_pour_bimanual.md) — 양팔 물붓기 등록·검증 절차
+- [docs/CONTRACT_policy_control.md](docs/CONTRACT_policy_control.md) — 계약 스키마 (생성물)
+
+**하드웨어·시뮬레이터**
 
 - `openarm_control/README.md`
 - `tesollo_control/README.md`

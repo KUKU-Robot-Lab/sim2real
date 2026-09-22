@@ -145,11 +145,11 @@ armature 0 · friction 0
 
 | | p | i | d | 근거 |
 |---|---|---|---|---|
-| 벤더 기본 | 1.5 | 0 | 0 | `dg5f_driver/config/dg5f_right_controller.yaml`, 20관절 동일 |
-| **★확정** | **4.5** | **0** | **0** | 아래 |
+| **★현행** | **1.5** | **0** | **0** | 벤더값 = 드라이버 기본. `dg5f_driver/config/dg5f_right_controller.yaml`, 20관절 동일 |
+| 폐기(09.01 튜닝) | 4.5 | 0 | 0 | 아래 근거는 기록으로만 남긴다. 벤더값 규칙에 따라 폐기됐고 `--p 4.5` 로만 도달한다 |
 
 ```bash
-python3 scripts/ops/apply_hand_gains.py --execute      # bringup 이후 매번
+python3 scripts/ops/apply_hand_gains.py --execute      # bringup 이후 매번 — 벤더 p=1.5 를 적용한다
 python3 scripts/ops/apply_hand_gains.py --restore --execute   # 벤더 기본으로
 ```
 
@@ -256,7 +256,7 @@ thumb {_3,_4}   index {_2,_3,_4}   middle {_2,_3,_4}   ring {_2,_3,_4}   pinky {
 | `scripts/probes/probe_excite_clearance.py` | 여진 전 안전 판정(자세·진폭) |
 | `scripts/nodes/gravity_comp_node.py` | 실기 연속 중력보상(collect 중 필수) |
 | **손** | |
-| `scripts/ops/apply_hand_gains.py` | 확정 게인(p=4.5·d=0) 적용 — bringup 이후 매번 |
+| `scripts/ops/apply_hand_gains.py` | 벤더 게인(p=1.5·d=0) 적용 — bringup 이후 매번. 구 4.5 는 `--p 4.5` 로만 |
 | `scripts/probes/probe_hand_multi_gain.py` | ★**다관절 동시** 게인 시험(진동 σ 측정 + 응답 기록) |
 | `scripts/probes/probe_hand_gain_sweep.py` | 단일 관절 게인 스윕 — 진동은 못 잡으니 보조로만 |
 | `scripts/probes/probe_hand_sim_replay.py` | 실기 손 응답을 sim 에서 재생해 대조 |

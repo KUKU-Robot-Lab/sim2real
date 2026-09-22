@@ -117,7 +117,7 @@ python3 scripts/probes/probe_fabric_deploy_parity.py --sim logs/shadow/sim_fab_t
 ```bash
 cd ~/rl_ws/sim2real
 source /opt/ros/humble/setup.bash && . .venv/bin/activate
-python3 -m pytest scripts/ -q                       # 계약·브리지·재생 코어
+python3 -m pytest tests -q -m "not gpu"             # 계약·브리지·재생 코어 (scripts/ 에는 테스트가 없다)
 python3 -m pytest ~/rl_ws/robot_control/tests -q     # 프로필·안전 게이트
 ```
 
@@ -195,7 +195,7 @@ ros2 launch openarm_bringup openarm.bimanual.launch.py use_fake_hardware:=false 
 
 robotctl pose ready --group openarm_left_arm --execute     # 2단계, 0.1 rad/s
 
-python3 scripts/ops/lowlevel_check.py --robot gripper_left --group arm --dry-run
+python3 scripts/ops/lowlevel_check.py --robot gripper_left --group arm   # --execute 를 빼면 그것이 dry run
 python3 scripts/ops/lowlevel_check.py --robot gripper_left --group arm --execute
 ```
 

@@ -56,7 +56,7 @@ OpenArm vendor 소스는 별도의 "로봇제어 레포"가 아니라 **이 sim2
 `git ls-files vendor | wc -l` → 887개 추적 파일; 예외로
 `vendor/openarm/openarm_teleop/` 만 `.gitignore` 처리). 즉 로봇 제어 PC에는
 별도 레포를 clone 할 필요 없이 **이 sim2real 저장소 자체를 배치하고
-colcon build** 하면 된다(`scripts/build_vendor_pkgs.sh` 참고, `INSTALL.md`
+colcon build** 하면 된다(`scripts/setup/build_vendor_pkgs.sh` 참고, `INSTALL.md`
 Step 1~3,5 = control 역할).
 
 - **OpenArm 팔 드라이버**: `vendor/openarm/{openarm_description, openarm_can,
@@ -85,10 +85,10 @@ Step 1~3,5 = control 역할).
     / `sim2real_dryrun.py` 가 `Sim2RealCommandPublisher` 로 발행하는 것을
     받아 위 컨트롤러 토픽으로 중계.
 - **빌드**: robot_control `ros_ws/build.sh` 를 먼저 돌린 뒤
-  `scripts/build_vendor_pkgs.sh` 가 `vendor/openarm` 4개와 `isaacsim_bridge`
+  `scripts/setup/build_vendor_pkgs.sh` 가 `vendor/openarm` 4개와 `isaacsim_bridge`
   를 빌드한다(`--bridge-only` 옵션은 isaacsim_bridge 만). 스크립트는
   robot_control install 을 오버레이로 source 하며, 없으면 무엇을 해야 하는지
-  말하고 종료한다. `scripts/setup_check.sh control` 로 사전 점검.
+  말하고 종료한다. `scripts/setup/setup_check.sh control` 로 사전 점검.
 - **위치**: 로봇제어 PC 에는 **sim2real 과 robot_control 을 나란히** 배치한다
   (기본 탐색 경로 `../robot_control/ros_ws/install`, `ROBOT_CONTROL_INSTALL`
   로 변경 가능). Tesollo 드라이버가 robot_control 로 옮겨간 만큼 sim2real 은
@@ -117,7 +117,7 @@ Step 1~3,5 = control 역할).
     `pour_inference.py`(pour 는 FK 라 1회 capture 후 relay 죽어도 계속 동작).
 - **ROS_DOMAIN_ID=126** 를 perception PC / sim2real PC / 로봇제어 PC 모두
   동일하게 export 해야 DDS 로 서로 보인다(`INSTALL.md` Step 2,
-  `scripts/setup_check.sh` 에서 확인).
+  `scripts/setup/setup_check.sh` 에서 확인).
 - **점검 스크립트**: `sim2real/scripts/check_cup_pose_link.sh [domain_id]`
   (기본 126) — `ROS_DOMAIN_ID` 일치 여부 + `ros2 topic list` 에 `/cup_pose`
   가시 여부를 각 PC 에서 실행해 확인.
@@ -162,8 +162,8 @@ tesollo_control/ + isaacsim_bridge (sim2real 내부) ─────┘     sim2
       가능, 복사 불필요).
 - [ ] 로봇 드라이버: 로봇제어 PC 에 sim2real 과 robot_control 을 나란히 배치 →
       robot_control `ros_ws/build.sh` 먼저 →
-      `scripts/build_vendor_pkgs.sh` 로 `vendor/openarm`,
-      `isaacsim_bridge` colcon build → `scripts/setup_check.sh control` 로
+      `scripts/setup/build_vendor_pkgs.sh` 로 `vendor/openarm`,
+      `isaacsim_bridge` colcon build → `scripts/setup/setup_check.sh control` 로
       CAN 인터페이스/vendor 빌드 확인 → `openarm_control` +
       `tesollo_control`(또는 `integrated_control` 통합) + `isaacsim_bridge`
       launch 기동.
