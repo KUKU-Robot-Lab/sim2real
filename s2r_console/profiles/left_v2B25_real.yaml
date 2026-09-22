@@ -1,0 +1,23 @@
+# 좌팔 그리퍼 grasp (V2B25) — **실기**. 도메인 126.
+schema: s2r_console/profile/v1
+id: left_v2B25_real
+title: 좌팔 그리퍼 grasp · 실기 (V2B25)
+mission: config/mission_policy_control.yaml
+domain: {id: 126, class: real}
+policy_dt: 0.02                # 50 Hz
+status_nodes: [obs, policy, fabric, pd]
+
+# robot_control bringup — openarm.bimanual.launch.py (arm_prefix 기본값 "" → 네임스페이스 없음).
+# 노드·컨트롤러 이름은 launch 와 openarm_bimanual_controllers.yaml 에서 읽었다. 실기에서 관측한 값은 아니다.
+# managers.active 는 **실행 내내** active 여야 하는 것만. 팔 JTC 는 pd 가 engage 때 끄므로 판정하지 않는다.
+stack:
+  title: robot_control (openarm bringup)
+  nodes: [/controller_manager, /robot_state_publisher]
+  topics:
+    - {name: /joint_states, stale_ms: 500}
+    - {name: /head/joint_states}              # 선택 입력 — 끊겨도 판정하지 않는다
+  managers:
+    - {name: /controller_manager, active: [joint_state_broadcaster, left_gripper_controller]}
+
+# 연결 그림은 적지 않는다 — 콘솔이 미션의 명령(argv) · 계약 json · robot yaml 에서 만든다(`s2r_console/wiring.py`).
+# 정책을 바꾸면(미션이 다른 계약·launch 를 가리키면) 노드와 전선이 따라 바뀐다. 손으로 적은 `diagram:` 절을 두면 그것이 이긴다.

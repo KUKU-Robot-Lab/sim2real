@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S2R 배포 콘솔</title>
+<link rel="stylesheet" href="/static/console.css">
+</head>
+<body>
+<header id="top">
+  <div class="brand"><span class="logo">S2R</span><span class="brand-sub">배포 콘솔</span></div>
+  <div id="run-info" class="run-info"></div>
+  <div class="spacer"></div>
+  <div id="lease" class="lease"></div>
+</header>
+
+<section id="banner" class="banner tone-mute"></section>
+
+<main id="landing" class="landing" hidden></main>
+
+<main id="work" class="work" hidden>
+  <section class="panel links-panel">
+    <div class="panel-head"><h2>연결</h2><span id="links-meta" class="meta"></span></div>
+    <div id="diagram" class="dg" hidden><svg id="dg-wires" class="dg-wires" aria-hidden="true"></svg><div id="dg-cols" class="dg-cols"></div></div>
+    <details id="dg-extra" class="links-table" hidden><summary id="dg-extra-sum">그림 밖 연결</summary><div id="dg-extra-body" class="dg-extra"></div></details>
+    <details id="links-table" class="links-table"><summary>표로 보기</summary><div id="links" class="links"></div></details>
+  </section>
+  <section class="col col-mission">
+    <div class="panel">
+      <div class="panel-head"><h2>미션</h2><span id="mission-meta" class="meta"></span></div>
+      <ol id="stages" class="stages"></ol>
+    </div>
+  </section>
+
+  <section class="col col-live">
+    <div class="panel">
+      <div class="panel-head"><h2>노드</h2><span id="bridge-meta" class="meta"></span></div>
+      <div id="nodes"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>타이밍</h2><span id="metrics-meta" class="meta"></span></div>
+      <div id="metrics"></div>
+    </div>
+    <div class="panel" id="policy-panel">
+      <div class="panel-head"><h2>정책</h2><span id="policy-meta" class="meta"></span></div>
+      <div id="policy"></div>
+    </div>
+  </section>
+
+  <section class="col col-side">
+    <div class="panel">
+      <div class="panel-head"><h2>프로세스</h2><span id="procs-meta" class="meta"></span></div>
+      <div id="procs"></div>
+    </div>
+    <div class="panel grow">
+      <div class="panel-head"><h2>사건</h2></div>
+      <ul id="events" class="events"></ul>
+    </div>
+  </section>
+</main>
+
+<footer id="stopbar" class="stopbar" hidden>
+  <div class="stop-label">정지<small>조작 권한 없이도 된다</small></div>
+  <div id="quick" class="quick"></div>
+  <div class="stop-note">★ 비상정지는 <b>물리 버튼</b>이다. 이 화면의 버튼은 웹서버와 DDS 를 거친다 — 가장 느린 정지 경로다.</div>
+  <div class="spacer"></div>
+  <button id="btn-end" class="btn btn-ghost">run 끝내기…</button>
+</footer>
+
+<aside id="logdrawer" class="drawer" hidden>
+  <div class="drawer-head">
+    <b id="log-title">로그</b><span class="spacer"></span>
+    <label class="chk"><input type="checkbox" id="log-follow" checked> 따라가기</label>
+    <button class="btn btn-ghost btn-sm" id="log-close">닫기</button>
+  </div>
+  <pre id="log-body"></pre>
+</aside>
+
+<div id="modal" class="modal" hidden><div class="modal-card" id="modal-card"></div></div>
+<div id="toasts" class="toasts"></div>
+<div id="stale" class="disconnected" hidden><div><b id="stale-title">콘솔 서버와 끊겼다</b><span id="stale-why">화면의 값은 마지막으로 받은 것이다 — 지금의 로봇 상태가 아니다.</span></div></div>
+
+<script src="/static/console.js"></script>
+</body>
+</html>
