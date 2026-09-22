@@ -30,7 +30,9 @@ OBS_STATUS = f"{NS}/status/obs"
 FABRIC_STATUS = f"{NS}/status/fabric"
 DEFAULT_PHASE_TIMEOUT = 30.0
 DEFAULT_SERVICE_TIMEOUT = 5.0
-RESET_RETRY_S = 4.0            # fabric 이 armed 가 안 되면 reset 을 다시 보내는 간격
+RESET_RETRY_S = 4.0
+HAND_STAGES = ("pd_hand_home", "pd_hand_rest")
+HAND_SETTLE_S = 4.0            # 손 목표를 바꾼 뒤 기다리는 시간 — 손 max_vel 램프(최대 1.6 rad 쯤)            # fabric 이 armed 가 안 되면 reset 을 다시 보내는 간격
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,8 @@ STAGES: tuple[Stage, ...] = (
     Stage("pd_goto_home", "pd goto_home (계약 홈으로 0.1 rad/s 램프 + settle)", f"{NS}/pd/goto_home",
           ("TRACKING",), touches_real=True),
     Stage("pd_hand_home", "pd hand_home (팔이 홈에 정착한 뒤 손을 계약 홈 손 자세로)", f"{NS}/pd/hand_home",
+          ("TRACKING",), touches_real=True, only=True),
+    Stage("pd_hand_rest", "pd hand_rest (손을 engage 때 자세로 — 홈 경로 되짚기 전)", f"{NS}/pd/hand_rest",
           ("TRACKING",), touches_real=True, only=True),
     Stage("ep_reset", "episode reset (obs 가 seq 0 준비, 앵커 스냅샷)", f"{NS}/episode/reset", ("TRACKING",)),
     Stage("ep_start", "episode start (정책 루프 시작)", f"{NS}/episode/start", ("TRACKING",), touches_real=True),
@@ -178,6 +182,11 @@ class Runner:
         print(f"    ✗ fabric not armed after reset (status.armed) — {tries} tries in {self.phase_timeout:.0f}s")
         return False
 
+    def spin_for(self, seconds: float) -> None:
+        t_end = time.monotonic() + seconds
+        while time.monotonic() < t_end:
+            self.spin(0.1)
+
     def spin(self, seconds: float) -> None:
         self.rclpy.spin_once(self.node, timeout_sec=seconds)
 
@@ -258,6 +267,8 @@ def run_stage(runner: Runner, stage: Stage, steps: int) -> bool:
         print(f"    note: {reasons}")
     if stage.id == "ep_reset" and not runner.reset_until_armed(stage.service):
         return False
+    if stage.id in HAND_STAGES:                  # 손은 속도 제한 램프로 간다 — 다음 동작 전에 도착할 시간을 준다
+        runner.spin_for(HAND_SETTLE_S)
     return runner.wait_phase(stage)
 
 

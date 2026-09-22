@@ -21,6 +21,11 @@ artifacts:
   robot_bi: deploy/policy_control/config/robots/dg5f_m_bi_real.yaml
   pd: deploy/policy_control/config/pd_dg5f_m_short.yaml
   pd_exec: deploy/policy_control/config/pd_dg5f_m_short_exec.yaml   # execute 한 줄만 다른 발행 사본 — pd_arm 단계만
+  # 저장된 홈 경로(오프라인에서 계획 · 충돌 검사 · Isaac 확인). 실기에서는 다시 계산하지 않는다(09.22 사용자).
+  #   만들기(실측 차렷 · 실측 손): plan_home_path.py --side <side> --start=<7관절> --hand-start measured --hand-q '<손>' \\
+  #            --goal contract --other-arm both --via j1j4 --out <이 경로>. 손은 팔이 움직이는 동안 그대로다(pd home_hand: keep)
+  path_right: deploy/policy_control/paths/home_right.npz
+  path_left: deploy/policy_control/paths/home_left.npz
   gains_yaml: ../urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml
 
 checkpoints: {}
@@ -86,9 +91,9 @@ stages:
 
   - id: home_right
     group: motion
-    title: "[right] engage → 제자리 10 s → 실측 자세에서 충돌 없는 경로 재계획 → Isaac 미리보기 → 경로 재생으로 정책 시작 자세 → 손"
+    title: "[right] engage → 제자리 10 s → 저장 경로 시작점 확인 → Isaac 미리보기 → 저장 경로 재생(j1·j4 로 빼고 들어가기) → 손"
     needs: [pd_arm_right]
-    artifacts: [contract, robot_right]
+    artifacts: [contract, robot_right, path_right]
     touches_real: true
     skippable: true
 
@@ -112,9 +117,9 @@ stages:
 
   - id: return_right
     group: finish
-    title: "[right] 같은 경로를 거꾸로 따라 시작 자세(차렷)로 — pd 가 잡은 채. 해제 · 종료 전에 팔을 내려 둔다"
+    title: "[right] 손을 출발 때 자세로 → 같은 경로를 거꾸로 따라 시작 자세(차렷)로 — pd 가 잡은 채. 해제 · 종료 전에 팔을 내려 둔다"
     needs: [home_right]
-    artifacts: [contract, robot_right]
+    artifacts: [contract, robot_right, path_right]
     touches_real: true
     skippable: true
 
@@ -145,9 +150,9 @@ stages:
 
   - id: home_left
     group: motion
-    title: "[left] engage → 제자리 10 s → 실측 자세에서 충돌 없는 경로 재계획 → Isaac 미리보기 → 경로 재생으로 정책 시작 자세 → 손"
+    title: "[left] engage → 제자리 10 s → 저장 경로 시작점 확인 → Isaac 미리보기 → 저장 경로 재생(j1·j4 로 빼고 들어가기) → 손"
     needs: [pd_arm_left]
-    artifacts: [contract, robot_left]
+    artifacts: [contract, robot_left, path_left]
     touches_real: true
     skippable: true
 
@@ -171,9 +176,9 @@ stages:
 
   - id: return_left
     group: finish
-    title: "[left] 같은 경로를 거꾸로 따라 시작 자세(차렷)로 — pd 가 잡은 채. 해제 · 종료 전에 팔을 내려 둔다"
+    title: "[left] 손을 출발 때 자세로 → 같은 경로를 거꾸로 따라 시작 자세(차렷)로 — pd 가 잡은 채. 해제 · 종료 전에 팔을 내려 둔다"
     needs: [home_left]
-    artifacts: [contract, robot_left]
+    artifacts: [contract, robot_left, path_left]
     touches_real: true
     skippable: true
 
@@ -239,6 +244,9 @@ run:
     - note: DG-5F 드라이버(좌) — namespace dg5f_left. 콘솔이 띄우고 감독한다
       argv: [ros2, launch, dg5f_driver, dg5f_left_driver.launch.py, "delto_ip:=169.254.186.73"]
       background: true
+    - note: "★모터 응답 확인 — can0 · can1 수신 패킷이 실제로 늘어나는가. 0 이면 모터에 명령이 닿지 않는다(09.22 전원을 켰다고
+        여겼는데 RX 0 · ERROR-PASSIVE, 관절 상태가 전부 0.0 이었다). 실패하면 전원 · 비상정지 · CAN 케이블을 보고 CAN 을 다시 올릴 것"
+      argv: [python3, "{repo}/scripts/setup/check_can_rx.py", can0, can1]
   viewer:
     - note: 읽기 전용 Isaac 뷰어 — relay(ROS 구독만) → UDP → Isaac(ROS 없음). 부팅 1~2 분. GPU 에 학습 · fabric 이 있으면 뜨지 않는다
         (그래서 fabric 보다 먼저 켠다). 창을 닫으면 이 단위가 꺼진다
@@ -248,8 +256,8 @@ run:
     - note: 인지 런처 — vision-3090 의 카메라·FP++ 컨테이너를 ssh 로 보고 켜고 끈다(스스로는 아무것도 켜지 않는다)
       argv: [python3, "{repo}/scripts/nodes/perception_launcher_node.py", --host, vision-3090]
       background: true
-    - note: 카메라 + FP++(cup_big_s100) 켜기 — vision-3090 에서. 런처가 받을 때까지 최대 3 s 기다리고, 없으면 실패로 끝난다
-      argv: [python3, "{repo}/scripts/ops/perception_ctl.py", start, cup_big_s100]
+    - note: 카메라 + FP++(cup_big_s100) 켜기 — vision-3090 에서. 런처가 끝낼 때까지 최대 150 s 기다리고, 실패를 보고하면 이 단계도 실패(09.22 에는 보내기만 하고 통과했다)
+      argv: [python3, "{repo}/scripts/ops/perception_ctl.py", start, cup_big_s100, --wait, "150"]
   pd_load_right:
     - note: "[right] pd 노드 무발행 기동 — status 의 gains ok · 입력 신선도를 본다"
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",
@@ -278,17 +286,17 @@ run:
     - note: "[right] ★10 s 동안 팔이 제자리였는가(처짐 · 떨림 · 소리 없음). 아니면 '정상이 아니다' 후 정지 바의 PD 해제"
       argv: [bash, -lc, "true"]
       manual: true
-    - note: "[right] 지금 팔 관절을 재서 그 자리부터 정책 시작 자세까지 충돌 없는 경로를 계획(테이블 · 몸통 · 반대 팔 2 cm 여유,
-        손 두 자세 · 반대 팔 두 자세 모두 통과). 못 찾으면 여기서 멈춘다 — 팔은 움직이지 않는다.
-        ★관절공간 직선(goto_home)은 테이블 상판을 지난다(09.22 계산) — 쓰지 않는다"
-      argv: [python3, "{repo}/deploy/policy_control/tools/plan_home_from_robot.py", --side, right]
-    - note: "[right] 계획한 경로를 Isaac 화면에 4배속으로 미리 보여 준다(viewer 가 떠 있을 때. 로봇은 움직이지 않는다)"
-      argv: [python3, "{repo}/deploy/policy_control/tools/preview_path_in_viewer.py", --npz, "{repo}/logs/policy_control/home_path_right_current.npz", --speed, "4"]
+    - note: "[right] 저장된 홈 경로를 재생해도 되는가 — 팔이 경로 시작점(0.05 rad 안)에 있고, 경로가 지금 계약으로 만든 것이고,
+        관절 상태가 살아 있는가(전부 0.0 이면 엔코더 미수신). 경로는 j1·j4 로 빼기 → 공중에서 나머지 → j1·j4 로 들어가기.
+        ★관절공간 직선(goto_home)은 테이블 상판을 지난다 — 쓰지 않는다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/check_path_start.py", --npz, "{artifact:path_right}"]
+    - note: "[right] 저장 경로를 Isaac 화면에 4배속으로 미리 보여 준다 — 팔 관절만 보낸다(손은 실기 값 그대로). 로봇은 움직이지 않는다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/preview_path_in_viewer.py", --npz, "{artifact:path_right}", --speed, "4"]
     - note: "[right] ★Isaac 에서 경로를 확인했는가 · 실물 경로 주변(로봇 옆 약 0.7 m · 높이 약 0.8 m)이 비어 있는가. 아니면 '정상이 아니다'"
       argv: [bash, -lc, "true"]
       manual: true
-    - note: "[right] 계획한 경로를 pd 로 재생(최대 0.1 rad/s, 약 25 s). 끝나면 episode stop 으로 pd 가 마지막 자세를 붙든다"
-      argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py", --npz, "{repo}/logs/policy_control/home_path_right_current.npz", --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7",
+    - note: "[right] 저장 경로를 pd 로 재생(최대 0.1 rad/s). 끝나면 episode stop 으로 pd 가 마지막 자세를 붙든다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py", --npz, "{artifact:path_right}", --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7",
              --rate-scale, "1.0"]
       execute_args: [--execute]
     - note: "[right] 정책 시작 자세에서 정착(이미 도착 — 남은 오차만). 실패하면 pd 를 해제한다"
@@ -327,8 +335,11 @@ run:
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, ep_stop]
       execute_args: [--execute]
   return_right:
+    - note: "[right] 손을 engage 때 자세로 되돌린다(pd/hand_rest) — 홈 경로는 그 손 자세로 충돌 검사했다(편 손으로 되짚으면 검사 밖이다)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_hand_rest]
+      execute_args: [--execute, --approve, pd_hand_rest]
     - note: "[right] 홈 경로 되짚기(최대 0.1 rad/s). 진입 램프 간극이 0.35 rad 를 넘으면 거부된다(정책 시작 자세 근처에서만)"
-      argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py", --npz, "{repo}/logs/policy_control/home_path_right_current.npz", --reverse, --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7",
+      argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py", --npz, "{artifact:path_right}", --reverse, --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7",
              --rate-scale, "1.0"]
       execute_args: [--execute]
   release_right:
@@ -360,17 +371,17 @@ run:
     - note: "[left] ★10 s 동안 팔이 제자리였는가(처짐 · 떨림 · 소리 없음). 아니면 '정상이 아니다' 후 정지 바의 PD 해제"
       argv: [bash, -lc, "true"]
       manual: true
-    - note: "[left] 지금 팔 관절을 재서 그 자리부터 정책 시작 자세까지 충돌 없는 경로를 계획(테이블 · 몸통 · 반대 팔 2 cm 여유,
-        손 두 자세 · 반대 팔 두 자세 모두 통과). 못 찾으면 여기서 멈춘다 — 팔은 움직이지 않는다.
-        ★관절공간 직선(goto_home)은 테이블 상판을 지난다(09.22 계산) — 쓰지 않는다"
-      argv: [python3, "{repo}/deploy/policy_control/tools/plan_home_from_robot.py", --side, left]
-    - note: "[left] 계획한 경로를 Isaac 화면에 4배속으로 미리 보여 준다(viewer 가 떠 있을 때. 로봇은 움직이지 않는다)"
-      argv: [python3, "{repo}/deploy/policy_control/tools/preview_path_in_viewer.py", --npz, "{repo}/logs/policy_control/home_path_left_current.npz", --speed, "4"]
+    - note: "[left] 저장된 홈 경로를 재생해도 되는가 — 팔이 경로 시작점(0.05 rad 안)에 있고, 경로가 지금 계약으로 만든 것이고,
+        관절 상태가 살아 있는가(전부 0.0 이면 엔코더 미수신). 경로는 j1·j4 로 빼기 → 공중에서 나머지 → j1·j4 로 들어가기.
+        ★관절공간 직선(goto_home)은 테이블 상판을 지난다 — 쓰지 않는다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/check_path_start.py", --npz, "{artifact:path_left}"]
+    - note: "[left] 저장 경로를 Isaac 화면에 4배속으로 미리 보여 준다 — 팔 관절만 보낸다(손은 실기 값 그대로). 로봇은 움직이지 않는다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/preview_path_in_viewer.py", --npz, "{artifact:path_left}", --speed, "4"]
     - note: "[left] ★Isaac 에서 경로를 확인했는가 · 실물 경로 주변(로봇 옆 약 0.7 m · 높이 약 0.8 m)이 비어 있는가. 아니면 '정상이 아니다'"
       argv: [bash, -lc, "true"]
       manual: true
-    - note: "[left] 계획한 경로를 pd 로 재생(최대 0.1 rad/s, 약 25 s). 끝나면 episode stop 으로 pd 가 마지막 자세를 붙든다"
-      argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py", --npz, "{repo}/logs/policy_control/home_path_left_current.npz", --joints, "l_aj_1,l_aj_2,l_aj_3,l_aj_4,l_aj_5,l_aj_6,l_aj_7",
+    - note: "[left] 저장 경로를 pd 로 재생(최대 0.1 rad/s). 끝나면 episode stop 으로 pd 가 마지막 자세를 붙든다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py", --npz, "{artifact:path_left}", --joints, "l_aj_1,l_aj_2,l_aj_3,l_aj_4,l_aj_5,l_aj_6,l_aj_7",
              --rate-scale, "1.0"]
       execute_args: [--execute]
     - note: "[left] 정책 시작 자세에서 정착(이미 도착 — 남은 오차만). 실패하면 pd 를 해제한다"
@@ -409,8 +420,11 @@ run:
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, ep_stop]
       execute_args: [--execute]
   return_left:
+    - note: "[left] 손을 engage 때 자세로 되돌린다(pd/hand_rest) — 홈 경로는 그 손 자세로 충돌 검사했다(편 손으로 되짚으면 검사 밖이다)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_hand_rest]
+      execute_args: [--execute, --approve, pd_hand_rest]
     - note: "[left] 홈 경로 되짚기(최대 0.1 rad/s). 진입 램프 간극이 0.35 rad 를 넘으면 거부된다(정책 시작 자세 근처에서만)"
-      argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py", --npz, "{repo}/logs/policy_control/home_path_left_current.npz", --reverse, --joints, "l_aj_1,l_aj_2,l_aj_3,l_aj_4,l_aj_5,l_aj_6,l_aj_7",
+      argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py", --npz, "{artifact:path_left}", --reverse, --joints, "l_aj_1,l_aj_2,l_aj_3,l_aj_4,l_aj_5,l_aj_6,l_aj_7",
              --rate-scale, "1.0"]
       execute_args: [--execute]
   release_left:

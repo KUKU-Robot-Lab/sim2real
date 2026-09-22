@@ -39,12 +39,18 @@ def test_each_arm_is_readied_engaged_and_homed_before_the_selftest():
         home = [" ".join(c.argv) for c in cmds]
         # engage·제자리 → 확인 → 실측 재계획 → Isaac 미리보기 → 확인 → 경로 재생 → 정착 → 도착 확인 → 손(09.22)
         assert "--only pd_engage --hold-s 10" in home[0] and cmds[1].manual
-        assert "plan_home_from_robot.py" in home[2] and "preview_path_in_viewer.py" in home[3] and cmds[4].manual
-        assert "replay_to_pd.py" in home[5] and f"home_path_{side}_current.npz" in home[5] and "--reverse" not in home[5]
+        # 저장 경로만 쓴다 — 실기에서 다시 계산하지 않는다(09.22 사용자). 시작점 확인 → 미리보기 → 확인 → 재생
+        assert "check_path_start.py" in home[2] and f"{{artifact:path_{side}}}" in home[2]
+        assert "preview_path_in_viewer.py" in home[3] and "--with-fixed" not in home[3] and cmds[4].manual
+        assert "replay_to_pd.py" in home[5] and f"{{artifact:path_{side}}}" in home[5] and "--reverse" not in home[5]
+        assert not any("plan_home" in a for c in cmds for a in c.argv)
         assert "--only pd_goto_home" in home[6] and "--service-timeout 45" in home[6]      # 정착만 — 도착은 재생이 했다
         assert cmds[7].manual and "--only pd_hand_home" in home[8]
-        back = " ".join(_cmds(f"return_{side}")[0].argv)
-        assert "--reverse" in back and f"home_path_{side}_current.npz" in back               # 같은 경로를 되짚는다
+        ret = _cmds(f"return_{side}")
+        assert "--only pd_hand_rest" in " ".join(ret[0].argv)                               # 손을 출발 자세로 먼저
+        back = " ".join(ret[1].argv)
+        assert "--reverse" in back and f"{{artifact:path_{side}}}" in back                    # 같은 경로를 되짚는다
+        assert f"path_{side}" in MISSION.stages[IDS.index(f"home_{side}")].artifacts          # 승인 근거 해시에 들어간다
         assert IDS.index(f"return_{side}") < IDS.index(f"release_{side}")
         assert "--joints" not in " ".join(_cmds(f"selftest_{side}")[0].argv)          # 초기 자세는 팔꿈치가 굽어 7관절 모두
 
@@ -133,3 +139,11 @@ def test_preflight_runs_only_the_real_deployment_tests_not_the_whole_suite():
     assert not any(a.rstrip("/").endswith("tests/policy_control") for a in argv)      # 디렉터리 통째가 아니다
     for f in files:
         assert Path(f.replace("{repo}", str(PATH.parents[1]))).is_file(), f
+
+
+def test_the_drivers_stage_ends_by_checking_that_the_motors_answer_on_can():
+    # 09.22: can0 · can1 RX 0 · ERROR-PASSIVE 인데 브링업이 "activated" 를 찍고 관절 상태를 전부 0.0 으로 냈다.
+    last = " ".join(_cmds("drivers")[-1].argv)
+    assert "check_can_rx.py" in last and "can0" in last and "can1" in last
+    sensors = " ".join(_cmds("sensors")[1].argv)
+    assert "--wait" in sensors                                                        # 인지 기동 실패를 기다려 본다

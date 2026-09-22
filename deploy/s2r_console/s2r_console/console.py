@@ -450,6 +450,16 @@ class Console:
                 ledger.append(s.ledger_path, ledger.Entry("revoke", stage_id, "console", _now(), {}, f"실행에 쓰였다 ({outcome})"))
             mark = {"DONE": "✓", "FAILED": "✗", "ABORTED": "■"}.get(outcome, "?")
             s.event("stage", f"{mark} {stage_id} {outcome}" + (f" — {note}" if note else ""))
+            release = outcome != MC.STATUS_DONE and stage.touches_real and self._pd_holds(s)
+        if release:
+            # 실기 단계가 실패 · 중단했는데 pd 가 팔을 잡고 있으면 풀어 둔다(JTC 가 그 자리를 잡는다).
+            # 09.22: 저장 경로 시작점 검사에서 멈췄는데 pd 는 engage 된 채 남았다 — 그 검사는 episode_ctl 이 아니라 해제하지 않는다.
+            try:
+                self.quick("pd_release", client=f"자동: {stage_id} {outcome}")
+            except ConsoleError as exc:
+                with self._lock:
+                    if self.session is s:
+                        s.event("quick", f"자동 PD 해제를 못 했다 — 정지 바의 PD 해제를 누를 것 ({exc})")
 
     # ── 그림의 스위치 ───────────────────────────────────────────────────
     def toggle_unit(self, key: str, on: bool, *, operator: str) -> None:
@@ -483,6 +493,17 @@ class Console:
         """
         pd_boxes = [] if s.diagram is None else [b for b in s.diagram.boxes if b.id.startswith("pd") or b.status == "pd"]
         return None if not pd_boxes else {b.unit for b in pd_boxes if b.unit}
+
+    def _pd_holds(self, s: Session) -> bool:
+        """pd 가 팔을 잡고 있을 수 있는가(모르는 것도 잡은 쪽으로). 콘솔이 띄운 pd 가 없으면 아니다."""
+        procs = {p["key"]: p for p in s.supervisor.table()}
+        keys = self._robot_keys(s) or set()
+        if not any(procs.get(k, {}).get("alive") for k in keys):
+            return False
+        with s.feed_lock:
+            obs = s.feed.observed()
+        phase = self._pd_phase(s, obs, {p["key"]: p for p in s.supervisor.table()})
+        return phase not in U.PD_FREE
 
     def _pd_phase(self, s: Session, obs, procs: Mapping[str, Mapping]) -> str | None:
         """끄기·종료 규칙이 볼 pd phase — 조용한 pd 는 자유가 아니라 `U.PD_UNKNOWN` 이다."""

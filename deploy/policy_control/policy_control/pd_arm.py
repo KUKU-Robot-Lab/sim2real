@@ -214,6 +214,7 @@ class ArmUnit:
         self.t_ee_recv: float | None = None
         self.target: PdTarget | None = None
         self.hand_target: np.ndarray | None = None
+        self.rest_hand: np.ndarray | None = None     # engage 때 실측 손 자세
         self.hold: Hold | None = None
         self.blend: Blend | None = None
         self.switch_failed = False
@@ -526,6 +527,8 @@ class ArmUnit:
         return ref - np.asarray(self.gravity_fn(q_m), dtype=float) / self.kp, note
 
     def engage_stage(self, q_seed: np.ndarray, now: float) -> str:
+        # 출발 때의 손 자세 — 홈 경로는 이 손으로 검사했다. 복귀 전에 손을 여기로 되돌린다(pd/hand_rest, 09.22).
+        self.rest_hand = self._measured_hand(now)
         self.stage.engage(q_seed)
         self.blend = Blend("engage", now)
         self.hold, self.target, self.switch_failed = None, None, False
@@ -551,6 +554,28 @@ class ArmUnit:
 
     def start_hand_home(self) -> None:
         self.hold = replace(self.hold, hand=self.home_hand.copy())
+
+    def _measured_hand(self, now: float) -> np.ndarray | None:
+        if not self.hand_joints:
+            return None
+        state = self.sources.snapshot(now)
+        names = list(state.ee_names)
+        if not all(j in names for j in self.hand_joints):
+            return None
+        return np.asarray([state.ee_q[names.index(j)] for j in self.hand_joints], dtype=float)
+
+    def hand_rest_refusals(self) -> list[str]:
+        """손을 engage 때 자세로 되돌릴 수 없는 이유 — 팔을 pd 가 내부 목표로 붙들고 있을 때만(episode stop · goto_home 뒤)."""
+        if getattr(self, "rest_hand", None) is None:
+            return [f"{self.side}: engage 때 손 자세를 기록하지 못했다(손 상태 없음)"]
+        if self.phase not in _MOVING:
+            return [f"{self.side}: phase {self.phase.value} — engage 된 팔에서만"]
+        if self.hold is None:
+            return [f"{self.side}: 팔이 외부 목표를 따르는 중이다 — 에피소드 정지 뒤에"]
+        return []
+
+    def start_hand_rest(self) -> None:
+        self.hold = replace(self.hold, hand=self.rest_hand.copy())
 
     def start_thermal_retreat(self) -> bool:
         """자기해제형 HOLD(발열·워치독)에서 홈으로 내려가는 것을 허용한다.

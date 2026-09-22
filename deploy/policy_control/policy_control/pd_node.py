@@ -5,7 +5,7 @@
     /policy_control/episode (reset → new_episode, stop/abort → 현재 세트포인트 유지)  │
     /policy_control/estop (Bool, 래치 — 모든 팔)                                     ▼
     backends.write(cmd) [execute 일 때만 발행] · /policy_control/pd/applied (모든 팔 이어 붙임) · /policy_control/status/pd
-    서비스 std_srvs/Trigger: /policy_control/pd/{engage, goto_home, hand_home, release} — 선택한 팔을 순서대로(우 먼저)
+    서비스 std_srvs/Trigger: /policy_control/pd/{engage, goto_home, hand_home, hand_rest, release} — 선택한 팔을 순서대로(우 먼저)
 
 ROS 파라미터 `sides` = 쉼표 목록(기본 '' = robot yaml 과 계약 양쪽에 있는 팔 전부). 한 팔의 HOLD 는 그 팔만 세운다;
 estop/release 는 모든 팔에 건다. status 의 `phase` 는 팔들의 합성(HOLD > RELEASING > RAMPING > TRACKING > IDLE),
@@ -180,7 +180,7 @@ class PdNode(Node):
             self.create_subscription(JointState, topic, self._joint_cb(targets), _qos_sensor(), callback_group=main)
         self._wire_temperature(main)
         services = (("engage", self._srv_engage), ("goto_home", self._srv_goto_home), ("hand_home", self._srv_hand_home),
-                    ("release", self._srv_release))
+                    ("hand_rest", self._srv_hand_rest), ("release", self._srv_release))
         for name, fn in services:
             self.create_service(Trigger, f"{NS}/pd/{name}", fn, callback_group=self.cb_srv)
         self.create_timer(self.dt, self._on_timer, callback_group=main)
@@ -362,6 +362,16 @@ class PdNode(Node):
             for unit in self.units.values():
                 unit.start_hand_home()
         return trigger_reply(resp, True, [self._tag(u, "hand → contract home") for u in self.units.values()])
+
+    def _srv_hand_rest(self, req, resp):
+        """손을 engage 때 실측 자세로 되돌린다 — 홈 경로를 되짚기 전에(경로는 그 손 자세로 충돌 검사했다, 09.22)."""
+        with self._lock:
+            refusals = [r for unit in self.units.values() for r in unit.hand_rest_refusals()]
+            if refusals:
+                return trigger_reply(resp, False, refusals)
+            for unit in self.units.values():
+                unit.start_hand_rest()
+        return trigger_reply(resp, True, [self._tag(u, "hand → engage 때 자세") for u in self.units.values()])
 
     def _srv_goto_home(self, req, resp):
         """계약 홈으로 0.1 rad/s 램프 + settle — 팔을 순서대로(우 먼저, 양팔 리셋 규약)."""

@@ -52,6 +52,9 @@ def main(argv=None) -> int:
     ap.add_argument("--loops", type=int, default=1)
     ap.add_argument("--hold-frac", type=float, default=None, help="0..1 — 이 위치 프레임 하나만 반복 송신")
     ap.add_argument("--hold-sec", type=float, default=60.0)
+    ap.add_argument("--with-fixed", action="store_true",
+                    help="손 · 반대 팔 · 목도 계약 홈 값으로 덮어 보낸다. 기본은 **움직이는 팔 관절만** — 나머지는 뷰어가 실기 값을 "
+                         "그대로 둔다(09.22: 손을 계약 홈(편 손)으로 덮어 보내 손가락이 갑자기 펴진 것처럼 보였다)")
     args = ap.parse_args(argv)
     if args.host not in ("127.0.0.1", "localhost"):
         raise SystemExit("로컬 뷰어 전용 — host 는 127.0.0.1")
@@ -65,8 +68,10 @@ def main(argv=None) -> int:
     if not joints:
         raise SystemExit("npz 에 meta_joints 가 없다")
     side = "right" if joints[0].startswith("r_") else "left"
-    with open(args.contract) as f:
-        fixed = fixed_joints(json.load(f), side, args.other_arm)
+    fixed = {}
+    if args.with_fixed:
+        with open(args.contract) as f:
+            fixed = fixed_joints(json.load(f), side, args.other_arm)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     addr = (args.host, args.port)
 

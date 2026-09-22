@@ -59,6 +59,19 @@ def _fake_argv(argv: list) -> list:
     return out
 
 
+def _arm_start(artifacts: dict) -> list[str]:
+    """fake 팔을 저장 홈 경로의 시작점(실측 차렷)에서 시작시킨다 — 실기와 같은 시작점 검사를 fake 에서도 밟는다."""
+    import numpy as np
+
+    parts = []
+    for side in ("right", "left"):
+        path = REPO / str(artifacts.get(f"path_{side}", ""))
+        if path.is_file():
+            q = np.load(path)["meta_start"]
+            parts.append(f"{side}=" + ",".join(f"{float(v):.6f}" for v in q))
+    return [f"arm_start:={';'.join(parts)}"] if parts else []
+
+
 def convert(real: dict) -> dict:
     fake = yaml.safe_load(yaml.safe_dump(real, allow_unicode=True))          # 깊은 복사
     fake["name"] = f"{real['name']} (fake)"
@@ -68,7 +81,7 @@ def convert(real: dict) -> dict:
     run = fake["run"]
     if not any(c.get("background") for c in real["run"]["drivers"]):
         raise SystemExit("실기 drivers 에 배경 명령이 없다 — 변환 규칙을 다시 볼 것")
-    run["drivers"] = [PLANT]
+    run["drivers"] = [{**PLANT, "argv": PLANT["argv"] + _arm_start(fake["artifacts"])}]
     for stage, note in NO_HARDWARE.items():
         run[stage] = [{"note": note, "argv": ["echo", note]}]
     alive = {f"{st}#{i}" for st, cmds in run.items() for i, c in enumerate(cmds) if c.get("background")}
@@ -79,6 +92,8 @@ def convert(real: dict) -> dict:
                 c["stop"] = [k for k in dict.fromkeys(keys) if k in alive]     # fake 에 없는 프로세스(목 · 인지)는 뺀다
             elif c.get("argv") and stage != "drivers":
                 c["argv"] = _fake_argv(c["argv"])
+                if any(str(a).endswith("check_path_start.py") for a in c["argv"]):
+                    c["argv"].append("--allow-exact-zero")        # fake 팔은 정확히 0 에서 시작한다(엔코더 미수신 검사를 끈다)
         run[stage] = [c for c in cmds if not ("stop" in c and not c["stop"])]
     return fake
 

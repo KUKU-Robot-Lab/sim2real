@@ -75,6 +75,8 @@ def _plant_args(cfg: dict) -> list[str]:
     if model not in ("pd", "rate"):
         raise RuntimeError(f"plant_model must be pd|rate, got {model!r}")
     plant = ["--model", model, "--forward", "--rate-hz", cfg["plant_hz"]]
+    if cfg.get("arm_start"):
+        plant.append("--start-q=" + cfg["arm_start"])
     if model == "pd":
         plant += ["--friction-scale", cfg.get("plant_friction", "1.0")]
     return plant
@@ -165,6 +167,8 @@ def generate_launch_description() -> LaunchDescription:
                               description="pd = 실측 게인 PD+마찰+중력 모델 | rate = 속도제한만(이상 추종, 배선 검증용)"),
         # 좌 v2B25 학습 스폰 중심(x 0.38, y 0.19) · 컵 원점 z = **학습 sim 테이블 0.200** + 0.09209 = 0.29209
         # (정책이 본 유일한 z — left_inference_node TRAIN_CUP_Z). 실기 datum 0.205 는 실기 FP++ 가 준다.
+        DeclareLaunchArgument("arm_start", default_value="",
+                              description="팔 시작 자세 'right=a,…;left=…' (계약 모드, 기본 0)"),
         DeclareLaunchArgument("hand_follow", default_value="joint_target",
                               description="joint_target (옛 반사) | jtc (실기처럼 pd 의 드라이버 JTC 를 따른다)"),
         DeclareLaunchArgument("hand_start", default_value="home", description="home (계약 home_hand) | zero"),

@@ -484,8 +484,18 @@ def certify_pairs(chk: Checker, frames: np.ndarray, top: int = 12) -> list[dict]
 
 # ---------------------------------------------------------------- 메인
 
-def build_scenes(contract: dict, side: str, other_mode: str, hand_mode: str) -> list[dict]:
-    """고정 관절 조합 목록. 경로는 모든 조합에서 통과해야 한다(반대팔 home/zero × 손 contract/zeros)."""
+def parse_hand_q(text: str | None) -> dict[str, float]:
+    """`r_hj_index_2=1.62,r_hj_thumb_3=1.16,...` → dict. 실측 손 자세(09.22 실기 차렷에서 손은 주먹을 쥐고 있었다)."""
+    out: dict[str, float] = {}
+    for item in (text or "").split(","):
+        if item.strip():
+            k, _, v = item.partition("=")
+            out[k.strip()] = float(v)
+    return out
+
+
+def build_scenes(contract: dict, side: str, other_mode: str, hand_mode: str, hand_q: dict | None = None) -> list[dict]:
+    """고정 관절 조합 목록. 경로는 모든 조합에서 통과해야 한다(반대팔 home/zero × 손 contract/zeros [+ 실측 손])."""
     other = "left" if side == "right" else "right"
     sd, od = contract["sides"][side], contract["sides"][other]
     hands = []
@@ -493,6 +503,8 @@ def build_scenes(contract: dict, side: str, other_mode: str, hand_mode: str) -> 
         hands.append(dict(sd["home_hand"]))
     if hand_mode in ("zeros", "both"):
         hands.append({k: 0.0 for k in sd["home_hand"]})
+    if hand_q:
+        hands.append({**{k: 0.0 for k in sd["home_hand"]}, **{k: v for k, v in hand_q.items() if k in sd["home_hand"]}})
     arms = []
     if other_mode in ("home", "both"):
         arms.append(dict(zip(od["arm_joints"], od["home_arm"])))
@@ -525,6 +537,38 @@ def abduction_box(lo: np.ndarray, hi: np.ndarray, side: str, cap: float, start, 
     return lo, hi
 
 
+J1J4_GRID_J1 = np.round(np.arange(-1.4, 1.41, 0.2), 2)
+J1J4_GRID_J4 = np.round(np.arange(0.2, 1.41, 0.2), 2)
+
+
+def plan_j1j4(chk, start, goal, lo, hi, step=CHECK_STEP, vmax=0.1, dt=FRAME_DT, ramp=RAMP_TIME):
+    """start → A(j1·j4 만) → B(A 의 j1·j4 + 나머지는 목표) → goal(j1·j4 만). 격자에서 통과하는 A 중 여유가 최대인 것들의
+    **가운데**를 고른다(경계에 붙은 자세는 모델 오차에 약하다). 없으면 None.
+
+    꼭짓점 사이 검사를 통과해도 **시간을 붙인 프레임**으로 다시 검사해 통과한 것만 쓴다 — 09.22 여유가 정확히 2 cm 에 걸린
+    후보가 꼭짓점 검사는 통과하고 프레임 검사(1e-5 m 부족)에서 떨어졌다."""
+    passing = []
+    for j1 in J1J4_GRID_J1:
+        for j4 in J1J4_GRID_J4:
+            if not (lo[0] <= j1 <= hi[0] and lo[3] <= j4 <= hi[3]):
+                continue
+            a = start.copy()
+            a[0], a[3] = j1, j4
+            b = goal.copy()
+            b[0], b[3] = j1, j4
+            path = np.stack([start, a, b, goal])
+            rep = chk.check_path(path, step)
+            if rep["ok"] and chk.check_path(time_parametrize(path, vmax, dt, ramp), step)["ok"]:
+                passing.append((round(float(rep["min_clear_ne"]), 3), float(j1), float(j4), path))
+    if not passing:
+        return None
+    best = max(p[0] for p in passing)
+    top = sorted((p for p in passing if p[0] >= best - 1e-9), key=lambda p: (p[1], p[2]))
+    pick = top[len(top) // 2]
+    print(f"[j1j4] 통과 {len(passing)} 개 · 최대 여유 {best:.3f} m 인 것 {len(top)} 개 중 가운데 — 빼기 자세 j1 {pick[1]:+.2f} · j4 {pick[2]:.2f}")
+    return pick[3]
+
+
 def fmt_pair(k) -> str:
     return f"{k[0]}<->{k[1]}"
 
@@ -536,9 +580,11 @@ def main(argv=None) -> int:
     ap.add_argument("--goal", default="contract", help="'contract'(계약 home_arm) | 'env_reset'(env.yaml 리셋 자세) | CSV")
     ap.add_argument("--other-arm", choices=("home", "zero", "both"), default="both",
                     help="반대팔 고정 자세 — both 면 두 자세 모두에서 통과해야 한다")
-    ap.add_argument("--hand-start", choices=("contract", "zeros", "both"), default="contract",
+    ap.add_argument("--hand-start", choices=("contract", "zeros", "both", "measured"), default="contract",
                     help="이동 중 손 자세 — contract = 계약 home_hand(엄지_2 만 ±1.57), zeros = 전부 0, both = 둘 다 통과")
     ap.add_argument("--with-cup", action="store_true", help="스폰 중심에 cup_big_s100 상자를 둔다")
+    ap.add_argument("--hand-q", default=None,
+                    help="실측 손 자세 'r_hj_index_2=1.62,...' — --hand-start 자세들에 **더해** 이 손으로도 통과해야 한다")
     ap.add_argument("--margin", type=float, default=0.02, help="세계·몸통·반대팔 최소 여유 [m]")
     ap.add_argument("--inset", type=float, default=0.05, help="RRT 샘플 관절한계 안쪽 여유 [rad]")
     ap.add_argument("--step", type=float, default=CHECK_STEP, help="조밀 검사 간격 [rad]")
@@ -552,6 +598,9 @@ def main(argv=None) -> int:
     ap.add_argument("--escape-radius", type=float, default=ESCAPE_RADIUS,
                     help="시작 자세 탈출 영역 L-inf 반경 [rad] — 시작에서 이미 margin 미달인 쌍만 이 안에서 완화")
     ap.add_argument("--force-rrt", action="store_true", help="직선이 통과해도 RRT 로 계획(시험용)")
+    ap.add_argument("--via", choices=("rrt", "j1j4"), default="rrt",
+                    help="j1j4 = j1·j4 로 테이블에서 빼기 → 공중에서 나머지 관절 → j1·j4 로 들어가기(09.22 사용자 방식). "
+                         "격자에서 통과하는 빼기 자세 중 여유가 가장 큰 것들의 가운데를 고른다")
     ap.add_argument("--max-abduction", type=float, default=None,
                     help="어깨 옆 벌림(j2) 상한 [rad] — 손이 옆으로 크게 나가지 않게(09.22 사용자: 옆이 아니라 j1·j4 로). "
                          "j3(상완 회전)도 [-0.3, 0.6] 으로 묶는다. 좌팔은 부호를 뒤집는다. 없으면 관절한계 전부")
@@ -578,7 +627,9 @@ def main(argv=None) -> int:
     hi = np.array([limits[j][1] for j in world.moving_joints])
     start = np.zeros(7) if args.start == "zeros" else parse_q(args.start)
     goal, goal_src = resolve_goal(args.goal, contract, env, args.side)
-    scenes = build_scenes(contract, args.side, args.other_arm, args.hand_start)
+    if args.hand_start == "measured" and not args.hand_q:
+        raise SystemExit("--hand-start measured 에는 --hand-q(실측 손 자세)가 필요하다")
+    scenes = build_scenes(contract, args.side, args.other_arm, args.hand_start, parse_hand_q(args.hand_q))
     for name, q in (("start", start), ("goal", goal)):
         bad = [(j, round(float(v), 4), limits[j]) for j, v in zip(world.moving_joints, q)
                if not limits[j][0] - 1e-9 <= v <= limits[j][1] + 1e-9]
@@ -620,6 +671,10 @@ def main(argv=None) -> int:
     rng = np.random.default_rng(args.seed)
     if straight["ok"] and not args.force_rrt:
         method, path = "straight", np.stack([start, goal])
+    elif args.via == "j1j4":
+        method, path = "j1j4", plan_j1j4(chk, start, goal, lo, hi, args.step, vmax, args.dt, args.ramp_time)
+        if path is None:
+            raise SystemExit("[plan] j1·j4 구조 경로를 찾지 못했다(격자 전부 실패) — --via rrt 를 쓰거나 세계를 다시 볼 것")
     else:
         method = "rrt"
         path = None
@@ -661,6 +716,7 @@ def main(argv=None) -> int:
              meta_escape_pairs=np.array([fmt_pair(k) for k in chk.escape0]),
              meta_always_contact=np.array([fmt_pair(k) for k in chk.always_contact]),
              meta_other_arm=np.array(args.other_arm), meta_hand_start=np.array(args.hand_start),
+             meta_hand_q=np.array(args.hand_q or ""),
              meta_with_cup=np.bool_(args.with_cup), meta_goal_source=np.array(goal_src),
              meta_exact_min_lb=np.float64(worst["exact_lb"] if worst else np.nan))
     print(f"[plan] 방법 {method} · 프레임 {len(frames)} × dt {args.dt} = {(len(frames) - 1) * args.dt:.1f} s "

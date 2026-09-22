@@ -795,3 +795,25 @@ def test_home_hand_option_is_checked_and_defaults_to_contract(tmp_path):
     real = SIM2REAL / "deploy/policy_control/config"
     assert L.load_pd_config(real / "pd_dg5f_m_short.yaml").home_hand == "keep"               # 실기 설정은 keep
     assert L.load_pd_config(real / "pd_dg5f_m_short_exec.yaml").home_hand == "keep"
+
+
+@needs_asset
+def test_hand_rest_returns_the_hand_to_its_engage_pose(ros, bi_cm, bi_hand_ctrls, tmp_path):
+    # 09.22: 홈 경로는 출발 때 손 자세(주먹)로 검사했다 — 되짚기 전에 손을 그 자세로 되돌린다.
+    node, plant, caller, spin = _bi_rig(ros, True, _keep_yaml(tmp_path))
+    try:
+        ok, reasons = caller.trigger("hand_rest")
+        assert ok is False                                                                  # engage 전
+        assert caller.trigger("engage")[0]
+        plant.wait(lambda st: all(a["phase"] in ("RAMPING", "TRACKING") for a in st["arms"].values()))
+        assert caller.trigger("goto_home")[0] and caller.trigger("hand_home")[0]
+        time.sleep(0.3)
+        ok, reasons = caller.trigger("hand_rest")
+        assert ok, reasons
+        time.sleep(0.3)
+        last = plant.applied[-1]
+        hand = [last.position[list(last.name).index(j)] for j in _hand_can("right") if j in last.name]
+        assert hand and max(abs(v) for v in hand) < 1e-6                                   # 플랜트 손은 0 에서 시작했다
+        assert caller.trigger("release")[0]
+    finally:
+        _close_rig(node, plant, caller, spin)

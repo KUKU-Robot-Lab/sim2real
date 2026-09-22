@@ -106,10 +106,23 @@ def _friction(args) -> np.ndarray:
     return np.asarray(fc, dtype=float) * float(args.friction_scale)
 
 
-def _arm(spec: SideSpec, args, kp, kd, fc, inertia, gravity) -> SideArm:
+def _arm(spec: SideSpec, args, kp, kd, fc, inertia, gravity, q0=None) -> SideArm:
     # ★substeps 를 줄이면 마찰 데드밴드가 부풀어 저관성 관절이 조용히 얼어붙는다(`MockArm` 이 거부한다). 기본값을 쓴다.
     return SideArm(spec, model=args.model, max_vel=args.max_vel, dt=1.0 / args.rate_hz, kp=kp, kd=kd, fc=fc,
-                   inertia=inertia, gravity=gravity)
+                   inertia=inertia, gravity=gravity, q0=q0)
+
+
+def parse_start_q(text: str | None) -> dict[str, list[float]]:
+    """`right=a,b,…;left=…` → {side: [7]}. 비면 {} (0 에서 시작)."""
+    out: dict[str, list[float]] = {}
+    for part in (text or "").split(";"):
+        if part.strip():
+            side, _, vals = part.partition("=")
+            q = [float(v) for v in vals.split(",")]
+            if len(q) != NUM_ARM:
+                raise SystemExit(f"[fake_arm_bridge] --start-q {side}: {NUM_ARM} 개가 필요하다, {len(q)} 개")
+            out[side.strip()] = q
+    return out
 
 
 def build_legacy(args) -> PlantSpec:
@@ -175,7 +188,8 @@ def build_contract(args) -> PlantSpec:
             gravity = gravity_from_pd_config(Path(args.pd_config), contract, side)
         else:
             gravity = gravity_from_urdf(urdf, spec, contract.side(side).palm_body) if args.gravity else None
-        arms.append(_arm(spec, args, kp, kd, fc, inertia_at(urdf, spec, q_inertia), gravity))
+        arms.append(_arm(spec, args, kp, kd, fc, inertia_at(urdf, spec, q_inertia), gravity,
+                         parse_start_q(args.start_q).get(side)))
         grips.append(_contract_grip(robot_cfg, profile, side))
     statics = tuple((side_spec_from_contract(contract, profile, s), np.asarray(contract.side(s).home_arm, dtype=float))
                     for s in contract.side_names if s not in sides)
@@ -284,6 +298,7 @@ def _parser() -> argparse.ArgumentParser:
                         help="자산 URDF 체인 g(q) 를 모델에 넣는다(페이로드 없음). 계약 모드에서 --pd-config 가 있으면 그쪽이 우선")
     parser.add_argument("--inertia-q", default=None,
                         help="유효관성을 계산할 관절자세 7값 CSV(canonical 순). 레거시 기본 0(차렷), 계약 모드 기본 = 계약 홈")
+    parser.add_argument("--start-q", default=None, help="계약 모드: 팔 시작 자세 'right=a,…;left=…' (기본 0)")
     parser.add_argument("--friction-scale", type=float, default=1.0, help="r2s 캘리브 쿨롱 마찰 Fc 배율. 0 = sim 처럼 마찰 없음")
     parser.add_argument("--gains", type=Path, default=DEFAULT_GAINS, help="MIT kp/kd 진실원천(pd 노드와 같은 파일)")
     return parser

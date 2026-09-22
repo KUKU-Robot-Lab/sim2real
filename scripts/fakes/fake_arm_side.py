@@ -102,9 +102,10 @@ class SideArm:
     """MockArm 한 팔 + 지령 버퍼. 지령은 canonical 순(부호 적용 뒤)으로 든다."""
 
     def __init__(self, spec: SideSpec, *, model: str, max_vel: float, dt: float, kp, kd, fc, inertia,
-                 gravity=None) -> None:
+                 gravity=None, q0=None) -> None:
         self.spec = spec
-        self.q0 = np.zeros(NUM_ARM)
+        # 시작 자세 — 기본 0. 저장 홈 경로가 실측 차렷(0 이 아니다)에서 시작하므로 fake 도 거기서 시작할 수 있게(09.22)
+        self.q0 = np.zeros(NUM_ARM) if q0 is None else np.asarray(q0, dtype=float).copy()
         self.arm = MockArm(q0=self.q0.copy(), model=model, max_vel=max_vel, dt=dt, kp=kp, kd=kd, fc=fc,
                            inertia=inertia, gravity=gravity)
         self.cmd = self.q0.copy()

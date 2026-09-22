@@ -56,6 +56,8 @@ def main() -> int:
     s = sub.add_parser("start")
     s.add_argument("objects", nargs="+")
     s.add_argument("--viewer", action="store_true")
+    s.add_argument("--wait", type=float, default=0.0,
+                   help="런처가 일을 끝낼 때까지(busy=False) 최대 이 초만큼 기다리고, 오류면 1 로 끝난다(0 = 보내기만)")
     st = sub.add_parser("stop")
     st.add_argument("--camera", action="store_true", help="카메라까지 내린다")
     v = sub.add_parser("viewer")
@@ -93,13 +95,45 @@ def main() -> int:
     deadline = time.monotonic() + 3.0
     while not box and time.monotonic() < deadline:
         rclpy.spin_once(node, timeout_sec=0.1)
-    if box:
+    rc = 0
+    wait = float(getattr(args, "wait", 0.0) or 0.0)
+    if wait > 0 and payload is not None:
+        # 09.22 실기: start 는 보내기만 하고 0 으로 끝나 카메라 기동 실패(camera_up.sh rc=1)를 콘솔이 몰랐다.
+        rc = _wait_done(node, box, wait)
+    elif box:
         print_status(json.loads(box[-1]))
     else:
         print("/perception/status 가 안 온다", file=sys.stderr)
     node.destroy_node()
     rclpy.shutdown()
-    return 0
+    return rc
+
+
+def _wait_done(node, box: list, wait: float) -> int:
+    """busy 가 True 였다가 False 가 될 때까지(또는 wait 초). 끝난 상태에 error 가 있으면 1."""
+    import rclpy
+
+    t0, seen_busy = time.monotonic(), False
+    while time.monotonic() - t0 < wait:
+        rclpy.spin_once(node, timeout_sec=0.2)
+        if not box:
+            continue
+        st = json.loads(box[-1])
+        seen_busy |= bool(st.get("busy"))
+        if seen_busy and not st.get("busy"):
+            print_status(st)
+            if st.get("error"):
+                print(f"✗ 인지 기동 실패: {st['error']}", file=sys.stderr)
+                return 1
+            return 0
+        if not seen_busy and time.monotonic() - t0 > 5.0 and st.get("error"):
+            print_status(st)
+            print(f"✗ 인지 기동 실패: {st['error']}", file=sys.stderr)
+            return 1
+    print(f"✗ {wait:.0f} s 안에 런처가 끝나지 않았다", file=sys.stderr)
+    if box:
+        print_status(json.loads(box[-1]))
+    return 1
 
 
 if __name__ == "__main__":

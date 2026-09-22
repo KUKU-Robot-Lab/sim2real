@@ -149,7 +149,7 @@ def after_stage(report: Report, domain: int, stage: str, tgt: dict) -> None:
         check_side(report, domain, side, tgt, arm=True, hand=False, when="셀프테스트 뒤")
     elif stage.startswith("return_") and side:
         import numpy as np
-        path = HERE.parents[2] / "logs" / "policy_control" / f"home_path_{side}_current.npz"
+        path = HERE.parents[2] / "deploy" / "policy_control" / "paths" / f"home_{side}.npz"
         start = [float(v) for v in np.load(path)["meta_start"]]
         want = {f"{side[0]}_aj_{i}": v for i, v in enumerate(start, 1)}
         err, what = worst(sample(domain), want)
