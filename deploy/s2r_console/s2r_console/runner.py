@@ -163,6 +163,12 @@ class StageRunner:
         if self._sup.is_alive(step.key):
             self._set(step, status="kept", detail="이미 떠 있다 — 다시 띄우지 않는다")
             return None
+        foreign = self._sup.foreign_launches(step.argv)
+        if foreign:                          # 콘솔 밖에서 같은 launch 가 떠 있다 — 둘을 같은 하드웨어에 붙이지 않는다
+            pids = ", ".join(str(p) for p, _ in foreign)
+            self._set(step, status="failed", detail=f"콘솔 밖에서 이미 떠 있다: pid {pids}")
+            return FAILED, (f"{step.note}: 같은 launch 가 콘솔 밖에서 이미 떠 있다(pid {pids}) — 두 번 띄우지 않는다. "
+                            "하드웨어를 받친 뒤 그 PID 를 정리하고 다시 실행할 것")
         try:
             self._sup.spawn(step.key, stage=self.stage_id, note=step.note, argv=step.argv, background=True, manual=False)
         except SupervisorError as exc:

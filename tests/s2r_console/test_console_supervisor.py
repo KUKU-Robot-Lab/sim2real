@@ -50,3 +50,18 @@ def test_stop_does_not_return_while_a_child_of_the_group_survives(tmp_path, monk
     sup.stop(["up#0"])
 
     assert not _alive(child)                          # 리더가 먼저 죽었어도 그룹에 남은 자식까지 끝낸다
+
+
+def test_a_launch_already_running_outside_the_console_is_found_and_ours_is_not():
+    # 09.22 실기: 3 시간 전 run 이 남긴 팔 브링업이 살아 있는데 새 콘솔이 한 번 더 띄웠다 — 같은 CAN 에 둘.
+    from s2r_console.supervisor import foreign_launches, launch_target
+    t = launch_target(["ros2", "launch", "openarm_bringup", "openarm.bimanual.launch.py", "use_rviz:=false"])
+    assert t == "openarm.bimanual.launch.py"
+    assert launch_target(["ros2", "launch", "/r/deploy/policy_control/launch/pd_controller.launch.py"]) == "pd_controller.launch.py"
+    assert launch_target(["python3", "x.py"]) is None
+    procs = [(10, 10, "/usr/bin/python3 /opt/ros/humble/bin/ros2 launch openarm_bringup openarm.bimanual.launch.py a:=1"),
+             (11, 10, "/opt/ros/humble/lib/controller_manager/ros2_control_node --ros-args"),        # launch 의 자식 — 따로 세지 않는다
+             (20, 20, "/usr/bin/python3 /opt/ros/humble/bin/ros2 launch openarm_bringup openarm.bimanual.launch.py"),
+             (30, 30, "/usr/bin/python3 /opt/ros/humble/bin/ros2 launch dg5f_driver dg5f_right_driver.launch.py")]
+    assert [p for p, _ in foreign_launches(t, procs, own_pgids={20})] == [10]      # 20 은 콘솔이 띄운 것
+    assert foreign_launches("dg5f_left_driver.launch.py", procs, set()) == []

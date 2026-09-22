@@ -30,6 +30,43 @@ class SupervisorError(RuntimeError):
 CHILD_DIED = "process has died"
 
 
+def launch_target(argv) -> str | None:
+    """`ros2 launch <pkg> <file>` / `ros2 launch <path>` 의 launch 파일 이름. launch 가 아니면 None."""
+    argv = [str(a) for a in argv]
+    if argv[:2] != ["ros2", "launch"]:
+        return None
+    files = [a for a in argv[2:] if a.endswith((".launch.py", ".launch.xml", ".launch.yaml"))]
+    return os.path.basename(files[0]) if files else None
+
+
+def foreign_launches(target: str, procs, own_pgids) -> list[tuple[int, str]]:
+    """같은 launch 파일로 떠 있는 **콘솔 밖** 프로세스 (pid, cmdline). `procs` 는 (pid, pgid, cmdline) 들.
+
+    09.22 실기: 3 시간 전 run 이 남긴 팔 브링업이 살아 있는데 새 콘솔이 브링업을 한 번 더 띄웠다 — 같은 CAN 에 둘이 붙었다.
+    """
+    out = []
+    for pid, pgid, cmd in procs:
+        if pgid in own_pgids:
+            continue
+        words = cmd.split()
+        if "launch" in words and any(os.path.basename(w) == target for w in words):
+            out.append((pid, cmd[:160]))
+    return out
+
+
+def scan_processes():
+    """/proc 에서 (pid, pgid, cmdline). 읽을 수 없는 것은 건너뛴다."""
+    for d in Path("/proc").iterdir():
+        if not d.name.isdigit():
+            continue
+        try:
+            cmd = (d / "cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace").strip()
+            pid = int(d.name)
+            yield pid, os.getpgid(pid), cmd
+        except (OSError, ProcessLookupError):
+            continue
+
+
 def child_env(base: Mapping[str, str], *, domain: int, run_id: str) -> dict[str, str]:
     """부모 env 에 도메인과 run id 를 덮어쓴다. 순수."""
     env = dict(base)
@@ -125,6 +162,20 @@ class Supervisor:
             size = fh.tell()
             fh.seek(max(0, size - n_bytes))
             return fh.read().decode("utf-8", errors="replace")
+
+    def own_pgids(self) -> set[int]:
+        with self._lock:
+            out = set()
+            for p in self._procs.values():
+                try:
+                    out.add(os.getpgid(p.popen.pid))
+                except ProcessLookupError:
+                    continue
+            return out
+
+    def foreign_launches(self, argv) -> list[tuple[int, str]]:
+        target = launch_target(argv)
+        return [] if target is None else foreign_launches(target, scan_processes(), self.own_pgids())
 
     def child_deaths(self, key: str) -> list[str]:
         """이 프로세스의 로그에서 `ros2 launch` 가 알린 자식 죽음 줄. launch 는 자식이 죽어도 살아 있어서
