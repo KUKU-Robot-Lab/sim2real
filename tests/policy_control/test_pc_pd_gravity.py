@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from policy_control import contract as C
+from policy_control import contract_assets as A
 from policy_control import pd_gravity as G
 from policy_control import pd_law as L
 
@@ -285,7 +286,9 @@ def test_payload_is_only_what_the_chain_cannot_carry(pd_yaml, contract_path, urd
     for side in ("left", "right"):
         s = contract.side(side)
         p = side[0]
-        q = {**{j: 0.0 for j in s.arm_joints}, **s.home_hand}
+        # payload 기준 손 자세 = 열린 손(자산 hand_home, 실기 gravity_comp_node 로 검증된 자세). 계약의 home_hand 는
+        # 09.22 부터 정책 초기 손 자세(run: 홈)일 수 있어 기준으로 쓰지 않는다 — payload 는 자세마다 바꾸는 값이 아니다.
+        q = {**{j: 0.0 for j in s.arm_joints}, **A.hand_home(contract.asset.ee_kind, side, s.hand_joints)}
         tf = _link_transforms(model, q)
         links = set()
         for jn, info in model["joints"].items():

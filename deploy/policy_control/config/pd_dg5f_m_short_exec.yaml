@@ -10,6 +10,7 @@
 #   발행은 사본 pd_dg5f_m_short_exec.yaml(execute 한 줄만 다름)로만, 콘솔 미션의 pd_arm_<side> 단계(승인)에서 띄운다.
 side: both
 execute: true                  # true 여야 컨트롤러 토픽·controller_manager 를 건드린다
+home_hand: keep                # goto_home 은 팔만 — 손은 팔이 도착한 뒤 pd/hand_home 으로(09.22 차렷에서 손가락이 펴졌다)
 pd_hz: 100.0                   # 재발행 주기
 ramp_speed: 0.1                # RAMPING(첫 목표까지) / goto_home 램프 [rad/s]
 watchdog_sec: 0.25             # joint_target 두절 → HOLD (CommandGate 와 동일)

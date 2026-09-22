@@ -127,8 +127,9 @@ def test_episode_ctl_execute_requires_all_real_approvals(ctl, capsys):
 
 
 def test_episode_ctl_stage_order_and_helpers(ctl):
-    ids = [s.id for s in ctl.STAGES]
+    ids = [s.id for s in ctl.selected(())]                    # 전체 시나리오 — pd_hand_home 은 --only 로만(09.22)
     assert ids == ["pd_engage", "pd_goto_home", "ep_reset", "ep_start", "run", "ep_stop", "pd_release"]
+    assert [s.id for s in ctl.STAGES if s.only] == ["pd_hand_home"]
     assert ctl.missing_approvals(frozenset()) == ["pd_engage", "pd_goto_home", "ep_start"]
     assert ctl.missing_approvals(frozenset(ids)) == []
     assert ctl.parse_trigger(True, '{"ok": true, "reasons": []}') == (True, [])

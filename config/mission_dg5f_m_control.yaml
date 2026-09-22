@@ -53,6 +53,12 @@ stages:
     needs: [preflight]
     skippable: true
 
+  - id: viewer
+    group: connect
+    title: Isaac Sim 화면 — right_aglt 정책 환경(로봇 · 테이블 · 컵)에 실기 관절 상태를 비춘다 (읽기 전용 · rviz 대신)
+    needs: [preflight]
+    skippable: true
+
   # ────────────────────────────────────────────── 오른팔 ③ 준비 · ④ 자세 이동 · ⑤ 정책 동작 · ⑥ 해제
   - id: pd_load_right
     group: prepare
@@ -80,7 +86,7 @@ stages:
 
   - id: home_right
     group: motion
-    title: "[right] engage → 제자리 10 s(처짐·떨림 확인) → 계약 홈(차렷 0)으로 0.1 rad/s 램프 — 팔의 첫 움직임"
+    title: "[right] engage → 제자리 10 s → 팔만 정책 초기 자세로(0.1 rad/s) → 도착 확인 → 손을 정책 초기 손 자세로"
     needs: [pd_arm_right]
     artifacts: [contract, robot_right]
     touches_real: true
@@ -88,29 +94,10 @@ stages:
 
   - id: selftest_right
     group: motion
-    title: "[right] 셀프테스트 — 홈에서 hold 10 s → 관절별 ±0.02/0.05/0.10 rad (r_aj_4 제외)"
-    # ★r_aj_4 는 프로필 하한이 정확히 0 이라 차렷에서 −방향이 한계 밖 → pd 가 HOLD 한다(2026-09-07 실기). 굽힌 자세에서 따로 본다.
+    title: "[right] 셀프테스트 — 정책 초기 자세에서 hold 10 s → 관절별 ±0.02/0.05/0.10 rad"
+    # 초기 자세는 차렷이 아니라 팔꿈치가 굽어 있어(aj_4 0.43~0.72) 7관절 모두 ±0.10 이 한계 안이다(aj_6 0.65 + 0.10 < 0.785).
     # ★손목 r_aj_5/6/7 은 kp 10 이라 ±0.02(=0.2 N·m)이 관절 마찰과 비슷해 비율이 안 나온다 — 판정은 ±0.05 이상으로.
     needs: [home_right]
-    artifacts: [contract, robot_right]
-    touches_real: true
-    skippable: true
-
-  - id: preset_right
-    group: motion
-    title: "[right] 차렷 → preset(팔꿈치 114.6°) — pd 가 직접 이동, 손이 몸통 · 판에서 자유로운 자세"
-    needs: [home_right]
-    needs_why: >
-      ★2026-09-07 확정. 자세 이동을 pd 가 소유한다. 옛 경로(gravity_comp_node + shadow_replay + JTC)는 pd 로 인계할 때
-      무보상 공백이 생겨 8° 내려앉았다. pd 의 model_tau_ff 가 검증모델과 0.99~1.01 로 일치하므로 두 시스템을 쓸 이유가 없다.
-    artifacts: [contract, robot_right]
-    touches_real: true
-    skippable: true
-
-  - id: preset_return_right
-    group: motion
-    title: "[right] preset → 올라온 궤적을 --reverse 로 되짚어 복귀 (goto_home 금지 — 관절공간 직선은 테이블을 모른다)"
-    needs: [preset_right]
     artifacts: [contract, robot_right]
     touches_real: true
     skippable: true
@@ -150,7 +137,7 @@ stages:
 
   - id: home_left
     group: motion
-    title: "[left] engage → 제자리 10 s(처짐·떨림 확인) → 계약 홈(차렷 0)으로 0.1 rad/s 램프 — 팔의 첫 움직임"
+    title: "[left] engage → 제자리 10 s → 팔만 정책 초기 자세로(0.1 rad/s) → 도착 확인 → 손을 정책 초기 손 자세로"
     needs: [pd_arm_left]
     artifacts: [contract, robot_left]
     touches_real: true
@@ -158,14 +145,13 @@ stages:
 
   - id: selftest_left
     group: motion
-    title: "[left] 셀프테스트 — 홈에서 hold 10 s → 관절별 ±0.02/0.05/0.10 rad (l_aj_4 제외)"
-    # ★l_aj_4 는 프로필 하한이 정확히 0 이라 차렷에서 −방향이 한계 밖 → pd 가 HOLD 한다(2026-09-07 실기). 굽힌 자세에서 따로 본다.
+    title: "[left] 셀프테스트 — 정책 초기 자세에서 hold 10 s → 관절별 ±0.02/0.05/0.10 rad"
+    # 초기 자세는 차렷이 아니라 팔꿈치가 굽어 있어(aj_4 0.43~0.72) 7관절 모두 ±0.10 이 한계 안이다(aj_6 0.65 + 0.10 < 0.785).
     # ★손목 l_aj_5/6/7 은 kp 10 이라 ±0.02(=0.2 N·m)이 관절 마찰과 비슷해 비율이 안 나온다 — 판정은 ±0.05 이상으로.
     needs: [home_left]
     artifacts: [contract, robot_left]
     touches_real: true
     skippable: true
-
 
   - id: fabric_direct_left
     group: policy
@@ -201,9 +187,10 @@ run:
       # 계속 실패하고(원래부터의 결함), 지금 로봇(short)과 무관하다. 빼지 않으면 이 관문이 영원히 막힌다(2026-09-22)
       argv: [python3, -m, pytest, "{repo}/tests/policy_control", -q, -m, "not gpu", -p, "no:cacheprovider",
              --deselect, "tests/policy_control/test_pc_fk_urdf.py::test_canonical_palm_is_the_alias_frame_and_the_kinematics_chain"]
-    - note: 자산 제어 전용 계약 재생성 + control_gains.yaml 대조 (MISMATCH 면 rc 3)
+    - note: 자산 제어 전용 계약 재생성 + control_gains.yaml 대조 (MISMATCH 면 rc 3). ★홈 = right_aglt 정책의 초기 자세
+        (init_state 의 양팔·양손 값 그대로 — 정책 환경과 실기가 같아야 한다, 09.22)
       argv: [python3, "{repo}/deploy/policy_control/tools/build_deploy_contract.py", --asset, openarm_dg5f-m-short_bi_rl,
-             --home, zero, --gains, "{artifact:gains_yaml}", --out, "{artifact:contract}"]
+             --home, "run:deploy/policies/right_aglt", --gains, "{artifact:gains_yaml}", --out, "{artifact:contract}"]
     - note: forward 컨트롤러가 양팔 모두 bringup 설정에 선언돼 있는지 (grep -c 12 = CM 목록 6 + 파라미터 블록 6)
       argv: [grep, -c, "_forward_", "/home/user/rl_ws/robot_control/ros_ws/src/openarm_ros2/openarm_bringup/config/controllers/openarm_bimanual_controllers.yaml"]
   drivers:
@@ -216,9 +203,9 @@ run:
     - note: ★CAN 설정(좌 can1) — 팔 브링업이 left_can_interface:=can1 을 쓴다(2026-09-22 전까지 이 단계에 can0 만 있었다)
       argv: [bash, -lc, "sudo ip link set can1 down && sudo ip link set can1 type can bitrate 1000000 dbitrate 5000000 fd on && sudo ip link set can1 up"]
       manual: true
-    - note: 팔 브링업(robot_control, forward 컨트롤러 선언 포함) — 콘솔이 띄우고 감독한다. 위 전원·CAN 확인이 끝나야 뜬다
+    - note: 팔 브링업(robot_control, forward 컨트롤러 선언 포함) — 콘솔이 띄우고 감독한다. 위 전원·CAN 확인이 끝나야 뜬다. rviz 는 켜지 않는다(화면은 Isaac Sim)
       argv: [ros2, launch, openarm_bringup, openarm.bimanual.launch.py, "use_fake_hardware:=false",
-             "right_can_interface:=can0", "left_can_interface:=can1"]
+             "right_can_interface:=can0", "left_can_interface:=can1", "use_rviz:=false"]
       background: true
     - note: ★손 네트워크 — 손은 CAN 이 아니라 Modbus TCP(우 169.254.186.72 · 좌 .73, :502) 다. 09.14 배선은
         우 = 본체 eno1, 좌 = USB-C 허브 enx00e04c6806e1 로 NIC 이 둘이고, 169.254.0.0/16 경로가 wifi 에 먼저 잡혀 있다.
@@ -232,6 +219,11 @@ run:
       background: true
     - note: DG-5F 드라이버(좌) — namespace dg5f_left. 콘솔이 띄우고 감독한다
       argv: [ros2, launch, dg5f_driver, dg5f_left_driver.launch.py, "delto_ip:=169.254.186.73"]
+      background: true
+  viewer:
+    - note: 읽기 전용 Isaac 뷰어 — relay(ROS 구독만) → UDP → Isaac(ROS 없음). 부팅 1~2 분. GPU 에 학습 · fabric 이 있으면 뜨지 않는다
+        (그래서 fabric 보다 먼저 켠다). 창을 닫으면 이 단위가 꺼진다
+      argv: [bash, "{repo}/robot/isaacsim_bridge/viewer/run_viewer.sh"]
       background: true
   sensors:
     - note: 인지 런처 — vision-3090 의 카메라·FP++ 컨테이너를 ssh 로 보고 켜고 끈다(스스로는 아무것도 켜지 않는다)
@@ -267,30 +259,21 @@ run:
     - note: "[right] ★10 s 동안 팔이 제자리였는가(처짐 · 떨림 · 소리 없음). 아니면 '정상이 아니다' 후 정지 바의 PD 해제"
       argv: [bash, -lc, "true"]
       manual: true
-    - note: "[right] 계약 홈(차렷 0)으로 0.1 rad/s 램프 + 정착. 실패하면 pd 를 해제한다"
+    - note: "[right] ★팔만 정책 초기 자세(right_aglt init_state)로 0.1 rad/s 관절공간 직선 — 손은 그대로(pd home_hand: keep).
+        경로가 테이블 · 몸통에 닿을 것 같으면 즉시 비상정지. 실패하면 pd 를 해제한다"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_goto_home]
       execute_args: [--execute, --approve, pd_goto_home]
+    - note: "[right] ★팔이 초기 자세에 도착했는가. 손가락을 펴도 테이블 · 몸통 · 컵에 닿지 않는가. 아니면 '정상이 아니다' 후 PD 해제"
+      argv: [bash, -lc, "true"]
+      manual: true
+    - note: "[right] 손을 정책 초기 손 자세로 (pd/hand_home — 팔이 홈에 정착했을 때만 받는다)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_hand_home]
+      execute_args: [--execute, --approve, pd_hand_home]
   selftest_right:
-    - note: "[right] 셀프테스트 — 진폭 0.02→0.05→0.10 rad, r_aj_4 제외(차렷에서 하한 0)"
+    - note: "[right] 셀프테스트 — 진폭 0.02→0.05→0.10 rad, 7관절"
       argv: [python3, "{repo}/deploy/policy_control/tools/pd_selftest.py", --contract, "{artifact:contract}",
-             --robot, "{artifact:robot_right}", --side, right, --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_5,r_aj_6,r_aj_7", --amplitudes, "0.02,0.05,0.10",
+             --robot, "{artifact:robot_right}", --side, right, --amplitudes, "0.02,0.05,0.10",
              --out, "{repo}/logs/policy_control/real_dg5fm_right_selftest.json"]
-      execute_args: [--execute]
-  preset_right:
-    - note: "[right] pd engage 상태에서 preset 궤적을 pd 의 joint_target 으로 흘린다 (104 s @0.5)"
-      argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py",
-             --npz, "{repo}/logs/shadow/reset_both/reset_right.npz",
-             --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7", --rate-scale, "0.5"]
-      execute_args: [--execute]
-    - note: "[right] 도착 후 처짐 확인 — pd 가 잡고 있으면 20 s 에 0.00° (2026-09-07 실측)"
-      argv: [echo, "ros2 topic echo /policy_control/status/pd --once  ·  phase TRACKING · ok true"]
-  preset_return_right:
-    - note: "[right] ★preset 에서 내려올 때는 goto_home 을 쓰지 않는다 — 관절공간 직선이라 테이블을 모른다
-        (2026-09-07 실기에서 손이 테이블로 향해 사용자가 모터 강제 종료). 올라온 궤적을 --reverse 로 되짚는다.
-        진입 램프 간극이 0.35 rad 를 넘으면 거부된다."
-      argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py",
-             --npz, "{repo}/logs/shadow/reset_both/reset_right.npz", --reverse,
-             --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7", --rate-scale, "0.5"]
       execute_args: [--execute]
   fabric_direct_right:
     - note: "[right] fabric 노드 direct 모드 (계약이 control_only 라 obs/policy 는 안 뜬다).
@@ -341,13 +324,20 @@ run:
     - note: "[left] ★10 s 동안 팔이 제자리였는가(처짐 · 떨림 · 소리 없음). 아니면 '정상이 아니다' 후 정지 바의 PD 해제"
       argv: [bash, -lc, "true"]
       manual: true
-    - note: "[left] 계약 홈(차렷 0)으로 0.1 rad/s 램프 + 정착. 실패하면 pd 를 해제한다"
+    - note: "[left] ★팔만 정책 초기 자세(right_aglt init_state)로 0.1 rad/s 관절공간 직선 — 손은 그대로(pd home_hand: keep).
+        경로가 테이블 · 몸통에 닿을 것 같으면 즉시 비상정지. 실패하면 pd 를 해제한다"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_goto_home]
       execute_args: [--execute, --approve, pd_goto_home]
+    - note: "[left] ★팔이 초기 자세에 도착했는가. 손가락을 펴도 테이블 · 몸통 · 컵에 닿지 않는가. 아니면 '정상이 아니다' 후 PD 해제"
+      argv: [bash, -lc, "true"]
+      manual: true
+    - note: "[left] 손을 정책 초기 손 자세로 (pd/hand_home — 팔이 홈에 정착했을 때만 받는다)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, pd_hand_home]
+      execute_args: [--execute, --approve, pd_hand_home]
   selftest_left:
-    - note: "[left] 셀프테스트 — 진폭 0.02→0.05→0.10 rad, l_aj_4 제외(차렷에서 하한 0)"
+    - note: "[left] 셀프테스트 — 진폭 0.02→0.05→0.10 rad, 7관절"
       argv: [python3, "{repo}/deploy/policy_control/tools/pd_selftest.py", --contract, "{artifact:contract}",
-             --robot, "{artifact:robot_left}", --side, left, --joints, "l_aj_1,l_aj_2,l_aj_3,l_aj_5,l_aj_6,l_aj_7", --amplitudes, "0.02,0.05,0.10",
+             --robot, "{artifact:robot_left}", --side, left, --amplitudes, "0.02,0.05,0.10",
              --out, "{repo}/logs/policy_control/real_dg5fm_left_selftest.json"]
       execute_args: [--execute]
   fabric_direct_left:

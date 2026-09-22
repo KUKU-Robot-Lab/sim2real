@@ -13,6 +13,7 @@ The default asset is the bimanual DG-5F-M (``DEFAULT_ASSET``).
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -191,9 +192,18 @@ def arm_homes(mode: str, sides: tuple) -> tuple[dict, str]:
     src_side = "left" if detect_family(run / "params/env.yaml") == "gripper_left" else "right"
     home = _home_values(env_text, [f"{src_side[0]}_aj_{i}" for i in range(1, 8)])
     sign, _ = _mirror_signs()
-    mirrored = [s * v for s, v in zip(sign, home)]
-    out = {s: (home if s == src_side else mirrored) for s in sides}
-    return out, f"run:{run.name} init_state ({src_side}; other arm = _ARM_SIGN mirror)"
+    out, how = {}, []
+    for s in sides:
+        if s == src_side:
+            out[s] = home
+            continue
+        try:                                        # 반대 팔도 init_state 에 있으면 그 값 — 정책 환경과 같아야 한다(09.22)
+            out[s] = _home_values(env_text, [f"{s[0]}_aj_{i}" for i in range(1, 8)])
+            how.append(f"{s} = init_state")
+        except SystemExit:
+            out[s] = [g * v for g, v in zip(sign, home)]
+            how.append(f"{s} = _ARM_SIGN mirror")
+    return out, f"run:{run.name} init_state ({src_side}; {', '.join(how) or 'one arm'})"
 
 
 def hand_home(ee_kind: str, side: str, hand_joints: list) -> dict:
@@ -258,6 +268,46 @@ def _pour_hand_homes(home: str, asset: str, sides: tuple) -> dict:
     return pour_homes(pour, sides)[1]
 
 
+def _run_hand_homes(home: str, spec: AssetSpec, manifest: dict, sides: tuple) -> dict:
+    """``run:`` 홈의 손 = 그 런의 init_state 손 값(정책의 첫 상태와 같아야 한다, 09.22 사용자).
+
+    init_state 에 없는 손 관절(잠근 관절 등)은 기본 open pose 값을 쓴다. 반대 팔은 손 부호로 미러한다.
+    다른 홈 모드면 {} — 호출자가 기본 open pose 를 쓴다.
+    """
+    if not home.startswith("run:"):
+        return {}
+    from .contract_build import _block, _robot_block, _text, detect_family
+    run = Path(home[4:])
+    if not run.is_absolute():
+        run = _paths.SIM2REAL / run
+    env_path = run / "params/env.yaml"
+    src = "left" if detect_family(env_path) == "gripper_left" else "right"
+    joint_pos = _block(_robot_block(_text(env_path)), r"^\s*joint_pos:\s*$")
+    out = {}
+    for side in sides:
+        hand = side_joints(manifest, side)[1]
+        base = hand_home(spec.ee_kind, side, hand)                      # 없는 관절의 자리
+        vals = {}
+        for j in hand:
+            own = re.search(rf"^\s*{re.escape(j)}:\s*(-?[0-9.eE+]+)\s*$", joint_pos, re.M)
+            if own is not None:                                         # 그 팔의 값이 있으면 그대로
+                vals[j] = float(own.group(1))
+                continue
+            name = f"{src[0]}{j[1:]}"                                   # 없으면 원본 팔 값을 미러
+            m = re.search(rf"^\s*{re.escape(name)}:\s*(-?[0-9.eE+]+)\s*$", joint_pos, re.M)
+            if m is None:
+                vals[j] = base[j]
+                continue
+            v = float(m.group(1))
+            if side != src:                                             # 부호표는 오른손 관절 순서(HAND_JOINT_NAMES)다
+                from grasp_s2r_synergy import HAND_JOINT_NAMES
+                _, sign = _mirror_signs()
+                v *= sign[list(HAND_JOINT_NAMES).index(f"r{name[1:]}")]
+            vals[j] = v
+        out[side] = vals
+    return out
+
+
 def _control_side(spec: AssetSpec, manifest: dict, side: str, home_arm: list, home_source: str,
                   gains_yaml: Path, home_hand: dict | None = None) -> SideCfg:
     arm, hand = side_joints(manifest, side)
@@ -286,7 +336,7 @@ def build_asset_contract(asset: str = DEFAULT_ASSET, sides: tuple = ("right", "l
     if primary not in sides:
         raise ContractError(f"primary {primary!r} not in sides {sides}")
     homes, home_source = arm_homes(home, tuple(sides))
-    hands = _pour_hand_homes(home, asset, tuple(sides))
+    hands = _pour_hand_homes(home, asset, tuple(sides)) or _run_hand_homes(home, spec, manifest, tuple(sides))
     side_cfgs = {s: _control_side(spec, manifest, s, homes[s], home_source, gains_yaml, hands.get(s))
                  for s in sides}
     main = side_cfgs[primary]

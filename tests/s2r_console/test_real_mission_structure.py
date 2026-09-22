@@ -35,9 +35,12 @@ def test_each_arm_is_readied_engaged_and_homed_before_the_selftest():
         assert any(a == "execute:=false" for c in _cmds(f"pd_load_{side}") for a in c.argv)
         arm = _cmds(f"pd_arm_{side}")
         assert arm[0].stop and any(a == "execute:=true" for a in arm[1].argv)          # 무발행을 내린 뒤 발행을 띄운다
-        home = [" ".join(c.argv) for c in _cmds(f"home_{side}")]
-        assert "--only pd_engage --hold-s 10" in home[0] and _cmds(f"home_{side}")[1].manual and "--only pd_goto_home" in home[2]
-        assert f"{side[0]}_aj_4" not in " ".join(_cmds(f"selftest_{side}")[0].argv)    # 차렷에서 하한 0
+        cmds = _cmds(f"home_{side}")
+        home = [" ".join(c.argv) for c in cmds]
+        # 팔 → 손 순서(09.22 차렷에서 손가락이 펴졌다): engage·제자리 → 확인 → 팔만 홈 → 도착 확인 → 손 홈
+        assert "--only pd_engage --hold-s 10" in home[0] and cmds[1].manual
+        assert "--only pd_goto_home" in home[2] and cmds[3].manual and "--only pd_hand_home" in home[4]
+        assert "--joints" not in " ".join(_cmds(f"selftest_{side}")[0].argv)          # 초기 자세는 팔꿈치가 굽어 7관절 모두
 
 
 def test_the_head_publisher_starts_only_after_head_home_released_the_port():
@@ -77,3 +80,19 @@ def test_only_the_arm_stage_launches_pd_with_the_exec_config():
         assert "pd_exec" in MISSION.stages[IDS.index(f"pd_arm_{side}")].artifacts      # 승인 근거 해시에 들어간다
     others = [s for s in IDS if not s.startswith("pd_arm_")]
     assert not any("pd_exec" in a for s in others for c in _cmds(s) for a in c.argv)
+
+
+def test_the_home_is_the_right_policy_initial_state_and_rviz_stays_off():
+    build = " ".join(_cmds("preflight")[1].argv)
+    assert "--home run:deploy/policies/right_aglt" in build
+    arm = _cmds("drivers")[_launches("drivers", "openarm.bimanual.launch.py")[0]]
+    assert "use_rviz:=false" in arm.argv
+    assert not any(s.startswith("preset") for s in IDS)              # 차렷 기준 궤적 — 초기 자세에서는 쓸 수 없다
+
+
+def test_the_isaac_viewer_comes_before_anything_that_uses_the_gpu():
+    # run_viewer.sh 는 GPU 에 python 계산 프로세스가 있으면 뜨지 않는다(학습 보호) — fabric(cuda) 보다 먼저 켠다.
+    assert IDS.index("viewer") < IDS.index("fabric_direct_right")
+    (cmd,) = _cmds("viewer")
+    assert cmd.background and cmd.argv[-1].endswith("robot/isaacsim_bridge/viewer/run_viewer.sh")
+    assert MISSION.stages[IDS.index("viewer")].skippable and not MISSION.stages[IDS.index("viewer")].touches_real

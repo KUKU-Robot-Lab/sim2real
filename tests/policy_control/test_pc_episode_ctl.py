@@ -19,7 +19,8 @@ _spec.loader.exec_module(ec)
 
 def test_only_keeps_the_declared_order_whatever_the_argument_order():
     assert [s.id for s in ec.selected(("pd_goto_home", "pd_engage"))] == ["pd_engage", "pd_goto_home"]
-    assert ec.selected(()) == ec.STAGES
+    assert "pd_hand_home" not in [s.id for s in ec.selected(())]          # --only 로만 부르는 단계
+    assert [s.id for s in ec.selected(("pd_hand_home",))] == ["pd_hand_home"]
     with pytest.raises(KeyError):
         ec.selected(("nope",))
 

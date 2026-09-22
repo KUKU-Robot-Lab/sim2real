@@ -532,8 +532,25 @@ class ArmUnit:
         return self.phase.value
 
     def start_home(self) -> None:
-        self.hold = Hold(q=self.home_arm.copy(), hand=self.home_hand, bias=np.zeros(len(self.home_arm)), settle=True)
+        """계약 홈으로 팔을 보낸다. 손은 pd yaml `home_hand` 에 따른다 — keep 이면 손 지령을 내지 않는다(드라이버가
+        마지막 자세를 유지). 손은 팔이 도착한 뒤 `start_hand_home` 으로 따로 보낸다."""
+        hand = self.home_hand if self.cfg.home_hand == "contract" else None
+        self.hold = Hold(q=self.home_arm.copy(), hand=hand, bias=np.zeros(len(self.home_arm)), settle=True)
         self.target = None
+        self.hand_target = None
+
+    def hand_home_refusals(self) -> list[str]:
+        """손을 계약 홈 손 자세로 보낼 수 없는 이유 — 팔이 홈에 **도착해 잡혀 있을 때만** 된다."""
+        if self.home_hand is None:
+            return [f"{self.side}: 계약에 이 팔의 홈 손 자세가 없다"]
+        if self.phase not in _MOVING:
+            return [f"{self.side}: phase {self.phase.value} — engage 뒤 goto_home 을 먼저"]
+        if self.hold is None or not self.hold.settle or not self.hold.settled:
+            return [f"{self.side}: 팔이 홈에 도착해 정착하지 않았다 — goto_home 을 먼저"]
+        return []
+
+    def start_hand_home(self) -> None:
+        self.hold = replace(self.hold, hand=self.home_hand.copy())
 
     def start_thermal_retreat(self) -> bool:
         """자기해제형 HOLD(발열·워치독)에서 홈으로 내려가는 것을 허용한다.

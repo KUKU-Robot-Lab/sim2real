@@ -39,6 +39,8 @@ class Stage:
     service: str | None            # None = 대기 단계
     expect_pd: tuple[str, ...]     # 단계 후 pd phase 허용값 (빈 튜플 = 검사 없음)
     touches_real: bool = False
+    #: 참이면 전체 시나리오(--only 없음)에는 들어가지 않는다 — --only 로 부를 때만.
+    only: bool = False
 
 
 STAGES: tuple[Stage, ...] = (
@@ -46,6 +48,8 @@ STAGES: tuple[Stage, ...] = (
           ("RAMPING", "TRACKING"), touches_real=True),
     Stage("pd_goto_home", "pd goto_home (계약 홈으로 0.1 rad/s 램프 + settle)", f"{NS}/pd/goto_home",
           ("TRACKING",), touches_real=True),
+    Stage("pd_hand_home", "pd hand_home (팔이 홈에 정착한 뒤 손을 계약 홈 손 자세로)", f"{NS}/pd/hand_home",
+          ("TRACKING",), touches_real=True, only=True),
     Stage("ep_reset", "episode reset (obs 가 seq 0 준비, 앵커 스냅샷)", f"{NS}/episode/reset", ("TRACKING",)),
     Stage("ep_start", "episode start (정책 루프 시작)", f"{NS}/episode/start", ("TRACKING",), touches_real=True),
     Stage("run", "N 스텝 대기 또는 Ctrl-C (HOLD 면 조기 종료)", None, ()),
@@ -65,7 +69,7 @@ def stage_by_id(stage_id: str) -> Stage:
 def selected(only: tuple[str, ...] = ()) -> tuple[Stage, ...]:
     """실행할 단계 — 비어 있으면 전부. 순서는 항상 STAGES 의 순서다(인자 순서로 뒤집지 않는다)."""
     if not only:
-        return STAGES
+        return tuple(s for s in STAGES if not s.only)
     unknown = [o for o in only if o not in {s.id for s in STAGES}]
     if unknown:
         raise KeyError(f"unknown --only {unknown}; known: {[s.id for s in STAGES]}")

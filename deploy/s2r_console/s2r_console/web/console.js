@@ -157,6 +157,13 @@ function cmdsHtml(r, steps, can, live) {
   }).join("");
 }
 
+// 직전에 끝낸 단계로 한 칸 돌아가기 — 더 앞은 '전체 단계' 목록의 ↶ 로
+function prevBtn(m, can) {
+  const cur = m.rows.findIndex((r) => r.current);
+  const prev = [...m.rows.slice(0, cur < 0 ? m.rows.length : cur)].reverse().find((r) => r.can_rewind);
+  return prev ? `<button class="btn btn-sm btn-ghost" data-act="rewind" data-arg="${esc(prev.id)}" ${can ? "" : "disabled"}>↶ 이전 단계(${esc(prev.id)})로</button>` : "";
+}
+
 function renderControl(s) {
   const can = holding(), m = s.mission, R = s.runner;
   const cur = m.rows.find((r) => r.current);
@@ -201,7 +208,7 @@ function renderControl(s) {
     <div class="cp-desc">${esc(cur.title)}</div>
     <div class="cp-chips">${groupChips(m, cur)}</div>
     <p class="cp-note">${say}</p>${reasons}${stale}${cmds}
-    <div class="actions cp-actions">${actions}<span class="spacer"></span><button class="btn btn-sm btn-ghost" data-act="show-all">전체 단계 ▾</button></div>`);
+    <div class="actions cp-actions">${actions}<span class="spacer"></span>${prevBtn(m, can)}<button class="btn btn-sm btn-ghost" data-act="show-all">전체 단계 ▾</button></div>`);
 }
 
 function renderBanner(s) {
@@ -262,6 +269,7 @@ function renderStages(s) {
       r.touches_real ? `<span class="badge real">실기</span>` : "",
       r.current ? `<button class="badge now" data-act="goto-stage" data-arg="${esc(r.id)}">지금 — 조작판 ↑</button>` : "",
       r.skipped ? `<span class="badge">건너뜀</span>` : "",
+      r.can_rewind ? `<button class="btn btn-sm btn-ghost rewind" data-act="rewind" data-arg="${esc(r.id)}" ${can ? "" : "disabled"} title="이 단계부터 다시 진행한다">↶ 여기서 다시</button>` : "",
     ].join("");
     const steps = R && R.stage === r.id ? R.steps : null;
     const body = r.commands.length ? det(`cmds:${r.id}`, `명령 ${r.commands.length}개`, `<ul class="cmds">${cmdsHtml(r, steps, can, false)}</ul>`) : "";
@@ -642,6 +650,13 @@ const acts = {
       <div class="modal-actions"><button class="btn btn-ghost" data-act="modal-close">취소</button>
       <button class="btn btn-primary" data-act="skip-go" data-arg="${esc(id)}">건너뛴다</button></div>`);
   },
+  rewind(id) {
+    modal(`<h3>되돌아가기 — ${esc(id)}</h3><p><b>${esc(id)}</b> 단계부터 다시 진행한다. 그 뒤에 끝낸 단계들은 다시 해야 한다.</p>
+      <p>떠 있는 프로세스는 그대로 둔다(다시 실행하면 "이미 떠 있음" 으로 넘어간다). 실기 단계는 승인을 다시 받는다.</p>
+      <div class="modal-actions"><button class="btn btn-ghost" data-act="modal-close">취소</button>
+      <button class="btn btn-primary" data-act="rewind-go" data-arg="${esc(id)}">되돌아간다</button></div>`);
+  },
+  async "rewind-go"(id) { await call("POST", "/api/stage/rewind", { stage: id }); closeModal(); refresh(); },
   async "skip-go"(id) { await call("POST", "/api/stage/skip", { stage: id }); closeModal(); refresh(); },
 };
 

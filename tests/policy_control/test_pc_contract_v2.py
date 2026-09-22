@@ -109,13 +109,29 @@ def test_homes_zero_and_hand_open_mirrored(ctl):
 
 @needs_asset
 @needs_right
-def test_home_from_run_mirrors_the_other_arm():
+def test_home_from_run_takes_each_arm_from_init_state_and_mirrors_only_what_is_missing():
+    # 09.22 사용자: "정책의 환경이 sim 에서 동일해야함. 실제 real 도 같은 상태" — 반대 팔도 init_state 에 값이
+    # 있으면 그 값을 쓴다. 미러는 그 팔의 값이 env.yaml 에 없을 때만.
     from openarm.tesollo.left.grasp_v1 import grasp_left_preset as P
 
     c = A.build_asset_contract(home="run:logs/policy/right_g1")
     g1 = B.build_contract(RIGHT_RUN)
     assert c.side("right").home_arm == pytest.approx(g1.pd.home_arm)
-    assert c.side("left").home_arm == pytest.approx([s * v for s, v in zip(P._ARM_SIGN, g1.pd.home_arm)])
+    env = B._text(RIGHT_RUN / "params/env.yaml")
+    try:
+        want = B._home_values(env, [f"l_aj_{i}" for i in range(1, 8)])
+    except SystemExit:
+        want = [s * v for s, v in zip(P._ARM_SIGN, g1.pd.home_arm)]
+    assert c.side("left").home_arm == pytest.approx(want)
+
+
+@needs_asset
+def test_home_from_run_takes_the_hand_from_init_state_too():
+    c = A.build_asset_contract(home="run:deploy/policies/right_aglt")
+    right = c.side("right").home_hand
+    assert right["r_hj_thumb_2"] == pytest.approx(-1.57) and right["r_hj_thumb_3"] == pytest.approx(0.0)   # open pose 는 −0.5
+    assert c.side("right").home_arm == pytest.approx([0.2667, 0.4487, 0.4923, 0.7184, -0.046, 0.6496, 0.4762])
+    assert c.side("left").home_arm == pytest.approx([-0.361, -0.6357, 0.0322, 0.433, -0.2661, -0.5842, -0.7274])
 
 
 @needs_asset

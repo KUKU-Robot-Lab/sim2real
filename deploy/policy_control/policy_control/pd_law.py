@@ -263,13 +263,20 @@ class PdConfig:
     thermal: tuple
     gripper: GripperBlock | None
     hand: HandBlock | None
+    #: goto_home 때 손을 어떻게 하나 — "contract": 계약 홈 손 자세로 같이 보낸다(정책 배포의 시작 자세) ·
+    #: "keep": 손은 건드리지 않는다(팔만 이동, 손은 도착 뒤 pd/hand_home 으로 따로). 09.22 실기: 차렷에서 손가락이
+    #: 펴져 몸통·판에 닿을 뻔했다 — 실기 제어 설정은 keep.
+    home_hand: str = "contract"
 
+
+HOME_HAND_MODES = ("contract", "keep")
 
 _SCALARS = {"pd_hz": float, "ramp_speed": float, "watchdog_sec": float, "lead_sec": float,
             "lead_vel": float, "vel_ff_cap": float, "effort_cap": float, "abort_tracking": float,
             "release_zero_ticks": int, "blend_sec": float}
 _KEYS = {"side", "execute", "max_vel", "settle", "gravity", "gains", "thermal", "gripper", "hand",
          *_SCALARS}
+_OPTIONAL = {"home_hand"}
 
 
 def load_pd_config(path: Path) -> PdConfig:
@@ -281,7 +288,7 @@ def load_pd_config(path: Path) -> PdConfig:
         raise PdConfigError(f"cannot read {path}: {exc}") from exc
     if not isinstance(raw, dict):
         raise PdConfigError(f"{path}: top level must be a mapping")
-    unknown, missing = set(raw) - _KEYS, _KEYS - set(raw)
+    unknown, missing = set(raw) - _KEYS - _OPTIONAL, _KEYS - set(raw)
     if unknown or missing:
         raise PdConfigError(f"{path}: unknown keys {sorted(unknown)}, missing keys {sorted(missing)}")
     try:
@@ -293,6 +300,9 @@ def load_pd_config(path: Path) -> PdConfig:
 def _build_config(raw: Mapping) -> PdConfig:
     if not isinstance(raw["execute"], bool):
         raise PdConfigError(f"execute must be a bool, got {raw['execute']!r}")
+    home_hand = raw.get("home_hand", "contract")
+    if home_hand not in HOME_HAND_MODES:
+        raise PdConfigError(f"home_hand must be one of {HOME_HAND_MODES}, got {home_hand!r}")
     scalars = {k: _num(raw[k], k, t) for k, t in _SCALARS.items()}
     for k in _SCALARS:
         if scalars[k] <= 0 and k != "vel_ff_cap":
@@ -307,6 +317,7 @@ def _build_config(raw: Mapping) -> PdConfig:
         thermal=thermal_rules_from_config(raw["thermal"] or []),
         gripper=None if raw["gripper"] is None else _block(GripperBlock, raw["gripper"], "gripper"),
         hand=None if raw["hand"] is None else _block(HandBlock, raw["hand"], "hand"),
+        home_hand=home_hand,
     )
 
 

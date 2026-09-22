@@ -739,3 +739,59 @@ def test_a_judged_hold_may_not_retreat(rig):
     plant.wait_phase(("HOLD",))
     ok, reasons = caller.trigger("goto_home")
     assert ok is False and any("HOLD" in r for r in reasons), reasons
+
+
+# ================================================================== 09.22 팔 → 손 순서 (home_hand: keep · pd/hand_home)
+def _keep_yaml(tmp_path) -> Path:
+    """fake 양팔 설정 + home_hand: keep — goto_home 이 손을 건드리지 않는 설정."""
+    out = tmp_path / "pd_bi_fake_keep.yaml"
+    out.write_text(PD_BI_FAKE.read_text() + "\nhome_hand: keep\n")
+    return out
+
+
+def _hand_in_applied(plant, side: str, n: int = 10) -> bool:
+    hand = set(_hand_can(side))
+    return any(hand & set(m.name) for m in plant.applied[-n:])
+
+
+def _hand_can(side):
+    return [f"{side[0]}_hj_{f}_{i}" for f in ("thumb", "index", "middle", "ring", "pinky") for i in range(1, 5)]
+
+
+@needs_asset
+def test_keep_sends_the_arm_home_first_and_the_hand_only_on_hand_home(ros, bi_cm, bi_hand_ctrls, tmp_path):
+    # 09.22 실기: goto_home 이 팔과 손을 한꺼번에 보내 차렷에서 손가락이 펴졌다. keep 이면 팔만, 손은 도착 뒤 따로.
+    node, plant, caller, spin = _bi_rig(ros, True, _keep_yaml(tmp_path))
+    try:
+        ok, reasons = caller.trigger("hand_home")
+        assert ok is False and any("goto_home" in r or "engage" in r for r in reasons)        # engage 전 — 거부
+        assert caller.trigger("engage")[0]
+        plant.wait(lambda st: all(a["phase"] in ("RAMPING", "TRACKING") for a in st["arms"].values()))
+        ok, reasons = caller.trigger("hand_home")
+        assert ok is False and any("goto_home" in r for r in reasons)                         # 팔이 아직 홈이 아니다
+        ok, reasons = caller.trigger("goto_home")
+        assert ok, reasons
+        time.sleep(0.3)
+        assert not any(_hand_in_applied(plant, s) for s in BI_SIDES)                         # 손 지령 없음
+        ok, reasons = caller.trigger("hand_home")
+        assert ok, reasons
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 2.0 and not all(_hand_in_applied(plant, s, 3) for s in BI_SIDES):
+            time.sleep(0.01)
+        assert all(_hand_in_applied(plant, s, 3) for s in BI_SIDES)                          # 이제 손이 계약 홈으로
+        assert caller.trigger("release")[0]
+    finally:
+        _close_rig(node, plant, caller, spin)
+
+
+def test_home_hand_option_is_checked_and_defaults_to_contract(tmp_path):
+    from policy_control import pd_law as L
+    assert L.load_pd_config(PD_BI_FAKE).home_hand == "contract"                              # 옛 설정은 그대로
+    assert L.load_pd_config(_keep_yaml(tmp_path)).home_hand == "keep"
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(PD_BI_FAKE.read_text() + "\nhome_hand: open\n")
+    with pytest.raises(L.PdConfigError, match="home_hand"):
+        L.load_pd_config(bad)
+    real = SIM2REAL / "deploy/policy_control/config"
+    assert L.load_pd_config(real / "pd_dg5f_m_short.yaml").home_hand == "keep"               # 실기 설정은 keep
+    assert L.load_pd_config(real / "pd_dg5f_m_short_exec.yaml").home_hand == "keep"

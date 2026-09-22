@@ -110,3 +110,30 @@ def test_the_last_stage_can_bring_everything_down_in_order(flow):
     _run(flow, "down")
     assert not any(_alive(flow, k) for k in ("up#0", "up#1", "swap#1"))
     assert "swap#1, up#1" in flow.session.runner.view()["steps"][0]["detail"]   # up#0 은 이미 없었다
+
+
+def test_rewind_goes_back_to_a_finished_stage_and_keeps_its_processes(flow):
+    # 09.22 사용자: "gui 창에서 잘못되면 되돌아가서 진행할 수가 없네"
+    from s2r_console.console import ConsoleError
+    _run(flow, "up")
+    _run(flow, "swap")
+    flow.skip_stage("extra", operator="pytest")
+    with pytest.raises(ConsoleError):
+        flow.rewind("down", operator="pytest")                     # 아직 끝내지 않은 단계로는 못 간다
+    flow.rewind("swap", operator="pytest")
+    m = flow.snapshot()["session"]["mission"]
+    assert m["stage"] == "swap" and m["status"] == "PENDING"
+    rows = {r["id"]: r for r in m["rows"]}
+    assert rows["up"]["done"] and not rows["swap"]["done"] and not rows["extra"]["done"] and not rows["extra"]["skipped"]
+    assert _alive(flow, "swap#1") and _alive(flow, "up#1")          # 떠 있는 것은 그대로
+    _run(flow, "swap")                                              # 다시 실행 — 이미 떠 있는 것은 넘긴다
+    assert flow.session.runner.view()["steps"][1]["status"] == "kept"
+
+
+def test_rewind_is_refused_while_a_stage_runs(flow, tiny_repo):
+    from s2r_console.console import ConsoleError
+    _run(flow, "up")
+    flow.session.runner = type("R", (), {"active": True, "stage_id": "swap"})()
+    with pytest.raises(ConsoleError, match="실행 중"):
+        flow.rewind("up", operator="pytest")
+    flow.session.runner = None

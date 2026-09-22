@@ -386,6 +386,32 @@ class Console:
             s.event("stage", f"» {stage_id} 건너뜀 — {operator}")
             self._intent(s, "stage/skip", {"stage": stage_id, "operator": operator})
 
+    def rewind(self, stage_id: str, *, operator: str) -> None:
+        """끝낸(또는 건너뛴) 단계로 돌아가 그 단계부터 다시 진행한다 — 09.22 사용자: "잘못되면 되돌아가서 진행할 수가 없다".
+
+        떠 있는 프로세스는 그대로 둔다(다시 실행하면 러너가 "이미 떠 있음" 으로 넘긴다). 실기 단계는 승인을 다시 받는다
+        (승인은 실행 한 번에 쓰이고 사라진다). 단계가 도는 중에는 되돌리지 않는다.
+        """
+        with self._lock:
+            s = self._need()
+            if s.runner is not None and s.runner.active:
+                raise ConsoleError(f"단계 {s.runner.stage_id} 가 실행 중이다 — 끝나거나 중단한 뒤에 되돌릴 것")
+            try:
+                MC.stage_by_id(s.mission, stage_id)
+            except KeyError as exc:
+                raise ConsoleError(f"모르는 단계: {stage_id}", code=404) from exc
+            ids = [st.id for st in s.mission.stages]
+            if stage_id not in s.state.completed:
+                raise ConsoleError(f"{stage_id} 는 아직 끝낸 단계가 아니다 — 끝낸 단계로만 돌아간다")
+            cut = ids.index(stage_id)
+            s.state = MC.MissionState(stage=stage_id, status=MC.STATUS_PENDING,
+                                      completed=tuple(x for x in s.state.completed if ids.index(x) < cut),
+                                      cycle=s.state.cycle, note=f"되돌림 ({operator})")
+            s.skipped = frozenset(x for x in s.skipped if ids.index(x) < cut)
+            mission_run.save_state(s.run_id, s.state)
+            s.event("stage", f"↶ {stage_id} 로 되돌림 — {operator}")
+            self._intent(s, "stage/rewind", {"stage": stage_id, "operator": operator})
+
     def _skip_reasons(self, s: Session, stage) -> list[str]:
         with s.feed_lock:
             obs = s.feed.observed()
@@ -596,6 +622,7 @@ class Console:
                 "can_approve": current and st.touches_real and not approved and not structural and not busy,
                 "can_run": current and not structural and (approved or not st.touches_real) and not busy,
                 "group": st.group, "skippable": st.skippable, "skipped": st.id in s.skipped,
+                "can_rewind": st.id in s.state.completed and not busy,
                 "can_skip": current and st.skippable and not skip_why, "skip_why": skip_why if current and st.skippable else [],
                 "commands": [{"note": c.note, "argv": list(c.argv), "kind": step_kind(c), "stop": list(c.stop)} for c in cmds],
             })
