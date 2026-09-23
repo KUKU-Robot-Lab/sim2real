@@ -322,10 +322,13 @@ def test_dg5f_single_point_positions_only_finger_major(ros, hand_probe, pub_node
 def test_dg5f_real_profile_clamps_thumb_2_to_zero(ros, pub_node):
     from policy_control.pd_backends import Dg5fJtcBackend, HandCmd
 
+    from policy_control.pd_backends import HAND_LIMIT_MARGIN
+
     be = Dg5fJtcBackend(pub_node, HAND_TOPIC, _hand_remap(HAND_CAN, real_profile=True), max_vel=99.0, execute=True)
     w = be.write(HandCmd(q_star=np.full(20, 0.01), qd_star=None, dt=1 / 60))
-    assert w.names[1] == "rj_dg_1_2" and w.q_cmd[1] == pytest.approx(0.0)   # r_hj_thumb_2 upper 0.0
-    assert w.q_cmd[0] == pytest.approx(0.01)
+    # 09.23 실기: 한계값 **그대로** 지령하면 기계 끝점으로 미는 것이다 — 손가락이 꺾이고 드라이버가 error 423 을 냈다.
+    assert w.names[1] == "rj_dg_1_2" and w.q_cmd[1] == pytest.approx(-HAND_LIMIT_MARGIN)   # thumb_2 upper 0.0 에서 물러난다
+    assert w.q_cmd[0] == pytest.approx(0.01)                                                # 한계에서 먼 관절은 그대로
 
 
 def test_dg5f_velocity_limit_and_bad_length(ros, pub_node):

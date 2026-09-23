@@ -22,7 +22,9 @@ abort_tracking: 0.5            # max|세트포인트 − 실측| [rad] → HOLD 
 release_zero_ticks: 5          # RELEASING 에서 q̇*=0·τ=0 송출 횟수
 blend_sec: 1.0                 # engage/release 토크 블렌드 시간
 settle:
-  clamp: 0.12                  # goto_home 정착 bias 상한 [rad]
+  clamp: 0.30                  # goto_home 정착 bias 각도 상한 [rad] — j7 처짐 0.21 을 덮어야 한다(09.23 실기)
+  clamp_nm: 5.0                # 같은 상한을 토크로도 — kp 70 관절은 0.071 rad 까지만(effort_cap 여유)
+  gain: 0.01                   # 정착 적분 이득/틱(100 Hz) — 처짐이 5 s 안에 tol 아래로
   tol: 0.01                    # 정착 판정 [rad]
 gravity:
   mode: model_tau_ff           # 계약(sides.*.gravity)과 같아야 한다 — 제어 전용 자산 계약은 model_tau_ff

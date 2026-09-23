@@ -203,15 +203,49 @@ class HandWritten:
     limited: bool
 
 
+#: 손 목표를 관절 한계에서 이만큼 안쪽으로 물린다 [rad]. 09.23 실기: 계약의 손 홈이 굽힘 관절의
+#: **하한 0.0 그 자체**여서 pd 가 기계 끝점으로 밀었고 손가락이 꺾였다(드라이버 error 423).
+HAND_LIMIT_MARGIN = 0.05
+#: 손 세트포인트가 실측을 앞설 수 있는 최대치 [rad]. 속도 제한은 **직전 세트포인트** 기준이라
+#: 손이 막혀도 세트포인트는 목표까지 계속 전진한다 — 그 간극이 곧 미는 힘이다.
+HAND_MAX_LEAD = 0.2
+
+
+def hand_safe_target(q_t: np.ndarray, lower: np.ndarray, upper: np.ndarray,
+                     margin: float = HAND_LIMIT_MARGIN) -> np.ndarray:
+    """손 목표를 한계 안쪽 `margin` 으로 물린 값. 순수. 범위가 margin 보다 좁으면 가운데로."""
+    lo, hi = np.asarray(lower, float) + margin, np.asarray(upper, float) - margin
+    mid = (np.asarray(lower, float) + np.asarray(upper, float)) / 2.0
+    lo, hi = np.where(lo <= hi, lo, mid), np.where(lo <= hi, hi, mid)
+    return np.clip(np.asarray(q_t, float), lo, hi)
+
+
+def hand_lead_clamp(q_cmd: np.ndarray, q_meas: np.ndarray | None,
+                    max_lead: float = HAND_MAX_LEAD) -> np.ndarray:
+    """세트포인트가 실측을 `max_lead` 넘게 앞서지 못하게 한다. 순수.
+
+    손이 막히면 실측이 멈추므로 세트포인트도 거기서 멈춘다 — 미는 힘이 그 간극에 묶인다."""
+    q = np.asarray(q_cmd, float)
+    if q_meas is None:
+        return q
+    m = np.asarray(q_meas, float)
+    return np.clip(q, m - max_lead, m + max_lead)
+
+
 class Dg5fJtcBackend:
-    def __init__(self, node, topic: str, remap: JointRemap, max_vel: float, *, execute: bool) -> None:
+    def __init__(self, node, topic: str, remap: JointRemap, max_vel: float, *, execute: bool,
+                 limit_margin: float = HAND_LIMIT_MARGIN, max_lead: float = HAND_MAX_LEAD) -> None:
         from trajectory_msgs.msg import JointTrajectory
 
         if max_vel <= 0.0:
             raise ValueError("max_vel > 0 이어야 한다")
+        if limit_margin < 0.0 or max_lead <= 0.0:
+            raise ValueError("limit_margin >= 0, max_lead > 0 이어야 한다")
         self.remap = remap
         self.names = tuple(remap.output_source)
         self.max_vel = float(max_vel)
+        self.limit_margin = float(limit_margin)
+        self.max_lead = float(max_lead)
         self.execute = bool(execute)
         self._pub = _GuardedPublisher(node, JointTrajectory, topic, self.execute)
         self._prev: np.ndarray | None = None
@@ -223,8 +257,11 @@ class Dg5fJtcBackend:
     def write(self, cmd: HandCmd) -> HandWritten:
         dt = _check_dt(cmd.dt)
         q_t = self.remap.apply(_vec(cmd.q_star, self.remap.input_len, "hand q_star"))
+        q_t = hand_safe_target(q_t, self.remap.lower, self.remap.upper, self.limit_margin)
+        meas = None if cmd.q_meas is None else self.remap.apply(_vec(cmd.q_meas, self.remap.input_len, "hand q_meas"))
         prev = self._prev if self._prev is not None else self._seed(cmd.q_meas, q_t)
         q_cmd = velocity_limited_target(q_t, prev, self.max_vel, dt)
+        q_cmd = hand_lead_clamp(q_cmd, meas, self.max_lead)
         q_cmd = np.clip(q_cmd, self.remap.lower, self.remap.upper)
         self._prev = q_cmd
         self._pub.publish(_single_point_trajectory(self.names, q_cmd))

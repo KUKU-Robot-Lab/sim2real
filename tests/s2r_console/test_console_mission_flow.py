@@ -130,6 +130,30 @@ def test_rewind_goes_back_to_a_finished_stage_and_keeps_its_processes(flow):
     assert flow.session.runner.view()["steps"][1]["status"] == "kept"
 
 
+def test_restart_brings_the_stage_units_down_first_and_starts_new_ones(flow):
+    """09.23 실기: 살아 있는 유닛은 "kept" 로 넘어가 망가진 드라이버가 그대로 남았다 — 운영자가 PID 를 찾아 죽여야 했다."""
+    _run(flow, "up")
+    first = _pid(flow, "up#1")
+    assert _alive(flow, "up#1")
+    flow.rewind("up", operator="pytest")
+    flow.run_stage("up", operator="pytest", restart=True)
+    flow.session.runner.join(15)
+    assert flow.session.runner.outcome == "DONE", flow.session.runner.view()
+    assert flow.session.runner.view()["steps"][1]["status"] != "kept"     # 넘기지 않고 새로 띄웠다
+    assert _alive(flow, "up#1") and _pid(flow, "up#1") != first
+    assert any(e.get("action") == "stage/restart" for e in _intents(flow))
+
+
+def _pid(console, key):
+    return next(p["pid"] for p in console.session.supervisor.table() if p["key"] == key)
+
+
+def _intents(console):
+    import json
+    path = console.session.intents_path
+    return [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
+
+
 def test_rewind_is_refused_while_a_stage_runs(flow, tiny_repo):
     from s2r_console.console import ConsoleError
     _run(flow, "up")

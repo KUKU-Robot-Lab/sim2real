@@ -53,6 +53,8 @@ class Feed:
         self.graph: tuple[str, ...] = ()
         self._topics: Mapping[str, Mapping] = {}
         self._topics_at: float | None = None
+        self._joints: Mapping[str, Sequence] = {}
+        self._joints_at: float | None = None
         self._rosgraph: Mapping | None = None
         self._rosgraph_at: float | None = None
         self._ctl: dict[str, Mapping] = {}
@@ -100,6 +102,10 @@ class Feed:
                 self.window.offer(node, data)
                 if node == "pd":
                     self._note_hold(data)
+        elif ch == "joints":
+            data = msg.get("data")
+            if isinstance(data, Mapping):
+                self._joints, self._joints_at = data, now
         elif ch == "topics":
             data = msg.get("data")
             if isinstance(data, Mapping):
@@ -162,6 +168,8 @@ class Feed:
                         episode=self._episode, bridge_faults=tuple(self._faults),
                         bridge_down_why=None if self.bridge_up() else self._down_why,
                         graph=self.graph, topics=dict(self._topics),
+                        joints=dict(self._joints),
+                        joints_age_s=None if self._joints_at is None else now - self._joints_at,
                         topics_age_s=None if self._topics_at is None else now - self._topics_at,
                         rosgraph=self._rosgraph,
                         rosgraph_age_s=None if self._rosgraph_at is None else now - self._rosgraph_at,

@@ -21,6 +21,7 @@ from typing import Callable, Mapping, Sequence
 import yaml
 
 from . import _paths, ledger, survey
+from . import robot_view as R
 from . import units as U
 from .console_state import STALE_S, derive
 from .diagram import _LAUNCHER as PERCEPT_BOX
@@ -75,6 +76,27 @@ class ConsoleError(RuntimeError):
         super().__init__(message)
         self.code, self.reasons = code, reasons or (message,)
 
+
+
+def _robot_reference(mission, repo: Path) -> tuple[dict, dict]:
+    """(계약의 sides, 관절 한계) — 화면의 로봇 상태 표가 목표·끝점을 표시할 때 쓴다.
+
+    둘 다 없어도 표는 그려진다(목표 없는 실측만). 읽기 실패는 조용히 비운다 — 표시용이다."""
+    sides: dict = {}
+    limits: dict = {}
+    rel = (mission.artifacts or {}).get("contract")
+    if rel:
+        try:
+            sides = json.loads((repo / rel).read_text()).get("sides") or {}
+        except (OSError, ValueError):
+            sides = {}
+    try:
+        from jtc_bridge_core import load_profile_joints                        # noqa: PLC0415 (scripts/)
+        prof = load_profile_joints(_paths.ROBOT_PROFILE)
+        limits = {k: (v["lower"], v["upper"]) for k, v in prof.items() if "lower" in v and "upper" in v}
+    except Exception:                                                          # noqa: BLE001 — 표시용이라 막지 않는다
+        limits = {}
+    return sides, limits
 
 def mission_units(profile: Profile, *, repo: Path) -> dict[str, U.UnitCmd]:
     """프로파일의 미션이 가진 배경·수동 명령 — 그림의 스위치와 자동 생성의 재료. argv 는 미션 yaml 에서만 온다."""
@@ -213,6 +235,8 @@ class Session:
         self.diagram = diagram_of(profile, self.units, repo=repo)
         #: 운영자가 끈 것 {키: 그때의 pid} — 죽은 것과 구별한다. pid 까지 적어야 그 뒤 다시 뜬 프로세스의 크래시를 가리지 않는다.
         self.units_stopped: dict[str, int | None] = {}
+        #: 로봇 상태 표가 쓰는 목표·한계 — 계약과 프로파일에서 한 번만 읽는다(09.23).
+        self.contract_sides, self.joint_limits = _robot_reference(self.mission, repo)
         proc = self.run_dir / "proc"
         probe = probe_argv(profile, self.diagram) if bridge else None
         self.bridge = (_Pipe("bridge", bridge_argv(profile, self.diagram), self.feed.bridge_died, self.feed, self.feed_lock, env,
@@ -351,12 +375,21 @@ class Console:
             s.event("approve", f"{stage_id} 승인 취소 — {note}")
 
     # ── 단계 실행 ───────────────────────────────────────────────────────
-    def run_stage(self, stage_id: str, *, operator: str) -> None:
+    def run_stage(self, stage_id: str, *, operator: str, restart: bool = False) -> None:
+        """단계를 실행한다. `restart` 면 **이 단계가 띄운 유닛을 먼저 내리고** 새로 띄운다.
+
+        09.23 실기: 살아 있는 유닛은 "kept — 이미 떠 있다" 로 건너뛰므로(runner.py), 다시 실행해도
+        망가진 드라이버가 그대로 남았다. 운영자가 사람 손으로 PID 를 찾아 죽여야 했다."""
         with self._lock:
             s = self._need()
             stage = self._current_stage(s, stage_id)
             if s.state.status == MC.STATUS_DONE:
                 raise ConsoleError("미션이 끝났다")
+            if restart:
+                keys = [p.key for p in s.supervisor.alive() if p.stage == stage_id]
+                stopped = s.supervisor.stop(keys) if keys else 0
+                s.event("stage", f"↻ {stage_id} — 이 단계의 유닛 {stopped} 개를 내리고 다시 띄운다")
+                self._intent(s, "stage/restart", {"stage": stage_id, "operator": operator, "units": keys})
             result = MC.gate(s.mission, stage_id, s.state, self._evidence(s))
             if not result.ok:
                 raise ConsoleError(f"{stage_id} 를 지금 실행할 수 없다", reasons=tuple(result.reasons))
@@ -611,7 +644,8 @@ class Console:
         diagram = None if s.diagram is None else build_diagram(obs, s.diagram, units=units)
         nodes = [{"name": n, "age_s": None if n not in obs.age_s else round(obs.age_s[n], 2),
                   "stale": obs.age_s.get(n, 1e9) > 2.0, "status": obs.status.get(n)} for n in s.profile.status_nodes]
-        return {"run_id": s.run_id, "run_dir": str(s.run_dir), "operator": s.operator,
+        robot = R.view(obs.joints, s.contract_sides, s.joint_limits, age_s=obs.joints_age_s)
+        return {"robot": robot, "run_id": s.run_id, "run_dir": str(s.run_dir), "operator": s.operator,
                 "uptime_s": round(time.time() - s.started), "profile": s.profile.as_dict(),
                 "banner": banner.as_dict(), "links": links, "diagram": diagram, "rosgraph": rosgraph, "units": units, "bridge": bridge, "nodes": nodes, "episode": obs.episode,
                 "mission": self._mission_view(s), "runner": None if s.runner is None else s.runner.view(),

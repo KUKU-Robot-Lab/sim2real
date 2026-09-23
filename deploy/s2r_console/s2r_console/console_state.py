@@ -45,6 +45,10 @@ class Observed:
     bridge_down_why: str | None = None
     #: 브리지가 본 ROS 그래프의 노드 전체 이름 (`/ns/name`)
     graph: Sequence[str] = ()
+    #: 관절 이름 → [위치, 속도, 토크] — 브리지가 /joint_states 를 구독해 최신값만 보낸 것(09.23 화면 표)
+    joints: Mapping[str, Sequence] = field(default_factory=dict)
+    #: 관절 상태를 받은 지 몇 초 — 한 번도 못 받았으면 None
+    joints_age_s: float | None = None
     #: 스택 토픽 이름 → {"pubs": 내는 쪽 수, "n": 지난 구간에 받은 수, "age_ms": 마지막 도착 뒤 ms | None}
     topics: Mapping[str, Mapping] = field(default_factory=dict)
     #: topics 보고를 받은 지 몇 초 — 한 번도 못 받았으면 None

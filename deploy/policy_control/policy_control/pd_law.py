@@ -18,7 +18,7 @@ tick(100 Hz 재발행) — 플랜 §4.4:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import MISSING, dataclass, replace
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
@@ -227,6 +227,34 @@ class MaxVel:
 class Settle:
     clamp: float
     tol: float
+    gain: float = 0.0          # 0 = 정착 보정 없음(옛 설정 그대로)
+    clamp_nm: float = 0.0      # >0 이면 관절별 상한을 토크 예산으로 더 좁힌다 [N·m]
+
+
+def settle_limit(kp, clamp: float, clamp_nm: float) -> np.ndarray:
+    """정착 bias 의 관절별 상한 = min(clamp, clamp_nm/kp). 순수.
+
+    각도로만 묶으면 kp 가 큰 관절(어깨 70)에서 bias 가 큰 토크가 된다 — 토크로도 묶는다."""
+    kp_arr = np.asarray(kp, dtype=np.float64)
+    if np.any(kp_arr <= 0.0):
+        raise ValueError("kp must be > 0 on every joint")
+    lim = np.full(kp_arr.shape, float(clamp))
+    return np.minimum(lim, clamp_nm / kp_arr) if clamp_nm > 0.0 else lim
+
+
+def settle_bias(bias, home, q_meas, kp, *, gain: float, clamp: float, clamp_nm: float) -> np.ndarray:
+    """goto_home 정착 적분: bias += gain·(home − q), 관절별 상한 안으로. 순수.
+
+    09.23 실기: `model_tau_ff` 는 `kp(q*−q) + τ_ff ≡ kp(ref−q)` 항등이라 모터 총 토크가 kp·(ref−q) 로
+    고정된다 — 평형에서 **처짐 τ_중력/kp 가 반드시 남는다**(j7 2.06 N·m / kp 10 = 0.21 rad).
+    정착 기준 0.01 rad 은 그 처짐으로는 절대 통과할 수 없어 goto_home 이 30 s 를 기다리다 실패했다.
+    이 적분항이 그 처짐만큼 세트포인트를 밀어 실제 관절을 홈에 세운다."""
+    b = np.asarray(bias, dtype=np.float64)
+    if gain <= 0.0:
+        return b.copy()
+    lim = settle_limit(kp, clamp, clamp_nm)
+    err = np.asarray(home, dtype=np.float64) - np.asarray(q_meas, dtype=np.float64)
+    return np.clip(b + gain * err, -lim, lim)
 
 
 @dataclass(frozen=True)
@@ -328,10 +356,13 @@ def _num(value, name: str, kind):
 
 
 def _block(cls, raw: Mapping, name: str):
+    """yaml 매핑 → 값 dataclass. 기본값이 있는 필드는 빠져도 된다(옛 pd yaml 이 그대로 로드된다)."""
     fields = cls.__dataclass_fields__
-    if not isinstance(raw, Mapping) or set(raw) != set(fields):
-        raise PdConfigError(f"{name}: expected keys {sorted(fields)}, got {raw!r}")
-    return cls(**{k: _num(raw[k], f"{name}.{k}", float) for k in fields})
+    required = {k for k, f in fields.items() if f.default is MISSING and f.default_factory is MISSING}
+    if not isinstance(raw, Mapping) or not required <= set(raw) <= set(fields):
+        raise PdConfigError(f"{name}: expected keys {sorted(required)} (optional {sorted(set(fields) - required)}), "
+                            f"got {raw!r}")
+    return cls(**{k: _num(raw[k], f"{name}.{k}", float) for k in raw})
 
 
 def _per_side(value, conv):

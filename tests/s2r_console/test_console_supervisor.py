@@ -65,3 +65,45 @@ def test_a_launch_already_running_outside_the_console_is_found_and_ours_is_not()
              (30, 30, "/usr/bin/python3 /opt/ros/humble/bin/ros2 launch dg5f_driver dg5f_right_driver.launch.py")]
     assert [p for p, _ in foreign_launches(t, procs, own_pgids={20})] == [10]      # 20 은 콘솔이 띄운 것
     assert foreign_launches("dg5f_left_driver.launch.py", procs, set()) == []
+
+
+# ── 자식 죽음 판정 (09.23 실기에서 둘 다 멀쩡한 드라이버를 실패로 만들었다) ──────────────
+DIED_JSB = ("[ERROR] [spawner-3]: process has died [pid 1183517, exit code 1, "
+            "cmd '/opt/ros/humble/lib/controller_manager/spawner joint_state_broadcaster "
+            "-c /dg5f_right/controller_manager --ros-args'].")
+DIED_ARM = ("[ERROR] [spawner-4]: process has died [pid 1149944, exit code 1, "
+            "cmd '/opt/ros/humble/lib/controller_manager/spawner left_joint_trajectory_controller "
+            "right_joint_trajectory_controller -c /controller_manager --ros-args'].")
+ALREADY = "[WARN] [spawner_joint_state_broadcaster]: Controller already loaded, skipping load_controller"
+ACTIVE = "[ERROR] [ctl]: Controller 'joint_state_broadcaster' can not be configured from 'active' state."
+
+
+def test_a_spawner_that_died_because_the_controller_was_already_active_is_not_a_death():
+    assert SV.benign_spawner_death(DIED_JSB, [ALREADY, ACTIVE, DIED_JSB])
+
+
+def test_a_spawner_death_without_that_evidence_is_a_real_death():
+    assert not SV.benign_spawner_death(DIED_JSB, [DIED_JSB])
+    # 두 컨트롤러 중 하나만 '이미 로드' 면 진짜 죽음으로 본다(보수적)
+    half = "[WARN] [spawner_left_joint_trajectory_controller]: Controller already loaded, skipping load_controller"
+    assert not SV.benign_spawner_death(DIED_ARM, [half, DIED_ARM])
+
+
+def test_a_node_death_that_is_not_a_spawner_is_a_real_death():
+    line = "[ERROR] [pd_node-1]: process has died [pid 5, exit code 1, cmd '/x/pd_node --ros-args']."
+    assert not SV.benign_spawner_death(line, [ALREADY, line])
+
+
+def test_child_deaths_ignores_lines_the_previous_launch_of_the_same_stage_wrote(tmp_path):
+    sup = SV.Supervisor(cwd=tmp_path, run_dir=tmp_path, env=dict(os.environ))
+    log = tmp_path / "proc" / "drivers_3.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(DIED_ARM + "\n")                       # 지난 기동이 남긴 죽음 줄
+    proc = sup.spawn("drivers#3", stage="drivers", note="n", argv=[sys.executable, "-c", "pass"],
+                     background=True, manual=False)
+    proc.popen.wait(timeout=10)
+    assert sup.child_deaths("drivers#3") == []            # 이번 기동이 쓴 것은 없다
+    with log.open("a") as fh:
+        fh.write(DIED_JSB + "\n")
+    assert sup.child_deaths("drivers#3") == [DIED_JSB]    # 이번 기동의 줄은 잡는다
+    sup.stop()

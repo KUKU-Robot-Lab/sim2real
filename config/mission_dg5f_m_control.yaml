@@ -115,6 +115,14 @@ stages:
     touches_real: true
     skippable: true
 
+  - id: reset_right
+    group: finish
+    title: "[right] 비상 복귀 — 저장 경로에서 지금과 가장 가까운 지점을 찾아 거기서부터 거꾸로 차렷까지. 어느 단계에서 막혔든 여기로 빠져나온다"
+    needs: [pd_arm_right]
+    artifacts: [contract, robot_right, path_right]
+    touches_real: true
+    skippable: true
+
   - id: return_right
     group: finish
     title: "[right] 손을 출발 때 자세로 → 같은 경로를 거꾸로 따라 시작 자세(차렷)로 — pd 가 잡은 채. 해제 · 종료 전에 팔을 내려 둔다"
@@ -171,6 +179,14 @@ stages:
     title: "[left] fabric direct 모드 — 에피소드 시작 → palm +2 cm · 손 30 % 폐쇄 → 에피소드 정지 (작은 델타만)"
     needs: [home_left]
     artifacts: [contract, robot_left]
+    touches_real: true
+    skippable: true
+
+  - id: reset_left
+    group: finish
+    title: "[left] 비상 복귀 — 저장 경로에서 지금과 가장 가까운 지점을 찾아 거기서부터 거꾸로 차렷까지. 어느 단계에서 막혔든 여기로 빠져나온다"
+    needs: [pd_arm_left]
+    artifacts: [contract, robot_left, path_left]
     touches_real: true
     skippable: true
 
@@ -343,6 +359,17 @@ run:
     - note: "[right] 에피소드 stop — pd 는 계속 잡고 있다(해제는 ⑥)"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, ep_stop]
       execute_args: [--execute]
+  reset_right:
+    - note: "[right] 진입 램프 충돌 검사만 — 발행 없음. 저장 경로에서 가장 가까운 프레임까지 갈 수 있는지 먼저 본다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/reset_to_rest.py", --side, right,
+             --npz, "{artifact:path_right}"]
+    - note: "★[right] 팔이 차렷까지 내려온다(engage → 되짚기 → release). 사람이 보고 있을 것"
+      argv: [python3, "{repo}/deploy/policy_control/tools/reset_to_rest.py", --side, right,
+             --npz, "{artifact:path_right}"]
+      execute_args: [--execute]
+    - note: "[right] 팔이 차렷에 내려와 있고 pd 가 해제됐는지 눈으로 확인"
+      argv: [bash, -lc, "true"]
+      manual: true
   return_right:
     - note: "[right] 정책 시작 자세에서 정착 — fabric 뒤 pd 는 스트림 두절 HOLD 다. goto_home 이 그 HOLD 를 풀고 추종으로 되돌린다
         (HOLD 에서는 손 명령이 나가지 않는다). 이미 홈 근처라 남은 오차만 움직인다"
@@ -439,6 +466,17 @@ run:
     - note: "[left] 에피소드 stop — pd 는 계속 잡고 있다(해제는 ⑥)"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --only, ep_stop]
       execute_args: [--execute]
+  reset_left:
+    - note: "[left] 진입 램프 충돌 검사만 — 발행 없음. 저장 경로에서 가장 가까운 프레임까지 갈 수 있는지 먼저 본다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/reset_to_rest.py", --side, left,
+             --npz, "{artifact:path_left}"]
+    - note: "★[left] 팔이 차렷까지 내려온다(engage → 되짚기 → release). 사람이 보고 있을 것"
+      argv: [python3, "{repo}/deploy/policy_control/tools/reset_to_rest.py", --side, left,
+             --npz, "{artifact:path_left}"]
+      execute_args: [--execute]
+    - note: "[left] 팔이 차렷에 내려와 있고 pd 가 해제됐는지 눈으로 확인"
+      argv: [bash, -lc, "true"]
+      manual: true
   return_left:
     - note: "[left] 정책 시작 자세에서 정착 — fabric 뒤 pd 는 스트림 두절 HOLD 다. goto_home 이 그 HOLD 를 풀고 추종으로 되돌린다
         (HOLD 에서는 손 명령이 나가지 않는다). 이미 홈 근처라 남은 오차만 움직인다"

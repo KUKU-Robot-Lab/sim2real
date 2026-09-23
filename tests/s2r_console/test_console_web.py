@@ -227,6 +227,15 @@ def test_one_control_panel_under_the_banner_carries_every_stage_action():
     assert "cmdsHtml(cur, mine, can, true)" in panel, "수동 확인 버튼도 조작판에"
 
 
+def test_restart_is_offered_only_when_the_stage_has_live_units_and_it_says_what_it_kills():
+    # 09.23 실기: 다시 실행하면 살아 있는 유닛을 "kept" 로 넘겨 망가진 드라이버가 그대로 남았다.
+    panel = re.search(r"function renderControl[\s\S]*?\n}\n", JS).group(0)
+    assert re.search(r'if \(liveUnits\(cur\.id\)\.length\) actions \+= `<button[^`]*data-act="restart"', panel)
+    act = re.search(r"async restart\(id\) \{[\s\S]*?\n  \},", JS).group(0)
+    assert "confirm(" in act and "liveUnits(id)" in act                    # 무엇을 내리는지 보여주고 묻는다
+    assert 'restart: true' in act and '"/api/stage/run"' in act
+
+
 def test_the_full_stage_list_is_folded_and_read_only():
     assert re.search(r'<details id="all-stages"', HTML) and 'id="all-stages" class="panel all-stages" open' not in HTML
     listing = re.search(r"function renderStages[\s\S]*?\n}\n", JS).group(0)
@@ -312,3 +321,39 @@ def test_diagram_boxes_can_be_moved_and_the_layout_stays_in_this_browser():
     assert "translate" not in re.search(r"function boxHtml[\s\S]*?\n}", JS).group(0)
     assert re.search(r'put\("dg-cols"[^\n]*\n\s*layoutFor\(s\.profile\.id\);\n\s*applyLayout\(\);', JS)
     assert re.search(r"\.dg-head\s*\{[^}]*touch-action:\s*none", CSS)
+
+
+def test_the_side_column_shows_robot_joints_instead_of_processes_and_events():
+    # 09.23 사용자: "프로세스 창은 굳이 없어도 될 것 같고. 사건도. 이미 연결 창에서 로그로 다 보이잖아."
+    assert 'id="robot"' in HTML and "로봇 상태" in HTML
+    assert 'id="procs"' not in HTML and 'id="events"' not in HTML
+    assert "renderProcs" not in JS and "renderEvents" not in JS
+    body = re.search(r"function renderRobot[\s\S]*?\n}\n", JS).group(0)
+    for field in ("groups", "channels", "stale"):
+        assert field in body, field                     # 판정·채널은 서버(robot_view.py)가 준 값으로만
+    assert "j-limit" in CSS and "j-off" in CSS           # 끝점·벗어남을 색으로
+
+
+def test_the_panel_is_left_table_art_right_table_and_uses_the_generated_svgs():
+    # 09.23 사용자: "오른팔 상태 <- 정면 오픈암 -> 왼 상태 / 오른손 상태 <오른손·왼손> 왼손 상태"
+    body = re.search(r"function renderRobot[\s\S]*?\n}\n", JS).group(0)
+    assert re.search(r'jointPanel\(by\("오른팔"\).*art\("arms"\).*jointPanel\(by\("왼팔"\)', body, re.S)
+    assert re.search(r'jointPanel\(by\("오른손"\)[\s\S]*art\("right"\)[\s\S]*art\("left"\)[\s\S]*jointPanel\(by\("왼손"\)', body)
+    assert re.search(r'grid-template-columns:\s*minmax\(0,1fr\)[^;]*minmax\(0,1fr\);', CSS)
+    for stem in ("robot_arms", "robot_hand_right", "robot_hand_left"):
+        assert stem in JS, stem
+        assert (WEB / f"{stem}.svg").exists() and (WEB / f"{stem}.png").exists(), stem   # 실루엣 + 음영 렌더
+    # 09.23 사용자 "렌더에 실루엣과 같이 되면 좋을 것 같음" — PNG 위에 SVG 를 겹친다(같은 투영·같은 창)
+    assert re.search(r'<img src="\$\{ROBOT_ART\[key\]\}\.png"', JS)
+    assert re.search(r"\.rart svg\s*\{[^}]*position:\s*absolute", CSS)
+    assert re.search(r"\.rart svg polygon\s*\{[^}]*fill:\s*none", CSS)               # 상태 없는 링크는 렌더가 보인다
+    # 관절 id → 링크 id 로 바꿔 색칠한다(r_hj_index_2 → r_hl_index_2)
+    assert re.search(r'replace\(/_\(\[ah\]\)j_/', JS)
+
+
+def test_every_channel_gets_a_chip_and_position_is_the_default():
+    # 09.23 사용자: "디폴트는 joint state 고, vel 이나 effort 들도"
+    body = re.search(r"function renderRobot[\s\S]*?\n}\n", JS).group(0)
+    assert 'data-act="robot-chan"' in body and 'r.channels.map' in body
+    assert re.search(r'S\.robotChan[^;]*\?[^;]*:\s*"pos"', body)
+    assert re.search(r'"robot-chan"\(key\)\s*\{\s*S\.robotChan = key;', JS)

@@ -335,3 +335,32 @@ button:focus-visible, .sw:focus-visible, summary:focus-visible, a:focus-visible,
 .stage-group { padding: 8px 12px 4px; font-size: 12px; color: var(--dim); border-bottom: 1px solid var(--line); background: rgba(255,255,255,.02); }
 .stage-group.motion { color: var(--bad); }
 .badge.now { cursor: pointer; border-color: var(--live); color: var(--live); background: none; font: inherit; font-size: 11px; }
+
+/* 로봇 상태 — 09.23. 왼쪽 표 · 가운데 자산 실루엣 · 오른쪽 표. 색은 서버가 준 state 하나로만 정한다. */
+.rgrid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.1fr) minmax(0,1fr); gap: 8px; padding: 8px; align-items: start; }
+.rgrid .jpanel { margin: 0; background: var(--panel-2); }
+.rgrid .jpanel .panel-head { padding: 6px 10px; }
+.rgrid .jpanel .panel-head h2 { font-size: 12px; }
+.rart { display: flex; justify-content: center; align-items: flex-start; padding: 4px; }
+.rart .stack { position: relative; display: block; max-height: 260px; }
+.rart img { display: block; width: 100%; height: auto; max-height: 260px; }
+.rart svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.rart.rhands { gap: 10px; }
+.rart.rhands figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 1 1 0; min-width: 0; }
+.rart.rhands figcaption { font-size: 11px; color: var(--mute); }
+/* 기본은 투명 — 렌더가 그대로 보인다. 상태가 있는 링크만 JS 가 규칙을 붙여 칠한다. */
+.rart svg polygon { fill: none; stroke: none; stroke-width: 1.2; }
+.chip { font: inherit; font-size: 11px; padding: 2px 8px; margin-right: 4px; border-radius: 999px;
+        border: 1px solid var(--line-2); background: transparent; color: var(--mute); cursor: pointer; }
+.chip.on { color: var(--fg); border-color: var(--live); }
+
+/* 로봇 상태 표 — 09.23. 관절마다 현재·목표차·한계 안 위치. 색은 서버가 준 state 하나로만 정한다. */
+table.joints { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.joints td { padding: 2px 6px; border-bottom: 1px solid var(--line); }
+table.joints tr.jgroup th { text-align: left; padding: 8px 6px 3px; font-size: 12px; color: var(--mute); border-bottom: 1px solid var(--line); }
+table.joints tr.j-off td { color: var(--warn); font-weight: 600; }
+table.joints tr.j-limit td { color: var(--bad); font-weight: 600; }
+table.joints tr.j-missing td { color: var(--mute); }
+.jbar { position: relative; display: block; height: 8px; min-width: 60px; background: var(--panel-2); border-radius: 4px; }
+.jbar i { position: absolute; top: 0; width: 3px; height: 8px; background: currentColor; border-radius: 2px; }
+.jbar b { position: absolute; top: -2px; width: 1px; height: 12px; background: var(--mute); }

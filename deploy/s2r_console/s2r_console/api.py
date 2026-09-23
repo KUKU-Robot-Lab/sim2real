@@ -99,7 +99,7 @@ def _write(console: Console, method: str, path: str, data: dict, token: str | No
         console.revoke(str(data.get("stage", "")), operator=who)
         return 200, ok
     if path == "/api/stage/run":
-        console.run_stage(str(data.get("stage", "")), operator=who)
+        console.run_stage(str(data.get("stage", "")), operator=who, restart=bool(data.get("restart")))
         return 202, ok
     if path == "/api/stage/rewind":
         console.rewind(str(data.get("stage", "")), operator=who)

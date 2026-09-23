@@ -9,6 +9,7 @@ HTTP 계층은 **argv 를 받지 않는다**. argv 는 미션 yaml 의 runbook �
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -28,6 +29,25 @@ class SupervisorError(RuntimeError):
 
 #: ros2 launch 가 자식이 죽었을 때 찍는 문구(launch/actions/execute_local.py).
 CHILD_DIED = "process has died"
+#: spawner 가 **이미 떠 있는** 컨트롤러에 다시 붙다가 죽을 때의 근거 문구(09.23 실기 DG-5F).
+#: 이 죽음은 하드웨어가 정상이라는 뜻이다 — 실패로 보면 멀쩡한 드라이버를 다시 띄우게 된다.
+SPAWNER_OK_REASONS = ("already loaded", "can not be configured from 'active' state")
+_SPAWNER_CMD = re.compile(r"controller_manager/spawner ([^']*?) -c ")
+
+
+def benign_spawner_death(line: str, log_lines: Sequence[str]) -> bool:
+    """죽은 spawner 가 맡은 컨트롤러가 이미 로드·active 여서 난 죽음인가. 순수.
+
+    죽음 줄의 cmd 에서 컨트롤러 이름을 뽑아, 같은 로그의 `[spawner_<이름>]` 줄에서 근거를 찾는다.
+    이름을 하나라도 확인하지 못하면 진짜 죽음으로 본다(보수적)."""
+    m = _SPAWNER_CMD.search(line)
+    if m is None:
+        return False
+    names = [n for n in m.group(1).split() if not n.startswith("-")]
+    if not names:
+        return False
+    return all(any(f"spawner_{n}" in ln and any(r in ln for r in SPAWNER_OK_REASONS) for ln in log_lines)
+               for n in names)
 
 
 def launch_target(argv) -> str | None:
@@ -86,6 +106,7 @@ class Proc:
     popen: subprocess.Popen
     log: Path
     started: float
+    log_pos: int = 0       # 이 기동이 쓰기 시작한 로그 위치 — 앞의 줄은 지난 기동의 것이다(09.23)
 
     @property
     def rc(self) -> int | None:
@@ -119,6 +140,7 @@ class Supervisor:
             fh = log.open("ab")
             fh.write(f"\n$ {' '.join(argv)}\n".encode())
             fh.flush()
+            log_pos = log.stat().st_size            # 같은 단계를 다시 띄우면 로그가 이어 쓰인다 — 여기서부터 본다
             try:
                 popen = subprocess.Popen(list(argv), cwd=str(self._cwd), env=self._env, stdin=subprocess.DEVNULL,
                                          stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
@@ -128,7 +150,7 @@ class Supervisor:
                 raise SupervisorError(f"{argv[0]}: {exc}") from exc
             fh.close()
             proc = Proc(key=key, stage=stage, note=note, argv=tuple(argv), background=background,
-                        popen=popen, log=log, started=time.time())
+                        popen=popen, log=log, started=time.time(), log_pos=log_pos)
             self._procs[key] = proc
             self._write_pids()
             return proc
@@ -184,8 +206,11 @@ class Supervisor:
             proc = self._procs.get(key)
         if proc is None:
             return []
-        text = proc.log.read_text(encoding="utf-8", errors="replace")
-        return [ln.strip() for ln in text.splitlines() if CHILD_DIED in ln]
+        with proc.log.open("rb") as fh:                    # 이번 기동이 쓴 부분만 — 지난 기동의 죽음을 다시 읽지 않는다
+            fh.seek(min(proc.log_pos, proc.log.stat().st_size))
+            lines = fh.read().decode("utf-8", "replace").splitlines()
+        return [ln.strip() for ln in lines
+                if CHILD_DIED in ln and not benign_spawner_death(ln, lines)]
 
     # ── 정지 ────────────────────────────────────────────────────────────
     def stop(self, keys: Sequence[str] | None = None) -> int:

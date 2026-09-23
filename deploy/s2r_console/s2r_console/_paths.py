@@ -17,6 +17,8 @@ OPS = SCRIPTS / "ops"
 POLICY_CONTROL = SIM2REAL / "deploy" / "policy_control"
 POLICIES = SIM2REAL / "deploy" / "policies"
 WEB = Path(__file__).resolve().parent / "web"
+#: 벤더 관절 한계(로봇 프로파일) — 화면의 로봇 상태 표가 "끝점" 을 표시할 때 읽는다(09.23).
+ROBOT_PROFILE = SIM2REAL.parent / "robot_control" / "src" / "robot_control" / "profiles" / "openarm_tesollo.yaml"
 
 
 def install() -> None:

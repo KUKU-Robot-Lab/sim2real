@@ -82,7 +82,9 @@ def make_handler(console: Console):
                 return self._send(404, {"ok": False, "error": "없는 파일"})
             raw = target.read_bytes()
             self.send_response(200)
-            self.send_header("Content-Type", (mimetypes.guess_type(target.name)[0] or "application/octet-stream") + "; charset=utf-8")
+            kind = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+            #: charset 은 글자 파일에만 — 그림(png)에 붙이면 규격에 없는 헤더가 된다
+            self.send_header("Content-Type", kind + ("; charset=utf-8" if kind.startswith("text/") or "xml" in kind or "json" in kind or "javascript" in kind else ""))
             self.send_header("Content-Length", str(len(raw)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()

@@ -499,6 +499,56 @@ run:
     stop:
     - fabric_direct_right#0
     - pd_arm_right#1
+  reset_left:
+  - argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/reset_to_rest.py'
+    - --side
+    - left
+    - --npz
+    - '{artifact:path_left}'
+    note: '[left] 진입 램프 충돌 검사만 — 발행 없음. 저장 경로에서 가장 가까운 프레임까지 갈 수 있는지 먼저 본다'
+  - argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/reset_to_rest.py'
+    - --side
+    - left
+    - --npz
+    - '{artifact:path_left}'
+    execute_args:
+    - --execute
+    note: ★[left] 팔이 차렷까지 내려온다(engage → 되짚기 → release). 사람이 보고 있을 것
+  - argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+    note: '[left] 팔이 차렷에 내려와 있고 pd 가 해제됐는지 눈으로 확인'
+  reset_right:
+  - argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/reset_to_rest.py'
+    - --side
+    - right
+    - --npz
+    - '{artifact:path_right}'
+    note: '[right] 진입 램프 충돌 검사만 — 발행 없음. 저장 경로에서 가장 가까운 프레임까지 갈 수 있는지 먼저 본다'
+  - argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/reset_to_rest.py'
+    - --side
+    - right
+    - --npz
+    - '{artifact:path_right}'
+    execute_args:
+    - --execute
+    note: ★[right] 팔이 차렷까지 내려온다(engage → 되짚기 → release). 사람이 보고 있을 것
+  - argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+    note: '[right] 팔이 차렷에 내려와 있고 pd 가 해제됐는지 눈으로 확인'
   return_left:
   - argv:
     - python3
@@ -757,6 +807,16 @@ stages:
   - robot_right
   - path_right
   group: finish
+  id: reset_right
+  needs:
+  - pd_arm_right
+  skippable: true
+  title: '[right] 비상 복귀 — 저장 경로에서 지금과 가장 가까운 지점을 찾아 거기서부터 거꾸로 차렷까지. 어느 단계에서 막혔든 여기로 빠져나온다'
+- artifacts:
+  - contract
+  - robot_right
+  - path_right
+  group: finish
   id: return_right
   needs:
   - home_right
@@ -817,6 +877,16 @@ stages:
   - home_left
   skippable: true
   title: '[left] fabric direct 모드 — 에피소드 시작 → palm +2 cm · 손 30 % 폐쇄 → 에피소드 정지 (작은 델타만)'
+- artifacts:
+  - contract
+  - robot_left
+  - path_left
+  group: finish
+  id: reset_left
+  needs:
+  - pd_arm_left
+  skippable: true
+  title: '[left] 비상 복귀 — 저장 경로에서 지금과 가장 가까운 지점을 찾아 거기서부터 거꾸로 차렷까지. 어느 단계에서 막혔든 여기로 빠져나온다'
 - artifacts:
   - contract
   - robot_left

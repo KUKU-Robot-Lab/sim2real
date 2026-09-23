@@ -24,7 +24,7 @@ from .pd_backends import (ArmForwardBackend, Dg5fJtcBackend, GripperCmd, Gripper
 from .pd_gains import GainsError, expected_hand_gains, load_and_check
 from .pd_gravity import make_gravity
 from .pd_law import (PdCommand, PdConfig, blend_engage, blend_fraction, blend_release, law_cfg_from_config,
-                     limits_from_profile)
+                     limits_from_profile, settle_bias)
 from .pd_state import (EngageCheck, Phase, engage_refusals, hold_is_self_clearing, recv_ages_ms,
                        thermal_act_joints, thermal_init, thermal_levels, thermal_stale_joints, thermal_step,
                        thermal_unknown_joints)
@@ -389,16 +389,20 @@ class ArmUnit:
                         seq=HOLD_SEQ, t_recv=now)
 
     def _settle(self, hold: Hold, q_m: np.ndarray) -> Hold:
-        """goto_home 정착: bias += gain·(home − q) (clamp), |q − home| < tol 이면 settled (left_inference_node 규약)."""
+        """goto_home 정착: bias += gain·(home − q) (관절별 상한), |q − home| < tol 이면 settled.
+
+        이득은 계약의 `integral_droop` 이득이 있으면 그것, 없으면 pd yaml `settle.gain` 이다.
+        09.23 실기: `model_tau_ff` 계약에서 이 보정이 통째로 꺼져 있어 goto_home 이 처짐(j7 0.21 rad)을
+        메우지 못하고 30 s 를 기다리다 실패했다 — 중력 모드와 무관하게 적분한다."""
         err = float(np.abs(q_m - hold.q).max())
         if not hold.settle or hold.settled or self.phase is not Phase.TRACKING:
             return replace(hold, err=err)
         if err < self.cfg.settle.tol:
             return replace(hold, settled=True, err=err)
         g = self.side_cfg.gravity
-        if g.mode != "integral_droop" or g.gain is None:
-            return replace(hold, err=err)
-        bias = np.clip(hold.bias + float(g.gain) * (hold.q - q_m), -self.cfg.settle.clamp, self.cfg.settle.clamp)
+        gain = float(g.gain) if (g.mode == "integral_droop" and g.gain is not None) else self.cfg.settle.gain
+        bias = settle_bias(hold.bias, hold.q, q_m, self.kp, gain=gain,
+                           clamp=self.cfg.settle.clamp, clamp_nm=self.cfg.settle.clamp_nm)
         return replace(hold, bias=bias, err=err)
 
     # ---------------------------------------------------------------- blend

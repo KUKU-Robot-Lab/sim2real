@@ -18,8 +18,10 @@ abort_tracking: 0.5
 release_zero_ticks: 5
 blend_sec: 1.0
 settle:
-  clamp: 0.12
-  tol: 0.01
+  clamp: 0.30                  # goto_home 정착 bias 각도 상한 [rad] — j7 처짐 0.21 을 덮어야 한다(09.23 실기)
+  clamp_nm: 5.0                # 같은 상한을 토크로도 — kp 70 관절은 0.071 rad 까지만(effort_cap 여유)
+  gain: 0.01                   # 정착 적분 이득/틱(100 Hz) — 처짐이 5 s 안에 tol 아래로
+  tol: 0.01                    # 정착 판정 [rad]
 gravity:
   mode: model_tau_ff
   urdf: hdgp/assets/robot/openarm_dg5f-m-short_bi_rl/openarm_dg5f-m-short_bi_rl.urdf

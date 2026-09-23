@@ -89,8 +89,7 @@ function render() {
   renderNodes(s);
   renderMetrics(s);
   renderPolicy(s);
-  renderProcs(s);
-  renderEvents(s);
+  renderRobot(s);
   put("quick", S.quick.map((q) => `<button class="btn-stop" data-act="quick" data-arg="${esc(q.name)}" title="${esc(q.help)}">■ ${esc(q.label)}</button>`).join(""));
 }
 
@@ -194,6 +193,8 @@ function renderControl(s) {
   else {
     if (cur.touches_real && !cur.approved) actions += `<button class="btn btn-real" data-act="approve" data-arg="${esc(cur.id)}" ${can && cur.can_approve ? "" : "disabled"}>승인…</button>`;
     actions += `<button class="btn ${cur.touches_real ? "btn-real" : "btn-primary"}" data-act="run" data-arg="${esc(cur.id)}" ${can && cur.can_run ? "" : "disabled"}>▶ ${failed ? "다시 실행" : "실행"}</button>`;
+    // 09.23 실기: 살아 있는 유닛은 "kept" 로 건너뛴다 — 망가진 드라이버를 갈아 끼우려면 먼저 내려야 한다.
+    if (liveUnits(cur.id).length) actions += `<button class="btn btn-ghost" data-act="restart" data-arg="${esc(cur.id)}" ${can && cur.can_run ? "" : "disabled"} title="이 단계가 띄운 ${liveUnits(cur.id).length} 개를 내리고 새로 띄운다">↻ 다시 띄우기</button>`;
     if (cur.skippable) {
       const why = (cur.skip_why || []).join(" · ");
       actions += `<button class="btn btn-ghost" data-act="skip" data-arg="${esc(cur.id)}" ${can && cur.can_skip ? "" : "disabled"} title="${esc(why || "실행하지 않고 다음 단계로")}">이 단계 건너뛰기</button>`;
@@ -431,6 +432,12 @@ $("diagram").addEventListener("keydown", (e) => {
   e.preventDefault();
 });
 
+// 이 단계가 띄워 **지금 살아 있는** 유닛 — "다시 띄우기" 가 내릴 것들(09.23).
+function liveUnits(stage) {
+  const us = (S.session && S.session.units) || {};
+  return Object.values(us).filter((u) => u.stage === stage && u.alive);
+}
+
 function unitModal(key) {
   const u = S.session.units[key], boxes = S.session.diagram.cols.flat().filter((b) => b.unit && b.unit.key === key);
   modal(`<h3>끄기 — ${esc(key)}</h3><p>${esc(u.note)}</p>
@@ -526,19 +533,76 @@ function renderPolicy(s) {
     <dt>체크포인트</dt><dd>${esc(p.checkpoint || "—")}</dd><dt>계약</dt><dd>${esc(p.contract || "—")}</dd></dl>${issues}${c.note ? `<div class="note">${esc(c.note)}</div>` : ""}`);
 }
 
-function renderProcs(s) {
-  const alive = s.procs.filter((p) => p.alive).length;
-  put("procs-meta", `${alive} / ${s.procs.length} 살아 있음`);
-  if (!s.procs.length) return put("procs", `<div class="empty">아직 띄운 프로세스가 없다.</div><div style="padding:0 12px 10px"><button class="btn btn-sm btn-ghost" data-act="log" data-arg="bridge">브리지 로그</button></div>`);
-  const rows = s.procs.map((p) => `<tr><td><span class="lamp ${p.alive ? "live" : p.rc === 0 ? "ok" : "bad"}"></span><span class="mono">${esc(p.key)}</span><div class="hint">${esc(p.note)}</div></td>
-    <td class="num">${p.alive ? `${fmt(p.age_s, 0)} s` : `rc ${esc(p.rc)}`}</td><td><button class="btn btn-sm btn-ghost" data-act="log" data-arg="${esc(p.key)}">로그</button></td></tr>`);
-  put("procs", `<table><tbody>${rows.join("")}</tbody></table><div style="padding:6px 12px 10px"><button class="btn btn-sm btn-ghost" data-act="log" data-arg="bridge">브리지 로그</button></div>`);
+// 로봇 상태 — 자산에서 뽑은 실루엣(링크마다 id) 옆에 관절 표. 판정·채널은 서버(robot_view.py)가 준다.
+// 09.23 실기: 손가락이 계약 홈(굽힘 관절 하한 0.0)으로 밀려 꺾였는데 화면 어디에도 그 값이 없었다.
+// 렌더(PNG, 실제 메쉬 음영) 위에 실루엣(SVG, 링크마다 id)을 겹친다 — 둘은 같은 투영·같은 창이라 맞아떨어진다.
+const ROBOT_ART = { arms: "robot_arms", right: "robot_hand_right", left: "robot_hand_left" };
+const artCache = {};
+
+async function loadArt(key) {
+  if (artCache[key] !== undefined) return artCache[key];
+  artCache[key] = "";
+  try {
+    const r = await fetch(`${ROBOT_ART[key]}.svg`);
+    artCache[key] = r.ok ? await r.text() : "";
+  } catch { artCache[key] = ""; }
+  refresh();
+  return artCache[key];
 }
 
-function renderEvents(s) {
-  const rows = s.events.slice().reverse().map((e) =>
-    `<li class="ev-${esc(e.kind)}"><time>${new Date(e.t * 1000).toLocaleTimeString("ko-KR", { hour12: false })}</time><span class="ev-dot"></span><span>${esc(e.text)}</span></li>`);
-  put("events", rows.join("") || `<li><time></time><span></span><span class="hint">아직 사건이 없다.</span></li>`);
+function jointRows(g, chan) {
+  return g.rows.map((row) => {
+    const v = row.vals[chan];
+    const err = chan === "pos" ? row.err : null;
+    return `<tr class="jr j-${esc(row.state)}"><td class="jn mono">${esc(row.joint.replace(/^[rl]_[ah][jl]_/, ""))}</td>
+      <td class="jv mono">${v === null || v === undefined ? "—" : fmt(v, 3)}</td>
+      <td class="je mono">${err === null ? "" : fmt(err, 3)}</td>
+      <td class="jm">${row.state === "limit" ? "끝점" : row.state === "off" ? "벗어남" : ""}</td></tr>`;
+  }).join("");
+}
+
+function jointPanel(g, chan) {
+  if (!g) return `<div class="panel jpanel"><div class="empty">—</div></div>`;
+  const bad = g.rows.filter((r) => r.state === "limit").length;
+  return `<div class="panel jpanel"><div class="panel-head"><h2>${esc(g.title)}</h2>
+      <span class="meta">${g.seen}/${g.total}${bad ? ` · <b class="bad">끝점 ${bad}</b>` : ""}</span></div>
+    <table class="joints"><tbody>${jointRows(g, chan)}</tbody></table></div>`;
+}
+
+// 링크 id 로 칠한다: r_hj_index_2(관절) → r_hl_index_2(링크). 상태가 없는 링크는 칠하지 않아 렌더가 그대로 보인다.
+const ART_TINT = { limit: "rgba(255,93,82,.45)", off: "rgba(227,160,8,.42)" };
+const ART_EDGE = { limit: "#ff5d52", off: "#e3a008" };
+
+function artWith(key, groups) {
+  const svg = artCache[key];
+  if (svg === undefined) { loadArt(key); return `<div class="empty">그림 여는 중…</div>`; }
+  const rules = [];
+  groups.forEach((g) => g.rows.forEach((r) => {
+    if (r.state === "ok" || r.state === "missing") return;
+    const id = r.joint.replace(/_([ah])j_/, "_$1l_");
+    rules.push(`#${id} { fill: ${ART_TINT[r.state]}; stroke: ${ART_EDGE[r.state]}; }`);
+  }));
+  const img = `<img src="${ROBOT_ART[key]}.png" alt="" onerror="this.style.display='none'">`;
+  return `${img}${svg ? `<style>${rules.join("\n")}</style>${svg}` : ""}`;
+}
+
+function renderRobot(s) {
+  const r = s.robot;
+  if (!r || !r.groups.length) return put("robot", `<div class="empty">관절 상태가 아직 없다 — 드라이버가 떠야 보인다.</div>`);
+  const chan = S.robotChan && r.channels.some((c) => c.key === S.robotChan) ? S.robotChan : "pos";
+  put("robot-chan", r.channels.map((c) =>
+    `<button class="chip${c.key === chan ? " on" : ""}" data-act="robot-chan" data-arg="${esc(c.key)}">${esc(c.name)}<span class="hint"> ${esc(c.unit)}</span></button>`).join(""));
+  put("robot-meta", r.stale ? `<span class="warn">오래됨</span>` : `${fmt(r.age_s, 1)} s 전`);
+  const by = (t) => r.groups.find((g) => g.title === t);
+  const art = (k) => artWith(k, r.groups);
+  put("robot", `<div class="rgrid">
+      ${jointPanel(by("오른팔"), chan)}<div class="rart"><span class="stack">${art("arms")}</span></div>${jointPanel(by("왼팔"), chan)}
+      ${jointPanel(by("오른손"), chan)}
+      <div class="rart rhands"><figure><span class="stack">${art("right")}</span><figcaption>오른손</figcaption></figure>
+        <figure><span class="stack">${art("left")}</span><figcaption>왼손</figcaption></figure></div>
+      ${jointPanel(by("왼손"), chan)}
+    </div>
+    <div class="hint" style="padding:6px 12px 10px">${chan === "pos" ? "현재 · 목표와의 차이 [rad]" : `현재 [${esc((r.channels.find((c) => c.key === chan) || {}).unit || "")}]`} · 색은 관절 상태(끝점 빨강 · 벗어남 노랑)</div>`);
 }
 
 // ── 모달 ────────────────────────────────────────────────────────────────
@@ -592,7 +656,14 @@ const acts = {
   async open(id) { await call("POST", "/api/run/open", { profile: id }); refresh(); },
   approve(id) { approveModal(id); },
   async "approve-go"(id) { await call("POST", "/api/approve", { stage: id, typed: $("approve-typed").value }); closeModal(); refresh(); },
+  "robot-chan"(key) { S.robotChan = key; refresh(); },
   async run(id) { await call("POST", "/api/stage/run", { stage: id }); refresh(); },
+  async restart(id) {
+    const live = liveUnits(id);
+    if (!confirm(`${id} 가 띄운 ${live.length} 개를 내리고 다시 띄운다.\n\n${live.map((u) => `· ${u.note || u.key} (pid ${u.pid})`).join("\n")}`)) return;
+    await call("POST", "/api/stage/run", { stage: id, restart: true });
+    refresh();
+  },
   async ack(arg) { const [i, ok] = arg.split(":"); await call("POST", "/api/stage/ack", { index: Number(i), ok: ok === "1" }); refresh(); },
   async "abort-stage"() { await call("POST", "/api/stage/abort"); refresh(); },
   async quick(name) { await call("POST", `/api/quick/${name}`); toast("정지 요청을 보냈다 — 결과는 '사건' 에 뜬다", [], true); refresh(); },
