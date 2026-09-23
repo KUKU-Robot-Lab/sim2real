@@ -1,6 +1,6 @@
 """plan_home_path.py — 차렷 -> 홈 오프라인 경로 계획기 (ROS·GPU 없음).
 
-시간 매개화가 pd ramp_speed(0.1 rad/s)를 지키는지, npz 가 replay_to_pd.load_frames 로 읽히는지,
+시간 매개화가 pd ramp_speed(설정값, 09.23 부터 0.2 rad/s)를 지키는지, npz 가 replay_to_pd.load_frames 로 읽히는지,
 충돌 검사기가 뻔한 충돌(손을 테이블 상판에 박은 자세)을 잡고 저장된 경로는 통과시키는지, 관절한계를 본다.
 mujoco·trimesh 가 없는 파이썬(시스템 python3 등)에서는 충돌 부분만 skip 한다.
 """
@@ -16,7 +16,7 @@ import pytest
 
 SIM2REAL = Path(__file__).resolve().parents[2]
 TOOLS = SIM2REAL / "deploy/policy_control/tools"
-NPZ = SIM2REAL / "logs/policy_control/home_path_right.npz"
+NPZ = SIM2REAL / "deploy/policy_control/paths/home_right.npz"   # 실기가 실제로 재생하는 저장 경로
 
 pytestmark = pytest.mark.unit
 
@@ -35,7 +35,10 @@ HOME = np.array([0.2667, 0.4487, 0.4923, 0.7184, -0.046, 0.6496, 0.4762])
 
 
 def test_ramp_speed_is_read_from_pd_config():
-    assert P.read_ramp_speed(P.PD_CONFIG_DEFAULT) == pytest.approx(0.1)
+    import yaml
+    want = yaml.safe_load(P.PD_CONFIG_DEFAULT.read_text())["ramp_speed"]
+    got = P.read_ramp_speed(P.PD_CONFIG_DEFAULT)
+    assert got == pytest.approx(want) and 0.0 < got <= 0.5        # 0.5 rad/s 넘는 값은 도구가 거부한다
 
 
 def test_time_parametrization_respects_speed_and_endpoints():
@@ -65,7 +68,7 @@ def test_saved_npz_is_readable_by_replay_to_pd():
     frames, dt = R.load_frames(args)
     assert frames.shape[1] == 7 and dt == pytest.approx(0.02)
     assert np.allclose(frames[0], d["meta_start"]) and np.allclose(frames[-1], d["meta_goal"])
-    assert np.abs(np.diff(frames, axis=0)).max() / dt <= 0.1 + 1e-9
+    assert np.abs(np.diff(frames, axis=0)).max() / dt <= P.read_ramp_speed(P.PD_CONFIG_DEFAULT) + 1e-9
     for key in ("meta_min_clearance", "meta_worst_pair", "meta_method", "meta_contract_sha1", "meta_urdf_sha1"):
         assert key in d
     # 되짚기(--reverse)도 된다: 홈에 서 있으면 진입 램프 간극 0
@@ -103,7 +106,7 @@ def checker():
 
 
 def test_table_geometry_comes_from_env_usda(checker):
-    top = [b for b in checker.w.table_boxes if b["hi"][2] > 0.2]
+    top = [b for b in checker.w.table_boxes if b["hi"][2] > 0.2 and b["name"].startswith("table")]
     assert len(top) == 1
     assert top[0]["hi"][2] == pytest.approx(0.205, abs=1e-6)   # env.yaml table_surface_z
 
@@ -122,15 +125,29 @@ def test_goal_pose_is_clear(checker):
     assert v.ok and v.min_clear >= 0.02
 
 
-def test_saved_path_passes_dense_check(checker):
+def test_saved_path_passes_dense_check():
+    """저장 경로를 **그 경로 자신의 메타**(손 자세 · 반대팔 · 여유)로 다시 조밀 검사한다.
+
+    세계(테이블 · 뒤 박스 · 옆 벽)는 기본값이므로, 나중에 장애물이 바뀌면 이 테스트가 먼저 깨진다.
+    """
     if not NPZ.exists():
         pytest.skip("npz 없음")
+    pytest.importorskip("mujoco")
     d = np.load(NPZ)
-    if float(d["meta_margin"]) != 0.02 or bool(d["meta_with_cup"]) or str(d["meta_hand_start"]) != "contract":
-        pytest.skip("기본 설정으로 만든 npz 가 아니다")
-    rep = checker.check_path(np.asarray(d["meta_waypoints"]))
+    W = P.W
+    side = "right" if str(d["meta_joints"][0]).startswith("r_") else "left"
+    contract = P.load_contract(W.CONTRACT_DEFAULT)
+    scenes = P.build_scenes(contract, side, str(d["meta_other_arm"]), str(d["meta_hand_start"]),
+                            P.parse_hand_q(str(d["meta_hand_q"]) or None))
+    world = W.build_world(W.WorldSpec(side=side))          # Checker 가 excluded_pairs 를 쓰므로 세계를 따로 짓는다
+    lim = W.load_profile_limits(W.PROFILE_DEFAULT)
+    lo = np.array([lim[j][0] for j in world.moving_joints])
+    hi = np.array([lim[j][1] for j in world.moving_joints])
+    chk = P.Checker(world, scenes, float(d["meta_margin"]), np.asarray(d["meta_start"]), (lo, hi))
+    assert [P.fmt_pair(k) for k in chk.always_contact] == [str(s) for s in d["meta_always_contact"]]
+    rep = chk.check_path(np.asarray(d["meta_waypoints"]))
     assert rep["ok"], rep["fails"][:3]
-    assert rep["min_clear"] >= 0.02
+    assert rep["min_clear"] >= float(d["meta_margin"]) - 1e-6
 
 
 def test_straight_line_to_home_hits_table(checker):
@@ -153,3 +170,16 @@ def test_abduction_box_caps_the_sideways_swing_and_keeps_start_and_goal_inside()
     assert lo3[1] == -0.9 and hi3[1] == 3.0 and (lo3[2], hi3[2]) == (-0.6, 0.3)
     wide = np.array([0.0, 1.2, 0.0, 0.0, 0.0, 0.0, 0.0])                            # 목표가 상한 밖이면 목표까지는 넓힌다
     assert P.abduction_box(lo, hi, "right", 0.9, start, wide)[1][1] == 1.2
+
+
+def test_the_back_box_and_side_walls_are_in_the_world_by_default():
+    # 09.23 사용자: 로봇 원점 기준 뒤 고정 박스 x -1.0~-0.25 · y ±0.45 · z 0~0.22, 그리고 옆 벽 y = ±0.45.
+    import numpy as np
+    W = P.W
+    boxes = {b["name"]: b for b in W.wall_boxes()}
+    assert set(boxes) == {"back_box", "wall_y_neg", "wall_y_pos"}
+    b = boxes["back_box"]
+    assert b["lo"] == pytest.approx([-1.0, -0.45, 0.0]) and b["hi"] == pytest.approx([-0.25, 0.45, 0.22])
+    assert boxes["wall_y_pos"]["lo"][1] == pytest.approx(0.45) and boxes["wall_y_neg"]["hi"][1] == pytest.approx(-0.45)
+    assert np.all(boxes["wall_y_pos"]["hi"][2] > 1.0) and np.all(boxes["wall_y_pos"]["lo"][2] < 0.0)
+    assert W.wall_boxes({}, None) == []

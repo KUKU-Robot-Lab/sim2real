@@ -583,6 +583,8 @@ def main(argv=None) -> int:
     ap.add_argument("--hand-start", choices=("contract", "zeros", "both", "measured"), default="contract",
                     help="이동 중 손 자세 — contract = 계약 home_hand(엄지_2 만 ±1.57), zeros = 전부 0, both = 둘 다 통과")
     ap.add_argument("--with-cup", action="store_true", help="스폰 중심에 cup_big_s100 상자를 둔다")
+    ap.add_argument("--no-walls", action="store_true",
+                    help=f"뒤 고정 박스({W.BACK_BOX}) · 옆 벽(y=±{W.WALL_Y_ABS})을 빼고 계획한다 — 기본은 넣는다(09.23 사용자)")
     ap.add_argument("--hand-q", default=None,
                     help="실측 손 자세 'r_hj_index_2=1.62,...' — --hand-start 자세들에 **더해** 이 손으로도 통과해야 한다")
     ap.add_argument("--margin", type=float, default=0.02, help="세계·몸통·반대팔 최소 여유 [m]")
@@ -621,7 +623,9 @@ def main(argv=None) -> int:
     env = W.load_env_yaml(args.env_yaml)
     vmax = read_ramp_speed(args.pd_config)
     world = W.build_world(W.WorldSpec(urdf=args.urdf, env_yaml=args.env_yaml, side=args.side, with_cup=args.with_cup,
-                                      detect_margin=max(0.08, args.margin * 3)))
+                                      detect_margin=max(0.08, args.margin * 3),
+                                      back_box={} if args.no_walls else None,
+                                      wall_y_abs=None if args.no_walls else W.WALL_Y_ABS))
     limits = W.load_profile_limits(args.profile)
     lo = np.array([limits[j][0] for j in world.moving_joints])
     hi = np.array([limits[j][1] for j in world.moving_joints])
@@ -717,6 +721,7 @@ def main(argv=None) -> int:
              meta_always_contact=np.array([fmt_pair(k) for k in chk.always_contact]),
              meta_other_arm=np.array(args.other_arm), meta_hand_start=np.array(args.hand_start),
              meta_hand_q=np.array(args.hand_q or ""),
+             meta_walls=np.array("" if args.no_walls else f"back_box={W.BACK_BOX},y_abs={W.WALL_Y_ABS}"),
              meta_with_cup=np.bool_(args.with_cup), meta_goal_source=np.array(goal_src),
              meta_exact_min_lb=np.float64(worst["exact_lb"] if worst else np.nan))
     print(f"[plan] 방법 {method} · 프레임 {len(frames)} × dt {args.dt} = {(len(frames) - 1) * args.dt:.1f} s "

@@ -36,6 +36,26 @@ def _load(name: str):
     return mod
 
 
+SAVED_ESCAPE_TOL = 0.002        # [m] 저장 시작점과 같은 값으로 보는 폭(검사기 표본 간격 차)
+
+
+def drop_saved_escape_fails(fails: list[dict], d_start: dict, saved_escape: set[str],
+                            tol: float = SAVED_ESCAPE_TOL) -> list[dict]:
+    """저장 경로가 시작 자세에서 이미 인정한 쌍(meta_escape_pairs)은 **그 자세보다 가까워지지 않으면** 통과.
+
+    09.23: 실기 차렷에서 r_hl_flange_adapter 가 상판에서 1.6 cm 라(여유 2 cm 미달) 1° 정렬도 거부됐다.
+    어차피 그 자세로 가는 길이므로, 끝점보다 나빠지지 않는 것이 이 구간에 맞는 기준이다.
+    """
+    out = []
+    for f in fails:
+        k = tuple(f["pair"])
+        floor = d_start.get(k, d_start.get(k[::-1]))
+        if floor is not None and f"{k[0]}<->{k[1]}" in saved_escape and f["dist"] >= floor - tol:
+            continue
+        out.append(f)
+    return out
+
+
 def measure() -> dict[str, float]:
     out = subprocess.run([sys.executable, str(SAMPLE), "--seconds", "0.6"], capture_output=True, text=True, timeout=30)
     if out.returncode != 0:
@@ -80,16 +100,28 @@ def main() -> int:
     hi = np.array([limits[j][1] for j in world.moving_joints])
     scenes = P.build_scenes(contract, side, "both", "measured", hand_q)
     chk = P.Checker(world, scenes, args.margin, now, (lo, hi), P.ESCAPE_RADIUS, 0)
+    saved_escape = {str(s) for s in d["meta_escape_pairs"]} if "meta_escape_pairs" in d else set()
+    d_start = chk.raw(start)                       # 저장 경로 시작점에서의 쌍별 거리 — 이 구간의 하한
     path = np.stack([now, start])
-    rep = chk.check_path(path)
-    P._print_check("접근 구간(지금 → 시작점)", rep)
-    if not rep["ok"]:
+
+    def judge(what: str, rep: dict) -> bool:
+        P._print_check(what, rep)
+        if rep["ok"]:
+            return True
+        kept = drop_saved_escape_fails(rep["fails"], d_start, saved_escape)
+        dropped = len(rep["fails"]) - len(kept)
+        if dropped:
+            print(f"[approach] 저장 경로가 시작 자세에서 이미 인정한 쌍 {dropped} 건은 그 값보다 가까워지지 않아 통과")
+        rep["fails"] = kept
+        return not kept
+
+    if not judge("접근 구간(지금 → 시작점)", chk.check_path(path)):
         print("✗ 접근 구간이 충돌 · 여유 미달 — 팔을 움직이지 말 것", file=sys.stderr)
         return 1
     vmax = P.read_ramp_speed(P.PD_CONFIG_DEFAULT)
     frames = P.time_parametrize(path, vmax, P.FRAME_DT, P.RAMP_TIME)
     frames_rep = chk.check_path(frames)
-    if not frames_rep["ok"]:
+    if not judge("접근 구간 프레임", frames_rep):
         print("✗ 시간 매개화 프레임 검사 실패", file=sys.stderr)
         return 1
     out = args.out or (SIM2REAL / "logs" / "policy_control" / f"approach_{side}.npz")

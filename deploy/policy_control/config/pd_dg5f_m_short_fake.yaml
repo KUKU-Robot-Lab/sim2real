@@ -5,7 +5,7 @@ side: both
 execute: true                  # ★fake 플랜트 전용 사본 — 실기 yaml(pd_dg5f_m.yaml)은 false
 home_hand: keep                # 실기 설정과 같게 — goto_home 은 팔만, 손은 pd/hand_home 으로
 pd_hz: 100.0
-ramp_speed: 0.1
+ramp_speed: 0.2
 watchdog_sec: 0.25
 lead_sec: 0.25                 # ★fake: 0.5 rad — sim 은 lead 캡이 없다. 실기 yaml 은 단계 승인
 lead_vel: 2.0

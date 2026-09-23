@@ -212,9 +212,11 @@ run:
              "{repo}/tests/policy_control/test_pc_launch_files.py", "{repo}/tests/policy_control/test_pc_replay_reverse.py",
              "{repo}/tests/s2r_console/test_real_mission_structure.py"]
     - note: 자산 제어 전용 계약 재생성 + control_gains.yaml 대조 (MISMATCH 면 rc 3). ★홈 = right_aglt 정책의 초기 자세
-        (init_state 의 양팔·양손 값 그대로 — 정책 환경과 실기가 같아야 한다, 09.22)
+        (정책 팔은 에피소드 리셋 자세, 손은 init_state — 정책 환경과 실기가 같아야 한다, 09.22).
+        반대 팔은 --mirror-other-arm 으로 대칭(09.23 사용자) — init_state 의 왼팔 홈은 +y 벽에서 1.6 cm 다
       argv: [python3, "{repo}/deploy/policy_control/tools/build_deploy_contract.py", --asset, openarm_dg5f-m-short_bi_rl,
-             --home, "run:deploy/policies/right_aglt", --gains, "{artifact:gains_yaml}", --out, "{artifact:contract}"]
+             --home, "run:deploy/policies/right_aglt", --mirror-other-arm,
+             --gains, "{artifact:gains_yaml}", --out, "{artifact:contract}"]
     - note: forward 컨트롤러가 양팔 모두 bringup 설정에 선언돼 있는지 (grep -c 12 = CM 목록 6 + 파라미터 블록 6)
       argv: [grep, -c, "_forward_", "/home/user/rl_ws/robot_control/ros_ws/src/openarm_ros2/openarm_bringup/config/controllers/openarm_bimanual_controllers.yaml"]
   drivers:

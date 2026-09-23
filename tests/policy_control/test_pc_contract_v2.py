@@ -136,6 +136,23 @@ def test_home_from_run_takes_the_hand_from_init_state_too():
 
 
 @needs_asset
+def test_mirror_other_arm_overrides_the_init_state_home():
+    """09.23 사용자 "오른팔 왼팔 대칭 상태로 만듦" — 반대 팔 홈을 init_state 대신 부호 미러로 잡는다.
+
+    init_state 의 왼팔 홈은 +y 벽에서 1.6 cm 까지 붙어(충돌 여유 2 cm 미달) 경로 계획이 목표에서 막혔다.
+    """
+    from openarm.tesollo.left.grasp_v1 import grasp_left_preset as P
+
+    run = "run:deploy/policies/right_aglt"
+    plain, mirrored = A.build_asset_contract(home=run), A.build_asset_contract(home=run, mirror_other=True)
+    right = mirrored.side("right").home_arm
+    assert right == pytest.approx(plain.side("right").home_arm)                     # 정책 팔은 그대로
+    assert mirrored.side("left").home_arm == pytest.approx([s * v for s, v in zip(P._ARM_SIGN, right)])
+    assert mirrored.side("left").home_arm != pytest.approx(plain.side("left").home_arm)
+    assert "left = _ARM_SIGN mirror (forced)" in A.arm_homes(run, ("right", "left"), mirror_other=True)[1]
+
+
+@needs_asset
 def test_gains_are_the_driver_gains(ctl):
     real = C.load_driver_gains(A.GAINS_YAML)
     for side in ctl.side_names:

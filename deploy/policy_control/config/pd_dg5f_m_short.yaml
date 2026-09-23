@@ -9,7 +9,7 @@ side: both
 execute: false                 # true 여야 컨트롤러 토픽·controller_manager 를 건드린다
 home_hand: keep                # goto_home 은 팔만 — 손은 팔이 도착한 뒤 pd/hand_home 으로(09.22 차렷에서 손가락이 펴졌다)
 pd_hz: 100.0                   # 재발행 주기
-ramp_speed: 0.1                # RAMPING(첫 목표까지) / goto_home 램프 [rad/s]
+ramp_speed: 0.2                # RAMPING(첫 목표까지) / goto_home 램프 [rad/s]
 watchdog_sec: 0.25             # joint_target 두절 → HOLD (CommandGate 와 동일)
 lead_sec: 0.1                  # max_lead = lead_vel·lead_sec (세트포인트가 실측을 앞서는 상한)
 lead_vel: 2.0                  # 프로필 관절 velocity 한계(openarm_tesollo.yaml)

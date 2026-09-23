@@ -228,7 +228,7 @@ fk: {'kind': 'urdf_chain', 'urdf': 'hdgp/assets/robot/openarm_dg5f-m-short_bi_rl
 ### pd
 - groups ['right_arm', 'right_hand'] · gravity `model_tau_ff` · sim gravity disabled False
 - trained gains kp [70.0, 70.0, 70.0, 60.0, 10.0, 10.0, 10.0] / kd [2.75, 2.5, 2.0, 2.0, 0.7, 0.6, 0.5]
-- home arm [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+- home arm [-1.1974, 0.6707, 0.1866, 1.731, 0.692, 0.0416, 0.946]
 
 ### sides (v2)
 - asset `openarm_dg5f-m-short_bi_rl` (dg5f) urdf `hdgp/assets/robot/openarm_dg5f-m-short_bi_rl/openarm_dg5f-m-short_bi_rl.urdf` · primary `right` · control_only True

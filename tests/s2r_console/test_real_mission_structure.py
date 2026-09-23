@@ -100,6 +100,8 @@ def test_only_the_arm_stage_launches_pd_with_the_exec_config():
 def test_the_home_is_the_right_policy_initial_state_and_rviz_stays_off():
     build = " ".join(_cmds("preflight")[1].argv)
     assert "--home run:deploy/policies/right_aglt" in build
+    # 09.23 사용자 "오른팔 왼팔 대칭": preflight 가 계약을 다시 만드므로 여기에 없으면 왼팔 홈이 벽 앞(1.6 cm)으로 되돌아간다
+    assert "--mirror-other-arm" in build
     arm = _cmds("drivers")[_launches("drivers", "openarm.bimanual.launch.py")[0]]
     assert "use_rviz:=false" in arm.argv
     assert not any(s.startswith("preset") for s in IDS)              # 차렷 기준 궤적 — 초기 자세에서는 쓸 수 없다

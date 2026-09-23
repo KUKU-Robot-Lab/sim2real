@@ -165,9 +165,9 @@ class ULink:
 def parse_urdf(path: Path) -> tuple[dict[str, ULink], list[UJoint], str]:
     root = ET.parse(path).getroot()
     links = {}
-    for l in root.findall("link"):
-        ul = ULink(l.get("name"))
-        for c in l.findall("collision"):
+    for lk in root.findall("link"):
+        ul = ULink(lk.get("name"))
+        for c in lk.findall("collision"):
             g = c.find("geometry")
             T = _origin(c)
             m = g.find("mesh")
@@ -243,6 +243,33 @@ def _fmt(v) -> str:
     return " ".join(f"{float(x):.7g}" for x in np.asarray(v).reshape(-1))
 
 
+#: 로봇 뒤 고정 박스 — 로봇 원점 기준(09.23 사용자). x -1.00~-0.25 · y ±0.45 · z 0~0.22.
+BACK_BOX = {"x": (-1.0, -0.25), "y": (-0.45, 0.45), "z": (0.0, 0.22)}
+#: 양옆 벽 — y = ±0.45, 바닥부터 사람 키까지.
+WALL_Y_ABS = 0.45
+WALL_THICK = 0.2                    # 상자 두께 [m] — 벽 바깥으로
+WALL_Z = (-0.3, 2.0)                # 벽 상자 높이 범위 [m]
+WALL_X = (-1.2, 1.2)                # 옆 벽 상자가 덮는 앞뒤 범위 [m]
+
+
+def wall_boxes(back_box: dict | None = None, y_abs: float | None = WALL_Y_ABS) -> list[dict]:
+    """로봇 뒤 고정 박스 + 양옆 벽을 상자로. 테이블과 같은 규칙(여유 2 cm)으로 검사한다.
+
+    09.23 실기: 벽이 세계에 없어 계획기가 팔을 y -0.5~-0.67 까지 뺐다 — 저장 경로가 왼쪽 벽을 0.26 m 지났다.
+    """
+    box = BACK_BOX if back_box is None else back_box
+    out = []
+    if box:
+        out.append({"name": "back_box", "lo": np.array([box["x"][0], box["y"][0], box["z"][0]]),
+                    "hi": np.array([box["x"][1], box["y"][1], box["z"][1]])})
+    if y_abs is not None:
+        for name, y in (("wall_y_neg", -abs(y_abs)), ("wall_y_pos", abs(y_abs))):
+            lo_y, hi_y = (y - WALL_THICK, y) if y < 0 else (y, y + WALL_THICK)
+            out.append({"name": name, "lo": np.array([WALL_X[0], lo_y, WALL_Z[0]]),
+                        "hi": np.array([WALL_X[1], hi_y, WALL_Z[1]])})
+    return out
+
+
 @dataclass
 class WorldSpec:
     urdf: Path = URDF_DEFAULT
@@ -250,6 +277,8 @@ class WorldSpec:
     side: str = "right"
     with_cup: bool = False
     detect_margin: float = 0.08     # contact 를 보고받을 거리 상한 [m]
+    back_box: dict | None = None                 # None = 기본 BACK_BOX · {} = 박스 없음
+    wall_y_abs: float | None = WALL_Y_ABS        # None = 옆 벽 없음(옛 경로 재검사용)
 
 
 @dataclass
@@ -311,7 +340,7 @@ def build_world(spec: WorldSpec) -> World:
     if not np.allclose(trot, [1, 0, 0, 0]):
         raise ValueError(f"테이블 회전 {trot} — 항등이 아닌 경우 미구현")
     usda = local_rl_path(env["table_cfg"]["spawn"]["usd_path"])
-    boxes = table_boxes_from_usda(usda, tpos)
+    boxes = table_boxes_from_usda(usda, tpos) + wall_boxes(spec.back_box, spec.wall_y_abs)
 
     assets, mesh_notes = [], {}
     body_group: dict[str, int] = {}

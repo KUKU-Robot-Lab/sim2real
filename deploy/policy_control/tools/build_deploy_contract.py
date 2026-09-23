@@ -49,6 +49,8 @@ def _parse(argv=None) -> argparse.Namespace:
     ap.add_argument("--primary", default="right", help="asset-only: side mirrored into the legacy top-level sections")
     ap.add_argument("--home", default="zero", help="asset-only: zero | run:<run dir> (init_state, mirrored) | "
                          "pour:<pour_contract.json> (bimanual pour reset pose, arms + hands)")
+    ap.add_argument("--mirror-other-arm", action="store_true",
+                    help="asset-only, run: 홈 전용 — 반대 팔 홈을 init_state 대신 부호 미러로(좌우 대칭)")
     args = ap.parse_args(argv)
     if args.run is None and args.out is None:
         ap.error("--out is required without --run")
@@ -77,7 +79,8 @@ def main(argv=None) -> int:
         out = args.out or (args.run / "deploy_contract.json")
     else:
         c = build_asset_contract(args.asset or DEFAULT_ASSET, sides=tuple(args.sides.split(",")),
-                                 primary=args.primary, home=args.home)
+                                 primary=args.primary, home=args.home,
+                                 mirror_other=args.mirror_other_arm)
         out = args.out
     out.parent.mkdir(parents=True, exist_ok=True)
     C.save_contract(c, out)

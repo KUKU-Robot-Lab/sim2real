@@ -42,7 +42,7 @@ run:
     - hand_follow:=jtc
     - hand_start:=zero
     - plant_model:=rate
-    - arm_start:=right=0.005900,-0.000200,0.005500,0.009700,-0.014700,-0.026500,0.000200;left=0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000
+    - arm_start:=right=0.033400,-0.000200,0.006300,0.029600,0.057000,-0.063500,0.015400;left=-0.007800,-0.013500,-0.004800,0.008200,0.004400,0.009000,0.018900
     background: true
   fabric_direct_left:
   - argv:
@@ -460,12 +460,13 @@ run:
     - openarm_dg5f-m-short_bi_rl
     - --home
     - run:deploy/policies/right_aglt
+    - --mirror-other-arm
     - --gains
     - '{artifact:gains_yaml}'
     - --out
     - '{artifact:contract}'
-    note: 자산 제어 전용 계약 재생성 + control_gains.yaml 대조 (MISMATCH 면 rc 3). ★홈 = right_aglt 정책의 초기 자세 (init_state 의 양팔·양손 값 그대로 —
-      정책 환경과 실기가 같아야 한다, 09.22)
+    note: 자산 제어 전용 계약 재생성 + control_gains.yaml 대조 (MISMATCH 면 rc 3). ★홈 = right_aglt 정책의 초기 자세 (정책 팔은 에피소드 리셋 자세, 손은 init_state
+      — 정책 환경과 실기가 같아야 한다, 09.22). 반대 팔은 --mirror-other-arm 으로 대칭(09.23 사용자) — init_state 의 왼팔 홈은 +y 벽에서 1.6 cm 다
   - argv:
     - grep
     - -c

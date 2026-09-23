@@ -174,9 +174,13 @@ def pour_homes(pour, sides: tuple) -> tuple[dict, dict]:
     return arm, hand
 
 
-def arm_homes(mode: str, sides: tuple) -> tuple[dict, str]:
+def arm_homes(mode: str, sides: tuple, mirror_other: bool = False) -> tuple[dict, str]:
     """``zero`` (차렷, all joints 0), ``run:<dir>`` (that run's init_state, mirrored to the other arm) or
-    ``pour:<pour_contract.json>`` (the bimanual pour reset pose, both arms explicit)."""
+    ``pour:<pour_contract.json>`` (the bimanual pour reset pose, both arms explicit).
+
+    ``mirror_other`` (``run:`` 전용): 반대 팔 홈을 init_state 대신 **항상** 부호 미러로 잡는다.
+    09.23 사용자 "오른팔 왼팔 대칭 상태로 만듦" — init_state 의 왼팔 홈이 +y 벽에서 1.6 cm 라 경로가 목표에서 막혔다.
+    """
     if mode == "zero":
         return {s: [0.0] * 7 for s in sides}, "zero (차렷)"
     if mode.startswith(POUR_HOME):
@@ -197,6 +201,10 @@ def arm_homes(mode: str, sides: tuple) -> tuple[dict, str]:
     for s in sides:
         if s == src_side:
             out[s] = home
+            continue
+        if mirror_other:                            # 대칭 강제(09.23) — init_state 를 보지 않는다
+            out[s] = [g * v for g, v in zip(sign, home)]
+            how.append(f"{s} = _ARM_SIGN mirror (forced)")
             continue
         try:                                        # 반대 팔도 init_state 에 있으면 그 값 — 정책 환경과 같아야 한다(09.22)
             out[s] = _home_values(env_text, [f"{s[0]}_aj_{i}" for i in range(1, 8)])
@@ -347,13 +355,14 @@ def _control_side(spec: AssetSpec, manifest: dict, side: str, home_arm: list, ho
 
 
 def build_asset_contract(asset: str = DEFAULT_ASSET, sides: tuple = ("right", "left"), primary: str = "right",
-                         home: str = "zero", gains_yaml: Path = GAINS_YAML) -> DeployContract:
+                         home: str = "zero", gains_yaml: Path = GAINS_YAML,
+                         mirror_other: bool = False) -> DeployContract:
     """Control-only contract for ``asset``: fabric + pd per side, no policy (obs/action empty)."""
     spec = asset_spec(asset)
     manifest = load_manifest(spec)
     if primary not in sides:
         raise ContractError(f"primary {primary!r} not in sides {sides}")
-    homes, home_source = arm_homes(home, tuple(sides))
+    homes, home_source = arm_homes(home, tuple(sides), mirror_other)
     hands = _pour_hand_homes(home, asset, tuple(sides)) or _run_hand_homes(home, spec, manifest, tuple(sides))
     side_cfgs = {s: _control_side(spec, manifest, s, homes[s], home_source, gains_yaml, hands.get(s))
                  for s in sides}

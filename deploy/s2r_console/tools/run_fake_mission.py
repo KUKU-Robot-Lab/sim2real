@@ -93,6 +93,8 @@ def run(args) -> int:
     tgt = targets(Path(con.repo) / s.mission.artifacts["contract"])
     report = Report()
     skip = set(args.skip) | ({"viewer"} if not args.with_viewer else set())
+    if "sensors" in skip:                            # 켠 적이 없으면 끌 것도 없다(런처 구독자 0 → rc 1)
+        skip.add("sensors_off")
     print(f"[fake-e2e] {args.profile} · 도메인 {domain} · run {s.run_id} · 건너뜀 {sorted(skip)}", flush=True)
     try:
         while s.state.status != "DONE":
@@ -121,7 +123,10 @@ def run(args) -> int:
             if outcome != "DONE":
                 for st in s.runner.view()["steps"]:
                     if st["status"] in ("failed", "aborted") and st["kind"] not in ("manual", "stop"):
-                        print(con.log_tail(st["key"])[-1500:], flush=True)
+                        try:                          # 기동 전에 막힌 단계(콘솔 밖 런치 감지 등)는 로그가 없다
+                            print(con.log_tail(st["key"])[-1500:], flush=True)
+                        except C.ConsoleError as exc:
+                            print(f"  (로그 없음: {exc})", flush=True)
                 break
             after_stage(report, domain, stage, tgt)
     finally:
