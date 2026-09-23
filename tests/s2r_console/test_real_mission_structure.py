@@ -39,13 +39,15 @@ def test_each_arm_is_readied_engaged_and_homed_before_the_selftest():
         home = [" ".join(c.argv) for c in cmds]
         # engage·제자리 → 확인 → 실측 재계획 → Isaac 미리보기 → 확인 → 경로 재생 → 정착 → 도착 확인 → 손(09.22)
         assert "--only pd_engage --hold-s 10" in home[0] and cmds[1].manual
-        # 저장 경로만 쓴다 — 실기에서 다시 계산하지 않는다(09.22 사용자). 시작점 확인 → 미리보기 → 확인 → 재생
-        assert "check_path_start.py" in home[2] and f"{{artifact:path_{side}}}" in home[2]
-        assert "preview_path_in_viewer.py" in home[3] and "--with-fixed" not in home[3] and cmds[4].manual
-        assert "replay_to_pd.py" in home[5] and f"{{artifact:path_{side}}}" in home[5] and "--reverse" not in home[5]
-        assert not any("plan_home" in a for c in cmds for a in c.argv)
-        assert "--only pd_goto_home" in home[6] and "--service-timeout 45" in home[6]      # 정착만 — 도착은 재생이 했다
-        assert cmds[7].manual and "--only pd_hand_home" in home[8]
+        # 저장 경로는 다시 계획하지 않는다 — 시작점까지 정렬 → 확인 → 미리보기 → 확인 → 재생(09.22 · 09.23 사용자)
+        assert "plan_approach_to_start.py" in home[2] and f"{{artifact:path_{side}}}" in home[2]
+        assert "replay_to_pd.py" in home[3] and f"approach_{side}.npz" in home[3]
+        assert "check_path_start.py" in home[4] and f"{{artifact:path_{side}}}" in home[4]
+        assert "preview_path_in_viewer.py" in home[5] and "--with-fixed" not in home[5] and cmds[6].manual
+        assert "replay_to_pd.py" in home[7] and f"{{artifact:path_{side}}}" in home[7] and "--reverse" not in home[7]
+        assert not any("plan_home_from_robot" in a for c in cmds for a in c.argv)
+        assert "--only pd_goto_home" in home[8] and "--service-timeout 45" in home[8]      # 정착만 — 도착은 재생이 했다
+        assert cmds[9].manual and "--only pd_hand_home" in home[10]
         ret = _cmds(f"return_{side}")
         assert "--only pd_goto_home" in " ".join(ret[0].argv)                               # fabric 뒤 HOLD 를 풀고
         assert "--only pd_hand_rest" in " ".join(ret[1].argv)                               # 손을 출발 자세로 먼저

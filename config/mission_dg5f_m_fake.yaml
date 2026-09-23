@@ -42,7 +42,7 @@ run:
     - hand_follow:=jtc
     - hand_start:=zero
     - plant_model:=rate
-    - arm_start:=right=-0.024600,-0.000200,0.106200,0.146300,-0.176400,-0.026500,-0.037200;left=0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000
+    - arm_start:=right=0.005900,-0.000200,0.005500,0.009700,-0.014700,-0.026500,0.000200;left=0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000
     background: true
   fabric_direct_left:
   - argv:
@@ -186,6 +186,25 @@ run:
     note: '[left] ★10 s 동안 팔이 제자리였는가(처짐 · 떨림 · 소리 없음). 아니면 ''정상이 아니다'' 후 정지 바의 PD 해제'
   - argv:
     - python3
+    - '{repo}/deploy/policy_control/tools/plan_approach_to_start.py'
+    - --npz
+    - '{artifact:path_left}'
+    note: '[left] 지금 자세 → 저장 경로 시작점까지 짧은 접근 구간을 만들고 검사한다(실측 손 자세 기준, 여유 2 cm). 저장 경로는 다시 계획하지 않는다 — 자세만 맞춘다(09.23 사용자). 0.6
+      rad 를 넘게 벌어져 있으면 멈춘다'
+  - argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/replay_to_pd.py'
+    - --npz
+    - '{repo}/logs/policy_control/approach_left.npz'
+    - --joints
+    - l_aj_1,l_aj_2,l_aj_3,l_aj_4,l_aj_5,l_aj_6,l_aj_7
+    - --rate-scale
+    - '1.0'
+    execute_args:
+    - --execute
+    note: '[left] 접근 구간 재생 — 저장 경로 시작점에 선다(최대 0.1 rad/s)'
+  - argv:
+    - python3
     - '{repo}/deploy/policy_control/tools/check_path_start.py'
     - --npz
     - '{artifact:path_left}'
@@ -267,6 +286,25 @@ run:
     - 'true'
     manual: true
     note: '[right] ★10 s 동안 팔이 제자리였는가(처짐 · 떨림 · 소리 없음). 아니면 ''정상이 아니다'' 후 정지 바의 PD 해제'
+  - argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/plan_approach_to_start.py'
+    - --npz
+    - '{artifact:path_right}'
+    note: '[right] 지금 자세 → 저장 경로 시작점까지 짧은 접근 구간을 만들고 검사한다(실측 손 자세 기준, 여유 2 cm). 저장 경로는 다시 계획하지 않는다 — 자세만 맞춘다(09.23 사용자). 0.6
+      rad 를 넘게 벌어져 있으면 멈춘다'
+  - argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/replay_to_pd.py'
+    - --npz
+    - '{repo}/logs/policy_control/approach_right.npz'
+    - --joints
+    - r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7
+    - --rate-scale
+    - '1.0'
+    execute_args:
+    - --execute
+    note: '[right] 접근 구간 재생 — 저장 경로 시작점에 선다(최대 0.1 rad/s)'
   - argv:
     - python3
     - '{repo}/deploy/policy_control/tools/check_path_start.py'
@@ -694,7 +732,7 @@ stages:
   needs:
   - pd_arm_right
   skippable: true
-  title: '[right] engage → 제자리 10 s → 저장 경로 시작점 확인 → Isaac 미리보기 → 저장 경로 재생(j1·j4 로 빼고 들어가기) → 손'
+  title: '[right] engage → 제자리 10 s → 시작점까지 정렬 → 시작점 확인 → Isaac 미리보기 → 저장 경로 재생(j1·j4 로 빼고 들어가기) → 손'
 - artifacts:
   - contract
   - robot_right
@@ -759,7 +797,7 @@ stages:
   needs:
   - pd_arm_left
   skippable: true
-  title: '[left] engage → 제자리 10 s → 저장 경로 시작점 확인 → Isaac 미리보기 → 저장 경로 재생(j1·j4 로 빼고 들어가기) → 손'
+  title: '[left] engage → 제자리 10 s → 시작점까지 정렬 → 시작점 확인 → Isaac 미리보기 → 저장 경로 재생(j1·j4 로 빼고 들어가기) → 손'
 - artifacts:
   - contract
   - robot_left
