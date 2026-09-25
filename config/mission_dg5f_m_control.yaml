@@ -345,7 +345,6 @@ run:
     - note: "[right] 손이 구를 넘으면 **실측에서 접을 수 있는 만큼** 접어 본다 — 손가락끼리 안 닿는 선까지(원본 메쉬 기준).
         굳은 손가락이 있어 접어도 구를 넘으면 그 숫자를 낸다(그 손으로는 저장 경로를 쓸 수 없다는 뜻). 발행 없음"
       argv: [python3, "{repo}/deploy/policy_control/tools/plan_hand_fold.py", --side, right]
-      execute_args: [--execute]
     - note: "[right] 지금 자세 → 저장 경로 시작점까지 짧은 접근 구간을 만들고 검사한다(실측 손 자세 기준, 여유 2 cm).
         저장 경로는 다시 계획하지 않는다 — 자세만 맞춘다(09.23 사용자). 0.6 rad 를 넘게 벌어져 있으면 멈춘다"
       argv: [python3, "{repo}/deploy/policy_control/tools/plan_approach_to_start.py", --npz, "{artifact:path_right}"]
@@ -461,7 +460,6 @@ run:
     - note: "[left] 손이 구를 넘으면 **실측에서 접을 수 있는 만큼** 접어 본다 — 손가락끼리 안 닿는 선까지(원본 메쉬 기준).
         굳은 손가락이 있어 접어도 구를 넘으면 그 숫자를 낸다(그 손으로는 저장 경로를 쓸 수 없다는 뜻). 발행 없음"
       argv: [python3, "{repo}/deploy/policy_control/tools/plan_hand_fold.py", --side, left]
-      execute_args: [--execute]
     - note: "[left] 지금 자세 → 저장 경로 시작점까지 짧은 접근 구간을 만들고 검사한다(실측 손 자세 기준, 여유 2 cm).
         저장 경로는 다시 계획하지 않는다 — 자세만 맞춘다(09.23 사용자). 0.6 rad 를 넘게 벌어져 있으면 멈춘다"
       argv: [python3, "{repo}/deploy/policy_control/tools/plan_approach_to_start.py", --npz, "{artifact:path_left}"]

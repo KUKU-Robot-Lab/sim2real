@@ -186,3 +186,22 @@ def test_the_drivers_stage_ends_by_checking_that_the_motors_answer_on_can():
     assert "check_can_rx.py" in last and "can0" in last and "can1" in last
     sensors = " ".join(_cmds("sensors")[1].argv)
     assert "--wait" in sensors                                                        # 인지 기동 실패를 기다려 본다
+
+
+def test_every_execute_flag_is_one_the_tool_actually_takes():
+    """실행 때 덧붙는 `execute_args` 의 플래그를 그 도구가 받는가 — 09.25 fake: 읽기 전용 plan_hand_fold 에
+    `--execute` 를 붙여 두어 argparse 가 rc 2 로 거부했고, 실기 미션도 같은 자리에서 멈췄을 것이다.
+    도구를 띄우지 않고 소스의 add_argument 로 본다(몇몇은 rclpy 를 import 한다)."""
+    repo = PATH.parents[1]
+    bad = []
+    for stage, cmds in BOOK.commands.items():
+        for c in cmds:
+            if not c.execute_args:
+                continue
+            tool = next((a for a in c.argv if a.endswith(".py")), None)
+            if tool is None:
+                continue
+            src = Path(tool.replace("{repo}", str(repo))).read_text(encoding="utf-8")
+            bad += [(stage, Path(tool).name, f) for f in c.execute_args
+                    if f.startswith("--") and f'"{f}"' not in src and f"'{f}'" not in src]
+    assert not bad, bad

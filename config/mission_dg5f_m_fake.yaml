@@ -221,8 +221,6 @@ run:
     - '{repo}/deploy/policy_control/tools/plan_hand_fold.py'
     - --side
     - left
-    execute_args:
-    - --execute
     note: '[left] 손이 구를 넘으면 **실측에서 접을 수 있는 만큼** 접어 본다 — 손가락끼리 안 닿는 선까지(원본 메쉬 기준). 굳은 손가락이 있어 접어도 구를 넘으면 그 숫자를 낸다(그 손으로는 저장
       경로를 쓸 수 없다는 뜻). 발행 없음'
   - argv:
@@ -349,8 +347,6 @@ run:
     - '{repo}/deploy/policy_control/tools/plan_hand_fold.py'
     - --side
     - right
-    execute_args:
-    - --execute
     note: '[right] 손이 구를 넘으면 **실측에서 접을 수 있는 만큼** 접어 본다 — 손가락끼리 안 닿는 선까지(원본 메쉬 기준). 굳은 손가락이 있어 접어도 구를 넘으면 그 숫자를 낸다(그 손으로는 저장
       경로를 쓸 수 없다는 뜻). 발행 없음'
   - argv:
