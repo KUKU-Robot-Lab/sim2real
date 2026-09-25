@@ -9,6 +9,7 @@
 robot:= 이 있으면 **계약 모드**: fake_arm_bridge --contract/--robot-yaml/--sides (팔마다 MockArm, controller_manager
 스텁 하나가 양팔 JTC+forward 를 안다, 중력은 pd yaml 의 모델과 같은 식), 팔마다 fake_hand_state_pub(namespace dg5f_<side>,
 /policy_control/joint_target 을 그 팔 관절로 걸러 반사) + fake_tip_contact_pub(namespace). 없으면 레거시 프로필 모드.
+실기처럼 팔과 손을 따로 띄우려면 `hands:=none`(팔만) 과 `arm:=false side:=<팔>`(그 손만)을 따로 띄운다.
 
 ★안전: ROS_DOMAIN_ID 가 비어 있거나 0(실기 기본 도메인)이면 기동을 거부한다 — 같은 호스트의
   실팔 DDS 그래프에 fake 메시지가 섞이는 사고의 유일한 소프트웨어 방어선이다.
@@ -126,11 +127,12 @@ def contract_nodes(cfg: dict, sides: tuple) -> list:
     plant = [*common, "--sides", ",".join(sides), "--pd-config", str(pd_config), *_plant_args(cfg)]
     if cfg.get("inertia_q"):
         plant.append("--inertia-q=" + cfg["inertia_q"])
-    nodes = [_script("fake_arm_bridge", *plant), _cup(cfg)]
+    arm = _flag(cfg.get("arm", "true"), "arm")
+    nodes = [_script("fake_arm_bridge", *plant), _cup(cfg)] if arm else []
     follow = str(cfg.get("hand_follow") or "joint_target")
     if follow not in ("joint_target", "jtc"):
         raise RuntimeError(f"hand_follow must be joint_target|jtc, got {follow!r}")
-    for side in sides:
+    for side in _hand_sides(cfg, sides):
         # jtc = 실기 손과 같은 입력(pd 의 드라이버 JTC) — pd → 손 경로를 확인한다. joint_target = 옛 반사(기본)
         feed = (["--jtc-topic", f"/dg5f_{side}/dg5f_{side}_controller/joint_trajectory"] if follow == "jtc"
                 else ["--echo-topic", "/policy_control/joint_target"])
@@ -142,6 +144,23 @@ def contract_nodes(cfg: dict, sides: tuple) -> list:
                              "--controller-node"))
         nodes.append(_script("fake_tip_contact_pub", "--namespace", f"dg5f_{side}", "--rate", HAND_HZ))
     return nodes
+
+
+def _flag(value, name: str) -> bool:
+    v = str(value).strip().lower()
+    if v not in ("true", "false"):
+        raise RuntimeError(f"{name} must be true|false, got {value!r}")
+    return v == "true"
+
+
+def _hand_sides(cfg: dict, sides: tuple) -> tuple:
+    """손을 띄울 팔. `hands:=none` 이면 팔만 — 실기처럼 손 드라이버를 팔마다 따로 띄울 때(09.25)."""
+    hands = str(cfg.get("hands") or "all")
+    if hands == "all":
+        return sides
+    if hands == "none":
+        return ()
+    raise RuntimeError(f"hands must be all|none, got {hands!r}")
 
 
 def _cup(cfg: dict) -> ExecuteProcess:
@@ -187,6 +206,10 @@ def generate_launch_description() -> LaunchDescription:
         # (정책이 본 유일한 z — left_inference_node TRAIN_CUP_Z). 실기 datum 0.205 는 실기 FP++ 가 준다.
         DeclareLaunchArgument("arm_start", default_value="",
                               description="팔 시작 자세 'right=a,…;left=…' (계약 모드, 기본 0)"),
+        DeclareLaunchArgument("arm", default_value="true",
+                              description="계약 모드: false 면 팔 브리지·컵 없이 손만 (손 드라이버를 팔마다 따로 띄우는 fake)"),
+        DeclareLaunchArgument("hands", default_value="all",
+                              description="계약 모드: all (side 의 팔마다 손) | none (팔만 — 손은 따로 띄운다)"),
         DeclareLaunchArgument("hand_follow", default_value="joint_target",
                               description="joint_target (옛 반사) | jtc (실기처럼 pd 의 드라이버 JTC 를 따른다)"),
         DeclareLaunchArgument("hand_start", default_value="home",

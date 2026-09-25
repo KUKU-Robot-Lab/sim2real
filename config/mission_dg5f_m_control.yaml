@@ -59,7 +59,7 @@ stages:
   - id: drivers
     group: connect
     lane: rig
-    title: 모터 전원 → CAN ×2 → 팔 브링업 → 손 네트워크 → DG-5F 손 드라이버 ×2 (토크는 들어가지만 팔은 제자리)
+    title: 모터 전원 → CAN ×2 → 팔 브링업(양팔 한 프로세스) → CAN 응답 확인 (토크는 들어가지만 팔은 제자리). 손 드라이버는 팔 창마다 따로
     needs: [preflight]
     needs_why: 점검 전에 띄우면 오배선 상태로 모터가 돈다
     touches_real: true
@@ -79,11 +79,21 @@ stages:
     skippable: true
 
   # ────────────────────────────────────────────── 오른팔 ③ 준비 · ④ 자세 이동 · ⑤ 정책 동작 · ⑥ 해제
+  - id: hand_right
+    group: connect
+    lane: arm_right
+    title: "[right] 손 네트워크 확인 → DG-5F 손 드라이버(우) — 이 손만 켜고 끄고 다시 띄운다(팔 브링업과 따로)"
+    needs: [preflight]
+    needs_why: 점검 전에 띄우면 오배선 상태로 손가락이 돈다
+    touches_real: true
+    skippable: true
+
   - id: pd_load_right
     group: prepare
     lane: arm_right
     title: "[right] pd 무발행 기동 (execute:=false) — 게인 · 입력 · forward 컨트롤러 load(inactive) · 손 PID 1.5 확인만"
-    needs: [drivers]
+    needs: [drivers, hand_right]
+    needs_why: pd 는 팔(브링업)과 그 팔의 손 드라이버가 둘 다 떠 있어야 입력이 들어온다
     artifacts: [contract, robot_right, pd]
     touches_real: true
     skippable: true
@@ -162,11 +172,21 @@ stages:
     skippable: true
 
   # ────────────────────────────────────────────── 왼팔 ③ 준비 · ④ 자세 이동 · ⑤ 정책 동작 · ⑥ 해제
+  - id: hand_left
+    group: connect
+    lane: arm_left
+    title: "[left] 손 네트워크 확인 → DG-5F 손 드라이버(좌) — 이 손만 켜고 끄고 다시 띄운다(팔 브링업과 따로)"
+    needs: [preflight]
+    needs_why: 점검 전에 띄우면 오배선 상태로 손가락이 돈다
+    touches_real: true
+    skippable: true
+
   - id: pd_load_left
     group: prepare
     lane: arm_left
     title: "[left] pd 무발행 기동 (execute:=false) — 게인 · 입력 · forward 컨트롤러 load(inactive) · 손 PID 1.5 확인만"
-    needs: [drivers]
+    needs: [drivers, hand_left]
+    needs_why: pd 는 팔(브링업)과 그 팔의 손 드라이버가 둘 다 떠 있어야 입력이 들어온다
     artifacts: [contract, robot_left, pd]
     touches_real: true
     skippable: true
@@ -282,19 +302,6 @@ run:
       argv: [ros2, launch, openarm_bringup, openarm.bimanual.launch.py, "use_fake_hardware:=false",
              "right_can_interface:=can0", "left_can_interface:=can1", "use_rviz:=false"]
       background: true
-    - note: ★손 네트워크 — 손은 CAN 이 아니라 Modbus TCP(우 169.254.186.72 · 좌 .73, :502) 다. 09.14 배선은
-        우 = 본체 eno1, 좌 = USB-C 허브 enx00e04c6806e1 로 NIC 이 둘이고, 169.254.0.0/16 경로가 wifi 에 먼저 잡혀 있다.
-        서브넷 주소만 주면 패킷이 엉뚱한 NIC 로 새므로(09.07 tailscale0 로 새서 controller_manager 대기) 손마다
-        /32 호스트 경로를 고정한다. 최초 1회 --apply(NetworkManager 프로필), 이후엔 인자 없이 점검만. rc 0 이어야 진행
-      argv: [bash, "{repo}/scripts/setup/hand_net_dual.sh", --apply]
-      manual: true
-    - note: ★DG-5F 드라이버(우) — 벤더 dg5f_ros2 로 교체(09.14, robot_control ros_ws/src/dg5f_ros2). config 의 PID p 는
-        벤더 1.5 여야 한다 — pd engage 는 같은 값인지 확인만 하고 올리지 않는다
-      argv: [ros2, launch, dg5f_driver, dg5f_right_driver.launch.py, "delto_ip:=169.254.186.72"]
-      background: true
-    - note: DG-5F 드라이버(좌) — namespace dg5f_left. 콘솔이 띄우고 감독한다
-      argv: [ros2, launch, dg5f_driver, dg5f_left_driver.launch.py, "delto_ip:=169.254.186.73"]
-      background: true
     - note: "★모터 응답 확인 — can0 · can1 수신 패킷이 실제로 늘어나는가. 0 이면 모터에 명령이 닿지 않는다(09.22 전원을 켰다고
         여겼는데 RX 0 · ERROR-PASSIVE, 관절 상태가 전부 0.0 이었다). 실패하면 전원 · 비상정지 · CAN 케이블을 보고 CAN 을 다시 올릴 것"
       argv: [python3, "{repo}/scripts/setup/check_can_rx.py", can0, can1]
@@ -309,6 +316,17 @@ run:
       background: true
     - note: 카메라 + FP++(cup_big_s100) 켜기 — vision-3090 에서. 런처가 끝낼 때까지 최대 150 s 기다리고, 실패를 보고하면 이 단계도 실패(09.22 에는 보내기만 하고 통과했다)
       argv: [python3, "{repo}/scripts/ops/perception_ctl.py", start, cup_big_s100, --wait, "150"]
+  hand_right:
+    - note: ★손 네트워크 — 손은 CAN 이 아니라 Modbus TCP(우 169.254.186.72 · 좌 .73, :502) 다. 09.14 배선은
+        우 = 본체 eno1, 좌 = USB-C 허브 enx00e04c6806e1 로 NIC 이 둘이고, 169.254.0.0/16 경로가 wifi 에 먼저 잡혀 있다.
+        서브넷 주소만 주면 패킷이 엉뚱한 NIC 로 새므로(09.07 tailscale0 로 새서 controller_manager 대기) 손마다
+        /32 호스트 경로를 고정한다. 최초 1회 --apply(NetworkManager 프로필), 이후엔 인자 없이 점검만. rc 0 이어야 진행
+      argv: [bash, "{repo}/scripts/setup/hand_net_dual.sh", --apply]
+      manual: true
+    - note: ★DG-5F 드라이버(우) — 벤더 dg5f_ros2 로 교체(09.14, robot_control ros_ws/src/dg5f_ros2). config 의 PID p 는
+        벤더 1.5 여야 한다 — pd engage 는 같은 값인지 확인만 하고 올리지 않는다
+      argv: [ros2, launch, dg5f_driver, dg5f_right_driver.launch.py, "delto_ip:=169.254.186.72"]
+      background: true
   pd_load_right:
     - note: "[right] pd 노드 무발행 기동 — status 의 gains ok · 입력 신선도를 본다"
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",
@@ -432,6 +450,16 @@ run:
       execute_args: [--execute]
     - note: "[right] 이 팔의 fabric · pd 정지 — pd 가 IDLE 이라 토크는 JTC 가 그대로 잡는다"
       stop: ["fabric_direct_right#0", "pd_arm_right#1"]
+  hand_left:
+    - note: ★손 네트워크 — 손은 CAN 이 아니라 Modbus TCP(우 169.254.186.72 · 좌 .73, :502) 다. 09.14 배선은
+        우 = 본체 eno1, 좌 = USB-C 허브 enx00e04c6806e1 로 NIC 이 둘이고, 169.254.0.0/16 경로가 wifi 에 먼저 잡혀 있다.
+        서브넷 주소만 주면 패킷이 엉뚱한 NIC 로 새므로(09.07 tailscale0 로 새서 controller_manager 대기) 손마다
+        /32 호스트 경로를 고정한다. 최초 1회 --apply(NetworkManager 프로필), 이후엔 인자 없이 점검만. rc 0 이어야 진행
+      argv: [bash, "{repo}/scripts/setup/hand_net_dual.sh", --apply]
+      manual: true
+    - note: DG-5F 드라이버(좌) — namespace dg5f_left. 콘솔이 띄우고 감독한다
+      argv: [ros2, launch, dg5f_driver, dg5f_left_driver.launch.py, "delto_ip:=169.254.186.73"]
+      background: true
   pd_load_left:
     - note: "[left] pd 노드 무발행 기동 — status 의 gains ok · 입력 신선도를 본다"
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",
@@ -560,7 +588,7 @@ run:
       stop: ["fabric_direct_right#0", "pd_arm_right#1", "pd_load_right#0",
              "fabric_direct_left#0", "pd_arm_left#1", "pd_load_left#0", "head_home#1", "sensors#0"]
     - note: DG-5F 손 드라이버 정지 (우 → 좌) — 손가락 토크가 풀린다
-      stop: ["drivers#5", "drivers#6"]
+      stop: ["hand_right#1", "hand_left#1"]
     - note: ★팔 브링업 정지 — OpenArm 하드웨어가 disable_all() 로 모든 모터를 끈다(팔이 받침으로 내려앉는다)
       stop: ["drivers#3"]
     - note: 모터 전원(양팔) OFF — 물리 스위치

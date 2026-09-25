@@ -41,7 +41,7 @@ lanes:
 name: policy_control 양팔 DG-5F-M 제어 전용 점검 (fake)
 run:
   drivers:
-  - note: 'fake 플랜트 — 양팔 MockArm(rate: 배선 · 순서 · 도달만, 처짐 · 마찰 없음) + 양손 fake(pd 의 드라이버 JTC 를 따른다, 0 자세에서 시작) + 컵 포즈'
+  - note: 'fake 플랜트 — 양팔 MockArm(rate: 배선 · 순서 · 도달만, 처짐 · 마찰 없음) + 컵 포즈. 손은 hand_<팔> 단계가 따로 띄운다'
     argv:
     - ros2
     - launch
@@ -50,8 +50,7 @@ run:
     - robot:={artifact:robot_bi}
     - contract:={artifact:contract}
     - pd_config:={artifact:pd}
-    - hand_follow:=jtc
-    - hand_start:=path
+    - hands:=none
     - plant_model:=rate
     - arm_start:=right=0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000;left=0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000
     background: true
@@ -179,6 +178,50 @@ run:
     execute_args:
     - --execute
     note: '[right] 에피소드 stop — pd 는 계속 잡고 있다(해제는 ⑥)'
+  hand_left:
+  - argv:
+    - bash
+    - '{repo}/scripts/setup/hand_net_dual.sh'
+    - --apply
+    manual: true
+    note: ★손 네트워크 — 손은 CAN 이 아니라 Modbus TCP(우 169.254.186.72 · 좌 .73, :502) 다. 09.14 배선은 우 = 본체 eno1, 좌 = USB-C 허브 enx00e04c6806e1
+      로 NIC 이 둘이고, 169.254.0.0/16 경로가 wifi 에 먼저 잡혀 있다. 서브넷 주소만 주면 패킷이 엉뚱한 NIC 로 새므로(09.07 tailscale0 로 새서 controller_manager
+      대기) 손마다 /32 호스트 경로를 고정한다. 최초 1회 --apply(NetworkManager 프로필), 이후엔 인자 없이 점검만. rc 0 이어야 진행
+  - note: fake 손(left) — pd 의 드라이버 JTC 를 따른다, 경로 기준 자세에서 조금 어긋나 시작
+    argv:
+    - ros2
+    - launch
+    - '{repo}/deploy/policy_control/launch/fake_plant.launch.py'
+    - side:=left
+    - robot:={artifact:robot_bi}
+    - contract:={artifact:contract}
+    - pd_config:={artifact:pd}
+    - arm:=false
+    - hand_follow:=jtc
+    - hand_start:=path
+    background: true
+  hand_right:
+  - argv:
+    - bash
+    - '{repo}/scripts/setup/hand_net_dual.sh'
+    - --apply
+    manual: true
+    note: ★손 네트워크 — 손은 CAN 이 아니라 Modbus TCP(우 169.254.186.72 · 좌 .73, :502) 다. 09.14 배선은 우 = 본체 eno1, 좌 = USB-C 허브 enx00e04c6806e1
+      로 NIC 이 둘이고, 169.254.0.0/16 경로가 wifi 에 먼저 잡혀 있다. 서브넷 주소만 주면 패킷이 엉뚱한 NIC 로 새므로(09.07 tailscale0 로 새서 controller_manager
+      대기) 손마다 /32 호스트 경로를 고정한다. 최초 1회 --apply(NetworkManager 프로필), 이후엔 인자 없이 점검만. rc 0 이어야 진행
+  - note: fake 손(right) — pd 의 드라이버 JTC 를 따른다, 경로 기준 자세에서 조금 어긋나 시작
+    argv:
+    - ros2
+    - launch
+    - '{repo}/deploy/policy_control/launch/fake_plant.launch.py'
+    - side:=right
+    - robot:={artifact:robot_bi}
+    - contract:={artifact:contract}
+    - pd_config:={artifact:pd}
+    - arm:=false
+    - hand_follow:=jtc
+    - hand_start:=path
+    background: true
   head_home:
   - note: fake — 목 하드웨어가 없다(실기에서는 기준자세 + 목 퍼블리셔)
     argv:
@@ -787,7 +830,8 @@ run:
     - sensors#0
   - note: DG-5F 손 드라이버 정지 (우 → 좌) — 손가락 토크가 풀린다
     stop:
-    - drivers#0
+    - hand_right#1
+    - hand_left#1
   - note: ★팔 브링업 정지 — OpenArm 하드웨어가 disable_all() 로 모든 모터를 끈다(팔이 받침으로 내려앉는다)
     stop:
     - drivers#0
@@ -818,7 +862,7 @@ stages:
   needs:
   - preflight
   needs_why: 점검 전에 띄우면 오배선 상태로 모터가 돈다
-  title: 모터 전원 → CAN ×2 → 팔 브링업 → 손 네트워크 → DG-5F 손 드라이버 ×2 (토크는 들어가지만 팔은 제자리)
+  title: 모터 전원 → CAN ×2 → 팔 브링업(양팔 한 프로세스) → CAN 응답 확인 (토크는 들어가지만 팔은 제자리). 손 드라이버는 팔 창마다 따로
 - group: connect
   id: sensors
   lane: head
@@ -833,6 +877,14 @@ stages:
   - preflight
   skippable: true
   title: Isaac Sim 화면 — right_aglt 정책 환경(로봇 · 테이블 · 컵)에 실기 관절 상태를 비춘다 (읽기 전용 · rviz 대신)
+- group: connect
+  id: hand_right
+  lane: arm_right
+  needs:
+  - preflight
+  needs_why: 점검 전에 띄우면 오배선 상태로 손가락이 돈다
+  skippable: true
+  title: '[right] 손 네트워크 확인 → DG-5F 손 드라이버(우) — 이 손만 켜고 끄고 다시 띄운다(팔 브링업과 따로)'
 - artifacts:
   - contract
   - robot_right
@@ -842,6 +894,8 @@ stages:
   lane: arm_right
   needs:
   - drivers
+  - hand_right
+  needs_why: pd 는 팔(브링업)과 그 팔의 손 드라이버가 둘 다 떠 있어야 입력이 들어온다
   skippable: true
   title: '[right] pd 무발행 기동 (execute:=false) — 게인 · 입력 · forward 컨트롤러 load(inactive) · 손 PID 1.5 확인만'
 - artifacts:
@@ -923,6 +977,14 @@ stages:
   - pd_arm_right
   skippable: true
   title: '[right] pd 해제(역블렌드 → JTC 복귀) → 이 팔의 pd · fabric 프로세스 정지 — 팔은 JTC 가 계속 잡는다'
+- group: connect
+  id: hand_left
+  lane: arm_left
+  needs:
+  - preflight
+  needs_why: 점검 전에 띄우면 오배선 상태로 손가락이 돈다
+  skippable: true
+  title: '[left] 손 네트워크 확인 → DG-5F 손 드라이버(좌) — 이 손만 켜고 끄고 다시 띄운다(팔 브링업과 따로)'
 - artifacts:
   - contract
   - robot_left
@@ -932,6 +994,8 @@ stages:
   lane: arm_left
   needs:
   - drivers
+  - hand_left
+  needs_why: pd 는 팔(브링업)과 그 팔의 손 드라이버가 둘 다 떠 있어야 입력이 들어온다
   skippable: true
   title: '[left] pd 무발행 기동 (execute:=false) — 게인 · 입력 · forward 컨트롤러 load(inactive) · 손 PID 1.5 확인만'
 - artifacts:

@@ -9,7 +9,8 @@ fake 미션을 손으로 따로 두면 실기 미션을 고칠 때마다 어긋�
 
 바꾸는 것(그 밖은 한 글자도 바꾸지 않는다):
   · robot yaml → *_fake, pd 설정 → pd_dg5f_m_short_fake.yaml (execute 는 launch 인자가 정한다: 무발행 단계 false)
-  · drivers → fake 플랜트 한 개(양팔 MockArm + 양손 fake, 손은 pd 의 드라이버 JTC 를 따르고 0 자세에서 시작)
+  · drivers → fake 플랜트(양팔 MockArm, hands:=none) · hand_<팔> 의 손 드라이버 → 그 손만 띄우는 fake 플랜트
+    (arm:=false, 손은 pd 의 드라이버 JTC 를 따르고 경로 기준 자세에서 조금 어긋나 시작)
   · 모든 ros2 launch 에 fake:=true (도메인 0 거부)
   · head_home → 목 하드웨어가 없다고 적는 echo (단계는 남긴다). vision-3090 인지는 진짜로 켠다(로봇이 아니다)
   · 정지 대상 drivers#<n> → drivers#0 (fake 플랜트)
@@ -37,13 +38,21 @@ ARTIFACTS = {
 PLANT = {
     # plant_model rate: pd 모델은 팔 실측 캘리브(hdgp/log/logs/r2s_autotune/…/right_arm_best_calibration.json)의 마찰을
     # 요구하는데 그 파일이 이제 없다(로컬·서버 모두, 09.22). 값을 지어 넣지 않는다 — rate 는 배선 · 순서 · 도달만 본다.
-    "note": "fake 플랜트 — 양팔 MockArm(rate: 배선 · 순서 · 도달만, 처짐 · 마찰 없음) + 양손 fake(pd 의 드라이버 JTC 를 따른다, "
-            "0 자세에서 시작) + 컵 포즈",
+    "note": "fake 플랜트 — 양팔 MockArm(rate: 배선 · 순서 · 도달만, 처짐 · 마찰 없음) + 컵 포즈. 손은 hand_<팔> 단계가 따로 띄운다",
     "argv": ["ros2", "launch", "{repo}/deploy/policy_control/launch/fake_plant.launch.py", "side:=both",
              "robot:={artifact:robot_bi}", "contract:={artifact:contract}", "pd_config:={artifact:pd}",
-             "hand_follow:=jtc", "hand_start:=path", "plant_model:=rate"],
+             "hands:=none", "plant_model:=rate"],
     "background": True,
 }
+
+
+def _hand(side: str) -> dict:
+    """실기 손 드라이버 자리 — 그 손만 띄우는 fake(팔 브리지 없음)."""
+    return {"note": f"fake 손({side}) — pd 의 드라이버 JTC 를 따른다, 경로 기준 자세에서 조금 어긋나 시작",
+            "argv": ["ros2", "launch", "{repo}/deploy/policy_control/launch/fake_plant.launch.py", f"side:={side}",
+                     "robot:={artifact:robot_bi}", "contract:={artifact:contract}", "pd_config:={artifact:pd}",
+                     "arm:=false", "hand_follow:=jtc", "hand_start:=path"],
+            "background": True}
 # vision-3090(카메라 · FP++)은 로봇이 아니라 fake 에서도 진짜로 켠다(09.22 사용자: 언제든 쓸 수 있다). 목만 없다.
 NO_HARDWARE = {"head_home": "fake — 목 하드웨어가 없다(실기에서는 기준자세 + 목 퍼블리셔)"}
 HEADER = """# ★생성 파일 — 고치지 말 것. scripts/ops/make_fake_mission.py 가 config/mission_dg5f_m_control.yaml 에서 만든다.
@@ -82,6 +91,12 @@ def convert(real: dict) -> dict:
     if not any(c.get("background") for c in real["run"]["drivers"]):
         raise SystemExit("실기 drivers 에 배경 명령이 없다 — 변환 규칙을 다시 볼 것")
     run["drivers"] = [{**PLANT, "argv": PLANT["argv"] + _arm_start(fake["artifacts"])}]
+    for side in ("right", "left"):                # 손 드라이버 명령만 fake 로 — 앞의 수동 확인은 그대로(키 번호가 실기와 같다)
+        cmds = run[f"hand_{side}"]
+        hits = [i for i, c in enumerate(cmds) if c.get("background") and "dg5f_driver" in c.get("argv", ())]
+        if len(hits) != 1:
+            raise SystemExit(f"실기 hand_{side} 에 손 드라이버 배경 명령이 하나가 아니다 — 변환 규칙을 다시 볼 것")
+        cmds[hits[0]] = _hand(side)
     for stage, note in NO_HARDWARE.items():
         run[stage] = [{"note": note, "argv": ["echo", note]}]
     alive = {f"{st}#{i}" for st, cmds in run.items() for i, c in enumerate(cmds) if c.get("background")}
@@ -90,7 +105,7 @@ def convert(real: dict) -> dict:
             if c.get("stop"):
                 keys = ("drivers#0" if k.startswith("drivers#") else k for k in c["stop"])
                 c["stop"] = [k for k in dict.fromkeys(keys) if k in alive]     # fake 에 없는 프로세스(목 · 인지)는 뺀다
-            elif c.get("argv") and stage != "drivers":
+            elif c.get("argv") and stage != "drivers" and "fake_plant.launch.py" not in " ".join(c["argv"]):
                 c["argv"] = _fake_argv(c["argv"])
                 if any(str(a).endswith("check_path_start.py") for a in c["argv"]):
                     c["argv"].append("--allow-exact-zero")        # fake 팔은 정확히 0 에서 시작한다(엔코더 미수신 검사를 끈다)

@@ -26,6 +26,7 @@ STAGE_TIMEOUT_S = 900.0          # preflight(pytest 전부) 가 5 분 남짓
 #: 둘 다 밟으면 reset 이 pd 를 풀고 차렷까지 내린 뒤 return 이 "홈에서 정착"을 하려 해서 거부된다(09.23 fake).
 #: 비상 복귀 자체는 test_pc_reset_to_rest 가 따로 잠근다.
 EXCLUSIVE = ("reset_right", "reset_left")
+SKIP_WAIT_S = 10.0             # s — release 직후 pd 상태가 새로 들어올 시간(STALE_S 보다 넉넉히)
 ARM_TOL = 0.02                   # rad — pd 정착 허용(settle.tol 과 같은 자리수)
 #: rad — 손 속도 제한 램프가 끝났는가. pd 가 **일부러** 한계 안쪽 HAND_LIMIT_MARGIN 으로 물려 지령하므로
 #: (09.23 실기: 계약 홈이 굽힘 관절 하한 0.0 그 자체라 손가락이 꺾이고 드라이버가 error 423 을 냈다)
@@ -73,6 +74,23 @@ def targets(contract_path: Path) -> dict[str, dict[str, dict[str, float]]]:
     return out
 
 
+def skip_when_pd_settles(con, stage: str, wait_s: float = SKIP_WAIT_S) -> None:
+    """건너뛰기는 pd 상태를 모르거나 팔을 잡은 동안 거부된다(정당한 게이트). release 직후에는 상태 토픽이
+    한 박자 늦어 그 게이트에 걸린다(09.25 fake: release_left 직후 sensors_off). 잠깐 기다렸다 다시 묻고,
+    그래도 거부면 사유를 붙여 실패한다."""
+    from s2r_console import console as C
+
+    deadline = time.monotonic() + wait_s
+    while True:
+        try:
+            con.skip_stage(stage, operator="fake-e2e")
+            return
+        except C.ConsoleError as exc:
+            if time.monotonic() >= deadline:
+                raise SystemExit(f"✗ {stage} 를 건너뛸 수 없다: {list(getattr(exc, 'reasons', ()))}") from exc
+            time.sleep(0.5)
+
+
 def check_side(report: Report, domain: int, side: str, tgt: dict, *, arm: bool, hand: bool, when: str) -> None:
     q = sample(domain)
     if arm:
@@ -116,7 +134,7 @@ def run(args) -> int:
                 print(f"» {stage} 지나침 (대체 경로 — {stage.replace('reset_', 'return_')} 를 걷는다)", flush=True)
                 continue
             if stage in skip:
-                con.skip_stage(stage, operator="fake-e2e")
+                skip_when_pd_settles(con, stage)
                 print(f"» {stage} 건너뜀", flush=True)
                 continue
             print(f"▶ {stage}", flush=True)

@@ -228,6 +228,22 @@ def test_fake_plant_contract_mode_wires_each_side(plant, monkeypatch):
 
 
 @needs_asset
+def test_fake_plant_can_start_the_arms_and_each_hand_separately(plant, monkeypatch):
+    """09.25: 실기 손 드라이버가 팔마다 따로 뜨게 되어 fake 도 팔(hands:=none)과 손(arm:=false)을 따로 띄운다."""
+    monkeypatch.setenv("ROS_DOMAIN_ID", "97")
+    cfg = _plant_cfg(side="both", robot="dg5f_m_bi_fake", contract=str(ASSET_CONTRACT))
+    arms = plant.plant_nodes({**cfg, "hands": "none"})
+    assert [_script(p) for p in arms] == ["fake_arm_bridge", "fake_cup_pose_pub"]
+    hand = plant.plant_nodes({**cfg, "side": "left", "arm": "false"})
+    assert [_script(p) for p in hand] == ["fake_hand_state_pub", "fake_tip_contact_pub"]
+    assert _cmd(hand[0])[_cmd(hand[0]).index("--side") + 1] == "left" and "--controller-node" in _cmd(hand[0])
+    with pytest.raises(RuntimeError, match="hands"):
+        plant.plant_nodes({**cfg, "hands": "left"})
+    with pytest.raises(RuntimeError, match="arm"):
+        plant.plant_nodes({**cfg, "arm": "no"})
+
+
+@needs_asset
 def test_pd_launch_sides_and_pd_config_shorthand(pd_launch, monkeypatch):
     monkeypatch.setenv("ROS_DOMAIN_ID", "97")
     cfg = {"contract": str(ASSET_CONTRACT), "robot": "dg5f_m_bi_fake", "fake": "true", "use_source": "false",

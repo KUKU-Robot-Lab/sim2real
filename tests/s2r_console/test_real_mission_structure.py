@@ -12,6 +12,7 @@ RAW = yaml.safe_load(PATH.read_text(encoding="utf-8"))
 MISSION = load_mission(RAW)
 BOOK = load_runbook(RAW.get("run"), MISSION)          # 정지 대상 · 순서 검사가 여기서 돈다
 IDS = [s.id for s in MISSION.stages]
+RAW_STAGES = {st["id"]: st for st in RAW["stages"]}
 
 
 def _cmds(stage):
@@ -108,8 +109,28 @@ def test_shutdown_is_last_confirms_support_first_and_drops_the_arm_last():
     assert cmds[0].manual and "받침" in cmds[0].note
     stops = [c.stop for c in cmds if c.stop]
     arm = _launches("drivers", "openarm.bimanual.launch.py")[0]
-    hands = _launches("drivers", "dg5f_driver")
-    assert stops[-1] == (f"drivers#{arm}",) and set(stops[-2]) == {f"drivers#{i}" for i in hands}
+    hands = {f"hand_{side}#{_launches(f'hand_{side}', 'dg5f_driver')[0]}" for side in ("right", "left")}
+    assert stops[-1] == (f"drivers#{arm}",) and set(stops[-2]) == hands
+
+
+def test_each_hand_driver_is_its_own_stage_in_its_arms_window():
+    """09.25 사용자: "팔은 하나인거 알고 있고, 손만 분리 필요" — 팔 브링업은 양팔이 한 프로세스라 drivers 에 남고,
+    손 드라이버는 팔마다 따로 켜고 끄고 다시 띄운다(단계 다시 실행 = 그 단계의 유닛만 내렸다 다시 띄움)."""
+    assert not _launches("drivers", "dg5f_driver")                                  # 드라이버 창에는 팔만
+    assert len(_launches("drivers", "openarm.bimanual.launch.py")) == 1
+    for side, ip in (("right", "169.254.186.72"), ("left", "169.254.186.73")):
+        st = MISSION.stages[IDS.index(f"hand_{side}")]
+        assert RAW_STAGES[st.id]["lane"] == f"arm_{side}" and st.touches_real and st.skippable
+        assert set(st.needs) == {"preflight"}                                        # 팔 브링업과 무관하게 켠다
+        (i,) = _launches(st.id, "dg5f_driver")
+        cmd = _cmds(st.id)[i]
+        assert cmd.background and f"dg5f_{side}_driver.launch.py" in cmd.argv and f"delto_ip:={ip}" in cmd.argv
+        assert any(c.manual and "hand_net_dual.sh" in " ".join(c.argv) for c in _cmds(st.id)[:i])   # 네트워크 먼저
+        other = "left" if side == "right" else "right"
+        assert not _launches(st.id, f"dg5f_{other}_driver")
+        load = MISSION.stages[IDS.index(f"pd_load_{side}")]
+        assert f"hand_{side}" in load.needs and "drivers" in load.needs              # pd 는 팔과 그 손이 다 떠야
+        assert IDS.index(f"hand_{side}") < IDS.index(f"pd_load_{side}")
 
 
 def test_only_side_stages_and_optional_sensors_can_be_skipped():
@@ -162,12 +183,21 @@ def test_the_fake_mission_is_generated_from_the_real_one_and_walks_the_same_stag
     assert [(s.id, s.group, s.skippable) for s in fake.stages] == [(s.id, s.group, s.skippable) for s in MISSION.stages]
     assert not any(s.touches_real for s in fake.stages)                          # fake 는 승인 없이 — 실기가 아니다
     assert all("fake" in v for k, v in fake_raw["artifacts"].items() if k.startswith(("robot_", "pd")))
-    launches = [c for st, cmds in book.commands.items() if st != "drivers" for c in cmds if c.argv[:2] == ("ros2", "launch")]
+    def is_plant(c):
+        return any(a.endswith("fake_plant.launch.py") for a in c.argv)
+
+    launches = [c for cmds in book.commands.values() for c in cmds if c.argv[:2] == ("ros2", "launch") and not is_plant(c)]
     assert launches and all("fake:=true" in c.argv for c in launches)     # fake_plant 는 스스로 도메인 0 을 거부한다
     plant = book.commands["drivers"][0]
-    # 손은 pd 의 JTC 를 따르고, 09.23 부터 **경로 기준 자세에서 어긋난 채** 시작한다(실기가 전원 재투입 뒤 그랬다).
-    # 0 자세(완전히 편 손)로 시작하면 손을 마는 중간 자세가 몸통을 스쳐 검사가 막는다 — 실기에 없는 상황이다.
-    assert "hand_follow:=jtc" in plant.argv and "hand_start:=path" in plant.argv
+    assert is_plant(plant) and "hands:=none" in plant.argv                 # 팔만 — 손은 손 단계가 띄운다(실기와 같게)
+    for side in ("right", "left"):
+        (hand,) = [c for c in book.commands[f"hand_{side}"] if c.background]
+        # 손은 pd 의 JTC 를 따르고, 09.23 부터 **경로 기준 자세에서 어긋난 채** 시작한다(실기가 전원 재투입 뒤 그랬다).
+        # 0 자세(완전히 편 손)로 시작하면 손을 마는 중간 자세가 몸통을 스쳐 검사가 막는다 — 실기에 없는 상황이다.
+        assert is_plant(hand) and f"side:={side}" in hand.argv and "arm:=false" in hand.argv
+        assert "hand_follow:=jtc" in hand.argv and "hand_start:=path" in hand.argv
+    stops = {k for c in book.commands["shutdown"] if c.stop for k in c.stop}
+    assert {"hand_right#1", "hand_left#1", "drivers#0"} <= stops           # fake 에서도 손을 팔마다 내린다
 
 
 def test_preflight_runs_only_the_real_deployment_tests_not_the_whole_suite():
