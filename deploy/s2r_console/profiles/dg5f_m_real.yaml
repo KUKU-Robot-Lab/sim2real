@@ -6,7 +6,7 @@ title: 양팔 DG-5F-M · 실기 제어 점검
 mission: config/mission_dg5f_m_control.yaml
 domain: {id: 126, class: real}
 policy_dt: 0.02
-status_nodes: [episode_master, fabric, pd]
+status_nodes: [episode_master, fabric, pd_right, pd_left]   # pd 는 팔마다 따로 뜬다(09.23)
 
 # 이름은 launch 에서 읽었다 — 실기에서 관측한 값은 아니다.
 #   팔: robot_control 의 openarm.bimanual.launch.py (arm_prefix 기본값 "" → 네임스페이스 없음)

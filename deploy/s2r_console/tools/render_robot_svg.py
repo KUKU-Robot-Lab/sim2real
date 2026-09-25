@@ -38,28 +38,6 @@ def _load(name: str):
     return mod
 
 
-def link_transforms(links, joints, q: dict[str, float]) -> dict[str, np.ndarray]:
-    """링크 이름 → 4x4 월드 변환. 고정 관절은 각도 0, 회전 관절은 `q` (없으면 0)."""
-    from scipy.spatial.transform import Rotation
-
-    out: dict[str, np.ndarray] = {}
-    children: dict[str, list] = {}
-    for j in joints:
-        children.setdefault(j.parent, []).append(j)
-    roots = [n for n in links if all(j.child != n for j in joints)]
-    stack = [(r, np.eye(4)) for r in roots]
-    while stack:
-        name, T = stack.pop()
-        out[name] = T
-        for j in children.get(name, ()):
-            Tj = np.array(j.T, dtype=float)
-            if j.jtype in ("revolute", "continuous"):
-                ang = float(q.get(j.name, 0.0))
-                R = np.eye(4)
-                R[:3, :3] = Rotation.from_rotvec(np.asarray(j.axis, float) * ang).as_matrix()
-                Tj = Tj @ R
-            stack.append((j.child, T @ Tj))
-    return out
 
 
 def link_polygons(links, T: dict[str, np.ndarray], keep, view: str) -> list[tuple[str, np.ndarray]]:
@@ -200,7 +178,7 @@ def main() -> int:
     W = _load("home_path_world")
     links, joints, _ = W.parse_urdf(W.URDF_DEFAULT)
     q = {}                                                       # 차렷(전부 0) — 화면은 실제 각도를 숫자로 따로 보여준다
-    T = link_transforms(links, joints, q)
+    T = W.link_transforms(links, joints, q)
     if args.frame:
         if args.frame not in T:
             raise SystemExit(f"✗ 그런 링크가 없다: {args.frame}")

@@ -73,17 +73,29 @@ run:
              --x, "0.3630", --y, "0.1680", --z, "0.2853"]
       background: true
   pd_load:
-    - note: pd 노드 (양팔, fake)
+    # pd 는 팔마다 따로 뜬다(09.23 사용자: "개별 제어를 하는 게 맞을 것 같음") — 노드 이름도 서비스도 갈린다.
+    - note: pd 노드 (오른팔, fake)
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",
              "contract:={artifact:contract_pd}", "robot:=dg5f_m_bi_fake", "pd_config:=dg5f_m_short_fake",
-             "sides:=right,left", "execute:=true", "fake:=true", "use_source:=true"]
+             "sides:=right", "execute:=true", "fake:=true", "use_source:=true"]
+      background: true
+    - note: pd 노드 (왼팔, fake)
+      argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",
+             "contract:={artifact:contract_pd}", "robot:=dg5f_m_bi_fake", "pd_config:=dg5f_m_short_fake",
+             "sides:=left", "execute:=true", "fake:=true", "use_source:=true"]
       background: true
   pd_home:
-    - note: pd engage
-      argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", pd/engage, --expect-pd, RAMPING, TRACKING]
+    - note: pd engage (오른팔)
+      argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", pd/engage, --side, right, --expect-pd, RAMPING, TRACKING]
       execute_args: [--execute]
-    - note: pd goto_home
-      argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", pd/goto_home, --expect-pd, TRACKING]
+    - note: pd engage (왼팔)
+      argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", pd/engage, --side, left, --expect-pd, RAMPING, TRACKING]
+      execute_args: [--execute]
+    - note: pd goto_home (오른팔)
+      argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", pd/goto_home, --side, right, --expect-pd, TRACKING]
+      execute_args: [--execute]
+    - note: pd goto_home (왼팔)
+      argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", pd/goto_home, --side, left, --expect-pd, TRACKING]
       execute_args: [--execute]
   chain:
     - note: pour 체인 (cpu, fabric 끔)
@@ -111,6 +123,9 @@ run:
       argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", episode/stop]
       execute_args: [--execute]
   release:
-    - note: pd release
-      argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", pd/release, --expect-pd, IDLE]
+    - note: pd release (오른팔)
+      argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", pd/release, --side, right, --expect-pd, IDLE]
+      execute_args: [--execute]
+    - note: pd release (왼팔)
+      argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", pd/release, --side, left, --expect-pd, IDLE]
       execute_args: [--execute]

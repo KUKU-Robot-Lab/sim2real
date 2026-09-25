@@ -107,3 +107,17 @@ def test_child_deaths_ignores_lines_the_previous_launch_of_the_same_stage_wrote(
         fh.write(DIED_JSB + "\n")
     assert sup.child_deaths("drivers#3") == [DIED_JSB]    # 이번 기동의 줄은 잡는다
     sup.stop()
+
+
+NOT_INACTIVE = ("[WARN] [dg5f_right.controller_manager]: Controller with name 'dg5f_right_controller' "
+                "is not inactive so its following controllers do not have to be checked, because it cannot be activated.")
+DIED_HAND = ("[ERROR] [spawner-4]: process has died [pid 1645273, exit code 1, "
+             "cmd '/opt/ros/humble/lib/controller_manager/spawner dg5f_right_controller "
+             "-c /dg5f_right/controller_manager --ros-args'].")
+
+
+def test_the_reason_may_come_from_the_controller_manager_not_the_spawner():
+    # 09.23 실기 두 번째 변형: 근거를 spawner 가 아니라 controller_manager 가 냈다 — 손은 멀쩡했는데 단계가 실패했다
+    assert SV.benign_spawner_death(DIED_HAND, [NOT_INACTIVE, DIED_HAND])
+    other = NOT_INACTIVE.replace("dg5f_right_controller", "dg5f_left_controller")
+    assert not SV.benign_spawner_death(DIED_HAND, [other, DIED_HAND])     # 다른 컨트롤러 이야기면 아니다

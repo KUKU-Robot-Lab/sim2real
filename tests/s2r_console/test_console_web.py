@@ -216,20 +216,44 @@ def test_a_lock_reason_wraps_to_two_lines_instead_of_hiding_behind_hover():
 
 
 # ── "노드를 어떻게 켜나" 를 화면이 답한다 (09.22 실기 첫 세션) ────────────
-def test_one_control_panel_under_the_banner_carries_every_stage_action():
+def test_the_stage_card_carries_every_stage_action():
     # 09.22 사용자: "메인 status 화면 창에서 승인 및 진행" — 카드를 줄줄이 내려가며 버튼을 찾지 않는다.
     assert re.search(r'<section id="control"[^>]*>\s*<ol id="gb"', HTML), "진행 막대가 조작판 맨 위"
-    assert HTML.index('id="control"') < HTML.index('id="work"')
     assert "function renderControl" in JS and "renderControl(" in JS.split("function renderControl")[0]
-    panel = re.search(r"function renderControl[\s\S]*?\n}\n", JS).group(0)
+    panel = re.search(r"function stageCard[\s\S]*?\n}\n", JS).group(0)
     for act in ("approve", "run", "skip", "abort-stage"):
         assert f'data-act="{act}"' in panel, act
-    assert "cmdsHtml(cur, mine, can, true)" in panel, "수동 확인 버튼도 조작판에"
+    assert "cmdsHtml(cur, mine, can, true)" in panel, "수동 확인 버튼도 카드에"
+
+
+def test_the_control_panel_sits_under_the_robot_state_panel():
+    # 09.23 사용자: "robot stat 창 아래에 / 드라이버 창, vision 창 / 오른팔, 왼팔 / 오른손, 왼손"
+    assert HTML.index('id="work"') < HTML.index('id="control"'), "조작판은 작업 영역 안에"
+    assert HTML.index('class="panel robot-panel"') < HTML.index('id="control"')
+    assert HTML.index('id="control"') < HTML.index('id="all-stages"')
+    assert 'id="lanes"' in HTML and 'id="hands"' in HTML
+
+
+def test_each_lane_is_its_own_window_and_hand_windows_are_service_buttons():
+    # 09.23 사용자: "따로 분리되어 있는 시스템이 순서대로 하는게 이상함" · "손 창은 서비스 버튼 모음"
+    ctrl = re.search(r"function renderControl[\s\S]*?\n}\n", JS).group(0)
+    assert 'put("lanes", lanes.map(' in ctrl and 'put("hands"' in ctrl
+    lane = re.search(r"function laneHtml[\s\S]*?\n}\n", JS).group(0)
+    assert "lane.next" in lane and "s.runners[lane.id]" in lane           # 창마다 제 러너를 본다
+    hand = re.search(r"function handPanel[\s\S]*?\n}\n", JS).group(0)
+    assert 'q.where === "hand"' in hand and "s.pd_sides" in hand          # 어느 pd 가 떠 있는지 말한다
+    assert re.search(r"\.lanes \{[^}]*grid-template-columns: repeat\(2", CSS)
+
+
+def test_a_stage_that_stops_another_lane_says_so():
+    # pd 노드 이름이 하나뿐이라 왼팔 pd 를 띄우면 오른팔 pd 가 내려간다 — 창을 나눴으면 반드시 말해야 한다.
+    card = re.search(r"function stageCard[\s\S]*?\n}\n", JS).group(0)
+    assert "stops_lanes" in card and "laneTitle(" in card
 
 
 def test_restart_is_offered_only_when_the_stage_has_live_units_and_it_says_what_it_kills():
     # 09.23 실기: 다시 실행하면 살아 있는 유닛을 "kept" 로 넘겨 망가진 드라이버가 그대로 남았다.
-    panel = re.search(r"function renderControl[\s\S]*?\n}\n", JS).group(0)
+    panel = re.search(r"function stageCard[\s\S]*?\n}\n", JS).group(0)
     assert re.search(r'if \(liveUnits\(cur\.id\)\.length\) actions \+= `<button[^`]*data-act="restart"', panel)
     act = re.search(r"async restart\(id\) \{[\s\S]*?\n  \},", JS).group(0)
     assert "confirm(" in act and "liveUnits(id)" in act                    # 무엇을 내리는지 보여주고 묻는다
@@ -327,6 +351,10 @@ def test_the_side_column_shows_robot_joints_instead_of_processes_and_events():
     # 09.23 사용자: "프로세스 창은 굳이 없어도 될 것 같고. 사건도. 이미 연결 창에서 로그로 다 보이잖아."
     assert 'id="robot"' in HTML and "로봇 상태" in HTML
     assert 'id="procs"' not in HTML and 'id="events"' not in HTML
+    # 09.23 사용자: "타이밍 아래에 나와야 전체가 보이는데" — 옆 칸이 아니라 전체 폭 한 줄
+    assert 'class="col col-side"' not in HTML
+    assert re.search(r'<section class="panel robot-panel">', HTML)
+    assert re.search(r"\.robot-panel\s*\{[^}]*grid-column:\s*1 / -1", CSS)
     assert "renderProcs" not in JS and "renderEvents" not in JS
     body = re.search(r"function renderRobot[\s\S]*?\n}\n", JS).group(0)
     for field in ("groups", "channels", "stale"):
@@ -345,6 +373,9 @@ def test_the_panel_is_left_table_art_right_table_and_uses_the_generated_svgs():
         assert (WEB / f"{stem}.svg").exists() and (WEB / f"{stem}.png").exists(), stem   # 실루엣 + 음영 렌더
     # 09.23 사용자 "렌더에 실루엣과 같이 되면 좋을 것 같음" — PNG 위에 SVG 를 겹친다(같은 투영·같은 창)
     assert re.search(r'<img src="\$\{ROBOT_ART\[key\]\}\.png"', JS)
+    # 정적 파일은 /static/ 아래로만 나간다(server.py `_static`) — 상대 경로는 404 였다(09.23 화면에 그림이 안 떴다)
+    assert re.search(r'ROBOT_ART = \{[^}]*"/static/robot_arms"', JS)
+    assert all(f'"/static/{stem}"' in JS for stem in ("robot_arms", "robot_hand_right", "robot_hand_left"))
     assert re.search(r"\.rart svg\s*\{[^}]*position:\s*absolute", CSS)
     assert re.search(r"\.rart svg polygon\s*\{[^}]*fill:\s*none", CSS)               # 상태 없는 링크는 렌더가 보인다
     # 관절 id → 링크 id 로 바꿔 색칠한다(r_hj_index_2 → r_hl_index_2)

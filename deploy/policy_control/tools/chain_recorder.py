@@ -90,7 +90,9 @@ def main() -> int:
     node.create_subscription(Float64MultiArray, "/policy_control/obs", on_obs, 100)
     node.create_subscription(Float64MultiArray, "/policy_control/action", on_act, 100)
     node.create_subscription(JointState, "/policy_control/joint_target", on_tgt, 100)
-    node.create_subscription(JointState, "/policy_control/pd/applied", on_app, 100)
+    # applied 는 팔마다 따로다(09.23) — 기록은 양쪽을 다 받는다(이름이 안 겹친다).
+    for _s in ("right", "left"):
+        node.create_subscription(JointState, f"/policy_control/pd_{_s}/applied", on_app, 100)
     node.create_subscription(JointState, "/joint_states", on_js, qos_profile_sensor_data)
     t0 = time.time()
     while time.time() - t0 < args.seconds:

@@ -31,14 +31,16 @@ class SupervisorError(RuntimeError):
 CHILD_DIED = "process has died"
 #: spawner 가 **이미 떠 있는** 컨트롤러에 다시 붙다가 죽을 때의 근거 문구(09.23 실기 DG-5F).
 #: 이 죽음은 하드웨어가 정상이라는 뜻이다 — 실패로 보면 멀쩡한 드라이버를 다시 띄우게 된다.
-SPAWNER_OK_REASONS = ("already loaded", "can not be configured from 'active' state")
+SPAWNER_OK_REASONS = ("already loaded", "can not be configured from 'active' state", "is not inactive")
 _SPAWNER_CMD = re.compile(r"controller_manager/spawner ([^']*?) -c ")
 
 
 def benign_spawner_death(line: str, log_lines: Sequence[str]) -> bool:
-    """죽은 spawner 가 맡은 컨트롤러가 이미 로드·active 여서 난 죽음인가. 순수.
+    """죽은 spawner 가 맡은 컨트롤러가 **이미 떠 있어서** 난 죽음인가. 순수.
 
-    죽음 줄의 cmd 에서 컨트롤러 이름을 뽑아, 같은 로그의 `[spawner_<이름>]` 줄에서 근거를 찾는다.
+    죽음 줄의 cmd 에서 컨트롤러 이름을 뽑아, 같은 로그에서 그 이름과 함께 나온 근거 줄을 찾는다.
+    근거는 spawner 가 낼 수도(`[spawner_<이름>] … already loaded`) 컨트롤러 매니저가 낼 수도 있다
+    (`Controller with name '<이름>' is not inactive` — 09.23 실기 두 번째 변형).
     이름을 하나라도 확인하지 못하면 진짜 죽음으로 본다(보수적)."""
     m = _SPAWNER_CMD.search(line)
     if m is None:
@@ -46,8 +48,8 @@ def benign_spawner_death(line: str, log_lines: Sequence[str]) -> bool:
     names = [n for n in m.group(1).split() if not n.startswith("-")]
     if not names:
         return False
-    return all(any(f"spawner_{n}" in ln and any(r in ln for r in SPAWNER_OK_REASONS) for ln in log_lines)
-               for n in names)
+    return all(any((f"spawner_{n}" in ln or f"'{n}'" in ln) and any(r in ln for r in SPAWNER_OK_REASONS)
+                   for ln in log_lines) for n in names)
 
 
 def launch_target(argv) -> str | None:
@@ -72,6 +74,41 @@ def foreign_launches(target: str, procs, own_pgids) -> list[tuple[int, str]]:
         if "launch" in words and any(os.path.basename(w) == target for w in words):
             out.append((pid, cmd[:160]))
     return out
+
+
+#: 콘솔의 launch 들이 띄우는 노드 — 이 이름이 **고아**(ppid 1)로 남아 있으면 지난 run 의 찌꺼기다.
+#: 09.23 실기: 콘솔이 비정상 종료될 때마다 손 드라이버 노드가 남아 Modbus 세션을 쥐었고(왼손 12개),
+#: 새 드라이버가 "Connect Failed" 를 냈다. `stop()` 은 콘솔이 살아 있을 때만 돈다.
+ORPHAN_NODES = ("controller_manager/ros2_control_node", "controller_manager/spawner",
+                "robot_state_publisher/robot_state_publisher", "policy_control/pd_node",
+                "joint_state_publisher", "delto_hardware_interface")
+
+
+def orphan_nodes(procs, own_pgids) -> list[tuple[int, str]]:
+    """지난 run 이 남긴 고아 ROS 노드 (pid, cmdline). 순수 — `procs` 는 (pid, pgid, cmdline, ppid) 들.
+
+    부모가 죽어 init 이 거둔 것(ppid 1)만 센다. 콘솔이 지금 띄운 것(own_pgids)은 건드리지 않는다."""
+    out = []
+    for pid, pgid, cmd, ppid in procs:
+        if pgid in own_pgids or ppid != 1 or not cmd:
+            continue
+        if any(n in cmd for n in ORPHAN_NODES):
+            out.append((pid, cmd))
+    return sorted(out)
+
+
+def scan_processes_full():
+    """/proc 에서 (pid, pgid, cmdline, ppid). 고아 판정에 ppid 가 필요하다."""
+    for d in Path("/proc").iterdir():
+        if not d.name.isdigit():
+            continue
+        try:
+            cmd = (d / "cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace").strip()
+            pid = int(d.name)
+            ppid = int((d / "status").read_text().split("PPid:")[1].split()[0])
+            yield pid, os.getpgid(pid), cmd, ppid
+        except (OSError, ProcessLookupError, IndexError, ValueError):
+            continue
 
 
 def scan_processes():

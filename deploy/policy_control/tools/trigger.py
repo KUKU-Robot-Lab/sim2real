@@ -28,8 +28,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from episode_ctl import parse_trigger  # noqa: E402
 
 NS = "/policy_control"
-SERVICES = ("pd/engage", "pd/goto_home", "pd/release",
-            "episode/reset", "episode/start", "episode/stop", "episode/abort")
+#: pd 는 팔마다 서비스가 따로다 — `pd/engage --side right` → `/policy_control/pd_right/engage` (09.23).
+PD_SERVICES = ("pd/engage", "pd/goto_home", "pd/release", "pd/hand_home", "pd/hand_rest", "pd/hand_path")
+SERVICES = PD_SERVICES + ("episode/reset", "episode/start", "episode/stop", "episode/abort")
 #: 로봇을 **덜** 움직이게 하는 쪽 — 승인 없이 언제든 불러도 되는 것들.
 DESCENDING = ("episode/stop", "episode/abort", "pd/release")
 
@@ -41,7 +42,44 @@ def domain_refusal(env: Mapping[str, str], allow_zero: bool) -> str | None:
     return None
 
 
-def call(service: str, *, expect_pd: Sequence[str], service_timeout: float, phase_timeout: float) -> tuple[bool, list[str]]:
+def read_pd(timeout: float, side: str) -> str:
+    """`status/pd` 의 phase 한 줄. **구독만 한다** — 아무 서비스도 부르지 않고 아무것도 발행하지 않는다.
+
+    09.23: 이미 잡고 있는 pd 에 engage 를 부르면 거부된다(`phase TRACKING is not IDLE`). 부르기 전에
+    상태를 볼 수단이 없어서 도구들이 거부를 실패로 다뤘다.
+    """
+    import rclpy  # noqa: PLC0415
+    from std_msgs.msg import String
+
+    rclpy.init()
+    node = rclpy.create_node(f"policy_control_pd_probe_{side}")
+    pd: dict = {}
+
+    def on_pd(msg: String) -> None:
+        try:
+            pd.update(json.loads(msg.data))
+        except ValueError:
+            pass
+
+    node.create_subscription(String, f"{NS}/status/pd_{side}", on_pd, 10)
+    try:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline and "phase" not in pd:
+            rclpy.spin_once(node, timeout_sec=0.1)
+        return str(pd.get("phase", ""))
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+
+def resolve(service: str, side: str) -> str:
+    """사용자가 적는 이름 → 실제 서비스 경로. pd 는 쪽이 붙는다."""
+    if service in PD_SERVICES:
+        return f"{NS}/pd_{side}/{service.split('/', 1)[1]}"
+    return f"{NS}/{service}"
+
+
+def call(service: str, *, side: str, expect_pd: Sequence[str], service_timeout: float, phase_timeout: float) -> tuple[bool, list[str]]:
     import rclpy  # noqa: PLC0415
     from std_msgs.msg import String
     from std_srvs.srv import Trigger
@@ -56,18 +94,19 @@ def call(service: str, *, expect_pd: Sequence[str], service_timeout: float, phas
         except ValueError:
             pass
 
-    node.create_subscription(String, f"{NS}/status/pd", on_pd, 10)
+    node.create_subscription(String, f"{NS}/status/pd_{side}", on_pd, 10)
     try:
-        client = node.create_client(Trigger, f"{NS}/{service}")
+        path = resolve(service, side)
+        client = node.create_client(Trigger, path)
         if not client.wait_for_service(timeout_sec=service_timeout):
-            return False, [f"service {NS}/{service} unavailable ({service_timeout:.0f}s)"]
+            return False, [f"service {path} unavailable ({service_timeout:.0f}s)"]
         future = client.call_async(Trigger.Request())
         # goto_home 같은 서비스는 램프가 끝나야 응답한다 — 응답 자체를 phase 타임아웃만큼 기다린다.
         rclpy.spin_until_future_complete(node, future, timeout_sec=max(service_timeout, phase_timeout))
         if not future.done() or future.result() is None:
-            return False, [f"service {NS}/{service} timeout"]
+            return False, [f"service {path} timeout"]
         resp = future.result()
-        print(f"  ← {NS}/{service}: success={resp.success} message={resp.message}", flush=True)
+        print(f"  ← {path}: success={resp.success} message={resp.message}", flush=True)
         ok, reasons = parse_trigger(resp.success, resp.message)
         if not ok or not expect_pd:
             return ok, reasons
@@ -85,7 +124,12 @@ def call(service: str, *, expect_pd: Sequence[str], service_timeout: float, phas
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
-    ap.add_argument("service", choices=SERVICES)
+    ap.add_argument("service", nargs="?", choices=SERVICES,
+                    help="--read-pd 만 쓸 때는 생략한다")
+    ap.add_argument("--read-pd", action="store_true",
+                    help="pd phase 한 줄을 찍고 끝낸다 — 구독 전용이라 --execute 가 필요 없다")
+    ap.add_argument("--side", choices=("right", "left"), default="right",
+                    help="pd 서비스·status 는 팔마다 따로다 — 어느 팔인가")
     ap.add_argument("--expect-pd", nargs="*", default=[], help="호출 뒤 기다릴 pd phase (여러 개면 그중 하나)")
     ap.add_argument("--execute", action="store_true", help="★실제로 서비스를 부른다")
     ap.add_argument("--allow-domain-0", action="store_true")
@@ -93,7 +137,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--phase-timeout", type=float, default=90.0)
     args = ap.parse_args(argv)
 
-    print(f"trigger {NS}/{args.service} · 기대 pd {args.expect_pd or '-'} · execute {args.execute}", flush=True)
+    if args.read_pd:
+        refusal = domain_refusal(os.environ, args.allow_domain_0)
+        if refusal:
+            print(f"  ✗ {refusal}", file=sys.stderr)
+            return 2
+        print(read_pd(args.service_timeout, args.side))
+        return 0
+    if not args.service:
+        ap.error("service 가 필요하다 (또는 --read-pd)")
+    print(f"trigger {resolve(args.service, args.side)} · 기대 pd {args.expect_pd or '-'} · execute {args.execute}", flush=True)
     if not args.execute:
         print("DRY RUN — 아무 서비스도 부르지 않았다.")
         return 0
@@ -101,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     if refusal:
         print(f"  ✗ {refusal}")
         return 2
-    ok, reasons = call(args.service, expect_pd=args.expect_pd,
+    ok, reasons = call(args.service, side=args.side, expect_pd=args.expect_pd,
                        service_timeout=args.service_timeout, phase_timeout=args.phase_timeout)
     for r in reasons:
         print(f"  {'·' if ok else '✗'} {r}")

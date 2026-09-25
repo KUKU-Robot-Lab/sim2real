@@ -22,8 +22,17 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SAMPLE = HERE / "sample_joints.py"
 STAGE_TIMEOUT_S = 900.0          # preflight(pytest 전부) 가 5 분 남짓
+#: 다른 단계와 **양자택일**이라 한 번에 걷지 않는 단계 — 비상 복귀(reset_*)는 정상 복귀(return_*)의 대체 경로다.
+#: 둘 다 밟으면 reset 이 pd 를 풀고 차렷까지 내린 뒤 return 이 "홈에서 정착"을 하려 해서 거부된다(09.23 fake).
+#: 비상 복귀 자체는 test_pc_reset_to_rest 가 따로 잠근다.
+EXCLUSIVE = ("reset_right", "reset_left")
 ARM_TOL = 0.02                   # rad — pd 정착 허용(settle.tol 과 같은 자리수)
-HAND_TOL = 0.05                  # rad — 손 속도 제한 램프가 끝났는가
+#: rad — 손 속도 제한 램프가 끝났는가. pd 가 **일부러** 한계 안쪽 HAND_LIMIT_MARGIN 으로 물려 지령하므로
+#: (09.23 실기: 계약 홈이 굽힘 관절 하한 0.0 그 자체라 손가락이 꺾이고 드라이버가 error 423 을 냈다)
+#: 계약 홈과는 그 여유만큼 **어긋나 서는 것이 정상**이다. 그래서 허용은 그 여유보다 커야 한다.
+HAND_TOL = 0.08
+#: 팔만 움직인 직후 "손은 아직 그대로"를 판정하는 문턱 — 이쪽은 여유와 무관하게 크게 본다.
+HAND_MOVED_TOL = 0.3
 
 
 @dataclass
@@ -78,7 +87,7 @@ def check_hand_not_home(report: Report, domain: int, side: str, tgt: dict, when:
     """팔만 움직인 직후 — 손은 아직 초기 손 자세가 아니어야 한다(0 에서 시작한 fake 손 · pd home_hand: keep)."""
     q = sample(domain)
     err, what = worst(q, tgt[side]["hand"])
-    report.add(f"{when}: {side} 손은 아직 움직이지 않았다(팔 먼저)", err >= HAND_TOL, f"초기 손 자세와의 차 {err:.3f} · {what}")
+    report.add(f"{when}: {side} 손은 아직 움직이지 않았다(팔 먼저)", err >= HAND_MOVED_TOL, f"초기 손 자세와의 차 {err:.3f} · {what}")
 
 
 def run(args) -> int:
@@ -95,33 +104,41 @@ def run(args) -> int:
     skip = set(args.skip) | ({"viewer"} if not args.with_viewer else set())
     if "sensors" in skip:                            # 켠 적이 없으면 끌 것도 없다(런처 구독자 0 → rc 1)
         skip.add("sensors_off")
-    print(f"[fake-e2e] {args.profile} · 도메인 {domain} · run {s.run_id} · 건너뜀 {sorted(skip)}", flush=True)
+    print(f"[fake-e2e] {args.profile} · 도메인 {domain} · run {s.run_id} · 건너뜀 {sorted(skip)} · "
+          f"지나침 {sorted(EXCLUSIVE)}", flush=True)
     try:
-        while s.state.status != "DONE":
-            stage = s.state.stage
+        # 미션 차례대로 하나씩 — 창(lane)이 있으면 동시에도 되지만, e2e 는 **모든 단계를 한 번씩** 밟는 것이 일이다.
+        # yaml 순서는 선행(needs)을 이미 만족한다(mission_core 가 뒤 단계를 선행으로 두는 것을 막는다).
+        for stage in [x.id for x in s.mission.stages]:
+            if stage in EXCLUSIVE:
+                # 지나친다 — **건너뛰기가 아니다**. 건너뛰기는 pd 가 팔을 잡고 있으면 거부되고(정당하다),
+                # 완료로도 적힌다. 대체 경로는 걷지 않았을 뿐 끝낸 것이 아니다.
+                print(f"» {stage} 지나침 (대체 경로 — {stage.replace('reset_', 'return_')} 를 걷는다)", flush=True)
+                continue
             if stage in skip:
                 con.skip_stage(stage, operator="fake-e2e")
                 print(f"» {stage} 건너뜀", flush=True)
                 continue
             print(f"▶ {stage}", flush=True)
             con.run_stage(stage, operator="fake-e2e")
+            runner = con._runner_of(s, stage)
             acked: set[int] = set()
             t0 = time.monotonic()
-            while s.runner is not None and s.runner.active:
-                for st in s.runner.view()["steps"]:
+            while runner is not None and runner.active:
+                for st in runner.view()["steps"]:
                     if st["status"] == "waiting" and st["index"] not in acked:
                         before_ack(report, domain, stage, st, tgt)
-                        con.ack(st["index"], True)
+                        con.ack(st["index"], True, stage_id=stage)
                         acked.add(st["index"])
                 if time.monotonic() - t0 > STAGE_TIMEOUT_S:
-                    con.abort_stage()
+                    con.abort_stage(stage)
                     report.add(f"{stage} 시간 초과", False)
                     break
                 time.sleep(0.2)
-            outcome = s.runner.outcome if s.runner else None
+            outcome = runner.outcome if runner else None
             report.add(f"{stage} 완료", outcome == "DONE", "" if outcome == "DONE" else f"{outcome}: {s.state.note}")
             if outcome != "DONE":
-                for st in s.runner.view()["steps"]:
+                for st in runner.view()["steps"]:
                     if st["status"] in ("failed", "aborted") and st["kind"] not in ("manual", "stop"):
                         try:                          # 기동 전에 막힌 단계(콘솔 밖 런치 감지 등)는 로그가 없다
                             print(con.log_tail(st["key"])[-1500:], flush=True)

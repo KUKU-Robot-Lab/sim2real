@@ -301,7 +301,17 @@ button:focus-visible, .sw:focus-visible, summary:focus-visible, a:focus-visible,
 .panel-head #dg-reset { margin-left: 8px; }
 
 /* 조작판 — 지금 할 단계 하나. 승인 · 실행 · 수동 확인 · 건너뛰기는 여기서만 */
-.control { margin: 12px 18px 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); scroll-margin-top: 12px; }
+.control { grid-column: 1 / -1; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); scroll-margin-top: 12px; }
+/* 창 — 따로 도는 장치 하나에 칸 하나. 드라이버|비전 / 오른팔|왼팔 / 오른손|왼손 (09.23 사용자) */
+.lanes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 10px; }
+.lanes + .lanes { padding-top: 0; }
+.lane { background: var(--panel-2); display: flex; flex-direction: column; }
+.lane .cp-chips { padding: 8px 12px 0; margin-top: 0; }
+.lane .cp-head, .lane .cp-desc, .lane .cp-note, .lane .reasons, .lane .cmds, .lane .actions { margin-left: 12px; margin-right: 12px; }
+.lane .actions { margin-bottom: 12px; }
+.lane-busy { outline: 1px solid var(--live); }
+.lane-off { opacity: .72; }
+@media (max-width: 1180px) { .lanes { grid-template-columns: 1fr; } }
 .control.flash { animation: stage-flash 1.6s ease-out 1; }
 .gb { list-style: none; margin: 0; padding: 8px 10px; display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); }
 .gb-step { display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 6px; border-radius: 999px; color: var(--dim); font-size: 12.5px; border: 1px solid transparent; }
@@ -337,14 +347,16 @@ button:focus-visible, .sw:focus-visible, summary:focus-visible, a:focus-visible,
 .badge.now { cursor: pointer; border-color: var(--live); color: var(--live); background: none; font: inherit; font-size: 11px; }
 
 /* 로봇 상태 — 09.23. 왼쪽 표 · 가운데 자산 실루엣 · 오른쪽 표. 색은 서버가 준 state 하나로만 정한다. */
-.rgrid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.1fr) minmax(0,1fr); gap: 8px; padding: 8px; align-items: start; }
+.robot-panel { grid-column: 1 / -1; }
+.rgrid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.2fr) minmax(0,1fr); gap: 10px; padding: 10px; align-items: start; }
 .rgrid .jpanel { margin: 0; background: var(--panel-2); }
 .rgrid .jpanel .panel-head { padding: 6px 10px; }
 .rgrid .jpanel .panel-head h2 { font-size: 12px; }
 .rart { display: flex; justify-content: center; align-items: flex-start; padding: 4px; }
-.rart .stack { position: relative; display: block; max-height: 260px; }
-.rart img { display: block; width: 100%; height: auto; max-height: 260px; }
+.rart .stack { position: relative; display: block; }
+.rart img { display: block; width: 100%; height: auto; max-height: 330px; }
 .rart svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+@media (max-width: 1180px) { .rgrid { grid-template-columns: 1fr; } }
 .rart.rhands { gap: 10px; }
 .rart.rhands figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 1 1 0; min-width: 0; }
 .rart.rhands figcaption { font-size: 11px; color: var(--mute); }

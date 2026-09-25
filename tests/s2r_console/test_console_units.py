@@ -15,20 +15,22 @@ from s2r_console.units import PD_UNKNOWN, UnitCmd, off_reasons, on_reasons, pd_p
 
 BG = UnitCmd(key="up#0", stage="up", index=0, note="오래 사는 것", argv=("sleep", "30"), kind="background",
              touches_real=False, needs=("check",))
+#: 실기를 건드린다고 미션이 선언한 단위 — pd 가 잡고 있으면 끌 수 없다(09.23 부터 이 구분이 생겼다)
+REAL_BG = UnitCmd(**{**BG.__dict__, "touches_real": True})
 
 
 # ── 켜기 규칙 ───────────────────────────────────────────────────────────
 def test_a_background_unit_whose_needs_are_done_may_be_switched_on():
-    assert on_reasons(BG, alive=False, busy_stage=None, completed={"check"}) == []
+    assert on_reasons(BG, alive=False, busy_stages=(), completed={"check"}) == []
 
 
 @pytest.mark.parametrize(("unit", "kw", "needle"), [
-    (BG, dict(alive=True, busy_stage=None, completed={"check"}), "이미"),
-    (BG, dict(alive=False, busy_stage="up", completed={"check"}), "실행 중"),          # 제 단계의 러너가 같은 키를 띄우는 중일 수 있다
-    (BG, dict(alive=False, busy_stage=None, completed=set()), "check"),
-    (UnitCmd(**{**BG.__dict__, "kind": "manual"}), dict(alive=False, busy_stage=None, completed={"check"}), "수동"),
-    (UnitCmd(**{**BG.__dict__, "kind": "foreground"}), dict(alive=False, busy_stage=None, completed={"check"}), "배경"),
-    (UnitCmd(**{**BG.__dict__, "touches_real": True}), dict(alive=False, busy_stage=None, completed={"check"}), "승인"),
+    (BG, dict(alive=True, busy_stages=(), completed={"check"}), "이미"),
+    (BG, dict(alive=False, busy_stages=("up",), completed={"check"}), "실행 중"),          # 제 단계의 러너가 같은 키를 띄우는 중일 수 있다
+    (BG, dict(alive=False, busy_stages=(), completed=set()), "check"),
+    (UnitCmd(**{**BG.__dict__, "kind": "manual"}), dict(alive=False, busy_stages=(), completed={"check"}), "수동"),
+    (UnitCmd(**{**BG.__dict__, "kind": "foreground"}), dict(alive=False, busy_stages=(), completed={"check"}), "배경"),
+    (UnitCmd(**{**BG.__dict__, "touches_real": True}), dict(alive=False, busy_stages=(), completed={"check"}), "승인"),
 ])
 def test_switching_on_is_refused_with_a_reason(unit, kw, needle):
     reasons = on_reasons(unit, **kw)
@@ -37,18 +39,19 @@ def test_switching_on_is_refused_with_a_reason(unit, kw, needle):
 
 # ── 끄기 규칙 ───────────────────────────────────────────────────────────
 def test_a_live_unit_may_be_switched_off_while_pd_is_idle():
-    assert off_reasons(BG, alive=True, busy_stage=None, pd_phase="IDLE", robot_unit=True, real=True) == []
-    assert off_reasons(BG, alive=True, busy_stage=None, pd_phase=None, robot_unit=True, real=True) == []
+    assert off_reasons(BG, alive=True, busy_stages=(), pd_phase="IDLE", robot_unit=True, real=True) == []
+    assert off_reasons(BG, alive=True, busy_stages=(), pd_phase=None, robot_unit=True, real=True) == []
 
 
-@pytest.mark.parametrize(("kw", "needle"), [
-    (dict(alive=False, busy_stage=None, pd_phase="IDLE", robot_unit=False, real=False), "떠 있지"),
-    (dict(alive=True, busy_stage="up", pd_phase="IDLE", robot_unit=False, real=False), "실행 중"),
-    (dict(alive=True, busy_stage=None, pd_phase="TRACKING", robot_unit=True, real=False), "PD 해제"),   # pd 를 죽이면 팔이 떨어진다
-    (dict(alive=True, busy_stage=None, pd_phase="TRACKING", robot_unit=False, real=True), "PD 해제"),   # 실기는 전부 막는다
+@pytest.mark.parametrize(("unit", "kw", "needle"), [
+    (BG, dict(alive=False, busy_stages=(), pd_phase="IDLE", robot_unit=False, real=False), "떠 있지"),
+    (BG, dict(alive=True, busy_stages=("up",), pd_phase="IDLE", robot_unit=False, real=False), "실행 중"),
+    (BG, dict(alive=True, busy_stages=(), pd_phase="TRACKING", robot_unit=True, real=False), "PD 해제"),
+    # 09.23: 실기라도 **로봇을 건드리는 단위**만 막는다(뷰어처럼 구독만 하는 것은 pd 가 잡고 있어도 끈다)
+    (REAL_BG, dict(alive=True, busy_stages=(), pd_phase="TRACKING", robot_unit=False, real=True), "PD 해제"),
 ])
-def test_switching_off_is_refused_with_a_reason(kw, needle):
-    reasons = off_reasons(BG, **kw)
+def test_switching_off_is_refused_with_a_reason(unit, kw, needle):
+    reasons = off_reasons(unit, **kw)
     assert reasons and any(needle in r for r in reasons)
 
 
@@ -84,27 +87,27 @@ def test_a_pd_that_spoke_and_fell_silent_is_unknown_until_it_is_proven_gone():
 
 
 def test_an_unknown_pd_locks_guarded_units_only():
-    kw = dict(alive=True, busy_stage=None, pd_phase=PD_UNKNOWN)
+    kw = dict(alive=True, busy_stages=(), pd_phase=PD_UNKNOWN)
     assert any("모른다" in r for r in off_reasons(BG, **kw, robot_unit=True, real=False))
-    assert any("모른다" in r for r in off_reasons(BG, **kw, robot_unit=False, real=True))
+    assert any("모른다" in r for r in off_reasons(REAL_BG, **kw, robot_unit=False, real=True))
     assert off_reasons(BG, **kw, robot_unit=False, real=False) == []
 
 
 def test_a_running_stage_locks_guarded_units():
     # 도는 단계가 곧 pd 를 걸 수 있다 — IDLE 스냅샷만 믿고 pd 단위를 끄지 않는다.
-    reasons = off_reasons(BG, alive=True, busy_stage="episode", pd_phase="IDLE", robot_unit=True, real=False)
+    reasons = off_reasons(BG, alive=True, busy_stages=("episode",), pd_phase="IDLE", robot_unit=True, real=False)
     assert any("episode" in r for r in reasons)
 
 
 def test_another_stage_running_does_not_lock_the_switch():
     # episode 단계는 수십 초 돈다. 그동안 입력을 껐다 켤 수 없으면 스위치가 쓸모없다 (09.21 fake 실행에서 막혔다).
-    assert on_reasons(BG, alive=False, busy_stage="episode", completed={"check"}) == []
-    assert off_reasons(BG, alive=True, busy_stage="episode", pd_phase="IDLE", robot_unit=False, real=False) == []
+    assert on_reasons(BG, alive=False, busy_stages=("episode",), completed={"check"}) == []
+    assert off_reasons(BG, alive=True, busy_stages=("episode",), pd_phase="IDLE", robot_unit=False, real=False) == []
 
 
 def test_a_fake_input_may_be_switched_off_while_pd_tracks():
     # 입력이 끊기면 체인이 abort → pd HOLD 로 간다. fake 에서는 그 경로를 일부러 밟아 볼 수 있어야 한다.
-    assert off_reasons(BG, alive=True, busy_stage=None, pd_phase="TRACKING", robot_unit=False, real=False) == []
+    assert off_reasons(BG, alive=True, busy_stages=(), pd_phase="TRACKING", robot_unit=False, real=False) == []
 
 
 # ── 콘솔 흐름 ───────────────────────────────────────────────────────────
@@ -262,7 +265,7 @@ def test_every_pd_unit_is_guarded_when_a_mission_launches_more_than_one():
     units = {k: UnitCmd(key=k, stage=f"pd_load_{k}", index=0, note="", argv=("sleep", "1"), kind="background",
                         touches_real=True, needs=()) for k in ("pd_l", "pd_r")}
     procs = {k: {"key": k, "alive": True, "pid": 1, "rc": None, "age_s": 1.0} for k in units}
-    out = views(units, procs, stopped=(), busy_stage=None, completed=(), pd_phase="TRACKING",
+    out = views(units, procs, stopped=(), busy_stages=(), completed=(), pd_phase="TRACKING",
                 robot_keys={"pd_l", "pd_r"}, real=False)
     assert all(any("PD 해제" in r for r in v["why_off"]) for v in out.values()), out
 
@@ -273,8 +276,8 @@ def test_a_locked_switch_says_what_to_do_in_few_words():
                    kind="background", touches_real=True, needs=("preflight",))
     waiting = UnitCmd(key="sensors#0", stage="sensors", index=0, note="", argv=("python3", "a.py"),
                       kind="background", touches_real=False, needs=("preflight",))
-    (why_real,) = on_reasons(real, alive=False, busy_stage=None, completed=())
-    (why_wait,) = on_reasons(waiting, alive=False, busy_stage=None, completed=())
+    (why_real,) = on_reasons(real, alive=False, busy_stages=(), completed=())
+    (why_wait,) = on_reasons(waiting, alive=False, busy_stages=(), completed=())
     assert "bringup" in why_real and "실행" in why_real and len(why_real) <= 28, why_real
     assert "preflight" in why_wait and len(why_wait) <= 28, why_wait
 
@@ -286,7 +289,7 @@ def test_a_locked_switch_names_the_stage_that_turns_it_on():
                    kind="background", touches_real=True, needs=("preflight",))
     head = UnitCmd(key="sensors#1", stage="sensors", index=1, note="", argv=("python3", "h.py"),
                    kind="background", touches_real=False, needs=("preflight",))
-    kw = dict(stopped=(), busy_stage=None, pd_phase=None, robot_keys=set(), real=True)
+    kw = dict(stopped=(), busy_stages=(), pd_phase=None, robot_keys=set(), real=True)
     v = views({u.key: u for u in (real, head)}, {}, completed=(), **kw)
     assert v["bringup#3"]["goto"] == "bringup"          # 실기 단계의 명령 — 그 단계를 실행해야 켜진다
     assert v["sensors#1"]["goto"] == "preflight"        # 선행 단계가 먼저다
@@ -323,3 +326,15 @@ def test_skipping_is_refused_while_the_arm_may_be_held():
     assert any("실행 중" in r for r in skip_reasons(skippable=True, busy=True, pd_phase=None))
     assert any("TRACKING" in r for r in skip_reasons(skippable=True, busy=False, pd_phase="TRACKING"))
     assert any("모른다" in r for r in skip_reasons(skippable=True, busy=False, pd_phase=PD_UNKNOWN))
+
+
+def test_a_unit_that_does_not_touch_the_robot_can_be_stopped_while_pd_holds():
+    # 09.23 사용자: "isaacsim 이 강제 종료도 안 됨" — 구독만 하는 뷰어를 pd 상태가 막고 있었다.
+    assert off_reasons(BG, alive=True, busy_stages=(), pd_phase="TRACKING",
+                       robot_unit=False, real=True) == []                 # 뷰어처럼 구독만 하는 단위
+    assert off_reasons(BG, alive=True, busy_stages=("home_right",), pd_phase="TRACKING",
+                       robot_unit=False, real=True) == []                 # 다른 단계가 돌아도 끌 수 있다
+    assert off_reasons(REAL_BG, alive=True, busy_stages=(), pd_phase="TRACKING",
+                       robot_unit=False, real=True)                       # 실기를 건드리는 단위는 그대로 막는다
+    assert off_reasons(BG, alive=True, busy_stages=(), pd_phase="TRACKING",
+                       robot_unit=True, real=True)                        # pd 를 띄운 단위도 그대로

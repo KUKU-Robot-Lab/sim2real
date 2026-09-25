@@ -62,3 +62,31 @@ def test_the_trimmed_reset_path_ends_where_we_are_and_starts_at_rest():
     assert np.allclose(cut[0], d["meta_start"])                # 되짚기의 도착점 = 차렷
     assert np.allclose(cut[-1], frames[k])                     # 되짚기의 출발점 = 멈춘 자리
     assert np.abs(np.diff(cut, axis=0)).max() / float(d["meta_step_dt"]) <= 0.2 + 1e-9
+
+
+def test_an_already_engaged_pd_is_not_engaged_again(monkeypatch):
+    """정책을 돌리다 멈춘 자리에서 부르면 pd 는 이미 팔을 잡고 있다 — engage 는 거부된다.
+
+    09.23 fake: fabric 뒤에 reset 을 부르자 'forward effort controller already active ·
+    phase TRACKING is not IDLE' 로 막혔다. 잡고 있는 상태가 곧 우리가 원하는 상태다.
+    """
+    class Out:
+        def __init__(self, text):
+            self.stdout, self.returncode = text, 0
+
+    seen = {}
+
+    def fake_run(argv, **kw):
+        seen["argv"] = argv
+        return Out(seen["phase"])
+
+    monkeypatch.setattr(R.subprocess, "run", fake_run)
+    for phase in R.PD_HOLDING:
+        seen["phase"] = f"{phase}\n"
+        assert R.pd_holds("right") is True, phase
+    for phase in ("IDLE", "", "FAULT"):
+        seen["phase"] = f"{phase}\n"
+        assert R.pd_holds("left") is False, phase
+    assert "--read-pd" in seen["argv"]                    # 구독 전용 — 서비스는 부르지 않는다
+    #: pd status 는 팔마다 따로다(09.23) — 어느 팔을 보는지 말해야 한다
+    assert seen["argv"][seen["argv"].index("--side") + 1] == "left"

@@ -4,12 +4,13 @@
     /joint_states · /dg5f_<side>/joint_states (robot yaml arm/ee) ─▶ 팔별 SourceSet   ├─▶ ArmUnit.tick @ pd_hz (팔마다)
     /policy_control/episode (reset → new_episode, stop/abort → 현재 세트포인트 유지)  │
     /policy_control/estop (Bool, 래치 — 모든 팔)                                     ▼
-    backends.write(cmd) [execute 일 때만 발행] · /policy_control/pd/applied (모든 팔 이어 붙임) · /policy_control/status/pd
-    서비스 std_srvs/Trigger: /policy_control/pd/{engage, goto_home, hand_home, hand_rest, release} — 선택한 팔을 순서대로(우 먼저)
+    backends.write(cmd) [execute 일 때만 발행] · /policy_control/pd_<side>/applied · /policy_control/status/pd_<side>
+    서비스 std_srvs/Trigger: /policy_control/pd_<side>/{engage, goto_home, hand_path, hand_home, hand_rest, release}
+    ★이름은 **팔마다** 갈린다(09.23) — 한 노드가 양팔을 맡아도 부르는 쪽은 언제나 한 팔만 움직인다.
 
 ROS 파라미터 `sides` = 쉼표 목록(기본 '' = robot yaml 과 계약 양쪽에 있는 팔 전부). 한 팔의 HOLD 는 그 팔만 세운다;
-estop/release 는 모든 팔에 건다. status 의 `phase` 는 팔들의 합성(HOLD > RELEASING > RAMPING > TRACKING > IDLE),
-팔별 상세는 `arms.<side>`.
+estop 은 모든 팔에 걸리고, release 서비스는 **부른 팔만** 푼다(SIGINT 경로는 이 노드의 모든 팔).
+status 는 팔마다 따로 나가므로 `phase` 는 그 팔의 phase 이고 `arms` 에는 그 팔 하나만 있다 — 합치는 것은 읽는 쪽 몫이다.
 
 ★execute = ROS 파라미터 `execute` AND pd_*.yaml `execute` — 둘 다 참일 때만 컨트롤러 토픽 발행·
   controller_manager 호출이 생긴다(백엔드·ControllerSwitch 가 각자 잠근다). 아니면 법칙·status·applied 만 돈다.
@@ -36,7 +37,7 @@ if __package__ in (None, ""):          # `python deploy/policy_control/policy_co
     __package__ = "policy_control"
 
 from . import codec  # noqa: E402
-from .chain import ChainError, StageStatus  # noqa: E402
+from .chain import ChainError  # noqa: E402
 from .codec import CodecError  # noqa: E402
 from .contract import load_contract  # noqa: E402
 from .pd_arm import ArmUnit, PdArmError, TickResult, select_sides  # noqa: E402
@@ -47,11 +48,38 @@ from .sources import RobotCfgError, load_profile, load_robot_cfg  # noqa: E402
 
 NS = "/policy_control"
 NODE_NAME = "pd_node"
+#: 이름은 **쪽마다** 갈린다 — 서비스 `/policy_control/pd_<side>/*` · status `/policy_control/status/pd_<side>` ·
+#: 노드 `pd_node_<side>`. 09.23 사용자 결정: "pd 를 구분하는 게 맞을 것 같음. 앞으로도 양팔 또는 한팔 정책들이
+#: 많을 거고 개별 제어를 하는 게 맞을 것 같음". 한 노드가 양팔을 맡아도 이름은 쪽마다 두 벌 등록한다 —
+#: 부르는 쪽은 언제나 쪽을 지정하고, 누가 띄웠는지 몰라도 된다.
 STAGE_NODE = "pd"
+
+
+def pd_ns(side: str) -> str:
+    """그 팔의 서비스·토픽 접두어."""
+    return f"{NS}/pd_{side}"
+
+
+def status_node(side: str) -> str:
+    """그 팔의 status 이름 — 콘솔 프로파일 `status_nodes` 에 이 토큰이 들어간다."""
+    return f"{STAGE_NODE}_{side}"
+
+
+def node_name(sides) -> str:
+    """쪽 하나면 `pd_node_<side>`, 여러 쪽이면 `pd_node` — 같은 이름이 두 번 뜨지 않게."""
+    sides = list(sides)
+    return f"{NODE_NAME}_{sides[0]}" if len(sides) == 1 else NODE_NAME
 PHASE_PRECEDENCE = (Phase.HOLD, Phase.RELEASING, Phase.RAMPING, Phase.TRACKING, Phase.IDLE)
 _MOVING = (Phase.RAMPING, Phase.TRACKING)
 _HANDLED = (CodecError, ChainError, BackendError, RobotCfgError, PdArmError, ValueError, KeyError)
 _NUM_RE = re.compile(r"[-+]?\d+(\.\d+)?")
+
+
+def _bind(fn, units: tuple):
+    """서비스 콜백을 그 팔에 묶는다 — 핸들러는 `units` 만 보고 다른 팔을 건드리지 않는다."""
+    def srv(req, resp):
+        return fn(req, resp, units)
+    return srv
 
 
 class PdNodeError(RuntimeError):
@@ -98,7 +126,11 @@ def trigger_reply(resp, ok: bool, reasons) -> object:
 
 
 def aggregate_phase(phases) -> Phase:
-    """팔들의 phase 합성: HOLD > RELEASING > RAMPING > TRACKING > IDLE (하나라도 서면 HOLD 로 보인다)."""
+    """팔들의 phase 합성: HOLD > RELEASING > RAMPING > TRACKING > IDLE (하나라도 서면 HOLD 로 보인다).
+
+    status 는 09.23 부터 팔마다 따로 낸다 — 합치는 것은 **읽는 쪽** 일이다(화면 배너 하나 등).
+    여기 남겨 두는 이유는 그 규칙이 한 곳에만 적혀 있어야 하기 때문이다.
+    """
     phases = list(phases)
     for p in PHASE_PRECEDENCE:
         if p in phases:
@@ -118,6 +150,7 @@ class PdNode(Node):
     """subscribe → codec.decode → ArmUnit.tick(타이머, 팔마다) → backends.write / codec.encode → publish."""
 
     def __init__(self, *, context=None, parameter_overrides=None) -> None:
+        # 노드 이름은 launch 가 `__node:=` 로 정한다(쪽을 그때 안다). 여기서는 기본 이름으로 뜬다.
         super().__init__(NODE_NAME, context=context, parameter_overrides=parameter_overrides)
         self._declare_params()
         self.cfg = load_pd_config(self._path("pd_config"))
@@ -135,7 +168,7 @@ class PdNode(Node):
         self._lock = threading.Lock()
         self._estop = False
         self._last_error: str | None = None
-        self._last_status: dict = {}
+        self._last_status: dict = {}      # 쪽 -> 마지막 status 본문
         self._wire()
         self.get_logger().info(
             f"pd_node up · sides {self.sides} · execute {self.execute} (param {bool(self.get_parameter('execute').value)}"
@@ -166,8 +199,10 @@ class PdNode(Node):
 
         self.cb_main = MutuallyExclusiveCallbackGroup()
         self.cb_srv = MutuallyExclusiveCallbackGroup()
-        self._pub_applied = self.create_publisher(JointState, f"{NS}/pd/applied", _qos_chain())
-        self._pub_status = self.create_publisher(String, f"{NS}/status/{STAGE_NODE}", _qos_chain())
+        self._pub_applied = {s: self.create_publisher(JointState, f"{pd_ns(s)}/applied", _qos_chain())
+                             for s in self.sides}
+        self._pub_status = {s: self.create_publisher(String, f"{NS}/status/{status_node(s)}", _qos_chain())
+                            for s in self.sides}
         main = self.cb_main
         self.create_subscription(JointState, f"{NS}/joint_target", self._on_target, _qos_chain(), callback_group=main)
         self.create_subscription(String, f"{NS}/episode", self._on_episode, _qos_latched(), callback_group=main)
@@ -180,9 +215,13 @@ class PdNode(Node):
             self.create_subscription(JointState, topic, self._joint_cb(targets), _qos_sensor(), callback_group=main)
         self._wire_temperature(main)
         services = (("engage", self._srv_engage), ("goto_home", self._srv_goto_home), ("hand_home", self._srv_hand_home),
-                    ("hand_rest", self._srv_hand_rest), ("release", self._srv_release))
-        for name, fn in services:
-            self.create_service(Trigger, f"{NS}/pd/{name}", fn, callback_group=self.cb_srv)
+                    ("hand_rest", self._srv_hand_rest), ("hand_path", self._srv_hand_path),
+                    ("release", self._srv_release))
+        #: 쪽마다 한 벌 — 이 노드가 양팔을 맡아도 부르는 쪽은 한 팔만 움직인다.
+        for side, unit in self.units.items():
+            for name, fn in services:
+                self.create_service(Trigger, f"{pd_ns(side)}/{name}", _bind(fn, (unit,)),
+                                    callback_group=self.cb_srv)
         self.create_timer(self.dt, self._on_timer, callback_group=main)
 
     def _wire_temperature(self, group) -> None:
@@ -286,19 +325,18 @@ class PdNode(Node):
         self._publish_status(results, t0)
 
     def _publish_applied(self, results: list) -> None:
-        names, q, qd, tau = [], [], [], []
+        """팔마다 제 토픽으로 — 예전에는 한 토픽에 양팔을 이어 붙였다(09.23 쪽 분리)."""
         for unit, r in results:
             if r.cmd is None:
                 continue
-            names += unit.arm_joints
-            q.append(r.cmd.q), qd.append(r.cmd.qd), tau.append(r.cmd.tau)
+            names = list(unit.arm_joints)
+            q, qd, tau = [r.cmd.q], [r.cmd.qd], [r.cmd.tau]
             if r.hand_written is not None:
                 names += unit.hand_joints
                 q.append(r.hand_written), qd.append(np.zeros(len(r.hand_written))), tau.append(np.zeros(len(r.hand_written)))
-        if not names:
-            return
-        self._pub_applied.publish(codec.encode_joint_state(names, np.concatenate(q), velocity=np.concatenate(qd),
-                                                           effort=np.concatenate(tau), stamp=time.time()))
+            self._pub_applied[unit.side].publish(
+                codec.encode_joint_state(names, np.concatenate(q), velocity=np.concatenate(qd),
+                                         effort=np.concatenate(tau), stamp=time.time()))
 
     def _tag(self, unit: ArmUnit, text: str) -> str:
         return f"{unit.side}: {text}" if len(self.units) > 1 else text
@@ -311,27 +349,31 @@ class PdNode(Node):
         return body
 
     def _publish_status(self, results: list, t0: float, reasons: tuple = ()) -> None:
-        arms = {u.side: self._side_status(u, r) for u, r in results}
-        first = next(iter(arms.values()))
-        phase = aggregate_phase(u.phase for u, _ in results)
-        seqs = [a["seq"] for a in arms.values() if a["seq"] >= 0]
-        body = {
-            "node": STAGE_NODE, "phase": phase.value, "episode": first["episode"], "seq": max(seqs) if seqs else first["seq"],
-            "ok": all(a["ok"] for a in arms.values()) and not reasons,
-            "reasons": [self._tag(u, x) for u, _ in results for x in arms[u.side]["reasons"]] + [r for r in reasons if r],
-            "stage_ms": max(a["proc_ms"] for a in arms.values()), "proc_ms": (time.perf_counter() - t0) * 1e3,
-            "execute": self.execute, "stage_cfg": self.stage_name, "sides": list(arms), "estop": self._estop,
-            "gains": first["gains"], "thermal": {k: v for a in arms.values() for k, v in a["thermal"].items()},
-            "blend": first["blend"], "hold": first["hold"], "target": first["target"], "arms": arms,
-            "last_error": self._last_error, "t_pub_ns": time.time_ns()}
-        self._last_status = body
-        self._pub_status.publish(codec.encode_status(body))
+        """팔마다 status 하나 — `/policy_control/status/pd_<side>`.
+
+        09.23 쪽 분리 전에는 한 토픽에 양팔을 합쳐 냈다. 합치면 "지금 pd 가 무슨 phase 인가"에
+        답이 하나뿐이라, 오른팔이 TRACKING 이고 왼팔이 IDLE 인 상태를 화면이 말할 수 없었다.
+        `arms` 는 그 팔 하나만 담지만 키는 그대로 둔다 — 읽는 쪽 모양이 바뀌지 않는다.
+        """
+        for unit, r in results:
+            body = self._side_status(unit, r)
+            arms = {unit.side: body}
+            self._last_status[unit.side] = out = {
+                "node": status_node(unit.side), "phase": unit.phase.value, "episode": body["episode"],
+                "seq": body["seq"], "ok": bool(body["ok"]) and not reasons,
+                "reasons": list(body["reasons"]) + [x for x in reasons if x],
+                "stage_ms": body["proc_ms"], "proc_ms": (time.perf_counter() - t0) * 1e3,
+                "execute": self.execute, "stage_cfg": self.stage_name, "sides": [unit.side], "estop": self._estop,
+                "gains": body["gains"], "thermal": dict(body["thermal"]),
+                "blend": body["blend"], "hold": body["hold"], "target": body["target"], "arms": arms,
+                "last_error": self._last_error, "t_pub_ns": time.time_ns()}
+            self._pub_status[unit.side].publish(codec.encode_status(out))
 
     # ---------------------------------------------------------------- services
-    def _srv_engage(self, req, resp):
+    def _srv_engage(self, req, resp, units):
         """선택한 팔을 순서대로(우 먼저): 거부 사유 → 손 PID → 컨트롤러 교대 → seed → RAMPING."""
         notes: list[str] = []
-        for unit in self.units.values():
+        for unit in units:
             states = unit.list_controllers()                              # 블로킹 호출은 락 밖에서
             with self._lock:
                 refusals = unit.engage_refusals(states, self._estop, time.monotonic())
@@ -349,35 +391,47 @@ class PdNode(Node):
             notes += [note, self._tag(unit, f"phase {phase}")]
         return trigger_reply(resp, True, notes)
 
-    def _srv_hand_home(self, req, resp):
+    def _srv_hand_home(self, req, resp, units):
         """손을 계약 홈 손 자세로 — 팔이 홈에 도착해 정착한 **뒤에만**. 한 팔이라도 안 되면 아무 팔도 움직이지 않는다.
 
         09.22 실기: goto_home 이 팔과 손을 한꺼번에 보내 차렷에서 손가락이 펴졌다. 순서는 팔 → 손이다
         (pd yaml `home_hand: keep` 이면 goto_home 은 팔만 보낸다).
         """
         with self._lock:
-            refusals = [r for unit in self.units.values() for r in unit.hand_home_refusals()]
+            refusals = [r for unit in units for r in unit.hand_home_refusals()]
             if refusals:
                 return trigger_reply(resp, False, refusals)
-            for unit in self.units.values():
+            for unit in units:
                 unit.start_hand_home()
-        return trigger_reply(resp, True, [self._tag(u, "hand → contract home") for u in self.units.values()])
+        return trigger_reply(resp, True, [self._tag(u, "hand → contract home") for u in units])
 
-    def _srv_hand_rest(self, req, resp):
+    def _srv_hand_path(self, req, resp, units):
+        """손을 **저장 홈 경로가 검사한 자세**(pd yaml hand_path_pose)로 보낸다 — 팔이 움직이기 전에.
+
+        09.23 실기: 손 전원을 껐다 켜자 손가락이 다른 자세로 자리 잡아 경로 시작점 검사가 막았다."""
+        with self._lock:
+            refusals = [r for unit in units for r in unit.hand_path_refusals()]
+            if refusals:
+                return trigger_reply(resp, False, refusals)
+            for unit in units:
+                unit.start_hand_path()
+        return trigger_reply(resp, True, [self._tag(u, "hand → 경로 기준 자세") for u in units])
+
+    def _srv_hand_rest(self, req, resp, units):
         """손을 engage 때 실측 자세로 되돌린다 — 홈 경로를 되짚기 전에(경로는 그 손 자세로 충돌 검사했다, 09.22)."""
         with self._lock:
-            refusals = [r for unit in self.units.values() for r in unit.hand_rest_refusals()]
+            refusals = [r for unit in units for r in unit.hand_rest_refusals()]
             if refusals:
                 return trigger_reply(resp, False, refusals)
-            for unit in self.units.values():
+            for unit in units:
                 unit.start_hand_rest()
-        return trigger_reply(resp, True, [self._tag(u, "hand → engage 때 자세") for u in self.units.values()])
+        return trigger_reply(resp, True, [self._tag(u, "hand → engage 때 자세") for u in units])
 
-    def _srv_goto_home(self, req, resp):
+    def _srv_goto_home(self, req, resp, units):
         """계약 홈으로 0.1 rad/s 램프 + settle — 팔을 순서대로(우 먼저, 양팔 리셋 규약)."""
         notes: list[str] = []
         timeout = float(self.get_parameter("goto_home_timeout_sec").value)
-        for unit in self.units.values():
+        for unit in units:
             retreat = False
             with self._lock:
                 phase = unit.phase
@@ -405,11 +459,11 @@ class PdNode(Node):
                 return trigger_reply(resp, False, notes)
         return trigger_reply(resp, True, notes)
 
-    def _srv_release(self, req, resp):
+    def _srv_release(self, req, resp, units):
         with self._lock:
-            if not any(u.engaged for u in self.units.values()):
+            if not any(u.engaged for u in units):
                 return trigger_reply(resp, True, ["already IDLE — nothing to release"])
-        ok, reasons = self.release_path()
+        ok, reasons = self.release_path(units)
         return trigger_reply(resp, ok, reasons)
 
     def _wait(self, done, timeout: float, what: str, *, hold_units: tuple = ()) -> tuple[bool, list[str]]:
@@ -424,11 +478,14 @@ class PdNode(Node):
             time.sleep(0.02)
         return False, [f"{what}: timeout {timeout:.1f}s"]
 
-    def release_path(self) -> tuple[bool, list[str]]:
-        """모든 engaged 팔: 역블렌드 → RELEASING 0 송출 ×N → IDLE → zero_release → switch → JTC. 서비스와 SIGINT 가 같이 쓴다."""
+    def release_path(self, units=None) -> tuple[bool, list[str]]:
+        """engaged 팔: 역블렌드 → RELEASING 0 송출 ×N → IDLE → zero_release → switch → JTC. 서비스와 SIGINT 가 같이 쓴다.
+
+        `units` 가 없으면 이 노드의 모든 팔 — SIGINT 경로가 그렇게 부른다."""
         now = time.monotonic()
+        pool = tuple(self.units.values()) if units is None else tuple(units)
         with self._lock:
-            active = [u for u in self.units.values() if u.engaged or u.phase is Phase.RELEASING]
+            active = [u for u in pool if u.engaged or u.phase is Phase.RELEASING]
             if not active:
                 return True, ["already IDLE"]
             for u in active:

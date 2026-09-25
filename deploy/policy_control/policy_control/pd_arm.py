@@ -244,6 +244,10 @@ class ArmUnit:
         home_hand = self.side_cfg.home_hand
         self.home_hand = np.array([float(home_hand[j]) for j in self.hand_joints]) \
             if self.hand_joints and all(j in home_hand for j in self.hand_joints) else None
+        #: 저장 홈 경로를 검사한 손 모양(pd yaml `hand_path_pose`) — 팔이 움직이기 전에 여기로 보낸다(09.23)
+        path_pose = (self.cfg.hand_path_pose or {}).get(self.side) or {}
+        self.path_hand = np.array([float(path_pose[j]) for j in self.hand_joints]) \
+            if self.hand_joints and all(j in path_pose for j in self.hand_joints) else None
 
     def _check_gains(self) -> tuple[bool, dict]:
         try:
@@ -567,6 +571,33 @@ class ArmUnit:
         if not all(j in names for j in self.hand_joints):
             return None
         return np.asarray([state.ee_q[names.index(j)] for j in self.hand_joints], dtype=float)
+
+    def hand_path_refusals(self) -> list[str]:
+        """손을 **경로 기준 자세**로 보낼 수 없는 이유 — engage 된 팔에서, 팔이 아직 외부 목표를 따르기 전에.
+
+        09.23 실기: 손 전원을 껐다 켜자 손가락이 다른 자세로 자리 잡아 저장 경로의 시작점 검사가 막았다.
+        경로는 그 손 모양으로 여유를 계산했으므로, 팔이 움직이기 전에 손을 그 모양으로 되돌린다."""
+        if self.path_hand is None:
+            return [f"{self.side}: pd 설정에 hand_path_pose 가 없다"]
+        if self.phase not in _MOVING:
+            return [f"{self.side}: phase {self.phase.value} — engage 된 팔에서만"]
+        return []
+
+    def start_hand_path(self) -> None:
+        """손만 기준 자세로 — 팔은 지금 세트포인트를 그대로 붙든다."""
+        q = self.stage.state.law.q_setpoint.copy()
+        self.hold = Hold(q=q, hand=self.path_hand.copy(), bias=np.zeros(len(q)), settle=False) \
+            if self.hold is None else replace(self.hold, hand=self.path_hand.copy())
+        self.target, self.hand_target = None, None
+
+    def hand_path_reached(self, now: float, tol: float = 0.15) -> tuple[bool, float, str]:
+        """(도착했나, 최대 오차, 최악 관절). `now` 는 소스와 같은 시계(monotonic)."""
+        meas = self._measured_hand(now)
+        if meas is None or self.path_hand is None:
+            return False, float("inf"), "손 상태 없음"
+        err = np.abs(meas - self.path_hand)
+        i = int(np.argmax(err))
+        return bool(err.max() <= tol), float(err.max()), self.hand_joints[i]
 
     def hand_rest_refusals(self) -> list[str]:
         """손을 engage 때 자세로 되돌릴 수 없는 이유 — 팔을 pd 가 내부 목표로 붙들고 있을 때만(episode stop · goto_home 뒤)."""

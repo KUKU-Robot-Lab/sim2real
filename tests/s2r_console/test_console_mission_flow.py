@@ -157,10 +157,10 @@ def _intents(console):
 def test_rewind_is_refused_while_a_stage_runs(flow, tiny_repo):
     from s2r_console.console import ConsoleError
     _run(flow, "up")
-    flow.session.runner = type("R", (), {"active": True, "stage_id": "swap"})()
+    flow.session.runners[""] = type("R", (), {"active": True, "stage_id": "swap"})()
     with pytest.raises(ConsoleError, match="실행 중"):
         flow.rewind("up", operator="pytest")
-    flow.session.runner = None
+    flow.session.runners.pop("")
 
 
 DYING = """

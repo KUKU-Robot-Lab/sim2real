@@ -26,7 +26,7 @@ wait_status() {   # $1 = 기대 status 토픽 수
   echo "[run] status topics: $n"
 }
 trigger() {   # $1 = 서비스 이름 → 응답 출력, 실패면 rc 1
-  out=$(timeout 120 ros2 service call /policy_control/pd/$1 std_srvs/srv/Trigger "{}" 2>&1 | tr -d '\n'); echo "[run] $1: $out"
+  out=$(timeout 120 ros2 service call /policy_control/pd_${SIDE:-right}/$1 std_srvs/srv/Trigger "{}" 2>&1 | tr -d '\n'); echo "[run] $1: $out"
   echo "$out" | grep -q "success=True" ; return $?
 }
 

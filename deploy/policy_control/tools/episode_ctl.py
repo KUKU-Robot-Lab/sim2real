@@ -25,14 +25,30 @@ import time
 from dataclasses import dataclass
 
 NS = "/policy_control"
-PD_STATUS = f"{NS}/status/pd"
+#: pd 는 팔마다 이름이 다르다 — 서비스 `/policy_control/pd_<side>/*` · status `/policy_control/status/pd_<side>`
+#: (09.23 사용자: "pd 를 구분하는 게 맞을 것 같음"). `--side` 가 어느 팔인지 정한다.
+DEFAULT_SIDE = "right"
+
+
+def pd_service(side: str, name: str) -> str:
+    return f"{NS}/pd_{side}/{name}"
+
+
+def pd_status(side: str) -> str:
+    return f"{NS}/status/pd_{side}"
 OBS_STATUS = f"{NS}/status/obs"
 FABRIC_STATUS = f"{NS}/status/fabric"
 DEFAULT_PHASE_TIMEOUT = 30.0
 DEFAULT_SERVICE_TIMEOUT = 5.0
 RESET_RETRY_S = 4.0
-HAND_STAGES = ("pd_hand_home", "pd_hand_rest")
+HAND_STAGES = ("pd_hand_home", "pd_hand_rest", "pd_hand_path")
 HAND_SETTLE_S = 4.0            # 손 목표를 바꾼 뒤 기다리는 시간 — 손 max_vel 램프(최대 1.6 rad 쯤)            # fabric 이 armed 가 안 되면 reset 을 다시 보내는 간격
+
+
+class PD(str):
+    """pd 서비스 **이름**(쪽 없음). 부를 때 `--side` 로 완성한다 — 표에는 쪽을 적지 않는다."""
+
+    __slots__ = ()
 
 
 @dataclass(frozen=True)
@@ -47,19 +63,22 @@ class Stage:
 
 
 STAGES: tuple[Stage, ...] = (
-    Stage("pd_engage", "pd engage (JTC → forward 3종, 토크 블렌드)", f"{NS}/pd/engage",
+    Stage("pd_engage", "pd engage (JTC → forward 3종, 토크 블렌드)", PD("engage"),
           ("RAMPING", "TRACKING"), touches_real=True),
-    Stage("pd_goto_home", "pd goto_home (계약 홈으로 0.1 rad/s 램프 + settle)", f"{NS}/pd/goto_home",
+    Stage("pd_goto_home", "pd goto_home (계약 홈으로 0.1 rad/s 램프 + settle)", PD("goto_home"),
           ("TRACKING",), touches_real=True),
-    Stage("pd_hand_home", "pd hand_home (팔이 홈에 정착한 뒤 손을 계약 홈 손 자세로)", f"{NS}/pd/hand_home",
+    Stage("pd_hand_home", "pd hand_home (팔이 홈에 정착한 뒤 손을 계약 홈 손 자세로)", PD("hand_home"),
           ("TRACKING",), touches_real=True, only=True),
-    Stage("pd_hand_rest", "pd hand_rest (손을 engage 때 자세로 — 홈 경로 되짚기 전)", f"{NS}/pd/hand_rest",
+    Stage("pd_hand_rest", "pd hand_rest (손을 engage 때 자세로 — 홈 경로 되짚기 전)", PD("hand_rest"),
           ("TRACKING",), touches_real=True, only=True),
+    # 09.23 실기: 손 전원을 껐다 켜자 손가락이 다른 자세로 자리 잡아 경로 시작점 검사가 막았다 — 팔보다 먼저 손을 맞춘다.
+    Stage("pd_hand_path", "pd hand_path (손을 저장 홈 경로가 검사한 자세로 — 팔이 움직이기 전)", PD("hand_path"),
+          ("RAMPING", "TRACKING"), touches_real=True, only=True),
     Stage("ep_reset", "episode reset (obs 가 seq 0 준비, 앵커 스냅샷)", f"{NS}/episode/reset", ("TRACKING",)),
     Stage("ep_start", "episode start (정책 루프 시작)", f"{NS}/episode/start", ("TRACKING",), touches_real=True),
     Stage("run", "N 스텝 대기 또는 Ctrl-C (HOLD 면 조기 종료)", None, ()),
     Stage("ep_stop", "episode stop", f"{NS}/episode/stop", ("TRACKING", "HOLD")),
-    Stage("pd_release", "pd release (역블렌드 → 0 송출 → JTC 복귀)", f"{NS}/pd/release", ("IDLE",)),
+    Stage("pd_release", "pd release (역블렌드 → 0 송출 → JTC 복귀)", PD("release"), ("IDLE",)),
 )
 SAFE_TAIL = ("ep_stop", "pd_release")
 
@@ -109,13 +128,14 @@ def phase_ok(status: dict | None, stage: Stage) -> bool:
     return status is not None and status.get("phase") in stage.expect_pd
 
 
-def print_plan(steps: int, approvals: frozenset[str], execute: bool, only: tuple[str, ...] = (), hold_s: float = 0.0) -> None:
-    print(f"episode_ctl 계획 · steps {steps} · execute {execute}" + (f" · only {list(only)}" if only else "")
+def print_plan(steps: int, approvals: frozenset[str], execute: bool, only: tuple[str, ...] = (), hold_s: float = 0.0,
+               side: str = DEFAULT_SIDE) -> None:
+    print(f"episode_ctl 계획 · steps {steps} · side {side} · execute {execute}" + (f" · only {list(only)}" if only else "")
           + (f" · engage 뒤 제자리 {hold_s:g} s" if hold_s else ""))
     for s in selected(only):
         real = "실기" if s.touches_real else "    "
         appr = ("승인" if s.id in approvals else "미승인") if s.touches_real else "  "
-        svc = s.service or "(wait)"
+        svc = service_of(s, side) or "(wait)"
         print(f"  {s.id:13} {real} {appr:4} {svc:32} → pd {list(s.expect_pd) or '-'}  {s.title}")
     if not execute:
         print("\nDRY RUN — 아무 서비스도 부르지 않았다. 실행하려면 --execute 와 --approve <id> (실기 단계 전부)")
@@ -125,19 +145,20 @@ def print_plan(steps: int, approvals: frozenset[str], execute: bool, only: tuple
 class Runner:
     """서비스 호출 + status 대기. rclpy 는 --execute 일 때만 import 된다."""
 
-    def __init__(self, service_timeout: float, phase_timeout: float) -> None:
+    def __init__(self, service_timeout: float, phase_timeout: float, side: str = DEFAULT_SIDE) -> None:
         import rclpy
         from rclpy.node import Node
         from std_msgs.msg import String
 
         rclpy.init()
         self.rclpy = rclpy
-        self.node = Node("episode_ctl")
+        self.node = Node(f"episode_ctl_{side}")
+        self.side = side
         self.service_timeout = service_timeout
         self.phase_timeout = phase_timeout
         self.pd_status: dict | None = None
         self.obs_status: dict | None = None
-        self.node.create_subscription(String, PD_STATUS, self._on_pd, 10)
+        self.node.create_subscription(String, pd_status(side), self._on_pd, 10)
         self.node.create_subscription(String, OBS_STATUS, self._on_obs, 10)
         self.fabric_status: dict | None = None
         self.node.create_subscription(String, FABRIC_STATUS, self._on_fabric, 10)
@@ -255,17 +276,25 @@ def _loads(text: str) -> dict | None:
     return body if isinstance(body, dict) else None
 
 
+def service_of(stage: Stage, side: str) -> str | None:
+    """표의 이름 → 실제 서비스 경로. pd 는 쪽이 붙고, episode 는 그대로다."""
+    if stage.service is None:
+        return None
+    return pd_service(side, str(stage.service)) if isinstance(stage.service, PD) else str(stage.service)
+
+
 def run_stage(runner: Runner, stage: Stage, steps: int) -> bool:
     print(f"\n▶ {stage.id} — {stage.title}")
-    if stage.service is None:
+    service = service_of(stage, runner.side)
+    if service is None:
         return runner.wait_steps(steps)
-    ok, reasons = runner.call(stage.service)
+    ok, reasons = runner.call(service)
     if not ok:
         print(f"    ✗ refused: {reasons}")
         return False
     if reasons:
         print(f"    note: {reasons}")
-    if stage.id == "ep_reset" and not runner.reset_until_armed(stage.service):
+    if stage.id == "ep_reset" and not runner.reset_until_armed(service):
         return False
     if stage.id in HAND_STAGES:                  # 손은 속도 제한 램프로 간다 — 다음 동작 전에 도착할 시간을 준다
         runner.spin_for(HAND_SETTLE_S)
@@ -279,8 +308,9 @@ def safe_tail(runner: Runner, done: set[str], steps: int) -> None:
             run_stage(runner, stage_by_id(sid), steps)
 
 
-def execute(steps: int, service_timeout: float, phase_timeout: float, only: tuple[str, ...] = (), hold_s: float = 0.0) -> int:
-    runner = Runner(service_timeout, phase_timeout)
+def execute(steps: int, service_timeout: float, phase_timeout: float, only: tuple[str, ...] = (), hold_s: float = 0.0,
+            side: str = DEFAULT_SIDE) -> int:
+    runner = Runner(service_timeout, phase_timeout, side)
     done: set[str] = set()
     rc = 0
     try:
@@ -310,6 +340,8 @@ def execute(steps: int, service_timeout: float, phase_timeout: float, only: tupl
 def _parse(argv: list[str] | None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--side", choices=("right", "left"), default=DEFAULT_SIDE,
+                    help="pd 는 팔마다 서비스가 따로다 — 어느 팔을 부를 것인가 (episode 서비스는 쪽이 없다)")
     ap.add_argument("--steps", type=int, default=250, help="run 단계에서 기다릴 obs seq")
     ap.add_argument("--execute", action="store_true", help="★실제로 서비스를 부른다")
     ap.add_argument("--approve", action="append", default=[], help="실기 단계 승인 (반복)")
@@ -339,14 +371,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.hold_s < 0 or (args.hold_s and "pd_engage" not in {s.id for s in selected(only)}):
         print("--hold-s 는 pd_engage 를 부를 때만, 0 이상", file=sys.stderr)
         return 2
-    print_plan(args.steps, approvals, args.execute, only, args.hold_s)
+    print_plan(args.steps, approvals, args.execute, only, args.hold_s, args.side)
     if not args.execute:
         return 0
     missing = missing_approvals(approvals, only)
     if missing:
         print(f"\n✗ 실기 단계 승인이 없다 — --approve {' --approve '.join(missing)}", file=sys.stderr)
         return 3
-    return execute(args.steps, args.service_timeout, args.phase_timeout, only, args.hold_s)
+    return execute(args.steps, args.service_timeout, args.phase_timeout, only, args.hold_s, args.side)
 
 
 if __name__ == "__main__":

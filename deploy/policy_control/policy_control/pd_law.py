@@ -295,6 +295,10 @@ class PdConfig:
     #: "keep": 손은 건드리지 않는다(팔만 이동, 손은 도착 뒤 pd/hand_home 으로 따로). 09.22 실기: 차렷에서 손가락이
     #: 펴져 몸통·판에 닿을 뻔했다 — 실기 제어 설정은 keep.
     home_hand: str = "contract"
+    #: 팔이 움직이기 **전에** 손을 보내 둘 기준 자세 {팔: {관절: rad}} — 저장 홈 경로를 검사한 손 모양이다.
+    #: 09.23 실기: 손 전원을 껐다 켜자 손가락이 다른 자세로 자리 잡아 경로 시작점 검사가 막았다(엄지 0.9 rad 차이).
+    #: 경로 계획(`plan_home_path --hand-start pd`)과 실기(`pd/hand_path`)가 이 한 값을 같이 읽는다.
+    hand_path_pose: Mapping[str, Mapping[str, float]] | None = None
 
 
 HOME_HAND_MODES = ("contract", "keep")
@@ -304,7 +308,7 @@ _SCALARS = {"pd_hz": float, "ramp_speed": float, "watchdog_sec": float, "lead_se
             "release_zero_ticks": int, "blend_sec": float}
 _KEYS = {"side", "execute", "max_vel", "settle", "gravity", "gains", "thermal", "gripper", "hand",
          *_SCALARS}
-_OPTIONAL = {"home_hand"}
+_OPTIONAL = {"home_hand", "hand_path_pose"}
 
 
 def load_pd_config(path: Path) -> PdConfig:
@@ -331,6 +335,7 @@ def _build_config(raw: Mapping) -> PdConfig:
     home_hand = raw.get("home_hand", "contract")
     if home_hand not in HOME_HAND_MODES:
         raise PdConfigError(f"home_hand must be one of {HOME_HAND_MODES}, got {home_hand!r}")
+    path_pose = _hand_path_pose(raw.get("hand_path_pose"))
     scalars = {k: _num(raw[k], k, t) for k, t in _SCALARS.items()}
     for k in _SCALARS:
         if scalars[k] <= 0 and k != "vel_ff_cap":
@@ -342,6 +347,7 @@ def _build_config(raw: Mapping) -> PdConfig:
         gravity=_gravity_block(raw["gravity"]),
         gains=GainsBlock(yaml=_path(raw["gains"]["yaml"]),
                          accept_sim_mismatch=raw["gains"]["accept_sim_mismatch"]),
+        hand_path_pose=path_pose,
         thermal=thermal_rules_from_config(raw["thermal"] or []),
         gripper=None if raw["gripper"] is None else _block(GripperBlock, raw["gripper"], "gripper"),
         hand=None if raw["hand"] is None else _block(HandBlock, raw["hand"], "hand"),
@@ -353,6 +359,20 @@ def _num(value, name: str, kind):
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise PdConfigError(f"{name} must be a number, got {value!r}")
     return kind(value)
+
+
+def _hand_path_pose(raw) -> dict[str, dict[str, float]] | None:
+    """`hand_path_pose: {right: {관절: rad}, left: {…}}` 를 검사해 읽는다. 없으면 None."""
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping) or not raw:
+        raise PdConfigError(f"hand_path_pose: {{팔: {{관절: rad}}}} 여야 한다, got {raw!r}")
+    out: dict[str, dict[str, float]] = {}
+    for side, pose in raw.items():
+        if not isinstance(pose, Mapping) or not pose:
+            raise PdConfigError(f"hand_path_pose.{side}: 관절 매핑이 비었다")
+        out[str(side)] = {str(j): _num(v, f"hand_path_pose.{side}.{j}", float) for j, v in pose.items()}
+    return out
 
 
 def _block(cls, raw: Mapping, name: str):

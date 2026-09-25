@@ -82,7 +82,11 @@ def pd_nodes(cfg: dict) -> list:
                      "execute": execute, "stage": stage, "sides": parse_sides(cfg.get("sides", ""))}]
     if cfg.get("params_file", ""):
         params.append(str(require_file(resolve_path(cfg["params_file"]), "params_file")))
-    return [make_node(PD_NODE, params, use_source=is_true(cfg.get("use_source", "false")))]
+    # 노드 이름은 쪽마다 — 같은 이름을 두 번 띄우면 서비스가 겹친다(09.23 쪽 분리 전에는 미션이
+    # 왼팔 pd 를 띄우기 전에 오른팔 pd 를 내려야 했다).
+    sides = [x for x in params[0]["sides"].split(",") if x]
+    name = f"{PD_NODE}_{sides[0]}" if len(sides) == 1 else PD_NODE
+    return [make_node(PD_NODE, params, use_source=is_true(cfg.get("use_source", "false")), node_name=name)]
 
 
 def _opaque(context):

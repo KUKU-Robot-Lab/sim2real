@@ -219,7 +219,11 @@ def _pd(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
     muted = "" if execute else "pd 가 execute:=false 로 떠 있다 — 구동 토픽을 내지 않는다(무발행)"
     # 같은 팔의 pd 가 무발행 → 발행으로 두 번 뜨는 미션이 있다 — 제목만 보고도 어느 쪽 상자인지 알게 한다
     label = " · ".join([f"{SIDE_KO.get(sd, sd)}팔" for sd in sides] + ([] if execute else ["무발행"]))
-    pd = g.box("pd", f"pd_node · PD 제어 ({label})" if label else "pd_node · PD 제어", L_PD, status="pd", ros=["/pd_node"], unit=key,
+    # 이름은 팔마다 갈린다(09.23) — 한 팔이면 `pd_node_<side>` · status `pd_<side>`.
+    node = f"/pd_node_{sides[0]}" if len(sides) == 1 else "/pd_node"
+    status = f"pd_{sides[0]}" if len(sides) == 1 else "pd"
+    pd = g.box("pd", f"{node.lstrip('/')} · PD 제어 ({label})" if label else f"{node.lstrip('/')} · PD 제어",
+               L_PD, status=status, ros=[node], unit=key,
                stages=["PD 법칙", "컨트롤러 교대", "발행" if execute else "무발행"])
     drives = 0
     for side in sides:

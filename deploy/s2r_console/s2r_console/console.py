@@ -32,6 +32,7 @@ from .lease import Lease
 from .links import chain
 from .profiles import Profile, scan
 from .rosgraph import REPEAT_S as GRAPH_REPEAT_S
+from . import pd_names as PD
 from .runner import SETTLE_S, StageRunner, step_kind
 from .supervisor import Supervisor, SupervisorError, child_env
 from .wiring import generate as generate_diagram
@@ -44,12 +45,21 @@ from mission_stages import commands_for, load_runbook  # noqa: E402
 
 #: 언제나 누를 수 있는 정지 동작. **argv 는 여기 코드에만 있다** — HTTP 로는 이름만 온다.
 #: estop 은 없다: 웹서버→DDS 를 거치는 estop 은 가장 느린 estop 이고, 빨간 버튼은 물리 버튼이어야 한다.
+#: 언제나 되는 서비스 호출 {이름: (라벨, 설명, trigger 인자, 자리)}.
+#: 자리 "stop" = 아래 정지 바 · "hand" = 손 창의 버튼(09.23 사용자: "손 창은 서비스 버튼 모음").
 QUICK = {
-    "episode_stop": ("에피소드 정지", "정책 루프를 멈춘다. pd 는 팔을 잡은 채로 남는다.", ["episode/stop"]),
-    "episode_abort": ("에피소드 중단", "abort 이벤트를 낸다. pd 는 HOLD 로 간다.", ["episode/abort"]),
-    "pd_release": ("PD 해제", "역블렌드로 토크를 내리고 JTC 로 돌려준다 → IDLE.", ["pd/release", "--expect-pd", "IDLE"]),
+    "episode_stop": ("에피소드 정지", "정책 루프를 멈춘다. pd 는 팔을 잡은 채로 남는다.", ["episode/stop"], "stop"),
+    "episode_abort": ("에피소드 중단", "abort 이벤트를 낸다. pd 는 HOLD 로 간다.", ["episode/abort"], "stop"),
+    "pd_release": ("PD 해제", "역블렌드로 토크를 내리고 JTC 로 돌려준다 → IDLE.", ["pd/release", "--expect-pd", "IDLE"], "stop"),
+    "pd_hand_home": ("손 → 정책 자세", "계약의 초기 손 자세로. 팔이 홈에 정착했을 때만 받는다.", ["pd/hand_home"], "hand"),
+    "pd_hand_rest": ("손 → engage 때 자세", "손을 pd 를 걸 때의 실측 자세로 되돌린다.", ["pd/hand_rest"], "hand"),
+    # pd 서비스는 09.23 부터 팔마다 따로다 — 이 이름들은 `--side` 를 붙여 부른다(quick 이 쪽을 받는다).
+    # ★pd/hand_path(주먹)는 버튼으로 두지 않는다 — 그 이동은 손가락이 상판 모서리를 지날 수 있어
+    #   hand_to_path_pose.py 가 **먼저 구간을 충돌 검사한 뒤** 부른다. 버튼은 그 검사를 건너뛴다.
 }
 _TRIGGER = _paths.POLICY_CONTROL / "tools" / "trigger.py"
+#: 여러 팔의 phase 를 한 줄로 합칠 때의 무게 순서 — 하나라도 잡고 있으면 잡고 있는 것.
+_PD_ORDER = (U.PD_UNKNOWN, "HOLD", "RELEASING", "RAMPING", "TRACKING", "IDLE")
 _BRIDGE_RESTART_S = 3.0
 _BRIDGE_RESTART_MAX_S = 30.0
 GRAPH_STALE_S = 3 * GRAPH_REPEAT_S   # 그래프는 REPEAT_S 마다 다시 온다 — 세 번 거르면 못 본 것으로 친다
@@ -78,12 +88,13 @@ class ConsoleError(RuntimeError):
 
 
 
-def _robot_reference(mission, repo: Path) -> tuple[dict, dict]:
-    """(계약의 sides, 관절 한계) — 화면의 로봇 상태 표가 목표·끝점을 표시할 때 쓴다.
+def _robot_reference(mission, repo: Path) -> tuple[dict, dict, dict]:
+    """(계약의 sides, 관절 한계, 원본→canonical 이름표) — 화면의 로봇 상태 표가 쓴다.
 
-    둘 다 없어도 표는 그려진다(목표 없는 실측만). 읽기 실패는 조용히 비운다 — 표시용이다."""
+    없어도 표는 그려진다(목표 없는 실측만). 읽기 실패는 조용히 비운다 — 표시용이다."""
     sides: dict = {}
     limits: dict = {}
+    alias: dict = {}
     rel = (mission.artifacts or {}).get("contract")
     if rel:
         try:
@@ -94,9 +105,10 @@ def _robot_reference(mission, repo: Path) -> tuple[dict, dict]:
         from jtc_bridge_core import load_profile_joints                        # noqa: PLC0415 (scripts/)
         prof = load_profile_joints(_paths.ROBOT_PROFILE)
         limits = {k: (v["lower"], v["upper"]) for k, v in prof.items() if "lower" in v and "upper" in v}
+        alias = {v["source"]: k for k, v in prof.items() if v.get("source")}   # /joint_states 는 원본 이름으로 온다
     except Exception:                                                          # noqa: BLE001 — 표시용이라 막지 않는다
-        limits = {}
-    return sides, limits
+        limits, alias = {}, {}
+    return sides, limits, alias
 
 def mission_units(profile: Profile, *, repo: Path) -> dict[str, U.UnitCmd]:
     """프로파일의 미션이 가진 배경·수동 명령 — 그림의 스위치와 자동 생성의 재료. argv 는 미션 yaml 에서만 온다."""
@@ -224,7 +236,11 @@ class Session:
         self.supervisor = Supervisor(cwd=repo, run_dir=self.run_dir, env=env)
         self.feed = Feed(profile.status_nodes, expect_domain=profile.domain, latency=profile.latency)
         self.feed_lock = threading.Lock()
-        self.runner: StageRunner | None = None
+        #: 창(lane) 마다 러너 하나 — 창이 다르면 동시에 돈다(09.23 사용자: 드라이버 · 비전 · 오른팔 · 왼팔은
+        #: 따로 도는 장치다). 미션이 창을 선언하지 않았으면 창 "" 하나뿐이라 예전처럼 한 번에 하나만 돈다.
+        self.runners: dict[str, StageRunner] = {}
+        #: 창마다 마지막으로 끝난 단계 {창: {stage, outcome, note}} — 창 하나의 실패를 그 창 안에서 말하려면 필요하다.
+        self.lane_last: dict[str, dict] = {}
         self.policy = None if profile.policy_dir is None else registry.check(profile.policy_dir, deep=False)
         self.started = time.time()
         self._dead_seen: set[str] = set()
@@ -236,7 +252,7 @@ class Session:
         #: 운영자가 끈 것 {키: 그때의 pid} — 죽은 것과 구별한다. pid 까지 적어야 그 뒤 다시 뜬 프로세스의 크래시를 가리지 않는다.
         self.units_stopped: dict[str, int | None] = {}
         #: 로봇 상태 표가 쓰는 목표·한계 — 계약과 프로파일에서 한 번만 읽는다(09.23).
-        self.contract_sides, self.joint_limits = _robot_reference(self.mission, repo)
+        self.contract_sides, self.joint_limits, self.joint_alias = _robot_reference(self.mission, repo)
         proc = self.run_dir / "proc"
         probe = probe_argv(profile, self.diagram) if bridge else None
         self.bridge = (_Pipe("bridge", bridge_argv(profile, self.diagram), self.feed.bridge_died, self.feed, self.feed_lock, env,
@@ -252,6 +268,11 @@ class Session:
         for pipe in (self.bridge, self.probe):
             if pipe is not None:
                 pipe.start()
+
+    @property
+    def runner(self) -> StageRunner | None:
+        """창을 선언하지 않은 미션의 러너 하나 — 창이 있으면 `runners` 를 쓸 것."""
+        return self.runners.get("")
 
     def event(self, kind: str, text: str) -> None:
         with self.feed_lock:
@@ -285,8 +306,7 @@ class Console:
         """지금 run 을 끝내면 왜 안 되는가. 비어 있으면 된다."""
         s = self._need()
         out = []
-        if s.runner is not None and s.runner.active:
-            out.append(f"단계 {s.runner.stage_id} 가 실행 중이다")
+        out += [f"단계 {sid} 가 실행 중이다" for sid in self._busy(s).values()]
         with s.feed_lock:
             obs = s.feed.observed()
         phase = self._pd_phase(s, obs, {p["key"]: p for p in s.supervisor.table()})
@@ -311,9 +331,10 @@ class Console:
             reasons = self.end_reasons()
             if reasons and not force:
                 raise ConsoleError("run 을 끝낼 수 없다", reasons=tuple(reasons))
-            if s.runner is not None and s.runner.active:
-                s.runner.abort()
-                s.runner.join(timeout=8)
+            for r in list(s.runners.values()):
+                if r.active:
+                    r.abort()
+                    r.join(timeout=8)
             n = s.supervisor.stop()
             for pipe in (s.bridge, s.probe):
                 if pipe is not None:
@@ -337,9 +358,10 @@ class Console:
             if not kept:
                 self.end(force=True)
                 return []
-            if s.runner is not None and s.runner.active:
-                s.runner.abort()
-                s.runner.join(timeout=8)
+            for r in list(s.runners.values()):
+                if r.active:
+                    r.abort()
+                    r.join(timeout=8)
             others = [k for k, p in procs.items() if p.get("alive") and k not in kept]
             if others:
                 s.supervisor.stop(others)
@@ -383,7 +405,7 @@ class Console:
         with self._lock:
             s = self._need()
             stage = self._current_stage(s, stage_id)
-            if s.state.status == MC.STATUS_DONE:
+            if not s.mission.lanes and s.state.status == MC.STATUS_DONE:
                 raise ConsoleError("미션이 끝났다")
             if restart:
                 keys = [p.key for p in s.supervisor.alive() if p.stage == stage_id]
@@ -394,13 +416,16 @@ class Console:
             if not result.ok:
                 raise ConsoleError(f"{stage_id} 를 지금 실행할 수 없다", reasons=tuple(result.reasons))
             commands = commands_for(s.runbook, s.mission, stage_id, repo=self.repo, execute=True)
-            s.state = MC.begin(s.state)
+            # 창 모드는 커서가 없다 — 기록 파일의 `stage` 는 **마지막으로 시작한 단계**를 가리킨다.
+            # (그대로 두면 selftest 가 도는데 state.json 이 home_right RUNNING 으로 보인다.)
+            s.state = (MC.MissionState(stage=stage_id, status=MC.STATUS_RUNNING, completed=s.state.completed,
+                                       cycle=s.state.cycle, note="") if s.mission.lanes else MC.begin(s.state))
             mission_run.save_state(s.run_id, s.state)
             s.event("stage", f"▶ {stage_id} — {stage.title}")
             self._intent(s, "stage/run", {"stage": stage_id, "operator": operator,
                                           "argv": [list(c.argv) for c in commands]})
-            s.runner = StageRunner(stage_id, commands, s.supervisor, on_done=self._stage_done)
-            s.runner.start()
+            s.runners[self._lane(s, stage)] = StageRunner(stage_id, commands, s.supervisor, on_done=self._stage_done)
+            s.runners[self._lane(s, stage)].start()
 
     def skip_stage(self, stage_id: str, *, operator: str) -> None:
         """지금 단계를 실행하지 않고 넘긴다 — 오른팔만 할 때 왼팔 단계처럼 미션이 `skippable` 로 선언한 것만.
@@ -413,7 +438,8 @@ class Console:
             reasons = self._skip_reasons(s, stage)
             if reasons:
                 raise ConsoleError(f"{stage_id} 를 건너뛸 수 없다", reasons=tuple(reasons))
-            s.state = MC.advance(s.mission, MC.begin(s.state), MC.STATUS_DONE, note=f"건너뜀 ({operator})")
+            s.state = (self._settle(s, stage_id, MC.STATUS_DONE, f"건너뜀 ({operator})") if s.mission.lanes
+                       else MC.advance(s.mission, MC.begin(s.state), MC.STATUS_DONE, note=f"건너뜀 ({operator})"))
             s.skipped = s.skipped | {stage_id}
             mission_run.save_state(s.run_id, s.state)
             s.event("stage", f"» {stage_id} 건너뜀 — {operator}")
@@ -427,8 +453,9 @@ class Console:
         """
         with self._lock:
             s = self._need()
-            if s.runner is not None and s.runner.active:
-                raise ConsoleError(f"단계 {s.runner.stage_id} 가 실행 중이다 — 끝나거나 중단한 뒤에 되돌릴 것")
+            busy = self._busy(s)
+            if busy:
+                raise ConsoleError(f"단계 {', '.join(busy.values())} 가 실행 중이다 — 끝나거나 중단한 뒤에 되돌릴 것")
             try:
                 MC.stage_by_id(s.mission, stage_id)
             except KeyError as exc:
@@ -436,51 +463,90 @@ class Console:
             ids = [st.id for st in s.mission.stages]
             if stage_id not in s.state.completed:
                 raise ConsoleError(f"{stage_id} 는 아직 끝낸 단계가 아니다 — 끝낸 단계로만 돌아간다")
-            cut = ids.index(stage_id)
+            if s.mission.lanes:
+                drop = self._dependents(s.mission, stage_id)
+            else:
+                cut = ids.index(stage_id)
+                drop = {x for x in ids if ids.index(x) >= cut}
             s.state = MC.MissionState(stage=stage_id, status=MC.STATUS_PENDING,
-                                      completed=tuple(x for x in s.state.completed if ids.index(x) < cut),
+                                      completed=tuple(x for x in s.state.completed if x not in drop),
                                       cycle=s.state.cycle, note=f"되돌림 ({operator})")
-            s.skipped = frozenset(x for x in s.skipped if ids.index(x) < cut)
+            s.skipped = frozenset(x for x in s.skipped if x not in drop)
             mission_run.save_state(s.run_id, s.state)
             s.event("stage", f"↶ {stage_id} 로 되돌림 — {operator}")
             self._intent(s, "stage/rewind", {"stage": stage_id, "operator": operator})
+
+    @staticmethod
+    def _dependents(mission, stage_id: str) -> set[str]:
+        """그 단계와, 그것에 (간접으로라도) 기대는 단계 전부. 창 모드의 되돌리기가 지울 범위다.
+
+        yaml 순서로 자르면 다른 창의 멀쩡한 단계까지 지운다 — 오른팔을 되돌렸다고 왼팔을 잊을 이유가 없다.
+        """
+        out = {stage_id}
+        changed = True
+        while changed:
+            changed = False
+            for st in mission.stages:
+                if st.id not in out and any(n in out for n in st.needs):
+                    out.add(st.id)
+                    changed = True
+        return out
 
     def _skip_reasons(self, s: Session, stage) -> list[str]:
         with s.feed_lock:
             obs = s.feed.observed()
         phase = self._pd_phase(s, obs, {p["key"]: p for p in s.supervisor.table()})
-        return U.skip_reasons(skippable=stage.skippable, busy=s.runner is not None and s.runner.active, pd_phase=phase)
+        lane = self._lane(s, stage)
+        busy = s.runners.get(lane)
+        return U.skip_reasons(skippable=stage.skippable, busy=busy is not None and busy.active, pd_phase=phase)
 
-    def ack(self, index: int, ok: bool) -> None:
+    def _one_runner(self, s: Session, stage_id: str) -> StageRunner:
+        """`stage_id` 가 있으면 그 단계의 러너, 없으면 도는 것이 정확히 하나일 때 그것."""
+        if stage_id:
+            r = self._runner_of(s, stage_id)
+            if r is None:
+                raise ConsoleError(f"{stage_id} 는 실행 중이 아니다")
+            return r
+        live = [r for r in s.runners.values() if r.active]
+        if not live:
+            raise ConsoleError("실행 중인 단계가 없다")
+        if len(live) > 1:
+            raise ConsoleError(f"{len(live)} 개가 동시에 돈다 — 어느 단계인지 지정할 것",
+                               reasons=tuple(r.stage_id for r in live))
+        return live[0]
+
+    def ack(self, index: int, ok: bool, *, stage_id: str = "") -> None:
         with self._lock:
             s = self._need()
-            if s.runner is None or not s.runner.active:
-                raise ConsoleError("실행 중인 단계가 없다")
+            runner = self._one_runner(s, stage_id)
             try:
-                s.runner.ack(index, ok)
+                runner.ack(index, ok)
             except ValueError as exc:
                 raise ConsoleError(str(exc)) from exc
-            self._intent(s, "stage/ack", {"stage": s.runner.stage_id, "index": index, "ok": ok})
+            self._intent(s, "stage/ack", {"stage": runner.stage_id, "index": index, "ok": ok})
 
-    def abort_stage(self) -> None:
+    def abort_stage(self, stage_id: str = "") -> None:
         with self._lock:
             s = self._need()
-            if s.runner is None or not s.runner.active:
-                raise ConsoleError("실행 중인 단계가 없다")
-            s.runner.abort()
-            self._intent(s, "stage/abort", {"stage": s.runner.stage_id})
+            runner = self._one_runner(s, stage_id)
+            runner.abort()
+            self._intent(s, "stage/abort", {"stage": runner.stage_id})
 
     def _stage_done(self, stage_id: str, outcome: str, note: str) -> None:
         with self._lock:
             s = self.session
-            if s is None or s.state.stage != stage_id:
+            if s is None:
+                return
+            if not s.mission.lanes and s.state.stage != stage_id:
                 return
             stage = MC.stage_by_id(s.mission, stage_id)
-            s.state = MC.advance(s.mission, s.state, outcome, note=note)
+            s.state = (self._settle(s, stage_id, outcome, note) if s.mission.lanes
+                       else MC.advance(s.mission, s.state, outcome, note=note))
             mission_run.save_state(s.run_id, s.state)
             if stage.touches_real:
                 # 승인은 **한 번의 실행**에 대한 것이다 — 반복(loop_to)으로 돌아와도 다시 받는다.
                 ledger.append(s.ledger_path, ledger.Entry("revoke", stage_id, "console", _now(), {}, f"실행에 쓰였다 ({outcome})"))
+            s.lane_last[self._lane(s, stage)] = {"stage": stage_id, "outcome": outcome, "note": note}
             mark = {"DONE": "✓", "FAILED": "✗", "ABORTED": "■"}.get(outcome, "?")
             s.event("stage", f"{mark} {stage_id} {outcome}" + (f" — {note}" if note else ""))
             release = outcome != MC.STATUS_DONE and stage.touches_real and self._pd_holds(s)
@@ -493,6 +559,22 @@ class Console:
                 with self._lock:
                     if self.session is s:
                         s.event("quick", f"자동 PD 해제를 못 했다 — 정지 바의 PD 해제를 누를 것 ({exc})")
+
+    @staticmethod
+    def _settle(s: Session, stage_id: str, outcome: str, note: str) -> MC.MissionState:
+        """창 모드의 상태 전이 — 커서를 옮기지 않고 **끝난 것**만 적는다.
+
+        `MC.advance` 는 단계 하나가 순서대로 도는 것을 전제로 `state.stage` 를 다음으로 옮긴다.
+        창이 여럿이면 "다음"이 하나가 아니다 — 무엇을 할 수 있는지는 `needs` 가 정한다(`MC.gate` 는 순서를 안 본다).
+        `stage` 는 마지막으로 끝난 단계를 적어 둘 뿐이고, 판정에는 `completed` 만 쓰인다.
+        """
+        done = s.state.completed
+        if outcome == MC.STATUS_DONE and stage_id not in done:
+            done = done + (stage_id,)
+        others = [sid for lane, sid in Console._busy(s).items() if sid != stage_id]
+        status = MC.STATUS_RUNNING if others else outcome
+        return MC.MissionState(stage=stage_id, status=status, completed=done,
+                               cycle=s.state.cycle, note=note)
 
     # ── 그림의 스위치 ───────────────────────────────────────────────────
     def toggle_unit(self, key: str, on: bool, *, operator: str) -> None:
@@ -538,17 +620,23 @@ class Console:
         phase = self._pd_phase(s, obs, {p["key"]: p for p in s.supervisor.table()})
         return phase not in U.PD_FREE
 
-    def _pd_phase(self, s: Session, obs, procs: Mapping[str, Mapping]) -> str | None:
-        """끄기·종료 규칙이 볼 pd phase — 조용한 pd 는 자유가 아니라 `U.PD_UNKNOWN` 이다."""
+    def _pd_phase(self, s: Session, obs, procs: Mapping[str, Mapping], side: str = "") -> str | None:
+        """끄기·종료 규칙이 볼 pd phase — 조용한 pd 는 자유가 아니라 `U.PD_UNKNOWN` 이다.
+
+        pd 는 09.23 부터 팔마다 따로 뜬다. `side` 를 주면 그 팔만, 안 주면 **가장 무거운 쪽**으로 합친다
+        (종료·끄기 규칙은 답이 하나여야 한다 — 한 팔이라도 잡고 있으면 잡고 있는 것으로 본다).
+        """
         keys = self._robot_keys(s)
         # None = 어느 단위가 pd 인지 모른다(그림 없음) · 빈 집합 = 그림은 있는데 pd 를 콘솔이 띄우지 않는다(역시 모른다)
         pd_alive = None if not keys else any(procs.get(k, {}).get("alive") for k in keys)
         d = s.diagram
-        pd_ros = () if d is None else tuple(n for b in d.boxes if b.status == "pd" for n in b.ros)
+        pd_ros = () if d is None else tuple(n for b in d.boxes if PD.is_pd(str(b.status or "")) for n in b.ros)
         seen = obs.rosgraph is not None and obs.rosgraph_age_s is not None and obs.rosgraph_age_s <= GRAPH_STALE_S
         pd_in_graph = bool(set(pd_ros) & set(obs.rosgraph.get("nodes") or ())) if seen and pd_ros else None
-        return U.pd_phase_of(obs.status.get("pd"), obs.age_s.get("pd"), stale_s=STALE_S, pd_alive=pd_alive,
-                             real=s.profile.is_real, pd_in_graph=pd_in_graph)
+        names = [PD.name(side)] if side else list(PD.nodes(s.profile.status_nodes)) or [PD.LEGACY]
+        phases = [U.pd_phase_of(obs.status.get(n), obs.age_s.get(n), stale_s=STALE_S, pd_alive=pd_alive,
+                                real=s.profile.is_real, pd_in_graph=pd_in_graph) for n in names]
+        return PD.worst(phases, _PD_ORDER) if len(phases) > 1 else phases[0]
 
     @staticmethod
     def _unit_settle(s: Session, key: str, note: str) -> None:
@@ -576,22 +664,29 @@ class Console:
             with s.feed_lock:
                 obs = s.feed.observed()
         robot_keys = self._robot_keys(s)
-        busy = s.runner.stage_id if s.runner is not None and s.runner.active else None
+        busy = set(self._busy(s).values())
         procs = {p["key"]: p for p in s.supervisor.table()}
         pd_phase = self._pd_phase(s, obs, procs)
         stopped = {k for k, pid in s.units_stopped.items() if procs.get(k, {}).get("pid") == pid}
-        return U.views(s.units, procs, stopped=stopped, busy_stage=busy, completed=s.state.completed,
+        return U.views(s.units, procs, stopped=stopped, busy_stages=busy, completed=s.state.completed,
                        pd_phase=pd_phase, robot_keys=robot_keys, real=s.profile.is_real)
 
     # ── 언제나 되는 정지 동작 ───────────────────────────────────────────
-    def quick(self, name: str, *, client: str) -> None:
+    def quick(self, name: str, *, client: str, side: str = "") -> None:
+        """언제나 되는 서비스 호출. pd 서비스는 **팔을 지정**해야 한다(09.23 쪽 분리)."""
         if name not in QUICK:
             raise ConsoleError(f"모르는 동작: {name}", code=404)
         with self._lock:
             s = self._need()
-            label, _, args = QUICK[name]
+            label, _, args, _where = QUICK[name]
+            is_pd = any(a.startswith("pd/") for a in args)
+            if is_pd:
+                if side not in ("right", "left"):
+                    raise ConsoleError(f"{name} 은 어느 팔인지 필요하다 — pd 서비스는 팔마다 따로다", code=400)
+                args = [*args, "--side", side]
+                label = f"{label} ({'오른팔' if side == 'right' else '왼팔'})"
             argv = ["python3", str(_TRIGGER), *args, "--execute", "--service-timeout", "5"]
-            key = f"quick#{name}"
+            key = f"quick#{name}" + (f"#{side}" if side else "")
             try:
                 s.supervisor.spawn(key, stage="quick", note=label, argv=argv, background=False, manual=False)
             except SupervisorError as exc:
@@ -623,7 +718,9 @@ class Console:
             good, bad = scan(self.profiles_dir, repo=self.repo)
             out = {"t": time.time(), "lease": self.lease.view(),
                    "profiles": [p.as_dict() for p in good], "bad_profiles": bad, "session": None,
-                   "quick": [{"name": k, "label": v[0], "help": v[1]} for k, v in QUICK.items()]}
+                   "quick": [{"name": k, "label": v[0], "help": v[1], "where": v[3],
+                              # pd 서비스는 팔마다 따로다(09.23) — 화면이 쪽마다 버튼을 낸다.
+                              "per_side": any(a.startswith("pd/") for a in v[2])} for k, v in QUICK.items()]}
             if self.session is not None:
                 out["session"] = self._session_view(self.session)
             return out
@@ -644,13 +741,33 @@ class Console:
         diagram = None if s.diagram is None else build_diagram(obs, s.diagram, units=units)
         nodes = [{"name": n, "age_s": None if n not in obs.age_s else round(obs.age_s[n], 2),
                   "stale": obs.age_s.get(n, 1e9) > 2.0, "status": obs.status.get(n)} for n in s.profile.status_nodes]
-        robot = R.view(obs.joints, s.contract_sides, s.joint_limits, age_s=obs.joints_age_s)
+        robot = R.view(obs.joints, s.contract_sides, s.joint_limits, age_s=obs.joints_age_s,
+                       alias=s.joint_alias)
         return {"robot": robot, "run_id": s.run_id, "run_dir": str(s.run_dir), "operator": s.operator,
                 "uptime_s": round(time.time() - s.started), "profile": s.profile.as_dict(),
                 "banner": banner.as_dict(), "links": links, "diagram": diagram, "rosgraph": rosgraph, "units": units, "bridge": bridge, "nodes": nodes, "episode": obs.episode,
-                "mission": self._mission_view(s), "runner": None if s.runner is None else s.runner.view(),
+                "mission": self._mission_view(s), "pd_sides": self._pd_sides(s, obs),
+                "runners": {lane: r.view() for lane, r in s.runners.items()},
                 "procs": s.supervisor.table(), "metrics": metrics, "events": events,
                 "policy": self._policy_view(s), "end_reasons": self.end_reasons()}
+
+    @staticmethod
+    def _pd_sides(s: Session, obs=None) -> list[str]:
+        """지금 **status 가 오고 있는** pd 의 쪽 — 손 창의 버튼이 갈 곳.
+
+        09.23 쪽 분리 뒤에는 서비스도 status 도 팔마다 따로다. 프로세스가 떠 있는지가 아니라
+        그 팔의 status 가 오는지로 판단한다 — 떠 있어도 말이 없으면 그 손에 보내면 안 된다.
+        """
+        if obs is None:
+            with s.feed_lock:
+                obs = s.feed.observed()
+        out = []
+        for n in PD.nodes(s.profile.status_nodes):
+            side = PD.side_of(n)
+            age = obs.age_s.get(n)
+            if side and obs.status.get(n) is not None and age is not None and age <= STALE_S:
+                out.append(side)
+        return out
 
     def _mission_view(self, s: Session) -> dict:
         entries = ledger.read(s.ledger_path)
@@ -658,32 +775,69 @@ class Console:
         valid = ledger.valid_approvals(entries, basis)
         stale = ledger.stale_reasons(entries, basis)
         ev = survey.gather(s.mission, repo=self.repo, approvals=valid, cache=s.cache)
-        rows_struct = MC.plan(s.mission, s.state, mission_run.plan_evidence(s.mission, ev))
-        busy = s.runner is not None and s.runner.active
-        finished = s.state.status == MC.STATUS_DONE
+        pev = mission_run.plan_evidence(s.mission, ev)
+        lanes = s.mission.lanes
+        busy_by_lane = self._busy(s)
+        busy = bool(busy_by_lane)
+        finished = s.state.status == MC.STATUS_DONE and not lanes
+        #: 창마다 "다음 단계" = 그 창에서 아직 안 끝낸 첫 단계. 화면이 창 하나에 카드 하나를 크게 그린다.
+        nxt = {}
+        for st in s.mission.stages:
+            lane = self._lane(s, st)
+            if lane not in nxt and st.id not in s.state.completed:
+                nxt[lane] = st.id
+        if lanes:
+            rows_struct = [MC.StagePlan(stage=st, result=MC.gate(s.mission, st.id, s.state, pev))
+                           for st in s.mission.stages]
+        else:
+            rows_struct = list(MC.plan(s.mission, s.state, pev))
         skip_why = None if finished else self._skip_reasons(s, MC.stage_by_id(s.mission, s.state.stage))
+        #: 창 모드는 단계마다 판정한다 — pd 상태는 한 번만 읽는다(23 단계 × 피드 잠금은 비싸다).
+        with s.feed_lock:
+            pd_phase = self._pd_phase(s, s.feed.observed(), {p["key"]: p for p in s.supervisor.table()})
         rows = []
         for row in rows_struct:
             st = row.stage
-            current = st.id == s.state.stage and not finished
+            lane = self._lane(s, st)
+            lane_busy = busy_by_lane.get(lane)
+            current = (nxt.get(lane) == st.id) if lanes else (st.id == s.state.stage and not finished)
             structural = list(row.result.reasons)
+            lane_why = (U.skip_reasons(skippable=st.skippable, busy=bool(lane_busy), pd_phase=pd_phase)
+                        + structural) if lanes else []
             approved = st.id in valid
             cmds = commands_for(s.runbook, s.mission, st.id, repo=self.repo, execute=True)
             rows.append({
-                "id": st.id, "title": st.title, "touches_real": st.touches_real,
+                "id": st.id, "title": st.title, "touches_real": st.touches_real, "lane": lane,
                 "done": st.id in s.state.completed, "current": current,
-                "status": s.state.status if current else ("DONE" if st.id in s.state.completed else "PENDING"),
+                "running": lane_busy == st.id,
+                "status": ("RUNNING" if lane_busy == st.id else
+                           "DONE" if st.id in s.state.completed else
+                           s.state.status if current and not lanes else "PENDING"),
                 "reasons": structural, "approved": approved, "approval_stale": stale.get(st.id, []),
-                "can_approve": current and st.touches_real and not approved and not structural and not busy,
-                "can_run": current and not structural and (approved or not st.touches_real) and not busy,
+                "can_approve": (st.touches_real and not approved and not structural
+                                and not lane_busy if lanes else
+                                current and st.touches_real and not approved and not structural and not busy),
+                "can_run": ((not structural and (approved or not st.touches_real) and not lane_busy) if lanes else
+                            current and not structural and (approved or not st.touches_real) and not busy),
                 "group": st.group, "skippable": st.skippable, "skipped": st.id in s.skipped,
                 "can_rewind": st.id in s.state.completed and not busy,
-                "can_skip": current and st.skippable and not skip_why, "skip_why": skip_why if current and st.skippable else [],
+                "can_skip": (not lane_why if lanes else current and st.skippable and not skip_why),
+                "skip_why": (lane_why if lanes else skip_why if current and st.skippable else []),
                 "commands": [{"note": c.note, "argv": list(c.argv), "kind": step_kind(c), "stop": list(c.stop)} for c in cmds],
+                #: 이 단계가 **다른 창**의 것을 내린다 — 왼팔 pd 를 띄우면 오른팔 pd 가 내려간다(노드 이름이 하나뿐이다).
+                #: 창을 나눠 놓고 이것을 말하지 않으면 운영자는 오른팔이 왜 풀렸는지 모른다.
+                "stops_lanes": sorted({self._lane(s, MC.stage_by_id(s.mission, k.split("#")[0]))
+                                       for c in cmds for k in c.stop
+                                       if k.split("#")[0] in {x.id for x in s.mission.stages}}
+                                      - {lane, ""}),
             })
         groups = [{"id": g.id, "title": g.title, "motion": g.motion} for g in s.mission.groups]
+        lane_view = [{"id": la.id, "title": la.title, "side": la.side,
+                      "busy": busy_by_lane.get(la.id), "next": nxt.get(la.id), "last": s.lane_last.get(la.id),
+                      "rows": [st.id for st in s.mission.stages if st.lane == la.id]} for la in lanes]
         return {"name": s.mission.name, "stage": s.state.stage, "status": s.state.status, "cycle": s.state.cycle,
-                "note": s.state.note, "loop_to": s.mission.loop_to, "rows": rows, "groups": groups}
+                "note": s.state.note, "loop_to": s.mission.loop_to, "rows": rows, "groups": groups,
+                "lanes": lane_view}
 
     @staticmethod
     def _policy_view(s: Session) -> dict | None:
@@ -700,15 +854,33 @@ class Console:
         return self.session
 
     @staticmethod
+    def _lane(s: Session, stage) -> str:
+        """이 단계가 속한 창. 창을 선언하지 않은 미션은 창 하나("")다 — 예전과 같은 직렬 진행."""
+        return stage.lane if s.mission.lanes else ""
+
+    @staticmethod
+    def _busy(s: Session) -> dict[str, str]:
+        """지금 도는 것 {창: 단계}."""
+        return {lane: r.stage_id for lane, r in s.runners.items() if r.active}
+
+    @staticmethod
+    def _runner_of(s: Session, stage_id: str) -> StageRunner | None:
+        return next((r for r in s.runners.values() if r.active and r.stage_id == stage_id), None)
+
+    @staticmethod
     def _current_stage(s: Session, stage_id: str):
         try:
             stage = MC.stage_by_id(s.mission, stage_id)
         except KeyError as exc:
             raise ConsoleError(f"모르는 단계: {stage_id}", code=404) from exc
-        if stage_id != s.state.stage:
+        if not s.mission.lanes and stage_id != s.state.stage:
             raise ConsoleError(f"지금 단계는 {s.state.stage} 다 — {stage_id} 는 차례가 아니다")
-        if s.runner is not None and s.runner.active:
-            raise ConsoleError(f"단계 {s.runner.stage_id} 가 실행 중이다")
+        lane = Console._lane(s, stage)
+        busy = s.runners.get(lane)
+        if busy is not None and busy.active:
+            title = next((la.title for la in s.mission.lanes if la.id == lane), lane)
+            raise ConsoleError(f"{title} 창에서 {busy.stage_id} 가 실행 중이다" if lane
+                               else f"단계 {busy.stage_id} 가 실행 중이다")
         return stage
 
     def _evidence(self, s: Session) -> MC.Evidence:

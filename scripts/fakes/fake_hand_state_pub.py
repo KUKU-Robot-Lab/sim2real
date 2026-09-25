@@ -104,10 +104,14 @@ class FakeHandController(Node):
 
 class FakeHandState(Node):
     def __init__(self, spec: HandSpec, rate_hz: float, echo_topic: str | None = None,
-                 cmd_topic: str | None = None, jtc_topic: str | None = None, start_zero: bool = False) -> None:
+                 cmd_topic: str | None = None, jtc_topic: str | None = None, start_zero: bool = False,
+                 start_q: dict[str, float] | None = None) -> None:
         super().__init__("fake_hand_state_pub")
         if start_zero:                                   # 손 홈 동작이 보이게 — 실기처럼 손가락을 편 0 자세에서 시작
             spec = replace(spec, pose=tuple(0.0 for _ in spec.pose))
+        if start_q:                                      # 09.23: 실기는 전원을 껐다 켜면 **말린 채 조금 어긋나** 있다
+            # 값은 canonical 이름으로 들어온다 — pose 는 source 순이라 canonical 순서로 맞춰 읽는다
+            spec = replace(spec, pose=tuple(float(start_q.get(c, v)) for c, v in zip(spec.canonical, spec.pose)))
         self.spec = spec
         self.echo = bool(echo_topic or cmd_topic or jtc_topic)
         self.rate_hz = rate_hz
@@ -186,6 +190,7 @@ def main() -> None:
     parser.add_argument("--jtc-topic", default=None,
                         help="실기 손과 같은 입력: pd 가 내는 드라이버 JTC(JointTrajectory)를 따른다 — --echo-topic 보다 우선")
     parser.add_argument("--start-zero", action="store_true", default=False, help="계약 home_hand 가 아니라 0 자세에서 시작")
+    parser.add_argument("--start-q", default="", help="'r_hj_index_2=1.4,…' 로 시작 자세를 직접 — 실기의 어긋난 손을 흉내 낸다")
     parser.add_argument("--echo", action="store_true", default=False,
                         help="레거시: 정책 손 명령(<ee_cmd>)을 관절상태로 반사 — 진화하는 손 obs 재현")
     parser.add_argument("--controller-node", action="store_true", default=False,
@@ -203,7 +208,9 @@ def main() -> None:
         cmd_topic = load_robot_profile(name).topics["ee_cmd"] if args.echo and not args.echo_topic else None
     rclpy.init()
     node = FakeHandState(spec, args.rate, echo_topic=args.echo_topic, cmd_topic=cmd_topic, jtc_topic=args.jtc_topic,
-                         start_zero=args.start_zero)
+                         start_zero=args.start_zero,
+                         start_q={kv.split("=")[0]: float(kv.split("=")[1])
+                                  for kv in args.start_q.split(",") if "=" in kv} or None)
     nodes = [node]
     if args.controller_node:
         nodes.append(FakeHandController(spec.js_topic.rsplit("/", 1)[0], spec.source))

@@ -41,7 +41,7 @@ PLANT = {
             "0 자세에서 시작) + 컵 포즈",
     "argv": ["ros2", "launch", "{repo}/deploy/policy_control/launch/fake_plant.launch.py", "side:=both",
              "robot:={artifact:robot_bi}", "contract:={artifact:contract}", "pd_config:={artifact:pd}",
-             "hand_follow:=jtc", "hand_start:=zero", "plant_model:=rate"],
+             "hand_follow:=jtc", "hand_start:=path", "plant_model:=rate"],
     "background": True,
 }
 # vision-3090(카메라 · FP++)은 로봇이 아니라 fake 에서도 진짜로 켠다(09.22 사용자: 언제든 쓸 수 있다). 목만 없다.

@@ -12,7 +12,7 @@
 
 콘솔(API) 프로세스는 rclpy 를 import 하지 않는다 — DDS 참가자가 아니면 도메인을 잘못 골라도 쓸 수 없다.
 
-    python3 -m s2r_console.bridge --domain 97 --nodes pour_node pd pour_guard --topics /joint_states
+    python3 -m s2r_console.bridge --domain 97 --nodes pour_node pd_right pd_left pour_guard --topics /joint_states
 """
 from __future__ import annotations
 
@@ -82,9 +82,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--topics", nargs="*", default=[])
     ap.add_argument("--watch", nargs="*", default=[])
     ap.add_argument("--perception", default="", help="인지 런처 상태 토픽(std_msgs/String JSON) — 그림에 인지 상자가 있을 때만")
-    ap.add_argument("--joints", nargs="*", default=["/joint_states"],
+    #: 손은 자기 namespace 토픽으로 나온다 — 팔만 구독하면 화면의 손 칸이 비어 있다(09.23 실기).
+    ap.add_argument("--joints", nargs="*",
+                    default=["/joint_states", "/dg5f_right/joint_states", "/dg5f_left/joint_states"],
                     help="관절 상태 토픽 — 화면의 로봇 상태 표가 쓴다(구독만). 빈 목록이면 받지 않는다")
     ap.add_argument("--joints-hz", type=float, default=4.0, help="관절 상태를 콘솔로 보내는 상한 [Hz]")
+    ap.add_argument("--dynamic-joints", nargs="*",
+                    default=["/dynamic_joint_states", "/dg5f_right/dynamic_joint_states",
+                             "/dg5f_left/dynamic_joint_states"],
+                    help="온도 등 인터페이스별 값이 오는 토픽 — 화면의 온도 채널이 쓴다(구독만)")
     args = ap.parse_args(argv)
 
     refusal = domain_refusal(os.environ.get("ROS_DOMAIN_ID"), args.domain)
@@ -123,19 +129,37 @@ def main(argv: list[str] | None = None) -> int:
             pass
 
     #: 관절 상태는 100 Hz 로 오므로 그대로 흘리면 콘솔이 잠긴다 — 최신값만 모아 `--joints-hz` 로 보낸다.
+    #: 칸 순서는 화면의 채널 순서(robot_view.CHANNELS)다 — 위치 · 속도 · 토크 · 로터온도 · MOS온도.
+    SLOTS = 5
     joints: dict[str, list] = {}
     last_joint_emit = [0.0]
 
-    def on_joints(msg) -> None:
-        for i, name in enumerate(msg.name):
-            joints[str(name)] = [
-                float(msg.position[i]) if i < len(msg.position) else None,
-                float(msg.velocity[i]) if i < len(msg.velocity) else None,
-                float(msg.effort[i]) if i < len(msg.effort) else None]
+    def _slot(name: str) -> list:
+        return joints.setdefault(str(name), [None] * SLOTS)
+
+    def _beat_joints() -> None:
         now = time.monotonic()
         if joints and now - last_joint_emit[0] >= 1.0 / max(args.joints_hz, 0.1):
             last_joint_emit[0] = now
-            _emit(line("joints", data=dict(joints)))
+            _emit(line("joints", data={k: list(v) for k, v in joints.items()}))
+
+    def on_joints(msg) -> None:
+        for i, name in enumerate(msg.name):
+            row = _slot(name)
+            row[0] = float(msg.position[i]) if i < len(msg.position) else None
+            row[1] = float(msg.velocity[i]) if i < len(msg.velocity) else None
+            row[2] = float(msg.effort[i]) if i < len(msg.effort) else None
+        _beat_joints()
+
+    def on_dynamic(msg) -> None:
+        """온도는 `/dynamic_joint_states` 에만 있다 — 드라이버가 내는 인터페이스를 그대로 읽는다(09.23 사용자)."""
+        for name, iv in zip(msg.joint_names, msg.interface_values):
+            vals = dict(zip(list(iv.interface_names), list(iv.values)))
+            row = _slot(name)
+            for slot, key in ((3, "temperature_rotor"), (4, "temperature_mos")):
+                if key in vals:
+                    row[slot] = float(vals[key])
+        _beat_joints()
 
     meter = TopicMeter(args.topics, args.watch)
     me = node.get_fully_qualified_name()
@@ -197,6 +221,10 @@ def main(argv: list[str] | None = None) -> int:
         from sensor_msgs.msg import JointState                                  # noqa: PLC0415
         for t in args.joints:
             node.create_subscription(JointState, t, on_joints, qos_profile_sensor_data)
+    if args.dynamic_joints:
+        from control_msgs.msg import DynamicJointState                          # noqa: PLC0415
+        for t in args.dynamic_joints:
+            node.create_subscription(DynamicJointState, t, on_dynamic, qos_profile_sensor_data)
     node.create_timer(1.0, beat)
 
     _emit(line("hello", domain=args.domain, nodes=list(args.nodes)))

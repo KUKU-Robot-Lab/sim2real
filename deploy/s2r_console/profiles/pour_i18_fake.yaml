@@ -6,8 +6,8 @@ mission: config/mission_pour_fake.yaml
 domain: {id: 97, class: fake}
 policy: deploy/policies/both_pour_i18
 policy_dt: 0.016667            # 60 Hz
-status_nodes: [pour_node, pd, pour_guard]
-latency: {from: pour_node, to: pd}   # 가드는 seq 를 내지 않는다
+status_nodes: [pour_node, pd_right, pd_left, pour_guard]   # 양팔 붓기 — pd 가 팔마다(09.23)
+latency: {from: pour_node, to: pd_right}   # 가드는 seq 를 내지 않는다 · pd 는 팔마다라 한쪽을 잡는다
 
 # robot_control 대역 — fake_plant.launch.py (side:=both, 계약 모드) 가 띄우는 것. 09.21 도메인 97 그래프 실측.
 # managers.active 는 **실행 내내** active 여야 하는 것만. 팔 JTC 는 pd 가 engage 때 끄므로 판정하지 않는다.

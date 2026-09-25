@@ -5,7 +5,7 @@ title: 좌팔 그리퍼 grasp · 실기 (V2B25)
 mission: config/mission_policy_control.yaml
 domain: {id: 126, class: real}
 policy_dt: 0.02                # 50 Hz
-status_nodes: [obs, policy, fabric, pd]
+status_nodes: [obs, policy, fabric, pd_left]        # 왼팔 정책 — pd 는 그 팔 하나(09.23)
 
 # robot_control bringup — openarm.bimanual.launch.py (arm_prefix 기본값 "" → 네임스페이스 없음).
 # 노드·컨트롤러 이름은 launch 와 openarm_bimanual_controllers.yaml 에서 읽었다. 실기에서 관측한 값은 아니다.

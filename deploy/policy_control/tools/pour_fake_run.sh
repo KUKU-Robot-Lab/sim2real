@@ -72,7 +72,7 @@ bg ros2 launch deploy/policy_control/launch/pd_controller.launch.py contract:="$
     pd_config:="${PD_CONFIG:-dg5f_m_short_fake}" sides:=right,left execute:=true fake:=true use_source:=true \
     > "$LOG/pd.log" 2>&1
 sleep 8
-pd() { timeout 120 ros2 service call "/policy_control/pd/$1" std_srvs/srv/Trigger "{}" 2>&1 | tr -d '\n'; }
+pd() { timeout 120 ros2 service call "/policy_control/pd_${PD_SIDE:-right}/$1" std_srvs/srv/Trigger "{}" 2>&1 | tr -d '\n'; }
 echo "[pour_fake] pd engage   : $(pd engage)"    | tee "$LOG/pd_stage.log"
 echo "[pour_fake] pd goto_home: $(pd goto_home)" | tee -a "$LOG/pd_stage.log"
 grep -q "goto_home.*success=True" "$LOG/pd_stage.log" || { echo "[pour_fake] goto_home 실패 — 중단"; exit 1; }

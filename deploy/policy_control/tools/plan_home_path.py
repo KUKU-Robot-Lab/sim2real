@@ -496,6 +496,9 @@ def parse_hand_q(text: str | None) -> dict[str, float]:
 
 def build_scenes(contract: dict, side: str, other_mode: str, hand_mode: str, hand_q: dict | None = None) -> list[dict]:
     """고정 관절 조합 목록. 경로는 모든 조합에서 통과해야 한다(반대팔 home/zero × 손 contract/zeros [+ 실측 손])."""
+    if hand_mode not in ("contract", "zeros", "both", "measured"):
+        # 빈 장면 목록은 **아무것도 검사하지 않고 통과**한다 — 조용히 넘어가면 안 되는 종류의 실수다.
+        raise ValueError(f"모르는 손 모드: {hand_mode!r} (손 봉투 구로 계획했으면 'contract' 를 줄 것)")
     other = "left" if side == "right" else "right"
     sd, od = contract["sides"][side], contract["sides"][other]
     hands = []
@@ -580,8 +583,13 @@ def main(argv=None) -> int:
     ap.add_argument("--goal", default="contract", help="'contract'(계약 home_arm) | 'env_reset'(env.yaml 리셋 자세) | CSV")
     ap.add_argument("--other-arm", choices=("home", "zero", "both"), default="both",
                     help="반대팔 고정 자세 — both 면 두 자세 모두에서 통과해야 한다")
-    ap.add_argument("--hand-start", choices=("contract", "zeros", "both", "measured"), default="contract",
-                    help="이동 중 손 자세 — contract = 계약 home_hand(엄지_2 만 ±1.57), zeros = 전부 0, both = 둘 다 통과")
+    ap.add_argument("--hand-start", choices=("contract", "zeros", "both", "measured", "pd"), default="contract",
+                    help="이동 중 손 자세 — contract = 계약 home_hand · zeros = 전부 0 · both = 둘 다 통과 · "
+                         "measured = --hand-q · pd = pd yaml hand_path_pose(실기가 팔보다 먼저 손을 보내는 그 자세)")
+    ap.add_argument("--hand-sphere", type=float, nargs="?", const=W.HAND_SPHERE_DEFAULT, default=None,
+                    metavar="R",
+                    help=f"손 링크를 지우고 손바닥에 반지름 R [m] 구 하나를 달아 계획한다(기본 {W.HAND_SPHERE_DEFAULT}). "
+                         "손가락 자세를 모르는 채 팔을 먼저 옮기고 손은 도착 후 펴는 운용용 — --hand-start 는 무시된다")
     ap.add_argument("--with-cup", action="store_true", help="스폰 중심에 cup_big_s100 상자를 둔다")
     ap.add_argument("--no-walls", action="store_true",
                     help=f"뒤 고정 박스({W.BACK_BOX}) · 옆 벽(y=±{W.WALL_Y_ABS})을 빼고 계획한다 — 기본은 넣는다(09.23 사용자)")
@@ -625,15 +633,30 @@ def main(argv=None) -> int:
     world = W.build_world(W.WorldSpec(urdf=args.urdf, env_yaml=args.env_yaml, side=args.side, with_cup=args.with_cup,
                                       detect_margin=max(0.08, args.margin * 3),
                                       back_box={} if args.no_walls else None,
-                                      wall_y_abs=None if args.no_walls else W.WALL_Y_ABS))
+                                      wall_y_abs=None if args.no_walls else W.WALL_Y_ABS,
+                                      hand_sphere=args.hand_sphere))
     limits = W.load_profile_limits(args.profile)
     lo = np.array([limits[j][0] for j in world.moving_joints])
     hi = np.array([limits[j][1] for j in world.moving_joints])
     start = np.zeros(7) if args.start == "zeros" else parse_q(args.start)
     goal, goal_src = resolve_goal(args.goal, contract, env, args.side)
+    if args.hand_sphere is not None:
+        # 손이 구 하나로 바뀌었으니 손 관절값은 아무 영향이 없다 — 장면을 하나로 줄인다.
+        args.hand_start, args.hand_q = "sphere", None
+        print(f"[plan] 손 = 반지름 {args.hand_sphere:.3f} m 구(손바닥 {W.HAND_SPHERE_CENTER}) · 손가락 자세 무관")
+    elif args.hand_start == "pd":                     # 실기와 같은 값을 쓴다 — 어긋나면 시작점 검사가 막는다(09.23)
+        import yaml as _yaml
+        pose = (_yaml.safe_load(args.pd_config.read_text()).get("hand_path_pose") or {}).get(args.side)
+        if not pose:
+            raise SystemExit(f"✗ {args.pd_config} 에 hand_path_pose.{args.side} 가 없다")
+        args.hand_q = ",".join(f"{k}={float(v):.4f}" for k, v in sorted(pose.items()))
+        args.hand_start = "measured"
+        print(f"[plan] 손 자세 = pd 설정 hand_path_pose.{args.side} ({len(pose)} 관절)")
     if args.hand_start == "measured" and not args.hand_q:
         raise SystemExit("--hand-start measured 에는 --hand-q(실측 손 자세)가 필요하다")
-    scenes = build_scenes(contract, args.side, args.other_arm, args.hand_start, parse_hand_q(args.hand_q))
+    scenes = build_scenes(contract, args.side, args.other_arm,
+                          "contract" if args.hand_start == "sphere" else args.hand_start,
+                          parse_hand_q(args.hand_q))
     for name, q in (("start", start), ("goal", goal)):
         bad = [(j, round(float(v), 4), limits[j]) for j, v in zip(world.moving_joints, q)
                if not limits[j][0] - 1e-9 <= v <= limits[j][1] + 1e-9]
@@ -721,6 +744,7 @@ def main(argv=None) -> int:
              meta_always_contact=np.array([fmt_pair(k) for k in chk.always_contact]),
              meta_other_arm=np.array(args.other_arm), meta_hand_start=np.array(args.hand_start),
              meta_hand_q=np.array(args.hand_q or ""),
+             meta_hand_sphere=np.float64(args.hand_sphere if args.hand_sphere is not None else np.nan),
              meta_walls=np.array("" if args.no_walls else f"back_box={W.BACK_BOX},y_abs={W.WALL_Y_ABS}"),
              meta_with_cup=np.bool_(args.with_cup), meta_goal_source=np.array(goal_src),
              meta_exact_min_lb=np.float64(worst["exact_lb"] if worst else np.nan))

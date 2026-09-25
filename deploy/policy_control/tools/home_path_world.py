@@ -201,6 +201,71 @@ def parse_urdf(path: Path) -> tuple[dict[str, ULink], list[UJoint], str]:
 _MESH_CACHE: dict = {}
 
 
+def link_transforms(links, joints, q: dict[str, float]) -> dict[str, np.ndarray]:
+    """링크 이름 → 4x4 월드 변환. 고정 관절은 각도 0, 회전 관절은 `q` (없으면 0)."""
+    from scipy.spatial.transform import Rotation
+
+    out: dict[str, np.ndarray] = {}
+    children: dict[str, list] = {}
+    for j in joints:
+        children.setdefault(j.parent, []).append(j)
+    roots = [n for n in links if all(j.child != n for j in joints)]
+    stack = [(r, np.eye(4)) for r in roots]
+    while stack:
+        name, T = stack.pop()
+        out[name] = T
+        for j in children.get(name, ()):
+            Tj = np.array(j.T, dtype=float)
+            if j.jtype in ("revolute", "continuous"):
+                ang = float(q.get(j.name, 0.0))
+                R = np.eye(4)
+                R[:3, :3] = Rotation.from_rotvec(np.asarray(j.axis, float) * ang).as_matrix()
+                Tj = Tj @ R
+            stack.append((j.child, T @ Tj))
+    return out
+
+
+#: 손 봉투 구 — 손바닥 프레임 기준 중심 [m]. 좌우 대칭이라 한 값을 쓴다(실측: 좌우 최적중심 y 가 ±0.007 로만 다름).
+#  09.23 실측(주먹 자세 hand_path_pose, 손 링크 볼록껍질 전부):
+#    주먹 100% 접음 0.093 m · 80% 0.106 · 60% 0.118 · 40% 0.143 · 편 손 0.176
+#  즉 반지름 0.11 m 구는 "주먹의 80% 이상 접은 손"을 담는다.
+HAND_SPHERE_CENTER = (0.02, 0.0, 0.04)
+HAND_SPHERE_DEFAULT = 0.11
+
+
+def hand_radius(links, joints, q: dict[str, float], side: str,
+                center=HAND_SPHERE_CENTER) -> tuple[float, str]:
+    """손 링크 전부를 담는 구의 반지름 [m] 과 가장 먼 링크 — 중심은 손바닥 프레임의 `center`.
+
+    저장 경로를 `--hand-sphere R` 로 계획했다면 실기의 손이 그 구 안에 있어야 재생해도 된다.
+    손가락 자세를 정확히 맞추는 대신 **봉투에 들어가는가**만 본다(09.23 사용자).
+    껍질 꼭짓점으로 잰다 — 계획에 쓴 충돌 모델과 같은 것이다.
+    """
+    pre = side[0] + "_"
+    T = link_transforms(links, joints, q)
+    palm = f"{pre}hl_palm"
+    if palm not in T:
+        raise KeyError(f"{palm} 이 URDF 에 없다")
+    inv = np.linalg.inv(T[palm])
+    c = np.asarray(center, dtype=float)
+    best, worst = 0.0, ""
+    for name, link in links.items():
+        if f"{pre}hl_" not in name:
+            continue
+        for Tc, kind, data in link.collisions:
+            if kind != "mesh":
+                continue
+            path, scale = data
+            for verts in mesh_hull_pieces(path, scale)[0]:
+                v = np.asarray(verts, float) @ np.asarray(Tc, float)[:3, :3].T + np.asarray(Tc, float)[:3, 3]
+                v = v @ T[name][:3, :3].T + T[name][:3, 3]
+                v = v @ inv[:3, :3].T + inv[:3, 3]
+                r = float(np.linalg.norm(v - c, axis=1).max())
+                if r > best:
+                    best, worst = r, name
+    return best, worst
+
+
 def mesh_hull_pieces(path: Path, scale) -> tuple[list[np.ndarray], str]:
     """메쉬 -> 볼록 조각들의 꼭짓점 목록과 처리 방식 문자열."""
     key = (str(path), tuple(scale))
@@ -279,6 +344,11 @@ class WorldSpec:
     detect_margin: float = 0.08     # contact 를 보고받을 거리 상한 [m]
     back_box: dict | None = None                 # None = 기본 BACK_BOX · {} = 박스 없음
     wall_y_abs: float | None = WALL_Y_ABS        # None = 옆 벽 없음(옛 경로 재검사용)
+    hand_sphere: float | None = None             # 손 링크를 지우고 손바닥에 이 반지름 구 하나를 단다 [m]
+    #: 참이면 **손가락끼리**의 충돌을 본다(기본은 같은 그룹이라 통째로 제외된다 — 팔 경로 계획에는 손 자세가
+    #: 고정이라 볼 이유가 없었다). 실측 자세에서 손을 접을 때는 이것이 판정의 전부다(09.23 사용자:
+    #: "손가락들이 서로 충돌이 일어나지 않게 모을 순 없는건가? 현재 joint state 기반해서").
+    hand_self: bool = False
 
 
 @dataclass
@@ -345,7 +415,26 @@ def build_world(spec: WorldSpec) -> World:
     assets, mesh_notes = [], {}
     body_group: dict[str, int] = {}
 
+    # 손 구 모드: 손바닥 **아래**(손가락)만 지우고 손바닥에 구 하나를 단다.
+    #   손바닥 위쪽 r_hl_{flange_adapter,adapter,base} 는 손가락 자세와 무관한 실물이라 그대로 둔다.
+    dropped: set[str] = set()
+    if spec.hand_sphere is not None:
+        kids_of: dict[str, list[str]] = {}
+        for j in joints:
+            kids_of.setdefault(j.parent, []).append(j.child)
+        stack = [c for n in links if n.endswith("_hl_palm") for c in kids_of.get(n, [])]
+        while stack:
+            n = stack.pop()
+            dropped.add(n)
+            stack.extend(kids_of.get(n, []))
+
     def geoms_xml(link: ULink) -> str:
+        if spec.hand_sphere is not None and link.name.endswith("_hl_palm"):
+            return (f'{_geoms_of(link)}\n'
+                    f'<geom type="sphere" size="{spec.hand_sphere:.7g}" pos="{_fmt(np.array(HAND_SPHERE_CENTER))}"/>')
+        return _geoms_of(link)
+
+    def _geoms_of(link: ULink) -> str:
         out = []
         for k, (T, kind, data) in enumerate(link.collisions):
             pos, quat = T[:3, 3], _R_to_quat(T[:3, :3])
@@ -371,6 +460,8 @@ def build_world(spec: WorldSpec) -> World:
             raise ValueError(f"prismatic 관절 {joint.name} 미구현")
         kids = []
         for cj in by_parent.get(name, []):
+            if cj.child in dropped:
+                continue                    # 손가락 몸통을 아예 안 만든다 — 지오메트리가 없으면 질량이 0 이라 MuJoCo 가 막는다
             g = moving.index(cj.name) + 1 if cj.name in moving else group
             kids.append(body_xml(cj.child, cj.T, cj, g))
         return (f'<body name="{name}" pos="{_fmt(T[:3, 3])}" quat="{_fmt(_R_to_quat(T[:3, :3]))}">\n{jx}\n'
@@ -409,16 +500,37 @@ def build_world(spec: WorldSpec) -> World:
     # 제외: URDF 부모-자식(고정 관절 포함) + 같은 그룹(서로 상대 자세가 변하지 않음, 0 은 이미 비트로 빠짐)
     excl = set()
     for j in joints:
-        excl.add(tuple(sorted((j.parent, j.child))))
+        if j.parent in body_group and j.child in body_group:      # 빠진 몸통(손 구 모드)은 제외 목록에도 없다
+            excl.add(tuple(sorted((j.parent, j.child))))
+    if spec.hand_sphere is not None:
+        # 구는 **세계·몸통·반대팔**에 대한 봉투다. 같은 팔의 손목 링크와는 원래 안 닿는데도
+        # 구가 손목 뒤로 튀어나와 겹치므로(r_al_5<->r_hl_palm) 같은 팔 쌍만 제외한다.
+        palms = [n for n in body_group if n.endswith("_hl_palm")]
+        for palm in palms:
+            same = palm[:2]                                  # "r_" / "l_"
+            for other in body_group:
+                if other != palm and other.startswith(same) and ("_al_" in other or "_hl_" in other):
+                    excl.add(tuple(sorted((palm, other))))
+
     by_group: dict[int, list[str]] = {}
     for b, g in body_group.items():
         by_group.setdefault(g, []).append(b)
+    def _same_finger(a: str, b: str) -> bool:
+        """같은 손가락의 이웃 마디인가 — 접히면 당연히 붙는다(부모-자식은 이미 빠졌다)."""
+        if "_hl_" not in a or "_hl_" not in b or a[:2] != b[:2]:
+            return False
+        fa, fb = a.split("_hl_")[1].split("_")[0], b.split("_hl_")[1].split("_")[0]
+        return fa == fb
+
     for g, bs in by_group.items():
         if g == 0:
             continue
         for i in range(len(bs)):
             for k in range(i + 1, len(bs)):
-                excl.add(tuple(sorted((bs[i], bs[k]))))
+                a, b = bs[i], bs[k]
+                if spec.hand_self and "_hl_" in a and "_hl_" in b and not _same_finger(a, b):
+                    continue                 # 손가락끼리는 본다 — 접는 자세를 찾는 것이 이 모드의 목적이다
+                excl.add(tuple(sorted((a, b))))
     spec_x = "".join(f'<exclude body1="{a}" body2="{b}"/>' for a, b in sorted(excl))
     xml = xml.replace("</worldbody>", f"</worldbody><contact>{spec_x}</contact>")
 

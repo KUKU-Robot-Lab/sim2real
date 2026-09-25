@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Mapping, Sequence
 
+from . import pd_names as PD
 from .console_state import STALE_S, Observed
 
 LIVE, HELD, OFF, UNKNOWN = "live", "held", "off", "unknown"
@@ -24,7 +25,14 @@ TONE = {LIVE: "ok", HELD: "mute", OFF: "mute", UNKNOWN: "mute",
 #: 블록 상태 = 행 중 가장 나쁜 것. off·held 는 정상 쪽이다(선택 입력이 꺼져 있음 / 래치 값).
 _RANK = {OFF: 0, HELD: 1, LIVE: 2, UNKNOWN: 3, STALE: 4, MISSING: 5, FAULT: 6, DOWN: 6}
 
-ROBOT_NODE = "pd"
+ROBOT_NODE = "pd"          # 옛 이름 — 09.23 부터 pd 는 `pd_right`·`pd_left` 로 갈린다(pd_names)
+#: 요약 한 줄에 쓸 무게 순서 — 하나라도 잡고 있으면 잡고 있는 것으로 본다.
+_PD_ORDER = ("HOLD", "RELEASING", "RAMPING", "TRACKING", "IDLE")
+
+
+def _worst(live: Mapping[str, Mapping]) -> Mapping:
+    phase = PD.worst((str(b.get("phase", "")) for b in live.values()), _PD_ORDER)
+    return next((b for b in live.values() if str(b.get("phase", "")) == phase), next(iter(live.values())))
 #: pd 가 누구의 목표를 따르는가 — pd_arm 의 extras["target"] 그대로. 내부 유지는 정상(IDLE·홈·fabric 끈 fake)이라 held.
 _TARGET = {"external": (LIVE, None, "체인 목표 추종"),
            "internal": (HELD, None, "내부 유지 목표 (체인 목표 안 받음)"),
@@ -32,7 +40,7 @@ _TARGET = {"external": (LIVE, None, "체인 목표 추종"),
 
 
 def _role(node: str) -> str:
-    if node == ROBOT_NODE:
+    if PD.is_pd(node):
         return "robot"
     return "guard" if node.endswith("guard") else "policy"
 
@@ -87,20 +95,23 @@ def _inputs_block(obs: Observed, nodes: Sequence[str]) -> dict:
     return _block("inputs", "입력", [], detail=detail)
 
 
-def _robot_block(obs: Observed, title: str) -> dict:
-    rows = [_heartbeat(obs, ROBOT_NODE)]
-    s = _fresh(obs, ROBOT_NODE)
-    if s is None:
+def _robot_block(obs: Observed, title: str, nodes: Sequence[str] = (ROBOT_NODE,)) -> dict:
+    """pd 는 팔마다 따로 온다(09.23) — 줄은 쪽마다, 요약은 가장 무거운 쪽으로."""
+    rows = [_heartbeat(obs, n) for n in nodes]
+    bodies = {n: _fresh(obs, n) for n in nodes}
+    live = {n: b for n, b in bodies.items() if b is not None}
+    if not live:
         return _block("robot", title, rows)
-    for side, arm in (s.get("arms") or {}).items():
+    for side, arm in ((sd, a) for b in live.values() for sd, a in (b.get("arms") or {}).items()):
         limit = arm.get("state_stale_ms")
         for src, age in (arm.get("state_age_ms") or {}).items():
             state = MISSING if age is None else STALE if limit is not None and age > limit else LIVE
             rows.append(_row(f"{side}:{src}", state, age, "로봇 상태 수신"))
         if "target" in arm:
             rows.append(_row(f"{side}:목표", *_TARGET.get(arm["target"], (UNKNOWN, None, str(arm["target"])))))
-    bits = [str(s.get("phase") or ""), "명령 나감" if s.get("execute") else "dry-run (명령 안 나감)"]
-    if s.get("estop"):
+    phases = " · ".join(f"{PD.side_of(n) or n} {b.get('phase') or ''}".strip() for n, b in live.items())
+    bits = [phases, "명령 나감" if any(b.get("execute") for b in live.values()) else "dry-run (명령 안 나감)"]
+    if any(b.get("estop") for b in live.values()):
         return _block("robot", title, rows, detail=" · ".join([*bits, "ESTOP 래치"]), state=FAULT)
     return _block("robot", title, rows, detail=" · ".join(b for b in bits if b))
 
@@ -168,6 +179,7 @@ def chain(obs: Observed, *, expected_nodes: Sequence[str], domain: int | None, d
           stack=None) -> list[dict]:
     """신호가 흐르는 순서대로 블록 목록. 가드 블록은 가드 노드를 기대할 때만 있다."""
     by_role = {r: [n for n in expected_nodes if _role(n) == r] for r in ("policy", "robot", "guard")}
+    robot_nodes = by_role["robot"] or [ROBOT_NODE]
     robot_title = "실기 (pd)" if domain_class == "real" else "fake 플랜트 (pd)"
     titles = [("inputs", "입력"), ("policy", "정책"), ("robot", robot_title)] + [("guard", "가드")] * bool(by_role["guard"])
 
@@ -185,7 +197,7 @@ def chain(obs: Observed, *, expected_nodes: Sequence[str], domain: int | None, d
     out = [bridge, *([_stack_block(obs, stack)] if stack is not None else []),
            _inputs_block(obs, expected_nodes),
            _block("policy", "정책", [_heartbeat(obs, n) for n in by_role["policy"]]),
-           _robot_block(obs, robot_title)]
+           _robot_block(obs, robot_title, robot_nodes)]
     if by_role["guard"]:
         out.append(_block("guard", "가드", [_heartbeat(obs, n) for n in by_role["guard"]]))
     return out

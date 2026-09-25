@@ -39,8 +39,8 @@ wait_status 3
 launch_bg python deploy/policy_control/tools/status_to_csv.py --seconds $SEC --out "$LOG/status.csv" --jsonl "$LOG/status.jsonl" > "$LOG/status_summary.txt" 2>&1
 launch_bg python deploy/policy_control/tools/chain_recorder.py --contract $CONTRACT --side $SIDE --seconds $SEC --out "$LOG/chain_$SIDE.npz" > "$LOG/recorder_$SIDE.log" 2>&1
 sleep 2; RC=0
-call pd/engage || RC=1
-[ $RC -eq 0 ] && { call pd/goto_home || RC=1; }
+call pd_$SIDE/engage || RC=1
+[ $RC -eq 0 ] && { call pd_$SIDE/goto_home || RC=1; }
 if [ $RC -eq 0 ]; then
   call episode/reset || RC=1; sleep 2
   call episode/start || RC=1; sleep 2
@@ -54,7 +54,7 @@ if [ $RC -eq 0 ]; then
   sleep 4
   call episode/stop || RC=1
 fi
-call pd/release || RC=1
+call pd_$SIDE/release || RC=1
 sleep 2
 for p in "${PIDS[@]:3}"; do wait "$p" 2>/dev/null; done
 python - "$LOG" "$SIDE" "$DZ" <<'PY' | tee "$LOG/summary.txt"

@@ -137,9 +137,15 @@ def test_saved_path_passes_dense_check():
     W = P.W
     side = "right" if str(d["meta_joints"][0]).startswith("r_") else "left"
     contract = P.load_contract(W.CONTRACT_DEFAULT)
-    scenes = P.build_scenes(contract, side, str(d["meta_other_arm"]), str(d["meta_hand_start"]),
+    #: 손 봉투 구로 계획한 경로는 손 관절값이 세계에 없다 — 계획기와 같은 구로 세계를 짓는다(09.23).
+    sphere = float(d["meta_hand_sphere"]) if "meta_hand_sphere" in d else float("nan")
+    sphere = None if sphere != sphere else sphere
+    hand_start = str(d["meta_hand_start"])
+    scenes = P.build_scenes(contract, side, str(d["meta_other_arm"]),
+                            "contract" if hand_start == "sphere" else hand_start,
                             P.parse_hand_q(str(d["meta_hand_q"]) or None))
-    world = W.build_world(W.WorldSpec(side=side))          # Checker 가 excluded_pairs 를 쓰므로 세계를 따로 짓는다
+    # Checker 가 excluded_pairs 를 쓰므로 세계를 따로 짓는다
+    world = W.build_world(W.WorldSpec(side=side, hand_sphere=sphere))
     lim = W.load_profile_limits(W.PROFILE_DEFAULT)
     lo = np.array([lim[j][0] for j in world.moving_joints])
     hi = np.array([lim[j][1] for j in world.moving_joints])

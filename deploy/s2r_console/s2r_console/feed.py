@@ -21,6 +21,7 @@ import time
 from collections import deque
 from typing import Callable, Mapping, Sequence
 
+from . import pd_names as PD
 from .console_state import Observed
 from .telemetry import Window
 
@@ -100,7 +101,7 @@ class Feed:
                 self._status[node] = data
                 self._seen_at[node] = now
                 self.window.offer(node, data)
-                if node == "pd":
+                if PD.is_pd(node):                 # pd 는 팔마다 따로 온다(09.23)
                     self._note_hold(data)
         elif ch == "joints":
             data = msg.get("data")

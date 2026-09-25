@@ -61,6 +61,9 @@ class Stage:
     evidence: str = ""
     #: 화면의 묶음(`Mission.groups` 의 id). 비어 있으면 묶음 없이 보인다.
     group: str = ""
+    #: 화면의 **창**(`Mission.lanes` 의 id). 한 창 안에서는 한 번에 한 단계만 돈다 — 창이 다르면 동시에 돈다.
+    #: 드라이버 · 비전 · 오른팔 · 왼팔처럼 서로 독립인 장치를 순서대로 다루지 않으려고 둔다(09.23 사용자).
+    lane: str = ""
     #: 참이면 운영자가 실행하지 않고 넘길 수 있다(예: 오른팔만 할 때 왼팔 단계). 넘겨도 되는지는 호출자가
     #: 실기 상태로 한 번 더 판정한다 — 여기서는 "넘길 수 있게 선언됐다" 만 안다.
     skippable: bool = False
@@ -77,6 +80,19 @@ class Group:
 
 
 @dataclass(frozen=True)
+class Lane:
+    """동시에 진행하는 **창** — 드라이버 · 비전 · 오른팔 · 왼팔 …
+
+    한 창은 장치 하나를 뜻한다. 같은 창의 단계는 순서대로, 다른 창끼리는 동시에 돈다.
+    """
+
+    id: str
+    title: str
+    #: 이 창이 다루는 쪽(있으면) — 화면이 좌우를 맞춰 그린다.
+    side: str = ""
+
+
+@dataclass(frozen=True)
 class Mission:
     name: str
     stages: tuple[Stage, ...]
@@ -85,6 +101,8 @@ class Mission:
     artifacts: Mapping[str, str] = field(default_factory=dict)
     checkpoints: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     groups: tuple[Group, ...] = ()
+    #: 동시에 진행하는 창. 비어 있으면 창 없음 = 한 줄로 순서대로(옛 미션).
+    lanes: tuple[Lane, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -293,6 +311,7 @@ def _stage_from_raw(raw: Mapping) -> Stage:
         blocked=str(raw.get("blocked", "")),
         evidence=str(raw.get("evidence", "")),
         group=str(raw.get("group", "")),
+        lane=str(raw.get("lane", "")),
         skippable=bool(raw.get("skippable", False)),
     )
 
@@ -308,6 +327,32 @@ def _groups_from_raw(raw) -> tuple[Group, ...]:
     if dupes:
         raise ValueError(f"묶음 id 가 중복이다: {dupes}")
     return tuple(groups)
+
+
+def _lanes_from_raw(raw) -> tuple[Lane, ...]:
+    lanes = []
+    for lane in raw or ():
+        if not lane.get("id") or not lane.get("title"):
+            raise ValueError(f"창에는 id 와 title 이 있어야 한다: {lane}")
+        lanes.append(Lane(id=str(lane["id"]), title=str(lane["title"]), side=str(lane.get("side", ""))))
+    ids = [lane.id for lane in lanes]
+    dupes = sorted({i for i in ids if ids.count(i) > 1})
+    if dupes:
+        raise ValueError(f"창 id 가 중복이다: {dupes}")
+    return tuple(lanes)
+
+
+def _validate_lanes(mission: Mission) -> None:
+    """창을 선언했으면 모든 단계가 창 하나에 속한다 — 창 없는 단계는 어느 화면에도 안 보인다."""
+    if not mission.lanes:
+        stray = [s.id for s in mission.stages if s.lane]
+        if stray:
+            raise ValueError(f"lanes 를 선언하지 않았는데 lane 을 단 단계가 있다: {stray}")
+        return
+    known = {lane.id for lane in mission.lanes}
+    for stage in mission.stages:
+        if stage.lane not in known:
+            raise ValueError(f"단계 '{stage.id}' 의 창 '{stage.lane}' 가 lanes 에 없다")
 
 
 def _validate_groups(mission: Mission) -> None:
@@ -372,7 +417,9 @@ def load_mission(raw: Mapping) -> Mission:
         artifacts=dict(raw.get("artifacts", {}) or {}),
         checkpoints=checkpoints,
         groups=_groups_from_raw(raw.get("groups")),
+        lanes=_lanes_from_raw(raw.get("lanes")),
     )
     _validate_stage_refs(mission)
     _validate_groups(mission)
+    _validate_lanes(mission)
     return mission

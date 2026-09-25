@@ -37,17 +37,23 @@ def test_each_arm_is_readied_engaged_and_homed_before_the_selftest():
         assert arm[0].stop and any(a == "execute:=true" for a in arm[1].argv)          # 무발행을 내린 뒤 발행을 띄운다
         cmds = _cmds(f"home_{side}")
         home = [" ".join(c.argv) for c in cmds]
-        # engage·제자리 → 확인 → 실측 재계획 → Isaac 미리보기 → 확인 → 경로 재생 → 정착 → 도착 확인 → 손(09.22)
+        # engage·제자리 → 확인 → **손 기준 자세** → 시작점 정렬 → 검사 → 미리보기 → 확인 → 재생 → 정착 → 확인 → 손
         assert "--only pd_engage --hold-s 10" in home[0] and cmds[1].manual
+        # 09.23 사용자 "어떤 hand 자세든 trajectory 시작 자세로 맞춘다" — 손이 먼저, 팔이 움직이기 전에
+        assert "hand_to_path_pose.py" in home[2] and f"--side {side}" in home[2]
+        assert home.index([h for h in home if "hand_to_path_pose.py" in h][0]) < \
+               home.index([h for h in home if "plan_approach_to_start.py" in h][0])
+        # 손이 구를 넘으면 실측에서 접어 본다 — 그 다음이 팔이다(09.23 사용자: "현재 joint state 기반해서")
+        assert "plan_hand_fold.py" in home[3] and f"--side {side}" in home[3]
         # 저장 경로는 다시 계획하지 않는다 — 시작점까지 정렬 → 확인 → 미리보기 → 확인 → 재생(09.22 · 09.23 사용자)
-        assert "plan_approach_to_start.py" in home[2] and f"{{artifact:path_{side}}}" in home[2]
-        assert "replay_to_pd.py" in home[3] and f"approach_{side}.npz" in home[3]
-        assert "check_path_start.py" in home[4] and f"{{artifact:path_{side}}}" in home[4]
-        assert "preview_path_in_viewer.py" in home[5] and "--with-fixed" not in home[5] and cmds[6].manual
-        assert "replay_to_pd.py" in home[7] and f"{{artifact:path_{side}}}" in home[7] and "--reverse" not in home[7]
+        assert "plan_approach_to_start.py" in home[4] and f"{{artifact:path_{side}}}" in home[4]
+        assert "replay_to_pd.py" in home[5] and f"approach_{side}.npz" in home[5]
+        assert "check_path_start.py" in home[6] and f"{{artifact:path_{side}}}" in home[6]
+        assert "preview_path_in_viewer.py" in home[7] and "--with-fixed" not in home[7] and cmds[8].manual
+        assert "replay_to_pd.py" in home[9] and f"{{artifact:path_{side}}}" in home[9] and "--reverse" not in home[9]
         assert not any("plan_home_from_robot" in a for c in cmds for a in c.argv)
-        assert "--only pd_goto_home" in home[8] and "--service-timeout 45" in home[8]      # 정착만 — 도착은 재생이 했다
-        assert cmds[9].manual and "--only pd_hand_home" in home[10]
+        assert "--only pd_goto_home" in home[10] and "--service-timeout 45" in home[10]    # 정착만 — 도착은 재생이 했다
+        assert cmds[11].manual and "--only pd_hand_home" in home[12]
         ret = _cmds(f"return_{side}")
         assert "--only pd_goto_home" in " ".join(ret[0].argv)                               # fabric 뒤 HOLD 를 풀고
         assert "--only pd_hand_rest" in " ".join(ret[1].argv)                               # 손을 출발 자세로 먼저
@@ -65,9 +71,35 @@ def test_the_head_publisher_starts_only_after_head_home_released_the_port():
     assert not any("head_joint_publisher" in a for s in IDS if s != "head_home" for c in _cmds(s) for a in c.argv)
 
 
-def test_the_left_arm_never_starts_a_second_pd_node_beside_the_right_one():
-    assert "pd_arm_right#1" in _cmds("pd_load_left")[0].stop
+def test_each_arm_runs_its_own_pd_and_no_longer_kills_the_other():
+    """09.23 사용자: "pd 를 구분하는 게 맞을 것 같음" — 왼팔 pd 를 띄워도 오른팔 pd 를 내리지 않는다.
+
+    그 전에는 노드 이름이 `/pd_node` 하나뿐이라 왼팔을 띄우기 전에 오른팔을 내려야 했다.
+    이제 이름이 `pd_node_<side>` 이고 서비스·status 도 팔마다 따로라 둘이 같이 떠 있어도 된다.
+    """
+    left = _cmds("pd_load_left")
+    assert not any("right" in k for c in left for k in c.stop), [c.stop for c in left]
     assert set(_cmds("release_right")[-1].stop) == {"fabric_direct_right#0", "pd_arm_right#1"}
+    #: 각 팔의 pd 는 제 쪽만 띄운다 — sides 인자가 그 팔 하나여야 이름이 갈린다.
+    for side in ("right", "left"):
+        for stage in (f"pd_load_{side}", f"pd_arm_{side}"):
+            launch = [c for c in _cmds(stage) if any("pd_controller.launch.py" in a for a in c.argv)]
+            assert launch, stage
+            assert f"sides:={side}" in launch[0].argv, (stage, launch[0].argv)
+
+
+def test_every_pd_service_call_names_the_arm():
+    """pd 서비스는 팔마다 따로다 — 미션의 모든 episode_ctl 호출이 `--side` 를 들고 있어야 한다."""
+    for sid in IDS:
+        for c in _cmds(sid):
+            if not any("episode_ctl.py" in a for a in c.argv):
+                continue
+            only = c.argv[c.argv.index("--only") + 1] if "--only" in c.argv else ""
+            if not any(x.startswith("pd_") for x in only.split(",")):
+                continue
+            assert "--side" in c.argv, (sid, c.argv)
+            side = c.argv[c.argv.index("--side") + 1]
+            assert sid.endswith(f"_{side}"), (sid, side)     # 그 단계의 팔과 같아야 한다
 
 
 def test_shutdown_is_last_confirms_support_first_and_drops_the_arm_last():
@@ -133,7 +165,9 @@ def test_the_fake_mission_is_generated_from_the_real_one_and_walks_the_same_stag
     launches = [c for st, cmds in book.commands.items() if st != "drivers" for c in cmds if c.argv[:2] == ("ros2", "launch")]
     assert launches and all("fake:=true" in c.argv for c in launches)     # fake_plant 는 스스로 도메인 0 을 거부한다
     plant = book.commands["drivers"][0]
-    assert "hand_follow:=jtc" in plant.argv and "hand_start:=zero" in plant.argv   # 손은 pd 의 JTC 를 따른다
+    # 손은 pd 의 JTC 를 따르고, 09.23 부터 **경로 기준 자세에서 어긋난 채** 시작한다(실기가 전원 재투입 뒤 그랬다).
+    # 0 자세(완전히 편 손)로 시작하면 손을 마는 중간 자세가 몸통을 스쳐 검사가 막는다 — 실기에 없는 상황이다.
+    assert "hand_follow:=jtc" in plant.argv and "hand_start:=path" in plant.argv
 
 
 def test_preflight_runs_only_the_real_deployment_tests_not_the_whole_suite():

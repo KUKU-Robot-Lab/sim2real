@@ -65,6 +65,20 @@ def run(argv: list[str], what: str) -> None:
         raise SystemExit(f"✗ {what} 실패 (rc={rc}) — 멈춘다")
 
 
+#: pd 가 팔을 잡고 있다고 보는 phase — 이 상태에서는 engage 를 부르지 않는다.
+PD_HOLDING = ("RAMPING", "TRACKING", "HOLD")
+
+
+def pd_holds(side: str, timeout: float = 3.0) -> bool:
+    """`/policy_control/status/pd` 를 잠깐 듣고 pd 가 팔을 잡고 있는지 본다. 못 들으면 False(= engage 를 시도한다)."""
+    out = subprocess.run([sys.executable, str(HERE / "trigger.py"), "--read-pd", "--side", side,
+                          "--service-timeout", str(timeout)],
+                         capture_output=True, text=True, cwd=str(SIM2REAL))
+    phase = (out.stdout.strip().splitlines() or [""])[-1].strip()
+    print(f"[reset] pd phase {phase or '(못 읽음)'}")
+    return phase in PD_HOLDING
+
+
 def restore_controllers(side: str, execute: bool) -> int:
     """pd 가 없는데 forward 컨트롤러만 active 로 남은 상태를 JTC 로 되돌린다(자세는 그대로)."""
     fwd = [f"{side}_forward_{k}_controller" for k in ("position", "velocity", "effort")]
@@ -146,12 +160,18 @@ def main() -> int:
     print(f"[reset] 되짚을 구간 {cut} · 프레임 {k + 1} × {float(d['meta_step_dt'])} = "
           f"{k * float(d['meta_step_dt']):.1f} s")
     ctl = str(HERE / "episode_ctl.py")
-    run([sys.executable, ctl, "--only", "pd_engage", "--hold-s", str(args.hold_s),
-         "--execute", "--approve", "pd_engage"], "pd engage")
+    # pd 가 이미 팔을 잡고 있으면(정책을 돌리다 멈춘 자리) engage 는 거부된다 — 그 상태가 바로 우리가 원하는 것이다.
+    # 09.23 fake: fabric 뒤에 부르면 'forward effort controller already active · phase TRACKING is not IDLE'.
+    if pd_holds(args.side):
+        print("[reset] pd 가 이미 팔을 잡고 있다 — engage 를 건너뛴다")
+    else:
+        run([sys.executable, ctl, "--only", "pd_engage", "--side", args.side, "--hold-s", str(args.hold_s),
+             "--execute", "--approve", "pd_engage"], "pd engage")
     run([sys.executable, str(HERE / "replay_to_pd.py"), "--npz", str(cut), "--joints", ",".join(joints),
          "--rate-scale", "1.0", "--reverse", "--max-ramp-rad", f"{gap + RAMP_HEADROOM:.3f}", "--execute"],
         "되짚기 재생")
-    run([sys.executable, ctl, "--only", "pd_release", "--execute", "--approve", "pd_release"], "pd release")
+    run([sys.executable, ctl, "--only", "pd_release", "--side", args.side,
+         "--execute", "--approve", "pd_release"], "pd release")
 
     back = measure()
     err = float(np.abs(np.array([back[j] for j in joints]) - start).max())

@@ -11,6 +11,22 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Mapping, Sequence
 
+from . import pd_names as PD
+
+#: 배너 한 줄로 합칠 때의 무게 순서 — 하나라도 서면 선 것으로 본다.
+_PD_ORDER = ("HOLD", "RELEASING", "RAMPING", "TRACKING", "IDLE")
+
+
+def _worst_pd(pds: Mapping[str, Mapping]) -> Mapping | None:
+    """팔별 pd status 중 **가장 무거운** 것. 배너·종료 규칙처럼 답이 하나여야 하는 곳에서만."""
+    if not pds:
+        return None
+    phase = PD.worst((str(x.get("phase", "")) for x in pds.values()), _PD_ORDER)
+    for body in pds.values():
+        if str(body.get("phase", "")) == phase:
+            return body
+    return next(iter(pds.values()))
+
 #: 이보다 오래된 status 는 "안 보인다" 로 친다 [s].
 STALE_S = 2.0
 
@@ -99,22 +115,25 @@ def derive(obs: Observed, *, expected_nodes: Sequence[str]) -> Banner:
     if obs.bridge_faults:
         return Banner(FAULT, TONE[FAULT], tuple(obs.bridge_faults))
 
-    pd = _fresh(obs, "pd")
     fresh = {n: _fresh(obs, n) for n in expected_nodes}
+    #: pd 는 팔마다 따로 온다(09.23) — 배너는 한 줄이라 **가장 무거운 쪽**으로 합친다.
+    pds = {n: s_ for n, s_ in fresh.items() if PD.is_pd(n) and s_ is not None}
+    pd = _worst_pd(pds)
     seen = {n: s for n, s in fresh.items() if s is not None}
     if not seen:
         return Banner(OFFLINE, TONE[OFFLINE], ("status 가 하나도 오지 않는다 (노드가 떠 있지 않다)",))
 
-    armed = None if pd is None else bool(pd.get("execute"))
+    armed = None if not pds else any(bool(x.get("execute")) for x in pds.values())
 
     if pd is not None and pd.get("estop"):
         return Banner(ESTOP, TONE[ESTOP], ("pd 가 estop 래치를 보고한다 — 해제는 콘솔 밖에서 한다",), armed)
 
     bad = [f"{n}: {r}" for n, s in seen.items() if s.get("ok") is False for r in (s.get("reasons") or ["ok=false"])]
     pd_phase = None if pd is None else str(pd.get("phase", ""))
+    pd_tag = "pd" if len(pds) <= 1 else f"pd({pd.get('sides', [''])[0] if pd.get('sides') else '?'})"
 
     if pd is not None and pd_phase == "HOLD":
-        reasons = tuple(f"pd: {r}" for r in (pd.get("reasons") or ())) or ("pd 가 HOLD 다",)
+        reasons = tuple(f"{pd_tag}: {r}" for r in (pd.get("reasons") or ())) or (f"{pd_tag} 가 HOLD 다",)
         return Banner(HOLD, TONE[HOLD], reasons, armed)
     if bad:
         return Banner(FAULT, TONE[FAULT], tuple(bad), armed)
@@ -125,7 +144,7 @@ def derive(obs: Observed, *, expected_nodes: Sequence[str]) -> Banner:
     if running:
         return Banner(RUNNING, TONE[RUNNING], (), armed)
     if pd_phase in ("RAMPING", "TRACKING"):
-        return Banner(ARMED, TONE[ARMED], (f"pd {pd_phase}",), armed)
+        return Banner(ARMED, TONE[ARMED], (f"{pd_tag} {pd_phase}",), armed)
 
     missing = tuple(f"{n}: status 없음" for n, s in fresh.items() if s is None)
     return Banner(IDLE, TONE[IDLE], missing, armed)

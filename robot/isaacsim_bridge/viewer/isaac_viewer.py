@@ -41,9 +41,13 @@ parser.add_argument("--shot", default=None, help="PNG 경로 — 첫 패킷 적�
 parser.add_argument("--shot_wait_s", type=float, default=20.0, help="--shot 전 첫 패킷 대기 상한")
 parser.add_argument("--exit_after_shot", action="store_true")
 parser.add_argument("--max_seconds", type=float, default=0.0, help=">0 이면 이 시간 뒤 종료(자동 시험용)")
+parser.add_argument("--record", default=None,
+                    help="PNG 프레임을 쌓을 디렉터리 — 첫 패킷부터 녹화한다(영상용). 로봇에는 아무것도 보내지 않는다")
+parser.add_argument("--record_idle_s", type=float, default=2.5,
+                    help="--record 중 패킷이 이만큼 끊기면 녹화를 끝내고 종료한다")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
-if args.shot:
+if args.shot or args.record:
     args.enable_cameras = True              # rgb_array 렌더(뷰포트 annotator)에 필요
 app_launcher = AppLauncher(args)
 simulation_app = app_launcher.app
@@ -235,7 +239,7 @@ def main() -> None:
     cup_pose = cup_default_pose(cfg, spec)
     print_value_table(cfg, spec, chosen, cup_pose, policy_dir)
 
-    env = gym.make(task, cfg=cfg, render_mode="rgb_array" if args.shot else None).unwrapped
+    env = gym.make(task, cfg=cfg, render_mode="rgb_array" if (args.shot or args.record) else None).unwrapped
     env.reset()                                          # 학습과 같은 리셋(로봇 시작 자세 등) — 이후 step 없음
     pin_cup(env, cup_pose)
     mirror = RobotMirror(env)
@@ -249,6 +253,13 @@ def main() -> None:
     t0 = last_status = time.monotonic()
     last_pkt_t, applied, shot_done = None, 0, False
     first_applied_at = None
+    #: 녹화 — 프레임마다 벽시계를 함께 적는다. 렌더가 송신보다 느리면 프레임이 빠지므로,
+    #: 영상 fps 를 나중에 **실제 간격**으로 맞춰야 실시간으로 보인다.
+    rec_dir = Path(args.record).resolve() if args.record else None
+    rec_n, rec_times, rec_last_pkt = 0, [], None
+    if rec_dir is not None:
+        rec_dir.mkdir(parents=True, exist_ok=True)
+        _log(f"녹화 — {rec_dir} (패킷이 {args.record_idle_s:g} s 끊기면 종료)")
     while simulation_app.is_running():
         tick = time.monotonic()
         live, pre = udp.poll(), preview.poll()
@@ -262,6 +273,23 @@ def main() -> None:
                 first_applied_at = tick
                 _log(f"첫 패킷 적용: {applied} 관절 {list(mirror.applied_names)}")
         env.sim.render()
+
+        if rec_dir is not None:
+            if pkt is not None:
+                rec_last_pkt = tick
+            if rec_last_pkt is not None:
+                img = env.render()
+                if img is not None:
+                    _save_png(img, str(rec_dir / f"f{rec_n:05d}.png"))
+                    rec_times.append(time.monotonic())
+                    rec_n += 1
+                if tick - rec_last_pkt > args.record_idle_s:
+                    span = (rec_times[-1] - rec_times[0]) if len(rec_times) > 1 else 0.0
+                    fps = (len(rec_times) - 1) / span if span > 0 else 0.0
+                    print("VIEWER_RECORD " + json.dumps(
+                        {"dir": str(rec_dir), "frames": rec_n, "span_s": round(span, 3),
+                         "fps": round(fps, 3)}, ensure_ascii=False), flush=True)
+                    break
 
         if args.shot and not shot_done:
             waited = tick - t0

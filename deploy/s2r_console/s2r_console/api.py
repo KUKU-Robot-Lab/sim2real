@@ -80,7 +80,9 @@ def _write(console: Console, method: str, path: str, data: dict, token: str | No
 
     # ── 멈추기: lease 없이 ──────────────────────────────────────────────
     if path.startswith("/api/quick/"):
-        console.quick(path.rsplit("/", 1)[1], client=client)
+        # /api/quick/<name> 또는 /api/quick/<name>/<side> — pd 서비스는 팔마다 따로다(09.23)
+        rest = path[len("/api/quick/"):].strip("/").split("/")
+        console.quick(rest[0], client=client, side=rest[1] if len(rest) > 1 else "")
         return 202, ok
 
     # ── 나머지는 lease 가 있어야 ────────────────────────────────────────
@@ -108,10 +110,10 @@ def _write(console: Console, method: str, path: str, data: dict, token: str | No
         console.skip_stage(str(data.get("stage", "")), operator=who)
         return 200, ok
     if path == "/api/stage/ack":
-        console.ack(int(data.get("index", -1)), bool(data.get("ok")))
+        console.ack(int(data.get("index", -1)), bool(data.get("ok")), stage_id=str(data.get("stage", "")))
         return 200, ok
     if path == "/api/stage/abort":
-        console.abort_stage()
+        console.abort_stage(str(data.get("stage", "")))
         return 202, ok
     if path == "/api/unit":
         # 오는 것은 키와 켬/끔뿐이다. argv 는 미션 yaml 에서만 온다 — 본문의 다른 필드는 읽지 않는다.

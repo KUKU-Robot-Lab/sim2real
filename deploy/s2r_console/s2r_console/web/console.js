@@ -90,7 +90,20 @@ function render() {
   renderMetrics(s);
   renderPolicy(s);
   renderRobot(s);
-  put("quick", S.quick.map((q) => `<button class="btn-stop" data-act="quick" data-arg="${esc(q.name)}" title="${esc(q.help)}">■ ${esc(q.label)}</button>`).join(""));
+  put("quick", stopButtons(s));
+}
+
+// 정지 바 — pd 서비스는 팔마다 따로다(09.23). PD 해제는 **팔마다 한 개**로 나눠 둔다:
+// 한 버튼이 양팔을 푸는 것처럼 보이면 안 된다(누른 사람이 반대 팔도 풀렸다고 믿는다).
+const SIDE_KO = { right: "오른팔", left: "왼팔" };
+
+function stopButtons(s) {
+  const sides = (s && s.mission && (s.mission.lanes || []).map((l) => l.side).filter(Boolean)) || [];
+  const arms = sides.length ? sides : ["right", "left"];
+  return (S.quick || []).filter((q) => q.where !== "hand").flatMap((q) => {
+    if (!q.per_side) return [`<button class="btn-stop" data-act="quick" data-arg="${esc(q.name)}" title="${esc(q.help)}">■ ${esc(q.label)}</button>`];
+    return arms.map((a) => `<button class="btn-stop" data-act="quick" data-arg="${esc(q.name)}:${esc(a)}" title="${esc(q.help)}">■ ${esc(q.label)} ${esc(SIDE_KO[a] || a)}</button>`);
+  }).join("");
 }
 
 function domainBadge(p) {
@@ -148,8 +161,8 @@ function cmdsHtml(r, steps, can, live) {
     const waiting = live && st && st.status === "waiting";
     const manual = waiting ? `<div class="manual-box"><b>다른 셸에서 직접 실행할 것</b> — 콘솔은 이 명령을 실행하지 않는다.
         <div class="cmd-copy"><pre>${esc(shellLine(c.argv))}</pre>${copyBtn(shellLine(c.argv))}</div>
-        <div class="actions"><button class="btn btn-primary btn-sm" data-act="ack" data-arg="${k}:1" ${can ? "" : "disabled"}>실행했고 정상이다 → 다음</button>
-        <button class="btn btn-sm" data-act="ack" data-arg="${k}:0" ${can ? "" : "disabled"}>정상이 아니다 → 중단</button></div></div>` : "";
+        <div class="actions"><button class="btn btn-primary btn-sm" data-act="ack" data-arg="${esc(r.id)}:${k}:1" ${can ? "" : "disabled"}>실행했고 정상이다 → 다음</button>
+        <button class="btn btn-sm" data-act="ack" data-arg="${esc(r.id)}:${k}:0" ${can ? "" : "disabled"}>정상이 아니다 → 중단</button></div></div>` : "";
     const detail = st && st.detail ? `<span class="cmd-argv" style="color:var(--warn)">${esc(st.detail)}</span>` : "";
     const copy = c.kind === "manual" && !manual ? copyBtn(shellLine(c.argv)) : "";
     return `<li class="cmd${waiting ? " waiting" : ""}"><span class="cmd-kind ${esc(c.kind)}">${KIND_LABEL[c.kind] || esc(c.kind)}</span><span>${esc(c.note || cmdLine(c))}${detail}<span class="cmd-argv">${esc(cmdLine(c))}</span></span><span>${chip} ${logBtn}${copy}</span>${manual}</li>`;
@@ -163,33 +176,29 @@ function prevBtn(m, can) {
   return prev ? `<button class="btn btn-sm btn-ghost" data-act="rewind" data-arg="${esc(prev.id)}" ${can ? "" : "disabled"}>↶ 이전 단계(${esc(prev.id)})로</button>` : "";
 }
 
-function renderControl(s) {
-  const can = holding(), m = s.mission, R = s.runner;
-  const cur = m.rows.find((r) => r.current);
-  put("gb", groupBar(m));
-  if (!cur) {
-    return put("cp", `<div class="cp-head"><span class="cp-title">모든 단계가 끝났다</span></div>
-      <p class="cp-note">정리가 끝났으면 오른쪽 아래 <b>run 끝내기</b>로 닫는다.</p>`);
-  }
+// 한 단계 카드의 속. `R` = 그 창의 러너(없으면 null). 창이 여럿이면 카드도 여럿이다.
+function stageCard(s, cur, R, can) {
+  const m = s.mission;
   const g = stageGroups(m).find((x) => x.id === (cur.group || "")) || stageGroups(m)[0];
-  const running = m.status === "RUNNING", failed = m.status === "FAILED" || m.status === "ABORTED";
+  const running = cur.status === "RUNNING";
+  const failed = !running && (cur.last_outcome === "FAILED" || cur.last_outcome === "ABORTED");
   const mine = R && R.stage === cur.id ? R.steps : null;
   const waiting = mine && mine.some((st) => st.status === "waiting");
   const tags = [
     cur.touches_real ? `<span class="badge real">실기</span>` : "",
     g.motion ? `<span class="badge bad">팔·목이 움직인다</span>` : `<span class="badge">움직임 없음</span>`,
     cur.touches_real && cur.approved ? `<span class="badge ok">승인됨</span>` : "",
-    failed ? `<span class="badge bad">${esc(m.status)}</span>` : "",
+    failed ? `<span class="badge bad">${esc(cur.last_outcome)}</span>` : "",
   ].join("");
   let say;
   if (!can) say = `<b>먼저 조작 권한을 잡을 것</b> — 오른쪽 위에 이름을 넣고 <b>조작 권한 잡기</b>.`;
   else if (waiting) say = `<b>✋ 확인을 기다린다</b> — 아래 명령을 다른 셸에서 실행하거나 확인한 뒤 <b>실행했고 정상이다</b>.`;
   else if (running) say = `실행 중… 명령이 끝나는 대로 다음 단계로 넘어간다.`;
-  else if (failed) say = `<span class="warn">${esc(m.note || "실패했다")}</span> — 원인을 고친 뒤 다시 실행하거나, 건너뛸 수 있으면 건너뛴다.`;
+  else if (failed) say = `<span class="warn">${esc(cur.last_note || "실패했다")}</span> — 원인을 고친 뒤 다시 실행하거나, 건너뛸 수 있으면 건너뛴다.`;
   else if (cur.reasons.length) say = `<span class="warn">막힘: ${esc(cur.reasons[0])}</span>`;
   else say = cur.touches_real && !cur.approved ? `실기 단계다 — <b>승인…</b> 뒤 <b>▶ 실행</b>.` : `<b>▶ 실행</b>으로 시작한다.`;
   let actions = "";
-  if (running) actions = `<button class="btn btn-sm" data-act="abort-stage" ${can ? "" : "disabled"}>■ 이 단계 중단</button>`;
+  if (running) actions = `<button class="btn btn-sm" data-act="abort-stage" data-arg="${esc(cur.id)}" ${can ? "" : "disabled"}>■ 이 단계 중단</button>`;
   else {
     if (cur.touches_real && !cur.approved) actions += `<button class="btn btn-real" data-act="approve" data-arg="${esc(cur.id)}" ${can && cur.can_approve ? "" : "disabled"}>승인…</button>`;
     actions += `<button class="btn ${cur.touches_real ? "btn-real" : "btn-primary"}" data-act="run" data-arg="${esc(cur.id)}" ${can && cur.can_run ? "" : "disabled"}>▶ ${failed ? "다시 실행" : "실행"}</button>`;
@@ -202,14 +211,73 @@ function renderControl(s) {
   }
   const reasons = cur.reasons.length > 1 ? `<ul class="reasons">${cur.reasons.slice(1).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
   const stale = cur.approval_stale.length ? `<ul class="reasons bad"><li><b>이전 승인이 무효가 됐다</b> — 승인한 뒤 파일이 바뀌었다</li>${cur.approval_stale.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
+  // 창을 나눠 놓으면 "다른 창의 것을 내린다"를 반드시 말해야 한다 — pd 노드 이름이 하나뿐이라 왼팔을 띄우면 오른팔이 풀린다.
+  const steals = (cur.stops_lanes || []).length
+    ? `<ul class="reasons bad"><li><b>이 단계는 ${cur.stops_lanes.map((id) => esc(laneTitle(m, id))).join(" · ")} 창의 프로세스를 내린다</b> — 그 팔은 pd 가 풀리고 JTC 가 잡는다</li></ul>` : "";
   const cmds = cur.commands.length ? (mine || waiting || cur.commands.length <= 3
     ? `<ul class="cmds">${cmdsHtml(cur, mine, can, true)}</ul>`
     : det(`cp:${cur.id}`, `실행할 명령 ${cur.commands.length}개`, `<ul class="cmds">${cmdsHtml(cur, mine, can, true)}</ul>`)) : "";
-  put("cp", `<div class="cp-head"><span class="cp-where">${esc(g.title)} ›</span><span class="cp-title">${esc(cur.id)}</span>${tags}</div>
+  return `<div class="cp-head"><span class="cp-where">${esc(g.title)} ›</span><span class="cp-title">${esc(cur.id)}</span>${tags}</div>
     <div class="cp-desc">${esc(cur.title)}</div>
-    <div class="cp-chips">${groupChips(m, cur)}</div>
-    <p class="cp-note">${say}</p>${reasons}${stale}${cmds}
-    <div class="actions cp-actions">${actions}<span class="spacer"></span>${prevBtn(m, can)}<button class="btn btn-sm btn-ghost" data-act="show-all">전체 단계 ▾</button></div>`);
+    <p class="cp-note">${say}</p>${reasons}${stale}${steals}${cmds}
+    <div class="actions cp-actions">${actions}</div>`;
+}
+
+const laneTitle = (m, id) => ((m.lanes || []).find((l) => l.id === id) || { title: id }).title;
+
+// 창 하나 = 따로 도는 장치. 그 창에서 아직 안 끝낸 첫 단계를 카드로, 나머지는 칩으로.
+function laneHtml(s, lane, can) {
+  const m = s.mission, rows = m.rows.filter((r) => r.lane === lane.id);
+  const done = rows.filter((r) => r.done).length;
+  const chips = rows.map((r) => `<span class="gc${r.id === lane.next ? " now" : r.done ? " done" : ""}" title="${esc(r.title)}">${r.done ? "✓ " : r.id === lane.next ? "● " : ""}${esc(r.id)}</span>`).join("");
+  let body;
+  if (!lane.next) body = `<p class="cp-note">이 창의 단계를 모두 끝냈다.</p>`;
+  else {
+    const cur = rows.find((r) => r.id === lane.next);
+    const last = lane.last && lane.last.stage === cur.id ? lane.last : null;
+    body = stageCard(s, { ...cur, last_outcome: last ? last.outcome : "", last_note: last ? last.note : "" },
+                     s.runners ? s.runners[lane.id] : null, can);
+  }
+  return `<section class="panel lane${lane.busy ? " lane-busy" : ""}">
+    <div class="panel-head"><h2>${esc(lane.title)}</h2><span class="meta">${done}/${rows.length}${lane.busy ? ` · ${esc(lane.busy)} 실행 중` : ""}</span></div>
+    <div class="cp-chips">${chips}</div>${body}</section>`;
+}
+
+// 손 창 — 단계가 아니라 **서비스 버튼**이다(09.23 사용자). pd 서비스에는 쪽이 없어서 떠 있는 pd 가 대상을 정한다.
+function handPanel(s, side, can) {
+  const label = side === "right" ? "오른손" : "왼손";
+  const sides = s.pd_sides || [];
+  const mine = sides.includes(side);
+  const why = mine ? "" : `${label} 의 pd status 가 오지 않는다 — 그 팔의 pd 단계를 먼저 실행할 것`;
+  // pd 서비스는 팔마다 따로다(09.23) — 버튼이 쪽을 함께 보낸다.
+  const btns = (S.quick || []).filter((q) => q.where === "hand").map((q) =>
+    `<button class="btn btn-sm" data-act="quick" data-arg="${esc(q.name)}:${esc(side)}" ${mine && can ? "" : "disabled"} title="${esc(q.help)}">${esc(q.label)}</button>`).join("");
+  return `<section class="panel lane hand${mine ? "" : " lane-off"}">
+    <div class="panel-head"><h2>${esc(label)}</h2><span class="meta">${mine ? `pd_${esc(side)} 살아 있음` : "대기"}</span></div>
+    ${why ? `<p class="cp-note warn">${esc(why)}</p>` : `<p class="cp-note">손만 움직인다 — 팔은 그대로다. 손가락을 펴는 것은 팔이 홈에 정착한 뒤에 한다.
+      주먹(경로 자세)으로 오므리는 것은 팔 창의 홈 단계가 한다 — 그 이동은 충돌 검사를 먼저 해야 한다.</p>`}
+    <div class="actions">${btns}</div></section>`;
+}
+
+function renderControl(s) {
+  const can = holding(), m = s.mission;
+  put("gb", groupBar(m));
+  const lanes = m.lanes || [];
+  if (!lanes.length) {                       // 창을 선언하지 않은 미션 — 예전처럼 카드 하나
+    const cur = m.rows.find((r) => r.current);
+    put("lanes", "");
+    put("hands", "");
+    if (!cur) {
+      return put("cp", `<div class="cp-head"><span class="cp-title">모든 단계가 끝났다</span></div>
+        <p class="cp-note">정리가 끝났으면 오른쪽 아래 <b>run 끝내기</b>로 닫는다.</p>`);
+    }
+    const R = s.runners ? s.runners[""] : null;
+    return put("cp", stageCard(s, { ...cur, last_outcome: m.status, last_note: m.note }, R, can)
+      + `<div class="actions cp-actions"><span class="spacer"></span>${prevBtn(m, can)}<button class="btn btn-sm btn-ghost" data-act="show-all">전체 단계 ▾</button></div>`);
+  }
+  put("cp", "");
+  put("lanes", lanes.map((l) => laneHtml(s, l, can)).join(""));
+  put("hands", ["right", "left"].map((side) => handPanel(s, side, can)).join(""));
 }
 
 function renderBanner(s) {
@@ -254,16 +322,20 @@ function renderLanding() {
 }
 const rel = (p) => String(p).replace(/^.*\/sim2real\//, "");
 
+const runnerOf = (s, id) => Object.values(s.runners || {}).find((r) => r && r.stage === id) || null;
+
 function renderStages(s) {
-  const R = s.runner, m = s.mission, can = holding();
+  const m = s.mission, can = holding();
   put("mission-meta", `${esc(m.name)} · ${m.rows.filter((r) => r.done).length}/${m.rows.length}`);
   let lastGroup = null;
   const rows = m.rows.map((r, i) => {
     const g = stageGroups(m).find((x) => x.id === (r.group || ""));
     const header = g && g.id !== lastGroup ? `<li class="stage-group${g.motion ? " motion" : ""}">${esc(g.title)}</li>` : "";
     lastGroup = g ? g.id : lastGroup;
-    const failed = r.current && (m.status === "FAILED" || m.status === "ABORTED");
-    const running = r.current && m.status === "RUNNING";
+    const laneLast = ((m.lanes || []).find((l) => l.id === r.lane) || {}).last;
+    const lastHere = laneLast && laneLast.stage === r.id ? laneLast.outcome : (r.current ? m.status : "");
+    const running = r.status === "RUNNING";
+    const failed = !running && (lastHere === "FAILED" || lastHere === "ABORTED");
     const flash = r.id === flashStage && Date.now() < flashUntil ? "flash" : "";
     const cls = ["stage", r.done ? "done" : "", r.current ? "current" : "", running ? "running" : "", failed ? "failed" : "", r.reasons.length ? "blocked" : "", flash].join(" ");
     const badges = [
@@ -272,7 +344,8 @@ function renderStages(s) {
       r.skipped ? `<span class="badge">건너뜀</span>` : "",
       r.can_rewind ? `<button class="btn btn-sm btn-ghost rewind" data-act="rewind" data-arg="${esc(r.id)}" ${can ? "" : "disabled"} title="이 단계부터 다시 진행한다">↶ 여기서 다시</button>` : "",
     ].join("");
-    const steps = R && R.stage === r.id ? R.steps : null;
+    const rr = runnerOf(s, r.id);
+    const steps = rr ? rr.steps : null;
     const body = r.commands.length ? det(`cmds:${r.id}`, `명령 ${r.commands.length}개`, `<ul class="cmds">${cmdsHtml(r, steps, can, false)}</ul>`) : "";
     return `${header}<li id="stage-${esc(r.id)}" class="${cls}"><div class="stage-rail"><span class="dot">${r.done ? "✓" : ""}</span></div><div class="stage-body">
       <div class="stage-line"><span class="stage-id">${i + 1}. ${esc(r.id)}</span>${badges}</div><div class="stage-title">${esc(r.title)}</div>${body}</div></li>`;
@@ -536,7 +609,8 @@ function renderPolicy(s) {
 // 로봇 상태 — 자산에서 뽑은 실루엣(링크마다 id) 옆에 관절 표. 판정·채널은 서버(robot_view.py)가 준다.
 // 09.23 실기: 손가락이 계약 홈(굽힘 관절 하한 0.0)으로 밀려 꺾였는데 화면 어디에도 그 값이 없었다.
 // 렌더(PNG, 실제 메쉬 음영) 위에 실루엣(SVG, 링크마다 id)을 겹친다 — 둘은 같은 투영·같은 창이라 맞아떨어진다.
-const ROBOT_ART = { arms: "robot_arms", right: "robot_hand_right", left: "robot_hand_left" };
+//: 정적 파일은 /static/ 아래로만 서비스된다(server.py `_static`) — 상대 경로로 부르면 404 다.
+const ROBOT_ART = { arms: "/static/robot_arms", right: "/static/robot_hand_right", left: "/static/robot_hand_left" };
 const artCache = {};
 
 async function loadArt(key) {
@@ -664,9 +738,18 @@ const acts = {
     await call("POST", "/api/stage/run", { stage: id, restart: true });
     refresh();
   },
-  async ack(arg) { const [i, ok] = arg.split(":"); await call("POST", "/api/stage/ack", { index: Number(i), ok: ok === "1" }); refresh(); },
-  async "abort-stage"() { await call("POST", "/api/stage/abort"); refresh(); },
-  async quick(name) { await call("POST", `/api/quick/${name}`); toast("정지 요청을 보냈다 — 결과는 '사건' 에 뜬다", [], true); refresh(); },
+  async ack(arg) {
+    const [stage, i, ok] = arg.split(":");
+    await call("POST", "/api/stage/ack", { stage, index: Number(i), ok: ok === "1" });
+    refresh();
+  },
+  async "abort-stage"(id) { await call("POST", "/api/stage/abort", { stage: id || "" }); refresh(); },
+  async quick(arg) {
+    const [name, side] = String(arg).split(":");                           // pd 서비스는 팔마다 따로다(09.23)
+    await call("POST", `/api/quick/${name}${side ? `/${side}` : ""}`);
+    toast("요청을 보냈다 — 결과는 '사건' 에 뜬다", [], true);
+    refresh();
+  },
   async unit(arg) {
     const [key, on] = [arg.slice(0, arg.lastIndexOf(":")), arg.endsWith(":1")];
     if (!on) return unitModal(key);                                        // 끄기는 한 번 더 묻는다
@@ -694,8 +777,9 @@ const acts = {
   "layout-reset"() { layout = {}; saveLayout(); applyLayout(); drawWires(); },
   "goto-stage"(id) {                                                         // 잠금 줄 · 목록 → 지금 단계면 조작판, 아니면 목록의 그 줄
     const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const cur = S && S.session && S.session.mission.rows.find((r) => r.current);
-    if (cur && cur.id === id) {
+    // 창이 여럿이면 "지금 단계"도 여럿이다 — 그 id 가 제 창의 지금 단계면 조작판으로 간다.
+    const cur = S && S.session && S.session.mission.rows.find((r) => r.id === id && r.current);
+    if (cur) {
       const cp = $("control");
       cp.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
       cp.classList.remove("flash"); void cp.offsetWidth; cp.classList.add("flash");

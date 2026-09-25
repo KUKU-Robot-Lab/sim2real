@@ -67,6 +67,35 @@ def hand_verdict(q: dict[str, float], hand_q_text: str, tol: float) -> list[str]
     return []
 
 
+def sphere_verdict(q: dict[str, float], side: str, radius: float) -> list[str]:
+    """경로를 손 봉투 구로 계획했다면(meta_hand_sphere) 지금 손이 그 구 안에 있어야 한다.
+
+    손가락 자세를 맞추는 대신 **봉투에 들어가는가**만 본다 — 손 전원을 껐다 켤 때마다 손가락이
+    다른 자세로 자리 잡아도, 충분히 오므려져 있으면 저장 경로가 그대로 유효하다(09.23 사용자).
+    """
+    W = _world()
+    links, joints, _ = W.parse_urdf(W.URDF_DEFAULT)
+    hand = [j for j in q if f"{side[0]}_hj_" in j]
+    if not hand:
+        return [f"손 관절 상태가 없다({side}) — 손 드라이버가 떠 있는가"]
+    r, worst = W.hand_radius(links, joints, {j: float(q[j]) for j in hand}, side)
+    if r > radius:
+        return [f"손이 경로 봉투(반지름 {radius * 100:.1f} cm)를 {(r - radius) * 100:.1f} cm 넘는다 — "
+                f"{worst} 가 손바닥에서 {r * 100:.1f} cm. 손가락을 더 오므릴 것"]
+    print(f"[path] 손 봉투 {r * 100:.1f} / {radius * 100:.1f} cm ({worst}) — 구 안")
+    return []
+
+
+def _world():
+    import importlib.util
+    here = Path(__file__).resolve().parent
+    spec = importlib.util.spec_from_file_location("home_path_world", here / "home_path_world.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["home_path_world"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--npz", type=Path, required=True)
@@ -86,7 +115,11 @@ def main() -> int:
         reasons.append(f"경로를 만든 계약({want[:10]})이 지금 계약({have[:10]})과 다르다 — 경로를 다시 만들 것")
     q = measure()
     reasons += verdict(q, joints, np.asarray(d["meta_start"], dtype=float), args.tol, args.allow_exact_zero)
-    if "meta_hand_q" in d and str(d["meta_hand_q"]) and not args.allow_exact_zero:
+    sphere = float(d["meta_hand_sphere"]) if "meta_hand_sphere" in d else float("nan")
+    if sphere == sphere:                      # 봉투로 계획한 경로 — 손 자세는 구 안에 있기만 하면 된다
+        side = "right" if str(d["meta_joints"][0]).startswith("r_") else "left"
+        reasons += sphere_verdict(q, side, sphere)
+    elif "meta_hand_q" in d and str(d["meta_hand_q"]) and not args.allow_exact_zero:
         reasons += hand_verdict(q, str(d["meta_hand_q"]), args.hand_tol)
     print(f"[path] {args.npz.name} · {d['meta_method']} · {len(d['arm_target'])} 프레임 · 최소 여유 "
           f"{float(d['meta_min_clearance_non_escape']):.3f} m")

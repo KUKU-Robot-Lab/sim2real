@@ -32,7 +32,7 @@ from lowlevel_check_core import (build_step_plan, evaluate_hold, evaluate_step, 
 
 TARGET_TOPIC = "/policy_control/joint_target"
 STATE_TOPIC = "/joint_states"
-PD_STATUS = "/policy_control/status/pd"
+PD_STATUS = "/policy_control/status/pd_{side}"      # 팔마다 따로(09.23)
 EPISODE_TOPIC = "/policy_control/episode"
 STOP_WAIT_S = 1.0         # episode stop 이 pd 에 닿을 때까지(< watchdog 0.25 s 가 정상, 여유 포함)
 STREAM_HZ = 50.0
@@ -139,12 +139,12 @@ def main() -> int:
         phase["pd"], phase["target"] = body.get("phase"), body.get("target")
 
     node.create_subscription(JointState, STATE_TOPIC, on_js, qos_profile_sensor_data)
-    node.create_subscription(String, PD_STATUS, on_pd, 10)
+    side = "left" if joints[0].startswith("l_") else "right"
+    node.create_subscription(String, PD_STATUS.format(side=side), on_pd, 10)
     pub = node.create_publisher(JointState, TARGET_TOPIC, 10)
     # episode stop 발행자는 **지금** 만든다 — 끝에 만들면 discovery 전에 프로세스가 끝나 latched 메시지가 사라진다(run right1)
     latched = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
     ep_pub = node.create_publisher(String, EPISODE_TOPIC, latched)
-    side = "left" if joints[0].startswith("l_") else "right"
     source = [f"openarm_{side}_joint{j.split('_')[-1]}" for j in joints]
 
     def measured() -> np.ndarray:

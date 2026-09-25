@@ -95,7 +95,8 @@ python3 scripts/ops/mission_run.py --abort  20260922_101500
 에피소드 한 판(로봇이 움직인다 — 승인 3개가 전부 있어야 시작한다):
 
 ```bash
-python3 deploy/policy_control/tools/episode_ctl.py --steps 250 --execute \
+# pd 는 팔마다 따로다(09.23) — --side 로 어느 팔인지 말한다(episode 서비스는 쪽이 없다)
+python3 deploy/policy_control/tools/episode_ctl.py --side right --steps 250 --execute \
     --approve pd_engage --approve pd_goto_home --approve ep_start
 ```
 

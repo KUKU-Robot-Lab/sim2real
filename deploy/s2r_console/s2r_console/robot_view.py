@@ -17,7 +17,8 @@ from typing import Mapping, Sequence
 FINGERS = ("thumb", "index", "middle", "ring", "pinky")
 #: 화면이 고를 수 있는 값 채널 — (키, 이름, 단위). `pos` 만 목표·한계와 견준다.
 #: 손끝 촉각은 그 값을 내는 원이 생기면 `("tactile", "촉각", "N")` 을 더하면 된다(09.23 대비).
-CHANNELS = (("pos", "위치", "rad"), ("vel", "속도", "rad/s"), ("eff", "토크", "N·m"))
+CHANNELS = (("pos", "위치", "rad"), ("vel", "속도", "rad/s"), ("eff", "토크", "N·m"),
+            ("temp", "로터", "°C"), ("mos", "MOS", "°C"))
 #: 목표와 이만큼 벌어지면 화면에서 굵게 — 팔은 pd 정착 공차(0.01)의 5배, 손은 속도 제한 한 틱 몫
 ARM_OFF_RAD = 0.05
 HAND_OFF_RAD = 0.10
@@ -67,9 +68,24 @@ def group(title: str, names: Sequence[str], joints: Mapping[str, Sequence],
             "limit": [r["joint"] for r in rows if r["state"] == "limit"]}
 
 
+def by_canonical(joints: Mapping[str, Sequence], alias: Mapping[str, str] | None) -> dict:
+    """`/joint_states` 는 **원본 이름**(openarm_right_joint1)으로 온다 — canonical(r_aj_1)로 옮긴다. 순수.
+
+    09.23 실기: 이 변환이 없어 표의 모든 칸이 '—' 였다(창은 떴는데 값이 안 나왔다)."""
+    if not alias:
+        return dict(joints)
+    out = dict(joints)
+    for src, canon in alias.items():
+        if src in joints:
+            out[canon] = joints[src]
+    return out
+
+
 def view(joints: Mapping[str, Sequence], contract_sides: Mapping[str, Mapping],
-         limits: Mapping[str, Sequence], *, age_s: float | None) -> dict:
+         limits: Mapping[str, Sequence], *, age_s: float | None,
+         alias: Mapping[str, str] | None = None) -> dict:
     """화면이 그대로 그리는 모양. `contract_sides` 는 계약의 `sides`(팔·손 홈이 목표다)."""
+    joints = by_canonical(joints, alias)
     groups = []
     for side in ("right", "left"):
         if side not in contract_sides:            # 계약에 없는 팔은 그리지 않는다(한 팔짜리 계약)

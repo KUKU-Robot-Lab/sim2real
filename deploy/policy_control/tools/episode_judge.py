@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""에피소드 성공 판정 — /policy_control/obs·status/pd·joint_target 를 구독해 계약 세그먼트로 판정한다.
+"""에피소드 성공 판정 — /policy_control/obs·status/pd_<side>·joint_target 를 구독해 계약 세그먼트로 판정한다.
 
 좌(v2B25) 기준(플랜 §6 M8): ① gripper_gate 가 1 이 된 뒤 ≤ close_steps 안에 그리퍼 목표 ≤ closed_m
 ② 부착(게이트) 이후 물체 z 가 시작 대비 ≥ lift_m 상승을 hold_steps 동안 유지 ③ pd HOLD 0회
@@ -102,7 +102,9 @@ def main() -> int:
 
     node.create_subscription(Float64MultiArray, "/policy_control/obs", on_obs, 50)
     node.create_subscription(JointState, "/policy_control/joint_target", on_target, 50)
-    node.create_subscription(String, "/policy_control/status/pd", on_pd, 50)
+    # pd status 는 팔마다 따로다(09.23) — 판정은 "어느 팔이든 HOLD 였나"만 보므로 둘 다 듣는다.
+    for _s in ("right", "left"):
+        node.create_subscription(String, f"/policy_control/status/pd_{_s}", on_pd, 50)
     t0 = time.time()
     while time.time() - t0 < args.seconds:
         rclpy.spin_once(node, timeout_sec=0.1)

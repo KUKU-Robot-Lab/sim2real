@@ -15,11 +15,6 @@
 </header>
 
 <section id="banner" class="banner tone-mute"></section>
-<section id="control" class="control" hidden aria-label="지금 할 단계">
-  <ol id="gb" class="gb" aria-label="진행 묶음"></ol>
-  <div id="cp" class="cp" aria-live="polite"></div>
-</section>
-
 <main id="landing" class="landing" hidden></main>
 
 <main id="work" class="work" hidden>
@@ -44,11 +39,15 @@
     </div>
   </section>
 
-  <section class="col col-side">
-    <div class="panel grow">
-      <div class="panel-head"><h2>로봇 상태</h2><span id="robot-chan" class="meta"></span><span id="robot-meta" class="meta"></span></div>
-      <div id="robot"></div>
-    </div>
+  <section class="panel robot-panel">
+    <div class="panel-head"><h2>로봇 상태</h2><span id="robot-chan" class="meta"></span><span id="robot-meta" class="meta"></span></div>
+    <div id="robot"></div>
+  </section>
+  <section id="control" class="control" hidden aria-label="제어 창">
+    <ol id="gb" class="gb" aria-label="진행 묶음"></ol>
+    <div id="cp" class="cp" aria-live="polite"></div>
+    <div id="lanes" class="lanes"></div>
+    <div id="hands" class="lanes hands"></div>
   </section>
   <details id="all-stages" class="panel all-stages">
     <summary class="panel-head"><h2>전체 단계</h2><span id="mission-meta" class="meta"></span><span class="hint">읽기용 — 조작은 위 조작판에서</span></summary>

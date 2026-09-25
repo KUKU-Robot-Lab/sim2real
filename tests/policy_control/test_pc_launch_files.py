@@ -129,7 +129,8 @@ def test_episode_ctl_execute_requires_all_real_approvals(ctl, capsys):
 def test_episode_ctl_stage_order_and_helpers(ctl):
     ids = [s.id for s in ctl.selected(())]                    # 전체 시나리오 — pd_hand_home 은 --only 로만(09.22)
     assert ids == ["pd_engage", "pd_goto_home", "ep_reset", "ep_start", "run", "ep_stop", "pd_release"]
-    assert [s.id for s in ctl.STAGES if s.only] == ["pd_hand_home", "pd_hand_rest"]
+    # --only 로만 부르는 손 단계들 — 09.23 pd_hand_path 추가(팔보다 먼저 손을 경로 기준 자세로)
+    assert [s.id for s in ctl.STAGES if s.only] == ["pd_hand_home", "pd_hand_rest", "pd_hand_path"]
     assert ctl.missing_approvals(frozenset()) == ["pd_engage", "pd_goto_home", "ep_start"]
     assert ctl.missing_approvals(frozenset(ids)) == []
     assert ctl.parse_trigger(True, '{"ok": true, "reasons": []}') == (True, [])

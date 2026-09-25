@@ -67,12 +67,16 @@ def index_units(mission, commands_by_stage: Mapping[str, tuple]) -> dict[str, Un
     return out
 
 
-def _busy(unit: "UnitCmd", busy_stage: str | None) -> list[str]:
-    """제 단계가 도는 동안만 잠근다 — 러너가 같은 키를 띄우거나 지켜보는 중이다. 남의 단계(긴 episode)는 막지 않는다."""
-    return [f"단계 {busy_stage} 가 실행 중이다 — 이 명령을 그 단계가 다루고 있다. 끝난 뒤에 할 것"] if busy_stage == unit.stage else []
+def _busy(unit: "UnitCmd", busy_stages: Collection[str]) -> list[str]:
+    """제 단계가 도는 동안만 잠근다 — 러너가 같은 키를 띄우거나 지켜보는 중이다. 남의 단계(긴 episode)는 막지 않는다.
+
+    창(lane)이 여럿이면 동시에 여러 단계가 돈다 — 그래서 **목록**을 받는다(09.23).
+    """
+    return ([f"단계 {unit.stage} 가 실행 중이다 — 이 명령을 그 단계가 다루고 있다. 끝난 뒤에 할 것"]
+            if unit.stage in (busy_stages or ()) else [])
 
 
-def on_reasons(unit: UnitCmd, *, alive: bool, busy_stage: str | None, completed: Collection[str]) -> list[str]:
+def on_reasons(unit: UnitCmd, *, alive: bool, busy_stages: Collection[str] = (), completed: Collection[str]) -> list[str]:
     """왜 지금 켤 수 없는가. 비어 있으면 켜도 된다."""
     if unit.kind == "manual":
         return ["수동 명령이다 — 콘솔은 실행하지 않는다. 운영자 셸에서 직접 띄울 것"]
@@ -84,8 +88,8 @@ def on_reasons(unit: UnitCmd, *, alive: bool, busy_stage: str | None, completed:
         return [f"{unit.stage} 단계를 승인·실행하면 켜진다"]     # 실기 단계 — 스위치로는 켜지 않는다
     waiting = [n for n in unit.needs if n not in completed]
     if waiting:
-        return [f"먼저 {', '.join(waiting)} 단계를 끝낼 것", *_busy(unit, busy_stage)]
-    return _busy(unit, busy_stage)
+        return [f"먼저 {', '.join(waiting)} 단계를 끝낼 것", *_busy(unit, busy_stages)]
+    return _busy(unit, busy_stages)
 
 
 def goto_stage(unit: UnitCmd, *, alive: bool, completed: Collection[str]) -> str | None:
@@ -139,16 +143,19 @@ def skip_reasons(*, skippable: bool, busy: bool, pd_phase: str | None) -> list[s
     return out
 
 
-def off_reasons(unit: UnitCmd, *, alive: bool, busy_stage: str | None, pd_phase: str | None,
+def off_reasons(unit: UnitCmd, *, alive: bool, busy_stages: Collection[str] = (), pd_phase: str | None,
                 robot_unit: bool, real: bool) -> list[str]:
     """왜 지금 끌 수 없는가. `robot_unit` = 이 단위가 pd 노드를 띄운 것인가."""
     if not alive:
         return ["떠 있지 않다"]
-    out = _busy(unit, busy_stage)
-    guarded = robot_unit or real
-    if guarded and busy_stage is not None and busy_stage != unit.stage:
+    out = _busy(unit, busy_stages)
+    #: 로봇을 건드리지 않는다고 미션이 선언한 단위(뷰어 · 인지)는 pd 가 잡고 있어도 끌 수 있다.
+    #: 09.23 사용자: "isaacsim 이 강제 종료도 안 됨" — 구독만 하는 화면을 pd 상태가 막고 있었다.
+    guarded = robot_unit or (real and unit.touches_real)
+    others = [sid for sid in (busy_stages or ()) if sid != unit.stage]
+    if guarded and others:
         # 도는 단계가 곧 pd 를 걸 수 있다 — 상태 스냅샷(최대 STALE_S 묵음)만 믿고 끄지 않는다.
-        out.append(f"단계 {busy_stage} 가 실행 중이다 — 실기/pd 단위는 단계가 끝난 뒤에 끌 것")
+        out.append(f"단계 {', '.join(others)} 가 실행 중이다 — 실기/pd 단위는 단계가 끝난 뒤에 끌 것")
     if guarded and pd_phase == PD_UNKNOWN:
         out.append("pd 상태를 모른다 — 브리지/상태 토픽을 먼저 살릴 것 (떠 있는 pd 가 팔을 잡고 있을 수 있다)")
     elif guarded and pd_phase not in PD_FREE:
@@ -167,7 +174,7 @@ def view(unit: UnitCmd, proc: Mapping | None, *, stopped: bool, why_on: list[str
             "can_on": not why_on, "can_off": not why_off, "why_on": why_on, "why_off": why_off}
 
 
-def views(units: Mapping[str, UnitCmd], procs: Mapping[str, Mapping], *, stopped: Collection[str], busy_stage: str | None,
+def views(units: Mapping[str, UnitCmd], procs: Mapping[str, Mapping], *, stopped: Collection[str], busy_stages: Collection[str] = (),
           completed: Collection[str], pd_phase: str | None, robot_keys: Collection[str] | None,
           real: bool) -> dict[str, dict]:
     """단위 전부의 화면 모양. `robot_keys` 를 모르면(그림이 없다) 모든 단위를 pd 처럼 조심해서 다룬다.
@@ -177,8 +184,8 @@ def views(units: Mapping[str, UnitCmd], procs: Mapping[str, Mapping], *, stopped
     out = {}
     for key, u in units.items():
         alive = bool(procs.get(key, {}).get("alive"))
-        why_on = on_reasons(u, alive=alive, busy_stage=busy_stage, completed=completed)
-        why_off = off_reasons(u, alive=alive, busy_stage=busy_stage, pd_phase=pd_phase,
+        why_on = on_reasons(u, alive=alive, busy_stages=busy_stages, completed=completed)
+        why_off = off_reasons(u, alive=alive, busy_stages=busy_stages, pd_phase=pd_phase,
                               robot_unit=robot_keys is None or key in robot_keys, real=real)
         out[key] = {**view(u, procs.get(key), stopped=key in stopped, why_on=why_on, why_off=why_off),
                     "goto": goto_stage(u, alive=alive, completed=completed)}

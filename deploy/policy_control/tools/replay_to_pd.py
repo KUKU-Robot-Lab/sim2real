@@ -27,7 +27,8 @@ from shadow_replay_core import PARK_SPEED_RAD_PER_SEC, approach_ramp  # noqa: E4
 
 TOPIC = "/policy_control/joint_target"
 EPISODE_TOPIC = "/policy_control/episode"
-PD_STATUS = "/policy_control/status/pd"
+#: pd status 는 팔마다 따로다(09.23) — `--joints` 접두어가 쪽을 알려 준다.
+PD_STATUS = "/policy_control/status/pd_{side}"
 STOP_WAIT_S = 1.0          # episode stop 이 pd 에 닿을 때까지(pd_selftest 와 같은 값)
 # npz 안 관절목표 열 후보 — 앞에서부터 있는 것을 쓴다
 NPZ_JOINT_KEYS = ("fabric_q", "arm_target", "arm_q_cmd")
@@ -140,7 +141,9 @@ def main() -> int:
     pd = {"target": None}
     node.create_subscription(JointState, STATE_TOPIC,
                              lambda m: meas.update(zip(m.name, m.position)), qos_profile_sensor_data)
-    node.create_subscription(String, PD_STATUS, lambda m: pd.update(target=_target_of(m.data)), 10)
+    side = "left" if args.joints[0].startswith("l_") else "right"
+    node.create_subscription(String, PD_STATUS.format(side=side),
+                             lambda m: pd.update(target=_target_of(m.data)), 10)
     pub = node.create_publisher(JointState, TOPIC, 10)
     # episode stop 발행자는 **지금** 만든다 — 끝에 만들면 discovery 전에 끝나 latched 메시지가 사라진다(pd_selftest 와 같은 이유)
     latched = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -151,7 +154,6 @@ def main() -> int:
     if not meas:
         raise SystemExit(f"[replay] {STATE_TOPIC} 수신 없음")
     # canonical → source 이름은 pd 가 처리한다; 여기서는 실측을 이름으로 찾는다(l_aj_i ↔ openarm_left_jointi)
-    side = "left" if args.joints[0].startswith("l_") else "right"
     start = np.array([meas[f"openarm_{side}_joint{j.split('_')[-1]}"] for j in args.joints])
     plan, vel, n_ramp = build_plan(frames, start, pub_dt, args.reverse, args.max_ramp_rad)
     def send(k, q, qd):

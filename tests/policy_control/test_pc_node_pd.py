@@ -82,8 +82,8 @@ class Plant:
         self.pub = self.node.create_publisher(JointState, "/joint_states", 10)
         for k, name in FWD.items():
             self.node.create_subscription(Float64MultiArray, f"/{name}/commands", self._cb(k), 10)
-        self.node.create_subscription(JointState, f"{NS}/pd/applied", lambda m: self.applied.append(m), 10)
-        self.node.create_subscription(String, f"{NS}/status/pd", lambda m: self.status.append(m), 10)
+        self.node.create_subscription(JointState, f"{NS}/pd_{SIDE}/applied", lambda m: self.applied.append(m), 10)
+        self.node.create_subscription(String, f"{NS}/status/pd_{SIDE}", lambda m: self.status.append(m), 10)
         self.node.create_timer(1.0 / PLANT_HZ, self._tick)
 
     def _cb(self, kind):
@@ -133,7 +133,7 @@ class Plant:
 class Caller:
     """Trigger 호출 + joint_target 발행 + estop/episode 발행 (자기 executor)."""
 
-    def __init__(self, context):
+    def __init__(self, context, side: str = SIDE):
         from rclpy.node import Node
         from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
         from sensor_msgs.msg import JointState
@@ -142,6 +142,7 @@ class Caller:
         from policy_control.controller_switch import ServiceCaller
 
         self.node = Node("pd_caller", context=context)
+        self.side = side
         self.sc = ServiceCaller(self.node, "srv", timeout_sec=10.0)
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                              durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -152,7 +153,7 @@ class Caller:
     def trigger(self, name: str):
         from std_srvs.srv import Trigger
 
-        resp, reason = self.sc.call(Trigger, f"{NS}/pd/{name}", Trigger.Request())
+        resp, reason = self.sc.call(Trigger, f"{NS}/pd_{self.side}/{name}", Trigger.Request())
         assert resp is not None, reason
         body = json.loads(resp.message)
         assert body["ok"] is resp.success
@@ -279,7 +280,7 @@ def test_dry_run_engage_refused_and_nothing_published(rig_dry, cm):
     node, plant, caller = rig_dry
     stub, calls = cm
     st = _wait_status(plant)
-    assert st["node"] == "pd" and st["phase"] == "IDLE" and st["execute"] is False
+    assert st["node"] == f"pd_{SIDE}" and st["phase"] == "IDLE" and st["execute"] is False
     assert st["gains"]["ok"] is True
     ok, reasons = caller.trigger("engage")
     assert ok is False and any("execute" in r for r in reasons)
@@ -445,8 +446,12 @@ class BiPlant:
         for s in BI_SIDES:
             for k, name in _fwd_of(s).items():
                 self.node.create_subscription(Float64MultiArray, f"/{name}/commands", self._cb(s, k), 10)
-        self.node.create_subscription(JointState, f"{NS}/pd/applied", lambda m: self.applied.append(m), 10)
-        self.node.create_subscription(String, f"{NS}/status/pd", lambda m: self.status.append(m), 10)
+        # 이름이 팔마다 갈린다(09.23) — 쪽마다 따로 모은다. "지금 pd phase" 는 이제 팔마다 답이 다르다.
+        self.by_side: dict[str, list] = {s_: [] for s_ in BI_SIDES}
+        self.applied_by: dict[str, list] = {s_: [] for s_ in BI_SIDES}
+        for s_ in BI_SIDES:
+            self.node.create_subscription(JointState, f"{NS}/pd_{s_}/applied", self._applied_cb(s_), 10)
+            self.node.create_subscription(String, f"{NS}/status/pd_{s_}", self._status_cb(s_), 10)
         self.node.create_timer(1.0 / PLANT_HZ, self._tick)
 
     def _cb(self, side, kind):
@@ -466,26 +471,58 @@ class BiPlant:
             self.hand_pubs[s].publish(codec.encode_joint_state(_hand_src(s), np.zeros(20), velocity=np.zeros(20),
                                                                stamp=time.time()))
 
-    def last_status(self) -> dict | None:
-        return json.loads(self.status[-1].data) if self.status else None
+    def _status_cb(self, side: str):
+        def cb(msg):
+            self.status.append(msg)
+            self.by_side[side].append(msg)
+        return cb
 
-    def wait(self, pred, timeout: float = 3.0) -> dict | None:
+    def _applied_cb(self, side: str):
+        def cb(msg):
+            self.applied.append(msg)
+            self.applied_by[side].append(msg)
+        return cb
+
+    def last_status(self, side: str | None = None) -> dict | None:
+        rows = self.status if side is None else self.by_side[side]
+        return json.loads(rows[-1].data) if rows else None
+
+    def both(self) -> dict:
+        """{쪽: 마지막 status} — 팔마다 따로 오므로 합치는 것은 읽는 쪽 몫이다."""
+        return {s_: self.last_status(s_) for s_ in BI_SIDES if self.by_side[s_]}
+
+    def wait(self, pred, timeout: float = 3.0, side: str | None = None) -> dict | None:
         t0 = time.monotonic()
         while time.monotonic() - t0 < timeout:
-            st = self.last_status()
+            st = self.last_status(side)
             if st is not None and pred(st):
                 return st
             time.sleep(0.01)
-        return self.last_status()
+        return self.last_status(side)
 
-    def wait_phase(self, phases, timeout: float = 3.0) -> dict | None:
-        return self.wait(lambda st: st["phase"] in phases, timeout)
+    def wait_both(self, pred, timeout: float = 3.0) -> dict:
+        """양쪽 status 가 **각각** 조건을 만족할 때까지."""
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < timeout:
+            got = self.both()
+            if len(got) == len(BI_SIDES) and all(pred(v) for v in got.values()):
+                return got
+            time.sleep(0.01)
+        return self.both()
+
+    def wait_phase(self, phases, timeout: float = 3.0, side: str | None = None) -> dict | None:
+        return self.wait(lambda st: st["phase"] in phases, timeout, side)
 
     def close(self):
         self.node.destroy_node()
 
 
 class BiCaller(Caller):
+    def trigger_side(self, name: str, side: str):
+        """그 팔의 서비스만 부른다 — 한 번의 호출이 다른 팔을 건드리지 않는 것이 이 구조의 요점이다."""
+        self.side = side
+        return self.trigger(name)
+
     def target_named(self, names, q, seq: int, episode: str = "1"):
         from policy_control import codec
 
@@ -576,11 +613,14 @@ def test_bi_dry_run_publishes_nothing_on_either_side(ros, bi_cm, bi_hand_ctrls):
     stub, calls = bi_cm
     node, plant, caller, spin = _bi_rig(ros, False, PD_BI)
     try:
-        st = _wait_status(plant)
-        assert st["sides"] == list(BI_SIDES) and st["phase"] == "IDLE" and st["execute"] is False
-        assert set(st["arms"]) == set(BI_SIDES) and all(st["arms"][s]["gains"]["ok"] for s in BI_SIDES)
-        ok, reasons = caller.trigger("engage")
-        assert ok is False and any("execute" in r for r in reasons)
+        got = plant.wait_both(lambda st: st["phase"] == "IDLE")
+        assert set(got) == set(BI_SIDES)                                   # status 가 팔마다 따로 온다(09.23)
+        for s, st in got.items():
+            assert st["node"] == f"pd_{s}" and st["sides"] == [s] and set(st["arms"]) == {s}
+            assert st["execute"] is False and st["arms"][s]["gains"]["ok"]
+        for s in BI_SIDES:
+            ok, reasons = caller.trigger_side("engage", s)
+            assert ok is False and any("execute" in r for r in reasons)
         for s in BI_SIDES:
             for name in _fwd_of(s).values():
                 assert plant.node.count_publishers(f"/{name}/commands") == 0
@@ -597,46 +637,55 @@ def test_bi_engage_right_first_goto_home_one_arm_hold_release(ros, bi_cm, bi_han
     stub, calls = bi_cm
     node, plant, caller, spin = _bi_rig(ros, True, PD_BI_FAKE)
     try:
-        ok, reasons = caller.trigger("engage")
+        # ★한 팔씩 — 오른팔 engage 가 왼팔을 건드리지 않는 것이 쪽 분리의 요점이다(09.23 사용자).
+        ok, reasons = caller.trigger_side("engage", "right")
         assert ok, reasons
-        first = {s: next(i for i, r in enumerate(reasons) if r.startswith(f"{s}: phase")) for s in BI_SIDES}
-        assert first["right"] < first["left"]                                   # 우팔 먼저
+        assert all(stub.known[n] == "active" for n in _fwd_of("right").values())
+        assert stub.known[_jtc_of("right")] == "inactive"
+        assert stub.known[_jtc_of("left")] == "active"                          # 왼팔은 아직 JTC 가 잡고 있다
+        assert plant.wait(lambda st: st["phase"] in ("RAMPING", "TRACKING"), side="right")["phase"] != "IDLE"
+        assert plant.last_status("left")["phase"] == "IDLE"
+        ok, reasons = caller.trigger_side("engage", "left")
+        assert ok, reasons
         for s in BI_SIDES:
             assert all(stub.known[n] == "active" for n in _fwd_of(s).values()) and stub.known[_jtc_of(s)] == "inactive"
             assert _hand_p(bi_hand_ctrls[s], s) == [1.5] * 20                  # 손 PID = 벤더값(09.06, 드라이버 기본과 같다)
-        st = plant.wait(lambda st: all(a["phase"] in ("RAMPING", "TRACKING") for a in st["arms"].values()))
-        assert st["phase"] in ("RAMPING", "TRACKING") and st["execute"] is True
+        got = plant.wait_both(lambda st: st["phase"] in ("RAMPING", "TRACKING"))
+        assert all(st["execute"] is True for st in got.values())
         t0 = time.monotonic()
-        while time.monotonic() - t0 < 2.0 and not (plant.applied and set(_arm_can("right") + _arm_can("left"))
-                                                      <= set(plant.applied[-1].name)):
+        while time.monotonic() - t0 < 2.0 and not all(
+                plant.applied_by[s] and set(_arm_can(s)) <= set(plant.applied_by[s][-1].name) for s in BI_SIDES):
             time.sleep(0.01)
-        assert set(_arm_can("right") + _arm_can("left")) <= set(plant.applied[-1].name)   # applied 는 양팔을 싣는다
-        ok, reasons = caller.trigger("goto_home")
-        assert ok, reasons
-        st = plant.last_status()
-        assert all(st["arms"][s]["phase"] == "TRACKING" for s in BI_SIDES)
+        for s in BI_SIDES:                                                      # applied 도 팔마다 제 토픽으로
+            assert set(_arm_can(s)) <= set(plant.applied_by[s][-1].name)
+            assert not (set(_arm_can("right" if s == "left" else "left")) & set(plant.applied_by[s][-1].name))
+        for s in BI_SIDES:
+            assert caller.trigger_side("goto_home", s)[0]
+        got = plant.wait_both(lambda st: st["phase"] == "TRACKING")
+        assert all(st["phase"] == "TRACKING" for st in got.values())
         assert all(np.abs(plant.q[s]).max() < 0.011 for s in BI_SIDES)          # 홈 = 0(차렷)
         # 양팔 목표 스트림 → 둘 다 TRACKING; 그 뒤 좌팔만 → 우팔 watchdog HOLD, 좌팔은 계속 TRACKING
         q_r, q_l = np.full(7, 0.03), np.full(7, 0.03)
         for seq in range(30):
             caller.target_named(_arm_can("right") + _arm_can("left"), np.concatenate([q_r, q_l]), seq)
             time.sleep(0.02)
-        st = plant.wait(lambda st: st["phase"] == "TRACKING" and st["seq"] == 29)
-        assert st["phase"] == "TRACKING" and st["seq"] == 29 and st["ok"] is True
+        got = plant.wait_both(lambda st: st["phase"] == "TRACKING" and st["seq"] == 29)
+        assert all(st["ok"] is True for st in got.values())
         for seq in range(30, 70):
             caller.target_named(_arm_can("left"), q_l + 0.01, seq)
             time.sleep(0.02)
-        st = plant.last_status()
-        assert st["phase"] == "HOLD" and st["ok"] is False
-        assert st["arms"]["right"]["phase"] == "HOLD" and st["arms"]["left"]["phase"] == "TRACKING"
-        assert any(r.startswith("right:") and "watchdog" in r for r in st["reasons"])
+        # 목표 스트림이 왼팔만 오면 **오른팔 status 만** HOLD 가 된다 — 합쳐 내던 때는 한 줄로 뭉개졌다.
+        right, left = plant.last_status("right"), plant.last_status("left")
+        assert right["phase"] == "HOLD" and right["ok"] is False
+        assert left["phase"] == "TRACKING"
+        assert any("watchdog" in r for r in right["reasons"])
         np.testing.assert_allclose(plant.q["right"], q_r, atol=0.02)               # 우팔 동결
         np.testing.assert_allclose(plant.q["left"], q_l + 0.01, atol=0.02)         # 좌팔은 새 목표를 따랐다
         np.testing.assert_allclose(plant.fwd["right"]["velocity"][-1], np.zeros(7))
-        ok, reasons = caller.trigger("release")
-        assert ok, reasons
-        st = plant.wait_phase(("IDLE",))
-        assert st["phase"] == "IDLE" and all(a["phase"] == "IDLE" for a in st["arms"].values())
+        for s in BI_SIDES:
+            assert caller.trigger_side("release", s)[0]
+        got = plant.wait_both(lambda st: st["phase"] == "IDLE")
+        assert all(st["phase"] == "IDLE" for st in got.values())
         for s in BI_SIDES:
             assert stub.known[_jtc_of(s)] == "active" and all(stub.known[n] == "inactive" for n in _fwd_of(s).values())
     finally:
@@ -648,13 +697,16 @@ def test_bi_estop_holds_both_arms(ros, bi_cm, bi_hand_ctrls):
     stub, calls = bi_cm
     node, plant, caller, spin = _bi_rig(ros, True, PD_BI_FAKE)
     try:
-        assert caller.trigger("engage")[0]
-        plant.wait(lambda st: all(a["phase"] in ("RAMPING", "TRACKING") for a in st["arms"].values()))
+        for s in BI_SIDES:
+            assert caller.trigger_side("engage", s)[0]
+        plant.wait_both(lambda st: st["phase"] in ("RAMPING", "TRACKING"))
         caller.estop(True)
-        st = plant.wait(lambda st: all(a["phase"] == "HOLD" for a in st["arms"].values()))
-        assert st["phase"] == "HOLD" and st["estop"] is True and all(a["phase"] == "HOLD" for a in st["arms"].values())
-        assert caller.trigger("release")[0] and plant.wait_phase(("IDLE",))["phase"] == "IDLE"
-        ok, reasons = caller.trigger("engage")
+        got = plant.wait_both(lambda st: st["phase"] == "HOLD")                 # estop 은 쪽이 없다 — 둘 다 선다
+        assert all(st["estop"] is True for st in got.values())
+        for s in BI_SIDES:
+            assert caller.trigger_side("release", s)[0]
+        assert all(st["phase"] == "IDLE" for st in plant.wait_both(lambda st: st["phase"] == "IDLE").values())
+        ok, reasons = caller.trigger_side("engage", "right")
         assert ok is False and any("estop" in r for r in reasons)
     finally:
         _close_rig(node, plant, caller, spin)
@@ -665,14 +717,16 @@ def test_bi_sides_param_selects_one_arm(ros, bi_cm, bi_hand_ctrls):
     stub, calls = bi_cm
     node, plant, caller, spin = _bi_rig(ros, True, PD_BI_FAKE, sides="left")
     try:
-        st = _wait_status(plant)
-        assert st["sides"] == ["left"] and set(st["arms"]) == {"left"}
-        ok, reasons = caller.trigger("engage")
+        st = plant.wait(lambda st: st["phase"] == "IDLE", side="left")
+        assert st["sides"] == ["left"] and set(st["arms"]) == {"left"} and st["node"] == "pd_left"
+        assert not plant.by_side["right"]                                       # 오른팔 status 는 아예 없다
+        ok, reasons = caller.trigger_side("engage", "left")
         assert ok, reasons
         assert stub.known[_jtc_of("left")] == "inactive" and stub.known[_jtc_of("right")] == "active"
         assert not any(n in stub.known for n in _fwd_of("right").values())      # 우팔은 손대지 않는다
         assert _hand_p(bi_hand_ctrls["right"], "right") == [1.5] * 20 and _hand_p(bi_hand_ctrls["left"], "left") == [1.5] * 20
-        assert caller.trigger("release")[0] and plant.wait_phase(("IDLE",))["phase"] == "IDLE"
+        assert caller.trigger_side("release", "left")[0]
+        assert plant.wait_phase(("IDLE",), side="left")["phase"] == "IDLE"
     finally:
         _close_rig(node, plant, caller, spin)
 
@@ -750,8 +804,10 @@ def _keep_yaml(tmp_path) -> Path:
 
 
 def _hand_in_applied(plant, side: str, n: int = 10) -> bool:
+    """그 팔의 applied 에 손 관절이 실렸는가 — 토픽이 팔마다 따로다(09.23)."""
     hand = set(_hand_can(side))
-    return any(hand & set(m.name) for m in plant.applied[-n:])
+    rows = plant.applied_by[side] if hasattr(plant, "applied_by") else plant.applied
+    return any(hand & set(m.name) for m in rows[-n:])
 
 
 def _hand_can(side):
@@ -763,23 +819,25 @@ def test_keep_sends_the_arm_home_first_and_the_hand_only_on_hand_home(ros, bi_cm
     # 09.22 실기: goto_home 이 팔과 손을 한꺼번에 보내 차렷에서 손가락이 펴졌다. keep 이면 팔만, 손은 도착 뒤 따로.
     node, plant, caller, spin = _bi_rig(ros, True, _keep_yaml(tmp_path))
     try:
-        ok, reasons = caller.trigger("hand_home")
+        ok, reasons = caller.trigger_side("hand_home", "right")
         assert ok is False and any("goto_home" in r or "engage" in r for r in reasons)        # engage 전 — 거부
-        assert caller.trigger("engage")[0]
-        plant.wait(lambda st: all(a["phase"] in ("RAMPING", "TRACKING") for a in st["arms"].values()))
-        ok, reasons = caller.trigger("hand_home")
+        for s_ in BI_SIDES:
+            assert caller.trigger_side("engage", s_)[0]
+        plant.wait_both(lambda st: st["phase"] in ("RAMPING", "TRACKING"))
+        ok, reasons = caller.trigger_side("hand_home", "right")
         assert ok is False and any("goto_home" in r for r in reasons)                         # 팔이 아직 홈이 아니다
-        ok, reasons = caller.trigger("goto_home")
-        assert ok, reasons
+        for s_ in BI_SIDES:
+            assert caller.trigger_side("goto_home", s_)[0]
         time.sleep(0.3)
         assert not any(_hand_in_applied(plant, s) for s in BI_SIDES)                         # 손 지령 없음
-        ok, reasons = caller.trigger("hand_home")
-        assert ok, reasons
+        for s_ in BI_SIDES:
+            assert caller.trigger_side("hand_home", s_)[0]
         t0 = time.monotonic()
         while time.monotonic() - t0 < 2.0 and not all(_hand_in_applied(plant, s, 3) for s in BI_SIDES):
             time.sleep(0.01)
         assert all(_hand_in_applied(plant, s, 3) for s in BI_SIDES)                          # 이제 손이 계약 홈으로
-        assert caller.trigger("release")[0]
+        for s_ in BI_SIDES:
+            assert caller.trigger_side("release", s_)[0]
     finally:
         _close_rig(node, plant, caller, spin)
 
@@ -802,18 +860,21 @@ def test_hand_rest_returns_the_hand_to_its_engage_pose(ros, bi_cm, bi_hand_ctrls
     # 09.22: 홈 경로는 출발 때 손 자세(주먹)로 검사했다 — 되짚기 전에 손을 그 자세로 되돌린다.
     node, plant, caller, spin = _bi_rig(ros, True, _keep_yaml(tmp_path))
     try:
-        ok, reasons = caller.trigger("hand_rest")
+        ok, reasons = caller.trigger_side("hand_rest", "right")
         assert ok is False                                                                  # engage 전
-        assert caller.trigger("engage")[0]
-        plant.wait(lambda st: all(a["phase"] in ("RAMPING", "TRACKING") for a in st["arms"].values()))
-        assert caller.trigger("goto_home")[0] and caller.trigger("hand_home")[0]
+        for s_ in BI_SIDES:
+            assert caller.trigger_side("engage", s_)[0]
+        plant.wait_both(lambda st: st["phase"] in ("RAMPING", "TRACKING"))
+        for s_ in BI_SIDES:
+            assert caller.trigger_side("goto_home", s_)[0] and caller.trigger_side("hand_home", s_)[0]
         time.sleep(0.3)
-        ok, reasons = caller.trigger("hand_rest")
+        ok, reasons = caller.trigger_side("hand_rest", "right")
         assert ok, reasons
         time.sleep(0.3)
-        last = plant.applied[-1]
+        last = plant.applied_by["right"][-1]
         hand = [last.position[list(last.name).index(j)] for j in _hand_can("right") if j in last.name]
         assert hand and max(abs(v) for v in hand) < 1e-6                                   # 플랜트 손은 0 에서 시작했다
-        assert caller.trigger("release")[0]
+        for s_ in BI_SIDES:
+            assert caller.trigger_side("release", s_)[0]
     finally:
         _close_rig(node, plant, caller, spin)

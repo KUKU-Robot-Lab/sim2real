@@ -56,12 +56,15 @@ def test_the_left_side_is_skipped_when_the_contract_has_no_left():
 
 
 def test_every_channel_is_carried_so_the_screen_can_choose():
-    # 09.23 사용자: "디폴트는 joint state 고, vel 이나 effort 들도"
-    j = {"r_aj_1": [-1.19, 0.02, -2.65]}
+    # 09.23 사용자: "디폴트는 joint state 고, vel 이나 effort 들도" · "관절값하고 온도값들도 보이면 좋겠는데"
+    j = {"r_aj_1": [-1.19, 0.02, -2.65, 35.0, 29.0]}
     arm = [g for g in R.view(j, SIDES, LIMITS, age_s=0.1)["groups"] if g["title"] == "오른팔"][0]
     row = arm["rows"][0]
-    assert row["vals"] == {"pos": pytest.approx(-1.19), "vel": pytest.approx(0.02), "eff": pytest.approx(-2.65)}
-    assert [c["key"] for c in R.view(j, SIDES, LIMITS, age_s=0.1)["channels"]] == ["pos", "vel", "eff"]
+    assert row["vals"]["pos"] == pytest.approx(-1.19) and row["vals"]["eff"] == pytest.approx(-2.65)
+    assert row["vals"]["temp"] == pytest.approx(35.0) and row["vals"]["mos"] == pytest.approx(29.0)
+    assert [c["key"] for c in R.view(j, SIDES, LIMITS, age_s=0.1)["channels"]] == \
+           ["pos", "vel", "eff", "temp", "mos"]
+    assert [c["unit"] for c in R.view(j, SIDES, LIMITS, age_s=0.1)["channels"]][3:] == ["°C", "°C"]
 
 
 def test_a_channel_the_driver_does_not_send_stays_empty_not_zero():
@@ -77,3 +80,19 @@ def test_adding_a_channel_needs_only_the_table_at_the_top():
     names = [c[0] for c in R.CHANNELS]
     assert names[0] == "pos"                                   # 기본은 관절 위치
     assert len(R.CHANNELS[0]) == 3                             # (키, 이름, 단위)
+
+
+def test_source_joint_names_are_mapped_to_canonical():
+    # 09.23 실기: /joint_states 는 원본 이름(openarm_right_joint1)으로 온다 — 표가 값을 못 찾아 전부 '—' 였다.
+    alias = {"openarm_right_joint1": "r_aj_1", "rj_dg_2_2": "r_hj_index_2"}
+    raw = {"openarm_right_joint1": [-1.19, 0.0, -2.65], "rj_dg_2_2": [0.005, 0.0, 1.2]}
+    v = R.view(raw, SIDES, LIMITS, age_s=0.1, alias=alias)
+    arm = [g for g in v["groups"] if g["title"] == "오른팔"][0]
+    assert arm["rows"][0]["pos"] == pytest.approx(-1.19) and arm["seen"] == 1
+    hand = [g for g in v["groups"] if g["title"] == "오른손"][0]
+    assert [r for r in hand["rows"] if r["joint"] == "r_hj_index_2"][0]["state"] == "limit"
+
+
+def test_canonical_names_still_work_without_an_alias():
+    v = R.view({"r_aj_1": [-1.19]}, SIDES, LIMITS, age_s=0.1)
+    assert [g for g in v["groups"] if g["title"] == "오른팔"][0]["rows"][0]["pos"] == pytest.approx(-1.19)

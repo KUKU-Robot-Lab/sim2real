@@ -102,6 +102,21 @@ def legacy_nodes(cfg: dict, side: str) -> list:
     return nodes
 
 
+#: 09.23 실기: 손 전원을 껐다 켜자 손가락이 기준 자세에서 이만큼 어긋나 있었다 — fake 도 그 상태에서 시작한다.
+HAND_DRIFT = {"thumb_1": +0.90, "thumb_3": -0.81, "index_4": +0.60, "index_2": -0.35, "pinky_4": +0.30}
+
+
+def _drifted_path_pose(pd_config: Path, side: str) -> str:
+    """pd yaml `hand_path_pose.<side>` 에서 몇 관절만 어긋난 시작 자세 'joint=rad,…'. 그 팔의 값만 쓴다."""
+    import yaml
+
+    pose = (yaml.safe_load(Path(pd_config).read_text()).get("hand_path_pose") or {}).get(side)
+    if not pose:
+        raise RuntimeError(f"{pd_config}: hand_path_pose.{side} 가 없다 — hand_start:=path 는 이 값이 있어야 한다")
+    out = {str(j): float(v) + HAND_DRIFT.get(str(j).split("_hj_")[-1], 0.0) for j, v in pose.items()}
+    return ",".join(f"{j}={v:.4f}" for j, v in sorted(out.items()))
+
+
 def contract_nodes(cfg: dict, sides: tuple) -> list:
     """계약 모드: 팔마다 MockArm(하나의 브리지) + 팔마다 손/손끝 fake(namespace dg5f_<side>)."""
     contract = _require(_resolve(cfg["contract"]), "contract")
@@ -119,7 +134,10 @@ def contract_nodes(cfg: dict, sides: tuple) -> list:
         # jtc = 실기 손과 같은 입력(pd 의 드라이버 JTC) — pd → 손 경로를 확인한다. joint_target = 옛 반사(기본)
         feed = (["--jtc-topic", f"/dg5f_{side}/dg5f_{side}_controller/joint_trajectory"] if follow == "jtc"
                 else ["--echo-topic", "/policy_control/joint_target"])
-        start = ["--start-zero"] if str(cfg.get("hand_start") or "home") == "zero" else []
+        mode = str(cfg.get("hand_start") or "home")
+        start = ["--start-zero"] if mode == "zero" else []
+        if mode == "path":                               # 실기처럼: 경로 기준 자세에서 몇 관절만 어긋나 있다(09.23)
+            start = ["--start-q", _drifted_path_pose(pd_config, side)]
         nodes.append(_script("fake_hand_state_pub", *common, "--side", side, "--rate", HAND_HZ, *feed, *start,
                              "--controller-node"))
         nodes.append(_script("fake_tip_contact_pub", "--namespace", f"dg5f_{side}", "--rate", HAND_HZ))
@@ -171,7 +189,8 @@ def generate_launch_description() -> LaunchDescription:
                               description="팔 시작 자세 'right=a,…;left=…' (계약 모드, 기본 0)"),
         DeclareLaunchArgument("hand_follow", default_value="joint_target",
                               description="joint_target (옛 반사) | jtc (실기처럼 pd 의 드라이버 JTC 를 따른다)"),
-        DeclareLaunchArgument("hand_start", default_value="home", description="home (계약 home_hand) | zero"),
+        DeclareLaunchArgument("hand_start", default_value="home",
+                              description="home (계약 home_hand) | zero | path (pd yaml hand_path_pose 에서 어긋난 손)"),
         DeclareLaunchArgument("cup_x", default_value="0.38"),
         DeclareLaunchArgument("cup_y", default_value="0.19"),
         DeclareLaunchArgument("cup_z", default_value="0.29209"),

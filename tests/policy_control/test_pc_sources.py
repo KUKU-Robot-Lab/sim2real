@@ -241,27 +241,54 @@ def test_profile_has_both_hands_and_merging_refuses_duplicates(tmp_path):
     assert gripper["l_hj_gripper_1"]["source"] == "openarm_left_finger_joint1"
 
 
-#: 장착된 손(DG-5F-M short)의 Tesollo CAD 릴리스 — 학습 자산의 출처이자 매뉴얼과 일치하는 한계표.
-#: 드라이버 패키지(dg_description·dg5f_ros2 의 dg5f_description)의 URDF 는 9관절이 옛 값이다.
+#: 장착된 손(DG-5F-M short)의 벤더 출처 **둘**. 20관절 중 9개에서 서로 다르다.
+#:   CAD_DG5F   = Tesollo CAD 릴리스. 학습 자산(USD)의 출처다.
+#:   DRIVER_DG5F= dg5f_ros2 가 설치하는 dg5f_description. **실물 손과 Modbus 로 말하는 그 패키지**다.
+#: 09.23 실기: 손가락이 한계 밖으로 밀려 드라이버가 error 423 을 냈다 — 프로파일을 드라이버 URDF 로 맞췄다
+#: (사용자: "/home/user/rl_ws/repo/tesollo/dg5f_ros2 이걸 참고해서 만든 거라서, 제대로 다시 확인해봐").
+#: 차이나는 9관절은 드라이버 쪽이 **좁다**(엄지 IP 1개만 넓다) — 지령 클램프는 좁은 쪽이 안전하다.
+#: ★열린 물음: sim(USD·CAD)과 실기(드라이버)의 한계가 다르다. 정책이 CAD 끝까지 지령하면 실기는 클램프된다.
 CAD_DG5F = SIM2REAL.parent / "repo/tesollo/tesollo_model/dg5f"
+DRIVER_DG5F = SIM2REAL.parent / "repo/tesollo/dg5f_ros2/install/dg5f_description/share/dg5f_description/urdf"
+#: 두 출처가 다른 관절(쪽 접두어 제외) — 이 목록이 바뀌면 벤더가 값을 고친 것이다. 세지 않고 이름으로 잠근다.
+CAD_DRIVER_DISAGREE = ("thumb_1", "thumb_2", "index_1", "middle_1", "middle_2", "ring_1", "ring_2",
+                       "pinky_1", "pinky_2")
+
+
+def _urdf_limits(path):
+    from xml.etree import ElementTree
+
+    return {j.get("name"): (float(j.find("limit").get("lower")), float(j.find("limit").get("upper")))
+            for j in ElementTree.parse(path).getroot().findall("joint") if j.find("limit") is not None}
 
 
 @pytest.mark.parametrize("side,profile_path", [("left", PROFILE), ("right", PROFILE)])
-def test_hand_profile_limits_are_the_cad_release(side, profile_path):
-    from xml.etree import ElementTree
-
-    urdf = CAD_DG5F / f"dg5f_{side}_short.urdf"
+def test_hand_profile_limits_are_the_driver_package(side, profile_path):
+    """프로파일 한계 = **드라이버 패키지**의 URDF. 그 값이 실물 손이 거부하는 경계다."""
+    urdf = DRIVER_DG5F / f"dg5f_{side}_short.urdf"
     if not urdf.exists():
-        pytest.skip(f"CAD 릴리스 없음: {urdf}")
-    described = {j.get("name"): j.find("limit") for j in ElementTree.parse(urdf).getroot().findall("joint")
-                 if j.find("limit") is not None}
+        pytest.skip(f"드라이버 URDF 없음: {urdf}")
+    driver = _urdf_limits(urdf)
     prof = sources.load_profile(profile_path)
     hand = {c: e for c, e in prof.items() if c.startswith(f"{side[0]}_hj_") and "gripper" not in c}
     assert len(hand) == 20
     for canonical, entry in hand.items():
-        limit = described[entry["source"]]
-        want = (float(limit.get("lower")), float(limit.get("upper")))
+        want = driver[entry["source"]]
         assert (entry["lower"], entry["upper"]) == pytest.approx(want, abs=1e-6), (canonical, want)
+
+
+@pytest.mark.parametrize("side", ("left", "right"))
+def test_the_cad_release_differs_from_the_driver_in_exactly_the_known_joints(side):
+    """두 벤더 출처의 불일치를 **이름으로** 고정한다 — 조용히 늘거나 줄면 그것이 새 소식이다."""
+    cad_path, drv_path = CAD_DG5F / f"dg5f_{side}_short.urdf", DRIVER_DG5F / f"dg5f_{side}_short.urdf"
+    if not (cad_path.exists() and drv_path.exists()):
+        pytest.skip("벤더 출처가 둘 다 있어야 비교한다")
+    cad, drv = _urdf_limits(cad_path), _urdf_limits(drv_path)
+    prof = sources.load_profile(PROFILE)
+    hand = {c: e for c, e in prof.items() if c.startswith(f"{side[0]}_hj_") and "gripper" not in c}
+    differ = sorted(c.split("_hj_")[1] for c, e in hand.items()
+                    if cad[e["source"]] != pytest.approx(drv[e["source"]], abs=1e-6))
+    assert differ == sorted(CAD_DRIVER_DISAGREE)
 
 
 def test_sided_yaml_rejects_bare_roles_and_object_suffix(tmp_path):
