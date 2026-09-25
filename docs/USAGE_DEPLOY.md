@@ -107,7 +107,13 @@ python3 deploy/policy_control/tools/episode_ctl.py --side right --steps 250 --ex
 ```bash
 deploy/s2r_console/tools/console.sh --profile dg5f_m_real --port 8091 --operator <이름>   # 지금 로봇(DG-5F-M)
 ssh -L 8091:127.0.0.1:8091 <이 PC>      # 원격은 터널로만. 127.0.0.1 바인딩이고 인증이 없다
+deploy/s2r_console/tools/console.sh --window                    # 브라우저 대신 자기 창(GTK + WebKit)
+deploy/s2r_console/tools/install_desktop_entry.sh               # 프로그램 메뉴에 "S2R 콘솔" 등록(창 모드)
 ```
+
+- **창 모드**: 같은 화면을 전용 창으로 연다. 창을 닫으면 콘솔이 내려간다(Ctrl+C 와 같은 정리).
+  진행 중인 레인이나 살아 있는 자식이 있으면 닫기 전에 묻는다. 서버는 그대로 떠 있어 원격 터널도 된다.
+  메뉴에서 띄우면 출력은 `logs/s2r_console_app.log` 에 쌓인다.
 
 - 연결 그림은 **미션 argv + 계약 + robot yaml 에서 자동 생성**된다. 정책을 바꾸면 노드·전선이 따라 바뀐다.
 - 프로세스 스위치가 상자에 붙는다. pd 가 팔을 잡고 있거나 단계가 도는 동안에는 끄기가 거부된다(409).

@@ -26,6 +26,9 @@ logs/policy/**/*.pth
 # 미션 실행 기록 (state.json/jsonl/pids) — 런타임 상태이지 산출물이 아니다
 logs/mission/
 
+# 창 모드 콘솔(프로그램 메뉴)의 출력 — deploy/s2r_console/tools/console_app.sh
+logs/s2r_console_app.log
+
 # policy_control 실행 로그 (fake plant·체인 리코더 npz/csv/log, 197MB+) —
 # 판정 결과는 docs/ 와 tests/fixtures/ 의 골든에 남는다
 logs/policy_control/

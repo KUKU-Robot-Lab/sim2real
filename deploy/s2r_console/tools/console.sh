@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S2R 배포 콘솔을 띄운다 — 브라우저에서 http://127.0.0.1:8091
+# S2R 배포 콘솔을 띄운다 — 브라우저에서 http://127.0.0.1:8091 (또는 --window 로 자기 창)
 #
 #   deploy/s2r_console/tools/console.sh                                  # 프로파일을 화면에서 고른다
 #   deploy/s2r_console/tools/console.sh --profile pour_i18_fake --operator me
