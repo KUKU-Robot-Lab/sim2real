@@ -214,8 +214,23 @@ def test_the_drivers_stage_ends_by_checking_that_the_motors_answer_on_can():
     # 09.22: can0 · can1 RX 0 · ERROR-PASSIVE 인데 브링업이 "activated" 를 찍고 관절 상태를 전부 0.0 으로 냈다.
     last = " ".join(_cmds("drivers")[-1].argv)
     assert "check_can_rx.py" in last and "can0" in last and "can1" in last
-    sensors = " ".join(_cmds("sensors")[1].argv)
+    (sensors,) = [" ".join(c.argv) for c in _cmds("sensors") if "perception_ctl.py" in " ".join(c.argv)]
     assert "--wait" in sensors                                                        # 인지 기동 실패를 기다려 본다
+
+
+def test_only_the_object_pose_crosses_from_the_vision_pc():
+    """09.26 사용자: "vision3090 에서 fpp 를 통해서 받은 것만 노드로 5090 에 넘겨주면 되는거 아닌가" —
+    영상 · FP++ 는 저 PC 안에서만(localhost) 돌고, 자세는 UDP 로 와서 이 PC 의 수신기가 다시 낸다."""
+    cmds = _cmds("sensors")
+    rx = [i for i, c in enumerate(cmds) if any(a.endswith("fpp_pose_rx.py") for a in c.argv)]
+    ctl = [i for i, c in enumerate(cmds) if any(a.endswith("perception_ctl.py") for a in c.argv)]
+    assert len(rx) == 1 and cmds[rx[0]].background and rx[0] < ctl[0]              # 받을 준비가 먼저
+    key = f"sensors#{rx[0]}"
+    for stage in ("sensors_off", "shutdown"):
+        assert any(key in c.stop for c in _cmds(stage) if c.stop), stage              # 끌 때 같이 내린다
+    common = (PATH.parents[1] / "scripts/vision/common.sh").read_text(encoding="utf-8")
+    fpp = (PATH.parents[1] / "scripts/vision/fpp_up.sh").read_text(encoding="utf-8")
+    assert "export ROS_LOCALHOST_ONLY=1" in common and "-e ROS_LOCALHOST_ONLY=1" in fpp
 
 
 def test_every_execute_flag_is_one_the_tool_actually_takes():

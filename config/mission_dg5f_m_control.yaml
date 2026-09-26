@@ -314,6 +314,10 @@ run:
     - note: 인지 런처 — vision-3090 의 카메라·FP++ 컨테이너를 ssh 로 보고 켜고 끈다(스스로는 아무것도 켜지 않는다)
       argv: [python3, "{repo}/scripts/nodes/perception_launcher_node.py", --host, vision-3090]
       background: true
+    - note: "FP++ 자세 수신기 — vision-3090 은 영상 · FP++ 를 저 PC 안에서만 돌리고(localhost 전용) 물체 자세만 UDP 로
+        보낸다(09.26 wifi 가 막히면 DDS 로 넘기던 카메라가 멈췄다). 받아서 /perception_plus_plus/<물체>/pose 로 다시 낸다"
+      argv: [python3, "{repo}/scripts/nodes/fpp_pose_rx.py"]
+      background: true
     - note: 카메라 + FP++(cup_big_s100) 켜기 — vision-3090 에서. 런처가 끝낼 때까지 최대 150 s 기다리고, 실패를 보고하면 이 단계도 실패(09.22 에는 보내기만 하고 통과했다)
       argv: [python3, "{repo}/scripts/ops/perception_ctl.py", start, cup_big_s100, --wait, "150"]
   hand_right:
@@ -578,15 +582,15 @@ run:
   sensors_off:
     - note: FP++ 컨테이너 + 카메라 내리기 (vision-3090)
       argv: [python3, "{repo}/scripts/ops/perception_ctl.py", stop, --camera]
-    - note: 로컬 인지 런처 정지
-      stop: ["sensors#0"]
+    - note: 로컬 인지 런처 · FP++ 자세 수신기 정지
+      stop: ["sensors#0", "sensors#1"]
   shutdown:
     - note: "★양팔을 받침 위 · 안전 자세에 두었는가. 두 팔 모두 pd 해제(⑥ release)를 끝냈는가. 다음 스텝부터 토크가 풀린다"
       argv: [bash, -lc, "true"]
       manual: true
     - note: 남은 pd · fabric · 목 퍼블리셔 정지
       stop: ["fabric_direct_right#0", "pd_arm_right#1", "pd_load_right#0",
-             "fabric_direct_left#0", "pd_arm_left#1", "pd_load_left#0", "head_home#1", "sensors#0"]
+             "fabric_direct_left#0", "pd_arm_left#1", "pd_load_left#0", "head_home#1", "sensors#0", "sensors#1"]
     - note: DG-5F 손 드라이버 정지 (우 → 좌) — 손가락 토크가 풀린다
       stop: ["hand_right#1", "hand_left#1"]
     - note: ★팔 브링업 정지 — OpenArm 하드웨어가 disable_all() 로 모든 모터를 끈다(팔이 받침으로 내려앉는다)

@@ -9,5 +9,5 @@ out = subprocess.run(["docker", "ps", "-a", "--filter", "name=^fpp_", "--format"
                      capture_output=True, text=True).stdout
 containers = dict(line.split("\t", 1) for line in out.splitlines() if "\t" in line)
 print(json.dumps({"camera_up": up("realsense2_camera_node"), "containers": containers,
-                  "viewer_up": up("cup_view_stream.py")}))
+                  "viewer_up": up("cup_view_stream.py"), "pose_tx_up": up("fpp_pose_tx.py")}))
 EOF

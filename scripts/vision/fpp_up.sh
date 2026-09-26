@@ -5,7 +5,7 @@ source "$(dirname "$0")/common.sh"
 NAME=${1:?name}; YAML=${2:?yaml path}
 [ -f "$YAML" ] || { echo "yaml missing: $YAML" >&2; exit 1; }
 docker rm -f "fpp_$NAME" >/dev/null 2>&1 || true
-docker run -d --name "fpp_$NAME" --network host --ipc=host --gpus all -e ROS_DOMAIN_ID=126 \
+docker run -d --name "fpp_$NAME" --network host --ipc=host --gpus all -e ROS_DOMAIN_ID=126 -e ROS_LOCALHOST_ONLY=1 \
   -v $PPP/perception_plus_plus_core/detection/yolo.py:/workspace/perception_plus_plus/perception_plus_plus_core/detection/yolo.py:ro \
   -v $PPP/perception_plus_plus_core/fp_adapter/foundationpose_plus_plus.py:/workspace/perception_plus_plus/perception_plus_plus_core/fp_adapter/foundationpose_plus_plus.py:ro \
   -v $PPP/ros_ws/src/perception_plus_plus_ros/perception_plus_plus_ros/node.py:/opt/perception_plus_plus/lib/python3.10/site-packages/perception_plus_plus_ros/node.py:ro \

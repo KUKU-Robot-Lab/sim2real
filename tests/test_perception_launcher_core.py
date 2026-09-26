@@ -42,13 +42,16 @@ def test_parse_remote_status():
                              ' "viewer_up": false}')
     assert st == RemoteState(camera_up=True, containers={"fpp_shaker_closed": "Up 3 minutes"},
                              viewer_up=False)
+    assert st.pose_tx_up is False                                    # 옛 status.sh(키 없음)는 꺼진 것으로
+    st = parse_remote_status('{"camera_up": true, "containers": {}, "viewer_up": false, "pose_tx_up": true}')
+    assert st.pose_tx_up is True
     with pytest.raises(ValueError, match="status"):
         parse_remote_status("garbage")
 
 
 def test_plan_start_is_idempotent_and_prunes_extras():
     state = RemoteState(camera_up=True, containers={"fpp_shaker_closed": "Up 1 minute",
-                                                    "fpp_old": "Up 9 minutes"}, viewer_up=False)
+                                                    "fpp_old": "Up 9 minutes"}, viewer_up=False, pose_tx_up=True)
     cmd = Command("start", ("shaker_closed", "cup_big_s100"), viewer=True, camera=False)
     assert plan_actions(cmd, state) == [("fpp_down", "fpp_old"), ("fpp_up", "cup_big_s100"),
                                         ("viewer_up",)]
@@ -57,7 +60,18 @@ def test_plan_start_is_idempotent_and_prunes_extras():
 def test_plan_start_cold_brings_camera_first():
     state = RemoteState(camera_up=False, containers={}, viewer_up=False)
     cmd = Command("start", ("shaker_closed",), viewer=None, camera=False)
-    assert plan_actions(cmd, state) == [("camera_up",), ("fpp_up", "shaker_closed")]
+    assert plan_actions(cmd, state) == [("camera_up",), ("fpp_up", "shaker_closed"), ("pose_tx_up",)]
+
+
+def test_the_pose_sender_is_started_once_and_stopped_with_the_containers():
+    """09.26: 영상 · FP++ 는 vision-3090 안에서만 돌고 자세만 UDP 로 넘어온다 — 송신기 없이는 정책 입력이 없다."""
+    running = RemoteState(camera_up=True, containers={"fpp_shaker_closed": "Up 1 minute"}, viewer_up=False,
+                          pose_tx_up=True)
+    assert plan_actions(Command("start", ("shaker_closed",), None, False), running) == []
+    stopping = plan_actions(Command("stop", (), None, False), running)
+    assert stopping == [("fpp_down", "fpp_shaker_closed"), ("pose_tx_down",)]
+    idle = RemoteState(camera_up=True, containers={}, viewer_up=False)
+    assert ("pose_tx_down",) not in plan_actions(Command("stop", (), None, False), idle)
 
 
 def test_plan_stop_tears_down_everything_camera_only_when_asked():

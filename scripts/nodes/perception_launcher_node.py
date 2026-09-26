@@ -8,7 +8,9 @@
 
 원격 실행은 tailscale ssh(무비밀번호) 로 repo 의 scripts/vision/*.sh 를 부른다.
 FP++ yaml 은 레지스트리에서 생성해 vision 의 log/fpp_params/<name>.yaml 에 써 넣는다.
-카메라 hz 는 DDS 로 직접 잰다(두 PC 가 같은 LAN, domain 126).
+영상 · FP++ 는 vision-3090 안에서만 돈다(localhost 전용 DDS). 로봇 PC 로는 FP++ 자세만 UDP 로 온다(09.26):
+vision 의 pose_tx_up.sh(송신기)를 이 런처가 띄우고, 받는 쪽 fpp_pose_rx.py 가 같은 토픽으로 다시 낸다.
+카메라 hz 는 그 수신기가 송신기의 heartbeat 로 내는 /perception/camera_hz 를 읽는다.
 실패는 status.error 로 드러낸다 — 조용한 재시도 없음.
 """
 from __future__ import annotations
@@ -26,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
+import fpp_udp  # noqa: E402
 from object_registry import load_registry, output_topic, render_fpp_yaml  # noqa: E402
 from perception_launcher_core import (  # noqa: E402
     build_status, parse_command, parse_remote_status, plan_actions,
@@ -35,7 +38,7 @@ REMOTE_SIM2REAL = "/home/usr/rl_ws/sim2real"
 REMOTE_PARAMS = f"{REMOTE_SIM2REAL}/log/fpp_params"
 _SCRIPT_FOR = {"camera_up": "camera_up.sh", "camera_down": "camera_down.sh",
                "fpp_up": "fpp_up.sh", "fpp_down": "fpp_down.sh",
-               "viewer_up": "viewer_up.sh", "viewer_down": "viewer_down.sh"}
+               "viewer_up": "viewer_up.sh", "viewer_down": "viewer_down.sh", "pose_tx_down": "pose_tx_down.sh"}
 
 
 class RemoteExec:
@@ -54,6 +57,13 @@ class RemoteExec:
         quoted = " ".join(f"'{a}'" for a in args)
         return self._ssh(f"bash {REMOTE_SIM2REAL}/scripts/vision/{script} {quoted}")
 
+    def client_ip(self) -> str:
+        """저 PC 가 본 이 PC 의 주소(ssh 가 온 곳) — UDP 자세를 받을 주소다. 주소를 설정에 적어 두지 않는다."""
+        fields = self._ssh("echo $SSH_CLIENT").split()
+        if not fields:
+            raise RuntimeError(f"ssh {self.host}: SSH_CLIENT 가 비었다 — 받을 주소를 모른다")
+        return fields[0]
+
     def put(self, text: str, remote_path: str) -> None:
         self._ssh(f"mkdir -p $(dirname '{remote_path}') && cat > '{remote_path}'", stdin=text)
 
@@ -69,8 +79,7 @@ def main() -> None:
     import rclpy
     from geometry_msgs.msg import PoseStamped
     from rclpy.node import Node
-    from sensor_msgs.msg import CameraInfo
-    from std_msgs.msg import String
+    from std_msgs.msg import Float32, String
 
     class Launcher(Node):
         def __init__(self) -> None:
@@ -80,10 +89,10 @@ def main() -> None:
             self._error: str | None = None
             self._state = None
             self._last_pose: dict[str, float] = {}
-            self._cam_stamps: list[float] = []
+            self._camera: tuple[float, float] | None = None       # (받은 시각, hz) — fpp_pose_rx 가 낸다
             self._pub = self.create_publisher(String, "/perception/status", 10)
             self.create_subscription(String, "/perception/cmd", self._on_cmd, 10)
-            self.create_subscription(CameraInfo, "/camera/camera/color/camera_info", self._on_cam, 5)
+            self.create_subscription(Float32, fpp_udp.CAMERA_HZ_TOPIC, self._on_cam, 5)
             for name in registry.names():
                 self.create_subscription(PoseStamped, output_topic(name),
                                          lambda _m, n=name: self._last_pose.__setitem__(n, time.monotonic()), 10)
@@ -91,9 +100,8 @@ def main() -> None:
             self.create_timer(args.poll, self._poll_remote)
             self._poll_remote()
 
-        def _on_cam(self, _msg) -> None:
-            now = time.monotonic()
-            self._cam_stamps = [t for t in self._cam_stamps if now - t < 2.0] + [now]
+        def _on_cam(self, msg) -> None:
+            self._camera = (time.monotonic(), float(msg.data))
 
         def _poll_remote(self) -> None:
             if self._busy:
@@ -108,7 +116,7 @@ def main() -> None:
             now = time.monotonic()
             ages = {n: (round(now - self._last_pose[n], 3) if n in self._last_pose else None)
                     for n in registry.names()}
-            payload = build_status(self._state, len(self._cam_stamps) / 2.0, ages, self._busy, self._error)
+            payload = build_status(self._state, fpp_udp.camera_hz_at(self._camera, now), ages, self._busy, self._error)
             self._pub.publish(String(data=json.dumps(payload, ensure_ascii=False)))
 
         def _on_cmd(self, msg: String) -> None:
@@ -155,6 +163,8 @@ def main() -> None:
                 if not names:
                     raise RuntimeError("viewer_up: 물체가 없다 — start 로 먼저 컨테이너를 띄울 것")
                 out = remote.run("viewer_up.sh", *names)
+            elif kind == "pose_tx_up":
+                out = remote.run("pose_tx_up.sh", remote.client_ip(), str(fpp_udp.PORT))
             elif kind == "fpp_down":
                 out = remote.run("fpp_down.sh", action[1])
             else:

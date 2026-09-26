@@ -3,7 +3,7 @@
 source "$(dirname "$0")/common.sh"
 [ $# -ge 1 ] || { echo "need object names" >&2; exit 1; }
 bash "$(dirname "$0")/viewer_down.sh" >/dev/null
-DISPLAY=:0 setsid bash -c "source /opt/ros/humble/setup.bash; export ROS_DOMAIN_ID=126;
+DISPLAY=:0 setsid bash -c "source /opt/ros/humble/setup.bash; export ROS_DOMAIN_ID=126 ROS_LOCALHOST_ONLY=1;
   cd $SIM2REAL/scripts && exec python3 cup_view_stream.py --show --compressed --port 8080 --objects $*" \
   </dev/null >"$LOGDIR/viewer.log" 2>&1 &
 sleep 2; pgrep -f cup_view_stream.py >/dev/null && echo "viewer up" || { cat "$LOGDIR/viewer.log" >&2; exit 1; }

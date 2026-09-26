@@ -18,7 +18,8 @@ def test_start_without_viewer_flag_omits_key_and_keeps_viewer_running():
     import json
     cmd = parse_command(json.dumps(payload), REG)
     assert cmd.viewer is None
-    state = RemoteState(camera_up=True, containers={"fpp_cup_big_s100": "Up 1 minute"}, viewer_up=True)
+    state = RemoteState(camera_up=True, containers={"fpp_cup_big_s100": "Up 1 minute"}, viewer_up=True,
+                        pose_tx_up=True)
     assert plan_actions(cmd, state) == []
 
 

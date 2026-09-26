@@ -30,6 +30,8 @@ class RemoteState:
     camera_up: bool
     containers: dict[str, str]
     viewer_up: bool
+    #: FP++ 자세 → 로봇 PC UDP 송신기(09.26). 영상 · FP++ 는 vision-3090 안에서만 돌아 이것 없이는 자세가 안 온다
+    pose_tx_up: bool = False
 
 
 def parse_command(text: str, registry) -> Command:
@@ -68,7 +70,7 @@ def parse_remote_status(text: str) -> RemoteState:
         raise ValueError(f"remote status is not the expected JSON: {text[:200]!r}")
     return RemoteState(camera_up=bool(raw.get("camera_up")),
                        containers={str(k): str(v) for k, v in raw["containers"].items()},
-                       viewer_up=bool(raw.get("viewer_up")))
+                       viewer_up=bool(raw.get("viewer_up")), pose_tx_up=bool(raw.get("pose_tx_up")))
 
 
 def plan_actions(cmd: Command, state: RemoteState) -> list[tuple[str, ...]]:
@@ -83,6 +85,8 @@ def plan_actions(cmd: Command, state: RemoteState) -> list[tuple[str, ...]]:
         for name in cmd.objects:
             if not state.containers.get(container_name(name), "").startswith("Up"):
                 actions.append(("fpp_up", name))
+        if not state.pose_tx_up:
+            actions.append(("pose_tx_up",))
         if cmd.viewer is True and not state.viewer_up:
             actions.append(("viewer_up",))
         if cmd.viewer is False and state.viewer_up:
@@ -94,6 +98,8 @@ def plan_actions(cmd: Command, state: RemoteState) -> list[tuple[str, ...]]:
         for cname in sorted(state.containers):
             if cname.startswith(CONTAINER_PREFIX):
                 actions.append(("fpp_down", cname))
+        if state.pose_tx_up:
+            actions.append(("pose_tx_down",))
         if cmd.camera and state.camera_up:
             actions.append(("camera_down",))
         return actions
