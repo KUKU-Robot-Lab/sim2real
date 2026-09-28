@@ -43,3 +43,16 @@ def test_cli_refuses_a_hold_without_engage_and_unknown_stages(capsys):
     assert ec.main(["--only", "pd_engage", "--hold-s", "10"]) == 0       # 계획만 — 서비스를 부르지 않는다
     assert "DRY RUN" in capsys.readouterr().out
     assert ec.main(["--only", "pd_engage", "--execute"]) == 3            # 승인 없이는 실행하지 않는다
+
+
+def test_a_lost_response_is_told_apart_from_a_refusal_and_idempotent_pd_calls_are_retried():
+    """09.28 실기: goto_home 응답이 유실돼 45 s 뒤 실패 → pd 해제 → JTC 가 넘겨받는 사이 팔이 움직였다."""
+    from episode_ctl import RETRY_ON_LOST, keep_engaged_after_lost, lost_response
+
+    assert lost_response(["service /policy_control/pd_left/goto_home timeout"])
+    assert not lost_response(["service /policy_control/pd_left/goto_home unavailable"])
+    assert not lost_response(["phase IDLE is not RAMPING/TRACKING (engage first)"])
+    assert {"pd_goto_home", "pd_hand_home"} <= RETRY_ON_LOST and "pd_engage" not in RETRY_ON_LOST
+    assert keep_engaged_after_lost({"phase": "TRACKING", "ok": True})
+    assert not keep_engaged_after_lost({"phase": "HOLD", "ok": False})
+    assert not keep_engaged_after_lost(None)

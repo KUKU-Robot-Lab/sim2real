@@ -81,6 +81,20 @@ STAGES: tuple[Stage, ...] = (
     Stage("pd_release", "pd release (역블렌드 → 0 송출 → JTC 복귀)", PD("release"), ("IDLE",)),
 )
 SAFE_TAIL = ("ep_stop", "pd_release")
+#: 같은 요청을 다시 보내도 결과가 같은 pd 서비스 — 응답이 유실되면 한 번 더 보낸다.
+#: 09.28 실기: pd 가 goto_home 에 응답했지만 "failed to send response (timeout)" 로 클라이언트에 닿지 않아 45 s 뒤
+#: 실패로 판정 → pd 를 해제했고, JTC 가 넘겨받는 사이 팔이 0.2~0.4 rad 움직였다.
+RETRY_ON_LOST = frozenset({"pd_goto_home", "pd_hand_home", "pd_hand_rest", "pd_hand_path"})
+
+
+def lost_response(reasons: list[str]) -> bool:
+    """서비스는 있는데 응답이 안 온 경우(거부 · 서비스 없음과 다르다)."""
+    return any(str(r).startswith("service ") and str(r).endswith(" timeout") for r in reasons)
+
+
+def keep_engaged_after_lost(status: dict | None) -> bool:
+    """응답만 잃었고 pd 가 정상으로 팔을 잡고 있으면 해제하지 않는다 — 해제가 더 위험하다(위 09.28)."""
+    return bool(status) and status.get("phase") in ("RAMPING", "TRACKING") and bool(status.get("ok", False))
 
 
 def stage_by_id(stage_id: str) -> Stage:
@@ -155,6 +169,7 @@ class Runner:
         self.node = Node(f"episode_ctl_{side}")
         self.side = side
         self.service_timeout = service_timeout
+        self.lost = False                      # 마지막 실패가 응답 유실이었나
         self.phase_timeout = phase_timeout
         self.pd_status: dict | None = None
         self.obs_status: dict | None = None
@@ -289,6 +304,10 @@ def run_stage(runner: Runner, stage: Stage, steps: int) -> bool:
     if service is None:
         return runner.wait_steps(steps)
     ok, reasons = runner.call(service)
+    if not ok and lost_response(reasons) and stage.id in RETRY_ON_LOST:
+        print(f"    ⚠ 응답이 안 왔다 {reasons} — 같은 요청을 한 번 더(이 서비스는 다시 불러도 결과가 같다)")
+        ok, reasons = runner.call(service)
+    runner.lost = (not ok) and lost_response(reasons)
     if not ok:
         print(f"    ✗ refused: {reasons}")
         return False
@@ -329,7 +348,10 @@ def execute(steps: int, service_timeout: float, phase_timeout: float, only: tupl
         if only:
             # 일부만 부를 때: 성공이면 engage 를 **유지**한다(다음 단계가 이어 쓴다). 실패·중단이면 pd 를 풀어 둔다 —
             # 이 호출 전에 이미 engage 돼 있었을 수 있으므로(goto_home 만 부른 경우) engage 여부와 무관하게 release 한다.
-            if rc != 0:
+            if rc != 0 and runner.lost and keep_engaged_after_lost(runner.pd_status):
+                print(f"    ⚠ 응답만 잃었고 pd 는 {runner.pd_status.get('phase')} 로 팔을 잡고 있다 — 해제하지 않는다"
+                      "(해제하면 JTC 가 넘겨받는 사이 팔이 움직였다). 단계를 다시 실행하면 된다")
+            elif rc != 0:
                 run_stage(runner, stage_by_id("pd_release"), steps)
         elif "pd_engage" in done:
             safe_tail(runner, done, steps)
