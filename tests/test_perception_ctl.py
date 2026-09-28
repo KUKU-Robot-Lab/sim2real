@@ -40,3 +40,16 @@ def test_wait_verdict_accepts_an_immediate_no_change_and_catches_errors():
     assert wait_verdict(True, False, 12.0, None) == "ok"
     assert wait_verdict(True, False, 12.0, "camera did not publish") == "fail"
     assert wait_verdict(False, False, 4.0, "ssh rc=1") == "fail"
+
+
+def test_stop_without_the_launcher_calls_the_same_down_scripts_over_ssh():
+    """09.28 실기: shutdown 이 런처를 먼저 내려 sensors_off 가 실패했다 — 런처 없이도 저 PC 에서 직접 내린다."""
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("perception_ctl_direct",
+                                                  Path(__file__).resolve().parents[1] / "scripts/ops/perception_ctl.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.direct_stop_scripts(False) == [("pose_tx_down.sh",), ("fpp_down.sh", "all")]
+    assert mod.direct_stop_scripts(True)[-1] == ("camera_down.sh",)

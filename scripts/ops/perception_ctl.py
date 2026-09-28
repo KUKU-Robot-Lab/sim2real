@@ -8,7 +8,8 @@
   perception_ctl.py list
 
 이름은 레지스트리(config/objects.yaml)로 검증·alias 해석 후 /perception/cmd 에 발행한다.
-perception_launcher_node.py 가 떠 있어야 한다.
+perception_launcher_node.py 가 떠 있어야 한다. 단 stop 은 런처가 없으면 ssh 로 저 PC 의 내리는 스크립트를 직접 부른다
+(09.28 실기: shutdown 이 런처를 먼저 내려 sensors_off 가 "구독자 0" 으로 실패했고 FP++ · 카메라가 켜진 채 남았다).
 """
 from __future__ import annotations
 
@@ -39,6 +40,30 @@ def build_payload(args, registry) -> dict | None:
     return None
 
 
+REMOTE_SIM2REAL = "/home/usr/rl_ws/sim2real"
+
+
+def direct_stop_scripts(camera: bool) -> list[tuple[str, ...]]:
+    """런처 없이 내릴 때 저 PC 에서 부를 스크립트(런처의 stop 과 같은 것) — 자세 송신 → FP++ 전부 → (카메라)."""
+    out = [("pose_tx_down.sh",), ("fpp_down.sh", "all")]
+    if camera:
+        out.append(("camera_down.sh",))
+    return out
+
+
+def direct_stop(host: str, camera: bool) -> int:
+    import subprocess
+
+    rc = 0
+    for script, *argv in direct_stop_scripts(camera):
+        cmd = f"bash {REMOTE_SIM2REAL}/scripts/vision/{script} " + " ".join(f"'{a}'" for a in argv)
+        proc = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", host, cmd],
+                              capture_output=True, text=True, timeout=60)
+        print(f"[direct] {host}: {script} {' '.join(argv)} → rc={proc.returncode} {(proc.stdout or proc.stderr).strip()[-120:]}")
+        rc = rc or proc.returncode
+    return rc
+
+
 def print_status(payload: dict) -> None:
     print(f"camera: {'up' if payload['camera_up'] else 'down'} ({payload['camera_hz']} Hz)"
           f" · viewer: {payload['viewer']} · busy: {payload['busy']}")
@@ -60,6 +85,7 @@ def main() -> int:
                    help="런처가 일을 끝낼 때까지(busy=False) 최대 이 초만큼 기다리고, 오류면 1 로 끝난다(0 = 보내기만)")
     st = sub.add_parser("stop")
     st.add_argument("--camera", action="store_true", help="카메라까지 내린다")
+    st.add_argument("--host", default="vision-3090", help="런처가 없을 때 ssh 로 직접 내릴 곳")
     v = sub.add_parser("viewer")
     v.add_argument("on", choices=("on", "off"))
     sub.add_parser("status")
@@ -86,6 +112,11 @@ def main() -> int:
         while pub.get_subscription_count() == 0 and time.monotonic() < deadline:
             rclpy.spin_once(node, timeout_sec=0.1)
         if pub.get_subscription_count() == 0:
+            if args.op == "stop":
+                print(f"perception_launcher_node 가 안 떠 있다 — ssh 로 {args.host} 에서 직접 내린다", file=sys.stderr)
+                node.destroy_node()
+                rclpy.shutdown()
+                return direct_stop(args.host, bool(args.camera))
             print("perception_launcher_node 가 안 떠 있다 (/perception/cmd 구독자 0)", file=sys.stderr)
             return 1
         pub.publish(String(data=json.dumps(payload)))
