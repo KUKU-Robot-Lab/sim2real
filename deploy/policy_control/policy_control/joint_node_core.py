@@ -61,6 +61,31 @@ def start_refusals(c: JointContract, m: JointMeasure, tol: float) -> list:
     return [f"arm is {err:.3f} rad from the training reset pose (tol {tol})"] if err > tol else []
 
 
+START_TILT_MAX_DEG = 15.0   # 학습 초기 컵은 똑바로 서 있다(fj reset 기울기 0) — FP++ 잡음 · 테이블 기울기 여유
+START_MOVE_MAX_M = 0.02     # 리셋(목표를 정한 때)과 시작 사이 선 컵이 이만큼 흐르면 FP++ 추종이 불안정한 것
+
+
+def object_start_refusals(obj: Pose | None, reset_obj: Pose | None, max_tilt_deg: float = START_TILT_MAX_DEG,
+                          max_move_m: float = START_MOVE_MAX_M) -> list:
+    """리셋 · 시작 때 FP++ 가 선 컵을 제대로 보고 있는지(빈 목록 = 통과). 09.28 사용자: "로봇을 리셋할 때 fpp 가 제대로
+    cup 을 추종하고 있는지 확인해야 하는데 그 과정이 없음" — 2회차는 FP++ 가 선 컵을 174° 로 뒤집어 본 채 시작했다.
+    기울기는 학습과 같다(물체 z 축과 세계 z 의 각, fj_core_env._get_dones). reset_obj 가 None 이면 흐름은 보지 않는다."""
+    from .joint_obs import quat_to_matrix
+    if obj is None:
+        return ["no fresh FP++ object pose — check that FP++ is tracking the cup"]
+    tilt = float(np.degrees(np.arccos(np.clip(quat_to_matrix(obj.quat)[2, 2], -1.0, 1.0))))
+    out = []
+    if tilt > max_tilt_deg:
+        out.append(f"FP++ says the cup is at tilt {tilt:.1f} deg (> {max_tilt_deg:.0f}) — a standing cup is expected; "
+                   f"re-register FP++")
+    if reset_obj is not None:
+        moved = float(np.linalg.norm(np.asarray(obj.pos, float) - np.asarray(reset_obj.pos, float)))
+        if moved > max_move_m:
+            out.append(f"FP++ cup pose moved {moved * 100:.1f} cm since reset (> {max_move_m * 100:.0f}) — "
+                       f"tracking is unstable or the cup was moved; reset again")
+    return out
+
+
 def keypoint_goal_dist(c: JointContract, obj: Pose, goal: Pose) -> float:
     """학습의 목표 도달 거리 — 물체 · 목표 키포인트(4 개) 사이 거리의 최대(hdgp keypoint_max_dist)."""
     from .joint_obs import keypoints

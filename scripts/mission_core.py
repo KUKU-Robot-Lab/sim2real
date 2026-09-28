@@ -77,6 +77,8 @@ class Group:
     title: str
     #: 이 묶음의 단계가 팔·목을 움직이는가. 화면이 색과 경고로 구분한다.
     motion: bool = False
+    #: 차례에 끼지 않는 묶음(진단). 창의 '다음 단계'가 되지 않고, 운영자가 골라서만 돈다(09.28 사용자: selftest 따로).
+    optional: bool = False
 
 
 @dataclass(frozen=True)
@@ -321,7 +323,8 @@ def _groups_from_raw(raw) -> tuple[Group, ...]:
     for g in raw or ():
         if not g.get("id") or not g.get("title"):
             raise ValueError(f"묶음에는 id 와 title 이 있어야 한다: {g}")
-        groups.append(Group(id=str(g["id"]), title=str(g["title"]), motion=bool(g.get("motion", False))))
+        groups.append(Group(id=str(g["id"]), title=str(g["title"]), motion=bool(g.get("motion", False)),
+                            optional=bool(g.get("optional", False))))
     ids = [g.id for g in groups]
     dupes = sorted({gid for gid in ids if ids.count(gid) > 1})
     if dupes:

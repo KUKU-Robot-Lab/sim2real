@@ -184,3 +184,27 @@ def test_keypoint_goal_distance_is_the_max_over_keypoints(c):
     up = np.array([1.0, 0.0, 0.0, 0.0])
     a, b = Pose(np.zeros(3), up), Pose(np.array([0.03, 0.0, 0.04]), up)
     assert keypoint_goal_dist(c, a, b) == pytest.approx(0.05)            # 같은 자세면 모든 키포인트가 같이 옮겨진다
+
+
+def test_object_start_check_refuses_a_flipped_missing_or_moving_fpp_pose():
+    """09.28 사용자: "로봇을 리셋할 때 fpp 가 제대로 cup 을 추종하고 있는지 확인해야 하는데 그 과정이 없음".
+    2회차는 FP++ 가 선 컵을 174° 로 뒤집어 보고 있었는데 그대로 시작했다. 학습 초기 컵은 똑바로 서 있다."""
+    import numpy as np
+    from policy_control.joint_node_core import object_start_refusals
+    from policy_control.joint_obs import Pose
+
+    def tilt(deg: float) -> np.ndarray:                     # x 축으로 deg 기운 쿼터니언 (w, x, y, z)
+        h = np.radians(deg) / 2
+        return np.array([np.cos(h), np.sin(h), 0.0, 0.0])
+
+    up = Pose(np.array([0.258, 0.108, 0.287]), tilt(0.6))  # 1회차 시작(실기)
+    assert object_start_refusals(up, up) == []
+    flipped = Pose(np.array([0.261, 0.126, 0.306]), tilt(174.3))  # 2회차 시작(실기)
+    r = object_start_refusals(flipped, flipped)
+    assert len(r) == 1 and "tilt" in r[0]
+    r = object_start_refusals(None, up)
+    assert len(r) == 1 and "FP++" in r[0]
+    moved = Pose(up.pos + np.array([0.03, 0.0, 0.0]), up.quat)  # 리셋 뒤 3 cm 흐름 = 추종이 불안정
+    r = object_start_refusals(moved, up)
+    assert len(r) == 1 and "moved" in r[0]
+    assert object_start_refusals(Pose(up.pos, tilt(14.0)), None) == []   # 리셋 기준이 없으면 기울기만 본다

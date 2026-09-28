@@ -188,3 +188,29 @@ def test_ack_and_abort_name_the_stage_when_two_lanes_run(lanes):
     lanes.abort_stage("right_home")
     for r in list(lanes.session.runners.values()):
         r.join(20)
+
+
+OPTIONAL = MISSION.replace(
+    "  - {id: motion, title: 자세 이동, motion: true}\n",
+    "  - {id: motion, title: 자세 이동, motion: true}\n  - {id: diagnose, title: 진단 (선택), motion: true, optional: true}\n",
+).replace(
+    "  - id: left_home\n",
+    "  - id: right_selftest\n    lane: arm_right\n    group: diagnose\n    title: 셀프테스트\n    needs: [right_load]\n"
+    "  - id: left_home\n",
+).replace(
+    "run:\n",
+    "run:\n  right_selftest:\n    - {note: 셀프테스트, argv: [\"true\"]}\n",
+)
+
+
+def test_an_optional_group_is_never_the_next_stage_but_can_still_be_run(console, tiny_repo):
+    """09.28 사용자: "selftest_left 이거 맨날 실패하는 것 같은데 따로 빼두던가" — 차례에 끼지 않고, 고르면 돈다."""
+    (tiny_repo / "mission.yaml").write_text(textwrap.dedent(OPTIONAL))
+    console.open("t_fake", operator="pytest")
+    _run(console, "drivers")
+    _run(console, "right_load")
+    _run(console, "right_home")
+    view = {x["id"]: x for x in _mission(console)["lanes"]}
+    assert view["arm_right"]["next"] is None                  # 진단은 차례가 아니다
+    assert _rows(console)["right_selftest"]["can_run"]
+    _run(console, "right_selftest")

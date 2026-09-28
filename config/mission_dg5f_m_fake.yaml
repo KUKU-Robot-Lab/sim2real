@@ -29,6 +29,10 @@ groups:
   title: 정책 동작
 - id: finish
   title: 정리
+- id: diagnose
+  motion: true
+  optional: true
+  title: 진단 (선택)
 lanes:
 - id: rig
   title: 드라이버
@@ -1322,7 +1326,7 @@ stages:
 - artifacts:
   - contract
   - robot_right
-  group: motion
+  group: diagnose
   id: selftest_right
   lane: arm_right
   needs:
@@ -1438,7 +1442,7 @@ stages:
 - artifacts:
   - contract
   - robot_left
-  group: motion
+  group: diagnose
   id: selftest_left
   lane: arm_left
   needs:

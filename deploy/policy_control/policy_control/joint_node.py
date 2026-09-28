@@ -31,7 +31,8 @@ from policy_control.joint_chain import JointChain, JointChainError  # noqa: E402
 from policy_control.joint_contract import JointContract, JointContractError, load_contract  # noqa: E402
 from policy_control.joint_decoder import JointDecodeError  # noqa: E402
 from policy_control.joint_node_core import (  # noqa: E402
-    EpisodeEnd, JointNodeError, joint_target_arrays, keypoint_goal_dist, measure_from_state, start_refusals,
+    START_MOVE_MAX_M, START_TILT_MAX_DEG, EpisodeEnd, JointNodeError, joint_target_arrays, keypoint_goal_dist,
+    measure_from_state, object_start_refusals, start_refusals,
 )
 from policy_control.joint_obs import JointObsError  # noqa: E402
 from policy_control.sources import RobotCfgError, SourceSet, load_robot_cfg, select_side  # noqa: E402
@@ -75,7 +76,8 @@ class JointNode(Node):
         for name, default in (("contract", ""), ("robot", ""), ("device", "cuda:0"), ("reset_tol_rad", 0.15),
                               ("max_gap_ticks", 3), ("goal_offset", [0.0, 0.0, 0.0]), ("use_goal_offset", False),
                               ("publish_target", True), ("success_tol_m", 0.0), ("success_steps", 10),
-                              ("max_episode_s", 0.0)):
+                              ("max_episode_s", 0.0), ("start_tilt_max_deg", START_TILT_MAX_DEG),
+                              ("start_obj_move_m", START_MOVE_MAX_M)):
             self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
         cpath, rpath = Path(str(p("contract"))), Path(str(p("robot")))
@@ -95,6 +97,9 @@ class JointNode(Node):
         self._seq, self._gap, self._errors = 0, 0, {}
         # 09.28 사용자: 목표에 이송하면 에피소드가 끝난다 — 끝나면 pd 가 그 자세 · 손 쥠을 붙잡는다(episode stop 과 같다)
         self.ending = EpisodeEnd(float(p("success_tol_m")), int(p("success_steps")), float(p("max_episode_s")))
+        # 09.28 사용자: 리셋 때 FP++ 가 컵을 제대로 추종하는지 확인 — 리셋 · 시작 모두 선 컵 · 흐르지 않음을 본다
+        self.obj_check = {"max_tilt_deg": float(p("start_tilt_max_deg")), "max_move_m": float(p("start_obj_move_m"))}
+        self._reset_obj = None
 
         chain_qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -152,6 +157,9 @@ class JointNode(Node):
     def _srv_reset(self, _req, res):
         try:
             m = self._measure()
+            bad = object_start_refusals(m.obj, None, **self.obj_check)
+            if bad:
+                return self._reply(res, False, [f"reset: {r}" for r in bad])
             if self.chain is None:
                 if self._policy is None:
                     from policy_control.joint_policy import JointPolicy
@@ -160,7 +168,7 @@ class JointNode(Node):
             goal = self.chain.reset(m.obj, self.goal_offset)
         except _HANDLED as exc:
             return self._reply(res, False, [f"reset: {exc}"])
-        self._seq, self._gap = 0, 0
+        self._seq, self._gap, self._reset_obj = 0, 0, m.obj
         event, _ = self.book.reset()
         self._emit(event)
         return self._reply(res, True, [f"goal {[round(float(v), 3) for v in goal.pos]}"])
@@ -169,7 +177,9 @@ class JointNode(Node):
         if self.chain is None:
             return self._reply(res, False, ["start: reset first"])
         try:
-            refusals = start_refusals(self.contract, self._measure(), self.reset_tol)
+            m = self._measure()
+            refusals = start_refusals(self.contract, m, self.reset_tol) + \
+                object_start_refusals(m.obj, self._reset_obj, **self.obj_check)
         except _HANDLED as exc:
             return self._reply(res, False, [f"start: {exc}"])
         if refusals:

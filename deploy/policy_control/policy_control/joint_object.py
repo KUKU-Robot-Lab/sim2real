@@ -5,10 +5,10 @@
   live      FP++ 자세를 쓴다. 한 번에 jump_m 넘게 튀면 그 한 개는 버리고 직전 값을 쓴다(연속 reject_limit 번이면
             진짜로 옮겨진 것으로 보고 받는다). 쓴 자세마다 **손바닥 기준 상대 자세**를 갱신해 둔다.
   attached  손바닥–물체 원점 거리 < attach_dist_m 이고 손 닫힘 > attach_closure 가 attach_steps 스텝 이어지면
-            마지막 상대 자세로 **붙인다**. 이후 물체 = 손바닥 자세 ∘ 상대 자세(에피소드 끝까지).
-            붙인 뒤에도 FP++ 가 그 예측에서 refine_m 안이면 상대 자세를 그 값으로 다듬는다('attached_live') —
-            일찍 붙이면 손가락이 조이는 동안 컵이 손 안에서 움직인다(trace: 다듬지 않으면 최대 2.3 cm).
-            가려진 FP++ 가 흐르면(예측에서 refine_m 밖) 다듬지 않고 마지막 좋은 상대 자세를 지킨다('attached').
+            마지막 상대 자세로 **붙인다**. 이후 물체 = 손바닥 FK ∘ 상대 자세(에피소드 끝까지). FP++ 는 보지 않는다.
+            09.28 사용자: "컵을 파지하고 나서부터는 fk 로". 전에는 붙인 뒤에도 예측에서 3 cm 안의 FP++ 로 상대 자세를
+            다듬었는데('attached_live'), 가려진 FP++ 가 스텝마다 조금씩 흐르면 그 흐름을 계속 받아 실기 4회 중 4회
+            상대 자세가 6~18 cm 끌려갔다(컵은 손에 있었다). 붙인 순간의 상대 자세는 네 번 모두 1.6 cm 안에서 같았다.
 기본값은 학습 trace(right_m15_e800, 600 스텝)에서 잰 파지 상태다: 들어 올린 동안 손바닥–컵 원점 12.1~13.6 cm ·
 닫힘 ≥ 0.56, 접근 중에는 ≥ 15 cm · 닫힘 < 0.1.
 붙인 뒤 컵이 미끄러지거나 떨어지면 이 추정은 모른다 — 운영자가 본다(status 의 source 가 'attached').
@@ -30,7 +30,6 @@ class AttachCfg:
     attach_steps: int = 5
     jump_m: float = 0.05
     reject_limit: int = 3
-    refine_m: float = 0.03
 
 
 def matrix_to_quat(R: np.ndarray) -> np.ndarray:
@@ -87,17 +86,11 @@ class ObjectEstimator:
         return self._last
 
     def update(self, fpp: Pose | None, palm_pos, palm_rot, hand_qstar) -> tuple[Pose | None, str]:
-        """(물체 자세 | None, 출처 'live' · 'held' · 'attached_live' · 'attached' · 'missing')."""
+        """(물체 자세 | None, 출처 'live' · 'held' · 'attached' · 'missing')."""
         palm_pos, palm_rot = np.asarray(palm_pos, float), np.asarray(palm_rot, float)
         if self.attached:
             p_rel, R_rel = self._rel
-            pred = Pose(palm_pos + palm_rot @ p_rel, matrix_to_quat(palm_rot @ R_rel))
-            if fpp is not None and np.linalg.norm(np.asarray(fpp.pos, float) - pred.pos) < self.cfg.refine_m:
-                meas = Pose(np.asarray(fpp.pos, float).copy(), np.asarray(fpp.quat, float).copy())
-                self._rel = (palm_rot.T @ (meas.pos - palm_pos), palm_rot.T @ quat_to_matrix(meas.quat))
-                self._last = meas
-                return meas, "attached_live"
-            return pred, "attached"
+            return Pose(palm_pos + palm_rot @ p_rel, matrix_to_quat(palm_rot @ R_rel)), "attached"
         pose = self._accept(fpp)
         if pose is None:
             return None, "missing"

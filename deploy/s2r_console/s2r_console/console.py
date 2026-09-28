@@ -781,10 +781,12 @@ class Console:
         busy = bool(busy_by_lane)
         finished = s.state.status == MC.STATUS_DONE and not lanes
         #: 창마다 "다음 단계" = 그 창에서 아직 안 끝낸 첫 단계. 화면이 창 하나에 카드 하나를 크게 그린다.
+        #: 선택 묶음(진단)은 차례가 아니다 — '다른 단계 고르기'에서만 고른다.
+        optional = {g.id for g in s.mission.groups if g.optional}
         nxt = {}
         for st in s.mission.stages:
             lane = self._lane(s, st)
-            if lane not in nxt and st.id not in s.state.completed:
+            if lane not in nxt and st.id not in s.state.completed and st.group not in optional:
                 nxt[lane] = st.id
         if lanes:
             rows_struct = [MC.StagePlan(stage=st, result=MC.gate(s.mission, st.id, s.state, pev))
@@ -831,7 +833,7 @@ class Console:
                                        if k.split("#")[0] in {x.id for x in s.mission.stages}}
                                       - {lane, ""}),
             })
-        groups = [{"id": g.id, "title": g.title, "motion": g.motion} for g in s.mission.groups]
+        groups = [{"id": g.id, "title": g.title, "motion": g.motion, "optional": g.optional} for g in s.mission.groups]
         lane_view = [{"id": la.id, "title": la.title, "side": la.side,
                       "busy": busy_by_lane.get(la.id), "next": nxt.get(la.id), "last": s.lane_last.get(la.id),
                       "rows": [st.id for st in s.mission.stages if st.lane == la.id]} for la in lanes]

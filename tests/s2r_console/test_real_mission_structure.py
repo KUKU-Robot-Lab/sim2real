@@ -25,10 +25,18 @@ def _launches(stage, needle):
     return [i for i, c in enumerate(_cmds(stage)) if any(needle in a for a in c.argv)]
 
 
-def test_every_stage_sits_in_one_of_the_six_groups_in_order():
-    assert [g.title for g in MISSION.groups] == ["점검", "연결", "준비", "자세 이동", "정책 동작", "정리"]
+def test_every_stage_sits_in_one_of_the_groups_in_order():
+    assert [g.title for g in MISSION.groups] == ["점검", "연결", "준비", "자세 이동", "정책 동작", "정리", "진단 (선택)"]
     assert all(s.group for s in MISSION.stages)
-    assert {g.id for g in MISSION.groups if g.motion} == {"motion", "policy"}
+    assert {g.id for g in MISSION.groups if g.motion} == {"motion", "policy", "diagnose"}
+
+
+def test_selftest_is_an_optional_diagnosis_nothing_waits_for():
+    """09.28 사용자: "selftest_left 이거 맨날 실패하는 것 같은데 따로 빼두던가" — 차례에서 빼고, 아무것도 기대지 않는다."""
+    optional = {g.id for g in MISSION.groups if g.optional}
+    assert optional == {"diagnose"}
+    assert {s.id for s in MISSION.stages if s.group in optional} == {"selftest_right", "selftest_left"}
+    assert not [s.id for s in MISSION.stages if {"selftest_right", "selftest_left"} & set(s.needs)]
 
 
 def test_each_arm_is_readied_engaged_and_homed_before_the_selftest():
