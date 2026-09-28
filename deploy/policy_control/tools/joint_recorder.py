@@ -61,6 +61,7 @@ def _stack(rows, width: int) -> np.ndarray:
 
 
 def main() -> int:
+    """실시간 구독 기록(시험 · 짧은 확인용). 정책 단계는 policy_bag.py(rosbag2)를 쓴다 — 이 노드는 촉각을 버렸다(09.28)."""
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--contract", type=Path, required=True, help="joint_contract.json")
     ap.add_argument("--robot", type=Path, required=True, help="robot yaml (정책 노드와 같은 파일)")
@@ -69,149 +70,39 @@ def main() -> int:
     args = ap.parse_args()
     if os.environ.get("ROS_DOMAIN_ID", "") in ("", "0"):
         raise SystemExit("✗ ROS_DOMAIN_ID 가 비었거나 0 — 거부")
+    from policy_control.trace_acc import TraceAccumulator, topics
+    from rosidl_runtime_py.utilities import get_message
+
     c = load_contract(args.contract)
     cfg = select_side(load_robot_cfg(args.robot), c.side)
-    src = SourceSet(cfg)
-    arm_s, ee_s, obj_s = cfg.sources["arm"], cfg.sources["ee"], cfg.sources.get("object")
+    acc = TraceAccumulator(c, cfg)
 
     import rclpy
-    from geometry_msgs.msg import PoseStamped, WrenchStamped
-    from rclpy.qos import qos_profile_sensor_data
+    from rclpy.executors import SingleThreadedExecutor
+    from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
     from rclpy.signals import SignalHandlerOptions
-    from sensor_msgs.msg import Image, JointState
-    from std_msgs.msg import Float64MultiArray, String
 
+    qos = QoSProfile(depth=200, reliability=ReliabilityPolicy.BEST_EFFORT, history=HistoryPolicy.KEEP_LAST)
     stop = {"now": False}
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.update(now=True))
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     node = rclpy.create_node(f"joint_recorder_{c.side}")
-    R: dict[str, list] = {k: [] for k in ("obs", "act", "tgt", "app", "arm", "hand", "cur", "obj", "jn", "pd", "tip", "tac")}
-    names: dict[str, tuple | None] = {"tgt": None, "app": None, "cur": None}
-    errors: dict[str, int] = {}
-
-    def guard(key, fn):
-        def cb(m):
-            try:
-                fn(time.time(), m)
-            except (codec.CodecError, ValueError, KeyError) as exc:
-                errors[f"{key}: {type(exc).__name__}"] = errors.get(f"{key}: {type(exc).__name__}", 0) + 1
-        return cb
-
-    def on_float(key):
-        def fn(t, m):
-            s = codec.decode_float_array(m)
-            R[key].append((t, s.seq, s.data.copy()))
-        return fn
-
-    def on_names(key):
-        def fn(t, m):
-            n = tuple(m.name)
-            if names[key] is None:
-                names[key] = n
-            if n != names[key]:
-                return
-            q = np.asarray(m.position, float)
-            qd = np.asarray(m.velocity, float) if len(m.velocity) == len(n) else np.full(len(n), np.nan)
-            tau = np.asarray(m.effort, float) if len(m.effort) == len(n) else np.full(len(n), np.nan)
-            seq = -1
-            if key == "tgt":
-                _, _, s = str(m.header.frame_id).rpartition(":")
-                seq = int(s) if s.isdigit() else -1
-            R[key].append((t, seq, q, qd, tau))
-        return fn
-
-    def on_joint(key, source):
-        def fn(t, m):
-            src.update_from_joint_state(source.name, codec.decode_joint_state(m), time.monotonic())
-            st = src.snapshot(time.monotonic())
-            if key == "arm" and st.arm_q is not None:
-                R["arm"].append((t, np.asarray(st.arm_q, float), np.asarray(st.arm_qd, float)))
-            if key == "hand" and st.ee_q is not None:
-                R["hand"].append((t, np.asarray(st.ee_q, float)))
-                on_names("cur")(t, m)                            # 드라이버 원래 이름으로 전류(effort)
-        return fn
-
-    def on_obj(t, m):
-        p = codec.decode_pose(m)
-        R["obj"].append((t, np.asarray(p.pos, float), np.asarray(p.quat, float)))
-
-    def on_tip(i):
-        def fn(t, m):
-            f, w = m.wrench.force, m.wrench.torque
-            R["tip"].append((t, i, np.array([f.x, f.y, f.z, w.x, w.y, w.z], float)))
-        return fn
-
-    def on_tac(i):
-        def fn(t, m):
-            raw = np.frombuffer(bytes(m.data), dtype=np.uint16 if m.encoding == "mono16" else np.uint8).astype(float)
-            cells = np.full(18, np.nan)
-            cells[: min(18, raw.size)] = raw[:18]
-            R["tac"].append((t, i, cells))
-        return fn
-
-    def on_status(key):
-        return lambda t, m: R[key].append((t, str(m.data)))
-
-    node.create_subscription(Float64MultiArray, f"{NS}/obs", guard("obs", on_float("obs")), 100)
-    node.create_subscription(Float64MultiArray, f"{NS}/action", guard("act", on_float("act")), 100)
-    node.create_subscription(JointState, f"{NS}/joint_target", guard("tgt", on_names("tgt")), 100)
-    node.create_subscription(JointState, f"{NS}/pd_{c.side}/applied", guard("app", on_names("app")), 100)
-    node.create_subscription(JointState, arm_s.topic, guard("arm", on_joint("arm", arm_s)), qos_profile_sensor_data)
-    node.create_subscription(JointState, ee_s.topic, guard("hand", on_joint("hand", ee_s)), qos_profile_sensor_data)
-    if obj_s is not None:
-        node.create_subscription(PoseStamped, obj_s.topic, guard("obj", on_obj), qos_profile_sensor_data)
-    for i in range(1, 6):
-        node.create_subscription(WrenchStamped, f"/dg5f_{c.side}/fingertip_{i}_broadcaster/wrench",
-                                 guard("tip", on_tip(i)), qos_profile_sensor_data)
-    for i in range(1, 6):
-        node.create_subscription(Image, f"/dg5f_{c.side}/tactile/finger_{i}", guard("tac", on_tac(i)), qos_profile_sensor_data)
-    node.create_subscription(String, f"{NS}/status/joint_node", guard("jn", on_status("jn")), 50)
-    node.create_subscription(String, f"{NS}/status/pd_{c.side}", guard("pd", on_status("pd")), 50)
+    for topic, (kind, typ, _grp) in topics(c, cfg).items():
+        node.create_subscription(get_message(typ), topic, (lambda k: lambda m: acc.add(k, time.time(), m))(kind), qos)
     out = out_path(args.out_dir, c.task.replace("/", "_"), c.side)
     print(f"[recorder] {c.task} · {c.side} · 기록 시작 → {out.name} (정지 신호에 저장)", flush=True)
     t_start = time.time()
+    ex = SingleThreadedExecutor()
+    ex.add_node(node)
     while not stop["now"] and (args.seconds <= 0 or time.time() - t_start < args.seconds):
-        rclpy.spin_once(node, timeout_sec=0.05)
-
-    ee_names = list(ee_s.joints) + list(ee_s.mirror)
-    tn, an, cn = names["tgt"] or (), names["app"] or (), names["cur"] or ()
-    data = {
-        "meta_task": np.array(c.task), "meta_side": np.array(c.side), "meta_contract": np.array(str(args.contract)),
-        "meta_policy_hz": np.float64(c.policy_hz), "meta_t_start": np.float64(t_start),
-        "meta_errors": np.array([f"{k} ×{v}" for k, v in errors.items()]),
-        "obs_t": np.array([r[0] for r in R["obs"]]), "obs_seq": np.array([r[1] for r in R["obs"]], int),
-        "obs": _stack([r[2] for r in R["obs"]], c.obs_dim),
-        "act_t": np.array([r[0] for r in R["act"]]), "act_seq": np.array([r[1] for r in R["act"]], int),
-        "act": _stack([r[2] for r in R["act"]], c.action_dim),
-        "tgt_t": np.array([r[0] for r in R["tgt"]]), "tgt_seq": np.array([r[1] for r in R["tgt"]], int),
-        "tgt_names": np.array(tn), "tgt_q": _stack([r[2] for r in R["tgt"]], len(tn)),
-        "tgt_qd": _stack([r[3] for r in R["tgt"]], len(tn)),
-        "app_t": np.array([r[0] for r in R["app"]]), "app_names": np.array(an),
-        "app_q": _stack([r[2] for r in R["app"]], len(an)), "app_qd": _stack([r[3] for r in R["app"]], len(an)),
-        "app_tau": _stack([r[4] for r in R["app"]], len(an)),
-        "arm_t": np.array([r[0] for r in R["arm"]]), "arm_names": np.array(c.arm_joints),
-        "arm_q": _stack([r[1] for r in R["arm"]], 7), "arm_qd": _stack([r[2] for r in R["arm"]], 7),
-        "hand_t": np.array([r[0] for r in R["hand"]]), "hand_names": np.array(ee_names),
-        "hand_q": _stack([r[1] for r in R["hand"]], len(ee_names)),
-        "cur_t": np.array([r[0] for r in R["cur"]]), "cur_names": np.array(cn),
-        "cur_mA": _stack([r[4] for r in R["cur"]], len(cn)),
-        "obj_t": np.array([r[0] for r in R["obj"]]), "obj_pos": _stack([r[1] for r in R["obj"]], 3),
-        "obj_quat": _stack([r[2] for r in R["obj"]], 4),
-        "jn_t": np.array([r[0] for r in R["jn"]]), "jn_json": np.array([r[1] for r in R["jn"]]),
-        "pd_t": np.array([r[0] for r in R["pd"]]), "pd_json": np.array([r[1] for r in R["pd"]]),
-        "tip_t": np.array([r[0] for r in R["tip"]]), "tip_idx": np.array([r[1] for r in R["tip"]], int),
-        "tip_wrench": _stack([r[2] for r in R["tip"]], 6),
-        "tac_t": np.array([r[0] for r in R["tac"]]), "tac_idx": np.array([r[1] for r in R["tac"]], int),
-        "tac": _stack([r[2] for r in R["tac"]], 18),
-    }
+        ex.spin_once(timeout_sec=0.05)
     out.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(out, **data)                      # 압축하지 않는다 — 콘솔은 SIGTERM 뒤 5 s 에 SIGKILL 한다
+    np.savez(out, **acc.to_arrays({"contract": str(args.contract), "t_start": t_start}))  # 압축 안 함 — 콘솔 KILL 5 s
     node.destroy_node()
     rclpy.shutdown()
-    print(f"[recorder] 저장 {out} · {time.time() - t_start:.1f} s · 목표 {len(R['tgt'])} · obs {len(R['obs'])} · "
-          f"팔 {len(R['arm'])} · 손 {len(R['hand'])} · 물체 {len(R['obj'])} · 손끝 F/T {len(R['tip'])} · 촉각 {len(R['tac'])}"
-          + (f" · 디코드 실패 {errors}" if errors else ""), flush=True)
+    print(f"[recorder] 저장 {out} · {time.time() - t_start:.1f} s · {acc.counts()}"
+          + (f" · 디코드 실패 {acc.errors}" if acc.errors else ""), flush=True)
     return 0
 
 

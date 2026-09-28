@@ -307,7 +307,7 @@ def test_a_policy_run_is_recorded_and_summarized(side):
     sid = f"policy_{side}"
     cmds = _cmds(sid)
     rec = cmds[5]
-    assert rec.background and any(a.endswith("joint_recorder.py") for a in rec.argv)
+    assert rec.background and any(a.endswith("policy_bag.py") for a in rec.argv)      # 09.28 rosbag2 두 묶음
     assert f"{{artifact:joint_{side}}}" in rec.argv and f"{{artifact:robot_{side}}}" in rec.argv
     text = [" ".join(c.argv) for c in cmds]
     reset = next(i for i, t in enumerate(text) if "trigger.py episode/reset" in t)

@@ -493,9 +493,9 @@ run:
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/joint_chain.launch.py",
              "contract:={artifact:joint_right}", "robot:={artifact:robot_right}", "device:=cpu", "use_source:=true"]
       background: true
-    - note: "[right] 기록기 — obs · 행동 · 목표 q* · pd 가 보낸 값 · 팔 · 손 실측 · 손 전류 · 컵 자세 · status 를
-        logs/policy_control/real_runs/ 에 남긴다(구독만, 정지 신호에 저장). 제어기가 정책을 따라갔는지 보는 근거(09.28 사용자)"
-      argv: [python3, "{repo}/deploy/policy_control/tools/joint_recorder.py", --contract, "{artifact:joint_right}",
+    - note: "[right] 기록 — ros2 bag 두 묶음: policy(obs · 행동 · 목표 · pd · 팔 · 손 · 컵 · status) · sensors(손끝 촉각 · F/T).
+        logs/policy_control/real_runs/<시각>__<task>__right/ (구독만, 정지 신호에 bag 을 닫는다). 09.28 사용자: bag 으로 · 따로 관리"
+      argv: [python3, "{repo}/deploy/policy_control/tools/policy_bag.py", --contract, "{artifact:joint_right}",
              --robot, "{artifact:robot_right}"]
       background: true
     - note: "[right] 손끝 F/T 영점 — 팔이 정책 시작 자세 · 손이 초기 자세 · 아무것도 안 닿은 지금을 0 으로(09.28 사용자: home 자세 기준).
@@ -689,9 +689,9 @@ run:
              "contract:={artifact:joint_left}", "robot:={artifact:robot_left}", "device:=cpu", "use_source:=true",
              "success_tol_m:=0.0318", "success_steps:=10", "max_episode_s:=15.0"]
       background: true
-    - note: "[left] 기록기 — obs · 행동 · 목표 q* · pd 가 보낸 값 · 팔 · 손 실측 · 손 전류 · 컵 자세 · status 를
-        logs/policy_control/real_runs/ 에 남긴다(구독만, 정지 신호에 저장). 제어기가 정책을 따라갔는지 보는 근거(09.28 사용자)"
-      argv: [python3, "{repo}/deploy/policy_control/tools/joint_recorder.py", --contract, "{artifact:joint_left}",
+    - note: "[left] 기록 — ros2 bag 두 묶음: policy(obs · 행동 · 목표 · pd · 팔 · 손 · 컵 · status) · sensors(손끝 촉각 · F/T).
+        logs/policy_control/real_runs/<시각>__<task>__left/ (구독만, 정지 신호에 bag 을 닫는다). 09.28 사용자: bag 으로 · 따로 관리"
+      argv: [python3, "{repo}/deploy/policy_control/tools/policy_bag.py", --contract, "{artifact:joint_left}",
              --robot, "{artifact:robot_left}"]
       background: true
     - note: "[left] 손끝 F/T 영점 — 팔이 정책 시작 자세 · 손이 초기 자세 · 아무것도 안 닿은 지금을 0 으로(09.28 사용자: home 자세 기준).

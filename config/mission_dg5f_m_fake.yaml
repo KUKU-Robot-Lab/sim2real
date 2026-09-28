@@ -603,14 +603,14 @@ run:
       끝나면 pd 가 그 자세 · 손 쥠을 붙잡는다'
   - argv:
     - python3
-    - '{repo}/deploy/policy_control/tools/joint_recorder.py'
+    - '{repo}/deploy/policy_control/tools/policy_bag.py'
     - --contract
     - '{artifact:joint_left}'
     - --robot
     - '{artifact:robot_left}'
     background: true
-    note: '[left] 기록기 — obs · 행동 · 목표 q* · pd 가 보낸 값 · 팔 · 손 실측 · 손 전류 · 컵 자세 · status 를 logs/policy_control/real_runs/ 에
-      남긴다(구독만, 정지 신호에 저장). 제어기가 정책을 따라갔는지 보는 근거(09.28 사용자)'
+    note: '[left] 기록 — ros2 bag 두 묶음: policy(obs · 행동 · 목표 · pd · 팔 · 손 · 컵 · status) · sensors(손끝 촉각 · F/T). logs/policy_control/real_runs/<시각>__<task>__left/
+      (구독만, 정지 신호에 bag 을 닫는다). 09.28 사용자: bag 으로 · 따로 관리'
   - argv:
     - python3
     - '{repo}/deploy/policy_control/tools/ft_zero.py'
@@ -714,14 +714,14 @@ run:
       로컬 5090 에서 학습이 돌 때 그 GPU 에 올리지 않는다 — fake 에서 한 스텝 p95 7.7 ms(60 Hz 예산 16.7)'
   - argv:
     - python3
-    - '{repo}/deploy/policy_control/tools/joint_recorder.py'
+    - '{repo}/deploy/policy_control/tools/policy_bag.py'
     - --contract
     - '{artifact:joint_right}'
     - --robot
     - '{artifact:robot_right}'
     background: true
-    note: '[right] 기록기 — obs · 행동 · 목표 q* · pd 가 보낸 값 · 팔 · 손 실측 · 손 전류 · 컵 자세 · status 를 logs/policy_control/real_runs/ 에
-      남긴다(구독만, 정지 신호에 저장). 제어기가 정책을 따라갔는지 보는 근거(09.28 사용자)'
+    note: '[right] 기록 — ros2 bag 두 묶음: policy(obs · 행동 · 목표 · pd · 팔 · 손 · 컵 · status) · sensors(손끝 촉각 · F/T). logs/policy_control/real_runs/<시각>__<task>__right/
+      (구독만, 정지 신호에 bag 을 닫는다). 09.28 사용자: bag 으로 · 따로 관리'
   - argv:
     - python3
     - '{repo}/deploy/policy_control/tools/ft_zero.py'
