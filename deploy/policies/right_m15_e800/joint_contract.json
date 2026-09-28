@@ -160,7 +160,7 @@
   "r_hj_ring_4",
   "r_hj_thumb_4"
  ],
- "hand_obs_order_source": "assumed: 20-joint PhysX order (pour i24 trace) minus welded joints",
+ "hand_obs_order_source": "measured: deploy/policies/right_m15_e800/trace_meta.json",
  "welded": {
   "r_hj_thumb_1": 0.0
  },

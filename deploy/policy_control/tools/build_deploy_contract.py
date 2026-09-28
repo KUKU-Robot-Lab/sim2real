@@ -90,8 +90,13 @@ def _main_joint(args) -> int:
         order, source = None, "assumed: 20-joint PhysX order (pour i24 trace) minus welded joints"
     else:
         raw = json.loads(Path(spec).read_text())
-        names = raw.get("joint_names", raw) if isinstance(raw, dict) else raw
-        order, source = [n for n in names if "_hj_" in n], f"measured: {spec}"
+        if isinstance(raw, dict) and "hand_obs_order" in raw:            # isaac_joint_trace.py 의 meta
+            order = list(raw["hand_obs_order"])
+        else:                                                             # joint_names(전 관절) 또는 목록
+            names = raw.get("joint_names", raw) if isinstance(raw, dict) else raw
+            side = "r" if "right" in str(args.run) or "_r_" in str(args.run) else None
+            order = [n for n in names if "_hj_" in n and (side is None or n.startswith(f"{side}_hj_"))]
+        source = f"measured: {spec}"
     hdgp = Path(__file__).resolve().parents[4] / "hdgp"
     c = build_joint_contract(args.run, hdgp, args.asset or JOINT_DEPLOY_ASSET, hand_obs_order=order,
                              order_source=source, checkpoint=args.checkpoint)
