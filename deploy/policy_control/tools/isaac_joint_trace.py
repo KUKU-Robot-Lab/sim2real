@@ -181,4 +181,7 @@ np.savez_compressed(args.out, **out)
 Path(str(args.out).replace(".npz", "_meta.json")).write_text(json.dumps(meta, indent=1, ensure_ascii=False))
 print(f"[trace] {task} · {N} env · {T} steps · hand obs order {meta['hand_obs_order']}", flush=True)
 print(f"[trace] → {args.out}", flush=True)
-app.close()
+# app.close() 는 nohup · setsid 아래에서 몇 분씩 멈춘다(09.28 vision-3090: 저장 뒤 6 분). 파일은 이미 썼다 — 바로 끝낸다.
+import os  # noqa: E402
+sys.stdout.flush()
+os._exit(0)
