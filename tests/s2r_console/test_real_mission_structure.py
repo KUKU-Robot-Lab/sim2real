@@ -340,10 +340,11 @@ def test_pd_runs_at_full_speed_and_the_left_policy_ends_its_own_episode():
 
 
 @pytest.mark.parametrize("side", ["right", "left"])
-def test_the_hand_driver_publishes_the_fingertip_force_torque_sensors(side):
-    """09.28 사용자: 정책 기록에 손끝 센서 값도 — 드라이버가 손끝 F/T 와 broadcaster 를 켠다."""
+def test_the_hand_driver_publishes_the_fingertip_sensors(side):
+    """09.28 사용자: 정책 기록에 손끝 센서 값도 — 드라이버가 손끝 센서(이 손은 촉각)를 켠다."""
     (drv,) = [c for c in _cmds(f"hand_{side}") if f"dg5f_{side}_driver.launch.py" in c.argv]
-    assert "fingertip_sensor:=true" in drv.argv and "ft_broadcaster:=true" in drv.argv
+    assert "fingertip_sensor:=true" in drv.argv
+    assert "ft_broadcaster:=true" not in drv.argv          # 09.28 이 손은 촉각 — F/T broadcaster 가 죽어 단계가 실패했다
 
 
 @pytest.mark.parametrize("side", ["right", "left"])

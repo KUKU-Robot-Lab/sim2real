@@ -617,8 +617,8 @@ run:
     - --side
     - left
     - --if-present
-    note: '[left] 손끝 F/T 영점 — 팔이 정책 시작 자세 · 손이 초기 자세 · 아무것도 안 닿은 지금을 0 으로(09.28 사용자: home 자세 기준). 드라이버 서비스 set_ft_sensor_offset.
-      반복할 때마다 다시 잡는다. 센서를 켜지 않은 드라이버면 경고만 한다'
+    note: '[left] 손끝 F/T 영점 — 팔이 정책 시작 자세 · 손이 초기 자세 · 아무것도 안 닿은 지금을 0 으로(09.28 사용자: home 자세 기준). 드라이버 서비스 set_ft_sensor_offset(F/T
+      센서 손만). 촉각 손은 서비스가 없어 경고만 하고, 분석이 시작 전 1 s 평균을 0 으로 뺀다'
   - argv:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
@@ -728,8 +728,8 @@ run:
     - --side
     - right
     - --if-present
-    note: '[right] 손끝 F/T 영점 — 팔이 정책 시작 자세 · 손이 초기 자세 · 아무것도 안 닿은 지금을 0 으로(09.28 사용자: home 자세 기준). 드라이버 서비스 set_ft_sensor_offset.
-      반복할 때마다 다시 잡는다. 센서를 켜지 않은 드라이버면 경고만 한다'
+    note: '[right] 손끝 F/T 영점 — 팔이 정책 시작 자세 · 손이 초기 자세 · 아무것도 안 닿은 지금을 0 으로(09.28 사용자: home 자세 기준). 드라이버 서비스 set_ft_sensor_offset(F/T
+      센서 손만). 촉각 손은 서비스가 없어 경고만 하고, 분석이 시작 전 1 s 평균을 0 으로 뺀다'
   - argv:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'

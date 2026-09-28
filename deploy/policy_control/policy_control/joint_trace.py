@@ -143,6 +143,24 @@ def summarize(d) -> dict:
                 rows[i] = {"n": int(k.sum()), "f_max": float(fn.max()), "f_p50": float(np.percentile(fn, 50)),
                            "t_max": float(tt[k][int(np.argmax(fn))] - t0)}
         out["tips"] = rows
+    out["tactile"] = None
+    if "tac_t" in d and len(d["tac_t"]):
+        ct, ci, cv = np.asarray(d["tac_t"], float), np.asarray(d["tac_idx"], int), np.asarray(d["tac"], float)
+        rows = {}
+        for i in range(1, 6):
+            k = ci == i
+            if not k.any():
+                continue
+            pre = k & (ct < t0) & (ct >= t0 - 1.0)          # 영점 = 시작 전 1 s 평균(팔 정책 시작 자세 · 무접촉)
+            base = np.nanmean(cv[pre], axis=0) if pre.any() else np.nanmean(cv[k][:30], axis=0)
+            w = k & (ct >= t0) & (ct <= t1)
+            if not w.any():
+                continue
+            delta = cv[w] - base
+            tot = np.nansum(delta, axis=1)
+            rows[i] = {"n": int(w.sum()), "base_sum": float(np.nansum(base)), "sum_max": float(tot.max()),
+                       "cell_max": float(np.nanmax(delta)), "t_max": float(ct[w][int(np.argmax(tot))] - t0)}
+        out["tactile"] = rows
     act = np.asarray(d["act"], float)
     ta = np.asarray(d["act_t"], float)
     keep = (ta >= t0) & (ta <= t1) if ta.size else np.zeros(0, bool)
@@ -183,11 +201,17 @@ def render(s: dict) -> str:
         L += _row(av["names"], av["rms"], av["max"], fmt="{:8.4f}")
     tips = s.get("tips")
     if tips is None:
-        L.append("손끝 F/T: 기록 없음(드라이버 fingertip_sensor · ft_broadcaster 가 꺼져 있었다)")
+        L.append("손끝 F/T: 기록 없음(F/T 센서 손이 아니거나 드라이버 ft_broadcaster 가 꺼져 있었다)")
     else:
         names = {1: "엄지", 2: "검지", 3: "중지", 4: "약지", 5: "새끼"}
         L.append("손끝 힘 |F| [N] — 손끝별 중앙값 · 최대 (최대 시각)")
         L += [f"  {names[i]}  {r['f_p50']:.2f} · {r['f_max']:.2f} ({r['t_max']:.1f} s, {r['n']} 표본)" for i, r in sorted(tips.items())]
+    tac = s.get("tactile")
+    if tac:
+        names = {1: "엄지", 2: "검지", 3: "중지", 4: "약지", 5: "새끼"}
+        L.append("손끝 촉각(원시 단위, 시작 전 1 s 평균을 0 으로) — 손끝별 칸 합 최대 · 한 칸 최대 (최대 시각) · 영점 합")
+        L += [f"  {names[i]}  {r['sum_max']:.0f} · {r['cell_max']:.0f} ({r['t_max']:.1f} s) · 영점 {r['base_sum']:.0f}"
+              for i, r in sorted(tac.items())]
     sat = s["action_sat"]
     if sat:
         hand = "—" if sat["hand"] is None else f"{sat['hand'] * 100:.1f} %"

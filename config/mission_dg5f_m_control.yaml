@@ -381,7 +381,7 @@ run:
       manual: true
     - note: ★DG-5F 드라이버(우) — 벤더 dg5f_ros2 로 교체(09.14, robot_control ros_ws/src/dg5f_ros2). config 의 PID p 는
         벤더 1.5 여야 한다 — pd engage 는 같은 값인지 확인만 하고 올리지 않는다
-      argv: [ros2, launch, dg5f_driver, dg5f_right_driver.launch.py, "delto_ip:=169.254.186.72", "fingertip_sensor:=true", "ft_broadcaster:=true"]
+      argv: [ros2, launch, dg5f_driver, dg5f_right_driver.launch.py, "delto_ip:=169.254.186.72", "fingertip_sensor:=true"]
       background: true
   pd_load_right:
     - note: "[right] pd 노드 무발행 기동 — status 의 gains ok · 입력 신선도를 본다"
@@ -499,7 +499,7 @@ run:
              --robot, "{artifact:robot_right}"]
       background: true
     - note: "[right] 손끝 F/T 영점 — 팔이 정책 시작 자세 · 손이 초기 자세 · 아무것도 안 닿은 지금을 0 으로(09.28 사용자: home 자세 기준).
-        드라이버 서비스 set_ft_sensor_offset. 반복할 때마다 다시 잡는다. 센서를 켜지 않은 드라이버면 경고만 한다"
+        드라이버 서비스 set_ft_sensor_offset(F/T 센서 손만). 촉각 손은 서비스가 없어 경고만 하고, 분석이 시작 전 1 s 평균을 0 으로 뺀다"
       argv: [python3, "{repo}/deploy/policy_control/tools/ft_zero.py", --side, right, --if-present]
     - note: "[right] episode reset — 지금 컵 위치로 목표를 정한다(응답에 목표 좌표). 팔이 학습 시작 자세에서 0.15 rad 넘게 멀면 start 가 거부된다"
       argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", episode/reset]
@@ -580,9 +580,10 @@ run:
         /32 호스트 경로를 고정한다. 최초 1회 --apply(NetworkManager 프로필), 이후엔 인자 없이 점검만. rc 0 이어야 진행
       argv: [bash, "{repo}/scripts/setup/hand_net_dual.sh", --apply]
       manual: true
-    - note: "DG-5F 드라이버(좌) — namespace dg5f_left. 콘솔이 띄우고 감독한다. 손끝 F/T 센서를 켠다(09.28 사용자: 정책 기록에 손끝 값) —
-        /dg5f_left/fingertip_1~5_broadcaster/wrench"
-      argv: [ros2, launch, dg5f_driver, dg5f_left_driver.launch.py, "delto_ip:=169.254.186.73", "fingertip_sensor:=true", "ft_broadcaster:=true"]
+    - note: "DG-5F 드라이버(좌) — namespace dg5f_left. 콘솔이 띄우고 감독한다. 손끝 센서를 켠다(09.28 사용자: 정책 기록에 손끝 값).
+        이 손은 F/T 가 아니라 촉각(TACTILE_M 3×5)이다 → /dg5f_left/tactile/finger_1~5 (100 Hz). F/T broadcaster 는 켜지 않는다
+        (09.28 실기: 켰더니 force 인터페이스가 없어 spawner 5 개가 죽고 단계가 실패로 잡혔다)"
+      argv: [ros2, launch, dg5f_driver, dg5f_left_driver.launch.py, "delto_ip:=169.254.186.73", "fingertip_sensor:=true"]
       background: true
   pd_load_left:
     - note: "[left] pd 노드 무발행 기동 — status 의 gains ok · 입력 신선도를 본다"
@@ -694,7 +695,7 @@ run:
              --robot, "{artifact:robot_left}"]
       background: true
     - note: "[left] 손끝 F/T 영점 — 팔이 정책 시작 자세 · 손이 초기 자세 · 아무것도 안 닿은 지금을 0 으로(09.28 사용자: home 자세 기준).
-        드라이버 서비스 set_ft_sensor_offset. 반복할 때마다 다시 잡는다. 센서를 켜지 않은 드라이버면 경고만 한다"
+        드라이버 서비스 set_ft_sensor_offset(F/T 센서 손만). 촉각 손은 서비스가 없어 경고만 하고, 분석이 시작 전 1 s 평균을 0 으로 뺀다"
       argv: [python3, "{repo}/deploy/policy_control/tools/ft_zero.py", --side, left, --if-present]
     - note: "[left] episode reset — 지금 컵 위치로 목표를 정한다(응답에 목표 좌표). 팔이 학습 시작 자세에서 0.15 rad 넘게 멀면 start 가 거부된다"
       argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", episode/reset]

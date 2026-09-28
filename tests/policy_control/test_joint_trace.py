@@ -32,6 +32,8 @@ def _rec(lag=0.1, hz=60.0, T=4.0, drop=()):
         "act_t": t, "act": act,
         "tip_t": np.repeat(t, 2), "tip_idx": np.tile([2, 4], len(t)),
         "tip_wrench": np.tile([[3.0, 4.0, 0.0, 0, 0, 0], [0.0, 0.0, 1.0, 0, 0, 0]], (len(t), 1)),
+        "tac_t": np.concatenate([np.arange(-1.0, 0.0, 0.01), t]), "tac_idx": np.full(100 + len(t), 3),
+        "tac": np.concatenate([np.full((100, 18), 5.0), np.full((len(t), 18), 5.0) + (t > 2.0)[:, None] * 10.0]),
     }
 
 
@@ -60,3 +62,12 @@ def test_fingertip_force_is_summarized_per_tip_and_absent_tips_are_left_out():
     assert set(s["tips"]) == {2, 4}
     assert s["tips"][2]["f_max"] == pytest.approx(5.0) and s["tips"][4]["f_p50"] == pytest.approx(1.0)
     assert "검지" in render(s) and "손끝 힘" in render(s)
+
+
+def test_tactile_is_zeroed_by_the_second_before_the_start_and_summarized_per_finger():
+    # 09.28 왼손은 촉각(TACTILE_M) — 드라이버 영점이 없어 시작 전 1 s 평균을 0 으로 뺀다
+    s = summarize(_rec())
+    r = s["tactile"][3]
+    assert r["base_sum"] == pytest.approx(90.0) and r["cell_max"] == pytest.approx(10.0)
+    assert r["sum_max"] == pytest.approx(180.0) and r["t_max"] > 2.0
+    assert "촉각" in render(s)
