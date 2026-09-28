@@ -257,9 +257,9 @@ def test_every_execute_flag_is_one_the_tool_actually_takes():
     assert not bad, bad
 
 
-@pytest.mark.parametrize("side,other,policy", [("right", "left", "right_m15_e800"), ("left", "right", "left_cp_e4280")])
+@pytest.mark.parametrize("side,other,policy", [("right", "left", "right_m15_e800"), ("left", "right", "left_cg_i01")])
 def test_each_policy_stage_runs_its_registered_joint_policy_after_home(side, other, policy):
-    """09.28 사용자: 오른팔 첫 실험 정책 = right_m15_e800, 오른손 419 로 왼팔(left_cp_e4280)로도 프레임워크 확인.
+    """09.28 사용자: 오른팔 첫 실험 정책 = right_m15_e800, 오른손 419 로 왼팔로도 — 오전 left_cp_e4280(접근), 오후 left_cg_i01(컵 집기 · 들기).
     홈 경로 끝 = 그 정책의 학습 시작 자세다."""
     sid = f"policy_{side}"
     st = MISSION.stages[IDS.index(sid)]

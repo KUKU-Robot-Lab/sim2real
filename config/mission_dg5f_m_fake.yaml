@@ -12,7 +12,7 @@ artifacts:
   path_left: deploy/policy_control/paths/home_left.npz
   gains_yaml: ../urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml
   joint_right: deploy/policies/right_m15_e800/joint_contract.json
-  joint_left: deploy/policies/left_cp_e4280/joint_contract.json
+  joint_left: deploy/policies/left_cg_i01/joint_contract.json
 checkpoints: {}
 groups:
 - id: check
@@ -553,8 +553,9 @@ run:
     - -lc
     - 'true'
     manual: true
-    note: ★[left] 컵이 학습 범위(로봇 앞 x 0.10~0.40 · y 0.00~0.30, 테이블 위 똑바로)에 있고 콘솔에서 컵 자세가 들어오는가. 손 · 팔 주변에 사람 · 물건이 없는가. 정책은 팔을
-      최대 0.3 rad/s 로 움직인다. 이 정책은 컵을 잡지 않는다(옆에서 멈춤)
+    note: '★[left] 컵이 학습 범위(로봇 앞 x 0.10~0.40 · y 0.00~0.30, 테이블 위 똑바로)에 있고 콘솔에서 컵 자세가 들어오는가. 손 · 팔 주변에 사람 · 물건이 없는가. 정책은 팔을
+      최대 0.3 rad/s 로 움직인다. ★이 정책은 컵을 잡아 약 25 cm 들어 올린다 — 빈 컵(cup_big)만 · 떨어져도 되는 아래 공간. 알려진 결함: 손끝 파지(4관절 과굽힘) · 새끼 미참여 ·
+      급하게 들어 올림'
   - argv:
     - python3
     - '{repo}/deploy/policy_control/tools/check_path_start.py'
@@ -628,6 +629,12 @@ run:
     execute_args:
     - --execute
     note: '[left] episode stop — pd 는 마지막 목표를 붙잡는다(해제는 ⑥). ★복귀 전에 팔이 컵 · 테이블에서 떨어졌는지 볼 것'
+  - argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+    note: ★[left] 손에 컵이 있으면 운영자가 받아 든다 — 다음 rehome · return 은 손을 편다(공중에서 놓는다) · 경로 계획은 손에 든 컵을 모른다. 컵을 받았거나 손에 없으면 '정상'
   - note: '[left] 정책 노드 · 기록기 정지 — 기록기는 이때 파일을 쓴다'
     stop:
     - policy_left#4
@@ -1434,7 +1441,7 @@ stages:
   - sensors
   needs_why: 정책은 홈 경로 끝 자세에서만 출발해 봤고, 컵 자세(FP++ → base)가 입력이다
   skippable: true
-  title: '[left] 정책 left_cp_e4280(cup_pick 접근) — 컵 확인 → 정책 노드 → reset → start → 관찰(컵 옆 C자 자세에서 멈춘다) → stop'
+  title: '[left] 정책 left_cg_i01(컵 집기 · 들기) — 컵 확인 → 정책 노드 → reset(목표 = 컵 + 24.6 cm 위) → start → 관찰 → stop → 컵 받기'
 - artifacts:
   - contract
   - robot_left
