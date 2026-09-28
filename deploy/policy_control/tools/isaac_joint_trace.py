@@ -31,6 +31,9 @@ parser.add_argument("--out", type=Path, required=True)
 parser.add_argument("--cup-xy", default="", help="컵 스폰을 이 자리(env-local = 로봇 base)에 고정 'x,y' — 무작위 폭 0")
 parser.add_argument("--keep-train-delays", action="store_true",
                     help="학습 때 행동 · 관측 · 물체 지연을 그대로 둔다(기본은 배포 관측과 맞추려고 끈다)")
+parser.add_argument("--tol", type=float, default=0.0,
+                    help="목표 허용오차 고정(env tol_eval) — 커리큘럼 상태는 체크포인트에 없어 새 env 는 tol_start(0.1125)에서 "
+                         "시작한다. 그 체크포인트가 학습된 값(tfevents task/tol)을 준다(09.28 cg_l_i01 e5802 = 0.0318)")
 parser.add_argument("--replay-actions", type=Path, default=None,
                     help="실기 기록 npz 의 정책 행동을 순서대로 넣는다(정책 대신) — 같은 명령에 sim 이 어떻게 반응하는가")
 AppLauncher.add_app_launcher_args(parser)
@@ -83,6 +86,8 @@ if not args.keep_train_delays:
 for k, v in _off:
     if hasattr(cfg, k):
         setattr(cfg, k, v)
+if args.tol > 0 and hasattr(cfg, "tol_eval"):
+    cfg.tol_eval = float(args.tol)
 if args.cup_xy:
     _x, _y = (float(v) for v in args.cup_xy.split(","))
     cfg.object_spawn_center_override = (_x, _y)
@@ -120,7 +125,7 @@ meta = {
 }
 rec = {k: [] for k in ("obs", "action", "q", "qd", "obj_pos", "obj_quat", "goal_pos", "goal_quat", "arm_qstar",
                        "hand_qstar", "palm_pos", "palm_quat", "tips", "ep_len", "tau")}
-meta.update(cup_xy=args.cup_xy, keep_train_delays=bool(args.keep_train_delays),
+meta.update(cup_xy=args.cup_xy, keep_train_delays=bool(args.keep_train_delays), tol_eval=float(args.tol),
             delays={k: getattr(cfg, k, None) for k in ("action_delay_steps", "obs_delay_steps", "object_delay_steps")},
             replay_actions=str(args.replay_actions or ""))
 replay = None
