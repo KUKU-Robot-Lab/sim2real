@@ -113,8 +113,12 @@ class RLGamesActorPolicy:
         #   "give up after 5 attempts" 로 죽는다(2026-09-03 torch 2.7.1 실측).
         #   체크포인트는 우리가 학습해 만든 신뢰된 파일이므로 직접 연다.
         weights = torch.load(checkpoint_path, map_location=device, weights_only=False)
+        # SAPG(vendor/rl_games_sapg) 저장은 에이전트 번호로 한 겹 싼다 — {0: {model, scaler, …}} (09.28 cup_pick m15).
+        if "model" not in weights and len(weights) == 1 and 0 in weights:
+            weights = weights[0]
         adjusted = _adjust_state_dict_keys(weights["model"], self.model.state_dict())
-        self.model.load_state_dict(adjusted, strict=False)
+        # strict=False 는 이름이 어긋난 가중치를 조용히 버린다 — 무엇이 안 들어갔는지 남겨 호출자가 확인하게 한다.
+        self.load_report = self.model.load_state_dict(adjusted, strict=False)
 
         # normalize_input=True 일 때 running_mean_std 복원
         # (모델 state_dict 안에 포함되어 있으면 이미 위에서 로드됨.

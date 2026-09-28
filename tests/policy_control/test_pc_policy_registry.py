@@ -15,7 +15,7 @@ PTH = b"weights-v1"
 
 
 def make(root: Path, pid: str = "p1", *, status: str = "candidate", note: str = "", contract: str = "",
-         contract_md5: str | None = None) -> Path:
+         contract_md5: str | None = None, order: str = "measured: trace meta") -> Path:
     d = root / pid
     (d / "nn").mkdir(parents=True)
     (d / "params").mkdir()
@@ -29,6 +29,8 @@ def make(root: Path, pid: str = "p1", *, status: str = "candidate", note: str = 
     if contract:
         md5 = hashlib.md5(PTH).hexdigest() if contract_md5 is None else contract_md5
         doc = {"checkpoint_md5": md5} if contract == "pour_contract.json" else {"run": {"checkpoint_md5": md5}}
+        if contract == "joint_contract.json":
+            doc = {"checkpoint_md5": md5, "hand_obs_order_source": order}
         (d / contract).write_text(json.dumps(doc))
     return d
 
@@ -194,3 +196,10 @@ def test_a_hand_copied_bundle_needs_provenance_only_once_it_is_verified(tmp_path
     assert R.check(bundle(tmp_path, "c1")).ok                       # candidate — 출처는 아직 안 따진다
     d = bundle(tmp_path, "c2", status="verified")
     assert any(R.MANIFEST in i for i in R.check(d).issues)
+
+
+def test_a_joint_contract_with_an_assumed_hand_order_cannot_be_verified(tmp_path):
+    """09.28: 손 관측 순서를 가정한 계약은 관측이 학습과 같다는 근거가 없다 — candidate 까지만."""
+    assert R.check(make(tmp_path, status="candidate", contract="joint_contract.json", order="assumed: x")).ok
+    e = R.check(make(tmp_path, "p2", status="verified", contract="joint_contract.json", order="assumed: x"))
+    assert any("실측이 아니다" in i for i in e.issues)

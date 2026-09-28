@@ -16,7 +16,7 @@
 
 손으로 옮긴 한 벌에는 `fetch.json` 이 없다. 그것은 `candidate` 까지만 봐준다 — `verified`·`deployed` 는
 출처를 모르면 안 된다.
-      deploy_contract.json | pour_contract.json                                   (만들어졌으면)
+      deploy_contract.json | pour_contract.json | joint_contract.json                                (만들어졌으면)
       trace_meta.json, trace.npz                                                  (pour 계열)
 
 상태(status)는 넷뿐이다. `verified`/`deployed` 는 계약이 있어야 한다 — 계약 없는 "검증됨"은 말이 안 된다.
@@ -35,7 +35,7 @@ CARD = "policy.yaml"
 MANIFEST = "fetch.json"
 INDEX = "INDEX.md"
 PARAMS = ("params/env.yaml", "params/agent.yaml")
-CONTRACTS = ("deploy_contract.json", "pour_contract.json")
+CONTRACTS = ("deploy_contract.json", "pour_contract.json", "joint_contract.json")
 
 STATUSES = {
     "candidate": "받아만 뒀다 — 계약·체인 검증 전",
@@ -168,6 +168,14 @@ def check(path: Path, *, deep: bool = True) -> Entry:
             issues.append(f"{contract} 의 체크포인트 md5 가 nn/{checkpoint} 와 다르다 — 계약을 다시 만들어라")
     if not contract and card.get("status") in NEEDS_CONTRACT:
         issues.append(f"status {card.get('status')} 인데 계약이 없다")
+    if contract == "joint_contract.json" and card.get("status") in NEEDS_CONTRACT:
+        try:
+            src = str(json.loads((path / contract).read_text()).get("hand_obs_order_source", ""))
+        except (OSError, ValueError):
+            src = ""
+        if not src.startswith("measured"):
+            # 손 관측 순서를 가정한 계약은 관측이 학습과 같다는 근거가 없다 — 실측 trace 로 다시 만들기 전에는 못 올린다
+            issues.append(f"status {card.get('status')} 인데 {contract} 의 손 관측 순서가 실측이 아니다({src or '?'})")
 
     return Entry(path.name, path, card, checkpoint, contract, tuple(issues))
 

@@ -5,10 +5,10 @@
 | id | status | task | side | checkpoint | 계약 | 점검 |
 |---|---|---|---|---|---|---|
 | `both_pour_i18` | hold | open-short_b_pour_fab | both | open-short_b_pour_fab.pth | - | ok |
-| `both_pour_i24` | candidate | open-short_b_pour_fab | both | open-short_b_pour_fab.pth | - | ok |
+| `both_pour_i24` | candidate | open-short_b_pour_fab | both | open-short_b_pour_fab.pth | pour_contract.json | ok |
 | `left_aglt` | candidate | open-short_l_cup_pick-lstm | left | cup_pick_l_approach_hold_e4280.pth | - | ok |
 | `right_aglt` | hold | open-short_r_grasp_fj_t2r_rand-lstm | right | fj_rand_i01_best_ep5000.pth | - | ok |
-| `right_m15_e800` | candidate | open-short_r_cup_pick-lstm | right | last_open-short_r_cup_pick-lstm_ep_800_rew_2313.1377.pth | - | ok |
+| `right_m15_e800` | candidate | open-short_r_cup_pick-lstm | right | last_open-short_r_cup_pick-lstm_ep_800_rew_2313.1377.pth | joint_contract.json | ok |
 
 ## status
 

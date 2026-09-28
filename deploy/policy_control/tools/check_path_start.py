@@ -34,7 +34,8 @@ def measure() -> dict[str, float]:
     return json.loads(out.stdout.strip().splitlines()[-1])["q"]
 
 
-def verdict(q: dict[str, float], joints: list[str], start: np.ndarray, tol: float, allow_exact_zero: bool = False) -> list[str]:
+def verdict(q: dict[str, float], joints: list[str], start: np.ndarray, tol: float, allow_exact_zero: bool = False,
+            where: str = "시작점") -> list[str]:
     """재생하면 안 되는 이유. 비면 재생해도 된다."""
     missing = [j for j in joints if j not in q]
     if missing:
@@ -45,7 +46,7 @@ def verdict(q: dict[str, float], joints: list[str], start: np.ndarray, tol: floa
     err = np.abs(now - start)
     k = int(np.argmax(err))
     if err[k] > tol:
-        return [f"팔이 경로 시작점에 있지 않다 — {joints[k]} {now[k]:+.3f} (시작점 {start[k]:+.3f}, 허용 {tol})"]
+        return [f"팔이 경로 {where}에 있지 않다 — {joints[k]} {now[k]:+.3f} ({where} {start[k]:+.3f}, 허용 {tol})"]
     return []
 
 
@@ -103,6 +104,8 @@ def main() -> int:
     ap.add_argument("--tol", type=float, default=0.05, help="시작점 허용 [rad] (관절별 최대)")
     ap.add_argument("--allow-exact-zero", action="store_true", help="fake 플랜트 전용 — 팔이 정확히 0 에서 시작한다")
     ap.add_argument("--hand-tol", type=float, default=0.2, help="손 자세 허용 [rad] (경로를 실측 손으로 검사했을 때)")
+    ap.add_argument("--at", choices=("start", "end"), default="start",
+                    help="end: 팔이 경로 **끝**(= 정책 시작 자세) 근처인가만 본다 — 관절공간 직선 정착(goto_home)을 걸기 전 가드(09.28)")
     args = ap.parse_args()
     if os.environ.get("ROS_DOMAIN_ID", "") in ("", "0"):
         raise SystemExit("✗ ROS_DOMAIN_ID 가 비었거나 0 — 거부")
@@ -114,6 +117,13 @@ def main() -> int:
     if want != have:
         reasons.append(f"경로를 만든 계약({want[:10]})이 지금 계약({have[:10]})과 다르다 — 경로를 다시 만들 것")
     q = measure()
+    if args.at == "end":                      # 끝점 가드 — 손은 보지 않는다(정책 단계가 손을 정한다)
+        reasons += verdict(q, joints, np.asarray(d["meta_goal"], dtype=float), args.tol, args.allow_exact_zero, "끝점")
+        for r in reasons:
+            print(f"  ✗ {r}")
+        if not reasons:
+            print(f"  ✓ 팔이 경로 끝점에서 {args.tol} rad 안이다 — 직선 정착을 걸어도 된다")
+        return 1 if reasons else 0
     reasons += verdict(q, joints, np.asarray(d["meta_start"], dtype=float), args.tol, args.allow_exact_zero)
     sphere = float(d["meta_hand_sphere"]) if "meta_hand_sphere" in d else float("nan")
     if sphere == sphere:                      # 봉투로 계획한 경로 — 손 자세는 구 안에 있기만 하면 된다

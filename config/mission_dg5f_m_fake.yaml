@@ -11,6 +11,7 @@ artifacts:
   path_right: deploy/policy_control/paths/home_right.npz
   path_left: deploy/policy_control/paths/home_left.npz
   gains_yaml: ../urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml
+  joint_right: deploy/policies/right_m15_e800/joint_contract.json
 checkpoints: {}
 groups:
 - id: check
@@ -52,6 +53,9 @@ run:
     - pd_config:={artifact:pd}
     - hands:=none
     - plant_model:=rate
+    - cup_x:=0.25
+    - cup_y:=-0.15
+    - cup_z:=0.3055
     - arm_start:=right=0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000;left=0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000
     background: true
   fabric_direct_left:
@@ -537,6 +541,83 @@ run:
     - fake:=true
     background: true
     note: '[right] pd 노드 무발행 기동 — status 의 gains ok · 입력 신선도를 본다'
+  policy_right:
+  - note: '[right] fabric 체인이 떠 있으면 내린다 — 같은 /policy_control/episode/* 서비스를 낸다(정책 노드와 겹친다)'
+    stop:
+    - fabric_direct_right#0
+  - argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+    note: ★[right] 컵이 학습 범위(로봇 앞 x 0.10~0.40 · y −0.30~0.00, 테이블 위 똑바로)에 있고 콘솔에서 컵 자세가 들어오는가. 손 · 팔 주변에 사람 · 물건이 없는가. 정책은
+      팔을 최대 0.3 rad/s 로 움직인다
+  - argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/check_path_start.py'
+    - --npz
+    - '{artifact:path_right}'
+    - --at
+    - end
+    - --tol
+    - '0.4'
+    - --allow-exact-zero
+    note: '[right] 팔이 정책 시작 자세(홈 경로 끝) 0.4 rad 안인가 — 멀면 여기서 멈춘다(관절공간 직선 정착은 먼 곳에서 테이블을 지날 수 있다)'
+  - argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - right
+    - --only
+    - pd_goto_home
+    - --service-timeout
+    - '45'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_goto_home
+    note: '[right] 시작 자세로 정착 — 앞 단계(fabric 점검 등)가 남긴 작은 어긋남을 pd goto_home 으로 없앤다(정책 start 허용 0.15 rad)'
+  - argv:
+    - ros2
+    - launch
+    - '{repo}/deploy/policy_control/launch/joint_chain.launch.py'
+    - contract:={artifact:joint_right}
+    - robot:={artifact:robot_right}
+    - device:=cuda:0
+    - use_source:=true
+    - fake:=true
+    background: true
+    note: '[right] 정책 노드(joint_node, LSTM · GPU) — 팔 관절 증분 + 손 절대 목표를 pd 로. start 전에는 아무것도 보내지 않는다'
+  - argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/reset
+    execute_args:
+    - --execute
+    note: '[right] episode reset — 지금 컵 위치로 목표를 정한다(응답에 목표 좌표). 팔이 학습 시작 자세에서 0.15 rad 넘게 멀면 start 가 거부된다'
+  - argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/start
+    execute_args:
+    - --execute
+    note: ★[right] episode start — 이 순간부터 정책이 팔 · 손을 움직인다
+  - argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+    note: ★[right] 관찰 — 이상하면 정지 바의 정지(episode stop)를 누른다. 끝났으면 '정상'
+  - argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/stop
+    execute_args:
+    - --execute
+    note: '[right] episode stop — pd 는 마지막 목표를 붙잡는다(해제는 ⑥). ★복귀 전에 팔이 컵 · 테이블에서 떨어졌는지 볼 것'
+  - note: '[right] 정책 노드 정지'
+    stop:
+    - policy_right#4
   preflight:
   - argv:
     - python3
@@ -800,6 +881,10 @@ run:
     background: true
     note: FP++ 자세 수신기 — vision-3090 은 영상 · FP++ 를 저 PC 안에서만 돌리고(localhost 전용) 물체 자세만 UDP 로 보낸다(09.26 wifi 가 막히면 DDS 로 넘기던
       카메라가 멈췄다). 받아서 /perception_plus_plus/<물체>/pose 로 다시 낸다
+  - note: fake — 물체 자세는 플랜트가 낸다(object_pose_node 는 실기에서만)
+    argv:
+    - echo
+    - fake — 물체 자세는 플랜트가 낸다(object_pose_node 는 실기에서만)
   - argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
@@ -815,7 +900,7 @@ run:
     - stop
     - --camera
     note: FP++ 컨테이너 + 카메라 내리기 (vision-3090)
-  - note: 로컬 인지 런처 · FP++ 자세 수신기 정지
+  - note: 로컬 인지 런처 · FP++ 자세 수신기 · 물체 자세 변환 정지
     stop:
     - sensors#0
     - sensors#1
@@ -836,6 +921,7 @@ run:
     - pd_load_left#0
     - sensors#0
     - sensors#1
+    - policy_right#4
   - note: DG-5F 손 드라이버 정지 (우 → 좌) — 손가락 토크가 풀린다
     stop:
     - hand_right#1
@@ -956,6 +1042,18 @@ stages:
   - home_right
   skippable: true
   title: '[right] fabric direct 모드 — 에피소드 시작 → palm +2 cm · 손 30 % 폐쇄 → 에피소드 정지 (작은 델타만)'
+- artifacts:
+  - joint_right
+  - robot_right
+  group: policy
+  id: policy_right
+  lane: arm_right
+  needs:
+  - home_right
+  - sensors
+  needs_why: 정책은 홈 경로 끝 자세에서만 출발해 봤고, 컵 자세(FP++ → base)가 입력이다
+  skippable: true
+  title: '[right] 정책 right_m15_e800(cup_pick) — 컵 확인 → 정책 노드 → reset(목표 = 컵 + 24.6 cm 위) → start → 관찰 → stop'
 - artifacts:
   - contract
   - robot_right

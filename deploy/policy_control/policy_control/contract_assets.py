@@ -79,6 +79,9 @@ ASSETS = {
     "openarm_dg5f-m-short_bi_rl": AssetSpec(
         "openarm_dg5f-m-short_bi_rl", "dg5f",
         {"right": _tesollo("right", "dg5f-m-short"), "left": _tesollo("left", "dg5f-m-short")}),
+    # thumb_1 을 용접(fixed, 0 rad)한 short — grasp_fj · cup_pick 계열의 학습 자산. fabric 없음(joint family).
+    # 관측 FK 는 이 URDF 로 푼다(학습 기하 그대로). pd · 실기 손은 20 관절 short 자산을 쓴다.
+    "openarm_dg5f-m-short-tl_bi_rl": AssetSpec("openarm_dg5f-m-short-tl_bi_rl", "dg5f", {"right": None, "left": None}),
     "openarm_dg5f-s_bi_rl": AssetSpec("openarm_dg5f-s_bi_rl", "dg5f",
                                       {"right": _tesollo("right", "dg5f-s"), "left": _tesollo("left", "dg5f-s")}),
     "openarm_gripper_bi_rl": AssetSpec("openarm_gripper_bi_rl", "gripper", {

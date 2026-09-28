@@ -25,16 +25,35 @@ class ProfileLoadError(RuntimeError):
 
 def load_pair(hdgp_root: Path, pair_name: str):
     """Return the hdgp ``BimanualPair`` (source/receiver RobotProfile) named ``pair_name``."""
+    def pick(mods):
+        try:
+            return mods[-1].get_pair(pair_name)
+        except KeyError as exc:
+            raise ProfileLoadError(str(exc)) from exc
+    return _with_modules(hdgp_root, _MODULES, pick)
+
+
+def load_profile(hdgp_root: Path, profile_name: str):
+    """Return one hdgp ``RobotProfile`` (``robot_profiles.PROFILES[name]``) — joint family 계약 빌드용."""
+    def pick(mods):
+        profiles = mods[-1].PROFILES
+        if profile_name not in profiles:
+            raise ProfileLoadError(f"hdgp profile {profile_name!r} not found (have {sorted(profiles)})")
+        return profiles[profile_name]
+    return _with_modules(hdgp_root, _MODULES[:2], pick)
+
+
+def _with_modules(hdgp_root: Path, modules: tuple, pick):
     base = Path(hdgp_root) / "source" / "openarm" / "openarm" / "agnostic"
-    names = _PKGS + tuple(n for n, _ in _MODULES)
+    names = _PKGS + tuple(n for n, _ in modules)
     saved = {n: sys.modules.get(n) for n in names}
     try:
         for pkg in _PKGS:
             stub = types.ModuleType(pkg)
             stub.__path__ = []
             sys.modules[pkg] = stub
-        mod = None
-        for name, rel in _MODULES:
+        loaded = []
+        for name, rel in modules:
             path = base / rel
             if not path.is_file():
                 raise ProfileLoadError(f"hdgp profile module missing: {path}")
@@ -42,13 +61,11 @@ def load_pair(hdgp_root: Path, pair_name: str):
             mod = importlib.util.module_from_spec(spec)
             sys.modules[name] = mod
             spec.loader.exec_module(mod)
+            loaded.append(mod)
             parent, _, leaf = name.rpartition(".")
             if parent:
                 setattr(sys.modules[parent], leaf, mod)
-        try:
-            return mod.get_pair(pair_name)
-        except KeyError as exc:
-            raise ProfileLoadError(str(exc)) from exc
+        return pick(loaded)
     finally:
         for n, old in saved.items():
             if old is None:

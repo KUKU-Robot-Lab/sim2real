@@ -250,3 +250,27 @@ def test_every_execute_flag_is_one_the_tool_actually_takes():
             bad += [(stage, Path(tool).name, f) for f in c.execute_args
                     if f.startswith("--") and f'"{f}"' not in src and f"'{f}'" not in src]
     assert not bad, bad
+
+
+def test_the_right_policy_stage_runs_the_registered_joint_policy_after_home():
+    """09.28 사용자: 오른팔 첫 실험 정책 = right_m15_e800. 홈 경로 끝 = 그 정책의 학습 시작 자세다."""
+    st = MISSION.stages[IDS.index("policy_right")]
+    assert set(st.needs) == {"home_right", "sensors"} and st.touches_real and st.skippable
+    assert RAW_STAGES["policy_right"]["lane"] == "arm_right" and IDS.index("home_right") < IDS.index("policy_right")
+    assert RAW["artifacts"]["joint_right"] == "deploy/policies/right_m15_e800/joint_contract.json"
+    cmds = _cmds("policy_right")
+    assert cmds[0].stop == ("fabric_direct_right#0",)                              # 같은 episode 서비스를 내는 체인
+    (launch,) = [i for i, c in enumerate(cmds) if any(a.endswith("joint_chain.launch.py") for a in c.argv)]
+    assert cmds[launch].background and "device:=cuda:0" in cmds[launch].argv
+    text = [" ".join(c.argv) for c in cmds]
+    order = [next(i for i, t in enumerate(text) if f"trigger.py episode/{e}" in t) for e in ("reset", "start", "stop")]
+    assert order == sorted(order) and launch < order[0]
+    assert cmds[order[1] - 0].execute_args and any(c.manual for c in cmds[order[1]:order[2]])   # 관찰 확인
+    assert any(c.stop == (f"policy_right#{launch}",) for c in cmds[order[2]:])
+    guard = next(i for i, t in enumerate(text) if "check_path_start.py" in t and "--at end" in t)
+    settle = next(i for i, t in enumerate(text) if "pd_goto_home" in t)
+    assert guard < settle < launch                                                  # 가까울 때만 직선 정착
+    for stage in ("shutdown",):
+        assert any(f"policy_right#{launch}" in c.stop for c in _cmds(stage) if c.stop)
+    # 정책 입력인 컵 자세(base_link)를 내는 노드가 인지 단계에 있다
+    assert any(a.endswith("object_pose_node.py") for c in _cmds("sensors") for a in c.argv)

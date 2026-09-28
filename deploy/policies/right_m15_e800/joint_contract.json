@@ -1,0 +1,218 @@
+{
+ "schema": "policy_control/joint_contract/v1",
+ "family": "joint_direct",
+ "task": "open-short_r_cup_pick-lstm",
+ "run_dir": "deploy/policies/right_m15_e800",
+ "checkpoint": "deploy/policies/right_m15_e800/nn/last_open-short_r_cup_pick-lstm_ep_800_rew_2313.1377.pth",
+ "checkpoint_md5": "4717e3251e15766839f10be68c7c55ff",
+ "env_yaml_sha1": "e3d9e96746e3aa90b6c5096d4b544d6a61e13ed9",
+ "agent_yaml_sha1": "5d03ef19e80bdbe316cd6179c4a0c92899089901",
+ "asset": "openarm_dg5f-m-short_bi_rl",
+ "train_asset": "openarm_dg5f-m-short-tl_bi_rl",
+ "side": "right",
+ "policy_hz": 60.0,
+ "obs_dim": 133,
+ "action_dim": 26,
+ "obs_clip": 5.0,
+ "action_clip": 1.0,
+ "recurrent": true,
+ "arm_joints": [
+  "r_aj_1",
+  "r_aj_2",
+  "r_aj_3",
+  "r_aj_4",
+  "r_aj_5",
+  "r_aj_6",
+  "r_aj_7"
+ ],
+ "arm_lo": [
+  -1.396263,
+  -0.17453267320510335,
+  -1.570796,
+  0.0,
+  -1.570796,
+  -0.785398,
+  -1.570796
+ ],
+ "arm_hi": [
+  3.490659,
+  3.3161253267948965,
+  1.570796,
+  2.443461,
+  1.570796,
+  0.785398,
+  1.570796
+ ],
+ "arm_reset": [
+  -1.1974,
+  0.6707,
+  0.1866,
+  1.731,
+  0.692,
+  0.0416,
+  0.946
+ ],
+ "k_arm": 0.05,
+ "arm_ema": 0.1,
+ "hand_joints": [
+  "r_hj_thumb_2",
+  "r_hj_thumb_3",
+  "r_hj_thumb_4",
+  "r_hj_index_1",
+  "r_hj_index_2",
+  "r_hj_index_3",
+  "r_hj_index_4",
+  "r_hj_middle_1",
+  "r_hj_middle_2",
+  "r_hj_middle_3",
+  "r_hj_middle_4",
+  "r_hj_ring_1",
+  "r_hj_ring_2",
+  "r_hj_ring_3",
+  "r_hj_ring_4",
+  "r_hj_pinky_1",
+  "r_hj_pinky_2",
+  "r_hj_pinky_3",
+  "r_hj_pinky_4"
+ ],
+ "hand_lo": [
+  -1.5808,
+  0.0,
+  0.0,
+  -0.01,
+  0.0,
+  0.0,
+  0.0,
+  -0.01,
+  0.0,
+  0.0,
+  0.0,
+  -0.01,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  -0.01,
+  0.0,
+  0.0
+ ],
+ "hand_hi": [
+  -1.5608,
+  1.5708,
+  1.5708,
+  0.01,
+  2.00713,
+  1.5708,
+  1.5708,
+  0.01,
+  2.00713,
+  1.5708,
+  1.5708,
+  0.01,
+  1.91986,
+  1.5708,
+  1.5708,
+  0.01,
+  0.01,
+  1.5708,
+  1.5708
+ ],
+ "hand_reset": [
+  -1.57,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0
+ ],
+ "hand_ema": 0.1,
+ "hand_obs_order": [
+  "r_hj_index_1",
+  "r_hj_middle_1",
+  "r_hj_pinky_1",
+  "r_hj_ring_1",
+  "r_hj_index_2",
+  "r_hj_middle_2",
+  "r_hj_pinky_2",
+  "r_hj_ring_2",
+  "r_hj_thumb_2",
+  "r_hj_index_3",
+  "r_hj_middle_3",
+  "r_hj_pinky_3",
+  "r_hj_ring_3",
+  "r_hj_thumb_3",
+  "r_hj_index_4",
+  "r_hj_middle_4",
+  "r_hj_pinky_4",
+  "r_hj_ring_4",
+  "r_hj_thumb_4"
+ ],
+ "hand_obs_order_source": "assumed: 20-joint PhysX order (pour i24 trace) minus welded joints",
+ "welded": {
+  "r_hj_thumb_1": 0.0
+ },
+ "palm_body": "r_hl_palm",
+ "tip_bodies": [
+  "r_hl_thumb_tip",
+  "r_hl_index_tip",
+  "r_hl_middle_tip",
+  "r_hl_ring_tip",
+  "r_hl_pinky_tip"
+ ],
+ "keypoint_half_height": 0.09,
+ "keypoint_axial_unit": [
+  [
+   0.0,
+   0.0,
+   1.0
+  ],
+  [
+   0.0,
+   0.0,
+   -1.0
+  ],
+  [
+   0.0,
+   0.0,
+   0.3333333333333333
+  ],
+  [
+   0.0,
+   0.0,
+   -0.3333333333333333
+  ]
+ ],
+ "goal_offset": [
+  0.0,
+  0.0,
+  0.24625000000000002
+ ],
+ "goal_box_lo": [
+  0.04999999999999999,
+  -0.35,
+  0.40549
+ ],
+ "goal_box_hi": [
+  0.45,
+  0.05000000000000002,
+  0.60549
+ ],
+ "notes": [
+  "train_urdf openarm_dg5f-m-short-tl_bi_rl.urdf · profile tesollo_right_short_tl",
+  "관측 노이즈 · 지연은 학습 전용이라 넣지 않는다",
+  "목표는 한 점(학습은 가로 ±goal_first_xy_range · 높이 goal_first_z_range 에서 뽑는다)"
+ ]
+}

@@ -28,6 +28,8 @@ from policy_control import pour_contract as PC  # noqa: E402
 from policy_control.contract_build import SIM_META_HOWTO, build_contract, build_pour, detect_family  # noqa: E402
 
 POUR_OUT_NAME = "pour_contract.json"  # own schema: never the single-arm deploy_contract.json name
+JOINT_OUT_NAME = "joint_contract.json"  # joint_direct family (arm joint increments + hand absolute, no fabric)
+JOINT_DEPLOY_ASSET = "openarm_dg5f-m-short_bi_rl"   # 실기 손 = 20 관절 short; 학습 자산의 용접 관절은 계약이 붙잡는다
 
 
 def _parse(argv=None) -> argparse.Namespace:
@@ -49,6 +51,10 @@ def _parse(argv=None) -> argparse.Namespace:
     ap.add_argument("--primary", default="right", help="asset-only: side mirrored into the legacy top-level sections")
     ap.add_argument("--home", default="zero", help="asset-only: zero | run:<run dir> (init_state, mirrored) | "
                          "pour:<pour_contract.json> (bimanual pour reset pose, arms + hands)")
+    ap.add_argument("--hand-obs-order", default=None,
+                    help="joint_direct only (required): <json list> of the 19/20 hand joint names in simulator order "
+                         "(from a play trace meta 'joint_names'), or 'assumed' (20-joint order minus welded joints — "
+                         "marks the contract so it cannot be verified)")
     ap.add_argument("--mirror-other-arm", action="store_true",
                     help="asset-only, run: 홈 전용 — 반대 팔 홈을 init_state 대신 부호 미러로(좌우 대칭)")
     args = ap.parse_args(argv)
@@ -70,10 +76,40 @@ def _main_pour(args) -> int:
     return 0
 
 
+def _main_joint(args) -> int:
+    import json
+
+    from policy_control.joint_build import build_joint_contract
+    from policy_control.joint_contract import save_contract
+
+    spec = args.hand_obs_order
+    if spec is None:
+        raise SystemExit("[contract] joint_direct needs --hand-obs-order <json> | assumed (the simulator hand joint "
+                         "order is not in the URDF — dump it with a play trace meta)")
+    if spec == "assumed":
+        order, source = None, "assumed: 20-joint PhysX order (pour i24 trace) minus welded joints"
+    else:
+        raw = json.loads(Path(spec).read_text())
+        names = raw.get("joint_names", raw) if isinstance(raw, dict) else raw
+        order, source = [n for n in names if "_hj_" in n], f"measured: {spec}"
+    hdgp = Path(__file__).resolve().parents[4] / "hdgp"
+    c = build_joint_contract(args.run, hdgp, args.asset or JOINT_DEPLOY_ASSET, hand_obs_order=order,
+                             order_source=source, checkpoint=args.checkpoint)
+    out = args.out or (args.run / JOINT_OUT_NAME)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    save_contract(c, out)
+    print(f"[contract] {c.task} · joint_direct · obs {c.obs_dim} / act {c.action_dim} · {c.policy_hz:.0f} Hz · "
+          f"{c.side} · train {c.train_asset} → deploy {c.asset} · hand obs order {source.split(':')[0]} → {out}")
+    return 0
+
+
 def main(argv=None) -> int:
     args = _parse(argv)
-    if args.run is not None and detect_family(args.run / "params/env.yaml") == "pour_bimanual":
+    family = detect_family(args.run / "params/env.yaml") if args.run is not None else None
+    if family == "pour_bimanual":
         return _main_pour(args)
+    if family == "joint_direct":
+        return _main_joint(args)
     if args.run is not None:
         c = build_contract(args.run, checkpoint=args.checkpoint, grasp_band=args.grasp_band, asset=args.asset)
         out = args.out or (args.run / "deploy_contract.json")

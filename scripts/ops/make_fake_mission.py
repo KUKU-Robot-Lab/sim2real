@@ -41,7 +41,9 @@ PLANT = {
     "note": "fake 플랜트 — 양팔 MockArm(rate: 배선 · 순서 · 도달만, 처짐 · 마찰 없음) + 컵 포즈. 손은 hand_<팔> 단계가 따로 띄운다",
     "argv": ["ros2", "launch", "{repo}/deploy/policy_control/launch/fake_plant.launch.py", "side:=both",
              "robot:={artifact:robot_bi}", "contract:={artifact:contract}", "pd_config:={artifact:pd}",
-             "hands:=none", "plant_model:=rate"],
+             "hands:=none", "plant_model:=rate",
+             # 컵 = 오른팔 정책(right_m15_e800)의 학습 스폰 중심 · 정착 높이 — 정책 단계가 이 자세로 목표를 정한다
+             "cup_x:=0.25", "cup_y:=-0.15", "cup_z:=0.3055"],
     "background": True,
 }
 
@@ -55,6 +57,8 @@ def _hand(side: str) -> dict:
             "background": True}
 # vision-3090(카메라 · FP++)은 로봇이 아니라 fake 에서도 진짜로 켠다(09.22 사용자: 언제든 쓸 수 있다). 목만 없다.
 NO_HARDWARE = {"head_home": "fake — 목 하드웨어가 없다(실기에서는 기준자세 + 목 퍼블리셔)"}
+#: fake 에서는 플랜트가 물체 자세를 낸다 — 실물 변환 노드를 띄우면 같은 토픽에 둘이 된다. 자리(키 번호)는 남긴다.
+FAKE_OBJECT_NOTE = "fake — 물체 자세는 플랜트가 낸다(object_pose_node 는 실기에서만)"
 HEADER = """# ★생성 파일 — 고치지 말 것. scripts/ops/make_fake_mission.py 가 config/mission_dg5f_m_control.yaml 에서 만든다.
 #   실기 미션을 고친 뒤: python3 scripts/ops/make_fake_mission.py  (테스트가 --check 로 어긋남을 잡는다)
 # 실기와 같은 단계 · 순서 · 승인을 fake 플랜트(도메인 97)에서 밟는다 — 오른팔 · 오른손 · 왼팔 · 왼손 확인용.
@@ -99,6 +103,10 @@ def convert(real: dict) -> dict:
         cmds[hits[0]] = _hand(side)
     for stage, note in NO_HARDWARE.items():
         run[stage] = [{"note": note, "argv": ["echo", note]}]
+    for cmds in run.values():
+        for i, c in enumerate(cmds):
+            if any(str(a).endswith("object_pose_node.py") for a in c.get("argv", ())):
+                cmds[i] = {"note": FAKE_OBJECT_NOTE, "argv": ["echo", FAKE_OBJECT_NOTE]}
     alive = {f"{st}#{i}" for st, cmds in run.items() for i, c in enumerate(cmds) if c.get("background")}
     for stage, cmds in run.items():
         for c in cmds:
