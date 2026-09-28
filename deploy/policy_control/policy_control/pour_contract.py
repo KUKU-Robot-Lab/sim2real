@@ -120,6 +120,9 @@ class PourContract:
     fill_level: FillLevelCfg
     fabric: PourFabricCfg
     sides: tuple              # (PourSideCfg src, PourSideCfg rcv)
+    #: EMA 뒤 palm 지령의 스텝당 변화량 상한(정규화 액션 단위) — hdgp `palm_cmd_max_step`(i19 부터 학습에 들어간 slew).
+    #: 0 = 끔. 기본값이 있는 이유: 그 전에 만든 계약 파일(i18)에는 이 키가 없다 — 그 런은 slew 없이 학습했다.
+    palm_cmd_max_step: float = 0.0
 
     @property
     def roles(self) -> tuple:
@@ -153,6 +156,8 @@ def validate(c: PourContract) -> PourContract:
         raise PourContractError(f"dims {c.obs_dim}/{c.action_dim} != layout {want_obs}/{want_act}")
     if not 0.0 < c.palm_ema_alpha <= 1.0:
         raise PourContractError(f"palm_ema_alpha {c.palm_ema_alpha} outside (0, 1]")
+    if not c.palm_cmd_max_step >= 0.0:
+        raise PourContractError(f"palm_cmd_max_step {c.palm_cmd_max_step} must be >= 0 (0 = off)")
     if c.fabric_dt <= 0.0 or c.fabric_decimation < 1:
         raise PourContractError(f"fabric_dt/decimation {c.fabric_dt}/{c.fabric_decimation} invalid")
     if c.fabric.table_obstacle and (c.fabric.table_thickness <= 0.0 or c.fabric.table_margin_xy < 0.0):

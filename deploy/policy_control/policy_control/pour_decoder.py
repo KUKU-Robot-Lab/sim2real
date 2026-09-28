@@ -99,6 +99,13 @@ def hand_target(side: PourSideCfg, close: np.ndarray) -> np.ndarray:
     return np.clip(o + (g - o) * close, side.hand_lo, side.hand_hi)
 
 
+def slew_limit(prev: np.ndarray, target: np.ndarray, max_step: float) -> np.ndarray:
+    """hdgp `pour_rules.slew_limit` 와 같은 식 — 스텝당 변화량 상한(정규화 단위). max_step <= 0 이면 끔."""
+    if max_step <= 0.0:
+        return target
+    return prev + np.clip(target - prev, -max_step, max_step)
+
+
 class PourDecoder:
     """Stateful per-episode decoder for both sides. `step` returns new targets; nothing is edited in place."""
 
@@ -131,7 +138,8 @@ class PourDecoder:
                 raise PourDecodeError(f"missing SideInputs for '{role}'")
             side = self.c.side(role)
             base = i * (PALM_DIM + HAND_DIM)
-            cmd = alpha * a[base:base + PALM_DIM] + (1.0 - alpha) * self._palm_cmd[role]
+            ema = alpha * a[base:base + PALM_DIM] + (1.0 - alpha) * self._palm_cmd[role]
+            cmd = slew_limit(self._palm_cmd[role], ema, self.c.palm_cmd_max_step)
             gate_in = inputs[role] if active else SideInputs(0.0, inputs[role].f_mid, inputs[role].f_dist)
             close = step_close(self.c, side, self._close[role], a[base + PALM_DIM:base + PALM_DIM + HAND_DIM], gate_in)
             new_cmd[role], new_close[role] = cmd, close

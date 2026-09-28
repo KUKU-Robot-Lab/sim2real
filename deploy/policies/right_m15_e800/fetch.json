@@ -1,0 +1,36 @@
+{
+ "host": "local",
+ "remote_dir": "/home/user/rl_ws/our_source/cup_pick_runs_0926/runs/right/cp_r_m15",
+ "hdgp_head_at_fetch": "633e46e32ed62d36e86a002b0649fc3c16c6393e",
+ "run_commit": "d38b4346",
+ "files": [
+  {
+   "local_rel": "params/env.yaml",
+   "remote_rel": "params/env.yaml",
+   "sha256": "4b87390c01feba18e9ddf1ae826b1be6516eb651e62a63885ebcbee504318850",
+   "md5": "9c250b5bc77961fb3c5108a0ee755bbb",
+   "size": 43375
+  },
+  {
+   "local_rel": "params/agent.yaml",
+   "remote_rel": "params/agent.yaml",
+   "sha256": "49f6571ecd993b88d0a48a46305f332a1c63d113b19af4c83a0d9612f266fca4",
+   "md5": "ab0b197af2e52e0929cd227baa8b6807",
+   "size": 2541
+  },
+  {
+   "local_rel": "nn/last_open-short_r_cup_pick-lstm_ep_800_rew_2313.1377.pth",
+   "remote_rel": "nn/last_open-short_r_cup_pick-lstm_ep_800_rew_2313.1377.pth",
+   "sha256": "0a672783c3c9691ceb26af0a78947b8b087039fa990ed79dece3867a64c367d6",
+   "md5": "4717e3251e15766839f10be68c7c55ff",
+   "size": 138200732
+  },
+  {
+   "local_rel": "test_history.md",
+   "remote_rel": "test_history.md",
+   "sha256": "0eb52c74e8a6f70b289585d1bcbf3e50fe40026de07a99a28015b00f0349b184",
+   "md5": "5a63e6ff3dac5e32fa695f335e3fbc0f",
+   "size": 728
+  }
+ ]
+}

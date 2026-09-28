@@ -158,6 +158,8 @@ def build_pour_contract(run_dir: Path, sim_meta: Path, hdgp_root: Path, urdf: Pa
         normalize_input=bool(agent["config"]["normalize_input"]),
         obs_clip=None if clip is None else float(clip), action_clip=1.0,
         hold_steps=int(_need(env, "hold_steps")), palm_ema_alpha=alpha,
+        # i19 부터 env 에 있다 — 없으면 slew 없이 학습한 런이다(0). 있는데 빠뜨리면 지령이 학습과 달라진다(09.28 i24).
+        palm_cmd_max_step=float(env.get("palm_cmd_max_step") or 0.0),
         cup_mouth_z=float(_need(env, "cup_mouth_z")), joint_pos_err_max=float(_need(env, "joint_pos_err_max")),
         hand_action_mode=str(_need(env, "hand_action_mode")),
         synergy_close_speed=float(_need(env, "synergy_close_speed")),

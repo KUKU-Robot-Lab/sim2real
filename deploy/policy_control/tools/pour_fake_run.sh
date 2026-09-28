@@ -6,7 +6,8 @@
 #   증명 못 한다: 파지·붓기 성공. MockArm 에 커플링도 테이블 접촉도 없다(POLICY_CONTROL_STATUS:24).
 #
 #   usage: ROS_DOMAIN_ID=97 deploy/policy_control/tools/pour_fake_run.sh [seconds] [logdir]
-#   env:   RUN(기본 pour_i18) · USE_FABRIC(기본 false — CUDA 가 비어 있을 때만 true) ·
+#   env:   RUN(기본 pour_i18) · RUN_DIR(기본 logs/policy/$RUN — 등록부 정책은 deploy/policies/<id>) ·
+#          PD_CONTRACT(기본 logs/policy/asset_$RUN/deploy_contract.json) · USE_FABRIC(기본 false — CUDA 가 비어 있을 때만 true) ·
 #          PLANT_MODEL(기본 rate — 배선 검증용. pd 모델은 실측 팔 캘리브레이션
 #          hdgp/log/logs/r2s_autotune/results/right_arm_best_calibration.json 을 요구하는데
 #          이 PC 에 없다. 09.05 자산 정리 때 사라진 것으로 보인다) ·
@@ -22,8 +23,9 @@ export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-97}"
 
 RUN="${RUN:-pour_i18}"
 SEC="${1:-20}"; LOG="${2:-logs/policy_control/pour_fake_$(date +%m%d_%H%M%S)}"; mkdir -p "$LOG"
-CONTRACT="logs/policy/$RUN/pour_contract.json"
-PD_CONTRACT="logs/policy/asset_$RUN/deploy_contract.json"
+RUN_DIR="${RUN_DIR:-logs/policy/$RUN}"
+CONTRACT="$RUN_DIR/pour_contract.json"
+PD_CONTRACT="${PD_CONTRACT:-logs/policy/asset_$RUN/deploy_contract.json}"
 ROBOT="${ROBOT:-dg5f_m_bi_fake}"
 SRC_TOPIC=/objects/pour_src_cup/pose
 RCV_TOPIC=/objects/pour_rcv_cup/pose
@@ -32,9 +34,9 @@ for f in "$CONTRACT" "$PD_CONTRACT"; do
 done
 
 # 컵 초기 위치는 그 런의 trace 첫 행에서 읽는다 — 손으로 옮겨 적지 않는다.
-read -r SX SY SZ RX RY RZ < <(python - "$RUN" <<'PY'
+read -r SX SY SZ RX RY RZ < <(python - "$RUN_DIR" <<'PY'
 import sys, numpy as np, pathlib
-p = pathlib.Path("logs/policy") / sys.argv[1] / "trace.npz"
+p = pathlib.Path(sys.argv[1]) / "trace.npz"
 if p.is_file():
     z = np.load(p)
     v = list(z["src_cup_pos"][0, 0]) + list(z["rcv_cup_pos"][0, 0])
@@ -72,10 +74,17 @@ bg ros2 launch deploy/policy_control/launch/pd_controller.launch.py contract:="$
     pd_config:="${PD_CONFIG:-dg5f_m_short_fake}" sides:=right,left execute:=true fake:=true use_source:=true \
     > "$LOG/pd.log" 2>&1
 sleep 8
-pd() { timeout 120 ros2 service call "/policy_control/pd_${PD_SIDE:-right}/$1" std_srvs/srv/Trigger "{}" 2>&1 | tr -d '\n'; }
-echo "[pour_fake] pd engage   : $(pd engage)"    | tee "$LOG/pd_stage.log"
-echo "[pour_fake] pd goto_home: $(pd goto_home)" | tee -a "$LOG/pd_stage.log"
-grep -q "goto_home.*success=True" "$LOG/pd_stage.log" || { echo "[pour_fake] goto_home 실패 — 중단"; exit 1; }
+# pd 서비스는 팔마다 갈린다(09.23) — 한 노드가 양팔을 가져도 이름은 pd_right · pd_left 다. 두 팔 모두 부른다
+# (09.28: 오른팔만 부르던 때 왼팔이 차렷에 남아 start 가 "0.841 rad from the training reset pose" 로 거부됐다).
+pd() { timeout 120 ros2 service call "/policy_control/pd_$1/$2" std_srvs/srv/Trigger "{}" 2>&1 | tr -d '\n'; }
+: > "$LOG/pd_stage.log"
+for s in right left; do
+  echo "[pour_fake] pd engage    $s: $(pd $s engage)"    | tee -a "$LOG/pd_stage.log"
+done
+for s in right left; do
+  echo "[pour_fake] pd goto_home $s: $(pd $s goto_home)" | tee -a "$LOG/pd_stage.log"
+done
+[ "$(grep -c "goto_home.*success=True" "$LOG/pd_stage.log")" = 2 ] || { echo "[pour_fake] goto_home 실패 — 중단"; exit 1; }
 
 bg ros2 launch deploy/policy_control/launch/pour_chain.launch.py contract:="$CONTRACT" robot:="$ROBOT" \
     src_cup_topic:="$SRC_TOPIC" rcv_cup_topic:="$RCV_TOPIC" device:="${DEVICE:-cpu}" \
@@ -106,7 +115,7 @@ echo "[pour_fake] start: $(call start)" | tee -a "$LOG/episode.log"
 grep -q "start.*success=True" "$LOG/episode.log" || RC=1
 sleep "$SEC"
 echo "[pour_fake] stop : $(call stop)" | tee -a "$LOG/episode.log"
-echo "[pour_fake] pd release : $(pd release)" | tee -a "$LOG/pd_stage.log"
+for s in right left; do echo "[pour_fake] pd release $s: $(pd $s release)" | tee -a "$LOG/pd_stage.log"; done
 
 echo "[pour_fake] ---- 판정 ----" | tee "$LOG/verdict.txt"
 cat "$LOG/status_summary.txt" | tee -a "$LOG/verdict.txt"

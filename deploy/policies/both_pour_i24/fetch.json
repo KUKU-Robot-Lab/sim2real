@@ -1,0 +1,50 @@
+{
+ "host": "local",
+ "remote_dir": "/home/user/rl_ws/our_source/pour_bi_runs_0926/s2r/pour_i24_best",
+ "run_commit": "8cc6c6c6",
+ "reward_body_commit": "d66e4df5",
+ "files": [
+  {
+   "local_rel": "params/env.yaml",
+   "remote_rel": "params/env.yaml",
+   "sha256": "74f241ea869c961699094f5aa4caabe0b24bd8bd70cf2760d3c56cac383fdc34",
+   "md5": "5326db1277f4c06a92dc0c5ab4c8cdb1",
+   "size": 67578
+  },
+  {
+   "local_rel": "params/agent.yaml",
+   "remote_rel": "params/agent.yaml",
+   "sha256": "729a7d8c5aff29a558053452e8e1cf3465b964c17dc1a0786c80bb681afedc68",
+   "md5": "7c49f13eadfa6956a0beaf8738512bd5",
+   "size": 2213
+  },
+  {
+   "local_rel": "nn/open-short_b_pour_fab.pth",
+   "remote_rel": "nn/open-short_b_pour_fab.pth",
+   "sha256": "a970d982761d8c4fa54199d53fb4bca4126bd40f9a37265d8282011cab4391d0",
+   "md5": "a8c56f1884db994d7ab42029eb3976e1",
+   "size": 4667063
+  },
+  {
+   "local_rel": "test_history.md",
+   "remote_rel": "test_history.md",
+   "sha256": "8702f79a44187a6d4d8c3993dfd09b22303890061d17de5dce67291bdaf0b7d3",
+   "md5": "04fa9105f5ef3e99979e9878a69689bf",
+   "size": 748
+  },
+  {
+   "local_rel": "trace_meta.json",
+   "remote_rel": "eval_best_adr30_64env_meta.json",
+   "sha256": "a0b40d658be2df8a4c75e1e8c24b61ae841441adeba7aa0c48bfa5e1c054c64f",
+   "md5": "1c1fe0273df3ba1403ff10ee7692079f",
+   "size": 2562
+  },
+  {
+   "local_rel": "trace.npz",
+   "remote_rel": "eval_best_adr30_64env.npz",
+   "sha256": "0260b8840a575d8dbca9c751cfaae616c91e352a3705a18c981febd7b8695425",
+   "md5": "c82d83704f00a52b037d1685c62201cf",
+   "size": 144625537
+  }
+ ]
+}
