@@ -274,16 +274,21 @@ function laneHtml(s, lane, can) {
 // 정리 단계(비상 복귀 · 차렷 복귀 · pd 해제)는 순서를 기다리지 않고 언제나 고를 수 있다 — 09.28 실기: selftest 가
 // 실패하면 pd 가 팔을 잡은 동안 건너뛰기가 막혀(안전 규칙) 창이 거기 멈췄고, 차렷으로 돌아올 길이 화면에 없었다.
 // 서버는 창 안의 어느 단계든 needs · 승인 · 창이 비었는지로만 판정한다(_current_stage) — 버튼만 없던 것이다.
+// 09.28 실기 2: 같은 이유로 selftest_left 실패 뒤 policy_left 로 갈 길도 없었다 — 나머지 단계도 따로 묶어 보인다.
 function exitHtml(rows, lane, can) {
-  const outs = rows.filter((r) => r.group === "finish" && !r.done && r.id !== lane.next);
-  if (!outs.length) return "";
+  const left = rows.filter((r) => !r.done && r.id !== lane.next);
+  const outs = left.filter((r) => r.group === "finish");
+  const jumps = left.filter((r) => r.group !== "finish");
   const btn = (r) => {
     const need = r.touches_real && !r.approved;
     const act = need ? `<button class="btn btn-sm btn-real" data-act="approve" data-arg="${esc(r.id)}" ${can && r.can_approve ? "" : "disabled"}>승인…</button>` : "";
-    return `<div class="exit-row"><span class="exit-title" title="${esc(r.title)}"><b>${esc(r.id)}</b> — ${esc(r.title)}</span>
+    const why = r.reasons && r.reasons.length ? `<span class="hint" title="${esc(r.reasons.join(" · "))}"> · 막힘: ${esc(r.reasons[0])}</span>` : "";
+    return `<div class="exit-row"><span class="exit-title" title="${esc(r.title)}"><b>${esc(r.id)}</b> — ${esc(r.title)}${why}</span>
       <span class="actions">${act}<button class="btn btn-sm ${r.touches_real ? "btn-real" : "btn-primary"}" data-act="run" data-arg="${esc(r.id)}" ${can && r.can_run ? "" : "disabled"}>▶ 실행</button></span></div>`;
   };
-  return det(`exit:${lane.id}`, `정리 · 빠져나가기 (${outs.length}) — 순서와 상관없이`, `<div class="exits">${outs.map(btn).join("")}</div>`);
+  const exits = outs.length ? det(`exit:${lane.id}`, `정리 · 빠져나가기 (${outs.length}) — 순서와 상관없이`, `<div class="exits">${outs.map(btn).join("")}</div>`) : "";
+  const skips = jumps.length ? det(`jump:${lane.id}`, `다른 단계 고르기 (${jumps.length}) — 차례를 건너뛰어 실행 (선행 단계 · 승인은 그대로 본다)`, `<div class="exits">${jumps.map(btn).join("")}</div>`) : "";
+  return exits + skips;
 }
 
 // 손 창 — 단계가 아니라 **서비스 버튼**이다(09.23 사용자). pd 서비스에는 쪽이 없어서 떠 있는 pd 가 대상을 정한다.
@@ -678,11 +683,17 @@ function jointRows(g, chan) {
   }).join("");
 }
 
+// effort 칸은 팔과 손이 다른 양이다 — 팔(openarm)은 관절 토크 N·m, 손(DG-5F 드라이버)은 모터 전류 mA 를 넣는다.
+// 09.28 사용자: 손 effort 10.000 을 토크로 읽고 "왜 이렇게 하드하게 들어가나" — 실제로는 10 mA 였다.
+const EFF_AS = { arm: ["토크", "N·m"], hand: ["모터 전류", "mA"] };
+const effAs = (g) => EFF_AS[g.title.endsWith("손") ? "hand" : "arm"];
+
 function jointPanel(g, chan) {
   if (!g) return `<div class="panel jpanel"><div class="empty">—</div></div>`;
   const bad = g.rows.filter((r) => r.state === "limit").length;
+  const unit = chan === "eff" ? ` · ${effAs(g)[0]} [${effAs(g)[1]}]` : "";
   return `<div class="panel jpanel"><div class="panel-head"><h2>${esc(g.title)}</h2>
-      <span class="meta">${g.seen}/${g.total}${bad ? ` · <b class="bad">끝점 ${bad}</b>` : ""}</span></div>
+      <span class="meta">${g.seen}/${g.total}${esc(unit)}${bad ? ` · <b class="bad">끝점 ${bad}</b>` : ""}</span></div>
     <table class="joints"><tbody>${jointRows(g, chan)}</tbody></table></div>`;
 }
 
@@ -708,7 +719,7 @@ function renderRobot(s) {
   if (!r || !r.groups.length) return put("robot", `<div class="empty">관절 상태가 아직 없다 — 드라이버가 떠야 보인다.</div>`);
   const chan = r.channels.some((c) => c.key === robotChan) ? robotChan : "pos";
   put("robot-chan", r.channels.map((c) =>
-    `<button class="chip${c.key === chan ? " on" : ""}" data-act="robot-chan" data-arg="${esc(c.key)}">${esc(c.name)}<span class="hint"> ${esc(c.unit)}</span></button>`).join(""));
+    `<button class="chip${c.key === chan ? " on" : ""}" data-act="robot-chan" data-arg="${esc(c.key)}">${c.key === "eff" ? "토크 · 전류" : esc(c.name)}<span class="hint"> ${c.key === "eff" ? "팔 N·m · 손 mA" : esc(c.unit)}</span></button>`).join(""));
   put("robot-meta", r.stale ? `<span class="warn">오래됨</span>` : `${fmt(r.age_s, 1)} s 전`);
   const by = (t) => r.groups.find((g) => g.title === t);
   const art = (k) => artWith(k, r.groups);
@@ -719,7 +730,7 @@ function renderRobot(s) {
         <figure><span class="stack">${art("left")}</span><figcaption>왼손</figcaption></figure></div>
       ${jointPanel(by("왼손"), chan)}
     </div>
-    <div class="hint" style="padding:6px 12px 10px">${chan === "pos" ? "현재 · 목표와의 차이 [rad]" : `현재 [${esc((r.channels.find((c) => c.key === chan) || {}).unit || "")}]`} · 색은 관절 상태(끝점 빨강 · 벗어남 노랑)</div>`);
+    <div class="hint" style="padding:6px 12px 10px">${chan === "pos" ? "현재 · 목표와의 차이 [rad]" : chan === "eff" ? "팔 = 관절 토크 [N·m] · 손 = 모터 전류 [mA] (DG-5F 드라이버가 effort 칸에 전류를 넣는다)" : `현재 [${esc((r.channels.find((c) => c.key === chan) || {}).unit || "")}]`} · 색은 관절 상태(끝점 빨강 · 벗어남 노랑)</div>`);
 }
 
 // ── 모달 ────────────────────────────────────────────────────────────────

@@ -17,7 +17,8 @@ from typing import Mapping, Sequence
 FINGERS = ("thumb", "index", "middle", "ring", "pinky")
 #: 화면이 고를 수 있는 값 채널 — (키, 이름, 단위). `pos` 만 목표·한계와 견준다.
 #: 손끝 촉각은 그 값을 내는 원이 생기면 `("tactile", "촉각", "N")` 을 더하면 된다(09.23 대비).
-CHANNELS = (("pos", "위치", "rad"), ("vel", "속도", "rad/s"), ("eff", "토크", "N·m"),
+#: `eff` 는 팔과 손이 다른 양이다 — 팔(openarm)은 관절 토크 N·m, 손(DG-5F 드라이버)은 모터 전류 mA(09.28).
+CHANNELS = (("pos", "위치", "rad"), ("vel", "속도", "rad/s"), ("eff", "토크 · 전류", "팔 N·m · 손 mA"),
             ("temp", "로터", "°C"), ("mos", "MOS", "°C"))
 #: 목표와 이만큼 벌어지면 화면에서 굵게 — 팔은 pd 정착 공차(0.01)의 5배, 손은 속도 제한 한 틱 몫
 ARM_OFF_RAD = 0.05

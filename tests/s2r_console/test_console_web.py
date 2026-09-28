@@ -400,3 +400,18 @@ def test_finish_stages_can_be_picked_from_every_lane_out_of_order():
     assert 'data-act="approve"' in body and 'data-act="run"' in body
     assert "r.can_run" in body and "r.can_approve" in body               # 서버 판정 그대로 — 화면이 규칙을 새로 만들지 않는다
     assert re.search(r"\$\{body\}\$\{exitHtml\(rows, lane, can\)\}", JS)
+
+
+def test_every_other_stage_can_be_picked_out_of_order_with_the_server_verdict():
+    # 09.28 실기 2: selftest_left 가 실패하고 pd 가 팔을 잡은 동안 건너뛰기가 막혀 policy_left 로 갈 길이 없었다.
+    # 서버는 needs · 승인 · 창이 비었는지만 본다 — 화면은 나머지 단계를 따로 묶어 서버 판정 그대로 버튼을 켠다.
+    body = re.search(r"function exitHtml[\s\S]*?\n}\n", JS).group(0)
+    assert 'r.group !== "finish"' in body and "jump:${lane.id}" in body
+    assert "r.reasons" in body                                            # 막힌 이유(선행 단계)를 그 줄에 보인다
+
+
+def test_effort_is_labelled_torque_for_arms_and_motor_current_for_hands():
+    # 09.28 사용자: 손 effort 10.000 을 토크로 읽었다 — DG-5F 드라이버는 그 칸에 모터 전류 mA 를 넣는다
+    assert re.search(r'EFF_AS = \{ arm: \["토크", "N·m"\], hand: \["모터 전류", "mA"\] \}', JS)
+    body = re.search(r"function jointPanel[\s\S]*?\n}\n", JS).group(0)
+    assert 'chan === "eff"' in body and "effAs(g)" in body
