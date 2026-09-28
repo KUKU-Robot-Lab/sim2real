@@ -332,8 +332,9 @@ run:
         보낸다(09.26 wifi 가 막히면 DDS 로 넘기던 카메라가 멈췄다). 받아서 /perception_plus_plus/<물체>/pose 로 다시 낸다"
       argv: [python3, "{repo}/scripts/nodes/fpp_pose_rx.py"]
       background: true
-    - note: "물체 자세 → base_link — FP++ 의 카메라 프레임 자세를 목 관절 · extrinsics 로 바꿔 /objects/<물체>/pose 로 낸다.
-        정책은 이 토픽을 읽는다(robot yaml 의 object 소스). 목 퍼블리셔(head_home)가 없으면 내지 않는다"
+    - note: "물체 자세 → base_link — FP++ 의 카메라 프레임 자세를 정적 extrinsics(목 pan 0 · tilt −20 = head_home 기준자세)로
+        바꿔 /objects/<물체>/pose 로 낸다. 정책은 이 토픽을 읽는다(robot yaml 의 object 소스).
+        ★목이 기준자세가 아니면 컵 좌표가 틀린다(pan 15° 면 수 cm) — head_home 을 먼저"
       argv: [python3, "{repo}/scripts/nodes/object_pose_node.py", --objects, cup_big_s100]
       background: true
     - note: 카메라 + FP++(cup_big_s100) 켜기 — vision-3090 에서. 런처가 끝낼 때까지 최대 150 s 기다리고, 실패를 보고하면 이 단계도 실패(09.22 에는 보내기만 하고 통과했다)

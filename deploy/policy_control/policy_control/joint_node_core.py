@@ -20,15 +20,16 @@ class JointNodeError(RuntimeError):
 def measure_from_state(c: JointContract, st, arm_names) -> JointMeasure:
     """sources.RobotState(한 팔) → JointMeasure. 결손 · stale · 속도 없음 · 물체 없음이면 JointNodeError."""
     bad = set(st.stale) | set(st.missing)
-    for need in ("arm", "ee", "object"):
+    for need in ("arm", "ee"):
         if need in bad:
             raise JointNodeError(f"source {need!r} is {'stale' if need in st.stale else 'missing'}")
     if st.arm_q is None or st.arm_qd is None:
         raise JointNodeError("arm source has no position/velocity (arm_qd is an actor input)")
     if st.ee_q is None or st.ee_qd is None:
         raise JointNodeError("hand source has no position/velocity (hand_qd is an actor input)")
-    if st.object_pos is None or st.object_quat is None:
-        raise JointNodeError("no object pose")
+    # 물체는 없거나 stale 이어도 측정은 낸다(None) — 파지 뒤에는 손에 붙인 추정을 쓰고, 그 전에는 체인이 거부한다
+    fresh = "object" not in bad and st.object_pos is not None and st.object_quat is not None
+    obj = Pose(np.asarray(st.object_pos, float).copy(), np.asarray(st.object_quat, float).copy()) if fresh else None
     pos = {**dict(zip(arm_names, st.arm_q)), **dict(zip(st.ee_names, st.ee_q))}
     vel = {**dict(zip(arm_names, st.arm_qd)), **dict(zip(st.ee_names, st.ee_qd))}
     need = list(c.arm_joints) + list(c.hand_joints)
@@ -37,8 +38,7 @@ def measure_from_state(c: JointContract, st, arm_names) -> JointMeasure:
         raise JointNodeError(f"joints not in the sources: {missing}")
     if not all(np.isfinite(pos[n]) and np.isfinite(vel[n]) for n in need):
         raise JointNodeError("non-finite joint value")
-    return JointMeasure({n: float(pos[n]) for n in pos}, {n: float(vel[n]) for n in vel},
-                        Pose(np.asarray(st.object_pos, float).copy(), np.asarray(st.object_quat, float).copy()))
+    return JointMeasure({n: float(pos[n]) for n in pos}, {n: float(vel[n]) for n in vel}, obj)
 
 
 def joint_target_arrays(c: JointContract, step: JointStep) -> tuple[tuple, np.ndarray, np.ndarray]:

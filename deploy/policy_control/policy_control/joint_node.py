@@ -222,7 +222,10 @@ class JointNode(Node):
         if self._publish:
             self._pub_target.publish(codec.encode_joint_target(names, q, qd, str(self.book.episode), self._seq))
         self._status(True, [], {"proc_ms": (time.perf_counter() - t0) * 1e3,
-                                "goal": [round(float(v), 4) for v in step.goal.pos]})
+                                "goal": [round(float(v), 4) for v in step.goal.pos],
+                                # live · held(튄 값 버림) · attached(파지 뒤 손에 붙인 추정)
+                                "obj_source": step.obj_source, "obj": [round(float(v), 4) for v in step.obj.pos],
+                                "obj_rejected": self.chain.objects.rejected_total})
 
 
 def main(argv=None) -> int:

@@ -22,8 +22,9 @@ CONTRACT="$RUN_DIR/joint_contract.json"
 PD_CONTRACT="${PD_CONTRACT:-logs/policy/asset_right_m15/deploy_contract.json}"
 ROBOT="${ROBOT:-dg5f_m_right_fake}"
 SIDE="${SIDE:-right}"
-# 학습 스폰 중심(object_spawn_center_override 0.25, −0.15) · 정착한 컵 원점 높이(goal_box_min z − 0.1)
-read -r CX CY CZ <<< "${CUP:-0.25 -0.15 0.3055}"
+# 학습 스폰 중심(object_spawn_center_override 0.25, −0.15) · 컵 원점 높이 0.2757(학습 trace 에피소드 시작 실측,
+# 실기 FP++ 0.279 와 3.5 mm 차)
+read -r CX CY CZ <<< "${CUP:-0.25 -0.15 0.2757}"
 for f in "$CONTRACT" "$PD_CONTRACT"; do
   [ -f "$f" ] || { echo "[joint_fake] $f 가 없다 — build_deploy_contract.py 를 먼저"; exit 2; }
 done
