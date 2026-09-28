@@ -397,6 +397,8 @@ def test_finish_stages_can_be_picked_from_every_lane_out_of_order():
     # 09.28 실기: selftest_left 가 실패하고 pd 가 팔을 잡은 동안 건너뛰기가 막혀 차렷 복귀로 갈 길이 화면에 없었다
     body = re.search(r"function exitHtml[\s\S]*?\n}\n", JS).group(0)
     assert 'r.group === "finish"' in body and "!r.done" in body and "r.id !== lane.next" in body
+    # 09.28 사용자: 정책 → 홈 자세 → 정책 반복 — 정리 · 정책 단계는 끝난 뒤에도 다시 고른다
+    assert 'r.group === "finish" || r.group === "policy"' in body
     assert 'data-act="approve"' in body and 'data-act="run"' in body
     assert "r.can_run" in body and "r.can_approve" in body               # 서버 판정 그대로 — 화면이 규칙을 새로 만들지 않는다
     assert re.search(r"\$\{body\}\$\{exitHtml\(rows, lane, can\)\}", JS)
@@ -415,3 +417,9 @@ def test_effort_is_labelled_torque_for_arms_and_motor_current_for_hands():
     assert re.search(r'EFF_AS = \{ arm: \["토크", "N·m"\], hand: \["모터 전류", "mA"\] \}', JS)
     body = re.search(r"function jointPanel[\s\S]*?\n}\n", JS).group(0)
     assert 'chan === "eff"' in body and "effAs(g)" in body
+
+
+def test_the_lane_card_follows_the_running_stage_before_the_next_one():
+    # 09.28 실기: 차례를 건너뛰어 policy_left 를 띄웠더니 카드는 selftest_left 에 머물러 수동 확인 버튼이 없었다
+    body = re.search(r"function laneHtml[\s\S]*?\n}\n", JS).group(0)
+    assert "const shown = lane.busy || lane.next;" in body and "r.id === shown" in body

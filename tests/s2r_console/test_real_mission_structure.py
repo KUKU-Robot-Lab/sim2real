@@ -58,9 +58,12 @@ def test_each_arm_is_readied_engaged_and_homed_before_the_selftest():
         assert "--only pd_goto_home" in home[10] and "--service-timeout 45" in home[10]    # 정착만 — 도착은 재생이 했다
         assert cmds[11].manual and "--only pd_hand_home" in home[12]
         ret = _cmds(f"return_{side}")
-        assert "--only pd_goto_home" in " ".join(ret[0].argv)                               # fabric 뒤 HOLD 를 풀고
-        assert "--only pd_hand_rest" in " ".join(ret[1].argv)                               # 손을 출발 자세로 먼저
-        back = " ".join(ret[2].argv)
+        # 09.28 정책이 팔을 1.1 rad 옮겨 놓았다 — 먼 곳에서 곧장 goto_home(검사 없는 직선)으로 가지 않는다
+        assert "plan_rehome.py" in " ".join(ret[0].argv) and f"--side {side}" in " ".join(ret[0].argv)
+        assert "replay_to_pd.py" in " ".join(ret[1].argv) and f"rehome_{side}.npz" in " ".join(ret[1].argv)
+        assert "--only pd_goto_home" in " ".join(ret[2].argv)                               # 남은 오차 · HOLD 풀기
+        assert "--only pd_hand_rest" in " ".join(ret[3].argv)                               # 손을 출발 자세로 먼저
+        back = " ".join(ret[4].argv)
         assert "--reverse" in back and f"{{artifact:path_{side}}}" in back                    # 같은 경로를 되짚는다
         assert f"path_{side}" in MISSION.stages[IDS.index(f"home_{side}")].artifacts          # 승인 근거 해시에 들어간다
         assert IDS.index(f"return_{side}") < IDS.index(f"release_{side}")
@@ -276,7 +279,7 @@ def test_each_policy_stage_runs_its_registered_joint_policy_after_home(side, oth
     order = [next(i for i, t in enumerate(text) if f"trigger.py episode/{e}" in t) for e in ("reset", "start", "stop")]
     assert order == sorted(order) and launch < order[0]
     assert cmds[order[1] - 0].execute_args and any(c.manual for c in cmds[order[1]:order[2]])   # 관찰 확인
-    assert any(c.stop == (f"{sid}#{launch}",) for c in cmds[order[2]:])
+    assert any(f"{sid}#{launch}" in c.stop for c in cmds[order[2]:])
     guard = next(i for i, t in enumerate(text) if "check_path_start.py" in t and "--at end" in t)
     assert f"{{artifact:path_{side}}}" in text[guard]
     settle = next(i for i, t in enumerate(text) if "pd_goto_home" in t)
@@ -296,3 +299,32 @@ def test_the_left_policy_starts_where_the_left_home_path_ends():
     c = json.loads((REPO / RAW["artifacts"]["joint_left"]).read_text())
     end = np.load(REPO / RAW["artifacts"]["path_left"])["arm_target"][-1]
     assert c["side"] == "left" and np.abs(end - np.asarray(c["arm_reset"])).max() < 1e-6
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_a_policy_run_is_recorded_and_summarized(side):
+    """09.28 사용자: 정책을 돌렸는데 로그가 없었다 — 제어기가 따라갔는지 보고 재학습할 근거."""
+    sid = f"policy_{side}"
+    cmds = _cmds(sid)
+    rec = cmds[5]
+    assert rec.background and any(a.endswith("joint_recorder.py") for a in rec.argv)
+    assert f"{{artifact:joint_{side}}}" in rec.argv and f"{{artifact:robot_{side}}}" in rec.argv
+    text = [" ".join(c.argv) for c in cmds]
+    reset = next(i for i, t in enumerate(text) if "trigger.py episode/reset" in t)
+    assert 5 < reset                                                   # reset 전부터 남긴다
+    stop = next(i for i, c in enumerate(cmds) if c.stop and f"{sid}#5" in c.stop)
+    assert f"{sid}#4" in cmds[stop].stop
+    assert "joint_trace_report.py" in text[stop + 1] and f"--side {side}" in text[stop + 1]
+    assert any(f"{sid}#5" in c.stop for c in _cmds("shutdown") if c.stop)
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_rehome_brings_the_arm_back_to_the_policy_start_through_a_planned_path(side):
+    """09.28 사용자: 정책 → 홈 자세 → 정책을 반복할 수 있어야 한다."""
+    sid = f"rehome_{side}"
+    st = MISSION.stages[IDS.index(sid)]
+    assert RAW_STAGES[sid]["group"] == "finish" and RAW_STAGES[sid]["lane"] == f"arm_{side}" and st.touches_real
+    text = [" ".join(c.argv) for c in _cmds(sid)]
+    assert "plan_rehome.py" in text[0] and f"--side {side}" in text[0]
+    assert "replay_to_pd.py" in text[1] and f"rehome_{side}.npz" in text[1] and "--reverse" not in text[1]
+    assert "--only pd_goto_home" in text[2] and _cmds(sid)[3].manual and "--only pd_hand_home" in text[4]

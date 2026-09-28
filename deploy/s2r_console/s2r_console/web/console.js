@@ -259,9 +259,12 @@ function laneHtml(s, lane, can) {
   const done = rows.filter((r) => r.done).length;
   const chips = rows.map((r) => `<span class="gc${r.id === lane.next ? " now" : r.done ? " done" : ""}" title="${esc(r.title)}">${r.done ? "✓ " : r.id === lane.next ? "● " : ""}${esc(r.id)}</span>`).join("");
   let body;
-  if (!lane.next) body = `<p class="cp-note">이 창의 단계를 모두 끝냈다.</p>`;
+  // 카드는 **돌고 있는 단계**가 먼저다 — 09.28 실기: '다른 단계 고르기'로 policy_left 를 띄웠더니 카드는 차례인
+  // selftest_left 에 머물러, policy_left 의 수동 확인(컵 · 주변) 버튼이 화면 어디에도 없었다.
+  const shown = lane.busy || lane.next;
+  if (!shown) body = `<p class="cp-note">이 창의 단계를 모두 끝냈다.</p>`;
   else {
-    const cur = rows.find((r) => r.id === lane.next);
+    const cur = rows.find((r) => r.id === shown);
     const last = lane.last && lane.last.stage === cur.id ? lane.last : null;
     body = stageCard(s, { ...cur, last_outcome: last ? last.outcome : "", last_note: last ? last.note : "" },
                      s.runners ? s.runners[lane.id] : null, can);
@@ -276,14 +279,16 @@ function laneHtml(s, lane, can) {
 // 서버는 창 안의 어느 단계든 needs · 승인 · 창이 비었는지로만 판정한다(_current_stage) — 버튼만 없던 것이다.
 // 09.28 실기 2: 같은 이유로 selftest_left 실패 뒤 policy_left 로 갈 길도 없었다 — 나머지 단계도 따로 묶어 보인다.
 function exitHtml(rows, lane, can) {
-  const left = rows.filter((r) => !r.done && r.id !== lane.next);
+  // 정리 · 정책 단계는 끝난 뒤에도 다시 고른다 — 09.28 사용자: "정책 → 홈 자세 → 정책" 을 반복한다.
+  const again = (r) => r.group === "finish" || r.group === "policy";
+  const left = rows.filter((r) => (!r.done || again(r)) && r.id !== lane.next && r.id !== lane.busy);
   const outs = left.filter((r) => r.group === "finish");
   const jumps = left.filter((r) => r.group !== "finish");
   const btn = (r) => {
     const need = r.touches_real && !r.approved;
     const act = need ? `<button class="btn btn-sm btn-real" data-act="approve" data-arg="${esc(r.id)}" ${can && r.can_approve ? "" : "disabled"}>승인…</button>` : "";
     const why = r.reasons && r.reasons.length ? `<span class="hint" title="${esc(r.reasons.join(" · "))}"> · 막힘: ${esc(r.reasons[0])}</span>` : "";
-    return `<div class="exit-row"><span class="exit-title" title="${esc(r.title)}"><b>${esc(r.id)}</b> — ${esc(r.title)}${why}</span>
+    return `<div class="exit-row"><span class="exit-title" title="${esc(r.title)}"><b>${r.done ? "✓ " : ""}${esc(r.id)}</b> — ${esc(r.title)}${why}</span>
       <span class="actions">${act}<button class="btn btn-sm ${r.touches_real ? "btn-real" : "btn-primary"}" data-act="run" data-arg="${esc(r.id)}" ${can && r.can_run ? "" : "disabled"}>▶ 실행</button></span></div>`;
   };
   const exits = outs.length ? det(`exit:${lane.id}`, `정리 · 빠져나가기 (${outs.length}) — 순서와 상관없이`, `<div class="exits">${outs.map(btn).join("")}</div>`) : "";
