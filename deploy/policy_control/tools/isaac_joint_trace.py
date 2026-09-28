@@ -27,6 +27,12 @@ parser.add_argument("--num_envs", type=int, default=1, help="LSTM 이면 1 — �
 parser.add_argument("--steps", type=int, default=240)
 parser.add_argument("--seed", type=int, default=7)
 parser.add_argument("--out", type=Path, required=True)
+# 실기 대조(09.28 사용자: "실제값하고 sim값을 비교 분석") — 실기 기록(joint_recorder.py npz)과 같은 조건으로
+parser.add_argument("--cup-xy", default="", help="컵 스폰을 이 자리(env-local = 로봇 base)에 고정 'x,y' — 무작위 폭 0")
+parser.add_argument("--keep-train-delays", action="store_true",
+                    help="학습 때 행동 · 관측 · 물체 지연을 그대로 둔다(기본은 배포 관측과 맞추려고 끈다)")
+parser.add_argument("--replay-actions", type=Path, default=None,
+                    help="실기 기록 npz 의 정책 행동을 순서대로 넣는다(정책 대신) — 같은 명령에 sim 이 어떻게 반응하는가")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 args.headless = True
@@ -66,11 +72,19 @@ cfg.seed = args.seed
 if hasattr(cfg, "start_palm_dist_band_m") and args.num_envs < 64:
     cfg.start_palm_dist_band_m = (0.0, 10.0)
 # 학습 전용 관측 교란을 끈다 — 배포는 이것 없이 관측을 만든다(노이즈는 0, 지연 큐 길이 1 = 지연 0)
-for k, v in (("obs_noise_qpos", 0.0), ("obs_noise_qvel", 0.0), ("obs_noise_body", 0.0), ("obs_noise_object", 0.0),
-             ("obs_object_xyz_std", 0.0), ("obs_object_rot_deg", 0.0), ("obs_delay_steps", 1),
-             ("action_delay_steps", 1), ("object_delay_steps", 1)):
+_off = [("obs_noise_qpos", 0.0), ("obs_noise_qvel", 0.0), ("obs_noise_body", 0.0), ("obs_noise_object", 0.0),
+        ("obs_object_xyz_std", 0.0), ("obs_object_rot_deg", 0.0)]
+if not args.keep_train_delays:
+    _off += [("obs_delay_steps", 1), ("action_delay_steps", 1), ("object_delay_steps", 1)]
+for k, v in _off:
     if hasattr(cfg, k):
         setattr(cfg, k, v)
+if args.cup_xy:
+    _x, _y = (float(v) for v in args.cup_xy.split(","))
+    cfg.object_spawn_center_override = (_x, _y)
+    cfg.spawn_range = 0.0
+    if hasattr(cfg, "respawn_on_fail"):
+        cfg.respawn_on_fail = False
 if contract["recurrent"] and args.num_envs != 1:
     raise SystemExit("recurrent policy: --num_envs 1 (policy_loader keeps a single hidden state)")
 env = gym.make(task, cfg=cfg).unwrapped
@@ -101,7 +115,20 @@ meta = {
     "num_envs": N, "steps": args.steps, "seed": args.seed, "clip_observations": clip,
 }
 rec = {k: [] for k in ("obs", "action", "q", "qd", "obj_pos", "obj_quat", "goal_pos", "goal_quat", "arm_qstar",
-                       "hand_qstar", "palm_pos", "palm_quat", "tips", "ep_len")}
+                       "hand_qstar", "palm_pos", "palm_quat", "tips", "ep_len", "tau")}
+meta.update(cup_xy=args.cup_xy, keep_train_delays=bool(args.keep_train_delays),
+            delays={k: getattr(cfg, k, None) for k in ("action_delay_steps", "obs_delay_steps", "object_delay_steps")},
+            replay_actions=str(args.replay_actions or ""))
+replay = None
+if args.replay_actions is not None:
+    # 실기 기록의 정책 행동 — joint_node 가 running 인 구간을 seq 순서로(정책이 낸 그대로, 클립 전 원출력)
+    _d = np.load(args.replay_actions)
+    _run = [float(t) for t, s in zip(_d["jn_t"], _d["jn_json"]) if json.loads(str(s)).get("phase") == "running"]
+    _keep = (_d["act_t"] >= min(_run)) & (_d["act_t"] <= max(_run))
+    _order = np.argsort(_d["act_seq"][_keep])
+    replay = torch.as_tensor(_d["act"][_keep][_order], dtype=torch.float32, device=dev)
+    meta["replay_rows"] = int(replay.shape[0])
+    args.steps = min(args.steps, int(replay.shape[0]))
 
 
 def snap(obs: torch.Tensor) -> None:
@@ -118,6 +145,7 @@ def snap(obs: torch.Tensor) -> None:
     rec["palm_quat"].append(env.robot.data.body_quat_w[:, env.palm_idx].cpu().numpy())
     rec["tips"].append((env.robot.data.body_pos_w[:, env._tip_ids_t] - env.scene.env_origins.unsqueeze(1)).cpu().numpy())
     rec["ep_len"].append(env.episode_length_buf.cpu().numpy())
+    rec["tau"].append(env.robot.data.applied_torque.cpu().numpy())
 
 
 if hasattr(policy, "reset_states"):
@@ -127,7 +155,7 @@ with torch.inference_mode():
     for t in range(args.steps):
         snap(obs)
         o = obs.clamp(-clip, clip)
-        a = policy.get_action(o)
+        a = policy.get_action(o) if replay is None else replay[t].unsqueeze(0).expand(N, -1)
         rec["action"].append(a.cpu().numpy())
         obs_dict, _, term, trunc, _ = env.step(a)
         obs = obs_dict["policy"]
