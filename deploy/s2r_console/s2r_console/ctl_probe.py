@@ -75,6 +75,12 @@ def main(argv: list[str] | None = None) -> int:
             time.sleep(max(0.0, PERIOD_S - (time.monotonic() - began)))
     except (KeyboardInterrupt, ExternalShutdownException, BrokenPipeError):
         pass
+    except Exception as exc:                          # noqa: BLE001
+        # 정지 신호로 컨텍스트가 먼저 닫히면 기다리던 호출이 RCLError("context is invalid")로 끝난다(09.28 shutdown) —
+        # 끝나는 중이면 정상 종료, 아니면 그대로 올린다.
+        if rclpy.ok():
+            raise
+        del exc
     finally:
         node.destroy_node()
         rclpy.try_shutdown()
