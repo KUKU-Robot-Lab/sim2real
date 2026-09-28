@@ -47,7 +47,10 @@ def joint_params(cfg: dict) -> dict:
     off = _offset(cfg.get("goal_offset", ""))
     return {"contract": str(contract), "robot": str(robot), "device": str(cfg.get("device", "cuda:0")),
             "use_goal_offset": off is not None, "goal_offset": off or [0.0, 0.0, 0.0],
-            "publish_target": _chain.is_true(cfg.get("publish_target", "true"))}
+            "publish_target": _chain.is_true(cfg.get("publish_target", "true")),
+            # 09.28 에피소드 끝 — 학습 규칙(키포인트 도달 tol · 연속 스텝 · 에피소드 길이). 0 = 끔
+            "success_tol_m": float(cfg.get("success_tol_m", "0.0")), "success_steps": int(cfg.get("success_steps", "10")),
+            "max_episode_s": float(cfg.get("max_episode_s", "0.0"))}
 
 
 def joint_nodes(cfg: dict) -> list:
@@ -68,6 +71,9 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("device", default_value="cuda:0"),
         DeclareLaunchArgument("goal_offset", default_value=""),
         DeclareLaunchArgument("publish_target", default_value="true"),
+        DeclareLaunchArgument("success_tol_m", default_value="0.0", description="목표 도달 키포인트 거리 [m] (0 = 끔)"),
+        DeclareLaunchArgument("success_steps", default_value="10"),
+        DeclareLaunchArgument("max_episode_s", default_value="0.0", description="에피소드 최대 길이 [s] (0 = 끔)"),
         DeclareLaunchArgument("fake", default_value="false"),
         DeclareLaunchArgument("use_source", default_value="false"),
         DeclareLaunchArgument("params_file", default_value=""),

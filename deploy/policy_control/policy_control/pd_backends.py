@@ -194,6 +194,7 @@ class HandCmd:
     qd_star: np.ndarray | None  # 버린다 — 서명 호환용
     dt: float
     q_meas: np.ndarray | None = None   # canonical 순 실측 — 첫 지령의 속도 제한 기준(없으면 첫 지령 무제한)
+    max_vel: float | None = None       # 이 지령만의 속도 상한 [rad/s] — None 이면 백엔드 기본(max_vel)
 
 
 @dataclass(frozen=True)
@@ -260,7 +261,10 @@ class Dg5fJtcBackend:
         q_t = hand_safe_target(q_t, self.remap.lower, self.remap.upper, self.limit_margin)
         meas = None if cmd.q_meas is None else self.remap.apply(_vec(cmd.q_meas, self.remap.input_len, "hand q_meas"))
         prev = self._prev if self._prev is not None else self._seed(cmd.q_meas, q_t)
-        q_cmd = velocity_limited_target(q_t, prev, self.max_vel, dt)
+        vmax = self.max_vel if cmd.max_vel is None else float(cmd.max_vel)
+        if vmax <= 0.0:
+            raise ValueError(f"hand max_vel > 0 이어야 한다: {vmax}")
+        q_cmd = velocity_limited_target(q_t, prev, vmax, dt)
         q_cmd = hand_lead_clamp(q_cmd, meas, self.max_lead)
         q_cmd = np.clip(q_cmd, self.remap.lower, self.remap.upper)
         self._prev = q_cmd

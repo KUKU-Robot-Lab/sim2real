@@ -59,3 +59,36 @@ def start_refusals(c: JointContract, m: JointMeasure, tol: float) -> list:
     """start 를 거부할 이유(빈 목록 = 시작). 팔이 학습 시작 자세에서 멀면 거부 — 정책은 그 자세에서만 출발해 봤다."""
     err = reset_pose_error(c, m)
     return [f"arm is {err:.3f} rad from the training reset pose (tol {tol})"] if err > tol else []
+
+
+def keypoint_goal_dist(c: JointContract, obj: Pose, goal: Pose) -> float:
+    """학습의 목표 도달 거리 — 물체 · 목표 키포인트(4 개) 사이 거리의 최대(hdgp keypoint_max_dist)."""
+    from .joint_obs import keypoints
+    return float(np.linalg.norm(keypoints(c, obj) - keypoints(c, goal), axis=1).max())
+
+
+class EpisodeEnd:
+    """정책 에피소드를 스스로 끝낼 때를 정한다 — 09.28 사용자: "목표에 이송(리프트)하고 에피소드가 끝나면 정책은 끝난 것.
+    이후에 홈자세로 돌아와서 다시 액션 실행". 학습 규칙 그대로:
+      도달  키포인트 최대 거리 ≤ tol 이 연속 steps 스텝(env goal_success_steps · force_consecutive, tol 은 그 체크포인트가
+            학습된 값 — 커리큘럼 상태는 체크포인트에 없어 tfevents task/tol 에서 읽어 넘긴다)
+      시간  running 이 max_s 초(env episode_length_s)
+    0 이하는 그 조건을 끈다. 순수 — 시각은 부르는 쪽이 준다.
+    """
+
+    def __init__(self, tol: float = 0.0, steps: int = 10, max_s: float = 0.0) -> None:
+        self.tol, self.steps, self.max_s = float(tol), max(int(steps), 1), float(max_s)
+        self.reset(0.0)
+
+    def reset(self, t_start: float) -> None:
+        self.t_start, self.near = float(t_start), 0
+
+    def update(self, dist: float | None, t: float) -> str | None:
+        """끝낼 이유(없으면 None). dist 가 None(물체 없음)이면 도달 연속을 끊는다."""
+        if self.tol > 0:
+            self.near = self.near + 1 if dist is not None and dist <= self.tol else 0
+            if self.near >= self.steps:
+                return f"goal reached (keypoint dist {dist:.3f} <= {self.tol:.3f} m for {self.near} steps)"
+        if self.max_s > 0 and t - self.t_start >= self.max_s:
+            return f"episode time {t - self.t_start:.1f} s >= {self.max_s:.1f} s"
+        return None

@@ -31,7 +31,7 @@ from policy_control.joint_chain import JointChain, JointChainError  # noqa: E402
 from policy_control.joint_contract import JointContract, JointContractError, load_contract  # noqa: E402
 from policy_control.joint_decoder import JointDecodeError  # noqa: E402
 from policy_control.joint_node_core import (  # noqa: E402
-    JointNodeError, joint_target_arrays, measure_from_state, start_refusals,
+    EpisodeEnd, JointNodeError, joint_target_arrays, keypoint_goal_dist, measure_from_state, start_refusals,
 )
 from policy_control.joint_obs import JointObsError  # noqa: E402
 from policy_control.sources import RobotCfgError, SourceSet, load_robot_cfg, select_side  # noqa: E402
@@ -74,7 +74,8 @@ class JointNode(Node):
         super().__init__(NODE, **kw)
         for name, default in (("contract", ""), ("robot", ""), ("device", "cuda:0"), ("reset_tol_rad", 0.15),
                               ("max_gap_ticks", 3), ("goal_offset", [0.0, 0.0, 0.0]), ("use_goal_offset", False),
-                              ("publish_target", True)):
+                              ("publish_target", True), ("success_tol_m", 0.0), ("success_steps", 10),
+                              ("max_episode_s", 0.0)):
             self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
         cpath, rpath = Path(str(p("contract"))), Path(str(p("robot")))
@@ -92,6 +93,8 @@ class JointNode(Node):
         self.chain: JointChain | None = None
         self.book = EpisodeBook(contract_home(self.contract))
         self._seq, self._gap, self._errors = 0, 0, {}
+        # 09.28 사용자: 목표에 이송하면 에피소드가 끝난다 — 끝나면 pd 가 그 자세 · 손 쥠을 붙잡는다(episode stop 과 같다)
+        self.ending = EpisodeEnd(float(p("success_tol_m")), int(p("success_steps")), float(p("max_episode_s")))
 
         chain_qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -174,6 +177,7 @@ class JointNode(Node):
         event, reasons = self.book.start()
         if event is None:
             return self._reply(res, False, reasons)
+        self.ending.reset(time.monotonic())
         self._emit(event)
         return self._reply(res, True, [])
 
@@ -217,6 +221,8 @@ class JointNode(Node):
             return
         self._gap = 0
         self._seq += 1
+        kp_dist = None if step.obj is None else keypoint_goal_dist(self.contract, step.obj, step.goal)
+        why_end = self.ending.update(kp_dist, time.monotonic())
         self._pub_obs.publish(codec.encode_float_array(step.obs, ["obs"], [step.obs.size], self._seq))
         self._pub_action.publish(codec.encode_action(step.action, self._seq))
         if self._publish:
@@ -225,7 +231,9 @@ class JointNode(Node):
                                 "goal": [round(float(v), 4) for v in step.goal.pos],
                                 # live · held(튄 값 버림) · attached(파지 뒤 손에 붙인 추정)
                                 "obj_source": step.obj_source, "obj": [round(float(v), 4) for v in step.obj.pos],
-                                "obj_rejected": self.chain.objects.rejected_total})
+                                "obj_rejected": self.chain.objects.rejected_total, "kp_goal_dist": None if kp_dist is None else round(kp_dist, 4)})
+        if why_end is not None:
+            self._end("stop", why_end)
 
 
 def main(argv=None) -> int:

@@ -438,12 +438,19 @@ class ArmUnit:
             self.backends.arm.write(cmd)
         if phase not in _MOVING:
             return None
-        hand = self.hold.hand if (self.hold is not None and self.hold.hand is not None) else self.hand_target
+        held = self.hold is not None and self.hold.hand is not None
+        hand = self.hold.hand if held else self.hand_target
         if hand is None:
             return None
-        return self._write_hand(hand, state)
+        return self._write_hand(hand, state, track=not held)
 
-    def _write_hand(self, hand: np.ndarray, state):
+    def _track_hand_vel(self) -> float | None:
+        """정책 추종 때의 손 속도 상한 — pd yaml hand.max_vel_track(0 이면 None = 백엔드 기본)."""
+        h = getattr(self.cfg, "hand", None)
+        v = 0.0 if h is None else float(getattr(h, "max_vel_track", 0.0))
+        return v if v > 0.0 else None
+
+    def _write_hand(self, hand: np.ndarray, state, track: bool = False):
         b = self.backends
         if b.gripper is not None:
             idx = list(state.ee_names).index(b.hand_joint)
@@ -452,7 +459,8 @@ class ArmUnit:
         if b.hand is not None:
             meas = np.asarray([state.ee_q[list(state.ee_names).index(j)] for j in self.hand_joints], dtype=float) \
                 if all(j in state.ee_names for j in self.hand_joints) else None
-            b.hand.write(HandCmd(q_star=hand, qd_star=None, dt=self.dt, q_meas=meas))
+            b.hand.write(HandCmd(q_star=hand, qd_star=None, dt=self.dt, q_meas=meas,
+                                 max_vel=self._track_hand_vel() if track else None))
             return hand.copy()
         return None
 

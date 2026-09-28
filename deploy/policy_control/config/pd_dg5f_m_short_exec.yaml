@@ -121,4 +121,6 @@ gripper: null
 hand:
   pid_p: 1.5   # 2026-09-06 사용자 확정: DG-5F 손도 벤더 기본값만(구 실기 튜닝 4.5 폐기)
   pid_d: 0.0
-  max_vel: 1.0                 # [rad/s]
+  max_vel: 1.0                 # [rad/s] pd 가 스스로 하는 손 이동(hand_home · hand_rest · hand_path)
+  max_vel_track: 12.1          # [rad/s] 정책 추종 때만 = 정책 손 행동이 낼 수 있는 최대(hand_ema 0.1 × 범위 2.007 × 60 Hz = 12.04).
+                               #   09.28 사용자 "손 속도상한은 액션과 동일하게" — 1.0 은 그날 손 지연 약 290 ms 를 만들었다

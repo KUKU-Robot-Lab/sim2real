@@ -156,3 +156,31 @@ def test_the_lstm_checkpoint_loads_on_cpu_and_answers_26_finite_actions(c):
     a3 = pol.forward(obs)
     assert a1.shape == (26,) and np.all(np.isfinite(a1))
     assert np.allclose(a1, a3, atol=1e-6) and not np.allclose(a1, a2, atol=1e-7)          # 은닉 상태가 돈다
+
+
+def test_the_episode_ends_like_training_when_the_goal_is_held_or_time_runs_out():
+    """09.28 사용자: 목표에 이송하면 에피소드가 끝나고, 홈으로 돌아와 다시 돌린다 — 학습 규칙(연속 도달 · 에피소드 길이)."""
+    from policy_control.joint_node_core import EpisodeEnd
+
+    e = EpisodeEnd(tol=0.0318, steps=10, max_s=15.0)
+    e.reset(100.0)
+    for k in range(9):
+        assert e.update(0.02, 100.0 + k / 60) is None
+    assert e.update(0.05, 100.2) is None                 # 한 번 벗어나면 연속이 끊긴다(force_consecutive)
+    for k in range(9):
+        assert e.update(0.03, 100.3 + k / 60) is None
+    assert "goal reached" in e.update(0.03, 100.5)
+    e.reset(200.0)
+    assert e.update(None, 214.9) is None and "episode time" in e.update(0.5, 215.0)
+    off = EpisodeEnd()
+    off.reset(0.0)
+    assert off.update(0.0, 1e6) is None                   # 0 = 끔(오른팔 등 값을 넘기지 않은 정책)
+
+
+def test_keypoint_goal_distance_is_the_max_over_keypoints(c):
+    from policy_control.joint_node_core import keypoint_goal_dist
+    from policy_control.joint_obs import Pose
+
+    up = np.array([1.0, 0.0, 0.0, 0.0])
+    a, b = Pose(np.zeros(3), up), Pose(np.array([0.03, 0.0, 0.04]), up)
+    assert keypoint_goal_dist(c, a, b) == pytest.approx(0.05)            # 같은 자세면 모든 키포인트가 같이 옮겨진다

@@ -348,6 +348,20 @@ def test_dg5f_velocity_limit_and_bad_length(ros, pub_node):
         be.write(HandCmd(q_star=np.zeros(19), qd_star=None, dt=0.01))
 
 
+def test_dg5f_policy_tracking_uses_its_own_speed_limit(ros, pub_node):
+    """09.28 사용자 "손 속도상한은 액션과 동일하게" — 지령마다 상한을 줄 수 있고, 안 주면 백엔드 기본(max_vel)이다."""
+    from policy_control.pd_backends import Dg5fJtcBackend, HandCmd
+
+    be = Dg5fJtcBackend(pub_node, HAND_TOPIC, _hand_remap(HAND_CAN), max_vel=1.0, execute=True)
+    be.write(HandCmd(q_star=np.full(20, 0.5), qd_star=None, dt=0.01))
+    w = be.write(HandCmd(q_star=np.full(20, 0.6), qd_star=None, dt=0.01, max_vel=12.1))
+    np.testing.assert_allclose(w.q_cmd, 0.6)                # 12.1·0.01 = 0.121 > 0.1 — 깎지 않는다
+    w = be.write(HandCmd(q_star=np.full(20, 0.7), qd_star=None, dt=0.01))
+    np.testing.assert_allclose(w.q_cmd, 0.61)               # 상한을 안 주면 max_vel 1.0 그대로
+    with pytest.raises(ValueError):
+        be.write(HandCmd(q_star=np.full(20, 0.7), qd_star=None, dt=0.01, max_vel=0.0))
+
+
 def test_dg5f_dry_run_publishes_nothing(ros, hand_probe, pub_node):
     from policy_control.pd_backends import Dg5fJtcBackend, HandCmd
 

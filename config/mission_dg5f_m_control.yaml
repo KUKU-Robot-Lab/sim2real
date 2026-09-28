@@ -392,10 +392,11 @@ run:
   pd_arm_right:
     - note: "[right] 무발행 pd 정지"
       stop: ["pd_load_right#0"]
-    - note: "[right] pd 발행 모드 기동 (execute:=true) — IDLE 로 뜬다. engage 전까지 팔은 JTC 가 잡는다"
+    - note: "[right] pd 발행 모드 기동 (execute:=true · stage:=full) — IDLE 로 뜬다. engage 전까지 팔은 JTC 가 잡는다.
+        full = 세트포인트가 정책 목표를 최대 2.0 rad/s 로 따라간다(reduced 0.25 는 09.28 실기에서 팔 지연 약 190 ms 를 만들었다 — 사용자 결정)"
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",
              "contract:={artifact:contract}", "robot:={artifact:robot_right}", "pd_config:={artifact:pd_exec}",
-             "sides:=right", "execute:=true"]
+             "sides:=right", "execute:=true", "stage:=full"]
       background: true
   head_home:
     - note: 목 기준자세 + I게인 재적용 (I 게인은 RAM 이라 전원을 끄면 사라진다 — 드라이버를 올릴 때마다)
@@ -588,10 +589,11 @@ run:
   pd_arm_left:
     - note: "[left] 무발행 pd 정지"
       stop: ["pd_load_left#0"]
-    - note: "[left] pd 발행 모드 기동 (execute:=true) — IDLE 로 뜬다. engage 전까지 팔은 JTC 가 잡는다"
+    - note: "[left] pd 발행 모드 기동 (execute:=true · stage:=full) — IDLE 로 뜬다. engage 전까지 팔은 JTC 가 잡는다.
+        full = 세트포인트가 정책 목표를 최대 2.0 rad/s 로 따라간다(reduced 0.25 는 09.28 실기에서 팔 지연 약 190 ms 를 만들었다 — 사용자 결정)"
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/pd_controller.launch.py",
              "contract:={artifact:contract}", "robot:={artifact:robot_left}", "pd_config:={artifact:pd_exec}",
-             "sides:=left", "execute:=true"]
+             "sides:=left", "execute:=true", "stage:=full"]
       background: true
   home_left:
     - note: "[left] engage → 제자리 10 s. pd 가 HOLD 로 가면 실패하고 pd 를 해제한다"
@@ -675,9 +677,12 @@ run:
     - note: "[left] 시작 자세로 정착 — 앞 단계(fabric 점검 등)가 남긴 작은 어긋남을 pd goto_home 으로 없앤다(정책 start 허용 0.15 rad)"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --side, left, --only, pd_goto_home, --service-timeout, "45"]
       execute_args: [--execute, --approve, pd_goto_home]
-    - note: "[left] 정책 노드(joint_node, LSTM · CPU 2 스레드) — 팔 관절 증분 + 손 절대 목표를 pd 로. start 전에는 아무것도 보내지 않는다"
+    - note: "[left] 정책 노드(joint_node, LSTM · CPU 2 스레드) — 팔 관절 증분 + 손 절대 목표를 pd 로. start 전에는 아무것도 보내지 않는다.
+        에피소드는 학습 규칙대로 스스로 끝난다(09.28 사용자): 컵 키포인트가 목표에서 3.18 cm 안(e5802 가 학습된 tol, tfevents task/tol)
+        10 스텝 연속이면 도달 · 아니면 15 s(env episode_length_s). 끝나면 pd 가 그 자세 · 손 쥠을 붙잡는다"
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/joint_chain.launch.py",
-             "contract:={artifact:joint_left}", "robot:={artifact:robot_left}", "device:=cpu", "use_source:=true"]
+             "contract:={artifact:joint_left}", "robot:={artifact:robot_left}", "device:=cpu", "use_source:=true",
+             "success_tol_m:=0.0318", "success_steps:=10", "max_episode_s:=15.0"]
       background: true
     - note: "[left] 기록기 — obs · 행동 · 목표 q* · pd 가 보낸 값 · 팔 · 손 실측 · 손 전류 · 컵 자세 · status 를
         logs/policy_control/real_runs/ 에 남긴다(구독만, 정지 신호에 저장). 제어기가 정책을 따라갔는지 보는 근거(09.28 사용자)"
@@ -690,7 +695,7 @@ run:
     - note: "★[left] episode start — 이 순간부터 정책이 팔 · 손을 움직인다"
       argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", episode/start]
       execute_args: [--execute]
-    - note: "★[left] 관찰 — 이상하면 정지 바의 정지(episode stop)를 누른다. 끝났으면 '정상'"
+    - note: "★[left] 관찰 — 정책은 목표 도달 또는 15 s 에 스스로 멈춘다(콘솔 status 의 episode stopped). 이상하면 정지 바의 정지(episode stop). 멈췄으면 '정상'"
       argv: [bash, -lc, "true"]
       manual: true
     - note: "[left] episode stop — pd 는 마지막 목표를 붙잡는다(해제는 ⑥). ★복귀 전에 팔이 컵 · 테이블에서 떨어졌는지 볼 것"

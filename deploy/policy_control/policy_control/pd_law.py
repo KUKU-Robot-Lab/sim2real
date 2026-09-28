@@ -268,6 +268,10 @@ class HandBlock:
     pid_p: float
     pid_d: float
     max_vel: float
+    #: 정책(외부 목표)을 따를 때만 쓰는 손 속도 상한 [rad/s]. 0 = max_vel 과 같다.
+    #: 09.28 사용자 "손 속도상한은 액션과 동일하게" — pd 가 스스로 하는 손 이동(hand_home · hand_rest · hand_path)은
+    #: max_vel 로 천천히 두고, 정책 추종에서만 정책 행동이 낼 수 있는 속도까지 허용한다.
+    max_vel_track: float = 0.0
 
 
 @dataclass(frozen=True)

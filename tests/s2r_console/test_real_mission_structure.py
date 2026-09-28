@@ -328,3 +328,12 @@ def test_rehome_brings_the_arm_back_to_the_policy_start_through_a_planned_path(s
     assert "plan_rehome.py" in text[0] and f"--side {side}" in text[0]
     assert "replay_to_pd.py" in text[1] and f"rehome_{side}.npz" in text[1] and "--reverse" not in text[1]
     assert "--only pd_goto_home" in text[2] and _cmds(sid)[3].manual and "--only pd_hand_home" in text[4]
+
+
+def test_pd_runs_at_full_speed_and_the_left_policy_ends_its_own_episode():
+    """09.28 사용자: pd FULL 로 진행 · 목표에 이송하면 에피소드가 끝난다(학습 규칙) · 그 뒤 rehome 으로 반복."""
+    for side in ("right", "left"):
+        (pd,) = [c for c in _cmds(f"pd_arm_{side}") if any(a.endswith("pd_controller.launch.py") for a in c.argv)]
+        assert "stage:=full" in pd.argv and "execute:=true" in pd.argv
+    launch = _cmds("policy_left")[4].argv
+    assert "success_tol_m:=0.0318" in launch and "success_steps:=10" in launch and "max_episode_s:=15.0" in launch
