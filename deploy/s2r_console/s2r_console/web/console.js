@@ -268,7 +268,22 @@ function laneHtml(s, lane, can) {
   }
   return `<section class="panel lane${lane.busy ? " lane-busy" : ""}">
     <div class="panel-head"><h2>${esc(lane.title)}</h2><span class="meta">${done}/${rows.length}${lane.busy ? ` · ${esc(lane.busy)} 실행 중` : ""}</span></div>
-    <div class="cp-chips">${chips}</div>${body}</section>`;
+    <div class="cp-chips">${chips}</div>${body}${exitHtml(rows, lane, can)}</section>`;
+}
+
+// 정리 단계(비상 복귀 · 차렷 복귀 · pd 해제)는 순서를 기다리지 않고 언제나 고를 수 있다 — 09.28 실기: selftest 가
+// 실패하면 pd 가 팔을 잡은 동안 건너뛰기가 막혀(안전 규칙) 창이 거기 멈췄고, 차렷으로 돌아올 길이 화면에 없었다.
+// 서버는 창 안의 어느 단계든 needs · 승인 · 창이 비었는지로만 판정한다(_current_stage) — 버튼만 없던 것이다.
+function exitHtml(rows, lane, can) {
+  const outs = rows.filter((r) => r.group === "finish" && !r.done && r.id !== lane.next);
+  if (!outs.length) return "";
+  const btn = (r) => {
+    const need = r.touches_real && !r.approved;
+    const act = need ? `<button class="btn btn-sm btn-real" data-act="approve" data-arg="${esc(r.id)}" ${can && r.can_approve ? "" : "disabled"}>승인…</button>` : "";
+    return `<div class="exit-row"><span class="exit-title" title="${esc(r.title)}"><b>${esc(r.id)}</b> — ${esc(r.title)}</span>
+      <span class="actions">${act}<button class="btn btn-sm ${r.touches_real ? "btn-real" : "btn-primary"}" data-act="run" data-arg="${esc(r.id)}" ${can && r.can_run ? "" : "disabled"}>▶ 실행</button></span></div>`;
+  };
+  return det(`exit:${lane.id}`, `정리 · 빠져나가기 (${outs.length}) — 순서와 상관없이`, `<div class="exits">${outs.map(btn).join("")}</div>`);
 }
 
 // 손 창 — 단계가 아니라 **서비스 버튼**이다(09.23 사용자). pd 서비스에는 쪽이 없어서 떠 있는 pd 가 대상을 정한다.

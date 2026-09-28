@@ -391,3 +391,12 @@ def test_every_channel_gets_a_chip_and_position_is_the_default():
     assert re.search(r'^let robotChan = "pos";', JS, re.M)
     assert re.search(r'"robot-chan"\(key\)\s*\{\s*robotChan = key;', JS)
     assert "S.robotChan" not in JS
+
+
+def test_finish_stages_can_be_picked_from_every_lane_out_of_order():
+    # 09.28 실기: selftest_left 가 실패하고 pd 가 팔을 잡은 동안 건너뛰기가 막혀 차렷 복귀로 갈 길이 화면에 없었다
+    body = re.search(r"function exitHtml[\s\S]*?\n}\n", JS).group(0)
+    assert 'r.group === "finish"' in body and "!r.done" in body and "r.id !== lane.next" in body
+    assert 'data-act="approve"' in body and 'data-act="run"' in body
+    assert "r.can_run" in body and "r.can_approve" in body               # 서버 판정 그대로 — 화면이 규칙을 새로 만들지 않는다
+    assert re.search(r"\$\{body\}\$\{exitHtml\(rows, lane, can\)\}", JS)

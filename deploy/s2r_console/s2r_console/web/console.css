@@ -376,3 +376,9 @@ table.joints tr.j-missing td { color: var(--mute); }
 .jbar { position: relative; display: block; height: 8px; min-width: 60px; background: var(--panel-2); border-radius: 4px; }
 .jbar i { position: absolute; top: 0; width: 3px; height: 8px; background: currentColor; border-radius: 2px; }
 .jbar b { position: absolute; top: -2px; width: 1px; height: 12px; background: var(--mute); }
+
+/* 정리 단계 바로가기 — 창 카드 아래 접는 상자 */
+.exits { display: grid; gap: 6px; padding: 6px 0 2px; }
+.exit-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.exit-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.exit-row .actions { display: flex; gap: 6px; flex: none; }
