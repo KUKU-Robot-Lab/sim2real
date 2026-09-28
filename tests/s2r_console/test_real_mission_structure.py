@@ -3,11 +3,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 from mission_core import load_mission
 from mission_stages import load_runbook
 
-PATH = Path(__file__).resolve().parents[2] / "config" / "mission_dg5f_m_control.yaml"
+REPO = Path(__file__).resolve().parents[2]
+PATH = REPO / "config" / "mission_dg5f_m_control.yaml"
 RAW = yaml.safe_load(PATH.read_text(encoding="utf-8"))
 MISSION = load_mission(RAW)
 BOOK = load_runbook(RAW.get("run"), MISSION)          # 정지 대상 · 순서 검사가 여기서 돈다
@@ -252,25 +254,45 @@ def test_every_execute_flag_is_one_the_tool_actually_takes():
     assert not bad, bad
 
 
-def test_the_right_policy_stage_runs_the_registered_joint_policy_after_home():
-    """09.28 사용자: 오른팔 첫 실험 정책 = right_m15_e800. 홈 경로 끝 = 그 정책의 학습 시작 자세다."""
-    st = MISSION.stages[IDS.index("policy_right")]
-    assert set(st.needs) == {"home_right", "sensors"} and st.touches_real and st.skippable
-    assert RAW_STAGES["policy_right"]["lane"] == "arm_right" and IDS.index("home_right") < IDS.index("policy_right")
-    assert RAW["artifacts"]["joint_right"] == "deploy/policies/right_m15_e800/joint_contract.json"
-    cmds = _cmds("policy_right")
-    assert cmds[0].stop == ("fabric_direct_right#0",)                              # 같은 episode 서비스를 내는 체인
+@pytest.mark.parametrize("side,other,policy", [("right", "left", "right_m15_e800"), ("left", "right", "left_cp_e4280")])
+def test_each_policy_stage_runs_its_registered_joint_policy_after_home(side, other, policy):
+    """09.28 사용자: 오른팔 첫 실험 정책 = right_m15_e800, 오른손 419 로 왼팔(left_cp_e4280)로도 프레임워크 확인.
+    홈 경로 끝 = 그 정책의 학습 시작 자세다."""
+    sid = f"policy_{side}"
+    st = MISSION.stages[IDS.index(sid)]
+    assert set(st.needs) == {f"home_{side}", "sensors"} and st.touches_real and st.skippable
+    assert RAW_STAGES[sid]["lane"] == f"arm_{side}" and IDS.index(f"home_{side}") < IDS.index(sid)
+    assert RAW["artifacts"][f"joint_{side}"] == f"deploy/policies/{policy}/joint_contract.json"
+    cmds = _cmds(sid)
+    # 같은 /policy_control/episode/* 서비스를 내는 체인은 한 번에 하나 — 앞에서 뜨는 체인을 먼저 내린다
+    # (미션은 뒤에 뜨는 단계를 정지 대상으로 받지 않는다: 오른팔 단계는 오른팔 fabric 만, 왼팔 단계는 셋 다)
+    expect = {"right": {"fabric_direct_right#0"},
+              "left": {"fabric_direct_left#0", "fabric_direct_right#0", f"policy_{other}#4"}}[side]
+    assert set(cmds[0].stop) == expect
     (launch,) = [i for i, c in enumerate(cmds) if any(a.endswith("joint_chain.launch.py") for a in c.argv)]
-    assert cmds[launch].background and "device:=cuda:0" in cmds[launch].argv
+    assert launch == 4 and cmds[launch].background and "device:=cuda:0" in cmds[launch].argv
+    assert f"contract:={{artifact:joint_{side}}}" in cmds[launch].argv and f"robot:={{artifact:robot_{side}}}" in cmds[launch].argv
     text = [" ".join(c.argv) for c in cmds]
     order = [next(i for i, t in enumerate(text) if f"trigger.py episode/{e}" in t) for e in ("reset", "start", "stop")]
     assert order == sorted(order) and launch < order[0]
     assert cmds[order[1] - 0].execute_args and any(c.manual for c in cmds[order[1]:order[2]])   # 관찰 확인
-    assert any(c.stop == (f"policy_right#{launch}",) for c in cmds[order[2]:])
+    assert any(c.stop == (f"{sid}#{launch}",) for c in cmds[order[2]:])
     guard = next(i for i, t in enumerate(text) if "check_path_start.py" in t and "--at end" in t)
+    assert f"{{artifact:path_{side}}}" in text[guard]
     settle = next(i for i, t in enumerate(text) if "pd_goto_home" in t)
+    assert f"--side {side}" in text[settle]
     assert guard < settle < launch                                                  # 가까울 때만 직선 정착
     for stage in ("shutdown",):
-        assert any(f"policy_right#{launch}" in c.stop for c in _cmds(stage) if c.stop)
+        assert any(f"{sid}#{launch}" in c.stop for c in _cmds(stage) if c.stop)
     # 정책 입력인 컵 자세(base_link)를 내는 노드가 인지 단계에 있다
     assert any(a.endswith("object_pose_node.py") for c in _cmds("sensors") for a in c.argv)
+
+
+def test_the_left_policy_starts_where_the_left_home_path_ends():
+    import json
+
+    import numpy as np
+
+    c = json.loads((REPO / RAW["artifacts"]["joint_left"]).read_text())
+    end = np.load(REPO / RAW["artifacts"]["path_left"])["arm_target"][-1]
+    assert c["side"] == "left" and np.abs(end - np.asarray(c["arm_reset"])).max() < 1e-6

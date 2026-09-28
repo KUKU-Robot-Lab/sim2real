@@ -1,6 +1,6 @@
 # 왼팔 cup_pick 접근 계열 한 벌 — params/ 가 런별로 갈라져 있다(params/<체크포인트 이름>/).
 id: left_aglt
-status: candidate
+status: candidate        # 실기 확인은 left_cp_e4280(같은 e4280, joint 계약 있음)
 task: open-short_l_cup_pick-lstm
 side: left
 checkpoint: cup_pick_l_approach_hold_e4280.pth

@@ -33,6 +33,10 @@ artifacts:
   #   만들기: build_deploy_contract.py --run deploy/policies/right_m15_e800 --hand-obs-order <trace meta | assumed>
   #   시작 자세 = 홈 경로의 끝(arm_reset_joint_pos_override 가 right_aglt 와 같다)
   joint_right: deploy/policies/right_m15_e800/joint_contract.json
+  # 왼팔 정책(09.28 사용자: 오른손 419 로 왼팔로 프레임워크 확인) — left_aglt 의 e4280(접근 + C자 사전파지 정지, 무접촉).
+  #   만들기: build_deploy_contract.py --run deploy/policies/left_cp_e4280 --hand-obs-order <trace meta | assumed>
+  #   시작 자세 = 왼팔 홈 경로의 끝(오른팔 시작 자세의 거울, 차이 0)
+  joint_left: deploy/policies/left_cp_e4280/joint_contract.json
 
 checkpoints: {}
 
@@ -244,6 +248,16 @@ stages:
     touches_real: true
     skippable: true
 
+  - id: policy_left
+    group: policy
+    lane: arm_left
+    title: "[left] 정책 left_cp_e4280(cup_pick 접근) — 컵 확인 → 정책 노드 → reset → start → 관찰(컵 옆 C자 자세에서 멈춘다) → stop"
+    needs: [home_left, sensors]
+    needs_why: 정책은 홈 경로 끝 자세에서만 출발해 봤고, 컵 자세(FP++ → base)가 입력이다
+    artifacts: [joint_left, robot_left]
+    touches_real: true
+    skippable: true
+
   - id: reset_left
     group: finish
     lane: arm_left
@@ -442,7 +456,8 @@ run:
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --side, right, --only, ep_stop]
       execute_args: [--execute]
   policy_right:
-    - note: "[right] fabric 체인이 떠 있으면 내린다 — 같은 /policy_control/episode/* 서비스를 낸다(정책 노드와 겹친다)"
+    - note: "[right] fabric 체인이 떠 있으면 내린다 — 같은 /policy_control/episode/* 서비스를 낸다(정책 노드와 겹친다).
+        왼팔 체인은 이 뒤에 뜨는 단계라 여기서 내리지 않는다(왼팔 정책 단계가 오른팔 체인을 내린다)"
       stop: ["fabric_direct_right#0"]
     - note: "★[right] 컵이 학습 범위(로봇 앞 x 0.10~0.40 · y −0.30~0.00, 테이블 위 똑바로)에 있고 콘솔에서 컵 자세가 들어오는가.
         손 · 팔 주변에 사람 · 물건이 없는가. 정책은 팔을 최대 0.3 rad/s 로 움직인다"
@@ -596,6 +611,36 @@ run:
     - note: "[left] 에피소드 stop — pd 는 계속 잡고 있다(해제는 ⑥)"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --side, left, --only, ep_stop]
       execute_args: [--execute]
+  policy_left:
+    - note: "[left] 같은 /policy_control/episode/* 서비스를 내는 체인(양팔 fabric · 오른팔 정책)이 떠 있으면 내린다"
+      stop: ["fabric_direct_left#0", "fabric_direct_right#0", "policy_right#4"]
+    - note: "★[left] 컵이 학습 범위(로봇 앞 x 0.10~0.40 · y 0.00~0.30, 테이블 위 똑바로)에 있고 콘솔에서 컵 자세가 들어오는가.
+        손 · 팔 주변에 사람 · 물건이 없는가. 정책은 팔을 최대 0.3 rad/s 로 움직인다. 이 정책은 컵을 잡지 않는다(옆에서 멈춤)"
+      argv: [bash, -lc, "true"]
+      manual: true
+    - note: "[left] 팔이 정책 시작 자세(홈 경로 끝) 0.4 rad 안인가 — 멀면 여기서 멈춘다(관절공간 직선 정착은 먼 곳에서 테이블을 지날 수 있다)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/check_path_start.py", --npz, "{artifact:path_left}", --at, end, --tol, "0.4"]
+    - note: "[left] 시작 자세로 정착 — 앞 단계(fabric 점검 등)가 남긴 작은 어긋남을 pd goto_home 으로 없앤다(정책 start 허용 0.15 rad)"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --side, left, --only, pd_goto_home, --service-timeout, "45"]
+      execute_args: [--execute, --approve, pd_goto_home]
+    - note: "[left] 정책 노드(joint_node, LSTM · GPU) — 팔 관절 증분 + 손 절대 목표를 pd 로. start 전에는 아무것도 보내지 않는다"
+      argv: [ros2, launch, "{repo}/deploy/policy_control/launch/joint_chain.launch.py",
+             "contract:={artifact:joint_left}", "robot:={artifact:robot_left}", "device:=cuda:0", "use_source:=true"]
+      background: true
+    - note: "[left] episode reset — 지금 컵 위치로 목표를 정한다(응답에 목표 좌표). 팔이 학습 시작 자세에서 0.15 rad 넘게 멀면 start 가 거부된다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", episode/reset]
+      execute_args: [--execute]
+    - note: "★[left] episode start — 이 순간부터 정책이 팔 · 손을 움직인다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", episode/start]
+      execute_args: [--execute]
+    - note: "★[left] 관찰 — 이상하면 정지 바의 정지(episode stop)를 누른다. 끝났으면 '정상'"
+      argv: [bash, -lc, "true"]
+      manual: true
+    - note: "[left] episode stop — pd 는 마지막 목표를 붙잡는다(해제는 ⑥). ★복귀 전에 팔이 컵 · 테이블에서 떨어졌는지 볼 것"
+      argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", episode/stop]
+      execute_args: [--execute]
+    - note: "[left] 정책 노드 정지"
+      stop: ["policy_left#4"]
   reset_left:
     - note: "[left] 정책 체인(fabric)이 떠 있으면 먼저 내린다 — pd 가 TRACKING 이면 reset 의 engage 가 거부된다
         (09.23 fake: 'forward effort controller already active · phase TRACKING is not IDLE'). 팔은 그 자리에 선다"
@@ -639,7 +684,8 @@ run:
       manual: true
     - note: 남은 pd · fabric · 목 퍼블리셔 정지
       stop: ["fabric_direct_right#0", "pd_arm_right#1", "pd_load_right#0",
-             "fabric_direct_left#0", "pd_arm_left#1", "pd_load_left#0", "head_home#1", "sensors#0", "sensors#1", "sensors#2", "policy_right#4"]
+             "fabric_direct_left#0", "pd_arm_left#1", "pd_load_left#0", "head_home#1", "sensors#0", "sensors#1", "sensors#2", "policy_right#4",
+             "policy_left#4"]
     - note: DG-5F 손 드라이버 정지 (우 → 좌) — 손가락 토크가 풀린다
       stop: ["hand_right#1", "hand_left#1"]
     - note: ★팔 브링업 정지 — OpenArm 하드웨어가 disable_all() 로 모든 모터를 끈다(팔이 받침으로 내려앉는다)
