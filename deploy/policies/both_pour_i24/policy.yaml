@@ -1,6 +1,6 @@
 # 양팔 물붓기 i24 — 붓기 t2r 세션(pour_bi)의 s2r 1순위(our_source/pour_bi_runs_0926/s2r/pour_i24_best). i18 을 대신한다.
 id: both_pour_i24
-status: candidate        # candidate | verified | deployed | hold
+status: hold             # candidate | verified | deployed | hold
 task: open-short_b_pour_fab
 side: both
 checkpoint: open-short_b_pour_fab.pth
@@ -8,6 +8,7 @@ source: 'local:/home/user/rl_ws/our_source/pour_bi_runs_0926/s2r/pour_i24_best'
 reward: reward_gen/pour_bi/iter_24 (사본 reward_fn.py · 본문 커밋 d66e4df5)
 interface: obs 223 · critic 293 · action 18 (팔당 palm 6D 증분 + grip3) · MLP · 60 Hz
 note: >-
+  09.28 hold — 사용자 결정: 붓기 s2r 기준은 i18. 계약 · 재현 · fake 체인은 통과한 채로 둔다.
   t2r_i24 best(epoch 1557, 학습 커밋 8cc6c6c6). ADR30 결정론 평가 64env: env 성공 0.719 · in_target 0.925 ·
   흘림 중앙값 0 · 최고 기울기 116°(i18 은 155°). 들기 순간 파지 유지 드리프트 1.08~1.56 cm.
   약점: 리시버 팔 떨림이 소스의 약 1.5배(액션 부호반전 0.445 대 0.294) · 작업이 중심선 왼쪽(소스 y +0.16,
