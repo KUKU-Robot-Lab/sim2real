@@ -16,6 +16,8 @@
   손 전류               /dg5f_<side>/joint_states effort          (드라이버 원래 이름 · mA)
   물체 자세             robot yaml 의 object 소스
   status               joint_node · pd_<side> JSON
+  손끝 F/T              /dg5f_<side>/fingertip_1~5_broadcaster/wrench (드라이버 fingertip_sensor · ft_broadcaster 켤 때)
+                        tip 순서 = 벤더 finger 1~5(엄지 · 검지 · 중지 · 약지 · 새끼), 팁 로컬 프레임 [N · N·m]
 
 SIGTERM(콘솔의 정지) · SIGINT 을 받으면 그때까지를 저장하고 끝난다. --seconds 를 주면 그 시간 뒤에도 끝난다.
 분석: tools/joint_trace_report.py --latest --side <side>
@@ -71,7 +73,7 @@ def main() -> int:
     arm_s, ee_s, obj_s = cfg.sources["arm"], cfg.sources["ee"], cfg.sources.get("object")
 
     import rclpy
-    from geometry_msgs.msg import PoseStamped
+    from geometry_msgs.msg import PoseStamped, WrenchStamped
     from rclpy.qos import qos_profile_sensor_data
     from rclpy.signals import SignalHandlerOptions
     from sensor_msgs.msg import JointState
@@ -82,7 +84,7 @@ def main() -> int:
         signal.signal(sig, lambda *_: stop.update(now=True))
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     node = rclpy.create_node(f"joint_recorder_{c.side}")
-    R: dict[str, list] = {k: [] for k in ("obs", "act", "tgt", "app", "arm", "hand", "cur", "obj", "jn", "pd")}
+    R: dict[str, list] = {k: [] for k in ("obs", "act", "tgt", "app", "arm", "hand", "cur", "obj", "jn", "pd", "tip")}
     names: dict[str, tuple | None] = {"tgt": None, "app": None, "cur": None}
     errors: dict[str, int] = {}
 
@@ -132,6 +134,12 @@ def main() -> int:
         p = codec.decode_pose(m)
         R["obj"].append((t, np.asarray(p.pos, float), np.asarray(p.quat, float)))
 
+    def on_tip(i):
+        def fn(t, m):
+            f, w = m.wrench.force, m.wrench.torque
+            R["tip"].append((t, i, np.array([f.x, f.y, f.z, w.x, w.y, w.z], float)))
+        return fn
+
     def on_status(key):
         return lambda t, m: R[key].append((t, str(m.data)))
 
@@ -143,6 +151,9 @@ def main() -> int:
     node.create_subscription(JointState, ee_s.topic, guard("hand", on_joint("hand", ee_s)), qos_profile_sensor_data)
     if obj_s is not None:
         node.create_subscription(PoseStamped, obj_s.topic, guard("obj", on_obj), qos_profile_sensor_data)
+    for i in range(1, 6):
+        node.create_subscription(WrenchStamped, f"/dg5f_{c.side}/fingertip_{i}_broadcaster/wrench",
+                                 guard("tip", on_tip(i)), qos_profile_sensor_data)
     node.create_subscription(String, f"{NS}/status/joint_node", guard("jn", on_status("jn")), 50)
     node.create_subscription(String, f"{NS}/status/pd_{c.side}", guard("pd", on_status("pd")), 50)
     out = out_path(args.out_dir, c.task.replace("/", "_"), c.side)
@@ -177,13 +188,15 @@ def main() -> int:
         "obj_quat": _stack([r[2] for r in R["obj"]], 4),
         "jn_t": np.array([r[0] for r in R["jn"]]), "jn_json": np.array([r[1] for r in R["jn"]]),
         "pd_t": np.array([r[0] for r in R["pd"]]), "pd_json": np.array([r[1] for r in R["pd"]]),
+        "tip_t": np.array([r[0] for r in R["tip"]]), "tip_idx": np.array([r[1] for r in R["tip"]], int),
+        "tip_wrench": _stack([r[2] for r in R["tip"]], 6),
     }
     out.parent.mkdir(parents=True, exist_ok=True)
     np.savez(out, **data)                      # 압축하지 않는다 — 콘솔은 SIGTERM 뒤 5 s 에 SIGKILL 한다
     node.destroy_node()
     rclpy.shutdown()
     print(f"[recorder] 저장 {out} · {time.time() - t_start:.1f} s · 목표 {len(R['tgt'])} · obs {len(R['obs'])} · "
-          f"팔 {len(R['arm'])} · 손 {len(R['hand'])} · 물체 {len(R['obj'])}"
+          f"팔 {len(R['arm'])} · 손 {len(R['hand'])} · 물체 {len(R['obj'])} · 손끝 {len(R['tip'])}"
           + (f" · 디코드 실패 {errors}" if errors else ""), flush=True)
     return 0
 

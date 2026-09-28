@@ -30,6 +30,8 @@ def _rec(lag=0.1, hz=60.0, T=4.0, drop=()):
         "hand_t": tm, "hand_names": np.array(HAND), "hand_q": np.full((len(tm), 1), 0.45),
         "app_t": np.zeros(0), "app_names": np.array([]), "app_q": np.zeros((0, 0)),
         "act_t": t, "act": act,
+        "tip_t": np.repeat(t, 2), "tip_idx": np.tile([2, 4], len(t)),
+        "tip_wrench": np.tile([[3.0, 4.0, 0.0, 0, 0, 0], [0.0, 0.0, 1.0, 0, 0, 0]], (len(t), 1)),
     }
 
 
@@ -50,3 +52,11 @@ def test_gaps_rate_saturation_and_object_source_are_counted():
     assert s["action_sat"]["arm"] == pytest.approx(1 / 7) and s["action_sat"]["hand"] == 0.0
     assert s["obj_source"] == {"live": len(_rec(drop=range(60, 66))["tgt_t"])}
     assert "가장 잘 맞는 지연" in render(s)
+
+
+def test_fingertip_force_is_summarized_per_tip_and_absent_tips_are_left_out():
+    # 09.28 사용자: 정책 기록에 손끝 센서 값도 — 손끝별 |F| 중앙값 · 최대
+    s = summarize(_rec())
+    assert set(s["tips"]) == {2, 4}
+    assert s["tips"][2]["f_max"] == pytest.approx(5.0) and s["tips"][4]["f_p50"] == pytest.approx(1.0)
+    assert "검지" in render(s) and "손끝 힘" in render(s)

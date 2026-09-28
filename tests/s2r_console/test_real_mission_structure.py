@@ -337,3 +337,20 @@ def test_pd_runs_at_full_speed_and_the_left_policy_ends_its_own_episode():
         assert "stage:=full" in pd.argv and "execute:=true" in pd.argv
     launch = _cmds("policy_left")[4].argv
     assert "success_tol_m:=0.0318" in launch and "success_steps:=10" in launch and "max_episode_s:=15.0" in launch
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_the_hand_driver_publishes_the_fingertip_force_torque_sensors(side):
+    """09.28 사용자: 정책 기록에 손끝 센서 값도 — 드라이버가 손끝 F/T 와 broadcaster 를 켠다."""
+    (drv,) = [c for c in _cmds(f"hand_{side}") if f"dg5f_{side}_driver.launch.py" in c.argv]
+    assert "fingertip_sensor:=true" in drv.argv and "ft_broadcaster:=true" in drv.argv
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_fingertip_sensors_are_zeroed_at_the_policy_start_pose_before_reset(side):
+    """09.28 사용자: 손끝 F/T 는 home 자세 기준으로 0 을 잡는다 — 기록기가 뜬 뒤 · reset 전, 매번."""
+    text = [" ".join(c.argv) for c in _cmds(f"policy_{side}")]
+    zero = next(i for i, t in enumerate(text) if "ft_zero.py" in t)
+    reset = next(i for i, t in enumerate(text) if "trigger.py episode/reset" in t)
+    settle = next(i for i, t in enumerate(text) if "pd_goto_home" in t)
+    assert settle < 5 < zero < reset and f"--side {side}" in text[zero]

@@ -131,6 +131,18 @@ def summarize(d) -> dict:
                 diff = qa - qt
                 out["applied_vs_target"] = {"names": common, "rms": np.sqrt(np.mean(diff ** 2, axis=0)),
                                             "max": np.abs(diff).max(axis=0)}
+    out["tips"] = None
+    if "tip_t" in d and len(d["tip_t"]):
+        tt, ti, tw = np.asarray(d["tip_t"], float), np.asarray(d["tip_idx"], int), np.asarray(d["tip_wrench"], float)
+        keep = (tt >= t0) & (tt <= t1)
+        rows = {}
+        for i in range(1, 6):
+            k = keep & (ti == i)
+            if k.any():
+                fn = np.linalg.norm(tw[k, :3], axis=1)
+                rows[i] = {"n": int(k.sum()), "f_max": float(fn.max()), "f_p50": float(np.percentile(fn, 50)),
+                           "t_max": float(tt[k][int(np.argmax(fn))] - t0)}
+        out["tips"] = rows
     act = np.asarray(d["act"], float)
     ta = np.asarray(d["act_t"], float)
     keep = (ta >= t0) & (ta <= t1) if ta.size else np.zeros(0, bool)
@@ -169,6 +181,13 @@ def render(s: dict) -> str:
     if av:
         L.append("pd 가 보낸 값 − 정책 목표 (0 이 아니면 pd 가 속도 · 한계로 목표를 깎았다)")
         L += _row(av["names"], av["rms"], av["max"], fmt="{:8.4f}")
+    tips = s.get("tips")
+    if tips is None:
+        L.append("손끝 F/T: 기록 없음(드라이버 fingertip_sensor · ft_broadcaster 가 꺼져 있었다)")
+    else:
+        names = {1: "엄지", 2: "검지", 3: "중지", 4: "약지", 5: "새끼"}
+        L.append("손끝 힘 |F| [N] — 손끝별 중앙값 · 최대 (최대 시각)")
+        L += [f"  {names[i]}  {r['f_p50']:.2f} · {r['f_max']:.2f} ({r['t_max']:.1f} s, {r['n']} 표본)" for i, r in sorted(tips.items())]
     sat = s["action_sat"]
     if sat:
         hand = "—" if sat["hand"] is None else f"{sat['hand'] * 100:.1f} %"

@@ -613,6 +613,14 @@ run:
       남긴다(구독만, 정지 신호에 저장). 제어기가 정책을 따라갔는지 보는 근거(09.28 사용자)'
   - argv:
     - python3
+    - '{repo}/deploy/policy_control/tools/ft_zero.py'
+    - --side
+    - left
+    - --if-present
+    note: '[left] 손끝 F/T 영점 — 팔이 정책 시작 자세 · 손이 초기 자세 · 아무것도 안 닿은 지금을 0 으로(09.28 사용자: home 자세 기준). 드라이버 서비스 set_ft_sensor_offset.
+      반복할 때마다 다시 잡는다. 센서를 켜지 않은 드라이버면 경고만 한다'
+  - argv:
+    - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
     - episode/reset
     execute_args:
@@ -714,6 +722,14 @@ run:
     background: true
     note: '[right] 기록기 — obs · 행동 · 목표 q* · pd 가 보낸 값 · 팔 · 손 실측 · 손 전류 · 컵 자세 · status 를 logs/policy_control/real_runs/ 에
       남긴다(구독만, 정지 신호에 저장). 제어기가 정책을 따라갔는지 보는 근거(09.28 사용자)'
+  - argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/ft_zero.py'
+    - --side
+    - right
+    - --if-present
+    note: '[right] 손끝 F/T 영점 — 팔이 정책 시작 자세 · 손이 초기 자세 · 아무것도 안 닿은 지금을 0 으로(09.28 사용자: home 자세 기준). 드라이버 서비스 set_ft_sensor_offset.
+      반복할 때마다 다시 잡는다. 센서를 켜지 않은 드라이버면 경고만 한다'
   - argv:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
