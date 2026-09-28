@@ -71,7 +71,33 @@ function toast(title, reasons, ok = false) {
 }
 
 // ── 그리기 ──────────────────────────────────────────────────────────────
+// ── 스크롤 고정 ───────────────────────────────────────────────────────────
+// 09.28 창 모드(WebKitGTK)에서 "혼자서 자꾸 스크롤이 올라간다": put() 이 매 폴링 innerHTML 을 바꿔 위쪽 칸 높이가
+// 바뀌면, Chrome 은 scroll anchoring 으로 보이는 자리를 지켜 주지만 WebKit 에는 그 기능이 없다. 안쪽 목록(.events ·
+// .node-json)은 다시 그려지면 scrollTop 이 0 으로 돌아간다. 그래서 그리기 전후에 직접 맞춘다 — 그리는 동안에는
+// 사용자가 스크롤할 수 없으므로(동기 실행) 사용자 스크롤을 덮어쓸 일은 없다.
+const INNER_SCROLL = ".events, .node-json";
+
+function keepScroll(draw) {
+  const targets = Object.keys(html).map((id) => $(id)).filter(Boolean);
+  const anchor = targets.find((el) => el.offsetParent !== null && el.getBoundingClientRect().bottom > 0);
+  const top0 = anchor ? anchor.getBoundingClientRect().top : 0;
+  const inner = [...document.querySelectorAll(INNER_SCROLL)].map((el) => el.scrollTop);
+  draw();
+  [...document.querySelectorAll(INNER_SCROLL)].forEach((el, i) => {
+    if (inner[i] && el.scrollTop !== inner[i]) el.scrollTop = inner[i];
+  });
+  if (anchor && anchor.isConnected) {
+    const d = anchor.getBoundingClientRect().top - top0;
+    if (Math.abs(d) >= 1) window.scrollBy(0, d);
+  }
+}
+
 function render() {
+  keepScroll(renderAll);
+}
+
+function renderAll() {
   if (!S) return;
   const s = S.session;
   document.body.classList.toggle("is-real", !!s && s.profile.domain_class === "real");

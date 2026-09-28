@@ -56,6 +56,15 @@ def run(url: str, *, title: str, close_warning: Callable[[], str]) -> None:
         dlg.destroy()
         return answer != Gtk.ResponseType.OK          # True 면 닫기를 막는다
 
+    def on_key(_w, ev):                                # F5 · Ctrl+R = 새로고침(화면 파일은 요청마다 디스크에서 읽힌다)
+        from gi.repository import Gdk
+        ctrl = bool(ev.state & Gdk.ModifierType.CONTROL_MASK)
+        if ev.keyval == Gdk.KEY_F5 or (ctrl and ev.keyval in (Gdk.KEY_r, Gdk.KEY_R)):
+            view.reload()
+            return True
+        return False
+
+    win.connect("key-press-event", on_key)
     win.connect("delete-event", on_delete)
     win.connect("destroy", lambda *_: Gtk.main_quit())
     for sig in (signal.SIGINT, signal.SIGTERM):       # 터미널 Ctrl+C · kill 도 창을 닫고 같은 정리로 간다
