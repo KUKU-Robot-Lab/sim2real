@@ -67,6 +67,10 @@ apply_logged_env_cfg(cfg, rebase_logged_paths(load_run_yaml(str(run / "params" /
                                               workspace_root=str(HDGP.parent)))
 cfg.scene.num_envs = args.num_envs
 cfg.seed = args.seed
+# 런 폴더에 보상 사본(reward/compute_reward.py)이 있으면 그것을 쓴다 — 다른 호스트의 hdgp 에 그 라운드 파일이 없을 수 있다
+# (09.28 vision-3090: cup_grasp_l/iter_01 없음). trace 는 궤적만 남기므로 보상 값은 결과에 영향이 없다.
+if (run / "reward" / "compute_reward.py").is_file() and hasattr(cfg, "reward_code_path"):
+    cfg.reward_code_path = str(run / "reward" / "compute_reward.py")
 # 부팅 가드 `start_palm_dist_band_m` 은 갓 리셋한 env 들의 **평균** 손바닥–컵 거리를 본다. env 1 개면 무작위 스폰
 # 한 번이 그대로 평균이라 가장자리(09.28: 380.6 mm, 상한 380)에 걸린다 — 물리가 아니라 부팅 점검이라 넓힌다.
 if hasattr(cfg, "start_palm_dist_band_m") and args.num_envs < 64:

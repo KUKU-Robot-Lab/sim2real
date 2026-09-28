@@ -6,7 +6,7 @@ task: open-short_l_cup_pick-lstm
 side: left
 checkpoint: cg_l_i01_e5802.pth
 source: 'local:our_source/policy/cg_l_i01 (nn/open-short_l_cup_pick-lstm.pth = best, e5802 · 하드링크 · params/)'
-reward: reward_gen/cup_grasp_l/iter_01/compute_reward.py (md5 aec2166c — 접근 · 파지 · 들기 · 이송 · 유지)
+reward: reward_gen/cup_grasp_l/iter_01/compute_reward.py (md5 aec2166c — 접근 · 파지 · 들기 · 이송 · 유지) · 사본 reward/ (trace 용)
 interface: obs 133 · critic 157 · action 26 (팔 7 관절 증분 + 손 19 절대, hand_direct, 13 가동)
 note: >-
   run cg_l_i01(09.27 arm4090, PPO-LSTM 4096 env, seed 42, fresh). best = e5802 · last_mean_rewards 2597.
