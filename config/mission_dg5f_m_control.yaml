@@ -468,9 +468,10 @@ run:
     - note: "[right] 시작 자세로 정착 — 앞 단계(fabric 점검 등)가 남긴 작은 어긋남을 pd goto_home 으로 없앤다(정책 start 허용 0.15 rad)"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --side, right, --only, pd_goto_home, --service-timeout, "45"]
       execute_args: [--execute, --approve, pd_goto_home]
-    - note: "[right] 정책 노드(joint_node, LSTM · GPU) — 팔 관절 증분 + 손 절대 목표를 pd 로. start 전에는 아무것도 보내지 않는다"
+    - note: "[right] 정책 노드(joint_node, LSTM · CPU 2 스레드) — 팔 관절 증분 + 손 절대 목표를 pd 로. start 전에는 아무것도 보내지 않는다.
+        CPU 인 이유(09.28 사용자): 로컬 5090 에서 학습이 돌 때 그 GPU 에 올리지 않는다 — fake 에서 한 스텝 p95 7.7 ms(60 Hz 예산 16.7)"
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/joint_chain.launch.py",
-             "contract:={artifact:joint_right}", "robot:={artifact:robot_right}", "device:=cuda:0", "use_source:=true"]
+             "contract:={artifact:joint_right}", "robot:={artifact:robot_right}", "device:=cpu", "use_source:=true"]
       background: true
     - note: "[right] episode reset — 지금 컵 위치로 목표를 정한다(응답에 목표 좌표). 팔이 학습 시작 자세에서 0.15 rad 넘게 멀면 start 가 거부된다"
       argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", episode/reset]
@@ -623,9 +624,9 @@ run:
     - note: "[left] 시작 자세로 정착 — 앞 단계(fabric 점검 등)가 남긴 작은 어긋남을 pd goto_home 으로 없앤다(정책 start 허용 0.15 rad)"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --side, left, --only, pd_goto_home, --service-timeout, "45"]
       execute_args: [--execute, --approve, pd_goto_home]
-    - note: "[left] 정책 노드(joint_node, LSTM · GPU) — 팔 관절 증분 + 손 절대 목표를 pd 로. start 전에는 아무것도 보내지 않는다"
+    - note: "[left] 정책 노드(joint_node, LSTM · CPU 2 스레드) — 팔 관절 증분 + 손 절대 목표를 pd 로. start 전에는 아무것도 보내지 않는다"
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/joint_chain.launch.py",
-             "contract:={artifact:joint_left}", "robot:={artifact:robot_left}", "device:=cuda:0", "use_source:=true"]
+             "contract:={artifact:joint_left}", "robot:={artifact:robot_left}", "device:=cpu", "use_source:=true"]
       background: true
     - note: "[left] episode reset — 지금 컵 위치로 목표를 정한다(응답에 목표 좌표). 팔이 학습 시작 자세에서 0.15 rad 넘게 멀면 start 가 거부된다"
       argv: [python3, "{repo}/deploy/policy_control/tools/trigger.py", episode/reset]

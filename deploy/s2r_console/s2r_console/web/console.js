@@ -18,6 +18,8 @@ const copyBtn = (text) => text === "true" ? "" : `<button class="btn btn-sm btn-
 const fmt = (v, d = 2) => (v === null || v === undefined || Number.isNaN(v) ? "—" : Number(v).toFixed(d));
 
 let S = null;                 // 마지막 스냅샷
+// 화면에서 고른 것은 S 밖에 둔다 — S 는 폴링마다 서버 스냅샷으로 통째로 바뀐다(09.28: 로봇 상태 채널을 눌러도 바로 '위치'로 돌아갔다)
+let robotChan = "pos";
 let lastAt = 0;               // 그것을 "끝까지 그린" 시각 [ms] — 받기만 하고 못 그린 것은 세지 않는다
 let drawError = null;         // 마지막 그리기 예외. 있으면 화면을 덮는다
 const bootAt = Date.now();
@@ -689,7 +691,7 @@ function artWith(key, groups) {
 function renderRobot(s) {
   const r = s.robot;
   if (!r || !r.groups.length) return put("robot", `<div class="empty">관절 상태가 아직 없다 — 드라이버가 떠야 보인다.</div>`);
-  const chan = S.robotChan && r.channels.some((c) => c.key === S.robotChan) ? S.robotChan : "pos";
+  const chan = r.channels.some((c) => c.key === robotChan) ? robotChan : "pos";
   put("robot-chan", r.channels.map((c) =>
     `<button class="chip${c.key === chan ? " on" : ""}" data-act="robot-chan" data-arg="${esc(c.key)}">${esc(c.name)}<span class="hint"> ${esc(c.unit)}</span></button>`).join(""));
   put("robot-meta", r.stale ? `<span class="warn">오래됨</span>` : `${fmt(r.age_s, 1)} s 전`);
@@ -756,7 +758,7 @@ const acts = {
   async open(id) { await call("POST", "/api/run/open", { profile: id }); refresh(); },
   approve(id) { approveModal(id); },
   async "approve-go"(id) { await call("POST", "/api/approve", { stage: id, typed: $("approve-typed").value }); closeModal(); refresh(); },
-  "robot-chan"(key) { S.robotChan = key; refresh(); },
+  "robot-chan"(key) { robotChan = key; refresh(); },
   async run(id) { await call("POST", "/api/stage/run", { stage: id }); refresh(); },
   async restart(id) {
     const live = liveUnits(id);

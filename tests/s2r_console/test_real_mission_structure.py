@@ -270,7 +270,7 @@ def test_each_policy_stage_runs_its_registered_joint_policy_after_home(side, oth
               "left": {"fabric_direct_left#0", "fabric_direct_right#0", f"policy_{other}#4"}}[side]
     assert set(cmds[0].stop) == expect
     (launch,) = [i for i, c in enumerate(cmds) if any(a.endswith("joint_chain.launch.py") for a in c.argv)]
-    assert launch == 4 and cmds[launch].background and "device:=cuda:0" in cmds[launch].argv
+    assert launch == 4 and cmds[launch].background and "device:=cpu" in cmds[launch].argv   # 학습 GPU 를 비켜 간다
     assert f"contract:={{artifact:joint_{side}}}" in cmds[launch].argv and f"robot:={{artifact:robot_{side}}}" in cmds[launch].argv
     text = [" ".join(c.argv) for c in cmds]
     order = [next(i for i, t in enumerate(text) if f"trigger.py episode/{e}" in t) for e in ("reset", "start", "stop")]

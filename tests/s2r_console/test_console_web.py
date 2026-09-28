@@ -386,5 +386,8 @@ def test_every_channel_gets_a_chip_and_position_is_the_default():
     # 09.23 사용자: "디폴트는 joint state 고, vel 이나 effort 들도"
     body = re.search(r"function renderRobot[\s\S]*?\n}\n", JS).group(0)
     assert 'data-act="robot-chan"' in body and 'r.channels.map' in body
-    assert re.search(r'S\.robotChan[^;]*\?[^;]*:\s*"pos"', body)
-    assert re.search(r'"robot-chan"\(key\)\s*\{\s*S\.robotChan = key;', JS)
+    assert re.search(r'robotChan[^;]*\?[^;]*:\s*"pos"', body)
+    # 09.28 실기: 고른 채널을 S(폴링마다 통째로 바뀌는 스냅샷)에 두어 눌러도 곧 '위치'로 돌아갔다 — S 밖에 둔다
+    assert re.search(r'^let robotChan = "pos";', JS, re.M)
+    assert re.search(r'"robot-chan"\(key\)\s*\{\s*robotChan = key;', JS)
+    assert "S.robotChan" not in JS
