@@ -75,7 +75,7 @@ def print_status(payload: dict) -> None:
         print(f"  ERROR: {payload['error']}")
 
 
-def main() -> int:
+def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="op", required=True)
     s = sub.add_parser("start")
@@ -86,11 +86,17 @@ def main() -> int:
     st = sub.add_parser("stop")
     st.add_argument("--camera", action="store_true", help="카메라까지 내린다")
     st.add_argument("--host", default="vision-3090", help="런처가 없을 때 ssh 로 직접 내릴 곳")
+    st.add_argument("--wait", type=float, default=0.0,
+                    help="런처가 다 내릴 때까지 최대 이 초만큼 기다린다(FP++ 재등록: stop 이 끝난 뒤 start)")
     v = sub.add_parser("viewer")
     v.add_argument("on", choices=("on", "off"))
     sub.add_parser("status")
     sub.add_parser("list")
-    args = ap.parse_args()
+    return ap
+
+
+def main() -> int:
+    args = parser().parse_args()
     registry = load_registry()
     if args.op == "list":
         for name in registry.names():

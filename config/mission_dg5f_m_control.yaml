@@ -83,6 +83,14 @@ stages:
     needs: [preflight]
     skippable: true
 
+  - id: fpp_reregister
+    group: diagnose
+    lane: head
+    title: "FP++ 다시 등록 — 컵을 세워 둔 채 FP++ 만 내렸다 올린다(카메라 · 로봇은 그대로). 정책 reset · start 가 FP++ 기울기 · 흐름으로 거부될 때"
+    # 09.28 2회차: FP++ 가 선 컵을 174° 로 뒤집어 본 채 정책이 시작됐다. FP++ 는 켤 때 첫 영상으로 자세를 잡는다(등록)
+    needs: [sensors]
+    skippable: true
+
   - id: viewer
     group: connect
     lane: head
@@ -374,6 +382,11 @@ run:
       argv: [python3, "{repo}/scripts/nodes/object_pose_node.py", --objects, cup_big_s100]
       background: true
     - note: 카메라 + FP++(cup_big_s100) 켜기 — vision-3090 에서. 런처가 끝낼 때까지 최대 150 s 기다리고, 실패를 보고하면 이 단계도 실패(09.22 에는 보내기만 하고 통과했다)
+      argv: [python3, "{repo}/scripts/ops/perception_ctl.py", start, cup_big_s100, --wait, "150"]
+  fpp_reregister:
+    - note: FP++ 내리기 — 컨테이너 · 자세 송신만(카메라는 켠 채). 런처가 다 내릴 때까지 기다린다
+      argv: [python3, "{repo}/scripts/ops/perception_ctl.py", stop, --wait, "60"]
+    - note: FP++ 올리기 — 첫 영상에서 컵을 다시 등록한다. 컵이 테이블에 똑바로 서 있고 손이 가리지 않아야 한다
       argv: [python3, "{repo}/scripts/ops/perception_ctl.py", start, cup_big_s100, --wait, "150"]
   hand_right:
     - note: ★손 네트워크 — 손은 CAN 이 아니라 Modbus TCP(우 169.254.186.72 · 좌 .73, :502) 다. 09.14 배선은

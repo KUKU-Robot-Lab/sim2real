@@ -256,6 +256,7 @@ const laneTitle = (m, id) => ((m.lanes || []).find((l) => l.id === id) || { titl
 // 창 하나 = 따로 도는 장치. 그 창에서 아직 안 끝낸 첫 단계를 카드로, 나머지는 칩으로.
 function laneHtml(s, lane, can) {
   const m = s.mission, rows = m.rows.filter((r) => r.lane === lane.id);
+  const optional = new Set(stageGroups(m).filter((g) => g.optional).map((g) => g.id));
   const done = rows.filter((r) => r.done).length;
   const chips = rows.map((r) => `<span class="gc${r.id === lane.next ? " now" : r.done ? " done" : ""}" title="${esc(r.title)}">${r.done ? "✓ " : r.id === lane.next ? "● " : ""}${esc(r.id)}</span>`).join("");
   let body;
@@ -271,16 +272,17 @@ function laneHtml(s, lane, can) {
   }
   return `<section class="panel lane${lane.busy ? " lane-busy" : ""}">
     <div class="panel-head"><h2>${esc(lane.title)}</h2><span class="meta">${done}/${rows.length}${lane.busy ? ` · ${esc(lane.busy)} 실행 중` : ""}</span></div>
-    <div class="cp-chips">${chips}</div>${body}${exitHtml(rows, lane, can)}</section>`;
+    <div class="cp-chips">${chips}</div>${body}${exitHtml(rows, lane, can, optional)}</section>`;
 }
 
 // 정리 단계(비상 복귀 · 차렷 복귀 · pd 해제)는 순서를 기다리지 않고 언제나 고를 수 있다 — 09.28 실기: selftest 가
 // 실패하면 pd 가 팔을 잡은 동안 건너뛰기가 막혀(안전 규칙) 창이 거기 멈췄고, 차렷으로 돌아올 길이 화면에 없었다.
 // 서버는 창 안의 어느 단계든 needs · 승인 · 창이 비었는지로만 판정한다(_current_stage) — 버튼만 없던 것이다.
 // 09.28 실기 2: 같은 이유로 selftest_left 실패 뒤 policy_left 로 갈 길도 없었다 — 나머지 단계도 따로 묶어 보인다.
-function exitHtml(rows, lane, can) {
+function exitHtml(rows, lane, can, optional = new Set()) {
   // 정리 · 정책 단계는 끝난 뒤에도 다시 고른다 — 09.28 사용자: "정책 → 홈 자세 → 정책" 을 반복한다.
-  const again = (r) => r.group === "finish" || r.group === "policy";
+  // 선택 묶음(진단: selftest · FP++ 재등록)도 — 리셋이 FP++ 때문에 거부될 때마다 다시 돌린다.
+  const again = (r) => r.group === "finish" || r.group === "policy" || optional.has(r.group);
   const left = rows.filter((r) => (!r.done || again(r)) && r.id !== lane.next && r.id !== lane.busy);
   const outs = left.filter((r) => r.group === "finish");
   const jumps = left.filter((r) => r.group !== "finish");

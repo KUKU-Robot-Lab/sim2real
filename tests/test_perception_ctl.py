@@ -53,3 +53,10 @@ def test_stop_without_the_launcher_calls_the_same_down_scripts_over_ssh():
     spec.loader.exec_module(mod)
     assert mod.direct_stop_scripts(False) == [("pose_tx_down.sh",), ("fpp_down.sh", "all")]
     assert mod.direct_stop_scripts(True)[-1] == ("camera_down.sh",)
+
+
+def test_stop_can_wait_until_the_launcher_is_done():
+    # 재등록은 stop 이 끝난 뒤 start 를 보내야 한다 — 런처가 바쁜 동안 start 가 섞이지 않게
+    from perception_ctl import parser
+    assert parser().parse_args(["stop", "--wait", "60"]).wait == 60.0
+    assert parser().parse_args(["stop"]).wait == 0.0

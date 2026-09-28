@@ -35,7 +35,7 @@ def test_selftest_is_an_optional_diagnosis_nothing_waits_for():
     """09.28 사용자: "selftest_left 이거 맨날 실패하는 것 같은데 따로 빼두던가" — 차례에서 빼고, 아무것도 기대지 않는다."""
     optional = {g.id for g in MISSION.groups if g.optional}
     assert optional == {"diagnose"}
-    assert {s.id for s in MISSION.stages if s.group in optional} == {"selftest_right", "selftest_left"}
+    assert {s.id for s in MISSION.stages if s.group in optional} == {"selftest_right", "selftest_left", "fpp_reregister"}
     assert not [s.id for s in MISSION.stages if {"selftest_right", "selftest_left"} & set(s.needs)]
 
 
@@ -363,3 +363,12 @@ def test_fingertip_sensors_are_zeroed_at_the_policy_start_pose_before_reset(side
     reset = next(i for i, t in enumerate(text) if "trigger.py episode/reset" in t)
     settle = next(i for i, t in enumerate(text) if "pd_goto_home" in t)
     assert settle < 5 < zero < reset and f"--side {side}" in text[zero]
+
+
+def test_fpp_can_be_re_registered_without_touching_the_camera_or_the_robot():
+    """09.28 사용자: 리셋 때 FP++ 가 컵을 제대로 추종하는지 확인 — 거부되면(뒤집힌 컵 · 흐름) FP++ 만 다시 올린다."""
+    st = MISSION.stages[IDS.index("fpp_reregister")]
+    assert st.lane == "head" and st.group == "diagnose" and not st.touches_real and "sensors" in st.needs
+    argv = [list(c.argv) for c in _cmds("fpp_reregister")]
+    assert argv[0][-3:] == ["stop", "--wait", "60"] and "--camera" not in argv[0]      # 카메라는 그대로
+    assert argv[1][-4:] == ["start", "cup_big_s100", "--wait", "150"]

@@ -401,7 +401,7 @@ def test_finish_stages_can_be_picked_from_every_lane_out_of_order():
     assert 'r.group === "finish" || r.group === "policy"' in body
     assert 'data-act="approve"' in body and 'data-act="run"' in body
     assert "r.can_run" in body and "r.can_approve" in body               # 서버 판정 그대로 — 화면이 규칙을 새로 만들지 않는다
-    assert re.search(r"\$\{body\}\$\{exitHtml\(rows, lane, can\)\}", JS)
+    assert re.search(r"\$\{body\}\$\{exitHtml\(rows, lane, can, optional\)\}", JS)
 
 
 def test_every_other_stage_can_be_picked_out_of_order_with_the_server_verdict():
@@ -423,3 +423,10 @@ def test_the_lane_card_follows_the_running_stage_before_the_next_one():
     # 09.28 실기: 차례를 건너뛰어 policy_left 를 띄웠더니 카드는 selftest_left 에 머물러 수동 확인 버튼이 없었다
     body = re.search(r"function laneHtml[\s\S]*?\n}\n", JS).group(0)
     assert "const shown = lane.busy || lane.next;" in body and "r.id === shown" in body
+
+
+def test_optional_diagnosis_stages_can_be_picked_again_after_they_ran():
+    # 09.28 사용자: selftest 는 따로 · FP++ 재등록은 리셋이 거부할 때마다 — 선택 묶음은 끝난 뒤에도 다시 고른다
+    body = re.search(r"function exitHtml[\s\S]*?\n}\n", JS).group(0)
+    assert "optional.has(r.group)" in body
+    assert re.search(r"exitHtml\(rows, lane, can, optional\)", JS)

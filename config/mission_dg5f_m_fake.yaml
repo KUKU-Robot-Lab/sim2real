@@ -187,6 +187,22 @@ run:
     execute_args:
     - --execute
     note: '[right] 에피소드 stop — pd 는 계속 잡고 있다(해제는 ⑥)'
+  fpp_reregister:
+  - argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - stop
+    - --wait
+    - '60'
+    note: FP++ 내리기 — 컨테이너 · 자세 송신만(카메라는 켠 채). 런처가 다 내릴 때까지 기다린다
+  - argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - cup_big_s100
+    - --wait
+    - '150'
+    note: FP++ 올리기 — 첫 영상에서 컵을 다시 등록한다. 컵이 테이블에 똑바로 서 있고 손이 가리지 않아야 한다
   hand_left:
   - argv:
     - bash
@@ -1265,6 +1281,13 @@ stages:
   - preflight
   skippable: true
   title: 인지 켜기 — vision-3090 카메라 · FP++ (로봇을 움직이지 않는다)
+- group: diagnose
+  id: fpp_reregister
+  lane: head
+  needs:
+  - sensors
+  skippable: true
+  title: FP++ 다시 등록 — 컵을 세워 둔 채 FP++ 만 내렸다 올린다(카메라 · 로봇은 그대로). 정책 reset · start 가 FP++ 기울기 · 흐름으로 거부될 때
 - group: connect
   id: viewer
   lane: head
