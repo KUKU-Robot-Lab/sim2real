@@ -43,8 +43,9 @@ def planner_argv(side: str, q: dict[str, float], out: Path) -> list[str]:
     if not hand:
         raise SystemExit(f"✗ 손 관절 상태가 없다({side}) — 손 드라이버가 떠 있는가(손 자세로 충돌을 검사한다)")
     return [sys.executable, str(HERE / "plan_home_path.py"), "--side", side,
-            "--start", ",".join(f"{q[j]:.5f}" for j in arm), "--goal", "contract",
-            "--hand-start", "measured", "--hand-q", ",".join(f"{k}={v:.5f}" for k, v in sorted(hand.items())),
+            # `--opt=값` 으로 붙인다 — 값이 '-0.1…' 처럼 음수로 시작하면 argparse 가 옵션으로 읽는다(09.28 실기 rc=2)
+            "--start=" + ",".join(f"{q[j]:.5f}" for j in arm), "--goal", "contract",
+            "--hand-start", "measured", "--hand-q=" + ",".join(f"{k}={v:.5f}" for k, v in sorted(hand.items())),
             "--out", str(out)]
 
 
