@@ -39,6 +39,25 @@ def _load(name: str):
 SAVED_ESCAPE_TOL = 0.002        # [m] 저장 시작점과 같은 값으로 보는 폭(검사기 표본 간격 차)
 
 
+def drop_start_pose_fails(fails: list[dict], d_start: dict, margin: float,
+                          tol: float = SAVED_ESCAPE_TOL) -> list[dict]:
+    """경로 시작 자세에서 **이미** 여유(margin) 안인 쌍은 그 자세의 거리보다 가까워지지 않으면 통과.
+
+    09.28 실기: 차렷에서 쉬던 손(실측 · 접힌 손가락)의 검지 끝이 저장 경로 시작점(차렷 0)에서 몸통과 1.82 cm 라,
+    0.0116 rad 정렬도 거부됐다. 저장 경로의 탈출 쌍 목록(meta_escape_pairs)은 경로를 계획한 손 모델(봉투 구)
+    기준이라 손바닥만 있고 실측 손가락은 없다. 어차피 그 자세로 가는 길이고 재생은 거기서 출발하므로, 이 구간이
+    경로 자신의 출발점보다 엄격할 이유가 없다 — drop_saved_escape_fails 를 실측 손 전체로 넓힌 것이다.
+    """
+    out = []
+    for f in fails:
+        k = tuple(f["pair"])
+        floor = d_start.get(k, d_start.get(k[::-1]))
+        if floor is not None and floor < margin and f["dist"] >= floor - tol:
+            continue
+        out.append(f)
+    return out
+
+
 def drop_saved_escape_fails(fails: list[dict], d_start: dict, saved_escape: set[str],
                             tol: float = SAVED_ESCAPE_TOL) -> list[dict]:
     """저장 경로가 시작 자세에서 이미 인정한 쌍(meta_escape_pairs)은 **그 자세보다 가까워지지 않으면** 통과.
@@ -112,6 +131,11 @@ def main() -> int:
         dropped = len(rep["fails"]) - len(kept)
         if dropped:
             print(f"[approach] 저장 경로가 시작 자세에서 이미 인정한 쌍 {dropped} 건은 그 값보다 가까워지지 않아 통과")
+        kept2 = drop_start_pose_fails(kept, d_start, args.margin)
+        if len(kept2) < len(kept):
+            pairs = sorted({"<->".join(f["pair"]) for f in kept if f not in kept2})
+            print(f"[approach] 경로 시작 자세에서 이미 여유 {args.margin} m 안인 쌍 {pairs} — 그 자세 거리보다 가까워지지 않아 통과")
+        kept = kept2
         rep["fails"] = kept
         return not kept
 

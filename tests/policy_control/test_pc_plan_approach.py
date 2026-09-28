@@ -53,3 +53,14 @@ def test_a_pair_the_saved_path_did_not_tolerate_still_fails():
 def test_a_pair_missing_from_the_start_pose_distances_still_fails():
     fails = [_fail(THUMB, 0.0161)]
     assert A.drop_saved_escape_fails(fails, {}, SAVED) == fails
+
+
+def test_a_real_finger_already_inside_the_margin_at_the_path_start_passes_if_it_gets_no_closer():
+    """09.28 실기: 쉬던 손의 검지 끝이 차렷(저장 경로 시작점)에서 몸통과 1.82 cm — 0.0116 rad 정렬이 거부됐다."""
+    pair = ("body_link", "l_hl_index_4")
+    fails = [{"pair": pair, "dist": 0.0182, "s": 0.012, "q": [], "slack": -0.0018}]
+    assert A.drop_start_pose_fails(fails, {pair: 0.0182}, margin=0.02) == []
+    closer = [{"pair": pair, "dist": 0.0150, "s": 0.006, "q": [], "slack": -0.005}]
+    assert A.drop_start_pose_fails(closer, {pair: 0.0182}, margin=0.02) == closer      # 시작 자세보다 가까워지면 막는다
+    assert A.drop_start_pose_fails(fails, {pair: 0.025}, margin=0.02) == fails          # 시작 자세는 여유 밖 — 봐주지 않는다
+    assert A.drop_start_pose_fails(fails, {}, margin=0.02) == fails
