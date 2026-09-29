@@ -90,7 +90,10 @@ def _write(console: Console, method: str, path: str, data: dict, token: str | No
     console.lease.renew(held.token)
     who = held.holder
     if path == "/api/run/open":
-        s = console.open(str(data.get("profile", "")), operator=who)
+        picked = data.get("policies") or {}
+        if not isinstance(picked, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in picked.items()):
+            return _fail(400, "'policies' 는 {쪽: 정책 id} 여야 한다")
+        s = console.open(str(data.get("profile", "")), operator=who, policies=picked)
         return 200, {"ok": True, "run_id": s.run_id}
     if path == "/api/run/end":
         return 200, {"ok": True, "stopped": console.end(force=bool(data.get("force")))}

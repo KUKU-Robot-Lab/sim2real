@@ -118,6 +118,7 @@ function renderAll() {
   renderMetrics(s);
   renderFpp(s);
   renderPolicy(s);
+  renderSetupPanel(s);
   renderRobot(s);
   put("quick", stopButtons(s));
 }
@@ -340,7 +341,7 @@ function renderBanner(s) {
   const el = $("banner");
   if (!s) {
     el.className = "banner tone-mute";
-    return put("banner", `<div class="banner-state">대기</div><div class="banner-reasons"><span class="quiet">열린 run 이 없다 — 아래에서 프로파일을 고를 것.</span></div>`);
+    return put("banner", `<div class="banner-state">대기</div><div class="banner-reasons"><span class="quiet">열린 run 이 없다 — 아래에서 로봇 · 정책을 고를 것.</span></div>`);
   }
   const b = s.banner;
   el.className = `banner tone-${b.tone}`;
@@ -362,19 +363,79 @@ function renderBanner(s) {
       <div class="pill"><small>미션 · 사이클 ${esc(m.cycle)}</small><b>${esc(m.stage)} ${esc(m.status)}</b></div></div>`);
 }
 
+// ── 첫 화면: ① 로봇 → ② 정책 → ③ 실기 · fake (09.29 사용자: "처음 창을 키면 robot 및 실행 가능한 policy 선택창") ──
+// 로봇은 deploy/s2r_console/robots/<id>.yaml 하나씩(모듈). 정책 목록 · 고를 수 있는지는 서버가 판정한다 — 여기는 그리기만.
+const pick = { robot: "", policies: {} };
+const SLOT_KO = { right: "오른팔", left: "왼팔", both: "양팔" };
+
+function robotCard(r, can) {
+  const usable = r.policies.filter((p) => !p.why.length).length;
+  const on = pick.robot === r.id;
+  return `<div class="card robot-card${on ? " on" : ""}"><div><span class="badge">${esc(r.host || "?")}</span> <span class="badge">${esc(r.hand.model || "")}</span></div>
+    <h3>${esc(r.title)}</h3>
+    <div class="path">자산 ${esc(r.asset)}<br>손 ${esc(r.hand.vendor || "")} ${esc(r.hand.model || "")} · 구동 ${esc(r.hand.actuated || "?")}<br>
+      프로파일 ${r.profiles.length ? r.profiles.map((p) => esc(p.id)).join(" · ") : "없음"} · 고를 수 있는 정책 ${usable}/${r.policies.length}</div>
+    ${r.note ? `<div class="hint">${esc(r.note)}</div>` : ""}
+    <div class="actions"><button class="btn ${on ? "btn-ghost" : "btn-primary"}" data-act="pick-robot" data-arg="${esc(r.id)}">${on ? "선택됨" : "이 로봇"}</button></div></div>`;
+}
+
+function slotPicker(r, side) {
+  const def = (r.defaults || {})[side] || "";
+  const mine = r.policies.filter((p) => p.side === side);
+  const cur = pick.policies[side] || "";
+  const opt = (p) => `<option value="${esc(p.id)}" ${p.why.length ? "disabled" : ""} ${cur === p.id ? "selected" : ""}>${esc(p.id)} · ${esc(p.status)}${p.why.length ? ` — ${esc(p.why[0])}` : ""}</option>`;
+  const chosen = mine.find((p) => p.id === (cur || def));
+  return `<div class="slot"><label><b>${esc(SLOT_KO[side] || side)}</b> <span class="hint">미션 산출물 ${esc(r.slots[side])}</span></label>
+    <select data-pick="${esc(side)}"><option value="" ${cur ? "" : "selected"}>미션 기본값${def ? ` (${esc(def)})` : ""}</option>${mine.map(opt).join("")}</select>
+    ${chosen ? `<div class="hint slot-note">${esc(chosen.task)}${chosen.note ? ` — ${esc(chosen.note.slice(0, 220))}` : ""}</div>` : ""}</div>`;
+}
+
+function policyTable(r) {
+  if (!r.policies.length) return `<div class="empty">이 로봇의 정책이 deploy/policies 에 아직 없다.</div>`;
+  const rows = r.policies.map((p) => `<tr class="${p.why.length ? "off" : ""}"><td><code>${esc(p.id)}</code></td><td>${esc(SLOT_KO[p.side] || p.side)}</td><td>${esc(p.status)}</td>
+    <td>${esc(p.contract || "—")}</td><td>${p.why.length ? `<span class="warn">${esc(p.why.join(" · "))}</span>` : "고를 수 있다"}</td></tr>`).join("");
+  return `<table class="ptable"><thead><tr><th>정책</th><th>자리</th><th>상태</th><th>계약</th><th>판정</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 function renderLanding() {
   const can = holding();
-  const cards = S.profiles.map((p) => {
+  const robots = S.robots || [];
+  if (!robots.some((r) => r.id === pick.robot)) pick.robot = robots.length === 1 ? robots[0].id : "";
+  const r = robots.find((x) => x.id === pick.robot);
+  const step = r ? 2 : 1;
+  const steps = ["로봇", "정책", "실기 · fake"].map((t, i) => `<li class="${i + 1 < step ? "done" : i + 1 === step ? "now" : ""}">${i + 1}. ${t}</li>`).join("");
+  let body = "";
+  if (r) {
+    const settings = r.settings.map((x) => `<tr><th>${esc(x.label)}</th><td>${esc(x.value)}</td></tr>`).join("");
+    const picked = Object.fromEntries(Object.entries(pick.policies).filter(([, v]) => v));
+    const runBtns = r.profiles.map((p) => {
+      const real = p.domain_class === "real";
+      return `<button class="btn ${real ? "btn-real" : "btn-primary"}" data-act="open-picked" data-arg="${esc(p.id)}" ${can ? "" : "disabled"}>${real ? "실기" : "FAKE"} · 도메인 ${esc(p.domain)} — ${esc(p.title)} run 시작</button>`;
+    }).join("");
+    body = `<section class="panel pick-panel"><div class="panel-head"><h2>${esc(r.title)}</h2><span class="meta">${esc(r.host)}</span></div>
+      <div class="pick-grid">
+        <div><h3 class="sub">로봇 설정</h3><table class="settings">${settings}</table></div>
+        <div><h3 class="sub">② 정책 고르기</h3>${Object.keys(r.slots).map((side) => slotPicker(r, side)).join("")}
+          <p class="hint">고른 정책은 이번 run 에서만 미션 산출물을 바꾼다(yaml 은 그대로). 실기 단계 승인은 그 계약으로 다시 받는다.</p>
+          <h3 class="sub">③ 실행</h3><div class="actions run-btns">${runBtns || `<span class="warn">프로파일이 없다 — ${esc((r.missing_profiles || []).join(", ") || "robots/*.yaml 의 profiles")}</span>`}</div>
+          ${Object.keys(picked).length ? `<p class="hint">고른 것: ${Object.entries(picked).map(([k, v]) => `${esc(SLOT_KO[k] || k)} ${esc(v)}`).join(" · ")}</p>` : ""}
+          ${can ? "" : `<p class="hint">먼저 오른쪽 위에서 조작 권한을 잡을 것</p>`}</div>
+      </div>
+      ${det(`policies:${r.id}`, `이 로봇의 정책 전부 (${r.policies.length}) — 못 고르는 이유 포함`, policyTable(r))}</section>`;
+  }
+  const inRobot = new Set(robots.flatMap((x) => x.profiles.map((p) => p.id)));
+  const others = S.profiles.filter((p) => !inRobot.has(p.id)).map((p) => {
     const real = p.domain_class === "real";
     return `<div class="card ${real ? "real" : "fake"}"><div>${domainBadge(p)}</div><h3>${esc(p.title)}</h3>
       <div class="path">미션 ${esc(rel(p.mission))}<br>노드 ${p.status_nodes.map(esc).join(" · ")}${p.policy_dir ? `<br>정책 ${esc(rel(p.policy_dir))}` : ""}</div>
-      <div class="actions"><button class="btn ${real ? "btn-real" : "btn-primary"}" data-act="open" data-arg="${esc(p.id)}" ${can ? "" : "disabled"}>run 시작</button>
-      ${can ? "" : `<span class="hint">먼저 오른쪽 위에서 조작 권한을 잡을 것</span>`}</div></div>`;
+      <div class="actions"><button class="btn ${real ? "btn-real" : "btn-primary"}" data-act="open" data-arg="${esc(p.id)}" ${can ? "" : "disabled"}>run 시작</button></div></div>`;
   });
-  const broken = Object.entries(S.bad_profiles).map(([name, why]) =>
+  const broken = [...Object.entries(S.bad_profiles), ...Object.entries(S.bad_robots || {})].map(([name, why]) =>
     `<div class="card broken"><div><span class="badge warn">읽지 못함</span></div><h3>${esc(name)}</h3><div class="path">${esc(why)}</div></div>`);
-  put("landing", `<h1>배포 프로파일</h1><p class="lead">프로파일은 미션 · 정책 · DDS 도메인을 한 묶음으로 고정한다. 하나를 열면 그 도메인에 <b>구독 전용</b> 브리지가 붙는다 — 그것만으로는 아무 명령도 나가지 않는다.</p>
-    <div class="cards">${cards.join("")}${broken.join("")}</div>`);
+  put("landing", `<h1>로봇 · 정책 고르기</h1><ol class="steps">${steps}</ol>
+    <p class="lead">로봇 하나를 고르면 그 로봇의 설정과 고를 수 있는 정책이 보인다. run 을 열면 그 도메인에 <b>구독 전용</b> 브리지가 붙는다 — 그것만으로는 아무 명령도 나가지 않는다.</p>
+    <div class="cards">${robots.map((x) => robotCard(x, can)).join("")}</div>${body}
+    ${others.length || broken.length ? det("other-profiles", `로봇 모듈 밖의 프로파일 (${others.length})`, `<div class="cards">${others.join("")}${broken.join("")}</div>`) : ""}`);
 }
 const rel = (p) => String(p).replace(/^.*\/sim2real\//, "");
 
@@ -678,18 +739,20 @@ function renderPolicy(s) {
 // 09.23 실기: 손가락이 계약 홈(굽힘 관절 하한 0.0)으로 밀려 꺾였는데 화면 어디에도 그 값이 없었다.
 // 렌더(PNG, 실제 메쉬 음영) 위에 실루엣(SVG, 링크마다 id)을 겹친다 — 둘은 같은 투영·같은 창이라 맞아떨어진다.
 //: 정적 파일은 /static/ 아래로만 서비스된다(server.py `_static`) — 상대 경로로 부르면 404 다.
-const ROBOT_ART = { arms: "/static/robot_arms", right: "/static/robot_hand_right", left: "/static/robot_hand_left" };
+// 그림은 로봇 모듈의 art(없으면 그리지 않는다) — DG-5F 그림을 RH56F1 에 덧칠하지 않는다
+const ROBOT_ART_DEFAULT = { arms: "robot_arms", right: "robot_hand_right", left: "robot_hand_left" };
+const robotArt = () => { const m = S && S.session && S.session.robot_module; return m ? (m.art || {}) : ROBOT_ART_DEFAULT; };
 const artCache = {};
 
-async function loadArt(key) {
-  if (artCache[key] !== undefined) return artCache[key];
-  artCache[key] = "";
+async function loadArt(name) {
+  if (artCache[name] !== undefined) return artCache[name];
+  artCache[name] = "";
   try {
-    const r = await fetch(`${ROBOT_ART[key]}.svg`);
-    artCache[key] = r.ok ? await r.text() : "";
-  } catch { artCache[key] = ""; }
+    const r = await fetch(`/static/${name}.svg`);
+    artCache[name] = r.ok ? await r.text() : "";
+  } catch { artCache[name] = ""; }
   refresh();
-  return artCache[key];
+  return artCache[name];
 }
 
 function jointRows(g, chan) {
@@ -722,16 +785,30 @@ const ART_TINT = { limit: "rgba(255,93,82,.45)", off: "rgba(227,160,8,.42)" };
 const ART_EDGE = { limit: "#ff5d52", off: "#e3a008" };
 
 function artWith(key, groups) {
-  const svg = artCache[key];
-  if (svg === undefined) { loadArt(key); return `<div class="empty">그림 여는 중…</div>`; }
+  const name = robotArt()[key];
+  if (!name) return "";
+  const svg = artCache[name];
+  if (svg === undefined) { loadArt(name); return `<div class="empty">그림 여는 중…</div>`; }
   const rules = [];
   groups.forEach((g) => g.rows.forEach((r) => {
     if (r.state === "ok" || r.state === "missing") return;
     const id = r.joint.replace(/_([ah])j_/, "_$1l_");
     rules.push(`#${id} { fill: ${ART_TINT[r.state]}; stroke: ${ART_EDGE[r.state]}; }`);
   }));
-  const img = `<img src="${ROBOT_ART[key]}.png" alt="" onerror="this.style.display='none'">`;
+  const img = `<img src="/static/${name}.png" alt="" onerror="this.style.display='none'">`;
   return `${img}${svg ? `<style>${rules.join("\n")}</style>${svg}` : ""}`;
+}
+
+// 로봇 모듈 칸 — 어느 로봇 · 어느 정책(고른 것 · 미션 기본값)으로 열었는가, 로봇 설정(09.29 사용자: "robot setting 및 state")
+function renderSetupPanel(s) {
+  const m = s.robot_module;
+  $("robotmod-panel").hidden = !m;
+  if (!m) return;
+  put("robotmod-meta", `${esc(m.host)} · ${esc(m.hand.model || "")}`);
+  const slots = Object.entries(m.slots_now || {}).map(([side, id]) =>
+    `<tr><th>${esc(SLOT_KO[side] || side)} 정책</th><td><code>${esc(id)}</code> ${m.picked[side] ? "(첫 화면에서 고름)" : "(미션 기본값)"}</td></tr>`).join("");
+  const rows = m.settings.map((x) => `<tr><th>${esc(x.label)}</th><td>${esc(x.value)}</td></tr>`).join("");
+  put("robotmod", `<table class="settings">${slots}</table>${det("robotmod-settings", "로봇 설정", `<table class="settings">${rows}</table>`)}`);
 }
 
 function renderRobot(s) {
@@ -802,6 +879,12 @@ const acts = {
   },
   async "lease-drop"() { await call("DELETE", "/api/lease"); me.token = ""; refresh(); },
   async open(id) { await call("POST", "/api/run/open", { profile: id }); refresh(); },
+  "pick-robot"(id) { if (pick.robot !== id) { pick.robot = id; pick.policies = {}; } refresh(); },
+  async "open-picked"(id) {
+    const policies = Object.fromEntries(Object.entries(pick.policies).filter(([, v]) => v));
+    await call("POST", "/api/run/open", { profile: id, policies });
+    refresh();
+  },
   approve(id) { approveModal(id); },
   async "approve-go"(id) { await call("POST", "/api/approve", { stage: id, typed: $("approve-typed").value }); closeModal(); refresh(); },
   "robot-chan"(key) { robotChan = key; refresh(); },
@@ -894,6 +977,10 @@ document.addEventListener("click", (e) => {
   if (!b || b.disabled) return;
   const fn = acts[b.dataset.act];
   if (fn) Promise.resolve(fn(b.dataset.arg)).catch(() => {});
+});
+document.addEventListener("change", (e) => {
+  const side = e.target.dataset && e.target.dataset.pick;
+  if (side) { pick.policies[side] = e.target.value; render(); }
 });
 document.addEventListener("toggle", (e) => {
   const k = e.target.dataset && e.target.dataset.key;

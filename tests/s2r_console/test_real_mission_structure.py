@@ -386,8 +386,24 @@ def test_pd_runs_at_full_speed_and_the_left_policy_ends_its_own_episode():
     for side in ("right", "left"):
         (pd,) = [c for c in _cmds(f"pd_arm_{side}") if any(a.endswith("pd_controller.launch.py") for a in c.argv)]
         assert "stage:=full" in pd.argv and "execute:=true" in pd.argv
-    launch = _cmds("policy_left")[4].argv
+    from mission_stages import commands_for
+    # 정책마다 다른 인자는 정책 카드(deploy)가 가진다 — 09.29 첫 화면에서 정책을 고른다
+    assert "success_tol_m:={policy:joint_left.success_tol_m}" in _cmds("policy_left")[4].argv
+    launch = commands_for(BOOK, MISSION, "policy_left", repo=REPO, execute=True)[4].argv
     assert "success_tol_m:=0.0318" in launch and "success_steps:=10" in launch and "max_episode_s:=15.0" in launch
+    right = commands_for(BOOK, MISSION, "policy_right", repo=REPO, execute=True)
+    assert any("success_tol_m:=0.0" in a for c in right for a in c.argv)       # right_m15_e800 은 도착 판정 끔(09.28 그대로)
+
+
+def test_every_policy_the_mission_can_pick_has_its_deploy_args():
+    """joint 자리에 고를 수 있는 정책은 모두 카드에 deploy 인자가 있다 — 없으면 정책 단계가 명령을 못 만든다."""
+    import json
+    for d in sorted((REPO / "deploy/policies").iterdir()):
+        if not (d / "joint_contract.json").is_file():
+            continue
+        card = yaml.safe_load((d / "policy.yaml").read_text())
+        assert {"success_tol_m", "success_steps", "max_episode_s"} <= set(card.get("deploy") or {}), d.name
+        assert json.loads((d / "joint_contract.json").read_text())["side"] == card["side"], d.name
 
 
 @pytest.mark.parametrize("side", ["right", "left"])

@@ -32,6 +32,8 @@ from .feed import Feed
 from .lease import Lease
 from .links import chain
 from .profiles import Profile, scan
+from . import robots as RB
+from .errors import ProfileError
 from .rosgraph import REPEAT_S as GRAPH_REPEAT_S
 from . import pd_names as PD
 from .runner import SETTLE_S, StageRunner, step_kind
@@ -91,7 +93,7 @@ class ConsoleError(RuntimeError):
 
 
 
-def _robot_reference(mission, repo: Path) -> tuple[dict, dict, dict]:
+def _robot_reference(mission, repo: Path, joint_profile: Path | None = None) -> tuple[dict, dict, dict]:
     """(계약의 sides, 관절 한계, 원본→canonical 이름표) — 화면의 로봇 상태 표가 쓴다.
 
     없어도 표는 그려진다(목표 없는 실측만). 읽기 실패는 조용히 비운다 — 표시용이다."""
@@ -106,7 +108,7 @@ def _robot_reference(mission, repo: Path) -> tuple[dict, dict, dict]:
             sides = {}
     try:
         from jtc_bridge_core import load_profile_joints                        # noqa: PLC0415 (scripts/)
-        prof = load_profile_joints(_paths.ROBOT_PROFILE)
+        prof = load_profile_joints(joint_profile or _paths.ROBOT_PROFILE)
         limits = {k: (v["lower"], v["upper"]) for k, v in prof.items() if "lower" in v and "upper" in v}
         alias = {v["source"]: k for k, v in prof.items() if v.get("source")}   # /joint_states 는 원본 이름으로 온다
     except Exception:                                                          # noqa: BLE001 — 표시용이라 막지 않는다
@@ -229,10 +231,16 @@ class _Pipe:
 
 
 class Session:
-    def __init__(self, profile: Profile, *, repo: Path, operator: str, bridge: bool) -> None:
+    def __init__(self, profile: Profile, *, repo: Path, operator: str, bridge: bool,
+                 robot: RB.Robot | None = None, picked: Mapping[str, str] | None = None,
+                 artifacts: Mapping[str, str] | None = None) -> None:
         self.profile, self.repo, self.operator = profile, repo, operator
         raw = yaml.safe_load(profile.mission.read_text(encoding="utf-8"))
-        self.mission = MC.load_mission(raw)
+        mission = MC.load_mission(raw)
+        #: 첫 화면에서 고른 정책(09.29 사용자) — 미션의 산출물(계약 경로)만 바꾼다. 승인 근거 해시가 계약을 담으므로
+        #: 정책이 바뀌면 승인도 다시 받는다.
+        self.robot, self.picked = robot, dict(picked or {})
+        self.mission = replace(mission, artifacts={**mission.artifacts, **dict(artifacts or {})})
         self.runbook = load_runbook(raw.get("run", {}), self.mission)
         self.run_id = f"{datetime.now():%Y%m%d_%H%M%S}__{profile.id}"
         self.run_dir = mission_run.MISSION_LOG_DIR / self.run_id
@@ -262,7 +270,8 @@ class Session:
         #: 운영자가 끈 것 {키: 그때의 pid} — 죽은 것과 구별한다. pid 까지 적어야 그 뒤 다시 뜬 프로세스의 크래시를 가리지 않는다.
         self.units_stopped: dict[str, int | None] = {}
         #: 로봇 상태 표가 쓰는 목표·한계 — 계약과 프로파일에서 한 번만 읽는다(09.23).
-        self.contract_sides, self.joint_limits, self.joint_alias = _robot_reference(self.mission, repo)
+        self.contract_sides, self.joint_limits, self.joint_alias = _robot_reference(
+            self.mission, repo, None if robot is None or not robot.joint_profile else (repo / robot.joint_profile).resolve())
         proc = self.run_dir / "proc"
         probe = probe_argv(profile, self.diagram) if bridge else None
         self.bridge = (_Pipe("bridge", bridge_argv(profile, self.diagram), self.feed.bridge_died, self.feed, self.feed_lock, env,
@@ -272,6 +281,7 @@ class Session:
         mission_run.save_state(self.run_id, self.state)
         (self.run_dir / "run.json").write_text(json.dumps({
             "run_id": self.run_id, "profile": profile.as_dict(), "operator": operator,
+            "robot": None if robot is None else robot.id, "policies": self.picked, "artifact_overrides": dict(artifacts or {}),
             "started": datetime.now().isoformat(timespec="seconds"),
             "basis": dict(survey.all_basis(self.mission, repo=repo, cache=self.cache)),
         }, ensure_ascii=False, indent=2))
@@ -290,16 +300,21 @@ class Session:
 
 
 class Console:
-    def __init__(self, *, repo: Path = _paths.SIM2REAL, profiles_dir: Path | None = None, bridge: bool = True) -> None:
+    def __init__(self, *, repo: Path = _paths.SIM2REAL, profiles_dir: Path | None = None, bridge: bool = True,
+                 robots_dir: Path | None = None, policies_dir: Path | None = None) -> None:
         self.repo = repo
         self.profiles_dir = profiles_dir or Path(__file__).resolve().parents[1] / "profiles"
+        self.robots_dir = robots_dir or Path(__file__).resolve().parents[1] / "robots"
+        self.policies_dir = policies_dir or repo / "deploy" / "policies"
+        self._policy_cache: tuple[float, dict[str, RB.PolicyInfo]] = (0.0, {})
         self.lease = Lease()
         self.session: Session | None = None
         self._bridge = bridge
         self._lock = threading.RLock()
 
     # ── 열고 닫기 ───────────────────────────────────────────────────────
-    def open(self, profile_id: str, *, operator: str) -> Session:
+    def open(self, profile_id: str, *, operator: str, policies: Mapping[str, str] | None = None) -> Session:
+        """프로파일을 연다. `policies` = 첫 화면에서 고른 {쪽: 정책 id} — 그 로봇의 슬롯 산출물만 바꾼다."""
         with self._lock:
             if self.session is not None:
                 raise ConsoleError(f"run {self.session.run_id} 이 열려 있다 — 먼저 끝낼 것")
@@ -308,9 +323,63 @@ class Console:
             if profile is None:
                 why = next((v for k, v in bad.items() if Path(k).stem == profile_id), "그런 프로파일이 없다")
                 raise ConsoleError(f"{profile_id}: {why}", code=404)
-            self.session = Session(profile, repo=self.repo, operator=operator, bridge=self._bridge)
-            self.session.event("run", f"run 시작 — {profile.title} (도메인 {profile.domain}, {profile.domain_class})")
+            robot = next((r for r in RB.scan(self.robots_dir)[0] if profile.id in r.profiles), None)
+            picked = {k: v for k, v in (policies or {}).items() if v}
+            artifacts = {}
+            if picked:
+                if robot is None:
+                    raise ConsoleError(f"{profile_id} 는 어느 로봇 모듈에도 없다 — 정책을 고를 수 없다", code=400)
+                try:
+                    artifacts = RB.overrides(robot, picked, self._policies(), self.policies_dir, self.repo)
+                except ProfileError as exc:
+                    raise ConsoleError("고른 정책을 쓸 수 없다", code=400, reasons=tuple(str(exc).split("; "))) from exc
+            self.session = Session(profile, repo=self.repo, operator=operator, bridge=self._bridge,
+                                   robot=robot, picked=picked, artifacts=artifacts)
+            chosen = " · ".join(f"{k} {v}" for k, v in picked.items()) or "미션 기본값"
+            self.session.event("run", f"run 시작 — {profile.title} (도메인 {profile.domain}, {profile.domain_class}) · 정책 {chosen}")
             return self.session
+
+    def _policies(self) -> dict[str, RB.PolicyInfo]:
+        """deploy/policies 의 정책 카드 — 첫 화면이 몇 초마다 부르므로 5 s 동안 기억한다(체크포인트 md5 를 센다)."""
+        at, cached = self._policy_cache
+        if time.monotonic() - at < 5.0:
+            return cached
+        out = {}
+        for e in registry.scan(self.policies_dir, deep=False):
+            doc = None
+            if e.contract:
+                try:
+                    doc = json.loads((e.path / e.contract).read_text())
+                except (OSError, ValueError):
+                    doc = None
+            out[e.id] = RB.policy_info(e, doc)
+        self._policy_cache = (time.monotonic(), out)
+        return out
+
+    def _robots_view(self, profiles: Sequence[Profile]) -> tuple[list[dict], dict[str, str]]:
+        """첫 화면의 로봇 카드 — 프로파일(있는 것 · 없는 것)과 고를 수 있는 정책."""
+        robots, bad = RB.scan(self.robots_dir)
+        known = {p.id: p for p in profiles}
+        policies = list(self._policies().values())
+        out = []
+        for r in robots:
+            out.append({**r.as_dict(),
+                        "profiles": [known[p].as_dict() for p in r.profiles if p in known],
+                        "missing_profiles": [p for p in r.profiles if p not in known],
+                        "policies": RB.choices(r, policies),
+                        "defaults": self._slot_defaults(r, known)})
+        return out, bad
+
+    def _slot_defaults(self, robot: RB.Robot, known: Mapping[str, Profile]) -> dict[str, str]:
+        """{쪽: 미션이 기본으로 가리키는 정책 id} — 첫 프로파일의 미션 산출물에서."""
+        prof = next((known[p] for p in robot.profiles if p in known), None)
+        if prof is None:
+            return {}
+        try:
+            arts = (yaml.safe_load(prof.mission.read_text(encoding="utf-8")) or {}).get("artifacts") or {}
+        except (OSError, yaml.YAMLError):
+            return {}
+        return {side: Path(str(arts[key])).parent.name for side, key in robot.slots.items() if key in arts}
 
     def end_reasons(self) -> list[str]:
         """지금 run 을 끝내면 왜 안 되는가. 비어 있으면 된다."""
@@ -728,8 +797,10 @@ class Console:
     def snapshot(self) -> dict:
         with self._lock:
             good, bad = scan(self.profiles_dir, repo=self.repo)
+            robots, bad_robots = self._robots_view(good) if self.session is None else ([], {})
             out = {"t": time.time(), "lease": self.lease.view(),
                    "profiles": [p.as_dict() for p in good], "bad_profiles": bad, "session": None,
+                   "robots": robots, "bad_robots": bad_robots,
                    "quick": [{"name": k, "label": v[0], "help": v[1], "where": v[3],
                               # pd 서비스는 팔마다 따로다(09.23) — 화면이 쪽마다 버튼을 낸다.
                               "per_side": any(a.startswith("pd/") for a in v[2])} for k, v in QUICK.items()]}
@@ -762,6 +833,8 @@ class Console:
                 "runners": {lane: r.view() for lane, r in s.runners.items()},
                 "procs": s.supervisor.table(), "metrics": metrics, "events": events,
                 "policy": self._policy_view(s), "end_reasons": self.end_reasons(),
+                "robot_module": None if s.robot is None else {**s.robot.as_dict(), "picked": s.picked,
+                                                              "slots_now": self._slots_now(s)},
                 "fpp": self._fpp_view(s, obs)}
 
     @staticmethod
@@ -861,6 +934,13 @@ class Console:
         return {"name": s.mission.name, "stage": s.state.stage, "status": s.state.status, "cycle": s.state.cycle,
                 "note": s.state.note, "loop_to": s.mission.loop_to, "rows": rows, "groups": groups,
                 "lanes": lane_view}
+
+    @staticmethod
+    def _slots_now(s: Session) -> dict[str, str]:
+        """{쪽: 지금 미션이 쓰는 정책 폴더 이름} — 고른 것이든 미션 기본값이든."""
+        arts = s.mission.artifacts
+        return {side: Path(str(arts[key])).parent.name for side, key in (s.robot.slots if s.robot else {}).items()
+                if key in arts}
 
     @staticmethod
     def _policy_view(s: Session) -> dict | None:

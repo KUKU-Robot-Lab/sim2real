@@ -372,10 +372,10 @@ def test_the_panel_is_left_table_art_right_table_and_uses_the_generated_svgs():
         assert stem in JS, stem
         assert (WEB / f"{stem}.svg").exists() and (WEB / f"{stem}.png").exists(), stem   # 실루엣 + 음영 렌더
     # 09.23 사용자 "렌더에 실루엣과 같이 되면 좋을 것 같음" — PNG 위에 SVG 를 겹친다(같은 투영·같은 창)
-    assert re.search(r'<img src="\$\{ROBOT_ART\[key\]\}\.png"', JS)
+    assert re.search(r'<img src="/static/\$\{name\}\.png"', JS)          # 09.29 그림 이름은 로봇 모듈의 art
     # 정적 파일은 /static/ 아래로만 나간다(server.py `_static`) — 상대 경로는 404 였다(09.23 화면에 그림이 안 떴다)
-    assert re.search(r'ROBOT_ART = \{[^}]*"/static/robot_arms"', JS)
-    assert all(f'"/static/{stem}"' in JS for stem in ("robot_arms", "robot_hand_right", "robot_hand_left"))
+    assert re.search(r'ROBOT_ART_DEFAULT = \{[^}]*"robot_arms"', JS) and "fetch(`/static/${name}.svg`)" in JS
+    assert all(f'"{stem}"' in JS for stem in ("robot_arms", "robot_hand_right", "robot_hand_left"))
     assert re.search(r"\.rart svg\s*\{[^}]*position:\s*absolute", CSS)
     assert re.search(r"\.rart svg polygon\s*\{[^}]*fill:\s*none", CSS)               # 상태 없는 링크는 렌더가 보인다
     # 관절 id → 링크 id 로 바꿔 색칠한다(r_hj_index_2 → r_hl_index_2)

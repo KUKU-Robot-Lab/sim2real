@@ -16,3 +16,7 @@ note: >-
   목표(컵 + 0.246 m). 학습은 목표에 닿으면 0.08 m 옮긴 다음 목표를 주지만(goal_delta_distance, 최대 5) 배포는 첫 목표에서 멈춘다.
   손 관측 순서는 가정(e4280 과 같은 규칙) — Isaac trace 대조는 아직.
   fake 체인(도메인 97, CPU, 컵 0.25 0.15): 32 s · 59.8 Hz · not-ok 0 · proc p95 9.1 ms · 손을 쥔 뒤 물체 추정 attached_live.
+deploy:                  # 정책마다 다른 실행 인자 — 미션이 {policy:joint_left.<이름>} 으로 읽는다(09.29)
+  success_tol_m: 0.0318  # e5802 가 학습된 tol(tfevents task/tol)
+  success_steps: 10
+  max_episode_s: 15.0    # env episode_length_s

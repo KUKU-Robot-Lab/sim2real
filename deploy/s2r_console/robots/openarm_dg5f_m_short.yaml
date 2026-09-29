@@ -1,0 +1,20 @@
+# 지금 실기 로봇(local5090) — OpenArm 양팔 + Tesollo DG-5F-M short 양손(09.14 손 교체 이후).
+schema: s2r_console/robot/v1
+id: openarm_dg5f_m_short
+title: OpenArm + DG-5F-M short
+host: local5090
+asset: openarm_dg5f-m-short_bi_rl            # 계약의 asset 이 이것인 정책만 고를 수 있다
+task_prefixes: [open-short_]                 # 계약이 아직 없는 정책도 목록에는 보인다(고를 수는 없다)
+hand: {model: DG-5F-M short, vendor: Tesollo, actuated: "20 / 손"}
+profiles: [dg5f_m_real, dg5f_m_fake]
+# 정책을 고르면 미션의 이 산출물(계약 경로)을 바꾼다 — 고르지 않으면 미션 yaml 의 값 그대로
+slots: {right: joint_right, left: joint_left}
+art: {arms: robot_arms, right: robot_hand_right, left: robot_hand_left}
+settings:
+  - {label: 팔, value: "OpenArm v10 × 2 · CAN FD 1M/5M · 우 can0 · 좌 can1 (robot_control openarm.bimanual.launch.py)"}
+  - {label: 손, value: "DG-5F-M short × 2 · Modbus TCP :502 · 우 169.254.186.72 · 좌 169.254.186.73 (dg5f_ros2)"}
+  - {label: 손 제어, value: "손마다 controller_manager(dg5f_right · dg5f_left) + JTC · PID p 1.5(벤더)"}
+  - {label: 손끝, value: "우 F/T · 좌 촉각(TACTILE_M)"}
+  - {label: pd, value: "config/pd_dg5f_m_short(_exec).yaml · 팔 게인 = 벤더 control_gains.yaml"}
+  - {label: 인지, value: "vision-3090 카메라 · FP++ → UDP 51126 → /objects/<물체>/pose"}
+  - {label: 알려진 결함, value: "오른손 419(새끼 3관절 모터 19) — 오른손은 정책 단계에 넣지 않는다(09.28~)"}

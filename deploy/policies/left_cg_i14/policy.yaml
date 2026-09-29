@@ -17,3 +17,7 @@ note: >-
   critic 만 157 → 178(배포는 actor 만 쓴다). env 에 새로 생긴 real_*_lag_steps · real_obj_dropout 은 전부 0(학습에 지연 없음).
   손 관측 순서는 가정(e4280 · i01 과 같은 규칙) — Isaac trace 대조는 아직.
   fake 체인(도메인 97, CPU, 컵 0.25 0.15): 30 s · not-ok 0 · proc p95 9.0 ms · 팔 이동 1.42 rad · reset/start FP++ 검사 통과.
+deploy:                  # 정책마다 다른 실행 인자 — 미션이 {policy:joint_left.<이름>} 으로 읽는다(09.29)
+  success_tol_m: 0.1125  # e5320 이 학습된 tol — i14 는 커리큘럼이 시작값에서 줄지 않았다
+  success_steps: 10
+  max_episode_s: 15.0

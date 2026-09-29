@@ -1,0 +1,18 @@
+# arm4090 실기 로봇 — OpenArm 양팔 + Inspire RH56F1 양손(구동 6 / 손, 종속 6 은 mimic).
+# 학습: hdgp pour_bi_rh(pour_fabric_mimic · pour_fj 양손) · rh_aglt_{r,l}(파지). 09.29 사용자: pour_fj 양손 다음 rh_aglt.
+schema: s2r_console/robot/v1
+id: openarm_rh56f1
+title: OpenArm + Inspire RH56F1
+host: arm4090
+asset: openarm_rh56f1_bi_rl
+task_prefixes: [open-rh_]
+hand: {model: RH56F1, vendor: Inspire, actuated: "6 / 손 (종속 6)"}
+profiles: []                 # C 단계에서 rh56f1_fake(도메인 97) 를 더한다
+slots: {right: joint_right, left: joint_left}
+settings:
+  - {label: 팔, value: "OpenArm v10 × 2 · CAN FD (DG-5F 로봇과 같은 팔 스택)"}
+  - {label: 손, value: "RH56F1 × 2 · 손마다 개별 포트 · RS485(USB) 또는 CANFD — 상황에 따라 바꾼다(09.29 사용자)"}
+  - {label: 손 드라이버, value: "robot_control ros_ws/src/inspire_rh56f1 · /hand_<side>/angle_set · angle_actual · touch_data"}
+  - {label: 손 명령, value: "각도 레지스터 0.1° (네 손가락 1740 = 편 손 · 900 = 굽힘) — 보정은 policy_control config/rh56f1_hand_map.yaml"}
+  - {label: 손 순서, value: "드라이버 슬롯 새끼 · 약지 · 중지 · 검지 · 엄지 굽힘 · 엄지 회전 ↔ sim thumb_1 · thumb_2 · index · middle · ring · pinky"}
+note: 실기 미션은 아직 없다 — 손 드라이버 · 백엔드 · fake 까지. 정책(pour_fj)이 나오면 계약을 만들어 고른다.

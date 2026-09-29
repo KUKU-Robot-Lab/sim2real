@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
 
+import yaml
+
 from mission_core import Mission
 
 #: `{종류:열쇠}` 또는 `{repo}`. 종류를 `[a-z_]` 로 좁히면 **오타가 조용히 통과한다**
@@ -74,11 +76,33 @@ def _lookup(kind: str, key: str, mission: Mission, repo: Path) -> str:
             raise KeyError(f"체크포인트 키 '{key}' 가 미션에 선언되지 않았다")
         field_name = "path" if kind == "checkpoint" else "params"
         return str(repo / mission.checkpoints[key][field_name])
+    if kind == "policy":
+        return _policy_field(key, mission, repo)
     raise ValueError(f"모르는 자리표시자 종류: {kind}")
 
 
+def _policy_field(key: str, mission: Mission, repo: Path) -> str:
+    """`{policy:산출물키.필드}` — 그 산출물(계약)이 든 정책 폴더의 `policy.yaml` 의 `deploy.<필드>`.
+
+    09.29 사용자: 첫 화면에서 정책을 고른다. 도착 판정 tol 처럼 **정책마다 다른** 실행 인자를 미션 yaml 에 적어 두면
+    정책을 바꿀 때 거짓이 된다(cg_l_i01 0.0318 · cg_l_i14 0.1125) — 정책 카드가 가진다.
+    """
+    art, _, name = key.partition(".")
+    if art not in mission.artifacts or not name:
+        raise KeyError(f"{{policy:{key}}} — '산출물키.필드' 여야 하고 산출물 키가 미션에 있어야 한다")
+    card_path = (repo / mission.artifacts[art]).parent / "policy.yaml"
+    try:
+        card = yaml.safe_load(card_path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        raise KeyError(f"{card_path} 를 읽지 못했다: {exc}") from exc
+    deploy = card.get("deploy") or {}
+    if name not in deploy:
+        raise KeyError(f"{card_path} 의 deploy 에 '{name}' 가 없다")
+    return str(deploy[name])
+
+
 def resolve(text: str, mission: Mission, *, repo: Path) -> str:
-    """`{repo}` · `{artifact:키}` · `{checkpoint:키}` · `{params:키}` 를 치환한다."""
+    """`{repo}` · `{artifact:키}` · `{checkpoint:키}` · `{params:키}` · `{policy:산출물키.필드}` 를 치환한다."""
 
     def sub(m: re.Match) -> str:
         kind, key = m.group(1), m.group(2)

@@ -173,7 +173,7 @@ stages:
   - id: policy_right
     group: policy
     lane: arm_right
-    title: "[right] 정책 right_m15_e800(cup_pick) — 컵 확인 → 정책 노드 → reset(목표 = 컵 + 24.6 cm 위) → start → 관찰 → stop"
+    title: "[right] 정책(첫 화면에서 고른 것 · 기본 right_m15_e800) — 컵 확인 → 정책 노드 → reset(목표 = 컵 + 24.6 cm 위) → start → 관찰 → stop"
     needs: [home_right, sensors]
     needs_why: 정책은 홈 경로 끝 자세에서만 출발해 봤고, 컵 자세(FP++ → base)가 입력이다
     artifacts: [joint_right, robot_right]
@@ -280,7 +280,7 @@ stages:
   - id: policy_left
     group: policy
     lane: arm_left
-    title: "[left] 정책 left_cg_i01(컵 집기 · 들기) — 컵 확인 → 정책 노드 → reset(목표 = 컵 + 24.6 cm 위) → start → 관찰 → stop → 컵 받기"
+    title: "[left] 정책(첫 화면에서 고른 것 · 기본 left_cg_i01) — 컵 확인 → 정책 노드 → reset(목표 = 컵 + 24.6 cm 위) → start → 관찰 → stop → 컵 받기"
     needs: [home_left, sensors]
     needs_why: 정책은 홈 경로 끝 자세에서만 출발해 봤고, 컵 자세(FP++ → base)가 입력이다
     artifacts: [joint_left, robot_left]
@@ -519,7 +519,9 @@ run:
     - note: "[right] 정책 노드(joint_node, LSTM · CPU 2 스레드) — 팔 관절 증분 + 손 절대 목표를 pd 로. start 전에는 아무것도 보내지 않는다.
         CPU 인 이유(09.28 사용자): 로컬 5090 에서 학습이 돌 때 그 GPU 에 올리지 않는다 — fake 에서 한 스텝 p95 7.7 ms(60 Hz 예산 16.7)"
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/joint_chain.launch.py",
-             "contract:={artifact:joint_right}", "robot:={artifact:robot_right}", "device:=cpu", "use_source:=true"]
+             "contract:={artifact:joint_right}", "robot:={artifact:robot_right}", "device:=cpu", "use_source:=true",
+             "success_tol_m:={policy:joint_right.success_tol_m}", "success_steps:={policy:joint_right.success_steps}",
+             "max_episode_s:={policy:joint_right.max_episode_s}"]
       background: true
     - note: "[right] 기록 — ros2 bag 두 묶음: policy(obs · 행동 · 목표 · pd · 팔 · 손 · 컵 · status) · sensors(손끝 촉각 · F/T).
         logs/policy_control/real_runs/<시각>__<task>__right/ (구독만, 정지 신호에 bag 을 닫는다). 09.28 사용자: bag 으로 · 따로 관리"
@@ -704,7 +706,7 @@ run:
       stop: ["fabric_direct_left#0", "fabric_direct_right#0", "policy_right#4"]
     - note: "★[left] 컵이 학습 범위(로봇 앞 x 0.10~0.40 · y 0.00~0.30, 테이블 위 똑바로)에 있고 콘솔에서 컵 자세가 들어오는가.
         손 · 팔 주변에 사람 · 물건이 없는가. 정책은 팔을 최대 0.3 rad/s 로 움직인다. ★이 정책은 컵을 잡아 약 25 cm 들어 올린다 —
-        빈 컵(cup_big)만 · 떨어져도 되는 아래 공간. 알려진 결함: 손끝 파지(4관절 과굽힘) · 새끼 미참여 · 급하게 들어 올림"
+        빈 컵(cup_big)만 · 떨어져도 되는 아래 공간. 알려진 결함은 콘솔 정책 칸(정책 카드 note)에"
       argv: [bash, -lc, "true"]
       manual: true
     - note: "[left] 팔이 정책 시작 자세(홈 경로 끝) 0.4 rad 안인가 — 멀면 여기서 멈춘다(관절공간 직선 정착은 먼 곳에서 테이블을 지날 수 있다)"
@@ -713,11 +715,12 @@ run:
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --side, left, --only, pd_goto_home, --service-timeout, "45"]
       execute_args: [--execute, --approve, pd_goto_home]
     - note: "[left] 정책 노드(joint_node, LSTM · CPU 2 스레드) — 팔 관절 증분 + 손 절대 목표를 pd 로. start 전에는 아무것도 보내지 않는다.
-        에피소드는 학습 규칙대로 스스로 끝난다(09.28 사용자): 컵 키포인트가 목표에서 3.18 cm 안(e5802 가 학습된 tol, tfevents task/tol)
-        10 스텝 연속이면 도달 · 아니면 15 s(env episode_length_s). 끝나면 pd 가 그 자세 · 손 쥠을 붙잡는다"
+        에피소드는 학습 규칙대로 스스로 끝난다(09.28 사용자): 컵 키포인트가 목표에서 tol 안(정책 카드 deploy.success_tol_m = 그 체크포인트가
+        학습된 tfevents task/tol) success_steps 연속이면 도달 · 아니면 max_episode_s. 끝나면 pd 가 그 자세 · 손 쥠을 붙잡는다"
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/joint_chain.launch.py",
              "contract:={artifact:joint_left}", "robot:={artifact:robot_left}", "device:=cpu", "use_source:=true",
-             "success_tol_m:=0.0318", "success_steps:=10", "max_episode_s:=15.0"]
+             "success_tol_m:={policy:joint_left.success_tol_m}", "success_steps:={policy:joint_left.success_steps}",
+             "max_episode_s:={policy:joint_left.max_episode_s}"]
       background: true
     - note: "[left] 기록 — ros2 bag 두 묶음: policy(obs · 행동 · 목표 · pd · 팔 · 손 · 컵 · status) · sensors(손끝 촉각 · F/T).
         logs/policy_control/real_runs/<시각>__<task>__left/ (구독만, 정지 신호에 bag 을 닫는다). 09.28 사용자: bag 으로 · 따로 관리"
