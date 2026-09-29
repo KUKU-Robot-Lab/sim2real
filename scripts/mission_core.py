@@ -67,6 +67,10 @@ class Stage:
     #: 참이면 운영자가 실행하지 않고 넘길 수 있다(예: 오른팔만 할 때 왼팔 단계). 넘겨도 되는지는 호출자가
     #: 실기 상태로 한 번 더 판정한다 — 여기서는 "넘길 수 있게 선언됐다" 만 안다.
     skippable: bool = False
+    #: 이 단계가 **끝나면** 완료 표시를 지울 단계 — 켜기 · 끄기 짝(sensors ↔ sensors_off)처럼 그 단계가 만든 상태를
+    #: 되돌리는 단계가 적는다. 09.29 사용자: "sensor-off 를 하면 두 번 다시 sensor 를 켤 수 없음" — sensors 가 완료로 남아
+    #: 창 카드와 '다른 단계 고르기' 어디에도 다시 안 나왔다. 건너뜀은 아무것도 되돌리지 않았으므로 지우지 않는다.
+    undoes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -92,6 +96,9 @@ class Lane:
     title: str
     #: 이 창이 다루는 쪽(있으면) — 화면이 좌우를 맞춰 그린다.
     side: str = ""
+    #: 선행이 다 끝났으면 **이미 한 번 끝냈어도** 창의 카드가 되는 단계. 09.29 사용자: "home 이후에는 정책 창이 디폴트" —
+    #: 정책 → rehome → 정책을 반복하는데 카드는 yaml 순서대로 fabric_direct · reset 으로 넘어갔다.
+    focus: str = ""
 
 
 @dataclass(frozen=True)
@@ -259,6 +266,13 @@ def plan(mission: Mission, state: MissionState, evidence: Evidence) -> tuple[Sta
 
 
 # ── 전이 ───────────────────────────────────────────────────────────────────
+def settle_completed(mission: Mission, completed: tuple[str, ...], stage_id: str) -> tuple[str, ...]:
+    """`stage_id` 가 **실행으로** 끝났을 때의 완료 목록 — 그것을 더하고, 그것이 되돌린 단계(`undoes`)를 뺀다."""
+    undone = set(stage_by_id(mission, stage_id).undoes)
+    kept = tuple(sid for sid in completed if sid not in undone)
+    return kept if stage_id in kept else kept + (stage_id,)
+
+
 def begin(state: MissionState) -> MissionState:
     return replace(state, status=STATUS_RUNNING, note="")
 
@@ -315,6 +329,7 @@ def _stage_from_raw(raw: Mapping) -> Stage:
         group=str(raw.get("group", "")),
         lane=str(raw.get("lane", "")),
         skippable=bool(raw.get("skippable", False)),
+        undoes=tuple(raw.get("undoes", ()) or ()),
     )
 
 
@@ -337,7 +352,8 @@ def _lanes_from_raw(raw) -> tuple[Lane, ...]:
     for lane in raw or ():
         if not lane.get("id") or not lane.get("title"):
             raise ValueError(f"창에는 id 와 title 이 있어야 한다: {lane}")
-        lanes.append(Lane(id=str(lane["id"]), title=str(lane["title"]), side=str(lane.get("side", ""))))
+        lanes.append(Lane(id=str(lane["id"]), title=str(lane["title"]), side=str(lane.get("side", "")),
+                          focus=str(lane.get("focus", ""))))
     ids = [lane.id for lane in lanes]
     dupes = sorted({i for i in ids if ids.count(i) > 1})
     if dupes:
@@ -356,6 +372,10 @@ def _validate_lanes(mission: Mission) -> None:
     for stage in mission.stages:
         if stage.lane not in known:
             raise ValueError(f"단계 '{stage.id}' 의 창 '{stage.lane}' 가 lanes 에 없다")
+    by_id = {s.id: s for s in mission.stages}
+    for lane in mission.lanes:
+        if lane.focus and (lane.focus not in by_id or by_id[lane.focus].lane != lane.id):
+            raise ValueError(f"창 '{lane.id}' 의 focus '{lane.focus}' 가 이 창의 단계가 아니다")
 
 
 def _validate_groups(mission: Mission) -> None:
@@ -394,6 +414,9 @@ def _validate_stage_refs(mission: Mission) -> None:
         for key in stage.checkpoints:
             if key not in mission.checkpoints:
                 raise ValueError(f"단계 '{stage.id}' 의 체크포인트 키 '{key}' 가 선언되지 않았다")
+        for sid in stage.undoes:
+            if sid not in ids or sid == stage.id:
+                raise ValueError(f"단계 '{stage.id}' 의 undoes '{sid}' 가 미션의 다른 단계가 아니다")
 
 
 def load_mission(raw: Mapping) -> Mission:

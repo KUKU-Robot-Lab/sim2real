@@ -54,6 +54,8 @@ QUICK = {
     "pd_release": ("PD 해제", "역블렌드로 토크를 내리고 JTC 로 돌려준다 → IDLE.", ["pd/release", "--expect-pd", "IDLE"], "stop"),
     "pd_hand_home": ("손 → 정책 자세", "계약의 초기 손 자세로. 팔이 홈에 정착했을 때만 받는다.", ["pd/hand_home"], "hand"),
     "pd_hand_rest": ("손 → engage 때 자세", "손을 pd 를 걸 때의 실측 자세로 되돌린다.", ["pd/hand_rest"], "hand"),
+    "pd_hand_release": ("손 놓기 (팔 제자리)", "팔은 그 자리에 둔 채 손을 계약 홈 손 자세로 편다 — 쥔 것이 떨어진다. 에피소드 정지 뒤에만.",
+                        ["pd/hand_release"], "hand"),
     # pd 서비스는 09.23 부터 팔마다 따로다 — 이 이름들은 `--side` 를 붙여 부른다(quick 이 쪽을 받는다).
     # ★pd/hand_path(주먹)는 버튼으로 두지 않는다 — 그 이동은 손가락이 상판 모서리를 지날 수 있어
     #   hand_to_path_pose.py 가 **먼저 구간을 충돌 검사한 뒤** 부른다. 버튼은 그 검사를 건너뛴다.
@@ -446,7 +448,7 @@ class Console:
             reasons = self._skip_reasons(s, stage)
             if reasons:
                 raise ConsoleError(f"{stage_id} 를 건너뛸 수 없다", reasons=tuple(reasons))
-            s.state = (self._settle(s, stage_id, MC.STATUS_DONE, f"건너뜀 ({operator})") if s.mission.lanes
+            s.state = (self._settle(s, stage_id, MC.STATUS_DONE, f"건너뜀 ({operator})", ran=False) if s.mission.lanes
                        else MC.advance(s.mission, MC.begin(s.state), MC.STATUS_DONE, note=f"건너뜀 ({operator})"))
             s.skipped = s.skipped | {stage_id}
             mission_run.save_state(s.run_id, s.state)
@@ -569,16 +571,18 @@ class Console:
                         s.event("quick", f"자동 PD 해제를 못 했다 — 정지 바의 PD 해제를 누를 것 ({exc})")
 
     @staticmethod
-    def _settle(s: Session, stage_id: str, outcome: str, note: str) -> MC.MissionState:
+    def _settle(s: Session, stage_id: str, outcome: str, note: str, *, ran: bool = True) -> MC.MissionState:
         """창 모드의 상태 전이 — 커서를 옮기지 않고 **끝난 것**만 적는다.
 
         `MC.advance` 는 단계 하나가 순서대로 도는 것을 전제로 `state.stage` 를 다음으로 옮긴다.
         창이 여럿이면 "다음"이 하나가 아니다 — 무엇을 할 수 있는지는 `needs` 가 정한다(`MC.gate` 는 순서를 안 본다).
         `stage` 는 마지막으로 끝난 단계를 적어 둘 뿐이고, 판정에는 `completed` 만 쓰인다.
+        실행으로 끝난 단계는 자기가 되돌린 단계(`undoes`, sensors_off → sensors)의 완료를 지운다 — 건너뜀(`ran=False`)은 안 지운다.
         """
         done = s.state.completed
-        if outcome == MC.STATUS_DONE and stage_id not in done:
-            done = done + (stage_id,)
+        if outcome == MC.STATUS_DONE:
+            done = (MC.settle_completed(s.mission, done, stage_id) if ran else
+                    done if stage_id in done else done + (stage_id,))
         others = [sid for lane, sid in Console._busy(s).items() if sid != stage_id]
         status = MC.STATUS_RUNNING if others else outcome
         return MC.MissionState(stage=stage_id, status=status, completed=done,
@@ -800,7 +804,7 @@ class Console:
         #: 창마다 "다음 단계" = 그 창에서 아직 안 끝낸 첫 단계. 화면이 창 하나에 카드 하나를 크게 그린다.
         #: 선택 묶음(진단)은 차례가 아니다 — '다른 단계 고르기'에서만 고른다.
         optional = {g.id for g in s.mission.groups if g.optional}
-        nxt = {}
+        nxt = self._lane_focus(s)
         for st in s.mission.stages:
             lane = self._lane(s, st)
             if lane not in nxt and st.id not in s.state.completed and st.group not in optional:
@@ -876,6 +880,16 @@ class Console:
     def _lane(s: Session, stage) -> str:
         """이 단계가 속한 창. 창을 선언하지 않은 미션은 창 하나("")다 — 예전과 같은 직렬 진행."""
         return stage.lane if s.mission.lanes else ""
+
+    @staticmethod
+    def _lane_focus(s: Session) -> dict[str, str]:
+        """{창: focus 단계} — 선행이 다 끝난 창만. 이미 끝낸 정책이라도 home 에 서 있으면 다시 그 카드다(09.29 사용자)."""
+        done = set(s.state.completed)
+        out = {}
+        for la in s.mission.lanes:
+            if la.focus and set(MC.stage_by_id(s.mission, la.focus).needs) <= done:
+                out[la.id] = la.focus
+        return out
 
     @staticmethod
     def _busy(s: Session) -> dict[str, str]:

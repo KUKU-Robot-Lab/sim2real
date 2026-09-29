@@ -41,7 +41,7 @@ FABRIC_STATUS = f"{NS}/status/fabric"
 DEFAULT_PHASE_TIMEOUT = 30.0
 DEFAULT_SERVICE_TIMEOUT = 5.0
 RESET_RETRY_S = 4.0
-HAND_STAGES = ("pd_hand_home", "pd_hand_rest", "pd_hand_path")
+HAND_STAGES = ("pd_hand_home", "pd_hand_rest", "pd_hand_path", "pd_hand_release")
 HAND_SETTLE_S = 4.0            # 손 목표를 바꾼 뒤 기다리는 시간 — 손 max_vel 램프(최대 1.6 rad 쯤)            # fabric 이 armed 가 안 되면 reset 을 다시 보내는 간격
 
 
@@ -71,6 +71,9 @@ STAGES: tuple[Stage, ...] = (
           ("TRACKING",), touches_real=True, only=True),
     Stage("pd_hand_rest", "pd hand_rest (손을 engage 때 자세로 — 홈 경로 되짚기 전)", PD("hand_rest"),
           ("TRACKING",), touches_real=True, only=True),
+    # 09.29 사용자: rehome 은 손가락을 먼저 풀어(컵은 테이블로 떨어진다 · 사람이 대기) 그다음 팔을 옮긴다.
+    Stage("pd_hand_release", "pd hand_release (팔은 제자리, 손만 계약 홈 손 자세로 — rehome 전에 쥔 것을 놓는다)",
+          PD("hand_release"), ("TRACKING",), touches_real=True, only=True),
     # 09.23 실기: 손 전원을 껐다 켜자 손가락이 다른 자세로 자리 잡아 경로 시작점 검사가 막았다 — 팔보다 먼저 손을 맞춘다.
     Stage("pd_hand_path", "pd hand_path (손을 저장 홈 경로가 검사한 자세로 — 팔이 움직이기 전)", PD("hand_path"),
           ("RAMPING", "TRACKING"), touches_real=True, only=True),
@@ -84,7 +87,7 @@ SAFE_TAIL = ("ep_stop", "pd_release")
 #: 같은 요청을 다시 보내도 결과가 같은 pd 서비스 — 응답이 유실되면 한 번 더 보낸다.
 #: 09.28 실기: pd 가 goto_home 에 응답했지만 "failed to send response (timeout)" 로 클라이언트에 닿지 않아 45 s 뒤
 #: 실패로 판정 → pd 를 해제했고, JTC 가 넘겨받는 사이 팔이 0.2~0.4 rad 움직였다.
-RETRY_ON_LOST = frozenset({"pd_goto_home", "pd_hand_home", "pd_hand_rest", "pd_hand_path"})
+RETRY_ON_LOST = frozenset({"pd_goto_home", "pd_hand_home", "pd_hand_rest", "pd_hand_path", "pd_hand_release"})
 
 
 def lost_response(reasons: list[str]) -> bool:

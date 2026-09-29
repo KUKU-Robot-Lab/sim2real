@@ -878,3 +878,42 @@ def test_hand_rest_returns_the_hand_to_its_engage_pose(ros, bi_cm, bi_hand_ctrls
             assert caller.trigger_side("release", s_)[0]
     finally:
         _close_rig(node, plant, caller, spin)
+
+
+@needs_asset
+def test_hand_release_opens_the_hand_where_the_arm_is_held(ros, bi_cm, bi_hand_ctrls, tmp_path):
+    # 09.29 사용자: rehome 은 손가락을 먼저 풀고(컵은 테이블로) 그다음 팔. 팔이 홈이 아니어도, pd 가 붙들고 있으면 된다.
+    node, plant, caller, spin = _bi_rig(ros, True, _keep_yaml(tmp_path))
+    try:
+        ok, reasons = caller.trigger_side("hand_release", "right")
+        assert ok is False and any("engage" in r for r in reasons)                         # engage 전
+        for s_ in BI_SIDES:
+            assert caller.trigger_side("engage", s_)[0]
+        plant.wait_both(lambda st: st["phase"] in ("RAMPING", "TRACKING"))
+        for s_ in BI_SIDES:
+            assert caller.trigger_side("goto_home", s_)[0]
+        time.sleep(0.3)
+        assert not _hand_in_applied(plant, "right")                                         # keep — 손 지령 없음
+        ok, reasons = caller.trigger_side("hand_release", "right")
+        assert ok, reasons
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 2.0 and not _hand_in_applied(plant, "right", 3):
+            time.sleep(0.01)
+        assert _hand_in_applied(plant, "right", 3)                                          # 손이 계약 홈 손 자세로
+        for s_ in BI_SIDES:
+            assert caller.trigger_side("release", s_)[0]
+    finally:
+        _close_rig(node, plant, caller, spin)
+
+
+def test_hand_release_refuses_while_the_arm_follows_the_policy():
+    """정책(외부 목표)을 따르는 중에는 손만 바꾸지 않는다 — 에피소드 정지 뒤에만."""
+    from types import SimpleNamespace
+    from policy_control import pd_arm as A
+    moving = A._MOVING[0]
+    unit = SimpleNamespace(side="right", home_hand=[0.0], phase=moving, hold=None)
+    assert any("에피소드 정지" in r for r in A.ArmUnit.hand_release_refusals(unit))
+    unit.hold = object()
+    assert A.ArmUnit.hand_release_refusals(unit) == []
+    unit.home_hand = None
+    assert any("홈 손 자세" in r for r in A.ArmUnit.hand_release_refusals(unit))

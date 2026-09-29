@@ -47,8 +47,10 @@ lanes:
   # "따로 분리되어 있는 시스템이 순서대로 하는게 이상함"). 화면은 이 순서로 두 칸씩 그린다.
   - {id: rig, title: 드라이버}
   - {id: head, title: 비전 · 머리}
-  - {id: arm_right, title: 오른팔, side: right}
-  - {id: arm_left, title: 왼팔, side: left}
+  # focus: 선행(home · sensors)이 끝나 있으면 이미 돌린 정책이라도 그 창의 카드는 정책이다(09.29 사용자: "home 이후에는
+  # 정책 창이 디폴트"). 정책 → rehome → 정책 반복. rehome · 정리는 카드 아래 '정리 · 빠져나가기' 에서 고른다.
+  - {id: arm_right, title: 오른팔, side: right, focus: policy_right}
+  - {id: arm_left, title: 왼팔, side: left, focus: policy_left}
 
 groups:
   - {id: check, title: 점검}
@@ -83,6 +85,8 @@ stages:
     title: 인지 켜기 — vision-3090 카메라 · FP++ (로봇을 움직이지 않는다)
     needs: [preflight]
     skippable: true
+    # 켜기 · 끄기 짝 — 켜면 '끔' 완료를 지우고, 끄면(sensors_off) 이 단계의 완료를 지운다(09.29 사용자: 끈 뒤 다시 켤 수 없었다)
+    undoes: [sensors_off]
 
   - id: fpp_reregister
     group: diagnose
@@ -158,7 +162,7 @@ stages:
     skippable: true
 
   - id: fabric_direct_right
-    group: policy
+    group: diagnose
     lane: arm_right
     title: "[right] fabric direct 모드 — 에피소드 시작 → palm +2 cm · 손 30 % 폐쇄 → 에피소드 정지 (작은 델타만)"
     needs: [home_right]
@@ -184,11 +188,12 @@ stages:
     artifacts: [contract, robot_right, path_right]
     touches_real: true
     skippable: true
+    undoes: [home_right, pd_arm_right]
 
   - id: rehome_right
     group: finish
     lane: arm_right
-    title: "[right] 정책 시작 자세로 되돌아오기 — 검사한 직선 → 정착 → 손 초기 자세. 정책을 한 번 더 돌릴 때(09.28 사용자: 정책 → 홈 → 반복)"
+    title: "[right] 정책 시작 자세로 되돌아오기 — 손가락 먼저 풀기(컵은 테이블로) → 편 손으로 경로 계획 → 재생 → 정착. 정책을 한 번 더 돌릴 때(09.28 사용자: 정책 → 홈 → 반복)"
     needs: [home_right]
     artifacts: [contract, robot_right, path_right]
     touches_real: true
@@ -202,6 +207,7 @@ stages:
     artifacts: [contract, robot_right, path_right]
     touches_real: true
     skippable: true
+    undoes: [home_right]
 
   - id: release_right
     group: finish
@@ -210,6 +216,7 @@ stages:
     needs: [pd_arm_right]
     touches_real: true
     skippable: true
+    undoes: [home_right, pd_arm_right]
 
   # ────────────────────────────────────────────── 왼팔 ③ 준비 · ④ 자세 이동 · ⑤ 정책 동작 · ⑥ 해제
   - id: hand_left
@@ -262,7 +269,7 @@ stages:
     skippable: true
 
   - id: fabric_direct_left
-    group: policy
+    group: diagnose
     lane: arm_left
     title: "[left] fabric direct 모드 — 에피소드 시작 → palm +2 cm · 손 30 % 폐쇄 → 에피소드 정지 (작은 델타만)"
     needs: [home_left]
@@ -288,11 +295,12 @@ stages:
     artifacts: [contract, robot_left, path_left]
     touches_real: true
     skippable: true
+    undoes: [home_left, pd_arm_left]
 
   - id: rehome_left
     group: finish
     lane: arm_left
-    title: "[left] 정책 시작 자세로 되돌아오기 — 검사한 직선 → 정착 → 손 초기 자세. 정책을 한 번 더 돌릴 때(09.28 사용자: 정책 → 홈 → 반복)"
+    title: "[left] 정책 시작 자세로 되돌아오기 — 손가락 먼저 풀기(컵은 테이블로) → 편 손으로 경로 계획 → 재생 → 정착. 정책을 한 번 더 돌릴 때(09.28 사용자: 정책 → 홈 → 반복)"
     needs: [home_left]
     artifacts: [contract, robot_left, path_left]
     touches_real: true
@@ -306,6 +314,7 @@ stages:
     artifacts: [contract, robot_left, path_left]
     touches_real: true
     skippable: true
+    undoes: [home_left]
 
   - id: release_left
     group: finish
@@ -314,13 +323,15 @@ stages:
     needs: [pd_arm_left]
     touches_real: true
     skippable: true
+    undoes: [home_left, pd_arm_left]
 
   # ────────────────────────────────────────────── ⑥ 정리
   - id: sensors_off
     group: finish
     lane: head
-    title: 인지 끄기 — vision-3090 의 FP++ 컨테이너 · 카메라와 로컬 런처를 내린다
+    title: 인지 끄기 — vision-3090 의 FP++ 컨테이너 · 카메라와 로컬 런처를 내린다. 끝나면 sensors 를 다시 켤 수 있다
     skippable: true
+    undoes: [sensors, fpp_reregister]
 
   - id: shutdown
     group: finish
@@ -568,22 +579,24 @@ run:
              --rate-scale, "1.0"]
       execute_args: [--execute]
   rehome_right:
-    - note: "[right] 지금 자세 → 정책 시작 자세(홈 경로 끝) 경로를 실측에서 계획한다 — 직선이 막히면 RRT(실측 손 · 테이블 · 몸통 · 반대 팔,
-        여유 2 cm). 09.28 정책이 멈춘 자리에서 곧장 가는 직선은 새끼 손끝이 상판을 지난다 — goto_home 으로 가지 않는다. 약 20 s"
+    - note: "★[right] 손가락을 먼저 푼다 — 쥔 컵은 테이블로 떨어진다. 사람이 컵 옆에 대기하고 있는가. 손 · 팔 주변이 비어 있는가.
+        09.29 사용자: 정책은 들고 멈추므로 컵을 떨구는 것 외에 문제가 없다 — 손가락을 먼저 풀고 그다음 팔을 옮긴다"
+      argv: [bash, -lc, "true"]
+      manual: true
+    - note: "[right] 손을 정책 초기 손 자세로 — 팔은 pd 가 지금 자리에 붙든 채(pd/hand_release, 에피소드 정지 뒤에만 받는다).
+        손 속도 상한 램프로 가며 도착할 시간(4 s)을 기다린다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --side, right, --only, pd_hand_release, --service-timeout, "15"]
+      execute_args: [--execute, --approve, pd_hand_release]
+    - note: "[right] 지금 자세 → 정책 시작 자세(홈 경로 끝) 경로를 실측에서 계획한다 — 편 손(실측) 기준, 직선이 막히면 RRT(실측 손 · 테이블 ·
+        몸통 · 반대 팔, 여유 2 cm). 09.28 정책이 멈춘 자리에서 곧장 가는 직선은 새끼 손끝이 상판을 지난다 — goto_home 으로 가지 않는다. 약 20 s"
       argv: [python3, "{repo}/deploy/policy_control/tools/plan_rehome.py", --side, right]
     - note: "[right] 계획한 경로를 재생 — 정책 시작 자세에 선다(최대 0.1 rad/s). 끝나면 episode stop 으로 pd 가 그 자세를 붙든다"
       argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py", --npz, "{repo}/logs/policy_control/rehome_right.npz",
              --joints, "r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7", --rate-scale, "1.0"]
       execute_args: [--execute]
-    - note: "[right] 정책 시작 자세에서 정착 — 남은 오차만(정책 start 허용 0.15 rad)"
+    - note: "[right] 정책 시작 자세에서 정착 — 남은 오차만(정책 start 허용 0.15 rad). 손은 이미 정책 초기 손 자세다. 이제 policy_right 를 다시 돌릴 수 있다"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --side, right, --only, pd_goto_home, --service-timeout, "45"]
       execute_args: [--execute, --approve, pd_goto_home]
-    - note: "[right] ★팔이 정책 시작 자세에 도착했는가. 손가락을 펴도 테이블 · 몸통 · 컵에 닿지 않는가. 아니면 '정상이 아니다' 후 PD 해제"
-      argv: [bash, -lc, "true"]
-      manual: true
-    - note: "[right] 손을 정책 초기 손 자세로 (pd/hand_home — 팔이 홈에 정착했을 때만 받는다). 이제 policy_right 를 다시 돌릴 수 있다"
-      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --side, right, --only, pd_hand_home, --service-timeout, "15"]
-      execute_args: [--execute, --approve, pd_hand_home]
   release_right:
     - note: "[right] pd release — 역블렌드 → 0 송출 → JTC 복귀 (실패 시 복구 CLI: tools/pd_release.py --side right --execute)"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --side, right, --only, pd_release]
@@ -768,22 +781,24 @@ run:
              --rate-scale, "1.0"]
       execute_args: [--execute]
   rehome_left:
-    - note: "[left] 지금 자세 → 정책 시작 자세(홈 경로 끝) 경로를 실측에서 계획한다 — 직선이 막히면 RRT(실측 손 · 테이블 · 몸통 · 반대 팔,
-        여유 2 cm). 09.28 정책이 멈춘 자리에서 곧장 가는 직선은 새끼 손끝이 상판을 지난다 — goto_home 으로 가지 않는다. 약 20 s"
+    - note: "★[left] 손가락을 먼저 푼다 — 쥔 컵은 테이블로 떨어진다. 사람이 컵 옆에 대기하고 있는가. 손 · 팔 주변이 비어 있는가.
+        09.29 사용자: 정책은 들고 멈추므로 컵을 떨구는 것 외에 문제가 없다 — 손가락을 먼저 풀고 그다음 팔을 옮긴다"
+      argv: [bash, -lc, "true"]
+      manual: true
+    - note: "[left] 손을 정책 초기 손 자세로 — 팔은 pd 가 지금 자리에 붙든 채(pd/hand_release, 에피소드 정지 뒤에만 받는다).
+        손 속도 상한 램프로 가며 도착할 시간(4 s)을 기다린다"
+      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --side, left, --only, pd_hand_release, --service-timeout, "15"]
+      execute_args: [--execute, --approve, pd_hand_release]
+    - note: "[left] 지금 자세 → 정책 시작 자세(홈 경로 끝) 경로를 실측에서 계획한다 — 편 손(실측) 기준, 직선이 막히면 RRT(실측 손 · 테이블 ·
+        몸통 · 반대 팔, 여유 2 cm). 09.28 정책이 멈춘 자리에서 곧장 가는 직선은 새끼 손끝이 상판을 지난다 — goto_home 으로 가지 않는다. 약 20 s"
       argv: [python3, "{repo}/deploy/policy_control/tools/plan_rehome.py", --side, left]
     - note: "[left] 계획한 경로를 재생 — 정책 시작 자세에 선다(최대 0.1 rad/s). 끝나면 episode stop 으로 pd 가 그 자세를 붙든다"
       argv: [python3, "{repo}/deploy/policy_control/tools/replay_to_pd.py", --npz, "{repo}/logs/policy_control/rehome_left.npz",
              --joints, "l_aj_1,l_aj_2,l_aj_3,l_aj_4,l_aj_5,l_aj_6,l_aj_7", --rate-scale, "1.0"]
       execute_args: [--execute]
-    - note: "[left] 정책 시작 자세에서 정착 — 남은 오차만(정책 start 허용 0.15 rad)"
+    - note: "[left] 정책 시작 자세에서 정착 — 남은 오차만(정책 start 허용 0.15 rad). 손은 이미 정책 초기 손 자세다. 이제 policy_left 를 다시 돌릴 수 있다"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --side, left, --only, pd_goto_home, --service-timeout, "45"]
       execute_args: [--execute, --approve, pd_goto_home]
-    - note: "[left] ★팔이 정책 시작 자세에 도착했는가. 손가락을 펴도 테이블 · 몸통 · 컵에 닿지 않는가. 아니면 '정상이 아니다' 후 PD 해제"
-      argv: [bash, -lc, "true"]
-      manual: true
-    - note: "[left] 손을 정책 초기 손 자세로 (pd/hand_home — 팔이 홈에 정착했을 때만 받는다). 이제 policy_left 를 다시 돌릴 수 있다"
-      argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --side, left, --only, pd_hand_home, --service-timeout, "15"]
-      execute_args: [--execute, --approve, pd_hand_home]
   release_left:
     - note: "[left] pd release — 역블렌드 → 0 송출 → JTC 복귀 (실패 시 복구 CLI: tools/pd_release.py --side left --execute)"
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --side, left, --only, pd_release]
@@ -791,8 +806,9 @@ run:
     - note: "[left] 이 팔의 fabric · pd 정지 — pd 가 IDLE 이라 토크는 JTC 가 그대로 잡는다"
       stop: ["fabric_direct_left#0", "pd_arm_left#1"]
   sensors_off:
-    - note: FP++ 컨테이너 + 카메라 내리기 (vision-3090)
-      argv: [python3, "{repo}/scripts/ops/perception_ctl.py", stop, --camera]
+    - note: "FP++ 컨테이너 + 카메라 내리기 (vision-3090) — 런처가 다 내릴 때까지 기다린다. 09.28 실기: 기다리지 않고 바로 런처를
+        죽여 저쪽이 busy · 컨테이너 Up 인 채 남았다(그 뒤 sensors 를 다시 켜도 옛 컨테이너를 '변경 없음' 으로 볼 수 있다)"
+      argv: [python3, "{repo}/scripts/ops/perception_ctl.py", stop, --camera, --wait, "60"]
     - note: 로컬 인지 런처 · FP++ 자세 수신기 · 물체 자세 변환 정지
       stop: ["sensors#0", "sensors#1", "sensors#2"]
   shutdown:

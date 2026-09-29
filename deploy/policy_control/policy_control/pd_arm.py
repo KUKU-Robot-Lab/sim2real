@@ -620,6 +620,24 @@ class ArmUnit:
     def start_hand_rest(self) -> None:
         self.hold = replace(self.hold, hand=self.rest_hand.copy())
 
+    def hand_release_refusals(self) -> list[str]:
+        """손을 계약 홈 손 자세로 **팔은 그 자리에서** 보낼 수 없는 이유 — rehome 이 팔을 옮기기 전에 손가락부터 푼다.
+
+        09.29 사용자: "테이블 위에 떨어지도록 먼저 손가락을 풀게 하고 그다음 팔을 움직이게". 정책은 컵을 들고 멈추고
+        사람이 대기하므로 컵을 떨구는 것 외에 문제가 없다. `hand_home` 과 달리 팔이 홈에 있을 필요가 없고,
+        pd 가 팔을 내부 목표로 붙들고 있으면(에피소드 정지 뒤) 된다.
+        """
+        if self.home_hand is None:
+            return [f"{self.side}: 계약에 이 팔의 홈 손 자세가 없다"]
+        if self.phase not in _MOVING:
+            return [f"{self.side}: phase {self.phase.value} — engage 된 팔에서만"]
+        if self.hold is None:
+            return [f"{self.side}: 팔이 외부 목표를 따르는 중이다 — 에피소드 정지 뒤에"]
+        return []
+
+    def start_hand_release(self) -> None:
+        self.hold = replace(self.hold, hand=self.home_hand.copy())
+
     def start_thermal_retreat(self) -> bool:
         """자기해제형 HOLD(발열·워치독)에서 홈으로 내려가는 것을 허용한다.
 

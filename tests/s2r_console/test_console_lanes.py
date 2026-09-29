@@ -214,3 +214,102 @@ def test_an_optional_group_is_never_the_next_stage_but_can_still_be_run(console,
     assert view["arm_right"]["next"] is None                  # 진단은 차례가 아니다
     assert _rows(console)["right_selftest"]["can_run"]
     _run(console, "right_selftest")
+
+
+TOGGLE = """
+name: 켜기 끄기 · focus
+lanes:
+  - {id: head, title: 비전}
+  - {id: arm_right, title: 오른팔, side: right, focus: right_policy}
+groups:
+  - {id: connect, title: 연결}
+  - {id: policy, title: 정책}
+  - {id: finish, title: 정리}
+stages:
+  - id: sensors
+    lane: head
+    group: connect
+    title: 인지 켜기
+    undoes: [sensors_off]
+  - id: right_home
+    lane: arm_right
+    group: connect
+    title: 홈
+  - id: right_policy
+    lane: arm_right
+    group: policy
+    title: 정책
+    needs: [right_home, sensors]
+  - id: right_rehome
+    lane: arm_right
+    group: finish
+    title: 다시 홈
+    needs: [right_home]
+  - id: right_return
+    lane: arm_right
+    group: finish
+    title: 차렷
+    needs: [right_home]
+    undoes: [right_home]
+  - id: sensors_off
+    lane: head
+    group: finish
+    title: 인지 끄기
+    skippable: true
+    undoes: [sensors]
+run:
+  sensors:
+    - {note: 켜기, argv: ["true"]}
+  right_home:
+    - {note: 홈, argv: ["true"]}
+  right_policy:
+    - {note: 정책, argv: ["true"]}
+  right_rehome:
+    - {note: 다시 홈, argv: ["true"]}
+  right_return:
+    - {note: 차렷, argv: ["true"]}
+  sensors_off:
+    - {note: 끄기, argv: ["true"]}
+"""
+
+
+def _lane(console, lane_id):
+    return {x["id"]: x for x in _mission(console)["lanes"]}[lane_id]
+
+
+def test_sensors_can_be_turned_on_again_after_sensors_off(console, tiny_repo):
+    """09.29 사용자: "sensor-off 를 하면 두 번 다시 sensor 를 킬 수 없음" — 끄면 켬 완료가 지워져 다시 차례가 된다."""
+    (tiny_repo / "mission.yaml").write_text(textwrap.dedent(TOGGLE))
+    console.open("t_fake", operator="pytest")
+    _run(console, "sensors")
+    _run(console, "sensors_off")
+    assert "sensors" not in console.session.state.completed
+    assert _lane(console, "head")["next"] == "sensors"
+    assert _rows(console)["sensors"]["can_run"]
+    _run(console, "sensors")
+    assert "sensors_off" not in console.session.state.completed and "sensors" in console.session.state.completed
+
+
+def test_skipping_sensors_off_undoes_nothing(console, tiny_repo):
+    """건너뜀은 실행하지 않았다 — 인지는 켜진 채이므로 켬 완료를 지우지 않는다."""
+    (tiny_repo / "mission.yaml").write_text(textwrap.dedent(TOGGLE))
+    console.open("t_fake", operator="pytest")
+    _run(console, "sensors")
+    console.skip_stage("sensors_off", operator="pytest")
+    assert {"sensors", "sensors_off"} <= set(console.session.state.completed)
+
+
+def test_the_arm_card_returns_to_the_policy_after_home(console, tiny_repo):
+    """09.29 사용자: "home 이후에는 정책 창이 디폴트" — 정책을 돌린 뒤 · rehome 뒤에도 카드는 정책이다."""
+    (tiny_repo / "mission.yaml").write_text(textwrap.dedent(TOGGLE))
+    console.open("t_fake", operator="pytest")
+    _run(console, "right_home")
+    assert _lane(console, "arm_right")["next"] == "right_policy"      # 인지 전에도 차례는 정책(막힘 사유가 보인다)
+    _run(console, "sensors")
+    _run(console, "right_policy")
+    assert _lane(console, "arm_right")["next"] == "right_policy"
+    _run(console, "right_rehome")
+    assert _lane(console, "arm_right")["next"] == "right_policy"
+    _run(console, "right_return")                                      # 차렷으로 — 정책 시작 자세가 아니다
+    assert "right_home" not in console.session.state.completed
+    assert _lane(console, "arm_right")["next"] == "right_home"

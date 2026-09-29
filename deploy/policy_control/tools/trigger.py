@@ -29,7 +29,8 @@ from episode_ctl import parse_trigger  # noqa: E402
 
 NS = "/policy_control"
 #: pd 는 팔마다 서비스가 따로다 — `pd/engage --side right` → `/policy_control/pd_right/engage` (09.23).
-PD_SERVICES = ("pd/engage", "pd/goto_home", "pd/release", "pd/hand_home", "pd/hand_rest", "pd/hand_path")
+PD_SERVICES = ("pd/engage", "pd/goto_home", "pd/release", "pd/hand_home", "pd/hand_rest", "pd/hand_path",
+               "pd/hand_release")
 SERVICES = PD_SERVICES + ("episode/reset", "episode/start", "episode/stop", "episode/abort")
 #: 로봇을 **덜** 움직이게 하는 쪽 — 승인 없이 언제든 불러도 되는 것들.
 DESCENDING = ("episode/stop", "episode/abort", "pd/release")

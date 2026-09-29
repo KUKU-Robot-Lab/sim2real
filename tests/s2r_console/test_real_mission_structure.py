@@ -35,8 +35,50 @@ def test_selftest_is_an_optional_diagnosis_nothing_waits_for():
     """09.28 사용자: "selftest_left 이거 맨날 실패하는 것 같은데 따로 빼두던가" — 차례에서 빼고, 아무것도 기대지 않는다."""
     optional = {g.id for g in MISSION.groups if g.optional}
     assert optional == {"diagnose"}
-    assert {s.id for s in MISSION.stages if s.group in optional} == {"selftest_right", "selftest_left", "fpp_reregister"}
+    # 09.29 사용자 "home 이후에는 정책 창이 디폴트" — fabric direct 시험도 진단으로 뺐다(카드가 정책 앞에서 멈췄다)
+    assert {s.id for s in MISSION.stages if s.group in optional} == {
+        "selftest_right", "selftest_left", "fpp_reregister", "fabric_direct_right", "fabric_direct_left"}
     assert not [s.id for s in MISSION.stages if {"selftest_right", "selftest_left"} & set(s.needs)]
+
+
+def test_arm_lanes_focus_on_their_policy_after_home():
+    """09.29 사용자: home 이후 정책 창이 디폴트 — 정책 → rehome → 정책 반복."""
+    focus = {la.id: la.focus for la in MISSION.lanes}
+    assert focus["arm_right"] == "policy_right" and focus["arm_left"] == "policy_left"
+    assert not focus["rig"] and not focus["head"]
+
+
+def test_sensors_and_sensors_off_undo_each_other():
+    """09.29 사용자: "sensor-off 를 하면 두 번 다시 sensor 를 킬 수 없음" — 끄면 켬 완료를, 켜면 끔 완료를 지운다."""
+    by = {s.id: s for s in MISSION.stages}
+    assert "sensors" in by["sensors_off"].undoes and "sensors_off" in by["sensors"].undoes
+    # 끄기는 vision-3090 이 다 내릴 때까지 기다린 뒤 로컬 런처를 내린다(09.28: 기다리지 않아 busy · 컨테이너 Up 이 남았다)
+    off = _cmds("sensors_off")
+    assert "--wait" in off[0].argv and off[1].stop
+
+
+def test_leaving_the_policy_start_pose_forgets_home():
+    """차렷으로 가거나(return · reset) pd 를 풀면(release · reset) 정책 시작 자세가 아니다 — 정책 카드가 다시 home 을 요구한다."""
+    by = {s.id: s for s in MISSION.stages}
+    for side in ("right", "left"):
+        assert f"home_{side}" in by[f"return_{side}"].undoes
+        assert {f"home_{side}", f"pd_arm_{side}"} <= set(by[f"release_{side}"].undoes)
+        assert {f"home_{side}", f"pd_arm_{side}"} <= set(by[f"reset_{side}"].undoes)
+        assert not by[f"rehome_{side}"].undoes
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_rehome_opens_the_hand_before_the_arm_moves(side):
+    """09.29 사용자: 손가락을 먼저 풀어 컵을 테이블로 떨어뜨리고, 그다음 팔을 움직인다(사람이 대기)."""
+    cmds = _cmds(f"rehome_{side}")
+    text = [" ".join(c.argv) for c in cmds]
+    assert cmds[0].manual and "떨어진다" in cmds[0].note
+    assert "--only pd_hand_release" in text[1] and "--approve pd_hand_release" in " ".join(cmds[1].execute_args)
+    plan = next(i for i, t in enumerate(text) if "plan_rehome.py" in t)
+    replay = next(i for i, t in enumerate(text) if "replay_to_pd.py" in t)
+    assert 1 < plan < replay
+    assert "--only pd_goto_home" in text[-1]
+    assert not any("pd_hand_home" in t for t in text)          # 손은 이미 홈 손 자세다
 
 
 def test_each_arm_is_readied_engaged_and_homed_before_the_selftest():
@@ -333,9 +375,10 @@ def test_rehome_brings_the_arm_back_to_the_policy_start_through_a_planned_path(s
     st = MISSION.stages[IDS.index(sid)]
     assert RAW_STAGES[sid]["group"] == "finish" and RAW_STAGES[sid]["lane"] == f"arm_{side}" and st.touches_real
     text = [" ".join(c.argv) for c in _cmds(sid)]
-    assert "plan_rehome.py" in text[0] and f"--side {side}" in text[0]
-    assert "replay_to_pd.py" in text[1] and f"rehome_{side}.npz" in text[1] and "--reverse" not in text[1]
-    assert "--only pd_goto_home" in text[2] and _cmds(sid)[3].manual and "--only pd_hand_home" in text[4]
+    # 09.29: 손을 먼저 푼 뒤(0 확인 · 1 hand_release) 계획 → 재생 → 정착
+    assert "plan_rehome.py" in text[2] and f"--side {side}" in text[2]
+    assert "replay_to_pd.py" in text[3] and f"rehome_{side}.npz" in text[3] and "--reverse" not in text[3]
+    assert "--only pd_goto_home" in text[4]
 
 
 def test_pd_runs_at_full_speed_and_the_left_policy_ends_its_own_episode():
