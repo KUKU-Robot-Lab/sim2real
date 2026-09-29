@@ -323,7 +323,7 @@ def _pick_checkpoint(run: Path, checkpoint: Path | None) -> Path | None:
 def _check_checkpoint_dims(ckpt: Path | None, obs_dim: int, action_dim: int) -> None:
     if ckpt is None:
         return
-    from robot_profile import checkpoint_contract
+    from policy_control.checkpoint_dims import checkpoint_contract
 
     got_obs, got_act = checkpoint_contract(ckpt)
     if (got_obs, got_act) != (obs_dim, action_dim):

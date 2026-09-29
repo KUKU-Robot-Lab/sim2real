@@ -10,7 +10,7 @@ Tesollo tip F/T → 5 tip 접촉 변환 노드가 준비되기 전까지, 이 �
 실접촉이 필요하면 F/T 변환 노드로 교체할 것. [[grasp-v2-contact-obs-sim2real]]
 
 발행: <tip_force_xyz> 15D (5×3×0.0) + <tip_force_norm> 5D (5×0.0)
-      — 구성 프로필(--robot)의 토픽, 또는 --namespace dg5f_<side> 의 /<ns>/tip_forces_xyz + /<ns>/contact_forces.
+      — --namespace dg5f_<side> 의 /<ns>/tip_forces_xyz + /<ns>/contact_forces.
 """
 
 from __future__ import annotations
@@ -59,18 +59,11 @@ class FakeTipContact(Node):
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--robot", default=None, help="config/robots 의 구성 프로필 이름 (기본 tesollo_bi_s__right)")
-    parser.add_argument("--namespace", default=None, help="dg5f_left | dg5f_right — 프로필 없이 namespace 토픽으로")
+    parser.add_argument("--namespace", required=True, help="dg5f_left | dg5f_right")
     parser.add_argument("--rate", type=float, default=30.0)
     args = parser.parse_args()
-    if args.namespace:
-        label = args.namespace
-        xyz_topic, norm_topic = topics_for_namespace(args.namespace)
-    else:
-        from robot_profile import load_robot_profile
-
-        profile = load_robot_profile(args.robot or "tesollo_bi_s__right")
-        label, xyz_topic, norm_topic = profile.name, profile.topics["tip_force_xyz"], profile.topics["tip_force_norm"]
+    label = args.namespace
+    xyz_topic, norm_topic = topics_for_namespace(args.namespace)
     rclpy.init()
     node = FakeTipContact(label, xyz_topic, norm_topic, args.rate)
     try:

@@ -7,14 +7,13 @@ grasp_inference / policy_control obs 는 /dg5f_<side>/joint_states(손 20관절)
 
 ⚠️ 실제 손 구동은 없음(손 분리). 정책의 손 명령은 무시된다 — 팔 궤적만 검증하는 용도.
 
---echo 모드(08.03, RUNNING 팔 후퇴 진단): 정적 자세 대신 정책의 손 명령을 그대로 관절상태로 되돌려
+반사 모드(08.03, RUNNING 팔 후퇴 진단): 정적 자세 대신 정책의 손 명령을 그대로 관절상태로 되돌려
 발행한다. sim 에서는 손이 명령을 즉시 추종하므로, echo 는 "sim 처럼 진화하는 손 obs"를 손 없이 재현한다.
 --echo-topic /policy_control/joint_target (JointState, canonical 이름): 이 손의 관절이 **모두** 있는 메시지만
 반사한다 — 양팔 fabric/pd 가 같은 토픽에 낼 때 다른 팔의 목표는 자연히 걸러진다.
 
-두 모드:
-  레거시 프로필  --robot tesollo_sensor__right (scripts/robot_profile, hdgp preset 의 HAND_APPROACH_POSE)
-  계약          --contract <deploy_contract.json> --robot-yaml <policy_control robots yaml> --side left|right
+계약 모드(09.29 옛 --robot 프로필 모드는 지웠다):
+  --contract <deploy_contract.json> --robot-yaml <policy_control robots yaml> --side left|right
                 — 관절 = 계약 sides[side].hand_joints, source 이름 = 합친 프로필(좌손 보충 포함), 자세 = 계약 home_hand,
                   토픽 = /dg5f_<side>/{joint_states, tip_forces_xyz, contact_forces}
 
@@ -51,19 +50,6 @@ class HandSpec:
     js_topic: str
     xyz_topic: str
     norm_topic: str
-
-
-def spec_from_profile(name: str) -> HandSpec:
-    from robot_profile import load_hdgp_module, load_robot_profile
-
-    profile = load_robot_profile(name)
-    # 좌측은 우측의 부호 미러 — preset 에서 가져오지 않으면 조용히 틀린다
-    pose = tuple(float(v) for v in load_hdgp_module(profile, "preset").HAND_APPROACH_POSE)
-    if len(pose) != len(profile.ee_source):
-        raise ValueError(f"APPROACH 자세 {len(pose)}D != EE 관절 {len(profile.ee_source)}개")
-    return HandSpec(name=profile.name, canonical=tuple(profile.ee_canonical), source=tuple(profile.ee_source), pose=pose,
-                    js_topic=profile.topics["ee_state"], xyz_topic=profile.topics["tip_force_xyz"],
-                    norm_topic=profile.topics["tip_force_norm"])
 
 
 def spec_from_contract(contract_path: Path, robot_yaml: Path, side: str) -> HandSpec:
@@ -181,7 +167,6 @@ class FakeHandState(Node):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--robot", default=None, help="레거시: config/robots 의 구성 프로필 이름 (기본 tesollo_bi_s__right)")
     parser.add_argument("--contract", type=Path, default=None, help="계약 모드: deploy_contract.json")
     parser.add_argument("--robot-yaml", type=Path, default=None, help="계약 모드: deploy/policy_control/config/robots/*.yaml")
     parser.add_argument("--side", choices=("left", "right"), default=None, help="계약 모드: 어느 손")
@@ -191,21 +176,12 @@ def main() -> None:
                         help="실기 손과 같은 입력: pd 가 내는 드라이버 JTC(JointTrajectory)를 따른다 — --echo-topic 보다 우선")
     parser.add_argument("--start-zero", action="store_true", default=False, help="계약 home_hand 가 아니라 0 자세에서 시작")
     parser.add_argument("--start-q", default="", help="'r_hj_index_2=1.4,…' 로 시작 자세를 직접 — 실기의 어긋난 손을 흉내 낸다")
-    parser.add_argument("--echo", action="store_true", default=False,
-                        help="레거시: 정책 손 명령(<ee_cmd>)을 관절상태로 반사 — 진화하는 손 obs 재현")
     parser.add_argument("--controller-node", action="store_true", default=False,
                         help="드라이버 JTC 컨트롤러 노드(/dg5f_<side>/dg5f_<side>_controller, gains.<joint>.p/d 파라미터)도 띄운다")
     args = parser.parse_args()
-    if args.contract is not None:
-        if args.robot_yaml is None or args.side is None:
-            raise SystemExit("--contract 에는 --robot-yaml 과 --side 가 필요하다")
-        spec, cmd_topic = spec_from_contract(args.contract, args.robot_yaml, args.side), None
-    else:
-        from robot_profile import load_robot_profile
-
-        name = args.robot or "tesollo_bi_s__right"
-        spec = spec_from_profile(name)
-        cmd_topic = load_robot_profile(name).topics["ee_cmd"] if args.echo and not args.echo_topic else None
+    if args.contract is None or args.robot_yaml is None or args.side is None:
+        raise SystemExit("--contract · --robot-yaml · --side 가 필요하다(옛 --robot 프로필 모드는 09.29 에 지웠다)")
+    spec, cmd_topic = spec_from_contract(args.contract, args.robot_yaml, args.side), None
     rclpy.init()
     node = FakeHandState(spec, args.rate, echo_topic=args.echo_topic, cmd_topic=cmd_topic, jtc_topic=args.jtc_topic,
                          start_zero=args.start_zero,

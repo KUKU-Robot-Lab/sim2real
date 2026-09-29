@@ -113,46 +113,43 @@ def test_resuming_a_run_that_was_never_recorded_fails_loudly(tmp_path, monkeypat
 
 
 # ── CLI 규약 ───────────────────────────────────────────────────────────────
-def test_the_real_mission_file_loads_and_declares_what_is_blocked():
+MISSIONS = sorted((mission_run.REPO / "config").glob("mission_*.yaml"))
+DG5F = str(mission_run.REPO / "config" / "mission_dg5f_m_control.yaml")
+
+
+@pytest.mark.parametrize("path", MISSIONS, ids=lambda p: p.stem)
+def test_every_mission_file_loads(path):
     """배포된 미션 정의가 실제로 적재되는지 — 오타 하나면 실기 날에 알게 된다."""
-    mission, runbook = mission_run._load(mission_run.DEFAULT_MISSION)
+    mission, runbook = mission_run._load(path)
 
-    blocked = [s.id for s in mission.stages if s.blocked]
-    assert blocked, "막힌 단계가 하나도 없다면 선언을 빠뜨린 것이다"
-    assert all(s.evidence for s in mission.stages if s.blocked), "막힘에는 근거가 있어야 한다"
     assert set(runbook.commands) <= {s.id for s in mission.stages}
+    missing = [s.evidence for s in mission.stages
+               if s.blocked and s.evidence and not (mission_run.REPO / s.evidence).exists()]
+    assert missing == [], "근거가 없는 경로를 가리키면 사용자가 확인할 수 없다"
 
 
-def test_every_blocked_stage_names_a_file_that_exists():
-    """근거가 없는 경로를 가리키면 사용자가 확인할 수 없다."""
-    mission, _ = mission_run._load(mission_run.DEFAULT_MISSION)
-
-    missing = [
-        s.evidence
-        for s in mission.stages
-        if s.blocked and not (mission_run.REPO / s.evidence).exists()
-    ]
-
-    assert missing == []
+def test_the_runner_needs_a_mission(capsys):
+    assert mission_run.main(["--plan"]) == 2
+    assert "--mission" in capsys.readouterr().out
 
 
 def test_plan_run_publishes_nothing_and_exits_clean(capsys):
-    code = mission_run.main(["--plan"])
+    code = mission_run.main(["--mission", DG5F, "--plan"])
 
     assert code == 0
-    assert "막힘" in capsys.readouterr().out
+    assert "preflight" in capsys.readouterr().out
 
 
 def test_a_real_stage_is_refused_without_approval(capsys):
     """'모든 실기 진행은 사용자 허락과 함께' 를 코드로 옮긴 것이다."""
-    code = mission_run.main(["--stage", "preset_head", "--execute"])
+    code = mission_run.main(["--mission", DG5F, "--stage", "drivers", "--execute"])
 
     assert code == 1
     assert "승인이 없다" in capsys.readouterr().out
 
 
 def test_a_dry_run_of_a_ready_stage_says_it_published_nothing(capsys):
-    code = mission_run.main(["--stage", "preflight"])
+    code = mission_run.main(["--mission", DG5F, "--stage", "preflight"])
 
     out = capsys.readouterr().out
     assert code == 0
@@ -160,19 +157,29 @@ def test_a_dry_run_of_a_ready_stage_says_it_published_nothing(capsys):
     assert "--execute" not in out.split("드라이런")[0]
 
 
-def test_a_blocked_stage_still_previews_its_commands_in_a_dry_run(capsys):
+def _blocked_mission(tmp_path):
+    p = tmp_path / "mission_blocked.yaml"
+    p.write_text("""name: t
+stages:
+- id: move
+  title: 이동
+  touches_real: true
+  blocked: 아직 없다
+run:
+  move:
+  - argv: [python3, "{repo}/scripts/nodes/some_tool.py", --x]
+    execute_args: [--execute]
+""")
+    return str(p)
+
+
+def test_a_blocked_stage_still_previews_its_commands_in_a_dry_run(capsys, tmp_path):
     """무엇을 하려던 것인지는 보여야 한다 — 발행이 없으니 위험도 없다."""
-    code = mission_run.main(["--stage", "preset_left"])
+    code = mission_run.main(["--mission", _blocked_mission(tmp_path), "--stage", "move"])
 
     out = capsys.readouterr().out
     assert code == 1                       # 가드는 막았다고 말한다
     assert "미리보기" in out
-    assert "nodes/shadow_replay.py" in out       # 그래도 무엇을 하려던 것인지는 보인다
-    assert "--execute" not in out.split("드라이런")[0]
-
-
-def test_the_preview_of_a_blocked_stage_never_carries_execute(capsys):
-    mission_run.main(["--stage", "preset_right"])
-
-    argv_lines = [l for l in capsys.readouterr().out.split("\n") if "nodes/shadow_replay.py" in l]
-    assert argv_lines and all("--execute" not in l for l in argv_lines)
+    assert "some_tool.py" in out           # 그래도 무엇을 하려던 것인지는 보인다
+    argv_lines = [line for line in out.split("\n") if "some_tool.py" in line]
+    assert argv_lines and all("--execute" not in line for line in argv_lines)

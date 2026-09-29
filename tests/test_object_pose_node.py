@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -29,7 +30,8 @@ def test_cup_applies_yup_to_zup_but_same_camera():
     conv = PoseConverter(REG, ["shaker_closed", "cup_big_s100"])
     p_s, q_s = conv.convert("shaker_closed", np.zeros(3), np.array([1.0, 0, 0, 0]))
     p_c, q_c = conv.convert("cup_big_s100", np.zeros(3), np.array([1.0, 0, 0, 0]))
-    assert np.allclose(p_s, p_c)          # cad_to_body 는 위치 0 이라 위치 동일
+    # shaker 는 cad_to_body 위치 +4.6 mm(CAD 중심 → sim body 원점, 09.07), cup 은 0 — 차이는 그 길이뿐
+    assert np.linalg.norm(p_s - p_c) == pytest.approx(0.0046, abs=1e-6)
     assert not np.allclose(q_c, q_s)      # cup 은 Y-up→Z-up 회전이 붙는다
 
 

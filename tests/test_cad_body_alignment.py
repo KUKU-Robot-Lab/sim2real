@@ -1,12 +1,16 @@
 import sys
 from pathlib import Path
 import numpy as np
+import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from cad_body_alignment import mesh_aabb, cad_to_body_yup_to_zup  # noqa: E402
 from pour_obs_geometry import quat_apply  # noqa: E402
 
-CUP_OBJ = str(Path(__file__).resolve().parents[2] / "perception/assets/Cup/cup.obj")
+# 09.29: 옛 ~/rl_ws/perception 저장소는 없어졌다 — FP++ 가 쓰는 메시(config/objects.yaml cup_big_s100)를 본다.
+CUP_OBJ = str(Path(__file__).resolve().parents[2] / "perception_plus_plus/assets/meshes/cup.obj")
 
+
+@pytest.mark.skipif(not Path(CUP_OBJ).is_file(), reason=f"{CUP_OBJ} 없음(perception_plus_plus 미설치 호스트)")
 def test_mesh_aabb_matches_measured_cup():
     mn, mx = mesh_aabb(CUP_OBJ)
     assert np.allclose(mn, [-0.0463, -0.0773, -0.0440], atol=1e-3)

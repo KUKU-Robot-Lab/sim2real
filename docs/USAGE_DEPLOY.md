@@ -74,7 +74,6 @@ python3 deploy/policy_control/tools/ckpt_gate.py --trace deploy/policies/<id>/tr
 
 ```bash
 ROS_DOMAIN_ID=97 deploy/policy_control/tools/pour_fake_run.sh 30 logs/policy_control/pour_fake1
-ROS_DOMAIN_ID=99 deploy/policy_control/tools/fake_plant_run.sh 900 logs/policy_control/fake1
 MODE=pd SIDE=left ROS_DOMAIN_ID=97 deploy/policy_control/tools/fake_plant_run.sh 0 logs/policy_control/fake_pd_left
 SIDE=left ROS_DOMAIN_ID=96 deploy/policy_control/tools/fake_direct_run.sh logs/policy_control/direct_left
 ```
@@ -88,7 +87,7 @@ python3 scripts/ops/mission_run.py --mission config/mission_policy_control.yaml 
 python3 scripts/ops/mission_run.py --mission config/mission_policy_control.yaml --stage pd_load
 python3 scripts/ops/mission_run.py --mission config/mission_policy_control.yaml \
     --stage pd_load --execute --approve pd_load
-python3 scripts/ops/mission_run.py --resume 20260922_101500 --plan
+python3 scripts/ops/mission_run.py --mission config/mission_policy_control.yaml --resume 20260922_101500 --plan
 python3 scripts/ops/mission_run.py --abort  20260922_101500
 ```
 

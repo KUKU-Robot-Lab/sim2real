@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """fake 플랜트의 **한 팔** — MockArm + 지령 버퍼 + /joint_states 행 (fake_arm_bridge 가 팔마다 하나씩 든다).
 
-이름·부호·홈은 두 갈래로 온다: 레거시 프로필(scripts/robot_profile) 또는 **계약 + policy_control robot yaml**
+이름·부호·홈은 **계약 + policy_control robot yaml** 에서 온다
 (`side_spec_from_contract`). 중력·관성은 자산 URDF 에서 — 중력은 pd yaml 의 모델(`pd_gravity.make_gravity`)을
 그대로 빌려 pd 노드의 τ_ff 와 같은 식이 되게 한다(플랜트는 제어 경로 검증용이지 모델 정합 실험이 아니다).
 """
@@ -34,15 +34,6 @@ class SideSpec:
     sign: np.ndarray            # 7
     home: np.ndarray            # 7, canonical 순 — 유효관성 기본 자세
     jtc_topic: str              # /<side>_joint_trajectory_controller/joint_trajectory
-
-
-def side_spec_from_profile(profile, side: str, arm_canonical, home) -> SideSpec:
-    """scripts/robot_profile 프로필(레거시) → SideSpec."""
-    lim = profile.joint_limits
-    return SideSpec(side=side, canonical=tuple(arm_canonical),
-                    source=tuple(lim[c]["source"] for c in arm_canonical),
-                    sign=np.array([float(lim[c]["sign"]) for c in arm_canonical]),
-                    home=np.asarray(home, dtype=float).copy(), jtc_topic=jtc_topic(side))
 
 
 def side_spec_from_contract(contract, profile: dict, side: str) -> SideSpec:

@@ -9,9 +9,8 @@
 그런데 새 코드의 ROS 부분(발행·구독·리맵·타이머·게이트·csv)은 로봇 없이는 한 번도
 돌지 않는다. 여기서 돌려 두면 실기에서 남는 미지수는 **로봇 자체**뿐이다.
 
-두 모드:
-  레거시 프로필  --robot gripper_left|tesollo_sensor__right (scripts/robot_profile, 구 자산 URDF) — 한 팔 + 유휴 팔 정적
-  계약          --contract <deploy_contract.json> --robot-yaml <policy_control/config/robots/*.yaml> --sides right,left
+계약 모드(09.29 옛 --robot 프로필 모드는 hdgp 레거시 태스크 삭제와 함께 지웠다):
+  --contract <deploy_contract.json> --robot-yaml <policy_control/config/robots/*.yaml> --sides right,left
                 — 계약 sides 의 팔마다 MockArm, controller_manager 스텁 하나가 양팔 JTC+forward 3종을 안다(STRICT),
                   중력은 --pd-config 의 모델(pd 노드와 같은 식, 팔별 tip/payload) 또는 --gravity(자산 URDF 체인),
                   유효관성은 계약 홈(또는 --inertia-q) 자세의 자산 URDF. 선택하지 않은 팔은 홈에 정적으로 실린다.
@@ -23,7 +22,6 @@
 
 실행:
     source /opt/ros/humble/setup.bash && . .venv/bin/activate
-    python3 scripts/fakes/fake_arm_bridge.py --robot gripper_left --model pd --forward --gravity
     python3 scripts/fakes/fake_arm_bridge.py --contract logs/policy/asset_openarm_dg5f-m_bi_rl/deploy_contract.json \
         --robot-yaml deploy/policy_control/config/robots/dg5f_m_bi_fake.yaml --sides right,left \
         --pd-config deploy/policy_control/config/pd_dg5f_m_fake.yaml --rate-hz 100
@@ -45,16 +43,13 @@ for _p in (_SIM2REAL / "scripts", _HERE, _SIM2REAL / "deploy" / "policy_control"
 
 from arm_pd_model import load_arm_pd  # noqa: E402
 from fake_arm_side import (NUM_ARM, SideArm, SideSpec, driver_gains, gravity_from_pd_config,  # noqa: E402
-                           gravity_from_urdf, inertia_at, side_spec_from_contract, side_spec_from_profile,
-                           static_rows)
+                           gravity_from_urdf, inertia_at, side_spec_from_contract, static_rows)
 from fake_cm_stub import ControllerManagerStub, jtc_of  # noqa: E402,F401  (re-export: tests import it from here)
 
 #: 실측 캘리브레이션. `right_arm_best_calibration.json` 은 **우팔** 값이다 —
 #  좌팔에는 식별 캘리브가 없다(그 파일의 openarm_left_arm 400/80 은 sim 기본값이 남은 것).
 #  같은 팔 하드웨어라 예측용으로 쓰되, 실측이라고 부르지 않는다.
 CALIBRATION = Path.home() / "rl_ws/hdgp/log/logs/r2s_autotune/results/right_arm_best_calibration.json"
-ASSET_URDF = Path.home() / "rl_ws/urdf/generated/rl/openarm_tesollo_sensor_rl.urdf"          # 레거시 프로필 모드
-PROFILE_YAML = Path.home() / "rl_ws/robot_control/src/robot_control/profiles/openarm_tesollo.yaml"
 DEFAULT_GAINS = Path.home() / "rl_ws/urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml"
 RL_WS = _SIM2REAL.parent
 STATE_TOPIC = "/joint_states"
@@ -76,15 +71,6 @@ class PlantSpec:
     grip: GripSpec | None
     forward: bool               # forward 3종 + controller_manager 스텁
     with_effort: bool           # /joint_states effort 에 모델 토크(pd 모델)
-
-
-def _legacy_tip(side: str) -> str:
-    """★robot_control.profile.load_builtin_profile 은 자산 manifest(09.05 에 교체됨)를 요구해 죽는다.
-    체인 tip 이름만 필요하므로 프로필 yaml 의 groups 를 직접 읽는다."""
-    import yaml
-
-    group = yaml.safe_load(PROFILE_YAML.read_text())["groups"][f"openarm_{side}_arm"]
-    return group.get("asset_tip_link") or group["tip_link"]
 
 
 def _inertia_q(text: str | None) -> np.ndarray | None:
@@ -123,34 +109,6 @@ def parse_start_q(text: str | None) -> dict[str, list[float]]:
                 raise SystemExit(f"[fake_arm_bridge] --start-q {side}: {NUM_ARM} 개가 필요하다, {len(q)} 개")
             out[side.strip()] = q
     return out
-
-
-def build_legacy(args) -> PlantSpec:
-    """--robot 프로필 모드: 한 팔 MockArm + 유휴 팔(hdgp preset rest) 정적 + EE 그리퍼 행."""
-    from robot_profile import idle_arm_rest_pose, load_robot_profile
-
-    profile = load_robot_profile(args.robot)
-    side = profile.acting_side
-    q_inertia = _inertia_q(args.inertia_q)
-    spec = side_spec_from_profile(profile, side, profile.arm_canonical, np.zeros(NUM_ARM) if q_inertia is None else q_inertia)
-    kp, kd, fc, dataset = load_arm_pd(CALIBRATION)
-    if args.forward:
-        # ★pd 노드와 **같은** kp/kd: 모터 MIT 루프가 쓰는 control_gains.yaml. r2s 캘리브의
-        #   stiffness/damping 은 JTC 시대 등가 게인이라 여기서는 쓰지 않는다.
-        kp, kd = driver_gains(args.gains)
-    fc = np.asarray(fc, dtype=float) * float(args.friction_scale)
-    gravity = gravity_from_urdf(ASSET_URDF, spec, _legacy_tip(side)) if args.gravity else None
-    arm = _arm(spec, args, kp, kd, fc, inertia_at(ASSET_URDF, spec), gravity)
-    idle_side = "left" if side == "right" else "right"
-    idle_spec = side_spec_from_profile(profile, idle_side, profile.idle_arm_canonical, np.zeros(NUM_ARM))
-    idle_q = np.asarray(idle_arm_rest_pose(profile)) + args.idle_arm_offset
-    lim = profile.joint_limits
-    grip = GripSpec(topic=profile.topics["ee_traj"], source=tuple(lim[c]["source"] for c in profile.ee_canonical),
-                    sign=tuple(float(lim[c]["sign"]) for c in profile.ee_canonical))
-    print(f"[fake_arm_bridge] 레거시 프로필 {profile.name} · 게인 출처 "
-          f"{'control_gains.yaml' if args.forward else CALIBRATION.name + ' (dataset=' + str(dataset) + ')'} — ★우팔 식별값")
-    return PlantSpec(arms=(arm,), statics=((idle_spec, idle_q),), grip=grip, forward=bool(args.forward),
-                     with_effort=args.model == "pd")
 
 
 def _contract_grip(robot_cfg, profile: dict, side: str) -> GripSpec | None:
@@ -277,7 +235,6 @@ def make_node(spec: PlantSpec, rate_hz: float):
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--robot", default=None, help="레거시 프로필 이름(config/robots, scripts/robot_profile)")
     parser.add_argument("--contract", default=None, help="계약 모드: deploy_contract.json (asset 포함 v2)")
     parser.add_argument("--robot-yaml", default=None, help="계약 모드: deploy/policy_control/config/robots/*.yaml")
     parser.add_argument("--sides", default="", help="계약 모드: 명령을 받는 팔(쉼표). 기본 = 계약의 팔 전부")
@@ -290,14 +247,13 @@ def _parser() -> argparse.ArgumentParser:
                              "(kp·max_vel·dt − fc)/kd 에 갇힌다 — 팔이 아니라 모델이 만든 정체다.")
     parser.add_argument("--rate-hz", type=float, default=50.0,
                         help="적분·발행 주기. ★높일수록 세트포인트 선행량이 작아져 마찰 데드밴드에 걸린다 — MockArm 이 거부하면 낮출 것.")
-    parser.add_argument("--idle-arm-offset", type=float, default=0.0, help="레거시: 유휴 팔을 rest 에서 이만큼 어긋나게(게이트 시험용)")
     parser.add_argument("--forward", action="store_true", default=False,
                         help="pd 노드 경로: /<side>_forward_{position,velocity,effort}_controller/commands 를 받아 MIT 3중으로 "
                              "적분하고 controller_manager 서비스(list/load/configure/switch)를 흉내낸다. 계약 모드는 항상 켜진다.")
     parser.add_argument("--gravity", action="store_true", default=False,
                         help="자산 URDF 체인 g(q) 를 모델에 넣는다(페이로드 없음). 계약 모드에서 --pd-config 가 있으면 그쪽이 우선")
     parser.add_argument("--inertia-q", default=None,
-                        help="유효관성을 계산할 관절자세 7값 CSV(canonical 순). 레거시 기본 0(차렷), 계약 모드 기본 = 계약 홈")
+                        help="유효관성을 계산할 관절자세 7값 CSV(canonical 순). 기본 = 계약 홈")
     parser.add_argument("--start-q", default=None, help="계약 모드: 팔 시작 자세 'right=a,…;left=…' (기본 0)")
     parser.add_argument("--friction-scale", type=float, default=1.0, help="r2s 캘리브 쿨롱 마찰 Fc 배율. 0 = sim 처럼 마찰 없음")
     parser.add_argument("--gains", type=Path, default=DEFAULT_GAINS, help="MIT kp/kd 진실원천(pd 노드와 같은 파일)")
@@ -306,11 +262,9 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = _parser().parse_args()
-    if bool(args.contract) == bool(args.robot):
-        raise SystemExit("--robot(레거시) 또는 --contract + --robot-yaml(계약 모드) 중 하나")
-    if args.contract and not args.robot_yaml:
-        raise SystemExit("--contract 에는 --robot-yaml 이 필요하다")
-    spec = build_contract(args) if args.contract else build_legacy(args)
+    if not args.contract or not args.robot_yaml:
+        raise SystemExit("--contract + --robot-yaml 이 필요하다(옛 --robot 프로필 모드는 09.29 에 지웠다)")
+    spec = build_contract(args)
 
     import rclpy
 

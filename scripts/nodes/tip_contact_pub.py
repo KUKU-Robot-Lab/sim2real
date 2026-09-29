@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""실물 Tesollo tip F/T → 접촉력 토픽 변환 노드 (구성 프로필 기반, 좌/우).
+"""실물 Tesollo tip F/T → 접촉력 토픽 변환 노드 (좌/우, 토픽은 /dg5f_<side>/ 아래).
 
 dg5f 드라이버를 `fingertip_sensor:=true` 로 올리면 벤더 ForceTorqueSensorBroadcaster 가
 `fingertip_{1..5}_broadcaster/wrench`(WrenchStamped) 를 발행한다. 이 노드가 그 5개를
@@ -22,7 +22,10 @@ tip 순서: fingertip_1..5 = thumb..pinky (= {r|l}j_dg_1..5 = canonical {r|l}_hj
 
 실행:
     ros2 launch dg5f_driver dg5f_right_driver.launch.py fingertip_sensor:=true
-    python3 tip_contact_pub.py --robot tesollo_bi_s__right [--rate 60] [--bias-samples 30]
+    python3 tip_contact_pub.py --side right [--rate 60] [--bias-samples 30] [--force-sign 1]
+
+09.29: 옛 구성 프로필(--robot tesollo_bi_s__right, scripts/robot_profile)을 지우며 토픽을 side 에서 만든다.
+      값은 그 프로필과 같다(wrench /dg5f_<side>/fingertip_{i}_broadcaster/wrench, force_sign 1).
 """
 
 from __future__ import annotations
@@ -40,10 +43,27 @@ from pathlib import Path
 # ★`scripts/` 를 임포트 경로에 넣는다 — 이 파일은 거기서 한 단계 내려와 있다.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from robot_profile import load_robot_profile
+from dataclasses import dataclass
+
 from tip_contact_core import TipForceExtractor
 
 NUM_TIPS = 5
+
+
+@dataclass(frozen=True)
+class TipTopics:
+    """한 손의 tip 토픽 · 힘 부호."""
+    name: str
+    tip_force_xyz: str
+    tip_force_norm: str
+    tip_wrench_fmt: str
+    tip_force_sign: float
+
+
+def tip_topics(side: str, force_sign: float = 1.0) -> TipTopics:
+    ns = f"/dg5f_{side}"
+    return TipTopics(name=f"dg5f_{side}", tip_force_xyz=f"{ns}/tip_forces_xyz", tip_force_norm=f"{ns}/contact_forces",
+                     tip_wrench_fmt=ns + "/fingertip_{i}_broadcaster/wrench", tip_force_sign=float(force_sign))
 
 
 def _xyz_layout(msg: Float64MultiArray) -> None:
@@ -61,8 +81,8 @@ class TipContactPub(Node):
         self.extractor = TipForceExtractor(
             num_tips=NUM_TIPS, bias_samples=bias_samples, sign=profile.tip_force_sign,
         )
-        xyz_topic = profile.topics["tip_force_xyz"]
-        norm_topic = profile.topics["tip_force_norm"]
+        xyz_topic = profile.tip_force_xyz
+        norm_topic = profile.tip_force_norm
         self.pub_xyz = self.create_publisher(Float64MultiArray, xyz_topic, 10)
         self.pub_norm = self.create_publisher(Float64MultiArray, norm_topic, 10)
 
@@ -113,16 +133,16 @@ class TipContactPub(Node):
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--robot", default="tesollo_bi_s__right",
-                        help="config/robots 의 구성 프로필 이름")
+    parser.add_argument("--side", choices=("right", "left"), default="right")
+    parser.add_argument("--force-sign", type=float, default=1.0, help="tip 힘 부호(옛 프로필 tip_sensor.force_sign)")
     parser.add_argument("--rate", type=float, default=60.0)
     parser.add_argument("--bias-samples", type=int, default=30)
     parser.add_argument("--topic-fmt", default=None,
-                        help="tip wrench 토픽 패턴 ({i}=1..5). 기본은 프로필 값")
+                        help="tip wrench 토픽 패턴 ({i}=1..5). 기본 /dg5f_<side>/fingertip_{i}_broadcaster/wrench")
     args = parser.parse_args()
 
-    profile = load_robot_profile(args.robot)
-    topic_fmt = args.topic_fmt or profile.topics["tip_wrench_fmt"]
+    profile = tip_topics(args.side, args.force_sign)
+    topic_fmt = args.topic_fmt or profile.tip_wrench_fmt
 
     rclpy.init()
     node = TipContactPub(profile, args.rate, args.bias_samples, topic_fmt)

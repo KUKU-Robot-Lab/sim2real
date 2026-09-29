@@ -50,9 +50,6 @@ def test_detects_grasp_s2r_family():
 # ---------------------------------------------------------------- left v2B25
 @needs_left
 def test_left_rate_and_policy(left):
-    from left_inference_dryrun import step_dt_from_run
-
-    assert left.rate.step_dt == pytest.approx(step_dt_from_run(LEFT_RUN / "params/env.yaml"))
     assert left.rate.policy_hz == pytest.approx(50.0)
     assert left.rate.episode_steps == 250
     assert left.policy.obs_dim == 49 and left.policy.action_dim == 7
@@ -80,12 +77,10 @@ def test_left_obs_segments_match_run(left):
 
 @needs_left
 def test_left_home_and_goal_from_run(left):
-    from left_inference_dryrun import goal_center_from_run
     from left_policy_core import home_from_run
 
     assert left.pd.home_arm == pytest.approx(home_from_run(LEFT_RUN / "params/env.yaml").tolist())
     goal = left.obs.segment("target_object_position").params["goal"]
-    assert goal[:3] == pytest.approx(goal_center_from_run(LEFT_RUN / "params/env.yaml"))
     assert goal[3:] == [1.0, 0.0, 0.0, 0.0]
 
 

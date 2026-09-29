@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """미션 러너 — 순서대로 부르고, 막히면 왜 막혔는지 말한다.
 
-    python3 scripts/ops/mission_run.py --plan                    # 전체 판정 (발행 없음)
-    python3 scripts/ops/mission_run.py --stage preset_right      # 그 단계의 명령만 출력
-    python3 scripts/ops/mission_run.py --stage preset_right --execute --approve preset_right
-    python3 scripts/ops/mission_run.py --resume 20260901_161200 --plan
+    python3 scripts/ops/mission_run.py --mission config/mission_dg5f_m_control.yaml --plan   # 전체 판정 (발행 없음)
+    python3 scripts/ops/mission_run.py --mission … --stage home_right      # 그 단계의 명령만 출력
+    python3 scripts/ops/mission_run.py --mission … --stage home_right --execute --approve home_right
+    python3 scripts/ops/mission_run.py --mission … --resume 20260901_161200 --plan
     python3 scripts/ops/mission_run.py --abort  20260901_161200
 
 세 가지 규약을 코드로 잠근다.
@@ -55,7 +55,6 @@ from mission_core import (
 from mission_stages import Command, Runbook, commands_for, load_runbook
 
 REPO = Path(__file__).resolve().parents[2]
-DEFAULT_MISSION = REPO / "config" / "mission_pour.yaml"
 MISSION_LOG_DIR = REPO / "logs" / "mission"
 
 #: 자식이 SIGTERM 을 무시할 때 SIGKILL 까지 기다리는 시간 [s].
@@ -267,7 +266,7 @@ def _load(path: Path) -> tuple[Mission, Runbook]:
 
 def _parse(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--mission", type=Path, default=DEFAULT_MISSION)
+    p.add_argument("--mission", type=Path, help="미션 yaml (config/mission_*.yaml). --abort 에는 필요 없다")
     p.add_argument("--plan", action="store_true", help="전 단계 판정을 출력하고 끝낸다")
     p.add_argument("--stage", help="이 단계만 본다 / 실행한다")
     p.add_argument("--execute", action="store_true", help="★실제로 실행한다")
@@ -285,6 +284,9 @@ def main(argv: list[str] | None = None) -> int:
         abort_run(args.abort)
         return 0
 
+    if args.mission is None:
+        print("--mission 이 필요하다(예: config/mission_dg5f_m_control.yaml) — 옛 기본 mission_pour.yaml 은 09.29 에 지웠다")
+        return 2
     mission, runbook = _load(args.mission)
     state = load_state(args.resume) if args.resume else initial_state(mission)
     run_id = args.resume or args.run or datetime.now().strftime("%Y%m%d_%H%M%S")

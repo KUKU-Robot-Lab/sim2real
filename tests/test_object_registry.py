@@ -41,7 +41,7 @@ def test_render_fpp_yaml_matches_node_parameter_schema():
     reg = load_registry(DEFAULT_REGISTRY)
     doc = yaml.safe_load(render_fpp_yaml(reg.get("shaker_closed")))
     params = doc["cup_tracking"]["ros__parameters"]
-    assert params["mesh_path"] == "assets/meshes/shaker_sim.ply"
+    assert params["mesh_path"] == "assets/meshes/shaker_cad.obj"          # 09.07 사용자 지정 CAD
     assert params["mesh_scale_to_meters"] == 1.0
     assert params["detection_pick"] == "blue"
     assert params["pose_topic"] == "/perception_plus_plus/shaker_closed/pose"

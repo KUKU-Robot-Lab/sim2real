@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
 # M8 — 무하드웨어 폐루프 한 판.
-#   MODE=chain(기본): fake 플랜트 + 체인 3노드 + pd(execute) + episode_ctl + judge + status csv (좌 v2B25 정책).
-#   MODE=pd         : 제어 전용(asset 계약) — fake 플랜트(계약 모드) + pd(execute) 만: engage → goto_home →
+#   MODE=pd(기본)   : 제어 전용(asset 계약) — fake 플랜트(계약 모드) + pd(execute) 만: engage → goto_home →
 #                     pd_selftest(hold + 관절 2개 ±0.1 rad 램프 0.1 rad/s) → release. 팔 SIDE=left|right|both.
 #   ROS_DOMAIN_ID 는 반드시 실기 도메인(0/unset)이 아니어야 한다(launch 가 거부한다).
-#   usage: ROS_DOMAIN_ID=99 deploy/policy_control/tools/fake_plant_run.sh [steps] [logdir]
-#          MODE=pd SIDE=left ROS_DOMAIN_ID=97 deploy/policy_control/tools/fake_plant_run.sh 0 logs/policy_control/fake_dg5fm_left_run1
+#   usage: MODE=pd SIDE=left ROS_DOMAIN_ID=97 deploy/policy_control/tools/fake_plant_run.sh 0 logs/policy_control/fake_dg5fm_left_run1
 #   env(MODE=pd): SIDE, ROBOT(기본 dg5f_m_<SIDE>_fake / bi), CONTRACT(기본 asset_openarm_dg5f-m_bi_rl), PD_CONFIG(기본 dg5f_m_fake),
 #                 STEP_JOINTS(기본 <p>_aj_3,<p>_aj_6 — 홈 0 에서 j4 는 하한 0 이라 −스텝이 한계 가드에 걸린다), AMPS(기본 0.1), HOLD_S(기본 3), DWELL_S(기본 2)
 set -o pipefail
 cd "$(dirname "$0")/../../.."   # deploy/policy_control/tools → 저장소 루트
 source /opt/ros/humble/setup.bash && . .venv/bin/activate
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-99}"
-MODE="${MODE:-chain}"
+MODE="${MODE:-pd}"
 STEPS="${1:-250}"; LOG="${2:-logs/policy_control/fake_$(date +%m%d_%H%M%S)}"; mkdir -p "$LOG"
 PIDS=()
 cleanup() { for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill -- -"$p" 2>/dev/null; done; sleep 1; for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill -9 -- -"$p" 2>/dev/null; done; }
@@ -91,22 +89,7 @@ PY
   exit $RC
 fi
 
-# ------------------------------------------------------------------ MODE=chain (좌 v2B25 정책 폐루프)
-CONTRACT=logs/policy/left_v2B25/deploy_contract.json
-ROBOT=deploy/policy_control/config/robots/left_gripper_fake.yaml
-echo "[run] domain $ROS_DOMAIN_ID · steps $STEPS · log $LOG"
-launch_bg ros2 launch deploy/policy_control/launch/fake_plant.launch.py side:=left contract:=$PWD/$CONTRACT plant_model:=${PLANT_MODEL:-pd} plant_friction:=${PLANT_FRICTION:-1.0} > "$LOG/fake_plant.log" 2>&1
-sleep 4
-launch_bg ros2 launch deploy/policy_control/launch/pd_controller.launch.py contract:=$CONTRACT robot:=$ROBOT pd_config:=deploy/policy_control/config/pd_left_fake.yaml execute:=true stage:=${PD_STAGE:-full} fake:=true use_source:=true > "$LOG/pd.log" 2>&1
-launch_bg ros2 launch deploy/policy_control/launch/policy_chain.launch.py contract:=$CONTRACT robot:=$ROBOT device:=cuda:0 fake:=true use_source:=true > "$LOG/chain.log" 2>&1
-echo "[run] waiting for status topics…"
-wait_status 4
-launch_bg python deploy/policy_control/tools/status_to_csv.py --seconds $(( STEPS / 50 + 25 )) --out "$LOG/status.csv" --policy-dt 0.02 --jsonl "$LOG/status.jsonl" > "$LOG/status_summary.txt" 2>&1
-launch_bg python deploy/policy_control/tools/episode_judge.py --contract $CONTRACT --seconds $(( STEPS / 50 + 20 )) --out "$LOG/verdict.json" > "$LOG/judge.log" 2>&1
-launch_bg python deploy/policy_control/tools/chain_recorder.py --contract $CONTRACT --seconds $(( STEPS / 50 + 20 )) --out "$LOG/chain.npz" > "$LOG/recorder.log" 2>&1
-sleep 2
-python deploy/policy_control/tools/episode_ctl.py --steps "$STEPS" --execute --approve pd_engage --approve pd_goto_home --approve ep_start --service-timeout 90 --phase-timeout 90 2>&1 | tee "$LOG/episode_ctl.log"
-RC=${PIPESTATUS[0]}
-wait "${PIDS[3]}" 2>/dev/null; wait "${PIDS[4]}" 2>/dev/null
-echo "[run] episode_ctl rc=$RC"; cat "$LOG/status_summary.txt"; cat "$LOG/verdict.json" 2>/dev/null
-exit $RC
+# 09.29: MODE=chain(좌 v2B25 스톡 그리퍼 정책 폐루프)은 옛 프로필 fake 플랜트와 함께 지웠다. 정책 폐루프 리허설은
+#        콘솔 fake 프로파일(dg5f_m_fake · rh56f1_fake)로 한다.
+echo "[run] MODE=$MODE 없음 — MODE=pd 만 남았다(정책 폐루프는 콘솔 fake 프로파일)." >&2
+exit 2

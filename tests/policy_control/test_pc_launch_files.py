@@ -192,21 +192,11 @@ def test_fake_plant_refuses_domain_zero_and_both_without_robot(plant, monkeypatc
         with pytest.raises(RuntimeError, match="ROS_DOMAIN_ID"):
             plant.plant_nodes(_plant_cfg())
     monkeypatch.setenv("ROS_DOMAIN_ID", "97")
-    with pytest.raises(RuntimeError, match="robot"):
-        plant.plant_nodes(_plant_cfg(side="both"))
+    for side in ("left", "right", "both"):                  # 옛 프로필 모드(robot:= 없음)는 09.29 에 지웠다
+        with pytest.raises(RuntimeError, match="robot"):
+            plant.plant_nodes(_plant_cfg(side=side))
     with pytest.raises(RuntimeError, match="contract"):
         plant.plant_nodes(_plant_cfg(side="left", robot="dg5f_m_left_fake"))
-
-
-def test_fake_plant_legacy_sides_unchanged(plant, monkeypatch):
-    monkeypatch.setenv("ROS_DOMAIN_ID", "97")
-    left = plant.plant_nodes(_plant_cfg(side="left"))
-    right = plant.plant_nodes(_plant_cfg(side="right"))
-    assert [_script(p) for p in left] == ["fake_arm_bridge", "fake_cup_pose_pub"]
-    assert [_script(p) for p in right] == ["fake_arm_bridge", "fake_cup_pose_pub", "fake_hand_state_pub", "fake_tip_contact_pub"]
-    bridge = _cmd(left[0])
-    assert "--robot" in bridge and "gripper_left" in bridge and "--forward" in bridge and "--gravity" in bridge
-    assert "--controller-node" in _cmd(right[2])
 
 
 @needs_asset

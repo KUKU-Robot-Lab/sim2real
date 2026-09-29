@@ -27,7 +27,7 @@ from arm_pd_model import (  # noqa: E402
     load_arm_pd,
     second_order_characteristics,
 )
-from robot_profile import WS_ROOT  # noqa: E402
+WS_ROOT = Path(__file__).resolve().parents[2]          # ~/rl_ws
 
 URDF = WS_ROOT / "urdf/generated/rl/openarm_tesollo_bi_s_rl.urdf"
 ARM = [f"r_aj_{i}" for i in range(1, 8)]

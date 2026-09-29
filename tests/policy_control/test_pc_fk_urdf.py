@@ -99,16 +99,14 @@ def test_asset_urdf_matches_fabric_urdf_palm_and_tips(ctl, side):
 
 @needs_asset
 @pytest.mark.parametrize("side", SIDES)
-def test_canonical_palm_is_the_alias_frame_and_the_kinematics_chain(ctl, side):
-    """`{p}_hl_palm` ≡ `{p}_hl_palm_alias`(항등 고정 관절) 이고, 팔 구간은 robot_control 의 검증된 체인과 같다."""
+def test_canonical_palm_is_the_kinematics_chain(ctl, side):
+    """팔 구간 palm 은 robot_control 의 검증된 체인과 같다. `_alias` 프레임은 urdf 생성기에서 지워졌다(hdgp 122992f2)."""
     from robot_control.kinematics import chain_from_urdf
 
     s = ctl.side(side)
     fk = _asset_fk(s)
     chain = chain_from_urdf(ASSET.urdf.read_text(), list(s.arm_joints), s.palm_body)
     for _, aq, hq in _configs(s, seed=1):
-        T = fk.tree.transforms([s.palm_body, f"{s.palm_body}_alias"], fk._q(aq, hq))
-        np.testing.assert_allclose(T[s.palm_body], T[f"{s.palm_body}_alias"], atol=0.0, rtol=0.0)
         pose = fk.palm_pose(aq, hq)
         Tc = chain.pose(aq)
         np.testing.assert_allclose(pose.palm_pos, Tc[:3, 3], atol=1e-12)
