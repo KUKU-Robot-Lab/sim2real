@@ -105,9 +105,10 @@ python3 deploy/policy_control/tools/episode_ctl.py --side right --steps 250 --ex
 터미널 네 개를 오가지 않기 위한 화면. 판정을 새로 만들지 않고 미션·계약·상태 토픽의 문자열을 옮긴다.
 
 ```bash
-deploy/s2r_console/tools/console.sh --profile dg5f_m_real --port 8091 --operator <이름>   # 지금 로봇(DG-5F-M)
+deploy/s2r_console/tools/console.sh --window                    # 첫 화면: 로봇 → 정책 → 실기/fake 를 고른다(09.29)
+deploy/s2r_console/tools/console.sh --port 8091                 # 브라우저 http://127.0.0.1:8091 (같은 첫 화면)
+deploy/s2r_console/tools/console.sh --profile dg5f_m_real --operator <이름>   # ★첫 화면을 건너뛰고 미션 기본 정책으로 바로 연다
 ssh -L 8091:127.0.0.1:8091 <이 PC>      # 원격은 터널로만. 127.0.0.1 바인딩이고 인증이 없다
-deploy/s2r_console/tools/console.sh --window                    # 브라우저 대신 자기 창(GTK + WebKit)
 deploy/s2r_console/tools/install_desktop_entry.sh               # 프로그램 메뉴에 "S2R 콘솔" 등록(창 모드)
 ```
 

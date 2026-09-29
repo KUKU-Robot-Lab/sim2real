@@ -4,9 +4,9 @@
 환경을 구축하는 절차. 각 Step 끝의 **확인** 커맨드가 통과해야 다음으로 넘어간다.
 
 ```bash
-# 지금 이 PC에 뭐가 준비됐는지부터 확인 (설치는 안 함)
-./scripts/setup/setup_check.sh            # 전체
-./scripts/setup/setup_check.sh vision     # 역할별: control | vision | policy
+# 지금 이 PC에 뭐가 준비됐는지부터 확인 (설치는 안 함) — 로봇 PC
+python3 scripts/setup/check_host.py --robot dg5f     # 또는 --robot rh56f1
+./scripts/setup/setup_check.sh vision                # 비전 PC(옛 점검 스크립트)
 ```
 
 ## 어떤 PC에 어떤 Step이 필요한가
@@ -16,9 +16,8 @@ PC 역할은 자유롭게 합칠 수 있다 (한 대에 전부도 가능). DDS(�
 
 | 역할 | 담당 | 필요한 Step |
 |---|---|---|
-| **control** | OpenArm / Tesollo / RH56F1 드라이버 | 1~3, 5 |
-| **vision** | D435i + FoundationPose → `/cup_pose` | 1~3, 5, **6~8** |
-| **policy** | pour 정책 추론 (GPU) | 1~5 (Step 4-B 포함) |
+| **로봇 PC**(local5090 = DG-5F-M short · arm4090 = RH56F1) | 드라이버 · pd · 정책 · 콘솔 | 1~5 |
+| **vision**(vision-3090) | 카메라 + FP++ → 물체 자세 UDP | 1~2, 6~8 (docs/USAGE_DEPLOY.md §6) |
 | sim | Isaac Sim (sim-shadow 검증용, 선택) | 1~3 + Isaac Sim 설치본 |
 
 ---
@@ -77,70 +76,103 @@ ros2 doctor --report | head -5
 echo $ROS_DOMAIN_ID               # 126
 ```
 
-## Step 3. 레포 클론 + 빌드
+## Step 3. 저장소 네 개 + 빌드
+
+sim2real 혼자로는 돌지 않는다. **네 저장소를 `~/rl_ws` 에 나란히** 둔다 — 코드가 이 상대 위치를 전제한다
+(`sim2real/../robot_control` 등).
+
+| 저장소 | 브랜치 | sim2real 이 쓰는 것 |
+|---|---|---|
+| `KUKU-Robot-Lab/sim2real` | main | 이 저장소 — 콘솔 · 미션 · policy_control · 정책 계약 · 홈 경로 |
+| `KUKU-Robot-Lab/robot_control` | humble | 드라이버(openarm bringup · dg5f_ros2 · dg_hardware · inspire_rh56f1) · 관절 프로필 |
+| `KUKU-Robot-Lab/hdgp` | main | 자산(URDF/USD · manifest · 테이블 env_v1) · pour_fj 프로필 모듈 · FABRICS |
+| `KUKU-Robot-Lab/urdf` | main | 팔 PD 게인 `vendor/openarm_description/config/arm/v10/control_gains.yaml` |
 
 ```bash
-git clone https://github.com/divingyoon/sim2real.git
-cd sim2real
-./scripts/setup/build_vendor_pkgs.sh    # isaacsim_bridge + OpenArm/Tesollo vendor 전체
-source install/setup.bash
+mkdir -p ~/rl_ws && cd ~/rl_ws
+git clone https://github.com/KUKU-Robot-Lab/sim2real.git
+git clone -b humble https://github.com/KUKU-Robot-Lab/robot_control.git
+git clone https://github.com/KUKU-Robot-Lab/hdgp.git
+git clone https://github.com/KUKU-Robot-Lab/urdf.git
+# 이미 있으면 네 곳 모두 git pull
 ```
 
-### Step 3-B. RH56F1 손을 쓸 경우 (inspire_ws 별도 빌드)
+### Step 3-A. robot_control 드라이버 빌드
 
 ```bash
-cd vendor/inspire_ws
-colcon build
-source install/setup.bash
-cd ../..
+cd ~/rl_ws/robot_control/ros_ws
+# RH56F1 손을 쓰는 PC(arm4090)만: 벤더 드라이버 의존성(sim2real robot/vendor/inspire_ws/install_dependencies.sh 와 같다)
+sudo apt install -y build-essential cmake libboost-system-dev libboost-thread-dev libboost-dev libyaml-cpp-dev
+./build.sh                                   # colcon --symlink-install, install/ 에 openarm_* · dg5f_* · rh56f1_*
 ```
+
+### Step 3-B. sim2real policy_control 빌드 (★symlink 필수)
+
+```bash
+cd ~/rl_ws/sim2real
+source /opt/ros/humble/setup.bash && source ../robot_control/ros_ws/install/setup.bash
+colcon build --packages-select policy_control --base-paths deploy --symlink-install
+readlink -f build/policy_control/policy_control     # → …/sim2real/deploy/policy_control/policy_control 이어야 한다
+```
+
+> ★`--symlink-install` 없이 빌드하면(복사 설치) `_paths` 가 저장소 루트를 못 찾아 pd_node · joint_node 가
+> import 에서 죽는다(09.28 실기). 잘못 빌드했으면 `rm -rf build/policy_control install/policy_control` 뒤 다시.
+> 콘솔이 떠 있는 동안에는 다시 빌드하지 않는다(떠 있는 콘솔은 옛 환경을 들고 있다).
 
 **확인**
 ```bash
-ros2 pkg list | grep -E "isaacsim_bridge|openarm|dg5f"
-# RH56F1 사용 시: ros2 pkg list | grep inspire
+ros2 pkg list | grep -E "openarm_bringup|dg5f_driver|rh56f1_driver|policy_control"
 ```
 
-## Step 4. Python 의존성
+## Step 4. sim2real/.venv — 정책 추론 · 경로 계획 · 테스트
+
+콘솔(`deploy/s2r_console/tools/console.sh`)과 미션 명령의 `python3` 는 이 venv 다. **시스템 패키지를 보게** 만들어야
+ROS(rclpy)가 보인다. 버전은 local5090 기준(2026-09-29) — 다르면 `check_host.py` 가 WARN 을 낸다.
 
 ```bash
-# 공통 (릴레이·테스트)
-pip install numpy pyyaml pytest
+cd ~/rl_ws/sim2real
+python3 -m venv --system-site-packages .venv
+.venv/bin/pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu128   # Blackwell=cu128+
+.venv/bin/pip install rl-games==1.6.1 mujoco==2.3.0 numpy==1.26.4 scipy==1.13.1 trimesh pyyaml pytest
+# FABRICS(DG-5F fabric 단계): hdgp 안의 소스를 venv 에 연결
+echo "$HOME/rl_ws/hdgp/source/FABRICS/src" > .venv/lib/python3.10/site-packages/fabrics_sim.pth
 ```
 
-### Step 4-B. policy PC만 — 정책 추론 스택
+> `~/.local` 에 pydantic · flask 같은 사용자 패키지가 있으면 venv 로 새어 들어온다(include-system-site-packages).
+> venv 에는 위 목록 밖의 패키지를 설치하지 않는다 — rclpy · torch · fabrics 가 같이 사는 유일한 곳이다.
+
+### Step 4-B. 정책 가중치 — git 에 없다
+
+`deploy/policies/*/nn/*.pth` 는 `.gitignore` 로 빠진다(용량). 5090 에서 복사한다 — 계약의 md5 와 같아야 한다.
 
 ```bash
-# torch: 본인 GPU에 맞는 CUDA 빌드 선택 (Blackwell=cu128+)
-pip install torch --index-url https://download.pytorch.org/whl/cu128
-pip install rl-games
-
-# FABRICS: 레포 형제 디렉토리에 배치 (pour_inference.py가 자동 탐색)
-#   <workspace>/sim2real          ← 이 레포
-#   <workspace>/repo/FABRICS      ← 여기 또는 <workspace>/hdgp/source/FABRICS
+rsync -av <5090 PC>:~/rl_ws/sim2real/deploy/policies/ ~/rl_ws/sim2real/deploy/policies/ \
+      --include='*/' --include='nn/*.pth' --exclude='*'
 ```
 
-**확인**
-```bash
-python3 -c "import torch; print(torch.cuda.is_available())"   # True
-python3 -c "import rl_games; print('rl_games OK')"
-```
+### Step 4-C. 이 PC 에만 있는 값
 
-## Step 5. 회귀 테스트 게이트
+| 파일 | 무엇 |
+|---|---|
+| `deploy/policy_control/config/rh56f1_ports.yaml` | RH56F1 손마다 포트 · transport(rs485/canfd) · Hand_ID (`ls -l /dev/serial/by-id`) |
+| CAN 이름 | 미션 drivers 단계가 `can0`(우) · `can1`(좌) 를 쓴다 |
+| DG-5F 손 네트워크 | 미션 hand_<side> 단계의 `hand_net_dual.sh --apply`(최초 1회) |
+| `ROS_DOMAIN_ID` | 실기 126 (fake 는 콘솔이 97 로 띄운다) |
 
-sim 학습 코드와의 정합(drift-guard 포함)을 확인하는 순수 로직 테스트.
-**하나라도 실패하면 실기 구동 금지.**
+## Step 5. 점검 · 회귀 테스트 게이트
 
 ```bash
-python3 -m pytest tests -q -m "not gpu"      # 저장소 루트에서. 실패 0 이어야 한다
+cd ~/rl_ws/sim2real && source /opt/ros/humble/setup.bash
+python3 scripts/setup/check_host.py --robot dg5f       # 또는 --robot rh56f1 (arm4090) · --fetch 로 원격 비교
+.venv/bin/python -m pytest tests -q -m "not gpu"        # 실패 0 이어야 실기
 ```
 
-> 테스트는 `tests/` 에 있다(옛 문서의 `cd scripts` 는 2026-09 이동 전 경로다).
-> GPU 를 쓰는 것은 `-m "not gpu"` 로 뺀다 — 학습이 도는 GPU 를 건드리지 않기 위해서다.
+`check_host.py` 는 읽기만 한다 — 저장소 배치 · 원격과의 차이 · venv 버전 · policy_control symlink 빌드 ·
+robot_control 패키지 · 가중치 md5(계약과) · 실기 미션이 가리키는 파일 · 홈 경로와 계약의 짝 · PC 별 값.
+MISS 가 하나라도 있으면 rc 1 이고, 고칠 방법(이 문서의 Step)을 같이 낸다.
 
-> drift-guard 테스트 일부는 형제 디렉토리 `hdgp/`(학습 레포)가 있으면 학습
-> 코드와 직접 대조하고, 없으면 skip된다. 학습 코드를 변경한 PC에서는 hdgp를
-> 옆에 두고 돌리는 것을 권장.
+> 테스트는 `tests/` 에 있다. GPU 를 쓰는 것은 `-m "not gpu"` 로 뺀다 — 학습이 도는 GPU 를 건드리지 않기 위해서다.
+> hdgp 자산 · 모듈을 읽는 테스트는 hdgp 가 옆에 있어야 돈다(Step 3).
 
 ## Step 6. Docker + nvidia-container-toolkit (vision PC만)
 
@@ -203,7 +235,14 @@ ros2 pkg list | grep foundationpose
 
 ## Step 9. 실행
 
-역할별 브링업·테스트 절차는 **`robot/USAGE_ISAACSIM_ROS2.md`** 를 따른다:
+실기 운영은 콘솔 하나로 한다 — 로봇(DG-5F-M short · RH56F1) → 정책 → 실기/fake 를 첫 화면에서 고른다.
+
+```bash
+deploy/s2r_console/tools/console.sh --port 8091          # 브라우저 http://127.0.0.1:8091 (원격은 ssh -L 8091:127.0.0.1:8091)
+deploy/s2r_console/tools/console.sh --window             # 전용 창
+```
+
+자세한 배포 절차는 [`docs/USAGE_DEPLOY.md`](docs/USAGE_DEPLOY.md). 옛 역할별 브링업 문서는 아래 표:
 
 | 하고 싶은 것 | 문서 |
 |---|---|
@@ -257,7 +296,9 @@ ssh server
 
 | 증상 | 확인 |
 |---|---|
-| `setup_check.sh` MISS | 표기된 Step으로 이동 |
+| `check_host.py` · `setup_check.sh` MISS | 표기된 Step으로 이동 |
+| pd_node 가 import 에서 죽음 | policy_control 이 복사 설치 — Step 3-B symlink 로 다시 |
+| 정책 단계가 "checkpoint md5" 로 멈춤 | 가중치가 계약과 다르다 — Step 4-B 로 5090 에서 다시 복사 |
 | PC끼리 토픽 안 보임 | 모든 PC `ROS_DOMAIN_ID` 동일 + 같은 서브넷 + 방화벽(UDP 멀티캐스트) |
 | `docker: unknown runtime nvidia` | Step 6의 `nvidia-ctk runtime configure` + docker 재시작 |
 | torch가 GPU 커널 에러 (Blackwell) | cu128 이상 빌드로 재설치 (Step 4-B) |
