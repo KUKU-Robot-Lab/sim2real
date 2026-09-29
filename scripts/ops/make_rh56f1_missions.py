@@ -53,7 +53,8 @@ def _stages(kind: str) -> list[dict]:
         {"id": "cups", "group": "connect", "lane": "both", "needs": ["preflight"], "skippable": True,
          "title": ("두 컵 자세 — 붓는 컵 /objects/cup_src/pose · 받는 컵 /objects/cup_rcv/pose (base)" if real else
                    "fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채"),
-         **({"blocked": "arm4090 인지(카메라 · FP++ 두 물체) 연결 전 — 컵 두 개의 자세를 /objects/cup_src · cup_rcv 로 내는 단계가 없다"}
+         **({"blocked": "arm5080 인지(카메라 · FP++ 두 물체) 연결 전 — arm5080 에 ROS · docker · FP++ 이미지가 없고, 컵 두 개의 자세를 "
+                        "/objects/cup_src · cup_rcv 로 내는 단계가 없다(09.29 사용자: FP++ 는 arm5080)"}
             if real else {})},
         {"id": "drivers", "group": "connect", "lane": "rig", "needs": ["preflight"],
          "title": ("모터 전원 → CAN ×2 → 팔 브링업 → CAN 응답 확인 (토크는 들어가지만 팔은 제자리)" if real else

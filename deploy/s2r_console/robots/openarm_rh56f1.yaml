@@ -16,6 +16,7 @@ settings:
   - {label: 손, value: "RH56F1 × 2 · 손마다 개별 포트 · RS485(USB) 또는 CANFD — 상황에 따라 바꾼다(09.29 사용자)"}
   - {label: 손 드라이버, value: "robot_control ros_ws/src/inspire_rh56f1 · /hand_<side>/angle_set · angle_actual · touch_data"}
   - {label: 손 명령, value: "각도 레지스터 0.1° (네 손가락 1740 = 편 손 · 900 = 굽힘) — 변환표 policy_control config/rh56f1_hand_map.yaml, 엄지 두 축 verified 전(-1)"}
+  - {label: PC, value: "로봇 PC arm4090(OpenArm CAN · RH56F1 손 · 콘솔) · 인지 PC arm5080(카메라 · FP++ — 09.29 사용자)"}
   - {label: 홈, value: "hdgp rh_aglt 시작 자세(09.29) — 차렷 → 홈 저장 경로 paths/home_rh56f1_{right,left}.npz (RRT, 여유 2 cm, 약 27 · 33 s)"}
   - {label: 손 포트, value: "policy_control config/rh56f1_ports.yaml — transport rs485 | canfd · port · hand_id (바꾸면 손 단계 승인을 다시)"}
   - {label: pd, value: "config/pd_rh56f1(_exec).yaml · 손 payload 0.192 kg(가동 손가락) · 중력 끝 링크 palm_sensor"}

@@ -58,7 +58,8 @@ stages:
   - preflight
   skippable: true
   title: 두 컵 자세 — 붓는 컵 /objects/cup_src/pose · 받는 컵 /objects/cup_rcv/pose (base)
-  blocked: arm4090 인지(카메라 · FP++ 두 물체) 연결 전 — 컵 두 개의 자세를 /objects/cup_src · cup_rcv 로 내는 단계가 없다
+  blocked: 'arm5080 인지(카메라 · FP++ 두 물체) 연결 전 — arm5080 에 ROS · docker · FP++ 이미지가 없고, 컵 두 개의 자세를 /objects/cup_src · cup_rcv 로 내는 단계가 없다(09.29
+    사용자: FP++ 는 arm5080)'
 - id: drivers
   group: connect
   lane: rig
