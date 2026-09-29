@@ -1,0 +1,8 @@
+# RH56F1 양팔 홈 — hdgp rh_aglt 시작 자세(09.29 사용자: "aglt 보면 현재 home 자세를 수정했어").
+# 오른팔: tasks/rh_aglt_r/rh_aglt_env_cfg.py arm_start_q (f1214607 "시작 자세를 테이블 앞 가장자리로" —
+#         palm_sensor (0.08, −0.30, 0.45), 손바닥 +z 수평 · 두 손바닥이 마주 봄 · 엄지 끝이 새끼보다 71 mm 위)
+# 왼팔:   rh_aglt_l _ARM_START_Q_RIGHT 의 거울, 부호 (−,−,−,+,−,−,−) — 1df26f28 "쉬는 팔 = 활성 팔 시작 자세의 거울"
+# 손: 계약 hand_home = RH56F1 open (thumb_1 1.57, 나머지 0)
+source: "hdgp rh_aglt arm_start_q (f1214607 · 1df26f28) · left = mirror (-,-,-,+,-,-,-)"
+right: [-1.2127, 0.2026, 0.6538, 1.7608, 0.3791, 0.5785, 0.6646]
+left: [1.2127, -0.2026, -0.6538, 1.7608, -0.3791, -0.5785, -0.6646]

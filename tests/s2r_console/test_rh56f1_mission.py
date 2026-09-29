@@ -133,15 +133,43 @@ def test_the_console_opens_the_rh56f1_fake_profile_with_its_robot_module(tmp_pat
         c.shutdown()
 
 
-def test_home_and_cups_are_blocked_on_the_real_robot_until_they_exist():
-    """실기: RH56F1 홈 경로 · 두 컵 인지가 아직 없다 — 이유와 함께 막는다. fake 는 goto_home · fake 컵으로 돈다."""
+def test_only_the_cups_are_blocked_on_the_real_robot():
+    """실기: 두 컵 인지가 아직 없다 — 이유와 함께 막는다. 홈은 저장 경로가 생겨 풀었다(09.29 사용자)."""
     by = {s.id: s for s in REAL.stages}
-    for sid in ("cups", "home_right", "home_left"):
-        assert by[sid].blocked, sid
-    assert "홈 경로" in by["home_right"].blocked and "인지" in by["cups"].blocked
+    assert "인지" in by["cups"].blocked
+    assert not by["home_right"].blocked and not by["home_left"].blocked
     assert not any(s.blocked for s in FAKE.stages)
-    fake_home = " ".join(" ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, "home_right"))
-    assert "--only pd_engage" in fake_home and "--only pd_goto_home" in fake_home
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_home_replays_the_saved_zero_to_home_path_like_the_dg5f_mission(side):
+    """engage → 확인 → 손 편 손 → 확인 → 시작점 검사 → 확인 → 경로 재생 → 정착 → 확인 → 손 홈. 실기 · fake 같은 경로."""
+    for m, book in ((REAL, REAL_BOOK), (FAKE, FAKE_BOOK)):
+        cmds = _cmds(m, book, f"home_{side}")
+        text = [" ".join(c.argv) for c in cmds]
+        assert "--only pd_engage --hold-s 10" in text[0] and cmds[1].manual
+        assert "--only pd_hand_path" in text[2] and cmds[3].manual
+        assert "check_path_start.py" in text[4] and f"home_rh56f1_{side}.npz" in text[4] and "--contract" in text[4]
+        assert cmds[5].manual and "replay_to_pd.py" in text[6] and f"home_rh56f1_{side}.npz" in text[6]
+        assert "--execute" in cmds[6].argv and "--only pd_goto_home" in text[7] and cmds[8].manual
+        assert "--only pd_hand_home" in text[9]
+        assert f"path_{side}" in m.stages[[x.id for x in m.stages].index(f"home_{side}")].artifacts
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_the_saved_path_goes_from_zero_to_the_aglt_home_of_the_current_contract(side):
+    import hashlib
+    import numpy as np
+    d = np.load(REPO / REAL.artifacts[f"path_{side}"])
+    contract = REPO / REAL.artifacts["contract"]
+    assert str(d["meta_contract_sha1"]) == hashlib.sha1(contract.read_bytes()).hexdigest()   # 계약이 바뀌면 다시 계획
+    homes = yaml.safe_load((PC / "config/homes/rh56f1_aglt.yaml").read_text())
+    assert np.allclose(d["meta_start"], 0.0) and np.allclose(d["meta_goal"], homes[side])
+    a = d["arm_target"]
+    assert np.allclose(a[0], 0.0) and np.allclose(a[-1], homes[side])
+    assert float(d["meta_min_clearance_non_escape"]) >= 0.02 - 1e-4 and str(d["meta_hand_start"]) == "both"
+    assert float(d["meta_max_joint_speed"]) <= 0.2 + 1e-6 and str(d["meta_other_arm"]) == "both"
+    assert list(d["meta_joints"]) == [f"{side[0]}_aj_{i}" for i in range(1, 8)]
 
 
 def test_the_pour_fj_policy_stage_runs_the_picked_contract_with_the_venv_python():

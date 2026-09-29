@@ -405,11 +405,17 @@ def build_world(spec: WorldSpec) -> World:
     # 로봇 베이스 자세 = env.yaml robot_cfg.init_state (테이블도 같은 방식)
     rpos = np.array(env["robot_cfg"]["init_state"]["pos"], dtype=float)
     rquat = np.array(env["robot_cfg"]["init_state"]["rot"], dtype=float)     # w x y z
-    tpos = np.array(env["table_cfg"]["init_state"]["pos"], dtype=float)
-    trot = np.array(env["table_cfg"]["init_state"]["rot"], dtype=float)
+    if "table_cfg" in env:
+        tpos = np.array(env["table_cfg"]["init_state"]["pos"], dtype=float)
+        trot = np.array(env["table_cfg"]["init_state"]["rot"], dtype=float)
+        usd = env["table_cfg"]["spawn"]["usd_path"]
+    else:
+        # rh_aglt(09.29): 테이블은 rigid object 가 아니라 `table_spawn` 을 env 원점에 그대로 스폰한다(rh_aglt_env.py
+        # `cfg.table_spawn.func(..., translation=(0, 0, 0))`) — 위치 0 · 회전 항등
+        tpos, trot, usd = np.zeros(3), np.array([1.0, 0, 0, 0]), env["table_spawn"]["usd_path"]
     if not np.allclose(trot, [1, 0, 0, 0]):
         raise ValueError(f"테이블 회전 {trot} — 항등이 아닌 경우 미구현")
-    usda = local_rl_path(env["table_cfg"]["spawn"]["usd_path"])
+    usda = local_rl_path(usd)
     boxes = table_boxes_from_usda(usda, tpos) + wall_boxes(spec.back_box, spec.wall_y_abs)
 
     assets, mesh_notes = [], {}

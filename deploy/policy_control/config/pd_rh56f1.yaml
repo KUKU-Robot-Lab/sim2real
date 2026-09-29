@@ -1,5 +1,5 @@
 # pd 노드 설정 — 양팔 OpenArm + Inspire RH56F1 (자산 hdgp/assets/robot/openarm_rh56f1_bi_rl). 09.29 사용자: rh56f1 제어 연결.
-# pd_dg5f_m_short.yaml 과 다른 것: gravity(urdf · tip_link · payload) · 손 블록(벤더 위치 제어라 PID 가 없다) · hand_path_pose 없음.
+# pd_dg5f_m_short.yaml 과 다른 것: gravity(urdf · tip_link · payload) · 손 블록(벤더 위치 제어라 PID 가 없다) · 손 기준 자세 = 편 손.
 #   팔 게인 · 리미터 · 발열 · 정착은 같은 OpenArm 팔이라 그대로다. 손은 robot yaml group backend rh56f1_angle 이
 #   변환표(rh56f1_hand_map.yaml)로 벤더 각도 레지스터에 보낸다 — 방향 확인 안 된 축(엄지 둘)은 -1(움직이지 않음).
 # 실기용 — execute false. 발행은 사본 pd_rh56f1_exec.yaml(execute 한 줄만 다름)로만(승인 단계).
@@ -24,6 +24,10 @@ settle:
   clamp_nm: 5.0                # 같은 상한을 토크로도 — kp 70 관절은 0.071 rad 까지만(effort_cap 여유)
   gain: 0.01                   # 정착 적분 이득/틱(100 Hz) — 처짐이 5 s 안에 tol 아래로
   tol: 0.01                    # 정착 판정 [rad]
+hand_path_pose:                 # 팔이 경로를 따르기 전에 손을 여기로(pd/hand_path) — 홈 경로(paths/home_rh56f1_*.npz)를
+  # 편 손(이 자세)과 접은 손(전부 0) 둘 다로 검사했다. 엄지 두 축은 변환표 verified 전이라 pd 가 -1 을 보내 그대로 둔다(09.29).
+  right: {r_hj_thumb_1: 1.57, r_hj_thumb_2: 0.0, r_hj_index_1: 0.0, r_hj_middle_1: 0.0, r_hj_ring_1: 0.0, r_hj_pinky_1: 0.0}
+  left: {l_hj_thumb_1: 1.57, l_hj_thumb_2: 0.0, l_hj_index_1: 0.0, l_hj_middle_1: 0.0, l_hj_ring_1: 0.0, l_hj_pinky_1: 0.0}
 gravity:
   mode: model_tau_ff           # 계약(sides.*.gravity)과 같아야 한다 — 제어 전용 자산 계약은 model_tau_ff
   urdf: hdgp/assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf   # 계약 asset.urdf (양팔, canonical 이름)

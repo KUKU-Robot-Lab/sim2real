@@ -194,7 +194,9 @@ def test_control_contract_has_no_fabric_and_opens_the_hand():
         assert list(s.hand_joints) == HMAP.names(side)
         assert s.home_hand[f"{side[0]}_hj_thumb_1"] == 1.57 and s.pd_groups == [f"{side}_arm", f"{side}_hand"]
     raw = json.loads(CONTRACT.read_text())
-    assert raw["sides"]["right"]["home_arm"][3] == pytest.approx(1.5941)
+    homes = yaml.safe_load((SIM2REAL / "deploy/policy_control/config/homes/rh56f1_aglt.yaml").read_text())
+    assert raw["sides"]["right"]["home_arm"] == pytest.approx(homes["right"])        # 홈 = rh_aglt 시작 자세(09.29)
+    assert raw["sides"]["left"]["home_arm"] == pytest.approx(homes["left"])
 
 
 def test_a_fabric_less_contract_is_only_valid_when_control_only():

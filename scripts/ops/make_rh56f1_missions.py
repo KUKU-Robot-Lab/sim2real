@@ -7,8 +7,9 @@
 09.29 사용자: "sim2real 과 robot_control 쪽에서 rh56f1 제어 part 연결" · 손마다 개별 포트 · USB RS485 / CANFD 를
 상황에 따라 바꿔 쓴다 · 정책은 pour_fj(양팔) 다음 rh_aglt — 곧 나온다.
 범위 = 손 연결 · 점검 · 한 축 방향 확인 · 팔 pd(무발행 → 발행) · 홈 · 두 컵 · 양팔 pour_fj 정책 · 정리.
-★실기에서 막아 둔 것(blocked — 이유가 화면에 보인다): 홈(RH56F1 손 기하로 홈 경로를 계획하기 전 — DG-5F 저장 경로를 쓰지 않고,
-  검사 없는 goto_home 직선도 쓰지 않는다) · 두 컵 자세(arm4090 인지 연결 전). fake 는 goto_home · fake 컵으로 끝까지 돈다.
+홈 = hdgp rh_aglt 시작 자세(09.29 사용자 "aglt 보면 home 자세를 수정했어"). 차렷 → 홈은 저장 경로(paths/home_rh56f1_*.npz,
+plan_home_path RRT · RH56F1 자산 충돌 검사 · 편 손/접은 손 둘 다)를 pd 로 재생한다 — 실기 · fake 같은 경로.
+★실기에서 막아 둔 것(blocked — 이유가 화면에 보인다): 두 컵 자세(arm4090 인지 연결 전).
 
 실기와 fake 가 다른 것(그 밖은 같다):
   · 팔 드라이버: CAN + openarm bringup ↔ fake 플랜트(양팔 MockArm rate, hands:=none)
@@ -78,17 +79,16 @@ def _stages(kind: str) -> list[dict]:
              "needs_why": "무발행 상태에서 게인 · 입력이 맞는지 본 뒤에만 발행 권한을 준다",
              "title": f"[{s}] pd 발행 모드 전환 — engage 는 하지 않는다(팔은 JTC 가 잡는다)"},
             {"id": f"home_{s}", "group": "motion", "lane": f"arm_{s}", "needs": [f"pd_arm_{s}"], "skippable": True,
-             "touches_real": real, "artifacts": ["contract"],
-             "title": f"[{s}] engage → pour_fj 시작 자세(홈) — 손은 편 손",
-             **({"blocked": "RH56F1 홈 경로 계획 전 — plan_home_path 를 RH56F1 손 기하로 돌려 저장 경로를 만든 뒤(검사 없는 "
-                            "goto_home 직선으로 차렷에서 홈까지 가지 않는다)"} if real else {})},
+             "touches_real": real, "artifacts": ["contract", f"path_{s}"],
+             "title": f"[{s}] engage → 손 편 손 → 저장 경로로 차렷 → 홈(rh_aglt 시작 자세) → 정착 → 손 초기 자세"},
             {"id": f"release_{s}", "group": "finish", "lane": f"arm_{s}", "needs": [f"pd_arm_{s}"], "skippable": True,
              "touches_real": real, "undoes": [f"pd_arm_{s}", f"home_{s}"],
              "title": f"[{s}] pd 해제(역블렌드 → JTC) → 이 팔의 pd 정지"},
         ]
     st.append({"id": "policy_pourfj", "group": "policy", "lane": "both", "skippable": True, "touches_real": real,
                "needs": ["home_right", "home_left", "cups", "hand_check_right", "hand_check_left"],
-               "needs_why": "정책은 양팔이 pour_fj 시작 자세 · 손이 편 채 · 두 컵이 선 채로만 출발해 봤다",
+               "needs_why": "정책은 양팔이 pour_fj 시작 자세 · 손이 편 채 · 두 컵이 선 채로만 출발해 봤다. ★09.29 홈이 rh_aglt 시작 자세로 "
+                            "바뀌어 pour_fj 시작 자세와 다르다 — 정책 노드가 start 를 거부한다(0.15 rad). 홈 → pour_fj 시작 경로가 필요",
                "artifacts": ["pourfj_both", "robot_bi", "contract"],
                "title": "[양팔] pour_fj 정책(첫 화면에서 고른 것) — 정책 노드 → reset → start → 관찰 → stop (시간이 되면 스스로 끝난다)"})
     st.append({"id": "shutdown", "group": "finish", "lane": "rig", "needs": ["drivers"], "touches_real": real,
@@ -107,9 +107,10 @@ def _run(kind: str) -> dict:
             _cmd("RH56F1 변환표 · 백엔드 · 상태 노드 · 계약 · 미션 테스트(수 초)",
                  ["python3", "-m", "pytest", "-q", "-m", "not gpu", "-p", "no:cacheprovider",
                   "{repo}/tests/policy_control/test_pc_rh56f1.py", "{repo}/tests/s2r_console/test_rh56f1_mission.py"]),
-            _cmd("제어 전용 계약 재생성 — 자산 openarm_rh56f1_bi_rl, 홈 = hdgp pour_fj 리셋 홈(양팔, config/homes), 손 = 편 손",
+            _cmd("제어 전용 계약 재생성 — 자산 openarm_rh56f1_bi_rl, 홈 = hdgp rh_aglt 시작 자세(양팔 거울, config/homes/rh56f1_aglt.yaml), "
+                 "손 = 편 손. 홈이 바뀌면 저장 경로의 계약 해시가 어긋나 home 단계가 멈춘다 — 경로를 다시 계획할 것",
                  ["python3", f"{PC}/tools/build_deploy_contract.py", "--asset", "openarm_rh56f1_bi_rl",
-                  "--home", "arms:config/homes/rh56f1_pour_fj.yaml", "--out", "{artifact:contract}"]),
+                  "--home", "arms:config/homes/rh56f1_aglt.yaml", "--out", "{artifact:contract}"]),
         ],
         "drivers": ([
             _cmd("★모터 전원(양팔) ON — 물리 스위치", ["bash", "-lc", "true"], manual=True),
@@ -127,8 +128,9 @@ def _run(kind: str) -> dict:
             _cmd("fake 플랜트 — 양팔 MockArm(rate), 손 없음(손 창이 fake 손을 띄운다)",
                  ["ros2", "launch", f"{PC}/launch/fake_plant.launch.py", "side:=both", "robot:={artifact:robot_bi}",
                   "contract:={artifact:contract}", "hands:=none", "plant_model:=rate",
-                  # 차렷(0)에서 시작하면 j4 가 하한 0 에 붙어 pd 가 '한계 밖 목표'로 HOLD 한다(09.29 fake) — j4 만 0.1 안쪽
-                  "arm_start:=right=0,0,0,0.1,0,0,0;left=0,0,0,0.1,0,0,0"], background=True),
+                  # 차렷(0)에서 시작하면 j4 가 하한 0 에 붙어 pd 가 '한계 밖 목표'로 HOLD 한다(09.29 fake) — j4 만 0.02 안쪽
+                  # (저장 경로 시작점 검사 허용 0.05 안)
+                  "arm_start:=right=0,0,0,0.02,0,0,0;left=0,0,0,0.02,0,0,0"], background=True),
         ]),
         "shutdown": [
             _cmd("★양팔을 받침 위 · 안전 자세에 두었는가. 두 팔 모두 pd 해제를 끝냈는가. 다음 스텝부터 토크가 풀린다",
@@ -197,18 +199,42 @@ def _run(kind: str) -> dict:
                      ["ros2", "launch", f"{PC}/launch/pd_controller.launch.py", "contract:={artifact:contract}",
                       f"robot:={{artifact:robot_{s}}}", "pd_config:={artifact:pd_exec}", f"sides:={s}",
                       "execute:=true", "stage:=full", *fake_arg], background=True)],
-            f"home_{s}": [] if real else [
-                _cmd(f"[{s}] pd engage", ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_engage"],
-                     execute_args=["--execute", "--approve", "pd_engage"]),
-                _cmd(f"[{s}] pd goto_home — pour_fj 시작 자세(fake 에서만 직선)",
-                     ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_goto_home", "--service-timeout", "45"],
-                     execute_args=["--execute", "--approve", "pd_goto_home"])],
+            f"home_{s}": _home(s),
             f"release_{s}": [
                 _cmd(f"[{s}] pd release — 역블렌드 → 0 송출 → JTC 복귀",
                      ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_release"], execute_args=["--execute"]),
                 _cmd(f"[{s}] 이 팔의 pd 정지 — IDLE 이라 토크는 JTC 가 잡는다", stop=[f"pd_arm_{s}#1"])],
         })
     return run
+
+
+def _home(s: str) -> list[dict]:
+    """차렷 → 홈. DG-5F 미션의 home 순서와 같다(engage · 손 · 시작점 검사 · 재생 · 정착 · 손)."""
+    joints = ",".join(f"{s[0]}_aj_{i}" for i in range(1, 8))
+    ctl = lambda only, *extra: ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", only, *extra]  # noqa: E731
+    return [
+        _cmd(f"[{s}] engage → 제자리 10 s. pd 가 HOLD 로 가면 실패하고 pd 를 해제한다", ctl("pd_engage", "--hold-s", "10"),
+             execute_args=["--execute", "--approve", "pd_engage"]),
+        _cmd(f"★[{s}] 10 s 동안 팔이 제자리였는가(처짐 · 떨림 · 소리 없음). 아니면 '정상이 아니다' 후 정지 바의 PD 해제",
+             ["bash", "-lc", "true"], manual=True),
+        _cmd(f"[{s}] 손을 편 손으로(pd/hand_path) — 홈 경로는 편 손 · 접은 손 둘 다로 검사했다. 엄지 두 축은 verified 전이라 그대로",
+             ctl("pd_hand_path", "--service-timeout", "15"), execute_args=["--execute", "--approve", "pd_hand_path"]),
+        _cmd(f"★[{s}] 네 손가락이 펴졌는가 · 엄지가 손바닥 안으로 크게 접혀 있지 않은가(엄지는 아직 pd 가 움직이지 않는다)",
+             ["bash", "-lc", "true"], manual=True),
+        _cmd(f"[{s}] 저장 경로를 재생해도 되는가 — 팔이 차렷(경로 시작점 0.05 rad 안) · 경로가 지금 계약으로 만든 것 · 관절 상태가 살아 있음",
+             ["python3", f"{PC}/tools/check_path_start.py", "--npz", f"{{artifact:path_{s}}}", "--contract", "{artifact:contract}"]),
+        _cmd(f"★[{s}] 경로 주변(로봇 옆 · 테이블 앞 가장자리 · 몸통)이 비어 있는가. 약 30 s 동안 최대 0.2 rad/s 로 움직인다",
+             ["bash", "-lc", "true"], manual=True),
+        _cmd(f"[{s}] 저장 경로를 pd 로 재생 — 끝나면 episode stop 으로 pd 가 마지막 자세를 붙든다",
+             ["python3", f"{PC}/tools/replay_to_pd.py", "--npz", f"{{artifact:path_{s}}}", "--joints", joints,
+              "--rate-scale", "1.0"], execute_args=["--execute"]),
+        _cmd(f"[{s}] 홈에서 정착(이미 도착 — 남은 오차만)", ctl("pd_goto_home", "--service-timeout", "45"),
+             execute_args=["--execute", "--approve", "pd_goto_home"]),
+        _cmd(f"★[{s}] 팔이 홈(테이블 앞 가장자리, 손바닥이 마주 봄)에 도착했는가. 아니면 '정상이 아니다' 후 PD 해제",
+             ["bash", "-lc", "true"], manual=True),
+        _cmd(f"[{s}] 손을 계약 홈 손 자세로(pd/hand_home — 팔이 홈에 정착했을 때만 받는다)", ctl("pd_hand_home", "--service-timeout", "15"),
+             execute_args=["--execute", "--approve", "pd_hand_home"]),
+    ]
 
 
 def mission(kind: str) -> dict:
@@ -221,6 +247,10 @@ def mission(kind: str) -> dict:
         "pd": f"deploy/policy_control/config/pd_rh56f1{'' if real else '_fake'}.yaml",
         "pd_exec": f"deploy/policy_control/config/pd_rh56f1{'_exec' if real else '_fake'}.yaml",
         "rh56f1_map": "deploy/policy_control/config/rh56f1_hand_map.yaml",
+        # 차렷 → 홈(rh_aglt 시작 자세) 저장 경로 — plan_home_path.py --side <s> --goal contract --other-arm both --hand-start both
+        #   --urdf <RH56F1 자산> --contract <이 미션 contract> --profile openarm_rh56f1 --env-yaml <aglt 런> --pd-config pd_rh56f1
+        "path_right": "deploy/policy_control/paths/home_rh56f1_right.npz",
+        "path_left": "deploy/policy_control/paths/home_rh56f1_left.npz",
         # 양팔 붓기 정책(첫 화면의 '양팔' 자리가 바꾼다) · 양팔 robot yaml
         "pourfj_both": "deploy/policies/both_rh_pourfj_f01/pour_fj_contract.json",
         "robot_bi": f"deploy/policy_control/config/robots/rh56f1_bi_{robot}.yaml",
