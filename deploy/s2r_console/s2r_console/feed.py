@@ -13,6 +13,7 @@
   topics  {"ch","data"}                  1 Hz. 스택 토픽별 {"pubs","n","age_ms"} — 브리지가 센 것
   rosgraph {"ch","data"}                 바뀔 때(+5 s 마다). 도메인 전체의 노드·토픽·연결 — 정책을 모른다
   controllers {"ch","manager","ok",...}  컨트롤러 프로브(`ctl_probe.py`)가 낸다. ok 면 "controllers", 아니면 "reason"
+  objects {"ch","data"}                  1 Hz. 물체 자세 토픽 → object_health.PoseWindow.summary | None (FP++ 칸)
 """
 from __future__ import annotations
 
@@ -56,6 +57,8 @@ class Feed:
         self._topics_at: float | None = None
         self._joints: Mapping[str, Sequence] = {}
         self._joints_at: float | None = None
+        self._objects: Mapping[str, Mapping | None] = {}
+        self._objects_at: float | None = None
         self._rosgraph: Mapping | None = None
         self._rosgraph_at: float | None = None
         self._ctl: dict[str, Mapping] = {}
@@ -111,6 +114,10 @@ class Feed:
             data = msg.get("data")
             if isinstance(data, Mapping):
                 self._topics, self._topics_at = data, now
+        elif ch == "objects":
+            data = msg.get("data")
+            if isinstance(data, Mapping):
+                self._objects, self._objects_at = data, now
         elif ch == "rosgraph":
             data = msg.get("data")
             if isinstance(data, Mapping):
@@ -174,6 +181,8 @@ class Feed:
                         topics_age_s=None if self._topics_at is None else now - self._topics_at,
                         rosgraph=self._rosgraph,
                         rosgraph_age_s=None if self._rosgraph_at is None else now - self._rosgraph_at,
+                        objects=dict(self._objects),
+                        objects_age_s=None if self._objects_at is None else now - self._objects_at,
                         perception=self._percept,
                         perception_age_s=None if self._percept_at is None else now - self._percept_at,
                         controllers=dict(self._ctl),

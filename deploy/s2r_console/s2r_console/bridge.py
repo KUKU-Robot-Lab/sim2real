@@ -87,6 +87,8 @@ def main(argv: list[str] | None = None) -> int:
                     default=["/joint_states", "/dg5f_right/joint_states", "/dg5f_left/joint_states"],
                     help="관절 상태 토픽 — 화면의 로봇 상태 표가 쓴다(구독만). 빈 목록이면 받지 않는다")
     ap.add_argument("--joints-hz", type=float, default=4.0, help="관절 상태를 콘솔로 보내는 상한 [Hz]")
+    ap.add_argument("--objects", nargs="*", default=[],
+                    help="물체 자세 토픽(PoseStamped) — 주기 · 지연 · 기울기 · 흔들림을 1 Hz 로 요약한다(상태창 FP++ 칸, 09.29)")
     ap.add_argument("--dynamic-joints", nargs="*",
                     default=["/dynamic_joint_states", "/dg5f_right/dynamic_joint_states",
                              "/dg5f_left/dynamic_joint_states"],
@@ -161,6 +163,16 @@ def main(argv: list[str] | None = None) -> int:
                     row[slot] = float(vals[key])
         _beat_joints()
 
+    from .object_health import PoseWindow                                     # noqa: PLC0415
+    poses = {t: PoseWindow() for t in args.objects}
+
+    def on_pose(topic: str):
+        def cb(msg) -> None:
+            st = msg.header.stamp
+            p, q = msg.pose.position, msg.pose.orientation
+            poses[topic].add(time.time(), st.sec + st.nanosec * 1e-9, (p.x, p.y, p.z), (q.w, q.x, q.y, q.z))
+        return cb
+
     meter = TopicMeter(args.topics, args.watch)
     me = node.get_fully_qualified_name()
 
@@ -203,6 +215,9 @@ def main(argv: list[str] | None = None) -> int:
     def beat() -> None:
         names = sorted({(ns.rstrip("/") + "/" + n) for n, ns in node.get_node_names_and_namespaces()})
         _emit(line("beat", graph=names))
+        if poses:                                    # 지연은 두 PC 벽시계 차 — 벽시계로 잰다
+            now = time.time()
+            _emit(line("objects", data={t: w.summary(now) for t, w in poses.items()}))
         send_rosgraph(dict(node.get_topic_names_and_types()))
         if meter.all:
             subscribe_new()
@@ -217,6 +232,10 @@ def main(argv: list[str] | None = None) -> int:
     node.create_subscription(String, f"{NS}/episode", on_episode, latched)
     if args.perception:
         node.create_subscription(String, args.perception, on_perception, chain)
+    if args.objects:
+        from geometry_msgs.msg import PoseStamped                               # noqa: PLC0415
+        for t in args.objects:
+            node.create_subscription(PoseStamped, t, on_pose(t), qos_profile_sensor_data)
     if args.joints:
         from sensor_msgs.msg import JointState                                  # noqa: PLC0415
         for t in args.joints:

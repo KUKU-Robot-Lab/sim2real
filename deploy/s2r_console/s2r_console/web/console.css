@@ -382,3 +382,9 @@ table.joints tr.j-missing td { color: var(--mute); }
 .exit-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .exit-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .exit-row .actions { display: flex; gap: 6px; flex: none; }
+
+/* FP++ 칸(09.29) — 줄마다 램프, 나쁜 값은 글자색으로도 */
+.fpp-name { display: flex; align-items: center; gap: 6px; padding: 10px 12px 0; flex-wrap: wrap; }
+.fpp-kv { grid-template-columns: 128px 1fr; }
+.fpp-kv dt { display: flex; align-items: center; }
+.fpp-bad { color: var(--bad); } .fpp-warn { color: var(--warn); }

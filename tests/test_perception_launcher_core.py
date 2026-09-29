@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from object_registry import DEFAULT_REGISTRY, load_registry  # noqa: E402
 from perception_launcher_core import (  # noqa: E402
-    Command, RemoteState, build_status, parse_command, parse_remote_status, plan_actions,
+    Command, RemoteState, build_status, last_crash, parse_command, parse_remote_status, plan_actions,
 )
 
 REG = load_registry(DEFAULT_REGISTRY)
@@ -92,7 +92,29 @@ def test_build_status_shape():
     out = build_status(st, camera_hz=29.9, pose_ages={"shaker_closed": 0.05, "cup_big_s100": None},
                        busy=False, error=None)
     assert out["camera_hz"] == 29.9 and out["camera_up"] is True
-    assert out["objects"]["shaker_closed"] == {"container": "Up 2 minutes", "pose_age_s": 0.05}
-    assert out["objects"]["cup_big_s100"] == {"container": None, "pose_age_s": None}
+    assert out["objects"]["shaker_closed"] == {"container": "Up 2 minutes", "pose_age_s": 0.05, "crash": None}
+    assert out["objects"]["cup_big_s100"] == {"container": None, "pose_age_s": None, "crash": None}
     assert out["viewer"] is False and out["busy"] is False and out["error"] is None
     assert build_status(None, 0.0, {}, True, "ssh failed")["error"] == "ssh failed"
+
+
+OOM_LOG = """[cup_tracking_node-1] [INFO] tracking started
+[cup_tracking_node-1] Traceback (most recent call last):
+[cup_tracking_node-1]   File "/workspace/x.py", line 3, in f
+[cup_tracking_node-1]     return self.reciprocal() * other
+[cup_tracking_node-1] torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 296.00 MiB. GPU 0 has a total capacity of 23.53 GiB of which 157.12 MiB is free.
+"""
+
+
+def test_a_tracker_that_died_inside_an_up_container_is_reported():
+    """09.29: 컨테이너는 Up 인데 추적 노드가 CUDA OOM 으로 죽어 자세가 0 이었다."""
+    assert last_crash(OOM_LOG).startswith("torch.OutOfMemoryError: CUDA out of memory")
+    assert last_crash("[cup_tracking_node-1] [INFO] ok\n") is None
+    st = parse_remote_status('{"camera_up": true, "containers": {"fpp_cup_big_s100": "Up 2 minutes"}, "viewer_up": false,'
+                             ' "crashes": {"fpp_cup_big_s100": "torch.OutOfMemoryError: x"},'
+                             ' "gpu": {"used_mib": 23934, "total_mib": 24576}}')
+    out = build_status(st, 30.0, {"cup_big_s100": None}, False, None)
+    assert out["objects"]["cup_big_s100"]["crash"] == "torch.OutOfMemoryError: x"
+    assert out["gpu"] == {"used_mib": 23934, "total_mib": 24576}
+    old = build_status(parse_remote_status('{"camera_up": true, "containers": {}, "viewer_up": false}'), 0.0, {}, False, None)
+    assert old["gpu"] is None                                       # 옛 status.sh 는 모른다

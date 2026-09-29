@@ -116,6 +116,7 @@ function renderAll() {
   renderLinks(s);
   renderNodes(s);
   renderMetrics(s);
+  renderFpp(s);
   renderPolicy(s);
   renderRobot(s);
   put("quick", stopButtons(s));
@@ -648,6 +649,18 @@ function spark(cv, values, budget) {
   g.beginPath(); values.forEach((v, i) => (i ? g.lineTo(x(i), y(v)) : g.moveTo(x(i), y(v))));
   g.strokeStyle = "#4da3ff"; g.lineWidth = 1.4; g.stroke();
   g.lineTo(x(values.length - 1), h); g.lineTo(x(0), h); g.closePath(); g.fillStyle = "rgba(77,163,255,.12)"; g.fill();
+}
+
+// FP++ 칸 — 09.29 사용자: "fpp 가 제대로 되는지 … 상태창에서". 줄 · 판정은 서버(object_health.py)가 준다.
+// 그날 컨테이너는 Up 인데 추적 노드가 CUDA OOM 으로 죽어 자세가 0 이었다 — 컨테이너 상태만으로는 못 본다.
+function renderFpp(s) {
+  const f = s.fpp;
+  $("fpp-panel").hidden = !f;
+  if (!f) return;
+  put("fpp-meta", `<span class="badge ${f.tone === "mute" ? "" : esc(f.tone)}">${esc(f.say)}</span>`);
+  put("fpp", f.objects.map((o) => `<div class="fpp-obj"><div class="fpp-name"><span class="lamp ${esc(o.tone)}"></span><b>${esc(o.name)}</b>
+    <span class="hint">${esc(o.topic)}${f.stale ? " · 브리지 보고가 늦다" : ""}</span></div>
+    <dl class="kv fpp-kv">${o.rows.map((r) => `<dt><span class="lamp ${esc(r.tone)}"></span>${esc(r.label)}</dt><dd class="fpp-${esc(r.tone)}">${esc(r.value)}</dd>`).join("")}</dl></div>`).join(""));
 }
 
 function renderPolicy(s) {

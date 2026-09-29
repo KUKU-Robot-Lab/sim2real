@@ -72,6 +72,9 @@ class Observed:
     #: 도메인에서 실제로 본 연결(`rosgraph.observe`) — {"nodes","topics","edges"}. 한 번도 못 받았으면 None
     rosgraph: Mapping | None = None
     rosgraph_age_s: float | None = None
+    #: 물체 자세 토픽 → 브리지가 잰 요약(object_health.PoseWindow.summary) | None — 상태창 FP++ 칸(09.29)
+    objects: Mapping[str, Mapping | None] = field(default_factory=dict)
+    objects_age_s: float | None = None
     #: 인지 런처가 vision-3090 에서 읽어 낸 상태 — {"camera_up","camera_hz","objects","viewer","busy","error"}
     perception: Mapping | None = None
     perception_age_s: float | None = None

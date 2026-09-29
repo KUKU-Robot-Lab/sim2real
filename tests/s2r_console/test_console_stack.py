@@ -285,7 +285,8 @@ def test_bridge_argv_meters_the_diagram_wires_and_only_watches_the_rest():
     profile = _profile("pour_i18_fake")
     argv = bridge_argv(profile, diagram_of(profile, mission_units(profile, repo=SIM2REAL), repo=SIM2REAL))
     topics = argv[argv.index("--topics") + 1:argv.index("--watch")]
-    watch = argv[argv.index("--watch") + 1:]
+    rest = argv[argv.index("--watch") + 1:]
+    watch = rest[:next((i for i, a in enumerate(rest) if a.startswith("--")), len(rest))]
     assert "/policy_control/joint_target" in topics and "/joint_states" in topics
     assert len(topics) == len(set(topics))                          # 스택과 그림이 같은 토픽을 말해도 한 번만 구독한다
     assert "/policy_control/pour/fill_level" in watch and not set(watch) & set(topics)
@@ -309,3 +310,13 @@ def test_the_bridge_listens_to_the_perception_launcher_only_when_the_picture_has
     }, path=Path("p.yaml"))
     argv = bridge_argv(pour, with_launcher)
     assert argv[argv.index("--perception") + 1] == "/perception/status"
+
+
+def test_the_real_profile_bridge_summarises_the_cup_pose_the_policy_reads():
+    # 09.29 사용자: FP++ 가 제대로 되는지 상태창에서 — 정책이 읽는 base_link 자세를 브리지가 요약한다
+    from s2r_console.console import bridge_argv, diagram_of, mission_units
+    profile = _profile("dg5f_m_real")
+    argv = bridge_argv(profile, diagram_of(profile, mission_units(profile, repo=SIM2REAL), repo=SIM2REAL))
+    objects = argv[argv.index("--objects") + 1:]
+    assert "/objects/cup_big_s100/pose" in objects
+    assert all(t.startswith("/objects/") and t.endswith("/pose") for t in objects)

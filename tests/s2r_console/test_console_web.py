@@ -430,3 +430,11 @@ def test_optional_diagnosis_stages_can_be_picked_again_after_they_ran():
     body = re.search(r"function exitHtml[\s\S]*?\n}\n", JS).group(0)
     assert "optional.has(r.group)" in body
     assert re.search(r"exitHtml\(rows, lane, can, optional\)", JS)
+
+
+def test_the_live_column_has_an_fpp_panel_drawn_from_the_server_verdict():
+    # 09.29 사용자: "fpp 가 제대로 되는지 … 상태창에서 확인할 수 있으면 좋겠는데"
+    assert 'id="fpp-panel"' in HTML and 'id="fpp"' in HTML
+    body = re.search(r"function renderFpp[\s\S]*?\n}\n", JS).group(0)
+    assert "s.fpp" in body and "r.tone" in body and "f.say" in body       # 판정은 서버가 — 화면은 그리기만
+    assert re.search(r"renderFpp\(s\);", JS)

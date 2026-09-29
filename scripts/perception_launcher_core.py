@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import json
 import sys
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -32,6 +33,10 @@ class RemoteState:
     viewer_up: bool
     #: FP++ 자세 → 로봇 PC UDP 송신기(09.26). 영상 · FP++ 는 vision-3090 안에서만 돌아 이것 없이는 자세가 안 온다
     pose_tx_up: bool = False
+    #: 컨테이너 이름 → 추적 노드가 죽은 마지막 오류 줄(09.29: 컨테이너 Up · 노드 CUDA OOM · 자세 0)
+    crashes: dict[str, str] = field(default_factory=dict)
+    #: vision-3090 GPU {"used_mib","total_mib"} — 학습과 같이 쓴다. 옛 status.sh 는 None
+    gpu: dict | None = None
 
 
 def parse_command(text: str, registry) -> Command:
@@ -68,9 +73,30 @@ def parse_remote_status(text: str) -> RemoteState:
         raw = None
     if not isinstance(raw, dict) or "containers" not in raw:
         raise ValueError(f"remote status is not the expected JSON: {text[:200]!r}")
+    gpu = raw.get("gpu")
+    gpu = {"used_mib": int(gpu["used_mib"]), "total_mib": int(gpu["total_mib"])} if isinstance(gpu, dict) else None
     return RemoteState(camera_up=bool(raw.get("camera_up")),
                        containers={str(k): str(v) for k, v in raw["containers"].items()},
-                       viewer_up=bool(raw.get("viewer_up")), pose_tx_up=bool(raw.get("pose_tx_up")))
+                       viewer_up=bool(raw.get("viewer_up")), pose_tx_up=bool(raw.get("pose_tx_up")),
+                       crashes={str(k): str(v) for k, v in (raw.get("crashes") or {}).items() if v},
+                       gpu=gpu)
+
+
+_LAUNCH_PREFIX = re.compile(r"^\[[^\]]+\]\s?")
+_ERROR_LINE = re.compile(r"^[\w.]*(Error|Exception)\b.*")
+
+
+def last_crash(log: str, limit: int = 160) -> str | None:
+    """컨테이너 로그에서 마지막 Traceback 의 오류 줄(없으면 None). vision-3090 의 status.sh 가 부른다.
+    ros2 launch 가 붙이는 '[노드-1] ' 머리는 뗀다."""
+    lines = [_LAUNCH_PREFIX.sub("", ln) for ln in log.splitlines()]
+    starts = [i for i, ln in enumerate(lines) if ln.startswith("Traceback (most recent call last)")]
+    if not starts:
+        return None
+    for ln in lines[starts[-1] + 1:]:
+        if _ERROR_LINE.match(ln.strip()):
+            return ln.strip()[:limit]
+    return "Traceback (오류 줄 없음)"
 
 
 def plan_actions(cmd: Command, state: RemoteState) -> list[tuple[str, ...]]:
@@ -115,8 +141,10 @@ def build_status(state: RemoteState | None, camera_hz: float, pose_ages: dict[st
     objects = {}
     for name, age in pose_ages.items():
         cont = state.containers.get(container_name(name)) if state else None
-        objects[name] = {"container": cont, "pose_age_s": age}
+        crash = state.crashes.get(container_name(name)) if state else None
+        objects[name] = {"container": cont, "pose_age_s": age, "crash": crash}
     return {
+        "gpu": state.gpu if state else None,
         "camera_up": bool(state.camera_up) if state else None,
         "camera_hz": round(float(camera_hz), 2),
         "objects": objects,

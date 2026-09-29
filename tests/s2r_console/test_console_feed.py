@@ -116,3 +116,13 @@ def test_the_perception_status_from_vision_3090_reaches_the_snapshot():
     assert o.perception["camera_up"] is True and o.perception_age_s == 0.0
     clock.t = 4.0
     assert f.observed().perception_age_s == 4.0
+
+
+def test_object_pose_summaries_reach_observed_with_their_age():
+    f, clock = feed()
+    assert f.observed().objects == {} and f.observed().objects_age_s is None
+    f.ingest(line("objects", data={"/objects/cup/pose": {"hz": 13.0}, "/objects/x/pose": None}))
+    clock.t = 1.5
+    o = f.observed()
+    assert o.objects["/objects/cup/pose"]["hz"] == 13.0 and o.objects["/objects/x/pose"] is None
+    assert o.objects_age_s == 1.5

@@ -21,6 +21,7 @@ from typing import Callable, Mapping, Sequence
 import yaml
 
 from . import _paths, ledger, survey
+from . import object_health as OH
 from . import robot_view as R
 from . import units as U
 from .console_state import STALE_S, derive
@@ -145,7 +146,14 @@ def bridge_argv(profile: Profile, diagram: Diagram | None = None) -> list[str]:
     argv += ["--watch", *watch] if watch else []
     if diagram is not None and any(b.id == PERCEPT_BOX for b in diagram.boxes):
         argv += ["--perception", PERCEPT_STATUS]         # vision-3090 의 카메라·컨테이너는 런처만 안다
+    objects = object_topics(topics)
+    argv += ["--objects", *objects] if objects else []   # 상태창 FP++ 칸 — 정책이 읽는 base_link 자세
     return argv
+
+
+def object_topics(topics) -> list[str]:
+    """정책이 읽는 물체 자세(/objects/<이름>/pose). 순수."""
+    return [t for t in topics if t.startswith("/objects/") and t.endswith("/pose")]
 
 
 def probe_argv(profile: Profile, diagram: Diagram | None = None) -> list[str] | None:
@@ -749,7 +757,16 @@ class Console:
                 "mission": self._mission_view(s), "pd_sides": self._pd_sides(s, obs),
                 "runners": {lane: r.view() for lane, r in s.runners.items()},
                 "procs": s.supervisor.table(), "metrics": metrics, "events": events,
-                "policy": self._policy_view(s), "end_reasons": self.end_reasons()}
+                "policy": self._policy_view(s), "end_reasons": self.end_reasons(),
+                "fpp": self._fpp_view(s, obs)}
+
+    @staticmethod
+    def _fpp_view(s: Session, obs) -> dict | None:
+        """상태창 FP++ 칸(09.29 사용자) — 브리지가 물체 자세를 세지 않는 프로파일이면 None."""
+        topics = object_topics(bridge_argv(s.profile, s.diagram))
+        if not topics:
+            return None
+        return OH.view(obs.objects, obs.objects_age_s, obs.perception, topics)
 
     @staticmethod
     def _pd_sides(s: Session, obs=None) -> list[str]:
