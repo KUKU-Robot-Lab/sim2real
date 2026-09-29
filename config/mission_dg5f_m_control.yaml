@@ -33,11 +33,12 @@ artifacts:
   #   만들기: build_deploy_contract.py --run deploy/policies/right_m15_e800 --hand-obs-order <trace meta | assumed>
   #   시작 자세 = 홈 경로의 끝(arm_reset_joint_pos_override 가 right_aglt 와 같다)
   joint_right: deploy/policies/right_m15_e800/joint_contract.json
-  # 왼팔 정책 — 09.29 사용자: cg_l_i14(cup_grasp_l iter_14 보상, best e5320, "14를 앞으로의 기준으로")로 교체.
-  #   그 전: 09.28 오전 left_cp_e4280(접근, 배관 확인) · 오후 left_cg_i01(컵 집기, 실기 5회) — 폴더는 그대로 둔다.
-  #   만들기: build_deploy_contract.py --run deploy/policies/left_cg_i14 --hand-obs-order assumed
+  # 왼팔 정책 — 09.28 오후 사용자: 실제로 컵을 잡는 cg_l_i01(cup_grasp_l iter_01 보상, best e5802)로 교체.
+  #   그 전 정책 left_cp_e4280(접근 + C자 사전파지 정지, 무접촉)은 오전 실기에서 배관 확인을 마쳤다 — 폴더는 그대로 둔다.
+  #   만들기: build_deploy_contract.py --run deploy/policies/left_cg_i01 --hand-obs-order <trace meta | assumed>
   #   시작 자세 = 왼팔 홈 경로의 끝(오른팔 시작 자세의 거울, 차이 0). 계약은 e4280 과 출처 칸만 다르다(같은 과제 · 자산)
-  joint_left: deploy/policies/left_cg_i14/joint_contract.json
+  #   09.29 오전 left_cg_i14 로 바꿨다가 같은 날 사용자 지시로 i01 로 되돌림("어제까지 진행하던 정책으로"). i14 폴더는 그대로 둔다.
+  joint_left: deploy/policies/left_cg_i01/joint_contract.json
 
 checkpoints: {}
 
@@ -272,7 +273,7 @@ stages:
   - id: policy_left
     group: policy
     lane: arm_left
-    title: "[left] 정책 left_cg_i14(인벨롭 파지 · 들기) — 컵 확인 → 정책 노드 → reset(목표 = 컵 + 24.6 cm 위) → start → 관찰 → stop → 컵 받기"
+    title: "[left] 정책 left_cg_i01(컵 집기 · 들기) — 컵 확인 → 정책 노드 → reset(목표 = 컵 + 24.6 cm 위) → start → 관찰 → stop → 컵 받기"
     needs: [home_left, sensors]
     needs_why: 정책은 홈 경로 끝 자세에서만 출발해 봤고, 컵 자세(FP++ → base)가 입력이다
     artifacts: [joint_left, robot_left]
@@ -690,8 +691,7 @@ run:
       stop: ["fabric_direct_left#0", "fabric_direct_right#0", "policy_right#4"]
     - note: "★[left] 컵이 학습 범위(로봇 앞 x 0.10~0.40 · y 0.00~0.30, 테이블 위 똑바로)에 있고 콘솔에서 컵 자세가 들어오는가.
         손 · 팔 주변에 사람 · 물건이 없는가. 정책은 팔을 최대 0.3 rad/s 로 움직인다. ★이 정책은 컵을 잡아 약 25 cm 들어 올린다 —
-        빈 컵(cup_big)만 · 떨어져도 되는 아래 공간. 알려진 결함(사용자 영상 판정): 컵 윗부분을 위에서 감싼다(손바닥 +5.6 cm ·
-        엄지 · 검지 끝은 입구 높이 +8~10 cm)"
+        빈 컵(cup_big)만 · 떨어져도 되는 아래 공간. 알려진 결함: 손끝 파지(4관절 과굽힘) · 새끼 미참여 · 급하게 들어 올림"
       argv: [bash, -lc, "true"]
       manual: true
     - note: "[left] 팔이 정책 시작 자세(홈 경로 끝) 0.4 rad 안인가 — 멀면 여기서 멈춘다(관절공간 직선 정착은 먼 곳에서 테이블을 지날 수 있다)"
@@ -700,11 +700,11 @@ run:
       argv: [python3, "{repo}/deploy/policy_control/tools/episode_ctl.py", --side, left, --only, pd_goto_home, --service-timeout, "45"]
       execute_args: [--execute, --approve, pd_goto_home]
     - note: "[left] 정책 노드(joint_node, LSTM · CPU 2 스레드) — 팔 관절 증분 + 손 절대 목표를 pd 로. start 전에는 아무것도 보내지 않는다.
-        에피소드는 학습 규칙대로 스스로 끝난다(09.28 사용자): 컵 키포인트가 목표에서 11.25 cm 안(e5320 이 학습된 tol, tfevents task/tol —
-        i14 는 커리큘럼이 시작값에서 줄지 않았다) 10 스텝 연속이면 도달 · 아니면 15 s(env episode_length_s). 끝나면 pd 가 그 자세 · 손 쥠을 붙잡는다"
+        에피소드는 학습 규칙대로 스스로 끝난다(09.28 사용자): 컵 키포인트가 목표에서 3.18 cm 안(e5802 가 학습된 tol, tfevents task/tol)
+        10 스텝 연속이면 도달 · 아니면 15 s(env episode_length_s). 끝나면 pd 가 그 자세 · 손 쥠을 붙잡는다"
       argv: [ros2, launch, "{repo}/deploy/policy_control/launch/joint_chain.launch.py",
              "contract:={artifact:joint_left}", "robot:={artifact:robot_left}", "device:=cpu", "use_source:=true",
-             "success_tol_m:=0.1125", "success_steps:=10", "max_episode_s:=15.0"]
+             "success_tol_m:=0.0318", "success_steps:=10", "max_episode_s:=15.0"]
       background: true
     - note: "[left] 기록 — ros2 bag 두 묶음: policy(obs · 행동 · 목표 · pd · 팔 · 손 · 컵 · status) · sensors(손끝 촉각 · F/T).
         logs/policy_control/real_runs/<시각>__<task>__left/ (구독만, 정지 신호에 bag 을 닫는다). 09.28 사용자: bag 으로 · 따로 관리"
