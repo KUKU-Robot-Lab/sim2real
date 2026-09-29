@@ -30,7 +30,8 @@ def H():
 
 @needs_contract
 def test_close_interpolates_open_to_grip_and_left_mirrors(H):
-    from openarm.tesollo.left.grasp_v1 import grasp_left_preset as P
+    from policy_control import hdgp_frozen as _F
+    P = type("P", (), {"_ARM_SIGN": list(_F.ARM_MIRROR_SIGN), "_HAND_SIGN": list(_F.HAND_MIRROR_SIGN)})
 
     c = C.load_contract(CONTRACT)
     for side in ("right", "left"):

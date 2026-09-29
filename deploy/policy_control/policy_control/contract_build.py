@@ -344,7 +344,7 @@ def _rate(env_text: str) -> RateCfg:
 def _grasp_band_axis(spec: str | None) -> tuple[list[float], str]:
     """Gate band in cup-origin axis coordinates + where it came from."""
     from left_grasp_gate import CUP_BOTTOM_TO_ORIGIN
-    from openarm.gripper.left.grasp_sensor import grasp_left_preset as P1
+    from .hdgp_frozen import GripperLeftPreset as P1
 
     if spec is None:
         raise SystemExit("[contract] gripper_left runs need --grasp-band v1|v2|lo,hi — the dump does not "
@@ -352,7 +352,7 @@ def _grasp_band_axis(spec: str | None) -> tuple[list[float], str]:
     if spec == "v1":
         band, source = P1.GRASP_HEIGHT_BAND, "grasp_left_preset.GRASP_HEIGHT_BAND (v1)"
     elif spec == "v2":
-        from openarm.gripper.left.grasp_sensor_v2 import v2_preset as P2
+        from .hdgp_frozen import GripperLeftV2Preset as P2
         band, source = P2.GRASP_HEIGHT_BAND, "v2_preset.GRASP_HEIGHT_BAND (v2, 09.03+)"
     else:
         parts = [float(v) for v in spec.split(",")]
@@ -365,7 +365,7 @@ def _grasp_band_axis(spec: str | None) -> tuple[list[float], str]:
 def _build_left(env_text: str, agent_yaml: Path, grasp_band: str | None) -> dict:
     from gripper_left_palm_command import cfg_from_run as palm_cfg_from_run
     from left_obs_builder import segments_from_run
-    from openarm.gripper.left.grasp_sensor import grasp_left_preset as P
+    from .hdgp_frozen import GripperLeftPreset as P
 
     env_yaml = agent_yaml.parent / "env.yaml"
     segments = segments_from_run(env_yaml)              # SystemExit on an unknown term

@@ -111,7 +111,7 @@ def test_left_action_matches_palm_reader(left):
 @needs_left
 def test_left_gate_params_from_run(left):
     from left_grasp_gate import CUP_BOTTOM_TO_ORIGIN
-    from openarm.gripper.left.grasp_sensor import grasp_left_preset as P
+    from policy_control.hdgp_frozen import GripperLeftPreset as P
 
     g = left.obs.segment("gripper_gate").params
     # ★v2B25 는 v1 대역(판 위 10~85 mm)으로 학습됐다 — 골든 스트림이 62 mm 에서 게이트가 열림을 증명.
@@ -135,7 +135,7 @@ def test_left_fabric_and_gravity(left):
     assert f.vel_ff_scale == 1.0
     assert f.joint_order == [f"l_aj_{i}" for i in range(1, 8)]
     # ★fabric 홈(J147, 액션의 default_config) ≠ 로봇 리셋 홈(dump init_state): j4 0.9336 vs 0.5665
-    from openarm.gripper.left.grasp_sensor import grasp_left_preset as P
+    from policy_control.hdgp_frozen import GripperLeftPreset as P
     assert f.home_q == pytest.approx([P.LEFT_ARM_HOME_JOINT_POS[j] for j in f.joint_order])
     assert f.home_q[3] == pytest.approx(0.9336) and left.pd.home_arm[3] == pytest.approx(0.5665)
     assert "fabric default_config" in (f.home_source or "")

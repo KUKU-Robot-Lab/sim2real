@@ -12,6 +12,15 @@
 """
 
 from __future__ import annotations
+from pathlib import Path as _LegacyPath
+
+import pytest as _legacy_pytest
+
+# 09.29 hdgp 1eb205d4 가 레거시 태스크(tesollo · gripper)를 지웠다 — 이 테스트가 읽는 grasp_v1 계약 상수(grasp_left_constants) 는 그 패키지에만 있다.
+# 복구: hdgp 태그 archive/legacy-tasks-20260929. 지금 미션(DG-5F · RH56F1)은 이 도구를 쓰지 않는다.
+if not (_LegacyPath.home() / "rl_ws/hdgp/source/openarm/openarm/tesollo").exists():
+    _legacy_pytest.skip("hdgp 레거시 tesollo 패키지 없음(1eb205d4 삭제) — archive/legacy-tasks-20260929", allow_module_level=True)
+
 
 import ast
 import re

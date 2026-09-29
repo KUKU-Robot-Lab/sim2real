@@ -96,7 +96,8 @@ def test_side_fabrics_exist_on_disk(ctl):
 @needs_asset
 def test_homes_zero_and_hand_open_mirrored(ctl):
     from grasp_s2r_synergy import HAND_JOINT_NAMES, HAND_OPEN_POSE
-    from openarm.tesollo.left.grasp_v1 import grasp_left_preset as P
+    from policy_control import hdgp_frozen as _F
+    P = type("P", (), {"_ARM_SIGN": list(_F.ARM_MIRROR_SIGN), "_HAND_SIGN": list(_F.HAND_MIRROR_SIGN)})
 
     assert ctl.side("right").home_arm == [0.0] * 7 and ctl.side("left").home_arm == [0.0] * 7
     right_open = dict(zip(HAND_JOINT_NAMES, HAND_OPEN_POSE))
@@ -112,7 +113,8 @@ def test_homes_zero_and_hand_open_mirrored(ctl):
 def test_home_from_run_takes_each_arm_from_init_state_and_mirrors_only_what_is_missing():
     # 09.22 사용자: "정책의 환경이 sim 에서 동일해야함. 실제 real 도 같은 상태" — 반대 팔도 init_state 에 값이
     # 있으면 그 값을 쓴다. 미러는 그 팔의 값이 env.yaml 에 없을 때만.
-    from openarm.tesollo.left.grasp_v1 import grasp_left_preset as P
+    from policy_control import hdgp_frozen as _F
+    P = type("P", (), {"_ARM_SIGN": list(_F.ARM_MIRROR_SIGN), "_HAND_SIGN": list(_F.HAND_MIRROR_SIGN)})
 
     c = A.build_asset_contract(home="run:logs/policy/right_g1")
     g1 = B.build_contract(RIGHT_RUN)
@@ -141,7 +143,8 @@ def test_mirror_other_arm_overrides_the_init_state_home():
 
     init_state 의 왼팔 홈은 +y 벽에서 1.6 cm 까지 붙어(충돌 여유 2 cm 미달) 경로 계획이 목표에서 막혔다.
     """
-    from openarm.tesollo.left.grasp_v1 import grasp_left_preset as P
+    from policy_control import hdgp_frozen as _F
+    P = type("P", (), {"_ARM_SIGN": list(_F.ARM_MIRROR_SIGN), "_HAND_SIGN": list(_F.HAND_MIRROR_SIGN)})
 
     run = "run:deploy/policies/right_aglt"
     plain, mirrored = A.build_asset_contract(home=run), A.build_asset_contract(home=run, mirror_other=True)

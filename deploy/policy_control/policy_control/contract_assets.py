@@ -145,9 +145,9 @@ def pd_groups_for(side: str, ee_kind: str) -> list:
 
 # ------------------------------------------------------------------ homes (data sources only)
 def _mirror_signs() -> tuple[list, list]:
-    """(arm, hand) mirror signs right→left, from the tesollo left preset (FK-verified 07-28)."""
-    from openarm.tesollo.left.grasp_v1 import grasp_left_preset as P
-    return [float(s) for s in P._ARM_SIGN], [float(s) for s in P._HAND_SIGN]
+    """(arm, hand) mirror signs right→left, from the tesollo left preset (FK-verified 07-28) — hdgp_frozen 에 고정(09.29)."""
+    from .hdgp_frozen import ARM_MIRROR_SIGN, HAND_MIRROR_SIGN
+    return [float(s) for s in ARM_MIRROR_SIGN], [float(s) for s in HAND_MIRROR_SIGN]
 
 
 POUR_HOME = "pour:"
@@ -275,7 +275,7 @@ def hand_home(ee_kind: str, side: str, hand_joints: list) -> dict:
             raise ContractError(f"hand open pose lacks {missing}")
         return {j: float(vals[j]) for j in hand_joints}
     if ee_kind == "gripper":
-        from openarm.gripper.left.grasp_sensor import grasp_left_preset as P
+        from .hdgp_frozen import GripperLeftPreset as P
         return {j: float(P.GRIPPER_OPEN_POS) for j in hand_joints}
     if ee_kind == "rh56f1":
         # hdgp modules/robot_profiles.py RH56F1 hand_open_pose (thumb_1 1.57, 나머지 0) — 양손 같은 값(한계가 좌우 같다)

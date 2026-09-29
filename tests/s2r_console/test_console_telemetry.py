@@ -81,7 +81,7 @@ def test_bucket_max_edges():
 
 @pytest.mark.golden
 @pytest.mark.skipif(not RUNS, reason="fake run 기록이 없다")
-@pytest.mark.parametrize("run", RUNS, ids=lambda p: p.parent.name)
+@pytest.mark.parametrize("run", RUNS, ids=lambda p: getattr(getattr(p, "parent", None), "name", str(p)))   # 기록이 없으면 빈 목록
 def test_percentiles_match_the_csv_tool_on_recorded_runs(run):
     """같은 기록 → 같은 p50/p95·seq missing. 규칙이 갈라지면 운영자는 화면과 CSV 중 무엇을 믿을지 모른다.
 
@@ -107,6 +107,10 @@ def test_percentiles_match_the_csv_tool_on_recorded_runs(run):
 
 
 def test_the_golden_runs_are_not_vacuous():
+    # 09.29 사용자: logs 는 용량 때문에 PC 에 두지 않는다(DATA 디스크로 옮김) — 기록 폴더가 아예 없으면 건너뛴다.
+    # 폴더는 있는데 기록이 빠졌을 때만 실패시킨다(위 대조 테스트가 아무것도 잠그지 않는 것을 막는다).
+    if not (SIM2REAL / "logs" / "policy_control").is_dir():
+        pytest.skip("logs/policy_control 없음 — 이 PC 는 실행 기록을 두지 않는다")
     assert len(RUNS) >= 3, "지연이 기록된 fake run 이 사라졌다 — 위 대조 테스트가 아무것도 잠그지 않는다"
 
 
