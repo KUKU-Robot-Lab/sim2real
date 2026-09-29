@@ -4,6 +4,7 @@
 source "$(dirname "$0")/common.sh"
 NAME=${1:?name}; YAML=${2:?yaml path}
 [ -f "$YAML" ] || { echo "yaml missing: $YAML" >&2; exit 1; }
+YAML="$(realpath "$YAML")"          # docker -v 는 절대 경로만 받는다 — 런처는 홈 기준 상대 경로를 넘긴다
 docker rm -f "fpp_$NAME" >/dev/null 2>&1 || true
 docker run -d --name "fpp_$NAME" --network host --ipc=host --gpus all -e ROS_DOMAIN_ID=126 -e ROS_LOCALHOST_ONLY=1 \
   -v $PPP/perception_plus_plus_core/detection/yolo.py:/workspace/perception_plus_plus/perception_plus_plus_core/detection/yolo.py:ro \

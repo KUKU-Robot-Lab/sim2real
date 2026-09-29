@@ -40,7 +40,7 @@ def build_payload(args, registry) -> dict | None:
     return None
 
 
-REMOTE_SIM2REAL = "/home/usr/rl_ws/sim2real"
+REMOTE_SIM2REAL = "rl_ws/sim2real"          # 저 PC 홈 기준(ssh 는 홈에서 시작, PC 마다 사용자 이름이 다르다)
 
 
 def direct_stop_scripts(camera: bool) -> list[tuple[str, ...]]:

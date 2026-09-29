@@ -4,8 +4,8 @@
 #        Traceback 오류 줄(crashes)과 GPU 메모리(gpu)를 같이 낸다. 콘솔 상태창의 FP++ 칸이 읽는다.
 source "$(dirname "$0")/common.sh"
 python3 - <<'EOF'
-import json, subprocess, sys
-sys.path.insert(0, "/home/usr/rl_ws/sim2real/scripts")
+import json, os, subprocess, sys
+sys.path.insert(0, os.path.join(os.environ["SIM2REAL"], "scripts"))
 def up(pat):
     return subprocess.run(["pgrep", "-f", pat], capture_output=True).returncode == 0
 out = subprocess.run(["docker", "ps", "-a", "--filter", "name=^fpp_", "--format", "{{.Names}}\t{{.Status}}"],

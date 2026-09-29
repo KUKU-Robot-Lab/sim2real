@@ -97,12 +97,23 @@ git clone https://github.com/KUKU-Robot-Lab/urdf.git
 # 이미 있으면 네 곳 모두 git pull
 ```
 
+> hdgp 는 비공개라 https 로는 `could not read Username` 에서 멈춘다. GitHub ssh 키가 있는 PC 는 ssh 주소로 받는다:
+> `git -C ~/rl_ws/hdgp fetch git@github.com:KUKU-Robot-Lab/hdgp.git main:refs/remotes/origin/main && git -C ~/rl_ws/hdgp merge --ff-only origin/main`
+
 ### Step 3-A. robot_control 드라이버 빌드
 
 ```bash
 cd ~/rl_ws/robot_control/ros_ws
-# RH56F1 손을 쓰는 PC(arm4090)만: 벤더 드라이버 의존성(sim2real robot/vendor/inspire_ws/install_dependencies.sh 와 같다)
-sudo apt install -y build-essential cmake libboost-system-dev libboost-thread-dev libboost-dev libyaml-cpp-dev
+# 빌드 의존성 — 5090 에 깔린 것과 같게(09.29 arm4090 에서 빠져 있던 목록). openarm_can 은 CLI11 이 없으면 cmake 에서 멈춘다.
+sudo apt install -y build-essential cmake libboost-system-dev libboost-thread-dev libboost-dev libyaml-cpp-dev \
+    libcli11-dev libspdlog-dev python3.10-venv \
+    ros-humble-ros2-control ros-humble-ros2-controllers ros-humble-controller-manager ros-humble-control-msgs \
+    ros-humble-hardware-interface ros-humble-ros2-control-test-assets ros-humble-xacro \
+    ros-humble-joint-state-publisher ros-humble-joint-state-publisher-gui \
+    ros-humble-moveit-configs-utils ros-humble-moveit-kinematics ros-humble-moveit-planners \
+    ros-humble-moveit-ros-move-group ros-humble-moveit-ros-visualization ros-humble-moveit-setup-assistant \
+    ros-humble-moveit-simple-controller-manager ros-humble-ros-gz ros-humble-ign-ros2-control \
+    ros-humble-realsense2-description
 ./build.sh                                   # colcon --symlink-install, install/ 에 openarm_* · dg5f_* · rh56f1_*
 ```
 

@@ -34,7 +34,8 @@ from perception_launcher_core import (  # noqa: E402
     build_status, parse_command, parse_remote_status, plan_actions,
 )
 
-REMOTE_SIM2REAL = "/home/usr/rl_ws/sim2real"
+#: 저 PC 의 홈에서 본 상대 경로 — ssh 명령은 홈에서 시작한다. PC 마다 사용자 이름이 달라(usr · user) 절대 경로를 쓰지 않는다(09.29).
+REMOTE_SIM2REAL = "rl_ws/sim2real"
 REMOTE_PARAMS = f"{REMOTE_SIM2REAL}/log/fpp_params"
 _SCRIPT_FOR = {"camera_up": "camera_up.sh", "camera_down": "camera_down.sh",
                "fpp_up": "fpp_up.sh", "fpp_down": "fpp_down.sh",
