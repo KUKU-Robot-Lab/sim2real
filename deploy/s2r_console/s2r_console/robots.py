@@ -23,7 +23,8 @@ from .errors import ProfileError
 SCHEMA = "s2r_console/robot/v1"
 SIDES = ("right", "left", "both")
 #: 슬롯이 받는 계약 파일 — 산출물 키의 접두어로 정한다(joint_* 는 joint family 계약만).
-SLOT_CONTRACTS = {"joint": ("joint_contract.json",), "pour": ("pour_contract.json",)}
+SLOT_CONTRACTS = {"joint": ("joint_contract.json",), "pour": ("pour_contract.json",),
+                  "pourfj": ("pour_fj_contract.json",)}     # RH56F1 양팔 붓기(pour_fj, 09.29)
 _KEYS = {"schema", "id", "title", "host", "asset", "hand", "profiles", "slots", "task_prefixes", "art", "settings", "note",
          "joint_profile"}
 

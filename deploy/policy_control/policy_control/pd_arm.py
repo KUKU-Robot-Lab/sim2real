@@ -15,11 +15,12 @@ from typing import Mapping
 
 import numpy as np
 
+from . import _paths
 from .chain import PdStage, PdTarget, StageStatus
 from .codec import CodecError, JointSample, select_joints
 from .contract import SIDES, DeployContract, GainMismatch, SideCfg, side_of_joint
 from .controller_switch import ControllerSwitch, read_jtc_reference, source_arm_joints
-from .pd_backends import (ArmForwardBackend, Dg5fJtcBackend, GripperCmd, GripperJtcBackend, HandCmd,
+from .pd_backends import (ArmForwardBackend, Dg5fJtcBackend, GripperCmd, GripperJtcBackend, HandCmd, Rh56f1AngleBackend,
                           HandGainsClient, hand_controller_name)
 from .pd_gains import GainsError, expected_hand_gains, load_and_check
 from .pd_gravity import make_gravity
@@ -66,7 +67,7 @@ class SideBackends:
     arm: ArmForwardBackend
     switch: ControllerSwitch
     gripper: GripperJtcBackend | None
-    hand: Dg5fJtcBackend | None
+    hand: Dg5fJtcBackend | Rh56f1AngleBackend | None
     hand_gains: HandGainsClient | None
     hand_joint: str | None         # gripper 백엔드의 canonical 관절
 
@@ -149,6 +150,8 @@ def build_side_backends(node, groups: dict, cfg: PdConfig, side_cfg: SideCfg, ha
             gripper, hand_joint = _gripper_backend(node, name, g, cfg, hand_joints, profile, execute)
         elif kind == "dg5f_jtc":
             hand, gains = _hand_backend(node, name, g, cfg, hand_joints, profile, execute)
+        elif kind == "rh56f1_angle":
+            hand = _rh56f1_backend(node, name, g, cfg, hand_joints, profile, execute)
         else:
             raise PdArmError(f"groups.{name}: unknown backend {kind!r}")
     if (arm is None) != (switch is None):
@@ -187,6 +190,21 @@ def _hand_backend(node, name, g, cfg, hand_joints, profile, execute):
         raise PdArmError(f"groups.{name}: {exc}") from exc
     gains = HandGainsClient(node, controller, sources, timeout_sec=3.0, execute=execute)
     return backend, gains
+
+
+def _rh56f1_backend(node, name, g, cfg, hand_joints, profile, execute):
+    """RH56F1 손 — 벤더 각도 레지스터로. 변환표는 group 의 `map`(rl_ws 상대, 없으면 기본 rh56f1_hand_map.yaml)."""
+    from . import rh56f1_map
+    if cfg.hand is None:
+        raise PdArmError(f"groups.{name}: rh56f1_angle needs the pd yaml hand block")
+    path = g.get("map")
+    try:
+        hmap = rh56f1_map.load(_paths.RL_WS / path if path else rh56f1_map.DEFAULT_PATH)
+        return Rh56f1AngleBackend(node, str(g["topic"]), hand_joints,
+                                  [profile[j]["lower"] for j in hand_joints], [profile[j]["upper"] for j in hand_joints],
+                                  hmap, cfg.hand.max_vel, execute=execute, hand_id=int(g.get("hand_id", 0)))
+    except (rh56f1_map.HandMapError, ValueError, KeyError) as exc:
+        raise PdArmError(f"groups.{name}: {exc}") from exc
 
 
 def _side_thermal(cfg: PdConfig, side: str) -> tuple:

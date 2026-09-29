@@ -221,7 +221,8 @@ class DeployContract:
     policy: PolicyCfg
     obs: ObsCfg
     action: ActionCfg
-    fabric: FabricCfg
+    #: None only for a control-only contract of an asset with no Fabrics layer at all (RH56F1 — joint family, 09.29)
+    fabric: FabricCfg | None
     pd: PdCfg
     #: v2 — the bimanual view. ``fabric``/``action``/``pd`` above mirror ``sides[primary_side]``.
     sides: dict = field(default_factory=dict)
@@ -286,7 +287,7 @@ def from_dict(raw: dict) -> DeployContract:
                        segments=tuple(ObsSegment(**s) for s in obs["segments"])),
             action=ActionCfg(groups=tuple(ActionGroup(**g) for g in act["groups"]),
                              palm=_opt(PalmCfg, act["palm"]), hand=_opt(HandCfg, act["hand"])),
-            fabric=FabricCfg(**raw["fabric"]),
+            fabric=_opt(FabricCfg, raw["fabric"]),
             pd=_pd_from_dict(raw["pd"]),
             control_only=bool(raw.get("control_only", False)),
             asset=_opt(AssetInfo, raw.get("asset")),
@@ -339,7 +340,10 @@ def validate(c: DeployContract) -> DeployContract:
     if c.schema != SCHEMA and c.schema not in LEGACY_SCHEMAS:
         raise ContractError(f"schema {c.schema!r} not in {(SCHEMA, *LEGACY_SCHEMAS)}")
     _validate_policy_io(c)
-    if len(c.fabric.joint_order) != len(c.fabric.home_q):
+    if c.fabric is None:
+        if not c.control_only or any(s.fabric is not None for s in c.sides.values()):
+            raise ContractError("fabric may be empty only in a control-only contract whose sides have no fabric")
+    elif len(c.fabric.joint_order) != len(c.fabric.home_q):
         raise ContractError("fabric.joint_order and fabric.home_q lengths differ")
     _validate_gains(c.pd.sim_gains, "pd")
     if c.pd.gravity.mode not in GRAVITY_MODES:

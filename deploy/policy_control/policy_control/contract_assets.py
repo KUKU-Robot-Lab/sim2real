@@ -127,7 +127,8 @@ def side_bodies(manifest: dict, side: str, ee_kind: str) -> tuple[str, list]:
     """(palm link, fingertip links) of one side, checked against the manifest link_order."""
     p = side[0]
     links = set(manifest["link_order"])
-    palm = f"{p}_hl_palm" if ee_kind in ("dg5f", "rh56f1") else f"{p}_hl_gripper_base"
+    # RH56F1 자산에는 `*_hl_palm` 이 없다 — 손바닥 기준 링크는 palm_sensor(hdgp RH56F1 프로필 palm_link 와 같다)
+    palm = {"dg5f": f"{p}_hl_palm", "rh56f1": f"{p}_hl_palm_sensor"}.get(ee_kind, f"{p}_hl_gripper_base")
     if ee_kind == "none":
         palm = f"{p}_al_7"
     tips = [f"{p}_hl_{f}_tip" for f in FINGERS] if ee_kind in ("dg5f", "rh56f1") else []
@@ -150,6 +151,25 @@ def _mirror_signs() -> tuple[list, list]:
 
 
 POUR_HOME = "pour:"
+#: 양팔 홈을 적은 yaml(right/left 7개 + source) — 학습 런 덤프가 로컬에 없을 때(RH56F1, 09.29)
+ARMS_HOME = "arms:"
+
+
+def _arms_file_homes(mode: str, sides: tuple) -> tuple[dict, str]:
+    path = Path(mode[len(ARMS_HOME):])
+    if not path.is_absolute():
+        path = _paths.SIM2REAL / "deploy" / "policy_control" / path if not path.exists() else path.resolve()
+    try:
+        raw = yaml.safe_load(path.read_text()) or {}
+    except OSError as exc:
+        raise ContractError(f"home {mode}: {exc}") from exc
+    out = {}
+    for s in sides:
+        vals = raw.get(s)
+        if not isinstance(vals, list) or len(vals) != 7:
+            raise ContractError(f"home {path.name}: '{s}' 는 7 개 값이어야 한다")
+        out[s] = [float(v) for v in vals]
+    return out, f"arms:{path.name} ({raw.get('source', '?')})"
 
 
 def _load_pour(mode: str):
@@ -189,8 +209,10 @@ def arm_homes(mode: str, sides: tuple, mirror_other: bool = False) -> tuple[dict
     if mode.startswith(POUR_HOME):
         pour, path = _load_pour(mode)
         return pour_homes(pour, sides)[0], f"pour:{path.name} arm_reset ({pour.run_dir})"
+    if mode.startswith(ARMS_HOME):
+        return _arms_file_homes(mode, sides)
     if not mode.startswith("run:"):
-        raise ContractError(f"home must be 'zero', 'run:<run dir>' or 'pour:<pour_contract.json>', got {mode!r}")
+        raise ContractError(f"home must be 'zero', 'run:<run dir>', 'pour:<pour_contract.json>' or 'arms:<yaml>', got {mode!r}")
     from .contract_build import _home_values, _text, detect_family
     run = Path(mode[4:])
     if not run.is_absolute():
@@ -235,6 +257,10 @@ def _reset_override(env_text: str) -> list[float] | None:
     return vals
 
 
+#: hdgp modules/robot_profiles.py:887 RH56F1 hand_open_pose (pour_fj · rh_aglt 의 시작 손)
+RH56F1_OPEN_POSE = {"thumb_1": 1.57, "thumb_2": 0.0, "index_1": 0.0, "middle_1": 0.0, "ring_1": 0.0, "pinky_1": 0.0}
+
+
 def hand_home(ee_kind: str, side: str, hand_joints: list) -> dict:
     if ee_kind == "dg5f":
         from grasp_s2r_synergy import HAND_JOINT_NAMES, HAND_OPEN_POSE
@@ -251,6 +277,13 @@ def hand_home(ee_kind: str, side: str, hand_joints: list) -> dict:
     if ee_kind == "gripper":
         from openarm.gripper.left.grasp_sensor import grasp_left_preset as P
         return {j: float(P.GRIPPER_OPEN_POS) for j in hand_joints}
+    if ee_kind == "rh56f1":
+        # hdgp modules/robot_profiles.py RH56F1 hand_open_pose (thumb_1 1.57, 나머지 0) — 양손 같은 값(한계가 좌우 같다)
+        vals = {f"{side[0]}_hj_{n}": v for n, v in RH56F1_OPEN_POSE.items()}
+        missing = [j for j in hand_joints if j not in vals]
+        if missing:
+            raise ContractError(f"RH56F1 open pose lacks {missing}")
+        return {j: float(vals[j]) for j in hand_joints}
     return {j: 0.0 for j in hand_joints}
 
 
@@ -370,8 +403,9 @@ def build_asset_contract(asset: str = DEFAULT_ASSET, sides: tuple = ("right", "l
     side_cfgs = {s: _control_side(spec, manifest, s, homes[s], home_source, gains_yaml, hands.get(s))
                  for s in sides}
     main = side_cfgs[primary]
-    if main.fabric is None:
+    if main.fabric is None and any(spec.fabric.get(s) is not None for s in sides):
         raise ContractError(f"asset {asset}: primary side {primary} has no fabric — pick the other side")
+    # fabric 이 아예 없는 자산(RH56F1 — joint family 전용)은 fabric 없이 pd 제어 전용 계약을 만든다(09.29)
     c = DeployContract(
         schema=SCHEMA,
         run=RunInfo(dir="", task=f"asset:{asset}", experiment="control_only", checkpoint="", checkpoint_md5="",

@@ -1,0 +1,17 @@
+# OpenArm 양팔 + RH56F1 — **fake**. 도메인 97. 실기 미션과 같은 정의(make_rh56f1_missions.py)에서 나온 미션을 fake 플랜트 · fake 손으로.
+schema: s2r_console/profile/v1
+id: rh56f1_fake
+title: 양팔 RH56F1 · fake 손 연결 · pd 점검 (실기 미션과 같은 단계)
+mission: config/mission_rh56f1_fake.yaml
+domain: {id: 97, class: fake}
+policy_dt: 0.0166667
+status_nodes: [pd_right, pd_left]
+stack:
+  title: fake 플랜트 + fake RH56F1 손 ×2 + 상태 노드 ×2
+  nodes: [/fake_arm_bridge]
+  topics:
+    - {name: /joint_states, stale_ms: 500}
+    - {name: /hand_right/joint_states, stale_ms: 500}
+    - {name: /hand_left/joint_states, stale_ms: 500}
+  managers:
+    - {name: /controller_manager, active: [joint_state_broadcaster]}

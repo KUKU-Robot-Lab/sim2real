@@ -1,0 +1,63 @@
+# left 팔 + RH56F1 — fake 플랜트(도메인 97): /hand_left/angle_* ← scripts/fakes/fake_rh56f1_hand.py,
+# /hand_left/joint_states ← rh56f1_state_node, /joint_states ← fake_arm_bridge. 토픽 계약은 실기와 같다.
+robot: rh56f1_left_fake
+joint_profiles:
+  - robot_control/src/robot_control/profiles/openarm_rh56f1.yaml
+sources:
+  arm:
+    type: joint_state
+    topic: /joint_states
+    joints: [l_aj_1, l_aj_2, l_aj_3, l_aj_4, l_aj_5, l_aj_6, l_aj_7]
+    naming: source
+    stale_sec: 0.5
+  ee:
+    type: joint_state
+    topic: /hand_left/joint_states          # rh56f1_state_node — 구동 6 + 종속 6, rad
+    joints: [l_hj_thumb_1, l_hj_thumb_2, l_hj_index_1, l_hj_middle_1, l_hj_ring_1, l_hj_pinky_1]
+    naming: source                            # 프로필 source = canonical(RH56F1 은 이름 변환이 없다)
+    stale_sec: 0.5
+  tip_force:
+    type: float_array
+    topic: /hand_left/tip_forces            # 손끝 법선 힘 5(엄지 → 새끼, N — 벤더 단위 실측 전)
+    tips: [l_hl_thumb_tip, l_hl_index_tip, l_hl_middle_tip, l_hl_ring_tip, l_hl_pinky_tip]
+    axes: 1
+    required: false
+    stale_sec: 0.5
+  object:
+    type: pose
+    topic: /objects/cup_big_s100/pose
+    frame: base_link
+    mode: live
+    required: false
+    stale_sec: 0.5
+  decoder_target:
+    type: joint_state
+    topic: /policy_control/joint_target
+    joints: [l_hj_thumb_1, l_hj_thumb_2, l_hj_index_1, l_hj_middle_1, l_hj_ring_1, l_hj_pinky_1]
+    naming: canonical
+    required: false
+    stale_sec: 1.0
+  head:
+    type: joint_state
+    topic: /head/joint_states
+    joints: [head_j_pan, head_j_tilt]
+    naming: canonical
+    required: false
+    stale_sec: 1.0
+groups:
+  left_arm:
+    backend: arm_forward
+    side: left
+    jtc: left_joint_trajectory_controller
+    forward: [left_forward_position_controller, left_forward_velocity_controller, left_forward_effort_controller]
+  left_hand:
+    backend: rh56f1_angle
+    side: left
+    topic: /hand_left/angle_set
+    hand_id: 0                                # 0 = 이 포트의 손(드라이버가 손마다 프로세스 하나)
+    map: sim2real/deploy/policy_control/config/rh56f1_hand_map.yaml
+table:
+  top: 0.200
+  clearance_min: -0.01
+  center_xy: [0.375, -0.165]            # 같은 테이블 — 좌우 로봇 yaml 이 같은 값(dg5f_m_left_real 과 같다)
+  size_xy: [0.550, 0.970]

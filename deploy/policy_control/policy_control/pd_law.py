@@ -438,8 +438,9 @@ def limits_from_profile(profile_path: Path, joints: Sequence[str]) -> tuple[np.n
 
 def side_vel_ff_scale(contract: DeployContract, side: str | None) -> float:
     """fabric.vel_ff_scale of *side* (legacy top-level fabric when side is None or the side has no fabric)."""
-    fabric = contract.side(side).fabric if side is not None else None
-    return float((fabric or contract.fabric).vel_ff_scale)
+    fabric = (contract.side(side).fabric if side is not None else None) or contract.fabric
+    #: fabric 이 없는 자산(RH56F1 joint family) — pd 에 fabric 속도가 오지 않으므로 q̇* 전향 배율은 1.0(그대로)
+    return 1.0 if fabric is None else float(fabric.vel_ff_scale)
 
 
 def law_cfg_from_config(config: PdConfig, contract: DeployContract, stage: str,

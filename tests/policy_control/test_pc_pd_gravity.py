@@ -251,12 +251,18 @@ def test_make_gravity_per_side_from_dg5f_m_yaml_matches_chain_math():
 
 SHORT_CONTRACT = SIM2REAL / "logs/policy/asset_openarm_dg5f-m-short_bi_rl/deploy_contract.json"
 SHORT_URDF = RL_WS / "hdgp/assets/robot/openarm_dg5f-m-short_bi_rl/openarm_dg5f-m-short_bi_rl.urdf"
+RH_CONTRACT = SIM2REAL / "logs/policy/asset_openarm_rh56f1_bi_rl/deploy_contract.json"
+RH_URDF = RL_WS / "hdgp/assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf"
 #: (pd yaml, 계약, URDF) — pd yaml 마다 payload 가 **자기 자산 URDF** 에서 나와야 한다.
 PAYLOAD_CASES = [
     pytest.param("pd_dg5f_m.yaml", ASSET_CONTRACT, ASSET_URDF, id="dg5f-m"),
     pytest.param("pd_dg5f_m_fake.yaml", ASSET_CONTRACT, ASSET_URDF, id="dg5f-m-fake"),
     pytest.param("pd_dg5f_m_short.yaml", SHORT_CONTRACT, SHORT_URDF, id="dg5f-m-short"),
     pytest.param("pd_dg5f_m_short_fake.yaml", SHORT_CONTRACT, SHORT_URDF, id="dg5f-m-short-fake"),
+    # 09.29 RH56F1(arm4090) — 가동 손가락 0.19 kg 만(손 전체 0.71 kg 중 고정 링크는 체인이 싣는다)
+    pytest.param("pd_rh56f1.yaml", RH_CONTRACT, RH_URDF, id="rh56f1"),
+    pytest.param("pd_rh56f1_exec.yaml", RH_CONTRACT, RH_URDF, id="rh56f1-exec"),
+    pytest.param("pd_rh56f1_fake.yaml", RH_CONTRACT, RH_URDF, id="rh56f1-fake"),
 ]
 
 

@@ -191,6 +191,19 @@ class UrdfTree:
             out[link] = T
         return out
 
+    def expand_mimic(self, q: dict) -> dict:
+        """mimic 을 **여러 단계**까지 푼 값. RH56F1 엄지는 thumb_4 ← thumb_3 ← thumb_2 로 두 단계다(09.29)."""
+        out = dict(q)
+        pending = {n: j for n, j in self.joints.items() if j.mimic is not None and n not in out}
+        while pending:
+            ready = [n for n, j in pending.items() if j.mimic[0] in out]
+            if not ready:
+                break
+            for n in ready:
+                src, mult, off = pending.pop(n).mimic
+                out[n] = mult * float(out[src]) + off
+        return out
+
     @staticmethod
     def _value(j: _Joint, q: dict) -> float:
         if j.type == "fixed":
@@ -230,7 +243,7 @@ class UrdfChainFK:
 
     def _check_coverage(self) -> None:
         known = set(self.arm_joints) | set(self.hand_joints)
-        mimic_ok = {n for n, j in self.tree.joints.items() if j.mimic is not None and j.mimic[0] in known}
+        mimic_ok = set(self.tree.expand_mimic({n: 0.0 for n in known})) - known     # 여러 단계 mimic 까지
         unknown = [j for j in self.arm_joints + self.hand_joints if j not in self.tree.joints]
         if unknown:
             raise FKError(f"{self.tree.path.name}: 관절 {unknown} 이 URDF 에 없다")
@@ -245,7 +258,7 @@ class UrdfChainFK:
     def _q(self, arm_q, hand_q) -> dict:
         a = _vec(arm_q, len(self.arm_joints), "arm_q")
         h = _vec(hand_q, len(self.hand_joints), "hand_q")
-        return {**dict(zip(self.arm_joints, a)), **dict(zip(self.hand_joints, h))}
+        return self.tree.expand_mimic({**dict(zip(self.arm_joints, a)), **dict(zip(self.hand_joints, h))})
 
     def body_poses(self, arm_q, hand_q) -> dict:
         """{링크: (pos(3,), R(3,3))} for palm + tips."""

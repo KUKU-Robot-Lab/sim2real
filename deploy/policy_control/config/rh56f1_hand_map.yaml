@@ -1,0 +1,42 @@
+# Inspire RH56F1 손 — sim 관절(rad) ↔ 벤더 드라이버 각도 레지스터(0.1°) 변환표. policy_control/rh56f1_map.py 가 읽는다.
+#
+# 드라이버: robot_control ros_ws/src/inspire_rh56f1 (rh56f1_driver). 손마다 개별 포트 · 프로세스 하나.
+#   /hand_<side>/angle_set (SetAngle1 int32[6], -1 = 그 축은 움직이지 않는다) · /hand_<side>/angle_actual (GetAngleAct1)
+#   슬롯 0..5 = 새끼 · 약지 · 중지 · 검지 · 엄지 굽힘 · 엄지 회전 (벤더 매뉴얼 1040..1045 표)
+# sim: hdgp 자산 openarm_rh56f1_bi_rl — 구동 6(thumb_1 · thumb_2 · index_1 · middle_1 · ring_1 · pinky_1), 0 rad = 편 손.
+#
+# ★방향: 매뉴얼 ANGLE_SET 절 — 검지 1720(≈ 1740) 이 완전히 편 상태, 900 으로 두면 손바닥 쪽으로 굽는다.
+#   즉 네 손가락은 **레지스터가 클수록 펴진다**. sim 0 rad(편 손) → 1740, 한계(굽힘) → 900.
+#   (옛 isaacsim_bridge 의 rh56f1_hand_calibration.yaml 은 0 rad → 900 이라 편 손 명령이 주먹이 된다 — 쓰지 않는다.)
+# ★엄지 두 축은 방향 · 대응(슬롯 4 = thumb_2 굽힘, 5 = thumb_1 회전)이 행정 길이로 맞춘 추정이다 — verified: false.
+#   verified: false 인 축은 pd 가 -1(움직이지 않음)을 보낸다. arm4090 에서 tools/rh56f1_axis_probe.py 로 한 축씩 확인한 뒤 true 로.
+# ★비례: 레지스터 끝값 ↔ URDF 한계를 선형으로 잇는다. 매뉴얼 84° vs URDF 87.58°(네 손가락) — 벤더 xlsx
+#   (urdf/vendor/RH56F1/RH56F1_R/参数资料/RH56F1行程与角度对应关系) 로 보면 비선형일 수 있다. 실측 전까지 끝점 선형.
+schema: policy_control/rh56f1_hand_map/v1
+slot_order: [pinky_1, ring_1, middle_1, index_1, thumb_2, thumb_1]
+#: 이 관절 순서가 pd · 정책의 손 6관절 순서(자산 control_joint_order = hdgp 프로필 순)
+joint_order: [thumb_1, thumb_2, index_1, middle_1, ring_1, pinky_1]
+joints:
+  #        rad 끝점 (lo, hi)             그 끝점의 레지스터(0.1°)       방향 확인
+  thumb_1:  {rad: [0.0, 2.0943951], reg: [1750, 600],  verified: false}   # 엄지 회전(슬롯 5) — 행정 ~115°, 방향 미확인
+  thumb_2:  {rad: [0.0, 0.4745550], reg: [1350, 1100], verified: false}   # 엄지 굽힘(슬롯 4) — 행정 ~25°, 방향 미확인
+  index_1:  {rad: [0.0, 1.5285594], reg: [1740, 900],  verified: true}    # 매뉴얼: 클수록 펴짐
+  middle_1: {rad: [0.0, 1.5285594], reg: [1740, 900],  verified: true}
+  ring_1:   {rad: [0.0, 1.5285594], reg: [1740, 900],  verified: true}
+  pinky_1:  {rad: [0.0, 1.5285594], reg: [1740, 900],  verified: true}
+#: PhysX mimic(자산 URDF) — 드라이버는 구동 6 만 준다. 상태 노드가 종속 6 을 계산해 JointState 에 싣는다(FK · 화면용).
+mimic:
+  thumb_3: {of: thumb_2, k: 1.1425}
+  thumb_4: {of: thumb_3, k: 0.7508}
+  index_2: {of: index_1, k: 1.1169}
+  middle_2: {of: middle_1, k: 1.1169}
+  ring_2: {of: ring_1, k: 1.1169}
+  pinky_2: {of: pinky_1, k: 1.1169}
+#: 촉각 — TouchData1.finger_forces 는 새끼부터(벤더), sim 은 엄지부터. 단위 0.01 N(hdgp pour_fabric_env_cfg 주석) — 실측 전.
+touch:
+  vendor_order: [pinky, ring, middle, index, thumb]
+  sim_order: [thumb, index, middle, ring, pinky]
+  unit_n: 0.01
+  unit_verified: false
+#: 명령 주기 상한 — 벤더 노드는 쓰기마다 응답을 최대 25 ms 기다리고 그만큼 읽기 주기가 밀린다(robot_control README).
+command_max_hz: 30.0

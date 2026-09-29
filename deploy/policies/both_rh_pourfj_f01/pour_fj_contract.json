@@ -1,0 +1,263 @@
+{
+  "schema": "policy_control/pour_fj_contract/v1",
+  "task": "open-rh_b_pour_fj",
+  "run_dir": "/home/user/rl_ws/sim2real/deploy/policies/both_rh_pourfj_f01",
+  "checkpoint": "/home/user/rl_ws/sim2real/deploy/policies/both_rh_pourfj_f01/nn/last_open-rh_b_pour_fj-lstm_ep_2300_rew_1107.8425.pth",
+  "checkpoint_md5": "5102001cdd1eaca3f43060d8f4f486c3",
+  "env_yaml_sha1": "bc6fcfac1ae1ccfd58d369ec5fe11c6b756dc7a4",
+  "agent_yaml_sha1": "5aeba3bc782a40a0e338d356d4037b2b0b1cae5f",
+  "asset": "openarm_rh56f1_bi_rl",
+  "policy_hz": 60.0,
+  "episode_s": 15.0,
+  "obs_dim": 165,
+  "action_dim": 26,
+  "obs_clip": 5.0,
+  "action_clip": 1.0,
+  "recurrent": true,
+  "hold_steps": 30,
+  "arm_mode": "increment",
+  "k_arm": 0.05,
+  "arm_ema": 0.1,
+  "arm_abs_vmax": 0.3,
+  "hand_ema": 0.1,
+  "hand_full_range_s": 1.0,
+  "hand_range": "limits",
+  "hand_freeze": false,
+  "freeze_threshold_n": 1.0,
+  "joint_pos_err_max": 1.2,
+  "tactile_clip_n": 10.0,
+  "tactile_tanh_n": 3.0,
+  "obs_tips_rel_palm": false,
+  "obs_mouth_diff": false,
+  "cup_mouth_z": 0.053885,
+  "hand_obs_order_source": "assumed:index_1,middle_1,pinky_1,ring_1,thumb_1,thumb_2",
+  "sides": {
+    "src": {
+      "role": "src",
+      "side": "right",
+      "arm_joints": [
+        "r_aj_1",
+        "r_aj_2",
+        "r_aj_3",
+        "r_aj_4",
+        "r_aj_5",
+        "r_aj_6",
+        "r_aj_7"
+      ],
+      "arm_home": [
+        -0.2069,
+        0.4203,
+        0.388,
+        1.5941,
+        0.4569,
+        0.3426,
+        -0.4174
+      ],
+      "arm_lo": [
+        -1.396263,
+        -0.17453267320510335,
+        -1.570796,
+        0.0,
+        -1.570796,
+        -0.785398,
+        -1.570796
+      ],
+      "arm_hi": [
+        3.490659,
+        3.3161253267948965,
+        1.570796,
+        2.443461,
+        1.570796,
+        0.785398,
+        1.570796
+      ],
+      "hand_joints": [
+        "r_hj_thumb_1",
+        "r_hj_thumb_2",
+        "r_hj_index_1",
+        "r_hj_middle_1",
+        "r_hj_ring_1",
+        "r_hj_pinky_1"
+      ],
+      "hand_obs_order": [
+        "r_hj_index_1",
+        "r_hj_middle_1",
+        "r_hj_pinky_1",
+        "r_hj_ring_1",
+        "r_hj_thumb_1",
+        "r_hj_thumb_2"
+      ],
+      "hand_open": [
+        1.57,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "hand_grip": [
+        1.2,
+        0.24,
+        1.08,
+        1.08,
+        0.85,
+        0.85
+      ],
+      "hand_lim_lo": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "hand_lim_hi": [
+        2.0943951023931953,
+        0.4745550236172582,
+        1.5285593588966337,
+        1.5285593588966337,
+        1.5285593588966337,
+        1.5285593588966337
+      ],
+      "hand_finger": [
+        0,
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "hand_freeze": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "palm_body": "r_hl_palm_sensor",
+      "tip_bodies": [
+        "r_hl_thumb_tip",
+        "r_hl_index_tip",
+        "r_hl_middle_tip",
+        "r_hl_ring_tip",
+        "r_hl_pinky_tip"
+      ]
+    },
+    "rcv": {
+      "role": "rcv",
+      "side": "left",
+      "arm_joints": [
+        "l_aj_1",
+        "l_aj_2",
+        "l_aj_3",
+        "l_aj_4",
+        "l_aj_5",
+        "l_aj_6",
+        "l_aj_7"
+      ],
+      "arm_home": [
+        0.2069,
+        -0.4203,
+        -0.388,
+        1.5941,
+        -0.4569,
+        -0.3426,
+        0.4174
+      ],
+      "arm_lo": [
+        -3.490659,
+        -3.3161253267948965,
+        -1.570796,
+        0.0,
+        -1.570796,
+        -0.785398,
+        -1.570796
+      ],
+      "arm_hi": [
+        1.3962629999999998,
+        0.17453267320510335,
+        1.570796,
+        2.443461,
+        1.570796,
+        0.785398,
+        1.570796
+      ],
+      "hand_joints": [
+        "l_hj_thumb_1",
+        "l_hj_thumb_2",
+        "l_hj_index_1",
+        "l_hj_middle_1",
+        "l_hj_ring_1",
+        "l_hj_pinky_1"
+      ],
+      "hand_obs_order": [
+        "l_hj_index_1",
+        "l_hj_middle_1",
+        "l_hj_pinky_1",
+        "l_hj_ring_1",
+        "l_hj_thumb_1",
+        "l_hj_thumb_2"
+      ],
+      "hand_open": [
+        1.57,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "hand_grip": [
+        1.2,
+        0.24,
+        1.08,
+        1.08,
+        0.85,
+        0.85
+      ],
+      "hand_lim_lo": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "hand_lim_hi": [
+        2.0943951023931953,
+        0.4745550236172582,
+        1.5285593588966337,
+        1.5285593588966337,
+        1.5285593588966337,
+        1.5285593588966337
+      ],
+      "hand_finger": [
+        0,
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "hand_freeze": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "palm_body": "l_hl_palm_sensor",
+      "tip_bodies": [
+        "l_hl_thumb_tip",
+        "l_hl_index_tip",
+        "l_hl_middle_tip",
+        "l_hl_ring_tip",
+        "l_hl_pinky_tip"
+      ]
+    }
+  },
+  "notes": [
+    "env.yaml 에 ['arm_joint_mode', 'hand_direct_range', 'hand_direct_contact_freeze'] 없음 — 그 기능 이전 런(increment · limits · 동결 없음)"
+  ]
+}

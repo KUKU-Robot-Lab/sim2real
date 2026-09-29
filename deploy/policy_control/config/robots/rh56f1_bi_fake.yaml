@@ -1,0 +1,159 @@
+# 양팔 + RH56F1 — fake 플랜트(도메인 97) 전용. rh56f1_{right,left}_fake.yaml 을 합친 것(fake_plant side:=both 가 읽는다).
+robot: rh56f1_bi_fake
+joint_profiles:
+- robot_control/src/robot_control/profiles/openarm_rh56f1.yaml
+sources:
+  arm_right:
+    type: joint_state
+    topic: /joint_states
+    joints:
+    - r_aj_1
+    - r_aj_2
+    - r_aj_3
+    - r_aj_4
+    - r_aj_5
+    - r_aj_6
+    - r_aj_7
+    naming: source
+    stale_sec: 0.5
+  ee_right:
+    type: joint_state
+    topic: /hand_right/joint_states
+    joints:
+    - r_hj_thumb_1
+    - r_hj_thumb_2
+    - r_hj_index_1
+    - r_hj_middle_1
+    - r_hj_ring_1
+    - r_hj_pinky_1
+    naming: source
+    stale_sec: 0.5
+  tip_force_right:
+    type: float_array
+    topic: /hand_right/tip_forces
+    tips:
+    - r_hl_thumb_tip
+    - r_hl_index_tip
+    - r_hl_middle_tip
+    - r_hl_ring_tip
+    - r_hl_pinky_tip
+    axes: 1
+    required: false
+    stale_sec: 0.5
+  decoder_target_right:
+    type: joint_state
+    topic: /policy_control/joint_target
+    joints:
+    - r_hj_thumb_1
+    - r_hj_thumb_2
+    - r_hj_index_1
+    - r_hj_middle_1
+    - r_hj_ring_1
+    - r_hj_pinky_1
+    naming: canonical
+    required: false
+    stale_sec: 1.0
+  arm_left:
+    type: joint_state
+    topic: /joint_states
+    joints:
+    - l_aj_1
+    - l_aj_2
+    - l_aj_3
+    - l_aj_4
+    - l_aj_5
+    - l_aj_6
+    - l_aj_7
+    naming: source
+    stale_sec: 0.5
+  ee_left:
+    type: joint_state
+    topic: /hand_left/joint_states
+    joints:
+    - l_hj_thumb_1
+    - l_hj_thumb_2
+    - l_hj_index_1
+    - l_hj_middle_1
+    - l_hj_ring_1
+    - l_hj_pinky_1
+    naming: source
+    stale_sec: 0.5
+  tip_force_left:
+    type: float_array
+    topic: /hand_left/tip_forces
+    tips:
+    - l_hl_thumb_tip
+    - l_hl_index_tip
+    - l_hl_middle_tip
+    - l_hl_ring_tip
+    - l_hl_pinky_tip
+    axes: 1
+    required: false
+    stale_sec: 0.5
+  decoder_target_left:
+    type: joint_state
+    topic: /policy_control/joint_target
+    joints:
+    - l_hj_thumb_1
+    - l_hj_thumb_2
+    - l_hj_index_1
+    - l_hj_middle_1
+    - l_hj_ring_1
+    - l_hj_pinky_1
+    naming: canonical
+    required: false
+    stale_sec: 1.0
+  object:
+    type: pose
+    topic: /objects/cup_big_s100/pose
+    frame: base_link
+    mode: live
+    required: false
+    stale_sec: 0.5
+  head:
+    type: joint_state
+    topic: /head/joint_states
+    joints:
+    - head_j_pan
+    - head_j_tilt
+    naming: canonical
+    required: false
+    stale_sec: 1.0
+groups:
+  right_arm:
+    backend: arm_forward
+    side: right
+    jtc: right_joint_trajectory_controller
+    forward:
+    - right_forward_position_controller
+    - right_forward_velocity_controller
+    - right_forward_effort_controller
+  right_hand:
+    backend: rh56f1_angle
+    side: right
+    topic: /hand_right/angle_set
+    hand_id: 0
+    map: sim2real/deploy/policy_control/config/rh56f1_hand_map.yaml
+  left_arm:
+    backend: arm_forward
+    side: left
+    jtc: left_joint_trajectory_controller
+    forward:
+    - left_forward_position_controller
+    - left_forward_velocity_controller
+    - left_forward_effort_controller
+  left_hand:
+    backend: rh56f1_angle
+    side: left
+    topic: /hand_left/angle_set
+    hand_id: 0
+    map: sim2real/deploy/policy_control/config/rh56f1_hand_map.yaml
+table:
+  top: 0.2
+  clearance_min: -0.01
+  center_xy:
+  - 0.375
+  - -0.165
+  size_xy:
+  - 0.55
+  - 0.97

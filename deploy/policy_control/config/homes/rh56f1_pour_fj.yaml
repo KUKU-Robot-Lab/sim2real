@@ -1,0 +1,7 @@
+# RH56F1 양팔 시작 자세 — hdgp pour_fj(open-rh_b_pour_fj) 의 리셋 홈. build_deploy_contract.py --home arms:<이 파일>.
+# 오른팔: hdgp source/openarm/openarm/agnostic/modules/robot_profiles.py RH56F1_RIGHT init r_aj_1..7 (09.08 되돌림 뒤 값)
+# 왼팔:   tasks/pour_fabric_mimic/robot_profiles.py _mirror_init — 부호 _ARM_SIGN_L (-1,-1,-1,+1,-1,-1,-1)
+# 손: 계약 hand_home = RH56F1 open (thumb_1 1.57, 나머지 0) — contract_assets.RH56F1_OPEN_POSE
+source: "hdgp RH56F1_RIGHT init (pour_fj reset) · left = _ARM_SIGN_L mirror"
+right: [-0.2069, 0.4203, 0.3880, 1.5941, 0.4569, 0.3426, -0.4174]
+left: [0.2069, -0.4203, -0.3880, 1.5941, -0.4569, -0.3426, 0.4174]

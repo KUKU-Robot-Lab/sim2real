@@ -1,0 +1,46 @@
+# fake 플랜트(도메인 97) 전용: pd_rh56f1.yaml 과 같은 팔 · 손 · 중력, execute true + fake 완화값(pd_dg5f_m_short_fake 와 같은 완화).
+side: both
+execute: true                  # ★fake 플랜트 전용 사본 — 실기 yaml(pd_dg5f_m.yaml)은 false
+home_hand: keep                # 실기 설정과 같게 — goto_home 은 팔만, 손은 pd/hand_home 으로
+pd_hz: 100.0
+ramp_speed: 0.2
+watchdog_sec: 0.25
+lead_sec: 0.25                 # ★fake: 0.5 rad — sim 은 lead 캡이 없다. 실기 yaml 은 단계 승인
+lead_vel: 2.0
+max_vel:
+  reduced: 0.25
+  full: 4.0                    # fabric 이 이미 속도를 묶는다 — 세트포인트 리미터는 그 위에
+vel_ff_cap: 2.0                # ★fake: q̇* 전향 켬(플랜트가 kd·q̇* 를 안다)
+effort_cap: 20.0
+abort_tracking: 0.5
+release_zero_ticks: 5
+blend_sec: 1.0
+settle:
+  clamp: 0.30                  # goto_home 정착 bias 각도 상한 [rad] — j7 처짐 0.21 을 덮어야 한다(09.23 실기)
+  clamp_nm: 5.0                # 같은 상한을 토크로도 — kp 70 관절은 0.071 rad 까지만(effort_cap 여유)
+  gain: 0.01                   # 정착 적분 이득/틱(100 Hz) — 처짐이 5 s 안에 tol 아래로
+  tol: 0.01                    # 정착 판정 [rad]
+gravity:
+  mode: model_tau_ff           # 계약(sides.*.gravity)과 같아야 한다 — 제어 전용 자산 계약은 model_tau_ff
+  urdf: hdgp/assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf   # 계약 asset.urdf (양팔, canonical 이름)
+  tip_link: {left: l_hl_palm_sensor, right: r_hl_palm_sensor}                # RH56F1 자산에는 palm_ee 가 없다 — 계약 palm_body
+  scale: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  # payload = 체인이 못 싣는 몫 = 가동 손 관절(구동 6 + mimic 6) 너머 링크 22 개, 계약 home_hand(open: thumb_1 1.57) 자세,
+  # COM 프레임 = 체인 마지막 링크 *_al_7. 손 전체 0.708 kg 중 고정 링크(mount · base · palm)는 체인이 이미 싣는다.
+  # test_pc_pd_gravity 의 URDF 계산과 같은 방법(09.29 계산).
+  payload:
+    left:  [0.1915800, 0.020847, 0.011958, 0.179547]
+    right: [0.1915800, 0.014897, -0.031431, 0.179734]
+  cap_nm: 20.0
+gains:
+  yaml: urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml
+  accept_sim_mismatch: false
+thermal:                       # fake 플랜트는 서미스터가 없다 — 옛 effort 근거를 유지한다
+  - {joint: r_aj_7, effort_nm: 1.5, act_sec: 300}
+  - {joint: l_aj_7, effort_nm: 1.5, act_sec: 300}
+gripper: null
+hand:
+  pid_p: 0.0                   # RH56F1 은 벤더 펌웨어 위치 제어 — pd 가 맞출 PID 가 없다(백엔드에 게인 클라이언트 없음)
+  pid_d: 0.0
+  max_vel: 1.0                 # [rad/s] pd 가 스스로 하는 손 이동(hand_home · hand_release)
+  max_vel_track: 2.1           # [rad/s] 정책 추종 = sim 손 속도 상한(관절 전 범위 / 1.0 s, thumb_1 2.094 가 최대 — hdgp pour_fj · rh_aglt)

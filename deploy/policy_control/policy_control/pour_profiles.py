@@ -33,6 +33,26 @@ def load_pair(hdgp_root: Path, pair_name: str):
     return _with_modules(hdgp_root, _MODULES, pick)
 
 
+_MIMIC_PKGS = ("openarm.agnostic.tasks", "openarm.agnostic.tasks.pour_fabric_mimic")
+_MIMIC_MODULES = (
+    ("openarm.agnostic.modules.vendor_gains", "modules/vendor_gains.py"),
+    ("openarm.agnostic.modules.robot_profiles", "modules/robot_profiles.py"),
+    ("openarm.agnostic.tasks.pour_fabric_mimic.robot_profiles", "tasks/pour_fabric_mimic/robot_profiles.py"),
+    ("openarm.agnostic.tasks.pour_fabric_mimic.bimanual", "tasks/pour_fabric_mimic/bimanual.py"),
+)
+
+
+def load_mimic_pair(hdgp_root: Path, pair_name: str = "rh"):
+    """RH56F1 양팔 쌍(hdgp tasks/pour_fabric_mimic/bimanual.py) — pour_fj 계약 빌드용(09.29). 패키지 상대 import 를 쓰므로
+    task 패키지까지 스텁을 둔다."""
+    def pick(mods):
+        try:
+            return mods[-1].get_pair(pair_name)
+        except KeyError as exc:
+            raise ProfileLoadError(str(exc)) from exc
+    return _with_modules(hdgp_root, _MIMIC_MODULES, pick, extra_pkgs=_MIMIC_PKGS)
+
+
 def load_profile(hdgp_root: Path, profile_name: str):
     """Return one hdgp ``RobotProfile`` (``robot_profiles.PROFILES[name]``) — joint family 계약 빌드용."""
     def pick(mods):
@@ -43,12 +63,12 @@ def load_profile(hdgp_root: Path, profile_name: str):
     return _with_modules(hdgp_root, _MODULES[:2], pick)
 
 
-def _with_modules(hdgp_root: Path, modules: tuple, pick):
+def _with_modules(hdgp_root: Path, modules: tuple, pick, extra_pkgs: tuple = ()):
     base = Path(hdgp_root) / "source" / "openarm" / "openarm" / "agnostic"
-    names = _PKGS + tuple(n for n, _ in modules)
+    names = _PKGS + tuple(extra_pkgs) + tuple(n for n, _ in modules)
     saved = {n: sys.modules.get(n) for n in names}
     try:
-        for pkg in _PKGS:
+        for pkg in _PKGS + tuple(extra_pkgs):
             stub = types.ModuleType(pkg)
             stub.__path__ = []
             sys.modules[pkg] = stub

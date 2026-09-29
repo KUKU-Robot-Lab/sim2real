@@ -295,6 +295,9 @@ def test_skipping_sensors_off_undoes_nothing(console, tiny_repo):
     (tiny_repo / "mission.yaml").write_text(textwrap.dedent(TOGGLE))
     console.open("t_fake", operator="pytest")
     _run(console, "sensors")
+    t_end = time.time() + 5.0
+    while console._busy(console.session) and time.time() < t_end:           # 러너가 끝난 뒤 창이 비기까지(경합)
+        time.sleep(0.02)
     console.skip_stage("sensors_off", operator="pytest")
     assert {"sensors", "sensors_off"} <= set(console.session.state.completed)
 

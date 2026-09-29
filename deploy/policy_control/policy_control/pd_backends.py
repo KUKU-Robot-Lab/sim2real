@@ -5,6 +5,7 @@
 - ``GripperJtcBackend``  좌 스톡 그리퍼 — 단일점 JointTrajectory(tfs 0, 위치만), 과압착 가드
   ``q_cmd = max(q*, q_meas − overtravel)`` (닫을 때만), 직전 지령 기준 속도 제한.
 - ``Dg5fJtcBackend``     DG-5F — 단일점 JointTrajectory(tfs 0, 위치만, q̇* 버림), source finger-major.
+- ``Rh56f1AngleBackend`` Inspire RH56F1 — 벤더 각도 레지스터 SetAngle1(0.1°, 슬롯 순), 변환표 rh56f1_hand_map.yaml.
 - ``HandGainsClient``    /dg5f_right/dg5f_right_controller 의 gains.<joint>.{p,d} 를 GetParameters
   한 번으로 읽고 불일치면 SetParameters **한 번**(scripts/ops/apply_hand_gains.py 규약).
 
@@ -57,7 +58,7 @@ class _GuardedPublisher:
     def __init__(self, node, msg_type, topic: str, execute: bool) -> None:
         self.topic = topic
         self.execute = bool(execute)
-        self._pub = node.create_publisher(msg_type, topic, QOS_DEPTH) if self.execute else None
+        self._pub = node.create_publisher(msg_type, topic, QOS_DEPTH) if self.execute and msg_type is not None else None
         self.count = 0
 
     def publish(self, msg) -> None:
@@ -279,6 +280,87 @@ class Dg5fJtcBackend:
 
     def zero_release(self) -> None:
         self._prev = None
+
+
+# ---------------------------------------------------------------- Inspire RH56F1 (vendor angle register)
+#: 바뀌지 않아도 이 주기로 다시 보낸다 [s]
+RH56F1_RESEND_S = 1.0
+
+
+class Rh56f1AngleBackend:
+    """RH56F1 — 손 목표(rad, 계약 hand_joints 순 6) → 속도 제한 → 벤더 각도 레지스터 SetAngle1(슬롯 순, 0.1°).
+
+    09.29 사용자: rh56f1 제어 연결. 드라이버(robot_control inspire_rh56f1)는 쓰기마다 응답을 기다려 읽기 주기가
+    밀리므로 **바뀐 것만 · 최대 map.command_max_hz** 로 보낸다. 방향 확인이 안 된 축(rh56f1_hand_map.yaml
+    verified: false)은 -1(움직이지 않음)을 보낸다. 벤더 JTC 가 없어 PID 게인 클라이언트도 없다.
+    """
+
+    def __init__(self, node, topic: str, hand_joints: Sequence[str], lower, upper, hand_map, max_vel: float, *,
+                 execute: bool, hand_id: int = 0, limit_margin: float = HAND_LIMIT_MARGIN,
+                 max_lead: float = HAND_MAX_LEAD, clock=None) -> None:
+        if max_vel <= 0.0:
+            raise ValueError("max_vel > 0 이어야 한다")
+        side = str(hand_joints[0])[0]
+        want = hand_map.names("right" if side == "r" else "left")
+        if list(hand_joints) != want:
+            raise ValueError(f"RH56F1 손 관절 순서 {list(hand_joints)} ≠ 변환표 {want}")
+        self.names = tuple(hand_joints)
+        self.lower, self.upper = np.asarray(lower, float), np.asarray(upper, float)
+        self.map = hand_map
+        self.max_vel, self.limit_margin, self.max_lead = float(max_vel), float(limit_margin), float(max_lead)
+        self.hand_id = int(hand_id)
+        self.execute = bool(execute)
+        self._clock = clock or __import__("time").monotonic
+        self._msg_type = None
+        if self.execute:
+            from rh56f1_interfaces.msg import SetAngle1                       # robot_control 설치 공간
+            self._msg_type = SetAngle1
+        self._pub = _GuardedPublisher(node, self._msg_type, topic, self.execute) if self.execute else _GuardedPublisher(
+            node, None, topic, False)
+        self._prev: np.ndarray | None = None
+        self._last_sent: tuple[list[int], float] | None = None
+        self.last_register: list[int] | None = None
+
+    @property
+    def publish_count(self) -> int:
+        return self._pub.count
+
+    def write(self, cmd: HandCmd) -> HandWritten:
+        dt = _check_dt(cmd.dt)
+        q_t = hand_safe_target(_vec(cmd.q_star, len(self.names), "hand q_star"), self.lower, self.upper,
+                               self.limit_margin)
+        meas = None if cmd.q_meas is None else _vec(cmd.q_meas, len(self.names), "hand q_meas")
+        prev = self._prev if self._prev is not None else (q_t if meas is None else meas)
+        vmax = self.max_vel if cmd.max_vel is None else float(cmd.max_vel)
+        if vmax <= 0.0:
+            raise ValueError(f"hand max_vel > 0 이어야 한다: {vmax}")
+        q_cmd = hand_lead_clamp(velocity_limited_target(q_t, prev, vmax, dt), meas, self.max_lead)
+        q_cmd = np.clip(q_cmd, self.lower, self.upper)
+        self._prev = q_cmd
+        reg = self.map.to_register(q_cmd)
+        self.last_register = reg
+        now = self._clock()
+        # 같은 값이라도 RH56F1_RESEND_S 마다 한 번 — 연결 직후 첫 명령이 사라지면 목표가 그대로인 동안 다시 안 간다(09.29 fake)
+        due = (self._last_sent is None
+               or (reg != self._last_sent[0] and now - self._last_sent[1] >= 1.0 / self.map.command_max_hz)
+               or now - self._last_sent[1] >= RH56F1_RESEND_S)
+        if due and any(r != -1 for r in reg):
+            self._send(reg)
+            self._last_sent = (reg, now)
+        return HandWritten(names=self.names, q_cmd=q_cmd, limited=bool(np.any(np.abs(q_cmd - q_t) > 1e-12)))
+
+    def _send(self, reg: list[int]) -> None:
+        if self._msg_type is None:
+            return
+        msg = self._msg_type()
+        msg.hand_id = self.hand_id
+        msg.joint_values = [int(v) for v in reg]
+        self._pub.publish(msg)
+
+    def zero_release(self) -> None:
+        """드라이버가 마지막 레지스터를 유지한다 — 보낼 0 이 없다. 직전 지령만 잊는다."""
+        self._prev = None
+        self._last_sent = None
 
 
 # ---------------------------------------------------------------- hand PID gains

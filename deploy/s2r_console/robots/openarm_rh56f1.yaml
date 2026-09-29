@@ -7,12 +7,16 @@ host: arm4090
 asset: openarm_rh56f1_bi_rl
 task_prefixes: [open-rh_]
 hand: {model: RH56F1, vendor: Inspire, actuated: "6 / 손 (종속 6)"}
-profiles: []                 # C 단계에서 rh56f1_fake(도메인 97) 를 더한다
-slots: {right: joint_right, left: joint_left}
+profiles: [rh56f1_real, rh56f1_fake]
+joint_profile: ../robot_control/src/robot_control/profiles/openarm_rh56f1.yaml   # 로봇 상태 표의 한계 · 이름
+# 양팔 붓기(pour_fj) = 계약 하나가 두 팔(both). rh_aglt(한 팔)은 right/left — 그 family 가 생기면 계약 종류를 더한다
+slots: {both: pourfj_both, right: joint_right, left: joint_left}
 settings:
   - {label: 팔, value: "OpenArm v10 × 2 · CAN FD (DG-5F 로봇과 같은 팔 스택)"}
   - {label: 손, value: "RH56F1 × 2 · 손마다 개별 포트 · RS485(USB) 또는 CANFD — 상황에 따라 바꾼다(09.29 사용자)"}
   - {label: 손 드라이버, value: "robot_control ros_ws/src/inspire_rh56f1 · /hand_<side>/angle_set · angle_actual · touch_data"}
-  - {label: 손 명령, value: "각도 레지스터 0.1° (네 손가락 1740 = 편 손 · 900 = 굽힘) — 보정은 policy_control config/rh56f1_hand_map.yaml"}
+  - {label: 손 명령, value: "각도 레지스터 0.1° (네 손가락 1740 = 편 손 · 900 = 굽힘) — 변환표 policy_control config/rh56f1_hand_map.yaml, 엄지 두 축 verified 전(-1)"}
+  - {label: 손 포트, value: "policy_control config/rh56f1_ports.yaml — transport rs485 | canfd · port · hand_id (바꾸면 손 단계 승인을 다시)"}
+  - {label: pd, value: "config/pd_rh56f1(_exec).yaml · 손 payload 0.192 kg(가동 손가락) · 중력 끝 링크 palm_sensor"}
   - {label: 손 순서, value: "드라이버 슬롯 새끼 · 약지 · 중지 · 검지 · 엄지 굽힘 · 엄지 회전 ↔ sim thumb_1 · thumb_2 · index · middle · ring · pinky"}
-note: 실기 미션은 아직 없다 — 손 드라이버 · 백엔드 · fake 까지. 정책(pour_fj)이 나오면 계약을 만들어 고른다.
+note: 미션 v1 = 손 연결 · 점검 · 한 축 방향 확인 · 팔 pd. 정책 단계는 pour_fj(양팔) 계약이 생기면 더한다 — 엄지 두 축은 방향 확인 전.

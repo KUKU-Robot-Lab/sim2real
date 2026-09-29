@@ -29,7 +29,7 @@ def make(root: Path, pid: str = "p1", *, status: str = "candidate", note: str = 
     if contract:
         md5 = hashlib.md5(PTH).hexdigest() if contract_md5 is None else contract_md5
         doc = {"checkpoint_md5": md5} if contract == "pour_contract.json" else {"run": {"checkpoint_md5": md5}}
-        if contract == "joint_contract.json":
+        if contract in ("joint_contract.json", "pour_fj_contract.json"):      # 손 관측 순서가 실측이어야 verified
             doc = {"checkpoint_md5": md5, "hand_obs_order_source": order}
         (d / contract).write_text(json.dumps(doc))
     return d

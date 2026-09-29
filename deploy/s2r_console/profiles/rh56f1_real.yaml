@@ -1,0 +1,20 @@
+# OpenArm 양팔 + Inspire RH56F1 — **실기**(arm4090). 도메인 126. 09.29 사용자: rh56f1 제어 연결.
+# 미션은 scripts/ops/make_rh56f1_missions.py 가 fake 와 같은 정의에서 만든다 — 손 연결 · 점검 · 방향 확인 · 팔 pd.
+schema: s2r_console/profile/v1
+id: rh56f1_real
+title: 양팔 RH56F1 · 실기 손 연결 · pd 점검
+mission: config/mission_rh56f1_control.yaml
+domain: {id: 126, class: real}
+policy_dt: 0.0166667
+status_nodes: [pd_right, pd_left]
+stack:
+  title: robot_control (openarm bringup) + RH56F1 드라이버 ×2 + 상태 노드 ×2
+  nodes: [/controller_manager, /robot_state_publisher]
+  topics:
+    - {name: /joint_states, stale_ms: 500}
+    - {name: /hand_right/angle_actual, stale_ms: 500}
+    - {name: /hand_left/angle_actual, stale_ms: 500}
+    - {name: /hand_right/joint_states, stale_ms: 500}
+    - {name: /hand_left/joint_states, stale_ms: 500}
+  managers:
+    - {name: /controller_manager, active: [joint_state_broadcaster]}

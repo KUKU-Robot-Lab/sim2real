@@ -1,0 +1,63 @@
+# right 팔 + RH56F1 — fake 플랜트(도메인 97): /hand_right/angle_* ← scripts/fakes/fake_rh56f1_hand.py,
+# /hand_right/joint_states ← rh56f1_state_node, /joint_states ← fake_arm_bridge. 토픽 계약은 실기와 같다.
+robot: rh56f1_right_fake
+joint_profiles:
+  - robot_control/src/robot_control/profiles/openarm_rh56f1.yaml
+sources:
+  arm:
+    type: joint_state
+    topic: /joint_states
+    joints: [r_aj_1, r_aj_2, r_aj_3, r_aj_4, r_aj_5, r_aj_6, r_aj_7]
+    naming: source
+    stale_sec: 0.5
+  ee:
+    type: joint_state
+    topic: /hand_right/joint_states          # rh56f1_state_node — 구동 6 + 종속 6, rad
+    joints: [r_hj_thumb_1, r_hj_thumb_2, r_hj_index_1, r_hj_middle_1, r_hj_ring_1, r_hj_pinky_1]
+    naming: source                            # 프로필 source = canonical(RH56F1 은 이름 변환이 없다)
+    stale_sec: 0.5
+  tip_force:
+    type: float_array
+    topic: /hand_right/tip_forces            # 손끝 법선 힘 5(엄지 → 새끼, N — 벤더 단위 실측 전)
+    tips: [r_hl_thumb_tip, r_hl_index_tip, r_hl_middle_tip, r_hl_ring_tip, r_hl_pinky_tip]
+    axes: 1
+    required: false
+    stale_sec: 0.5
+  object:
+    type: pose
+    topic: /objects/cup_big_s100/pose
+    frame: base_link
+    mode: live
+    required: false
+    stale_sec: 0.5
+  decoder_target:
+    type: joint_state
+    topic: /policy_control/joint_target
+    joints: [r_hj_thumb_1, r_hj_thumb_2, r_hj_index_1, r_hj_middle_1, r_hj_ring_1, r_hj_pinky_1]
+    naming: canonical
+    required: false
+    stale_sec: 1.0
+  head:
+    type: joint_state
+    topic: /head/joint_states
+    joints: [head_j_pan, head_j_tilt]
+    naming: canonical
+    required: false
+    stale_sec: 1.0
+groups:
+  right_arm:
+    backend: arm_forward
+    side: right
+    jtc: right_joint_trajectory_controller
+    forward: [right_forward_position_controller, right_forward_velocity_controller, right_forward_effort_controller]
+  right_hand:
+    backend: rh56f1_angle
+    side: right
+    topic: /hand_right/angle_set
+    hand_id: 0                                # 0 = 이 포트의 손(드라이버가 손마다 프로세스 하나)
+    map: sim2real/deploy/policy_control/config/rh56f1_hand_map.yaml
+table:
+  top: 0.200
+  clearance_min: -0.01
+  center_xy: [0.375, -0.165]
+  size_xy: [0.550, 0.970]
