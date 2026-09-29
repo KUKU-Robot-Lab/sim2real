@@ -1,0 +1,39 @@
+{
+ "policy": "cg_l_i14_e5320.pth",
+ "task": "cup_grasp",
+ "arm": "left",
+ "stage": "grasp (접근 → 인벨롭 파지 → 들기 → 이송)",
+ "interface": {
+  "obs": 133,
+  "critic_state": 178,
+  "action": 26,
+  "action_layout": "arm 7 joint increments + hand 19 absolute (full-joint, no synergy; 13 movable)",
+  "asset": "openarm_dg5f-m-short-tl_bi_rl",
+  "algo": "PPO-LSTM (rl_games)"
+ },
+ "env": {
+  "gym_id": "open-short_l_cup_grasp-lstm",
+  "goal_first_z_range": [0.2125, 0.28],
+  "goal_delta_distance": 0.08,
+  "goal_max": 5,
+  "tol_at_checkpoint": 0.1125,
+  "episode_length_s": 15.0
+ },
+ "reward": {
+  "file": "reward_gen/cup_grasp_l/iter_14/compute_reward.py",
+  "sha256": "6d51109c4c3c5021ace737d50bd715bce234b4b88371a96247dd9a4d58a82861"
+ },
+ "metrics_at_save": {
+  "epoch": 5320,
+  "last_mean_rewards": 596.62463,
+  "tfevents_at_5320": {"successes_mean": 0.70, "success_ep": 0.43}
+ },
+ "provenance": {
+  "run": "cg_l_i14",
+  "host": "local 5090",
+  "source_dir": "our_source/policy/cg_l_i14",
+  "source_file": "nn/open-short_l_cup_grasp-lstm.pth",
+  "md5": "dd38b47e3314ee06c09857f343f89cca"
+ },
+ "known_defects": ["컵 윗부분을 위에서 감쌈(손바닥 +5.6 cm, 엄지 · 검지 끝 입구 높이)"]
+}

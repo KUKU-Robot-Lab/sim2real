@@ -12,7 +12,7 @@ artifacts:
   path_left: deploy/policy_control/paths/home_left.npz
   gains_yaml: ../urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml
   joint_right: deploy/policies/right_m15_e800/joint_contract.json
-  joint_left: deploy/policies/left_cg_i01/joint_contract.json
+  joint_left: deploy/policies/left_cg_i14/joint_contract.json
 checkpoints: {}
 groups:
 - id: check
@@ -578,8 +578,8 @@ run:
     - 'true'
     manual: true
     note: '★[left] 컵이 학습 범위(로봇 앞 x 0.10~0.40 · y 0.00~0.30, 테이블 위 똑바로)에 있고 콘솔에서 컵 자세가 들어오는가. 손 · 팔 주변에 사람 · 물건이 없는가. 정책은 팔을
-      최대 0.3 rad/s 로 움직인다. ★이 정책은 컵을 잡아 약 25 cm 들어 올린다 — 빈 컵(cup_big)만 · 떨어져도 되는 아래 공간. 알려진 결함: 손끝 파지(4관절 과굽힘) · 새끼 미참여 ·
-      급하게 들어 올림'
+      최대 0.3 rad/s 로 움직인다. ★이 정책은 컵을 잡아 약 25 cm 들어 올린다 — 빈 컵(cup_big)만 · 떨어져도 되는 아래 공간. 알려진 결함(사용자 영상 판정): 컵 윗부분을 위에서 감싼다(손바닥
+      +5.6 cm · 엄지 · 검지 끝은 입구 높이 +8~10 cm)'
   - argv:
     - python3
     - '{repo}/deploy/policy_control/tools/check_path_start.py'
@@ -613,14 +613,14 @@ run:
     - robot:={artifact:robot_left}
     - device:=cpu
     - use_source:=true
-    - success_tol_m:=0.0318
+    - success_tol_m:=0.1125
     - success_steps:=10
     - max_episode_s:=15.0
     - fake:=true
     background: true
     note: '[left] 정책 노드(joint_node, LSTM · CPU 2 스레드) — 팔 관절 증분 + 손 절대 목표를 pd 로. start 전에는 아무것도 보내지 않는다. 에피소드는 학습 규칙대로 스스로
-      끝난다(09.28 사용자): 컵 키포인트가 목표에서 3.18 cm 안(e5802 가 학습된 tol, tfevents task/tol) 10 스텝 연속이면 도달 · 아니면 15 s(env episode_length_s).
-      끝나면 pd 가 그 자세 · 손 쥠을 붙잡는다'
+      끝난다(09.28 사용자): 컵 키포인트가 목표에서 11.25 cm 안(e5320 이 학습된 tol, tfevents task/tol — i14 는 커리큘럼이 시작값에서 줄지 않았다) 10 스텝 연속이면 도달
+      · 아니면 15 s(env episode_length_s). 끝나면 pd 가 그 자세 · 손 쥠을 붙잡는다'
   - argv:
     - python3
     - '{repo}/deploy/policy_control/tools/policy_bag.py'
@@ -1493,7 +1493,7 @@ stages:
   - sensors
   needs_why: 정책은 홈 경로 끝 자세에서만 출발해 봤고, 컵 자세(FP++ → base)가 입력이다
   skippable: true
-  title: '[left] 정책 left_cg_i01(컵 집기 · 들기) — 컵 확인 → 정책 노드 → reset(목표 = 컵 + 24.6 cm 위) → start → 관찰 → stop → 컵 받기'
+  title: '[left] 정책 left_cg_i14(인벨롭 파지 · 들기) — 컵 확인 → 정책 노드 → reset(목표 = 컵 + 24.6 cm 위) → start → 관찰 → stop → 컵 받기'
 - artifacts:
   - contract
   - robot_left

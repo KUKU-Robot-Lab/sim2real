@@ -67,7 +67,7 @@ RC=0
 snap() {   # 팔 7 관절 한 줄 — pd 가 정책 목표를 실제로 따랐는지(팔이 움직였는지) 본다
   timeout 10 ros2 topic echo --once /joint_states sensor_msgs/msg/JointState 2>/dev/null | python -c "
 import sys, yaml
-d = yaml.safe_load(sys.stdin.read().split('---')[0])
+d = yaml.safe_load('\n'.join(l for l in sys.stdin.read().split('---')[0].splitlines() if not l.startswith(chr(9))))  # QoS 이벤트 줄(탭) 제외
 m = dict(zip(d['name'], d['position']))
 print(' '.join(f'{m[n]:.4f}' for n in [f'openarm_${SIDE}_joint{i}' for i in range(1, 8)] if n in m) or ' '.join(f'{m[n]:.4f}' for n in [f'${SIDE:0:1}_aj_{i}' for i in range(1, 8)]))"
 }
