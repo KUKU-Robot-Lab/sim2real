@@ -56,3 +56,7 @@ checkpoints/
 #   pour_entry 리허설 GIF: README 가 '정본' 이라 부르는 폐루프 기록 하나만 추적한다
 logs/shadow/pour_entry/*.gif
 !logs/shadow/pour_entry/bimanual_closedloop.gif
+
+# 09.29 사용자: logs 는 올리지 않는다(용량 — 기록은 /media/user/DATA/sim2real_logs_0929). 미션이 가리키는 배포 계약만 남긴다.
+logs/*
+!logs/policy/
