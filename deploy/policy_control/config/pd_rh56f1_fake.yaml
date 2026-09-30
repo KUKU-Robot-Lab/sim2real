@@ -48,3 +48,6 @@ hand:
   pid_d: 0.0
   max_vel: 1.0                 # [rad/s] pd 가 스스로 하는 손 이동(hand_home · hand_release)
   max_vel_track: 2.1           # [rad/s] 정책 추종 = sim 손 속도 상한(관절 전 범위 / 1.0 s, thumb_1 2.094 가 최대 — hdgp pour_fj · rh_aglt)
+  # 손 자체 설정(벤더 레지스터, pd 발행 모드에서 첫 각도 명령 전 · 5 s 마다) — 09.30. 0 = 보내지 않는다.
+  hw_speed: 2000               # 0..4000, 2000 = 무부하 전 행정 1000 ms = sim hand_full_range_s 1.0 (실측 튜닝 전 시작값)
+  hw_force: 0                  # 힘 멈춤 임계 [g, 센서 위치 — 손끝의 약 10배]. sim 은 손끝 1 N 에서 닫기 정지 — 실측 뒤 정한다

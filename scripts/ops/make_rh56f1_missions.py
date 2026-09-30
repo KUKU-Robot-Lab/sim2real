@@ -92,6 +92,13 @@ def _stages(kind: str) -> list[dict]:
                             "바뀌어 pour_fj 시작 자세와 다르다 — 정책 노드가 start 를 거부한다(0.15 rad). 홈 → pour_fj 시작 경로가 필요",
                "artifacts": ["pourfj_both", "robot_bi", "contract"],
                "title": "[양팔] pour_fj 정책(첫 화면에서 고른 것) — 정책 노드 → reset → start → 관찰 → stop (시간이 되면 스스로 끝난다)"})
+    for s in SIDES:
+        st.append({"id": f"policy_aglt_{s}", "group": "policy", "lane": f"arm_{s}", "skippable": True, "touches_real": real,
+                   "needs": [f"home_{s}", "cups", f"hand_check_{s}"],
+                   "needs_why": "정책은 팔이 rh_aglt 시작 자세(= 홈) · 손이 편 채 · 컵이 학습 배치에 선 채로만 출발해 봤다",
+                   "artifacts": [f"aglt_{s}", f"robot_{s}", "contract"],
+                   "title": f"[{s}] rh_aglt 정책(첫 화면에서 고른 것) — 컵에 접근 · 쥐기 · 들기 · 목표(컵 위 14 cm)로 이송. "
+                            "정책 노드 → reset → start → 관찰 → stop"})
     st.append({"id": "shutdown", "group": "finish", "lane": "rig", "needs": ["drivers"], "touches_real": real,
                "title": "안전 종료 — 팔 받침 확인 → 남은 pd → 손 상태 · 드라이버 → 팔 브링업 (★팔 토크가 풀린다)"})
     if not real:
@@ -136,7 +143,8 @@ def _run(kind: str) -> dict:
         "shutdown": [
             _cmd("★양팔을 받침 위 · 안전 자세에 두었는가. 두 팔 모두 pd 해제를 끝냈는가. 다음 스텝부터 토크가 풀린다",
                  ["bash", "-lc", "true"], manual=True),
-            _cmd("남은 정책 노드 · pd 정지", stop=["policy_pourfj#1"] + [f"{p}_{s}#{i}" for s in SIDES for p, i in (("pd_load", 0), ("pd_arm", 1))]),
+            _cmd("남은 정책 노드 · pd 정지", stop=["policy_pourfj#1"] + [f"policy_aglt_{s}#1" for s in SIDES]
+                 + [f"{p}_{s}#{i}" for s in SIDES for p, i in (("pd_load", 0), ("pd_arm", 1))]),
             _cmd("손 상태 노드 · 손 드라이버 정지 — 손가락은 마지막 자세에서 멈춘다(벤더 펌웨어가 잡는다)",
                  stop=[f"hand_{s}#{i}" for s in SIDES for i in ((2, 1) if real else (1, 0))]),
             _cmd("★팔 브링업 정지 — 모든 팔 모터가 꺼진다(받침으로 내려앉는다)" if real else "fake 플랜트 정지",
@@ -163,6 +171,25 @@ def _run(kind: str) -> dict:
              execute_args=["--execute"]),
         _cmd("정책 노드 정지", stop=["policy_pourfj#1"]),
     ]
+    for s, cup in (("right", "src"), ("left", "rcv")):
+        run[f"policy_aglt_{s}"] = [
+            _cmd(f"★[{s}] 컵이 학습 배치(로봇 앞 x ≈ 0.35, y ≈ {'−' if s == 'right' else '+'}0.16)에 서 있고 콘솔에 컵 자세"
+                 f"(/objects/cup_{cup}/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가. 정책은 팔을 스스로 움직이고 "
+                 "컵을 쥐어 든다 — 빈 컵만" if real else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
+            _cmd(f"[{s}] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)",
+                 ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_aglt_node.py", "--ros-args",
+                  "-p", f"contract:={{artifact:aglt_{s}}}", "-p", f"robot:={{artifact:robot_{s}}}", "-p", "device:=cpu",
+                  "-p", f"cup_topic:=/objects/cup_{cup}/pose", "-p", f"max_episode_s:={{policy:aglt_{s}.max_episode_s}}"],
+                 background=True),
+            _cmd(f"[{s}] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + (0, 0, 0.14)",
+                 ["python3", f"{PC}/tools/trigger.py", "episode/reset"], execute_args=["--execute"]),
+            _cmd(f"★[{s}] episode start — 팔이 시작 자세 0.15 rad 안 · 컵이 서 있어야 받는다",
+                 ["python3", f"{PC}/tools/trigger.py", "episode/start"], execute_args=["--execute"]),
+            _cmd("★관찰 — 이상하면 정지 바의 '에피소드 정지'", ["bash", "-lc", "true"], manual=True),
+            _cmd("episode stop — pd 가 그 자세 · 손 쥠을 붙잡는다", ["python3", f"{PC}/tools/trigger.py", "episode/stop"],
+                 execute_args=["--execute"]),
+            _cmd("정책 노드 정지", stop=[f"policy_aglt_{s}#1"]),
+        ]
     for s in SIDES:
         hand = [_cmd(f"★[{s}] 손 포트 확인 — ls -l /dev/serial/by-id · 설정 deploy/policy_control/config/rh56f1_ports.yaml "
                      "(transport rs485 | canfd · port · hand_id). 손 전원이 켜져 있는가. 드라이버는 시작할 때 쓰기를 하지 않는다",
@@ -255,6 +282,9 @@ def mission(kind: str) -> dict:
         # 양팔 붓기 정책(첫 화면의 '양팔' 자리가 바꾼다) · 양팔 robot yaml
         "pourfj_both": "deploy/policies/both_rh_pourfj_f01/pour_fj_contract.json",
         "robot_bi": f"deploy/policy_control/config/robots/rh56f1_bi_{robot}.yaml",
+        # 한 팔 rh_aglt 정책(첫 화면의 '오른팔 · 왼팔' 자리가 바꾼다) — 09.30
+        "aglt_right": "deploy/policies/right_rh_aglt_i03/rh_aglt_contract.json",
+        "aglt_left": "deploy/policies/left_rh_aglt_i05/rh_aglt_contract.json",
     }
     if real:
         arts["rh56f1_ports"] = "deploy/policy_control/config/rh56f1_ports.yaml"
@@ -266,8 +296,9 @@ def mission(kind: str) -> dict:
                    {"id": "motion", "title": "자세 이동", "motion": True}, {"id": "policy", "title": "정책 동작", "motion": True},
                    {"id": "finish", "title": "정리"},
                    {"id": "diagnose", "title": "진단 (선택)", "motion": True, "optional": True}],
-        "lanes": [{"id": "rig", "title": "드라이버"}, {"id": "arm_right", "title": "오른팔 · 오른손", "side": "right"},
-                  {"id": "arm_left", "title": "왼팔 · 왼손", "side": "left"},
+        "lanes": [{"id": "rig", "title": "드라이버"},
+                  {"id": "arm_right", "title": "오른팔 · 오른손", "side": "right", "focus": "policy_aglt_right"},
+                  {"id": "arm_left", "title": "왼팔 · 왼손", "side": "left", "focus": "policy_aglt_left"},
                   {"id": "both", "title": "양팔 · 컵 · 정책", "focus": "policy_pourfj"}],
         "stages": _stages(kind),
         "run": _run(kind),

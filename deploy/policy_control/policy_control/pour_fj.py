@@ -8,8 +8,8 @@ side_rig.py step_joint_arm · direct_hand_targets · joint_err, pour_fabric_env_
   팔  increment: q_raw = clip(q* + k·a) → q* = clip(α·q_raw + (1−α)·q*)                          (f00~f03)
       absolute : q_raw = home + a·(hi−home) (a≥0) | home + a·(home−lo) → q* += clip(α·(q_raw−q*), ±vmax·dt)   (f04~)
       대기(hold_steps) 동안 q* = home
-  손  raw = lo + ½(a+1)(hi−lo) ([lo,hi] = grip: 편~쥔 자세 관절별 · limits: 관절 한계) → EMA α → 스텝당 변화 ≤ 한계 전 범위/(T·60)
-      → (freeze) 그 손가락이 닿았고 닫는 방향이면 변화 0 → clip(lo, hi). 대기 중에도 손은 행동을 따른다.
+  손  policy_control/rh56f1_hand.py HandLaw(모든 RH56F1 정책 공통) — range grip | limits · EMA · 전 범위 T 초 · 접촉 동결.
+      pour_fj 는 대기 중에도 손이 행동을 따른다(hold "follow").
 관측(팔마다 63): arm_q 7 · arm_qd 7 · hand_q 6(★PhysX 순) · palm_pos 3 · palm R 열0+열1 6 · [tips−palm 15] · cup−palm 3 ·
   tips−cup 15 · joint_err 6((q*−q)/joint_pos_err_max, ±1, 프로필 순) · cup_up 3 · arm q* 7
   그 뒤 rcv 컵 − src 컵 3 · [입구 차 3] · 촉각 src 5 · rcv 5 (tanh(clip(F,0,10)/3)) · 직전 행동 26  → 165 (f01 · f04)
@@ -27,6 +27,8 @@ from typing import Mapping, Sequence
 
 import numpy as np
 import yaml
+
+from policy_control import rh56f1_hand as RH
 
 SCHEMA = "policy_control/pour_fj_contract/v1"
 ROLES = ("src", "rcv")
@@ -271,12 +273,17 @@ class FjDecoder:
         self.state = {r: _SideState(np.array(self.c.sides[r].arm_home, float), np.array(self.c.sides[r].hand_open, float))
                       for r in ROLES}
 
+    def law(self, s: FjSide) -> RH.HandLaw:
+        """손 행동 법칙(policy_control/rh56f1_hand.py) — pour_fj 는 대기 중에도 손이 행동을 따른다(hdgp side_rig 게이트 없음)."""
+        c = self.c
+        return RH.HandLaw(q_open=tuple(s.hand_open), q_grip=tuple(s.hand_grip), lim_lo=tuple(s.hand_lim_lo),
+                          lim_hi=tuple(s.hand_lim_hi), range_mode=c.hand_range, ema=c.hand_ema,
+                          full_range_s=c.hand_full_range_s, policy_hz=60.0, freeze=c.hand_freeze,
+                          freeze_joints=tuple(bool(x) for x in s.hand_freeze), freeze_threshold_n=c.freeze_threshold_n,
+                          hold="follow")
+
     def hand_range(self, s: FjSide) -> tuple[np.ndarray, np.ndarray]:
-        llo, lhi = np.array(s.hand_lim_lo), np.array(s.hand_lim_hi)
-        if self.c.hand_range == "grip":
-            o, g = np.array(s.hand_open), np.array(s.hand_grip)
-            return np.clip(np.minimum(o, g), llo, lhi), np.clip(np.maximum(o, g), llo, lhi)
-        return llo, lhi
+        return self.law(s).bounds()
 
     def step(self, action: Sequence[float], *, active: bool,
              touch: Mapping[str, Sequence[bool]] | None = None) -> dict[str, tuple[np.ndarray, np.ndarray]]:
@@ -303,17 +310,12 @@ class FjDecoder:
         return np.clip(c.arm_ema * q_raw + (1.0 - c.arm_ema) * q, lo, hi)
 
     def _hand(self, s: FjSide, prev: np.ndarray, a: np.ndarray, touch) -> np.ndarray:
-        c = self.c
-        lo, hi = self.hand_range(s)
-        raw = lo + 0.5 * (a + 1.0) * (hi - lo)
-        ema = c.hand_ema * raw + (1.0 - c.hand_ema) * prev
-        cap = (np.array(s.hand_lim_hi) - np.array(s.hand_lim_lo)) / (c.hand_full_range_s * 60.0)
-        delta = np.clip(ema - prev, -cap, cap)
-        if c.hand_freeze and touch is not None:
-            t = np.asarray(touch, bool)[np.array(s.hand_finger)] & np.array(s.hand_freeze)
-            closing = delta * np.sign(np.array(s.hand_grip) - np.array(s.hand_open)) > 0.0
-            delta = np.where(t & closing, 0.0, delta)
-        return np.clip(prev + delta, lo, hi)
+        """touch = 손가락 5개 닿음(bool) — 계약의 동결 임계로 이미 판정한 값."""
+        law = self.law(s)
+        freeze = None
+        if law.freeze and touch is not None:
+            freeze = np.asarray(touch, bool)[list(RH.FINGER_OF)] & np.asarray(law.freeze_joints, bool)
+        return law.step(prev, a, active=True, freeze=freeze)       # 학습의 hard-coded 60 — policy_hz 와 같다
 
 
 # ---------------------------------------------------------------- 관측
@@ -349,8 +351,7 @@ def _side_obs(c: FjContract, s: FjSide, m: FjSideMeas, hand_target: np.ndarray, 
 
 
 def tactile_obs(c: FjContract, f: Sequence[float]) -> np.ndarray:
-    x = np.clip(np.asarray(f, float), 0.0, c.tactile_clip_n)
-    return np.tanh(x / c.tactile_tanh_n) if c.tactile_tanh_n > 0 else x
+    return RH.tactile_obs(f, c.tactile_clip_n, c.tactile_tanh_n)
 
 
 def build_obs(c: FjContract, meas: Mapping[str, FjSideMeas], dec: FjDecoder, prev_action: Sequence[float]) -> np.ndarray:

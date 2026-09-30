@@ -35,7 +35,8 @@ CARD = "policy.yaml"
 MANIFEST = "fetch.json"
 INDEX = "INDEX.md"
 PARAMS = ("params/env.yaml", "params/agent.yaml")
-CONTRACTS = ("deploy_contract.json", "pour_contract.json", "joint_contract.json", "pour_fj_contract.json")
+CONTRACTS = ("deploy_contract.json", "pour_contract.json", "joint_contract.json", "pour_fj_contract.json",
+             "rh_aglt_contract.json")   # rh_aglt: 손 관측이 이름(프로필) 순이라 순서 실측 규칙이 필요 없다(09.30)
 
 STATUSES = {
     "candidate": "받아만 뒀다 — 계약·체인 검증 전",

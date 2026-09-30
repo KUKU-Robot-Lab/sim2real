@@ -1,4 +1,9 @@
-"""pour_fj_node: RH56F1 양팔 붓기 정책(hdgp open-rh_b_pour_fj) — 관측 → 정책 → 디코더를 한 프로세스에서, 양팔을 한 번에.
+"""pour_fj_node: RH56F1 정책 노드 — 관측 → 정책 → 디코더를 한 프로세스에서. 계열(family)을 계약 schema 로 고른다.
+
+  pour_fj  양팔 붓기(hdgp open-rh_b_pour_fj) — 노드 이름 pour_fj_node, 컵 둘
+  rh_aglt  한 팔 접근 · 파지 · 들기 · 이송(hdgp open-rh_{r,l}_aglt, 09.30) — 노드 이름 rh_aglt_node(tools 없이
+           policy_control/rh_aglt_node.py 로 띄운다), 컵 하나 + 리셋 때 정한 목표
+손 행동 법칙은 두 계열 모두 policy_control/rh56f1_hand.py 한 곳이다.
 
 09.29 사용자: pour_fj 양손 정책이 곧 나온다 — 미리 준비. 로직은 policy_control/pour_fj.py(순수)에 있고 여기는 배선만.
 
@@ -29,6 +34,7 @@ if __package__ in (None, ""):
 from policy_control import _paths  # noqa: F401,E402
 from policy_control import codec  # noqa: E402
 from policy_control import pour_fj as F  # noqa: E402
+from policy_control import rh_aglt as A  # noqa: E402
 from policy_control.episode_master import EpisodeBook  # noqa: E402
 from policy_control.joint_obs import quat_to_matrix  # noqa: E402
 from policy_control.sources import SourceSet, load_robot_cfg, select_side  # noqa: E402
@@ -45,9 +51,8 @@ class PourFjNodeError(RuntimeError):
 
 
 # ---------------------------------------------------------------- ROS 없는 절반
-def side_meas(c: F.FjContract, role: str, st, arm_names, fk, cup) -> F.FjSideMeas:
-    """sources.RobotState(한 팔) + 컵 (pos, quat) → FjSideMeas. 결손 · stale 이면 PourFjNodeError."""
-    s = c.sides[role]
+def _side_raw(s, st, arm_names, fk, cup, role: str) -> dict:
+    """sources.RobotState(한 팔) + 컵 (pos, quat) → 측정 칸들. s 는 계열의 한 팔(arm_joints · hand_joints …)."""
     bad = set(st.stale) | set(st.missing)
     for need in ("arm", "ee"):
         if need in bad:
@@ -66,10 +71,23 @@ def side_meas(c: F.FjContract, role: str, st, arm_names, fk, cup) -> F.FjSideMea
     hand_q = np.array([hand[j] for j in s.hand_joints], float)
     pose = fk.palm_pose(arm_q, hand_q)
     tact = np.zeros(5) if st.tip_force is None or "tip_force" in bad else np.asarray(st.tip_force, float).reshape(5, -1)[:, 0]
-    return F.FjSideMeas(arm_q=arm_q, arm_qd=np.array([arm_d[j] for j in s.arm_joints], float),
-                        hand_q={j: float(hand[j]) for j in s.hand_joints}, palm_pos=np.asarray(pose.palm_pos, float),
-                        palm_R=quat_to_matrix(pose.palm_quat), tips=np.asarray(pose.tips, float).reshape(5, 3),
-                        cup_pos=np.asarray(cup[0], float), cup_quat=np.asarray(cup[1], float), tactile_n=tact)
+    return dict(arm_q=arm_q, arm_qd=np.array([arm_d[j] for j in s.arm_joints], float),
+                hand_q={j: float(hand[j]) for j in s.hand_joints}, palm_pos=np.asarray(pose.palm_pos, float),
+                palm_R=quat_to_matrix(pose.palm_quat), tips=np.asarray(pose.tips, float).reshape(5, 3),
+                cup_pos=np.asarray(cup[0], float), cup_quat=np.asarray(cup[1], float), tactile_n=tact)
+
+
+def side_meas(c: F.FjContract, role: str, st, arm_names, fk, cup) -> F.FjSideMeas:
+    """sources.RobotState(한 팔) + 컵 (pos, quat) → FjSideMeas. 결손 · stale 이면 PourFjNodeError."""
+    return F.FjSideMeas(**_side_raw(c.sides[role], st, arm_names, fk, cup, role))
+
+
+def aglt_meas(c: A.RaContract, role: str, st, arm_names, fk, cup) -> A.RaMeas:
+    return A.RaMeas(**_side_raw(c.side(role), st, arm_names, fk, cup, role))
+
+
+def _cup_tilt_deg(quat) -> float:
+    return float(np.degrees(np.arccos(np.clip(quat_to_matrix(quat)[2, 2], -1.0, 1.0))))
 
 
 def start_refusals(c: F.FjContract, meas: dict, tol: float) -> list:
@@ -79,7 +97,7 @@ def start_refusals(c: F.FjContract, meas: dict, tol: float) -> list:
         err = float(np.abs(meas[r].arm_q - np.asarray(c.sides[r].arm_home)).max())
         if err > tol:
             out.append(f"{c.sides[r].side} arm is {err:.3f} rad from the training start pose (tol {tol})")
-        tilt = float(np.degrees(np.arccos(np.clip(quat_to_matrix(meas[r].cup_quat)[2, 2], -1.0, 1.0))))
+        tilt = _cup_tilt_deg(meas[r].cup_quat)
         if tilt > START_TILT_MAX_DEG:
             out.append(f"{r} cup tilt {tilt:.1f} deg (> {START_TILT_MAX_DEG:.0f}) — a standing cup is expected")
     return out
@@ -97,6 +115,56 @@ def target_arrays(c: F.FjContract, targets: dict) -> tuple[tuple, np.ndarray, np
     return tuple(names), arr, np.zeros(arr.size)
 
 
+def aglt_start_refusals(c: A.RaContract, meas: dict, tol: float) -> list:
+    m, s = meas["arm"], c.side()
+    out = []
+    err = float(np.abs(m.arm_q - np.asarray(s.arm_home)).max())
+    if err > tol:
+        out.append(f"{s.side} arm is {err:.3f} rad from the training start pose (tol {tol})")
+    tilt = _cup_tilt_deg(m.cup_quat)
+    if tilt > START_TILT_MAX_DEG:
+        out.append(f"cup tilt {tilt:.1f} deg (> {START_TILT_MAX_DEG:.0f}) — a standing cup is expected")
+    return out
+
+
+def aglt_target_arrays(c: A.RaContract, targets: dict) -> tuple[tuple, np.ndarray, np.ndarray]:
+    s = c.side()
+    arr = np.concatenate([targets["arm"][0], targets["arm"][1]]).astype(float)
+    if not np.all(np.isfinite(arr)):
+        raise PourFjNodeError("non-finite joint target")
+    return tuple(s.arm_joints) + tuple(s.hand_joints), arr, np.zeros(arr.size)
+
+
+class AgltChain:
+    """rh_aglt 한 스텝 — 관측(목표 포함) → 정책 → 디코더. 목표는 reset 때 컵 자세로 정한다."""
+
+    def __init__(self, c: A.RaContract, policy) -> None:
+        self.c, self.policy = c, policy
+        self.dec = A.RaDecoder(c)
+        self.prev = np.zeros(c.action_dim)
+        self.step_i = 0
+        self.goal: A.Goal | None = None
+
+    def reset(self, meas: dict | None = None) -> None:
+        if meas is None:
+            raise PourFjNodeError("rh_aglt reset needs the cup pose (goal = cup at reset + offset)")
+        self.dec.reset()
+        self.prev = np.zeros(self.c.action_dim)
+        self.step_i = 0
+        self.goal = A.first_goal(self.c, meas["arm"].cup_pos, meas["arm"].cup_quat)
+        if hasattr(self.policy, "reset"):
+            self.policy.reset()
+
+    def step(self, meas: dict) -> tuple[np.ndarray, np.ndarray, dict]:
+        m = meas["arm"]
+        obs = A.build_obs(self.c, m, self.dec, self.goal, self.prev)
+        a = np.clip(np.asarray(self.policy.forward(obs), float), -self.c.action_clip, self.c.action_clip)
+        targets = self.dec.step(a, active=self.step_i >= self.c.hold_steps, tactile_n=m.tactile_n)
+        self.prev = np.clip(a, -1.0, 1.0)
+        self.step_i += 1
+        return obs, a, targets
+
+
 class PourFjChain:
     """관측 → 정책 → 디코더 한 스텝. 순수(정책 · FK 는 주입)."""
 
@@ -106,7 +174,7 @@ class PourFjChain:
         self.prev = np.zeros(c.action_dim)
         self.step_i = 0
 
-    def reset(self) -> None:
+    def reset(self, meas: dict | None = None) -> None:
         self.dec.reset()
         self.prev = np.zeros(self.c.action_dim)
         self.step_i = 0
@@ -123,6 +191,36 @@ class PourFjChain:
         return obs, a, targets
 
 
+# ---------------------------------------------------------------- 계열
+class Family:
+    def __init__(self, *, name, schema, load, roles, cups, meas, chain, refusals, targets, errors, label):
+        self.name, self.schema, self.load, self.roles, self.cups = name, schema, load, roles, cups
+        self.meas, self.chain, self.refusals, self.targets, self.errors, self.label = (meas, chain, refusals, targets,
+                                                                                      errors, label)
+
+
+FAMILIES = {
+    "pour_fj": Family(name="pour_fj_node", schema=F.SCHEMA, load=F.load_contract, roles=F.ROLES,
+                      cups=(("src", "cup_src_topic", "/objects/cup_src/pose"), ("rcv", "cup_rcv_topic", "/objects/cup_rcv/pose")),
+                      meas=side_meas, chain=PourFjChain, refusals=start_refusals, targets=target_arrays,
+                      errors=(PourFjNodeError, F.PourFjError, ValueError),
+                      label=lambda c: f"arm {c.arm_mode} · hand obs order {c.hand_obs_order_source.split(':')[0]}"),
+    "rh_aglt": Family(name="rh_aglt_node", schema=A.SCHEMA, load=A.load_contract, roles=A.ROLES,
+                      cups=(("arm", "cup_topic", "/objects/cup_big_s100/pose"),),
+                      meas=aglt_meas, chain=AgltChain, refusals=aglt_start_refusals, targets=aglt_target_arrays,
+                      errors=(PourFjNodeError, A.RhAgltError, ValueError),
+                      label=lambda c: f"{c.side().side} arm · goal +{c.goal_offset}"),
+}
+
+
+def family_of(contract_path: Path) -> str:
+    schema = json.loads(Path(contract_path).read_text()).get("schema")
+    for k, fam in FAMILIES.items():
+        if fam.schema == schema:
+            return k
+    raise PourFjNodeError(f"{contract_path}: 모르는 계약 schema {schema!r} (pour_fj · rh_aglt)")
+
+
 # ---------------------------------------------------------------- ROS
 try:
     from rclpy.node import Node
@@ -131,7 +229,7 @@ except ImportError:
 
 
 class PourFjNode(Node):
-    def __init__(self, *, policy=None, **kw) -> None:
+    def __init__(self, *, policy=None, family: str = "pour_fj", **kw) -> None:
         from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
         from geometry_msgs.msg import PoseStamped
         from sensor_msgs.msg import JointState
@@ -140,19 +238,24 @@ class PourFjNode(Node):
         from policy_control.contract_assets import ASSETS
         from policy_control.fk_numpy import UrdfChainFK
 
-        super().__init__(NODE, **kw)
+        self.fam = FAMILIES[family]
+        self.node_name = self.fam.name
+        super().__init__(self.fam.name, **kw)
         for name, default in (("contract", ""), ("robot", ""), ("device", "cpu"), ("reset_tol_rad", 0.15),
                               ("max_gap_ticks", 3), ("publish_target", True), ("max_episode_s", -1.0),
-                              ("cup_src_topic", "/objects/cup_src/pose"), ("cup_rcv_topic", "/objects/cup_rcv/pose")):
+                              *((param, topic) for _, param, topic in self.fam.cups)):
             self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
         cpath, rpath = Path(str(p("contract"))), Path(str(p("robot")))
         if not cpath.is_file() or not rpath.is_file():
             raise PourFjNodeError(f"parameters 'contract' and 'robot' must be existing files (got {cpath}, {rpath})")
-        self.contract = F.load_contract(cpath)
+        if family_of(cpath) != family:
+            raise PourFjNodeError(f"{cpath}: {family_of(cpath)} 계약 — 이 노드는 {family}")
+        self.contract = self.fam.load(cpath)
         cfg = load_robot_cfg(rpath)
-        self.srcs = {r: SourceSet(select_side(cfg, self.contract.sides[r].side)) for r in F.ROLES}
-        self.arm_names = {r: tuple(select_side(cfg, self.contract.sides[r].side).sources["arm"].joints) for r in F.ROLES}
+        self.srcs = {r: SourceSet(select_side(cfg, self.contract.sides[r].side)) for r in self.fam.roles}
+        self.arm_names = {r: tuple(select_side(cfg, self.contract.sides[r].side).sources["arm"].joints)
+                          for r in self.fam.roles}
         urdf = ASSETS[self.contract.asset].urdf
         self.fk = {r: UrdfChainFK(urdf, s.arm_joints, s.hand_joints, s.palm_body, s.tip_bodies)
                    for r, s in self.contract.sides.items()}
@@ -160,7 +263,7 @@ class PourFjNode(Node):
         self.reset_tol, self.max_gap, self._publish = float(p("reset_tol_rad")), int(p("max_gap_ticks")), bool(p("publish_target"))
         m = float(p("max_episode_s"))
         self.max_s = self.contract.episode_s if m < 0 else m
-        self.chain: PourFjChain | None = None
+        self.chain = None
         self.book = EpisodeBook({})
         self.cups: dict = {}
         self._seq, self._gap, self._errors, self._t_start = 0, 0, {}, 0.0
@@ -172,20 +275,19 @@ class PourFjNode(Node):
         self._pub_obs = self.create_publisher(Float64MultiArray, f"{NS}/obs", chain_qos)
         self._pub_action = self.create_publisher(Float64MultiArray, f"{NS}/action", chain_qos)
         self._pub_episode = self.create_publisher(String, f"{NS}/episode", latched)
-        self._pub_status = self.create_publisher(String, f"{NS}/status/{NODE}", QoSProfile(depth=10))
+        self._pub_status = self.create_publisher(String, f"{NS}/status/{self.node_name}", QoSProfile(depth=10))
         msgs = {"joint_state": JointState, "float_array": Float64MultiArray}
-        for r in F.ROLES:
+        for r in self.fam.roles:
             for src in select_side(cfg, self.contract.sides[r].side).sources.values():
                 if src.type in msgs and (src.role or src.name) in ("arm", "ee", "tip_force"):
                     self.create_subscription(msgs[src.type], src.topic, self._source_cb(r, src), qos_profile_sensor_data)
-        for role, topic in (("src", str(p("cup_src_topic"))), ("rcv", str(p("cup_rcv_topic")))):
-            self.create_subscription(PoseStamped, topic, self._cup_cb(role), qos_profile_sensor_data)
+        for role, param, _ in self.fam.cups:
+            self.create_subscription(PoseStamped, str(p(param)), self._cup_cb(role), qos_profile_sensor_data)
         for name in EVENTS:
             self.create_service(Trigger, f"{NS}/episode/{name}", getattr(self, f"_srv_{name}"))
         self.create_timer(1.0 / float(self.contract.policy_hz), self._on_tick)
-        self.get_logger().info(f"pour_fj_node up · obs {self.contract.obs_dim} act {self.contract.action_dim} · "
-                               f"{self.contract.policy_hz:.0f} Hz · arm {self.contract.arm_mode} · hand obs order "
-                               f"{self.contract.hand_obs_order_source.split(':')[0]}")
+        self.get_logger().info(f"{self.node_name} up · obs {self.contract.obs_dim} act {self.contract.action_dim} · "
+                               f"{self.contract.policy_hz:.0f} Hz · {self.fam.label(self.contract)}")
 
     # ---------------------------------------------------------------- inputs
     def _source_cb(self, role, src):
@@ -216,8 +318,8 @@ class PourFjNode(Node):
 
     def _measure(self) -> dict:
         now = time.monotonic()
-        return {r: side_meas(self.contract, r, self.srcs[r].snapshot(now), self.arm_names[r], self.fk[r], self._cup(r))
-                for r in F.ROLES}
+        return {r: self.fam.meas(self.contract, r, self.srcs[r].snapshot(now), self.arm_names[r], self.fk[r], self._cup(r))
+                for r in self.fam.roles}
 
     # ---------------------------------------------------------------- services
     def _reply(self, res, ok: bool, reasons):
@@ -232,14 +334,14 @@ class PourFjNode(Node):
 
     def _srv_reset(self, _req, res):
         try:
-            self._measure()
+            meas = self._measure()
             if self.chain is None:
                 if self._policy is None:
                     from policy_control.joint_policy import JointPolicy
                     self._policy = JointPolicy(self.contract, self.device)
-                self.chain = PourFjChain(self.contract, self._policy)
-            self.chain.reset()
-        except (PourFjNodeError, F.PourFjError, ValueError) as exc:
+                self.chain = self.fam.chain(self.contract, self._policy)
+            self.chain.reset(meas)
+        except self.fam.errors as exc:
             return self._reply(res, False, [f"reset: {exc}"])
         self._seq, self._gap = 0, 0
         event, _ = self.book.reset()
@@ -250,8 +352,8 @@ class PourFjNode(Node):
         if self.chain is None:
             return self._reply(res, False, ["start: reset first"])
         try:
-            refusals = start_refusals(self.contract, self._measure(), self.reset_tol)
-        except (PourFjNodeError, F.PourFjError, ValueError) as exc:
+            refusals = self.fam.refusals(self.contract, self._measure(), self.reset_tol)
+        except self.fam.errors as exc:
             return self._reply(res, False, [f"start: {exc}"])
         if refusals:
             return self._reply(res, False, refusals)
@@ -276,9 +378,11 @@ class PourFjNode(Node):
 
     # ---------------------------------------------------------------- tick
     def _status(self, ok: bool, reasons, extra=None) -> None:
-        body = {"node": NODE, "phase": self.book.phase, "episode": self.book.episode, "seq": self._seq, "ok": bool(ok),
+        body = {"node": self.node_name, "phase": self.book.phase, "episode": self.book.episode, "seq": self._seq, "ok": bool(ok),
                 "reasons": [str(r) for r in reasons], "publish_target": self._publish,
                 "hand_obs_order": self.contract.hand_obs_order_source.split(":")[0],
+                **({"goal": [round(float(v), 4) for v in self.chain.goal.pos]}
+                   if getattr(self.chain, "goal", None) is not None else {}),
                 "t_pub_ns": self.get_clock().now().nanoseconds, **(extra or {})}
         self._pub_status.publish(self._String(data=json.dumps(body)))
 
@@ -287,14 +391,14 @@ class PourFjNode(Node):
             try:
                 self._measure()
                 self._status(True, list(self._errors.values()))
-            except (PourFjNodeError, F.PourFjError, ValueError) as exc:
+            except self.fam.errors as exc:
                 self._status(False, [*self._errors.values(), str(exc)])
             return
         t0 = time.perf_counter()
         try:
             obs, action, targets = self.chain.step(self._measure())
-            names, q, qd = target_arrays(self.contract, targets)
-        except (PourFjNodeError, F.PourFjError, ValueError) as exc:
+            names, q, qd = self.fam.targets(self.contract, targets)
+        except self.fam.errors as exc:
             self._gap += 1
             self._status(False, [str(exc)], {"gap": self._gap})
             if self._gap > self.max_gap:
@@ -312,14 +416,14 @@ class PourFjNode(Node):
             self._end("stop", f"episode time >= {self.max_s:.1f} s (학습 episode_length_s)")
 
 
-def main(argv=None) -> int:
+def main(argv=None, family: str = "pour_fj") -> int:
     import rclpy
     from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 
     rclpy.init(args=argv)
     node = None
     try:
-        node = PourFjNode()
+        node = PourFjNode(family=family)
         executor = SingleThreadedExecutor()
         executor.add_node(node)
         try:

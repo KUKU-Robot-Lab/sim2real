@@ -189,3 +189,25 @@ def test_the_rh56f1_robot_offers_the_pour_fj_policy_for_both_arms():
     (rh,) = [r for r in RB.scan(REPO / "deploy/s2r_console/robots")[0] if r.id == "openarm_rh56f1"]
     assert rh.slots["both"] == "pourfj_both" and RB.slot_contracts("pourfj_both") == ("pour_fj_contract.json",)
     assert REAL.artifacts["pourfj_both"].endswith("both_rh_pourfj_f01/pour_fj_contract.json")
+
+
+@pytest.mark.parametrize("side,cup", [("right", "src"), ("left", "rcv")])
+def test_each_arm_runs_its_rh_aglt_policy_after_home(side, cup):
+    """09.30 사용자: RH56F1 정책을 deploy 에 연결 — 한 팔 rh_aglt 는 그 팔의 창에서, 홈 뒤 정책 카드."""
+    for m, book in ((REAL, REAL_BOOK), (FAKE, FAKE_BOOK)):
+        cmds = _cmds(m, book, f"policy_aglt_{side}")
+        node = next(c for c in cmds if any("rh_aglt_node.py" in a for a in c.argv))
+        assert node.background and node.argv[0].endswith(".venv/bin/python")
+        assert any(a.startswith("contract:=") and a.endswith("rh_aglt_contract.json") for a in node.argv)
+        assert f"cup_topic:=/objects/cup_{cup}/pose" in node.argv and "max_episode_s:=15.0" in node.argv
+        by = {s.id: s for s in m.stages}
+        assert {f"home_{side}", "cups", f"hand_check_{side}"} <= set(by[f"policy_aglt_{side}"].needs)
+        assert {la.id: la.focus for la in m.lanes}[f"arm_{side}"] == f"policy_aglt_{side}"
+    assert REAL.stages[[s.id for s in REAL.stages].index(f"policy_aglt_{side}")].touches_real
+
+
+def test_the_rh56f1_robot_offers_rh_aglt_for_each_arm():
+    from s2r_console import robots as RB
+    (rh,) = [r for r in RB.scan(REPO / "deploy/s2r_console/robots")[0] if r.id == "openarm_rh56f1"]
+    assert rh.slots["right"] == "aglt_right" and rh.slots["left"] == "aglt_left"
+    assert RB.slot_contracts("aglt_right") == ("rh_aglt_contract.json",)

@@ -202,7 +202,8 @@ def _rh56f1_backend(node, name, g, cfg, hand_joints, profile, execute):
         hmap = rh56f1_map.load(_paths.RL_WS / path if path else rh56f1_map.DEFAULT_PATH)
         return Rh56f1AngleBackend(node, str(g["topic"]), hand_joints,
                                   [profile[j]["lower"] for j in hand_joints], [profile[j]["upper"] for j in hand_joints],
-                                  hmap, cfg.hand.max_vel, execute=execute, hand_id=int(g.get("hand_id", 0)))
+                                  hmap, cfg.hand.max_vel, execute=execute, hand_id=int(g.get("hand_id", 0)),
+                                  hw_speed=int(getattr(cfg.hand, "hw_speed", 0)), hw_force=int(getattr(cfg.hand, "hw_force", 0)))
     except (rh56f1_map.HandMapError, ValueError, KeyError) as exc:
         raise PdArmError(f"groups.{name}: {exc}") from exc
 

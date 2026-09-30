@@ -25,6 +25,7 @@ from policy_control import rh56f1_map as M  # noqa: E402
 from policy_control.pd_backends import HandCmd, Rh56f1AngleBackend  # noqa: E402
 from policy_control.rh56f1_state_node import HandStateCore  # noqa: E402
 
+REPO = Path(__file__).resolve().parents[2]
 HMAP = M.load()
 PROFILE = RL_WS / "robot_control/src/robot_control/profiles/openarm_rh56f1.yaml"
 MANIFEST = RL_WS / "hdgp/assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl_manifest.yaml"
@@ -154,6 +155,34 @@ def test_backend_sends_only_changes_and_at_most_command_max_hz():
     t[0] = 1.2
     b.write(cmd([1.57, 0, 1, 1, 1, 1]))
     assert len(pub.msgs) >= 3                                                # 1 s 마다 다시(연결 직후 유실 대비)
+
+
+def test_backend_sets_the_hand_speed_and_force_before_the_first_angle_and_then_every_few_seconds():
+    """09.30 사용자: 손 액션 구조 · 튜닝 — 손 자체 속도(speed_set) · 힘 멈춤(force_set)을 pd yaml 에서 준다. 0 은 보내지 않는다."""
+    pytest.importorskip("rh56f1_interfaces.msg", reason="robot_control 설치 공간(rh56f1_interfaces)이 source 되지 않았다")
+    from policy_control.pd_backends import RH56F1_HW_RESEND_S
+    t = [0.0]
+    node = _Node()
+    names = HMAP.names("right")
+    b = Rh56f1AngleBackend(node, "/hand_right/angle_set", names, [0.0] * 6, [2.1, 0.48, 1.53, 1.53, 1.53, 1.53], HMAP, 1.0,
+                           execute=True, clock=lambda: t[0], hw_speed=2000)
+    assert "/hand_right/speed_set" in node.pubs and "/hand_right/force_set" not in node.pubs       # force 0 = 안 보낸다
+    cmd = HandCmd(q_star=np.array(OPEN), qd_star=None, dt=0.01, q_meas=np.array(OPEN))
+    b.write(cmd)
+    speed = node.pubs["/hand_right/speed_set"].msgs
+    assert len(speed) == 1 and list(speed[0].joint_values) == [2000] * 6
+    t[0] = RH56F1_HW_RESEND_S + 0.1
+    b.write(cmd)
+    assert len(speed) == 2
+    with pytest.raises(ValueError, match="speed"):
+        Rh56f1AngleBackend(_Node(), "/t", names, [0] * 6, [1] * 6, HMAP, 1.0, execute=False, hw_speed=5000)
+
+
+def test_pd_yaml_hand_settings_are_loaded():
+    from policy_control.pd_law import load_pd_config
+    for name in ("pd_rh56f1.yaml", "pd_rh56f1_exec.yaml"):
+        h = load_pd_config(REPO / "deploy/policy_control/config" / name).hand
+        assert h.hw_speed == 2000 and h.hw_force == 0
 
 
 # ---------------------------------------------------------------- 상태 노드 · fake 손

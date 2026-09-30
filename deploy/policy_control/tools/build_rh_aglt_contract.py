@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""RH56F1 한 팔 aglt(hdgp open-rh_{r,l}_aglt) 런 → rh_aglt 계약(policy_control/rh_aglt.py). 09.30 사용자: RH56F1 정책 deploy 연결.
+
+    python3 tools/build_rh_aglt_contract.py --run deploy/policies/right_rh_aglt_i03 [--checkpoint nn/<pth>] [--out …]
+
+손 관측 순서는 문제가 없다 — rh_aglt 는 손 관절을 이름(프로필 순)으로 찾는다. 왼팔은 hdgp tasks/rh_aglt_l/profile.py 와
+같은 규칙(이름 r_ → l_, 손 값 그대로)으로 RH56F1_RIGHT 에서 만든다.
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from policy_control import _paths  # noqa: E402
+from policy_control import rh_aglt as A  # noqa: E402
+from policy_control.pour_profiles import load_profile  # noqa: E402
+
+ASSET = "openarm_rh56f1_bi_rl"
+URDF = _paths.RL_WS / "hdgp" / "assets" / "robot" / ASSET / f"{ASSET}.urdf"
+
+
+def _checkpoint(run: Path, explicit: str | None) -> Path:
+    if explicit:
+        p = Path(explicit)
+        return p if p.is_absolute() else run / p
+    found = sorted((run / "nn").glob("*.pth"))
+    if len(found) != 1:
+        raise SystemExit(f"{run}/nn 에 .pth 가 {len(found)} 개 — --checkpoint 로 고를 것")
+    return found[0]
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--run", required=True, help="params/{env,agent}.yaml 이 있는 런 폴더")
+    ap.add_argument("--checkpoint", help="nn/ 에 하나가 아니면 명시")
+    ap.add_argument("--hdgp", default=str(_paths.RL_WS / "hdgp"))
+    ap.add_argument("--out", help="기본 <run>/rh_aglt_contract.json")
+    args = ap.parse_args(argv)
+    run = Path(args.run).resolve()
+    c = A.build(run, _checkpoint(run, args.checkpoint), load_profile(Path(args.hdgp), "rh56f1_right"), URDF, asset=ASSET)
+    out = Path(args.out) if args.out else run / "rh_aglt_contract.json"
+    out.write_text(c.to_json())
+    s = c.side()
+    print(f"[rh_aglt] {c.task} · {s.side} · obs {c.obs_dim} / act {c.action_dim} · {c.policy_hz:.0f} Hz · "
+          f"hold {c.hold_steps} · 목표 +{c.goal_offset} → {out}")
+    for n in c.notes:
+        print(f"  note: {n}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

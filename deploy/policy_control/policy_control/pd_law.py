@@ -272,6 +272,10 @@ class HandBlock:
     #: 09.28 사용자 "손 속도상한은 액션과 동일하게" — pd 가 스스로 하는 손 이동(hand_home · hand_rest · hand_path)은
     #: max_vel 로 천천히 두고, 정책 추종에서만 정책 행동이 낼 수 있는 속도까지 허용한다.
     max_vel_track: float = 0.0
+    #: RH56F1 손 자체 설정(벤더 레지스터) — 0 = 보내지 않는다(손에 남은 값 그대로). 09.30 사용자 "핸드 액션 구조 · 튜닝".
+    #: hw_speed 0..4000 (2000 = 무부하 전 행정 1000 ms) · hw_force 힘 멈춤 임계 [g, 센서 위치 기준 — 손끝의 약 10배].
+    hw_speed: int = 0
+    hw_force: int = 0
 
 
 @dataclass(frozen=True)

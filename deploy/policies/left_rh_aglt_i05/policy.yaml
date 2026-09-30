@@ -1,0 +1,14 @@
+# RH56F1 왼팔 rh_aglt — 먼 출발 접근 · 네 손가락 인벨롭 · 들기 · 이송(hdgp open-rh_l_aglt). 09.30 사용자: deploy 연결.
+id: left_rh_aglt_i05
+status: candidate        # candidate | verified | deployed | hold
+task: open-rh_l_aglt-lstm
+side: left
+checkpoint: last_open-rh_l_aglt-lstm_ep_3800_rew_3346.764.pth
+source: 'local:~/rl_ws/our_source/policy/aglt_l_i05 (ep_3800 · params/)'
+interface: obs 96 · critic 128 · action 13 (팔 관절 증분 7 · 손 6 — rh56f1_hand 법칙)
+deploy:
+  max_episode_s: 15.0    # env episode_length_s — 실기는 성공을 세지 않고 시간으로 끝낸다
+note: >-
+  학습 로그 e3785~3964 파지 0.80 · 들기 0.75 · 목표 성공 0.9~1.1/에피소드(허용오차 2.1 cm). 엄지 대향이 후반에 줄었다(0.52 → 0.04).
+  계약 rh_aglt_contract.json 은 tools/build_rh_aglt_contract.py 로 런의 env.yaml 에서 만든다. 손 관측은 이름(프로필) 순 —
+  pour_fj 와 달리 PhysX 순서 문제가 없다. 목표 = 리셋 때 컵 + (0, 0, 0.14)(학습 첫 목표 분포의 가운데).

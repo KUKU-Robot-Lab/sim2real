@@ -285,6 +285,8 @@ class Dg5fJtcBackend:
 # ---------------------------------------------------------------- Inspire RH56F1 (vendor angle register)
 #: 바뀌지 않아도 이 주기로 다시 보낸다 [s]
 RH56F1_RESEND_S = 1.0
+#: 손 자체 속도 · 힘 설정을 다시 보내는 주기 — 드라이버를 다시 띄우면 손은 전원 켤 때 값으로 돌아간다
+RH56F1_HW_RESEND_S = 5.0
 
 
 class Rh56f1AngleBackend:
@@ -297,9 +299,11 @@ class Rh56f1AngleBackend:
 
     def __init__(self, node, topic: str, hand_joints: Sequence[str], lower, upper, hand_map, max_vel: float, *,
                  execute: bool, hand_id: int = 0, limit_margin: float = HAND_LIMIT_MARGIN,
-                 max_lead: float = HAND_MAX_LEAD, clock=None) -> None:
+                 max_lead: float = HAND_MAX_LEAD, clock=None, hw_speed: int = 0, hw_force: int = 0) -> None:
         if max_vel <= 0.0:
             raise ValueError("max_vel > 0 이어야 한다")
+        if not (0 <= int(hw_speed) <= 4000 and 0 <= int(hw_force) <= 3000):
+            raise ValueError(f"손 설정 speed 0..4000 · force 0..3000 g: {hw_speed} · {hw_force}")
         side = str(hand_joints[0])[0]
         want = hand_map.names("right" if side == "r" else "left")
         if list(hand_joints) != want:
@@ -312,9 +316,17 @@ class Rh56f1AngleBackend:
         self.execute = bool(execute)
         self._clock = clock or __import__("time").monotonic
         self._msg_type = None
+        #: 손 자체 설정 — (이름, 값, 메시지 형, 토픽). 값 0 은 보내지 않는다. 토픽은 angle_set 과 같은 이름공간.
+        self.hw = {"speed": int(hw_speed), "force": int(hw_force)}
+        self._hw_pubs: dict = {}
+        self._hw_sent_at: float | None = None
+        base = topic.rsplit("/", 1)[0]
         if self.execute:
-            from rh56f1_interfaces.msg import SetAngle1                       # robot_control 설치 공간
+            from rh56f1_interfaces.msg import SetAngle1, SetForce1, SetSpeed1   # robot_control 설치 공간
             self._msg_type = SetAngle1
+            for key, typ in (("speed", SetSpeed1), ("force", SetForce1)):
+                if self.hw[key] > 0:
+                    self._hw_pubs[key] = (typ, _GuardedPublisher(node, typ, f"{base}/{key}_set", True))
         self._pub = _GuardedPublisher(node, self._msg_type, topic, self.execute) if self.execute else _GuardedPublisher(
             node, None, topic, False)
         self._prev: np.ndarray | None = None
@@ -349,9 +361,21 @@ class Rh56f1AngleBackend:
             self._last_sent = (reg, now)
         return HandWritten(names=self.names, q_cmd=q_cmd, limited=bool(np.any(np.abs(q_cmd - q_t) > 1e-12)))
 
+    def _send_hw(self, now: float) -> None:
+        """손 자체 속도 · 힘 설정 — 첫 각도 명령 전에, 그 뒤 RH56F1_HW_RESEND_S 마다. 손을 움직이지 않는다."""
+        if not self._hw_pubs or (self._hw_sent_at is not None and now - self._hw_sent_at < RH56F1_HW_RESEND_S):
+            return
+        for key, (typ, pub) in self._hw_pubs.items():
+            msg = typ()
+            msg.hand_id = self.hand_id
+            msg.joint_values = [int(self.hw[key])] * 6
+            pub.publish(msg)
+        self._hw_sent_at = now
+
     def _send(self, reg: list[int]) -> None:
         if self._msg_type is None:
             return
+        self._send_hw(self._clock())
         msg = self._msg_type()
         msg.hand_id = self.hand_id
         msg.joint_values = [int(v) for v in reg]
@@ -361,6 +385,7 @@ class Rh56f1AngleBackend:
         """드라이버가 마지막 레지스터를 유지한다 — 보낼 0 이 없다. 직전 지령만 잊는다."""
         self._prev = None
         self._last_sent = None
+        self._hw_sent_at = None
 
 
 # ---------------------------------------------------------------- hand PID gains

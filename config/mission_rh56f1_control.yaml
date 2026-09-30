@@ -11,6 +11,8 @@ artifacts:
   path_left: deploy/policy_control/paths/home_rh56f1_left.npz
   pourfj_both: deploy/policies/both_rh_pourfj_f01/pour_fj_contract.json
   robot_bi: deploy/policy_control/config/robots/rh56f1_bi_real.yaml
+  aglt_right: deploy/policies/right_rh_aglt_i03/rh_aglt_contract.json
+  aglt_left: deploy/policies/left_rh_aglt_i05/rh_aglt_contract.json
   rh56f1_ports: deploy/policy_control/config/rh56f1_ports.yaml
 checkpoints: {}
 groups:
@@ -38,9 +40,11 @@ lanes:
 - id: arm_right
   title: 오른팔 · 오른손
   side: right
+  focus: policy_aglt_right
 - id: arm_left
   title: 왼팔 · 왼손
   side: left
+  focus: policy_aglt_left
 - id: both
   title: 양팔 · 컵 · 정책
   focus: policy_pourfj
@@ -240,6 +244,36 @@ stages:
   - robot_bi
   - contract
   title: '[양팔] pour_fj 정책(첫 화면에서 고른 것) — 정책 노드 → reset → start → 관찰 → stop (시간이 되면 스스로 끝난다)'
+- id: policy_aglt_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  touches_real: true
+  needs:
+  - home_right
+  - cups
+  - hand_check_right
+  needs_why: 정책은 팔이 rh_aglt 시작 자세(= 홈) · 손이 편 채 · 컵이 학습 배치에 선 채로만 출발해 봤다
+  artifacts:
+  - aglt_right
+  - robot_right
+  - contract
+  title: '[right] rh_aglt 정책(첫 화면에서 고른 것) — 컵에 접근 · 쥐기 · 들기 · 목표(컵 위 14 cm)로 이송. 정책 노드 → reset → start → 관찰 → stop'
+- id: policy_aglt_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  touches_real: true
+  needs:
+  - home_left
+  - cups
+  - hand_check_left
+  needs_why: 정책은 팔이 rh_aglt 시작 자세(= 홈) · 손이 편 채 · 컵이 학습 배치에 선 채로만 출발해 봤다
+  artifacts:
+  - aglt_left
+  - robot_left
+  - contract
+  title: '[left] rh_aglt 정책(첫 화면에서 고른 것) — 컵에 접근 · 쥐기 · 들기 · 목표(컵 위 14 cm)로 이송. 정책 노드 → reset → start → 관찰 → stop'
 - id: shutdown
   group: finish
   lane: rig
@@ -318,6 +352,8 @@ run:
   - note: 남은 정책 노드 · pd 정지
     stop:
     - policy_pourfj#1
+    - policy_aglt_right#1
+    - policy_aglt_left#1
     - pd_load_right#0
     - pd_arm_right#1
     - pd_load_left#0
@@ -383,6 +419,114 @@ run:
   - note: 정책 노드 정지
     stop:
     - policy_pourfj#1
+  policy_aglt_right:
+  - note: ★[right] 컵이 학습 배치(로봇 앞 x ≈ 0.35, y ≈ −0.16)에 서 있고 콘솔에 컵 자세(/objects/cup_src/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가. 정책은 팔을 스스로
+      움직이고 컵을 쥐어 든다 — 빈 컵만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -p
+    - contract:={artifact:aglt_right}
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - cup_topic:=/objects/cup_src/pose
+    - -p
+    - max_episode_s:={policy:aglt_right.max_episode_s}
+    background: true
+  - note: '[right] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + (0, 0, 0.14)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/reset
+    execute_args:
+    - --execute
+  - note: ★[right] episode start — 팔이 시작 자세 0.15 rad 안 · 컵이 서 있어야 받는다
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/start
+    execute_args:
+    - --execute
+  - note: ★관찰 — 이상하면 정지 바의 '에피소드 정지'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: episode stop — pd 가 그 자세 · 손 쥠을 붙잡는다
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/stop
+    execute_args:
+    - --execute
+  - note: 정책 노드 정지
+    stop:
+    - policy_aglt_right#1
+  policy_aglt_left:
+  - note: ★[left] 컵이 학습 배치(로봇 앞 x ≈ 0.35, y ≈ +0.16)에 서 있고 콘솔에 컵 자세(/objects/cup_rcv/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가. 정책은 팔을 스스로
+      움직이고 컵을 쥐어 든다 — 빈 컵만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[left] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -p
+    - contract:={artifact:aglt_left}
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - cup_topic:=/objects/cup_rcv/pose
+    - -p
+    - max_episode_s:={policy:aglt_left.max_episode_s}
+    background: true
+  - note: '[left] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + (0, 0, 0.14)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/reset
+    execute_args:
+    - --execute
+  - note: ★[left] episode start — 팔이 시작 자세 0.15 rad 안 · 컵이 서 있어야 받는다
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/start
+    execute_args:
+    - --execute
+  - note: ★관찰 — 이상하면 정지 바의 '에피소드 정지'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: episode stop — pd 가 그 자세 · 손 쥠을 붙잡는다
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/stop
+    execute_args:
+    - --execute
+  - note: 정책 노드 정지
+    stop:
+    - policy_aglt_left#1
   hand_right:
   - note: ★[right] 손 포트 확인 — ls -l /dev/serial/by-id · 설정 deploy/policy_control/config/rh56f1_ports.yaml (transport rs485 | canfd · port · hand_id).
       손 전원이 켜져 있는가. 드라이버는 시작할 때 쓰기를 하지 않는다

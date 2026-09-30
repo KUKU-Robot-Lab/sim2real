@@ -9,12 +9,13 @@ task_prefixes: [open-rh_]
 hand: {model: RH56F1, vendor: Inspire, actuated: "6 / 손 (종속 6)"}
 profiles: [rh56f1_real, rh56f1_fake]
 joint_profile: ../robot_control/src/robot_control/profiles/openarm_rh56f1.yaml   # 로봇 상태 표의 한계 · 이름
-# 양팔 붓기(pour_fj) = 계약 하나가 두 팔(both). rh_aglt(한 팔)은 right/left — 그 family 가 생기면 계약 종류를 더한다
-slots: {both: pourfj_both, right: joint_right, left: joint_left}
+# 양팔 붓기(pour_fj) = 계약 하나가 두 팔(both) · rh_aglt(한 팔 접근 · 파지 · 이송, 09.30) = 팔마다
+slots: {both: pourfj_both, right: aglt_right, left: aglt_left}
 settings:
   - {label: 팔, value: "OpenArm v10 × 2 · CAN FD (DG-5F 로봇과 같은 팔 스택)"}
   - {label: 손, value: "RH56F1 × 2 · 손마다 개별 포트 · RS485(USB) 또는 CANFD — 상황에 따라 바꾼다(09.29 사용자)"}
   - {label: 손 드라이버, value: "robot_control ros_ws/src/inspire_rh56f1 · /hand_<side>/angle_set · angle_actual · touch_data"}
+  - {label: 손 행동, value: "정책 6 = 엄지 외전 · 엄지 굽힘 · 검지 · 중지 · 약지 · 새끼 → rh56f1_hand.py(편~쥔 구간 · EMA 0.1 · 전 범위 1 s · 촉각 1 N 동결) — docs/RH56F1_HAND.md"}
   - {label: 손 명령, value: "각도 레지스터 0.1° (네 손가락 1740 = 편 손 · 900 = 굽힘) — 변환표 policy_control config/rh56f1_hand_map.yaml, 엄지 두 축 verified 전(-1)"}
   - {label: PC, value: "arm4090 에 팔 CAN · RH56F1 손 · 머리 · RealSense D435i 가 모두 붙는다(09.30) — 장치표 docs/HOST_arm4090.md"}
   - {label: 머리, value: "XC330 pan ID 1 · tilt ID 2 · 1M · 홈 config/head_home_rh56f1.yaml(5090 과 틱이 다르다 — offset pan +1024 · tilt −1024)"}
