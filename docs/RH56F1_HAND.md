@@ -64,6 +64,12 @@ q*       = clip(q* + Δ, lo, hi)
 | 대기 | 30 스텝, 손은 따른다 | 10 스텝, 편 손 |
 | 노드 | `pour_fj_node.py` | `rh_aglt_node.py` (같은 모듈의 rh_aglt 계열) |
 | 컵 | /objects/cup_src · cup_rcv | 오른팔 cup_src · 왼팔 cup_rcv, 목표 = 리셋 때 컵 + 14 cm |
+| 기본 정책(09.30) | both_rh_pourfj_f01 | 오른팔 right_rh_aglt_mirror_l5(좌 i05 ep3800 거울) · 왼팔 left_rh_aglt_i05(ep3800) — i03 은 hold |
+
+**양팔 rh_aglt 를 한 세션에서 동시에(09.30):** 정책 노드를 팔마다 `-r __node:=rh_aglt_node_<side> -p ns:=<side>` 로 띄운다 —
+에피소드 서비스 · 토픽 · 관측 · 행동이 `/policy_control/<side>/…` 로 갈리고(`joint_target` 은 공용), pd 는
+`/policy_control/<side>/episode` 를 그 팔에만 적용한다. 부르기: `trigger.py episode/start --episode-ns <side>`.
+콘솔 정지 바의 에피소드 정지 · 중단은 `--episode-ns '*'` 로 떠 있는 정책 노드 전부를 멈춘다. 미션 `policy_aglt_<side>` 가 이렇게 띄운다.
 
 ## 6. 실측으로 정할 것 (튜닝 — 손이 움직인다, 단계마다 승인)
 
