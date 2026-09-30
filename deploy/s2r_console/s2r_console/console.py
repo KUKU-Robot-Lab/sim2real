@@ -51,8 +51,11 @@ from mission_stages import commands_for, load_runbook  # noqa: E402
 #: 언제나 되는 서비스 호출 {이름: (라벨, 설명, trigger 인자, 자리)}.
 #: 자리 "stop" = 아래 정지 바 · "hand" = 손 창의 버튼(09.23 사용자: "손 창은 서비스 버튼 모음").
 QUICK = {
-    "episode_stop": ("에피소드 정지", "정책 루프를 멈춘다. pd 는 팔을 잡은 채로 남는다.", ["episode/stop"], "stop"),
-    "episode_abort": ("에피소드 중단", "abort 이벤트를 낸다. pd 는 HOLD 로 간다.", ["episode/abort"], "stop"),
+    # 에피소드 정지 · 중단은 떠 있는 정책 노드 **전부**에 — 팔마다 도는 정책(rh_aglt 양팔 동시, ns right · left)도 멈춘다(09.30)
+    "episode_stop": ("에피소드 정지", "정책 루프를 멈춘다(떠 있는 정책 노드 전부). pd 는 팔을 잡은 채로 남는다.",
+                     ["episode/stop", "--episode-ns", "*"], "stop"),
+    "episode_abort": ("에피소드 중단", "abort 이벤트를 낸다(떠 있는 정책 노드 전부). pd 는 HOLD 로 간다.",
+                      ["episode/abort", "--episode-ns", "*"], "stop"),
     "pd_release": ("PD 해제", "역블렌드로 토크를 내리고 JTC 로 돌려준다 → IDLE.", ["pd/release", "--expect-pd", "IDLE"], "stop"),
     "pd_hand_home": ("손 → 정책 자세", "계약의 초기 손 자세로. 팔이 홈에 정착했을 때만 받는다.", ["pd/hand_home"], "hand"),
     "pd_hand_rest": ("손 → engage 때 자세", "손을 pd 를 걸 때의 실측 자세로 되돌린다.", ["pd/hand_rest"], "hand"),

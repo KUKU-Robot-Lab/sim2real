@@ -239,13 +239,17 @@ class PourFjNode(Node):
         from policy_control.fk_numpy import UrdfChainFK
 
         self.fam = FAMILIES[family]
-        self.node_name = self.fam.name
         super().__init__(self.fam.name, **kw)
+        self.node_name = self.get_name()          # -r __node:=rh_aglt_node_right 로 팔마다 이름을 가른다
         for name, default in (("contract", ""), ("robot", ""), ("device", "cpu"), ("reset_tol_rad", 0.15),
-                              ("max_gap_ticks", 3), ("publish_target", True), ("max_episode_s", -1.0),
+                              ("max_gap_ticks", 3), ("publish_target", True), ("max_episode_s", -1.0), ("ns", ""),
                               *((param, topic) for _, param, topic in self.fam.cups)):
             self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
+        ns = str(p("ns")).strip("/")
+        #: 한 세션에서 정책을 팔마다 동시에(09.30 사용자): ns 를 주면 에피소드 서비스 · 토픽 · 관측 · 행동을 /policy_control/<ns>/ 아래로.
+        #  pd 는 /policy_control/<side>/episode 를 그 팔에만 적용한다 — ns 는 팔 이름(right · left)으로 준다. joint_target 은 공용.
+        self.base = f"{NS}/{ns}" if ns else NS
         cpath, rpath = Path(str(p("contract"))), Path(str(p("robot")))
         if not cpath.is_file() or not rpath.is_file():
             raise PourFjNodeError(f"parameters 'contract' and 'robot' must be existing files (got {cpath}, {rpath})")
@@ -272,9 +276,9 @@ class PourFjNode(Node):
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self._String = String
         self._pub_target = self.create_publisher(JointState, f"{NS}/joint_target", chain_qos)
-        self._pub_obs = self.create_publisher(Float64MultiArray, f"{NS}/obs", chain_qos)
-        self._pub_action = self.create_publisher(Float64MultiArray, f"{NS}/action", chain_qos)
-        self._pub_episode = self.create_publisher(String, f"{NS}/episode", latched)
+        self._pub_obs = self.create_publisher(Float64MultiArray, f"{self.base}/obs", chain_qos)
+        self._pub_action = self.create_publisher(Float64MultiArray, f"{self.base}/action", chain_qos)
+        self._pub_episode = self.create_publisher(String, f"{self.base}/episode", latched)
         self._pub_status = self.create_publisher(String, f"{NS}/status/{self.node_name}", QoSProfile(depth=10))
         msgs = {"joint_state": JointState, "float_array": Float64MultiArray}
         for r in self.fam.roles:
@@ -284,7 +288,7 @@ class PourFjNode(Node):
         for role, param, _ in self.fam.cups:
             self.create_subscription(PoseStamped, str(p(param)), self._cup_cb(role), qos_profile_sensor_data)
         for name in EVENTS:
-            self.create_service(Trigger, f"{NS}/episode/{name}", getattr(self, f"_srv_{name}"))
+            self.create_service(Trigger, f"{self.base}/episode/{name}", getattr(self, f"_srv_{name}"))
         self.create_timer(1.0 / float(self.contract.policy_hz), self._on_tick)
         self.get_logger().info(f"{self.node_name} up · obs {self.contract.obs_dim} act {self.contract.action_dim} · "
                                f"{self.contract.policy_hz:.0f} Hz · {self.fam.label(self.contract)}")

@@ -178,15 +178,17 @@ def _run(kind: str) -> dict:
                  "컵을 쥐어 든다 — 빈 컵만" if real else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
             _cmd(f"[{s}] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)",
                  ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_aglt_node.py", "--ros-args",
+                  # 팔마다 이름 · 에피소드를 가른다 — 양팔 정책을 한 세션에서 동시에 띄워도 서로의 reset · stop 이 섞이지 않는다(09.30)
+                  "-r", f"__node:=rh_aglt_node_{s}", "-p", f"ns:={s}",
                   "-p", f"contract:={{artifact:aglt_{s}}}", "-p", f"robot:={{artifact:robot_{s}}}", "-p", "device:=cpu",
                   "-p", f"cup_topic:=/objects/cup_{cup}/pose", "-p", f"max_episode_s:={{policy:aglt_{s}.max_episode_s}}"],
                  background=True),
             _cmd(f"[{s}] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + (0, 0, 0.14)",
-                 ["python3", f"{PC}/tools/trigger.py", "episode/reset"], execute_args=["--execute"]),
+                 ["python3", f"{PC}/tools/trigger.py", "episode/reset", "--episode-ns", s], execute_args=["--execute"]),
             _cmd(f"★[{s}] episode start — 팔이 시작 자세 0.15 rad 안 · 컵이 서 있어야 받는다",
-                 ["python3", f"{PC}/tools/trigger.py", "episode/start"], execute_args=["--execute"]),
+                 ["python3", f"{PC}/tools/trigger.py", "episode/start", "--episode-ns", s], execute_args=["--execute"]),
             _cmd("★관찰 — 이상하면 정지 바의 '에피소드 정지'", ["bash", "-lc", "true"], manual=True),
-            _cmd("episode stop — pd 가 그 자세 · 손 쥠을 붙잡는다", ["python3", f"{PC}/tools/trigger.py", "episode/stop"],
+            _cmd("episode stop — pd 가 그 자세 · 손 쥠을 붙잡는다", ["python3", f"{PC}/tools/trigger.py", "episode/stop", "--episode-ns", s],
                  execute_args=["--execute"]),
             _cmd("정책 노드 정지", stop=[f"policy_aglt_{s}#1"]),
         ]
@@ -283,7 +285,8 @@ def mission(kind: str) -> dict:
         "pourfj_both": "deploy/policies/both_rh_pourfj_f01/pour_fj_contract.json",
         "robot_bi": f"deploy/policy_control/config/robots/rh56f1_bi_{robot}.yaml",
         # 한 팔 rh_aglt 정책(첫 화면의 '오른팔 · 왼팔' 자리가 바꾼다) — 09.30
-        "aglt_right": "deploy/policies/right_rh_aglt_i03/rh_aglt_contract.json",
+        # 오른팔 = 좌 i05 ep3800 거울(09.30 사용자 — i03 은 엄지를 입구 안에 넣는 파지라 hold)
+        "aglt_right": "deploy/policies/right_rh_aglt_mirror_l5/rh_aglt_contract.json",
         "aglt_left": "deploy/policies/left_rh_aglt_i05/rh_aglt_contract.json",
     }
     if real:

@@ -917,3 +917,26 @@ def test_hand_release_refuses_while_the_arm_follows_the_policy():
     assert A.ArmUnit.hand_release_refusals(unit) == []
     unit.home_hand = None
     assert any("홈 손 자세" in r for r in A.ArmUnit.hand_release_refusals(unit))
+
+
+@needs_asset
+def test_bi_side_episode_topic_touches_only_that_arm(ros, bi_cm, bi_hand_ctrls):
+    """09.30 사용자: 정책을 팔마다 한 세션에서 동시에 — 정책 노드(ns right · left)는 /policy_control/<side>/episode 로 내고
+    pd 는 그 사건을 그 팔에만 적용한다. 공용 /policy_control/episode 는 양팔 모두(pour_fj)."""
+    from std_msgs.msg import String
+
+    node, plant, caller, spin = _bi_rig(ros, False, PD_BI)
+    try:
+        plant.wait_both(lambda st: st["phase"] == "IDLE")
+        latched = caller.pub_episode.qos_profile
+        pub_r = caller.node.create_publisher(String, f"{NS}/right/episode", latched)
+        time.sleep(0.4)
+        pub_r.publish(String(data=json.dumps({"episode": 7, "event": "reset", "object_anchor": None, "home_q": {},
+                                              "reasons": []})))
+        got = plant.wait_both(lambda st: st["episode"] == 7 if st["node"] == "pd_right" else True)
+        assert got["right"]["episode"] == 7 and got["left"]["episode"] != 7
+        caller.episode("reset", 9)                                            # 공용 = 양팔
+        got = plant.wait_both(lambda st: st["episode"] == 9)
+        assert got["right"]["episode"] == 9 and got["left"]["episode"] == 9
+    finally:
+        _close_rig(node, plant, caller, spin)

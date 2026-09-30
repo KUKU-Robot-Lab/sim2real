@@ -173,3 +173,37 @@ def test_a_pour_fj_contract_is_not_taken_for_rh_aglt():
     bad["action_dim"] = 26
     with pytest.raises(A.RhAgltError):
         A.validate(A.RaContract(**{**bad, "sides": {"arm": A.RaSide(**bad["sides"]["arm"])}}))
+
+
+MIRROR = POL / "right_rh_aglt_mirror_l5" / "rh_aglt_contract.json"
+ARM_MIRROR_SIGN = (-1.0, -1.0, -1.0, 1.0, -1.0, -1.0, -1.0)
+_M, _MN = (1.0, -1.0, 1.0), (-1.0, 1.0, -1.0)
+#: hdgp scripts/tools/mirror_rh_aglt_ckpt.py actor_sign — 관측 96 칸별 좌우 부호(팔 부호 · 손 +1 · 위치 (1,−1,1) · 손바닥 x 열 (−1,1,−1))
+OBS_MIRROR = (list(ARM_MIRROR_SIGN) * 3 + [1.0] * 12 + list(_M) + list(_MN) + list(_M) + list(_M) + list(_M)
+              + list(_M) * 5 + list(_M) * 4 + list(_M) + [1.0] * 5 + list(ARM_MIRROR_SIGN) + [1.0] * 6)
+ACT_MIRROR = list(ARM_MIRROR_SIGN) + [1.0] * 6
+
+
+def test_the_mirrored_right_policy_is_the_left_policy_seen_in_a_mirror():
+    """09.30 사용자 "오른팔 미러 되는지": 배포 로더로 두 체크포인트를 불러 a_R(o) = S_a · π_L(D_o · o) 를 LSTM 연속 60 스텝에서 확인."""
+    pytest.importorskip("torch")
+    cr, cl = A.load_contract(MIRROR), A.load_contract(LEFT)
+    if not (Path(cr.checkpoint).is_file() and Path(cl.checkpoint).is_file()):
+        pytest.skip("가중치 없음(.gitignore)")
+    from policy_control.joint_policy import JointPolicy
+    pr, pl = JointPolicy(cr, "cpu"), JointPolicy(cl, "cpu")
+    assert len(OBS_MIRROR) == 96
+    D, S = np.array(OBS_MIRROR), np.array(ACT_MIRROR)
+    dec = A.RaDecoder(cr)
+    m = _meas(cr)
+    goal = A.first_goal(cr, m.cup_pos, m.cup_quat)
+    rng = np.random.default_rng(3)
+    prev = np.zeros(13)
+    worst = 0.0
+    for _ in range(60):
+        o = A.build_obs(cr, m, dec, goal, prev) + rng.normal(0, 0.05, 96)     # 배포 관측 + 흔들기(LSTM 상태가 쌓인다)
+        a_r, a_l = pr.forward(o), pl.forward(D * o)
+        worst = max(worst, float(np.abs(a_r - S * a_l).max()))
+        prev = np.clip(a_r, -1, 1)
+        dec.step(a_r, active=True)
+    assert worst < 1e-4, worst

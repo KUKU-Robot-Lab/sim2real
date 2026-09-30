@@ -111,3 +111,12 @@ def test_the_launch_names_the_node_after_its_arm(monkeypatch):
     assert made["node_name"] == "pd_node_left"
     launch.pd_nodes({**cfg, "sides": "both"})
     assert made["node_name"] == "pd_node"                          # 양팔 한 노드 — 이름은 하나
+
+
+def test_per_arm_policy_nodes_have_their_own_episode_services():
+    """09.30: 팔마다 도는 정책 노드(-p ns:=right) → /policy_control/right/episode/*, 정지 바는 떠 있는 것 전부."""
+    assert T.resolve("episode/reset", "left", "right") == "/policy_control/right/episode/reset"
+    assert T.resolve("episode/stop", "right", "") == "/policy_control/episode/stop"
+    up = ["/policy_control/left/episode/stop", "/policy_control/pd_right/engage", "/policy_control/episode/stop"]
+    assert T.every_policy_paths("episode/stop", up) == ["/policy_control/episode/stop", "/policy_control/left/episode/stop"]
+    assert T.every_policy_paths("episode/stop", ["/x"]) == []

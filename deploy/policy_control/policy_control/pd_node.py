@@ -2,7 +2,7 @@
 
     /policy_control/joint_target (JointState, canonical 이름) ─▶ 이름으로 팔별 분배 ─┐
     /joint_states · /dg5f_<side>/joint_states (robot yaml arm/ee) ─▶ 팔별 SourceSet   ├─▶ ArmUnit.tick @ pd_hz (팔마다)
-    /policy_control/episode (reset → new_episode, stop/abort → 현재 세트포인트 유지)  │
+    /policy_control/episode (reset → new_episode, stop/abort → 현재 세트포인트 유지) · /policy_control/<side>/episode(그 팔만)  │
     /policy_control/estop (Bool, 래치 — 모든 팔)                                     ▼
     backends.write(cmd) [execute 일 때만 발행] · /policy_control/pd_<side>/applied · /policy_control/status/pd_<side>
     서비스 std_srvs/Trigger: /policy_control/pd_<side>/{engage, goto_home, hand_path, hand_home, hand_rest, hand_release, release}
@@ -206,6 +206,10 @@ class PdNode(Node):
         main = self.cb_main
         self.create_subscription(JointState, f"{NS}/joint_target", self._on_target, _qos_chain(), callback_group=main)
         self.create_subscription(String, f"{NS}/episode", self._on_episode, _qos_latched(), callback_group=main)
+        # 팔마다 따로 도는 정책(rh_aglt 양팔 동시, 09.30)은 /policy_control/<side>/episode 로 낸다 — 그 팔에만 적용
+        for s in self.sides:
+            self.create_subscription(String, f"{NS}/{s}/episode", self._side_episode_cb(s), _qos_latched(),
+                                     callback_group=main)
         self.create_subscription(Bool, f"{NS}/estop", self._on_estop, _qos_latched(), callback_group=main)
         topics: dict[str, list] = {}
         for unit in self.units.values():
@@ -284,7 +288,7 @@ class PdNode(Node):
         if not taken:
             self._note_error(f"joint_target: no selected side's arm joints among {list(msg.name)[:8]}…")
 
-    def _on_episode(self, msg) -> None:
+    def _on_episode(self, msg, only_side: str | None = None) -> None:
         try:
             ev = json.loads(msg.data)
             event, episode = str(ev["event"]), int(ev["episode"])
@@ -293,7 +297,11 @@ class PdNode(Node):
             return
         with self._lock:
             for unit in self.units.values():
-                unit.on_episode(event, episode)
+                if only_side is None or unit.side == only_side:
+                    unit.on_episode(event, episode)
+
+    def _side_episode_cb(self, side: str):
+        return lambda msg: self._on_episode(msg, only_side=side)
 
     def _on_estop(self, msg) -> None:
         with self._lock:

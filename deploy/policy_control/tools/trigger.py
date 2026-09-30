@@ -73,14 +73,54 @@ def read_pd(timeout: float, side: str) -> str:
         rclpy.try_shutdown()
 
 
-def resolve(service: str, side: str) -> str:
-    """사용자가 적는 이름 → 실제 서비스 경로. pd 는 쪽이 붙는다."""
+def resolve(service: str, side: str, episode_ns: str = "") -> str:
+    """사용자가 적는 이름 → 실제 서비스 경로. pd 는 쪽이 붙는다. 에피소드는 --episode-ns 가 있으면 그 정책 노드의 것
+    (팔마다 동시에 도는 정책 노드 `-p ns:=<side>` — /policy_control/<ns>/episode/*, 09.30)."""
     if service in PD_SERVICES:
         return f"{NS}/pd_{side}/{service.split('/', 1)[1]}"
-    return f"{NS}/{service}"
+    ns = episode_ns.strip("/")
+    return f"{NS}/{ns}/{service}" if ns else f"{NS}/{service}"
 
 
-def call(service: str, *, side: str, expect_pd: Sequence[str], service_timeout: float, phase_timeout: float) -> tuple[bool, list[str]]:
+#: 정지 바(콘솔)가 부르는 곳 — 공용 정책 노드와 팔마다 도는 정책 노드(ns right · left) 전부
+EPISODE_NS_ALL = ("", "right", "left")
+
+
+def every_policy_paths(service: str, available: Sequence[str]) -> list[str]:
+    """`--episode-ns '*'`: 지금 떠 있는 정책 노드의 그 서비스 경로들(공용 + 팔마다). 순수."""
+    want = [resolve(service, "right", ns) for ns in EPISODE_NS_ALL]
+    return [p for p in want if p in set(available)]
+
+
+def _call_every_policy(node, service: str, timeout: float) -> tuple[bool, list[str]]:
+    """떠 있는 모든 정책 노드에 같은 에피소드 서비스(stop · abort)를 — 하나도 없으면 실패, 하나라도 거절하면 실패."""
+    import rclpy  # noqa: PLC0415
+    from std_srvs.srv import Trigger
+    deadline = time.monotonic() + min(timeout, 2.0)
+    paths: list[str] = []
+    while time.monotonic() < deadline and not paths:          # 서비스 목록은 발견에 시간이 조금 걸린다
+        rclpy.spin_once(node, timeout_sec=0.1)
+        paths = every_policy_paths(service, [n for n, _ in node.get_service_names_and_types()])
+    if not paths:
+        return False, [f"떠 있는 정책 노드가 없다 ({', '.join(resolve(service, 'right', n) for n in EPISODE_NS_ALL)})"]
+    ok_all, reasons = True, []
+    for path in paths:
+        client = node.create_client(Trigger, path)
+        if not client.wait_for_service(timeout_sec=timeout):
+            ok_all, reasons = False, reasons + [f"service {path} unavailable"]
+            continue
+        fut = client.call_async(Trigger.Request())
+        rclpy.spin_until_future_complete(node, fut, timeout_sec=timeout)
+        if not fut.done() or fut.result() is None:
+            ok_all, reasons = False, reasons + [f"service {path} timeout"]
+            continue
+        print(f"  ← {path}: success={fut.result().success} message={fut.result().message}", flush=True)
+        ok, why = parse_trigger(fut.result().success, fut.result().message)
+        ok_all, reasons = ok_all and ok, reasons + list(why)
+    return ok_all, reasons
+
+
+def call(service: str, *, side: str, episode_ns: str = "", expect_pd: Sequence[str], service_timeout: float, phase_timeout: float) -> tuple[bool, list[str]]:
     import rclpy  # noqa: PLC0415
     from std_msgs.msg import String
     from std_srvs.srv import Trigger
@@ -97,7 +137,9 @@ def call(service: str, *, side: str, expect_pd: Sequence[str], service_timeout: 
 
     node.create_subscription(String, f"{NS}/status/pd_{side}", on_pd, 10)
     try:
-        path = resolve(service, side)
+        if episode_ns == "*" and service.startswith("episode/"):
+            return _call_every_policy(node, service, service_timeout)
+        path = resolve(service, side, episode_ns)
         client = node.create_client(Trigger, path)
         if not client.wait_for_service(timeout_sec=service_timeout):
             return False, [f"service {path} unavailable ({service_timeout:.0f}s)"]
@@ -131,6 +173,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="pd phase 한 줄을 찍고 끝낸다 — 구독 전용이라 --execute 가 필요 없다")
     ap.add_argument("--side", choices=("right", "left"), default="right",
                     help="pd 서비스·status 는 팔마다 따로다 — 어느 팔인가")
+    ap.add_argument("--episode-ns", default="",
+                    help="팔마다 도는 정책 노드의 ns(right · left) — /policy_control/<ns>/episode/*. '*' = 떠 있는 정책 노드 전부(정지 바)")
     ap.add_argument("--expect-pd", nargs="*", default=[], help="호출 뒤 기다릴 pd phase (여러 개면 그중 하나)")
     ap.add_argument("--execute", action="store_true", help="★실제로 서비스를 부른다")
     ap.add_argument("--allow-domain-0", action="store_true")
@@ -147,7 +191,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if not args.service:
         ap.error("service 가 필요하다 (또는 --read-pd)")
-    print(f"trigger {resolve(args.service, args.side)} · 기대 pd {args.expect_pd or '-'} · execute {args.execute}", flush=True)
+    shown = "떠 있는 정책 노드 전부" if args.episode_ns == "*" else resolve(args.service, args.side, args.episode_ns)
+    print(f"trigger {shown} · 기대 pd {args.expect_pd or '-'} · execute {args.execute}", flush=True)
     if not args.execute:
         print("DRY RUN — 아무 서비스도 부르지 않았다.")
         return 0
@@ -155,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
     if refusal:
         print(f"  ✗ {refusal}")
         return 2
-    ok, reasons = call(args.service, side=args.side, expect_pd=args.expect_pd,
+    ok, reasons = call(args.service, side=args.side, episode_ns=args.episode_ns, expect_pd=args.expect_pd,
                        service_timeout=args.service_timeout, phase_timeout=args.phase_timeout)
     for r in reasons:
         print(f"  {'·' if ok else '✗'} {r}")

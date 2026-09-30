@@ -11,7 +11,7 @@ artifacts:
   path_left: deploy/policy_control/paths/home_rh56f1_left.npz
   pourfj_both: deploy/policies/both_rh_pourfj_f01/pour_fj_contract.json
   robot_bi: deploy/policy_control/config/robots/rh56f1_bi_fake.yaml
-  aglt_right: deploy/policies/right_rh_aglt_i03/rh_aglt_contract.json
+  aglt_right: deploy/policies/right_rh_aglt_mirror_l5/rh_aglt_contract.json
   aglt_left: deploy/policies/left_rh_aglt_i05/rh_aglt_contract.json
 checkpoints: {}
 groups:
@@ -412,6 +412,10 @@ run:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
     - --ros-args
+    - -r
+    - __node:=rh_aglt_node_right
+    - -p
+    - ns:=right
     - -p
     - contract:={artifact:aglt_right}
     - -p
@@ -428,6 +432,8 @@ run:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
     - episode/reset
+    - --episode-ns
+    - right
     execute_args:
     - --execute
   - note: ★[right] episode start — 팔이 시작 자세 0.15 rad 안 · 컵이 서 있어야 받는다
@@ -435,6 +441,8 @@ run:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
     - episode/start
+    - --episode-ns
+    - right
     execute_args:
     - --execute
   - note: ★관찰 — 이상하면 정지 바의 '에피소드 정지'
@@ -448,6 +456,8 @@ run:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
     - episode/stop
+    - --episode-ns
+    - right
     execute_args:
     - --execute
   - note: 정책 노드 정지
@@ -465,6 +475,10 @@ run:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
     - --ros-args
+    - -r
+    - __node:=rh_aglt_node_left
+    - -p
+    - ns:=left
     - -p
     - contract:={artifact:aglt_left}
     - -p
@@ -481,6 +495,8 @@ run:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
     - episode/reset
+    - --episode-ns
+    - left
     execute_args:
     - --execute
   - note: ★[left] episode start — 팔이 시작 자세 0.15 rad 안 · 컵이 서 있어야 받는다
@@ -488,6 +504,8 @@ run:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
     - episode/start
+    - --episode-ns
+    - left
     execute_args:
     - --execute
   - note: ★관찰 — 이상하면 정지 바의 '에피소드 정지'
@@ -501,6 +519,8 @@ run:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
     - episode/stop
+    - --episode-ns
+    - left
     execute_args:
     - --execute
   - note: 정책 노드 정지
