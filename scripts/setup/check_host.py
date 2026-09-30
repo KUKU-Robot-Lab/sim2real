@@ -231,6 +231,16 @@ def check_host_specific(rep: Report, robot: str) -> None:
             (rep.ok if Path(port).exists() else
              lambda w: rep.warn(w, "손 연결 확인 후 config/rh56f1_ports.yaml 의 port 를 이 PC 값으로(ls -l /dev/serial/by-id)"))(
                 f"RH56F1 {side} {ports[side]['transport']} {port}")
+        head = yaml.safe_load((SIM2REAL / "config/head_home_rh56f1.yaml").read_text())["port"]
+        (rep.ok if Path(head).exists() else
+         lambda w: rep.warn(w, "U2D2 연결 확인 — 머리 pan · tilt 는 허브에 따로 꽂는다(직렬 연결 금지, docs/HOST_arm4090.md)"))(
+            f"머리 U2D2 {head}")
+        for can in ("can0", "can1"):
+            flags = Path(f"/sys/class/net/{can}/flags")
+            if flags.exists() and not int(flags.read_text(), 16) & 0x1:
+                rep.warn(f"CAN {can} 이 꺼져 있다(DOWN)", "운영자가 sudo ip link set … fd on && up (docs/HOST_arm4090.md)")
+        usb = subprocess.run(["lsusb"], capture_output=True, text=True).stdout
+        (rep.ok if "RealSense" in usb else lambda w: rep.warn(w, "RealSense 를 USB3 포트에 꽂는다"))("RealSense 카메라")
     if robot in ("dg5f", "all"):
         rep.warn("DG-5F 손 네트워크(/32 경로)는 미션 hand_<side> 단계의 hand_net_dual.sh --apply 로(최초 1회)")
 
