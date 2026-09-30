@@ -1,0 +1,28 @@
+# head(목) 기준 자세 — arm4090 RH56F1 로봇 (2026-09-30, 5090 홈 화면과 같게 맞춤)
+#
+# 맞춘 방법: scripts/calib/head_view_autoalign.py(tilt: 테이블 평면 숙임) + 볼트 무리 위치로 pan 손 조정.
+#   기준 config/head_view_ref_5090.npz(5090 홈 pan 2049 · tilt 1820 틱) 대비: 숙임 18.93°(기준 18.9) · 테이블 거리 0.61 m(0.614) ·
+#   왼쪽 · 가운데 볼트 무리 5~10 px · 회전 약 0.7°.
+# ★이 머리는 5090 과 같은 숫자로 못 맞춘다: tilt 혼이 약 184° 돌아 조립돼 있고 Homing Offset 은 ±1024 틱(±90°)만 먹는다
+#   (그 밖의 값은 레지스터에 써져도 무시 — 09.30 실측). 그래서 모터 EEPROM 에 offset pan +1024 · tilt −1024 를 넣어 쓰는 범위를
+#   0/4095 경계에서 떼어 놓고, 이 파일에 그 상태의 홈 각을 따로 둔다. 5090 은 config/head_home.yaml 을 그대로 쓴다.
+#   offset 을 바꾸면 아래 deg 도 다시 맞춰야 한다.
+# 카메라 외부 파라미터(head_extrinsics.yaml)의 영점도 이 로봇은 다르다 — 같은 화면일 때
+#   tilt: 5090 −20.04° ↔ 이 로봇 +71.81°,  pan: 5090 +0.09° ↔ 이 로봇 −2.90° (FP++ 를 arm4090 에 올릴 때 반영).
+port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
+baud: 1000000
+
+motors:
+  pan:
+    id: 1
+    deg: -2.9          # 틱 2015(offset +1024 적용 후) — 목표 1997 에서 멈춘 실제 자리
+  tilt:
+    id: 2
+    deg: 71.8          # 틱 2865(offset −1024 적용 후)
+
+position_i_gain: 400
+
+# 순서 규약은 config/head_home.yaml 과 같다: 토크off → 모드 → 게인 → 프로파일 → 토크on → 목표
+operating_mode: 3
+profile_acceleration: 20
+profile_velocity: 50

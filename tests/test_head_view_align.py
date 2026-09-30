@@ -63,3 +63,14 @@ def test_autoalign_steps_toward_zero_and_never_leave_the_window():
     assert clamp_step(error=3.0, gain=0.0, max_step=2.0) == 0.0            # 이득을 모르면 움직이지 않는다
     lim = round(25 * 4096 / 360)
     assert within_window(5000, 2048, 25.0) == 2048 + lim and within_window(0, 2048, 25.0) == 2048 - lim
+
+
+def test_the_rh56f1_head_home_loads_and_is_not_the_5090_file():
+    """arm4090 머리는 오프셋 한도(±90°) 때문에 5090 숫자로 못 맞춰 따로 둔다(09.30)."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from head_home import load_head_home
+    rh = load_head_home(Path(__file__).resolve().parents[1] / "config/head_home_rh56f1.yaml")
+    dg = load_head_home(DEFAULT_HOME)
+    assert rh.port.startswith("/dev/serial/by-id/") and rh.targets_deg != dg.targets_deg
+    assert rh.position_i_gain == dg.position_i_gain and rh.operating_mode == dg.operating_mode
