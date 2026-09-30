@@ -39,7 +39,7 @@ q*       = clip(q* + Δ, lo, hi)
    속도 상한 max_vel_track 2.1 rad/s(= sim 상한) · 한계 여유 · 측정값과의 거리 제한
    → rh56f1_hand_map.yaml 로 rad → 레지스터(끝점 선형, 엄지 두 축은 verified 전이라 −1 = 안 움직임)
    → 바뀐 것만 · 최대 30 Hz · 1 s 마다 재전송 ─ /hand_<side>/angle_set ─▶ robot_control rh56f1_driver ─ RS485 ─▶ 손
-손 자체 설정(pd yaml hand.hw_*, 발행 모드에서 첫 명령 전 · 5 s 마다): speed_set 2000(= 무부하 전 행정 1 s) · force_set 미설정
+손 자체 설정(pd yaml hand.hw_*, 발행 모드에서 첫 명령 전 · 5 s 마다): speed_set 2000(= 무부하 전 행정 1 s) · force_set 600 g(벤더 기본)
 ```
 
 ## 4. 센서 → 관측
@@ -70,5 +70,5 @@ q*       = clip(q* + Δ, lo, hi)
 1. 엄지 두 축 방향 · 대응(미션 probe_<side>) → `verified: true`.
 2. 손 속도: 편 손 ↔ 반쯤 쥔 손 스텝의 지연 · 도달 시간 vs sim(전 범위 1 s, EMA 0.1) → `hw_speed`.
 3. 레지스터 ↔ 각도 비선형(벤더 행정-각도 표) → 변환표 보정.
-4. 힘 멈춤 임계(`hw_force`) — sim 은 손끝 1 N 에서 닫기를 멈춘다.
+4. 힘 멈춤 임계(`hw_force`, 지금 벤더 기본 600 g) — sim 은 손끝 1 N 에서 닫기를 멈춘다. 파지 실험으로 조정.
 5. 촉각 단위(0.01 N 추정)를 알려진 무게로 확인 → `unit_verified: true`.

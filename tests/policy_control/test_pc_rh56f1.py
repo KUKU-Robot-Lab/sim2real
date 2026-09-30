@@ -171,7 +171,7 @@ def test_backend_sets_the_hand_speed_and_force_before_the_first_angle_and_then_e
     names = HMAP.names("right")
     b = Rh56f1AngleBackend(node, "/hand_right/angle_set", names, [0.0] * 6, [2.1, 0.48, 1.53, 1.53, 1.53, 1.53], HMAP, 1.0,
                            execute=True, clock=lambda: t[0], hw_speed=2000)
-    assert "/hand_right/speed_set" in node.pubs and "/hand_right/force_set" not in node.pubs       # force 0 = 안 보낸다
+    assert "/hand_right/speed_set" in node.pubs and "/hand_right/force_set" not in node.pubs       # force 0(인자 기본) = 안 보낸다
     cmd = HandCmd(q_star=np.array(OPEN), qd_star=None, dt=0.01, q_meas=np.array(OPEN))
     b.write(cmd)
     speed = node.pubs["/hand_right/speed_set"].msgs
@@ -187,7 +187,7 @@ def test_pd_yaml_hand_settings_are_loaded():
     from policy_control.pd_law import load_pd_config
     for name in ("pd_rh56f1.yaml", "pd_rh56f1_exec.yaml"):
         h = load_pd_config(REPO / "deploy/policy_control/config" / name).hand
-        assert h.hw_speed == 2000 and h.hw_force == 0
+        assert h.hw_speed == 2000 and h.hw_force == 600
 
 
 # ---------------------------------------------------------------- 상태 노드 · fake 손
