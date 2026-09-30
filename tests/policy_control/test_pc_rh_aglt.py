@@ -129,7 +129,8 @@ def test_the_chain_holds_then_moves_and_needs_the_cup_to_reset(c):
     ch = N.AgltChain(c, _Const(np.r_[np.full(7, 0.5), np.ones(6)]))
     with pytest.raises(N.PourFjNodeError, match="cup"):
         ch.reset(None)
-    meas = {"arm": _meas(c)}
+    y = 0.16 if c.side().side == "left" else -0.16          # 그 팔의 소환 박스 안, 정착고(첫 목표가 목표 박스로 잘리지 않게)
+    meas = {"arm": _meas(c, cup=(0.35, y, 0.264865))}
     ch.reset(meas)
     assert ch.goal.pos == pytest.approx(meas["arm"].cup_pos + [0, 0, 0.14])
     for _ in range(c.hold_steps):

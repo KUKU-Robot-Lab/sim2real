@@ -63,10 +63,10 @@ q*       = clip(q* + Δ, lo, hi)
 | 행동 | 26 = [오른팔 7 · 오른손 6][왼팔 7 · 왼손 6] | 13 = 팔 7 · 손 6 |
 | 손 범위 · 동결 | f01: 한계 전 범위 · 동결 없음 (f02~: grip · 1 N) | grip · 1 N |
 | 손 관측 순서 | PhysX 순 — 10.01 t2r_rh5_f01 ep800 trace 로 실측: 가정(index · middle · pinky · ring · thumb_1 · thumb_2)과 같다 | 프로필 순(이름) — 문제 없음 |
-| Isaac 대조 | rh5_f01 ep800: 팔 · 손 q* 한 스텝 재생 오차 < 1e-7, LSTM 행동 ≤ 1.2e-3(리셋부터) | 계약 테스트(test_pc_rh_aglt) |
+| Isaac 대조 | rh5_f01 ep800 · f02 ep3000: 팔 · 손 q* 한 스텝 재생 오차 < 1e-7(동결 = 직전 스텝 첫마디 OR 손끝 컵 접촉), LSTM 행동 ≤ 1.2e-3(f01, 리셋부터) | 계약 테스트(test_pc_rh_aglt) |
 | 대기 | 30 스텝, 손은 따른다 | 10 스텝, 편 손 |
 | 노드 | `pour_fj_node.py` | `rh_aglt_node.py` (같은 모듈의 rh_aglt 계열) |
-| 컵 | /objects/cup_src · cup_rcv | 오른팔 cup_src · 왼팔 cup_rcv, 목표 = 리셋 때 컵 + 14 cm |
+| 컵 | /objects/cup_src · cup_rcv | 오른팔 cup_src · 왼팔 cup_rcv, 첫 목표 = 리셋 때 컵 + 14 cm, 그 뒤 목표 직접 입력(아래) |
 | 기본 정책(09.30) | both_rh_pourfj_f01 | 오른팔 right_rh_aglt_mirror_l5(좌 i05 ep3800 거울) · 왼팔 left_rh_aglt_i05(ep3800) — i03 은 hold |
 
 **양팔 rh_aglt 를 한 세션에서 동시에(09.30):** 정책 노드를 팔마다 `-r __node:=rh_aglt_node_<side> -p ns:=<side>` 로 띄운다 —
@@ -81,3 +81,16 @@ q*       = clip(q* + Δ, lo, hi)
 3. 레지스터 ↔ 각도 비선형(벤더 행정-각도 표) → 변환표 보정.
 4. 힘 멈춤 임계(`hw_force`, 지금 벤더 기본 600 g) — sim 은 손끝 1 N 에서 닫기를 멈춘다. 파지 실험으로 조정.
 5. 촉각 단위(0.01 N 추정)를 알려진 무게로 확인 → `unit_verified: true`.
+
+**동결 신호 차이(10.01, f02 trace):** 학습의 손 동결은 손가락 **첫마디 OR 손끝**의 컵 접촉력(> 1 N)이다. f02 왼손(쥐는 손)은
+첫마디 접촉으로 동결되는 스텝이 많아, 손끝만으로 흉내 내면 1만 스텝 넘게 달라진다. 실기 촉각은 손끝뿐이라 배포는 손끝 촉각으로
+대신한다 — 첫마디 쪽은 손 펌웨어 힘 멈춤(forceSet 600 g)에 기댄다. 모터 힘(force_actual)으로 첫마디 접촉을 대신할지는 실측 뒤 정한다.
+
+**rh_aglt 목표 직접 입력(10.01 사용자):** 에피소드 reset 뒤 `/policy_control/<ns>/goal`(geometry_msgs/Point, 로봇 base m)에 최종 목표를 낸다.
+결과는 `/policy_control/<ns>/goal_result`(latched JSON: ok · reasons · goal · queue · kp_dist · near_steps · successes). 규칙(`rh_aglt_goals.py`):
+- 학습 목표 박스 밖이면 거부 — 오른팔 x 0.10~0.40 · y −0.30~−0.10, 왼팔 y +0.10~+0.30, z 0.345~0.485(= 정착고 0.265 + 0.08~0.22).
+- 첫 목표 전: 리셋 때 컵에서 수평 ±0.05 · 위로 0.10~0.18 안이면 첫 목표를 그것으로, 밖이면 첫 목표를 달성한 뒤 거기서부터 잇는다.
+- 먼 목표는 직전 달성 목표에서 축마다 ±0.08 m 이내 중간 목표로 나눠 차례로 준다.
+- 달성 = 키포인트 최대거리 ≤ 0.02 m(tol_floor) 누적 10 스텝 + 지금 근처 + 쥠(엄지 AND 다른 손가락 촉각 > 1 N). 마지막 목표에는 머문다.
+- 예: `ros2 topic pub --once /policy_control/right/goal geometry_msgs/msg/Point "{x: 0.30, y: -0.15, z: 0.44}"` — 팔이 움직이는 입력이라 실기에서는 승인 뒤.
+

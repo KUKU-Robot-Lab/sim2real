@@ -12,7 +12,8 @@ rh_aglt_env.py 는 좌우가 바이트 단위로 같다(hdgp test_rh_aglt_contra
   arm_q 7 · arm_qd 7 · arm q* 7 · hand_q 6(★프로필 순 — hand_t = 이름으로 찾은 hand_ids) · hand_err 6((q*−q)/1.2, ±1) ·
   palm 3 · palm R 열0+열1 6 · cup−palm 3 · cup_up 3 · tips−cup 15 · (컵 kp − 목표 kp) 12 · 목표−palm 3 · 촉각 5 · 직전 행동 13
 위치는 로봇 base(= 학습 env-local, 로봇이 원점) 기준. 목표: 리셋 때 컵 + (0, 0, goal_first_z 가운데), 자세 = 리셋 때 컵 자세
-(학습은 xy ±5 cm · z 0.10~0.18 균등 — 배포는 가운데). 성공해도 다음 목표로 넘어가지 않는다(한 번 들기 · 이송).
+(학습은 xy ±5 cm · z 0.10~0.18 균등 — 배포는 가운데). 10.01 사용자: 목표를 직접 넣는다 — rh_aglt_goals.py(학습 목표 분포
+검사 · 먼 목표는 goal_delta_distance 이내 중간 목표로 나눠 차례로, 성공 = 키포인트 최대거리 ≤ tol_floor 누적 10 스텝 + 쥠).
 """
 from __future__ import annotations
 
@@ -91,6 +92,15 @@ class RaContract:
     hand_obs_order_source: str
     sides: dict                 # "arm" → RaSide
     notes: list = field(default_factory=list)
+    # ★10.01 목표 입력(rh_aglt_goals) — 학습 목표 분포. 빈 값 = 이 필드 전 계약(목표 입력을 거부한다, 다시 빌드)
+    goal_box_min: list = field(default_factory=list)     # base 절대 박스 = 소환 박스 xy ± margin · z 정착고 + goal_box_z_range
+    goal_box_max: list = field(default_factory=list)
+    goal_first_xy_range: float = 0.0                     # 첫 목표: 리셋 때 컵에서 수평 ±, 위로 goal_first_z_range
+    goal_first_z_range: list = field(default_factory=list)
+    goal_delta_distance: float = 0.0                     # 다음 목표: 직전 목표에서 축마다 ±
+    goal_success_steps: int = 0                          # 키포인트 최대거리 ≤ goal_tol 인 스텝 누적(연속 아님)
+    goal_tol: float = 0.0                                # 학습 종점 tol_floor
+    grasp_threshold_n: float = 0.0                       # 쥠 = 엄지 AND 다른 손가락 > 이 힘(contact_force_threshold)
 
     def side(self, role: str = "arm") -> RaSide:
         return self.sides[role]
@@ -171,8 +181,16 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
                hand_lim_lo=[lim[j][0] for j in hand], hand_lim_hi=[lim[j][1] for j in hand],
                palm_body=rename(str(right_profile.palm_body)), tip_bodies=[rename(b) for b in right_profile.fingertip_bodies])
     z = [float(v) for v in env["goal_first_z_range"]]
-    notes = [f"학습 목표 분포 xy ±{float(env['goal_first_xy_range'])} m · z {z} — 배포는 가운데 한 점",
-             f"hdgp 성공 tol_floor {float(env['tol_floor'])} m (배포는 성공을 세지 않는다)"]
+    ctr, hw, m = [float(v) for v in env["spawn_center"]], [float(v) for v in env["spawn_half"]], float(env["goal_box_xy_margin"])
+    z0 = float(env["table_surface_z"]) + float(env["cup_origin_offset_z"])
+    zb = [float(v) for v in env["goal_box_z_range"]]
+    for k in ("goal_first_tilt_deg", "goal_delta_rotation_deg"):
+        if float(env.get(k, 0.0)) != 0.0:
+            raise RhAgltError(f"{k} ≠ 0 — 기울인 목표는 배포 목표 입력이 모른다")
+    notes = [f"첫 목표 기본 = 리셋 때 컵 + (0, 0, {0.5 * (z[0] + z[1]):.2f}) — 학습 분포 xy ±{float(env['goal_first_xy_range'])} m · z {z}",
+             f"목표 입력: 박스 밖 거부 · 먼 목표는 축마다 ±{float(env['goal_delta_distance'])} m 이내 중간 목표로 나눔",
+             f"목표 달성 = 키포인트 최대거리 ≤ tol_floor {float(env['tol_floor'])} m 누적 {int(env['goal_success_steps'])} 스텝 + 쥠"
+             f"(엄지 AND 다른 손가락 촉각 > {float(env['contact_force_threshold'])} N — 학습은 첫마디+손끝 컵 접촉, 실기는 손끝 촉각)"]
     if not bool(cfg_a.get("normalize_input", False)):
         notes.append("normalize_input false")
     c = RaContract(
@@ -189,7 +207,12 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
         freeze_threshold_n=float(env["contact_freeze_threshold"]), joint_err_norm=float(env["joint_err_norm"]),
         tactile_clip_n=float(env["tactile_obs_clip_n"]), tactile_tanh_n=float(env["tactile_obs_tanh_n"]),
         cup_half_height=float(env["cup_half_height"]), goal_offset=[0.0, 0.0, 0.5 * (z[0] + z[1])],
-        hand_obs_order_source="profile(hdgp rh_aglt_env hand_ids = 이름 순)", sides={"arm": s}, notes=notes)
+        hand_obs_order_source="profile(hdgp rh_aglt_env hand_ids = 이름 순)", sides={"arm": s}, notes=notes,
+        goal_box_min=[ctr[0] - hw[0] - m, ctr[1] - hw[1] - m, z0 + zb[0]],
+        goal_box_max=[ctr[0] + hw[0] + m, ctr[1] + hw[1] + m, z0 + zb[1]],
+        goal_first_xy_range=float(env["goal_first_xy_range"]), goal_first_z_range=z,
+        goal_delta_distance=float(env["goal_delta_distance"]), goal_success_steps=int(env["goal_success_steps"]),
+        goal_tol=float(env["tol_floor"]), grasp_threshold_n=float(env["contact_force_threshold"]))
     validate(c)
     return c
 

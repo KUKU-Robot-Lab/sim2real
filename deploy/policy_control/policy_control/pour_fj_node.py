@@ -35,6 +35,7 @@ from policy_control import _paths  # noqa: F401,E402
 from policy_control import codec  # noqa: E402
 from policy_control import pour_fj as F  # noqa: E402
 from policy_control import rh_aglt as A  # noqa: E402
+from policy_control import rh_aglt_goals as G  # noqa: E402
 from policy_control.episode_master import EpisodeBook  # noqa: E402
 from policy_control.joint_obs import quat_to_matrix  # noqa: E402
 from policy_control.sources import SourceSet, load_robot_cfg, select_side  # noqa: E402
@@ -136,14 +137,23 @@ def aglt_target_arrays(c: A.RaContract, targets: dict) -> tuple[tuple, np.ndarra
 
 
 class AgltChain:
-    """rh_aglt 한 스텝 — 관측(목표 포함) → 정책 → 디코더. 목표는 reset 때 컵 자세로 정한다."""
+    """rh_aglt 한 스텝 — 관측(목표 포함) → 정책 → 디코더. 첫 목표는 reset 때 컵 자세로, 그 뒤는 사용자 입력(rh_aglt_goals)."""
 
     def __init__(self, c: A.RaContract, policy) -> None:
         self.c, self.policy = c, policy
         self.dec = A.RaDecoder(c)
         self.prev = np.zeros(c.action_dim)
         self.step_i = 0
-        self.goal: A.Goal | None = None
+        self.goals: G.GoalBook | None = None
+
+    @property
+    def goal(self) -> A.Goal | None:
+        return None if self.goals is None else self.goals.goal
+
+    def request_goal(self, target) -> list:
+        if self.goals is None:
+            return ["goal: reset first (the first goal comes from the cup pose at reset)"]
+        return self.goals.request(target)
 
     def reset(self, meas: dict | None = None) -> None:
         if meas is None:
@@ -151,7 +161,7 @@ class AgltChain:
         self.dec.reset()
         self.prev = np.zeros(self.c.action_dim)
         self.step_i = 0
-        self.goal = A.first_goal(self.c, meas["arm"].cup_pos, meas["arm"].cup_quat)
+        self.goals = G.GoalBook.start(self.c, meas["arm"].cup_pos, meas["arm"].cup_quat)
         if hasattr(self.policy, "reset"):
             self.policy.reset()
 
@@ -159,7 +169,10 @@ class AgltChain:
         m = meas["arm"]
         obs = A.build_obs(self.c, m, self.dec, self.goal, self.prev)
         a = np.clip(np.asarray(self.policy.forward(obs), float), -self.c.action_clip, self.c.action_clip)
-        targets = self.dec.step(a, active=self.step_i >= self.c.hold_steps, tactile_n=m.tactile_n)
+        active = self.step_i >= self.c.hold_steps
+        targets = self.dec.step(a, active=active, tactile_n=m.tactile_n)
+        if active:                                  # 학습 GoalState.step 도 대기 중에는 세지 않는다
+            self.goals.step(m.cup_pos, m.cup_quat, m.tactile_n)
         self.prev = np.clip(a, -1.0, 1.0)
         self.step_i += 1
         return obs, a, targets
@@ -209,7 +222,8 @@ FAMILIES = {
                       cups=(("arm", "cup_topic", "/objects/cup_big_s100/pose"),),
                       meas=aglt_meas, chain=AgltChain, refusals=aglt_start_refusals, targets=aglt_target_arrays,
                       errors=(PourFjNodeError, A.RhAgltError, ValueError),
-                      label=lambda c: f"{c.side().side} arm · goal +{c.goal_offset}"),
+                      label=lambda c: f"{c.side().side} arm · goal +{c.goal_offset}"
+                                        f"{' · goal input on' if G.has_goal_spec(c) else ' · goal input off (old contract)'}"),
 }
 
 
@@ -289,6 +303,10 @@ class PourFjNode(Node):
             self.create_subscription(PoseStamped, str(p(param)), self._cup_cb(role), qos_profile_sensor_data)
         for name in EVENTS:
             self.create_service(Trigger, f"{self.base}/episode/{name}", getattr(self, f"_srv_{name}"))
+        if family == "rh_aglt":                     # 10.01 사용자: 목표 직접 입력(base 좌표 m) — 결과는 goal_result(latched JSON)
+            from geometry_msgs.msg import Point
+            self._pub_goal_result = self.create_publisher(String, f"{self.base}/goal_result", latched)
+            self.create_subscription(Point, f"{self.base}/goal", self._on_goal, QoSProfile(depth=10))
         self.create_timer(1.0 / float(self.contract.policy_hz), self._on_tick)
         self.get_logger().info(f"{self.node_name} up · obs {self.contract.obs_dim} act {self.contract.action_dim} · "
                                f"{self.contract.policy_hz:.0f} Hz · {self.fam.label(self.contract)}")
@@ -324,6 +342,18 @@ class PourFjNode(Node):
         now = time.monotonic()
         return {r: self.fam.meas(self.contract, r, self.srcs[r].snapshot(now), self.arm_names[r], self.fk[r], self._cup(r))
                 for r in self.fam.roles}
+
+    def _on_goal(self, msg) -> None:
+        target = [float(msg.x), float(msg.y), float(msg.z)]
+        reasons = (["goal: reset first (the first goal comes from the cup pose at reset)"] if self.chain is None
+                   else self.chain.request_goal(target))
+        body = {"ok": not reasons, "reasons": reasons, "request": [round(v, 4) for v in target],
+                **(self.chain.goals.as_dict() if getattr(self.chain, "goals", None) is not None else {})}
+        self._pub_goal_result.publish(self._String(data=json.dumps(body)))
+        if reasons:                                 # rclpy: 한 호출 자리에서 로그 등급을 바꾸면 ValueError
+            self.get_logger().warning(f"goal {body['request']} refused {reasons}")
+        else:
+            self.get_logger().info(f"goal {body['request']} accepted · now {body.get('goal')} · queue {body.get('queue')}")
 
     # ---------------------------------------------------------------- services
     def _reply(self, res, ok: bool, reasons):
@@ -385,8 +415,7 @@ class PourFjNode(Node):
         body = {"node": self.node_name, "phase": self.book.phase, "episode": self.book.episode, "seq": self._seq, "ok": bool(ok),
                 "reasons": [str(r) for r in reasons], "publish_target": self._publish,
                 "hand_obs_order": self.contract.hand_obs_order_source.split(":")[0],
-                **({"goal": [round(float(v), 4) for v in self.chain.goal.pos]}
-                   if getattr(self.chain, "goal", None) is not None else {}),
+                **(self.chain.goals.as_dict() if getattr(self.chain, "goals", None) is not None else {}),
                 "t_pub_ns": self.get_clock().now().nanoseconds, **(extra or {})}
         self._pub_status.publish(self._String(data=json.dumps(body)))
 

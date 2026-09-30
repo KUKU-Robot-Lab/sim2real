@@ -20,7 +20,8 @@ F01 = Path("/media/user/DATA/kuku_ai/rl/rl_runs_20260926/pour_bi_rh/t2r_rh4_f01"
 F01_CKPT = F01 / "last_open-rh_b_pour_fj-lstm_ep_2300_rew_1107.8425.pth"
 URDF = _paths.RL_WS / "hdgp/assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf"
 HOMES = _paths.SIM2REAL / "deploy/policy_control/config/homes/rh56f1_pour_fj.yaml"
-RH5 = _paths.SIM2REAL / "logs/policy/t2r_rh5_f01_ep800"      # arm4090 ~/logs/t2r/det_rh/t2r_rh5_f01_ep800 (git 밖)
+# pour_bi_rh 세션 결정론 재생(git 밖): f01 ep800 = arm4090 ~/logs/t2r/det_rh/ · f02 ep3000 = server ~/logs/t2r/det_rh/
+RH5_RUNS = [_paths.SIM2REAL / f"logs/policy/{n}" for n in ("t2r_rh5_f01_ep800", "t2r_rh5_f02_ep3000")]
 
 
 def _side(role: str) -> F.FjSide:
@@ -190,10 +191,13 @@ def test_hand_speed_cap_is_common_with_thumb_flex_apart():
     assert law.finger_open_floor == 0.065 and law.vel_cap_rad_s == F.hand_vel_cap(c)
 
 
-@pytest.mark.skipif(not (RH5 / "trace.npz").is_file(), reason="t2r_rh5_f01 ep800 trace 없음(git 밖)")
-def test_rh5_f01_trace_one_step_decoder_replay_is_exact():
-    """10.01 pour_bi_rh 세션 결정론 재생(64 env · 900 스텝): 관측 안의 q*(팔 마지막 7 · 손 joint_err 복원)를
-    직전 q* + 이번 행동으로 한 스텝씩 다시 만든다. 동결은 직전 스텝 손가락 컵 접촉력(src_f/rcv_f)으로."""
+@pytest.mark.parametrize("RH5", RH5_RUNS, ids=lambda p: p.name)
+def test_rh5_trace_one_step_decoder_replay_is_exact(RH5):
+    """10.01 pour_bi_rh 세션 결정론 재생(64 env · 900 스텝, f01 · f02 같은 행동 법칙): 관측 안의 q*(팔 마지막 7 · 손 joint_err 복원)를
+    직전 q* + 이번 행동으로 한 스텝씩 다시 만든다. 동결은 직전 스텝 손가락 첫마디 OR 손끝 컵 접촉력(link_mid · link_tip) —
+    hdgp side_rig `(mid > thr) | (dist > thr)`. f02 왼손은 첫마디 접촉으로 동결되는 스텝이 많다(손끝만 쓰면 1만 스텝 넘게 어긋남)."""
+    if not (RH5 / "trace.npz").is_file():
+        pytest.skip(f"{RH5.name} trace 없음(git 밖)")
     pair = load_mimic_pair(_paths.RL_WS / "hdgp")
     meta = json.loads((RH5 / "trace_meta.json").read_text())
     order = {r: meta[f"{r}_hand_obs_joint_names"] for r in F.ROLES}
@@ -210,6 +214,7 @@ def test_rh5_f01_trace_one_step_decoder_replay_is_exact():
     for ri, r in enumerate(F.ROLES):
         s, off = c.sides[r], 0 if r == "src" else 63
         law, idx = dec.law(s), [list(s.hand_obs_order).index(j) for j in s.hand_joints]
+        touch = np.maximum(d[f"{r}_link_mid"], d[f"{r}_link_tip"])            # npz 키 접근은 매번 압축을 푼다 — 한 번만
         for n in (0, 21, 42, 63):
             home = np.array(s.arm_home)
             back = [t for t in range(c.hold_steps + 1, O.shape[0]) if np.abs(O[t, n, off + 56:off + 63] - home).max() < 1e-6]
@@ -221,7 +226,7 @@ def test_rh5_f01_trace_one_step_decoder_replay_is_exact():
                     continue
                 q0 = O[t - 1, n, off + 14:off + 20][idx] + e0 * c.joint_pos_err_max
                 q1 = O[t, n, off + 14:off + 20][idx] + e1 * c.joint_pos_err_max
-                fz = law.touch_to_freeze(d[f"{r}_f"][t - 1, n])
+                fz = law.touch_to_freeze(touch[t - 1, n])
                 hand_err = max(hand_err, np.abs(law.step(q0, A[t, n, ri * 13 + 7:(ri + 1) * 13], active=True, freeze=fz) - q1).max())
     assert arm_err < 1e-6 and hand_err < 1e-5, (arm_err, hand_err)
 
