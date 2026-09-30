@@ -97,8 +97,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  레지스터(슬롯 순 새끼 · 약지 · 중지 · 검지 · 엄지 굽힘 · 엄지 회전) {last['reg']}")
         print("  rad(자산 순) " + " · ".join(f"{n.split('_hj_')[1]} {v:+.3f}"
                                             for n, v in zip(hmap.names(args.side), hmap.to_rad(last["reg"]))))
-    if hmap.unverified():
-        print(f"  ★방향 확인 전 축(pd 가 -1 로 둔다): {', '.join(hmap.unverified())} — tools/rh56f1_axis_probe.py")
+    if hmap.unverified(args.side):
+        print(f"  ★방향 확인 전 축(pd 가 -1 로 둔다): {', '.join(hmap.unverified(args.side))} — tools/rh56f1_axis_probe.py")
     bad = verdict(hmap, args.side, last["reg"], last["names"], last["js"], hz, lower, upper)
     for b in bad:
         print(f"  ✗ {b}")

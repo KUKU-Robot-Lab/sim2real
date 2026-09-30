@@ -7,7 +7,8 @@ verified: false 이고, pd 는 그 축에 -1(움직이지 않음)을 보낸다. 
   2) 그 축만 `--to` rad 에 해당하는 레지스터로 보낸다(다른 다섯 축은 -1 — 드라이버가 그대로 둔다)
   3) --hold 초 뒤 다시 읽어 그 슬롯만 움직였는가 · 레지스터가 어느 쪽으로 갔는가를 보고
   4) --back 이면 원래 레지스터로 되돌린다
-사람이 **어느 손가락이 어느 쪽(굽힘/펴짐 · 벌림)으로** 움직였는지 보고, 맞으면 변환표 verified 를 true 로 바꾼다.
+사람이 **어느 손가락이 어느 쪽(굽힘/펴짐 · 벌림)으로** 움직였는지 보고, 맞으면 변환표 verified 에 그 손(right · left)을 적는다
+(두 손 모두 확인되면 true).
 
   python3 tools/rh56f1_axis_probe.py --side right --axis index_1 --to 0.3 --back            # 계획만(발행 없음)
   python3 tools/rh56f1_axis_probe.py --side right --axis index_1 --to 0.3 --back --execute  # ★실기 — 승인 뒤
@@ -28,7 +29,8 @@ MAX_STEP_RAD = 0.5
 READ_TIMEOUT_S = 3.0
 
 
-def plan(hmap: rh56f1_map.HandMap, axis: str, to_rad: float, now_reg: list[int]) -> tuple[list[int], int, str]:
+def plan(hmap: rh56f1_map.HandMap, axis: str, to_rad: float, now_reg: list[int],
+         side: str | None = None) -> tuple[list[int], int, str]:
     """(보낼 SetAngle1 값, 목표 레지스터, 설명). 순수 — 한 축만, 나머지 -1. 너무 크면 ValueError."""
     if axis not in hmap.joint_order:
         raise ValueError(f"축 {axis!r} — {list(hmap.joint_order)} 중 하나")
@@ -41,7 +43,7 @@ def plan(hmap: rh56f1_map.HandMap, axis: str, to_rad: float, now_reg: list[int])
     cmd = [rh56f1_map.LEAVE] * 6
     cmd[a.slot] = target
     how = (f"{axis}(슬롯 {a.slot}) 레지스터 {now_reg[a.slot]} → {target}  "
-           f"(변환표상 {now_rad:.3f} → {to_rad:.3f} rad, {'확인됨' if a.verified else '★방향 미확인'})")
+           f"(변환표상 {now_rad:.3f} → {to_rad:.3f} rad, {'확인됨' if a.ok(side) else '★방향 미확인'})")
     return cmd, target, how
 
 
@@ -111,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         a = hmap.axes[hmap.joint_order.index(args.axis)] if args.axis in hmap.joint_order else None
         goal = args.to if args.by is None or a is None else a.to_rad(before[a.slot]) + args.by
-        cmd, target, how = plan(hmap, args.axis, goal, before)
+        cmd, target, how = plan(hmap, args.axis, goal, before, args.side)
         print(f"[{args.side}] 지금 {before}\n  계획: {how}\n  보낼 값 {cmd}")
         if not args.execute:
             print("  (계획만 — --execute 없이는 보내지 않는다)")

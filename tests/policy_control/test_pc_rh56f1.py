@@ -122,7 +122,7 @@ def test_backend_ramps_in_rad_and_turns_the_result_into_registers():
     w = b.write(HandCmd(q_star=np.array([1.57, 0, 1.0, 1.0, 1.0, 1.0]), qd_star=None, dt=0.01,
                         q_meas=np.array(OPEN)))
     assert w.limited and np.allclose(w.q_cmd[2:], 0.01)                      # 1 rad/s × 10 ms
-    assert b.last_register[3] == HMAP.axes[2].to_reg(0.01) and b.last_register[4] == M.LEAVE
+    assert b.last_register[3] == HMAP.axes[2].to_reg(0.01) and b.last_register[4] != M.LEAVE   # 오른손 엄지 확인됨(09.30)
     assert b.publish_count == 0                                               # execute=False → 발행 없음
 
 
@@ -139,7 +139,7 @@ def test_backend_sends_only_changes_and_at_most_command_max_hz():
     pub = b._pub._pub
     cmd = lambda q: HandCmd(q_star=np.array(q), qd_star=None, dt=0.01, q_meas=np.array(OPEN))  # noqa: E731
     b.write(cmd(OPEN))
-    assert len(pub.msgs) == 1 and pub.msgs[0].hand_id == 0 and list(pub.msgs[0].joint_values)[4:] == [-1, -1]
+    assert len(pub.msgs) == 1 and pub.msgs[0].hand_id == 0 and -1 not in list(pub.msgs[0].joint_values)   # 오른손 엄지 확인됨
     b.write(cmd(OPEN))
     assert len(pub.msgs) == 1                                                # 같은 레지스터 — 안 보낸다
     b.write(cmd([1.57, 0, 1, 1, 1, 1]))
@@ -247,3 +247,18 @@ def test_robot_yamls_use_the_rh56f1_backend_and_state_topics():
             assert hand["backend"] == "rh56f1_angle" and hand["topic"] == f"/hand_{side}/angle_set"
             assert cfg.sources["ee"].topic == f"/hand_{side}/joint_states"
             assert list(cfg.sources["ee"].joints) == HMAP.names(side)
+
+
+def test_thumbs_are_verified_on_the_right_hand_only_until_the_left_is_checked():
+    """09.30 사용자: 오른손 엄지 두 축 방향이 맞다 — 변환표 verified: [right]. 왼손 엄지는 아직 -1."""
+    q = [1.2, 0.2, 0.5, 0.5, 0.5, 0.5]
+    right, left = HMAP.to_register(q, side="right"), HMAP.to_register(q, side="left")
+    assert right[4] != M.LEAVE and right[5] != M.LEAVE and left[4] == M.LEAVE and left[5] == M.LEAVE
+    assert HMAP.unverified("right") == [] and HMAP.unverified("left") == ["thumb_1", "thumb_2"]
+    b = _backend()
+    b.write(HandCmd(q_star=np.array(OPEN), qd_star=None, dt=0.01, q_meas=np.array(OPEN)))
+    assert M.LEAVE not in b.last_register                                  # 오른손 백엔드는 엄지도 보낸다
+    with pytest.raises(M.HandMapError, match="right"):
+        raw = yaml.safe_load((REPO / "deploy/policy_control/config/rh56f1_hand_map.yaml").read_text())
+        raw["joints"]["thumb_1"]["verified"] = ["up"]
+        M.parse(raw)

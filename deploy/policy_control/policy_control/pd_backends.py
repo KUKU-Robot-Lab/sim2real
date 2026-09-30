@@ -305,7 +305,8 @@ class Rh56f1AngleBackend:
         if not (0 <= int(hw_speed) <= 4000 and 0 <= int(hw_force) <= 3000):
             raise ValueError(f"손 설정 speed 0..4000 · force 0..3000 g: {hw_speed} · {hw_force}")
         side = str(hand_joints[0])[0]
-        want = hand_map.names("right" if side == "r" else "left")
+        self.side = "right" if side == "r" else "left"
+        want = hand_map.names(self.side)
         if list(hand_joints) != want:
             raise ValueError(f"RH56F1 손 관절 순서 {list(hand_joints)} ≠ 변환표 {want}")
         self.names = tuple(hand_joints)
@@ -349,7 +350,7 @@ class Rh56f1AngleBackend:
         q_cmd = hand_lead_clamp(velocity_limited_target(q_t, prev, vmax, dt), meas, self.max_lead)
         q_cmd = np.clip(q_cmd, self.lower, self.upper)
         self._prev = q_cmd
-        reg = self.map.to_register(q_cmd)
+        reg = self.map.to_register(q_cmd, side=self.side)       # 이 손에서 방향 확인된 축만(엄지는 손마다)
         self.last_register = reg
         now = self._clock()
         # 같은 값이라도 RH56F1_RESEND_S 마다 한 번 — 연결 직후 첫 명령이 사라지면 목표가 그대로인 동안 다시 안 간다(09.29 fake)

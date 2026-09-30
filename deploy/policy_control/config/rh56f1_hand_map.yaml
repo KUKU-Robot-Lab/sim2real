@@ -8,8 +8,10 @@
 # ★방향: 매뉴얼 ANGLE_SET 절 — 검지 1720(≈ 1740) 이 완전히 편 상태, 900 으로 두면 손바닥 쪽으로 굽는다.
 #   즉 네 손가락은 **레지스터가 클수록 펴진다**. sim 0 rad(편 손) → 1740, 한계(굽힘) → 900.
 #   (옛 isaacsim_bridge 의 rh56f1_hand_calibration.yaml 은 0 rad → 900 이라 편 손 명령이 주먹이 된다 — 쓰지 않는다.)
-# ★엄지 두 축은 방향 · 대응(슬롯 4 = thumb_2 굽힘, 5 = thumb_1 회전)이 행정 길이로 맞춘 추정이다 — verified: false.
-#   verified: false 인 축은 pd 가 -1(움직이지 않음)을 보낸다. arm4090 에서 tools/rh56f1_axis_probe.py 로 한 축씩 확인한 뒤 true 로.
+# ★엄지 두 축의 방향 · 대응(슬롯 4 = thumb_2 굽힘, 5 = thumb_1 회전)은 09.30 arm4090 오른손에서 사용자가 눈으로 확인했다
+#   (probe: thumb_2 +0.15 rad = 손바닥 쪽 굽힘, thumb_1 −0.3 rad = 손바닥을 가로지르는 대향). 왼손은 아직 — verified: [right].
+#   확인 안 된 손 · 축은 pd 가 -1(움직이지 않음)을 보낸다. 두 손 모두 확인되면 true.
+#   네 손가락(슬롯 0~3)도 09.30 오른손 probe(+0.3 rad)에서 슬롯 대응 · 굽힘 방향 확인(레지스터 1750 → 1575).
 # ★비례: 레지스터 끝값 ↔ URDF 한계를 선형으로 잇는다. 매뉴얼 84° vs URDF 87.58°(네 손가락) — 벤더 xlsx
 #   (urdf/vendor/RH56F1/RH56F1_R/参数资料/RH56F1行程与角度对应关系) 로 보면 비선형일 수 있다. 실측 전까지 끝점 선형.
 schema: policy_control/rh56f1_hand_map/v1
@@ -18,8 +20,8 @@ slot_order: [pinky_1, ring_1, middle_1, index_1, thumb_2, thumb_1]
 joint_order: [thumb_1, thumb_2, index_1, middle_1, ring_1, pinky_1]
 joints:
   #        rad 끝점 (lo, hi)             그 끝점의 레지스터(0.1°)       방향 확인
-  thumb_1:  {rad: [0.0, 2.0943951], reg: [1750, 600],  verified: false}   # 엄지 회전(슬롯 5) — 행정 ~115°, 방향 미확인
-  thumb_2:  {rad: [0.0, 0.4745550], reg: [1350, 1100], verified: false}   # 엄지 굽힘(슬롯 4) — 행정 ~25°, 방향 미확인
+  thumb_1:  {rad: [0.0, 2.0943951], reg: [1750, 600],  verified: [right]} # 엄지 회전(슬롯 5) — 09.30 오른손 확인(951→1113 = 대향 쪽), 왼손 전
+  thumb_2:  {rad: [0.0, 0.4745550], reg: [1350, 1100], verified: [right]} # 엄지 굽힘(슬롯 4) — 09.30 오른손 확인(1349→1270 = 손바닥 쪽), 왼손 전
   index_1:  {rad: [0.0, 1.5285594], reg: [1740, 900],  verified: true}    # 매뉴얼: 클수록 펴짐
   middle_1: {rad: [0.0, 1.5285594], reg: [1740, 900],  verified: true}
   ring_1:   {rad: [0.0, 1.5285594], reg: [1740, 900],  verified: true}

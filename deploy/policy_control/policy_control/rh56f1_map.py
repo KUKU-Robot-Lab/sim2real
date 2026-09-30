@@ -35,7 +35,11 @@ class Axis:
     slot: int               # 드라이버 슬롯 0..5
     rad: tuple[float, float]
     reg: tuple[int, int]    # rad[0] · rad[1] 에서의 레지스터
-    verified: bool
+    verified: bool          # 양손 모두 방향 확인됨
+    sides: tuple = ()       # 한쪽만 확인됐을 때 그 손(right · left) — yaml verified: [right]
+
+    def ok(self, side: str | None) -> bool:
+        return self.verified or (side is not None and side in self.sides)
 
     def to_reg(self, q: float) -> int:
         lo, hi = self.rad
@@ -63,16 +67,17 @@ class HandMap:
     def names(self, side: str) -> list[str]:
         return [f"{side[0]}_hj_{a.name}" for a in self.axes]
 
-    def unverified(self) -> list[str]:
-        return [a.name for a in self.axes if not a.verified]
+    def unverified(self, side: str | None = None) -> list[str]:
+        return [a.name for a in self.axes if not a.ok(side)]
 
-    def to_register(self, q: Sequence[float], *, allow_unverified: bool = False) -> list[int]:
+    def to_register(self, q: Sequence[float], *, side: str | None = None, allow_unverified: bool = False) -> list[int]:
+        """side 를 주면 그 손에서만 확인된 축(verified: [right])도 보낸다. 확인 안 된 축은 LEAVE(-1)."""
         arr = np.asarray(q, dtype=float).reshape(-1)
         if arr.shape[0] != N or not np.all(np.isfinite(arr)):
             raise HandMapError(f"손 목표는 유한한 {N} 개여야 한다: {arr}")
         out = [LEAVE] * N
         for a, v in zip(self.axes, arr):
-            out[a.slot] = a.to_reg(v) if (a.verified or allow_unverified) else LEAVE
+            out[a.slot] = a.to_reg(v) if (a.ok(side) or allow_unverified) else LEAVE
         return out
 
     def to_rad(self, reg: Sequence[float]) -> np.ndarray:
@@ -109,7 +114,15 @@ def parse(raw: Mapping) -> HandMap:
             raise HandMapError(f"{name}: rad · reg 는 서로 다른 두 끝점이어야 한다")
         if min(reg) < 0:
             raise HandMapError(f"{name}: 레지스터는 0 이상(-1 은 '움직이지 않음' 예약값)")
-        axes.append(Axis(name, slots.index(name), rad, reg, bool(j.get("verified", False))))
+        v = j.get("verified", False)
+        if isinstance(v, (list, tuple)):
+            bad = set(v) - {"right", "left"}
+            if bad:
+                raise HandMapError(f"{name}: verified 목록은 right · left 만: {sorted(bad)}")
+            sides = tuple(sorted(set(v)))
+            axes.append(Axis(name, slots.index(name), rad, reg, set(sides) == {"right", "left"}, sides))
+        else:
+            axes.append(Axis(name, slots.index(name), rad, reg, bool(v)))
     mimic, known = [], set(order)
     pending = dict(raw.get("mimic") or {})
     while pending:
