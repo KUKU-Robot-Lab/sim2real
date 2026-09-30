@@ -49,3 +49,17 @@ def test_the_5090_reference_sees_the_table_from_the_home_pose():
     assert ref["rgb"].shape == (480, 640, 3) and (ref["pan_tick"], ref["tilt_tick"]) == (2049, 1820)
     m = view_metrics(ref["depth"], ref["K"])
     assert m["pitch_deg"] == pytest.approx(18.9, abs=1.0) and m["dist_m"] == pytest.approx(0.614, abs=0.02)
+
+
+def test_signed_pitch_keeps_its_sign_across_straight_down():
+    assert view_metrics(_plane_depth(10.0, 0.0, 0.6), K)["pitch_signed_deg"] == pytest.approx(10.0, abs=0.2)
+    assert view_metrics(_plane_depth(-10.0, 0.0, 0.6), K)["pitch_signed_deg"] == pytest.approx(-10.0, abs=0.2)
+
+
+def test_autoalign_steps_toward_zero_and_never_leave_the_window():
+    from head_view_autoalign import clamp_step, within_window
+    assert clamp_step(error=4.0, gain=1.0, max_step=2.0) == -2.0          # 큰 오차도 한 걸음은 2° 까지
+    assert clamp_step(error=-0.5, gain=-1.0, max_step=2.0) == pytest.approx(-0.5)
+    assert clamp_step(error=3.0, gain=0.0, max_step=2.0) == 0.0            # 이득을 모르면 움직이지 않는다
+    lim = round(25 * 4096 / 360)
+    assert within_window(5000, 2048, 25.0) == 2048 + lim and within_window(0, 2048, 25.0) == 2048 - lim

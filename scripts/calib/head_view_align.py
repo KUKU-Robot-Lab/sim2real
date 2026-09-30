@@ -53,6 +53,7 @@ def view_metrics(depth_m: np.ndarray, k: np.ndarray, seed: int = 0) -> dict:
     pts = backproject(depth_m, k)
     n, d, mask = ransac_plane(pts, np.random.default_rng(seed))
     return {"pitch_deg": float(np.degrees(np.arccos(np.clip(n[2], -1.0, 1.0)))),
+            "pitch_signed_deg": float(np.degrees(np.arctan2(n[1], n[2]))),      # 화면 세로 방향 부호 포함(0 을 지나도 연속)
             "roll_deg": float(np.degrees(np.arctan2(-n[0], n[1]))),
             "dist_m": float(abs(d)), "inliers": float(mask.mean())}
 
