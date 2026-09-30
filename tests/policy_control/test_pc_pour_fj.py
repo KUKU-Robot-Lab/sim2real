@@ -20,6 +20,7 @@ F01 = Path("/media/user/DATA/kuku_ai/rl/rl_runs_20260926/pour_bi_rh/t2r_rh4_f01"
 F01_CKPT = F01 / "last_open-rh_b_pour_fj-lstm_ep_2300_rew_1107.8425.pth"
 URDF = _paths.RL_WS / "hdgp/assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf"
 HOMES = _paths.SIM2REAL / "deploy/policy_control/config/homes/rh56f1_pour_fj.yaml"
+RH5 = _paths.SIM2REAL / "logs/policy/t2r_rh5_f01_ep800"      # arm4090 ~/logs/t2r/det_rh/t2r_rh5_f01_ep800 (git 밖)
 
 
 def _side(role: str) -> F.FjSide:
@@ -177,6 +178,52 @@ def test_building_from_the_f01_run_uses_its_era_behaviour_and_the_hdgp_homes():
     assert c.sides["src"].palm_body == "r_hl_palm_sensor" and c.sides["rcv"].side == "left"
     assert c.hand_obs_order_source.startswith("assumed")
     json.loads(c.to_json())
+
+
+def test_hand_speed_cap_is_common_with_thumb_flex_apart():
+    """hdgp side_rig init_real_control: thumb_2 만 hand_thumb_flex_vel_cap_rad_s(0 이면 공통 값)."""
+    assert F.hand_vel_cap(_contract()) == ()
+    assert F.hand_vel_cap(_contract(hand_vel_cap_rad_s=2.1)) == (2.1,) * 6
+    c = _contract(hand_vel_cap_rad_s=2.1, hand_thumb_flex_vel_cap_rad_s=0.56, hand_finger_open_floor_rad=0.065)
+    assert F.hand_vel_cap(c) == (2.1, 0.56, 2.1, 2.1, 2.1, 2.1)
+    law = F.FjDecoder(c).law(c.sides["src"])
+    assert law.finger_open_floor == 0.065 and law.vel_cap_rad_s == F.hand_vel_cap(c)
+
+
+@pytest.mark.skipif(not (RH5 / "trace.npz").is_file(), reason="t2r_rh5_f01 ep800 trace 없음(git 밖)")
+def test_rh5_f01_trace_one_step_decoder_replay_is_exact():
+    """10.01 pour_bi_rh 세션 결정론 재생(64 env · 900 스텝): 관측 안의 q*(팔 마지막 7 · 손 joint_err 복원)를
+    직전 q* + 이번 행동으로 한 스텝씩 다시 만든다. 동결은 직전 스텝 손가락 컵 접촉력(src_f/rcv_f)으로."""
+    pair = load_mimic_pair(_paths.RL_WS / "hdgp")
+    meta = json.loads((RH5 / "trace_meta.json").read_text())
+    order = {r: meta[f"{r}_hand_obs_joint_names"] for r in F.ROLES}
+    c = F.build(RH5, next((RH5 / "nn").glob("*.pth")), pair, URDF, asset="openarm_rh56f1_bi_rl",
+                hand_obs_order=order, obs_order_source="measured:trace_meta.json")
+    assert [n.split("_hj_")[1] for n in order["src"]] == list(F.ASSUMED_OBS_ORDER)      # 가정했던 순서가 맞았다
+    assert (c.arm_mode, c.hand_range, c.hand_freeze) == ("absolute", "grip", True)
+    assert (c.hand_finger_open_floor_rad, c.hand_vel_cap_rad_s, c.hand_thumb_flex_vel_cap_rad_s) == (0.065, 2.1, 0.56)
+    d = np.load(RH5 / "trace.npz")
+    O, A = d["obs_next"].astype(float), d["actions"].astype(float)
+    assert np.abs(O[:, :, 139:165] - np.clip(A, -1, 1)).max() == 0.0                    # prev_action
+    dec = F.FjDecoder(c)
+    arm_err, hand_err = 0.0, 0.0
+    for ri, r in enumerate(F.ROLES):
+        s, off = c.sides[r], 0 if r == "src" else 63
+        law, idx = dec.law(s), [list(s.hand_obs_order).index(j) for j in s.hand_joints]
+        for n in (0, 21, 42, 63):
+            home = np.array(s.arm_home)
+            back = [t for t in range(c.hold_steps + 1, O.shape[0]) if np.abs(O[t, n, off + 56:off + 63] - home).max() < 1e-6]
+            for t in range(c.hold_steps + 1, back[0] if back else O.shape[0]):     # 다음 에피소드 리셋 전까지
+                q = O[t - 1, n, off + 56:off + 63]
+                arm_err = max(arm_err, np.abs(dec._arm(s, q, A[t, n, ri * 13:ri * 13 + 7]) - O[t, n, off + 56:off + 63]).max())
+                e0, e1 = O[t - 1, n, off + 47:off + 53], O[t, n, off + 47:off + 53]
+                if max(np.abs(e0).max(), np.abs(e1).max()) > 0.999:                   # joint_err 가 잘린 칸은 복원 불가
+                    continue
+                q0 = O[t - 1, n, off + 14:off + 20][idx] + e0 * c.joint_pos_err_max
+                q1 = O[t, n, off + 14:off + 20][idx] + e1 * c.joint_pos_err_max
+                fz = law.touch_to_freeze(d[f"{r}_f"][t - 1, n])
+                hand_err = max(hand_err, np.abs(law.step(q0, A[t, n, ri * 13 + 7:(ri + 1) * 13], active=True, freeze=fz) - q1).max())
+    assert arm_err < 1e-6 and hand_err < 1e-5, (arm_err, hand_err)
 
 
 # ---------------------------------------------------------------- 노드의 ROS 없는 절반 · FK

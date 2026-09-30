@@ -100,6 +100,10 @@ class FjContract:
     hand_obs_order_source: str
     sides: dict                 # role -> FjSide
     notes: list = field(default_factory=list)
+    # ★09.30 hdgp 실기 맞춤(side_rig direct_hand_targets) — 0 = 그 기능 이전 런
+    hand_finger_open_floor_rad: float = 0.0
+    hand_vel_cap_rad_s: float = 0.0
+    hand_thumb_flex_vel_cap_rad_s: float = 0.0
 
     def side(self, role: str) -> FjSide:
         return self.sides[role]
@@ -239,7 +243,10 @@ def build(run_dir: Path, checkpoint: Path, pair, urdf: Path, *, asset: str,
         obs_tips_rel_palm=bool(env.get("obs_tips_rel_palm", True)), obs_mouth_diff=bool(env.get("obs_mouth_diff", True)),
         cup_mouth_z=float(env["cup_mouth_z"]),
         hand_obs_order_source=obs_order_source or ("assumed:" + ",".join(ASSUMED_OBS_ORDER)),
-        sides=sides, notes=notes)
+        sides=sides, notes=notes,
+        hand_finger_open_floor_rad=float(env.get("hand_finger_open_floor_rad", 0.0)),
+        hand_vel_cap_rad_s=float(env.get("hand_vel_cap_rad_s", 0.0)),
+        hand_thumb_flex_vel_cap_rad_s=float(env.get("hand_thumb_flex_vel_cap_rad_s", 0.0)))
     if not bool(cfg_a.get("normalize_input", False)):
         notes.append("normalize_input false")
     validate(c)
@@ -254,6 +261,14 @@ def _finger(joint: str) -> str:
 
 
 # ---------------------------------------------------------------- 디코더
+def hand_vel_cap(c: FjContract) -> tuple:
+    """hdgp side_rig init_real_control: 공통 상한, thumb_2(엄지 굽힘)만 따로(0 이면 공통). 공통이 0 이면 ()(전 범위/1 s)."""
+    if c.hand_vel_cap_rad_s <= 0.0:
+        return ()
+    th = c.hand_thumb_flex_vel_cap_rad_s
+    return tuple(th if (th > 0.0 and j == "thumb_2") else c.hand_vel_cap_rad_s for j in RH.JOINTS)
+
+
 @dataclass
 class _SideState:
     arm_target: np.ndarray
@@ -280,7 +295,7 @@ class FjDecoder:
                           lim_hi=tuple(s.hand_lim_hi), range_mode=c.hand_range, ema=c.hand_ema,
                           full_range_s=c.hand_full_range_s, policy_hz=60.0, freeze=c.hand_freeze,
                           freeze_joints=tuple(bool(x) for x in s.hand_freeze), freeze_threshold_n=c.freeze_threshold_n,
-                          hold="follow")
+                          hold="follow", finger_open_floor=c.hand_finger_open_floor_rad, vel_cap_rad_s=hand_vel_cap(c))
 
     def hand_range(self, s: FjSide) -> tuple[np.ndarray, np.ndarray]:
         return self.law(s).bounds()

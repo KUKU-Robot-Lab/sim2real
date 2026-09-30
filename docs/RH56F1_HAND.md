@@ -27,6 +27,8 @@
 raw      = lo + ½(clip(a, −1, 1) + 1)(hi − lo)          a = 0 은 반쯤 쥔 손 · thumb_1 만 a = +1 이 편 쪽
 ema      = 0.1·raw + 0.9·q*                             EMA
 Δ        = clip(ema − q*, ± 한계 전 범위 / (1.0 s · 60))  "전 범위 1 초" 속도 상한
+           pour_fj rh5~(env hand_vel_cap_rad_s): ± 2.1/60 rad, thumb_2 만 ± 0.56/60 rad (실기 속도)
+lo       = max(lo, 0.065) 네 손가락만                    pour_fj rh5~(env hand_finger_open_floor_rad) — 실기 1740 까지만 펴짐
 동결     : 그 손가락 촉각 > 1 N 이고 닫는 방향이면 Δ = 0 (펴기는 허용)
 q*       = clip(q* + Δ, lo, hi)
 대기     : rh_aglt 처음 10 스텝은 편 손 · pour_fj 처음 30 스텝은 손이 행동을 따른다(팔만 고정)
@@ -60,7 +62,8 @@ q*       = clip(q* + Δ, lo, hi)
 |---|---|---|
 | 행동 | 26 = [오른팔 7 · 오른손 6][왼팔 7 · 왼손 6] | 13 = 팔 7 · 손 6 |
 | 손 범위 · 동결 | f01: 한계 전 범위 · 동결 없음 (f02~: grip · 1 N) | grip · 1 N |
-| 손 관측 순서 | PhysX 순 — **추정**(assumed), Isaac trace 로 실측 필요 | 프로필 순(이름) — 문제 없음 |
+| 손 관측 순서 | PhysX 순 — 10.01 t2r_rh5_f01 ep800 trace 로 실측: 가정(index · middle · pinky · ring · thumb_1 · thumb_2)과 같다 | 프로필 순(이름) — 문제 없음 |
+| Isaac 대조 | rh5_f01 ep800: 팔 · 손 q* 한 스텝 재생 오차 < 1e-7, LSTM 행동 ≤ 1.2e-3(리셋부터) | 계약 테스트(test_pc_rh_aglt) |
 | 대기 | 30 스텝, 손은 따른다 | 10 스텝, 편 손 |
 | 노드 | `pour_fj_node.py` | `rh_aglt_node.py` (같은 모듈의 rh_aglt 계열) |
 | 컵 | /objects/cup_src · cup_rcv | 오른팔 cup_src · 왼팔 cup_rcv, 목표 = 리셋 때 컵 + 14 cm |

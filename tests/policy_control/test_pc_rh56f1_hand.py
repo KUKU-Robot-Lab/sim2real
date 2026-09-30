@@ -93,3 +93,27 @@ def test_bad_laws_are_refused():
         _law(q_grip=(3.0, 0, 0, 0, 0, 0))
     with pytest.raises(H.HandActionError):
         _law().step(np.array(OPEN), np.ones(5), active=True)
+
+
+def test_open_floor_lifts_only_the_four_fingers_lower_bound():
+    """hdgp pour_fabric_mimic side_rig(09.30): 실기 레지스터 1740 까지만 펴진다 → 네 손가락 목표 하한 0.065 rad."""
+    lo, hi = _law(finger_open_floor=0.065).bounds()
+    lo0, hi0 = _law().bounds()
+    assert lo[2:] == pytest.approx([0.065] * 4) and lo[:2] == pytest.approx(lo0[:2]) and hi == pytest.approx(hi0)
+    assert _law(finger_open_floor=0.065).raw(-np.ones(6))[2:] == pytest.approx([0.065] * 4)
+
+
+def test_real_speed_cap_replaces_the_full_range_cap():
+    caps = (2.1, 0.56, 2.1, 2.1, 2.1, 2.1)
+    assert _law(vel_cap_rad_s=caps).cap() == pytest.approx(np.array(caps) / 60.0)
+    q = _law(vel_cap_rad_s=caps, freeze=False).step(np.array(OPEN), np.ones(6), active=True)
+    assert q[1] - OPEN[1] == pytest.approx(0.56 / 60.0)            # 엄지 굽힘은 따로 느리다
+
+
+def test_bad_floor_and_speed_caps_are_refused():
+    with pytest.raises(H.HandActionError):
+        _law(vel_cap_rad_s=(2.1,) * 5)
+    with pytest.raises(H.HandActionError):
+        _law(vel_cap_rad_s=(2.1, 0.0, 2.1, 2.1, 2.1, 2.1))
+    with pytest.raises(H.HandActionError):
+        _law(finger_open_floor=-0.1)

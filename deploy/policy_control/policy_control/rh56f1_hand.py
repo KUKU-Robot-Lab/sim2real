@@ -12,6 +12,8 @@
   raw  = lo + ½(clip(a,−1,1)+1)(hi−lo)            a = 0 은 구간 가운데. thumb_1 만 a = +1 이 편 쪽(open > grip)
   ema  = α·raw + (1−α)·q*_{t−1}                    α = hand_ema(0.1)
   Δ    = clip(ema − q*_{t−1}, ±(한계 전 범위)/(full_range_s·policy_hz))   벤더 속도 "전 범위 1 s" 모사
+         vel_cap_rad_s(관절별, 09.30 pour_fj 실기 맞춤)가 있으면 그 값/policy_hz 로 바꾼다
+  lo   = max(lo, finger_open_floor)  네 손가락만(09.30 실기 레지스터 1740 까지만 펴짐), hi = max(hi, lo)
   동결: 그 손가락이 닿았고(촉각 > 임계, 기본 1 N) 닫는 방향이면 Δ = 0 — 펴기는 허용           (freeze = True 인 과제만)
   q*   = clip(q*_{t−1} + Δ, lo, hi)
   대기(hold_steps): hold = "open" → q* = open(rh_aglt) · "follow" → 대기 중에도 행동을 따른다(pour_fj)
@@ -55,11 +57,17 @@ class HandLaw:
     freeze_joints: tuple          # JOINTS 순 bool — 동결 대상(프로필 hand_freeze_suffixes). 기본 전부
     freeze_threshold_n: float
     hold: str                     # open | follow
+    finger_open_floor: float = 0.0    # 네 손가락 목표 하한(rad). 0 = 없음 — hdgp hand_finger_open_floor_rad
+    vel_cap_rad_s: tuple = ()         # JOINTS 순 속도 상한(rad/s). 빈 값 = 전 범위/full_range_s — hdgp hand_vel_cap_rad_s
 
     def __post_init__(self) -> None:
         for name in ("q_open", "q_grip", "lim_lo", "lim_hi", "freeze_joints"):
             if len(getattr(self, name)) != len(JOINTS):
                 raise HandActionError(f"{name} 는 {len(JOINTS)} 개")
+        if self.vel_cap_rad_s and (len(self.vel_cap_rad_s) != len(JOINTS) or min(self.vel_cap_rad_s) <= 0.0):
+            raise HandActionError(f"vel_cap_rad_s 는 양수 {len(JOINTS)} 개: {self.vel_cap_rad_s}")
+        if self.finger_open_floor < 0.0:
+            raise HandActionError(f"finger_open_floor {self.finger_open_floor} < 0")
         if self.range_mode not in RANGES or self.hold not in HOLDS:
             raise HandActionError(f"range_mode {self.range_mode!r} · hold {self.hold!r}")
         if not (0.0 < self.ema <= 1.0 and self.full_range_s > 0.0 and self.policy_hz > 0.0):
@@ -72,12 +80,20 @@ class HandLaw:
     def bounds(self) -> tuple[np.ndarray, np.ndarray]:
         llo, lhi = np.asarray(self.lim_lo, float), np.asarray(self.lim_hi, float)
         if self.range_mode == "limits":
-            return llo, lhi
-        o, g = np.asarray(self.q_open, float), np.asarray(self.q_grip, float)
-        return np.clip(np.minimum(o, g), llo, lhi), np.clip(np.maximum(o, g), llo, lhi)
+            lo, hi = llo, lhi
+        else:
+            o, g = np.asarray(self.q_open, float), np.asarray(self.q_grip, float)
+            lo, hi = np.clip(np.minimum(o, g), llo, lhi), np.clip(np.maximum(o, g), llo, lhi)
+        if self.finger_open_floor > 0.0:
+            finger = np.array([not j.startswith("thumb") for j in JOINTS])
+            lo = np.where(finger, np.maximum(lo, self.finger_open_floor), lo)
+            hi = np.maximum(hi, lo)
+        return lo, hi
 
     def cap(self) -> np.ndarray:
-        """스텝당 최대 변화 — 관절 한계 전 범위를 full_range_s 초에."""
+        """스텝당 최대 변화 — 관절 한계 전 범위를 full_range_s 초에(vel_cap_rad_s 가 있으면 그 속도)."""
+        if self.vel_cap_rad_s:
+            return np.asarray(self.vel_cap_rad_s, float) / self.policy_hz
         return (np.asarray(self.lim_hi, float) - np.asarray(self.lim_lo, float)) / (self.full_range_s * self.policy_hz)
 
     def raw(self, a: Sequence[float]) -> np.ndarray:
