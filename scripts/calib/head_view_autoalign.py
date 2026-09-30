@@ -128,6 +128,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--vel", type=int, default=15, help="Profile Velocity(0.229 rpm 단위) — 15 ≈ 21°/s")
     ap.add_argument("--acc", type=int, default=10)
     ap.add_argument("--i-gain", type=int, default=400)
+    ap.add_argument("--coarse-tilt-to", type=int, default=None,
+                    help="먼저 tilt 를 이 틱 쪽으로 --coarse-step-deg 씩 옮기며 테이블이 잡히면 멈춘다(최대 --coarse-max-deg)")
+    ap.add_argument("--coarse-step-deg", type=float, default=5.0)
+    ap.add_argument("--coarse-max-deg", type=float, default=100.0)
     ap.add_argument("--execute", action="store_true", help="이게 있어야 모터에 쓴다")
     args = ap.parse_args(argv)
 
@@ -141,8 +145,15 @@ def main(argv: list[str] | None = None) -> int:
         m = measure(grab, ref)
         print(f"시작: pan {start[PAN]} · tilt {start[TILT]} 틱 · 숙임 {m['pitch']:+.1f}°(기준 {ref_pitch:+.1f}) · "
               f"좌우 {m['shift']} px · 평면 {m['inliers']:.2f}", flush=True)
-        if m["inliers"] < MIN_INLIERS or abs(m["pitch"] - ref_pitch) > MAX_START_PITCH_ERR:
-            print("테이블이 안 보이거나 기준에서 너무 멀다 — 손으로 테이블 쪽으로 대강 돌린 뒤 다시.")
+        coarse = args.coarse_tilt_to is not None
+        if coarse:
+            travel = (args.coarse_tilt_to - start[TILT]) / TICKS_PER_DEG
+            if not 0 <= args.coarse_tilt_to <= 4095 or abs(travel) > args.coarse_max_deg:
+                print(f"큰 이동 목표 {args.coarse_tilt_to} 가 한계(0~4095) 밖이거나 {travel:+.0f}° 로 너무 멀다 — 멈춘다")
+                return 1
+            print(f"큰 이동: tilt {start[TILT]} → {args.coarse_tilt_to} ({travel:+.0f}°) 를 {args.coarse_step_deg}° 씩")
+        elif m["inliers"] < MIN_INLIERS or abs(m["pitch"] - ref_pitch) > MAX_START_PITCH_ERR:
+            print("테이블이 안 보이거나 기준에서 너무 멀다 — 손으로 테이블 쪽으로 대강 돌린 뒤 다시(또는 --coarse-tilt-to).")
             return 1
         if not args.execute:
             print("--execute 없이 — 모터에 쓰지 않았다")
@@ -151,6 +162,24 @@ def main(argv: list[str] | None = None) -> int:
             bus.health(i)
             enable_hold(bus, i, args.vel, args.acc, args.i_gain)
         cur = dict(start)
+        if coarse:
+            step = round(args.coarse_step_deg * TICKS_PER_DEG) * (1 if args.coarse_tilt_to > cur[TILT] else -1)
+            while True:
+                nxt = cur[TILT] + step
+                if (step > 0 and nxt >= args.coarse_tilt_to) or (step < 0 and nxt <= args.coarse_tilt_to):
+                    nxt = args.coarse_tilt_to
+                cur[TILT] = move_to(bus, TILT, nxt)
+                m = measure(grab, ref, frames=2)
+                print(f"  tilt {cur[TILT]} · 숙임 {m['pitch']:+.1f}° · 평면 {m['inliers']:.2f}", flush=True)
+                if m["inliers"] >= MIN_INLIERS and abs(m["pitch"] - ref_pitch) < 10.0:
+                    print("  테이블이 기준 근처에 잡혔다 — 큰 이동 끝")
+                    break
+                if nxt == args.coarse_tilt_to:
+                    break
+            if m["inliers"] < MIN_INLIERS or abs(m["pitch"] - ref_pitch) > MAX_START_PITCH_ERR:
+                print("큰 이동 뒤에도 테이블이 기준 근처에 없다 — 그 자리에서 멈춘다(토크 켜 둠)")
+                return 1
+            start = dict(cur)          # 미세 조정 창은 큰 이동이 끝난 자리 기준
         # 이득 재기: tilt → 숙임, pan → 좌우
         gains = {}
         for i, key in ((TILT, "pitch"), (PAN, "shift")):
