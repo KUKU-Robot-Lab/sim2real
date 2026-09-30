@@ -8,6 +8,7 @@
   HandMap.to_rad(reg)       슬롯 순 레지스터 → joint_order rad (확인 안 된 축도 값은 낸다 — 읽기는 막지 않는다)
   HandMap.with_mimic(q)     구동 6 → 자산의 종속 6 까지 {이름: rad}
   HandMap.touch_sim_order   벤더 손가락 힘(새끼부터) → sim 순(엄지부터) N
+side 를 주면 그 손의 보정(`calibration.<side>` — 09.30 레지스터 스윕)을 쓴다. 없으면 기본 끝점 변환.
 """
 from __future__ import annotations
 
@@ -37,6 +38,7 @@ class Axis:
     reg: tuple[int, int]    # rad[0] · rad[1] 에서의 레지스터
     verified: bool          # 양손 모두 방향 확인됨
     sides: tuple = ()       # 한쪽만 확인됐을 때 그 손(right · left) — yaml verified: [right]
+    cmd: tuple | None = None  # 명령 레지스터 범위(min, max) — 보정 축은 변환 범위가 벤더 명령 범위보다 넓다
 
     def ok(self, side: str | None) -> bool:
         return self.verified or (side is not None and side in self.sides)
@@ -44,7 +46,8 @@ class Axis:
     def to_reg(self, q: float) -> int:
         lo, hi = self.rad
         t = (float(np.clip(q, min(lo, hi), max(lo, hi))) - lo) / (hi - lo)
-        return int(round(self.reg[0] + t * (self.reg[1] - self.reg[0])))
+        r = int(round(self.reg[0] + t * (self.reg[1] - self.reg[0])))
+        return int(np.clip(r, *self.cmd)) if self.cmd else r
 
     def to_rad(self, r: float) -> float:
         a, b = self.reg
@@ -59,6 +62,10 @@ class HandMap:
     touch_perm: tuple[int, ...]                     # sim 순 i ← 벤더 칸 touch_perm[i]
     touch_unit_n: float
     command_max_hz: float
+    side_axes: Mapping = None                       # side → tuple[Axis] (보정), 없으면 axes
+
+    def axes_of(self, side: str | None) -> tuple[Axis, ...]:
+        return (self.side_axes or {}).get(side, self.axes) if side else self.axes
 
     @property
     def joint_order(self) -> tuple[str, ...]:
@@ -76,15 +83,15 @@ class HandMap:
         if arr.shape[0] != N or not np.all(np.isfinite(arr)):
             raise HandMapError(f"손 목표는 유한한 {N} 개여야 한다: {arr}")
         out = [LEAVE] * N
-        for a, v in zip(self.axes, arr):
+        for a, v in zip(self.axes_of(side), arr):
             out[a.slot] = a.to_reg(v) if (a.ok(side) or allow_unverified) else LEAVE
         return out
 
-    def to_rad(self, reg: Sequence[float]) -> np.ndarray:
+    def to_rad(self, reg: Sequence[float], side: str | None = None) -> np.ndarray:
         reg = list(reg)
         if len(reg) != N:
             raise HandMapError(f"레지스터는 {N} 개여야 한다: {reg}")
-        return np.array([a.to_rad(reg[a.slot]) for a in self.axes])
+        return np.array([a.to_rad(reg[a.slot]) for a in self.axes_of(side)])
 
     def with_mimic(self, q: Sequence[float]) -> dict[str, float]:
         out = {a.name: float(v) for a, v in zip(self.axes, q)}
@@ -133,11 +140,30 @@ def parse(raw: Mapping) -> HandMap:
             mimic.append((k, pending[k]["of"], float(pending[k]["k"])))
             known.add(k)
             del pending[k]
+    side_axes = {}
+    for side, cal in (raw.get("calibration") or {}).items():
+        if side not in ("right", "left"):
+            raise HandMapError(f"calibration 은 right · left 만: {side}")
+        out = []
+        for a in axes:
+            c = (cal or {}).get(a.name)
+            if c is None:
+                out.append(a)
+                continue
+            reg0, slope = float(c["reg0"]), float(c["deg_per_10reg"])      # q = (reg0 − reg)·slope/10 [°]
+            if slope <= 0:
+                raise HandMapError(f"calibration.{side}.{a.name}: deg_per_10reg > 0")
+            # 읽기 범위 = 기본 굽힌 쪽 끝 + 50 레지스터(실측 896 처럼 끝을 조금 넘는다) · 명령은 cmd 로 기본 범위에 자른다
+            end = a.reg[1] + 50 * int(np.sign(a.reg[1] - a.reg[0]))
+            q_end = np.radians((reg0 - end) * slope / 10.0)
+            out.append(Axis(a.name, a.slot, (0.0, float(q_end)), (reg0, float(end)), a.verified, a.sides,
+                            cmd=(min(a.reg), max(a.reg))))
+        side_axes[side] = tuple(out)
     t = raw["touch"]
     vendor, sim = list(t["vendor_order"]), list(t["sim_order"])
     if sorted(vendor) != sorted(sim):
         raise HandMapError("touch vendor_order · sim_order 는 같은 손가락이어야 한다")
-    return HandMap(axes=tuple(axes), mimic=tuple(mimic), touch_perm=tuple(vendor.index(f) for f in sim),
+    return HandMap(axes=tuple(axes), mimic=tuple(mimic), touch_perm=tuple(vendor.index(f) for f in sim), side_axes=side_axes,
                    touch_unit_n=float(t["unit_n"]), command_max_hz=float(raw.get("command_max_hz", 30.0)))
 
 

@@ -26,6 +26,26 @@ joints:
   middle_1: {rad: [0.0, 1.5285594], reg: [1740, 900],  verified: true}
   ring_1:   {rad: [0.0, 1.5285594], reg: [1740, 900],  verified: true}
   pinky_1:  {rad: [0.0, 1.5285594], reg: [1740, 900],  verified: true}
+#: 손 · 축별 보정 — 09.30 arm4090 레지스터 스윕(한 축씩 단계별 angleSet → posAct 행정 → 벤더 행정-각도 표 → 관절각).
+#  q[°] = (reg0 − 레지스터) · deg_per_10reg / 10. 관계는 직선(잔차 네 손가락 ≤ 0.9° · 엄지 ≤ 0.1°), 기울기 ≈ 1.00 °/10reg —
+#  위 기본 끝점(1740 ↔ 0 · 900 ↔ 87.58°)은 기울기 1.043 · 영점이 틀려 최대 6.5° 어긋났다. 관절 0 = 벤더 '이론 행정' 시작
+#  (네 손가락 · 엄지 굽힘 0.25 mm, 엄지 외전 0.77 mm — URDF 한계가 이 범위와 같다). 명령 레지스터는 기본 끝점 범위로 자른다.
+#  원자료 sim2real/logs/rh56f1_probe_0930/sweep_*.csv · 분석 docs/RH56F1_TUNING_0930.md. side 없이 부르면 기본 끝점.
+calibration:
+  right:
+    index_1:  {reg0: 1776.3, deg_per_10reg: 1.0052}
+    middle_1: {reg0: 1771.8, deg_per_10reg: 1.0045}
+    ring_1:   {reg0: 1787.5, deg_per_10reg: 1.0095}
+    pinky_1:  {reg0: 1790.9, deg_per_10reg: 1.0121}
+    thumb_2:  {reg0: 1362.0, deg_per_10reg: 0.9923}
+    thumb_1:  {reg0: 1754.8, deg_per_10reg: 0.9979}
+  left:
+    index_1:  {reg0: 1779.0, deg_per_10reg: 1.0065}
+    middle_1: {reg0: 1764.3, deg_per_10reg: 1.0013}
+    ring_1:   {reg0: 1766.7, deg_per_10reg: 1.0019}
+    pinky_1:  {reg0: 1762.6, deg_per_10reg: 1.0010}
+    thumb_2:  {reg0: 1376.4, deg_per_10reg: 0.9891}
+    thumb_1:  {reg0: 1817.8, deg_per_10reg: 0.9980}
 #: PhysX mimic(자산 URDF) — 드라이버는 구동 6 만 준다. 상태 노드가 종속 6 을 계산해 JointState 에 싣는다(FK · 화면용).
 mimic:
   thumb_3: {of: thumb_2, k: 1.1425}

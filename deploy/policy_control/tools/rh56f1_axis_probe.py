@@ -34,7 +34,7 @@ def plan(hmap: rh56f1_map.HandMap, axis: str, to_rad: float, now_reg: list[int],
     """(보낼 SetAngle1 값, 목표 레지스터, 설명). 순수 — 한 축만, 나머지 -1. 너무 크면 ValueError."""
     if axis not in hmap.joint_order:
         raise ValueError(f"축 {axis!r} — {list(hmap.joint_order)} 중 하나")
-    a = hmap.axes[hmap.joint_order.index(axis)]
+    a = hmap.axes_of(side)[hmap.joint_order.index(axis)]
     now_rad = a.to_rad(now_reg[a.slot])
     if abs(to_rad - now_rad) > MAX_STEP_RAD:
         raise ValueError(f"{axis}: 지금 {now_rad:.3f} → {to_rad:.3f} rad 는 {abs(to_rad - now_rad):.3f} rad — "
@@ -111,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
         if before is None:
             print(f"✗ {ns}/angle_actual 이 {READ_TIMEOUT_S} s 안에 안 온다 — 드라이버를 먼저")
             return 1
-        a = hmap.axes[hmap.joint_order.index(args.axis)] if args.axis in hmap.joint_order else None
+        a = hmap.axes_of(args.side)[hmap.joint_order.index(args.axis)] if args.axis in hmap.joint_order else None
         goal = args.to if args.by is None or a is None else a.to_rad(before[a.slot]) + args.by
         cmd, target, how = plan(hmap, args.axis, goal, before, args.side)
         print(f"[{args.side}] 지금 {before}\n  계획: {how}\n  보낼 값 {cmd}")

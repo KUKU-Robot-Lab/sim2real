@@ -127,7 +127,7 @@ def test_backend_ramps_in_rad_and_turns_the_result_into_registers():
     w = b.write(HandCmd(q_star=np.array([1.57, 0, 1.0, 1.0, 1.0, 1.0]), qd_star=None, dt=0.01,
                         q_meas=np.array(OPEN)))
     assert w.limited and np.allclose(w.q_cmd[2:], 0.01)                      # 1 rad/s × 10 ms
-    assert b.last_register[3] == HMAP.axes[2].to_reg(0.01) and b.last_register[4] != M.LEAVE   # 오른손 엄지 확인됨(09.30)
+    assert b.last_register[3] == HMAP.axes_of("right")[2].to_reg(0.01) and b.last_register[4] != M.LEAVE   # 오른손 보정 · 엄지 확인됨
     assert b.publish_count == 0                                               # execute=False → 발행 없음
 
 
@@ -193,11 +193,12 @@ def test_pd_yaml_hand_settings_are_loaded():
 # ---------------------------------------------------------------- 상태 노드 · fake 손
 def test_state_core_publishes_rad_with_mimic_and_velocity():
     core = HandStateCore(HMAP, "left")
-    reg0 = HMAP.to_register(OPEN, allow_unverified=True)
+    q0 = [1.2, 0.2, 0.5, 0.5, 0.5, 0.5]                                      # 보정 범위 안(편 손 0 은 명령 끝점 1740 에서 잘린다)
+    reg0 = HMAP.to_register(q0, side="left")
     names, pos, vel = core.on_angle(reg0, 0.0)
     assert names[:6] == HMAP.names("left") and "l_hj_thumb_3" in names and len(names) == 12
-    assert np.allclose(pos[:6], OPEN, atol=2e-3) and not vel.any()
-    reg1 = HMAP.to_register([1.57, 0, 0.2, 0, 0, 0], allow_unverified=True)
+    assert np.allclose(pos[:6], q0, atol=3e-3) and not vel.any()
+    reg1 = HMAP.to_register([1.2, 0.2, 0.7, 0.5, 0.5, 0.5], side="left")
     _, pos1, vel1 = core.on_angle(reg1, 0.1)
     assert vel1[2] == pytest.approx((pos1[2] - pos[2]) / 0.1)                # 첫 차분은 그대로
     _, pos2, vel2 = core.on_angle(reg1, 0.2)                                  # 멈춤 → EMA α 0.3 로 줄어든다
@@ -259,3 +260,32 @@ def test_verified_list_names_only_hands():
         raw = yaml.safe_load((REPO / "deploy/policy_control/config/rh56f1_hand_map.yaml").read_text())
         raw["joints"]["thumb_1"]["verified"] = ["up"]
         M.parse(raw)
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_calibrated_map_reproduces_the_0930_sweep_within_a_degree(side):
+    """09.30 레지스터 스윕(posAct → 벤더 표 → 관절각)을 손 · 축별 보정이 1° 안으로 재현한다. 기본 끝점 변환은 최대 6.5° 틀렸다."""
+    import csv
+    path = REPO / "logs/rh56f1_probe_0930/sweep_joint_rad.npz"
+    if not path.is_file():
+        pytest.skip("스윕 원자료 없음(git 밖) — logs/rh56f1_probe_0930")
+    d = np.load(path)
+    names = {"index": "index_1", "middle": "middle_1", "ring": "ring_1", "pinky": "pinky_1",
+             "thumb_bend": "thumb_2", "thumb_rot": "thumb_1"}
+    worst_cal, worst_default = 0.0, 0.0
+    for key, joint in names.items():
+        reg, q = d[f"{side}_{key}_reg"], d[f"{side}_{key}_rad"]
+        cal = HMAP.axes_of(side)[HMAP.joint_order.index(joint)]
+        base = HMAP.axes[HMAP.joint_order.index(joint)]
+        worst_cal = max(worst_cal, max(abs(cal.to_rad(r) - v) for r, v in zip(reg, q)))
+        worst_default = max(worst_default, max(abs(base.to_rad(r) - v) for r, v in zip(reg, q)))
+    assert np.degrees(worst_cal) < 1.0 < np.degrees(worst_default)
+
+
+def test_calibrated_commands_stay_in_the_vendor_register_range():
+    for side in ("right", "left"):
+        reg = HMAP.to_register([0.0] * 6, side=side)                        # 관절 0 = 보정 영점(1760~1818) — 명령은 끝점까지
+        lim = {a.slot: (min(a.reg), max(a.reg)) for a in HMAP.axes}
+        assert all(lim[i][0] <= r <= lim[i][1] for i, r in enumerate(reg))
+        back = HMAP.to_rad(HMAP.to_register([0.8, 0.2, 0.7, 0.7, 0.7, 0.7], side=side), side)
+        assert back == pytest.approx([0.8, 0.2, 0.7, 0.7, 0.7, 0.7], abs=0.003)

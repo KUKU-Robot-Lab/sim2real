@@ -43,7 +43,7 @@ class HandStateCore:
         return [f"{p}_hj_{n}" for n in order]
 
     def on_angle(self, reg: Sequence[float], t: float) -> tuple[list[str], np.ndarray, np.ndarray]:
-        q6 = self.hmap.to_rad(reg)
+        q6 = self.hmap.to_rad(reg, self.side)                     # 이 손의 보정(09.30 스윕)
         full = self.hmap.with_mimic(q6)
         pos = np.array([full[n.split("_hj_", 1)[1]] for n in self.names()])
         if self._last is not None and t > self._last[0]:

@@ -41,7 +41,7 @@ def verdict(hmap: rh56f1_map.HandMap, side: str, reg: list[int] | None, names: l
     if js is None:
         bad.append(f"/hand_{side}/joint_states 가 안 온다 — rh56f1_state_node 가 떠 있는가")
         return bad
-    q = hmap.to_rad(reg)
+    q = hmap.to_rad(reg, side)
     for n, v in zip(hmap.names(side), q):
         got = js.get(n)
         if got is None:
@@ -60,8 +60,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--map", default=str(rh56f1_map.DEFAULT_PATH))
     args = ap.parse_args(argv)
     hmap = rh56f1_map.load(args.map)
-    lower = {n: a.rad[0] for n, a in zip(hmap.names(args.side), hmap.axes)}
-    upper = {n: a.rad[1] for n, a in zip(hmap.names(args.side), hmap.axes)}
+    axes = hmap.axes_of(args.side)                                      # 이 손의 보정 범위(09.30 스윕)
+    lower = {n: min(a.rad) for n, a in zip(hmap.names(args.side), axes)}
+    upper = {n: max(a.rad) for n, a in zip(hmap.names(args.side), axes)}
 
     import rclpy
     from rclpy.node import Node
@@ -96,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
     if last["reg"] is not None:
         print(f"  레지스터(슬롯 순 새끼 · 약지 · 중지 · 검지 · 엄지 굽힘 · 엄지 회전) {last['reg']}")
         print("  rad(자산 순) " + " · ".join(f"{n.split('_hj_')[1]} {v:+.3f}"
-                                            for n, v in zip(hmap.names(args.side), hmap.to_rad(last["reg"]))))
+                                            for n, v in zip(hmap.names(args.side), hmap.to_rad(last["reg"], args.side))))
     if hmap.unverified(args.side):
         print(f"  ★방향 확인 전 축(pd 가 -1 로 둔다): {', '.join(hmap.unverified(args.side))} — tools/rh56f1_axis_probe.py")
     bad = verdict(hmap, args.side, last["reg"], last["names"], last["js"], hz, lower, upper)
