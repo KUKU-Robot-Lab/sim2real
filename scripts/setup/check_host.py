@@ -26,7 +26,8 @@ RL_WS = SIM2REAL.parent
 REPOS = {"sim2real": "main", "robot_control": "humble", "hdgp": "main", "urdf": None}
 #: 5090 기준 버전(2026-09-29). 다르면 WARN — 학습 · 재생 결과가 달라질 수 있다
 VENV_PACKAGES = {"torch": "2.7.1+cu128", "rl-games": "1.6.1", "mujoco": "2.3.0", "numpy": "1.26.4",
-                 "scipy": "1.13.1", "trimesh": None, "PyYAML": None}   # 배포(dist) 이름
+                 "scipy": "1.13.1", "trimesh": None, "PyYAML": None,
+                 "shapely": "2.1.2", "h5py": "3.14.0"}   # 배포(dist) 이름. 뒤 둘은 5090 에서 ~/.local 이 대신 채우고 있었다(09.30 arm4090)
 ROBOT_CONTROL_PKGS = {"common": ["openarm_bringup", "openarm_hardware", "openarm_description"],
                       "dg5f": ["dg5f_driver", "delto_hardware"],
                       "rh56f1": ["rh56f1_driver", "rh56f1_interfaces", "inspire_control_ros2"]}
@@ -188,6 +189,10 @@ def check_policies(rep: Report, source_host: str) -> None:
             rep.miss(f"{e.id}: nn/{name} md5 가 계약과 다르다", "5090 의 파일을 다시 복사")
         else:
             rep.ok(f"{e.id}: nn/{name}" + (" · md5 = 계약" if md5 else " · 계약 없음(md5 대조 없음)"))
+        for issue in e.issues:
+            if issue.startswith("매니페스트의"):         # trace.npz 처럼 git 에서 빠진 파일(골든 대조용)
+                rep.miss(f"{e.id}: {issue}", f"rsync -av {source_host}:~/rl_ws/sim2real/deploy/policies/{e.id}/ {e.path}/ "
+                         "--include='*.npz' --exclude='*'")
 
 
 def check_missions(rep: Report, robot: str) -> None:

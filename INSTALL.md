@@ -114,6 +114,8 @@ sudo apt install -y build-essential cmake libboost-system-dev libboost-thread-de
     ros-humble-moveit-ros-move-group ros-humble-moveit-ros-visualization ros-humble-moveit-setup-assistant \
     ros-humble-moveit-simple-controller-manager ros-humble-ros-gz ros-humble-ign-ros2-control \
     ros-humble-realsense2-description
+# dg_sdk_ros2_bridge 가 링크하는 libDGSDK.so 는 .gitignore 라 clone 에 없다 — 버전 파일 171 을 이름만 바꿔 둔다(5090 과 md5 같음)
+cp src/delto_m_ros2/dg_sdk_ros2_bridge/libs/libDGSDK_171.so src/delto_m_ros2/dg_sdk_ros2_bridge/libs/libDGSDK.so
 ./build.sh                                   # colcon --symlink-install, install/ 에 openarm_* · dg5f_* · rh56f1_*
 ```
 
@@ -122,10 +124,12 @@ sudo apt install -y build-essential cmake libboost-system-dev libboost-thread-de
 ```bash
 cd ~/rl_ws/sim2real
 source /opt/ros/humble/setup.bash && source ../robot_control/ros_ws/install/setup.bash
-colcon build --packages-select policy_control --base-paths deploy --symlink-install
+PYTHONNOUSERSITE=1 colcon build --packages-select policy_control --base-paths deploy --symlink-install
 readlink -f build/policy_control/policy_control     # → …/sim2real/deploy/policy_control/policy_control 이어야 한다
 ```
 
+> ★`PYTHONNOUSERSITE=1`: `~/.local` 에 setuptools 80 이상이 있으면(arm4090 은 84) `--symlink-install` 을 줘도 조용히
+> 복사 설치가 된다(09.30). 시스템 setuptools(59.6)로 빌드하게 `~/.local` 을 끈다.
 > ★`--symlink-install` 없이 빌드하면(복사 설치) `_paths` 가 저장소 루트를 못 찾아 pd_node · joint_node 가
 > import 에서 죽는다(09.28 실기). 잘못 빌드했으면 `rm -rf build/policy_control install/policy_control` 뒤 다시.
 > 콘솔이 떠 있는 동안에는 다시 빌드하지 않는다(떠 있는 콘솔은 옛 환경을 들고 있다).
@@ -144,7 +148,7 @@ ROS(rclpy)가 보인다. 버전은 local5090 기준(2026-09-29) — 다르면 `c
 cd ~/rl_ws/sim2real
 python3 -m venv --system-site-packages .venv
 .venv/bin/pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu128   # Blackwell=cu128+
-.venv/bin/pip install rl-games==1.6.1 mujoco==2.3.0 numpy==1.26.4 scipy==1.13.1 trimesh pyyaml pytest
+.venv/bin/pip install rl-games==1.6.1 mujoco==2.3.0 numpy==1.26.4 scipy==1.13.1 trimesh pyyaml pytest shapely==2.1.2 h5py==3.14.0
 # FABRICS(DG-5F fabric 단계): hdgp 안의 소스를 venv 에 연결
 echo "$HOME/rl_ws/hdgp/source/FABRICS/src" > .venv/lib/python3.10/site-packages/fabrics_sim.pth
 ```
@@ -158,7 +162,7 @@ echo "$HOME/rl_ws/hdgp/source/FABRICS/src" > .venv/lib/python3.10/site-packages/
 
 ```bash
 rsync -av <5090 PC>:~/rl_ws/sim2real/deploy/policies/ ~/rl_ws/sim2real/deploy/policies/ \
-      --include='*/' --include='nn/*.pth' --exclude='*'
+      --include='*/' --include='nn/*.pth' --include='trace.npz' --exclude='*'     # trace.npz: 골든 대조(both_pour_i24)
 ```
 
 ### Step 4-C. 이 PC 에만 있는 값
