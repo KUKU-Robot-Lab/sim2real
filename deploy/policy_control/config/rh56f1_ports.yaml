@@ -1,6 +1,7 @@
 # RH56F1 손 연결 — 손마다 개별 포트(09.29 사용자). USB RS485 와 CANFD 를 상황에 따라 바꿔 쓴다 → 여기 transport 만 바꾼다.
 # tools/rh56f1_driver.py 가 읽어 robot_control rh56f1_driver 를 띄운다. 미션 산출물(rh56f1_ports)이라 바꾸면 손 단계 승인을 다시 받는다.
-# ★arm4090 에서 확인 전 값: 포트(ls -l /dev/serial/by-id 로 고정 권장) · 어느 포트가 오른손인가 · Hand_ID · baud.
+# 09.30 arm4090 확인: 오른손 = FTDI FT232R BG0327KL(오른손만 연결한 상태에서 응답), 왼손 = BG033STU(나머지 하나).
+#   두 손 모두 Hand_ID 1 · 115200. ttyUSB 번호는 꽂는 순서로 바뀐다(같은 날 0↔1↔2 로 바뀜) → by-id 로 고정.
 #   canfd 는 USB-CANFD 변환기가 만드는 시리얼 포트다(벤더 코드에 SocketCAN 경로가 없다 — robot_control inspire_rh56f1 README).
-right: {transport: rs485, port: /dev/ttyUSB0, baud: 115200, hand_id: 1}
-left:  {transport: rs485, port: /dev/ttyUSB1, baud: 115200, hand_id: 1}
+right: {transport: rs485, port: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_BG0327KL-if00-port0, baud: 115200, hand_id: 1}
+left:  {transport: rs485, port: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_BG033STU-if00-port0, baud: 115200, hand_id: 1}
