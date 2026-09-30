@@ -1,0 +1,14 @@
+# RH56F1 오른팔 rh_aglt — 좌 aglt_l_i05 ep3800 을 거울 변환한 우팔 정책(학습 없음). 09.30 t2r RH56F1 [Grasping] 세션이 알림.
+id: right_rh_aglt_mirror_l5
+status: candidate        # candidate | verified | deployed | hold
+task: open-rh_r_aglt-lstm
+side: right
+checkpoint: aglt_l_i05_ep3800_to_r.pth
+source: 'local:~/rl_ws/our_source/policy/aglt_r_mirror_l5 (변환 hdgp scripts/tools/mirror_rh_aglt_ckpt.py · params = 우 aglt_r_i06 런)'
+interface: obs 96 · critic 128 · action 13 (팔 관절 증분 7 · 손 6 — rh56f1_hand 법칙)
+deploy:
+  max_episode_s: 15.0
+note: >-
+  우 env 결정론 probe(서버 GPU0, 64 env × 1800 스텝) 파지 0.806 · 들기 0.753 · 목표 성공 0.38 — 좌 원본(0.805 · 0.755)과 같다.
+  엄지 입구 안 0.0002(i03 은 0.97 — 사용자 영상 판정상 입구 안 엄지 파지라 좋은 오른팔 정책이 아니라고 grasping 세션이 알림).
+  알려진 결함: 엄지 대향 낮음(0.22), 네 손가락 손끝 파지(첫마디 0).

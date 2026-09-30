@@ -223,3 +223,21 @@ def test_chain_holds_the_arm_for_hold_steps_and_feeds_back_the_clamped_action():
     far = dict(meas, rcv=_meas("rcv", 1.0))
     assert any("left arm" in r for r in start_refusals(c, far, 0.15))
 
+
+
+def test_hand_obs_order_is_read_from_both_trace_meta_formats():
+    """hdgp 6f2ced31(09.30 pour_bi_rh 세션): trace_meta 에 {src,rcv}_hand_obs_joint_names · _hand_action_slot 이 생겼다."""
+    import importlib.util
+    path = Path(__file__).resolve().parents[2] / "deploy/policy_control/tools/build_pour_fj_contract.py"
+    spec = importlib.util.spec_from_file_location("_build_pour_fj", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    r = [f"r_hj_{j}" for j in ("index_1", "middle_1", "pinky_1", "ring_1", "thumb_1", "thumb_2")]
+    l = [n.replace("r_", "l_", 1) for n in r]
+    assert mod.hand_obs_order_from_meta({"hand_joint_names": {"src": r, "rcv": l}}) == {"src": r, "rcv": l}
+    new = {"src_hand_obs_joint_names": r, "rcv_hand_obs_joint_names": l,
+           "src_hand_action_slot": [0, 1, 2, 3, 4, 5], "rcv_hand_action_slot": [0, 1, 2, 3, 4, 5]}
+    assert mod.hand_obs_order_from_meta(new) == {"src": r, "rcv": l}
+    assert mod.hand_obs_order_from_meta({}) is None
+    with pytest.raises(SystemExit, match="항등"):
+        mod.hand_obs_order_from_meta({**new, "src_hand_action_slot": [1, 0, 2, 3, 4, 5]})

@@ -24,6 +24,23 @@ ASSET = "openarm_rh56f1_bi_rl"
 URDF = _paths.RL_WS / "hdgp" / "assets" / "robot" / ASSET / f"{ASSET}.urdf"
 
 
+def hand_obs_order_from_meta(meta: dict) -> dict | None:
+    """trace_meta 에서 손 관측(PhysX) 순서 {src: [...], rcv: [...]}. 두 형식을 받는다 —
+    옛 `hand_joint_names: {src, rcv}` · hdgp 6f2ced31(09.30 pour_bi_rh 세션) 뒤 `{src,rcv}_hand_obs_joint_names`.
+    6f2ced31 형식은 `{src,rcv}_hand_action_slot`(손 행동 6 → 관절)도 있으면 프로필 순(항등)인지 확인한다."""
+    old = meta.get("hand_joint_names")
+    if isinstance(old, dict) and set(old) == set(F.ROLES):
+        return {r: list(old[r]) for r in F.ROLES}
+    new = {r: meta.get(f"{r}_hand_obs_joint_names") for r in F.ROLES}
+    if not all(new.values()):
+        return None
+    for r in F.ROLES:
+        slots = meta.get(f"{r}_hand_action_slot")
+        if slots is not None and list(slots) != list(range(len(slots))):
+            raise SystemExit(f"{r}_hand_action_slot {slots} — 손 행동 슬롯이 프로필 순(항등)이 아니다. 디코더가 가정한다")
+    return {r: list(new[r]) for r in F.ROLES}
+
+
 def _checkpoint(run: Path, explicit: str | None) -> Path:
     if explicit:
         p = Path(explicit)
@@ -46,9 +63,10 @@ def main(argv: list[str] | None = None) -> int:
     order, source = None, ""
     if args.hand_obs_order:
         meta = json.loads(Path(args.hand_obs_order).read_text())
-        order = meta.get("hand_joint_names")
-        if not order or set(order) != set(F.ROLES):
-            raise SystemExit(f"{args.hand_obs_order}: hand_joint_names {{src: [...], rcv: [...]}} 가 없다")
+        order = hand_obs_order_from_meta(meta)
+        if not order:
+            raise SystemExit(f"{args.hand_obs_order}: 손 관측 순서가 없다 — hand_joint_names {{src, rcv}} 또는 "
+                             "{src,rcv}_hand_obs_joint_names(hdgp 6f2ced31 뒤 trace_meta)")
         source = f"measured:{Path(args.hand_obs_order).name}"
     c = F.build(run, _checkpoint(run, args.checkpoint), load_mimic_pair(Path(args.hdgp)), URDF, asset=ASSET,
                 hand_obs_order=order, obs_order_source=source)
