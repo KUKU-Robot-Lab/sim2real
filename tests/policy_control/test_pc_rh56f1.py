@@ -49,11 +49,16 @@ def test_the_driver_slot_order_is_pinky_first():
     assert reg[:4] == [HMAP.axes[5].to_reg(1.5), HMAP.axes[4].to_reg(1.0), HMAP.axes[3].to_reg(0.5), 1740]
 
 
-def test_unverified_thumb_axes_are_left_alone():
-    assert set(HMAP.unverified()) == {"thumb_1", "thumb_2"}
-    reg = HMAP.to_register(OPEN)
-    assert reg[4] == M.LEAVE and reg[5] == M.LEAVE
-    assert all(r != M.LEAVE for r in HMAP.to_register(OPEN, allow_unverified=True))
+def test_all_axes_are_verified_after_the_0930_probes_but_an_unverified_axis_is_left_alone():
+    """09.30 양손 probe 뒤 전부 확인됨. 확인 안 된 축은 -1(LEAVE) — 변환표를 고쳐 흉내 낸다."""
+    assert HMAP.unverified() == [] and all(r != M.LEAVE for r in HMAP.to_register(OPEN))
+    raw = yaml.safe_load((REPO / "deploy/policy_control/config/rh56f1_hand_map.yaml").read_text())
+    raw["joints"]["thumb_1"]["verified"] = False
+    raw["joints"]["thumb_2"]["verified"] = ["right"]
+    m = M.parse(raw)
+    assert m.to_register(OPEN)[5] == M.LEAVE and m.to_register(OPEN)[4] == M.LEAVE
+    assert m.to_register(OPEN, side="right")[4] != M.LEAVE and m.to_register(OPEN, side="left")[4] == M.LEAVE
+    assert all(r != M.LEAVE for r in m.to_register(OPEN, allow_unverified=True))
 
 
 def test_rad_and_register_round_trip_and_clamp():
@@ -249,15 +254,7 @@ def test_robot_yamls_use_the_rh56f1_backend_and_state_topics():
             assert list(cfg.sources["ee"].joints) == HMAP.names(side)
 
 
-def test_thumbs_are_verified_on_the_right_hand_only_until_the_left_is_checked():
-    """09.30 사용자: 오른손 엄지 두 축 방향이 맞다 — 변환표 verified: [right]. 왼손 엄지는 아직 -1."""
-    q = [1.2, 0.2, 0.5, 0.5, 0.5, 0.5]
-    right, left = HMAP.to_register(q, side="right"), HMAP.to_register(q, side="left")
-    assert right[4] != M.LEAVE and right[5] != M.LEAVE and left[4] == M.LEAVE and left[5] == M.LEAVE
-    assert HMAP.unverified("right") == [] and HMAP.unverified("left") == ["thumb_1", "thumb_2"]
-    b = _backend()
-    b.write(HandCmd(q_star=np.array(OPEN), qd_star=None, dt=0.01, q_meas=np.array(OPEN)))
-    assert M.LEAVE not in b.last_register                                  # 오른손 백엔드는 엄지도 보낸다
+def test_verified_list_names_only_hands():
     with pytest.raises(M.HandMapError, match="right"):
         raw = yaml.safe_load((REPO / "deploy/policy_control/config/rh56f1_hand_map.yaml").read_text())
         raw["joints"]["thumb_1"]["verified"] = ["up"]
