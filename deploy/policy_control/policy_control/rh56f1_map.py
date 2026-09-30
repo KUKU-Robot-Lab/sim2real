@@ -62,6 +62,8 @@ class HandMap:
     touch_perm: tuple[int, ...]                     # sim 순 i ← 벤더 칸 touch_perm[i]
     touch_unit_n: float
     command_max_hz: float
+    touch_combine: str = "normal"                   # normal | magnitude(√(법선² + 접선²) — sim 의 합력 크기)
+    touch_max_raw: float = 3000.0                   # 벤더 포화값(09.30 누름에서 3000 에서 멈췄다)
     side_axes: Mapping = None                       # side → tuple[Axis] (보정), 없으면 axes
 
     def axes_of(self, side: str | None) -> tuple[Axis, ...]:
@@ -99,10 +101,17 @@ class HandMap:
             out[name] = k * out[of]
         return out
 
-    def touch_sim_order(self, vendor: Sequence[float]) -> np.ndarray:
+    def touch_sim_order(self, vendor: Sequence[float], tangential: Sequence[float] | None = None) -> np.ndarray:
+        """벤더 손가락 힘(새끼부터, 원시) → sim 순(엄지부터) N. combine magnitude 면 접선까지 합친 크기(sim 촉각 = 합력 크기)."""
         v = np.asarray(vendor, dtype=float).reshape(-1)
         if v.shape[0] != len(self.touch_perm):
             raise HandMapError(f"손가락 힘은 {len(self.touch_perm)} 개여야 한다: {v.shape[0]}")
+        v = np.clip(v, 0.0, self.touch_max_raw)
+        if self.touch_combine == "magnitude" and tangential is not None:
+            tg = np.clip(np.asarray(tangential, dtype=float).reshape(-1), 0.0, self.touch_max_raw)
+            if tg.shape != v.shape:
+                raise HandMapError(f"접선은 {v.shape[0]} 개여야 한다: {tg.shape[0]}")
+            v = np.hypot(v, tg)
         return v[list(self.touch_perm)] * self.touch_unit_n
 
 
@@ -160,11 +169,14 @@ def parse(raw: Mapping) -> HandMap:
                             cmd=(min(a.reg), max(a.reg))))
         side_axes[side] = tuple(out)
     t = raw["touch"]
+    if t.get("combine", "normal") not in ("normal", "magnitude"):
+        raise HandMapError(f"touch.combine 은 normal · magnitude: {t.get('combine')}")
     vendor, sim = list(t["vendor_order"]), list(t["sim_order"])
     if sorted(vendor) != sorted(sim):
         raise HandMapError("touch vendor_order · sim_order 는 같은 손가락이어야 한다")
     return HandMap(axes=tuple(axes), mimic=tuple(mimic), touch_perm=tuple(vendor.index(f) for f in sim), side_axes=side_axes,
-                   touch_unit_n=float(t["unit_n"]), command_max_hz=float(raw.get("command_max_hz", 30.0)))
+                   touch_unit_n=float(t["unit_n"]), command_max_hz=float(raw.get("command_max_hz", 30.0)),
+                   touch_combine=str(t.get("combine", "normal")), touch_max_raw=float(t.get("max_raw", 3000.0)))
 
 
 def load(path: str | Path = DEFAULT_PATH) -> HandMap:

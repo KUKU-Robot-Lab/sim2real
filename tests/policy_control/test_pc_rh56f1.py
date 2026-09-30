@@ -289,3 +289,14 @@ def test_calibrated_commands_stay_in_the_vendor_register_range():
         assert all(lim[i][0] <= r <= lim[i][1] for i, r in enumerate(reg))
         back = HMAP.to_rad(HMAP.to_register([0.8, 0.2, 0.7, 0.7, 0.7, 0.7], side=side), side)
         assert back == pytest.approx([0.8, 0.2, 0.7, 0.7, 0.7, 0.7], abs=0.003)
+
+
+def test_tactile_is_the_contact_force_magnitude_like_the_training_sensor():
+    """09.30 누름: 접선이 법선의 0.4~1.0배 — 학습 촉각(손끝 링크 합력 크기)과 같게 √(법선² + 접선²). 3000 포화."""
+    n = [300, 0, 0, 400, 3000]                                          # 벤더 순 새끼 → 엄지
+    t = [400, 0, 0, 300, 9999]
+    got = HMAP.touch_sim_order(n, t)                                    # sim 순 엄지 → 새끼
+    assert got == pytest.approx([np.hypot(3000, 3000) * 0.01, 5.0, 0.0, 0.0, 5.0])
+    assert HMAP.touch_sim_order(n) == pytest.approx([30.0, 4.0, 0.0, 0.0, 3.0])     # 접선이 없으면 법선만
+    core = HandStateCore(HMAP, "right")
+    assert core.tip_forces(n, t)[1] == pytest.approx(5.0)

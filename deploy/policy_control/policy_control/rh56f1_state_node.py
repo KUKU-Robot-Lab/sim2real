@@ -5,7 +5,7 @@ pd · 정책 · 콘솔은 rad JointState 를 읽는다 — 이 노드가 변환�
 
   구독  /hand_<side>/angle_actual (rh56f1_interfaces/GetAngleAct1)  ·  /hand_<side>/touch_data (TouchData1)
   발행  /hand_<side>/joint_states (sensor_msgs/JointState, canonical 이름, 구동 6 + 종속 6(mimic), rad · rad/s)
-        /hand_<side>/tip_forces   (std_msgs/Float64MultiArray, 5, sim 순 엄지 → 새끼, N — 단위는 실측 전)
+        /hand_<side>/tip_forces   (std_msgs/Float64MultiArray, 5, sim 순 엄지 → 새끼, N — √(법선² + 접선²), 단위 실측 전)
 
     python3 deploy/policy_control/policy_control/rh56f1_state_node.py --side right
 """
@@ -53,8 +53,8 @@ class HandStateCore:
         vel = np.zeros_like(pos) if self._vel is None else self._vel
         return self.names(), pos, vel
 
-    def tip_forces(self, finger_forces: Sequence[float]) -> np.ndarray:
-        return self.hmap.touch_sim_order(finger_forces)
+    def tip_forces(self, finger_forces: Sequence[float], tangentials: Sequence[float] | None = None) -> np.ndarray:
+        return self.hmap.touch_sim_order(finger_forces, tangentials)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -85,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         js_pub.publish(out)
 
     def on_touch(msg) -> None:
-        tip_pub.publish(Float64MultiArray(data=core.tip_forces(list(msg.finger_forces)).tolist()))
+        tip_pub.publish(Float64MultiArray(data=core.tip_forces(list(msg.finger_forces), list(msg.finger_tangentials)).tolist()))
 
     node.create_subscription(GetAngleAct1, f"{ns}/angle_actual", on_angle, 10)
     node.create_subscription(TouchData1, f"{ns}/touch_data", on_touch, 10)

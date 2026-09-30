@@ -54,11 +54,16 @@ mimic:
   middle_2: {of: middle_1, k: 1.1169}
   ring_2: {of: ring_1, k: 1.1169}
   pinky_2: {of: pinky_1, k: 1.1169}
-#: 촉각 — TouchData1.finger_forces 는 새끼부터(벤더), sim 은 엄지부터. 단위 0.01 N(hdgp pour_fabric_env_cfg 주석) — 실측 전.
+#: 촉각 — TouchData1.finger_forces(법선) · finger_tangentials(접선) 는 새끼부터(벤더), sim 은 엄지부터. 단위 0.01 N(추정) — 실측 전.
+#  09.30 arm4090 손으로 누름: 양손 손끝 10개 모두 반응, 쉴 때 정확히 0(잡음 0 · 문턱 없음 — 원시 1 부터 나온다), 3000 에서 포화.
+#  누를 때 접선이 법선의 0.4~1.0배(중앙) — sim 촉각은 손끝 `*_sensor` 링크 합력의 크기라 combine: magnitude(√(법선² + 접선²)).
+#  손바닥 9칸 중 3 · 6 · 9 번째는 쉴 때 65535(없는 칸), 나머지는 누르면 3000 까지. 근접(proximity) 값은 65000 대 — 쓰지 않는다.
 touch:
   vendor_order: [pinky, ring, middle, index, thumb]
   sim_order: [thumb, index, middle, ring, pinky]
   unit_n: 0.01
   unit_verified: false
+  combine: magnitude
+  max_raw: 3000
 #: 명령 주기 상한 — 벤더 노드는 쓰기마다 응답을 최대 25 ms 기다리고 그만큼 읽기 주기가 밀린다(robot_control README).
 command_max_hz: 30.0

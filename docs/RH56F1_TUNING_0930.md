@@ -73,8 +73,11 @@ URDF 관절 한계는 이 표의 "이론 행정"(설치 · 간섭 고려) 범위
 - 곡선 자료: `logs/rh56f1_probe_0930/rh56f1_mimic_table.npz`
   (f_q1 · f_q2 = 네 손가락 _1 · _2 [rad], t_q2 · t_q3 · t_q4 = 엄지 [rad], f_step · t_step = 행정 스텝). 재생성 `rh_table.py` + `xlsx_dump.py`.
 
-## 6. 센서
+## 6. 센서 (09.30 손으로 누름 — `logs/rh56f1_probe_0930/bag_touch_press`, `touch_press_summary.txt`)
 
-- 손끝 촉각: 드라이버 touch_data.finger_forces(새끼부터, 원시) → ×0.01 N(추정, unit_verified false) → 엄지부터 5 → 정책 tanh(clip(F,0,10)/3).
-  학습의 촉각(각 손가락 `*_sensor` net 접촉력)과 같은 뜻. 편 손 무접촉에서 0.0.
-- 모터 힘 force_actual(g): 17.5° 무부하 스텝 중 최대 12~71 g. 학습에 없다.
+- 양손 손끝 10개 모두 반응. 쉴 때 정확히 0(잡음 0, 문턱 없음 — 원시 1 부터 나온다), 원시 3000 에서 포화(0.01 N 이면 30 N).
+- 누를 때 접선이 법선의 0.4~1.0배(중앙). 학습 촉각 = 손끝 `*_sensor` 링크 **합력의 크기**(대상 무관 net) → 배포 촉각을
+  √(법선² + 접선²) × 0.01 N 으로 바꿨다(`rh56f1_hand_map.yaml touch.combine: magnitude`). 엄지부터 5 → tanh(clip(F, 0, 10)/3).
+- 단위 0.01 N 은 아직 추정(아는 무게로 확인 전). 학습 rh_aglt 는 촉각 잡음 0.1 N 을 넣었는데 실기 쉴 때 잡음은 0.
+- 손바닥 9칸: 3 · 6 · 9 번째는 없는 칸(65535), 나머지는 누르면 3000 까지. 근접(proximity)은 65000 대라 쓰지 않는다. 학습 actor 는 손바닥 · 근접을 안 쓴다.
+- 모터 힘 force_actual(g): 누름 중 최대 32~346 g — 손가락을 밖에서 밀면 모터 힘에도 나온다(학습에 없다).
