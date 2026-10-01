@@ -159,18 +159,35 @@ def test_real_cups_run_fpp_on_this_pc_after_the_head_home_and_shutdown_takes_it_
 
 
 @pytest.mark.parametrize("side", ["right", "left"])
-def test_home_replays_the_saved_zero_to_home_path_like_the_dg5f_mission(side):
-    """engage → 확인 → 손 편 손 → 확인 → 시작점 검사 → 확인 → 경로 재생 → 정착 → 확인 → 손 홈. 실기 · fake 같은 경로."""
+def test_home_is_one_approval_then_runs_through(side):
+    """10.01 사용자: "home 자세 진행하면 팔-손 한번에". 사람 확인은 맨 앞 하나 → engage → 주먹 → 시작점 검사 → 재생 → 정착 → 손 홈."""
     for m, book in ((REAL, REAL_BOOK), (FAKE, FAKE_BOOK)):
         cmds = _cmds(m, book, f"home_{side}")
         text = [" ".join(c.argv) for c in cmds]
-        assert "--only pd_engage --hold-s 10" in text[0] and cmds[1].manual
-        assert "--only pd_hand_path" in text[2] and cmds[3].manual
-        assert "check_path_start.py" in text[4] and f"home_rh56f1_{side}.npz" in text[4] and "--contract" in text[4]
-        assert cmds[5].manual and "replay_to_pd.py" in text[6] and f"home_rh56f1_{side}.npz" in text[6]
-        assert "--execute" in cmds[6].argv and "--only pd_goto_home" in text[7] and cmds[8].manual
-        assert "--only pd_hand_home" in text[9]
+        assert cmds[0].manual and not any(c.manual for c in cmds[1:])
+        order = ["--only pd_engage --hold-s 10", "--only pd_hand_path", "check_path_start.py", "replay_to_pd.py",
+                 "--only pd_goto_home", "--only pd_hand_home"]
+        assert len(text) == 1 + len(order) and all(want in t for want, t in zip(order, text[1:]))
+        assert f"home_rh56f1_{side}.npz" in text[3] and "--contract" in text[3] and "--at" not in text[3]
+        assert f"home_rh56f1_{side}.npz" in text[4] and "--reverse" not in text[4] and "--execute" in cmds[4].argv
         assert f"path_{side}" in m.stages[[x.id for x in m.stages].index(f"home_{side}")].artifacts
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_return_goes_home_to_rest_on_the_same_path_reversed_then_releases(side):
+    """10.01 4090:s2r 실기 순서: 홈 정착 → 주먹 → 경로 끝 검사 → 역재생 → pd 해제. 한 번 승인, home 을 되돌린다."""
+    for m, book in ((REAL, REAL_BOOK), (FAKE, FAKE_BOOK)):
+        by = {x.id: x for x in m.stages}
+        st = by[f"return_{side}"]
+        assert st.needs == (f"home_{side}",) and f"home_{side}" in st.undoes
+        cmds = _cmds(m, book, f"return_{side}")
+        text = [" ".join(c.argv) for c in cmds]
+        assert cmds[0].manual and not any(c.manual for c in cmds[1:])
+        order = ["--only pd_goto_home", "--only pd_hand_path", "check_path_start.py", "replay_to_pd.py", "--only pd_release"]
+        assert len(text) == 1 + len(order) and all(want in t for want, t in zip(order, text[1:]))
+        assert "--at end" in text[3] and "--reverse" in text[4] and f"home_rh56f1_{side}.npz" in text[4]
+    assert by[f"return_{side}"].touches_real is False                      # fake 미션
+    assert {x.id: x for x in REAL.stages}[f"return_{side}"].touches_real
 
 
 @pytest.mark.parametrize("side", ["right", "left"])

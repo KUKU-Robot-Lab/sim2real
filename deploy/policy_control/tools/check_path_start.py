@@ -27,8 +27,10 @@ SAMPLE = SIM2REAL / "deploy" / "s2r_console" / "tools" / "sample_joints.py"
 CONTRACT = SIM2REAL / "logs" / "policy" / "asset_openarm_dg5f-m-short_bi_rl" / "deploy_contract.json"
 
 
-def measure() -> dict[str, float]:
-    out = subprocess.run([sys.executable, str(SAMPLE), "--seconds", "0.6"], capture_output=True, text=True, timeout=30)
+def measure(need: list[str] | None = None) -> dict[str, float]:
+    """need = 판정에 쓸 관절 — 다 들어올 때까지(최대 5 s) 기다린다(10.01 실기: 0.6 s 창에서 /joint_states 를 놓쳤다)."""
+    argv = [sys.executable, str(SAMPLE), "--seconds", "0.6"] + (["--need", ",".join(need)] if need else [])
+    out = subprocess.run(argv, capture_output=True, text=True, timeout=30)
     if out.returncode != 0:
         raise SystemExit(f"✗ 관절 상태를 못 읽었다: {out.stderr.strip()[-300:]}")
     return json.loads(out.stdout.strip().splitlines()[-1])["q"]
@@ -116,7 +118,9 @@ def main() -> int:
     have = hashlib.sha1(args.contract.read_bytes()).hexdigest()
     if want != have:
         reasons.append(f"경로를 만든 계약({want[:10]})이 지금 계약({have[:10]})과 다르다 — 경로를 다시 만들 것")
-    q = measure()
+    hand_need = [kv.partition("=")[0].strip() for kv in str(d["meta_hand_q"]).split(",") if kv.strip()] \
+        if "meta_hand_q" in d else []
+    q = measure(joints + hand_need)
     if args.at == "end":                      # 끝점 가드 — 손은 보지 않는다(정책 단계가 손을 정한다)
         reasons += verdict(q, joints, np.asarray(d["meta_goal"], dtype=float), args.tol, args.allow_exact_zero, "끝점")
         for r in reasons:

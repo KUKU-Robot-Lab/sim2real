@@ -92,13 +92,30 @@ def skip_when_pd_settles(con, stage: str, wait_s: float = SKIP_WAIT_S) -> None:
             time.sleep(0.5)
 
 
+def reachable_hand(side: str, want: dict[str, float]) -> dict[str, float]:
+    """RH56F1 은 명령 레지스터가 벤더 범위로 잘려(네 손가락 1740 = 2.2~5.2°) 0 rad 를 명령해도 그만큼만 편다.
+    판정 목표를 손이 실제로 갈 수 있는 값(rad → 레지스터 → rad)으로 바꾼다. RH56F1 손 관절이 아니면 그대로(10.01 fake e2e)."""
+    try:
+        sys.path.insert(0, str(HERE.parents[1] / "policy_control"))
+        from policy_control import rh56f1_map
+        hmap = rh56f1_map.load()
+    except Exception:                               # noqa: BLE001 — 지도가 없으면 DG5F 처럼 그대로 판정
+        return want
+    names = hmap.names(side)
+    if set(want) != set(names):
+        return want
+    q = [want[n] for n in names]
+    back = hmap.to_rad(hmap.to_register(q, side=side, allow_unverified=True), side=side)
+    return {n: float(v) for n, v in zip(names, back)}
+
+
 def check_side(report: Report, domain: int, side: str, tgt: dict, *, arm: bool, hand: bool, when: str) -> None:
     q = sample(domain)
     if arm:
         err, what = worst(q, tgt[side]["arm"])
         report.add(f"{when}: {side} 팔이 초기 자세", err < ARM_TOL, f"최대 오차 {err:.4f} rad · {what}")
     if hand:
-        err, what = worst(q, tgt[side]["hand"])
+        err, what = worst(q, reachable_hand(side, tgt[side]["hand"]))
         report.add(f"{when}: {side} 손이 초기 손 자세", err < HAND_TOL, f"최대 오차 {err:.4f} rad · {what}")
 
 
@@ -120,6 +137,8 @@ def run(args) -> int:
         raise SystemExit("실기 프로파일에는 쓰지 않는다")
     domain = s.profile.domain
     tgt = targets(Path(con.repo) / s.mission.artifacts["contract"])
+    paths = {side: Path(con.repo) / s.mission.artifacts[f"path_{side}"] for side in ("right", "left")
+             if f"path_{side}" in s.mission.artifacts}
     report = Report()
     skip = set(args.skip) | ({"viewer"} if not args.with_viewer else set())
     if "sensors" in skip:                            # 켠 적이 없으면 끌 것도 없다(런처 구독자 0 → rc 1)
@@ -165,7 +184,7 @@ def run(args) -> int:
                         except C.ConsoleError as exc:
                             print(f"  (로그 없음: {exc})", flush=True)
                 break
-            after_stage(report, domain, stage, tgt)
+            after_stage(report, domain, stage, tgt, paths)
     finally:
         kept = con.shutdown()
         if kept:
@@ -182,7 +201,7 @@ def before_ack(report: Report, domain: int, stage: str, step: dict, tgt: dict) -
         check_hand_not_home(report, domain, side, tgt, when="팔 이동 뒤")
 
 
-def after_stage(report: Report, domain: int, stage: str, tgt: dict) -> None:
+def after_stage(report: Report, domain: int, stage: str, tgt: dict, paths: dict | None = None) -> None:
     side = "right" if stage.endswith("_right") else "left" if stage.endswith("_left") else None
     if stage.startswith("home_") and side:
         time.sleep(3.0)                                  # 손 속도 제한 램프
@@ -191,7 +210,8 @@ def after_stage(report: Report, domain: int, stage: str, tgt: dict) -> None:
         check_side(report, domain, side, tgt, arm=True, hand=False, when="셀프테스트 뒤")
     elif stage.startswith("return_") and side:
         import numpy as np
-        path = HERE.parents[2] / "deploy" / "policy_control" / "paths" / f"home_{side}.npz"
+        # 미션 산출물 path_<side>(RH56F1 은 home_rh56f1_<side>.npz) — 없으면 옛 DG5F 이름(10.01)
+        path = (paths or {}).get(side) or HERE.parents[2] / "deploy" / "policy_control" / "paths" / f"home_{side}.npz"
         start = [float(v) for v in np.load(path)["meta_start"]]
         want = {f"{side[0]}_aj_{i}": v for i, v in enumerate(start, 1)}
         err, what = worst(sample(domain), want)

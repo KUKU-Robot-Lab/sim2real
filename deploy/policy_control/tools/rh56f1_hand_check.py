@@ -53,6 +53,13 @@ def verdict(hmap: rh56f1_map.HandMap, side: str, reg: list[int] | None, names: l
     return bad
 
 
+def rate_hz(stamps: list) -> float:
+    """받은 시각들의 평균 주기 → Hz(첫 · 끝 메시지 사이). 두 개 미만이면 0."""
+    if len(stamps) < 2 or stamps[-1] <= stamps[0]:
+        return 0.0
+    return (len(stamps) - 1) / (stamps[-1] - stamps[0])
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--side", choices=("right", "left"), required=True)
@@ -92,7 +99,8 @@ def main(argv: list[str] | None = None) -> int:
     node.destroy_node()
     rclpy.shutdown()
 
-    hz = {k: len(v) / args.seconds for k, v in seen.items()}
+    # 10.01 fake e2e: 개수 / 창 길이는 발견(discovery) 지연을 주기로 쳐 50 Hz 손을 9.3 Hz 로 읽었다 — 받은 메시지 사이 간격으로 잰다
+    hz = {k: rate_hz(v) for k, v in seen.items()}
     print(f"[{args.side}] angle_actual {hz['angle']:.1f} Hz · joint_states {hz['js']:.1f} Hz · touch_data {hz['touch']:.1f} Hz")
     if last["reg"] is not None:
         print(f"  레지스터(슬롯 순 새끼 · 약지 · 중지 · 검지 · 엄지 굽힘 · 엄지 회전) {last['reg']}")

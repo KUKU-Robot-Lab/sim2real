@@ -86,7 +86,10 @@ def _stages(kind: str) -> list[dict]:
              "title": f"[{s}] pd 발행 모드 전환 — engage 는 하지 않는다(팔은 JTC 가 잡는다)"},
             {"id": f"home_{s}", "group": "motion", "lane": f"arm_{s}", "needs": [f"pd_arm_{s}"], "skippable": True,
              "touches_real": real, "artifacts": ["contract", f"path_{s}"],
-             "title": f"[{s}] engage → 차렷 손(주먹) → 저장 경로로 차렷 → 홈(rh_aglt 시작 자세) → 정착 → 손 초기 자세"},
+             "title": f"[{s}] (한 번 승인) engage → 차렷 손(주먹) → 저장 경로로 차렷 → 홈(rh_aglt 시작 자세) → 정착 → 손 초기 자세"},
+            {"id": f"return_{s}", "group": "finish", "lane": f"arm_{s}", "needs": [f"home_{s}"], "skippable": True,
+             "touches_real": real, "artifacts": ["contract", f"path_{s}"], "undoes": [f"home_{s}"],
+             "title": f"[{s}] 홈 → 차렷 — 홈 정착 → 차렷 손(주먹) → 저장 경로 역재생 → pd 해제(한 번 승인, 홈 근처에서만)"},
             {"id": f"release_{s}", "group": "finish", "lane": f"arm_{s}", "needs": [f"pd_arm_{s}"], "skippable": True,
              "touches_real": real, "undoes": [f"pd_arm_{s}", f"home_{s}"],
              "title": f"[{s}] pd 해제(역블렌드 → JTC) → 이 팔의 pd 정지"},
@@ -261,6 +264,7 @@ def _run(kind: str) -> dict:
                       f"robot:={{artifact:robot_{s}}}", "pd_config:={artifact:pd_exec}", f"sides:={s}",
                       "execute:=true", "stage:=full", *fake_arg], background=True)],
             f"home_{s}": _home(s),
+            f"return_{s}": _return(s),
             f"release_{s}": [
                 _cmd(f"[{s}] pd release — 역블렌드 → 0 송출 → JTC 복귀",
                      ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_release"], execute_args=["--execute"]),
@@ -270,31 +274,48 @@ def _run(kind: str) -> dict:
 
 
 def _home(s: str) -> list[dict]:
-    """차렷 → 홈. DG-5F 미션의 home 순서와 같다(engage · 손 · 시작점 검사 · 재생 · 정착 · 손)."""
+    """차렷 → 홈, 한 번 승인으로 끝까지(10.01 사용자: "home 자세 진행하면 팔-손 한번에"). 사람 확인은 맨 앞 하나 —
+    그 뒤는 도구가 실패하면 그 자리에서 멈춘다(engage 는 10 s HOLD 감시, 재생 전 시작점 검사, hand_home 은 pd 가 정착했을 때만 받는다)."""
     joints = ",".join(f"{s[0]}_aj_{i}" for i in range(1, 8))
     ctl = lambda only, *extra: ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", only, *extra]  # noqa: E731
     return [
+        _cmd(f"★[{s}] 경로 주변(로봇 옆 · 테이블 앞 가장자리 · 몸통)이 비어 있는가. 약 15 s 동안 최대 0.3 rad/s 로 움직인다 — "
+             "engage → 차렷 손(주먹) → 경로 재생 → 홈 정착 → 손을 홈 손 자세로, 끊지 않고 이어 간다", ["bash", "-lc", "true"], manual=True),
         _cmd(f"[{s}] engage → 제자리 10 s. pd 가 HOLD 로 가면 실패하고 pd 를 해제한다", ctl("pd_engage", "--hold-s", "10"),
              execute_args=["--execute", "--approve", "pd_engage"]),
-        _cmd(f"★[{s}] 10 s 동안 팔이 제자리였는가(처짐 · 떨림 · 소리 없음). 아니면 '정상이 아니다' 후 정지 바의 PD 해제",
-             ["bash", "-lc", "true"], manual=True),
         _cmd(f"[{s}] 손을 차렷 손(주먹)으로(pd/hand_path) — 네 손가락 1.45 · 엄지 대향 0.8 · 굽힘 0.3. 홈 경로는 이 손으로 계획했다",
              ctl("pd_hand_path", "--service-timeout", "15"), execute_args=["--execute", "--approve", "pd_hand_path"]),
-        _cmd(f"★[{s}] 차렷 손(주먹)인가 — 네 손가락이 굽어 있고 엄지가 반쯤 손바닥 쪽으로 돌아 있는가(손끝이 받침판 · 밑판에 닿지 않는가)",
-             ["bash", "-lc", "true"], manual=True),
         _cmd(f"[{s}] 저장 경로를 재생해도 되는가 — 팔이 차렷(경로 시작점 0.05 rad 안) · 경로가 지금 계약으로 만든 것 · 관절 상태가 살아 있음",
              ["python3", f"{PC}/tools/check_path_start.py", "--npz", f"{{artifact:path_{s}}}", "--contract", "{artifact:contract}"]),
-        _cmd(f"★[{s}] 경로 주변(로봇 옆 · 테이블 앞 가장자리 · 몸통)이 비어 있는가. 약 30 s 동안 최대 0.2 rad/s 로 움직인다",
-             ["bash", "-lc", "true"], manual=True),
-        _cmd(f"[{s}] 저장 경로를 pd 로 재생 — 끝나면 episode stop 으로 pd 가 마지막 자세를 붙든다",
+        _cmd(f"[{s}] 저장 경로를 pd 로 재생(약 15 s, 최대 0.3 rad/s) — 끝나면 이 팔의 episode stop 으로 pd 가 마지막 자세를 붙든다",
              ["python3", f"{PC}/tools/replay_to_pd.py", "--npz", f"{{artifact:path_{s}}}", "--joints", joints,
               "--rate-scale", "1.0"], execute_args=["--execute"]),
         _cmd(f"[{s}] 홈에서 정착(이미 도착 — 남은 오차만)", ctl("pd_goto_home", "--service-timeout", "45"),
              execute_args=["--execute", "--approve", "pd_goto_home"]),
-        _cmd(f"★[{s}] 팔이 홈(테이블 앞 가장자리, 손바닥이 마주 봄)에 도착했는가. 아니면 '정상이 아니다' 후 PD 해제",
-             ["bash", "-lc", "true"], manual=True),
         _cmd(f"[{s}] 손을 계약 홈 손 자세로(pd/hand_home — 팔이 홈에 정착했을 때만 받는다)", ctl("pd_hand_home", "--service-timeout", "15"),
              execute_args=["--execute", "--approve", "pd_hand_home"]),
+    ]
+
+
+def _return(s: str) -> list[dict]:
+    """홈 → 차렷, 한 번 승인(10.01 사용자 · 4090:s2r 실기 순서). 홈 근처에서만 — 정책이 멈춘 먼 자리에서 goto_home 직선은 테이블을
+    모른다(DG-5F 09.28). 홈 정착(굳은 hold 도 풀린다) → 주먹 → 경로 끝 검사 → 같은 경로 역재생 → pd 해제(JTC 가 차렷을 잡는다)."""
+    joints = ",".join(f"{s[0]}_aj_{i}" for i in range(1, 8))
+    ctl = lambda only, *extra: ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", only, *extra]  # noqa: E731
+    return [
+        _cmd(f"★[{s}] 팔이 홈 근처에 있고(정책이 멀리 끌고 갔으면 먼저 홈으로) 손에 컵이 없는가 · 경로 주변이 비어 있는가. "
+             "홈 정착 → 주먹 → 저장 경로 역재생(약 15 s, 최대 0.3 rad/s) → pd 해제, 끊지 않고 이어 간다", ["bash", "-lc", "true"], manual=True),
+        _cmd(f"[{s}] 홈에서 정착 — 남은 오차만(굳은 hold 도 여기서 풀린다)", ctl("pd_goto_home", "--service-timeout", "45"),
+             execute_args=["--execute", "--approve", "pd_goto_home"]),
+        _cmd(f"[{s}] 손을 차렷 손(주먹)으로(pd/hand_path) — 홈 경로는 이 손으로 계획했다", ctl("pd_hand_path", "--service-timeout", "15"),
+             execute_args=["--execute", "--approve", "pd_hand_path"]),
+        _cmd(f"[{s}] 되짚어도 되는가 — 팔이 경로 끝(홈) 0.05 rad 안 · 경로가 지금 계약으로 만든 것 · 관절 상태가 살아 있음",
+             ["python3", f"{PC}/tools/check_path_start.py", "--npz", f"{{artifact:path_{s}}}", "--contract", "{artifact:contract}",
+              "--at", "end"]),
+        _cmd(f"[{s}] 같은 경로를 거꾸로 재생 → 차렷", ["python3", f"{PC}/tools/replay_to_pd.py", "--npz", f"{{artifact:path_{s}}}",
+                                                   "--reverse", "--joints", joints, "--rate-scale", "1.0"], execute_args=["--execute"]),
+        _cmd(f"[{s}] pd release — 역블렌드 → 0 송출 → JTC 가 차렷을 잡는다(pd 프로세스는 남는다 — 끝낼 때 release_{s})",
+             ctl("pd_release"), execute_args=["--execute"]),
     ]
 
 

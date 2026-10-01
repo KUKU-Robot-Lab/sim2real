@@ -26,7 +26,8 @@ from policy_control import _paths  # noqa: E402,F401
 from shadow_replay_core import PARK_SPEED_RAD_PER_SEC, approach_ramp  # noqa: E402
 
 TOPIC = "/policy_control/joint_target"
-EPISODE_TOPIC = "/policy_control/episode"
+EPISODE_TOPIC = "/policy_control/episode"            # 공용(양팔) — 재생은 쓰지 않는다
+EPISODE_TOPIC_SIDE = "/policy_control/{side}/episode"   # 팔별 — pd_node 가 그 팔에만 적용
 #: pd status 는 팔마다 따로다(09.23) — `--joints` 접두어가 쪽을 알려 준다.
 PD_STATUS = "/policy_control/status/pd_{side}"
 STOP_WAIT_S = 1.0          # episode stop 이 pd 에 닿을 때까지(pd_selftest 와 같은 값)
@@ -147,7 +148,9 @@ def main() -> int:
     pub = node.create_publisher(JointState, TOPIC, 10)
     # episode stop 발행자는 **지금** 만든다 — 끝에 만들면 discovery 전에 끝나 latched 메시지가 사라진다(pd_selftest 와 같은 이유)
     latched = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
-    ep_pub = node.create_publisher(String, EPISODE_TOPIC, latched)
+    # ★10.01 실기: 공용 /policy_control/episode 로 stop 을 내면 **다른 팔의 pd** 도 받아 홈에서 정착한 hold 를 새 hold(settle False)로
+    #   덮었다(좌 재생 뒤 우 hold err 0.037 굳음). pd 는 팔마다 /policy_control/<side>/episode 를 그 팔에만 적용한다 — 이 팔 토픽으로 낸다.
+    ep_pub = node.create_publisher(String, EPISODE_TOPIC_SIDE.format(side=side), latched)
     t0 = time.time()
     while time.time() - t0 < 5.0 and not meas:
         rclpy.spin_once(node, timeout_sec=0.1)
