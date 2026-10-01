@@ -14,12 +14,22 @@ from object_registry import (  # noqa: E402
 )
 
 
-def test_default_registry_loads_two_real_objects():
+def test_default_registry_loads_real_objects():
     reg = load_registry(DEFAULT_REGISTRY)
-    assert set(reg.names()) == {"shaker_closed", "cup_big_s100"}
+    assert set(reg.names()) == {"shaker_closed", "cup_big_s100", "aglt_cup_s065"}
     assert reg.get("shaker_closed").origin_above_bottom_m == pytest.approx(0.0921)
     assert reg.get("shaker_closed").symmetry_axis == (0.0, 0.0, 1.0)
     assert reg.get("cup_big_s100").symmetry_axis == (0.0, 1.0, 0.0)
+
+
+def test_aglt_cup_is_shaker_scaled_065():
+    """10.01 arm4090: rh_aglt 학습 컵(shaker_closed_thick × 0.65)의 실물 — 메시 · 원점 · cad_to_body 가 같은 배율."""
+    reg = load_registry(DEFAULT_REGISTRY)
+    sh, ag = reg.get("shaker_closed"), reg.get("aglt_cup_s065")
+    assert ag.fpp["mesh_path"] == sh.fpp["mesh_path"] and ag.fpp["mesh_scale_to_meters"] == pytest.approx(0.65)
+    assert ag.origin_above_bottom_m == pytest.approx(0.65 * sh.origin_above_bottom_m, abs=1e-5)
+    assert ag.cad_to_body_pos == pytest.approx(0.65 * sh.cad_to_body_pos, abs=1e-5)
+    assert ag.fpp["detection_pick"] == "bright"
 
 
 def test_alias_resolves_to_canonical_and_unknown_raises():

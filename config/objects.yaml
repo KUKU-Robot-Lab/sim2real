@@ -42,6 +42,26 @@ objects:
       origin_above_bottom_m: 0.0773
     aabb: [[-0.0463, -0.0773, -0.044], [0.0437, 0.1003, 0.046]]   # CAD(Y-up) 프레임 AABB
     symmetry_axis: [0.0, 1.0, 0.0]     # cup.obj 는 Y-up 이라 대칭축이 CAD y
+  aglt_cup_s065:
+    real: "흰 aglt 컵 — shaker_closed_thick × 0.65 출력물(arm4090, 위 ⌀57 · 아래 ⌀38 · 높이 113.75 mm)"
+    # 10.01 사용자: rh_aglt 학습 컵(hdgp rh_aglt_env_cfg CUP_USD shaker_closed_thick_rl.usd · cup_scale 0.65)의 실물.
+    #   cup_big(90 × 178 mm) · shaker_closed(175 mm) 메시로 따라가면 z −36 mm · 기울기 10° 로 틀어졌다.
+    fpp:
+      mesh_path: assets/meshes/shaker_cad.obj     # shaker 외형(⌀88 × 175 mm) — × 0.65 가 실물 프로파일과 0.2 mm 안
+      mesh_scale_to_meters: 0.65
+      cup_class_id: 41
+      detection_pick: bright                      # 흰색 — 검은 상판 위에서 가장 밝은 컵
+      yolo_confidence: 0.25
+    cad_to_body:
+      # shaker_closed 의 0.0046(CAD 중심 → sim body 원점)을 × 0.65. 축은 둘 다 Z-up.
+      position: [0.0, 0.0, 0.00299]
+      orientation_wxyz: [1.0, 0.0, 0.0, 0.0]
+    sim:
+      usd: hdgp/assets/cup/shaker_closed_thick_rl.usd
+      origin_above_bottom_m: 0.05987             # 0.0921 × 0.65 (rh_aglt CUP_UNIT.bottom_z × cup_scale)
+    aabb: [[-0.0286, -0.0286, -0.05987], [0.0286, 0.0286, 0.05389]]
+    symmetry_axis: [0.0, 0.0, 1.0]
+
 aliases:
   cup_big_s080: cup_big_s100     # sim 스케일 변형 — 실물은 하나
   cup_big_s120: cup_big_s100
