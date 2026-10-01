@@ -69,3 +69,28 @@ def test_unknown_name_rejected_and_names_resolved():
         assert "unknown object" in str(err)
     else:
         raise AssertionError("expected ValueError")
+
+
+ARM4090_CAMERA = Path(__file__).resolve().parents[1] / "config" / "global_camera_extrinsics_arm4090.yaml"
+
+
+def test_camera_yaml_override_and_z_bias():
+    """10.01 arm4090: 로봇 전용 camera 파일 + 그 파일의 base_z_bias_m 이 출력 z 에 더해진다."""
+    shared = PoseConverter(REG, ["cup_big_s100"])
+    assert shared.z_bias == 0.0
+    own = PoseConverter(REG, ["cup_big_s100"], ARM4090_CAMERA)
+    assert np.isclose(own.z_bias, -0.008)
+    nobias = PoseConverter(REG, ["cup_big_s100"], ARM4090_CAMERA, z_bias=0.0)
+    cam_p, cam_q = np.array([0.02, 0.05, 0.62]), np.array([1.0, 0.0, 0.0, 0.0])
+    p1, q1 = own.convert("cup_big_s100", cam_p, cam_q)
+    p0, q0 = nobias.convert("cup_big_s100", cam_p, cam_q)
+    assert np.allclose(p1 - p0, [0.0, 0.0, -0.008]) and np.allclose(q1, q0)
+    ps, _ = shared.convert("cup_big_s100", cam_p, cam_q)
+    assert np.linalg.norm(ps - p0) > 0.005                 # 5090 공유 값과 실제로 다르다
+
+
+def test_z_bias_out_of_range_rejected(tmp_path):
+    bad = tmp_path / "cam.yaml"
+    bad.write_text(ARM4090_CAMERA.read_text().replace("base_z_bias_m: -0.008", "base_z_bias_m: 0.2"))
+    with pytest.raises(ValueError):
+        PoseConverter(REG, ["cup_big_s100"], bad)

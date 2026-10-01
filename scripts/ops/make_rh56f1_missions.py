@@ -35,6 +35,8 @@ PROBES = (("index_1", "0.3"), ("middle_1", "0.3"), ("ring_1", "0.3"), ("pinky_1"
           ("thumb_2", "0.15"), ("thumb_1", "-0.3"))
 #: 실기 컵 — FP++ 물체 하나. fake 는 학습 배치의 두 컵(cup_src · cup_rcv)
 REAL_CUP = "cup_big_s100"
+#: arm4090 머리 카메라 외부 파라미터 — 테이블 CAD 캘리브(scripts/calib/table_cad_extrinsics.py, 10.01 기본 방법)
+CAMERA_EXTRINSICS = "config/global_camera_extrinsics_arm4090.yaml"
 HEADER = {
     "real": "# RH56F1 로봇(arm4090) 실기 미션 — scripts/ops/make_rh56f1_missions.py 가 만든다. 손으로 고치지 말 것(--check 가 잡는다).\n",
     "fake": "# RH56F1 로봇 fake 미션(도메인 97) — scripts/ops/make_rh56f1_missions.py 가 실기 미션과 같은 정의에서 만든다.\n",
@@ -177,11 +179,13 @@ def _run(kind: str) -> dict:
              ["python3", "{repo}/scripts/nodes/perception_launcher_node.py", "--host", "local"], background=True),
         _cmd("FP++ 자세 수신기 — 영상 · FP++ 는 localhost 전용 DDS 에서 돌고 자세만 UDP(127.0.0.1)로 넘어온다",
              ["python3", "{repo}/scripts/nodes/fpp_pose_rx.py"], background=True),
-        _cmd(f"물체 자세 → base — 고정 외부 파라미터(5090 홈 화면). /objects/{REAL_CUP}/pose",
-             ["python3", "{repo}/scripts/nodes/object_pose_node.py", "--objects", REAL_CUP], background=True),
+        _cmd(f"물체 자세 → base — arm4090 테이블 CAD 캘리브 외부 파라미터(+ depth z 보정). /objects/{REAL_CUP}/pose",
+             ["python3", "{repo}/scripts/nodes/object_pose_node.py", "--objects", REAL_CUP,
+              "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
         _cmd(f"카메라 + FP++({REAL_CUP}) 켜기 — 런처가 끝낼 때까지 최대 150 s, 실패하면 이 단계도 실패",
              ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", REAL_CUP, "--wait", "150"]),
-        _cmd(f"★컵 자세 확인 — 테이블 위 컵 원점 z ≈ 0.265 · x 0.1~0.4 · |y| 0.1~0.3 인가(외부 파라미터 · 머리 자세 점검)",
+        _cmd(f"★컵 자세 확인 — 테이블 위 컵 원점 z ≈ 0.282(상판 0.205 + 원점 0.0773, ±5 mm) · 기울기 < 3° · "
+             f"x 0.1~0.4 · |y| 0.1~0.3 인가(어긋나면 head_home 뒤 scripts/calib/table_cad_extrinsics.py)",
              ["bash", "-lc", f"timeout 5 ros2 topic echo --once /objects/{REAL_CUP}/pose geometry_msgs/msg/PoseStamped"],
              manual=True),
     ] if real else [

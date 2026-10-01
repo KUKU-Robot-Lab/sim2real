@@ -1,0 +1,32 @@
+# arm4090(RH56F1 로봇) 머리 D435i 카메라 extrinsics — 이 로봇 전용. 5090 은 global_camera_extrinsics.yaml 을 쓴다.
+#
+# 형식은 global_camera_extrinsics.yaml 과 같다(cup_pose_relay.load_extrinsics). 쿼터니언은 wxyz.
+#   T_base_body = T_base_cam ∘ T_cam_cad(FP++ 출력) ∘ T_cad_body
+#
+# ── T_base_cam: robot base ← camera_color_optical_frame ────────────────────
+# ★2026-10-01 테이블 CAD 캘리브(scripts/calib/table_cad_extrinsics.py — 이 로봇의 기본 캘리브 방법).
+#   10.01 사용자: "sim 환경의 부분하고, 실제 환경 사진을 픽셀로 분석" · "앞으로 이게 디폴트 칼리브레이션 방법임".
+#   env_v1 상판 구멍 20 개(은색 와셔 12 · 빈 구멍 8, CAD 원 맞춤 중심) PnP + depth 상판 법선 제약.
+#   테이블이 빈 두 장(머리 head_home_rh56f1 — pan −1.45° · tilt +71.96° 에서 멈춘 자세)의 평균, 두 장 차 2 mm.
+#   재투영 평균 2.3 px. 5090 값으로는 상판 외곽 · 구멍이 사진에서 40~60 px 어긋났다(컵 xy ≈ 3 cm).
+# ★머리 기준 자세(head_home_rh56f1) 하나에서만 맞는 정적 스냅샷이다. 머리 pan 이 매번 ±1° 안팎 다르게 멈춰
+#   y 가 ~1 cm 흔들릴 수 있다 — 의심되면 head_home 뒤 도구를 다시 돌린다(라이브 1장, 로봇은 움직이지 않는다):
+#     python3 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090.yaml \
+#             --write --out config/global_camera_extrinsics_arm4090.yaml
+camera:
+  frame: camera_color_optical_frame
+  position: [0.050504, 0.037916, 0.820846]
+  orientation_wxyz: [0.130161, -0.69891, 0.696068, -0.100366]
+
+# ── base z 보정: object_pose_node 가 물체 자세 z 에 더한다 ───────────────────
+# D435i depth 가 이 거리(0.6~0.7 m)에서 표면을 ~8 mm 높게(가깝게) 본다 — 같은 외부 파라미터로 depth 상판이
+# 0.213(CAD 0.205), sim 컵과 같은 크기의 남색 컵 원점이 sim(0.205 + 0.0773)보다 +5.7~+8.9 mm(10.01, 세 자리).
+# 외부 파라미터는 depth 를 쓰지 않는 PnP 라 이 치우침은 FP++(depth 정합) 쪽에만 있다.
+base_z_bias_m: -0.008
+
+# ── T_cad_body: global_camera_extrinsics.yaml 과 같다(물체별 값은 objects.yaml cad_to_body 가 이긴다) ──
+cad_to_body:
+  position: [0.0, 0.0, 0.0]
+  orientation_wxyz: [0.707107, 0.707107, 0.0, 0.0]
+
+base_frame: base_link

@@ -7,6 +7,10 @@ base_link 로 바꿔 발행한다. camera 블록은 레지스트리가 가리키
 cad_to_body 는 물체 항목. 소비자: ROS 정책 노드(다음 스펙).
 
   python3 object_pose_node.py [--objects shaker_closed cup_big_s100] [--head-joint-topic /head/joint_states]
+  python3 object_pose_node.py --objects cup_big_s100 --camera-extrinsics config/global_camera_extrinsics_arm4090.yaml
+
+10.01: 카메라 extrinsics 는 로봇마다 다르다(arm4090 은 테이블 CAD 캘리브 전용 파일). `--camera-extrinsics` 가
+레지스트리의 공유 파일을 대신하고, 그 파일의 `base_z_bias_m`(없으면 0 — depth 치우침 보정)을 출력 z 에 더한다.
 """
 from __future__ import annotations
 
@@ -15,6 +19,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import yaml
 # ★`scripts/` 를 임포트 경로에 넣는다 — 이 파일은 거기서 한 단계 내려와 있다.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -28,16 +33,29 @@ from object_registry import extrinsics_for, input_topic, load_registry, output_t
 from pose_symmetry import quat_axis_direction, quat_conj, remove_twist  # noqa: E402
 
 
+def base_z_bias(camera_yaml: str | Path) -> float:
+    """camera extrinsics yaml 의 선택 키 `base_z_bias_m`(없으면 0)."""
+    with open(camera_yaml) as fh:
+        raw = yaml.safe_load(fh) or {}
+    value = float(raw.get("base_z_bias_m", 0.0))
+    if abs(value) > 0.05:
+        raise ValueError(f"{camera_yaml}: base_z_bias_m {value} 가 ±0.05 m 밖 — 보정이 아니라 캘리브 오류다")
+    return value
+
+
 class PoseConverter:
     """순수부: 물체별 Extrinsics 를 미리 조립해 두고 변환만 한다."""
 
-    def __init__(self, registry, names: list[str]) -> None:
+    def __init__(self, registry, names: list[str], camera_yaml: str | Path | None = None,
+                 z_bias: float | None = None) -> None:
+        camera_yaml = Path(camera_yaml) if camera_yaml is not None else registry.camera_extrinsics
+        self.z_bias = float(z_bias) if z_bias is not None else base_z_bias(camera_yaml)
         self.names: list[str] = []
         for raw in names:
             canon = registry.resolve(raw)
             if canon not in self.names:
                 self.names.append(canon)
-        self._ext = {n: extrinsics_for(registry.get(n), registry.camera_extrinsics) for n in self.names}
+        self._ext = {n: extrinsics_for(registry.get(n), camera_yaml) for n in self.names}
         # 대칭축을 body 프레임으로 옮겨 둔다: a_body = R(q_cad_body)ᵀ · a_cad
         self._axis_body = {}
         for n in self.names:
@@ -57,6 +75,8 @@ class PoseConverter:
             # ★출력(base) 프레임에서 body 대칭축 둘레 twist 를 뺀다 — 축 방향(기울기)은 보존,
             #   축 둘레 회전(추적기 자유 방향)은 0. 정립이면 base 기준 항등에 가까운 자세가 된다.
             quat = remove_twist(quat, self._axis_body[name])
+        if self.z_bias:
+            pos = pos + np.array([0.0, 0.0, self.z_bias])
         return pos, quat
 
 
@@ -66,9 +86,12 @@ def main() -> None:
     ap.add_argument("--head-joint-topic", default=None,
                     help="주면 T_base_cam 을 목 각도로 매번 계산(정적 camera 블록은 pan0/tilt-20 전용)")
     ap.add_argument("--head-max-age", type=float, default=1.0)
+    ap.add_argument("--camera-extrinsics", default=None,
+                    help="camera extrinsics yaml(기본: 레지스트리 공유 파일). 로봇 전용 캘리브 파일을 준다")
+    ap.add_argument("--z-bias", type=float, default=None, help="출력 z 보정 [m](기본: 그 yaml 의 base_z_bias_m)")
     args = ap.parse_args()
     registry = load_registry()
-    conv = PoseConverter(registry, args.objects or registry.names())
+    conv = PoseConverter(registry, args.objects or registry.names(), args.camera_extrinsics, args.z_bias)
 
     import rclpy
     from geometry_msgs.msg import PoseStamped
@@ -87,7 +110,8 @@ def main() -> None:
                 self.create_subscription(JointState, args.head_joint_topic, self._on_head, 10)
             self._count = {n: 0 for n in conv.names}
             self.create_timer(10.0, self._report)
-            self.get_logger().info(f"objects {conv.names} → {[output_topic(n) for n in conv.names]}")
+            self.get_logger().info(f"objects {conv.names} → {[output_topic(n) for n in conv.names]} · "
+                                   f"camera {args.camera_extrinsics or registry.camera_extrinsics} · z 보정 {conv.z_bias:+.4f} m")
 
         def _on_head(self, msg) -> None:
             names = list(msg.name)

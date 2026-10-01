@@ -446,12 +446,14 @@ run:
     - python3
     - '{repo}/scripts/nodes/fpp_pose_rx.py'
     background: true
-  - note: 물체 자세 → base — 고정 외부 파라미터(5090 홈 화면). /objects/cup_big_s100/pose
+  - note: 물체 자세 → base — arm4090 테이블 CAD 캘리브 외부 파라미터(+ depth z 보정). /objects/cup_big_s100/pose
     argv:
     - python3
     - '{repo}/scripts/nodes/object_pose_node.py'
     - --objects
     - cup_big_s100
+    - --camera-extrinsics
+    - '{repo}/config/global_camera_extrinsics_arm4090.yaml'
     background: true
   - note: 카메라 + FP++(cup_big_s100) 켜기 — 런처가 끝낼 때까지 최대 150 s, 실패하면 이 단계도 실패
     argv:
@@ -461,7 +463,7 @@ run:
     - cup_big_s100
     - --wait
     - '150'
-  - note: ★컵 자세 확인 — 테이블 위 컵 원점 z ≈ 0.265 · x 0.1~0.4 · |y| 0.1~0.3 인가(외부 파라미터 · 머리 자세 점검)
+  - note: ★컵 자세 확인 — 테이블 위 컵 원점 z ≈ 0.282(상판 0.205 + 원점 0.0773, ±5 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 인가(어긋나면 head_home 뒤 scripts/calib/table_cad_extrinsics.py)
     argv:
     - bash
     - -lc
