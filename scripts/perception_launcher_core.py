@@ -152,3 +152,15 @@ def build_status(state: RemoteState | None, camera_hz: float, pose_ages: dict[st
         "busy": bool(busy),
         "error": error,
     }
+
+
+LOCAL_HOSTS = ("local", "localhost")
+
+
+def shell_argv(host: str, command: str) -> list[str]:
+    """인지 PC 에서 명령을 돌릴 argv — local(10.01 arm4090: 로봇 PC 가 인지도 돌린다)이면 이 PC 의 bash, 아니면 ssh.
+    둘 다 홈에서 시작한다고 보고 부른다(스크립트 경로가 홈 기준 상대 — PC 마다 사용자 이름이 다르다)."""
+    if host in LOCAL_HOSTS:
+        return ["bash", "-c", command]
+    return ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", host, command]
+

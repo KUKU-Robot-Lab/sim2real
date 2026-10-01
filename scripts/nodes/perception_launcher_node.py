@@ -12,6 +12,8 @@ FP++ yaml 은 레지스트리에서 생성해 vision 의 log/fpp_params/<name>.y
 vision 의 pose_tx_up.sh(송신기)를 이 런처가 띄우고, 받는 쪽 fpp_pose_rx.py 가 같은 토픽으로 다시 낸다.
 카메라 hz 는 그 수신기가 송신기의 heartbeat 로 내는 /perception/camera_hz 를 읽는다.
 실패는 status.error 로 드러낸다 — 조용한 재시도 없음.
+10.01: `--host local` = 인지를 이 PC 에서(arm4090 — 로봇 PC 가 카메라 · FP++ 를 같이 돌린다). ssh 대신 같은 스크립트를
+홈에서 bash 로 부르고, 자세 UDP 는 127.0.0.1 로 받는다(영상 · FP++ 는 그대로 localhost 전용 DDS — 로봇 노드와 섞지 않는다).
 """
 from __future__ import annotations
 
@@ -31,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fpp_udp  # noqa: E402
 from object_registry import load_registry, output_topic, render_fpp_yaml  # noqa: E402
 from perception_launcher_core import (  # noqa: E402
-    build_status, parse_command, parse_remote_status, plan_actions,
+    LOCAL_HOSTS, build_status, parse_command, parse_remote_status, plan_actions, shell_argv,
 )
 
 #: 저 PC 의 홈에서 본 상대 경로 — ssh 명령은 홈에서 시작한다. PC 마다 사용자 이름이 달라(usr · user) 절대 경로를 쓰지 않는다(09.29).
@@ -47,8 +49,8 @@ class RemoteExec:
         self.host, self.timeout_s = host, timeout_s
 
     def _ssh(self, command: str, stdin: str | None = None) -> str:
-        proc = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", self.host, command],
-                              input=stdin, capture_output=True, text=True, timeout=self.timeout_s)
+        proc = subprocess.run(shell_argv(self.host, command), input=stdin, capture_output=True, text=True,
+                              timeout=self.timeout_s, cwd=str(Path.home()))
         if proc.returncode != 0:
             raise RuntimeError(f"ssh {self.host} '{command[:60]}…' rc={proc.returncode}: "
                                f"{(proc.stderr or proc.stdout).strip()[-300:]}")
@@ -60,6 +62,8 @@ class RemoteExec:
 
     def client_ip(self) -> str:
         """저 PC 가 본 이 PC 의 주소(ssh 가 온 곳) — UDP 자세를 받을 주소다. 주소를 설정에 적어 두지 않는다."""
+        if self.host in LOCAL_HOSTS:
+            return "127.0.0.1"
         fields = self._ssh("echo $SSH_CLIENT").split()
         if not fields:
             raise RuntimeError(f"ssh {self.host}: SSH_CLIENT 가 비었다 — 받을 주소를 모른다")
@@ -71,7 +75,7 @@ class RemoteExec:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--host", default="vision-3090")
+    ap.add_argument("--host", default="vision-3090", help="인지 PC(ssh) · local = 이 PC(arm4090)")
     ap.add_argument("--poll", type=float, default=5.0, help="원격 상태 폴링 주기(s)")
     args = ap.parse_args()
     registry = load_registry()

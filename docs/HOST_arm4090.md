@@ -42,7 +42,9 @@ OpenArm 양팔 + Inspire RH56F1 양손 + 머리(XC330 ×2) + RealSense 가 모�
 
   맞춘 품질: 숙임 18.93°(기준 18.9) · 테이블 거리 0.61 m(0.614) · 볼트 무리 5~10 px · 회전 약 0.7°.
   도구 `scripts/calib/head_view_align.py`(읽기) · `head_view_autoalign.py`(--execute 로만 움직임) · 기준 `config/head_view_ref_5090.npz`.
-- 카메라 외부 파라미터(`config/head_extrinsics.yaml`)는 5090 값이다. FP++ 를 이 PC 에 올리면 영점을 이 표로 바꿔 따로 둔다.
+- 카메라 외부 파라미터: FP++ 는 고정 `config/global_camera_extrinsics.yaml`(5090 홈 화면 스냅샷)을 쓴다 — 머리를
+  `head_home_rh56f1` 에 두면 화면이 5090 홈과 같으므로 그대로 맞다(미션 cups 가 head_home 뒤). 목 각도로 다시 계산하는
+  `object_pose_node --head-joint-topic`(`head_extrinsics.yaml`)은 영점이 이 표만큼 달라 아직 쓰지 않는다.
 - 혼을 다시 조립하면 offset · `head_home_rh56f1.yaml` · 위 표를 다시 맞춘다.
 
 ## 소프트웨어
@@ -51,3 +53,14 @@ OpenArm 양팔 + Inspire RH56F1 양손 + 머리(XC330 ×2) + RealSense 가 모�
 - robot_control 23 패키지 · policy_control symlink(`PYTHONNOUSERSITE=1` 로 빌드) · `.venv`(torch 2.7.1+cu128 등) · 정책 가중치 md5 = 5090.
 - `~/rl_ws/dynamixel-tools`(머리 `scripts/calib/dxl.sh` 가 쓴다).
 - 09.30: `check_host.py --robot rh56f1` MISS 0, `pytest -m "not gpu"` 1906 passed · 실패 0.
+
+## 인지(FP++) — 10.01
+
+- docker 29.8.2 · NVIDIA Container Toolkit 1.20.1(사용자 설치) · 이미지 `perception-plus-plus:humble-cup`(tar 11.6 GB → 34.1 GB)
+  · 컨테이너 안 torch 2.4.1+cu121 CUDA 확인.
+- 이 PC 에서 돈다: `perception_launcher_node.py --host local`(ssh 대신 같은 스크립트를 bash 로) · 영상 · FP++ 는 localhost 전용
+  DDS, 자세만 UDP 127.0.0.1:51126 → `fpp_pose_rx.py` → `object_pose_node.py` → `/objects/cup_big_s100/pose`.
+- 미션: head_home → cups(런처 · 수신 · base 변환 · start) · shutdown 이 `perception_ctl.py stop --camera --host local`.
+  실기 컵은 하나 — 양팔 pour_fj(두 컵)는 막아 둠.
+- ★학습이 같은 GPU 에서 돌면 FP++ 를 올리지 않는다 — 09.25 이 PC 는 학습 중 VRAM 여유 11.7 GB 에서 영상 녹화를 올린 직후 전원이 꺼졌다.
+

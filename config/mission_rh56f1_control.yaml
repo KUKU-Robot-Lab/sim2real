@@ -55,15 +55,22 @@ stages:
   title: 테스트 · RH56F1 제어 전용 계약 재생성(양팔 pour_fj 홈 · 편 손) (읽기 전용)
   artifacts:
   - rh56f1_map
+- id: head_home
+  group: motion
+  lane: rig
+  needs:
+  - preflight
+  skippable: true
+  touches_real: true
+  title: 머리 기준자세(head_home_rh56f1 = 5090 홈과 같은 화면) + I 게인 — 카메라 좌표가 이 자세에서만 맞다(머리가 조금 움직인다)
 - id: cups
   group: connect
   lane: both
   needs:
-  - preflight
+  - head_home
   skippable: true
-  title: 두 컵 자세 — 붓는 컵 /objects/cup_src/pose · 받는 컵 /objects/cup_rcv/pose (base)
-  blocked: 'arm5080 인지(카메라 · FP++ 두 물체) 연결 전 — arm5080 에 ROS · docker · FP++ 이미지가 없고, 컵 두 개의 자세를 /objects/cup_src · cup_rcv 로 내는 단계가 없다(09.29
-    사용자: FP++ 는 arm5080)'
+  touches_real: true
+  title: 컵 자세(arm4090 FP++) — RealSense · FP++ 컨테이너(cup_big_s100) → /objects/cup_big_s100/pose (base). GPU VRAM 수 GB
 - id: drivers
   group: connect
   lane: rig
@@ -231,6 +238,7 @@ stages:
   lane: both
   skippable: true
   touches_real: true
+  blocked: 두 컵 구분 전 — 실기 인지는 컵 하나(cup_big_s100)만 낸다. 같은 빨간 컵 둘은 FP++ 가 못 가른다(색이 다른 컵 · 자리로 가르기 중 하나가 필요)
   needs:
   - home_right
   - home_left
@@ -258,7 +266,8 @@ stages:
   - aglt_right
   - robot_right
   - contract
-  title: '[right] rh_aglt 정책(첫 화면에서 고른 것) — 컵에 접근 · 쥐기 · 들기 · 목표(컵 위 14 cm)로 이송. 정책 노드 → reset → start → 관찰 → stop'
+  title: '[right] rh_aglt 정책(첫 화면에서 고른 것) — 컵에 접근 · 쥐기 · 들기 · 목표(컵 위 14 cm, /policy_control/<팔>/goal 로 바꿀 수 있다)로 이송. 정책 노드 → reset → start → 관찰
+    → stop'
 - id: policy_aglt_left
   group: policy
   lane: arm_left
@@ -273,7 +282,8 @@ stages:
   - aglt_left
   - robot_left
   - contract
-  title: '[left] rh_aglt 정책(첫 화면에서 고른 것) — 컵에 접근 · 쥐기 · 들기 · 목표(컵 위 14 cm)로 이송. 정책 노드 → reset → start → 관찰 → stop'
+  title: '[left] rh_aglt 정책(첫 화면에서 고른 것) — 컵에 접근 · 쥐기 · 들기 · 목표(컵 위 14 cm, /policy_control/<팔>/goal 로 바꿀 수 있다)로 이송. 정책 노드 → reset → start → 관찰
+    → stop'
 - id: shutdown
   group: finish
   lane: rig
@@ -358,6 +368,21 @@ run:
     - pd_arm_right#1
     - pd_load_left#0
     - pd_arm_left#1
+  - note: 카메라 · FP++ 내리기 — 런처가 없으면 이 PC 에서 직접 내린다
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - stop
+    - --camera
+    - --host
+    - local
+    - --wait
+    - '60'
+  - note: 인지 런처 · 자세 수신기 · 물체 자세 노드 정지
+    stop:
+    - cups#1
+    - cups#2
+    - cups#3
   - note: 손 상태 노드 · 손 드라이버 정지 — 손가락은 마지막 자세에서 멈춘다(벤더 펌웨어가 잡는다)
     stop:
     - hand_right#2
@@ -367,7 +392,55 @@ run:
   - note: ★팔 브링업 정지 — 모든 팔 모터가 꺼진다(받침으로 내려앉는다)
     stop:
     - drivers#3
-  cups: []
+  head_home:
+  - note: 머리 기준자세 + I 게인(RAM — 전원을 끄면 사라진다) — arm4090 머리는 5090 과 숫자가 다르다(config/head_home_rh56f1.yaml)
+    argv:
+    - python3
+    - '{repo}/scripts/head_home.py'
+    - --config
+    - '{repo}/config/head_home_rh56f1.yaml'
+    execute_args:
+    - --execute
+  cups:
+  - note: ★머리가 기준자세인가(head_home 을 했는가) · 컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · arm4090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다)
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: 인지 런처(이 PC) — 카메라 · FP++ 컨테이너를 같은 PC 의 스크립트로 켜고 끈다. 스스로는 아무것도 켜지 않는다
+    argv:
+    - python3
+    - '{repo}/scripts/nodes/perception_launcher_node.py'
+    - --host
+    - local
+    background: true
+  - note: FP++ 자세 수신기 — 영상 · FP++ 는 localhost 전용 DDS 에서 돌고 자세만 UDP(127.0.0.1)로 넘어온다
+    argv:
+    - python3
+    - '{repo}/scripts/nodes/fpp_pose_rx.py'
+    background: true
+  - note: 물체 자세 → base — 고정 외부 파라미터(5090 홈 화면). /objects/cup_big_s100/pose
+    argv:
+    - python3
+    - '{repo}/scripts/nodes/object_pose_node.py'
+    - --objects
+    - cup_big_s100
+    background: true
+  - note: 카메라 + FP++(cup_big_s100) 켜기 — 런처가 끝낼 때까지 최대 150 s, 실패하면 이 단계도 실패
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - cup_big_s100
+    - --wait
+    - '150'
+  - note: ★컵 자세 확인 — 테이블 위 컵 원점 z ≈ 0.265 · x 0.1~0.4 · |y| 0.1~0.3 인가(외부 파라미터 · 머리 자세 점검)
+    argv:
+    - bash
+    - -lc
+    - timeout 5 ros2 topic echo --once /objects/cup_big_s100/pose geometry_msgs/msg/PoseStamped
+    manual: true
   policy_pourfj:
   - note: ★두 컵이 학습 배치(로봇 앞 x ≈ 0.38, y ≈ ∓0.16)에 서 있고 콘솔에 두 컵 자세가 들어오는가. 양팔 · 양손 주변이 비어 있는가. 정책은 팔을 스스로 움직이고 손가락을 쥔다 — 빈 컵만
     argv:
@@ -420,8 +493,8 @@ run:
     stop:
     - policy_pourfj#1
   policy_aglt_right:
-  - note: ★[right] 컵이 학습 배치(로봇 앞 x ≈ 0.35, y ≈ −0.16)에 서 있고 콘솔에 컵 자세(/objects/cup_src/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가. 정책은 팔을 스스로
-      움직이고 컵을 쥐어 든다 — 빈 컵만
+  - note: ★[right] 컵이 학습 배치(로봇 앞 x ≈ 0.25, y ≈ −0.20 ± 0.1)에 서 있고 콘솔에 컵 자세(/objects/cup_big_s100/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가.
+      정책은 팔을 스스로 움직이고 컵을 쥐어 든다 — 빈 컵만
     argv:
     - bash
     - -lc
@@ -443,7 +516,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/cup_src/pose
+    - cup_topic:=/objects/cup_big_s100/pose
     - -p
     - max_episode_s:={policy:aglt_right.max_episode_s}
     background: true
@@ -484,8 +557,8 @@ run:
     stop:
     - policy_aglt_right#1
   policy_aglt_left:
-  - note: ★[left] 컵이 학습 배치(로봇 앞 x ≈ 0.35, y ≈ +0.16)에 서 있고 콘솔에 컵 자세(/objects/cup_rcv/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가. 정책은 팔을 스스로
-      움직이고 컵을 쥐어 든다 — 빈 컵만
+  - note: ★[left] 컵이 학습 배치(로봇 앞 x ≈ 0.25, y ≈ +0.20 ± 0.1)에 서 있고 콘솔에 컵 자세(/objects/cup_big_s100/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가.
+      정책은 팔을 스스로 움직이고 컵을 쥐어 든다 — 빈 컵만
     argv:
     - bash
     - -lc
@@ -507,7 +580,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/cup_rcv/pose
+    - cup_topic:=/objects/cup_big_s100/pose
     - -p
     - max_episode_s:={policy:aglt_left.max_episode_s}
     background: true

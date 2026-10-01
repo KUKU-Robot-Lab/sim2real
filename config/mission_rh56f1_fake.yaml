@@ -54,11 +54,18 @@ stages:
   title: 테스트 · RH56F1 제어 전용 계약 재생성(양팔 pour_fj 홈 · 편 손) (읽기 전용)
   artifacts:
   - rh56f1_map
+- id: head_home
+  group: motion
+  lane: rig
+  needs:
+  - preflight
+  skippable: true
+  title: fake — 머리 없음(실기 순서를 맞추려고 둔 자리)
 - id: cups
   group: connect
   lane: both
   needs:
-  - preflight
+  - head_home
   skippable: true
   title: fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채
 - id: drivers
@@ -238,7 +245,8 @@ stages:
   - aglt_right
   - robot_right
   - contract
-  title: '[right] rh_aglt 정책(첫 화면에서 고른 것) — 컵에 접근 · 쥐기 · 들기 · 목표(컵 위 14 cm)로 이송. 정책 노드 → reset → start → 관찰 → stop'
+  title: '[right] rh_aglt 정책(첫 화면에서 고른 것) — 컵에 접근 · 쥐기 · 들기 · 목표(컵 위 14 cm, /policy_control/<팔>/goal 로 바꿀 수 있다)로 이송. 정책 노드 → reset → start → 관찰
+    → stop'
 - id: policy_aglt_left
   group: policy
   lane: arm_left
@@ -252,7 +260,8 @@ stages:
   - aglt_left
   - robot_left
   - contract
-  title: '[left] rh_aglt 정책(첫 화면에서 고른 것) — 컵에 접근 · 쥐기 · 들기 · 목표(컵 위 14 cm)로 이송. 정책 노드 → reset → start → 관찰 → stop'
+  title: '[left] rh_aglt 정책(첫 화면에서 고른 것) — 컵에 접근 · 쥐기 · 들기 · 목표(컵 위 14 cm, /policy_control/<팔>/goal 로 바꿀 수 있다)로 이송. 정책 노드 → reset → start → 관찰
+    → stop'
 - id: shutdown
   group: finish
   lane: rig
@@ -322,6 +331,12 @@ run:
   - note: fake 플랜트 정지
     stop:
     - drivers#0
+  head_home:
+  - note: fake — 머리 없음
+    argv:
+    - bash
+    - -lc
+    - 'true'
   cups:
   - note: fake 컵(src) — /objects/cup_src/pose
     argv:

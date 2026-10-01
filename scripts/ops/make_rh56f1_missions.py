@@ -9,7 +9,9 @@
 범위 = 손 연결 · 점검 · 한 축 방향 확인 · 팔 pd(무발행 → 발행) · 홈 · 두 컵 · 양팔 pour_fj 정책 · 정리.
 홈 = hdgp rh_aglt 시작 자세(09.29 사용자 "aglt 보면 home 자세를 수정했어"). 차렷 → 홈은 저장 경로(paths/home_rh56f1_*.npz,
 plan_home_path RRT · RH56F1 자산 충돌 검사 · 편 손/접은 손 둘 다)를 pd 로 재생한다 — 실기 · fake 같은 경로.
-★실기에서 막아 둔 것(blocked — 이유가 화면에 보인다): 두 컵 자세(arm4090 인지 연결 전).
+★10.01 인지는 arm4090 안에서(docker FP++ · RealSense · 런처 --host local). 실기 컵은 하나(cup_big_s100) — 한 팔 rh_aglt 는
+/objects/cup_big_s100/pose 를 읽고, 두 컵이 필요한 양팔 pour_fj 는 막아 둔다(같은 빨간 컵 둘을 FP++ 가 못 가른다).
+카메라 좌표는 고정 외부 파라미터(5090 홈 화면) — 머리를 head_home_rh56f1(5090 과 같은 화면)에 둔 뒤에만 맞다.
 
 실기와 fake 가 다른 것(그 밖은 같다):
   · 팔 드라이버: CAN + openarm bringup ↔ fake 플랜트(양팔 MockArm rate, hands:=none)
@@ -31,6 +33,8 @@ PC = "{repo}/deploy/policy_control"
 #: 방향 확인 한 축씩 — 네 손가락은 굽힘 쪽(+), 엄지 굽힘 +, 엄지 회전은 지금에서 − (편 손 1.57 에서 grip 1.20 쪽)
 PROBES = (("index_1", "0.3"), ("middle_1", "0.3"), ("ring_1", "0.3"), ("pinky_1", "0.3"),
           ("thumb_2", "0.15"), ("thumb_1", "-0.3"))
+#: 실기 컵 — FP++ 물체 하나. fake 는 학습 배치의 두 컵(cup_src · cup_rcv)
+REAL_CUP = "cup_big_s100"
 HEADER = {
     "real": "# RH56F1 로봇(arm4090) 실기 미션 — scripts/ops/make_rh56f1_missions.py 가 만든다. 손으로 고치지 말 것(--check 가 잡는다).\n",
     "fake": "# RH56F1 로봇 fake 미션(도메인 97) — scripts/ops/make_rh56f1_missions.py 가 실기 미션과 같은 정의에서 만든다.\n",
@@ -50,12 +54,13 @@ def _stages(kind: str) -> list[dict]:
     st = [
         {"id": "preflight", "group": "check", "lane": "rig",
          "title": "테스트 · RH56F1 제어 전용 계약 재생성(양팔 pour_fj 홈 · 편 손) (읽기 전용)", "artifacts": ["rh56f1_map"]},
-        {"id": "cups", "group": "connect", "lane": "both", "needs": ["preflight"], "skippable": True,
-         "title": ("두 컵 자세 — 붓는 컵 /objects/cup_src/pose · 받는 컵 /objects/cup_rcv/pose (base)" if real else
-                   "fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채"),
-         **({"blocked": "arm5080 인지(카메라 · FP++ 두 물체) 연결 전 — arm5080 에 ROS · docker · FP++ 이미지가 없고, 컵 두 개의 자세를 "
-                        "/objects/cup_src · cup_rcv 로 내는 단계가 없다(09.29 사용자: FP++ 는 arm5080)"}
-            if real else {})},
+        {"id": "head_home", "group": "motion", "lane": "rig", "needs": ["preflight"], "skippable": True, "touches_real": real,
+         "title": ("머리 기준자세(head_home_rh56f1 = 5090 홈과 같은 화면) + I 게인 — 카메라 좌표가 이 자세에서만 맞다(머리가 조금 움직인다)"
+                   if real else "fake — 머리 없음(실기 순서를 맞추려고 둔 자리)")},
+        {"id": "cups", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
+         "touches_real": real,
+         "title": (f"컵 자세(arm4090 FP++) — RealSense · FP++ 컨테이너({REAL_CUP}) → /objects/{REAL_CUP}/pose (base). GPU VRAM 수 GB" if real else
+                   "fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채")},
         {"id": "drivers", "group": "connect", "lane": "rig", "needs": ["preflight"],
          "title": ("모터 전원 → CAN ×2 → 팔 브링업 → CAN 응답 확인 (토크는 들어가지만 팔은 제자리)" if real else
                    "fake 플랜트 — 양팔 MockArm(rate) · controller_manager 스텁 (손은 손 창에서 따로)"),
@@ -87,6 +92,8 @@ def _stages(kind: str) -> list[dict]:
              "title": f"[{s}] pd 해제(역블렌드 → JTC) → 이 팔의 pd 정지"},
         ]
     st.append({"id": "policy_pourfj", "group": "policy", "lane": "both", "skippable": True, "touches_real": real,
+               **({"blocked": f"두 컵 구분 전 — 실기 인지는 컵 하나({REAL_CUP})만 낸다. 같은 빨간 컵 둘은 FP++ 가 못 가른다"
+                             "(색이 다른 컵 · 자리로 가르기 중 하나가 필요)"} if real else {}),
                "needs": ["home_right", "home_left", "cups", "hand_check_right", "hand_check_left"],
                "needs_why": "정책은 양팔이 pour_fj 시작 자세 · 손이 편 채 · 두 컵이 선 채로만 출발해 봤다. ★09.29 홈이 rh_aglt 시작 자세로 "
                             "바뀌어 pour_fj 시작 자세와 다르다 — 정책 노드가 start 를 거부한다(0.15 rad). 홈 → pour_fj 시작 경로가 필요",
@@ -97,8 +104,8 @@ def _stages(kind: str) -> list[dict]:
                    "needs": [f"home_{s}", "cups", f"hand_check_{s}"],
                    "needs_why": "정책은 팔이 rh_aglt 시작 자세(= 홈) · 손이 편 채 · 컵이 학습 배치에 선 채로만 출발해 봤다",
                    "artifacts": [f"aglt_{s}", f"robot_{s}", "contract"],
-                   "title": f"[{s}] rh_aglt 정책(첫 화면에서 고른 것) — 컵에 접근 · 쥐기 · 들기 · 목표(컵 위 14 cm)로 이송. "
-                            "정책 노드 → reset → start → 관찰 → stop"})
+                   "title": f"[{s}] rh_aglt 정책(첫 화면에서 고른 것) — 컵에 접근 · 쥐기 · 들기 · 목표(컵 위 14 cm, "
+                            "/policy_control/<팔>/goal 로 바꿀 수 있다)로 이송. 정책 노드 → reset → start → 관찰 → stop"})
     st.append({"id": "shutdown", "group": "finish", "lane": "rig", "needs": ["drivers"], "touches_real": real,
                "title": "안전 종료 — 팔 받침 확인 → 남은 pd → 손 상태 · 드라이버 → 팔 브링업 (★팔 토크가 풀린다)"})
     if not real:
@@ -145,13 +152,36 @@ def _run(kind: str) -> dict:
                  ["bash", "-lc", "true"], manual=True),
             _cmd("남은 정책 노드 · pd 정지", stop=["policy_pourfj#1"] + [f"policy_aglt_{s}#1" for s in SIDES]
                  + [f"{p}_{s}#{i}" for s in SIDES for p, i in (("pd_load", 0), ("pd_arm", 1))]),
+            *([_cmd("카메라 · FP++ 내리기 — 런처가 없으면 이 PC 에서 직접 내린다",
+                    ["python3", "{repo}/scripts/ops/perception_ctl.py", "stop", "--camera", "--host", "local", "--wait", "60"]),
+               _cmd("인지 런처 · 자세 수신기 · 물체 자세 노드 정지", stop=["cups#1", "cups#2", "cups#3"])] if real else []),
             _cmd("손 상태 노드 · 손 드라이버 정지 — 손가락은 마지막 자세에서 멈춘다(벤더 펌웨어가 잡는다)",
                  stop=[f"hand_{s}#{i}" for s in SIDES for i in ((2, 1) if real else (1, 0))]),
             _cmd("★팔 브링업 정지 — 모든 팔 모터가 꺼진다(받침으로 내려앉는다)" if real else "fake 플랜트 정지",
                  stop=["drivers#3" if real else "drivers#0"]),
         ],
     }
-    run["cups"] = [] if real else [
+    run["head_home"] = [
+        _cmd("머리 기준자세 + I 게인(RAM — 전원을 끄면 사라진다) — arm4090 머리는 5090 과 숫자가 다르다(config/head_home_rh56f1.yaml)",
+             ["python3", "{repo}/scripts/head_home.py", "--config", "{repo}/config/head_home_rh56f1.yaml"],
+             execute_args=["--execute"])] if real else [_cmd("fake — 머리 없음", ["bash", "-lc", "true"])]
+    run["cups"] = [
+        _cmd("★머리가 기준자세인가(head_home 을 했는가) · 컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · arm4090 GPU 여유가 "
+             "있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다)",
+             ["bash", "-lc", "nvidia-smi --query-compute-apps=pid,used_memory --format=csv; "
+                             "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader"], manual=True),
+        _cmd("인지 런처(이 PC) — 카메라 · FP++ 컨테이너를 같은 PC 의 스크립트로 켜고 끈다. 스스로는 아무것도 켜지 않는다",
+             ["python3", "{repo}/scripts/nodes/perception_launcher_node.py", "--host", "local"], background=True),
+        _cmd("FP++ 자세 수신기 — 영상 · FP++ 는 localhost 전용 DDS 에서 돌고 자세만 UDP(127.0.0.1)로 넘어온다",
+             ["python3", "{repo}/scripts/nodes/fpp_pose_rx.py"], background=True),
+        _cmd(f"물체 자세 → base — 고정 외부 파라미터(5090 홈 화면). /objects/{REAL_CUP}/pose",
+             ["python3", "{repo}/scripts/nodes/object_pose_node.py", "--objects", REAL_CUP], background=True),
+        _cmd(f"카메라 + FP++({REAL_CUP}) 켜기 — 런처가 끝낼 때까지 최대 150 s, 실패하면 이 단계도 실패",
+             ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", REAL_CUP, "--wait", "150"]),
+        _cmd(f"★컵 자세 확인 — 테이블 위 컵 원점 z ≈ 0.265 · x 0.1~0.4 · |y| 0.1~0.3 인가(외부 파라미터 · 머리 자세 점검)",
+             ["bash", "-lc", f"timeout 5 ros2 topic echo --once /objects/{REAL_CUP}/pose geometry_msgs/msg/PoseStamped"],
+             manual=True),
+    ] if real else [
         _cmd(f"fake 컵({role}) — /objects/cup_{role}/pose", ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--x", "0.38",
                                                              "--y", y, "--z", "0.264865", "--topic", f"/objects/cup_{role}/pose"],
              background=True) for role, y in (("src", "-0.16"), ("rcv", "0.16"))]
@@ -173,15 +203,16 @@ def _run(kind: str) -> dict:
     ]
     for s, cup in (("right", "src"), ("left", "rcv")):
         run[f"policy_aglt_{s}"] = [
-            _cmd(f"★[{s}] 컵이 학습 배치(로봇 앞 x ≈ 0.35, y ≈ {'−' if s == 'right' else '+'}0.16)에 서 있고 콘솔에 컵 자세"
-                 f"(/objects/cup_{cup}/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가. 정책은 팔을 스스로 움직이고 "
+            _cmd(f"★[{s}] 컵이 학습 배치(로봇 앞 x ≈ 0.25, y ≈ {'−' if s == 'right' else '+'}0.20 ± 0.1)에 서 있고 콘솔에 컵 자세"
+                 f"(/objects/{REAL_CUP}/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가. 정책은 팔을 스스로 움직이고 "
                  "컵을 쥐어 든다 — 빈 컵만" if real else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
             _cmd(f"[{s}] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)",
                  ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_aglt_node.py", "--ros-args",
                   # 팔마다 이름 · 에피소드를 가른다 — 양팔 정책을 한 세션에서 동시에 띄워도 서로의 reset · stop 이 섞이지 않는다(09.30)
                   "-r", f"__node:=rh_aglt_node_{s}", "-p", f"ns:={s}",
                   "-p", f"contract:={{artifact:aglt_{s}}}", "-p", f"robot:={{artifact:robot_{s}}}", "-p", "device:=cpu",
-                  "-p", f"cup_topic:=/objects/cup_{cup}/pose", "-p", f"max_episode_s:={{policy:aglt_{s}.max_episode_s}}"],
+                  "-p", f"cup_topic:=/objects/{REAL_CUP if real else 'cup_' + cup}/pose",
+                  "-p", f"max_episode_s:={{policy:aglt_{s}.max_episode_s}}"],
                  background=True),
             _cmd(f"[{s}] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + (0, 0, 0.14)",
                  ["python3", f"{PC}/tools/trigger.py", "episode/reset", "--episode-ns", s], execute_args=["--execute"]),

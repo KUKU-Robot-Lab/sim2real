@@ -133,12 +133,29 @@ def test_the_console_opens_the_rh56f1_fake_profile_with_its_robot_module(tmp_pat
         c.shutdown()
 
 
-def test_only_the_cups_are_blocked_on_the_real_robot():
-    """실기: 두 컵 인지가 아직 없다 — 이유와 함께 막는다. 홈은 저장 경로가 생겨 풀었다(09.29 사용자)."""
+def test_only_the_two_cup_pour_is_blocked_on_the_real_robot():
+    """10.01: 인지는 arm4090 안(FP++ 컵 하나)으로 풀었다 — 두 컵이 필요한 양팔 pour_fj 만 이유와 함께 막는다."""
     by = {s.id: s for s in REAL.stages}
-    assert "인지" in by["cups"].blocked
-    assert not by["home_right"].blocked and not by["home_left"].blocked
+    assert {s.id for s in REAL.stages if s.blocked} == {"policy_pourfj"} and "두 컵" in by["policy_pourfj"].blocked
     assert not any(s.blocked for s in FAKE.stages)
+
+
+def test_real_cups_run_fpp_on_this_pc_after_the_head_home_and_shutdown_takes_it_down():
+    """10.01 사용자: FP++ 를 arm4090 에. 런처 --host local · UDP 수신 · base 변환 · start, 머리 기준자세가 먼저."""
+    by = {s.id: s for s in REAL.stages}
+    assert by["cups"].needs == ("head_home",) and by["head_home"].touches_real and by["cups"].touches_real
+    head = _cmds(REAL, REAL_BOOK, "head_home")
+    assert any("head_home.py" in " ".join(c.argv) and "head_home_rh56f1.yaml" in " ".join(c.argv) for c in head)
+    cups = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "cups")]
+    for want in ("perception_launcher_node.py --host local", "fpp_pose_rx.py", "object_pose_node.py --objects cup_big_s100",
+                 "perception_ctl.py start cup_big_s100 --wait 150"):
+        assert any(want in a for a in cups), want
+    bg = [c for c in _cmds(REAL, REAL_BOOK, "cups") if c.background]
+    assert len(bg) == 3
+    down = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "shutdown")]
+    assert any("perception_ctl.py stop --camera --host local" in a for a in down)
+    stops = {x for c in _cmds(REAL, REAL_BOOK, "shutdown") for x in c.stop}
+    assert {"cups#1", "cups#2", "cups#3"} <= stops
 
 
 @pytest.mark.parametrize("side", ["right", "left"])
@@ -199,7 +216,8 @@ def test_each_arm_runs_its_rh_aglt_policy_after_home(side, cup):
         node = next(c for c in cmds if any("rh_aglt_node.py" in a for a in c.argv))
         assert node.background and node.argv[0].endswith(".venv/bin/python")
         assert any(a.startswith("contract:=") and a.endswith("rh_aglt_contract.json") for a in node.argv)
-        assert f"cup_topic:=/objects/cup_{cup}/pose" in node.argv and "max_episode_s:=15.0" in node.argv
+        topic = "/objects/cup_big_s100/pose" if m is REAL else f"/objects/cup_{cup}/pose"   # 실기 컵은 FP++ 물체 하나
+        assert f"cup_topic:={topic}" in node.argv and "max_episode_s:=15.0" in node.argv
         by = {s.id: s for s in m.stages}
         assert {f"home_{side}", "cups", f"hand_check_{side}"} <= set(by[f"policy_aglt_{side}"].needs)
         assert {la.id: la.focus for la in m.lanes}[f"arm_{side}"] == f"policy_aglt_{side}"

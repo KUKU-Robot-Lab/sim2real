@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 from object_registry import load_registry  # noqa: E402
+from perception_launcher_core import shell_argv  # noqa: E402
 
 
 def build_payload(args, registry) -> dict | None:
@@ -57,8 +58,7 @@ def direct_stop(host: str, camera: bool) -> int:
     rc = 0
     for script, *argv in direct_stop_scripts(camera):
         cmd = f"bash {REMOTE_SIM2REAL}/scripts/vision/{script} " + " ".join(f"'{a}'" for a in argv)
-        proc = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", host, cmd],
-                              capture_output=True, text=True, timeout=60)
+        proc = subprocess.run(shell_argv(host, cmd), capture_output=True, text=True, timeout=60, cwd=str(Path.home()))
         print(f"[direct] {host}: {script} {' '.join(argv)} → rc={proc.returncode} {(proc.stdout or proc.stderr).strip()[-120:]}")
         rc = rc or proc.returncode
     return rc
@@ -85,7 +85,7 @@ def parser() -> argparse.ArgumentParser:
                    help="런처가 일을 끝낼 때까지(busy=False) 최대 이 초만큼 기다리고, 오류면 1 로 끝난다(0 = 보내기만)")
     st = sub.add_parser("stop")
     st.add_argument("--camera", action="store_true", help="카메라까지 내린다")
-    st.add_argument("--host", default="vision-3090", help="런처가 없을 때 ssh 로 직접 내릴 곳")
+    st.add_argument("--host", default="vision-3090", help="런처가 없을 때 직접 내릴 곳(ssh) · local = 이 PC")
     st.add_argument("--wait", type=float, default=0.0,
                     help="런처가 다 내릴 때까지 최대 이 초만큼 기다린다(FP++ 재등록: stop 이 끝난 뒤 start)")
     v = sub.add_parser("viewer")

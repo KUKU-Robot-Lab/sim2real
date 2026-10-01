@@ -60,3 +60,13 @@ def test_stop_can_wait_until_the_launcher_is_done():
     from perception_ctl import parser
     assert parser().parse_args(["stop", "--wait", "60"]).wait == 60.0
     assert parser().parse_args(["stop"]).wait == 0.0
+
+
+def test_local_host_runs_the_same_scripts_on_this_pc_without_ssh():
+    """10.01 arm4090: 로봇 PC 가 카메라 · FP++ 를 같이 돌린다 — 런처 · 직접 내리기 모두 --host local 이면 bash 로."""
+    from perception_launcher_core import shell_argv
+    assert shell_argv("local", "bash rl_ws/sim2real/scripts/vision/status.sh") == [
+        "bash", "-c", "bash rl_ws/sim2real/scripts/vision/status.sh"]
+    assert shell_argv("localhost", "x")[0] == "bash"
+    assert shell_argv("vision-3090", "x")[:2] == ["ssh", "-o"] and shell_argv("vision-3090", "x")[-2:] == ["vision-3090", "x"]
+
