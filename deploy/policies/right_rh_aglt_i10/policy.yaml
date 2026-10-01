@@ -1,0 +1,14 @@
+# RH56F1 오른팔 rh_aglt iter_10(① 지연 없이 학습). 10.01 t2r RH56F1 [Grasping] 세션 — 사용자가 이 버전으로 실기 예정.
+id: right_rh_aglt_i10
+status: candidate        # candidate | verified | deployed | hold
+task: open-rh_r_aglt-lstm
+side: right
+checkpoint: last_open-rh_r_aglt-lstm_ep_4600_rew_2678.948.pth
+source: 'arm4090:~/rl_ws/our_source/policy/aglt_r_i10_ep4600 (md5 e677a1305da2…, params/, README.md)'
+interface: obs 96 · critic 128 · action 13 (팔 관절 증분 7 · 손 6 — rh56f1_hand 법칙, i09d 와 계약 동일)
+deploy:
+  max_episode_s: 15.0
+note: >-
+  보상 iter_10 · env 9a46c174(지연 키 0 — 지연 없이 학습). 학습 공차 0.0229 m. 결정론(64 env) 지연 0: 컵 든 에피소드 1.00,
+  목표 성공 2.0~2.3/에피소드(0.0229) · 0.8~0.9(0.02). 실측 지연을 넣으면 컵 든 에피소드 0.8. 엄지 · 검지 · 중지 · 새끼 접촉, 약지 안 닫음.
+  지연 적응판(②)은 학습 중.
