@@ -599,6 +599,9 @@ def main(argv=None) -> int:
     ap.add_argument("--inset", type=float, default=0.05, help="RRT 샘플 관절한계 안쪽 여유 [rad]")
     ap.add_argument("--step", type=float, default=CHECK_STEP, help="조밀 검사 간격 [rad]")
     ap.add_argument("--ramp-time", type=float, default=RAMP_TIME)
+    ap.add_argument("--max-speed", type=float, default=None,
+                    help="경로 전용 관절 속도 상한 [rad/s] — 없으면 pd 설정 ramp_speed. pd ramp_speed(goto_home 램프)는 바꾸지 않는다"
+                         "(10.01 사용자: 홈 경로 양팔 각 약 15 s). (0, 0.5] 만")
     ap.add_argument("--dt", type=float, default=FRAME_DT)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--rrt-iters", type=int, default=4000)
@@ -639,6 +642,10 @@ def main(argv=None) -> int:
     contract = load_contract(args.contract)
     env = W.load_env_yaml(args.env_yaml)
     vmax = read_ramp_speed(args.pd_config)
+    if args.max_speed is not None:
+        if not 0.0 < args.max_speed <= 0.5:
+            raise SystemExit(f"--max-speed {args.max_speed} 가 (0, 0.5] 밖 — 거부")
+        vmax = float(args.max_speed)
     world = W.build_world(W.WorldSpec(urdf=args.urdf, env_yaml=args.env_yaml, side=args.side, with_cup=args.with_cup,
                                       detect_margin=max(0.08, args.margin * 3),
                                       back_box={} if args.no_walls else None,

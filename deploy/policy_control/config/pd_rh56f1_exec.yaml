@@ -26,11 +26,12 @@ settle:
   gain: 0.01                   # 정착 적분 이득/틱(100 Hz) — 처짐이 5 s 안에 tol 아래로
   tol: 0.01                    # 정착 판정 [rad]
 hand_path_pose:                 # 팔이 경로를 따르기 전에 손을 여기로(pd/hand_path) — 홈 경로(paths/home_rh56f1_*.npz)를
-  # 10.01 사용자: 차렷 손 = 엄지 반쯤 대향(thumb_1 0.8 — 작을수록 손바닥을 가로질러 대향, 1.57 은 바깥으로 벌린 편 손). 엄지 두 축은
-  # 09.30 verified 라 pd 가 실제로 보낸다. 홈 경로(paths/home_rh56f1_*.npz)는 이 손으로 plan_home_path --check-only 통과
-  # (arm4090, 좌우 최소 여유 0.0200 m = 옛 손 기준선과 같음). 접은 손(전부 0) 검사도 그대로 유효.
-  right: {r_hj_thumb_1: 0.8, r_hj_thumb_2: 0.0, r_hj_index_1: 0.0, r_hj_middle_1: 0.0, r_hj_ring_1: 0.0, r_hj_pinky_1: 0.0}
-  left: {l_hj_thumb_1: 0.8, l_hj_thumb_2: 0.0, l_hj_index_1: 0.0, l_hj_middle_1: 0.0, l_hj_ring_1: 0.0, l_hj_pinky_1: 0.0}
+  # 10.01 사용자: 차렷 손 = 주먹("차렷부터 주먹같이 굽혀야 바닥에 안 닿는다"). 편 손 차렷은 손끝 sensor 가 table_1(밑판)을
+  # 0.75 cm 파고들고, 네 손가락 1.2 면 접촉 · 1.4 면 좌측 계획 실패(여유 1.94 cm) — 1.45 에서 밑판 · 몸통 여유 2 cm 이상.
+  # 엄지 thumb_1 0.8(반쯤 대향) · thumb_2 0.3. 실기 양손으로 쥐어 확인(4090:s2r, 레지스터 우 [967,961,942,946,1189,1295]
+  # · 좌 [932,934,931,949,1203,1359], 슬롯 순 새끼→엄지 대향). 홈 경로는 이 손(--hand-start pd)으로 다시 계획했다.
+  right: {r_hj_thumb_1: 0.8, r_hj_thumb_2: 0.3, r_hj_index_1: 1.45, r_hj_middle_1: 1.45, r_hj_ring_1: 1.45, r_hj_pinky_1: 1.45}
+  left: {l_hj_thumb_1: 0.8, l_hj_thumb_2: 0.3, l_hj_index_1: 1.45, l_hj_middle_1: 1.45, l_hj_ring_1: 1.45, l_hj_pinky_1: 1.45}
 gravity:
   mode: model_tau_ff           # 계약(sides.*.gravity)과 같아야 한다 — 제어 전용 자산 계약은 model_tau_ff
   urdf: hdgp/assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf   # 계약 asset.urdf (양팔, canonical 이름)
