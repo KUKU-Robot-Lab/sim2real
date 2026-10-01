@@ -19,7 +19,10 @@ VIEWER = Path(__file__).resolve().parents[3] / "robot" / "isaacsim_bridge" / "vi
 sys.path.insert(0, str(VIEWER))
 from joint_map import load_profile_table, map_joint_state  # noqa: E402
 
-TOPICS = ("/joint_states", "/dg5f_right/joint_states", "/dg5f_left/joint_states")
+#: 팔 · DG5F 손 · RH56F1 손(rh56f1_state_node — canonical r_hj_* 이름). 10.01: RH56F1 손 토픽이 없어 fake 홈 손 판정이
+#: '관절 상태 없음'으로 실패하고, "손은 아직 움직이지 않았다"는 inf 로 공허하게 통과했다.
+TOPICS = ("/joint_states", "/dg5f_right/joint_states", "/dg5f_left/joint_states",
+          "/hand_right/joint_states", "/hand_left/joint_states")
 
 
 def main() -> int:
@@ -48,7 +51,11 @@ def main() -> int:
     for t in TOPICS:
         node.create_subscription(JointState, t, cb(t), 10)
     t0 = time.monotonic()
-    while time.monotonic() - t0 < args.seconds or len(seen) < len(TOPICS) and time.monotonic() - t0 < 5.0:
+
+    def present() -> set[str]:                    # 그래프에 발행자가 있는 후보 — 로봇마다 손 토픽이 다르다
+        return {t for t in TOPICS if node.count_publishers(t) > 0}
+
+    while time.monotonic() - t0 < args.seconds or not present() <= seen and time.monotonic() - t0 < 5.0:
         rclpy.spin_once(node, timeout_sec=0.05)
     node.destroy_node()
     rclpy.shutdown()

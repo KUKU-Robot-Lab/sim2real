@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
@@ -105,7 +106,8 @@ def check_hand_not_home(report: Report, domain: int, side: str, tgt: dict, when:
     """팔만 움직인 직후 — 손은 아직 초기 손 자세가 아니어야 한다(0 에서 시작한 fake 손 · pd home_hand: keep)."""
     q = sample(domain)
     err, what = worst(q, tgt[side]["hand"])
-    report.add(f"{when}: {side} 손은 아직 움직이지 않았다(팔 먼저)", err >= HAND_MOVED_TOL, f"초기 손 자세와의 차 {err:.3f} · {what}")
+    ok = math.isfinite(err) and err >= HAND_MOVED_TOL          # 손 상태가 없으면(inf) 판정할 수 없다 — 통과가 아니다(10.01)
+    report.add(f"{when}: {side} 손은 아직 움직이지 않았다(팔 먼저)", ok, f"초기 손 자세와의 차 {err:.3f} · {what}")
 
 
 def run(args) -> int:
