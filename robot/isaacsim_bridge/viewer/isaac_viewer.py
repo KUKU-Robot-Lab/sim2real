@@ -18,6 +18,7 @@ import os
 import socket
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from isaaclab.app import AppLauncher
@@ -60,6 +61,8 @@ from isaaclab_tasks.utils import parse_env_cfg  # noqa: E402
 import openarm.tasks  # noqa: E402,F401
 # tasks/__init__ 가 등록 ImportError 를 삼키므로 명시 import 해 드러낸다(hdgp probe 들과 같은 방식).
 import openarm.agnostic.tasks.grasp_fj_t2r.config  # noqa: E402,F401
+import openarm.agnostic.tasks.rh_aglt_l.config  # noqa: E402,F401  (10.01 RH56F1 rh_aglt — open-rh_{r,l}_aglt-lstm)
+import openarm.agnostic.tasks.rh_aglt_r.config  # noqa: E402,F401
 from openarm.agnostic.modules import object_bank as _object_bank  # noqa: E402
 
 sys.path.insert(0, str(HDGP / "scripts" / "tools"))
@@ -86,18 +89,48 @@ def _require_file(path: str, what: str) -> str:
     return path
 
 
+@dataclass(frozen=True)
+class CupSpec:
+    """장면 컵 — 뱅크 종(DG5F 과제) 또는 과제 고정 컵(RH56F1 rh_aglt)."""
+
+    id: str
+    origin_offset_z: float
+    center_xy: tuple
+    spawn_note: str
+
+
+#: RH56F1 rh_aglt 는 cfg 에 gui_camera_eye 가 없다 — 로봇 앞(+x)에서 작업 영역을 보는 시점(env-local)
+RH_VIEW_EYE = (1.3, 0.0, 0.9)
+RH_VIEW_LOOKAT = (0.25, 0.0, 0.3)
+
+
+def _viewer_at_env0(cfg, eye, lookat) -> None:
+    cfg.viewer.origin_type = "env"
+    cfg.viewer.env_index = 0
+    cfg.viewer.eye = tuple(eye)
+    cfg.viewer.lookat = tuple(lookat)
+
+
 def build_cfg(task: str, logged: dict, cup: str, device: str):
-    """등록 cfg -> env.yaml 복원 -> 뷰어 전용 최소 변경(num_envs=1·컵 종 1개·지령 마커 끔)."""
+    """등록 cfg -> env.yaml 복원 -> 뷰어 전용 최소 변경(num_envs=1·컵 1개·지령 마커 끔). (cfg, CupSpec, 컵 spawn) 을 돌려준다.
+
+    과제 두 계열: 컵 뱅크가 있는 DG5F 과제(object_bank · object_cfg) · 컵이 하나인 RH56F1 rh_aglt(cup_cfg · table_spawn).
+    """
     cfg = parse_env_cfg(task, device=device, num_envs=1)
     apply_logged_env_cfg(cfg, logged)
     cfg.scene.num_envs = 1                              # env.yaml 은 4096
-    cfg.enable_cmd_markers = False                      # 스텝을 안 하므로 지령 마커는 리셋 목표에 멈춰 오해를 준다
-    # 카메라: env.yaml 의 gui_camera_eye/target(env-local) 을 뷰어 시작 시점으로.
-    cfg.viewer.origin_type = "env"
-    cfg.viewer.env_index = 0
-    cfg.viewer.eye = tuple(cfg.gui_camera_eye)
-    cfg.viewer.lookat = tuple(cfg.gui_camera_target)
+    if hasattr(cfg, "enable_cmd_markers"):
+        cfg.enable_cmd_markers = False                  # 스텝을 안 하므로 지령 마커는 리셋 목표에 멈춰 오해를 준다
+    if hasattr(cfg, "object_bank"):
+        return _build_cfg_bank(cfg, cup)
+    if hasattr(cfg, "cup_cfg"):
+        return _build_cfg_rh_aglt(cfg, cup)
+    raise SystemExit(f"{task}: 모르는 과제 cfg {cfg.__class__.__name__} — object_bank(DG5F) 도 cup_cfg(rh_aglt) 도 없다")
 
+
+def _build_cfg_bank(cfg, cup: str):
+    # 카메라: env.yaml 의 gui_camera_eye/target(env-local) 을 뷰어 시작 시점으로.
+    _viewer_at_env0(cfg, cfg.gui_camera_eye, cfg.gui_camera_target)
     bank = _object_bank.get(cfg.object_bank)
     ids = [s.id for s in bank.specs]
     if cup not in ids:
@@ -114,32 +147,48 @@ def build_cfg(task: str, logged: dict, cup: str, device: str):
     _require_file(cfg.robot_cfg.spawn.usd_path, "로봇")
     _require_file(cfg.table_cfg.spawn.usd_path, "테이블")
     _require_file(chosen.usd_path, "컵")
-    return cfg, spec, chosen
-
-
-def cup_default_pose(cfg, spec) -> tuple[float, ...]:
-    """학습 리셋이 컵을 놓는 자리의 **평균**: 소환 중심(랜덤 ± spawn_range 의 중앙) · 정착고.
-
-    env `_reset_idx`: xy = 소환 중심 + U(±spawn_range), z(정착) = table_surface_z + 종별 원점 오프셋, 회전 항등.
-    """
     cx, cy = (float(v) for v in cfg.object_spawn_center_override)
+    return cfg, CupSpec(spec.id, float(spec.origin_offset_z), (cx, cy),
+                        f"env.yaml object_spawn_center_override (학습 랜덤 ±{cfg.spawn_range} 대신 중앙)"), chosen
+
+
+def _build_cfg_rh_aglt(cfg, cup: str):
+    """RH56F1 rh_aglt: 컵은 cup_cfg 하나(스케일 cup_scale) — --cup 은 쓰지 않는다. 시점은 RH_VIEW_*."""
+    _viewer_at_env0(cfg, RH_VIEW_EYE, RH_VIEW_LOOKAT)
+    chosen = cfg.cup_cfg.spawn
+    _require_file(cfg.robot_cfg.spawn.usd_path, "로봇")
+    _require_file(cfg.table_spawn.usd_path, "테이블")
+    _require_file(chosen.usd_path, "컵")
+    cx, cy = (float(v) for v in cfg.spawn_center)
+    _log(f"rh_aglt 과제 — 컵은 과제 고정(cup_scale {cfg.cup_scale}), --cup {cup!r} 는 쓰지 않는다")
+    return cfg, CupSpec(f"rh_aglt cup (scale {cfg.cup_scale})", float(cfg.cup_origin_offset_z), (cx, cy),
+                        f"env.yaml spawn_center (학습 랜덤 ±{tuple(cfg.spawn_half)} 대신 중앙)"), chosen
+
+
+def cup_default_pose(cfg, spec: CupSpec) -> tuple[float, ...]:
+    """학습 리셋이 컵을 놓는 자리의 **평균**: 소환 중심(랜덤의 중앙) · 정착고(table_surface_z + 원점 오프셋) · 회전 항등."""
+    cx, cy = spec.center_xy
     z = float(cfg.table_surface_z) + float(spec.origin_offset_z)
     return (cx, cy, z, 1.0, 0.0, 0.0, 0.0)
 
 
 def print_value_table(cfg, spec, chosen, cup_pose, policy_dir: Path) -> None:
+    table = cfg.table_cfg.spawn.usd_path if hasattr(cfg, "table_cfg") else cfg.table_spawn.usd_path
+    table_pose = (f"{tuple(cfg.table_cfg.init_state.pos)} {tuple(cfg.table_cfg.init_state.rot)}" if hasattr(cfg, "table_cfg")
+                  else "원점(rh_aglt 는 테이블을 env 원점에 놓는다)")
     rows = [
         ("task", "policy.yaml task", cfg.__class__.__name__),
         ("robot usd", "env.yaml robot_cfg.spawn.usd_path", cfg.robot_cfg.spawn.usd_path),
         ("robot base pos/rot", "env.yaml robot_cfg.init_state", f"{tuple(cfg.robot_cfg.init_state.pos)} {tuple(cfg.robot_cfg.init_state.rot)}"),
-        ("table usd", "env.yaml table_cfg.spawn.usd_path", cfg.table_cfg.spawn.usd_path),
-        ("table pos/rot", "env.yaml table_cfg.init_state", f"{tuple(cfg.table_cfg.init_state.pos)} {tuple(cfg.table_cfg.init_state.rot)}"),
+        ("table usd", "env.yaml table_cfg / table_spawn", table),
+        ("table pos/rot", "env.yaml table_cfg.init_state", table_pose),
         ("table_surface_z", "env.yaml table_surface_z", cfg.table_surface_z),
-        ("cup species", "--cup / object_bank", f"{spec.id} (bank {cfg.object_bank})"),
-        ("cup usd/scale/mass", "env.yaml object_cfg.spawn.assets_cfg[k]",
-         f"{chosen.usd_path} {tuple(chosen.scale)} {chosen.mass_props.mass if chosen.mass_props else None}"),
-        ("cup xy", "env.yaml object_spawn_center_override (spawn_range 중앙)", f"{cup_pose[:2]} (학습 랜덤 ±{cfg.spawn_range} 대신 중앙 고정)"),
-        ("cup z", "env.yaml table_surface_z + 뱅크 origin_offset_z", f"{cup_pose[2]:.5f} (= {cfg.table_surface_z} + {spec.origin_offset_z:.5f})"),
+        ("cup", "--cup / object_bank · rh_aglt cup_cfg", spec.id),
+        ("cup usd/scale/mass", "env.yaml 컵 spawn",
+         f"{chosen.usd_path} {tuple(chosen.scale) if chosen.scale else None} "
+         f"{chosen.mass_props.mass if getattr(chosen, 'mass_props', None) else None}"),
+        ("cup xy", spec.spawn_note, f"{cup_pose[:2]}"),
+        ("cup z", "env.yaml table_surface_z + 원점 오프셋", f"{cup_pose[2]:.5f} (= {cfg.table_surface_z} + {spec.origin_offset_z:.5f})"),
         ("sim dt / render_interval", "env.yaml sim", f"{cfg.sim.dt} / {cfg.sim.render_interval} (스텝 안 함)"),
     ]
     _log(f"장면 값 출처 (정책 번들 {policy_dir}):")
@@ -212,11 +261,16 @@ class RobotMirror:
         return len(names)
 
 
+def cup_object(env):
+    """장면 컵 강체 — DG5F 과제는 env.object, RH56F1 rh_aglt 는 env.cup."""
+    return env.object if hasattr(env, "object") else env.cup
+
+
 def pin_cup(env, cup_pose) -> None:
     root = torch.zeros(1, 13, device=env.device)
     root[0, :7] = torch.tensor(cup_pose, device=env.device)
     root[0, :3] += env.scene.env_origins[0]
-    env.object.write_root_state_to_sim(root)
+    cup_object(env).write_root_state_to_sim(root)
 
 
 def _save_png(img, path: str) -> str:
@@ -300,7 +354,7 @@ def main() -> None:
                 path = _save_png(img, args.shot)
                 q = env.robot.data.joint_pos[0]
                 link = env.robot.root_physx_view.get_link_transforms()[0, palm_idx, :3] - env.scene.env_origins[0]
-                cup = env.object.root_physx_view.get_transforms()[0, :3] - env.scene.env_origins[0]
+                cup = cup_object(env).root_physx_view.get_transforms()[0, :3] - env.scene.env_origins[0]
                 summary = {
                     "shot": path, "task": task, "cup": spec.id, "packets": udp.received,
                     "applied_joints": list(mirror.applied_names),
@@ -333,5 +387,15 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    finally:
+    except BaseException as exc:                    # noqa: BLE001
+        # 10.01: simulation_app.close() 가 프로세스를 끝내 예외가 rc 0 으로 묻혔다 — 알리고 rc 1 로 바로 나간다
+        if isinstance(exc, SystemExit) and exc.code in (None, 0):
+            simulation_app.close()
+            raise
+        import traceback
+        traceback.print_exc()
+        print(f"VIEWER_ERROR {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+        sys.stdout.flush()
+        os._exit(exc.code if isinstance(exc, SystemExit) and isinstance(exc.code, int) and exc.code else 1)
+    else:
         simulation_app.close()

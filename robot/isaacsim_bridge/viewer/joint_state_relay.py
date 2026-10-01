@@ -7,6 +7,7 @@ ROS 2 Humble(py3.10) 쪽 프로세스. Isaac Sim(py3.11) 과 섞이지 않게 UD
     ROS_DOMAIN_ID=126 python3 joint_state_relay.py --port 47811
 
 - 구독: /joint_states(팔) · /dg5f_right/joint_states · /dg5f_left/joint_states · /head/joint_states(있으면)
+  · /hand_{right,left}/joint_states(RH56F1 — 10.01)
 - 이름 사상: robot_control 프로필 `openarm_tesollo.yaml` 의 source->canonical·sign (joint_map.py)
 - 송신: 127.0.0.1:<port> 로 `{t, names, positions}` JSON 을 --rate Hz(기본 30)
 - ROS_DOMAIN_ID 가 비었거나 0 이면 거부한다(기본 도메인에서 엉뚱한 그래프에 붙지 않게).
@@ -26,7 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import joint_map  # noqa: E402
 import packet  # noqa: E402
 
-DEFAULT_TOPICS = ("/joint_states", "/dg5f_right/joint_states", "/dg5f_left/joint_states", "/head/joint_states")
+DEFAULT_TOPICS = ("/joint_states", "/dg5f_right/joint_states", "/dg5f_left/joint_states", "/head/joint_states",
+                  "/hand_right/joint_states", "/hand_left/joint_states")   # 10.01 RH56F1 상태 노드(canonical 이름)
 #: rclpy(Humble) Node 가 **항상** 만드는 내부 발행자. 로봇 명령 토픽이 아니다.
 #: /rosout 은 enable_rosout=False 로 끈다. /parameter_events 는 Humble rclpy 가 조건 없이 만든다.
 ALLOWED_INTERNAL_PUBLISHERS = frozenset({"/parameter_events"})

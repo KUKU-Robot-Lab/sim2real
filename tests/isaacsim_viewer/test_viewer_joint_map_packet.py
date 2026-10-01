@@ -177,3 +177,27 @@ def test_relay_source_has_no_publisher_calls():
     src = (Path(joint_map.__file__).parent / "joint_state_relay.py").read_text()
     assert "create_publisher(" not in src
     assert "create_client(" not in src and "ActionClient" not in src
+
+
+RH56F1_PROFILE = Path(__file__).resolve().parents[3] / "robot_control/src/robot_control/profiles/openarm_rh56f1.yaml"
+
+
+@pytest.mark.skipif(not RH56F1_PROFILE.is_file(), reason="robot_control 없음")
+def test_rh56f1_mimic_joints_from_the_asset_urdf_pass_through():
+    """10.01 4090:s2r: 상태 노드가 낸 손 종속 관절(*_2 · thumb_3/4)을 relay 가 버려 끝마디가 고정됐다.
+    프로필은 구동 관절만 담는다(profile.py 규칙) — 자산 URDF 의 <mimic> 관절을 canonical 그대로 받는다."""
+    import yaml
+    table = joint_map.load_profile_table(RH56F1_PROFILE)
+    doc = yaml.safe_load(RH56F1_PROFILE.read_text())
+    mimic = joint_map.asset_mimic_joints(RH56F1_PROFILE, doc)
+    if not mimic:
+        pytest.skip("RH56F1 자산 URDF 없음")
+    assert len(mimic) == 12 and {"r_hj_thumb_3", "r_hj_thumb_4", "l_hj_pinky_2"} <= set(mimic)
+    assert len(table) == 26 + 12
+    r = joint_map.map_joint_state(["r_hj_index_2", "l_hj_thumb_4", "r_hj_index_1"], [0.1, 0.2, 0.3], table)
+    assert dict(r.values) == {"r_hj_index_2": 0.1, "l_hj_thumb_4": 0.2, "r_hj_index_1": 0.3} and not r.unknown
+
+
+def test_relay_subscribes_to_the_rh56f1_hand_state_topics():
+    src = (Path(joint_map.__file__).parent / "joint_state_relay.py").read_text()
+    assert '"/hand_right/joint_states"' in src and '"/hand_left/joint_states"' in src

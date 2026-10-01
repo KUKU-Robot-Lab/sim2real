@@ -6,11 +6,14 @@
 - 팔: `/joint_states` 의 `openarm_right_joint1..7` -> `r_aj_1..7` (좌팔 `l_aj_*`)
 - 손: `/dg5f_right/joint_states` 의 `rj_dg_<f>_<j>` -> `r_hj_<finger>_<j>` (좌손 `lj_dg_*` -> `l_hj_*`)
 - 이미 canonical 이름으로 오는 메시지(예: `/head/joint_states` 의 `head_j_pan`)는 그대로 통과시킨다.
+- 10.01 RH56F1: 손 종속(mimic) 관절은 구동이 아니라 프로필 `joints:` 에 없다(profile.py 가 구동 그룹 밖 관절을 거부).
+  상태 노드는 그것들을 canonical 이름으로 낸다 — 프로필 `asset.urdf` 의 `<mimic>` 관절을 canonical 그대로 통과로 더한다.
 """
 
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -68,7 +71,44 @@ def load_profile_table(path: str | Path = DEFAULT_PROFILE) -> Mapping[str, Joint
         doc = yaml.safe_load(fh)
     if not isinstance(doc, dict) or not isinstance(doc.get("joints"), list):
         raise ValueError(f"프로필에 joints 목록이 없다: {p}")
-    return build_table(doc["joints"])
+    entries = list(doc["joints"])
+    known = {str(e.get("canonical")) for e in entries if isinstance(e, Mapping)}
+    for name in asset_mimic_joints(p, doc):
+        if name not in known:
+            entries.append({"source": name, "canonical": name, "sign": 1})
+    return build_table(entries)
+
+
+def _asset_urdf(profile_path: Path, doc: Mapping) -> Path | None:
+    """프로필 asset.urdf — 프로필 위치 기준 상대 경로. 없으면 rl_ws/hdgp 아래에서 같은 상대 경로를 찾는다
+    (robot_control profile._resolve_manifest 와 같은 규칙, HDGP_ROOT 우선)."""
+    asset = doc.get("asset")
+    value = asset.get("urdf") if isinstance(asset, Mapping) else None
+    if not value:
+        return None
+    path = Path(str(value))
+    if path.is_absolute():
+        return path if path.is_file() else None
+    direct = (profile_path.parent / path).resolve()
+    if direct.is_file():
+        return direct
+    if "hdgp" in path.parts:
+        rel = Path(*path.parts[path.parts.index("hdgp") + 1:])
+        for root in (os.environ.get("HDGP_ROOT"), str(_RL_WS / "hdgp")):
+            if root and (Path(root) / rel).is_file():
+                return Path(root) / rel
+    return None
+
+
+def asset_mimic_joints(profile_path: Path, doc: Mapping) -> tuple[str, ...]:
+    """자산 URDF 에서 `<mimic>` 을 가진 관절 이름(자산 = canonical 이름). URDF 가 없으면 빈 튜플."""
+    urdf = _asset_urdf(Path(profile_path), doc)
+    if urdf is None:
+        return ()
+    import xml.etree.ElementTree as ET
+
+    root = ET.parse(urdf).getroot()
+    return tuple(j.get("name") for j in root.iter("joint") if j.find("mimic") is not None and j.get("name"))
 
 
 def canonical_names(table: Mapping[str, JointRule]) -> frozenset[str]:
