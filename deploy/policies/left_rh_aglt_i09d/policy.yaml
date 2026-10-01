@@ -1,0 +1,14 @@
+# RH56F1 왼팔 rh_aglt — 실측 지연 적응(②) 실기 후보. 10.01 t2r RH56F1 [Grasping] 세션이 arm4090 에 올림(사용자 지시).
+id: left_rh_aglt_i09d
+status: candidate        # candidate | verified | deployed | hold
+task: open-rh_l_aglt-lstm
+side: left
+checkpoint: last_open-rh_l_aglt-lstm_ep_3000_rew_2940.748.pth
+source: 'arm4090:~/rl_ws/our_source/policy/aglt_l_i09d_ep3000 (sha256 cd3c0aa9670cb7a1… · params/ · README.md)'
+interface: obs 96 · critic 128 · action 13 (팔 관절 증분 7 · 손 6 — rh56f1_hand 법칙, i05 와 계약 동일)
+deploy:
+  max_episode_s: 15.0
+note: >-
+  보상 iter_09 c1 · env 실기 반응(팔 지연 9~12 · 손 3~5 스텝 · 펌웨어 멈춤 · 편 손 하한)으로 학습. 결정론(64 env, 지연 켬)
+  컵 든 에피소드 0.98 · 낙하 0 · 목표 성공 1.19/에피소드(공차 0.035) — 공차 0.02(배포 달성 판정)에서는 0.05.
+  다섯 손가락 파지. 주의: 어깨 j2 한계 0.31 · 컵 기울기 중앙 18°.

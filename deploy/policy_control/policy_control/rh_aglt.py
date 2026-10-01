@@ -147,6 +147,11 @@ def load_contract(path: str | Path) -> RaContract:
 
 
 # ---------------------------------------------------------------- 빌드
+#: hdgp rh_aglt real_response(09.30 9a46c174): 명령 지연 · 편 손 하한 · 리셋 엄지 외전 — PD 에 들어가는 목표만 바꾼다
+SIM_ONLY_RESPONSE_KEYS = ("arm_cmd_delay_steps", "hand_cmd_delay_steps", "hand_open_floor_deg_lo", "hand_open_floor_deg_hi",
+                          "thumb1_reset_range")
+
+
 def is_rh_aglt_run(env: Mapping) -> bool:
     return (str(env.get("profile_name", "")).startswith("rh56f1_") and int(env.get("action_space", 0)) == 13
             and int(env.get("observation_space", 0)) == obs_dim_of())
@@ -191,6 +196,10 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
              f"목표 입력: 박스 밖 거부 · 먼 목표는 축마다 ±{float(env['goal_delta_distance'])} m 이내 중간 목표로 나눔",
              f"목표 달성 = 키포인트 최대거리 ≤ tol_floor {float(env['tol_floor'])} m 누적 {int(env['goal_success_steps'])} 스텝 + 쥠"
              f"(엄지 AND 다른 손가락 촉각 > {float(env['contact_force_threshold'])} N — 학습은 첫마디+손끝 컵 접촉, 실기는 손끝 촉각)"]
+    sim_only = {k: env[k] for k in SIM_ONLY_RESPONSE_KEYS if k in env}
+    if sim_only:                                  # hdgp real_response.py — PD 앞단에서 sim 이 실기 반응을 흉내 낸 것(관측은 명령 목표)
+        notes.append("학습 실기 반응(sim 전용, 배포 디코더는 따라 하지 않는다 — 실기가 스스로 낸다): "
+                     + " · ".join(f"{k} {list(v) if isinstance(v, (list, tuple)) else v}" for k, v in sim_only.items()))
     if not bool(cfg_a.get("normalize_input", False)):
         notes.append("normalize_input false")
     c = RaContract(
