@@ -184,8 +184,13 @@ def test_the_saved_path_goes_from_zero_to_the_aglt_home_of_the_current_contract(
     assert np.allclose(d["meta_start"], 0.0) and np.allclose(d["meta_goal"], homes[side])
     a = d["arm_target"]
     assert np.allclose(a[0], 0.0) and np.allclose(a[-1], homes[side])
-    assert float(d["meta_min_clearance_non_escape"]) >= 0.02 - 1e-4 and str(d["meta_hand_start"]) == "both"
-    assert float(d["meta_max_joint_speed"]) <= 0.2 + 1e-6 and str(d["meta_other_arm"]) == "both"
+    # 10.01 사용자: 차렷 손 = 주먹(pd hand_path_pose)으로 계획(--hand-start pd → meta 는 measured + 그 손 값),
+    #   경로 전용 속도 0.3 rad/s(--max-speed, 각 약 15 s). pd ramp_speed 0.2 는 그대로.
+    assert float(d["meta_min_clearance_non_escape"]) >= 0.02 - 1e-4 and str(d["meta_hand_start"]) == "measured"
+    pose = yaml.safe_load((PC / "config/pd_rh56f1.yaml").read_text())["hand_path_pose"][side]
+    hand_q = dict(kv.split("=") for kv in str(d["meta_hand_q"]).split(","))
+    assert {k: float(v) for k, v in hand_q.items()} == pytest.approx({k: float(v) for k, v in pose.items()})
+    assert float(d["meta_max_joint_speed"]) <= 0.3 + 1e-6 and str(d["meta_other_arm"]) == "both"
     assert list(d["meta_joints"]) == [f"{side[0]}_aj_{i}" for i in range(1, 8)]
 
 
