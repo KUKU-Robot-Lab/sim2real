@@ -1,0 +1,13 @@
+# RH56F1 오른팔 rh_aglt iter_10 ②(실측 지연 적응). 10.01 Grasping 세션이 arm4090 에 올림 — 사용자가 이 계열로 s2r 예정.
+id: right_rh_aglt_i10d
+status: candidate        # candidate | verified | deployed | hold
+task: open-rh_r_aglt-lstm
+side: right
+checkpoint: last_open-rh_r_aglt-lstm_ep_1400_rew_1483.9092.pth
+source: 'arm4090:~/rl_ws/our_source/policy/aglt_r_i10d_ep2000 (md5 993287de9400…, 파일명 ep1400 = server 기준, 합계 ep2000)'
+interface: obs 96 · critic 128 · action 13 (팔 관절 증분 7 · 손 6 — rh56f1_hand 법칙, i10 · i09d 와 계약 동일)
+deploy:
+  max_episode_s: 15.0
+note: >-
+  ① i10 ep4600 → 실측 지연(팔 9~12 · 손 3~5 스텝)으로 이어 학습. 결정론(server, 64 env, 지연 켬): 컵 든 에피소드 0.94 · 낙하 0.006 ·
+  목표 성공 2.40/에피소드(학습 공차 0.059) · 0.16(0.02). 다섯 손가락 파지 · 컵 기울기 중앙 12°. 주의: 손목 j6 한계 0.40~0.48(이송 중).

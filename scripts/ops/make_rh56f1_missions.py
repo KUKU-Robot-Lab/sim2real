@@ -86,7 +86,7 @@ def _stages(kind: str) -> list[dict]:
              "title": f"[{s}] pd 발행 모드 전환 — engage 는 하지 않는다(팔은 JTC 가 잡는다)"},
             {"id": f"home_{s}", "group": "motion", "lane": f"arm_{s}", "needs": [f"pd_arm_{s}"], "skippable": True,
              "touches_real": real, "artifacts": ["contract", f"path_{s}"],
-             "title": f"[{s}] engage → 손 편 손 → 저장 경로로 차렷 → 홈(rh_aglt 시작 자세) → 정착 → 손 초기 자세"},
+             "title": f"[{s}] engage → 차렷 손(엄지 반쯤 대향) → 저장 경로로 차렷 → 홈(rh_aglt 시작 자세) → 정착 → 손 초기 자세"},
             {"id": f"release_{s}", "group": "finish", "lane": f"arm_{s}", "needs": [f"pd_arm_{s}"], "skippable": True,
              "touches_real": real, "undoes": [f"pd_arm_{s}", f"home_{s}"],
              "title": f"[{s}] pd 해제(역블렌드 → JTC) → 이 팔의 pd 정지"},
@@ -278,9 +278,9 @@ def _home(s: str) -> list[dict]:
              execute_args=["--execute", "--approve", "pd_engage"]),
         _cmd(f"★[{s}] 10 s 동안 팔이 제자리였는가(처짐 · 떨림 · 소리 없음). 아니면 '정상이 아니다' 후 정지 바의 PD 해제",
              ["bash", "-lc", "true"], manual=True),
-        _cmd(f"[{s}] 손을 편 손으로(pd/hand_path) — 홈 경로는 편 손 · 접은 손 둘 다로 검사했다. 엄지 두 축은 verified 전이라 그대로",
+        _cmd(f"[{s}] 손을 차렷 손으로(pd/hand_path) — 네 손가락 펴고 엄지 반쯤 대향(thumb_1 0.8). 홈 경로는 이 손 · 접은 손으로 검사했다",
              ctl("pd_hand_path", "--service-timeout", "15"), execute_args=["--execute", "--approve", "pd_hand_path"]),
-        _cmd(f"★[{s}] 네 손가락이 펴졌는가 · 엄지가 손바닥 안으로 크게 접혀 있지 않은가(엄지는 아직 pd 가 움직이지 않는다)",
+        _cmd(f"★[{s}] 차렷 손인가 — 네 손가락이 펴지고 엄지가 반쯤 손바닥 쪽으로 돌아 있는가(끝까지 접히거나 바깥으로 벌어져 있지 않은가)",
              ["bash", "-lc", "true"], manual=True),
         _cmd(f"[{s}] 저장 경로를 재생해도 되는가 — 팔이 차렷(경로 시작점 0.05 rad 안) · 경로가 지금 계약으로 만든 것 · 관절 상태가 살아 있음",
              ["python3", f"{PC}/tools/check_path_start.py", "--npz", f"{{artifact:path_{s}}}", "--contract", "{artifact:contract}"]),
@@ -310,6 +310,7 @@ def mission(kind: str) -> dict:
         "rh56f1_map": "deploy/policy_control/config/rh56f1_hand_map.yaml",
         # 차렷 → 홈(rh_aglt 시작 자세) 저장 경로 — plan_home_path.py --side <s> --goal contract --other-arm both --hand-start both
         #   --urdf <RH56F1 자산> --contract <이 미션 contract> --profile openarm_rh56f1 --env-yaml <aglt 런> --pd-config pd_rh56f1
+        #   ★plan_home_path 기본값(--urdf · --contract · --profile · --env-yaml)은 DG5F 다 — 빼먹으면 DG5F 세계로 검사한다(10.01)
         "path_right": "deploy/policy_control/paths/home_rh56f1_right.npz",
         "path_left": "deploy/policy_control/paths/home_rh56f1_left.npz",
         # 양팔 붓기 정책(첫 화면의 '양팔' 자리가 바꾼다) · 양팔 robot yaml

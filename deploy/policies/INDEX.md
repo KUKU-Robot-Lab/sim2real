@@ -14,11 +14,13 @@
 | `left_rh_aglt_i05` | candidate | open-rh_l_aglt-lstm | left | last_open-rh_l_aglt-lstm_ep_3800_rew_3346.764.pth | rh_aglt_contract.json | ok |
 | `left_rh_aglt_i09d` | candidate | open-rh_l_aglt-lstm | left | last_open-rh_l_aglt-lstm_ep_3000_rew_2940.748.pth | rh_aglt_contract.json | ok |
 | `left_rh_aglt_i10` | candidate | open-rh_l_aglt-lstm | left | last_open-rh_l_aglt-lstm_ep_4600_mirror_of_r_i10.pth | rh_aglt_contract.json | ok |
+| `left_rh_aglt_i10d` | candidate | open-rh_l_aglt-lstm | left | last_open-rh_l_aglt-lstm_ep_2200_rew_2715.922.pth | rh_aglt_contract.json | ok |
 | `right_aglt` | hold | open-short_r_grasp_fj_t2r_rand-lstm | right | fj_rand_i01_best_ep5000.pth | - | ok |
 | `right_m15_e800` | candidate | open-short_r_cup_pick-lstm | right | last_open-short_r_cup_pick-lstm_ep_800_rew_2313.1377.pth | joint_contract.json | ok |
 | `right_rh_aglt_i03` | hold | open-rh_r_aglt-lstm | right | last_open-rh_r_aglt-lstm_ep_4600_rew_3222.941.pth | rh_aglt_contract.json | ok |
 | `right_rh_aglt_i09d` | candidate | open-rh_r_aglt-lstm | right | last_open-rh_r_aglt-lstm_ep_5800_rew_1844.392.pth | rh_aglt_contract.json | ok |
 | `right_rh_aglt_i10` | candidate | open-rh_r_aglt-lstm | right | last_open-rh_r_aglt-lstm_ep_4600_rew_2678.948.pth | rh_aglt_contract.json | ok |
+| `right_rh_aglt_i10d` | candidate | open-rh_r_aglt-lstm | right | last_open-rh_r_aglt-lstm_ep_1400_rew_1483.9092.pth | rh_aglt_contract.json | ok |
 | `right_rh_aglt_mirror_l5` | candidate | open-rh_r_aglt-lstm | right | aglt_l_i05_ep3800_to_r.pth | rh_aglt_contract.json | ok |
 
 ## status
@@ -40,9 +42,11 @@
 - `left_rh_aglt_i05` — 학습 로그 e3785~3964 파지 0.80 · 들기 0.75 · 목표 성공 0.9~1.1/에피소드(허용오차 2.1 cm). 엄지 대향이 후반에 줄었다(0.52 → 0.04). 계약 rh_aglt_contract.json 은 tools/build_rh_aglt_contract.py 로 런의 env.yaml 에서 만든다. 손 관측은 이름(프로필) 순 — pour_fj 와 달리 PhysX 순서 문제가 없다. 목표 = 리셋 때 컵 + (0, 0, 0.14)(학습 첫 목표 분포의 가운데).
 - `left_rh_aglt_i09d` — 보상 iter_09 c1 · env 실기 반응(팔 지연 9~12 · 손 3~5 스텝 · 펌웨어 멈춤 · 편 손 하한)으로 학습. 결정론(64 env, 지연 켬) 컵 든 에피소드 0.98 · 낙하 0 · 목표 성공 1.19/에피소드(공차 0.035) — 공차 0.02(배포 달성 판정)에서는 0.05. 다섯 손가락 파지. 주의: 어깨 j2 한계 0.31 · 컵 기울기 중앙 18°.
 - `left_rh_aglt_i10` — 좌 env 결정론(arm5080, 64 env) 지연 0: 컵 든 에피소드 1.00 · 목표 성공 2.02/에피소드(0.0229) · 0.83(0.02). 실측 지연: 컵 든 에피소드 0.78. 엄지 · 검지 · 중지 · 새끼 접촉, 약지 안 닿음. 컵 기울기 중앙 8.6°.
+- `left_rh_aglt_i10d` — 우 i10 거울(i10mir) → 실측 지연으로 이어 2200 epoch(server). 결정론(64 env, 지연 켬): 컵 든 에피소드 0.89 · 낙하 0.006 · 목표 성공 2.55/에피소드(학습 공차 0.052) · 0.06(0.02). 다섯 손가락 파지 · 컵 기울기 중앙 13°.
 - `right_aglt` — 09.28 hold — 오른팔 첫 실험은 right_m15_e800(cup_pick 세션 s2r 후보, 사용자 선택)으로 한다. 인터페이스는 같다. s2r 후보. 먼 출발 성공 0.85 · 공차 0.019 · 컵 기울기 4.3°. sha256 앞 16자리 e76f9c6079663b61. 계약 없음 — obs 133 / action 26(팔 7 관절 증분 + 손 19 절대)은 기존 세 family 어디에도 안 맞는다. build_deploy_contract 가 grasp_s2r 로 판정했다가 인터페이스 차이로 거절한다. 새 family 가 필요하다. 같은 한 벌의 fj_rand_i01_final.pth 는 공차 바닥 뒤 열화(성공 0.61)라 쓰지 않는다.
 - `right_m15_e800` — cp_r_m15 ep_800 (md5 4717e325 = policy_zoo cup_pick_r_manip_e800). 보상 iter_15. 학습 창 파지 0.967 · 들기 0.959 · 먼 출발 성공 0.827, 외란 20 N/kg 600 epoch 유지. 약점: 검지 0 · 5지 인벨롭 0(4지+손바닥), 고정 공차 평가 없음, 공차 0.082 까지만.
 - `right_rh_aglt_i03` — 09.30 hold — 사용자 영상 판정: 엄지를 입구 안에 넣는 파지(결정론 probe 엄지 끝 컵 안 0.97). 오른팔은 right_rh_aglt_mirror_l5 를 쓴다. LOOP_STATE 추천 구간 e4400~4800 (성공 200 epoch 평균 최고 1.1~1.3/에피소드, 파지 0.73~0.79). 마지막 가중치 쓰지 말 것. 엄지 대향 0 — 사용자 판정: 모양 결함 알고 쓰는 첫 실기 후보. 계약 rh_aglt_contract.json 은 tools/build_rh_aglt_contract.py 로 런의 env.yaml 에서 만든다. 손 관측은 이름(프로필) 순 — pour_fj 와 달리 PhysX 순서 문제가 없다. 목표 = 리셋 때 컵 + (0, 0, 0.14)(학습 첫 목표 분포의 가운데).
 - `right_rh_aglt_i09d` — 보상 iter_09 c1 · env 실기 반응(팔 지연 9~12 · 손 3~5 스텝 · 펌웨어 멈춤 · 편 손 하한)으로 학습. 결정론(5090, 64 env, 지연 켬) 컵 든 에피소드 0.91 · 낙하 스텝 0.016 · 목표 성공 0.84/에피소드(공차 0.039) — 공차 0.02(배포 달성 판정)에서는 0.05. 세 손가락 파지(약지 · 새끼 0). 주의: 손목 j6 한계(여유 < 5 %) 0.45 · j6 출력 |mu|>1 0.58.
 - `right_rh_aglt_i10` — 보상 iter_10 · env 9a46c174(지연 키 0 — 지연 없이 학습). 학습 공차 0.0229 m. 결정론(64 env) 지연 0: 컵 든 에피소드 1.00, 목표 성공 2.0~2.3/에피소드(0.0229) · 0.8~0.9(0.02). 실측 지연을 넣으면 컵 든 에피소드 0.8. 엄지 · 검지 · 중지 · 새끼 접촉, 약지 안 닫음. 지연 적응판(②)은 학습 중.
+- `right_rh_aglt_i10d` — ① i10 ep4600 → 실측 지연(팔 9~12 · 손 3~5 스텝)으로 이어 학습. 결정론(server, 64 env, 지연 켬): 컵 든 에피소드 0.94 · 낙하 0.006 · 목표 성공 2.40/에피소드(학습 공차 0.059) · 0.16(0.02). 다섯 손가락 파지 · 컵 기울기 중앙 12°. 주의: 손목 j6 한계 0.40~0.48(이송 중).
 - `right_rh_aglt_mirror_l5` — 우 env 결정론 probe(서버 GPU0, 64 env × 1800 스텝) 파지 0.806 · 들기 0.753 · 목표 성공 0.38 — 좌 원본(0.805 · 0.755)과 같다. 엄지 입구 안 0.0002(i03 은 0.97 — 사용자 영상 판정상 입구 안 엄지 파지라 좋은 오른팔 정책이 아니라고 grasping 세션이 알림). 알려진 결함: 엄지 대향 낮음(0.22), 네 손가락 손끝 파지(첫마디 0).

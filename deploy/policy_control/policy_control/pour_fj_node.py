@@ -465,6 +465,9 @@ def main(argv=None, family: str = "pour_fj") -> int:
             executor.shutdown()
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
+    except Exception as exc:                      # SIGTERM 으로 컨텍스트가 먼저 닫힌 뒤 타이머가 한 번 더 발행하면 RCLError — 정상 종료
+        if rclpy.ok() or "context is invalid" not in str(exc):
+            raise
     finally:
         if node is not None:
             node.destroy_node()

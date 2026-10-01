@@ -623,6 +623,15 @@ def main(argv=None) -> int:
     ap.add_argument("--profile", type=Path, default=W.PROFILE_DEFAULT)
     ap.add_argument("--pd-config", type=Path, default=PD_CONFIG_DEFAULT)
     args = ap.parse_args(argv)
+    # 10.01: 기본값(--urdf · --contract · --profile · --env-yaml)은 DG5F 다. RH56F1 pd 설정만 주고 나머지를 빼먹으면 손 링크 이름이 같아
+    #   DG5F 세계로 그럴듯하게 검사한다(arm4090 실측: 우측 table_8 −0.86 cm '실패'). RH56F1 이면 넷 다 명시해야 한다.
+    if "rh56f1" in args.pd_config.name:
+        left_default = [f"--{k.replace('_', '-')}" for k, d in (("urdf", W.URDF_DEFAULT), ("contract", W.CONTRACT_DEFAULT),
+                                                                   ("profile", W.PROFILE_DEFAULT), ("env_yaml", W.ENV_YAML_DEFAULT))
+                        if getattr(args, k) == d]
+        if left_default:
+            raise SystemExit(f"✗ pd 설정이 RH56F1({args.pd_config.name})인데 {', '.join(left_default)} 이 DG5F 기본값이다 — "
+                             "RH56F1 자산 · 계약 · 프로필 · aglt 런 env.yaml 을 명시할 것(make_rh56f1_missions.py path_* 주석)")
     if args.step > CHECK_STEP + 1e-12:
         raise SystemExit(f"--step 은 {CHECK_STEP} rad 이하")
 
