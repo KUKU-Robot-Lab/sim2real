@@ -70,7 +70,7 @@ stages:
   - head_home
   skippable: true
   touches_real: true
-  title: 컵 자세(arm4090 FP++) — RealSense · FP++ 컨테이너(cup_big_s100) → /objects/cup_big_s100/pose (base). GPU VRAM 수 GB
+  title: 컵 자세(arm4090 FP++) — RealSense · FP++ 컨테이너(aglt_cup_s065) → /objects/aglt_cup_s065/pose (base). GPU VRAM 수 GB
 - id: drivers
   group: connect
   lane: rig
@@ -264,7 +264,7 @@ stages:
   lane: both
   skippable: true
   touches_real: true
-  blocked: 두 컵 구분 전 — 실기 인지는 컵 하나(cup_big_s100)만 낸다. 같은 빨간 컵 둘은 FP++ 가 못 가른다(색이 다른 컵 · 자리로 가르기 중 하나가 필요)
+  blocked: 두 컵 구분 전 — 실기 인지는 컵 하나(aglt_cup_s065)만 낸다. 같은 컵 둘은 FP++ 가 못 가른다(색이 다른 컵 · 자리로 가르기 중 하나가 필요)
   needs:
   - home_right
   - home_left
@@ -446,28 +446,28 @@ run:
     - python3
     - '{repo}/scripts/nodes/fpp_pose_rx.py'
     background: true
-  - note: 물체 자세 → base — arm4090 테이블 CAD 캘리브 외부 파라미터(+ depth z 보정). /objects/cup_big_s100/pose
+  - note: 물체 자세 → base — arm4090 테이블 CAD 캘리브 외부 파라미터(+ depth z 보정). /objects/aglt_cup_s065/pose
     argv:
     - python3
     - '{repo}/scripts/nodes/object_pose_node.py'
     - --objects
-    - cup_big_s100
+    - aglt_cup_s065
     - --camera-extrinsics
     - '{repo}/config/global_camera_extrinsics_arm4090.yaml'
     background: true
-  - note: 카메라 + FP++(cup_big_s100) 켜기 — 런처가 끝낼 때까지 최대 150 s, 실패하면 이 단계도 실패
+  - note: 카메라 + FP++(aglt_cup_s065) 켜기 — 런처가 끝낼 때까지 최대 150 s, 실패하면 이 단계도 실패
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
-    - cup_big_s100
+    - aglt_cup_s065
     - --wait
     - '150'
-  - note: ★컵 자세 확인 — 테이블 위 컵 원점 z ≈ 0.282(상판 0.205 + 원점 0.0773, ±5 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 인가(어긋나면 head_home 뒤 scripts/calib/table_cad_extrinsics.py)
+  - note: ★컵 자세 확인 — 테이블 위 컵 원점 z ≈ 0.265(상판 0.205 + 원점 0.0599, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 인가(어긋나면 head_home 뒤 scripts/calib/table_cad_extrinsics.py)
     argv:
     - bash
     - -lc
-    - timeout 5 ros2 topic echo --once /objects/cup_big_s100/pose geometry_msgs/msg/PoseStamped
+    - timeout 5 ros2 topic echo --once /objects/aglt_cup_s065/pose geometry_msgs/msg/PoseStamped
     manual: true
   policy_pourfj:
   - note: ★두 컵이 학습 배치(로봇 앞 x ≈ 0.38, y ≈ ∓0.16)에 서 있고 콘솔에 두 컵 자세가 들어오는가. 양팔 · 양손 주변이 비어 있는가. 정책은 팔을 스스로 움직이고 손가락을 쥔다 — 빈 컵만
@@ -521,7 +521,7 @@ run:
     stop:
     - policy_pourfj#1
   policy_aglt_right:
-  - note: ★[right] 컵이 학습 배치(로봇 앞 x ≈ 0.25, y ≈ −0.20 ± 0.1)에 서 있고 콘솔에 컵 자세(/objects/cup_big_s100/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가.
+  - note: ★[right] 컵이 학습 배치(로봇 앞 x ≈ 0.25, y ≈ −0.20 ± 0.1)에 서 있고 콘솔에 컵 자세(/objects/aglt_cup_s065/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가.
       정책은 팔을 스스로 움직이고 컵을 쥐어 든다 — 빈 컵만
     argv:
     - bash
@@ -544,7 +544,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/cup_big_s100/pose
+    - cup_topic:=/objects/aglt_cup_s065/pose
     - -p
     - max_episode_s:={policy:aglt_right.max_episode_s}
     background: true
@@ -585,7 +585,7 @@ run:
     stop:
     - policy_aglt_right#1
   policy_aglt_left:
-  - note: ★[left] 컵이 학습 배치(로봇 앞 x ≈ 0.25, y ≈ +0.20 ± 0.1)에 서 있고 콘솔에 컵 자세(/objects/cup_big_s100/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가.
+  - note: ★[left] 컵이 학습 배치(로봇 앞 x ≈ 0.25, y ≈ +0.20 ± 0.1)에 서 있고 콘솔에 컵 자세(/objects/aglt_cup_s065/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가.
       정책은 팔을 스스로 움직이고 컵을 쥐어 든다 — 빈 컵만
     argv:
     - bash
@@ -608,7 +608,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/cup_big_s100/pose
+    - cup_topic:=/objects/aglt_cup_s065/pose
     - -p
     - max_episode_s:={policy:aglt_left.max_episode_s}
     background: true

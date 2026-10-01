@@ -219,7 +219,7 @@ FAMILIES = {
                       errors=(PourFjNodeError, F.PourFjError, ValueError),
                       label=lambda c: f"arm {c.arm_mode} · hand obs order {c.hand_obs_order_source.split(':')[0]}"),
     "rh_aglt": Family(name="rh_aglt_node", schema=A.SCHEMA, load=A.load_contract, roles=A.ROLES,
-                      cups=(("arm", "cup_topic", "/objects/cup_big_s100/pose"),),
+                      cups=(("arm", "cup_topic", "/objects/aglt_cup_s065/pose"),),
                       meas=aglt_meas, chain=AgltChain, refusals=aglt_start_refusals, targets=aglt_target_arrays,
                       errors=(PourFjNodeError, A.RhAgltError, ValueError),
                       label=lambda c: f"{c.side().side} arm · goal +{c.goal_offset}"

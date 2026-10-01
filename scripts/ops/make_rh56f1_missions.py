@@ -9,8 +9,9 @@
 범위 = 손 연결 · 점검 · 한 축 방향 확인 · 팔 pd(무발행 → 발행) · 홈 · 두 컵 · 양팔 pour_fj 정책 · 정리.
 홈 = hdgp rh_aglt 시작 자세(09.29 사용자 "aglt 보면 home 자세를 수정했어"). 차렷 → 홈은 저장 경로(paths/home_rh56f1_*.npz,
 plan_home_path RRT · RH56F1 자산 충돌 검사 · 편 손/접은 손 둘 다)를 pd 로 재생한다 — 실기 · fake 같은 경로.
-★10.01 인지는 arm4090 안에서(docker FP++ · RealSense · 런처 --host local). 실기 컵은 하나(cup_big_s100) — 한 팔 rh_aglt 는
-/objects/cup_big_s100/pose 를 읽고, 두 컵이 필요한 양팔 pour_fj 는 막아 둔다(같은 빨간 컵 둘을 FP++ 가 못 가른다).
+★10.01 인지는 arm4090 안에서(docker FP++ · RealSense · 런처 --host local). 실기 컵은 하나(aglt_cup_s065 — rh_aglt 학습 컵
+shaker_closed_thick × 0.65 의 흰 출력물, 10.01 사용자) — 한 팔 rh_aglt 는 /objects/aglt_cup_s065/pose 를 읽고, 두 컵이 필요한
+양팔 pour_fj 는 막아 둔다(같은 컵 둘을 FP++ 가 못 가른다 — 색이 다른 두 컵이면 레지스트리 두 항목으로 풀린다).
 카메라 좌표는 고정 외부 파라미터(5090 홈 화면) — 머리를 head_home_rh56f1(5090 과 같은 화면)에 둔 뒤에만 맞다.
 
 실기와 fake 가 다른 것(그 밖은 같다):
@@ -34,7 +35,7 @@ PC = "{repo}/deploy/policy_control"
 PROBES = (("index_1", "0.3"), ("middle_1", "0.3"), ("ring_1", "0.3"), ("pinky_1", "0.3"),
           ("thumb_2", "0.15"), ("thumb_1", "-0.3"))
 #: 실기 컵 — FP++ 물체 하나. fake 는 학습 배치의 두 컵(cup_src · cup_rcv)
-REAL_CUP = "cup_big_s100"
+REAL_CUP = "aglt_cup_s065"
 #: arm4090 머리 카메라 외부 파라미터 — 테이블 CAD 캘리브(scripts/calib/table_cad_extrinsics.py, 10.01 기본 방법)
 CAMERA_EXTRINSICS = "config/global_camera_extrinsics_arm4090.yaml"
 HEADER = {
@@ -97,7 +98,7 @@ def _stages(kind: str) -> list[dict]:
              "title": f"[{s}] pd 해제(역블렌드 → JTC) → 이 팔의 pd 정지"},
         ]
     st.append({"id": "policy_pourfj", "group": "policy", "lane": "both", "skippable": True, "touches_real": real,
-               **({"blocked": f"두 컵 구분 전 — 실기 인지는 컵 하나({REAL_CUP})만 낸다. 같은 빨간 컵 둘은 FP++ 가 못 가른다"
+               **({"blocked": f"두 컵 구분 전 — 실기 인지는 컵 하나({REAL_CUP})만 낸다. 같은 컵 둘은 FP++ 가 못 가른다"
                              "(색이 다른 컵 · 자리로 가르기 중 하나가 필요)"} if real else {}),
                "needs": ["home_right", "home_left", "cups", "hand_check_right", "hand_check_left"],
                "needs_why": "정책은 양팔이 pour_fj 시작 자세 · 손이 편 채 · 두 컵이 선 채로만 출발해 봤다. ★09.29 홈이 rh_aglt 시작 자세로 "
@@ -184,7 +185,7 @@ def _run(kind: str) -> dict:
               "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
         _cmd(f"카메라 + FP++({REAL_CUP}) 켜기 — 런처가 끝낼 때까지 최대 150 s, 실패하면 이 단계도 실패",
              ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", REAL_CUP, "--wait", "150"]),
-        _cmd(f"★컵 자세 확인 — 테이블 위 컵 원점 z ≈ 0.282(상판 0.205 + 원점 0.0773, ±5 mm) · 기울기 < 3° · "
+        _cmd(f"★컵 자세 확인 — 테이블 위 컵 원점 z ≈ 0.265(상판 0.205 + 원점 0.0599, ±8 mm) · 기울기 < 3° · "
              f"x 0.1~0.4 · |y| 0.1~0.3 인가(어긋나면 head_home 뒤 scripts/calib/table_cad_extrinsics.py)",
              ["bash", "-lc", f"timeout 5 ros2 topic echo --once /objects/{REAL_CUP}/pose geometry_msgs/msg/PoseStamped"],
              manual=True),
