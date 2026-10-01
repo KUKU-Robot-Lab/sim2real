@@ -317,9 +317,9 @@ def mission(kind: str) -> dict:
         "pourfj_both": "deploy/policies/both_rh_pourfj_f01/pour_fj_contract.json",
         "robot_bi": f"deploy/policy_control/config/robots/rh56f1_bi_{robot}.yaml",
         # 한 팔 rh_aglt 정책(첫 화면의 '오른팔 · 왼팔' 자리가 바꾼다) — 09.30
-        # 오른팔 = 좌 i05 ep3800 거울(09.30 사용자 — i03 은 엄지를 입구 안에 넣는 파지라 hold)
-        "aglt_right": "deploy/policies/right_rh_aglt_mirror_l5/rh_aglt_contract.json",
-        "aglt_left": "deploy/policies/left_rh_aglt_i05/rh_aglt_contract.json",
+        # 10.01 사용자: 기본 = iter_10 ②(실측 지연 적응) i10d 좌우. 이전 기본은 우 mirror_l5 · 좌 i05(09.30).
+        "aglt_right": "deploy/policies/right_rh_aglt_i10d/rh_aglt_contract.json",
+        "aglt_left": "deploy/policies/left_rh_aglt_i10d/rh_aglt_contract.json",
     }
     if real:
         arts["rh56f1_ports"] = "deploy/policy_control/config/rh56f1_ports.yaml"

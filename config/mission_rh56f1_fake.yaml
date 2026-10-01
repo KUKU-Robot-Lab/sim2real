@@ -11,8 +11,8 @@ artifacts:
   path_left: deploy/policy_control/paths/home_rh56f1_left.npz
   pourfj_both: deploy/policies/both_rh_pourfj_f01/pour_fj_contract.json
   robot_bi: deploy/policy_control/config/robots/rh56f1_bi_fake.yaml
-  aglt_right: deploy/policies/right_rh_aglt_mirror_l5/rh_aglt_contract.json
-  aglt_left: deploy/policies/left_rh_aglt_i05/rh_aglt_contract.json
+  aglt_right: deploy/policies/right_rh_aglt_i10d/rh_aglt_contract.json
+  aglt_left: deploy/policies/left_rh_aglt_i10d/rh_aglt_contract.json
 checkpoints: {}
 groups:
 - id: check
