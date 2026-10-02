@@ -95,6 +95,7 @@ static uint64_t mono_ns(void) {
 
 typedef struct {
   int commanded;           /* 첫 각도 명령을 받았는가 */
+  int hold_enable;         /* --op-enable: 명령 전(hold)에도 ENABLE_SET = enable_value (목표 = 지금 각도) */
   int enable_value;        /* 명령 중 ENABLE_SET 값 */
   int16_t target[6], force[6], speed[6];
 } ctl_t;
@@ -104,7 +105,7 @@ static void hold(ctl_t *c, const int16_t *in) {
 }
 
 static void write_outputs(const ctl_t *c, int16_t *out) {
-  out[OUT_ENABLE] = (int16_t)(c->commanded ? c->enable_value : 0);
+  out[OUT_ENABLE] = (int16_t)((c->commanded || c->hold_enable) ? c->enable_value : 0);
   for (int i = 0; i < 6; i++) {
     out[OUT_ANGLE + i] = c->target[i];
     out[OUT_FORCE + i] = c->force[i];
@@ -152,6 +153,26 @@ static void request_al(uint16 state) {
   ec_FPWR(ec_slave[1].configadr, ECT_REG_ALCTL, sizeof(v), &v, EC_TIMEOUTRET);
 }
 
+/* OP 가 안 될 때 ESC 레지스터를 본다(ET1100/ESC 데이터시트 주소) — 읽기만 */
+static void dump_esc(void) {
+  static const struct { uint16 adr, len; const char *name; } R[] = {
+      {0x0110, 2, "DL status"},       {0x0130, 2, "AL status"},       {0x0134, 2, "AL code"},
+      {0x0220, 4, "AL event"},        {0x0810, 8, "SM2(start,len,ctl,st,act,pdi)"},
+      {0x0818, 8, "SM3(start,len,ctl,st,act,pdi)"}, {0x0400, 2, "WD divider"}, {0x0410, 2, "WD PDI time"},
+      {0x0420, 2, "WD SM time"},      {0x0440, 2, "WD SM status"},    {0x0442, 2, "WD SM counter"},
+      {0x0981, 1, "DC activation"},   {0x0980, 1, "DC cyclic unit"}};
+  uint8 buf[8];
+  printf("[master] ESC 레지스터:");
+  for (unsigned i = 0; i < sizeof(R) / sizeof(R[0]); i++) {
+    memset(buf, 0, sizeof(buf));
+    int w = ec_FPRD(ec_slave[1].configadr, R[i].adr, R[i].len, buf, EC_TIMEOUTRET);
+    printf(" | %s 0x%04x=", R[i].name, R[i].adr);
+    if (w <= 0) { printf("(못 읽음)"); continue; }
+    for (int k = 0; k < R[i].len; k++) printf("%02x", buf[k]);
+  }
+  printf("\n");
+}
+
 static int open_sock(const char *path) {
   int fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
   if (fd < 0) return -1;
@@ -164,17 +185,19 @@ static int open_sock(const char *path) {
 
 static void usage(const char *p) {
   fprintf(stderr, "usage: %s --ifname IF --master-sock P --node-sock P [--hz 1000] [--state-hz 100] [--speed 2000] "
-                  "[--force 600] [--enable-value 1] [--hb-timeout-ms 500] [--no-op]\n", p);
+                  "[--force 600] [--enable-value 1] [--hb-timeout-ms 500] [--no-op] [--op-enable] [--sync-type N] [--op-timeout-ms 3000]\n", p);
 }
 
 int main(int argc, char **argv) {
   const char *ifname = NULL, *msock = NULL, *nsock = NULL;
   double hz = 1000, state_hz = 100;
   int speed = 2000, force = 600, enable_value = 1, hb_timeout_ms = 500, no_op = 0;
+  int op_enable = 0, sync_type = -1, op_timeout_ms = 3000;   /* OP 실험 손잡이(기본 끔) */
   static struct option opts[] = {{"ifname", 1, 0, 'i'}, {"master-sock", 1, 0, 'm'}, {"node-sock", 1, 0, 'n'},
                                  {"hz", 1, 0, 'h'},     {"state-hz", 1, 0, 's'},    {"speed", 1, 0, 'v'},
                                  {"force", 1, 0, 'f'},  {"enable-value", 1, 0, 'e'}, {"hb-timeout-ms", 1, 0, 't'},
-                                 {"no-op", 0, 0, 'o'},  {0, 0, 0, 0}};
+                                 {"no-op", 0, 0, 'o'},  {"op-enable", 0, 0, 'E'}, {"sync-type", 1, 0, 'y'},
+                                 {"op-timeout-ms", 1, 0, 'T'}, {0, 0, 0, 0}};
   for (int c; (c = getopt_long(argc, argv, "", opts, NULL)) != -1;) {
     switch (c) {
       case 'i': ifname = optarg; break;
@@ -187,6 +210,9 @@ int main(int argc, char **argv) {
       case 'e': enable_value = atoi(optarg); break;
       case 't': hb_timeout_ms = atoi(optarg); break;
       case 'o': no_op = 1; break;
+      case 'E': op_enable = 1; break;
+      case 'y': sync_type = atoi(optarg); break;
+      case 'T': op_timeout_ms = atoi(optarg); break;
       default: usage(argv[0]); return 2;
     }
   }
@@ -209,6 +235,12 @@ int main(int argc, char **argv) {
   if (ec_config_init(FALSE) != 1) { printf("[master] ✗ slave %d 개(1 이어야 한다 — 손 하나 · NIC 하나)\n", ec_slavecount); goto out_ec; }
   if (ec_slave[1].eep_id != EXPECT_ID) { printf("[master] ✗ slave ID 0x%x ≠ RH56F1 0x%x\n", ec_slave[1].eep_id, EXPECT_ID); goto out_ec; }
   ec_slave[1].CoEdetails &= ~ECT_COEDET_SDOCA;
+  if (sync_type >= 0) {   /* 0x1C32/0x1C33:01 Synchronization Type — PREOP 에서 SDO 로 */
+    uint16 v = (uint16)sync_type;
+    int w1 = ec_SDOwrite(1, 0x1C32, 0x01, FALSE, sizeof(v), &v, EC_TIMEOUTRXM);
+    int w2 = ec_SDOwrite(1, 0x1C33, 0x01, FALSE, sizeof(v), &v, EC_TIMEOUTRXM);
+    printf("[master] sync type %d 쓰기 1C32 %s · 1C33 %s\n", sync_type, w1 > 0 ? "ok" : "실패", w2 > 0 ? "ok" : "실패");
+  }
   ec_config_map(&IOmap);
   ec_configdc();   /* SOEM simple_test 와 같은 순서(매뉴얼: DC 동기 모드는 없다 — SYNC 는 켜지 않는다) */
   if (ec_slave[1].Obytes != N_OUT * 2 || ec_slave[1].Ibytes != N_IN * 2) {
@@ -223,7 +255,7 @@ int main(int argc, char **argv) {
   }
   int16_t *in = (int16_t *)ec_slave[1].inputs, *out = (int16_t *)ec_slave[1].outputs;
   int expected = ec_group[0].outputsWKC * 2 + ec_group[0].inputsWKC;
-  ctl_t c = {.commanded = 0, .enable_value = enable_value};
+  ctl_t c = {.commanded = 0, .hold_enable = op_enable, .enable_value = enable_value};
   for (int i = 0; i < 6; i++) { c.force[i] = (int16_t)clampi(force, 0, FORCE_MAX); c.speed[i] = (int16_t)clampi(speed, 0, SPEED_MAX); }
   memset(out, 0, N_OUT * 2);
   /* 입력이 차도록 몇 주기 돌린 뒤 hold 목표를 잡는다 */
@@ -302,8 +334,11 @@ int main(int argc, char **argv) {
         if (al_now & EC_STATE_ERROR) {
           request_al((al_now & 0x0F) | EC_STATE_ACK);
           op_req_t = 0;
-        } else if (op_req_t == 0 || t0 - op_req_t > 3000000000ull) {
-          if (op_req_t) printf("[master] ⚠ OP 요청 3 s 지남(AL 0x%02x · code 0x%04x) — 다시 요청\n", al_now, al_code);
+        } else if (op_req_t == 0 || t0 - op_req_t > (uint64_t)op_timeout_ms * 1000000ull) {
+          if (op_req_t) {
+            printf("[master] ⚠ OP 요청 %d ms 지남(AL 0x%02x · code 0x%04x) — 다시 요청\n", op_timeout_ms, al_now, al_code);
+            dump_esc();
+          }
           request_al(EC_STATE_OPERATIONAL);
           op_req_t = t0;
         }

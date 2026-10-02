@@ -152,8 +152,9 @@ def test_master_source_keeps_the_safety_rules():
     src = MASTER_C.read_text()
     assert "PR_SET_PDEATHSIG" in src                              # 노드가 죽으면 같이 끝난다
     assert "if (!c.commanded) hold(&c, in);" in src                # 첫 명령 전 · 노드 끊김 · 정지 = 제자리
-    assert "out[OUT_ENABLE] = (int16_t)(c->commanded ? c->enable_value : 0);" in src
+    assert "out[OUT_ENABLE] = (int16_t)((c->commanded || c->hold_enable) ? c->enable_value : 0);" in src
+    assert "int op_enable = 0, sync_type = -1" in src                # 실험 손잡이는 기본 끔
     assert "ECT_COEDET_SDOCA" in src and "EXPECT_ID 0x9252" in src
     assert "if (v < 0) v = c->commanded ? c->target[i] : in[IN_ANGLE + i];" in src
     # 10.02: 요청 값을 상태 변수에 덮지 않는다 · OP 는 한 번 요청하고 3 s 기다린다
-    assert "ec_slave[1].state = EC_STATE_OPERATIONAL" not in src and "t0 - op_req_t > 3000000000ull" in src
+    assert "ec_slave[1].state = EC_STATE_OPERATIONAL" not in src and "t0 - op_req_t > (uint64_t)op_timeout_ms * 1000000ull" in src
