@@ -137,6 +137,21 @@ static void apply_cmd(ctl_t *c, const cmd_msg *m, const int16_t *in) {
   }
 }
 
+/* AL 상태 · 코드를 slave 1 에서 직접 읽고 쓴다. ec_slave[].state 를 요청 값으로 덮지 않는다
+ * (10.02: 덮어쓴 값이 상태로 나가 OP 로 오판했고, 0.1 s 마다 OP 를 다시 요청해 전이가 끝나지 못했다). */
+static uint16 read_al(uint16 *code) {
+  uint16 st = 0, cd = 0;
+  if (ec_FPRD(ec_slave[1].configadr, ECT_REG_ALSTAT, sizeof(st), &st, EC_TIMEOUTRET) <= 0) return 0xFFFF;
+  ec_FPRD(ec_slave[1].configadr, ECT_REG_ALSTATCODE, sizeof(cd), &cd, EC_TIMEOUTRET);
+  *code = etohs(cd);
+  return etohs(st);
+}
+
+static void request_al(uint16 state) {
+  uint16 v = htoes(state);
+  ec_FPWR(ec_slave[1].configadr, ECT_REG_ALCTL, sizeof(v), &v, EC_TIMEOUTRET);
+}
+
 static int open_sock(const char *path) {
   int fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
   if (fd < 0) return -1;
@@ -195,6 +210,7 @@ int main(int argc, char **argv) {
   if (ec_slave[1].eep_id != EXPECT_ID) { printf("[master] ✗ slave ID 0x%x ≠ RH56F1 0x%x\n", ec_slave[1].eep_id, EXPECT_ID); goto out_ec; }
   ec_slave[1].CoEdetails &= ~ECT_COEDET_SDOCA;
   ec_config_map(&IOmap);
+  ec_configdc();   /* SOEM simple_test 와 같은 순서(매뉴얼: DC 동기 모드는 없다 — SYNC 는 켜지 않는다) */
   if (ec_slave[1].Obytes != N_OUT * 2 || ec_slave[1].Ibytes != N_IN * 2) {
     printf("[master] ✗ PDO 크기 출력 %d · 입력 %d B (기대 %d · %d)\n", ec_slave[1].Obytes, ec_slave[1].Ibytes, N_OUT * 2, N_IN * 2);
     goto out_init;
@@ -216,7 +232,9 @@ int main(int argc, char **argv) {
   write_outputs(&c, out);
   printf("[master] SAFE_OP · %s · 출력 %d B · 입력 %d B · %.0f Hz · 상태 %.0f Hz · 속도 %d · 힘 %d · %s\n", ifname,
          ec_slave[1].Obytes, ec_slave[1].Ibytes, hz, state_hz, speed, force, no_op ? "--no-op(SAFE_OP 유지)" : "OP 요청");
-  if (!no_op) { ec_slave[0].state = EC_STATE_OPERATIONAL; ec_writestate(0); }
+  uint16 al_code = 0, al_now = read_al(&al_code);
+  uint64_t op_req_t = 0;
+  if (!no_op) { request_al(EC_STATE_OPERATIONAL); op_req_t = mono_ns(); }
 
   const long period = (long)(1e9 / hz);
   const int state_every = (int)(hz / state_hz + 0.5);
@@ -270,23 +288,30 @@ int main(int argc, char **argv) {
     }
     cycles++;
 
-    if (cycles % 100 == 0) {   /* 상태 확인 · OP 복구 */
-      ec_readstate();
-      int op = ec_slave[1].state == EC_STATE_OPERATIONAL;
-      if (op != was_op) { printf("[master] %s (state 0x%02x)\n", op ? "OP" : "OP 아님", ec_slave[1].state); was_op = op; }
-      if (!no_op && !op && stop_left < 0) {
-        if (ec_slave[1].state == EC_STATE_SAFE_OP + EC_STATE_ERROR) {
-          ec_slave[1].state = EC_STATE_SAFE_OP + EC_STATE_ACK;
-          ec_writestate(1);
-        } else if (ec_slave[1].state == EC_STATE_SAFE_OP) {
-          ec_slave[1].state = EC_STATE_OPERATIONAL;
-          ec_writestate(1);
+    if (cycles % 100 == 0) {   /* 상태 확인 · OP 요청(한 번 요청하고 기다린다 — 오류 · 3 s 초과 때만 다시) */
+      uint16 code = 0, now = read_al(&code);
+      if (now != 0xFFFF) {
+        if (now != al_now || code != al_code)
+          printf("[master] AL 0x%02x → 0x%02x · code 0x%04x %s\n", al_now, now, code, code ? ec_ALstatuscode2string(code) : "");
+        al_now = now;
+        al_code = code;
+      }
+      int op = (al_now & 0x0F) == EC_STATE_OPERATIONAL && !(al_now & EC_STATE_ERROR);
+      if (op != was_op) { printf("[master] %s\n", op ? "OP" : "OP 아님"); was_op = op; }
+      if (!no_op && !op && stop_left < 0 && al_now != 0xFFFF) {
+        if (al_now & EC_STATE_ERROR) {
+          request_al((al_now & 0x0F) | EC_STATE_ACK);
+          op_req_t = 0;
+        } else if (op_req_t == 0 || t0 - op_req_t > 3000000000ull) {
+          if (op_req_t) printf("[master] ⚠ OP 요청 3 s 지남(AL 0x%02x · code 0x%04x) — 다시 요청\n", al_now, al_code);
+          request_al(EC_STATE_OPERATIONAL);
+          op_req_t = t0;
         }
       }
     }
     if (cycles % state_every == 0) {
-      state_msg s = {.magic = STATE_MAGIC, .seq = seq++, .t_ns = t1, .al_state = ec_slave[1].state,
-                     .al_code = ec_slave[1].ALstatuscode, .wkc_bad = wkc_bad, .cycles = cycles,
+      state_msg s = {.magic = STATE_MAGIC, .seq = seq++, .t_ns = t1, .al_state = al_now,
+                     .al_code = al_code, .wkc_bad = wkc_bad, .cycles = cycles,
                      .rtt_max_us = rtt_max, .late_max_us = late_max};
       s.flags = (was_op ? FLAG_OP : 0) | (out[OUT_ENABLE] ? FLAG_ENABLED : 0) | (c.commanded ? FLAG_COMMANDED : 0) |
                 (node_ok ? FLAG_NODE_OK : 0) | (stop_left >= 0 ? FLAG_STOPPING : 0);

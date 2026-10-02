@@ -155,3 +155,5 @@ def test_master_source_keeps_the_safety_rules():
     assert "out[OUT_ENABLE] = (int16_t)(c->commanded ? c->enable_value : 0);" in src
     assert "ECT_COEDET_SDOCA" in src and "EXPECT_ID 0x9252" in src
     assert "if (v < 0) v = c->commanded ? c->target[i] : in[IN_ANGLE + i];" in src
+    # 10.02: 요청 값을 상태 변수에 덮지 않는다 · OP 는 한 번 요청하고 3 s 기다린다
+    assert "ec_slave[1].state = EC_STATE_OPERATIONAL" not in src and "t0 - op_req_t > 3000000000ull" in src
