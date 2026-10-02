@@ -64,6 +64,10 @@ def _stages(kind: str) -> list[dict]:
          "touches_real": real,
          "title": (f"컵 자세(arm4090 FP++) — RealSense · FP++ 컨테이너({REAL_CUP}) → /objects/{REAL_CUP}/pose (base). GPU VRAM 수 GB" if real else
                    "fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채")},
+        {"id": "cup_holders", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
+         "touches_real": real,
+         "title": ("컵홀더 자세(마커 ID 0·1·2) — RealSense 컬러 → /objects/cup_holder_{0,1,2}/pose (base) · /cup_holders/status. "
+                   "로봇은 움직이지 않는다. CPU 만" if real else "fake — 카메라 없음(실기 순서를 맞추려고 둔 자리)")},
         {"id": "drivers", "group": "connect", "lane": "rig", "needs": ["preflight"],
          "title": ("모터 전원 → CAN ×2 → 팔 브링업 → CAN 응답 확인 (토크는 들어가지만 팔은 제자리)" if real else
                    "fake 플랜트 — 양팔 MockArm(rate) · controller_manager 스텁 (손은 손 창에서 따로)"),
@@ -160,13 +164,26 @@ def _run(kind: str) -> dict:
                  + [f"{p}_{s}#{i}" for s in SIDES for p, i in (("pd_load", 0), ("pd_arm", 1))]),
             *([_cmd("카메라 · FP++ 내리기 — 런처가 없으면 이 PC 에서 직접 내린다",
                     ["python3", "{repo}/scripts/ops/perception_ctl.py", "stop", "--camera", "--host", "local", "--wait", "60"]),
-               _cmd("인지 런처 · 자세 수신기 · 물체 자세 노드 정지", stop=["cups#1", "cups#2", "cups#3"])] if real else []),
+               _cmd("인지 런처 · 자세 수신기 · 물체 자세 노드 · 컵홀더 노드 정지",
+                    stop=["cups#1", "cups#2", "cups#3", "cup_holders#2"])] if real else []),
             _cmd("손 상태 노드 · 손 드라이버 정지 — 손가락은 마지막 자세에서 멈춘다(벤더 펌웨어가 잡는다)",
                  stop=[f"hand_{s}#{i}" for s in SIDES for i in ((2, 1) if real else (1, 0))]),
             _cmd("★팔 브링업 정지 — 모든 팔 모터가 꺼진다(받침으로 내려앉는다)" if real else "fake 플랜트 정지",
                  stop=["drivers#3" if real else "drivers#0"]),
         ],
     }
+    run["cup_holders"] = [
+        _cmd("★머리가 기준자세인가(head_home 을 했는가 — 외부 파라미터가 그 자세에서만 맞다) · 홀더 세 개가 상판 위에 서 있고 "
+             "-x 면 마커가 손 · 컵에 가리지 않는가", ["bash", "-lc", "true"], manual=True),
+        _cmd("카메라(RealSense) 켜기 — 이미 떠 있으면 그대로(cups 단계와 같이 써도 된다)",
+             ["bash", "{repo}/scripts/vision/camera_up.sh"]),
+        _cmd("컵홀더 자세 노드 — ArUco → 직전 자세 추적(0.2 s) → 놓친 id 만 무늬 전체 탐색(첫 장 ~6 s). "
+             "x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 config/cup_holder_poses_arm4090.yaml 을 갱신",
+             ["python3", "{repo}/scripts/nodes/cup_holder_pose_node.py", "--write"], background=True),
+        _cmd("★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.39 부근) · y 간격 ~0.12 · stable ✓ 인가 "
+             "(어긋나면 head_home 뒤 scripts/calib/table_cad_extrinsics.py · 겹친 영상은 scripts/calib/cup_holder_pose.py --png)",
+             ["bash", "-lc", "timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String"], manual=True),
+    ] if real else [_cmd("fake — 카메라 없음", ["bash", "-lc", "true"])]
     run["head_home"] = [
         _cmd("머리 기준자세 + I 게인(RAM — 전원을 끄면 사라진다) — arm4090 머리는 5090 과 숫자가 다르다(config/head_home_rh56f1.yaml)",
              ["python3", "{repo}/scripts/head_home.py", "--config", "{repo}/config/head_home_rh56f1.yaml"],

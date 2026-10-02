@@ -252,3 +252,20 @@ def test_the_rh56f1_robot_offers_rh_aglt_for_each_arm():
     (rh,) = [r for r in RB.scan(REPO / "deploy/s2r_console/robots")[0] if r.id == "openarm_rh56f1"]
     assert rh.slots["right"] == "aglt_right" and rh.slots["left"] == "aglt_left"
     assert RB.slot_contracts("aglt_right") == ("rh_aglt_contract.json",)
+
+
+def test_real_cup_holders_run_the_marker_node_after_the_head_home_and_shutdown_stops_it():
+    """10.02 사용자: 컵홀더 마커 자동 추정. 카메라만 켜고(로봇 무동작) 노드를 배경으로, 머리 기준자세가 먼저."""
+    by = {s.id: s for s in REAL.stages}
+    assert by["cup_holders"].needs == ("head_home",)
+    cmds = _cmds(REAL, REAL_BOOK, "cup_holders")
+    argv = [" ".join(c.argv) for c in cmds]
+    assert any("scripts/vision/camera_up.sh" in a for a in argv)
+    bg = [c for c in cmds if c.background]
+    assert len(bg) == 1 and "cup_holder_pose_node.py --write" in " ".join(bg[0].argv)
+    assert cmds.index(bg[0]) == 2                                   # shutdown 의 cup_holders#2
+    assert cmds[0].manual and cmds[-1].manual and "/cup_holders/status" in " ".join(cmds[-1].argv)
+    stops = {x for c in _cmds(REAL, REAL_BOOK, "shutdown") for x in c.stop}
+    assert "cup_holders#2" in stops
+    fake = {s.id for s in FAKE.stages}
+    assert "cup_holders" in fake and not any(c.background for c in _cmds(FAKE, FAKE_BOOK, "cup_holders"))

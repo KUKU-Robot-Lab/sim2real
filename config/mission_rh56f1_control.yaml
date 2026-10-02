@@ -71,6 +71,14 @@ stages:
   skippable: true
   touches_real: true
   title: 컵 자세(arm4090 FP++) — RealSense · FP++ 컨테이너(aglt_cup_s065) → /objects/aglt_cup_s065/pose (base). GPU VRAM 수 GB
+- id: cup_holders
+  group: connect
+  lane: both
+  needs:
+  - head_home
+  skippable: true
+  touches_real: true
+  title: 컵홀더 자세(마커 ID 0·1·2) — RealSense 컬러 → /objects/cup_holder_{0,1,2}/pose (base) · /cup_holders/status. 로봇은 움직이지 않는다. CPU 만
 - id: drivers
   group: connect
   lane: rig
@@ -404,11 +412,12 @@ run:
     - local
     - --wait
     - '60'
-  - note: 인지 런처 · 자세 수신기 · 물체 자세 노드 정지
+  - note: 인지 런처 · 자세 수신기 · 물체 자세 노드 · 컵홀더 노드 정지
     stop:
     - cups#1
     - cups#2
     - cups#3
+    - cup_holders#2
   - note: 손 상태 노드 · 손 드라이버 정지 — 손가락은 마지막 자세에서 멈춘다(벤더 펌웨어가 잡는다)
     stop:
     - hand_right#2
@@ -418,6 +427,31 @@ run:
   - note: ★팔 브링업 정지 — 모든 팔 모터가 꺼진다(받침으로 내려앉는다)
     stop:
     - drivers#3
+  cup_holders:
+  - note: ★머리가 기준자세인가(head_home 을 했는가 — 외부 파라미터가 그 자세에서만 맞다) · 홀더 세 개가 상판 위에 서 있고 -x 면 마커가 손 · 컵에 가리지 않는가
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 카메라(RealSense) 켜기 — 이미 떠 있으면 그대로(cups 단계와 같이 써도 된다)
+    argv:
+    - bash
+    - '{repo}/scripts/vision/camera_up.sh'
+  - note: 컵홀더 자세 노드 — ArUco → 직전 자세 추적(0.2 s) → 놓친 id 만 무늬 전체 탐색(첫 장 ~6 s). x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 config/cup_holder_poses_arm4090.yaml
+      을 갱신
+    argv:
+    - python3
+    - '{repo}/scripts/nodes/cup_holder_pose_node.py'
+    - --write
+    background: true
+  - note: '★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.39 부근) · y 간격 ~0.12 · stable ✓ 인가 (어긋나면 head_home 뒤 scripts/calib/table_cad_extrinsics.py · 겹친
+      영상은 scripts/calib/cup_holder_pose.py --png)'
+    argv:
+    - bash
+    - -lc
+    - timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String
+    manual: true
   head_home:
   - note: 머리 기준자세 + I 게인(RAM — 전원을 끄면 사라진다) — arm4090 머리는 5090 과 숫자가 다르다(config/head_home_rh56f1.yaml)
     argv:

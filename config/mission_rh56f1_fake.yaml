@@ -68,6 +68,13 @@ stages:
   - head_home
   skippable: true
   title: fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채
+- id: cup_holders
+  group: connect
+  lane: both
+  needs:
+  - head_home
+  skippable: true
+  title: fake — 카메라 없음(실기 순서를 맞추려고 둔 자리)
 - id: drivers
   group: connect
   lane: rig
@@ -355,6 +362,12 @@ run:
   - note: fake 플랜트 정지
     stop:
     - drivers#0
+  cup_holders:
+  - note: fake — 카메라 없음
+    argv:
+    - bash
+    - -lc
+    - 'true'
   head_home:
   - note: fake — 머리 없음
     argv:
