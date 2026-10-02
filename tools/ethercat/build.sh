@@ -3,6 +3,9 @@
 set -e
 SOEM=${SOEM:-$HOME/rl_ws/SOEM}
 cd "$(dirname "$0")"
-gcc -O2 -o ecat_rtt ecat_rtt.c -I"$SOEM/soem" -I"$SOEM/osal" -I"$SOEM/osal/linux" -I"$SOEM/oshw/linux" \
-    "$SOEM/build/libsoem.a" -lpthread -lrt
-echo "built $(pwd)/ecat_rtt — 다음: sudo setcap cap_net_raw,cap_net_admin=ep $(pwd)/ecat_rtt"
+INC=(-I"$SOEM/soem" -I"$SOEM/osal" -I"$SOEM/osal/linux" -I"$SOEM/oshw/linux")
+for t in ecat_rtt ecat_rh56f1; do
+  # 다시 빌드하면 파일이 바뀌어 setcap 이 풀린다 — 내용이 같으면 건드리지 않는다
+  gcc -O2 -Wall -o "$t.new" "$t.c" "${INC[@]}" "$SOEM/build/libsoem.a" -lpthread -lrt
+  if [ -f "$t" ] && cmp -s "$t" "$t.new"; then rm "$t.new"; echo "$t 그대로(setcap 유지)"; else mv "$t.new" "$t"; echo "built $(pwd)/$t — 다음: sudo setcap cap_net_raw,cap_net_admin=ep $(pwd)/$t"; fi
+done
