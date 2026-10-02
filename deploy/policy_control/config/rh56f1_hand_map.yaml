@@ -1,6 +1,6 @@
 # Inspire RH56F1 손 — sim 관절(rad) ↔ 벤더 드라이버 각도 레지스터(0.1°) 변환표. policy_control/rh56f1_map.py 가 읽는다.
 #
-# 드라이버: robot_control ros_ws/src/inspire_rh56f1 (rh56f1_driver). 손마다 개별 포트 · 프로세스 하나.
+# 드라이버: 10.02 부터 EtherCAT(policy_control rh56f1_ecat_node · 같은 토픽 · 같은 레지스터 단위). 옛 RS485 = robot_control rh56f1_driver.
 #   /hand_<side>/angle_set (SetAngle1 int32[6], -1 = 그 축은 움직이지 않는다) · /hand_<side>/angle_actual (GetAngleAct1)
 #   슬롯 0..5 = 새끼 · 약지 · 중지 · 검지 · 엄지 굽힘 · 엄지 회전 (벤더 매뉴얼 1040..1045 표)
 # sim: hdgp 자산 openarm_rh56f1_bi_rl — 구동 6(thumb_1 · thumb_2 · index_1 · middle_1 · ring_1 · pinky_1), 0 rad = 편 손.

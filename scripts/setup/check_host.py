@@ -227,10 +227,28 @@ def check_host_specific(rep: Report, robot: str) -> None:
         import yaml   # noqa: PLC0415
         ports = yaml.safe_load((SIM2REAL / "deploy/policy_control/config/rh56f1_ports.yaml").read_text())
         for side in ("right", "left"):
-            port = ports[side]["port"]
+            hand = ports[side]
+            if hand["transport"] == "ethercat":        # 10.02 — 손 하나 = NIC 하나
+                ifn = hand["ifname"]
+                oper = Path(f"/sys/class/net/{ifn}/operstate")
+                state = oper.read_text().strip() if oper.exists() else "없음"
+                (rep.ok if state == "up" else
+                 lambda w: rep.warn(w, "손 전원 · 랜 케이블, 이름이 다르면 config/rh56f1_ports.yaml 의 ifname 을 이 PC 값으로(ip -br link)"))(
+                    f"RH56F1 {side} ethercat {ifn} ({state})")
+                continue
+            port = hand["port"]
             (rep.ok if Path(port).exists() else
              lambda w: rep.warn(w, "손 연결 확인 후 config/rh56f1_ports.yaml 의 port 를 이 PC 값으로(ls -l /dev/serial/by-id)"))(
-                f"RH56F1 {side} {ports[side]['transport']} {port}")
+                f"RH56F1 {side} {hand['transport']} {port}")
+        if any(ports[s]["transport"] == "ethercat" for s in ("right", "left")):
+            master = SIM2REAL / (ports.get("ethercat") or {}).get("master", "tools/ethercat/rh56f1_ecat_master")
+            caps = subprocess.run(["getcap", str(master)], capture_output=True, text=True).stdout if master.exists() else ""
+            if not master.exists():
+                rep.miss(f"EtherCAT 마스터 {master}", "bash tools/ethercat/build.sh (SOEM ~/rl_ws/SOEM)")
+            elif "cap_net_raw" not in caps:
+                rep.miss(f"EtherCAT 마스터 setcap {master}", f"운영자: sudo setcap cap_net_raw,cap_net_admin=ep {master}")
+            else:
+                rep.ok(f"EtherCAT 마스터 {master.name} (cap_net_raw)")
         head = yaml.safe_load((SIM2REAL / "config/head_home_rh56f1.yaml").read_text())["port"]
         (rep.ok if Path(head).exists() else
          lambda w: rep.warn(w, "U2D2 연결 확인 — 머리 pan · tilt 는 허브에 따로 꽂는다(직렬 연결 금지, docs/HOST_arm4090.md)"))(

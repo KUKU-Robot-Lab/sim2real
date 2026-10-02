@@ -1,0 +1,312 @@
+/* RH56F1 손 EtherCAT 마스터 (SOEM v1.4.0) — 손 하나 · NIC 하나 · 프로세스 하나. 2026-10-02.
+ *
+ *   rh56f1_ecat_master --ifname enp6s0 --master-sock /tmp/x_m.sock --node-sock /tmp/x_n.sock
+ *                      [--hz 1000] [--state-hz 100] [--speed 2000] [--force 600] [--enable-value 1]
+ *                      [--hb-timeout-ms 500] [--no-op]
+ *
+ * ROS 는 이 프로세스에 없다 — setcap(cap_net_raw) 실행 파일은 LD_LIBRARY_PATH 를 무시해서 ROS 라이브러리를 못 읽는다.
+ * ROS 쪽은 policy_control/rh56f1_ecat_node.py 가 이 프로세스를 자식으로 띄우고 유닉스 데이터그램 소켓으로 주고받는다
+ * (형식은 policy_control/rh56f1_ecat.py 와 같아야 한다: 상태 RHS1 · 명령 RHC1).
+ *
+ * 안전 규칙
+ *  · 손이 첫 각도 명령을 받기 전(hold)에는 매 주기 ANGLESET = 지금 ANGLEACT(범위로 자름) · ENABLE_SET = 0 — 손이 제자리.
+ *  · 명령의 -1 은 그 축 직전 목표를 유지(직전이 없으면 지금 각도). 범위 밖 값은 매뉴얼 범위로 자른다.
+ *  · 노드 소식(명령 · 하트비트)이 hb-timeout 넘게 없으면 hold 로 되돌아간다. 3 s 넘게 없거나 부모가 죽으면 끝낸다.
+ *  · SIGTERM/SIGINT: hold 로 50 주기 → INIT → 종료.
+ *  · --no-op: SAFE_OP 에 머문다(손은 출력을 쓰지 않는다) — 상태만 읽는 점검용.
+ *
+ * AL 0x1E 우회: 펌웨어 PDO 매핑 항목이 UINT16 이라 SOEM complete access 를 끈다(tools/ethercat/ecat_rh56f1.c 주석).
+ */
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <getopt.h>
+#include <sched.h>
+#include <signal.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <sys/prctl.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <time.h>
+#include <unistd.h>
+#include "ethercat.h"
+
+#define N_IN 76
+#define N_OUT 19
+#define EXPECT_ID 0x9252
+#define STATE_MAGIC 0x31534852u /* "RHS1" */
+#define CMD_MAGIC 0x31434852u   /* "RHC1" */
+#define CMD_HEARTBEAT 0
+#define CMD_ANGLE 1
+#define CMD_FORCE 2
+#define CMD_SPEED 3
+#define CMD_ENABLE 4
+/* 입력 · 출력 PDO 안 위치 (매뉴얼 표 50) */
+#define IN_ANGLE 6
+#define OUT_ENABLE 0
+#define OUT_ANGLE 1
+#define OUT_FORCE 7
+#define OUT_SPEED 13
+#define FLAG_OP 0x01
+#define FLAG_ENABLED 0x02
+#define FLAG_COMMANDED 0x04
+#define FLAG_NODE_OK 0x08
+#define FLAG_STOPPING 0x10
+
+#pragma pack(push, 1)
+typedef struct {
+  uint32_t magic, seq;
+  uint64_t t_ns;
+  uint16_t al_state, al_code, flags, wkc_bad;
+  uint32_t cycles;
+  uint16_t rtt_max_us, late_max_us;
+  int16_t in[N_IN];
+  int16_t out[N_OUT];
+} state_msg;
+typedef struct {
+  uint32_t magic;
+  uint16_t kind, n;
+  int32_t v[6];
+} cmd_msg;
+#pragma pack(pop)
+_Static_assert(sizeof(state_msg) == 222, "state_msg 크기 — policy_control/rh56f1_ecat.py STATE_SIZE 와 같게");
+_Static_assert(sizeof(cmd_msg) == 32, "cmd_msg 크기 — rh56f1_ecat.py CMD_SIZE 와 같게");
+
+/* 매뉴얼 2.5.11 각도 범위: 새끼 · 약지 · 중지 · 검지 900~1740, 엄지 굽힘 1100~1350, 엄지 회전 600~1800 */
+static const int ANG_LO[6] = {900, 900, 900, 900, 1100, 600};
+static const int ANG_HI[6] = {1740, 1740, 1740, 1740, 1350, 1800};
+#define FORCE_MAX 1000 /* g, 매뉴얼 2.5.12 */
+#define SPEED_MAX 4000 /* 매뉴얼 2.5.13 */
+
+static volatile sig_atomic_t g_stop = 0;
+static char IOmap[4096];
+
+static void on_signal(int s) { (void)s; g_stop = 1; }
+static int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
+static uint64_t mono_ns(void) {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return (uint64_t)t.tv_sec * 1000000000ull + t.tv_nsec;
+}
+
+typedef struct {
+  int commanded;           /* 첫 각도 명령을 받았는가 */
+  int enable_value;        /* 명령 중 ENABLE_SET 값 */
+  int16_t target[6], force[6], speed[6];
+} ctl_t;
+
+static void hold(ctl_t *c, const int16_t *in) {
+  for (int i = 0; i < 6; i++) c->target[i] = (int16_t)clampi(in[IN_ANGLE + i], ANG_LO[i], ANG_HI[i]);
+}
+
+static void write_outputs(const ctl_t *c, int16_t *out) {
+  out[OUT_ENABLE] = (int16_t)(c->commanded ? c->enable_value : 0);
+  for (int i = 0; i < 6; i++) {
+    out[OUT_ANGLE + i] = c->target[i];
+    out[OUT_FORCE + i] = c->force[i];
+    out[OUT_SPEED + i] = c->speed[i];
+  }
+}
+
+static void apply_cmd(ctl_t *c, const cmd_msg *m, const int16_t *in) {
+  switch (m->kind) {
+    case CMD_ANGLE:
+      for (int i = 0; i < 6; i++) {
+        int v = m->v[i];
+        if (v < 0) v = c->commanded ? c->target[i] : in[IN_ANGLE + i];   /* -1 = 그 축은 둔다 */
+        c->target[i] = (int16_t)clampi(v, ANG_LO[i], ANG_HI[i]);
+      }
+      if (!c->commanded) printf("[master] 첫 각도 명령 — ENABLE_SET %d\n", c->enable_value);
+      c->commanded = 1;
+      break;
+    case CMD_FORCE:
+      for (int i = 0; i < 6; i++) if (m->v[i] >= 0) c->force[i] = (int16_t)clampi(m->v[i], 0, FORCE_MAX);
+      break;
+    case CMD_SPEED:
+      for (int i = 0; i < 6; i++) if (m->v[i] >= 0) c->speed[i] = (int16_t)clampi(m->v[i], 0, SPEED_MAX);
+      break;
+    case CMD_ENABLE:
+      c->enable_value = m->v[0];
+      break;
+    default:
+      break;
+  }
+}
+
+static int open_sock(const char *path) {
+  int fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+  if (fd < 0) return -1;
+  struct sockaddr_un a = {.sun_family = AF_UNIX};
+  strncpy(a.sun_path, path, sizeof(a.sun_path) - 1);
+  unlink(path);
+  if (bind(fd, (struct sockaddr *)&a, sizeof(a)) < 0) { close(fd); return -1; }
+  return fd;
+}
+
+static void usage(const char *p) {
+  fprintf(stderr, "usage: %s --ifname IF --master-sock P --node-sock P [--hz 1000] [--state-hz 100] [--speed 2000] "
+                  "[--force 600] [--enable-value 1] [--hb-timeout-ms 500] [--no-op]\n", p);
+}
+
+int main(int argc, char **argv) {
+  const char *ifname = NULL, *msock = NULL, *nsock = NULL;
+  double hz = 1000, state_hz = 100;
+  int speed = 2000, force = 600, enable_value = 1, hb_timeout_ms = 500, no_op = 0;
+  static struct option opts[] = {{"ifname", 1, 0, 'i'}, {"master-sock", 1, 0, 'm'}, {"node-sock", 1, 0, 'n'},
+                                 {"hz", 1, 0, 'h'},     {"state-hz", 1, 0, 's'},    {"speed", 1, 0, 'v'},
+                                 {"force", 1, 0, 'f'},  {"enable-value", 1, 0, 'e'}, {"hb-timeout-ms", 1, 0, 't'},
+                                 {"no-op", 0, 0, 'o'},  {0, 0, 0, 0}};
+  for (int c; (c = getopt_long(argc, argv, "", opts, NULL)) != -1;) {
+    switch (c) {
+      case 'i': ifname = optarg; break;
+      case 'm': msock = optarg; break;
+      case 'n': nsock = optarg; break;
+      case 'h': hz = atof(optarg); break;
+      case 's': state_hz = atof(optarg); break;
+      case 'v': speed = atoi(optarg); break;
+      case 'f': force = atoi(optarg); break;
+      case 'e': enable_value = atoi(optarg); break;
+      case 't': hb_timeout_ms = atoi(optarg); break;
+      case 'o': no_op = 1; break;
+      default: usage(argv[0]); return 2;
+    }
+  }
+  if (!ifname || !msock || !nsock || hz < 50 || hz > 4000 || state_hz <= 0 || state_hz > hz) { usage(argv[0]); return 2; }
+  setvbuf(stdout, NULL, _IOLBF, 0);
+  prctl(PR_SET_PDEATHSIG, SIGTERM);   /* 노드가 죽으면 같이 끝난다 */
+  signal(SIGTERM, on_signal);
+  signal(SIGINT, on_signal);
+  struct sched_param sp = {.sched_priority = 80};
+  if (sched_setscheduler(0, SCHED_FIFO, &sp) != 0) printf("[master] SCHED_FIFO 못 씀(%s) — 보통 우선순위로 돈다\n", strerror(errno));
+  mlockall(MCL_CURRENT | MCL_FUTURE);
+
+  int fd = open_sock(msock);
+  if (fd < 0) { printf("[master] ✗ 소켓 %s: %s\n", msock, strerror(errno)); return 1; }
+  struct sockaddr_un node = {.sun_family = AF_UNIX};
+  strncpy(node.sun_path, nsock, sizeof(node.sun_path) - 1);
+
+  int rc = 1;
+  if (!ec_init(ifname)) { printf("[master] ✗ ec_init(%s) — cap_net_raw(setcap) · 인터페이스 이름 확인\n", ifname); goto out_sock; }
+  if (ec_config_init(FALSE) != 1) { printf("[master] ✗ slave %d 개(1 이어야 한다 — 손 하나 · NIC 하나)\n", ec_slavecount); goto out_ec; }
+  if (ec_slave[1].eep_id != EXPECT_ID) { printf("[master] ✗ slave ID 0x%x ≠ RH56F1 0x%x\n", ec_slave[1].eep_id, EXPECT_ID); goto out_ec; }
+  ec_slave[1].CoEdetails &= ~ECT_COEDET_SDOCA;
+  ec_config_map(&IOmap);
+  if (ec_slave[1].Obytes != N_OUT * 2 || ec_slave[1].Ibytes != N_IN * 2) {
+    printf("[master] ✗ PDO 크기 출력 %d · 입력 %d B (기대 %d · %d)\n", ec_slave[1].Obytes, ec_slave[1].Ibytes, N_OUT * 2, N_IN * 2);
+    goto out_init;
+  }
+  ec_statecheck(0, EC_STATE_SAFE_OP, EC_TIMEOUTSTATE * 4);
+  if (ec_slave[1].state != EC_STATE_SAFE_OP) {
+    ec_readstate();
+    printf("[master] ✗ SAFE_OP 실패 AL 0x%04x %s\n", ec_slave[1].ALstatuscode, ec_ALstatuscode2string(ec_slave[1].ALstatuscode));
+    goto out_init;
+  }
+  int16_t *in = (int16_t *)ec_slave[1].inputs, *out = (int16_t *)ec_slave[1].outputs;
+  int expected = ec_group[0].outputsWKC * 2 + ec_group[0].inputsWKC;
+  ctl_t c = {.commanded = 0, .enable_value = enable_value};
+  for (int i = 0; i < 6; i++) { c.force[i] = (int16_t)clampi(force, 0, FORCE_MAX); c.speed[i] = (int16_t)clampi(speed, 0, SPEED_MAX); }
+  memset(out, 0, N_OUT * 2);
+  /* 입력이 차도록 몇 주기 돌린 뒤 hold 목표를 잡는다 */
+  for (int i = 0; i < 20; i++) { ec_send_processdata(); ec_receive_processdata(EC_TIMEOUTRET); usleep(1000); }
+  hold(&c, in);
+  write_outputs(&c, out);
+  printf("[master] SAFE_OP · %s · 출력 %d B · 입력 %d B · %.0f Hz · 상태 %.0f Hz · 속도 %d · 힘 %d · %s\n", ifname,
+         ec_slave[1].Obytes, ec_slave[1].Ibytes, hz, state_hz, speed, force, no_op ? "--no-op(SAFE_OP 유지)" : "OP 요청");
+  if (!no_op) { ec_slave[0].state = EC_STATE_OPERATIONAL; ec_writestate(0); }
+
+  const long period = (long)(1e9 / hz);
+  const int state_every = (int)(hz / state_hz + 0.5);
+  struct timespec next;
+  clock_gettime(CLOCK_MONOTONIC, &next);
+  uint64_t last_node = mono_ns(), started = last_node;
+  uint32_t cycles = 0, seq = 0;
+  uint16_t wkc_bad = 0, rtt_max = 0, late_max = 0;
+  int was_op = 0, node_ok = 0, stop_left = -1, consecutive_bad = 0;
+  for (;;) {
+    next.tv_nsec += period;
+    while (next.tv_nsec >= 1000000000L) { next.tv_nsec -= 1000000000L; next.tv_sec++; }
+    clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, NULL);
+    uint64_t t0 = mono_ns();
+    uint64_t want = (uint64_t)next.tv_sec * 1000000000ull + next.tv_nsec;
+    if (t0 > want) { uint64_t l = (t0 - want) / 1000; if (l > late_max) late_max = l > 65535 ? 65535 : (uint16_t)l; }
+
+    /* 노드 명령 */
+    cmd_msg m;
+    ssize_t r;
+    while ((r = recv(fd, &m, sizeof(m), 0)) > 0) {
+      if (r != sizeof(m) || m.magic != CMD_MAGIC) continue;
+      last_node = t0;
+      if (!node_ok) { node_ok = 1; printf("[master] 노드 연결\n"); }
+      if (stop_left < 0) apply_cmd(&c, &m, in);
+    }
+    uint64_t silent_ms = (t0 - last_node) / 1000000ull;
+    if (node_ok && silent_ms > (uint64_t)hb_timeout_ms) {
+      node_ok = 0;
+      if (c.commanded) printf("[master] ⚠ 노드 소식 %llu ms 없음 — hold\n", (unsigned long long)silent_ms);
+      c.commanded = 0;
+    }
+    if (silent_ms > 3000 && (t0 - started) > 3000000000ull && stop_left < 0) {
+      printf("[master] 노드 소식 3 s 없음 — 끝낸다\n");
+      g_stop = 1;
+    }
+    if (g_stop && stop_left < 0) { stop_left = 50; c.commanded = 0; printf("[master] 정지 — hold 후 INIT\n"); }
+    if (!c.commanded) hold(&c, in);
+    write_outputs(&c, out);
+
+    ec_send_processdata();
+    int wkc = ec_receive_processdata(EC_TIMEOUTRET);
+    uint64_t t1 = mono_ns();
+    uint64_t rtt = (t1 - t0) / 1000;
+    if (rtt > rtt_max) rtt_max = rtt > 65535 ? 65535 : (uint16_t)rtt;
+    if (wkc < expected) {
+      wkc_bad++;
+      if (++consecutive_bad == 100) printf("[master] ⚠ WKC %d < %d 가 100 주기 연속 — 케이블 · 손 전원\n", wkc, expected);
+    } else {
+      consecutive_bad = 0;
+    }
+    cycles++;
+
+    if (cycles % 100 == 0) {   /* 상태 확인 · OP 복구 */
+      ec_readstate();
+      int op = ec_slave[1].state == EC_STATE_OPERATIONAL;
+      if (op != was_op) { printf("[master] %s (state 0x%02x)\n", op ? "OP" : "OP 아님", ec_slave[1].state); was_op = op; }
+      if (!no_op && !op && stop_left < 0) {
+        if (ec_slave[1].state == EC_STATE_SAFE_OP + EC_STATE_ERROR) {
+          ec_slave[1].state = EC_STATE_SAFE_OP + EC_STATE_ACK;
+          ec_writestate(1);
+        } else if (ec_slave[1].state == EC_STATE_SAFE_OP) {
+          ec_slave[1].state = EC_STATE_OPERATIONAL;
+          ec_writestate(1);
+        }
+      }
+    }
+    if (cycles % state_every == 0) {
+      state_msg s = {.magic = STATE_MAGIC, .seq = seq++, .t_ns = t1, .al_state = ec_slave[1].state,
+                     .al_code = ec_slave[1].ALstatuscode, .wkc_bad = wkc_bad, .cycles = cycles,
+                     .rtt_max_us = rtt_max, .late_max_us = late_max};
+      s.flags = (was_op ? FLAG_OP : 0) | (out[OUT_ENABLE] ? FLAG_ENABLED : 0) | (c.commanded ? FLAG_COMMANDED : 0) |
+                (node_ok ? FLAG_NODE_OK : 0) | (stop_left >= 0 ? FLAG_STOPPING : 0);
+      memcpy(s.in, in, sizeof(s.in));
+      memcpy(s.out, out, sizeof(s.out));
+      sendto(fd, &s, sizeof(s), MSG_DONTWAIT, (struct sockaddr *)&node, sizeof(node));
+      wkc_bad = rtt_max = late_max = 0;
+    }
+    if (stop_left >= 0 && --stop_left <= 0) break;
+  }
+  rc = 0;
+out_init:
+  ec_slave[0].state = EC_STATE_INIT;
+  ec_writestate(0);
+  ec_statecheck(0, EC_STATE_INIT, EC_TIMEOUTSTATE);
+  printf("[master] INIT · 끝\n");
+out_ec:
+  ec_close();
+out_sock:
+  close(fd);
+  unlink(msock);
+  return rc;
+}

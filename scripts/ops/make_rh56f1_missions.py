@@ -249,11 +249,12 @@ def _run(kind: str) -> dict:
             _cmd("정책 노드 정지", stop=[f"policy_aglt_{s}#1"]),
         ]
     for s in SIDES:
-        hand = [_cmd(f"★[{s}] 손 포트 확인 — ls -l /dev/serial/by-id · 설정 deploy/policy_control/config/rh56f1_ports.yaml "
-                     "(transport rs485 | canfd · port · hand_id). 손 전원이 켜져 있는가. 드라이버는 시작할 때 쓰기를 하지 않는다",
-                     ["bash", "-lc", "ls -l /dev/serial/by-id 2>/dev/null; cat {repo}/deploy/policy_control/config/rh56f1_ports.yaml"],
-                     manual=True),
-                _cmd(f"[{s}] RH56F1 드라이버 — 읽기만 도는 벤더 노드(명령 토픽이 오기 전에는 쓰지 않는다)",
+        hand = [_cmd(f"★[{s}] 손 EtherCAT 확인 — 손 전원 · 랜 케이블(손 하나 = NIC 하나, 오른손 USB-C 랜 · 왼손 내장 랜 — "
+                     "deploy/policy_control/config/rh56f1_ports.yaml). 링크가 up 이고 마스터에 setcap 이 붙어 있는가",
+                     ["bash", "-lc", "ip -br link; getcap {repo}/tools/ethercat/rh56f1_ecat_master; "
+                                     "cat {repo}/deploy/policy_control/config/rh56f1_ports.yaml"], manual=True),
+                _cmd(f"[{s}] RH56F1 EtherCAT 드라이버 — 1 kHz 마스터 + ROS 노드(벤더와 같은 토픽). OP 로 올라가지만 첫 각도 "
+                     "명령 전에는 손이 제자리(목표 = 지금 각도 · ENABLE 0)",
                      ["python3", f"{PC}/tools/rh56f1_driver.py", "--side", s], background=True)] if real else [
                 _cmd(f"[{s}] fake RH56F1 손 — 벤더 드라이버와 같은 토픽 · 단위(편 손에서 시작)",
                      ["python3", "{repo}/scripts/fakes/fake_rh56f1_hand.py", "--side", s], background=True)]

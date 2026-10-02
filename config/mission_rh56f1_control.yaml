@@ -683,14 +683,14 @@ run:
     stop:
     - policy_aglt_left#1
   hand_right:
-  - note: ★[right] 손 포트 확인 — ls -l /dev/serial/by-id · 설정 deploy/policy_control/config/rh56f1_ports.yaml (transport rs485 | canfd · port · hand_id).
-      손 전원이 켜져 있는가. 드라이버는 시작할 때 쓰기를 하지 않는다
+  - note: ★[right] 손 EtherCAT 확인 — 손 전원 · 랜 케이블(손 하나 = NIC 하나, 오른손 USB-C 랜 · 왼손 내장 랜 — deploy/policy_control/config/rh56f1_ports.yaml). 링크가 up
+      이고 마스터에 setcap 이 붙어 있는가
     argv:
     - bash
     - -lc
-    - ls -l /dev/serial/by-id 2>/dev/null; cat {repo}/deploy/policy_control/config/rh56f1_ports.yaml
+    - ip -br link; getcap {repo}/tools/ethercat/rh56f1_ecat_master; cat {repo}/deploy/policy_control/config/rh56f1_ports.yaml
     manual: true
-  - note: '[right] RH56F1 드라이버 — 읽기만 도는 벤더 노드(명령 토픽이 오기 전에는 쓰지 않는다)'
+  - note: '[right] RH56F1 EtherCAT 드라이버 — 1 kHz 마스터 + ROS 노드(벤더와 같은 토픽). OP 로 올라가지만 첫 각도 명령 전에는 손이 제자리(목표 = 지금 각도 · ENABLE 0)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/rh56f1_driver.py'
@@ -1044,14 +1044,14 @@ run:
     stop:
     - pd_arm_right#1
   hand_left:
-  - note: ★[left] 손 포트 확인 — ls -l /dev/serial/by-id · 설정 deploy/policy_control/config/rh56f1_ports.yaml (transport rs485 | canfd · port · hand_id).
-      손 전원이 켜져 있는가. 드라이버는 시작할 때 쓰기를 하지 않는다
+  - note: ★[left] 손 EtherCAT 확인 — 손 전원 · 랜 케이블(손 하나 = NIC 하나, 오른손 USB-C 랜 · 왼손 내장 랜 — deploy/policy_control/config/rh56f1_ports.yaml). 링크가 up
+      이고 마스터에 setcap 이 붙어 있는가
     argv:
     - bash
     - -lc
-    - ls -l /dev/serial/by-id 2>/dev/null; cat {repo}/deploy/policy_control/config/rh56f1_ports.yaml
+    - ip -br link; getcap {repo}/tools/ethercat/rh56f1_ecat_master; cat {repo}/deploy/policy_control/config/rh56f1_ports.yaml
     manual: true
-  - note: '[left] RH56F1 드라이버 — 읽기만 도는 벤더 노드(명령 토픽이 오기 전에는 쓰지 않는다)'
+  - note: '[left] RH56F1 EtherCAT 드라이버 — 1 kHz 마스터 + ROS 노드(벤더와 같은 토픽). OP 로 올라가지만 첫 각도 명령 전에는 손이 제자리(목표 = 지금 각도 · ENABLE 0)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/rh56f1_driver.py'

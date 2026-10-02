@@ -30,9 +30,9 @@ def verdict(hmap: rh56f1_map.HandMap, side: str, reg: list[int] | None, names: l
     """문제 목록 — 비면 통과. 순수."""
     bad = []
     if reg is None:
-        return [f"/hand_{side}/angle_actual 이 안 온다 — 드라이버(rh56f1_driver)가 떠 있는가 · 포트 · Hand_ID"]
+        return [f"/hand_{side}/angle_actual 이 안 온다 — 드라이버(rh56f1_driver.py — EtherCAT 노드 · 마스터)가 떠 있는가 · 손 전원 · 랜 케이블"]
     if hz.get("angle", 0.0) < MIN_HZ:
-        bad.append(f"angle_actual {hz.get('angle', 0.0):.1f} Hz < {MIN_HZ:.0f} — 손이 응답하지 않는 틱이 있다(포트 · baud · Hand_ID)")
+        bad.append(f"angle_actual {hz.get('angle', 0.0):.1f} Hz < {MIN_HZ:.0f} — 손이 응답하지 않는 틱이 있다(/hand_{side}/ecat_status 의 WKC · OP 확인)")
     want = [""] * 6
     for a in hmap.axes:
         want[a.slot] = f"{side[0]}_hj_{a.name}"

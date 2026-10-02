@@ -103,15 +103,23 @@ def test_every_execute_flag_is_one_the_tool_takes():
 
 
 def test_the_driver_launcher_reads_the_port_file_and_refuses_one_port_for_two_hands():
+    """10.02: 손은 EtherCAT(손 하나 = NIC 하나). rs485 · canfd 는 벤더 드라이버 경로로 남는다."""
     import rh56f1_driver as D
     cfg = yaml.safe_load((PC / "config" / "rh56f1_ports.yaml").read_text())
-    argv = D.argv_for(cfg, "right")
-    assert argv[:4] == ["ros2", "launch", "rh56f1_driver", "rh56f1_right_driver.launch.py"]
-    assert f"port:={cfg['right']['port']}" in argv and f"transport:={cfg['right']['transport']}" in argv
-    with pytest.raises(ValueError, match="같은 포트"):
-        D.argv_for({"right": cfg["right"], "left": dict(cfg["left"], port=cfg["right"]["port"])}, "right")
+    assert cfg["right"]["transport"] == cfg["left"]["transport"] == "ethercat"
+    assert (cfg["right"]["ifname"], cfg["left"]["ifname"]) == ("enx00e04c6806e1", "enp6s0")
+    argv = D.argv_for(cfg, "right", "P.yaml")
+    assert argv[1].endswith("policy_control/rh56f1_ecat_node.py") and argv[2:] == ["--side", "right", "--ports", "P.yaml"]
+    assert D.argv_for(cfg, "left", "P.yaml", no_op=True)[-1] == "--no-op"
+    with pytest.raises(ValueError, match="같은 NIC"):
+        D.argv_for({"right": cfg["right"], "left": dict(cfg["left"], ifname=cfg["right"]["ifname"])}, "right")
     with pytest.raises(ValueError, match="transport"):
         D.argv_for({"right": dict(cfg["right"], transport="can"), "left": cfg["left"]}, "right")
+    rs = {"right": {"transport": "rs485", "port": "/dev/a", "baud": 115200, "hand_id": 1},
+          "left": {"transport": "rs485", "port": "/dev/b", "baud": 115200, "hand_id": 1}}
+    assert D.argv_for(rs, "right")[:4] == ["ros2", "launch", "rh56f1_driver", "rh56f1_right_driver.launch.py"]
+    with pytest.raises(ValueError, match="같은 포트"):
+        D.argv_for({"right": rs["right"], "left": dict(rs["left"], port="/dev/a")}, "right")
 
 
 def test_the_console_opens_the_rh56f1_fake_profile_with_its_robot_module(tmp_path, monkeypatch):

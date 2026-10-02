@@ -40,7 +40,8 @@ q*       = clip(q* + Δ, lo, hi)
 정책 노드 q*(rad, 60 Hz) ─ /policy_control/joint_target ─▶ pd_node rh56f1_angle 백엔드
    속도 상한 max_vel_track 2.1 rad/s(= sim 상한) · 한계 여유 · 측정값과의 거리 제한
    → rh56f1_hand_map.yaml 로 rad → 레지스터(끝점 선형, 엄지 두 축은 verified 전이라 −1 = 안 움직임)
-   → 바뀐 것만 · 최대 30 Hz · 1 s 마다 재전송 ─ /hand_<side>/angle_set ─▶ robot_control rh56f1_driver ─ RS485 ─▶ 손
+   → 바뀐 것만 · 최대 30 Hz · 1 s 마다 재전송 ─ /hand_<side>/angle_set ─▶ rh56f1_ecat_node ─ 유닉스 소켓 ─▶
+   rh56f1_ecat_master(SOEM, 1 kHz PDO) ─ EtherCAT ─▶ 손   (10.02 RS485 에서 바꿈 — 아래 'EtherCAT' 절)
 손 자체 설정(pd yaml hand.hw_*, 발행 모드에서 첫 명령 전 · 5 s 마다): speed_set 2000(= 무부하 전 행정 1 s) · force_set 600 g(벤더 기본)
 ```
 
@@ -94,3 +95,30 @@ q*       = clip(q* + Δ, lo, hi)
 - 달성 = 키포인트 최대거리 ≤ 0.02 m(tol_floor) 누적 10 스텝 + 지금 근처 + 쥠(엄지 AND 다른 손가락 촉각 > 1 N). 마지막 목표에는 머문다.
 - 예: `ros2 topic pub --once /policy_control/right/goal geometry_msgs/msg/Point "{x: 0.30, y: -0.15, z: 0.44}"` — 팔이 움직이는 입력이라 실기에서는 승인 뒤.
 
+
+## 7. EtherCAT (10.02 — RS485 대신, 정책 제어 포함)
+
+사용자 결정: RS485(115200 baud · 상태 50 Hz · 명령 최대 30 Hz)는 더 쓰지 않는다. 손 EtherCAT 포트는 하나뿐이라 **손 하나 = NIC 하나**
+(일반 스위치로 묶으면 0 slave + 브로드캐스트 폭주, 10.01). arm4090: 오른손 USB-C 랜 `enx00e04c6806e1` · 왼손 내장 랜 `enp6s0`.
+
+```
+pd · 정책 ─ /hand_<side>/angle_set · force_set · speed_set ─▶ rh56f1_ecat_node.py (ROS, 벤더와 같은 토픽 · 메시지)
+                                                                 │ 유닉스 데이터그램(명령 RHC1 · 상태 RHS1, policy_control/rh56f1_ecat.py)
+                                                                 ▼
+                         tools/ethercat/rh56f1_ecat_master (C · SOEM v1.4.0 · cap_net_raw · 1 kHz PDO) ─ EtherCAT ─▶ 손
+상태: 마스터 ─(state_hz 100)▶ 노드 ─▶ /hand_<side>/angle_actual · force_actual · current_actual · touch_data · ecat_status(JSON 1 Hz)
+```
+
+- 두 프로세스로 나눈 이유: setcap 실행 파일은 `LD_LIBRARY_PATH` 를 무시해 ROS 라이브러리를 못 읽는다. 노드가 마스터를 자식으로 띄우고,
+  마스터는 `PR_SET_PDEATHSIG` 로 노드와 같이 끝난다.
+- PDO(매뉴얼 §2.6 표 50): 입력 76 × INT16(위치 · 각도 · 힘 · 전류 · 오류 · 상태 · 온도 각 6 + 촉각), 출력 19 × INT16(ENABLE_SET · 각도 6 ·
+  힘 6 · 속도 6). 각도 단위 · 슬롯 순서는 RS485 레지스터와 같아 변환표(`rh56f1_hand_map.yaml`)를 그대로 쓴다.
+- **AL 0x1E 우회**: 펌웨어의 PDO 매핑 항목(0x1601 · 0x1A00)이 표준 UINT32 가 아니라 UINT16(`0x0110`)이다. SOEM complete access 가
+  크기를 잘못 계산(144/608 bit)해 SM 길이가 어긋난다 → 마스터가 `ECT_COEDET_SDOCA` 를 끄면 38 / 152 B 로 맞는다.
+- 안전: 첫 각도 명령 전 · 노드 하트비트 0.5 s 끊김 · 정지 때 마스터는 매 주기 목표 = 지금 각도 · ENABLE_SET 0(제자리).
+  -1 = 그 축 직전 목표 유지. 범위 밖 값은 매뉴얼 범위(네 손가락 900~1740 · 엄지 굽힘 1100~1350 · 엄지 회전 600~1800 · 힘 ≤ 1000 g ·
+  속도 ≤ 4000)로 자른다. `--no-op` 는 SAFE_OP 에 머문다(상태만, 손은 출력을 쓰지 않는다).
+- 실측(10.02, SAFE_OP 1 kHz 3000 회): 잃음 0 · PDO 왕복 오른손 p50 68 us(USB 랜) · 왼손 41 us · 주기 흔들림 ±25 us.
+- 남은 확인(손이 움직인다 — 승인): OP 에서 ENABLE_SET 값의 뜻 · 첫 명령 반응 · 왼손 상태 코드 255(표 46 에 없음)의 뜻.
+- 빌드 · 권한: `bash tools/ethercat/build.sh` → `sudo setcap cap_net_raw,cap_net_admin=ep tools/ethercat/rh56f1_ecat_master`
+  (내용이 바뀌어 다시 빌드되면 setcap 도 다시). 점검 도구: `tools/ethercat/ecat_rh56f1 {rtt|safeop} <ifname>`.

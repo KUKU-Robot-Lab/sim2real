@@ -23,7 +23,7 @@ if __package__ in (None, ""):              # 파일 경로로 띄울 때(미션 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from policy_control import rh56f1_map  # noqa: E402
 
-#: 속도 = 위치 차분의 지수 평균 — 드라이버 50 Hz 에서 잡음 줄이기(α 가 클수록 최근 값)
+#: 속도 = 위치 차분의 지수 평균 — 드라이버 발행(RS485 50 Hz · 10.02 EtherCAT 100 Hz)에서 잡음 줄이기(α 가 클수록 최근 값)
 VEL_ALPHA = 0.3
 
 

@@ -10,12 +10,16 @@ OpenArm 양팔 + Inspire RH56F1 양손 + 머리(XC330 ×2) + RealSense 가 모�
 |---|---|---|---|
 | 오른팔 | PCAN-USB Pro FD ch1 | `can0` (1M / 5M FD) | 미션 drivers 단계 |
 | 왼팔 | PCAN-USB Pro FD ch2 | `can1` (1M / 5M FD) | 미션 drivers 단계 |
-| 오른손 RH56F1 | FTDI FT232R BG0327KL · RS485 | `/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_BG0327KL-if00-port0` | `deploy/policy_control/config/rh56f1_ports.yaml` |
-| 왼손 RH56F1 | FTDI FT232R BG033STU · RS485 | `/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_BG033STU-if00-port0` | 〃 |
+| 오른손 RH56F1 | EtherCAT · USB-C 랜(RTL, MAC 00:e0:4c:68:06:e1) | `enx00e04c6806e1` | `deploy/policy_control/config/rh56f1_ports.yaml` |
+| 왼손 RH56F1 | EtherCAT · 내장 랜(RTL8125) | `enp6s0` | 〃 |
 | 머리 pan · tilt | U2D2(FT232H FT763P8T) · TTL · 1M | `/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0` | `config/head_home_rh56f1.yaml` |
 | 카메라 | RealSense D435i serial 348122071637 · fw 5.16.0.1 · USB 3.2 | — | — |
 
-- `ttyUSB0/1/2` 번호는 꽂는 순서로 바뀐다(09.30 같은 날 세 번 바뀜). 손 · 머리 설정은 by-id 경로만 쓴다.
+- ★10.02 손은 RS485 에서 EtherCAT 으로 바꿨다(사용자). 손 하나에 NIC 하나 — 일반 스위치로 묶으면 0 slave + 브로드캐스트 폭주(10.01).
+  마스터 `tools/ethercat/rh56f1_ecat_master` 는 raw socket 이라 빌드 뒤 운영자가
+  `sudo setcap cap_net_raw,cap_net_admin=ep ~/rl_ws/sim2real/tools/ethercat/rh56f1_ecat_master` (다시 빌드하면 다시).
+  SOEM v1.4.0 은 `~/rl_ws/SOEM`(사용자 빌드). 옛 RS485 포트(FTDI BG0327KL 오른손 · BG033STU 왼손)는 rh56f1_ports.yaml 주석에 남겼다.
+- `ttyUSB0/1/2` 번호는 꽂는 순서로 바뀐다(09.30 같은 날 세 번 바뀜). 머리 설정은 by-id 경로만 쓴다.
 - CAN 을 켜는 것은 sudo 라 운영자가 한다:
   `sudo ip link set can0 down && sudo ip link set can0 type can bitrate 1000000 dbitrate 5000000 fd on && sudo ip link set can0 up` (can1 도 같게).
 
