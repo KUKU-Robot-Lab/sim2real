@@ -189,7 +189,11 @@ def main(argv: list[str] | None = None) -> int:
     def pump_log() -> None:
         for line in link.proc.stdout:          # type: ignore[union-attr]
             line = line.rstrip()
-            (log.warning if ("✗" in line or "⚠" in line) else log.info)(line)
+            # rclpy 는 같은 호출 자리에서 심각도를 바꾸면 ValueError — 자리를 나눈다
+            if "✗" in line or "⚠" in line:
+                log.warning(line)
+            else:
+                log.info(line)
 
     def pump_state() -> None:
         while not stop.is_set():
