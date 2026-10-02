@@ -200,8 +200,8 @@ int main(int argc, char **argv) {
     goto out_init;
   }
   ec_statecheck(0, EC_STATE_SAFE_OP, EC_TIMEOUTSTATE * 4);
+  ec_readstate();   /* statecheck(0) 은 ec_slave[0] 만 갱신한다 — slave 1 은 다시 읽어야 한다(10.02 'AL 0x0000' 오판) */
   if (ec_slave[1].state != EC_STATE_SAFE_OP) {
-    ec_readstate();
     printf("[master] ✗ SAFE_OP 실패 AL 0x%04x %s\n", ec_slave[1].ALstatuscode, ec_ALstatuscode2string(ec_slave[1].ALstatuscode));
     goto out_init;
   }
