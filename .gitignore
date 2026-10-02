@@ -60,3 +60,4 @@ logs/shadow/pour_entry/*.gif
 # 09.29 사용자: logs 는 올리지 않는다(용량 — 기록은 /media/user/DATA/sim2real_logs_0929). 미션이 가리키는 배포 계약만 남긴다.
 logs/*
 !logs/policy/
+tools/ethercat/ecat_rtt
