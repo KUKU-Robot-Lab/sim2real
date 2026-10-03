@@ -164,3 +164,40 @@ def test_either_signal_attaches_on_a_thumb_phalanx_grasp_that_the_tips_miss():
     assert grasp_signal([1.5, 1.2, 0, 0, 0], None, AttachCfg(signal="either"))
     with pytest.raises(ValueError):
         grasp_signal(tips, joints, AttachCfg(signal="bogus"))
+
+
+def test_attach_records_how_many_steps_after_the_grasp_and_checks_fpp_against_fk():
+    """Grasping 요청: 쥔 뒤 몇 스텝 만에 붙었는지, 붙은 뒤 FP++ 프레임 vs 같은 시각 FK 추정 차이(손 안 밀림 · 부착 오차)."""
+    w, c = _World(), CupAttach(AttachCfg())
+    t = 0.0
+    while t < 2.0:
+        p, R = w.palm(t)
+        c.step(t >= w.grasp_t, t, p, R, w.fpp(t))
+        t += DT
+    d = c.as_dict()
+    assert 20 <= d["attach_steps"] <= 32                              # 지연 0.29 s + 100 ms ≈ 24 스텝(프레임 간격만큼 더)
+    assert d["check_n"] >= 5 and d["check_max_m"] < 0.002              # 맞게 붙었으면 뒤 프레임들도 FK 와 2 mm 안
+
+
+def test_a_cup_slipping_in_the_hand_shows_up_in_the_check():
+    w, c = _World(), CupAttach(AttachCfg())
+    t = 0.0
+    while t < 2.0:
+        p, R = w.palm(t)
+        if t > 1.6:
+            w.cup_rel = np.array([0.0, 0.0, -0.06])                  # 컵이 손 안에서 2 cm 밀렸다
+        c.step(t >= w.grasp_t, t, p, R, w.fpp(t))
+        t += DT
+    assert c.as_dict()["check_max_m"] > 0.015                         # 관측은 FK 그대로지만 기록은 밀림을 보인다
+
+
+def test_optional_palm_distance_gate_blocks_finger_on_finger_false_grasps():
+    c = CupAttach(AttachCfg(attach_after_s=0.0, max_palm_dist_m=0.12))
+    far = (np.array([0.30, 0.20, 0.26]), Q0, 0.0)                     # 컵은 30 cm 떨어져 있는데 손가락끼리 닿아 힘이 실린다
+    for k in range(20):
+        c.step(True, k * DT, np.array([0.30, -0.10, 0.30]), I3, far)
+    assert c.source == "live" and c.grasp_steps == 0
+    near = (np.array([0.30, -0.10, 0.26]), Q0, 0.36)               # 파지가 인정된 21 스텝(0.35 s) 뒤에 찍힌 프레임
+    c.step(True, 21 * DT, np.array([0.30, -0.10, 0.30]), I3, near)
+    c.step(True, 22 * DT, np.array([0.30, -0.10, 0.30]), I3, near)
+    assert c.source == "attached"

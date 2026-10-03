@@ -276,7 +276,8 @@ def test_the_node_feeds_joint_forces_into_the_grasp_signal(c):
     est = CupAttach(AttachCfg(attach_after_s=0.0))
     live = (np.array([0.30, -0.10, 0.26]), np.array([1.0, 0, 0, 0]), 0.03)   # 파지 시작(0.02) 뒤에 찍힌 프레임
     fake = SimpleNamespace(attach={"arm": est}, attach_cfg=AttachCfg(attach_after_s=0.0), _cup=lambda r: live,
-                           get_clock=lambda: SimpleNamespace(now=lambda: SimpleNamespace(nanoseconds=0)))
+                           get_clock=lambda: SimpleNamespace(now=lambda: SimpleNamespace(nanoseconds=0)),
+                           get_logger=lambda: SimpleNamespace(info=lambda *_a, **_k: None))
     st = _St(s, tip=(0.1, 1.5, 0, 0, 0))                     # 엄지 손끝은 0.1 N
     st.stamps = {"arm": 0.01}
     st.joint_force, st.stale = np.array([[450.0], [0.0], [400.0], [0.0], [0.0], [0.0]]), ("joint_force",)

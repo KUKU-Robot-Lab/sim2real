@@ -263,6 +263,7 @@ class PourFjNode(LeanNodeMixin, Node):
                               ("max_gap_ticks", 3), ("publish_target", True), ("max_episode_s", -1.0), ("ns", ""),
                               ("cup_attach", True), ("attach_force_n", AttachCfg.force_n),
                               ("attach_joint_force_g", AttachCfg.joint_force_g), ("attach_signal", AttachCfg.signal),
+                              ("attach_max_palm_dist_m", AttachCfg.max_palm_dist_m),
                               ("attach_after_s", AttachCfg.attach_after_s), ("release_steps", AttachCfg.release_steps),
                               *((param, topic) for _, param, topic in self.fam.cups)):
             self.declare_parameter(name, default)
@@ -296,6 +297,7 @@ class PourFjNode(LeanNodeMixin, Node):
         #   FP++ 프레임이 오면 그 프레임 시각의 손바닥 FK 로 붙이고, 15 스텝(250 ms) 끊기면 뗀다.
         self.attach_cfg = AttachCfg(force_n=float(p("attach_force_n")), joint_force_g=float(p("attach_joint_force_g")),
                                     signal=str(p("attach_signal")), attach_after_s=float(p("attach_after_s")),
+                                    max_palm_dist_m=float(p("attach_max_palm_dist_m")),
                                     release_steps=int(p("release_steps")))
         self.attach = {r: CupAttach(self.attach_cfg) for r in self.fam.roles} if bool(p("cup_attach")) else {}
         self._seq, self._gap, self._errors, self._t_start = 0, 0, {}, 0.0
@@ -383,7 +385,11 @@ class PourFjNode(LeanNodeMixin, Node):
             def step(palm_pos, palm_R, tact, st):
                 t_palm = st.stamps.get("arm") or self.get_clock().now().nanoseconds * 1e-9   # 팔 상태 stamp = 손바닥 FK 시각
                 jf = None if st.joint_force is None or "joint_force" in st.stale else st.joint_force
-                return est.step(grasp_signal(tact, jf, self.attach_cfg), float(t_palm), palm_pos, palm_R, live)
+                before = est.source
+                out = est.step(grasp_signal(tact, jf, self.attach_cfg), float(t_palm), palm_pos, palm_R, live)
+                if est.source != before:                  # 붙고 뗀 순간을 로그로 — 상태(status.cup)에도 같은 값이 계속 실린다
+                    self.get_logger().info(f"cup {role}: {before} → {est.source} · {est.as_dict()}")
+                return out
             return step
         return lambda palm_pos, palm_R, _tact, _st: est.peek(palm_pos, palm_R, live)
 
