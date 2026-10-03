@@ -33,6 +33,7 @@ if __package__ in (None, ""):
 
 from policy_control import _paths  # noqa: F401,E402
 from policy_control import codec  # noqa: E402
+from policy_control.cup_attach import AttachCfg, CupAttach, grasp_flag  # noqa: E402
 from policy_control import pour_fj as F  # noqa: E402
 from policy_control import rh_aglt as A  # noqa: E402
 from policy_control import rh_aglt_goals as G  # noqa: E402
@@ -67,12 +68,14 @@ def _side_raw(s, st, arm_names, fk, cup, role: str) -> dict:
     missing = [j for j in list(s.arm_joints) + list(s.hand_joints) if j not in {**arm, **hand}]
     if missing:
         raise PourFjNodeError(f"{s.side}: 소스에 없는 관절 {missing}")
-    if cup is None:
-        raise PourFjNodeError(f"{role} 컵 자세가 없다(또는 {CUP_STALE_S} s 넘게 끊겼다)")
     arm_q = np.array([arm[j] for j in s.arm_joints], float)
     hand_q = np.array([hand[j] for j in s.hand_joints], float)
     pose = fk.palm_pose(arm_q, hand_q)
     tact = np.zeros(5) if st.tip_force is None or "tip_force" in bad else np.asarray(st.tip_force, float).reshape(5, -1)[:, 0]
+    if callable(cup):                               # ★10.04 쥔 뒤에는 손바닥 FK 로(cup_attach) — 손바닥 · 촉각 · 시각을 본 뒤 고른다
+        cup = cup(np.asarray(pose.palm_pos, float), quat_to_matrix(pose.palm_quat), tact, st)
+    if cup is None:
+        raise PourFjNodeError(f"{role} 컵 자세가 없다(또는 {CUP_STALE_S} s 넘게 끊겼다)")
     return dict(arm_q=arm_q, arm_qd=np.array([arm_d[j] for j in s.arm_joints], float),
                 hand_q={j: float(hand[j]) for j in s.hand_joints}, palm_pos=np.asarray(pose.palm_pos, float),
                 palm_R=quat_to_matrix(pose.palm_quat), tips=np.asarray(pose.tips, float).reshape(5, 3),
@@ -258,6 +261,8 @@ class PourFjNode(LeanNodeMixin, Node):
         self.node_name = self.get_name()          # -r __node:=rh_aglt_node_right 로 팔마다 이름을 가른다
         for name, default in (("contract", ""), ("robot", ""), ("device", "cpu"), ("reset_tol_rad", 0.15),
                               ("max_gap_ticks", 3), ("publish_target", True), ("max_episode_s", -1.0), ("ns", ""),
+                              ("cup_attach", True), ("attach_force_n", AttachCfg.force_n),
+                              ("attach_after_s", AttachCfg.attach_after_s), ("release_steps", AttachCfg.release_steps),
                               *((param, topic) for _, param, topic in self.fam.cups)):
             self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
@@ -285,6 +290,12 @@ class PourFjNode(LeanNodeMixin, Node):
         self.chain = None
         self.book = EpisodeBook({})
         self.cups: dict = {}
+        # ★10.04 사용자: FP++ 는 정지한 컵만 — 쥔 뒤 컵 자세는 손바닥 기준 상대 자세 + 손바닥 FK(cup_attach).
+        #   sim(rh_aglt hdgp 2721a946)과 같은 규칙: 엄지 · 다른 손가락 손끝 > 1 N 이 이어지는 동안 파지 시작 뒤 100 ms 넘어 찍힌
+        #   FP++ 프레임이 오면 그 프레임 시각의 손바닥 FK 로 붙이고, 15 스텝(250 ms) 끊기면 뗀다.
+        self.attach_cfg = AttachCfg(force_n=float(p("attach_force_n")), attach_after_s=float(p("attach_after_s")),
+                                    release_steps=int(p("release_steps")))
+        self.attach = {r: CupAttach(self.attach_cfg) for r in self.fam.roles} if bool(p("cup_attach")) else {}
         self._seq, self._gap, self._errors, self._t_start = 0, 0, {}, 0.0
 
         chain_qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
@@ -330,18 +341,32 @@ class PourFjNode(LeanNodeMixin, Node):
         def cb(msg) -> None:
             try:
                 s = codec.decode_pose(msg)
-                self.cups[role] = (time.monotonic(), s.pos, s.quat)
+                self.cups[role] = (time.monotonic(), s.pos, s.quat, s.stamp)   # stamp = FP++ 영상 시각(시스템 시계 초)
             except (codec.CodecError, ValueError) as exc:
                 self._errors[f"cup_{role}"] = str(exc)
         return cb
 
     def _cup(self, role):
         got = self.cups.get(role)
-        return None if got is None or time.monotonic() - got[0] > CUP_STALE_S else (got[1], got[2])
+        return None if got is None or time.monotonic() - got[0] > CUP_STALE_S else (got[1], got[2], got[3])
 
-    def _measure(self) -> dict:
+    def _cup_for(self, role: str, advance: bool):
+        """컵 자세를 고르는 함수 — 붙어 있으면 손바닥 FK. advance=True(달리는 정책 스텝)일 때만 판정 카운터가 움직인다."""
+        live = self._cup(role)
+        est = self.attach.get(role)
+        if est is None:
+            return live
+        if advance:
+            def step(palm_pos, palm_R, tact, st):
+                t_palm = st.stamps.get("arm") or self.get_clock().now().nanoseconds * 1e-9   # 팔 상태 stamp = 손바닥 FK 시각
+                return est.step(grasp_flag(tact, self.attach_cfg.force_n), float(t_palm), palm_pos, palm_R, live)
+            return step
+        return lambda palm_pos, palm_R, _tact, _st: est.peek(palm_pos, palm_R, live)
+
+    def _measure(self, advance: bool = False) -> dict:
         now = time.monotonic()
-        return {r: self.fam.meas(self.contract, r, self.srcs[r].snapshot(now), self.arm_names[r], self.fk[r], self._cup(r))
+        return {r: self.fam.meas(self.contract, r, self.srcs[r].snapshot(now), self.arm_names[r], self.fk[r],
+                                 self._cup_for(r, advance))
                 for r in self.fam.roles}
 
     def _on_goal(self, msg) -> None:
@@ -368,6 +393,8 @@ class PourFjNode(LeanNodeMixin, Node):
         self.get_logger().info(f"episode {event.episode} {event.event} {list(event.reasons)}")
 
     def _srv_reset(self, _req, res):
+        for est in self.attach.values():           # 새 에피소드 — 컵은 다시 FP++ 부터
+            est.reset()
         try:
             meas = self._measure()
             if self.chain is None:
@@ -417,6 +444,7 @@ class PourFjNode(LeanNodeMixin, Node):
                 "reasons": [str(r) for r in reasons], "publish_target": self._publish,
                 "hand_obs_order": self.contract.hand_obs_order_source.split(":")[0],
                 **(self.chain.goals.as_dict() if getattr(self.chain, "goals", None) is not None else {}),
+                "cup": {r: e.as_dict() for r, e in self.attach.items()},
                 "t_pub_ns": self.get_clock().now().nanoseconds, **(extra or {})}
         self._pub_status.publish(self._String(data=json.dumps(body)))
 
@@ -430,7 +458,7 @@ class PourFjNode(LeanNodeMixin, Node):
             return
         t0 = time.perf_counter()
         try:
-            obs, action, targets = self.chain.step(self._measure())
+            obs, action, targets = self.chain.step(self._measure(advance=True))
             names, q, qd = self.fam.targets(self.contract, targets)
         except self.fam.errors as exc:
             self._gap += 1

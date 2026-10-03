@@ -208,3 +208,60 @@ def test_the_mirrored_right_policy_is_the_left_policy_seen_in_a_mirror():
         prev = np.clip(a_r, -1, 1)
         dec.step(a_r, active=True)
     assert worst < 1e-4, worst
+
+
+class _St:
+    """sources.RobotState 의 필요한 칸만."""
+    def __init__(self, s, tip=(0, 0, 0, 0, 0)):
+        self.stale, self.missing = (), ()
+        self.arm_q, self.arm_qd = np.asarray(s.arm_home, float), np.zeros(7)
+        self.ee_names, self.ee_q = tuple(s.hand_joints), np.asarray(s.hand_open, float)
+        self.tip_force = np.asarray(tip, float)
+        self.stamps = {"arm": 0.0}
+
+
+class _Fk:
+    def __init__(self, palm):
+        self.palm = np.asarray(palm, float)
+
+    def palm_pose(self, arm_q, hand_q):
+        from types import SimpleNamespace
+        return SimpleNamespace(palm_pos=self.palm, palm_quat=np.array([1.0, 0, 0, 0]), tips=np.zeros(15))
+
+
+def test_the_cup_can_be_chosen_after_the_palm_and_touch_are_known(c):
+    """10.04 쥔 뒤 FK: 측정이 손바닥 FK · 촉각을 먼저 구하고 컵 고르는 함수에 넘긴다(cup_attach 가 쓴다)."""
+    s = c.side()
+    seen = {}
+
+    def pick(palm_pos, palm_R, tact, st):
+        seen.update(palm=palm_pos, R=palm_R, tact=tact, stamp=st.stamps["arm"])
+        return palm_pos + np.array([0.0, 0.0, -0.04]), np.array([1.0, 0, 0, 0])
+
+    raw = N._side_raw(s, _St(s, tip=(1.5, 0, 2.0, 0, 0)), list(s.arm_joints), _Fk([0.3, -0.1, 0.3]), pick, "arm")
+    assert seen["palm"] == pytest.approx([0.3, -0.1, 0.3]) and seen["R"] == pytest.approx(np.eye(3))
+    assert seen["tact"] == pytest.approx([1.5, 0, 2.0, 0, 0])
+    assert raw["cup_pos"] == pytest.approx([0.3, -0.1, 0.26])
+    with pytest.raises(N.PourFjNodeError, match="컵"):
+        N._side_raw(s, _St(s), list(s.arm_joints), _Fk([0.3, -0.1, 0.3]), lambda *_: None, "arm")
+
+
+def test_a_grasped_cup_follows_the_palm_through_the_measurement_path(c):
+    """쥔 채 0.29 s 늦은 FP++ 프레임이 오면 그 프레임 시각의 손바닥으로 붙고, 이후에는 튀는 FP++ 대신 손바닥을 따른다."""
+    from policy_control.cup_attach import AttachCfg, CupAttach, grasp_flag
+    s = c.side()
+    est = CupAttach(AttachCfg())
+    cup0 = np.array([0.30, -0.10, 0.26])
+
+    def step(t, palm, tip, cup_live):
+        st = _St(s, tip=tip)
+        st.stamps = {"arm": t}
+        f = lambda pp, pR, tt, stt: est.step(grasp_flag(tt, 1.0), stt.stamps["arm"], pp, pR, cup_live)  # noqa: E731
+        return N._side_raw(s, st, list(s.arm_joints), _Fk(palm), f, "arm")
+
+    for k in range(40):                                   # 쥔 채로 손은 그대로, 마지막 프레임은 0.29 s 전 것
+        t = k / 60
+        raw = step(t, [0.30, -0.10, 0.30], (1.5, 1.2, 0, 0, 0), (cup0, np.array([1.0, 0, 0, 0]), t - 0.29))
+    assert est.source == "attached" and raw["cup_pos"] == pytest.approx(cup0)
+    raw = step(41 / 60, [0.30, -0.10, 0.40], (1.5, 1.2, 0, 0, 0), (np.array([0.9, 0.9, 0.9]), np.array([1.0, 0, 0, 0]), 0.3))
+    assert raw["cup_pos"] == pytest.approx([0.30, -0.10, 0.36])       # 손과 함께 10 cm 위, 튄 FP++ 무시
