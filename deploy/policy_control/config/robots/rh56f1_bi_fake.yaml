@@ -40,6 +40,19 @@ sources:
     axes: 1
     required: false
     stale_sec: 0.5
+  joint_force_right:
+    type: float_array
+    topic: /hand_right/joint_forces          # 10.04 손 관절 힘 6(엄지 굽힘 · 엄지 회전 · 검지 · 중지 · 약지 · 새끼, g) — 쥔 판정
+    tips:
+    - r_jf_thumb_bend
+    - r_jf_thumb_rot
+    - r_jf_index
+    - r_jf_middle
+    - r_jf_ring
+    - r_jf_pinky
+    axes: 1
+    required: false
+    stale_sec: 0.5
   decoder_target_right:
     type: joint_state
     topic: /policy_control/joint_target
@@ -87,6 +100,19 @@ sources:
     - l_hl_middle_tip
     - l_hl_ring_tip
     - l_hl_pinky_tip
+    axes: 1
+    required: false
+    stale_sec: 0.5
+  joint_force_left:
+    type: float_array
+    topic: /hand_left/joint_forces          # 10.04 손 관절 힘 6(엄지 굽힘 · 엄지 회전 · 검지 · 중지 · 약지 · 새끼, g) — 쥔 판정
+    tips:
+    - l_jf_thumb_bend
+    - l_jf_thumb_rot
+    - l_jf_index
+    - l_jf_middle
+    - l_jf_ring
+    - l_jf_pinky
     axes: 1
     required: false
     stale_sec: 0.5

@@ -218,6 +218,7 @@ class _St:
         self.ee_names, self.ee_q = tuple(s.hand_joints), np.asarray(s.hand_open, float)
         self.tip_force = np.asarray(tip, float)
         self.stamps = {"arm": 0.0}
+        self.joint_force = None
 
 
 class _Fk:
@@ -265,3 +266,24 @@ def test_a_grasped_cup_follows_the_palm_through_the_measurement_path(c):
     assert est.source == "attached" and raw["cup_pos"] == pytest.approx(cup0)
     raw = step(41 / 60, [0.30, -0.10, 0.40], (1.5, 1.2, 0, 0, 0), (np.array([0.9, 0.9, 0.9]), np.array([1.0, 0, 0, 0]), 0.3))
     assert raw["cup_pos"] == pytest.approx([0.30, -0.10, 0.36])       # 손과 함께 10 cm 위, 튄 FP++ 무시
+
+
+def test_the_node_feeds_joint_forces_into_the_grasp_signal(c):
+    """노드의 _cup_for: 관절 힘(엄지 첫마디 파지)만으로도 판정되고, stale 이면 쓰지 않는다."""
+    from types import SimpleNamespace
+    from policy_control.cup_attach import AttachCfg, CupAttach
+    s = c.side()
+    est = CupAttach(AttachCfg(attach_after_s=0.0))
+    live = (np.array([0.30, -0.10, 0.26]), np.array([1.0, 0, 0, 0]), 0.03)   # 파지 시작(0.02) 뒤에 찍힌 프레임
+    fake = SimpleNamespace(attach={"arm": est}, attach_cfg=AttachCfg(attach_after_s=0.0), _cup=lambda r: live,
+                           get_clock=lambda: SimpleNamespace(now=lambda: SimpleNamespace(nanoseconds=0)))
+    st = _St(s, tip=(0.1, 1.5, 0, 0, 0))                     # 엄지 손끝은 0.1 N
+    st.stamps = {"arm": 0.01}
+    st.joint_force, st.stale = np.array([[450.0], [0.0], [400.0], [0.0], [0.0], [0.0]]), ("joint_force",)
+    pick = N.PourFjNode._cup_for(fake, "arm", True)
+    pick(np.array([0.3, -0.1, 0.3]), np.eye(3), np.asarray(st.tip_force), st)
+    assert est.source == "live"                               # stale 한 관절 힘은 안 쓴다
+    st.stale = ()
+    st.stamps = {"arm": 0.02}
+    pick(np.array([0.3, -0.1, 0.3]), np.eye(3), np.asarray(st.tip_force), st)
+    assert est.source == "attached"

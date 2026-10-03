@@ -4,8 +4,11 @@
 pd · 정책 · 콘솔은 rad JointState 를 읽는다 — 이 노드가 변환표(config/rh56f1_hand_map.yaml)로 바꾼다.
 
   구독  /hand_<side>/angle_actual (rh56f1_interfaces/GetAngleAct1)  ·  /hand_<side>/touch_data (TouchData1)
+        /hand_<side>/force_actual (GetForceAct1 — 슬롯 순 새끼 · 약지 · 중지 · 검지 · 엄지 굽힘 · 엄지 회전, g)
   발행  /hand_<side>/joint_states (sensor_msgs/JointState, canonical 이름, 구동 6 + 종속 6(mimic), rad · rad/s)
         /hand_<side>/tip_forces   (std_msgs/Float64MultiArray, 5, sim 순 엄지 → 새끼, N — √(법선² + 접선²), 단위 실측 전)
+        /hand_<side>/joint_forces (std_msgs/Float64MultiArray, 6, 엄지 굽힘 · 엄지 회전 · 검지 · 중지 · 약지 · 새끼, g — 센서 위치,
+                                   force_actual 그대로. 10.04 쥔 판정: 엄지를 첫마디로 감싸 쥐면 손끝 촉각엔 잘 안 잡힌다)
 
     python3 deploy/policy_control/policy_control/rh56f1_state_node.py --side right
 """
@@ -27,6 +30,17 @@ from policy_control import rh56f1_map  # noqa: E402
 #: 속도 = 위치 차분의 지수 평균. ★10.03 시정수로 정한다 — 발행 주기(RS485 50 Hz · EtherCAT 200 Hz)가 바뀌어도 같은 필터.
 #  옛 값 α 0.3 @ 50 Hz 와 같은 시정수(−dt/ln(1−α) ≈ 0.056 s).
 VEL_TAU_S = 0.056
+
+
+#: force_actual 슬롯(새끼 · 약지 · 중지 · 검지 · 엄지 굽힘 · 엄지 회전) → joint_forces 순(엄지 굽힘 · 엄지 회전 · 검지 · 중지 · 약지 · 새끼)
+JOINT_FORCE_ORDER = (4, 5, 3, 2, 1, 0)
+
+
+def joint_forces_out(slots: Sequence[float]) -> list[float]:
+    """벤더 슬롯 순 관절 힘(g) → 엄지 먼저 순. 순수."""
+    if len(slots) != 6:
+        raise ValueError(f"force_actual 은 6 칸이어야 한다(got {len(slots)})")
+    return [float(slots[i]) for i in JOINT_FORCE_ORDER]
 
 
 @dataclass
@@ -65,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     import rclpy
     from sensor_msgs.msg import JointState
     from std_msgs.msg import Float64MultiArray
-    from rh56f1_interfaces.msg import GetAngleAct1, TouchData1
+    from rh56f1_interfaces.msg import GetAngleAct1, GetForceAct1, TouchData1
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--side", choices=("right", "left"), required=True)
@@ -81,6 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     node.get_logger().info(keep_off_rt())               # ★10.03 실시간 코어를 비켜 간다
     js_pub = node.create_publisher(JointState, f"{ns}/joint_states", 10)
     tip_pub = node.create_publisher(Float64MultiArray, f"{ns}/tip_forces", 10)
+    jf_pub = node.create_publisher(Float64MultiArray, f"{ns}/joint_forces", 10)
 
     def on_angle(msg) -> None:
         # ★10.03 원본 도장을 이어받는다(EtherCAT 노드 = 하드웨어 샘플 시각) — 없으면(0) 받은 시각. bag 정렬 · 속도 계산 모두 이 시각
@@ -97,6 +112,11 @@ def main(argv: list[str] | None = None) -> int:
 
     node.create_subscription(GetAngleAct1, f"{ns}/angle_actual", on_angle, 10)
     node.create_subscription(TouchData1, f"{ns}/touch_data", on_touch, 10)
+
+    def on_force(msg) -> None:
+        jf_pub.publish(Float64MultiArray(data=joint_forces_out(list(msg.joint_values))))
+
+    node.create_subscription(GetForceAct1, f"{ns}/force_actual", on_force, 10)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

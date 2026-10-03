@@ -33,7 +33,7 @@ if __package__ in (None, ""):
 
 from policy_control import _paths  # noqa: F401,E402
 from policy_control import codec  # noqa: E402
-from policy_control.cup_attach import AttachCfg, CupAttach, grasp_flag  # noqa: E402
+from policy_control.cup_attach import AttachCfg, CupAttach, grasp_signal  # noqa: E402
 from policy_control import pour_fj as F  # noqa: E402
 from policy_control import rh_aglt as A  # noqa: E402
 from policy_control import rh_aglt_goals as G  # noqa: E402
@@ -248,7 +248,7 @@ except ImportError:
 
 class PourFjNode(LeanNodeMixin, Node):
     def __init__(self, *, policy=None, family: str = "pour_fj", **kw) -> None:
-        from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+        from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data as _sensor
         from geometry_msgs.msg import PoseStamped
         from sensor_msgs.msg import JointState
         from std_msgs.msg import Float64MultiArray, String
@@ -262,6 +262,7 @@ class PourFjNode(LeanNodeMixin, Node):
         for name, default in (("contract", ""), ("robot", ""), ("device", "cpu"), ("reset_tol_rad", 0.15),
                               ("max_gap_ticks", 3), ("publish_target", True), ("max_episode_s", -1.0), ("ns", ""),
                               ("cup_attach", True), ("attach_force_n", AttachCfg.force_n),
+                              ("attach_joint_force_g", AttachCfg.joint_force_g), ("attach_signal", AttachCfg.signal),
                               ("attach_after_s", AttachCfg.attach_after_s), ("release_steps", AttachCfg.release_steps),
                               *((param, topic) for _, param, topic in self.fam.cups)):
             self.declare_parameter(name, default)
@@ -293,7 +294,8 @@ class PourFjNode(LeanNodeMixin, Node):
         # ★10.04 사용자: FP++ 는 정지한 컵만 — 쥔 뒤 컵 자세는 손바닥 기준 상대 자세 + 손바닥 FK(cup_attach).
         #   sim(rh_aglt hdgp 2721a946)과 같은 규칙: 엄지 · 다른 손가락 손끝 > 1 N 이 이어지는 동안 파지 시작 뒤 100 ms 넘어 찍힌
         #   FP++ 프레임이 오면 그 프레임 시각의 손바닥 FK 로 붙이고, 15 스텝(250 ms) 끊기면 뗀다.
-        self.attach_cfg = AttachCfg(force_n=float(p("attach_force_n")), attach_after_s=float(p("attach_after_s")),
+        self.attach_cfg = AttachCfg(force_n=float(p("attach_force_n")), joint_force_g=float(p("attach_joint_force_g")),
+                                    signal=str(p("attach_signal")), attach_after_s=float(p("attach_after_s")),
                                     release_steps=int(p("release_steps")))
         self.attach = {r: CupAttach(self.attach_cfg) for r in self.fam.roles} if bool(p("cup_attach")) else {}
         self._seq, self._gap, self._errors, self._t_start = 0, 0, {}, 0.0
@@ -301,18 +303,25 @@ class PourFjNode(LeanNodeMixin, Node):
         chain_qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self._String = String
+        self._Pose = PoseStamped
         self._pub_target = self.create_publisher(JointState, f"{NS}/joint_target", chain_qos)
         self._pub_obs = self.create_publisher(Float64MultiArray, f"{self.base}/obs", chain_qos)
         self._pub_action = self.create_publisher(Float64MultiArray, f"{self.base}/action", chain_qos)
         self._pub_episode = self.create_publisher(String, f"{self.base}/episode", latched)
         self._pub_status = self.create_publisher(String, f"{NS}/status/{self.node_name}", QoSProfile(depth=10))
+        # ★10.04 CPU: 상태 · 컵 토픽은 실행기 밖 폴링 노드에서 받는다 — 정책 틱(60 Hz) · 서비스에서 쌓인 것을 비우고 마지막 것만 푼다.
+        #   팔 250 + 손 250 + 촉각 250 + 관절 힘 250 Hz 를 메시지마다 깨어나 받던 비용(pd 와 같은 rclpy wait set 비용)을 없앤다.
+        #   받은 시각은 rmw received_timestamp(낡음 판정 그대로). raw_poll 참고.
+        from policy_control.raw_poll import make_poll_node, poll_subscription
         msgs = {"joint_state": JointState, "float_array": Float64MultiArray}
+        self._poll = make_poll_node(f"{self.node_name}_poll", context=self.context)
+        self._poll_srcs = []
         for r in self.fam.roles:
             for src in select_side(cfg, self.contract.sides[r].side).sources.values():
-                if src.type in msgs and (src.role or src.name) in ("arm", "ee", "tip_force"):
-                    self.create_subscription(msgs[src.type], src.topic, self._source_cb(r, src), qos_profile_sensor_data)
-        for role, param, _ in self.fam.cups:
-            self.create_subscription(PoseStamped, str(p(param)), self._cup_cb(role), qos_profile_sensor_data)
+                if src.type in msgs and (src.role or src.name) in ("arm", "ee", "tip_force", "joint_force"):
+                    self._poll_srcs.append((r, src, msgs[src.type], poll_subscription(self._poll, msgs[src.type], src.topic, _sensor)))
+        self._poll_cups = {role: poll_subscription(self._poll, PoseStamped, str(p(param)), _sensor)
+                           for role, param, _ in self.fam.cups}
         for name in EVENTS:
             self.create_service(Trigger, f"{self.base}/episode/{name}", getattr(self, f"_srv_{name}"))
         if family == "rh_aglt":                     # 10.01 사용자: 목표 직접 입력(base 좌표 m) — 결과는 goal_result(latched JSON)
@@ -324,27 +333,41 @@ class PourFjNode(LeanNodeMixin, Node):
                                f"{self.contract.policy_hz:.0f} Hz · {self.fam.label(self.contract)}")
 
     # ---------------------------------------------------------------- inputs
-    def _source_cb(self, role, src):
-        def cb(msg) -> None:
-            try:
-                now = time.monotonic()
-                if src.type == "joint_state":
-                    self.srcs[role].update_from_joint_state(src.name, codec.decode_joint_state(msg), now)
-                else:
-                    self.srcs[role].update_from_float_array(src.name, codec.decode_float_array(msg), now)
-                self._errors.pop(f"{role}.{src.name}", None)
-            except (codec.CodecError, ValueError) as exc:
-                self._errors[f"{role}.{src.name}"] = str(exc)
-        return cb
+    def _apply_source(self, role, src, msg, now: float) -> None:
+        try:
+            if src.type == "joint_state":
+                self.srcs[role].update_from_joint_state(src.name, codec.decode_joint_state(msg), now)
+            else:
+                self.srcs[role].update_from_float_array(src.name, codec.decode_float_array(msg), now)
+            self._errors.pop(f"{role}.{src.name}", None)
+        except (codec.CodecError, ValueError) as exc:
+            self._errors[f"{role}.{src.name}"] = str(exc)
 
-    def _cup_cb(self, role):
-        def cb(msg) -> None:
-            try:
-                s = codec.decode_pose(msg)
-                self.cups[role] = (time.monotonic(), s.pos, s.quat, s.stamp)   # stamp = FP++ 영상 시각(시스템 시계 초)
-            except (codec.CodecError, ValueError) as exc:
-                self._errors[f"cup_{role}"] = str(exc)
-        return cb
+    def _apply_cup(self, role, msg, now: float) -> None:
+        try:
+            s = codec.decode_pose(msg)
+            self.cups[role] = (now, s.pos, s.quat, s.stamp)   # stamp = FP++ 영상 시각(시스템 시계 초)
+        except (codec.CodecError, ValueError) as exc:
+            self._errors[f"cup_{role}"] = str(exc)
+
+    def _drain(self) -> None:
+        """폴링 구독마다 쌓인 것을 비우고 마지막 메시지만 풀어 소스 · 컵에 넣는다(받은 시각 그대로)."""
+        from rclpy.serialization import deserialize_message
+        from policy_control.raw_poll import take_last
+        for role, src, typ, sub in self._poll_srcs:
+            got = take_last(sub)
+            if got is not None:
+                self._apply_source(role, src, deserialize_message(got[0], typ), got[1])
+        for role, sub in self._poll_cups.items():
+            got = take_last(sub)
+            if got is not None:
+                self._apply_cup(role, deserialize_message(got[0], self._Pose), got[1])
+
+    def destroy_node(self) -> None:
+        poll, self._poll = getattr(self, "_poll", None), None
+        if poll is not None:
+            poll.destroy_node()
+        super().destroy_node()
 
     def _cup(self, role):
         got = self.cups.get(role)
@@ -359,7 +382,8 @@ class PourFjNode(LeanNodeMixin, Node):
         if advance:
             def step(palm_pos, palm_R, tact, st):
                 t_palm = st.stamps.get("arm") or self.get_clock().now().nanoseconds * 1e-9   # 팔 상태 stamp = 손바닥 FK 시각
-                return est.step(grasp_flag(tact, self.attach_cfg.force_n), float(t_palm), palm_pos, palm_R, live)
+                jf = None if st.joint_force is None or "joint_force" in st.stale else st.joint_force
+                return est.step(grasp_signal(tact, jf, self.attach_cfg), float(t_palm), palm_pos, palm_R, live)
             return step
         return lambda palm_pos, palm_R, _tact, _st: est.peek(palm_pos, palm_R, live)
 
@@ -393,6 +417,7 @@ class PourFjNode(LeanNodeMixin, Node):
         self.get_logger().info(f"episode {event.episode} {event.event} {list(event.reasons)}")
 
     def _srv_reset(self, _req, res):
+        self._drain()
         for est in self.attach.values():           # 새 에피소드 — 컵은 다시 FP++ 부터
             est.reset()
         try:
@@ -411,6 +436,7 @@ class PourFjNode(LeanNodeMixin, Node):
         return self._reply(res, True, [])
 
     def _srv_start(self, _req, res):
+        self._drain()
         if self.chain is None:
             return self._reply(res, False, ["start: reset first"])
         try:
@@ -449,6 +475,7 @@ class PourFjNode(LeanNodeMixin, Node):
         self._pub_status.publish(self._String(data=json.dumps(body)))
 
     def _on_tick(self) -> None:
+        self._drain()
         if self.book.phase != "running" or self.chain is None:
             try:
                 self._measure()

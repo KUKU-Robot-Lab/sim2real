@@ -4,8 +4,14 @@
 입력 넣어주면 되니까." 규칙은 T2R RH56F1 Grasping 세션의 sim(rh_aglt, hdgp 2721a946)과 같게 둔다 — 배포와 sim 관측이
 같은 순간 · 같은 방식으로 붙는다.
 
-  grasped    엄지 손끝 > force_n 이고 검지 · 중지 · 약지 · 새끼 중 하나라도 > force_n (60 Hz 정책 스텝마다).
-             sim 은 첫마디 + 손끝 링크의 컵 접촉력, 실기는 손끝 촉각(/hand_<side>/tip_forces, 엄지 → 새끼)뿐이다.
+  grasped    sim 은 엄지 > 1 N 이고 검지 · 중지 · 약지 · 새끼 중 하나라도 > 1 N(첫마디 + 손끝 링크의 컵 접촉력, 60 Hz).
+             실기는 두 신호 중 하나라도 맞으면(signal "either"):
+               손끝  — 손끝 촉각(/hand_<side>/tip_forces, 엄지 → 새끼, N)에 같은 규칙(force_n).
+               관절  — 관절 힘(/hand_<side>/joint_forces, 엄지 굽힘 · 엄지 회전 · 검지 · 중지 · 약지 · 새끼, g, 센서 위치)에서
+                       엄지 두 축 중 하나 > joint_force_g 이고 다른 손가락 하나라도 > joint_force_g.
+             10.04 Grasping 세션: cyl60 정책은 엄지를 첫마디로 감싸 쥐어 쥔 스텝 중 엄지 손끝 > 1 N 은 21 %뿐 — 손끝만이면
+             18 %만 붙는다. 관절 힘은 첫마디 접촉도 실린다. joint_force_g 300 은 임시값(forceSet 600 g 의 절반) — 실기에서
+             무부하 잡음 · 쥔 값을 재서 정한다.
   attached   grasped 가 이어지는 동안, 파지 시작 뒤 attach_after_s(100 ms) 이상 지나서 **찍힌** FP++ 프레임이 도착하면 붙인다.
              상대 자세 = (그 프레임이 찍힌 시각의 손바닥 FK)⁻¹ ∘ 그 프레임의 컵 자세. FP++ 는 약 0.29 s 늦어서, 같은 프레임을
              '지금' 손바닥에 붙이면 쥐자마자 들어 올린 손과 어긋난다(sim 첫 기동 77 mm · trace 100 mm 넘게) — 손바닥 FK 를
@@ -25,9 +31,14 @@ import numpy as np
 from .joint_object import matrix_to_quat
 
 
+SIGNALS = ("tip", "joint", "either")
+
+
 @dataclass(frozen=True)
 class AttachCfg:
-    force_n: float = 1.0          # sim _grasp_flag 문턱(엄지 · 다른 손가락 각각)
+    force_n: float = 1.0          # sim _grasp_flag 문턱(엄지 · 다른 손가락 각각) — 손끝 촉각 N
+    joint_force_g: float = 300.0  # 관절 힘 문턱 [g, 센서 위치] — ★임시값, 실기 실측 전
+    signal: str = "either"        # tip | joint | either
     attach_after_s: float = 0.1   # 파지 시작 뒤 이만큼 지나서 찍힌 프레임부터 붙인다(sim 6 스텝)
     release_steps: int = 15       # 250 ms @ 60 Hz
     history_s: float = 0.8        # 손바닥 FK 기록 — FP++ 지연(최대 약 0.4 s)보다 넉넉히
@@ -40,6 +51,23 @@ def grasp_flag(tactile_n, force_n: float) -> bool:
     if t.size < 5:
         return False
     return bool(t[0] > force_n and np.any(t[1:5] > force_n))
+
+
+def grasp_flag_joint(joint_force_g, threshold_g: float) -> bool:
+    """관절 힘 6(엄지 굽힘 · 엄지 회전 · 검지 · 중지 · 약지 · 새끼, g) → 쥐었나. 순수."""
+    t = np.asarray(joint_force_g, float).reshape(-1)
+    if t.size < 6:
+        return False
+    return bool(max(t[0], t[1]) > threshold_g and np.any(t[2:6] > threshold_g))
+
+
+def grasp_signal(tactile_n, joint_force_g, cfg: AttachCfg) -> bool:
+    """설정한 신호로 쥔 판정 — 관절 힘이 없으면(소스 결손) 손끝만 본다. 순수."""
+    if cfg.signal not in SIGNALS:
+        raise ValueError(f"signal {cfg.signal!r} — {SIGNALS}")
+    tip = cfg.signal in ("tip", "either") and grasp_flag(tactile_n, cfg.force_n)
+    joint = cfg.signal in ("joint", "either") and joint_force_g is not None and grasp_flag_joint(joint_force_g, cfg.joint_force_g)
+    return bool(tip or joint)
 
 
 def quat_to_matrix(q) -> np.ndarray:

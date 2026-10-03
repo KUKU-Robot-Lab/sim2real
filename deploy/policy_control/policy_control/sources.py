@@ -31,7 +31,8 @@ SOURCE_TYPES = ("joint_state", "float_array", "pose")
 OBJECT_MODES = ("latch_at_reset", "attach_after_gate", "live")
 REQUIRED_SOURCES = ("arm", "ee", "object")
 TYPE_BY_ROLE = {"arm": "joint_state", "ee": "joint_state", "head": "joint_state",
-                "decoder_target": "joint_state", "tip_force": "float_array", "object": "pose"}
+                "decoder_target": "joint_state", "tip_force": "float_array", "object": "pose",
+                "joint_force": "float_array"}   # 10.04 RH56F1 손 관절 힘(g) — 쥔 판정(cup_attach)
 #: 양팔 yaml 은 역할에 팔 접미사를 붙인다(`arm_left`, `ee_right`, `tip_force_left` …).
 #: 접미사 없는 역할은 한 팔 yaml(기존)과 같다. 어느 팔인지는 SourceCfg.side 가 든다.
 SIDE_SUFFIXES = ("left", "right")
@@ -241,7 +242,7 @@ def _check_required(path: Path, sources: dict) -> None:
         missing = [f"{r}_{side}" for side in sided for r in ("arm", "ee") if f"{r}_{side}" not in sources]
         if "object" not in sources:
             missing.append("object")
-        bare = [n for n, s in sources.items() if not s.side and s.role in ("arm", "ee", "tip_force", "decoder_target")]
+        bare = [n for n, s in sources.items() if not s.side and s.role in ("arm", "ee", "tip_force", "decoder_target", "joint_force")]
         if bare:
             raise RobotCfgError(f"{path}: 양팔 yaml 에서는 {bare} 에도 팔 접미사를 붙인다")
     else:
@@ -319,6 +320,7 @@ class RobotState:
     stamps: dict                       # source → 메시지 stamp
     stale: tuple                       # 필수 소스 중 stale_sec 초과
     missing: tuple                     # 필수 소스 중 한 번도 안 온 것
+    joint_force: np.ndarray | None = None  # (n, 1) RH56F1 손 관절 힘 [g, 센서 위치] — 10.04, 없으면 None
 
 
 @dataclass(frozen=True)
@@ -454,4 +456,5 @@ class SourceSet:
             head=_ro(None if head is None else head[0]),
             decoder_target=_ro(None if dec is None else dec[0]),
             stamps=stamps, stale=tuple(stale), missing=tuple(missing),
+            joint_force=_ro(self._get("joint_force")),
         )

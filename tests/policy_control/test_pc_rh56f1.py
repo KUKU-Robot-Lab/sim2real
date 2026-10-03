@@ -329,3 +329,11 @@ def test_engage_seed_just_outside_a_joint_limit_is_clipped_in_and_far_outside_is
     assert np.allclose(same, [0.2, 0.3, 0.0]) and none == []
     with pytest.raises(PdArmError, match="l_aj_4"):
         clip_seed(np.array([0.2, -(SEED_CLIP_TOL_RAD + 0.01), 0.0]), lo, hi, names)
+
+
+def test_joint_forces_are_republished_thumb_first():
+    """10.04 force_actual(슬롯 새끼 · 약지 · 중지 · 검지 · 엄지 굽힘 · 엄지 회전) → joint_forces(엄지 굽힘 · 엄지 회전 · 검지 · 중지 · 약지 · 새끼)."""
+    from policy_control.rh56f1_state_node import joint_forces_out
+    assert joint_forces_out([10, 20, 30, 40, 50, 60]) == [50.0, 60.0, 40.0, 30.0, 20.0, 10.0]
+    with pytest.raises(ValueError):
+        joint_forces_out([1, 2, 3])

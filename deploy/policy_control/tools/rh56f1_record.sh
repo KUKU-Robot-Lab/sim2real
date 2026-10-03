@@ -19,7 +19,7 @@ start)
   SIM2REAL="$(cd "$(dirname "$0")/../../.." && pwd)"
   OUT="$SIM2REAL/logs/bags/$(date +%Y%m%d_%H%M%S)_$NAME"; mkdir -p "$(dirname "$OUT")"
   HAND=""
-  for s in right left; do for t in angle_actual force_actual current_actual touch_data joint_states tip_forces ecat_status; do
+  for s in right left; do for t in angle_actual force_actual current_actual touch_data joint_states tip_forces joint_forces ecat_status; do
     HAND="$HAND /hand_$s/$t"; done; done
   ENV="source /opt/ros/humble/setup.bash; source \$HOME/rl_ws/robot_control/ros_ws/install/setup.bash; export ROS_DOMAIN_ID=\${ROS_DOMAIN_ID:-126}"
   setsid bash -c "echo \$\$ > '$DIR/arm.pid'; $ENV; exec ros2 bag record -o '$OUT/arm' /joint_states $EXTRA" </dev/null >"$DIR/arm.log" 2>&1 &

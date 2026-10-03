@@ -141,3 +141,26 @@ def test_reset_forgets_everything():
     assert c.source == "attached"
     c.reset()
     assert c.source == "live" and c.as_dict()["rel_pos"] is None and c.palm_at(0.05) is None
+
+
+def test_joint_force_grasp_needs_a_thumb_axis_and_another_finger():
+    from policy_control.cup_attach import grasp_flag_joint
+    assert grasp_flag_joint([400, 0, 350, 0, 0, 0], 300)              # 엄지 굽힘 + 검지
+    assert grasp_flag_joint([0, 400, 0, 0, 0, 310], 300)              # 엄지 회전 + 새끼
+    assert not grasp_flag_joint([400, 400, 0, 0, 0, 0], 300)          # 엄지만
+    assert not grasp_flag_joint([0, 0, 900, 900, 900, 900], 300)      # 엄지 없이
+    assert not grasp_flag_joint([400, 0, 350, 0, 0], 300)             # 칸 수가 모자라면 아니다
+
+
+def test_either_signal_attaches_on_a_thumb_phalanx_grasp_that_the_tips_miss():
+    """10.04 Grasping: cyl60 정책은 엄지를 첫마디로 감싸 손끝 촉각엔 엄지가 잘 안 잡힌다 — 관절 힘으로는 잡힌다."""
+    from policy_control.cup_attach import grasp_signal
+    tips = [0.2, 1.5, 1.4, 0.0, 0.0]                                  # 엄지 손끝 0.2 N
+    joints = [450, 120, 420, 380, 0, 0]                               # 엄지 굽힘 450 g
+    assert not grasp_signal(tips, joints, AttachCfg(signal="tip"))
+    assert grasp_signal(tips, joints, AttachCfg(signal="joint"))
+    assert grasp_signal(tips, joints, AttachCfg(signal="either"))
+    assert not grasp_signal(tips, None, AttachCfg(signal="either"))  # 관절 힘 소스가 없으면 손끝만
+    assert grasp_signal([1.5, 1.2, 0, 0, 0], None, AttachCfg(signal="either"))
+    with pytest.raises(ValueError):
+        grasp_signal(tips, joints, AttachCfg(signal="bogus"))
