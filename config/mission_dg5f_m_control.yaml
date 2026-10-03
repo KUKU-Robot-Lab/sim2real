@@ -358,6 +358,9 @@ run:
              --gains, "{artifact:gains_yaml}", --out, "{artifact:contract}"]
     - note: forward 컨트롤러가 양팔 모두 bringup 설정에 선언돼 있는지 (grep -c 12 = CM 목록 6 + 파라미터 블록 6)
       argv: [grep, -c, "_forward_", "/home/user/rl_ws/robot_control/ros_ws/src/openarm_ros2/openarm_bringup/config/controllers/openarm_bimanual_controllers.yaml"]
+    - note: CPU — 실시간 한도(controller_manager FIFO 50) · 코어 배치. 한도가 안 열렸으면 MISS — 운영자가
+        sudo bash scripts/setup/rt_setup.sh 한 번 → 재부팅(10.03, PC 가 바뀌어도 같은 점검)
+      argv: [python3, "{repo}/scripts/setup/check_host.py", --robot, dg5f, --only, cpu]
   drivers:
     - note: ★모터 전원(양팔) ON — 물리 스위치. 켠 뒤 확인한다. 전원 없이 브링업을 띄우면 CAN 응답이 없어 실패한다
       argv: [bash, -lc, "true"]

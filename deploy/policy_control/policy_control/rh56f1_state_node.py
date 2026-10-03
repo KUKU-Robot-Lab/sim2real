@@ -77,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
     rclpy.init()
     from policy_control.lean_node import make_lean_node
     node = make_lean_node(f"rh56f1_state_{args.side}")  # ★10.03 CPU: QoS 이벤트 · 파라미터 서비스 끔
+    from policy_control.cpu_plan import keep_off_rt
+    node.get_logger().info(keep_off_rt())               # ★10.03 실시간 코어를 비켜 간다
     js_pub = node.create_publisher(JointState, f"{ns}/joint_states", 10)
     tip_pub = node.create_publisher(Float64MultiArray, f"{ns}/tip_forces", 10)
 

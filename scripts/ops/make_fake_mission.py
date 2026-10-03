@@ -103,6 +103,8 @@ def convert(real: dict) -> dict:
         cmds[hits[0]] = _hand(side)
     for stage, note in NO_HARDWARE.items():
         run[stage] = [{"note": note, "argv": ["echo", note]}]
+    # fake 는 이 PC 의 실시간 한도와 무관하다(플랜트 · 노드만 돈다) — 실기 CPU 점검은 뺀다(10.03)
+    run["preflight"] = [c for c in run["preflight"] if "--only" not in c.get("argv", ())]
     for cmds in run.values():
         for i, c in enumerate(cmds):
             if any(str(a).endswith("object_pose_node.py") for a in c.get("argv", ())):

@@ -173,12 +173,15 @@ rsync -av <5090 PC>:~/rl_ws/sim2real/deploy/policies/ ~/rl_ws/sim2real/deploy/po
 | CAN 이름 | 미션 drivers 단계가 `can0`(우) · `can1`(좌) 를 쓴다 |
 | DG-5F 손 네트워크 | 미션 hand_<side> 단계의 `hand_net_dual.sh --apply`(최초 1회) |
 | `ROS_DOMAIN_ID` | 실기 126 (fake 는 콘솔이 97 로 띄운다) |
+| 실시간 한도(로봇 PC) | `sudo bash scripts/setup/rt_setup.sh` 한 번 → 재부팅. EtherCAT 마스터(SCHED_FIFO 80) · controller_manager(50) 가 실시간 우선순위를 받는다. `--performance` 를 붙이면 부팅 때 CPU governor 도 performance(선택) |
+| 코어 배치 | 손으로 정하지 않는다 — 노드가 그 PC 의 코어(sysfs)를 읽어 EtherCAT 마스터를 제 코어에, 나머지 노드를 그 밖에 둔다(`python3 -m policy_control.cpu_plan` 으로 보기). 끄기 `S2R_CPU_PIN=0` |
 
 ## Step 5. 점검 · 회귀 테스트 게이트
 
 ```bash
 cd ~/rl_ws/sim2real && source /opt/ros/humble/setup.bash
 python3 scripts/setup/check_host.py --robot dg5f       # 또는 --robot rh56f1 (arm4090) · --fetch 로 원격 비교
+python3 scripts/setup/check_host.py --robot rh56f1 --only cpu   # CPU 만 — 실기 미션 preflight 가 매번 부른다
 .venv/bin/python -m pytest tests -q -m "not gpu"        # 실패 0 이어야 실기
 ```
 

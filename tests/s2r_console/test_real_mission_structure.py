@@ -431,3 +431,10 @@ def test_fpp_can_be_re_registered_without_touching_the_camera_or_the_robot():
     argv = [list(c.argv) for c in _cmds("fpp_reregister")]
     assert argv[0][-3:] == ["stop", "--wait", "60"] and "--camera" not in argv[0]      # 카메라는 그대로
     assert argv[1][-4:] == ["start", "cup_big_s100", "--wait", "150"]
+
+
+def test_the_real_preflight_checks_the_cpu_and_the_fake_mission_drops_it():
+    # 10.03 사용자: CPU 최적화는 PC 가 바뀌어도 자동 — 실기는 controller_manager 실시간 한도를 본다. fake 는 무관
+    assert [list(c.argv[-4:]) for c in _cmds("preflight") if "--only" in c.argv] == [["--robot", "dg5f", "--only", "cpu"]]
+    fake = yaml.safe_load((REPO / "config" / "mission_dg5f_m_fake.yaml").read_text(encoding="utf-8"))
+    assert not any("--only" in c.get("argv", ()) for c in fake["run"]["preflight"])

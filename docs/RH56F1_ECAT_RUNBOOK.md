@@ -26,6 +26,18 @@
 - 미확인: 실기 133 s 의 동시 멈춤(손 336 · pd 149 · /joint_states 88 ms). fake 2 분 부하에서는 재현 안 됨(pd 최대 간격 47 ms).
 - 배경 실행한 ros2 launch 는 SIGINT 를 무시한다 → 노드 PID 에 SIGTERM.
 
+## ★10.03 CPU 자동 배치 · 실시간 한도 (PC 가 바뀌어도 같은 절차)
+
+- 실측(arm4090): 손 EtherCAT 마스터 · controller_manager 둘 다 `SCHED_FIFO … Operation not permitted` — 보통 우선순위로 돌았다.
+  RTPRIO 한도 0. GNOME 터미널 아래 프로세스는 systemd 사용자 관리자(user@1000.service)의 한도를 받아서 limits.d 만으로는 안 바뀐다.
+- 한 번(운영자): `sudo bash scripts/setup/rt_setup.sh` → 재부팅. limits.d · user@<uid>.service drop-in · ~/.config/systemd/user.conf
+  세 곳에 rtprio 98 · memlock unlimited. 확인 `bash scripts/setup/rt_setup.sh --check`, 되돌리기 `--undo`.
+- 매번(자동): 실기 미션 preflight 첫 명령 `check_host.py --robot rh56f1 --only cpu` — 한도가 80 미만이면 MISS 로 멈춘다(fake 미션에는 없다).
+- 코어(자동): `policy_control/cpu_plan.py` 가 sysfs(물리 코어 · SMT 형제 · isolated)를 읽어 정한다 — 번호를 박지 않는다.
+  EtherCAT 마스터 오른/왼은 각자 물리 코어 하나(isolcpus 가 있으면 그것, 없으면 큰 번호부터, cpu0 코어는 안 씀), 형제 스레드까지 비켜 두고
+  pd · 정책 · 손 상태 · EtherCAT 노드는 그 밖(일반 코어)에서 돈다. 물리 코어가 4 개 미만이면 고정하지 않는다. arm4090 = cpu15 · cpu14.
+  torch 스레드 = POLICY_CPU_THREADS 또는 2. 끄기 `S2R_CPU_PIN=0`. 노드 로그 첫머리에 'CPU: …' 한 줄.
+
 ## ★10.03 고속 맞춤 (3ca354e · 4c1bfae)
 
 | 구간 | 값 | 근거 |

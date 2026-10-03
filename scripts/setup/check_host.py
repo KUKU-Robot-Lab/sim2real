@@ -7,6 +7,7 @@ PC 별 설정)과 저장소 배치를 한 번에 본다. 고칠 방법은 INSTAL
     python3 scripts/setup/check_host.py                     # 전부
     python3 scripts/setup/check_host.py --robot rh56f1      # RH56F1 로봇 PC(arm4090) 기준
     python3 scripts/setup/check_host.py --robot dg5f --fetch  # 원격과 비교(git fetch — 네트워크)
+    python3 scripts/setup/check_host.py --robot rh56f1 --only cpu   # CPU 만(실시간 한도 · 코어 배치) — 실기 미션 preflight 가 부른다
 
 rc 0 = MISS 없음(WARN 은 있을 수 있다), 1 = MISS 있음.
 """
@@ -263,19 +264,57 @@ def check_host_specific(rep: Report, robot: str) -> None:
         rep.warn("DG-5F 손 네트워크(/32 경로)는 미션 hand_<side> 단계의 hand_net_dual.sh --apply 로(최초 1회)")
 
 
+def check_cpu(rep: Report, robot: str) -> None:
+    """10.03 사용자: CPU 최적화는 PC 가 바뀌어도 자동이어야 한다. 코어 배치는 노드가 sysfs 를 읽어 스스로 정하고,
+    여기서는 그 배치를 보여 주고 PC 에 손으로 열어야 하는 것(실시간 한도)만 따진다."""
+    sys.path.insert(0, str(SIM2REAL / "deploy" / "policy_control"))
+    from policy_control import cpu_plan   # noqa: PLC0415
+    rep.section("CPU (실시간 · 코어 배치)")
+    rep.ok(f"배치 {cpu_plan.current_plan().describe()}")
+    if robot == "dg5f":
+        need, who = 50, "controller_manager(FIFO 50)"
+    else:
+        need, who = cpu_plan.RT_PRIO_NEEDED, f"EtherCAT 마스터(FIFO {cpu_plan.RT_PRIO_NEEDED}) · controller_manager(50)"
+    rt = cpu_plan.rt_limit()
+    applied = Path("/etc/security/limits.d/99-sim2real-rt.conf").exists()
+    if rt >= need:
+        rep.ok(f"실시간 한도 rtprio {rt} ≥ {need} — {who}")
+    elif applied:
+        rep.miss(f"실시간 한도 rtprio {rt} < {need} (설정 파일은 있다)", "재부팅(또는 모든 세션 로그아웃 → 다시 로그인) — 이 셸은 설정 전에 열렸다")
+    else:
+        rep.miss(f"실시간 한도 rtprio {rt} < {need} — {who} 가 보통 우선순위로 돈다(제어 주기 흔들림)",
+                 "운영자: sudo bash scripts/setup/rt_setup.sh → 재부팅. 한 PC 에 한 번")
+    mem = cpu_plan.memlock_limit()
+    if mem == -1 or mem >= 256 << 20:
+        rep.ok(f"memlock {'unlimited' if mem == -1 else f'{mem >> 20} MiB'} (마스터 mlockall)")
+    else:
+        rep.warn(f"memlock {mem >> 20} MiB — 마스터 mlockall 뒤 메모리 할당이 막힐 수 있다", "sudo bash scripts/setup/rt_setup.sh")
+    gov = sorted(set(cpu_plan.governors()))
+    if not gov:
+        rep.ok("CPU governor 없음(cpufreq 없음 — VM 등)")
+    else:
+        rep.ok(f"CPU governor {'/'.join(gov)}" + ("" if gov == ["performance"] else
+                                                  " (고정하려면 sudo bash scripts/setup/rt_setup.sh --performance — 선택)"))
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--robot", choices=("all", "dg5f", "rh56f1"), default="all", help="이 PC 에 붙은 로봇")
     ap.add_argument("--fetch", action="store_true", help="git fetch 로 원격과 비교(네트워크)")
     ap.add_argument("--source-host", default="<5090 PC>", help="가중치를 받아 올 PC(rsync 안내에 쓴다)")
+    ap.add_argument("--only", choices=("cpu",), help="이 부분만 본다(빠름 — 미션 preflight 용)")
     args = ap.parse_args(argv)
     rep = Report()
+    if args.only == "cpu":
+        check_cpu(rep, args.robot)
+        return rep.print()
     check_repos(rep, args.fetch)
     check_venv(rep)
     check_builds(rep, args.robot)
     check_policies(rep, args.source_host)
     check_missions(rep, args.robot)
     check_host_specific(rep, args.robot)
+    check_cpu(rep, args.robot)
     rc = rep.print()
     print("다음: python3 -m pytest tests -q -m 'not gpu' (저장소 루트, .venv) — 실패 0 이어야 실기")
     return rc

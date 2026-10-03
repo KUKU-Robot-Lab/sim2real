@@ -14,6 +14,8 @@
 ## bringup 점검 순서
 단계의 정본은 `config/mission_dg5f_m_control.yaml` 이다. 요지:
 1. 드라이버·노드 PID 와 남은 프로세스를 확인한다. 이전 세션 노드가 남아 있으면 보고하고 허락 뒤 내린다.
+   CPU 도 이때 본다: `python3 scripts/setup/check_host.py --robot <rh56f1|dg5f> --only cpu`(미션 preflight 가 자동으로 부른다).
+   실시간 한도 MISS 면 운영자에게 `sudo bash scripts/setup/rt_setup.sh` → 재부팅을 요청한다. 코어 배치는 노드가 PC 마다 스스로 정한다.
 2. 상태 토픽(`/joint_states`, `/dg5f_*/joint_states`, `/head/joint_states`) 수신과 관절 방향을 실기와 대조한다.
 3. pd 는 무발행(`execute:=false`)으로 먼저 띄워 게인·입력을 확인한다. 발행 모드 전환은 허락 뒤.
 4. 자세 이동(home, preset, 경로 재생)은 pd 가 한다. 한 팔씩, 단계마다 허락.

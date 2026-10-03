@@ -595,6 +595,8 @@ def main(argv=None) -> int:
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.set())
     node = PdNode()
+    from .cpu_plan import keep_off_rt
+    node.get_logger().info(keep_off_rt())   # ★10.03 실시간 코어(EtherCAT 마스터 자리)를 비켜 간다
     executor = MultiThreadedExecutor(num_threads=3)
     executor.add_node(node)
     try:

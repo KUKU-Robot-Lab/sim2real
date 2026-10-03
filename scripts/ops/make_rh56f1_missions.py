@@ -129,6 +129,9 @@ def _run(kind: str) -> dict:
     fake_arg = [] if real else ["fake:=true"]
     run = {
         "preflight": [
+            *([_cmd("CPU — 실시간 한도(EtherCAT 마스터 FIFO 80 · controller_manager 50) · 코어 배치(이 PC 의 코어를 읽어 노드가 "
+                    "스스로 정한다). 한도가 안 열렸으면 MISS — 운영자가 sudo bash scripts/setup/rt_setup.sh 한 번 → 재부팅(10.03)",
+                    ["python3", "{repo}/scripts/setup/check_host.py", "--robot", "rh56f1", "--only", "cpu"])] if real else []),
             _cmd("RH56F1 변환표 · 백엔드 · 상태 노드 · 계약 · 미션 테스트(수 초)",
                  ["python3", "-m", "pytest", "-q", "-m", "not gpu", "-p", "no:cacheprovider",
                   "{repo}/tests/policy_control/test_pc_rh56f1.py", "{repo}/tests/s2r_console/test_rh56f1_mission.py"]),

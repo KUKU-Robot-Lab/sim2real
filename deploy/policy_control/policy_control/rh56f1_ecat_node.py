@@ -224,6 +224,11 @@ def main(argv: list[str] | None = None) -> int:
             last["state"], last["count"] = s, last["count"] + 1
             publish(s)
 
+    from policy_control import cpu_plan
+    plan = cpu_plan.current_plan()               # ★10.03 PC 마다 코어를 읽어 정한다(번호를 박지 않는다)
+    log.info(cpu_plan.keep_off_rt(plan))
+    margv, cpu_note = cpu_plan.pinned_argv(margv, f"ecat_{args.side}", plan)   # 마스터는 제 코어에서 시작
+    log.info(cpu_note)
     log.info(f"{ns} EtherCAT {ifname} — 마스터 {' '.join(margv)}")
     link.start(margv)
     threading.Thread(target=pump_log, daemon=True).start()

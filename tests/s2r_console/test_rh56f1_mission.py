@@ -284,3 +284,10 @@ def test_real_cup_holders_run_the_marker_node_after_the_head_home_and_shutdown_s
     assert "cup_holders#2" in stops
     fake = {s.id for s in FAKE.stages}
     assert "cup_holders" in fake and not any(c.background for c in _cmds(FAKE, FAKE_BOOK, "cup_holders"))
+
+
+def test_the_real_preflight_checks_the_cpu_on_this_pc_and_fake_does_not():
+    # 10.03 사용자: CPU 최적화는 PC 가 바뀌어도 자동 — 실기 세션마다 실시간 한도 · 코어 배치를 본다. fake 는 무관
+    cpu = lambda book, m: [list(c.argv) for c in _cmds(m, book, "preflight") if "--only" in c.argv]  # noqa: E731
+    assert cpu(REAL_BOOK, REAL) == [["python3", f"{REPO}/scripts/setup/check_host.py", "--robot", "rh56f1", "--only", "cpu"]]
+    assert cpu(FAKE_BOOK, FAKE) == []

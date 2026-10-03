@@ -254,6 +254,8 @@ def main(argv=None) -> int:
     node = None
     try:
         node = JointNode()
+        from .cpu_plan import keep_off_rt
+        node.get_logger().info(keep_off_rt())   # ★10.03 실시간 코어를 비켜 간다
         executor = SingleThreadedExecutor()
         executor.add_node(node)
         try:

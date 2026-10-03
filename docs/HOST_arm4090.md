@@ -19,6 +19,9 @@ OpenArm 양팔 + Inspire RH56F1 양손 + 머리(XC330 ×2) + RealSense 가 모�
   마스터 `tools/ethercat/rh56f1_ecat_master` 는 raw socket 이라 빌드 뒤 운영자가
   `sudo setcap cap_net_raw,cap_net_admin=ep ~/rl_ws/sim2real/tools/ethercat/rh56f1_ecat_master` (다시 빌드하면 다시).
   SOEM v1.4.0 은 `~/rl_ws/SOEM`(사용자 빌드). 옛 RS485 포트(FTDI BG0327KL 오른손 · BG033STU 왼손)는 rh56f1_ports.yaml 주석에 남겼다.
+- ★10.03 CPU: Ryzen 9 5950X 16 코어 · 32 스레드(형제 i · i+16), 일반 커널(PREEMPT_DYNAMIC) · governor schedutil.
+  실시간 한도 0 → 운영자 `sudo bash scripts/setup/rt_setup.sh` → 재부팅. 코어 배치는 자동 — EtherCAT 마스터 오른손 cpu15 · 왼손 cpu14
+  (형제 31 · 30 까지 비켜 둠), 나머지 노드는 28 스레드 자리. enp6s0 IRQ 는 cpu23(irqbalance).
 - `ttyUSB0/1/2` 번호는 꽂는 순서로 바뀐다(09.30 같은 날 세 번 바뀜). 머리 설정은 by-id 경로만 쓴다.
 - CAN 을 켜는 것은 sudo 라 운영자가 한다:
   `sudo ip link set can0 down && sudo ip link set can0 type can bitrate 1000000 dbitrate 5000000 fd on && sudo ip link set can0 up` (can1 도 같게).

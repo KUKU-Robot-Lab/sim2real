@@ -458,6 +458,8 @@ def main(argv=None, family: str = "pour_fj") -> int:
     node = None
     try:
         node = PourFjNode(family=family)
+        from policy_control.cpu_plan import keep_off_rt
+        node.get_logger().info(keep_off_rt())   # ★10.03 실시간 코어를 비켜 간다
         executor = SingleThreadedExecutor()
         executor.add_node(node)
         try:
