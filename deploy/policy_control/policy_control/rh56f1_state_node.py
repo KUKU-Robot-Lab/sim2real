@@ -63,7 +63,6 @@ class HandStateCore:
 
 def main(argv: list[str] | None = None) -> int:
     import rclpy
-    from rclpy.node import Node
     from sensor_msgs.msg import JointState
     from std_msgs.msg import Float64MultiArray
     from rh56f1_interfaces.msg import GetAngleAct1, TouchData1
@@ -76,7 +75,8 @@ def main(argv: list[str] | None = None) -> int:
     ns = f"/hand_{args.side}"
 
     rclpy.init()
-    node = Node(f"rh56f1_state_{args.side}")
+    from policy_control.lean_node import make_lean_node
+    node = make_lean_node(f"rh56f1_state_{args.side}")  # ★10.03 CPU: QoS 이벤트 · 파라미터 서비스 끔
     js_pub = node.create_publisher(JointState, f"{ns}/joint_states", 10)
     tip_pub = node.create_publisher(Float64MultiArray, f"{ns}/tip_forces", 10)
 

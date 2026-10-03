@@ -40,6 +40,7 @@ from . import codec  # noqa: E402
 from .chain import ChainError  # noqa: E402
 from .codec import CodecError  # noqa: E402
 from .contract import load_contract  # noqa: E402
+from .lean_node import LeanNodeMixin, lean_node_kwargs  # noqa: E402
 from .pd_arm import ArmUnit, PdArmError, TickResult, select_sides  # noqa: E402
 from .pd_backends import BackendError  # noqa: E402
 from .pd_law import load_pd_config  # noqa: E402
@@ -81,6 +82,9 @@ def _bind(fn, units: tuple):
         return fn(req, resp, units)
     return srv
 
+
+#: 모터 온도를 푸는 주기 [s] — 발열 판정은 수십 초 단위, 낡음 판정(소스 stale_sec 0.5)보다 충분히 짧게
+TEMP_DECODE_SEC = 0.2
 
 class PdNodeError(RuntimeError):
     """노드 배선/설정 오류(기동 거부) 또는 tick 입력 오류(status 사유)."""
@@ -146,12 +150,13 @@ def parse_target_frame(frame_id: str) -> tuple[str, int]:
 
 
 # ================================================================== node
-class PdNode(Node):
+class PdNode(LeanNodeMixin, Node):
     """subscribe → codec.decode → ArmUnit.tick(타이머, 팔마다) → backends.write / codec.encode → publish."""
 
     def __init__(self, *, context=None, parameter_overrides=None) -> None:
         # 노드 이름은 launch 가 `__node:=` 로 정한다(쪽을 그때 안다). 여기서는 기본 이름으로 뜬다.
-        super().__init__(NODE_NAME, context=context, parameter_overrides=parameter_overrides)
+        # ★10.03 CPU: 기본 QoS 이벤트 핸들러 · 파라미터 서비스를 끈다(lean_node — wait set 이 작아진다)
+        super().__init__(NODE_NAME, context=context, parameter_overrides=parameter_overrides, **lean_node_kwargs())
         self._declare_params()
         self.cfg = load_pd_config(self._path("pd_config"))
         self.contract = load_contract(self._path("contract"))
@@ -215,8 +220,19 @@ class PdNode(Node):
         for unit in self.units.values():
             for topic, roles in unit.joint_topics().items():
                 topics.setdefault(topic, []).append((unit, roles))
-        for topic, targets in topics.items():
-            self.create_subscription(JointState, topic, self._joint_cb(targets), _qos_sensor(), callback_group=main)
+        # ★10.03 CPU: 상태 토픽(팔 /joint_states 750 Hz · 손 250 Hz)을 콜백에서 풀지 않는다 — 직렬 바이트와 받은 시각만 두고
+        #   틱(pd_hz)에서 토픽마다 **마지막 한 개**만 푼다. 소스는 '마지막 값'만 쓰므로 결과가 같다(sources.update_from_joint_state).
+        #   예전에는 pd 프로세스마다 초당 ~1500 메시지를 파이썬으로 풀어 프로세스당 약 1 코어를 썼다(10.03 실측).
+        self._raw_js: dict[str, tuple[bytes, float]] = {}
+        self._raw_js_done: dict[str, float] = {}
+        self._raw_temp: dict[str, tuple[bytes, float]] = {}
+        self._raw_temp_done: float | None = None
+        self._temp_decoded_at = float("-inf")
+        self._js_targets = topics
+        self._js_type = JointState
+        for topic in topics:
+            self.create_subscription(JointState, topic, self._raw_cb(self._raw_js, topic), _qos_sensor(),
+                                     callback_group=main, raw=True)
         self._wire_temperature(main)
         services = (("engage", self._srv_engage), ("goto_home", self._srv_goto_home), ("hand_home", self._srv_hand_home),
                     ("hand_rest", self._srv_hand_rest), ("hand_path", self._srv_hand_path),
@@ -243,12 +259,45 @@ class PdNode(Node):
             self.get_logger().warn("control_msgs 없음 — 모터 온도를 못 읽는다(발열 규칙은 effort 근거만)")
             return
         topic = str(self.get_parameter("temperature_topic").value)
-        self.create_subscription(DynamicJointState, topic, self._on_dynamic_joint_state,
-                                 _qos_sensor(), callback_group=group)
+        from_robot = {u.robot_cfg.temperature_topic for u in self.units.values() if u.robot_cfg.temperature_topic}
+        if len(from_robot) > 1:
+            raise PdNodeError(f"팔마다 temperature_topic 이 다르다: {sorted(from_robot)}")
+        if from_robot and topic == "/dynamic_joint_states":          # 파라미터를 따로 주지 않았으면 robot yaml 이 이긴다
+            topic = from_robot.pop()
+        self.get_logger().info(f"모터 온도 토픽 {topic}")
+        self._temp_type = DynamicJointState
+        # ★10.03 CPU: 온도는 천천히 변한다 — 직렬 바이트만 두고 TEMP_DECODE_SEC 마다 마지막 것만 푼다(750 Hz 를 다 풀지 않는다)
+        self.create_subscription(DynamicJointState, topic, self._raw_cb(self._raw_temp, "temp"),
+                                 _qos_sensor(), callback_group=group, raw=True)
 
     _TEMP_FIELDS = ("temperature_rotor", "temperature_mos")
 
-    def _on_dynamic_joint_state(self, msg) -> None:
+    @staticmethod
+    def _raw_cb(store: dict, key: str):
+        def cb(data: bytes) -> None:
+            store[key] = (data, time.monotonic())          # GIL 아래 한 번의 대입 — 락 없이 '마지막 것'만 남는다
+        return cb
+
+    def _drain_raw(self, now: float) -> None:
+        """틱 앞에서: 토픽마다 새로 온 마지막 메시지만 풀어 넘긴다. 받은 시각은 그 메시지가 도착한 시각(낡음 판정 그대로)."""
+        from rclpy.serialization import deserialize_message
+        for topic, (data, t_recv) in list(self._raw_js.items()):
+            if self._raw_js_done.get(topic) == t_recv:
+                continue
+            self._raw_js_done[topic] = t_recv
+            try:
+                sample = codec.decode_joint_state(deserialize_message(data, self._js_type))
+                with self._lock:
+                    for unit, roles in self._js_targets[topic]:
+                        unit.on_joint_state(roles, sample, t_recv)
+            except _HANDLED as exc:
+                self._note_error(f"joint_state({topic}): {exc}")
+        got = self._raw_temp.get("temp")
+        if got is not None and got[1] != self._raw_temp_done and now - self._temp_decoded_at >= TEMP_DECODE_SEC:
+            self._raw_temp_done, self._temp_decoded_at = got[1], now
+            self._on_dynamic_joint_state(deserialize_message(got[0], self._temp_type), t_recv=got[1])
+
+    def _on_dynamic_joint_state(self, msg, t_recv: float | None = None) -> None:
         """관절당 서미스터 중 **더 뜨거운 쪽**을 취해 각 팔에 넘긴다."""
         by_source: dict[str, float] = {}
         for name, iface in zip(msg.joint_names, msg.interface_values):
@@ -257,24 +306,12 @@ class PdNode(Node):
                 by_source[name] = max(hot)
         if not by_source:
             return
-        now = time.monotonic()
+        now = time.monotonic() if t_recv is None else t_recv
         with self._lock:
             for unit in self.units.values():
                 unit.on_temperatures(by_source, now)
 
     # ---------------------------------------------------------------- subscriptions
-    def _joint_cb(self, targets: list):
-        def cb(msg) -> None:
-            try:
-                sample = codec.decode_joint_state(msg)
-                now = time.monotonic()
-                with self._lock:
-                    for unit, roles in targets:
-                        unit.on_joint_state(roles, sample, now)
-            except _HANDLED as exc:
-                self._note_error(f"joint_state({[r for _, r in targets]}): {exc}")
-        return cb
-
     def _on_target(self, msg) -> None:
         try:
             sample = codec.decode_joint_state(msg)
@@ -317,6 +354,7 @@ class PdNode(Node):
     # ---------------------------------------------------------------- timer
     def _on_timer(self) -> None:
         t0 = time.perf_counter()
+        self._drain_raw(time.monotonic())
         with self._lock:
             try:
                 self._tick(time.monotonic(), t0)

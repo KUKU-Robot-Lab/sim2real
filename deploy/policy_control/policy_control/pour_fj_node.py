@@ -39,6 +39,7 @@ from policy_control import rh_aglt_goals as G  # noqa: E402
 from policy_control.episode_master import EpisodeBook  # noqa: E402
 from policy_control.joint_obs import quat_to_matrix  # noqa: E402
 from policy_control.sources import SourceSet, load_robot_cfg, select_side  # noqa: E402
+from policy_control.lean_node import LeanNodeMixin, lean_node_kwargs  # noqa: E402
 
 NS = "/policy_control"
 NODE = "pour_fj_node"
@@ -242,7 +243,7 @@ except ImportError:
     Node = object                        # type: ignore[misc,assignment]
 
 
-class PourFjNode(Node):
+class PourFjNode(LeanNodeMixin, Node):
     def __init__(self, *, policy=None, family: str = "pour_fj", **kw) -> None:
         from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
         from geometry_msgs.msg import PoseStamped
@@ -253,7 +254,7 @@ class PourFjNode(Node):
         from policy_control.fk_numpy import UrdfChainFK
 
         self.fam = FAMILIES[family]
-        super().__init__(self.fam.name, **kw)
+        super().__init__(self.fam.name, **{**lean_node_kwargs(), **kw})   # ★10.03 CPU(lean_node)
         self.node_name = self.get_name()          # -r __node:=rh_aglt_node_right 로 팔마다 이름을 가른다
         for name, default in (("contract", ""), ("robot", ""), ("device", "cpu"), ("reset_tol_rad", 0.15),
                               ("max_gap_ticks", 3), ("publish_target", True), ("max_episode_s", -1.0), ("ns", ""),

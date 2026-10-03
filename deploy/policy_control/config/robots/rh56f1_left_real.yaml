@@ -1,13 +1,17 @@
 # left 팔 + Inspire RH56F1 (자산 hdgp/assets/robot/openarm_rh56f1_bi_rl) — 실기(arm4090). 09.29 사용자: rh56f1 제어 연결.
 # 손: robot_control rh56f1_driver(/hand_left/angle_*, 0.1°) → policy_control rh56f1_state_node → /hand_left/joint_states(rad).
 # 손 명령은 pd 가 벤더 각도 레지스터로 직접(/hand_left/angle_set, 변환표 config/rh56f1_hand_map.yaml).
+# ★10.03 CPU: 팔 상태는 robot_control 브링업의 pd 전용 사본(pd_state_broadcaster, 250 Hz · 14 관절 · 위치/속도/힘)을 읽는다.
+#   /joint_states(750 Hz)는 기록용으로 그대로 — 파이썬 pd · 정책이 750 Hz 를 받으면 rclpy 콜백만으로 프로세스당 약 0.5~1 코어.
+#   모터 온도도 pd_temp_broadcaster(10 Hz · 온도만). 브링업이 이 두 broadcaster 를 띄우지 않으면 pd 가 'stale' 로 engage 를 거부한다.
 robot: rh56f1_left_real
+temperature_topic: /pd_temp_broadcaster/dynamic_joint_states   # 10.03 — 10 Hz · 온도만
 joint_profiles:
   - robot_control/src/robot_control/profiles/openarm_rh56f1.yaml
 sources:
   arm:
     type: joint_state
-    topic: /joint_states
+    topic: /pd_state_broadcaster/joint_states   # 10.03 — 250 Hz 사본(위 머리 주석)
     joints: [l_aj_1, l_aj_2, l_aj_3, l_aj_4, l_aj_5, l_aj_6, l_aj_7]
     naming: source
     stale_sec: 0.5

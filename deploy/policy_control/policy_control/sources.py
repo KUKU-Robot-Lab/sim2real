@@ -81,6 +81,7 @@ class RobotCfg:
     groups: dict
     table: TableCfg
     joint_profiles: tuple = ()         # 합쳐 쓰는 프로필들(robot_control 본 프로필 + 보충 프로필)
+    temperature_topic: str = ""        # 모터 온도(DynamicJointState) 토픽 — 비면 pd 파라미터 기본(/dynamic_joint_states)
 
     @property
     def object_mode(self) -> str:
@@ -209,9 +210,12 @@ def load_robot_cfg(path: Path) -> RobotCfg:
     table = raw["table"]
     if not isinstance(table, dict) or "top" not in table or "clearance_min" not in table:
         raise RobotCfgError(f"{path}: table 은 top/clearance_min 을 가져야 한다")
+    temp = str(raw.get("temperature_topic", "") or "")
+    if temp and not temp.startswith("/"):
+        raise RobotCfgError(f"{path}: temperature_topic 은 / 로 시작하는 토픽: {temp!r}")
     cfg = RobotCfg(robot=str(raw["robot"]), joint_profile=profiles[0], sources=sources,
                    groups=dict(raw.get("groups", {}) or {}),
-                   table=_table_cfg(table), joint_profiles=tuple(profiles))
+                   table=_table_cfg(table), joint_profiles=tuple(profiles), temperature_topic=temp)
     _check_profile_names(cfg)
     return cfg
 

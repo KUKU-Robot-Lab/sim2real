@@ -124,13 +124,13 @@ def main(argv: list[str] | None = None) -> int:
     margv = E.master_argv(binary, ifname, link.master_sock, link.node_sock, cfg, args.no_op)
 
     import rclpy
-    from rclpy.node import Node
     from std_msgs.msg import String
     from rh56f1_interfaces.msg import (GetAngleAct1, GetCurrentAct1, GetForceAct1, SetAngle1, SetForce1, SetSpeed1,
                                        TouchData1)
 
     rclpy.init()
-    node = Node(f"rh56f1_ecat_{args.side}")
+    from policy_control.lean_node import make_lean_node
+    node = make_lean_node(f"rh56f1_ecat_{args.side}")   # ★10.03 CPU: QoS 이벤트 · 파라미터 서비스 끔
     log = node.get_logger()
     ns = f"/hand_{args.side}"
     names = E.joint_names(args.side)
