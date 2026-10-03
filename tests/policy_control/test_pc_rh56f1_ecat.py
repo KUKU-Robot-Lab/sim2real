@@ -96,7 +96,7 @@ def test_port_file_gives_one_nic_per_hand_and_a_valid_master_command():
     assert (ifr, ifl) == ("enx00e04c6806e1", "enp6s0")
     argv = E.master_argv("/m", ifr, "/a", "/b", cfg, no_op=False)
     assert argv[:3] == ["/m", "--ifname", ifr] and "--no-op" not in argv
-    assert argv[argv.index("--hz") + 1] == "1000.0" and argv[argv.index("--speed") + 1] == "2000"
+    assert argv[argv.index("--hz") + 1] == "500.0" and argv[argv.index("--speed") + 1] == "2000"
     assert E.master_argv("/m", ifr, "/a", "/b", cfg, no_op=True)[-1] == "--no-op"
     assert "--op-enable" not in argv and "--sync-type" not in argv                     # 실험 손잡이 기본 끔
     exp = E.master_argv("/m", ifr, "/a", "/b", dict(cfg, op_enable=True, sync_type=1), no_op=False)
