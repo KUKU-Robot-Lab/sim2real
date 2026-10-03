@@ -38,6 +38,19 @@
   pd · 정책 · 손 상태 · EtherCAT 노드는 그 밖(일반 코어)에서 돈다. 물리 코어가 4 개 미만이면 고정하지 않는다. arm4090 = cpu15 · cpu14.
   torch 스레드 = POLICY_CPU_THREADS 또는 2. 끄기 `S2R_CPU_PIN=0`. 노드 로그 첫머리에 'CPU: …' 한 줄.
 
+## ★10.03 밤 실기 측정 — 정책 2개 + FP++ 까지 (무발행, 로봇 정지)
+
+- 순서: CAN 무해 프레임(0x5A5) ACK 확인 → 손 → 팔 브링업(/joint_states 0 이 아닌지 즉시 확인) → pd 무발행 ×2 → rh_aglt 양팔
+  (CPU 추론, 컵 대신 FP++ 홀더 자세, reset_tol 4.0) → bag 기록 + 프로세스별 CPU → 역순 정리.
+- 실시간: 손 마스터 FIFO 80(cpu15 · cpu14), controller_manager RT 스레드 FIFO 50. FP++ 컨테이너는 일반 코어(0-13,16-29).
+- CPU(코어 수, 170 s 평균): FP++ 3.13 · pd ×2 0.62 · 정책 ×2 0.54 · 기록 ×2 0.40 · 손 상태 ×2 0.35 · controller_manager 0.30 ·
+  카메라 0.25 · 손 EtherCAT 노드 ×2 0.21 · 마스터 ×2 0.02 → 합계 약 5.9 / 32. GPU 65 % · FP++ 2.1 GB.
+- 멈춤(최대 간격): /joint_states 4.6 ms · pd 상태 12.5 ms · 정책 상태(60 Hz) 20.6 ms · 손 9.5 ms. 오후의 동시 멈춤(손 336 · pd 149 ·
+  팔 88 ms)은 204 · 363 s 기록 모두에서 다시 안 나왔다. 기록 시작 0.6 s 에 손 토픽 333 ms 늦게 옴 1 회 — 샘플 시각은 4 ms 간격
+  그대로라 기록기 시작 때 전달 지연(제어와 무관).
+- 남은 것: pd 가 실기 30 %(fake 17 %) · FP++ 깊이 광선 방향 13 mm 짧음(배포는 z −8 mm 만 보정) · pd 발행 상태 측정.
+- 보고서: ~/rl_ws/report/rh56f1_final_optimization_eli5.html. bag: logs/bags/20261003_231359_rt_cpu_check · 20261003_234451_policy_fpp_check(arm4090).
+
 ## ★10.03 고속 맞춤 (3ca354e · 4c1bfae)
 
 | 구간 | 값 | 근거 |
