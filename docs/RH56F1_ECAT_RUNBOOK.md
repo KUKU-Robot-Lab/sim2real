@@ -14,6 +14,18 @@
 - 명령 뒤 상태 코드는 6 축 모두 1(쥐는 중). 목표가 매뉴얼 범위로 잘려 실제 각도와 3~4 차이(오른손 1743 vs 1740 · 왼손 896 vs 900)라
   계속 따라가는 중으로 보인다 — 온도 36~40 °C 로 문제는 없었지만 범위 끝에서는 지켜볼 것.
 
+## ★10.03 양팔 홈 ↔ 차렷 · CPU 최적화 (2b644f0 · 88f449e · 319888a · robot_control 3c909cc)
+
+- 홈 ↔ 차렷: 오른팔 · 왼팔 모두 성공(홈 오차 0.0099 · 0.0097 rad). 왼팔은 차렷 j4 −0.013 rad 가 하한 0 밖이라 engage 시작점과
+  경로 진입 램프의 첫 목표가 '한계 밖'으로 HOLD → 목표는 늘 한계로 자르고 고장 판정은 0.05 rad 넘을 때만.
+- CPU(같은 부하, fake 도메인): pd 프로세스 66.5 % → 17.3 %.
+  ① robot_control 브링업에 pd 전용 사본 — /pd_state_broadcaster/joint_states 250 Hz · /pd_temp_broadcaster/dynamic_joint_states 10 Hz
+     (/joint_states 750 Hz 는 기록용 그대로). rh56f1_*_real.yaml 이 사본을 읽는다 — **브링업은 robot_control 3c909cc 이후여야 한다**.
+  ② pd 는 상태를 raw 로 받아 틱에서 마지막 것만 푼다. ③ lean_node — 기본 QoS 이벤트 · 파라미터 서비스 끔(executor wait set 비용이 66 %).
+- 기록: 팔 · 손 기록기 분리(rh56f1_record.sh), 기록 중 bag 은 읽지 않는다(bag_rate_report.py 는 metadata.yaml 없으면 거부).
+- 미확인: 실기 133 s 의 동시 멈춤(손 336 · pd 149 · /joint_states 88 ms). fake 2 분 부하에서는 재현 안 됨(pd 최대 간격 47 ms).
+- 배경 실행한 ros2 launch 는 SIGINT 를 무시한다 → 노드 PID 에 SIGTERM.
+
 ## ★10.03 고속 맞춤 (3ca354e · 4c1bfae)
 
 | 구간 | 값 | 근거 |
