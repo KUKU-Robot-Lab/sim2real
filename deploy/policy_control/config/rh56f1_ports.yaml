@@ -16,7 +16,7 @@ ethercat:
   #   LAN9252(ID 0x9252) SSC 펌웨어가 프로세스 데이터 처리에 밀려 상태기계를 못 도는 것으로 본다. 500 · 250 · 100 Hz 는 바로 OP.
   cycle_hz: 500           # PDO 주기 — 1000 은 OP 가 안 된다
   cycle_hz_op: 0          # >0: OP 에 들어간 뒤 이 주기로(예 1000). 0 = cycle_hz 그대로 — 10.03 실측 전이라 꺼 둔다
-  state_hz: 200           # ROS 발행(angle_actual 등) — ★10.03 pd 120 Hz · 정책 60 Hz 보다 빠르게(상태 나이 ≤ 5 ms)
+  state_hz: 250           # ROS 발행(angle_actual 등) — ★10.03 pd 120 Hz · 정책 60 Hz 보다 빠르게(상태 나이 ≤ 4 ms). cycle_hz 를 나눠떨어지게(200 은 500/3 = 166.7 Hz 로 나왔다)
   speed: 2000             # 시작 SPEEDSET(pd 가 hw_speed 로 덮는다) · 매뉴얼 0~4000
   force: 600              # 시작 FORCESET(g, pd 가 hw_force 로 덮는다) · 매뉴얼 0~1000
   enable_value: 1         # 명령 중 ENABLE_SET 값 — 매뉴얼은 'Motion control enable' 뿐이라 첫 OP 시험에서 확인

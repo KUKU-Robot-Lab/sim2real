@@ -219,6 +219,10 @@ def master_argv(binary: str, ifname: str, master_sock: str, node_sock: str, cfg:
         raise EcatError("cycle_hz 는 50~4000")
     if not 0 < float(cfg.get("state_hz", 100)) <= float(cfg.get("cycle_hz", 1000)):
         raise EcatError("state_hz 는 0 초과 cycle_hz 이하")
+    for key in ("cycle_hz", "cycle_hz_op"):          # 마스터는 N 주기마다 상태를 보낸다 — 안 나눠떨어지면 주기가 틀어진다(10.03)
+        hz = float(cfg.get(key, 0) or 0)
+        if hz > 0 and abs(hz / float(cfg.get("state_hz", 100)) - round(hz / float(cfg.get("state_hz", 100)))) > 1e-9:
+            raise EcatError(f"{key} {hz:g} 가 state_hz {float(cfg.get('state_hz', 100)):g} 로 나눠떨어지지 않는다")
     if not 0 <= int(cfg.get("speed", 2000)) <= SPEED_MAX or not 0 <= int(cfg.get("force", 600)) <= FORCE_MAX:
         raise EcatError(f"speed 0~{SPEED_MAX} · force 0~{FORCE_MAX}")
     return argv + (["--no-op"] if no_op else [])

@@ -106,6 +106,8 @@ def test_port_file_gives_one_nic_per_hand_and_a_valid_master_command():
     assert fast[fast.index("--hz-op") + 1] == "1000.0"
     with pytest.raises(E.EcatError, match="cycle_hz_op"):
         E.master_argv("/m", ifr, "/a", "/b", dict(cfg, cycle_hz_op=50), no_op=False)
+    with pytest.raises(E.EcatError, match="나눠떨어지지"):
+        E.master_argv("/m", ifr, "/a", "/b", dict(cfg, state_hz=200), no_op=False)         # 500/200 → 166.7 Hz 였다
 
     with pytest.raises(E.EcatError, match="같은 NIC"):
         NODE.ecat_config({"right": ports["right"], "left": dict(ports["left"], ifname=ifr)}, "right")

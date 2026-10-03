@@ -1,0 +1,11 @@
+# /etc/sudoers.d/rh56f1-setcap — RH56F1 EtherCAT 실행 파일 세 개에 raw socket 권한(cap_net_raw · cap_net_admin)만
+# 비밀번호 없이 붙이게 한다. tools/ethercat/build.sh 가 다시 빌드한 뒤 `sudo --non-interactive setcap …` 으로 쓴다.
+# 설치(운영자 한 번):
+#   sudo install -m 0440 -o root -g root tools/ethercat/sudoers-rh56f1-setcap /etc/sudoers.d/rh56f1-setcap
+#   sudo visudo -c        # 문법 확인 — 실패하면 sudo rm /etc/sudoers.d/rh56f1-setcap
+# 범위: 이 세 경로 · 이 권한 문자열만. 다른 파일 · 다른 권한 · 다른 명령은 여전히 비밀번호를 묻는다.
+# 주의: 세 파일은 user 가 쓸 수 있는 경로라 그 자리에 다른 프로그램을 두면 그것도 같은 네트워크 권한을 받을 수 있다
+#       (raw socket 송수신 · 인터페이스 설정까지 — root 권한 전체는 아니다).
+user ALL=(root) NOPASSWD: /usr/sbin/setcap cap_net_raw\,cap_net_admin=ep /home/user/rl_ws/sim2real/tools/ethercat/rh56f1_ecat_master
+user ALL=(root) NOPASSWD: /usr/sbin/setcap cap_net_raw\,cap_net_admin=ep /home/user/rl_ws/sim2real/tools/ethercat/ecat_rh56f1
+user ALL=(root) NOPASSWD: /usr/sbin/setcap cap_net_raw\,cap_net_admin=ep /home/user/rl_ws/sim2real/tools/ethercat/ecat_rtt
