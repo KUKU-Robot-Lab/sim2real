@@ -27,6 +27,8 @@ STATE_SIZE, CMD_SIZE = _STATE.size, _CMD.size
 ANGLE_LO = (900, 900, 900, 900, 1100, 600)
 ANGLE_HI = (1740, 1740, 1740, 1740, 1350, 1800)
 FORCE_MAX, SPEED_MAX = 1000, 4000
+#: 10.03 실측 — 손 펌웨어(LAN9252 SSC)가 이보다 빠른 PDO 주기에서는 OP 요청도 명령도 읽지 못한다(500 OK · 750 · 1000 무시)
+MAX_CYCLE_HZ = 500.0
 SLOT_FINGERS = ("pinky_1", "ring_1", "middle_1", "index_1", "thumb_2", "thumb_1")   # 벤더 드라이버와 같은 순서 · 이름
 #: 매뉴얼 표 46 상태 코드(255 는 표에 없다 — 10.02 왼손 전원 뒤 명령 전 값으로 관찰)
 STATUS_TEXT = {0: "펴는 중", 1: "쥐는 중", 2: "위치 도달 정지", 3: "힘 제어 정지", 5: "전류 보호 정지",
@@ -219,6 +221,9 @@ def master_argv(binary: str, ifname: str, master_sock: str, node_sock: str, cfg:
         raise EcatError("cycle_hz 는 50~4000")
     if not 0 < float(cfg.get("state_hz", 100)) <= float(cfg.get("cycle_hz", 1000)):
         raise EcatError("state_hz 는 0 초과 cycle_hz 이하")
+    for key in ("cycle_hz", "cycle_hz_op"):          # ★10.03 실측: 750 · 1000 Hz 에서 손 MCU 가 OP 요청 · 명령을 읽지 못한다(조용히 무시)
+        if float(cfg.get(key, 0) or 0) > MAX_CYCLE_HZ:
+            raise EcatError(f"{key} {float(cfg[key]):g} > {MAX_CYCLE_HZ:g} Hz — 이 손은 그보다 빠르면 명령을 무시한다(10.03 실측)")
     for key in ("cycle_hz", "cycle_hz_op"):          # 마스터는 N 주기마다 상태를 보낸다 — 안 나눠떨어지면 주기가 틀어진다(10.03)
         hz = float(cfg.get(key, 0) or 0)
         if hz > 0 and abs(hz / float(cfg.get("state_hz", 100)) - round(hz / float(cfg.get("state_hz", 100)))) > 1e-9:

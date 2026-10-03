@@ -102,8 +102,11 @@ def test_port_file_gives_one_nic_per_hand_and_a_valid_master_command():
     exp = E.master_argv("/m", ifr, "/a", "/b", dict(cfg, op_enable=True, sync_type=1), no_op=False)
     assert "--op-enable" in exp and exp[exp.index("--sync-type") + 1] == "1"
     assert "--hz-op" not in argv                                                          # 10.03 기본 꺼짐
-    fast = E.master_argv("/m", ifr, "/a", "/b", dict(cfg, cycle_hz_op=1000), no_op=False)
-    assert fast[fast.index("--hz-op") + 1] == "1000.0"
+    fast = E.master_argv("/m", ifr, "/a", "/b", dict(cfg, cycle_hz=250, cycle_hz_op=500), no_op=False)
+    assert fast[fast.index("--hz-op") + 1] == "500.0"
+    for k, v in (("cycle_hz_op", 1000), ("cycle_hz_op", 750), ("cycle_hz", 1000)):          # 10.03: 손이 명령을 무시
+        with pytest.raises(E.EcatError, match="무시"):
+            E.master_argv("/m", ifr, "/a", "/b", dict(cfg, **{k: v}), no_op=False)
     with pytest.raises(E.EcatError, match="cycle_hz_op"):
         E.master_argv("/m", ifr, "/a", "/b", dict(cfg, cycle_hz_op=50), no_op=False)
     with pytest.raises(E.EcatError, match="나눠떨어지지"):
