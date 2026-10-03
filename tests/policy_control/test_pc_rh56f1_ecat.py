@@ -184,3 +184,9 @@ def test_master_source_keeps_the_safety_rules():
     assert "if (v < 0) v = c->commanded ? c->target[i] : in[IN_ANGLE + i];" in src
     # 10.02: 요청 값을 상태 변수에 덮지 않는다 · OP 는 한 번 요청하고 3 s 기다린다
     assert "ec_slave[1].state = EC_STATE_OPERATIONAL" not in src and "t0 - op_req_t > (uint64_t)op_timeout_ms * 1000000ull" in src
+
+
+def test_sample_time_is_the_hardware_moment_on_the_ros_clock():
+    """10.03 bag 정렬: 노드가 받은 시각이 아니라 마스터가 PDO 를 받은 시각."""
+    assert E.sample_time_ns(ros_now_ns=10_000_000_000, mono_now_ns=500_000_000, sample_mono_ns=497_000_000) == 9_997_000_000
+    assert E.sample_time_ns(10_000_000_000, 500, 900) == 10_000_000_000          # 미래(시계 이상)면 지금

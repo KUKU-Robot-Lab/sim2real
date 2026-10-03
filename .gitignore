@@ -64,3 +64,4 @@ tools/ethercat/ecat_rtt
 tools/ethercat/ecat_rh56f1
 tools/ethercat/*.new
 tools/ethercat/rh56f1_ecat_master
+logs/bags/

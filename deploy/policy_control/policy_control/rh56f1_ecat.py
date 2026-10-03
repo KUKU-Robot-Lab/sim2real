@@ -196,6 +196,13 @@ class CommandBook:
         return pack_cmd(CMD_HEARTBEAT)
 
 
+def sample_time_ns(ros_now_ns: int, mono_now_ns: int, sample_mono_ns: int) -> int:
+    """마스터가 PDO 를 받은 순간(CLOCK_MONOTONIC)을 ROS 시계로 — 10.03 bag 정렬용(노드가 받은 시각이 아니라 하드웨어 샘플 시각).
+    마스터 · 노드는 같은 호스트의 같은 단조 시계라 차이만 빼면 된다. 미래 시각이면(시계 이상) 지금으로."""
+    age = mono_now_ns - int(sample_mono_ns)
+    return ros_now_ns - age if age >= 0 else ros_now_ns
+
+
 def joint_names(side: str) -> list[str]:
     p = "r" if side == "right" else "l"
     return [f"{p}_hj_{f}" for f in SLOT_FINGERS]

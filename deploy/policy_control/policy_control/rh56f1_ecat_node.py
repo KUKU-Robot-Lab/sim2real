@@ -144,9 +144,15 @@ def main(argv: list[str] | None = None) -> int:
     lock = threading.Lock()
     last = {"state": None, "status_t": 0.0, "count": 0}
 
-    def six(msg_type, values):
+    from builtin_interfaces.msg import Time
+
+    def stamp_of(s: E.EcatState) -> Time:
+        ns_ = E.sample_time_ns(node.get_clock().now().nanoseconds, time.monotonic_ns(), s.t_ns)
+        return Time(sec=ns_ // 1_000_000_000, nanosec=ns_ % 1_000_000_000)
+
+    def six(msg_type, values, stamp):
         m = msg_type()
-        m.header.stamp = node.get_clock().now().to_msg()
+        m.header.stamp = stamp
         m.header.frame_id = ns
         m.hand_id = hand_id
         m.joint_values = [int(v) for v in values]
@@ -154,11 +160,12 @@ def main(argv: list[str] | None = None) -> int:
         return m
 
     def publish(s: E.EcatState) -> None:
-        pubs["angle"].publish(six(GetAngleAct1, s.angle))
-        pubs["force"].publish(six(GetForceAct1, s.force))
-        pubs["current"].publish(six(GetCurrentAct1, s.current))
+        st = stamp_of(s)                        # ★10.03 하드웨어 샘플 시각 — 네 토픽이 같은 도장(bag 에서 한 샘플로 묶인다)
+        pubs["angle"].publish(six(GetAngleAct1, s.angle, st))
+        pubs["force"].publish(six(GetForceAct1, s.force, st))
+        pubs["current"].publish(six(GetCurrentAct1, s.current, st))
         t = TouchData1()
-        t.header.stamp = node.get_clock().now().to_msg()
+        t.header.stamp = st
         for k, v in s.touch().items():
             setattr(t, k, [int(x) for x in v])
         pubs["touch"].publish(t)

@@ -81,10 +81,12 @@ def main(argv: list[str] | None = None) -> int:
     tip_pub = node.create_publisher(Float64MultiArray, f"{ns}/tip_forces", 10)
 
     def on_angle(msg) -> None:
-        stamp = node.get_clock().now()
-        names, pos, vel = core.on_angle(list(msg.joint_values), stamp.nanoseconds * 1e-9)
+        # ★10.03 원본 도장을 이어받는다(EtherCAT 노드 = 하드웨어 샘플 시각) — 없으면(0) 받은 시각. bag 정렬 · 속도 계산 모두 이 시각
+        src = msg.header.stamp
+        stamp_ns = src.sec * 1_000_000_000 + src.nanosec if (src.sec or src.nanosec) else node.get_clock().now().nanoseconds
+        names, pos, vel = core.on_angle(list(msg.joint_values), stamp_ns * 1e-9)
         out = JointState()
-        out.header.stamp = stamp.to_msg()
+        out.header.stamp = msg.header.stamp if (src.sec or src.nanosec) else node.get_clock().now().to_msg()
         out.name, out.position, out.velocity = names, pos.tolist(), vel.tolist()
         js_pub.publish(out)
 
