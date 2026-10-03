@@ -104,6 +104,9 @@ class FjContract:
     hand_finger_open_floor_rad: float = 0.0
     hand_vel_cap_rad_s: float = 0.0
     hand_thumb_flex_vel_cap_rad_s: float = 0.0
+    # ★10.04 hdgp t2r_rh5_b16(53050c2e) 손 닫힘 상한 — 에피소드 시작(인계)의 손 목표 q*_0 에서 닫는 쪽으로 이만큼까지만.
+    #   0 = 그 기능 이전 런. >0 이면 디코더를 인계 손 목표(직전 정책의 마지막 joint_target)로 시작해야 한다.
+    hand_close_margin_rad: float = 0.0
 
     def side(self, role: str) -> FjSide:
         return self.sides[role]
@@ -224,6 +227,8 @@ def build(run_dir: Path, checkpoint: Path, pair, urdf: Path, *, asset: str,
             hand_finger=[FINGERS.index(_finger(n)) for n in hand],
             hand_freeze=[n.rsplit("_", 1)[1] in tuple(prof.hand_freeze_suffixes) for n in hand],
             palm_body=str(prof.palm_body), tip_bodies=list(prof.fingertip_bodies))
+        if float(env.get("hand_force_stop_nm", 0.0)) != 0.0:
+            raise PourFjError("hand_force_stop_nm ≠ 0 — sim 힘 멈춤을 배포에 옮기지 않았다(b16 은 0)")
         if float(env.get("oppose_grip_delta_rad", 0.0)) != 0.0:
             raise PourFjError("oppose_grip_delta_rad ≠ 0 — 대향 grip 보정을 아직 옮기지 않았다")
     c = FjContract(
@@ -246,7 +251,8 @@ def build(run_dir: Path, checkpoint: Path, pair, urdf: Path, *, asset: str,
         sides=sides, notes=notes,
         hand_finger_open_floor_rad=float(env.get("hand_finger_open_floor_rad", 0.0)),
         hand_vel_cap_rad_s=float(env.get("hand_vel_cap_rad_s", 0.0)),
-        hand_thumb_flex_vel_cap_rad_s=float(env.get("hand_thumb_flex_vel_cap_rad_s", 0.0)))
+        hand_thumb_flex_vel_cap_rad_s=float(env.get("hand_thumb_flex_vel_cap_rad_s", 0.0)),
+        hand_close_margin_rad=float(env.get("hand_close_margin_rad", 0.0)))
     if not bool(cfg_a.get("normalize_input", False)):
         notes.append("normalize_input false")
     validate(c)
@@ -284,9 +290,18 @@ class FjDecoder:
         self.state: dict[str, _SideState] = {}
         self.reset()
 
-    def reset(self) -> None:
-        self.state = {r: _SideState(np.array(self.c.sides[r].arm_home, float), np.array(self.c.sides[r].hand_open, float))
+    def reset(self, hand_start: Mapping[str, Sequence[float]] | None = None) -> None:
+        """hand_start[role] = 인계 순간의 손 목표 q*_0(직전 정책의 마지막 목표, hand_joints 순). 없으면 편 손에서 시작.
+
+        ★hand_close_margin_rad > 0(b16~) 계약은 hand_start 가 있어야 한다 — 편 손을 q*_0 로 두면 손을 못 쥔다. 없으면 step 이 거부.
+        """
+        start = hand_start or {}
+        self.state = {r: _SideState(np.array(self.c.sides[r].arm_home, float),
+                                    np.array(start[r] if r in start else self.c.sides[r].hand_open, float))
                       for r in ROLES}
+        self.hand_q0 = {r: np.array(start[r], float) for r in ROLES if r in start}
+        self.close_dir = {r: np.sign(np.asarray(self.c.sides[r].hand_grip, float) - np.asarray(self.c.sides[r].hand_open, float))
+                          for r in ROLES}
 
     def law(self, s: FjSide) -> RH.HandLaw:
         """손 행동 법칙(policy_control/rh56f1_hand.py) — pour_fj 는 대기 중에도 손이 행동을 따른다(hdgp side_rig 게이트 없음)."""
@@ -311,7 +326,7 @@ class FjDecoder:
             s, st = self.c.sides[r], self.state[r]
             a_arm, a_hand = a[i * 13:i * 13 + 7], a[i * 13 + 7:(i + 1) * 13]
             st.arm_target = self._arm(s, st.arm_target, a_arm) if active else np.array(s.arm_home, float)
-            st.hand_target = self._hand(s, st.hand_target, a_hand, None if touch is None else touch.get(r))
+            st.hand_target = self._hand(s, st.hand_target, a_hand, None if touch is None else touch.get(r), r)
             out[r] = (st.arm_target.copy(), st.hand_target.copy())
         return out
 
@@ -324,13 +339,24 @@ class FjDecoder:
         q_raw = np.clip(q + c.k_arm * a, lo, hi)
         return np.clip(c.arm_ema * q_raw + (1.0 - c.arm_ema) * q, lo, hi)
 
-    def _hand(self, s: FjSide, prev: np.ndarray, a: np.ndarray, touch) -> np.ndarray:
+    def _hand(self, s: FjSide, prev: np.ndarray, a: np.ndarray, touch, role: str | None = None) -> np.ndarray:
         """touch = 손가락 5개 닿음(bool) — 계약의 동결 임계로 이미 판정한 값."""
         law = self.law(s)
         freeze = None
         if law.freeze and touch is not None:
             freeze = np.asarray(touch, bool)[list(RH.FINGER_OF)] & np.asarray(law.freeze_joints, bool)
-        return law.step(prev, a, active=True, freeze=freeze)       # 학습의 hard-coded 60 — policy_hz 와 같다
+        q = law.step(prev, a, active=True, freeze=freeze)          # 학습의 hard-coded 60 — policy_hz 와 같다
+        m = self.c.hand_close_margin_rad
+        if m > 0.0:
+            # ★10.04 b16: EMA · 속도 상한 · grip 범위 clamp 다음에(side_rig.direct_hand_targets 순서) 닫는 쪽만 q*_0 + margin 까지.
+            #   close_dir = sign(grip − open), 엄지 회전(thumb_1)도 같은 규칙. 펴는 쪽은 자르지 않는다.
+            q0 = self.hand_q0.get(role)
+            if q0 is None:
+                raise PourFjError("hand_close_margin_rad 계약은 인계 손 목표(reset(hand_start=…)) 없이 돌 수 없다")
+            d = self.close_dir[role]
+            lim = q0 + d * m
+            q = np.where(d > 0, np.minimum(q, lim), np.where(d < 0, np.maximum(q, lim), q))
+        return q
 
 
 # ---------------------------------------------------------------- 관측

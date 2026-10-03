@@ -293,3 +293,55 @@ def test_hand_obs_order_is_read_from_both_trace_meta_formats():
     assert mod.hand_obs_order_from_meta({}) is None
     with pytest.raises(SystemExit, match="항등"):
         mod.hand_obs_order_from_meta({**new, "src_hand_action_slot": [1, 0, 2, 3, 4, 5]})
+
+
+# ---------------------------------------------------------------- 10.04 b16 손 닫힘 상한
+Q0 = [1.40, 0.10, 0.43, 0.43, 0.40, 0.40]          # 인계 쥔 목표(엄지 회전은 닫을수록 작아진다: grip 1.2 < open 1.57)
+
+
+def test_b16_close_margin_caps_closing_at_the_handoff_target_plus_margin():
+    """hdgp t2r_rh5_b16: 정책이 손을 +1 로 포화해도 닫는 쪽은 q*_0 + 0.02 까지(엄지 회전은 반대 방향), 펴는 쪽은 자유."""
+    c = _contract(hand_close_margin_rad=0.02, hand_freeze=False)
+    d = F.FjDecoder(c)
+    d.reset(hand_start={"src": Q0, "rcv": Q0})
+    close = np.ones(26)
+    close[7] = close[20] = -1.0                                    # 엄지 회전은 −1 이 닫는 쪽(각도 감소, grip 1.2 < open 1.57)
+    for _ in range(300):
+        out = d.step(close, active=True)
+    h = out["src"][1]
+    assert h[0] == pytest.approx(1.38, abs=1e-6)                   # 엄지 회전: 1.40 − 0.02 에서 멈춘다
+    assert h[1:] == pytest.approx(np.array(Q0[1:]) + 0.02, abs=1e-6)
+    for _ in range(300):
+        out = d.step(-close, active=True)
+    h = out["src"][1]
+    assert h[2] < 0.43 - 0.2 and h[0] > 1.40                      # 펴는 쪽은 q*_0 를 지나 연다
+
+
+def test_b16_contract_refuses_to_start_without_the_handoff_hand_target():
+    from policy_control import pour_fj_node as N
+    c = _contract(hand_close_margin_rad=0.02)
+    d = F.FjDecoder(c)
+    with pytest.raises(F.PourFjError, match="인계"):
+        d.step(np.zeros(26), active=True)
+    ch = N.PourFjChain(c, policy=None)
+    with pytest.raises(N.PourFjNodeError, match="인계"):
+        ch.reset(None)
+    with pytest.raises(N.PourFjNodeError, match="인계"):
+        ch.reset(None, hand_start={"src": Q0})                     # 두 손 다 있어야
+    ch.reset(None, hand_start={"src": Q0, "rcv": Q0})
+    assert ch.dec.state["src"].hand_target == pytest.approx(Q0)   # 디코더 q* 도 인계 목표에서 시작
+
+
+def test_old_contracts_still_start_from_the_open_hand_and_are_not_capped():
+    d = F.FjDecoder(_contract(hand_freeze=False))
+    assert d.state["src"].hand_target == pytest.approx([1.57, 0, 0, 0, 0, 0])
+    for _ in range(300):
+        out = d.step(np.ones(26), active=True)
+    assert out["src"][1][2] == pytest.approx(1.08, abs=1e-3)      # grip 끝까지
+
+
+def test_close_margin_round_trips_through_the_contract_json(tmp_path):
+    c = _contract(hand_close_margin_rad=0.02)
+    p = tmp_path / "c.json"
+    p.write_text(c.to_json())
+    assert F.load_contract(p).hand_close_margin_rad == 0.02
