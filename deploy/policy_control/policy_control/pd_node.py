@@ -209,7 +209,6 @@ class PdNode(LeanNodeMixin, Node):
         self._pub_status = {s: self.create_publisher(String, f"{NS}/status/{status_node(s)}", _qos_chain())
                             for s in self.sides}
         main = self.cb_main
-        self.create_subscription(JointState, f"{NS}/joint_target", self._on_target, _qos_chain(), callback_group=main)
         self.create_subscription(String, f"{NS}/episode", self._on_episode, _qos_latched(), callback_group=main)
         # 팔마다 따로 도는 정책(rh_aglt 양팔 동시, 09.30)은 /policy_control/<side>/episode 로 낸다 — 그 팔에만 적용
         for s in self.sides:
@@ -220,19 +219,22 @@ class PdNode(LeanNodeMixin, Node):
         for unit in self.units.values():
             for topic, roles in unit.joint_topics().items():
                 topics.setdefault(topic, []).append((unit, roles))
-        # ★10.03 CPU: 상태 토픽(팔 /joint_states 750 Hz · 손 250 Hz)을 콜백에서 풀지 않는다 — 직렬 바이트와 받은 시각만 두고
-        #   틱(pd_hz)에서 토픽마다 **마지막 한 개**만 푼다. 소스는 '마지막 값'만 쓰므로 결과가 같다(sources.update_from_joint_state).
-        #   예전에는 pd 프로세스마다 초당 ~1500 메시지를 파이썬으로 풀어 프로세스당 약 1 코어를 썼다(10.03 실측).
-        self._raw_js: dict[str, tuple[bytes, float]] = {}
-        self._raw_js_done: dict[str, float] = {}
-        self._raw_temp: dict[str, tuple[bytes, float]] = {}
+        # ★10.03 CPU: 상태 토픽을 콜백에서 풀지 않고 틱(pd_hz)에서 토픽마다 **마지막 한 개**만 푼다(소스는 마지막 값만 쓴다).
+        # ★10.04 CPU: 그 구독을 실행기에 넣지도 않는다 — 실행기에 안 들어가는 폴링 노드에 두고 틱에서 쌓인 것을 비운다(raw_poll).
+        #   실기 bag 재생 · py-spy: pd CPU 의 대부분이 메시지마다 깨어나 wait set 을 다시 짜는 비용이었다(제어 계산은 약 6 %).
+        #   정책 명령(joint_target)은 도착 시각이 감시(watchdog) · 새 스텝 판정에 쓰여 그대로 실행기에서 받는다.
+        from .raw_poll import make_poll_node, poll_subscription
+        self._poll = make_poll_node(f"{NODE_NAME}_poll_{'_'.join(self.sides)}", context=self.context)
+        self._poll_js = {topic: poll_subscription(self._poll, JointState, topic, _qos_sensor()) for topic in topics}
+        # 정책 명령도 틱에서 — 양팔 목표가 한 토픽에 섞여 오므로 마지막 것만이 아니라 쌓인 것을 모두, rmw 가 받은 시각으로
+        #   (감시 · 새 스텝 판정이 쓰는 도착 시각이 콜백 때와 같다). depth 10 = 틱 사이 최대 ~2 개라 넉넉하다
+        self._poll_target = poll_subscription(self._poll, JointState, f"{NS}/joint_target", _qos_chain())
+        self._poll_temp = None
+        self._raw_temp_last: tuple[bytes, float] | None = None
         self._raw_temp_done: float | None = None
         self._temp_decoded_at = float("-inf")
         self._js_targets = topics
         self._js_type = JointState
-        for topic in topics:
-            self.create_subscription(JointState, topic, self._raw_cb(self._raw_js, topic), _qos_sensor(),
-                                     callback_group=main, raw=True)
         self._wire_temperature(main)
         services = (("engage", self._srv_engage), ("goto_home", self._srv_goto_home), ("hand_home", self._srv_hand_home),
                     ("hand_rest", self._srv_hand_rest), ("hand_path", self._srv_hand_path),
@@ -266,25 +268,24 @@ class PdNode(LeanNodeMixin, Node):
             topic = from_robot.pop()
         self.get_logger().info(f"모터 온도 토픽 {topic}")
         self._temp_type = DynamicJointState
-        # ★10.03 CPU: 온도는 천천히 변한다 — 직렬 바이트만 두고 TEMP_DECODE_SEC 마다 마지막 것만 푼다(750 Hz 를 다 풀지 않는다)
-        self.create_subscription(DynamicJointState, topic, self._raw_cb(self._raw_temp, "temp"),
-                                 _qos_sensor(), callback_group=group, raw=True)
+        from .raw_poll import poll_subscription
+        self._poll_temp = poll_subscription(self._poll, DynamicJointState, topic, _qos_sensor())
+        # ★10.03 CPU: 온도는 천천히 변한다 — TEMP_DECODE_SEC 마다 마지막 것만 푼다(폴링 노드, 실행기 밖)
 
     _TEMP_FIELDS = ("temperature_rotor", "temperature_mos")
 
-    @staticmethod
-    def _raw_cb(store: dict, key: str):
-        def cb(data: bytes) -> None:
-            store[key] = (data, time.monotonic())          # GIL 아래 한 번의 대입 — 락 없이 '마지막 것'만 남는다
-        return cb
-
     def _drain_raw(self, now: float) -> None:
-        """틱 앞에서: 토픽마다 새로 온 마지막 메시지만 풀어 넘긴다. 받은 시각은 그 메시지가 도착한 시각(낡음 판정 그대로)."""
+        """틱 앞에서: 폴링 구독마다 쌓인 것을 비우고 마지막 메시지만 풀어 넘긴다. 받은 시각 = rmw 가 받은 시각(낡음 판정 그대로)."""
         from rclpy.serialization import deserialize_message
-        for topic, (data, t_recv) in list(self._raw_js.items()):
-            if self._raw_js_done.get(topic) == t_recv:
+
+        from .raw_poll import take_all, take_last
+        for data, t_recv in take_all(self._poll_target):
+            self._on_target(deserialize_message(data, self._js_type), t_recv=t_recv)
+        for topic, sub in self._poll_js.items():
+            got = take_last(sub)
+            if got is None:
                 continue
-            self._raw_js_done[topic] = t_recv
+            data, t_recv = got
             try:
                 sample = codec.decode_joint_state(deserialize_message(data, self._js_type))
                 with self._lock:
@@ -292,7 +293,11 @@ class PdNode(LeanNodeMixin, Node):
                         unit.on_joint_state(roles, sample, t_recv)
             except _HANDLED as exc:
                 self._note_error(f"joint_state({topic}): {exc}")
-        got = self._raw_temp.get("temp")
+        if self._poll_temp is not None:
+            fresh = take_last(self._poll_temp)
+            if fresh is not None:
+                self._raw_temp_last = fresh
+        got = self._raw_temp_last
         if got is not None and got[1] != self._raw_temp_done and now - self._temp_decoded_at >= TEMP_DECODE_SEC:
             self._raw_temp_done, self._temp_decoded_at = got[1], now
             self._on_dynamic_joint_state(deserialize_message(got[0], self._temp_type), t_recv=got[1])
@@ -312,11 +317,11 @@ class PdNode(LeanNodeMixin, Node):
                 unit.on_temperatures(by_source, now)
 
     # ---------------------------------------------------------------- subscriptions
-    def _on_target(self, msg) -> None:
+    def _on_target(self, msg, t_recv: float | None = None) -> None:
         try:
             sample = codec.decode_joint_state(msg)
             _, seq = parse_target_frame(msg.header.frame_id)
-            now = time.monotonic()
+            now = time.monotonic() if t_recv is None else t_recv
             with self._lock:
                 taken = [u.side for u in self.units.values() if u.take_target(sample, seq, now)]
         except _HANDLED as exc:
@@ -572,6 +577,7 @@ class PdNode(LeanNodeMixin, Node):
                     u.start_release(time.monotonic())
         deadline = time.monotonic() + self.cfg.blend_sec + self.cfg.release_zero_ticks * self.dt + 2.0
         while time.monotonic() < deadline:
+            self._drain_raw(time.monotonic())        # ★10.04 폴링이라 실행기가 멈춘 뒤에도 상태를 새로 받는다
             with self._lock:
                 if all(u.phase is Phase.IDLE for u in self.units.values()):
                     break
@@ -583,6 +589,9 @@ class PdNode(LeanNodeMixin, Node):
     def close(self) -> None:
         for u in self.units.values():
             u.close()
+        poll, self._poll = getattr(self, "_poll", None), None
+        if poll is not None:
+            poll.destroy_node()
 
 
 def main(argv=None) -> int:
