@@ -12,6 +12,7 @@ pd · 정책 · 콘솔은 rad JointState 를 읽는다 — 이 노드가 변환�
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,8 +24,9 @@ if __package__ in (None, ""):              # 파일 경로로 띄울 때(미션 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from policy_control import rh56f1_map  # noqa: E402
 
-#: 속도 = 위치 차분의 지수 평균 — 드라이버 발행(RS485 50 Hz · 10.02 EtherCAT 100 Hz)에서 잡음 줄이기(α 가 클수록 최근 값)
-VEL_ALPHA = 0.3
+#: 속도 = 위치 차분의 지수 평균. ★10.03 시정수로 정한다 — 발행 주기(RS485 50 Hz · EtherCAT 200 Hz)가 바뀌어도 같은 필터.
+#  옛 값 α 0.3 @ 50 Hz 와 같은 시정수(−dt/ln(1−α) ≈ 0.056 s).
+VEL_TAU_S = 0.056
 
 
 @dataclass
@@ -33,7 +35,7 @@ class HandStateCore:
 
     hmap: rh56f1_map.HandMap
     side: str
-    alpha: float = VEL_ALPHA
+    tau_s: float = VEL_TAU_S
     _last: tuple[float, np.ndarray] | None = field(default=None, init=False)
     _vel: np.ndarray | None = field(default=None, init=False)
 
@@ -47,8 +49,10 @@ class HandStateCore:
         full = self.hmap.with_mimic(q6)
         pos = np.array([full[n.split("_hj_", 1)[1]] for n in self.names()])
         if self._last is not None and t > self._last[0]:
-            v = (pos - self._last[1]) / (t - self._last[0])
-            self._vel = v if self._vel is None else self.alpha * v + (1.0 - self.alpha) * self._vel
+            dt = t - self._last[0]
+            v = (pos - self._last[1]) / dt
+            a = 1.0 - math.exp(-dt / self.tau_s)
+            self._vel = v if self._vel is None else a * v + (1.0 - a) * self._vel
         self._last = (t, pos)
         vel = np.zeros_like(pos) if self._vel is None else self._vel
         return self.names(), pos, vel

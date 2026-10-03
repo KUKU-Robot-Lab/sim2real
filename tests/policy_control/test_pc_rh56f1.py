@@ -9,6 +9,8 @@
 """
 from __future__ import annotations
 
+import math
+
 import json
 import sys
 from pathlib import Path
@@ -201,8 +203,22 @@ def test_state_core_publishes_rad_with_mimic_and_velocity():
     reg1 = HMAP.to_register([1.2, 0.2, 0.7, 0.5, 0.5, 0.5], side="left")
     _, pos1, vel1 = core.on_angle(reg1, 0.1)
     assert vel1[2] == pytest.approx((pos1[2] - pos[2]) / 0.1)                # 첫 차분은 그대로
-    _, pos2, vel2 = core.on_angle(reg1, 0.2)                                  # 멈춤 → EMA α 0.3 로 줄어든다
-    assert vel2[2] == pytest.approx(0.7 * vel1[2])
+    _, pos2, vel2 = core.on_angle(reg1, 0.2)                                  # 멈춤 → 시정수 EMA 로 줄어든다
+    a = 1.0 - math.exp(-0.1 / core.tau_s)
+    assert vel2[2] == pytest.approx((1.0 - a) * vel1[2])
+
+
+def test_state_velocity_filter_does_not_depend_on_the_publish_rate():
+    """10.03: 상태 발행이 50 → 200 Hz 로 바뀌어도 같은 램프에서 같은 속도 추정(시정수 필터)."""
+    def run(hz):
+        core = HandStateCore(HMAP, "left")
+        v = None
+        for k in range(int(0.5 * hz) + 1):
+            t = k / hz
+            q = [1.2, 0.2, 0.5 + 0.4 * t, 0.5, 0.5, 0.5]                     # 0.4 rad/s 램프
+            _, _, v = core.on_angle(HMAP.to_register(q, side="left"), t)
+        return v[2]
+    assert run(50) == pytest.approx(run(200), rel=0.1) and run(200) == pytest.approx(0.4, rel=0.15)
 
 
 def test_fake_hand_moves_a_full_stroke_in_a_second_and_keeps_minus_one_axes():

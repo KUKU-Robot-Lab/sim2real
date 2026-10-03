@@ -21,18 +21,27 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from policy_control import rh56f1_map  # noqa: E402
 
-MIN_HZ = 20.0            # 벤더 기본 50 Hz — 응답이 없으면 ~13 Hz 로 떨어진다(robot_control README)
+MIN_HZ = 20.0            # RS485 벤더 기본 50 Hz — 응답이 없으면 ~13 Hz 로 떨어진다(robot_control README)
+PORTS = Path(__file__).resolve().parents[1] / "config" / "rh56f1_ports.yaml"
+
+
+def min_hz_for(ports: dict, side: str) -> float:
+    """기대 최소 주기 — EtherCAT 이면 설정 state_hz 의 80 %(10.03 200 Hz → 160), RS485 는 MIN_HZ."""
+    if (ports.get(side) or {}).get("transport") == "ethercat":
+        return 0.8 * float((ports.get("ethercat") or {}).get("state_hz", 100))
+    return MIN_HZ
 LIMIT_TOL = 0.02         # rad
 
 
 def verdict(hmap: rh56f1_map.HandMap, side: str, reg: list[int] | None, names: list[str] | None,
-            js: dict[str, float] | None, hz: dict[str, float], lower: dict, upper: dict) -> list[str]:
+            js: dict[str, float] | None, hz: dict[str, float], lower: dict, upper: dict,
+            min_hz: float = MIN_HZ) -> list[str]:
     """문제 목록 — 비면 통과. 순수."""
     bad = []
     if reg is None:
         return [f"/hand_{side}/angle_actual 이 안 온다 — 드라이버(rh56f1_driver.py — EtherCAT 노드 · 마스터)가 떠 있는가 · 손 전원 · 랜 케이블"]
-    if hz.get("angle", 0.0) < MIN_HZ:
-        bad.append(f"angle_actual {hz.get('angle', 0.0):.1f} Hz < {MIN_HZ:.0f} — 손이 응답하지 않는 틱이 있다(/hand_{side}/ecat_status 의 WKC · OP 확인)")
+    if hz.get("angle", 0.0) < min_hz:
+        bad.append(f"angle_actual {hz.get('angle', 0.0):.1f} Hz < {min_hz:.0f} — 손이 응답하지 않는 틱이 있다(/hand_{side}/ecat_status 의 WKC · OP 확인)")
     want = [""] * 6
     for a in hmap.axes:
         want[a.slot] = f"{side[0]}_hj_{a.name}"
@@ -108,7 +117,9 @@ def main(argv: list[str] | None = None) -> int:
                                             for n, v in zip(hmap.names(args.side), hmap.to_rad(last["reg"], args.side))))
     if hmap.unverified(args.side):
         print(f"  ★방향 확인 전 축(pd 가 -1 로 둔다): {', '.join(hmap.unverified(args.side))} — tools/rh56f1_axis_probe.py")
-    bad = verdict(hmap, args.side, last["reg"], last["names"], last["js"], hz, lower, upper)
+    import yaml
+    want_hz = min_hz_for(yaml.safe_load(PORTS.read_text()) or {}, args.side) if PORTS.is_file() else MIN_HZ
+    bad = verdict(hmap, args.side, last["reg"], last["names"], last["js"], hz, lower, upper, want_hz)
     for b in bad:
         print(f"  ✗ {b}")
     print("  ✓ 통과" if not bad else f"  ✗ 문제 {len(bad)} 개")

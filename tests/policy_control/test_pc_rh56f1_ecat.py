@@ -101,6 +101,12 @@ def test_port_file_gives_one_nic_per_hand_and_a_valid_master_command():
     assert "--op-enable" not in argv and "--sync-type" not in argv                     # 실험 손잡이 기본 끔
     exp = E.master_argv("/m", ifr, "/a", "/b", dict(cfg, op_enable=True, sync_type=1), no_op=False)
     assert "--op-enable" in exp and exp[exp.index("--sync-type") + 1] == "1"
+    assert "--hz-op" not in argv                                                          # 10.03 기본 꺼짐
+    fast = E.master_argv("/m", ifr, "/a", "/b", dict(cfg, cycle_hz_op=1000), no_op=False)
+    assert fast[fast.index("--hz-op") + 1] == "1000.0"
+    with pytest.raises(E.EcatError, match="cycle_hz_op"):
+        E.master_argv("/m", ifr, "/a", "/b", dict(cfg, cycle_hz_op=50), no_op=False)
+
     with pytest.raises(E.EcatError, match="같은 NIC"):
         NODE.ecat_config({"right": ports["right"], "left": dict(ports["left"], ifname=ifr)}, "right")
     with pytest.raises(E.EcatError, match="transport"):
@@ -109,6 +115,18 @@ def test_port_file_gives_one_nic_per_hand_and_a_valid_master_command():
         E.master_argv("/m", ifr, "/a", "/b", dict(cfg, cycle_hz=10), no_op=False)
     with pytest.raises(E.EcatError):
         E.master_argv("/m", ifr, "/a", "/b", dict(cfg, force=5000), no_op=False)
+
+def test_rates_line_up_for_high_speed_control():
+    """10.03 사용자: EtherCAT 은 고속 제어가 목적 — 손 명령 · pd · 상태 발행이 정책(60 Hz)을 막지 않게."""
+    from policy_control.pd_law import load_pd_config
+    hmap = yaml.safe_load((PC / "config" / "rh56f1_hand_map.yaml").read_text())
+    ports = yaml.safe_load((PC / "config" / "rh56f1_ports.yaml").read_text())
+    for name in ("pd_rh56f1.yaml", "pd_rh56f1_exec.yaml", "pd_rh56f1_fake.yaml"):
+        cfg = load_pd_config(PC / "config" / name)
+        assert cfg.pd_hz == 120.0 and abs(cfg.settle.gain * cfg.pd_hz - 1.0) < 0.01     # 정착 시정수 유지
+    assert hmap["command_max_hz"] >= 120.0                                # 손 명령이 pd 틱마다 나갈 수 있다
+    assert ports["ethercat"]["state_hz"] >= 2 * 120.0 / 1.2              # 상태가 pd 보다 빠르다
+    assert ports["ethercat"]["cycle_hz"] >= 4 * ports["ethercat"]["state_hz"] / 2
 
 
 def test_master_link_exchanges_states_and_commands_with_a_fake_master(tmp_path):

@@ -65,5 +65,7 @@ touch:
   unit_verified: false
   combine: magnitude
   max_raw: 3000
-#: 명령 주기 상한 — 벤더 노드는 쓰기마다 응답을 최대 25 ms 기다리고 그만큼 읽기 주기가 밀린다(robot_control README).
-command_max_hz: 30.0
+#: 명령 주기 상한 — RS485 벤더 노드는 쓰기마다 응답을 최대 25 ms 기다려 30 Hz 로 막았다.
+#  ★10.03 EtherCAT 은 쓰기가 막히지 않는다(500 Hz PDO) → pd 주기(120 Hz)와 같게 — 손 명령이 정책 · pd 를 늦추지 않는다.
+#  RS485(비상용)로 돌아가면 30 으로 되돌린다.
+command_max_hz: 120.0

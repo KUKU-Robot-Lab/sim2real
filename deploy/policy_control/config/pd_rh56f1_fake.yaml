@@ -2,7 +2,7 @@
 side: both
 execute: true                  # ★fake 플랜트 전용 사본 — 실기 yaml(pd_dg5f_m.yaml)은 false
 home_hand: keep                # 실기 설정과 같게 — goto_home 은 팔만, 손은 pd/hand_home 으로
-pd_hz: 100.0
+pd_hz: 120.0                   # 재발행 주기 — ★10.03: sim PD 120 Hz(dt 1/120 · decimation 2)와 같게, 정책 60 Hz 한 스텝 = 정확히 2 틱(100 이면 1.67)
 ramp_speed: 0.2
 watchdog_sec: 0.25
 lead_sec: 0.25                 # ★fake: 0.5 rad — sim 은 lead 캡이 없다. 실기 yaml 은 단계 승인
@@ -18,7 +18,7 @@ blend_sec: 1.0
 settle:
   clamp: 0.30                  # goto_home 정착 bias 각도 상한 [rad] — j7 처짐 0.21 을 덮어야 한다(09.23 실기)
   clamp_nm: 5.0                # 같은 상한을 토크로도 — kp 70 관절은 0.071 rad 까지만(effort_cap 여유)
-  gain: 0.01                   # 정착 적분 이득/틱(100 Hz) — 처짐이 5 s 안에 tol 아래로
+  gain: 0.00833                # 정착 적분 이득/틱(120 Hz, 100 Hz 0.01 과 같은 시정수) — 처짐이 5 s 안에 tol 아래로
   tol: 0.01                    # 정착 판정 [rad]
 hand_path_pose:                 # 팔이 경로를 따르기 전에 손을 여기로(pd/hand_path) — 홈 경로(paths/home_rh56f1_*.npz)를
   # 10.01 사용자: 차렷 손 = 주먹("차렷부터 주먹같이 굽혀야 바닥에 안 닿는다"). 편 손 차렷은 손끝 sensor 가 table_1(밑판)을

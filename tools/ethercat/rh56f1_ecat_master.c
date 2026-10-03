@@ -185,7 +185,7 @@ static int open_sock(const char *path) {
 
 static void usage(const char *p) {
   fprintf(stderr, "usage: %s --ifname IF --master-sock P --node-sock P [--hz 1000] [--state-hz 100] [--speed 2000] "
-                  "[--force 600] [--enable-value 1] [--hb-timeout-ms 500] [--no-op] [--op-enable] [--sync-type N] [--op-timeout-ms 3000]\n", p);
+                  "[--force 600] [--enable-value 1] [--hb-timeout-ms 500] [--no-op] [--op-enable] [--sync-type N] [--op-timeout-ms 3000] [--hz-op 1000]\n", p);
 }
 
 int main(int argc, char **argv) {
@@ -193,11 +193,12 @@ int main(int argc, char **argv) {
   double hz = 1000, state_hz = 100;
   int speed = 2000, force = 600, enable_value = 1, hb_timeout_ms = 500, no_op = 0;
   int op_enable = 0, sync_type = -1, op_timeout_ms = 3000;   /* OP 실험 손잡이(기본 끔) */
+  double hz_op = 0;   /* >0: OP 에 들어간 뒤 이 주기로(10.03 — 1 kHz 로는 OP 전이가 안 되지만 들어간 뒤는 확인 대상) */
   static struct option opts[] = {{"ifname", 1, 0, 'i'}, {"master-sock", 1, 0, 'm'}, {"node-sock", 1, 0, 'n'},
                                  {"hz", 1, 0, 'h'},     {"state-hz", 1, 0, 's'},    {"speed", 1, 0, 'v'},
                                  {"force", 1, 0, 'f'},  {"enable-value", 1, 0, 'e'}, {"hb-timeout-ms", 1, 0, 't'},
                                  {"no-op", 0, 0, 'o'},  {"op-enable", 0, 0, 'E'}, {"sync-type", 1, 0, 'y'},
-                                 {"op-timeout-ms", 1, 0, 'T'}, {0, 0, 0, 0}};
+                                 {"op-timeout-ms", 1, 0, 'T'}, {"hz-op", 1, 0, 'H'}, {0, 0, 0, 0}};
   for (int c; (c = getopt_long(argc, argv, "", opts, NULL)) != -1;) {
     switch (c) {
       case 'i': ifname = optarg; break;
@@ -213,10 +214,12 @@ int main(int argc, char **argv) {
       case 'E': op_enable = 1; break;
       case 'y': sync_type = atoi(optarg); break;
       case 'T': op_timeout_ms = atoi(optarg); break;
+      case 'H': hz_op = atof(optarg); break;
       default: usage(argv[0]); return 2;
     }
   }
-  if (!ifname || !msock || !nsock || hz < 50 || hz > 4000 || state_hz <= 0 || state_hz > hz) { usage(argv[0]); return 2; }
+  if (!ifname || !msock || !nsock || hz < 50 || hz > 4000 || state_hz <= 0 || state_hz > hz ||
+      (hz_op != 0 && (hz_op < state_hz || hz_op > 4000))) { usage(argv[0]); return 2; }
   setvbuf(stdout, NULL, _IOLBF, 0);
   prctl(PR_SET_PDEATHSIG, SIGTERM);   /* 노드가 죽으면 같이 끝난다 */
   signal(SIGTERM, on_signal);
@@ -268,8 +271,9 @@ int main(int argc, char **argv) {
   uint64_t op_req_t = 0;
   if (!no_op) { request_al(EC_STATE_OPERATIONAL); op_req_t = mono_ns(); }
 
-  const long period = (long)(1e9 / hz);
-  const int state_every = (int)(hz / state_hz + 0.5);
+  long period = (long)(1e9 / hz);
+  int state_every = (int)(hz / state_hz + 0.5);
+  double hz_now = hz;
   struct timespec next;
   clock_gettime(CLOCK_MONOTONIC, &next);
   uint64_t last_node = mono_ns(), started = last_node;
@@ -329,7 +333,17 @@ int main(int argc, char **argv) {
         al_code = code;
       }
       int op = (al_now & 0x0F) == EC_STATE_OPERATIONAL && !(al_now & EC_STATE_ERROR);
-      if (op != was_op) { printf("[master] %s\n", op ? "OP" : "OP 아님"); was_op = op; }
+      if (op != was_op) {
+        printf("[master] %s\n", op ? "OP" : "OP 아님");
+        was_op = op;
+        double want_hz = (op && hz_op > 0) ? hz_op : hz;   /* OP 안에서만 빠른 주기 — OP 를 잃으면 전이용 주기로 */
+        if (want_hz != hz_now) {
+          hz_now = want_hz;
+          period = (long)(1e9 / hz_now);
+          state_every = (int)(hz_now / state_hz + 0.5);
+          printf("[master] 주기 %.0f Hz\n", hz_now);
+        }
+      }
       if (!no_op && !op && stop_left < 0 && al_now != 0xFFFF) {
         if (al_now & EC_STATE_ERROR) {
           request_al((al_now & 0x0F) | EC_STATE_ACK);
