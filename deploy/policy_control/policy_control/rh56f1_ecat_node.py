@@ -107,9 +107,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--side", choices=("right", "left"), required=True)
     ap.add_argument("--ports", default=str(DEFAULT_PORTS))
     ap.add_argument("--no-op", action="store_true", help="SAFE_OP 에 머문다 — 상태만 읽고 손은 명령을 쓰지 않는다")
+    ap.add_argument("--op-enable", action="store_true", help="OP 실험: 명령 전에도 ENABLE_SET 을 켠다(목표 = 지금 각도)")
+    ap.add_argument("--sync-type", type=int, default=None, help="OP 실험: 0x1C32/33:01 에 쓸 값(0 free run · 1 SM 동기)")
     args, _ = ap.parse_known_args(argv)
 
     ifname, cfg = ecat_config(yaml.safe_load(Path(args.ports).read_text()) or {}, args.side)
+    if args.op_enable:
+        cfg["op_enable"] = True
+    if args.sync_type is not None:
+        cfg["sync_type"] = args.sync_type
     binary = str((REPO / cfg.get("master", "tools/ethercat/rh56f1_ecat_master")).resolve())
     if not os.access(binary, os.X_OK):
         print(f"✗ 마스터 {binary} 가 없다 — bash tools/ethercat/build.sh 뒤 sudo setcap cap_net_raw,cap_net_admin=ep {binary}")

@@ -18,7 +18,13 @@ ethercat:
   force: 600              # 시작 FORCESET(g, pd 가 hw_force 로 덮는다) · 매뉴얼 0~1000
   enable_value: 1         # 명령 중 ENABLE_SET 값 — 매뉴얼은 'Motion control enable' 뿐이라 첫 OP 시험에서 확인
   hb_timeout_ms: 500      # 노드 소식이 이만큼 없으면 마스터가 제자리 유지(hold)로
+  # OP 실험 손잡이(10.02 손이 OP 요청 뒤 SAFE_OP 에 머묾 · code 0) — 기본은 끔, 드라이버 --op-enable · --sync-type 로도 켠다
+  op_enable: false        # true: 명령 전(hold)에도 ENABLE_SET = enable_value (목표 = 지금 각도라 손은 제자리)
+  sync_type: -1           # 0x1C32/0x1C33:01 에 쓸 값(-1 = 안 씀, 0 free run · 1 SM 동기)
+  op_timeout_ms: 3000     # OP 요청 대기 — 넘으면 ESC 레지스터를 찍고 다시 요청
 
-# 옛 RS485(10.02 이전) — 다시 쓰려면 위 right/left 를 이 값으로 바꾼다(벤더 드라이버 robot_control rh56f1_driver):
-#   right: {transport: rs485, port: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_BG0327KL-if00-port0, baud: 115200, hand_id: 1}
-#   left:  {transport: rs485, port: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_BG033STU-if00-port0, baud: 115200, hand_id: 1}
+# 옛 RS485(10.02 이전 · 비상용) — `rh56f1_driver.py --side <s> --transport rs485` 가 이 블록을 쓴다(벤더 드라이버 robot_control
+# rh56f1_driver). 손 RS485 포트에 USB-RS485(FTDI) 를 다시 꽂아야 한다 — 10.02 밤에는 빠져 있었다.
+rs485:
+  right: {transport: rs485, port: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_BG0327KL-if00-port0, baud: 115200, hand_id: 1}
+  left:  {transport: rs485, port: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_BG033STU-if00-port0, baud: 115200, hand_id: 1}

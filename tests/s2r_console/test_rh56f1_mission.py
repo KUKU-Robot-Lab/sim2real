@@ -115,6 +115,13 @@ def test_the_driver_launcher_reads_the_port_file_and_refuses_one_port_for_two_ha
         D.argv_for({"right": cfg["right"], "left": dict(cfg["left"], ifname=cfg["right"]["ifname"])}, "right")
     with pytest.raises(ValueError, match="transport"):
         D.argv_for({"right": dict(cfg["right"], transport="can"), "left": cfg["left"]}, "right")
+    # 비상용 RS485 블록 · OP 실험 인자
+    fb = D.argv_for(cfg, "right", transport="rs485")
+    assert fb[:4] == ["ros2", "launch", "rh56f1_driver", "rh56f1_right_driver.launch.py"]
+    assert "port:=/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_BG0327KL-if00-port0" in fb
+    assert D.argv_for(cfg, "right", "P.yaml", extra=["--op-enable"])[-1] == "--op-enable"
+    with pytest.raises(ValueError, match="transport"):
+        D.argv_for(cfg, "right", transport="can")
     rs = {"right": {"transport": "rs485", "port": "/dev/a", "baud": 115200, "hand_id": 1},
           "left": {"transport": "rs485", "port": "/dev/b", "baud": 115200, "hand_id": 1}}
     assert D.argv_for(rs, "right")[:4] == ["ros2", "launch", "rh56f1_driver", "rh56f1_right_driver.launch.py"]

@@ -205,7 +205,12 @@ def master_argv(binary: str, ifname: str, master_sock: str, node_sock: str, cfg:
             "--hz", str(float(cfg.get("cycle_hz", 1000))), "--state-hz", str(float(cfg.get("state_hz", 100))),
             "--speed", str(int(cfg.get("speed", 2000))), "--force", str(int(cfg.get("force", 600))),
             "--enable-value", str(int(cfg.get("enable_value", 1))),
-            "--hb-timeout-ms", str(int(cfg.get("hb_timeout_ms", 500)))]
+            "--hb-timeout-ms", str(int(cfg.get("hb_timeout_ms", 500))),
+            "--op-timeout-ms", str(int(cfg.get("op_timeout_ms", 3000)))]
+    if bool(cfg.get("op_enable", False)):
+        argv.append("--op-enable")
+    if int(cfg.get("sync_type", -1)) >= 0:
+        argv += ["--sync-type", str(int(cfg["sync_type"]))]
     if not 50 <= float(cfg.get("cycle_hz", 1000)) <= 4000:
         raise EcatError("cycle_hz 는 50~4000")
     if not 0 < float(cfg.get("state_hz", 100)) <= float(cfg.get("cycle_hz", 1000)):

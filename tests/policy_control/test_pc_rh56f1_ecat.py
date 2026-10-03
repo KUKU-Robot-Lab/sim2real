@@ -98,6 +98,9 @@ def test_port_file_gives_one_nic_per_hand_and_a_valid_master_command():
     assert argv[:3] == ["/m", "--ifname", ifr] and "--no-op" not in argv
     assert argv[argv.index("--hz") + 1] == "1000.0" and argv[argv.index("--speed") + 1] == "2000"
     assert E.master_argv("/m", ifr, "/a", "/b", cfg, no_op=True)[-1] == "--no-op"
+    assert "--op-enable" not in argv and "--sync-type" not in argv                     # 실험 손잡이 기본 끔
+    exp = E.master_argv("/m", ifr, "/a", "/b", dict(cfg, op_enable=True, sync_type=1), no_op=False)
+    assert "--op-enable" in exp and exp[exp.index("--sync-type") + 1] == "1"
     with pytest.raises(E.EcatError, match="같은 NIC"):
         NODE.ecat_config({"right": ports["right"], "left": dict(ports["left"], ifname=ifr)}, "right")
     with pytest.raises(E.EcatError, match="transport"):
