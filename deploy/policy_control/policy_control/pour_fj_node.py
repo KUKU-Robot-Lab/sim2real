@@ -192,10 +192,16 @@ class PourFjChain:
         self.step_i = 0
 
     def reset(self, meas: dict | None = None, hand_start: dict | None = None) -> None:
-        """hand_start[role] = 인계 손 목표(hand_joints 순) — hand_close_margin 계약(b16~)은 필수."""
-        if self.c.hand_close_margin_rad > 0.0 and (not hand_start or set(hand_start) != set(F.ROLES)):
-            raise PourFjNodeError("이 붓기 계약(hand_close_margin_rad > 0)은 인계 순간의 손 목표가 필요하다 — "
-                                  "직전 정책의 joint_target(양손)이 없다")
+        """hand_close_margin 계약(b16~): 인계 순간의 손 **실측** 관절각을 q*_0 로 하고 디코더 q* 도 거기서 시작한다.
+
+        sim 과 같다 — 인계 뱅크(build_pour_handoff_bank --targets_from_state)의 손 목표가 수집 순간 실제 관절 위치이고
+        env 가 그 값을 닫기 상한 기준으로 쓴다(T2R Pouring 10.04). 실기는 손가락이 컵에 막혀 목표보다 덜 닫히므로
+        파지 정책의 마지막 목표를 쓰면 이미 margin 넘게 조인 상태로 시작할 수 있다. hand_start 를 주면 그것이 이긴다(시험용).
+        """
+        if self.c.hand_close_margin_rad > 0.0 and hand_start is None:
+            if meas is None or set(meas) != set(F.ROLES):
+                raise PourFjNodeError("이 붓기 계약(hand_close_margin_rad > 0)은 인계 순간 두 손의 실측 관절각이 필요하다")
+            hand_start = {r: [float(meas[r].hand_q[j]) for j in self.c.sides[r].hand_joints] for r in F.ROLES}
         self.dec.reset(hand_start)
         self.prev = np.zeros(self.c.action_dim)
         self.step_i = 0
@@ -324,7 +330,7 @@ class PourFjNode(LeanNodeMixin, Node):
         self._poll_srcs = []
         for r in self.fam.roles:
             for src in select_side(cfg, self.contract.sides[r].side).sources.values():
-                if src.type in msgs and (src.role or src.name) in ("arm", "ee", "tip_force", "joint_force", "decoder_target"):
+                if src.type in msgs and (src.role or src.name) in ("arm", "ee", "tip_force", "joint_force"):
                     self._poll_srcs.append((r, src, msgs[src.type], poll_subscription(self._poll, msgs[src.type], src.topic, _sensor)))
         self._poll_cups = {role: poll_subscription(self._poll, PoseStamped, str(p(param)), _sensor)
                            for role, param, _ in self.fam.cups}
@@ -360,16 +366,7 @@ class PourFjNode(LeanNodeMixin, Node):
         """폴링 구독마다 쌓인 것을 비우고 마지막 메시지만 풀어 소스 · 컵에 넣는다(받은 시각 그대로)."""
         from rclpy.serialization import deserialize_message
         from policy_control.raw_poll import take_last
-        from policy_control.raw_poll import take_all
         for role, src, typ, sub in self._poll_srcs:
-            if (src.role or src.name) == "decoder_target":
-                # 한 토픽에 양팔 목표가 섞여 온다 — 모두 넣고 그 팔 관절이 없는 메시지는 조용히 넘긴다(인계 손 목표용)
-                for data, t in take_all(sub):
-                    try:
-                        self.srcs[role].update_from_joint_state(src.name, codec.decode_joint_state(deserialize_message(data, typ)), t)
-                    except (codec.CodecError, ValueError):
-                        pass
-                continue
             got = take_last(sub)
             if got is not None:
                 self._apply_source(role, src, deserialize_message(got[0], typ), got[1])
@@ -435,21 +432,6 @@ class PourFjNode(LeanNodeMixin, Node):
         self._pub_episode.publish(self._String(data=json.dumps(body)))
         self.get_logger().info(f"episode {event.episode} {event.event} {list(event.reasons)}")
 
-    def _hand_start(self) -> dict | None:
-        """인계 손 목표 — 각 팔 decoder_target(직전 joint_target)의 손 관절, 계약 hand_joints 순. 하나라도 없으면 None."""
-        now, out = time.monotonic(), {}
-        for r in self.fam.roles:
-            st = self.srcs[r].snapshot(now)
-            src = self.srcs[r].cfg.sources.get("decoder_target")
-            if st.decoder_target is None or src is None:
-                return None
-            got = dict(zip(src.joints, st.decoder_target))
-            want = list(self.contract.sides[r].hand_joints)
-            if any(j not in got for j in want):
-                return None
-            out[r] = [float(got[j]) for j in want]
-        return out
-
     def _srv_reset(self, _req, res):
         self._drain()
         for est in self.attach.values():           # 새 에피소드 — 컵은 다시 FP++ 부터
@@ -461,12 +443,10 @@ class PourFjNode(LeanNodeMixin, Node):
                     from policy_control.joint_policy import JointPolicy
                     self._policy = JointPolicy(self.contract, self.device)
                 self.chain = self.fam.chain(self.contract, self._policy)
-            if getattr(self.contract, "hand_close_margin_rad", 0.0) > 0.0:
-                hs = self._hand_start()
-                self.chain.reset(meas, hand_start=hs)  # 없으면 거부(손을 못 쥐는 시작을 막는다)
-                self.get_logger().info(f"인계 손 목표 q*_0 {hs}")
-            else:
-                self.chain.reset(meas)
+            self.chain.reset(meas)                      # margin 계약은 meas 의 손 실측각이 q*_0(없으면 측정에서 이미 거부)
+            q0 = getattr(self.chain.dec, "hand_q0", None) if hasattr(self.chain, "dec") else None
+            if q0:
+                self.get_logger().info(f"인계 손 q*_0(실측) { {r: [round(float(v), 3) for v in q] for r, q in q0.items()} }")
         except self.fam.errors as exc:
             return self._reply(res, False, [f"reset: {exc}"])
         self._seq, self._gap = 0, 0

@@ -291,7 +291,7 @@ class FjDecoder:
         self.reset()
 
     def reset(self, hand_start: Mapping[str, Sequence[float]] | None = None) -> None:
-        """hand_start[role] = 인계 순간의 손 목표 q*_0(직전 정책의 마지막 목표, hand_joints 순). 없으면 편 손에서 시작.
+        """hand_start[role] = 인계 순간의 손 q*_0(hand_joints 순 — 배포는 손 실측 관절각, sim 뱅크와 같다). 없으면 편 손에서 시작.
 
         ★hand_close_margin_rad > 0(b16~) 계약은 hand_start 가 있어야 한다 — 편 손을 q*_0 로 두면 손을 못 쥔다. 없으면 step 이 거부.
         """

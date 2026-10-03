@@ -317,19 +317,21 @@ def test_b16_close_margin_caps_closing_at_the_handoff_target_plus_margin():
     assert h[2] < 0.43 - 0.2 and h[0] > 1.40                      # 펴는 쪽은 q*_0 를 지나 연다
 
 
-def test_b16_contract_refuses_to_start_without_the_handoff_hand_target():
+def test_b16_contract_starts_from_the_measured_hand_angles_and_refuses_without_them():
+    """sim 뱅크(--targets_from_state)처럼 q*_0 = 인계 순간 손 실측 관절각 — 파지 정책의 마지막 목표가 아니다(T2R Pouring 10.04)."""
     from policy_control import pour_fj_node as N
     c = _contract(hand_close_margin_rad=0.02)
     d = F.FjDecoder(c)
     with pytest.raises(F.PourFjError, match="인계"):
         d.step(np.zeros(26), active=True)
     ch = N.PourFjChain(c, policy=None)
-    with pytest.raises(N.PourFjNodeError, match="인계"):
+    with pytest.raises(N.PourFjNodeError, match="실측"):
         ch.reset(None)
-    with pytest.raises(N.PourFjNodeError, match="인계"):
-        ch.reset(None, hand_start={"src": Q0})                     # 두 손 다 있어야
-    ch.reset(None, hand_start={"src": Q0, "rcv": Q0})
-    assert ch.dec.state["src"].hand_target == pytest.approx(Q0)   # 디코더 q* 도 인계 목표에서 시작
+    meas = {r: _meas(r) for r in F.ROLES}
+    measured = {r: [meas[r].hand_q[j] for j in c.sides[r].hand_joints] for r in F.ROLES}
+    ch.reset(meas)
+    assert ch.dec.state["src"].hand_target == pytest.approx(measured["src"])   # q* 도 실측에서 시작
+    assert ch.dec.hand_q0["rcv"] == pytest.approx(measured["rcv"])
 
 
 def test_old_contracts_still_start_from_the_open_hand_and_are_not_capped():
