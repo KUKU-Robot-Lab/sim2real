@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""컵홀더 자세 자동 추정 — 각 홀더 -x 면의 ArUco 마커(30 mm)로 STL 원점의 base 자세를 낸다.
+"""컵홀더 자세 자동 추정 — 각 홀더 -x 면의 ArUco 마커(크기 · 위치는 config/cup_holders.yaml)로 STL 원점의 base 자세를 낸다.
 
   ① RGB + K 한 장(라이브: scripts/vision/grab_rgbd.py, 또는 --npz). 로봇은 움직이지 않는다.
   ② ArUco(DICT_6X6_250) 검출 → 마커 네 모서리(서브픽셀).
@@ -59,6 +59,7 @@ class HolderCfg:
     upright: bool
     on_table: bool               # 바닥이 상판 위 — 최종 자세의 z 를 상판 높이로 고정
     shared: tuple[str, ...]
+    base_bottom_m: float         # 상판에 닿는 바닥면 높이(STL, 원점 기준 m) — 원점 z = 상판 z − 이 값
 
 
 def marker_corners_stl(center, normal, up, size: float) -> np.ndarray:
@@ -84,6 +85,10 @@ def load_cfg(path: Path = DEFAULT_CFG) -> HolderCfg:
     bad = [a for a in shared if a not in AXES]
     if bad:
         raise ValueError(f"{path}: constraints.shared {bad} — 가능한 축 {AXES}")
+    # 10.03 새 홀더(마커 22 mm · 흰 패드 30 mm): 마커 아래 변(−26 mm)이 바닥(−30 mm)이 아니다 — 바닥은 따로 적는다.
+    #   없으면 옛 규칙(마커가 패드를 꽉 채워 아래 변 = 바닥).
+    bb = raw.get("constraints", {}).get("base_bottom_stl_mm")
+    base_bottom = float(bb) * s if bb is not None else float(corners[:, 2].min())
     hs = raw["holders"]
     ids = tuple(int(h["marker_id"]) for h in hs)
     if len(set(ids)) != len(ids):
@@ -92,7 +97,8 @@ def load_cfg(path: Path = DEFAULT_CFG) -> HolderCfg:
                      dictionary=str(m["dictionary"]), marker_size=float(m["size_m"]), corners_stl=corners,
                      names=tuple(str(h["name"]) for h in hs), ids=ids,
                      upright=bool(raw.get("constraints", {}).get("upright", True)),
-                     on_table=bool(raw.get("constraints", {}).get("on_table", True)), shared=shared)
+                     on_table=bool(raw.get("constraints", {}).get("on_table", True)), shared=shared,
+                     base_bottom_m=base_bottom)
 
 
 def load_stl(path: Path) -> np.ndarray:
@@ -352,10 +358,10 @@ def write_poses(path: Path, cfg: HolderCfg, poses: dict[int, np.ndarray], meta: 
 
 
 def _template_geometry(cfg: HolderCfg, table_z: float) -> tuple[np.ndarray, float]:
-    """마커 법선(STL) · 홀더 원점 z — 바닥(= 마커 아래 변 높이)이 table_z 에 놓인다."""
+    """마커 법선(STL) · 홀더 원점 z — 바닥(base_bottom_m)이 table_z 에 놓인다."""
     c = cfg.corners_stl
     normal = np.cross(c[3] - c[0], c[1] - c[0])
-    return normal / np.linalg.norm(normal), table_z - float(c[:, 2].min())
+    return normal / np.linalg.norm(normal), table_z - cfg.base_bottom_m
 
 
 def template_fallback(gray: np.ndarray, K: np.ndarray, T_bc: np.ndarray, cfg: HolderCfg, ids: list[int],
@@ -499,7 +505,7 @@ def main(argv=None) -> int:
         dtxt = f" · depth−추정 {dz * 1000:+.0f} mm" if dz is not None else ""
         w = "  ⚠공유 제약으로 잔차 증가" if r > max(SHARED_WARN_PX, 2 * est.free[i].rms_px) else ""
         print(f"  {name}(id{i}·{est.src[i]}) origin x {p[0]:+.4f}  y {p[1]:+.4f}  z {p[2]:.4f} m  "
-              f"yaw {math.degrees(p[3]):+6.1f}°  | 바닥 z {p[2] - 0.030:.4f}(상판 {TABLE_TOP_Z}) · rms {r:.2f} px{dtxt}{w}")
+              f"yaw {math.degrees(p[3]):+6.1f}°  | 바닥 z {p[2] + cfg.base_bottom_m:.4f}(상판 {TABLE_TOP_Z}) · rms {r:.2f} px{dtxt}{w}")
 
     overlay(rgb, K, T_bc, cfg, est.det, est.poses, args.png)
     print(f"\n겹친 영상: {args.png}")

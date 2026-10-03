@@ -1,31 +1,33 @@
-# 컵홀더 마커 자동 추정 설정 — scripts/calib/cup_holder_pose.py (2026-10-02)
+# 컵홀더 마커 자동 추정 설정 — scripts/calib/cup_holder_pose.py (2026-10-02, 10.03 새 홀더로 교체)
 #
-# STL(cup holder1.stl, 단위 mm) 형상:
-#   받침 블록 x∈[-30,30] · y∈[-30,30] · z∈[-30,0], 위에 컵 링(외경 60 · 내경 50, 윗면 z=+30, 컵 바닥 z=-25).
-#   +x 쪽 팔(y∈[-15,15])은 x=90 까지 뻗고 아래로 z=-50.1 까지 내려간다.
-#   -x 쪽 30×30 패드가 1 mm 튀어나와 있다(x=-31, y∈[-15,15], z∈[-30,0]) — 이 면 전체가 ArUco 마커다.
-#   원점 = 컵 축 위, 받침 윗면 높이(z=0).
+# 10.03 사용자: 홀더를 hdgp/assets/cup_holder(rh_place_r sim 과 같은 형상)로 바꾸고, 테이블 왼쪽부터 0 · 1 · 2,
+#   마커는 흰 30 mm 패드에 22 mm(검은 테두리 바깥 변).
+# STL = hdgp/assets/cup_holder/cup_holder_rl.usd 의 visuals 메쉬를 mm 로(assets/meshes/cup_holder.stl):
+#   링 바깥 Ø80 · 안 Ø70, 윗면 z=+30, 컵 바닥(안쪽 바닥 윗면) z=−25, 받침 바닥 z=−30.
+#   +x 쪽 클램프(y∈[-15,15])는 x=100 까지 뻗고, 안쪽면 x=+90 이 상판 끝에 닿는다(z −50.1 까지 내려감).
+#   −x 쪽 30×30 패드가 1 mm 튀어나와 있다(x=−41, y∈[−15,15], z∈[−30,0]) — 그 가운데에 22 mm 마커.
+#   원점 = 컵 축 위, 받침 윗면 높이(z=0). FP++ 메쉬는 같은 형상의 m 단위 assets/meshes/cup_holder.obj.
 stl: assets/meshes/cup_holder.stl
 stl_units_m: 0.001
 camera_extrinsics: config/global_camera_extrinsics_arm4090.yaml
 
 marker:
   dictionary: DICT_6X6_250
-  size_m: 0.030                  # 검은 테두리 바깥 변
-  center_stl_mm: [-31.0, 0.0, -15.0]
+  size_m: 0.022                  # 검은 테두리 바깥 변(흰 패드 30 mm 의 가운데)
+  center_stl_mm: [-41.0, 0.0, -15.0]
   normal_stl: [-1.0, 0.0, 0.0]   # 마커 z(면 바깥)
   up_stl: [0.0, 0.0, 1.0]        # 마커 y(인쇄 위쪽) 가정값 — 실제로 붙은 방향(0/90/180/270°)은 도구가 고른다
 
-holders:                         # 테이블 왼쪽부터(사용자 10.02) — 실물 y +0.083 · −0.034 · −0.153
+holders:                         # 테이블 왼쪽부터(사용자 10.03) — sim(rh_place_r) 배치 y +0.083 · −0.034 · −0.153
   - {name: cup_holder_0, marker_id: 0}
   - {name: cup_holder_1, marker_id: 1}
   - {name: cup_holder_2, marker_id: 2}
 
 constraints:
   upright: true                  # STL z = base z (roll·pitch 0). 추정은 x · y · z · yaw 만
-  # 바닥이 상판(z 0.205) 위 → 최종 자세 z 를 0.235 로 고정. 머리 시점에서 x(앞뒤)와 z 가 영상에서 거의 구분되지 않아
-  #   z 를 풀어 두면 x 공유 오차가 z 로 빠진다(10.02 합성 검사).
+  # 바닥이 상판(z 0.205) 위 → 최종 자세 z = 상판 − base_bottom = 0.235. 머리 시점에서 x(앞뒤)와 z 가 영상에서 거의
+  #   구분되지 않아 z 를 풀어 두면 x 공유 오차가 z 로 빠진다(10.02 합성 검사).
   on_table: true
-  # 10.02 실물: 세 홀더가 base y 로 ~118 mm 간격으로 늘어서고 x 는 0.392~0.394 로 같다(사용자 확인 "x 가 거의 고정이고
-  #   y 는 변하는게 맞아"). 세 홀더가 같은 값을 갖는 축(x|y|z|yaw).
+  base_bottom_stl_mm: -30.0      # 받침 바닥(상판에 닿는 면). 마커 아래 변(−26)과 다르다
+  # 세 홀더 모두 클램프 안쪽면이 상판 끝에 닿아 x 가 같다(sim x 0.380 = 상판 끝 0.470 − 0.090). 같은 값을 갖는 축(x|y|z|yaw).
   shared: [x]

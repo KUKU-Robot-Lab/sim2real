@@ -68,17 +68,18 @@ def _render(T_bc, poses: dict[int, tuple], k: int = 0, noise: float = 0.0, seed:
 
 
 def test_stl_marker_face_is_the_30mm_pad_on_minus_x():
-    """설정의 마커 모서리가 STL 의 −x 돌출 패드(x=−31, 30×30) 네 꼭짓점과 일치한다."""
+    """10.03 새 홀더(hdgp cup_holder): −x 돌출 패드(x=−41, 30×30) 가운데에 22 mm 마커 — 흰 여백 4 mm."""
     tris = H.load_stl(CFG.stl) * CFG.stl_scale
     P = tris.reshape(-1, 3)
-    on = P[np.isclose(P[:, 0], -0.031, atol=1e-6)]
-    assert on.size, "x=−31 mm 면이 없다"
+    on = P[np.isclose(P[:, 0], -0.041, atol=1e-6)]
+    assert on.size, "x=−41 mm 면이 없다"
     lo, hi = on.min(0), on.max(0)
     assert np.allclose([lo[1], hi[1], lo[2], hi[2]], [-0.015, 0.015, -0.030, 0.0], atol=1e-6)
     c = CFG.corners_stl
-    assert np.allclose(c[:, 0], -0.031)
-    assert np.allclose(sorted(c[:, 1]), [-0.015, -0.015, 0.015, 0.015])
-    assert np.allclose(sorted(c[:, 2]), [-0.030, -0.030, 0.0, 0.0])
+    assert np.allclose(c[:, 0], -0.041)
+    assert np.allclose(sorted(c[:, 1]), [-0.011, -0.011, 0.011, 0.011])
+    assert np.allclose(sorted(c[:, 2]), [-0.026, -0.026, -0.004, -0.004])
+    assert CFG.base_bottom_m == pytest.approx(-0.030)              # 바닥은 마커 아래 변(−26)이 아니라 받침 바닥
     # 마커 z(=TL→TR × TL→BL 의 반대) 가 면 바깥(−x)
     n = np.cross(c[3] - c[0], c[1] - c[0])
     assert n[0] < 0
@@ -193,7 +194,8 @@ def test_template_fallback_finds_every_holder_id_rotation_and_position():
     for i, p in REAL.items():
         h = hits[i]
         assert h.k == REAL_K[i]
-        assert h.ncc > 0.8 and h.runner_up < h.ncc - 0.15
+        # 22 mm 마커(10.03)는 30 mm 보다 화면에서 작아 점수가 0.78~0.81 — 위치 · 각도 정확도는 아래에서 그대로 본다
+        assert h.ncc > 0.75 and h.runner_up < h.ncc - 0.15
         assert np.allclose(h.pose[:2], p[:2], atol=0.003), (i, h.pose, p)
         assert abs(math.degrees(H.wrap(h.pose[3] - p[3]))) < 3.0
         assert h.pose[2] == pytest.approx(0.235, abs=1e-9)        # 바닥이 상판(0.205) 위 · 원점은 +30 mm
