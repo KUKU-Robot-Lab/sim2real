@@ -16,6 +16,7 @@
 되려면 PC 의 RT 한도가 열려 있어야 한다(scripts/setup/rt_setup.sh, 점검은 check_host.py --only cpu).
 
     python3 -m policy_control.cpu_plan          # 이 PC 의 배치를 한 줄로
+    python3 policy_control/cpu_plan.py --general   # 일반 코어 cpulist("0-13,16-29") — fpp_up.sh 가 컨테이너를 여기에 묶는다
 """
 from __future__ import annotations
 
@@ -47,6 +48,21 @@ def parse_cpulist(text: str) -> tuple[int, ...]:
         lo, _, hi = part.partition("-")
         out.extend(range(int(lo), int(hi or lo) + 1))
     return tuple(sorted(set(out)))
+
+
+def format_cpulist(cpus) -> str:
+    """(0, 1, 2, 3, 8, 10, 11) → "0-3,8,10-11" (커널 · docker --cpuset-cpus 형식). 순수."""
+    out, run = [], []
+    for c in sorted(set(int(c) for c in cpus)):
+        if run and c == run[-1] + 1:
+            run.append(c)
+            continue
+        if run:
+            out.append(f"{run[0]}-{run[-1]}" if len(run) > 1 else str(run[0]))
+        run = [c]
+    if run:
+        out.append(f"{run[0]}-{run[-1]}" if len(run) > 1 else str(run[0]))
+    return ",".join(out)
 
 
 def _read(path: Path) -> str:
@@ -212,4 +228,10 @@ def governors(sysfs: Path = SYSFS) -> tuple[str, ...]:
 
 
 if __name__ == "__main__":
-    print(current_plan().describe())
+    import sys
+    plan = current_plan()
+    if "--general" in sys.argv[1:]:
+        # 셸 · 컨테이너용: 실시간 코어를 비켜 둔 자리. 고정하지 않는 PC 면 빈 줄(호출하는 쪽이 제한을 안 건다)
+        print(format_cpulist(plan.general) if plan.rt else "")
+    else:
+        print(plan.describe())

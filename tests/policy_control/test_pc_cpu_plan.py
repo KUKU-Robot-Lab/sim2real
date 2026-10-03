@@ -162,3 +162,29 @@ def test_keep_off_rt_without_a_plan_only_reports(tmp_path):
     before = os.sched_getaffinity(0)
     assert C.keep_off_rt(C.CpuPlan(general=tuple(before), note="작은 PC")) == "CPU: 작은 PC"
     assert os.sched_getaffinity(0) == before
+
+
+@pytest.mark.parametrize("cpus, want", [((0, 1, 2, 3, 8, 10, 11), "0-3,8,10-11"), ((5,), "5"), ((), ""),
+                                        (tuple(range(14)) + tuple(range(16, 30)), "0-13,16-29")])
+def test_cpulist_round_trips_in_the_kernel_format(cpus, want):
+    assert C.format_cpulist(cpus) == want
+    assert C.parse_cpulist(want) == tuple(sorted(cpus))
+
+
+def test_the_general_cpulist_cli_is_empty_when_the_pc_is_not_pinned(tmp_path):
+    """fpp_up.sh 가 이 출력으로 --cpuset-cpus 를 건다 — 고정하지 않는 PC(작은 · S2R_CPU_PIN=0)는 빈 줄이어야 제한이 안 걸린다."""
+    import subprocess
+    import sys
+    script = Path(C.__file__)
+    off = subprocess.run([sys.executable, str(script), "--general"], capture_output=True, text=True,
+                         env={**os.environ, C.PIN_ENV: "0"})
+    assert off.returncode == 0 and off.stdout.strip() == ""
+    on = subprocess.run([sys.executable, str(script), "--general"], capture_output=True, text=True,
+                        env={k: v for k, v in os.environ.items() if k != C.PIN_ENV})
+    plan = C.current_plan()
+    assert on.stdout.strip() == (C.format_cpulist(plan.general) if plan.rt else "")
+
+
+def test_fpp_containers_are_kept_off_the_realtime_cores():
+    text = (Path(__file__).resolve().parents[2] / "scripts/vision/fpp_up.sh").read_text()
+    assert "cpu_plan.py\" --general" in text and '"${CPUSET[@]}"' in text

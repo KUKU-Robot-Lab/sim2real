@@ -10,7 +10,12 @@ docker rm -f "fpp_$NAME" >/dev/null 2>&1 || true
 #  못 뜬다. 호스트 캐시를 붙인다. 컨테이너 사용자 perception 은 uid 1000 = 호스트 사용자(arm4090 · vision-3090 같음).
 CACHE="${FPP_CACHE:-$HOME/.cache/fpp}"
 mkdir -p "$CACHE/torch" "$CACHE/warp"
-docker run -d --name "fpp_$NAME" --network host --ipc=host --gpus all -e ROS_DOMAIN_ID=126 -e ROS_LOCALHOST_ONLY=1 \
+# ★10.03 FP++ 는 CPU 를 코어 3.5 개쯤 쓴다(홀더 하나 추적, arm4090 실측) — EtherCAT 마스터 실시간 코어와 그 형제 스레드를
+#  비켜 간다. 코어 목록은 이 PC 에서 cpu_plan 이 정한다(고정 안 하는 PC 면 빈 값 → 제한 없음). 끄기 S2R_CPU_PIN=0.
+GENERAL_CPUS="$(python3 "$SIM2REAL/deploy/policy_control/policy_control/cpu_plan.py" --general 2>/dev/null || true)"
+CPUSET=()
+[ -n "$GENERAL_CPUS" ] && CPUSET=(--cpuset-cpus "$GENERAL_CPUS")
+docker run -d --name "fpp_$NAME" --network host --ipc=host --gpus all "${CPUSET[@]}" -e ROS_DOMAIN_ID=126 -e ROS_LOCALHOST_ONLY=1 \
   -v $PPP/perception_plus_plus_core/detection/yolo.py:/workspace/perception_plus_plus/perception_plus_plus_core/detection/yolo.py:ro \
   -v $PPP/perception_plus_plus_core/fp_adapter/foundationpose_plus_plus.py:/workspace/perception_plus_plus/perception_plus_plus_core/fp_adapter/foundationpose_plus_plus.py:ro \
   -v $PPP/ros_ws/src/perception_plus_plus_ros/perception_plus_plus_ros/node.py:/opt/perception_plus_plus/lib/python3.10/site-packages/perception_plus_plus_ros/node.py:ro \
@@ -24,4 +29,4 @@ docker run -d --name "fpp_$NAME" --network host --ipc=host --gpus all -e ROS_DOM
     cd /workspace/perception_plus_plus
     exec ros2 launch perception_plus_plus_ros cup_tracking.launch.py parameters_file:=/opt/params/$NAME.yaml" \
   >/dev/null
-echo "fpp_$NAME up"
+echo "fpp_$NAME up${GENERAL_CPUS:+ · cpuset $GENERAL_CPUS}"
