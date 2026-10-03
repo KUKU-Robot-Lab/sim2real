@@ -116,6 +116,10 @@ def reset_droop(state: PdState) -> PdState:
     return replace(state, droop=np.zeros_like(state.droop))
 
 
+#: 목표가 관절 한계 밖으로 이만큼 넘을 때만 'position' 고장 — 그 안은 조용히 자른다(pd_arm.SEED_CLIP_TOL_RAD · check_path_start 와 같은 0.05)
+POSITION_FAULT_TOL = 0.05
+
+
 # ------------------------------------------------------------------ tick law
 def step(state: PdState, inp: PdInputs, cfg: PdLawCfg,
          gravity_fn: Callable[[np.ndarray], np.ndarray] | None = None) -> tuple[PdState, PdCommand]:
@@ -127,7 +131,9 @@ def step(state: PdState, inp: PdInputs, cfg: PdLawCfg,
 
     limited: list[str] = []
     q_t = np.clip(q_target, cfg.lower, cfg.upper)
-    if np.any(q_t != q_target):
+    # ★10.03 실기: 한계에 붙은 자세(차렷 j4 −0.013 rad, 하한 0)의 실측을 그대로 목표로 쓰는 경로 진입 램프가 '한계 밖 목표'로
+    #   HOLD 됐다. 목표는 언제나 한계로 자르고, 고장(position → HOLD)은 POSITION_FAULT_TOL 넘게 밖일 때만.
+    if float(np.max(np.maximum(cfg.lower - q_target, q_target - cfg.upper))) > POSITION_FAULT_TOL:
         limited.append("position")
 
     q_sp, lead_flags = _advance_setpoint(state.q_setpoint, q_t, q_meas, inp, cfg)

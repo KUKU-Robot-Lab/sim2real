@@ -115,6 +115,15 @@ def test_target_outside_limits_is_clipped_and_flagged():
     assert "position" in cmd.limited
 
 
+def test_target_just_outside_a_limit_is_clipped_without_a_fault():
+    """10.03 실기: 차렷 j4 −0.013 rad(하한 0)를 시작점으로 쓰는 경로 진입 램프가 HOLD 였다 — 0.05 rad 안은 자르기만."""
+    cfg = _cfg(lower=np.full(N, 0.0), upper=np.full(N, 1.0), max_vel=100.0, lead_vel=100.0)
+    st2, cmd = L.step(_state(), _inputs(q_target=np.full(N, -0.013)), cfg)
+    assert np.allclose(st2.q_setpoint, 0.0) and "position" not in cmd.limited
+    _, cmd = L.step(_state(), _inputs(q_target=np.full(N, -(L.POSITION_FAULT_TOL + 0.01))), cfg)
+    assert "position" in cmd.limited
+
+
 def test_hold_freezes_setpoint_and_zeroes_velocity():
     st = _state(0.3)
     st2, cmd = L.step(st, _inputs(q_target=np.full(N, 1.0), qd_target=np.full(N, 0.4),
