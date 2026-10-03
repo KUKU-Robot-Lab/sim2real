@@ -15,6 +15,7 @@ docker run -d --name "fpp_$NAME" --network host --ipc=host --gpus all -e ROS_DOM
   -v $PPP/perception_plus_plus_core/fp_adapter/foundationpose_plus_plus.py:/workspace/perception_plus_plus/perception_plus_plus_core/fp_adapter/foundationpose_plus_plus.py:ro \
   -v $PPP/ros_ws/src/perception_plus_plus_ros/perception_plus_plus_ros/node.py:/opt/perception_plus_plus/lib/python3.10/site-packages/perception_plus_plus_ros/node.py:ro \
   -v $PPP/assets/meshes:/workspace/perception_plus_plus/assets/meshes:ro \
+  -v $SIM2REAL/assets/meshes:/workspace/perception_plus_plus/assets/s2r_meshes:ro \
   -v "$YAML":/opt/params/"$NAME".yaml:ro \
   -v "$CACHE/torch":/home/perception/.cache/torch -v "$CACHE/warp":/home/perception/.cache/warp \
   perception-plus-plus:humble-cup bash -lc "

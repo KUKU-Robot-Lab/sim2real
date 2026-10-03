@@ -61,6 +61,25 @@ objects:
       origin_above_bottom_m: 0.05987             # 0.0921 × 0.65 (rh_aglt CUP_UNIT.bottom_z × cup_scale)
     aabb: [[-0.0286, -0.0286, -0.05987], [0.0286, 0.0286, 0.05389]]
     symmetry_axis: [0.0, 0.0, 1.0]
+  cup_holder:
+    real: "검은 컵홀더 — hdgp/assets/cup_holder 형상 출력물(링 ⌀80/⌀70 · 테이블 끝 클램프), 테이블 왼쪽부터 0 · 1 · 2"
+    # 10.03 사용자: 마커 추정(scripts/calib/cup_holder_pose.py)을 FP++ 로 재확인. YOLO(yolov8m-seg)는 홀더를 cup(41)으로
+    #   잡는다(10.03 arm4090 한 장: id2 0.57 · id0 0.20 · id1 0.11, 노란 원통 0.13) — 컨테이너 하나 = 홀더 하나라
+    #   confidence 0.3 이면 가장 또렷한 하나만 남는다. 홀더별로 따로 보려면 검출 쪽에 위치 고르기가 필요하다.
+    fpp:
+      mesh_path: assets/s2r_meshes/cup_holder.obj   # sim2real assets/meshes 를 컨테이너에 붙인 자리(fpp_up.sh) — m 단위
+      mesh_scale_to_meters: 1.0
+      cup_class_id: 41
+      detection_pick: confidence
+      yolo_confidence: 0.3
+    cad_to_body:
+      position: [0.0, 0.0, 0.0]          # 메쉬 원점 = 홀더 원점(컵 축 위 받침 윗면), 축도 같다
+      orientation_wxyz: [1.0, 0.0, 0.0, 0.0]
+    sim:
+      usd: hdgp/assets/cup_holder/cup_holder_rl.usd
+      origin_above_bottom_m: 0.030       # 받침 바닥 −30 mm
+    aabb: [[-0.041, -0.040, -0.0501], [0.100, 0.040, 0.030]]
+    # symmetry_axis 없음 — 클램프가 있어 yaw 를 버리지 않는다
 
 aliases:
   cup_big_s080: cup_big_s100     # sim 스케일 변형 — 실물은 하나

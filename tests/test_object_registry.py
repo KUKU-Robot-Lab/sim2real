@@ -16,7 +16,7 @@ from object_registry import (  # noqa: E402
 
 def test_default_registry_loads_real_objects():
     reg = load_registry(DEFAULT_REGISTRY)
-    assert set(reg.names()) == {"shaker_closed", "cup_big_s100", "aglt_cup_s065"}
+    assert set(reg.names()) == {"shaker_closed", "cup_big_s100", "aglt_cup_s065", "cup_holder"}
     assert reg.get("shaker_closed").origin_above_bottom_m == pytest.approx(0.0921)
     assert reg.get("shaker_closed").symmetry_axis == (0.0, 0.0, 1.0)
     assert reg.get("cup_big_s100").symmetry_axis == (0.0, 1.0, 0.0)
@@ -89,3 +89,18 @@ def test_invalid_registry_fails_fast(tmp_path):
     cyc.write_text("camera_extrinsics: c\nobjects: {}\naliases: {a: b, b: a}\n")
     with pytest.raises(ValueError, match="alias"):
         load_registry(cyc)
+
+
+def test_cup_holder_fpp_mesh_is_the_marker_stl_in_meters():
+    """10.03 FP++ 재확인용 — FP++ 메쉬(m)와 마커 추정 STL(mm)이 같은 형상 · 같은 원점, 컨테이너가 보는 자리에 있다."""
+    import trimesh
+    h = load_registry(DEFAULT_REGISTRY).get("cup_holder")
+    assert h.symmetry_axis is None and h.origin_above_bottom_m == pytest.approx(0.030)
+    rel = h.fpp["mesh_path"]
+    assert rel.startswith("assets/s2r_meshes/")                       # fpp_up.sh 가 sim2real assets/meshes 를 여기에 붙인다
+    repo = DEFAULT_REGISTRY.parents[1]
+    obj = trimesh.load(repo / "assets/meshes" / Path(rel).name, force="mesh")
+    stl = trimesh.load(repo / "assets/meshes/cup_holder.stl", force="mesh")
+    assert np.allclose(obj.bounds, stl.bounds / 1000.0, atol=1e-6)
+    assert np.allclose(obj.bounds, np.array(h.aabb), atol=1e-4)
+    assert "s2r_meshes" in (repo / "scripts/vision/fpp_up.sh").read_text()
