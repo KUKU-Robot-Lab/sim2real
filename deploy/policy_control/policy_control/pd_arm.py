@@ -11,7 +11,7 @@ engage_stage·start_home·start_release·zero_release·engage_refusals) 과 **�
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Mapping
+from typing import Mapping, Sequence
 
 import numpy as np
 
@@ -35,6 +35,24 @@ from jtc_bridge_core import JointRemap  # noqa: E402  (scripts/)
 
 HOLD_SEQ = -2                      # 내부(홈/정지) 목표의 seq — 외부 목표(≥0)·없음(−1)과 구분
 JTC_REF_MAX_AGE_SEC = 0.5
+#: engage 시작점(실측 · JTC 기준)이 관절 한계 밖이면 이만큼까지는 한계로 잘라 시작한다 — 넘으면 engage 거부.
+#  10.03 실기: 왼팔 차렷 j4 −0.8°(−0.014 rad)가 하한 0 밖이라 시작점이 '한계 밖 목표'로 잡혀 engage 즉시 HOLD.
+#  0.05 rad = 경로 시작점 검사 허용(check_path_start)과 같다. 자르면 그 관절이 한계 안쪽으로 램프 속도로 조금 들어간다.
+SEED_CLIP_TOL_RAD = 0.05
+
+
+def clip_seed(seed: np.ndarray, lower: np.ndarray, upper: np.ndarray, names: Sequence[str],
+              tol: float = SEED_CLIP_TOL_RAD) -> tuple[np.ndarray, list[str]]:
+    """(한계로 자른 시작점, 자른 관절 메모). tol 넘게 밖이면 PdArmError. 순수."""
+    seed = np.asarray(seed, dtype=float)
+    over = np.maximum(lower - seed, seed - upper)
+    bad = [f"{n} {float(seed[i]):+.3f} (한계 [{float(lower[i]):+.3f}, {float(upper[i]):+.3f}])"
+           for i, n in enumerate(names) if over[i] > tol]
+    if bad:
+        raise PdArmError(f"engage 시작점이 관절 한계 밖 {tol} rad 초과: {', '.join(bad)} — JTC 로 한계 안에 둔 뒤 다시")
+    clipped = np.clip(seed, lower, upper)
+    notes = [f"{n} {float(seed[i]):+.4f} → {float(clipped[i]):+.4f}" for i, n in enumerate(names) if clipped[i] != seed[i]]
+    return clipped, notes
 SIDE_ORDER = ("right", "left")     # 양팔 리셋 규약: 우팔 먼저
 _ENGAGED = (Phase.RAMPING, Phase.TRACKING, Phase.HOLD)
 _MOVING = (Phase.RAMPING, Phase.TRACKING)
@@ -246,6 +264,7 @@ class ArmUnit:
     # ---------------------------------------------------------------- setup
     def _setup_law(self, stage_name: str) -> None:
         lower, upper, vel = limits_from_profile(self.robot_cfg.joint_profile, self.arm_joints)
+        self.lower, self.upper = np.asarray(lower, dtype=float), np.asarray(upper, dtype=float)
         if np.any(np.abs(vel - self.cfg.lead_vel) > 1e-9):
             raise PdArmError(f"pd yaml lead_vel {self.cfg.lead_vel} ≠ profile joint velocity {vel.tolist()}")
         if list(self.side_cfg.sim_gains.joints) != self.arm_joints:
@@ -559,7 +578,11 @@ class ArmUnit:
             ref = np.array([float(ref_src[idx[self.profile[c]["source"]]]) * float(self.profile[c]["sign"])
                             for c in self.arm_joints])
             note = f"{self.side}: seed JTC reference"
-        return ref - np.asarray(self.gravity_fn(q_m), dtype=float) / self.kp, note
+        seed, clipped = clip_seed(ref - np.asarray(self.gravity_fn(q_m), dtype=float) / self.kp,
+                                  self.lower, self.upper, self.arm_joints)
+        if clipped:
+            note += f" · 한계 안으로 자름 {clipped}"
+        return seed, note
 
     def engage_stage(self, q_seed: np.ndarray, now: float) -> str:
         # 출발 때의 손 자세 — 홈 경로는 이 손으로 검사했다. 복귀 전에 손을 여기로 되돌린다(pd/hand_rest, 09.22).

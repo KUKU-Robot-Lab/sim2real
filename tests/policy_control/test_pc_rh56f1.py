@@ -316,3 +316,16 @@ def test_tactile_is_the_contact_force_magnitude_like_the_training_sensor():
     assert HMAP.touch_sim_order(n) == pytest.approx([30.0, 4.0, 0.0, 0.0, 3.0])     # 접선이 없으면 법선만
     core = HandStateCore(HMAP, "right")
     assert core.tip_forces(n, t)[1] == pytest.approx(5.0)
+
+
+def test_engage_seed_just_outside_a_joint_limit_is_clipped_in_and_far_outside_is_refused():
+    """10.03 실기: 왼팔 차렷 j4 −0.8° 가 하한 0 밖 → engage 시작점이 '한계 밖 목표'로 즉시 HOLD 였다."""
+    from policy_control.pd_arm import PdArmError, SEED_CLIP_TOL_RAD, clip_seed
+    lo, hi = np.array([-1.0, 0.0, -1.0]), np.array([1.0, 2.4, 1.0])
+    names = ["l_aj_3", "l_aj_4", "l_aj_5"]
+    seed, notes = clip_seed(np.array([0.2, -0.014, 0.0]), lo, hi, names)
+    assert seed[1] == 0.0 and seed[0] == 0.2 and len(notes) == 1 and "l_aj_4" in notes[0]
+    same, none = clip_seed(np.array([0.2, 0.3, 0.0]), lo, hi, names)
+    assert np.allclose(same, [0.2, 0.3, 0.0]) and none == []
+    with pytest.raises(PdArmError, match="l_aj_4"):
+        clip_seed(np.array([0.2, -(SEED_CLIP_TOL_RAD + 0.01), 0.0]), lo, hi, names)
