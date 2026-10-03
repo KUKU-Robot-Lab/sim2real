@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from object_pose_node import PoseConverter  # noqa: E402
+from object_pose_node import PoseConverter, correct_depth  # noqa: E402
 from object_registry import DEFAULT_REGISTRY, load_registry  # noqa: E402
 
 REG = load_registry(DEFAULT_REGISTRY)
@@ -74,23 +74,65 @@ def test_unknown_name_rejected_and_names_resolved():
 ARM4090_CAMERA = Path(__file__).resolve().parents[1] / "config" / "global_camera_extrinsics_arm4090.yaml"
 
 
-def test_camera_yaml_override_and_z_bias():
-    """10.01 arm4090: 로봇 전용 camera 파일 + 그 파일의 base_z_bias_m 이 출력 z 에 더해진다."""
+def test_camera_yaml_override_and_depth_ray_correction():
+    """10.01 arm4090 전용 camera 파일 · 10.04 z 만 보정(−8 mm)을 깊이 광선 보정으로 바꿨다."""
     shared = PoseConverter(REG, ["cup_big_s100"])
-    assert shared.z_bias == 0.0
+    assert shared.z_bias == 0.0 and shared.depth_bias is None
     own = PoseConverter(REG, ["cup_big_s100"], ARM4090_CAMERA)
-    assert np.isclose(own.z_bias, -0.008)
-    nobias = PoseConverter(REG, ["cup_big_s100"], ARM4090_CAMERA, z_bias=0.0)
+    assert own.z_bias == 0.0 and own.depth_bias == pytest.approx((0.0286, -0.059, 0.45, 0.90))
     cam_p, cam_q = np.array([0.02, 0.05, 0.62]), np.array([1.0, 0.0, 0.0, 0.0])
     p1, q1 = own.convert("cup_big_s100", cam_p, cam_q)
-    p0, q0 = nobias.convert("cup_big_s100", cam_p, cam_q)
-    assert np.allclose(p1 - p0, [0.0, 0.0, -0.008]) and np.allclose(q1, q0)
+    off = PoseConverter(REG, ["cup_big_s100"], ARM4090_CAMERA)
+    off.depth_bias = None                                          # 같은 변환에서 깊이 보정만 끈다
+    p0, q0 = off.convert("cup_big_s100", cam_p, cam_q)
+    assert np.allclose(q1, q0)                                     # 위치만 바뀐다
+    e = 0.0286 - 0.059 * 0.62                                     # −8.0 mm (짧게 봄)
+    assert np.isclose(np.linalg.norm(p1 - p0), -e * np.linalg.norm(cam_p) / 0.62, atol=1e-6)
     ps, _ = shared.convert("cup_big_s100", cam_p, cam_q)
     assert np.linalg.norm(ps - p0) > 0.005                 # 5090 공유 값과 실제로 다르다
 
 
+def test_depth_correction_stretches_along_the_ray_and_clamps_outside_the_fit():
+    bias = (0.0286, -0.059, 0.45, 0.90)
+    p = np.array([0.10, -0.05, 0.70])
+    q = correct_depth(p, bias)
+    assert np.allclose(np.cross(p, q), 0.0, atol=1e-12)            # 같은 광선 위
+    assert np.isclose(q[2] - p[2], -(0.0286 - 0.059 * 0.70))       # 12.7 mm 더 멀리
+    far = correct_depth(np.array([0.0, 0.0, 1.5]), bias)
+    assert np.isclose(far[2] - 1.5, -(0.0286 - 0.059 * 0.90))      # 맞춘 범위 끝값으로 자른다
+    assert np.allclose(correct_depth(p, None), p)
+
+
+def test_holder2_fpp_lands_near_the_marker_truth_after_the_ray_correction():
+    """10.04 arm4090 실측: FP++(홀더 2, z 보정 0) base (0.3748, −0.1572, 0.2454) · 마커 정답 (0.3820, −0.1613, 0.2350)."""
+    own = PoseConverter(REG, ["cup_big_s100"], ARM4090_CAMERA)
+    ext = own._ext["cup_big_s100"]
+    from table_cad_extrinsics import T_from                      # base ← camera (같은 쿼터니언 규약 wxyz)
+    T = T_from(ext.cam_pos, ext.cam_quat)
+    raw_base = np.array([0.3748, -0.1572, 0.2454])
+    cam = (np.linalg.inv(T) @ np.r_[raw_base, 1.0])[:3]
+    fixed = (T @ np.r_[correct_depth(cam, own.depth_bias), 1.0])[:3]
+    truth = np.array([0.3820, -0.1613, 0.2350])
+    assert np.linalg.norm(raw_base - truth) > 0.013
+    assert np.linalg.norm(fixed - truth) < 0.004
+
+
 def test_z_bias_out_of_range_rejected(tmp_path):
     bad = tmp_path / "cam.yaml"
-    bad.write_text(ARM4090_CAMERA.read_text().replace("base_z_bias_m: -0.008", "base_z_bias_m: 0.2"))
+    bad.write_text(ARM4090_CAMERA.read_text().replace("base_z_bias_m: 0.0", "base_z_bias_m: 0.2"))
+    with pytest.raises(ValueError):
+        PoseConverter(REG, ["cup_big_s100"], bad)
+
+
+def test_depth_bias_and_z_bias_together_are_refused(tmp_path):
+    both = tmp_path / "cam.yaml"
+    both.write_text(ARM4090_CAMERA.read_text().replace("base_z_bias_m: 0.0", "base_z_bias_m: -0.008"))
+    with pytest.raises(ValueError):
+        PoseConverter(REG, ["cup_big_s100"], both)
+
+
+def test_depth_bias_out_of_range_rejected(tmp_path):
+    bad = tmp_path / "cam.yaml"
+    bad.write_text(ARM4090_CAMERA.read_text().replace("offset_m: 0.0286", "offset_m: 0.2"))
     with pytest.raises(ValueError):
         PoseConverter(REG, ["cup_big_s100"], bad)

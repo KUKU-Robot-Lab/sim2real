@@ -18,11 +18,18 @@ camera:
   position: [0.050504, 0.037916, 0.820846]
   orientation_wxyz: [0.130161, -0.69891, 0.696068, -0.100366]
 
-# ── base z 보정: object_pose_node 가 물체 자세 z 에 더한다 ───────────────────
-# D435i depth 가 이 거리(0.6~0.7 m)에서 표면을 ~8 mm 높게(가깝게) 본다 — 같은 외부 파라미터로 depth 상판이
-# 0.213(CAD 0.205), sim 컵과 같은 크기의 남색 컵 원점이 sim(0.205 + 0.0773)보다 +5.7~+8.9 mm(10.01, 세 자리).
-# 외부 파라미터는 depth 를 쓰지 않는 PnP 라 이 치우침은 FP++(depth 정합) 쪽에만 있다.
-base_z_bias_m: -0.008
+# ── depth 보정: object_pose_node 가 FP++ 자세(카메라 프레임)를 광선 방향으로 늘린다 ───────────────
+# D435i depth 가 표면을 가깝게 본다 — 외부 파라미터는 depth 를 쓰지 않는 PnP 라 이 치우침은 FP++(depth 정합) 쪽에만 있다.
+# ★10.04 상판 평면(CAD 0.205)을 정답으로 화면 전체(프레임 2 장 · 약 44 만 픽셀)를 맞췄다: 측정 깊이 z(광학축)에서
+#   e(z) = offset_m + per_m · z 만큼 짧다(z 0.60 → −6.8 mm · 0.70 → −12.7 mm, 맞춘 범위 0.55~0.75 m, 맞춘 뒤 σ 2.6 mm).
+#   홀더 2(z 0.64) FP++ − 마커 정답: 보정 전 13.3 mm · z 만 −8 mm 보정 8.6 mm · 이 광선 보정 3.6 mm.
+#   깊이 밖(valid_z_m)에서는 끝값으로 자른다. 도구: logs/cup_holders_1003/*.npz · docs/RH56F1_ECAT_RUNBOOK.md.
+depth_bias:
+  offset_m: 0.0286
+  per_m: -0.0590
+  valid_z_m: [0.45, 0.90]
+# 10.01 의 z 만 보정(−8 mm, 상판이 0.213 으로 보였다)은 위 광선 보정으로 대신한다 — 둘을 같이 쓰지 않는다.
+base_z_bias_m: 0.0
 
 # ── T_cad_body: global_camera_extrinsics.yaml 과 같다(물체별 값은 objects.yaml cad_to_body 가 이긴다) ──
 cad_to_body:

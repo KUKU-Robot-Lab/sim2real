@@ -11,6 +11,7 @@ cad_to_body 는 물체 항목. 소비자: ROS 정책 노드(다음 스펙).
 
 10.01: 카메라 extrinsics 는 로봇마다 다르다(arm4090 은 테이블 CAD 캘리브 전용 파일). `--camera-extrinsics` 가
 레지스트리의 공유 파일을 대신하고, 그 파일의 `base_z_bias_m`(없으면 0 — depth 치우침 보정)을 출력 z 에 더한다.
+10.04: 그 파일에 `depth_bias`(offset_m · per_m · valid_z_m)가 있으면 FP++ 위치를 카메라 광선 방향으로 늘린다(z 만 보정의 대신).
 """
 from __future__ import annotations
 
@@ -43,6 +44,36 @@ def base_z_bias(camera_yaml: str | Path) -> float:
     return value
 
 
+DEPTH_BIAS_MAX_M = 0.05
+
+
+def depth_bias(camera_yaml: str | Path) -> tuple[float, float, float, float] | None:
+    """camera yaml 의 선택 블록 `depth_bias`(offset_m · per_m · valid_z_m) — 없으면 None. 10.04 arm4090."""
+    with open(camera_yaml) as fh:
+        raw = (yaml.safe_load(fh) or {}).get("depth_bias")
+    if raw is None:
+        return None
+    off, per = float(raw["offset_m"]), float(raw["per_m"])
+    lo, hi = (float(v) for v in raw.get("valid_z_m", (0.3, 1.5)))
+    if not 0.0 < lo < hi:
+        raise ValueError(f"{camera_yaml}: depth_bias.valid_z_m [{lo}, {hi}] 가 이상하다")
+    worst = max(abs(off + per * lo), abs(off + per * hi))
+    if worst > DEPTH_BIAS_MAX_M:
+        raise ValueError(f"{camera_yaml}: depth_bias 가 범위 끝에서 {worst:.3f} m — 보정이 아니라 캘리브 오류다")
+    return off, per, lo, hi
+
+
+def correct_depth(pos_cam: np.ndarray, bias: tuple[float, float, float, float] | None) -> np.ndarray:
+    """카메라 프레임 점을 광선 방향으로 늘린다: 측정 깊이 z 가 e(z) 만큼 짧다 → 참 깊이 z − e(z). 순수."""
+    p = np.asarray(pos_cam, float)
+    if bias is None or p[2] <= 0.0:
+        return p
+    off, per, lo, hi = bias
+    z = float(p[2])
+    e = off + per * min(max(z, lo), hi)
+    return p * ((z - e) / z)
+
+
 class PoseConverter:
     """순수부: 물체별 Extrinsics 를 미리 조립해 두고 변환만 한다."""
 
@@ -50,6 +81,9 @@ class PoseConverter:
                  z_bias: float | None = None) -> None:
         camera_yaml = Path(camera_yaml) if camera_yaml is not None else registry.camera_extrinsics
         self.z_bias = float(z_bias) if z_bias is not None else base_z_bias(camera_yaml)
+        self.depth_bias = depth_bias(camera_yaml)
+        if self.depth_bias is not None and self.z_bias:
+            raise ValueError(f"{camera_yaml}: depth_bias(광선 보정)와 z 보정 {self.z_bias:+.4f} 를 같이 쓰지 않는다 — 하나만")
         self.names: list[str] = []
         for raw in names:
             canon = registry.resolve(raw)
@@ -70,7 +104,7 @@ class PoseConverter:
         ext = self._ext[name]
         if head is not None:
             ext = extrinsics_at_head(ext, *head)
-        pos, quat = cad_pose_to_base_body(ext, np.asarray(pos_cam, float), np.asarray(quat_cam, float))
+        pos, quat = cad_pose_to_base_body(ext, correct_depth(pos_cam, self.depth_bias), np.asarray(quat_cam, float))
         if self._axis_body[name] is not None:
             # ★출력(base) 프레임에서 body 대칭축 둘레 twist 를 뺀다 — 축 방향(기울기)은 보존,
             #   축 둘레 회전(추적기 자유 방향)은 0. 정립이면 base 기준 항등에 가까운 자세가 된다.
@@ -111,7 +145,8 @@ def main() -> None:
             self._count = {n: 0 for n in conv.names}
             self.create_timer(10.0, self._report)
             self.get_logger().info(f"objects {conv.names} → {[output_topic(n) for n in conv.names]} · "
-                                   f"camera {args.camera_extrinsics or registry.camera_extrinsics} · z 보정 {conv.z_bias:+.4f} m")
+                                   f"camera {args.camera_extrinsics or registry.camera_extrinsics} · z 보정 {conv.z_bias:+.4f} m"
+                                   f" · 깊이 광선 보정 {conv.depth_bias}")
 
         def _on_head(self, msg) -> None:
             names = list(msg.name)
