@@ -8,8 +8,8 @@
     마스터는 그 코어의 첫 스레드에 꽂고, 형제 스레드까지 '예약'으로 비켜 둔다 — 우리 노드는 예약 밖(general)에서 돈다.
   · 물리 코어가 역할 수 + 4 보다 적으면 고정하지 않는다(작은 VM · 노트북 — 고정하면 오히려 굶는다).
     손이 없는 PC(DG-5F)도 역할 자리 두 코어를 비켜 두지만, 비켜 두는 것은 우리 노드뿐이라 다른 프로그램은 그대로 쓴다.
-  · torch 스레드: POLICY_CPU_THREADS 가 양의 정수면 그것. 아니면 2(09.28 fake 실측: 코어 전부 47 ms · 2 개 4 ms),
-    일반 물리 코어가 적으면 하나는 다른 노드 몫으로 남긴다.
+  · torch 스레드: POLICY_CPU_THREADS 가 양의 정수면 그것. 아니면 1(09.28: 코어 전부 47 ms · 2 개 4 ms,
+    10.04: 1 개 4.2 ms 에 CPU 는 2 개의 절반).
   · 끄기: S2R_CPU_PIN=0 (고정만 끈다. torch 스레드 수는 그대로 정한다).
 
 실시간 우선순위(SCHED_FIFO) 자체는 여기서 주지 않는다 — 마스터 · controller_manager 가 스스로 요청하고, 그것이
@@ -30,7 +30,8 @@ from typing import Iterable, Mapping
 
 SYSFS = Path("/sys/devices/system/cpu")
 RT_ROLES = ("ecat_right", "ecat_left")
-TORCH_THREADS = 2
+TORCH_THREADS = 1                # ★10.04 실측(rh_aglt LSTM 1024, CPU 추론, 같은 부하): 2 개 CPU 65 % · 3.7 ms/스텝 →
+                                 #   1 개 31.6 % · 4.2 ms — 2 개는 OpenMP 스레드가 연산 사이에 바쁘게 기다려 코어를 더 쓴다
 PIN_ENV = "S2R_CPU_PIN"
 THREADS_ENV = "POLICY_CPU_THREADS"
 MIN_GENERAL_CORES = 4                    # 실시간 코어를 떼고도 우리 노드(pd 3 스레드 · 정책 · 상태 · 노드)에 남길 물리 코어

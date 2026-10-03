@@ -53,13 +53,13 @@ def test_desktop_gives_each_master_its_own_high_core_and_keeps_the_sibling_free(
     assert dict(p.rt) == {"ecat_right": 15, "ecat_left": 14}
     assert p.reserved == (14, 15, 30, 31)
     assert not set(p.reserved) & set(p.general) and len(p.general) == 28
-    assert p.torch_threads == 2
+    assert p.torch_threads == 1
 
 
 def test_the_smallest_pinned_machine_keeps_four_cores_for_the_nodes_and_skips_cpu0(tmp_path):
     p = C.make_plan(C.read_topology(_flat(tmp_path, 6)), env={})
     assert dict(p.rt) == {"ecat_right": 5, "ecat_left": 4} and p.general == (0, 1, 2, 3)
-    assert p.torch_threads == 2
+    assert p.torch_threads == 1
 
 
 def test_isolated_cpu0_core_is_still_never_used(tmp_path):
@@ -71,7 +71,7 @@ def test_isolated_cpu0_core_is_still_never_used(tmp_path):
 def test_a_small_machine_is_not_pinned(tmp_path, cores):
     p = C.make_plan(C.read_topology(_flat(tmp_path, cores)), env={})
     assert dict(p.rt) == {} and p.reserved == () and p.general == tuple(range(cores))
-    assert p.torch_threads == 2 and "고정 안 함" in p.note
+    assert p.torch_threads == 1 and "고정 안 함" in p.note
 
 
 def test_isolated_cores_are_used_first_and_kept_out_of_general(tmp_path):
@@ -85,7 +85,7 @@ def test_pinning_can_be_turned_off(tmp_path):
     assert dict(p.rt) == {} and len(p.general) == 32 and C.PIN_ENV in p.note
 
 
-@pytest.mark.parametrize("raw, want", [("4", 4), ("x", 2), ("0", 2)])
+@pytest.mark.parametrize("raw, want", [("4", 4), ("x", 1), ("0", 1)])
 def test_torch_threads_env_wins_when_valid(tmp_path, raw, want):
     p = C.make_plan(C.read_topology(_smt(tmp_path, 16)), env={C.THREADS_ENV: raw})
     assert p.torch_threads == want
@@ -120,7 +120,7 @@ def test_pin_reports_a_reason_instead_of_raising():
 
 def test_describe_names_the_roles_and_threads(tmp_path):
     text = C.make_plan(C.read_topology(_smt(tmp_path, 16)), env={}).describe()
-    assert "cpu15" in text and "cpu14" in text and "torch 2" in text
+    assert "cpu15" in text and "cpu14" in text and "torch 1" in text
 
 
 def test_the_master_starts_on_its_planned_core(tmp_path):

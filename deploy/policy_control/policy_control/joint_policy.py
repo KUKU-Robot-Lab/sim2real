@@ -28,7 +28,7 @@ class JointPolicy:
         if str(device).startswith("cpu"):
             # 기본 스레드 수(코어 전부)는 같은 PC 의 학습 · 다른 노드와 겨뤄 한 스텝이 47 ms 까지 늘었다(09.28 fake,
             # 혼자 재면 4 ms). 60 Hz 예산 16.7 ms 안에 두려고 줄인다. 실기는 cuda 로 돈다(2.4 ms).
-            from .cpu_plan import current_plan   # POLICY_CPU_THREADS 가 있으면 그 값, 없으면 2(코어가 적으면 1)
+            from .cpu_plan import current_plan   # POLICY_CPU_THREADS 가 있으면 그 값, 없으면 1(10.04: 2 개의 절반 CPU, 스텝 +0.5 ms)
             torch.set_num_threads(current_plan().torch_threads)
         cls = RLGamesLstmActorPolicy if contract.recurrent else RLGamesActorPolicy
         self._torch, self._device, self._dim = torch, device, int(contract.obs_dim)

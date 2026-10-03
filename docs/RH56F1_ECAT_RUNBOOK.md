@@ -36,9 +36,13 @@
 - 코어(자동): `policy_control/cpu_plan.py` 가 sysfs(물리 코어 · SMT 형제 · isolated)를 읽어 정한다 — 번호를 박지 않는다.
   EtherCAT 마스터 오른/왼은 각자 물리 코어 하나(isolcpus 가 있으면 그것, 없으면 큰 번호부터, cpu0 코어는 안 씀), 형제 스레드까지 비켜 두고
   pd · 정책 · 손 상태 · EtherCAT 노드는 그 밖(일반 코어)에서 돈다. 물리 코어가 4 개 미만이면 고정하지 않는다. arm4090 = cpu15 · cpu14.
-  torch 스레드 = POLICY_CPU_THREADS 또는 2. 끄기 `S2R_CPU_PIN=0`. 노드 로그 첫머리에 'CPU: …' 한 줄.
+  torch 스레드 = POLICY_CPU_THREADS 또는 1(10.04: 2 개는 CPU 2 배 · 0.5 ms 빠름). 끄기 `S2R_CPU_PIN=0`. 노드 로그 첫머리에 'CPU: …' 한 줄.
 
-## ★10.03 밤 실기 측정 — 정책 2개 + FP++ 까지 (무발행, 로봇 정지)
+## ★10.03 밤 실기 측정 — 정책 노드 2개(대기) + FP++ (무발행, 로봇 정지)
+
+- ★정정(10.04): 기록 · CPU 측정 동안 rh_aglt 두 노드는 내내 stopped 였다 — `max_episode_s -1` 은 '제한 없음'이 아니라
+  계약의 학습 에피소드 길이(15 s)라 시작 15 s 뒤 끝났다. 아래 '정책 ×2 0.54' 는 대기 틱(60 Hz 측정 · 상태)의 값이고
+  추론 부하는 아직 안 쟀다. joint_target 이 bag 에 0 개인 것도 이 때문이다. 다음 측정은 max_episode_s 를 크게(예 600) 준다.
 
 - 순서: CAN 무해 프레임(0x5A5) ACK 확인 → 손 → 팔 브링업(/joint_states 0 이 아닌지 즉시 확인) → pd 무발행 ×2 → rh_aglt 양팔
   (CPU 추론, 컵 대신 FP++ 홀더 자세, reset_tol 4.0) → bag 기록 + 프로세스별 CPU → 역순 정리.
