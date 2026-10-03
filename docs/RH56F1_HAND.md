@@ -119,6 +119,7 @@ pd · 정책 ─ /hand_<side>/angle_set · force_set · speed_set ─▶ rh56f1_
   -1 = 그 축 직전 목표 유지. 범위 밖 값은 매뉴얼 범위(네 손가락 900~1740 · 엄지 굽힘 1100~1350 · 엄지 회전 600~1800 · 힘 ≤ 1000 g ·
   속도 ≤ 4000)로 자른다. `--no-op` 는 SAFE_OP 에 머문다(상태만, 손은 출력을 쓰지 않는다).
 - 실측(10.02, SAFE_OP 1 kHz 3000 회): 잃음 0 · PDO 왕복 오른손 p50 68 us(USB 랜) · 왼손 41 us · 주기 흔들림 ±25 us.
-- 남은 확인(손이 움직인다 — 승인): OP 에서 ENABLE_SET 값의 뜻 · 첫 명령 반응 · 왼손 상태 코드 255(표 46 에 없음)의 뜻.
+- ★10.03: 1 kHz 에서는 OP 가 안 된다(손 MCU 가 OP 요청을 못 읽음) → 주기 500 Hz. 두 손 OP · 검지 하나 굽힘/폄 · 되돌림 성공(docs/RH56F1_ECAT_RUNBOOK.md).
+- 확인: ENABLE_SET 1 = 동작 허용(10.03). 상태 코드 255 = 전원 뒤 첫 명령 전(두 손 모두 관찰).
 - 빌드 · 권한: `bash tools/ethercat/build.sh` → `sudo setcap cap_net_raw,cap_net_admin=ep tools/ethercat/rh56f1_ecat_master`
   (내용이 바뀌어 다시 빌드되면 setcap 도 다시). 점검 도구: `tools/ethercat/ecat_rh56f1 {rtt|safeop} <ifname>`.
