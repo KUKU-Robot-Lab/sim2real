@@ -264,6 +264,21 @@ def check_host_specific(rep: Report, robot: str) -> None:
         rep.warn("DG-5F 손 네트워크(/32 경로)는 미션 hand_<side> 단계의 hand_net_dual.sh --apply 로(최초 1회)")
 
 
+def _under_tailscale_ssh() -> bool:
+    """이 셸이 Tailscale SSH 로 열렸나 — tailscaled 는 PAM 을 안 거쳐 limits.d 대신 tailscaled 서비스 한도를 물려준다."""
+    pid = os.getppid()
+    for _ in range(20):
+        try:
+            if b"tailscaled" in Path(f"/proc/{pid}/cmdline").read_bytes():
+                return True
+            pid = int(Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            return False
+        if pid <= 1:
+            return False
+    return False
+
+
 def check_cpu(rep: Report, robot: str) -> None:
     """10.03 사용자: CPU 최적화는 PC 가 바뀌어도 자동이어야 한다. 코어 배치는 노드가 sysfs 를 읽어 스스로 정하고,
     여기서는 그 배치를 보여 주고 PC 에 손으로 열어야 하는 것(실시간 한도)만 따진다."""
@@ -277,10 +292,16 @@ def check_cpu(rep: Report, robot: str) -> None:
         need, who = cpu_plan.RT_PRIO_NEEDED, f"EtherCAT 마스터(FIFO {cpu_plan.RT_PRIO_NEEDED}) · controller_manager(50)"
     rt = cpu_plan.rt_limit()
     applied = Path("/etc/security/limits.d/99-sim2real-rt.conf").exists()
+    tailscale = _under_tailscale_ssh()
+    ts_drop = Path("/etc/systemd/system/tailscaled.service.d/99-sim2real-rt.conf").exists()
     if rt >= need:
         rep.ok(f"실시간 한도 rtprio {rt} ≥ {need} — {who}")
+    elif tailscale and applied and not ts_drop:
+        rep.miss(f"실시간 한도 rtprio {rt} < {need} — Tailscale SSH 셸은 PAM 을 안 거쳐 limits.d 가 안 먹는다",
+                 "운영자: sudo bash scripts/setup/rt_setup.sh 를 다시(tailscaled 한도 추가) → 재부팅")
     elif applied:
-        rep.miss(f"실시간 한도 rtprio {rt} < {need} (설정 파일은 있다)", "재부팅(또는 모든 세션 로그아웃 → 다시 로그인) — 이 셸은 설정 전에 열렸다")
+        rep.miss(f"실시간 한도 rtprio {rt} < {need} (설정 파일은 있다)",
+                 "재부팅 — 설정 뒤에 해야 한다. 이 셸 · 사용자 관리자 · tailscaled 가 설정 전에 떴다")
     else:
         rep.miss(f"실시간 한도 rtprio {rt} < {need} — {who} 가 보통 우선순위로 돈다(제어 주기 흔들림)",
                  "운영자: sudo bash scripts/setup/rt_setup.sh → 재부팅. 한 PC 에 한 번")

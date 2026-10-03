@@ -16,6 +16,8 @@
 #   /etc/systemd/system/user@<uid>.service.d/99-sim2real-rt.conf   이 사용자의 systemd 사용자 관리자 자체
 #   ~/.config/systemd/user.conf  [Manager] DefaultLimit*     GNOME 터미널 등 사용자 관리자가 띄우는 프로그램
 #     (arm4090: terminator · ros2_control_node 가 user@1000.service 아래에서 RTPRIO 0 이었다 — limits.d 만으로는 안 바뀐다)
+#   /etc/systemd/system/tailscaled.service.d/99-sim2real-rt.conf   Tailscale SSH 세션(있을 때만)
+#     (tailscaled 가 셸을 직접 띄워 PAM 을 안 거친다 — 원격에서 띄운 노드는 tailscaled 의 한도를 물려받는다, 10.03 arm4090)
 # 적용은 다시 로그인한 뒤부터다. 사용자 관리자가 세션 사이에 살아 있을 수 있어 재부팅이 확실하다.
 set -euo pipefail
 
@@ -46,6 +48,9 @@ THOME=$(getent passwd "$TARGET" | cut -d: -f6)
 LIMITS=/etc/security/limits.d/$TAG
 UNIT_DIR=/etc/systemd/system/user@$TUID.service.d
 UNIT_DROP=$UNIT_DIR/$TAG
+TS_DIR=/etc/systemd/system/tailscaled.service.d
+TS_DROP=$TS_DIR/$TAG
+has_tailscale() { systemctl cat tailscaled.service >/dev/null 2>&1; }
 USER_CONF=$THOME/.config/systemd/user.conf
 
 check() {
@@ -54,6 +59,9 @@ check() {
     if [ -f "$f" ]; then echo "  [있음] $f"; else echo "  [없음] $f"; fi
   done
   if grep -qs "^# sim2real-rt" "$USER_CONF"; then echo "  [있음] $USER_CONF (sim2real-rt 블록)"; else echo "  [없음] $USER_CONF (sim2real-rt 블록)"; fi
+  if has_tailscale; then
+    if [ -f "$TS_DROP" ]; then echo "  [있음] $TS_DROP (Tailscale SSH)"; else echo "  [없음] $TS_DROP (Tailscale SSH)"; fi
+  fi
   if systemctl is-enabled "$GOV_UNIT" >/dev/null 2>&1; then echo "  [있음] $GOV_UNIT (governor performance)"; else echo "  [없음] $GOV_UNIT (선택)"; fi
   echo "  지금 이 셸: rtprio $(ulimit -r) · memlock $(ulimit -l) · governor $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo '-')"
   echo "  필요: rtprio ≥ 80 (EtherCAT 마스터) · memlock unlimited"
@@ -62,8 +70,8 @@ check() {
 if [ "$MODE" = check ]; then check; exit 0; fi
 
 if [ "$MODE" = undo ]; then
-  rm -f "$LIMITS" "$UNIT_DROP"
-  rmdir "$UNIT_DIR" 2>/dev/null || true
+  rm -f "$LIMITS" "$UNIT_DROP" "$TS_DROP"
+  rmdir "$UNIT_DIR" "$TS_DIR" 2>/dev/null || true
   if [ -f "$USER_CONF" ]; then sudo -u "$TARGET" -- sed -i '/^# sim2real-rt/,+3d' "$USER_CONF"; fi   # 사용자 소유 그대로
   if systemctl is-enabled "$GOV_UNIT" >/dev/null 2>&1; then systemctl disable --now "$GOV_UNIT"; fi
   rm -f "/etc/systemd/system/$GOV_UNIT"
@@ -84,6 +92,15 @@ cat > "$UNIT_DROP" <<EOF
 LimitRTPRIO=$RTPRIO
 LimitMEMLOCK=infinity
 EOF
+if has_tailscale; then
+  mkdir -p "$TS_DIR"
+  cat > "$TS_DROP" <<EOF
+# sim2real rt_setup.sh — Tailscale SSH 로 띄운 프로그램이 물려받는 한도(tailscaled 는 PAM 을 안 거친다)
+[Service]
+LimitRTPRIO=$RTPRIO
+LimitMEMLOCK=infinity
+EOF
+fi
 # 사용자 홈의 파일은 그 사용자로 쓴다 — root 로 mkdir 하면 ~/.config 까지 root 소유가 되어 GNOME · dconf 쓰기가 막힌다
 as_user() { sudo -u "$TARGET" -- "$@"; }
 if ! grep -qs "^# sim2real-rt" "$USER_CONF"; then
@@ -120,5 +137,6 @@ fi
 
 check
 echo
-echo "다음: 재부팅(또는 이 사용자의 모든 세션 로그아웃 → 다시 로그인) 뒤"
+echo "다음: ★재부팅 — 이 스크립트를 돌린 '뒤에' 해야 한다(돌고 있는 세션 · 사용자 관리자 · tailscaled 는 옛 한도 그대로다)"
+echo "      재부팅 뒤"
 echo "      python3 scripts/setup/check_host.py --robot <rh56f1|dg5f> --only cpu    # rtprio ≥ 80 이면 통과"
