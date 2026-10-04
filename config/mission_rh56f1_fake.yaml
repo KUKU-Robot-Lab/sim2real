@@ -13,6 +13,8 @@ artifacts:
   robot_bi: deploy/policy_control/config/robots/rh56f1_bi_fake.yaml
   aglt_right: deploy/policies/right_rh_aglt_cyl60g/rh_aglt_contract.json
   aglt_left: deploy/policies/left_rh_aglt_cyl60gmir/rh_aglt_contract.json
+  place_right: deploy/policies/right_rh_place_i09/rh_place_contract.json
+  place_left: deploy/policies/left_rh_place_i01/rh_place_contract.json
 checkpoints: {}
 groups:
 - id: check
@@ -293,6 +295,32 @@ stages:
   - contract
   title: '[left] rh_aglt 정책(첫 화면에서 고른 것) — 컵에 접근 · 쥐기 · 들기 · 목표(컵 위 14 cm, /policy_control/<팔>/goal 로 바꿀 수 있다)로 이송. 정책 노드 → reset → start → 관찰
     → stop'
+- id: policy_place_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  needs:
+  - policy_aglt_right
+  - cup_holders
+  needs_why: 놓기 정책은 aglt 가 컵을 쥐고 인계 자리(0.25, ∓0.12, 0.41)에 멈춘 상태에서만 출발해 봤다 — 팔 · 손 목표는 pd 가 붙잡은 aglt 마지막 joint_target, 목표는 홀더 자세
+  artifacts:
+  - place_right
+  - robot_right
+  - contract
+  title: '[right] rh_place 정책 — 쥔 컵을 컵홀더 자리에 내려놓고 손을 편 뒤 팔을 시작 관절로(놓음 5 스텝 → 스크립트 45 스텝 → 스스로 끝). 정책 노드 → reset → start → 관찰'
+- id: policy_place_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  needs:
+  - policy_aglt_left
+  - cup_holders
+  needs_why: 놓기 정책은 aglt 가 컵을 쥐고 인계 자리(0.25, ∓0.12, 0.41)에 멈춘 상태에서만 출발해 봤다 — 팔 · 손 목표는 pd 가 붙잡은 aglt 마지막 joint_target, 목표는 홀더 자세
+  artifacts:
+  - place_left
+  - robot_left
+  - contract
+  title: '[left] rh_place 정책 — 쥔 컵을 컵홀더 자리에 내려놓고 손을 편 뒤 팔을 시작 관절로(놓음 5 스텝 → 스크립트 45 스텝 → 스스로 끝). 정책 노드 → reset → start → 관찰'
 - id: shutdown
   group: finish
   lane: rig
@@ -515,6 +543,92 @@ run:
   - note: 정책 노드 정지
     stop:
     - policy_aglt_right#1
+  policy_place_right:
+  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, 학습 배치 x 0.38)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --latched
+    - --rate
+    - '2'
+    - --x
+    - '0.38'
+    - --y
+    - '-0.002'
+    - --z
+    - '0.235'
+    - --topic
+    - /objects/cup_holder_1/pose
+    background: true
+  - note: fake — 확인만
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/aglt_goal.py'
+    - --side
+    - right
+    - --handoff
+    manual: true
+  - note: '[right] rh_place 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 컵은 reset 때 FP++ 한 장으로 손바닥에 붙이고 그 뒤는 손바닥 FK 로만 본다(학습 attached)'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_place_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_place_node_right
+    - -p
+    - ns:=right
+    - -p
+    - contract:={artifact:place_right}
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - cup_topic:=/objects/cup_src/pose
+    - -p
+    - holder:=1
+    - -p
+    - require_grasp:=false
+    background: true
+  - note: '[right] episode reset — 홀더 1 자세 · pd 가 붙잡은 aglt 마지막 목표(팔 실측 0.15 rad 안) · 컵 자세가 있어야 받는다'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/reset
+    - --episode-ns
+    - right
+    execute_args:
+    - --execute
+  - note: ★[right] episode start — 컵을 쥐고 있어야(엄지 AND 다른 손가락 촉각 > 1 N) 받는다
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/start
+    - --episode-ns
+    - right
+    execute_args:
+    - --execute
+  - note: ★관찰 — 놓음(손끝 · 관절 힘이 비고 5 스텝) 뒤 손을 펴고 팔이 돌아오면 스스로 끝난다. 이상하면 정지 바의 '에피소드 정지'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: episode stop(이미 끝났으면 그대로) — pd 가 그 자세를 붙잡는다
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/stop
+    - --episode-ns
+    - right
+    execute_args:
+    - --execute
+  - note: 정책 노드 정지
+    stop:
+    - policy_place_right#2
+  - note: fake 홀더 정지
+    stop:
+    - policy_place_right#0
   policy_aglt_left:
   - note: fake — 확인만
     argv:
@@ -578,6 +692,92 @@ run:
   - note: 정책 노드 정지
     stop:
     - policy_aglt_left#1
+  policy_place_left:
+  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, 학습 배치 x 0.38)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --latched
+    - --rate
+    - '2'
+    - --x
+    - '0.38'
+    - --y
+    - '-0.002'
+    - --z
+    - '0.235'
+    - --topic
+    - /objects/cup_holder_1/pose
+    background: true
+  - note: fake — 확인만
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/aglt_goal.py'
+    - --side
+    - left
+    - --handoff
+    manual: true
+  - note: '[left] rh_place 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 컵은 reset 때 FP++ 한 장으로 손바닥에 붙이고 그 뒤는 손바닥 FK 로만 본다(학습 attached)'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_place_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_place_node_left
+    - -p
+    - ns:=left
+    - -p
+    - contract:={artifact:place_left}
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - cup_topic:=/objects/cup_rcv/pose
+    - -p
+    - holder:=1
+    - -p
+    - require_grasp:=false
+    background: true
+  - note: '[left] episode reset — 홀더 1 자세 · pd 가 붙잡은 aglt 마지막 목표(팔 실측 0.15 rad 안) · 컵 자세가 있어야 받는다'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/reset
+    - --episode-ns
+    - left
+    execute_args:
+    - --execute
+  - note: ★[left] episode start — 컵을 쥐고 있어야(엄지 AND 다른 손가락 촉각 > 1 N) 받는다
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/start
+    - --episode-ns
+    - left
+    execute_args:
+    - --execute
+  - note: ★관찰 — 놓음(손끝 · 관절 힘이 비고 5 스텝) 뒤 손을 펴고 팔이 돌아오면 스스로 끝난다. 이상하면 정지 바의 '에피소드 정지'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: episode stop(이미 끝났으면 그대로) — pd 가 그 자세를 붙잡는다
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/stop
+    - --episode-ns
+    - left
+    execute_args:
+    - --execute
+  - note: 정책 노드 정지
+    stop:
+    - policy_place_left#2
+  - note: fake 홀더 정지
+    stop:
+    - policy_place_left#0
   hand_right:
   - note: '[right] fake RH56F1 손 — 벤더 드라이버와 같은 토픽 · 단위(편 손에서 시작)'
     argv:

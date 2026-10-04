@@ -13,6 +13,8 @@ artifacts:
   robot_bi: deploy/policy_control/config/robots/rh56f1_bi_real.yaml
   aglt_right: deploy/policies/right_rh_aglt_cyl60g/rh_aglt_contract.json
   aglt_left: deploy/policies/left_rh_aglt_cyl60gmir/rh_aglt_contract.json
+  place_right: deploy/policies/right_rh_place_i09/rh_place_contract.json
+  place_left: deploy/policies/left_rh_place_i01/rh_place_contract.json
   rh56f1_ports: deploy/policy_control/config/rh56f1_ports.yaml
 checkpoints: {}
 groups:
@@ -318,6 +320,34 @@ stages:
   - contract
   title: '[left] rh_aglt 정책(첫 화면에서 고른 것) — 컵에 접근 · 쥐기 · 들기 · 목표(컵 위 14 cm, /policy_control/<팔>/goal 로 바꿀 수 있다)로 이송. 정책 노드 → reset → start → 관찰
     → stop'
+- id: policy_place_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  touches_real: true
+  needs:
+  - policy_aglt_right
+  - cup_holders
+  needs_why: 놓기 정책은 aglt 가 컵을 쥐고 인계 자리(0.25, ∓0.12, 0.41)에 멈춘 상태에서만 출발해 봤다 — 팔 · 손 목표는 pd 가 붙잡은 aglt 마지막 joint_target, 목표는 홀더 자세
+  artifacts:
+  - place_right
+  - robot_right
+  - contract
+  title: '[right] rh_place 정책 — 쥔 컵을 컵홀더 자리에 내려놓고 손을 편 뒤 팔을 시작 관절로(놓음 5 스텝 → 스크립트 45 스텝 → 스스로 끝). 정책 노드 → reset → start → 관찰'
+- id: policy_place_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  touches_real: true
+  needs:
+  - policy_aglt_left
+  - cup_holders
+  needs_why: 놓기 정책은 aglt 가 컵을 쥐고 인계 자리(0.25, ∓0.12, 0.41)에 멈춘 상태에서만 출발해 봤다 — 팔 · 손 목표는 pd 가 붙잡은 aglt 마지막 joint_target, 목표는 홀더 자세
+  artifacts:
+  - place_left
+  - robot_left
+  - contract
+  title: '[left] rh_place 정책 — 쥔 컵을 컵홀더 자리에 내려놓고 손을 편 뒤 팔을 시작 관절로(놓음 5 스텝 → 스크립트 45 스텝 → 스스로 끝). 정책 노드 → reset → start → 관찰'
 - id: shutdown
   group: finish
   lane: rig
@@ -627,6 +657,72 @@ run:
   - note: 정책 노드 정지
     stop:
     - policy_aglt_right#1
+  policy_place_right:
+  - note: ★[right] 직전 aglt 에피소드가 컵을 쥔 채 stop 했는가(pd 가 그 자세 · 손을 붙잡고 있다). 인계 자리로 옮기려면 aglt 를 다시 start 하고 aglt_goal.py --side right --handoff --execute
+      로 목표를 준 뒤 도착하면 stop. 홀더 1 위 20 cm 가 비어 있는가 — 정책이 컵을 홀더에 내려놓고 손을 편다
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/aglt_goal.py'
+    - --side
+    - right
+    - --handoff
+    manual: true
+  - note: '[right] rh_place 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 컵은 reset 때 FP++ 한 장으로 손바닥에 붙이고 그 뒤는 손바닥 FK 로만 본다(학습 attached)'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_place_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_place_node_right
+    - -p
+    - ns:=right
+    - -p
+    - contract:={artifact:place_right}
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - cup_topic:=/objects/cyl60/pose
+    - -p
+    - holder:=1
+    background: true
+  - note: '[right] episode reset — 홀더 1 자세 · pd 가 붙잡은 aglt 마지막 목표(팔 실측 0.15 rad 안) · 컵 자세가 있어야 받는다'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/reset
+    - --episode-ns
+    - right
+    execute_args:
+    - --execute
+  - note: ★[right] episode start — 컵을 쥐고 있어야(엄지 AND 다른 손가락 촉각 > 1 N) 받는다
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/start
+    - --episode-ns
+    - right
+    execute_args:
+    - --execute
+  - note: ★관찰 — 놓음(손끝 · 관절 힘이 비고 5 스텝) 뒤 손을 펴고 팔이 돌아오면 스스로 끝난다. 이상하면 정지 바의 '에피소드 정지'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: episode stop(이미 끝났으면 그대로) — pd 가 그 자세를 붙잡는다
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/stop
+    - --episode-ns
+    - right
+    execute_args:
+    - --execute
+  - note: 정책 노드 정지
+    stop:
+    - policy_place_right#1
   policy_aglt_left:
   - note: ★[left] 컵이 학습 배치(로봇 앞 x ≈ 0.25, y ≈ +0.20 ± 0.1)에 서 있고 콘솔에 컵 자세(/objects/cyl60/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가. 정책은 팔을
       스스로 움직이고 컵을 쥐어 든다 — 빈 컵만
@@ -691,6 +787,72 @@ run:
   - note: 정책 노드 정지
     stop:
     - policy_aglt_left#1
+  policy_place_left:
+  - note: ★[left] 직전 aglt 에피소드가 컵을 쥔 채 stop 했는가(pd 가 그 자세 · 손을 붙잡고 있다). 인계 자리로 옮기려면 aglt 를 다시 start 하고 aglt_goal.py --side left --handoff --execute
+      로 목표를 준 뒤 도착하면 stop. 홀더 1 위 20 cm 가 비어 있는가 — 정책이 컵을 홀더에 내려놓고 손을 편다
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/aglt_goal.py'
+    - --side
+    - left
+    - --handoff
+    manual: true
+  - note: '[left] rh_place 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 컵은 reset 때 FP++ 한 장으로 손바닥에 붙이고 그 뒤는 손바닥 FK 로만 본다(학습 attached)'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_place_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_place_node_left
+    - -p
+    - ns:=left
+    - -p
+    - contract:={artifact:place_left}
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - cup_topic:=/objects/cyl60/pose
+    - -p
+    - holder:=1
+    background: true
+  - note: '[left] episode reset — 홀더 1 자세 · pd 가 붙잡은 aglt 마지막 목표(팔 실측 0.15 rad 안) · 컵 자세가 있어야 받는다'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/reset
+    - --episode-ns
+    - left
+    execute_args:
+    - --execute
+  - note: ★[left] episode start — 컵을 쥐고 있어야(엄지 AND 다른 손가락 촉각 > 1 N) 받는다
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/start
+    - --episode-ns
+    - left
+    execute_args:
+    - --execute
+  - note: ★관찰 — 놓음(손끝 · 관절 힘이 비고 5 스텝) 뒤 손을 펴고 팔이 돌아오면 스스로 끝난다. 이상하면 정지 바의 '에피소드 정지'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: episode stop(이미 끝났으면 그대로) — pd 가 그 자세를 붙잡는다
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/stop
+    - --episode-ns
+    - left
+    execute_args:
+    - --execute
+  - note: 정책 노드 정지
+    stop:
+    - policy_place_left#1
   hand_right:
   - note: ★[right] 손 EtherCAT 확인 — 손 전원 · 랜 케이블(손 하나 = NIC 하나, 오른손 USB-C 랜 · 왼손 내장 랜 — deploy/policy_control/config/rh56f1_ports.yaml). 링크가 up
       이고 마스터에 setcap 이 붙어 있는가

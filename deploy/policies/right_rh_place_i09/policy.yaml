@@ -4,12 +4,13 @@ status: candidate        # candidate | verified | deployed | hold
 task: open-rh_r_place-lstm
 side: right
 checkpoint: place_r_i09_ep4000.pth
-summary: cyl60 을 쥔 채 인계받아 홀더 1 · 2 에 내려놓기(보상 iter_09) — 배포 계열 없음
+summary: cyl60 을 쥔 채 인계받아 홀더 1 · 2 에 내려놓기(보상 iter_09)
 eval: 결정론 128 env 완벽 0.907 · 부분 0.067 · 실패 0.026 · 실측 오차 넣으면 완벽 0.825
 source: 'arm4090:~/rl_ws/our_source/policy/place_r_i09_ep4000 (md5 4ee40f18d625b021c1ec795916dbf659)'
 interface: obs 96 · critic 128 · action 13 (rh_aglt 와 같은 차원 · 디코더)
 note: >-
   server GPU0 place_r_i09(보상 reward_gen/rh_place_r/iter_09) ep4000. 좌 place_l_i01 의 출발점. 학습 코드 hdgp 51013e96.
-  배포 계열(계약 · 노드)이 없다 — rh_aglt 와 관측 · 행동 차원이 같지만 목표는 홀더 자리(seat_pos, aglt 는 컵 + 0.14),
-  시작은 aglt 가 쥔 상태 인계(hold 0, 뱅크 bank_r_cyl60_keep), 놓은 뒤 45 스텝은 sim 스크립트(손 펴기 · 팔 복귀)다.
+  10.04 배포 연결: rh_place_contract.json(tools/build_rh_aglt_contract.py 가 place 런을 알아본다) · rh_place_node ·
+  미션 단계 policy_place_<팔>. 목표 = 홀더 원점 + 0.060 m, 시작 = pd 가 붙잡은 aglt 마지막 joint_target, 컵은 reset 때
+  FP++ 한 장으로 손바닥에 붙인다(학습 attached), 놓음 판정 = 손끝 촉각 < 1 N · 관절 힘 < 300 g(임시) 5 스텝.
   FP++ 지각 · 부착 없이 학습(fpp_enable · fpp_attach_enable false), 명령 지연 0. 홀더 x 0.380 · 목표 홀더 1 · 2.

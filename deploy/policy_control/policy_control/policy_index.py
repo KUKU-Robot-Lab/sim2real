@@ -135,7 +135,9 @@ FAMILIES = (
     Family("rh_place", "RH56F1 한 팔 컵 홀더 놓기 (rh_place)", ("open-rh_", "_place"),
            "rh_aglt 가 cyl60 을 쥐고 (0.25, ∓0.12, +0.12)에 멈춘 상태를 인계받아 컵 홀더 자리에 내려놓는다. 관측 · 행동 차원과 "
            "디코더는 rh_aglt 와 같고 목표(홀더 자리) · 시작(인계 뱅크, hold 0) · 놓은 뒤 45 스텝 sim 스크립트가 다르다.",
-           "아직 실기 경로가 없다 — 배포 계열(계약 · 노드)이 없다. rh_aglt 계약 빌더가 차원만 보고 받지 않도록 막아 두었다.",
+           "미션 단계 `policy_place_<팔>`(노드 `rh_place_node`, 계약 rh_place_contract.json) — aglt 가 컵을 쥐고 인계 자리"
+           "(`aglt_goal.py --handoff`)에서 stop 한 뒤. 목표 홀더는 미션 `PLACE_HOLDER`(기본 1). 콘솔 자리는 아직 없다"
+           "(팔마다 한 자리 = aglt) — 다른 놓기 정책은 미션 산출물 `place_<팔>` 을 바꿔 쓴다.",
            (("보상", _reward), ("학습 물체", _object), ("명령 지연", _delay), ("FP++ (학습)", _fpp), ("시작", _start),
             ("목표", _goal))),
     Family("pour_fj", "RH56F1 양팔 붓기 (pour_fj)", ("open-rh_", "_pour_fj"),

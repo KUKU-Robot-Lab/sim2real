@@ -38,6 +38,7 @@ from policy_control.cup_attach import AttachCfg, CupAttach, grasp_signal  # noqa
 from policy_control import pour_fj as F  # noqa: E402
 from policy_control import rh_aglt as A  # noqa: E402
 from policy_control import rh_aglt_goals as G  # noqa: E402
+from policy_control import rh_place as P  # noqa: E402
 from policy_control.episode_master import EpisodeBook  # noqa: E402
 from policy_control.joint_obs import quat_to_matrix  # noqa: E402
 from policy_control.sources import SourceSet, load_robot_cfg, select_side  # noqa: E402
@@ -249,6 +250,12 @@ FAMILIES = {
                       errors=(PourFjNodeError, A.RhAgltError, ValueError),
                       label=lambda c: f"{c.side().side} arm · goal +{c.goal_offset}"
                                         f"{' · goal input on' if G.has_goal_spec(c) else ' · goal input off (old contract)'}"),
+    # 10.04 컵 홀더 놓기 — 노드 부분(홀더 자세 · pd 가 붙잡은 목표 · 붙은 컵 · 놓음 뒤 끝)은 rh_place_node.PlaceNode
+    "rh_place": Family(name="rh_place_node", schema=P.SCHEMA, load=P.load_contract, roles=A.ROLES,
+                       cups=(("arm", "cup_topic", "/objects/cyl60/pose"),),
+                       meas=aglt_meas, chain=P.PlaceChain, refusals=lambda c, meas, _tol: P.start_refusals(c, meas),
+                       targets=aglt_target_arrays, errors=(PourFjNodeError, A.RhAgltError, ValueError),
+                       label=lambda c: f"{c.side().side} arm · place · holders {c.target_holders}"),
 }
 
 
@@ -257,7 +264,7 @@ def family_of(contract_path: Path) -> str:
     for k, fam in FAMILIES.items():
         if fam.schema == schema:
             return k
-    raise PourFjNodeError(f"{contract_path}: 모르는 계약 schema {schema!r} (pour_fj · rh_aglt)")
+    raise PourFjNodeError(f"{contract_path}: 모르는 계약 schema {schema!r} (pour_fj · rh_aglt · rh_place)")
 
 
 # ---------------------------------------------------------------- ROS
@@ -458,7 +465,7 @@ class PourFjNode(LeanNodeMixin, Node):
                 self.chain = self.fam.chain(self.contract, self._policy)
                 if hasattr(self.chain, "grasp_cfg") and self.attach:
                     self.chain.grasp_cfg = self.attach_cfg
-            self.chain.reset(meas)                      # margin 계약은 meas 의 손 실측각이 q*_0(없으면 측정에서 이미 거부)
+            self._reset_chain(meas)                     # margin 계약은 meas 의 손 실측각이 q*_0(없으면 측정에서 이미 거부)
             q0 = getattr(self.chain.dec, "hand_q0", None) if hasattr(self.chain, "dec") else None
             if q0:
                 self.get_logger().info(f"인계 손 q*_0(실측) { {r: [round(float(v), 3) for v in q] for r, q in q0.items()} }")
@@ -498,13 +505,24 @@ class PourFjNode(LeanNodeMixin, Node):
         self._end("abort", "abort requested")
         return self._reply(res, True, [])
 
+    # ---------------------------------------------------------------- 계열 고리(rh_place_node.PlaceNode 가 덮는다)
+    def _reset_chain(self, meas: dict) -> None:
+        self.chain.reset(meas)
+
+    def _after_step(self) -> bool:
+        """스텝 뒤 계열 고유 끝내기. True = 에피소드를 끝냈다."""
+        return False
+
+    def _status_extra(self) -> dict:
+        return {}
+
     # ---------------------------------------------------------------- tick
     def _status(self, ok: bool, reasons, extra=None) -> None:
         body = {"node": self.node_name, "phase": self.book.phase, "episode": self.book.episode, "seq": self._seq, "ok": bool(ok),
                 "reasons": [str(r) for r in reasons], "publish_target": self._publish,
                 "hand_obs_order": self.contract.hand_obs_order_source.split(":")[0],
                 **(self.chain.goals.as_dict() if getattr(self.chain, "goals", None) is not None else {}),
-                "cup": {r: e.as_dict() for r, e in self.attach.items()},
+                "cup": {r: e.as_dict() for r, e in self.attach.items()}, **self._status_extra(),
                 "t_pub_ns": self.get_clock().now().nanoseconds, **(extra or {})}
         self._pub_status.publish(self._String(data=json.dumps(body)))
 
@@ -535,18 +553,20 @@ class PourFjNode(LeanNodeMixin, Node):
             self._pub_target.publish(codec.encode_joint_target(names, q, qd, str(self.book.episode), self._seq))
         self._status(True, [], {"proc_ms": (time.perf_counter() - t0) * 1e3, "step": self.chain.step_i,
                                 "hold": self.chain.step_i <= self.contract.hold_steps})
+        if self._after_step():
+            return
         if self.max_s > 0 and time.monotonic() - self._t_start >= self.max_s:
             self._end("stop", f"episode time >= {self.max_s:.1f} s (학습 episode_length_s)")
 
 
-def main(argv=None, family: str = "pour_fj") -> int:
+def main(argv=None, family: str = "pour_fj", node_cls=None) -> int:
     import rclpy
     from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 
     rclpy.init(args=argv)
     node = None
     try:
-        node = PourFjNode(family=family)
+        node = (node_cls or PourFjNode)(family=family)
         from policy_control.cpu_plan import keep_off_rt
         node.get_logger().info(keep_off_rt())   # ★10.03 실시간 코어를 비켜 간다
         executor = SingleThreadedExecutor()

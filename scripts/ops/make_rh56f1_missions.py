@@ -37,6 +37,10 @@ PROBES = (("index_1", "0.3"), ("middle_1", "0.3"), ("ring_1", "0.3"), ("pinky_1"
 #: 실기 컵 — FP++ 물체 하나. fake 는 학습 배치의 두 컵(cup_src · cup_rcv)
 #: ★10.04 cyl60(⌀60 × 170 mm 노란 원통, 원점 = 중심) — rh_aglt cyl60g 정책으로 s2r(T2R Grasping, 사용자 승인). 전: aglt_cup_s065
 REAL_CUP = "cyl60"
+#: 놓기 목표 홀더 — 좌우 학습 목표(우 1 · 2, 좌 0 · 1)에 모두 드는 가운데 홀더 1(10.04)
+PLACE_HOLDER = {"right": 1, "left": 1}
+#: fake 홀더 y — hdgp rh_place env holder_ys(0.153, −0.002, −0.161)
+FAKE_HOLDER_Y = {0: 0.153, 1: -0.002, 2: -0.161}
 REAL_CUP_ORIGIN_Z = 0.085                 # 원점 높이(바닥 위) — 컵 자세 확인 문구
 #: arm4090 머리 카메라 외부 파라미터 — 테이블 CAD 캘리브(scripts/calib/table_cad_extrinsics.py, 10.01 기본 방법)
 CAMERA_EXTRINSICS = "config/global_camera_extrinsics_arm4090.yaml"
@@ -118,6 +122,14 @@ def _stages(kind: str) -> list[dict]:
                    "artifacts": [f"aglt_{s}", f"robot_{s}", "contract"],
                    "title": f"[{s}] rh_aglt 정책(첫 화면에서 고른 것) — 컵에 접근 · 쥐기 · 들기 · 목표(컵 위 14 cm, "
                             "/policy_control/<팔>/goal 로 바꿀 수 있다)로 이송. 정책 노드 → reset → start → 관찰 → stop"})
+    for s in SIDES:
+        st.append({"id": f"policy_place_{s}", "group": "policy", "lane": f"arm_{s}", "skippable": True, "touches_real": real,
+                   "needs": [f"policy_aglt_{s}", "cup_holders"],
+                   "needs_why": "놓기 정책은 aglt 가 컵을 쥐고 인계 자리(0.25, ∓0.12, 0.41)에 멈춘 상태에서만 출발해 봤다 — "
+                                "팔 · 손 목표는 pd 가 붙잡은 aglt 마지막 joint_target, 목표는 홀더 자세",
+                   "artifacts": [f"place_{s}", f"robot_{s}", "contract"],
+                   "title": f"[{s}] rh_place 정책 — 쥔 컵을 컵홀더 자리에 내려놓고 손을 편 뒤 팔을 시작 관절로(놓음 5 스텝 → "
+                            "스크립트 45 스텝 → 스스로 끝). 정책 노드 → reset → start → 관찰"})
     st.append({"id": "shutdown", "group": "finish", "lane": "rig", "needs": ["drivers"], "touches_real": real,
                "title": "안전 종료 — 팔 받침 확인 → 남은 pd → 손 상태 · 드라이버 → 팔 브링업 (★팔 토크가 풀린다)"})
     if not real:
@@ -253,6 +265,34 @@ def _run(kind: str) -> dict:
                  execute_args=["--execute"]),
             _cmd("정책 노드 정지", stop=[f"policy_aglt_{s}#1"]),
         ]
+        hid = PLACE_HOLDER[s]
+        run[f"policy_place_{s}"] = ([] if real else [
+            _cmd(f"fake 홀더 {hid} — /objects/cup_holder_{hid}/pose (latched, 학습 배치 x 0.38)",
+                 ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--latched", "--rate", "2", "--x", "0.38",
+                  "--y", str(FAKE_HOLDER_Y[hid]), "--z", "0.235", "--topic", f"/objects/cup_holder_{hid}/pose"],
+                 background=True)]) + [
+            _cmd(f"★[{s}] 직전 aglt 에피소드가 컵을 쥔 채 stop 했는가(pd 가 그 자세 · 손을 붙잡고 있다). 인계 자리로 옮기려면 "
+                 f"aglt 를 다시 start 하고 aglt_goal.py --side {s} --handoff --execute 로 목표를 준 뒤 도착하면 stop. "
+                 f"홀더 {hid} 위 20 cm 가 비어 있는가 — 정책이 컵을 홀더에 내려놓고 손을 편다" if real else "fake — 확인만",
+                 ["python3", f"{PC}/tools/aglt_goal.py", "--side", s, "--handoff"], manual=True),
+            _cmd(f"[{s}] rh_place 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 컵은 reset 때 FP++ 한 장으로 "
+                 "손바닥에 붙이고 그 뒤는 손바닥 FK 로만 본다(학습 attached)",
+                 ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_place_node.py", "--ros-args",
+                  "-r", f"__node:=rh_place_node_{s}", "-p", f"ns:={s}",
+                  "-p", f"contract:={{artifact:place_{s}}}", "-p", f"robot:={{artifact:robot_{s}}}", "-p", "device:=cpu",
+                  "-p", f"cup_topic:=/objects/{REAL_CUP if real else 'cup_' + ('src' if s == 'right' else 'rcv')}/pose",
+                  "-p", f"holder:={hid}", *([] if real else ["-p", "require_grasp:=false"])],
+                 background=True),
+            _cmd(f"[{s}] episode reset — 홀더 {hid} 자세 · pd 가 붙잡은 aglt 마지막 목표(팔 실측 0.15 rad 안) · 컵 자세가 있어야 받는다",
+                 ["python3", f"{PC}/tools/trigger.py", "episode/reset", "--episode-ns", s], execute_args=["--execute"]),
+            _cmd(f"★[{s}] episode start — 컵을 쥐고 있어야(엄지 AND 다른 손가락 촉각 > 1 N) 받는다",
+                 ["python3", f"{PC}/tools/trigger.py", "episode/start", "--episode-ns", s], execute_args=["--execute"]),
+            _cmd("★관찰 — 놓음(손끝 · 관절 힘이 비고 5 스텝) 뒤 손을 펴고 팔이 돌아오면 스스로 끝난다. 이상하면 정지 바의 '에피소드 정지'",
+                 ["bash", "-lc", "true"], manual=True),
+            _cmd("episode stop(이미 끝났으면 그대로) — pd 가 그 자세를 붙잡는다",
+                 ["python3", f"{PC}/tools/trigger.py", "episode/stop", "--episode-ns", s], execute_args=["--execute"]),
+            _cmd("정책 노드 정지", stop=[f"policy_place_{s}#{1 if real else 2}"]),
+        ] + ([] if real else [_cmd("fake 홀더 정지", stop=[f"policy_place_{s}#0"])])
     for s in SIDES:
         hand = [_cmd(f"★[{s}] 손 EtherCAT 확인 — 손 전원 · 랜 케이블(손 하나 = NIC 하나, 오른손 USB-C 랜 · 왼손 내장 랜 — "
                      "deploy/policy_control/config/rh56f1_ports.yaml). 링크가 up 이고 마스터에 setcap 이 붙어 있는가",
@@ -371,6 +411,9 @@ def mission(kind: str) -> dict:
         # ★10.04 cyl60g(FP++ 지각 · 파지 후 부착으로 학습) — 계약은 i10d 와 체크포인트 외 같아 홈 · 저장 경로는 그대로
         "aglt_right": "deploy/policies/right_rh_aglt_cyl60g/rh_aglt_contract.json",
         "aglt_left": "deploy/policies/left_rh_aglt_cyl60gmir/rh_aglt_contract.json",
+        # 한 팔 컵 홀더 놓기(10.04 PLACE 세션, aglt cyl60 인계) — 콘솔 자리는 아직 없다(팔마다 한 자리 = aglt)
+        "place_right": "deploy/policies/right_rh_place_i09/rh_place_contract.json",
+        "place_left": "deploy/policies/left_rh_place_i01/rh_place_contract.json",
     }
     if real:
         arts["rh56f1_ports"] = "deploy/policy_control/config/rh56f1_ports.yaml"

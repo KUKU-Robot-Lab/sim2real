@@ -187,11 +187,16 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
     """런 덤프(params/env.yaml · agent.yaml) + hdgp RH56F1_RIGHT 프로필 → 계약. 왼팔은 hdgp tasks/rh_aglt_l/profile.py 와
     같은 규칙으로 이름만 바꾼다(손 거울 부호 +1 — 좌 URDF 가 엄지 축을 이미 뒤집었다). 팔 시작 자세는 env.yaml arm_start_q
     (좌 런은 이미 거울상)."""
-    run_dir = Path(run_dir)
-    env_p, agent_p = run_dir / "params" / "env.yaml", run_dir / "params" / "agent.yaml"
+    env_p = Path(run_dir) / "params" / "env.yaml"
     env = read_env(env_p)
     if not is_rh_aglt_run(env):
         raise RhAgltError(f"{env_p}: rh_aglt 런이 아니다(profile rh56f1_* · obs {obs_dim_of()} · action 13 · 홀더 키 없음 — rh_place 는 따로)")
+    return build_from_env(Path(run_dir), checkpoint, right_profile, urdf, asset=asset, env=env)
+
+
+def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: str, env: Mapping) -> RaContract:
+    """build 의 본체 — 런 종류 검사 없이(rh_place 가 같은 관측 · 디코더 칸을 여기서 받는다, rh_place.build)."""
+    env_p, agent_p = run_dir / "params" / "env.yaml", run_dir / "params" / "agent.yaml"
     agent = yaml.safe_load(agent_p.read_text())
     net, cfg_a = agent["params"]["network"], agent["params"]["config"]
     side = "left" if env["profile_name"] == "rh56f1_left" else "right"
@@ -271,8 +276,11 @@ class RaDecoder:
         self.state: dict[str, _State] = {}
         self.reset()
 
-    def reset(self) -> None:
-        self.state = {"arm": _State(self._home.copy(), np.asarray(self.c.side().hand_open, float))}
+    def reset(self, arm_start: Sequence[float] | None = None, hand_start: Sequence[float] | None = None) -> None:
+        """기본 = 홈 · 편 손(rh_aglt 학습 리셋). rh_place 는 인계 순간의 팔 · 손 목표에서 시작한다(sim 뱅크 arm_q_target · hand_target)."""
+        arm = self._home if arm_start is None else np.clip(np.asarray(arm_start, float), self._lo, self._hi)
+        hand = self.c.side().hand_open if hand_start is None else hand_start
+        self.state = {"arm": _State(np.array(arm, float), np.array(hand, float))}
 
     def step(self, action: Sequence[float], *, active: bool,
              tactile_n: Sequence[float] | None = None) -> dict[str, tuple[np.ndarray, np.ndarray]]:

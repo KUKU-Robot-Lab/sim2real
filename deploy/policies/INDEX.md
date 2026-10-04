@@ -46,12 +46,12 @@
 
 rh_aglt 가 cyl60 을 쥐고 (0.25, ∓0.12, +0.12)에 멈춘 상태를 인계받아 컵 홀더 자리에 내려놓는다. 관측 · 행동 차원과 디코더는 rh_aglt 와 같고 목표(홀더 자리) · 시작(인계 뱅크, hold 0) · 놓은 뒤 45 스텝 sim 스크립트가 다르다.
 
-**실기 개별 실행** — 아직 실기 경로가 없다 — 배포 계열(계약 · 노드)이 없다. rh_aglt 계약 빌더가 차원만 보고 받지 않도록 막아 두었다.
+**실기 개별 실행** — 미션 단계 `policy_place_<팔>`(노드 `rh_place_node`, 계약 rh_place_contract.json) — aglt 가 컵을 쥐고 인계 자리(`aglt_goal.py --handoff`)에서 stop 한 뒤. 목표 홀더는 미션 `PLACE_HOLDER`(기본 1). 콘솔 자리는 아직 없다(팔마다 한 자리 = aglt) — 다른 놓기 정책은 미션 산출물 `place_<팔>` 을 바꿔 쓴다.
 
 | id | 쪽 | status | 체크포인트 | 설명 | sim 평가 | 미션 기본 |
 |---|---|---|---|---|---|---|
-| `left_rh_place_i01` | left | candidate | ep800 | 우 place i09 ep4000 거울 → 보상 iter_01 로 이어 학습 ep800 — 배포 계열 없음 | 결정론 128 env × 1800 스텝(2511 에피소드) 완벽 0.851 · 부분 0.066 · 실패 0.084 · 같은 조건 거울 원본 0.306 | – |
-| `right_rh_place_i09` | right | candidate | ep4000 | cyl60 을 쥔 채 인계받아 홀더 1 · 2 에 내려놓기(보상 iter_09) — 배포 계열 없음 | 결정론 128 env 완벽 0.907 · 부분 0.067 · 실패 0.026 · 실측 오차 넣으면 완벽 0.825 | – |
+| `left_rh_place_i01` | left | candidate | ep800 | 우 place i09 ep4000 거울 → 보상 iter_01 로 이어 학습 ep800 | 결정론 128 env × 1800 스텝(2511 에피소드) 완벽 0.851 · 부분 0.066 · 실패 0.084 · 같은 조건 거울 원본 0.306 | rh56f1_control, rh56f1_fake |
+| `right_rh_place_i09` | right | candidate | ep4000 | cyl60 을 쥔 채 인계받아 홀더 1 · 2 에 내려놓기(보상 iter_09) | 결정론 128 env 완벽 0.907 · 부분 0.067 · 실패 0.026 · 실측 오차 넣으면 완벽 0.825 | rh56f1_control, rh56f1_fake |
 
 학습 조건(각 폴더 `params/env.yaml` 에서 읽음):
 
@@ -171,7 +171,7 @@ python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_place-pl
 - `left_rh_aglt_i09d` — 보상 iter_09 c1 · env 실기 반응(팔 지연 9~12 · 손 3~5 스텝 · 펌웨어 멈춤 · 편 손 하한)으로 학습. 결정론(64 env, 지연 켬) 컵 든 에피소드 0.98 · 낙하 0 · 목표 성공 1.19/에피소드(공차 0.035) — 공차 0.02(배포 달성 판정)에서는 0.05. 다섯 손가락 파지. 주의: 어깨 j2 한계 0.31 · 컵 기울기 중앙 18°.
 - `left_rh_aglt_i10` — 좌 env 결정론(arm5080, 64 env) 지연 0: 컵 든 에피소드 1.00 · 목표 성공 2.02/에피소드(0.0229) · 0.83(0.02). 실측 지연: 컵 든 에피소드 0.78. 엄지 · 검지 · 중지 · 새끼 접촉, 약지 안 닿음. 컵 기울기 중앙 8.6°.
 - `left_rh_aglt_i10d` — 우 i10 거울(i10mir) → 실측 지연으로 이어 2200 epoch(server). 결정론(64 env, 지연 켬): 컵 든 에피소드 0.89 · 낙하 0.006 · 목표 성공 2.55/에피소드(학습 공차 0.052) · 0.06(0.02). 다섯 손가락 파지 · 컵 기울기 중앙 13°.
-- `left_rh_place_i01` — server GPU0 place_l_i01(보상 reward_gen/rh_place_l/iter_01). 평가는 홀더 고정 배치(holder_y_shift_fixed 0 · DR 축소), params/ 는 학습 런 그대로(평가 때 바꾼 홀더 DR 값 아님). 목표 y 구간 −0.06~0 완벽 0.85 · 0~+0.20 완벽 0.851. 배포 계열 없음 — right_rh_place_i09 note 와 같은 이유. FP++ 지각 · 부착 없이 학습, 명령 지연 0. hdgp 51013e96.
+- `left_rh_place_i01` — server GPU0 place_l_i01(보상 reward_gen/rh_place_l/iter_01). 평가는 홀더 고정 배치(holder_y_shift_fixed 0 · DR 축소), params/ 는 학습 런 그대로(평가 때 바꾼 홀더 DR 값 아님). 목표 y 구간 −0.06~0 완벽 0.85 · 0~+0.20 완벽 0.851. 배포는 right_rh_place_i09 note 와 같다(rh_place_contract.json · rh_place_node · policy_place_left). FP++ 지각 · 부착 없이 학습, 명령 지연 0. hdgp 51013e96.
 - `right_aglt` — 09.28 hold — 오른팔 첫 실험은 right_m15_e800(cup_pick 세션 s2r 후보, 사용자 선택)으로 한다. 인터페이스는 같다. s2r 후보. 먼 출발 성공 0.85 · 공차 0.019 · 컵 기울기 4.3°. sha256 앞 16자리 e76f9c6079663b61. 계약 없음 — obs 133 / action 26(팔 7 관절 증분 + 손 19 절대)은 기존 세 family 어디에도 안 맞는다. build_deploy_contract 가 grasp_s2r 로 판정했다가 인터페이스 차이로 거절한다. 새 family 가 필요하다. 같은 한 벌의 fj_rand_i01_final.pth 는 공차 바닥 뒤 열화(성공 0.61)라 쓰지 않는다.
 - `right_m15_e800` — cp_r_m15 ep_800 (md5 4717e325 = policy_zoo cup_pick_r_manip_e800). 보상 iter_15. 학습 창 파지 0.967 · 들기 0.959 · 먼 출발 성공 0.827, 외란 20 N/kg 600 epoch 유지. 약점: 검지 0 · 5지 인벨롭 0(4지+손바닥), 고정 공차 평가 없음, 공차 0.082 까지만.
 - `right_rh_aglt_cyl60g` — aglt_r_cyl60n ep12800 → FP++ 지각(지연 250~400 ms · 10.5 Hz · 광선 잔차 ±4 mm) + 파지 후 FK 부착으로 이어 학습. 결정론(5090, 64 env, tol 0.02, 같은 지각): 에피소드당 성공 1.77(원 정책 1.16). 배포 전제 796b074 · 03cd917 · 104f2b1. 주의: 이송 중 어깨 j2 가 한계 0.05 rad 안에 37 %(출발 · 접근 0, 몸 접촉 0).
@@ -180,4 +180,4 @@ python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_place-pl
 - `right_rh_aglt_i10` — 보상 iter_10 · env 9a46c174(지연 키 0 — 지연 없이 학습). 학습 공차 0.0229 m. 결정론(64 env) 지연 0: 컵 든 에피소드 1.00, 목표 성공 2.0~2.3/에피소드(0.0229) · 0.8~0.9(0.02). 실측 지연을 넣으면 컵 든 에피소드 0.8. 엄지 · 검지 · 중지 · 새끼 접촉, 약지 안 닫음. 지연 적응판(②)은 학습 중.
 - `right_rh_aglt_i10d` — ① i10 ep4600 → 실측 지연(팔 9~12 · 손 3~5 스텝)으로 이어 학습. 결정론(server, 64 env, 지연 켬): 컵 든 에피소드 0.94 · 낙하 0.006 · 목표 성공 2.40/에피소드(학습 공차 0.059) · 0.16(0.02). 다섯 손가락 파지 · 컵 기울기 중앙 12°. 주의: 손목 j6 한계 0.40~0.48(이송 중).
 - `right_rh_aglt_mirror_l5` — 우 env 결정론 probe(서버 GPU0, 64 env × 1800 스텝) 파지 0.806 · 들기 0.753 · 목표 성공 0.38 — 좌 원본(0.805 · 0.755)과 같다. 엄지 입구 안 0.0002(i03 은 0.97 — 사용자 영상 판정상 입구 안 엄지 파지라 좋은 오른팔 정책이 아니라고 grasping 세션이 알림). 알려진 결함: 엄지 대향 낮음(0.22), 네 손가락 손끝 파지(첫마디 0).
-- `right_rh_place_i09` — server GPU0 place_r_i09(보상 reward_gen/rh_place_r/iter_09) ep4000. 좌 place_l_i01 의 출발점. 학습 코드 hdgp 51013e96. 배포 계열(계약 · 노드)이 없다 — rh_aglt 와 관측 · 행동 차원이 같지만 목표는 홀더 자리(seat_pos, aglt 는 컵 + 0.14), 시작은 aglt 가 쥔 상태 인계(hold 0, 뱅크 bank_r_cyl60_keep), 놓은 뒤 45 스텝은 sim 스크립트(손 펴기 · 팔 복귀)다. FP++ 지각 · 부착 없이 학습(fpp_enable · fpp_attach_enable false), 명령 지연 0. 홀더 x 0.380 · 목표 홀더 1 · 2.
+- `right_rh_place_i09` — server GPU0 place_r_i09(보상 reward_gen/rh_place_r/iter_09) ep4000. 좌 place_l_i01 의 출발점. 학습 코드 hdgp 51013e96. 10.04 배포 연결: rh_place_contract.json(tools/build_rh_aglt_contract.py 가 place 런을 알아본다) · rh_place_node · 미션 단계 policy_place_<팔>. 목표 = 홀더 원점 + 0.060 m, 시작 = pd 가 붙잡은 aglt 마지막 joint_target, 컵은 reset 때 FP++ 한 장으로 손바닥에 붙인다(학습 attached), 놓음 판정 = 손끝 촉각 < 1 N · 관절 힘 < 300 g(임시) 5 스텝. FP++ 지각 · 부착 없이 학습(fpp_enable · fpp_attach_enable false), 명령 지연 0. 홀더 x 0.380 · 목표 홀더 1 · 2.

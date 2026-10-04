@@ -19,6 +19,7 @@ def main() -> None:
     ap.add_argument("--frame", default="base_link")
     ap.add_argument("--rate", type=float, default=30.0)
     ap.add_argument("--orbit", default="", help="r,hz (예: 0.05,0.2). 빈값=정지")
+    ap.add_argument("--latched", action="store_true", help="transient_local(실기 cup_holder_pose_node 와 같은 QoS — 홀더용)")
     ap.add_argument("--topic", default="/cup_pose",
                     help="발행 토픽. policy_control 은 /objects/<name>/pose 를 구독한다")
     args = ap.parse_args()
@@ -28,7 +29,12 @@ def main() -> None:
 
     rclpy.init()
     node = Node("fake_cup_pose_pub")
-    pub = node.create_publisher(PoseStamped, args.topic, 10)
+    if args.latched:
+        from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+        qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+    else:
+        qos = 10
+    pub = node.create_publisher(PoseStamped, args.topic, qos)
     t0 = node.get_clock().now()
 
     def tick():

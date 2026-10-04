@@ -2,6 +2,7 @@
 """RH56F1 한 팔 aglt(hdgp open-rh_{r,l}_aglt) 런 → rh_aglt 계약(policy_control/rh_aglt.py). 09.30 사용자: RH56F1 정책 deploy 연결.
 
     python3 tools/build_rh_aglt_contract.py --run deploy/policies/right_rh_aglt_i03 [--checkpoint nn/<pth>] [--out …]
+    python3 tools/build_rh_aglt_contract.py --run deploy/policies/right_rh_place_i09    # rh_place 런 → rh_place_contract.json(10.04)
 
 손 관측 순서는 문제가 없다 — rh_aglt 는 손 관절을 이름(프로필 순)으로 찾는다. 왼팔은 hdgp tasks/rh_aglt_l/profile.py 와
 같은 규칙(이름 r_ → l_, 손 값 그대로)으로 RH56F1_RIGHT 에서 만든다.
@@ -15,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from policy_control import _paths  # noqa: E402
 from policy_control import rh_aglt as A  # noqa: E402
+from policy_control import rh_place as P  # noqa: E402
 from policy_control.pour_profiles import load_profile  # noqa: E402
 
 ASSET = "openarm_rh56f1_bi_rl"
@@ -39,8 +41,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", help="기본 <run>/rh_aglt_contract.json")
     args = ap.parse_args(argv)
     run = Path(args.run).resolve()
-    c = A.build(run, _checkpoint(run, args.checkpoint), load_profile(Path(args.hdgp), "rh56f1_right"), URDF, asset=ASSET)
-    out = Path(args.out) if args.out else run / "rh_aglt_contract.json"
+    place = P.is_rh_place_run(A.read_env(run / "params" / "env.yaml"))
+    c = (P.build if place else A.build)(run, _checkpoint(run, args.checkpoint), load_profile(Path(args.hdgp), "rh56f1_right"),
+                                        URDF, asset=ASSET)
+    out = Path(args.out) if args.out else run / ("rh_place_contract.json" if place else "rh_aglt_contract.json")
     out.write_text(c.to_json())
     s = c.side()
     print(f"[rh_aglt] {c.task} · {s.side} · obs {c.obs_dim} / act {c.action_dim} · {c.policy_hz:.0f} Hz · "

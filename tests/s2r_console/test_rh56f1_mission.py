@@ -291,3 +291,22 @@ def test_the_real_preflight_checks_the_cpu_on_this_pc_and_fake_does_not():
     cpu = lambda book, m: [list(c.argv) for c in _cmds(m, book, "preflight") if "--only" in c.argv]  # noqa: E731
     assert cpu(REAL_BOOK, REAL) == [["python3", f"{REPO}/scripts/setup/check_host.py", "--robot", "rh56f1", "--only", "cpu"]]
     assert cpu(FAKE_BOOK, FAKE) == []
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_each_arm_places_the_cup_after_its_aglt_hand_off(side):
+    """10.04 사용자: 성공한 정책부터 실기에 — 놓기(rh_place)는 aglt 뒤, 홀더 자세가 있을 때. fake 는 latched 홀더 · 쥠 검사 끔."""
+    for m, book in ((REAL, REAL_BOOK), (FAKE, FAKE_BOOK)):
+        cmds = _cmds(m, book, f"policy_place_{side}")
+        node = next(c for c in cmds if any("rh_place_node.py" in a for a in c.argv))
+        assert node.background and node.argv[0].endswith(".venv/bin/python")
+        assert any(a.startswith("contract:=") and a.endswith("rh_place_contract.json") for a in node.argv)
+        assert "holder:=1" in node.argv and f"ns:={side}" in node.argv
+        assert ("require_grasp:=false" in node.argv) is (m is FAKE)
+        by = {s.id: s for s in m.stages}
+        assert {f"policy_aglt_{side}", "cup_holders"} <= set(by[f"policy_place_{side}"].needs)
+        resets = [c for c in cmds if "episode/reset" in c.argv]
+        assert resets and all(f"{side}" in c.argv for c in resets)
+    holder = next(c for c in _cmds(FAKE, FAKE_BOOK, f"policy_place_{side}") if any("fake_cup_pose_pub" in a for a in c.argv))
+    assert "--latched" in holder.argv and "/objects/cup_holder_1/pose" in holder.argv
+    assert REAL.stages[[s.id for s in REAL.stages].index(f"policy_place_{side}")].touches_real
