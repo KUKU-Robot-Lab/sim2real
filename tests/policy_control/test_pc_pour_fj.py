@@ -461,3 +461,20 @@ def test_cup_mouth_follows_the_cup_object_not_the_stale_dump():
         assert F.cup_mouth_z_of({**dump, "cup_object": name}) == pytest.approx(0.085)
     with pytest.raises(F.PourFjError, match="cup_object"):
         F.cup_mouth_z_of({**dump, "cup_object": "mug"})
+
+
+def test_runs_with_action_law_features_the_decoder_lacks_are_refused(tmp_path):
+    """10.04 pour_bi_rh b23(hdgp 733b3365): 팔 행동 저역 필터 · 증분 목표 상자 · 두 손 고정 · 리시버 팔 고정은 배포 디코더에
+    아직 없다 — 켜진 런은 계약을 만들지 않는다(조용히 무시하면 실기 목표가 학습과 어긋난다). 끔 값과 키 없음(옛 런)은 통과."""
+    base = "pair_name: rh\nhand_control: direct\naction_space: 26\n"
+    off = (base + "arm_action_lpf: 1.0\narm_abs_range_rad: !!python/tuple []\nhand_hold: false\nrcv_arm_hold: false\n"
+           "hand_force_stop_nm: 0.0\noppose_grip_delta_rad: 0.0\n")
+    on = base + "arm_action_lpf: 0.3\narm_abs_range_rad: !!python/tuple\n- 0.6\n- 0.6\nhand_hold: true\nrcv_arm_hold: true\n"
+    run = tmp_path / "run" / "params"
+    run.mkdir(parents=True)
+    for text, want in ((base, []), (off, []),
+                       (on, ["arm_abs_range_rad", "arm_action_lpf", "hand_hold", "rcv_arm_hold"])):
+        (run / "env.yaml").write_text(text)
+        assert [k.split("=")[0] for k in F.unported_keys(F.read_env(run / "env.yaml"))] == want
+    with pytest.raises(F.PourFjError, match=r"arm_action_lpf=0\.3"):
+        F.build(run.parent, tmp_path / "x.pth", None, tmp_path / "x.urdf", asset="a")

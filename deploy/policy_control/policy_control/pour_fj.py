@@ -212,6 +212,32 @@ def is_pour_fj_run(env: Mapping) -> bool:
             and int(env.get("action_space", 0)) == 26)
 
 
+#: hdgp 에 생겼지만 배포 디코더로 아직 옮기지 않은 env 키와 그 '끔' 값(hdgp pour_fabric_env_cfg 기본값).
+#: 켜진 런은 계약을 만들지 않는다 — 조용히 무시하면 실기 목표가 학습과 어긋난다(10.01 손 q* 어긋남과 같은 부류).
+#: 옮길 때는 여기서 빼고 디코더와 trace 한 스텝 재생 대조를 더한다.
+UNPORTED_OFF: Mapping[str, object] = {
+    "hand_force_stop_nm": 0.0,      # sim 힘 멈춤(b16 은 0)
+    "oppose_grip_delta_rad": 0.0,   # 대향 grip 보정
+    "arm_abs_range_rad": (),        # hdgp 23c2ab6f absolute ±1 범위 · 733b3365 증분 목표 상자(arm_abs_home_rad ± 범위)
+    "arm_action_lpf": 1.0,          # hdgp 733b3365 팔 행동 저역 필터 a_f = β·a + (1−β)·a_f
+    "hand_hold": False,             # hdgp 733b3365 두 손 목표를 인계 쥔 목표로 고정, 손 행동 무시
+    "rcv_arm_hold": False,          # hdgp 733b3365 리시버 팔 목표를 인계 목표로 고정, 그 행동 무시
+}
+
+
+def _is_on(value, off) -> bool:
+    if isinstance(off, tuple):
+        return bool(tuple(value or ()))
+    if isinstance(off, bool):
+        return bool(value) != off
+    return float(value) != float(off)
+
+
+def unported_keys(env: Mapping) -> list[str]:
+    """env 에서 켜진 미이식 기능 'key=값'. 키가 없으면 그 기능 이전 런(끔). 순수."""
+    return [f"{k}={env[k]}" for k, off in UNPORTED_OFF.items() if env.get(k) is not None and _is_on(env[k], off)]
+
+
 def _urdf_limits(urdf: Path, joints: Sequence[str]) -> dict:
     import xml.etree.ElementTree as ET
     root = ET.fromstring(Path(urdf).read_text())
@@ -237,6 +263,9 @@ def build(run_dir: Path, checkpoint: Path, pair, urdf: Path, *, asset: str,
     env = read_env(env_p)
     if not is_pour_fj_run(env):
         raise PourFjError(f"{env_p}: pour_fj 런이 아니다(pair_name rh · hand_control direct · action 26)")
+    unported = unported_keys(env)
+    if unported:
+        raise PourFjError(f"{env_p}: 배포 디코더에 아직 없는 기능이 켜져 있다 {unported} — 옮기고 trace 대조한 뒤 계약을 만든다")
     agent = yaml.safe_load(agent_p.read_text())
     net, cfg_a = agent["params"]["network"], agent["params"]["config"]
     notes = []
@@ -269,10 +298,6 @@ def build(run_dir: Path, checkpoint: Path, pair, urdf: Path, *, asset: str,
             hand_finger=[FINGERS.index(_finger(n)) for n in hand],
             hand_freeze=[n.rsplit("_", 1)[1] in tuple(prof.hand_freeze_suffixes) for n in hand],
             palm_body=str(prof.palm_body), tip_bodies=list(prof.fingertip_bodies))
-        if float(env.get("hand_force_stop_nm", 0.0)) != 0.0:
-            raise PourFjError("hand_force_stop_nm ≠ 0 — sim 힘 멈춤을 배포에 옮기지 않았다(b16 은 0)")
-        if float(env.get("oppose_grip_delta_rad", 0.0)) != 0.0:
-            raise PourFjError("oppose_grip_delta_rad ≠ 0 — 대향 grip 보정을 아직 옮기지 않았다")
     c = FjContract(
         schema=SCHEMA, task=TASK_PREFIX, run_dir=str(run_dir), checkpoint=str(checkpoint),
         checkpoint_md5=_md5(checkpoint), env_yaml_sha1=_sha1(env_p), agent_yaml_sha1=_sha1(agent_p), asset=asset,
