@@ -413,3 +413,39 @@ def test_reset_starts_at_zero_target_velocity_and_handoff_arm_starts_measured():
     assert st.arm_target == pytest.approx([0.2] * 7) and st.arm_prev_q == pytest.approx([0.2] * 7)   # 실측 · 속도 0
     out = ch.dec.step(np.ones(26), active=True)
     assert np.abs(out["src"][0] - 0.2).max() <= 2.0 / 3600 + 1e-12     # 첫 스텝은 amax·dt² 까지만
+
+
+def test_bank_start_contract_skips_the_hold_and_starts_from_the_measured_arm():
+    """sim start_bank.restore 가 episode_length_buf = hold_steps — 인계 시작은 첫 스텝부터 정책, 팔 q* 는 실측에서(T2R Pouring 10.04)."""
+    from policy_control import pour_fj_node as N
+
+    class _P:
+        def forward(self, obs):
+            return np.ones(26)
+
+        def reset(self):
+            pass
+
+    c = _contract(arm_mode="absolute", bank_start=True, hold_steps=30)
+    ch = N.PourFjChain(c, policy=_P())
+    with pytest.raises(N.PourFjNodeError, match="실측"):
+        ch.reset(None)
+    meas = {r: replace(_meas(r), arm_q=np.full(7, 0.2), cup_pos=np.array([0.38, -0.16, 0.26])) for r in F.ROLES}
+    ch.reset(meas)
+    assert ch.step_i == c.hold_steps
+    _, _, t = ch.step(meas)
+    assert not np.allclose(t["src"][0], c.sides["src"].arm_home)        # hold 였다면 arm_home(0)
+    assert np.abs(t["src"][0] - 0.2).max() < 0.05                      # 실측 0.2 에서 정책으로 한 스텝
+
+
+def test_old_contracts_keep_the_hold_from_home():
+    from policy_control import pour_fj_node as N
+
+    class _P:
+        def forward(self, obs):
+            return np.ones(26)
+
+    c = _contract(arm_mode="absolute", hold_steps=30)
+    ch = N.PourFjChain(c, policy=_P())
+    ch.reset(None)
+    assert ch.step_i == 0

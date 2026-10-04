@@ -126,6 +126,9 @@ class FjContract:
     hand_close_margin_rad: float = 0.0
     # ★10.04 hdgp t2r_rh5_b17(92237130) absolute 팔 목표 가속 한계 [rad/s²] — 0 = 끔(그 이전 런)
     arm_abs_amax: float = 0.0
+    # ★10.04 인계 뱅크에서만 시작하는 런(env start_bank_frac ≥ 1, b-계열) — sim 은 hold 를 건너뛰고(start_bank.restore 가
+    #   episode_length_buf = hold_steps) 팔 · 손 q* 를 수집 순간 실측으로 둔다. 배포도 인계 순간 실측에서, hold 없이 시작한다.
+    bank_start: bool = False
 
     def side(self, role: str) -> FjSide:
         return self.sides[role]
@@ -276,7 +279,8 @@ def build(run_dir: Path, checkpoint: Path, pair, urdf: Path, *, asset: str,
         hand_vel_cap_rad_s=float(env.get("hand_vel_cap_rad_s", 0.0)),
         hand_thumb_flex_vel_cap_rad_s=float(env.get("hand_thumb_flex_vel_cap_rad_s", 0.0)),
         hand_close_margin_rad=float(env.get("hand_close_margin_rad", 0.0)),
-        arm_abs_amax=float(env.get("arm_abs_amax", 0.0)))
+        arm_abs_amax=float(env.get("arm_abs_amax", 0.0)),
+        bank_start=float(env.get("start_bank_frac", 0.0) or 0.0) >= 1.0 and bool(env.get("start_bank_path")))
     if not bool(cfg_a.get("normalize_input", False)):
         notes.append("normalize_input false")
     validate(c)

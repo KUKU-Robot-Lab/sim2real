@@ -198,17 +198,18 @@ class PourFjChain:
         env 가 그 값을 닫기 상한 기준으로 쓴다(T2R Pouring 10.04). 실기는 손가락이 컵에 막혀 목표보다 덜 닫히므로
         파지 정책의 마지막 목표를 쓰면 이미 margin 넘게 조인 상태로 시작할 수 있다. hand_start 를 주면 그것이 이긴다(시험용).
         """
-        if self.c.hand_close_margin_rad > 0.0 and hand_start is None:
-            if meas is None or set(meas) != set(F.ROLES):
-                raise PourFjNodeError("이 붓기 계약(hand_close_margin_rad > 0)은 인계 순간 두 손의 실측 관절각이 필요하다")
-            hand_start = {r: [float(meas[r].hand_q[j]) for j in self.c.sides[r].hand_joints] for r in F.ROLES}
+        handoff = bool(getattr(self.c, "bank_start", False)) or self.c.hand_close_margin_rad > 0.0
         arm_start = None
-        if self.c.hand_close_margin_rad > 0.0 and meas is not None and set(meas) == set(F.ROLES):
-            # 인계 계약은 팔 q* 도 실측에서 시작(sim 뱅크 --targets_from_state 와 같다)
-            arm_start = {r: [float(v) for v in meas[r].arm_q] for r in F.ROLES}
+        if handoff:
+            if meas is None or set(meas) != set(F.ROLES):
+                raise PourFjNodeError("이 붓기 계약(인계 뱅크 시작 · hand_close_margin)은 인계 순간 두 팔 · 두 손의 실측 관절각이 필요하다")
+            if hand_start is None:
+                hand_start = {r: [float(meas[r].hand_q[j]) for j in self.c.sides[r].hand_joints] for r in F.ROLES}
+            arm_start = {r: [float(v) for v in meas[r].arm_q] for r in F.ROLES}   # sim 뱅크 --targets_from_state
         self.dec.reset(hand_start, arm_start)
         self.prev = np.zeros(self.c.action_dim)
-        self.step_i = 0
+        # sim start_bank.restore: episode_length_buf = hold_steps → 인계 시작은 hold 를 건너뛰고 첫 스텝부터 정책(LSTM 은 0)
+        self.step_i = self.c.hold_steps if handoff else 0
         if hasattr(self.policy, "reset"):
             self.policy.reset()
 
@@ -303,6 +304,8 @@ class PourFjNode(LeanNodeMixin, Node):
         self.reset_tol, self.max_gap, self._publish = float(p("reset_tol_rad")), int(p("max_gap_ticks")), bool(p("publish_target"))
         m = float(p("max_episode_s"))
         self.max_s = self.contract.episode_s if m < 0 else m
+        if m < 0 and getattr(self.contract, "bank_start", False):    # sim 은 hold_steps 만큼 이미 흐른 채로 시작한다
+            self.max_s = self.contract.episode_s - self.contract.hold_steps / float(self.contract.policy_hz)
         self.chain = None
         self.book = EpisodeBook({})
         self.cups: dict = {}
