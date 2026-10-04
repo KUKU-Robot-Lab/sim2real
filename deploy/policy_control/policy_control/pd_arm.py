@@ -68,6 +68,10 @@ class Blend:
     t0: float
 
 
+#: goto_home 정착 적분은 세트포인트가 목표(홈 + bias)에 이만큼 안으로 따라온 뒤에만 — 램프 중 적분은 bias 를 상한까지 채운다(10.04)
+SETTLE_RAMP_DONE_RAD = 0.01
+
+
 @dataclass(frozen=True)
 class Hold:
     """내부 목표: goto_home(settle) 또는 stop/abort 뒤 현재 세트포인트 유지."""
@@ -450,10 +454,17 @@ class ArmUnit:
             return replace(hold, err=err)
         if err < self.cfg.settle.tol:
             return replace(hold, settled=True, err=err)
+        # ★10.04 실기 return_right: 정책이 팔을 홈에서 0.61 rad 끌고 간 뒤 goto_home 이 램프 중에도 적분해 bias 가 상한까지 차고,
+        #   홈 + bias 가 관절 한계를 0.05 넘게 지나 'joint limit: target outside profile bounds' HOLD → 홈 복귀 실패.
+        #   정착 적분은 처짐(평형 오차)만 메우는 것 — 세트포인트가 홈에 닿은 뒤에만 적분하고, 홈 + bias 는 한계 안으로.
+        law = self.stage.state.law
+        if law is not None and float(np.abs(law.q_setpoint - (hold.q + hold.bias)).max()) > SETTLE_RAMP_DONE_RAD:
+            return replace(hold, err=err)        # 램프가 아직 목표(홈 + 지금 bias)를 따라가는 중
         g = self.side_cfg.gravity
         gain = float(g.gain) if (g.mode == "integral_droop" and g.gain is not None) else self.cfg.settle.gain
         bias = settle_bias(hold.bias, hold.q, q_m, self.kp, gain=gain,
                            clamp=self.cfg.settle.clamp, clamp_nm=self.cfg.settle.clamp_nm)
+        bias = np.clip(hold.q + bias, self.lower, self.upper) - hold.q
         return replace(hold, bias=bias, err=err)
 
     # ---------------------------------------------------------------- blend

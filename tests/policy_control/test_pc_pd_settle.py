@@ -67,3 +67,48 @@ def test_gain_zero_keeps_the_old_behaviour():
 def test_settle_block_defaults_keep_old_configs_loadable():
     s = Settle(clamp=0.12, tol=0.01)
     assert s.gain == 0.0 and s.clamp_nm == 0.0              # 옛 pd yaml 은 보정 없음 그대로
+
+
+# ---------------------------------------------------------------- 10.04 실기: 정책 뒤 goto_home 이 HOLD(한계 밖 목표)
+def _unit(setpoint, lower, upper):
+    """ArmUnit._settle 이 보는 것만 가진 가짜 팔(ROS 없음)."""
+    from types import SimpleNamespace as NS
+
+    from policy_control.pd_state import Phase
+    return NS(phase=Phase.TRACKING, kp=KP, lower=np.asarray(lower, float), upper=np.asarray(upper, float),
+              cfg=NS(settle=NS(tol=0.01, gain=GAIN, clamp=CLAMP, clamp_nm=CLAMP_NM)),
+              side_cfg=NS(gravity=NS(mode="model_tau_ff", gain=None)),
+              stage=NS(state=NS(law=NS(q_setpoint=np.asarray(setpoint, float)))))
+
+
+RH_HOME = np.array([-1.2127, 0.2026, 0.6538, 1.7608, 0.3791, 0.5785, 0.6646])        # rh56f1_aglt 오른팔 홈
+RH_LO = np.array([-1.39626, -0.174533, -1.5708, 0.0, -1.5708, -0.785398, -1.5708])   # openarm_rh56f1 프로필
+RH_HI = np.array([3.49066, 3.31612, 1.5708, 2.44346, 1.5708, 0.785398, 1.5708])
+
+
+def test_no_settle_integration_while_the_ramp_is_still_travelling_home():
+    """정책이 팔을 0.61 rad 끌고 간 뒤 goto_home: 램프 중 적분하면 손목 bias 가 0.3 까지 차 홈 + bias 가 한계를 0.05 넘게
+    지나 'joint limit: target outside profile bounds' HOLD 였다(return_right 실패). 세트포인트가 홈에 닿을 때까지는 적분하지 않는다."""
+    from policy_control.pd_arm import ArmUnit, Hold
+    far = RH_HOME - np.array([0, 0, 0, 0.61, 0, 0.3, 0])                 # 팔은 아직 멀리
+    unit = _unit(setpoint=far + 0.05, lower=RH_LO, upper=RH_HI)          # 램프 세트포인트도 아직 홈 전
+    hold = Hold(q=RH_HOME.copy(), hand=None, bias=np.zeros(7), settle=True)
+    for _ in range(500):
+        hold = ArmUnit._settle(unit, hold, far)
+    assert np.allclose(hold.bias, 0.0) and not hold.settled
+
+
+def test_settle_bias_never_pushes_the_target_past_the_joint_limits():
+    """세트포인트가 홈에 닿은 뒤 처짐을 메우되, 홈 + bias 는 한계 안 — 손목 j6 홈 0.5785 · 한계 0.7854 면 bias ≤ 0.2069
+    (상한 0.3 이 아니라)."""
+    from policy_control.pd_arm import ArmUnit, Hold
+    unit = _unit(setpoint=RH_HOME, lower=RH_LO, upper=RH_HI)
+    stuck = RH_HOME - np.array([0, 0, 0, 0, 0, 0.4, 0])                  # j6 가 걸려 홈에 못 간다
+    hold = Hold(q=RH_HOME.copy(), hand=None, bias=np.zeros(7), settle=True)
+    for _ in range(3000):
+        unit.stage.state.law.q_setpoint = hold.q + hold.bias             # 세트포인트는 목표를 따라간다
+        hold = ArmUnit._settle(unit, hold, stuck)
+    target = hold.q + hold.bias
+    assert np.all(target <= RH_HI + 1e-12) and np.all(target >= RH_LO - 1e-12)
+    assert hold.bias[5] == pytest.approx(RH_HI[5] - RH_HOME[5])          # 한계까지만 민다
+    assert hold.bias[5] > 0.1                                            # 적분은 실제로 돈다

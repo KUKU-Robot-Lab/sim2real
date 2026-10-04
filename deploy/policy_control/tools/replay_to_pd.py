@@ -159,10 +159,14 @@ def main() -> int:
     # canonical → source 이름은 pd 가 처리한다; 여기서는 실측을 이름으로 찾는다(l_aj_i ↔ openarm_left_jointi)
     start = np.array([meas[f"openarm_{side}_joint{j.split('_')[-1]}"] for j in args.joints])
     plan, vel, n_ramp = build_plan(frames, start, pub_dt, args.reverse, args.max_ramp_rad)
+    # ★10.04 실기: 목표 프레임 'replay:k' 와 stop 사건(episode 0)의 번호가 달라, 끝에서 pd 가 stop 을 받아 붙든 뒤에도
+    #   stop 확인용으로 보내던 마지막 프레임이 붙들기를 지웠다(pd stopped_episode 는 같은 번호만 거른다) → 1 s 뒤 스트림이
+    #   끊기자 워치독 HOLD ↔ 해제가 2 s 동안 번갈았다(home · return 끝). 이 재생만의 번호로 프레임과 stop 을 맞춘다.
+    ep_id = replay_episode_id()
     def send(k, q, qd):
         msg = JointState()
         msg.header.stamp = node.get_clock().now().to_msg()
-        msg.header.frame_id = f"replay:{k}"
+        msg.header.frame_id = f"{ep_id}:{k}"
         msg.name, msg.position, msg.velocity, msg.effort = list(args.joints), q.tolist(), qd.tolist(), [0.0] * len(q)
         pub.publish(msg)
         rclpy.spin_once(node, timeout_sec=0.0)
@@ -173,7 +177,7 @@ def main() -> int:
     if not args.no_stop_event:
         # 재생이 끝났다는 뜻으로 episode stop — pd 가 마지막 세트포인트를 내부 목표로 붙든다(스트림 두절 HOLD 가 아니라).
         # 그래야 뒤의 goto_home 정착 · pd/hand_home 이 받아들여진다(09.22 홈 경로 재생).
-        ep_pub.publish(String(data=json.dumps({"episode": 0, "event": "stop", "object_anchor": None, "home_q": {},
+        ep_pub.publish(String(data=json.dumps({"episode": ep_id, "event": "stop", "object_anchor": None, "home_q": {},
                                                "reasons": ["replay_to_pd done"], "t_ns": time.time_ns()})))
         t1 = time.time()
         while time.time() - t1 < STOP_WAIT_S and pd["target"] != "internal":
@@ -185,6 +189,12 @@ def main() -> int:
     node.destroy_node()
     rclpy.shutdown()
     return 0
+
+
+def replay_episode_id() -> int:
+    """재생마다 다른 에피소드 번호(목표 프레임 '<번호>:<seq>' 와 stop 사건이 같은 번호) — 정책 노드 번호(작은 정수)와 겹치지 않게
+    큰 수로. pd 는 stop 받은 번호의 늦은 프레임만 거르고, 다음 재생은 새 번호라 받는다."""
+    return 900_000_000 + (time.time_ns() // 1_000_000) % 99_000_000
 
 
 def _target_of(text: str):

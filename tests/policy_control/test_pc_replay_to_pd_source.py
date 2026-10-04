@@ -60,3 +60,13 @@ def test_unknown_key_names_the_available_ones():
     with pytest.raises(SystemExit) as e:
         mod.load_frames(_Args(PRESET, [f"r_aj_{i}" for i in range(1, 8)], key="nope"))
     assert "arm_target" in str(e.value), "무엇을 쓸 수 있는지 알려줘야 한다"
+
+
+def test_each_replay_has_its_own_episode_number_for_frames_and_stop():
+    """10.04 실기: 프레임 'replay:k' 와 stop(episode 0) 번호가 달라 stop 확인용 마지막 프레임이 pd 의 붙들기를 지웠다 →
+    끝에서 워치독 HOLD ↔ 해제가 번갈았다. 재생마다 큰 번호 하나(정책 에피소드 번호와 겹치지 않게)."""
+    mod = _tool()
+    a = mod.replay_episode_id()
+    assert isinstance(a, int) and a >= 900_000_000
+    src = (SIM2REAL / "deploy/policy_control/tools/replay_to_pd.py").read_text()
+    assert 'frame_id = f"{ep_id}:{k}"' in src and '"episode": ep_id' in src and "replay:{k}" not in src
