@@ -103,12 +103,16 @@ def test_depth_correction_stretches_along_the_ray_and_clamps_outside_the_fit():
     assert np.allclose(correct_depth(p, None), p)
 
 
+#: 아래 홀더 2 실측(10.03 프레임)이 쓴 외부 파라미터 — 10.01 캘리브. 파일은 10.04 에 다시 캘리브했다(카메라가 움직였다).
+CAM_10_01 = (np.array([0.050504, 0.037916, 0.820846]), np.array([0.130161, -0.69891, 0.696068, -0.100366]))
+
+
 def test_holder2_fpp_lands_near_the_marker_truth_after_the_ray_correction():
-    """10.04 arm4090 실측: FP++(홀더 2, z 보정 0) base (0.3748, −0.1572, 0.2454) · 마커 정답 (0.3820, −0.1613, 0.2350)."""
+    """10.04 arm4090 실측: FP++(홀더 2, z 보정 0) base (0.3748, −0.1572, 0.2454) · 마커 정답 (0.3820, −0.1613, 0.2350).
+    그때의 외부 파라미터(10.01)로 카메라 프레임으로 되돌린 뒤 파일의 깊이 광선 보정을 건다."""
     own = PoseConverter(REG, ["cup_big_s100"], ARM4090_CAMERA)
-    ext = own._ext["cup_big_s100"]
     from table_cad_extrinsics import T_from                      # base ← camera (같은 쿼터니언 규약 wxyz)
-    T = T_from(ext.cam_pos, ext.cam_quat)
+    T = T_from(*CAM_10_01)
     raw_base = np.array([0.3748, -0.1572, 0.2454])
     cam = (np.linalg.inv(T) @ np.r_[raw_base, 1.0])[:3]
     fixed = (T @ np.r_[correct_depth(cam, own.depth_bias), 1.0])[:3]

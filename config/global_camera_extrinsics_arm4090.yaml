@@ -9,14 +9,19 @@
 #   env_v1 상판 구멍 20 개(은색 와셔 12 · 빈 구멍 8, CAD 원 맞춤 중심) PnP + depth 상판 법선 제약.
 #   테이블이 빈 두 장(머리 head_home_rh56f1 — pan −1.45° · tilt +71.96° 에서 멈춘 자세)의 평균, 두 장 차 2 mm.
 #   재투영 평균 2.3 px. 5090 값으로는 상판 외곽 · 구멍이 사진에서 40~60 px 어긋났다(컵 xy ≈ 3 cm).
+# ★2026-10-04 다시 캘리브(같은 도구 · 라이브 1장, 사용자 "카메라를 몇 번 움직여서 안 맞을 수 있다"): 10.01 값은 구멍 재투영
+#   평균 6.0 px(상판 위 약 4 mm) · 오른쪽(y −0.3) 구멍에서 8~12 px 로 어긋났다 → 새 값 2.36 px(최대 4.7 px).
+#   머리 pan −1.27° · tilt +71.87°(읽기만 확인), 상판에 컵 · 홀더가 있어 구멍 20 개 중 16 개 사용. 10.01 값과 차이 위치
+#   (7.8, −8.8, −1.0) mm · 회전 1.28° — 컵 자리에서 xy 1~2 mm, 오른팔 자리 z 약 8 mm. 이 자세에서 맞춘 값이라
+#   미션 head_home 을 다시 돌리면(pan 이 ±1° 다르게 멈춘다) 이 도구를 다시 돌린다.
 # ★머리 기준 자세(head_home_rh56f1) 하나에서만 맞는 정적 스냅샷이다. 머리 pan 이 매번 ±1° 안팎 다르게 멈춰
 #   y 가 ~1 cm 흔들릴 수 있다 — 의심되면 head_home 뒤 도구를 다시 돌린다(라이브 1장, 로봇은 움직이지 않는다):
 #     python3 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090.yaml \
 #             --write --out config/global_camera_extrinsics_arm4090.yaml
 camera:
   frame: camera_color_optical_frame
-  position: [0.050504, 0.037916, 0.820846]
-  orientation_wxyz: [0.130161, -0.69891, 0.696068, -0.100366]
+  position: [0.0583100383, 0.0290947753, 0.819849248]
+  orientation_wxyz: [0.12943712, -0.698828034, 0.697777977, -0.0893941029]
 
 # ── depth 보정: object_pose_node 가 FP++ 자세(카메라 프레임)를 광선 방향으로 늘린다 ───────────────
 # D435i depth 가 표면을 가깝게 본다 — 외부 파라미터는 depth 를 쓰지 않는 PnP 라 이 치우침은 FP++(depth 정합) 쪽에만 있다.
