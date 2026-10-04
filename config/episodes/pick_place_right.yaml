@@ -1,0 +1,23 @@
+# 오른팔 집기 → 놓기 — 실기 첫 에피소드(10.04 사용자: 성공한 정책부터, 구분 실행 → 연속 실행).
+# 실행: 상황판 미션 단계 episode_pick_place_right · CLI tools/episode_run.py --episode config/episodes/pick_place_right.yaml
+episode: {name: pick_place_right, version: 1}
+# SETTING = 공통 중간 자세: aglt 고정 목표 = rh_place · pour 인계 뱅크 시작(손에 든 컵 원점, base m — 정착 컵 원점 0.290 + 0.12)
+setting: {right: [0.25, -0.12, 0.41], left: [0.25, 0.12, 0.41]}
+objects:
+  CUP: {topic: /objects/cyl60/pose}              # FP++ 노란 원통(cyl60) — snapshot 이 처음 한 번 기록
+holders: {CENTER_HOLDER: 1}                      # 좌우 놓기 학습 목표에 모두 드는 가운데 홀더
+holder_poses: config/cup_holder_poses_arm4090.yaml
+policies:
+  rh_aglt_r: {policy: right_rh_aglt_cyl60g, kind: aglt, side: right}
+  rh_place_r: {policy: right_rh_place_i09, kind: place, side: right}
+trajectories:
+  go_home: {kind: rehome, sides: [right]}
+failure_policy: {default: 1, rh_aglt_r: 2, rh_place_r: 0}
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  - {id: pick_cup, type: policy, name: rh_aglt_r, target_object: CUP, expect: {pose: SETTING, right_hand: CUP}}
+  - {id: place_cup, type: policy, name: rh_place_r, source_object: CUP, target_holder: CENTER_HOLDER,
+     expect: {pose: SETTING, right_hand: EMPTY, cup_placed: true}}
+  - {id: go_home_end, type: trajectory, name: go_home, expect: {pose: HOME}}
+  - {id: done, type: terminal, result: SUCCESS}

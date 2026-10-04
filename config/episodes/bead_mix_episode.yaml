@@ -1,0 +1,53 @@
+# 비드 섞기 최종 에피소드(sim2real_episode_implementation_guide.md 1-2) — 지금은 모의 실행(--dry-run)만.
+# 실기 막힘: 붓기(rh_pour) 성공 후보 대기 · 뚜껑 체결(rh_lock) · 흔들기(rh_shake) 정책 없음 · 색이 다른 컵 · 뚜껑 FP++ 항목 없음.
+episode: {name: bead_mix_episode, version: 1}
+setting: {right: [0.25, -0.12, 0.41], left: [0.25, 0.12, 0.41]}
+objects:
+  RED_CUP: {topic: /objects/red_cup/pose}
+  BLUE_CUP: {topic: /objects/blue_cup/pose}
+  GREEN_CUP: {topic: /objects/green_cup/pose}
+  LID: {topic: /objects/lid/pose}
+  LOCKED_RED_CUP: {topic: /objects/red_cup_locked/pose}
+holders: {LEFT_HOLDER: 0, CENTER_HOLDER: 1, RIGHT_HOLDER: 2}
+holder_poses: config/cup_holder_poses_arm4090.yaml
+policies:
+  rh_aglt_l: {policy: left_rh_aglt_cyl60gmir, kind: aglt, side: left}
+  rh_aglt_r: {policy: right_rh_aglt_cyl60g, kind: aglt, side: right}
+  rh_pour: {policy: null, kind: pour, side: both}          # 성공 후보가 나오면 붙인다(10.04 사용자)
+  rh_place_l: {policy: left_rh_place_i01, kind: place, side: left}
+  rh_place_r: {policy: right_rh_place_i09, kind: place, side: right}
+  rh_lock: {policy: null, kind: lock, side: right}
+  rh_shake: {policy: null, kind: shake, side: left}
+trajectories:
+  go_home: {kind: rehome, sides: [right, left]}
+  setting_to_home: {kind: rehome, sides: [right]}           # 오른손만 — 왼손은 RED 를 든 채(가이드 1-2)
+failure_policy: {default: 1, rh_aglt_l: 2, rh_aglt_r: 2, rh_pour: 1, rh_place_l: 1, rh_place_r: 1, rh_lock: 2, rh_shake: 0}
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  - id: pick_red_blue
+    type: parallel_policy
+    policies:
+      - {name: rh_aglt_l, target_object: RED_CUP}
+      - {name: rh_aglt_r, target_object: BLUE_CUP}
+    expect: {pose: SETTING, left_hand: RED_CUP, right_hand: BLUE_CUP}
+    checkpoint: RED_BLUE_SETTING
+  - {id: pour_blue_to_red, type: policy, name: rh_pour, source_object: BLUE_CUP, target_object: RED_CUP,
+     expect: {pose: SETTING, blue_poured: true}}
+  - {id: place_blue, type: policy, name: rh_place_r, source_object: BLUE_CUP, target_holder: RIGHT_HOLDER,
+     expect: {pose: SETTING, left_hand: RED_CUP, right_hand: EMPTY, blue_placed: true}, checkpoint: RED_ONLY_AFTER_BLUE}
+  - {id: return_home_after_blue, type: trajectory, name: setting_to_home,
+     expect: {pose: HOME, left_hand: RED_CUP, right_hand: EMPTY}, checkpoint: RED_HOME_AFTER_BLUE}
+  - {id: pick_green, type: policy, name: rh_aglt_r, target_object: GREEN_CUP,
+     expect: {pose: SETTING, left_hand: RED_CUP, right_hand: GREEN_CUP}, checkpoint: RED_GREEN_SETTING}
+  - {id: pour_green_to_red, type: policy, name: rh_pour, source_object: GREEN_CUP, target_object: RED_CUP,
+     expect: {pose: SETTING, green_poured: true}}
+  - {id: place_green, type: policy, name: rh_place_r, source_object: GREEN_CUP, target_holder: CENTER_HOLDER,
+     expect: {pose: SETTING, left_hand: RED_CUP, right_hand: EMPTY, green_placed: true}, checkpoint: RED_ONLY_AFTER_GREEN}
+  - {id: lock_red, type: policy, name: rh_lock, target_object: RED_CUP,
+     expect: {pose: SETTING, left_hand: LOCKED_RED_CUP, right_hand: EMPTY, red_locked: true}, checkpoint: LOCKED_RED_SETTING}
+  - {id: shake_red, type: policy, name: rh_shake, expect: {pose: SETTING, shake_done: true}}
+  - {id: place_red, type: policy, name: rh_place_l, source_object: LOCKED_RED_CUP, target_holder: LEFT_HOLDER,
+     expect: {pose: SETTING, left_hand: EMPTY, right_hand: EMPTY, red_placed: true}, checkpoint: EMPTY_SETTING}
+  - {id: go_home_end, type: trajectory, name: go_home, expect: {pose: HOME}}
+  - {id: episode_success, type: terminal, result: SUCCESS}

@@ -1,0 +1,32 @@
+# 양팔 동시 집기 → 오른팔 놓기 → 왼팔 놓기 — 컵 두 개를 FP++ 가 가를 수 있을 때 실기(지금은 모의 · fake).
+# ★두 컵은 서로 다른 토픽이어야 한다(같은 모양 컵 둘을 FP++ 가 못 가른다 — 색이 다른 컵 · 레지스트리 두 항목).
+episode: {name: pick_place_both, version: 1}
+setting: {right: [0.25, -0.12, 0.41], left: [0.25, 0.12, 0.41]}
+objects:
+  CUP_R: {topic: /objects/cyl60/pose}
+  CUP_L: {topic: /objects/cyl60_b/pose}          # 두 번째 컵 — 레지스트리 항목이 생기면 바꾼다
+holders: {RIGHT_HOLDER: 2, LEFT_HOLDER: 0}
+holder_poses: config/cup_holder_poses_arm4090.yaml
+policies:
+  rh_aglt_r: {policy: right_rh_aglt_cyl60g, kind: aglt, side: right}
+  rh_aglt_l: {policy: left_rh_aglt_cyl60gmir, kind: aglt, side: left}
+  rh_place_r: {policy: right_rh_place_i09, kind: place, side: right}
+  rh_place_l: {policy: left_rh_place_i01, kind: place, side: left}
+trajectories:
+  go_home: {kind: rehome, sides: [right, left]}
+failure_policy: {default: 1, rh_aglt_r: 2, rh_aglt_l: 2, rh_place_r: 0, rh_place_l: 0}
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  - id: pick_both
+    type: parallel_policy
+    policies:
+      - {name: rh_aglt_l, target_object: CUP_L}
+      - {name: rh_aglt_r, target_object: CUP_R}
+    expect: {pose: SETTING, left_hand: CUP_L, right_hand: CUP_R}
+  - {id: place_right, type: policy, name: rh_place_r, source_object: CUP_R, target_holder: RIGHT_HOLDER,
+     expect: {pose: SETTING, right_hand: EMPTY, right_placed: true}}
+  - {id: place_left, type: policy, name: rh_place_l, source_object: CUP_L, target_holder: LEFT_HOLDER,
+     expect: {pose: SETTING, left_hand: EMPTY, left_placed: true}}
+  - {id: go_home_end, type: trajectory, name: go_home, expect: {pose: HOME}}
+  - {id: done, type: terminal, result: SUCCESS}
