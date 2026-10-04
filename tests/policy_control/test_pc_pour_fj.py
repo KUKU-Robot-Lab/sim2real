@@ -220,7 +220,8 @@ def test_rh5_trace_one_step_decoder_replay_is_exact(RH5):
             back = [t for t in range(c.hold_steps + 1, O.shape[0]) if np.abs(O[t, n, off + 56:off + 63] - home).max() < 1e-6]
             for t in range(c.hold_steps + 1, back[0] if back else O.shape[0]):     # 다음 에피소드 리셋 전까지
                 q = O[t - 1, n, off + 56:off + 63]
-                arm_err = max(arm_err, np.abs(dec._arm(s, q, A[t, n, ri * 13:ri * 13 + 7]) - O[t, n, off + 56:off + 63]).max())
+                st = F._SideState(q, np.zeros(6))                                 # f01 · f02 는 가속 한계 없음(prev 무관)
+                arm_err = max(arm_err, np.abs(dec._arm(s, st, A[t, n, ri * 13:ri * 13 + 7]) - O[t, n, off + 56:off + 63]).max())
                 e0, e1 = O[t - 1, n, off + 47:off + 53], O[t, n, off + 47:off + 53]
                 if max(np.abs(e0).max(), np.abs(e1).max()) > 0.999:                   # joint_err 가 잘린 칸은 복원 불가
                     continue
@@ -347,3 +348,68 @@ def test_close_margin_round_trips_through_the_contract_json(tmp_path):
     p = tmp_path / "c.json"
     p.write_text(c.to_json())
     assert F.load_contract(p).hand_close_margin_rad == 0.02
+
+
+# ---------------------------------------------------------------- 10.04 b16 a=0 자세 · b17 가속 한계
+B16_HOME = (-0.0729, 0.2479, -0.0574, 0.8405, 0.2238, 0.1198, 0.7866)       # t2r_rh5_b16 env arm_abs_home_rad
+
+
+def test_arm_abs_home_is_mirrored_for_the_left_arm_like_hdgp():
+    assert F.arm_abs_home_for("right", B16_HOME) == pytest.approx(list(B16_HOME))
+    assert F.arm_abs_home_for("left", B16_HOME) == pytest.approx([0.0729, -0.2479, 0.0574, 0.8405, -0.2238, -0.1198, -0.7866])
+    assert F.arm_abs_home_for("right", None) == [] and F.arm_abs_home_for("left", ()) == []
+    with pytest.raises(F.PourFjError):
+        F.arm_abs_home_for("right", (0.1, 0.2))
+
+
+def test_absolute_action_zero_drives_to_arm_abs_home_not_the_start_pose():
+    sides = {r: replace(_side(r), arm_abs_home=[0.3] * 7) for r in F.ROLES}
+    d = F.FjDecoder(_contract(arm_mode="absolute", sides=sides))
+    for _ in range(600):
+        out = d.step(np.zeros(26), active=True)
+    assert out["src"][0] == pytest.approx([0.3] * 7, abs=1e-3)         # arm_home 0 이 아니라 a=0 자세 0.3
+
+
+def _sim_step(q, prev_q, a, home, lo, hi, alpha, vmax, amax, dt):
+    """hdgp 92237130 side_rig.step_joint_arm(absolute) + _accel_limit 를 그대로 옮긴 기준."""
+    q_raw = np.where(a >= 0, home + a * (hi - home), home + a * (home - lo))
+    err = q_raw - q
+    step = np.clip(alpha * err, -vmax * dt, vmax * dt)
+    if amax > 0:
+        prev_step = np.zeros_like(step) if prev_q is None else q - prev_q
+        v_stop = np.sqrt(2 * amax * np.abs(err)) * dt
+        step = np.maximum(np.minimum(step, v_stop), -v_stop)
+        dv = amax * dt * dt
+        step = np.maximum(np.minimum(step, prev_step + dv), prev_step - dv)
+    return np.clip(q + step, lo, hi)
+
+
+def test_accel_limit_matches_the_sim_law_step_by_step_and_has_no_velocity_flips():
+    c = _contract(arm_mode="absolute", arm_abs_amax=2.0)
+    d = F.FjDecoder(c)
+    rng = np.random.default_rng(0)
+    s = c.sides["src"]
+    q, prev = np.array(s.arm_home, float), np.array(s.arm_home, float)
+    steps = []
+    for t in range(400):
+        a = np.clip(rng.normal(0, 1, 26), -1, 1) * (1 if (t // 20) % 2 else -1)   # 20 스텝마다 뒤집는 거친 행동
+        ref = _sim_step(q, prev, a[:7], np.array(s.arm_home), np.array(s.arm_lo), np.array(s.arm_hi), 0.1, 0.3, 2.0, 1 / 60)
+        out = d.step(a, active=True)
+        assert out["src"][0] == pytest.approx(ref, abs=1e-12)
+        prev, q = q, ref
+        steps.append(q - prev)
+    dsteps = np.diff(np.array(steps), axis=0)
+    assert np.abs(dsteps).max() <= 2.0 / 3600 + 1e-12                   # |Δstep| ≤ amax·dt²
+
+
+def test_reset_starts_at_zero_target_velocity_and_handoff_arm_starts_measured():
+    from policy_control import pour_fj_node as N
+    c = _contract(arm_mode="absolute", arm_abs_amax=2.0, hand_close_margin_rad=0.02)
+    ch = N.PourFjChain(c, policy=None)
+    meas = {r: _meas(r) for r in F.ROLES}
+    meas = {r: replace(m, arm_q=np.full(7, 0.2)) for r, m in meas.items()}
+    ch.reset(meas)
+    st = ch.dec.state["src"]
+    assert st.arm_target == pytest.approx([0.2] * 7) and st.arm_prev_q == pytest.approx([0.2] * 7)   # 실측 · 속도 0
+    out = ch.dec.step(np.ones(26), active=True)
+    assert np.abs(out["src"][0] - 0.2).max() <= 2.0 / 3600 + 1e-12     # 첫 스텝은 amax·dt² 까지만

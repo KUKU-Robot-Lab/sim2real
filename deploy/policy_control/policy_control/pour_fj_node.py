@@ -202,7 +202,11 @@ class PourFjChain:
             if meas is None or set(meas) != set(F.ROLES):
                 raise PourFjNodeError("이 붓기 계약(hand_close_margin_rad > 0)은 인계 순간 두 손의 실측 관절각이 필요하다")
             hand_start = {r: [float(meas[r].hand_q[j]) for j in self.c.sides[r].hand_joints] for r in F.ROLES}
-        self.dec.reset(hand_start)
+        arm_start = None
+        if self.c.hand_close_margin_rad > 0.0 and meas is not None and set(meas) == set(F.ROLES):
+            # 인계 계약은 팔 q* 도 실측에서 시작(sim 뱅크 --targets_from_state 와 같다)
+            arm_start = {r: [float(v) for v in meas[r].arm_q] for r in F.ROLES}
+        self.dec.reset(hand_start, arm_start)
         self.prev = np.zeros(self.c.action_dim)
         self.step_i = 0
         if hasattr(self.policy, "reset"):

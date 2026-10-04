@@ -43,6 +43,21 @@ class PourFjError(ValueError):
     pass
 
 
+#: 왼팔 거울 부호 — hdgp pour_fabric_mimic/side_rig._ARM_SIGN_L(= robot_profiles._ARM_SIGN_L)과 같다
+ARM_SIGN_L = (-1.0, -1.0, -1.0, 1.0, -1.0, -1.0, -1.0)
+
+
+def arm_abs_home_for(side: str, raw) -> list:
+    """env arm_abs_home_rad(오른팔 기준 7) → 그 팔의 a=0 자세. 왼팔은 거울 부호(hdgp side_rig.init_joint_arm). 없으면 []. 순수."""
+    home = tuple(raw or ())
+    if not home:
+        return []
+    if len(home) != 7:
+        raise PourFjError(f"arm_abs_home_rad 길이 {len(home)} ≠ 팔 관절 7")
+    sign = ARM_SIGN_L if side == "left" else (1.0,) * 7
+    return [s_ * float(v) for s_, v in zip(sign, home)]
+
+
 # ---------------------------------------------------------------- 계약
 @dataclass(frozen=True)
 class FjSide:
@@ -62,6 +77,8 @@ class FjSide:
     hand_freeze: list           # 접촉 동결 대상 관절(프로필 hand_freeze_suffixes)
     palm_body: str
     tip_bodies: list
+    # ★10.04 absolute 모드 a=0 자세(hdgp side_rig.abs_home) — env arm_abs_home_rad(왼팔은 거울 부호). 비면 arm_home(시작 자세).
+    arm_abs_home: list = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -107,6 +124,8 @@ class FjContract:
     # ★10.04 hdgp t2r_rh5_b16(53050c2e) 손 닫힘 상한 — 에피소드 시작(인계)의 손 목표 q*_0 에서 닫는 쪽으로 이만큼까지만.
     #   0 = 그 기능 이전 런. >0 이면 디코더를 인계 손 목표(직전 정책의 마지막 joint_target)로 시작해야 한다.
     hand_close_margin_rad: float = 0.0
+    # ★10.04 hdgp t2r_rh5_b17(92237130) absolute 팔 목표 가속 한계 [rad/s²] — 0 = 끔(그 이전 런)
+    arm_abs_amax: float = 0.0
 
     def side(self, role: str) -> FjSide:
         return self.sides[role]
@@ -142,6 +161,9 @@ def validate(c: FjContract) -> None:
             raise PourFjError(f"{r}: 팔 7 · 손 6 · 관측 손 순서는 같은 6 관절")
         if not all(lo <= h <= hi for lo, h, hi in zip(s.arm_lo, s.arm_home, s.arm_hi)):
             raise PourFjError(f"{r}: arm_home 이 관절 한계 밖")
+        if s.arm_abs_home and (len(s.arm_abs_home) != 7
+                               or not all(lo <= h <= hi for lo, h, hi in zip(s.arm_lo, s.arm_abs_home, s.arm_hi))):
+            raise PourFjError(f"{r}: arm_abs_home_rad 가 관절 한계 밖이거나 7 개가 아니다 {s.arm_abs_home}")
 
 
 # ---------------------------------------------------------------- 빌드 (런 덤프 + hdgp 프로필)
@@ -218,8 +240,9 @@ def build(run_dir: Path, checkpoint: Path, pair, urdf: Path, *, asset: str,
         lim = _urdf_limits(urdf, arm + hand)
         init = prof.init_joint_pos if hasattr(prof, "init_joint_pos") else prof.init_state_joint_pos
         order = list((hand_obs_order or {}).get(role) or [f"{p}_hj_{n}" for n in ASSUMED_OBS_ORDER])
+        abs_home = arm_abs_home_for(side, env.get("arm_abs_home_rad") if str(env.get("arm_joint_mode", "increment")) == "absolute" else None)
         sides[role] = FjSide(
-            role=role, side=side, arm_joints=arm, arm_home=[float(init[j]) for j in arm],
+            role=role, side=side, arm_joints=arm, arm_home=[float(init[j]) for j in arm], arm_abs_home=abs_home,
             arm_lo=[lim[j][0] for j in arm], arm_hi=[lim[j][1] for j in arm],
             hand_joints=hand, hand_obs_order=order,
             hand_open=[float(v) for v in prof.hand_open_pose], hand_grip=[float(v) for v in prof.hand_grip_pose],
@@ -252,7 +275,8 @@ def build(run_dir: Path, checkpoint: Path, pair, urdf: Path, *, asset: str,
         hand_finger_open_floor_rad=float(env.get("hand_finger_open_floor_rad", 0.0)),
         hand_vel_cap_rad_s=float(env.get("hand_vel_cap_rad_s", 0.0)),
         hand_thumb_flex_vel_cap_rad_s=float(env.get("hand_thumb_flex_vel_cap_rad_s", 0.0)),
-        hand_close_margin_rad=float(env.get("hand_close_margin_rad", 0.0)))
+        hand_close_margin_rad=float(env.get("hand_close_margin_rad", 0.0)),
+        arm_abs_amax=float(env.get("arm_abs_amax", 0.0)))
     if not bool(cfg_a.get("normalize_input", False)):
         notes.append("normalize_input false")
     validate(c)
@@ -279,6 +303,7 @@ def hand_vel_cap(c: FjContract) -> tuple:
 class _SideState:
     arm_target: np.ndarray
     hand_target: np.ndarray
+    arm_prev_q: np.ndarray | None = None    # 직전 스텝 갱신 앞의 q*(가속 한계의 prev_step 기준, sim _arm_prev_q)
 
 
 class FjDecoder:
@@ -290,15 +315,19 @@ class FjDecoder:
         self.state: dict[str, _SideState] = {}
         self.reset()
 
-    def reset(self, hand_start: Mapping[str, Sequence[float]] | None = None) -> None:
+    def reset(self, hand_start: Mapping[str, Sequence[float]] | None = None,
+              arm_start: Mapping[str, Sequence[float]] | None = None) -> None:
         """hand_start[role] = 인계 순간의 손 q*_0(hand_joints 순 — 배포는 손 실측 관절각, sim 뱅크와 같다). 없으면 편 손에서 시작.
 
         ★hand_close_margin_rad > 0(b16~) 계약은 hand_start 가 있어야 한다 — 편 손을 q*_0 로 두면 손을 못 쥔다. 없으면 step 이 거부.
         """
-        start = hand_start or {}
-        self.state = {r: _SideState(np.array(self.c.sides[r].arm_home, float),
-                                    np.array(start[r] if r in start else self.c.sides[r].hand_open, float))
-                      for r in ROLES}
+        start, arm0 = hand_start or {}, arm_start or {}
+        self.state = {}
+        for r in ROLES:
+            q_arm = np.array(arm0[r] if r in arm0 else self.c.sides[r].arm_home, float)
+            # 리셋 = 목표 속도 0(sim reset_arm_rate: _arm_prev_q = q*)
+            self.state[r] = _SideState(q_arm, np.array(start[r] if r in start else self.c.sides[r].hand_open, float),
+                                       q_arm.copy())
         self.hand_q0 = {r: np.array(start[r], float) for r in ROLES if r in start}
         self.close_dir = {r: np.sign(np.asarray(self.c.sides[r].hand_grip, float) - np.asarray(self.c.sides[r].hand_open, float))
                           for r in ROLES}
@@ -325,17 +354,29 @@ class FjDecoder:
         for i, r in enumerate(ROLES):
             s, st = self.c.sides[r], self.state[r]
             a_arm, a_hand = a[i * 13:i * 13 + 7], a[i * 13 + 7:(i + 1) * 13]
-            st.arm_target = self._arm(s, st.arm_target, a_arm) if active else np.array(s.arm_home, float)
+            q_new = self._arm(s, st, a_arm)
+            st.arm_prev_q = st.arm_target.copy()                         # sim: 갱신 앞 q* 를 기록(모드 · hold 무관)
+            st.arm_target = q_new if active else np.array(s.arm_home, float)
             st.hand_target = self._hand(s, st.hand_target, a_hand, None if touch is None else touch.get(r), r)
             out[r] = (st.arm_target.copy(), st.hand_target.copy())
         return out
 
-    def _arm(self, s: FjSide, q: np.ndarray, a: np.ndarray) -> np.ndarray:
-        c, lo, hi, home = self.c, np.array(s.arm_lo), np.array(s.arm_hi), np.array(s.arm_home)
+    def _arm(self, s: FjSide, st: "_SideState", a: np.ndarray) -> np.ndarray:
+        c, lo, hi, q = self.c, np.array(s.arm_lo), np.array(s.arm_hi), st.arm_target
         if c.arm_mode == "absolute":
+            home = np.array(s.arm_abs_home if s.arm_abs_home else s.arm_home, float)   # a=0 자세(sim abs_home)
             q_raw = np.where(a >= 0.0, home + a * (hi - home), home + a * (home - lo))
             cap = c.arm_abs_vmax * self.dt
-            return np.clip(q + np.clip(c.arm_ema * (q_raw - q), -cap, cap), lo, hi)
+            err = q_raw - q
+            step = np.clip(c.arm_ema * err, -cap, cap)
+            if c.arm_abs_amax > 0.0:
+                # ★10.04 b17 가속 한계(sim _accel_limit): 멈출 수 있는 속도 √(2·amax·|err|)·dt, |step − prev_step| ≤ amax·dt²
+                prev_step = np.zeros_like(step) if st.arm_prev_q is None else q - st.arm_prev_q
+                v_stop = np.sqrt(2.0 * c.arm_abs_amax * np.abs(err)) * self.dt
+                step = np.clip(step, -v_stop, v_stop)
+                dv = c.arm_abs_amax * self.dt * self.dt
+                step = np.clip(step, prev_step - dv, prev_step + dv)
+            return np.clip(q + step, lo, hi)
         q_raw = np.clip(q + c.k_arm * a, lo, hi)
         return np.clip(c.arm_ema * q_raw + (1.0 - c.arm_ema) * q, lo, hi)
 
