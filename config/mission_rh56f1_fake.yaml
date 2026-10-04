@@ -1770,6 +1770,8 @@ run:
     - -p
     - cup_static:=true
     - -p
+    - cup_latch:=true
+    - -p
     - max_episode_s:=15.0
     background: true
   - note: '[right] rh_place_r 노드(right_rh_place_i09) — 홀더 1 · 놓은 뒤 스스로 끝남'
@@ -1888,6 +1890,8 @@ run:
     - cup_topic:=/episode/objects/CUP/pose
     - -p
     - cup_static:=true
+    - -p
+    - cup_latch:=true
     - -p
     - max_episode_s:=15.0
     background: true

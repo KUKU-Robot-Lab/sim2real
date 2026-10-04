@@ -323,6 +323,7 @@ def test_the_episode_stage_brings_up_both_policies_and_the_runner(side):
         assert f"ns:={side} " in argv["rh_aglt_node"] + " " and "stop_on_target:=true" in argv["rh_aglt_node"]
         assert "cup_topic:=/episode/objects/CUP/pose" in argv["rh_aglt_node"]                  # snapshot 재발행 컵
         assert "cup_static:=true" in argv["rh_aglt_node"]                    # 정지 기록 → 파지 시작 시각 FK 로 붙인다
+        assert "cup_latch:=true" in argv["rh_aglt_node"]                     # 처음 한 번 잡은 컵으로 끝까지(10.04 사용자)
         assert f"ns:={side}_place" in argv["rh_place_node"]
         assert f"episode_topic:=/policy_control/{side}/episode" in argv["rh_place_node"]
         assert f"episode:=config/episodes/pick_place_{side}.yaml" in argv["episode_runner_node"]

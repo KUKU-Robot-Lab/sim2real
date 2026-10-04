@@ -65,3 +65,5 @@ tools/ethercat/ecat_rh56f1
 tools/ethercat/*.new
 tools/ethercat/rh56f1_ecat_master
 logs/bags/
+# 로봇 PC 가 cup_holders 단계(--write)로 만드는 홀더 자세 — 그 PC 의 실측 데이터(10.04)
+config/cup_holder_poses_*.yaml

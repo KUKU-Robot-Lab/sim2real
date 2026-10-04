@@ -72,7 +72,7 @@ config/episodes/<이름>.yaml ── episode_spec(검증 · 역할 → 등록부
 
 SETTING = aglt 고정 목표 (0.25, ∓0.12, 0.41)(손에 든 컵 원점) — rh_place · pour 인계 뱅크가 이 자세에서 만들어졌다.
 
-컵 자세: aglt 는 snapshot 정지 기록(/episode/objects/CUP/pose)을 받는다. 쥐면(엄지 + 다른 손가락) 100 ms 뒤 **파지 시작 시각**의
+컵 자세: aglt 는 snapshot 정지 기록(/episode/objects/CUP/pose)을 받고, reset 때 그 값을 붙잡아(`cup_latch:=true`) 에피소드 동안 FP++ 출력을 더 보지 않는다(10.04 사용자: "처음 FP++ 로 인식하면 그때 움직이기만 — 컵은 가만히 있다"). 단독 aglt 단계도 같다. 쥐면(엄지 + 다른 손가락) 100 ms 뒤 **파지 시작 시각**의
 손바닥 FK 와 기록 자세로 손에 붙이고(rh_aglt_node `cup_static:=true`, cup_attach static), 그 뒤 컵 = 손바닥 FK. 실시간 FP++ 를
 받는 단독 정책 단계는 프레임 시각 손바닥과 짝짓는 원래 규칙 그대로다. 기록 자세를 '지금' 손바닥과 짝지으면 그 100 ms 동안 든
 만큼 어긋난다(sim 의 77 mm 사고와 같은 부류).

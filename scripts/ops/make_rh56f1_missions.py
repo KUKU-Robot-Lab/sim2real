@@ -451,7 +451,7 @@ def _episode_run(name: str, real: bool) -> list:
                              ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_aglt_node.py", "--ros-args",
                               "-r", f"__node:=rh_aglt_node_{b.side}", "-p", f"ns:={b.side}", "-p", f"contract:={contract}",
                               "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", "stop_on_target:=true",
-                              "-p", f"cup_topic:={EPISODE_RELAY.format(obj)}", "-p", "cup_static:=true",
+                              "-p", f"cup_topic:={EPISODE_RELAY.format(obj)}", "-p", "cup_static:=true", "-p", "cup_latch:=true",
                               "-p", "max_episode_s:=15.0"], background=True))
         elif b.kind == "place":
             src = next((j for n in ep.nodes for j in n.jobs if j.role == role), None)
