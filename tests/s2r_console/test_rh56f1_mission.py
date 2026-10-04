@@ -160,7 +160,7 @@ def test_real_cups_run_fpp_on_this_pc_after_the_head_home_and_shutdown_takes_it_
     by = {s.id: s for s in REAL.stages}
     assert by["cups"].needs == ("head_home",) and by["head_home"].touches_real and by["cups"].touches_real
     head = _cmds(REAL, REAL_BOOK, "head_home")
-    assert any("head_home.py" in " ".join(c.argv) and "head_home_rh56f1.yaml" in " ".join(c.argv) for c in head)
+    assert any("head_pose_check.py" in " ".join(c.argv) and "head_home_rh56f1.yaml" in " ".join(c.argv) for c in head)
     cups = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "cups")]
     for want in ("perception_launcher_node.py --host local", "fpp_pose_rx.py", "object_pose_node.py --objects cyl60",
                  "--camera-extrinsics", "global_camera_extrinsics_arm4090.yaml",
@@ -373,3 +373,6 @@ def test_head_pose_is_checked_and_aligned_before_fpp_and_holder_poses():
         if then:
             assert h < idx(cmds, then), sid
         assert not any("head_pose_check.py" in " ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, sid))   # fake 는 머리 없음
+    # head_home 은 설정 목표(pan 2015 — 18 틱 앞에서 멈춰 늘 ✗, 10.04 실기 단계 실패)가 아니라 캘리브 자세로 맞추고 검증한다
+    home = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "head_home")]
+    assert len(home) == 1 and "--home" in home[0] and "head_home.py" not in home[0]

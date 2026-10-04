@@ -75,7 +75,7 @@ def _stages(kind: str) -> list[dict]:
         {"id": "preflight", "group": "check", "lane": "rig",
          "title": "테스트 · RH56F1 제어 전용 계약 재생성(양팔 pour_fj 홈 · 편 손) (읽기 전용)", "artifacts": ["rh56f1_map"]},
         {"id": "head_home", "group": "motion", "lane": "rig", "needs": ["preflight"], "skippable": True, "touches_real": real,
-         "title": ("머리 기준자세(head_home_rh56f1 = 5090 홈과 같은 화면) + I 게인 — 카메라 좌표가 이 자세에서만 맞다(머리가 조금 움직인다)"
+         "title": ("머리를 카메라 캘리브 자세(외부 파라미터 head_pose)로 + I 게인 — 카메라 좌표가 이 자세에서만 맞다(머리가 조금 움직인다)"
                    if real else "fake — 머리 없음(실기 순서를 맞추려고 둔 자리)")},
         {"id": "cups", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
          "touches_real": real,
@@ -223,10 +223,11 @@ def _run(kind: str) -> dict:
              ["bash", "-lc", "timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String"], manual=True),
     ] if real else [_cmd("fake — 카메라 없음", ["bash", "-lc", "true"])]
     run["head_home"] = [
-        _cmd("머리 기준자세 + I 게인(RAM — 전원을 끄면 사라진다) — arm4090 머리는 5090 과 숫자가 다르다(config/head_home_rh56f1.yaml)",
-             ["python3", "{repo}/scripts/head_home.py", "--config", "{repo}/" + HEAD_CONFIG],
-             execute_args=["--execute"]),
-        _cmd("카메라 캘리브 자세로 맞춤 — head_home 목표와 캘리브 자세(head_pose)는 다르다(pan 은 목표보다 18 틱 앞에서 멈춘다)", HEAD_CHECK_ARGV, execute_args=["--execute"]),
+        # ★10.04: head_home.py 는 설정 목표(pan 2015)로 검증하는데 이 머리 pan 은 목표보다 18 틱 앞에서 멈춰 늘 ✗(19:35 실기 단계
+        #   실패). 카메라가 맞는 자세는 그 목표가 아니라 캘리브 때 멈춘 자리(외부 파라미터 head_pose) — 거기로 맞추고 거기로 검증한다.
+        _cmd("머리를 카메라 캘리브 자세로 — 토크 · 모드 · I 게인(RAM, 전원을 끄면 사라진다)이 다르면 먼저 적용하고, 외부 파라미터 "
+             "head_pose 로 목표를 고쳐 가며 맞춘 뒤 ±4 틱으로 검증(머리가 조금 움직인다)",
+             HEAD_CHECK_ARGV + ["--home"], execute_args=["--execute"]),
     ] if real else [_cmd("fake — 머리 없음", ["bash", "-lc", "true"])]
     run["cups"] = [
         _cmd("★컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · arm4090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 "

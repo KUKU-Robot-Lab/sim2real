@@ -64,7 +64,7 @@ stages:
   - preflight
   skippable: true
   touches_real: true
-  title: 머리 기준자세(head_home_rh56f1 = 5090 홈과 같은 화면) + I 게인 — 카메라 좌표가 이 자세에서만 맞다(머리가 조금 움직인다)
+  title: 머리를 카메라 캘리브 자세(외부 파라미터 head_pose)로 + I 게인 — 카메라 좌표가 이 자세에서만 맞다(머리가 조금 움직인다)
 - id: cups
   group: connect
   lane: both
@@ -524,16 +524,15 @@ run:
     - timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String
     manual: true
   head_home:
-  - note: 머리 기준자세 + I 게인(RAM — 전원을 끄면 사라진다) — arm4090 머리는 5090 과 숫자가 다르다(config/head_home_rh56f1.yaml)
+  - note: 머리를 카메라 캘리브 자세로 — 토크 · 모드 · I 게인(RAM, 전원을 끄면 사라진다)이 다르면 먼저 적용하고, 외부 파라미터 head_pose 로 목표를 고쳐 가며 맞춘 뒤 ±4 틱으로 검증(머리가 조금 움직인다)
     argv:
     - python3
-    - '{repo}/scripts/head_home.py'
+    - '{repo}/scripts/head_pose_check.py'
     - --config
     - '{repo}/config/head_home_rh56f1.yaml'
-    execute_args:
-    - --execute
-  - note: 카메라 캘리브 자세로 맞춤 — head_home 목표와 캘리브 자세(head_pose)는 다르다(pan 은 목표보다 18 틱 앞에서 멈춘다)
-    argv: *id001
+    - --extrinsics
+    - '{repo}/config/global_camera_extrinsics_arm4090.yaml'
+    - --home
     execute_args:
     - --execute
   cups:

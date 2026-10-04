@@ -8,6 +8,7 @@
     python3 scripts/head_pose_check.py --config config/head_home_rh56f1.yaml \\
         --extrinsics config/global_camera_extrinsics_arm4090.yaml          # 읽기만 — 어긋나면 rc 1
     python3 scripts/head_pose_check.py ... --execute                       # 어긋나면 캘리브 자세로 맞춘 뒤 다시 확인
+    python3 scripts/head_pose_check.py ... --execute --home                # 미션 head_home: 멀리 있어도 그 자세로(게인 · 토크도)
 
 맞추는 법: 이 머리 pan 은 목표보다 18 틱(1.6°) 앞에서 멈춘다(10.04 실측: 목표 2015 → 2033, 그 전 1997 → 2015 — 낮은 유지력 ·
 마찰). 목표를 그대로 보내면 캘리브 자세에 닿지 않으니 '목표 += 캘리브 자세 − 멈춘 자리'를 몇 번 되풀이한다. 목표는 캘리브
@@ -106,6 +107,8 @@ def main(argv=None) -> int:
     ap.add_argument("--config", type=Path, required=True, help="머리 설정(포트 · 게인 · 모터 id) — head_home_rh56f1.yaml")
     ap.add_argument("--extrinsics", type=Path, required=True, help="head_pose 가 든 카메라 외부 파라미터 yaml")
     ap.add_argument("--execute", action="store_true", help="어긋나면 캘리브 자세로 맞춘다(머리가 움직인다)")
+    ap.add_argument("--home", action="store_true",
+                    help="head_home 대신: 캘리브 자세에서 멀리 있어도 맞춘다(없으면 MAX_START_ERR 넘게 벗어나면 거부)")
     args = ap.parse_args(argv)
 
     hp = load_head_pose(args.extrinsics)
@@ -134,7 +137,7 @@ def main(argv=None) -> int:
             print("[head] ✗ 캘리브 자세와 다르다 — --execute 로 맞추거나(머리가 움직인다), 이 자세에서 다시 캘리브한다")
             return 1
         far = [n for n in hp.ticks if abs(now[n] - hp.ticks[n]) > MAX_START_ERR]
-        if far:
+        if far and not args.home:
             print(f"[head] ✗ {far} 가 캘리브 자세에서 {MAX_START_ERR} 틱 넘게 벗어나 있다 — head_home 을 먼저 돌린다")
             return 1
         targets = {ids[n]: t for n, t in hp.ticks.items()}
@@ -145,8 +148,9 @@ def main(argv=None) -> int:
                      and c.read1(i, ADDR_OPERATING_MODE, "mode") == cfg.operating_mode
                      and c.read2_signed(i, ADDR_POSITION_I_GAIN, "i") == cfg.position_i_gain)
             if not ready:
-                print(f"  {n}: 토크 · 모드 · I 게인이 설정과 다르다 — head_home 순서로 적용")
-                one = HeadHome(**{**cfg.__dict__, "targets_deg": {**cfg.targets_deg, i: tick_to_deg(targets[i])}})
+                print(f"  {n}: 토크 · 모드 · I 게인이 설정과 다르다 — head_home 순서로 적용(목표 = 지금 자리, 옮기기는 다음에)")
+                here = c.read_present_tick(i)
+                one = HeadHome(**{**cfg.__dict__, "targets_deg": {**cfg.targets_deg, i: tick_to_deg(here)}})
                 apply_one(c, one, i)
         time.sleep(SETTLE_S)
         ok = align(lambda i: c.read_present_tick(i), lambda i: c.read4_signed(i, ADDR_GOAL_POSITION, "goal"),
