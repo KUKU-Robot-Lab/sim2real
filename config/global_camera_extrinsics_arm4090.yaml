@@ -12,16 +12,25 @@
 # ★2026-10-04 다시 캘리브(같은 도구 · 라이브 1장, 사용자 "카메라를 몇 번 움직여서 안 맞을 수 있다"): 10.01 값은 구멍 재투영
 #   평균 6.0 px(상판 위 약 4 mm) · 오른쪽(y −0.3) 구멍에서 8~12 px 로 어긋났다 → 새 값 2.36 px(최대 4.7 px).
 #   머리 pan −1.27° · tilt +71.87°(읽기만 확인), 상판에 컵 · 홀더가 있어 구멍 20 개 중 16 개 사용. 10.01 값과 차이 위치
-#   (7.8, −8.8, −1.0) mm · 회전 1.28° — 컵 자리에서 xy 1~2 mm, 오른팔 자리 z 약 8 mm. 이 자세에서 맞춘 값이라
-#   미션 head_home 을 다시 돌리면(pan 이 ±1° 다르게 멈춘다) 이 도구를 다시 돌린다.
-# ★머리 기준 자세(head_home_rh56f1) 하나에서만 맞는 정적 스냅샷이다. 머리 pan 이 매번 ±1° 안팎 다르게 멈춰
-#   y 가 ~1 cm 흔들릴 수 있다 — 의심되면 head_home 뒤 도구를 다시 돌린다(라이브 1장, 로봇은 움직이지 않는다):
+#   (7.8, −8.8, −1.0) mm · 회전 1.28° — 컵 자리에서 xy 1~2 mm, 오른팔 자리 z 약 8 mm.
+# ★머리 자세 하나에서만 맞는 정적 스냅샷이다 — 그 자세를 아래 head_pose 에 적고, 미션 head_home · cups · cup_holders 단계가
+#   FP++ 전에 scripts/head_pose_check.py 로 비교해 맞춘다(pan 은 목표보다 18 틱 앞에서 멈춰 목표 = 캘리브 자세가 아니다).
+#   카메라를 건드렸으면 이 자세에서 다시 캘리브한다(라이브 1장, 로봇은 움직이지 않는다 · head_pose 도 같이 적는다):
 #     python3 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090.yaml \
-#             --write --out config/global_camera_extrinsics_arm4090.yaml
+#             --write --head-config config/head_home_rh56f1.yaml
 camera:
   frame: camera_color_optical_frame
   position: [0.0583100383, 0.0290947753, 0.819849248]
   orientation_wxyz: [0.12943712, -0.698828034, 0.697777977, -0.0893941029]
+
+# ── 이 외부 파라미터를 잰 머리 자세(틱) — scripts/head_pose_check.py 가 FP++ · 홀더 자세 전에 비교하고 맞춘다 ─────
+# 10.04 사용자: "fpp 진행 전에 자동으로 각도 확인하고 세팅을 제대로 맞춘 다음에 진행". 다시 캘리브하면 같이 바뀐다
+# (table_cad_extrinsics.py --write --head-config config/head_home_rh56f1.yaml). 10.04 값은 캘리브 사진(18:58) 앞뒤로
+# 읽기만 해서 두 번 같았다(18:31 · 19:09). head_home 목표(pan 2015)와 다르다 — 이 머리 pan 은 목표보다 18 틱 앞에서 멈춘다.
+head_pose:
+  pan_tick: 2033       # −1.27°
+  tilt_tick: 2865      # +71.87°
+  tol_tick: 4          # ±0.35° — 테이블(약 0.6 m)에서 약 3.5 mm
 
 # ── depth 보정: object_pose_node 가 FP++ 자세(카메라 프레임)를 광선 방향으로 늘린다 ───────────────
 # D435i depth 가 표면을 가깝게 본다 — 외부 파라미터는 depth 를 쓰지 않는 PnP 라 이 치우침은 FP++(depth 정합) 쪽에만 있다.

@@ -48,6 +48,13 @@ EPISODE_RELAY = "/episode/objects/{}/pose"
 REAL_CUP_ORIGIN_Z = 0.085                 # 원점 높이(바닥 위) — 컵 자세 확인 문구
 #: arm4090 머리 카메라 외부 파라미터 — 테이블 CAD 캘리브(scripts/calib/table_cad_extrinsics.py, 10.01 기본 방법)
 CAMERA_EXTRINSICS = "config/global_camera_extrinsics_arm4090.yaml"
+#: 머리 설정(포트 · 게인 · 모터 id) — head_home · head_pose_check 가 같이 쓴다
+HEAD_CONFIG = "config/head_home_rh56f1.yaml"
+#: ★10.04 사용자 "fpp 진행 전에 자동으로 각도 확인하고 세팅을 제대로 맞춘 다음에 진행" — 외부 파라미터를 잰 머리 자세
+#  (CAMERA_EXTRINSICS 의 head_pose)와 지금 자세를 비교하고, 실기 실행이면 그 자세로 맞춘다(pan 은 목표보다 18 틱 앞에서 멈춘다)
+HEAD_CHECK_ARGV = ["python3", "{repo}/scripts/head_pose_check.py", "--config", "{repo}/" + HEAD_CONFIG,
+                   "--extrinsics", "{repo}/" + CAMERA_EXTRINSICS]
+RECALIB_HINT = ("scripts/calib/table_cad_extrinsics.py --init " + CAMERA_EXTRINSICS + " --write --head-config " + HEAD_CONFIG)
 HEADER = {
     "real": "# RH56F1 로봇(arm4090) 실기 미션 — scripts/ops/make_rh56f1_missions.py 가 만든다. 손으로 고치지 말 것(--check 가 잡는다).\n",
     "fake": "# RH56F1 로봇 fake 미션(도메인 97) — scripts/ops/make_rh56f1_missions.py 가 실기 미션과 같은 정의에서 만든다.\n",
@@ -195,7 +202,7 @@ def _run(kind: str) -> dict:
             *([_cmd("카메라 · FP++ 내리기 — 런처가 없으면 이 PC 에서 직접 내린다",
                     ["python3", "{repo}/scripts/ops/perception_ctl.py", "stop", "--camera", "--host", "local", "--wait", "60"]),
                _cmd("인지 런처 · 자세 수신기 · 물체 자세 노드 · 컵홀더 노드 정지",
-                    stop=["cups#1", "cups#2", "cups#3", "cup_holders#2"])] if real else []),
+                    stop=["cups#1", "cups#2", "cups#3", "cup_holders#3"])] if real else []),
             _cmd("손 상태 노드 · 손 드라이버 정지 — 손가락은 마지막 자세에서 멈춘다(벤더 펌웨어가 잡는다)",
                  stop=[f"hand_{s}#{i}" for s in SIDES for i in ((2, 1) if real else (1, 0))]),
             _cmd("★팔 브링업 정지 — 모든 팔 모터가 꺼진다(받침으로 내려앉는다)" if real else "fake 플랜트 정지",
@@ -203,24 +210,27 @@ def _run(kind: str) -> dict:
         ],
     }
     run["cup_holders"] = [
-        _cmd("★머리가 기준자세인가(head_home 을 했는가 — 외부 파라미터가 그 자세에서만 맞다) · 홀더 세 개가 상판 위에 서 있고 "
-             "-x 면 마커가 손 · 컵에 가리지 않는가", ["bash", "-lc", "true"], manual=True),
+        _cmd("★홀더 세 개가 상판 위에 서 있고 -x 면 마커가 손 · 컵에 가리지 않는가(머리 자세는 다음 스텝이 캘리브 자세로 맞춘다)",
+             ["bash", "-lc", "true"], manual=True),
+        _cmd("머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)", HEAD_CHECK_ARGV, execute_args=["--execute"]),
         _cmd("카메라(RealSense) 켜기 — 이미 떠 있으면 그대로(cups 단계와 같이 써도 된다)",
              ["bash", "{repo}/scripts/vision/camera_up.sh"]),
         _cmd("컵홀더 자세 노드 — ArUco → 직전 자세 추적(0.2 s) → 놓친 id 만 무늬 전체 탐색(첫 장 ~6 s). "
              "x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 config/cup_holder_poses_arm4090.yaml 을 갱신",
              ["python3", "{repo}/scripts/nodes/cup_holder_pose_node.py", "--write"], background=True),
         _cmd("★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.39 부근) · y 간격 ~0.12 · stable ✓ 인가 "
-             "(어긋나면 head_home 뒤 scripts/calib/table_cad_extrinsics.py · 겹친 영상은 scripts/calib/cup_holder_pose.py --png)",
+             f"(어긋나면 {RECALIB_HINT} · 겹친 영상은 scripts/calib/cup_holder_pose.py --png)",
              ["bash", "-lc", "timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String"], manual=True),
     ] if real else [_cmd("fake — 카메라 없음", ["bash", "-lc", "true"])]
     run["head_home"] = [
         _cmd("머리 기준자세 + I 게인(RAM — 전원을 끄면 사라진다) — arm4090 머리는 5090 과 숫자가 다르다(config/head_home_rh56f1.yaml)",
-             ["python3", "{repo}/scripts/head_home.py", "--config", "{repo}/config/head_home_rh56f1.yaml"],
-             execute_args=["--execute"])] if real else [_cmd("fake — 머리 없음", ["bash", "-lc", "true"])]
+             ["python3", "{repo}/scripts/head_home.py", "--config", "{repo}/" + HEAD_CONFIG],
+             execute_args=["--execute"]),
+        _cmd("카메라 캘리브 자세로 맞춤 — head_home 목표와 캘리브 자세(head_pose)는 다르다(pan 은 목표보다 18 틱 앞에서 멈춘다)", HEAD_CHECK_ARGV, execute_args=["--execute"]),
+    ] if real else [_cmd("fake — 머리 없음", ["bash", "-lc", "true"])]
     run["cups"] = [
-        _cmd("★머리가 기준자세인가(head_home 을 했는가) · 컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · arm4090 GPU 여유가 "
-             "있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다)",
+        _cmd("★컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · arm4090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 "
+             "모자랄 수 있다). 머리 자세는 FP++ 를 켜기 전에 이 단계가 캘리브 자세로 맞춘다",
              ["bash", "-lc", "nvidia-smi --query-compute-apps=pid,used_memory --format=csv; "
                              "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader"], manual=True),
         _cmd("인지 런처(이 PC) — 카메라 · FP++ 컨테이너를 같은 PC 의 스크립트로 켜고 끈다. 스스로는 아무것도 켜지 않는다",
@@ -230,10 +240,11 @@ def _run(kind: str) -> dict:
         _cmd(f"물체 자세 → base — arm4090 테이블 CAD 캘리브 외부 파라미터(+ depth z 보정). /objects/{REAL_CUP}/pose",
              ["python3", "{repo}/scripts/nodes/object_pose_node.py", "--objects", REAL_CUP,
               "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
+        _cmd("FP++ 전 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)", HEAD_CHECK_ARGV, execute_args=["--execute"]),
         _cmd(f"카메라 + FP++({REAL_CUP}) 켜기 — 런처가 끝낼 때까지 최대 150 s, 실패하면 이 단계도 실패",
              ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", REAL_CUP, "--wait", "150"]),
         _cmd(f"★컵 자세 확인 — 테이블 위 컵 원점 z ≈ {0.205 + REAL_CUP_ORIGIN_Z:.3f}(상판 0.205 + 원점 {REAL_CUP_ORIGIN_Z}, ±8 mm) · 기울기 < 3° · "
-             f"x 0.1~0.4 · |y| 0.1~0.3 인가(어긋나면 head_home 뒤 scripts/calib/table_cad_extrinsics.py)",
+             f"x 0.1~0.4 · |y| 0.1~0.3 인가(카메라를 건드렸으면 {RECALIB_HINT})",
              ["bash", "-lc", f"timeout 5 ros2 topic echo --once /objects/{REAL_CUP}/pose geometry_msgs/msg/PoseStamped"],
              manual=True),
     ] if real else [

@@ -13,10 +13,13 @@
   ④ RANSAC PnP → 재투영 → 다시 다듬기(반복) → T_base_cam
   ⑤ 확인: 상판 외곽 + 구멍 원을 초기/새 값으로 겹친 PNG · depth RANSAC 테이블 평면(z 0.205 · 수평이어야 한다)
   ⑥ --write 일 때만 --out yaml 의 camera 블록(position · orientation_wxyz)을 바꾼다(다른 줄 보존)
+  ⑦ --head-config 를 주면 사진을 찍은 머리 자세(틱, 읽기만)를 같은 파일 head_pose 에 적는다 — 미션이 FP++ 전에
+     scripts/head_pose_check.py 로 그 자세와 비교해 맞춘다(10.04). head_pose 가 있는 파일은 --head-config 없이 쓰지 않는다
 
     python3 scripts/calib/table_cad_extrinsics.py                                   # 라이브 1장 · 보고만
     python3 scripts/calib/table_cad_extrinsics.py --npz /tmp/rgbd.npz --png /tmp/overlay.png
-    python3 scripts/calib/table_cad_extrinsics.py --write --out config/global_camera_extrinsics_arm4090.yaml
+    python3 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090.yaml \
+        --write --head-config config/head_home_rh56f1.yaml                      # arm4090(머리 자세도 기록)
 
 라이브 캡처는 카메라 노드(scripts/vision/camera_up.sh, 도메인 126 · localhost)가 떠 있어야 한다. 로봇은 움직이지 않는다.
 """
@@ -363,6 +366,34 @@ def overlay(rgb: np.ndarray, K: np.ndarray, holes: list[Hole], cands: dict, path
 
 
 # ---------------------------------------------------------------- 실행
+def update_head_pose_yaml(text: str, ticks: dict) -> str:
+    """head_pose 블록의 <이름>_tick 값만 바꾼다(주석 · 다른 줄 보존). 블록이 없으면 camera 블록 뒤에 새로 넣는다. 순수."""
+    lines = text.splitlines(keepends=True)
+    out, in_hp, done = [], False, set()
+    for line in lines:
+        s = line.rstrip("\n")
+        if not s.lstrip().startswith("#") and re.match(r"^\S.*:\s*$", s):
+            in_hp = s.strip() == "head_pose:"
+        m = re.match(r"^(\s+)(\w+)_tick:\s*-?\d+(.*)$", s) if in_hp else None
+        if m and m.group(2) in ticks:
+            out.append(f"{m.group(1)}{m.group(2)}_tick: {int(ticks[m.group(2)])}{m.group(3)}\n")
+            done.add(m.group(2))
+            continue
+        out.append(line)
+    if done == set(ticks):
+        return "".join(out)
+    if done:
+        raise ValueError(f"head_pose 에 {sorted(set(ticks) - done)} 줄이 없다")
+    block = "head_pose:\n" + "".join(f"  {k}_tick: {int(v)}\n" for k, v in ticks.items()) + "  tol_tick: 4\n\n"
+    text = "".join(out)
+    cam = re.search(r"(?m)^camera:\s*$", text)
+    if cam is None:
+        return text.rstrip("\n") + "\n\n" + block
+    j = text.find("\n\n", cam.end())
+    j = len(text) if j < 0 else j + 2
+    return text[:j] + block + text[j:]
+
+
 def grab_live(domain: int, timeout: float = 15.0) -> Path:
     out = Path(tempfile.mkdtemp(prefix="table_cad_")) / "rgbd.npz"
     env_cmd = (f"source /opt/ros/humble/setup.bash && export ROS_DOMAIN_ID={domain} ROS_LOCALHOST_ONLY=1 && "
@@ -385,7 +416,19 @@ def main(argv=None) -> int:
     ap.add_argument("--usda", type=Path, default=ENV_USDA)
     ap.add_argument("--no-depth-tilt", action="store_true", help="깊이 상판 법선 제약을 빼고 PnP 만")
     ap.add_argument("--domain", type=int, default=126, help="카메라 노드 도메인(실기 126 · localhost 전용) — 셸의 ROS_DOMAIN_ID 를 믿지 않는다")
+    ap.add_argument("--head-config", type=Path, default=None,
+                    help="머리 설정(head_home_rh56f1.yaml) — 주면 찍을 때의 머리 자세(틱)를 읽어 --write 때 head_pose 에 적는다")
     args = ap.parse_args(argv)
+    out_path = args.out or args.init
+    if args.write and args.head_config is None and "\nhead_pose:" in Path(out_path).read_text():
+        raise SystemExit(f"✗ {out_path} 에 head_pose 가 있다 — 이 캘리브를 잰 머리 자세도 같이 적어야 한다(--head-config)")
+    head_ticks = None
+    if args.head_config is not None:
+        if args.npz is not None:
+            raise SystemExit("✗ --head-config 는 라이브 1장일 때만 — 저장된 사진(--npz)은 찍을 때 머리 자세를 모른다")
+        from head_pose_check import read_head_ticks
+        head_ticks = read_head_ticks(args.head_config)
+        print(f"[head] 찍을 때 머리 자세 {head_ticks}")
 
     npz = args.npz or grab_live(args.domain)
     d = np.load(npz)
@@ -424,9 +467,15 @@ def main(argv=None) -> int:
     if args.write:
         from calibrate_camera_extrinsics import update_camera_extrinsics_yaml
 
-        out = args.out or args.init
-        out.write_text(update_camera_extrinsics_yaml(str(out), T[:3, 3], q))
-        print(f"[write] {out} camera 블록 갱신")
+        out = out_path
+        text = update_camera_extrinsics_yaml(str(out), T[:3, 3], q)
+        if head_ticks is not None:
+            after = read_head_ticks(args.head_config)
+            if after != head_ticks:            # 찍는 동안 머리가 움직였다 — 어느 자세의 값인지 모른다
+                raise SystemExit(f"✗ 머리 자세가 찍는 동안 바뀌었다 {head_ticks} → {after} — 다시 찍는다")
+            text = update_head_pose_yaml(text, head_ticks)
+        out.write_text(text)
+        print(f"[write] {out} camera 블록 갱신" + (f" · head_pose {head_ticks}" if head_ticks else ""))
     return 0
 
 

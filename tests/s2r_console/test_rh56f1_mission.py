@@ -278,10 +278,10 @@ def test_real_cup_holders_run_the_marker_node_after_the_head_home_and_shutdown_s
     assert any("scripts/vision/camera_up.sh" in a for a in argv)
     bg = [c for c in cmds if c.background]
     assert len(bg) == 1 and "cup_holder_pose_node.py --write" in " ".join(bg[0].argv)
-    assert cmds.index(bg[0]) == 2                                   # shutdown 의 cup_holders#2
+    assert cmds.index(bg[0]) == 3                                   # shutdown 의 cup_holders#3(앞에 머리 확인 · 맞춤)
     assert cmds[0].manual and cmds[-1].manual and "/cup_holders/status" in " ".join(cmds[-1].argv)
     stops = {x for c in _cmds(REAL, REAL_BOOK, "shutdown") for x in c.stop}
-    assert "cup_holders#2" in stops
+    assert "cup_holders#3" in stops
     fake = {s.id for s in FAKE.stages}
     assert "cup_holders" in fake and not any(c.background for c in _cmds(FAKE, FAKE_BOOK, "cup_holders"))
 
@@ -357,3 +357,19 @@ def test_the_real_episode_stage_records_what_the_release_threshold_needs():
         assert topic in line
     assert any(list(c.argv[-1:]) == ["stop"] and "rh56f1_record.sh" in " ".join(c.argv) for c in cmds)
     assert not any("rh56f1_record.sh" in " ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, "episode_pick_place_right"))
+
+
+def test_head_pose_is_checked_and_aligned_before_fpp_and_holder_poses():
+    """10.04 사용자 "fpp 진행 전에 자동으로 각도 확인하고 세팅을 제대로 맞춘 다음에 진행": 실기 head_home · cups · cup_holders 가
+    카메라 외부 파라미터를 잰 머리 자세(head_pose)와 비교 · 맞춤(실기 실행 = --execute)을 FP++ · 홀더 노드보다 먼저 한다."""
+    def idx(cmds, needle):
+        return next(i for i, c in enumerate(cmds) if needle in " ".join(c.argv))
+    for sid, then in (("head_home", None), ("cups", "perception_ctl.py start"), ("cup_holders", "cup_holder_pose_node.py")):
+        cmds = _cmds(REAL, REAL_BOOK, sid)
+        h = idx(cmds, "head_pose_check.py")
+        argv = " ".join(cmds[h].argv)
+        assert "--execute" in argv and "--extrinsics" in argv and "global_camera_extrinsics_arm4090.yaml" in argv, sid
+        assert "head_home_rh56f1.yaml" in argv
+        if then:
+            assert h < idx(cmds, then), sid
+        assert not any("head_pose_check.py" in " ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, sid))   # fake 는 머리 없음

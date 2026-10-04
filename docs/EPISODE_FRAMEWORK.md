@@ -51,8 +51,8 @@ config/episodes/<이름>.yaml ── episode_spec(검증 · 역할 → 등록부
 | # | 상황판 단계 | 허락 | 볼 것 |
 |---|---|---|---|
 | 1 | preflight · drivers · hand_right · hand_check_right | drivers 는 운영자(전원 · CAN) | CPU 실시간 한도 · 손 250 Hz |
-| 2 | head_home | 단계 승인(머리가 움직인다) | 카메라 화면이 5090 홈과 같은가 |
-| 3 | cups | 단계 승인 | /objects/cyl60/pose 가 들어오는가 · 컵은 aglt 배치(x ≈ 0.25, y ≈ −0.20 ± 0.1) |
+| 2 | head_home | 단계 승인(머리가 움직인다) | head_home 뒤 head_pose_check 가 카메라 캘리브 자세(외부 파라미터 파일 head_pose)로 맞춘다 |
+| 3 | cups | 단계 승인 | FP++ 전에 머리 자세를 다시 확인 · 맞춤 → /objects/cyl60/pose · 컵은 aglt 배치(x ≈ 0.25, y ≈ −0.20 ± 0.1) |
 | 4 | cup_holders | — | `--write` 가 `config/cup_holder_poses_arm4090.yaml` 을 쓴다(★없으면 에피소드 시작 검사가 멈춘다) |
 | 5 | pd_load_right → pd_arm_right → home_right | 단계마다 승인 | pd TRACKING · 홈 정착 |
 | 6 | episode_pick_place_right | 단계 승인 | 시작 검사(정책 · 홀더 파일 · 남은 노드) → bag 기록 시작 → 노드 · 실행기 |

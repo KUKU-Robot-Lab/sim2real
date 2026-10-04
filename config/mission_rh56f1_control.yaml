@@ -478,7 +478,7 @@ run:
     - cups#1
     - cups#2
     - cups#3
-    - cup_holders#2
+    - cup_holders#3
   - note: 손 상태 노드 · 손 드라이버 정지 — 손가락은 마지막 자세에서 멈춘다(벤더 펌웨어가 잡는다)
     stop:
     - hand_right#2
@@ -489,12 +489,22 @@ run:
     stop:
     - drivers#3
   cup_holders:
-  - note: ★머리가 기준자세인가(head_home 을 했는가 — 외부 파라미터가 그 자세에서만 맞다) · 홀더 세 개가 상판 위에 서 있고 -x 면 마커가 손 · 컵에 가리지 않는가
+  - note: ★홀더 세 개가 상판 위에 서 있고 -x 면 마커가 손 · 컵에 가리지 않는가(머리 자세는 다음 스텝이 캘리브 자세로 맞춘다)
     argv:
     - bash
     - -lc
     - 'true'
     manual: true
+  - note: 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)
+    argv: &id001
+    - python3
+    - '{repo}/scripts/head_pose_check.py'
+    - --config
+    - '{repo}/config/head_home_rh56f1.yaml'
+    - --extrinsics
+    - '{repo}/config/global_camera_extrinsics_arm4090.yaml'
+    execute_args:
+    - --execute
   - note: 카메라(RealSense) 켜기 — 이미 떠 있으면 그대로(cups 단계와 같이 써도 된다)
     argv:
     - bash
@@ -506,8 +516,8 @@ run:
     - '{repo}/scripts/nodes/cup_holder_pose_node.py'
     - --write
     background: true
-  - note: '★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.39 부근) · y 간격 ~0.12 · stable ✓ 인가 (어긋나면 head_home 뒤 scripts/calib/table_cad_extrinsics.py · 겹친
-      영상은 scripts/calib/cup_holder_pose.py --png)'
+  - note: '★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.39 부근) · y 간격 ~0.12 · stable ✓ 인가 (어긋나면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090.yaml
+      --write --head-config config/head_home_rh56f1.yaml · 겹친 영상은 scripts/calib/cup_holder_pose.py --png)'
     argv:
     - bash
     - -lc
@@ -522,8 +532,12 @@ run:
     - '{repo}/config/head_home_rh56f1.yaml'
     execute_args:
     - --execute
+  - note: 카메라 캘리브 자세로 맞춤 — head_home 목표와 캘리브 자세(head_pose)는 다르다(pan 은 목표보다 18 틱 앞에서 멈춘다)
+    argv: *id001
+    execute_args:
+    - --execute
   cups:
-  - note: ★머리가 기준자세인가(head_home 을 했는가) · 컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · arm4090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다)
+  - note: ★컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · arm4090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다). 머리 자세는 FP++ 를 켜기 전에 이 단계가 캘리브 자세로 맞춘다
     argv:
     - bash
     - -lc
@@ -550,6 +564,10 @@ run:
     - --camera-extrinsics
     - '{repo}/config/global_camera_extrinsics_arm4090.yaml'
     background: true
+  - note: FP++ 전 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)
+    argv: *id001
+    execute_args:
+    - --execute
   - note: 카메라 + FP++(cyl60) 켜기 — 런처가 끝낼 때까지 최대 150 s, 실패하면 이 단계도 실패
     argv:
     - python3
@@ -558,7 +576,8 @@ run:
     - cyl60
     - --wait
     - '150'
-  - note: ★컵 자세 확인 — 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 인가(어긋나면 head_home 뒤 scripts/calib/table_cad_extrinsics.py)
+  - note: ★컵 자세 확인 — 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090.yaml --write --head-config config/head_home_rh56f1.yaml)
     argv:
     - bash
     - -lc

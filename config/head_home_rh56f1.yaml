@@ -9,6 +9,9 @@
 #   offset 을 바꾸면 아래 deg 도 다시 맞춰야 한다.
 # 카메라 외부 파라미터(head_extrinsics.yaml)의 영점도 이 로봇은 다르다 — 같은 화면일 때
 #   tilt: 5090 −20.04° ↔ 이 로봇 +71.81°,  pan: 5090 +0.09° ↔ 이 로봇 −2.90° (FP++ 를 arm4090 에 올릴 때 반영).
+# ★10.04 실측: pan 은 목표보다 18 틱(1.6°) 앞에서 멈춘다(목표 2015 → 2033, 그 전 1997 → 2015). 카메라 외부 파라미터를 잰
+#   자세는 이 목표가 아니라 그때 멈춘 자리다 — config/global_camera_extrinsics_arm4090.yaml head_pose 에 틱으로 적혀 있고,
+#   미션 head_home · cups · cup_holders 단계가 scripts/head_pose_check.py 로 비교해 그 자세로 맞춘다(FP++ 전).
 port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
 baud: 1000000
 
