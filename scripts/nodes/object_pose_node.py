@@ -31,7 +31,7 @@ from cup_pose_relay import (  # noqa: E402
     cad_pose_to_base_body, extrinsics_at_head, head_state_is_usable,
 )
 from object_registry import extrinsics_for, input_topic, load_registry, output_topic  # noqa: E402
-from pose_symmetry import quat_axis_direction, quat_conj, remove_twist  # noqa: E402
+from pose_symmetry import point_axis_up, quat_axis_direction, quat_conj, remove_twist  # noqa: E402
 
 
 def base_z_bias(camera_yaml: str | Path) -> float:
@@ -97,6 +97,7 @@ class PoseConverter:
             self._axis_body[n] = (None if spec.symmetry_axis is None else
                                   quat_axis_direction(quat_conj(spec.cad_to_body_quat),
                                                       np.asarray(spec.symmetry_axis, float)))
+        self._flip = {n: bool(registry.get(n).symmetry_flip) for n in self.names}
         self.base_frame = next(iter(self._ext.values())).base_frame if self._ext else "base_link"
 
     def convert(self, name: str, pos_cam: np.ndarray, quat_cam: np.ndarray,
@@ -106,6 +107,9 @@ class PoseConverter:
             ext = extrinsics_at_head(ext, *head)
         pos, quat = cad_pose_to_base_body(ext, correct_depth(pos_cam, self.depth_bias), np.asarray(quat_cam, float))
         if self._axis_body[name] is not None:
+            if self._flip[name]:
+                # ★위아래도 대칭인 원통은 FP++ 가 뒤집어 잡는다(10.04 cyl60 기울기 179°) — 서 있는 컵이라는 가정으로 축을 위로
+                quat = point_axis_up(quat, self._axis_body[name])
             # ★출력(base) 프레임에서 body 대칭축 둘레 twist 를 뺀다 — 축 방향(기울기)은 보존,
             #   축 둘레 회전(추적기 자유 방향)은 0. 정립이면 base 기준 항등에 가까운 자세가 된다.
             quat = remove_twist(quat, self._axis_body[name])

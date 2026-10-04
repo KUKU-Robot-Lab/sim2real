@@ -42,6 +42,7 @@ class ObjectSpec:
     origin_above_bottom_m: float
     aabb: tuple[tuple[float, float, float], tuple[float, float, float]]
     symmetry_axis: tuple[float, float, float] | None = None   # CAD 프레임 대칭축, 없으면 회전 그대로
+    symmetry_flip: bool = False   # 위아래도 대칭(FP++ 가 뒤집어 잡는다) — 출력 축을 위로(pose_symmetry.point_axis_up)
 
 
 @dataclass(frozen=True)
@@ -100,6 +101,11 @@ def _parse_object(name: str, raw: dict) -> ObjectSpec:
         axis = tuple(float(v) for v in axis)
         if len(axis) != 3 or np.linalg.norm(axis) < 1e-9:
             raise ValueError(f"objects.{name}.symmetry_axis must be a non-zero [x,y,z]")
+    flip = raw.get("symmetry_flip", False)
+    if not isinstance(flip, bool):
+        raise ValueError(f"objects.{name}.symmetry_flip must be true/false")
+    if flip and axis is None:
+        raise ValueError(f"objects.{name}.symmetry_flip needs symmetry_axis")
     return ObjectSpec(
         name=name, real=str(raw["real"]), fpp=fpp,
         cad_to_body_pos=_validated_pos(cad["position"], f"objects.{name}.cad_to_body.position"),
@@ -109,6 +115,7 @@ def _parse_object(name: str, raw: dict) -> ObjectSpec:
         origin_above_bottom_m=float(raw["sim"]["origin_above_bottom_m"]),
         aabb=(tuple(float(v) for v in aabb[0]), tuple(float(v) for v in aabb[1])),
         symmetry_axis=axis,
+        symmetry_flip=flip,
     )
 
 

@@ -136,3 +136,18 @@ def test_depth_bias_out_of_range_rejected(tmp_path):
     bad.write_text(ARM4090_CAMERA.read_text().replace("offset_m: 0.0286", "offset_m: 0.2"))
     with pytest.raises(ValueError):
         PoseConverter(REG, ["cup_big_s100"], bad)
+
+
+def test_cyl60_upside_down_fpp_pose_comes_out_standing_with_the_same_position():
+    """10.04 arm4090 첫 확인: FP++ 가 노란 원통을 뒤집어 잡았다(기울기 179°) — 레지스트리 symmetry_flip 으로 축을 위로.
+    위치(원점 = 중심)는 그대로. symmetry_flip 은 원통에만(홀더는 위아래가 다르다)."""
+    from pose_symmetry import quat_axis_direction
+    z = np.array([0.0, 0.0, 1.0])
+    conv = PoseConverter(REG, ["cyl60"], ARM4090_CAMERA)
+    cam = np.array([0.02, -0.05, 0.62])
+    b_a, q_a = conv.convert("cyl60", cam, np.array([1.0, 0.0, 0.0, 0.0]))
+    b_b, q_b = conv.convert("cyl60", cam, np.array([0.0, 1.0, 0.0, 0.0]))     # 카메라 x 둘레 180° — 반대로 잡은 원통
+    assert np.allclose(b_a, b_b, atol=1e-9)
+    a, b = quat_axis_direction(q_a, z), quat_axis_direction(q_b, z)
+    assert a[2] > 0 and b[2] > 0 and np.dot(a, b) > 0.999
+    assert REG.get("cyl60").symmetry_flip and not REG.get("cup_holder").symmetry_flip
