@@ -6,7 +6,8 @@
     배포 = pd 가 붙잡고 있는 마지막 joint_target), hold 0, LSTM 0.
   · 컵 관측 = 인계 순간 손바닥 기준 상대 자세로 붙인 것(sim cup_obs_mode "attached") — 에피소드 내내 손바닥 FK 로만.
   · 놓음 = 손가락 · 손바닥 접촉 < 1 N 이 release_steps 연속 → settle_steps 동안 스크립트(손 = 편 손 행동, 팔 = 시작 관절 쪽 최대 증분)
-    → 끝. 실기 판정은 손끝 촉각 전부 < 1 N 이고 관절 힘(있으면) 전부 < 문턱(쥠 판정과 같은 300 g, 임시).
+    → 끝. 실기 판정은 손끝 촉각 전부 < 1 N 이고 관절 힘(있으면) 전부 < 문턱(쥠 판정과 같은 300 g, 임시)이며, 네 손가락 손
+    목표가 인계 때보다 open 쪽으로 OPEN_MIN_RAD 넘게 열린 뒤(실기는 손바닥 · 첫마디 접촉을 못 본다 — 10.04 PLACE 검토).
 """
 from __future__ import annotations
 
@@ -25,6 +26,9 @@ TASK_PREFIX = "open-rh_{}_place"
 #: hdgp tasks/rh_place_r/place_geom.py:12 — 홀더 원점 기준 컵이 앉는 바닥 높이
 HOLDER_FLOOR_Z = -0.025
 JOINT_FREE_G = AttachCfg.joint_force_g
+#: 놓음 안전 게이트(10.04 PLACE 검토) — 네 손가락 손 목표가 인계 때보다 open 쪽으로 평균 이만큼 열린 뒤에만 '빈 손'을 센다.
+#  sim 놓음은 정책이 손을 연 뒤에만 났다. 실기는 손바닥 · 첫마디 접촉을 못 봐서 손끝이 비어도 마디로 쥐고 있을 수 있다.
+OPEN_MIN_RAD = 0.15
 
 
 class RhPlaceError(A.RhAgltError):
@@ -61,7 +65,8 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
                              f"{list(env['target_holders'])} (/objects/cup_holder_<k>/pose)",
                              "시작 = aglt 가 쥐고 멈춘 상태: 팔 · 손 목표는 pd 가 붙잡은 마지막 joint_target, hold 0, LSTM 0",
                              f"놓음 = 접촉 < {float(env['contact_force_threshold'])} N {int(env['release_steps'])} 스텝 → "
-                             f"{int(env['settle_steps'])} 스텝 스크립트(손 펴기 · 팔 시작 관절로) → 끝"]},
+                             f"{int(env['settle_steps'])} 스텝 스크립트(손 펴기 · 팔 시작 관절로) → 끝 — 배포는 손끝 촉각 · 관절 힘으로 "
+                             f"보고 네 손가락 손 목표가 인계보다 {OPEN_MIN_RAD} rad 넘게 열린 뒤에만 센다(손바닥 · 첫마디 접촉 없음)"]},
                        seat_dz=HOLDER_FLOOR_Z + origin_z, target_holders=[int(h) for h in env["target_holders"]],
                        release_steps=int(env["release_steps"]), settle_steps=int(env["settle_steps"]),
                        release_force_n=float(env["contact_force_threshold"]))
@@ -142,8 +147,8 @@ def start_refusals(c: PlaceContract, meas: Mapping) -> list:
 class PlaceChain:
     """rh_place 한 스텝 — 붙은 컵 · 홀더 자리 목표로 관측 → 정책(놓은 뒤에는 스크립트) → rh_aglt 디코더."""
 
-    def __init__(self, c: PlaceContract, policy, *, joint_free_g: float = JOINT_FREE_G) -> None:
-        self.c, self.policy, self.joint_free_g = c, policy, joint_free_g
+    def __init__(self, c: PlaceContract, policy, *, joint_free_g: float = JOINT_FREE_G, open_min_rad: float = OPEN_MIN_RAD) -> None:
+        self.c, self.policy, self.joint_free_g, self.open_min_rad = c, policy, joint_free_g, open_min_rad
         self.dec = A.RaDecoder(c)
         self.prev = np.zeros(c.action_dim)
         self.step_i, self.free_streak, self.settle_t = 0, 0, -1
@@ -151,6 +156,11 @@ class PlaceChain:
         self.rel: tuple[np.ndarray, np.ndarray] | None = None   # 손바닥 좌표계의 컵 (위치, 쿼터니언)
         self.start_q: np.ndarray | None = None
         self._a_open = open_hand_action(c)
+        s = c.side()
+        self._close_dir = np.sign(np.asarray(s.hand_grip, float) - np.asarray(s.hand_open, float))
+        self._fingers = [i for i, j in enumerate(s.hand_joints) if "thumb" not in j]
+        self.hand0: np.ndarray | None = None
+        self.opened, self.tact_max, self.jf_max = 0.0, 0.0, None
 
     @property
     def settling(self) -> bool:
@@ -174,6 +184,8 @@ class PlaceChain:
         if len(arm0) != len(s.arm_joints) or len(hand0) != len(s.hand_joints):
             raise RhPlaceError("held target 은 팔 7 · 손 6")
         self.dec.reset(arm_start=arm0, hand_start=hand0)
+        self.hand0 = np.asarray(hand0, float).copy()
+        self.opened, self.tact_max, self.jf_max = 0.0, 0.0, None
         self.goal = seat_goal(self.c, holder)
         R = np.asarray(m.palm_R, float)
         self.rel = (R.T @ (np.asarray(m.cup_pos, float) - np.asarray(m.palm_pos, float)),
@@ -201,10 +213,15 @@ class PlaceChain:
         else:
             a = np.clip(np.asarray(self.policy.forward(obs), float), -self.c.action_clip, self.c.action_clip)
         targets = self.dec.step(a, active=True, tactile_n=m.tactile_n)
+        f = self._fingers
+        self.opened = float(np.mean(self._close_dir[f] * (self.hand0[f] - targets["arm"][1][f])))
+        self.tact_max = float(np.max(np.asarray(m.tactile_n, float)))
+        self.jf_max = None if m.joint_force is None else float(np.max(np.asarray(m.joint_force, float)))
         if self.settling:
             self.settle_t += 1
         else:
-            self.free_streak = self.free_streak + 1 if is_free(self.c, m.tactile_n, m.joint_force, self.joint_free_g) else 0
+            free = self.opened >= self.open_min_rad and is_free(self.c, m.tactile_n, m.joint_force, self.joint_free_g)
+            self.free_streak = self.free_streak + 1 if free else 0
             if self.free_streak >= self.c.release_steps:
                 self.settle_t = 0
         self.prev = np.clip(a, -1.0, 1.0)
@@ -213,7 +230,10 @@ class PlaceChain:
 
     def as_dict(self) -> dict:
         return {"phase": "done" if self.done else "settle" if self.settling else "place", "free_streak": self.free_streak,
-                "settle_t": self.settle_t, "seat": None if self.goal is None else [round(float(v), 4) for v in self.goal.pos]}
+                "settle_t": self.settle_t, "seat": None if self.goal is None else [round(float(v), 4) for v in self.goal.pos],
+                # 첫 실기 문턱 정하기용(PLACE 검토) — 손 목표가 인계보다 연 양 · 손끝 최대 · 관절 힘 최대
+                "opened": round(self.opened, 4), "tact_max": round(self.tact_max, 3),
+                "jf_max": None if self.jf_max is None else round(self.jf_max, 1)}
 
 
 def _quat_conj(q: np.ndarray) -> np.ndarray:

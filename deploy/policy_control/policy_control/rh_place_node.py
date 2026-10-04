@@ -23,7 +23,7 @@ if __package__ in (None, ""):
 
 from policy_control import codec  # noqa: E402
 from policy_control.pour_fj_node import NS, Family, PourFjNode, PourFjNodeError, main  # noqa: E402
-from policy_control.rh_place import JOINT_FREE_G  # noqa: E402
+from policy_control.rh_place import JOINT_FREE_G, OPEN_MIN_RAD  # noqa: E402
 
 
 class PlaceNode(PourFjNode):
@@ -35,7 +35,7 @@ class PlaceNode(PourFjNode):
         from policy_control.raw_poll import poll_subscription
 
         for name, default in (("holder", -1), ("holder_topic", ""), ("allow_measured_start", False),
-                              ("joint_free_g", JOINT_FREE_G), ("require_grasp", True)):
+                              ("joint_free_g", JOINT_FREE_G), ("release_open_min_rad", OPEN_MIN_RAD), ("require_grasp", True)):
             self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
         if not bool(p("require_grasp")):                   # fake 손은 촉각이 0 — 리허설에서만 끈다
@@ -54,7 +54,8 @@ class PlaceNode(PourFjNode):
         self._poll_held = poll_subscription(self._poll, JointState, f"{NS}/joint_target",
                                             QoSProfile(depth=50, reliability=ReliabilityPolicy.RELIABLE))
         self.get_logger().info(f"place · 홀더 {self.holder_id} ({self.holder_topic}) · 놓음 손끝 < "
-                               f"{self.contract.release_force_n} N · 관절 힘 < {float(p('joint_free_g'))} g")
+                               f"{self.contract.release_force_n} N · 관절 힘 < {float(p('joint_free_g'))} g · 손 목표가 "
+                               f"{float(p('release_open_min_rad'))} rad 넘게 열린 뒤")
 
     # ---------------------------------------------------------------- inputs
     def _on_holder(self, msg) -> None:
@@ -95,6 +96,7 @@ class PlaceNode(PourFjNode):
 
     def _reset_chain(self, meas: dict) -> None:
         self.chain.joint_free_g = float(self.get_parameter("joint_free_g").value)
+        self.chain.open_min_rad = float(self.get_parameter("release_open_min_rad").value)
         held = self._held(meas)
         self.chain.reset(meas, holder=self._holder, held=held,
                          allow_measured=bool(self.get_parameter("allow_measured_start").value))
@@ -104,6 +106,8 @@ class PlaceNode(PourFjNode):
                                f"손바닥 기준 컵 {np.round(rel, 3).tolist()}")
 
     def _after_step(self) -> bool:
+        if self.chain.settle_t == 0:                       # 놓음이 난 스텝 — 첫 실기 문턱 정하기용 값
+            self.get_logger().info(f"place 놓음 판정 · {self.chain.as_dict()}")
         if self.chain.done:
             self._end("stop", f"placed — 놓음 {self.contract.release_steps} 스텝 + 스크립트 {self.contract.settle_steps} 스텝 끝")
             return True

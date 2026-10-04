@@ -108,13 +108,34 @@ def test_reset_without_held_targets_uses_the_measured_joints_only_when_told(c):
     assert ch.dec.state["arm"].arm_target == pytest.approx(c.side().arm_home)
 
 
+class _Open:
+    """정책이 손을 연다(놓기 학습에서 놓음이 나는 유일한 경우)."""
+
+    def __init__(self, c):
+        self.a = np.concatenate([np.zeros(7), P.open_hand_action(c)])
+
+    def forward(self, obs):
+        return self.a
+
+
+class _Grip:
+    def __init__(self, c):
+        s = c.side()
+        o, g = np.asarray(s.hand_open), np.asarray(s.hand_grip)
+        self.a = np.concatenate([np.zeros(7), np.where(g > o, 1.0, -1.0)])
+
+    def forward(self, obs):
+        return self.a
+
+
 def test_release_then_scripted_settle_then_done(c):
-    ch = P.PlaceChain(c, _Zero())
+    ch = P.PlaceChain(c, _Open(c))
     m_held, m_free = _meas(c), _meas(c, tact=(0.2, 0.1, 0, 0, 0))
     ch.reset({"arm": m_held}, holder=[0.38, -0.002, 0.235], held=(np.asarray(c.side().arm_home) + 0.05,
                                                                  np.asarray(c.side().hand_grip)))
-    for _ in range(3):
+    for _ in range(10):                                                 # 정책이 손을 연다 — 아직 촉각은 남아 있다
         ch.step({"arm": m_held})
+    assert ch.opened >= P.OPEN_MIN_RAD
     for k in range(c.release_steps - 1):
         ch.step({"arm": m_free})
         assert not ch.settling
@@ -132,9 +153,23 @@ def test_release_then_scripted_settle_then_done(c):
     assert np.abs(st.arm_target - np.asarray(c.side().arm_home)).max() < 0.05      # 시작 관절(측정) 쪽으로 돌아왔다
 
 
-def test_a_touch_breaks_the_release_streak(c):
-    ch = P.PlaceChain(c, _Zero())
+def test_empty_fingertips_do_not_release_while_the_hand_is_still_closed(c):
+    """10.04 PLACE 검토: RH56F1 의 좋은 파지는 첫마디 인벨롭 — 손끝 촉각 0 이어도 쥐고 있을 수 있다. sim 놓음은 정책이 손을 연 뒤에만
+    났으므로 '손 명령이 시작보다 open 쪽으로 OPEN_MIN_RAD 넘게 열림'을 판정에 더한다(링 위에서 쥔 컵을 놓지 않게)."""
+    ch = P.PlaceChain(c, _Grip(c))
     ch.reset({"arm": _meas(c)}, holder=[0.38, -0.002, 0.235], held=(c.side().arm_home, c.side().hand_grip))
+    for _ in range(20):
+        ch.step({"arm": _meas(c, tact=(0, 0, 0, 0, 0))})
+    assert not ch.settling and ch.opened < P.OPEN_MIN_RAD
+    d = ch.as_dict()
+    assert d["tact_max"] == 0.0 and d["free_streak"] == 0 and "opened" in d
+
+
+def test_a_touch_breaks_the_release_streak(c):
+    ch = P.PlaceChain(c, _Open(c))
+    ch.reset({"arm": _meas(c)}, holder=[0.38, -0.002, 0.235], held=(c.side().arm_home, c.side().hand_grip))
+    for _ in range(10):
+        ch.step({"arm": _meas(c)})
     free, touch = _meas(c, tact=(0, 0, 0, 0, 0)), _meas(c, tact=(0, 1.5, 0, 0, 0))
     for m in (free, free, free, free, touch, free, free, free, free):
         ch.step({"arm": m})
