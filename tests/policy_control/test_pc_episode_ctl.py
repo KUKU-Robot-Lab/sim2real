@@ -56,3 +56,11 @@ def test_a_lost_response_is_told_apart_from_a_refusal_and_idempotent_pd_calls_ar
     assert keep_engaged_after_lost({"phase": "TRACKING", "ok": True})
     assert not keep_engaged_after_lost({"phase": "HOLD", "ok": False})
     assert not keep_engaged_after_lost(None)
+
+
+def test_skip_engaged_only_skips_a_pd_that_already_holds_the_arm():
+    """10.04 rehome: 정책이 멈춘 뒤 pd 는 그 자리를 붙들고 있다(TRACKING) — engage 는 IDLE 에서만 받으니 건너뛴다."""
+    from types import SimpleNamespace as NS
+    for phase, want in (("TRACKING", True), ("RAMPING", True), ("IDLE", False), ("HOLD", False)):
+        assert ec.already_engaged(NS(pd_status={"phase": phase}, spin=lambda s: None), wait_s=0.0) is want
+    assert ec.already_engaged(NS(pd_status=None, spin=lambda s: None), wait_s=0.05) is False   # status 를 못 받으면 engage 한다

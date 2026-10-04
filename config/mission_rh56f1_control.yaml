@@ -348,6 +348,30 @@ stages:
   - robot_left
   - contract
   title: '[left] rh_place 정책 — 쥔 컵을 컵홀더 자리에 내려놓고 손을 편 뒤 팔을 시작 관절로(놓음 5 스텝 → 스크립트 45 스텝 → 스스로 끝). 정책 노드 → reset → start → 관찰'
+- id: rehome_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  touches_real: true
+  needs:
+  - pd_arm_right
+  needs_why: pd 가 떠 있어야 경로를 재생한다(IDLE 이면 지금 자리에서 engage)
+  artifacts:
+  - contract
+  - robot_right
+  title: '[right] 정책 시작 자세(홈)로 되돌아오기 — 손 먼저 펴기 → 실측에서 경로 계획(직선이 막히면 RRT) → 재생 → 정착. 정책이 멈춘 자리에서 다시 정책 · return · 에피소드로(10.04 사용자: DG-5F 처럼 rehome)'
+- id: rehome_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  touches_real: true
+  needs:
+  - pd_arm_left
+  needs_why: pd 가 떠 있어야 경로를 재생한다(IDLE 이면 지금 자리에서 engage)
+  artifacts:
+  - contract
+  - robot_left
+  title: '[left] 정책 시작 자세(홈)로 되돌아오기 — 손 먼저 펴기 → 실측에서 경로 계획(직선이 막히면 RRT) → 재생 → 정착. 정책이 멈춘 자리에서 다시 정책 · return · 에피소드로(10.04 사용자: DG-5F 처럼 rehome)'
 - id: episode_pick_place_right
   group: policy
   lane: arm_right
@@ -659,6 +683,10 @@ run:
     - -p
     - cup_topic:=/objects/cyl60/pose
     - -p
+    - cup_latch:=true
+    - -p
+    - cup_static:=true
+    - -p
     - max_episode_s:={policy:aglt_right.max_episode_s}
     background: true
   - note: '[right] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + (0, 0, 0.14)'
@@ -697,6 +725,87 @@ run:
   - note: 정책 노드 정지
     stop:
     - policy_aglt_right#1
+  rehome_right:
+  - note: ★[right] 손에 컵이 있으면 사람이 받아 든다(다음 스텝이 손을 편다) · 이 팔 · 손 주변과 경로(테이블 앞 · 몸통 옆)가 비어 있는가. 정책이 멈춘 자리 → 정책 시작 자세(홈)로 간다(최대 0.1 rad/s, 약 20~40
+      s)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] pd 가 IDLE 이면 지금 자리에서 engage — 이미 붙들고 있으면(정책 뒤 TRACKING) 건너뜀'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - right
+    - --only
+    - pd_engage
+    - --skip-engaged
+    - --hold-s
+    - '2'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_engage
+  - note: '[right] 손을 편다(pd/hand_release — 팔은 제자리) — 쥔 컵을 놓는다'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - right
+    - --only
+    - pd_hand_release
+    - --service-timeout
+    - '15'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_hand_release
+  - note: '[right] 지금 자세 → 정책 시작 자세 경로를 실측에서 계획 — 편 손 · 테이블 · 몸통 · 반대 팔(여유 2 cm), 직선이 막히면 RRT. 곧장 goto_home 은 손끝이 상판을 지날 수 있다(09.28)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/plan_rehome.py'
+    - --side
+    - right
+    - --robot
+    - rh56f1
+    - --out
+    - '{repo}/logs/policy_control/rehome_right.npz'
+  - note: '[right] 경로 시작점 = 지금 자세인가(0.05 rad) · 경로가 지금 계약으로 만든 것인가'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/check_path_start.py'
+    - --npz
+    - '{repo}/logs/policy_control/rehome_right.npz'
+    - --contract
+    - '{artifact:contract}'
+  - note: '[right] 경로 재생 → 정책 시작 자세 — 끝나면 episode stop 으로 pd 가 그 자세를 붙든다'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/replay_to_pd.py'
+    - --npz
+    - '{repo}/logs/policy_control/rehome_right.npz'
+    - --joints
+    - r_aj_1,r_aj_2,r_aj_3,r_aj_4,r_aj_5,r_aj_6,r_aj_7
+    - --rate-scale
+    - '1.0'
+    execute_args:
+    - --execute
+  - note: '[right] 정책 시작 자세에서 정착 — 이제 policy_aglt_right · return_right · 에피소드를 다시 돌릴 수 있다'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - right
+    - --only
+    - pd_goto_home
+    - --service-timeout
+    - '45'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_goto_home
   policy_place_right:
   - note: ★[right] 직전 aglt 에피소드가 컵을 쥔 채 stop 했는가(pd 가 그 자세 · 손을 붙잡고 있다). 인계 자리로 옮기려면 aglt 를 다시 start 하고 aglt_goal.py --side right --handoff --execute
       로 목표를 준 뒤 도착하면 stop. 홀더 1 위 20 cm 가 비어 있는가 — 정책이 컵을 홀더에 내려놓고 손을 편다
@@ -789,6 +898,10 @@ run:
     - -p
     - cup_topic:=/objects/cyl60/pose
     - -p
+    - cup_latch:=true
+    - -p
+    - cup_static:=true
+    - -p
     - max_episode_s:={policy:aglt_left.max_episode_s}
     background: true
   - note: '[left] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + (0, 0, 0.14)'
@@ -827,6 +940,87 @@ run:
   - note: 정책 노드 정지
     stop:
     - policy_aglt_left#1
+  rehome_left:
+  - note: ★[left] 손에 컵이 있으면 사람이 받아 든다(다음 스텝이 손을 편다) · 이 팔 · 손 주변과 경로(테이블 앞 · 몸통 옆)가 비어 있는가. 정책이 멈춘 자리 → 정책 시작 자세(홈)로 간다(최대 0.1 rad/s, 약 20~40
+      s)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[left] pd 가 IDLE 이면 지금 자리에서 engage — 이미 붙들고 있으면(정책 뒤 TRACKING) 건너뜀'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - left
+    - --only
+    - pd_engage
+    - --skip-engaged
+    - --hold-s
+    - '2'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_engage
+  - note: '[left] 손을 편다(pd/hand_release — 팔은 제자리) — 쥔 컵을 놓는다'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - left
+    - --only
+    - pd_hand_release
+    - --service-timeout
+    - '15'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_hand_release
+  - note: '[left] 지금 자세 → 정책 시작 자세 경로를 실측에서 계획 — 편 손 · 테이블 · 몸통 · 반대 팔(여유 2 cm), 직선이 막히면 RRT. 곧장 goto_home 은 손끝이 상판을 지날 수 있다(09.28)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/plan_rehome.py'
+    - --side
+    - left
+    - --robot
+    - rh56f1
+    - --out
+    - '{repo}/logs/policy_control/rehome_left.npz'
+  - note: '[left] 경로 시작점 = 지금 자세인가(0.05 rad) · 경로가 지금 계약으로 만든 것인가'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/check_path_start.py'
+    - --npz
+    - '{repo}/logs/policy_control/rehome_left.npz'
+    - --contract
+    - '{artifact:contract}'
+  - note: '[left] 경로 재생 → 정책 시작 자세 — 끝나면 episode stop 으로 pd 가 그 자세를 붙든다'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/replay_to_pd.py'
+    - --npz
+    - '{repo}/logs/policy_control/rehome_left.npz'
+    - --joints
+    - l_aj_1,l_aj_2,l_aj_3,l_aj_4,l_aj_5,l_aj_6,l_aj_7
+    - --rate-scale
+    - '1.0'
+    execute_args:
+    - --execute
+  - note: '[left] 정책 시작 자세에서 정착 — 이제 policy_aglt_left · return_left · 에피소드를 다시 돌릴 수 있다'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - left
+    - --only
+    - pd_goto_home
+    - --service-timeout
+    - '45'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_goto_home
   policy_place_left:
   - note: ★[left] 직전 aglt 에피소드가 컵을 쥔 채 stop 했는가(pd 가 그 자세 · 손을 붙잡고 있다). 인계 자리로 옮기려면 aglt 를 다시 start 하고 aglt_goal.py --side left --handoff --execute
       로 목표를 준 뒤 도착하면 stop. 홀더 1 위 20 cm 가 비어 있는가 — 정책이 컵을 홀더에 내려놓고 손을 편다
@@ -1172,8 +1366,8 @@ run:
     - --approve
     - pd_hand_home
   return_right:
-  - note: ★[right] 팔이 홈 근처에 있고(정책이 멀리 끌고 갔으면 먼저 홈으로) 손에 컵이 없는가 · 경로 주변이 비어 있는가. 홈 정착 → 주먹 → 저장 경로 역재생(약 15 s, 최대 0.3 rad/s) → pd 해제, 끊지 않고 이어
-      간다
+  - note: ★[right] 팔이 홈 근처에 있고(정책 뒤면 먼저 rehome_right 단계로 홈에) 손에 컵이 없는가 · 경로 주변이 비어 있는가. 홈 정착 → 주먹 → 저장 경로 역재생(약 15 s, 최대 0.3 rad/s) → pd 해제, 끊지
+      않고 이어 간다
     argv:
     - bash
     - -lc
@@ -1533,7 +1727,8 @@ run:
     - --approve
     - pd_hand_home
   return_left:
-  - note: ★[left] 팔이 홈 근처에 있고(정책이 멀리 끌고 갔으면 먼저 홈으로) 손에 컵이 없는가 · 경로 주변이 비어 있는가. 홈 정착 → 주먹 → 저장 경로 역재생(약 15 s, 최대 0.3 rad/s) → pd 해제, 끊지 않고 이어 간다
+  - note: ★[left] 팔이 홈 근처에 있고(정책 뒤면 먼저 rehome_left 단계로 홈에) 손에 컵이 없는가 · 경로 주변이 비어 있는가. 홈 정착 → 주먹 → 저장 경로 역재생(약 15 s, 최대 0.3 rad/s) → pd 해제, 끊지
+      않고 이어 간다
     argv:
     - bash
     - -lc

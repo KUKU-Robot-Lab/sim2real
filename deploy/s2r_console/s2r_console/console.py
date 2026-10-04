@@ -636,15 +636,28 @@ class Console:
             mark = {"DONE": "✓", "FAILED": "✗", "ABORTED": "■"}.get(outcome, "?")
             s.event("stage", f"{mark} {stage_id} {outcome}" + (f" — {note}" if note else ""))
             release = outcome != MC.STATUS_DONE and stage.touches_real and self._pd_holds(s)
-        if release:
-            # 실기 단계가 실패 · 중단했는데 pd 가 팔을 잡고 있으면 풀어 둔다(JTC 가 그 자리를 잡는다).
-            # 09.22: 저장 경로 시작점 검사에서 멈췄는데 pd 는 engage 된 채 남았다 — 그 검사는 episode_ctl 이 아니라 해제하지 않는다.
+            sides = self._release_sides(s, stage) if release else []
+        # 실기 단계가 실패 · 중단했는데 pd 가 팔을 잡고 있으면 풀어 둔다(JTC 가 그 자리를 잡는다).
+        # 09.22: 저장 경로 시작점 검사에서 멈췄는데 pd 는 engage 된 채 남았다 — 그 검사는 episode_ctl 이 아니라 해제하지 않는다.
+        # ★10.04 실기: pd 서비스는 팔마다 따로인데 쪽 없이 불러 늘 '어느 팔인지 필요하다'로 실패했다 — 단계의 창(팔)으로 고른다.
+        for side in sides:
             try:
-                self.quick("pd_release", client=f"자동: {stage_id} {outcome}")
+                self.quick("pd_release", client=f"자동: {stage_id} {outcome}", side=side)
             except ConsoleError as exc:
                 with self._lock:
                     if self.session is s:
-                        s.event("quick", f"자동 PD 해제를 못 했다 — 정지 바의 PD 해제를 누를 것 ({exc})")
+                        s.event("quick", f"자동 PD 해제를 못 했다({side}) — 정지 바의 PD 해제를 누를 것 ({exc})")
+
+    def _release_sides(self, s: Session, stage) -> list[str]:
+        """실패한 실기 단계 뒤 풀 pd 의 쪽 — 단계 창이 한 팔이면 그 팔, 아니면 status 가 오는 pd 전부(잡고 있는 쪽만)."""
+        lane = self._lane(s, stage)
+        side = next((la.side for la in s.mission.lanes if la.id == lane), "") if lane else ""
+        if side in ("right", "left"):
+            return [side]
+        with s.feed_lock:
+            obs = s.feed.observed()
+        procs = {p["key"]: p for p in s.supervisor.table()}
+        return [sd for sd in self._pd_sides(s, obs) if self._pd_phase(s, obs, procs, side=sd) not in U.PD_FREE]
 
     @staticmethod
     def _settle(s: Session, stage_id: str, outcome: str, note: str, *, ran: bool = True) -> MC.MissionState:

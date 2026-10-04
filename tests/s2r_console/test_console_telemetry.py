@@ -109,8 +109,9 @@ def test_percentiles_match_the_csv_tool_on_recorded_runs(run):
 def test_the_golden_runs_are_not_vacuous():
     # 09.29 사용자: logs 는 용량 때문에 PC 에 두지 않는다(DATA 디스크로 옮김) — 기록 폴더가 아예 없으면 건너뛴다.
     # 폴더는 있는데 기록이 빠졌을 때만 실패시킨다(위 대조 테스트가 아무것도 잠그지 않는 것을 막는다).
-    if not (SIM2REAL / "logs" / "policy_control").is_dir():
-        pytest.skip("logs/policy_control 없음 — 이 PC 는 실행 기록을 두지 않는다")
+    # 10.04: rehome 경로(logs/policy_control/rehome_<팔>.npz)도 이 폴더에 생긴다 — 폴더가 아니라 fake run 기록 폴더로 본다.
+    if not any((SIM2REAL / "logs" / "policy_control").glob("fake_run*")):
+        pytest.skip("logs/policy_control/fake_run* 없음 — 이 PC 는 실행 기록을 두지 않는다")
     assert len(RUNS) >= 3, "지연이 기록된 fake run 이 사라졌다 — 위 대조 테스트가 아무것도 잠그지 않는다"
 
 

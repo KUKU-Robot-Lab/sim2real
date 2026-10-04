@@ -376,3 +376,29 @@ def test_head_pose_is_checked_and_aligned_before_fpp_and_holder_poses():
     # head_home 은 설정 목표(pan 2015 — 18 틱 앞에서 멈춰 늘 ✗, 10.04 실기 단계 실패)가 아니라 캘리브 자세로 맞추고 검증한다
     home = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "head_home")]
     assert len(home) == 1 and "--home" in home[0] and "head_home.py" not in home[0]
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_rehome_brings_the_arm_back_from_where_a_policy_stopped(side):
+    """10.04 사용자: "tesollo 에는 rehome 이 있는데 여기는 없어서 오른손 정책이 컵을 못 잡고 끝났는데 초기 자세로 못 간다".
+    pd 가 IDLE 이면 그 자리에서 engage(붙들고 있으면 건너뜀) → 손 펴기 → 실측에서 경로 계획(RRT) → 시작점 검사 → 재생 → 정착."""
+    for m, book in ((REAL, REAL_BOOK), (FAKE, FAKE_BOOK)):
+        by = {s.id: s for s in m.stages}
+        assert f"rehome_{side}" in by and by[f"rehome_{side}"].needs == (f"pd_arm_{side}",)
+        cmds = [" ".join(c.argv) for c in _cmds(m, book, f"rehome_{side}")]
+        order = ["--only pd_engage --skip-engaged", "--only pd_hand_release", f"plan_rehome.py --side {side} --robot rh56f1",
+                 "check_path_start.py", "replay_to_pd.py", "--only pd_goto_home"]
+        idx = [next(i for i, a in enumerate(cmds) if o in a) for o in order]
+        assert idx == sorted(idx), cmds
+        assert all("--execute" in cmds[i] for i in (idx[0], idx[1], idx[4], idx[5]))
+        assert f"rehome_{side}.npz" in cmds[idx[3]] and f"rehome_{side}.npz" in cmds[idx[4]]
+    assert by[f"rehome_{side}"].touches_real is False                     # fake
+    assert {s.id: s for s in REAL.stages}[f"rehome_{side}"].touches_real
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_the_lone_aglt_stage_latches_the_cup_at_reset(side):
+    """10.04 실기: 손이 다가가자 FP++ 컵이 1.5~2.6 s 끊겨 '컵 자세가 없다'로 집기 전에 멈췄다 — reset 때 컵을 잡아 두고 쥐면 FK."""
+    for m, book in ((REAL, REAL_BOOK), (FAKE, FAKE_BOOK)):
+        node = next(" ".join(c.argv) for c in _cmds(m, book, f"policy_aglt_{side}") if "rh_aglt_node.py" in " ".join(c.argv))
+        assert "cup_latch:=true" in node and "cup_static:=true" in node

@@ -330,13 +330,29 @@ def safe_tail(runner: Runner, done: set[str], steps: int) -> None:
             run_stage(runner, stage_by_id(sid), steps)
 
 
+ENGAGED = ("RAMPING", "TRACKING")
+
+
+def already_engaged(runner, wait_s: float = 3.0) -> bool:
+    """pd 가 이미 팔을 붙들고 있나(RAMPING · TRACKING) — status 를 wait_s 동안 기다려 본다."""
+    t_end = time.monotonic() + wait_s
+    while runner.pd_status is None and time.monotonic() < t_end:
+        runner.spin(0.1)
+    return (runner.pd_status or {}).get("phase") in ENGAGED
+
+
 def execute(steps: int, service_timeout: float, phase_timeout: float, only: tuple[str, ...] = (), hold_s: float = 0.0,
-            side: str = DEFAULT_SIDE) -> int:
+            side: str = DEFAULT_SIDE, skip_engaged: bool = False) -> int:
     runner = Runner(service_timeout, phase_timeout, side)
     done: set[str] = set()
     rc = 0
     try:
         for stage in selected(only):
+            if stage.id == "pd_engage" and skip_engaged and already_engaged(runner):
+                # 10.04 rehome: 정책이 멈춘 뒤에는 pd 가 그 자리를 붙들고 있다(TRACKING) — engage 는 IDLE 에서만 받는다
+                print(f"\n▶ pd_engage — 이미 {runner.pd_status.get('phase')} — 건너뛴다(지금 자리를 붙들고 있다)")
+                done.add(stage.id)
+                continue
             if not run_stage(runner, stage, steps):
                 rc = 2
                 break
@@ -374,6 +390,8 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     ap.add_argument("--phase-timeout", type=float, default=DEFAULT_PHASE_TIMEOUT)
     ap.add_argument("--only", default="", help="쉼표로 단계 id — 그 단계만 (예: pd_engage). 성공하면 engage 를 유지한다")
     ap.add_argument("--hold-s", type=float, default=0.0, help="pd_engage 뒤 제자리 유지 시간 [s] — 그동안 HOLD 로 가면 실패")
+    ap.add_argument("--skip-engaged", action="store_true",
+                    help="pd 가 이미 RAMPING · TRACKING 이면 pd_engage 를 건너뛴다(rehome — 정책이 멈춘 자리를 pd 가 붙들고 있을 때)")
     return ap.parse_args(argv)
 
 
@@ -403,7 +421,8 @@ def main(argv: list[str] | None = None) -> int:
     if missing:
         print(f"\n✗ 실기 단계 승인이 없다 — --approve {' --approve '.join(missing)}", file=sys.stderr)
         return 3
-    return execute(args.steps, args.service_timeout, args.phase_timeout, only, args.hold_s, args.side)
+    return execute(args.steps, args.service_timeout, args.phase_timeout, only, args.hold_s, args.side,
+                   skip_engaged=args.skip_engaged)
 
 
 if __name__ == "__main__":

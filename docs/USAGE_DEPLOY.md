@@ -126,6 +126,10 @@ deploy/s2r_console/tools/install_desktop_entry.sh               # 프로그램 �
 - **에피소드(정책 잇기, 10.04)**: 미션 단계 `episode_<이름>` 이 정책 노드들과 `episode_runner_node` 를 띄우고, 에피소드 패널의
   [다음](구분 실행 — 노드마다 이름 입력) · [연속 실행](`episode:<이름>` 한 번)으로 진행한다. 정지 바의 '에피소드 정지'도 실행기를
   멈춘다. 정의 · 실패 → 복구 표 · fake 리허설은 [EPISODE_FRAMEWORK.md](EPISODE_FRAMEWORK.md).
+- **RH56F1 정책 뒤 되돌아오기(10.04)**: 단독 정책 단계(`policy_aglt_<팔>` 등)가 멈춘 자리에서 `rehome_<팔>` — pd 가 IDLE 이면
+  그 자리에서 engage(붙들고 있으면 건너뜀) → 손 펴기 → 실측에서 경로 계획(직선이 막히면 RRT) → 시작점 검사 → 재생 → 홈 정착.
+  그다음 정책을 다시 돌리거나 `return_<팔>`(홈 → 차렷). `home_<팔>` 은 차렷에서만 출발한다(저장 경로).
+  단독 aglt 는 reset 때 FP++ 컵을 잡아 두고(`cup_latch`) 쥐면 손바닥 FK 로 — 손이 컵을 가려 FP++ 가 끊겨도 멈추지 않는다.
 
 ## 6. 인지 — 카메라·FP++ 는 vision-3090 에서 돈다
 

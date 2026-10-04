@@ -141,6 +141,13 @@ def _stages(kind: str) -> list[dict]:
                    "artifacts": [f"place_{s}", f"robot_{s}", "contract"],
                    "title": f"[{s}] rh_place 정책 — 쥔 컵을 컵홀더 자리에 내려놓고 손을 편 뒤 팔을 시작 관절로(놓음 5 스텝 → "
                             "스크립트 45 스텝 → 스스로 끝). 정책 노드 → reset → start → 관찰"})
+    for s in SIDES:
+        st.append({"id": f"rehome_{s}", "group": "policy", "lane": f"arm_{s}", "skippable": True, "touches_real": real,
+                   "needs": [f"pd_arm_{s}"],
+                   "needs_why": "pd 가 떠 있어야 경로를 재생한다(IDLE 이면 지금 자리에서 engage)",
+                   "artifacts": ["contract", f"robot_{s}"],
+                   "title": f"[{s}] 정책 시작 자세(홈)로 되돌아오기 — 손 먼저 펴기 → 실측에서 경로 계획(직선이 막히면 RRT) → 재생 → 정착. "
+                            "정책이 멈춘 자리에서 다시 정책 · return · 에피소드로(10.04 사용자: DG-5F 처럼 rehome)"})
     for name in EPISODES:
         ep = _episode(name)
         sides = sorted({b.side for b in ep.policies.values()})
@@ -279,6 +286,8 @@ def _run(kind: str) -> dict:
                   "-r", f"__node:=rh_aglt_node_{s}", "-p", f"ns:={s}",
                   "-p", f"contract:={{artifact:aglt_{s}}}", "-p", f"robot:={{artifact:robot_{s}}}", "-p", "device:=cpu",
                   "-p", f"cup_topic:=/objects/{REAL_CUP if real else 'cup_' + cup}/pose",
+                  # ★10.04 실기: 손이 다가가자 FP++ 가 1.5~2.6 s 끊겨 집기 전에 멈췄다 — reset 때 컵을 잡아 두고(정지 컵) 쥐면 FK
+                  "-p", "cup_latch:=true", "-p", "cup_static:=true",
                   "-p", f"max_episode_s:={{policy:aglt_{s}.max_episode_s}}"],
                  background=True),
             _cmd(f"[{s}] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + (0, 0, 0.14)",
@@ -289,6 +298,31 @@ def _run(kind: str) -> dict:
             _cmd("episode stop — pd 가 그 자세 · 손 쥠을 붙잡는다", ["python3", f"{PC}/tools/trigger.py", "episode/stop", "--episode-ns", s],
                  execute_args=["--execute"]),
             _cmd("정책 노드 정지", stop=[f"policy_aglt_{s}#1"]),
+        ]
+        npz = f"{{repo}}/logs/policy_control/rehome_{s}.npz"
+        p = s[0]
+        run[f"rehome_{s}"] = [
+            _cmd(f"★[{s}] 손에 컵이 있으면 사람이 받아 든다(다음 스텝이 손을 편다) · 이 팔 · 손 주변과 경로(테이블 앞 · 몸통 옆)가 "
+                 "비어 있는가. 정책이 멈춘 자리 → 정책 시작 자세(홈)로 간다(최대 0.1 rad/s, 약 20~40 s)" if real else "fake — 확인만",
+                 ["bash", "-lc", "true"], manual=True),
+            _cmd(f"[{s}] pd 가 IDLE 이면 지금 자리에서 engage — 이미 붙들고 있으면(정책 뒤 TRACKING) 건너뜀",
+                 ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_engage", "--skip-engaged", "--hold-s", "2"],
+                 execute_args=["--execute", "--approve", "pd_engage"]),
+            _cmd(f"[{s}] 손을 편다(pd/hand_release — 팔은 제자리) — 쥔 컵을 놓는다",
+                 ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_hand_release", "--service-timeout", "15"],
+                 execute_args=["--execute", "--approve", "pd_hand_release"]),
+            _cmd(f"[{s}] 지금 자세 → 정책 시작 자세 경로를 실측에서 계획 — 편 손 · 테이블 · 몸통 · 반대 팔(여유 2 cm), 직선이 막히면 RRT. "
+                 "곧장 goto_home 은 손끝이 상판을 지날 수 있다(09.28)",
+                 ["python3", f"{PC}/tools/plan_rehome.py", "--side", s, "--robot", "rh56f1", "--out", npz]),
+            _cmd(f"[{s}] 경로 시작점 = 지금 자세인가(0.05 rad) · 경로가 지금 계약으로 만든 것인가",
+                 ["python3", f"{PC}/tools/check_path_start.py", "--npz", npz, "--contract", "{artifact:contract}"]),
+            _cmd(f"[{s}] 경로 재생 → 정책 시작 자세 — 끝나면 episode stop 으로 pd 가 그 자세를 붙든다",
+                 ["python3", f"{PC}/tools/replay_to_pd.py", "--npz", npz,
+                  "--joints", ",".join(f"{p}_aj_{i}" for i in range(1, 8)), "--rate-scale", "1.0"],
+                 execute_args=["--execute"]),
+            _cmd(f"[{s}] 정책 시작 자세에서 정착 — 이제 policy_aglt_{s} · return_{s} · 에피소드를 다시 돌릴 수 있다",
+                 ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_goto_home", "--service-timeout", "45"],
+                 execute_args=["--execute", "--approve", "pd_goto_home"]),
         ]
         hid = PLACE_HOLDER[s]
         run[f"policy_place_{s}"] = ([] if real else [
@@ -483,7 +517,7 @@ def _return(s: str) -> list[dict]:
     joints = ",".join(f"{s[0]}_aj_{i}" for i in range(1, 8))
     ctl = lambda only, *extra: ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", only, *extra]  # noqa: E731
     return [
-        _cmd(f"★[{s}] 팔이 홈 근처에 있고(정책이 멀리 끌고 갔으면 먼저 홈으로) 손에 컵이 없는가 · 경로 주변이 비어 있는가. "
+        _cmd(f"★[{s}] 팔이 홈 근처에 있고(정책 뒤면 먼저 rehome_{s} 단계로 홈에) 손에 컵이 없는가 · 경로 주변이 비어 있는가. "
              "홈 정착 → 주먹 → 저장 경로 역재생(약 15 s, 최대 0.3 rad/s) → pd 해제, 끊지 않고 이어 간다", ["bash", "-lc", "true"], manual=True),
         _cmd(f"[{s}] 홈에서 정착 — 남은 오차만(굳은 hold 도 여기서 풀린다)", ctl("pd_goto_home", "--service-timeout", "45"),
              execute_args=["--execute", "--approve", "pd_goto_home"]),
