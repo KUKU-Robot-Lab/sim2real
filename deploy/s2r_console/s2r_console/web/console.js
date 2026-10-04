@@ -356,7 +356,9 @@ function renderBanner(s) {
   const pBridge = !br.enabled ? `<div class="pill off"><small>브리지</small><b>꺼짐</b></div>`
     : br.up ? `<div class="pill good"><small>브리지 · 구독 전용</small><b>도메인 ${esc(br.domain)}</b></div>`
       : `<div class="pill warn"><small>브리지</small><b>끊김</b></div>`;
-  const ep = s.episode ? `#${esc(s.episode.episode)} ${esc(s.episode.event)}` : "—";
+  // 에피소드 실행기가 떠 있으면 그 상태를, 아니면 정책 노드의 episode 이벤트를 보인다
+  const er = s.episode_runner;
+  const ep = er ? `${esc(er.episode)} ${esc(er.phase)}` : s.episode ? `#${esc(s.episode.episode)} ${esc(s.episode.event)}` : "—";
   const m = s.mission;
   put("banner", `<div class="banner-state">${esc(b.state)}</div><div class="banner-reasons">${reasons}</div>
     <div class="pills">${pArmed}${pBridge}
@@ -725,38 +727,118 @@ function renderFpp(s) {
     <dl class="kv fpp-kv">${o.rows.map((r) => `<dt><span class="lamp ${esc(r.tone)}"></span>${esc(r.label)}</dt><dd class="fpp-${esc(r.tone)}">${esc(r.value)}</dd>`).join("")}</dl></div>`).join(""));
 }
 
-// 에피소드 실행기(10.04) — 순서 · 지금 노드 · 손 물체 · 실패/복구. 구분 실행은 [다음] 이 노드마다 이름 입력,
-// 연속 실행은 episode:<이름> 한 번. 정지는 lease 없이 언제나.
+// 에피소드(10.04) — 연결 그림처럼 노드 상자를 순서대로 잇고, 재시도 · 되돌아가기는 피드백 화살표로 그린다(사용자 10.04).
+// 상자 = 노드(순서 번호 · 무엇 · 기대 상태 · 몇 번 돌았나 · 걸린 시간), 실선 = 다음 노드, 주황 점선 = 실패 시 되돌아가는 길.
+// 버튼: [다음](구분 실행 — 노드 이름 입력) · [연속 실행](episode:<이름> 한 번) · [새 에피소드] · ■ 정지(lease 없이).
 const EP_TONE = { READY: "", RUNNING: "warn", SUCCESS: "ok", FAILURE: "bad", STOPPED: "bad" };
+const EP_STATE = { pending: "대기", running: "실행 중", done: "완료", failed: "실패", recovering: "복구 대기", stopped: "정지" };
+let lastEpFlow = null, lastEpWires = "";
+
+function epNodeState(e, n, i) {
+  const r = (e.runs || {})[n.id];
+  if (r && r.state && !(r.state === "done" && i >= e.index && e.phase !== "SUCCESS")) return r.state;
+  return i < e.index ? "done" : "pending";
+}
+
+function epBoxHtml(e, n, i) {
+  const st = epNodeState(e, n, i), r = (e.runs || {})[n.id] || {};
+  const cur = i === e.index && !["SUCCESS", "FAILURE", "STOPPED"].includes(e.phase);
+  const busy = cur && e.busy && st === "running";
+  const att = (e.attempts || {})[n.id];
+  const foot = [r.n ? `${r.n}번 실행` : "", r.s !== undefined && r.s !== null ? `${fmt(r.s, 1)} s` : "",
+                att ? `재시도 ${att}` : "", r.code && r.code !== "COMPLETED" ? r.code : ""].filter(Boolean);
+  return `<div class="epf-box st-${esc(st)}${cur ? " is-current" : ""}" id="epf-box-${esc(n.id)}">
+    <div class="epf-head"><span class="epf-idx" aria-hidden="true">${st === "done" ? "✓" : st === "failed" || st === "stopped" ? "✕" : i + 1}</span>
+      <b>${esc(n.id)}</b><span class="epf-state">${busy ? "⟳ " : ""}${esc(EP_STATE[st] || st)}</span></div>
+    <div class="epf-kind">${esc(n.title)}${n.checkpoint ? ` <span class="epf-cp" title="되돌아갈 수 있는 자리">⚑ ${esc(n.checkpoint)}</span>` : ""}</div>
+    ${(n.lines || []).map((l) => `<div class="epf-line">${esc(l)}</div>`).join("")}
+    ${n.expect ? `<div class="epf-expect">→ ${esc(n.expect)}</div>` : ""}
+    ${foot.length ? `<div class="epf-foot">${foot.map((x) => `<span>${esc(x)}</span>`).join("")}</div>` : ""}</div>`;
+}
+
 function renderEpisode(s) {
   const e = s.episode_runner;
-  $("episode-panel").hidden = !e;
+  $("epf-panel").hidden = !e;
+  lastEpFlow = e && e.flow ? e : null;
   if (!e) return;
   const can = holding() && !e.stale;
-  put("episode-meta", `<span class="badge ${EP_TONE[e.phase] || ""}">${esc(e.phase)}${e.busy ? " · 실행 중" : ""}</span>
+  put("epf-meta", `<span class="badge ${EP_TONE[e.phase] || ""}">${esc(e.phase)}${e.busy ? " · 실행 중" : ""}</span>
     <span class="hint">${esc(e.episode)} · ${esc(e.episode_id)}${e.stale ? " · 상태가 늦다" : ""}</span>`);
-  const nodes = (e.nodes || []).map((n) => `<li class="ep-${esc(n.state)}${n.id === e.node && e.busy ? " ep-busy" : ""}">
-    <b>${esc(n.id)}</b> <span class="hint">${esc(n.type)} ${esc(n.name)}</span></li>`).join("");
-  const w = e.world || {};
-  const objs = Object.entries(w.objects || {}).map(([k, v]) => `${esc(k)}: ${esc(v.at)}`).join(" · ") || "—";
-  const last = e.last && e.last.node ? `<div class="note">${esc(e.last.node)} → <b>${esc(e.last.code)}</b> ${esc(e.last.reason || "")}</div>` : "";
-  const pend = e.pending ? `<div class="note warn">복구 대기: ${esc(e.pending.action)} — ${esc(e.pending.reason)}</div>` : "";
-  const next = e.next_action;
-  const done = ["SUCCESS", "FAILURE", "STOPPED"].includes(e.phase);
-  const btns = `<div class="actions">
+  const next = e.next_action, done = ["SUCCESS", "FAILURE", "STOPPED"].includes(e.phase);
+  put("epf-ctl", `<div class="actions">
     <button class="btn btn-sm btn-real" data-act="ep-next" data-arg="${esc(next || "")}" ${can && next && !e.busy ? "" : "disabled"}
       title="노드 하나(구분 실행) — 이름을 입력해 승인">다음: ${esc(next || "—")}</button>
     <button class="btn btn-sm btn-real" data-act="ep-run" data-arg="episode:${esc(e.episode)}" ${can && !done && !e.busy ? "" : "disabled"}
       title="끝까지(연속 실행) — 승인 한 번, 실패면 정해진 복구 또는 정지">연속 실행</button>
     <button class="btn btn-sm btn-ghost" data-act="ep-reset" ${can && !e.busy ? "" : "disabled"} title="WorldState 처음부터">새 에피소드</button>
-    <button class="btn-stop" data-act="ep-stop" title="실행기 정지 — 정책 노드 episode/stop(pd 가 붙든다) · 재생 중단">■ 에피소드 실행기 정지</button></div>`;
-  const hist = (e.history || []).slice(-8).reverse().map((h) => `<li><span class="hint">${esc(String(h.timestamp || "").slice(11, 19))}</span>
-    ${esc(h.event)} <b>${esc(h.state_id || "")}</b> ${esc(h.result || "")} <span class="hint">${esc(h.termination_reason || "")}</span></li>`).join("");
-  put("episode", `${btns}<ol class="ep-nodes">${nodes}</ol>
-    <dl class="kv"><dt>자세</dt><dd>${esc(w.pose)}</dd><dt>오른손</dt><dd>${esc(w.right_hand)}</dd><dt>왼손</dt><dd>${esc(w.left_hand)}</dd>
-    <dt>진행</dt><dd>${esc((w.task_flags || []).join(", ") || "—")}</dd><dt>물체</dt><dd>${objs}</dd>
-    <dt>재시도</dt><dd>${esc(JSON.stringify(e.attempts || {}))}</dd><dt>기록</dt><dd class="hint">${esc(rel(e.run_dir || ""))}</dd></dl>
+    <button class="btn-stop" data-act="ep-stop" title="실행기 정지 — 정책 노드 episode/stop(pd 가 붙든다) · 재생 중단">■ 에피소드 실행기 정지</button>
+    ${e.auto_approve ? '<span class="hint">auto_approve(fake)</span>' : ""}</div>`);
+  const nodes = (e.flow && e.flow.nodes) || [];
+  put("epf-row", nodes.map((n, i) => epBoxHtml(e, n, i)).join(""));
+  const w = e.world || {};
+  const objs = Object.entries(w.objects || {}).map(([k, v]) => `${esc(k)}: ${esc(v.at)}`).join(" · ") || "—";
+  // 사유가 "policy_timeout — 재시도 2/2 다 씀" 처럼 코드로 시작하면 코드를 한 번만 쓴다
+  const lc = (e.last && e.last.code) || "", lr = String((e.last && e.last.reason) || "");
+  const why = (lc && lr.startsWith(lc) ? lr.slice(lc.length) : lr).replace(/^\s*[—-]\s*/, "").trim();
+  const last = e.last && e.last.node ? `<div class="note${lc && lc !== "none" ? " warn" : ""}">${esc(e.last.node)} → <b>${esc(lc)}</b>${why ? ` — ${esc(why)}` : ""}</div>` : "";
+  const pend = e.pending ? `<div class="note warn">복구 대기: <b>${esc(e.pending.action)}</b> — ${esc(e.pending.reason)} · [다음] 으로 승인</div>` : "";
+  // .events li 는 3열 그리드(시각·점·본문) — 자식을 꼭 3개로 묶는다(ui-pages.md 사고 기록)
+  const hist = (e.history || []).slice(-12).reverse().map((h) => `<li class="ev-episode"><time>${esc(String(h.timestamp || "").slice(11, 19))}</time><span class="ev-dot"></span>
+    <span>${esc(h.event)} <b>${esc(h.state_id || "")}</b> ${esc(h.result || "")} <span class="hint">${esc(h.termination_reason || "")}</span></span></li>`).join("");
+  put("epf-info", `<dl class="kv epf-kv"><dt>자세</dt><dd>${esc(w.pose)}</dd><dt>오른손</dt><dd>${esc(w.right_hand)}</dd>
+    <dt>왼손</dt><dd>${esc(w.left_hand)}</dd><dt>진행</dt><dd>${esc((w.task_flags || []).join(", ") || "—")}</dd>
+    <dt>물체</dt><dd>${objs}</dd><dt>기록</dt><dd class="hint">${esc(rel(e.run_dir || ""))}</dd></dl>
     ${pend}${last}${det("ep-hist", "최근 기록", `<ol class="events">${hist}</ol>`)}`);
+  requestAnimationFrame(drawEpWires);
+}
+
+// 화살표는 상자가 자리를 잡은 뒤에 잰다. 다음 노드 = 오른쪽 변 → 왼쪽 변(실선), 되돌아가기 = 아래로 돌아 앞 상자 밑으로(주황),
+// 같은 노드 다시 = 상자 위 고리(주황). 쓴 피드백은 진하게, 지금 하는 복구는 흐르게.
+const EP_ARROW = ["ok", "live", "mute", "warn"].map((k) => `<marker id="epf-ah-${k}" viewBox="0 0 10 10" refX="9" refY="5"
+  markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="epf-ah-${k}"/></marker>`).join("");
+function drawEpWires() {
+  const e = lastEpFlow, root = $("epf"), svg = $("epf-wires");
+  if (!e || root.offsetParent === null) return;
+  // 위 여백 = 다시 고리 자리, 아래 여백 = 되돌아가기 곡선 수만큼. 재기 전에 정해 둔다(정한 뒤 잰 자리에 그린다)
+  const fbs = e.flow.feedback || [], nBack = fbs.filter((f) => f.kind !== "retry").length;
+  const padT = `${fbs.some((f) => f.kind === "retry") ? 46 : 12}px`, padB = `${nBack ? Math.round(0.75 * (44 + 22 * (nBack - 1)) + 30) : 14}px`;
+  if (root.style.paddingTop !== padT) root.style.paddingTop = padT;
+  if (root.style.paddingBottom !== padB) root.style.paddingBottom = padB;
+  const r0 = root.getBoundingClientRect(), sx = root.scrollLeft;
+  const box = (id) => { const el = document.getElementById(`epf-box-${id}`); return el && el.getBoundingClientRect(); };
+  const nodes = e.flow.nodes, out = [];
+  for (let i = 0; i + 1 < nodes.length; i++) {
+    const a = box(nodes[i].id), b = box(nodes[i + 1].id);
+    if (!a || !b) continue;
+    const y = a.top - r0.top + a.height / 2, x1 = a.right - r0.left + sx + 2, x2 = b.left - r0.left + sx - 3;
+    const sa = epNodeState(e, nodes[i], i), sb = epNodeState(e, nodes[i + 1], i + 1);
+    const cls = sb === "running" ? "active" : sa === "done" && sb !== "pending" ? "done" : sa === "done" ? "ready" : "";
+    const ah = cls === "active" ? "live" : cls === "done" ? "ok" : "mute";
+    out.push(`<path class="ep-wire ${cls}" d="M${x1.toFixed(1)},${y.toFixed(1)} L${x2.toFixed(1)},${y.toFixed(1)}" marker-end="url(#epf-ah-${ah})"/>`);
+  }
+  let below = 0;
+  for (const f of e.flow.feedback || []) {
+    const a = box(f.from), b = box(f.to);
+    if (!a || !b) continue;
+    const r = (e.runs || {})[f.from] || {}, used = (e.attempts || {})[f.from] || 0;
+    const mine = r.recovery === (f.kind === "rollback" ? "rollback_retry" : "retry");
+    const active = r.state === "recovering" && mine, cls = `ep-fb${used && mine ? " used" : ""}${active ? " active" : ""}`;
+    const count = used && mine ? `${used}/${f.max} 사용` : `최대 ${f.max}번`;
+    if (f.kind === "retry") {
+      const yT = a.top - r0.top, xr = a.right - r0.left + sx - 18, xl = a.left - r0.left + sx + 18;
+      out.push(`<path class="${cls}" d="M${xr.toFixed(1)},${yT.toFixed(1)} C${xr.toFixed(1)},${(yT - 30).toFixed(1)} ${xl.toFixed(1)},${(yT - 30).toFixed(1)} ${xl.toFixed(1)},${(yT - 1).toFixed(1)}" marker-end="url(#epf-ah-warn)"/>`);
+      out.push(`<text class="ep-fb-label${used && mine ? " used" : ""}" x="${((xr + xl) / 2).toFixed(1)}" y="${(yT - 26).toFixed(1)}" text-anchor="middle">↻ 인지 갱신 후 다시 · ${count}</text>`);
+      continue;
+    }
+    const h = 44 + 22 * below++;
+    const yA = a.bottom - r0.top, yB = b.bottom - r0.top, xa = a.left - r0.left + sx + a.width / 2, xb = b.left - r0.left + sx + b.width / 2;
+    out.push(`<path class="${cls}" d="M${xa.toFixed(1)},${yA.toFixed(1)} C${xa.toFixed(1)},${(yA + h).toFixed(1)} ${xb.toFixed(1)},${(yB + h).toFixed(1)} ${xb.toFixed(1)},${(yB + 2).toFixed(1)}" marker-end="url(#epf-ah-warn)"/>`);
+    out.push(`<text class="ep-fb-label${used && mine ? " used" : ""}" x="${((xa + xb) / 2).toFixed(1)}" y="${(Math.max(yA, yB) + h * 0.75 + 15).toFixed(1)}" text-anchor="middle">↺ ${esc(f.label)} · ${count}</text>`);
+  }
+  const paths = `<defs>${EP_ARROW}</defs>` + out.join("");
+  svg.setAttribute("width", root.scrollWidth);
+  svg.setAttribute("height", root.scrollHeight);
+  if (paths !== lastEpWires) { lastEpWires = paths; svg.innerHTML = paths; }
 }
 
 function episodeModal(action, want) {
@@ -1098,6 +1180,7 @@ function connect() {
 setInterval(cover, 500);
 setInterval(() => { if (holding()) call("POST", "/api/lease/renew").catch(() => { me.token = ""; }); }, 10000);
 setInterval(pollLog, 1000);
-window.addEventListener("resize", () => { if (S && S.session) drawCharts(S.session.metrics); drawWires(); });
+window.addEventListener("resize", () => { if (S && S.session) drawCharts(S.session.metrics); drawWires(); drawEpWires(); });
 if (window.ResizeObserver) new ResizeObserver(() => drawWires()).observe($("diagram"));   // 글꼴·표 펼침으로 상자가 밀려도 전선이 따라온다
+if (window.ResizeObserver) new ResizeObserver(() => drawEpWires()).observe($("epf"));   // 에피소드 상자가 늘어나도 화살표가 따라온다
 refresh().then(connect);

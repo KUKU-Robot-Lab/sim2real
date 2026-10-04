@@ -414,11 +414,45 @@ table.ptable tr.off td { color: var(--faint); }
 .pick-panel > details { padding: 0 14px 12px; }
 .robotmod { padding: 6px 12px 10px; }
 
-/* 에피소드 실행기(10.04) */
-.ep-nodes { margin: 8px 12px; padding-left: 18px; font-size: 13px; }
-.ep-nodes li { padding: 2px 0; }
-.ep-nodes li.ep-done { color: var(--ok, #3fb950); }
-.ep-nodes li.ep-current { font-weight: 600; }
-.ep-nodes li.ep-busy::after { content: " ⟳"; }
-.ep-nodes li.ep-pending { opacity: .6; }
+/* 에피소드 흐름(10.04) — 연결 그림과 같은 상자 · 선, 피드백은 주황 */
+.epf-panel { grid-column: 1 / -1; }
+.epf-ctl { padding: 0 12px; }
+/* 위 · 아래 여백은 drawEpWires 가 피드백 화살표 수로 정한다 */
+.epf { position: relative; overflow-x: auto; padding: 12px 16px 14px; }
+.epf-wires { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 0; overflow: visible; }
+.epf-row { position: relative; z-index: 1; display: flex; align-items: stretch; gap: 52px; min-width: min-content; }
+.epf-box { flex: 1 0 196px; max-width: 264px; border: 1px solid var(--line); border-left: 3px solid var(--mute); border-radius: 6px;
+           padding: 7px 9px; background: var(--panel-2); font-size: 12px; }
+.epf-box.st-done { border-left-color: var(--ok); }
+.epf-box.st-running { border-left-color: var(--live); box-shadow: 0 0 0 1px var(--live), 0 0 14px rgba(77,163,255,.35); }
+.epf-box.st-failed, .epf-box.st-stopped { border-left-color: var(--bad); box-shadow: 0 0 0 1px rgba(255,93,82,.6); }
+.epf-box.st-recovering { border-left-color: var(--warn); box-shadow: 0 0 0 1px rgba(227,160,8,.6); }
+.epf-box.st-pending { opacity: .78; }
+.epf-box.is-current { outline: 1px dashed var(--line-2); outline-offset: 3px; }
+.epf-head { display: flex; align-items: center; gap: 6px; }
+.epf-head b { flex: 1 1 auto; min-width: 0; font-size: 12.5px; overflow-wrap: anywhere; }
+.epf-idx { flex: 0 0 auto; width: 19px; height: 19px; border-radius: 50%; display: inline-grid; place-items: center;
+           font: 600 11px var(--mono); background: var(--line-2); color: var(--text); }
+.st-done .epf-idx { background: var(--ok); color: #0d1117; } .st-running .epf-idx { background: var(--live); color: #0d1117; }
+.st-failed .epf-idx, .st-stopped .epf-idx { background: var(--bad); color: #0d1117; } .st-recovering .epf-idx { background: var(--warn); color: #0d1117; }
+.epf-state { font: 11px var(--mono); color: var(--dim); white-space: nowrap; }
+.st-running .epf-state { color: var(--live); } .st-failed .epf-state, .st-stopped .epf-state { color: var(--bad); }
+.st-recovering .epf-state { color: var(--warn); } .st-done .epf-state { color: var(--ok); }
+.epf-kind { color: var(--faint); font: 11px var(--mono); margin-top: 3px; }
+.epf-cp { color: var(--live); white-space: nowrap; }
+.epf-line { color: var(--dim); font: 11px var(--mono); margin-top: 1px; overflow-wrap: anywhere; }
+.epf-expect { color: var(--text); font: 11px var(--mono); margin-top: 5px; padding-top: 4px; border-top: 1px solid var(--line); }
+.epf-foot { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 4px; font: 10.5px var(--mono); color: var(--faint); }
+.ep-wire { fill: none; stroke: var(--mute); stroke-width: 1.6; }
+.ep-wire.ready { stroke: var(--dim); } .ep-wire.done { stroke: var(--ok); }
+.ep-wire.active { stroke: var(--live); stroke-dasharray: 5 7; animation: dg-flow .7s linear infinite; }
+.ep-fb { fill: none; stroke: var(--warn); stroke-width: 1.4; stroke-dasharray: 4 5; opacity: .5; }
+.ep-fb.used { opacity: 1; stroke-dasharray: none; stroke-width: 2; }
+.ep-fb.active { opacity: 1; stroke-dasharray: 5 7; animation: dg-flow .7s linear infinite; }
+.ep-fb-label { fill: var(--warn); font: 11px var(--sans); opacity: .75;
+               paint-order: stroke; stroke: var(--panel); stroke-width: 4px; stroke-linejoin: round; }
+.ep-fb-label.used { opacity: 1; font-weight: 600; }
+.epf-ah-ok { fill: var(--ok); } .epf-ah-live { fill: var(--live); } .epf-ah-mute { fill: var(--mute); } .epf-ah-warn { fill: var(--warn); }
+.epf-info { padding: 0 12px 10px; }
+.epf-kv { grid-template-columns: max-content 1fr max-content 1fr max-content 1fr; }
 .note.warn { border-left: 3px solid #e3a008; }

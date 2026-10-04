@@ -24,6 +24,7 @@ from typing import Callable, Mapping, Protocol
 
 from policy_control.episode_failure import (F, FailureCode, FailureDetector, NodeResult, Recovery, RecoveryManager,
                                             ROLLBACK, SAFE_STOP)
+from policy_control.episode_flow import flow_of
 from policy_control.episode_spec import EMPTY, Episode, Node
 from policy_control.episode_world import World
 
@@ -75,7 +76,17 @@ class EpisodeManager:
     last: dict = field(default_factory=dict)            # 마지막 노드 결과 요약(상황판)
     history: list = field(default_factory=list)
     pending: tuple | None = None                        # 구분 실행: 승인을 기다리는 복구 (node, Recovery)
+    runs: dict = field(default_factory=dict)            # 노드 id → {state, n(실행 횟수), s(마지막 걸린 시간), code} — 흐름 그림
+    flow: dict = field(default_factory=dict)            # 흐름 그림의 고정 부분(episode_flow.flow_of)
     _auto: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.flow:
+            self.flow = flow_of(self.ep)
+
+    def _mark(self, node_id: str, state: str, **kw) -> None:
+        prev = self.runs.get(node_id, {"n": 0})
+        self.runs[node_id] = {**prev, "state": state, **kw}
 
     # ---------------------------------------------------------------- 공개
     @property
@@ -121,6 +132,8 @@ class EpisodeManager:
 
     def stop(self, reason: str = "operator stop") -> str:
         self.executor.safe_stop(reason)
+        if self.node is not None and self.runs.get(self.node.id, {}).get("state") == "running":
+            self._mark(self.node.id, "stopped")
         self.status = STOPPED
         self._log("stop", self.node, termination_reason=reason)
         return self.status
@@ -134,7 +147,7 @@ class EpisodeManager:
                 "attempts": dict(self.attempts), "checkpoints": sorted(self.checkpoints), "last": dict(self.last),
                 "pending": None if self.pending is None else {"node": self.pending[0].id, "action": self.pending[1].action,
                                                               "reason": self.pending[1].reason},
-                "next_action": self.next_action(),
+                "next_action": self.next_action(), "flow": self.flow, "runs": {k: dict(v) for k, v in self.runs.items()},
                 "history": self.history[-20:]}
 
     # ---------------------------------------------------------------- 내부
@@ -145,6 +158,7 @@ class EpisodeManager:
             return self.status
         if node.type == "terminal":
             self.status = SUCCESS if (node.result or SUCCESS) == SUCCESS else FAILURE
+            self._mark(node.id, "done" if self.status == SUCCESS else "failed", n=1)
             self._log("terminal", node, result=self.status)
             self.index += 1
             return self.status
@@ -152,12 +166,14 @@ class EpisodeManager:
             return self._declined(node, node.id)
         self.status = RUNNING
         t0, start = time.monotonic(), _now()
+        self._mark(node.id, "running", n=self.runs.get(node.id, {"n": 0})["n"] + 1)
         self._log("enter", node, start_time=start)
         before = self.world
         self.world = self.world.running() if node.type in ("policy", "parallel_policy") else self.world
         results, located = self._execute(node, before)
         if self.status == STOPPED:                       # 실행 중에 stop — 결과는 남기고 더 나가지 않는다
             self.world = before
+            self._mark(node.id, "stopped", s=round(time.monotonic() - t0, 2))
             self._log("stopped", node, start_time=start, end_time=_now(),
                       termination_reason="; ".join(r.reason for r in results if r.reason))
             return self.status
@@ -168,6 +184,7 @@ class EpisodeManager:
                      "results": [{"role": r.role, "status": r.status, "reason": r.reason, "signals": dict(r.signals)}
                                  for r in results]}
         if code is F.NONE:
+            self._mark(node.id, "done", s=round(dur, 2), code="COMPLETED")
             self.world = self._after_success(node, before, located)
             if node.checkpoint:
                 self.checkpoints[node.checkpoint] = {"world": self.world, "joints": self.executor.joints(), "node": node.id,
@@ -178,6 +195,7 @@ class EpisodeManager:
             self.status = READY if self.node is not None else SUCCESS
             return self.status
         self.world = before
+        self._mark(node.id, "failed", s=round(dur, 2), code=code.value)
         self._log("failure", node, start_time=start, end_time=_now(), duration=round(dur, 3), result=code.value,
                   termination_reason=reason, failed_role=who)
         return self._recover(node, code)
@@ -228,6 +246,7 @@ class EpisodeManager:
             return self._fail(node, code, rec.reason)
         if not self._auto:                              # 구분 실행: 다음 명령(step)이 승인받고 복구한다
             self.pending = (node, rec)
+            self._mark(node.id, "recovering", recovery=rec.action)
             self.status = READY
             self._log("recovery_pending", node, result=rec.action, termination_reason=rec.reason)
             return self.status
@@ -241,10 +260,13 @@ class EpisodeManager:
             if res.status != "completed":
                 code = F.CONTROLLER_ERROR if res.signals.get("pd_fault") else F.UNKNOWN
                 return self._fail(node, code, f"복구 준비 {pre} 실패: {res.reason}")
+        self._mark(node.id, "recovering", recovery=rec.action)
         if rec.action == ROLLBACK:
             cp = self.checkpoints[rec.checkpoint]
             back = self.ep.nodes[self.ep.node_index(cp["node"])]
+            self._mark(back.id, "running", n=self.runs.get(back.id, {"n": 0})["n"] + 1)
             res = self.executor.run_trajectory(back, self.ep.trajectories[back.name], self.world)
+            self._mark(back.id, "done" if res.status == "completed" else "failed", s=round(res.duration_s, 2))
             if res.status != "completed":
                 return self._fail(node, F.POSE_MISMATCH, f"{rec.checkpoint} 로 못 돌아갔다: {res.reason}")
             self.world = World(pose=cp["world"].pose, hands=self.world.hands, flags=self.world.flags,

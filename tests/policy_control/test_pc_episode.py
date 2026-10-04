@@ -334,3 +334,36 @@ def test_the_plan_tool_refuses_a_real_run_without_the_holder_file(tmp_path, monk
     from policy_control import policy_registry as R
     if all(e.ok for e in R.scan(REPO / "deploy" / "policies", deep=False)):
         assert rc == 0
+
+
+# ---------------------------------------------------------------- 흐름 그림(상황판)
+def test_the_flow_draws_the_grasp_retry_as_a_feedback_back_to_the_empty_handed_home():
+    """10.04 사용자: 상황판이 연결창처럼 순서대로, 두 번 반복하는 부분은 피드백 연결처럼."""
+    from policy_control.episode_flow import flow_of
+    f = flow_of(_ep())
+    assert [n["id"] for n in f["nodes"]] == ["go_home_start", "scene", "pick_cup", "place_cup", "go_home_end", "done"]
+    back = [e for e in f["feedback"] if e["kind"] == "rollback"]
+    assert back == [{"from": "pick_cup", "to": "go_home_start", "kind": "rollback", "max": 2, "label": back[0]["label"]}]
+    assert not any(e["from"] == "place_cup" for e in f["feedback"])            # 놓기는 재시도 0 — 실패면 정지
+    pick = next(n for n in f["nodes"] if n["id"] == "pick_cup")
+    assert "right_rh_aglt_cyl60g" in " ".join(pick["lines"]) and "SETTING" in pick["expect"]
+    assert next(n for n in f["nodes"] if n["id"] == "go_home_start")["checkpoint"] == "HOME_START"
+
+
+def test_no_feedback_back_home_while_a_hand_holds_a_cup():
+    """bead_mix 의 두 번째 집기(왼손이 RED 를 든 채) — 빈손 홈 checkpoint 와 손이 달라 되돌아가기 화살표가 그 checkpoint 로만."""
+    from policy_control.episode_flow import flow_of
+    f = flow_of(_ep("bead_mix_episode"))
+    back = {e["from"]: e["to"] for e in f["feedback"] if e["kind"] == "rollback"}
+    assert back["pick_red_blue"] == "go_home_start"
+    assert back["pick_green"] == "return_home_after_blue"                      # 왼손 RED · 오른손 빈손인 홈
+
+
+def test_the_view_carries_the_flow_and_what_happened_at_each_node():
+    ep = _ep()
+    m = EpisodeManager(ep, FakeExecutor(ep, inject={"pick_cup": [F.GRASP_FAILED_RIGHT]}), approve=_yes())
+    m.run()
+    v = m.view()
+    assert v["flow"]["nodes"][0]["id"] == "go_home_start"
+    assert v["runs"]["pick_cup"]["n"] == 2 and v["runs"]["pick_cup"]["state"] == "done"
+    assert v["runs"]["place_cup"]["state"] == "done" and v["runs"]["go_home_start"]["n"] == 2   # 되돌아가기도 센다
