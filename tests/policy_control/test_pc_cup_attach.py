@@ -215,3 +215,33 @@ def test_a_release_after_attaching_is_counted_for_the_episode_runner():
     assert c.source == "live" and c.as_dict()["releases"] == 1
     c.reset()
     assert c.as_dict()["releases"] == 0
+
+
+def _run_static(cfg: AttachCfg, w: _World, until: float = 2.0):
+    """에피소드 snapshot 재발행: 값은 닿기 전 컵 자리 그대로, stamp 는 '지금'(30 Hz 재발행)."""
+    snap, _ = w.cup_true(0.0)
+    c, t, attached_at, out = CupAttach(cfg), 0.0, None, None
+    while t < until:
+        p, R = w.palm(t)
+        out = c.step(t >= w.grasp_t, t, p, R, (snap, Q0, t))
+        if c.source == "attached" and attached_at is None:
+            attached_at = t
+        t += DT
+    p, R = w.palm(t - DT)
+    return c, attached_at, out, p + R @ w.cup_rel
+
+
+def test_static_snapshot_attaches_with_the_palm_at_the_grasp_start():
+    """10.04 사용자 "잡을 때 위치를 기준으로 핸드와 함께 FK": 정지 기록은 파지 시작 시각의 손바닥과 짝짓는다."""
+    w = _World()
+    c, attached_at, out, truth = _run_static(AttachCfg(static_source=True), w)
+    assert attached_at is not None and w.grasp_t + 0.1 - 1e-9 <= attached_at <= w.grasp_t + 0.1 + 2 * DT
+    assert np.linalg.norm(out[0] - truth) < 0.002                     # 들어 올린 손을 따라간다
+    assert c.check_n == 0 and c.as_dict()["static"] is True          # 정지 기록과는 비교하지 않는다
+
+
+def test_the_frame_time_rule_on_a_static_snapshot_would_be_off_by_the_lift():
+    """비교: 정지 기록을 프레임 시각(= 지금) 규칙으로 붙이면 파지 뒤 100 ms 동안 든 만큼(0.7 m/s → 7 cm) 틀린다."""
+    w = _World()
+    _, _, out, truth = _run_static(AttachCfg(), w)
+    assert np.linalg.norm(out[0] - truth) > 0.05

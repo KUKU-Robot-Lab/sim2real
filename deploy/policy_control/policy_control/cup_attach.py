@@ -17,6 +17,10 @@
              '지금' 손바닥에 붙이면 쥐자마자 들어 올린 손과 어긋난다(sim 첫 기동 77 mm · trace 100 mm 넘게) — 손바닥 FK 를
              history_s 동안 기록해 두고 프레임 시각에서 보간한다. 그 전까지(대개 파지 뒤 약 0.4 s)는 FP++ 를 그대로 쓴다.
              붙인 뒤 컵 = 지금 손바닥 FK ∘ 상대 자세. FP++ 는 보지 않는다(가려져 흐르는 값을 받지 않는다 — 09.28 joint 계열 교훈).
+  static     컵 자세가 정지 기록이면(에피소드 snapshot 재발행 /episode/objects/<이름>/pose — stamp 가 '지금'이고 값은 닿기 전
+             자리) 프레임 시각 짝짓기가 틀린다: 파지 뒤 100 ms 에 '지금' 손바닥과 짝지으면 그 사이 든 만큼 어긋난다.
+             static_source=True 면 파지가 attach_after_s 이어진 뒤 **파지 시작 시각**의 손바닥 FK 와 기록 자세로 붙인다
+             (컵은 닿기 전 자리 그대로 — 10.04 사용자 "잡을 때 위치를 기준으로 핸드와 함께 FK"). 붙은 뒤 비교(check)는 하지 않는다.
   released   grasped 가 release_steps(15 = 250 ms) 스텝 연속 끊기면 떼고 FP++ 로 돌아간다. 다시 쥐면 처음부터.
 시각: 손바닥 = 팔 상태 메시지 stamp, 컵 = FP++ 영상 stamp(RealSense). 둘 다 시스템 시계 초다.
 붙인 뒤 컵이 손에서 미끄러져도 이 추정은 모른다 — status 의 cup.source 가 'attached' 인지 운영자가 본다.
@@ -44,6 +48,7 @@ class AttachCfg:
     history_s: float = 0.8        # 손바닥 FK 기록 — FP++ 지연(최대 약 0.4 s)보다 넉넉히
     max_extrapolate_s: float = 0.02
     max_palm_dist_m: float = 0.0  # >0: 손바닥–컵 원점(FP++) 거리도 이 안이어야 쥔 것으로(오탐 대비, 기본 끔 — sim 쥔 상태 4~5 cm)
+    static_source: bool = False   # 컵 자세가 정지 기록(에피소드 snapshot 재발행) — 파지 시작 시각 FK 로 붙인다(위 static)
 
 
 def grasp_flag(tactile_n, force_n: float) -> bool:
@@ -174,7 +179,8 @@ class CupAttach:
             if live is None or np.linalg.norm(np.asarray(live[0], float) - np.asarray(palm_pos, float)) > self.cfg.max_palm_dist_m:
                 grasped = False                      # 컵이 손바닥 근처에 없다 — 손가락끼리 · 관성 오탐
         if self.attached:
-            self._check(live)
+            if not self.cfg.static_source:            # 정지 기록은 손과 같이 움직이지 않는다 — 비교가 뜻이 없다
+                self._check(live)
             self.off_steps = 0 if grasped else self.off_steps + 1
             if self.off_steps >= self.cfg.release_steps:
                 hist, last = list(self._hist), (self.attach_steps, self.check_n, self.check_last_m, self.check_max_m)
@@ -191,22 +197,34 @@ class CupAttach:
         if self.grasp_since is None:
             self.grasp_since = float(t)
         self.grasp_steps += 1
+        if self.cfg.static_source:
+            if live is not None and float(t) >= self.grasp_since + self.cfg.attach_after_s:
+                at = self.palm_at(self.grasp_since)
+                if at is not None:
+                    return self._attach(at, live, palm_pos, palm_R)
+            return live
         if live is not None and len(live) > 2 and live[2] is not None \
                 and float(live[2]) >= self.grasp_since + self.cfg.attach_after_s:
             at = self.palm_at(float(live[2]))
             if at is not None:
-                p0, R0 = at
-                self._rel_p = R0.T @ (np.asarray(live[0], float) - p0)
-                self._rel_R = R0.T @ quat_to_matrix(live[1])
-                self.attached, self.off_steps = True, 0
-                self.attach_steps = self.grasp_steps
-                self.check_n, self.check_last_m, self.check_max_m, self._check_stamp = 0, None, None, live[2]
-                return self._from_palm(palm_pos, palm_R)
+                return self._attach(at, live, palm_pos, palm_R)
         return live
+
+    def _attach(self, at, live, palm_pos, palm_R):
+        """상대 자세 = (짝지은 시각의 손바닥)⁻¹ ∘ 컵 → 붙이고 지금 손바닥 FK 로 컵을 돌려준다."""
+        p0, R0 = at
+        self._rel_p = R0.T @ (np.asarray(live[0], float) - p0)
+        self._rel_R = R0.T @ quat_to_matrix(live[1])
+        self.attached, self.off_steps = True, 0
+        self.attach_steps = self.grasp_steps
+        stamp = live[2] if len(live) > 2 else None
+        self.check_n, self.check_last_m, self.check_max_m, self._check_stamp = 0, None, None, stamp
+        return self._from_palm(palm_pos, palm_R)
 
     def as_dict(self) -> dict:
         r = lambda v: None if v is None else round(float(v), 4)  # noqa: E731
-        return {"source": self.source, "grasp_since": self.grasp_since, "grasp_steps": self.grasp_steps,
+        return {"source": self.source, "static": self.cfg.static_source, "grasp_since": self.grasp_since,
+                "grasp_steps": self.grasp_steps,
                 "off_steps": self.off_steps, "attach_steps": self.attach_steps, "releases": self.releases,
                 "check_n": self.check_n, "check_last_m": r(self.check_last_m), "check_max_m": r(self.check_max_m),
                 "rel_pos": None if self._rel_p is None else [round(float(v), 4) for v in self._rel_p]}

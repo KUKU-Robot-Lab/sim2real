@@ -399,11 +399,14 @@ def _episode_run(name: str, real: bool) -> list:
         robot = f"{{artifact:robot_{b.side}}}"
         if b.kind == "aglt":
             obj = next((j.target_object for n in ep.nodes for j in n.jobs if j.role == role and j.target_object), first_obj)
-            cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — SETTING 도달에 스스로 끝남 · 컵 = snapshot 재발행",
+            # 컵 = snapshot 정지 기록 재발행 → 붙이기는 파지 시작 시각의 손바닥 FK 로(cup_static, cup_attach static)
+            cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — SETTING 도달에 스스로 끝남 · 컵 = snapshot 재발행"
+                             " · 쥐면 파지 시작 자세로 손에 붙임",
                              ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_aglt_node.py", "--ros-args",
                               "-r", f"__node:=rh_aglt_node_{b.side}", "-p", f"ns:={b.side}", "-p", f"contract:={contract}",
                               "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", "stop_on_target:=true",
-                              "-p", f"cup_topic:={EPISODE_RELAY.format(obj)}", "-p", "max_episode_s:=15.0"], background=True))
+                              "-p", f"cup_topic:={EPISODE_RELAY.format(obj)}", "-p", "cup_static:=true",
+                              "-p", "max_episode_s:=15.0"], background=True))
         elif b.kind == "place":
             src = next((j for n in ep.nodes for j in n.jobs if j.role == role), None)
             obj = src.source_object if src and src.source_object else first_obj

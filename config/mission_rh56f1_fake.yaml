@@ -1557,7 +1557,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(right_rh_aglt_cyl60g) — SETTING 도달에 스스로 끝남 · 컵 = snapshot 재발행'
+  - note: '[right] rh_aglt_r 노드(right_rh_aglt_cyl60g) — SETTING 도달에 스스로 끝남 · 컵 = snapshot 재발행 · 쥐면 파지 시작 자세로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -1576,6 +1576,8 @@ run:
     - stop_on_target:=true
     - -p
     - cup_topic:=/episode/objects/CUP/pose
+    - -p
+    - cup_static:=true
     - -p
     - max_episode_s:=15.0
     background: true
@@ -1674,7 +1676,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[left] rh_aglt_l 노드(left_rh_aglt_cyl60gmir) — SETTING 도달에 스스로 끝남 · 컵 = snapshot 재발행'
+  - note: '[left] rh_aglt_l 노드(left_rh_aglt_cyl60gmir) — SETTING 도달에 스스로 끝남 · 컵 = snapshot 재발행 · 쥐면 파지 시작 자세로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -1693,6 +1695,8 @@ run:
     - stop_on_target:=true
     - -p
     - cup_topic:=/episode/objects/CUP/pose
+    - -p
+    - cup_static:=true
     - -p
     - max_episode_s:=15.0
     background: true

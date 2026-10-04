@@ -294,6 +294,7 @@ class PourFjNode(LeanNodeMixin, Node):
                               ("attach_joint_force_g", AttachCfg.joint_force_g), ("attach_signal", AttachCfg.signal),
                               ("attach_max_palm_dist_m", AttachCfg.max_palm_dist_m),
                               ("attach_after_s", AttachCfg.attach_after_s), ("release_steps", AttachCfg.release_steps),
+                              ("cup_static", AttachCfg.static_source),
                               *((param, topic) for _, param, topic in self.fam.cups)):
             self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
@@ -329,7 +330,9 @@ class PourFjNode(LeanNodeMixin, Node):
         self.attach_cfg = AttachCfg(force_n=float(p("attach_force_n")), joint_force_g=float(p("attach_joint_force_g")),
                                     signal=str(p("attach_signal")), attach_after_s=float(p("attach_after_s")),
                                     max_palm_dist_m=float(p("attach_max_palm_dist_m")),
-                                    release_steps=int(p("release_steps")))
+                                    release_steps=int(p("release_steps")),
+                                    # 에피소드는 컵을 snapshot 정지 기록으로 준다 — 파지 시작 시각 FK 로 붙인다(cup_attach static)
+                                    static_source=bool(p("cup_static")))
         self.attach = {r: CupAttach(self.attach_cfg) for r in self.fam.roles} if bool(p("cup_attach")) else {}
         self._seq, self._gap, self._errors, self._t_start = 0, 0, {}, 0.0
 
