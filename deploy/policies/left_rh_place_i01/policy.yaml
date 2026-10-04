@@ -13,3 +13,5 @@ note: >-
   params/ 는 학습 런 그대로(평가 때 바꾼 홀더 DR 값 아님). 목표 y 구간 −0.06~0 완벽 0.85 · 0~+0.20 완벽 0.851.
   배포는 right_rh_place_i09 note 와 같다(rh_place_contract.json · rh_place_node · policy_place_left). FP++ 지각 · 부착 없이
   학습, 명령 지연 0. hdgp 51013e96.
+  놓음 게이트(release_open_min_rad 0.15) sim 검증(PLACE 10.04): 인계 때 쥔 양 중앙 0.53 rad(0.40~0.64), 놓음 때 연 양 중앙
+  0.334 · 하위 1 % 0.217 — 0.15 미만 0 %. 실기 파지가 덜 쥔 채 넘어오면 '쥔 양 대비 비율' 게이트로 바꾼다.

@@ -14,3 +14,5 @@ note: >-
   미션 단계 policy_place_<팔>. 목표 = 홀더 원점 + 0.060 m, 시작 = pd 가 붙잡은 aglt 마지막 joint_target, 컵은 reset 때
   FP++ 한 장으로 손바닥에 붙인다(학습 attached), 놓음 판정 = 손끝 촉각 < 1 N · 관절 힘 < 300 g(임시) 5 스텝.
   FP++ 지각 · 부착 없이 학습(fpp_enable · fpp_attach_enable false), 명령 지연 0. 홀더 x 0.380 · 목표 홀더 1 · 2.
+  놓음 게이트(release_open_min_rad 0.15) sim 검증(PLACE 10.04, 128 env 결정론): 인계 때 쥔 양 중앙 0.41 rad(0.38~0.46),
+  놓음 때 연 양 중앙 0.257 · 하위 1 % 0.209 — 0.15 미만 0.2~0.4 %. 실기 문턱은 0.25 를 넘기지 않는다(쥔 양 상한).
