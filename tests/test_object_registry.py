@@ -16,7 +16,7 @@ from object_registry import (  # noqa: E402
 
 def test_default_registry_loads_real_objects():
     reg = load_registry(DEFAULT_REGISTRY)
-    assert set(reg.names()) == {"shaker_closed", "cup_big_s100", "aglt_cup_s065", "cup_holder"}
+    assert set(reg.names()) == {"shaker_closed", "cup_big_s100", "aglt_cup_s065", "cyl60", "cup_holder"}
     assert reg.get("shaker_closed").origin_above_bottom_m == pytest.approx(0.0921)
     assert reg.get("shaker_closed").symmetry_axis == (0.0, 0.0, 1.0)
     assert reg.get("cup_big_s100").symmetry_axis == (0.0, 1.0, 0.0)
@@ -104,3 +104,14 @@ def test_cup_holder_fpp_mesh_is_the_marker_stl_in_meters():
     assert np.allclose(obj.bounds, stl.bounds / 1000.0, atol=1e-6)
     assert np.allclose(obj.bounds, np.array(h.aabb), atol=1e-4)
     assert "s2r_meshes" in (repo / "scripts/vision/fpp_up.sh").read_text()
+
+
+def test_cyl60_fpp_mesh_matches_the_sim_cylinder():
+    """10.04 rh_aglt cyl60 정책용 — ⌀60 × 170 mm, 원점 = 중심(바닥 +0.085), 대칭축 z."""
+    import trimesh
+    c = load_registry(DEFAULT_REGISTRY).get("cyl60")
+    assert c.origin_above_bottom_m == pytest.approx(0.085) and c.symmetry_axis == (0.0, 0.0, 1.0)
+    repo = DEFAULT_REGISTRY.parents[1]
+    m = trimesh.load(repo / "assets/meshes" / Path(c.fpp["mesh_path"]).name, force="mesh")
+    assert np.allclose(m.bounds, [[-0.03, -0.03, -0.085], [0.03, 0.03, 0.085]], atol=1e-4)
+    assert np.allclose(m.bounds, np.array(c.aabb), atol=1e-4)

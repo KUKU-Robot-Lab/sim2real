@@ -68,7 +68,7 @@ q*       = clip(q* + Δ, lo, hi)
 | 대기 | 30 스텝, 손은 따른다 | 10 스텝, 편 손 |
 | 노드 | `pour_fj_node.py` | `rh_aglt_node.py` (같은 모듈의 rh_aglt 계열) |
 | 컵 | /objects/cup_src · cup_rcv | 오른팔 cup_src · 왼팔 cup_rcv, 첫 목표 = 리셋 때 컵 + 14 cm, 그 뒤 목표 직접 입력(아래) |
-| 기본 정책(10.01) | both_rh_pourfj_f01 | 오른팔 right_rh_aglt_i10d · 왼팔 left_rh_aglt_i10d(iter_10 ② 실측 지연 적응). 이전 기본 mirror_l5 · i05, i03 은 hold |
+| 기본 정책(10.04) | both_rh_pourfj_f01 | 오른팔 right_rh_aglt_cyl60g · 왼팔 left_rh_aglt_cyl60gmir(cyl60 · FP++ 지각 · 파지 후 부착, T2R Grasping). 실기 컵 cyl60. 이전 기본 i10d(aglt_cup_s065) · mirror_l5 · i05, i03 은 hold |
 
 **양팔 rh_aglt 를 한 세션에서 동시에(09.30):** 정책 노드를 팔마다 `-r __node:=rh_aglt_node_<side> -p ns:=<side>` 로 띄운다 —
 에피소드 서비스 · 토픽 · 관측 · 행동이 `/policy_control/<side>/…` 로 갈리고(`joint_target` 은 공용), pd 는

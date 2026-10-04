@@ -9,8 +9,8 @@
 범위 = 손 연결 · 점검 · 한 축 방향 확인 · 팔 pd(무발행 → 발행) · 홈 · 두 컵 · 양팔 pour_fj 정책 · 정리.
 홈 = hdgp rh_aglt 시작 자세(09.29 사용자 "aglt 보면 home 자세를 수정했어"). 차렷 → 홈은 저장 경로(paths/home_rh56f1_*.npz,
 plan_home_path RRT · RH56F1 자산 충돌 검사 · 편 손/접은 손 둘 다)를 pd 로 재생한다 — 실기 · fake 같은 경로.
-★10.01 인지는 arm4090 안에서(docker FP++ · RealSense · 런처 --host local). 실기 컵은 하나(aglt_cup_s065 — rh_aglt 학습 컵
-shaker_closed_thick × 0.65 의 흰 출력물, 10.01 사용자) — 한 팔 rh_aglt 는 /objects/aglt_cup_s065/pose 를 읽고, 두 컵이 필요한
+★10.01 인지는 arm4090 안에서(docker FP++ · RealSense · 런처 --host local). 실기 컵은 하나(10.04 부터 cyl60 노란 원통 — 그 전 aglt_cup_s065, rh_aglt 학습 컵
+shaker_closed_thick × 0.65 의 흰 출력물, 10.01 사용자) — 한 팔 rh_aglt 는 /objects/<REAL_CUP>/pose 를 읽고, 두 컵이 필요한
 양팔 pour_fj 는 막아 둔다(같은 컵 둘을 FP++ 가 못 가른다 — 색이 다른 두 컵이면 레지스트리 두 항목으로 풀린다).
 카메라 좌표는 고정 외부 파라미터(5090 홈 화면) — 머리를 head_home_rh56f1(5090 과 같은 화면)에 둔 뒤에만 맞다.
 
@@ -35,7 +35,9 @@ PC = "{repo}/deploy/policy_control"
 PROBES = (("index_1", "0.3"), ("middle_1", "0.3"), ("ring_1", "0.3"), ("pinky_1", "0.3"),
           ("thumb_2", "0.15"), ("thumb_1", "-0.3"))
 #: 실기 컵 — FP++ 물체 하나. fake 는 학습 배치의 두 컵(cup_src · cup_rcv)
-REAL_CUP = "aglt_cup_s065"
+#: ★10.04 cyl60(⌀60 × 170 mm 노란 원통, 원점 = 중심) — rh_aglt cyl60g 정책으로 s2r(T2R Grasping, 사용자 승인). 전: aglt_cup_s065
+REAL_CUP = "cyl60"
+REAL_CUP_ORIGIN_Z = 0.085                 # 원점 높이(바닥 위) — 컵 자세 확인 문구
 #: arm4090 머리 카메라 외부 파라미터 — 테이블 CAD 캘리브(scripts/calib/table_cad_extrinsics.py, 10.01 기본 방법)
 CAMERA_EXTRINSICS = "config/global_camera_extrinsics_arm4090.yaml"
 HEADER = {
@@ -205,7 +207,7 @@ def _run(kind: str) -> dict:
               "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
         _cmd(f"카메라 + FP++({REAL_CUP}) 켜기 — 런처가 끝낼 때까지 최대 150 s, 실패하면 이 단계도 실패",
              ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", REAL_CUP, "--wait", "150"]),
-        _cmd(f"★컵 자세 확인 — 테이블 위 컵 원점 z ≈ 0.265(상판 0.205 + 원점 0.0599, ±8 mm) · 기울기 < 3° · "
+        _cmd(f"★컵 자세 확인 — 테이블 위 컵 원점 z ≈ {0.205 + REAL_CUP_ORIGIN_Z:.3f}(상판 0.205 + 원점 {REAL_CUP_ORIGIN_Z}, ±8 mm) · 기울기 < 3° · "
              f"x 0.1~0.4 · |y| 0.1~0.3 인가(어긋나면 head_home 뒤 scripts/calib/table_cad_extrinsics.py)",
              ["bash", "-lc", f"timeout 5 ros2 topic echo --once /objects/{REAL_CUP}/pose geometry_msgs/msg/PoseStamped"],
              manual=True),
@@ -366,8 +368,9 @@ def mission(kind: str) -> dict:
         "robot_bi": f"deploy/policy_control/config/robots/rh56f1_bi_{robot}.yaml",
         # 한 팔 rh_aglt 정책(첫 화면의 '오른팔 · 왼팔' 자리가 바꾼다) — 09.30
         # 10.01 사용자: 기본 = iter_10 ②(실측 지연 적응) i10d 좌우. 이전 기본은 우 mirror_l5 · 좌 i05(09.30).
-        "aglt_right": "deploy/policies/right_rh_aglt_i10d/rh_aglt_contract.json",
-        "aglt_left": "deploy/policies/left_rh_aglt_i10d/rh_aglt_contract.json",
+        # ★10.04 cyl60g(FP++ 지각 · 파지 후 부착으로 학습) — 계약은 i10d 와 체크포인트 외 같아 홈 · 저장 경로는 그대로
+        "aglt_right": "deploy/policies/right_rh_aglt_cyl60g/rh_aglt_contract.json",
+        "aglt_left": "deploy/policies/left_rh_aglt_cyl60gmir/rh_aglt_contract.json",
     }
     if real:
         arts["rh56f1_ports"] = "deploy/policy_control/config/rh56f1_ports.yaml"
