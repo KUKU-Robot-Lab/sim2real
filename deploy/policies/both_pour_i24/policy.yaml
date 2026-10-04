@@ -4,6 +4,8 @@ status: hold             # candidate | verified | deployed | hold
 task: open-short_b_pour_fab
 side: both
 checkpoint: open-short_b_pour_fab.pth
+summary: 'DG-5F short 양팔 붓기 i24 best — 기울기를 116° 로 낮췄지만 hold'
+eval: 'ADR30 64 env env 성공 0.719 · in_target 0.925 · 흘림 중앙 0 · 리시버 떨림 소스의 1.5 배'
 source: 'local:/home/user/rl_ws/our_source/pour_bi_runs_0926/s2r/pour_i24_best'
 reward: reward_gen/pour_bi/iter_24 (사본 reward_fn.py · 본문 커밋 d66e4df5)
 interface: obs 223 · critic 293 · action 18 (팔당 palm 6D 증분 + grip3) · MLP · 60 Hz

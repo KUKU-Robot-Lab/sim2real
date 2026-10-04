@@ -4,6 +4,8 @@ status: hold
 task: open-short_r_grasp_fj_t2r_rand-lstm
 side: right
 checkpoint: fj_rand_i01_best_ep5000.pth
+summary: 'DG-5F 오른팔 grasp_fj_rand i01 best — 계약 없음 · hold'
+eval: '먼 출발 성공 0.85 · 공차 0.019 · 컵 기울기 4.3°'
 note: >-
   09.28 hold — 오른팔 첫 실험은 right_m15_e800(cup_pick 세션 s2r 후보, 사용자 선택)으로 한다. 인터페이스는 같다.
   s2r 후보. 먼 출발 성공 0.85 · 공차 0.019 · 컵 기울기 4.3°. sha256 앞 16자리 e76f9c6079663b61.

@@ -5,6 +5,8 @@ status: candidate        # candidate | verified | deployed | hold
 task: open-short_l_cup_pick-lstm
 side: left
 checkpoint: cup_pick_l_approach_hold_e4280.pth
+summary: 'DG-5F 왼팔 컵 옆 C자 사전파지에서 멈춤(잡지 않음) — 실기 첫 확인용'
+eval: '먼 출발 접근 0.943 · 컵 접촉 0 · 손바닥-컵 간격 0.059 m'
 source: 'local:deploy/policies/left_aglt (nn/cup_pick_l_approach_hold_e4280.pth 하드링크 · params/cup_pick_l_approach_hold_e4280/)'
 reward: reward_gen/cup_pick_l_approach/iter_01/compute_reward.py (접근 · 정지 · 무접촉, 파지 · 들기 항 없음)
 interface: obs 133 · critic 157 · action 26 (팔 7 관절 증분 + 손 19 절대, hand_direct, 13 가동)

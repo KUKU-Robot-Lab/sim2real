@@ -4,6 +4,8 @@ status: candidate        # candidate | verified | deployed | hold
 task: open-short_r_cup_pick-lstm
 side: right
 checkpoint: last_open-short_r_cup_pick-lstm_ep_800_rew_2313.1377.pth
+summary: 'DG-5F 오른팔 컵 집기 · 들기(cup_pick iter_15) — 09.28 실기 첫 오른팔'
+eval: '학습 창 파지 0.967 · 들기 0.959 · 먼 출발 성공 0.827 · 검지 0 · 5지 인벨롭 0'
 source: 'local:/home/user/rl_ws/our_source/cup_pick_runs_0926/runs/right/cp_r_m15'
 reward: reward_gen/cup_pick_r_manip/iter_15/compute_reward.py (사본 reward.py)
 interface: obs 133 · critic 157 · action 26 (팔 7 관절 증분 + 손 19 절대, hand_direct, 13 가동)

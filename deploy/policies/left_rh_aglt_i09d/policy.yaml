@@ -4,6 +4,8 @@ status: candidate        # candidate | verified | deployed | hold
 task: open-rh_l_aglt-lstm
 side: left
 checkpoint: last_open-rh_l_aglt-lstm_ep_3000_rew_2940.748.pth
+summary: 'shaker × 0.65 · 보상 iter_09 · 실측 지연 적응 · 다섯 손가락 파지'
+eval: '지연 켬 · 컵 든 0.98 · 성공 1.19/ep(tol 0.035) · 0.05(tol 0.02) · 컵 기울기 18° · 어깨 j2 한계 0.31'
 source: 'arm4090:~/rl_ws/our_source/policy/aglt_l_i09d_ep3000 (sha256 cd3c0aa9670cb7a1… · params/ · README.md)'
 interface: obs 96 · critic 128 · action 13 (팔 관절 증분 7 · 손 6 — rh56f1_hand 법칙, i05 와 계약 동일)
 deploy:

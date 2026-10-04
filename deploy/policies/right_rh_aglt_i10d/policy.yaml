@@ -4,6 +4,8 @@ status: candidate        # candidate | verified | deployed | hold
 task: open-rh_r_aglt-lstm
 side: right
 checkpoint: last_open-rh_r_aglt-lstm_ep_1400_rew_1483.9092.pth
+summary: 'shaker × 0.65 · 보상 iter_10 · i10 을 실측 지연(팔 9–12 · 손 3–5 스텝)으로 이어 학습(파일 이름 ep_1400 = 이어 학습 합계 2000)'
+eval: '지연 켬 · 컵 든 에피소드 0.94 · 성공 2.40/ep(tol 0.059) · 0.16(tol 0.02) · 손목 j6 한계 0.40~0.48'
 source: 'arm4090:~/rl_ws/our_source/policy/aglt_r_i10d_ep2000 (md5 993287de9400…, 파일명 ep1400 = server 기준, 합계 ep2000)'
 interface: obs 96 · critic 128 · action 13 (팔 관절 증분 7 · 손 6 — rh56f1_hand 법칙, i10 · i09d 와 계약 동일)
 deploy:

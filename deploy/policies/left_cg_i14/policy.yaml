@@ -5,6 +5,8 @@ status: candidate        # candidate | verified | deployed | hold
 task: open-short_l_cup_grasp-lstm
 side: left
 checkpoint: cg_l_i14_e5320.pth
+summary: 'DG-5F 왼팔 인벨롭 그립(iter_14) — 컵 윗부분을 위에서 감싼다'
+eval: 'successes 0.70 · success_ep 0.43(tol 0.1125, 커리큘럼이 안 줄었다)'
 source: 'local:our_source/policy/cg_l_i14 (nn/open-short_l_cup_grasp-lstm.pth = best, e5320 · 하드링크 · params/)'
 reward: reward_gen/cup_grasp_l/iter_14/compute_reward.py (sha256 6d51109c) · 사본 reward/ (trace 용)
 interface: obs 133 · critic 178 · action 26 (팔 7 관절 증분 + 손 19 절대, hand_direct, 13 가동)

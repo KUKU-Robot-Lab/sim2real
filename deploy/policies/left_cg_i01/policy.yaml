@@ -5,6 +5,8 @@ status: candidate        # candidate | verified | deployed | hold
 task: open-short_l_cup_pick-lstm
 side: left
 checkpoint: cg_l_i01_e5802.pth
+summary: 'DG-5F 왼팔 컵 집기 · 들기 · 이송(cup_grasp iter_01) — 09.28 실기'
+eval: '끝 100 epoch 파지 0.75 · 들기 0.70 · 손바닥 접촉 0.65 · 4번 관절 과굽힘 손끝 파지'
 source: 'local:our_source/policy/cg_l_i01 (nn/open-short_l_cup_pick-lstm.pth = best, e5802 · 하드링크 · params/)'
 reward: reward_gen/cup_grasp_l/iter_01/compute_reward.py (md5 aec2166c — 접근 · 파지 · 들기 · 이송 · 유지) · 사본 reward/ (trace 용)
 interface: obs 133 · critic 157 · action 26 (팔 7 관절 증분 + 손 19 절대, hand_direct, 13 가동)

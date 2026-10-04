@@ -176,6 +176,29 @@ def test_a_pour_fj_contract_is_not_taken_for_rh_aglt():
         A.validate(A.RaContract(**{**bad, "sides": {"arm": A.RaSide(**bad["sides"]["arm"])}}))
 
 
+def test_the_cup_geometry_follows_the_object_like_the_training_env():
+    """hdgp rh_aglt_env_cfg.resolve_cfg 와 같은 규칙 — shaker 만 cup_scale 을 받고 원기둥은 실물 크기."""
+    assert A.cup_geometry({"object_name": "shaker", "cup_scale": 0.65}) == pytest.approx((0.056875, 0.059865))
+    assert A.cup_geometry({"cup_scale": 0.65}) == pytest.approx((0.056875, 0.059865))        # 키 없는 옛 런 = shaker
+    assert A.cup_geometry({"object_name": "cyl60", "cup_scale": 0.65}) == pytest.approx((0.085, 0.085))
+    with pytest.raises(A.RhAgltError, match="object_name"):
+        A.cup_geometry({"object_name": "mug", "cup_scale": 0.65})
+
+
+@pytest.mark.parametrize("pid", ["right_rh_aglt_cyl60g", "left_rh_aglt_cyl60gmir"])
+def test_the_cylinder_contracts_carry_the_cylinder_not_the_stale_shaker_dump(pid):
+    """10.04: train.py 는 hydra 가 object_name=cyl60 을 덮은 뒤 · env 가 resolve_cfg 를 다시 부르기 전에 env.yaml 을 덤프한다.
+    덤프의 파생 값(반높이 0.0569 · 원점 높이 0.0599)은 기본 shaker × 0.65 값이고 학습 env 는 cyl60(0.085 · 0.085)으로 돌았다 —
+    계약이 덤프를 믿으면 키포인트가 축으로 2.8 cm 짧고 목표 박스가 2.5 cm 낮다."""
+    run = POL / pid
+    env = yaml.unsafe_load((run / "params" / "env.yaml").read_text())
+    assert env["object_name"] == "cyl60" and env["cup_half_height"] == pytest.approx(0.056875)     # 덤프는 낡았다
+    c = A.load_contract(run / "rh_aglt_contract.json")
+    assert c.cup_half_height == pytest.approx(0.085)
+    z0, zb = float(env["table_surface_z"]) + 0.085, env["goal_box_z_range"]
+    assert (c.goal_box_min[2], c.goal_box_max[2]) == pytest.approx((z0 + zb[0], z0 + zb[1]))
+
+
 MIRROR = POL / "right_rh_aglt_mirror_l5" / "rh_aglt_contract.json"
 ARM_MIRROR_SIGN = (-1.0, -1.0, -1.0, 1.0, -1.0, -1.0, -1.0)
 _M, _MN = (1.0, -1.0, 1.0), (-1.0, 1.0, -1.0)
@@ -288,3 +311,14 @@ def test_the_node_feeds_joint_forces_into_the_grasp_signal(c):
     st.stamps = {"arm": 0.02}
     pick(np.array([0.3, -0.1, 0.3]), np.eye(3), np.asarray(st.tip_force), st)
     assert est.source == "attached"
+
+
+def test_a_place_run_is_not_taken_for_rh_aglt_even_with_the_same_dimensions():
+    """rh_place 는 관측 96 · 행동 13 · rh56f1 프로필로 rh_aglt 와 같지만 목표(홀더 자리) · 시작(인계 뱅크)이 다르다 —
+    rh_aglt 계약을 만들면 콘솔이 aglt 자리에 그대로 내보인다(10.04)."""
+    env = A.read_env(POL / "right_rh_aglt_cyl60g" / "params" / "env.yaml")
+    assert A.is_rh_aglt_run(env)
+    assert not A.is_rh_aglt_run({**env, "target_holders": (1, 2)})
+    place = POL / "right_rh_place_i09" / "params" / "env.yaml"
+    if place.is_file():
+        assert not A.is_rh_aglt_run(A.read_env(place))

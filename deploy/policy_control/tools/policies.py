@@ -2,7 +2,8 @@
 """`sim2real/deploy/policies/` 에 **무엇이 등록돼 있고 쓸 수 있는 상태인가**를 본다.
 
     python3 deploy/policy_control/tools/policies.py                 # 목록 + 점검 (문제가 있으면 rc 1)
-    python3 deploy/policy_control/tools/policies.py --write-index   # deploy/policies/INDEX.md 갱신
+    python3 deploy/policy_control/tools/policies.py --write-index   # deploy/policies/INDEX.md 갱신 — 계열별 설명 · 학습 조건 차이 ·
+                                                                    # sim/실기 개별 실행법(policy_index.py). 설명은 카드 summary · eval
     python3 deploy/policy_control/tools/policies.py --shallow       # 138 MB 체크포인트 재해시를 건너뛴다
 
 등록은 `fetch_run.py`, 계약은 `build_deploy_contract.py`, 상태는 각 `policy.yaml` 을 사람이 고친다.
@@ -17,6 +18,7 @@ from pathlib import Path
 SIM2REAL = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(SIM2REAL / "deploy" / "policy_control"))
 
+from policy_control import policy_index as X  # noqa: E402
 from policy_control import policy_registry as R  # noqa: E402
 
 
@@ -37,7 +39,7 @@ def main(argv=None) -> int:
         for i in e.issues:
             print(f"     - {i}")
     if args.write_index:
-        (args.root / R.INDEX).write_text(R.render_index(entries))
+        (args.root / R.INDEX).write_text(X.render(entries, repo=SIM2REAL))
         print(f"[policies] {args.root / R.INDEX} 갱신")
     bad = sum(not e.ok for e in entries)
     print(f"[policies] {len(entries)} 개 · 문제 {bad} 개")

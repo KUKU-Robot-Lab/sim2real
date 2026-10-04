@@ -4,6 +4,8 @@ status: candidate        # candidate | verified | deployed | hold
 task: open-rh_r_aglt-lstm
 side: right
 checkpoint: last_open-rh_r_aglt-lstm_ep_4600_rew_2678.948.pth
+summary: 'shaker × 0.65 · 보상 iter_10 · 지연 없이 학습(①)'
+eval: '지연 0 · 컵 든 1.00 · 성공 2.0~2.3/ep(tol 0.0229) · 0.8~0.9(tol 0.02) · 실측 지연 넣으면 컵 든 0.8'
 source: 'arm4090:~/rl_ws/our_source/policy/aglt_r_i10_ep4600 (md5 e677a1305da2…, params/, README.md)'
 interface: obs 96 · critic 128 · action 13 (팔 관절 증분 7 · 손 6 — rh56f1_hand 법칙, i09d 와 계약 동일)
 deploy:

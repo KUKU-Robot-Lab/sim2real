@@ -40,6 +40,11 @@ python3 deploy/policy_control/tools/policies.py --shallow         # sha256 재�
 python3 deploy/policy_control/tools/policies.py --write-index      # deploy/policies/INDEX.md 갱신
 ```
 
+`INDEX.md` 는 계열별(rh_aglt · rh_place · pour_fj · DG-5F joint · pour_fab)로 정책 설명 · sim 평가 · 미션 기본값,
+학습 조건 차이(보상 · 학습 물체 · 명령 지연 · FP++ · 공차 · 시작 …, 각 `params/env.yaml` 에서 읽음), 실기 · sim 개별 실행법을
+적는다. 설명은 카드의 `summary` · `eval`(한 줄씩)과 `note` 에서 온다 — 카드나 params 를 바꾸면 `--write-index` 를 다시 돌린다
+(`test_pc_policy_index.py` 가 커밋된 INDEX 와 다시 만든 것을 비교한다).
+
 정책 하나 = 디렉터리 하나. 한 팔의 묶음(체크포인트 여럿)이면 카드 `policy.yaml` 의 `checkpoint:` 가
 후보 하나를 가리킨다. status 는 넷뿐이다: `candidate` → `verified` → `deployed`, 쓰지 않으면 `hold`.
 

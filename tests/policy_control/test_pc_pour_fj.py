@@ -449,3 +449,15 @@ def test_old_contracts_keep_the_hold_from_home():
     ch = N.PourFjChain(c, policy=_P())
     ch.reset(None)
     assert ch.step_i == 0
+
+
+def test_cup_mouth_follows_the_cup_object_not_the_stale_dump():
+    """10.04: b16~b18 은 cup_object=cyl60_box32w25 인데 env.yaml 덤프의 cup_mouth_z 는 기본 shaker × 0.65(0.0539) —
+    train.py 가 hydra 오버라이드 뒤 · resolve_cfg 재호출 전에 덤프한다. hdgp pour_fabric_mimic CUP_OBJECTS 대로 다시 푼다."""
+    dump = {"cup_scale": 0.65, "cup_mouth_z": 0.053885}
+    assert F.cup_mouth_z_of(dump) == pytest.approx(0.053885)                              # 키 없는 옛 런 = shaker = 덤프
+    assert F.cup_mouth_z_of({**dump, "cup_object": "shaker"}) == pytest.approx(0.053885)
+    for name in ("cyl60", "cyl60_box32", "cyl60_box32w25", "cyl60_sdf256"):
+        assert F.cup_mouth_z_of({**dump, "cup_object": name}) == pytest.approx(0.085)
+    with pytest.raises(F.PourFjError, match="cup_object"):
+        F.cup_mouth_z_of({**dump, "cup_object": "mug"})

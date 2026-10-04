@@ -4,6 +4,8 @@ status: candidate        # 실기 확인은 left_cp_e4280(같은 e4280, joint �
 task: open-short_l_cup_pick-lstm
 side: left
 checkpoint: cup_pick_l_approach_hold_e4280.pth
+summary: 'DG-5F 왼팔 cup_pick 체크포인트 세 개 한 벌(계약 없음) — 실기는 left_cp_e4280'
+eval: '–'
 note: >-
   세 체크포인트 한 벌(접근 e3400 · 접근+C자 유지 e4280 · 입력 시드 i00b). 후보는 가장 나중 단계인
   e4280 으로 적어 뒀다 — 다른 것을 쓰려면 이 checkpoint: 한 줄만 바꾸면 된다.

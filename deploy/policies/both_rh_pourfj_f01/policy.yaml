@@ -5,6 +5,8 @@ status: candidate        # candidate | verified | deployed | hold
 task: open-rh_b_pour_fj-lstm
 side: both
 checkpoint: last_open-rh_b_pour_fj-lstm_ep_2300_rew_1107.8425.pth
+summary: 'RH56F1 양팔 붓기 첫 full-joint 런 — 배관 · fake 확인용(성능 후보 아님)'
+eval: '–'
 source: 'local:/media/user/DATA/kuku_ai/rl/rl_runs_20260926/pour_bi_rh/t2r_rh4_f01 (ep_2300 · params/)'
 interface: obs 165 · critic 207 · action 26 ([오른팔 7 증분 · 오른손 6 direct][왼팔 7 · 왼손 6])
 deploy:

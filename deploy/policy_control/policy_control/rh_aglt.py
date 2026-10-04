@@ -152,9 +152,31 @@ SIM_ONLY_RESPONSE_KEYS = ("arm_cmd_delay_steps", "hand_cmd_delay_steps", "hand_o
                           "thumb1_reset_range")
 
 
+#: hdgp tasks/rh_aglt_r/rh_aglt_env_cfg.py OBJECTS · CUP_UNIT(hdgp 2721a946 :44-58) — 컵 USD 원점 기준 치수(m) · cup_scale 을 받는지
+CUP_OBJECTS: dict[str, tuple[dict[str, float], bool]] = {
+    "shaker": ({"bottom_z": -0.0921, "rim_z": 0.0829}, True),
+    "cyl60": ({"bottom_z": -0.085, "rim_z": 0.085}, False),
+    "cyl65": ({"bottom_z": -0.085, "rim_z": 0.085}, False),
+}
+
+
+def cup_geometry(env: Mapping) -> tuple[float, float]:
+    """(cup_half_height, cup_origin_offset_z) — hdgp resolve_cfg(:410-422)와 같은 규칙으로 object_name 에서 다시 푼다.
+
+    env.yaml 의 파생 값은 쓰지 않는다: train.py 는 hydra 가 object_name 을 덮은 뒤 · env 가 resolve_cfg 를 다시 부르기 전에
+    덤프하므로 cyl60 런의 덤프에는 기본 shaker × cup_scale 값이 남는다(10.04 확인 — 학습 env 는 cyl60 으로 돌았다)."""
+    name = str(env.get("object_name", "shaker"))
+    if name not in CUP_OBJECTS:
+        raise RhAgltError(f"object_name {name!r} 을 모른다 — {sorted(CUP_OBJECTS)} (hdgp OBJECTS 를 옮겨 와라)")
+    unit, scaled = CUP_OBJECTS[name]
+    s = float(env["cup_scale"]) if scaled else 1.0
+    return 0.5 * (unit["rim_z"] - unit["bottom_z"]) * s, -unit["bottom_z"] * s
+
+
 def is_rh_aglt_run(env: Mapping) -> bool:
+    """rh_place(hdgp open-rh_*_place)도 프로필 · 관측 96 · 행동 13 이 같다 — 홀더 키(target_holders)로 가른다(10.04)."""
     return (str(env.get("profile_name", "")).startswith("rh56f1_") and int(env.get("action_space", 0)) == 13
-            and int(env.get("observation_space", 0)) == obs_dim_of())
+            and int(env.get("observation_space", 0)) == obs_dim_of() and "target_holders" not in env)
 
 
 def _left(name: str) -> str:
@@ -169,7 +191,7 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
     env_p, agent_p = run_dir / "params" / "env.yaml", run_dir / "params" / "agent.yaml"
     env = read_env(env_p)
     if not is_rh_aglt_run(env):
-        raise RhAgltError(f"{env_p}: rh_aglt 런이 아니다(profile rh56f1_* · obs {obs_dim_of()} · action 13)")
+        raise RhAgltError(f"{env_p}: rh_aglt 런이 아니다(profile rh56f1_* · obs {obs_dim_of()} · action 13 · 홀더 키 없음 — rh_place 는 따로)")
     agent = yaml.safe_load(agent_p.read_text())
     net, cfg_a = agent["params"]["network"], agent["params"]["config"]
     side = "left" if env["profile_name"] == "rh56f1_left" else "right"
@@ -187,7 +209,8 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
                palm_body=rename(str(right_profile.palm_body)), tip_bodies=[rename(b) for b in right_profile.fingertip_bodies])
     z = [float(v) for v in env["goal_first_z_range"]]
     ctr, hw, m = [float(v) for v in env["spawn_center"]], [float(v) for v in env["spawn_half"]], float(env["goal_box_xy_margin"])
-    z0 = float(env["table_surface_z"]) + float(env["cup_origin_offset_z"])
+    half_h, origin_z = cup_geometry(env)
+    z0 = float(env["table_surface_z"]) + origin_z
     zb = [float(v) for v in env["goal_box_z_range"]]
     for k in ("goal_first_tilt_deg", "goal_delta_rotation_deg"):
         if float(env.get(k, 0.0)) != 0.0:
@@ -200,6 +223,10 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
     if sim_only:                                  # hdgp real_response.py — PD 앞단에서 sim 이 실기 반응을 흉내 낸 것(관측은 명령 목표)
         notes.append("학습 실기 반응(sim 전용, 배포 디코더는 따라 하지 않는다 — 실기가 스스로 낸다): "
                      + " · ".join(f"{k} {list(v) if isinstance(v, (list, tuple)) else v}" for k, v in sim_only.items()))
+    dumped = (float(env["cup_half_height"]), float(env["cup_origin_offset_z"]))
+    if max(abs(a - b) for a, b in zip(dumped, (half_h, origin_z))) > 1e-6:
+        notes.append(f"컵 {env.get('object_name', 'shaker')}: 반높이 {half_h:.4f} · 원점 높이 {origin_z:.4f} m — env.yaml 덤프"
+                     f"({dumped[0]:.4f} · {dumped[1]:.4f})는 hydra 오버라이드 전 기본 shaker 값이라 쓰지 않았다")
     if not bool(cfg_a.get("normalize_input", False)):
         notes.append("normalize_input false")
     c = RaContract(
@@ -215,7 +242,7 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
         hand_ema=float(env["hand_ema"]), hand_full_range_s=float(env["hand_full_range_s"]),
         freeze_threshold_n=float(env["contact_freeze_threshold"]), joint_err_norm=float(env["joint_err_norm"]),
         tactile_clip_n=float(env["tactile_obs_clip_n"]), tactile_tanh_n=float(env["tactile_obs_tanh_n"]),
-        cup_half_height=float(env["cup_half_height"]), goal_offset=[0.0, 0.0, 0.5 * (z[0] + z[1])],
+        cup_half_height=half_h, goal_offset=[0.0, 0.0, 0.5 * (z[0] + z[1])],
         hand_obs_order_source="profile(hdgp rh_aglt_env hand_ids = 이름 순)", sides={"arm": s}, notes=notes,
         goal_box_min=[ctr[0] - hw[0] - m, ctr[1] - hw[1] - m, z0 + zb[0]],
         goal_box_max=[ctr[0] + hw[0] + m, ctr[1] + hw[1] + m, z0 + zb[1]],

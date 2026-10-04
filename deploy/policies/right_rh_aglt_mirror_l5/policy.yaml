@@ -4,6 +4,8 @@ status: candidate        # candidate | verified | deployed | hold
 task: open-rh_r_aglt-lstm
 side: right
 checkpoint: aglt_l_i05_ep3800_to_r.pth
+summary: '좌 i05 ep3800 의 거울(가중치) — params 는 우 i06 런(보상 칸은 그 런 것)'
+eval: '우 env 결정론 파지 0.806 · 들기 0.753 · 목표 성공 0.38 · 엄지 대향 0.22'
 source: 'local:~/rl_ws/our_source/policy/aglt_r_mirror_l5 (변환 hdgp scripts/tools/mirror_rh_aglt_ckpt.py · params = 우 aglt_r_i06 런)'
 interface: obs 96 · critic 128 · action 13 (팔 관절 증분 7 · 손 6 — rh56f1_hand 법칙)
 deploy:

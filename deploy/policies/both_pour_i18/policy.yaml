@@ -4,6 +4,8 @@ status: candidate
 task: open-short_b_pour_fab
 side: both
 checkpoint: last_open-short_b_pour_fab_ep_2500_rew_36408.105.pth
+summary: 'DG-5F short 양팔 붓기 i18 — 붓기 s2r 기준(09.28), 당장 실기 안 함'
+eval: 'ADR30 64 env 성공 0.828 · in_target 0.907 · 흘림 0.07 · 소스 최대 기울기 155°(ckpt_gate 탈락 3)'
 note: >-
   09.28 사용자 결정: 붓기는 i18 을 쓴다(i24 는 hold), 다만 당장 진행하지 않는다. checkpoint 는 검증된 계약
   (logs/policy/pour_i18/pour_contract.json, md5 f50b09a6)과 같은 ep_2500 으로 바꿨다.

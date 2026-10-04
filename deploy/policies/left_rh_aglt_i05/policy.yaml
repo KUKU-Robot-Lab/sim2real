@@ -4,6 +4,8 @@ status: candidate        # candidate | verified | deployed | hold
 task: open-rh_l_aglt-lstm
 side: left
 checkpoint: last_open-rh_l_aglt-lstm_ep_3800_rew_3346.764.pth
+summary: '왼팔 첫 파지 정책(보상 iter_05) — mirror_l5 의 원본'
+eval: '학습 로그 파지 0.80 · 들기 0.75 · 성공 0.9~1.1/ep(tol 0.021) · 엄지 대향 0.04'
 source: 'local:~/rl_ws/our_source/policy/aglt_l_i05 (ep_3800 · params/)'
 interface: obs 96 · critic 128 · action 13 (팔 관절 증분 7 · 손 6 — rh56f1_hand 법칙)
 deploy:

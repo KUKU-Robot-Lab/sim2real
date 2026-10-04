@@ -4,6 +4,8 @@ status: candidate        # candidate | verified | deployed | hold
 task: open-rh_l_aglt-lstm
 side: left
 checkpoint: last_open-rh_l_aglt-lstm_ep_4600_mirror_of_r_i10.pth
+summary: '우 i10 ep4600 의 거울(추가 학습 없음)'
+eval: '지연 0 · 컵 든 1.00 · 성공 2.02/ep(tol 0.0229) · 0.83(tol 0.02) · 실측 지연 넣으면 0.78'
 source: 'arm4090:~/rl_ws/our_source/policy/aglt_l_i10mir_ep4600 (md5 ce9d5a8b119a…, 변환 hdgp scripts/tools/mirror_rh_aglt_ckpt.py, params = 왼팔 task, README.md)'
 interface: obs 96 · critic 128 · action 13 (팔 관절 증분 7 · 손 6 — rh56f1_hand 법칙, i09d 와 계약 동일)
 deploy:

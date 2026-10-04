@@ -191,6 +191,22 @@ def _md5(p: Path) -> str:
     return hashlib.md5(Path(p).read_bytes()).hexdigest()
 
 
+#: hdgp tasks/pour_fabric_mimic/pour_fabric_env_cfg.py CUP_OBJECTS 의 geom.cup_mouth_z(실물 크기, cup_scale 안 받음, hdgp a0c0f2a3).
+#: shaker 는 덤프 값 그대로 — resolve_cfg 가 같은 값을 다시 쓴다.
+CUP_MOUTH_Z = {"cyl60": 0.085, "cyl60_box32": 0.085, "cyl60_box32w25": 0.085, "cyl60_sdf256": 0.085}
+
+
+def cup_mouth_z_of(env: Mapping) -> float:
+    """컵 원점 → 입구 높이. env.yaml 의 cup_mouth_z 는 hydra 가 cup_object 를 덮기 전 기본 shaker 값으로 덤프된다
+    (train.py 가 resolve_cfg 재호출 전에 덤프 — 10.04 b16~b18 확인) — cup_object 에서 다시 푼다."""
+    name = str(env.get("cup_object", "shaker"))
+    if name == "shaker":
+        return float(env["cup_mouth_z"])
+    if name not in CUP_MOUTH_Z:
+        raise PourFjError(f"cup_object {name!r} 의 입구 높이를 모른다 — hdgp CUP_OBJECTS 에서 CUP_MOUTH_Z 로 옮겨 와라")
+    return CUP_MOUTH_Z[name]
+
+
 def is_pour_fj_run(env: Mapping) -> bool:
     return (env.get("pair_name") == "rh" and env.get("hand_control") == "direct"
             and int(env.get("action_space", 0)) == 26)
@@ -272,7 +288,7 @@ def build(run_dir: Path, checkpoint: Path, pair, urdf: Path, *, asset: str,
         freeze_threshold_n=float(env["contact_freeze_threshold"]), joint_pos_err_max=float(env["joint_pos_err_max"]),
         tactile_clip_n=float(env["tactile_obs_clip_n"]), tactile_tanh_n=float(env["tactile_obs_tanh_n"]),
         obs_tips_rel_palm=bool(env.get("obs_tips_rel_palm", True)), obs_mouth_diff=bool(env.get("obs_mouth_diff", True)),
-        cup_mouth_z=float(env["cup_mouth_z"]),
+        cup_mouth_z=cup_mouth_z_of(env),
         hand_obs_order_source=obs_order_source or ("assumed:" + ",".join(ASSUMED_OBS_ORDER)),
         sides=sides, notes=notes,
         hand_finger_open_floor_rad=float(env.get("hand_finger_open_floor_rad", 0.0)),

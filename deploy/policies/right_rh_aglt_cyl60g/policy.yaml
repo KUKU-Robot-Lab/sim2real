@@ -4,6 +4,8 @@ status: candidate        # candidate | verified | deployed | hold
 task: open-rh_r_aglt-lstm
 side: right
 checkpoint: last_open-rh_r_aglt-lstm_ep_2600_rew_3509.6997.pth
+summary: 'cyl60 원통 · FP++ 지각과 파지 후 FK 부착으로 이어 학습한 최신 파지 · 이송'
+eval: '결정론 64 env · tol 0.02 · FP++ 조건 성공 1.77/ep(원 cyl60n 1.16) · 쥔 기울기 4.4° · 이송 중 j2 한계 37 %'
 source: 'arm4090:~/rl_ws/our_source/policy/aglt_r_cyl60g_ep2600 (md5 693978da29545d130d3c496b920e30d3)'
 interface: obs 96 · critic 128 · action 13 (팔 관절 증분 7 · 손 6 — i10d 와 계약 동일, 체크포인트만 다르다)
 deploy:
