@@ -74,6 +74,7 @@ class EpisodeManager:
     status: str = READY
     last: dict = field(default_factory=dict)            # 마지막 노드 결과 요약(상황판)
     history: list = field(default_factory=list)
+    pending: tuple | None = None                        # 구분 실행: 승인을 기다리는 복구 (node, Recovery)
     _auto: bool = False
 
     # ---------------------------------------------------------------- 공개
@@ -86,6 +87,12 @@ class EpisodeManager:
         if self.status in (SUCCESS, FAILURE, STOPPED):
             return self.status
         self._auto = False
+        if self.pending is not None:                    # 구분 실행 — 복구 동작도 한 번의 명령 · 승인
+            node, rec = self.pending
+            if not self.approve(f"recover:{node.id}:{rec.action}", rec.reason):
+                return self._declined(node, f"recover:{node.id}:{rec.action}")
+            self.pending = None
+            return self._do_recovery(node, rec)
         return self._advance()
 
     def run(self) -> str:
@@ -94,7 +101,7 @@ class EpisodeManager:
             return self.status
         rest = " → ".join(n.id for n in self.ep.nodes[self.index:])
         if not self.approve(f"episode:{self.ep.name}", f"연속 실행 — {rest}"):
-            return self._fail(None, F.OPERATOR_DECLINED, "연속 실행 승인 안 됨")
+            return self._declined(self.node, f"episode:{self.ep.name}")
         self._auto = True
         try:
             while self.status in (READY, RUNNING):
@@ -102,6 +109,15 @@ class EpisodeManager:
         finally:
             self._auto = False
         return self.status
+
+    def next_action(self) -> str | None:
+        """다음 step() 이 승인을 물을 이름 — 상황판 확인 입력과 같다(없으면 None)."""
+        if self.status in (SUCCESS, FAILURE, STOPPED):
+            return None
+        if self.pending is not None:
+            return f"recover:{self.pending[0].id}:{self.pending[1].action}"
+        node = self.node
+        return None if node is None or node.type == "terminal" else node.id
 
     def stop(self, reason: str = "operator stop") -> str:
         self.executor.safe_stop(reason)
@@ -116,6 +132,9 @@ class EpisodeManager:
                            "state": ("done" if i < self.index else "current" if i == self.index else "pending")}
                           for i, n in enumerate(self.ep.nodes)],
                 "attempts": dict(self.attempts), "checkpoints": sorted(self.checkpoints), "last": dict(self.last),
+                "pending": None if self.pending is None else {"node": self.pending[0].id, "action": self.pending[1].action,
+                                                              "reason": self.pending[1].reason},
+                "next_action": self.next_action(),
                 "history": self.history[-20:]}
 
     # ---------------------------------------------------------------- 내부
@@ -130,13 +149,18 @@ class EpisodeManager:
             self.index += 1
             return self.status
         if not self._auto and not self.approve(node.id, self._describe(node)):
-            return self._fail(node, F.OPERATOR_DECLINED, f"{node.id} 승인 안 됨")
+            return self._declined(node, node.id)
         self.status = RUNNING
         t0, start = time.monotonic(), _now()
         self._log("enter", node, start_time=start)
         before = self.world
         self.world = self.world.running() if node.type in ("policy", "parallel_policy") else self.world
         results, located = self._execute(node, before)
+        if self.status == STOPPED:                       # 실행 중에 stop — 결과는 남기고 더 나가지 않는다
+            self.world = before
+            self._log("stopped", node, start_time=start, end_time=_now(),
+                      termination_reason="; ".join(r.reason for r in results if r.reason))
+            return self.status
         code, who = self.detector.evaluate(self.ep, node, results)
         dur = time.monotonic() - t0
         reason = "; ".join(r.reason for r in results if r.reason)
@@ -202,10 +226,15 @@ class EpisodeManager:
         self._log("recovery", node, result=rec.action, termination_reason=rec.reason, checkpoint=rec.checkpoint)
         if rec.action == SAFE_STOP:
             return self._fail(node, code, rec.reason)
-        what = f"recover:{node.id}:{rec.action}"
-        if not self._auto and not self.approve(what, rec.reason):
-            return self._fail(node, F.OPERATOR_DECLINED, f"복구 승인 안 됨 — {rec.reason}")
-        self.attempts[node.id] = n + 1
+        if not self._auto:                              # 구분 실행: 다음 명령(step)이 승인받고 복구한다
+            self.pending = (node, rec)
+            self.status = READY
+            self._log("recovery_pending", node, result=rec.action, termination_reason=rec.reason)
+            return self.status
+        return self._do_recovery(node, rec)
+
+    def _do_recovery(self, node: Node, rec: Recovery) -> str:
+        self.attempts[node.id] = self.attempts.get(node.id, 0) + 1
         plans = self._plans(node, self.world) if node.jobs else []
         for pre in rec.pre:
             res = self.executor.prepare(pre, plans, self.world)
@@ -228,6 +257,13 @@ class EpisodeManager:
                     self.world = _with_pose(self.world.locate(name, "table", pose[0]), name, pose)
             self._log("resnapshot", node, result="COMPLETED", objects=sorted(located))
         self.status = READY
+        return self.status
+
+    def _declined(self, node: Node | None, what: str) -> str:
+        """승인이 없다 — 아무것도 움직이지 않았다. 에피소드는 그 자리에서 기다린다(실패 아님)."""
+        self.last = {"node": None if node is None else node.id, "code": F.OPERATOR_DECLINED.value,
+                     "reason": f"{what} 승인 없음 — 실행하지 않았다"}
+        self._log("declined", node, termination_reason=f"{what} 승인 없음")
         return self.status
 
     def _fail(self, node: Node | None, code: FailureCode, reason: str) -> str:

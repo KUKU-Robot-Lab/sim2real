@@ -85,6 +85,12 @@ class GoalBook:
     def goal(self) -> A.Goal:
         return A.Goal(self.current.copy(), self.quat.copy())
 
+    @property
+    def reached(self) -> bool:
+        """사용자가 넣은 최종 목표 자체를 달성했다(중간 목표 말고) — 에피소드 실행기의 aglt 끝(SETTING 도달)."""
+        return (self.target is not None and self.anchor is not None and not self.queue
+                and bool(np.allclose(self.anchor, self.target)))
+
     def request(self, target: Sequence[float]) -> list[str]:
         """최종 목표를 받는다. 거부 사유 목록(빈 목록 = 받았다). 받으면 지금 목표 · 줄을 바꾸고 누적을 0 으로."""
         c = self.c
@@ -135,4 +141,4 @@ class GoalBook:
         r = lambda v: [round(float(x), 4) for x in v]  # noqa: E731
         return {"goal": r(self.current), "queue": len(self.queue), "target": None if self.target is None else r(self.target),
                 "kp_dist": None if math.isnan(self.kp_dist) else round(self.kp_dist, 4), "near_steps": self.near_steps,
-                "successes": self.successes}
+                "successes": self.successes, "reached": self.reached}

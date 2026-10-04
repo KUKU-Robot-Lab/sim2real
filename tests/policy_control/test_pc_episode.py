@@ -141,13 +141,17 @@ def test_the_whole_guide_episode_runs_in_the_dry_run():
     assert m.world.hand("left") == "EMPTY" and m.world.pose == "HOME"
 
 
-def test_a_declined_node_stops_without_running_it():
+def test_a_node_without_approval_does_not_run_and_the_episode_waits():
     ep = _ep()
     ex = FakeExecutor(ep)
-    m = EpisodeManager(ep, ex, approve=lambda what, _why: what != "pick_cup")
+    ok = {"pick_cup": False}
+    m = EpisodeManager(ep, ex, approve=lambda what, _why: ok.get(what, True))
     m.step()
     m.step()
-    assert m.step() == FAILURE and not any(c[0] == "policy" for c in ex.calls) and ex.stopped
+    assert m.step() == READY and m.next_action() == "pick_cup" and not any(c[0] == "policy" for c in ex.calls)
+    assert m.last["code"] == "operator_declined" and not ex.stopped
+    ok["pick_cup"] = True
+    assert m.step() == READY and m.next_action() == "place_cup"
 
 
 def test_the_log_has_the_guide_fields(tmp_path):
@@ -219,13 +223,22 @@ def test_no_rollback_while_holding_an_object():
     assert rec.action == "safe_stop" and "checkpoint" in rec.reason
 
 
-def test_step_mode_asks_before_a_recovery_motion():
+def test_step_mode_makes_the_recovery_its_own_approved_command():
+    """구분 실행: 실패한 노드 뒤 다음 명령은 복구(되돌아가기) 하나 — 그다음 명령이 그 노드를 다시 돈다."""
     ep, asked = _ep(), []
     ex = FakeExecutor(ep, inject={"pick_cup": [F.GRASP_FAILED_RIGHT]})
     m = EpisodeManager(ep, ex, approve=_yes(asked))
     for _ in range(3):
         m.step()
-    assert m.status == READY and asked[-1].startswith("recover:pick_cup:rollback_retry")
+    assert m.status == READY and m.next_action() == "recover:pick_cup:rollback_retry"
+    assert m.view()["pending"]["action"] == "rollback_retry"
+    m.step()
+    assert asked[-1] == "recover:pick_cup:rollback_retry" and m.next_action() == "pick_cup"
+    assert [c[:2] for c in ex.calls][-3:] == [("prepare", "open_hand"), ("trajectory", "go_home_start"),
+                                              ("snapshot", "pick_cup:resnap")]
+    while m.status not in (SUCCESS, FAILURE):
+        m.step()
+    assert m.status == SUCCESS
 
 
 def test_the_detector_reads_refusal_text_and_signals():
@@ -251,3 +264,49 @@ def test_a_timeout_after_the_grasp_is_not_retried_from_home():
     ep = S.parse({**yaml.safe_load((EPISODES / "pick_place_right.yaml").read_text()), "failure_policy": {"default": 2}})
     m = EpisodeManager(ep, FakeExecutor(ep, inject={"place_cup": [F.POLICY_TIMEOUT]}), approve=_yes())
     assert m.run() == FAILURE and "timeout" in m.last["code"]
+
+
+# ---------------------------------------------------------------- 명령 · 승인 파일 · ROS 순수부
+def test_the_command_tool_only_sends_the_name_the_runner_will_ask_for():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("episode_cmd", REPO / "deploy/policy_control/tools/episode_cmd.py")
+    cmd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cmd)
+    st = {"episode": "pick_place_right", "phase": "READY", "next_action": "pick_cup", "busy": False}
+    assert cmd.refusal("next", "pick_cup", st) is None
+    assert "≠" in cmd.refusal("next", "place_cup", st)
+    assert cmd.refusal("run", "episode:pick_place_right", st) is None
+    assert "busy" not in (cmd.refusal("run", "x", st) or "") and cmd.refusal("run", "x", st)
+    assert "돌고" in cmd.refusal("next", "pick_cup", {**st, "busy": True})
+    assert cmd.refusal("stop", None, {**st, "busy": True}) is None                 # 멈춤은 언제나
+    assert "없다" in cmd.refusal("next", None, {**st, "next_action": None, "phase": "SUCCESS"})
+
+
+def test_an_approval_line_is_used_once_and_only_after_the_runner_started(tmp_path):
+    from policy_control.episode_runner_node import Approvals, write_approval
+    path = tmp_path / "approvals.jsonl"
+    write_approval("pick_cup", "old", path)                                        # 뜨기 전 승인은 안 쓴다
+    import time as _t
+    _t.sleep(0.01)
+    a = Approvals(path, _t.time())
+    assert not a.take("pick_cup")
+    write_approval("pick_cup", "op", path)
+    assert a.take("pick_cup") and not a.take("pick_cup")                           # 한 번만
+    write_approval("episode:pick_place_right", "op", path)
+    assert not a.take("pick_cup") and a.take("episode:pick_place_right")
+
+
+def test_snapshot_needs_enough_still_frames_and_the_holder_check_uses_the_seat():
+    from policy_control.episode_ros import SEAT_DZ_CYL60, cup_in_holder, load_holder_poses, snapshot_of
+    q = (1.0, 0.0, 0.0, 0.0)
+    still = [((0.25, -0.2, 0.29 + 0.001 * (k % 2)), q, 0.0) for k in range(8)]
+    pos, quat = snapshot_of(still)
+    assert pos == pytest.approx((0.25, -0.2, 0.2905), abs=1e-3) and quat == q
+    assert snapshot_of(still[:3]) is None                                          # 프레임 모자람
+    moving = [((0.25 + 0.01 * k, -0.2, 0.29), q, 0.0) for k in range(8)]
+    assert snapshot_of(moving) is None                                             # 움직이는 중
+    assert SEAT_DZ_CYL60 == pytest.approx(0.060)
+    assert cup_in_holder((0.381, -0.003, 0.296), (0.38, -0.002, 0.235), SEAT_DZ_CYL60)
+    assert not cup_in_holder((0.43, -0.003, 0.296), (0.38, -0.002, 0.235), SEAT_DZ_CYL60)   # 구멍 밖
+    assert not cup_in_holder((0.38, -0.002, 0.36), (0.38, -0.002, 0.235), SEAT_DZ_CYL60)    # 링 위에 걸침
+    assert load_holder_poses(Path("/nonexistent.yaml")) == {}

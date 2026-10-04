@@ -21,6 +21,17 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SIM2REAL = HERE.parents[2]
 SAMPLE = SIM2REAL / "deploy" / "s2r_console" / "tools" / "sample_joints.py"
+RL_WS = SIM2REAL.parent
+#: plan_home_path 기본값은 DG-5F 세계다(10.01 — 빼먹으면 DG-5F 로 검사한다). 로봇마다 세계 · 계약 · 프로필 · pd 를 넘긴다.
+#: rh56f1 = 미션 저장 홈 경로(paths/home_rh56f1_*.npz)를 만든 것과 같은 세계(10.04 에피소드 실행기 궤적).
+ROBOTS = {
+    "dg5f": [],
+    "rh56f1": ["--urdf", str(RL_WS / "hdgp/assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf"),
+               "--contract", str(SIM2REAL / "logs/policy/asset_openarm_rh56f1_bi_rl/deploy_contract.json"),
+               "--profile", str(RL_WS / "robot_control/src/robot_control/profiles/openarm_rh56f1.yaml"),
+               "--env-yaml", str(SIM2REAL / "deploy/policies/right_rh_aglt_cyl60g/params/env.yaml"),
+               "--pd-config", str(SIM2REAL / "deploy/policy_control/config/pd_rh56f1.yaml")],
+}
 
 
 def measure() -> dict[str, float]:
@@ -30,7 +41,7 @@ def measure() -> dict[str, float]:
     return json.loads(out.stdout.strip().splitlines()[-1])["q"]
 
 
-def planner_argv(side: str, q: dict[str, float], out: Path) -> list[str]:
+def planner_argv(side: str, q: dict[str, float], out: Path, robot: str = "dg5f") -> list[str]:
     """실측 → plan_home_path 인자. 팔 7 관절이 없으면 SystemExit, 손은 있는 것만 넘긴다(측정 손 자세로 검사)."""
     p = side[0]
     arm = [f"{p}_aj_{i}" for i in range(1, 8)]
@@ -46,20 +57,21 @@ def planner_argv(side: str, q: dict[str, float], out: Path) -> list[str]:
             # `--opt=값` 으로 붙인다 — 값이 '-0.1…' 처럼 음수로 시작하면 argparse 가 옵션으로 읽는다(09.28 실기 rc=2)
             "--start=" + ",".join(f"{q[j]:.5f}" for j in arm), "--goal", "contract",
             "--hand-start", "measured", "--hand-q=" + ",".join(f"{k}={v:.5f}" for k, v in sorted(hand.items())),
-            "--out", str(out)]
+            "--out", str(out), *ROBOTS[robot]]
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--side", choices=("left", "right"), required=True)
     ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument("--robot", choices=sorted(ROBOTS), default="dg5f", help="계획 세계(자산 · 계약 · 프로필 · pd)")
     args = ap.parse_args()
     if os.environ.get("ROS_DOMAIN_ID", "") in ("", "0"):
         raise SystemExit("✗ ROS_DOMAIN_ID 가 비었거나 0 — 거부")
     out = args.out or (SIM2REAL / "logs" / "policy_control" / f"rehome_{args.side}.npz")
     if out.exists():
         out.unlink()                         # 옛 계획이 남아 있으면 계획이 실패해도 재생 단계가 그것을 튼다
-    argv = planner_argv(args.side, measure(), out)
+    argv = planner_argv(args.side, measure(), out, args.robot)
     print(f"[rehome] {args.side} 실측 → 정책 시작 자세 계획 (직선 → 실패하면 RRT, 실측 손 · 여유 2 cm)", flush=True)
     rc = subprocess.run(argv).returncode
     if rc != 0 or not out.exists():

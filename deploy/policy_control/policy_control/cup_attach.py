@@ -112,6 +112,7 @@ class CupAttach:
         self.off_steps = 0
         self._rel_p: np.ndarray | None = None
         self._rel_R: np.ndarray | None = None
+        self.releases = 0                          # 이 에피소드에서 붙었다가 떨어진 횟수(에피소드 실행기 OBJECT_DROPPED 신호)
         self._hist.clear()
 
     @property
@@ -177,9 +178,11 @@ class CupAttach:
             self.off_steps = 0 if grasped else self.off_steps + 1
             if self.off_steps >= self.cfg.release_steps:
                 hist, last = list(self._hist), (self.attach_steps, self.check_n, self.check_last_m, self.check_max_m)
+                releases = self.releases + 1
                 self.reset()
                 self._hist.extend(hist)                  # 기록은 이어 간다(다시 쥘 때 쓴다)
                 self.attach_steps, self.check_n, self.check_last_m, self.check_max_m = last   # 마지막 부착 기록은 남긴다
+                self.releases = releases
                 return live
             return self._from_palm(palm_pos, palm_R)
         if not grasped:
@@ -204,6 +207,6 @@ class CupAttach:
     def as_dict(self) -> dict:
         r = lambda v: None if v is None else round(float(v), 4)  # noqa: E731
         return {"source": self.source, "grasp_since": self.grasp_since, "grasp_steps": self.grasp_steps,
-                "off_steps": self.off_steps, "attach_steps": self.attach_steps,
+                "off_steps": self.off_steps, "attach_steps": self.attach_steps, "releases": self.releases,
                 "check_n": self.check_n, "check_last_m": r(self.check_last_m), "check_max_m": r(self.check_max_m),
                 "rel_pos": None if self._rel_p is None else [round(float(v), 4) for v in self._rel_p]}

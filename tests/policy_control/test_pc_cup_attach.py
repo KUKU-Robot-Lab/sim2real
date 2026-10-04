@@ -201,3 +201,17 @@ def test_optional_palm_distance_gate_blocks_finger_on_finger_false_grasps():
     c.step(True, 21 * DT, np.array([0.30, -0.10, 0.30]), I3, near)
     c.step(True, 22 * DT, np.array([0.30, -0.10, 0.30]), I3, near)
     assert c.source == "attached"
+
+
+def test_a_release_after_attaching_is_counted_for_the_episode_runner():
+    """10.04 에피소드 실행기(Step 2): 붙었다가 떨어진 횟수 = 컵 놓침 신호(OBJECT_DROPPED). 새 에피소드(reset)면 0."""
+    c = CupAttach(AttachCfg(attach_after_s=0.0))
+    pp = np.array([0.3, -0.1, 0.3])
+    c.step(True, 0.0, pp, I3, None)
+    c.step(True, 0.02, pp, I3, (np.array([0.3, -0.1, 0.26]), Q0, 0.01))
+    assert c.source == "attached" and c.as_dict()["releases"] == 0
+    for k in range(15):
+        c.step(False, 0.04 + k * DT, pp, I3, None)
+    assert c.source == "live" and c.as_dict()["releases"] == 1
+    c.reset()
+    assert c.as_dict()["releases"] == 0

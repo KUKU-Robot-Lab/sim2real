@@ -166,3 +166,17 @@ def test_the_aglt_chain_uses_joint_forces_for_the_goal_grasp_when_configured():
     for _ in range(c.hold_steps + 12):
         ch.step({"arm": held})
     assert ch.goals.successes >= 1
+
+
+def test_reached_means_the_requested_target_itself_was_achieved():
+    """10.04 에피소드 실행기: aglt 는 SETTING(사용자 목표)에 닿으면 끝난다 — 중간 목표 달성은 아직 아니다."""
+    c = A.load_contract(RIGHT)
+    book = G.GoalBook.start(c, [0.25, -0.20, 0.29], [1.0, 0.0, 0.0, 0.0])
+    assert not book.reached
+    assert book.request([0.25, -0.12, 0.41]) == []
+    tact = [2.0, 2.0, 0, 0, 0]
+    for _ in range(200):
+        book.step(book.current, book.quat, tact)
+        if book.reached:
+            break
+    assert book.reached and np.allclose(book.anchor, [0.25, -0.12, 0.41])
