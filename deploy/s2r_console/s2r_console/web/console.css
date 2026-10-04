@@ -418,7 +418,7 @@ table.ptable tr.off td { color: var(--faint); }
 .epf-panel { grid-column: 1 / -1; }
 .epf-ctl { padding: 0 12px; }
 /* 위 · 아래 여백은 drawEpWires 가 피드백 화살표 수로 정한다 */
-.epf { position: relative; overflow-x: auto; padding: 12px 16px 14px; }
+.epf { position: relative; overflow-x: auto; padding: 12px 16px 14px; scrollbar-color: var(--line-2) transparent; }
 .epf-wires { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 0; overflow: visible; }
 .epf-row { position: relative; z-index: 1; display: flex; align-items: stretch; gap: 52px; min-width: min-content; }
 .epf-box { flex: 1 0 196px; max-width: 264px; border: 1px solid var(--line); border-left: 3px solid var(--mute); border-radius: 6px;
