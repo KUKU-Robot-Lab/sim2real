@@ -4,8 +4,9 @@
 import { spawn } from "node:child_process";
 const [url, png, waitMs = "6000", selector = ""] = process.argv.slice(2);
 const port = 9333 + Math.floor(Math.random() * 500);
+const profile = `/tmp/cdp-prof-${port}`;                 // 찍고 나면 지운다(한 번에 수 MB — 남기면 /tmp 에 쌓인다)
 const chrome = spawn("google-chrome", ["--headless=new", "--disable-gpu", "--no-sandbox", `--remote-debugging-port=${port}`,
-  "--window-size=1600,2600", "--user-data-dir=/tmp/cdp-prof-" + port, "about:blank"], { stdio: "ignore" });
+  "--window-size=1600,2600", `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore" });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let targets;
 for (let i = 0; i < 50; i++) { try { targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); break; } catch { await sleep(200); } }
@@ -39,5 +40,7 @@ const shot = await send("Page.captureScreenshot", clip ? { format: "png", clip, 
                                                      : { format: "png", captureBeyondViewport: false });
 const fs = await import("node:fs"); fs.writeFileSync(png, Buffer.from(shot.result.data, "base64"));
 console.log(logs.slice(0, 20).join("\n"));
-ws.close(); chrome.kill();
+ws.close();
+await new Promise((r) => { chrome.once("exit", r); chrome.kill(); setTimeout(r, 3000); });
+fs.rmSync(profile, { recursive: true, force: true });
 process.exit(0);
