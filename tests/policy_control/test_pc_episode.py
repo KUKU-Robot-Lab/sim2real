@@ -310,3 +310,27 @@ def test_snapshot_needs_enough_still_frames_and_the_holder_check_uses_the_seat()
     assert not cup_in_holder((0.43, -0.003, 0.296), (0.38, -0.002, 0.235), SEAT_DZ_CYL60)   # 구멍 밖
     assert not cup_in_holder((0.38, -0.002, 0.36), (0.38, -0.002, 0.235), SEAT_DZ_CYL60)    # 링 위에 걸침
     assert load_holder_poses(Path("/nonexistent.yaml")) == {}
+
+
+def test_holder_problems_names_missing_files_and_ids():
+    ep = _ep()
+    assert S.holder_problems(ep, {1: ((0.38, -0.002, 0.235), 0.0)}) == []
+    assert "CENTER_HOLDER" in S.holder_problems(ep, {0: ((0.38, 0.15, 0.235), 0.0)})[0]
+    assert "cup_holders" in S.holder_problems(ep, {})[0]                         # 파일이 없다 — cup_holders --write 를 돌릴 것
+
+
+def test_the_plan_tool_refuses_a_real_run_without_the_holder_file(tmp_path, monkeypatch):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("episode_run", REPO / "deploy/policy_control/tools/episode_run.py")
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    raw = yaml.safe_load((EPISODES / "pick_place_right.yaml").read_text())
+    raw["holder_poses"] = str(tmp_path / "none.yaml")
+    path = tmp_path / "ep.yaml"
+    path.write_text(yaml.safe_dump(raw, allow_unicode=True))
+    assert tool.main(["--episode", str(path), "--plan", "--require-holders"]) == 1
+    (tmp_path / "none.yaml").write_text("holders:\n  cup_holder_1: {marker_id: 1, position: [0.38, -0.002, 0.235], yaw_rad: 0.0}\n")
+    rc = tool.main(["--episode", str(path), "--plan", "--require-holders"])
+    from policy_control import policy_registry as R
+    if all(e.ok for e in R.scan(REPO / "deploy" / "policies", deep=False)):
+        assert rc == 0

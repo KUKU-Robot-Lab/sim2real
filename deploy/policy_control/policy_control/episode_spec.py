@@ -220,3 +220,12 @@ def availability(ep: Episode, entries: Mapping[str, object]) -> dict[str, str]:
         else:
             out[role] = ""
     return out
+
+
+def holder_problems(ep: Episode, poses: Mapping[int, object]) -> list[str]:
+    """고정 홀더 자세 파일(holder_poses → {마커 id: 자세})에 이 에피소드가 쓰는 홀더가 다 있는가. 빈 목록 = 된다."""
+    if not ep.holders:
+        return []
+    if not poses:
+        return [f"{ep.holder_poses or '홀더 자세 파일'} 이 없거나 비었다 — 미션 cup_holders 단계(--write)로 만든다"]
+    return [f"{name}(마커 {hid})이 {ep.holder_poses} 에 없다" for name, hid in ep.holders.items() if hid not in poses]

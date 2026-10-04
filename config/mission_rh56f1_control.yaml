@@ -1597,6 +1597,19 @@ run:
     stop:
     - pd_arm_left#1
   episode_pick_place_right:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세(config/cup_holder_poses_arm4090.yaml)에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/pick_place_right.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner)$'''
   - note: ★[에피소드 pick_place_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었는가 · config/cup_holder_poses_arm4090.yaml 가 있는가(cup_holders
       단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
     argv:
@@ -1648,6 +1661,13 @@ run:
     - -p
     - holder:=1
     background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+    argv:
+    - bash
+    - -lc
+    - EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
+      /policy_control/status/episode_runner /policy_control/right/episode /episode/objects/CUP/pose /objects/cyl60/pose /objects/cup_holder_1/pose'
+      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_pick_place_right
   - note: 에피소드 실행기 — pick_place_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_right)
     argv:
     - '{repo}/.venv/bin/python'
@@ -1666,10 +1686,28 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_pick_place_right#6
+    - episode_pick_place_right#4
     - episode_pick_place_right#3
-    - episode_pick_place_right#2
-    - episode_pick_place_right#1
+  - note: 기록 끝 — bag 두 개 마무리(SIGINT)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
   episode_pick_place_left:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세(config/cup_holder_poses_arm4090.yaml)에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/pick_place_left.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner)$'''
   - note: ★[에피소드 pick_place_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었는가 · config/cup_holder_poses_arm4090.yaml 가 있는가(cup_holders
       단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
     argv:
@@ -1721,6 +1759,13 @@ run:
     - -p
     - holder:=1
     background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+    argv:
+    - bash
+    - -lc
+    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
+      /policy_control/status/episode_runner /policy_control/left/episode /episode/objects/CUP/pose /objects/cyl60/pose /objects/cup_holder_1/pose'
+      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_pick_place_left
   - note: 에피소드 실행기 — pick_place_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_left)
     argv:
     - '{repo}/.venv/bin/python'
@@ -1739,6 +1784,11 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_pick_place_left#6
+    - episode_pick_place_left#4
     - episode_pick_place_left#3
-    - episode_pick_place_left#2
-    - episode_pick_place_left#1
+  - note: 기록 끝 — bag 두 개 마무리(SIGINT)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop

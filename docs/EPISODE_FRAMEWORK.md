@@ -46,6 +46,22 @@ config/episodes/<이름>.yaml ── episode_spec(검증 · 역할 → 등록부
 승인 규칙: 실행기는 승인 없이 아무것도 움직이지 않는다(승인 없음 = 실행 안 함, 실패 아님). 승인은 `logs/episode/approvals.jsonl`
 한 줄 = 한 번, 실행기가 뜬 뒤 쓰인 것만. `auto_approve` 는 fake 도메인에서만(126 이면 노드가 거부).
 
+## 첫 실기 순서(pick_place_right)
+
+| # | 상황판 단계 | 허락 | 볼 것 |
+|---|---|---|---|
+| 1 | preflight · drivers · hand_right · hand_check_right | drivers 는 운영자(전원 · CAN) | CPU 실시간 한도 · 손 250 Hz |
+| 2 | head_home | 단계 승인(머리가 움직인다) | 카메라 화면이 5090 홈과 같은가 |
+| 3 | cups | 단계 승인 | /objects/cyl60/pose 가 들어오는가 · 컵은 aglt 배치(x ≈ 0.25, y ≈ −0.20 ± 0.1) |
+| 4 | cup_holders | — | `--write` 가 `config/cup_holder_poses_arm4090.yaml` 을 쓴다(★없으면 에피소드 시작 검사가 멈춘다) |
+| 5 | pd_load_right → pd_arm_right → home_right | 단계마다 승인 | pd TRACKING · 홈 정착 |
+| 6 | episode_pick_place_right | 단계 승인 | 시작 검사(정책 · 홀더 파일 · 남은 노드) → bag 기록 시작 → 노드 · 실행기 |
+| 7 | 에피소드 패널 [다음] × 노드 수 | 노드 이름 입력(구분 실행) | 홈 → snapshot → 집기(SETTING 도달) → 놓기(홀더 1) → 홈 |
+| 8 | 에피소드 패널 [연속 실행] | `episode:pick_place_right` 한 번 | 7 이 한 번 끝까지 된 뒤에 |
+
+놓음 문턱(손 목표 0.15 rad · 관절 힘 300 g)은 6 의 bag(손 · 정책 · 실행기 상태)으로 정한다.
+화면 확인: `node deploy/s2r_console/tools/screenshot_cdp.mjs http://127.0.0.1:8091/ out.png`(chrome --screenshot 는 SSE 상황판을 못 담는다).
+
 ## 에피소드
 
 | 파일 | 순서 | 실기 |

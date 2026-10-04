@@ -1539,6 +1539,18 @@ run:
     - --topic
     - /objects/cup_holder_1/pose
     background: true
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/pick_place_right.yaml
+    - --plan
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner)$'''
   - note: fake — 확인만
     argv:
     - bash
@@ -1609,9 +1621,9 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_pick_place_right#7
+    - episode_pick_place_right#6
     - episode_pick_place_right#5
-    - episode_pick_place_right#4
-    - episode_pick_place_right#3
     - episode_pick_place_right#1
     - episode_pick_place_right#0
   episode_pick_place_left:
@@ -1644,6 +1656,18 @@ run:
     - --topic
     - /objects/cup_holder_1/pose
     background: true
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/pick_place_left.yaml
+    - --plan
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner)$'''
   - note: fake — 확인만
     argv:
     - bash
@@ -1714,8 +1738,8 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_pick_place_left#7
+    - episode_pick_place_left#6
     - episode_pick_place_left#5
-    - episode_pick_place_left#4
-    - episode_pick_place_left#3
     - episode_pick_place_left#1
     - episode_pick_place_left#0

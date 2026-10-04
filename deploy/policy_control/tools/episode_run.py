@@ -39,6 +39,8 @@ def main(argv=None) -> int:
     g.add_argument("--dry-run", action="store_true")
     ap.add_argument("--inject", action="append", default=[], help="노드=실패코드[,실패코드] (모의 실패)")
     ap.add_argument("--step", action="store_true", help="모의 실행을 노드 하나씩(구분 실행 모양)")
+    ap.add_argument("--require-holders", action="store_true",
+                    help="--plan: 고정 홀더 자세 파일에 쓰는 홀더가 다 있어야 rc 0(실기 에피소드 단계 시작 검사)")
     args = ap.parse_args(argv)
     path = args.episode if args.episode.is_absolute() else _paths.SIM2REAL / args.episode
     ep = S.load(path)
@@ -54,7 +56,16 @@ def main(argv=None) -> int:
         bad = {r: why for r, why in av.items() if why}
         for r, why in av.items():
             print(f"  {'✓' if not why else '✗'} {r}: {why or ep.policies[r].policy}")
-        return 1 if bad else 0
+        holders = []
+        if args.require_holders:
+            from policy_control.episode_ros import load_holder_poses
+            hp = Path(ep.holder_poses)
+            holders = S.holder_problems(ep, load_holder_poses(hp if hp.is_absolute() else _paths.SIM2REAL / hp))
+            for why in holders:
+                print(f"  ✗ 홀더: {why}")
+            if not holders and ep.holders:
+                print(f"  ✓ 홀더 {dict(ep.holders)} — {ep.holder_poses}")
+        return 1 if bad or holders else 0
     ex = FakeExecutor(ep, inject=_inject(args.inject))
     rows: list[dict] = []
     m = EpisodeManager(ep, ex, approve=lambda what, why: True, log=rows.append, episode_id="dry-run")

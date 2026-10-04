@@ -381,6 +381,14 @@ def _episode_run(name: str, real: bool) -> list:
                               "--y", str(FAKE_HOLDER_Y[hid]), "--z", "0.235", "--topic", f"/objects/cup_holder_{hid}/pose"],
                              background=True))
     first_obj = next(iter(ep.objects))
+    sides = sorted({b.side for b in ep.policies.values()})
+    left = "|".join(f"(rh_aglt_node|rh_place_node)_{s}" for s in sides)
+    cmds.append(_cmd("시작 검사 — 정책이 등록부에서 쓸 수 있고" + (f" 고정 홀더 자세({ep.holder_poses})에 쓰는 홀더가 다 있는가"
+                     if real else "") + " (읽기만)",
+                     ["python3", "{repo}/deploy/policy_control/tools/episode_run.py", "--episode", f"config/episodes/{name}.yaml",
+                      "--plan", *(["--require-holders"] if real else [])]))
+    cmds.append(_cmd("시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)",
+                     ["bash", "-lc", f"! ros2 node list 2>/dev/null | grep -E '^/({left}|episode_runner)$'"]))
     cmds.append(_cmd(f"★[에피소드 {name}] 물체({', '.join(ep.objects)})가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 "
                      f"{', '.join(f'{k}={v}' for k, v in ep.holders.items())} 위가 비었는가 · {ep.holder_poses} 가 있는가"
                      "(cup_holders 단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다" if real else "fake — 확인만",
@@ -407,6 +415,16 @@ def _episode_run(name: str, real: bool) -> list:
                               "-p", f"episode_topic:=/policy_control/{b.side}/episode", "-p", f"contract:={contract}",
                               "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", f"cup_topic:={ep.objects[obj]['topic']}",
                               "-p", f"holder:={hid}", *([] if real else ["-p", "require_grasp:=false"])], background=True))
+    if real:                                         # 첫 실기는 놓음 문턱(손끝 · 관절 힘 · 손 목표)을 bag 으로 정한다(PLACE 10.04)
+        extra = [f"/policy_control/{x}" for x in ("joint_target", *(f"status/pd_{s}" for s in sides),
+                                                   *(f"status/rh_aglt_node_{s}" for s in sides),
+                                                   *(f"status/rh_place_node_{s}" for s in sides), "status/episode_runner",
+                                                   *(f"{s}/episode" for s in sides))]
+        extra += [EPISODE_RELAY.format(o) for o in ep.objects] + [o["topic"] for o in ep.objects.values()]
+        extra += [f"/objects/cup_holder_{h}/pose" for h in sorted(set(ep.holders.values()))]
+        cmds.append(_cmd("기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더",
+                         ["bash", "-lc", f"EXTRA='{' '.join(extra)}' bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh "
+                                         f"start episode_{name}"]))
     cmds.append(_cmd(f"에피소드 실행기 — {name} · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:{name})",
                      ["{repo}/.venv/bin/python", f"{PC}/policy_control/episode_runner_node.py", "--ros-args",
                       "-p", f"episode:=config/episodes/{name}.yaml", "-p", "robot:=rh56f1"], background=True))
@@ -414,6 +432,9 @@ def _episode_run(name: str, real: bool) -> list:
                      "(이상하면 '에피소드 실행기 정지' · 정지 바)", ["bash", "-lc", "true"], manual=True))
     bg = [i for i, c in enumerate(cmds) if c.get("background")]
     cmds.append(_cmd("에피소드 노드들 정지", stop=[f"episode_{name}#{i}" for i in reversed(bg)]))
+    if real:
+        cmds.append(_cmd("기록 끝 — bag 두 개 마무리(SIGINT)",
+                         ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop"]))
     return cmds
 
 

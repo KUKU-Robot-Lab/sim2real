@@ -49,7 +49,20 @@ def _episode_status(con) -> dict | None:
     return (con.snapshot().get("session") or {}).get("episode_runner")
 
 
-def drive(con, mode: str, name: str) -> dict:
+def shot(port: int, out: Path) -> None:
+    """상황판 화면 한 장(헤드리스 크롬) — 에피소드 패널을 눈으로 확인한다(rules/ui-pages.md)."""
+    import subprocess
+    out.parent.mkdir(parents=True, exist_ok=True)
+    # chrome --screenshot 는 SSE 가 열린 상황판에서 JS 가 그린 화면을 못 담는다 — CDP 로 그린 뒤 찍는다(screenshot_cdp.mjs)
+    try:
+        r = subprocess.run(["node", str(HERE / "screenshot_cdp.mjs"), f"http://127.0.0.1:{port}/", str(out), "5000"],
+                           capture_output=True, text=True, timeout=60)
+        print(f"  📷 {out} {r.stdout.strip().splitlines()[0] if r.stdout.strip() else r.stderr.strip()[-200:]}", flush=True)
+    except (OSError, subprocess.SubprocessError) as exc:      # 화면은 확인용 — 리허설을 멈추지 않는다
+        print(f"  📷 실패 {out.name}: {exc}", flush=True)
+
+
+def drive(con, mode: str, name: str, on_step=None) -> dict:
     t0 = time.monotonic()
     while time.monotonic() - t0 < 30 and not (_episode_status(con) or {}).get("next_action"):
         time.sleep(0.5)
@@ -63,6 +76,8 @@ def drive(con, mode: str, name: str) -> dict:
             before = (st.get("index"), st.get("next_action"), len(st.get("history") or []))
             print(f"  ▶ 다음: {st['next_action']}", flush=True)
             con.episode("next", operator="fake-episode", typed=st["next_action"])
+            if on_step:
+                on_step(st["next_action"])
             t1 = time.monotonic()
             while time.monotonic() - t1 < 120:                 # 실행기가 받아 busy 가 되거나 상태가 바뀔 때까지
                 cur = _episode_status(con) or {}
@@ -78,6 +93,8 @@ def main() -> int:
     ap.add_argument("--episode", default="pick_place_right")
     ap.add_argument("--mode", choices=("step", "run"), default="step")
     ap.add_argument("--profile", default="rh56f1_fake")
+    ap.add_argument("--serve", type=int, default=0, help="이 포트로 상황판 HTTP 를 같이 띄운다(127.0.0.1)")
+    ap.add_argument("--shots", type=Path, default=None, help="--serve 와 함께: 에피소드 패널 화면을 여기에 찍는다")
     args = ap.parse_args()
     from s2r_console import console as C
 
@@ -88,6 +105,13 @@ def main() -> int:
         raise SystemExit("실기 프로파일에는 쓰지 않는다")
     side = "left" if args.episode.endswith("_left") else "right"
     rows = []
+    server = None
+    if args.serve:
+        from s2r_console.server import serve
+        import threading
+        server = serve(con, bind="127.0.0.1", port=args.serve)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+    snap = (lambda tag: shot(args.serve, args.shots / f"{args.episode}_{tag}.png")) if args.serve and args.shots else None
     try:
         for stage in PREP[side]:
             print(f"▶ {stage}", flush=True)
@@ -101,7 +125,12 @@ def main() -> int:
         print(f"▶ {stage}", flush=True)
         con.run_stage(stage, operator="fake-episode")
         _wait_stage(con, s, stage, stop_at_manual="에피소드 진행")
-        st = drive(con, args.mode, args.episode)
+        time.sleep(2.0)
+        if snap:
+            snap("0_ready")
+        st = drive(con, args.mode, args.episode, on_step=(lambda what: snap(f"step_{what.replace(':', '_')}")) if snap else None)
+        if snap:
+            snap("9_end")
         print(f"\n[fake-episode] {args.episode} · {args.mode} → {st.get('phase')} · last {json.dumps(st.get('last'), ensure_ascii=False)[:400]}")
         for h in (st.get("history") or [])[-20:]:
             print(f"   {h.get('timestamp', '')[11:19]} {h.get('event'):<17} {h.get('state_id') or '':<16} {h.get('result', '') or ''} "
@@ -113,6 +142,8 @@ def main() -> int:
         rows.append((stage, r.outcome if r else None))
         return 0 if st.get("phase") in ("SUCCESS", "FAILURE", "STOPPED") else 1
     finally:
+        if server is not None:
+            server.shutdown()
         kept = con.shutdown()
         print(f"[fake-episode] 단계 {rows} · 남은 프로세스 {kept or '없음'}")
 

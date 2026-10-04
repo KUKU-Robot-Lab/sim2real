@@ -330,3 +330,29 @@ def test_the_episode_stage_brings_up_both_policies_and_the_runner(side):
         assert {f"home_{side}", "cups", "cup_holders"} <= set(by[sid].needs)
         assert any(c.manual and "상황판" in c.note for c in cmds)
     assert REAL.stages[[s.id for s in REAL.stages].index(sid)].touches_real
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_the_episode_stage_checks_before_it_starts_anything(side):
+    """실기는 고정 홀더 자세 파일까지 검사하고(fake 는 fake 홀더), 같은 이름 노드가 남아 있으면 띄우기 전에 멈춘다."""
+    sid = f"episode_pick_place_{side}"
+    for m, book in ((REAL, REAL_BOOK), (FAKE, FAKE_BOOK)):
+        cmds = _cmds(m, book, sid)
+        plan = next(i for i, c in enumerate(cmds) if any("episode_run.py" in a for a in c.argv))
+        first_node = next(i for i, c in enumerate(cmds) if c.background and any("_node.py" in a for a in c.argv))
+        assert plan < first_node and not cmds[plan].background
+        assert ("--require-holders" in cmds[plan].argv) is (m is REAL)
+        leftover = next(c for c in cmds if list(c.argv[:2]) == ["bash", "-lc"] and "ros2 node list" in c.argv[2])
+        assert f"rh_aglt_node|rh_place_node)_{side}" in leftover.argv[2] and "episode_runner" in leftover.argv[2]
+
+
+def test_the_real_episode_stage_records_what_the_release_threshold_needs():
+    """첫 실기에서 놓음 문턱(손끝 · 관절 힘 · 손 목표)을 정하려면 손 bag 과 정책 · 실행기 상태가 같이 있어야 한다."""
+    cmds = _cmds(REAL, REAL_BOOK, "episode_pick_place_right")
+    start = next(c for c in cmds if "rh56f1_record.sh" in " ".join(c.argv) and "start" in " ".join(c.argv))
+    line = " ".join(start.argv)
+    for topic in ("/policy_control/status/rh_place_node_right", "/policy_control/status/episode_runner",
+                  "/policy_control/joint_target", "/objects/cyl60/pose", "/objects/cup_holder_1/pose"):
+        assert topic in line
+    assert any(list(c.argv[-1:]) == ["stop"] and "rh56f1_record.sh" in " ".join(c.argv) for c in cmds)
+    assert not any("rh56f1_record.sh" in " ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, "episode_pick_place_right"))
