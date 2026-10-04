@@ -209,7 +209,7 @@ def test_a_missing_holder_is_retried_after_a_perception_refresh():
                    "failure_policy": {"default": 1}})
     ex2 = FakeExecutor(ep2, inject={"place_cup": [F.HOLDER_NOT_FOUND]})
     assert EpisodeManager(ep2, ex2, approve=_yes()).run() == SUCCESS
-    assert ("prepare", "refresh_perception", ("rh_place_r",)) in ex2.calls
+    assert ("prepare", "refresh_holders", ("rh_place_r",)) in ex2.calls
 
 
 def test_no_rollback_while_holding_an_object():

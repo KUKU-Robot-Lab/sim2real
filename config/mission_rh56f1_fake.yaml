@@ -321,6 +321,26 @@ stages:
   - robot_left
   - contract
   title: '[left] rh_place 정책 — 쥔 컵을 컵홀더 자리에 내려놓고 손을 편 뒤 팔을 시작 관절로(놓음 5 스텝 → 스크립트 45 스텝 → 스스로 끝). 정책 노드 → reset → start → 관찰'
+- id: episode_pick_place_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  needs:
+  - home_right
+  - cups
+  - cup_holders
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 정책을 잇는다
+  title: '[에피소드] pick_place_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → pick_cup → place_cup → go_home_end'
+- id: episode_pick_place_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  needs:
+  - home_left
+  - cups
+  - cup_holders
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 정책을 잇는다
+  title: '[에피소드] pick_place_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → pick_cup → place_cup → go_home_end'
 - id: shutdown
   group: finish
   lane: rig
@@ -1489,3 +1509,213 @@ run:
   - note: '[left] 이 팔의 pd 정지 — IDLE 이라 토크는 JTC 가 잡는다'
     stop:
     - pd_arm_left#1
+  episode_pick_place_right:
+  - note: fake 물체 — /objects/cyl60/pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '-0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/cyl60/pose
+    background: true
+  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --latched
+    - --rate
+    - '2'
+    - --x
+    - '0.38'
+    - --y
+    - '-0.002'
+    - --z
+    - '0.235'
+    - --topic
+    - /objects/cup_holder_1/pose
+    background: true
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] rh_aglt_r 노드(right_rh_aglt_cyl60g) — SETTING 도달에 스스로 끝남 · 컵 = snapshot 재발행'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_right
+    - -p
+    - ns:=right
+    - -p
+    - contract:={repo}/deploy/policies/right_rh_aglt_cyl60g/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - stop_on_target:=true
+    - -p
+    - cup_topic:=/episode/objects/CUP/pose
+    - -p
+    - max_episode_s:=15.0
+    background: true
+  - note: '[right] rh_place_r 노드(right_rh_place_i09) — 홀더 1 · 놓은 뒤 스스로 끝남'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_place_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_place_node_right
+    - -p
+    - ns:=right_place
+    - -p
+    - episode_topic:=/policy_control/right/episode
+    - -p
+    - contract:={repo}/deploy/policies/right_rh_place_i09/rh_place_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - cup_topic:=/objects/cyl60/pose
+    - -p
+    - holder:=1
+    - -p
+    - require_grasp:=false
+    background: true
+  - note: 에피소드 실행기 — pick_place_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_right)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -p
+    - episode:=config/episodes/pick_place_right.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_pick_place_right#5
+    - episode_pick_place_right#4
+    - episode_pick_place_right#3
+    - episode_pick_place_right#1
+    - episode_pick_place_right#0
+  episode_pick_place_left:
+  - note: fake 물체 — /objects/cyl60/pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/cyl60/pose
+    background: true
+  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --latched
+    - --rate
+    - '2'
+    - --x
+    - '0.38'
+    - --y
+    - '-0.002'
+    - --z
+    - '0.235'
+    - --topic
+    - /objects/cup_holder_1/pose
+    background: true
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[left] rh_aglt_l 노드(left_rh_aglt_cyl60gmir) — SETTING 도달에 스스로 끝남 · 컵 = snapshot 재발행'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_left
+    - -p
+    - ns:=left
+    - -p
+    - contract:={repo}/deploy/policies/left_rh_aglt_cyl60gmir/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - stop_on_target:=true
+    - -p
+    - cup_topic:=/episode/objects/CUP/pose
+    - -p
+    - max_episode_s:=15.0
+    background: true
+  - note: '[left] rh_place_l 노드(left_rh_place_i01) — 홀더 1 · 놓은 뒤 스스로 끝남'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_place_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_place_node_left
+    - -p
+    - ns:=left_place
+    - -p
+    - episode_topic:=/policy_control/left/episode
+    - -p
+    - contract:={repo}/deploy/policies/left_rh_place_i01/rh_place_contract.json
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - cup_topic:=/objects/cyl60/pose
+    - -p
+    - holder:=1
+    - -p
+    - require_grasp:=false
+    background: true
+  - note: 에피소드 실행기 — pick_place_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_left)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -p
+    - episode:=config/episodes/pick_place_left.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_pick_place_left#5
+    - episode_pick_place_left#4
+    - episode_pick_place_left#3
+    - episode_pick_place_left#1
+    - episode_pick_place_left#0

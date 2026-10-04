@@ -118,6 +118,7 @@ function renderAll() {
   renderMetrics(s);
   renderFpp(s);
   renderPolicy(s);
+  renderEpisode(s);
   renderSetupPanel(s);
   renderRobot(s);
   put("quick", stopButtons(s));
@@ -724,6 +725,55 @@ function renderFpp(s) {
     <dl class="kv fpp-kv">${o.rows.map((r) => `<dt><span class="lamp ${esc(r.tone)}"></span>${esc(r.label)}</dt><dd class="fpp-${esc(r.tone)}">${esc(r.value)}</dd>`).join("")}</dl></div>`).join(""));
 }
 
+// 에피소드 실행기(10.04) — 순서 · 지금 노드 · 손 물체 · 실패/복구. 구분 실행은 [다음] 이 노드마다 이름 입력,
+// 연속 실행은 episode:<이름> 한 번. 정지는 lease 없이 언제나.
+const EP_TONE = { READY: "", RUNNING: "warn", SUCCESS: "ok", FAILURE: "bad", STOPPED: "bad" };
+function renderEpisode(s) {
+  const e = s.episode_runner;
+  $("episode-panel").hidden = !e;
+  if (!e) return;
+  const can = holding() && !e.stale;
+  put("episode-meta", `<span class="badge ${EP_TONE[e.phase] || ""}">${esc(e.phase)}${e.busy ? " · 실행 중" : ""}</span>
+    <span class="hint">${esc(e.episode)} · ${esc(e.episode_id)}${e.stale ? " · 상태가 늦다" : ""}</span>`);
+  const nodes = (e.nodes || []).map((n) => `<li class="ep-${esc(n.state)}${n.id === e.node && e.busy ? " ep-busy" : ""}">
+    <b>${esc(n.id)}</b> <span class="hint">${esc(n.type)} ${esc(n.name)}</span></li>`).join("");
+  const w = e.world || {};
+  const objs = Object.entries(w.objects || {}).map(([k, v]) => `${esc(k)}: ${esc(v.at)}`).join(" · ") || "—";
+  const last = e.last && e.last.node ? `<div class="note">${esc(e.last.node)} → <b>${esc(e.last.code)}</b> ${esc(e.last.reason || "")}</div>` : "";
+  const pend = e.pending ? `<div class="note warn">복구 대기: ${esc(e.pending.action)} — ${esc(e.pending.reason)}</div>` : "";
+  const next = e.next_action;
+  const done = ["SUCCESS", "FAILURE", "STOPPED"].includes(e.phase);
+  const btns = `<div class="actions">
+    <button class="btn btn-sm btn-real" data-act="ep-next" data-arg="${esc(next || "")}" ${can && next && !e.busy ? "" : "disabled"}
+      title="노드 하나(구분 실행) — 이름을 입력해 승인">다음: ${esc(next || "—")}</button>
+    <button class="btn btn-sm btn-real" data-act="ep-run" data-arg="episode:${esc(e.episode)}" ${can && !done && !e.busy ? "" : "disabled"}
+      title="끝까지(연속 실행) — 승인 한 번, 실패면 정해진 복구 또는 정지">연속 실행</button>
+    <button class="btn btn-sm btn-ghost" data-act="ep-reset" ${can && !e.busy ? "" : "disabled"} title="WorldState 처음부터">새 에피소드</button>
+    <button class="btn-stop" data-act="ep-stop" title="실행기 정지 — 정책 노드 episode/stop(pd 가 붙든다) · 재생 중단">■ 에피소드 실행기 정지</button></div>`;
+  const hist = (e.history || []).slice(-8).reverse().map((h) => `<li><span class="hint">${esc(String(h.timestamp || "").slice(11, 19))}</span>
+    ${esc(h.event)} <b>${esc(h.state_id || "")}</b> ${esc(h.result || "")} <span class="hint">${esc(h.termination_reason || "")}</span></li>`).join("");
+  put("episode", `${btns}<ol class="ep-nodes">${nodes}</ol>
+    <dl class="kv"><dt>자세</dt><dd>${esc(w.pose)}</dd><dt>오른손</dt><dd>${esc(w.right_hand)}</dd><dt>왼손</dt><dd>${esc(w.left_hand)}</dd>
+    <dt>진행</dt><dd>${esc((w.task_flags || []).join(", ") || "—")}</dd><dt>물체</dt><dd>${objs}</dd>
+    <dt>재시도</dt><dd>${esc(JSON.stringify(e.attempts || {}))}</dd><dt>기록</dt><dd class="hint">${esc(rel(e.run_dir || ""))}</dd></dl>
+    ${pend}${last}${det("ep-hist", "최근 기록", `<ol class="events">${hist}</ol>`)}`);
+}
+
+function episodeModal(action, want) {
+  const title = action === "run" ? "연속 실행 — 끝까지(사용자 개입 없이)" : `구분 실행 — ${want}`;
+  const body = action === "run"
+    ? "승인 한 번으로 남은 노드를 끝까지 실행한다. 실패하면 정해진 복구(재시도 상한 · 빈손 홈으로 되돌아가기)를 스스로 하거나 멈춘다. 안전 정지(pd HOLD · 비상정지 · 시간 초과 · 노드 오류)는 자동이다."
+    : "이 노드(또는 기다리는 복구) 하나만 실행한다.";
+  modal(`<h3>${esc(title)}</h3><p>${esc(body)}</p>
+    <p style="margin-top:12px">로봇 주변이 비어 있고 물리 비상정지에 손이 닿는지 확인한 뒤 <code>${esc(want)}</code> 를 그대로 입력할 것.</p>
+    <input type="text" id="ep-typed" autocomplete="off" style="width:100%" placeholder="${esc(want)}">
+    <div class="modal-actions"><button class="btn btn-ghost" data-act="modal-close">취소</button>
+    <button class="btn btn-real" id="ep-go" data-act="ep-go" data-arg="${esc(action)}" disabled>실행</button></div>`, true);
+  const input = $("ep-typed");
+  input.addEventListener("input", () => { $("ep-go").disabled = input.value !== want; });
+  input.focus();
+}
+
 function renderPolicy(s) {
   const p = s.policy;
   $("policy-panel").hidden = !p;
@@ -863,6 +913,11 @@ function endModal() {
 
 // ── 동작 ────────────────────────────────────────────────────────────────
 const acts = {
+  "ep-next"(want) { if (want) episodeModal("next", want); },
+  "ep-run"(want) { episodeModal("run", want); },
+  async "ep-go"(action) { await call("POST", "/api/episode", { action, typed: $("ep-typed").value }); closeModal(); refresh(); },
+  async "ep-stop"() { await call("POST", "/api/episode/stop"); refresh(); },
+  async "ep-reset"() { await call("POST", "/api/episode", { action: "reset" }); refresh(); },
   async "lease-take"() {
     const name = ($("op-name")?.value || "").trim();
     if (!name) return toast("운영자 이름을 넣을 것");

@@ -144,15 +144,15 @@ RETRY, ROLLBACK, SAFE_STOP = "retry", "rollback_retry", "safe_stop"
 class Recovery:
     action: str                     # retry | rollback_retry | safe_stop
     reason: str
-    pre: tuple = ()                 # 재시도 전 준비(refresh_perception · open_hand)
+    pre: tuple = ()                 # 재시도 전 준비(refresh_objects · refresh_holders · open_hand)
     checkpoint: str | None = None   # rollback 이 돌아갈 checkpoint
 
 
 #: 가이드 2-6 표 — 이 저장소에 있는 수단만 쓴다(재파지 기술 · 장면 재평가가 없는 것은 safe stop)
 _TABLE = {
-    F.TARGET_NOT_FOUND: (RETRY, ("refresh_perception",)),
-    F.HOLDER_NOT_FOUND: (RETRY, ("refresh_perception",)),
-    F.LID_NOT_FOUND: (RETRY, ("refresh_perception",)),
+    F.TARGET_NOT_FOUND: (RETRY, ("refresh_objects",)),
+    F.HOLDER_NOT_FOUND: (RETRY, ("refresh_holders",)),
+    F.LID_NOT_FOUND: (RETRY, ("refresh_objects",)),
     F.GRASP_FAILED_LEFT: (ROLLBACK, ("open_hand",)),
     F.GRASP_FAILED_RIGHT: (ROLLBACK, ("open_hand",)),
     F.POSE_MISMATCH: (ROLLBACK, ()),

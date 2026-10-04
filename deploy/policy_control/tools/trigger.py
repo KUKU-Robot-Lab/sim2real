@@ -83,7 +83,7 @@ def resolve(service: str, side: str, episode_ns: str = "") -> str:
 
 
 #: 정지 바(콘솔)가 부르는 곳 — 공용 정책 노드와 팔마다 도는 정책 노드(ns right · left) 전부
-EPISODE_NS_ALL = ("", "right", "left")
+EPISODE_NS_ALL = ("", "right", "left", "right_place", "left_place")   # 10.04 에피소드 단계: 한 팔에 aglt · place 가 같이 뜬다
 
 
 def every_policy_paths(service: str, available: Sequence[str]) -> list[str]:

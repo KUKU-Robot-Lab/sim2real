@@ -253,6 +253,7 @@ class ArmUnit:
         self.hand_target: np.ndarray | None = None
         self.rest_hand: np.ndarray | None = None     # engage 때 실측 손 자세
         self.hold: Hold | None = None
+        self.stopped_episode: str | None = None       # stop · abort 받은 에피소드 — 그 번호의 늦은 목표는 쓰지 않는다(10.04)
         self.blend: Blend | None = None
         self.switch_failed = False
         self.thermal_retreat = False   # 발열 HOLD 에서 저부하 자세로 내려가는 중
@@ -352,12 +353,18 @@ class ArmUnit:
         return {c: float(sample.effort[idx[self.profile[c]["source"]]]) for c in self.arm_joints
                 if self.profile[c]["source"] in idx}
 
-    def take_target(self, sample: JointSample, seq: int, now: float) -> bool:
-        """joint_target 한 건에서 이 팔의 관절을 이름으로 뽑는다. 팔 관절이 다 없으면 False(다른 팔의 목표)."""
+    def take_target(self, sample: JointSample, seq: int, now: float, episode: str | None = None) -> bool:
+        """joint_target 한 건에서 이 팔의 관절을 이름으로 뽑는다. 팔 관절이 다 없으면 False(다른 팔의 목표).
+
+        ★10.04: 끝난 에피소드(stop · abort 를 받은 번호)의 목표는 받되 쓰지 않는다 — 정책이 끝난 직후 마지막 목표가 stop
+        사건보다 늦게 닿으면(토픽 사이 순서 보장 없음) 붙들기가 지워져 0.25 s 뒤 워치독 HOLD 로 갔다(fake 에피소드 실행기)."""
         try:
             q, qd = select_joints(sample, self.arm_joints)
         except CodecError:
             return False
+        stopped = getattr(self, "stopped_episode", None)
+        if stopped is not None and episode is not None and str(episode) == stopped and self.hold is not None:
+            return True
         if qd is None:
             raise CodecError(f"joint_target({self.side}): velocity 가 없다")
         n = len(self.arm_joints)
@@ -369,6 +376,7 @@ class ArmUnit:
 
     def on_episode(self, event: str, episode: int) -> None:
         if event == "reset":
+            self.stopped_episode = None
             self.stage.new_episode(episode)
             if self.hold is not None:                       # 정착 bias 제거·홈 유지(sim 리셋 직후와 동일)
                 self.hold = replace(self.hold, bias=np.zeros_like(self.hold.bias), settle=False)
@@ -376,6 +384,7 @@ class ArmUnit:
             self.hold = Hold(q=self.stage.state.law.q_setpoint.copy(), hand=self.hand_target,
                              bias=np.zeros(len(self.arm_joints)), settle=False)
             self.target = None
+            self.stopped_episode = str(int(episode))
 
     # ---------------------------------------------------------------- tick (under lock)
     def tick(self, now: float, estop: bool) -> TickResult:

@@ -66,6 +66,10 @@ QUICK = {
     #   hand_to_path_pose.py 가 **먼저 구간을 충돌 검사한 뒤** 부른다. 버튼은 그 검사를 건너뛴다.
 }
 _TRIGGER = _paths.POLICY_CONTROL / "tools" / "trigger.py"
+#: 10.04 에피소드 실행기 — 상황판 [다음 노드] · [연속 실행] · [정지] 가 부르는 도구(승인 한 줄 + 서비스). argv 는 여기에만.
+_EPISODE_CMD = _paths.POLICY_CONTROL / "tools" / "episode_cmd.py"
+EPISODE_NODE = "episode_runner"
+EPISODE_ACTIONS = ("next", "run", "stop", "reset")
 #: 여러 팔의 phase 를 한 줄로 합칠 때의 무게 순서 — 하나라도 잡고 있으면 잡고 있는 것.
 _PD_ORDER = (U.PD_UNKNOWN, "HOLD", "RELEASING", "RAMPING", "TRACKING", "IDLE")
 _BRIDGE_RESTART_S = 3.0
@@ -142,8 +146,8 @@ def diagram_of(profile: Profile, units: Mapping[str, U.UnitCmd], *, repo: Path) 
 def bridge_argv(profile: Profile, diagram: Diagram | None = None) -> list[str]:
     """구독 전용 브리지. 스택 토픽은 프로파일이 선언했을 때만 넘긴다. 순수."""
     diagram = diagram if diagram is not None else profile.diagram
-    argv = [sys.executable, "-m", "s2r_console.bridge", "--domain", str(profile.domain),
-            "--nodes", *profile.status_nodes]
+    nodes = list(dict.fromkeys([*profile.status_nodes, EPISODE_NODE]))   # 에피소드 실행기 상태(떠 있을 때만 온다)
+    argv = [sys.executable, "-m", "s2r_console.bridge", "--domain", str(profile.domain), "--nodes", *nodes]
     topics = [] if profile.stack is None else [t.name for t in profile.stack.topics]
     watch: list[str] = []
     if diagram is not None:                             # 그림의 전선 — 세는 것과 그래프만 보는 것
@@ -777,7 +781,48 @@ class Console:
                 raise ConsoleError(str(exc)) from exc
             s.event("quick", f"■ {label} 요청 ({client})")
             self._intent(s, f"quick/{name}", {"client": client})
+            if name in ("episode_stop", "episode_abort"):  # 에피소드 실행기도 멈춘다 — 안 그러면 연속 실행이 복구 동작으로 이어 간다
+                with s.feed_lock:
+                    alive = s.feed.observed().status.get(EPISODE_NODE) is not None
+                if alive and not s.supervisor.is_alive("episode#stop"):
+                    s.supervisor.spawn("episode#stop", stage="episode", note="에피소드 실행기 정지",
+                                       argv=["python3", str(_EPISODE_CMD), "stop", "--execute", "--operator", client],
+                                       background=False, manual=False)
         threading.Thread(target=self._quick_wait, args=(s, key, label), daemon=True).start()
+
+    def episode(self, action: str, *, operator: str, typed: str = "") -> None:
+        """에피소드 실행기 명령(10.04). next · run 은 실행기가 물을 이름을 그대로 입력해야 한다 — 구분 실행은 노드마다,
+        연속 실행은 episode:<이름> 한 번(그 안의 복구도). stop 은 lease 없이 언제나(api 가 거른다)."""
+        if action not in EPISODE_ACTIONS:
+            raise ConsoleError(f"모르는 에피소드 동작: {action}", code=404)
+        with self._lock:
+            s = self._need()
+            with s.feed_lock:
+                obs = s.feed.observed()
+            st = obs.status.get(EPISODE_NODE)
+            age = obs.age_s.get(EPISODE_NODE)
+            if st is None or age is None or age > STALE_S:
+                raise ConsoleError("에피소드 실행기 상태가 안 온다 — episode 단계를 먼저 실행할 것", code=409)
+            want = st.get("next_action") if action == "next" else f"episode:{st.get('episode')}" if action == "run" else ""
+            if action in ("next", "run"):
+                if st.get("busy"):
+                    raise ConsoleError(f"실행기가 {st.get('node')} 를 돌리는 중이다 — 끝나거나 정지 뒤에", code=409)
+                if not want:
+                    raise ConsoleError(f"할 노드가 없다(상태 {st.get('phase')})", code=409)
+                if typed != want:
+                    raise ConsoleError(f"확인 입력이 {want!r} 와 다르다", code=400)
+            argv = ["python3", str(_EPISODE_CMD), action, "--execute", "--operator", operator]
+            if action in ("next", "run"):
+                argv += ["--approve", want]
+            key = f"episode#{action}"
+            try:
+                s.supervisor.spawn(key, stage="episode", note=f"에피소드 {action} {want}".strip(), argv=argv,
+                                   background=False, manual=False)
+            except SupervisorError as exc:
+                raise ConsoleError(str(exc)) from exc
+            s.event("episode", f"▶ 에피소드 {action} {want} ({operator})".replace("  ", " "))
+            self._intent(s, f"episode/{action}", {"operator": operator, "approve": want})
+        threading.Thread(target=self._quick_wait, args=(s, key, f"에피소드 {action}"), daemon=True).start()
 
     @staticmethod
     def _quick_wait(s: Session, key: str, label: str) -> None:
@@ -838,7 +883,10 @@ class Console:
                 "policy": self._policy_view(s), "end_reasons": self.end_reasons(),
                 "robot_module": None if s.robot is None else {**s.robot.as_dict(), "picked": s.picked,
                                                               "slots_now": self._slots_now(s)},
-                "fpp": self._fpp_view(s, obs)}
+                "fpp": self._fpp_view(s, obs),
+                "episode_runner": None if obs.status.get(EPISODE_NODE) is None else {
+                    **obs.status[EPISODE_NODE], "age_s": round(obs.age_s.get(EPISODE_NODE, 1e9), 2),
+                    "stale": obs.age_s.get(EPISODE_NODE, 1e9) > STALE_S}}
 
     @staticmethod
     def _fpp_view(s: Session, obs) -> dict | None:

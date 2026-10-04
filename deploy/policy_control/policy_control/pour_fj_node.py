@@ -289,7 +289,7 @@ class PourFjNode(LeanNodeMixin, Node):
         self.node_name = self.get_name()          # -r __node:=rh_aglt_node_right 로 팔마다 이름을 가른다
         for name, default in (("contract", ""), ("robot", ""), ("device", "cpu"), ("reset_tol_rad", 0.15),
                               ("max_gap_ticks", 3), ("publish_target", True), ("max_episode_s", -1.0), ("ns", ""),
-                              ("stop_on_target", False),
+                              ("stop_on_target", False), ("episode_topic", ""),
                               ("cup_attach", True), ("attach_force_n", AttachCfg.force_n),
                               ("attach_joint_force_g", AttachCfg.joint_force_g), ("attach_signal", AttachCfg.signal),
                               ("attach_max_palm_dist_m", AttachCfg.max_palm_dist_m),
@@ -340,7 +340,9 @@ class PourFjNode(LeanNodeMixin, Node):
         self._pub_target = self.create_publisher(JointState, f"{NS}/joint_target", chain_qos)
         self._pub_obs = self.create_publisher(Float64MultiArray, f"{self.base}/obs", chain_qos)
         self._pub_action = self.create_publisher(Float64MultiArray, f"{self.base}/action", chain_qos)
-        self._pub_episode = self.create_publisher(String, f"{self.base}/episode", latched)
+        # 10.04 에피소드 실행기: 한 팔에 정책 노드 둘(aglt · place)이 같이 뜬다 — 서비스는 ns 로 가르고(right · right_place),
+        #   이벤트는 그 팔의 토픽(/policy_control/<팔>/episode)에 같이 낸다(pd 가 reset · stop 을 그 팔에 적용). 본문에 node 를 싣는다.
+        self._pub_episode = self.create_publisher(String, str(p("episode_topic")) or f"{self.base}/episode", latched)
         self._pub_status = self.create_publisher(String, f"{NS}/status/{self.node_name}", QoSProfile(depth=10))
         # ★10.04 CPU: 상태 · 컵 토픽은 실행기 밖 폴링 노드에서 받는다 — 정책 틱(60 Hz) · 서비스에서 쌓인 것을 비우고 마지막 것만 푼다.
         #   팔 250 + 손 250 + 촉각 250 + 관절 힘 250 Hz 를 메시지마다 깨어나 받던 비용(pd 와 같은 rclpy wait set 비용)을 없앤다.
@@ -449,7 +451,7 @@ class PourFjNode(LeanNodeMixin, Node):
         return res
 
     def _emit(self, event) -> None:
-        body = {**event.as_dict(), "t_ns": self.get_clock().now().nanoseconds}
+        body = {**event.as_dict(), "node": self.node_name, "t_ns": self.get_clock().now().nanoseconds}
         self._pub_episode.publish(self._String(data=json.dumps(body)))
         self.get_logger().info(f"episode {event.episode} {event.event} {list(event.reasons)}")
 

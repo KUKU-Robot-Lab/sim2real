@@ -34,8 +34,15 @@ ROBOTS = {
 }
 
 
-def measure() -> dict[str, float]:
-    out = subprocess.run([sys.executable, str(SAMPLE), "--seconds", "0.6"], capture_output=True, text=True, timeout=30)
+#: 실측에서 기다릴 관절(robot 별) — 손 상태가 늦게 붙으면 '손 관절 상태가 없다'로 계획이 멈춘다(10.04 에피소드 연속 실행)
+HAND_NEED = {"rh56f1": ("thumb_1", "thumb_2", "index_1", "middle_1", "ring_1", "pinky_1"), "dg5f": ()}
+
+
+def measure(side: str = "right", robot: str = "dg5f") -> dict[str, float]:
+    p = side[0]
+    need = [f"{p}_aj_{i}" for i in range(1, 8)] + [f"{p}_hj_{j}" for j in HAND_NEED.get(robot, ())]
+    out = subprocess.run([sys.executable, str(SAMPLE), "--seconds", "0.6", "--need", ",".join(need)],
+                         capture_output=True, text=True, timeout=30)
     if out.returncode != 0:
         raise SystemExit(f"✗ 관절 상태를 못 읽었다: {out.stderr.strip()[-300:]}")
     return json.loads(out.stdout.strip().splitlines()[-1])["q"]
@@ -71,7 +78,7 @@ def main() -> int:
     out = args.out or (SIM2REAL / "logs" / "policy_control" / f"rehome_{args.side}.npz")
     if out.exists():
         out.unlink()                         # 옛 계획이 남아 있으면 계획이 실패해도 재생 단계가 그것을 튼다
-    argv = planner_argv(args.side, measure(), out, args.robot)
+    argv = planner_argv(args.side, measure(args.side, args.robot), out, args.robot)
     print(f"[rehome] {args.side} 실측 → 정책 시작 자세 계획 (직선 → 실패하면 RRT, 실측 손 · 여유 2 cm)", flush=True)
     rc = subprocess.run(argv).returncode
     if rc != 0 or not out.exists():

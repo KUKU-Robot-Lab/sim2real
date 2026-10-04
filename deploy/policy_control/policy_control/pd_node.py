@@ -320,10 +320,10 @@ class PdNode(LeanNodeMixin, Node):
     def _on_target(self, msg, t_recv: float | None = None) -> None:
         try:
             sample = codec.decode_joint_state(msg)
-            _, seq = parse_target_frame(msg.header.frame_id)
+            ep, seq = parse_target_frame(msg.header.frame_id)
             now = time.monotonic() if t_recv is None else t_recv
             with self._lock:
-                taken = [u.side for u in self.units.values() if u.take_target(sample, seq, now)]
+                taken = [u.side for u in self.units.values() if u.take_target(sample, seq, now, episode=ep)]
         except _HANDLED as exc:
             self._note_error(f"joint_target: {exc}")
             return

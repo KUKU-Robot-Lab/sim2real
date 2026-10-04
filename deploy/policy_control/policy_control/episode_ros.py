@@ -40,6 +40,13 @@ POLICY_MARGIN_S = 10.0            # 정책 에피소드 시간 + 이만큼 안�
 SEAT_DZ_CYL60 = HOLDER_FLOOR_Z + 0.085
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
 SIDES = ("right", "left")
+NODES = {"aglt": "rh_aglt_node", "place": "rh_place_node"}
+
+
+def service_ns(kind: str, side: str) -> str:
+    """정책 노드 서비스 ns — 한 팔에 둘이 같이 떠서 aglt = <팔>, place = <팔>_place(미션 에피소드 단계와 같다).
+    이벤트는 둘 다 /policy_control/<팔>/episode 에 node 이름을 실어 낸다(pd 가 그 팔에 적용)."""
+    return side if kind == "aglt" else f"{side}_{kind}"
 
 
 def _q(msg) -> tuple:
@@ -100,7 +107,7 @@ class RosExecutor:
         self._cbg = ReentrantCallbackGroup()
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         for side in SIDES:
-            node.create_subscription(String, f"{NS}/{side}/episode", self._on_json(self._events, side), latched)
+            node.create_subscription(String, f"{NS}/{side}/episode", self._on_event, latched)
             node.create_subscription(String, f"{NS}/{side}/goal_result", self._on_json(self._goal_result, side), latched)
             node.create_subscription(String, f"{NS}/status/pd_{side}", self._on_json(self._pd, side), QoSProfile(depth=10))
             for kind in ("rh_aglt_node", "rh_place_node"):
@@ -118,6 +125,15 @@ class RosExecutor:
         node.create_timer(1.0 / 30.0, self._relay_tick)
 
     # ---------------------------------------------------------------- 입력
+    def _on_event(self, msg) -> None:
+        """팔 이벤트 토픽 — 정책 노드 둘이 같이 내므로 본문 node 로 가른다."""
+        try:
+            body = json.loads(msg.data)
+        except ValueError:
+            return
+        with self._lock:
+            self._events[str(body.get("node", ""))] = {**body, "_t": time.monotonic()}
+
     def _on_json(self, store: dict, key: str):
         def cb(msg) -> None:
             try:
@@ -163,10 +179,10 @@ class RosExecutor:
             self._relay_pub[name].publish(self._pose_msg(pos, quat))
 
     # ---------------------------------------------------------------- 서비스
-    def _call(self, path: str, timeout: float = 5.0) -> tuple[bool, list]:
+    def _call(self, path: str, timeout: float = 5.0, wait: float = 2.0) -> tuple[bool, list]:
         cli = self.node.create_client(self._Trigger, path, callback_group=self._cbg)
         try:
-            if not cli.wait_for_service(timeout_sec=2.0):
+            if not cli.wait_for_service(timeout_sec=wait):
                 return False, [f"{path}: 서비스가 없다(노드가 떠 있는가)"]
             fut = cli.call_async(self._Trigger.Request())
             t0 = time.monotonic()
@@ -236,14 +252,16 @@ class RosExecutor:
 
     def _policy(self, p) -> NodeResult:
         side = p.side
-        node_name = {"aglt": "rh_aglt_node", "place": "rh_place_node"}.get(p.kind)
+        node_name = NODES.get(p.kind)
         if node_name is None:
             return NodeResult("refused", f"{p.kind} 정책 노드가 아직 없다", role=p.role)
         status_key = f"{node_name}_{side}"
+        ns = service_ns(p.kind, side)
+        self._wait_node_ready(status_key)                 # 연속 실행: snapshot 직후 재발행 컵이 노드에 닿을 시간
         t0 = time.monotonic()
         with self._lock:
-            last_ep = int((self._events.get(side) or {}).get("episode", 0))
-        ok, why = self._call(f"{NS}/{side}/episode/reset")
+            last_ep = int((self._events.get(status_key) or {}).get("episode", 0))
+        ok, why = self._call(f"{NS}/{ns}/episode/reset")
         if not ok:
             return NodeResult("refused", "; ".join(why), role=p.role)
         if p.kind == "aglt" and p.setting is not None:
@@ -261,7 +279,7 @@ class RosExecutor:
                 time.sleep(0.05)
             if not res or not res.get("ok"):
                 return NodeResult("refused", f"goal {p.setting} refused: {(res or {}).get('reasons', 'no answer')}", role=p.role)
-        ok, why = self._call(f"{NS}/{side}/episode/start")
+        ok, why = self._call(f"{NS}/{ns}/episode/start")
         if not ok:
             return NodeResult("refused", "; ".join(why), role=p.role)
         limit = 15.0 + POLICY_MARGIN_S
@@ -271,25 +289,57 @@ class RosExecutor:
                 return NodeResult("aborted", "episode runner stop", time.monotonic() - t0, p.role)
             fault = self._pd_fault([side])
             if fault:
-                self._call(f"{NS}/{side}/episode/stop")
+                self._call(f"{NS}/{ns}/episode/stop")
                 return NodeResult("completed", fault, time.monotonic() - t0, p.role, {"pd_fault": fault})
             with self._lock:
-                ev = dict(self._events.get(side) or {})
+                ev = dict(self._events.get(status_key) or {})
                 st = dict(self._status.get(status_key) or {})
             if int(ev.get("episode", 0)) > last_ep and ev.get("event") in ("stop", "abort"):
                 break
             if time.monotonic() - t0 > limit:
-                self._call(f"{NS}/{side}/episode/stop")
+                self._call(f"{NS}/{ns}/episode/stop")
                 return NodeResult("timeout", f"no stop event in {limit:.0f} s", time.monotonic() - t0, p.role)
         reasons = "; ".join(ev.get("reasons", []))
         dur = time.monotonic() - t0
         if ev.get("event") == "abort":
             return NodeResult("aborted", reasons, dur, p.role)
+        if "user stop" in reasons:                    # 사람이 정지 바로 멈췄다 — 복구하지 않고 실행기도 멈춘다
+            return NodeResult("aborted", f"operator stopped the policy node ({reasons})", dur, p.role)
         if "episode time" in reasons:
             return NodeResult("timeout", reasons, dur, p.role, self._signals(p, st))
         return NodeResult("completed", reasons, dur, p.role, self._signals(p, st))
 
+    def _wait_node_ready(self, status_key: str, timeout: float = 5.0) -> None:
+        """정책 노드 status 가 ok(측정 · 컵이 다 들어옴)일 때까지 잠깐 기다린다 — 안 되면 그대로 reset(거부 사유가 판정한다)."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline and not self.cancel.is_set():
+            with self._lock:
+                st = dict(self._status.get(status_key) or {})
+            if st.get("ok") and time.monotonic() - float(st.get("_t", 0)) < 1.0:
+                return
+            time.sleep(0.1)
+
+    def _wait_pd_tracking(self, side: str, timeout: float = 5.0) -> bool:
+        """정책이 끝난 직후 pd 는 마지막 목표가 0.25 s 넘게 늙어 잠깐 watchdog HOLD 로 갔다가 정지 이벤트의 붙들기로 풀린다
+        (10.04 fake 연속 실행). 손 · 궤적 명령 전에 TRACKING 으로 돌아오기를 기다린다 — 안 돌아오면 False(진짜 HOLD)."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline and not self.cancel.is_set():
+            with self._lock:
+                st = dict(self._pd.get(side) or {})
+            if st.get("phase") == "TRACKING" and not st.get("estop") and time.monotonic() - float(st.get("_t", 0)) < 1.0:
+                return True
+            time.sleep(0.1)
+        return False
+
+    def _pd_view(self, side: str) -> dict:
+        with self._lock:
+            st = dict(self._pd.get(side) or {})
+        return {"pd_phase": st.get("phase"), "pd_reasons": st.get("reasons")}
+
     def _signals(self, p, st: Mapping) -> dict:
+        return {**self._signals_of(p, st), **self._pd_view(p.side)}
+
+    def _signals_of(self, p, st: Mapping) -> dict:
         if p.kind == "aglt":
             cup = (st.get("cup") or {}).get("arm") or {}
             return {"attached": cup.get("source") == "attached" if cup else None,
@@ -324,6 +374,10 @@ class RosExecutor:
             return NodeResult("completed", "noop")
         t0 = time.monotonic()
         for side in traj.sides:
+            if not self._wait_pd_tracking(side):
+                pd = self._pd_view(side)
+                return NodeResult("error", f"pd_{side} 가 TRACKING 이 아니다 · {pd['pd_phase']} {pd['pd_reasons']}",
+                                  signals={"pd_fault": pd["pd_phase"] or "unknown"})
             if world.hand(side) != EMPTY:
                 return NodeResult("refused", f"{side} hand holds {world.hand(side)} — rehome 계획기가 든 물체를 모른다")
             out = self.run_dir / f"rehome_{side}_{node.id}.npz"
@@ -336,12 +390,14 @@ class RosExecutor:
                 [sys.executable, str(TOOLS / "episode_ctl.py"), "--side", side, "--only", "pd_goto_home",
                  "--service-timeout", "45", "--execute", "--approve", "pd_goto_home"],
             ]
-            for argv in steps:
+            for k, argv in enumerate(steps):
                 rc, tail = self._run(argv)
                 if self.cancel.is_set():
                     return NodeResult("aborted", "episode runner stop", time.monotonic() - t0)
-                if rc != 0:
-                    return NodeResult("error", f"{Path(argv[1]).name} rc {rc}: {tail}", time.monotonic() - t0)
+                if rc != 0:                                # 계획 · 시작점 검사 실패 = 안전한 경로 없음(움직이지 않았다)
+                    status = "refused" if k < 2 else "error"
+                    return NodeResult(status, f"{'no safe path — ' if k < 2 else ''}{Path(argv[1]).name} rc {rc}: {tail}",
+                                      time.monotonic() - t0)
         return NodeResult("completed", "", time.monotonic() - t0)
 
     def _run(self, argv: list) -> tuple[int, str]:
@@ -359,12 +415,30 @@ class RosExecutor:
     def prepare(self, step: str, plans: list, world) -> NodeResult:
         if step == "open_hand":
             for side in sorted({p.side for p in plans if p.side in SIDES}):
+                if not self._wait_pd_tracking(side):
+                    pd = self._pd_view(side)
+                    return NodeResult("error", f"pd_{side} 가 TRACKING 으로 안 돌아온다 · {pd['pd_phase']} {pd['pd_reasons']}",
+                                      signals={"pd_fault": pd["pd_phase"] or "unknown"})
                 rc, tail = self._run([sys.executable, str(TOOLS / "trigger.py"), "pd/hand_release", "--side", side, "--execute"])
                 if rc != 0:
-                    return NodeResult("error", f"hand_release {side}: {tail}")
+                    pd = self._pd_view(side)
+                    return NodeResult("error", f"hand_release {side} 거부 · pd {pd['pd_phase']} {pd['pd_reasons']}: {tail}",
+                                      signals={"pd_fault": pd["pd_phase"]} if pd["pd_phase"] == "HOLD" else {})
             time.sleep(1.0)
             return NodeResult("completed", "")
-        if step == "refresh_perception":
+        if step == "refresh_objects":
+            names = [p.target_object or p.source_object for p in plans if (p.target_object or p.source_object)]
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline:
+                with self._lock:
+                    fresh = all(n in self._relay or any(time.monotonic() - f[2] < 0.5 for f in self._frames.get(n, []))
+                                for n in names)
+                if fresh:
+                    time.sleep(1.0)                        # 정책 노드가 받을 시간
+                    return NodeResult("completed", "")
+                time.sleep(0.1)
+            return NodeResult("refused", f"cup pose missing — {names} 프레임이 5 s 동안 없다")
+        if step == "refresh_holders":
             missing = self.publish_holders()
             if missing:
                 self.holders = load_holder_poses(_paths.SIM2REAL / self.ep.holder_poses)
@@ -384,7 +458,8 @@ class RosExecutor:
             except (ProcessLookupError, PermissionError):
                 pass
         for side in SIDES:
-            self._call(f"{NS}/{side}/episode/stop", timeout=3.0)
+            for kind in NODES:
+                self._call(f"{NS}/{service_ns(kind, side)}/episode/stop", timeout=2.0, wait=0.3)
 
     def joints(self) -> dict:
         return {}

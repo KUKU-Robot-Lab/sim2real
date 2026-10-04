@@ -734,6 +734,8 @@ def main(argv=None) -> int:
         raise SystemExit("[plan] 최종 경로 재검사 실패 — 쓰지 않는다")
 
     frames = time_parametrize(path, vmax, args.dt, args.ramp_time)
+    if len(frames) < 2:            # 시작 = 목표(이미 홈) — 길이 0 경로. 10.04 에피소드 실행기 go_home 이 홈에서 부른다
+        frames = np.vstack([np.asarray(start, float), np.asarray(goal, float)])
     vel = np.abs(np.diff(frames, axis=0)).max() / args.dt
     in_lim = bool(((frames >= lo - 1e-9) & (frames <= hi + 1e-9)).all())
     frames_rep = chk.check_path(frames, args.step)

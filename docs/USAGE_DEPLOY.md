@@ -123,6 +123,9 @@ deploy/s2r_console/tools/install_desktop_entry.sh               # 프로그램 �
 - 연결 그림은 **미션 argv + 계약 + robot yaml 에서 자동 생성**된다. 정책을 바꾸면 노드·전선이 따라 바뀐다.
 - 프로세스 스위치가 상자에 붙는다. pd 가 팔을 잡고 있거나 단계가 도는 동안에는 끄기가 거부된다(409).
 - 화면만 볼 때는 `--no-bridge` (rclpy 없는 PC 에서도 뜬다).
+- **에피소드(정책 잇기, 10.04)**: 미션 단계 `episode_<이름>` 이 정책 노드들과 `episode_runner_node` 를 띄우고, 에피소드 패널의
+  [다음](구분 실행 — 노드마다 이름 입력) · [연속 실행](`episode:<이름>` 한 번)으로 진행한다. 정지 바의 '에피소드 정지'도 실행기를
+  멈춘다. 정의 · 실패 → 복구 표 · fake 리허설은 [EPISODE_FRAMEWORK.md](EPISODE_FRAMEWORK.md).
 
 ## 6. 인지 — 카메라·FP++ 는 vision-3090 에서 돈다
 

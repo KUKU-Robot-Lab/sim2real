@@ -413,3 +413,12 @@ table.ptable tr.off td { color: var(--faint); }
 .run-btns .btn { white-space: normal; text-align: left; max-width: 100%; }
 .pick-panel > details { padding: 0 14px 12px; }
 .robotmod { padding: 6px 12px 10px; }
+
+/* 에피소드 실행기(10.04) */
+.ep-nodes { margin: 8px 12px; padding-left: 18px; font-size: 13px; }
+.ep-nodes li { padding: 2px 0; }
+.ep-nodes li.ep-done { color: var(--ok, #3fb950); }
+.ep-nodes li.ep-current { font-weight: 600; }
+.ep-nodes li.ep-busy::after { content: " ⟳"; }
+.ep-nodes li.ep-pending { opacity: .6; }
+.note.warn { border-left: 3px solid #e3a008; }

@@ -4,7 +4,7 @@
 09.29 사용자: rh56f1 제어 연결. 실기 손 없이 pd 백엔드 → 드라이버 토픽 → 상태 노드 → pd/정책 경로를 돌린다.
 
   구독  /hand_<side>/angle_set  (SetAngle1, 슬롯 순 0.1°, -1 = 그 축은 둔다)
-  발행  /hand_<side>/angle_actual (GetAngleAct1, 50 Hz) · /hand_<side>/touch_data (TouchData1, 전부 0)
+  발행  /hand_<side>/angle_actual (GetAngleAct1, 250 Hz — EtherCAT state_hz) · /hand_<side>/touch_data (TouchData1, 전부 0)
 
 손가락은 목표 레지스터로 **전 행정 1 s**(벤더 speedSet 2000 기본)의 속도로 간다. 접촉 · 힘 제한은 흉내내지 않는다.
 실기 도메인(126)과 0 은 거부한다.
@@ -25,7 +25,7 @@ sys.path.insert(0, str(_SIM2REAL / "deploy" / "policy_control"))
 from policy_control import rh56f1_map  # noqa: E402
 
 REAL_DOMAIN = 126
-RATE_HZ = 50.0
+RATE_HZ = 250.0           # 10.03 손 = EtherCAT(state_hz 250) — hand_check 가 그 80 % 를 기대한다(50 Hz RS485 시절 값이면 fake 미션이 멈춘다)
 #: 전 행정(레지스터 끝 ↔ 끝) 걸리는 시간 [s]
 STROKE_S = 1.0
 

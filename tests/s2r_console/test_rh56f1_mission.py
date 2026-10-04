@@ -310,3 +310,23 @@ def test_each_arm_places_the_cup_after_its_aglt_hand_off(side):
     holder = next(c for c in _cmds(FAKE, FAKE_BOOK, f"policy_place_{side}") if any("fake_cup_pose_pub" in a for a in c.argv))
     assert "--latched" in holder.argv and "/objects/cup_holder_1/pose" in holder.argv
     assert REAL.stages[[s.id for s in REAL.stages].index(f"policy_place_{side}")].touches_real
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_the_episode_stage_brings_up_both_policies_and_the_runner(side):
+    """10.04 에피소드 실행기: 한 팔에 aglt(ns <팔>) · place(ns <팔>_place, 이벤트는 팔 토픽) · 실행기 — 진행은 상황판."""
+    sid = f"episode_pick_place_{side}"
+    for m, book in ((REAL, REAL_BOOK), (FAKE, FAKE_BOOK)):
+        cmds = _cmds(m, book, sid)
+        argv = {k: " ".join(c.argv) for k in ("rh_aglt_node", "rh_place_node", "episode_runner_node")
+                for c in cmds if any(k + ".py" in a for a in c.argv)}
+        assert f"ns:={side} " in argv["rh_aglt_node"] + " " and "stop_on_target:=true" in argv["rh_aglt_node"]
+        assert "cup_topic:=/episode/objects/CUP/pose" in argv["rh_aglt_node"]                  # snapshot 재발행 컵
+        assert f"ns:={side}_place" in argv["rh_place_node"]
+        assert f"episode_topic:=/policy_control/{side}/episode" in argv["rh_place_node"]
+        assert f"episode:=config/episodes/pick_place_{side}.yaml" in argv["episode_runner_node"]
+        assert "auto_approve" not in argv["episode_runner_node"]                                 # 승인은 상황판에서
+        by = {s.id: s for s in m.stages}
+        assert {f"home_{side}", "cups", "cup_holders"} <= set(by[sid].needs)
+        assert any(c.manual and "상황판" in c.note for c in cmds)
+    assert REAL.stages[[s.id for s in REAL.stages].index(sid)].touches_real

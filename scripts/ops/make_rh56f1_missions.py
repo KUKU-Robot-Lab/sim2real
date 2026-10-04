@@ -41,6 +41,10 @@ REAL_CUP = "cyl60"
 PLACE_HOLDER = {"right": 1, "left": 1}
 #: fake 홀더 y — hdgp rh_place env holder_ys(0.153, −0.002, −0.161)
 FAKE_HOLDER_Y = {0: 0.153, 1: -0.002, 2: -0.161}
+#: 상황판에서 굴리는 에피소드(10.04 사용자: 구분 실행 → 연속 실행) — config/episodes/<이름>.yaml, 실기에 쓸 수 있는 것만
+EPISODES = ("pick_place_right", "pick_place_left")
+#: 에피소드 snapshot 이 다시 내는 정지 물체 자세(episode_ros.OBJECT_RELAY) — aglt 는 이것을 컵으로 본다
+EPISODE_RELAY = "/episode/objects/{}/pose"
 REAL_CUP_ORIGIN_Z = 0.085                 # 원점 높이(바닥 위) — 컵 자세 확인 문구
 #: arm4090 머리 카메라 외부 파라미터 — 테이블 CAD 캘리브(scripts/calib/table_cad_extrinsics.py, 10.01 기본 방법)
 CAMERA_EXTRINSICS = "config/global_camera_extrinsics_arm4090.yaml"
@@ -130,6 +134,15 @@ def _stages(kind: str) -> list[dict]:
                    "artifacts": [f"place_{s}", f"robot_{s}", "contract"],
                    "title": f"[{s}] rh_place 정책 — 쥔 컵을 컵홀더 자리에 내려놓고 손을 편 뒤 팔을 시작 관절로(놓음 5 스텝 → "
                             "스크립트 45 스텝 → 스스로 끝). 정책 노드 → reset → start → 관찰"})
+    for name in EPISODES:
+        ep = _episode(name)
+        sides = sorted({b.side for b in ep.policies.values()})
+        st.append({"id": f"episode_{name}", "group": "policy", "lane": f"arm_{sides[0]}", "skippable": True,
+                   "touches_real": real,
+                   "needs": [*(f"home_{s}" for s in sides), "cups", "cup_holders"],
+                   "needs_why": "에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 정책을 잇는다",
+                   "title": f"[에피소드] {name} — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 "
+                            f"진행: {' → '.join(n.id for n in ep.nodes if n.type != 'terminal')}"})
     st.append({"id": "shutdown", "group": "finish", "lane": "rig", "needs": ["drivers"], "touches_real": real,
                "title": "안전 종료 — 팔 받침 확인 → 남은 pd → 손 상태 · 드라이버 → 팔 브링업 (★팔 토크가 풀린다)"})
     if not real:
@@ -338,7 +351,70 @@ def _run(kind: str) -> dict:
                      ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_release"], execute_args=["--execute"]),
                 _cmd(f"[{s}] 이 팔의 pd 정지 — IDLE 이라 토크는 JTC 가 잡는다", stop=[f"pd_arm_{s}#1"])],
         })
+    for name in EPISODES:
+        run[f"episode_{name}"] = _episode_run(name, real)
     return run
+
+
+def _episode(name: str):
+    sys.path.insert(0, str(REPO / "deploy" / "policy_control"))
+    from policy_control import episode_spec as S
+    return S.load(REPO / "config" / "episodes" / f"{name}.yaml")
+
+
+def _episode_run(name: str, real: bool) -> list:
+    """에피소드 단계: (fake 컵 · 홀더) → 정책 노드들 → episode_runner_node → 상황판에서 진행(수동 확인) → 내린다."""
+    from policy_control import policy_registry as R
+    ep = _episode(name)
+    entries = {e.id: e for e in R.scan(REPO / "deploy" / "policies", deep=False)}
+    cmds, bg = [], []
+    if not real:
+        for oname, obj in ep.objects.items():
+            side = next((ep.policies[j.role].side for n in ep.nodes for j in n.jobs if j.target_object == oname), "right")
+            cmds.append(_cmd(f"fake 물체 — {obj['topic']}(aglt 학습 배치 x 0.25)",
+                             ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--x", "0.25",
+                              "--y", "0.20" if side == "left" else "-0.20", "--z", "0.29", "--topic", obj["topic"]],
+                             background=True))
+        for hid in sorted(set(ep.holders.values())):
+            cmds.append(_cmd(f"fake 홀더 {hid} — /objects/cup_holder_{hid}/pose (latched)",
+                             ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--latched", "--rate", "2", "--x", "0.38",
+                              "--y", str(FAKE_HOLDER_Y[hid]), "--z", "0.235", "--topic", f"/objects/cup_holder_{hid}/pose"],
+                             background=True))
+    first_obj = next(iter(ep.objects))
+    cmds.append(_cmd(f"★[에피소드 {name}] 물체({', '.join(ep.objects)})가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 "
+                     f"{', '.join(f'{k}={v}' for k, v in ep.holders.items())} 위가 비었는가 · {ep.holder_poses} 가 있는가"
+                     "(cup_holders 단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다" if real else "fake — 확인만",
+                     ["bash", "-lc", "true"], manual=True))
+    for role, b in ep.policies.items():
+        e = entries.get(b.policy)
+        contract = f"{{repo}}/deploy/policies/{b.policy}/{e.contract if e else 'missing.json'}"
+        robot = f"{{artifact:robot_{b.side}}}"
+        if b.kind == "aglt":
+            obj = next((j.target_object for n in ep.nodes for j in n.jobs if j.role == role and j.target_object), first_obj)
+            cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — SETTING 도달에 스스로 끝남 · 컵 = snapshot 재발행",
+                             ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_aglt_node.py", "--ros-args",
+                              "-r", f"__node:=rh_aglt_node_{b.side}", "-p", f"ns:={b.side}", "-p", f"contract:={contract}",
+                              "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", "stop_on_target:=true",
+                              "-p", f"cup_topic:={EPISODE_RELAY.format(obj)}", "-p", "max_episode_s:=15.0"], background=True))
+        elif b.kind == "place":
+            src = next((j for n in ep.nodes for j in n.jobs if j.role == role), None)
+            obj = src.source_object if src and src.source_object else first_obj
+            hid = ep.holders.get(src.target_holder) if src and src.target_holder else PLACE_HOLDER[b.side]
+            cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — 홀더 {hid} · 놓은 뒤 스스로 끝남",
+                             ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_place_node.py", "--ros-args",
+                              # 한 팔에 aglt 와 같이 뜬다 — 서비스는 <팔>_place, 이벤트는 그 팔 토픽(pd 가 reset · stop 적용)
+                              "-r", f"__node:=rh_place_node_{b.side}", "-p", f"ns:={b.side}_place",
+                              "-p", f"episode_topic:=/policy_control/{b.side}/episode", "-p", f"contract:={contract}",
+                              "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", f"cup_topic:={ep.objects[obj]['topic']}",
+                              "-p", f"holder:={hid}", *([] if real else ["-p", "require_grasp:=false"])], background=True))
+    cmds.append(_cmd(f"에피소드 실행기 — {name} · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:{name})",
+                     ["{repo}/.venv/bin/python", f"{PC}/policy_control/episode_runner_node.py", "--ros-args",
+                      "-p", f"episode:=config/episodes/{name}.yaml", "-p", "robot:=rh56f1"], background=True))
+    cmds.append(_cmd("★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 "
+                     "(이상하면 '에피소드 실행기 정지' · 정지 바)", ["bash", "-lc", "true"], manual=True))
+    bg = [i for i, c in enumerate(cmds) if c.get("background")]
+    cmds.append(_cmd("에피소드 노드들 정지", stop=[f"episode_{name}#{i}" for i in reversed(bg)]))
+    return cmds
 
 
 def _home(s: str) -> list[dict]:

@@ -940,3 +940,27 @@ def test_bi_side_episode_topic_touches_only_that_arm(ros, bi_cm, bi_hand_ctrls):
         assert got["right"]["episode"] == 9 and got["left"]["episode"] == 9
     finally:
         _close_rig(node, plant, caller, spin)
+
+
+def test_a_late_target_of_a_stopped_episode_does_not_cancel_the_stop_hold():
+    """10.04 fake 에피소드 연속 실행: 정책이 시간으로 끝난 직후 마지막 joint_target 이 stop 사건보다 늦게 닿으면(토픽이 달라
+    순서 보장이 없다) 외부 목표가 붙들기(hold)를 지워 0.25 s 뒤 워치독 HOLD 로 갔다 — 끝난 에피소드의 목표는 받되 쓰지 않는다.
+    다음 reset(같은 번호라도 — 팔 하나에 정책 노드 둘)이면 다시 받는다. 다른 발행자(replay 등)의 목표는 그대로 받는다."""
+    from types import SimpleNamespace
+    import numpy as np
+    from policy_control import pd_arm as A
+    from policy_control.codec import JointSample
+
+    joints = [f"r_aj_{i}" for i in range(1, 8)]
+    sample = JointSample(names=tuple(joints), position=np.zeros(7), velocity=np.zeros(7), effort=None, stamp=0.0)
+    law = SimpleNamespace(q_setpoint=np.ones(7))
+    unit = SimpleNamespace(side="right", arm_joints=joints, hand_joints=[], target=None, hold=None, hand_target=None,
+                           stage=SimpleNamespace(state=SimpleNamespace(law=law), new_episode=lambda e: None),
+                           stopped_episode=None)
+    A.ArmUnit.on_episode(unit, "stop", 3)
+    assert unit.hold is not None
+    assert A.ArmUnit.take_target(unit, sample, 900, 1.0, episode="3") is True and unit.hold is not None   # 늦은 목표 — 붙든다
+    assert A.ArmUnit.take_target(unit, sample, 5, 1.0, episode="replay") is True and unit.hold is None   # 다른 발행자
+    A.ArmUnit.on_episode(unit, "stop", 3)
+    A.ArmUnit.on_episode(unit, "reset", 3)
+    assert A.ArmUnit.take_target(unit, sample, 1, 2.0, episode="3") is True and unit.hold is None        # 새 에피소드

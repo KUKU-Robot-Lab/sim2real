@@ -239,7 +239,8 @@ class EpisodeManager:
         for pre in rec.pre:
             res = self.executor.prepare(pre, plans, self.world)
             if res.status != "completed":
-                return self._fail(node, F.UNKNOWN, f"복구 준비 {pre} 실패: {res.reason}")
+                code = F.CONTROLLER_ERROR if res.signals.get("pd_fault") else F.UNKNOWN
+                return self._fail(node, code, f"복구 준비 {pre} 실패: {res.reason}")
         if rec.action == ROLLBACK:
             cp = self.checkpoints[rec.checkpoint]
             back = self.ep.nodes[self.ep.node_index(cp["node"])]
