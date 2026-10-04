@@ -416,6 +416,7 @@ class FjSideMeas:
     cup_pos: np.ndarray         # 3 (그 팔의 컵 원점, base)
     cup_quat: np.ndarray        # 4 wxyz
     tactile_n: np.ndarray       # 5 (엄지 → 새끼, N)
+    joint_force: np.ndarray | None = None   # 6 손 관절 힘(g) — 10.04, 없으면 None
 
 
 def _quat_apply(q: np.ndarray, v: np.ndarray) -> np.ndarray:

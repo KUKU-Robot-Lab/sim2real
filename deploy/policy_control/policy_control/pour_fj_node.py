@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -72,6 +73,7 @@ def _side_raw(s, st, arm_names, fk, cup, role: str) -> dict:
     hand_q = np.array([hand[j] for j in s.hand_joints], float)
     pose = fk.palm_pose(arm_q, hand_q)
     tact = np.zeros(5) if st.tip_force is None or "tip_force" in bad else np.asarray(st.tip_force, float).reshape(5, -1)[:, 0]
+    jf = None if getattr(st, "joint_force", None) is None or "joint_force" in bad else np.asarray(st.joint_force, float).reshape(-1)
     if callable(cup):                               # ★10.04 쥔 뒤에는 손바닥 FK 로(cup_attach) — 손바닥 · 촉각 · 시각을 본 뒤 고른다
         cup = cup(np.asarray(pose.palm_pos, float), quat_to_matrix(pose.palm_quat), tact, st)
     if cup is None:
@@ -79,7 +81,7 @@ def _side_raw(s, st, arm_names, fk, cup, role: str) -> dict:
     return dict(arm_q=arm_q, arm_qd=np.array([arm_d[j] for j in s.arm_joints], float),
                 hand_q={j: float(hand[j]) for j in s.hand_joints}, palm_pos=np.asarray(pose.palm_pos, float),
                 palm_R=quat_to_matrix(pose.palm_quat), tips=np.asarray(pose.tips, float).reshape(5, 3),
-                cup_pos=np.asarray(cup[0], float), cup_quat=np.asarray(cup[1], float), tactile_n=tact)
+                cup_pos=np.asarray(cup[0], float), cup_quat=np.asarray(cup[1], float), tactile_n=tact, joint_force=jf)
 
 
 def side_meas(c: F.FjContract, role: str, st, arm_names, fk, cup) -> F.FjSideMeas:
@@ -149,6 +151,7 @@ class AgltChain:
         self.prev = np.zeros(c.action_dim)
         self.step_i = 0
         self.goals: G.GoalBook | None = None
+        self.grasp_cfg: AttachCfg | None = None     # 노드가 넣는다(부착과 같은 쥠 신호) — 없으면 손끝 촉각 규칙
 
     @property
     def goal(self) -> A.Goal | None:
@@ -176,7 +179,10 @@ class AgltChain:
         active = self.step_i >= self.c.hold_steps
         targets = self.dec.step(a, active=active, tactile_n=m.tactile_n)
         if active:                                  # 학습 GoalState.step 도 대기 중에는 세지 않는다
-            self.goals.step(m.cup_pos, m.cup_quat, m.tactile_n)
+            g = None
+            if self.grasp_cfg is not None:                 # 배포: 부착과 같은 쥠 신호(손끝 또는 관절 힘), 손끝 문턱은 계약 값
+                g = grasp_signal(m.tactile_n, m.joint_force, replace(self.grasp_cfg, force_n=self.c.grasp_threshold_n))
+            self.goals.step(m.cup_pos, m.cup_quat, m.tactile_n, is_grasped=g)
         self.prev = np.clip(a, -1.0, 1.0)
         self.step_i += 1
         return obs, a, targets
@@ -450,6 +456,8 @@ class PourFjNode(LeanNodeMixin, Node):
                     from policy_control.joint_policy import JointPolicy
                     self._policy = JointPolicy(self.contract, self.device)
                 self.chain = self.fam.chain(self.contract, self._policy)
+                if hasattr(self.chain, "grasp_cfg") and self.attach:
+                    self.chain.grasp_cfg = self.attach_cfg
             self.chain.reset(meas)                      # margin 계약은 meas 의 손 실측각이 q*_0(없으면 측정에서 이미 거부)
             q0 = getattr(self.chain.dec, "hand_q0", None) if hasattr(self.chain, "dec") else None
             if q0:

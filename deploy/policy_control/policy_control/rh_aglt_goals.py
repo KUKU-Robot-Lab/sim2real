@@ -107,7 +107,9 @@ class GoalBook:
         self.target, self.near_steps = p.copy(), 0
         return []
 
-    def step(self, cup_pos: Sequence[float], cup_quat: Sequence[float], tactile_n: Sequence[float]) -> bool:
+    def step(self, cup_pos: Sequence[float], cup_quat: Sequence[float], tactile_n: Sequence[float],
+             is_grasped: bool | None = None) -> bool:
+        """is_grasped 를 주면 그 판정(배포: 손끝 또는 관절 힘 — cup_attach.grasp_signal), 없으면 손끝 촉각 규칙."""
         """한 스텝 갱신. 이번 스텝에 목표를 달성했으면 True(다음 중간 목표로 넘긴 뒤)."""
         c = self.c
         kp_c = A.keypoints(c, cup_pos, cup_quat)
@@ -117,7 +119,8 @@ class GoalBook:
             return False
         near = self.kp_dist <= c.goal_tol
         self.near_steps += int(near)
-        if not (near and self.near_steps >= c.goal_success_steps and grasped(c, tactile_n)):
+        held = grasped(c, tactile_n) if is_grasped is None else bool(is_grasped)
+        if not (near and self.near_steps >= c.goal_success_steps and held):
             return False
         if self.anchor is not None and not self.queue and np.allclose(self.anchor, self.current):
             return False                           # 마지막 목표에 머무는 중 — 다시 세지 않는다

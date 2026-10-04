@@ -130,3 +130,39 @@ def test_chain_takes_goals_only_after_reset_and_does_not_count_during_hold():
         ch.step({"arm": _meas(c, goal, GRIP)})
     assert ch.goals.successes == 1
     assert A.build_obs(c, _meas(c, goal), ch.dec, ch.goal, ch.prev).size == c.obs_dim
+
+
+def test_a_deploy_grasp_signal_overrides_the_tip_rule():
+    """10.04 배포: 엄지 첫마디 파지는 손끝에 안 잡혀도 관절 힘으로 쥔 것 — 노드가 is_grasped 로 넘긴다(cup_attach.grasp_signal)."""
+    c = _right()
+    b = G.GoalBook.start(c, CUP_R, UP)
+    for _ in range(12):
+        assert not b.step(b.current, UP, (0, 0, 0, 0, 0))             # 손끝 0 → 쥠 아님
+    assert b.step(b.current, UP, (0, 0, 0, 0, 0), is_grasped=True)    # 관절 힘 판정이 쥠
+    assert b.successes == 1
+
+
+def test_the_aglt_chain_uses_joint_forces_for_the_goal_grasp_when_configured():
+    from dataclasses import replace as _replace
+    from policy_control import pour_fj_node as N
+    from policy_control import rh_aglt as A
+    from policy_control.cup_attach import AttachCfg
+    c = _right()
+
+    class _P:
+        def forward(self, obs):
+            return np.zeros(13)
+
+    ch = N.AgltChain(c, _P())
+    s = c.side()
+    m = A.RaMeas(arm_q=np.asarray(s.arm_home), arm_qd=np.zeros(7), hand_q=dict(zip(s.hand_joints, s.hand_open)),
+                 palm_pos=np.array([0.2, -0.2, 0.3]), palm_R=np.eye(3), tips=np.tile([0.25, -0.2, 0.28], (5, 1)),
+                 cup_pos=np.asarray(CUP_R, float), cup_quat=np.asarray(UP, float), tactile_n=np.zeros(5),
+                 joint_force=np.array([450.0, 0.0, 400.0, 0.0, 0.0, 0.0]))
+    ch.reset({"arm": m})
+    goal = ch.goal.pos.copy()
+    held = _replace(m, cup_pos=goal - np.array([0.0, 0.0, 0.0]))       # 목표 자리(키포인트 0 거리)에 컵
+    ch.grasp_cfg = AttachCfg()
+    for _ in range(c.hold_steps + 12):
+        ch.step({"arm": held})
+    assert ch.goals.successes >= 1
