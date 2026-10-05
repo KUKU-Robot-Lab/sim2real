@@ -5,6 +5,8 @@
 
   구독  /hand_<side>/angle_set  (SetAngle1, 슬롯 순 0.1°, -1 = 그 축은 둔다)
   발행  /hand_<side>/angle_actual (GetAngleAct1, 250 Hz — EtherCAT state_hz) · /hand_<side>/touch_data (TouchData1, 전부 0)
+        /hand_<side>/force_actual (GetForceAct1, 전부 0 — 10.05 실기 드라이버(rh56f1_ecat_node)와 같은 토픽 집합.
+        없으면 상태 노드가 joint_forces 를 못 내 정책 입력이 비고 상황판이 '끊긴 곳' 으로 본다)
 
 손가락은 목표 레지스터로 **전 행정 1 s**(벤더 speedSet 2000 기본)의 속도로 간다. 접촉 · 힘 제한은 흉내내지 않는다.
 실기 도메인(126)과 0 은 거부한다.
@@ -55,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
 
     import rclpy
     from rclpy.node import Node
-    from rh56f1_interfaces.msg import GetAngleAct1, SetAngle1, TouchData1
+    from rh56f1_interfaces.msg import GetAngleAct1, GetForceAct1, SetAngle1, TouchData1
 
     hmap = rh56f1_map.load(args.map)
     pose = [float(v) for v in args.open_pose.split(",")]
@@ -73,6 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     ns = f"/hand_{args.side}"
     act = node.create_publisher(GetAngleAct1, f"{ns}/angle_actual", 10)
     touch = node.create_publisher(TouchData1, f"{ns}/touch_data", 10)
+    force = node.create_publisher(GetForceAct1, f"{ns}/force_actual", 10)
 
     def on_set(msg) -> None:
         nonlocal target
@@ -89,6 +92,10 @@ def main(argv: list[str] | None = None) -> int:
         t = TouchData1()
         t.header.stamp = m.header.stamp
         touch.publish(t)
+        f = GetForceAct1()                                  # 관절 힘 0 g — 쥔 판정은 fake 에서 안 난다(촉각과 같다)
+        f.header.stamp = m.header.stamp
+        f.joint_names = names
+        force.publish(f)
 
     node.create_subscription(SetAngle1, f"{ns}/angle_set", on_set, 10)
     node.create_timer(1.0 / RATE_HZ, tick)

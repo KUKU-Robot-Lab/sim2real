@@ -479,19 +479,31 @@ const stepLabel = (st) => ({ running: "실행 중", waiting: "확인 대기", up
 let lastDiagram = null, lastWires = "";
 const TIGHT_FROM_COLS = 6;
 
+// 상자 하나 = 노드 하나. 같은 노드를 여러 단계가 띄우면(pd 무발행 → 발행, 단독 정책 → 에피소드) 명령마다 스위치 줄이 하나다.
+function boxUnits(b) {
+  return b.units && b.units.length ? b.units : b.unit ? [b.unit] : [];
+}
+
 function unitHtml(b) {
-  const u = b.unit;
-  if (!u) return "";
+  const us = boxUnits(b);
+  if (!us.length) return "";
+  // 잠긴 사유는 떠 있는 명령(없으면 첫 명령)만 크게 쓴다 — 나머지는 스위치 위에 올리면 보인다
+  const focus = us.find((u) => u.alive) || us[0];
+  const alt = us.length > 1 ? `<div class="dg-alt">띄우는 단계 ${us.length}개 — 같은 노드라 한 번에 하나만 뜬다</div>` : "";
+  return alt + us.map((u, i) => unitRow(b, u, u === focus, i === 0)).join("");
+}
+
+function unitRow(b, u, withLock, first) {
   if (u.error) return `<div class="dg-why">⚠ ${esc(u.key)} — ${esc(u.error)}</div>`;
   const can = u.alive ? u.can_off : u.can_on, why = (u.alive ? u.why_off : u.why_on)[0] || "";
   const locked = !holding() ? "조작 권한이 없다" : can ? "" : why;
   const meta = u.alive ? `pid ${esc(u.pid)} · ${fmt(u.age_s, 0)} s` : u.started ? `rc ${esc(u.rc)}` : "—";
-  const share = b.shares.length ? `<span class="dg-share" title="같이 켜지고 꺼진다: ${esc(b.shares.join(" · "))}">⛓ ${b.shares.length + 1}개 묶음</span>` : "";
+  const share = first && b.shares.length ? `<span class="dg-share" title="같이 켜지고 꺼진다: ${esc(b.shares.join(" · "))}">⛓ ${b.shares.length + 1}개 묶음</span>` : "";
   const manual = u.kind === "manual" ? `<div class="dg-why dg-manual" title="${esc(shellLine(u.argv))}">${copyBtn(shellLine(u.argv))} 운영자 셸에서 직접: <code>${esc(shellLine(u.argv))}</code></div>` : "";
   return `<div class="dg-unit"><button class="sw ${u.alive ? "on" : "off"}" role="switch" data-act="unit" data-arg="${esc(u.key)}:${u.alive ? "0" : "1"}"
-      aria-checked="${u.alive}" aria-label="${esc(b.title)} 켜기/끄기" title="${esc(locked || (u.alive ? "끄기" : "켜기"))}"${locked ? " disabled" : ""}></button>
+      aria-checked="${u.alive}" aria-label="${esc(b.title)} — ${esc(u.key)} 켜기/끄기" title="${esc(locked || (u.alive ? "끄기" : "켜기"))}"${locked ? " disabled" : ""}></button>
     <span>${esc(u.key)} · ${meta}</span>${share}${u.started ? `<button class="btn btn-sm btn-ghost" data-act="log" data-arg="${esc(u.key)}">로그</button>` : ""}</div>
-    ${!can && why ? (u.goto
+    ${withLock && !can && why ? (u.goto
         ? `<button class="dg-why dg-lock dg-goto" data-act="goto-stage" data-arg="${esc(u.goto)}" title="${esc(why)} — 누르면 그 단계로 간다">🔒 ${esc(why)} ↓</button>`
         : `<div class="dg-why dg-lock" title="${esc(why)}">🔒 ${esc(why)}</div>`) : ""}${manual}`;
 }
@@ -632,7 +644,7 @@ function liveUnits(stage) {
 }
 
 function unitModal(key) {
-  const u = S.session.units[key], boxes = S.session.diagram.cols.flat().filter((b) => b.unit && b.unit.key === key);
+  const u = S.session.units[key], boxes = S.session.diagram.cols.flat().filter((b) => boxUnits(b).some((x) => x.key === key));
   modal(`<h3>끄기 — ${esc(key)}</h3><p>${esc(u.note)}</p>
     <p>이 프로세스를 그룹째 정지한다(SIGTERM → 5 s → SIGKILL). 그림에서 같이 꺼지는 상자: <b>${boxes.map((b) => esc(b.title)).join(" · ")}</b></p>
     <p>입력이 끊기면 정책 체인은 스스로 abort 하고 pd 는 HOLD 로 간다.</p>

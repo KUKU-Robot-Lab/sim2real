@@ -5,6 +5,8 @@ argv 는 여전히 미션 yaml 에서만 온다(HTTP 로는 키 `stage#n` 만 �
 from __future__ import annotations
 
 import json
+import os
+import signal
 import time
 
 import pytest
@@ -157,9 +159,25 @@ def test_a_crash_after_switching_back_on_is_not_mistaken_for_the_operators_off(c
     s.units_stopped["up#0"] = -1                     # 예전에 끈 기록(다른 pid)이 남아 있다
     assert _unit(console, "up#0")["alive"] is True
 
-    s.supervisor.stop(["up#0"])                      # 운영자를 거치지 않은 죽음
+    pid = _unit(console, "up#0")["pid"]
+    os.killpg(os.getpgid(pid), signal.SIGKILL)       # 운영자도 감독자도 거치지 않은 죽음(크래시)
+    deadline = time.time() + 5
+    while time.time() < deadline and _unit(console, "up#0")["alive"]:
+        time.sleep(0.05)
     u = _unit(console, "up#0")
     assert u["alive"] is False and u["stopped"] is False
+
+
+def test_a_stage_or_run_end_stop_is_an_off_not_a_crash(console):
+    # 10.05: 단계의 '정지' 명령(발행 pd 가 무발행 pd 를 내린다 · 에피소드 정지)은 감독자가 내린 것 — "죽었다" 가 아니다
+    console.open("t_fake", operator="pytest")
+    _finish(console, "check")
+    s = console.session
+    console.toggle_unit("up#0", True, operator="pytest")
+    assert _unit(console, "up#0")["alive"] is True
+    s.supervisor.stop(["up#0"])
+    u = _unit(console, "up#0")
+    assert u["alive"] is False and u["stopped"] is True
 
 
 def test_a_refused_switch_changes_nothing_and_says_why(console):

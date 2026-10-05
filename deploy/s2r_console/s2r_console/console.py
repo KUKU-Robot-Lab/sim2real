@@ -130,6 +130,13 @@ def mission_units(profile: Profile, *, repo: Path) -> dict[str, U.UnitCmd]:
     return U.index_units(mission, {st.id: commands_for(runbook, mission, st.id, repo=repo, execute=True) for st in mission.stages})
 
 
+def drawable_units(mission, units: Mapping[str, U.UnitCmd]) -> dict[str, U.UnitCmd]:
+    """그림에 그릴 명령 — 막힌 단계(blocked)의 명령은 뺀다. 돌릴 수 없는 노드와 그것이 부르는 인지 사슬이 그림을 채운다.
+    단계 목록 · 스위치(`units`)에는 그대로 있다 — 그림에서만 뺀다."""
+    blocked = {st.id for st in mission.stages if st.blocked}
+    return {k: u for k, u in units.items() if u.stage not in blocked}
+
+
 def diagram_of(profile: Profile, units: Mapping[str, U.UnitCmd], *, repo: Path) -> Diagram | None:
     """프로파일이 그림을 손으로 적었으면 그것, 아니면 미션·계약·robot yaml 에서 만든다(정책이 바뀌면 따라 바뀐다).
 
@@ -273,7 +280,7 @@ class Session:
         self.units = U.index_units(self.mission, {st.id: commands_for(self.runbook, self.mission, st.id, repo=repo, execute=True)
                                                   for st in self.mission.stages})
         #: 연결 그림 — 프로파일이 적지 않았으면 미션·계약·robot yaml 에서 만든다. 정책을 바꾸면 그림이 따라 바뀐다.
-        self.diagram = diagram_of(profile, self.units, repo=repo)
+        self.diagram = diagram_of(profile, drawable_units(self.mission, self.units), repo=repo)
         #: 운영자가 끈 것 {키: 그때의 pid} — 죽은 것과 구별한다. pid 까지 적어야 그 뒤 다시 뜬 프로세스의 크래시를 가리지 않는다.
         self.units_stopped: dict[str, int | None] = {}
         #: 로봇 상태 표가 쓰는 목표·한계 — 계약과 프로파일에서 한 번만 읽는다(09.23).
@@ -408,8 +415,8 @@ class Console:
 
     @staticmethod
     def _stack_keys(s: "Session") -> set[str]:
-        """팔·손 드라이버를 띄운 단위 — 그림에서 controller_manager 를 가진 구동 상자의 단위."""
-        return set() if s.diagram is None else {b.unit for b in s.diagram.boxes if b.manager and b.unit}
+        """팔·손 드라이버를 띄운 단위 — 그림에서 controller_manager 를 가진 구동 상자의 단위(상자 하나에 명령이 여럿이면 전부)."""
+        return set() if s.diagram is None else {u for b in s.diagram.boxes if b.manager for u in b.units}
 
     def end(self, *, force: bool = False) -> int:
         with self._lock:
@@ -708,7 +715,8 @@ class Console:
         빈 집합은 pd 상자는 있는데 콘솔이 띄우지 않는다는 뜻이다(스위치가 없다).
         """
         pd_boxes = [] if s.diagram is None else [b for b in s.diagram.boxes if b.id.startswith("pd") or b.status == "pd"]
-        return None if not pd_boxes else {b.unit for b in pd_boxes if b.unit}
+        # 한 팔의 pd 상자 하나를 무발행 · 발행 두 명령이 띄운다 — 둘 다 pd 다(하나라도 빠지면 끄기 보호가 그 명령에 안 걸린다)
+        return None if not pd_boxes else {u for b in pd_boxes for u in b.units}
 
     def _pd_holds(self, s: Session) -> bool:
         """pd 가 팔을 잡고 있을 수 있는가(모르는 것도 잡은 쪽으로). 콘솔이 띄운 pd 가 없으면 아니다."""
@@ -769,6 +777,8 @@ class Console:
         procs = {p["key"]: p for p in s.supervisor.table()}
         pd_phase = self._pd_phase(s, obs, procs)
         stopped = {k for k, pid in s.units_stopped.items() if procs.get(k, {}).get("pid") == pid}
+        # 단계의 '정지' 명령 · run 끝내기 · 중단도 감독자가 내린 것이다 — 그 프로세스는 죽은 것이 아니라 꺼 둔 것이다
+        stopped |= {k for k, p in procs.items() if p.get("stopped") and not p.get("alive")}
         return U.views(s.units, procs, stopped=stopped, busy_stages=busy, completed=s.state.completed,
                        pd_phase=pd_phase, robot_keys=robot_keys, real=s.profile.is_real)
 

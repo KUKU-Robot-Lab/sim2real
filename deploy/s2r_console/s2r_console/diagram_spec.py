@@ -16,8 +16,9 @@ from typing import Mapping, Sequence
 from .errors import ProfileError
 
 _UNIT = re.compile(r"^[A-Za-z0-9_]+#\d+$")
-_BOX_KEYS = {"id", "title", "col", "status", "ros", "unit", "manager", "note", "stages", "host"}
-_WIRE_KEYS = {"from", "to", "topic", "label", "inputs", "meter", "on_demand", "stale_ms", "heard_by", "episodic", "muted"}
+_BOX_KEYS = {"id", "title", "col", "status", "ros", "unit", "units", "manager", "note", "stages", "host"}
+_WIRE_KEYS = {"from", "to", "topic", "label", "inputs", "meter", "on_demand", "stale_ms", "heard_by", "episodic", "muted",
+              "units", "muted_by"}
 
 
 @dataclass(frozen=True)
@@ -27,16 +28,23 @@ class Box:
     col: int                              # 왼쪽부터 몇 번째 열. 신호는 왼쪽에서 오른쪽으로만 흐른다
     status: str | None = None             # /policy_control/status/<이름> 을 내는 노드면 그 이름
     ros: tuple[str, ...] = ()             # 이 상자에 해당하는 ROS 노드 전체 이름 — 전선의 "받는 쪽" 판정에 쓴다
-    unit: str | None = None               # 이 상자를 띄우는 미션 명령 `stage#n` — 스위치가 붙는다
+    #: 이 노드를 띄우는 미션 명령 `stage#n` **전부** — 스위치가 하나씩 붙는다. 같은 노드를 여러 단계가 띄우면
+    #  (pd 무발행 → 발행, 단독 정책 단계 → 에피소드) 상자는 하나다. 이름이 같은 노드는 동시에 둘일 수 없다.
+    units: tuple[str, ...] = ()
     manager: str | None = None            # controller_manager 이름 — 컨트롤러 상태를 상자 안에 적는다
     note: str = ""
     stages: tuple[str, ...] = ()          # 한 프로세스 안의 단계(obs → policy → fabric IK …) — 상자 안에 작은 칩으로 그린다
     host: str = ""                        # 이 프로세스가 도는 PC. 빈 값은 콘솔과 같은 PC(인지는 vision-3090 에서 돈다)
 
+    @property
+    def unit(self) -> str | None:
+        """첫 명령(미션 순서) — 명령 하나만 보는 쪽이 쓴다."""
+        return self.units[0] if self.units else None
+
     def as_dict(self) -> dict:
         return {"id": self.id, "title": self.title, "col": self.col, "status": self.status, "ros": list(self.ros),
-                "unit": self.unit, "manager": self.manager, "note": self.note, "stages": list(self.stages),
-                "host": self.host}
+                "unit": self.unit, "units": list(self.units), "manager": self.manager, "note": self.note,
+                "stages": list(self.stages), "host": self.host}
 
 
 @dataclass(frozen=True)
@@ -53,11 +61,16 @@ class Wire:
     heard_by: tuple[str, ...] = ()
     episodic: bool = False                # 에피소드가 도는 동안만 흐른다(joint_target) — 쉬는 동안 끊긴 것이 아니다
     muted: str = ""                       # 비어 있지 않으면 흐르지 않는 것이 정상이다 — 그 사유 (pd execute:=false)
+    #: 이 전선을 쓰는 명령 — 비면 언제나. 상자 하나를 여러 명령이 띄울 때 한 명령만 쓰는 입력이 있다
+    #  (단독 aglt 는 FP++ 컵, 에피소드 aglt 는 실행기가 다시 낸 컵). 다른 명령이 떠 있으면 이 전선은 쉬는 것이 정상이다.
+    units: tuple[str, ...] = ()
+    muted_by: tuple[str, ...] = ()        # `muted` 가 맞는 명령 — 비면 언제나(무발행 pd 가 떠 있을 때만 흐르지 않는다)
 
     def as_dict(self) -> dict:
         return {"from": self.src, "to": self.dst, "topic": self.topic, "label": self.label, "inputs": list(self.inputs),
                 "meter": self.meter, "on_demand": self.on_demand, "stale_ms": self.stale_ms,
-                "heard_by": list(self.heard_by), "episodic": self.episodic, "muted": self.muted}
+                "heard_by": list(self.heard_by), "episodic": self.episodic, "muted": self.muted,
+                "units": list(self.units), "muted_by": list(self.muted_by)}
 
 
 @dataclass(frozen=True)
@@ -78,7 +91,7 @@ class Diagram:
         return _unique(w.topic for w in self.wires if w.topic not in counted)
 
     def units(self) -> tuple[str, ...]:
-        return _unique(b.unit for b in self.boxes if b.unit)
+        return _unique(u for b in self.boxes for u in b.units)
 
     def as_dict(self) -> dict:
         return {"boxes": [b.as_dict() for b in self.boxes], "wires": [w.as_dict() for w in self.wires]}
@@ -91,6 +104,12 @@ def _unique(items) -> tuple[str, ...]:
 def _abs_names(raw: object, where: str) -> tuple[str, ...]:
     if not isinstance(raw, (list, tuple)) or not all(isinstance(n, str) and n.startswith("/") for n in raw):
         raise ProfileError(f"{where} 는 '/' 로 시작하는 전체 이름의 목록이어야 한다: {raw!r}")
+    return tuple(raw)
+
+
+def _units(raw: object, where: str) -> tuple[str, ...]:
+    if not isinstance(raw, (list, tuple)) or not all(isinstance(u, str) and _UNIT.match(u) for u in raw):
+        raise ProfileError(f"{where}: unit 은 '단계#번호' 여야 한다: {raw!r}")
     return tuple(raw)
 
 
@@ -110,14 +129,14 @@ def _box(raw: object, where: str) -> Box:
     if isinstance(col, bool) or not isinstance(col, int) or col < 0:
         raise ProfileError(f"{where}: col 은 0 이상의 정수여야 한다: {col!r}")
     unit = raw.get("unit")
-    if unit is not None and not (isinstance(unit, str) and _UNIT.match(unit)):
-        raise ProfileError(f"{where}: unit 은 '단계#번호' 여야 한다: {unit!r}")
+    units = _units([] if unit is None else [unit], f"{where}.unit") + _units(raw.get("units", []), f"{where}.units")
     manager = raw.get("manager")
     if manager is not None and not (isinstance(manager, str) and manager.startswith("/")):
         raise ProfileError(f"{where}: manager 는 '/' 로 시작하는 전체 이름이어야 한다: {manager!r}")
     status = raw.get("status")
     return Box(id=str(raw["id"]), title=str(raw["title"]), col=col, status=None if status is None else str(status),
-               ros=_abs_names(raw.get("ros", []), f"{where}.ros"), unit=unit, manager=manager, note=str(raw.get("note", "")),
+               ros=_abs_names(raw.get("ros", []), f"{where}.ros"), units=_unique(units), manager=manager,
+               note=str(raw.get("note", "")),
                stages=_strings(raw.get("stages", []), f"{where}.stages"), host=str(raw.get("host", "")))
 
 
@@ -145,7 +164,9 @@ def _wire(raw: object, cols: Mapping[str, int], where: str) -> Wire:
                 meter=bool(raw.get("meter", True)), on_demand=bool(raw.get("on_demand", False)),
                 stale_ms=None if stale is None else float(stale),
                 heard_by=_abs_names(raw.get("heard_by", []), f"{where}.heard_by"),
-                episodic=bool(raw.get("episodic", False)), muted=str(raw.get("muted", "")))
+                episodic=bool(raw.get("episodic", False)), muted=str(raw.get("muted", "")),
+                units=_units(raw.get("units", []), f"{where}.units"),
+                muted_by=_units(raw.get("muted_by", []), f"{where}.muted_by"))
 
 
 def parse_diagram(raw: object, *, path: Path, status_nodes: Sequence[str] | None = None) -> Diagram:

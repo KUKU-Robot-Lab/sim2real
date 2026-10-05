@@ -144,6 +144,7 @@ class Proc:
     log: Path
     started: float
     log_pos: int = 0       # 이 기동이 쓰기 시작한 로그 위치 — 앞의 줄은 지난 기동의 것이다(09.23)
+    stopped: bool = False  # 감독자가 내렸다(단계의 정지 · 끄기 · run 끝) — 스스로 죽은 것과 구별한다
 
     @property
     def rc(self) -> int | None:
@@ -153,7 +154,8 @@ class Proc:
         rc = self.rc
         return {"key": self.key, "stage": self.stage, "note": self.note, "argv": list(self.argv),
                 "background": self.background, "pid": self.popen.pid, "rc": rc,
-                "alive": rc is None, "log": self.log.name, "age_s": round(time.time() - self.started, 1)}
+                "alive": rc is None, "log": self.log.name, "age_s": round(time.time() - self.started, 1),
+                "stopped": self.stopped}
 
 
 class Supervisor:
@@ -254,6 +256,8 @@ class Supervisor:
         """그룹째 SIGTERM, 유예 뒤 SIGKILL. 정지시킨 수를 낸다."""
         with self._lock:
             targets = [p for k, p in self._procs.items() if (keys is None or k in keys) and p.rc is None]
+            for p in targets:
+                p.stopped = True
         for p in targets:
             _signal_group(p.popen, signal.SIGTERM)
         # 리더(`ros2 launch`)가 먼저 끝나도 그룹에 노드가 남을 수 있다 — 그룹이 **빌 때까지** 기다리고, 안 비면 그룹째 죽인다.

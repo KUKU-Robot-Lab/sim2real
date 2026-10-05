@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Mapping
 
 from .console_state import STALE_S, Observed
@@ -110,13 +111,62 @@ def _controller_gate(obs: Observed, wire: Wire, dst: Box) -> tuple[str | None, s
     return None, ""
 
 
-def _port(obs: Observed, index: int, wire: Wire, spec: Diagram) -> dict:
-    dst = spec.box(wire.dst)
+def _alive(units: Mapping[str, Mapping]) -> set[str]:
+    return {k for k, v in units.items() if v.get("alive")}
+
+
+def _idle_variant(wire: Wire, src: Box, dst: Box, units: Mapping[str, Mapping]) -> str:
+    """이 전선을 쓰는 명령은 떠 있지 않은데 같은 상자를 **다른 명령**이 띄웠다 — 쉬는 것이 정상이다. 사유 또는 빈 문자열.
+
+    예: 오른팔 aglt 를 에피소드 단계가 띄웠으면 단독 단계의 컵 입력(FP++ 직접)은 쓰지 않는다 — 실행기가 다시 낸 컵을 받는다.
+    """
+    alive = _alive(units)
+    if not wire.units or alive & set(wire.units) or not alive & (set(src.units) | set(dst.units)):
+        return ""
+    stages = " · ".join(dict.fromkeys(u.split("#")[0] for u in wire.units))
+    return f"{stages} 단계일 때만 쓴다"
+
+
+def _box_off(obs: Observed, box: Box, units: Mapping[str, Mapping]) -> bool:
+    """상자의 노드가 떠 있지 않다고 **안다** — 그 상자를 띄우는 콘솔 명령이 전부 꺼져 있고 그래프에도 그 노드가 없다.
+
+    joint_target 처럼 여러 노드가 같이 내는 토픽은 다른 노드의 발행으로 초록이 될 수 있다 — 꺼진 노드의 전선이 초록이면 안 된다.
+    꺼진 노드의 입력마다 "받는 쪽이 구독하지 않는다" 를 적으면 상자가 사유로 가득 찬다 — 상자 하나가 "꺼져 있다" 고 말하면 된다.
+    모르는 명령 · 사람이 직접 하는 명령이 섞여 있으면 판단하지 않는다.
+    """
+    views = [units.get(k) for k in box.units]
+    if not views or any(v is None or v.get("kind") == "manual" or v.get("alive") for v in views):
+        return False
+    return bool(box.ros) and not set(box.ros) & set(obs.graph)
+
+
+def _muted_now(wire: Wire, src: Box, units: Mapping[str, Mapping]) -> Wire:
+    """`muted` 가 특정 명령(무발행 pd)의 선언이면 그 명령이 떠 있을 때만 맞다. 발행하는 다른 명령이 떠 있으면 선언을 지운다."""
+    if not wire.muted or not wire.muted_by:
+        return wire
+    alive = _alive(units)
+    if alive & set(wire.muted_by) or not alive & set(src.units):
+        return wire
+    return replace(wire, muted="")
+
+
+def _port(obs: Observed, index: int, wire: Wire, spec: Diagram, units: Mapping[str, Mapping] | None = None) -> dict:
+    units = units or {}
+    src, dst = spec.box(wire.src), spec.box(wire.dst)
+    wire = _muted_now(wire, src, units)
     said = [r for name, r in _receiver_rows(obs, dst).items() if name in wire.inputs]
     theirs = _worst(str(r.get("state")) if str(r.get("state")) in TONE else UNKNOWN for r in said) if said else None
+    idle = _idle_variant(wire, src, dst, units)
+    expected_off = bool(idle) or bool(wire.muted) or wire.on_demand
     if not obs.bridge_up:
         state, text, note = UNKNOWN, "", "브리지가 없어 알 수 없다"
-    elif _muted(obs, wire, spec.box(wire.src), dst):                             # 흐르지 않는 것이 정상이다(pd 무발행) — 끊김으로 치지 않는다
+    elif _box_off(obs, dst, units):                     # 받는 노드가 꺼져 있다 — 사유는 상자가 말한다
+        state, text, note = OFF, "", ""
+    elif idle:
+        state, text, note = OFF, "", idle
+    elif not wire.on_demand and _box_off(obs, src, units):
+        state, text, note = OFF, "", "내는 쪽이 꺼져 있다"
+    elif _muted(obs, wire, src, dst):                   # 흐르지 않는 것이 정상이다(pd 무발행) — 끊김으로 치지 않는다
         state, text, note = OFF, "", wire.muted
     elif wire.on_demand:
         # 가끔 한 번 내는 값: 발행자가 없는 것이 정상이다. 받는 쪽이 갖고 있다고 하면 그것이 상태다.
@@ -132,16 +182,24 @@ def _port(obs: Observed, index: int, wire: Wire, spec: Diagram) -> dict:
             if why:
                 state, text, note = (gated or state), ("" if gated else text), why
         if wire.episodic and state in (MISSING, STALE):
-            resting = _resting(obs, spec.box(wire.src))
+            resting = _resting(obs, src)
             if resting:
                 state, text, note = HELD, "", resting
     return {"id": index, "from": wire.src, "topic": wire.topic, "label": wire.label or _short(wire.topic),
-            "state": state, "tone": TONE[state], "text": text, "note": note}
+            "state": state, "tone": TONE[state], "text": text, "note": note, "expected_off": expected_off}
 
 
 def _resting(obs: Observed, src: Box) -> str:
-    """에피소드 동안만 내는 전선이 쉬는 중인가 — 내는 노드가 **살아서** running 이 아니라고 말할 때만. 아니면 빈 문자열."""
-    if src.status is None or obs.age_s.get(src.status, 1e9) > STALE_S:
+    """에피소드 동안만 내는 전선이 쉬는 중인가 — 내는 노드가 **살아서** running 이 아니라고 말할 때만. 아니면 빈 문자열.
+
+    콘솔이 status 를 듣지 않는 노드(RH56F1 정책 노드)는 phase 를 모른다 — 노드가 그래프에 있으면 "쉬는 중일 수 있다" 로 둔다.
+    에피소드 중 끊김은 그 팔 pd 의 status(HOLD · 워치독)와 에피소드 패널이 말한다.
+    """
+    if src.status is None:
+        if src.ros and set(src.ros) & set(obs.graph):
+            return f"에피소드 동안만 낸다 — {src.title} 의 상태는 콘솔이 듣지 않아 쉬는 중인지 모른다"
+        return ""
+    if obs.age_s.get(src.status, 1e9) > STALE_S:
         return ""
     phase = str((obs.status.get(src.status) or {}).get("phase") or "")
     return "" if phase in ("", "running") else f"에피소드 밖({phase}) — {src.title} 는 running 일 때만 낸다"
@@ -156,6 +214,18 @@ def _unit_verdict(unit: Mapping | None) -> tuple[str, str] | None:
     if not unit.get("started") or unit.get("stopped"):
         return OFF, "꺼져 있다" if unit.get("started") else "아직 켜지 않았다"
     return DOWN, f"프로세스가 죽었다 (rc={unit.get('rc')}) — 로그를 볼 것"
+
+
+def _units_verdict(views: list[dict]) -> tuple[str, str] | None:
+    """상자를 띄우는 명령이 여럿일 때 — 하나라도 떠 있으면 None, 아니면 **가장 최근에 띄운** 명령의 사유.
+
+    무발행 pd 를 내리고 발행 pd 를 띄웠다가 그것이 죽었으면 "죽었다" 가 맞고, 앞의 무발행이 꺼진 것은 지난 일이다.
+    """
+    if any(v.get("alive") for v in views):
+        return None
+    mine = [v for v in views if not v.get("error") and v.get("kind") != "manual"]
+    started = sorted((v for v in mine if v.get("started")), key=lambda v: v["age_s"] if v.get("age_s") is not None else 1e18)
+    return _unit_verdict(started[0] if started else (mine[0] if mine else None))
 
 
 def _status_box(obs: Observed, box: Box, title: str) -> tuple[str, str, list[dict]]:
@@ -246,7 +316,7 @@ def _percept_box(obs: Observed, box: Box) -> tuple[str, str, list[dict]] | None:
 
 
 def _box(obs: Observed, box: Box, spec: Diagram, ports: Mapping[int, dict], units: Mapping[str, Mapping]) -> dict:
-    unit = None if box.unit is None else dict(units.get(box.unit) or {"key": box.unit, "error": _NO_UNIT})
+    views = [dict(units.get(k) or {"key": k, "error": _NO_UNIT}) for k in box.units]
     lines: list[dict] = []
     said = None if not obs.bridge_up else _percept_box(obs, box)
     if not obs.bridge_up:
@@ -259,15 +329,16 @@ def _box(obs: Observed, box: Box, spec: Diagram, ports: Mapping[int, dict], unit
         state, detail = _plain_box(obs, box, spec, ports)
         if box.host and not detail:
             detail = f"{box.host} · 인지 런처가 없어 컨테이너 상태는 모른다"
-    verdict = _unit_verdict(unit)
+    verdict = _units_verdict(views)
     if obs.bridge_up and verdict is not None and state in (MISSING, STALE, UNKNOWN):
         state, detail = verdict                        # 안 보이는 이유를 안다 — 꺼 둔 것인지 죽은 것인지
     if obs.bridge_up and box.manager is not None:
         lines += _controller_lines(obs, box.manager)
-    shares = [b.title for b in spec.boxes if b.unit and b.unit == box.unit and b.id != box.id]
+    shares = [b.title for b in spec.boxes if b.id != box.id and set(b.units) & set(box.units)]
     return {"id": box.id, "title": box.title, "host": box.host,
             "state": state, "tone": TONE[state], "detail": detail, "lines": lines,
-            "ports": [ports[i] for i, w in enumerate(spec.wires) if w.dst == box.id], "unit": unit, "shares": shares,
+            "ports": [ports[i] for i, w in enumerate(spec.wires) if w.dst == box.id],
+            "unit": views[0] if views else None, "units": views, "shares": shares,
             "stages": list(box.stages)}
 
 
@@ -290,7 +361,7 @@ class _Named:
         self.name, self.active = name, ()
 
 
-def _summary(boxes: list[dict], spec: Diagram) -> dict:
+def _summary(boxes: list[dict]) -> dict:
     """상자가 다 떠 있어도 전선이 끊겨 있을 수 있다 — 둘 다 센다. 못 본 것을 이어졌다고 하지 않는다."""
     title = {b["id"]: b["title"] for b in boxes}
     where = lambda b, p: f"{title[p['from']]} → {b['title']} ({p['label']})"  # noqa: E731
@@ -302,16 +373,12 @@ def _summary(boxes: list[dict], spec: Diagram) -> dict:
     if not all(b["tone"] == "ok" or b["state"] == HELD for b in boxes):
         return {"tone": "mute", "text": "아직 다 켜지지 않았다"}
     # 여기부터는 상자가 전부 초록이다 — 그런데도 확인 못한 전선이 있으면 그것이 머리말이다.
+    # 흐르지 않는 것이 정상인 전선(`_port` 의 expected_off) — pd 무발행 · 가끔 한 번 오는 값 · 다른 단계가 띄운 상자의 입력
     dark = [where(b, p) for b in boxes for p in b["ports"]
-            if p["state"] == UNKNOWN or (p["state"] == OFF and not _expected_off(spec.wires[p["id"]]))]
+            if p["state"] == UNKNOWN or (p["state"] == OFF and not p.get("expected_off"))]
     if dark:
         return {"tone": "warn", "text": "상자는 다 떠 있는데 확인 못한 전선: " + " · ".join(dark)}
     return {"tone": "ok", "text": "전부 이어짐"}
-
-
-def _expected_off(wire: Wire) -> bool:
-    """흐르지 않는 것이 정상인 전선 — pd 무발행(execute:=false)과 가끔 한 번 오는 값."""
-    return bool(wire.muted) or wire.on_demand
 
 
 _PLUMBING = ("/policy_control/status/",)               # 콘솔이 이미 상자 상태로 읽는 것 — 그림 밖 목록에 다시 적지 않는다
@@ -331,10 +398,10 @@ def _extra(obs: Observed, spec: Diagram) -> dict | None:
 
 def build(obs: Observed, spec: Diagram, *, units: Mapping[str, Mapping]) -> dict:
     """화면이 그대로 그리는 모양. `units` 는 키 → 프로세스 상태(`units.view`)."""
-    ports = {i: _port(obs, i, w, spec) for i, w in enumerate(spec.wires)}
+    ports = {i: _port(obs, i, w, spec, units) for i, w in enumerate(spec.wires)}
     boxes = [_box(obs, b, spec, ports, units) for b in spec.boxes]
     cols = [[b for b, s in zip(boxes, spec.boxes) if s.col == c] for c in sorted({s.col for s in spec.boxes})]
     wires = [{"id": i, "from": w.src, "to": w.dst, "state": ports[i]["state"], "tone": ports[i]["tone"],
               "flow": ports[i]["state"] == LIVE and w.meter and not w.on_demand} for i, w in enumerate(spec.wires)]
-    return {"cols": cols, "wires": wires, "summary": _summary(boxes, spec), "extra": _extra(obs, spec)}
+    return {"cols": cols, "wires": wires, "summary": _summary(boxes), "extra": _extra(obs, spec)}
 

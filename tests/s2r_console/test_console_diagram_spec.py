@@ -30,7 +30,7 @@ GOOD = {
 def test_a_good_diagram_parses_into_frozen_records():
     d = parse_diagram(GOOD, path=P)
     assert isinstance(d, Diagram)
-    assert d.boxes[1] == Box(id="pour_node", title="정책", col=1, status="pour_node", ros=("/pour_node",), unit="chain#0")
+    assert d.boxes[1] == Box(id="pour_node", title="정책", col=1, status="pour_node", ros=("/pour_node",), units=("chain#0",))
     assert d.wires[0] == Wire(src="arm", dst="pour_node", topic="/joint_states", inputs=("src:arm", "rcv:arm"), stale_ms=500.0)
     assert d.wires[2].meter is False and d.wires[3].on_demand is True
 
