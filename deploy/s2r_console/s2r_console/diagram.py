@@ -181,9 +181,11 @@ def _port(obs: Observed, index: int, wire: Wire, spec: Diagram, units: Mapping[s
             gated, why = _controller_gate(obs, wire, dst)
             if why:
                 state, text, note = (gated or state), ("" if gated else text), why
-        if wire.episodic and state in (MISSING, STALE):
+        if wire.episodic and state in (MISSING, STALE, LIVE):
+            # 내는 노드가 running 이 아니라고 스스로 말하면 이 전선은 쉰다 — joint_target 처럼 여럿이 같이 내는 토픽이
+            # 다른 노드의 발행으로 흘러도 이 노드의 전선이 초록이면 안 된다(phase 를 모르는 노드는 끊김만 누그러뜨린다)
             resting = _resting(obs, src)
-            if resting:
+            if resting and (state != LIVE or src.status is not None):
                 state, text, note = HELD, "", resting
     return {"id": index, "from": wire.src, "topic": wire.topic, "label": wire.label or _short(wire.topic),
             "state": state, "tone": TONE[state], "text": text, "note": note, "expected_off": expected_off}
@@ -202,7 +204,7 @@ def _resting(obs: Observed, src: Box) -> str:
     if obs.age_s.get(src.status, 1e9) > STALE_S:
         return ""
     phase = str((obs.status.get(src.status) or {}).get("phase") or "")
-    return "" if phase in ("", "running") else f"에피소드 밖({phase}) — {src.title} 는 running 일 때만 낸다"
+    return "" if phase in ("", "running") else f"에피소드 밖({phase})"
 
 
 def _unit_verdict(unit: Mapping | None) -> tuple[str, str] | None:
@@ -339,6 +341,7 @@ def _box(obs: Observed, box: Box, spec: Diagram, ports: Mapping[int, dict], unit
             "state": state, "tone": TONE[state], "detail": detail, "lines": lines,
             "ports": [ports[i] for i, w in enumerate(spec.wires) if w.dst == box.id],
             "unit": views[0] if views else None, "units": views, "shares": shares,
+            "single": bool(box.ros),                    # ROS 노드 하나 — 여러 명령 중 한 번에 하나만 뜬다(fake 대역은 여럿이 같이 뜬다)
             "stages": list(box.stages)}
 
 

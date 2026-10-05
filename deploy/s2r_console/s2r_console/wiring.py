@@ -83,6 +83,12 @@ POLICY_NODES = {
                                                     ("cup_rcv_topic", "/objects/cup_rcv/pose"))),
 }
 _POLICY_INPUTS = ("arm", "ee", "tip_force", "joint_force")     # pour_fj_node 가 robot yaml 에서 폴링하는 소스 역할
+#: 실기 상자 제목 — fake 대역도 같은 상자 · 같은 제목으로 그린다(10.05 사용자: 연결창은 실기 기준, fake 노드는 따로 안 그린다)
+ARM_STATE_TITLE = "팔 상태 (robot_control)"
+OBJECT_POSE_TITLE = "object_pose_node · 카메라 → base_link"
+HOLDER_TITLE = "cup_holder_pose_node · 홀더 자세(마커)"
+#: 노드가 아니라 사람이 한 번 내는 도구(수동 명령) — 연결 상태가 아니므로 그리지 않는다. 조작판에는 그대로 있다
+_TOOLS = ("aglt_goal.py",)
 
 
 @dataclass(frozen=True)
@@ -157,13 +163,17 @@ class _Graph:
     percept_host: str = ""                                           # 인지 런처가 카메라 · FP++ 를 켜는 PC
     #: 상자 → 짧은 이름. 한 상자가 같은 토픽을 둘에게서 받을 때 포트에 내는 쪽을 앞에 붙인다(좁은 상자에서도 안 잘린다)
     tags: dict[str, str] = field(default_factory=dict)
+    #: 프로파일 status_nodes 밖인데 상자가 제 status 를 읽게 하는 노드(정책 · 실행기) — 콘솔 브리지가 같이 구독한다
+    own_status: set[str] = field(default_factory=set)
 
     def box(self, box_id: str, title: str, layer: int, **extra) -> str:
         """상자 하나 = 노드 하나. 같은 노드(이름이 같은 상자 · 같은 ROS 이름)를 또 띄우는 명령은 그 상자에 스위치를 더한다."""
-        status, unit = extra.pop("status", None), extra.pop("unit", None)
+        status, unit, own = extra.pop("status", None), extra.pop("unit", None), extra.pop("own_status", False)
         entry = {"id": box_id, "title": title, "col": layer, **{k: v for k, v in extra.items() if v not in (None, "", (), [])}}
-        if status in self.status_nodes:                              # 브리지가 듣지 않는 status 는 주장하지 않는다
+        if status in self.status_nodes or (own and status):          # 브리지가 듣지 않는 status 는 주장하지 않는다
             entry["status"] = status
+            if own and status not in self.status_nodes:
+                self.own_status.add(status)
         ros = list(entry.get("ros") or ())
         for bid, old in self.boxes.items():
             mine = list(old.get("ros") or ())
@@ -199,11 +209,11 @@ class _Graph:
     def mark(self) -> tuple:
         """명령 하나를 그리기 직전의 장부. 그리다 실패하면 여기로 되돌린다 — 반쪽짜리 체인을 남기지 않는다."""
         return copy.deepcopy((self.boxes, self.wires, self.providers, self.stage_providers, self.lazy, self.needs,
-                              self.makers, self.hand_drivers, self.percept_host, self.tags))
+                              self.makers, self.hand_drivers, self.percept_host, self.tags, self.own_status))
 
     def rollback(self, mark: tuple) -> None:
         (self.boxes, self.wires, self.providers, self.stage_providers, self.lazy, self.needs,
-         self.makers, self.hand_drivers, self.percept_host, self.tags) = mark
+         self.makers, self.hand_drivers, self.percept_host, self.tags, self.own_status) = mark
 
 
 def _read_json(path: Path) -> dict:
@@ -328,7 +338,7 @@ def _policy_node(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
     sides = [s for s in SIDE_ORDER if s in roles.values()]
     arms = " · ".join(f"{SIDE_KO.get(s, s)}팔" for s in sides)
     box = g.box(node, f"{node} · {what} ({arms})", L_POLICY, status=node, ros=[f"/{node}", POLICY_POLL_NODE.format(node=node)],
-                unit=key,
+                unit=key, own_status=True,
                 stages=[f"obs {contract.get('obs_dim', '?')}", f"policy → {contract.get('action_dim', '?')}", "decoder"])
     g.tags[box] = what.split()[0]                                         # 집기 · 놓기 · 붓기
     for role, side in roles.items():
@@ -355,7 +365,7 @@ def _episode_runner(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
     """
     episode = yaml.safe_load(_resolve(cmd.args["episode"], repo).read_text(encoding="utf-8")) or {}
     box = g.box(RUNNER_NODE.lstrip("/"), "episode_runner · 에피소드 실행기", L_OBS, status=RUNNER_NODE.lstrip("/"),
-                ros=[RUNNER_NODE], unit=key, stages=["snapshot", "정책 순서", "복구"],
+                ros=[RUNNER_NODE], unit=key, own_status=True, stages=["snapshot", "정책 순서", "복구"],
                 note="정책 노드의 episode 서비스를 부른다 — 그림에는 토픽만 그린다")
     g.tags[box] = "실행기"
     stage = key.split("#")[0]
@@ -369,14 +379,6 @@ def _episode_runner(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
     for spec in (episode.get("policies") or {}).values():
         if spec.get("side") in SIDE_ORDER:
             g.stage_providers[(stage, f"{NS}/{spec['side']}/goal")] = box
-
-
-def _aglt_goal(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
-    """aglt 목표를 한 번 보내는 운영자 도구(수동 명령) — 노드가 아니라 사람이 내는 입력이다."""
-    box = g.box("operator_goal", "운영자 입력 · aglt 목표", L_OBS, unit=key,
-                note="aglt_goal.py 가 base 좌표 목표를 한 번 보낸다(놓기 인계 자리)")
-    g.tags[box] = "운영자"
-    g.providers.setdefault(f"{NS}/{_side(cmd)}/goal", box)
 
 
 def _pd(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
@@ -449,19 +451,25 @@ def _fake_plant(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
     for role, own, cfg in _sources(robot, None):
         topic = str(cfg["topic"])
         if role == "arm":
-            g.providers.setdefault(topic, g.box("arm_state", "팔 상태 (MockArm)", L_SENSE, ros=["/fake_arm_bridge"], unit=key))
+            g.providers.setdefault(topic, g.box("arm_state", ARM_STATE_TITLE, L_SENSE, ros=["/fake_arm_bridge"], unit=key,
+                                                note="fake 대역 — fake_plant 의 MockArm 이 낸다"))
         elif role in ("ee", "tip_force") and own and hands:
-            g.providers.setdefault(topic, g.box(f"hand_{own}_state", f"{SIDE_KO[own]}손 · 관절 + 손끝 힘 (fake)", L_SENSE, unit=key))
-    g.lazy[FAKE_PLANT_OBJECT_TOPIC] = {"box_id": _object_id(FAKE_PLANT_OBJECT_TOPIC), "layer": L_SENSE, "unit": key,
-                                       "title": f"{_object_name(FAKE_PLANT_OBJECT_TOPIC)} 포즈 (fake)"}
+            g.providers.setdefault(topic, g.box(f"hand_{own}_state", f"{SIDE_KO[own]}손 · 관절 + 손끝 힘", L_SENSE, unit=key,
+                                                note="fake 대역 — fake_plant 가 낸다"))
+    g.lazy[FAKE_PLANT_OBJECT_TOPIC] = {"box_id": "object_pose", "layer": L_SENSE, "unit": key, "title": OBJECT_POSE_TITLE}
     g.providers["__fake_plant__"] = key
 
 
 def _fake_cup(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
+    """fake 컵 · 홀더 자세 — 실기에서 그 토픽을 내는 상자(물체 자세 · 홀더 노드)의 대역으로 그 상자에 붙인다."""
     topic = cmd.args.get("topic")
-    if topic:
-        g.providers[topic] = g.box(_object_id(topic), f"{_object_name(topic)} 포즈 (fake)", L_SENSE, unit=key)
-        g.tags[g.providers[topic]] = "fake"
+    if not topic:
+        return
+    holder = _object_name(topic).startswith("cup_holder")
+    box = g.box("cup_holders" if holder else "object_pose", HOLDER_TITLE if holder else OBJECT_POSE_TITLE, L_SENSE, unit=key,
+                note="fake 대역 — 고정 자세를 낸다")
+    g.tags[box] = "마커" if holder else "FP++"
+    g.providers[topic] = box
 
 
 def _bringup(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
@@ -521,7 +529,7 @@ def _provider(g: _Graph, topic: str, role: str, side: str, unit: str | None = No
     if role in ("ee", "tip_force", "joint_force") and side:
         box = g.box(f"hand_{side}_state", f"{SIDE_KO[side]}손 · 관절 + 손끝 힘", L_SENSE, unit=g.providers.get(f"__hand_unit_{side}__"))
         return g.providers.setdefault(topic, box)
-    box = g.box("arm_state", "팔 상태 (robot_control)", L_SENSE, unit=g.providers.get("__arm_unit__"),
+    box = g.box("arm_state", ARM_STATE_TITLE, L_SENSE, unit=g.providers.get("__arm_unit__"),
                 note="joint_state_broadcaster — robot_control bringup 이 띄운다")
     return g.providers.setdefault(topic, box)
 
@@ -540,7 +548,7 @@ def _perception_chain(g: _Graph, name: str, unit: str | None = None) -> str:
     camera = _camera(g)
     for cam in CAMERA_TOPICS:
         g.wire(camera, tracker, cam, meter=False)
-    pose = g.box("object_pose", "object_pose_node · 카메라 → base_link", L_SENSE, ros=[OBJECT_POSE_NODE], unit=unit)
+    pose = g.box("object_pose", OBJECT_POSE_TITLE, L_SENSE, ros=[OBJECT_POSE_NODE], unit=unit)
     g.tags[pose] = "FP++"
     g.wire(tracker, pose, input_topic(name), stale_ms=STALE_MS)
     g.providers.setdefault(output_topic(name), pose)
@@ -579,13 +587,13 @@ def _object_pose(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
     for name in names:
         _perception_chain(g, name.strip(), unit=key)
     if not names:
-        g.box("object_pose", "object_pose_node · 카메라 → base_link", L_SENSE, ros=[OBJECT_POSE_NODE], unit=key)
+        g.box("object_pose", OBJECT_POSE_TITLE, L_SENSE, ros=[OBJECT_POSE_NODE], unit=key)
 
 
 def _cup_holders(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
     """홀더 마커(ArUco) → 홀더 자세. 영상 · 카메라 정보를 받고 설정의 홀더마다 /objects/<홀더>/pose 를 낸다."""
     cfg = yaml.safe_load(_resolve(cmd.args.get("cfg") or HOLDER_CFG, repo).read_text(encoding="utf-8")) or {}
-    box = g.box("cup_holders", "cup_holder_pose_node · 홀더 자세(마커)", L_SENSE, ros=[HOLDER_NODE], unit=key,
+    box = g.box("cup_holders", HOLDER_TITLE, L_SENSE, ros=[HOLDER_NODE], unit=key,
                 note="마커로 홀더 자세를 잰다 — 에피소드는 이것이 쓴 고정 홀더 파일을 실행기가 다시 낸다")
     g.tags[box] = "마커"
     camera = _camera(g)
@@ -609,7 +617,7 @@ _PROVIDERS = {"fake_plant.launch.py": _fake_plant, "fake_cup_pose_pub.py": _fake
               "head_joint_publisher.py": _head_publisher, "perception_launcher_node.py": _perception_launcher,
               "fpp_pose_rx.py": _fpp_rx, "object_pose_node.py": _object_pose, "cup_holder_pose_node.py": _cup_holders,
               "rh56f1_driver.py": _rh56f1_driver, "fake_rh56f1_hand.py": _rh56f1_driver,
-              "rh56f1_state_node.py": _rh56f1_state, "episode_runner_node.py": _episode_runner, "aglt_goal.py": _aglt_goal}
+              "rh56f1_state_node.py": _rh56f1_state, "episode_runner_node.py": _episode_runner}
 _HANDLERS = {"policy_chain.launch.py": _policy_chain, "pour_chain.launch.py": _pour_chain, "pour_guard_node.py": _pour_guard,
              "pd_controller.launch.py": _pd, **{name: _policy_node for name in POLICY_NODES}}
 
@@ -736,7 +744,7 @@ def generate(units: Mapping[str, UnitCmd], *, repo: Path, status_nodes: Sequence
                 except Exception as exc:                             # noqa: BLE001 — 그림 하나 때문에 콘솔이 안 뜨면 안 된다
                     g.rollback(mark)                                 # 반쪽만 그린 체인이 "다 이어졌다" 로 보이면 안 된다
                     _unknown(g, key, cmd, f"읽지 못했다: {exc}", units[key].note)
-    known = set(_PROVIDERS) | set(_HANDLERS)
+    known = set(_PROVIDERS) | set(_HANDLERS) | set(_TOOLS)
     for key, cmd in parsed:
         if cmd.name not in known and not _shell_step(units[key]):
             _unknown(g, key, cmd, note=units[key].note)
@@ -746,4 +754,5 @@ def generate(units: Mapping[str, UnitCmd], *, repo: Path, status_nodes: Sequence
     boxes = [{**b, "col": used.index(b["col"])} for b in sorted(g.boxes.values(), key=lambda b: b["col"])]
     col = {b["id"]: b["col"] for b in boxes}
     wires = [w for w in g.wires if col[w["from"]] < col[w["to"]]]
-    return parse_diagram({"boxes": boxes, "wires": wires}, path=Path("<generated>"), status_nodes=status_nodes)
+    return parse_diagram({"boxes": boxes, "wires": wires}, path=Path("<generated>"),
+                         status_nodes=(*status_nodes, *sorted(g.own_status)))

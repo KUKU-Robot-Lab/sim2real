@@ -154,6 +154,8 @@ def bridge_argv(profile: Profile, diagram: Diagram | None = None) -> list[str]:
     """구독 전용 브리지. 스택 토픽은 프로파일이 선언했을 때만 넘긴다. 순수."""
     diagram = diagram if diagram is not None else profile.diagram
     nodes = list(dict.fromkeys([*profile.status_nodes, EPISODE_NODE]))   # 에피소드 실행기 상태(떠 있을 때만 온다)
+    # 그림의 정책 노드 · 실행기가 읽는 status — 상자가 phase · seq · 거부 사유를 직접 말하게 한다(떠 있을 때만 온다)
+    nodes = list(dict.fromkeys([*nodes, *(b.status for b in (diagram.boxes if diagram is not None else ()) if b.status)]))
     argv = [sys.executable, "-m", "s2r_console.bridge", "--domain", str(profile.domain), "--nodes", *nodes]
     topics = [] if profile.stack is None else [t.name for t in profile.stack.topics]
     watch: list[str] = []

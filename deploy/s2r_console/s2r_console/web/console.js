@@ -489,7 +489,7 @@ function unitHtml(b) {
   if (!us.length) return "";
   // 잠긴 사유는 떠 있는 명령(없으면 첫 명령)만 크게 쓴다 — 나머지는 스위치 위에 올리면 보인다
   const focus = us.find((u) => u.alive) || us[0];
-  const alt = us.length > 1 ? `<div class="dg-alt">띄우는 단계 ${us.length}개 — 같은 노드라 한 번에 하나만 뜬다</div>` : "";
+  const alt = us.length > 1 && b.single ? `<div class="dg-alt" title="같은 노드라 한 번에 하나만 뜬다">띄우는 단계 ${us.length}개 · 한 번에 하나</div>` : "";
   return alt + us.map((u, i) => unitRow(b, u, u === focus, i === 0)).join("");
 }
 

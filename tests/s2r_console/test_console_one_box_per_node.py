@@ -94,12 +94,12 @@ def test_an_input_only_one_stage_uses_names_that_stage(real):
     assert not into[("hand_right_state", "/hand_right/joint_states")].units                       # 둘 다 쓴다 — 언제나
 
 
-def test_in_the_episode_the_runner_gives_the_holder_and_goal_and_alone_the_holder_node_and_operator_do(real):
+def test_in_the_episode_the_runner_gives_the_holder_and_goal_and_alone_the_holder_node_does(real):
     _, _, d = real
     holder = {w.src: w.units for w in d.wires if w.dst == "rh_place_node_right" and w.topic == "/objects/cup_holder_1/pose"}
     assert holder == {"cup_holders": ("policy_place_right#1",), "episode_runner": ("episode_pick_place_right#4",)}
     goal = {w.src: w for w in d.wires if w.dst == "rh_aglt_node_right" and w.topic == "/policy_control/right/goal"}
-    assert set(goal) == {"operator_goal", "episode_runner"} and all(w.on_demand for w in goal.values())
+    assert set(goal) == {"episode_runner"} and all(w.on_demand for w in goal.values())
 
 
 def test_policy_nodes_feed_only_their_own_arms_pd(real):
@@ -134,10 +134,11 @@ def test_the_perception_chain_runs_on_this_pc_and_the_udp_receiver_switches_the_
         "/camera/camera/color/image_raw", "/camera/camera/color/camera_info"}
 
 
-def test_the_one_shot_goal_tool_is_one_operator_box_for_both_arms(real):
-    _, _, d = real
-    op = d.box("operator_goal")
-    assert set(op.units) == {"policy_place_right#0", "policy_place_left#0"} and not op.ros
+def test_the_one_shot_goal_tool_is_not_drawn_as_a_node(real):
+    # 10.05 사용자: 연결창은 실기 노드와 연결 상태 — 사람이 한 번 내는 도구(aglt_goal.py)는 노드가 아니다(조작판에는 있다)
+    _, units, d = real
+    assert {"policy_place_right#0", "policy_place_left#0"} <= set(units)
+    assert not [b for b in d.boxes if {"policy_place_right#0", "policy_place_left#0"} & set(b.units)]
 
 
 def test_the_fake_profile_gets_the_same_picture_with_fake_hands():
@@ -146,8 +147,8 @@ def test_the_fake_profile_gets_the_same_picture_with_fake_hands():
     assert not [b.id for b in d.boxes if b.id.startswith("unit_")]
     assert d.box("hand_right_drive").ros == ("/fake_rh56f1_right",)
     assert d.box("hand_right_state").ros == ("/rh56f1_state_right",)        # hands:=none — fake 플랜트의 손 상자가 없다
-    holders = [b for b in d.boxes if b.id.startswith("obj_cup_holder_1")]
-    assert len(holders) == 1 and len(holders[0].units) == 4                  # 같은 토픽을 내는 fake 컵 넷 = 상자 하나
+    holders = d.box("cup_holders")                                          # fake 홀더 넷 = 실기 홀더 노드 상자 하나
+    assert len(holders.units) == 4 and holders.title == W.HOLDER_TITLE and not holders.ros
 
 
 # ── 노드 소스의 이름 ────────────────────────────────────────────────────
@@ -351,8 +352,7 @@ def test_a_topic_heard_from_two_boxes_names_the_sender_in_the_port(real):
     _, _, d = real
     labels = {w.label for w in d.wires if w.dst == "pd" and w.topic == "/policy_control/joint_target"}
     assert labels == {"집기 ▸ joint_target", "놓기 ▸ joint_target"}                  # 내는 쪽이 앞 — 좁은 상자에서도 안 잘린다
-    assert {w.label for w in d.wires if w.dst == "rh_aglt_node_right" and w.topic.endswith("/goal")} == {
-        "운영자 ▸ right/goal", "실행기 ▸ right/goal"}
+    assert {w.label for w in d.wires if w.dst == "rh_aglt_node_right" and w.topic.endswith("/goal")} == {""}  # 하나뿐이면 이름 그대로
     assert {w.label for w in d.wires if w.dst == "rh_place_node_right" and w.topic.endswith("cup_holder_1/pose")} == {
         "마커 ▸ cup_holder_1/pose", "실행기 ▸ cup_holder_1/pose"}
     assert not d.box("pd").title.count("무발행")                                # 제목은 노드, 무발행 · 발행은 칩과 스위치가 말한다
@@ -390,3 +390,91 @@ def test_the_fake_hand_publishes_every_topic_the_state_node_reads():
     assert set(read) == {"angle_actual", "touch_data", "force_actual"}
     for name in read:
         assert f'f"{{ns}}/{name}"' in fake, name
+
+
+
+# ── 연결창은 실기 기준 (10.05 사용자: "노드 중에 FAKE 쪽은 필요 없을 것 같은데 — 실기 값 · 연결 상태 위주로") ──
+def _profile_diagram(name):
+    import mission_core as MC
+    prof = load(PROFILES / f"{name}.yaml", repo=SIM2REAL)
+    mission = MC.load_mission(yaml.safe_load(prof.mission.read_text(encoding="utf-8")))
+    return prof, W.generate(drawable_units(mission, mission_units(prof, repo=SIM2REAL)), repo=SIM2REAL,
+                            status_nodes=prof.status_nodes)
+
+
+@pytest.mark.parametrize("name", sorted(p.stem for p in PROFILES.glob("*_real.yaml")))
+def test_real_profiles_draw_no_fake_node(name):
+    _, d = _profile_diagram(name)
+    bad = [b.title for b in d.boxes if "fake" in f"{b.title} {' '.join(b.ros)}".lower() or "mock" in b.title.lower()]
+    assert not bad
+
+
+@pytest.mark.parametrize("name", sorted(p.stem for p in PROFILES.glob("*_fake.yaml")))
+def test_fake_stand_ins_take_the_place_of_the_real_boxes_instead_of_being_their_own_nodes(name):
+    _, d = _profile_diagram(name)
+    assert not [b.title for b in d.boxes if "(fake)" in b.title or "mock" in b.title.lower()]
+    assert not [b.id for b in d.boxes if b.id.startswith("obj_")]
+
+
+def test_the_fake_rh56f1_picture_has_the_real_pictures_boxes():
+    _, real = _profile_diagram("rh56f1_real")
+    _, fake = _profile_diagram("rh56f1_fake")
+    titles = {b.title for b in real.boxes}
+    # fake 에 없는 것: 인지(카메라 · FP++ · 런처 — 정지 컵을 fake 가 바로 낸다). fake 에만 있는 것: 막히지 않은 붓기 노드
+    missing = {b.title for b in real.boxes} - {b.title for b in fake.boxes}
+    assert missing <= {"인지 런처 · local", "카메라 (RealSense)", "FPP 추적 · cyl60"}, missing
+    extra = {b.title for b in fake.boxes} - titles
+    assert extra <= {"pour_fj_node · 붓기 정책 (오른팔 · 왼팔)"}, extra
+
+
+def test_policy_nodes_and_the_runner_say_their_own_phase_and_the_bridge_listens():
+    from s2r_console.console import bridge_argv
+    prof, d = _profile_diagram("rh56f1_real")
+    assert prof.status_nodes == ("pd_right", "pd_left")                    # 노드 표 · 배너 · 지연 기준은 그대로
+    want = {"rh_aglt_node_right", "rh_aglt_node_left", "rh_place_node_right", "rh_place_node_left", "episode_runner"}
+    assert {b.id: b.status for b in d.boxes if b.id in want} == {n: n for n in want}
+    argv = bridge_argv(prof, d)
+    nodes = argv[argv.index("--nodes") + 1:argv.index("--topics")]
+    assert set(nodes) >= want | {"pd_right", "pd_left"}
+
+
+def test_a_policy_box_shows_its_phase_and_its_refusal_reason():
+    spec = parse_diagram({"boxes": [
+        {"id": "aglt", "title": "aglt", "col": 0, "status": "rh_aglt_node_right", "ros": ["/rh_aglt_node_right"], "unit": "a#1"},
+    ]}, path=Path("p.yaml"), status_nodes=("rh_aglt_node_right",))
+    up = {"a#1": {"key": "a#1", "kind": "background", "alive": True, "started": True, "stopped": False}}
+    ok = Observed(bridge_up=True, status={"rh_aglt_node_right": {"phase": "running", "seq": 812, "ok": True}},
+                  age_s={"rh_aglt_node_right": 0.1}, graph=("/rh_aglt_node_right",), topics={}, topics_age_s=0.5)
+    box = build(ok, spec, units=up)["cols"][0][0]
+    assert box["state"] == "live" and box["detail"] == "running · seq 812"
+    refused = Observed(bridge_up=True, status={"rh_aglt_node_right": {"phase": "idle", "seq": 3, "ok": False,
+                                                                       "reasons": ["컵 자세가 없다 (0.5 s)"]}},
+                       age_s={"rh_aglt_node_right": 0.1}, graph=("/rh_aglt_node_right",), topics={}, topics_age_s=0.5)
+    box = build(refused, spec, units=up)["cols"][0][0]
+    assert box["state"] == "fault" and "컵 자세가 없다" in box["detail"]
+
+
+def test_an_idle_policy_does_not_take_credit_for_another_policys_joint_target():
+    # 에피소드: aglt 가 running 으로 joint_target 을 내고 place 는 떠서 idle — place → pd 전선은 쉬는 것이지 초록이 아니다
+    spec = parse_diagram({"boxes": [
+        {"id": "place", "title": "place", "col": 0, "status": "rh_place_node_right", "ros": ["/rh_place_node_right"], "unit": "p#4"},
+        {"id": "pd", "title": "pd", "col": 1, "ros": ["/pd_node_right", "/pd_node_poll_right"], "unit": "pd#1"},
+    ], "wires": [{"from": "place", "to": "pd", "topic": "/policy_control/joint_target", "stale_ms": 500, "episodic": True}]},
+        path=Path("p.yaml"), status_nodes=("rh_place_node_right",))
+    obs = Observed(bridge_up=True, status={"rh_place_node_right": {"phase": "idle", "seq": 0, "ok": True}},
+                   age_s={"rh_place_node_right": 0.1}, graph=("/rh_place_node_right", "/pd_node_right", "/pd_node_poll_right"),
+                   topics={"/policy_control/joint_target": _topic(("/rh_aglt_node_right", "/rh_place_node_right"),
+                                                                  ("/pd_node_poll_right",))}, topics_age_s=0.5)
+    alive = {k: {"key": k, "kind": "background", "alive": True, "started": True, "stopped": False} for k in ("p#4", "pd#1")}
+    (port,) = _ports(build(obs, spec, units=alive)).values()
+    assert port["state"] == "held" and port["note"] == "에피소드 밖(idle)"
+
+
+def test_only_a_real_node_box_says_its_commands_run_one_at_a_time():
+    out = build(_obs((), {}), SPEC, units=_units())
+    boxes = {b["id"]: b for col in out["cols"] for b in col}
+    assert boxes["aglt"]["single"] is True                                      # ROS 노드 하나
+    fake = parse_diagram({"boxes": [{"id": "object_pose", "title": "물체 자세", "col": 0, "units": ["c#0", "c#1"]}]},
+                         path=Path("p.yaml"))
+    (box,) = build(_obs((), {}), fake, units={})["cols"][0]
+    assert box["single"] is False                                               # fake 컵 대역 여럿은 같이 뜬다

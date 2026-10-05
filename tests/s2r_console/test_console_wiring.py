@@ -127,7 +127,7 @@ def test_the_pour_chain_is_wired_from_its_contract_roles_and_the_robot_yaml(repo
                           ("/dg5f_left/tip_forces_xyz", ("rcv:force",)), ("/objects/pour_src_cup/pose", ("src:cup",))):
         wire = next(w for w in d.wires if w.topic == topic and w.dst == "pour_node")
         assert wire.inputs == inputs
-    assert ("/objects/pour_rcv_cup/pose", "obj_pour_rcv_cup", "pour_guard") in got
+    assert ("/objects/pour_rcv_cup/pose", "object_pose", "pour_guard") in got        # fake 컵은 실기 물체 자세 상자의 대역
     assert ("/policy_control/joint_target", "pour_node", "pd") in got
     assert ("/policy_control/episode", "pour_node", "pour_guard") in got
     fill = next(w for w in d.wires if w.topic == "/policy_control/pour/fill_level")
@@ -138,7 +138,8 @@ def test_every_box_is_switched_by_the_mission_command_that_starts_it(repo):
     d = generate(pour_units(repo), repo=repo, status_nodes=("pour_node", "pd", "pour_guard"))
     unit_of = {b.id: b.unit for b in d.boxes}
     assert unit_of["pour_node"] == "chain#0" and unit_of["pour_guard"] == "chain#1" and unit_of["pd"] == "pd_load#0"
-    assert unit_of["obj_pour_src_cup"] == "plant#1" and unit_of["arm_state"] == "plant#0"
+    assert unit_of["object_pose"] == "plant#1" and unit_of["arm_state"] == "plant#0"
+    assert d.box("object_pose").units == ("plant#1", "plant#2")                      # 컵 둘 = 실기 object_pose_node 하나
     assert unit_of["operator"] is None
 
 
@@ -185,8 +186,12 @@ def test_perception_is_drawn_back_to_the_camera_when_nothing_in_the_mission_fake
 
 
 def test_a_faked_object_has_no_perception_chain(repo):
+    # 10.05 사용자: 연결창은 실기 기준 — fake 컵은 따로 그리지 않고 실기에서 그 자세를 내는 상자(object_pose)의 대역이다.
+    # 카메라 · FP++ 추적은 fake 에 없으므로 그리지 않는다.
     d = generate(pour_units(repo), repo=repo, status_nodes=("pour_node", "pd", "pour_guard"))
-    assert not [b for b in d.boxes if b.id in ("camera", "object_pose") or b.id.startswith("fpp_")]
+    assert not [b for b in d.boxes if b.id == "camera" or b.id.startswith("fpp_")]
+    pose = d.box("object_pose")
+    assert not pose.ros and "fake 대역" in pose.note and "fake" not in pose.title
 
 
 def test_a_pd_that_does_not_publish_mutes_its_drive_wires_instead_of_breaking_them(repo):
@@ -286,9 +291,13 @@ def test_every_shipped_profile_generates_a_valid_diagram():
 
     good, bad = scan(SIM2REAL / "deploy" / "s2r_console" / "profiles", repo=SIM2REAL)
     assert not bad and good
+    from s2r_console.console import bridge_argv
     for p in good:
         d = generate(mission_units(p, repo=SIM2REAL), repo=SIM2REAL, status_nodes=p.status_nodes)
-        assert {b.status for b in d.boxes if b.status} == set(p.status_nodes), p.id
+        claimed = {b.status for b in d.boxes if b.status}
+        assert set(p.status_nodes) <= claimed, p.id                       # 프로파일이 듣는 노드는 다 상자가 있다
+        argv = bridge_argv(p, d)                                          # 정책 · 실행기 상자가 읽는 status 도 브리지가 듣는다
+        assert claimed <= set(argv[argv.index("--nodes") + 1:]), p.id
         assert d.wires and all(b.unit is None or b.unit in d.units() for b in d.boxes)
 
 
