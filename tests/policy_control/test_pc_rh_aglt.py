@@ -185,7 +185,8 @@ def test_the_cup_geometry_follows_the_object_like_the_training_env():
         A.cup_geometry({"object_name": "mug", "cup_scale": 0.65})
 
 
-@pytest.mark.parametrize("pid", ["rh56f1/aglt/right_cyl60g", "rh56f1/aglt/left_cyl60gmir", "rh56f1/aglt/right_env17", "rh56f1/aglt/left_env17mir"])
+@pytest.mark.parametrize("pid", ["rh56f1/aglt/right_cyl60g", "rh56f1/aglt/left_cyl60gmir", "rh56f1/aglt/right_env17", "rh56f1/aglt/left_env17mir",
+                                 "rh56f1/aglt/left_env17f"])
 def test_the_cylinder_contracts_carry_the_cylinder_not_the_stale_shaker_dump(pid):
     """10.04: train.py 는 hydra 가 object_name=cyl60 을 덮은 뒤 · env 가 resolve_cfg 를 다시 부르기 전에 env.yaml 을 덤프한다.
     덤프의 파생 값(반높이 0.0569 · 원점 높이 0.0599)은 기본 shaker × 0.65 값이고 학습 env 는 cyl60(0.085 · 0.085)으로 돌았다 —

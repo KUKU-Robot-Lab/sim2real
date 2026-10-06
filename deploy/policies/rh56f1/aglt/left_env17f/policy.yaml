@@ -1,0 +1,17 @@
+# RH56F1 왼팔 rh_aglt cyl60 — 오른팔 env17 ep1000 의 거울을 왼팔 env 에서 200 epoch 이어 학습(10.06 T2R Grasping 이 arm4090 에 올림, 사용자 지시).
+id: rh56f1/aglt/left_env17f
+status: candidate        # candidate | verified | deployed | hold
+task: open-rh_l_aglt-lstm
+side: left
+checkpoint: last_open-rh_l_aglt-lstm_ep_200_rew_1834.8987.pth
+summary: '왼팔 env17 이어 학습(거울 → 왼팔 env 200 epoch) — 거울보다 성공 · 기울기가 낫다, left_env17mir 를 대체'
+eval: '결정론 64 env · tol 0.02 · ADR 0 · 하중 끔: 성공 4.79/5(5개 다 채움 0.93) · 쥔 기울기 중앙 5.6°(p90 12.3°) · 쥔 높이 0.23 × 입구'
+source: 'arm4090:~/rl_ws/our_source/policy/aglt_l_env17f_ep200 (md5 927120f8738cb2596eac382507ac9199)'
+interface: obs 96 · action 13 (left_env17mir 와 계약 · 망 구조 동일, 가중치만 다르다)
+deploy:
+  max_episode_s: 15.0
+note: >-
+  aglt_l_env17mir ep1000(우 env17 ep1000 의 거울) → 왼팔 env(보상 rh_aglt_l/iter_17 = 우 iter_17 과 같음 · cyl60 SDF · FP++ 지각 ·
+  파지 후 부착 · 붓기 하중 0.7 · 지연 0 · ADR 20)에서 aglt_l_env17f 200 epoch, ep200 선택(같은 런 ep400 4.71 · ep600 4.75).
+  거울 그대로는 4.40 · 8.1°, 오른팔 env17 ep1000 은 4.91 · 4.9°. 놓기 인계 주의: 놓기 i01 시작 뱅크의 쥔 높이는 p5~p95
+  3.1~5.5 cm, 이 정책은 오른팔과 같은 중심 파지(+2.0 cm)라 그 끝자락 밖이다 — 에피소드는 아직 cyl60gmir.

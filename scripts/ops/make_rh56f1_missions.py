@@ -559,7 +559,8 @@ def mission(kind: str) -> dict:
         #   단독 aglt 점검 자리만 바꾼다. 에피소드(config/episodes/*.yaml)는 cyl60g 그대로 — 놓기 i09 · i01 시작 뱅크(our_source/place_bank/
         #   bank_{r,l}_cyl60_keep.npz)의 쥔 높이가 p5~p95 4.3~5.3 cm(우) · 3.1~5.5 cm(좌), 3 cm 아래 0 %(우) · 4 %(좌)다(10.06 실측)
         "aglt_right": "deploy/policies/rh56f1/aglt/right_env17/rh_aglt_contract.json",
-        "aglt_left": "deploy/policies/rh56f1/aglt/left_env17mir/rh_aglt_contract.json",
+        #   10.06 왼팔은 env17 거울(left_env17mir) 대신 그 거울을 왼팔 env 에서 200 epoch 이어 학습한 left_env17f(T2R Grasping)
+        "aglt_left": "deploy/policies/rh56f1/aglt/left_env17f/rh_aglt_contract.json",
         # 한 팔 컵 홀더 놓기(10.04 PLACE 세션, aglt cyl60 인계) — 콘솔 자리는 아직 없다(팔마다 한 자리 = aglt)
         "place_right": "deploy/policies/rh56f1/place/right_i09/rh_place_contract.json",
         "place_left": "deploy/policies/rh56f1/place/left_i01/rh_place_contract.json",

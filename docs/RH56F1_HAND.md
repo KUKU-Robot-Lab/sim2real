@@ -68,7 +68,7 @@ q*       = clip(q* + Δ, lo, hi)
 | 대기 | 30 스텝, 손은 따른다 | 10 스텝, 편 손 |
 | 노드 | `pour_fj_node.py` | `rh_aglt_node.py` (같은 모듈의 rh_aglt 계열) |
 | 컵 | /objects/cup_src · cup_rcv | 오른팔 cup_src · 왼팔 cup_rcv, 첫 목표 = 리셋 때 컵 + 14 cm, 그 뒤 목표 직접 입력(아래) |
-| 기본 정책(10.06) | rh56f1/pour_fj/both_f01 | 단독 aglt 점검(미션 policy_aglt_<side>): 오른팔 rh56f1/aglt/right_env17 · 왼팔 rh56f1/aglt/left_env17mir(cyl60 · 보상 iter_17 · 붓기 하중으로 이어 학습, T2R Grasping, 실기 점검 전). 쥔 높이(컵 중심 위 손바닥, 컵 축)가 +2.0 cm 로 cyl60g(+4.3 cm)보다 낮다. 놓기 i09 · i01 시작 뱅크의 쥔 높이는 p5~p95 4.3~5.3 cm(우) · 3.1~5.5 cm(좌)이고 3 cm 아래는 0 %(우) · 4 %(좌)라 env17 인계는 놓기 학습 분포 밖(우) · 끝자락(좌)이다. 그래서 에피소드(config/episodes)는 10.04 기본 rh56f1/aglt/right_cyl60g · rh56f1/aglt/left_cyl60gmir(cyl60 · FP++ 지각 · 파지 후 부착) 그대로. 실기 컵 cyl60. 이전 기본 i10d(aglt_cup_s065) · mirror_l5 · i05, i03 은 hold |
+| 기본 정책(10.06) | rh56f1/pour_fj/both_f01 | 단독 aglt 점검(미션 policy_aglt_<side>): 오른팔 rh56f1/aglt/right_env17 · 왼팔 rh56f1/aglt/left_env17f(오른팔 거울을 왼팔 env 에서 이어 학습, 거울 left_env17mir 는 hold)(cyl60 · 보상 iter_17 · 붓기 하중으로 이어 학습, T2R Grasping, 실기 점검 전). 쥔 높이(컵 중심 위 손바닥, 컵 축)가 +2.0 cm 로 cyl60g(+4.3 cm)보다 낮다. 놓기 i09 · i01 시작 뱅크의 쥔 높이는 p5~p95 4.3~5.3 cm(우) · 3.1~5.5 cm(좌)이고 3 cm 아래는 0 %(우) · 4 %(좌)라 env17 인계는 놓기 학습 분포 밖(우) · 끝자락(좌)이다. 그래서 에피소드(config/episodes)는 10.04 기본 rh56f1/aglt/right_cyl60g · rh56f1/aglt/left_cyl60gmir(cyl60 · FP++ 지각 · 파지 후 부착) 그대로. 실기 컵 cyl60. 이전 기본 i10d(aglt_cup_s065) · mirror_l5 · i05, i03 은 hold |
 
 **양팔 rh_aglt 를 한 세션에서 동시에(09.30):** 정책 노드를 팔마다 `-r __node:=rh_aglt_node_<side> -p ns:=<side>` 로 띄운다 —
 에피소드 서비스 · 토픽 · 관측 · 행동이 `/policy_control/<side>/…` 로 갈리고(`joint_target` 은 공용), pd 는
