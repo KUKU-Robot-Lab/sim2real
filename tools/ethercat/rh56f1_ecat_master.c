@@ -45,6 +45,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "ethercat.h"
+#include "rh56f1_admittance.h"
 
 #define N_IN 76
 #define N_OUT 19
@@ -56,9 +57,12 @@
 #define CMD_FORCE 2
 #define CMD_SPEED 3
 #define CMD_ENABLE 4
+#define CMD_ANGLE_ADM 6  /* /hand_<s>/angle_target — 각도 목표 + 손가락별 어드민턴스(rh56f1_admittance.h) */
 #define CMD_MODE 5     /* 손가락 동작 모드(0x2000:1B~20) — OP 중에 SDO 스레드가 쓴다 · -1 = 그대로 */
 /* 입력 · 출력 PDO 안 위치 (매뉴얼 표 50) */
 #define IN_ANGLE 6
+#define IN_FORCE 12
+#define IN_TOUCH 42   /* 손가락 5 개 x (법선 · 접선 · 방향 · 근접 2) — 새끼부터, 법선 = 0.01 N */
 #define OUT_ENABLE 0
 #define OUT_ANGLE 1
 #define OUT_FORCE 7
@@ -110,18 +114,41 @@ typedef struct {
   int hold_enable;         /* --op-enable: 명령 전(hold)에도 ENABLE_SET = enable_value (목표 = 지금 각도) */
   int enable_value;        /* 명령 중 ENABLE_SET 값 */
   int16_t target[6], force[6], speed[6];
+  int adm_on[6];           /* 이 축의 목표가 angle_target(어드민턴스)로 왔는가 — angle_set 이 오면 0 */
+  int16_t sent[6];         /* 실제로 보낸 각도(어드민턴스를 거친 값) */
 } ctl_t;
 
+static adm_params_t g_adm;
+static adm_state_t g_adm_state;
+
 static void hold(ctl_t *c, const int16_t *in) {
-  for (int i = 0; i < 6; i++) c->target[i] = (int16_t)clampi(in[IN_ANGLE + i], ANG_LO[i], ANG_HI[i]);
+  for (int i = 0; i < 6; i++) c->sent[i] = c->target[i] = (int16_t)clampi(in[IN_ANGLE + i], ANG_LO[i], ANG_HI[i]);
 }
 
-static void write_outputs(const ctl_t *c, int16_t *out) {
+static void write_outputs(ctl_t *c, int16_t *out) {
   out[OUT_ENABLE] = (int16_t)((c->commanded || c->hold_enable) ? c->enable_value : 0);
   for (int i = 0; i < 6; i++) {
-    out[OUT_ANGLE + i] = c->target[i];
+    out[OUT_ANGLE + i] = c->sent[i];
     out[OUT_FORCE + i] = c->force[i];
     out[OUT_SPEED + i] = c->speed[i];
+  }
+}
+
+/* 매 주기 보낼 각도: angle_set 축은 목표 그대로, angle_target 축은 어드민턴스를 거친다. 쉼 값(힘 영점)은
+ * 명령 전(hold) 동안 지수 평균으로 잡는다(10.06 영점 보정 뒤 대부분 ±10 g). */
+static void control(ctl_t *c, const int16_t *in, double dt) {
+  for (int i = 0; i < 6; i++) {
+    double force = in[IN_FORCE + i];
+    if (!c->commanded) {
+      g_adm_state.bias[i] += 0.01 * (force - g_adm_state.bias[i]);
+      g_adm_state.y[i] = 0;
+      c->sent[i] = c->target[i];
+      continue;
+    }
+    if (!c->adm_on[i]) { c->sent[i] = c->target[i]; continue; }
+    int16_t tip_raw = i < 5 ? in[IN_TOUCH + i * 5] : -1;   /* 0xFFFF(안 읽힘) = -1 */
+    double cmd = adm_step(&g_adm, &g_adm_state, i, dt, c->target[i], in[IN_ANGLE + i], force, tip_raw < 0 ? -1.0 : tip_raw);
+    c->sent[i] = (int16_t)clampi((int)(cmd + 0.5), ANG_LO[i], ANG_HI[i]);
   }
 }
 
@@ -130,9 +157,15 @@ static void request_modes(const int32_t v[6]);
 static void apply_cmd(ctl_t *c, const cmd_msg *m, const int16_t *in) {
   switch (m->kind) {
     case CMD_ANGLE:
+    case CMD_ANGLE_ADM:
       for (int i = 0; i < 6; i++) {
         int v = m->v[i];
         if (v < 0) v = c->commanded ? c->target[i] : in[IN_ANGLE + i];   /* -1 = 그 축은 둔다 */
+        else {
+          int adm = m->kind == CMD_ANGLE_ADM && g_adm.joints[i];
+          if (!adm) g_adm_state.y[i] = 0;   /* 위치 제어로 돌아온 축: 보정 없이 목표 그대로 */
+          c->adm_on[i] = adm;
+        }
         c->target[i] = (int16_t)clampi(v, ANG_LO[i], ANG_HI[i]);
       }
       if (!c->commanded) printf("[master] 첫 각도 명령 — ENABLE_SET %d\n", c->enable_value);
@@ -371,10 +404,30 @@ static void request_modes(const int32_t v[6]) {
   pthread_mutex_unlock(&g_mode.mu);
 }
 
+static int parse_adm(const char *txt, adm_params_t *p) {
+  double v[16];
+  int n = 0;
+  const char *q = txt;
+  while (*q && n < 16) {
+    char *end;
+    v[n++] = strtod(q, &end);
+    if (end == q) return 0;
+    if (*end == ',') q = end + 1; else if (*end == '\0') q = end; else return 0;
+  }
+  if (n != 16 || *q) return 0;
+  adm_params_t a = {v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], {0}};
+  for (int i = 0; i < 6; i++) a.joints[i] = v[10 + i] != 0;
+  if (a.k_g_per_reg <= 0 || a.k_over_g_per_reg <= 0 || a.f_max_g <= 0 || a.max_offset_reg <= 0 ||
+      a.deadband_g < 0 || a.tau_contact_s < 0 || a.tau_release_s < 0 || a.lead_reg < 0 ||
+      a.proximal_scale <= 0 || a.proximal_scale > 1) return 0;
+  *p = a;
+  return 1;
+}
+
 static void usage(const char *p) {
   fprintf(stderr, "usage: %s --ifname IF --master-sock P --node-sock P [--hz 1000] [--state-hz 100] [--speed 2000] "
                   "[--force 600] [--enable-value 1] [--hb-timeout-ms 500] [--no-op] [--op-enable] [--sync-type N] [--op-timeout-ms 3000] [--hz-op 1000] "
-                  "[--clear-error] [--current-limit mA[,x6]] [--finger-mode m[,x6]] [--force-calibrate]\n", p);
+                  "[--clear-error] [--current-limit mA[,x6]] [--finger-mode m[,x6]] [--force-calibrate] [--adm 16 values]\n", p);
 }
 
 int main(int argc, char **argv) {
@@ -382,6 +435,7 @@ int main(int argc, char **argv) {
   double hz = 1000, state_hz = 100;
   int speed = 2000, force = 600, enable_value = 1, hb_timeout_ms = 500, no_op = 0;
   int op_enable = 0, sync_type = -1, op_timeout_ms = 3000;   /* OP 실험 손잡이(기본 끔) */
+  g_adm = ADM_DEFAULTS;
   int force_calib = 0, clear_error = 0, current_limit[6] = {-1, -1, -1, -1, -1, -1}, finger_mode[6] = {-1, -1, -1, -1, -1, -1};
   double hz_op = 0;   /* >0: OP 에 들어간 뒤 이 주기로(10.03 — 1 kHz 로는 OP 전이가 안 되지만 들어간 뒤는 확인 대상) */
   static struct option opts[] = {{"ifname", 1, 0, 'i'}, {"master-sock", 1, 0, 'm'}, {"node-sock", 1, 0, 'n'},
@@ -389,7 +443,7 @@ int main(int argc, char **argv) {
                                  {"force", 1, 0, 'f'},  {"enable-value", 1, 0, 'e'}, {"hb-timeout-ms", 1, 0, 't'},
                                  {"no-op", 0, 0, 'o'},  {"op-enable", 0, 0, 'E'}, {"sync-type", 1, 0, 'y'},
                                  {"op-timeout-ms", 1, 0, 'T'}, {"hz-op", 1, 0, 'H'},
-                                 {"clear-error", 0, 0, 'C'}, {"force-calibrate", 0, 0, 'K'}, {"current-limit", 1, 0, 'L'}, {"finger-mode", 1, 0, 'M'},
+                                 {"clear-error", 0, 0, 'C'}, {"force-calibrate", 0, 0, 'K'}, {"adm", 1, 0, 'A'}, {"current-limit", 1, 0, 'L'}, {"finger-mode", 1, 0, 'M'},
                                  {0, 0, 0, 0}};
   for (int c; (c = getopt_long(argc, argv, "", opts, NULL)) != -1;) {
     switch (c) {
@@ -409,6 +463,12 @@ int main(int argc, char **argv) {
       case 'H': hz_op = atof(optarg); break;
       case 'C': clear_error = 1; break;
       case 'K': force_calib = 1; break;
+      case 'A':
+        if (!parse_adm(optarg, &g_adm)) {
+          fprintf(stderr, "--adm: 숫자 10 개(k deadband tau_c tau_r f_max k_over lead max_off prox tip_on) + joints 6 개\n");
+          return 2;
+        }
+        break;
       case 'L':
         if (!parse6(optarg, CURRENT_LIMIT_MIN, CURRENT_LIMIT_MAX, current_limit)) {
           fprintf(stderr, "--current-limit: %d~%d mA(또는 -1), 하나 또는 여섯 개\n", CURRENT_LIMIT_MIN, CURRENT_LIMIT_MAX);
@@ -448,6 +508,12 @@ int main(int argc, char **argv) {
     printf("[master] sync type %d 쓰기 1C32 %s · 1C33 %s\n", sync_type, w1 > 0 ? "ok" : "실패", w2 > 0 ? "ok" : "실패");
   }
   if (sdo_setup(clear_error, current_limit, finger_mode, force_calib) != 0) goto out_ec;   /* PREOP: OP 전에 손 보호 설정 */
+  printf("[master] ADM {\"k_g_per_reg\": %g, \"deadband_g\": %g, \"tau_contact_s\": %g, \"tau_release_s\": %g, "
+         "\"f_max_g\": %g, \"k_over_g_per_reg\": %g, \"lead_reg\": %g, \"max_offset_reg\": %g, \"proximal_scale\": %g, "
+         "\"tip_on_counts\": %g, \"joints\": [%d, %d, %d, %d, %d, %d]} — angle_target 축에만\n",
+         g_adm.k_g_per_reg, g_adm.deadband_g, g_adm.tau_contact_s, g_adm.tau_release_s, g_adm.f_max_g,
+         g_adm.k_over_g_per_reg, g_adm.lead_reg, g_adm.max_offset_reg, g_adm.proximal_scale, g_adm.tip_on_counts,
+         g_adm.joints[0], g_adm.joints[1], g_adm.joints[2], g_adm.joints[3], g_adm.joints[4], g_adm.joints[5]);
   g_mode_thread_ok = pthread_create(&g_mode_thread, NULL, mode_worker, NULL) == 0;
   if (!g_mode_thread_ok) printf("[master] ⚠ 모드 전환 스레드를 못 띄움 — 실행 중 모드 전환 불가\n");
   ec_config_map(&IOmap);
@@ -521,6 +587,7 @@ int main(int argc, char **argv) {
       printf("[master] 정지 — 모드 0 · hold 후 INIT\n");
     }
     if (!c.commanded) hold(&c, in);
+    control(&c, in, 1.0 / hz_now);
     write_outputs(&c, out);
 
     ec_send_processdata();

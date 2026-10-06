@@ -16,7 +16,7 @@ from typing import Sequence
 N_IN, N_OUT, N = 76, 19, 6
 STATE_MAGIC = 0x31534852   # "RHS1"
 CMD_MAGIC = 0x31434852     # "RHC1"
-CMD_HEARTBEAT, CMD_ANGLE, CMD_FORCE, CMD_SPEED, CMD_ENABLE, CMD_MODE = 0, 1, 2, 3, 4, 5
+CMD_HEARTBEAT, CMD_ANGLE, CMD_FORCE, CMD_SPEED, CMD_ENABLE, CMD_MODE, CMD_ANGLE_ADM = 0, 1, 2, 3, 4, 5, 6
 FLAG_OP, FLAG_ENABLED, FLAG_COMMANDED, FLAG_NODE_OK, FLAG_STOPPING = 0x01, 0x02, 0x04, 0x08, 0x10
 
 _STATE = struct.Struct(f"<IIQHHHHIHH{N_IN}h{N_OUT}h")
@@ -179,6 +179,14 @@ class CommandBook:
         self.target = [n if n >= 0 else t for n, t in zip(new, self.target)]
         return pack_cmd(CMD_ANGLE, new)
 
+    def angle_target(self, values: Sequence[int]) -> bytes:
+        """/hand_<s>/angle_target: 같은 각도 목표 + 마스터의 손가락별 어드민턴스(rh56f1_admittance.h)."""
+        if len(values) != N:
+            raise EcatError(f"각도 {len(values)} 개 ≠ {N}")
+        new = clip_angle(values)
+        self.target = [n if n >= 0 else t for n, t in zip(new, self.target)]
+        return pack_cmd(CMD_ANGLE_ADM, new)
+
     @staticmethod
     def force(values: Sequence[int]) -> bytes:
         if len(values) != N:
@@ -292,6 +300,13 @@ def master_argv(binary: str, ifname: str, master_sock: str, node_sock: str, cfg:
     if int(cfg.get("sync_type", -1)) >= 0:
         argv += ["--sync-type", str(int(cfg["sync_type"]))]
     argv += protection_argv(cfg)
+    adm = cfg.get("admittance")
+    if adm is not None and bool(adm.get("enabled", True)):
+        from policy_control.rh56f1_admittance import AdmParams
+        try:
+            argv += ["--adm", AdmParams.from_cfg(adm).argv()]
+        except ValueError as e:
+            raise EcatError(str(e)) from e
     if not 50 <= float(cfg.get("cycle_hz", 1000)) <= 4000:
         raise EcatError("cycle_hz 는 50~4000")
     if not 0 < float(cfg.get("state_hz", 100)) <= float(cfg.get("cycle_hz", 1000)):

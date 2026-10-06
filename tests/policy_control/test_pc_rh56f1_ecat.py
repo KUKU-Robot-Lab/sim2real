@@ -240,3 +240,63 @@ def test_finger_mode_commands_and_master_reports():
     cfg = yaml.safe_load((PC / "config" / "rh56f1_ports.yaml").read_text())["ethercat"]
     argv = E.master_argv("/m", "eth0", "/a", "/b", cfg, no_op=False)
     assert argv[argv.index("--finger-mode") + 1] == "0,0,0,0,0,0"  # 시작마다 위치 모드
+
+
+def test_admittance_python_reference_matches_the_master_c(tmp_path):
+    """10.06 공통 손 제어(원격조작 · 정책): 마스터 C(rh56f1_admittance.h)와 Python 참조가 같은 숫자를 낸다."""
+    import random
+    import shutil
+    import subprocess
+
+    from policy_control.rh56f1_admittance import AdmParams, AdmState, adm_step
+
+    if shutil.which("gcc") is None:
+        pytest.skip("gcc 없음")
+    harness = tmp_path / "h.c"
+    harness.write_text('#include <stdio.h>\n#include "rh56f1_admittance.h"\n'
+                       "int main(void){adm_params_t p=ADM_DEFAULTS; adm_state_t s={0}; double t,a,f,tip; int i;\n"
+                       'while(scanf("%d %lf %lf %lf %lf",&i,&t,&a,&f,&tip)==5){double c=adm_step(&p,&s,i,0.002,t,a,f,tip);'
+                       'printf("%.9f %.9f\\n", c, s.y[i]);} return 0;}\n')
+    exe = tmp_path / "h"
+    subprocess.run(["gcc", "-O2", "-o", str(exe), str(harness), "-I", str(MASTER_C.parent), "-lm"], check=True)
+    rng = random.Random(3)
+    rows = []
+    for k in range(3000):
+        i = k % 6
+        rows.append((i, rng.uniform(900, 1740), rng.uniform(900, 1740), rng.choice([0, 30, 200, 900, 1500]) + rng.uniform(-20, 20),
+                     rng.choice([-1, 0, 10, 300])))
+    out = subprocess.run([str(exe)], input="\n".join(f"{i} {t} {a} {f} {tip}" for i, t, a, f, tip in rows),
+                         capture_output=True, text=True, check=True).stdout.split("\n")
+    p, s = AdmParams(), AdmState()
+    for (i, t, a, f, tip), line in zip(rows, out):
+        cmd = adm_step(p, s, i, 0.002, t, a, f, tip)
+        c_cmd, c_y = (float(v) for v in line.split())
+        assert cmd == pytest.approx(c_cmd, abs=1e-6) and s.y[i] == pytest.approx(c_y, abs=1e-6)
+
+
+def test_admittance_settles_at_stiffness_times_penetration():
+    """굳은 접촉(1 칸 = 100 g, 10.06 컵)에서도 출렁이지 않고, 쥐는 힘 ≈ k x 목표가 접촉점을 지난 칸."""
+    from policy_control.rh56f1_admittance import AdmParams, AdmState, adm_step
+
+    p, s = AdmParams(), AdmState()
+    contact, target, actual, forces = 1400.0, 1300.0, 1500.0, []
+    for _ in range(4000):   # 8 s at 500 Hz
+        force = max(contact - actual, 0.0) * 100.0
+        cmd = adm_step(p, s, 3, 0.002, target, actual, force, 300)
+        actual += max(min(cmd - actual, 2.0), -2.0)   # 손가락 ≈ 1000 칸/s
+        forces.append(force)
+    tail = forces[-500:]
+    assert max(tail) - min(tail) <= 100.0     # 1 칸 이내
+    assert 250 < tail[-1] < 400                # k 3.6 g/칸 x 100 칸 ≈ 360 g(굳은 접촉과 직렬)
+
+
+def test_angle_target_is_a_separate_input_and_angle_set_is_unchanged():
+    book = E.CommandBook()
+    raw = book.angle([-1, -1, -1, 1300, -1, -1])
+    adm = book.angle_target([-1, -1, -1, 1300, -1, -1])
+    assert E.unpack_cmd(raw)[0] == E.CMD_ANGLE and E.unpack_cmd(adm)[0] == E.CMD_ANGLE_ADM == 6
+    src = MASTER_C.read_text()
+    assert "#define CMD_ANGLE_ADM 6" in src and "if (!c->adm_on[i]) { c->sent[i] = c->target[i]; continue; }" in src
+    cfg = yaml.safe_load((PC / "config" / "rh56f1_ports.yaml").read_text())["ethercat"]
+    argv = E.master_argv("/m", "eth0", "/a", "/b", cfg, no_op=False)
+    assert argv[argv.index("--adm") + 1].endswith(",1,1,1,1,1,0")

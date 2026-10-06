@@ -8,8 +8,10 @@
         /hand_<side>/touch_data    (TouchData1 — palm_data 는 3 영역 × (법선 · 접선 · 방향))
         /hand_<side>/ecat_status   (std_msgs/String JSON, 1 Hz — OP · WKC · 왕복 · 오류 · 상태 · 온도)
   구독  /hand_<side>/angle_set (SetAngle1, -1 = 그 축 유지) · force_set (SetForce1) · speed_set (SetSpeed1)
+        · angle_target (SetAngle1 — 같은 목표 + 손가락별 어드민턴스, tools/ethercat/rh56f1_admittance.h)
         · finger_mode_set (std_msgs/Int32MultiArray 6, 0 위치 · 1 힘 폐루프, -1 그대로 — OP 중 SDO)
   발행  /hand_<side>/finger_mode (Int32MultiArray, 손에서 다시 읽은 모드 · transient local)
+        · admittance_offset (Int32MultiArray, 어드민턴스가 목표에서 연 칸 수)
 
     python3 deploy/policy_control/policy_control/rh56f1_ecat_node.py --side right            # config/rh56f1_ports.yaml
     python3 deploy/policy_control/policy_control/rh56f1_ecat_node.py --side right --no-op    # SAFE_OP · 상태만(손 무동작)
@@ -153,6 +155,8 @@ def main(argv: list[str] | None = None) -> int:
             "touch": node.create_publisher(TouchData1, f"{ns}/touch_data", 10),
             "status": node.create_publisher(String, f"{ns}/ecat_status", 10),
             # 손가락 동작 모드(손에서 다시 읽은 값) — 바뀔 때마다 · 늦게 붙은 구독자도 마지막 값을 받는다
+            # 어드민턴스가 목표에서 연 칸 수(보낸 각도 - 목표, 슬롯 순서) — angle_target 축만 0 이 아니다
+            "adm": node.create_publisher(Int32MultiArray, f"{ns}/admittance_offset", 10),
             "mode": node.create_publisher(Int32MultiArray, f"{ns}/finger_mode",
                                           QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))}
     book = E.CommandBook()
@@ -184,6 +188,9 @@ def main(argv: list[str] | None = None) -> int:
         for k, v in s.touch().items():
             setattr(t, k, [int(x) for x in v])
         pubs["touch"].publish(t)
+        sent = list(s.outputs[1:7])
+        pubs["adm"].publish(Int32MultiArray(data=[int(a - b) if b >= 0 and s.commanded else 0
+                                                  for a, b in zip(sent, book.target)]))
         now = time.monotonic()
         if now - last["status_t"] >= 1.0:
             last["status_t"] = now
@@ -195,7 +202,8 @@ def main(argv: list[str] | None = None) -> int:
     def on_cmd(kind: str, values) -> None:
         vals = list(values)
         try:
-            payload = {"angle": book.angle, "force": book.force, "speed": book.speed, "mode": book.mode}[kind](vals)
+            payload = {"angle": book.angle, "target": book.angle_target, "force": book.force, "speed": book.speed,
+                       "mode": book.mode}[kind](vals)
         except E.EcatError as e:
             log.error(f"{kind}_set 거부: {e}")
             return
@@ -205,6 +213,8 @@ def main(argv: list[str] | None = None) -> int:
             link.send(payload)
 
     node.create_subscription(SetAngle1, f"{ns}/angle_set", lambda m: on_cmd("angle", m.joint_values), 10)
+    # ★10.06 따로 연 입력: 각도 목표 + 손가락별 어드민턴스(마스터 500 Hz). angle_set(위치 제어)은 그대로다
+    node.create_subscription(SetAngle1, f"{ns}/angle_target", lambda m: on_cmd("target", m.joint_values), 10)
     node.create_subscription(SetForce1, f"{ns}/force_set", lambda m: on_cmd("force", m.joint_values), 10)
     node.create_subscription(SetSpeed1, f"{ns}/speed_set", lambda m: on_cmd("speed", m.joint_values), 10)
     node.create_subscription(Int32MultiArray, f"{ns}/finger_mode_set", lambda m: on_cmd("mode", m.data), 10)

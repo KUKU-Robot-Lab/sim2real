@@ -36,6 +36,24 @@ ethercat:
                             #   ★10.06 실측: 모드 1 은 각도를 무시하고 힘만 맞춘다(쥐는 동안만 노드가 /hand_<s>/finger_mode_set
                             #   으로 바꾼다). 손 RAM 에 남은 1 이 다음 시작에 이어지면 빈손에서 손가락이 끝까지 닫힌다.
                             #   모드 2(임피던스)는 느리고 떨려 쓰지 않는다(motion_acq docs/RH56F1_HAND_TUNING.md)
+  # ★10.06 손가락별 어드민턴스(tools/ethercat/rh56f1_admittance.h · Python 참조 policy_control/rh56f1_admittance.py).
+  #   /hand_<s>/angle_target 으로 온 축에만 걸린다 — angle_set(기존 위치 제어)은 그대로. 원격조작 · 정책이 같은 로직을 쓴다.
+  #   손가락마다 마스터 주기(500 Hz): 보낼 각도 = 목표 + y, y 는 (힘 - 쉼 값 - deadband) / k 를 tau 로 따라간다
+  #   (f_max 넘으면 k_over 로 더 빨리 연다), 접촉 중 실제 각도보다 lead 칸 넘게 앞서 닫지 않는다.
+  #   레지스터 단위: 네 손가락 550 칸/rad · 엄지 굽힘 527 칸/rad. 10.06 오른손 검지 + 컵: 1 칸 ≈ 100 g.
+  admittance:
+    enabled: true
+    k_g_per_reg: 3.6         # 쥐는 힘 / 목표가 접촉점을 지난 칸(≈ 2000 g/rad)
+    deadband_g: 40.0
+    tau_contact_s: 1.0       # 10.06 120 Hz 바깥 루프에서 0.5 s 는 컵에서 100~440 g 출렁 — 500 Hz 에서 다시 잰다
+    tau_release_s: 0.15
+    f_max_g: 800.0
+    k_over_g_per_reg: 0.36
+    lead_reg: 11.0
+    max_offset_reg: 880.0
+    proximal_scale: 0.7      # 손끝 촉각 < tip_on 이면 1 번 링크 접촉(힘 팔이 짧다): 힘을 1/0.7 로 본다
+    tip_on_counts: 20.0      # 0.2 N
+    joints: [1, 1, 1, 1, 1, 0]   # 새끼 · 약지 · 중지 · 검지 · 엄지 굽힘 · 엄지 회전(하중 때 부호 반대 — 위치 제어만)
 
 # 옛 RS485(10.02 이전 · 비상용) — `rh56f1_driver.py --side <s> --transport rs485` 가 이 블록을 쓴다(벤더 드라이버 robot_control
 # rh56f1_driver). 손 RS485 포트에 USB-RS485(FTDI) 를 다시 꽂아야 한다 — 10.02 밤에는 빠져 있었다.
