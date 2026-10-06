@@ -26,7 +26,7 @@ import numpy as np
 SIM2REAL = Path(__file__).resolve().parents[3]
 RL_WS = SIM2REAL.parent
 URDF_DEFAULT = RL_WS / "hdgp/assets/robot/openarm_dg5f-m-short_bi_rl/openarm_dg5f-m-short_bi_rl.urdf"
-ENV_YAML_DEFAULT = SIM2REAL / "deploy/policies/right_aglt/params/env.yaml"
+ENV_YAML_DEFAULT = SIM2REAL / "deploy/policies/dg5f_m/grasp_fj_rand/right_i01/params/env.yaml"
 CONTRACT_DEFAULT = SIM2REAL / "logs/policy/asset_openarm_dg5f-m-short_bi_rl/deploy_contract.json"
 PROFILE_DEFAULT = RL_WS / "robot_control/src/robot_control/profiles/openarm_tesollo.yaml"
 

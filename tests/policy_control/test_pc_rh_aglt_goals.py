@@ -12,7 +12,7 @@ from policy_control import rh_aglt as A
 from policy_control import rh_aglt_goals as G
 
 POL = Path(__file__).resolve().parents[2] / "deploy" / "policies"
-RIGHT, LEFT = POL / "right_rh_aglt_mirror_l5" / "rh_aglt_contract.json", POL / "left_rh_aglt_i05" / "rh_aglt_contract.json"
+RIGHT, LEFT = POL / "rh56f1/aglt/right_mirror_l5" / "rh_aglt_contract.json", POL / "rh56f1/aglt/left_i05" / "rh_aglt_contract.json"
 UP = np.array([1.0, 0.0, 0.0, 0.0])
 GRIP = (2.0, 1.5, 0.0, 0.0, 0.0)          # 엄지 + 검지
 CUP_R = np.array([0.25, -0.20, 0.264865])   # 오른팔 소환 박스 가운데, 정착고

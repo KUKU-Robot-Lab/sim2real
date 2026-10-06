@@ -1,6 +1,6 @@
-"""joint family(팔 관절 증분 + 손 절대, fabric 없음) — right_m15_e800 계약 · 디코더 · 관측 · 체인.
+"""joint family(팔 관절 증분 + 손 절대, fabric 없음) — dg5f_m/cup_pick/right_m15 계약 · 디코더 · 관측 · 체인.
 
-09.28 사용자: 오른팔 첫 실험 정책은 right_m15_e800(cup_pick 세션 s2r 후보). 기존 세 family 는 palm 6D 를 fabric 에
+09.28 사용자: 오른팔 첫 실험 정책은 dg5f_m/cup_pick/right_m15(cup_pick 세션 s2r 후보). 기존 세 family 는 palm 6D 를 fabric 에
 넘기므로 이 정책을 거절했다. 여기 값들은 학습 커밋 d38b4346 의 hdgp 코드에서 읽은 식 · 한계와 대조한다.
 시뮬레이터 재현(trace 대조)은 trace 가 생기면 따로 잠근다 — 지금 hand_obs_order 는 가정값이다.
 """
@@ -24,18 +24,18 @@ from policy_control.joint_obs import Pose, keypoints
 pytestmark = pytest.mark.unit
 
 SIM2REAL = Path(__file__).resolve().parents[2]
-RUN = SIM2REAL / "deploy/policies/right_m15_e800"
+RUN = SIM2REAL / "deploy/policies/dg5f_m/cup_pick/right_m15"
 HDGP = SIM2REAL.parent / "hdgp"
 DEPLOY = "openarm_dg5f-m-short_bi_rl"
 
 needs_run = pytest.mark.skipif(not (RUN / "params/env.yaml").is_file() or not HDGP.is_dir(),
-                               reason="right_m15_e800 등록본 또는 hdgp 가 없다")
+                               reason="dg5f_m/cup_pick/right_m15 등록본 또는 hdgp 가 없다")
 
 
 @pytest.fixture(scope="module")
 def c():
     if not (RUN / "params/env.yaml").is_file() or not HDGP.is_dir():
-        pytest.skip("right_m15_e800 등록본 또는 hdgp 가 없다")
+        pytest.skip("dg5f_m/cup_pick/right_m15 등록본 또는 hdgp 가 없다")
     if not list((RUN / "nn").glob("*.pth")):
         pytest.skip("체크포인트가 없다(gitignore) — fetch 한 PC 에서만")
     return build_joint_contract(RUN, HDGP, DEPLOY, hand_obs_order=None, order_source="assumed: test")
@@ -64,7 +64,7 @@ def test_the_contract_carries_the_trained_interface(c):
 
 def test_the_assumed_hand_order_is_the_20_joint_sim_order_without_the_weld(c):
     """pour i24 trace 의 실측 관절 순서(20 관절 short)에서 thumb_1 만 뺀 것과 같아야 한다."""
-    meta = SIM2REAL / "deploy/policies/both_pour_i24/trace_meta.json"
+    meta = SIM2REAL / "deploy/policies/dg5f_m/pour_fab/both_i24/trace_meta.json"
     if not meta.is_file():
         pytest.skip("i24 trace_meta 가 없다")
     names = [n for n in json.loads(meta.read_text())["joint_names"] if n.startswith("r_hj_") and n != "r_hj_thumb_1"]

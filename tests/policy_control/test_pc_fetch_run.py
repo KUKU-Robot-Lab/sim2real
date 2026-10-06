@@ -334,10 +334,12 @@ def test_remote_host_still_uses_ssh_and_a_host_prefix(tmp_path):
     assert all(c[-2].startswith("server:") for c in r.calls if c[0] == "rsync")
 
 
-def test_default_destination_is_the_policies_folder():
+def test_the_destination_must_be_named_because_the_run_label_is_not_a_registry_path():
+    """10.06 등록부 = <손>/<과제>/<팔>_<태그>. 런 이름(t2r_i18)으로 deploy/policies 바로 밑에 만들던 기본값은 규칙 밖이라 없앴다."""
     assert F.POLICIES.name == "policies" and F.POLICIES.parent == Path(F.__file__).resolve().parents[2]
-    r = FakeRunner()
-    F.main(["--run", "t2r_i18", "--checkpoint", "ep:2500", "--dry-run"], runner=r)      # 아무것도 쓰지 않는다
+    with pytest.raises(SystemExit) as exc:
+        F.main(["--run", "t2r_i18", "--checkpoint", "ep:2500", "--dry-run"], runner=FakeRunner())
+    assert exc.value.code == 2
     assert not (F.POLICIES / "t2r_i18").exists()
 
 

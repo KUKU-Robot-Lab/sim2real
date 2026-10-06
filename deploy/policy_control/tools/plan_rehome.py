@@ -4,7 +4,7 @@
     ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/plan_rehome.py --side left
     → logs/policy_control/rehome_<side>.npz (replay_to_pd 가 재생한다)
 
-09.28 사용자: "정책 진행하고 종료한 뒤에 다시 홈자세로 하고 반복해야할수도". 그날 left_cp_e4280 은 팔을 1.1 rad 옮겨
+09.28 사용자: "정책 진행하고 종료한 뒤에 다시 홈자세로 하고 반복해야할수도". 그날 dg5f_m/cup_pick/left_a01 은 팔을 1.1 rad 옮겨
 컵 옆 낮은 곳에 손을 두고 멈췄다. 거기서 시작 자세까지 관절공간 직선은 새끼 손끝이 상판을 지난다(검사기 최악 −0.21 m) —
 그래서 직선(goto_home · plan_approach_to_start)이 아니라 홈 경로를 만든 계획기(plan_home_path: 직선 → 실패하면 RRT,
 같은 세계 · 여유 2 cm · 실측 손 자세)를 실측 시작 자세로 부른다. 그날 자세에서 16 s 에 RRT 가 여유 2.5 cm 경로를 냈다.
@@ -29,7 +29,7 @@ ROBOTS = {
     "rh56f1": ["--urdf", str(RL_WS / "hdgp/assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf"),
                "--contract", str(SIM2REAL / "logs/policy/asset_openarm_rh56f1_bi_rl/deploy_contract.json"),
                "--profile", str(RL_WS / "robot_control/src/robot_control/profiles/openarm_rh56f1.yaml"),
-               "--env-yaml", str(SIM2REAL / "deploy/policies/right_rh_aglt_cyl60g/params/env.yaml"),
+               "--env-yaml", str(SIM2REAL / "deploy/policies/rh56f1/aglt/right_cyl60g/params/env.yaml"),
                "--pd-config", str(SIM2REAL / "deploy/policy_control/config/pd_rh56f1.yaml")],
 }
 

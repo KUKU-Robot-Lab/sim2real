@@ -1,0 +1,11 @@
+# DG-5F-M short 왼팔 grasp_fj_rand 시드(보상 grasp_fj_rand_left/iter_00, 런 fj_randL_i00b) — 옛 left_aglt 한 벌에서 떼어 냈다(10.06).
+id: dg5f_m/grasp_fj_rand/left_i00b
+status: candidate        # candidate | verified | deployed | hold
+task: open-short_l_grasp_fj_t2r_rand-lstm
+side: left
+checkpoint: seed_fj_randL_i00b_e800.pth
+summary: 'DG-5F 왼팔 grasp_fj_rand i00b e800 — 왼팔 cup_pick 런(left_a00 · left_a01)의 출발 가중치(계약 없음)'
+eval: '–'
+note: >-
+  런 fj_randL_i00b e800. gym id 가 s2r 동결 트랙(grasp_fj_t2r_rand)이다 — 재생만 하고 그 트랙에 쓰지 않는다.
+  인터페이스 obs 133 / action 26(팔 7 관절 증분 + 손 19 절대, 프로파일 tesollo_left_short_tl). 계약 없음.

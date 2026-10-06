@@ -4,21 +4,21 @@
 # ★도메인은 콘솔 프로파일(deploy/s2r_console/profiles/pour_i24_fake.yaml)이 자식 env 에 넣는다(97).
 #   launch 들은 fake:=true 일 때 도메인 ""/"0" 을 스스로 거부한다.
 # 순서는 deploy/policy_control/tools/pour_fake_run.sh 와 같다 — 그 스크립트가 한 번에 하는 일을 단계로 쪼갠 것이다.
-# 컵 위치는 both_pour_i24 trace 첫 행의 값이다(스크립트는 trace 에서 읽지만 yaml 은 코드를 못 돌리므로 적어 둔다).
+# 컵 위치는 dg5f_m/pour_fab/both_i24 trace 첫 행의 값이다(스크립트는 trace 에서 읽지만 yaml 은 코드를 못 돌리므로 적어 둔다).
 name: 양팔 물붓기 fake 체인 (pour_i24)
 loop_to: pd_home   # release 뒤에는 pd 가 IDLE 이다 — 다시 engage 부터. 떠 있는 체인은 그대로 둔다
 
 artifacts:
-  contract_pour: deploy/policies/both_pour_i24/pour_contract.json
+  contract_pour: deploy/policies/dg5f_m/pour_fab/both_i24/pour_contract.json
   contract_pd: logs/policy/asset_pour_i24/deploy_contract.json
   robot_fake: deploy/policy_control/config/robots/dg5f_m_bi_fake.yaml
   pd_fake: deploy/policy_control/config/pd_dg5f_m_short_fake.yaml
 
 checkpoints:
   pour:
-    path: deploy/policies/both_pour_i24/nn/open-short_b_pour_fab.pth
+    path: deploy/policies/dg5f_m/pour_fab/both_i24/nn/open-short_b_pour_fab.pth
     md5: "a8c56f18"
-    params: deploy/policies/both_pour_i24/params
+    params: deploy/policies/dg5f_m/pour_fab/both_i24/params
 
 stages:
   - id: preflight

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""학습 런에서 **계약 생성 입력만** 골라 `sim2real/deploy/policies/<id>/` 로 받는다 (정책 등록의 첫 단계).
+"""학습 런에서 **계약 생성 입력만** 골라 `sim2real/deploy/policies/<손>/<과제>/<팔>_<태그>/` 로 받는다 (정책 등록의 첫 단계).
 
 hdgp 의 미러(`scripts/reward_gen/t2r_round.py`)는 설계상 `summaries/` 와 `test_history.md`
 만 가져온다. 계약을 만들려면 그 외에 `params/{env,agent}.yaml` · 체크포인트 1개 ·
@@ -7,14 +7,14 @@ sim meta(`<trace>_meta.json`)가 필요하다. hdgp 는 건드리지 않고 여�
 
     # 무엇이 있는지 먼저 본다 (다운로드 없음)
     python3 deploy/policy_control/tools/fetch_run.py --run t2r_i18 --list
-    # ep_2500 과 그 trace 의 meta 를 deploy/policies/pour_i18 로
-    python3 deploy/policy_control/tools/fetch_run.py --run t2r_i18 --checkpoint ep:2500 --out deploy/policies/pour_i18
+    # ep_2500 과 그 trace 의 meta 를 deploy/policies/dg5f_m/pour_fab/both_i18 로(--out 은 등록부 규칙 경로, 10.06)
+    python3 deploy/policy_control/tools/fetch_run.py --run t2r_i18 --checkpoint ep:2500 --out deploy/policies/dg5f_m/pour_fab/both_i18
     # 이미 이 PC 에 골라 둔 한 벌에서 (ssh 없음) — 체크포인트는 파일명으로 **지정**한다
     python3 deploy/policy_control/tools/fetch_run.py --host local --root ~/rl_ws/our_source --run s2r_init_right \
-        --checkpoint fj_rand_i01_best_ep5000.pth --sim-meta none --out deploy/policies/grasp_fj_rand_i01
+        --checkpoint fj_rand_i01_best_ep5000.pth --sim-meta none --out deploy/policies/dg5f_m/grasp_fj_rand/right_i01
     # 그대로 계약 생성
-    python3 deploy/policy_control/tools/build_deploy_contract.py --run deploy/policies/pour_i18 \
-        --sim-meta deploy/policies/pour_i18/trace_meta.json
+    python3 deploy/policy_control/tools/build_deploy_contract.py --run deploy/policies/dg5f_m/pour_fab/both_i18 \
+        --sim-meta deploy/policies/dg5f_m/pour_fab/both_i18/trace_meta.json
     # 무엇이 등록돼 있나
     python3 deploy/policy_control/tools/policies.py
 
@@ -351,7 +351,8 @@ def _parse(argv=None) -> argparse.Namespace:
     ap.add_argument("--run", required=True, help="원격 런 디렉터리 이름 (예: t2r_i18)")
     ap.add_argument("--host", default=DEFAULT_HOST, help=f"ssh 호스트, 또는 '{LOCAL}' (이 PC 의 --root 아래)")
     ap.add_argument("--root", default=DEFAULT_ROOT, help="원격 로그 루트")
-    ap.add_argument("--out", type=Path, default=None, help="기본 sim2real/deploy/policies/<run>")
+    ap.add_argument("--out", type=Path, required=True,
+                    help="받을 폴더 — 등록부 규칙 sim2real/deploy/policies/<손>/<과제>/<팔>_<태그> (10.06, 예: …/dg5f_m/pour_fab/both_i18)")
     ap.add_argument("--checkpoint", default="", help="best | last | ep:NNNN | <파일명>")
     ap.add_argument("--sim-meta", default="auto",
                     help="auto | none | <파일명>. pour 계열만 필요하다 — 단일팔 런은 none")
@@ -414,7 +415,7 @@ def _fetch(runner, host: str, run_dir: str, out: Path, plan: Sequence[FetchFile]
 
 def main(argv=None, runner=run_cmd) -> int:
     args = _parse(argv)
-    out = args.out or POLICIES / args.run
+    out = args.out
     run_dir = f"{args.root}/{args.run}"
 
     try:

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """RH56F1 한 팔 aglt(hdgp open-rh_{r,l}_aglt) 런 → rh_aglt 계약(policy_control/rh_aglt.py). 09.30 사용자: RH56F1 정책 deploy 연결.
 
-    python3 tools/build_rh_aglt_contract.py --run deploy/policies/right_rh_aglt_i03 [--checkpoint nn/<pth>] [--out …]
-    python3 tools/build_rh_aglt_contract.py --run deploy/policies/right_rh_place_i09    # rh_place 런 → rh_place_contract.json(10.04)
+    python3 tools/build_rh_aglt_contract.py --run deploy/policies/rh56f1/aglt/right_i03 [--checkpoint nn/<pth>] [--out …]
+    python3 tools/build_rh_aglt_contract.py --run deploy/policies/rh56f1/place/right_i09    # rh_place 런 → rh_place_contract.json(10.04)
 
 손 관측 순서는 문제가 없다 — rh_aglt 는 손 관절을 이름(프로필 순)으로 찾는다. 왼팔은 hdgp tasks/rh_aglt_l/profile.py 와
 같은 규칙(이름 r_ → l_, 손 값 그대로)으로 RH56F1_RIGHT 에서 만든다.

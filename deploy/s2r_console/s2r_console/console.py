@@ -395,7 +395,12 @@ class Console:
             arts = (yaml.safe_load(prof.mission.read_text(encoding="utf-8")) or {}).get("artifacts") or {}
         except (OSError, yaml.YAMLError):
             return {}
-        return {side: Path(str(arts[key])).parent.name for side, key in robot.slots.items() if key in arts}
+        return {side: self._policy_id_of(str(arts[key])) for side, key in robot.slots.items() if key in arts}
+
+    def _policy_id_of(self, contract: str) -> str:
+        """미션 산출물(계약 경로) → 정책 id = 등록부 상대 경로(<손>/<과제>/<팔>_<태그>, 10.06). 등록부 밖이면 폴더 이름."""
+        d, root = (self.repo / contract).resolve().parent, self.policies_dir.resolve()
+        return d.relative_to(root).as_posix() if d.is_relative_to(root) else d.name
 
     def end_reasons(self) -> list[str]:
         """지금 run 을 끝내면 왜 안 되는가. 비어 있으면 된다."""
@@ -1011,11 +1016,10 @@ class Console:
                 "note": s.state.note, "loop_to": s.mission.loop_to, "rows": rows, "groups": groups,
                 "lanes": lane_view}
 
-    @staticmethod
-    def _slots_now(s: Session) -> dict[str, str]:
-        """{쪽: 지금 미션이 쓰는 정책 폴더 이름} — 고른 것이든 미션 기본값이든."""
+    def _slots_now(self, s: Session) -> dict[str, str]:
+        """{쪽: 지금 미션이 쓰는 정책 id} — 고른 것이든 미션 기본값이든."""
         arts = s.mission.artifacts
-        return {side: Path(str(arts[key])).parent.name for side, key in (s.robot.slots if s.robot else {}).items()
+        return {side: self._policy_id_of(str(arts[key])) for side, key in (s.robot.slots if s.robot else {}).items()
                 if key in arts}
 
     @staticmethod

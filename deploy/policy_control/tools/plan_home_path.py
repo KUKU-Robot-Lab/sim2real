@@ -522,7 +522,7 @@ def resolve_goal(text: str, contract: dict, env: dict, side: str) -> tuple[np.nd
         return np.array(contract["sides"][side]["home_arm"], dtype=float), "contract sides.%s.home_arm" % side
     if text == "env_reset":
         if side != "right":
-            raise SystemExit("env_reset 는 right_aglt env.yaml(우팔) 전용")
+            raise SystemExit("env_reset 는 dg5f_m/grasp_fj_rand/right_i01 env.yaml(우팔) 전용")
         return np.array(env["arm_reset_joint_pos_override"], dtype=float), "env.yaml arm_reset_joint_pos_override"
     return parse_q(text), "cli"
 

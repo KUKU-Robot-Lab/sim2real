@@ -2,7 +2,7 @@
 separately (pd_controller.launch.py) with a control-only DeployContract of the deploy asset; do NOT start
 episode_master next to this (joint_node is the episode master).
 
-    ros2 launch policy_control joint_chain.launch.py contract:=deploy/policies/right_m15_e800/joint_contract.json \
+    ros2 launch policy_control joint_chain.launch.py contract:=deploy/policies/dg5f_m/cup_pick/right_m15/joint_contract.json \
         robot:=dg5f_m_right_real use_source:=true
 
 args: contract (joint_contract.json, required) · robot · device · goal_offset ('x,y,z' m, '' = contract default) ·

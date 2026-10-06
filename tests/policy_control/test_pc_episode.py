@@ -119,7 +119,7 @@ def test_the_snapshot_pose_is_handed_to_the_grasp_policy():
     m = EpisodeManager(ep, Ex(ep), approve=_yes())
     m.run()
     pick = seen["pick_cup"][0]
-    assert pick.object_pose is not None and pick.setting == (0.25, -0.12, 0.41) and pick.policy == "right_rh_aglt_cyl60g"
+    assert pick.object_pose is not None and pick.setting == (0.25, -0.12, 0.41) and pick.policy == "rh56f1/aglt/right_cyl60g"
     place = seen["place_cup"][0]
     assert place.holder_id == 1 and place.target_holder == "CENTER_HOLDER"
 
@@ -346,7 +346,7 @@ def test_the_flow_draws_the_grasp_retry_as_a_feedback_back_to_the_empty_handed_h
     assert back == [{"from": "pick_cup", "to": "go_home_start", "kind": "rollback", "max": 2, "label": back[0]["label"]}]
     assert not any(e["from"] == "place_cup" for e in f["feedback"])            # 놓기는 재시도 0 — 실패면 정지
     pick = next(n for n in f["nodes"] if n["id"] == "pick_cup")
-    assert "right_rh_aglt_cyl60g" in " ".join(pick["lines"]) and "SETTING" in pick["expect"]
+    assert "rh56f1/aglt/right_cyl60g" in " ".join(pick["lines"]) and "SETTING" in pick["expect"]
     assert next(n for n in f["nodes"] if n["id"] == "go_home_start")["checkpoint"] == "HOME_START"
 
 

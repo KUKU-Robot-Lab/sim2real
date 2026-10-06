@@ -158,11 +158,12 @@ echo "$HOME/rl_ws/hdgp/source/FABRICS/src" > .venv/lib/python3.10/site-packages/
 
 ### Step 4-B. 정책 가중치 — git 에 없다
 
-`deploy/policies/*/nn/*.pth` 는 `.gitignore` 로 빠진다(용량). 5090 에서 복사한다 — 계약의 md5 와 같아야 한다.
+`deploy/policies/<손>/<과제>/<팔>_<태그>/nn/*.pth` 는 `.gitignore` 로 빠진다(용량). 5090 에서 복사한다 — 계약의 md5 와 같아야 한다.
+아래 rsync 의 `nn/*.pth` 는 끝 경로로 맞춰 손 · 과제 폴더 깊이와 상관없이 잡힌다. 빠진 것은 `scripts/setup/check_host.py` 가 정책마다 받는 명령을 알려 준다.
 
 ```bash
 rsync -av <5090 PC>:~/rl_ws/sim2real/deploy/policies/ ~/rl_ws/sim2real/deploy/policies/ \
-      --include='*/' --include='nn/*.pth' --include='trace.npz' --exclude='*'     # trace.npz: 골든 대조(both_pour_i24)
+      --include='*/' --include='nn/*.pth' --include='trace.npz' --exclude='*'     # trace.npz: 골든 대조(dg5f_m/pour_fab/both_i24)
 ```
 
 ### Step 4-C. 이 PC 에만 있는 값

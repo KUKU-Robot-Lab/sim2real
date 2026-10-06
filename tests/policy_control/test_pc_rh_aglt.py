@@ -16,7 +16,7 @@ from policy_control import rh_aglt as A
 
 REPO = Path(__file__).resolve().parents[2]
 POL = REPO / "deploy" / "policies"
-RIGHT, LEFT = POL / "right_rh_aglt_i03" / "rh_aglt_contract.json", POL / "left_rh_aglt_i05" / "rh_aglt_contract.json"
+RIGHT, LEFT = POL / "rh56f1/aglt/right_i03" / "rh_aglt_contract.json", POL / "rh56f1/aglt/left_i05" / "rh_aglt_contract.json"
 HOMES = REPO / "deploy/policy_control/config/homes/rh56f1_aglt.yaml"
 HDGP = Path.home() / "rl_ws/hdgp/source/openarm/openarm/agnostic"
 
@@ -166,7 +166,7 @@ def test_the_checkpoint_loads_and_acts(c):
 
 
 def test_a_pour_fj_contract_is_not_taken_for_rh_aglt():
-    fj = POL / "both_rh_pourfj_f01" / "pour_fj_contract.json"
+    fj = POL / "rh56f1/pour_fj/both_f01" / "pour_fj_contract.json"
     assert N.family_of(fj) == "pour_fj"
     with pytest.raises(A.RhAgltError, match="schema"):
         A.load_contract(fj)
@@ -185,7 +185,7 @@ def test_the_cup_geometry_follows_the_object_like_the_training_env():
         A.cup_geometry({"object_name": "mug", "cup_scale": 0.65})
 
 
-@pytest.mark.parametrize("pid", ["right_rh_aglt_cyl60g", "left_rh_aglt_cyl60gmir", "right_rh_aglt_env17", "left_rh_aglt_env17mir"])
+@pytest.mark.parametrize("pid", ["rh56f1/aglt/right_cyl60g", "rh56f1/aglt/left_cyl60gmir", "rh56f1/aglt/right_env17", "rh56f1/aglt/left_env17mir"])
 def test_the_cylinder_contracts_carry_the_cylinder_not_the_stale_shaker_dump(pid):
     """10.04: train.py 는 hydra 가 object_name=cyl60 을 덮은 뒤 · env 가 resolve_cfg 를 다시 부르기 전에 env.yaml 을 덤프한다.
     덤프의 파생 값(반높이 0.0569 · 원점 높이 0.0599)은 기본 shaker × 0.65 값이고 학습 env 는 cyl60(0.085 · 0.085)으로 돌았다 —
@@ -200,9 +200,9 @@ def test_the_cylinder_contracts_carry_the_cylinder_not_the_stale_shaker_dump(pid
 
 
 #: (오른팔, 왼팔) 거울 쌍 — 09.30 은 오른팔이 왼팔 i05 의 거울, 10.04 · 10.06 은 왼팔이 오른팔의 거울. D · S 가 ±1 이라 관계식은 같다.
-MIRROR_PAIRS = {"mirror_l5": ("right_rh_aglt_mirror_l5", "left_rh_aglt_i05"),
-                "cyl60g": ("right_rh_aglt_cyl60g", "left_rh_aglt_cyl60gmir"),
-                "env17": ("right_rh_aglt_env17", "left_rh_aglt_env17mir")}
+MIRROR_PAIRS = {"mirror_l5": ("rh56f1/aglt/right_mirror_l5", "rh56f1/aglt/left_i05"),
+                "cyl60g": ("rh56f1/aglt/right_cyl60g", "rh56f1/aglt/left_cyl60gmir"),
+                "env17": ("rh56f1/aglt/right_env17", "rh56f1/aglt/left_env17mir")}
 ARM_MIRROR_SIGN = (-1.0, -1.0, -1.0, 1.0, -1.0, -1.0, -1.0)
 _M, _MN = (1.0, -1.0, 1.0), (-1.0, 1.0, -1.0)
 #: hdgp scripts/tools/mirror_rh_aglt_ckpt.py actor_sign — 관측 96 칸별 좌우 부호(팔 부호 · 손 +1 · 위치 (1,−1,1) · 손바닥 x 열 (−1,1,−1))
@@ -320,9 +320,9 @@ def test_the_node_feeds_joint_forces_into_the_grasp_signal(c):
 def test_a_place_run_is_not_taken_for_rh_aglt_even_with_the_same_dimensions():
     """rh_place 는 관측 96 · 행동 13 · rh56f1 프로필로 rh_aglt 와 같지만 목표(홀더 자리) · 시작(인계 뱅크)이 다르다 —
     rh_aglt 계약을 만들면 콘솔이 aglt 자리에 그대로 내보인다(10.04)."""
-    env = A.read_env(POL / "right_rh_aglt_cyl60g" / "params" / "env.yaml")
+    env = A.read_env(POL / "rh56f1/aglt/right_cyl60g" / "params" / "env.yaml")
     assert A.is_rh_aglt_run(env)
     assert not A.is_rh_aglt_run({**env, "target_holders": (1, 2)})
-    place = POL / "right_rh_place_i09" / "params" / "env.yaml"
+    place = POL / "rh56f1/place/right_i09" / "params" / "env.yaml"
     if place.is_file():
         assert not A.is_rh_aglt_run(A.read_env(place))

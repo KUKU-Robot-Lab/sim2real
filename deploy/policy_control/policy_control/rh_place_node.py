@@ -8,7 +8,7 @@
   srv  /policy_control/<ns>/episode/{reset,start,stop,abort} — 놓은 뒤 스크립트가 끝나면 스스로 stop
 
     python3 deploy/policy_control/policy_control/rh_place_node.py --ros-args -r __node:=rh_place_node_right -p ns:=right \\
-        -p contract:=deploy/policies/right_rh_place_i09/rh_place_contract.json -p robot:=… [-p holder:=2]
+        -p contract:=deploy/policies/rh56f1/place/right_i09/rh_place_contract.json -p robot:=… [-p holder:=2]
 """
 from __future__ import annotations
 

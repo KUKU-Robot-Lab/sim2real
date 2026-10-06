@@ -183,7 +183,9 @@ def mission_defaults(repo: Path) -> dict[str, tuple[str, ...]]:
     """config/mission_*.yaml 이 가리키는 정책 → 미션 이름들(콘솔에서 안 고르면 쓰는 것)."""
     out: dict[str, set[str]] = {}
     for p in sorted((repo / "config").glob("mission_*.yaml")):
-        for pid in re.findall(r"deploy/policies/([A-Za-z0-9_]+)/", p.read_text(encoding="utf-8")):
+        # id = 등록부 상대 경로(10.06 <손>/<과제>/<팔>_<태그>) — 계약 파일 이름 앞까지가 id 다
+        for pid in re.findall(r"deploy/policies/((?:[A-Za-z0-9_]+/)*[A-Za-z0-9_]+)/[A-Za-z0-9_.-]+\.json",
+                              p.read_text(encoding="utf-8")):
             out.setdefault(pid, set()).add(p.stem.removeprefix("mission_"))
     return {k: tuple(sorted(v)) for k, v in out.items()}
 
@@ -226,6 +228,21 @@ def _play_section(entries: Iterable[R.Entry]) -> list[str]:
     return out + ["```", ""]
 
 
+def _tree_section(entries: list[R.Entry]) -> list[str]:
+    """폴더 = 로봇 손 / 정책 과제 / 팔_태그(10.06 사용자) — 한눈에 보는 목록."""
+    out = ["## 폴더 (손 / 과제 / 팔_태그)", "", "```"]
+    last: tuple[str, ...] = ()
+    for e in entries:
+        parts = tuple(e.id.split("/"))
+        for depth in range(len(parts) - 1):
+            if parts[:depth + 1] != last[:depth + 1]:
+                out.append("  " * depth + parts[depth] + "/")
+        status = "" if e.status == "candidate" else f"  ({e.status})"
+        out.append("  " * (len(parts) - 1) + parts[-1] + status)
+        last = parts
+    return out + ["```", ""]
+
+
 def render(entries: Iterable[R.Entry], *, repo: Path) -> str:
     entries = list(entries)
     missions = mission_defaults(repo)
@@ -235,15 +252,17 @@ def render(entries: Iterable[R.Entry], *, repo: Path) -> str:
            "- **미션 기본** = 콘솔에서 정책을 고르지 않으면 그 미션이 쓰는 정책(`config/mission_*.yaml`).",
            "- **sim 평가** 는 카드에 적힌 결정론 평가 요약이다. 공차 · 조건이 정책마다 달라 숫자끼리 바로 비교하지 않는다.",
            "- 체크포인트 가중치는 git 에 없다(`nn/` .gitignore) — 다른 호스트에서는 `check_host.py` 가 받는 명령을 알려 준다.", ""]
+    out += _tree_section(entries)
     for fam in (*FAMILIES, OTHER):
         members = [e for e in entries if family_of(str((e.card or {}).get("task", ""))) is fam]
         if members:
             out += _family_section(fam, members, missions)
     out += _play_section(entries)
     out += ["## status", ""] + [f"- `{k}` — {v}" for k, v in R.STATUSES.items()]
-    bad = [e for e in entries if not e.ok]
+    bad = [(e, (*e.issues, *R.layout_issues(e))) for e in entries]
+    bad = [(e, problems) for e, problems in bad if problems]
     if bad:
-        out += ["", "## 점검 문제", ""] + [f"- `{e.id}` — {' / '.join(e.issues)}" for e in bad]
+        out += ["", "## 점검 문제", ""] + [f"- `{e.id}` — {' / '.join(problems)}" for e, problems in bad]
     notes = [(e.id, str((e.card or {}).get("note") or "").strip()) for e in entries]
     out += ["", "## note (카드 원문)", ""] + [f"- `{i}` — {n}" for i, n in notes if n]
     return "\n".join(out) + "\n"

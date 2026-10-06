@@ -11,8 +11,8 @@ artifacts:
   path_right: deploy/policy_control/paths/home_right.npz
   path_left: deploy/policy_control/paths/home_left.npz
   gains_yaml: ../urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml
-  joint_right: deploy/policies/right_m15_e800/joint_contract.json
-  joint_left: deploy/policies/left_cg_i01/joint_contract.json
+  joint_right: deploy/policies/dg5f_m/cup_pick/right_m15/joint_contract.json
+  joint_left: deploy/policies/dg5f_m/cup_grasp/left_i01/joint_contract.json
 checkpoints: {}
 groups:
 - id: check
@@ -819,14 +819,15 @@ run:
     - --asset
     - openarm_dg5f-m-short_bi_rl
     - --home
-    - run:deploy/policies/right_aglt
+    - run:deploy/policies/dg5f_m/grasp_fj_rand/right_i01
     - --mirror-other-arm
     - --gains
     - '{artifact:gains_yaml}'
     - --out
     - '{artifact:contract}'
-    note: 자산 제어 전용 계약 재생성 + control_gains.yaml 대조 (MISMATCH 면 rc 3). ★홈 = right_aglt 정책의 초기 자세 (정책 팔은 에피소드 리셋 자세, 손은 init_state
-      — 정책 환경과 실기가 같아야 한다, 09.22). 반대 팔은 --mirror-other-arm 으로 대칭(09.23 사용자) — init_state 의 왼팔 홈은 +y 벽에서 1.6 cm 다
+    note: 자산 제어 전용 계약 재생성 + control_gains.yaml 대조 (MISMATCH 면 rc 3). ★홈 = dg5f_m/grasp_fj_rand/right_i01 정책의 초기 자세 (정책 팔은
+      에피소드 리셋 자세, 손은 init_state — 정책 환경과 실기가 같아야 한다, 09.22). 반대 팔은 --mirror-other-arm 으로 대칭(09.23 사용자) — init_state 의 왼팔 홈은
+      +y 벽에서 1.6 cm 다
   - argv:
     - grep
     - -c
@@ -1305,7 +1306,7 @@ stages:
   needs:
   - preflight
   skippable: true
-  title: Isaac Sim 화면 — right_aglt 정책 환경(로봇 · 테이블 · 컵)에 실기 관절 상태를 비춘다 (읽기 전용 · rviz 대신)
+  title: Isaac Sim 화면 — dg5f_m/grasp_fj_rand/right_i01 정책 환경(로봇 · 테이블 · 컵)에 실기 관절 상태를 비춘다 (읽기 전용 · rviz 대신)
 - group: connect
   id: hand_right
   lane: arm_right
@@ -1388,7 +1389,8 @@ stages:
   - sensors
   needs_why: 정책은 홈 경로 끝 자세에서만 출발해 봤고, 컵 자세(FP++ → base)가 입력이다
   skippable: true
-  title: '[right] 정책(첫 화면에서 고른 것 · 기본 right_m15_e800) — 컵 확인 → 정책 노드 → reset(목표 = 컵 + 24.6 cm 위) → start → 관찰 → stop'
+  title: '[right] 정책(첫 화면에서 고른 것 · 기본 dg5f_m/cup_pick/right_m15) — 컵 확인 → 정책 노드 → reset(목표 = 컵 + 24.6 cm 위) → start → 관찰 →
+    stop'
 - artifacts:
   - contract
   - robot_right
@@ -1512,7 +1514,8 @@ stages:
   - sensors
   needs_why: 정책은 홈 경로 끝 자세에서만 출발해 봤고, 컵 자세(FP++ → base)가 입력이다
   skippable: true
-  title: '[left] 정책(첫 화면에서 고른 것 · 기본 left_cg_i01) — 컵 확인 → 정책 노드 → reset(목표 = 컵 + 24.6 cm 위) → start → 관찰 → stop → 컵 받기'
+  title: '[left] 정책(첫 화면에서 고른 것 · 기본 dg5f_m/cup_grasp/left_i01) — 컵 확인 → 정책 노드 → reset(목표 = 컵 + 24.6 cm 위) → start → 관찰 →
+    stop → 컵 받기'
 - artifacts:
   - contract
   - robot_left

@@ -1,9 +1,10 @@
 """`sim2real/deploy/policies/` — **쓸 정책만** 모아 두는 곳의 규약과 점검 (rclpy·torch 무의존).
 
 `logs/policy/` 에는 배포본·자산 계약·옛 실험이 20 개 섞여 있어 "지금 무엇을 쓸 수 있나"에 답하지 못한다.
-여기는 그 질문 하나에만 답한다. 정책 하나 = 디렉터리 하나:
+여기는 그 질문 하나에만 답한다. 정책 하나 = 디렉터리 하나, 경로는 로봇 손 / 정책 과제 / 팔_태그
+(10.06 사용자: "로봇핸드, 정책 테스크, tag(i**) 이렇게 구분되어야 함"). id 는 그 상대 경로다:
 
-    deploy/policies/<id>/
+    deploy/policies/<손>/<과제>/<팔>_<태그>/          예: rh56f1/aglt/right_env17 · dg5f_m/pour_fab/both_i18
       policy.yaml            사람이 쓰는 카드 — id · status · task · side · checkpoint · note  (도구가 덮어쓰지 않는다)
       params/env.yaml, agent.yaml                                                 (계약의 모든 숫자의 원천)
       nn/<하나>.pth          한 개면 그것이 후보다
@@ -45,6 +46,10 @@ STATUSES = {
     "hold": "쓰지 않는다 — 이유는 note 에",
 }
 NEEDS_CONTRACT = ("verified", "deployed")
+#: 경로 첫 칸(로봇 손) → 그 손 정책의 hdgp gym id 접두어. 다른 손의 정책이 섞여 들어오면 layout_issues 가 잡는다.
+#: 새 손을 들이면 여기에 한 줄 더한다.
+HANDS = {"rh56f1": "open-rh_", "dg5f_m": "open-short_"}
+SIDES = ("right", "left", "both")
 
 
 @dataclass(frozen=True)
@@ -80,7 +85,14 @@ def contract_checkpoint_md5(doc: Mapping) -> str:
     return str((doc.get("run") or {}).get("checkpoint_md5") or "")
 
 
-def _load_card(path: Path, issues: list[str]) -> dict:
+def _is_tail(path: Path, pid: str) -> bool:
+    """pid(상대 경로)가 path 의 끝 칸들과 같은가 — 등록부 뿌리를 모를 때(콘솔 프로파일의 정책 폴더) 쓴다."""
+    parts = Path(pid).parts
+    return bool(parts) and path.parts[-len(parts):] == parts
+
+
+def _load_card(path: Path, issues: list[str], want: str | None = None) -> dict:
+    """want = 등록부 뿌리 기준 상대 경로(뿌리를 알 때). 모르면 카드 id 가 폴더 경로의 끝이어야 한다."""
     p = path / CARD
     if not p.is_file():
         issues.append(f"{CARD} 가 없다 — 이 정책이 무엇이고 왜 여기 있는지 적어라")
@@ -93,7 +105,10 @@ def _load_card(path: Path, issues: list[str]) -> dict:
     if not isinstance(card, dict):
         issues.append(f"{CARD} 는 매핑이어야 한다")
         return {}
-    if card.get("id") != path.name:
+    cid = str(card.get("id") or "")
+    if want is not None and cid != want:
+        issues.append(f"카드 id {cid!r} ≠ 등록부 경로 {want!r}")
+    elif want is None and not _is_tail(path, cid):
         issues.append(f"카드 id {card.get('id')!r} ≠ 디렉터리 이름 {path.name!r}")
     if card.get("status") not in STATUSES:
         issues.append(f"status {card.get('status')!r} 는 {sorted(STATUSES)} 중 하나여야 한다")
@@ -147,9 +162,13 @@ def _check_manifest(path: Path, issues: list[str], deep: bool, *, needed: bool =
             issues.append(f"{f['local_rel']} sha256 이 매니페스트와 다르다 — 받은 뒤에 바뀌었다")
 
 
-def check(path: Path, *, deep: bool = True) -> Entry:
+def check(path: Path, *, deep: bool = True, root: Path | None = None) -> Entry:
+    """정책 폴더 하나. root(등록부 뿌리)를 주면 id = root 기준 상대 경로이고 카드 id 가 그것과 같아야 한다."""
     issues: list[str] = []
-    card = _load_card(path, issues)
+    want = path.relative_to(root).as_posix() if root is not None else None
+    card = _load_card(path, issues, want)
+    cid = str(card.get("id") or "")
+    pid = want if want is not None else (cid if cid and _is_tail(path, cid) else path.name)
 
     checkpoint = _pick_checkpoint(path, card, issues)
     issues += [f"{rel} 가 없다" for rel in _params_of(path, checkpoint) if not (path / rel).is_file()]
@@ -178,14 +197,45 @@ def check(path: Path, *, deep: bool = True) -> Entry:
             # 손 관측 순서를 가정한 계약은 관측이 학습과 같다는 근거가 없다 — 실측 trace 로 다시 만들기 전에는 못 올린다
             issues.append(f"status {card.get('status')} 인데 {contract} 의 손 관측 순서가 실측이 아니다({src or '?'})")
 
-    return Entry(path.name, path, card, checkpoint, contract, tuple(issues))
+    return Entry(pid, path, card, checkpoint, contract, tuple(issues))
+
+
+def _is_policy_dir(d: Path) -> bool:
+    """정책 폴더 = 카드 · nn/ · params/ 중 하나가 있는 폴더. 셋 다 없으면 손 · 과제로 묶는 폴더다."""
+    return any((d / name).exists() for name in (CARD, "nn", "params"))
+
+
+def _policy_dirs(d: Path) -> list[Path]:
+    out: list[Path] = []
+    for c in sorted(x for x in d.iterdir() if x.is_dir() and not x.name.startswith(".") and x.name != "__pycache__"):
+        out += [c] if _is_policy_dir(c) else _policy_dirs(c)
+    return out
 
 
 def scan(root: Path, *, deep: bool = True) -> tuple[Entry, ...]:
+    """등록부 전체 — 손 · 과제 폴더를 따라 내려가 정책 폴더마다 check. 순서는 경로 순(손 → 과제 → 팔_태그)."""
     if not root.is_dir():
         return ()
-    dirs = sorted(d for d in root.iterdir() if d.is_dir() and not d.name.startswith("."))
-    return tuple(check(d, deep=deep) for d in dirs)
+    return tuple(check(d, deep=deep, root=root) for d in _policy_dirs(root))
+
+
+def layout_issues(e: Entry) -> tuple[str, ...]:
+    """id(등록부 상대 경로)가 <손>/<과제>/<팔>_<태그> 규칙을 따르는가(10.06 사용자). 빈 튜플 = 따른다.
+
+    정책을 못 쓰게 막지는 않는다(콘솔 선택 사유에 안 들어간다) — policies.py · INDEX · 등록부 테스트가 잡는다."""
+    parts = e.id.split("/")
+    if len(parts) != 3:
+        return (f"경로 {e.id!r} 는 <손>/<과제>/<팔>_<태그> 여야 한다 (예: rh56f1/aglt/right_env17)",)
+    hand, _task, leaf = parts
+    side, task = str(e.card.get("side") or ""), str(e.card.get("task") or "")
+    out = []
+    if hand not in HANDS:
+        out.append(f"모르는 손 {hand!r} — {', '.join(sorted(HANDS))} 중 하나(새 손은 policy_registry.HANDS 에 더한다)")
+    elif task and not task.startswith(HANDS[hand]):
+        out.append(f"과제 {task} 는 {hand} 정책이 아니다(gym id 가 {HANDS[hand]} 로 시작해야 한다)")
+    if side not in SIDES or not leaf.startswith(f"{side}_") or leaf == f"{side}_":
+        out.append(f"마지막 칸 {leaf!r} 은 <팔>_<태그> 여야 한다(카드 side {side or '?'})")
+    return tuple(out)
 
 
 def render_index(entries: Iterable[Entry]) -> str:

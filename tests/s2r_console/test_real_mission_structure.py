@@ -207,7 +207,7 @@ def test_only_the_arm_stage_launches_pd_with_the_exec_config():
 
 def test_the_home_is_the_right_policy_initial_state_and_rviz_stays_off():
     build = " ".join(_cmds("preflight")[1].argv)
-    assert "--home run:deploy/policies/right_aglt" in build
+    assert "--home run:deploy/policies/dg5f_m/grasp_fj_rand/right_i01" in build
     # 09.23 사용자 "오른팔 왼팔 대칭": preflight 가 계약을 다시 만드므로 여기에 없으면 왼팔 홈이 벽 앞(1.6 cm)으로 되돌아간다
     assert "--mirror-other-arm" in build
     arm = _cmds("drivers")[_launches("drivers", "openarm.bimanual.launch.py")[0]]
@@ -307,9 +307,9 @@ def test_every_execute_flag_is_one_the_tool_actually_takes():
     assert not bad, bad
 
 
-@pytest.mark.parametrize("side,other,policy", [("right", "left", "right_m15_e800"), ("left", "right", "left_cg_i01")])
+@pytest.mark.parametrize("side,other,policy", [("right", "left", "dg5f_m/cup_pick/right_m15"), ("left", "right", "dg5f_m/cup_grasp/left_i01")])
 def test_each_policy_stage_runs_its_registered_joint_policy_after_home(side, other, policy):
-    """09.28 사용자: 오른팔 첫 실험 정책 = right_m15_e800, 오른손 419 로 왼팔로도 — 오전 left_cp_e4280(접근), 오후 left_cg_i01(컵 집기 · 들기).
+    """09.28 사용자: 오른팔 첫 실험 정책 = dg5f_m/cup_pick/right_m15, 오른손 419 로 왼팔로도 — 오전 dg5f_m/cup_pick/left_a01(접근), 오후 dg5f_m/cup_grasp/left_i01(컵 집기 · 들기).
     홈 경로 끝 = 그 정책의 학습 시작 자세다."""
     sid = f"policy_{side}"
     st = MISSION.stages[IDS.index(sid)]
@@ -392,7 +392,7 @@ def test_pd_runs_at_full_speed_and_the_left_policy_ends_its_own_episode():
     launch = commands_for(BOOK, MISSION, "policy_left", repo=REPO, execute=True)[4].argv
     assert "success_tol_m:=0.0318" in launch and "success_steps:=10" in launch and "max_episode_s:=15.0" in launch
     right = commands_for(BOOK, MISSION, "policy_right", repo=REPO, execute=True)
-    assert any("success_tol_m:=0.0" in a for c in right for a in c.argv)       # right_m15_e800 은 도착 판정 끔(09.28 그대로)
+    assert any("success_tol_m:=0.0" in a for c in right for a in c.argv)       # dg5f_m/cup_pick/right_m15 은 도착 판정 끔(09.28 그대로)
 
 
 def test_every_policy_the_mission_can_pick_has_its_deploy_args():

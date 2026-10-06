@@ -9,7 +9,7 @@
     objects: {CUP: {topic: /objects/cyl60/pose}}   # 물체 이름 → FP++ 자세 토픽 — 에피소드 처음 snapshot 이 한 번에 기록한다
     holders: {CENTER_HOLDER: 1}                    # 홀더 이름 → 마커 id — 홀더는 고정, 자세는 holder_poses 파일
     holder_poses: config/cup_holder_poses_arm4090.yaml   # cup_holder_pose_node --write 가 쓴 고정 자세(10.04 사용자)
-    policies: {rh_aglt_r: {policy: right_rh_aglt_cyl60g, kind: aglt, side: right}, ...}   # policy 없음 = 아직 없는 정책
+    policies: {rh_aglt_r: {policy: rh56f1/aglt/right_cyl60g, kind: aglt, side: right}, ...}   # policy 없음 = 아직 없는 정책
     trajectories: {go_home: {kind: rehome, sides: [right, left]}}
     failure_policy: {default: 1, rh_aglt_r: 2}     # 노드당 재시도 상한(Step 2)
     sequence: [ {id, type: snapshot|trajectory|policy|parallel_policy|terminal, name, ..., expect: {...}, checkpoint: NAME} ]

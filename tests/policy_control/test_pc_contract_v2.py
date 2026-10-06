@@ -129,7 +129,7 @@ def test_home_from_run_takes_each_arm_from_init_state_and_mirrors_only_what_is_m
 
 @needs_asset
 def test_home_from_run_takes_the_hand_from_init_state_too():
-    c = A.build_asset_contract(home="run:deploy/policies/right_aglt")
+    c = A.build_asset_contract(home="run:deploy/policies/dg5f_m/grasp_fj_rand/right_i01")
     right = c.side("right").home_hand
     assert right["r_hj_thumb_2"] == pytest.approx(-1.57) and right["r_hj_thumb_3"] == pytest.approx(0.0)   # open pose 는 −0.5
     # 정책 팔은 에피소드 리셋 자세(arm_reset_joint_pos_override, grasp_fj_env.py:115) — init_state 가 아니다(09.22 사용자 결정)
@@ -146,7 +146,7 @@ def test_mirror_other_arm_overrides_the_init_state_home():
     from policy_control import hdgp_frozen as _F
     P = type("P", (), {"_ARM_SIGN": list(_F.ARM_MIRROR_SIGN), "_HAND_SIGN": list(_F.HAND_MIRROR_SIGN)})
 
-    run = "run:deploy/policies/right_aglt"
+    run = "run:deploy/policies/dg5f_m/grasp_fj_rand/right_i01"
     plain, mirrored = A.build_asset_contract(home=run), A.build_asset_contract(home=run, mirror_other=True)
     right = mirrored.side("right").home_arm
     assert right == pytest.approx(plain.side("right").home_arm)                     # 정책 팔은 그대로

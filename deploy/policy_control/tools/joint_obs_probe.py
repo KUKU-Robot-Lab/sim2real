@@ -2,7 +2,7 @@
 """joint family 입력 점검 — 실기 토픽을 **구독만** 해서 정책 관측이 조립되는지 본다. 아무것도 발행하지 않는다.
 
     ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/joint_obs_probe.py \
-        --contract deploy/policies/right_m15_e800/joint_contract.json --robot dg5f_m_right_real --seconds 5
+        --contract deploy/policies/dg5f_m/cup_pick/right_m15/joint_contract.json --robot dg5f_m_right_real --seconds 5
 
 보는 것: 소스별 수신 속도 · 결손 · stale, 계약 관절이 소스에 다 있는가, 손 속도가 오는가, 관측 조각(팔 · 손 ·
 palm · 손끝)의 값, 지금 팔이 정책 시작 자세에서 얼마나 먼가. 컵 자세가 오면 키포인트 칸까지 채운다.

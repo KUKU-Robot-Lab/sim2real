@@ -1,0 +1,17 @@
+# RH56F1 양팔 붓기(pour_fj) — 배관 확인용. 09.29 사용자: "pour_fj 양손 다음 rh_aglt, 곧 정책 나올 예정 미리 준비".
+# 새 런(f04~)이 나오면 같은 모양으로 폴더를 만들고 tools/build_pour_fj_contract.py 로 계약을 만든다.
+id: rh56f1/pour_fj/both_f01
+status: candidate        # candidate | verified | deployed | hold
+task: open-rh_b_pour_fj-lstm
+side: both
+checkpoint: last_open-rh_b_pour_fj-lstm_ep_2300_rew_1107.8425.pth
+summary: 'RH56F1 양팔 붓기 첫 full-joint 런 — 배관 · fake 확인용(성능 후보 아님)'
+eval: '–'
+source: 'local:/media/user/DATA/kuku_ai/rl/rl_runs_20260926/pour_bi_rh/t2r_rh4_f01 (ep_2300 · params/)'
+interface: obs 165 · critic 207 · action 26 ([오른팔 7 증분 · 오른손 6 direct][왼팔 7 · 왼손 6])
+deploy:
+  max_episode_s: 15.0    # env episode_length_s — 붓기 성공은 실기에서 잴 수 없어 시간으로 끝낸다
+note: >-
+  t2r_rh4_f01(pour_bi_rh 4번째 사이클 첫 full-joint 런). 손 direct 범위가 관절 한계 전 범위 · 접촉 동결 없음 —
+  그 뒤 런(de926392 grip 범위 + 1 N 동결, da3e33fb 팔 절대 목표)과 행동 규칙이 다르다. 계약이 런의 env.yaml 에서
+  그 시대 규칙을 읽는다. 손 관측 순서는 추정(assumed) — verified 전. 실기 성능 후보가 아니라 배관 · fake 확인용.

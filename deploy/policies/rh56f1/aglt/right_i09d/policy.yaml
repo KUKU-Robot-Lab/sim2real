@@ -1,0 +1,16 @@
+# RH56F1 오른팔 rh_aglt — 실측 지연 적응(②) 실기 후보. 10.01 t2r RH56F1 [Grasping] 세션이 arm4090 에 올림(사용자 지시).
+id: rh56f1/aglt/right_i09d
+status: candidate        # candidate | verified | deployed | hold
+task: open-rh_r_aglt-lstm
+side: right
+checkpoint: last_open-rh_r_aglt-lstm_ep_5800_rew_1844.392.pth
+summary: 'shaker × 0.65 · 보상 iter_09 · 실측 지연 적응 · 세 손가락 파지'
+eval: '지연 켬 · 컵 든 0.91 · 성공 0.84/ep(tol 0.039) · 0.05(tol 0.02) · 손목 j6 한계 0.45'
+source: 'arm4090:~/rl_ws/our_source/policy/aglt_r_i09d_ep5800 (sha256 5d479d0727af0fe8… · params/ · README.md)'
+interface: obs 96 · critic 128 · action 13 (팔 관절 증분 7 · 손 6 — rh56f1_hand 법칙, mirror_l5 와 계약 동일)
+deploy:
+  max_episode_s: 15.0
+note: >-
+  보상 iter_09 c1 · env 실기 반응(팔 지연 9~12 · 손 3~5 스텝 · 펌웨어 멈춤 · 편 손 하한)으로 학습. 결정론(5090, 64 env, 지연 켬)
+  컵 든 에피소드 0.91 · 낙하 스텝 0.016 · 목표 성공 0.84/에피소드(공차 0.039) — 공차 0.02(배포 달성 판정)에서는 0.05.
+  세 손가락 파지(약지 · 새끼 0). 주의: 손목 j6 한계(여유 < 5 %) 0.45 · j6 출력 |mu|>1 0.58.

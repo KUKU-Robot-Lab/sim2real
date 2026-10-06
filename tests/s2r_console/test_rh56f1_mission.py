@@ -243,7 +243,7 @@ def test_the_rh56f1_robot_offers_the_pour_fj_policy_for_both_arms():
     from s2r_console import robots as RB
     (rh,) = [r for r in RB.scan(REPO / "deploy/s2r_console/robots")[0] if r.id == "openarm_rh56f1"]
     assert rh.slots["both"] == "pourfj_both" and RB.slot_contracts("pourfj_both") == ("pour_fj_contract.json",)
-    assert REAL.artifacts["pourfj_both"].endswith("both_rh_pourfj_f01/pour_fj_contract.json")
+    assert REAL.artifacts["pourfj_both"].endswith("rh56f1/pour_fj/both_f01/pour_fj_contract.json")
 
 
 @pytest.mark.parametrize("side,cup", [("right", "src"), ("left", "rcv")])

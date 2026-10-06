@@ -1,4 +1,4 @@
-"""읽기 전용 Isaac Sim 뷰어 — right_aglt 정책의 학습 장면에 실기 관절 상태를 비춘다.
+"""읽기 전용 Isaac Sim 뷰어 — dg5f_m/grasp_fj_rand/right_i01 정책의 학습 장면에 실기 관절 상태를 비춘다.
 
 hdgp 의 태스크 env 를 **그대로**(num_envs=1) 만들고, 정책 번들의 `params/env.yaml` 을 hdgp play.py 와
 같은 복원기(`hdgp/scripts/tools/run_cfg_restore.py`, 읽기만)로 덮는다. 그 뒤 env.step 은 **한 번도 부르지
@@ -26,7 +26,7 @@ from isaaclab.app import AppLauncher
 HERE = Path(__file__).resolve().parent
 RL_WS = HERE.parents[3]
 HDGP = RL_WS / "hdgp"
-DEFAULT_POLICY_DIR = RL_WS / "sim2real" / "deploy" / "policies" / "right_aglt"
+DEFAULT_POLICY_DIR = RL_WS / "sim2real" / "deploy" / "policies" / "dg5f_m/grasp_fj_rand/right_i01"
 sys.path.insert(0, str(HERE))
 import packet  # noqa: E402
 

@@ -1,4 +1,4 @@
-# 읽기 전용 Isaac 뷰어 (right_aglt 정책 장면 + 실기 관절 미러)
+# 읽기 전용 Isaac 뷰어 (dg5f_m/grasp_fj_rand/right_i01 정책 장면 + 실기 관절 미러)
 
 rviz 대신 Isaac Sim 에서 **정책 학습 장면**(로봇 자산·테이블·컵)을 띄우고, 로봇 관절을 실기 `/joint_states` 로 따라 움직인다.
 로봇에 명령을 보내는 경로는 없다.
@@ -36,7 +36,7 @@ ROS_DOMAIN_ID=126 python3 joint_state_relay.py --port 47811
 - **relay**: `/joint_states`·`/dg5f_right/joint_states`·`/dg5f_left/joint_states`·`/head/joint_states` 를 BEST_EFFORT 로 구독,
   `robot_control/.../profiles/openarm_tesollo.yaml` 의 source->canonical·sign 으로 이름을 바꿔 30 Hz 로 UDP 송신.
   발행자는 rclpy 내부 `/parameter_events` 하나뿐이다(Humble 이 조건 없이 만든다, 부팅 시 점검).
-- **뷰어**: hdgp 태스크 `open-short_r_grasp_fj_t2r_rand-lstm` 을 num_envs=1 로 만들고 `deploy/policies/right_aglt/params/env.yaml` 을
+- **뷰어**: hdgp 태스크 `open-short_r_grasp_fj_t2r_rand-lstm` 을 num_envs=1 로 만들고 `deploy/policies/dg5f_m/grasp_fj_rand/right_i01/params/env.yaml` 을
   hdgp play.py 와 같은 복원기(`hdgp/scripts/tools/run_cfg_restore.py`)로 덮는다. `env.step` 은 부르지 않는다(정책·액션·물리 스텝 0).
   매 프레임 받은 관절 값을 쓰고(속도 0) `sim.render()` 만 돈다.
 - 학습과 다른 점(뷰어 전용): 컵 1종(`--cup`)만 스폰 · 컵 위치는 학습 랜덤(중심 ±0.15) 대신 **중심 (0.25, −0.15) 고정**,

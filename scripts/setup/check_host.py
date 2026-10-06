@@ -168,7 +168,7 @@ def _md5(p: Path) -> str:
 
 
 def check_policies(rep: Report, source_host: str) -> None:
-    rep.section("정책 가중치 deploy/policies/*/nn (git 에 없다 — .gitignore)")
+    rep.section("정책 가중치 deploy/policies/<손>/<과제>/<팔>_<태그>/nn (git 에 없다 — .gitignore)")
     sys.path.insert(0, str(SIM2REAL / "deploy/policy_control"))
     from policy_control import policy_registry as R   # noqa: PLC0415
     for e in R.scan(SIM2REAL / "deploy/policies", deep=False):

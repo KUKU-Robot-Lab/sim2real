@@ -137,11 +137,64 @@ def test_index_lists_every_policy_with_its_issues_and_notes(tmp_path):
 
 
 def test_the_real_policies_directory_is_clean():
+    """카드 · 체크포인트 점검에 더해 경로 규칙(<손>/<과제>/<팔>_<태그>, 10.06 사용자)까지 — 자리를 벗어난 폴더도 잡는다."""
     root = SIM2REAL / "deploy" / "policies"
     if not root.is_dir():
         pytest.skip("deploy/policies/ 가 아직 없다")
-    bad = {e.id: e.issues for e in R.scan(root, deep=False) if not e.ok}
+    bad = {e.id: (*e.issues, *R.layout_issues(e)) for e in R.scan(root, deep=False)}
+    bad = {k: v for k, v in bad.items() if v}
     assert not bad, bad
+
+
+# ── 10.06 등록부 경로 = <로봇 손>/<정책 과제>/<팔>_<태그> (사용자: "로봇핸드, 정책 테스크, tag(i**) 이렇게 구분") ──
+def nested(root: Path, pid: str, *, task: str = "open-rh_r_aglt-lstm", side: str = "right") -> Path:
+    d = make(root, pid)
+    card = yaml.safe_load((d / R.CARD).read_text())
+    (d / R.CARD).write_text(yaml.safe_dump({**card, "task": task, "side": side}))
+    return d
+
+
+def test_scan_walks_hand_and_task_folders_and_the_id_is_the_relative_path(tmp_path):
+    nested(tmp_path, "rh56f1/aglt/right_i10")
+    nested(tmp_path, "rh56f1/place/left_i01", task="open-rh_l_place-lstm", side="left")
+    nested(tmp_path, "dg5f_m/pour_fab/both_i18", task="open-short_b_pour_fab", side="both")
+    es = R.scan(tmp_path)
+    assert [e.id for e in es] == ["dg5f_m/pour_fab/both_i18", "rh56f1/aglt/right_i10", "rh56f1/place/left_i01"]
+    assert all(e.ok and not R.layout_issues(e) for e in es)
+    assert es[1].path == tmp_path / "rh56f1" / "aglt" / "right_i10"
+
+
+def test_a_card_id_must_be_the_path_under_the_registry(tmp_path):
+    d = nested(tmp_path, "rh56f1/aglt/right_i10")
+    (d / R.CARD).write_text(yaml.safe_dump({**yaml.safe_load((d / R.CARD).read_text()), "id": "right_i10"}))
+    (e,) = R.scan(tmp_path)
+    assert e.id == "rh56f1/aglt/right_i10" and any("등록부 경로" in i for i in e.issues)
+
+
+def test_a_single_folder_check_takes_a_nested_id_that_ends_the_path(tmp_path):
+    """콘솔 프로파일은 등록부 뿌리 없이 정책 폴더만 준다 — 카드 id 가 폴더 경로의 끝이면 된다."""
+    e = R.check(nested(tmp_path, "dg5f_m/pour_fab/both_i18", task="open-short_b_pour_fab", side="both"))
+    assert e.ok and e.id == "dg5f_m/pour_fab/both_i18"
+
+
+@pytest.mark.parametrize("pid, task, side, want", [
+    ("right_i10", "open-rh_r_aglt-lstm", "right", "<손>/<과제>/<팔>_<태그>"),
+    ("gripper/aglt/right_i10", "open-rh_r_aglt-lstm", "right", "모르는 손"),
+    ("dg5f_m/aglt/right_i10", "open-rh_r_aglt-lstm", "right", "dg5f_m 정책이 아니다"),
+    ("rh56f1/aglt/left_i10", "open-rh_r_aglt-lstm", "right", "<팔>_<태그>"),
+    ("rh56f1/aglt/right_", "open-rh_r_aglt-lstm", "right", "<팔>_<태그>"),
+])
+def test_layout_issues_say_what_is_out_of_place_without_blocking_the_policy(tmp_path, pid, task, side, want):
+    nested(tmp_path, pid, task=task, side=side)
+    (e,) = R.scan(tmp_path)
+    assert any(want in i for i in R.layout_issues(e)), R.layout_issues(e)
+    assert e.ok                    # 자리만 틀린 정책은 쓸 수 있다 — policies.py · INDEX · 등록부 테스트가 잡는다
+
+
+def test_hand_and_task_folders_without_policies_add_nothing(tmp_path):
+    (tmp_path / "rh56f1" / "aglt").mkdir(parents=True)
+    (tmp_path / "rh56f1" / "README.md").write_text("손 폴더 설명\n")
+    assert R.scan(tmp_path) == ()
 
 
 # ── 한 벌(bundle): 한 팔의 정책 묶음 — 체크포인트 여러 개 + 사이드카 (09.22 사용자 배치) ──

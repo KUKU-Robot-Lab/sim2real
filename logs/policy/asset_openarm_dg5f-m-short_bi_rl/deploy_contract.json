@@ -150,7 +150,7 @@
   "table_z": null,
   "use_hand_repulsion": false,
   "use_body_repulsion_pairs": true,
-  "home_source": "run:right_aglt (right = arm_reset_joint_pos_override; left = _ARM_SIGN mirror (forced))"
+  "home_source": "run:right_i01 (right = arm_reset_joint_pos_override; left = _ARM_SIGN mirror (forced))"
  },
  "pd": {
   "groups": [
@@ -412,7 +412,7 @@
     "table_z": null,
     "use_hand_repulsion": false,
     "use_body_repulsion_pairs": true,
-    "home_source": "run:right_aglt (right = arm_reset_joint_pos_override; left = _ARM_SIGN mirror (forced))"
+    "home_source": "run:right_i01 (right = arm_reset_joint_pos_override; left = _ARM_SIGN mirror (forced))"
    },
    "palm": null,
    "hand": null,
@@ -605,7 +605,7 @@
     "table_z": null,
     "use_hand_repulsion": false,
     "use_body_repulsion_pairs": true,
-    "home_source": "run:right_aglt (right = arm_reset_joint_pos_override; left = _ARM_SIGN mirror (forced))"
+    "home_source": "run:right_i01 (right = arm_reset_joint_pos_override; left = _ARM_SIGN mirror (forced))"
    },
    "palm": null,
    "hand": null,

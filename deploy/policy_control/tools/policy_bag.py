@@ -2,7 +2,7 @@
 """정책 실기 기록 — `ros2 bag record` 두 묶음(policy · sensors)을 띄우고, 정지 신호에 둘을 정상 종료한다. 구독만 한다.
 
     ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/policy_bag.py \
-        --contract deploy/policies/left_cg_i01/joint_contract.json \
+        --contract deploy/policies/dg5f_m/cup_grasp/left_i01/joint_contract.json \
         --robot deploy/policy_control/config/robots/dg5f_m_left_real.yaml
     → logs/policy_control/real_runs/<시각>__<task>__<side>/{policy/, sensors/, meta.json}
 

@@ -229,7 +229,7 @@ def detect_family(env_yaml: Path) -> str:
     if "FabricPalmAction" in text and "joint_pos_rel" in text:
         return "gripper_left"
     # grasp_fj · cup_pick 계열: grasp_s2r 의 키(fabrics_dt …)를 물려받지만 팔은 관절 증분, 손은 관절 절대(fabric 없음).
-    # 그래서 grasp_s2r 판정보다 **먼저** 본다(09.28 right_m15_e800).
+    # 그래서 grasp_s2r 판정보다 **먼저** 본다(09.28 dg5f_m/cup_pick/right_m15).
     if re.search(r"^hand_direct:\s*true\s*$", text, re.M) and re.search(r"^k_arm:", text, re.M):
         return "joint_direct"
     if re.search(r"^fabrics_dt:", text, re.M) and re.search(r"^palm_anchor_mode:", text, re.M):

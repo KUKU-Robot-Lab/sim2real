@@ -107,17 +107,18 @@ run:
 
 def _policy(repo: Path, pid: str, tol: float, *, asset="asset_a") -> None:
     d = repo / "deploy" / "policies" / pid
+    name = Path(pid).name                                   # id 는 상대 경로일 수 있다(10.06 <손>/<과제>/<팔>_<태그>)
     (d / "nn").mkdir(parents=True)
     (d / "params").mkdir()
-    (d / "nn" / f"{pid}.pth").write_bytes(pid.encode())
+    (d / "nn" / f"{name}.pth").write_bytes(pid.encode())
     for f in ("env.yaml", "agent.yaml"):
         (d / "params" / f).write_text("{}\n")
     import hashlib  # noqa: PLC0415
     md5 = hashlib.md5(pid.encode()).hexdigest()
     (d / "joint_contract.json").write_text(json.dumps({"schema": "policy_control/joint_contract/v1", "asset": asset,
-                                                       "side": "left", "checkpoint": f"{pid}.pth", "checkpoint_md5": md5}))
+                                                       "side": "left", "checkpoint": f"{name}.pth", "checkpoint_md5": md5}))
     (d / "policy.yaml").write_text(yaml.safe_dump({"id": pid, "status": "candidate", "task": "open-a_l_x", "side": "left",
-                                                   "checkpoint": f"{pid}.pth", "deploy": {"success_tol_m": tol}}))
+                                                   "checkpoint": f"{name}.pth", "deploy": {"success_tol_m": tol}}))
 
 
 @pytest.fixture()
@@ -175,3 +176,16 @@ def test_a_policy_of_another_robot_is_refused(picker):
         picker.open("t_fake", operator="pytest", policies={"left": "pol_other"})
     assert any("asset_b" in r for r in exc.value.reasons)
     assert picker.session is None
+
+
+def test_a_registry_path_id_is_the_default_the_pick_and_the_slot_now(picker, tiny_repo):
+    """10.06 등록부 = <손>/<과제>/<팔>_<태그> — id 가 상대 경로여도 기본값 · 고르기 · 지금 자리가 같은 id 를 말한다."""
+    _policy(tiny_repo, "hand_a/task_x/left_n1", 0.07)
+    m = tiny_repo / "mission.yaml"
+    m.write_text(m.read_text().replace("deploy/policies/pol_a/", "deploy/policies/hand_a/task_x/left_n1/"))
+    (bot,) = picker.snapshot()["robots"]
+    assert bot["defaults"] == {"left": "hand_a/task_x/left_n1"}
+    assert not {p["id"]: p for p in bot["policies"]}["hand_a/task_x/left_n1"]["why"]
+    s = picker.open("t_fake", operator="pytest", policies={"left": "hand_a/task_x/left_n1"})
+    assert s.mission.artifacts["joint_left"] == "deploy/policies/hand_a/task_x/left_n1/joint_contract.json"
+    assert picker.snapshot()["session"]["robot_module"]["slots_now"] == {"left": "hand_a/task_x/left_n1"}

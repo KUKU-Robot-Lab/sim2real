@@ -6,6 +6,7 @@
                                                                     # sim/실기 개별 실행법(policy_index.py). 설명은 카드 summary · eval
     python3 deploy/policy_control/tools/policies.py --shallow       # 138 MB 체크포인트 재해시를 건너뛴다
 
+정책 폴더는 `deploy/policies/<손>/<과제>/<팔>_<태그>/`(10.06) — 규칙을 벗어난 폴더도 문제로 센다.
 등록은 `fetch_run.py`, 계약은 `build_deploy_contract.py`, 상태는 각 `policy.yaml` 을 사람이 고친다.
 이 도구는 읽고 점검만 한다 — 규약은 `policy_control/policy_registry.py` 에 있다.
 """
@@ -33,15 +34,17 @@ def main(argv=None) -> int:
     if not entries:
         print(f"[policies] {args.root} 에 등록된 정책이 없다")
         return 0
+    bad = 0
     for e in entries:
-        print(f"{'ok ' if e.ok else '✗  '}{e.id:<24} {e.status:<10} {e.card.get('side', ''):<6} "
+        problems = (*e.issues, *R.layout_issues(e))
+        bad += bool(problems)
+        print(f"{'ok ' if not problems else '✗  '}{e.id:<28} {e.status:<10} {e.card.get('side', ''):<6} "
               f"{e.contract or '(계약 없음)':<22} {e.checkpoint or '-'}")
-        for i in e.issues:
+        for i in problems:
             print(f"     - {i}")
     if args.write_index:
         (args.root / R.INDEX).write_text(X.render(entries, repo=SIM2REAL))
         print(f"[policies] {args.root / R.INDEX} 갱신")
-    bad = sum(not e.ok for e in entries)
     print(f"[policies] {len(entries)} 개 · 문제 {bad} 개")
     return 1 if bad else 0
 

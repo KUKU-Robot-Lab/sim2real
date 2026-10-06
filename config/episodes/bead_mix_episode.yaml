@@ -11,11 +11,11 @@ objects:
 holders: {LEFT_HOLDER: 0, CENTER_HOLDER: 1, RIGHT_HOLDER: 2}
 holder_poses: config/cup_holder_poses_arm4090.yaml
 policies:
-  rh_aglt_l: {policy: left_rh_aglt_cyl60gmir, kind: aglt, side: left}
-  rh_aglt_r: {policy: right_rh_aglt_cyl60g, kind: aglt, side: right}
+  rh_aglt_l: {policy: rh56f1/aglt/left_cyl60gmir, kind: aglt, side: left}
+  rh_aglt_r: {policy: rh56f1/aglt/right_cyl60g, kind: aglt, side: right}
   rh_pour: {policy: null, kind: pour, side: both}          # 성공 후보가 나오면 붙인다(10.04 사용자)
-  rh_place_l: {policy: left_rh_place_i01, kind: place, side: left}
-  rh_place_r: {policy: right_rh_place_i09, kind: place, side: right}
+  rh_place_l: {policy: rh56f1/place/left_i01, kind: place, side: left}
+  rh_place_r: {policy: rh56f1/place/right_i09, kind: place, side: right}
   rh_lock: {policy: null, kind: lock, side: right}
   rh_shake: {policy: null, kind: shake, side: left}
 trajectories:

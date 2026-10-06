@@ -8,8 +8,8 @@ objects:
 holders: {CENTER_HOLDER: 1}                      # 좌우 놓기 학습 목표에 모두 드는 가운데 홀더
 holder_poses: config/cup_holder_poses_arm4090.yaml
 policies:
-  rh_aglt_l: {policy: left_rh_aglt_cyl60gmir, kind: aglt, side: left}
-  rh_place_l: {policy: left_rh_place_i01, kind: place, side: left}
+  rh_aglt_l: {policy: rh56f1/aglt/left_cyl60gmir, kind: aglt, side: left}
+  rh_place_l: {policy: rh56f1/place/left_i01, kind: place, side: left}
 trajectories:
   go_home: {kind: rehome, sides: [left]}
 failure_policy: {default: 1, rh_aglt_l: 2, rh_place_l: 0}

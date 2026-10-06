@@ -42,7 +42,7 @@ PLANT = {
     "argv": ["ros2", "launch", "{repo}/deploy/policy_control/launch/fake_plant.launch.py", "side:=both",
              "robot:={artifact:robot_bi}", "contract:={artifact:contract}", "pd_config:={artifact:pd}",
              "hands:=none", "plant_model:=rate",
-             # 컵 = 오른팔 정책(right_m15_e800)의 학습 스폰 중심 · 정착 높이 — 정책 단계가 이 자세로 목표를 정한다
+             # 컵 = 오른팔 정책(dg5f_m/cup_pick/right_m15)의 학습 스폰 중심 · 정착 높이 — 정책 단계가 이 자세로 목표를 정한다
              "cup_x:=0.25", "cup_y:=-0.15", "cup_z:=0.2757"],
     "background": True,
 }

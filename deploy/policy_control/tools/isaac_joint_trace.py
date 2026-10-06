@@ -1,8 +1,8 @@
 """joint family 학습 env 에서 정책을 짧게 돌려 **관절 순서 · 관측 · 행동 · 상태** 궤적을 남긴다(Isaac, 로봇 없음).
 
     cd ~/rl_ws/hdgp && ../IsaacLab/isaaclab.sh -p ~/rl_ws/sim2real/deploy/policy_control/tools/isaac_joint_trace.py \
-        --run ~/rl_ws/sim2real/deploy/policies/right_m15_e800 --num_envs 2 --steps 240 \
-        --out ~/rl_ws/sim2real/deploy/policies/right_m15_e800/trace.npz
+        --run ~/rl_ws/sim2real/deploy/policies/dg5f_m/cup_pick/right_m15 --num_envs 2 --steps 240 \
+        --out ~/rl_ws/sim2real/deploy/policies/dg5f_m/cup_pick/right_m15/trace.npz
 
 hdgp 는 고치지 않는다 — env 를 그대로 만들고 **학습 전용 관측 노이즈 · 지연만 끈다**(그래야 env 관측 = 배포가 만드는
 깨끗한 관측이다). 남기는 것:

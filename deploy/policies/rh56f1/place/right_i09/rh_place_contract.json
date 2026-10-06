@@ -1,0 +1,146 @@
+{
+  "schema": "policy_control/rh_place_contract/v1",
+  "task": "open-rh_r_place",
+  "run_dir": "/home/user/rl_ws/sim2real/deploy/policies/rh56f1/place/right_i09",
+  "checkpoint": "/home/user/rl_ws/sim2real/deploy/policies/rh56f1/place/right_i09/nn/place_r_i09_ep4000.pth",
+  "checkpoint_md5": "4ee40f18d625b021c1ec795916dbf659",
+  "env_yaml_sha1": "ca226e7550626842b3d7e4508bbaa9318971afe0",
+  "agent_yaml_sha1": "e0f7efb7de77ddb4509aa22d68d10a01a513c9c4",
+  "asset": "openarm_rh56f1_bi_rl",
+  "profile": "rh56f1_right",
+  "policy_hz": 60.0,
+  "episode_s": 15.0,
+  "obs_dim": 96,
+  "action_dim": 13,
+  "obs_clip": 5.0,
+  "action_clip": 1.0,
+  "recurrent": true,
+  "hold_steps": 0,
+  "k_arm": 0.05,
+  "arm_ema": 0.1,
+  "hand_ema": 0.1,
+  "hand_full_range_s": 1.0,
+  "freeze_threshold_n": 1.0,
+  "joint_err_norm": 1.2,
+  "tactile_clip_n": 10.0,
+  "tactile_tanh_n": 3.0,
+  "cup_half_height": 0.085,
+  "goal_offset": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "hand_obs_order_source": "profile(hdgp rh_aglt_env hand_ids = 이름 순)",
+  "sides": {
+    "arm": {
+      "role": "arm",
+      "side": "right",
+      "arm_joints": [
+        "r_aj_1",
+        "r_aj_2",
+        "r_aj_3",
+        "r_aj_4",
+        "r_aj_5",
+        "r_aj_6",
+        "r_aj_7"
+      ],
+      "arm_home": [
+        -1.2127,
+        0.2026,
+        0.6538,
+        1.7608,
+        0.3791,
+        0.5785,
+        0.6646
+      ],
+      "arm_lo": [
+        -1.396263,
+        -0.17453267320510335,
+        -1.570796,
+        0.0,
+        -1.570796,
+        -0.785398,
+        -1.570796
+      ],
+      "arm_hi": [
+        3.490659,
+        3.3161253267948965,
+        1.570796,
+        2.443461,
+        1.570796,
+        0.785398,
+        1.570796
+      ],
+      "hand_joints": [
+        "r_hj_thumb_1",
+        "r_hj_thumb_2",
+        "r_hj_index_1",
+        "r_hj_middle_1",
+        "r_hj_ring_1",
+        "r_hj_pinky_1"
+      ],
+      "hand_open": [
+        1.57,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "hand_grip": [
+        1.2,
+        0.24,
+        1.08,
+        1.08,
+        0.85,
+        0.85
+      ],
+      "hand_lim_lo": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "hand_lim_hi": [
+        2.0943951023931953,
+        0.4745550236172582,
+        1.5285593588966337,
+        1.5285593588966337,
+        1.5285593588966337,
+        1.5285593588966337
+      ],
+      "palm_body": "r_hl_palm_sensor",
+      "tip_bodies": [
+        "r_hl_thumb_tip",
+        "r_hl_index_tip",
+        "r_hl_middle_tip",
+        "r_hl_ring_tip",
+        "r_hl_pinky_tip"
+      ]
+    }
+  },
+  "notes": [
+    "학습 실기 반응(sim 전용, 배포 디코더는 따라 하지 않는다 — 실기가 스스로 낸다): arm_cmd_delay_steps [0, 0] · hand_cmd_delay_steps [0, 0] · hand_open_floor_deg_lo [0.0, 1.0, 2.0, 2.0, 2.0, 2.0] · hand_open_floor_deg_hi [0.0, 3.0, 5.5, 5.5, 5.5, 5.5] · thumb1_reset_range [1.4, 1.57]",
+    "목표 = 홀더 원점 + (0, 0, 0.060) · 세운 컵 — 학습 목표 홀더 [1, 2] (/objects/cup_holder_<k>/pose)",
+    "시작 = aglt 가 쥐고 멈춘 상태: 팔 · 손 목표는 pd 가 붙잡은 마지막 joint_target, hold 0, LSTM 0",
+    "놓음 = 접촉 < 1.0 N 5 스텝 → 45 스텝 스크립트(손 펴기 · 팔 시작 관절로) → 끝 — 배포는 손끝 촉각 · 관절 힘으로 보고 네 손가락 손 목표가 인계보다 0.15 rad 넘게 열린 뒤에만 센다(손바닥 · 첫마디 접촉 없음)"
+  ],
+  "goal_box_min": [],
+  "goal_box_max": [],
+  "goal_first_xy_range": 0.0,
+  "goal_first_z_range": [],
+  "goal_delta_distance": 0.0,
+  "goal_success_steps": 0,
+  "goal_tol": 0.0,
+  "grasp_threshold_n": 1.0,
+  "seat_dz": 0.060000000000000005,
+  "target_holders": [
+    1,
+    2
+  ],
+  "release_steps": 5,
+  "settle_steps": 45,
+  "release_force_n": 1.0
+}

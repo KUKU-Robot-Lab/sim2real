@@ -16,7 +16,7 @@ artifacts:
 
 checkpoints:
   pour:
-    path: deploy/policies/both_pour_i18/nn/last_open-short_b_pour_fab_ep_2500_rew_36408.105.pth   # 09.29 logs/policy/*/nn 은 추적하지 않는다
+    path: deploy/policies/dg5f_m/pour_fab/both_i18/nn/last_open-short_b_pour_fab_ep_2500_rew_36408.105.pth   # 09.29 logs/policy/*/nn 은 추적하지 않는다
     md5: "f50b09a6"
     params: logs/policy/pour_i18/params
 

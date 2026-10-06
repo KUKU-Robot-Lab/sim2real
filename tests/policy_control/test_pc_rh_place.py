@@ -16,7 +16,7 @@ from policy_control import rh_place as P
 
 REPO = Path(__file__).resolve().parents[2]
 POL = REPO / "deploy" / "policies"
-RUNS = {"right": POL / "right_rh_place_i09", "left": POL / "left_rh_place_i01"}
+RUNS = {"right": POL / "rh56f1/place/right_i09", "left": POL / "rh56f1/place/left_i01"}
 URDF = Path.home() / "rl_ws/hdgp/assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf"
 
 
@@ -50,7 +50,7 @@ def test_the_contract_is_the_place_run(c):
 
 
 def test_an_aglt_run_is_refused():
-    run = POL / "right_rh_aglt_cyl60g"
+    run = POL / "rh56f1/aglt/right_cyl60g"
     _need(run)
     from policy_control.pour_profiles import load_profile
     from policy_control import _paths

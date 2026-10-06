@@ -2,7 +2,7 @@
 """joint 정책 실기 기록기 — 정책이 도는 동안 입력 · 출력 · 제어기 응답을 npz 로 남긴다. 구독만 한다(발행 없음).
 
     ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/joint_recorder.py \
-        --contract deploy/policies/left_cp_e4280/joint_contract.json \
+        --contract deploy/policies/dg5f_m/cup_pick/left_a01/joint_contract.json \
         --robot deploy/policy_control/config/robots/dg5f_m_left_real.yaml
 
 09.28 사용자: "이번에 정책 실행시켰을때 로그가 같은게 있나? … 제어기 등이 잘 따라갔는지를 토대로 재학습할수도 있으니까".

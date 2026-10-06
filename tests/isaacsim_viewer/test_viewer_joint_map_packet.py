@@ -17,7 +17,7 @@ pytestmark = pytest.mark.unit
 
 ASSET_URDF = (Path(__file__).resolve().parents[3] / "hdgp" / "assets" / "robot"
               / "openarm_dg5f-m-short-tl_bi_rl" / "openarm_dg5f-m-short-tl_bi_rl.urdf")
-POLICY_ENV_YAML = (Path(__file__).resolve().parents[2] / "deploy" / "policies" / "right_aglt"
+POLICY_ENV_YAML = (Path(__file__).resolve().parents[2] / "deploy" / "policies" / "dg5f_m/grasp_fj_rand/right_i01"
                    / "params" / "env.yaml")
 
 
@@ -86,7 +86,7 @@ def test_merge_returns_new_mapping_without_mutating():
 
 
 def test_profile_covers_every_movable_joint_of_the_task_asset(table):
-    """right_aglt 자산(short-tl)의 가동 관절 중 팔·손 관절은 전부 프로필 canonical 에 있어야 한다."""
+    """dg5f_m/grasp_fj_rand/right_i01 자산(short-tl)의 가동 관절 중 팔·손 관절은 전부 프로필 canonical 에 있어야 한다."""
     if not ASSET_URDF.is_file():
         pytest.skip("hdgp 자산 URDF 없음")
     text = ASSET_URDF.read_text()

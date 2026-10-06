@@ -6,7 +6,7 @@
 #   증명 못 한다: 파지 · 들기 성공. MockArm 에 접촉도 컵 물리도 없다. 관측이 학습과 같은지는 trace 대조가 한다.
 #
 #   usage: ROS_DOMAIN_ID=97 deploy/policy_control/tools/joint_fake_run.sh [seconds] [logdir]
-#   env:   RUN_DIR(기본 deploy/policies/right_m15_e800) · PD_CONTRACT(기본 logs/policy/asset_right_m15/deploy_contract.json)
+#   env:   RUN_DIR(기본 deploy/policies/dg5f_m/cup_pick/right_m15) · PD_CONTRACT(기본 logs/policy/asset_right_m15/deploy_contract.json)
 #          ROBOT(기본 dg5f_m_right_fake) · SIDE(기본 right) · DEVICE(기본 cpu) · CUP("x y z", 기본 학습 스폰 중심)
 #
 #   ROS_DOMAIN_ID 는 실기(126)도 0/unset 도 아니어야 한다 — launch 가 0/unset 을 거부하고, 이 스크립트가 126 을 거부한다.
@@ -16,7 +16,7 @@ source /opt/ros/humble/setup.bash && . .venv/bin/activate
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-97}"
 [ "$ROS_DOMAIN_ID" = "126" ] && { echo "[joint_fake] 실기 도메인 126 에서는 돌리지 않는다"; exit 3; }
 
-RUN_DIR="${RUN_DIR:-deploy/policies/right_m15_e800}"
+RUN_DIR="${RUN_DIR:-deploy/policies/dg5f_m/cup_pick/right_m15}"
 SEC="${1:-20}"; LOG="${2:-logs/policy_control/joint_fake_$(date +%m%d_%H%M%S)}"; mkdir -p "$LOG"
 CONTRACT="$RUN_DIR/joint_contract.json"
 PD_CONTRACT="${PD_CONTRACT:-logs/policy/asset_right_m15/deploy_contract.json}"

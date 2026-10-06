@@ -1,0 +1,12 @@
+# DG-5F-M short 왼팔 cup_pick 접근(보상 cup_pick_l_approach/iter_00, 런 fj_abL_a00) — 옛 left_aglt 한 벌에서 떼어 냈다(10.06).
+id: dg5f_m/cup_pick/left_a00
+status: candidate        # candidate | verified | deployed | hold
+task: open-short_l_cup_pick-lstm
+side: left
+checkpoint: cup_pick_l_approach_e3400.pth
+summary: 'DG-5F 왼팔 컵 접근 e3400(계약 없음) — left_a01(접근 + C자 유지)의 앞 단계'
+eval: '–'
+note: >-
+  런 fj_abL_a00 e3400. 학습 당시 gym id 는 open-short_l_grasp_fj_ab-lstm(지금 open-short_l_cup_pick-lstm 과 같은 cfg, 이름
+  변경 전). 출발 가중치 fj_randL_i00b e800(= dg5f_m/grasp_fj_rand/left_i00b). 인터페이스 obs 133 / action 26(팔 7 관절 증분 +
+  손 19 절대, 프로파일 tesollo_left_short_tl). 계약 없음 — 실기 확인은 dg5f_m/cup_pick/left_a01.

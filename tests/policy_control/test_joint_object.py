@@ -16,7 +16,7 @@ from policy_control.joint_obs import Pose, quat_to_matrix
 
 pytestmark = pytest.mark.unit
 
-RUN = Path(__file__).resolve().parents[2] / "deploy/policies/right_m15_e800"
+RUN = Path(__file__).resolve().parents[2] / "deploy/policies/dg5f_m/cup_pick/right_m15"
 UP = np.array([1.0, 0.0, 0.0, 0.0])
 
 
