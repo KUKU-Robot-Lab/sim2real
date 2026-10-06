@@ -190,3 +190,34 @@ def test_sample_time_is_the_hardware_moment_on_the_ros_clock():
     """10.03 bag 정렬: 노드가 받은 시각이 아니라 마스터가 PDO 를 받은 시각."""
     assert E.sample_time_ns(ros_now_ns=10_000_000_000, mono_now_ns=500_000_000, sample_mono_ns=497_000_000) == 9_997_000_000
     assert E.sample_time_ns(10_000_000_000, 500, 900) == 10_000_000_000          # 미래(시계 이상)면 지금
+
+
+def test_hand_protection_settings_reach_the_master():
+    """10.06 왼손 컵 쥐기: 합 6.5 A 뒤 손 먹통 — 전류 보호 · 오류 지우기를 OP 전에 SDO 로 쓴다."""
+    cfg = yaml.safe_load((PC / "config" / "rh56f1_ports.yaml").read_text())["ethercat"]
+    argv = E.master_argv("/m", "eth0", "/a", "/b", cfg, no_op=False)
+    assert "--clear-error" in argv
+    assert argv[argv.index("--current-limit") + 1] == "800,800,800,800,800,800"
+    assert "--finger-mode" not in argv  # 임피던스는 실기 확인 뒤
+    six = E.protection_argv({"current_limit_ma": [700, 700, 700, 700, -1, 900], "finger_mode": 2})
+    assert six == ["--current-limit", "700,700,700,700,-1,900", "--finger-mode", "2,2,2,2,2,2"]
+    for bad in ({"current_limit_ma": 50}, {"current_limit_ma": 2000}, {"current_limit_ma": [800] * 5},
+                {"finger_mode": 3}):
+        with pytest.raises(E.EcatError):
+            E.protection_argv(bad)
+
+
+def test_master_reports_the_hand_protection_it_read():
+    line = ('[INFO]: [master] SDO {"current_limit_ma": [800, 800, 800, 800, 800, 800], "finger_mode": [0, 0, 0, 0, 0, 0], '
+            '"default_speed": [1000, null, 1000, 1000, 1000, 1000], "default_force_g": [500, 500, 500, 500, 500, 500]}')
+    sdo = E.parse_sdo_line(line)
+    assert sdo["current_limit_ma"] == [800] * 6 and sdo["default_speed"][1] is None
+    assert E.parse_sdo_line("[master] OP") is None and E.parse_sdo_line("[master] SDO {broken") is None
+
+
+def test_master_source_refuses_op_without_the_requested_protection():
+    src = MASTER_C.read_text()
+    assert "if (sdo_setup(clear_error, current_limit, finger_mode) != 0) goto out_ec;" in src
+    assert src.index("sdo_setup(clear_error") < src.index("ec_config_map(&IOmap);")  # PREOP, OP 전
+    for sub in ("SDO_CLEAR_ERROR 0x03", "SDO_CURRENT_LIMIT 0x07", "SDO_FINGER_MODE 0x1B"):
+        assert sub in src

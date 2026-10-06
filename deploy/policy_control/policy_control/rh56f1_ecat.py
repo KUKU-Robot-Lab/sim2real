@@ -208,6 +208,47 @@ def joint_names(side: str) -> list[str]:
     return [f"{p}_hj_{f}" for f in SLOT_FINGERS]
 
 
+CURRENT_LIMIT_RANGE = (100, 1500)   # mA, 매뉴얼 2.5.7 (100 미만은 빈손 동작도 세운다 — 10.06 빈손 ≤ 320 mA)
+FINGER_MODES = (0, 1, 2)            # 매뉴얼 2.5.21: 0 속도 · 힘 보호 · 1 힘 폐루프 · 2 임피던스
+
+
+def _six(value, name: str, valid) -> list[int]:
+    vals = [int(value)] * 6 if isinstance(value, (int, float)) else [int(v) for v in value]
+    if len(vals) != 6 or not all(v == -1 or valid(v) for v in vals):
+        raise EcatError(f"{name}: 값 하나 또는 여섯 개(새끼 · 약지 · 중지 · 검지 · 엄지 굽힘 · 엄지 회전, -1 = 안 씀)")
+    return vals
+
+
+def protection_argv(cfg: dict) -> list[str]:
+    """손 보호 설정(SDO 0x2000, 마스터가 OP 전에 쓰고 다시 읽어 확인) — 10.06 컵 쥐기 뒤 손 먹통 대책."""
+    argv: list[str] = []
+    if bool(cfg.get("clear_error", False)):
+        argv.append("--clear-error")
+    if cfg.get("current_limit_ma") is not None:
+        lo, hi = CURRENT_LIMIT_RANGE
+        vals = _six(cfg["current_limit_ma"], "current_limit_ma", lambda v: lo <= v <= hi)
+        argv += ["--current-limit", ",".join(map(str, vals))]
+    if cfg.get("finger_mode") is not None:
+        vals = _six(cfg["finger_mode"], "finger_mode", lambda v: v in FINGER_MODES)
+        argv += ["--finger-mode", ",".join(map(str, vals))]
+    return argv
+
+
+SDO_PREFIX = "[master] SDO "
+
+
+def parse_sdo_line(line: str) -> dict | None:
+    """마스터가 시작마다 찍는 손 보호 설정 한 줄 → dict (아니면 None)."""
+    import json
+    i = line.find(SDO_PREFIX + "{")
+    if i < 0:
+        return None
+    try:
+        return json.loads(line[i + len(SDO_PREFIX):])
+    except ValueError:
+        return None
+
+
 def master_argv(binary: str, ifname: str, master_sock: str, node_sock: str, cfg: dict, no_op: bool) -> list[str]:
     """마스터 실행 인자. cfg = rh56f1_ports.yaml 의 ethercat 블록."""
     argv = [binary, "--ifname", ifname, "--master-sock", master_sock, "--node-sock", node_sock,
@@ -224,6 +265,7 @@ def master_argv(binary: str, ifname: str, master_sock: str, node_sock: str, cfg:
         argv += ["--hz-op", str(float(cfg["cycle_hz_op"]))]
     if int(cfg.get("sync_type", -1)) >= 0:
         argv += ["--sync-type", str(int(cfg["sync_type"]))]
+    argv += protection_argv(cfg)
     if not 50 <= float(cfg.get("cycle_hz", 1000)) <= 4000:
         raise EcatError("cycle_hz 는 50~4000")
     if not 0 < float(cfg.get("state_hz", 100)) <= float(cfg.get("cycle_hz", 1000)):

@@ -109,6 +109,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-op", action="store_true", help="SAFE_OP 에 머문다 — 상태만 읽고 손은 명령을 쓰지 않는다")
     ap.add_argument("--op-enable", action="store_true", help="OP 실험: 명령 전에도 ENABLE_SET 을 켠다(목표 = 지금 각도)")
     ap.add_argument("--sync-type", type=int, default=None, help="OP 실험: 0x1C32/33:01 에 쓸 값(0 free run · 1 SM 동기)")
+    ap.add_argument("--current-limit", default=None, help="손 보호: 손가락별 전류 한계 mA(하나 또는 여섯 · -1 안 씀) — 설정 파일을 덮는다")
+    ap.add_argument("--finger-mode", default=None, help="손 동작 모드 0 속도 · 힘 보호 · 1 힘 폐루프 · 2 임피던스(하나 또는 여섯)")
     args, _ = ap.parse_known_args(argv)
 
     ifname, cfg = ecat_config(yaml.safe_load(Path(args.ports).read_text()) or {}, args.side)
@@ -116,6 +118,10 @@ def main(argv: list[str] | None = None) -> int:
         cfg["op_enable"] = True
     if args.sync_type is not None:
         cfg["sync_type"] = args.sync_type
+    for key, txt in (("current_limit_ma", args.current_limit), ("finger_mode", args.finger_mode)):
+        if txt is not None:
+            vals = [int(v) for v in str(txt).split(",")]
+            cfg[key] = vals[0] if len(vals) == 1 else vals
     binary = str((REPO / cfg.get("master", "tools/ethercat/rh56f1_ecat_master")).resolve())
     if not os.access(binary, os.X_OK):
         print(f"✗ 마스터 {binary} 가 없다 — bash tools/ethercat/build.sh 뒤 sudo setcap cap_net_raw,cap_net_admin=ep {binary}")
@@ -142,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
             "status": node.create_publisher(String, f"{ns}/ecat_status", 10)}
     book = E.CommandBook()
     lock = threading.Lock()
-    last = {"state": None, "status_t": 0.0, "count": 0}
+    last = {"state": None, "status_t": 0.0, "count": 0, "sdo": None}
 
     from builtin_interfaces.msg import Time
 
@@ -173,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
         if now - last["status_t"] >= 1.0:
             last["status_t"] = now
             d = s.summary()
-            d.update(ifname=ifname, no_op=args.no_op, states=last["count"], send_errors=link.send_errors)
+            d.update(ifname=ifname, no_op=args.no_op, states=last["count"], send_errors=link.send_errors, sdo=last["sdo"])
             pubs["status"].publish(String(data=json.dumps(d, ensure_ascii=False)))
 
     def on_cmd(kind: str, values) -> None:
@@ -202,6 +208,9 @@ def main(argv: list[str] | None = None) -> int:
     def pump_log() -> None:
         for line in link.proc.stdout:          # type: ignore[union-attr]
             line = line.rstrip()
+            sdo = E.parse_sdo_line(line)
+            if sdo is not None:
+                last["sdo"] = sdo                # ecat_status 에 같이 낸다(손 보호 설정 확인)
             # rclpy 는 같은 호출 자리에서 심각도를 바꾸면 ValueError — 자리를 나눈다
             if "✗" in line or "⚠" in line:
                 log.warning(line)

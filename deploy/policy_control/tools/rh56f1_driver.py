@@ -66,10 +66,14 @@ def main(argv: list[str] | None = None) -> int:
                     help="설정 파일 기본(ethercat)을 덮는다 — rs485 는 비상용 옛 배선(USB-RS485 를 다시 꽂아야 한다)")
     ap.add_argument("--op-enable", action="store_true", help="ethercat OP 실험: 명령 전에도 ENABLE_SET 을 켠다")
     ap.add_argument("--sync-type", type=int, default=None, help="ethercat OP 실험: 0x1C32/33:01 값")
+    ap.add_argument("--current-limit", default=None, help="ethercat 손 보호: 손가락별 전류 한계 mA(하나 또는 여섯) — 설정 파일을 덮는다")
+    ap.add_argument("--finger-mode", default=None, help="ethercat 손 동작 모드 0 · 1 · 2(하나 또는 여섯) — 설정 파일을 덮는다")
     args = ap.parse_args(argv)
     extra = (["--op-enable"] if args.op_enable else []) + (["--sync-type", str(args.sync_type)] if args.sync_type is not None else [])
+    extra += (["--current-limit", args.current_limit] if args.current_limit is not None else [])
+    extra += (["--finger-mode", args.finger_mode] if args.finger_mode is not None else [])
     if extra and args.transport == "rs485":
-        raise SystemExit("--op-enable · --sync-type 는 ethercat 전용")
+        raise SystemExit("--op-enable · --sync-type · --current-limit · --finger-mode 는 ethercat 전용")
     cmd = argv_for(yaml.safe_load(Path(args.ports).read_text()) or {}, args.side, args.ports, args.no_op,
                    transport=args.transport, extra=extra)
     print(" ".join(cmd), flush=True)
