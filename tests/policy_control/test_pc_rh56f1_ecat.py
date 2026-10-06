@@ -198,7 +198,7 @@ def test_hand_protection_settings_reach_the_master():
     argv = E.master_argv("/m", "eth0", "/a", "/b", cfg, no_op=False)
     assert "--clear-error" in argv
     assert argv[argv.index("--current-limit") + 1] == "800,800,800,800,800,800"
-    assert "--finger-mode" not in argv  # 임피던스는 실기 확인 뒤
+    assert argv[argv.index("--finger-mode") + 1] == "0,0,0,0,0,0"  # 시작마다 위치 모드(10.06)
     six = E.protection_argv({"current_limit_ma": [700, 700, 700, 700, -1, 900], "finger_mode": 2})
     assert six == ["--current-limit", "700,700,700,700,-1,900", "--finger-mode", "2,2,2,2,2,2"]
     for bad in ({"current_limit_ma": 50}, {"current_limit_ma": 2000}, {"current_limit_ma": [800] * 5},
@@ -221,3 +221,22 @@ def test_master_source_refuses_op_without_the_requested_protection():
     assert src.index("sdo_setup(clear_error") < src.index("ec_config_map(&IOmap);")  # PREOP, OP 전
     for sub in ("SDO_CLEAR_ERROR 0x03", "SDO_CURRENT_LIMIT 0x07", "SDO_FINGER_MODE 0x1B"):
         assert sub in src
+
+
+def test_finger_mode_commands_and_master_reports():
+    """10.06: 빈 공간 = 모드 0(위치), 쥐는 동안 = 모드 1(힘 폐루프). 마스터는 OP 중에 SDO 스레드로 쓴다."""
+    payload = E.CommandBook.mode([-1, -1, -1, 1, -1, -1])
+    assert len(payload) == E.CMD_SIZE
+    assert E.unpack_cmd(payload) == (E.CMD_MODE, [-1, -1, -1, 1, -1, -1])
+    for bad in ([3, 0, 0, 0, 0, 0], [0] * 5):
+        with pytest.raises(E.EcatError):
+            E.CommandBook.mode(bad)
+    m = E.parse_mode_line('[INFO]: [master] MODE {"finger_mode": [0, 0, 0, 1, 0, 0], "ms": 2.4, "ok": true}')
+    assert m["finger_mode"] == [0, 0, 0, 1, 0, 0] and m["ok"] is True
+    assert E.parse_mode_line("[master] SDO {}") is None
+    src = MASTER_C.read_text()
+    assert "#define CMD_MODE 5" in src and E.CMD_MODE == 5
+    assert "request_modes(all_position)" in src  # 끝낼 때 모드 0
+    cfg = yaml.safe_load((PC / "config" / "rh56f1_ports.yaml").read_text())["ethercat"]
+    argv = E.master_argv("/m", "eth0", "/a", "/b", cfg, no_op=False)
+    assert argv[argv.index("--finger-mode") + 1] == "0,0,0,0,0,0"  # 시작마다 위치 모드

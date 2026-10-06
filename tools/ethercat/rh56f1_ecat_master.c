@@ -29,6 +29,7 @@
 #define _GNU_SOURCE
 #include <errno.h>
 #include <limits.h>
+#include <pthread.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <sched.h>
@@ -55,6 +56,7 @@
 #define CMD_FORCE 2
 #define CMD_SPEED 3
 #define CMD_ENABLE 4
+#define CMD_MODE 5     /* 손가락 동작 모드(0x2000:1B~20) — OP 중에 SDO 스레드가 쓴다 · -1 = 그대로 */
 /* 입력 · 출력 PDO 안 위치 (매뉴얼 표 50) */
 #define IN_ANGLE 6
 #define OUT_ENABLE 0
@@ -123,6 +125,8 @@ static void write_outputs(const ctl_t *c, int16_t *out) {
   }
 }
 
+static void request_modes(const int32_t v[6]);
+
 static void apply_cmd(ctl_t *c, const cmd_msg *m, const int16_t *in) {
   switch (m->kind) {
     case CMD_ANGLE:
@@ -142,6 +146,9 @@ static void apply_cmd(ctl_t *c, const cmd_msg *m, const int16_t *in) {
       break;
     case CMD_ENABLE:
       c->enable_value = m->v[0];
+      break;
+    case CMD_MODE:
+      request_modes(m->v);
       break;
     default:
       break;
@@ -293,6 +300,77 @@ static int sdo_setup(int clear_error, const int cur[6], const int mode[6], int f
   return bad ? -1 : 0;
 }
 
+/* -- 실행 중 손가락 모드 전환 (10.06: 빈 공간 = 모드 0 위치, 쥐는 동안 = 모드 1 힘 폐루프) ---------- *
+ * SDO 는 메일박스로 수 ms 걸려 1 kHz 루프를 막으면 안 되므로 따로 스레드가 쓴다(SOEM 포트는 송수신 ·
+ * 인덱스 뮤텍스로 보호된다). 결과는 "[master] MODE {json}" 한 줄 — 노드가 /hand_<s>/finger_mode 로 낸다. */
+typedef struct {
+  pthread_mutex_t mu;
+  pthread_cond_t cv;
+  int pending[6], have, quit;
+  int applied[6];
+} mode_box_t;
+static mode_box_t g_mode = {PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, {-1, -1, -1, -1, -1, -1}, 0, 0,
+                            {-1, -1, -1, -1, -1, -1}};
+
+static void print_modes(const int v[6], double ms, int ok) {
+  char line[160];
+  int k = snprintf(line, sizeof(line), "{");
+  k += json6(line + k, sizeof(line) - k, "finger_mode", v);
+  snprintf(line + k, sizeof(line) - k, ", \"ms\": %.1f, \"ok\": %s}", ms, ok ? "true" : "false");
+  printf("[master] MODE %s\n", line);
+}
+
+static void *mode_worker(void *arg) {
+  (void)arg;
+  for (;;) {
+    int want[6];
+    pthread_mutex_lock(&g_mode.mu);
+    while (!g_mode.have && !g_mode.quit) pthread_cond_wait(&g_mode.cv, &g_mode.mu);
+    if (g_mode.quit) { pthread_mutex_unlock(&g_mode.mu); return NULL; }
+    memcpy(want, g_mode.pending, sizeof(want));
+    g_mode.have = 0;
+    for (int i = 0; i < 6; i++) g_mode.pending[i] = -1;
+    pthread_mutex_unlock(&g_mode.mu);
+    uint64_t t0 = mono_ns();
+    int ok = 1, now[6];
+    for (int i = 0; i < 6; i++) {
+      if (want[i] < 0) continue;
+      if (!sdo_write16((uint8)(SDO_FINGER_MODE + i), want[i])) ok = 0;
+    }
+    for (int i = 0; i < 6; i++) {
+      sdo_read16((uint8)(SDO_FINGER_MODE + i), &now[i]);
+      if (want[i] >= 0 && now[i] != want[i]) ok = 0;
+    }
+    drain_ec_errors();
+    pthread_mutex_lock(&g_mode.mu);
+    memcpy(g_mode.applied, now, sizeof(now));
+    pthread_mutex_unlock(&g_mode.mu);
+    print_modes(now, (mono_ns() - t0) / 1e6, ok);
+  }
+}
+
+static pthread_t g_mode_thread;
+static int g_mode_thread_ok = 0;
+
+static void stop_mode_worker(void) {
+  if (!g_mode_thread_ok) return;
+  pthread_mutex_lock(&g_mode.mu);
+  g_mode.quit = 1;
+  pthread_cond_signal(&g_mode.cv);
+  pthread_mutex_unlock(&g_mode.mu);
+  pthread_join(g_mode_thread, NULL);   /* SDO 가 진행 중이면 그 한 번(≤ 수 ms, 최악 EC_TIMEOUTRXM)을 마친다 */
+  g_mode_thread_ok = 0;
+}
+
+static void request_modes(const int32_t v[6]) {
+  pthread_mutex_lock(&g_mode.mu);
+  for (int i = 0; i < 6; i++)
+    if (v[i] >= 0 && v[i] <= 2) g_mode.pending[i] = v[i];   /* 몰린 요청은 합쳐 쓴다 */
+  g_mode.have = 1;
+  pthread_cond_signal(&g_mode.cv);
+  pthread_mutex_unlock(&g_mode.mu);
+}
+
 static void usage(const char *p) {
   fprintf(stderr, "usage: %s --ifname IF --master-sock P --node-sock P [--hz 1000] [--state-hz 100] [--speed 2000] "
                   "[--force 600] [--enable-value 1] [--hb-timeout-ms 500] [--no-op] [--op-enable] [--sync-type N] [--op-timeout-ms 3000] [--hz-op 1000] "
@@ -370,6 +448,8 @@ int main(int argc, char **argv) {
     printf("[master] sync type %d 쓰기 1C32 %s · 1C33 %s\n", sync_type, w1 > 0 ? "ok" : "실패", w2 > 0 ? "ok" : "실패");
   }
   if (sdo_setup(clear_error, current_limit, finger_mode, force_calib) != 0) goto out_ec;   /* PREOP: OP 전에 손 보호 설정 */
+  g_mode_thread_ok = pthread_create(&g_mode_thread, NULL, mode_worker, NULL) == 0;
+  if (!g_mode_thread_ok) printf("[master] ⚠ 모드 전환 스레드를 못 띄움 — 실행 중 모드 전환 불가\n");
   ec_config_map(&IOmap);
   ec_configdc();   /* SOEM simple_test 와 같은 순서(매뉴얼: DC 동기 모드는 없다 — SYNC 는 켜지 않는다) */
   if (ec_slave[1].Obytes != N_OUT * 2 || ec_slave[1].Ibytes != N_IN * 2) {
@@ -433,7 +513,13 @@ int main(int argc, char **argv) {
       printf("[master] 노드 소식 3 s 없음 — 끝낸다\n");
       g_stop = 1;
     }
-    if (g_stop && stop_left < 0) { stop_left = 50; c.commanded = 0; printf("[master] 정지 — hold 후 INIT\n"); }
+    if (g_stop && stop_left < 0) {
+      stop_left = 50;
+      c.commanded = 0;
+      static const int32_t all_position[6] = {0, 0, 0, 0, 0, 0};
+      request_modes(all_position);   /* 힘 폐루프로 쥔 손가락도 위치 모드(목표 = 지금 각도)로 두고 끝낸다 */
+      printf("[master] 정지 — 모드 0 · hold 후 INIT\n");
+    }
     if (!c.commanded) hold(&c, in);
     write_outputs(&c, out);
 
@@ -499,6 +585,7 @@ int main(int argc, char **argv) {
   }
   rc = 0;
 out_init:
+  stop_mode_worker();
   ec_slave[0].state = EC_STATE_INIT;
   ec_writestate(0);
   ec_statecheck(0, EC_STATE_INIT, EC_TIMEOUTSTATE);

@@ -8,6 +8,8 @@
         /hand_<side>/touch_data    (TouchData1 — palm_data 는 3 영역 × (법선 · 접선 · 방향))
         /hand_<side>/ecat_status   (std_msgs/String JSON, 1 Hz — OP · WKC · 왕복 · 오류 · 상태 · 온도)
   구독  /hand_<side>/angle_set (SetAngle1, -1 = 그 축 유지) · force_set (SetForce1) · speed_set (SetSpeed1)
+        · finger_mode_set (std_msgs/Int32MultiArray 6, 0 위치 · 1 힘 폐루프, -1 그대로 — OP 중 SDO)
+  발행  /hand_<side>/finger_mode (Int32MultiArray, 손에서 다시 읽은 모드 · transient local)
 
     python3 deploy/policy_control/policy_control/rh56f1_ecat_node.py --side right            # config/rh56f1_ports.yaml
     python3 deploy/policy_control/policy_control/rh56f1_ecat_node.py --side right --no-op    # SAFE_OP · 상태만(손 무동작)
@@ -133,7 +135,8 @@ def main(argv: list[str] | None = None) -> int:
     margv = E.master_argv(binary, ifname, link.master_sock, link.node_sock, cfg, args.no_op)
 
     import rclpy
-    from std_msgs.msg import String
+    from std_msgs.msg import Int32MultiArray, String
+    from rclpy.qos import DurabilityPolicy, QoSProfile
     from rh56f1_interfaces.msg import (GetAngleAct1, GetCurrentAct1, GetForceAct1, SetAngle1, SetForce1, SetSpeed1,
                                        TouchData1)
 
@@ -148,10 +151,13 @@ def main(argv: list[str] | None = None) -> int:
             "force": node.create_publisher(GetForceAct1, f"{ns}/force_actual", 10),
             "current": node.create_publisher(GetCurrentAct1, f"{ns}/current_actual", 10),
             "touch": node.create_publisher(TouchData1, f"{ns}/touch_data", 10),
-            "status": node.create_publisher(String, f"{ns}/ecat_status", 10)}
+            "status": node.create_publisher(String, f"{ns}/ecat_status", 10),
+            # 손가락 동작 모드(손에서 다시 읽은 값) — 바뀔 때마다 · 늦게 붙은 구독자도 마지막 값을 받는다
+            "mode": node.create_publisher(Int32MultiArray, f"{ns}/finger_mode",
+                                          QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))}
     book = E.CommandBook()
     lock = threading.Lock()
-    last = {"state": None, "status_t": 0.0, "count": 0, "sdo": None}
+    last = {"state": None, "status_t": 0.0, "count": 0, "sdo": None, "mode": None}
 
     from builtin_interfaces.msg import Time
 
@@ -182,13 +188,14 @@ def main(argv: list[str] | None = None) -> int:
         if now - last["status_t"] >= 1.0:
             last["status_t"] = now
             d = s.summary()
-            d.update(ifname=ifname, no_op=args.no_op, states=last["count"], send_errors=link.send_errors, sdo=last["sdo"])
+            d.update(ifname=ifname, no_op=args.no_op, states=last["count"], send_errors=link.send_errors, sdo=last["sdo"],
+                     finger_mode=last["mode"])
             pubs["status"].publish(String(data=json.dumps(d, ensure_ascii=False)))
 
     def on_cmd(kind: str, values) -> None:
         vals = list(values)
         try:
-            payload = {"angle": book.angle, "force": book.force, "speed": book.speed}[kind](vals)
+            payload = {"angle": book.angle, "force": book.force, "speed": book.speed, "mode": book.mode}[kind](vals)
         except E.EcatError as e:
             log.error(f"{kind}_set 거부: {e}")
             return
@@ -200,6 +207,13 @@ def main(argv: list[str] | None = None) -> int:
     node.create_subscription(SetAngle1, f"{ns}/angle_set", lambda m: on_cmd("angle", m.joint_values), 10)
     node.create_subscription(SetForce1, f"{ns}/force_set", lambda m: on_cmd("force", m.joint_values), 10)
     node.create_subscription(SetSpeed1, f"{ns}/speed_set", lambda m: on_cmd("speed", m.joint_values), 10)
+    node.create_subscription(Int32MultiArray, f"{ns}/finger_mode_set", lambda m: on_cmd("mode", m.data), 10)
+
+    def publish_mode(modes) -> None:
+        if not modes or any(v is None for v in modes):
+            return
+        last["mode"] = [int(v) for v in modes]
+        pubs["mode"].publish(Int32MultiArray(data=last["mode"]))
 
     def heartbeat() -> None:
         with lock:
@@ -211,8 +225,12 @@ def main(argv: list[str] | None = None) -> int:
     def pump_log() -> None:
         for line in link.proc.stdout:          # type: ignore[union-attr]
             line = line.rstrip()
+            mode = E.parse_mode_line(line)
+            if mode is not None:
+                publish_mode(mode.get("finger_mode"))
             sdo = E.parse_sdo_line(line)
             if sdo is not None:
+                publish_mode(sdo.get("finger_mode"))
                 last["sdo"] = sdo                # ecat_status 에 같이 낸다(손 보호 설정 확인)
             # rclpy 는 같은 호출 자리에서 심각도를 바꾸면 ValueError — 자리를 나눈다
             if "✗" in line or "⚠" in line:

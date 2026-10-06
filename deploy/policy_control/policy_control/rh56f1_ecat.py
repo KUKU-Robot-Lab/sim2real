@@ -16,7 +16,7 @@ from typing import Sequence
 N_IN, N_OUT, N = 76, 19, 6
 STATE_MAGIC = 0x31534852   # "RHS1"
 CMD_MAGIC = 0x31434852     # "RHC1"
-CMD_HEARTBEAT, CMD_ANGLE, CMD_FORCE, CMD_SPEED, CMD_ENABLE = 0, 1, 2, 3, 4
+CMD_HEARTBEAT, CMD_ANGLE, CMD_FORCE, CMD_SPEED, CMD_ENABLE, CMD_MODE = 0, 1, 2, 3, 4, 5
 FLAG_OP, FLAG_ENABLED, FLAG_COMMANDED, FLAG_NODE_OK, FLAG_STOPPING = 0x01, 0x02, 0x04, 0x08, 0x10
 
 _STATE = struct.Struct(f"<IIQHHHHIHH{N_IN}h{N_OUT}h")
@@ -192,6 +192,15 @@ class CommandBook:
         return pack_cmd(CMD_SPEED, clip_limit(values, SPEED_MAX))
 
     @staticmethod
+    def mode(values: Sequence[int]) -> bytes:
+        """손가락 동작 모드(0 위치 · 1 힘 폐루프), -1 = 그대로. 마스터의 SDO 스레드가 OP 중에 쓴다."""
+        if len(values) != N:
+            raise EcatError(f"모드 {len(values)} 개 ≠ {N}")
+        if not all(int(v) in (-1, 0, 1, 2) for v in values):
+            raise EcatError(f"모드는 -1 · 0 · 1 · 2: {list(values)}")
+        return pack_cmd(CMD_MODE, [int(v) for v in values])
+
+    @staticmethod
     def heartbeat() -> bytes:
         return pack_cmd(CMD_HEARTBEAT)
 
@@ -234,6 +243,21 @@ def protection_argv(cfg: dict) -> list[str]:
         vals = _six(cfg["finger_mode"], "finger_mode", lambda v: v in FINGER_MODES)
         argv += ["--finger-mode", ",".join(map(str, vals))]
     return argv
+
+
+MODE_PREFIX = "[master] MODE "
+
+
+def parse_mode_line(line: str) -> dict | None:
+    """마스터가 모드를 쓴 뒤 찍는 한 줄 → {"finger_mode": [6], "ms": .., "ok": ..} (아니면 None)."""
+    import json
+    i = line.find(MODE_PREFIX + "{")
+    if i < 0:
+        return None
+    try:
+        return json.loads(line[i + len(MODE_PREFIX):])
+    except ValueError:
+        return None
 
 
 SDO_PREFIX = "[master] SDO "
