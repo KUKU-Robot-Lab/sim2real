@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 INC=(-I"$SOEM/soem" -I"$SOEM/osal" -I"$SOEM/osal/linux" -I"$SOEM/oshw/linux")
 for t in ecat_rtt ecat_rh56f1 rh56f1_ecat_master; do
   # 다시 빌드하면 파일이 바뀌어 setcap 이 풀린다 — 내용이 같으면 건드리지 않는다
-  gcc -O2 -Wall -o "$t.new" "$t.c" "${INC[@]}" "$SOEM/build/libsoem.a" -lpthread -lrt
+  gcc -O2 -Wall -o "$t.new" "$t.c" "${INC[@]}" "$SOEM/build/libsoem.a" -lpthread -lrt -lm
   if [ -f "$t" ] && cmp -s "$t" "$t.new"; then
     rm "$t.new"
     if getcap "$t" | grep -q cap_net_raw; then echo "$t 그대로(setcap 있음)"; else echo "$t 그대로 — ★setcap 없음: sudo setcap cap_net_raw,cap_net_admin=ep $(pwd)/$t"; fi

@@ -8,6 +8,7 @@
  * 레지스터는 닫을수록 작아진다(네 손가락 1740 → 900, 엄지 굽힘 1350 → 1100). 축마다 매 주기:
  *   f   = max(힘 - 쉼 값 - deadband, 0)            (손끝 촉각이 조용하면 / proximal_scale: 1 번 링크 접촉)
  *   y  += a (f / k + max(f - f_max, 0) / k_over - y),   a = dt / (tau + dt)   (tau: 접촉 중 · 풀린 뒤)
+ *         단 접촉 중 |f - k y| < hold_band 면 y 그대로(손이 3~5 칸씩 움직여 생기는 출렁임을 막는다)
  *   cmd = 목표 + y                                       (y ≥ 0: 힘만큼 연다)
  *   접촉 중(f > 0) cmd ≥ 실제 각도 - lead (1 - f / f_max)  (빠른 접근이 굳은 물체에 깊이 박히지 않게)
  * 빈 공간에서는 f ≈ 0 이라 목표를 그대로 따른다. 접촉하면 쥐는 힘 ≈ k x (목표가 접촉점을 지난 칸 수).
@@ -16,6 +17,7 @@
  */
 #ifndef RH56F1_ADMITTANCE_H
 #define RH56F1_ADMITTANCE_H
+#include <math.h>
 
 typedef struct {
   double k_g_per_reg;      /* 쥐는 힘 / 목표가 접촉점을 지난 칸 수 */
@@ -28,6 +30,7 @@ typedef struct {
   double max_offset_reg;
   double proximal_scale;   /* 0~1, 손끝 촉각 < tip_on 이면 f /= proximal_scale */
   double tip_on_counts;    /* 손끝 법선 촉각(0.01 N 단위) */
+  double hold_band_g;      /* |f - k y| 가 이 안이면 y 를 그대로 둔다(손 위치 분해능 사이를 오가며 출렁이지 않게) */
   int joints[6];           /* 슬롯 순서(새끼 · 약지 · 중지 · 검지 · 엄지 굽힘 · 엄지 회전) — 1 = 이 제어를 쓸 수 있다 */
 } adm_params_t;
 
@@ -49,6 +52,7 @@ static const adm_params_t ADM_DEFAULTS = {
     .max_offset_reg = 880.0,      /* 손가락 전 범위 */
     .proximal_scale = 0.7,
     .tip_on_counts = 20.0,        /* 0.2 N */
+    .hold_band_g = 100.0,         /* 10.06 오른손 검지 + 컵: 손이 3~5 칸씩 움직여 80 <-> 300 g 를 오갔다 */
     .joints = {1, 1, 1, 1, 1, 0}, /* 엄지 회전: 하중 때 힘 부호가 반대(10.06) — 위치 제어만 */
 };
 
@@ -60,6 +64,7 @@ static inline double adm_step(const adm_params_t *p, adm_state_t *s, int i, doub
   if (f > 0 && tip >= 0 && tip < p->tip_on_counts) f /= p->proximal_scale;
   double goal = f / p->k_g_per_reg + (f > p->f_max_g ? (f - p->f_max_g) / p->k_over_g_per_reg : 0.0);
   if (goal > p->max_offset_reg) goal = p->max_offset_reg;
+  if (f > 0 && fabs(f - p->k_g_per_reg * s->y[i]) < p->hold_band_g && f <= p->f_max_g) goal = s->y[i];
   double tau = f > 0 ? p->tau_contact_s : p->tau_release_s;
   double a = tau <= 0 ? 1.0 : dt / (tau + dt);
   s->y[i] += a * (goal - s->y[i]);

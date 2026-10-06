@@ -290,7 +290,7 @@ def test_admittance_settles_at_stiffness_times_penetration():
         forces.append(force)
     tail = forces[-500:]
     assert max(tail) - min(tail) <= 100.0     # 1 칸 이내
-    assert 250 < tail[-1] < 400                # k 3.6 g/칸 x 100 칸 ≈ 360 g(굳은 접촉과 직렬)
+    assert 250 < tail[-1] < 500                # k 3.6 g/칸 x 100 칸 ≈ 360 g(굳은 접촉과 직렬) + 붙잡는 띠(100 g)까지
 
 
 def test_angle_target_is_a_separate_input_and_angle_set_is_unchanged():
@@ -302,4 +302,4 @@ def test_angle_target_is_a_separate_input_and_angle_set_is_unchanged():
     assert "#define CMD_ANGLE_ADM 6" in src and "if (!c->adm_on[i]) { c->sent[i] = c->target[i]; continue; }" in src
     cfg = yaml.safe_load((PC / "config" / "rh56f1_ports.yaml").read_text())["ethercat"]
     argv = E.master_argv("/m", "eth0", "/a", "/b", cfg, no_op=False)
-    assert argv[argv.index("--adm") + 1].endswith(",1,1,1,1,1,0")
+    assert argv[argv.index("--adm") + 1].endswith(",100,1,1,1,1,1,0")

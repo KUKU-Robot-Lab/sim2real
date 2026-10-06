@@ -405,21 +405,21 @@ static void request_modes(const int32_t v[6]) {
 }
 
 static int parse_adm(const char *txt, adm_params_t *p) {
-  double v[16];
+  double v[17];
   int n = 0;
   const char *q = txt;
-  while (*q && n < 16) {
+  while (*q && n < 17) {
     char *end;
     v[n++] = strtod(q, &end);
     if (end == q) return 0;
     if (*end == ',') q = end + 1; else if (*end == '\0') q = end; else return 0;
   }
-  if (n != 16 || *q) return 0;
-  adm_params_t a = {v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], {0}};
-  for (int i = 0; i < 6; i++) a.joints[i] = v[10 + i] != 0;
+  if (n != 17 || *q) return 0;
+  adm_params_t a = {v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], {0}};
+  for (int i = 0; i < 6; i++) a.joints[i] = v[11 + i] != 0;
   if (a.k_g_per_reg <= 0 || a.k_over_g_per_reg <= 0 || a.f_max_g <= 0 || a.max_offset_reg <= 0 ||
       a.deadband_g < 0 || a.tau_contact_s < 0 || a.tau_release_s < 0 || a.lead_reg < 0 ||
-      a.proximal_scale <= 0 || a.proximal_scale > 1) return 0;
+      a.proximal_scale <= 0 || a.proximal_scale > 1 || a.hold_band_g < 0) return 0;
   *p = a;
   return 1;
 }
@@ -427,7 +427,7 @@ static int parse_adm(const char *txt, adm_params_t *p) {
 static void usage(const char *p) {
   fprintf(stderr, "usage: %s --ifname IF --master-sock P --node-sock P [--hz 1000] [--state-hz 100] [--speed 2000] "
                   "[--force 600] [--enable-value 1] [--hb-timeout-ms 500] [--no-op] [--op-enable] [--sync-type N] [--op-timeout-ms 3000] [--hz-op 1000] "
-                  "[--clear-error] [--current-limit mA[,x6]] [--finger-mode m[,x6]] [--force-calibrate] [--adm 16 values]\n", p);
+                  "[--clear-error] [--current-limit mA[,x6]] [--finger-mode m[,x6]] [--force-calibrate] [--adm 17 values]\n", p);
 }
 
 int main(int argc, char **argv) {
@@ -465,7 +465,7 @@ int main(int argc, char **argv) {
       case 'K': force_calib = 1; break;
       case 'A':
         if (!parse_adm(optarg, &g_adm)) {
-          fprintf(stderr, "--adm: 숫자 10 개(k deadband tau_c tau_r f_max k_over lead max_off prox tip_on) + joints 6 개\n");
+          fprintf(stderr, "--adm: 숫자 11 개(k deadband tau_c tau_r f_max k_over lead max_off prox tip_on hold_band) + joints 6 개\n");
           return 2;
         }
         break;
@@ -510,9 +510,10 @@ int main(int argc, char **argv) {
   if (sdo_setup(clear_error, current_limit, finger_mode, force_calib) != 0) goto out_ec;   /* PREOP: OP 전에 손 보호 설정 */
   printf("[master] ADM {\"k_g_per_reg\": %g, \"deadband_g\": %g, \"tau_contact_s\": %g, \"tau_release_s\": %g, "
          "\"f_max_g\": %g, \"k_over_g_per_reg\": %g, \"lead_reg\": %g, \"max_offset_reg\": %g, \"proximal_scale\": %g, "
-         "\"tip_on_counts\": %g, \"joints\": [%d, %d, %d, %d, %d, %d]} — angle_target 축에만\n",
+         "\"tip_on_counts\": %g, \"hold_band_g\": %g, \"joints\": [%d, %d, %d, %d, %d, %d]} — angle_target 축에만\n",
          g_adm.k_g_per_reg, g_adm.deadband_g, g_adm.tau_contact_s, g_adm.tau_release_s, g_adm.f_max_g,
          g_adm.k_over_g_per_reg, g_adm.lead_reg, g_adm.max_offset_reg, g_adm.proximal_scale, g_adm.tip_on_counts,
+         g_adm.hold_band_g,
          g_adm.joints[0], g_adm.joints[1], g_adm.joints[2], g_adm.joints[3], g_adm.joints[4], g_adm.joints[5]);
   g_mode_thread_ok = pthread_create(&g_mode_thread, NULL, mode_worker, NULL) == 0;
   if (!g_mode_thread_ok) printf("[master] ⚠ 모드 전환 스레드를 못 띄움 — 실행 중 모드 전환 불가\n");
