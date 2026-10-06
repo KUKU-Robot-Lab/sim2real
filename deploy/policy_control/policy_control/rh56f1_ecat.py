@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Sequence
+
+import yaml
 
 N_IN, N_OUT, N = 76, 19, 6
 STATE_MAGIC = 0x31534852   # "RHS1"
@@ -236,6 +239,39 @@ def _six(value, name: str, valid) -> list[int]:
     return vals
 
 
+RL_WS = Path(__file__).resolve().parents[4]   # sim2real 의 부모(rl_ws) — robot_control 이 옆에 있다
+
+
+def _hand_module():
+    """robot_control.rh56f1_hand(정본 어드민턴스 · 계약 읽기) — 설치 없이 rl_ws/robot_control/src 에서."""
+    import sys
+    src = str(RL_WS / "robot_control" / "src")
+    if src not in sys.path:
+        sys.path.insert(0, src)
+    try:
+        from robot_control import rh56f1_hand
+    except ImportError as e:
+        raise EcatError(f"robot_control.rh56f1_hand 를 못 읽는다({src}): {e}") from e
+    return rh56f1_hand
+
+
+def with_contract(cfg: dict) -> dict:
+    """ethercat 블록 + 정본 계약(robot_control components/rh56f1.yaml)의 protection · control.admittance.
+    ethercat 블록에 같은 키가 있으면 그 값이 이긴다(드라이버 --current-limit · --finger-mode 실험 포함)."""
+    rel = cfg.get("contract")
+    if not rel:
+        return dict(cfg)
+    path = RL_WS / str(rel)
+    if not path.is_file():
+        raise EcatError(f"손 계약 {path} 이 없다 — robot_control 을 pull 했는지")
+    hand = _hand_module()
+    prot = hand.load_protection(path)
+    merged = {k: prot[k] for k in ("clear_error", "current_limit_ma", "finger_mode") if k in prot}
+    merged["admittance"] = {"enabled": True, **(yaml.safe_load(path.read_text()).get("control") or {}).get("admittance", {})}
+    merged.update({k: v for k, v in cfg.items() if k != "contract"})
+    return merged
+
+
 def protection_argv(cfg: dict) -> list[str]:
     """손 보호 설정(SDO 0x2000, 마스터가 OP 전에 쓰고 다시 읽어 확인) — 10.06 컵 쥐기 뒤 손 먹통 대책."""
     argv: list[str] = []
@@ -299,12 +335,12 @@ def master_argv(binary: str, ifname: str, master_sock: str, node_sock: str, cfg:
         argv += ["--hz-op", str(float(cfg["cycle_hz_op"]))]
     if int(cfg.get("sync_type", -1)) >= 0:
         argv += ["--sync-type", str(int(cfg["sync_type"]))]
+    cfg = with_contract(cfg)
     argv += protection_argv(cfg)
     adm = cfg.get("admittance")
     if adm is not None and bool(adm.get("enabled", True)):
-        from policy_control.rh56f1_admittance import AdmParams
         try:
-            argv += ["--adm", AdmParams.from_cfg(adm).argv()]
+            argv += ["--adm", _hand_module().AdmParams.from_cfg(adm).argv()]
         except ValueError as e:
             raise EcatError(str(e)) from e
     if not 50 <= float(cfg.get("cycle_hz", 1000)) <= 4000:

@@ -248,7 +248,8 @@ def test_admittance_python_reference_matches_the_master_c(tmp_path):
     import shutil
     import subprocess
 
-    from policy_control.rh56f1_admittance import AdmParams, AdmState, adm_step
+    hand = E._hand_module()   # 정본: robot_control.rh56f1_hand
+    AdmParams, AdmState, adm_step = hand.AdmParams, hand.AdmState, hand.adm_step
 
     if shutil.which("gcc") is None:
         pytest.skip("gcc 없음")
@@ -267,7 +268,8 @@ def test_admittance_python_reference_matches_the_master_c(tmp_path):
                      rng.choice([-1, 0, 10, 300])))
     out = subprocess.run([str(exe)], input="\n".join(f"{i} {t} {a} {f} {tip}" for i, t, a, f, tip in rows),
                          capture_output=True, text=True, check=True).stdout.split("\n")
-    p, s = AdmParams(), AdmState()
+    p, s = hand.load_admittance(), AdmState()   # 계약 값 = C 기본값이어야 한다
+    assert p == AdmParams()
     for (i, t, a, f, tip), line in zip(rows, out):
         cmd = adm_step(p, s, i, 0.002, t, a, f, tip)
         c_cmd, c_y = (float(v) for v in line.split())
@@ -276,7 +278,8 @@ def test_admittance_python_reference_matches_the_master_c(tmp_path):
 
 def test_admittance_settles_at_stiffness_times_penetration():
     """굳은 접촉(1 칸 = 100 g, 10.06 컵)에서도 출렁이지 않고, 쥐는 힘 ≈ k x 목표가 접촉점을 지난 칸."""
-    from policy_control.rh56f1_admittance import AdmParams, AdmState, adm_step
+    hand = E._hand_module()
+    AdmParams, AdmState, adm_step = hand.AdmParams, hand.AdmState, hand.adm_step
 
     p, s = AdmParams(), AdmState()
     contact, target, actual, forces = 1400.0, 1300.0, 1500.0, []

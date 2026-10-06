@@ -2,7 +2,8 @@
  *
  * 기존 위치 제어(/hand_<s>/angle_set → CMD_ANGLE)는 그대로다. 이 제어는 따로 연 입력
  * /hand_<s>/angle_target(CMD_ANGLE_ADM)으로 받은 축에만 걸린다 — 원격조작 · 정책이 같은 로직을 쓴다.
- * 같은 식의 Python 참조 구현: deploy/policy_control/policy_control/rh56f1_admittance.py (테스트가 숫자를 대조).
+ * 정본 계약 · Python 참조 구현: robot_control components/rh56f1.yaml (control.admittance) · robot_control.rh56f1_hand
+ * — 마스터는 시작 때 계약 값을 --adm 으로 받는다. 아래 ADM_DEFAULTS 는 계약과 같아야 한다(sim2real 테스트가 대조).
  *
  * 레지스터는 닫을수록 작아진다(네 손가락 1740 → 900, 엄지 굽힘 1350 → 1100). 축마다 매 주기:
  *   f   = max(힘 - 쉼 값 - deadband, 0)            (손끝 촉각이 조용하면 / proximal_scale: 1 번 링크 접촉)
