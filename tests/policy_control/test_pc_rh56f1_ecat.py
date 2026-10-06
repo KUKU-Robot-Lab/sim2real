@@ -217,7 +217,7 @@ def test_master_reports_the_hand_protection_it_read():
 
 def test_master_source_refuses_op_without_the_requested_protection():
     src = MASTER_C.read_text()
-    assert "if (sdo_setup(clear_error, current_limit, finger_mode) != 0) goto out_ec;" in src
+    assert "if (sdo_setup(clear_error, current_limit, finger_mode, force_calib) != 0) goto out_ec;" in src
     assert src.index("sdo_setup(clear_error") < src.index("ec_config_map(&IOmap);")  # PREOP, OP 전
     for sub in ("SDO_CLEAR_ERROR 0x03", "SDO_CURRENT_LIMIT 0x07", "SDO_FINGER_MODE 0x1B"):
         assert sub in src

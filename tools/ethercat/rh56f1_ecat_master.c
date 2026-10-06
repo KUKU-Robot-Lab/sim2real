@@ -18,6 +18,7 @@
  *      --clear-error           0x2000:03 = 1 (막힘 · 과전류 · 이상 · 통신 고장을 지운다. 과열은 식어야 풀린다)
  *      --current-limit a,..,f  0x2000:07~0C 손가락별 전류 보호(mA). 넘으면 손이 그 손가락을 세운다(상태 5)
  *      --finger-mode a,..,f    0x2000:1B~20 0 속도 · 힘 보호 · 1 힘 폐루프 · 2 임피던스
+ *      --force-calibrate       0x2000:06 = 1 힘 센서 영점 보정(빈손, 6 s 동안 손가락이 움직인다)
  *    값 순서는 PDO 와 같다(새끼 · 약지 · 중지 · 검지 · 엄지 굽힘 · 엄지 회전), -1 = 그 축은 쓰지 않는다.
  *    쓰고 나면 다시 읽어 같아야 OP 로 간다(다르거나 못 쓰면 끝낸다 — 보호 없이 손을 움직이지 않는다).
  *    쓰든 안 쓰든 시작마다 읽어 한 줄로 찍는다: "[master] SDO {json}" (노드가 ecat_status 의 sdo 로 낸다).
@@ -195,6 +196,7 @@ static int open_sock(const char *path) {
 /* -- 손 보호 설정 (SDO 0x2000) ---------------------------------------------------------------- */
 #define SDO_IDX 0x2000
 #define SDO_CLEAR_ERROR 0x03
+#define SDO_FORCE_CALIB 0x06    /* 1 = 손 힘 센서 영점 보정(6 s, 손가락을 폈다 굽힌다 · 빈손이어야 한다) */
 #define SDO_CURRENT_LIMIT 0x07   /* ~0x0C, mA */
 #define SDO_DEFAULT_SPEED 0x0D   /* ~0x12 */
 #define SDO_DEFAULT_FORCE 0x13   /* ~0x18, g */
@@ -244,7 +246,7 @@ static int json6(char *buf, size_t n, const char *key, const int v[6]) {
 }
 
 /* 쓰고(요청한 것만) 다시 읽어 찍는다. 요청한 값이 그대로 읽히지 않으면 -1 */
-static int sdo_setup(int clear_error, const int cur[6], const int mode[6]) {
+static int sdo_setup(int clear_error, const int cur[6], const int mode[6], int force_calib) {
   int bad = 0;
   /* ★10.06 첫 실기: ec_config_init 직후에는 손이 아직 PREOP 로 넘어가는 중이라 메일박스가 안 열려
    * SDO 가 모두 바로 실패했다(SOEM 은 그때 오류도 남기지 않는다). PREOP 를 기다린 뒤 쓴다. */
@@ -256,6 +258,12 @@ static int sdo_setup(int clear_error, const int cur[6], const int mode[6]) {
     int ok = sdo_write16(SDO_CLEAR_ERROR, 1);
     printf("[master] 오류 지우기(0x2000:03) %s\n", ok ? "ok" : "✗ 실패");
     bad |= !ok;
+  }
+  if (force_calib) {   /* 매뉴얼 2.5.6: 빈손에서 6 s — 다섯 손가락을 펴고, 네 손가락 굽힘 · 폄, 엄지 굽힘 · 폄 */
+    int ok = sdo_write16(SDO_FORCE_CALIB, 1);
+    printf("[master] 힘 센서 영점 보정(0x2000:06) %s — 7 s 기다린다(손이 움직인다)\n", ok ? "시작" : "✗ 실패");
+    bad |= !ok;
+    if (ok) for (int k = 0; k < 70 && !g_stop; k++) usleep(100000);
   }
   for (int i = 0; i < 6; i++) {
     if (cur[i] >= 0 && !sdo_write16((uint8)(SDO_CURRENT_LIMIT + i), cur[i])) { printf("[master] ✗ 전류 한계 %d 쓰기 실패\n", i); bad = 1; }
@@ -288,7 +296,7 @@ static int sdo_setup(int clear_error, const int cur[6], const int mode[6]) {
 static void usage(const char *p) {
   fprintf(stderr, "usage: %s --ifname IF --master-sock P --node-sock P [--hz 1000] [--state-hz 100] [--speed 2000] "
                   "[--force 600] [--enable-value 1] [--hb-timeout-ms 500] [--no-op] [--op-enable] [--sync-type N] [--op-timeout-ms 3000] [--hz-op 1000] "
-                  "[--clear-error] [--current-limit mA[,x6]] [--finger-mode m[,x6]]\n", p);
+                  "[--clear-error] [--current-limit mA[,x6]] [--finger-mode m[,x6]] [--force-calibrate]\n", p);
 }
 
 int main(int argc, char **argv) {
@@ -296,14 +304,14 @@ int main(int argc, char **argv) {
   double hz = 1000, state_hz = 100;
   int speed = 2000, force = 600, enable_value = 1, hb_timeout_ms = 500, no_op = 0;
   int op_enable = 0, sync_type = -1, op_timeout_ms = 3000;   /* OP 실험 손잡이(기본 끔) */
-  int clear_error = 0, current_limit[6] = {-1, -1, -1, -1, -1, -1}, finger_mode[6] = {-1, -1, -1, -1, -1, -1};
+  int force_calib = 0, clear_error = 0, current_limit[6] = {-1, -1, -1, -1, -1, -1}, finger_mode[6] = {-1, -1, -1, -1, -1, -1};
   double hz_op = 0;   /* >0: OP 에 들어간 뒤 이 주기로(10.03 — 1 kHz 로는 OP 전이가 안 되지만 들어간 뒤는 확인 대상) */
   static struct option opts[] = {{"ifname", 1, 0, 'i'}, {"master-sock", 1, 0, 'm'}, {"node-sock", 1, 0, 'n'},
                                  {"hz", 1, 0, 'h'},     {"state-hz", 1, 0, 's'},    {"speed", 1, 0, 'v'},
                                  {"force", 1, 0, 'f'},  {"enable-value", 1, 0, 'e'}, {"hb-timeout-ms", 1, 0, 't'},
                                  {"no-op", 0, 0, 'o'},  {"op-enable", 0, 0, 'E'}, {"sync-type", 1, 0, 'y'},
                                  {"op-timeout-ms", 1, 0, 'T'}, {"hz-op", 1, 0, 'H'},
-                                 {"clear-error", 0, 0, 'C'}, {"current-limit", 1, 0, 'L'}, {"finger-mode", 1, 0, 'M'},
+                                 {"clear-error", 0, 0, 'C'}, {"force-calibrate", 0, 0, 'K'}, {"current-limit", 1, 0, 'L'}, {"finger-mode", 1, 0, 'M'},
                                  {0, 0, 0, 0}};
   for (int c; (c = getopt_long(argc, argv, "", opts, NULL)) != -1;) {
     switch (c) {
@@ -322,6 +330,7 @@ int main(int argc, char **argv) {
       case 'T': op_timeout_ms = atoi(optarg); break;
       case 'H': hz_op = atof(optarg); break;
       case 'C': clear_error = 1; break;
+      case 'K': force_calib = 1; break;
       case 'L':
         if (!parse6(optarg, CURRENT_LIMIT_MIN, CURRENT_LIMIT_MAX, current_limit)) {
           fprintf(stderr, "--current-limit: %d~%d mA(또는 -1), 하나 또는 여섯 개\n", CURRENT_LIMIT_MIN, CURRENT_LIMIT_MAX);
@@ -360,7 +369,7 @@ int main(int argc, char **argv) {
     int w2 = ec_SDOwrite(1, 0x1C33, 0x01, FALSE, sizeof(v), &v, EC_TIMEOUTRXM);
     printf("[master] sync type %d 쓰기 1C32 %s · 1C33 %s\n", sync_type, w1 > 0 ? "ok" : "실패", w2 > 0 ? "ok" : "실패");
   }
-  if (sdo_setup(clear_error, current_limit, finger_mode) != 0) goto out_ec;   /* PREOP: OP 전에 손 보호 설정 */
+  if (sdo_setup(clear_error, current_limit, finger_mode, force_calib) != 0) goto out_ec;   /* PREOP: OP 전에 손 보호 설정 */
   ec_config_map(&IOmap);
   ec_configdc();   /* SOEM simple_test 와 같은 순서(매뉴얼: DC 동기 모드는 없다 — SYNC 는 켜지 않는다) */
   if (ec_slave[1].Obytes != N_OUT * 2 || ec_slave[1].Ibytes != N_IN * 2) {

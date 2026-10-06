@@ -224,6 +224,8 @@ def protection_argv(cfg: dict) -> list[str]:
     argv: list[str] = []
     if bool(cfg.get("clear_error", False)):
         argv.append("--clear-error")
+    if bool(cfg.get("force_calibrate", False)):   # 빈손에서만 — 6 s 동안 손가락이 움직인다(매뉴얼 2.5.6)
+        argv.append("--force-calibrate")
     if cfg.get("current_limit_ma") is not None:
         lo, hi = CURRENT_LIMIT_RANGE
         vals = _six(cfg["current_limit_ma"], "current_limit_ma", lambda v: lo <= v <= hi)

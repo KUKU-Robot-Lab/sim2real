@@ -110,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--op-enable", action="store_true", help="OP 실험: 명령 전에도 ENABLE_SET 을 켠다(목표 = 지금 각도)")
     ap.add_argument("--sync-type", type=int, default=None, help="OP 실험: 0x1C32/33:01 에 쓸 값(0 free run · 1 SM 동기)")
     ap.add_argument("--current-limit", default=None, help="손 보호: 손가락별 전류 한계 mA(하나 또는 여섯 · -1 안 씀) — 설정 파일을 덮는다")
+    ap.add_argument("--force-calibrate", action="store_true", help="힘 센서 영점 보정(빈손 · 6 s 동안 손가락이 움직인다)")
     ap.add_argument("--finger-mode", default=None, help="손 동작 모드 0 속도 · 힘 보호 · 1 힘 폐루프 · 2 임피던스(하나 또는 여섯)")
     args, _ = ap.parse_known_args(argv)
 
@@ -118,6 +119,8 @@ def main(argv: list[str] | None = None) -> int:
         cfg["op_enable"] = True
     if args.sync_type is not None:
         cfg["sync_type"] = args.sync_type
+    if args.force_calibrate:
+        cfg["force_calibrate"] = True
     for key, txt in (("current_limit_ma", args.current_limit), ("finger_mode", args.finger_mode)):
         if txt is not None:
             vals = [int(v) for v in str(txt).split(",")]

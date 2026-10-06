@@ -67,14 +67,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--op-enable", action="store_true", help="ethercat OP 실험: 명령 전에도 ENABLE_SET 을 켠다")
     ap.add_argument("--sync-type", type=int, default=None, help="ethercat OP 실험: 0x1C32/33:01 값")
     ap.add_argument("--current-limit", default=None, help="ethercat 손 보호: 손가락별 전류 한계 mA(하나 또는 여섯) — 설정 파일을 덮는다")
+    ap.add_argument("--force-calibrate", action="store_true", help="ethercat: 힘 센서 영점 보정(빈손 · 6 s 동안 손가락이 움직인다)")
     ap.add_argument("--finger-mode", default=None, help="ethercat 손 동작 모드 0 · 1 · 2(하나 또는 여섯) — 설정 파일을 덮는다")
     args = ap.parse_args(argv)
     extra = (["--op-enable"] if args.op_enable else []) + (["--sync-type", str(args.sync_type)] if args.sync_type is not None else [])
     # "=" form: values like "-1,-1,-1,1,-1,-1" would read as an option to argparse (10.06)
     extra += ([f"--current-limit={args.current_limit}"] if args.current_limit is not None else [])
     extra += ([f"--finger-mode={args.finger_mode}"] if args.finger_mode is not None else [])
+    extra += (["--force-calibrate"] if args.force_calibrate else [])
     if extra and args.transport == "rs485":
-        raise SystemExit("--op-enable · --sync-type · --current-limit · --finger-mode 는 ethercat 전용")
+        raise SystemExit("--op-enable · --sync-type · --current-limit · --finger-mode · --force-calibrate 는 ethercat 전용")
     cmd = argv_for(yaml.safe_load(Path(args.ports).read_text()) or {}, args.side, args.ports, args.no_op,
                    transport=args.transport, extra=extra)
     print(" ".join(cmd), flush=True)
