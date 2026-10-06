@@ -70,8 +70,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--finger-mode", default=None, help="ethercat 손 동작 모드 0 · 1 · 2(하나 또는 여섯) — 설정 파일을 덮는다")
     args = ap.parse_args(argv)
     extra = (["--op-enable"] if args.op_enable else []) + (["--sync-type", str(args.sync_type)] if args.sync_type is not None else [])
-    extra += (["--current-limit", args.current_limit] if args.current_limit is not None else [])
-    extra += (["--finger-mode", args.finger_mode] if args.finger_mode is not None else [])
+    # "=" form: values like "-1,-1,-1,1,-1,-1" would read as an option to argparse (10.06)
+    extra += ([f"--current-limit={args.current_limit}"] if args.current_limit is not None else [])
+    extra += ([f"--finger-mode={args.finger_mode}"] if args.finger_mode is not None else [])
     if extra and args.transport == "rs485":
         raise SystemExit("--op-enable · --sync-type · --current-limit · --finger-mode 는 ethercat 전용")
     cmd = argv_for(yaml.safe_load(Path(args.ports).read_text()) or {}, args.side, args.ports, args.no_op,
