@@ -49,7 +49,7 @@ typedef struct {
 static const adm_params_t ADM_DEFAULTS = {
     .k_g_per_reg = 3.6,           /* ≈ 2000 g/rad (네 손가락 550 칸/rad) */
     .deadband_g = 40.0,
-    .tau_contact_s = 1.0,
+    .tau_contact_s = 0.3,
     .tau_release_s = 0.15,
     .f_max_g = 800.0,
     .k_over_g_per_reg = 0.36,     /* ≈ 200 g/rad */
