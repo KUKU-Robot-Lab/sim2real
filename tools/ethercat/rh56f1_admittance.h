@@ -58,7 +58,7 @@ static const adm_params_t ADM_DEFAULTS = {
     .max_offset_reg = 880.0,      /* 손가락 전 범위 */
     .proximal_scale = 1.0,
     .tip_on_counts = 20.0,        /* 0.2 N */
-    .hold_band_g = 100.0,         /* 10.06 오른손 검지 + 컵: 손이 3~5 칸씩 움직여 80 <-> 300 g 를 오갔다 */
+    .hold_band_g = 200.0,         /* 10.06 오른손 검지 + 컵: 손이 3~5 칸씩 움직여 80 <-> 300 g 를 오갔다 */
     .joints = {1, 1, 1, 1, 1, 0}, /* 엄지 회전: 하중 때 힘 부호가 반대(10.06) — 위치 제어만 */
 };
 
