@@ -45,6 +45,7 @@ typedef struct {
   double lim[6];           /* 속도 제한 중 지난 주기의 cmd */
   int limiting[6];
   int pinned[6];           /* 전류가 넘어 실제 각도에 고정됨 */
+  double pin_f[6];         /* 고정할 때의 힘 */
 } adm_state_t;
 
 /* 기본값 — 10.06 오른손 검지 단독 시험 뒤(컵 1 칸 ≈ 100 g). 실기 튜닝 전. */
@@ -82,8 +83,13 @@ static inline double adm_step(const adm_params_t *p, adm_state_t *s, int i, doub
   double cmd = target + s->y[i];
   if (!s->limiting[i] && f > p->rate_on_g) { s->limiting[i] = 1; s->lim[i] = actual; }
   if (s->limiting[i]) {
-    if (current > p->current_hold_ma) { s->pinned[i] = 1; if (s->lim[i] < actual) s->lim[i] = actual; }
-    if (s->pinned[i] && cmd > s->lim[i]) s->pinned[i] = 0;
+    if (current > p->current_hold_ma) {
+      if (!s->pinned[i]) s->pin_f[i] = f;
+      s->pinned[i] = 1;
+      if (s->lim[i] < actual) s->lim[i] = actual;
+    }
+    /* 운영자가 그보다 열거나, 붙든 힘이 hold_band 만큼 빠지면 풀린다(10.06 4 rad/s 충돌 전류로 고정된 뒤 ~80 g 로 남음) */
+    if (s->pinned[i] && (cmd > s->lim[i] || f < s->pin_f[i] - p->hold_band_g)) s->pinned[i] = 0;
     double rate = s->pinned[i] ? 0.0 : 1.0 - f / p->f_max_g;
     if (rate < 0) rate = 0;
     double lim = s->lim[i] - p->rate_reg_s * rate * dt;
