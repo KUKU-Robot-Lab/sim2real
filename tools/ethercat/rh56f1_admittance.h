@@ -34,6 +34,7 @@ typedef struct {
   double proximal_scale;   /* 0~1, 손끝 촉각 < tip_on 이면 f /= proximal_scale */
   double tip_on_counts;    /* 손끝 법선 촉각(0.01 N 단위) */
   double hold_band_g;      /* |f - k y| 가 이 안이면 y 를 그대로 둔다(손 위치 분해능 사이를 오가며 출렁이지 않게) */
+  double current_hold_ma;  /* 접촉 중 전류가 이보다 크면 cmd 를 실제 각도에 고정(리드 스크루가 전류 없이 힘을 붙든다) */
   int joints[6];           /* 슬롯 순서(새끼 · 약지 · 중지 · 검지 · 엄지 굽힘 · 엄지 회전) — 1 = 이 제어를 쓸 수 있다 */
 } adm_params_t;
 
@@ -43,6 +44,7 @@ typedef struct {
   double bias[6];          /* 쉼 값(g) */
   double lim[6];           /* 속도 제한 중 지난 주기의 cmd */
   int limiting[6];
+  int pinned[6];           /* 전류가 넘어 실제 각도에 고정됨 */
 } adm_state_t;
 
 /* 기본값 — 10.06 오른손 검지 단독 시험 뒤(컵 1 칸 ≈ 100 g). 실기 튜닝 전. */
@@ -58,13 +60,14 @@ static const adm_params_t ADM_DEFAULTS = {
     .max_offset_reg = 880.0,      /* 손가락 전 범위 */
     .proximal_scale = 1.0,
     .tip_on_counts = 20.0,        /* 0.2 N */
-    .hold_band_g = 200.0,         /* 10.06 오른손 검지 + 컵: 손이 3~5 칸씩 움직여 80 <-> 300 g 를 오갔다 */
+    .hold_band_g = 200.0,         /* 10.06 tau 0.3: 중간 쥠이 190~720 g 를 오갔다(100 g) */
+    .current_hold_ma = 650.0,     /* 10.06 다섯 손가락: ~800 g 에서 명령이 막힌 손가락 너머에 머물자 전류가 500 -> 1084 mA */
     .joints = {1, 1, 1, 1, 1, 0}, /* 엄지 회전: 하중 때 힘 부호가 반대(10.06) — 위치 제어만 */
 };
 
 /* 한 축 한 주기. target · actual = 레지스터, force = g, tip = 손끝 법선(0.01 N, 모르면 -1). 반환 = 보낼 레지스터. */
 static inline double adm_step(const adm_params_t *p, adm_state_t *s, int i, double dt, double target, double actual,
-                              double force, double tip) {
+                              double force, double tip, double current) {
   double f = force - s->bias[i] - p->deadband_g;
   if (f < 0) f = 0;
   if (f > 0 && tip >= 0 && tip < p->tip_on_counts) f /= p->proximal_scale;
@@ -79,12 +82,14 @@ static inline double adm_step(const adm_params_t *p, adm_state_t *s, int i, doub
   double cmd = target + s->y[i];
   if (!s->limiting[i] && f > p->rate_on_g) { s->limiting[i] = 1; s->lim[i] = actual; }
   if (s->limiting[i]) {
-    double rate = 1.0 - f / p->f_max_g;
+    if (current > p->current_hold_ma) { s->pinned[i] = 1; if (s->lim[i] < actual) s->lim[i] = actual; }
+    if (s->pinned[i] && cmd > s->lim[i]) s->pinned[i] = 0;
+    double rate = s->pinned[i] ? 0.0 : 1.0 - f / p->f_max_g;
     if (rate < 0) rate = 0;
     double lim = s->lim[i] - p->rate_reg_s * rate * dt;
     if (cmd < lim) cmd = lim;
     s->lim[i] = cmd;
-    if (f <= 0 && s->y[i] < 1.0) s->limiting[i] = 0;
+    if (f <= 0 && s->y[i] < 1.0) s->limiting[i] = s->pinned[i] = 0;
   }
   return cmd;
 }

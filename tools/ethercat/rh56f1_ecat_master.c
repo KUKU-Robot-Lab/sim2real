@@ -62,6 +62,7 @@
 /* 입력 · 출력 PDO 안 위치 (매뉴얼 표 50) */
 #define IN_ANGLE 6
 #define IN_FORCE 12
+#define IN_CURRENT 18
 #define IN_TOUCH 42   /* 손가락 5 개 x (법선 · 접선 · 방향 · 근접 2) — 새끼부터, 법선 = 0.01 N */
 #define OUT_ENABLE 0
 #define OUT_ANGLE 1
@@ -142,13 +143,14 @@ static void control(ctl_t *c, const int16_t *in, double dt) {
     if (!c->commanded) {
       g_adm_state.bias[i] += 0.01 * (force - g_adm_state.bias[i]);
       g_adm_state.y[i] = 0;
-      g_adm_state.limiting[i] = 0;
+      g_adm_state.limiting[i] = g_adm_state.pinned[i] = 0;
       c->sent[i] = c->target[i];
       continue;
     }
     if (!c->adm_on[i]) { c->sent[i] = c->target[i]; continue; }
     int16_t tip_raw = i < 5 ? in[IN_TOUCH + i * 5] : -1;   /* 0xFFFF(안 읽힘) = -1 */
-    double cmd = adm_step(&g_adm, &g_adm_state, i, dt, c->target[i], in[IN_ANGLE + i], force, tip_raw < 0 ? -1.0 : tip_raw);
+    double cmd = adm_step(&g_adm, &g_adm_state, i, dt, c->target[i], in[IN_ANGLE + i], force, tip_raw < 0 ? -1.0 : tip_raw,
+                          (double)in[IN_CURRENT + i]);
     c->sent[i] = (int16_t)clampi((int)(cmd + 0.5), ANG_LO[i], ANG_HI[i]);
   }
 }
@@ -164,7 +166,7 @@ static void apply_cmd(ctl_t *c, const cmd_msg *m, const int16_t *in) {
         if (v < 0) v = c->commanded ? c->target[i] : in[IN_ANGLE + i];   /* -1 = 그 축은 둔다 */
         else {
           int adm = m->kind == CMD_ANGLE_ADM && g_adm.joints[i];
-          if (!adm) g_adm_state.y[i] = 0, g_adm_state.limiting[i] = 0;   /* 위치 제어로 돌아온 축: 보정 없이 목표 그대로 */
+          if (!adm) g_adm_state.y[i] = 0, g_adm_state.limiting[i] = g_adm_state.pinned[i] = 0;   /* 위치 제어로 돌아온 축: 보정 없이 목표 그대로 */
           c->adm_on[i] = adm;
         }
         c->target[i] = (int16_t)clampi(v, ANG_LO[i], ANG_HI[i]);
@@ -406,21 +408,21 @@ static void request_modes(const int32_t v[6]) {
 }
 
 static int parse_adm(const char *txt, adm_params_t *p) {
-  double v[18];
+  double v[19];
   int n = 0;
   const char *q = txt;
-  while (*q && n < 18) {
+  while (*q && n < 19) {
     char *end;
     v[n++] = strtod(q, &end);
     if (end == q) return 0;
     if (*end == ',') q = end + 1; else if (*end == '\0') q = end; else return 0;
   }
-  if (n != 18 || *q) return 0;
-  adm_params_t a = {v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11], {0}};
-  for (int i = 0; i < 6; i++) a.joints[i] = v[12 + i] != 0;
+  if (n != 19 || *q) return 0;
+  adm_params_t a = {v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11], v[12], {0}};
+  for (int i = 0; i < 6; i++) a.joints[i] = v[13 + i] != 0;
   if (a.k_g_per_reg <= 0 || a.k_over_g_per_reg <= 0 || a.f_max_g <= 0 || a.max_offset_reg <= 0 ||
       a.deadband_g < 0 || a.tau_contact_s < 0 || a.tau_release_s < 0 || a.rate_on_g < 0 || a.rate_reg_s <= 0 ||
-      a.proximal_scale <= 0 || a.proximal_scale > 1 || a.hold_band_g < 0) return 0;
+      a.proximal_scale <= 0 || a.proximal_scale > 1 || a.hold_band_g < 0 || a.current_hold_ma <= 0) return 0;
   *p = a;
   return 1;
 }
@@ -428,7 +430,7 @@ static int parse_adm(const char *txt, adm_params_t *p) {
 static void usage(const char *p) {
   fprintf(stderr, "usage: %s --ifname IF --master-sock P --node-sock P [--hz 1000] [--state-hz 100] [--speed 2000] "
                   "[--force 600] [--enable-value 1] [--hb-timeout-ms 500] [--no-op] [--op-enable] [--sync-type N] [--op-timeout-ms 3000] [--hz-op 1000] "
-                  "[--clear-error] [--current-limit mA[,x6]] [--finger-mode m[,x6]] [--force-calibrate] [--adm 18 values]\n", p);
+                  "[--clear-error] [--current-limit mA[,x6]] [--finger-mode m[,x6]] [--force-calibrate] [--adm 19 values]\n", p);
 }
 
 int main(int argc, char **argv) {
@@ -466,7 +468,7 @@ int main(int argc, char **argv) {
       case 'K': force_calib = 1; break;
       case 'A':
         if (!parse_adm(optarg, &g_adm)) {
-          fprintf(stderr, "--adm: 숫자 12 개(k deadband tau_c tau_r f_max k_over rate_on rate max_off prox tip_on hold_band) + joints 6 개\n");
+          fprintf(stderr, "--adm: 숫자 13 개(k deadband tau_c tau_r f_max k_over rate_on rate max_off prox tip_on hold_band current_hold) + joints 6 개\n");
           return 2;
         }
         break;
@@ -511,10 +513,10 @@ int main(int argc, char **argv) {
   if (sdo_setup(clear_error, current_limit, finger_mode, force_calib) != 0) goto out_ec;   /* PREOP: OP 전에 손 보호 설정 */
   printf("[master] ADM {\"k_g_per_reg\": %g, \"deadband_g\": %g, \"tau_contact_s\": %g, \"tau_release_s\": %g, "
          "\"f_max_g\": %g, \"k_over_g_per_reg\": %g, \"rate_on_g\": %g, \"rate_reg_s\": %g, \"max_offset_reg\": %g, \"proximal_scale\": %g, "
-         "\"tip_on_counts\": %g, \"hold_band_g\": %g, \"joints\": [%d, %d, %d, %d, %d, %d]} — angle_target 축에만\n",
+         "\"tip_on_counts\": %g, \"hold_band_g\": %g, \"current_hold_ma\": %g, \"joints\": [%d, %d, %d, %d, %d, %d]} — angle_target 축에만\n",
          g_adm.k_g_per_reg, g_adm.deadband_g, g_adm.tau_contact_s, g_adm.tau_release_s, g_adm.f_max_g,
          g_adm.k_over_g_per_reg, g_adm.rate_on_g, g_adm.rate_reg_s, g_adm.max_offset_reg, g_adm.proximal_scale, g_adm.tip_on_counts,
-         g_adm.hold_band_g,
+         g_adm.hold_band_g, g_adm.current_hold_ma,
          g_adm.joints[0], g_adm.joints[1], g_adm.joints[2], g_adm.joints[3], g_adm.joints[4], g_adm.joints[5]);
   g_mode_thread_ok = pthread_create(&g_mode_thread, NULL, mode_worker, NULL) == 0;
   if (!g_mode_thread_ok) printf("[master] ⚠ 모드 전환 스레드를 못 띄움 — 실행 중 모드 전환 불가\n");

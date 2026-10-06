@@ -255,8 +255,8 @@ def test_admittance_python_reference_matches_the_master_c(tmp_path):
         pytest.skip("gcc 없음")
     harness = tmp_path / "h.c"
     harness.write_text('#include <stdio.h>\n#include "rh56f1_admittance.h"\n'
-                       "int main(void){adm_params_t p=ADM_DEFAULTS; adm_state_t s={0}; double t,a,f,tip; int i;\n"
-                       'while(scanf("%d %lf %lf %lf %lf",&i,&t,&a,&f,&tip)==5){double c=adm_step(&p,&s,i,0.002,t,a,f,tip);'
+                       "int main(void){adm_params_t p=ADM_DEFAULTS; adm_state_t s={0}; double t,a,f,tip,cur; int i;\n"
+                       'while(scanf("%d %lf %lf %lf %lf %lf",&i,&t,&a,&f,&tip,&cur)==6){double c=adm_step(&p,&s,i,0.002,t,a,f,tip,cur);'
                        'printf("%.9f %.9f\\n", c, s.y[i]);} return 0;}\n')
     exe = tmp_path / "h"
     subprocess.run(["gcc", "-O2", "-o", str(exe), str(harness), "-I", str(MASTER_C.parent), "-lm"], check=True)
@@ -265,13 +265,13 @@ def test_admittance_python_reference_matches_the_master_c(tmp_path):
     for k in range(3000):
         i = k % 6
         rows.append((i, rng.uniform(900, 1740), rng.uniform(900, 1740), rng.choice([0, 30, 200, 900, 1500]) + rng.uniform(-20, 20),
-                     rng.choice([-1, 0, 10, 300])))
-    out = subprocess.run([str(exe)], input="\n".join(f"{i} {t} {a} {f} {tip}" for i, t, a, f, tip in rows),
+                     rng.choice([-1, 0, 10, 300]), rng.choice([-1, 0, 300, 700, 1100])))
+    out = subprocess.run([str(exe)], input="\n".join(f"{i} {t} {a} {f} {tip} {cur}" for i, t, a, f, tip, cur in rows),
                          capture_output=True, text=True, check=True).stdout.split("\n")
     p, s = hand.load_admittance(), AdmState()   # 계약 값 = C 기본값이어야 한다
     assert p == AdmParams()
-    for (i, t, a, f, tip), line in zip(rows, out):
-        cmd = adm_step(p, s, i, 0.002, t, a, f, tip)
+    for (i, t, a, f, tip, cur), line in zip(rows, out):
+        cmd = adm_step(p, s, i, 0.002, t, a, f, tip, cur)
         c_cmd, c_y = (float(v) for v in line.split())
         assert cmd == pytest.approx(c_cmd, abs=1e-6) and s.y[i] == pytest.approx(c_y, abs=1e-6)
 
@@ -302,4 +302,4 @@ def test_angle_target_is_a_separate_input_and_angle_set_is_unchanged():
     assert "#define CMD_ANGLE_ADM 6" in src and "if (!c->adm_on[i]) { c->sent[i] = c->target[i]; continue; }" in src
     cfg = yaml.safe_load((PC / "config" / "rh56f1_ports.yaml").read_text())["ethercat"]
     argv = E.master_argv("/m", "eth0", "/a", "/b", cfg, no_op=False)
-    assert argv[argv.index("--adm") + 1].endswith(",200,1,1,1,1,1,0")
+    assert argv[argv.index("--adm") + 1].endswith(",200,650,1,1,1,1,1,0")
