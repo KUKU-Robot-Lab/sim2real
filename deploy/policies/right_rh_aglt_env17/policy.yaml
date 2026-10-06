@@ -1,0 +1,17 @@
+# RH56F1 오른팔 rh_aglt cyl60 — 보상 iter_17(목표 근처 머묾 수입 제거)로 env16 ep800 을 이어 학습(10.06 T2R Grasping 이 arm4090 에 올림, 사용자 지시).
+id: right_rh_aglt_env17
+status: candidate        # candidate | verified | deployed | hold
+task: open-rh_r_aglt-lstm
+side: right
+checkpoint: last_open-rh_r_aglt-lstm_ep_1000_rew_1240.1438.pth
+summary: 'cyl60 · 보상 iter_17(목표 근처 머묾 수입 제거) · 붓기 하중으로 이어 학습한 최신 파지 · 이송 — 쥔 높이 컵 중심 위 약 +2 cm'
+eval: '결정론 64 env · tol 0.02 · ADR 0 · 하중 끔: 성공 4.91~4.93/5(5개 다 채움 0.97) · 목표 2 cm 안 16.6 % · 쥔 기울기 4.9° · 관절 한계 ≤ 0.03'
+source: 'arm4090:~/rl_ws/our_source/policy/aglt_r_env17_ep1000 (md5 8b95893ced75993a25596cb562943e82)'
+interface: obs 96 · action 13 (팔 관절 증분 7 · 손 6 — cyl60g 와 계약 · 망 구조 동일, 가중치만 다르다)
+deploy:
+  max_episode_s: 15.0
+note: >-
+  aglt_r_env16 ep800 → 보상 iter_17 로 aglt_r_env17(3000 epoch) 이어 학습, ep1000 선택. 학습 env 는 cyl60g 와 같은 FP++ 지각 ·
+  파지 후 부착 · 명령 지연 0 에 붓기 하중(prob 0.7)과 ADR 20→30 을 더했다. 뒤집기(구슬 20 · 실제 회전 ~118°): 놓침 0.14(cyl60g 0.06),
+  손 안 이동 중앙 0.29 cm. 실기에서 볼 것: 쥔 높이가 cyl60g(+4.3 cm)보다 약 2.3 cm 낮다. 놓기 인계 주의: 놓기 i09 시작 뱅크의
+  쥔 높이는 p5~p95 4.3~5.3 cm 라 env17(+2.0 cm)은 그 밖이다 — 에피소드는 아직 cyl60g.

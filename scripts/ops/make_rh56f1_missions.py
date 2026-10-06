@@ -554,9 +554,12 @@ def mission(kind: str) -> dict:
         "robot_bi": f"deploy/policy_control/config/robots/rh56f1_bi_{robot}.yaml",
         # 한 팔 rh_aglt 정책(첫 화면의 '오른팔 · 왼팔' 자리가 바꾼다) — 09.30
         # 10.01 사용자: 기본 = iter_10 ②(실측 지연 적응) i10d 좌우. 이전 기본은 우 mirror_l5 · 좌 i05(09.30).
-        # ★10.04 cyl60g(FP++ 지각 · 파지 후 부착으로 학습) — 계약은 i10d 와 체크포인트 외 같아 홈 · 저장 경로는 그대로
-        "aglt_right": "deploy/policies/right_rh_aglt_cyl60g/rh_aglt_contract.json",
-        "aglt_left": "deploy/policies/left_rh_aglt_cyl60gmir/rh_aglt_contract.json",
+        # 10.04 cyl60g(FP++ 지각 · 파지 후 부착으로 학습) — 계약은 i10d 와 체크포인트 외 같아 홈 · 저장 경로는 그대로
+        # ★10.06 env17(T2R Grasping 새 s2r 후보, 보상 iter_17 · 쥔 높이 컵 중심 위 +2.0 cm, cyl60g +4.3 cm) — 계약은 cyl60g 와 체크포인트 외 같다.
+        #   단독 aglt 점검 자리만 바꾼다. 에피소드(config/episodes/*.yaml)는 cyl60g 그대로 — 놓기 i09 · i01 시작 뱅크(our_source/place_bank/
+        #   bank_{r,l}_cyl60_keep.npz)의 쥔 높이가 p5~p95 4.3~5.3 cm(우) · 3.1~5.5 cm(좌), 3 cm 아래 0 %(우) · 4 %(좌)다(10.06 실측)
+        "aglt_right": "deploy/policies/right_rh_aglt_env17/rh_aglt_contract.json",
+        "aglt_left": "deploy/policies/left_rh_aglt_env17mir/rh_aglt_contract.json",
         # 한 팔 컵 홀더 놓기(10.04 PLACE 세션, aglt cyl60 인계) — 콘솔 자리는 아직 없다(팔마다 한 자리 = aglt)
         "place_right": "deploy/policies/right_rh_place_i09/rh_place_contract.json",
         "place_left": "deploy/policies/left_rh_place_i01/rh_place_contract.json",

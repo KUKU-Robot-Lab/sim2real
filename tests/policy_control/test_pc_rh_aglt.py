@@ -185,7 +185,7 @@ def test_the_cup_geometry_follows_the_object_like_the_training_env():
         A.cup_geometry({"object_name": "mug", "cup_scale": 0.65})
 
 
-@pytest.mark.parametrize("pid", ["right_rh_aglt_cyl60g", "left_rh_aglt_cyl60gmir"])
+@pytest.mark.parametrize("pid", ["right_rh_aglt_cyl60g", "left_rh_aglt_cyl60gmir", "right_rh_aglt_env17", "left_rh_aglt_env17mir"])
 def test_the_cylinder_contracts_carry_the_cylinder_not_the_stale_shaker_dump(pid):
     """10.04: train.py 는 hydra 가 object_name=cyl60 을 덮은 뒤 · env 가 resolve_cfg 를 다시 부르기 전에 env.yaml 을 덤프한다.
     덤프의 파생 값(반높이 0.0569 · 원점 높이 0.0599)은 기본 shaker × 0.65 값이고 학습 env 는 cyl60(0.085 · 0.085)으로 돌았다 —
@@ -199,7 +199,10 @@ def test_the_cylinder_contracts_carry_the_cylinder_not_the_stale_shaker_dump(pid
     assert (c.goal_box_min[2], c.goal_box_max[2]) == pytest.approx((z0 + zb[0], z0 + zb[1]))
 
 
-MIRROR = POL / "right_rh_aglt_mirror_l5" / "rh_aglt_contract.json"
+#: (오른팔, 왼팔) 거울 쌍 — 09.30 은 오른팔이 왼팔 i05 의 거울, 10.04 · 10.06 은 왼팔이 오른팔의 거울. D · S 가 ±1 이라 관계식은 같다.
+MIRROR_PAIRS = {"mirror_l5": ("right_rh_aglt_mirror_l5", "left_rh_aglt_i05"),
+                "cyl60g": ("right_rh_aglt_cyl60g", "left_rh_aglt_cyl60gmir"),
+                "env17": ("right_rh_aglt_env17", "left_rh_aglt_env17mir")}
 ARM_MIRROR_SIGN = (-1.0, -1.0, -1.0, 1.0, -1.0, -1.0, -1.0)
 _M, _MN = (1.0, -1.0, 1.0), (-1.0, 1.0, -1.0)
 #: hdgp scripts/tools/mirror_rh_aglt_ckpt.py actor_sign — 관측 96 칸별 좌우 부호(팔 부호 · 손 +1 · 위치 (1,−1,1) · 손바닥 x 열 (−1,1,−1))
@@ -208,10 +211,11 @@ OBS_MIRROR = (list(ARM_MIRROR_SIGN) * 3 + [1.0] * 12 + list(_M) + list(_MN) + li
 ACT_MIRROR = list(ARM_MIRROR_SIGN) + [1.0] * 6
 
 
-def test_the_mirrored_right_policy_is_the_left_policy_seen_in_a_mirror():
+@pytest.mark.parametrize("pair", list(MIRROR_PAIRS))
+def test_the_mirrored_right_policy_is_the_left_policy_seen_in_a_mirror(pair):
     """09.30 사용자 "오른팔 미러 되는지": 배포 로더로 두 체크포인트를 불러 a_R(o) = S_a · π_L(D_o · o) 를 LSTM 연속 60 스텝에서 확인."""
     pytest.importorskip("torch")
-    cr, cl = A.load_contract(MIRROR), A.load_contract(LEFT)
+    cr, cl = (A.load_contract(POL / pid / "rh_aglt_contract.json") for pid in MIRROR_PAIRS[pair])
     if not (Path(cr.checkpoint).is_file() and Path(cl.checkpoint).is_file()):
         pytest.skip("가중치 없음(.gitignore)")
     from policy_control.joint_policy import JointPolicy
