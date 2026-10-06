@@ -246,6 +246,12 @@ static int json6(char *buf, size_t n, const char *key, const int v[6]) {
 /* 쓰고(요청한 것만) 다시 읽어 찍는다. 요청한 값이 그대로 읽히지 않으면 -1 */
 static int sdo_setup(int clear_error, const int cur[6], const int mode[6]) {
   int bad = 0;
+  /* ★10.06 첫 실기: ec_config_init 직후에는 손이 아직 PREOP 로 넘어가는 중이라 메일박스가 안 열려
+   * SDO 가 모두 바로 실패했다(SOEM 은 그때 오류도 남기지 않는다). PREOP 를 기다린 뒤 쓴다. */
+  ec_statecheck(1, EC_STATE_PRE_OP, EC_TIMEOUTSTATE);
+  ec_readstate();
+  printf("[master] SDO 전 상태 AL 0x%02x · 메일박스 %d B · 프로토콜 0x%02x(CoE %s)\n", ec_slave[1].state,
+         ec_slave[1].mbx_l, ec_slave[1].mbx_proto, (ec_slave[1].mbx_proto & ECT_MBXPROT_COE) ? "있음" : "없음");
   if (clear_error) {
     int ok = sdo_write16(SDO_CLEAR_ERROR, 1);
     printf("[master] 오류 지우기(0x2000:03) %s\n", ok ? "ok" : "✗ 실패");
