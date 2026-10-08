@@ -71,11 +71,11 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
     _, _, d = real
     aglt = d.box("rh_aglt_node_right")
     assert aglt.ros == ("/rh_aglt_node_right", "/rh_aglt_node_right_poll")    # 센서는 폴링 노드가 구독한다
-    assert set(aglt.units) == {"policy_aglt_right#1", "episode_pick_place_right#3"}
+    assert set(aglt.units) == {"policy_aglt_right#3", "episode_pick_place_right#3"}   # 실기 단독 단계: 기록(bag · CPU) 두 줄 뒤(10.08)
     place = d.box("rh_place_node_right")
     assert set(place.units) == {"policy_place_right#1", "episode_pick_place_right#4"}
     runner = d.box("episode_runner")
-    assert set(runner.units) == {"episode_pick_place_right#6", "episode_pick_place_left#6"}
+    assert set(runner.units) == {"episode_pick_place_right#7", "episode_pick_place_left#7"}   # 실기: 앞에 CPU 기록 한 줄(10.08)
 
 
 def test_one_arms_pd_without_and_with_publishing_is_one_box_and_only_the_quiet_one_mutes_the_drive(real):
@@ -89,7 +89,7 @@ def test_one_arms_pd_without_and_with_publishing_is_one_box_and_only_the_quiet_o
 def test_an_input_only_one_stage_uses_names_that_stage(real):
     _, _, d = real
     into = {(w.src, w.topic): w for w in d.wires if w.dst == "rh_aglt_node_right"}
-    assert into[("object_pose", "/objects/cyl60/pose")].units == ("policy_aglt_right#1",)      # 단독: FP++ 컵을 직접
+    assert into[("object_pose", "/objects/cyl60/pose")].units == ("policy_aglt_right#3",)      # 단독: FP++ 컵을 직접(앞에 기록 두 줄, 10.08)
     assert into[("episode_runner", "/episode/objects/CUP/pose")].units == ("episode_pick_place_right#3",)
     assert not into[("hand_right_state", "/hand_right/joint_states")].units                       # 둘 다 쓴다 — 언제나
 

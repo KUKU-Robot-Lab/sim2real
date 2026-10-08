@@ -42,7 +42,7 @@ from .codec import CodecError  # noqa: E402
 from .contract import load_contract  # noqa: E402
 from .lean_node import LeanNodeMixin, lean_node_kwargs  # noqa: E402
 from .pd_arm import ArmUnit, PdArmError, TickResult, select_sides  # noqa: E402
-from .pd_backends import BackendError  # noqa: E402
+from .pd_backends import BackendError, hand_command  # noqa: E402
 from .pd_law import load_pd_config  # noqa: E402
 from .pd_state import Phase  # noqa: E402
 from .sources import RobotCfgError, load_profile, load_robot_cfg  # noqa: E402
@@ -340,7 +340,14 @@ class PdNode(LeanNodeMixin, Node):
         with self._lock:
             for unit in self.units.values():
                 if only_side is None or unit.side == only_side:
-                    unit.on_episode(event, episode)
+                    info = ev
+                    if "hand_command" in ev:            # 모르는 손 명령 입력 — 사건(stop · abort 의 붙들기 포함)은 처리하되
+                        try:                            #   입력은 지금 것 그대로 두고 알린다(10.08 리뷰: 위치로 떨어지지 않게)
+                            hand_command(ev["hand_command"])
+                        except ValueError as exc:
+                            self._note_error(f"episode: {exc}")
+                            info = {**ev, "hand_command": unit.hand_command}
+                    unit.on_episode(event, episode, info)
 
     def _side_episode_cb(self, side: str):
         return lambda msg: self._on_episode(msg, only_side=side)

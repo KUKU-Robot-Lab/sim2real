@@ -88,7 +88,9 @@ ARM_STATE_TITLE = "팔 상태 (robot_control)"
 OBJECT_POSE_TITLE = "object_pose_node · 카메라 → base_link"
 HOLDER_TITLE = "cup_holder_pose_node · 홀더 자세(마커)"
 #: 노드가 아니라 사람이 한 번 내는 도구(수동 명령) — 연결 상태가 아니므로 그리지 않는다. 조작판에는 그대로 있다
-_TOOLS = ("aglt_goal.py",)
+_TOOLS = ("aglt_goal.py",
+          # ★10.08 프로세스별 CPU 기록 — ROS 노드가 아니다(/proc 만 읽는다). 그림에 상자를 두지 않는다
+          "proc_cpu_record.py")
 
 
 @dataclass(frozen=True)

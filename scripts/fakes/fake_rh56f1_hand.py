@@ -4,6 +4,7 @@
 09.29 사용자: rh56f1 제어 연결. 실기 손 없이 pd 백엔드 → 드라이버 토픽 → 상태 노드 → pd/정책 경로를 돌린다.
 
   구독  /hand_<side>/angle_set  (SetAngle1, 슬롯 순 0.1°, -1 = 그 축은 둔다)
+        /hand_<side>/angle_target (같은 메시지 — 실기는 어드민턴스 입력. fake 는 접촉이 없어 어드민턴스가 0 이라 위치와 같다)
   발행  /hand_<side>/angle_actual (GetAngleAct1, 250 Hz — EtherCAT state_hz) · /hand_<side>/touch_data (TouchData1, 전부 0)
         /hand_<side>/force_actual (GetForceAct1, 전부 0 — 10.05 실기 드라이버(rh56f1_ecat_node)와 같은 토픽 집합.
         없으면 상태 노드가 joint_forces 를 못 내 정책 입력이 비고 상황판이 '끊긴 곳' 으로 본다)
@@ -31,6 +32,9 @@ RATE_HZ = 250.0           # 10.03 손 = EtherCAT(state_hz 250) — hand_check �
 #: 전 행정(레지스터 끝 ↔ 끝) 걸리는 시간 [s]
 STROKE_S = 1.0
 
+
+#: 손 명령 입력 둘(robot_control components/rh56f1.yaml command) — 10.08 pd 가 정책 계약 hand_command 로 고른다
+COMMAND_TOPICS = ("angle_set", "angle_target")
 
 def step(cur: np.ndarray, target: np.ndarray, span: np.ndarray, dt: float) -> np.ndarray:
     """한 틱 — 축마다 전 행정 STROKE_S 속도로 목표에 다가간다. 순수."""
@@ -97,7 +101,8 @@ def main(argv: list[str] | None = None) -> int:
         f.joint_names = names
         force.publish(f)
 
-    node.create_subscription(SetAngle1, f"{ns}/angle_set", on_set, 10)
+    for topic in COMMAND_TOPICS:
+        node.create_subscription(SetAngle1, f"{ns}/{topic}", on_set, 10)
     node.create_timer(1.0 / RATE_HZ, tick)
     try:
         rclpy.spin(node)

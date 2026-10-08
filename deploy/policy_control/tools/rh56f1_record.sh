@@ -13,13 +13,18 @@ CMD=${1:?start|stop}; NAME=${2:-run}
 DIR=/tmp/rh56f1_record; mkdir -p "$DIR"
 case "$CMD" in
 start)
+  # ★10.08 리뷰: 앞 단계가 도중에 실패하면 기록기가 남는다 — 같은 단계를 다시 돌릴 때 막히지 않게 남은 기록을 먼저 마무리한다
   for k in arm hand; do
-    if [ -f "$DIR/$k.pid" ] && kill -0 "$(cat "$DIR/$k.pid")" 2>/dev/null; then echo "$k 기록 중이다 — 먼저 stop"; exit 1; fi
+    if [ -f "$DIR/$k.pid" ] && kill -0 "$(cat "$DIR/$k.pid")" 2>/dev/null; then
+      echo "$k 기록이 남아 있다 — 마무리하고 새로 시작"; bash "$0" stop; break
+    fi
   done
   SIM2REAL="$(cd "$(dirname "$0")/../../.." && pwd)"
   OUT="$SIM2REAL/logs/bags/$(date +%Y%m%d_%H%M%S)_$NAME"; mkdir -p "$(dirname "$OUT")"
   HAND=""
-  for s in right left; do for t in angle_actual force_actual current_actual touch_data joint_states tip_forces joint_forces ecat_status; do
+  # 10.08 명령(위치 angle_set · 어드민턴스 angle_target)과 어드민턴스가 연 칸 수 · 손가락 모드도 — 어드민턴스 정책 쥠 분석
+  for s in right left; do for t in angle_actual force_actual current_actual touch_data joint_states tip_forces joint_forces ecat_status \
+      angle_set angle_target admittance_offset finger_mode; do
     HAND="$HAND /hand_$s/$t"; done; done
   ENV="source /opt/ros/humble/setup.bash; source \$HOME/rl_ws/robot_control/ros_ws/install/setup.bash; export ROS_DOMAIN_ID=\${ROS_DOMAIN_ID:-126}"
   setsid bash -c "echo \$\$ > '$DIR/arm.pid'; $ENV; exec ros2 bag record -o '$OUT/arm' /joint_states $EXTRA" </dev/null >"$DIR/arm.log" 2>&1 &
@@ -41,7 +46,9 @@ stop)
     fi
     rm -f "$DIR/$k.pid"
   done
-  [ -f "$DIR/last_out" ] && { source /opt/ros/humble/setup.bash; for k in arm hand; do ros2 bag info "$(cat "$DIR/last_out")/$k" 2>/dev/null | grep -E "Duration|Messages"; done; }
+  # 요약은 보기용 — bag 이 비었거나 없어도 정지는 성공(shutdown 이 이 줄에서 멈추지 않게, 10.08 리뷰)
+  [ -f "$DIR/last_out" ] && { source /opt/ros/humble/setup.bash; for k in arm hand; do ros2 bag info "$(cat "$DIR/last_out")/$k" 2>/dev/null | grep -E "Duration|Messages" || true; done; }
+  exit 0
   ;;
 *) echo "start|stop" >&2; exit 2;;
 esac

@@ -101,12 +101,46 @@ class RaContract:
     goal_success_steps: int = 0                          # 키포인트 최대거리 ≤ goal_tol 인 스텝 누적(연속 아님)
     goal_tol: float = 0.0                                # 학습 종점 tol_floor
     grasp_threshold_n: float = 0.0                       # 쥠 = 엄지 AND 다른 손가락 > 이 힘(contact_force_threshold)
+    # ★10.08 손 명령 입력 — 학습 env hand_adm_enable 이면 "admittance": pd 가 손 목표를 /hand_<s>/angle_target(마스터의 손가락별
+    #   어드민턴스, robot_control components/rh56f1.yaml control.admittance)으로 보낸다. "position" = angle_set(이 필드 전 계약 전부).
+    hand_command: str = "position"
+    hand_admittance: dict = field(default_factory=dict)  # 학습 값 k_g_per_rad · f_max_g · tau_contact_s · rate_rad_s · dr_frac(빈 값 = 위치)
 
     def side(self, role: str = "arm") -> RaSide:
         return self.sides[role]
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, indent=2)
+
+
+#: 손 명령 입력 — pd 가 이 값을 에피소드 reset 때 받아 손 토픽을 고른다(pd_backends.HAND_COMMANDS 와 같다)
+HAND_COMMANDS = ("position", "admittance")
+#: hdgp rh_aglt_env_cfg hand_adm_* → 계약 hand_admittance 키
+ADM_KEYS = {"hand_adm_k_g_per_rad": "k_g_per_rad", "hand_adm_f_max_g": "f_max_g", "hand_adm_tau_contact_s": "tau_contact_s",
+            "hand_adm_rate_rad_s": "rate_rad_s", "hand_adm_dr_frac": "dr_frac"}
+
+
+def hand_command_of(env: Mapping) -> tuple[str, dict]:
+    """학습 env → (손 명령 입력, 학습 어드민턴스 값). hand_adm_enable 이 없거나 거짓이면 위치 제어."""
+    if not bool(env.get("hand_adm_enable", False)):
+        return "position", {}
+    missing = [k for k in ADM_KEYS if k != "hand_adm_dr_frac" and k not in env]
+    if missing:
+        raise RhAgltError(f"hand_adm_enable 인데 {missing} 이 env.yaml 에 없다")
+    return "admittance", {v: float(env.get(k, 0.0)) for k, v in ADM_KEYS.items()}
+
+
+def admittance_mismatch(train: Mapping, real: Mapping, reg_per_rad: float, *, rel_tol: float = 0.02) -> list[str]:
+    """학습 어드민턴스(rad · g) ↔ 실기 드라이버 어드민턴스(레지스터 · g, robot_control control.admittance) — 다른 항목 설명.
+    reg_per_rad = 네 손가락 레지스터/rad(변환표). 학습 DR(±dr_frac)은 허용 폭이 아니다 — 명목값이 같아야 한다."""
+    pairs = (("k_g_per_rad", float(real["k_g_per_reg"]) * reg_per_rad), ("f_max_g", float(real["f_max_g"])),
+             ("tau_contact_s", float(real["tau_contact_s"])), ("rate_rad_s", float(real["rate_reg_s"]) / reg_per_rad))
+    out = []
+    for key, r in pairs:
+        t = float(train[key])
+        if abs(t - r) > rel_tol * max(abs(t), abs(r), 1e-9):
+            out.append(f"{key}: 학습 {t:g} ≠ 실기 {r:g}")
+    return out
 
 
 def hand_law(c: RaContract) -> RH.HandLaw:
@@ -134,6 +168,10 @@ def validate(c: RaContract) -> None:
     if not (c.k_arm > 0 and 0 < c.arm_ema <= 1 and c.cup_half_height > 0 and c.joint_err_norm > 0):
         raise RhAgltError("k_arm · arm_ema · cup_half_height · joint_err_norm")
     hand_law(c)                                    # 손 자세 · 한계 검사
+    if c.hand_command not in HAND_COMMANDS:
+        raise RhAgltError(f"hand_command {c.hand_command!r} — {HAND_COMMANDS}")
+    if (c.hand_command == "admittance") != bool(c.hand_admittance):
+        raise RhAgltError("hand_command admittance 와 hand_admittance(학습 값)는 같이 있어야 한다")
 
 
 def load_contract(path: str | Path) -> RaContract:
@@ -148,8 +186,8 @@ def load_contract(path: str | Path) -> RaContract:
 
 # ---------------------------------------------------------------- 빌드
 #: hdgp rh_aglt real_response(09.30 9a46c174): 명령 지연 · 편 손 하한 · 리셋 엄지 외전 — PD 에 들어가는 목표만 바꾼다
-SIM_ONLY_RESPONSE_KEYS = ("arm_cmd_delay_steps", "hand_cmd_delay_steps", "hand_open_floor_deg_lo", "hand_open_floor_deg_hi",
-                          "thumb1_reset_range")
+SIM_ONLY_RESPONSE_KEYS = ("arm_cmd_delay_steps", "arm_cmd_delay_joint_steps", "arm_cmd_delay_joint_jitter", "hand_cmd_delay_steps",
+                          "hand_open_floor_deg_lo", "hand_open_floor_deg_hi", "thumb1_reset_range")
 
 
 #: hdgp tasks/rh_aglt_r/rh_aglt_env_cfg.py OBJECTS · CUP_UNIT(hdgp 2721a946 :44-58) — 컵 USD 원점 기준 치수(m) · cup_scale 을 받는지
@@ -234,6 +272,10 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
                      f"({dumped[0]:.4f} · {dumped[1]:.4f})는 hydra 오버라이드 전 기본 shaker 값이라 쓰지 않았다")
     if not bool(cfg_a.get("normalize_input", False)):
         notes.append("normalize_input false")
+    hand_cmd, adm = hand_command_of(env)
+    if hand_cmd == "admittance":
+        notes.append("손 = 어드민턴스 전제(hand_adm_enable): pd 가 손 목표를 /hand_<s>/angle_target 으로 보낸다 — 학습 "
+                     + " · ".join(f"{k} {v:g}" for k, v in adm.items()) + "(엄지 회전은 위치만 — 드라이버 joints 와 같다)")
     c = RaContract(
         schema=SCHEMA, task=TASK_PREFIX.format(p), run_dir=str(run_dir), checkpoint=str(checkpoint),
         checkpoint_md5=hashlib.md5(Path(checkpoint).read_bytes()).hexdigest(),
@@ -253,7 +295,8 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
         goal_box_max=[ctr[0] + hw[0] + m, ctr[1] + hw[1] + m, z0 + zb[1]],
         goal_first_xy_range=float(env["goal_first_xy_range"]), goal_first_z_range=z,
         goal_delta_distance=float(env["goal_delta_distance"]), goal_success_steps=int(env["goal_success_steps"]),
-        goal_tol=float(env["tol_floor"]), grasp_threshold_n=float(env["contact_force_threshold"]))
+        goal_tol=float(env["tol_floor"]), grasp_threshold_n=float(env["contact_force_threshold"]),
+        hand_command=hand_cmd, hand_admittance=adm)
     validate(c)
     return c
 

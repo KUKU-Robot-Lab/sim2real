@@ -337,3 +337,53 @@ def test_joint_forces_are_republished_thumb_first():
     assert joint_forces_out([10, 20, 30, 40, 50, 60]) == [50.0, 60.0, 40.0, 30.0, 20.0, 10.0]
     with pytest.raises(ValueError):
         joint_forces_out([1, 2, 3])
+
+
+# ---------------------------------------------------------------- ★10.08 손 명령 입력(위치 · 어드민턴스)
+def test_backend_sends_admittance_on_angle_target_and_switches_input_at_once():
+    """정책 계약 hand_command admittance → /hand_<s>/angle_target(마스터의 손가락별 어드민턴스). 입력을 바꾸면 같은 값 ·
+    1/30 s 안이라도 곧바로 보낸다 — 마스터는 축마다 마지막으로 받은 입력을 따른다."""
+    pytest.importorskip("rh56f1_interfaces.msg", reason="robot_control 설치 공간(rh56f1_interfaces)이 source 되지 않았다")
+    t = [0.0]
+    node = _Node()
+    names = HMAP.names("right")
+    b = Rh56f1AngleBackend(node, "/hand_right/angle_set", names, [0.0] * 6, [2.1, 0.48, 1.53, 1.53, 1.53, 1.53], HMAP, 1.0,
+                           execute=True, clock=lambda: t[0])
+    pos, adm = node.pubs["/hand_right/angle_set"].msgs, node.pubs["/hand_right/angle_target"].msgs
+    cmd = lambda mode: HandCmd(q_star=np.array(OPEN), qd_star=None, dt=0.01, q_meas=np.array(OPEN), mode=mode)  # noqa: E731
+    b.write(cmd("admittance"))
+    assert (len(pos), len(adm)) == (0, 1) and b.mode == "admittance" and b.admittance_count == 1
+    b.write(cmd("admittance"))
+    assert len(adm) == 1                                                      # 같은 값 — 안 보낸다
+    b.write(cmd("position"))
+    assert (len(pos), len(adm)) == (1, 1) and b.mode == "position"                # 입력이 바뀌면 곧바로
+    assert b.publish_count == 2
+    with pytest.raises(ValueError, match="손 명령 입력"):
+        b.write(cmd("force"))
+
+
+def test_backend_without_execute_publishes_on_neither_input():
+    b = _backend()
+    b.write(HandCmd(q_star=np.array(OPEN), qd_star=None, dt=0.01, q_meas=np.array(OPEN), mode="admittance"))
+    assert b.publish_count == 0 and b.admittance_count == 0 and b.mode == "admittance"
+
+
+def test_fake_hand_takes_both_command_inputs():
+    import fake_rh56f1_hand as F
+    assert F.COMMAND_TOPICS == ("angle_set", "angle_target")
+
+
+def test_leaving_admittance_restarts_the_position_command_from_the_measured_hand():
+    """10.08 리뷰: 어드민턴스로 쥔 손가락은 목표보다 앞(접촉)에 막혀 있다 — 위치로 바꾸는 순간 마지막 목표를 그대로 보내면 힘 제한 없이
+    짓누른다. 위치로 바뀌면 실측 각에서 속도 상한으로 다시 출발한다."""
+    pytest.importorskip("rh56f1_interfaces.msg", reason="robot_control 설치 공간(rh56f1_interfaces)이 source 되지 않았다")
+    node = _Node()
+    names = HMAP.names("right")
+    b = Rh56f1AngleBackend(node, "/hand_right/angle_set", names, [0.0] * 6, [2.1, 0.48, 1.53, 1.53, 1.53, 1.53], HMAP, 1.0,
+                           execute=True, clock=lambda: 0.0)
+    closed = np.array(OPEN) + np.array([0, 0, 1.2, 1.2, 1.2, 1.2])
+    blocked = np.array(OPEN) + np.array([0, 0, 0.6, 0.6, 0.6, 0.6])         # 컵에 막힌 실측
+    for _ in range(400):                                                    # 어드민턴스로 쥔 목표까지 다 갔다
+        b.write(HandCmd(q_star=closed, qd_star=None, dt=0.01, q_meas=blocked, mode="admittance"))
+    w = b.write(HandCmd(q_star=closed, qd_star=None, dt=0.01, q_meas=blocked, mode="position"))
+    assert np.max(np.abs(w.q_cmd - blocked)) <= 1.0 * 0.01 + 1e-9           # 실측 + 한 틱(max_vel 1 rad/s · 10 ms)

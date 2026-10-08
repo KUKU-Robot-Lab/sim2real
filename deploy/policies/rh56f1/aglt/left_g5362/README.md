@@ -1,0 +1,11 @@
+# 왼손 — rh_aglt 어드민턴스 다지 파지 커리큘럼 최종 (10.08, 실기 테스트 후보)
+- 런: aglt_l_g5362 ep2000 · ckpt nn/last_open-rh_l_aglt-lstm_ep_2000_rew_1936.3903.pth · md5 a65740ca1a56688c8f9a3f8be3f6da37
+- 커리큘럼: ① i18g(다섯 손가락) → ⑤ progress·dwell → ③ FP++ → ⑥ 어드민턴스 DR ±20 % → ② 실측 지연. 정본 hdgp reward_gen/rh_aglt_r/ADM_CURRICULUM.md
+- 시뮬레이션 결정론(64 env, ADR 0, tol 0.02): 성공 4.78/5 · 5개 다 0.94 · 3지이상접촉 0.99 · q_geo 0.410 · 엄지>800 g 0.04 (ep2200 4.74 · ep4000 0.89 = 학습 후반 붕괴라 쓰지 말 것)
+- 뒤집기 시험(invert_eval.sh): gravity 180° 무게 ×2·×2.5 거의 안 놓침. 팔로 180° 회전은 j7(약 110°) 때문에 판정 불가
+- 과제: open-rh_*_aglt-lstm (LSTM) · obs 96 · act 13(팔 7 + 손 6) · 60 Hz(sim dt 1/120, decimation 2) · 에피소드 15 s · 목표 5개, tol 0.02 m, 10 스텝 유지
+- 물체: cyl60 원기둥(0.134 kg, 원점 = 원기둥 중심) — 10.03 cyl60 계열과 같은 물체
+- 손 제어: **어드민턴스 전제**(hand_adm_enable). k 1980 g/rad · f_max 800 g · tau_contact 0.3 s · rate 0.3 rad/s(학습 때 ±20 % DR). 실기 RH56F1 은 어드민턴스 모드(rh56f1_admittance)로 돌려야 학습 조건과 같다
+- 지연(학습): 팔 관절별 arm_cmd_delay_joint_steps 3.5/3.2/3.3/2.3/4.1/8.6/7.3 스텝 ±1(SIME2REAL 10.07 실측). 손 3~5 스텝은 RS485 시절 값(EtherCAT 실측 전 임시). env.yaml 의 arm_cmd_delay_steps [9,12] 는 관절별 값이 있으면 쓰이지 않음
+- 인지: FP++ 모델(지연 250~400 ms · 10.5 Hz · 빠진 프레임 · 편향 3 mm) + 잡은 뒤 손바닥 FK 부착(fpp_attach, hold 6 · release 15 스텝)
+- 보상 iter_18g · params/ = 학습 env.yaml·agent.yaml 그대로

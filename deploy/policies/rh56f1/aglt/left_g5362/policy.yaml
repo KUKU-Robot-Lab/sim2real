@@ -1,0 +1,15 @@
+# RH56F1 왼팔 rh_aglt cyl60 — 손 어드민턴스 다지 파지 커리큘럼 최종(10.08 T2R Grasping 이 arm4090 에 올림, 사용자 지시: 이 정책으로 실기 테스트).
+id: rh56f1/aglt/left_g5362
+status: candidate        # candidate | verified | deployed | hold
+task: open-rh_l_aglt-lstm
+side: left
+checkpoint: last_open-rh_l_aglt-lstm_ep_2000_rew_1936.3903.pth
+summary: 'cyl60 · 손 어드민턴스(실기 /hand_left/angle_target) 전제 다지 파지 · 이송 — 보상 iter_18g · 실측 팔 지연 학습'
+eval: '결정론 64 env · tol 0.02 · ADR 0: 성공 4.78/5(5개 다 0.94) · 3지 이상 접촉 0.99 · q_geo 0.410 · 엄지 > 800 g 0.04 · 뒤집기(중력 180° · 무게 ×2 · ×2.5) 놓침 0/64 · 1/64'
+source: 'arm4090:~/rl_ws/our_source/policy/aglt_l_g5362_ep2000 (md5 a65740ca1a56688c8f9a3f8be3f6da37)'
+interface: obs 96 · action 13 (팔 관절 증분 7 · 손 6 — env17f 와 계약 · 망 구조 · 디코더 동일, 손 명령 입력만 어드민턴스)
+deploy:
+  max_episode_s: 15.0
+note: >-
+  오른팔과 같은 커리큘럼(왼팔 env 에서 학습). 같은 런 ep4000 은 결정론 0.89 로 학습 후반 붕괴 — 쓰지 않는다(T2R Grasping).
+  계약 hand_command admittance — pd 가 에피소드 reset 때 받아 손 목표를 angle_target 으로 보낸다. 손 지연 3~5 스텝은 RS485 시절 값.

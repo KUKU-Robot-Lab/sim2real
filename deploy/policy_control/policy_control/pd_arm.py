@@ -20,8 +20,8 @@ from .chain import PdStage, PdTarget, StageStatus
 from .codec import CodecError, JointSample, select_joints
 from .contract import SIDES, DeployContract, GainMismatch, SideCfg, side_of_joint
 from .controller_switch import ControllerSwitch, read_jtc_reference, source_arm_joints
-from .pd_backends import (ArmForwardBackend, Dg5fJtcBackend, GripperCmd, GripperJtcBackend, HandCmd, Rh56f1AngleBackend,
-                          HandGainsClient, hand_controller_name)
+from .pd_backends import (ArmForwardBackend, Dg5fJtcBackend, GripperCmd, GripperJtcBackend, HandCmd, HandGainsClient,
+                          Rh56f1AngleBackend, hand_command, hand_controller_name)
 from .pd_gains import GainsError, expected_hand_gains, load_and_check
 from .pd_gravity import make_gravity
 from .pd_law import (PdCommand, PdConfig, blend_engage, blend_fraction, blend_release, law_cfg_from_config,
@@ -258,6 +258,9 @@ class ArmUnit:
         self.rest_hand: np.ndarray | None = None     # engage 때 실측 손 자세
         self.hold: Hold | None = None
         self.stopped_episode: str | None = None       # stop · abort 받은 에피소드 — 그 번호의 늦은 목표는 쓰지 않는다(10.04)
+        #: ★10.08 손 명령 입력 — 에피소드 reset 의 hand_command(정책 계약)로 정하고 다음 reset 까지 둔다. stop 뒤 붙든 손(hold) ·
+        #  pd 자체 손 이동도 같은 입력으로 — 어드민턴스로 쥔 컵을 위치 서보로 바꿔 짓누르지 않게.
+        self.hand_command = "position"
         self.blend: Blend | None = None
         self.switch_failed = False
         self.thermal_retreat = False   # 발열 HOLD 에서 저부하 자세로 내려가는 중
@@ -378,7 +381,15 @@ class ArmUnit:
         self.hold = None                                    # 외부 목표가 내부 유지를 대체한다
         return True
 
-    def on_episode(self, event: str, episode: int) -> None:
+    def on_episode(self, event: str, episode: int, info: Mapping | None = None) -> None:
+        # 손 명령 입력: 키를 실은 사건(정책 노드는 모든 사건에 싣는다)이면 그 값 — pd 를 에피소드 도중 다시 띄워도 latched start · stop 에서
+        # 맞춘다. reset 에 키가 없으면(옛 정책 · 다른 계열) 위치. 모르는 값이면 입력을 바꾸지 않고 ValueError(사건 처리 전에, 10.08 리뷰).
+        info = info or {}
+        if "hand_command" in info:
+            new_mode = hand_command(info["hand_command"])
+        else:
+            new_mode = "position" if event == "reset" else self.hand_command
+        self.hand_command = new_mode
         if event == "reset":
             self.stopped_episode = None
             self.stage.new_episode(episode)
@@ -518,7 +529,7 @@ class ArmUnit:
             meas = np.asarray([state.ee_q[list(state.ee_names).index(j)] for j in self.hand_joints], dtype=float) \
                 if all(j in state.ee_names for j in self.hand_joints) else None
             b.hand.write(HandCmd(q_star=hand, qd_star=None, dt=self.dt, q_meas=meas,
-                                 max_vel=self._track_hand_vel() if track else None))
+                                 max_vel=self._track_hand_vel() if track else None, mode=self.hand_command))
             return hand.copy()
         return None
 
@@ -538,7 +549,8 @@ class ArmUnit:
                 "blend": None if self.blend is None else self.blend.kind,
                 "hold": None if self.hold is None else {"settle": self.hold.settle, "settled": self.hold.settled,
                                                         "err": self.hold.err},
-                "target": "internal" if self.hold is not None else ("external" if self.target is not None else None)}
+                "target": "internal" if self.hold is not None else ("external" if self.target is not None else None),
+                "hand_command": self.hand_command}
 
     # ---------------------------------------------------------------- services
     def list_controllers(self) -> dict:

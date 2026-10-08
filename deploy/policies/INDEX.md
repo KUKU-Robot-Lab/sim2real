@@ -28,12 +28,14 @@ rh56f1/
     left_cyl60gmir
     left_env17f
     left_env17mir  (hold)
+    left_g5362
     left_i05
     left_i09d
     left_i10
     left_i10d
     right_cyl60g
     right_env17
+    right_g5362b
     right_i03  (hold)
     right_i09d
     right_i10
@@ -55,14 +57,16 @@ rh56f1/
 | id | 쪽 | status | 체크포인트 | 설명 | sim 평가 | 미션 기본 |
 |---|---|---|---|---|---|---|
 | `rh56f1/aglt/left_cyl60gmir` | left | candidate | ep2600 | 우 cyl60g ep2600 의 거울(추가 학습 없음) | 같은 조건 성공 1.62/ep · 쥔 기울기 8.4° | rh56f1_control, rh56f1_fake |
-| `rh56f1/aglt/left_env17f` | left | candidate | ep200 | 왼팔 env17 이어 학습(거울 → 왼팔 env 200 epoch) — 거울보다 성공 · 기울기가 낫다, left_env17mir 를 대체 | 결정론 64 env · tol 0.02 · ADR 0 · 하중 끔: 성공 4.79/5(5개 다 채움 0.93) · 쥔 기울기 중앙 5.6°(p90 12.3°) · 쥔 높이 0.23 × 입구 | rh56f1_control, rh56f1_fake |
+| `rh56f1/aglt/left_env17f` | left | candidate | ep200 | 왼팔 env17 이어 학습(거울 → 왼팔 env 200 epoch) — 거울보다 성공 · 기울기가 낫다, left_env17mir 를 대체 | 결정론 64 env · tol 0.02 · ADR 0 · 하중 끔: 성공 4.79/5(5개 다 채움 0.93) · 쥔 기울기 중앙 5.6°(p90 12.3°) · 쥔 높이 0.23 × 입구 | – |
 | `rh56f1/aglt/left_env17mir` | left | hold | ep1000 | 우 env17 ep1000 의 거울(추가 학습 없음) | 같은 조건 성공 4.40/5(5개 다 채움 0.83) · 쥔 기울기 8.1° | – |
+| `rh56f1/aglt/left_g5362` | left | candidate | ep2000 | cyl60 · 손 어드민턴스(실기 /hand_left/angle_target) 전제 다지 파지 · 이송 — 보상 iter_18g · 실측 팔 지연 학습 | 결정론 64 env · tol 0.02 · ADR 0: 성공 4.78/5(5개 다 0.94) · 3지 이상 접촉 0.99 · q_geo 0.410 · 엄지 > 800 g 0.04 · 뒤집기(중력 180° · 무게 ×2 · ×2.5) 놓침 0/64 · 1/64 | rh56f1_control, rh56f1_fake |
 | `rh56f1/aglt/left_i05` | left | candidate | ep3800 | 왼팔 첫 파지 정책(보상 iter_05) — mirror_l5 의 원본 | 학습 로그 파지 0.80 · 들기 0.75 · 성공 0.9~1.1/ep(tol 0.021) · 엄지 대향 0.04 | – |
 | `rh56f1/aglt/left_i09d` | left | candidate | ep3000 | shaker × 0.65 · 보상 iter_09 · 실측 지연 적응 · 다섯 손가락 파지 | 지연 켬 · 컵 든 0.98 · 성공 1.19/ep(tol 0.035) · 0.05(tol 0.02) · 컵 기울기 18° · 어깨 j2 한계 0.31 | – |
 | `rh56f1/aglt/left_i10` | left | candidate | ep4600 | 우 i10 ep4600 의 거울(추가 학습 없음) | 지연 0 · 컵 든 1.00 · 성공 2.02/ep(tol 0.0229) · 0.83(tol 0.02) · 실측 지연 넣으면 0.78 | – |
 | `rh56f1/aglt/left_i10d` | left | candidate | ep2200 | 우 i10 거울 → 실측 지연으로 이어 2200 epoch | 지연 켬 · 컵 든 0.89 · 성공 2.55/ep(tol 0.052) · 0.06(tol 0.02) · 컵 기울기 13° | – |
 | `rh56f1/aglt/right_cyl60g` | right | candidate | ep2600 | cyl60 원통 · FP++ 지각과 파지 후 FK 부착으로 이어 학습한 최신 파지 · 이송 | 결정론 64 env · tol 0.02 · FP++ 조건 성공 1.77/ep(원 cyl60n 1.16) · 쥔 기울기 4.4° · 이송 중 j2 한계 37 % | rh56f1_control, rh56f1_fake |
-| `rh56f1/aglt/right_env17` | right | candidate | ep1000 | cyl60 · 보상 iter_17(목표 근처 머묾 수입 제거) · 붓기 하중으로 이어 학습한 최신 파지 · 이송 — 쥔 높이 컵 중심 위 약 +2 cm | 결정론 64 env · tol 0.02 · ADR 0 · 하중 끔: 성공 4.91~4.93/5(5개 다 채움 0.97) · 목표 2 cm 안 16.6 % · 쥔 기울기 4.9° · 관절 한계 ≤ 0.03 | rh56f1_control, rh56f1_fake |
+| `rh56f1/aglt/right_env17` | right | candidate | ep1000 | cyl60 · 보상 iter_17(목표 근처 머묾 수입 제거) · 붓기 하중으로 이어 학습한 최신 파지 · 이송 — 쥔 높이 컵 중심 위 약 +2 cm | 결정론 64 env · tol 0.02 · ADR 0 · 하중 끔: 성공 4.91~4.93/5(5개 다 채움 0.97) · 목표 2 cm 안 16.6 % · 쥔 기울기 4.9° · 관절 한계 ≤ 0.03 | – |
+| `rh56f1/aglt/right_g5362b` | right | candidate | ep2200 | cyl60 · 손 어드민턴스(실기 /hand_right/angle_target) 전제 다지 파지 · 이송 — 보상 iter_18g · 실측 팔 지연 학습 | 결정론 64 env · tol 0.02 · ADR 0: 성공 4.90/5(5개 다 0.97) · 3지 이상 접촉 0.98 · q_geo 0.397 · 엄지 > 800 g 0.03 · 뒤집기(중력 180° · 무게 ×2 · ×2.5) 놓침 0/64 · 0/64 | rh56f1_control, rh56f1_fake |
 | `rh56f1/aglt/right_i03` | right | hold | ep4600 | 엄지를 컵 입구 안에 넣는 파지 — hold(오른팔 첫 후보였던 것) | 학습 로그 파지 0.73~0.79 · 성공 1.1~1.3/ep · 엄지 끝 컵 안 0.97 | – |
 | `rh56f1/aglt/right_i09d` | right | candidate | ep5800 | shaker × 0.65 · 보상 iter_09 · 실측 지연 적응 · 세 손가락 파지 | 지연 켬 · 컵 든 0.91 · 성공 0.84/ep(tol 0.039) · 0.05(tol 0.02) · 손목 j6 한계 0.45 | – |
 | `rh56f1/aglt/right_i10` | right | candidate | ep4600 | shaker × 0.65 · 보상 iter_10 · 지연 없이 학습(①) | 지연 0 · 컵 든 1.00 · 성공 2.0~2.3/ep(tol 0.0229) · 0.8~0.9(tol 0.02) · 실측 지연 넣으면 컵 든 0.8 | – |
@@ -76,12 +80,14 @@ rh56f1/
 | `rh56f1/aglt/left_cyl60gmir` | rh_aglt_r/iter_10 | cyl60 (노란 원통 Ø60×170) | 없음 | 지각 + 부착 | 0.02 | 홈 · hold 10 (ADR 20 부터) |
 | `rh56f1/aglt/left_env17f` | rh_aglt_l/iter_17 | cyl60 (노란 원통 Ø60×170) | 없음 | 지각 + 부착 | 0.02 | 홈 · hold 10 (ADR 20 부터) |
 | `rh56f1/aglt/left_env17mir` | rh_aglt_r/iter_17 | cyl60 (노란 원통 Ø60×170) | 없음 | 지각 + 부착 | 0.02 | 홈 · hold 10 (ADR 20 부터) |
+| `rh56f1/aglt/left_g5362` | rh_aglt_l/iter_18g | cyl60 (노란 원통 Ø60×170) | 팔 9–12 · 손 3–5 스텝 | 지각 + 부착 | 0.02 | 홈 · hold 10 (ADR 29 부터) |
 | `rh56f1/aglt/left_i05` | rh_aglt_l/iter_05 | shaker×0.65 (흰 출력물 aglt_cup_s065, Ø57) | 없음 (키 전 런) | 없음 | 0.1→0.02 | 홈 · hold 10 |
 | `rh56f1/aglt/left_i09d` | rh_aglt_l/iter_09 | shaker×0.65 (흰 출력물 aglt_cup_s065, Ø57) | 팔 9–12 · 손 3–5 스텝 | 없음 | 0.1→0.02 | 홈 · hold 10 |
 | `rh56f1/aglt/left_i10` | rh_aglt_l/iter_10 | shaker×0.65 (흰 출력물 aglt_cup_s065, Ø57) | 없음 | 없음 | 0.1→0.02 | 홈 · hold 10 |
 | `rh56f1/aglt/left_i10d` | rh_aglt_l/iter_10 | shaker×0.65 (흰 출력물 aglt_cup_s065, Ø57) | 팔 9–12 · 손 3–5 스텝 | 없음 | 0.1→0.02 | 홈 · hold 10 |
 | `rh56f1/aglt/right_cyl60g` | rh_aglt_r/iter_10 | cyl60 (노란 원통 Ø60×170) | 없음 | 지각 + 부착 | 0.02 | 홈 · hold 10 (ADR 20 부터) |
 | `rh56f1/aglt/right_env17` | rh_aglt_r/iter_17 | cyl60 (노란 원통 Ø60×170) | 없음 | 지각 + 부착 | 0.02 | 홈 · hold 10 (ADR 20 부터) |
+| `rh56f1/aglt/right_g5362b` | rh_aglt_r/iter_18g | cyl60 (노란 원통 Ø60×170) | 팔 9–12 · 손 3–5 스텝 | 지각 + 부착 | 0.02 | 홈 · hold 10 (ADR 29 부터) |
 | `rh56f1/aglt/right_i03` | rh_aglt_r/iter_03 | shaker×0.65 (흰 출력물 aglt_cup_s065, Ø57) | 없음 (키 전 런) | 없음 | 0.1→0.02 | 홈 · hold 10 |
 | `rh56f1/aglt/right_i09d` | rh_aglt_r/iter_09 | shaker×0.65 (흰 출력물 aglt_cup_s065, Ø57) | 팔 9–12 · 손 3–5 스텝 | 없음 | 0.1→0.02 | 홈 · hold 10 |
 | `rh56f1/aglt/right_i10` | rh_aglt_r/iter_10 | shaker×0.65 (흰 출력물 aglt_cup_s065, Ø57) | 없음 | 없음 | 0.1→0.02 | 홈 · hold 10 |
@@ -186,12 +192,14 @@ python scripts/reinforcement_learning/rl_games/play.py --task open-short_b_pour_
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_l_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/left_cyl60gmir/nn/last_open-rh_l_aglt-lstm_ep_2600_rew_0.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_l_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/left_env17f/nn/last_open-rh_l_aglt-lstm_ep_200_rew_1834.8987.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_l_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/left_env17mir/nn/last_open-rh_l_aglt-lstm_ep_1000_rew_0.pth
+python scripts/reinforcement_learning/rl_games/play.py --task open-rh_l_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/left_g5362/nn/last_open-rh_l_aglt-lstm_ep_2000_rew_1936.3903.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_l_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/left_i05/nn/last_open-rh_l_aglt-lstm_ep_3800_rew_3346.764.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_l_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/left_i09d/nn/last_open-rh_l_aglt-lstm_ep_3000_rew_2940.748.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_l_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/left_i10/nn/last_open-rh_l_aglt-lstm_ep_4600_mirror_of_r_i10.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_l_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/left_i10d/nn/last_open-rh_l_aglt-lstm_ep_2200_rew_2715.922.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_cyl60g/nn/last_open-rh_r_aglt-lstm_ep_2600_rew_3509.6997.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_env17/nn/last_open-rh_r_aglt-lstm_ep_1000_rew_1240.1438.pth
+python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_g5362b/nn/last_open-rh_r_aglt-lstm_ep_2200_rew_1687.9644.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_i03/nn/last_open-rh_r_aglt-lstm_ep_4600_rew_3222.941.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_i09d/nn/last_open-rh_r_aglt-lstm_ep_5800_rew_1844.392.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_i10/nn/last_open-rh_r_aglt-lstm_ep_4600_rew_2678.948.pth
@@ -223,12 +231,14 @@ python scripts/reinforcement_learning/rl_games/play.py --task open-rh_b_pour_fj-
 - `rh56f1/aglt/left_cyl60gmir` — 결정론(5090, 64 env, tol 0.02, 같은 지각): 에피소드당 성공 1.62. 주의: 쥔 동안 컵 기울기 중앙 8.4°(오른팔 4.4°).
 - `rh56f1/aglt/left_env17f` — aglt_l_env17mir ep1000(우 env17 ep1000 의 거울) → 왼팔 env(보상 rh_aglt_l/iter_17 = 우 iter_17 과 같음 · cyl60 SDF · FP++ 지각 · 파지 후 부착 · 붓기 하중 0.7 · 지연 0 · ADR 20)에서 aglt_l_env17f 200 epoch, ep200 선택(같은 런 ep400 4.71 · ep600 4.75). 거울 그대로는 4.40 · 8.1°, 오른팔 env17 ep1000 은 4.91 · 4.9°. 놓기 인계 주의: 놓기 i01 시작 뱅크의 쥔 높이는 p5~p95 3.1~5.5 cm, 이 정책은 오른팔과 같은 중심 파지(+2.0 cm)라 그 끝자락 밖이다 — 에피소드는 아직 cyl60gmir.
 - `rh56f1/aglt/left_env17mir` — 10.06 hold — rh56f1/aglt/left_env17f(이 거울을 왼팔 env 에서 200 epoch 이어 학습, 4.79 · 5.6°)가 대체했다(T2R Grasping). 결정론(64 env × 1800 스텝, tol 0.02, ADR 0, 하중 끔): 에피소드당 성공 4.40 / 5(5개 다 채움 0.83, 오른팔 4.91~4.93). 주의: 쥔 동안 컵 기울기 8.1°(오른팔 4.9°). params/env.yaml 의 pour_load_enable 은 false(오른팔 true) — 학습하지 않은 거울이라 계약에는 영향 없다(계약 diff 0). 놓기 인계 주의: 놓기 i01 시작 뱅크의 쥔 높이는 p5~p95 3.1~5.5 cm, 오른팔 env17 은 +2.0 cm (이 거울은 따로 재지 않았다) — 에피소드는 아직 cyl60gmir.
+- `rh56f1/aglt/left_g5362` — 오른팔과 같은 커리큘럼(왼팔 env 에서 학습). 같은 런 ep4000 은 결정론 0.89 로 학습 후반 붕괴 — 쓰지 않는다(T2R Grasping). 계약 hand_command admittance — pd 가 에피소드 reset 때 받아 손 목표를 angle_target 으로 보낸다. 손 지연 3~5 스텝은 RS485 시절 값.
 - `rh56f1/aglt/left_i05` — 학습 로그 e3785~3964 파지 0.80 · 들기 0.75 · 목표 성공 0.9~1.1/에피소드(허용오차 2.1 cm). 엄지 대향이 후반에 줄었다(0.52 → 0.04). 계약 rh_aglt_contract.json 은 tools/build_rh_aglt_contract.py 로 런의 env.yaml 에서 만든다. 손 관측은 이름(프로필) 순 — pour_fj 와 달리 PhysX 순서 문제가 없다. 목표 = 리셋 때 컵 + (0, 0, 0.14)(학습 첫 목표 분포의 가운데).
 - `rh56f1/aglt/left_i09d` — 보상 iter_09 c1 · env 실기 반응(팔 지연 9~12 · 손 3~5 스텝 · 펌웨어 멈춤 · 편 손 하한)으로 학습. 결정론(64 env, 지연 켬) 컵 든 에피소드 0.98 · 낙하 0 · 목표 성공 1.19/에피소드(공차 0.035) — 공차 0.02(배포 달성 판정)에서는 0.05. 다섯 손가락 파지. 주의: 어깨 j2 한계 0.31 · 컵 기울기 중앙 18°.
 - `rh56f1/aglt/left_i10` — 좌 env 결정론(arm5080, 64 env) 지연 0: 컵 든 에피소드 1.00 · 목표 성공 2.02/에피소드(0.0229) · 0.83(0.02). 실측 지연: 컵 든 에피소드 0.78. 엄지 · 검지 · 중지 · 새끼 접촉, 약지 안 닿음. 컵 기울기 중앙 8.6°.
 - `rh56f1/aglt/left_i10d` — 우 i10 거울(i10mir) → 실측 지연으로 이어 2200 epoch(server). 결정론(64 env, 지연 켬): 컵 든 에피소드 0.89 · 낙하 0.006 · 목표 성공 2.55/에피소드(학습 공차 0.052) · 0.06(0.02). 다섯 손가락 파지 · 컵 기울기 중앙 13°.
 - `rh56f1/aglt/right_cyl60g` — aglt_r_cyl60n ep12800 → FP++ 지각(지연 250~400 ms · 10.5 Hz · 광선 잔차 ±4 mm) + 파지 후 FK 부착으로 이어 학습. 결정론(5090, 64 env, tol 0.02, 같은 지각): 에피소드당 성공 1.77(원 정책 1.16). 배포 전제 796b074 · 03cd917 · 104f2b1. 주의: 이송 중 어깨 j2 가 한계 0.05 rad 안에 37 %(출발 · 접근 0, 몸 접촉 0).
 - `rh56f1/aglt/right_env17` — aglt_r_env16 ep800 → 보상 iter_17 로 aglt_r_env17(3000 epoch) 이어 학습, ep1000 선택. 학습 env 는 cyl60g 와 같은 FP++ 지각 · 파지 후 부착 · 명령 지연 0 에 붓기 하중(prob 0.7)과 ADR 20→30 을 더했다. 뒤집기(구슬 20 · 실제 회전 ~118°): 놓침 0.14(cyl60g 0.06), 손 안 이동 중앙 0.29 cm. 실기에서 볼 것: 쥔 높이가 cyl60g(+4.3 cm)보다 약 2.3 cm 낮다. 놓기 인계 주의: 놓기 i09 시작 뱅크의 쥔 높이는 p5~p95 4.3~5.3 cm 라 env17(+2.0 cm)은 그 밖이다 — 에피소드는 아직 cyl60g.
+- `rh56f1/aglt/right_g5362b` — 커리큘럼 ① i18g(다섯 손가락) → ⑤ progress·dwell → ③ FP++ → ⑥ 어드민턴스 DR ±20 % → ② 실측 지연(관절별 3.5/3.2/3.3/2.3/4.1/8.6/7.3 스텝 ±1). 손 지연 3~5 스텝은 RS485 시절 값(EtherCAT 실측 전). 계약 hand_command admittance — pd 가 에피소드 reset 때 받아 손 목표를 angle_target 으로 보낸다(학습 k 1980 g/rad · f_max 800 g · tau 0.3 s · 0.3 rad/s = 정본 robot_control 계약 명목값). 팔로 180° 돌리는 뒤집기는 j7(약 110°) 한계로 판정 못 했다. 에피소드(config/episodes)는 아직 cyl60g(위치 제어) — 놓기 정책은 위치 제어 학습이라 어드민턴스 집기 → 위치 놓기 인계는 따로 정한다.
 - `rh56f1/aglt/right_i03` — 09.30 hold — 사용자 영상 판정: 엄지를 입구 안에 넣는 파지(결정론 probe 엄지 끝 컵 안 0.97). 오른팔은 rh56f1/aglt/right_mirror_l5 를 쓴다. LOOP_STATE 추천 구간 e4400~4800 (성공 200 epoch 평균 최고 1.1~1.3/에피소드, 파지 0.73~0.79). 마지막 가중치 쓰지 말 것. 엄지 대향 0 — 사용자 판정: 모양 결함 알고 쓰는 첫 실기 후보. 계약 rh_aglt_contract.json 은 tools/build_rh_aglt_contract.py 로 런의 env.yaml 에서 만든다. 손 관측은 이름(프로필) 순 — pour_fj 와 달리 PhysX 순서 문제가 없다. 목표 = 리셋 때 컵 + (0, 0, 0.14)(학습 첫 목표 분포의 가운데).
 - `rh56f1/aglt/right_i09d` — 보상 iter_09 c1 · env 실기 반응(팔 지연 9~12 · 손 3~5 스텝 · 펌웨어 멈춤 · 편 손 하한)으로 학습. 결정론(5090, 64 env, 지연 켬) 컵 든 에피소드 0.91 · 낙하 스텝 0.016 · 목표 성공 0.84/에피소드(공차 0.039) — 공차 0.02(배포 달성 판정)에서는 0.05. 세 손가락 파지(약지 · 새끼 0). 주의: 손목 j6 한계(여유 < 5 %) 0.45 · j6 출력 |mu|>1 0.58.
 - `rh56f1/aglt/right_i10` — 보상 iter_10 · env 9a46c174(지연 키 0 — 지연 없이 학습). 학습 공차 0.0229 m. 결정론(64 env) 지연 0: 컵 든 에피소드 1.00, 목표 성공 2.0~2.3/에피소드(0.0229) · 0.8~0.9(0.02). 실측 지연을 넣으면 컵 든 에피소드 0.8. 엄지 · 검지 · 중지 · 새끼 접촉, 약지 안 닫음. 지연 적응판(②)은 학습 중.

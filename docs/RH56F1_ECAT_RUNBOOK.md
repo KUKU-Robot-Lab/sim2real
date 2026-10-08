@@ -55,6 +55,16 @@
 - 남은 것: pd 가 실기 30 %(fake 17 %) · FP++ 깊이 광선 방향 13 mm 짧음(배포는 z −8 mm 만 보정) · pd 발행 상태 측정.
 - 보고서: ~/rl_ws/report/rh56f1_final_optimization_eli5.html. bag: logs/bags/20261003_231359_rt_cpu_check · 20261003_234451_policy_fpp_check(arm4090).
 
+## ★10.08 실기 런 자동 기록 (CPU · 팔 지연)
+
+- 실기 미션 단독 aglt(`policy_aglt_<side>`) · 에피소드 단계가 정책보다 먼저 bag(rh56f1_record.sh, pd applied · 손 명령 angle_set/angle_target 포함)과
+  프로세스별 CPU(`tools/proc_cpu_record.py` → logs/cpu/<단계>.csv, 끝날 때 요약)를 띄운다. 10.03 은 정책이 15 s 에 멈춰 추론 부하를 못 쟀다 —
+  이번에는 정책이 실제로 도는 동안 남는다. 요약만 다시: `python3 deploy/policy_control/tools/proc_cpu_record.py --summary logs/cpu/<이름>.csv`.
+- 팔 명령 → 움직임 지연: `python3 deploy/policy_control/tools/arm_latency_report.py logs/bags/<런>/arm --side right [--json …]`
+  (목표 → pd applied 집어감 · applied → 실측 관절별 p10/50/90). 10.03 home_return bag 으로 10.07 Grasping 회신 값을 재현한다(test_pc_run_tools).
+  10.04 pd 폴링(cee5f88) 이후 실측은 첫 실기 런 bag 으로 다시 잰다.
+- 단계가 도중에 실패해 기록이 남아도 다음 start 가 먼저 마무리하고, shutdown 이 남은 기록 · CPU 기록기를 내린다.
+
 ## ★10.03 고속 맞춤 (3ca354e · 4c1bfae)
 
 | 구간 | 값 | 근거 |

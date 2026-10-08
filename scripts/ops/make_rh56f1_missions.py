@@ -204,8 +204,13 @@ def _run(kind: str) -> dict:
         "shutdown": [
             _cmd("★양팔을 받침 위 · 안전 자세에 두었는가. 두 팔 모두 pd 해제를 끝냈는가. 다음 스텝부터 토크가 풀린다",
                  ["bash", "-lc", "true"], manual=True),
-            _cmd("남은 정책 노드 · pd 정지", stop=["policy_pourfj#1"] + [f"policy_aglt_{s}#1" for s in SIDES]
+            # 실기 aglt 단계는 맨 앞에 기록(bag · CPU) 두 줄이 붙어 정책 노드가 #3, CPU 기록이 #2(10.08)
+            _cmd("남은 정책 노드 · pd 정지", stop=["policy_pourfj#1"] + [f"policy_aglt_{s}#{AGLT_NODE_IDX[real]}" for s in SIDES]
+                 + ([f"policy_aglt_{s}#2" for s in SIDES] if real else [])
                  + [f"{p}_{s}#{i}" for s in SIDES for p, i in (("pd_load", 0), ("pd_arm", 1))]),
+            # 정책 · 에피소드 단계가 도중에 실패하면 bag 기록기가 남는다(setsid) — 기록 중이 아니면 그렇다고만 찍는다(10.08)
+            *([_cmd("남은 bag 기록 마무리(rh56f1_record.sh stop)", ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop"])]
+              if real else []),
             *([_cmd("카메라 · FP++ 내리기 — 런처가 없으면 이 PC 에서 직접 내린다",
                     ["python3", "{repo}/scripts/ops/perception_ctl.py", "stop", "--camera", "--host", "local", "--wait", "60"]),
                _cmd("인지 런처 · 자세 수신기 · 물체 자세 노드 · 컵홀더 노드 정지",
@@ -276,10 +281,13 @@ def _run(kind: str) -> dict:
         _cmd("정책 노드 정지", stop=["policy_pourfj#1"]),
     ]
     for s, cup in (("right", "src"), ("left", "rcv")):
+        rec = _record_start(f"aglt_{s}", [s], [f"/objects/{REAL_CUP}/pose"]) if real else []
+        assert len(rec) + 1 == AGLT_NODE_IDX[real]
         run[f"policy_aglt_{s}"] = [
             _cmd(f"★[{s}] 컵이 학습 배치(로봇 앞 x ≈ 0.25, y ≈ {'−' if s == 'right' else '+'}0.20 ± 0.1)에 서 있고 콘솔에 컵 자세"
                  f"(/objects/{REAL_CUP}/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가. 정책은 팔을 스스로 움직이고 "
                  "컵을 쥐어 든다 — 빈 컵만" if real else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
+            *rec,
             _cmd(f"[{s}] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)",
                  ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_aglt_node.py", "--ros-args",
                   # 팔마다 이름 · 에피소드를 가른다 — 양팔 정책을 한 세션에서 동시에 띄워도 서로의 reset · stop 이 섞이지 않는다(09.30)
@@ -297,7 +305,8 @@ def _run(kind: str) -> dict:
             _cmd("★관찰 — 이상하면 정지 바의 '에피소드 정지'", ["bash", "-lc", "true"], manual=True),
             _cmd("episode stop — pd 가 그 자세 · 손 쥠을 붙잡는다", ["python3", f"{PC}/tools/trigger.py", "episode/stop", "--episode-ns", s],
                  execute_args=["--execute"]),
-            _cmd("정책 노드 정지", stop=[f"policy_aglt_{s}#1"]),
+            _cmd("정책 노드 정지", stop=[f"policy_aglt_{s}#{AGLT_NODE_IDX[real]}"]),
+            *(_record_stop(f"policy_aglt_{s}", 2) if real else []),
         ]
         npz = f"{{repo}}/logs/policy_control/rehome_{s}.npz"
         p = s[0]
@@ -399,6 +408,12 @@ def _run(kind: str) -> dict:
         })
     for name in EPISODES:
         run[f"episode_{name}"] = _episode_run(name, real)
+    # 에피소드 단계가 도중에 실패하면 CPU 기록기가 남는다 — shutdown 의 정지 목록에 더한다(10.08 리뷰)
+    cpu = [f"episode_{name}#{i}" for name in EPISODES for i, c in enumerate(run[f"episode_{name}"])
+           if "proc_cpu_record.py" in " ".join(map(str, c.get("argv") or ()))]
+    if cpu:
+        stop = next(c for c in run["shutdown"] if c.get("stop") and "policy_pourfj#1" in c["stop"])
+        stop["stop"] = [*stop["stop"], *cpu]
     return run
 
 
@@ -471,9 +486,11 @@ def _episode_run(name: str, real: bool) -> list:
                                                    *(f"{s}/episode" for s in sides))]
         extra += [EPISODE_RELAY.format(o) for o in ep.objects] + [o["topic"] for o in ep.objects.values()]
         extra += [f"/objects/cup_holder_{h}/pose" for h in sorted(set(ep.holders.values()))]
+        extra += [f"/policy_control/pd_{s}/applied" for s in sides]       # 10.08 팔 지연 도구(arm_latency_report)가 쓴다
         cmds.append(_cmd("기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더",
                          ["bash", "-lc", f"EXTRA='{' '.join(extra)}' bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh "
                                          f"start episode_{name}"]))
+        cmds.append(_cpu_record(f"episode_{name}"))
     cmds.append(_cmd(f"에피소드 실행기 — {name} · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:{name})",
                      ["{repo}/.venv/bin/python", f"{PC}/policy_control/episode_runner_node.py", "--ros-args",
                       "-p", f"episode:=config/episodes/{name}.yaml", "-p", "robot:=rh56f1"], background=True))
@@ -485,6 +502,31 @@ def _episode_run(name: str, real: bool) -> list:
         cmds.append(_cmd("기록 끝 — bag 두 개 마무리(SIGINT)",
                          ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop"]))
     return cmds
+
+
+#: 단독 aglt 단계에서 정책 노드 명령 번호 — 실기는 앞에 기록 시작(bag) · CPU 기록이 붙는다
+AGLT_NODE_IDX = {True: 3, False: 1}
+
+
+def _cpu_record(name: str) -> dict:
+    """프로세스별 CPU 1 Hz CSV(tools/proc_cpu_record.py) — 10.03 은 정책이 15 s 에 멈춰 추론 부하를 못 쟀다(10.08 실기 전 세팅)."""
+    return _cmd("CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)",
+                ["python3", f"{PC}/tools/proc_cpu_record.py", "--out", f"{{repo}}/logs/cpu/{name}.csv"], background=True)
+
+
+def _record_start(name: str, sides: list, topics: list) -> list[dict]:
+    """단독 정책 단계 기록(실기) — bag(팔 · 손) + CPU. 팔 지연 도구가 쓰는 pd applied · 목표 · status 를 같이 싣는다(10.08)."""
+    extra = ["/policy_control/joint_target", *(f"/policy_control/{x}" for s in sides for x in
+                                                (f"status/pd_{s}", f"status/rh_aglt_node_{s}", f"{s}/episode", f"pd_{s}/applied")),
+             *topics]
+    return [_cmd(f"기록 시작 — 팔 · 손 bag(rh56f1_record.sh {name}) · 팔 지연은 tools/arm_latency_report.py <bag>/arm",
+                 ["bash", "-lc", f"EXTRA='{' '.join(extra)}' bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh start {name}"]),
+            _cpu_record(name)]
+
+
+def _record_stop(stage: str, cpu_index: int) -> list[dict]:
+    return [_cmd("CPU 기록 끝(요약은 그 단계 로그)", stop=[f"{stage}#{cpu_index}"]),
+            _cmd("기록 끝 — bag 두 개 마무리(SIGINT)", ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop"])]
 
 
 def _home(s: str) -> list[dict]:
@@ -558,9 +600,11 @@ def mission(kind: str) -> dict:
         # ★10.06 env17(T2R Grasping 새 s2r 후보, 보상 iter_17 · 쥔 높이 컵 중심 위 +2.0 cm, cyl60g +4.3 cm) — 계약은 cyl60g 와 체크포인트 외 같다.
         #   단독 aglt 점검 자리만 바꾼다. 에피소드(config/episodes/*.yaml)는 cyl60g 그대로 — 놓기 i09 · i01 시작 뱅크(our_source/place_bank/
         #   bank_{r,l}_cyl60_keep.npz)의 쥔 높이가 p5~p95 4.3~5.3 cm(우) · 3.1~5.5 cm(좌), 3 cm 아래 0 %(우) · 4 %(좌)다(10.06 실측)
-        "aglt_right": "deploy/policies/rh56f1/aglt/right_env17/rh_aglt_contract.json",
+        #   ★10.08 기본 = 손 어드민턴스 다지 파지 최종(T2R Grasping, 사용자 "이 정책으로 실기 테스트") — 계약 hand_command admittance 로
+        #   pd 가 손 목표를 /hand_<s>/angle_target 으로 보낸다. env17 · env17f(위치 제어)는 첫 화면에서 고를 수 있다.
+        "aglt_right": "deploy/policies/rh56f1/aglt/right_g5362b/rh_aglt_contract.json",
         #   10.06 왼팔은 env17 거울(left_env17mir) 대신 그 거울을 왼팔 env 에서 200 epoch 이어 학습한 left_env17f(T2R Grasping)
-        "aglt_left": "deploy/policies/rh56f1/aglt/left_env17f/rh_aglt_contract.json",
+        "aglt_left": "deploy/policies/rh56f1/aglt/left_g5362/rh_aglt_contract.json",
         # 한 팔 컵 홀더 놓기(10.04 PLACE 세션, aglt cyl60 인계) — 콘솔 자리는 아직 없다(팔마다 한 자리 = aglt)
         "place_right": "deploy/policies/rh56f1/place/right_i09/rh_place_contract.json",
         "place_left": "deploy/policies/rh56f1/place/left_i01/rh_place_contract.json",

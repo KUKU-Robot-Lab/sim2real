@@ -231,6 +231,12 @@ class PourFjChain:
 
 
 # ---------------------------------------------------------------- 계열
+def episode_body(event: dict, node: str, t_ns: int, contract) -> dict:
+    """/policy_control/<ns>/episode 본문. ★10.08 hand_command = 정책 계약의 손 명령 입력(없으면 position) —
+    pd 가 reset 때 받아 손 토픽(angle_set · angle_target)을 고른다."""
+    return {**event, "node": node, "t_ns": int(t_ns), "hand_command": str(getattr(contract, "hand_command", "position"))}
+
+
 class Family:
     def __init__(self, *, name, schema, load, roles, cups, meas, chain, refusals, targets, errors, label):
         self.name, self.schema, self.load, self.roles, self.cups = name, schema, load, roles, cups
@@ -461,7 +467,7 @@ class PourFjNode(LeanNodeMixin, Node):
         return res
 
     def _emit(self, event) -> None:
-        body = {**event.as_dict(), "node": self.node_name, "t_ns": self.get_clock().now().nanoseconds}
+        body = episode_body(event.as_dict(), self.node_name, self.get_clock().now().nanoseconds, self.contract)
         self._pub_episode.publish(self._String(data=json.dumps(body)))
         self.get_logger().info(f"episode {event.episode} {event.event} {list(event.reasons)}")
 

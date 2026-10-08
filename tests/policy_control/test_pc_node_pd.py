@@ -956,7 +956,7 @@ def test_a_late_target_of_a_stopped_episode_does_not_cancel_the_stop_hold():
     law = SimpleNamespace(q_setpoint=np.ones(7))
     unit = SimpleNamespace(side="right", arm_joints=joints, hand_joints=[], target=None, hold=None, hand_target=None,
                            stage=SimpleNamespace(state=SimpleNamespace(law=law), new_episode=lambda e: None),
-                           stopped_episode=None)
+                           stopped_episode=None, hand_command="position")
     A.ArmUnit.on_episode(unit, "stop", 3)
     assert unit.hold is not None
     assert A.ArmUnit.take_target(unit, sample, 900, 1.0, episode="3") is True and unit.hold is not None   # 늦은 목표 — 붙든다
@@ -964,3 +964,32 @@ def test_a_late_target_of_a_stopped_episode_does_not_cancel_the_stop_hold():
     A.ArmUnit.on_episode(unit, "stop", 3)
     A.ArmUnit.on_episode(unit, "reset", 3)
     assert A.ArmUnit.take_target(unit, sample, 1, 2.0, episode="3") is True and unit.hold is None        # 새 에피소드
+
+
+def test_the_hand_command_comes_from_the_episode_reset_and_stays_until_the_next_reset():
+    """10.08 어드민턴스 정책: 정책 노드가 reset 사건에 hand_command 를 싣고, pd 는 다음 reset 까지 그 입력으로 손을 보낸다 —
+    stop 뒤 붙든 손(hold)도 같은 입력이라 어드민턴스로 쥔 컵을 위치 서보로 짓누르지 않는다. 없는 키 = 위치(옛 정책 · 재생)."""
+    from types import SimpleNamespace
+    import numpy as np
+    import pytest
+    from policy_control import pd_arm as A
+
+    joints = [f"r_aj_{i}" for i in range(1, 8)]
+    unit = SimpleNamespace(side="right", arm_joints=joints, hand_joints=[], target=None, hold=None, hand_target=None,
+                           stage=SimpleNamespace(state=SimpleNamespace(law=SimpleNamespace(q_setpoint=np.ones(7))),
+                                                 new_episode=lambda e: None),
+                           stopped_episode=None, hand_command="position")
+    A.ArmUnit.on_episode(unit, "reset", 1, {"event": "reset", "hand_command": "admittance"})
+    assert unit.hand_command == "admittance"
+    A.ArmUnit.on_episode(unit, "start", 1, {"event": "start"})
+    A.ArmUnit.on_episode(unit, "stop", 1, {"event": "stop"})
+    assert unit.hand_command == "admittance" and unit.hold is not None
+    A.ArmUnit.on_episode(unit, "reset", 2, {"event": "reset"})
+    assert unit.hand_command == "position"                                 # 키 없는 reset(다른 계열) = 위치
+    A.ArmUnit.on_episode(unit, "start", 2, {"event": "start", "hand_command": "admittance"})
+    assert unit.hand_command == "admittance"                               # pd 를 도중에 다시 띄워도 latched start 로 맞춘다
+    A.ArmUnit.on_episode(unit, "stop", 2, {"event": "stop"})
+    assert unit.hand_command == "admittance"                               # 키 없는 stop 은 바꾸지 않는다
+    with pytest.raises(ValueError, match="손 명령 입력"):
+        A.ArmUnit.on_episode(unit, "reset", 3, {"hand_command": "force"})
+    assert unit.hand_command == "admittance"                               # 모르는 값 — 입력은 그대로

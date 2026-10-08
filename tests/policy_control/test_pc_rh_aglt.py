@@ -186,7 +186,7 @@ def test_the_cup_geometry_follows_the_object_like_the_training_env():
 
 
 @pytest.mark.parametrize("pid", ["rh56f1/aglt/right_cyl60g", "rh56f1/aglt/left_cyl60gmir", "rh56f1/aglt/right_env17", "rh56f1/aglt/left_env17mir",
-                                 "rh56f1/aglt/left_env17f"])
+                                 "rh56f1/aglt/left_env17f", "rh56f1/aglt/right_g5362b", "rh56f1/aglt/left_g5362"])
 def test_the_cylinder_contracts_carry_the_cylinder_not_the_stale_shaker_dump(pid):
     """10.04: train.py 는 hydra 가 object_name=cyl60 을 덮은 뒤 · env 가 resolve_cfg 를 다시 부르기 전에 env.yaml 을 덤프한다.
     덤프의 파생 값(반높이 0.0569 · 원점 높이 0.0599)은 기본 shaker × 0.65 값이고 학습 env 는 cyl60(0.085 · 0.085)으로 돌았다 —
@@ -327,3 +327,91 @@ def test_a_place_run_is_not_taken_for_rh_aglt_even_with_the_same_dimensions():
     place = POL / "rh56f1/place/right_i09" / "params" / "env.yaml"
     if place.is_file():
         assert not A.is_rh_aglt_run(A.read_env(place))
+
+
+# ---------------------------------------------------------------- ★10.08 손 어드민턴스 정책
+ADM_RUNS = ("rh56f1/aglt/right_g5362b", "rh56f1/aglt/left_g5362")
+
+
+@pytest.mark.parametrize("pid", ADM_RUNS)
+def test_admittance_runs_carry_the_hand_command_and_the_training_admittance(pid):
+    """10.08 T2R Grasping: 어드민턴스 전제 학습(hand_adm_enable) — 계약이 손 명령 입력과 학습 값을 싣는다. 디코더 · 관측은 env17 과 같다."""
+    c = A.load_contract(POL / pid / "rh_aglt_contract.json")
+    env = yaml.unsafe_load((POL / pid / "params" / "env.yaml").read_text())
+    assert env["hand_adm_enable"] is True and c.hand_command == "admittance"
+    assert c.hand_admittance == {"k_g_per_rad": env["hand_adm_k_g_per_rad"], "f_max_g": env["hand_adm_f_max_g"],
+                                 "tau_contact_s": env["hand_adm_tau_contact_s"], "rate_rad_s": env["hand_adm_rate_rad_s"],
+                                 "dr_frac": env["hand_adm_dr_frac"]}
+    old = A.load_contract(POL / ("rh56f1/aglt/right_env17" if "right" in pid else "rh56f1/aglt/left_env17f") / "rh_aglt_contract.json")
+    assert old.hand_command == "position" and old.hand_admittance == {}          # 이 필드 전 계약 = 위치 제어
+    for k in ("k_arm", "arm_ema", "hand_ema", "hand_full_range_s", "freeze_threshold_n", "goal_offset", "goal_tol", "hold_steps"):
+        assert getattr(c, k) == getattr(old, k), k
+
+
+def test_a_run_without_the_admittance_switch_stays_position_and_a_half_switch_is_refused():
+    assert A.hand_command_of({}) == ("position", {})
+    assert A.hand_command_of({"hand_adm_enable": False, "hand_adm_k_g_per_rad": 1.0}) == ("position", {})
+    with pytest.raises(A.RhAgltError, match="hand_adm"):
+        A.hand_command_of({"hand_adm_enable": True, "hand_adm_k_g_per_rad": 1980.0})
+    c = A.load_contract(POL / ADM_RUNS[0] / "rh_aglt_contract.json")
+    with pytest.raises(A.RhAgltError, match="hand_command"):
+        A.with_run(c, hand_command="force")
+    with pytest.raises(A.RhAgltError, match="같이"):
+        A.with_run(c, hand_admittance={})
+
+
+def test_training_admittance_must_equal_the_real_driver_admittance():
+    """학습 명목값(rad) = 실기 드라이버(정본 robot_control components/rh56f1.yaml, 레지스터) — 빌드 도구가 다르면 거부한다."""
+    tool = importlib.util.spec_from_file_location("_build_rh_aglt", REPO / "deploy/policy_control/tools/build_rh_aglt_contract.py")
+    mod = importlib.util.module_from_spec(tool)
+    tool.loader.exec_module(mod)
+    try:
+        real, reg_per_rad = mod.real_admittance()
+    except SystemExit as exc:
+        pytest.skip(f"정본 손 계약 없음: {exc}")
+    assert reg_per_rad == pytest.approx(549.5, abs=0.5)
+    for pid in ADM_RUNS:
+        assert A.admittance_mismatch(A.load_contract(POL / pid / "rh_aglt_contract.json").hand_admittance, real, reg_per_rad) == []
+    train = {"k_g_per_rad": 1980.0, "f_max_g": 800.0, "tau_contact_s": 0.3, "rate_rad_s": 0.3}
+    assert A.admittance_mismatch(train, {**real, "tau_contact_s": 0.5}, reg_per_rad) == ["tau_contact_s: 학습 0.3 ≠ 실기 0.5"]
+    assert len(A.admittance_mismatch(train, {**real, "k_g_per_reg": 4.0}, reg_per_rad)) == 1
+
+
+def test_the_episode_body_tells_pd_which_hand_command_to_use():
+    c = A.load_contract(POL / ADM_RUNS[0] / "rh_aglt_contract.json")
+    body = N.episode_body({"episode": 3, "event": "reset"}, "rh_aglt_node", 7, c)
+    assert body == {"episode": 3, "event": "reset", "node": "rh_aglt_node", "t_ns": 7, "hand_command": "admittance"}
+    assert N.episode_body({"event": "reset"}, "n", 0, object())["hand_command"] == "position"     # 손 명령 입력 없는 계열
+
+
+@pytest.mark.parametrize("pid", ADM_RUNS)
+def test_the_admittance_checkpoints_load_and_act(pid):
+    pytest.importorskip("torch")
+    c = A.load_contract(POL / pid / "rh_aglt_contract.json")
+    if not Path(c.checkpoint).is_file():
+        pytest.skip("가중치 없음(.gitignore) — our_source/policy 에서 복사")
+    test_the_checkpoint_loads_and_acts(c)
+
+
+def test_the_hand_command_names_match_the_pd_backend():
+    from policy_control import pd_backends as B
+    assert A.HAND_COMMANDS == B.HAND_COMMANDS
+
+
+def test_an_episode_does_not_hand_over_between_hand_command_inputs():
+    """10.08 리뷰: 어드민턴스로 쥔 컵을 위치 제어 정책(놓기)이 이어받으면 reset 에서 입력이 바뀐다 — 인계 규칙을 정하기 전에는
+    한 팔의 에피소드 정책이 모두 같은 입력이어야 한다. 바꾸려면 이 시험을 먼저 고친다."""
+    import yaml as Y
+    for path in sorted((REPO / "config" / "episodes").glob("*.yaml")):
+        spec = Y.safe_load(path.read_text())
+        by_side: dict = {}
+        for role, b in (spec.get("policies") or {}).items():
+            if not b.get("policy"):                                       # 아직 비운 자리(붓기)
+                continue
+            run = POL / b["policy"]
+            cpath = next(run.glob("rh_*_contract.json"), None)
+            if cpath is None:
+                continue
+            mode = json.loads(cpath.read_text()).get("hand_command") or "position"
+            by_side.setdefault(b.get("side"), set()).add(mode)
+        assert all(len(m) == 1 for m in by_side.values()), f"{path.name}: {by_side}"

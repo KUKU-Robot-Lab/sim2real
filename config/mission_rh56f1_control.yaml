@@ -11,8 +11,8 @@ artifacts:
   path_left: deploy/policy_control/paths/home_rh56f1_left.npz
   pourfj_both: deploy/policies/rh56f1/pour_fj/both_f01/pour_fj_contract.json
   robot_bi: deploy/policy_control/config/robots/rh56f1_bi_real.yaml
-  aglt_right: deploy/policies/rh56f1/aglt/right_env17/rh_aglt_contract.json
-  aglt_left: deploy/policies/rh56f1/aglt/left_env17f/rh_aglt_contract.json
+  aglt_right: deploy/policies/rh56f1/aglt/right_g5362b/rh_aglt_contract.json
+  aglt_left: deploy/policies/rh56f1/aglt/left_g5362/rh_aglt_contract.json
   place_right: deploy/policies/rh56f1/place/right_i09/rh_place_contract.json
   place_left: deploy/policies/rh56f1/place/left_i01/rh_place_contract.json
   rh56f1_ports: deploy/policy_control/config/rh56f1_ports.yaml
@@ -481,12 +481,21 @@ run:
   - note: 남은 정책 노드 · pd 정지
     stop:
     - policy_pourfj#1
-    - policy_aglt_right#1
-    - policy_aglt_left#1
+    - policy_aglt_right#3
+    - policy_aglt_left#3
+    - policy_aglt_right#2
+    - policy_aglt_left#2
     - pd_load_right#0
     - pd_arm_right#1
     - pd_load_left#0
     - pd_arm_left#1
+    - episode_pick_place_right#6
+    - episode_pick_place_left#6
+  - note: 남은 bag 기록 마무리(rh56f1_record.sh stop)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
   - note: 카메라 · FP++ 내리기 — 런처가 없으면 이 PC 에서 직접 내린다
     argv:
     - python3
@@ -665,6 +674,19 @@ run:
     - -lc
     - 'true'
     manual: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh aglt_right) · 팔 지연은 tools/arm_latency_report.py <bag>/arm
+    argv:
+    - bash
+    - -lc
+    - EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/right/episode
+      /policy_control/pd_right/applied /objects/cyl60/pose' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start aglt_right
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{repo}/logs/cpu/aglt_right.csv'
+    background: true
   - note: '[right] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)'
     argv:
     - '{repo}/.venv/bin/python'
@@ -724,7 +746,15 @@ run:
     - --execute
   - note: 정책 노드 정지
     stop:
-    - policy_aglt_right#1
+    - policy_aglt_right#3
+  - note: CPU 기록 끝(요약은 그 단계 로그)
+    stop:
+    - policy_aglt_right#2
+  - note: 기록 끝 — bag 두 개 마무리(SIGINT)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
   rehome_right:
   - note: ★[right] 손에 컵이 있으면 사람이 받아 든다(다음 스텝이 손을 편다) · 이 팔 · 손 주변과 경로(테이블 앞 · 몸통 옆)가 비어 있는가. 정책이 멈춘 자리 → 정책 시작 자세(홈)로 간다(최대 0.1 rad/s, 약 20~40
       s)
@@ -880,6 +910,19 @@ run:
     - -lc
     - 'true'
     manual: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh aglt_left) · 팔 지연은 tools/arm_latency_report.py <bag>/arm
+    argv:
+    - bash
+    - -lc
+    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/left/episode
+      /policy_control/pd_left/applied /objects/cyl60/pose' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start aglt_left
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{repo}/logs/cpu/aglt_left.csv'
+    background: true
   - note: '[left] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)'
     argv:
     - '{repo}/.venv/bin/python'
@@ -939,7 +982,15 @@ run:
     - --execute
   - note: 정책 노드 정지
     stop:
-    - policy_aglt_left#1
+    - policy_aglt_left#3
+  - note: CPU 기록 끝(요약은 그 단계 로그)
+    stop:
+    - policy_aglt_left#2
+  - note: 기록 끝 — bag 두 개 마무리(SIGINT)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
   rehome_left:
   - note: ★[left] 손에 컵이 있으면 사람이 받아 든다(다음 스텝이 손을 편다) · 이 팔 · 손 주변과 경로(테이블 앞 · 몸통 옆)가 비어 있는가. 정책이 멈춘 자리 → 정책 시작 자세(홈)로 간다(최대 0.1 rad/s, 약 20~40
       s)
@@ -1883,8 +1934,15 @@ run:
     - bash
     - -lc
     - EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
-      /policy_control/status/episode_runner /policy_control/right/episode /episode/objects/CUP/pose /objects/cyl60/pose /objects/cup_holder_1/pose'
-      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_pick_place_right
+      /policy_control/status/episode_runner /policy_control/right/episode /episode/objects/CUP/pose /objects/cyl60/pose /objects/cup_holder_1/pose
+      /policy_control/pd_right/applied' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_pick_place_right
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{repo}/logs/cpu/episode_pick_place_right.csv'
+    background: true
   - note: 에피소드 실행기 — pick_place_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_right)
     argv:
     - '{repo}/.venv/bin/python'
@@ -1903,6 +1961,7 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_pick_place_right#7
     - episode_pick_place_right#6
     - episode_pick_place_right#4
     - episode_pick_place_right#3
@@ -1985,8 +2044,15 @@ run:
     - bash
     - -lc
     - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
-      /policy_control/status/episode_runner /policy_control/left/episode /episode/objects/CUP/pose /objects/cyl60/pose /objects/cup_holder_1/pose'
-      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_pick_place_left
+      /policy_control/status/episode_runner /policy_control/left/episode /episode/objects/CUP/pose /objects/cyl60/pose /objects/cup_holder_1/pose
+      /policy_control/pd_left/applied' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_pick_place_left
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{repo}/logs/cpu/episode_pick_place_left.csv'
+    background: true
   - note: 에피소드 실행기 — pick_place_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_left)
     argv:
     - '{repo}/.venv/bin/python'
@@ -2005,6 +2071,7 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_pick_place_left#7
     - episode_pick_place_left#6
     - episode_pick_place_left#4
     - episode_pick_place_left#3

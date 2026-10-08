@@ -196,6 +196,7 @@ class HandCmd:
     dt: float
     q_meas: np.ndarray | None = None   # canonical 순 실측 — 첫 지령의 속도 제한 기준(없으면 첫 지령 무제한)
     max_vel: float | None = None       # 이 지령만의 속도 상한 [rad/s] — None 이면 백엔드 기본(max_vel)
+    mode: str = "position"             # ★10.08 손 명령 입력(HAND_COMMANDS) — RH56F1 만 쓴다: admittance = angle_target
 
 
 @dataclass(frozen=True)
@@ -289,6 +290,18 @@ RH56F1_RESEND_S = 1.0
 RH56F1_HW_RESEND_S = 5.0
 
 
+#: ★10.08 손 명령 입력 — position = 위치 서보(/hand_<s>/angle_set), admittance = 같은 목표 + 마스터의 손가락별 어드민턴스
+#: (/hand_<s>/angle_target, robot_control components/rh56f1.yaml command.admittance). 마스터는 축마다 마지막으로 받은 입력을 따른다.
+HAND_COMMANDS = ("position", "admittance")
+
+
+def hand_command(value) -> str:
+    v = "position" if value is None else str(value)
+    if v not in HAND_COMMANDS:
+        raise ValueError(f"손 명령 입력 {v!r} — {HAND_COMMANDS}")
+    return v
+
+
 class Rh56f1AngleBackend:
     """RH56F1 — 손 목표(rad, 계약 hand_joints 순 6) → 속도 제한 → 벤더 각도 레지스터 SetAngle1(슬롯 순, 0.1°).
 
@@ -330,16 +343,37 @@ class Rh56f1AngleBackend:
                     self._hw_pubs[key] = (typ, _GuardedPublisher(node, typ, f"{base}/{key}_set", True))
         self._pub = _GuardedPublisher(node, self._msg_type, topic, self.execute) if self.execute else _GuardedPublisher(
             node, None, topic, False)
+        #: ★10.08 어드민턴스 입력(angle_target) — 같은 이름공간. 에피소드가 admittance 를 고를 때만 쓴다(정책 계약 hand_command)
+        adm_topic = f"{base}/angle_target"
+        self._pub_adm = _GuardedPublisher(node, self._msg_type, adm_topic, self.execute)
+        self._mode = "position"
         self._prev: np.ndarray | None = None
         self._last_sent: tuple[list[int], float] | None = None
         self.last_register: list[int] | None = None
 
     @property
     def publish_count(self) -> int:
-        return self._pub.count
+        return self._pub.count + self._pub_adm.count
+
+    @property
+    def mode(self) -> str:
+        """마지막으로 보낸(보낼) 손 명령 입력."""
+        return self._mode
+
+    @property
+    def admittance_count(self) -> int:
+        return self._pub_adm.count
 
     def write(self, cmd: HandCmd) -> HandWritten:
         dt = _check_dt(cmd.dt)
+        mode = hand_command(cmd.mode)
+        if mode != self._mode:                  # 입력을 바꾸면 곧바로 보낸다 — 마스터가 축마다 마지막 입력을 따른다
+            if self._mode == "admittance" and mode == "position":
+                # 어드민턴스로 쥔 손가락은 목표보다 앞(접촉 쪽)에 막혀 있다 — 마지막 목표를 위치 서보로 한 번에 보내면 힘 제한(800 g)
+                # 없이 컵을 짓누른다(10.08 리뷰). 실측 각에서 속도 상한으로 다시 출발한다.
+                self._prev = None
+            self._mode = mode
+            self._last_sent = None
         q_t = hand_safe_target(_vec(cmd.q_star, len(self.names), "hand q_star"), self.lower, self.upper,
                                self.limit_margin)
         meas = None if cmd.q_meas is None else _vec(cmd.q_meas, len(self.names), "hand q_meas")
@@ -380,7 +414,7 @@ class Rh56f1AngleBackend:
         msg = self._msg_type()
         msg.hand_id = self.hand_id
         msg.joint_values = [int(v) for v in reg]
-        self._pub.publish(msg)
+        (self._pub_adm if self._mode == "admittance" else self._pub).publish(msg)
 
     def zero_release(self) -> None:
         """드라이버가 마지막 레지스터를 유지한다 — 보낼 0 이 없다. 직전 지령만 잊는다."""
