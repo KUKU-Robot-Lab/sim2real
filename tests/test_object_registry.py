@@ -16,7 +16,7 @@ from object_registry import (  # noqa: E402
 
 def test_default_registry_loads_real_objects():
     reg = load_registry(DEFAULT_REGISTRY)
-    assert set(reg.names()) == {"shaker_closed", "cup_big_s100", "aglt_cup_s065", "cyl60", "cup_holder"}
+    assert set(reg.names()) == {"shaker_closed", "cup_big_s100", "aglt_cup_s065", "cyl60", "cyl60_blue", "cup_holder"}
     assert reg.get("shaker_closed").origin_above_bottom_m == pytest.approx(0.0921)
     assert reg.get("shaker_closed").symmetry_axis == (0.0, 0.0, 1.0)
     assert reg.get("cup_big_s100").symmetry_axis == (0.0, 1.0, 0.0)
@@ -30,6 +30,17 @@ def test_aglt_cup_is_shaker_scaled_065():
     assert ag.origin_above_bottom_m == pytest.approx(0.65 * sh.origin_above_bottom_m, abs=1e-5)
     assert ag.cad_to_body_pos == pytest.approx(0.65 * sh.cad_to_body_pos, abs=1e-5)
     assert ag.fpp["detection_pick"] == "bright"
+
+
+def test_blue_cup_is_cyl60_told_apart_by_colour():
+    """10.08 사용자: 왼쪽 파랑 · 오른쪽 노랑 — 같은 원통 모양을 FP++ 가 색으로만 가른다(노랑 bright · 파랑 blue)."""
+    reg = load_registry(DEFAULT_REGISTRY)
+    y, b = reg.get("cyl60"), reg.get("cyl60_blue")
+    assert (y.fpp["detection_pick"], b.fpp["detection_pick"]) == ("bright", "blue")
+    for key in ("mesh_path", "mesh_scale_to_meters", "cup_class_id"):
+        assert b.fpp[key] == y.fpp[key], key
+    assert b.origin_above_bottom_m == y.origin_above_bottom_m and b.symmetry_flip and y.symmetry_flip
+    assert list(b.cad_to_body_pos) == list(y.cad_to_body_pos)
 
 
 def test_alias_resolves_to_canonical_and_unknown_raises():

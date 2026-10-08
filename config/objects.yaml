@@ -62,7 +62,7 @@ objects:
     aabb: [[-0.0286, -0.0286, -0.05987], [0.0286, 0.0286, 0.05389]]
     symmetry_axis: [0.0, 0.0, 1.0]
   cyl60:
-    real: "노란 원통 cyl60(⌀60 × 170 mm, 벽 2.5 mm) — rh_aglt cyl60 정책 · 붓기 인계 컵(arm4090)"
+    real: "노란 원통 cyl60(⌀60 × 170 mm, 벽 2.5 mm) — rh_aglt cyl60 정책 · 붓기 인계 컵(arm4090) · 10.08 부터 오른쪽 컵(왼쪽은 cyl60_blue)"
     # 10.04 T2R Grasping: aglt_r_cyl60g · aglt_l_cyl60gmir ep2600 으로 s2r(사용자 승인). sim 자산 hdgp/assets/cyl_60mm/cyl_60mm_rl.usd,
     #   원점 = 원통 중심(바닥 위 0.085). YOLO 는 이 원통을 cup(41)으로 약하게 잡는다(10.03 눕힌 원통 0.13) — 문턱을 낮게,
     #   검은 상판 위 노란색이라 가장 밝은 것을 고른다(검은 컵홀더는 어둡다).
@@ -84,6 +84,25 @@ objects:
     #   aglt 시작 검사(서 있는 컵, 기울기 15° 이하)가 거부한다 → 출력 축을 위로 맞춘다. 테이블 위 서 있는 컵에만 맞는 가정이다
     #   (90° 넘게 기운 컵 · 붓는 중은 FP++ 가 아니라 손바닥 FK 로 본다).
     symmetry_flip: true
+  cyl60_blue:
+    real: "파란 원통 cyl60(⌀60 × 170 mm) — 10.08 사용자: 왼쪽 파랑 · 오른쪽 노랑(cyl60). 모양 · 메쉬 · 원점은 cyl60 과 같다"
+    # 컨테이너 하나 = 물체 하나. 둘 다 YOLO cup(41) 후보에서 색으로 고른다 — 이 항목은 파랑이 가장 센 것(B − max(R, G)),
+    #   cyl60 은 가장 밝은 것(노랑이 파랑보다 밝다). 같은 색 컵 둘이면 다시 못 가른다.
+    fpp:
+      mesh_path: assets/s2r_meshes/cyl60.obj
+      mesh_scale_to_meters: 1.0
+      cup_class_id: 41
+      detection_pick: blue
+      yolo_confidence: 0.1
+    cad_to_body:
+      position: [0.0, 0.0, 0.0]
+      orientation_wxyz: [1.0, 0.0, 0.0, 0.0]
+    sim:
+      usd: hdgp/assets/cyl_60mm/cyl_60mm_rl.usd
+      origin_above_bottom_m: 0.085
+    aabb: [[-0.030, -0.030, -0.085], [0.030, 0.030, 0.085]]
+    symmetry_axis: [0.0, 0.0, 1.0]
+    symmetry_flip: true                  # cyl60 과 같은 이유 — 위아래 같은 원통을 FP++ 가 뒤집어 잡는다
   cup_holder:
     real: "검은 컵홀더 — hdgp/assets/cup_holder 형상 출력물(링 ⌀80/⌀70 · 테이블 끝 클램프), 테이블 왼쪽부터 0 · 1 · 2"
     # 10.03 사용자: 마커 추정(scripts/calib/cup_holder_pose.py)을 FP++ 로 재확인. YOLO(yolov8m-seg)는 홀더를 cup(41)으로

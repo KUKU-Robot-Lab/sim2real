@@ -545,7 +545,11 @@ def _perception_chain(g: _Graph, name: str, unit: str | None = None) -> str:
     FP++ 자세를 UDP 로 받아 ROS 로 내는 수신기(fpp_pose_rx)가 미션에 있으면 FPP 상자의 스위치다."""
     host = g.percept_host or VISION_HOST
     rx = g.providers.get("__fpp_rx__")
-    tracker = g.box(f"fpp_{name}", f"FPP 추적 · {name}", L_TRACK, host=host, unit=rx, ros=[FPP_RX_NODE] if rx else None,
+    # 수신기 하나가 모든 물체를 낸다(10.08 두 컵) — ROS 노드는 처음 그린 FPP 상자 하나만 주장한다(한 노드 = 한 상자)
+    claim = rx is not None and not g.providers.get("__fpp_rx_claimed__")
+    if claim:
+        g.providers["__fpp_rx_claimed__"] = f"fpp_{name}"
+    tracker = g.box(f"fpp_{name}", f"FPP 추적 · {name}", L_TRACK, host=host, unit=rx, ros=[FPP_RX_NODE] if claim else None,
                     note=f"docker fpp_{name} ({INPUT_NS})" + (" · 자세는 fpp_pose_rx 가 UDP 로 받아 낸다" if rx else ""))
     camera = _camera(g)
     for cam in CAMERA_TOPICS:

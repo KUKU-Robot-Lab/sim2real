@@ -422,7 +422,7 @@ def test_the_fake_rh56f1_picture_has_the_real_pictures_boxes():
     titles = {b.title for b in real.boxes}
     # fake 에 없는 것: 인지(카메라 · FP++ · 런처 — 정지 컵을 fake 가 바로 낸다). fake 에만 있는 것: 막히지 않은 붓기 노드
     missing = {b.title for b in real.boxes} - {b.title for b in fake.boxes}
-    assert missing <= {"인지 런처 · local", "카메라 (RealSense)", "FPP 추적 · cyl60"}, missing
+    assert missing <= {"인지 런처 · local", "카메라 (RealSense)", "FPP 추적 · cyl60", "FPP 추적 · cyl60_blue"}, missing
     extra = {b.title for b in fake.boxes} - titles
     assert extra <= {"pour_fj_node · 붓기 정책 (오른팔 · 왼팔)"}, extra
 
