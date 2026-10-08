@@ -310,8 +310,10 @@ def _group_alive(pgid: int) -> bool:
 
 def _wait_group_empty(popen: subprocess.Popen, deadline: float) -> bool:
     while True:
-        popen.poll()                                  # 리더를 거둔다 — 거두지 않으면 좀비로 남는다
-        if not _group_alive(popen.pid):
+        reaped = popen.poll() is not None             # 리더를 거둔다 — 거두지 않으면 좀비로 남는다
+        # ★10.08 리더의 주 스레드가 먼저 끝나면 /proc 에는 'Z' 로 보이지만 다른 스레드(torch · rclpy)가 정리 중이라 아직 거둘 수 없다 —
+        #   그때 비었다고 하면 is_alive(=poll None)가 참이라 정지 단계가 실패했다. 리더까지 거둬져야 빈 것이다.
+        if reaped and not _group_alive(popen.pid):
             return True
         if time.time() >= deadline:
             return False

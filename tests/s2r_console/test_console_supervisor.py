@@ -121,3 +121,28 @@ def test_the_reason_may_come_from_the_controller_manager_not_the_spawner():
     assert SV.benign_spawner_death(DIED_HAND, [NOT_INACTIVE, DIED_HAND])
     other = NOT_INACTIVE.replace("dg5f_right_controller", "dg5f_left_controller")
     assert not SV.benign_spawner_death(DIED_HAND, [other, DIED_HAND])     # 다른 컨트롤러 이야기면 아니다
+
+
+def test_group_is_empty_only_after_the_leader_is_reaped(monkeypatch):
+    """10.08 fake: 정책 노드(torch · rclpy 스레드)가 SIGTERM 을 받으면 주 스레드가 먼저 끝나 /proc 의 리더가 'Z' 로 보이는데
+    다른 스레드는 아직 정리 중이라 poll() 은 None 이다 — 그때 '그룹 비었다' 로 끝내면 is_alive 가 참이라 정지 단계가
+    "정지되지 않았다" 로 실패했다. 리더가 거둬질 때까지(poll 이 rc 를 낼 때까지) 기다린다."""
+    from s2r_console import supervisor as SV
+
+    class _Popen:
+        pid = 4242
+
+        def __init__(self):
+            self.calls = 0
+
+        def poll(self):
+            self.calls += 1
+            return None if self.calls < 4 else -15
+
+    monkeypatch.setattr(SV, "_group_alive", lambda pgid: False)          # 리더는 Z, 다른 프로세스 없음
+    p = _Popen()
+    assert SV._wait_group_empty(p, deadline=__import__("time").time() + 5.0) is True
+    assert p.calls >= 4 and p.poll() == -15
+    q = _Popen()
+    q.poll = lambda: None                                                  # 끝내 안 거둬지면 기한에 거짓
+    assert SV._wait_group_empty(q, deadline=__import__("time").time() + 0.2) is False
