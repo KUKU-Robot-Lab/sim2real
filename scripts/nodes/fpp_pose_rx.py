@@ -48,6 +48,7 @@ def main() -> None:
             self.lock = threading.Lock()
             self.heartbeat: tuple[float, float] | None = None
             self.published = {n: 0 for n in names}
+            self.looped = {n: 0 for n in names}                 # 루프백 자세 — 다시 내지 않고 센다
             self.rejected = 0
             self.last_reject = ""
             self.sender = ""
@@ -86,6 +87,9 @@ def main() -> None:
                 if isinstance(packet, U.Heartbeat):
                     self.heartbeat = (time.monotonic(), packet.camera_hz)
                     return
+                if not U.relays_pose(addr[0]):              # 이 PC 의 FP++ 가 이미 낸 자세다(local)
+                    self.looped[packet.name] += 1
+                    return
                 self.published[packet.name] += 1
             msg = PoseStamped()
             msg.header.frame_id = packet.frame
@@ -103,9 +107,11 @@ def main() -> None:
         def _report(self) -> None:
             with self.lock:
                 pub = " · ".join(f"{n} {c}" for n, c in self.published.items() if c)
+                loop = sum(self.looped.values())
                 hz = U.camera_hz_at(self.heartbeat, time.monotonic())
                 line = (f"송신 {self.sender or '없음'} · 카메라 {hz:.1f} Hz · 냄 {pub or '0'} · 버림 {self.rejected}"
-                        f"{' (' + self.last_reject + ')' if self.last_reject else ''}")
+                        f"{' (' + self.last_reject + ')' if self.last_reject else ''}"
+                        f"{f' · 루프백 {loop}(이 PC 의 FP++ 가 직접 낸다)' if loop else ''}")
             self.get_logger().info(line)
 
         def close(self) -> None:

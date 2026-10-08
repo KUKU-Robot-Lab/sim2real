@@ -45,6 +45,7 @@ def main() -> None:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.sock.setblocking(False)
             self.seq = 0
+            self.fresh = U.StampGate()                          # 되돌아온 사본은 다시 보내지 않는다(10.08)
             self.sent = {n: 0 for n in names}
             self.dropped = 0
             self.last_error = ""
@@ -71,6 +72,9 @@ def main() -> None:
             return self.seq
 
         def _on_pose(self, name: str, msg) -> None:
+            stamp = (int(msg.header.stamp.sec), int(msg.header.stamp.nanosec))
+            if not self.fresh.accept(name, stamp):
+                return
             p, q = msg.pose.position, msg.pose.orientation
             packet = U.PosePacket(seq=self._next(), name=name, frame=msg.header.frame_id or "camera",
                                   stamp=(int(msg.header.stamp.sec), int(msg.header.stamp.nanosec)),
