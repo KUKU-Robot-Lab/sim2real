@@ -162,9 +162,9 @@ def test_real_cups_run_fpp_on_this_pc_after_the_head_home_and_shutdown_takes_it_
     head = _cmds(REAL, REAL_BOOK, "head_home")
     assert any("head_pose_check.py" in " ".join(c.argv) and "head_home_rh56f1.yaml" in " ".join(c.argv) for c in head)
     cups = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "cups")]
-    for want in ("perception_launcher_node.py --host local", "fpp_pose_rx.py", "object_pose_node.py --objects cyl60 cyl60_blue",
+    for want in ("perception_launcher_node.py --host local", "fpp_pose_rx.py", "object_pose_node.py --objects cyl60 cyl60_blue cyl60_pink",
                  "--camera-extrinsics", "global_camera_extrinsics_arm4090.yaml",
-                 "perception_ctl.py start cyl60 cyl60_blue --wait 150",
+                 "perception_ctl.py start cyl60 cyl60_blue cyl60_pink --wait 150",
                  "/objects/cyl60/pose", "/objects/cyl60_blue/pose"):
         assert any(want in a for a in cups), want
     bg = [c for c in _cmds(REAL, REAL_BOOK, "cups") if c.background]

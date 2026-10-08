@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""같은 모양 · 다른 색 물체 여럿을 FP++ 컨테이너 하나에서 — 색 판정 · 검출 배정 · 한 번 찍기 대표 자세(순수).
+
+10.08 사용자: "컨테이너 하나에, 색깔이 다른 동일 모델을 추출" — 파랑 · 핑크 · 노랑 cyl60. YOLO 는 셋 다 cup(41)으로
+잡을 뿐 구분하지 못한다 → 마스크 안 화소의 색상(HSV hue) 비율로 어느 물체인지 가른다. fpp_snapshot_node 가 쓴다.
+
+색상 범위는 OpenCV 눈금(hue 0~180). 10.08 arm4090 머리 카메라 실측: 파랑 99~105 · 노랑 23~28 · 핑크 158 ·
+테이블(검정) 채도 21. 채도 · 명도가 낮은 화소(테이블 · 그림자 · 컵 안 어두운 곳)는 어느 색에도 넣지 않는다.
+"""
+from __future__ import annotations
+
+import numpy as np
+
+#: 색 이름 → hue 구간들(OpenCV 0~180, 양 끝 포함)
+HUE_RANGES: dict[str, tuple[tuple[float, float], ...]] = {
+    "yellow": ((15.0, 40.0),),
+    "blue": ((85.0, 130.0),),
+    "pink": ((140.0, 175.0),),
+    "red": ((0.0, 8.0), (176.0, 180.0)),
+}
+COLORS = tuple(HUE_RANGES)
+S_MIN = 80.0       # 채도(0~255) — 테이블 21
+V_MIN = 50.0       # 명도(0~255)
+MIN_SCORE = 0.25   # 마스크의 이 비율 넘게 그 색이어야 그 물체로 본다
+
+
+def _hsv(px: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """N×3 RGB(uint8) → hue(0~180) · 채도(0~255) · 명도(0~255). OpenCV COLOR_RGB2HSV 와 같은 정의."""
+    p = px.astype(np.float64)
+    r, g, b = p[:, 0], p[:, 1], p[:, 2]
+    v = p.max(axis=1)
+    mn = p.min(axis=1)
+    d = v - mn
+    s = np.where(v > 0, 255.0 * d / np.maximum(v, 1e-9), 0.0)
+    dd = np.maximum(d, 1e-9)
+    h = np.where(v == r, (g - b) / dd, np.where(v == g, 2.0 + (b - r) / dd, 4.0 + (r - g) / dd))
+    h = np.where(d > 0, (h * 30.0) % 180.0, 0.0)
+    return h, s, v
+
+
+def color_fraction(rgb: np.ndarray, mask: np.ndarray, color: str) -> float:
+    """마스크 화소 중 그 색(채도 · 명도 문턱을 넘고 hue 가 구간 안)인 비율. 빈 마스크는 0."""
+    if color not in HUE_RANGES:
+        raise ValueError(f"색 {color!r} 을 모른다 — {COLORS}")
+    m = np.asarray(mask, bool)
+    n = int(m.sum())
+    if n == 0:
+        return 0.0
+    h, s, v = _hsv(np.asarray(rgb)[m].reshape(-1, 3))
+    vivid = (s >= S_MIN) & (v >= V_MIN)
+    inside = np.zeros(h.shape, bool)
+    for lo, hi in HUE_RANGES[color]:
+        inside |= (h >= lo) & (h <= hi)
+    return float((vivid & inside).sum()) / n
+
+
+def assign(rgb: np.ndarray, masks: list[np.ndarray], wanted: dict[str, str],
+           min_score: float = MIN_SCORE) -> dict[str, int]:
+    """물체 이름 → 검출 번호. 색 비율이 높은 짝부터 하나씩 — 한 검출은 한 물체에만, 문턱 못 넘는 물체는 뺀다."""
+    pairs = sorted(((color_fraction(rgb, m, color), name, i)
+                    for name, color in wanted.items() for i, m in enumerate(masks)), reverse=True)
+    out: dict[str, int] = {}
+    used: set[int] = set()
+    for score, name, i in pairs:
+        if score < min_score or name in out or i in used:
+            continue
+        out[name] = i
+        used.add(i)
+    return out
+
+
+def scores(rgb: np.ndarray, masks: list[np.ndarray]) -> list[dict[str, float]]:
+    """검출마다 색별 비율(상태 보고용)."""
+    return [{c: round(color_fraction(rgb, m, c), 3) for c in COLORS} for m in masks]
+
+
+def representative(poses: list[np.ndarray]) -> tuple[np.ndarray, float]:
+    """여러 장의 4×4 자세 → (위치 중앙값에 가장 가까운 한 장, 그 중앙값에서 가장 먼 장까지 mm)."""
+    if not poses:
+        raise ValueError("자세가 없다")
+    P = np.stack([np.asarray(T, float) for T in poses])
+    t = P[:, :3, 3]
+    med = np.median(t, axis=0)
+    d = np.linalg.norm(t - med, axis=1)
+    return P[int(np.argmin(d))].copy(), float(d.max() * 1e3)

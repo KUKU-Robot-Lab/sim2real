@@ -10,6 +10,7 @@ import sys
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -99,18 +100,30 @@ def last_crash(log: str, limit: int = 160) -> str | None:
     return "Traceback (오류 줄 없음)"
 
 
-def plan_actions(cmd: Command, state: RemoteState) -> list[tuple[str, ...]]:
+def _container(name: str, group_of: Callable[[str], str | None] | None) -> str:
+    group = group_of(name) if group_of else None
+    return container_name(group) if group else container_name(name)
+
+
+def plan_actions(cmd: Command, state: RemoteState,
+                 group_of: Callable[[str], str | None] | None = None) -> list[tuple[str, ...]]:
+    """group_of(물체) → 묶음 이름(objects.yaml fpp.group) — 묶음 물체는 컨테이너 fpp_<묶음> 하나(10.08 한 번 찍기)."""
     actions: list[tuple[str, ...]] = []
     if cmd.op == "start":
         if not state.camera_up:
             actions.append(("camera_up",))
-        wanted = {container_name(n) for n in cmd.objects}
+        wanted = {_container(n, group_of) for n in cmd.objects}
         for cname in sorted(state.containers):
             if cname.startswith(CONTAINER_PREFIX) and cname not in wanted:
                 actions.append(("fpp_down", cname))
+        started: set[str] = set()
         for name in cmd.objects:
-            if not state.containers.get(container_name(name), "").startswith("Up"):
-                actions.append(("fpp_up", name))
+            cname = _container(name, group_of)
+            if cname in started or state.containers.get(cname, "").startswith("Up"):
+                continue
+            started.add(cname)
+            group = group_of(name) if group_of else None
+            actions.append(("fpp_group_up", group) if group else ("fpp_up", name))
         if not state.pose_tx_up:
             actions.append(("pose_tx_up",))
         if cmd.viewer is True and not state.viewer_up:
@@ -137,11 +150,12 @@ def plan_actions(cmd: Command, state: RemoteState) -> list[tuple[str, ...]]:
 
 
 def build_status(state: RemoteState | None, camera_hz: float, pose_ages: dict[str, float | None],
-                 busy: bool, error: str | None) -> dict:
+                 busy: bool, error: str | None, group_of: Callable[[str], str | None] | None = None) -> dict:
     objects = {}
     for name, age in pose_ages.items():
-        cont = state.containers.get(container_name(name)) if state else None
-        crash = state.crashes.get(container_name(name)) if state else None
+        cname = _container(name, group_of)
+        cont = state.containers.get(cname) if state else None
+        crash = state.crashes.get(cname) if state else None
         objects[name] = {"container": cont, "pose_age_s": age, "crash": crash}
     return {
         "gpu": state.gpu if state else None,

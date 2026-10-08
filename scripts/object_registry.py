@@ -29,6 +29,8 @@ CONTAINER_PREFIX = "fpp_"
 _FPP_KEYS = ("mesh_path", "mesh_scale_to_meters", "cup_class_id",
              "detection_pick", "yolo_confidence")
 _PICKS = ("confidence", "dark", "bright", "red", "blue")
+#: fpp.group 이 있는 물체는 컨테이너 fpp_<group> 하나에서 한 번 찍는다(10.08, scripts/nodes/fpp_snapshot_node.py) —
+#: 그때는 fpp.color(fpp_color_pick.COLORS)로 YOLO 후보를 가른다. detection_pick 은 물체별 컨테이너(옛 방식)용
 
 
 @dataclass(frozen=True)
@@ -82,6 +84,16 @@ def container_name(name: str) -> str:
     return f"{CONTAINER_PREFIX}{name}"
 
 
+def container_for(spec: ObjectSpec) -> str:
+    """그 물체의 FP++ 컨테이너 — 묶음(fpp.group)이면 fpp_<group> 하나, 아니면 물체마다."""
+    group = spec.fpp.get("group")
+    return container_name(group) if group else container_name(spec.name)
+
+
+def group_members(registry: Registry, group: str) -> list[str]:
+    return [n for n, s in registry.objects.items() if s.fpp.get("group") == group]
+
+
 def _parse_object(name: str, raw: dict) -> ObjectSpec:
     for key in ("real", "fpp", "cad_to_body", "sim", "aabb"):
         if key not in raw:
@@ -92,6 +104,12 @@ def _parse_object(name: str, raw: dict) -> ObjectSpec:
             raise ValueError(f"objects.{name}.fpp: missing key '{key}'")
     if fpp["detection_pick"] not in _PICKS:
         raise ValueError(f"objects.{name}.fpp.detection_pick must be one of {_PICKS}")
+    if "group" in fpp:
+        from fpp_color_pick import COLORS
+        if not isinstance(fpp["group"], str) or not fpp["group"]:
+            raise ValueError(f"objects.{name}.fpp.group must be a non-empty name")
+        if fpp.get("color") not in COLORS:
+            raise ValueError(f"objects.{name}.fpp.color must be one of {COLORS} (group {fpp['group']})")
     cad = raw["cad_to_body"]
     aabb = raw["aabb"]
     if len(aabb) != 2 or any(len(c) != 3 for c in aabb):
@@ -167,6 +185,25 @@ def render_fpp_yaml(spec: ObjectSpec) -> str:
               f"# 실물: {spec.real}\n")
     return header + yaml.safe_dump({"cup_tracking": {"ros__parameters": params}},
                                    sort_keys=False, allow_unicode=True)
+
+
+def render_group_yaml(registry: Registry, group: str) -> str:
+    """묶음 컨테이너(fpp_snapshot_node --config) 설정 — 묶음의 물체 전부(요청에 없는 것도, 못 찾으면 비워 둔다)."""
+    names = group_members(registry, group)
+    if not names:
+        raise ValueError(f"묶음 {group!r} 에 물체가 없다")
+    objs = []
+    for n in names:
+        f = registry.get(n).fpp
+        objs.append({"name": n, "color": f["color"], "mesh_path": str(f["mesh_path"]),
+                     "mesh_scale_to_meters": float(f["mesh_scale_to_meters"]), "yolo_confidence": float(f["yolo_confidence"]),
+                     "pose_topic": input_topic(n)})
+    body = {"objects": objs, "cup_class_id": int(registry.get(names[0]).fpp["cup_class_id"]),
+            "yolo_weights": "models/yolo/yolov8m-seg.pt", "tracking_config": "config/cup_tracking.yaml",
+            "track_frames": 8, "republish_hz": 5.0, "retry_s": 3.0}
+    header = (f"# 생성됨 — sim2real/config/objects.yaml 의 fpp.group '{group}'. 손으로 고치지 말 것.\n"
+              f"# 물체: {', '.join(names)}\n")
+    return header + yaml.safe_dump(body, sort_keys=False, allow_unicode=True)
 
 
 def extrinsics_for(spec: ObjectSpec, camera_yaml: str | Path) -> Extrinsics:

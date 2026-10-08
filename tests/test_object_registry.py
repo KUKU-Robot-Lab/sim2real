@@ -16,7 +16,7 @@ from object_registry import (  # noqa: E402
 
 def test_default_registry_loads_real_objects():
     reg = load_registry(DEFAULT_REGISTRY)
-    assert set(reg.names()) == {"shaker_closed", "cup_big_s100", "aglt_cup_s065", "cyl60", "cyl60_blue", "cup_holder"}
+    assert set(reg.names()) == {"shaker_closed", "cup_big_s100", "aglt_cup_s065", "cyl60", "cyl60_blue", "cyl60_pink", "cup_holder"}
     assert reg.get("shaker_closed").origin_above_bottom_m == pytest.approx(0.0921)
     assert reg.get("shaker_closed").symmetry_axis == (0.0, 0.0, 1.0)
     assert reg.get("cup_big_s100").symmetry_axis == (0.0, 1.0, 0.0)
@@ -126,3 +126,31 @@ def test_cyl60_fpp_mesh_matches_the_sim_cylinder():
     m = trimesh.load(repo / "assets/meshes" / Path(c.fpp["mesh_path"]).name, force="mesh")
     assert np.allclose(m.bounds, [[-0.03, -0.03, -0.085], [0.03, 0.03, 0.085]], atol=1e-4)
     assert np.allclose(m.bounds, np.array(c.aabb), atol=1e-4)
+
+
+def test_three_colour_cups_share_one_fpp_container():
+    """10.08 사용자: 파랑 · 핑크 · 노랑 cyl60 을 컨테이너 하나에서(한 번 찍기). 같은 메쉬, 색만 다르다."""
+    from object_registry import container_for, group_members, render_group_yaml
+    reg = load_registry(DEFAULT_REGISTRY)
+    cups = {"cyl60": "yellow", "cyl60_blue": "blue", "cyl60_pink": "pink"}
+    for name, color in cups.items():
+        spec = reg.get(name)
+        assert spec.fpp["group"] == "cups" and spec.fpp["color"] == color
+        assert container_for(spec) == "fpp_cups"
+        assert spec.fpp["mesh_path"] == reg.get("cyl60").fpp["mesh_path"] and spec.symmetry_flip
+    assert group_members(reg, "cups") == list(cups)
+    assert container_for(reg.get("cup_holder")) == "fpp_cup_holder"          # 묶음 없는 물체는 그대로
+    doc = yaml.safe_load(render_group_yaml(reg, "cups"))
+    assert [o["name"] for o in doc["objects"]] == list(cups)
+    assert {o["name"]: o["color"] for o in doc["objects"]} == cups
+    assert {o["pose_topic"] for o in doc["objects"]} == {input_topic(n) for n in cups}
+
+
+def test_a_group_member_needs_a_known_colour(tmp_path):
+    raw = yaml.safe_load(DEFAULT_REGISTRY.read_text())
+    raw["objects"]["cyl60_pink"]["fpp"]["color"] = "purple"
+    raw["camera_extrinsics"] = str(DEFAULT_REGISTRY.parent.parent / raw["camera_extrinsics"])
+    f = tmp_path / "objects.yaml"
+    f.write_text(yaml.safe_dump(raw, allow_unicode=True))
+    with pytest.raises(ValueError, match="color"):
+        load_registry(f)

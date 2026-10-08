@@ -1,0 +1,272 @@
+#!/usr/bin/env python3
+"""FP++ 컨테이너 하나에서 같은 모양 · 다른 색 물체 여럿을 한 번 찍는다(10.08 사용자). 컨테이너 안에서 돈다.
+
+    python3 /opt/s2r/scripts/nodes/fpp_snapshot_node.py --config /opt/params/<그룹>.yaml
+    (scripts/vision/fpp_group_up.sh 가 띄운다 — 인지 런처가 objects.yaml 의 fpp.group 으로 부른다)
+
+왜: 컵은 가만히 있고 정책도 시작 때 컵 자세를 한 번 붙잡는다(에피소드 snapshot · 단독 aglt cup_latch, 10.04 사용자
+"FPP 는 정지 상태만, 잡은 뒤는 FK"). 물체마다 컨테이너를 두면 모델을 따로 올리고(하나 약 1.4 GB) 첫 등록이 겹쳐
+GPU 가 모자랐다(10.08 두 컨테이너 동시 등록 → 2.6 GB 더 요구 · OOM).
+
+하는 일:
+  1. 최신 컬러 · 정렬 깊이 한 장 → YOLO(cup 후보 전부) → 마스크 색 비율로 물체마다 후보 하나(fpp_color_pick.assign).
+  2. 물체마다 차례로: FP++ 등록 → 이어지는 몇 장 추적 → 위치 중앙값에 가까운 장(대표 자세) → 추적 상태 비움.
+     모델 · CUDA 컨텍스트는 하나를 재사용한다(재등록 = reset_object). 그래서 최대 메모리는 물체 수와 무관하다.
+  3. 대표 자세를 /perception_plus_plus/<물체>/pose 에 republish_hz 로 계속 낸다(stamp = 지금, 같은 값) —
+     object_pose_node 가 base 로 바꾼다. 신선도를 보는 하류(정책 노드 · 콘솔)가 그대로 돈다.
+  4. 못 찾은 물체는 retry_s 마다 다시 찾는다. /perception_plus_plus/snapshot/cmd(String "all" | "이름,이름")로 다시 찍는다
+     (컵을 옮긴 뒤).
+  /perception_plus_plus/snapshot/status(String JSON): 물체별 found · 색 비율 · 흔들림 mm · 장 수 · 오류, 후보별 색 비율.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import threading
+import time
+from pathlib import Path
+
+import numpy as np
+import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import fpp_color_pick as C  # noqa: E402
+
+STATUS_TOPIC = "/perception_plus_plus/snapshot/status"
+CMD_TOPIC = "/perception_plus_plus/snapshot/cmd"
+
+
+def load_config(path: str | Path) -> dict:
+    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    objs = raw.get("objects")
+    if not isinstance(objs, list) or not objs:
+        raise ValueError(f"{path}: objects 목록이 없다")
+    for o in objs:
+        for k in ("name", "color", "mesh_path", "mesh_scale_to_meters", "pose_topic"):
+            if k not in o:
+                raise ValueError(f"{path}: 물체 {o.get('name')} 에 {k} 가 없다")
+        if o["color"] not in C.COLORS:
+            raise ValueError(f"{path}: 물체 {o['name']} 색 {o['color']!r} — {C.COLORS}")
+    return raw
+
+
+def main(argv=None) -> None:
+    ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
+    ap.add_argument("--config", required=True)
+    args = ap.parse_args(argv)
+    cfg = load_config(args.config)
+
+    import rclpy
+    from cv_bridge import CvBridge
+    from geometry_msgs.msg import PoseStamped
+    from message_filters import ApproximateTimeSynchronizer, Subscriber
+    from rclpy.node import Node
+    from rclpy.qos import qos_profile_sensor_data
+    from sensor_msgs.msg import CameraInfo, Image
+    from std_msgs.msg import String
+
+    from perception_plus_plus_core.config import TrackingConfig
+    from perception_plus_plus_core.detection.yolo import YoloCupDetector
+    from perception_plus_plus_core.fp_adapter.foundationpose_plus_plus import FoundationPosePlusPlusAdapter
+    from perception_plus_plus_core.types import CameraIntrinsics, FrameBundle, MeshSpec
+    from perception_plus_plus_core.validation.depth import depth_to_meters
+    from perception_plus_plus_core.validation.quality import evaluate_quality
+
+    objects = {o["name"]: o for o in cfg["objects"]}
+    track_frames = int(cfg.get("track_frames", 8))
+    retry_s = float(cfg.get("retry_s", 3.0))
+    tconf = TrackingConfig.from_yaml(cfg.get("tracking_config", "config/cup_tracking.yaml"))
+
+    class Snapshot(Node):
+        def __init__(self) -> None:
+            super().__init__("fpp_snapshot")
+            self.bridge = CvBridge()
+            self.lock = threading.Lock()
+            self.frame: FrameBundle | None = None
+            self.frame_seq = 0
+            self.header = None
+            self.poses: dict[str, np.ndarray] = {}
+            self.info: dict[str, dict] = {n: {"found": False} for n in objects}
+            self.candidates: list = []
+            self.pending: set[str] = set(objects)
+            self.wake = threading.Event()
+            self.pubs = {n: self.create_publisher(PoseStamped, o["pose_topic"], 10) for n, o in objects.items()}
+            self.status_pub = self.create_publisher(String, STATUS_TOPIC, 10)
+            self.create_subscription(String, CMD_TOPIC, self._on_cmd, 10)
+            subs = [Subscriber(self, Image, cfg.get("rgb_topic", "/camera/camera/color/image_raw"),
+                               qos_profile=qos_profile_sensor_data),
+                    Subscriber(self, Image, cfg.get("depth_topic", "/camera/camera/aligned_depth_to_color/image_raw"),
+                               qos_profile=qos_profile_sensor_data),
+                    Subscriber(self, CameraInfo, cfg.get("camera_info_topic", "/camera/camera/color/camera_info"),
+                               qos_profile=qos_profile_sensor_data)]
+            self.sync = ApproximateTimeSynchronizer(subs, 10, 0.04)
+            self.sync.registerCallback(self._on_frame)
+            self.create_timer(1.0 / float(cfg.get("republish_hz", 5.0)), self._republish)
+            self.create_timer(1.0, self._publish_status)
+            self.adapter = FoundationPosePlusPlusAdapter()
+            self.detector = YoloCupDetector(cfg.get("yolo_weights", "models/yolo/yolov8m-seg.pt"),
+                                            int(cfg.get("cup_class_id", 41)),
+                                            float(min(o.get("yolo_confidence", 0.1) for o in objects.values())),
+                                            pick="confidence")
+            self.error = ""
+            threading.Thread(target=self._worker, name="fpp-snapshot", daemon=True).start()
+            listing = ", ".join(f"{n}({o['color']})" for n, o in objects.items())
+            self.get_logger().info(f"물체 {listing} · 한 번 찍기")
+
+        # ── 입력 ──
+        def _on_frame(self, rgb_msg, depth_msg, info_msg) -> None:
+            rgb = np.asarray(self.bridge.imgmsg_to_cv2(rgb_msg, "rgb8"))
+            depth = depth_to_meters(np.asarray(self.bridge.imgmsg_to_cv2(depth_msg, "passthrough")), depth_msg.encoding)
+            k = info_msg.k
+            frame = FrameBundle(rgb, depth, CameraIntrinsics(k[0], k[4], k[2], k[5], info_msg.width, info_msg.height),
+                                rclpy.time.Time.from_msg(rgb_msg.header.stamp).nanoseconds, rgb_msg.header.frame_id)
+            with self.lock:
+                self.frame, self.header = frame, rgb_msg.header
+                self.frame_seq += 1
+
+        def _on_cmd(self, msg) -> None:
+            text = msg.data.strip()
+            names = set(objects) if text in ("", "all") else {n.strip() for n in text.split(",")} & set(objects)
+            with self.lock:
+                for n in names:
+                    self.poses.pop(n, None)
+                    self.info[n] = {"found": False}
+                self.pending |= names
+            self.get_logger().info(f"다시 찍기: {sorted(names)}")
+            self.wake.set()
+
+        def _next_frame(self, after: int, timeout: float = 2.0):
+            t0 = time.monotonic()
+            while time.monotonic() - t0 < timeout:
+                with self.lock:
+                    if self.frame is not None and self.frame_seq > after:
+                        return self.frame, self.frame_seq
+                time.sleep(0.01)
+            return None, after
+
+        # ── 찍기 ──
+        def _worker(self) -> None:
+            seq = 0
+            while rclpy.ok():
+                with self.lock:
+                    todo = sorted(self.pending)
+                if not todo:
+                    self.wake.wait(timeout=1.0)
+                    self.wake.clear()
+                    continue
+                frame, seq = self._next_frame(seq, timeout=5.0)
+                if frame is None:
+                    self.error = "카메라 영상이 없다"
+                    continue
+                try:
+                    self._snapshot(frame, seq, todo)
+                    self.error = ""
+                except Exception as exc:  # noqa: BLE001 — 노드는 살아서 오류를 상태로 낸다
+                    self.error = f"{type(exc).__name__}: {exc}"[:200]
+                    self.get_logger().error(self.error)
+                with self.lock:
+                    left = bool(self.pending)
+                if left:
+                    self.wake.wait(timeout=retry_s)
+                    self.wake.clear()
+
+        def _snapshot(self, frame, seq: int, todo: list[str]) -> None:
+            dets = self.detector.detect(frame.rgb)
+            masks = [d.mask for d in dets]
+            self.candidates = [{"conf": round(d.confidence, 3), "box": _box(d), **s}
+                               for d, s in zip(dets, C.scores(frame.rgb, masks))]
+            pick = C.assign(frame.rgb, masks, {n: objects[n]["color"] for n in todo})
+            for name in todo:
+                if name not in pick:
+                    self.info[name] = {"found": False, "why": "그 색 후보가 없다"}
+                    continue
+                det = dets[pick[name]]
+                o = objects[name]
+                mesh = MeshSpec(o["mesh_path"], float(o["mesh_scale_to_meters"]))
+                t0 = time.monotonic()
+                result = self.adapter.initialize(frame, det.mask, mesh)
+                q = evaluate_quality(frame, result, None, tconf)
+                if not q.valid:
+                    self.adapter.reset()
+                    self.info[name] = {"found": False, "why": f"등록 품질 {q.reason}"}
+                    continue
+                poses = [result.object_to_camera]
+                s = seq
+                for _ in range(track_frames):
+                    f2, s = self._next_frame(s)
+                    if f2 is None:
+                        break
+                    poses.append(self.adapter.track(f2).object_to_camera)
+                self.adapter.reset()
+                T, spread = C.representative(poses)
+                with self.lock:
+                    self.poses[name] = T
+                    self.pending.discard(name)
+                self.info[name] = {"found": True, "color_score": round(C.color_fraction(frame.rgb, det.mask, o["color"]), 3),
+                                   "yolo_conf": round(det.confidence, 3), "frames": len(poses),
+                                   "spread_mm": round(spread, 1), "ms": round((time.monotonic() - t0) * 1e3),
+                                   "box": _box(det)}
+                self.get_logger().info(f"{name}: {self.info[name]}")
+
+        # ── 출력 ──
+        def _republish(self) -> None:
+            with self.lock:
+                if self.header is None:
+                    return
+                frame_id = self.header.frame_id
+                items = list(self.poses.items())
+            now = self.get_clock().now().to_msg()
+            for name, T in items:
+                msg = PoseStamped()
+                msg.header.frame_id, msg.header.stamp = frame_id, now
+                p, qx = T[:3, 3], _quat_xyzw(T[:3, :3])
+                msg.pose.position.x, msg.pose.position.y, msg.pose.position.z = map(float, p)
+                (msg.pose.orientation.x, msg.pose.orientation.y, msg.pose.orientation.z,
+                 msg.pose.orientation.w) = map(float, qx)
+                self.pubs[name].publish(msg)
+
+        def _publish_status(self) -> None:
+            with self.lock:
+                body = {"ok": not self.pending and not self.error, "pending": sorted(self.pending), "error": self.error,
+                        "objects": dict(self.info), "candidates": self.candidates}
+            self.status_pub.publish(String(data=json.dumps(body, ensure_ascii=False)))
+
+    rclpy.init()
+    node = Snapshot()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+def _box(det) -> list[int] | None:
+    return [round(float(v)) for v in det.xyxy] if getattr(det, "xyxy", None) is not None else None
+
+
+def _quat_xyzw(R: np.ndarray) -> np.ndarray:
+    """회전 행렬 → 사원수(x, y, z, w). 대각합이 작을 때도 안정한 분기."""
+    R = np.asarray(R, float)
+    t = np.trace(R)
+    if t > 0:
+        s = 2.0 * np.sqrt(t + 1.0)
+        q = [(R[2, 1] - R[1, 2]) / s, (R[0, 2] - R[2, 0]) / s, (R[1, 0] - R[0, 1]) / s, 0.25 * s]
+    else:
+        i = int(np.argmax(np.diag(R)))
+        j, k = (i + 1) % 3, (i + 2) % 3
+        s = 2.0 * np.sqrt(1.0 + R[i, i] - R[j, j] - R[k, k])
+        q = [0.0, 0.0, 0.0, (R[k, j] - R[j, k]) / s]
+        q[i] = 0.25 * s
+        q[j] = (R[j, i] + R[i, j]) / s
+        q[k] = (R[k, i] + R[i, k]) / s
+    q = np.asarray(q)
+    return q / np.linalg.norm(q)
+
+
+if __name__ == "__main__":
+    main()

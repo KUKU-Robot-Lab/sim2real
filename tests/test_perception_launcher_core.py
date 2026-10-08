@@ -118,3 +118,20 @@ def test_a_tracker_that_died_inside_an_up_container_is_reported():
     assert out["gpu"] == {"used_mib": 23934, "total_mib": 24576}
     old = build_status(parse_remote_status('{"camera_up": true, "containers": {}, "viewer_up": false}'), 0.0, {}, False, None)
     assert old["gpu"] is None                                       # 옛 status.sh 는 모른다
+
+
+def _group_of(name):
+    return REG.get(name).fpp.get("group")
+
+
+def test_grouped_cups_start_one_container_and_status_points_each_cup_at_it():
+    """10.08: 색 다른 cyl60 셋은 fpp_cups 하나 — 물체마다 컨테이너를 띄우지 않는다. 옛 물체별 컨테이너는 내린다."""
+    cmd = parse_command(json.dumps({"op": "start", "objects": ["cyl60", "cyl60_blue", "cyl60_pink"]}), REG)
+    state = RemoteState(camera_up=True, containers={"fpp_cyl60": "Up 1 h", "fpp_cyl60_blue": "Up 1 h"},
+                        viewer_up=False, pose_tx_up=True)
+    acts = plan_actions(cmd, state, group_of=_group_of)
+    assert acts == [("fpp_down", "fpp_cyl60"), ("fpp_down", "fpp_cyl60_blue"), ("fpp_group_up", "cups")]
+    up = RemoteState(camera_up=True, containers={"fpp_cups": "Up 5 s"}, viewer_up=False, pose_tx_up=True)
+    assert plan_actions(cmd, up, group_of=_group_of) == []
+    st = build_status(up, 30.0, {"cyl60": 0.1, "cyl60_pink": None}, False, None, group_of=_group_of)
+    assert st["objects"]["cyl60"]["container"] == "Up 5 s" and st["objects"]["cyl60_pink"]["container"] == "Up 5 s"

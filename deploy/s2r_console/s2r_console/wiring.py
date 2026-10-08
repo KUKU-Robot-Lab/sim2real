@@ -34,7 +34,7 @@ from .diagram import _short as short_topic
 from .diagram_spec import Diagram, parse_diagram
 from .units import UnitCmd
 
-from object_registry import INPUT_NS, OUTPUT_NS, input_topic, output_topic  # noqa: E402
+from object_registry import INPUT_NS, OUTPUT_NS, container_for, input_topic, load_registry, output_topic  # noqa: E402
 from policy_control.pd_backends import FORWARD_KINDS, forward_topic  # noqa: E402
 from policy_control.sources import split_role  # noqa: E402
 
@@ -545,12 +545,13 @@ def _perception_chain(g: _Graph, name: str, unit: str | None = None) -> str:
     FP++ 자세를 UDP 로 받아 ROS 로 내는 수신기(fpp_pose_rx)가 미션에 있으면 FPP 상자의 스위치다."""
     host = g.percept_host or VISION_HOST
     rx = g.providers.get("__fpp_rx__")
+    cont = _container_of(name)                         # 묶음(10.08 fpp_cups)이면 물체 여럿이 상자 하나
     # 수신기 하나가 모든 물체를 낸다(10.08 두 컵) — ROS 노드는 처음 그린 FPP 상자 하나만 주장한다(한 노드 = 한 상자)
-    claim = rx is not None and not g.providers.get("__fpp_rx_claimed__")
+    claim = rx is not None and g.providers.get("__fpp_rx_claimed__") in (None, cont)
     if claim:
-        g.providers["__fpp_rx_claimed__"] = f"fpp_{name}"
-    tracker = g.box(f"fpp_{name}", f"FPP 추적 · {name}", L_TRACK, host=host, unit=rx, ros=[FPP_RX_NODE] if claim else None,
-                    note=f"docker fpp_{name} ({INPUT_NS})" + (" · 자세는 fpp_pose_rx 가 UDP 로 받아 낸다" if rx else ""))
+        g.providers["__fpp_rx_claimed__"] = cont
+    tracker = g.box(cont, f"FPP 추적 · {cont[len('fpp_'):]}", L_TRACK, host=host, unit=rx, ros=[FPP_RX_NODE] if claim else None,
+                    note=f"docker {cont} ({INPUT_NS})" + (" · 자세는 fpp_pose_rx 가 UDP 로 받아 낸다" if rx else ""))
     camera = _camera(g)
     for cam in CAMERA_TOPICS:
         g.wire(camera, tracker, cam, meter=False)
@@ -559,6 +560,14 @@ def _perception_chain(g: _Graph, name: str, unit: str | None = None) -> str:
     g.wire(tracker, pose, input_topic(name), stale_ms=STALE_MS)
     g.providers.setdefault(output_topic(name), pose)
     return pose
+
+
+def _container_of(name: str) -> str:
+    """FP++ 컨테이너 이름 — 레지스트리에 없는 이름(fake 컵)은 물체마다."""
+    try:
+        return container_for(load_registry().get(name))
+    except (KeyError, ValueError):
+        return f"fpp_{name}"
 
 
 def _perception(g: _Graph, topic: str) -> str:

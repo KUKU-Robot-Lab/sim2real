@@ -39,6 +39,8 @@ PROBES = (("index_1", "0.3"), ("middle_1", "0.3"), ("ring_1", "0.3"), ("pinky_1"
 REAL_CUP = "cyl60"
 #: ★10.08 사용자: 왼쪽 파란 컵 · 오른쪽 노란 컵 — 팔마다 FP++ 물체 하나(색으로 가른다: 노랑 bright · 파랑 blue). 모양은 같은 cyl60
 REAL_CUPS = {"right": REAL_CUP, "left": "cyl60_blue"}
+#: 같은 묶음(objects.yaml fpp.group cups)의 나머지 컵 — 한 컨테이너가 같이 찍는다(10.08 사용자: 파랑 · 핑크 · 노랑)
+REAL_EXTRA_CUPS = ("cyl60_pink",)
 #: 놓기 목표 홀더 — 좌우 학습 목표(우 1 · 2, 좌 0 · 1)에 모두 드는 가운데 홀더 1(10.04)
 PLACE_HOLDER = {"right": 1, "left": 1}
 #: fake 홀더 y — hdgp rh_place env holder_ys(0.153, −0.002, −0.161)
@@ -53,12 +55,13 @@ CAMERA_EXTRINSICS = "config/global_camera_extrinsics_arm4090.yaml"
 
 
 def _cups() -> list[str]:
-    """실기 FP++ 컵 — 오른쪽 · 왼쪽 순, 중복 없이."""
-    return list(dict.fromkeys(REAL_CUPS[s] for s in SIDES))
+    """실기 FP++ 컵 — 오른쪽 · 왼쪽 · 나머지 순, 중복 없이."""
+    return list(dict.fromkeys([*(REAL_CUPS[s] for s in SIDES), *REAL_EXTRA_CUPS]))
 
 
 def _cups_txt() -> str:
-    return " · ".join(f"{REAL_CUPS[s]}={'노랑 오른쪽' if s == 'right' else '파랑 왼쪽'}" for s in SIDES)
+    return " · ".join([*(f"{REAL_CUPS[s]}={'노랑 오른쪽' if s == 'right' else '파랑 왼쪽'}" for s in SIDES),
+                       *(f"{c}=핑크" for c in REAL_EXTRA_CUPS)])
 #: 머리 설정(포트 · 게인 · 모터 id) — head_home · head_pose_check 가 같이 쓴다
 HEAD_CONFIG = "config/head_home_rh56f1.yaml"
 #: ★10.04 사용자 "fpp 진행 전에 자동으로 각도 확인하고 세팅을 제대로 맞춘 다음에 진행" — 외부 파라미터를 잰 머리 자세
@@ -90,7 +93,7 @@ def _stages(kind: str) -> list[dict]:
                    if real else "fake — 머리 없음(실기 순서를 맞추려고 둔 자리)")},
         {"id": "cups", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
          "touches_real": real,
-         "title": (f"컵 자세(arm4090 FP++) — RealSense · FP++ 컨테이너 둘({_cups_txt()}) → /objects/<컵>/pose (base). GPU VRAM 컨테이너마다 수 GB" if real else
+         "title": (f"컵 자세(arm4090 FP++) — RealSense · FP++ 컨테이너 하나(fpp_cups, 색으로 가르기 · 한 번 찍기: {_cups_txt()}) → /objects/<컵>/pose (base). GPU VRAM 약 4 GB" if real else
                    "fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채")},
         {"id": "cup_holders", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
          "touches_real": real,
@@ -265,7 +268,8 @@ def _run(kind: str) -> dict:
              ["python3", "{repo}/scripts/nodes/object_pose_node.py", "--objects", *_cups(),
               "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
         _cmd("FP++ 전 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)", HEAD_CHECK_ARGV, execute_args=["--execute"]),
-        _cmd(f"카메라 + FP++({_cups_txt()}) 켜기 — 컨테이너 둘, 런처가 끝낼 때까지 최대 150 s, 실패하면 이 단계도 실패",
+        _cmd(f"카메라 + FP++ 켜기 — 컨테이너 fpp_cups 하나가 {_cups_txt()} 를 차례로 한 번 찍는다(컵을 옮겼으면 "
+             "ros2 topic pub --once /perception_plus_plus/snapshot/cmd std_msgs/msg/String \"data: all\"). 최대 150 s, 실패하면 이 단계도 실패",
              ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", *_cups(), "--wait", "150"]),
         _cmd(f"★컵 자세 확인 — 테이블 위 컵 원점 z ≈ {0.205 + REAL_CUP_ORIGIN_Z:.3f}(상판 0.205 + 원점 {REAL_CUP_ORIGIN_Z}, ±8 mm) · 기울기 < 3° · "
              f"x 0.1~0.4 · |y| 0.1~0.3 · 왼쪽(y > 0) = 파랑 {REAL_CUPS['left']} · 오른쪽(y < 0) = 노랑 {REAL_CUPS['right']} 인가"

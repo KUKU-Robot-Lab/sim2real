@@ -127,8 +127,12 @@ def test_the_rh56f1_hand_is_a_driver_box_and_a_state_box_each_with_its_own_switc
 def test_the_perception_chain_runs_on_this_pc_and_the_udp_receiver_switches_the_fpp_box(real):
     _, _, d = real
     assert d.box("perception").host == "local" and d.box("camera").host == "local"
-    fpp = d.box("fpp_cyl60")
+    fpp = d.box("fpp_cups")                     # 10.08 색 다른 cyl60 셋 = 컨테이너 하나 = 상자 하나
     assert fpp.units == ("cups#2",) and fpp.ros == ("/fpp_pose_rx",) and fpp.host == "local"
+    assert not [b.id for b in d.boxes if b.id in ("fpp_cyl60", "fpp_cyl60_blue", "fpp_cyl60_pink")]
+    # 그림은 받는 쪽이 있는 물체만 잇는다 — 정책이 읽는 두 컵(핑크는 아직 읽는 정책이 없다)
+    assert {w.topic for w in d.wires if w.src == "fpp_cups" and w.dst == "object_pose"} == {
+        "/perception_plus_plus/cyl60/pose", "/perception_plus_plus/cyl60_blue/pose"}
     assert d.box("object_pose").units == ("cups#3",)
     assert {w.topic for w in d.wires if w.src == "camera" and w.dst == "cup_holders"} == {
         "/camera/camera/color/image_raw", "/camera/camera/color/camera_info"}
@@ -422,7 +426,7 @@ def test_the_fake_rh56f1_picture_has_the_real_pictures_boxes():
     titles = {b.title for b in real.boxes}
     # fake 에 없는 것: 인지(카메라 · FP++ · 런처 — 정지 컵을 fake 가 바로 낸다). fake 에만 있는 것: 막히지 않은 붓기 노드
     missing = {b.title for b in real.boxes} - {b.title for b in fake.boxes}
-    assert missing <= {"인지 런처 · local", "카메라 (RealSense)", "FPP 추적 · cyl60", "FPP 추적 · cyl60_blue"}, missing
+    assert missing <= {"인지 런처 · local", "카메라 (RealSense)", "FPP 추적 · cups"}, missing
     extra = {b.title for b in fake.boxes} - titles
     assert extra <= {"pour_fj_node · 붓기 정책 (오른팔 · 왼팔)"}, extra
 

@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 import fpp_udp  # noqa: E402
-from object_registry import load_registry, output_topic, render_fpp_yaml  # noqa: E402
+from object_registry import load_registry, output_topic, render_fpp_yaml, render_group_yaml  # noqa: E402
 from perception_launcher_core import (  # noqa: E402
     LOCAL_HOSTS, build_status, parse_command, parse_remote_status, plan_actions, shell_argv,
 )
@@ -40,7 +40,7 @@ from perception_launcher_core import (  # noqa: E402
 REMOTE_SIM2REAL = "rl_ws/sim2real"
 REMOTE_PARAMS = f"{REMOTE_SIM2REAL}/log/fpp_params"
 _SCRIPT_FOR = {"camera_up": "camera_up.sh", "camera_down": "camera_down.sh",
-               "fpp_up": "fpp_up.sh", "fpp_down": "fpp_down.sh",
+               "fpp_up": "fpp_up.sh", "fpp_group_up": "fpp_group_up.sh", "fpp_down": "fpp_down.sh",
                "viewer_up": "viewer_up.sh", "viewer_down": "viewer_down.sh", "pose_tx_down": "pose_tx_down.sh"}
 
 
@@ -79,6 +79,9 @@ def main() -> None:
     ap.add_argument("--poll", type=float, default=5.0, help="원격 상태 폴링 주기(s)")
     args = ap.parse_args()
     registry = load_registry()
+
+    def group_of(name: str) -> str | None:
+        return registry.get(name).fpp.get("group")
     remote = RemoteExec(args.host)
 
     import rclpy
@@ -121,7 +124,8 @@ def main() -> None:
             now = time.monotonic()
             ages = {n: (round(now - self._last_pose[n], 3) if n in self._last_pose else None)
                     for n in registry.names()}
-            payload = build_status(self._state, fpp_udp.camera_hz_at(self._camera, now), ages, self._busy, self._error)
+            payload = build_status(self._state, fpp_udp.camera_hz_at(self._camera, now), ages, self._busy, self._error,
+                                   group_of=group_of)
             self._pub.publish(String(data=json.dumps(payload, ensure_ascii=False)))
 
         def _on_cmd(self, msg: String) -> None:
@@ -143,7 +147,7 @@ def main() -> None:
             try:
                 self._error = None
                 state = parse_remote_status(remote.run("status.sh"))
-                actions = plan_actions(cmd, state)
+                actions = plan_actions(cmd, state, group_of=group_of)
                 self.get_logger().info(f"{cmd.op}: {actions or '변경 없음'}")
                 for action in actions:
                     self._do(action, cmd, state)
@@ -161,6 +165,11 @@ def main() -> None:
                 path = f"{REMOTE_PARAMS}/{name}.yaml"
                 remote.put(render_fpp_yaml(registry.get(name)), path)
                 out = remote.run("fpp_up.sh", name, path)
+            elif kind == "fpp_group_up":
+                group = action[1]
+                path = f"{REMOTE_PARAMS}/group_{group}.yaml"
+                remote.put(render_group_yaml(registry, group), path)
+                out = remote.run("fpp_group_up.sh", group, path)
             elif kind == "viewer_up":
                 # viewer 단독 명령엔 물체 목록이 없다 — 떠 있는 컨테이너에서 이름을 되찾는다.
                 names = list(cmd.objects) or [c[len("fpp_"):] for c, st in state.containers.items()
