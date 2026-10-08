@@ -17,7 +17,8 @@ GPU 가 모자랐다(10.08 두 컨테이너 동시 등록 → 2.6 GB 더 요구 
   3. 대표 자세를 /perception_plus_plus/<물체>/pose 에 republish_hz 로 계속 낸다(stamp = 지금, 같은 값) —
      object_pose_node 가 base 로 바꾼다. 신선도를 보는 하류(정책 노드 · 콘솔)가 그대로 돈다.
   4. 못 찾은 물체는 retry_s 마다 다시 찾는다. /perception_plus_plus/snapshot/cmd(String "all" | "이름,이름")로 다시 찍는다
-     (컵을 옮긴 뒤).
+     (컵을 옮긴 뒤 — 미션 cups 단계를 다시 실행하면 scripts/ops/fpp_rescan.py 가 보낸다). 다시 찍는 컵은 옛 좌표를 내지 않는다.
+     generation = 끝낸 찍기 바퀴 수(상태에 실린다).
   /perception_plus_plus/snapshot/status(String JSON): 물체별 found · 색 비율 · 흔들림 mm · 장 수 · 오류, 후보별 색 비율.
 """
 from __future__ import annotations
@@ -93,6 +94,7 @@ def main(argv=None) -> None:
             self.info: dict[str, dict] = {n: {"found": False} for n in objects}
             self.candidates: list = []
             self.pending: set[str] = set(objects)
+            self.generation = 0                     # 끝낸 찍기 바퀴 수 — fpp_rescan 이 '새 회차'를 가린다
             self.wake = threading.Event()
             self.pubs = {n: self.create_publisher(PoseStamped, o["pose_topic"], 10) for n, o in objects.items()}
             self.status_pub = self.create_publisher(String, STATUS_TOPIC, 10)
@@ -164,6 +166,8 @@ def main(argv=None) -> None:
                     continue
                 try:
                     self._snapshot(frame, seq, todo)
+                    with self.lock:
+                        self.generation += 1
                     self.error = ""
                 except Exception as exc:  # noqa: BLE001 — 노드는 살아서 오류를 상태로 낸다
                     self.error = f"{type(exc).__name__}: {exc}"[:200]
@@ -233,7 +237,8 @@ def main(argv=None) -> None:
 
         def _publish_status(self) -> None:
             with self.lock:
-                body = {"ok": not self.pending and not self.error, "pending": sorted(self.pending), "error": self.error,
+                body = {"ok": not self.pending and not self.error, "generation": self.generation,
+                        "pending": sorted(self.pending), "error": self.error,
                         "objects": dict(self.info), "candidates": self.candidates}
             self.status_pub.publish(String(data=json.dumps(body, ensure_ascii=False)))
 

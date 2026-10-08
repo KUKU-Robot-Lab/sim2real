@@ -268,15 +268,16 @@ def _run(kind: str) -> dict:
              ["python3", "{repo}/scripts/nodes/object_pose_node.py", "--objects", *_cups(),
               "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
         _cmd("FP++ 전 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)", HEAD_CHECK_ARGV, execute_args=["--execute"]),
-        _cmd(f"카메라 + FP++ 켜기 — 컨테이너 fpp_cups 하나가 {_cups_txt()} 를 차례로 한 번 찍는다(컵을 옮겼으면 "
-             "ros2 topic pub --once /perception_plus_plus/snapshot/cmd std_msgs/msg/String \"data: all\"). 최대 150 s, 실패하면 이 단계도 실패",
+        _cmd(f"카메라 + FP++ 켜기 — 컨테이너 fpp_cups 하나가 {_cups_txt()} 를 차례로 한 번 찍는다. 이미 떠 있으면 그대로. "
+             "최대 150 s, 실패하면 이 단계도 실패",
              ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", *_cups(), "--wait", "150"]),
-        _cmd(f"★컵 자세 확인 — 테이블 위 컵 원점 z ≈ {0.205 + REAL_CUP_ORIGIN_Z:.3f}(상판 0.205 + 원점 {REAL_CUP_ORIGIN_Z}, ±8 mm) · 기울기 < 3° · "
+        _cmd("컵 좌표 추출 — 처음엔 FP++ 가 켜지며 찍는 회차를 기다리고, 이 단계를 다시 실행하면(컵을 옮긴 뒤 '↶ 여기서 다시') "
+             "컨테이너를 끄지 않고 지금 카메라로 다시 찍는다(10.08 사용자). 컵마다 base 좌표 · 판정을 찍고, 정책이 읽는 컵을 못 찾으면 실패",
+             ["python3", "{repo}/scripts/ops/fpp_rescan.py", *(REAL_CUPS[s] for s in SIDES), "--wait", "120"]),
+        _cmd(f"★컵 자세 확인(바로 위 추출 결과) — 테이블 위 컵 원점 z ≈ {0.205 + REAL_CUP_ORIGIN_Z:.3f}(상판 0.205 + 원점 {REAL_CUP_ORIGIN_Z}, ±8 mm) · 기울기 < 3° · "
              f"x 0.1~0.4 · |y| 0.1~0.3 · 왼쪽(y > 0) = 파랑 {REAL_CUPS['left']} · 오른쪽(y < 0) = 노랑 {REAL_CUPS['right']} 인가"
              f"(카메라를 건드렸으면 {RECALIB_HINT})",
-             ["bash", "-lc", " ; ".join(f"echo '[{c}]'; timeout 5 ros2 topic echo --once /objects/{c}/pose geometry_msgs/msg/PoseStamped"
-                                       for c in _cups())],
-             manual=True),
+             ["bash", "-lc", "true"], manual=True),
     ] if real else [
         _cmd(f"fake 컵({role}) — /objects/cup_{role}/pose", ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--x", "0.38",
                                                              "--y", y, "--z", "0.264865", "--topic", f"/objects/cup_{role}/pose"],

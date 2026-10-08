@@ -90,7 +90,9 @@ HOLDER_TITLE = "cup_holder_pose_node · 홀더 자세(마커)"
 #: 노드가 아니라 사람이 한 번 내는 도구(수동 명령) — 연결 상태가 아니므로 그리지 않는다. 조작판에는 그대로 있다
 _TOOLS = ("aglt_goal.py",
           # ★10.08 프로세스별 CPU 기록 — ROS 노드가 아니다(/proc 만 읽는다). 그림에 상자를 두지 않는다
-          "proc_cpu_record.py")
+          "proc_cpu_record.py",
+          # ★10.08 컵 좌표 다시 찍기 — FP++ 컨테이너에 한 번 명령하고 끝난다(노드 아님)
+          "fpp_rescan.py")
 
 
 @dataclass(frozen=True)

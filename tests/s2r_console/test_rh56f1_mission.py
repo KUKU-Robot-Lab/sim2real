@@ -165,7 +165,7 @@ def test_real_cups_run_fpp_on_this_pc_after_the_head_home_and_shutdown_takes_it_
     for want in ("perception_launcher_node.py --host local", "fpp_pose_rx.py", "object_pose_node.py --objects cyl60 cyl60_blue cyl60_pink",
                  "--camera-extrinsics", "global_camera_extrinsics_arm4090.yaml",
                  "perception_ctl.py start cyl60 cyl60_blue cyl60_pink --wait 150",
-                 "/objects/cyl60/pose", "/objects/cyl60_blue/pose"):
+                 "fpp_rescan.py cyl60 cyl60_blue --wait 120"):        # 10.08 다시 실행 = 지금 카메라로 다시 찍기
         assert any(want in a for a in cups), want
     bg = [c for c in _cmds(REAL, REAL_BOOK, "cups") if c.background]
     assert len(bg) == 3

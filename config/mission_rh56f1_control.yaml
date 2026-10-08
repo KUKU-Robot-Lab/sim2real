@@ -603,8 +603,8 @@ run:
     argv: *id001
     execute_args:
     - --execute
-  - note: '카메라 + FP++ 켜기 — 컨테이너 fpp_cups 하나가 cyl60=노랑 오른쪽 · cyl60_blue=파랑 왼쪽 · cyl60_pink=핑크 를 차례로 한 번 찍는다(컵을 옮겼으면 ros2 topic pub --once /perception_plus_plus/snapshot/cmd
-      std_msgs/msg/String "data: all"). 최대 150 s, 실패하면 이 단계도 실패'
+  - note: 카메라 + FP++ 켜기 — 컨테이너 fpp_cups 하나가 cyl60=노랑 오른쪽 · cyl60_blue=파랑 왼쪽 · cyl60_pink=핑크 를 차례로 한 번 찍는다. 이미 떠 있으면 그대로. 최대 150 s, 실패하면 이 단계도
+      실패
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
@@ -614,15 +614,22 @@ run:
     - cyl60_pink
     - --wait
     - '150'
-  - note: ★컵 자세 확인 — 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 왼쪽(y > 0) = 파랑 cyl60_blue · 오른쪽(y
-      < 0) = 노랑 cyl60 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090.yaml --write --head-config
-      config/head_home_rh56f1.yaml)
+  - note: 컵 좌표 추출 — 처음엔 FP++ 가 켜지며 찍는 회차를 기다리고, 이 단계를 다시 실행하면(컵을 옮긴 뒤 '↶ 여기서 다시') 컨테이너를 끄지 않고 지금 카메라로 다시 찍는다(10.08 사용자). 컵마다 base 좌표 · 판정을 찍고,
+      정책이 읽는 컵을 못 찾으면 실패
+    argv:
+    - python3
+    - '{repo}/scripts/ops/fpp_rescan.py'
+    - cyl60
+    - cyl60_blue
+    - --wait
+    - '120'
+  - note: ★컵 자세 확인(바로 위 추출 결과) — 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 왼쪽(y > 0) = 파랑 cyl60_blue
+      · 오른쪽(y < 0) = 노랑 cyl60 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090.yaml --write
+      --head-config config/head_home_rh56f1.yaml)
     argv:
     - bash
     - -lc
-    - echo '[cyl60]'; timeout 5 ros2 topic echo --once /objects/cyl60/pose geometry_msgs/msg/PoseStamped ; echo '[cyl60_blue]'; timeout 5 ros2
-      topic echo --once /objects/cyl60_blue/pose geometry_msgs/msg/PoseStamped ; echo '[cyl60_pink]'; timeout 5 ros2 topic echo --once /objects/cyl60_pink/pose
-      geometry_msgs/msg/PoseStamped
+    - 'true'
     manual: true
   policy_pourfj:
   - note: ★두 컵이 학습 배치(로봇 앞 x ≈ 0.38, y ≈ ∓0.16)에 서 있고 콘솔에 두 컵 자세가 들어오는가. 양팔 · 양손 주변이 비어 있는가. 정책은 팔을 스스로 움직이고 손가락을 쥔다 — 빈 컵만
