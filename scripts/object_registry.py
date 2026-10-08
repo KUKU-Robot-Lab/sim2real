@@ -200,7 +200,7 @@ def render_group_yaml(registry: Registry, group: str) -> str:
                      "pose_topic": input_topic(n)})
     body = {"objects": objs, "cup_class_id": int(registry.get(names[0]).fpp["cup_class_id"]),
             "yolo_weights": "models/yolo/yolov8m-seg.pt", "tracking_config": "config/cup_tracking.yaml",
-            "track_frames": 8, "republish_hz": 5.0, "retry_s": 3.0}
+            "register_frames": 3, "republish_hz": 5.0, "retry_s": 3.0}
     header = (f"# 생성됨 — sim2real/config/objects.yaml 의 fpp.group '{group}'. 손으로 고치지 말 것.\n"
               f"# 물체: {', '.join(names)}\n")
     return header + yaml.safe_dump(body, sort_keys=False, allow_unicode=True)

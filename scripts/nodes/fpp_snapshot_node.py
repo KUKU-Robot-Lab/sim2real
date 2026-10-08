@@ -10,7 +10,9 @@ GPU 가 모자랐다(10.08 두 컨테이너 동시 등록 → 2.6 GB 더 요구 
 
 하는 일:
   1. 최신 컬러 · 정렬 깊이 한 장 → YOLO(cup 후보 전부) → 마스크 색 비율로 물체마다 후보 하나(fpp_color_pick.assign).
-  2. 물체마다 차례로: FP++ 등록 → 이어지는 몇 장 추적 → 위치 중앙값에 가까운 장(대표 자세) → 추적 상태 비움.
+  2. 물체마다 차례로: 이어지는 register_frames 장에서 따로따로 FP++ 등록 → 위치 중앙값에 가까운 장(대표 자세).
+     추적(track)은 쓰지 않는다 — 10.08 실측: 둘째 물체부터 추적 9 장이 262 · 111 mm 흔들렸다(첫 물체 0.5 mm). 마스크
+     추적기(Cutie)가 앞 물체를 기억한 채 넘어가는 것으로 본다. 등록은 매번 그 물체 마스크로 새로 시작한다.
      모델 · CUDA 컨텍스트는 하나를 재사용한다(재등록 = reset_object). 그래서 최대 메모리는 물체 수와 무관하다.
   3. 대표 자세를 /perception_plus_plus/<물체>/pose 에 republish_hz 로 계속 낸다(stamp = 지금, 같은 값) —
      object_pose_node 가 base 로 바꾼다. 신선도를 보는 하류(정책 노드 · 콘솔)가 그대로 돈다.
@@ -75,7 +77,7 @@ def main(argv=None) -> None:
     from perception_plus_plus_core.validation.quality import evaluate_quality
 
     objects = {o["name"]: o for o in cfg["objects"]}
-    track_frames = int(cfg.get("track_frames", 8))
+    register_frames = int(cfg.get("register_frames", 3))
     retry_s = float(cfg.get("retry_s", 3.0))
     tconf = TrackingConfig.from_yaml(cfg.get("tracking_config", "config/cup_tracking.yaml"))
 
@@ -186,20 +188,22 @@ def main(argv=None) -> None:
                 o = objects[name]
                 mesh = MeshSpec(o["mesh_path"], float(o["mesh_scale_to_meters"]))
                 t0 = time.monotonic()
-                result = self.adapter.initialize(frame, det.mask, mesh)
-                q = evaluate_quality(frame, result, None, tconf)
-                if not q.valid:
+                poses, why, f, s = [], "", frame, seq
+                for k in range(register_frames):
+                    if k:
+                        f, s = self._next_frame(s)
+                        if f is None:
+                            break
+                    result = self.adapter.initialize(f, det.mask, mesh)      # 컵은 그대로 — 첫 장 마스크를 쓴다
                     self.adapter.reset()
-                    self.info[name] = {"found": False, "why": f"등록 품질 {q.reason}"}
+                    q = evaluate_quality(f, result, None, tconf)
+                    if q.valid:
+                        poses.append(result.object_to_camera)
+                    else:
+                        why = q.reason
+                if not poses:
+                    self.info[name] = {"found": False, "why": f"등록 품질 {why}"}
                     continue
-                poses = [result.object_to_camera]
-                s = seq
-                for _ in range(track_frames):
-                    f2, s = self._next_frame(s)
-                    if f2 is None:
-                        break
-                    poses.append(self.adapter.track(f2).object_to_camera)
-                self.adapter.reset()
                 T, spread = C.representative(poses)
                 with self.lock:
                     self.poses[name] = T
