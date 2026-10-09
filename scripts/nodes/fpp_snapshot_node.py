@@ -184,7 +184,7 @@ def main(argv=None) -> None:
                     self.wake.wait(timeout=retry_s)
                     self.wake.clear()
 
-        def _candidates(self, frame, colors: set[str]) -> list[dict]:
+        def _candidates(self, frame, colors: list) -> list[dict]:
             """YOLO(classes 의 아무 클래스, 낮은 문턱) + YOLO 가 못 잡은 색의 색 덩어리 → 작업 영역 안 후보만.
             10.09: YOLO 가 핑크 병을 vase 0.08 로만 잡았다(병은 bottle 39 · cyl60 은 cup 41)."""
             out = []
@@ -217,7 +217,7 @@ def main(argv=None) -> None:
             return out
 
         def _snapshot(self, frame, seq: int, todo: list[str]) -> None:
-            cands = self._candidates(frame, {objects[n]["color"] for n in todo})
+            cands = self._candidates(frame, C.unique_colors(objects[n]["color"] for n in todo))
             self.candidates = [{"src": d["src"], "conf": d["conf"], "box": d["box"], "inside": d["inside"], **sc}
                                for d, sc in zip(cands, C.scores(frame.rgb, [d["mask"] for d in cands]))]
             dets = [d for d in cands if d["inside"]]

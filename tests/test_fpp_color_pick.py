@@ -215,3 +215,8 @@ def test_assign_skips_candidates_an_object_does_not_allow():
     img[10:50, 10:40] = PINK_RIM                         # 첫 후보가 더 진하지만(누운 병) 허락되지 않는다
     got = C.assign(img, masks, {"source240_pink": "pink"}, allowed={"source240_pink": {1}})
     assert got == {"source240_pink": 1}
+
+
+def test_unique_colours_dedupe_names_and_measured_ranges():
+    """10.09: 노드가 색을 set 으로 모으다 [lo, hi](list) 에서 TypeError — 순서를 지키며 중복만 뺀다."""
+    assert C.unique_colors(["pink", [2.1, 22.6], "pink", (2.1, 22.6), [157.0, 171.0]]) == ["pink", [2.1, 22.6], [157.0, 171.0]]

@@ -38,6 +38,17 @@ def hue_ranges(color) -> tuple[tuple[float, float], ...]:
     return ((lo, hi),) if lo <= hi else ((lo, 180.0), (0.0, hi))
 
 
+def unique_colors(colors) -> list:
+    """색(이름 또는 [lo, hi]) 목록에서 순서를 지키며 중복을 뺀다 — list 는 set 에 못 넣는다."""
+    out, seen = [], set()
+    for c in colors:
+        key = c if isinstance(c, str) else tuple(float(v) for v in c)
+        if key not in seen:
+            seen.add(key)
+            out.append(c)
+    return out
+
+
 def _hsv(px: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """N×3 RGB(uint8) → hue(0~180) · 채도(0~255) · 명도(0~255). OpenCV COLOR_RGB2HSV 와 같은 정의."""
     p = px.astype(np.float64)
