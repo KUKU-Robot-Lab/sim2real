@@ -117,6 +117,34 @@ def mask_points_base(mask: np.ndarray, depth: np.ndarray, K: np.ndarray, T_base_
     return pc @ T[:3, :3].T + T[:3, 3]
 
 
+def split_by_depth(mask: np.ndarray, depth: np.ndarray, K: np.ndarray, T_base_cam: np.ndarray,
+                   voxel: float = 0.01, min_px: int = 1500) -> list[np.ndarray]:
+    """영상에서 붙어 보이는 물체들을 3D 로 나눈다 — 마스크 화소를 base 점으로 옮겨 voxel 칸에 넣고, 칸들의 이어진
+    조각(26 이웃)마다 화소 마스크 하나(min_px 이상, 큰 것부터). 깊이 없는 화소는 버린다."""
+    from scipy import ndimage
+    m = np.asarray(mask, bool) & (np.asarray(depth) > 0.05) & np.isfinite(depth)
+    ys, xs = np.nonzero(m)
+    if len(ys) == 0:
+        return []
+    z = np.asarray(depth)[ys, xs]
+    pc = np.column_stack([(xs - K[0, 2]) * z / K[0, 0], (ys - K[1, 2]) * z / K[1, 1], z])
+    T = np.asarray(T_base_cam, float)
+    P = pc @ T[:3, :3].T + T[:3, 3]
+    idx = np.floor((P - P.min(axis=0)) / voxel).astype(int)
+    grid = np.zeros(idx.max(axis=0) + 1, bool)
+    grid[tuple(idx.T)] = True
+    lab, n = ndimage.label(grid, structure=np.ones((3, 3, 3), bool))
+    px_lab = lab[tuple(idx.T)]
+    out = []
+    for k in range(1, n + 1):
+        sel = px_lab == k
+        if sel.sum() >= min_px:
+            part = np.zeros(m.shape, bool)
+            part[ys[sel], xs[sel]] = True
+            out.append(part)
+    return sorted(out, key=lambda q: -int(q.sum()))
+
+
 FOOTPRINT_SCALE, FOOTPRINT_PAD = 1.5, 0.02
 
 

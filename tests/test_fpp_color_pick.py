@@ -220,3 +220,21 @@ def test_assign_skips_candidates_an_object_does_not_allow():
 def test_unique_colours_dedupe_names_and_measured_ranges():
     """10.09: 노드가 색을 set 으로 모으다 [lo, hi](list) 에서 TypeError — 순서를 지키며 중복만 뺀다."""
     assert C.unique_colors(["pink", [2.1, 22.6], "pink", (2.1, 22.6), [157.0, 171.0]]) == ["pink", [2.1, 22.6], [157.0, 171.0]]
+
+
+def test_a_blob_that_merges_two_objects_in_the_image_is_split_by_depth():
+    """10.09: 바깥으로 옮긴 핑크 병이 뒤에 누운 핑크 병과 영상에서 붙어 한 덩어리(수평 퍼짐 넘침 → 버림)가 됐다.
+    3D 로는 떨어져 있다 — 1 cm 칸으로 나눈 점 구름의 이어진 조각마다 후보로."""
+    K = np.array([[600.0, 0, 100], [0, 600.0, 60], [0, 0, 1]])
+    depth = np.zeros((120, 200))
+    m = np.zeros((120, 200), bool)
+    m[40:80, 60:100] = True
+    depth[40:80, 60:100] = 0.60                         # 앞 물체
+    m[40:80, 100:140] = True
+    depth[40:80, 100:140] = 0.75                        # 영상에서는 붙었지만 15 cm 뒤
+    parts = C.split_by_depth(m, depth, K, np.eye(4), voxel=0.01, min_px=200)
+    assert len(parts) == 2
+    assert sorted(int(p[:, 60:100].sum()) for p in parts) == [0, 1600]
+    one = np.zeros_like(m)
+    one[40:80, 60:100] = True
+    assert len(C.split_by_depth(one, depth, K, np.eye(4), voxel=0.01, min_px=200)) == 1

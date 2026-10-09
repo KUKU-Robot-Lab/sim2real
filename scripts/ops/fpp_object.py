@@ -195,10 +195,11 @@ def calib(repo: Path, name: str, camera_yaml: Path) -> dict[str, tuple[float, fl
     labels, n = ndimage.label(vivid)
     ys, hues = [], []
     hh = h.reshape(rgb.shape[:2])
+    pieces = []
     for k in range(1, n + 1):
-        m = labels == k
-        if m.sum() < 1500:
-            continue
+        if (labels == k).sum() >= 1500:
+            pieces += C.split_by_depth(labels == k, depth, K, T, min_px=1500)    # 영상에서 붙은 물체를 3D 로 나눈다
+    for m in pieces:
         p = C.mask_point(m, depth, K)
         if not C.in_workspace(T, p, GROUP_WORKSPACE):
             continue

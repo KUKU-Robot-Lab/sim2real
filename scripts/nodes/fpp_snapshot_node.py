@@ -210,6 +210,14 @@ def main(argv=None) -> None:
                     out.append({"mask": m, "src": f"blob {c}", "conf": None,
                                 "box": [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())]})
             K = frame.intrinsics.matrix
+            if T_base_cam is not None:
+                # 영상에서 붙어 보이는 물체들을 3D 로 나눈다(10.09 바깥으로 옮긴 핑크 병 + 뒤에 누운 핑크 병이 한 덩어리)
+                split = []
+                for d in out:
+                    parts = C.split_by_depth(d["mask"], frame.depth, K, T_base_cam, min_px=blob_min_area // 2)
+                    split += [{**d, "mask": q, "src": d["src"] + (f" /3D{k}" if len(parts) > 1 else "")}
+                              for k, q in enumerate(parts)] or [d]
+                out = split
             for d in out:
                 d["inside"] = T_base_cam is None or C.in_workspace(T_base_cam, C.mask_point(d["mask"], frame.depth, K), workspace)
                 d["points"] = (C.mask_points_base(d["mask"], frame.depth, K, T_base_cam)
