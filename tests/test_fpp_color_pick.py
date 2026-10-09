@@ -143,3 +143,29 @@ def test_the_purple_bottle_lying_off_the_table_is_not_pink():
     """10.09 사진: 테이블 밖에 누운 보라 병(hue 144)이 핑크 병(155~160)과 섞이지 않는다."""
     img, (m,) = _scene((LYING_PURPLE, (10, 60, 10, 60)))
     assert C.color_fraction(img, m, "pink") < 0.05
+
+
+def test_colour_blobs_become_candidates_when_yolo_misses_and_tiny_specks_do_not():
+    """10.09: YOLO 가 핑크 병을 vase 0.08 로만 잡았다 — 색 덩어리 자체를 후보로. 작은 점(반사 · 뚜껑 조각)은 버린다."""
+    img, _ = _scene((PINK_BOTTLE, (10, 70, 10, 50)), (PINK_BOTTLE, (100, 104, 150, 154)), (ORANGE, (10, 70, 120, 160)))
+    blobs = C.color_blobs(img, "pink", min_area=300)
+    assert len(blobs) == 1 and blobs[0][10:70, 10:50].all() and not blobs[0][100:104, 150:154].any()
+    assert C.color_blobs(img, "blue", min_area=300) == []
+
+
+def test_a_candidate_is_kept_only_if_its_depth_point_is_over_the_table():
+    """뒤쪽 · 옆에 누운 병(테이블 밖)은 버린다 — 마스크 깊이 중앙값을 base 로 바꿔 작업 영역 상자 안인지 본다."""
+    K = np.array([[600.0, 0, 100], [0, 600.0, 60], [0, 0, 1]])
+    depth = np.full((120, 200), 0.6)
+    m = np.zeros((120, 200), bool)
+    m[50:70, 90:110] = True                              # 영상 가운데 · 0.6 m 앞
+    p_cam = C.mask_point(m, depth, K)
+    np.testing.assert_allclose(p_cam, (0.0, 0.0, 0.6), atol=0.002)
+    T = np.eye(4)
+    T[:3, 3] = (0.3, 0.0, 0.9)                           # 카메라가 base 위 0.9 m — 광축이 아래(−z)를 보도록
+    T[:3, :3] = np.diag([1.0, -1.0, -1.0])
+    ws = {"x": [0.05, 0.47], "y": [-0.45, 0.45], "z": [0.15, 0.50]}
+    assert C.in_workspace(T, p_cam, ws)                  # base (0.3, 0, 0.3)
+    depth_far = np.full((120, 200), 0.85)                # base z 0.05 — 테이블 아래
+    assert not C.in_workspace(T, C.mask_point(m, depth_far, K), ws)
+    assert C.mask_point(m, np.zeros_like(depth), K) is None    # 깊이 없음

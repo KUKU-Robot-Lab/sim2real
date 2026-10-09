@@ -187,8 +187,25 @@ def render_fpp_yaml(spec: ObjectSpec) -> str:
                                    sort_keys=False, allow_unicode=True)
 
 
-def render_group_yaml(registry: Registry, group: str) -> str:
-    """묶음 컨테이너(fpp_snapshot_node --config) 설정 — 묶음의 물체 전부(요청에 없는 것도, 못 찾으면 비워 둔다)."""
+#: 묶음 후보의 YOLO 클래스(bottle · cup · vase) — 10.09 핑크 병이 vase 로만 잡혔다. 색이 실제로 가른다
+GROUP_CLASSES = (39, 41, 75)
+#: 후보를 남기는 base 상자 — 테이블 위(상판 0.205, 앞 끝 0.470) 물체 몸통. 밖에 누운 병 · 선반 물건을 버린다
+GROUP_WORKSPACE = {"x": [0.05, 0.47], "y": [-0.45, 0.45], "z": [0.15, 0.50]}
+
+
+def _base_from_camera(camera_yaml: str | Path) -> list[list[float]]:
+    from scipy.spatial.transform import Rotation
+    ext = load_extrinsics(camera_yaml)
+    w, x, y, z = (float(v) for v in ext.cam_quat)
+    T = np.eye(4)
+    T[:3, :3] = Rotation.from_quat([x, y, z, w]).as_matrix()
+    T[:3, 3] = ext.cam_pos
+    return T.round(9).tolist()
+
+
+def render_group_yaml(registry: Registry, group: str, camera_yaml: str | Path | None = None) -> str:
+    """묶음 컨테이너(fpp_snapshot_node --config) 설정 — 묶음의 물체 전부(요청에 없는 것도, 못 찾으면 비워 둔다).
+    camera_yaml(실기 외부 파라미터)을 주면 base←카메라를 실어 작업 영역 밖 후보를 버리게 한다."""
     names = group_members(registry, group)
     if not names:
         raise ValueError(f"묶음 {group!r} 에 물체가 없다")
@@ -200,7 +217,11 @@ def render_group_yaml(registry: Registry, group: str) -> str:
                      "pose_topic": input_topic(n)})
     body = {"objects": objs, "cup_class_id": int(registry.get(names[0]).fpp["cup_class_id"]),
             "yolo_weights": "models/yolo/yolov8m-seg.pt", "tracking_config": "config/cup_tracking.yaml",
-            "register_frames": 3, "republish_hz": 5.0, "retry_s": 3.0}
+            "register_frames": 3, "republish_hz": 5.0, "retry_s": 3.0,
+            "classes": sorted({*GROUP_CLASSES, *(int(registry.get(n).fpp["cup_class_id"]) for n in names)}),
+            "yolo_conf": 0.05, "blob_min_area": 1500, "workspace": GROUP_WORKSPACE}
+    if camera_yaml is not None:
+        body["camera_to_base"] = _base_from_camera(camera_yaml)
     header = (f"# 생성됨 — sim2real/config/objects.yaml 의 fpp.group '{group}'. 손으로 고치지 말 것.\n"
               f"# 물체: {', '.join(names)}\n")
     return header + yaml.safe_dump(body, sort_keys=False, allow_unicode=True)

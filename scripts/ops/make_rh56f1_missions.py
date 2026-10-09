@@ -261,7 +261,8 @@ def _run(kind: str) -> dict:
              ["bash", "-lc", "nvidia-smi --query-compute-apps=pid,used_memory --format=csv; "
                              "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader"], manual=True),
         _cmd("인지 런처(이 PC) — 카메라 · FP++ 컨테이너를 같은 PC 의 스크립트로 켜고 끈다. 스스로는 아무것도 켜지 않는다",
-             ["python3", "{repo}/scripts/nodes/perception_launcher_node.py", "--host", "local"], background=True),
+             ["python3", "{repo}/scripts/nodes/perception_launcher_node.py", "--host", "local",
+              "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
         _cmd("FP++ 자세 수신기 — 영상 · FP++ 는 localhost 전용 DDS 에서 돌고 자세만 UDP(127.0.0.1)로 넘어온다",
              ["python3", "{repo}/scripts/nodes/fpp_pose_rx.py"], background=True),
         _cmd(f"물체 자세 → base — arm4090 테이블 CAD 캘리브 외부 파라미터(+ depth z 보정). /objects/<컵>/pose({_cups_txt()})",

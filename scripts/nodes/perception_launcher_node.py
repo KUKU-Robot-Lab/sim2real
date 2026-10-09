@@ -77,6 +77,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="vision-3090", help="인지 PC(ssh) · local = 이 PC(arm4090)")
     ap.add_argument("--poll", type=float, default=5.0, help="원격 상태 폴링 주기(s)")
+    ap.add_argument("--camera-extrinsics", default=None,
+                    help="묶음 FP++ 의 테이블 밖 후보 거르기에 쓰는 base←카메라(실기 외부 파라미터 yaml)")
     args = ap.parse_args()
     registry = load_registry()
 
@@ -168,7 +170,7 @@ def main() -> None:
             elif kind == "fpp_group_up":
                 group = action[1]
                 path = f"{REMOTE_PARAMS}/group_{group}.yaml"
-                remote.put(render_group_yaml(registry, group), path)
+                remote.put(render_group_yaml(registry, group, camera_yaml=args.camera_extrinsics), path)
                 out = remote.run("fpp_group_up.sh", group, path)
             elif kind == "viewer_up":
                 # viewer 단독 명령엔 물체 목록이 없다 — 떠 있는 컨테이너에서 이름을 되찾는다.

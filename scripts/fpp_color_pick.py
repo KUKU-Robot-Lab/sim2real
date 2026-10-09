@@ -39,6 +39,48 @@ def _hsv(px: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return h, s, v
 
 
+def color_mask(rgb: np.ndarray, color: str) -> np.ndarray:
+    """영상 전체에서 그 색인 화소(H×W bool)."""
+    if color not in HUE_RANGES:
+        raise ValueError(f"색 {color!r} 을 모른다 — {COLORS}")
+    img = np.asarray(rgb)
+    h, s, v = _hsv(img.reshape(-1, 3))
+    out = np.zeros(h.shape, bool)
+    for lo, hi in HUE_RANGES[color]:
+        out |= (h >= lo) & (h <= hi)
+    return (out & (s >= S_MIN) & (v >= V_MIN)).reshape(img.shape[:2])
+
+
+def color_blobs(rgb: np.ndarray, color: str, min_area: int = 1500) -> list[np.ndarray]:
+    """그 색의 이어진 덩어리 마스크들(넓이 min_area 화소 이상, 큰 것부터) — YOLO 가 못 잡은 물체의 후보."""
+    from scipy import ndimage
+    labels, n = ndimage.label(color_mask(rgb, color))
+    if n == 0:
+        return []
+    areas = ndimage.sum(np.ones(labels.shape), labels, index=np.arange(1, n + 1))
+    keep = [i + 1 for i in np.argsort(-areas) if areas[i] >= min_area]
+    return [labels == k for k in keep]
+
+
+def mask_point(mask: np.ndarray, depth: np.ndarray, K: np.ndarray) -> np.ndarray | None:
+    """마스크 화소의 깊이 중앙값 · 화소 중심을 카메라 좌표 점으로. 유효 깊이가 없으면 None."""
+    m = np.asarray(mask, bool) & (np.asarray(depth) > 0.05) & np.isfinite(depth)
+    if not m.any():
+        return None
+    ys, xs = np.nonzero(m)
+    z = float(np.median(np.asarray(depth)[m]))
+    u, v = float(np.median(xs)), float(np.median(ys))
+    return np.array([(u - K[0, 2]) * z / K[0, 0], (v - K[1, 2]) * z / K[1, 1], z])
+
+
+def in_workspace(T_base_cam: np.ndarray, p_cam: np.ndarray | None, ws: dict) -> bool:
+    """카메라 점을 base 로 바꿔 작업 영역 상자({x,y,z: [lo, hi]}) 안인가. 점이 없으면 False."""
+    if p_cam is None:
+        return False
+    p = np.asarray(T_base_cam, float)[:3, :3] @ np.asarray(p_cam, float) + np.asarray(T_base_cam, float)[:3, 3]
+    return all(ws[k][0] <= p[i] <= ws[k][1] for i, k in enumerate("xyz"))
+
+
 def color_fraction(rgb: np.ndarray, mask: np.ndarray, color: str) -> float:
     """마스크 화소 중 그 색(채도 · 명도 문턱을 넘고 hue 가 구간 안)인 비율. 빈 마스크는 0."""
     if color not in HUE_RANGES:

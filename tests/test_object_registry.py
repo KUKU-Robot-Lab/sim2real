@@ -170,3 +170,18 @@ def test_source240_bottles_are_their_own_group_with_the_sim_origin():
     mesh = DEFAULT_REGISTRY.parent.parent / "assets" / "meshes" / "source240.obj"
     z = [float(line.split()[3]) for line in mesh.read_text().splitlines() if line.startswith("v ")]
     assert min(z) == pytest.approx(-0.085, abs=1e-4) and max(z) == pytest.approx(0.155, abs=1e-4)
+
+
+def test_the_group_config_carries_the_camera_pose_for_the_table_filter():
+    """10.09: 테이블 밖에 누운 병을 버리려면 컨테이너가 base←카메라를 알아야 한다 — 런처가 실기 외부 파라미터로 넣는다."""
+    from object_registry import render_group_yaml
+    from cup_pose_relay import load_extrinsics
+    reg = load_registry(DEFAULT_REGISTRY)
+    cam = DEFAULT_REGISTRY.parent / "global_camera_extrinsics_arm4090.yaml"
+    doc = yaml.safe_load(render_group_yaml(reg, "bottles", camera_yaml=cam))
+    T = np.asarray(doc["camera_to_base"])
+    ext = load_extrinsics(cam)
+    np.testing.assert_allclose(T[:3, 3], ext.cam_pos)
+    np.testing.assert_allclose(T[:3, :3] @ T[:3, :3].T, np.eye(3), atol=1e-9)
+    assert set(doc["classes"]) >= {39, 41, 75} and doc["workspace"]["z"][0] < 0.205 + 0.085
+    assert "camera_to_base" not in yaml.safe_load(render_group_yaml(reg, "bottles"))

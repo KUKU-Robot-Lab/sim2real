@@ -582,6 +582,8 @@ run:
     - '{repo}/scripts/nodes/perception_launcher_node.py'
     - --host
     - local
+    - --camera-extrinsics
+    - '{repo}/config/global_camera_extrinsics_arm4090.yaml'
     background: true
   - note: FP++ 자세 수신기 — 영상 · FP++ 는 localhost 전용 DDS 에서 돌고 자세만 UDP(127.0.0.1)로 넘어온다
     argv:

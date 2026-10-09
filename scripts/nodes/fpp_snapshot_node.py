@@ -9,7 +9,8 @@
 GPU 가 모자랐다(10.08 두 컨테이너 동시 등록 → 2.6 GB 더 요구 · OOM).
 
 하는 일:
-  1. 최신 컬러 · 정렬 깊이 한 장 → YOLO(cup 후보 전부) → 마스크 색 비율로 물체마다 후보 하나(fpp_color_pick.assign).
+  1. 최신 컬러 · 정렬 깊이 한 장 → 후보 = YOLO(classes, 문턱 yolo_conf) + YOLO 가 못 잡은 색의 색 덩어리 → 깊이로 base 에
+     옮겨 작업 영역(workspace, camera_to_base 가 있을 때) 밖은 버림 → 마스크 색 비율로 물체마다 후보 하나(fpp_color_pick.assign).
   2. 물체마다 차례로: 이어지는 register_frames 장에서 따로따로 FP++ 등록 → 위치 중앙값에 가까운 장(대표 자세).
      추적(track)은 쓰지 않는다 — 10.08 실측: 둘째 물체부터 추적 9 장이 262 · 111 mm 흔들렸다(첫 물체 0.5 mm). 마스크
      추적기(Cutie)가 앞 물체를 기억한 채 넘어가는 것으로 본다. 등록은 매번 그 물체 마스크로 새로 시작한다.
@@ -79,6 +80,11 @@ def main(argv=None) -> None:
 
     objects = {o["name"]: o for o in cfg["objects"]}
     register_frames = int(cfg.get("register_frames", 3))
+    classes = {int(c) for c in cfg.get("classes", [39, 41, 75])}       # bottle · cup · vase
+    yolo_conf = float(cfg.get("yolo_conf", 0.05))
+    blob_min_area = int(cfg.get("blob_min_area", 1500))
+    T_base_cam = np.asarray(cfg["camera_to_base"], float) if cfg.get("camera_to_base") is not None else None
+    workspace = cfg.get("workspace", {"x": [0.05, 0.47], "y": [-0.45, 0.45], "z": [0.15, 0.50]})
     retry_s = float(cfg.get("retry_s", 3.0))
     tconf = TrackingConfig.from_yaml(cfg.get("tracking_config", "config/cup_tracking.yaml"))
 
@@ -111,9 +117,7 @@ def main(argv=None) -> None:
             self.create_timer(1.0, self._publish_status)
             self.adapter = FoundationPosePlusPlusAdapter()
             self.detector = YoloCupDetector(cfg.get("yolo_weights", "models/yolo/yolov8m-seg.pt"),
-                                            int(cfg.get("cup_class_id", 41)),
-                                            float(min(o.get("yolo_confidence", 0.1) for o in objects.values())),
-                                            pick="confidence")
+                                            int(cfg.get("cup_class_id", 41)), yolo_conf, pick="confidence")
             self.error = ""
             threading.Thread(target=self._worker, name="fpp-snapshot", daemon=True).start()
             listing = ", ".join(f"{n}({o['color']})" for n, o in objects.items())
@@ -178,17 +182,49 @@ def main(argv=None) -> None:
                     self.wake.wait(timeout=retry_s)
                     self.wake.clear()
 
+        def _candidates(self, frame, colors: set[str]) -> list[dict]:
+            """YOLO(classes 의 아무 클래스, 낮은 문턱) + YOLO 가 못 잡은 색의 색 덩어리 → 작업 영역 안 후보만.
+            10.09: YOLO 가 핑크 병을 vase 0.08 로만 잡았다(병은 bottle 39 · cyl60 은 cup 41)."""
+            out = []
+            res = self.detector.model(frame.rgb, conf=yolo_conf, verbose=False)
+            for r in res:
+                if r.boxes is None or r.masks is None:
+                    continue
+                for cls, conf, box, mk in zip(r.boxes.cls.tolist(), r.boxes.conf.tolist(), r.boxes.xyxy.tolist(),
+                                              r.masks.data.cpu().numpy()):
+                    if int(cls) not in classes:
+                        continue
+                    m = mk.astype(bool)
+                    if m.shape != frame.rgb.shape[:2]:
+                        import cv2
+                        m = cv2.resize(m.astype(np.uint8), frame.rgb.shape[1::-1], interpolation=cv2.INTER_NEAREST).astype(bool)
+                    out.append({"mask": m, "src": f"yolo {int(cls)}", "conf": round(float(conf), 3),
+                                "box": [round(float(v)) for v in box]})
+            for c in colors:
+                if any(C.color_fraction(frame.rgb, d["mask"], c) >= C.MIN_SCORE for d in out):
+                    continue
+                for m in C.color_blobs(frame.rgb, c, min_area=blob_min_area):
+                    ys, xs = np.nonzero(m)
+                    out.append({"mask": m, "src": f"blob {c}", "conf": None,
+                                "box": [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())]})
+            K = frame.intrinsics.matrix
+            for d in out:
+                d["inside"] = T_base_cam is None or C.in_workspace(T_base_cam, C.mask_point(d["mask"], frame.depth, K), workspace)
+            return out
+
         def _snapshot(self, frame, seq: int, todo: list[str]) -> None:
-            dets = self.detector.detect(frame.rgb)
-            masks = [d.mask for d in dets]
-            self.candidates = [{"conf": round(d.confidence, 3), "box": _box(d), **s}
-                               for d, s in zip(dets, C.scores(frame.rgb, masks))]
+            cands = self._candidates(frame, {objects[n]["color"] for n in todo})
+            self.candidates = [{"src": d["src"], "conf": d["conf"], "box": d["box"], "inside": d["inside"], **sc}
+                               for d, sc in zip(cands, C.scores(frame.rgb, [d["mask"] for d in cands]))]
+            dets = [d for d in cands if d["inside"]]
+            masks = [d["mask"] for d in dets]
             pick = C.assign(frame.rgb, masks, {n: objects[n]["color"] for n in todo})
             for name in todo:
                 if name not in pick:
                     self.info[name] = {"found": False, "why": "그 색 후보가 없다"}
                     continue
                 det = dets[pick[name]]
+                det_mask = det["mask"]
                 o = objects[name]
                 mesh = MeshSpec(o["mesh_path"], float(o["mesh_scale_to_meters"]))
                 t0 = time.monotonic()
@@ -198,7 +234,7 @@ def main(argv=None) -> None:
                         f, s = self._next_frame(s)
                         if f is None:
                             break
-                    result = self.adapter.initialize(f, det.mask, mesh)      # 컵은 그대로 — 첫 장 마스크를 쓴다
+                    result = self.adapter.initialize(f, det_mask, mesh)      # 컵은 그대로 — 첫 장 마스크를 쓴다
                     self.adapter.reset()
                     q = evaluate_quality(f, result, None, tconf)
                     if q.valid:
@@ -212,10 +248,10 @@ def main(argv=None) -> None:
                 with self.lock:
                     self.poses[name] = T
                     self.pending.discard(name)
-                self.info[name] = {"found": True, "color_score": round(C.color_fraction(frame.rgb, det.mask, o["color"]), 3),
-                                   "yolo_conf": round(det.confidence, 3), "frames": len(poses),
+                self.info[name] = {"found": True, "color_score": round(C.color_fraction(frame.rgb, det_mask, o["color"]), 3),
+                                   "src": det["src"], "yolo_conf": det["conf"], "frames": len(poses),
                                    "spread_mm": round(spread, 1), "ms": round((time.monotonic() - t0) * 1e3),
-                                   "box": _box(det)}
+                                   "box": det["box"]}
                 self.get_logger().info(f"{name}: {self.info[name]}")
 
         # ── 출력 ──
@@ -252,10 +288,6 @@ def main(argv=None) -> None:
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-
-
-def _box(det) -> list[int] | None:
-    return [round(float(v)) for v in det.xyxy] if getattr(det, "xyxy", None) is not None else None
 
 
 def _quat_xyzw(R: np.ndarray) -> np.ndarray:
