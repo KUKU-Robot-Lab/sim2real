@@ -356,7 +356,7 @@ def _run(kind: str) -> dict:
             _cmd("episode stop — pd 가 그 자세 · 손 쥠을 붙잡는다", ["python3", f"{PC}/tools/trigger.py", "episode/stop", "--episode-ns", s],
                  execute_args=["--execute"]),
             _cmd("정책 노드 정지", stop=[f"policy_aglt_{s}#{AGLT_NODE_IDX[real]}"]),
-            *(_record_stop(f"policy_aglt_{s}", 2) if real else []),
+            *(_record_stop(f"policy_aglt_{s}", 2, f"aglt_{s}") if real else []),
         ]
         npz = f"{{repo}}/logs/policy_control/rehome_{s}.npz"
         p = s[0]
@@ -412,7 +412,7 @@ def _run(kind: str) -> dict:
             _cmd("정책 노드 정지", stop=[f"policy_place_{s}#{1 if real else 2}"]),
         ] + ([] if real else [_cmd("fake 홀더 정지", stop=[f"policy_place_{s}#0"])])
     for s in SIDES:
-        hand = [_cmd(f"★[{s}] 손 EtherCAT 확인 — 손 전원 · 랜 케이블(손 하나 = NIC 하나, 오른손 USB-C 랜 · 왼손 내장 랜 — "
+        hand = [_cmd(f"★[{s}] 손 EtherCAT 확인 — 손 전원 · 랜 케이블(손 하나 = NIC 하나, 두 손 모두 USB 3.0 랜(오른손 RTL8153 · 왼손 RTL8156, 10.09) — "
                      "deploy/policy_control/config/rh56f1_ports.yaml). 링크가 up 이고 마스터에 setcap 이 붙어 있는가",
                      ["bash", "-lc", "ip -br link; getcap {repo}/tools/ethercat/rh56f1_ecat_master; "
                                      "cat {repo}/deploy/policy_control/config/rh56f1_ports.yaml"], manual=True),
@@ -549,8 +549,8 @@ def _episode_run(name: str, real: bool) -> list:
     bg = [i for i, c in enumerate(cmds) if c.get("background")]
     cmds.append(_cmd("에피소드 노드들 정지", stop=[f"episode_{name}#{i}" for i in reversed(bg)]))
     if real:
-        cmds.append(_cmd("기록 끝 — bag 두 개 마무리(SIGINT)",
-                         ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop"]))
+        cmds.append(_cmd("기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)",
+                         ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop", f"episode_{name}"]))
     return cmds
 
 
@@ -569,14 +569,17 @@ def _record_start(name: str, sides: list, topics: list) -> list[dict]:
     extra = ["/policy_control/joint_target", *(f"/policy_control/{x}" for s in sides for x in
                                                 (f"status/pd_{s}", f"status/rh_aglt_node_{s}", f"{s}/episode", f"pd_{s}/applied")),
              *topics]
+    # ★10.09 실기: 양팔 동시 — 이름마다 따로 기록(한 팔의 시작 · 끝이 다른 팔 기록을 끄지 않는다), 손 bag 은 그 팔 손만
     return [_cmd(f"기록 시작 — 팔 · 손 bag(rh56f1_record.sh {name}) · 팔 지연은 tools/arm_latency_report.py <bag>/arm",
-                 ["bash", "-lc", f"EXTRA='{' '.join(extra)}' bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh start {name}"]),
+                 ["bash", "-lc", f"EXTRA='{' '.join(extra)}' HAND_SIDES='{' '.join(sides)}' "
+                                 f"bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh start {name}"]),
             _cpu_record(name)]
 
 
-def _record_stop(stage: str, cpu_index: int) -> list[dict]:
+def _record_stop(stage: str, cpu_index: int, name: str) -> list[dict]:
     return [_cmd("CPU 기록 끝(요약은 그 단계 로그)", stop=[f"{stage}#{cpu_index}"]),
-            _cmd("기록 끝 — bag 두 개 마무리(SIGINT)", ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop"])]
+            _cmd(f"기록 끝 — {name} bag 두 개 마무리(SIGINT, 이 단계 기록만)",
+                 ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop", name])]
 
 
 def _home(s: str) -> list[dict]:

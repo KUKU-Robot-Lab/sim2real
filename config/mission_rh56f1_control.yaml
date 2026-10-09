@@ -693,7 +693,8 @@ run:
     - bash
     - -lc
     - EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/right/episode
-      /policy_control/pd_right/applied /objects/source200_pink/pose' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start aglt_right
+      /policy_control/pd_right/applied /objects/source200_pink/pose' HAND_SIDES='right' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start aglt_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -764,11 +765,12 @@ run:
   - note: CPU 기록 끝(요약은 그 단계 로그)
     stop:
     - policy_aglt_right#2
-  - note: 기록 끝 — bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — aglt_right bag 두 개 마무리(SIGINT, 이 단계 기록만)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
+    - aglt_right
   rehome_right:
   - note: ★[right] 손에 컵이 있으면 사람이 받아 든다(다음 스텝이 손을 편다) · 이 팔 · 손 주변과 경로(테이블 앞 · 몸통 옆)가 비어 있는가. 정책이 멈춘 자리 → 정책 시작 자세(홈)로 간다(최대 0.1 rad/s, 약 20~40
       s)
@@ -929,7 +931,8 @@ run:
     - bash
     - -lc
     - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/left/episode
-      /policy_control/pd_left/applied /objects/shaker_c_orange/pose' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start aglt_left
+      /policy_control/pd_left/applied /objects/shaker_c_orange/pose' HAND_SIDES='left' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start aglt_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -1000,11 +1003,12 @@ run:
   - note: CPU 기록 끝(요약은 그 단계 로그)
     stop:
     - policy_aglt_left#2
-  - note: 기록 끝 — bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — aglt_left bag 두 개 마무리(SIGINT, 이 단계 기록만)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
+    - aglt_left
   rehome_left:
   - note: ★[left] 손에 컵이 있으면 사람이 받아 든다(다음 스텝이 손을 편다) · 이 팔 · 손 주변과 경로(테이블 앞 · 몸통 옆)가 비어 있는가. 정책이 멈춘 자리 → 정책 시작 자세(홈)로 간다(최대 0.1 rad/s, 약 20~40
       s)
@@ -1153,8 +1157,8 @@ run:
     stop:
     - policy_place_left#1
   hand_right:
-  - note: ★[right] 손 EtherCAT 확인 — 손 전원 · 랜 케이블(손 하나 = NIC 하나, 오른손 USB-C 랜 · 왼손 내장 랜 — deploy/policy_control/config/rh56f1_ports.yaml). 링크가 up
-      이고 마스터에 setcap 이 붙어 있는가
+  - note: ★[right] 손 EtherCAT 확인 — 손 전원 · 랜 케이블(손 하나 = NIC 하나, 두 손 모두 USB 3.0 랜(오른손 RTL8153 · 왼손 RTL8156, 10.09) — deploy/policy_control/config/rh56f1_ports.yaml).
+      링크가 up 이고 마스터에 setcap 이 붙어 있는가
     argv:
     - bash
     - -lc
@@ -1514,8 +1518,8 @@ run:
     stop:
     - pd_arm_right#1
   hand_left:
-  - note: ★[left] 손 EtherCAT 확인 — 손 전원 · 랜 케이블(손 하나 = NIC 하나, 오른손 USB-C 랜 · 왼손 내장 랜 — deploy/policy_control/config/rh56f1_ports.yaml). 링크가 up
-      이고 마스터에 setcap 이 붙어 있는가
+  - note: ★[left] 손 EtherCAT 확인 — 손 전원 · 랜 케이블(손 하나 = NIC 하나, 두 손 모두 USB 3.0 랜(오른손 RTL8153 · 왼손 RTL8156, 10.09) — deploy/policy_control/config/rh56f1_ports.yaml).
+      링크가 up 이고 마스터에 setcap 이 붙어 있는가
     argv:
     - bash
     - -lc
@@ -1979,11 +1983,12 @@ run:
     - episode_pick_place_right#6
     - episode_pick_place_right#4
     - episode_pick_place_right#3
-  - note: 기록 끝 — bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
+    - episode_pick_place_right
   episode_pick_place_left:
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세(config/cup_holder_poses_arm4090.yaml)에 쓰는 홀더가 다 있는가 (읽기만)
     argv:
@@ -2089,8 +2094,9 @@ run:
     - episode_pick_place_left#6
     - episode_pick_place_left#4
     - episode_pick_place_left#3
-  - note: 기록 끝 — bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
+    - episode_pick_place_left

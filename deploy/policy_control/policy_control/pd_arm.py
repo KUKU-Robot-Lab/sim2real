@@ -10,6 +10,7 @@ engage_stage·start_home·start_release·zero_release·engage_refusals) 과 **�
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, replace
 from typing import Mapping, Sequence
 
@@ -235,6 +236,26 @@ def _side_thermal(cfg: PdConfig, side: str) -> tuple:
 
 
 # ================================================================== one arm
+def _follows_live_target(unit) -> bool:
+    """내부 목표가 없고 워치독 안에 받은 외부 목표가 있다 — 정책 · 재생이 팔을 몰고 있다."""
+    target = getattr(unit, "target", None)
+    if unit.hold is not None or target is None:
+        return False
+    return (time.monotonic() - float(target.t_recv)) <= float(unit.cfg.watchdog_sec)
+
+
+def _hold_with_hand(unit, hand) -> None:
+    """지금 세트포인트를 내부 목표로 붙든다(이미 붙들었으면 그 자리) — 손만 바꾼다. 외부 목표는 버린다.
+    ★10.09 실기: 정책이 시작 전에 실패하거나 pd 를 해제했다 다시 engage 한 팔은 hold 도 산 목표도 없었다."""
+    hand = None if hand is None else np.asarray(hand, dtype=float).copy()
+    if unit.hold is None:
+        q = unit.stage.state.law.q_setpoint.copy()
+        unit.hold = Hold(q=q, hand=hand, bias=np.zeros(len(q)), settle=False)
+    else:
+        unit.hold = replace(unit.hold, hand=hand)
+    unit.target = None
+
+
 class ArmUnit:
     """한 팔: 실측(SourceSet, 한 팔 view) → PdStage.tick → 백엔드. 상태 변경은 노드 락 아래에서만."""
 
@@ -681,36 +702,47 @@ class ArmUnit:
         i = int(np.argmax(err))
         return bool(err.max() <= tol), float(err.max()), self.hand_joints[i]
 
+    def hold_refusals(self) -> list[str]:
+        """팔을 지금 자리에 붙들 수 없는 이유 — engage 된 팔에서만(IDLE · HOLD 는 이미 움직이지 않는다)."""
+        if self.phase not in _MOVING:
+            return [f"{self.side}: phase {self.phase.value} — engage 된 팔에서만"]
+        return []
+
+    def start_hold(self) -> None:
+        """실패 · 중단 뒤 해제 대신 — 외부 목표를 버리고 지금 세트포인트 · 손을 붙든다(10.09: 해제마다 팔이 처졌다)."""
+        hand = self.hold.hand if self.hold is not None else getattr(self, "hand_target", None)
+        _hold_with_hand(self, hand)
+
     def hand_rest_refusals(self) -> list[str]:
-        """손을 engage 때 자세로 되돌릴 수 없는 이유 — 팔을 pd 가 내부 목표로 붙들고 있을 때만(episode stop · goto_home 뒤)."""
+        """손을 engage 때 자세로 되돌릴 수 없는 이유 — 산 외부 목표(정책 · 재생)를 따르는 중이 아니면 된다."""
         if getattr(self, "rest_hand", None) is None:
             return [f"{self.side}: engage 때 손 자세를 기록하지 못했다(손 상태 없음)"]
         if self.phase not in _MOVING:
             return [f"{self.side}: phase {self.phase.value} — engage 된 팔에서만"]
-        if self.hold is None:
+        if _follows_live_target(self):
             return [f"{self.side}: 팔이 외부 목표를 따르는 중이다 — 에피소드 정지 뒤에"]
         return []
 
     def start_hand_rest(self) -> None:
-        self.hold = replace(self.hold, hand=self.rest_hand.copy())
+        _hold_with_hand(self, self.rest_hand)
 
     def hand_release_refusals(self) -> list[str]:
         """손을 계약 홈 손 자세로 **팔은 그 자리에서** 보낼 수 없는 이유 — rehome 이 팔을 옮기기 전에 손가락부터 푼다.
 
         09.29 사용자: "테이블 위에 떨어지도록 먼저 손가락을 풀게 하고 그다음 팔을 움직이게". 정책은 컵을 들고 멈추고
         사람이 대기하므로 컵을 떨구는 것 외에 문제가 없다. `hand_home` 과 달리 팔이 홈에 있을 필요가 없고,
-        pd 가 팔을 내부 목표로 붙들고 있으면(에피소드 정지 뒤) 된다.
+        산 외부 목표(정책 · 재생)를 따르는 중만 아니면 된다 — 내부 목표가 없으면 지금 세트포인트를 붙든다(10.09).
         """
         if self.home_hand is None:
             return [f"{self.side}: 계약에 이 팔의 홈 손 자세가 없다"]
         if self.phase not in _MOVING:
             return [f"{self.side}: phase {self.phase.value} — engage 된 팔에서만"]
-        if self.hold is None:
+        if _follows_live_target(self):
             return [f"{self.side}: 팔이 외부 목표를 따르는 중이다 — 에피소드 정지 뒤에"]
         return []
 
     def start_hand_release(self) -> None:
-        self.hold = replace(self.hold, hand=self.home_hand.copy())
+        _hold_with_hand(self, self.home_hand)
 
     def start_thermal_retreat(self) -> bool:
         """자기해제형 HOLD(발열·워치독)에서 홈으로 내려가는 것을 허용한다.

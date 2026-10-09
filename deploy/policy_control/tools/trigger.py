@@ -30,10 +30,10 @@ from episode_ctl import parse_trigger  # noqa: E402
 NS = "/policy_control"
 #: pd 는 팔마다 서비스가 따로다 — `pd/engage --side right` → `/policy_control/pd_right/engage` (09.23).
 PD_SERVICES = ("pd/engage", "pd/goto_home", "pd/release", "pd/hand_home", "pd/hand_rest", "pd/hand_path",
-               "pd/hand_release")
+               "pd/hand_release", "pd/hold")
 SERVICES = PD_SERVICES + ("episode/reset", "episode/start", "episode/stop", "episode/abort")
 #: 로봇을 **덜** 움직이게 하는 쪽 — 승인 없이 언제든 불러도 되는 것들.
-DESCENDING = ("episode/stop", "episode/abort", "pd/release")
+DESCENDING = ("episode/stop", "episode/abort", "pd/release", "pd/hold")   # hold = 그 자리에 얼린다(10.09)
 
 
 def domain_refusal(env: Mapping[str, str], allow_zero: bool) -> str | None:
@@ -120,6 +120,15 @@ def _call_every_policy(node, service: str, timeout: float) -> tuple[bool, list[s
     return ok_all, reasons
 
 
+#: reset 이 측정 · 컵을 아직 못 받아 거부되면 이 시간 동안 다시 부른다(10.09 실기: 노드가 뜬 지 0.25 s 만에 불렸다)
+RESET_RETRY_S, RESET_RETRY_EVERY_S = 6.0, 0.4
+
+
+def retry_reason(service: str, reasons: Sequence[str]) -> bool:
+    """다시 불러 볼 거부인가 — reset 이 '아직 안 온 · 늦은 소스'로 거부된 것만. 순수."""
+    return service == "episode/reset" and any(("is missing" in r or "is stale" in r) and "source" in r for r in reasons)
+
+
 def call(service: str, *, side: str, episode_ns: str = "", expect_pd: Sequence[str], service_timeout: float, phase_timeout: float) -> tuple[bool, list[str]]:
     import rclpy  # noqa: PLC0415
     from std_msgs.msg import String
@@ -143,14 +152,20 @@ def call(service: str, *, side: str, episode_ns: str = "", expect_pd: Sequence[s
         client = node.create_client(Trigger, path)
         if not client.wait_for_service(timeout_sec=service_timeout):
             return False, [f"service {path} unavailable ({service_timeout:.0f}s)"]
-        future = client.call_async(Trigger.Request())
-        # goto_home 같은 서비스는 램프가 끝나야 응답한다 — 응답 자체를 phase 타임아웃만큼 기다린다.
-        rclpy.spin_until_future_complete(node, future, timeout_sec=max(service_timeout, phase_timeout))
-        if not future.done() or future.result() is None:
-            return False, [f"service {path} timeout"]
-        resp = future.result()
-        print(f"  ← {path}: success={resp.success} message={resp.message}", flush=True)
-        ok, reasons = parse_trigger(resp.success, resp.message)
+        retry_until = time.monotonic() + RESET_RETRY_S
+        while True:
+            future = client.call_async(Trigger.Request())
+            # goto_home 같은 서비스는 램프가 끝나야 응답한다 — 응답 자체를 phase 타임아웃만큼 기다린다.
+            rclpy.spin_until_future_complete(node, future, timeout_sec=max(service_timeout, phase_timeout))
+            if not future.done() or future.result() is None:
+                return False, [f"service {path} timeout"]
+            resp = future.result()
+            print(f"  ← {path}: success={resp.success} message={resp.message}", flush=True)
+            ok, reasons = parse_trigger(resp.success, resp.message)
+            if ok or not retry_reason(service, reasons) or time.monotonic() > retry_until:
+                break
+            print(f"  … 소스가 아직이다 — {RESET_RETRY_EVERY_S:.1f} s 뒤 다시({'; '.join(reasons)[:120]})", flush=True)
+            time.sleep(RESET_RETRY_EVERY_S)
         if not ok or not expect_pd:
             return ok, reasons
         deadline = time.monotonic() + phase_timeout

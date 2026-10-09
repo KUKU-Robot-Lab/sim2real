@@ -59,6 +59,8 @@ QUICK = {
     "pd_release": ("PD 해제", "역블렌드로 토크를 내리고 JTC 로 돌려준다 → IDLE.", ["pd/release", "--expect-pd", "IDLE"], "stop"),
     "pd_hand_home": ("손 → 정책 자세", "계약의 초기 손 자세로. 팔이 홈에 정착했을 때만 받는다.", ["pd/hand_home"], "hand"),
     "pd_hand_rest": ("손 → engage 때 자세", "손을 pd 를 걸 때의 실측 자세로 되돌린다.", ["pd/hand_rest"], "hand"),
+    "pd_hold": ("팔 그 자리 붙들기", "외부 목표(정책 · 재생)를 버리고 pd 가 지금 자리 · 손을 붙든다 — 해제와 달리 팔이 처지지 않는다(10.09).",
+                ["pd/hold"], "stop"),
     "pd_hand_release": ("손 놓기 (팔 제자리)", "팔은 그 자리에 둔 채 손을 계약 홈 손 자세로 편다 — 쥔 것이 떨어진다. 에피소드 정지 뒤에만.",
                         ["pd/hand_release"], "hand"),
     # pd 서비스는 09.23 부터 팔마다 따로다 — 이 이름들은 `--side` 를 붙여 부른다(quick 이 쪽을 받는다).
@@ -66,6 +68,22 @@ QUICK = {
     #   hand_to_path_pose.py 가 **먼저 구간을 충돌 검사한 뒤** 부른다. 버튼은 그 검사를 건너뛴다.
 }
 _TRIGGER = _paths.POLICY_CONTROL / "tools" / "trigger.py"
+#: 정책이 팔을 모는 단계 — 실패하면 그 팔 에피소드부터 멈춘다(pd 가 그 자리를 붙들고 늦게 온 정책 목표를 버린다)
+POLICY_STAGE_PREFIXES = ("policy_", "episode_")
+
+
+def failure_actions(stage_id: str, sides: Sequence[str]) -> list[tuple[str, str]]:
+    """실패 · 중단한 실기 단계 뒤 팔마다 부를 서비스(trigger 이름, 쪽). 순수.
+
+    ★10.09 실기: 예전엔 pd 를 해제했다(JTC 가 그 자리를 잡는다고 봤다). 해제마다 팔이 중력에 0.05~0.1 rad 처진 뒤 JTC 가 잡아
+    왼팔이 네 번에 0.56 rad 밀렸고, 해제 뒤 다시 engage 한 팔은 rehome 의 손 펴기가 거부됐다. 이제 해제하지 않는다 —
+    정책 단계면 그 팔 에피소드를 정지하고(pd 가 stop 사건으로 그 자리를 붙든다), 그다음 pd 붙들기(어느 단계든)."""
+    out: list[tuple[str, str]] = []
+    for side in sides:
+        if stage_id.startswith(POLICY_STAGE_PREFIXES):
+            out.append(("episode/stop", side))
+        out.append(("pd/hold", side))
+    return out
 #: 10.04 에피소드 실행기 — 상황판 [다음 노드] · [연속 실행] · [정지] 가 부르는 도구(승인 한 줄 + 서비스). argv 는 여기에만.
 _EPISODE_CMD = _paths.POLICY_CONTROL / "tools" / "episode_cmd.py"
 EPISODE_NODE = "episode_runner"
@@ -649,18 +667,39 @@ class Console:
             s.lane_last[self._lane(s, stage)] = {"stage": stage_id, "outcome": outcome, "note": note}
             mark = {"DONE": "✓", "FAILED": "✗", "ABORTED": "■"}.get(outcome, "?")
             s.event("stage", f"{mark} {stage_id} {outcome}" + (f" — {note}" if note else ""))
-            release = outcome != MC.STATUS_DONE and stage.touches_real and self._pd_holds(s)
-            sides = self._release_sides(s, stage) if release else []
-        # 실기 단계가 실패 · 중단했는데 pd 가 팔을 잡고 있으면 풀어 둔다(JTC 가 그 자리를 잡는다).
-        # 09.22: 저장 경로 시작점 검사에서 멈췄는데 pd 는 engage 된 채 남았다 — 그 검사는 episode_ctl 이 아니라 해제하지 않는다.
-        # ★10.04 실기: pd 서비스는 팔마다 따로인데 쪽 없이 불러 늘 '어느 팔인지 필요하다'로 실패했다 — 단계의 창(팔)으로 고른다.
-        for side in sides:
+            # 실기든 fake 든 — 붙들기는 팔을 움직이지 않는다(10.09: fake 에서 같은 실패 흐름을 재현해 검증한다)
+            failed = outcome != MC.STATUS_DONE
+            sides = self._release_sides(s, stage) if failed and self._pd_holds(s) else []
+            leftovers = ([p.key for p in s.supervisor.alive() if p.stage == stage_id]
+                         if failed and stage_id.startswith(POLICY_STAGE_PREFIXES) else [])
+        # 실기 단계가 실패 · 중단했다 — 팔을 그 자리에 붙들고(해제하지 않는다, 10.09), 정책 단계에 남은 노드를 정리한다.
+        # ★10.04 실기: pd 서비스는 팔마다 따로다 — 단계의 창(팔)으로 쪽을 고른다.
+        if sides or leftovers:
+            threading.Thread(target=self._fail_safe, args=(s, stage_id, outcome, sides, leftovers), daemon=True).start()
+
+    def _fail_safe(self, s: Session, stage_id: str, outcome: str, sides: list[str], leftovers: list[str]) -> None:
+        """실패 뒤 차례대로: 그 팔 에피소드 정지 → pd 붙들기 → 정책 단계의 남은 배경 노드 정지. 각 호출은 끝날 때까지 기다린다
+        (정책 노드를 먼저 끄면 목표가 끊겨 0.25 s 뒤 워치독 HOLD 로 가고, 그러면 붙들기 · rehome 이 거부된다)."""
+        client = f"자동: {stage_id} {outcome}"
+        for svc, side in failure_actions(stage_id, sides):
+            flag = ["--episode-ns", side] if svc.startswith("episode/") else ["--side", side]
+            argv = ["python3", str(_TRIGGER), svc, *flag, "--execute", "--service-timeout", "5"]
             try:
-                self.quick("pd_release", client=f"자동: {stage_id} {outcome}", side=side)
-            except ConsoleError as exc:
-                with self._lock:
-                    if self.session is s:
-                        s.event("quick", f"자동 PD 해제를 못 했다({side}) — 정지 바의 PD 해제를 누를 것 ({exc})")
+                r = subprocess.run(argv, env=child_env(os.environ, domain=s.profile.domain, run_id=s.run_id),
+                                   capture_output=True, text=True, timeout=20)
+                ok = r.returncode == 0
+                last = (r.stdout.strip().splitlines() or [""])[-1][:160]
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                ok, last = False, str(exc)[:160]
+            with self._lock:
+                if self.session is s:
+                    s.event("quick", f"{'■' if ok else '✗'} {client} → {svc} ({side}) {last}")
+                    self._intent(s, f"failsafe/{svc}", {"client": client, "side": side, "ok": ok})
+        if leftovers:
+            stopped = s.supervisor.stop(leftovers)
+            with self._lock:
+                if self.session is s:
+                    s.event("quick", f"■ {client} → 남은 노드 {stopped} 개 정지 ({', '.join(leftovers)})")
 
     def _release_sides(self, s: Session, stage) -> list[str]:
         """실패한 실기 단계 뒤 풀 pd 의 쪽 — 단계 창이 한 팔이면 그 팔, 아니면 status 가 오는 pd 전부(잡고 있는 쪽만)."""

@@ -367,7 +367,8 @@ def test_the_real_episode_stage_records_what_the_release_threshold_needs():
     for topic in ("/policy_control/status/rh_place_node_right", "/policy_control/status/episode_runner",
                   "/policy_control/joint_target", f"/objects/{ACTIVE_SIDES['right']}/pose", "/objects/cup_holder_1/pose"):
         assert topic in line
-    assert any(list(c.argv[-1:]) == ["stop"] and "rh56f1_record.sh" in " ".join(c.argv) for c in cmds)
+    # 10.09 이름마다 따로 — 이 에피소드 기록만 끝낸다(양팔 동시 단계가 서로 끄지 않게)
+    assert any(list(c.argv[-2:]) == ["stop", "episode_pick_place_right"] and "rh56f1_record.sh" in " ".join(c.argv) for c in cmds)
     assert not any("rh56f1_record.sh" in " ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, "episode_pick_place_right"))
 
 
@@ -414,3 +415,11 @@ def test_the_lone_aglt_stage_latches_the_cup_at_reset(side):
     for m, book in ((REAL, REAL_BOOK), (FAKE, FAKE_BOOK)):
         node = next(" ".join(c.argv) for c in _cmds(m, book, f"policy_aglt_{side}") if "rh_aglt_node.py" in " ".join(c.argv))
         assert "cup_latch:=true" in node and "cup_static:=true" in node
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_each_arms_policy_stage_records_under_its_own_name_and_stops_only_that(side):
+    """★10.09 실기: 양팔 정책 동시 — 왼팔 기록 시작이 오른팔 기록을 끄고, 오른팔 끝이 왼팔 기록을 껐다."""
+    cmds = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, f"policy_aglt_{side}")]
+    assert any(f"rh56f1_record.sh start aglt_{side}" in c and f"HAND_SIDES='{side}'" in c for c in cmds)
+    assert any(c.endswith(f"rh56f1_record.sh stop aglt_{side}") for c in cmds)

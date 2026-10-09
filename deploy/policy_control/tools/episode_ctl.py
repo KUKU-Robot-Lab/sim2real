@@ -82,6 +82,9 @@ STAGES: tuple[Stage, ...] = (
     Stage("run", "N 스텝 대기 또는 Ctrl-C (HOLD 면 조기 종료)", None, ()),
     Stage("ep_stop", "episode stop", f"{NS}/episode/stop", ("TRACKING", "HOLD")),
     Stage("pd_release", "pd release (역블렌드 → 0 송출 → JTC 복귀)", PD("release"), ("IDLE",)),
+    # ★10.09 실기: 실패 뒤 해제 대신 — 팔을 지금 자리에 붙든다(해제마다 팔이 중력에 처진 뒤 JTC 가 잡았다)
+    Stage("pd_hold", "pd hold (외부 목표를 버리고 지금 자리 · 손 그대로 붙들기)", PD("hold"), ("RAMPING", "TRACKING"),
+          only=True),
 )
 SAFE_TAIL = ("ep_stop", "pd_release")
 #: 같은 요청을 다시 보내도 결과가 같은 pd 서비스 — 응답이 유실되면 한 번 더 보낸다.
@@ -98,6 +101,20 @@ def lost_response(reasons: list[str]) -> bool:
 def keep_engaged_after_lost(status: dict | None) -> bool:
     """응답만 잃었고 pd 가 정상으로 팔을 잡고 있으면 해제하지 않는다 — 해제가 더 위험하다(위 09.28)."""
     return bool(status) and status.get("phase") in ("RAMPING", "TRACKING") and bool(status.get("ok", False))
+
+
+def after_failure(status: dict | None) -> str:
+    """--only 호출이 거부 · 실패한 뒤 pd 에 할 일 — 'hold'(정상으로 팔을 잡고 있다: 그 자리를 붙든다) · 'release'(고장 HOLD:
+    예전처럼 푼다 — engage 시험에서 처지거나 떨린 경우) · 'none'(이미 IDLE · 상태 모름). ★10.09 실기: 정상인 팔을 해제하자
+    중력에 0.05~0.1 rad 처진 뒤 JTC 가 잡았고 네 번에 0.56 rad 가 쌓였다."""
+    if not status:
+        return "none"
+    phase = status.get("phase")
+    if phase in ("RAMPING", "TRACKING") and bool(status.get("ok", False)):
+        return "hold"
+    if phase == "HOLD":
+        return "release"
+    return "none"
 
 
 def stage_by_id(stage_id: str) -> Stage:
@@ -371,7 +388,13 @@ def execute(steps: int, service_timeout: float, phase_timeout: float, only: tupl
                 print(f"    ⚠ 응답만 잃었고 pd 는 {runner.pd_status.get('phase')} 로 팔을 잡고 있다 — 해제하지 않는다"
                       "(해제하면 JTC 가 넘겨받는 사이 팔이 움직였다). 단계를 다시 실행하면 된다")
             elif rc != 0:
-                run_stage(runner, stage_by_id("pd_release"), steps)
+                todo = after_failure(runner.pd_status)
+                if todo == "hold":
+                    print("    ⚠ 실패했지만 pd 가 팔을 정상으로 잡고 있다 — 해제하지 않고 그 자리를 붙든다(10.09: 해제하면 팔이 처졌다)."
+                          " 원인을 고친 뒤 이 단계를 다시 실행하거나 rehome")
+                    run_stage(runner, stage_by_id("pd_hold"), steps)
+                elif todo == "release":
+                    run_stage(runner, stage_by_id("pd_release"), steps)
         elif "pd_engage" in done:
             safe_tail(runner, done, steps)
         runner.close()

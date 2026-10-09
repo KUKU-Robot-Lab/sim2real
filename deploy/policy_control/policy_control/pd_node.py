@@ -5,7 +5,7 @@
     /policy_control/episode (reset → new_episode, stop/abort → 현재 세트포인트 유지) · /policy_control/<side>/episode(그 팔만)  │
     /policy_control/estop (Bool, 래치 — 모든 팔)                                     ▼
     backends.write(cmd) [execute 일 때만 발행] · /policy_control/pd_<side>/applied · /policy_control/status/pd_<side>
-    서비스 std_srvs/Trigger: /policy_control/pd_<side>/{engage, goto_home, hand_path, hand_home, hand_rest, hand_release, release}
+    서비스 std_srvs/Trigger: /policy_control/pd_<side>/{engage, goto_home, hand_path, hand_home, hand_rest, hand_release, hold, release}
     ★이름은 **팔마다** 갈린다(09.23) — 한 노드가 양팔을 맡아도 부르는 쪽은 언제나 한 팔만 움직인다.
 
 ROS 파라미터 `sides` = 쉼표 목록(기본 '' = robot yaml 과 계약 양쪽에 있는 팔 전부). 한 팔의 HOLD 는 그 팔만 세운다;
@@ -238,7 +238,7 @@ class PdNode(LeanNodeMixin, Node):
         self._wire_temperature(main)
         services = (("engage", self._srv_engage), ("goto_home", self._srv_goto_home), ("hand_home", self._srv_hand_home),
                     ("hand_rest", self._srv_hand_rest), ("hand_path", self._srv_hand_path),
-                    ("hand_release", self._srv_hand_release),
+                    ("hand_release", self._srv_hand_release), ("hold", self._srv_hold),
                     ("release", self._srv_release))
         #: 쪽마다 한 벌 — 이 노드가 양팔을 맡아도 부르는 쪽은 한 팔만 움직인다.
         for side, unit in self.units.items():
@@ -495,6 +495,17 @@ class PdNode(LeanNodeMixin, Node):
             for unit in units:
                 unit.start_hand_release()
         return trigger_reply(resp, True, [self._tag(u, "hand → contract home (팔 제자리)") for u in units])
+
+    def _srv_hold(self, req, resp, units):
+        """팔을 지금 자리에 붙든다 — 외부 목표를 버리고 지금 세트포인트 · 손 그대로. 실패 · 중단 뒤 해제 대신(10.09 실기:
+        해제마다 팔이 중력에 처진 뒤 JTC 가 잡아 0.56 rad 가 쌓였다). 이 뒤 hand_release · rehome 경로를 받는다."""
+        with self._lock:
+            refusals = [r for unit in units for r in unit.hold_refusals()]
+            if refusals:
+                return trigger_reply(resp, False, refusals)
+            for unit in units:
+                unit.start_hold()
+        return trigger_reply(resp, True, [self._tag(u, "그 자리 붙들기(내부 목표)") for u in units])
 
     def _srv_goto_home(self, req, resp, units):
         """계약 홈으로 0.1 rad/s 램프 + settle — 팔을 순서대로(우 먼저, 양팔 리셋 규약)."""

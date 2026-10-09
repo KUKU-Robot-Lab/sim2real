@@ -906,17 +906,66 @@ def test_hand_release_opens_the_hand_where_the_arm_is_held(ros, bi_cm, bi_hand_c
         _close_rig(node, plant, caller, spin)
 
 
-def test_hand_release_refuses_while_the_arm_follows_the_policy():
-    """정책(외부 목표)을 따르는 중에는 손만 바꾸지 않는다 — 에피소드 정지 뒤에만."""
+def _recovery_unit(target_age=None, hold=None):
+    """복구 서비스(hand_release · hand_rest · hold)가 보는 것만 가진 팔 — 외부 목표 나이(None = 목표 없음)."""
+    import time
     from types import SimpleNamespace
+    import numpy as np
     from policy_control import pd_arm as A
-    moving = A._MOVING[0]
-    unit = SimpleNamespace(side="right", home_hand=[0.0], phase=moving, hold=None)
-    assert any("에피소드 정지" in r for r in A.ArmUnit.hand_release_refusals(unit))
-    unit.hold = object()
-    assert A.ArmUnit.hand_release_refusals(unit) == []
-    unit.home_hand = None
-    assert any("홈 손 자세" in r for r in A.ArmUnit.hand_release_refusals(unit))
+    from policy_control.chain import PdTarget
+    target = None if target_age is None else PdTarget(q=np.zeros(7), qd=np.zeros(7), tau_ff=np.zeros(7), seq=1,
+                                                      t_recv=time.monotonic() - target_age)
+    law = SimpleNamespace(q_setpoint=np.full(7, 0.3))
+    return SimpleNamespace(side="right", home_hand=np.zeros(6), rest_hand=np.ones(6), phase=A._MOVING[1], hold=hold,
+                           target=target, hand_target=None, cfg=SimpleNamespace(watchdog_sec=0.25),
+                           stage=SimpleNamespace(state=SimpleNamespace(law=law)))
+
+
+def test_hand_release_refuses_only_while_the_arm_follows_a_live_policy_target():
+    """정책이 목표를 내는 중(워치독 안의 외부 목표)에는 손만 바꾸지 않는다. ★10.09 실기: 정책이 시작 전에 실패하거나
+    pd 를 해제했다 다시 engage 한 팔은 내부 목표(hold)도 산 외부 목표도 없는데 '외부 목표를 따르는 중'으로 거부돼
+    rehome 이 세 번 멈췄다 — 그때는 지금 세트포인트를 붙든 채 손을 편다."""
+    from policy_control import pd_arm as A
+    live = _recovery_unit(target_age=0.05)
+    assert any("에피소드 정지" in r for r in A.ArmUnit.hand_release_refusals(live))
+    for unit in (_recovery_unit(), _recovery_unit(target_age=5.0)):      # 목표 없음 · 끊긴 지 오래
+        assert A.ArmUnit.hand_release_refusals(unit) == []
+        A.ArmUnit.start_hand_release(unit)
+        assert unit.hold is not None and unit.target is None
+        assert list(unit.hold.q) == [0.3] * 7 and list(unit.hold.hand) == [0.0] * 6 and not unit.hold.settle
+    no_hand = _recovery_unit()
+    no_hand.home_hand = None
+    assert any("홈 손 자세" in r for r in A.ArmUnit.hand_release_refusals(no_hand))
+    idle = _recovery_unit()
+    idle.phase = A.Phase.IDLE
+    assert any("engage" in r for r in A.ArmUnit.hand_release_refusals(idle))
+
+
+def test_hand_rest_follows_the_same_rule():
+    from policy_control import pd_arm as A
+    assert any("에피소드 정지" in r for r in A.ArmUnit.hand_rest_refusals(_recovery_unit(target_age=0.05)))
+    unit = _recovery_unit()
+    assert A.ArmUnit.hand_rest_refusals(unit) == []
+    A.ArmUnit.start_hand_rest(unit)
+    assert unit.hold is not None and list(unit.hold.hand) == [1.0] * 6
+
+
+def test_hold_here_freezes_the_arm_at_its_setpoint_without_releasing_it():
+    """★10.09 실기: 실기 단계가 실패하면 상황판이 pd 를 해제했고, 해제마다 팔이 중력에 0.05~0.1 rad 처진 뒤 JTC 가 잡아
+    네 번에 0.56 rad 가 쌓였다. 해제 대신 pd 가 그 자리를 붙든다 — 외부 목표를 버리고 지금 세트포인트 · 손 그대로."""
+    import numpy as np
+    from policy_control import pd_arm as A
+    unit = _recovery_unit(target_age=0.05)
+    unit.hand_target = np.full(6, 0.7)
+    assert A.ArmUnit.hold_refusals(unit) == []
+    A.ArmUnit.start_hold(unit)
+    assert unit.target is None and list(unit.hold.q) == [0.3] * 7 and list(unit.hold.hand) == [0.7] * 6
+    held = _recovery_unit(hold=unit.hold)
+    A.ArmUnit.start_hold(held)
+    assert list(held.hold.hand) == [0.7] * 6                     # 이미 붙든 손은 그대로
+    idle = _recovery_unit()
+    idle.phase = A.Phase.IDLE
+    assert A.ArmUnit.hold_refusals(idle)
 
 
 @needs_asset

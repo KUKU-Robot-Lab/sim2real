@@ -64,3 +64,15 @@ def test_skip_engaged_only_skips_a_pd_that_already_holds_the_arm():
     for phase, want in (("TRACKING", True), ("RAMPING", True), ("IDLE", False), ("HOLD", False)):
         assert ec.already_engaged(NS(pd_status={"phase": phase}, spin=lambda s: None), wait_s=0.0) is want
     assert ec.already_engaged(NS(pd_status=None, spin=lambda s: None), wait_s=0.05) is False   # status 를 못 받으면 engage 한다
+
+
+def test_a_refused_or_failed_single_step_keeps_a_healthy_arm_held_instead_of_releasing():
+    """★10.09 실기: rehome 의 손 펴기가 거부되자 episode_ctl 이 pd 를 해제했고, 해제마다 팔이 중력에 처진 뒤 JTC 가 잡았다.
+    pd 가 정상으로 팔을 잡고 있으면(RAMPING · TRACKING · ok) 해제하지 않고 그 자리를 붙든다(pd/hold). pd 가 고장 HOLD 면
+    예전처럼 해제(engage 시험에서 처지거나 떨린 경우). 상태를 모르면 건드리지 않는다."""
+    from episode_ctl import after_failure
+    assert after_failure({"phase": "TRACKING", "ok": True}) == "hold"
+    assert after_failure({"phase": "RAMPING", "ok": True}) == "hold"
+    assert after_failure({"phase": "HOLD", "ok": False}) == "release"
+    assert after_failure({"phase": "IDLE", "ok": True}) == "none"
+    assert after_failure(None) == "none"
