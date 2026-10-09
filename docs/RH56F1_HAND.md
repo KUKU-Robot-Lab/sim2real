@@ -111,7 +111,7 @@ pd status 의 팔별 `hand_command` 로 지금 입력을 본다. **에피소드(
 ## 7. EtherCAT (10.02 — RS485 대신, 정책 제어 포함)
 
 사용자 결정: RS485(115200 baud · 상태 50 Hz · 명령 최대 30 Hz)는 더 쓰지 않는다. 손 EtherCAT 포트는 하나뿐이라 **손 하나 = NIC 하나**
-(일반 스위치로 묶으면 0 slave + 브로드캐스트 폭주, 10.01). arm4090: 오른손 USB-C 랜 `enx00e04c6806e1` · 왼손 내장 랜 `enp6s0`.
+(일반 스위치로 묶으면 0 slave + 브로드캐스트 폭주, 10.01). arm4090: ★10.09 오른손 USB 3.0 랜 `enx705dccf5a065`(RTL8153) · 왼손 USB 3.0 랜 `enx00e04c6806e1`(RTL8156) — 전: 오른손 `enx00e04c6806e1` · 왼손 내장 `enp6s0`.
 
 ```
 pd · 정책 ─ /hand_<side>/angle_set · force_set · speed_set ─▶ rh56f1_ecat_node.py (ROS, 벤더와 같은 토픽 · 메시지)

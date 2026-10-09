@@ -1,6 +1,6 @@
 # RH56F1 EtherCAT 실기 점검 순서 (arm4090) — 2026-10-03 준비
 
-손 드라이버는 EtherCAT(`config/rh56f1_ports.yaml` transport ethercat, 손 하나 = NIC 하나 · 오른손 `enx00e04c6806e1` · 왼손 `enp6s0`).
+손 드라이버는 EtherCAT(`config/rh56f1_ports.yaml` transport ethercat, 손 하나 = NIC 하나 · ★10.09 오른손 `enx705dccf5a065`(RTL8153) · 왼손 `enx00e04c6806e1`(RTL8156), 둘 다 USB 3.0 랜).
 구조 · 안전 규칙은 `docs/RH56F1_HAND.md` §7.
 
 ## ★10.03 결과 — EtherCAT 으로 두 손 손가락 제어 성공
@@ -91,7 +91,7 @@
 
 ```bash
 # 손 전원 ON · 랜 케이블 확인 후
-ip -br link show enx00e04c6806e1; ip -br link show enp6s0          # 둘 다 UP 이어야 한다
+ip -br link show enx705dccf5a065; ip -br link show enx00e04c6806e1   # 둘 다 UP · 100 Mb/s 전이중(/sys/class/net/<if>/speed · duplex)
 getcap ~/rl_ws/sim2real/tools/ethercat/rh56f1_ecat_master          # 비면 ↓
 sudo setcap cap_net_raw,cap_net_admin=ep ~/rl_ws/sim2real/tools/ethercat/rh56f1_ecat_master
 ```
@@ -100,8 +100,8 @@ sudo setcap cap_net_raw,cap_net_admin=ep ~/rl_ws/sim2real/tools/ethercat/rh56f1_
 
 ```bash
 cd ~/rl_ws/sim2real
-tools/ethercat/ecat_rtt enx00e04c6806e1 2000; tools/ethercat/ecat_rtt enp6s0 2000      # 잃음 0 · slave 1
-tools/ethercat/ecat_rh56f1 safeop enx00e04c6806e1 3 1000                               # 잃음 0 · 각도 · 온도
+tools/ethercat/ecat_rtt enx705dccf5a065 5000; tools/ethercat/ecat_rtt enx00e04c6806e1 5000   # 잃음 0 · slave 1 · p50 ~80 us(10.09)
+tools/ethercat/ecat_rh56f1 safeop enx705dccf5a065 3 1000                               # 잃음 0 · 각도 · 온도(오른손)
 ```
 
 ## 2. 드라이버 무동작 (SAFE_OP)

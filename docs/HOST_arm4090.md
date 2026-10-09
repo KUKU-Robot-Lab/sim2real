@@ -10,8 +10,8 @@ OpenArm 양팔 + Inspire RH56F1 양손 + 머리(XC330 ×2) + RealSense 가 모�
 |---|---|---|---|
 | 오른팔 | PCAN-USB Pro FD ch1 | `can0` (1M / 5M FD) | 미션 drivers 단계 |
 | 왼팔 | PCAN-USB Pro FD ch2 | `can1` (1M / 5M FD) | 미션 drivers 단계 |
-| 오른손 RH56F1 | EtherCAT · USB-C 랜(RTL, MAC 00:e0:4c:68:06:e1) | `enx00e04c6806e1` | `deploy/policy_control/config/rh56f1_ports.yaml` |
-| 왼손 RH56F1 | EtherCAT · 내장 랜(RTL8125) | `enp6s0` | 〃 |
+| 오른손 RH56F1 | EtherCAT · USB 3.0 랜 RTL8153(MAC 70:5d:cc:f5:a0:65) · USB-C 허브 | `enx705dccf5a065` | `deploy/policy_control/config/rh56f1_ports.yaml` |
+| 왼손 RH56F1 | EtherCAT · USB 3.0 랜 RTL8156(MAC 00:e0:4c:68:06:e1) · USB-C 허브 | `enx00e04c6806e1` | 〃 |
 | 머리 pan · tilt | U2D2(FT232H FT763P8T) · TTL · 1M | `/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0` | `config/head_home_rh56f1.yaml` |
 | 카메라 | RealSense D435i serial 348122071637 · fw 5.16.0.1 · USB 3.2 | — | — |
 
@@ -22,6 +22,9 @@ OpenArm 양팔 + Inspire RH56F1 양손 + 머리(XC330 ×2) + RealSense 가 모�
 - ★10.03 CPU: Ryzen 9 5950X 16 코어 · 32 스레드(형제 i · i+16), 일반 커널(PREEMPT_DYNAMIC) · governor schedutil.
   실시간 한도 0 → 운영자 `sudo bash scripts/setup/rt_setup.sh` → 재부팅. 코어 배치는 자동 — EtherCAT 마스터 오른손 cpu15 · 왼손 cpu14
   (형제 31 · 30 까지 비켜 둠), 나머지 노드는 28 스레드 자리. enp6s0 IRQ 는 cpu23(irqbalance).
+- ★10.09 손 랜 재배선(사용자): 두 손 모두 USB 3.0 랜(오른손 RTL8153 · 왼손 RTL8156)을 USB-C 허브 USB 3.0 쪽에. 내장 enp6s0 는 비었다.
+  `tools/ethercat/ecat_rtt <ifname> 5000`(상태 전이 없는 BRD 읽기) 두 손 동시: p50 79 us · p99 90~95 us · 잃음 0. 같은 날 시험한
+  USB 2.0 랜 RTL8152 는 p50 545 us · 잃음 1.8 %, AX88179(cdc_ncm 드라이버)는 p50 1.28 ms — 손에 쓰지 않는다. OpenArm PCAN 은 USB 2.0 버스(Bus 3)로 손과 갈렸다.
 - `ttyUSB0/1/2` 번호는 꽂는 순서로 바뀐다(09.30 같은 날 세 번 바뀜). 머리 설정은 by-id 경로만 쓴다.
 - CAN 을 켜는 것은 sudo 라 운영자가 한다:
   `sudo ip link set can0 down && sudo ip link set can0 type can bitrate 1000000 dbitrate 5000000 fd on && sudo ip link set can0 up` (can1 도 같게).

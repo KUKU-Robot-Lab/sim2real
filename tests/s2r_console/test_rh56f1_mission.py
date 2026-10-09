@@ -110,7 +110,7 @@ def test_the_driver_launcher_reads_the_port_file_and_refuses_one_port_for_two_ha
     import rh56f1_driver as D
     cfg = yaml.safe_load((PC / "config" / "rh56f1_ports.yaml").read_text())
     assert cfg["right"]["transport"] == cfg["left"]["transport"] == "ethercat"
-    assert (cfg["right"]["ifname"], cfg["left"]["ifname"]) == ("enx00e04c6806e1", "enp6s0")
+    assert (cfg["right"]["ifname"], cfg["left"]["ifname"]) == ("enx705dccf5a065", "enx00e04c6806e1")   # 10.09 둘 다 USB 3.0 랜
     argv = D.argv_for(cfg, "right", "P.yaml")
     assert argv[1].endswith("policy_control/rh56f1_ecat_node.py") and argv[2:] == ["--side", "right", "--ports", "P.yaml"]
     assert D.argv_for(cfg, "left", "P.yaml", no_op=True)[-1] == "--no-op"

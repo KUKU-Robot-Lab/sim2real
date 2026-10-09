@@ -93,7 +93,7 @@ def test_port_file_gives_one_nic_per_hand_and_a_valid_master_command():
     ports = yaml.safe_load((PC / "config" / "rh56f1_ports.yaml").read_text())
     ifr, cfg = NODE.ecat_config(ports, "right")
     ifl, _ = NODE.ecat_config(ports, "left")
-    assert (ifr, ifl) == ("enx00e04c6806e1", "enp6s0")
+    assert (ifr, ifl) == ("enx705dccf5a065", "enx00e04c6806e1")   # 10.09 오른손 RTL8153 · 왼손 RTL8156
     argv = E.master_argv("/m", ifr, "/a", "/b", cfg, no_op=False)
     assert argv[:3] == ["/m", "--ifname", ifr] and "--no-op" not in argv
     assert argv[argv.index("--hz") + 1] == "500.0" and argv[argv.index("--speed") + 1] == "2000"

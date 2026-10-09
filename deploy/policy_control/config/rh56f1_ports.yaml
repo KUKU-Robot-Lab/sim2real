@@ -3,12 +3,15 @@
 #
 # ★10.02 사용자: RS485 는 더 쓰지 않는다 — EtherCAT 으로 손 상태 · 명령(정책 제어 포함).
 #   손 하나 = NIC 하나(손 EtherCAT 포트는 하나뿐이라 데이지체인 불가, 일반 스위치는 브로드캐스트 폭주 — 10.01).
-#   arm4090 배선: 오른손 = USB-C 랜(enx00e04c6806e1 — 이름이 MAC 이라 꽂는 순서와 무관) · 왼손 = 내장 랜 enp6s0.
+#   arm4090 배선(★10.09 사용자 재배선 · 확인): 오른손 = USB 3.0 랜 RTL8153(enx705dccf5a065) · 왼손 = USB 3.0 랜 RTL8156(enx00e04c6806e1),
+#   둘 다 USB-C 허브(USB 3.0 쪽). 이름이 MAC 이라 꽂는 포트 · 순서와 무관. 10.02~10.09 오전: 오른손 enx00e04c6806e1 · 왼손 내장 enp6s0.
+#   ★USB 2.0 랜(RTL8152)은 쓰지 않는다 — 10.09 실측 왕복 p50 545 us · 잃음 1.8 %. AX88179(cdc_ncm) 도 1.28 ms.
 #   transport: ethercat → policy_control/rh56f1_ecat_node.py(ROS · 벤더와 같은 토픽) + tools/ethercat/rh56f1_ecat_master(1 kHz).
 #   마스터는 cap_net_raw 가 필요하다: bash tools/ethercat/build.sh → sudo setcap cap_net_raw,cap_net_admin=ep tools/ethercat/rh56f1_ecat_master
 #   10.02 실측(SAFE_OP 1 kHz 3000 회): 잃음 0 · PDO 왕복 오른손 p50 68 us · 왼손 41 us.
-right: {transport: ethercat, ifname: enx00e04c6806e1, hand_id: 1}
-left:  {transport: ethercat, ifname: enp6s0, hand_id: 1}
+#   10.09 실측(ecat_rtt BRD, 두 손 동시 5000 회 × 3): 오른손 · 왼손 p50 79 us · p99 90~95 us · 잃음 0.
+right: {transport: ethercat, ifname: enx705dccf5a065, hand_id: 1}
+left:  {transport: ethercat, ifname: enx00e04c6806e1, hand_id: 1}
 
 ethercat:
   master: tools/ethercat/rh56f1_ecat_master   # sim2real 기준 경로
