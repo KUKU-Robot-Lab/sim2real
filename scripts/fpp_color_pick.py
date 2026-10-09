@@ -51,10 +51,19 @@ def color_mask(rgb: np.ndarray, color: str) -> np.ndarray:
     return (out & (s >= S_MIN) & (v >= V_MIN)).reshape(img.shape[:2])
 
 
-def color_blobs(rgb: np.ndarray, color: str, min_area: int = 1500) -> list[np.ndarray]:
-    """그 색의 이어진 덩어리 마스크들(넓이 min_area 화소 이상, 큰 것부터) — YOLO 가 못 잡은 물체의 후보."""
+BLOB_CLOSE_PX = 3   # 닫기 반경 — PLA 결 · 그늘로 끊긴 몸통을 잇는다(10.09 핑크 병)
+
+
+def color_blobs(rgb: np.ndarray, color: str, min_area: int = 1500, close_px: int = BLOB_CLOSE_PX) -> list[np.ndarray]:
+    """그 색의 이어진 덩어리 마스크들(넓이 min_area 화소 이상, 큰 것부터) — YOLO 가 못 잡은 물체의 후보.
+    닫기(팽창 → 침식)와 구멍 메우기로 끊긴 결을 이은 뒤 센다."""
     from scipy import ndimage
-    labels, n = ndimage.label(color_mask(rgb, color))
+    m = color_mask(rgb, color)
+    if close_px > 0:
+        st = np.ones((2 * close_px + 1, 2 * close_px + 1), bool)
+        m = ndimage.binary_closing(np.pad(m, close_px), structure=st)[close_px:-close_px, close_px:-close_px]
+        m = ndimage.binary_fill_holes(m)
+    labels, n = ndimage.label(m)
     if n == 0:
         return []
     areas = ndimage.sum(np.ones(labels.shape), labels, index=np.arange(1, n + 1))

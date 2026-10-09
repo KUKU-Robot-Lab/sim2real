@@ -169,3 +169,17 @@ def test_a_candidate_is_kept_only_if_its_depth_point_is_over_the_table():
     depth_far = np.full((120, 200), 0.85)                # base z 0.05 — 테이블 아래
     assert not C.in_workspace(T, C.mask_point(m, depth_far, K), ws)
     assert C.mask_point(m, np.zeros_like(depth), K) is None    # 깊이 없음
+
+
+def test_a_speckled_bottle_is_one_blob_not_its_brightest_rim():
+    """10.09: 핑크 병 몸통(PLA 결 · 채도 100 근처)이 점점이 끊겨 가장 큰 덩어리가 입구 테두리(47×42 px)였다 —
+    닫기(closing)로 이어 붙여 몸통 전체를 한 덩어리로 본다."""
+    img, _ = _scene((TABLE, (0, 1, 0, 1)))
+    img[10:90, 20:60] = PINK_BOTTLE
+    img[10:90:3, 20:60] = TABLE                         # 3 줄마다 끊긴 결
+    img[10:90, 20:60:4] = TABLE
+    img[95:105, 25:35] = PINK_RIM                        # 따로 떨어진 작은 테두리
+    blobs = C.color_blobs(img, "pink", min_area=300)
+    assert len(blobs) == 1
+    ys, xs = np.nonzero(blobs[0])
+    assert ys.min() <= 11 and ys.max() >= 88 and xs.min() <= 21 and xs.max() >= 58
