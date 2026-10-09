@@ -256,3 +256,15 @@ def test_the_table_height_matches_the_table_calibration():
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "calib"))
     from table_cad_extrinsics import TABLE_TOP_Z
     assert C.TABLE_TOP_Z == TABLE_TOP_Z
+
+
+def test_a_shorter_standing_object_of_the_same_colour_is_not_the_bottle():
+    """10.09 source200(높이 0.20, 기대 꼭대기 0.405) 옆에 선 다른 주황 물건 — 꼭대기 0.373(−3.2 cm) · 폭 0.089.
+    대상 병은 0.410(+0.5 cm). 지금까지 서 있는 대상은 ±0.6 cm 안이었다."""
+    aabb = ((-0.03, -0.03, -0.085), (0.03, 0.03, 0.115))
+    rng = np.random.default_rng(2)
+
+    def pts(w, z5, z95):
+        return np.column_stack([rng.uniform(0, w, 800), rng.uniform(0, 0.02, 800), rng.uniform(z5, z95, 800)])
+    assert C.looks_standing(pts(0.055, 0.222, 0.410), aabb)
+    assert not C.looks_standing(pts(0.08, 0.223, 0.373), aabb)

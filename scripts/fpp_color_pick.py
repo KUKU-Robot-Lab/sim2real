@@ -163,7 +163,7 @@ def fits_footprint(points_base: np.ndarray, aabb, scale: float = FOOTPRINT_SCALE
 
 
 TABLE_TOP_Z = 0.205      # arm4090 상판(scripts/calib/table_cad_extrinsics.py 와 같은 값)
-TOP_TOL = 0.04           # 서 있는 물체 꼭대기 높이 허용 — 10.09 실측: 서 있음 +0.002 · +0.006, 누움 −0.055 · −0.070
+TOP_TOL = 0.025          # 서 있는 물체 꼭대기 높이 허용 — 10.09 실측: 대상 +0.002 · +0.006 · +0.005, 누움 −0.055 · −0.070, 다른 주황 물건 −0.032
 
 
 def looks_standing(points_base: np.ndarray, aabb, table_z: float = TABLE_TOP_Z, top_tol: float = TOP_TOL) -> bool:
