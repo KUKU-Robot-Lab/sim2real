@@ -118,6 +118,9 @@ class PoseConverter:
         return pos, quat
 
 
+RELOAD_S = 5.0     # 레지스트리 다시 읽기 주기 — 새 물체(objects.d)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--objects", nargs="*", default=None, help="기본: 레지스트리 전체")
@@ -130,6 +133,7 @@ def main() -> None:
     args = ap.parse_args()
     registry = load_registry()
     conv = PoseConverter(registry, args.objects or registry.names(), args.camera_extrinsics, args.z_bias)
+    state = {"conv": conv}      # --objects 없으면 레지스트리를 다시 읽어 새 물체를 더한다(10.09 fpp_object.py add 뒤 재기동 없이)
 
     import rclpy
     from geometry_msgs.msg import PoseStamped
@@ -148,9 +152,27 @@ def main() -> None:
                 self.create_subscription(JointState, args.head_joint_topic, self._on_head, 10)
             self._count = {n: 0 for n in conv.names}
             self.create_timer(10.0, self._report)
+            if args.objects is None:
+                self.create_timer(RELOAD_S, self._reload)
             self.get_logger().info(f"objects {conv.names} → {[output_topic(n) for n in conv.names]} · "
                                    f"camera {args.camera_extrinsics or registry.camera_extrinsics} · z 보정 {conv.z_bias:+.4f} m"
                                    f" · 깊이 광선 보정 {conv.depth_bias}")
+
+        def _reload(self) -> None:
+            try:
+                reg = load_registry()
+                new = [n for n in reg.names() if n not in state["conv"].names]
+                if not new:
+                    return
+                state["conv"] = PoseConverter(reg, reg.names(), args.camera_extrinsics, args.z_bias)
+            except (OSError, ValueError) as err:            # 고치는 중인 파일 — 옛 것으로 계속
+                self.get_logger().error(f"레지스트리 다시 읽기 실패(옛 것 유지): {err}", throttle_duration_sec=30.0)
+                return
+            for n in new:
+                self._pubs[n] = self.create_publisher(PoseStamped, output_topic(n), 10)
+                self.create_subscription(PoseStamped, input_topic(n), lambda m, n=n: self._on_pose(n, m), 10)
+                self._count[n] = 0
+            self.get_logger().info(f"새 물체 {new} → {[output_topic(n) for n in new]}")
 
         def _on_head(self, msg) -> None:
             names = list(msg.name)
@@ -171,10 +193,10 @@ def main() -> None:
                     return
                 head = self._head
             p, q = msg.pose.position, msg.pose.orientation
-            pos, quat = conv.convert(name, np.array([p.x, p.y, p.z]), np.array([q.w, q.x, q.y, q.z]), head)
+            pos, quat = state["conv"].convert(name, np.array([p.x, p.y, p.z]), np.array([q.w, q.x, q.y, q.z]), head)
             out = PoseStamped()
             out.header.stamp = msg.header.stamp
-            out.header.frame_id = conv.base_frame
+            out.header.frame_id = state["conv"].base_frame
             out.pose.position.x, out.pose.position.y, out.pose.position.z = map(float, pos)
             (out.pose.orientation.w, out.pose.orientation.x,
              out.pose.orientation.y, out.pose.orientation.z) = map(float, quat)
