@@ -14,7 +14,12 @@ objects:
       detection_pick: confidence
       yolo_confidence: 0.05
       group: shaker_c
-      color: orange
+      color:
+      - 0.1
+      - 24.1
+      hue_measured:
+      - 12.1
+      - 6.38
     cad_to_body:
       position:
       - 0.0
