@@ -640,7 +640,7 @@ def mission(kind: str) -> dict:
         #   bank_{r,l}_cyl60_keep.npz)의 쥔 높이가 p5~p95 4.3~5.3 cm(우) · 3.1~5.5 cm(좌), 3 cm 아래 0 %(우) · 4 %(좌)다(10.06 실측)
         #   ★10.08 기본 = 손 어드민턴스 다지 파지 최종(T2R Grasping, 사용자 "이 정책으로 실기 테스트") — 계약 hand_command admittance 로
         #   pd 가 손 목표를 /hand_<s>/angle_target 으로 보낸다. env17 · env17f(위치 제어)는 첫 화면에서 고를 수 있다.
-        "aglt_right": "deploy/policies/rh56f1/aglt/right_g5362b/rh_aglt_contract.json",
+        "aglt_right": "deploy/policies/rh56f1/aglt/right_src21c/rh_aglt_contract.json",   # 10.09 source 병 겸용(이전 right_g5362b · cyl60)
         #   10.06 왼팔은 env17 거울(left_env17mir) 대신 그 거울을 왼팔 env 에서 200 epoch 이어 학습한 left_env17f(T2R Grasping)
         "aglt_left": "deploy/policies/rh56f1/aglt/left_g5362/rh_aglt_contract.json",
         # 한 팔 컵 홀더 놓기(10.04 PLACE 세션, aglt cyl60 인계) — 콘솔 자리는 아직 없다(팔마다 한 자리 = aglt)

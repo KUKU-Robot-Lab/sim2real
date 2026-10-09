@@ -415,3 +415,44 @@ def test_an_episode_does_not_hand_over_between_hand_command_inputs():
             mode = json.loads(cpath.read_text()).get("hand_command") or "position"
             by_side.setdefault(b.get("side"), set()).add(mode)
         assert all(len(m) == 1 for m in by_side.values()), f"{path.name}: {by_side}"
+
+
+def test_cup_geometry_follows_object_names_like_hdgp_resolve_cfg():
+    """10.09 두 병 겸용 런(aglt_r_src21c): env.yaml object_name 은 기본값 shaker 로 남고 object_names 가
+    (source240_pla, source200_pla) 다. hdgp resolve_cfg 는 object_names 를 먼저 보고 unit 이 같아야 한다 —
+    shaker 로 풀면 반높이 0.057(관측 키포인트)이 틀린다. 병 unit = cyl60 과 같은 ±0.085."""
+    from policy_control import rh_aglt as A
+    env = {"object_name": "shaker", "object_names": ["source240_pla", "source200_pla"], "cup_scale": 0.65}
+    assert A.cup_geometry(env) == pytest.approx((0.085, 0.085))
+    assert A.cup_geometry({"object_name": "shaker_c", "object_names": [], "cup_scale": 0.65}) == pytest.approx((0.065, 0.065))
+    with pytest.raises(A.RhAgltError, match="unit"):
+        A.cup_geometry({"object_name": "shaker", "object_names": ["source240_pla", "shaker_c"], "cup_scale": 0.65})
+
+
+# ---------------------------------------------------------------- ★10.09 물체별 재학습(OBJ_RETRAIN) — 병 · 쉐이커
+OBJ_RUNS = {"rh56f1/aglt/right_src21c": 0.085, "rh56f1/aglt/right_s200": 0.085, "rh56f1/aglt/right_s240": 0.085,
+            "rh56f1/aglt/left_shk21": 0.065}
+
+
+@pytest.mark.parametrize("pid", sorted(OBJ_RUNS))
+def test_object_retrain_contracts_use_the_trained_object_geometry_and_act(pid):
+    """10.09 사용자: 새 Grasping 정책(src200 · 240 을 잘 잡는다)을 sim2real 로. 덤프의 object_name 은 기본값 shaker 로 남는다 —
+    object_name(s) 로 다시 푼 반높이(병 0.085 · 쉐이커 0.065)와 목표 박스 높이를 계약이 싣고, 손은 어드민턴스, 가중치가 돈다."""
+    run = POL / pid
+    env = yaml.unsafe_load((run / "params" / "env.yaml").read_text())
+    c = A.load_contract(run / "rh_aglt_contract.json")
+    half = OBJ_RUNS[pid]
+    assert env["cup_half_height"] == pytest.approx(0.056875)                     # 덤프는 낡았다
+    assert c.cup_half_height == pytest.approx(half) and c.hand_command == "admittance"
+    z0, zb = float(env["table_surface_z"]) + half, env["goal_box_z_range"]
+    assert (c.goal_box_min[2], c.goal_box_max[2]) == pytest.approx((z0 + zb[0], z0 + zb[1]))
+    if not Path(c.checkpoint).is_file():
+        pytest.skip("가중치 없음(.gitignore)")
+    pytest.importorskip("torch")
+    from policy_control.joint_policy import JointPolicy
+    ch = N.AgltChain(c, JointPolicy(c, "cpu"))
+    meas = {"arm": _meas(c)}
+    ch.reset(meas)
+    for _ in range(12):
+        obs, a, _t = ch.step(meas)
+    assert a.size == 13 and np.all(np.isfinite(a)) and np.all(np.isfinite(obs))

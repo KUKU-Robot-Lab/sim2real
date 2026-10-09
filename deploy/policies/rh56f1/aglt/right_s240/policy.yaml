@@ -1,0 +1,16 @@
+# RH56F1 오른팔 rh_aglt source240 병 전용 — 10.09 OBJ_RETRAIN 통과.
+id: rh56f1/aglt/right_s240
+status: candidate        # candidate | verified | deployed | hold
+task: open-rh_r_aglt-lstm
+side: right
+checkpoint: last_open-rh_r_aglt-lstm_ep_1600_rew_1825.811.pth
+summary: 'source240_pla 단독 · 손 어드민턴스(/hand_right/angle_target) 전제 · 보상 iter_21(낮게 쥐기 · 벽 곡선)'
+eval: '결정론 ADR 0: 4.91/5(arm4090) · 5090 재확인 4.84'
+source: 'arm4090:~/rl_ws/our_source/policy/aglt_r_s240_ep1600 (md5 7b8824c2597d3876f8b2b6a9a0a020cf)'
+interface: obs 96 · action 13 (팔 관절 증분 7 · 손 6 — g5362b 와 계약 · 망 구조 · 디코더 동일)
+deploy:
+  max_episode_s: 15.0
+note: >-
+  ★학습 조건: 팔 · 손 명령 지연 0 · FP++ 지각 모델 끔 · 어드민턴스 DR 0(g5362b 는 실측 지연 · FP++ · DR 까지 학습). 실기 지연(팔 관절별
+  2~9 스텝)에서 처음 돌리는 정책이다. 웜스타트 aglt_r_g5 ep1200. 정본 hdgp reward_gen/rh_aglt_r/OBJ_RETRAIN.md.
+  컵 반높이 · 원점은 계약 빌더가 object_name(s) 로 다시 푼다(병 unit = cyl60 ±0.085, 쉐이커 ±0.065) — FP++ 물체 원점과 같아야 한다.

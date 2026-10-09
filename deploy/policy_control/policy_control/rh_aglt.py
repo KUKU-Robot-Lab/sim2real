@@ -195,6 +195,14 @@ CUP_OBJECTS: dict[str, tuple[dict[str, float], bool]] = {
     "shaker": ({"bottom_z": -0.0921, "rim_z": 0.0829}, True),
     "cyl60": ({"bottom_z": -0.085, "rim_z": 0.085}, False),
     "cyl65": ({"bottom_z": -0.085, "rim_z": 0.085}, False),
+    # 10.09 hdgp OBJECTS(rh_aglt_env_cfg.py, e2bc225f) — 병은 unit 을 cyl60 값 그대로(목표 키포인트 · 보상 문맥 공유), 쉐이커는 높이 130
+    "cyl60_box32w25": ({"bottom_z": -0.085, "rim_z": 0.085}, False),
+    "source240": ({"bottom_z": -0.085, "rim_z": 0.085}, False),
+    "source200": ({"bottom_z": -0.085, "rim_z": 0.085}, False),
+    "source240_pla": ({"bottom_z": -0.085, "rim_z": 0.085}, False),
+    "source200_pla": ({"bottom_z": -0.085, "rim_z": 0.085}, False),
+    "shaker_c": ({"bottom_z": -0.065, "rim_z": 0.065}, False),
+    "shaker_b85": ({"bottom_z": -0.085, "rim_z": 0.045}, False),
 }
 
 
@@ -203,10 +211,14 @@ def cup_geometry(env: Mapping) -> tuple[float, float]:
 
     env.yaml 의 파생 값은 쓰지 않는다: train.py 는 hydra 가 object_name 을 덮은 뒤 · env 가 resolve_cfg 를 다시 부르기 전에
     덤프하므로 cyl60 런의 덤프에는 기본 shaker × cup_scale 값이 남는다(10.04 확인 — 학습 env 는 cyl60 으로 돌았다)."""
-    name = str(env.get("object_name", "shaker"))
-    if name not in CUP_OBJECTS:
-        raise RhAgltError(f"object_name {name!r} 을 모른다 — {sorted(CUP_OBJECTS)} (hdgp OBJECTS 를 옮겨 와라)")
-    unit, scaled = CUP_OBJECTS[name]
+    names = [str(n) for n in (env.get("object_names") or ())] or [str(env.get("object_name", "shaker"))]
+    unknown = [n for n in names if n not in CUP_OBJECTS]
+    if unknown:
+        raise RhAgltError(f"object_name(s) {unknown} 을 모른다 — {sorted(CUP_OBJECTS)} (hdgp OBJECTS 를 옮겨 와라)")
+    # 10.09 다물체 런(object_names) — hdgp resolve_cfg 처럼 unit · scaled 가 모두 같아야 기하를 공유한다
+    if any(CUP_OBJECTS[n] != CUP_OBJECTS[names[0]] for n in names):
+        raise RhAgltError(f"object_names {names} 의 unit · scaled 가 다르다 — 학습 env 도 거부한다")
+    unit, scaled = CUP_OBJECTS[names[0]]
     s = float(env["cup_scale"]) if scaled else 1.0
     return 0.5 * (unit["rim_z"] - unit["bottom_z"]) * s, -unit["bottom_z"] * s
 
@@ -268,7 +280,7 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
                      + " · ".join(f"{k} {list(v) if isinstance(v, (list, tuple)) else v}" for k, v in sim_only.items()))
     dumped = (float(env["cup_half_height"]), float(env["cup_origin_offset_z"]))
     if max(abs(a - b) for a, b in zip(dumped, (half_h, origin_z))) > 1e-6:
-        notes.append(f"컵 {env.get('object_name', 'shaker')}: 반높이 {half_h:.4f} · 원점 높이 {origin_z:.4f} m — env.yaml 덤프"
+        notes.append(f"컵 {'+'.join(env.get('object_names') or ()) or env.get('object_name', 'shaker')}: 반높이 {half_h:.4f} · 원점 높이 {origin_z:.4f} m — env.yaml 덤프"
                      f"({dumped[0]:.4f} · {dumped[1]:.4f})는 hydra 오버라이드 전 기본 shaker 값이라 쓰지 않았다")
     if not bool(cfg_a.get("normalize_input", False)):
         notes.append("normalize_input false")

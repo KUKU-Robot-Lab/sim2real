@@ -1,0 +1,16 @@
+# RH56F1 오른팔 rh_aglt source 병 두 개 겸용(240 · 200) — 10.09 T2R Grasping OBJ_RETRAIN 통과.
+id: rh56f1/aglt/right_src21c
+status: candidate        # candidate | verified | deployed | hold
+task: open-rh_r_aglt-lstm
+side: right
+checkpoint: last_open-rh_r_aglt-lstm_ep_1000_rew_1774.0562.pth
+summary: 'source240_pla + source200_pla(env 마다 반반) · 손 어드민턴스(/hand_right/angle_target) 전제 · 보상 iter_21(낮게 쥐기 · 벽 곡선)'
+eval: '결정론 64 env × 1800 · tol 0.02 · ADR 0: 240 병 4.58/5 · 200 병 4.96/5(vision-3090), 5090 재확인 4.66 · 4.66 · 넘어뜨림 ≤ 0.02'
+source: 'arm4090:~/rl_ws/our_source/policy/aglt_r_src21c_ep1000 (md5 a067df3a6fdfdeb5e4663a55096d74ed)'
+interface: obs 96 · action 13 (팔 관절 증분 7 · 손 6 — g5362b 와 계약 · 망 구조 · 디코더 동일)
+deploy:
+  max_episode_s: 15.0
+note: >-
+  ★학습 조건: 팔 · 손 명령 지연 0 · FP++ 지각 모델 끔 · 어드민턴스 DR 0(g5362b 는 실측 지연 · FP++ · DR 까지 학습). 실기 지연(팔 관절별
+  2~9 스텝)에서 처음 돌리는 정책이다. 웜스타트 aglt_r_src21 ep400(두 병 섞기) 이어서, ADR 1 부터. 정본 hdgp reward_gen/rh_aglt_r/OBJ_RETRAIN.md.
+  컵 반높이 · 원점은 계약 빌더가 object_name(s) 로 다시 푼다(병 unit = cyl60 ±0.085, 쉐이커 ±0.065) — FP++ 물체 원점과 같아야 한다.

@@ -11,7 +11,7 @@ artifacts:
   path_left: deploy/policy_control/paths/home_rh56f1_left.npz
   pourfj_both: deploy/policies/rh56f1/pour_fj/both_f01/pour_fj_contract.json
   robot_bi: deploy/policy_control/config/robots/rh56f1_bi_real.yaml
-  aglt_right: deploy/policies/rh56f1/aglt/right_g5362b/rh_aglt_contract.json
+  aglt_right: deploy/policies/rh56f1/aglt/right_src21c/rh_aglt_contract.json
   aglt_left: deploy/policies/rh56f1/aglt/left_g5362/rh_aglt_contract.json
   place_right: deploy/policies/rh56f1/place/right_i09/rh_place_contract.json
   place_left: deploy/policies/rh56f1/place/left_i01/rh_place_contract.json
