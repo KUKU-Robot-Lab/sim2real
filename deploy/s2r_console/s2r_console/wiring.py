@@ -93,7 +93,9 @@ _TOOLS = ("aglt_goal.py",
           # ★10.08 프로세스별 CPU 기록 — ROS 노드가 아니다(/proc 만 읽는다). 그림에 상자를 두지 않는다
           "proc_cpu_record.py",
           # ★10.08 컵 좌표 다시 찍기 — FP++ 컨테이너에 한 번 명령하고 끝난다(노드 아님)
-          "fpp_rescan.py")
+          "fpp_rescan.py",
+          # ★10.09 영상 · FP++ 실시간 좌표 기록(localhost DDS) — 그림에 상자를 두지 않는다
+          "vision_recorder.py")
 
 
 @dataclass(frozen=True)

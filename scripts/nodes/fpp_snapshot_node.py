@@ -21,6 +21,8 @@ GPU 가 모자랐다(10.08 두 컨테이너 동시 등록 → 2.6 GB 더 요구 
      (컵을 옮긴 뒤 — 미션 cups 단계를 다시 실행하면 scripts/ops/fpp_rescan.py 가 보낸다). 다시 찍는 컵은 옛 좌표를 내지 않는다.
      generation = 끝낸 찍기 바퀴 수(상태에 실린다).
   /perception_plus_plus/snapshot/status(String JSON): 물체별 found · 색 비율 · 흔들림 mm · 장 수 · 오류, 후보별 색 비율.
+  5. (live, 기본 켬) 찍은 뒤 그 컨테이너의 첫 물체를 프레임마다 추적해 /perception_plus_plus/<물체>/live_pose(카메라 프레임)로 낸다 —
+     기록 · 분석용이다. 정책은 찍은 고정 좌표(/…/pose)를 쓴다(10.09 사용자: 가림 · 좌표 튐 · 물체가 밀린 순간을 bag 으로).
 """
 from __future__ import annotations
 
@@ -83,6 +85,7 @@ def main(argv=None) -> None:
     objects = {o["name"]: o for o in cfg["objects"]}
     register_frames = int(cfg.get("register_frames", 3))
     group_name = str(cfg.get("group") or "+".join(objects))      # 묶음 컨테이너가 여럿이면 상태를 가른다(10.09)
+    live_on = bool(cfg.get("live", True))       # 찍은 뒤 물체 하나를 계속 추적해 /…/live_pose 로(기록용, 정책 입력 아님)
     classes = {int(c) for c in cfg.get("classes", [39, 41, 75])}       # bottle · cup · vase
     yolo_conf = float(cfg.get("yolo_conf", 0.05))
     blob_min_area = int(cfg.get("blob_min_area", 1500))
@@ -106,6 +109,9 @@ def main(argv=None) -> None:
             self.generation = 0                     # 끝낸 찍기 바퀴 수 — fpp_rescan 이 '새 회차'를 가린다
             self.wake = threading.Event()
             self.pubs = {n: self.create_publisher(PoseStamped, o["pose_topic"], 10) for n, o in objects.items()}
+            self.live_pubs = {n: self.create_publisher(PoseStamped, o["pose_topic"].replace("/pose", "/live_pose"), 10)
+                              for n, o in objects.items()}
+            self.live = {"name": None, "init": False, "prev": None, "invalid": 0, "ok": False, "why": "", "n": 0}
             self.status_pub = self.create_publisher(String, STATUS_TOPIC, 10)
             self.create_subscription(String, CMD_TOPIC, self._on_cmd, 10)
             subs = [Subscriber(self, Image, cfg.get("rgb_topic", "/camera/camera/color/image_raw"),
@@ -145,6 +151,8 @@ def main(argv=None) -> None:
                     self.poses.pop(n, None)
                     self.info[n] = {"found": False}
                 self.pending |= names
+                if self.live["name"] in names:
+                    self.live["init"] = False
             self.get_logger().info(f"다시 찍기: {sorted(names)}")
             self.wake.set()
 
@@ -157,16 +165,76 @@ def main(argv=None) -> None:
                 time.sleep(0.01)
             return None, after
 
+        # ── 실시간 추적(기록용, 10.09 사용자) ──
+        def _track_step(self, seq: int) -> int:
+            """찍은 물체 하나를 프레임마다 추적해 live_pose 로 낸다 — 정책 입력이 아니다(정책은 찍은 고정 좌표).
+            손이 다가가며 가리는 정도 · 좌표 튐 · 물체가 밀린 순간을 bag 으로 남긴다. 컨테이너 하나 = 추적 하나(Cutie 기억)."""
+            frame, seq = self._next_frame(seq, timeout=1.0)
+            if frame is None:
+                return seq
+            name = self.live["name"]
+            o = objects[name]
+            try:
+                if not self.live["init"]:
+                    cands = [d for d in self._candidates(frame, [o["color"]]) if d["inside"]]
+                    allowed = {name: {i for i, d in enumerate(cands) if d["points"] is None or C.looks_standing(d["points"], o["aabb"])}} \
+                        if o.get("aabb") else None
+                    pick = C.assign(frame.rgb, [d["mask"] for d in cands], {name: o["color"]}, allowed=allowed)
+                    if name not in pick:
+                        self.live.update(ok=False, why="그 색 후보가 없다")
+                        return seq
+                    result = self.adapter.initialize(frame, cands[pick[name]]["mask"], MeshSpec(o["mesh_path"], float(o["mesh_scale_to_meters"])))
+                    self.live.update(init=True, prev=None, invalid=0)
+                else:
+                    result = self.adapter.track(frame)
+                q = evaluate_quality(frame, result, self.live["prev"], tconf)
+                if not q.valid:
+                    self.live["invalid"] += 1
+                    self.live.update(ok=False, why=str(q.reason))
+                    if self.live["invalid"] >= 3:
+                        self.adapter.reset()
+                        self.live["init"] = False
+                    return seq
+                self.live.update(prev=result, invalid=0, ok=True, why="", n=self.live["n"] + 1)
+                self._publish_live(name, result.object_to_camera, frame.timestamp_ns)
+            except Exception as exc:  # noqa: BLE001 — 추적이 깨져도 찍은 좌표 · 노드는 산다
+                self.adapter.reset()
+                self.live.update(init=False, ok=False, why=f"{type(exc).__name__}: {exc}"[:120])
+            return seq
+
+        def _publish_live(self, name: str, T, stamp_ns: int) -> None:
+            with self.lock:
+                frame_id = self.header.frame_id if self.header is not None else "camera_color_optical_frame"
+            msg = PoseStamped()
+            msg.header.frame_id = frame_id
+            msg.header.stamp.sec, msg.header.stamp.nanosec = int(stamp_ns // 1_000_000_000), int(stamp_ns % 1_000_000_000)
+            p, qx = T[:3, 3], _quat_xyzw(T[:3, :3])
+            msg.pose.position.x, msg.pose.position.y, msg.pose.position.z = map(float, p)
+            (msg.pose.orientation.x, msg.pose.orientation.y, msg.pose.orientation.z, msg.pose.orientation.w) = map(float, qx)
+            self.live_pubs[name].publish(msg)
+
         # ── 찍기 ──
         def _worker(self) -> None:
             seq = 0
+            last_pass = 0.0
             while rclpy.ok():
                 with self.lock:
                     todo = sorted(self.pending)
-                if not todo:
+                    if live_on and self.live["name"] is None:
+                        found = [n for n in objects if n in self.poses]
+                        if found:
+                            self.live["name"] = found[0]
+                busy_retry = todo and time.monotonic() - last_pass < retry_s and self.generation > 0
+                if not todo or busy_retry:
+                    if self.live["name"] is not None:
+                        seq = self._track_step(seq)
+                        if self.wake.is_set():
+                            self.wake.clear()
+                        continue
                     self.wake.wait(timeout=1.0)
                     self.wake.clear()
                     continue
+                last_pass = time.monotonic()
                 frame, seq = self._next_frame(seq, timeout=5.0)
                 if frame is None:
                     self.error = "카메라 영상이 없다"
@@ -179,9 +247,10 @@ def main(argv=None) -> None:
                 except Exception as exc:  # noqa: BLE001 — 노드는 살아서 오류를 상태로 낸다
                     self.error = f"{type(exc).__name__}: {exc}"[:200]
                     self.get_logger().error(self.error)
+                self.live["init"] = False              # 찍기가 엔진을 다시 썼다 — 추적은 새로 시작
                 with self.lock:
                     left = bool(self.pending)
-                if left:
+                if left and self.live["name"] is None:
                     self.wake.wait(timeout=retry_s)
                     self.wake.clear()
 
@@ -289,7 +358,8 @@ def main(argv=None) -> None:
 
         def _publish_status(self) -> None:
             with self.lock:
-                body = {"group": group_name, "ok": not self.pending and not self.error, "generation": self.generation,
+                live = {k: self.live[k] for k in ("name", "ok", "why", "n", "invalid")}
+                body = {"group": group_name, "live": live, "ok": not self.pending and not self.error, "generation": self.generation,
                         "pending": sorted(self.pending), "error": self.error,
                         "objects": dict(self.info), "candidates": self.candidates}
             self.status_pub.publish(String(data=json.dumps(body, ensure_ascii=False)))

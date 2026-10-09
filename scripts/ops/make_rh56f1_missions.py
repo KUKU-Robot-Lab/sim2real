@@ -331,7 +331,7 @@ def _run(kind: str) -> dict:
         _cmd("정책 노드 정지", stop=["policy_pourfj#1"]),
     ]
     for s, cup in (("right", "src"), ("left", "rcv")):
-        rec = _record_start(f"aglt_{s}", [s], [f"/objects/{_side_cup(s)}/pose"]) if real else []
+        rec = _record_start(f"aglt_{s}", [s], [f"/objects/{_side_cup(s)}/pose"], [_side_cup(s)]) if real else []
         assert len(rec) + 1 == AGLT_NODE_IDX[real]
         run[f"policy_aglt_{s}"] = [
             _cmd(f"★[{s}] 컵이 학습 배치(로봇 앞 x ≈ 0.25, y ≈ {'−' if s == 'right' else '+'}0.20 ± 0.1)에 서 있고 콘솔에 컵 자세"
@@ -555,7 +555,7 @@ def _episode_run(name: str, real: bool) -> list:
 
 
 #: 단독 aglt 단계에서 정책 노드 명령 번호 — 실기는 앞에 기록 시작(bag) · CPU 기록이 붙는다
-AGLT_NODE_IDX = {True: 3, False: 1}
+AGLT_NODE_IDX = {True: 4, False: 1}     # 실기: 0 확인 · 1 bag · 2 CPU · 3 영상 · 4 정책 노드
 
 
 def _cpu_record(name: str) -> dict:
@@ -564,7 +564,7 @@ def _cpu_record(name: str) -> dict:
                 ["python3", f"{PC}/tools/proc_cpu_record.py", "--out", f"{{repo}}/logs/cpu/{name}.csv"], background=True)
 
 
-def _record_start(name: str, sides: list, topics: list) -> list[dict]:
+def _record_start(name: str, sides: list, topics: list, objs: list | None = None) -> list[dict]:
     """단독 정책 단계 기록(실기) — bag(팔 · 손) + CPU. 팔 지연 도구가 쓰는 pd applied · 목표 · status 를 같이 싣는다(10.08)."""
     extra = ["/policy_control/joint_target", *(f"/policy_control/{x}" for s in sides for x in
                                                 (f"status/pd_{s}", f"status/rh_aglt_node_{s}", f"{s}/episode", f"pd_{s}/applied")),
@@ -573,11 +573,16 @@ def _record_start(name: str, sides: list, topics: list) -> list[dict]:
     return [_cmd(f"기록 시작 — 팔 · 손 bag(rh56f1_record.sh {name}) · 팔 지연은 tools/arm_latency_report.py <bag>/arm",
                  ["bash", "-lc", f"EXTRA='{' '.join(extra)}' HAND_SIDES='{' '.join(sides)}' "
                                  f"bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh start {name}"]),
-            _cpu_record(name)]
+            _cpu_record(name),
+            # ★10.09 사용자: 카메라 영상 5 Hz · FP++ 실시간 좌표(정책 입력 아님) — localhost DDS 라 따로 띄운다
+            _cmd("영상 · FP++ 실시간 좌표 기록(5 Hz JPEG · live_pose CSV) → logs/vision_runs",
+                 ["env", "ROS_LOCALHOST_ONLY=1", "python3", "{repo}/scripts/nodes/vision_recorder.py", "--name", name,
+                  "--objects", *(objs or [])],
+                 background=True)]
 
 
 def _record_stop(stage: str, cpu_index: int, name: str) -> list[dict]:
-    return [_cmd("CPU 기록 끝(요약은 그 단계 로그)", stop=[f"{stage}#{cpu_index}"]),
+    return [_cmd("CPU · 영상 기록 끝(요약은 그 단계 로그)", stop=[f"{stage}#{cpu_index + 1}", f"{stage}#{cpu_index}"]),
             _cmd(f"기록 끝 — {name} bag 두 개 마무리(SIGINT, 이 단계 기록만)",
                  ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop", name])]
 

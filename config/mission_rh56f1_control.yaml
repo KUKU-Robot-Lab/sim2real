@@ -482,8 +482,8 @@ run:
   - note: 남은 정책 노드 · pd 정지
     stop:
     - policy_pourfj#1
-    - policy_aglt_right#3
-    - policy_aglt_left#3
+    - policy_aglt_right#4
+    - policy_aglt_left#4
     - policy_aglt_right#2
     - policy_aglt_left#2
     - pd_load_right#0
@@ -702,6 +702,17 @@ run:
     - --out
     - '{repo}/logs/cpu/aglt_right.csv'
     background: true
+  - note: 영상 · FP++ 실시간 좌표 기록(5 Hz JPEG · live_pose CSV) → logs/vision_runs
+    argv:
+    - env
+    - ROS_LOCALHOST_ONLY=1
+    - python3
+    - '{repo}/scripts/nodes/vision_recorder.py'
+    - --name
+    - aglt_right
+    - --objects
+    - source200_pink
+    background: true
   - note: '[right] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)'
     argv:
     - '{repo}/.venv/bin/python'
@@ -761,9 +772,10 @@ run:
     - --execute
   - note: 정책 노드 정지
     stop:
-    - policy_aglt_right#3
-  - note: CPU 기록 끝(요약은 그 단계 로그)
+    - policy_aglt_right#4
+  - note: CPU · 영상 기록 끝(요약은 그 단계 로그)
     stop:
+    - policy_aglt_right#3
     - policy_aglt_right#2
   - note: 기록 끝 — aglt_right bag 두 개 마무리(SIGINT, 이 단계 기록만)
     argv:
@@ -940,6 +952,17 @@ run:
     - --out
     - '{repo}/logs/cpu/aglt_left.csv'
     background: true
+  - note: 영상 · FP++ 실시간 좌표 기록(5 Hz JPEG · live_pose CSV) → logs/vision_runs
+    argv:
+    - env
+    - ROS_LOCALHOST_ONLY=1
+    - python3
+    - '{repo}/scripts/nodes/vision_recorder.py'
+    - --name
+    - aglt_left
+    - --objects
+    - shaker_c_orange
+    background: true
   - note: '[left] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)'
     argv:
     - '{repo}/.venv/bin/python'
@@ -999,9 +1022,10 @@ run:
     - --execute
   - note: 정책 노드 정지
     stop:
-    - policy_aglt_left#3
-  - note: CPU 기록 끝(요약은 그 단계 로그)
+    - policy_aglt_left#4
+  - note: CPU · 영상 기록 끝(요약은 그 단계 로그)
     stop:
+    - policy_aglt_left#3
     - policy_aglt_left#2
   - note: 기록 끝 — aglt_left bag 두 개 마무리(SIGINT, 이 단계 기록만)
     argv:
