@@ -158,14 +158,14 @@ def test_a_group_member_needs_a_known_colour(tmp_path):
 
 
 def test_source240_bottles_are_their_own_group_with_the_sim_origin():
-    """10.09 사용자: 왼쪽 주황 · 오른쪽 핑크 source240 병. 핑크 cyl60 과 색이 겹치므로 묶음을 나눈다(bottles).
+    """10.09 사용자: 왼쪽 주황 · 오른쪽 핑크 source240 병 — fpp_object.py add 로 objects.d/source240.yaml(묶음 source240).
     원점은 sim body 와 같은 바닥 위 85 mm — FP++ 메쉬 꼭짓점 z 가 −0.085 ~ +0.155 다."""
     from object_registry import container_for, group_members
     reg = load_registry(DEFAULT_REGISTRY)
-    assert group_members(reg, "bottles") == ["source240_orange", "source240_pink"]
+    assert group_members(reg, "source240") == ["source240_orange", "source240_pink"]
     for n, color in (("source240_orange", "orange"), ("source240_pink", "pink")):
         spec = reg.get(n)
-        assert container_for(spec) == "fpp_bottles" and spec.fpp["color"] == color
+        assert container_for(spec) == "fpp_source240" and spec.fpp["color"] == color
         assert spec.fpp["cup_class_id"] == 39 and not spec.symmetry_flip and spec.origin_above_bottom_m == 0.085
     mesh = DEFAULT_REGISTRY.parent.parent / "assets" / "meshes" / "source240.obj"
     z = [float(line.split()[3]) for line in mesh.read_text().splitlines() if line.startswith("v ")]
@@ -178,10 +178,10 @@ def test_the_group_config_carries_the_camera_pose_for_the_table_filter():
     from cup_pose_relay import load_extrinsics
     reg = load_registry(DEFAULT_REGISTRY)
     cam = DEFAULT_REGISTRY.parent / "global_camera_extrinsics_arm4090.yaml"
-    doc = yaml.safe_load(render_group_yaml(reg, "bottles", camera_yaml=cam))
+    doc = yaml.safe_load(render_group_yaml(reg, "source240", camera_yaml=cam))
     T = np.asarray(doc["camera_to_base"])
     ext = load_extrinsics(cam)
     np.testing.assert_allclose(T[:3, 3], ext.cam_pos)
     np.testing.assert_allclose(T[:3, :3] @ T[:3, :3].T, np.eye(3), atol=1e-9)
     assert set(doc["classes"]) >= {39, 41, 75} and doc["workspace"]["z"][0] < 0.205 + 0.085
-    assert "camera_to_base" not in yaml.safe_load(render_group_yaml(reg, "bottles"))
+    assert "camera_to_base" not in yaml.safe_load(render_group_yaml(reg, "source240"))

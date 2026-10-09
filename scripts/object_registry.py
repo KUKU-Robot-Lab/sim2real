@@ -26,6 +26,7 @@ DEFAULT_REGISTRY = _SCRIPT_DIR.parent / "config" / "objects.yaml"
 INPUT_NS = "/perception_plus_plus"
 OUTPUT_NS = "/objects"
 CONTAINER_PREFIX = "fpp_"
+DROPIN_DIR = "objects.d"     # objects.yaml 옆 — scripts/ops/fpp_object.py 가 쓰는 물체 파일들
 _FPP_KEYS = ("mesh_path", "mesh_scale_to_meters", "cup_class_id",
              "detection_pick", "yolo_confidence")
 _PICKS = ("confidence", "dark", "bright", "red", "blue")
@@ -105,11 +106,13 @@ def _parse_object(name: str, raw: dict) -> ObjectSpec:
     if fpp["detection_pick"] not in _PICKS:
         raise ValueError(f"objects.{name}.fpp.detection_pick must be one of {_PICKS}")
     if "group" in fpp:
-        from fpp_color_pick import COLORS
+        from fpp_color_pick import COLORS, hue_ranges
         if not isinstance(fpp["group"], str) or not fpp["group"]:
             raise ValueError(f"objects.{name}.fpp.group must be a non-empty name")
-        if fpp.get("color") not in COLORS:
-            raise ValueError(f"objects.{name}.fpp.color must be one of {COLORS} (group {fpp['group']})")
+        try:
+            hue_ranges(fpp.get("color", ""))
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"objects.{name}.fpp.color must be one of {COLORS} or [lo, hi] (group {fpp['group']})") from exc
     cad = raw["cad_to_body"]
     aabb = raw["aabb"]
     if len(aabb) != 2 or any(len(c) != 3 for c in aabb):
@@ -155,6 +158,13 @@ def load_registry(path: str | Path = DEFAULT_REGISTRY) -> Registry:
     if not isinstance(cfg, dict) or "objects" not in cfg or "camera_extrinsics" not in cfg:
         raise ValueError(f"{path}: need 'camera_extrinsics' and 'objects' keys")
     objects = {str(n): _parse_object(str(n), raw) for n, raw in (cfg["objects"] or {}).items()}
+    # 10.09 CAD 하나로 등록한 물체(scripts/ops/fpp_object.py add) — objects.d/<이름>.yaml 하나에 색별 물체들
+    for extra in sorted((path.parent / DROPIN_DIR).glob("*.yaml")):
+        raw_objs = (yaml.safe_load(extra.read_text(encoding="utf-8")) or {}).get("objects") or {}
+        for n, raw in raw_objs.items():
+            if str(n) in objects:
+                raise ValueError(f"{extra.name}: 물체 {n!r} 가 이미 있다(objects.yaml 또는 다른 objects.d 파일)")
+            objects[str(n)] = _parse_object(str(n), raw)
     aliases = _validate_aliases(cfg.get("aliases"), objects)
     cam = Path(cfg["camera_extrinsics"])
     if not cam.is_absolute():

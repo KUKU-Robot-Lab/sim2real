@@ -25,6 +25,9 @@ def _load(name):
 
 
 REAL_RAW, REAL, REAL_BOOK = _load("mission_rh56f1_control.yaml")
+#: 10.09 실기 물체는 config/fpp_active.yaml(fpp_object.py activate)이 정한다 — 테스트도 그것을 읽는다(물체를 바꿔도 안 깨진다)
+_ACTIVE = yaml.safe_load((REPO / "config" / "fpp_active.yaml").read_text(encoding="utf-8"))
+ACTIVE_GROUP, ACTIVE_SIDES = _ACTIVE["group"], _ACTIVE["sides"]
 FAKE_RAW, FAKE, FAKE_BOOK = _load("mission_rh56f1_fake.yaml")
 
 
@@ -162,10 +165,14 @@ def test_real_cups_run_fpp_on_this_pc_after_the_head_home_and_shutdown_takes_it_
     head = _cmds(REAL, REAL_BOOK, "head_home")
     assert any("head_pose_check.py" in " ".join(c.argv) and "head_home_rh56f1.yaml" in " ".join(c.argv) for c in head)
     cups = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "cups")]
-    for want in ("perception_launcher_node.py --host local", "fpp_pose_rx.py", "object_pose_node.py --objects cyl60 cyl60_blue cyl60_pink",
+    sys.path.insert(0, str(REPO / "scripts"))
+    from object_registry import group_members, load_registry
+    side = [ACTIVE_SIDES[s] for s in ("right", "left") if s in ACTIVE_SIDES]
+    objs = " ".join(dict.fromkeys([*side, *group_members(load_registry(), ACTIVE_GROUP)]))
+    for want in ("perception_launcher_node.py --host local", "fpp_pose_rx.py", f"object_pose_node.py --objects {objs}",
                  "--camera-extrinsics", "global_camera_extrinsics_arm4090.yaml",
-                 "perception_ctl.py start cyl60 cyl60_blue cyl60_pink --wait 150",
-                 "fpp_rescan.py cyl60 cyl60_blue --wait 120"):        # 10.08 다시 실행 = 지금 카메라로 다시 찍기
+                 f"perception_ctl.py start {objs} --wait 150",
+                 f"fpp_rescan.py {' '.join(side)} --wait 120"):        # 10.08 다시 실행 = 지금 카메라로 다시 찍기
         assert any(want in a for a in cups), want
     bg = [c for c in _cmds(REAL, REAL_BOOK, "cups") if c.background]
     assert len(bg) == 3
@@ -255,7 +262,7 @@ def test_each_arm_runs_its_rh_aglt_policy_after_home(side, cup):
         node = next(c for c in cmds if any("rh_aglt_node.py" in a for a in c.argv))
         assert node.background and node.argv[0].endswith(".venv/bin/python")
         assert any(a.startswith("contract:=") and a.endswith("rh_aglt_contract.json") for a in node.argv)
-        real_cup = {"right": "cyl60", "left": "cyl60_blue"}[side]      # 10.08 사용자: 오른쪽 노랑 · 왼쪽 파랑
+        real_cup = ACTIVE_SIDES.get(side, ACTIVE_SIDES["right"])      # config/fpp_active.yaml
         topic = f"/objects/{real_cup}/pose" if m is REAL else f"/objects/cup_{cup}/pose"
         assert f"cup_topic:={topic}" in node.argv and "max_episode_s:=15.0" in node.argv
         by = {s.id: s for s in m.stages}

@@ -27,6 +27,7 @@ from s2r_console.units import UnitCmd
 from s2r_console import wiring as W
 
 SIM2REAL = Path(__file__).resolve().parents[2]
+_ACTIVE = yaml.safe_load((SIM2REAL / "config" / "fpp_active.yaml").read_text(encoding="utf-8"))   # 10.09 실기 물체 = 이 파일
 PROFILES = SIM2REAL / "deploy" / "s2r_console" / "profiles"
 
 
@@ -89,7 +90,7 @@ def test_one_arms_pd_without_and_with_publishing_is_one_box_and_only_the_quiet_o
 def test_an_input_only_one_stage_uses_names_that_stage(real):
     _, _, d = real
     into = {(w.src, w.topic): w for w in d.wires if w.dst == "rh_aglt_node_right"}
-    assert into[("object_pose", "/objects/cyl60/pose")].units == ("policy_aglt_right#3",)      # 단독: FP++ 컵을 직접(앞에 기록 두 줄, 10.08)
+    assert into[("object_pose", f"/objects/{_ACTIVE['sides']['right']}/pose")].units == ("policy_aglt_right#3",)   # 단독: FP++ 컵을 직접
     assert into[("episode_runner", "/episode/objects/CUP/pose")].units == ("episode_pick_place_right#3",)
     assert not into[("hand_right_state", "/hand_right/joint_states")].units                       # 둘 다 쓴다 — 언제나
 
@@ -127,12 +128,13 @@ def test_the_rh56f1_hand_is_a_driver_box_and_a_state_box_each_with_its_own_switc
 def test_the_perception_chain_runs_on_this_pc_and_the_udp_receiver_switches_the_fpp_box(real):
     _, _, d = real
     assert d.box("perception").host == "local" and d.box("camera").host == "local"
-    fpp = d.box("fpp_cups")                     # 10.08 색 다른 cyl60 셋 = 컨테이너 하나 = 상자 하나
+    group, sides = _ACTIVE["group"], _ACTIVE["sides"]
+    fpp = d.box(f"fpp_{group}")                 # 10.08 색 다른 같은 모양 = 컨테이너 하나 = 상자 하나
     assert fpp.units == ("cups#2",) and fpp.ros == ("/fpp_pose_rx",) and fpp.host == "local"
-    assert not [b.id for b in d.boxes if b.id in ("fpp_cyl60", "fpp_cyl60_blue", "fpp_cyl60_pink")]
-    # 그림은 받는 쪽이 있는 물체만 잇는다 — 정책이 읽는 두 컵(핑크는 아직 읽는 정책이 없다)
-    assert {w.topic for w in d.wires if w.src == "fpp_cups" and w.dst == "object_pose"} == {
-        "/perception_plus_plus/cyl60/pose", "/perception_plus_plus/cyl60_blue/pose"}
+    assert not [b.id for b in d.boxes if b.id in {f"fpp_{n}" for n in sides.values()}]
+    # 그림은 받는 쪽이 있는 물체만 잇는다 — 정책이 읽는 팔별 물체
+    assert {w.topic for w in d.wires if w.src == f"fpp_{group}" and w.dst == "object_pose"} == {
+        f"/perception_plus_plus/{n}/pose" for n in sides.values()}
     assert d.box("object_pose").units == ("cups#3",)
     assert {w.topic for w in d.wires if w.src == "camera" and w.dst == "cup_holders"} == {
         "/camera/camera/color/image_raw", "/camera/camera/color/camera_info"}
@@ -426,7 +428,7 @@ def test_the_fake_rh56f1_picture_has_the_real_pictures_boxes():
     titles = {b.title for b in real.boxes}
     # fake 에 없는 것: 인지(카메라 · FP++ · 런처 — 정지 컵을 fake 가 바로 낸다). fake 에만 있는 것: 막히지 않은 붓기 노드
     missing = {b.title for b in real.boxes} - {b.title for b in fake.boxes}
-    assert missing <= {"인지 런처 · local", "카메라 (RealSense)", "FPP 추적 · cups"}, missing
+    assert missing <= {"인지 런처 · local", "카메라 (RealSense)", f"FPP 추적 · {_ACTIVE['group']}"}, missing
     extra = {b.title for b in fake.boxes} - titles
     assert extra <= {"pour_fj_node · 붓기 정책 (오른팔 · 왼팔)"}, extra
 

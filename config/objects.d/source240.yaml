@@ -1,0 +1,78 @@
+# 생성됨 — scripts/ops/fpp_object.py (묶음 'source240'). add 로 다시 만들고 calib 로 색을 잰다. 손으로 고치지 않는다.
+meta:
+  source_cad: source_240.stl
+  origin_above_bottom_m: 0.085
+  colors:
+  - orange
+  - pink
+objects:
+  source240_orange:
+    real: orange source240 — source_240.stl 에서 등록(fpp_object.py add)
+    fpp:
+      mesh_path: assets/s2r_meshes/source240.obj
+      mesh_scale_to_meters: 1.0
+      cup_class_id: 39
+      detection_pick: confidence
+      yolo_confidence: 0.05
+      group: source240
+      color: orange
+    cad_to_body:
+      position:
+      - 0.0
+      - 0.0
+      - 0.0
+      orientation_wxyz:
+      - 1.0
+      - 0.0
+      - 0.0
+      - 0.0
+    sim:
+      usd: ''
+      origin_above_bottom_m: 0.085
+    aabb:
+    - - -0.03
+      - -0.03
+      - -0.085
+    - - 0.03
+      - 0.03
+      - 0.155
+    symmetry_axis:
+    - 0.0
+    - 0.0
+    - 1.0
+    symmetry_flip: false
+  source240_pink:
+    real: pink source240 — source_240.stl 에서 등록(fpp_object.py add)
+    fpp:
+      mesh_path: assets/s2r_meshes/source240.obj
+      mesh_scale_to_meters: 1.0
+      cup_class_id: 39
+      detection_pick: confidence
+      yolo_confidence: 0.05
+      group: source240
+      color: pink
+    cad_to_body:
+      position:
+      - 0.0
+      - 0.0
+      - 0.0
+      orientation_wxyz:
+      - 1.0
+      - 0.0
+      - 0.0
+      - 0.0
+    sim:
+      usd: ''
+      origin_above_bottom_m: 0.085
+    aabb:
+    - - -0.03
+      - -0.03
+      - -0.085
+    - - 0.03
+      - 0.03
+      - 0.155
+    symmetry_axis:
+    - 0.0
+    - 0.0
+    - 1.0
+    symmetry_flip: false

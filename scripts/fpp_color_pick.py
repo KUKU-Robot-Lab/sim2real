@@ -25,6 +25,19 @@ V_MIN = 50.0       # 명도(0~255)
 MIN_SCORE = 0.25   # 마스크의 이 비율 넘게 그 색이어야 그 물체로 본다
 
 
+def hue_ranges(color) -> tuple[tuple[float, float], ...]:
+    """색 이름(HUE_RANGES) 또는 잰 구간 [lo, hi](fpp_object calib) → hue 구간들. lo > hi 면 0/180 을 넘는 구간(빨강 부근)."""
+    if isinstance(color, str):
+        if color not in HUE_RANGES:
+            raise ValueError(f"색 {color!r} 을 모른다 — {COLORS} 또는 [lo, hi]")
+        return HUE_RANGES[color]
+    vals = [float(v) for v in color]
+    if len(vals) != 2 or not all(0.0 <= v <= 180.0 for v in vals):
+        raise ValueError(f"hue 구간 {color!r} — [lo, hi] (0~180)")
+    lo, hi = vals
+    return ((lo, hi),) if lo <= hi else ((lo, 180.0), (0.0, hi))
+
+
 def _hsv(px: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """N×3 RGB(uint8) → hue(0~180) · 채도(0~255) · 명도(0~255). OpenCV COLOR_RGB2HSV 와 같은 정의."""
     p = px.astype(np.float64)
@@ -41,12 +54,11 @@ def _hsv(px: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 def color_mask(rgb: np.ndarray, color: str) -> np.ndarray:
     """영상 전체에서 그 색인 화소(H×W bool)."""
-    if color not in HUE_RANGES:
-        raise ValueError(f"색 {color!r} 을 모른다 — {COLORS}")
+    ranges = hue_ranges(color)
     img = np.asarray(rgb)
     h, s, v = _hsv(img.reshape(-1, 3))
     out = np.zeros(h.shape, bool)
-    for lo, hi in HUE_RANGES[color]:
+    for lo, hi in ranges:
         out |= (h >= lo) & (h <= hi)
     return (out & (s >= S_MIN) & (v >= V_MIN)).reshape(img.shape[:2])
 
@@ -92,8 +104,7 @@ def in_workspace(T_base_cam: np.ndarray, p_cam: np.ndarray | None, ws: dict) -> 
 
 def color_fraction(rgb: np.ndarray, mask: np.ndarray, color: str) -> float:
     """마스크 화소 중 그 색(채도 · 명도 문턱을 넘고 hue 가 구간 안)인 비율. 빈 마스크는 0."""
-    if color not in HUE_RANGES:
-        raise ValueError(f"색 {color!r} 을 모른다 — {COLORS}")
+    ranges = hue_ranges(color)
     m = np.asarray(mask, bool)
     n = int(m.sum())
     if n == 0:
@@ -101,7 +112,7 @@ def color_fraction(rgb: np.ndarray, mask: np.ndarray, color: str) -> float:
     h, s, v = _hsv(np.asarray(rgb)[m].reshape(-1, 3))
     vivid = (s >= S_MIN) & (v >= V_MIN)
     inside = np.zeros(h.shape, bool)
-    for lo, hi in HUE_RANGES[color]:
+    for lo, hi in ranges:
         inside |= (h >= lo) & (h <= hi)
     return float((vivid & inside).sum()) / n
 

@@ -28,19 +28,28 @@ from pathlib import Path
 import yaml
 
 REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "scripts"))   # object_registry — 묶음 물체 목록
 OUT = {"real": REPO / "config" / "mission_rh56f1_control.yaml", "fake": REPO / "config" / "mission_rh56f1_fake.yaml"}
 SIDES = ("right", "left")
 PC = "{repo}/deploy/policy_control"
 #: 방향 확인 한 축씩 — 네 손가락은 굽힘 쪽(+), 엄지 굽힘 +, 엄지 회전은 지금에서 − (편 손 1.57 에서 grip 1.20 쪽)
 PROBES = (("index_1", "0.3"), ("middle_1", "0.3"), ("ring_1", "0.3"), ("pinky_1", "0.3"),
           ("thumb_2", "0.15"), ("thumb_1", "-0.3"))
-#: 실기 컵 — FP++ 물체 하나. fake 는 학습 배치의 두 컵(cup_src · cup_rcv)
-#: ★10.04 cyl60(⌀60 × 170 mm 노란 원통, 원점 = 중심) — rh_aglt cyl60g 정책으로 s2r(T2R Grasping, 사용자 승인). 전: aglt_cup_s065
-REAL_CUP = "cyl60"
-#: ★10.08 사용자: 왼쪽 파란 컵 · 오른쪽 노란 컵 — 팔마다 FP++ 물체 하나(색으로 가른다: 노랑 bright · 파랑 blue). 모양은 같은 cyl60
-REAL_CUPS = {"right": REAL_CUP, "left": "cyl60_blue"}
-#: 같은 묶음(objects.yaml fpp.group cups)의 나머지 컵 — 한 컨테이너가 같이 찍는다(10.08 사용자: 파랑 · 핑크 · 노랑)
-REAL_EXTRA_CUPS = ("cyl60_pink",)
+#: 실기 컵 — config/fpp_active.yaml(scripts/ops/fpp_object.py activate)이 정한다: 묶음(컨테이너 fpp_<묶음> 하나가 한 번 찍기) ·
+#: 팔별 물체. fake 는 학습 배치의 두 컵(cup_src · cup_rcv). 10.04 cyl60 노랑 → 10.08 왼쪽 파랑 추가 → 10.09 파일로(물체를 자주 바꾼다)
+ACTIVE_FPP = REPO / "config" / "fpp_active.yaml"
+
+
+def _active() -> tuple[str, dict[str, str]]:
+    raw = yaml.safe_load(ACTIVE_FPP.read_text(encoding="utf-8")) or {}
+    group, sides = str(raw.get("group", "")), {str(k): str(v) for k, v in (raw.get("sides") or {}).items()}
+    if not group or "right" not in sides:
+        raise SystemExit(f"{ACTIVE_FPP}: group · sides.right 가 필요하다(fpp_object.py activate)")
+    return group, sides
+
+
+REAL_GROUP, REAL_CUPS = _active()
+REAL_CUP = REAL_CUPS["right"]
 #: 놓기 목표 홀더 — 좌우 학습 목표(우 1 · 2, 좌 0 · 1)에 모두 드는 가운데 홀더 1(10.04)
 PLACE_HOLDER = {"right": 1, "left": 1}
 #: fake 홀더 y — hdgp rh_place env holder_ys(0.153, −0.002, −0.161)
@@ -55,13 +64,23 @@ CAMERA_EXTRINSICS = "config/global_camera_extrinsics_arm4090.yaml"
 
 
 def _cups() -> list[str]:
-    """실기 FP++ 컵 — 오른쪽 · 왼쪽 · 나머지 순, 중복 없이."""
-    return list(dict.fromkeys([*(REAL_CUPS[s] for s in SIDES), *REAL_EXTRA_CUPS]))
+    """실기 FP++ 물체 — 팔별(오른쪽 · 왼쪽) 다음 묶음의 나머지, 중복 없이. 묶음 컨테이너는 묶음 전부를 찍는다."""
+    from object_registry import group_members, load_registry
+    members = group_members(load_registry(), REAL_GROUP)
+    side = [REAL_CUPS[s] for s in SIDES if s in REAL_CUPS]
+    missing = [n for n in side if n not in members]
+    if missing:
+        raise SystemExit(f"{ACTIVE_FPP}: {missing} 가 묶음 {REAL_GROUP} 에 없다")
+    return list(dict.fromkeys([*side, *members]))
+
+
+def _side_cup(s: str) -> str:
+    return REAL_CUPS.get(s, REAL_CUP)
 
 
 def _cups_txt() -> str:
-    return " · ".join([*(f"{REAL_CUPS[s]}={'노랑 오른쪽' if s == 'right' else '파랑 왼쪽'}" for s in SIDES),
-                       *(f"{c}=핑크" for c in REAL_EXTRA_CUPS)])
+    side = {v: k for k, v in REAL_CUPS.items()}
+    return " · ".join(f"{c}{'=' + ('오른팔' if side[c] == 'right' else '왼팔') if c in side else ''}" for c in _cups())
 #: 머리 설정(포트 · 게인 · 모터 id) — head_home · head_pose_check 가 같이 쓴다
 HEAD_CONFIG = "config/head_home_rh56f1.yaml"
 #: ★10.04 사용자 "fpp 진행 전에 자동으로 각도 확인하고 세팅을 제대로 맞춘 다음에 진행" — 외부 파라미터를 잰 머리 자세
@@ -93,7 +112,7 @@ def _stages(kind: str) -> list[dict]:
                    if real else "fake — 머리 없음(실기 순서를 맞추려고 둔 자리)")},
         {"id": "cups", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
          "touches_real": real,
-         "title": (f"컵 자세(arm4090 FP++) — RealSense · FP++ 컨테이너 하나(fpp_cups, 색으로 가르기 · 한 번 찍기: {_cups_txt()}) → /objects/<컵>/pose (base). GPU VRAM 약 4 GB" if real else
+         "title": (f"컵 자세(arm4090 FP++) — RealSense · FP++ 컨테이너 하나(fpp_{REAL_GROUP}, 색으로 가르기 · 한 번 찍기: {_cups_txt()}) → /objects/<물체>/pose (base). GPU VRAM 약 2 GB" if real else
                    "fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채")},
         {"id": "cup_holders", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
          "touches_real": real,
@@ -269,14 +288,14 @@ def _run(kind: str) -> dict:
              ["python3", "{repo}/scripts/nodes/object_pose_node.py", "--objects", *_cups(),
               "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
         _cmd("FP++ 전 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)", HEAD_CHECK_ARGV, execute_args=["--execute"]),
-        _cmd(f"카메라 + FP++ 켜기 — 컨테이너 fpp_cups 하나가 {_cups_txt()} 를 차례로 한 번 찍는다. 이미 떠 있으면 그대로. "
+        _cmd(f"카메라 + FP++ 켜기 — 컨테이너 fpp_{REAL_GROUP} 하나가 {_cups_txt()} 를 차례로 한 번 찍는다. 이미 떠 있으면 그대로. "
              "최대 150 s, 실패하면 이 단계도 실패",
              ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", *_cups(), "--wait", "150"]),
         _cmd("컵 좌표 추출 — 처음엔 FP++ 가 켜지며 찍는 회차를 기다리고, 이 단계를 다시 실행하면(컵을 옮긴 뒤 '↶ 여기서 다시') "
              "컨테이너를 끄지 않고 지금 카메라로 다시 찍는다(10.08 사용자). 컵마다 base 좌표 · 판정을 찍고, 정책이 읽는 컵을 못 찾으면 실패",
-             ["python3", "{repo}/scripts/ops/fpp_rescan.py", *(REAL_CUPS[s] for s in SIDES), "--wait", "120"]),
+             ["python3", "{repo}/scripts/ops/fpp_rescan.py", *(REAL_CUPS[s] for s in SIDES if s in REAL_CUPS), "--wait", "120"]),
         _cmd(f"★컵 자세 확인(바로 위 추출 결과) — 테이블 위 컵 원점 z ≈ {0.205 + REAL_CUP_ORIGIN_Z:.3f}(상판 0.205 + 원점 {REAL_CUP_ORIGIN_Z}, ±8 mm) · 기울기 < 3° · "
-             f"x 0.1~0.4 · |y| 0.1~0.3 · 왼쪽(y > 0) = 파랑 {REAL_CUPS['left']} · 오른쪽(y < 0) = 노랑 {REAL_CUPS['right']} 인가"
+             f"x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 {_side_cup('right')}(y < 0) · 왼팔 {_side_cup('left')}(y > 0) 인가"
              f"(카메라를 건드렸으면 {RECALIB_HINT})",
              ["bash", "-lc", "true"], manual=True),
     ] if real else [
@@ -300,11 +319,11 @@ def _run(kind: str) -> dict:
         _cmd("정책 노드 정지", stop=["policy_pourfj#1"]),
     ]
     for s, cup in (("right", "src"), ("left", "rcv")):
-        rec = _record_start(f"aglt_{s}", [s], [f"/objects/{REAL_CUPS[s]}/pose"]) if real else []
+        rec = _record_start(f"aglt_{s}", [s], [f"/objects/{_side_cup(s)}/pose"]) if real else []
         assert len(rec) + 1 == AGLT_NODE_IDX[real]
         run[f"policy_aglt_{s}"] = [
             _cmd(f"★[{s}] 컵이 학습 배치(로봇 앞 x ≈ 0.25, y ≈ {'−' if s == 'right' else '+'}0.20 ± 0.1)에 서 있고 콘솔에 컵 자세"
-                 f"(/objects/{REAL_CUPS[s]}/pose, {'노랑' if s == 'right' else '파랑'})가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가. 정책은 팔을 스스로 움직이고 "
+                 f"(/objects/{_side_cup(s)}/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가. 정책은 팔을 스스로 움직이고 "
                  "컵을 쥐어 든다 — 빈 컵만" if real else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
             *rec,
             _cmd(f"[{s}] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)",
@@ -312,7 +331,7 @@ def _run(kind: str) -> dict:
                   # 팔마다 이름 · 에피소드를 가른다 — 양팔 정책을 한 세션에서 동시에 띄워도 서로의 reset · stop 이 섞이지 않는다(09.30)
                   "-r", f"__node:=rh_aglt_node_{s}", "-p", f"ns:={s}",
                   "-p", f"contract:={{artifact:aglt_{s}}}", "-p", f"robot:={{artifact:robot_{s}}}", "-p", "device:=cpu",
-                  "-p", f"cup_topic:=/objects/{REAL_CUPS[s] if real else 'cup_' + cup}/pose",
+                  "-p", f"cup_topic:=/objects/{_side_cup(s) if real else 'cup_' + cup}/pose",
                   # ★10.04 실기: 손이 다가가자 FP++ 가 1.5~2.6 s 끊겨 집기 전에 멈췄다 — reset 때 컵을 잡아 두고(정지 컵) 쥐면 FK
                   "-p", "cup_latch:=true", "-p", "cup_static:=true",
                   "-p", f"max_episode_s:={{policy:aglt_{s}.max_episode_s}}"],
@@ -367,7 +386,7 @@ def _run(kind: str) -> dict:
                  ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_place_node.py", "--ros-args",
                   "-r", f"__node:=rh_place_node_{s}", "-p", f"ns:={s}",
                   "-p", f"contract:={{artifact:place_{s}}}", "-p", f"robot:={{artifact:robot_{s}}}", "-p", "device:=cpu",
-                  "-p", f"cup_topic:=/objects/{REAL_CUPS[s] if real else 'cup_' + ('src' if s == 'right' else 'rcv')}/pose",
+                  "-p", f"cup_topic:=/objects/{_side_cup(s) if real else 'cup_' + ('src' if s == 'right' else 'rcv')}/pose",
                   "-p", f"holder:={hid}", *([] if real else ["-p", "require_grasp:=false"])],
                  background=True),
             _cmd(f"[{s}] episode reset — 홀더 {hid} 자세 · pd 가 붙잡은 aglt 마지막 목표(팔 실측 0.15 rad 안) · 컵 자세가 있어야 받는다",

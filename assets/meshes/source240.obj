@@ -1,4 +1,6 @@
-# source240 from hdgp/assets/source_cup/source_240.stl (mm → m) — FP++ mesh, 원점 = 바닥 +0.085(sim body 원점, CAD 원점 +95 mm 에서 −10 mm)
+# source_240.stl → FP++ mesh (m, ×0.001) — 원점 = 바닥 위 0.0850 m · x y = 둘레 중심 (scripts/ops/fpp_object.py, 손으로 고치지 않는다)
+
+o source_240.stl
 v 0.02884114 0.00303133 -0.08500000
 v 0.02922002 0.00150621 -0.08496593
 v 0.02900000 0.00000000 -0.08500000
