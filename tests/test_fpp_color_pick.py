@@ -130,6 +130,8 @@ def test_snapshot_config_needs_every_key_and_a_known_colour(tmp_path):
     f = tmp_path / "g.yaml"
     f.write_text(json.dumps({"objects": [good]}))
     assert N.load_config(f)["objects"][0]["name"] == "cyl60"
+    f.write_text(json.dumps({"objects": [{**good, "color": [2.1, 22.6]}]}))     # calib 가 잰 hue 구간도 받는다(10.09)
+    assert N.load_config(f)["objects"][0]["color"] == [2.1, 22.6]
     for bad in ({**good, "color": "purple"}, {k: v for k, v in good.items() if k != "pose_topic"}):
         f.write_text(json.dumps({"objects": [bad]}))
         with pytest.raises(ValueError):

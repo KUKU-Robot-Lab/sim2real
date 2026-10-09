@@ -88,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         spin_until(lambda: box["status"] is not None)
         action = first_action(box["status"])
         if action == "wait_status":
-            print(f"[rescan] {STATUS_TOPIC} 가 {args.wait:.0f} s 안에 안 온다 — fpp_cups 컨테이너가 떠 있는가", file=sys.stderr)
+            print(f"[rescan] {STATUS_TOPIC} 가 {args.wait:.0f} s 안에 안 온다 — 묶음 FP++ 컨테이너(fpp_<묶음>)가 떠 있는가 · docker logs 로 확인", file=sys.stderr)
             return 1
         after = int(box["status"].get("generation", 0))
         if action == "command":

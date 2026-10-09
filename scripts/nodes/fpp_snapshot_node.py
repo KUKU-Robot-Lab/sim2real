@@ -51,8 +51,10 @@ def load_config(path: str | Path) -> dict:
         for k in ("name", "color", "mesh_path", "mesh_scale_to_meters", "pose_topic"):
             if k not in o:
                 raise ValueError(f"{path}: 물체 {o.get('name')} 에 {k} 가 없다")
-        if o["color"] not in C.COLORS:
-            raise ValueError(f"{path}: 물체 {o['name']} 색 {o['color']!r} — {C.COLORS}")
+        try:
+            C.hue_ranges(o["color"])
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"{path}: 물체 {o['name']} 색 {o['color']!r} — {C.COLORS} 또는 [lo, hi]") from exc
     return raw
 
 
