@@ -204,8 +204,8 @@ def calib(repo: Path, name: str, camera_yaml: Path) -> dict[str, tuple[float, fl
         if not C.in_workspace(T, p, GROUP_WORKSPACE):
             continue
         pb = T[:3, :3] @ p + T[:3, 3]
-        if not C.fits_footprint(C.mask_points_base(m, depth, K, T), aabb):
-            print(f"  (버림) y {pb[1]:+.3f} x {pb[0]:.3f} · 서 있는 {name} 보다 넓게 퍼졌다(누운 물체?)")
+        if not C.looks_standing(C.mask_points_base(m, depth, K, T), aabb):
+            print(f"  (버림) y {pb[1]:+.3f} x {pb[0]:.3f} · 서 있는 {name} 모양이 아니다(넓게 퍼짐 · 꼭대기 높이 다름 — 누운 물체?)")
             continue
         core = m & ndimage.binary_erosion(m, iterations=3) & ((s >= C.S_MIN) & (v >= C.V_MIN)).reshape(m.shape)
         ys.append(float(pb[1]))

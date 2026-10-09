@@ -162,6 +162,20 @@ def fits_footprint(points_base: np.ndarray, aabb, scale: float = FOOTPRINT_SCALE
     return spread <= limit
 
 
+TABLE_TOP_Z = 0.205      # arm4090 상판(scripts/calib/table_cad_extrinsics.py 와 같은 값)
+TOP_TOL = 0.04           # 서 있는 물체 꼭대기 높이 허용 — 10.09 실측: 서 있음 +0.002 · +0.006, 누움 −0.055 · −0.070
+
+
+def looks_standing(points_base: np.ndarray, aabb, table_z: float = TABLE_TOP_Z, top_tol: float = TOP_TOL) -> bool:
+    """서 있는 물체 같은가 — 수평 퍼짐이 바닥 안(fits_footprint)이고, 보이는 점 위쪽(p95)이 상판 + 물체 높이에 닿는다.
+    화면 끝에 잘린 누운 같은 색 물체는 폭으로는 못 거르고 꼭대기 높이로 거른다(10.09)."""
+    if not fits_footprint(points_base, aabb):
+        return False
+    lo, hi = np.asarray(aabb[0], float), np.asarray(aabb[1], float)
+    top = float(np.percentile(np.asarray(points_base, float)[:, 2], 95))
+    return abs(top - (table_z + float(hi[2] - lo[2]))) <= top_tol
+
+
 def in_workspace(T_base_cam: np.ndarray, p_cam: np.ndarray | None, ws: dict) -> bool:
     """카메라 점을 base 로 바꿔 작업 영역 상자({x,y,z: [lo, hi]}) 안인가. 점이 없으면 False."""
     if p_cam is None:

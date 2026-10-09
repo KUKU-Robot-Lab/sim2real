@@ -231,7 +231,7 @@ def main(argv=None) -> None:
             dets = [d for d in cands if d["inside"]]
             masks = [d["mask"] for d in dets]
             # 서 있는 모양(수평 퍼짐 ≤ 물체 바닥)인 후보만 — 누운 같은 색 물체를 버린다(10.09 핑크 병). aabb · 카메라 자세가 있을 때
-            allowed = {n: {i for i, d in enumerate(dets) if d["points"] is None or C.fits_footprint(d["points"], objects[n]["aabb"])}
+            allowed = {n: {i for i, d in enumerate(dets) if d["points"] is None or C.looks_standing(d["points"], objects[n]["aabb"])}
                        for n in todo if objects[n].get("aabb")}
             pick = C.assign(frame.rgb, masks, {n: objects[n]["color"] for n in todo}, allowed=allowed)
             for name in todo:

@@ -238,3 +238,21 @@ def test_a_blob_that_merges_two_objects_in_the_image_is_split_by_depth():
     one = np.zeros_like(m)
     one[40:80, 60:100] = True
     assert len(C.split_by_depth(one, depth, K, np.eye(4), voxel=0.01, min_px=200)) == 1
+
+
+def test_a_standing_object_reaches_its_height_above_the_table_and_a_lying_one_does_not():
+    """10.09 arm4090 실측(source240, 높이 0.24): 서 있는 병 점 위쪽(p95) 0.447 · 0.451 ≈ 상판 0.205 + 0.24,
+    화면 끝에 잘려 폭으로는 못 거른 누운 병 0.390 · 0.375."""
+    aabb = ((-0.03, -0.03, -0.085), (0.03, 0.03, 0.155))
+    rng = np.random.default_rng(1)
+
+    def pts(z5, z95):
+        return np.column_stack([rng.uniform(0, 0.05, 500), rng.uniform(0, 0.05, 500), rng.uniform(z5, z95, 500)])
+    assert C.looks_standing(pts(0.234, 0.447), aabb) and C.looks_standing(pts(0.228, 0.451), aabb)
+    assert not C.looks_standing(pts(0.265, 0.390), aabb) and not C.looks_standing(pts(0.231, 0.375), aabb)
+
+
+def test_the_table_height_matches_the_table_calibration():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "calib"))
+    from table_cad_extrinsics import TABLE_TOP_Z
+    assert C.TABLE_TOP_Z == TABLE_TOP_Z
