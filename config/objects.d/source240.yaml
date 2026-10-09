@@ -15,7 +15,12 @@ objects:
       detection_pick: confidence
       yolo_confidence: 0.05
       group: source240
-      color: orange
+      color:
+      - 2.1
+      - 22.6
+      hue_measured:
+      - 12.4
+      - 3.42
     cad_to_body:
       position:
       - 0.0
@@ -50,7 +55,12 @@ objects:
       detection_pick: confidence
       yolo_confidence: 0.05
       group: source240
-      color: pink
+      color:
+      - 157.0
+      - 171.0
+      hue_measured:
+      - 164.0
+      - 1.72
     cad_to_body:
       position:
       - 0.0
