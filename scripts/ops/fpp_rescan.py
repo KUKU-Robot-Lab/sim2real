@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import math
 import sys
 import time
@@ -103,10 +104,40 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("cups", nargs="+")
     ap.add_argument("--wait", type=float, default=120.0, help="전체 대기 상한(s)")
+    ap.add_argument("--phase", choices=("auto", "status", "full"), default="auto",
+                    help="auto: 상황판(ROS_LOCALHOST_ONLY≠1)이면 상태 · 명령은 localhost DDS 자식이, base 좌표는 이 프로세스가")
     args = ap.parse_args(argv)
+    if args.phase == "auto" and os.environ.get("ROS_LOCALHOST_ONLY") != "1":
+        return _split_run(args)
+    return _run(args, only_status=args.phase == "status")
+
+
+def _split_run(args) -> int:
+    """10.09 실기: FP++ 컨테이너는 localhost 전용 DDS(ROS_LOCALHOST_ONLY=1)라 상황판 노드(=0)가 상태 토픽을 못 본다.
+    상태 · 명령은 localhost 자식이 하고(결과를 FPP_STATUS 줄로), base 좌표(/objects, 로봇 쪽 DDS)는 이 프로세스가 본다."""
+    import subprocess
+    env = {**os.environ, "ROS_LOCALHOST_ONLY": "1"}
+    child = subprocess.run([sys.executable, str(Path(__file__).resolve()), *args.cups, "--wait", str(args.wait),
+                            "--phase", "status"], env=env, capture_output=True, text=True)
+    st = None
+    for line in child.stdout.splitlines():
+        if line.startswith(STATUS_MARK):
+            st = json.loads(line[len(STATUS_MARK):])
+        else:
+            print(line)
+    if child.stderr.strip():
+        print(child.stderr.strip()[-1500:], file=sys.stderr)
+    if child.returncode != 0 or st is None:
+        return child.returncode or 1
+    return _run(args, only_status=False, preset=st)
+
+
+STATUS_MARK = "FPP_STATUS "
+
+
+def _run(args, only_status: bool, preset: dict | None = None) -> int:
 
     import rclpy
-    from geometry_msgs.msg import PoseStamped
     from std_msgs.msg import String
 
     rclpy.init()
@@ -124,6 +155,9 @@ def main(argv: list[str] | None = None) -> int:
         return False
 
     try:
+        if preset is not None:                       # 상태는 localhost 자식이 끝냈다 — base 좌표만 본다
+            box["st"] = preset
+            return _report(node, box, args, spin_until)
         if not spin_until(lambda: not missing_names(box["st"], args.cups)):
             print(f"[rescan] {', '.join(missing_names(box['st'], args.cups))} 를 내는 묶음 FP++ 컨테이너 상태가 {args.wait:.0f} s 안에 "
                   "안 온다 — fpp_<묶음> 이 떠 있는가 · docker logs 로 확인", file=sys.stderr)
@@ -144,7 +178,22 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[rescan] {args.wait:.0f} s 안에 다 못 찾았다 — {' · '.join(lost) or '회차가 안 끝났다'} · 오류 {errs or '-'}",
                   file=sys.stderr)
             return 1
+        if only_status:
+            print(STATUS_MARK + json.dumps(box["st"], ensure_ascii=False))
+            return 0
+        return _report(node, box, args, spin_until)
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+def _report(node, box: dict, args, spin_until) -> int:
+    """찾은 물체의 base 좌표(/objects/<물체>/pose)와 판정을 찍는다."""
+    from geometry_msgs.msg import PoseStamped
+    if True:
         st = box["st"]
+        groups = groups_for(st, args.cups)
         info_of = {n: st[g]["objects"][n] for g, mine in groups_for(st, args.cups).items() for n in mine}
         lost = []
         t_round = time.time()
@@ -172,10 +221,6 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {n:11s} x {p.x:.3f} y {p.y:+.3f} z {p.z:.3f} 기울기 {tilt:.1f}° · 색 {info.get('color_score')} · "
                   f"흔들림 {info.get('spread_mm')} mm  {'✓' if not warn else '⚠ ' + ' · '.join(warn)}")
         return 1 if lost else 0
-    finally:
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
 
 
 if __name__ == "__main__":

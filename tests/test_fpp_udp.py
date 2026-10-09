@@ -79,14 +79,6 @@ def test_only_newer_packets_pass_per_object_and_a_restarted_sender_is_accepted()
     assert g.accept("cup", 6 + 5000) and g.accept("cup", 0)           # 크게 뒤로 = 송신기 재기동
 
 
-@pytest.mark.parametrize("host, relay", [("127.0.0.1", False), ("127.0.1.1", False), ("::1", False),
-                                         ("100.103.21.126", True), ("192.168.0.7", True)])
-def test_a_pose_from_this_pc_is_not_republished(host, relay):
-    """10.08: 인지를 이 PC 에서 돌리면(local) FP++ 가 이미 같은 DDS 에 자세를 낸다 — 루프백으로 온 자세를
-    수신기가 같은 토픽에 다시 내면 송신기가 그것을 또 보내 끝없이 돈다(노란 컵 토픽 4 kHz)."""
-    assert U.relays_pose(host) is relay
-
-
 def test_the_sender_sends_each_frame_once_per_object():
     """같은 stamp 의 자세가 다시 들어오면(되돌아온 사본) 보내지 않는다 — 순환을 송신기에서도 끊는다."""
     gate = U.StampGate()

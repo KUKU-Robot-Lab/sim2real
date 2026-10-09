@@ -140,15 +140,10 @@ def camera_hz_at(last: tuple[float, float] | None, now: float) -> float:
     return last[1]
 
 
-def relays_pose(host: str) -> bool:
-    """받은 자세를 ROS 로 다시 낼지 — 루프백(이 PC)에서 왔으면 내지 않는다.
-    인지를 이 PC 에서 돌리면(local, 10.01) FP++ 가 이미 같은 DDS 에 자세를 낸다. 그것을 다시 내면 송신기가
-    또 듣고 보내 끝없이 돈다(10.08 노란 컵 토픽 4 kHz). 하트비트(카메라 주기)는 그대로 받는다."""
-    return not (host.startswith("127.") or host == "::1")
-
-
 class StampGate:
-    """송신기 — 물체마다 더 새 stamp 만 보낸다. 되돌아온 사본(같은 stamp)을 다시 보내지 않는다."""
+    """송신기 — 물체마다 더 새 stamp 만 보낸다. 되돌아온 사본(같은 stamp)을 다시 보내지 않는다.
+    수신기 · 송신기가 같은 DDS 에 있어도(수동 기동 ROS_LOCALHOST_ONLY=1) 이것으로 순환이 끊긴다. 수신기는 받은 자세를
+    언제나 다시 낸다 — 상황판 노드(ROS_LOCALHOST_ONLY=0)는 FP++ 컨테이너(localhost 전용 DDS)를 직접 못 본다(10.09 실기)."""
 
     def __init__(self) -> None:
         self._last: dict[str, tuple[int, int]] = {}
