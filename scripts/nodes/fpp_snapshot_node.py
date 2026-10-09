@@ -41,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import fpp_color_pick as C  # noqa: E402
 
 STATUS_TOPIC = "/perception_plus_plus/snapshot/status"
+LIVE_RETRY_S = 30.0       # 추적 중 못 찾은 물체를 다시 찾는 간격
 CMD_TOPIC = "/perception_plus_plus/snapshot/cmd"
 
 
@@ -224,7 +225,9 @@ def main(argv=None) -> None:
                         found = [n for n in objects if n in self.poses]
                         if found:
                             self.live["name"] = found[0]
-                busy_retry = todo and time.monotonic() - last_pass < retry_s and self.generation > 0
+                # 추적 중이면 못 찾은 물체(테이블에 없는 묶음 물체)는 드물게만 다시 찾는다 — 찾기가 추적을 끊는다(10.09: 1.9 Hz)
+                every = LIVE_RETRY_S if self.live["name"] is not None else retry_s
+                busy_retry = todo and time.monotonic() - last_pass < every and self.generation > 0
                 if not todo or busy_retry:
                     if self.live["name"] is not None:
                         seq = self._track_step(seq)
