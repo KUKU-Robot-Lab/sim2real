@@ -146,3 +146,17 @@ def test_a_usd_cad_in_mm_is_read_with_its_stage_units(repo, tmp_path):
     m = trimesh.load(out)
     assert m.bounds[0][2] == pytest.approx(-0.085, abs=1e-6) and m.bounds[1][2] == pytest.approx(0.115, abs=1e-6)
     assert m.bounds[1][0] == pytest.approx(0.030, abs=1e-6)
+
+
+def test_calibration_counts_only_blobs_of_the_registered_colour_names():
+    """10.09 쉐이커 calib: 오른쪽 끝의 파란 로봇 부품 조각(hue 99)이 덩어리로 세여 2 ≠ 1 — 등록 때 준 색 이름에 맞는 덩어리만 센다."""
+    img = np.zeros((40, 80, 3), np.uint8)
+    img[:] = (103, 112, 112)
+    img[5:35, 5:30] = (183, 111, 24)                  # 주황
+    img[5:35, 50:75] = (1, 135, 190)                  # 파랑
+    a = np.zeros((40, 80), bool)
+    a[5:35, 5:30] = True
+    b = np.zeros((40, 80), bool)
+    b[5:35, 50:75] = True
+    assert F.keep_colored(img, [a, b], ["orange"]) == [0]
+    assert F.keep_colored(img, [a, b], ["orange", "blue"]) == [0, 1]

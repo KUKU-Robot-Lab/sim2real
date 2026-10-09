@@ -216,12 +216,19 @@ def _grab(timeout: float = 10.0):
     return rgb, depth_m, K
 
 
+def keep_colored(rgb: np.ndarray, masks: list[np.ndarray], colors: list) -> list[int]:
+    """등록 때 준 색(이름) 중 하나에 맞는 덩어리 번호만 — 다른 색 물건(로봇 부품 · 방해물)은 세지 않는다."""
+    return [i for i, m in enumerate(masks) if max(C.color_fraction(rgb, m, c) for c in colors) >= C.MIN_SCORE]
+
+
 def calib(repo: Path, name: str, camera_yaml: Path) -> dict[str, tuple[float, float]]:
     """테이블 위 선명한 색 덩어리(작업 영역 안)를 왼쪽부터 물체와 짝지어 hue 를 잰다."""
     from object_registry import GROUP_WORKSPACE, _base_from_camera
     doc = yaml.safe_load((Path(repo) / DROPIN / f"{name}.yaml").read_text(encoding="utf-8"))
     names = list(doc["objects"])
     aabb = doc["objects"][names[0]]["aabb"]
+    # 넓은 색 이름(add 의 --colors)으로 고른다 — 지난 calib 의 좁은 구간보다 조명 변화에 덜 민감
+    colors = list((doc.get("meta") or {}).get("colors") or [o["fpp"]["color"] for o in doc["objects"].values()])
     rgb, depth, K = _grab()
     T = np.asarray(_base_from_camera(camera_yaml))
     h, s, v = C._hsv(rgb.reshape(-1, 3))
@@ -236,7 +243,10 @@ def calib(repo: Path, name: str, camera_yaml: Path) -> dict[str, tuple[float, fl
     for k in range(1, n + 1):
         if (labels == k).sum() >= 1500:
             pieces += C.split_by_depth(labels == k, depth, K, T, min_px=1500)    # 영상에서 붙은 물체를 3D 로 나눈다
-    for m in pieces:
+    kept = set(keep_colored(rgb, pieces, colors))
+    for i, m in enumerate(pieces):
+        if i not in kept:
+            continue
         p = C.mask_point(m, depth, K)
         if not C.in_workspace(T, p, GROUP_WORKSPACE):
             continue
