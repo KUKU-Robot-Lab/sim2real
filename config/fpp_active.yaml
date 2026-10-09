@@ -1,5 +1,7 @@
-# 정책이 볼 FP++ 물체(묶음 · 팔별) — scripts/ops/fpp_object.py activate 가 쓴다. 미션 생성기가 읽는다.
-group: source200
+# 정책이 볼 FP++ 물체(팔별) — scripts/ops/fpp_object.py activate 가 쓴다. 미션 생성기가 읽는다. 묶음 컨테이너는 물체마다의 묶음.
 sides:
   right: source200_pink
-  left: source200_orange
+  left: shaker_c_orange
+groups:
+- source200
+- shaker_c

@@ -27,7 +27,7 @@ def _load(name):
 REAL_RAW, REAL, REAL_BOOK = _load("mission_rh56f1_control.yaml")
 #: 10.09 실기 물체는 config/fpp_active.yaml(fpp_object.py activate)이 정한다 — 테스트도 그것을 읽는다(물체를 바꿔도 안 깨진다)
 _ACTIVE = yaml.safe_load((REPO / "config" / "fpp_active.yaml").read_text(encoding="utf-8"))
-ACTIVE_GROUP, ACTIVE_SIDES = _ACTIVE["group"], _ACTIVE["sides"]
+ACTIVE_SIDES = _ACTIVE["sides"]
 FAKE_RAW, FAKE, FAKE_BOOK = _load("mission_rh56f1_fake.yaml")
 
 
@@ -168,7 +168,9 @@ def test_real_cups_run_fpp_on_this_pc_after_the_head_home_and_shutdown_takes_it_
     sys.path.insert(0, str(REPO / "scripts"))
     from object_registry import group_members, load_registry
     side = [ACTIVE_SIDES[s] for s in ("right", "left") if s in ACTIVE_SIDES]
-    objs = " ".join(dict.fromkeys([*side, *group_members(load_registry(), ACTIVE_GROUP)]))
+    reg = load_registry()
+    groups = list(dict.fromkeys(reg.get(n).fpp["group"] for n in side))          # 팔마다 다른 묶음이어도 된다(10.09)
+    objs = " ".join(dict.fromkeys([*side, *(n for g in groups for n in group_members(reg, g))]))
     for want in ("perception_launcher_node.py --host local", "fpp_pose_rx.py", "object_pose_node.py --camera-extrinsics",
                  "--camera-extrinsics", "global_camera_extrinsics_arm4090.yaml",
                  f"perception_ctl.py start {objs} --wait 150",

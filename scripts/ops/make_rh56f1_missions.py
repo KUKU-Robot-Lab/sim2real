@@ -40,15 +40,25 @@ PROBES = (("index_1", "0.3"), ("middle_1", "0.3"), ("ring_1", "0.3"), ("pinky_1"
 ACTIVE_FPP = REPO / "config" / "fpp_active.yaml"
 
 
-def _active() -> tuple[str, dict[str, str]]:
+def _active() -> tuple[list[str], dict[str, str]]:
+    """(묶음들, 팔별 물체) — 팔마다 다른 묶음이어도 된다(10.09 오른손 source200 병 · 왼손 shaker_c). 묶음은 팔 물체에서 푼다."""
+    from object_registry import load_registry
     raw = yaml.safe_load(ACTIVE_FPP.read_text(encoding="utf-8")) or {}
-    group, sides = str(raw.get("group", "")), {str(k): str(v) for k, v in (raw.get("sides") or {}).items()}
-    if not group or "right" not in sides:
-        raise SystemExit(f"{ACTIVE_FPP}: group · sides.right 가 필요하다(fpp_object.py activate)")
-    return group, sides
+    sides = {str(k): str(v) for k, v in (raw.get("sides") or {}).items()}
+    if "right" not in sides:
+        raise SystemExit(f"{ACTIVE_FPP}: sides.right 가 필요하다(fpp_object.py activate)")
+    reg = load_registry()
+    groups = []
+    for s_ in SIDES:
+        if s_ in sides:
+            g = reg.get(sides[s_]).fpp.get("group")
+            if not g:
+                raise SystemExit(f"{ACTIVE_FPP}: {sides[s_]} 는 묶음(fpp.group)이 없다 — fpp_object.py add 로 등록한 물체여야 한다")
+            groups.append(g)
+    return list(dict.fromkeys(groups)), sides
 
 
-REAL_GROUP, REAL_CUPS = _active()
+REAL_GROUPS, REAL_CUPS = _active()
 REAL_CUP = REAL_CUPS["right"]
 #: 놓기 목표 홀더 — 좌우 학습 목표(우 1 · 2, 좌 0 · 1)에 모두 드는 가운데 홀더 1(10.04)
 PLACE_HOLDER = {"right": 1, "left": 1}
@@ -66,12 +76,14 @@ CAMERA_EXTRINSICS = "config/global_camera_extrinsics_arm4090.yaml"
 def _cups() -> list[str]:
     """실기 FP++ 물체 — 팔별(오른쪽 · 왼쪽) 다음 묶음의 나머지, 중복 없이. 묶음 컨테이너는 묶음 전부를 찍는다."""
     from object_registry import group_members, load_registry
-    members = group_members(load_registry(), REAL_GROUP)
+    reg = load_registry()
+    members = [n for g in REAL_GROUPS for n in group_members(reg, g)]
     side = [REAL_CUPS[s] for s in SIDES if s in REAL_CUPS]
-    missing = [n for n in side if n not in members]
-    if missing:
-        raise SystemExit(f"{ACTIVE_FPP}: {missing} 가 묶음 {REAL_GROUP} 에 없다")
     return list(dict.fromkeys([*side, *members]))
+
+
+def _containers_txt() -> str:
+    return " · ".join(f"fpp_{g}" for g in REAL_GROUPS)
 
 
 def _side_cup(s: str) -> str:
@@ -112,7 +124,7 @@ def _stages(kind: str) -> list[dict]:
                    if real else "fake — 머리 없음(실기 순서를 맞추려고 둔 자리)")},
         {"id": "cups", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
          "touches_real": real,
-         "title": (f"컵 자세(arm4090 FP++) — RealSense · FP++ 컨테이너 하나(fpp_{REAL_GROUP}, 색으로 가르기 · 한 번 찍기: {_cups_txt()}) → /objects/<물체>/pose (base). GPU VRAM 약 2 GB" if real else
+         "title": (f"컵 자세(arm4090 FP++) — RealSense · FP++ 묶음 컨테이너({_containers_txt()}, 묶음마다 하나 · 색 · 모양으로 가르기 · 한 번 찍기: {_cups_txt()}) → /objects/<물체>/pose (base). GPU VRAM 컨테이너마다 약 2 GB" if real else
                    "fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채")},
         {"id": "cup_holders", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
          "touches_real": real,
@@ -288,7 +300,7 @@ def _run(kind: str) -> dict:
              ["python3", "{repo}/scripts/nodes/object_pose_node.py",       # 레지스트리 전체 — 묶음을 바꿔도(activate) 다시 띄우지 않는다
               "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
         _cmd("FP++ 전 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)", HEAD_CHECK_ARGV, execute_args=["--execute"]),
-        _cmd(f"카메라 + FP++ 켜기 — 컨테이너 fpp_{REAL_GROUP} 하나가 {_cups_txt()} 를 차례로 한 번 찍는다. 이미 떠 있으면 그대로. "
+        _cmd(f"카메라 + FP++ 켜기 — 묶음 컨테이너({_containers_txt()})가 {_cups_txt()} 를 차례로 한 번 찍는다. 이미 떠 있으면 그대로. "
              "최대 150 s, 실패하면 이 단계도 실패",
              ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", *_cups(), "--wait", "150"]),
         _cmd("컵 좌표 추출 — 처음엔 FP++ 가 켜지며 찍는 회차를 기다리고, 이 단계를 다시 실행하면(컵을 옮긴 뒤 '↶ 여기서 다시') "

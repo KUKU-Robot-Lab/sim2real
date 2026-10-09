@@ -28,6 +28,15 @@ from s2r_console import wiring as W
 
 SIM2REAL = Path(__file__).resolve().parents[2]
 _ACTIVE = yaml.safe_load((SIM2REAL / "config" / "fpp_active.yaml").read_text(encoding="utf-8"))   # 10.09 실기 물체 = 이 파일
+
+
+def _active_groups() -> list[str]:
+    """팔별 물체의 묶음들(팔마다 다를 수 있다 — 10.09 오른손 병 · 왼손 쉐이커)."""
+    import sys as _s
+    _s.path.insert(0, str(SIM2REAL / "scripts"))
+    from object_registry import load_registry
+    reg = load_registry()
+    return list(dict.fromkeys(reg.get(n).fpp["group"] for n in _ACTIVE["sides"].values()))
 PROFILES = SIM2REAL / "deploy" / "s2r_console" / "profiles"
 
 
@@ -128,12 +137,13 @@ def test_the_rh56f1_hand_is_a_driver_box_and_a_state_box_each_with_its_own_switc
 def test_the_perception_chain_runs_on_this_pc_and_the_udp_receiver_switches_the_fpp_box(real):
     _, _, d = real
     assert d.box("perception").host == "local" and d.box("camera").host == "local"
-    group, sides = _ACTIVE["group"], _ACTIVE["sides"]
-    fpp = d.box(f"fpp_{group}")                 # 10.08 색 다른 같은 모양 = 컨테이너 하나 = 상자 하나
-    assert fpp.units == ("cups#2",) and fpp.ros == ("/fpp_pose_rx",) and fpp.host == "local"
+    groups, sides = _active_groups(), _ACTIVE["sides"]
+    boxes = [d.box(f"fpp_{g}") for g in groups]  # 10.08 색 다른 같은 모양 = 묶음 컨테이너 하나 = 상자 하나(묶음마다)
+    assert all(b.units == ("cups#2",) and b.host == "local" for b in boxes)
+    assert sum(b.ros == ("/fpp_pose_rx",) for b in boxes) == 1              # 수신 노드 하나 = 상자 하나
     assert not [b.id for b in d.boxes if b.id in {f"fpp_{n}" for n in sides.values()}]
     # 그림은 받는 쪽이 있는 물체만 잇는다 — 정책이 읽는 팔별 물체
-    assert {w.topic for w in d.wires if w.src == f"fpp_{group}" and w.dst == "object_pose"} == {
+    assert {w.topic for w in d.wires if w.src in {f"fpp_{g}" for g in groups} and w.dst == "object_pose"} == {
         f"/perception_plus_plus/{n}/pose" for n in sides.values()}
     assert d.box("object_pose").units == ("cups#3",)
     assert {w.topic for w in d.wires if w.src == "camera" and w.dst == "cup_holders"} == {
@@ -428,7 +438,7 @@ def test_the_fake_rh56f1_picture_has_the_real_pictures_boxes():
     titles = {b.title for b in real.boxes}
     # fake 에 없는 것: 인지(카메라 · FP++ · 런처 — 정지 컵을 fake 가 바로 낸다). fake 에만 있는 것: 막히지 않은 붓기 노드
     missing = {b.title for b in real.boxes} - {b.title for b in fake.boxes}
-    assert missing <= {"인지 런처 · local", "카메라 (RealSense)", f"FPP 추적 · {_ACTIVE['group']}"}, missing
+    assert missing <= {"인지 런처 · local", "카메라 (RealSense)", *(f"FPP 추적 · {g}" for g in _active_groups())}, missing
     extra = {b.title for b in fake.boxes} - titles
     assert extra <= {"pour_fj_node · 붓기 정책 (오른팔 · 왼팔)"}, extra
 

@@ -42,3 +42,9 @@ def test_each_cup_row_is_checked_against_the_table_and_its_side():
                                            ["cyl60_pink: 그 색 후보가 없다"])])
 def test_missing_cups_are_named_with_the_reason(status, want):
     assert R.missing(status, ["cyl60", "cyl60_pink"]) == want
+
+
+def test_the_height_check_uses_each_objects_origin():
+    """10.09 쉐이커 원점 = 높이 가운데(바닥 위 65 mm) — cyl60 값(85 mm)으로 보면 2 cm 낮다고 잘못 경고한다."""
+    assert R.check_cup("shaker_c_orange", (0.25, 0.08, 0.270), 0.5, origin_above_bottom=0.065) == []
+    assert any("z" in w for w in R.check_cup("shaker_c_orange", (0.25, 0.08, 0.270), 0.5))

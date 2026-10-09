@@ -35,7 +35,8 @@ DROPIN = "config/objects.d"
 MESH_DIR = "assets/meshes"
 MESH_IN_CONTAINER = "assets/s2r_meshes"     # fpp_group_up.sh 가 sim2real assets/meshes 를 붙인 자리
 DEFAULT_CLASS = 41                           # YOLO cup — 묶음 노드는 bottle · cup · vase 를 다 받으니 기록용
-HUE_HALF_MIN = 7.0                           # 잰 hue 중앙 ± max(이것, 3σ)
+HUE_HALF_MIN = 7.0                           # 잰 hue 중앙 ± clip(3σ, 이것, HUE_HALF_MAX)
+HUE_HALF_MAX = 12.0                          # 10.09 주황 쉐이커 σ 6.3(안쪽 어두운 붉은색) — 3σ 면 노랑 · 빨강까지 들어간다
 
 
 USD_SUFFIXES = (".usd", ".usda", ".usdc", ".usdz")
@@ -164,22 +165,24 @@ def pair_left_to_right(ys: list[float], hues: list[np.ndarray], names: list[str]
 
 
 def set_hues(repo: Path, name: str, measured: dict[str, tuple[float, float]]) -> Path:
-    """잰 (중앙, σ) → color = [중앙 − w, 중앙 + w], w = max(HUE_HALF_MIN, 3σ). 0/180 을 넘으면 lo > hi."""
+    """잰 (중앙, σ) → color = [중앙 − w, 중앙 + w], w = clip(3σ, HUE_HALF_MIN, HUE_HALF_MAX). 0/180 을 넘으면 lo > hi."""
     f = Path(repo) / DROPIN / f"{name}.yaml"
     doc = yaml.safe_load(f.read_text(encoding="utf-8"))
     for n, (mid, sd) in measured.items():
-        w = max(HUE_HALF_MIN, 3.0 * sd)
+        w = min(HUE_HALF_MAX, max(HUE_HALF_MIN, 3.0 * sd))
         lo, hi = (mid - w) % 180.0, (mid + w) % 180.0
         doc["objects"][n]["fpp"]["color"] = [round(lo, 1), round(hi, 1)]
         doc["objects"][n]["fpp"]["hue_measured"] = [round(mid, 1), round(sd, 2)]
     return _write_dropin(Path(repo), name, doc.get("meta", {}), doc["objects"])
 
 
-def write_active(repo: Path, *, group: str, right: str, left: str | None) -> Path:
+def write_active(repo: Path, *, right: str, left: str | None, groups: list[str] | None = None) -> Path:
+    """팔별 물체 — 팔마다 다른 묶음이어도 된다(10.09 오른손 병 · 왼손 쉐이커). groups 는 읽기용 기록(미션은 물체에서 다시 푼다)."""
     f = Path(repo) / ACTIVE
     sides = {"right": right, **({"left": left} if left else {})}
-    head = "# 정책이 볼 FP++ 물체(묶음 · 팔별) — scripts/ops/fpp_object.py activate 가 쓴다. 미션 생성기가 읽는다.\n"
-    f.write_text(head + yaml.safe_dump({"group": group, "sides": sides}, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    head = "# 정책이 볼 FP++ 물체(팔별) — scripts/ops/fpp_object.py activate 가 쓴다. 미션 생성기가 읽는다. 묶음 컨테이너는 물체마다의 묶음.\n"
+    body = {"sides": sides, **({"groups": list(groups)} if groups else {})}
+    f.write_text(head + yaml.safe_dump(body, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return f
 
 
@@ -278,8 +281,8 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("calib", help="카메라로 색(hue) 재기 — 로봇 PC, 물체를 왼쪽부터 --colors 순서로")
     c.add_argument("name")
     c.add_argument("--camera-extrinsics", type=Path, default=_ROOT / "config" / "global_camera_extrinsics_arm4090.yaml")
-    t = sub.add_parser("activate", help="정책이 볼 물체 + 미션 다시 생성")
-    t.add_argument("group")
+    t = sub.add_parser("activate", help="정책이 볼 물체 + 미션 다시 생성(팔마다 다른 묶음 가능)")
+    t.add_argument("group", nargs="?", default=None, help="(옛 형식 · 무시해도 된다) 묶음 — 팔 물체에서 푼다")
     t.add_argument("--right", required=True)
     t.add_argument("--left", default=None)
     args = ap.parse_args(argv)
@@ -296,12 +299,18 @@ def main(argv: list[str] | None = None) -> int:
     else:
         from object_registry import load_registry
         reg = load_registry()
+        groups = []
         for n in filter(None, (args.right, args.left)):
-            if reg.get(n).fpp.get("group") != args.group:
-                raise SystemExit(f"{n} 는 묶음 {args.group} 이 아니다")
-        write_active(_ROOT, group=args.group, right=args.right, left=args.left)
+            g = reg.get(n).fpp.get("group")
+            if not g:
+                raise SystemExit(f"{n} 는 묶음 물체가 아니다 — fpp_object.py add 로 등록할 것")
+            if args.group and g != args.group:
+                raise SystemExit(f"{n} 는 묶음 {args.group} 이 아니다({g})")
+            groups.append(g)
+        groups = list(dict.fromkeys(groups))
+        write_active(_ROOT, right=args.right, left=args.left, groups=groups)
         subprocess.run([sys.executable, str(_ROOT / "scripts" / "ops" / "make_rh56f1_missions.py")], check=True)
-        print(f"[fpp_object] 활성: {args.group} · 오른팔 {args.right} · 왼팔 {args.left or '-'} — 미션을 다시 만들었다")
+        print(f"[fpp_object] 활성: 오른팔 {args.right} · 왼팔 {args.left or '-'} · 묶음 {', '.join(groups)} — 미션을 다시 만들었다")
     return 0
 
 

@@ -120,9 +120,9 @@ def test_hue_statistics_handle_the_red_wraparound():
 
 def test_activate_writes_the_side_mapping_the_mission_reads(repo):
     (repo / "config" / "objects.d" / "x.yaml").write_text(yaml.safe_dump({"objects": {}}))
-    F.write_active(repo, group="bottle", right="bottle_pink", left="bottle_orange")
+    F.write_active(repo, right="bottle_pink", left="shaker_orange", groups=["bottle", "shaker"])   # 팔마다 다른 묶음(10.09)
     doc = yaml.safe_load((repo / "config" / "fpp_active.yaml").read_text())
-    assert doc == {"group": "bottle", "sides": {"right": "bottle_pink", "left": "bottle_orange"}}
+    assert doc == {"sides": {"right": "bottle_pink", "left": "shaker_orange"}, "groups": ["bottle", "shaker"]}
 
 
 def test_a_usd_cad_in_mm_is_read_with_its_stage_units(repo, tmp_path):
@@ -160,3 +160,11 @@ def test_calibration_counts_only_blobs_of_the_registered_colour_names():
     b[5:35, 50:75] = True
     assert F.keep_colored(img, [a, b], ["orange"]) == [0]
     assert F.keep_colored(img, [a, b], ["orange", "blue"]) == [0, 1]
+
+
+def test_a_wide_measured_hue_spread_is_capped_so_neighbouring_colours_stay_out(repo, tmp_path):
+    """10.09 주황 쉐이커: 안쪽이 어두운 붉은색이라 hue 12.1 ± 6.3 → 3σ 면 ±19(노랑 23~28 · 빨강까지). 폭은 ±12 로 자른다."""
+    F.add_object(repo, _bottle_stl(tmp_path / "s.stl"), name="s", colors=["orange"], origin_above_bottom=0.065)
+    F.set_hues(repo, "s", {"s_orange": (12.1, 6.3)})
+    reg = load_registry(repo / "config" / "objects.yaml")
+    assert reg.get("s_orange").fpp["color"] == [0.1, 24.1]

@@ -16,6 +16,7 @@ import json
 import math
 import sys
 import time
+from pathlib import Path
 
 STATUS_TOPIC = "/perception_plus_plus/snapshot/status"
 CMD_TOPIC = "/perception_plus_plus/snapshot/cmd"
@@ -46,11 +47,11 @@ def missing(status: dict, names: list[str]) -> list[str]:
     return [f"{n}: {objs.get(n, {}).get('why', '상태 없음')}" for n in names if not objs.get(n, {}).get("found")]
 
 
-def check_cup(name: str, xyz: tuple[float, float, float], tilt_deg: float) -> list[str]:
-    """테이블 위에 서 있는 cyl60 기준의 경고들(빈 목록 = 통과)."""
+def check_cup(name: str, xyz: tuple[float, float, float], tilt_deg: float, origin_above_bottom: float = CUP_ORIGIN_Z) -> list[str]:
+    """테이블 위에 서 있는 물체 기준의 경고들(빈 목록 = 통과). 원점 높이는 물체마다(레지스트리, 쉐이커 0.065)."""
     x, _, z = xyz
     warn = []
-    z_want = TABLE_TOP_Z + CUP_ORIGIN_Z
+    z_want = TABLE_TOP_Z + origin_above_bottom
     if abs(z - z_want) > Z_TOL:
         warn.append(f"z {z:.3f} — 기대 {z_want:.3f} ± {Z_TOL * 1e3:.0f} mm")
     if tilt_deg > TILT_MAX_DEG:
@@ -58,6 +59,17 @@ def check_cup(name: str, xyz: tuple[float, float, float], tilt_deg: float) -> li
     if not X_RANGE[0] <= x <= X_RANGE[1]:
         warn.append(f"x {x:.3f} — {X_RANGE[0]}~{X_RANGE[1]} 밖")
     return warn
+
+
+def _origins(names: list[str]) -> dict[str, float]:
+    """물체마다 원점 높이(바닥 위) — 레지스트리를 못 읽으면 비워 둔다(cyl60 값으로 판정)."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from object_registry import load_registry
+        reg = load_registry()
+        return {n: float(reg.get(n).origin_above_bottom_m) for n in names}
+    except (OSError, ValueError, KeyError):
+        return {}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -113,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
         for n in args.cups:
             node.create_subscription(PoseStamped, f"/objects/{n}/pose", on_pose(n), 10)
         found = [n for n in args.cups if n not in {x.split(":")[0] for x in lost}]
+        origin = _origins(args.cups)
         spin_until(lambda: all(n in box["poses"] for n in found))
         print(f"[rescan] 회차 {st.get('generation')} · {time.strftime('%H:%M:%S', time.localtime(t_round))}")
         for n in args.cups:
@@ -123,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             p, q = m.pose.position, m.pose.orientation
             tilt = math.degrees(math.acos(max(-1.0, min(1.0, 1 - 2 * (q.x * q.x + q.y * q.y)))))
-            warn = check_cup(n, (p.x, p.y, p.z), tilt)
+            warn = check_cup(n, (p.x, p.y, p.z), tilt, origin.get(n, CUP_ORIGIN_Z))
             print(f"  {n:11s} x {p.x:.3f} y {p.y:+.3f} z {p.z:.3f} 기울기 {tilt:.1f}° · 색 {info.get('color_score')} · "
                   f"흔들림 {info.get('spread_mm')} mm  {'✓' if not warn else '⚠ ' + ' · '.join(warn)}")
         return 1 if lost else 0

@@ -1822,7 +1822,7 @@ run:
     - episode_pick_place_right#1
     - episode_pick_place_right#0
   episode_pick_place_left:
-  - note: fake 물체 — /objects/source200_orange/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/shaker_c_orange/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -1833,7 +1833,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source200_orange/pose
+    - /objects/shaker_c_orange/pose
     background: true
   - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched)
     argv:
@@ -1913,7 +1913,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source200_orange/pose
+    - cup_topic:=/objects/shaker_c_orange/pose
     - -p
     - holder:=1
     - -p

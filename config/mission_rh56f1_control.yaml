@@ -72,8 +72,8 @@ stages:
   - head_home
   skippable: true
   touches_real: true
-  title: '컵 자세(arm4090 FP++) — RealSense · FP++ 컨테이너 하나(fpp_source200, 색으로 가르기 · 한 번 찍기: source200_pink=오른팔 · source200_orange=왼팔) → /objects/<물체>/pose
-    (base). GPU VRAM 약 2 GB'
+  title: '컵 자세(arm4090 FP++) — RealSense · FP++ 묶음 컨테이너(fpp_source200 · fpp_shaker_c, 묶음마다 하나 · 색 · 모양으로 가르기 · 한 번 찍기: source200_pink=오른팔 · shaker_c_orange=왼팔
+    · source200_orange) → /objects/<물체>/pose (base). GPU VRAM 컨테이너마다 약 2 GB'
 - id: cup_holders
   group: connect
   lane: both
@@ -275,7 +275,7 @@ stages:
   lane: both
   skippable: true
   touches_real: true
-  blocked: '붓기는 보류(10.07 사용자: 성공 전 정책은 직접 확인 뒤) — 실기 인지는 10.08 부터 색으로 두 컵(source200_pink=오른팔 · source200_orange=왼팔)을 낸다'
+  blocked: '붓기는 보류(10.07 사용자: 성공 전 정책은 직접 확인 뒤) — 실기 인지는 10.08 부터 색으로 두 컵(source200_pink=오른팔 · shaker_c_orange=왼팔 · source200_orange)을 낸다'
   needs:
   - home_right
   - home_left
@@ -601,12 +601,14 @@ run:
     argv: *id001
     execute_args:
     - --execute
-  - note: 카메라 + FP++ 켜기 — 컨테이너 fpp_source200 하나가 source200_pink=오른팔 · source200_orange=왼팔 를 차례로 한 번 찍는다. 이미 떠 있으면 그대로. 최대 150 s, 실패하면 이 단계도 실패
+  - note: 카메라 + FP++ 켜기 — 묶음 컨테이너(fpp_source200 · fpp_shaker_c)가 source200_pink=오른팔 · shaker_c_orange=왼팔 · source200_orange 를 차례로 한 번 찍는다. 이미
+      떠 있으면 그대로. 최대 150 s, 실패하면 이 단계도 실패
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - source200_pink
+    - shaker_c_orange
     - source200_orange
     - --wait
     - '150'
@@ -616,11 +618,11 @@ run:
     - python3
     - '{repo}/scripts/ops/fpp_rescan.py'
     - source200_pink
-    - source200_orange
+    - shaker_c_orange
     - --wait
     - '120'
   - note: ★컵 자세 확인(바로 위 추출 결과) — 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source200_pink(y
-      < 0) · 왼팔 source200_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090.yaml
+      < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090.yaml
       --write --head-config config/head_home_rh56f1.yaml)
     argv:
     - bash
@@ -915,7 +917,7 @@ run:
     stop:
     - policy_place_right#1
   policy_aglt_left:
-  - note: ★[left] 컵이 학습 배치(로봇 앞 x ≈ 0.25, y ≈ +0.20 ± 0.1)에 서 있고 콘솔에 컵 자세(/objects/source200_orange/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가.
+  - note: ★[left] 컵이 학습 배치(로봇 앞 x ≈ 0.25, y ≈ +0.20 ± 0.1)에 서 있고 콘솔에 컵 자세(/objects/shaker_c_orange/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가.
       정책은 팔을 스스로 움직이고 컵을 쥐어 든다 — 빈 컵만
     argv:
     - bash
@@ -927,7 +929,7 @@ run:
     - bash
     - -lc
     - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/left/episode
-      /policy_control/pd_left/applied /objects/source200_orange/pose' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start aglt_left
+      /policy_control/pd_left/applied /objects/shaker_c_orange/pose' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start aglt_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -951,7 +953,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source200_orange/pose
+    - cup_topic:=/objects/shaker_c_orange/pose
     - -p
     - cup_latch:=true
     - -p
@@ -1110,7 +1112,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source200_orange/pose
+    - cup_topic:=/objects/shaker_c_orange/pose
     - -p
     - holder:=1
     background: true
@@ -2047,7 +2049,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source200_orange/pose
+    - cup_topic:=/objects/shaker_c_orange/pose
     - -p
     - holder:=1
     background: true
@@ -2056,7 +2058,7 @@ run:
     - bash
     - -lc
     - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
-      /policy_control/status/episode_runner /policy_control/left/episode /episode/objects/CUP/pose /objects/source200_orange/pose /objects/cup_holder_1/pose
+      /policy_control/status/episode_runner /policy_control/left/episode /episode/objects/CUP/pose /objects/shaker_c_orange/pose /objects/cup_holder_1/pose
       /policy_control/pd_left/applied' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_pick_place_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
