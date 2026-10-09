@@ -38,10 +38,47 @@ DEFAULT_CLASS = 41                           # YOLO cup — 묶음 노드는 bot
 HUE_HALF_MIN = 7.0                           # 잰 hue 중앙 ± max(이것, 3σ)
 
 
-def convert_mesh(src: Path, dst: Path, origin_above_bottom: float | None, units: str = "auto") -> Path:
-    """CAD → FP++ 메쉬(m, z 위). 원점 = 바닥 + origin_above_bottom(없으면 높이 가운데), x · y 는 바닥 둘레 중심."""
+USD_SUFFIXES = (".usd", ".usda", ".usdc", ".usdz")
+
+
+def _load_usd(src: Path):
+    """USD(z) 의 모든 Mesh 를 세계 변환 · metersPerUnit 을 적용해 한 trimesh 로(m). 다각형 면은 부채꼴로 나눈다."""
     import trimesh
-    m = trimesh.load(str(src), force="mesh")
+    from pxr import Usd, UsdGeom
+    st = Usd.Stage.Open(str(src))
+    mpu = float(UsdGeom.GetStageMetersPerUnit(st) or 1.0)
+    verts, faces, base = [], [], 0
+    for prim in st.Traverse():
+        if not prim.IsA(UsdGeom.Mesh):
+            continue
+        g = UsdGeom.Mesh(prim)
+        pts = np.asarray(g.GetPointsAttr().Get() or [], float)
+        if not len(pts):
+            continue
+        M = np.asarray(UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default()), float)
+        pts = (np.column_stack([pts, np.ones(len(pts))]) @ M)[:, :3]          # USD 행 벡터 규약
+        counts = list(g.GetFaceVertexCountsAttr().Get() or [])
+        idx = list(g.GetFaceVertexIndicesAttr().Get() or [])
+        k = 0
+        for c in counts:
+            f = idx[k:k + c]
+            k += c
+            faces += [[base + f[0], base + f[j], base + f[j + 1]] for j in range(1, c - 1)]
+        verts.append(pts)
+        base += len(pts)
+    if not verts:
+        raise ValueError(f"{src}: Mesh 가 없다")
+    return trimesh.Trimesh(np.vstack(verts) * mpu, np.asarray(faces), process=False)
+
+
+def convert_mesh(src: Path, dst: Path, origin_above_bottom: float | None, units: str = "auto") -> Path:
+    """CAD(stl · obj · ply · usd · usdz) → FP++ 메쉬(m, z 위). 원점 = 바닥 + origin_above_bottom(없으면 높이 가운데),
+    x · y 는 바닥 둘레 중심. USD 는 stage 단위(metersPerUnit)를 따른다."""
+    import trimesh
+    if Path(src).suffix.lower() in USD_SUFFIXES:
+        m, units = _load_usd(Path(src)), "m"
+    else:
+        m = trimesh.load(str(src), force="mesh")
     ext = float(np.max(m.extents))
     scale = {"mm": 0.001, "m": 1.0}.get(units, 0.001 if ext > 2.0 else 1.0)    # auto: 2 m 넘으면 mm 로 본다
     m.apply_scale(scale)

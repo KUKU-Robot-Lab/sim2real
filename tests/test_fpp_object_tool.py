@@ -123,3 +123,26 @@ def test_activate_writes_the_side_mapping_the_mission_reads(repo):
     F.write_active(repo, group="bottle", right="bottle_pink", left="bottle_orange")
     doc = yaml.safe_load((repo / "config" / "fpp_active.yaml").read_text())
     assert doc == {"group": "bottle", "sides": {"right": "bottle_pink", "left": "bottle_orange"}}
+
+
+def test_a_usd_cad_in_mm_is_read_with_its_stage_units(repo, tmp_path):
+    """10.09 source200 은 STL 이 없고 usdz(mm, metersPerUnit 0.001) · step 뿐 — USD 도 그대로 받는다."""
+    pxr = pytest.importorskip("pxr")
+    from pxr import Usd, UsdGeom
+    path = tmp_path / "cad.usda"
+    st = Usd.Stage.CreateNew(str(path))
+    UsdGeom.SetStageMetersPerUnit(st, 0.001)
+    UsdGeom.SetStageUpAxis(st, UsdGeom.Tokens.z)
+    xf = UsdGeom.Xform.Define(st, "/root")
+    xf.AddTranslateOp().Set((0.0, 0.0, 50.0))                     # 변환도 적용해야 한다
+    box = trimesh.creation.box(extents=(60.0, 60.0, 200.0))        # mm, 가운데 원점
+    mesh = UsdGeom.Mesh.Define(st, "/root/body")
+    mesh.CreatePointsAttr([tuple(map(float, v)) for v in box.vertices])
+    mesh.CreateFaceVertexCountsAttr([3] * len(box.faces))
+    mesh.CreateFaceVertexIndicesAttr([int(i) for f in box.faces for i in f])
+    st.Save()
+    del pxr
+    out = F.convert_mesh(path, repo / "assets" / "meshes" / "cad.obj", origin_above_bottom=0.085)
+    m = trimesh.load(out)
+    assert m.bounds[0][2] == pytest.approx(-0.085, abs=1e-6) and m.bounds[1][2] == pytest.approx(0.115, abs=1e-6)
+    assert m.bounds[1][0] == pytest.approx(0.030, abs=1e-6)
