@@ -210,6 +210,8 @@ def main(argv=None) -> None:
             K = frame.intrinsics.matrix
             for d in out:
                 d["inside"] = T_base_cam is None or C.in_workspace(T_base_cam, C.mask_point(d["mask"], frame.depth, K), workspace)
+                d["points"] = (C.mask_points_base(d["mask"], frame.depth, K, T_base_cam)
+                               if T_base_cam is not None and d["inside"] else None)
             return out
 
         def _snapshot(self, frame, seq: int, todo: list[str]) -> None:
@@ -218,7 +220,10 @@ def main(argv=None) -> None:
                                for d, sc in zip(cands, C.scores(frame.rgb, [d["mask"] for d in cands]))]
             dets = [d for d in cands if d["inside"]]
             masks = [d["mask"] for d in dets]
-            pick = C.assign(frame.rgb, masks, {n: objects[n]["color"] for n in todo})
+            # 서 있는 모양(수평 퍼짐 ≤ 물체 바닥)인 후보만 — 누운 같은 색 물체를 버린다(10.09 핑크 병). aabb · 카메라 자세가 있을 때
+            allowed = {n: {i for i, d in enumerate(dets) if d["points"] is None or C.fits_footprint(d["points"], objects[n]["aabb"])}
+                       for n in todo if objects[n].get("aabb")}
+            pick = C.assign(frame.rgb, masks, {n: objects[n]["color"] for n in todo}, allowed=allowed)
             for name in todo:
                 if name not in pick:
                     self.info[name] = {"found": False, "why": "그 색 후보가 없다"}

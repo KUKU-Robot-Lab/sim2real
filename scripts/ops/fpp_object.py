@@ -184,6 +184,7 @@ def calib(repo: Path, name: str, camera_yaml: Path) -> dict[str, tuple[float, fl
     from object_registry import GROUP_WORKSPACE, _base_from_camera
     doc = yaml.safe_load((Path(repo) / DROPIN / f"{name}.yaml").read_text(encoding="utf-8"))
     names = list(doc["objects"])
+    aabb = doc["objects"][names[0]]["aabb"]
     rgb, depth, K = _grab()
     T = np.asarray(_base_from_camera(camera_yaml))
     h, s, v = C._hsv(rgb.reshape(-1, 3))
@@ -202,10 +203,13 @@ def calib(repo: Path, name: str, camera_yaml: Path) -> dict[str, tuple[float, fl
         if not C.in_workspace(T, p, GROUP_WORKSPACE):
             continue
         pb = T[:3, :3] @ p + T[:3, 3]
+        if not C.fits_footprint(C.mask_points_base(m, depth, K, T), aabb):
+            print(f"  (버림) y {pb[1]:+.3f} x {pb[0]:.3f} · 서 있는 {name} 보다 넓게 퍼졌다(누운 물체?)")
+            continue
         core = m & ndimage.binary_erosion(m, iterations=3) & ((s >= C.S_MIN) & (v >= C.V_MIN)).reshape(m.shape)
         ys.append(float(pb[1]))
         hues.append(hh[core] if core.any() else hh[m])
-        print(f"  덩어리 y {pb[1]:+.3f} x {pb[0]:.3f} · {int(m.sum())} px · hue {hue_stats(hues[-1])[0]:.1f}")
+        print(f"  덩어리 y {pb[1]:+.3f} x {pb[0]:.3f} z {pb[2]:.3f} · {int(m.sum())} px · hue {hue_stats(hues[-1])[0]:.1f}")
     measured = pair_left_to_right(ys, hues, names)
     set_hues(Path(repo), name, measured)
     return measured

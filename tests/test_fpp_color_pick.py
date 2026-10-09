@@ -183,3 +183,33 @@ def test_a_speckled_bottle_is_one_blob_not_its_brightest_rim():
     assert len(blobs) == 1
     ys, xs = np.nonzero(blobs[0])
     assert ys.min() <= 11 and ys.max() >= 88 and xs.min() <= 21 and xs.max() >= 58
+
+
+def _flat_scene_points(xy_len, z_len, n=2000, seed=0):
+    rng = np.random.default_rng(seed)
+    return np.column_stack([rng.uniform(0, xy_len, n), rng.uniform(0, 0.01, n), 0.25 + rng.uniform(0, z_len, n)])
+
+
+def test_a_standing_bottle_fits_its_footprint_and_a_lying_one_does_not():
+    """10.09: 테이블 오른쪽 끝에 누운 핑크 병(z 0.309)이 서 있는 병(z 0.365)과 높이로는 안 갈렸다 — 수평 퍼짐으로 가른다.
+    서 있으면 수평 폭 ≈ 지름(60 mm), 누우면 길이(240 mm)."""
+    aabb = ((-0.03, -0.03, -0.085), (0.03, 0.03, 0.155))
+    assert C.fits_footprint(_flat_scene_points(0.06, 0.20), aabb)
+    assert not C.fits_footprint(_flat_scene_points(0.24, 0.05), aabb)
+    assert not C.fits_footprint(np.zeros((3, 3)), aabb)              # 점이 너무 적다
+
+
+def test_mask_points_back_project_every_valid_pixel_to_base():
+    K = np.array([[600.0, 0, 100], [0, 600.0, 60], [0, 0, 1]])
+    depth = np.full((120, 200), 0.6)
+    m = np.zeros((120, 200), bool)
+    m[60, 100] = m[60, 160] = True
+    P = C.mask_points_base(m, depth, K, np.eye(4), step=1)
+    np.testing.assert_allclose(sorted(P[:, 0]), [0.0, 0.06], atol=1e-9)
+
+
+def test_assign_skips_candidates_an_object_does_not_allow():
+    img, masks = _scene((PINK_BOTTLE, (10, 50, 10, 40)), (PINK_BOTTLE, (10, 50, 60, 90)))
+    img[10:50, 10:40] = PINK_RIM                         # 첫 후보가 더 진하지만(누운 병) 허락되지 않는다
+    got = C.assign(img, masks, {"source240_pink": "pink"}, allowed={"source240_pink": {1}})
+    assert got == {"source240_pink": 1}

@@ -94,6 +94,35 @@ def mask_point(mask: np.ndarray, depth: np.ndarray, K: np.ndarray) -> np.ndarray
     return np.array([(u - K[0, 2]) * z / K[0, 0], (v - K[1, 2]) * z / K[1, 1], z])
 
 
+def mask_points_base(mask: np.ndarray, depth: np.ndarray, K: np.ndarray, T_base_cam: np.ndarray,
+                     step: int = 3) -> np.ndarray:
+    """마스크의 유효 깊이 화소(step 칸마다)를 base 점들(N×3)로."""
+    m = np.asarray(mask, bool) & (np.asarray(depth) > 0.05) & np.isfinite(depth)
+    ys, xs = np.nonzero(m)
+    ys, xs = ys[::step], xs[::step]
+    z = np.asarray(depth)[ys, xs]
+    pc = np.column_stack([(xs - K[0, 2]) * z / K[0, 0], (ys - K[1, 2]) * z / K[1, 1], z])
+    T = np.asarray(T_base_cam, float)
+    return pc @ T[:3, :3].T + T[:3, 3]
+
+
+FOOTPRINT_SCALE, FOOTPRINT_PAD = 1.5, 0.02
+
+
+def fits_footprint(points_base: np.ndarray, aabb, scale: float = FOOTPRINT_SCALE, pad: float = FOOTPRINT_PAD) -> bool:
+    """보이는 면의 수평 퍼짐(p5~p95)이 서 있는 물체의 바닥 크기 안인가 — 누운 · 쓰러진 같은 색 물체를 버린다(10.09 핑크 병).
+    한계 = 물체 aabb 의 수평 최대 폭 × scale + pad. 점이 20 개 미만이면 False."""
+    P = np.asarray(points_base, float)
+    if len(P) < 20:
+        return False
+    lo, hi = np.asarray(aabb[0], float), np.asarray(aabb[1], float)
+    limit = float(np.max(hi[:2] - lo[:2])) * scale + pad
+    c = np.median(P[:, :2], axis=0)
+    r = np.linalg.norm(P[:, :2] - c, axis=1)
+    spread = 2.0 * float(np.percentile(r, 95))
+    return spread <= limit
+
+
 def in_workspace(T_base_cam: np.ndarray, p_cam: np.ndarray | None, ws: dict) -> bool:
     """카메라 점을 base 로 바꿔 작업 영역 상자({x,y,z: [lo, hi]}) 안인가. 점이 없으면 False."""
     if p_cam is None:
@@ -117,11 +146,13 @@ def color_fraction(rgb: np.ndarray, mask: np.ndarray, color: str) -> float:
     return float((vivid & inside).sum()) / n
 
 
-def assign(rgb: np.ndarray, masks: list[np.ndarray], wanted: dict[str, str],
-           min_score: float = MIN_SCORE) -> dict[str, int]:
-    """물체 이름 → 검출 번호. 색 비율이 높은 짝부터 하나씩 — 한 검출은 한 물체에만, 문턱 못 넘는 물체는 뺀다."""
+def assign(rgb: np.ndarray, masks: list[np.ndarray], wanted: dict, min_score: float = MIN_SCORE,
+           allowed: dict[str, set[int]] | None = None) -> dict[str, int]:
+    """물체 이름 → 검출 번호. 색 비율이 높은 짝부터 하나씩 — 한 검출은 한 물체에만, 문턱 못 넘는 물체는 뺀다.
+    allowed[이름] 이 있으면 그 후보들만(서 있는 모양이 맞는 것 — fits_footprint)."""
     pairs = sorted(((color_fraction(rgb, m, color), name, i)
-                    for name, color in wanted.items() for i, m in enumerate(masks)), reverse=True)
+                    for name, color in wanted.items() for i, m in enumerate(masks)
+                    if allowed is None or name not in allowed or i in allowed[name]), reverse=True)
     out: dict[str, int] = {}
     used: set[int] = set()
     for score, name, i in pairs:
