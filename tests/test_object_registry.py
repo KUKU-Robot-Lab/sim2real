@@ -165,7 +165,11 @@ def test_source240_bottles_are_their_own_group_with_the_sim_origin():
     assert group_members(reg, "source240") == ["source240_orange", "source240_pink"]
     for n, color in (("source240_orange", "orange"), ("source240_pink", "pink")):
         spec = reg.get(n)
-        assert container_for(spec) == "fpp_source240" and spec.fpp["color"] == color
+        assert container_for(spec) == "fpp_source240"
+        # 색은 이름이거나 calib 가 잰 hue 구간 — 어느 쪽이든 그 색 이름의 대표 hue 를 품는다
+        import fpp_color_pick as C
+        mid = {"orange": 12.0, "pink": 160.0}[color]
+        assert any(lo <= mid <= hi for lo, hi in C.hue_ranges(spec.fpp["color"]))
         assert spec.fpp["cup_class_id"] == 39 and not spec.symmetry_flip and spec.origin_above_bottom_m == 0.085
     mesh = DEFAULT_REGISTRY.parent.parent / "assets" / "meshes" / "source240.obj"
     z = [float(line.split()[3]) for line in mesh.read_text().splitlines() if line.startswith("v ")]
