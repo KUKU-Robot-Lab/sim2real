@@ -48,3 +48,20 @@ def test_the_height_check_uses_each_objects_origin():
     """10.09 쉐이커 원점 = 높이 가운데(바닥 위 65 mm) — cyl60 값(85 mm)으로 보면 2 cm 낮다고 잘못 경고한다."""
     assert R.check_cup("shaker_c_orange", (0.25, 0.08, 0.270), 0.5, origin_above_bottom=0.065) == []
     assert any("z" in w for w in R.check_cup("shaker_c_orange", (0.25, 0.08, 0.270), 0.5))
+
+
+def test_statuses_from_several_group_containers_are_tracked_per_group():
+    """10.09 오른손 병(fpp_source200) · 왼손 쉐이커(fpp_shaker_c) — 두 컨테이너가 같은 상태 토픽에 낸다.
+    묶음마다 회차를 따로 보고, 물어본 물체가 든 묶음이 모두 새 회차에서 찾았을 때 끝."""
+    st = {}
+    R.merge_status(st, {"group": "source200", "generation": 2, "objects": {"source200_pink": {"found": True}}})
+    R.merge_status(st, {"group": "shaker_c", "generation": 1, "objects": {"shaker_c_orange": {"found": True}}})
+    names = ["source200_pink", "shaker_c_orange"]
+    assert R.groups_for(st, names) == {"source200": ["source200_pink"], "shaker_c": ["shaker_c_orange"]}
+    after = {"source200": 2, "shaker_c": 1}
+    assert not R.all_done(st, after, names)
+    R.merge_status(st, {"group": "source200", "generation": 3, "objects": {"source200_pink": {"found": True}}})
+    assert not R.all_done(st, after, names)
+    R.merge_status(st, {"group": "shaker_c", "generation": 2, "objects": {"shaker_c_orange": {"found": True}}})
+    assert R.all_done(st, after, names)
+    assert R.missing_names(st, ["source200_pink", "cyl60"]) == ["cyl60"]      # 어느 컨테이너에도 없다

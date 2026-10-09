@@ -225,7 +225,7 @@ def render_group_yaml(registry: Registry, group: str, camera_yaml: str | Path | 
         objs.append({"name": n, "color": f["color"], "mesh_path": str(f["mesh_path"]),
                      "mesh_scale_to_meters": float(f["mesh_scale_to_meters"]), "yolo_confidence": float(f["yolo_confidence"]),
                      "pose_topic": input_topic(n), "aabb": [list(v) for v in registry.get(n).aabb]})
-    body = {"objects": objs, "cup_class_id": int(registry.get(names[0]).fpp["cup_class_id"]),
+    body = {"group": group, "objects": objs, "cup_class_id": int(registry.get(names[0]).fpp["cup_class_id"]),
             "yolo_weights": "models/yolo/yolov8m-seg.pt", "tracking_config": "config/cup_tracking.yaml",
             "register_frames": 3, "republish_hz": 5.0, "retry_s": 3.0,
             "classes": sorted({*GROUP_CLASSES, *(int(registry.get(n).fpp["cup_class_id"]) for n in names)}),

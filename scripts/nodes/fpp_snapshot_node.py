@@ -82,6 +82,7 @@ def main(argv=None) -> None:
 
     objects = {o["name"]: o for o in cfg["objects"]}
     register_frames = int(cfg.get("register_frames", 3))
+    group_name = str(cfg.get("group") or "+".join(objects))      # 묶음 컨테이너가 여럿이면 상태를 가른다(10.09)
     classes = {int(c) for c in cfg.get("classes", [39, 41, 75])}       # bottle · cup · vase
     yolo_conf = float(cfg.get("yolo_conf", 0.05))
     blob_min_area = int(cfg.get("blob_min_area", 1500))
@@ -288,7 +289,7 @@ def main(argv=None) -> None:
 
         def _publish_status(self) -> None:
             with self.lock:
-                body = {"ok": not self.pending and not self.error, "generation": self.generation,
+                body = {"group": group_name, "ok": not self.pending and not self.error, "generation": self.generation,
                         "pending": sorted(self.pending), "error": self.error,
                         "objects": dict(self.info), "candidates": self.candidates}
             self.status_pub.publish(String(data=json.dumps(body, ensure_ascii=False)))

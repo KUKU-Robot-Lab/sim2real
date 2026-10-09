@@ -42,6 +42,33 @@ def round_done(status: dict, after: int, names: list[str]) -> bool:
     return int(status.get("generation", 0)) > after and all(objs.get(n, {}).get("found") for n in names)
 
 
+def merge_status(st: dict, status: dict) -> None:
+    """묶음별 최신 상태 — 묶음 컨테이너가 여럿이면 같은 토픽에 각자 낸다(10.09 병 + 쉐이커)."""
+    key = status.get("group") or "+".join(sorted(status.get("objects", {})))
+    st[key] = status
+
+
+def groups_for(st: dict, names: list[str]) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    for g, status in st.items():
+        mine = [n for n in names if n in status.get("objects", {})]
+        if mine:
+            out[g] = mine
+    return out
+
+
+def missing_names(st: dict, names: list[str]) -> list[str]:
+    """어느 컨테이너 상태에도 없는 물체."""
+    known = {n for status in st.values() for n in status.get("objects", {})}
+    return [n for n in names if n not in known]
+
+
+def all_done(st: dict, after: dict[str, int], names: list[str]) -> bool:
+    if missing_names(st, names):
+        return False
+    return all(round_done(st[g], after.get(g, 0), mine) for g, mine in groups_for(st, names).items())
+
+
 def missing(status: dict, names: list[str]) -> list[str]:
     objs = status.get("objects", {})
     return [f"{n}: {objs.get(n, {}).get('why', '상태 없음')}" for n in names if not objs.get(n, {}).get("found")]
@@ -84,8 +111,8 @@ def main(argv: list[str] | None = None) -> int:
 
     rclpy.init()
     node = rclpy.create_node("fpp_rescan")
-    box: dict = {"status": None, "poses": {}}
-    node.create_subscription(String, STATUS_TOPIC, lambda m: box.update(status=json.loads(m.data)), 10)
+    box: dict = {"st": {}, "poses": {}}
+    node.create_subscription(String, STATUS_TOPIC, lambda m: merge_status(box["st"], json.loads(m.data)), 10)
     pub = node.create_publisher(String, CMD_TOPIC, 10)
     t_end = time.monotonic() + args.wait
 
@@ -97,25 +124,29 @@ def main(argv: list[str] | None = None) -> int:
         return False
 
     try:
-        spin_until(lambda: box["status"] is not None)
-        action = first_action(box["status"])
-        if action == "wait_status":
-            print(f"[rescan] {STATUS_TOPIC} 가 {args.wait:.0f} s 안에 안 온다 — 묶음 FP++ 컨테이너(fpp_<묶음>)가 떠 있는가 · docker logs 로 확인", file=sys.stderr)
+        if not spin_until(lambda: not missing_names(box["st"], args.cups)):
+            print(f"[rescan] {', '.join(missing_names(box['st'], args.cups))} 를 내는 묶음 FP++ 컨테이너 상태가 {args.wait:.0f} s 안에 "
+                  "안 온다 — fpp_<묶음> 이 떠 있는가 · docker logs 로 확인", file=sys.stderr)
             return 1
-        after = int(box["status"].get("generation", 0))
-        if action == "command":
+        st = box["st"]
+        groups = groups_for(st, args.cups)
+        after = {g: int(st[g].get("generation", 0)) for g in groups}
+        again = [n for g, mine in groups.items() if first_action(st[g]) == "command" for n in mine]
+        if again:
             spin_until(lambda: pub.get_subscription_count() > 0)
-            pub.publish(String(data=",".join(args.cups)))
-            print(f"[rescan] 다시 찍기 요청 — {', '.join(args.cups)} (지난 회차 {after})")
-        else:
-            print("[rescan] FP++ 가 켜지며 찍는 첫 회차를 기다린다")
-        if not spin_until(lambda: round_done(box["status"], after, args.cups)):
-            st = box["status"] or {}
-            print(f"[rescan] {args.wait:.0f} s 안에 다 못 찾았다 — {' · '.join(missing(st, args.cups)) or st.get('pending')} · "
-                  f"오류 {st.get('error') or '-'}", file=sys.stderr)
+            pub.publish(String(data=",".join(again)))
+            print(f"[rescan] 다시 찍기 요청 — {', '.join(again)}")
+        if len(again) < len(args.cups):
+            print("[rescan] FP++ 가 켜지며 찍는 첫 회차를 기다린다 — " + ", ".join(n for n in args.cups if n not in again))
+        if not spin_until(lambda: all_done(box["st"], after, args.cups)):
+            lost = [x for g, mine in groups_for(box["st"], args.cups).items() for x in missing(box["st"][g], mine)]
+            errs = " · ".join(f"{g}: {s_.get('error')}" for g, s_ in box["st"].items() if s_.get("error"))
+            print(f"[rescan] {args.wait:.0f} s 안에 다 못 찾았다 — {' · '.join(lost) or '회차가 안 끝났다'} · 오류 {errs or '-'}",
+                  file=sys.stderr)
             return 1
-        st = box["status"]
-        lost = missing(st, args.cups)          # 끝났으면 빈 목록 — 시간 초과 쪽은 위에서 끝난다
+        st = box["st"]
+        info_of = {n: st[g]["objects"][n] for g, mine in groups_for(st, args.cups).items() for n in mine}
+        lost = []
         t_round = time.time()
 
         def on_pose(name):
@@ -127,9 +158,10 @@ def main(argv: list[str] | None = None) -> int:
         found = [n for n in args.cups if n not in {x.split(":")[0] for x in lost}]
         origin = _origins(args.cups)
         spin_until(lambda: all(n in box["poses"] for n in found))
-        print(f"[rescan] 회차 {st.get('generation')} · {time.strftime('%H:%M:%S', time.localtime(t_round))}")
+        rounds = ", ".join(f"{g} {st[g].get('generation')}" for g in groups)
+        print(f"[rescan] 회차 {rounds} · {time.strftime('%H:%M:%S', time.localtime(t_round))}")
         for n in args.cups:
-            info = st.get("objects", {}).get(n, {})
+            info = info_of.get(n, {})
             m = box["poses"].get(n)
             if m is None:
                 print(f"  {n:11s} 없음 — {info.get('why', 'base 자세가 안 온다(object_pose_node)')}")
