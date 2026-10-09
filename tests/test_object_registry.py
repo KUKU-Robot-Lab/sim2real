@@ -16,7 +16,8 @@ from object_registry import (  # noqa: E402
 
 def test_default_registry_loads_real_objects():
     reg = load_registry(DEFAULT_REGISTRY)
-    assert set(reg.names()) == {"shaker_closed", "cup_big_s100", "aglt_cup_s065", "cyl60", "cyl60_blue", "cyl60_pink", "cup_holder"}
+    assert set(reg.names()) == {"shaker_closed", "cup_big_s100", "aglt_cup_s065", "cyl60", "cyl60_blue", "cyl60_pink",
+                                 "source240_orange", "source240_pink", "cup_holder"}
     assert reg.get("shaker_closed").origin_above_bottom_m == pytest.approx(0.0921)
     assert reg.get("shaker_closed").symmetry_axis == (0.0, 0.0, 1.0)
     assert reg.get("cup_big_s100").symmetry_axis == (0.0, 1.0, 0.0)
@@ -154,3 +155,18 @@ def test_a_group_member_needs_a_known_colour(tmp_path):
     f.write_text(yaml.safe_dump(raw, allow_unicode=True))
     with pytest.raises(ValueError, match="color"):
         load_registry(f)
+
+
+def test_source240_bottles_are_their_own_group_with_the_sim_origin():
+    """10.09 사용자: 왼쪽 주황 · 오른쪽 핑크 source240 병. 핑크 cyl60 과 색이 겹치므로 묶음을 나눈다(bottles).
+    원점은 sim body 와 같은 바닥 위 85 mm — FP++ 메쉬 꼭짓점 z 가 −0.085 ~ +0.155 다."""
+    from object_registry import container_for, group_members
+    reg = load_registry(DEFAULT_REGISTRY)
+    assert group_members(reg, "bottles") == ["source240_orange", "source240_pink"]
+    for n, color in (("source240_orange", "orange"), ("source240_pink", "pink")):
+        spec = reg.get(n)
+        assert container_for(spec) == "fpp_bottles" and spec.fpp["color"] == color
+        assert spec.fpp["cup_class_id"] == 39 and not spec.symmetry_flip and spec.origin_above_bottom_m == 0.085
+    mesh = DEFAULT_REGISTRY.parent.parent / "assets" / "meshes" / "source240.obj"
+    z = [float(line.split()[3]) for line in mesh.read_text().splitlines() if line.startswith("v ")]
+    assert min(z) == pytest.approx(-0.085, abs=1e-4) and max(z) == pytest.approx(0.155, abs=1e-4)

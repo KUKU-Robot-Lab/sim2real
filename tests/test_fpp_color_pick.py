@@ -18,6 +18,10 @@ BLUE, BLUE_IN = (1, 135, 190), (0, 82, 165)
 YELLOW, YELLOW_RIM = (249, 195, 20), (253, 238, 0)
 PINK = (193, 96, 166)
 TABLE = (103, 112, 112)
+# 10.09 source240 병(PLA) 실측: 주황 몸통 · 속, 핑크 몸통 · 입구, 테이블 밖에 누운 보라 병
+ORANGE, ORANGE_IN = (183, 111, 24), (207, 76, 2)
+PINK_BOTTLE, PINK_RIM = (144, 88, 132), (159, 77, 130)
+LYING_PURPLE = (133, 86, 144)
 
 
 def _scene(*patches):
@@ -34,7 +38,8 @@ def _scene(*patches):
 
 
 @pytest.mark.parametrize("rgb, color", [(BLUE, "blue"), (BLUE_IN, "blue"), (YELLOW, "yellow"), (YELLOW_RIM, "yellow"),
-                                        (PINK, "pink")])
+                                        (PINK, "pink"), (ORANGE, "orange"), (ORANGE_IN, "orange"), (PINK_BOTTLE, "pink"),
+                                        (PINK_RIM, "pink")])
 def test_each_measured_cup_colour_scores_high_only_for_its_own_name(rgb, color):
     img, (m,) = _scene((rgb, (10, 60, 10, 60)))
     scores = {c: C.color_fraction(img, m, c) for c in C.COLORS}
@@ -132,3 +137,9 @@ def test_snapshot_config_needs_every_key_and_a_known_colour(tmp_path):
     f.write_text(json.dumps({"objects": []}))
     with pytest.raises(ValueError):
         N.load_config(f)
+
+
+def test_the_purple_bottle_lying_off_the_table_is_not_pink():
+    """10.09 사진: 테이블 밖에 누운 보라 병(hue 144)이 핑크 병(155~160)과 섞이지 않는다."""
+    img, (m,) = _scene((LYING_PURPLE, (10, 60, 10, 60)))
+    assert C.color_fraction(img, m, "pink") < 0.05

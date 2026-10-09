@@ -126,6 +126,46 @@ objects:
     aabb: [[-0.030, -0.030, -0.085], [0.030, 0.030, 0.085]]
     symmetry_axis: [0.0, 0.0, 1.0]
     symmetry_flip: true
+  source240_orange:
+    real: "주황 source240 병(PLA, 높이 240 · 몸통 Ø60 · 목 Ø30) — 10.09 사용자: 왼쪽 주황 · 오른쪽 핑크. rh_aglt 우 src21c 학습 물체"
+    # 묶음 bottles(컨테이너 fpp_bottles 하나, 한 번 찍기). YOLO 는 병을 bottle(39)로 잡는다 — cup(41) 이 아니다.
+    #   원점 = 바닥 위 85 mm(hdgp make_source_rl_asset.py · env source240_pla 와 같음). 메쉬도 그 원점으로 옮겨 두었다.
+    fpp:
+      mesh_path: assets/s2r_meshes/source240.obj
+      mesh_scale_to_meters: 1.0
+      cup_class_id: 39
+      detection_pick: bright
+      yolo_confidence: 0.1
+      group: bottles
+      color: orange
+    cad_to_body:
+      position: [0.0, 0.0, 0.0]
+      orientation_wxyz: [1.0, 0.0, 0.0, 0.0]
+    sim:
+      usd: hdgp/assets/source_cup/source_240_rl.usd
+      origin_above_bottom_m: 0.085
+    aabb: [[-0.030, -0.030, -0.085], [0.030, 0.030, 0.155]]
+    symmetry_axis: [0.0, 0.0, 1.0]     # 축대칭 · 위아래는 다르다(목) — 뒤집기 보정 안 함
+  source240_pink:
+    real: "핑크 source240 병(PLA, 높이 240 · 몸통 Ø60 · 목 Ø30) — 10.09 사용자: 왼쪽 주황 · 오른쪽 핑크. rh_aglt 우 src21c 학습 물체"
+    # 묶음 bottles(컨테이너 fpp_bottles 하나, 한 번 찍기). YOLO 는 병을 bottle(39)로 잡는다 — cup(41) 이 아니다.
+    #   원점 = 바닥 위 85 mm(hdgp make_source_rl_asset.py · env source240_pla 와 같음). 메쉬도 그 원점으로 옮겨 두었다.
+    fpp:
+      mesh_path: assets/s2r_meshes/source240.obj
+      mesh_scale_to_meters: 1.0
+      cup_class_id: 39
+      detection_pick: red
+      yolo_confidence: 0.1
+      group: bottles
+      color: pink
+    cad_to_body:
+      position: [0.0, 0.0, 0.0]
+      orientation_wxyz: [1.0, 0.0, 0.0, 0.0]
+    sim:
+      usd: hdgp/assets/source_cup/source_240_rl.usd
+      origin_above_bottom_m: 0.085
+    aabb: [[-0.030, -0.030, -0.085], [0.030, 0.030, 0.155]]
+    symmetry_axis: [0.0, 0.0, 1.0]     # 축대칭 · 위아래는 다르다(목) — 뒤집기 보정 안 함
   cup_holder:
     real: "검은 컵홀더 — hdgp/assets/cup_holder 형상 출력물(링 ⌀80/⌀70 · 테이블 끝 클램프), 테이블 왼쪽부터 0 · 1 · 2"
     # 10.03 사용자: 마커 추정(scripts/calib/cup_holder_pose.py)을 FP++ 로 재확인. YOLO(yolov8m-seg)는 홀더를 cup(41)으로
