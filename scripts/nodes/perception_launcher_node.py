@@ -80,10 +80,10 @@ def main() -> None:
     ap.add_argument("--camera-extrinsics", default=None,
                     help="묶음 FP++ 의 테이블 밖 후보 거르기에 쓰는 base←카메라(실기 외부 파라미터 yaml)")
     args = ap.parse_args()
-    registry = load_registry()
+    reg = {"now": load_registry()}       # 10.09 명령마다 다시 읽는다 — fpp_object.py add 로 물체를 더해도 런처를 다시 띄우지 않는다
 
     def group_of(name: str) -> str | None:
-        return registry.get(name).fpp.get("group")
+        return reg["now"].get(name).fpp.get("group")
     remote = RemoteExec(args.host)
 
     import rclpy
@@ -103,12 +103,26 @@ def main() -> None:
             self._pub = self.create_publisher(String, "/perception/status", 10)
             self.create_subscription(String, "/perception/cmd", self._on_cmd, 10)
             self.create_subscription(Float32, fpp_udp.CAMERA_HZ_TOPIC, self._on_cam, 5)
-            for name in registry.names():
-                self.create_subscription(PoseStamped, output_topic(name),
-                                         lambda _m, n=name: self._last_pose.__setitem__(n, time.monotonic()), 10)
+            self._watched: set[str] = set()
+            self._watch_poses()
             self.create_timer(1.0, self._publish_status)
             self.create_timer(args.poll, self._poll_remote)
             self._poll_remote()
+
+        def _watch_poses(self) -> None:
+            for name in reg["now"].names():
+                if name not in self._watched:
+                    self._watched.add(name)
+                    self.create_subscription(PoseStamped, output_topic(name),
+                                             lambda _m, n=name: self._last_pose.__setitem__(n, time.monotonic()), 10)
+
+        def _reload(self) -> None:
+            try:
+                reg["now"] = load_registry()
+            except (OSError, ValueError) as err:          # 고치는 중인 파일 — 옛 것으로 계속
+                self.get_logger().error(f"레지스트리 다시 읽기 실패(옛 것 유지): {err}")
+                return
+            self._watch_poses()
 
         def _on_cam(self, msg) -> None:
             self._camera = (time.monotonic(), float(msg.data))
@@ -125,14 +139,15 @@ def main() -> None:
         def _publish_status(self) -> None:
             now = time.monotonic()
             ages = {n: (round(now - self._last_pose[n], 3) if n in self._last_pose else None)
-                    for n in registry.names()}
+                    for n in reg["now"].names()}
             payload = build_status(self._state, fpp_udp.camera_hz_at(self._camera, now), ages, self._busy, self._error,
                                    group_of=group_of)
             self._pub.publish(String(data=json.dumps(payload, ensure_ascii=False)))
 
         def _on_cmd(self, msg: String) -> None:
+            self._reload()
             try:
-                cmd = parse_command(msg.data, registry)
+                cmd = parse_command(msg.data, reg["now"])
             except ValueError as err:
                 self._error = f"cmd: {err}"
                 self.get_logger().error(self._error)
@@ -165,12 +180,12 @@ def main() -> None:
             if kind == "fpp_up":
                 name = action[1]
                 path = f"{REMOTE_PARAMS}/{name}.yaml"
-                remote.put(render_fpp_yaml(registry.get(name)), path)
+                remote.put(render_fpp_yaml(reg["now"].get(name)), path)
                 out = remote.run("fpp_up.sh", name, path)
             elif kind == "fpp_group_up":
                 group = action[1]
                 path = f"{REMOTE_PARAMS}/group_{group}.yaml"
-                remote.put(render_group_yaml(registry, group, camera_yaml=args.camera_extrinsics), path)
+                remote.put(render_group_yaml(reg["now"], group, camera_yaml=args.camera_extrinsics), path)
                 out = remote.run("fpp_group_up.sh", group, path)
             elif kind == "viewer_up":
                 # viewer 단독 명령엔 물체 목록이 없다 — 떠 있는 컨테이너에서 이름을 되찾는다.
