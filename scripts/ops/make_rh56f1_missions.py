@@ -284,8 +284,8 @@ def _run(kind: str) -> dict:
               "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
         _cmd("FP++ 자세 수신기 — 영상 · FP++ 는 localhost 전용 DDS 에서 돌고 자세만 UDP(127.0.0.1)로 넘어온다",
              ["python3", "{repo}/scripts/nodes/fpp_pose_rx.py"], background=True),
-        _cmd(f"물체 자세 → base — arm4090 테이블 CAD 캘리브 외부 파라미터(+ depth z 보정). /objects/<컵>/pose({_cups_txt()})",
-             ["python3", "{repo}/scripts/nodes/object_pose_node.py", "--objects", *_cups(),
+        _cmd("물체 자세 → base — arm4090 테이블 CAD 캘리브 외부 파라미터(+ depth z 보정). /objects/<물체>/pose(레지스트리의 모든 물체)",
+             ["python3", "{repo}/scripts/nodes/object_pose_node.py",       # 레지스트리 전체 — 묶음을 바꿔도(activate) 다시 띄우지 않는다
               "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
         _cmd("FP++ 전 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)", HEAD_CHECK_ARGV, execute_args=["--execute"]),
         _cmd(f"카메라 + FP++ 켜기 — 컨테이너 fpp_{REAL_GROUP} 하나가 {_cups_txt()} 를 차례로 한 번 찍는다. 이미 떠 있으면 그대로. "

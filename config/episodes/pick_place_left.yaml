@@ -4,7 +4,7 @@ episode: {name: pick_place_left, version: 1}
 # SETTING = 공통 중간 자세: aglt 고정 목표 = rh_place · pour 인계 뱅크 시작(손에 든 컵 원점, base m — 정착 컵 원점 0.290 + 0.12)
 setting: {right: [0.25, -0.12, 0.41], left: [0.25, 0.12, 0.41]}
 objects:
-  CUP: {topic: /objects/cyl60_blue/pose}         # FP++ 파란 원통(cyl60_blue, 10.08 사용자: 왼쪽 파랑) — snapshot 이 처음 한 번 기록
+  CUP: {active: left}                         # config/fpp_active.yaml 의 left 물체(10.09 fpp_object.py activate) — snapshot 이 처음 한 번 기록
 holders: {CENTER_HOLDER: 1}                      # 좌우 놓기 학습 목표에 모두 드는 가운데 홀더
 holder_poses: config/cup_holder_poses_arm4090.yaml
 policies:

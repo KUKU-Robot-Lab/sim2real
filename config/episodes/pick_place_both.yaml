@@ -3,8 +3,8 @@
 episode: {name: pick_place_both, version: 1}
 setting: {right: [0.25, -0.12, 0.41], left: [0.25, 0.12, 0.41]}
 objects:
-  CUP_R: {topic: /objects/cyl60/pose}
-  CUP_L: {topic: /objects/cyl60_blue/pose}       # 왼쪽 파란 원통(10.08 레지스트리 cyl60_blue)
+  CUP_R: {active: right}
+  CUP_L: {active: left}                          # config/fpp_active.yaml
 holders: {RIGHT_HOLDER: 2, LEFT_HOLDER: 0}
 holder_poses: config/cup_holder_poses_arm4090.yaml
 policies:

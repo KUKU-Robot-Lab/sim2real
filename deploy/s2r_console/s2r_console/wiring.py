@@ -37,6 +37,7 @@ from .units import UnitCmd
 from object_registry import INPUT_NS, OUTPUT_NS, container_for, input_topic, load_registry, output_topic  # noqa: E402
 from policy_control.pd_backends import FORWARD_KINDS, forward_topic  # noqa: E402
 from policy_control.sources import split_role  # noqa: E402
+from policy_control.episode_spec import resolve_objects  # noqa: E402
 
 NS = "/policy_control"
 TOPIC = {"obs": f"{NS}/obs", "action": f"{NS}/action", "target": f"{NS}/joint_target", "episode": f"{NS}/episode",
@@ -367,7 +368,9 @@ def _episode_runner(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
     토픽으로는: FP++ 컵을 창 동안 모아 정지 자세를 기록 → 다시 낸다(relay) · 고정 홀더 자세 · aglt 목표.
     홀더와 목표는 다른 단계의 노드도 내므로 **이 단계 안에서만** 실행기가 내는 쪽이다.
     """
-    episode = yaml.safe_load(_resolve(cmd.args["episode"], repo).read_text(encoding="utf-8")) or {}
+    ep_path = _resolve(cmd.args["episode"], repo)
+    episode = yaml.safe_load(ep_path.read_text(encoding="utf-8")) or {}
+    episode["objects"] = resolve_objects(episode.get("objects") or {}, str(ep_path))   # {active: 팔} → 토픽(10.09)
     box = g.box(RUNNER_NODE.lstrip("/"), "episode_runner · 에피소드 실행기", L_OBS, status=RUNNER_NODE.lstrip("/"),
                 ros=[RUNNER_NODE], unit=key, own_status=True, stages=["snapshot", "정책 순서", "복구"],
                 note="정책 노드의 episode 서비스를 부른다 — 그림에는 토픽만 그린다")

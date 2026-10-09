@@ -169,7 +169,7 @@ def test_real_cups_run_fpp_on_this_pc_after_the_head_home_and_shutdown_takes_it_
     from object_registry import group_members, load_registry
     side = [ACTIVE_SIDES[s] for s in ("right", "left") if s in ACTIVE_SIDES]
     objs = " ".join(dict.fromkeys([*side, *group_members(load_registry(), ACTIVE_GROUP)]))
-    for want in ("perception_launcher_node.py --host local", "fpp_pose_rx.py", f"object_pose_node.py --objects {objs}",
+    for want in ("perception_launcher_node.py --host local", "fpp_pose_rx.py", "object_pose_node.py --camera-extrinsics",
                  "--camera-extrinsics", "global_camera_extrinsics_arm4090.yaml",
                  f"perception_ctl.py start {objs} --wait 150",
                  f"fpp_rescan.py {' '.join(side)} --wait 120"):        # 10.08 다시 실행 = 지금 카메라로 다시 찍기
@@ -363,7 +363,7 @@ def test_the_real_episode_stage_records_what_the_release_threshold_needs():
     start = next(c for c in cmds if "rh56f1_record.sh" in " ".join(c.argv) and "start" in " ".join(c.argv))
     line = " ".join(start.argv)
     for topic in ("/policy_control/status/rh_place_node_right", "/policy_control/status/episode_runner",
-                  "/policy_control/joint_target", "/objects/cyl60/pose", "/objects/cup_holder_1/pose"):
+                  "/policy_control/joint_target", f"/objects/{ACTIVE_SIDES['right']}/pose", "/objects/cup_holder_1/pose"):
         assert topic in line
     assert any(list(c.argv[-1:]) == ["stop"] and "rh56f1_record.sh" in " ".join(c.argv) for c in cmds)
     assert not any("rh56f1_record.sh" in " ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, "episode_pick_place_right"))

@@ -367,3 +367,25 @@ def test_the_view_carries_the_flow_and_what_happened_at_each_node():
     assert v["flow"]["nodes"][0]["id"] == "go_home_start"
     assert v["runs"]["pick_cup"]["n"] == 2 and v["runs"]["pick_cup"]["state"] == "done"
     assert v["runs"]["place_cup"]["state"] == "done" and v["runs"]["go_home_start"]["n"] == 2   # 되돌아가기도 센다
+
+
+def test_an_episode_object_can_follow_the_active_fpp_object_of_an_arm(tmp_path):
+    """10.09 사용자: cyl60 · source200 · source240 을 바꿔 가며 쓴다 — 에피소드 물체가 config/fpp_active.yaml 의 팔별 물체를
+    따른다(CUP: {active: right}). 활성을 바꾸면(fpp_object.py activate) 에피소드 파일은 그대로."""
+    (tmp_path / "episodes").mkdir()
+    (tmp_path / "fpp_active.yaml").write_text(yaml.safe_dump({"group": "g", "sides": {"right": "source200_pink",
+                                                                                     "left": "source200_orange"}}))
+    raw = _raw()
+    raw["objects"] = {"CUP": {"active": "right"}}
+    ep = S.parse(raw, path=str(tmp_path / "episodes" / "x.yaml"))
+    assert ep.objects["CUP"]["topic"] == "/objects/source200_pink/pose"
+    raw["objects"] = {"CUP": {"active": "middle"}}
+    with pytest.raises(S.EpisodeSpecError, match="active"):
+        S.parse(raw, path=str(tmp_path / "episodes" / "x.yaml"))
+
+
+def test_the_shipped_pick_place_episodes_follow_the_active_objects():
+    active = yaml.safe_load((REPO / "config" / "fpp_active.yaml").read_text())
+    for name, side in (("pick_place_right", "right"), ("pick_place_left", "left")):
+        ep = S.load(EPISODES / f"{name}.yaml")
+        assert ep.objects["CUP"]["topic"] == f"/objects/{active['sides'][side]}/pose"

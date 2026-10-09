@@ -124,6 +124,33 @@ def _node(raw: Mapping, i: int) -> Node:
                 checkpoint=raw.get("checkpoint"), result=raw.get("result"))
 
 
+#: 실기 FP++ 활성 물체(scripts/ops/fpp_object.py activate) — 에피소드 objects 의 {active: <팔>} 이 이것을 따른다(10.09)
+ACTIVE_FPP = "fpp_active.yaml"
+_REPO_CONFIG = Path(__file__).resolve().parents[3] / "config"
+
+
+def resolve_objects(raw_objs: Mapping, path: str) -> dict[str, dict]:
+    """{이름: {topic: ..}} 그대로, {이름: {active: right|left}} 는 config/fpp_active.yaml 의 그 팔 물체 토픽으로."""
+    out: dict[str, dict] = {}
+    active = None
+    for k, v in (raw_objs or {}).items():
+        o = dict(v or {})
+        if "active" in o:
+            side = o["active"]
+            if side not in SIDES:
+                raise EpisodeSpecError(f"objects.{k}: active 는 {SIDES} 중 하나")
+            if active is None:
+                cfg = (Path(path).resolve().parent.parent if path else _REPO_CONFIG) / ACTIVE_FPP
+                if not cfg.is_file():
+                    cfg = _REPO_CONFIG / ACTIVE_FPP
+                active = (yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}).get("sides") or {}
+            if side not in active:
+                raise EpisodeSpecError(f"objects.{k}: active {side} — {ACTIVE_FPP} 에 그 팔 물체가 없다")
+            o["topic"] = f"/objects/{active[side]}/pose"
+        out[str(k)] = o
+    return out
+
+
 def parse(raw: Mapping, *, path: str = "") -> Episode:
     if not isinstance(raw, Mapping) or "sequence" not in raw:
         raise EpisodeSpecError(f"{path}: episode · sequence 가 있어야 한다")
@@ -140,7 +167,7 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
         trajs[str(name)] = Trajectory(name=str(name), kind=str(t["kind"]), sides=tuple(t.get("sides") or ("right", "left")))
     ep = Episode(name=str(meta.get("name", Path(path).stem)), version=int(meta.get("version", 1)),
                  nodes=tuple(_node(n, i) for i, n in enumerate(raw["sequence"])), policies=pols, trajectories=trajs,
-                 objects={str(k): dict(v or {}) for k, v in (raw.get("objects") or {}).items()},
+                 objects=resolve_objects(raw.get("objects") or {}, path),
                  holders={str(k): int(v) for k, v in (raw.get("holders") or {}).items()},
                  setting={str(k): tuple(float(x) for x in v) for k, v in (raw.get("setting") or {}).items()},
                  failure_policy={str(k): int(v) for k, v in (raw.get("failure_policy") or {"default": 1}).items()},

@@ -16,8 +16,9 @@ from object_registry import (  # noqa: E402
 
 def test_default_registry_loads_real_objects():
     reg = load_registry(DEFAULT_REGISTRY)
-    assert set(reg.names()) == {"shaker_closed", "cup_big_s100", "aglt_cup_s065", "cyl60", "cyl60_blue", "cyl60_pink",
-                                 "source240_orange", "source240_pink", "cup_holder"}
+    # 10.09 물체는 fpp_object.py add 로 계속 늘어난다 — 지금까지 실기에서 쓴 것이 모두 있는지만 본다(사용자 "모두 사용 가능하게")
+    assert set(reg.names()) >= {"shaker_closed", "cup_big_s100", "aglt_cup_s065", "cyl60", "cyl60_blue", "cyl60_pink",
+                                "source240_orange", "source240_pink", "source200_orange", "source200_pink", "cup_holder"}
     assert reg.get("shaker_closed").origin_above_bottom_m == pytest.approx(0.0921)
     assert reg.get("shaker_closed").symmetry_axis == (0.0, 0.0, 1.0)
     assert reg.get("cup_big_s100").symmetry_axis == (0.0, 1.0, 0.0)

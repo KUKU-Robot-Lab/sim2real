@@ -1,5 +1,5 @@
 # 정책이 볼 FP++ 물체(묶음 · 팔별) — scripts/ops/fpp_object.py activate 가 쓴다. 미션 생성기가 읽는다.
-group: cups
+group: source200
 sides:
-  right: cyl60
-  left: cyl60_blue
+  right: source200_pink
+  left: source200_orange
