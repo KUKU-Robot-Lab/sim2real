@@ -14,7 +14,12 @@ objects:
       detection_pick: confidence
       yolo_confidence: 0.05
       group: source240b
-      color: blue
+      color:
+      - 93.0
+      - 107.0
+      hue_measured:
+      - 100.0
+      - 1.96
     cad_to_body:
       position:
       - 0.0
