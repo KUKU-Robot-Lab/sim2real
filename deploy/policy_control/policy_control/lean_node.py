@@ -12,9 +12,10 @@
 from __future__ import annotations
 
 
-def lean_node_kwargs() -> dict:
-    """Node.__init__ 에 넘길 인자 — 파라미터 서비스 끔(--ros-args -p 로 주는 값은 그대로 읽힌다)."""
-    return {"start_parameter_services": False}
+def lean_node_kwargs(*, parameter_services: bool = False) -> dict:
+    """Node.__init__ 에 넘길 인자 — 파라미터 서비스 끔(--ros-args -p 로 주는 값은 그대로 읽힌다).
+    parameter_services=True: 에피소드 실행기가 SetParameters 로 값을 넣는 노드(다물체 aglt, 10.12)만 켠다."""
+    return {"start_parameter_services": bool(parameter_services)}
 
 
 class LeanNodeMixin:

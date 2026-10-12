@@ -102,3 +102,10 @@ def test_the_grasp_episode_stage_does_not_wait_for_cup_holders(side):
         stages = {s["id"]: s for s in m["stages"]}
         assert "cup_holders" not in stages[f"episode_grasp_rg3_{side}"]["needs"]
         assert "cup_holders" in stages[f"episode_pick_place_{side}"]["needs"]
+
+
+def test_a_multi_object_policy_node_keeps_its_parameter_services():
+    """실행기가 reset 전에 노드 파라미터 object 를 SetParameters 로 넣는다 — lean 노드(서비스 끔)에는 그 서비스가 없다(10.12 실기)."""
+    from policy_control.lean_node import lean_node_kwargs
+    assert lean_node_kwargs() == {"start_parameter_services": False}
+    assert lean_node_kwargs(parameter_services=True) == {"start_parameter_services": True}
