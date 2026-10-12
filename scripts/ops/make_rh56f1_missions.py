@@ -539,6 +539,8 @@ def _episode_run(name: str, real: bool) -> list:
         extra += [EPISODE_RELAY.format(o) for o in ep.objects] + [o["topic"] for o in ep.objects.values()]
         extra += [f"/objects/cup_holder_{h}/pose" for h in sorted(set(ep.holders.values()))]
         extra += [f"/policy_control/pd_{s}/applied" for s in sides]       # 10.08 팔 지연 도구(arm_latency_report)가 쓴다
+        # ★10.12 실기: 관측 · 행동이 bag 에 없어 실패 원인(어느 입력이 정책을 sim 과 갈랐나)을 역산 · 재구성으로만 쟀다
+        extra += [f"/policy_control/{s}/{x}" for s in sides for x in ("obs", "action")]
         cmds.append(_cmd("기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더",
                          ["bash", "-lc", f"EXTRA='{' '.join(extra)}' bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh "
                                          f"start episode_{name}"]))
@@ -569,7 +571,8 @@ def _cpu_record(name: str) -> dict:
 def _record_start(name: str, sides: list, topics: list, objs: list | None = None) -> list[dict]:
     """단독 정책 단계 기록(실기) — bag(팔 · 손) + CPU. 팔 지연 도구가 쓰는 pd applied · 목표 · status 를 같이 싣는다(10.08)."""
     extra = ["/policy_control/joint_target", *(f"/policy_control/{x}" for s in sides for x in
-                                                (f"status/pd_{s}", f"status/rh_aglt_node_{s}", f"{s}/episode", f"pd_{s}/applied")),
+                                                (f"status/pd_{s}", f"status/rh_aglt_node_{s}", f"{s}/episode", f"pd_{s}/applied",
+                                                 f"{s}/obs", f"{s}/action")),      # 10.12 관측 · 행동도(실패 원인 재구성)
              *topics]
     # ★10.09 실기: 양팔 동시 — 이름마다 따로 기록(한 팔의 시작 · 끝이 다른 팔 기록을 끄지 않는다), 손 bag 은 그 팔 손만
     return [_cmd(f"기록 시작 — 팔 · 손 bag(rh56f1_record.sh {name}) · 팔 지연은 tools/arm_latency_report.py <bag>/arm",

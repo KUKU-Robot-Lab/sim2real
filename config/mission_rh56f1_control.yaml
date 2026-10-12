@@ -714,8 +714,8 @@ run:
     - bash
     - -lc
     - EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/right/episode
-      /policy_control/pd_right/applied /objects/source240b_blue/pose' HAND_SIDES='right' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start aglt_right
+      /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action /objects/source240b_blue/pose' HAND_SIDES='right'
+      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start aglt_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -964,8 +964,8 @@ run:
     - bash
     - -lc
     - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/left/episode
-      /policy_control/pd_left/applied /objects/shaker_c_orange/pose' HAND_SIDES='left' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start aglt_left
+      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action /objects/shaker_c_orange/pose' HAND_SIDES='left' bash
+      {repo}/deploy/policy_control/tools/rh56f1_record.sh start aglt_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -1998,7 +1998,8 @@ run:
     - -lc
     - EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
       /policy_control/status/episode_runner /policy_control/right/episode /episode/objects/CUP/pose /objects/source240b_blue/pose /objects/cup_holder_1/pose
-      /policy_control/pd_right/applied' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_pick_place_right
+      /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_pick_place_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -2109,7 +2110,8 @@ run:
     - -lc
     - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
       /policy_control/status/episode_runner /policy_control/left/episode /episode/objects/CUP/pose /objects/shaker_c_orange/pose /objects/cup_holder_1/pose
-      /policy_control/pd_left/applied' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_pick_place_left
+      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_pick_place_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -2196,8 +2198,8 @@ run:
     - bash
     - -lc
     - EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
-      /policy_control/status/episode_runner /policy_control/right/episode /episode/objects/CUP/pose /objects/source240b_blue/pose /policy_control/pd_right/applied'
-      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_rg3_right
+      /policy_control/status/episode_runner /policy_control/right/episode /episode/objects/CUP/pose /objects/source240b_blue/pose /policy_control/pd_right/applied
+      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_rg3_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -2283,8 +2285,8 @@ run:
     - bash
     - -lc
     - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
-      /policy_control/status/episode_runner /policy_control/left/episode /episode/objects/CUP/pose /objects/shaker_c_orange/pose /policy_control/pd_left/applied'
-      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_rg3_left
+      /policy_control/status/episode_runner /policy_control/left/episode /episode/objects/CUP/pose /objects/shaker_c_orange/pose /policy_control/pd_left/applied
+      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_rg3_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
