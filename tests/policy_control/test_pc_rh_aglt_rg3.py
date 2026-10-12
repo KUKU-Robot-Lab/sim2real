@@ -122,6 +122,8 @@ def test_the_contract_rebuilds_from_the_run_with_99(c, tmp_path):
     new, old = json.loads(out.read_text()), json.loads((run / "rh_aglt_contract.json").read_text())
     for d in (new, old):
         d.pop("run_dir"), d.pop("checkpoint")
+    if "actor_tactile_obs" not in old:              # 10.12 필드 전 계약 — 기본(촉각 있음)과 같아야 한다
+        assert new.pop("actor_tactile_obs") is True
     assert new == old
 
 

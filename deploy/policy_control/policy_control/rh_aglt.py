@@ -112,6 +112,9 @@ class RaContract:
     object_geometry: dict = field(default_factory=dict)  # 이름 → {origin_offset_z, mouth_z, bottom_z, radius, half_height}(hdgp obj_geometry)
     goal_force_consecutive: bool = False                 # 10.11 D6: 목표 근처 스텝을 연속으로만 센다(벗어나면 0)
     active_object: str = ""                              # select_object 결과(계약 파일에는 비어 있다 — 에피소드 reset 때 고른다)
+    # ★10.12 hdgp actor_tactile_obs(3a1f897f) — False 면 손끝 촉각 5 칸이 actor 에서 빠진다(sim 원위 마디 전체 합력 대 실기
+    #   손끝 패드라 분포가 다르다 · rg3 실기 재현 차이의 25~30 %). True = 이 필드 전 계약 전부.
+    actor_tactile_obs: bool = True
 
     def side(self, role: str = "arm") -> RaSide:
         return self.sides[role]
@@ -158,13 +161,20 @@ def hand_law(c: RaContract) -> RH.HandLaw:
                       freeze_threshold_n=c.freeze_threshold_n, hold="open")
 
 
-def obs_dim_of(c: RaContract | None = None) -> int:
-    """관측 폭 — 96 + 물체 one-hot K(object_names 가 있을 때)."""
-    return sum(w for _, w in ACTOR_LAYOUT) + (len(c.object_names) if c is not None else 0)
+def obs_dim_of(c: RaContract | None = None, *, tactile: bool | None = None) -> int:
+    """관측 폭 — 96(촉각 없으면 91) + 물체 one-hot K(object_names 가 있을 때)."""
+    return sum(w for _, w in actor_layout(c, tactile=tactile))
 
 
-def actor_layout(c: RaContract | None = None) -> tuple:
-    return ACTOR_LAYOUT + ((("object_id", len(c.object_names)),) if c is not None and c.object_names else ())
+def actor_layout(c: RaContract | None = None, *, tactile: bool | None = None) -> tuple:
+    """hdgp layout.actor_layout 과 같은 순서 — tactile 은 계약 actor_tactile_obs(없으면 True)."""
+    tac = (c.actor_tactile_obs if c is not None else True) if tactile is None else bool(tactile)
+    base = ACTOR_LAYOUT if tac else tuple(x for x in ACTOR_LAYOUT if x[0] != "tactile")
+    return base + ((("object_id", len(c.object_names)),) if c is not None and c.object_names else ())
+
+
+#: 학습 덤프가 가질 수 있는 actor 폭(촉각 있음 · 없음) — 물체 one-hot 은 따로 더한다
+ACTOR_BASE_DIMS = (obs_dim_of(tactile=True), obs_dim_of(tactile=False))
 
 
 def validate(c: RaContract) -> None:
@@ -283,8 +293,17 @@ def cup_geometry(env: Mapping) -> tuple[float, float]:
 def is_rh_aglt_run(env: Mapping) -> bool:
     """rh_place(hdgp open-rh_*_place)도 프로필 · 관측 96 · 행동 13 이 같다 — 홀더 키(target_holders)로 가른다(10.04)."""
     return (str(env.get("profile_name", "")).startswith("rh56f1_") and int(env.get("action_space", 0)) == 13
-            and int(env.get("observation_space", 0)) in (obs_dim_of(), obs_dim_of() + _k_obs(env))
+            and int(env.get("observation_space", 0)) in (_base_dim(env), _base_dim(env) + _k_obs(env))
             and "target_holders" not in env)
+
+
+def _actor_tactile(env: Mapping) -> bool:
+    """hdgp cfg actor_tactile_obs(10.12, 기본 True — 이 키 전 런 전부)."""
+    return bool(env.get("actor_tactile_obs", True))
+
+
+def _base_dim(env: Mapping) -> int:
+    return obs_dim_of(tactile=_actor_tactile(env))
 
 
 def _k_obs(env: Mapping) -> int:
@@ -306,7 +325,8 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
     env_p = Path(run_dir) / "params" / "env.yaml"
     env = read_env(env_p)
     if not is_rh_aglt_run(env):
-        raise RhAgltError(f"{env_p}: rh_aglt 런이 아니다(profile rh56f1_* · obs {obs_dim_of()} · action 13 · 홀더 키 없음 — rh_place 는 따로)")
+        raise RhAgltError(f"{env_p}: rh_aglt 런이 아니다(profile rh56f1_* · obs {_base_dim(env)}(+물체 one-hot) · action 13 · "
+                          "홀더 키 없음 — rh_place 는 따로)")
     return build_from_env(Path(run_dir), checkpoint, right_profile, urdf, asset=asset, env=env)
 
 
@@ -353,7 +373,11 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
     if not bool(cfg_a.get("normalize_input", False)):
         notes.append("normalize_input false")
     obj_names = object_ids(env)
-    base = obs_dim_of()
+    tactile = _actor_tactile(env)
+    base = obs_dim_of(tactile=tactile)
+    if not tactile:
+        notes.append(f"★actor 촉각 없음(actor_tactile_obs False): 관측 {base}(+물체 one-hot) — 손끝 촉각은 critic 에만. "
+                     "쥠 멈춤 · 쥔 판정은 여전히 촉각 · 관절 힘을 쓴다(디코더 · cup_attach)")
     if obj_names and int(env["observation_space"]) not in (base, base + len(obj_names)):
         raise RhAgltError(f"object_id_obs: observation_space {env['observation_space']} ≠ {base}(+{len(obj_names)})")
     geo = {k: object_geometry(k, float(env.get("cup_scale", 1.0))) for k in obj_names}
@@ -391,7 +415,7 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
         goal_delta_distance=float(env["goal_delta_distance"]), goal_success_steps=int(env["goal_success_steps"]),
         goal_tol=float(env["tol_floor"]), grasp_threshold_n=float(env["contact_force_threshold"]),
         hand_command=hand_cmd, hand_admittance=adm, object_names=obj_names, object_geometry=geo,
-        goal_force_consecutive=bool(env.get("goal_force_consecutive", False)))
+        goal_force_consecutive=bool(env.get("goal_force_consecutive", False)), actor_tactile_obs=tactile)
     validate(c)
     return c
 
@@ -501,8 +525,10 @@ def build_obs(c: RaContract, m: RaMeas, dec: RaDecoder, goal: Goal, prev_action:
              m.palm_pos, np.concatenate([m.palm_R[:, 0], m.palm_R[:, 1]]),
              m.cup_pos - m.palm_pos, quat_apply(m.cup_quat, np.array([0.0, 0.0, 1.0])), (tips - m.cup_pos).reshape(-1),
              (keypoints(c, m.cup_pos, m.cup_quat) - keypoints(c, goal.pos, goal.quat)).reshape(-1),
-             goal.pos - m.palm_pos, RH.tactile_obs(m.tactile_n, c.tactile_clip_n, c.tactile_tanh_n),
-             np.asarray(prev_action, float)]
+             goal.pos - m.palm_pos]
+    if c.actor_tactile_obs:                         # 10.12 actor_tactile_obs False 면 이 칸이 없다(hdgp layout)
+        parts.append(RH.tactile_obs(m.tactile_n, c.tactile_clip_n, c.tactile_tanh_n))
+    parts.append(np.asarray(prev_action, float))
     if c.object_names:                              # ★10.12 물체 one-hot — 모르면 거부(조용한 0 벡터 금지)
         if c.active_object not in c.object_names:
             raise RhAgltError(f"물체 one-hot: active_object {c.active_object!r} ∉ {list(c.object_names)} — select_object 먼저")
