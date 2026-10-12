@@ -212,7 +212,8 @@ class PlaceChain:
             a = np.concatenate([np.clip((self.start_q - st.arm_target) / self.c.k_arm, -1.0, 1.0), self._a_open])
         else:
             a = np.clip(np.asarray(self.policy.forward(obs), float), -self.c.action_clip, self.c.action_clip)
-        targets = self.dec.step(a, active=True, tactile_n=m.tactile_n)
+        hand_q = np.array([m.hand_q[j] for j in self.c.side().hand_joints], float)
+        targets = self.dec.step(a, active=True, tactile_n=m.tactile_n, hand_q=hand_q)
         f = self._fingers
         self.opened = float(np.mean(self._close_dir[f] * (self.hand0[f] - targets["arm"][1][f])))
         self.tact_max = float(np.max(np.asarray(m.tactile_n, float)))

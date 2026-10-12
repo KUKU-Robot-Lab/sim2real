@@ -50,6 +50,12 @@ EVENTS = ("reset", "start", "stop", "abort")
 CUP_STALE_S = 0.5
 
 
+def _chain_grasped(chain) -> bool | None:
+    """달리는 체인 디코더의 막힘 쥔 판정 — hand_block 계약이 아니거나 체인이 없으면 None(촉각 · 관절 힘 규칙)."""
+    fn = getattr(getattr(chain, "dec", None), "grasped", None)
+    return fn() if callable(fn) else None
+
+
 def _fresh(got):
     """(받은 시각, pos, quat, stamp) → CUP_STALE_S 안이면 (pos, quat, stamp), 아니면 None. 순수(시계만 본다)."""
     return None if got is None or time.monotonic() - got[0] > CUP_STALE_S else (got[1], got[2], got[3])
@@ -188,10 +194,11 @@ class AgltChain:
         obs = A.build_obs(self.c, m, self.dec, self.goal, self.prev)
         a = np.clip(np.asarray(self.policy.forward(obs), float), -self.c.action_clip, self.c.action_clip)
         active = self.step_i >= self.c.hold_steps
-        targets = self.dec.step(a, active=active, tactile_n=m.tactile_n)
+        hand_q = np.array([m.hand_q[j] for j in self.c.side().hand_joints], float)
+        targets = self.dec.step(a, active=active, tactile_n=m.tactile_n, hand_q=hand_q)
         if active:                                  # 학습 GoalState.step 도 대기 중에는 세지 않는다
-            g = None
-            if self.grasp_cfg is not None:                 # 배포: 부착과 같은 쥠 신호(손끝 또는 관절 힘), 손끝 문턱은 계약 값
+            g = self.dec.grasped()                  # ★10.12 hand_block 계약: 막힘 신호 쥔 판정(sim _grasp_flag 와 같은 식)
+            if g is None and self.grasp_cfg is not None:   # 이전 계약: 부착과 같은 쥠 신호(손끝 또는 관절 힘), 손끝 문턱은 계약 값
                 g = grasp_signal(m.tactile_n, m.joint_force, replace(self.grasp_cfg, force_n=self.c.grasp_threshold_n))
             self.goals.step(m.cup_pos, m.cup_quat, m.tactile_n, is_grasped=g)
         self.prev = np.clip(a, -1.0, 1.0)
@@ -459,7 +466,10 @@ class PourFjNode(LeanNodeMixin, Node):
                 t_palm = st.stamps.get("arm") or self.get_clock().now().nanoseconds * 1e-9   # 팔 상태 stamp = 손바닥 FK 시각
                 jf = None if st.joint_force is None or "joint_force" in st.stale else st.joint_force
                 before = est.source
-                out = est.step(grasp_signal(tact, jf, self.attach_cfg), float(t_palm), palm_pos, palm_R, live)
+                g = _chain_grasped(getattr(self, "chain", None))   # ★10.12 hand_block 계약: 직전 정책 틱의 막힘 쥔 판정(sim PalmAttach)
+                if g is None:
+                    g = grasp_signal(tact, jf, self.attach_cfg)
+                out = est.step(bool(g), float(t_palm), palm_pos, palm_R, live)
                 if est.source != before:                  # 붙고 뗀 순간을 로그로 — 상태(status.cup)에도 같은 값이 계속 실린다
                     self.get_logger().info(f"cup {role}: {before} → {est.source} · {est.as_dict()}")
                 return out
