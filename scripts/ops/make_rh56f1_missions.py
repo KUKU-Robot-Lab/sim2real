@@ -65,7 +65,7 @@ PLACE_HOLDER = {"right": 1, "left": 1}
 #: fake 홀더 y — hdgp rh_place env holder_ys(0.153, −0.002, −0.161)
 FAKE_HOLDER_Y = {0: 0.153, 1: -0.002, 2: -0.161}
 #: 상황판에서 굴리는 에피소드(10.04 사용자: 구분 실행 → 연속 실행) — config/episodes/<이름>.yaml, 실기에 쓸 수 있는 것만
-EPISODES = ("pick_place_right", "pick_place_left")
+EPISODES = ("pick_place_right", "pick_place_left", "grasp_rg3_right", "grasp_rg3_left")
 #: 에피소드 snapshot 이 다시 내는 정지 물체 자세(episode_ros.OBJECT_RELAY) — aglt 는 이것을 컵으로 본다
 EPISODE_RELAY = "/episode/objects/{}/pose"
 REAL_CUP_ORIGIN_Z = 0.085                 # 원점 높이(바닥 위) — 컵 자세 확인 문구

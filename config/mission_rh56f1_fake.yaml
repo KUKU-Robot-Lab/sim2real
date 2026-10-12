@@ -363,6 +363,26 @@ stages:
   - cup_holders
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 정책을 잇는다
   title: '[에피소드] pick_place_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → pick_cup → place_cup → go_home_end'
+- id: episode_grasp_rg3_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  needs:
+  - home_right
+  - cups
+  - cup_holders
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 정책을 잇는다
+  title: '[에피소드] grasp_rg3_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+- id: episode_grasp_rg3_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  needs:
+  - home_left
+  - cups
+  - cup_holders
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 정책을 잇는다
+  title: '[에피소드] grasp_rg3_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
 - id: shutdown
   group: finish
   lane: rig
@@ -1942,3 +1962,161 @@ run:
     - episode_pick_place_left#5
     - episode_pick_place_left#1
     - episode_pick_place_left#0
+  episode_grasp_rg3_right:
+  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '-0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/source240b_blue/pose
+    background: true
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_rg3_right.yaml
+    - --plan
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner)$'''
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_rg3mft) — SETTING 도달에 스스로 끝남 · 컵 = snapshot 재발행 · 쥐면 파지 시작 자세로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_right
+    - -p
+    - ns:=right
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_rg3mft/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - stop_on_target:=true
+    - -p
+    - cup_topic:=/episode/objects/CUP/pose
+    - -p
+    - cup_static:=true
+    - -p
+    - cup_latch:=true
+    - -p
+    - max_episode_s:=15.0
+    background: true
+  - note: 에피소드 실행기 — grasp_rg3_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_rg3_right)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -p
+    - episode:=config/episodes/grasp_rg3_right.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_rg3_right#5
+    - episode_grasp_rg3_right#4
+    - episode_grasp_rg3_right#0
+  episode_grasp_rg3_left:
+  - note: fake 물체 — /objects/shaker_c_orange/pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/shaker_c_orange/pose
+    background: true
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_rg3_left.yaml
+    - --plan
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner)$'''
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_rg3) — SETTING 도달에 스스로 끝남 · 컵 = snapshot 재발행 · 쥐면 파지 시작 자세로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_left
+    - -p
+    - ns:=left
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_rg3/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - stop_on_target:=true
+    - -p
+    - cup_topic:=/episode/objects/CUP/pose
+    - -p
+    - cup_static:=true
+    - -p
+    - cup_latch:=true
+    - -p
+    - max_episode_s:=15.0
+    background: true
+  - note: 에피소드 실행기 — grasp_rg3_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_rg3_left)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -p
+    - episode:=config/episodes/grasp_rg3_left.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_rg3_left#5
+    - episode_grasp_rg3_left#4
+    - episode_grasp_rg3_left#0

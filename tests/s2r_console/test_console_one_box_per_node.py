@@ -81,11 +81,12 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
     _, _, d = real
     aglt = d.box("rh_aglt_node_right")
     assert aglt.ros == ("/rh_aglt_node_right", "/rh_aglt_node_right_poll")    # 센서는 폴링 노드가 구독한다
-    assert set(aglt.units) == {"policy_aglt_right#4", "episode_pick_place_right#3"}   # 실기 단독 단계: 기록(bag · CPU · 영상) 세 줄 뒤(10.09)
+    assert set(aglt.units) == {"policy_aglt_right#4", "episode_pick_place_right#3", "episode_grasp_rg3_right#3"}   # 실기 단독 단계: 기록(bag · CPU · 영상) 세 줄 뒤(10.09)
     place = d.box("rh_place_node_right")
     assert set(place.units) == {"policy_place_right#1", "episode_pick_place_right#4"}
     runner = d.box("episode_runner")
-    assert set(runner.units) == {"episode_pick_place_right#7", "episode_pick_place_left#7"}   # 실기: 앞에 CPU 기록 한 줄(10.08)
+    assert set(runner.units) == {"episode_pick_place_right#7", "episode_pick_place_left#7",
+                              "episode_grasp_rg3_right#6", "episode_grasp_rg3_left#6"}   # 실기: 앞에 CPU 기록 한 줄(10.08)
 
 
 def test_one_arms_pd_without_and_with_publishing_is_one_box_and_only_the_quiet_one_mutes_the_drive(real):
@@ -100,7 +101,7 @@ def test_an_input_only_one_stage_uses_names_that_stage(real):
     _, _, d = real
     into = {(w.src, w.topic): w for w in d.wires if w.dst == "rh_aglt_node_right"}
     assert into[("object_pose", f"/objects/{_ACTIVE['sides']['right']}/pose")].units == ("policy_aglt_right#4",)   # 단독: FP++ 컵을 직접
-    assert into[("episode_runner", "/episode/objects/CUP/pose")].units == ("episode_pick_place_right#3",)
+    assert into[("episode_runner", "/episode/objects/CUP/pose")].units == ("episode_pick_place_right#3", "episode_grasp_rg3_right#3")
     assert not into[("hand_right_state", "/hand_right/joint_states")].units                       # 둘 다 쓴다 — 언제나
 
 
@@ -438,7 +439,7 @@ def test_the_fake_rh56f1_picture_has_the_real_pictures_boxes():
     titles = {b.title for b in real.boxes}
     # fake 에 없는 것: 인지(카메라 · FP++ · 런처 — 정지 컵을 fake 가 바로 낸다). fake 에만 있는 것: 막히지 않은 붓기 노드
     missing = {b.title for b in real.boxes} - {b.title for b in fake.boxes}
-    assert missing <= {"인지 런처 · local", "카메라 (RealSense)", *(f"FPP 추적 · {g}" for g in _active_groups())}, missing
+    assert missing <= {"인지 런처 · local", "카메라 (RealSense)", *(f"FPP 추적 · {g}" for g in (*_active_groups(), "source240b"))}, missing   # rg3 파지 에피소드의 오른 컵 = source240b
     extra = {b.title for b in fake.boxes} - titles
     assert extra <= {"pour_fj_node · 붓기 정책 (오른팔 · 왼팔)"}, extra
 

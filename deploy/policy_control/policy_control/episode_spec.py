@@ -21,7 +21,7 @@ snapshot = 10.04 사용자 "처음에 FP++ 로 각 컵들 배치를 한번에 �
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Mapping
 
@@ -183,6 +183,20 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
 
 def load(path: str | Path) -> Episode:
     return parse(yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}, path=str(path))
+
+
+def override_grasp_object(ep: Episode, *, policy_object: str = "", cup_object: str = "") -> Episode:
+    """★10.12 실행기 파라미터로 물체를 바꾼 새 에피소드 — policy_object 는 aglt 단계의 물체 one-hot 이름,
+    cup_object 는 FP++ 물체 이름(/objects/<이름>/pose). 빈 값은 YAML 기본을 둔다. 원본은 바꾸지 않는다.
+    계약에 없는 이름은 여기서 막지 않고 availability 가 이유를 댄다(시작 검사)."""
+    po, co = policy_object.strip(), cup_object.strip()
+    nodes = tuple(
+        replace(n, jobs=tuple(replace(j, policy_object=po) if po and ep.policies[j.role].kind == "aglt" else j for j in n.jobs))
+        for n in ep.nodes)
+    objects = {k: ({**o, "topic": f"/objects/{co}/pose"} if co else o) for k, o in ep.objects.items()}
+    if co and len(objects) != 1:
+        raise EpisodeSpecError(f"cup_object 는 물체가 하나인 에피소드에만({list(ep.objects)})")
+    return replace(ep, nodes=nodes, objects=objects)
 
 
 def validate(ep: Episode) -> None:

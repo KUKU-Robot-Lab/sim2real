@@ -78,12 +78,13 @@ def _main_node():
         def __init__(self) -> None:
             super().__init__(NAME)
             for name, default in (("episode", ""), ("robot", "rh56f1"), ("auto_approve", False),
-                                  ("approvals", str(APPROVALS))):
+                                  ("approvals", str(APPROVALS)), ("policy_object", ""), ("cup_object", "")):
                 self.declare_parameter(name, default)
             p = lambda n: self.get_parameter(n).value  # noqa: E731
             path = Path(str(p("episode")))
             path = path if path.is_absolute() else _paths.SIM2REAL / path
-            self.ep = S.load(path)
+            # ★10.12 rg3 파지 에피소드의 물체 바꾸기 — 빈 값 = YAML 기본(rg3 이면 시작 검사가 계약 물체인지 본다)
+            self.ep = S.override_grasp_object(S.load(path), policy_object=str(p("policy_object")), cup_object=str(p("cup_object")))
             self.auto = bool(p("auto_approve"))
             if self.auto and os.environ.get("ROS_DOMAIN_ID", "") in ("", "0", REAL_DOMAIN):
                 raise SystemExit(f"auto_approve 는 fake 도메인에서만 — ROS_DOMAIN_ID={os.environ.get('ROS_DOMAIN_ID')!r}")
