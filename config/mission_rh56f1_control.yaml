@@ -403,8 +403,7 @@ stages:
   needs:
   - home_right
   - cups
-  - cup_holders
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 정책을 잇는다
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 정책을 잇는다
   title: '[에피소드] grasp_rg3_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
 - id: episode_grasp_rg3_left
   group: policy
@@ -414,8 +413,7 @@ stages:
   needs:
   - home_left
   - cups
-  - cup_holders
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 정책을 잇는다
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 정책을 잇는다
   title: '[에피소드] grasp_rg3_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
 - id: shutdown
   group: finish
@@ -2161,8 +2159,7 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★[에피소드 grasp_rg3_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더  위가 비었는가 ·  가 있는가(cup_holders 단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다
+  - note: ★[에피소드 grasp_rg3_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
     argv:
     - bash
     - -lc
@@ -2249,7 +2246,7 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner)$'''
-  - note: ★[에피소드 grasp_rg3_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더  위가 비었는가 ·  가 있는가(cup_holders 단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★[에피소드 grasp_rg3_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
     argv:
     - bash
     - -lc

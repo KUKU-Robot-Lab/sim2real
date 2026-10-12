@@ -198,8 +198,9 @@ def _stages(kind: str) -> list[dict]:
         sides = sorted({b.side for b in ep.policies.values()})
         st.append({"id": f"episode_{name}", "group": "policy", "lane": f"arm_{sides[0]}", "skippable": True,
                    "touches_real": real,
-                   "needs": [*(f"home_{s}" for s in sides), "cups", "cup_holders"],
-                   "needs_why": "에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 정책을 잇는다",
+                   # 10.12 홀더가 없는 에피소드(파지 전용)는 홀더 자세 단계를 기다리지 않는다
+                   "needs": [*(f"home_{s}" for s in sides), "cups", *(["cup_holders"] if ep.holders else [])],
+                   "needs_why": "에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵" + (" · 고정 홀더 자세 파일" if ep.holders else "") + " 위에서 정책을 잇는다",
                    "title": f"[에피소드] {name} — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 "
                             f"진행: {' → '.join(n.id for n in ep.nodes if n.type != 'terminal')}"})
     st.append({"id": "shutdown", "group": "finish", "lane": "rig", "needs": ["drivers"], "touches_real": real,
@@ -500,9 +501,10 @@ def _episode_run(name: str, real: bool) -> list:
                       "--plan", *(["--require-holders"] if real else [])]))
     cmds.append(_cmd("시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)",
                      ["bash", "-lc", f"! ros2 node list 2>/dev/null | grep -E '^/({left}|episode_runner)$'"]))
-    cmds.append(_cmd(f"★[에피소드 {name}] 물체({', '.join(ep.objects)})가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 "
-                     f"{', '.join(f'{k}={v}' for k, v in ep.holders.items())} 위가 비었는가 · {ep.holder_poses} 가 있는가"
-                     "(cup_holders 단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다" if real else "fake — 확인만",
+    cmds.append(_cmd(f"★[에피소드 {name}] 물체({', '.join(ep.objects)})가 학습 배치에 서 있고 FP++ 가 잡고 있는가"
+                     + (f" · 홀더 {', '.join(f'{k}={v}' for k, v in ep.holders.items())} 위가 비었는가 · {ep.holder_poses} 가 있는가"
+                        "(cup_holders 단계 --write)" if ep.holders else "")
+                     + ". 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다" if real else "fake — 확인만",
                      ["bash", "-lc", "true"], manual=True))
     for role, b in ep.policies.items():
         e = entries.get(b.policy)

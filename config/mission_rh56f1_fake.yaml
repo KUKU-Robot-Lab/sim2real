@@ -370,8 +370,7 @@ stages:
   needs:
   - home_right
   - cups
-  - cup_holders
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 정책을 잇는다
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 정책을 잇는다
   title: '[에피소드] grasp_rg3_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
 - id: episode_grasp_rg3_left
   group: policy
@@ -380,8 +379,7 @@ stages:
   needs:
   - home_left
   - cups
-  - cup_holders
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 정책을 잇는다
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 정책을 잇는다
   title: '[에피소드] grasp_rg3_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
 - id: shutdown
   group: finish

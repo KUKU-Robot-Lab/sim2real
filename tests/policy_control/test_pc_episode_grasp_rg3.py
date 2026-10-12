@@ -92,3 +92,13 @@ def test_an_unknown_policy_object_is_refused_by_availability():
     assert "cyl60" in S.availability(bad, entries)["rh_aglt_r"]
     good = S.override_grasp_object(_ep("right"), policy_object="shaker_c_real", cup_object="")
     assert S.availability(good, entries)["rh_aglt_r"] == ""
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_the_grasp_episode_stage_does_not_wait_for_cup_holders(side):
+    import yaml
+    for kind in ("control", "fake"):
+        m = yaml.safe_load((REPO / "config" / f"mission_rh56f1_{kind}.yaml").read_text(encoding="utf-8"))
+        stages = {s["id"]: s for s in m["stages"]}
+        assert "cup_holders" not in stages[f"episode_grasp_rg3_{side}"]["needs"]
+        assert "cup_holders" in stages[f"episode_pick_place_{side}"]["needs"]
