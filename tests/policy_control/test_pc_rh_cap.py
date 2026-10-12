@@ -182,3 +182,46 @@ def test_node_family_is_registered():
     from policy_control import rh_cap_node  # noqa: F401
     from policy_control.pour_fj_node import FAMILIES, family_of
     assert family_of(FIX / "rh_cap_grasp_contract.json") == "rh_cap" and FAMILIES["rh_cap"].name == "rh_cap_node"
+
+
+class Close:
+    """팔 0 · 손 +1(닫기) — 막힘 신호 시험용."""
+    def forward(self, obs):
+        assert obs.shape == (91,)
+        return np.concatenate([np.zeros(7), np.ones(6)])
+
+    def reset(self):
+        pass
+
+
+@pytest.fixture(scope="module")
+def cgb() -> C.CapContract:
+    return C.load_contract(FIX / "rh_cap_grasp_hb_contract.json")
+
+
+def test_hb_contract_carries_block_definition(cgb):
+    """capg_j04 · caps_j01(10.12 hand_block 런) 계약 = 막힘 쥠 멈춤 · 쥔 판정 · 펌웨어 멈춤 없음."""
+    cs_hb = C.load_contract(FIX / "rh_cap_seat_hb_contract.json")
+    for c in (cgb, cs_hb):
+        assert c.hand_block and c.grasp_rule == "thumb_flex_and_any_finger"
+        assert c.hand_lead_cap_rad == pytest.approx(0.2) and c.actor_tactile_obs is False and c.obs_dim == 91
+
+
+def test_hb_grasp_uses_block_not_tactile(cgb, fk):
+    """hand_block 계약이면 손끝 촉각만으로는 쥔 판정이 서지 않고, 손이 막혀(실측이 q* 를 못 따라감) 있어야 선다."""
+    hand = np.asarray(cgb.side().hand_open, float)
+    cap = fk.palm_pose(Q_MID, hand).palm_pos + [0.0, 0.0, -0.06]
+    ch = C.CapChain(cgb, Zero())
+    ch.fk = fk
+    ch.reset(_meas(cgb, fk, Q_MID, hand, cap), receiver=(np.array([0.3, 0.12, 0.41]), np.array([1.0, 0, 0, 0])))
+    h = hand.copy()
+    for _ in range(40):                                     # 손이 q* 를 완전히 따라감 · 촉각 3 N — 막힘 없음
+        _, _, tg = ch.step(_meas(cgb, fk, Q_MID, h, cap, tact=(3.0, 3.0, 0.0, 0.0, 0.0)))
+        h = tg["arm"][1]
+    assert ch.g_streak == 0
+    ch2 = C.CapChain(cgb, Close())
+    ch2.fk = fk
+    ch2.reset(_meas(cgb, fk, Q_MID, hand, cap), receiver=(np.array([0.3, 0.12, 0.41]), np.array([1.0, 0, 0, 0])))
+    for _ in range(40):                                     # 닫으라는데 실측 손이 편 채로 멈춤 = 막힘
+        ch2.step(_meas(cgb, fk, Q_MID, hand, cap))
+    assert ch2.g_streak > 0

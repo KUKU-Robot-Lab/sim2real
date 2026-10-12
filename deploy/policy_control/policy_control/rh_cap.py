@@ -332,6 +332,9 @@ class CapChain:
         return np.asarray(palm_pos, float) + R @ self.rel[0], _quat_mul(_matrix_to_quat(R), self.rel[1])
 
     def _grasped(self, m) -> bool:
+        g = self.dec.grasped()                       # 10.12 hand_block 계약 = 막힘 신호 쥔 판정(sim _grasp_flag 와 같은 식)
+        if g is not None:
+            return bool(g)
         cfg = self.grasp_cfg or AttachCfg(force_n=self.c.grasp_threshold_n)
         return bool(grasp_signal(m.tactile_n, m.joint_force, replace(cfg, force_n=self.c.grasp_threshold_n)))
 
@@ -359,7 +362,8 @@ class CapChain:
                 a_arm = ik_lift_action(self.c, self.fk, m.arm_q, np.array([m.hand_q[j] for j in s.hand_joints]),
                                        st.arm_target, self.lift_p0, self.lift_R0, self.lift_t, self._lo, self._hi)
         a_out = np.concatenate([a_arm, np.clip(a[7:], -1.0, 1.0)])
-        targets = self.dec.step(a_out, active=True, tactile_n=m.tactile_n)
+        targets = self.dec.step(a_out, active=True, tactile_n=m.tactile_n,
+                                hand_q=np.array([m.hand_q[j] for j in s.hand_joints], float))
         g = self._grasped(m)
         self.g_streak = self.g_streak + 1 if g else 0
         ok = self._phase_ok(m)

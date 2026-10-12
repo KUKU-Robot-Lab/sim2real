@@ -92,7 +92,8 @@ def main() -> int:
 
     def tick() -> None:
         st["arm"] = st["arm"] + a * (tgt["arm"] - st["arm"])
-        st["hand"] = st["hand"] + a * (tgt["hand"] - st["hand"])
+        if not st["held"]:                         # 쥔 뒤 손가락은 캡에 막혀 멈춘다(실기 막힘 신호 쥠 멈춤 · 쥔 판정이 이걸 본다)
+            st["hand"] = st["hand"] + a * (tgt["hand"] - st["hand"])
         close = float(np.mean(np.abs(st["hand"][fingers] - np.asarray(s.hand_open)[fingers])))
         grip = close > args.grip_close
         P = fk.palm_pose(st["arm"], st["hand"])
