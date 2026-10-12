@@ -121,6 +121,10 @@ class RaContract:
     hand_block: dict = field(default_factory=dict)       # {g_rad, eps_rad, n_ticks, lag_ticks, axes}
     grasp_rule: str = ""                                 # "thumb_flex_and_any_finger"(hand_block 과 같이)
     hand_lead_cap_rad: float = 0.0                       # 학습 sim 의 손 목표 앞섬 상한 — 실기 pd HAND_MAX_LEAD 와 같아야 한다
+    # ★10.13 쥔 판정 유지(hdgp grasp_hold_rule, hand_block.GraspHoldNp). 빈 값 = 막힘 쥔 판정 그대로(10.12 계약).
+    grasp_hold_rule: str = ""                            # "block_follow_open"
+    grasp_release_open_rad: list = field(default_factory=list)   # (엄지굽힘, 검지, 중지, 약지, 새끼) [rad]
+    grasp_release_steps: int = 0
     # ★10.12 계열 고유 관측 칸(폭 1씩, 물체 one-hot 뒤) — rh_place 관측 래치("latch", hdgp extra_actor_obs). 값은 체인이 준다.
     extra_actor_obs: list = field(default_factory=list)
 
@@ -209,8 +213,8 @@ def validate(c: RaContract) -> None:
 
 def _validate_block(c: RaContract) -> None:
     if not c.hand_block:
-        if c.grasp_rule:
-            raise RhAgltError(f"grasp_rule {c.grasp_rule!r} 는 hand_block 과 같이 있어야 한다")
+        if c.grasp_rule or c.grasp_hold_rule:
+            raise RhAgltError(f"grasp_rule {c.grasp_rule!r} · grasp_hold_rule {c.grasp_hold_rule!r} 는 hand_block 과 같이 있어야 한다")
         return
     try:
         HB.HandBlockNp.from_contract(c.hand_block, c.side().hand_joints, c.side().hand_open, c.side().hand_grip)
@@ -218,6 +222,14 @@ def _validate_block(c: RaContract) -> None:
         raise RhAgltError(str(e)) from e
     if c.grasp_rule not in HB.GRASP_RULES:
         raise RhAgltError(f"grasp_rule {c.grasp_rule!r} — {HB.GRASP_RULES}")
+    if c.grasp_hold_rule:
+        if c.grasp_hold_rule not in HB.HOLD_RULES:
+            raise RhAgltError(f"grasp_hold_rule {c.grasp_hold_rule!r} — {HB.HOLD_RULES}")
+        try:
+            HB.GraspHoldNp(HB.HandBlockNp.from_contract(c.hand_block, c.side().hand_joints, c.side().hand_open,
+                                                        c.side().hand_grip), c.grasp_release_open_rad, c.grasp_release_steps)
+        except HB.HandBlockError as e:
+            raise RhAgltError(str(e)) from e
     from policy_control.pd_backends import HAND_MAX_LEAD
     if abs(float(c.hand_lead_cap_rad) - HAND_MAX_LEAD) > 1e-9:
         raise RhAgltError(f"hand_lead_cap_rad {c.hand_lead_cap_rad} ≠ 실기 pd HAND_MAX_LEAD {HAND_MAX_LEAD} — "
@@ -420,6 +432,10 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
                      + " · ".join(f"{k} {v}" for k, v in robust.items()))
     hand_cmd, adm = hand_command_of(env)
     block, grasp_rule, lead_cap = hand_block_of(env)
+    hold = grasp_hold_of(env, block)
+    if hold:
+        notes.append(f"★쥔 판정 유지(10.13 {hold['grasp_hold_rule']}): 막힘 쥔 판정이 한 번 참이면 유지 — 실측 손가락이 쥔 자세보다 "
+                     f"{hold['grasp_release_open_rad']} rad 이상 열리고 래치 없음 · 목표 따라감이 {hold['grasp_release_steps']} 틱 연속이면 풀림")
     if block:
         notes.append(f"★쥠 멈춤 · 쥔 판정 = 막힘 신호(hand_block {block} · {grasp_rule}) — 손끝 촉각 · 접촉력 문턱 대신. "
                      f"sim DR(배포는 따라 하지 않는다): G {env.get('hand_block_g_rad')} · ε {env.get('hand_block_eps_rad')} · "
@@ -450,7 +466,7 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
         goal_tol=float(env["tol_floor"]), grasp_threshold_n=float(env["contact_force_threshold"]),
         hand_command=hand_cmd, hand_admittance=adm, object_names=obj_names, object_geometry=geo,
         goal_force_consecutive=bool(env.get("goal_force_consecutive", False)), actor_tactile_obs=tactile,
-        hand_block=block, grasp_rule=grasp_rule, hand_lead_cap_rad=lead_cap)
+        hand_block=block, grasp_rule=grasp_rule, hand_lead_cap_rad=lead_cap, **hold)
     validate(c)
     return c
 
@@ -473,6 +489,17 @@ def hand_block_of(env: Mapping) -> tuple[dict, str, float]:
     cap = float(env.get("hand_lead_cap_rad", 0.0))
     block = dict(HAND_BLOCK_NOMINAL, lag_ticks=int(env["hand_block_lag_ticks"]), axes=list(HAND_BLOCK_AXES))
     return block, HB.GRASP_RULES[0], cap
+
+
+def grasp_hold_of(env: Mapping, block: dict) -> dict:
+    """hdgp grasp_hold_rule → 계약 키 dict. "none"(기본) · 키 없음이면 {}(10.12 계약 그대로)."""
+    rule = str(env.get("grasp_hold_rule", "none"))
+    if rule == "none":
+        return {}
+    if not block:
+        raise RhAgltError(f"grasp_hold_rule {rule!r} 인데 hand_block_enable 이 꺼져 있다")
+    return {"grasp_hold_rule": rule, "grasp_release_open_rad": [float(v) for v in env["grasp_release_open_rad"]],
+            "grasp_release_steps": int(env["grasp_release_steps"])}
 
 
 def select_object(c: RaContract, name: str | None) -> RaContract:
@@ -512,6 +539,8 @@ class RaDecoder:
         self.state: dict[str, _State] = {}
         self.block = (HB.HandBlockNp.from_contract(c.hand_block, s.hand_joints, s.hand_open, s.hand_grip)
                       if c.hand_block else None)
+        self.hold = (HB.GraspHoldNp(self.block, c.grasp_release_open_rad, c.grasp_release_steps)
+                     if self.block is not None and c.grasp_hold_rule else None)
         self.reset()
 
     def reset(self, arm_start: Sequence[float] | None = None, hand_start: Sequence[float] | None = None) -> None:
@@ -521,6 +550,8 @@ class RaDecoder:
         self.state = {"arm": _State(np.array(arm, float), np.array(hand, float))}
         if self.block is not None:
             self.block.reset()
+        if self.hold is not None:
+            self.hold.reset()
 
     def step(self, action: Sequence[float], *, active: bool, tactile_n: Sequence[float] | None = None,
              hand_q: Sequence[float] | None = None) -> dict[str, tuple[np.ndarray, np.ndarray]]:
@@ -537,6 +568,8 @@ class RaDecoder:
         if self.block is not None:                    # 10.12 막힘 쥠 멈춤 — 직전 q* 와 지금 실측(hdgp _pre_physics_step 순서)
             if hand_q is None:
                 raise RhAgltError("hand_block 계약: 디코더에 실측 손 각도(hand_q)가 필요하다")
+            if self.hold is not None:                 # 10.13 쥔 판정 유지 — 이번 block.step 전(sim tick 끝 색인)
+                self.hold.step(self.block.grasped(), st.hand_target, hand_q)
             freeze = self.block.step(st.hand_target, hand_q)
         else:
             freeze = self.law.touch_to_freeze(tactile_n)
@@ -545,7 +578,9 @@ class RaDecoder:
 
     def grasped(self) -> bool | None:
         """막힘 신호 쥔 판정(직전 step 기준) — hand_block 계약이 아니면 None(호출자가 촉각 · 관절 힘 규칙을 쓴다)."""
-        return None if self.block is None else self.block.grasped()
+        if self.block is None:
+            return None
+        return self.hold.hold if self.hold is not None else self.block.grasped()
 
 
 # ---------------------------------------------------------------- 관측

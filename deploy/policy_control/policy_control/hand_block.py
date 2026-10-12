@@ -27,6 +27,9 @@ FINGERS = ("index", "middle", "ring", "pinky")
 CELL_THUMB_FLEX, CELL_FINGER = 1.0 / 527.0, 1.0 / 550.0
 KEYS = ("g_rad", "eps_rad", "n_ticks", "lag_ticks", "axes")
 GRASP_RULES = ("thumb_flex_and_any_finger",)
+#: 10.13 쥔 판정 유지 규칙(hdgp grasp_hold_rule) — "none" 은 계약에 빈 값으로 둔다
+HOLD_RULES = ("block_follow_open",)
+HOLD_AXES = ("thumb_flex", "index", "middle", "ring", "pinky")   # grasp_release_open_rad 순서
 
 
 class HandBlockError(ValueError):
@@ -71,6 +74,7 @@ class HandBlockNp:
         self.h = len(names)
         self.axes = np.zeros(self.h, bool)
         self.axes[list(idx.values())] = True
+        self.idx = idx
         self.thumb_flex = idx["thumb_flex"]
         self.fingers = sorted(idx[f] for f in FINGERS if f in idx)
         sgn = np.sign(np.asarray(q_grip, float) - np.asarray(q_open, float))
@@ -123,3 +127,52 @@ class HandBlockNp:
     def as_dict(self) -> dict:
         return {"latch": self.latch.astype(int).tolist(), "lead": [round(float(v), 4) for v in self.lead],
                 "grasped": self.grasped()}
+
+
+class GraspHoldNp:
+    """10.13 쥔 판정 유지(grasp_hold_rule="block_follow_open") — hdgp hand_block.GraspHold 의 numpy 판(한 손).
+
+    막힘 쥔 판정(raw)은 정책 q* 가 1 틱만 여는 쪽으로 흔들려도 풀려 쥔 채 들고 있는 동안 22~35 % 만 참이었다(grasping 10.13).
+    hold 는 raw 가 한 번 참이면 켜지고, 실측 손가락이 마지막으로 쥔 자세 q_g 보다 축별 X 이상 열리고 · 막힘 래치 축이 없고 ·
+    대상 축이 모두 목표를 따라갈 때(free)가 release_steps 틱 연속이면 꺼진다. q_g 는 raw 가 참인 틱에만 갱신한다.
+
+    틱 순서(sim 과 같은 색인): 이번 틱 block.step 전에 step(raw = 직전 래치의 grasped(), q* = 직전 정책 손 목표, q = 지금 실측)
+    — sim 은 tick t 끝에서 (tick t 래치, q*_t, 물리 뒤 q_{t+1}) 로 계산한다.
+    """
+
+    def __init__(self, block: HandBlockNp, open_rad: Sequence[float], release_steps: int) -> None:
+        x = [float(v) for v in open_rad]
+        if len(x) != len(HOLD_AXES) or min(x) < 0 or not all(np.isfinite(x)):
+            raise HandBlockError(f"grasp_release_open_rad 는 {HOLD_AXES} 순 {len(HOLD_AXES)} 개(≥ 0): {list(open_rad)}")
+        if int(release_steps) < 1:
+            raise HandBlockError(f"grasp_release_steps ≥ 1: {release_steps}")
+        self.b = block
+        self.x = np.zeros(block.h)
+        for a, v in zip(HOLD_AXES, x):
+            if a in block.idx:
+                self.x[block.idx[a]] = v
+        self.steps = int(release_steps)
+        self.reset()
+
+    def reset(self) -> None:
+        self.hold = False
+        self.cnt = 0
+        self.q_g = np.zeros(self.b.h)
+
+    def step(self, raw: bool, q_star: Sequence[float], q: Sequence[float]) -> bool:
+        b = self.b
+        qq = b.quantize(np.asarray(q, float).reshape(-1))
+        s = np.asarray(q_star, float).reshape(-1)
+        if raw:
+            self.q_g = qq.copy()
+        self.hold = self.hold or bool(raw)
+        open_amt = (self.q_g - qq) * b.sgn
+        follow = ((s - qq) * b.sgn) < b.cfg.g_rad
+        no_latch = not (b.latch & b.axes).any()
+        ok_f = bool((follow | ~b.axes).all())
+        ok_o = bool(((open_amt >= self.x) | ~b.axes).all())
+        free = self.hold and not raw and no_latch and ok_f and ok_o
+        self.cnt = self.cnt + 1 if free else 0
+        if self.cnt >= self.steps:
+            self.hold, self.cnt = False, 0
+        return self.hold

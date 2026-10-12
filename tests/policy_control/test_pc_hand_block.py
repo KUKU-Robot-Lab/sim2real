@@ -214,3 +214,105 @@ def test_the_builder_reads_the_block_from_the_run_env():
         A.hand_block_of(dict(env, hand_firmware_stop_enable=True))
     with pytest.raises(A.RhAgltError, match="명목값"):
         A.hand_block_of(dict(env, hand_block_g_rad=[0.0145, 0.018]))             # 배포 G 12 칸을 sim 이 학습하지 않았다
+
+
+# ---------------------------------------------------------------- 10.13 쥔 판정 유지(grasp_hold_rule)
+HOLD_X = (0.0, 0.10, 0.10, 0.10, 0.10)
+
+
+def _hold_scenario(jitter_every: int = 4, open_at: int = 70, steps: int = 110):
+    """닫혀 막힌 뒤 q* 가 jitter_every 틱마다 여는 쪽으로 1 칸 흔들리고, open_at 부터 q* · 실측이 함께 연다."""
+    qs, qm = _scenario(stop_at=0.30, steps=60, lag=3)
+    sg = np.sign(Q_GRIP - Q_OPEN)
+    star, q = qs[-1].copy(), qm[-1].copy()
+    for t in range(60, steps):
+        if t < open_at:
+            s = star - (0.003 * sg if t % jitter_every == 0 else 0.0)
+            qs.append(s), qm.append(q.copy())
+        else:
+            star = np.maximum(star - 0.05 * sg, Q_OPEN) if (sg > 0).all() else star
+            q = np.where(sg * (q - star) > 0, star, q)              # 실측은 열린 목표를 바로 따라간다
+            qs.append(star.copy()), qm.append(q.copy())
+    return qs, qm
+
+
+def _run_np(hold_x=HOLD_X, steps=5):
+    b = _blk()
+    h = HB.GraspHoldNp(b, hold_x, steps)
+    raws, holds = [], []
+    prev = Q_OPEN.copy()
+    for s, q in zip(*_hold_scenario()):
+        holds.append(h.step(b.grasped(), prev, q))
+        b.step(prev, q)
+        raws.append(b.grasped())
+        prev = s
+    return raws, holds
+
+
+def test_the_hold_keeps_the_grasp_through_target_jitter_and_releases_when_the_fingers_open():
+    raws, holds = _run_np()
+    first = raws.index(True)
+    held = holds[first + 1: 70]
+    assert not all(raws[first:70])                       # 원 판정은 흔들림에 풀린다(고치려는 문제)
+    assert all(held)                                     # 유지 판정은 그동안 계속 참
+    assert holds[-1] is False                            # 손가락이 X 이상 열리면 풀린다
+
+
+def test_the_hold_stays_when_the_fingers_open_less_than_x():
+    _, holds = _run_np(hold_x=(0.0, 2.0, 2.0, 2.0, 2.0))
+    assert holds[-1] is True
+
+
+def test_the_hold_refuses_bad_settings_and_resets():
+    b = _blk()
+    for x, n in (((0.1,) * 4, 5), ((0.0, -0.1, 0.1, 0.1, 0.1), 5), (HOLD_X, 0)):
+        with pytest.raises(HB.HandBlockError):
+            HB.GraspHoldNp(b, x, n)
+    h = HB.GraspHoldNp(b, HOLD_X, 5)
+    h.hold = True
+    h.reset()
+    assert h.hold is False and h.cnt == 0
+
+
+def test_the_numpy_hold_matches_the_sim_torch_grasp_hold_tick_by_tick():
+    torch, tb = _torch_block()
+    mod = sys_modules_hdgp()
+    if not hasattr(mod, "GraspHold"):
+        pytest.skip("hdgp GraspHold 없음")
+    th = mod.GraspHold(tb, torch.tensor([0.0, *HOLD_X], dtype=torch.float32), 5)
+    b = _blk()
+    h = HB.GraspHoldNp(b, HOLD_X, 5)
+    f = lambda v: torch.tensor(v, dtype=torch.float32).unsqueeze(0)
+    qs, qm = _hold_scenario()
+    prev, sim_hold = Q_OPEN.copy(), False
+    for k, (s, q) in enumerate(zip(qs, qm)):
+        got = h.step(b.grasped(), prev, q)               # 배포: 이번 틱 block.step 전
+        if k:
+            assert got == sim_hold
+        b.step(prev, q)
+        tb.step(f(prev), f(q))                           # sim tick k: pre_physics 막힘 → 물리 → 쥔 판정(q_{k+1}, q*_k)
+        nxt = qm[k + 1] if k + 1 < len(qm) else q
+        sim_hold = bool(th.step(tb.grasped(), f(s), f(nxt))[0])
+        prev = s
+
+
+def sys_modules_hdgp():
+    import sys
+    return sys.modules["hdgp_hand_block"]
+
+
+def test_the_contract_and_decoder_use_the_hold_when_the_run_env_asks():
+    env = {"grasp_hold_rule": "block_follow_open", "grasp_release_open_rad": list(HOLD_X), "grasp_release_steps": 5}
+    assert A.grasp_hold_of({}, BLOCK) == {} and A.grasp_hold_of({"grasp_hold_rule": "none"}, BLOCK) == {}
+    with pytest.raises(A.RhAgltError, match="hand_block_enable"):
+        A.grasp_hold_of(env, {})
+    c = A.load_contract(RUN / "rh_aglt_contract.json")
+    hb = A.replace(c, hand_block=dict(BLOCK), grasp_rule=HB.GRASP_RULES[0], hand_lead_cap_rad=0.2,
+                   **A.grasp_hold_of(env, BLOCK))
+    A.validate(hb)
+    dec = A.RaDecoder(hb)
+    assert dec.hold is not None and dec.grasped() is False
+    with pytest.raises(A.RhAgltError, match="grasp_hold_rule"):
+        A.validate(A.replace(hb, grasp_hold_rule="magic"))
+    with pytest.raises(A.RhAgltError):
+        A.validate(A.replace(hb, grasp_release_open_rad=[0.1] * 4))
