@@ -7,7 +7,7 @@ setting: {left: [0.25, 0.12, 0.41]}
 objects:
   CUP: {topic: /objects/shaker_c_orange/pose}
 policies:
-  rh_aglt_l: {policy: rh56f1/aglt/left_rg3, kind: aglt, side: left}
+  rh_aglt_l: {policy: rh56f1/aglt/left_rg3s, kind: aglt, side: left}
 trajectories:
   go_home: {kind: rehome, sides: [left]}
 failure_policy: {default: 1}
