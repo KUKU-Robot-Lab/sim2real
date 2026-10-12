@@ -134,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"✗ 마스터 {binary} 가 없다 — bash tools/ethercat/build.sh 뒤 sudo setcap cap_net_raw,cap_net_admin=ep {binary}")
         return 1
     link = MasterLink(args.side)
-    margv = E.master_argv(binary, ifname, link.master_sock, link.node_sock, cfg, args.no_op)
+    margv = E.master_argv(binary, ifname, link.master_sock, link.node_sock, cfg, args.no_op, side=args.side)
 
     import rclpy
     from std_msgs.msg import Int32MultiArray, String

@@ -121,6 +121,7 @@ typedef struct {
 
 static adm_params_t g_adm;
 static adm_state_t g_adm_state;
+static adm_base_t g_adm_base;   /* ★10.12 빈손 힘 기준선(--adm-base, 없으면 n = 0 → 0) */
 
 static void hold(ctl_t *c, const int16_t *in) {
   for (int i = 0; i < 6; i++) c->sent[i] = c->target[i] = (int16_t)clampi(in[IN_ANGLE + i], ANG_LO[i], ANG_HI[i]);
@@ -139,7 +140,7 @@ static void write_outputs(ctl_t *c, int16_t *out) {
  * 명령 전(hold) 동안 지수 평균으로 잡는다(10.06 영점 보정 뒤 대부분 ±10 g). */
 static void control(ctl_t *c, const int16_t *in, double dt) {
   for (int i = 0; i < 6; i++) {
-    double force = in[IN_FORCE + i];
+    double force = in[IN_FORCE + i] - adm_base_g(&g_adm_base, i, in[IN_ANGLE + i]);   /* ★10.12 빈손 기준선을 뺀 접촉 성분 */
     if (!c->commanded) {
       g_adm_state.bias[i] += 0.01 * (force - g_adm_state.bias[i]);
       g_adm_state.y[i] = 0;
@@ -415,7 +416,8 @@ static int parse_adm(const char *txt, adm_params_t *p) {
     char *end;
     v[n++] = strtod(q, &end);
     if (end == q) return 0;
-    if (*end == ',') q = end + 1; else if (*end == '\0') q = end; else return 0;
+    if (*end == ',') { q = end + 1; if (!*q) return 0; }   /* 끝 쉼표 거부 */
+    else if (*end == '\0') q = end; else return 0;
   }
   if (n != 19 || *q) return 0;
   adm_params_t a = {v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11], v[12], {0}};
@@ -427,10 +429,42 @@ static int parse_adm(const char *txt, adm_params_t *p) {
   return 1;
 }
 
+/* --adm-base "n,knot_1..knot_n,slot0 n 개,...,slot5 n 개" — 매듭 오름차순(2 ≤ n ≤ ADM_BASE_MAX), 값 0~2000 g */
+static int parse_adm_base(const char *txt, adm_base_t *b) {
+  double v[1 + ADM_BASE_MAX * 7];
+  int cnt = 0;
+  const char *q = txt;
+  while (*q && cnt < (int)(sizeof v / sizeof v[0])) {
+    char *end;
+    v[cnt++] = strtod(q, &end);
+    if (end == q) return 0;
+    if (*end == ',') { q = end + 1; if (!*q) return 0; }   /* 끝 쉼표 거부 */
+    else if (*end == '\0') q = end; else return 0;
+  }
+  if (*q || cnt < 1) return 0;
+  int n = (int)v[0];
+  if (v[0] != n || n < 2 || n > ADM_BASE_MAX || cnt != 1 + 7 * n) return 0;
+  adm_base_t a = {0};
+  a.n = n;
+  for (int k = 0; k < n; k++) {
+    a.knot[k] = v[1 + k];
+    if (k > 0 && !(a.knot[k] > a.knot[k - 1])) return 0;
+  }
+  for (int i = 0; i < 6; i++)
+    for (int k = 0; k < n; k++) {
+      double g = v[1 + n + i * n + k];
+      if (!(g >= 0.0 && g <= 2000.0)) return 0;
+      a.g[i][k] = g;
+    }
+  *b = a;
+  return 1;
+}
+
 static void usage(const char *p) {
   fprintf(stderr, "usage: %s --ifname IF --master-sock P --node-sock P [--hz 1000] [--state-hz 100] [--speed 2000] "
                   "[--force 600] [--enable-value 1] [--hb-timeout-ms 500] [--no-op] [--op-enable] [--sync-type N] [--op-timeout-ms 3000] [--hz-op 1000] "
-                  "[--clear-error] [--current-limit mA[,x6]] [--finger-mode m[,x6]] [--force-calibrate] [--adm 19 values]\n", p);
+                  "[--clear-error] [--current-limit mA[,x6]] [--finger-mode m[,x6]] [--force-calibrate] [--adm 19 values] "
+                  "[--adm-base n,knots,6xn g]\n", p);
 }
 
 int main(int argc, char **argv) {
@@ -446,7 +480,7 @@ int main(int argc, char **argv) {
                                  {"force", 1, 0, 'f'},  {"enable-value", 1, 0, 'e'}, {"hb-timeout-ms", 1, 0, 't'},
                                  {"no-op", 0, 0, 'o'},  {"op-enable", 0, 0, 'E'}, {"sync-type", 1, 0, 'y'},
                                  {"op-timeout-ms", 1, 0, 'T'}, {"hz-op", 1, 0, 'H'},
-                                 {"clear-error", 0, 0, 'C'}, {"force-calibrate", 0, 0, 'K'}, {"adm", 1, 0, 'A'}, {"current-limit", 1, 0, 'L'}, {"finger-mode", 1, 0, 'M'},
+                                 {"clear-error", 0, 0, 'C'}, {"force-calibrate", 0, 0, 'K'}, {"adm", 1, 0, 'A'}, {"adm-base", 1, 0, 'B'}, {"current-limit", 1, 0, 'L'}, {"finger-mode", 1, 0, 'M'},
                                  {0, 0, 0, 0}};
   for (int c; (c = getopt_long(argc, argv, "", opts, NULL)) != -1;) {
     switch (c) {
@@ -469,6 +503,12 @@ int main(int argc, char **argv) {
       case 'A':
         if (!parse_adm(optarg, &g_adm)) {
           fprintf(stderr, "--adm: 숫자 13 개(k deadband tau_c tau_r f_max k_over rate_on rate max_off prox tip_on hold_band current_hold) + joints 6 개\n");
+          return 2;
+        }
+        break;
+      case 'B':
+        if (!parse_adm_base(optarg, &g_adm_base)) {
+          fprintf(stderr, "--adm-base: n(2~%d), 매듭 n 개(오름차순 레지스터), 슬롯 6 x n 개(0~2000 g)\n", ADM_BASE_MAX);
           return 2;
         }
         break;
@@ -518,6 +558,12 @@ int main(int argc, char **argv) {
          g_adm.k_over_g_per_reg, g_adm.rate_on_g, g_adm.rate_reg_s, g_adm.max_offset_reg, g_adm.proximal_scale, g_adm.tip_on_counts,
          g_adm.hold_band_g, g_adm.current_hold_ma,
          g_adm.joints[0], g_adm.joints[1], g_adm.joints[2], g_adm.joints[3], g_adm.joints[4], g_adm.joints[5]);
+  if (g_adm_base.n > 0)   /* ★10.12 빈손 기준선 — 주먹(첫 매듭) 값으로 표가 실렸는지 보인다 */
+    printf("[master] ADM_BASE 매듭 %d 개 %.0f~%.0f 칸, 주먹 g [%.0f, %.0f, %.0f, %.0f, %.0f, %.0f] — 힘에서 빼고 씀\n",
+           g_adm_base.n, g_adm_base.knot[0], g_adm_base.knot[g_adm_base.n - 1], g_adm_base.g[0][0], g_adm_base.g[1][0],
+           g_adm_base.g[2][0], g_adm_base.g[3][0], g_adm_base.g[4][0], g_adm_base.g[5][0]);
+  else
+    printf("[master] ADM_BASE 없음 — 힘 = force_actual − 쉼 값(10.12 전)\n");
   g_mode_thread_ok = pthread_create(&g_mode_thread, NULL, mode_worker, NULL) == 0;
   if (!g_mode_thread_ok) printf("[master] ⚠ 모드 전환 스레드를 못 띄움 — 실행 중 모드 전환 불가\n");
   ec_config_map(&IOmap);

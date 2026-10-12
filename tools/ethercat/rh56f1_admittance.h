@@ -66,6 +66,27 @@ static const adm_params_t ADM_DEFAULTS = {
     .joints = {1, 1, 1, 1, 1, 0}, /* 엄지 회전: 하중 때 힘 부호가 반대(10.06) — 위치 제어만 */
 };
 
+/* ★10.12 빈손 힘 기준선 b(각도) — force_actual 은 접촉이 없어도 닫을수록 커진다(빈손 주먹 145~236 g, 10.12 bag ·
+ * motion_acq 원격조작 기록). sim 어드민턴스는 컵 접촉력만 받으므로, 마스터가 힘에서 지금 각도의 b 를 빼고 쓴다
+ * (쉼 값 bias 도 뺀 값으로 잡는다 — 주먹에서 시작해도 bias ≈ 0). 매듭 = 레지스터 오름차순, 값 = g(편 손 0),
+ * 매듭 사이 선형, 범위 밖은 끝값. n = 0 이면 0(10.12 전 동작). 표는 sim2real deploy/policy_control/config/rh56f1_adm_baseline.yaml. */
+#define ADM_BASE_MAX 64
+typedef struct {
+  int n;
+  double knot[ADM_BASE_MAX];
+  double g[6][ADM_BASE_MAX];
+} adm_base_t;
+
+static inline double adm_base_g(const adm_base_t *b, int i, double reg) {
+  if (b->n <= 0) return 0.0;
+  if (reg <= b->knot[0]) return b->g[i][0];
+  if (reg >= b->knot[b->n - 1]) return b->g[i][b->n - 1];
+  int k = 1;
+  while (k < b->n - 1 && reg > b->knot[k]) k++;
+  double t = (reg - b->knot[k - 1]) / (b->knot[k] - b->knot[k - 1]);
+  return b->g[i][k - 1] + t * (b->g[i][k] - b->g[i][k - 1]);
+}
+
 /* 한 축 한 주기. target · actual = 레지스터, force = g, tip = 손끝 법선(0.01 N, 모르면 -1). 반환 = 보낼 레지스터. */
 static inline double adm_step(const adm_params_t *p, adm_state_t *s, int i, double dt, double target, double actual,
                               double force, double tip, double current) {

@@ -240,6 +240,7 @@ def _six(value, name: str, valid) -> list[int]:
 
 
 RL_WS = Path(__file__).resolve().parents[4]   # sim2real 의 부모(rl_ws) — robot_control 이 옆에 있다
+REPO = Path(__file__).resolve().parents[3]    # sim2real — adm_baseline 등 sim2real 기준 경로
 
 
 def _hand_module():
@@ -319,8 +320,37 @@ def parse_sdo_line(line: str) -> dict | None:
         return None
 
 
-def master_argv(binary: str, ifname: str, master_sock: str, node_sock: str, cfg: dict, no_op: bool) -> list[str]:
-    """마스터 실행 인자. cfg = rh56f1_ports.yaml 의 ethercat 블록."""
+ADM_BASE_MAX = 64          # rh56f1_admittance.h ADM_BASE_MAX
+ADM_BASE_G_MAX = 2000.0
+
+
+def adm_base_arg(path: Path, side: str) -> str:
+    """빈손 기준선 표(yaml: knots · <side>.slots 6 × n) → 마스터 --adm-base 문자열 "n,knots,slot0..slot5". 잘못된 표는 거부."""
+    raw = yaml.safe_load(Path(path).read_text()) or {}
+    knots = [float(k) for k in raw.get("knots") or []]
+    n = len(knots)
+    if not 2 <= n <= ADM_BASE_MAX or any(b <= a for a, b in zip(knots, knots[1:])):
+        raise EcatError(f"{path}: knots 는 2~{ADM_BASE_MAX} 개 오름차순 — {knots[:5]}…")
+    slots = (raw.get(side) or {}).get("slots")
+    if not isinstance(slots, list) or len(slots) != 6 or any(len(r) != n for r in slots):
+        raise EcatError(f"{path}: {side}.slots 는 6 줄 × 매듭 {n} 개")
+    vals = [float(v) for r in slots for v in r]
+    if not all(0.0 <= v <= ADM_BASE_G_MAX for v in vals):
+        raise EcatError(f"{path}: 기준선 값은 0~{ADM_BASE_G_MAX:g} g")
+    return ",".join([str(n)] + [f"{k:g}" for k in knots] + [f"{v:g}" for v in vals])
+
+
+def binary_knows(binary: str, option: str) -> bool:
+    """마스터 실행 파일에 긴 옵션 이름이 박혀 있는지(getopt 표). 파일이 없으면 판단 보류 = True(존재 확인은 호출자)."""
+    path = Path(binary)
+    if not path.is_file():
+        return True
+    return option.encode() + b"\0" in path.read_bytes()
+
+
+def master_argv(binary: str, ifname: str, master_sock: str, node_sock: str, cfg: dict, no_op: bool,
+                side: str | None = None) -> list[str]:
+    """마스터 실행 인자. cfg = rh56f1_ports.yaml 의 ethercat 블록. side 가 있으면 그 손의 빈손 기준선(adm_baseline)도."""
     argv = [binary, "--ifname", ifname, "--master-sock", master_sock, "--node-sock", node_sock,
             "--hz", str(float(cfg.get("cycle_hz", 1000))), "--state-hz", str(float(cfg.get("state_hz", 100))),
             "--speed", str(int(cfg.get("speed", 2000))), "--force", str(int(cfg.get("force", 600))),
@@ -343,6 +373,13 @@ def master_argv(binary: str, ifname: str, master_sock: str, node_sock: str, cfg:
             argv += ["--adm", _hand_module().AdmParams.from_cfg(adm).argv()]
         except ValueError as e:
             raise EcatError(str(e)) from e
+        if cfg.get("adm_baseline") and side is not None:      # ★10.12 빈손 힘 기준선(손마다)
+            base = adm_base_arg(REPO / str(cfg["adm_baseline"]), side)
+            if binary_knows(binary, "adm-base"):
+                argv += ["--adm-base", base]
+            else:   # 10.12 전 빌드는 이 인자를 모르고 종료한다 — 빼고 띄우되 크게 알린다
+                print(f"⚠ 마스터 {binary} 가 --adm-base 를 모른다(옛 빌드) — 빈손 기준선 없이 띄운다. "
+                      "bash tools/ethercat/build.sh 뒤 sudo setcap 하면 들어간다")
     if not 50 <= float(cfg.get("cycle_hz", 1000)) <= 4000:
         raise EcatError("cycle_hz 는 50~4000")
     if not 0 < float(cfg.get("state_hz", 100)) <= float(cfg.get("cycle_hz", 1000)):
