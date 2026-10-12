@@ -72,4 +72,5 @@ def test_a_no_tactile_run_is_recognised_and_its_flag_is_read():
     nt = dict(env, actor_tactile_obs=False, observation_space=91)
     assert A.is_rh_aglt_run(nt) and A._actor_tactile(nt) is False and A._base_dim(nt) == 91
     assert A.is_rh_aglt_run(dict(nt, observation_space=94))         # 해석 뒤 값(+물체 one-hot)도
-    assert not A.is_rh_aglt_run(dict(nt, observation_space=96))     # 촉각을 뺐다면서 96 이면 거부
+    assert A.is_rh_aglt_run(dict(nt, observation_space=96))         # 10.13 rg3s: hdgp 는 해석 전 cfg 기본값 96 을 덤프한다
+    assert not A.is_rh_aglt_run(dict(nt, observation_space=97))     # 그 밖의 폭은 거부

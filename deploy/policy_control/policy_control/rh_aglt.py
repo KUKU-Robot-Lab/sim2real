@@ -332,8 +332,15 @@ def cup_geometry(env: Mapping) -> tuple[float, float]:
 def is_rh_aglt_run(env: Mapping) -> bool:
     """rh_place(hdgp open-rh_*_place)도 프로필 · 관측 96 · 행동 13 이 같다 — 홀더 키(target_holders)로 가른다(10.04)."""
     return (str(env.get("profile_name", "")).startswith("rh56f1_") and int(env.get("action_space", 0)) == 13
-            and int(env.get("observation_space", 0)) in (_base_dim(env), _base_dim(env) + _k_obs(env))
-            and "target_holders" not in env)
+            and _dumped_obs_ok(env) and "target_holders" not in env)
+
+
+def _dumped_obs_ok(env: Mapping, extra: int = 0) -> bool:
+    """덤프된 observation_space 가 이 런의 관측 폭으로 읽히는가. hdgp 는 env 초기화 전 cfg 기본값(96, 촉각 있음)을
+    덤프한다 — 10.13 rg3s(actor_tactile_obs False, 실제 94)도 96 으로 남았다. 실제 폭은 촉각 · 물체에서 다시 계산하고,
+    체크포인트 running_mean 폭이 다르면 정책 로드에서 막힌다."""
+    base, k = _base_dim(env), _k_obs(env)
+    return int(env.get("observation_space", 0)) in (base, base + k, base + k + extra, obs_dim_of(tactile=True))
 
 
 def _actor_tactile(env: Mapping) -> bool:
@@ -418,7 +425,7 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
     if not tactile:
         notes.append(f"★actor 촉각 없음(actor_tactile_obs False): 관측 {base}(+물체 one-hot) — 손끝 촉각은 critic 에만. "
                      "쥠 멈춤 · 쥔 판정은 여전히 촉각 · 관절 힘을 쓴다(디코더 · cup_attach)")
-    if obj_names and int(env["observation_space"]) not in (base, base + len(obj_names), base + len(obj_names) + extra_obs):
+    if obj_names and not _dumped_obs_ok(env, extra_obs):
         raise RhAgltError(f"object_id_obs: observation_space {env['observation_space']} ≠ {base}(+{len(obj_names)})")
     geo = {k: object_geometry(k, float(env.get("cup_scale", 1.0))) for k in obj_names}
     if obj_names:
