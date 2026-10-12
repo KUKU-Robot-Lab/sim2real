@@ -9,8 +9,8 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from object_registry import (  # noqa: E402
-    DEFAULT_REGISTRY, container_name, extrinsics_for, input_topic, load_registry,
-    output_topic, render_fpp_yaml, status_topic,
+    DEFAULT_REGISTRY, container_name, extrinsics_for, input_topic, live_input_topic, live_output_topic,
+    load_registry, output_topic, render_fpp_yaml, status_topic,
 )
 
 
@@ -58,6 +58,14 @@ def test_topic_and_container_names_follow_convention():
     assert status_topic("shaker_closed") == "/perception_plus_plus/shaker_closed/tracking_status"
     assert output_topic("shaker_closed") == "/objects/shaker_closed/pose"
     assert container_name("shaker_closed") == "fpp_shaker_closed"
+
+
+def test_live_tracking_topics_sit_next_to_the_pose_topics():
+    """10.12 사용자(A안): 쥘 때까지 FP++ live 추적을 정책이 받는다 — snapshot 노드가 /…/<물체>/live_pose(카메라)로 내고
+    object_pose_node 가 /objects/<물체>/live_pose(base)로 바꾼다."""
+    assert live_input_topic("source240b_blue") == "/perception_plus_plus/source240b_blue/live_pose"
+    assert live_output_topic("source240b_blue") == "/objects/source240b_blue/live_pose"
+    assert live_input_topic("x") == input_topic("x").replace("/pose", "/live_pose")
 
 
 def test_render_fpp_yaml_matches_node_parameter_schema():

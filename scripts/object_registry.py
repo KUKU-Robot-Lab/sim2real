@@ -81,6 +81,16 @@ def output_topic(name: str) -> str:
     return f"{OUTPUT_NS}/{name}/pose"
 
 
+def live_input_topic(name: str) -> str:
+    """FP++ live 추적(카메라 프레임) — fpp_snapshot_node 가 찍은 뒤 프레임마다 낸다(stamp = 영상 시각)."""
+    return f"{INPUT_NS}/{name}/live_pose"
+
+
+def live_output_topic(name: str) -> str:
+    """live 추적의 base 좌표 — object_pose_node 가 낸다. 10.12 사용자(A안): aglt 정책이 쥘 때까지 이것을 받는다."""
+    return f"{OUTPUT_NS}/{name}/live_pose"
+
+
 def container_name(name: str) -> str:
     return f"{CONTAINER_PREFIX}{name}"
 

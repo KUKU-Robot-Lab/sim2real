@@ -68,6 +68,18 @@ FAKE_HOLDER_Y = {0: 0.153, 1: -0.002, 2: -0.161}
 EPISODES = ("pick_place_right", "pick_place_left", "grasp_rg3_right", "grasp_rg3_left")
 #: 에피소드 snapshot 이 다시 내는 정지 물체 자세(episode_ros.OBJECT_RELAY) — aglt 는 이것을 컵으로 본다
 EPISODE_RELAY = "/episode/objects/{}/pose"
+# ★10.12 사용자(A안): 실기를 sim 에 맞춘다 — aglt 정책은 쥘 때까지 FP++ live 추적(/objects/<물체>/live_pose, 약 10 Hz)을 받고
+#   손이 가려 끊기면 마지막 값(sim FP++ ZOH), 쥔 뒤는 sim PalmAttach 처럼 파지 + 100 ms 뒤 찍힌 프레임과 그 시각 손바닥 FK 로
+#   붙인다. 가려서 프레임이 안 오면 0.7 s(sim 이 붙는 시간 범위 위)에 파지 시작 FK 로. 10.04 의 정지 컵(cup_latch · cup_static) 대신.
+AGLT_LIVE_ARGS = ("-p", "cup_static:=false", "-p", "cup_latch:=false", "-p", "cup_hold_last:=true",
+                  "-p", "attach_fallback_s:=0.7")
+
+
+def _live(topic: str) -> str:
+    """물체 pose 토픽 → 그 물체의 live 추적 토픽(snapshot 노드 · object_pose_node 규약: …/pose 옆 …/live_pose)."""
+    if not topic.endswith("/pose"):
+        raise ValueError(f"{topic!r} 는 …/pose 가 아니다")
+    return topic[: -len("/pose")] + "/live_pose"
 REAL_CUP_ORIGIN_Z = 0.085                 # 원점 높이(바닥 위) — 컵 자세 확인 문구
 #: arm4090 머리 카메라 외부 파라미터 — 테이블 CAD 캘리브(scripts/calib/table_cad_extrinsics.py, 10.01 기본 방법)
 CAMERA_EXTRINSICS = "config/global_camera_extrinsics_arm4090.yaml"
@@ -312,9 +324,11 @@ def _run(kind: str) -> dict:
              f"(카메라를 건드렸으면 {RECALIB_HINT})",
              ["bash", "-lc", "true"], manual=True),
     ] if real else [
-        _cmd(f"fake 컵({role}) — /objects/cup_{role}/pose", ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--x", "0.38",
-                                                             "--y", y, "--z", "0.264865", "--topic", f"/objects/cup_{role}/pose"],
-             background=True) for role, y in (("src", "-0.16"), ("rcv", "0.16"))]
+        _cmd(f"fake 컵({role}) — {t}", ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--x", "0.38",
+                                         "--y", y, "--z", "0.264865", "--topic", t],
+             background=True)
+        for role, y in (("src", "-0.16"), ("rcv", "0.16"))
+        for t in (f"/objects/cup_{role}/pose", _live(f"/objects/cup_{role}/pose"))]   # live = aglt 정책 입력(10.12 A안)
     run["policy_pourfj"] = [
         _cmd("★두 컵이 학습 배치(로봇 앞 x ≈ 0.38, y ≈ ∓0.16)에 서 있고 콘솔에 두 컵 자세가 들어오는가. 양팔 · 양손 주변이 비어 있는가. "
              "정책은 팔을 스스로 움직이고 손가락을 쥔다 — 빈 컵만" if real else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
@@ -332,7 +346,8 @@ def _run(kind: str) -> dict:
         _cmd("정책 노드 정지", stop=["policy_pourfj#1"]),
     ]
     for s, cup in (("right", "src"), ("left", "rcv")):
-        rec = _record_start(f"aglt_{s}", [s], [f"/objects/{_side_cup(s)}/pose"], [_side_cup(s)]) if real else []
+        cup_t = f"/objects/{_side_cup(s)}/pose" if real else f"/objects/cup_{cup}/pose"
+        rec = _record_start(f"aglt_{s}", [s], [cup_t, _live(cup_t)], [_side_cup(s)]) if real else []
         assert len(rec) + 1 == AGLT_NODE_IDX[real]
         run[f"policy_aglt_{s}"] = [
             _cmd(f"★[{s}] 컵이 학습 배치(로봇 앞 x ≈ 0.25, y ≈ {'−' if s == 'right' else '+'}0.20 ± 0.1)에 서 있고 콘솔에 컵 자세"
@@ -344,9 +359,8 @@ def _run(kind: str) -> dict:
                   # 팔마다 이름 · 에피소드를 가른다 — 양팔 정책을 한 세션에서 동시에 띄워도 서로의 reset · stop 이 섞이지 않는다(09.30)
                   "-r", f"__node:=rh_aglt_node_{s}", "-p", f"ns:={s}",
                   "-p", f"contract:={{artifact:aglt_{s}}}", "-p", f"robot:={{artifact:robot_{s}}}", "-p", "device:=cpu",
-                  "-p", f"cup_topic:=/objects/{_side_cup(s) if real else 'cup_' + cup}/pose",
-                  # ★10.04 실기: 손이 다가가자 FP++ 가 1.5~2.6 s 끊겨 집기 전에 멈췄다 — reset 때 컵을 잡아 두고(정지 컵) 쥐면 FK
-                  "-p", "cup_latch:=true", "-p", "cup_static:=true",
+                  "-p", f"cup_topic:={_live(cup_t)}",
+                  *AGLT_LIVE_ARGS,                       # 10.12 A안 — 쥘 때까지 live(끊기면 마지막 값), 쥔 뒤 프레임 시각 FK
                   "-p", f"max_episode_s:={{policy:aglt_{s}.max_episode_s}}"],
                  background=True),
             _cmd(f"[{s}] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + (0, 0, 0.14)",
@@ -483,10 +497,11 @@ def _episode_run(name: str, real: bool) -> list:
     if not real:
         for oname, obj in ep.objects.items():
             side = next((ep.policies[j.role].side for n in ep.nodes for j in n.jobs if j.target_object == oname), "right")
-            cmds.append(_cmd(f"fake 물체 — {obj['topic']}(aglt 학습 배치 x 0.25)",
-                             ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--x", "0.25",
-                              "--y", "0.20" if side == "left" else "-0.20", "--z", "0.29", "--topic", obj["topic"]],
-                             background=True))
+            for t in (obj["topic"], _live(obj["topic"])):           # live = aglt 정책 입력(10.12 A안)
+                cmds.append(_cmd(f"fake 물체 — {t}(aglt 학습 배치 x 0.25)",
+                                 ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--x", "0.25",
+                                  "--y", "0.20" if side == "left" else "-0.20", "--z", "0.29", "--topic", t],
+                                 background=True))
         for hid in sorted(set(ep.holders.values())):
             cmds.append(_cmd(f"fake 홀더 {hid} — /objects/cup_holder_{hid}/pose (latched)",
                              ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--latched", "--rate", "2", "--x", "0.38",
@@ -512,13 +527,13 @@ def _episode_run(name: str, real: bool) -> list:
         robot = f"{{artifact:robot_{b.side}}}"
         if b.kind == "aglt":
             obj = next((j.target_object for n in ep.nodes for j in n.jobs if j.role == role and j.target_object), first_obj)
-            # 컵 = snapshot 정지 기록 재발행 → 붙이기는 파지 시작 시각의 손바닥 FK 로(cup_static, cup_attach static)
-            cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — SETTING 도달에 스스로 끝남 · 컵 = snapshot 재발행"
-                             " · 쥐면 파지 시작 자세로 손에 붙임",
+            # 10.12 A안: 컵 = FP++ live(끊기면 마지막 값) → 쥐면 파지 + 100 ms 뒤 찍힌 프레임 시각의 손바닥 FK(가리면 0.7 s 대체)
+            cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — SETTING 도달에 스스로 끝남 · 컵 = FP++ live"
+                             " · 쥐면 손바닥 FK 로 손에 붙임",
                              ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_aglt_node.py", "--ros-args",
                               "-r", f"__node:=rh_aglt_node_{b.side}", "-p", f"ns:={b.side}", "-p", f"contract:={contract}",
                               "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", "stop_on_target:=true",
-                              "-p", f"cup_topic:={EPISODE_RELAY.format(obj)}", "-p", "cup_static:=true", "-p", "cup_latch:=true",
+                              "-p", f"cup_topic:={_live(ep.objects[obj]['topic'])}", *AGLT_LIVE_ARGS,
                               "-p", "max_episode_s:=15.0"], background=True))
         elif b.kind == "place":
             src = next((j for n in ep.nodes for j in n.jobs if j.role == role), None)
@@ -537,6 +552,7 @@ def _episode_run(name: str, real: bool) -> list:
                                                    *(f"status/rh_place_node_{s}" for s in sides), "status/episode_runner",
                                                    *(f"{s}/episode" for s in sides))]
         extra += [EPISODE_RELAY.format(o) for o in ep.objects] + [o["topic"] for o in ep.objects.values()]
+        extra += [_live(o["topic"]) for o in ep.objects.values()]          # 10.12 A안 — aglt 가 받은 live 컵
         extra += [f"/objects/cup_holder_{h}/pose" for h in sorted(set(ep.holders.values()))]
         extra += [f"/policy_control/pd_{s}/applied" for s in sides]       # 10.08 팔 지연 도구(arm_latency_report)가 쓴다
         # ★10.12 실기: 관측 · 행동이 bag 에 없어 실패 원인(어느 입력이 정책을 sim 과 갈랐나)을 역산 · 재구성으로만 쟀다

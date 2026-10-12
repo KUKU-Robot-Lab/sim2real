@@ -21,8 +21,10 @@ GPU 가 모자랐다(10.08 두 컨테이너 동시 등록 → 2.6 GB 더 요구 
      (컵을 옮긴 뒤 — 미션 cups 단계를 다시 실행하면 scripts/ops/fpp_rescan.py 가 보낸다). 다시 찍는 컵은 옛 좌표를 내지 않는다.
      generation = 끝낸 찍기 바퀴 수(상태에 실린다).
   /perception_plus_plus/snapshot/status(String JSON): 물체별 found · 색 비율 · 흔들림 mm · 장 수 · 오류, 후보별 색 비율.
-  5. (live, 기본 켬) 찍은 뒤 그 컨테이너의 첫 물체를 프레임마다 추적해 /perception_plus_plus/<물체>/live_pose(카메라 프레임)로 낸다 —
-     기록 · 분석용이다. 정책은 찍은 고정 좌표(/…/pose)를 쓴다(10.09 사용자: 가림 · 좌표 튐 · 물체가 밀린 순간을 bag 으로).
+  5. (live, 기본 켬) 찍은 뒤 그 컨테이너의 첫 물체를 프레임마다 추적해 /perception_plus_plus/<물체>/live_pose(카메라 프레임)로 낸다
+     (10.09 사용자: 가림 · 좌표 튐 · 물체가 밀린 순간을 bag 으로). 10.12 사용자(A안): aglt 정책이 쥘 때까지 이것을 받는다
+     (object_pose_node → /objects/<물체>/live_pose, 끊기면 정책 노드가 마지막 값 유지 · 쥔 뒤는 손바닥 FK). 컨테이너의 첫 물체만
+     추적하므로 정책이 볼 물체가 그 컨테이너의 첫 물체여야 한다(지금 묶음은 물체 하나씩).
 """
 from __future__ import annotations
 
@@ -86,7 +88,7 @@ def main(argv=None) -> None:
     objects = {o["name"]: o for o in cfg["objects"]}
     register_frames = int(cfg.get("register_frames", 3))
     group_name = str(cfg.get("group") or "+".join(objects))      # 묶음 컨테이너가 여럿이면 상태를 가른다(10.09)
-    live_on = bool(cfg.get("live", True))       # 찍은 뒤 물체 하나를 계속 추적해 /…/live_pose 로(기록용, 정책 입력 아님)
+    live_on = bool(cfg.get("live", True))       # 찍은 뒤 물체 하나를 계속 추적해 /…/live_pose 로(10.12 A안: aglt 정책 입력)
     classes = {int(c) for c in cfg.get("classes", [39, 41, 75])}       # bottle · cup · vase
     yolo_conf = float(cfg.get("yolo_conf", 0.05))
     blob_min_area = int(cfg.get("blob_min_area", 1500))
@@ -168,7 +170,7 @@ def main(argv=None) -> None:
 
         # ── 실시간 추적(기록용, 10.09 사용자) ──
         def _track_step(self, seq: int) -> int:
-            """찍은 물체 하나를 프레임마다 추적해 live_pose 로 낸다 — 정책 입력이 아니다(정책은 찍은 고정 좌표).
+            """찍은 물체 하나를 프레임마다 추적해 live_pose 로 낸다 — 10.12 A안부터 aglt 정책이 쥘 때까지 받는다.
             손이 다가가며 가리는 정도 · 좌표 튐 · 물체가 밀린 순간을 bag 으로 남긴다. 컨테이너 하나 = 추적 하나(Cutie 기억)."""
             frame, seq = self._next_frame(seq, timeout=1.0)
             if frame is None:

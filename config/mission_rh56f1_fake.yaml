@@ -476,6 +476,19 @@ run:
     - --topic
     - /objects/cup_src/pose
     background: true
+  - note: fake 컵(src) — /objects/cup_src/live_pose
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.38'
+    - --y
+    - '-0.16'
+    - --z
+    - '0.264865'
+    - --topic
+    - /objects/cup_src/live_pose
+    background: true
   - note: fake 컵(rcv) — /objects/cup_rcv/pose
     argv:
     - python3
@@ -488,6 +501,19 @@ run:
     - '0.264865'
     - --topic
     - /objects/cup_rcv/pose
+    background: true
+  - note: fake 컵(rcv) — /objects/cup_rcv/live_pose
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.38'
+    - --y
+    - '0.16'
+    - --z
+    - '0.264865'
+    - --topic
+    - /objects/cup_rcv/live_pose
     background: true
   policy_pourfj:
   - note: fake — 확인만
@@ -563,11 +589,15 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/cup_src/pose
+    - cup_topic:=/objects/cup_src/live_pose
     - -p
-    - cup_latch:=true
+    - cup_static:=false
     - -p
-    - cup_static:=true
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
     - -p
     - max_episode_s:={policy:aglt_right.max_episode_s}
     background: true
@@ -796,11 +826,15 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/cup_rcv/pose
+    - cup_topic:=/objects/cup_rcv/live_pose
     - -p
-    - cup_latch:=true
+    - cup_static:=false
     - -p
-    - cup_static:=true
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
     - -p
     - max_episode_s:={policy:aglt_left.max_episode_s}
     background: true
@@ -1732,6 +1766,19 @@ run:
     - --topic
     - /objects/source240b_blue/pose
     background: true
+  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '-0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/source240b_blue/live_pose
+    background: true
   - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched)
     argv:
     - python3
@@ -1766,7 +1813,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_cyl60g) — SETTING 도달에 스스로 끝남 · 컵 = snapshot 재발행 · 쥐면 파지 시작 자세로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_cyl60g) — SETTING 도달에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -1784,11 +1831,15 @@ run:
     - -p
     - stop_on_target:=true
     - -p
-    - cup_topic:=/episode/objects/CUP/pose
+    - cup_topic:=/objects/source240b_blue/live_pose
     - -p
-    - cup_static:=true
+    - cup_static:=false
     - -p
-    - cup_latch:=true
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
     - -p
     - max_episode_s:=15.0
     background: true
@@ -1834,9 +1885,10 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_pick_place_right#8
     - episode_pick_place_right#7
     - episode_pick_place_right#6
-    - episode_pick_place_right#5
+    - episode_pick_place_right#2
     - episode_pick_place_right#1
     - episode_pick_place_right#0
   episode_pick_place_left:
@@ -1852,6 +1904,19 @@ run:
     - '0.29'
     - --topic
     - /objects/shaker_c_orange/pose
+    background: true
+  - note: fake 물체 — /objects/shaker_c_orange/live_pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/shaker_c_orange/live_pose
     background: true
   - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched)
     argv:
@@ -1887,7 +1952,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_cyl60gmir) — SETTING 도달에 스스로 끝남 · 컵 = snapshot 재발행 · 쥐면 파지 시작 자세로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_cyl60gmir) — SETTING 도달에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -1905,11 +1970,15 @@ run:
     - -p
     - stop_on_target:=true
     - -p
-    - cup_topic:=/episode/objects/CUP/pose
+    - cup_topic:=/objects/shaker_c_orange/live_pose
     - -p
-    - cup_static:=true
+    - cup_static:=false
     - -p
-    - cup_latch:=true
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
     - -p
     - max_episode_s:=15.0
     background: true
@@ -1955,9 +2024,10 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_pick_place_left#8
     - episode_pick_place_left#7
     - episode_pick_place_left#6
-    - episode_pick_place_left#5
+    - episode_pick_place_left#2
     - episode_pick_place_left#1
     - episode_pick_place_left#0
   episode_grasp_rg3_right:
@@ -1973,6 +2043,19 @@ run:
     - '0.29'
     - --topic
     - /objects/source240b_blue/pose
+    background: true
+  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '-0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/source240b_blue/live_pose
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -1992,7 +2075,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_rg3mft) — SETTING 도달에 스스로 끝남 · 컵 = snapshot 재발행 · 쥐면 파지 시작 자세로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_rg3mft) — SETTING 도달에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -2010,11 +2093,15 @@ run:
     - -p
     - stop_on_target:=true
     - -p
-    - cup_topic:=/episode/objects/CUP/pose
+    - cup_topic:=/objects/source240b_blue/live_pose
     - -p
-    - cup_static:=true
+    - cup_static:=false
     - -p
-    - cup_latch:=true
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
     - -p
     - max_episode_s:=15.0
     background: true
@@ -2036,8 +2123,9 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_grasp_rg3_right#6
     - episode_grasp_rg3_right#5
-    - episode_grasp_rg3_right#4
+    - episode_grasp_rg3_right#1
     - episode_grasp_rg3_right#0
   episode_grasp_rg3_left:
   - note: fake 물체 — /objects/shaker_c_orange/pose(aglt 학습 배치 x 0.25)
@@ -2052,6 +2140,19 @@ run:
     - '0.29'
     - --topic
     - /objects/shaker_c_orange/pose
+    background: true
+  - note: fake 물체 — /objects/shaker_c_orange/live_pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/shaker_c_orange/live_pose
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -2071,7 +2172,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_rg3) — SETTING 도달에 스스로 끝남 · 컵 = snapshot 재발행 · 쥐면 파지 시작 자세로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_rg3) — SETTING 도달에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -2089,11 +2190,15 @@ run:
     - -p
     - stop_on_target:=true
     - -p
-    - cup_topic:=/episode/objects/CUP/pose
+    - cup_topic:=/objects/shaker_c_orange/live_pose
     - -p
-    - cup_static:=true
+    - cup_static:=false
     - -p
-    - cup_latch:=true
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
     - -p
     - max_episode_s:=15.0
     background: true
@@ -2115,6 +2220,7 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_grasp_rg3_left#6
     - episode_grasp_rg3_left#5
-    - episode_grasp_rg3_left#4
+    - episode_grasp_rg3_left#1
     - episode_grasp_rg3_left#0

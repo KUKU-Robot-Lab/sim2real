@@ -100,8 +100,9 @@ def test_one_arms_pd_without_and_with_publishing_is_one_box_and_only_the_quiet_o
 def test_an_input_only_one_stage_uses_names_that_stage(real):
     _, _, d = real
     into = {(w.src, w.topic): w for w in d.wires if w.dst == "rh_aglt_node_right"}
-    assert into[("object_pose", f"/objects/{_ACTIVE['sides']['right']}/pose")].units == ("policy_aglt_right#4",)   # 단독: FP++ 컵을 직접
-    assert into[("episode_runner", "/episode/objects/CUP/pose")].units == ("episode_pick_place_right#3", "episode_grasp_rg3_right#3")
+    # 10.12 사용자(A안): 단독 · 에피소드 모두 쥘 때까지 FP++ live 컵을 직접 받는다 — snapshot 재발행(/episode/objects) 은 안 받는다
+    assert not into[("object_pose", f"/objects/{_ACTIVE['sides']['right']}/live_pose")].units                  # 세 단계 모두
+    assert not [k for k in into if k[1].startswith("/episode/objects/")]
     assert not into[("hand_right_state", "/hand_right/joint_states")].units                       # 둘 다 쓴다 — 언제나
 
 

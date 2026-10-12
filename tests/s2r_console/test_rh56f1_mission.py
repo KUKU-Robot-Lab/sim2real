@@ -31,6 +31,10 @@ ACTIVE_SIDES = _ACTIVE["sides"]
 FAKE_RAW, FAKE, FAKE_BOOK = _load("mission_rh56f1_fake.yaml")
 
 
+# 10.12 사용자(A안): aglt 정책은 쥘 때까지 FP++ live 를 받고(끊기면 마지막 값), 쥔 뒤는 프레임 시각 FK(가리면 0.7 s 대체)
+AGLT_LIVE_ARGS = ("cup_static:=false", "cup_latch:=false", "cup_hold_last:=true", "attach_fallback_s:=0.7")
+
+
 def _cmds(m, book, sid):
     return commands_for(book, m, sid, repo=REPO, execute=True)
 
@@ -265,7 +269,7 @@ def test_each_arm_runs_its_rh_aglt_policy_after_home(side, cup):
         assert node.background and node.argv[0].endswith(".venv/bin/python")
         assert any(a.startswith("contract:=") and a.endswith("rh_aglt_contract.json") for a in node.argv)
         real_cup = ACTIVE_SIDES.get(side, ACTIVE_SIDES["right"])      # config/fpp_active.yaml
-        topic = f"/objects/{real_cup}/pose" if m is REAL else f"/objects/cup_{cup}/pose"
+        topic = f"/objects/{real_cup}/live_pose" if m is REAL else f"/objects/cup_{cup}/live_pose"   # 10.12 A안: live 추적
         assert f"cup_topic:={topic}" in node.argv and "max_episode_s:=15.0" in node.argv
         by = {s.id: s for s in m.stages}
         assert {f"home_{side}", "cups", f"hand_check_{side}"} <= set(by[f"policy_aglt_{side}"].needs)
@@ -332,9 +336,13 @@ def test_the_episode_stage_brings_up_both_policies_and_the_runner(side):
         argv = {k: " ".join(c.argv) for k in ("rh_aglt_node", "rh_place_node", "episode_runner_node")
                 for c in cmds if any(k + ".py" in a for a in c.argv)}
         assert f"ns:={side} " in argv["rh_aglt_node"] + " " and "stop_on_target:=true" in argv["rh_aglt_node"]
-        assert "cup_topic:=/episode/objects/CUP/pose" in argv["rh_aglt_node"]                  # snapshot 재발행 컵
-        assert "cup_static:=true" in argv["rh_aglt_node"]                    # 정지 기록 → 파지 시작 시각 FK 로 붙인다
-        assert "cup_latch:=true" in argv["rh_aglt_node"]                     # 처음 한 번 잡은 컵으로 끝까지(10.04 사용자)
+        cup = next(a.split(":=", 1)[1] for a in argv["rh_aglt_node"].split() if a.startswith("cup_topic:="))
+        assert cup.startswith("/objects/") and cup.endswith("/live_pose")    # 10.12 A안: 쥘 때까지 FP++ live
+        assert all(a in argv["rh_aglt_node"] for a in AGLT_LIVE_ARGS)
+        if m is FAKE:
+            assert any("fake_cup_pose_pub.py" in a for c in cmds if cup in c.argv for a in c.argv)
+        else:
+            assert any(cup in " ".join(c.argv) for c in cmds if "rh56f1_record" in " ".join(c.argv))
         assert f"ns:={side}_place" in argv["rh_place_node"]
         assert f"episode_topic:=/policy_control/{side}/episode" in argv["rh_place_node"]
         assert f"episode:=config/episodes/pick_place_{side}.yaml" in argv["episode_runner_node"]
@@ -410,11 +418,19 @@ def test_rehome_brings_the_arm_back_from_where_a_policy_stopped(side):
 
 
 @pytest.mark.parametrize("side", ["right", "left"])
-def test_the_lone_aglt_stage_latches_the_cup_at_reset(side):
-    """10.04 실기: 손이 다가가자 FP++ 컵이 1.5~2.6 s 끊겨 '컵 자세가 없다'로 집기 전에 멈췄다 — reset 때 컵을 잡아 두고 쥐면 FK."""
+def test_the_lone_aglt_stage_follows_the_live_cup_until_the_grasp(side):
+    """10.12 사용자(A안): 실기를 sim 에 맞춘다 — 쥘 때까지 FP++ live(끊기면 마지막 값, 10.04 의 '컵 자세가 없다' 멈춤 대신),
+    쥔 뒤는 파지 + 100 ms 뒤 찍힌 프레임 시각의 손바닥 FK(가려서 안 오면 0.7 s 에 파지 시작 FK)."""
     for m, book in ((REAL, REAL_BOOK), (FAKE, FAKE_BOOK)):
-        node = next(" ".join(c.argv) for c in _cmds(m, book, f"policy_aglt_{side}") if "rh_aglt_node.py" in " ".join(c.argv))
-        assert "cup_latch:=true" in node and "cup_static:=true" in node
+        cmds = _cmds(m, book, f"policy_aglt_{side}")
+        node = next(" ".join(c.argv) for c in cmds if "rh_aglt_node.py" in " ".join(c.argv))
+        assert all(a in node for a in AGLT_LIVE_ARGS), node
+        assert "cup_latch:=true" not in node and "cup_static:=true" not in node
+        live = next(a.split(":=", 1)[1] for a in node.split() if a.startswith("cup_topic:="))
+        if m is FAKE:                                                      # fake 도 그 토픽을 낸다
+            assert any("fake_cup_pose_pub.py" in " ".join(c.argv) and live in c.argv for c in _cmds(m, book, "cups"))
+        else:
+            assert any(live in " ".join(c.argv) for c in cmds if "rh56f1_record" in " ".join(c.argv))   # bag 에 싣는다
 
 
 @pytest.mark.parametrize("side", ["right", "left"])

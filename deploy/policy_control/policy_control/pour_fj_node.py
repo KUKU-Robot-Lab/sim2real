@@ -48,6 +48,13 @@ NS = "/policy_control"
 NODE = "pour_fj_node"
 EVENTS = ("reset", "start", "stop", "abort")
 CUP_STALE_S = 0.5
+
+
+def _fresh(got):
+    """(받은 시각, pos, quat, stamp) → CUP_STALE_S 안이면 (pos, quat, stamp), 아니면 None. 순수(시계만 본다)."""
+    return None if got is None or time.monotonic() - got[0] > CUP_STALE_S else (got[1], got[2], got[3])
+
+
 START_TILT_MAX_DEG = 15.0
 
 
@@ -304,7 +311,8 @@ class PourFjNode(LeanNodeMixin, Node):
                               ("attach_joint_force_g", AttachCfg.joint_force_g), ("attach_signal", AttachCfg.signal),
                               ("attach_max_palm_dist_m", AttachCfg.max_palm_dist_m),
                               ("attach_after_s", AttachCfg.attach_after_s), ("release_steps", AttachCfg.release_steps),
-                              ("cup_static", AttachCfg.static_source), ("cup_latch", False),
+                              ("cup_static", AttachCfg.static_source), ("cup_latch", False), ("cup_hold_last", False),
+                              ("attach_fallback_s", AttachCfg.fallback_after_s),
                               *((param, topic) for _, param, topic in self.fam.cups)):
             self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
@@ -342,12 +350,18 @@ class PourFjNode(LeanNodeMixin, Node):
                                     max_palm_dist_m=float(p("attach_max_palm_dist_m")),
                                     release_steps=int(p("release_steps")),
                                     # 에피소드는 컵을 snapshot 정지 기록으로 준다 — 파지 시작 시각 FK 로 붙인다(cup_attach static)
-                                    static_source=bool(p("cup_static")))
+                                    static_source=bool(p("cup_static")),
+                                    fallback_after_s=float(p("attach_fallback_s")))
         self.attach = {r: CupAttach(self.attach_cfg) for r in self.fam.roles} if bool(p("cup_attach")) else {}
         # ★10.04 실기: 단독 aglt 단계에서 손이 다가가자 FP++ 컵이 1.5~2.6 s 끊겨(손이 가림) '컵 자세가 없다'로 집기 전에 멈췄다.
         #   cup_latch 면 reset 때 컵 자세를 한 번 잡아 두고 그 에피소드 동안 그 값을 쓴다(사용자 원칙 "FPP 는 정지 상태만" —
         #   에피소드 snapshot 과 같다). 쥔 뒤는 손바닥 FK(cup_static 과 같이 쓴다). 다음 reset 에서 다시 잡는다.
         self.cup_latch = bool(p("cup_latch"))
+        # ★10.12 사용자(A안): 실기를 sim 에 맞춘다 — 쥘 때까지 FP++ live 를 받고, 손이 가려 끊기면 마지막 값을 쓴다(sim FP++
+        #   모델의 ZOH 와 같다 · 10.04 의 '컵 자세가 없다' 멈춤 대신). reset 은 신선한 값(CUP_STALE_S 안)이 있어야 받는다.
+        self.cup_hold_last = bool(p("cup_hold_last"))
+        if self.cup_latch and self.cup_hold_last:
+            raise ValueError("cup_latch 와 cup_hold_last 는 같이 쓰지 않는다(정지 컵 · live 컵 중 하나)")
         self._latched: dict = {}
         self._seq, self._gap, self._errors, self._t_start = 0, 0, {}, 0.0
 
@@ -422,11 +436,17 @@ class PourFjNode(LeanNodeMixin, Node):
             poll.destroy_node()
         super().destroy_node()
 
+    def _fresh_cup(self, role):
+        """CUP_STALE_S 안에 받은 컵(pos, quat, stamp) — 없으면 None."""
+        return _fresh(self.cups.get(role))
+
     def _cup(self, role):
         if self.cup_latch and role in self._latched:
             return self._latched[role]
         got = self.cups.get(role)
-        return None if got is None or time.monotonic() - got[0] > CUP_STALE_S else (got[1], got[2], got[3])
+        if self.cup_hold_last:                     # live — 끊겨도 마지막 값(stamp 는 그 프레임 그대로 · 붙이기 규칙이 쓴다)
+            return None if got is None else (got[1], got[2], got[3])
+        return _fresh(got)
 
     def _cup_for(self, role: str, advance: bool):
         """컵 자세를 고르는 함수 — 붙어 있으면 손바닥 FK. advance=True(달리는 정책 스텝)일 때만 판정 카운터가 움직인다."""
@@ -486,6 +506,13 @@ class PourFjNode(LeanNodeMixin, Node):
             if self._latched:
                 self.get_logger().info("cup latch: " + " · ".join(
                     f"{r} ({c[0][0]:+.3f}, {c[0][1]:+.3f}, {c[0][2]:+.3f})" for r, c in self._latched.items()))
+        if self.cup_hold_last:                     # live 컵 — 끊긴 채로 에피소드를 시작하지 않는다
+            stale = [r for r in self.fam.roles if self._fresh_cup(r) is None]
+            if stale:
+                if self.book.phase == "armed":
+                    self.book.phase = "idle"
+                return self._reply(res, False, [f"reset: FP++ live 컵 자세가 {CUP_STALE_S} s 안에 없다 {stale} — "
+                                                "컵이 보이는지 · live 추적(fpp 컨테이너)이 도는지 본다"])
         try:
             meas = self._measure()
             if self.chain is None:

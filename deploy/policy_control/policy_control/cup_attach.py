@@ -21,6 +21,9 @@
              자리) 프레임 시각 짝짓기가 틀린다: 파지 뒤 100 ms 에 '지금' 손바닥과 짝지으면 그 사이 든 만큼 어긋난다.
              static_source=True 면 파지가 attach_after_s 이어진 뒤 **파지 시작 시각**의 손바닥 FK 와 기록 자세로 붙인다
              (컵은 닿기 전 자리 그대로 — 10.04 사용자 "잡을 때 위치를 기준으로 핸드와 함께 FK"). 붙은 뒤 비교(check)는 하지 않는다.
+  fallback   (10.12 사용자 A안 — live FP++ 를 쥘 때까지 받는다) 손이 컵을 가려 파지 뒤 프레임이 안 오면(10.09 실기 live 0.3~2.3 s
+             끊김) fallback_after_s 에 static 규칙(파지 시작 시각 손바닥 FK + 마지막 컵)으로 붙인다 — 컵은 닿기 전 자리라고 본다.
+             sim 은 프레임이 늦어도 파지 뒤 약 0.6 s 안에 붙는다(지연 16~19 + 간격 5~7 · 가끔 8~10 스텝 + hold 6). 0 = 끔.
   released   grasped 가 release_steps(15 = 250 ms) 스텝 연속 끊기면 떼고 FP++ 로 돌아간다. 다시 쥐면 처음부터.
 시각: 손바닥 = 팔 상태 메시지 stamp, 컵 = FP++ 영상 stamp(RealSense). 둘 다 시스템 시계 초다.
 붙인 뒤 컵이 손에서 미끄러져도 이 추정은 모른다 — status 의 cup.source 가 'attached' 인지 운영자가 본다.
@@ -49,6 +52,13 @@ class AttachCfg:
     max_extrapolate_s: float = 0.02
     max_palm_dist_m: float = 0.0  # >0: 손바닥–컵 원점(FP++) 거리도 이 안이어야 쥔 것으로(오탐 대비, 기본 끔 — sim 쥔 상태 4~5 cm)
     static_source: bool = False   # 컵 자세가 정지 기록(에피소드 snapshot 재발행) — 파지 시작 시각 FK 로 붙인다(위 static)
+    fallback_after_s: float = 0.0  # live 에서 파지 뒤 이만큼 프레임이 안 오면 파지 시작 FK 로(위 fallback, 0 = 끔)
+
+    def __post_init__(self) -> None:
+        f = float(self.fallback_after_s)
+        if f != 0.0 and not self.attach_after_s < f <= self.history_s:
+            raise ValueError(f"fallback_after_s {f} — 0(끔) 또는 attach_after_s {self.attach_after_s} < x ≤ history_s "
+                             f"{self.history_s}(파지 시작 손바닥이 기록에 남아 있어야 한다)")
 
 
 def grasp_flag(tactile_n, force_n: float) -> bool:
@@ -118,6 +128,7 @@ class CupAttach:
         self._rel_p: np.ndarray | None = None
         self._rel_R: np.ndarray | None = None
         self.releases = 0                          # 이 에피소드에서 붙었다가 떨어진 횟수(에피소드 실행기 OBJECT_DROPPED 신호)
+        self.fallback = False                      # 마지막 부착이 프레임 없이 파지 시작 FK 로 붙었나(위 fallback)
         self._hist.clear()
 
     @property
@@ -184,11 +195,11 @@ class CupAttach:
             self.off_steps = 0 if grasped else self.off_steps + 1
             if self.off_steps >= self.cfg.release_steps:
                 hist, last = list(self._hist), (self.attach_steps, self.check_n, self.check_last_m, self.check_max_m)
-                releases = self.releases + 1
+                releases, fallback = self.releases + 1, self.fallback
                 self.reset()
                 self._hist.extend(hist)                  # 기록은 이어 간다(다시 쥘 때 쓴다)
                 self.attach_steps, self.check_n, self.check_last_m, self.check_max_m = last   # 마지막 부착 기록은 남긴다
-                self.releases = releases
+                self.releases, self.fallback = releases, fallback
                 return live
             return self._from_palm(palm_pos, palm_R)
         if not grasped:
@@ -208,6 +219,13 @@ class CupAttach:
             at = self.palm_at(float(live[2]))
             if at is not None:
                 return self._attach(at, live, palm_pos, palm_R)
+        if self.cfg.fallback_after_s > 0 and live is not None \
+                and float(t) >= self.grasp_since + self.cfg.fallback_after_s:
+            at = self.palm_at(self.grasp_since)       # 가려서 프레임이 안 왔다 — 정지 컵으로 보고 파지 시작 시각 FK(static 규칙)
+            if at is not None:
+                out = self._attach(at, live, palm_pos, palm_R)
+                self.fallback = True
+                return out
         return live
 
     def _attach(self, at, live, palm_pos, palm_R):
@@ -215,7 +233,7 @@ class CupAttach:
         p0, R0 = at
         self._rel_p = R0.T @ (np.asarray(live[0], float) - p0)
         self._rel_R = R0.T @ quat_to_matrix(live[1])
-        self.attached, self.off_steps = True, 0
+        self.attached, self.off_steps, self.fallback = True, 0, False
         self.attach_steps = self.grasp_steps
         stamp = live[2] if len(live) > 2 else None
         self.check_n, self.check_last_m, self.check_max_m, self._check_stamp = 0, None, None, stamp
@@ -223,7 +241,8 @@ class CupAttach:
 
     def as_dict(self) -> dict:
         r = lambda v: None if v is None else round(float(v), 4)  # noqa: E731
-        return {"source": self.source, "static": self.cfg.static_source, "grasp_since": self.grasp_since,
+        return {"source": self.source, "static": self.cfg.static_source, "fallback": self.fallback,
+                "grasp_since": self.grasp_since,
                 "grasp_steps": self.grasp_steps,
                 "off_steps": self.off_steps, "attach_steps": self.attach_steps, "releases": self.releases,
                 "check_n": self.check_n, "check_last_m": r(self.check_last_m), "check_max_m": r(self.check_max_m),

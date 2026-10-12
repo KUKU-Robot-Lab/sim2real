@@ -12,6 +12,8 @@ cad_to_body 는 물체 항목. 소비자: ROS 정책 노드(다음 스펙).
 10.01: 카메라 extrinsics 는 로봇마다 다르다(arm4090 은 테이블 CAD 캘리브 전용 파일). `--camera-extrinsics` 가
 레지스트리의 공유 파일을 대신하고, 그 파일의 `base_z_bias_m`(없으면 0 — depth 치우침 보정)을 출력 z 에 더한다.
 10.04: 그 파일에 `depth_bias`(offset_m · per_m · valid_z_m)가 있으면 FP++ 위치를 카메라 광선 방향으로 늘린다(z 만 보정의 대신).
+10.12: snapshot 노드의 live 추적 `/perception_plus_plus/<name>/live_pose` 도 같은 변환으로 `/objects/<name>/live_pose` 에
+(사용자 A안 — aglt 정책이 쥘 때까지 받는다). stamp 는 영상 시각 그대로.
 """
 from __future__ import annotations
 
@@ -30,7 +32,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from cup_pose_relay import (  # noqa: E402
     cad_pose_to_base_body, extrinsics_at_head, head_state_is_usable,
 )
-from object_registry import extrinsics_for, input_topic, load_registry, output_topic  # noqa: E402
+from object_registry import (  # noqa: E402
+    extrinsics_for, input_topic, live_input_topic, live_output_topic, load_registry, output_topic,
+)
 from pose_symmetry import point_axis_up, quat_axis_direction, quat_conj, remove_twist  # noqa: E402
 
 
@@ -142,9 +146,9 @@ def main() -> None:
     class ObjectPoseNode(Node):
         def __init__(self) -> None:
             super().__init__("object_pose_node")
-            self._pubs = {n: self.create_publisher(PoseStamped, output_topic(n), 10) for n in conv.names}
+            self._pubs, self._live_pubs = {}, {}
             for n in conv.names:
-                self.create_subscription(PoseStamped, input_topic(n), lambda m, n=n: self._on_pose(n, m), 10)
+                self._wire(n)
             self._head: tuple[float, float] | None = None
             self._head_stamp: float | None = None
             if args.head_joint_topic:
@@ -169,10 +173,16 @@ def main() -> None:
                 self.get_logger().error(f"레지스트리 다시 읽기 실패(옛 것 유지): {err}", throttle_duration_sec=30.0)
                 return
             for n in new:
-                self._pubs[n] = self.create_publisher(PoseStamped, output_topic(n), 10)
-                self.create_subscription(PoseStamped, input_topic(n), lambda m, n=n: self._on_pose(n, m), 10)
+                self._wire(n)
                 self._count[n] = 0
             self.get_logger().info(f"새 물체 {new} → {[output_topic(n) for n in new]}")
+
+        def _wire(self, n: str) -> None:
+            """정지 기록(/…/pose) 과 live 추적(/…/live_pose, 10.12 A안) 을 같은 변환으로 base 에 — stamp 는 그대로."""
+            self._pubs[n] = self.create_publisher(PoseStamped, output_topic(n), 10)
+            self._live_pubs[n] = self.create_publisher(PoseStamped, live_output_topic(n), 10)
+            self.create_subscription(PoseStamped, input_topic(n), lambda m, n=n: self._on_pose(n, m), 10)
+            self.create_subscription(PoseStamped, live_input_topic(n), lambda m, n=n: self._on_pose(n, m, live=True), 10)
 
         def _on_head(self, msg) -> None:
             names = list(msg.name)
@@ -184,7 +194,7 @@ def main() -> None:
             self._head = (np.degrees(pan), np.degrees(tilt))
             self._head_stamp = self.get_clock().now().nanoseconds * 1e-9
 
-        def _on_pose(self, name: str, msg: PoseStamped) -> None:
+        def _on_pose(self, name: str, msg: PoseStamped, live: bool = False) -> None:
             head = None
             if args.head_joint_topic:
                 now = self.get_clock().now().nanoseconds * 1e-9
@@ -200,6 +210,9 @@ def main() -> None:
             out.pose.position.x, out.pose.position.y, out.pose.position.z = map(float, pos)
             (out.pose.orientation.w, out.pose.orientation.x,
              out.pose.orientation.y, out.pose.orientation.z) = map(float, quat)
+            if live:
+                self._live_pubs[name].publish(out)
+                return
             self._pubs[name].publish(out)
             self._count[name] += 1
 

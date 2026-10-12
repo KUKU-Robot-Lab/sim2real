@@ -245,3 +245,56 @@ def test_the_frame_time_rule_on_a_static_snapshot_would_be_off_by_the_lift():
     w = _World()
     _, _, out, truth = _run_static(AttachCfg(), w)
     assert np.linalg.norm(out[0] - truth) > 0.05
+
+
+# ---------------------------------------------------------------- 10.12 A안: live FP++ 를 쥘 때까지 받는다
+def _run_occluded(cfg: AttachCfg, w: _World, hidden_from: float, until: float = 2.0):
+    """손이 컵을 가려 hidden_from 뒤로는 새 프레임이 없다 — 정책 노드는 마지막 프레임을 그대로 준다(hold-last)."""
+    c, t, attached_at, out = CupAttach(cfg), 0.0, None, None
+    last = None
+    while t < until:
+        p, R = w.palm(t)
+        if t < hidden_from:
+            last = w.fpp(t)
+        out = c.step(t >= w.grasp_t, t, p, R, last)
+        if c.source == "attached" and attached_at is None:
+            attached_at = t
+        t += DT
+    p, R = w.palm(t - DT)
+    return c, attached_at, out, p + R @ w.cup_rel
+
+
+def test_an_occluded_grasp_falls_back_to_the_grasp_start_palm():
+    """10.09 실기 live: 손이 다가가면 0.3~2.3 s 끊긴다. 파지 뒤 프레임이 안 오면 fallback_after_s 에 정지 컵 규칙(파지 시작 FK)."""
+    w = _World()
+    c, attached_at, out, truth = _run_occluded(AttachCfg(fallback_after_s=0.7), w, hidden_from=w.grasp_t - 0.2)
+    assert attached_at is not None and w.grasp_t + 0.7 - 1e-9 <= attached_at <= w.grasp_t + 0.7 + 2 * DT
+    assert np.linalg.norm(out[0] - truth) < 0.002                     # 컵은 닿기 전 자리 그대로였다 → 손을 따라간다
+    assert c.as_dict()["fallback"] is True
+
+
+def test_a_frame_that_arrives_before_the_fallback_wins():
+    """프레임이 오면 sim PalmAttach 규칙(파지 + 100 ms 뒤 찍힌 프레임, 그 시각 손바닥) — 대개 파지 뒤 약 0.4 s."""
+    w, c = _World(), CupAttach(AttachCfg(fallback_after_s=0.7))
+    t, attached_at = 0.0, None
+    while t < 2.0:
+        p, R = w.palm(t)
+        c.step(t >= w.grasp_t, t, p, R, w.fpp(t))
+        if c.source == "attached" and attached_at is None:
+            attached_at = t
+        t += DT
+    assert attached_at is not None and attached_at < w.grasp_t + 0.7
+    assert c.as_dict()["fallback"] is False
+
+
+def test_without_the_fallback_an_occluded_grasp_never_attaches():
+    w = _World()
+    c, attached_at, out, truth = _run_occluded(AttachCfg(), w, hidden_from=w.grasp_t - 0.2)
+    assert attached_at is None and c.source == "live"
+    assert np.linalg.norm(out[0] - truth) > 0.3                      # 정책은 탁자 위 컵을 계속 본다
+
+
+@pytest.mark.parametrize("bad", [-0.1, 0.05, 0.1, 0.9])
+def test_the_fallback_must_come_after_the_attach_delay_and_inside_the_palm_history(bad):
+    with pytest.raises(ValueError, match="fallback_after_s"):
+        AttachCfg(fallback_after_s=bad)                               # 0 = 끔, 아니면 attach_after_s < x ≤ history_s
