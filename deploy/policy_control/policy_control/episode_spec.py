@@ -10,6 +10,7 @@
     holders: {CENTER_HOLDER: 1}                    # 홀더 이름 → 마커 id — 홀더는 고정, 자세는 holder_poses 파일
     holder_poses: config/cup_holder_poses_arm4090.yaml   # cup_holder_pose_node --write 가 쓴 고정 자세(10.04 사용자)
     policies: {rh_aglt_r: {policy: rh56f1/aglt/right_cyl60g, kind: aglt, side: right}, ...}   # policy 없음 = 아직 없는 정책
+    sequence 의 aglt 단계(또는 parallel_policy 항목)에 policy_object: source240_real — 다물체 정책(rg3)의 물체 one-hot(10.12)
     trajectories: {go_home: {kind: rehome, sides: [right, left]}}
     failure_policy: {default: 1, rh_aglt_r: 2}     # 노드당 재시도 상한(Step 2)
     sequence: [ {id, type: snapshot|trajectory|policy|parallel_policy|terminal, name, ..., expect: {...}, checkpoint: NAME} ]
@@ -19,6 +20,7 @@ snapshot = 10.04 사용자 "처음에 FP++ 로 각 컵들 배치를 한번에 �
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
@@ -52,6 +54,8 @@ class Job:
     source_object: str | None = None
     target_object: str | None = None
     target_holder: str | None = None
+    #: ★10.12 다물체 aglt 정책(rh_aglt object_names)의 물체 이름(one-hot id, 예 source240_real) — 실기 물체는 단계마다 고정
+    policy_object: str | None = None
 
 
 @dataclass(frozen=True)
@@ -95,13 +99,14 @@ class Episode:
 
 
 def _job(raw: Mapping, where: str) -> Job:
-    unknown = set(raw) - {"name", "source_object", "target_object", "target_holder"}
+    unknown = set(raw) - {"name", "source_object", "target_object", "target_holder", "policy_object"}
     if unknown:
         raise EpisodeSpecError(f"{where}: 모르는 키 {sorted(unknown)}")
     if not raw.get("name"):
         raise EpisodeSpecError(f"{where}: name(정책 역할)이 없다")
     return Job(role=str(raw["name"]), source_object=raw.get("source_object"), target_object=raw.get("target_object"),
-               target_holder=raw.get("target_holder"))
+               target_holder=raw.get("target_holder"),
+               policy_object=None if raw.get("policy_object") is None else str(raw["policy_object"]))
 
 
 def _node(raw: Mapping, i: int) -> Node:
@@ -113,7 +118,7 @@ def _node(raw: Mapping, i: int) -> Node:
         raise EpisodeSpecError(f"{where}: id 가 없다")
     jobs: tuple = ()
     if t == "policy":
-        jobs = (_job({k: raw[k] for k in ("name", "source_object", "target_object", "target_holder") if k in raw}, where),)
+        jobs = (_job({k: raw[k] for k in ("name", "source_object", "target_object", "target_holder", "policy_object") if k in raw}, where),)
     elif t == "parallel_policy":
         jobs = tuple(_job(j, f"{where}.policies[{k}]") for k, j in enumerate(raw.get("policies") or []))
         if len(jobs) < 2:
@@ -206,6 +211,9 @@ def validate(ep: Episode) -> None:
                     errs.append(f"{n.id}: 물체 {o!r} 가 objects 에 없다")
             if j.target_holder is not None and j.target_holder not in ep.holders:
                 errs.append(f"{n.id}: 홀더 {j.target_holder!r} 가 holders 에 없다")
+            b = ep.policies.get(j.role)
+            if j.policy_object is not None and (b is None or b.kind != "aglt" or not j.policy_object):
+                errs.append(f"{n.id}: policy_object {j.policy_object!r} 는 aglt 정책 단계에만(물체 one-hot 이름)")
         if n.type == "trajectory" and n.name not in ep.trajectories:
             errs.append(f"{n.id}: trajectory {n.name!r} 가 trajectories 에 없다")
         pose = n.expect.get("pose")
@@ -245,8 +253,23 @@ def availability(ep: Episode, entries: Mapping[str, object]) -> dict[str, str]:
         elif getattr(e, "issues", ()):
             out[role] = f"{b.policy}: " + " / ".join(e.issues)
         else:
-            out[role] = ""
+            out[role] = _object_problem(ep, role, e)
     return out
+
+
+def _object_problem(ep: Episode, role: str, e: object) -> str:
+    """★10.12 다물체 aglt 계약(object_names)이면 그 역할의 단계마다 policy_object 가 계약 물체 중 하나여야 한다."""
+    path = getattr(e, "path", None)
+    cpath = Path(path) / e.contract if path is not None else None
+    try:
+        names = list(json.loads(cpath.read_text()).get("object_names") or []) if cpath and cpath.is_file() else []
+    except (OSError, ValueError) as exc:
+        return f"{e.contract}: 읽지 못함({exc})"
+    given = [j.policy_object for n in ep.nodes for j in n.jobs if j.role == role]
+    if not names:
+        return f"policy_object {sorted({g for g in given if g})} — 단일 물체 정책(계약에 object_names 없음)" if any(given) else ""
+    bad = sorted({str(g) for g in given if g not in names})
+    return f"다물체 정책 {names}: 단계 policy_object {bad} — 계약 물체 중 하나를 단계마다 준다" if bad else ""
 
 
 def holder_problems(ep: Episode, poses: Mapping[int, object]) -> list[str]:

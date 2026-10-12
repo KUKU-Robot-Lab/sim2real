@@ -44,6 +44,7 @@ class PolicyPlan:
     holder_id: int | None
     setting: tuple | None
     object_pose: tuple | None        # snapshot 이 기록한 물체 자세(pos, quat) — 집기 전 정지 컵
+    policy_object: str | None = None  # ★10.12 다물체 aglt 정책의 물체 이름 → 노드 파라미터 object(reset 전)
 
 
 class Executor(Protocol):
@@ -222,7 +223,8 @@ class EpisodeManager:
             out.append(PolicyPlan(role=j.role, kind=b.kind, side=b.side, policy=b.policy, target_object=j.target_object,
                                   source_object=j.source_object, target_holder=j.target_holder,
                                   holder_id=self.ep.holders.get(j.target_holder) if j.target_holder else None,
-                                  setting=self.ep.setting.get(side) if side else None, object_pose=pose))
+                                  setting=self.ep.setting.get(side) if side else None, object_pose=pose,
+                                  policy_object=j.policy_object))
         return out
 
     def _after_success(self, node: Node, before: World, located: Mapping) -> World:

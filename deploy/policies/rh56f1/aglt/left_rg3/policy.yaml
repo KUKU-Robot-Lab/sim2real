@@ -1,0 +1,16 @@
+# RH56F1 왼팔 rh_aglt 3물체 한 정책(rg3) — 10.12 grasping 최종, 사용자 성공 확정.
+id: rh56f1/aglt/left_rg3
+status: candidate        # candidate | verified | deployed | hold
+task: open-rh_l_aglt-lstm
+side: left
+checkpoint: last_open-rh_l_aglt-lstm_ep_1900_rew_850.4208.pth
+summary: '물체 3개(source240_real · source200_real · shaker_c_real) 한 정책 · 손 어드민턴스 · FP++ · 지연 ADR(0~1.5배) · 보상 rh_aglt_d6 iter_02'
+source: 'local5090:~/rl_ws/our_source/policy/aglt_l_rg3_ep1900 (md5 da6106478d1cbcf42b5af0154c6e4419)'
+interface: obs 99 (96 + 물체 one-hot 3, 맨 끝) · action 13 (팔 관절 증분 7 · 손 6)
+deploy:
+  max_episode_s: 15.0
+note: >-
+  ★물체 one-hot: 에피소드 aglt 단계에 policy_object(source240_real | source200_real | shaker_c_real)를 준다 — 러너가 reset 전에
+  노드 파라미터 object 로 넣고, 비어 있거나 모르는 이름이면 reset 이 거부된다(0 벡터로 돌지 않는다). 컵 반높이 · 목표 박스 높이는
+  물체를 따른다(계약 object_geometry: source 계열 반높이 0.085 · 원점 +0.085, shaker_c 반높이 0.065 · 원점 +0.065).
+  성공 = 컵 위 10 cm 키포인트 3 cm 안 연속 120 스텝(2 s) + 쥠. 학습은 지연 ADR · FP++ 지각 모델 · 어드민턴스까지(sim 전용 강건화).

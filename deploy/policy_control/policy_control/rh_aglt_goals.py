@@ -124,7 +124,7 @@ class GoalBook:
         if not has_goal_spec(c):
             return False
         near = self.kp_dist <= c.goal_tol
-        self.near_steps += int(near)
+        self.near_steps = (self.near_steps + 1 if near else 0) if c.goal_force_consecutive else self.near_steps + int(near)
         held = grasped(c, tactile_n) if is_grasped is None else bool(is_grasped)
         if not (near and self.near_steps >= c.goal_success_steps and held):
             return False

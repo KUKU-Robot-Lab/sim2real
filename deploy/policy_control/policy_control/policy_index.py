@@ -49,6 +49,9 @@ def _reward(env: Mapping, card: Mapping, _c: Mapping) -> str:
 
 
 def _object(env: Mapping, _card: Mapping, _c: Mapping) -> str:
+    names = list(dict.fromkeys(env.get("object_names") or ()))       # 10.12 다물체(one-hot) 정책
+    if names:
+        return " · ".join(str(n) for n in names) + (" (one-hot)" if env.get("object_id_obs") else "")
     name = str(env.get("object_name") or env.get("cup_object") or "shaker")
     if name == "shaker":
         return f"shaker×{env.get('cup_scale', 1.0)} (흰 출력물 aglt_cup_s065, Ø57)"
@@ -60,6 +63,9 @@ def _delay(env: Mapping, _card: Mapping, _c: Mapping) -> str:
     if arm is None and hand is None:
         return "없음 (키 전 런)"
     span = lambda v: "0" if not v or max(v) == 0 else f"{v[0]}–{v[1]}"  # noqa: E731
+    if env.get("cmd_delay_adr_mix") and env.get("arm_cmd_delay_joint_steps"):   # 10.12 rg3: 실측 관절별 × ADR 배율
+        lo, hi = env.get("cmd_delay_adr_scale_start", 0), env.get("cmd_delay_adr_scale_end", 1)
+        return f"팔 관절별 실측 × {lo}–{hi} (ADR) · 손 {span(hand)} 스텝"
     return "없음" if span(arm) == span(hand) == "0" else f"팔 {span(arm)} · 손 {span(hand)} 스텝"
 
 

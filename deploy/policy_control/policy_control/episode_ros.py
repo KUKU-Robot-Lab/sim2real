@@ -199,6 +199,30 @@ class RosExecutor:
         finally:
             self.node.destroy_client(cli)
 
+    def _set_object(self, node: str, name: str, timeout: float = 5.0, wait: float = 2.0) -> tuple[bool, list]:
+        """정책 노드 파라미터 object(다물체 aglt 정책의 물체 이름)를 SetParameters 로 — 다음 reset 이 읽는다."""
+        from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
+        from rcl_interfaces.srv import SetParameters
+
+        path = f"{node}/set_parameters"
+        cli = self.node.create_client(SetParameters, path, callback_group=self._cbg)
+        try:
+            if not cli.wait_for_service(timeout_sec=wait):
+                return False, [f"{path}: 서비스가 없다(노드가 떠 있는가)"]
+            req = SetParameters.Request()
+            req.parameters.append(Parameter(name="object", value=ParameterValue(
+                type=ParameterType.PARAMETER_STRING, string_value=name)))
+            fut = cli.call_async(req)
+            t0 = time.monotonic()
+            while not fut.done() and time.monotonic() - t0 < timeout:
+                time.sleep(0.02)
+            if not fut.done():
+                return False, [f"{path}: 응답 없음({timeout:.0f} s)"]
+            bad = [r.reason for r in fut.result().results if not r.successful]
+            return (False, [f"{path} object={name}: {bad}"]) if bad else (True, [])
+        finally:
+            self.node.destroy_client(cli)
+
     def _pd_fault(self, sides) -> str | None:
         with self._lock:
             for s in sides:
@@ -261,6 +285,10 @@ class RosExecutor:
         t0 = time.monotonic()
         with self._lock:
             last_ep = int((self._events.get(status_key) or {}).get("episode", 0))
+        if p.kind == "aglt" and getattr(p, "policy_object", None):   # ★10.12 다물체 정책 — reset 이 이 물체 one-hot 을 고른다
+            ok, why = self._set_object(f"/{node_name}_{side}", str(p.policy_object))
+            if not ok:
+                return NodeResult("refused", "; ".join(why), role=p.role)
         ok, why = self._call(f"{NS}/{ns}/episode/reset")
         if not ok:
             return NodeResult("refused", "; ".join(why), role=p.role)

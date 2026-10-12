@@ -11,6 +11,8 @@ rh_aglt_env.py 는 좌우가 바이트 단위로 같다(hdgp test_rh_aglt_contra
 관측 96(layout.actor_layout 순):
   arm_q 7 · arm_qd 7 · arm q* 7 · hand_q 6(★프로필 순 — hand_t = 이름으로 찾은 hand_ids) · hand_err 6((q*−q)/1.2, ±1) ·
   palm 3 · palm R 열0+열1 6 · cup−palm 3 · cup_up 3 · tips−cup 15 · (컵 kp − 목표 kp) 12 · 목표−palm 3 · 촉각 5 · 직전 행동 13
+★10.12 다물체 한 정책(object_names · per_env_geometry · object_id_obs): 관측 96 뒤에 물체 one-hot K(object_names 의 서로 다른
+키 순서, 잡음 없음 — hdgp rh_aglt_env._actor_parts 맨 끝) → 99. 컵 반높이 · 목표 박스 높이는 물체마다(select_object).
 위치는 로봇 base(= 학습 env-local, 로봇이 원점) 기준. 목표: 리셋 때 컵 + (0, 0, goal_first_z 가운데), 자세 = 리셋 때 컵 자세
 (학습은 xy ±5 cm · z 0.10~0.18 균등 — 배포는 가운데). 10.01 사용자: 목표를 직접 넣는다 — rh_aglt_goals.py(학습 목표 분포
 검사 · 먼 목표는 goal_delta_distance 이내 중간 목표로 나눠 차례로, 성공 = 키포인트 최대거리 ≤ tol_floor 누적 10 스텝 + 쥠).
@@ -105,6 +107,11 @@ class RaContract:
     #   어드민턴스, robot_control components/rh56f1.yaml control.admittance)으로 보낸다. "position" = angle_set(이 필드 전 계약 전부).
     hand_command: str = "position"
     hand_admittance: dict = field(default_factory=dict)  # 학습 값 k_g_per_rad · f_max_g · tau_contact_s · rate_rad_s · dr_frac(빈 값 = 위치)
+    # ★10.12 다물체 한 정책(hdgp object_id_obs) — object_names = 서로 다른 키, 순서 = one-hot id. 빈 값 = 물체 관측 없음(이 필드 전 계약)
+    object_names: list = field(default_factory=list)
+    object_geometry: dict = field(default_factory=dict)  # 이름 → {origin_offset_z, mouth_z, bottom_z, radius, half_height}(hdgp obj_geometry)
+    goal_force_consecutive: bool = False                 # 10.11 D6: 목표 근처 스텝을 연속으로만 센다(벗어나면 0)
+    active_object: str = ""                              # select_object 결과(계약 파일에는 비어 있다 — 에피소드 reset 때 고른다)
 
     def side(self, role: str = "arm") -> RaSide:
         return self.sides[role]
@@ -151,13 +158,18 @@ def hand_law(c: RaContract) -> RH.HandLaw:
                       freeze_threshold_n=c.freeze_threshold_n, hold="open")
 
 
-def obs_dim_of(_c: RaContract | None = None) -> int:
-    return sum(w for _, w in ACTOR_LAYOUT)
+def obs_dim_of(c: RaContract | None = None) -> int:
+    """관측 폭 — 96 + 물체 one-hot K(object_names 가 있을 때)."""
+    return sum(w for _, w in ACTOR_LAYOUT) + (len(c.object_names) if c is not None else 0)
+
+
+def actor_layout(c: RaContract | None = None) -> tuple:
+    return ACTOR_LAYOUT + ((("object_id", len(c.object_names)),) if c is not None and c.object_names else ())
 
 
 def validate(c: RaContract) -> None:
-    if c.action_dim != 13 or c.obs_dim != obs_dim_of():
-        raise RhAgltError(f"obs/action {c.obs_dim}/{c.action_dim} ≠ 레이아웃 {obs_dim_of()}/13")
+    if c.action_dim != 13 or c.obs_dim != obs_dim_of(c):
+        raise RhAgltError(f"obs/action {c.obs_dim}/{c.action_dim} ≠ 레이아웃 {obs_dim_of(c)}/13")
     s = c.side()
     if len(s.arm_joints) != 7 or len(s.hand_joints) != 6 or len(s.tip_bodies) != 5:
         raise RhAgltError("팔 7 · 손 6 · 손끝 5")
@@ -172,6 +184,20 @@ def validate(c: RaContract) -> None:
         raise RhAgltError(f"hand_command {c.hand_command!r} — {HAND_COMMANDS}")
     if (c.hand_command == "admittance") != bool(c.hand_admittance):
         raise RhAgltError("hand_command admittance 와 hand_admittance(학습 값)는 같이 있어야 한다")
+    _validate_objects(c)
+
+
+def _validate_objects(c: RaContract) -> None:
+    names = list(c.object_names)
+    if len(set(names)) != len(names):
+        raise RhAgltError(f"object_names {names} 에 중복 — one-hot id 는 서로 다른 키")
+    if names and sorted(c.object_geometry) != sorted(names):
+        raise RhAgltError(f"object_geometry 키 {sorted(c.object_geometry)} ≠ object_names {names}")
+    for k, g in c.object_geometry.items():
+        if set(g) != set(GEOM_FIELDS) or float(g["half_height"]) <= 0:
+            raise RhAgltError(f"object_geometry[{k}] = {g} — {GEOM_FIELDS}, 반높이 > 0")
+    if c.active_object and c.active_object not in names:
+        raise RhAgltError(f"active_object {c.active_object!r} 가 object_names {names} 에 없다")
 
 
 def load_contract(path: str | Path) -> RaContract:
@@ -203,7 +229,38 @@ CUP_OBJECTS: dict[str, tuple[dict[str, float], bool]] = {
     "source200_pla": ({"bottom_z": -0.085, "rim_z": 0.085}, False),
     "shaker_c": ({"bottom_z": -0.065, "rim_z": 0.065}, False),
     "shaker_b85": ({"bottom_z": -0.085, "rim_z": 0.045}, False),
+    # 10.11 hdgp OBJECTS *_real(실물 무게 · 실물 치수) — 10.12 다물체 한 정책(rg3)
+    "source240_real": ({"bottom_z": -0.085, "rim_z": 0.085}, False),
+    "source200_real": ({"bottom_z": -0.085, "rim_z": 0.085}, False),
+    "shaker_c_real": ({"bottom_z": -0.065, "rim_z": 0.065}, False),
 }
+#: hdgp OBJECTS unit outer_r(m) — 다물체 기하 표(object_geometry radius)용. 없는 물체는 다물체 계약에 못 쓴다
+CUP_OUTER_R = {"source240_real": 0.030, "source200_real": 0.030, "shaker_c_real": 0.0354}
+#: hdgp tasks/rh_aglt_r/obj_geometry.GEOM_FIELDS
+GEOM_FIELDS = ("origin_offset_z", "mouth_z", "bottom_z", "radius", "half_height")
+
+
+def _names(env: Mapping) -> list[str]:
+    names = [str(n) for n in (env.get("object_names") or ())] or [str(env.get("object_name", "shaker"))]
+    unknown = [n for n in names if n not in CUP_OBJECTS]
+    if unknown:
+        raise RhAgltError(f"object_name(s) {unknown} 을 모른다 — {sorted(CUP_OBJECTS)} (hdgp OBJECTS 를 옮겨 와라)")
+    return names
+
+
+def object_geometry(name: str, cup_scale: float) -> dict[str, float]:
+    """hdgp obj_geometry.object_geometry 와 같은 공식 — scaled 물체만 cup_scale 을 곱한다."""
+    unit, scaled = CUP_OBJECTS[name]
+    if name not in CUP_OUTER_R:
+        raise RhAgltError(f"{name}: 반지름(hdgp OBJECTS outer_r)을 모른다 — CUP_OUTER_R 에 옮겨 와라")
+    s = float(cup_scale) if scaled else 1.0
+    return {"origin_offset_z": -unit["bottom_z"] * s, "mouth_z": unit["rim_z"] * s, "bottom_z": unit["bottom_z"] * s,
+            "radius": CUP_OUTER_R[name] * s, "half_height": 0.5 * (unit["rim_z"] - unit["bottom_z"]) * s}
+
+
+def object_ids(env: Mapping) -> list[str]:
+    """hdgp object_id_obs 의 one-hot 순서 = object_names 의 서로 다른 키, 처음 나온 순서(obj_geometry.distinct_keys)."""
+    return list(dict.fromkeys(_names(env))) if bool(env.get("object_id_obs", False)) else []
 
 
 def cup_geometry(env: Mapping) -> tuple[float, float]:
@@ -211,13 +268,13 @@ def cup_geometry(env: Mapping) -> tuple[float, float]:
 
     env.yaml 의 파생 값은 쓰지 않는다: train.py 는 hydra 가 object_name 을 덮은 뒤 · env 가 resolve_cfg 를 다시 부르기 전에
     덤프하므로 cyl60 런의 덤프에는 기본 shaker × cup_scale 값이 남는다(10.04 확인 — 학습 env 는 cyl60 으로 돌았다)."""
-    names = [str(n) for n in (env.get("object_names") or ())] or [str(env.get("object_name", "shaker"))]
-    unknown = [n for n in names if n not in CUP_OBJECTS]
-    if unknown:
-        raise RhAgltError(f"object_name(s) {unknown} 을 모른다 — {sorted(CUP_OBJECTS)} (hdgp OBJECTS 를 옮겨 와라)")
-    # 10.09 다물체 런(object_names) — hdgp resolve_cfg 처럼 unit · scaled 가 모두 같아야 기하를 공유한다
-    if any(CUP_OBJECTS[n] != CUP_OBJECTS[names[0]] for n in names):
-        raise RhAgltError(f"object_names {names} 의 unit · scaled 가 다르다 — 학습 env 도 거부한다")
+    names = _names(env)
+    # 10.09 다물체 런(object_names) — hdgp resolve_cfg 처럼 unit · scaled 가 모두 같아야 기하를 공유한다.
+    #   10.11 per_env_geometry 면 unit 은 달라도 된다(스칼라 = 첫 물체, 물체별 값은 계약 object_geometry · select_object)
+    per_env = bool(env.get("per_env_geometry", False))
+    if any(CUP_OBJECTS[n][1] != CUP_OBJECTS[names[0]][1] or (not per_env and CUP_OBJECTS[n] != CUP_OBJECTS[names[0]])
+           for n in names):
+        raise RhAgltError(f"object_names {names} 의 unit · scaled 가 다르다 — 학습 env 도 거부한다(unit 만 다르면 per_env_geometry)")
     unit, scaled = CUP_OBJECTS[names[0]]
     s = float(env["cup_scale"]) if scaled else 1.0
     return 0.5 * (unit["rim_z"] - unit["bottom_z"]) * s, -unit["bottom_z"] * s
@@ -226,7 +283,16 @@ def cup_geometry(env: Mapping) -> tuple[float, float]:
 def is_rh_aglt_run(env: Mapping) -> bool:
     """rh_place(hdgp open-rh_*_place)도 프로필 · 관측 96 · 행동 13 이 같다 — 홀더 키(target_holders)로 가른다(10.04)."""
     return (str(env.get("profile_name", "")).startswith("rh56f1_") and int(env.get("action_space", 0)) == 13
-            and int(env.get("observation_space", 0)) == obs_dim_of() and "target_holders" not in env)
+            and int(env.get("observation_space", 0)) in (obs_dim_of(), obs_dim_of() + _k_obs(env))
+            and "target_holders" not in env)
+
+
+def _k_obs(env: Mapping) -> int:
+    """물체 one-hot 폭 — 덤프된 observation_space 는 96(해석 전) 또는 96+K 일 수 있다."""
+    try:
+        return len(object_ids(env))
+    except RhAgltError:
+        return 0
 
 
 def _left(name: str) -> str:
@@ -280,10 +346,26 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
                      + " · ".join(f"{k} {list(v) if isinstance(v, (list, tuple)) else v}" for k, v in sim_only.items()))
     dumped = (float(env["cup_half_height"]), float(env["cup_origin_offset_z"]))
     if max(abs(a - b) for a, b in zip(dumped, (half_h, origin_z))) > 1e-6:
-        notes.append(f"컵 {'+'.join(env.get('object_names') or ()) or env.get('object_name', 'shaker')}: 반높이 {half_h:.4f} · 원점 높이 {origin_z:.4f} m — env.yaml 덤프"
+        what = (f"스칼라(첫 물체 {_names(env)[0]} — 물체별 값은 object_geometry)" if env.get("per_env_geometry")
+                else '+'.join(env.get('object_names') or ()) or env.get('object_name', 'shaker'))
+        notes.append(f"컵 {what}: 반높이 {half_h:.4f} · 원점 높이 {origin_z:.4f} m — env.yaml 덤프"
                      f"({dumped[0]:.4f} · {dumped[1]:.4f})는 hydra 오버라이드 전 기본 shaker 값이라 쓰지 않았다")
     if not bool(cfg_a.get("normalize_input", False)):
         notes.append("normalize_input false")
+    obj_names = object_ids(env)
+    base = obs_dim_of()
+    if obj_names and int(env["observation_space"]) not in (base, base + len(obj_names)):
+        raise RhAgltError(f"object_id_obs: observation_space {env['observation_space']} ≠ {base}(+{len(obj_names)})")
+    geo = {k: object_geometry(k, float(env.get("cup_scale", 1.0))) for k in obj_names}
+    if obj_names:
+        notes.append(f"★다물체 한 정책: 관측 {base} + 물체 one-hot {len(obj_names)} (id 순 {obj_names}) — 에피소드 reset 때 "
+                     "노드 파라미터 object 로 물체를 고른다(모르면 reset 거부). 컵 반높이 · 목표 박스 높이는 물체를 따른다: "
+                     + " · ".join(f"{k} 반높이 {g['half_height']:.4f} 원점 {g['origin_offset_z']:.4f}" for k, g in geo.items()))
+    robust = {k: env[k] for k in ("cmd_delay_adr", "cmd_delay_adr_mix", "cmd_delay_adr_scale_end", "fpp_enable",
+                                  "fpp_attach_enable", "critic_delay_obs") if env.get(k)}
+    if obj_names and robust:
+        notes.append("학습 강건화(sim 전용, 배포 디코더 · 관측은 따라 하지 않는다): "
+                     + " · ".join(f"{k} {v}" for k, v in robust.items()))
     hand_cmd, adm = hand_command_of(env)
     if hand_cmd == "admittance":
         notes.append("손 = 어드민턴스 전제(hand_adm_enable): pd 가 손 목표를 /hand_<s>/angle_target 으로 보낸다 — 학습 "
@@ -294,7 +376,7 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
         env_yaml_sha1=hashlib.sha1(env_p.read_bytes()).hexdigest(),
         agent_yaml_sha1=hashlib.sha1(agent_p.read_bytes()).hexdigest(), asset=asset, profile=str(env["profile_name"]),
         policy_hz=1.0 / (float(env["sim"]["dt"]) * int(env["decimation"])), episode_s=float(env["episode_length_s"]),
-        obs_dim=int(env["observation_space"]), action_dim=int(env["action_space"]),
+        obs_dim=base + len(obj_names) if obj_names else int(env["observation_space"]), action_dim=int(env["action_space"]),
         obs_clip=float(agent["params"]["env"].get("clip_observations", 5.0)),
         action_clip=float(agent["params"]["env"].get("clip_actions", 1.0)), recurrent=bool(net.get("rnn")),
         hold_steps=int(env["hold_steps"]), k_arm=float(env["k_arm"]), arm_ema=float(env["arm_ema"]),
@@ -308,9 +390,29 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
         goal_first_xy_range=float(env["goal_first_xy_range"]), goal_first_z_range=z,
         goal_delta_distance=float(env["goal_delta_distance"]), goal_success_steps=int(env["goal_success_steps"]),
         goal_tol=float(env["tol_floor"]), grasp_threshold_n=float(env["contact_force_threshold"]),
-        hand_command=hand_cmd, hand_admittance=adm)
+        hand_command=hand_cmd, hand_admittance=adm, object_names=obj_names, object_geometry=geo,
+        goal_force_consecutive=bool(env.get("goal_force_consecutive", False)))
     validate(c)
     return c
+
+
+def select_object(c: RaContract, name: str | None) -> RaContract:
+    """에피소드에서 지금 잡는 물체 → 그 물체의 계약 보기. 다물체 계약이 아니면 그대로(name 무시하지 않고 비어 있어야 한다).
+
+    hdgp rh_aglt_env(10.11 per_env_geometry): 키포인트 반높이 = 물체 반높이, 목표 박스 z = 첫 물체 원점 기준 박스 +
+    (물체 원점 − 첫 물체 원점)(GoalState box_z_shift). 첫 목표 오프셋 · xy 박스는 그대로."""
+    if not c.object_names:
+        if name:
+            raise RhAgltError(f"물체 {name!r}: 이 계약은 물체 관측이 없다(단일 물체 정책) — object 를 비워라")
+        return c
+    if not name or name not in c.object_names:
+        raise RhAgltError(f"물체 {name!r} 를 모른다 — 이 정책은 {list(c.object_names)} 중 하나(노드 파라미터 object · "
+                          "에피소드 단계 policy_object)가 있어야 돈다")
+    g, g0 = c.object_geometry[name], c.object_geometry[c.object_names[0]]
+    dz = float(g["origin_offset_z"]) - float(g0["origin_offset_z"])
+    shift = lambda b: [*b[:2], b[2] + dz] if b else b  # noqa: E731
+    return with_run(c, active_object=name, cup_half_height=float(g["half_height"]),
+                    goal_box_min=shift(c.goal_box_min), goal_box_max=shift(c.goal_box_max))
 
 
 # ---------------------------------------------------------------- 디코더
@@ -390,7 +492,7 @@ def first_goal(c: RaContract, cup_pos: Sequence[float], cup_quat: Sequence[float
 
 
 def build_obs(c: RaContract, m: RaMeas, dec: RaDecoder, goal: Goal, prev_action: Sequence[float]) -> np.ndarray:
-    """관측 96 — 학습 `_actor_parts` 순서 그대로. 목표는 디코더의 지금 q*(직전 스텝 결과)."""
+    """관측 96(+물체 one-hot K) — 학습 `_actor_parts` 순서 그대로. 목표는 디코더의 지금 q*(직전 스텝 결과)."""
     s, st = c.side(), dec.state["arm"]
     hand_q = np.array([m.hand_q[j] for j in s.hand_joints], float)
     tips = np.asarray(m.tips, float).reshape(5, 3)
@@ -401,7 +503,14 @@ def build_obs(c: RaContract, m: RaMeas, dec: RaDecoder, goal: Goal, prev_action:
              (keypoints(c, m.cup_pos, m.cup_quat) - keypoints(c, goal.pos, goal.quat)).reshape(-1),
              goal.pos - m.palm_pos, RH.tactile_obs(m.tactile_n, c.tactile_clip_n, c.tactile_tanh_n),
              np.asarray(prev_action, float)]
-    for p, (name, w) in zip(parts, ACTOR_LAYOUT):
+    if c.object_names:                              # ★10.12 물체 one-hot — 모르면 거부(조용한 0 벡터 금지)
+        if c.active_object not in c.object_names:
+            raise RhAgltError(f"물체 one-hot: active_object {c.active_object!r} ∉ {list(c.object_names)} — select_object 먼저")
+        parts.append(np.eye(len(c.object_names))[c.object_names.index(c.active_object)])
+    layout = actor_layout(c)
+    if len(parts) != len(layout):
+        raise RhAgltError(f"관측 조각 {len(parts)} ≠ 레이아웃 {len(layout)}")
+    for p, (name, w) in zip(parts, layout):
         if np.asarray(p).size != w:
             raise RhAgltError(f"관측 '{name}' 폭 {np.asarray(p).size} ≠ {w}")
     obs = np.concatenate([np.asarray(p, float).reshape(-1) for p in parts])

@@ -153,6 +153,8 @@ class AgltChain:
         self.step_i = 0
         self.goals: G.GoalBook | None = None
         self.grasp_cfg: AttachCfg | None = None     # 노드가 넣는다(부착과 같은 쥠 신호) — 없으면 손끝 촉각 규칙
+        self.base = c                               # 파일 계약 — 다물체면 reset 마다 select_object 로 self.c 를 고른다
+        self.object_name: str | None = None         # ★10.12 노드 파라미터 object(에피소드 단계 policy_object)
 
     @property
     def goal(self) -> A.Goal | None:
@@ -166,6 +168,7 @@ class AgltChain:
     def reset(self, meas: dict | None = None) -> None:
         if meas is None:
             raise PourFjNodeError("rh_aglt reset needs the cup pose (goal = cup at reset + offset)")
+        self.c = A.select_object(self.base, self.object_name)   # 물체를 모르면 RhAgltError(조용한 0 one-hot 금지)
         self.dec.reset()
         self.prev = np.zeros(self.c.action_dim)
         self.step_i = 0
@@ -295,7 +298,7 @@ class PourFjNode(LeanNodeMixin, Node):
         self.node_name = self.get_name()          # -r __node:=rh_aglt_node_right 로 팔마다 이름을 가른다
         for name, default in (("contract", ""), ("robot", ""), ("device", "cpu"), ("reset_tol_rad", 0.15),
                               ("max_gap_ticks", 3), ("publish_target", True), ("max_episode_s", -1.0), ("ns", ""),
-                              ("stop_on_target", False), ("episode_topic", ""),
+                              ("stop_on_target", False), ("episode_topic", ""), ("object", ""),
                               ("cup_attach", True), ("attach_force_n", AttachCfg.force_n),
                               ("attach_joint_force_g", AttachCfg.joint_force_g), ("attach_signal", AttachCfg.signal),
                               ("attach_max_palm_dist_m", AttachCfg.max_palm_dist_m),
@@ -496,6 +499,8 @@ class PourFjNode(LeanNodeMixin, Node):
             if q0:
                 self.get_logger().info(f"인계 손 q*_0(실측) { {r: [round(float(v), 3) for v in q] for r, q in q0.items()} }")
         except self.fam.errors as exc:
+            if self.book.phase == "armed":          # ★10.12 실패한 reset 이 앞 reset(다른 물체 · 컵)으로 start 되지 않게
+                self.book.phase = "idle"
             return self._reply(res, False, [f"reset: {exc}"])
         self._seq, self._gap = 0, 0
         event, _ = self.book.reset()
@@ -533,6 +538,8 @@ class PourFjNode(LeanNodeMixin, Node):
 
     # ---------------------------------------------------------------- 계열 고리(rh_place_node.PlaceNode 가 덮는다)
     def _reset_chain(self, meas: dict) -> None:
+        if hasattr(self.chain, "object_name"):          # ★10.12 rh_aglt 다물체 정책 — reset 때 파라미터 object 로 물체를 고른다
+            self.chain.object_name = str(self.get_parameter("object").value).strip() or None
         self.chain.reset(meas)
 
     def _after_step(self) -> bool:
