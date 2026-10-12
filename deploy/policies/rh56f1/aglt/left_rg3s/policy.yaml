@@ -1,0 +1,16 @@
+# RH56F1 left rh_aglt 3물체 한 정책(rg3s) — 10.13 grasping 배포 후보(사용자 "후보전송" 승인 08:2x).
+id: rh56f1/aglt/left_rg3s
+status: candidate        # candidate | verified | deployed | hold
+task: open-rh_l_aglt-lstm
+side: left
+checkpoint: last_open-rh_l_aglt-lstm_ep_4700_rew_463.84695.pth
+summary: '물체 3개(source240_real · source200_real · shaker_c_real) 한 정책 · actor 촉각 없음(91 + one-hot 3) · 막힘 쥠 멈춤/쥔 판정(hand_block) · 쥔 판정 유지(block_follow_open) · 어드민턴스 · FP++ · 지연 ADR(0~1.5배) · 팔 오프셋 DR · 보상 rh_aglt_d6 iter_03'
+source: 'server:~/rl_ws/hdgp/log/rl_games/open-rh/left/aglt/aglt_l_rg3s/nn/last_open-rh_l_aglt-lstm_ep_4700_rew_463.84695.pth (md5 cb281517dedbcd0318016f07c42517ac) · 사본 local5090:~/rl_ws/our_source/policy/aglt_l_rg3s_ep4700'
+interface: obs 94 (91 + 물체 one-hot 3, 맨 끝) · action 13 (팔 관절 증분 7 · 손 6)
+deploy:
+  max_episode_s: 15.0
+note: >-
+  ★params/env.yaml 은 학습 덤프에서 두 곳을 고쳤다(10.13 등록 때): (1) observation_space 96 → 94 — 덤프가 env 초기화 전 기본값이라
+  체크포인트(running_mean · rnn 입력 94)에 맞춤. (2) grasp_hold_rule=block_follow_open · grasp_release_open_rad=(0,.1,.1,.1,.1) ·
+  grasp_release_steps=5 추가 — 학습은 이 규칙 없이(none) 했고, 결정론 평가에서 켠 값이 더 좋아서(아래 README) 배포에 켠다.
+  성공 = 컵 위 10 cm 키포인트 3 cm 안 연속 120 스텝(2 s) + 쥠.
