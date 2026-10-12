@@ -49,6 +49,9 @@ class PlaceContract(A.RaContract):
     # ★10.12 놓음 판정 — "contact"(손끝 촉각 · 관절 힘, 이 필드 전) | "block_follow_open"(막힘 신호 · 따라감 · 열림량, sim 과 같은 식)
     release_rule: str = "contact"
     release_open_rad: list = field(default_factory=list)  # block_follow_open: (엄지굽힘, 검지, 중지, 약지, 새끼) 쥔 자세에서 연 양 문턱
+    # ★10.13 놓기 기울기 게이트(hdgp release_max_tilt_deg): 놓음 조건이 release_steps 틱 찬 틱에 컵 기울기(세계 z) ≤ 이 값일
+    #   때만 놓음 — 배포는 지각 컵(손바닥 FK 부착) 자세로 같은 식. 0 = 게이트 없음(이 필드 전 계약).
+    release_max_tilt_deg: float = 0.0
 
 
 def is_rh_place_run(env: Mapping) -> bool:
@@ -86,6 +89,7 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
     base = A.build_from_env(Path(run_dir), checkpoint, right_profile, urdf, asset=asset, env=env, extra_obs=1 if latch else 0)
     rule = str(env.get("release_rule", "contact"))
     open_rad = [float(v) for v in env.get("release_open_rad", ())] if rule == "block_follow_open" else []
+    max_tilt = float(env.get("release_max_tilt_deg", 0.0))
     _, origin_z = A.cup_geometry(env)                       # 컵 원점 → 바닥 = −origin_z
     kw = {k: v for k, v in asdict(base).items() if not k.startswith("goal_")}
     kw["sides"] = base.sides
@@ -101,7 +105,7 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
                        seat_dz=HOLDER_FLOOR_Z + origin_z, target_holders=[int(h) for h in env["target_holders"]],
                        release_steps=int(env["release_steps"]), settle_steps=int(env["settle_steps"]),
                        release_force_n=float(env["contact_force_threshold"]),
-                       latch_obs=latch, release_rule=rule, release_open_rad=open_rad,
+                       latch_obs=latch, release_rule=rule, release_open_rad=open_rad, release_max_tilt_deg=max_tilt,
                        extra_actor_obs=["latch"] if latch else [],
                        obs_dim=base.obs_dim + (1 if latch else 0))
     if latch or rule != "contact":
@@ -111,6 +115,10 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
             f"★놓음(10.12) {rule}: 막힘 latch 없음 AND 모든 축이 목표를 따라감(앞섬 < G) AND 쥔 자세에서 연 양 ≥ "
             f"{open_rad} rad 이 {int(env['release_steps'])} 틱 — 관측 래치가 켜진 뒤에만" if rule != "contact" else
             "놓음 = 접촉(손끝 촉각 · 관절 힘)"])
+    if max_tilt > 0.0:
+        c = replace(c, notes=list(c.notes) + [
+            f"★놓기 기울기 게이트(10.13): 놓음 조건이 {int(env['release_steps'])} 틱 찬 틱에 지각 컵 기울기 ≤ {max_tilt}° 일 때만 "
+            "놓음(sim 은 실제 컵 기울기) — 기울어진 채로는 놓지 않고 정책이 세울 때까지 기다린다"])
     validate(c)
     return c
 
@@ -127,6 +135,8 @@ def validate(c: PlaceContract) -> None:
             raise RhPlaceError("latch bottom_xy 는 물체별 bottom_z(object_geometry)가 있어야 한다")
     elif c.extra_actor_obs:
         raise RhPlaceError(f"extra_actor_obs {c.extra_actor_obs} 인데 latch_obs 가 없다")
+    if not 0.0 <= float(c.release_max_tilt_deg) < 90.0:
+        raise RhPlaceError(f"release_max_tilt_deg {c.release_max_tilt_deg} — 0(없음) 또는 (0, 90)°")
     if c.release_rule not in RELEASE_RULES:
         raise RhPlaceError(f"release_rule {c.release_rule!r} — {RELEASE_RULES}")
     if c.release_rule == "block_follow_open":
@@ -260,11 +270,17 @@ class PlaceChain:
         if hasattr(self.policy, "reset"):
             self.policy.reset()
 
+    @staticmethod
+    def _tilt_deg(quat: np.ndarray) -> float:
+        """컵 z 축과 세계 z 사이 각 [deg] — hdgp acos(up_z)."""
+        up = A.quat_apply(quat, np.array([0.0, 0.0, 1.0]))
+        return float(np.degrees(np.arccos(np.clip(up[2], -1.0, 1.0))))
+
     def _latch_now(self, pos: np.ndarray, quat: np.ndarray) -> bool:
         """hdgp rh_place _latch_obs 의 지금 조건 — 지각 컵(손바닥 FK 부착) · 자리 목표."""
         L = self.c.latch_obs
         up = A.quat_apply(quat, np.array([0.0, 0.0, 1.0]))
-        tilt = float(np.degrees(np.arccos(np.clip(up[2], -1.0, 1.0))))
+        tilt = self._tilt_deg(quat)
         bz = float(self.c.object_geometry[self.c.active_object]["bottom_z"]) if self.c.object_names else 0.0
         bxy = (pos + up * bz)[:2] if L["bottom_xy"] else pos[:2]
         g = np.asarray(self.goal.pos, float)
@@ -316,6 +332,8 @@ class PlaceChain:
                 free = self.opened >= self.open_min_rad and is_free(self.c, m.tactile_n, m.joint_force, self.joint_free_g)
             self.free_streak = self.free_streak + 1 if free else 0
             gate = self.latch or not self.c.latch_obs     # 관측 래치가 켜진 뒤에만(sim release_requires_latch)
+            if self.c.release_max_tilt_deg > 0.0:         # 10.13 놓기 기울기 게이트(sim: 놓음 틱의 컵 기울기, streak 는 그대로 센다)
+                gate = gate and self._tilt_deg(quat) <= self.c.release_max_tilt_deg
             if self.free_streak >= self.c.release_steps and gate:
                 self.settle_t = 0
         self.prev = np.clip(a, -1.0, 1.0)

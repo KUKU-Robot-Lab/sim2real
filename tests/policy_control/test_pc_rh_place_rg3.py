@@ -140,3 +140,36 @@ def test_latch_settings_come_from_the_curriculum_end():
     with pytest.raises(P.RhPlaceError, match="쥠"):
         P.latch_obs_of(dict(env, latch_obs_requires_grasp=True))
     assert P.latch_obs_of({}) == {}
+
+
+def _rot_x(deg: float) -> np.ndarray:
+    a = np.radians(deg)
+    return np.array([[1.0, 0.0, 0.0], [0.0, np.cos(a), -np.sin(a)], [0.0, np.sin(a), np.cos(a)]])
+
+
+def test_a_tilted_cup_is_not_released_until_it_is_upright():
+    """10.13 place 오른손 release_max_tilt_deg 5 — 놓음 조건이 찬 뒤에도 지각 컵이 5° 넘게 기울면 놓지 않는다."""
+    from dataclasses import replace as _r
+    c = _contract(release_max_tilt_deg=5.0)
+    s = c.side()
+    lo, hi = np.asarray(s.hand_open, float), np.asarray(s.hand_grip, float)
+    held = lo + 0.6 * (hi - lo)
+    ch = P.PlaceChain(c, _Pol(np.concatenate([np.zeros(7), P.open_hand_action(c)])))
+    ch.object_name = "source240_real"
+    seat_z = HOLDER[2] + c.seat_dz
+    ch.reset({"arm": _meas(c, held, cup_z=seat_z)}, holder=HOLDER, held=(np.asarray(s.arm_home), held))
+    ch.step({"arm": _meas(c, held, cup_z=seat_z)})                 # 곧은 채 래치를 켠다
+    assert ch.latch
+    for _ in range(40):                                            # 손바닥이 8° 기울면 지각 컵도 8°(FK 부착)
+        m = _r(_meas(c, ch.dec.state["arm"].hand_target.copy(), cup_z=seat_z), palm_R=_rot_x(8.0))
+        ch.step({"arm": m})
+    assert not ch.settling and ch.free_streak >= c.release_steps
+    m = _r(_meas(c, ch.dec.state["arm"].hand_target.copy(), cup_z=seat_z), palm_R=_rot_x(3.0))
+    ch.step({"arm": m})
+    assert ch.settling                                             # 5° 안으로 세운 틱에 놓음
+
+
+def test_the_tilt_gate_comes_from_the_run_and_is_refused_out_of_range():
+    assert _contract().release_max_tilt_deg == 0.0                 # 키 없는 런 = 게이트 없음
+    with pytest.raises(P.RhPlaceError, match="release_max_tilt_deg"):
+        _contract(release_max_tilt_deg=95.0)
