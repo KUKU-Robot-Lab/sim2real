@@ -285,7 +285,7 @@ class RosExecutor:
         t0 = time.monotonic()
         with self._lock:
             last_ep = int((self._events.get(status_key) or {}).get("episode", 0))
-        if p.kind == "aglt" and getattr(p, "policy_object", None):   # ★10.12 다물체 정책 — reset 이 이 물체 one-hot 을 고른다
+        if p.kind in ("aglt", "place") and getattr(p, "policy_object", None):   # ★10.12 다물체 정책 — reset 이 물체 one-hot 을 고른다
             ok, why = self._set_object(f"/{node_name}_{side}", str(p.policy_object))
             if not ok:
                 return NodeResult("refused", "; ".join(why), role=p.role)

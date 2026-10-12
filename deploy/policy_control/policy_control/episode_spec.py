@@ -185,13 +185,17 @@ def load(path: str | Path) -> Episode:
     return parse(yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}, path=str(path))
 
 
+#: ★10.12 물체 one-hot 을 받는 정책 종류 — rh_aglt 다물체(rg3) · rh_place 다물체(rg3nt, 잡기와 같은 물체)
+OBJECT_KINDS = ("aglt", "place")
+
+
 def override_grasp_object(ep: Episode, *, policy_object: str = "", cup_object: str = "") -> Episode:
     """★10.12 실행기 파라미터로 물체를 바꾼 새 에피소드 — policy_object 는 aglt 단계의 물체 one-hot 이름,
     cup_object 는 FP++ 물체 이름(/objects/<이름>/pose). 빈 값은 YAML 기본을 둔다. 원본은 바꾸지 않는다.
     계약에 없는 이름은 여기서 막지 않고 availability 가 이유를 댄다(시작 검사)."""
     po, co = policy_object.strip(), cup_object.strip()
     nodes = tuple(
-        replace(n, jobs=tuple(replace(j, policy_object=po) if po and ep.policies[j.role].kind == "aglt" else j for j in n.jobs))
+        replace(n, jobs=tuple(replace(j, policy_object=po) if po and _takes_object(ep, j) else j for j in n.jobs))
         for n in ep.nodes)
     objects = {k: ({**o, "topic": f"/objects/{co}/pose"} if co else o) for k, o in ep.objects.items()}
     if co and len(objects) != 1:
@@ -226,8 +230,8 @@ def validate(ep: Episode) -> None:
             if j.target_holder is not None and j.target_holder not in ep.holders:
                 errs.append(f"{n.id}: 홀더 {j.target_holder!r} 가 holders 에 없다")
             b = ep.policies.get(j.role)
-            if j.policy_object is not None and (b is None or b.kind != "aglt" or not j.policy_object):
-                errs.append(f"{n.id}: policy_object {j.policy_object!r} 는 aglt 정책 단계에만(물체 one-hot 이름)")
+            if j.policy_object is not None and (b is None or b.kind not in OBJECT_KINDS or not j.policy_object):
+                errs.append(f"{n.id}: policy_object {j.policy_object!r} 는 {OBJECT_KINDS} 정책 단계에만(물체 one-hot 이름)")
         if n.type == "trajectory" and n.name not in ep.trajectories:
             errs.append(f"{n.id}: trajectory {n.name!r} 가 trajectories 에 없다")
         pose = n.expect.get("pose")
@@ -284,6 +288,13 @@ def _object_problem(ep: Episode, role: str, e: object) -> str:
         return f"policy_object {sorted({g for g in given if g})} — 단일 물체 정책(계약에 object_names 없음)" if any(given) else ""
     bad = sorted({str(g) for g in given if g not in names})
     return f"다물체 정책 {names}: 단계 policy_object {bad} — 계약 물체 중 하나를 단계마다 준다" if bad else ""
+
+
+def _takes_object(ep: Episode, j) -> bool:
+    """실행기 파라미터 policy_object 를 받는 단계 — aglt 는 언제나, place 는 YAML 에 policy_object 가 적힌 단계만
+    (단일 물체 place 정책(right_i09 등)에 물체를 억지로 넣지 않는다)."""
+    kind = ep.policies[j.role].kind
+    return kind == "aglt" or (kind == "place" and j.policy_object is not None)
 
 
 def holder_problems(ep: Episode, poses: Mapping[int, object]) -> list[str]:

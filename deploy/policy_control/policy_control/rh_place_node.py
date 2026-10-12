@@ -95,6 +95,7 @@ class PlaceNode(PourFjNode):
         return super()._srv_reset(req, res)
 
     def _reset_chain(self, meas: dict) -> None:
+        self.chain.object_name = str(self.get_parameter("object").value).strip() or None   # ★10.12 다물체 place(잡기와 같은 물체)
         self.chain.joint_free_g = float(self.get_parameter("joint_free_g").value)
         self.chain.open_min_rad = float(self.get_parameter("release_open_min_rad").value)
         held = self._held(meas)

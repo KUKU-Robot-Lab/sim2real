@@ -285,9 +285,25 @@ def test_an_episode_step_carries_the_policy_object_to_the_plan():
     assert seen["pick_cup"][0].policy_object == "source240_real" and seen["place_cup"][0].policy_object is None
 
 
-def test_a_policy_object_on_a_non_grasp_step_is_refused():
-    with pytest.raises(S.EpisodeSpecError, match="policy_object"):
-        S.parse(_raw(None, policy_object="source240_real"))
+def test_a_policy_object_on_a_place_step_is_allowed_and_the_override_reaches_it_only_if_marked():
+    """10.12 다물체 place(rg3nt) — 잡기와 같은 물체. YAML 에 policy_object 가 없는 place 단계(단일 물체 정책)는 그대로."""
+    ep = S.parse(_raw("source240_real", policy_object="source240_real"))
+    place = next(j for n in ep.nodes for j in n.jobs if ep.policies[j.role].kind == "place")
+    assert place.policy_object == "source240_real"
+    new = S.override_grasp_object(ep, policy_object="shaker_c_real")
+    assert next(j for n in new.nodes for j in n.jobs if new.policies[j.role].kind == "place").policy_object == "shaker_c_real"
+    old = S.override_grasp_object(S.parse(_raw("source240_real")), policy_object="shaker_c_real")
+    assert next(j for n in old.nodes for j in n.jobs if old.policies[j.role].kind == "place").policy_object is None
+
+
+def test_a_policy_object_on_a_non_policy_kind_is_refused():
+    raw = _raw(None)
+    raw["policies"]["rh_place_r"]["kind"] = "pour"
+    for n in raw["sequence"]:
+        if n["id"] == "place_cup":
+            n["policy_object"] = "source240_real"
+    with pytest.raises(S.EpisodeSpecError):
+        S.parse(raw)
 
 
 def test_availability_needs_a_known_object_for_the_multi_object_policy():

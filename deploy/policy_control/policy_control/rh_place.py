@@ -18,6 +18,7 @@ from typing import Mapping, Sequence
 
 import numpy as np
 
+from policy_control import hand_block as HB
 from policy_control import rh_aglt as A
 from policy_control.cup_attach import AttachCfg, grasp_signal
 
@@ -42,6 +43,12 @@ class PlaceContract(A.RaContract):
     release_steps: int = 0
     settle_steps: int = 0
     release_force_n: float = 0.0         # 놓음 = 접촉이 모두 이 힘 아래(env contact_force_threshold)
+    # ★10.12 관측 래치(hdgp release_latch_obs — 관측 끝 1 칸 "latch"): 지각 컵(손바닥 FK 부착)이 자리 위 dz 안 · 바닥 중심 xy
+    #   dxy 안 · 기울기 tilt_deg 안이면 켜지고 리셋까지 유지(놓기 전만). 빈 값 = 이 필드 전 계약(관측 96, 래치 없음).
+    latch_obs: dict = field(default_factory=dict)        # {dz, dxy, tilt_deg, bottom_xy}
+    # ★10.12 놓음 판정 — "contact"(손끝 촉각 · 관절 힘, 이 필드 전) | "block_follow_open"(막힘 신호 · 따라감 · 열림량, sim 과 같은 식)
+    release_rule: str = "contact"
+    release_open_rad: list = field(default_factory=list)  # block_follow_open: (엄지굽힘, 검지, 중지, 약지, 새끼) 쥔 자세에서 연 양 문턱
 
 
 def is_rh_place_run(env: Mapping) -> bool:
@@ -49,12 +56,36 @@ def is_rh_place_run(env: Mapping) -> bool:
             and int(env.get("hold_steps", -1)) == 0 and str(env.get("profile_name", "")).startswith("rh56f1_"))
 
 
+RELEASE_RULES = ("contact", "block_follow_open")
+RELEASE_AXES = ("thumb_flex", "index", "middle", "ring", "pinky")
+
+
+def latch_obs_of(env: Mapping) -> dict:
+    """hdgp release_latch_obs → {dz, dxy, tilt_deg, bottom_xy}. dxy 는 커리큘럼(curr_latch_dxy (시작, 끝))이 끝 칸에서
+    시작한 런이면 끝값(10.12 place: 덤프 latch_dxy 는 커리큘럼이 덮는 기본값). 커리큘럼 중간이면 거부."""
+    if not bool(env.get("release_latch_obs", False)):
+        return {}
+    if bool(env.get("latch_obs_requires_grasp", False)):
+        raise RhPlaceError("latch_obs_requires_grasp — 관측 래치에 쥠 조건이 붙은 런은 배포가 같은 값을 못 만든다")
+    dxy = float(env["latch_dxy"])
+    if bool(env.get("curr_enabled", False)) and env.get("curr_latch_dxy") is not None:
+        n, k = int(env["curr_num_increments"]), int(env.get("curr_start_increment", 0))
+        if k != n:
+            raise RhPlaceError(f"curr_latch_dxy 커리큘럼이 끝 칸에서 시작하지 않았다({k}/{n}) — 학습 끝의 latch_dxy 를 모른다")
+        dxy = float(list(env["curr_latch_dxy"])[1])
+    return {"dz": float(env["latch_dz"]), "dxy": dxy, "tilt_deg": float(env["latch_tilt_deg"]),
+            "bottom_xy": bool(env.get("latch_bottom_xy", False))}
+
+
 def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: str) -> PlaceContract:
     env_p = Path(run_dir) / "params" / "env.yaml"
     env = A.read_env(env_p)
     if not is_rh_place_run(env):
         raise RhPlaceError(f"{env_p}: rh_place 런이 아니다(target_holders · cup_obs_mode attached · hold 0)")
-    base = A.build_from_env(Path(run_dir), checkpoint, right_profile, urdf, asset=asset, env=env)
+    latch = latch_obs_of(env)
+    base = A.build_from_env(Path(run_dir), checkpoint, right_profile, urdf, asset=asset, env=env, extra_obs=1 if latch else 0)
+    rule = str(env.get("release_rule", "contact"))
+    open_rad = [float(v) for v in env.get("release_open_rad", ())] if rule == "block_follow_open" else []
     _, origin_z = A.cup_geometry(env)                       # 컵 원점 → 바닥 = −origin_z
     kw = {k: v for k, v in asdict(base).items() if not k.startswith("goal_")}
     kw["sides"] = base.sides
@@ -69,7 +100,17 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
                              f"보고 네 손가락 손 목표가 인계보다 {OPEN_MIN_RAD} rad 넘게 열린 뒤에만 센다(손바닥 · 첫마디 접촉 없음)"]},
                        seat_dz=HOLDER_FLOOR_Z + origin_z, target_holders=[int(h) for h in env["target_holders"]],
                        release_steps=int(env["release_steps"]), settle_steps=int(env["settle_steps"]),
-                       release_force_n=float(env["contact_force_threshold"]))
+                       release_force_n=float(env["contact_force_threshold"]),
+                       latch_obs=latch, release_rule=rule, release_open_rad=open_rad,
+                       extra_actor_obs=["latch"] if latch else [],
+                       obs_dim=base.obs_dim + (1 if latch else 0))
+    if latch or rule != "contact":
+        c = replace(c, notes=list(c.notes) + [
+            f"★관측 래치(10.12): 관측 끝 1 칸 — 지각 컵 원점 z − 자리 z ≤ {latch.get('dz')} · 바닥 중심 xy ≤ {latch.get('dxy')} m · "
+            f"기울기 ≤ {latch.get('tilt_deg')}° 면 켜지고 리셋까지 유지(놓기 전만)" if latch else "관측 래치 없음",
+            f"★놓음(10.12) {rule}: 막힘 latch 없음 AND 모든 축이 목표를 따라감(앞섬 < G) AND 쥔 자세에서 연 양 ≥ "
+            f"{open_rad} rad 이 {int(env['release_steps'])} 틱 — 관측 래치가 켜진 뒤에만" if rule != "contact" else
+            "놓음 = 접촉(손끝 촉각 · 관절 힘)"])
     validate(c)
     return c
 
@@ -78,6 +119,21 @@ def validate(c: PlaceContract) -> None:
     A.validate(c)
     if c.hold_steps != 0 or not c.target_holders or c.release_steps < 1 or c.settle_steps < 1 or c.release_force_n <= 0:
         raise RhPlaceError("hold 0 · 목표 홀더 · release/settle 스텝 · 놓음 힘")
+    if c.latch_obs:
+        if set(c.latch_obs) != {"dz", "dxy", "tilt_deg", "bottom_xy"} or list(c.extra_actor_obs) != ["latch"]:
+            raise RhPlaceError(f"latch_obs {c.latch_obs} · extra_actor_obs {c.extra_actor_obs} — dz · dxy · tilt_deg · bottom_xy, "
+                               "관측 끝 ['latch']")
+        if c.latch_obs["bottom_xy"] and not c.object_geometry:
+            raise RhPlaceError("latch bottom_xy 는 물체별 bottom_z(object_geometry)가 있어야 한다")
+    elif c.extra_actor_obs:
+        raise RhPlaceError(f"extra_actor_obs {c.extra_actor_obs} 인데 latch_obs 가 없다")
+    if c.release_rule not in RELEASE_RULES:
+        raise RhPlaceError(f"release_rule {c.release_rule!r} — {RELEASE_RULES}")
+    if c.release_rule == "block_follow_open":
+        if not c.hand_block or len(c.release_open_rad) != len(RELEASE_AXES) or min(c.release_open_rad) < 0 \
+                or max(c.release_open_rad) <= 0:
+            raise RhPlaceError(f"block_follow_open: hand_block 과 release_open_rad {len(RELEASE_AXES)} 개(≥ 0, 하나는 > 0) "
+                               f"{RELEASE_AXES} — 10.12 place 결정 (0.0, 0.10, 0.10, 0.10, 0.10)")
 
 
 def load_contract(path: str | Path) -> PlaceContract:
@@ -149,6 +205,8 @@ class PlaceChain:
 
     def __init__(self, c: PlaceContract, policy, *, joint_free_g: float = JOINT_FREE_G, open_min_rad: float = OPEN_MIN_RAD) -> None:
         self.c, self.policy, self.joint_free_g, self.open_min_rad = c, policy, joint_free_g, open_min_rad
+        self.base = c                                   # 파일 계약 — 다물체면 reset 마다 select_object 로 self.c 를 고른다
+        self.object_name: str | None = None             # ★10.12 노드 파라미터 object(잡기 단계와 같은 물체)
         self.dec = A.RaDecoder(c)
         self.prev = np.zeros(c.action_dim)
         self.step_i, self.free_streak, self.settle_t = 0, 0, -1
@@ -161,6 +219,10 @@ class PlaceChain:
         self._fingers = [i for i, j in enumerate(s.hand_joints) if "thumb" not in j]
         self.hand0: np.ndarray | None = None
         self.opened, self.tact_max, self.jf_max = 0.0, 0.0, None
+        self.latch = False                              # 관측 래치(latch_obs) — 리셋까지 유지
+        self.q_g: np.ndarray | None = None              # block_follow_open: 마지막으로 쥐었던 틱의 실측(칸 단위)
+        names = list(s.hand_joints)
+        self._rel_idx = [next(i for i, n in enumerate(names) if n.endswith(HB.AXIS_SUFFIX[a])) for a in RELEASE_AXES]
 
     @property
     def settling(self) -> bool:
@@ -175,6 +237,7 @@ class PlaceChain:
         m = meas["arm"]
         if holder is None:
             raise RhPlaceError("holder pose missing — /objects/cup_holder_<k>/pose 가 와야 목표(자리)를 안다")
+        self.c = A.select_object(self.base, self.object_name)   # 물체를 모르면 거부(조용한 0 one-hot 금지)
         s = self.c.side()
         hand_meas = np.array([m.hand_q[j] for j in s.hand_joints], float)
         if held is None and not allow_measured:
@@ -193,8 +256,31 @@ class PlaceChain:
         self.start_q = np.asarray(m.arm_q, float).copy()          # sim _start_q = 리셋 때 팔 실측(놓은 뒤 복귀 목표)
         self.prev = np.zeros(self.c.action_dim)
         self.step_i, self.free_streak, self.settle_t = 0, 0, -1
+        self.latch, self.q_g = False, None
         if hasattr(self.policy, "reset"):
             self.policy.reset()
+
+    def _latch_now(self, pos: np.ndarray, quat: np.ndarray) -> bool:
+        """hdgp rh_place _latch_obs 의 지금 조건 — 지각 컵(손바닥 FK 부착) · 자리 목표."""
+        L = self.c.latch_obs
+        up = A.quat_apply(quat, np.array([0.0, 0.0, 1.0]))
+        tilt = float(np.degrees(np.arccos(np.clip(up[2], -1.0, 1.0))))
+        bz = float(self.c.object_geometry[self.c.active_object]["bottom_z"]) if self.c.object_names else 0.0
+        bxy = (pos + up * bz)[:2] if L["bottom_xy"] else pos[:2]
+        g = np.asarray(self.goal.pos, float)
+        return bool(pos[2] - g[2] <= L["dz"] and np.linalg.norm(bxy - g[:2]) <= L["dxy"] and tilt <= L["tilt_deg"])
+
+    def _free_block(self, q_meas: np.ndarray, q_star: np.ndarray) -> bool:
+        """block_follow_open — 막힘 latch 없음 AND 모든 축이 목표를 따라감 AND 쥔 자세에서 X 이상 열림(sim 과 같은 식)."""
+        blk = self.dec.block
+        qq = blk.quantize(q_meas)
+        if self.q_g is None or blk.grasped():          # 리셋 뒤 첫 틱은 지금 자세, 그 뒤는 쥔 틱마다
+            self.q_g = qq.copy()
+        i = self._rel_idx
+        sgn = blk.sgn[i]
+        opened = (self.q_g[i] - qq[i]) * sgn
+        follow = (np.asarray(q_star, float)[i] - qq[i]) * sgn < blk.cfg.g_rad
+        return bool(not blk.latch.any() and follow.all() and np.all(opened >= np.asarray(self.c.release_open_rad, float)))
 
     def cup_from_palm(self, palm_pos: np.ndarray, palm_R: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         if self.rel is None:
@@ -206,7 +292,10 @@ class PlaceChain:
         m = meas["arm"]
         pos, quat = self.cup_from_palm(m.palm_pos, m.palm_R)
         m = replace(m, cup_pos=pos, cup_quat=quat)
-        obs = A.build_obs(self.c, m, self.dec, self.goal, self.prev)
+        if self.c.latch_obs and not self.settling:     # 정책 출력 전 같은 스텝의 지각 자세로(놓은 뒤에는 그대로)
+            self.latch = self.latch or self._latch_now(pos, quat)
+        extra = {"latch": 1.0 if self.latch else 0.0} if self.c.extra_actor_obs else None
+        obs = A.build_obs(self.c, m, self.dec, self.goal, self.prev, extra=extra)
         if self.settling:
             st = self.dec.state["arm"]
             a = np.concatenate([np.clip((self.start_q - st.arm_target) / self.c.k_arm, -1.0, 1.0), self._a_open])
@@ -221,9 +310,13 @@ class PlaceChain:
         if self.settling:
             self.settle_t += 1
         else:
-            free = self.opened >= self.open_min_rad and is_free(self.c, m.tactile_n, m.joint_force, self.joint_free_g)
+            if self.c.release_rule == "block_follow_open":
+                free = self._free_block(hand_q, targets["arm"][1])
+            else:
+                free = self.opened >= self.open_min_rad and is_free(self.c, m.tactile_n, m.joint_force, self.joint_free_g)
             self.free_streak = self.free_streak + 1 if free else 0
-            if self.free_streak >= self.c.release_steps:
+            gate = self.latch or not self.c.latch_obs     # 관측 래치가 켜진 뒤에만(sim release_requires_latch)
+            if self.free_streak >= self.c.release_steps and gate:
                 self.settle_t = 0
         self.prev = np.clip(a, -1.0, 1.0)
         self.step_i += 1
@@ -233,7 +326,8 @@ class PlaceChain:
         return {"phase": "done" if self.done else "settle" if self.settling else "place", "free_streak": self.free_streak,
                 "settle_t": self.settle_t, "seat": None if self.goal is None else [round(float(v), 4) for v in self.goal.pos],
                 # 첫 실기 문턱 정하기용(PLACE 검토) — 손 목표가 인계보다 연 양 · 손끝 최대 · 관절 힘 최대
-                "opened": round(self.opened, 4), "tact_max": round(self.tact_max, 3),
+                "opened": round(self.opened, 4), "tact_max": round(self.tact_max, 3), "latch": self.latch,
+                "rule": self.c.release_rule,
                 "jf_max": None if self.jf_max is None else round(self.jf_max, 1)}
 
 

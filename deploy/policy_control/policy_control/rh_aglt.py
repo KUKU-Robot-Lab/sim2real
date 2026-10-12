@@ -121,6 +121,8 @@ class RaContract:
     hand_block: dict = field(default_factory=dict)       # {g_rad, eps_rad, n_ticks, lag_ticks, axes}
     grasp_rule: str = ""                                 # "thumb_flex_and_any_finger"(hand_block 과 같이)
     hand_lead_cap_rad: float = 0.0                       # 학습 sim 의 손 목표 앞섬 상한 — 실기 pd HAND_MAX_LEAD 와 같아야 한다
+    # ★10.12 계열 고유 관측 칸(폭 1씩, 물체 one-hot 뒤) — rh_place 관측 래치("latch", hdgp extra_actor_obs). 값은 체인이 준다.
+    extra_actor_obs: list = field(default_factory=list)
 
     def side(self, role: str = "arm") -> RaSide:
         return self.sides[role]
@@ -176,7 +178,8 @@ def actor_layout(c: RaContract | None = None, *, tactile: bool | None = None) ->
     """hdgp layout.actor_layout 과 같은 순서 — tactile 은 계약 actor_tactile_obs(없으면 True)."""
     tac = (c.actor_tactile_obs if c is not None else True) if tactile is None else bool(tactile)
     base = ACTOR_LAYOUT if tac else tuple(x for x in ACTOR_LAYOUT if x[0] != "tactile")
-    return base + ((("object_id", len(c.object_names)),) if c is not None and c.object_names else ())
+    base = base + ((("object_id", len(c.object_names)),) if c is not None and c.object_names else ())
+    return base + (tuple((str(n), 1) for n in c.extra_actor_obs) if c is not None else ())
 
 
 #: 학습 덤프가 가질 수 있는 actor 폭(촉각 있음 · 없음) — 물체 one-hot 은 따로 더한다
@@ -354,7 +357,8 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
     return build_from_env(Path(run_dir), checkpoint, right_profile, urdf, asset=asset, env=env)
 
 
-def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: str, env: Mapping) -> RaContract:
+def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: str, env: Mapping,
+                   extra_obs: int = 0) -> RaContract:
     """build 의 본체 — 런 종류 검사 없이(rh_place 가 같은 관측 · 디코더 칸을 여기서 받는다, rh_place.build)."""
     env_p, agent_p = run_dir / "params" / "env.yaml", run_dir / "params" / "agent.yaml"
     agent = yaml.safe_load(agent_p.read_text())
@@ -402,7 +406,7 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
     if not tactile:
         notes.append(f"★actor 촉각 없음(actor_tactile_obs False): 관측 {base}(+물체 one-hot) — 손끝 촉각은 critic 에만. "
                      "쥠 멈춤 · 쥔 판정은 여전히 촉각 · 관절 힘을 쓴다(디코더 · cup_attach)")
-    if obj_names and int(env["observation_space"]) not in (base, base + len(obj_names)):
+    if obj_names and int(env["observation_space"]) not in (base, base + len(obj_names), base + len(obj_names) + extra_obs):
         raise RhAgltError(f"object_id_obs: observation_space {env['observation_space']} ≠ {base}(+{len(obj_names)})")
     geo = {k: object_geometry(k, float(env.get("cup_scale", 1.0))) for k in obj_names}
     if obj_names:
@@ -581,7 +585,8 @@ def first_goal(c: RaContract, cup_pos: Sequence[float], cup_quat: Sequence[float
     return Goal(np.asarray(cup_pos, float) + np.asarray(c.goal_offset, float), np.asarray(cup_quat, float))
 
 
-def build_obs(c: RaContract, m: RaMeas, dec: RaDecoder, goal: Goal, prev_action: Sequence[float]) -> np.ndarray:
+def build_obs(c: RaContract, m: RaMeas, dec: RaDecoder, goal: Goal, prev_action: Sequence[float],
+              extra: Mapping[str, float] | None = None) -> np.ndarray:
     """관측 96(+물체 one-hot K) — 학습 `_actor_parts` 순서 그대로. 목표는 디코더의 지금 q*(직전 스텝 결과)."""
     s, st = c.side(), dec.state["arm"]
     hand_q = np.array([m.hand_q[j] for j in s.hand_joints], float)
@@ -599,6 +604,10 @@ def build_obs(c: RaContract, m: RaMeas, dec: RaDecoder, goal: Goal, prev_action:
         if c.active_object not in c.object_names:
             raise RhAgltError(f"물체 one-hot: active_object {c.active_object!r} ∉ {list(c.object_names)} — select_object 먼저")
         parts.append(np.eye(len(c.object_names))[c.object_names.index(c.active_object)])
+    for name in c.extra_actor_obs:                  # 계열 고유 칸(rh_place latch) — 체인이 값을 준다(없으면 거부)
+        if extra is None or name not in extra:
+            raise RhAgltError(f"관측 '{name}' 값이 없다 — 체인이 extra 로 줘야 한다")
+        parts.append(np.array([float(extra[name])]))
     layout = actor_layout(c)
     if len(parts) != len(layout):
         raise RhAgltError(f"관측 조각 {len(parts)} ≠ 레이아웃 {len(layout)}")
