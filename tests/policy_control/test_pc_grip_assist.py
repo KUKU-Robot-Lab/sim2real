@@ -126,6 +126,55 @@ def test_a_bad_thumb_threshold_is_refused(bad):
         A.GripAssist(thumb_support_g=bad)
 
 
+THUMB_PUSHED = 0.03                                   # 실기 23:39 오른손: 컵이 엄지를 편 끝(0.049)보다 더 펴지게 민다(0.021~0.038)
+
+
+def _grasp_then_open(dec: A.RaDecoder, *, grasp_ticks: int = 240, open_ticks: int = 240) -> tuple[bool, bool]:
+    """쥠(엄지는 컵에 밀려 THUMB_PUSHED, 네 손가락은 컵에서 막힘) → 정책이 손을 편다(실측 = 목표, 엄지는 편 끝 THUMB_FLOOR).
+    (쥔 판정이 켜졌는가, 편 뒤 쥔 판정)."""
+    fingers = slice(I_INDEX, I_INDEX + 4)
+    a = -np.ones(13)
+    a[7 + I_INDEX:7 + I_INDEX + 4] = 1.0
+    seen = False
+    for _ in range(grasp_ticks):
+        q = dec.state["arm"].hand_target.copy()
+        q[I_THUMB_FLEX], q[fingers] = THUMB_PUSHED, np.minimum(q[fingers], CUP_INDEX)
+        dec.step(a, active=True, hand_q=q, joint_force=np.array([130.0, 0.0, 150.0, 0.0, 0.0, 0.0]))
+        seen = seen or bool(dec.grasped())
+    a = -np.ones(13)
+    for k in range(open_ticks):                       # 컵이 빠지면 엄지는 곧 편 끝으로, 손가락은 목표를 따라 천천히 열린다(bag 4.0~5.0 s)
+        q = dec.state["arm"].hand_target.copy()
+        q[fingers] = np.minimum(q[fingers], CUP_INDEX)
+        q[I_THUMB_FLEX] = THUMB_PUSHED if k < 3 else max(q[I_THUMB_FLEX], THUMB_FLOOR)
+        dec.step(a, active=True, hand_q=q, joint_force=np.zeros(6))
+    return seen, bool(dec.grasped())
+
+
+def test_without_the_thumb_floor_the_hold_never_releases_after_the_hand_opens(c):
+    """실기 20261013_223839 오른손 재현: 쥘 때 엄지 굽힘 q_g 0.038 < 편 끝 0.049 → 엄지 '열림 ≥ 0' 조건이 영영 안 맞아
+    손을 다 펴도 쥔 판정이 남는다(→ 컵 감시가 뗀 뒤 다시 안 붙음 → 실행기 쥠 실패 → 들고 있던 컵을 놓음)."""
+    seen, after = _grasp_then_open(A.RaDecoder(c, A.GripAssist(thumb_support_g=80.0)))
+    assert seen and after
+
+
+def test_the_thumb_open_floor_lets_the_hold_release_when_the_hand_opens(c):
+    seen, after = _grasp_then_open(A.RaDecoder(c, A.GripAssist(thumb_support_g=80.0, thumb_open_floor_rad=0.06)))
+    assert seen and not after
+
+
+def test_the_thumb_open_floor_keeps_the_grasp_while_holding(c):
+    """C 는 놓아 주는 조건만 바꾼다 — 쥔 채로 있으면(손가락이 안 열리면) 판정은 그대로 남는다."""
+    dec = A.RaDecoder(c, A.GripAssist(thumb_support_g=80.0, thumb_open_floor_rad=0.06))
+    seen, _ = _grasp_then_open(dec, open_ticks=0)
+    assert seen and dec.grasped()
+
+
+@pytest.mark.parametrize("bad", [-0.01, float("nan"), float("inf"), 0.3])
+def test_a_bad_thumb_open_floor_is_refused(bad):
+    with pytest.raises(A.RhAgltError):
+        A.GripAssist(thumb_open_floor_rad=bad)
+
+
 def _chain_with_cup(c, cup_reset_z: float) -> N.AgltChain:
     ch = N.AgltChain(c, policy=None)
     ch.goals = G.GoalBook.start(c, np.array([0.3, -0.1, cup_reset_z]), np.array([1.0, 0, 0, 0]), freeze=ch.freeze)
@@ -156,16 +205,18 @@ def test_lift_grasp_needs_the_lift_and_the_cup_near_the_palm(c):
 def _fake_node(c, **params):
     from types import SimpleNamespace
     vals = {"object": "", "freeze_rule": "lift_hold", "freeze_lift_m": 0.07, "freeze_hold_steps": 30,
-            "hand_unfreeze_on_grasp": False, "thumb_support_g": 0.0, "lift_grasp_palm_m": 0.0, **params}
+            "hand_unfreeze_on_grasp": False, "thumb_support_g": 0.0, "lift_grasp_palm_m": 0.0,
+            "thumb_open_floor_rad": 0.0, **params}
     chain = N.AgltChain(c, policy=None)
     chain.reset = lambda meas: None                   # 체인 리셋 자체는 다른 테스트가 본다 — 여기선 파라미터 배선만
     return SimpleNamespace(chain=chain, get_parameter=lambda n: SimpleNamespace(value=vals[n])), chain
 
 
 def test_the_node_wires_the_assist_parameters_into_the_chain_at_reset(c):
-    node, chain = _fake_node(c, hand_unfreeze_on_grasp=True, thumb_support_g=80.0, lift_grasp_palm_m=0.08)
+    node, chain = _fake_node(c, hand_unfreeze_on_grasp=True, thumb_support_g=80.0, lift_grasp_palm_m=0.08,
+                             thumb_open_floor_rad=0.06)
     N.PourFjNode._reset_chain(node, {})
-    assert chain.dec.assist == A.GripAssist(True, 80.0) and chain.lift_grasp_palm_m == 0.08
+    assert chain.dec.assist == A.GripAssist(True, 80.0, 0.06) and chain.lift_grasp_palm_m == 0.08
 
 
 def test_the_node_defaults_leave_the_sim_behaviour(c):
@@ -174,7 +225,8 @@ def test_the_node_defaults_leave_the_sim_behaviour(c):
     assert chain.dec.assist == A.GripAssist() and chain.lift_grasp_palm_m == 0.0
 
 
-@pytest.mark.parametrize("bad", [{"thumb_support_g": -5.0}, {"lift_grasp_palm_m": -0.1}, {"lift_grasp_palm_m": float("nan")}])
+@pytest.mark.parametrize("bad", [{"thumb_support_g": -5.0}, {"lift_grasp_palm_m": -0.1}, {"lift_grasp_palm_m": float("nan")},
+                                 {"thumb_open_floor_rad": -0.1}, {"thumb_open_floor_rad": float("nan")}])
 def test_bad_assist_parameters_refuse_the_reset(c, bad):
     node, _ = _fake_node(c, **bad)
     with pytest.raises(A.RhAgltError):

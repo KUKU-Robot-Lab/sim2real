@@ -265,6 +265,14 @@ def test_the_detector_reads_refusal_text_and_signals():
     # 10.13 실기 오른손: FP++ 실측 컵이 붙은 컵에서 9 cm 떨어졌다 — 손에 없다
     assert code(NodeResult("completed", lift, role="rh_aglt_r",
                            signals={"attached": True, "setting_err_m": 0.04, "live_off_m": 0.091})) is F.GRASP_FAILED_RIGHT
+    # 10.13 실기 오른손 223839: 첫 쥠이 미끄러져 감시가 뗐고(live_off 0.094 는 그 부착의 기록) 두 번째 쥠으로 FP++ 실측 컵을
+    #   9.6 cm 들었다 — 붙지 않은 채 들기 성공이면 그 들림은 FP++ 가 직접 본 것이다. 지난 부착의 거리는 보지 않는다
+    assert code(NodeResult("completed", lift, role="rh_aglt_r",
+                           signals={"attached": False, "setting_err_m": 0.056, "live_off_m": 0.0939})) is F.NONE
+    assert code(NodeResult("completed", "", role="rh_aglt_r",
+                           signals={"attached": False, "setting_err_m": 0.01})) is F.GRASP_FAILED_RIGHT
+    assert code(NodeResult("completed", lift, role="rh_aglt_r",
+                           signals={"attached": False, "dropped": True})) is F.OBJECT_DROPPED_RIGHT
     assert d.evaluate(ep, place, [NodeResult("refused", "reset: holder pose missing — …", role="rh_place_r")])[0] \
         is F.HOLDER_NOT_FOUND
 

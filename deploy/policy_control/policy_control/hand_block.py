@@ -159,12 +159,19 @@ class GraspHoldNp:
         self.cnt = 0
         self.q_g = np.zeros(self.b.h)
 
-    def step(self, raw: bool, q_star: Sequence[float], q: Sequence[float]) -> bool:
+    def step(self, raw: bool, q_star: Sequence[float], q: Sequence[float], floor: np.ndarray | None = None) -> bool:
+        """floor (H, nan = 없음) — ★10.13 배포 전용: 쥔 자세 q_g 를 축마다 이 값보다 더 편 쪽으로 기록하지 않는다.
+        실기 엄지 굽힘은 컵에 밀려 편 끝(0.046~0.049 rad)보다 더 펴진 0.02~0.04 에서 쥔다 — 그 q_g 로는 손을 다 펴도
+        '열림 ≥ 0' 이 영영 안 맞는다(20261013_223839). None = sim 과 같다."""
         b = self.b
         qq = b.quantize(np.asarray(q, float).reshape(-1))
         s = np.asarray(q_star, float).reshape(-1)
         if raw:
             self.q_g = qq.copy()
+            if floor is not None:
+                f = np.asarray(floor, float).reshape(-1)
+                on = np.isfinite(f)
+                self.q_g[on] = f[on] + np.maximum((qq[on] - f[on]) * b.sgn[on], 0.0) * b.sgn[on]
         self.hold = self.hold or bool(raw)
         open_amt = (self.q_g - qq) * b.sgn
         follow = ((s - qq) * b.sgn) < b.cfg.g_rad

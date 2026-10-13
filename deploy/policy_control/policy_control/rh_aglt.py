@@ -482,6 +482,8 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
 #: 10.12 grasping 확정 명목값(배포가 쓰는 값) — sim 은 env 마다 이 둘레 DR(hand_block_*_rad · n_ticks 범위)
 HAND_BLOCK_NOMINAL = {"g_rad": 0.0218, "eps_rad": 0.0109, "n_ticks": 3}
 HAND_BLOCK_AXES = ["thumb_flex", "index", "middle", "ring", "pinky"]
+#: GripAssist C 상한 — 엄지 굽힘 편 끝(0.046~0.049 rad) 근처 값만 뜻이 있다. 크게 주면 엄지가 굽은 채여도 풀린다
+THUMB_OPEN_FLOOR_MAX = 0.15
 
 
 def hand_block_of(env: Mapping) -> tuple[dict, str, float]:
@@ -548,14 +550,21 @@ class GripAssist:
         0.046(왼) · 0.049(오) rad 라 막힘 래치가 안 걸린다(왼손 쉐이커를 들고도 쥔 판정 0/899 틱 → lift_hold 멈춤 없음).
         엄지 굽힘 관절 힘(g)이 이 값을 넘으면 엄지 래치 대신 받침으로 본다(손가락 막힘 래치는 그대로 필요).
         bag: 빈손 −33~+28 g, 쥠 95~474 g. 0 = 끔.
+      C thumb_open_floor_rad — (bag 20261013_223839 오른손) 컵이 엄지 굽힘을 편 끝(0.049)보다 더 펴지게 밀어 쥔 자세
+        q_g 가 0.038 로 남았다. 쥔 판정 유지(GraspHold)는 '엄지가 q_g 보다 더 굽지 않았을 것'을 요구해 손을 다 편 뒤에도
+        (엄지 0.049) 3.5 s 동안 안 풀렸다 → 컵 감시가 뗀 뒤 다시 붙지 않음 → 두 번째 쥠으로 9.6 cm 들고도 실행기가 쥠 실패로
+        보고 손을 펴 컵을 떨굼. q_g 의 엄지 굽힘을 이 값보다 더 편 쪽으로 기록하지 않는다(편 끝 + 여유). 0 = 끔.
     """
 
     unfreeze_on_grasp: bool = False
     thumb_support_g: float = 0.0
+    thumb_open_floor_rad: float = 0.0
 
     def __post_init__(self) -> None:
         if not (np.isfinite(self.thumb_support_g) and self.thumb_support_g >= 0.0):
             raise RhAgltError(f"thumb_support_g ≥ 0(0 = 끔): {self.thumb_support_g}")
+        if not (np.isfinite(self.thumb_open_floor_rad) and 0.0 <= self.thumb_open_floor_rad <= THUMB_OPEN_FLOOR_MAX):
+            raise RhAgltError(f"thumb_open_floor_rad 0~{THUMB_OPEN_FLOOR_MAX} rad(0 = 끔): {self.thumb_open_floor_rad}")
 
 
 class RaDecoder:
@@ -593,6 +602,14 @@ class RaDecoder:
         f = np.asarray(joint_force, float).reshape(-1)
         return bool(f.size >= 1 and np.isfinite(f[0]) and f[0] > self.assist.thumb_support_g)
 
+    def _hold_floor(self) -> np.ndarray | None:
+        """C — 쥔 판정 유지의 q_g 하한(엄지 굽힘만, 나머지 nan). 끄면 None(sim 과 같다)."""
+        if self.assist.thumb_open_floor_rad <= 0.0 or self.block is None:
+            return None
+        f = np.full(self.block.h, np.nan)
+        f[self.block.thumb_flex] = self.assist.thumb_open_floor_rad
+        return f
+
     def _raw_grasped(self) -> bool:
         """막힘 쥔 판정(엄지 굽힘 AND 손가락) — B 가 켜져 있으면 엄지 래치 대신 엄지 받침도 인정한다."""
         b = self.block
@@ -618,7 +635,7 @@ class RaDecoder:
             if hand_q is None:
                 raise RhAgltError("hand_block 계약: 디코더에 실측 손 각도(hand_q)가 필요하다")
             if self.hold is not None:                 # 10.13 쥔 판정 유지 — 이번 block.step 전(sim tick 끝 색인)
-                self.hold.step(self._raw_grasped(), st.hand_target, hand_q)
+                self.hold.step(self._raw_grasped(), st.hand_target, hand_q, floor=self._hold_floor())
             freeze = self.block.step(st.hand_target, hand_q)
             self._support = self._thumb_support(joint_force)
             if self.assist.unfreeze_on_grasp and self.grasped():

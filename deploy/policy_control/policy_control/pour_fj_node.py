@@ -341,6 +341,7 @@ class PourFjNode(LeanNodeMixin, Node):
                               ("stop_on_target", False), ("goal_max", 0),
                               ("freeze_rule", "success"), ("freeze_lift_m", 0.07), ("freeze_hold_steps", 30), ("episode_topic", ""), ("object", ""),
                               ("hand_unfreeze_on_grasp", False), ("thumb_support_g", 0.0), ("lift_grasp_palm_m", 0.0),
+                              ("thumb_open_floor_rad", 0.0),
                               ("cup_attach", True), ("attach_force_n", AttachCfg.force_n),
                               ("attach_joint_force_g", AttachCfg.joint_force_g), ("attach_signal", AttachCfg.signal),
                               ("attach_max_palm_dist_m", AttachCfg.max_palm_dist_m),
@@ -624,9 +625,10 @@ class PourFjNode(LeanNodeMixin, Node):
             self.chain.freeze = G.FreezeRule(str(self.get_parameter("freeze_rule").value).strip(),
                                              float(self.get_parameter("freeze_lift_m").value),
                                              int(self.get_parameter("freeze_hold_steps").value))
-        if hasattr(self.chain, "lift_grasp_palm_m"):    # ★10.13 배포 전용 손 보조 A · B(rh_aglt.GripAssist) — 잘못된 값은 reset 거부
+        if hasattr(self.chain, "lift_grasp_palm_m"):    # ★10.13 배포 전용 손 보조 A · B · C(rh_aglt.GripAssist) — 잘못된 값은 reset 거부
             self.chain.dec.assist = A.GripAssist(bool(self.get_parameter("hand_unfreeze_on_grasp").value),
-                                                 float(self.get_parameter("thumb_support_g").value))
+                                                 float(self.get_parameter("thumb_support_g").value),
+                                                 float(self.get_parameter("thumb_open_floor_rad").value))
             self.chain.lift_grasp_palm_m = float(self.get_parameter("lift_grasp_palm_m").value)
             if not (np.isfinite(self.chain.lift_grasp_palm_m) and self.chain.lift_grasp_palm_m >= 0.0):
                 raise A.RhAgltError(f"lift_grasp_palm_m ≥ 0(0 = 끔): {self.chain.lift_grasp_palm_m}")

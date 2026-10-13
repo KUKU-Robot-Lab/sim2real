@@ -82,7 +82,10 @@ AGLT_LIVE_ARGS = ("-p", "cup_static:=false", "-p", "cup_latch:=false", "-p", "cu
                   # ★10.13 사용자 "a, b 둘 다 — 제어가 정책을 충실히 따라가게"(rh_aglt.GripAssist). bag 164845 · 165303 재생:
                   #   A 쥔 뒤 막힘 고정 풀기 — 오른손 검지 목표 0.52 → 0.72 rad · 왼손 0.66 → 1.08(정책 목표)
                   #   B 엄지 받침(엄지 굽힘 힘 > 80 g) + 들림(> 7 cm · 손바닥 8 cm 안) — 왼손 쥔 판정 0 틱 → 2.93 s, lift_hold 멈춤 4.59 s
-                  "-p", "hand_unfreeze_on_grasp:=true", "-p", "thumb_support_g:=80.0", "-p", "lift_grasp_palm_m:=0.08")
+                  "-p", "hand_unfreeze_on_grasp:=true", "-p", "thumb_support_g:=80.0", "-p", "lift_grasp_palm_m:=0.08",
+                  # ★10.13 C(bag 223839 오른손): 컵에 밀린 엄지 굽힘(0.038 < 편 끝 0.049)으로 쥔 판정 유지가 손을 다 펴도 안 풀려
+                  #   다시 쥔 컵이 안 붙음 → 실행기 쥠 실패 → 든 컵을 놓음. 쥔 자세 엄지 굽힘을 0.06 rad 보다 펴진 쪽으로 기록 안 함
+                  "-p", "thumb_open_floor_rad:=0.06")
 
 
 def _live(topic: str) -> str:

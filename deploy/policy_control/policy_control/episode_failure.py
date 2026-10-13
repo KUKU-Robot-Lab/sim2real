@@ -120,13 +120,19 @@ class FailureDetector:
         if b.kind == "aglt":
             if s.get("dropped"):
                 return _side_code(side, F.OBJECT_DROPPED_RIGHT, F.OBJECT_DROPPED_LEFT)
+            lifted = LIFT_HOLD_REASON in (res.reason or "")
+            # ★10.13 실기 223839: 붙지 않은 채 lift_hold 로 끝났으면 그 들림(+7 cm 넘게)은 FP++ 실측 컵이 직접 보인 것이다 —
+            #   쥠 실패가 아니다. 이때 live_off_m 은 감시가 뗀 지난 부착의 기록이라 보지 않는다(실행기가 쥠 실패로 보고
+            #   9.6 cm 든 컵을 손 펴 떨궜다).
             if s.get("attached") is False:
-                return _side_code(side, F.GRASP_FAILED_RIGHT, F.GRASP_FAILED_LEFT)
-            off = s.get("live_off_m")
-            if off is not None and float(off) > LIVE_CUP_OFF_M:
-                return _side_code(side, F.GRASP_FAILED_RIGHT, F.GRASP_FAILED_LEFT)
+                if not lifted:
+                    return _side_code(side, F.GRASP_FAILED_RIGHT, F.GRASP_FAILED_LEFT)
+            else:
+                off = s.get("live_off_m")
+                if off is not None and float(off) > LIVE_CUP_OFF_M:
+                    return _side_code(side, F.GRASP_FAILED_RIGHT, F.GRASP_FAILED_LEFT)
             err = s.get("setting_err_m")
-            if err is not None and float(err) > SETTING_TOL_M and LIFT_HOLD_REASON not in (res.reason or ""):
+            if err is not None and float(err) > SETTING_TOL_M and not lifted:
                 return F.POSE_MISMATCH
         elif b.kind == "place":
             if s.get("cup_in_holder") is False or s.get("hand_empty") is False:
