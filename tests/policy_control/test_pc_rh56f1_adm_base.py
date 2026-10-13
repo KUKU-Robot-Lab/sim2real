@@ -128,7 +128,7 @@ def test_the_master_parses_the_launcher_string_and_refuses_bad_ones(tmp_path):
 
 
 def test_an_old_master_build_runs_without_the_baseline_instead_of_dying(tmp_path, capsys):
-    cfg = {k: v for k, v in yaml.safe_load(PORTS.read_text())["ethercat"].items() if k != "adm_fscale"}   # 10.13 배율은 옛 빌드면 거부(아래)
+    cfg = {k: v for k, v in yaml.safe_load(PORTS.read_text())["ethercat"].items() if k not in ("adm_fscale", "pos_guard")}   # 10.13 배율 · 10.14 위치 보호는 옛 빌드면 거부
     old = tmp_path / "old_master"
     old.write_bytes(b"\x7fELF...adm\0current-limit\0")
     new = tmp_path / "new_master"
@@ -204,7 +204,7 @@ def test_ports_fscale_reaches_master_per_side_and_old_binary_is_refused(tmp_path
     eth = yaml.safe_load(PORTS.read_text())["ethercat"]
     assert eth["adm_fscale"]["right"][3] < 1.0             # 실험 값이 실려 있다(지우면 10.13 전 동작)
     new = tmp_path / "new_master"
-    new.write_bytes(b"\x7fELF...adm-base\0...adm-fscale\0")
+    new.write_bytes(b"\x7fELF...adm-base\0...adm-fscale\0...pos-guard\0")
     for side in ("right", "left"):
         argv = E.master_argv(str(new), "eth0", "/a", "/b", eth, no_op=False, side=side)
         val = argv[argv.index("--adm-fscale") + 1].split(",")

@@ -46,6 +46,7 @@
 #include <unistd.h>
 #include "ethercat.h"
 #include "rh56f1_admittance.h"
+#include "rh56f1_pos_guard.h"
 
 #define N_IN 76
 #define N_OUT 19
@@ -123,6 +124,8 @@ static adm_params_t g_adm;
 static adm_state_t g_adm_state;
 static adm_base_t g_adm_base;   /* ★10.12 빈손 힘 기준선(--adm-base, 없으면 n = 0 → 0) */
 static adm_fscale_t g_adm_fscale = {{1, 1, 1, 1, 1, 1}, 0};   /* ★10.13 손가락별 힘 입력 배율(--adm-fscale, 없으면 1) */
+static pos_guard_params_t g_pos_guard = {0.0, 0.0, 0.3};      /* ★10.14 angle_set 축 보호(--pos-guard, 없으면 끔) */
+static pos_guard_state_t g_pos_guard_state;
 
 static void hold(ctl_t *c, const int16_t *in) {
   for (int i = 0; i < 6; i++) c->sent[i] = c->target[i] = (int16_t)clampi(in[IN_ANGLE + i], ANG_LO[i], ANG_HI[i]);
@@ -147,10 +150,21 @@ static void control(ctl_t *c, const int16_t *in, double dt) {
       g_adm_state.bias[i] += 0.01 * (force - g_adm_state.bias[i]);
       g_adm_state.y[i] = 0;
       g_adm_state.limiting[i] = g_adm_state.pinned[i] = 0;
+      pos_guard_reset(&g_pos_guard_state, i);
       c->sent[i] = c->target[i];
       continue;
     }
-    if (!c->adm_on[i]) { c->sent[i] = c->target[i]; continue; }
+    if (!c->adm_on[i]) {   /* ★10.14 angle_set 축: 원시 힘 · 전류가 문턱을 hold_s 넘게 넘으면 지금 각도에 고정 */
+      int tripped = 0;
+      int cmd = pos_guard_step(&g_pos_guard, &g_pos_guard_state, i, dt, c->target[i], in[IN_ANGLE + i],
+                               (double)in[IN_FORCE + i], (double)in[IN_CURRENT + i], &tripped);
+      if (tripped)
+        printf("[master] 위치 보호: 슬롯 %d 힘 %d g · 전류 %d mA — 각도 %d 에 고정(목표 %d, %ld 번째)\n", i, in[IN_FORCE + i],
+               in[IN_CURRENT + i], in[IN_ANGLE + i], c->target[i], g_pos_guard_state.trips[i]);
+      c->sent[i] = (int16_t)clampi(cmd, ANG_LO[i], ANG_HI[i]);
+      continue;
+    }
+    pos_guard_reset(&g_pos_guard_state, i);   /* 어드민턴스 축은 current_hold 가 맡는다 */
     int16_t tip_raw = i < 5 ? in[IN_TOUCH + i * 5] : -1;   /* 0xFFFF(안 읽힘) = -1 */
     double cmd = adm_step(&g_adm, &g_adm_state, i, dt, c->target[i], in[IN_ANGLE + i], force, tip_raw < 0 ? -1.0 : tip_raw,
                           (double)in[IN_CURRENT + i]);
@@ -462,6 +476,29 @@ static int parse_adm_base(const char *txt, adm_base_t *b) {
   return 1;
 }
 
+/* ★10.14 --pos-guard "force_g,current_ma,hold_s" — angle_set 축 보호. 문턱 0 = 그 문턱 끔(둘 다 0 = 보호 없음),
+ * 아니면 힘 200~3000 g · 전류 100~1500 mA, hold_s 0.01~2 s */
+static int parse_pos_guard(const char *txt, pos_guard_params_t *g) {
+  double v[3];
+  int n = 0;
+  const char *q = txt;
+  while (*q && n < 3) {
+    char *end;
+    v[n++] = strtod(q, &end);
+    if (end == q) return 0;
+    if (*end == ',') { q = end + 1; if (!*q) return 0; }
+    else if (*end == '\0') q = end; else return 0;
+  }
+  if (n != 3 || *q) return 0;
+  if (!(v[0] == 0.0 || (v[0] >= 200.0 && v[0] <= 3000.0))) return 0;
+  if (!(v[1] == 0.0 || (v[1] >= 100.0 && v[1] <= 1500.0))) return 0;
+  if (!(v[2] >= 0.01 && v[2] <= 2.0)) return 0;
+  g->force_g = v[0];
+  g->current_ma = v[1];
+  g->hold_s = v[2];
+  return 1;
+}
+
 /* ★10.13 --adm-fscale "s0,..,s5,guard_g" — 배율 (0, 1] 여섯 개(슬롯 순서) + 원시 힘 보호 문턱(0 = 끔, 아니면 200~3000 g) */
 static int parse_adm_fscale(const char *txt, adm_fscale_t *f) {
   double v[7];
@@ -489,7 +526,7 @@ static void usage(const char *p) {
   fprintf(stderr, "usage: %s --ifname IF --master-sock P --node-sock P [--hz 1000] [--state-hz 100] [--speed 2000] "
                   "[--force 600] [--enable-value 1] [--hb-timeout-ms 500] [--no-op] [--op-enable] [--sync-type N] [--op-timeout-ms 3000] [--hz-op 1000] "
                   "[--clear-error] [--current-limit mA[,x6]] [--finger-mode m[,x6]] [--force-calibrate] [--adm 19 values] "
-                  "[--adm-base n,knots,6xn g] [--adm-fscale s0..s5,guard_g]\n", p);
+                  "[--adm-base n,knots,6xn g] [--adm-fscale s0..s5,guard_g] [--pos-guard force_g,current_ma,hold_s]\n", p);
 }
 
 int main(int argc, char **argv) {
@@ -505,7 +542,7 @@ int main(int argc, char **argv) {
                                  {"force", 1, 0, 'f'},  {"enable-value", 1, 0, 'e'}, {"hb-timeout-ms", 1, 0, 't'},
                                  {"no-op", 0, 0, 'o'},  {"op-enable", 0, 0, 'E'}, {"sync-type", 1, 0, 'y'},
                                  {"op-timeout-ms", 1, 0, 'T'}, {"hz-op", 1, 0, 'H'},
-                                 {"clear-error", 0, 0, 'C'}, {"force-calibrate", 0, 0, 'K'}, {"adm", 1, 0, 'A'}, {"adm-base", 1, 0, 'B'}, {"adm-fscale", 1, 0, 'F'}, {"current-limit", 1, 0, 'L'}, {"finger-mode", 1, 0, 'M'},
+                                 {"clear-error", 0, 0, 'C'}, {"force-calibrate", 0, 0, 'K'}, {"adm", 1, 0, 'A'}, {"adm-base", 1, 0, 'B'}, {"adm-fscale", 1, 0, 'F'}, {"pos-guard", 1, 0, 'P'}, {"current-limit", 1, 0, 'L'}, {"finger-mode", 1, 0, 'M'},
                                  {0, 0, 0, 0}};
   for (int c; (c = getopt_long(argc, argv, "", opts, NULL)) != -1;) {
     switch (c) {
@@ -534,6 +571,12 @@ int main(int argc, char **argv) {
       case 'B':
         if (!parse_adm_base(optarg, &g_adm_base)) {
           fprintf(stderr, "--adm-base: n(2~%d), 매듭 n 개(오름차순 레지스터), 슬롯 6 x n 개(0~2000 g)\n", ADM_BASE_MAX);
+          return 2;
+        }
+        break;
+      case 'P':
+        if (!parse_pos_guard(optarg, &g_pos_guard)) {
+          fprintf(stderr, "--pos-guard: 힘 g(0 또는 200~3000), 전류 mA(0 또는 100~1500), 유지 s(0.01~2)\n");
           return 2;
         }
         break;
@@ -598,6 +641,8 @@ int main(int argc, char **argv) {
   printf("[master] ADM_FSCALE [%g, %g, %g, %g, %g, %g] guard %g g%s\n", g_adm_fscale.scale[0], g_adm_fscale.scale[1],
          g_adm_fscale.scale[2], g_adm_fscale.scale[3], g_adm_fscale.scale[4], g_adm_fscale.scale[5], g_adm_fscale.guard_g,
          g_adm_fscale.guard_g > 0 ? "" : "(끔)");
+  printf("[master] POS_GUARD 힘 %g g · 전류 %g mA · %g s%s — angle_set 축에만\n", g_pos_guard.force_g,
+         g_pos_guard.current_ma, g_pos_guard.hold_s, pos_guard_on(&g_pos_guard) ? "" : "(끔)");
   g_mode_thread_ok = pthread_create(&g_mode_thread, NULL, mode_worker, NULL) == 0;
   if (!g_mode_thread_ok) printf("[master] ⚠ 모드 전환 스레드를 못 띄움 — 실행 중 모드 전환 불가\n");
   ec_config_map(&IOmap);

@@ -353,6 +353,21 @@ def adm_fscale_arg(block: dict, side: str) -> str:
     return ",".join(f"{v:g}" for v in vals + [guard])
 
 
+def pos_guard_arg(block: dict) -> str:
+    """★10.14 angle_set 축 보호(yaml pos_guard: force_g · current_ma · hold_s) → 마스터 --pos-guard "g,ma,s".
+    문턱 0 = 그 문턱 끔(둘 다 0 = 보호 없음). 마스터 parse_pos_guard 와 같은 범위."""
+    if not isinstance(block, dict):
+        raise EcatError(f"pos_guard 는 force_g · current_ma · hold_s 블록 — {block}")
+    g, ma, hold = (float(block.get(k, d)) for k, d in (("force_g", 0.0), ("current_ma", 0.0), ("hold_s", 0.3)))
+    if not (g == 0.0 or 200.0 <= g <= 3000.0):     # NaN 은 비교가 거짓이라 걸린다
+        raise EcatError(f"pos_guard.force_g: 0(끔) 또는 200~3000 g — {g}")
+    if not (ma == 0.0 or 100.0 <= ma <= 1500.0):
+        raise EcatError(f"pos_guard.current_ma: 0(끔) 또는 100~1500 mA — {ma}")
+    if not 0.01 <= hold <= 2.0:
+        raise EcatError(f"pos_guard.hold_s: 0.01~2 s — {hold}")
+    return f"{g:g},{ma:g},{hold:g}"
+
+
 def binary_knows(binary: str, option: str) -> bool:
     """마스터 실행 파일에 긴 옵션 이름이 박혀 있는지(getopt 표). 파일이 없으면 판단 보류 = True(존재 확인은 호출자)."""
     path = Path(binary)
@@ -398,6 +413,12 @@ def master_argv(binary: str, ifname: str, master_sock: str, node_sock: str, cfg:
                 raise EcatError(f"마스터 {binary} 가 --adm-fscale 를 모른다(옛 빌드) — bash tools/ethercat/build.sh 하거나 "
                                 "rh56f1_ports.yaml 의 adm_fscale 를 지운다")
             argv += ["--adm-fscale", adm_fscale_arg(cfg["adm_fscale"], side)]
+    if cfg.get("pos_guard") is not None:                       # ★10.14 angle_set 축 보호(위치제어 정책 · 원격조작)
+        guard = pos_guard_arg(cfg["pos_guard"])
+        if not binary_knows(binary, "pos-guard"):   # 보호가 빠진 채 손을 쥐는 것을 막는다
+            raise EcatError(f"마스터 {binary} 가 --pos-guard 를 모른다(옛 빌드) — bash tools/ethercat/build.sh 뒤 "
+                            "sudo setcap 하거나 rh56f1_ports.yaml 의 pos_guard 를 지운다")
+        argv += ["--pos-guard", guard]
     if not 50 <= float(cfg.get("cycle_hz", 1000)) <= 4000:
         raise EcatError("cycle_hz 는 50~4000")
     if not 0 < float(cfg.get("state_hz", 100)) <= float(cfg.get("cycle_hz", 1000)):

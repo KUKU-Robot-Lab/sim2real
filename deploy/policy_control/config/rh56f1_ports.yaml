@@ -45,6 +45,14 @@ ethercat:
     guard_g: 1000
     right: [1.0, 1.0, 0.45, 0.4, 0.7, 1.0]   # 슬롯: 새끼 · 약지 · 중지 · 검지 · 엄지 굽힘 · 엄지 회전
     left:  [1.0, 1.0, 0.45, 0.4, 1.0, 1.0]
+  # ★10.14 위치(angle_set) 축 보호(마스터 --pos-guard, tools/ethercat/rh56f1_pos_guard.h). 사용자 10.14: 힘 1,300 g 또는
+  #   전류 750 mA 를 hold_s 넘게 넘으면 그 손가락을 지금 각도에 고정(더 닫지 않음), 목표가 여는 쪽으로 가면 풀린다.
+  #   근거: 위치 경로엔 어드민턴스 current_hold(650 mA)가 없고, 10.06 모드 0 은 접촉 뒤 1.1~1.85 kg · 1 A 넘게 눌렀다.
+  #   10.13 rg3 bag 7 개에서 두 문턱을 0.3 s 넘게 넘은 구간 0 회. 이 블록을 지우면 10.14 전 동작(보호 없음).
+  pos_guard:
+    force_g: 1300
+    current_ma: 750
+    hold_s: 0.3
 
 # 옛 RS485(10.02 이전 · 비상용) — `rh56f1_driver.py --side <s> --transport rs485` 가 이 블록을 쓴다(벤더 드라이버 robot_control
 # rh56f1_driver). 손 RS485 포트에 USB-RS485(FTDI) 를 다시 꽂아야 한다 — 10.02 밤에는 빠져 있었다.

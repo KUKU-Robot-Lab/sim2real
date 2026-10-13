@@ -299,7 +299,9 @@ def test_angle_target_is_a_separate_input_and_angle_set_is_unchanged():
     adm = book.angle_target([-1, -1, -1, 1300, -1, -1])
     assert E.unpack_cmd(raw)[0] == E.CMD_ANGLE and E.unpack_cmd(adm)[0] == E.CMD_ANGLE_ADM == 6
     src = MASTER_C.read_text()
-    assert "#define CMD_ANGLE_ADM 6" in src and "if (!c->adm_on[i]) { c->sent[i] = c->target[i]; continue; }" in src
+    assert "#define CMD_ANGLE_ADM 6" in src
+    # ★10.14 angle_set 축은 목표 그대로 — 위치 보호(rh56f1_pos_guard.h)가 걸렸을 때만 지금 각도에 고정
+    assert "pos_guard_step(&g_pos_guard, &g_pos_guard_state, i, dt, c->target[i], in[IN_ANGLE + i]," in src
     cfg = yaml.safe_load((PC / "config" / "rh56f1_ports.yaml").read_text())["ethercat"]
     argv = E.master_argv("/m", "eth0", "/a", "/b", cfg, no_op=False)
     assert argv[argv.index("--adm") + 1].endswith(",200,650,1,1,1,1,1,0")
