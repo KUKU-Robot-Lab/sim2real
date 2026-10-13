@@ -77,6 +77,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="vision-3090", help="인지 PC(ssh) · local = 이 PC(arm4090)")
     ap.add_argument("--poll", type=float, default=5.0, help="원격 상태 폴링 주기(s)")
+    ap.add_argument("--pose-dest", default="",
+                    help="FP++ 자세 UDP 를 받을 이 PC 주소(비우면 ssh 가 온 주소 $SSH_CLIENT). ★10.13 5090 은 ssh 가 tailscale(wifi, "
+                         "왕복 3~130 ms)로 가서 자세도 wifi 로 왔다 — 이더넷 허브 쪽 주소를 준다(왕복 0.4 ms)")
     ap.add_argument("--camera-extrinsics", default=None,
                     help="묶음 FP++ 의 테이블 밖 후보 거르기에 쓰는 base←카메라(실기 외부 파라미터 yaml)")
     args = ap.parse_args()
@@ -201,7 +204,7 @@ def main() -> None:
                     raise RuntimeError("viewer_up: 물체가 없다 — start 로 먼저 컨테이너를 띄울 것")
                 out = remote.run("viewer_up.sh", *names)
             elif kind == "pose_tx_up":
-                out = remote.run("pose_tx_up.sh", remote.client_ip(), str(fpp_udp.PORT))
+                out = remote.run("pose_tx_up.sh", args.pose_dest or remote.client_ip(), str(fpp_udp.PORT))
             elif kind == "fpp_down":
                 out = remote.run("fpp_down.sh", action[1])
             else:

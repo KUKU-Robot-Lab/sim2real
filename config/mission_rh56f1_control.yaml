@@ -594,10 +594,12 @@ run:
     - '{repo}/scripts/nodes/perception_launcher_node.py'
     - --host
     - vision-3090
+    - --pose-dest
+    - 169.254.186.1
     - --camera-extrinsics
     - '{repo}/config/global_camera_extrinsics.yaml'
     background: true
-  - note: FP++ 자세 수신기 — 영상 · FP++ 는 vision-3090 안에서 돌고 자세만 UDP(저 PC → 이 PC)로 넘어온다
+  - note: FP++ 자세 수신기 — 영상 · FP++ 는 vision-3090 안에서 돌고 자세만 UDP(저 PC → 이 PC 169.254.186.1)로 넘어온다
     argv:
     - python3
     - '{repo}/scripts/nodes/fpp_pose_rx.py'

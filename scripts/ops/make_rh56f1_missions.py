@@ -98,12 +98,17 @@ STATIONS = {
         "extrinsics": "config/global_camera_extrinsics.yaml",
         "head_config": "config/head_home.yaml",
         "head_tool": "head_home",
+        # ★10.13 FP++ 자세 UDP 는 이더넷 허브로(5090 eno1 169.254.186.1 ↔ vision-3090 eno2 169.254.186.100, 왕복 0.4 ms).
+        #   ssh 는 tailscale(wifi, 왕복 3~130 ms)이라 받을 주소를 $SSH_CLIENT 로 정하면 자세가 wifi 로 온다.
+        #   이 주소는 NetworkManager 프로필 hand-right(eno1)가 준다 — 그 프로필을 끄면 자세가 안 온다.
+        "pose_dest": "169.254.186.1",
     },
     "arm4090": {
         "perception_host": "local",                  # 10.01 arm4090 은 카메라 · FP++ 를 같은 PC 에서
         "extrinsics": "config/global_camera_extrinsics_arm4090.yaml",   # 테이블 CAD 캘리브(10.01 기본 방법)
         "head_config": "config/head_home_rh56f1.yaml",
         "head_tool": "head_pose_check",
+        "pose_dest": "",                             # 같은 PC — 런처가 127.0.0.1 로 받는다
     },
 }
 ROBOT_PC = "5090"
@@ -366,9 +371,10 @@ def _run(kind: str) -> dict:
               if REMOTE_PERCEPTION else
               "인지 런처(이 PC) — 카메라 · FP++ 컨테이너를 같은 PC 의 스크립트로 켜고 끈다. 스스로는 아무것도 켜지 않는다"),
              ["python3", "{repo}/scripts/nodes/perception_launcher_node.py", "--host", PERCEPTION_HOST,
+              *(["--pose-dest", STATION["pose_dest"]] if STATION["pose_dest"] else []),
               "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
         _cmd(("FP++ 자세 수신기 — 영상 · FP++ 는 " + (f"{PERCEPTION_HOST} 안" if REMOTE_PERCEPTION else "localhost 전용 DDS")
-              + f"에서 돌고 자세만 UDP({'저 PC → 이 PC' if REMOTE_PERCEPTION else '127.0.0.1'})로 넘어온다"),
+              + f"에서 돌고 자세만 UDP({'저 PC → 이 PC ' + (STATION['pose_dest'] or '(ssh 주소)') if REMOTE_PERCEPTION else '127.0.0.1'})로 넘어온다"),
              ["python3", "{repo}/scripts/nodes/fpp_pose_rx.py"], background=True),
         _cmd(f"물체 자세 → base — {ROBOT_PC} 카메라 외부 파라미터({CAMERA_EXTRINSICS}, + depth z 보정). /objects/<물체>/pose(레지스트리의 모든 물체)",
              ["python3", "{repo}/scripts/nodes/object_pose_node.py",       # 레지스트리 전체 — 묶음을 바꿔도(activate) 다시 띄우지 않는다

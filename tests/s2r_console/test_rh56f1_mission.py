@@ -201,6 +201,9 @@ def test_real_cups_run_fpp_on_the_perception_pc_after_the_head_home_and_shutdown
     assert any(f"perception_ctl.py stop --camera --host {host}" in a for a in down)
     if GEN.REMOTE_PERCEPTION:                                            # GPU 여유는 카메라 · FP++ 가 도는 PC 에서 본다
         assert any(a.startswith(f"ssh -o BatchMode=yes {host} nvidia-smi") for a in cups)
+    dest = GEN.STATION["pose_dest"]                                      # 10.13 자세 UDP 는 이더넷 허브 주소로(ssh 는 wifi)
+    launcher = next(a for a in cups if "perception_launcher_node.py" in a)
+    assert (f"--pose-dest {dest}" in launcher) if dest else ("--pose-dest" not in launcher)
     stops = {x for c in _cmds(REAL, REAL_BOOK, "shutdown") for x in c.stop}
     assert {"cups#1", "cups#2", "cups#3"} <= stops
 
