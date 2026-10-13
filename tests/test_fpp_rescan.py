@@ -110,3 +110,16 @@ def test_a_cup_whose_container_never_came_up_is_reported_as_absent():
     lost = R.lost_reasons(st, names)
     assert len(lost) == 1 and lost[0].startswith("shaker_c_orange: 상태 없음")
     assert not R.enough_done(st, {"source240b": 2}, names)               # 상태 없는 물체가 있으면 grace 로 따로 본다
+
+
+def test_the_status_phase_runs_on_the_perception_pc_when_fpp_lives_there():
+    """10.13 실기(5090 + vision-3090): FP++ 상태 토픽은 인지 PC 의 localhost DDS 에만 있다 — 5090 에서 기다리면 120 s 뒤 실패했다."""
+    remote = R.status_argv(["source240b_blue", "shaker_c_orange"], 120.0, False, "vision-3090")
+    assert remote[0] == "ssh" and "BatchMode=yes" in remote and remote[-2] == "vision-3090"
+    cmd = remote[-1]
+    assert cmd.startswith(f"cd {R.REMOTE_SIM2REAL} && source scripts/vision/common.sh && ")
+    assert "fpp_rescan.py source240b_blue shaker_c_orange --wait 120 --phase status" in cmd
+    assert "--status-host" not in cmd and "--require-all" not in cmd
+    assert "--require-all" in R.status_argv(["a"], 5, True, "h")[-1]
+    local = R.status_argv(["cyl60"], 120.0, True)
+    assert local[0] == sys.executable and local[-4:] == ["120", "--phase", "status", "--require-all"]

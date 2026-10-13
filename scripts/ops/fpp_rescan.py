@@ -142,7 +142,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--require-all", action="store_true", help="물어본 물체를 전부 찾아야 통과")
     ap.add_argument("--phase", choices=("auto", "status", "full"), default="auto",
                     help="auto: 상황판(ROS_LOCALHOST_ONLY≠1)이면 상태 · 명령은 localhost DDS 자식이, base 좌표는 이 프로세스가")
+    # ★10.13 5090 + vision-3090: FP++ 컨테이너 · 상태 토픽은 인지 PC 의 localhost DDS 에만 있다 — 상태 단계를 그 PC 에서 ssh 로
+    ap.add_argument("--status-host", default="", help="FP++ 가 도는 인지 PC(ssh 이름). 비우면 이 PC 의 localhost DDS")
     args = ap.parse_args(argv)
+    if args.status_host and args.phase == "auto":
+        return _split_run(args)
     if args.phase == "auto" and os.environ.get("ROS_LOCALHOST_ONLY") != "1":
         return _split_run(args)
     return _run(args, only_status=args.phase == "status")
@@ -153,9 +157,12 @@ def _split_run(args) -> int:
     상태 · 명령은 localhost 자식이 하고(결과를 FPP_STATUS 줄로), base 좌표(/objects, 로봇 쪽 DDS)는 이 프로세스가 본다."""
     import subprocess
     env = {**os.environ, "ROS_LOCALHOST_ONLY": "1"}
-    child = subprocess.run([sys.executable, str(Path(__file__).resolve()), *args.cups, "--wait", str(args.wait),
-                            "--phase", "status", *(["--require-all"] if args.require_all else [])],
-                           env=env, capture_output=True, text=True)
+    try:
+        child = subprocess.run(status_argv(args.cups, args.wait, args.require_all, args.status_host),
+                               env=env, capture_output=True, text=True, timeout=args.wait + 60)
+    except subprocess.TimeoutExpired:
+        print(f"[rescan] 상태 단계가 {args.wait + 60:.0f} s 안에 안 끝났다({args.status_host or 'localhost'})", file=sys.stderr)
+        return 1
     st = None
     for line in child.stdout.splitlines():
         if line.startswith(STATUS_MARK):
@@ -170,6 +177,18 @@ def _split_run(args) -> int:
 
 
 STATUS_MARK = "FPP_STATUS "
+#: 인지 PC 의 저장소(홈 기준 — PC 마다 사용자 이름이 다르다, perception_launcher 와 같은 규약)
+REMOTE_SIM2REAL = "rl_ws/sim2real"
+
+
+def status_argv(cups: list[str], wait: float, require_all: bool, host: str = "") -> list[str]:
+    """상태 · 명령 단계(localhost DDS) 명령. host 가 있으면 그 PC 에서 ssh 로(common.sh 가 도메인 · localhost 를 맞춘다)."""
+    tail = [*cups, "--wait", f"{wait:g}", "--phase", "status", *(["--require-all"] if require_all else [])]
+    if not host:
+        return [sys.executable, str(Path(__file__).resolve()), *tail]
+    remote = (f"cd {REMOTE_SIM2REAL} && source scripts/vision/common.sh && "
+              f"python3 scripts/ops/fpp_rescan.py {' '.join(tail)}")
+    return ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host, remote]
 
 
 def _run(args, only_status: bool, preset: dict | None = None) -> int:

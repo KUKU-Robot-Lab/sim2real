@@ -195,6 +195,11 @@ def test_real_cups_run_fpp_on_the_perception_pc_after_the_head_home_and_shutdown
                  f"perception_ctl.py start {objs} --wait 150",
                  f"fpp_rescan.py {' '.join(side)} --wait 120"):        # 10.08 다시 실행 = 지금 카메라로 다시 찍기
         assert any(want in a for a in cups), want
+    rescan = next(c.argv for c in _cmds(REAL, REAL_BOOK, "cups") if any("fpp_rescan.py" in str(x) for x in c.argv))
+    if GEN.REMOTE_PERCEPTION:                                    # 10.13 FP++ 상태는 인지 PC 에서만 보인다
+        assert list(rescan[-2:]) == ["--status-host", host]
+    else:
+        assert "--status-host" not in rescan
     bg = [c for c in _cmds(REAL, REAL_BOOK, "cups") if c.background]
     assert len(bg) == 3
     down = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "shutdown")]
@@ -496,6 +501,7 @@ def test_each_cup_can_be_recognized_again_on_its_own(side):
     argv = [c.argv for c in _cmds(REAL, REAL_BOOK, f"cups_{side}")]
     rescan = [a for a in argv if any("fpp_rescan.py" in x for x in a)]
     assert len(rescan) == 1 and cup in rescan[0]
+    assert ("--status-host" in rescan[0]) == GEN.REMOTE_PERCEPTION
     assert not [o for o in ACTIVE_SIDES.values() if o != cup and o in rescan[0]]     # 이 컵 하나만
     start = [a for a in argv if any("perception_ctl.py" in x for x in a)]
     assert start and set(ACTIVE_SIDES.values()) <= set(start[0])   # start 는 넘긴 물체 밖을 내리므로 컵 전부(떠 있으면 그대로)

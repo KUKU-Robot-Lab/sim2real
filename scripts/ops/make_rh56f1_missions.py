@@ -159,6 +159,8 @@ REMOTE_SIM2REAL = "rl_ws/sim2real"
 #: 인지 PC 의 sim2real 전용 파이썬 — ★10.13 vision-3090 시스템 python3 는 ~/.local numpy 2.2 가 scipy 1.8 을 깨서
 #  홀더 노드(scipy.optimize) · 영상 기록기(scipy.spatial)가 시작하자마자 죽는다. scripts/vision/venv_setup.sh 가 만든다
 REMOTE_PY = ".venv/bin/python"
+#: ★10.13 컵 좌표 다시 찍기 — FP++ 상태 토픽이 인지 PC 의 localhost DDS 에만 있어 상태 단계를 그 PC 에서(실기 첫 회 cups 막힘)
+RESCAN_HOST = ["--status-host", PERCEPTION_HOST] if REMOTE_PERCEPTION else []
 
 
 def _on_perception_pc(script: str) -> list:
@@ -409,7 +411,8 @@ def _run(kind: str) -> dict:
              ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", *_cups(), "--wait", "150"]),
         _cmd("컵 좌표 추출 — 처음엔 FP++ 가 켜지며 찍는 회차를 기다리고, 이 단계를 다시 실행하면(컵을 옮긴 뒤 '↶ 여기서 다시') "
              "컨테이너를 끄지 않고 지금 카메라로 다시 찍는다(10.08 사용자). 컵마다 base 좌표 · 판정을 찍는다. ★10.13 하나라도 찾으면 통과 · 못 찾은 컵은 이유와 함께 경고(그 컵은 개별 인지 단계로 다시)",
-             ["python3", "{repo}/scripts/ops/fpp_rescan.py", *(REAL_CUPS[s] for s in SIDES if s in REAL_CUPS), "--wait", "120"]),
+             ["python3", "{repo}/scripts/ops/fpp_rescan.py", *(REAL_CUPS[s] for s in SIDES if s in REAL_CUPS), "--wait", "120",
+              *RESCAN_HOST]),
         _cmd(f"★컵 자세 확인(바로 위 추출 결과) — 테이블 위 컵 원점 z ≈ {0.205 + REAL_CUP_ORIGIN_Z:.3f}(상판 0.205 + 원점 {REAL_CUP_ORIGIN_Z}, ±8 mm) · 기울기 < 3° · "
              f"x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 {_side_cup('right')}(y < 0) · 왼팔 {_side_cup('left')}(y > 0) 인가"
              f"(카메라를 건드렸으면 {RECALIB_HINT})",
@@ -430,7 +433,7 @@ def _run(kind: str) -> dict:
             _cmd(f"[{s}] FP++ 컨테이너 확인 — 내려간 묶음만 다시 띄운다({_containers_txt()}). 최대 150 s",
                  ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", *_cups(), "--wait", "150"]),
             _cmd(f"[{s}] {REAL_CUPS[s]} 만 다시 찍기 — base 좌표 · 판정을 찍고, 못 찾으면 이유와 함께 실패",
-                 ["python3", "{repo}/scripts/ops/fpp_rescan.py", REAL_CUPS[s], "--wait", "120"]),
+                 ["python3", "{repo}/scripts/ops/fpp_rescan.py", REAL_CUPS[s], "--wait", "120", *RESCAN_HOST]),
         ] if real else [_cmd(f"[{s}] fake — FP++ 없음", ["bash", "-lc", "true"])]
     run["policy_pourfj"] = [
         _cmd("★두 컵이 학습 배치(로봇 앞 x ≈ 0.38, y ≈ ∓0.16)에 서 있고 콘솔에 두 컵 자세가 들어오는가. 양팔 · 양손 주변이 비어 있는가. "
