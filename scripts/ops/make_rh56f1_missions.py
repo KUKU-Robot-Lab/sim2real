@@ -636,7 +636,11 @@ def _episode_run(name: str, real: bool) -> list:
                      ["bash", "-lc", "true"], manual=True))
     for role, b in ep.policies.items():
         e = entries.get(b.policy)
-        contract = f"{{repo}}/deploy/policies/{b.policy}/{e.contract if e else 'missing.json'}"
+        # ★10.14 계약이 없으면(등록 전 · 계약 생성 전) 폴더 경로가 contract:= 로 들어가 실기에서 노드가 못 뜬다 — 여기서 멈춘다
+        if e is None or not e.contract:
+            raise SystemExit(f"에피소드 {name}: {b.policy} 에 계약 파일이 없다 — build_rh_aglt_contract.py --run "
+                             f"deploy/policies/{b.policy} 를 먼저 돌린다")
+        contract = f"{{repo}}/deploy/policies/{b.policy}/{e.contract}"
         robot = f"{{artifact:robot_{b.side}}}"
         if b.kind == "aglt":
             obj = next((j.target_object for n in ep.nodes for j in n.jobs if j.role == role and j.target_object), first_obj)
