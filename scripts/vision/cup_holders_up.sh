@@ -5,7 +5,11 @@
 source "$(dirname "$0")/common.sh"
 PIDFILE="$LOGDIR/cup_holders.pid"
 if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then echo "cup holders already up (pid $(cat "$PIDFILE"))"; exit 0; fi
-setsid python3 "$SIM2REAL/scripts/nodes/cup_holder_pose_node.py" "$@" </dev/null >"$LOGDIR/cup_holders.log" 2>&1 &
+# 10.13 vision-3090 은 시스템 python3 의 scipy 가 깨져 있다(scripts/vision/venv_setup.sh) — .venv 가 있으면 그것을 쓴다.
+#       상대 경로 인자(--out config/… · --extrinsics config/…)는 저장소 기준이다
+PY="$SIM2REAL/.venv/bin/python"; [ -x "$PY" ] || PY=python3
+cd "$SIM2REAL"
+setsid "$PY" "$SIM2REAL/scripts/nodes/cup_holder_pose_node.py" "$@" </dev/null >"$LOGDIR/cup_holders.log" 2>&1 &
 echo $! >"$PIDFILE"
 # 첫 장은 전체 무늬 탐색이라 ~6 s 걸린다
 for _ in $(seq 1 30); do

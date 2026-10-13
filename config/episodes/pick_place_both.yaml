@@ -6,7 +6,7 @@ objects:
   CUP_R: {active: right}
   CUP_L: {active: left}                          # config/fpp_active.yaml
 holders: {RIGHT_HOLDER: 2, LEFT_HOLDER: 0}
-holder_poses: config/cup_holder_poses_arm4090.yaml
+holder_poses: config/cup_holder_poses_5090_v1.yaml   # 10.13 5090 + vision-3090 자리에서 다시 잰 홀더(미션 cup_holders 단계)
 policies:
   rh_aglt_r: {policy: rh56f1/aglt/right_cyl60g, kind: aglt, side: right}
   rh_aglt_l: {policy: rh56f1/aglt/left_cyl60gmir, kind: aglt, side: left}

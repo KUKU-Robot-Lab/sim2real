@@ -306,22 +306,33 @@ def test_the_rh56f1_robot_offers_rh_aglt_for_each_arm():
 
 def test_real_cup_holders_run_the_marker_node_after_the_head_home_and_shutdown_stops_it():
     """10.02 사용자: 컵홀더 마커 자동 추정. 카메라만 켜고(로봇 무동작) 노드를 배경으로, 머리 기준자세가 먼저.
-    ★10.13 원격 인지(5090 + vision-3090): 홀더 노드는 카메라 PC 영상을 직접 읽어야 해 아직 없다 — 저장된 홀더 자세를 쓴다는 확인 하나."""
+    ★10.13 원격 인지(5090 + vision-3090): 노드는 카메라 PC 에서(영상을 그 PC 안에서 읽는다) 그 PC 의 venv 로 돌고,
+    고정 자세 파일(STATION holder_poses, 사용자 "5090holder_v1")만 이 PC 로 가져온다."""
     by = {s.id: s for s in REAL.stages}
     assert by["cup_holders"].needs == ("head_home",)
     cmds = _cmds(REAL, REAL_BOOK, "cup_holders")
     stops = {x for c in _cmds(REAL, REAL_BOOK, "shutdown") for x in c.stop}
-    if GEN.REMOTE_PERCEPTION:
-        assert len(cmds) == 1 and cmds[0].manual and "cup_holder_poses" in cmds[0].note
-        assert not any(c.background for c in cmds) and "cup_holders#3" not in stops
-        return
     argv = [" ".join(c.argv) for c in cmds]
     assert any("scripts/vision/camera_up.sh" in a for a in argv)
     bg = [c for c in cmds if c.background]
-    assert len(bg) == 1 and "cup_holder_pose_node.py --write" in " ".join(bg[0].argv)
+    node = " ".join(bg[0].argv)
+    assert len(bg) == 1 and "cup_holder_pose_node.py --write" in node
+    assert f"--out {GEN.HOLDER_POSES}" in node.replace("{repo}/", "")
+    assert f"--extrinsics {GEN.CAMERA_EXTRINSICS}" in node.replace("{repo}/", "")
     assert cmds.index(bg[0]) == 3                                   # shutdown 의 cup_holders#3(앞에 머리 확인 · 맞춤)
-    assert cmds[0].manual and cmds[-1].manual and "/cup_holders/status" in " ".join(cmds[-1].argv)
     assert "cup_holders#3" in stops
+    status = next(c for c in cmds if "/cup_holders/status" in " ".join(c.argv))
+    assert cmds[0].manual and status.manual
+    if GEN.REMOTE_PERCEPTION:
+        host = GEN.PERCEPTION_HOST
+        for c in (cmds[2], bg[0], status):                          # 카메라 · 노드 · 확인은 카메라 PC 에서
+            assert list(c.argv[:4]) == ["ssh", "-tt", "-o", "BatchMode=yes"] and c.argv[4] == host
+        assert f"{GEN.REMOTE_PY} scripts/nodes/cup_holder_pose_node.py" in node
+        fetch = cmds[-1]                                            # 마지막 = 파일을 이 PC 로
+        assert fetch.argv[0] == "scp" and fetch.argv[-2] == f"{host}:{GEN.REMOTE_SIM2REAL}/{GEN.HOLDER_POSES}"
+        assert fetch.argv[-1].endswith("/" + GEN.HOLDER_POSES) and not fetch.manual
+    else:
+        assert cmds[-1] is status
     fake = {s.id for s in FAKE.stages}
     assert "cup_holders" in fake and not any(c.background for c in _cmds(FAKE, FAKE_BOOK, "cup_holders"))
 
@@ -496,3 +507,22 @@ def test_the_both_cup_stage_passes_with_one_cup_unless_asked_for_all():
     flat = [x for c in _cmds(REAL, REAL_BOOK, "cups") for x in c.argv]
     assert "--require-all" not in flat
     assert any("fpp_rescan.py" in x for x in flat) and any("perception_ctl.py" in x for x in flat)
+
+
+def test_episodes_with_holders_read_the_holder_file_this_station_writes():
+    """10.13: 놓기 에피소드의 holder_poses = 미션 cup_holders 단계가 쓰는(가져오는) 파일. 다른 자리 값을 쓰지 않는다."""
+    import yaml as _y
+    used = {}
+    for f in sorted((REPO / "config/episodes").glob("*.yaml")):
+        raw = _y.safe_load(f.read_text(encoding="utf-8")) or {}
+        if raw.get("holders"):
+            used[f.name] = raw.get("holder_poses")
+    assert used and set(used.values()) == {GEN.HOLDER_POSES}, used
+
+
+def test_the_remote_vision_recorder_runs_on_the_perception_pc_venv():
+    """10.13 vision-3090 시스템 python3 는 scipy 가 깨져(~/.local numpy 2.2) 기록기가 _base_from_camera 에서 죽는다."""
+    if not GEN.REMOTE_PERCEPTION:
+        return
+    recs = [" ".join(c.argv) for st in REAL.stages for c in _cmds(REAL, REAL_BOOK, st.id) if "vision_recorder.py" in " ".join(c.argv)]
+    assert recs and all(f"{GEN.REMOTE_PY} scripts/nodes/vision_recorder.py" in r for r in recs)

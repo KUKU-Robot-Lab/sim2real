@@ -6,7 +6,7 @@ setting: {right: [0.25, -0.12, 0.41], left: [0.25, 0.12, 0.41]}
 objects:
   CUP: {active: right}                         # config/fpp_active.yaml 의 right 물체(10.09 fpp_object.py activate) — snapshot 이 처음 한 번 기록
 holders: {CENTER_HOLDER: 1}                      # 좌우 놓기 학습 목표에 모두 드는 가운데 홀더
-holder_poses: config/cup_holder_poses_arm4090.yaml
+holder_poses: config/cup_holder_poses_5090_v1.yaml   # 10.13 5090 + vision-3090 자리에서 다시 잰 홀더(미션 cup_holders 단계)
 policies:
   rh_aglt_r: {policy: rh56f1/aglt/right_cyl60g, kind: aglt, side: right}
   rh_place_r: {policy: rh56f1/place/right_i09, kind: place, side: right}

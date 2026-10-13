@@ -650,12 +650,17 @@ def _shell_step(u: UnitCmd) -> bool:
     return u.kind == "manual" and bool(u.argv) and Path(str(u.argv[0])).name in ("bash", "sh", "ssh")
 
 
+#: ★10.13 인지 PC 에서만 도는 ROS 노드 — 토픽이 그 PC 의 localhost DDS 에 머물러 이 PC 콘솔은 볼 수 없다.
+#  홀더 노드는 고정 자세 파일만 남기고(미션이 scp 로 가져온다) 에피소드 실행기가 그 파일로 홀더 자세를 다시 낸다
+_REMOTE_NODES = ("cup_holder_pose_node.py",)
+
+
 def _remote_tool(u: UnitCmd) -> bool:
-    """★10.13 인지 PC(vision-3090)에서 ssh 로 도는 도구(영상 기록 등) — 이 PC 의 노드가 아니므로 그리지 않는다."""
+    """★10.13 인지 PC(vision-3090)에서 ssh 로 도는 도구(영상 기록 등) · 그 PC 안에서 끝나는 노드 — 이 PC 의 노드가 아니므로 그리지 않는다."""
     if not u.argv or Path(str(u.argv[0])).name != "ssh":
         return False
     remote = " ".join(str(a) for a in u.argv[1:])
-    return any(tool in remote for tool in _TOOLS)
+    return any(tool in remote for tool in (*_TOOLS, *_REMOTE_NODES))
 
 
 def _unknown(g: _Graph, key: str, cmd: Cmd, why: str = "", note: str = "") -> None:

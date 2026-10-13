@@ -8,7 +8,7 @@
     setting: {right: [x, y, z], left: [...]}      # 공통 중간 자세 = aglt 목표 = place · pour 인계 시작(손에 든 컵 원점, base m)
     objects: {CUP: {topic: /objects/cyl60/pose}}   # 물체 이름 → FP++ 자세 토픽 — 에피소드 처음 snapshot 이 한 번에 기록한다
     holders: {CENTER_HOLDER: 1}                    # 홀더 이름 → 마커 id — 홀더는 고정, 자세는 holder_poses 파일
-    holder_poses: config/cup_holder_poses_arm4090.yaml   # cup_holder_pose_node --write 가 쓴 고정 자세(10.04 사용자)
+    holder_poses: config/cup_holder_poses_5090_v1.yaml   # cup_holder_pose_node --write 가 쓴 고정 자세(10.04 사용자 · 10.13 5090 자리)
     policies: {rh_aglt_r: {policy: rh56f1/aglt/right_cyl60g, kind: aglt, side: right}, ...}   # policy 없음 = 아직 없는 정책
     sequence 의 aglt 단계(또는 parallel_policy 항목)에 policy_object: source240_real — 다물체 정책(rg3)의 물체 one-hot(10.12)
     trajectories: {go_home: {kind: rehome, sides: [right, left]}}

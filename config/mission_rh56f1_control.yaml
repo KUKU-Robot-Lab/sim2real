@@ -553,6 +553,7 @@ run:
     - cups#1
     - cups#2
     - cups#3
+    - cup_holders#3
   - note: 손 상태 노드 · 손 드라이버 정지 — 손가락은 마지막 자세에서 멈춘다(벤더 펌웨어가 잡는다)
     stop:
     - hand_right#2
@@ -563,20 +564,61 @@ run:
     stop:
     - drivers#3
   cup_holders:
-  - note: ★5090 + vision-3090 구성 — 홀더 마커 측정은 아직 없다(홀더 노드가 카메라 PC 의 영상을 직접 읽어야 한다). 놓기는 저장된 홀더 자세(config/cup_holder_poses_arm4090.yaml, base 좌표)를
-      그대로 쓴다 — 홀더를 옮기지 않았는가
+  - note: ★홀더 세 개가 상판 위에 서 있고 -x 면 마커가 손 · 컵에 가리지 않는가(머리 자세는 다음 스텝이 캘리브 자세로 맞춘다)
     argv:
     - bash
     - -lc
     - 'true'
     manual: true
-  head_home:
-  - note: 머리를 카메라 캘리브 자세로 — 토크 · 모드 · I 게인(RAM, 전원을 끄면 사라진다)이 다르면 먼저 적용하고, 외부 파라미터 head_pose 로 목표를 고쳐 가며 맞춘 뒤 ±4 틱으로 검증(머리가 조금 움직인다)
+  - note: 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)
     argv: &id001
     - python3
     - '{repo}/scripts/head_home.py'
     - --config
     - '{repo}/config/head_home.yaml'
+    execute_args:
+    - --execute
+  - note: 카메라(RealSense, vision-3090) 켜기 — 이미 떠 있으면 그대로(cups 단계와 같이 써도 된다)
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - vision-3090
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && bash scripts/vision/camera_up.sh
+  - note: 컵홀더 자세 노드(vision-3090 에서, 영상을 그 PC 안에서 읽는다) — ArUco → 직전 자세 추적 → 놓친 id 만 무늬 전체 탐색(첫 장 ~6 s). x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 저 PC
+      의 config/cup_holder_poses_5090_v1.yaml 을 갱신. 파이썬은 저 PC 의 .venv/bin/python(없으면 scripts/vision/venv_setup.sh)
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - vision-3090
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && .venv/bin/python scripts/nodes/cup_holder_pose_node.py --write --out config/cup_holder_poses_5090_v1.yaml
+      --extrinsics config/global_camera_extrinsics.yaml > /tmp/perception/cup_holders.log 2>&1 & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM
+      INT; wait $P
+    background: true
+  - note: '★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y 간격 ~0.12 · stable ✓ 인가 (어긋나면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics.yaml
+      --write --head-config config/head_home.yaml)'
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - vision-3090
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String
+    manual: true
+  - note: 홀더 자세 파일을 이 PC 로 — vision-3090:config/cup_holder_poses_5090_v1.yaml → config/cup_holder_poses_5090_v1.yaml(놓기 에피소드가 읽는다). 파일이 아직 없으면
+      세 홀더가 안정되지 않은 것이다 — 확인 스텝부터 다시
+    argv:
+    - scp
+    - -o
+    - BatchMode=yes
+    - vision-3090:rl_ws/sim2real/config/cup_holder_poses_5090_v1.yaml
+    - '{repo}/config/cup_holder_poses_5090_v1.yaml'
+  head_home:
+  - note: 머리를 카메라 캘리브 자세로 — 토크 · 모드 · I 게인(RAM, 전원을 끄면 사라진다)이 다르면 먼저 적용하고, 외부 파라미터 head_pose 로 목표를 고쳐 가며 맞춘 뒤 ±4 틱으로 검증(머리가 조금 움직인다)
+    argv: *id001
     execute_args:
     - --execute
   cups:
@@ -768,8 +810,9 @@ run:
     - -o
     - BatchMode=yes
     - vision-3090
-    - cd rl_ws/sim2real && source scripts/vision/common.sh && python3 scripts/nodes/vision_recorder.py --name aglt_right --camera-extrinsics config/global_camera_extrinsics.yaml
-      --objects source240b_blue > /tmp/perception/vrec_aglt_right.log 2>&1 & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && .venv/bin/python scripts/nodes/vision_recorder.py --name aglt_right --camera-extrinsics
+      config/global_camera_extrinsics.yaml --objects source240b_blue > /tmp/perception/vrec_aglt_right.log 2>&1 & P=$!; trap 'kill -TERM $P; wait
+      $P' HUP TERM INT; wait $P
     background: true
   - note: '[right] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)'
     argv:
@@ -1033,8 +1076,9 @@ run:
     - -o
     - BatchMode=yes
     - vision-3090
-    - cd rl_ws/sim2real && source scripts/vision/common.sh && python3 scripts/nodes/vision_recorder.py --name aglt_left --camera-extrinsics config/global_camera_extrinsics.yaml
-      --objects shaker_c_orange > /tmp/perception/vrec_aglt_left.log 2>&1 & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && .venv/bin/python scripts/nodes/vision_recorder.py --name aglt_left --camera-extrinsics
+      config/global_camera_extrinsics.yaml --objects shaker_c_orange > /tmp/perception/vrec_aglt_left.log 2>&1 & P=$!; trap 'kill -TERM $P; wait
+      $P' HUP TERM INT; wait $P
     background: true
   - note: '[left] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)'
     argv:
@@ -1992,7 +2036,7 @@ run:
     stop:
     - pd_arm_left#1
   episode_pick_place_right:
-  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세(config/cup_holder_poses_arm4090.yaml)에 쓰는 홀더가 다 있는가 (읽기만)
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세(config/cup_holder_poses_5090_v1.yaml)에 쓰는 홀더가 다 있는가 (읽기만)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/episode_run.py'
@@ -2005,7 +2049,7 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★[에피소드 pick_place_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었는가 · config/cup_holder_poses_arm4090.yaml 가 있는가(cup_holders
+  - note: ★[에피소드 pick_place_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었는가 · config/cup_holder_poses_5090_v1.yaml 가 있는가(cup_holders
       단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
     argv:
     - bash
@@ -2120,7 +2164,7 @@ run:
     - stop
     - episode_pick_place_right
   episode_pick_place_left:
-  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세(config/cup_holder_poses_arm4090.yaml)에 쓰는 홀더가 다 있는가 (읽기만)
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세(config/cup_holder_poses_5090_v1.yaml)에 쓰는 홀더가 다 있는가 (읽기만)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/episode_run.py'
@@ -2133,7 +2177,7 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner)$'''
-  - note: ★[에피소드 pick_place_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었는가 · config/cup_holder_poses_arm4090.yaml 가 있는가(cup_holders
+  - note: ★[에피소드 pick_place_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었는가 · config/cup_holder_poses_5090_v1.yaml 가 있는가(cup_holders
       단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
     argv:
     - bash

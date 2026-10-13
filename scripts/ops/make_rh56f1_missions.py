@@ -102,6 +102,8 @@ STATIONS = {
         #   ssh 는 tailscale(wifi, 왕복 3~130 ms)이라 받을 주소를 $SSH_CLIENT 로 정하면 자세가 wifi 로 온다.
         #   이 주소는 NetworkManager 프로필 hand-right(eno1)가 준다 — 그 프로필을 끄면 자세가 안 온다.
         "pose_dest": "169.254.186.1",
+        # ★10.13 사용자: 홀더를 이 자리에 다시 놓고 새로 잰다("5090holder_v1"). 홀더 자세 파일은 .gitignore(PC · 배치마다 다르다)
+        "holder_poses": "config/cup_holder_poses_5090_v1.yaml",
     },
     "arm4090": {
         "perception_host": "local",                  # 10.01 arm4090 은 카메라 · FP++ 를 같은 PC 에서
@@ -109,6 +111,7 @@ STATIONS = {
         "head_config": "config/head_home_rh56f1.yaml",
         "head_tool": "head_pose_check",
         "pose_dest": "",                             # 같은 PC — 런처가 127.0.0.1 로 받는다
+        "holder_poses": "config/cup_holder_poses_arm4090.yaml",
     },
 }
 ROBOT_PC = "5090"
@@ -116,6 +119,7 @@ STATION = STATIONS[ROBOT_PC]
 PERCEPTION_HOST = STATION["perception_host"]
 REMOTE_PERCEPTION = PERCEPTION_HOST != "local"
 CAMERA_EXTRINSICS = STATION["extrinsics"]
+HOLDER_POSES = STATION["holder_poses"]
 
 
 def _cups() -> list[str]:
@@ -152,6 +156,9 @@ else:   # head_home.py — 설정의 기준 자세(pan · tilt)로 맞추고 검
 RECALIB_HINT = ("scripts/calib/table_cad_extrinsics.py --init " + CAMERA_EXTRINSICS + " --write --head-config " + HEAD_CONFIG)
 #: 원격 인지 PC 에서 도는 명령 — 홈에서 시작하는 ssh(사용자 이름이 PC 마다 달라 상대 경로, perception_launcher 와 같은 규약)
 REMOTE_SIM2REAL = "rl_ws/sim2real"
+#: 인지 PC 의 sim2real 전용 파이썬 — ★10.13 vision-3090 시스템 python3 는 ~/.local numpy 2.2 가 scipy 1.8 을 깨서
+#  홀더 노드(scipy.optimize) · 영상 기록기(scipy.spatial)가 시작하자마자 죽는다. scripts/vision/venv_setup.sh 가 만든다
+REMOTE_PY = ".venv/bin/python"
 
 
 def _on_perception_pc(script: str) -> list:
@@ -329,7 +336,7 @@ def _run(kind: str) -> dict:
             *([_cmd("카메라 · FP++ 내리기 — 런처가 없으면 이 PC 에서 직접 내린다",
                     ["python3", "{repo}/scripts/ops/perception_ctl.py", "stop", "--camera", "--host", PERCEPTION_HOST, "--wait", "60"]),
                _cmd("인지 런처 · 자세 수신기 · 물체 자세 노드 · 컵홀더 노드 정지",
-                    stop=["cups#1", "cups#2", "cups#3", *(["cup_holders#3"] if not REMOTE_PERCEPTION else [])])] if real else []),
+                    stop=["cups#1", "cups#2", "cups#3", "cup_holders#3"])] if real else []),
             _cmd("손 상태 노드 · 손 드라이버 정지 — 손가락은 마지막 자세에서 멈춘다(벤더 펌웨어가 잡는다)",
                  stop=[f"hand_{s}#{i}" for s in SIDES for i in ((2, 1) if real else (1, 0))]),
             _cmd("★팔 브링업 정지 — 모든 팔 모터가 꺼진다(받침으로 내려앉는다)" if real else "fake 플랜트 정지",
@@ -343,16 +350,33 @@ def _run(kind: str) -> dict:
         _cmd("카메라(RealSense) 켜기 — 이미 떠 있으면 그대로(cups 단계와 같이 써도 된다)",
              ["bash", "{repo}/scripts/vision/camera_up.sh"]),
         _cmd("컵홀더 자세 노드 — ArUco → 직전 자세 추적(0.2 s) → 놓친 id 만 무늬 전체 탐색(첫 장 ~6 s). "
-             "x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 config/cup_holder_poses_arm4090.yaml 을 갱신",
-             ["python3", "{repo}/scripts/nodes/cup_holder_pose_node.py", "--write"], background=True),
+             f"x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 {HOLDER_POSES} 을 갱신",
+             ["python3", "{repo}/scripts/nodes/cup_holder_pose_node.py", "--write", "--out", "{repo}/" + HOLDER_POSES,
+              "--extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
         _cmd("★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.39 부근) · y 간격 ~0.12 · stable ✓ 인가 "
              f"(어긋나면 {RECALIB_HINT} · 겹친 영상은 scripts/calib/cup_holder_pose.py --png)",
              ["bash", "-lc", "timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String"], manual=True),
     ] if real and not REMOTE_PERCEPTION else [
-        # ★10.13: 홀더 노드는 카메라 영상(localhost DDS)을 직접 읽어 카메라 PC 에서 돌아야 한다 — 원격 인지 구성은 아직 없다
-        _cmd(f"★{ROBOT_PC} + {PERCEPTION_HOST} 구성 — 홀더 마커 측정은 아직 없다(홀더 노드가 카메라 PC 의 영상을 직접 읽어야 한다). "
-             "놓기는 저장된 홀더 자세(config/cup_holder_poses_arm4090.yaml, base 좌표)를 그대로 쓴다 — 홀더를 옮기지 않았는가",
+        # ★10.13 원격 인지: 홀더 노드는 카메라 영상(localhost DDS)을 직접 읽어야 해 카메라 PC 에서 돌고, 고정 자세 파일만 이 PC 로 가져온다.
+        #   놓기 에피소드는 그 파일(base 좌표)을 읽는다 — 홀더 토픽은 이 PC 로 넘어오지 않는다
+        _cmd("★홀더 세 개가 상판 위에 서 있고 -x 면 마커가 손 · 컵에 가리지 않는가(머리 자세는 다음 스텝이 캘리브 자세로 맞춘다)",
              ["bash", "-lc", "true"], manual=True),
+        _cmd("머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)",
+             HEAD_CHECK_ARGV, execute_args=["--execute"]),
+        _cmd(f"카메라(RealSense, {PERCEPTION_HOST}) 켜기 — 이미 떠 있으면 그대로(cups 단계와 같이 써도 된다)",
+             _on_perception_pc("bash scripts/vision/camera_up.sh")),
+        _cmd(f"컵홀더 자세 노드({PERCEPTION_HOST} 에서, 영상을 그 PC 안에서 읽는다) — ArUco → 직전 자세 추적 → 놓친 id 만 무늬 전체 "
+             f"탐색(첫 장 ~6 s). x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 저 PC 의 {HOLDER_POSES} 을 갱신. "
+             f"파이썬은 저 PC 의 {REMOTE_PY}(없으면 scripts/vision/venv_setup.sh)",
+             _on_perception_pc(f"{REMOTE_PY} scripts/nodes/cup_holder_pose_node.py --write --out {HOLDER_POSES} "
+                               f"--extrinsics {CAMERA_EXTRINSICS} > /tmp/perception/cup_holders.log 2>&1 & P=$!; "
+                               "trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P"), background=True),
+        _cmd("★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y 간격 ~0.12 · stable ✓ 인가 "
+             f"(어긋나면 {RECALIB_HINT})",
+             _on_perception_pc("timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String"), manual=True),
+        _cmd(f"홀더 자세 파일을 이 PC 로 — {PERCEPTION_HOST}:{HOLDER_POSES} → {HOLDER_POSES}(놓기 에피소드가 읽는다). "
+             "파일이 아직 없으면 세 홀더가 안정되지 않은 것이다 — 확인 스텝부터 다시",
+             ["scp", "-o", "BatchMode=yes", f"{PERCEPTION_HOST}:{REMOTE_SIM2REAL}/{HOLDER_POSES}", "{repo}/" + HOLDER_POSES]),
     ] if real else [_cmd("fake — 카메라 없음", ["bash", "-lc", "true"])]
     run["head_home"] = [
         # ★10.04: head_home.py 는 설정 목표(pan 2015)로 검증하는데 이 머리 pan 은 목표보다 18 틱 앞에서 멈춰 늘 ✗(19:35 실기 단계
@@ -693,7 +717,7 @@ def _vision_record(name: str, objs: list) -> dict:
                      "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS, "--objects", *objs], background=True)
     # 원격: ssh -tt 를 콘솔이 끝내면 저쪽 셸이 HUP 를 받는다 → 기록기에 TERM(마무리 · CSV 닫기) 뒤 기다린다.
     # 기록은 저 PC 의 sim2real/logs/vision_runs 에 남는다(로그는 /tmp/perception/vrec_<이름>.log).
-    rec = (f"python3 scripts/nodes/vision_recorder.py --name {name} --camera-extrinsics {CAMERA_EXTRINSICS} --objects {' '.join(objs)} "
+    rec = (f"{REMOTE_PY} scripts/nodes/vision_recorder.py --name {name} --camera-extrinsics {CAMERA_EXTRINSICS} --objects {' '.join(objs)} "
            f"> /tmp/perception/vrec_{name}.log 2>&1 & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P")
     return _cmd(f"영상 · FP++ 실시간 좌표 기록({PERCEPTION_HOST}, 5 Hz JPEG · live_pose CSV) → 저 PC 의 logs/vision_runs",
                 _on_perception_pc(rec), background=True)
