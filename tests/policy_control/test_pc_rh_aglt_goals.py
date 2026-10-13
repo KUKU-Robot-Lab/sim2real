@@ -246,3 +246,68 @@ def test_stop_on_target_still_ends_at_the_setting():
     assert b.reached
     why = G.end_reason(b, stop_on_target=True, goal_max=0)
     assert why is not None and why.startswith("goal target reached")
+
+
+# ---------------------------------------------------------------- 10.13 grasping lift_hold(hdgp 9ac23c77 freeze_rule)
+LIFT = G.FreezeRule("lift_hold", 0.07, 30)
+
+
+def _lift_book(freeze=LIFT):
+    c = _rg3s()
+    return c, G.GoalBook.start(c, CUP_R, UP, freeze=freeze)
+
+
+def _up(dz):
+    return np.asarray(CUP_R, float) + [0.0, 0.0, dz]
+
+
+def test_lift_hold_ends_after_30_grasped_ticks_above_7cm_before_the_goal_success():
+    c, b = _lift_book()
+    for _ in range(29):
+        b.step(_up(0.08), UP, (0, 0, 0, 0, 0), is_grasped=True)
+        assert G.end_reason(b, stop_on_target=False, goal_max=1) is None
+    b.step(_up(0.08), UP, (0, 0, 0, 0, 0), is_grasped=True)
+    why = G.end_reason(b, stop_on_target=False, goal_max=1)
+    assert why is not None and why.startswith("lift_hold") and b.successes == 0   # 목표(10 cm)는 아직 — OR 로 먼저 끝남
+
+
+def test_lift_hold_resets_on_one_ungrasped_or_low_tick():
+    c, b = _lift_book()
+    for bad in (dict(dz=0.08, g=False), dict(dz=0.06, g=True)):
+        for _ in range(29):
+            b.step(_up(0.08), UP, (0, 0, 0, 0, 0), is_grasped=True)
+        b.step(_up(bad["dz"]), UP, (0, 0, 0, 0, 0), is_grasped=bad["g"])
+        assert b.lift_steps == 0
+        for _ in range(29):
+            b.step(_up(0.08), UP, (0, 0, 0, 0, 0), is_grasped=True)
+        assert G.end_reason(b, stop_on_target=False, goal_max=1) is None
+        b.step(_up(0.06), UP, (0, 0, 0, 0, 0), is_grasped=True)   # 다음 줄을 위해 0 으로
+
+
+def test_lift_hold_is_measured_from_the_reset_cup_and_threshold_is_strict():
+    c, b = _lift_book()
+    for _ in range(40):
+        b.step(_up(0.07), UP, (0, 0, 0, 0, 0), is_grasped=True)     # > 0.07 이어야 한다
+    assert b.lift_steps == 0 and G.end_reason(b, stop_on_target=False, goal_max=1) is None
+
+
+def test_default_success_rule_ignores_the_lift():
+    c, b = _lift_book(freeze=None)
+    assert b.freeze.rule == "success"
+    for _ in range(60):
+        b.step(_up(0.08), UP, (0, 0, 0, 0, 0), is_grasped=True)
+    assert G.end_reason(b, stop_on_target=False, goal_max=1) is None
+
+
+def test_goal_success_still_ends_with_lift_hold_on():
+    c, b = _lift_book(freeze=G.FreezeRule("lift_hold", 0.20, 30))  # 들기로는 안 닿는 문턱
+    for _ in range(c.goal_success_steps):
+        b.step(b.current, UP, (0, 0, 0, 0, 0), is_grasped=True)
+    assert "goal 1/1" in G.end_reason(b, stop_on_target=False, goal_max=1)
+
+
+@pytest.mark.parametrize("bad", [("magic", 0.07, 30), ("lift_hold", 0.0, 30), ("lift_hold", float("nan"), 30),
+                                 ("lift_hold", 0.07, 0)])
+def test_freeze_rule_refuses_bad_values(bad):
+    with pytest.raises(G.GoalInputError):
+        G.FreezeRule(*bad)

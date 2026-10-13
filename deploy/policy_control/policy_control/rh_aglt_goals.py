@@ -30,6 +30,28 @@ class GoalInputError(ValueError):
     pass
 
 
+FREEZE_RULES = ("success", "lift_hold")
+
+
+@dataclass(frozen=True)
+class FreezeRule:
+    """★10.13 grasping(hdgp 9ac23c77 freeze_rule) — 정책을 멈추고 팔 · 손 목표를 고정할 때.
+
+    success   = 기존 goal_max 성공만(기본).
+    lift_hold = 관측 컵 z − 리셋 컵 z(GoalBook.cup_reset) > lift_m AND 쥔 판정이 hold_steps 틱 연속 — 한 틱 끊기면 0 부터.
+                goal_max 성공과 OR(먼저 오는 쪽). 컵은 정책 입력과 같은 관측 경로(쥐기 전 FP++ live, 쥔 뒤 손바닥 FK)."""
+
+    rule: str = "success"
+    lift_m: float = 0.07
+    hold_steps: int = 30
+
+    def __post_init__(self) -> None:
+        if self.rule not in FREEZE_RULES:
+            raise GoalInputError(f"freeze_rule {self.rule!r} — one of {FREEZE_RULES}")
+        if not (math.isfinite(self.lift_m) and self.lift_m > 0.0) or int(self.hold_steps) < 1:
+            raise GoalInputError(f"freeze_lift_m > 0 and freeze_hold_steps >= 1, got {self.lift_m}, {self.hold_steps}")
+
+
 def has_goal_spec(c: A.RaContract) -> bool:
     return (len(c.goal_box_min) == 3 and len(c.goal_box_max) == 3 and len(c.goal_first_z_range) == 2
             and c.goal_delta_distance > 0.0 and c.goal_success_steps > 0 and c.goal_tol > 0.0)
@@ -72,14 +94,19 @@ class GoalBook:
     successes: int = 0
     kp_dist: float = float("nan")
     target: np.ndarray | None = None           # 사용자가 마지막으로 넣은 최종 목표
+    freeze: FreezeRule = field(default_factory=FreezeRule)
+    lift_dz: float = float("nan")              # 관측 컵 z − 리셋 컵 z
+    lift_steps: int = 0                        # (lift_dz > freeze.lift_m AND 쥠) 연속 틱
 
     @classmethod
-    def start(cls, c: A.RaContract, cup_pos: Sequence[float], cup_quat: Sequence[float]) -> "GoalBook":
+    def start(cls, c: A.RaContract, cup_pos: Sequence[float], cup_quat: Sequence[float],
+              freeze: FreezeRule | None = None) -> "GoalBook":
         g = A.first_goal(c, cup_pos, cup_quat)
         pos = g.pos.copy()
         if has_goal_spec(c):                       # 학습 sample_first_goal 도 박스로 자른다(_clamp_box)
             pos = np.clip(pos, c.goal_box_min, c.goal_box_max)
-        return cls(c=c, cup_reset=np.asarray(cup_pos, float).copy(), quat=np.asarray(cup_quat, float).copy(), current=pos)
+        return cls(c=c, cup_reset=np.asarray(cup_pos, float).copy(), quat=np.asarray(cup_quat, float).copy(), current=pos,
+                   freeze=freeze or FreezeRule())
 
     @property
     def goal(self) -> A.Goal:
@@ -121,11 +148,13 @@ class GoalBook:
         kp_c = A.keypoints(c, cup_pos, cup_quat)
         kp_g = A.keypoints(c, self.current, self.quat)
         self.kp_dist = float(np.linalg.norm(kp_c - kp_g, axis=1).max())
+        held = grasped(c, tactile_n) if is_grasped is None else bool(is_grasped)
+        self.lift_dz = float(np.asarray(cup_pos, float)[2] - self.cup_reset[2])
+        self.lift_steps = self.lift_steps + 1 if (self.lift_dz > self.freeze.lift_m and held) else 0
         if not has_goal_spec(c):
             return False
         near = self.kp_dist <= c.goal_tol
         self.near_steps = (self.near_steps + 1 if near else 0) if c.goal_force_consecutive else self.near_steps + int(near)
-        held = grasped(c, tactile_n) if is_grasped is None else bool(is_grasped)
         if not (near and self.near_steps >= c.goal_success_steps and held):
             return False
         if self.anchor is not None and not self.queue and np.allclose(self.anchor, self.current):
@@ -141,7 +170,8 @@ class GoalBook:
         r = lambda v: [round(float(x), 4) for x in v]  # noqa: E731
         return {"goal": r(self.current), "queue": len(self.queue), "target": None if self.target is None else r(self.target),
                 "kp_dist": None if math.isnan(self.kp_dist) else round(self.kp_dist, 4), "near_steps": self.near_steps,
-                "successes": self.successes, "reached": self.reached}
+                "successes": self.successes, "reached": self.reached, "freeze_rule": self.freeze.rule,
+                "lift_dz": None if math.isnan(self.lift_dz) else round(self.lift_dz, 4), "lift_steps": self.lift_steps}
 
 
 def end_reason(goals: "GoalBook | None", stop_on_target: bool, goal_max: int) -> str | None:
@@ -154,6 +184,10 @@ def end_reason(goals: "GoalBook | None", stop_on_target: bool, goal_max: int) ->
         return None
     if goal_max > 0 and goals.successes >= goal_max:
         return f"goal {goals.successes}/{goal_max} reached (sim goal_max) {np.round(goals.anchor, 3).tolist()}"
+    f = goals.freeze
+    if f.rule == "lift_hold" and goals.lift_steps >= f.hold_steps:
+        return (f"lift_hold: cup {goals.lift_dz:+.3f} m above reset (> {f.lift_m}) and grasped "
+                f"for {goals.lift_steps} ticks (sim freeze_rule lift_hold)")
     if stop_on_target and goals.reached:
         return f"goal target reached {goals.as_dict().get('target')}"
     return None

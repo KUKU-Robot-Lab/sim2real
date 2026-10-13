@@ -168,6 +168,7 @@ class AgltChain:
         self.grasp_cfg: AttachCfg | None = None     # 노드가 넣는다(부착과 같은 쥠 신호) — 없으면 손끝 촉각 규칙
         self.base = c                               # 파일 계약 — 다물체면 reset 마다 select_object 로 self.c 를 고른다
         self.object_name: str | None = None         # ★10.12 노드 파라미터 object(에피소드 단계 policy_object)
+        self.freeze = G.FreezeRule()                # ★10.13 노드 파라미터 freeze_rule · freeze_lift_m · freeze_hold_steps
 
     @property
     def goal(self) -> A.Goal | None:
@@ -185,7 +186,7 @@ class AgltChain:
         self.dec.reset()
         self.prev = np.zeros(self.c.action_dim)
         self.step_i = 0
-        self.goals = G.GoalBook.start(self.c, meas["arm"].cup_pos, meas["arm"].cup_quat)
+        self.goals = G.GoalBook.start(self.c, meas["arm"].cup_pos, meas["arm"].cup_quat, freeze=self.freeze)
         if hasattr(self.policy, "reset"):
             self.policy.reset()
 
@@ -313,7 +314,8 @@ class PourFjNode(LeanNodeMixin, Node):
         self.node_name = self.get_name()          # -r __node:=rh_aglt_node_right 로 팔마다 이름을 가른다
         for name, default in (("contract", ""), ("robot", ""), ("device", "cpu"), ("reset_tol_rad", 0.15),
                               ("max_gap_ticks", 3), ("publish_target", True), ("max_episode_s", -1.0), ("ns", ""),
-                              ("stop_on_target", False), ("goal_max", 0), ("episode_topic", ""), ("object", ""),
+                              ("stop_on_target", False), ("goal_max", 0),
+                              ("freeze_rule", "success"), ("freeze_lift_m", 0.07), ("freeze_hold_steps", 30), ("episode_topic", ""), ("object", ""),
                               ("cup_attach", True), ("attach_force_n", AttachCfg.force_n),
                               ("attach_joint_force_g", AttachCfg.joint_force_g), ("attach_signal", AttachCfg.signal),
                               ("attach_max_palm_dist_m", AttachCfg.max_palm_dist_m),
@@ -578,6 +580,10 @@ class PourFjNode(LeanNodeMixin, Node):
     def _reset_chain(self, meas: dict) -> None:
         if hasattr(self.chain, "object_name"):          # ★10.12 rh_aglt 다물체 정책 — reset 때 파라미터 object 로 물체를 고른다
             self.chain.object_name = str(self.get_parameter("object").value).strip() or None
+        if hasattr(self.chain, "freeze"):               # ★10.13 grasping lift_hold(sim freeze_rule) — 잘못된 값은 reset 거부
+            self.chain.freeze = G.FreezeRule(str(self.get_parameter("freeze_rule").value).strip(),
+                                             float(self.get_parameter("freeze_lift_m").value),
+                                             int(self.get_parameter("freeze_hold_steps").value))
         self.chain.reset(meas)
 
     def _after_step(self) -> bool:
