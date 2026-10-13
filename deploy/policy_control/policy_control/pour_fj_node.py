@@ -35,6 +35,7 @@ if __package__ in (None, ""):
 from policy_control import _paths  # noqa: F401,E402
 from policy_control import codec  # noqa: E402
 from policy_control.cup_attach import AttachCfg, CupAttach, grasp_signal  # noqa: E402
+from policy_control.fpp_gate import FppGate, GateCfg  # noqa: E402
 from policy_control import pour_fj as F  # noqa: E402
 from policy_control import rh_aglt as A  # noqa: E402
 from policy_control import rh_aglt_goals as G  # noqa: E402
@@ -323,6 +324,8 @@ class PourFjNode(LeanNodeMixin, Node):
                               ("cup_static", AttachCfg.static_source), ("cup_latch", False), ("cup_hold_last", False),
                               ("attach_fallback_s", AttachCfg.fallback_after_s),
                               ("attach_guard_m", AttachCfg.guard_m), ("attach_guard_frames", AttachCfg.guard_frames),
+                              ("fpp_gate_jump_m", GateCfg.jump_m), ("fpp_gate_dz_m", GateCfg.dz_m),
+                              ("fpp_gate_radius_m", GateCfg.radius_m), ("fpp_gate_max_hold_s", GateCfg.max_hold_s),
                               *((param, topic) for _, param, topic in self.fam.cups)):
             self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
@@ -364,6 +367,10 @@ class PourFjNode(LeanNodeMixin, Node):
                                     fallback_after_s=float(p("attach_fallback_s")),
                                     guard_m=float(p("attach_guard_m")), guard_frames=int(p("attach_guard_frames")))
         self.attach = {r: CupAttach(self.attach_cfg) for r in self.fam.roles} if bool(p("cup_attach")) else {}
+        # ★10.13 A안(fpp_gate.py): 쥐기 전 손 근처에서 튄 FP++ live 프레임은 버리고 마지막 값(sim FppGate 와 같은 식).
+        self.gate_cfg = GateCfg(jump_m=float(p("fpp_gate_jump_m")), dz_m=float(p("fpp_gate_dz_m")),
+                                radius_m=float(p("fpp_gate_radius_m")), max_hold_s=float(p("fpp_gate_max_hold_s")))
+        self.gates = {r: FppGate(self.gate_cfg) for r in self.attach} if self.gate_cfg.enabled else {}
         # ★10.04 실기: 단독 aglt 단계에서 손이 다가가자 FP++ 컵이 1.5~2.6 s 끊겨(손이 가림) '컵 자세가 없다'로 집기 전에 멈췄다.
         #   cup_latch 면 reset 때 컵 자세를 한 번 잡아 두고 그 에피소드 동안 그 값을 쓴다(사용자 원칙 "FPP 는 정지 상태만" —
         #   에피소드 snapshot 과 같다). 쥔 뒤는 손바닥 FK(cup_static 과 같이 쓴다). 다음 reset 에서 다시 잡는다.
@@ -465,6 +472,7 @@ class PourFjNode(LeanNodeMixin, Node):
         est = self.attach.get(role)
         if est is None:
             return live
+        gate = self.gates.get(role)
         if advance:
             def step(palm_pos, palm_R, tact, st):
                 t_palm = st.stamps.get("arm") or self.get_clock().now().nanoseconds * 1e-9   # 팔 상태 stamp = 손바닥 FK 시각
@@ -473,12 +481,16 @@ class PourFjNode(LeanNodeMixin, Node):
                 g = _chain_grasped(getattr(self, "chain", None))   # ★10.12 hand_block 계약: 직전 정책 틱의 막힘 쥔 판정(sim PalmAttach)
                 if g is None:
                     g = grasp_signal(tact, jf, self.attach_cfg)
-                out = est.step(bool(g), float(t_palm), palm_pos, palm_R, live)
+                seen = live
+                if gate is not None:                      # ★10.13 A안 — 쥐기 전 · 붙기 전만 거른다(sim FppGate active)
+                    seen = gate.step(live, time.monotonic(), palm_pos, active=not est.attached and not bool(g))
+                out = est.step(bool(g), float(t_palm), palm_pos, palm_R, seen)
                 if est.source != before:                  # 붙고 뗀 순간을 로그로 — 상태(status.cup)에도 같은 값이 계속 실린다
                     self.get_logger().info(f"cup {role}: {before} → {est.source} · {est.as_dict()}")
                 return out
             return step
-        return lambda palm_pos, palm_R, _tact, _st: est.peek(palm_pos, palm_R, live)
+        seen0 = live if gate is None else gate.peek(live)
+        return lambda palm_pos, palm_R, _tact, _st: est.peek(palm_pos, palm_R, seen0)
 
     def _measure(self, advance: bool = False) -> dict:
         now = time.monotonic()
@@ -513,6 +525,8 @@ class PourFjNode(LeanNodeMixin, Node):
         self._drain()
         for est in self.attach.values():           # 새 에피소드 — 컵은 다시 FP++ 부터
             est.new_episode()
+        for gate in self.gates.values():
+            gate.new_episode()
         if self.cup_latch:                         # 지금 신선한 FP++ 컵을 이 에피소드의 컵으로(없으면 아래 측정이 거부한다)
             self._latched = {}
             fresh = {r: self._cup(r) for r in self.fam.roles}
@@ -610,7 +624,8 @@ class PourFjNode(LeanNodeMixin, Node):
                 "reasons": [str(r) for r in reasons], "publish_target": self._publish,
                 "hand_obs_order": self.contract.hand_obs_order_source.split(":")[0],
                 **(self.chain.goals.as_dict() if getattr(self.chain, "goals", None) is not None else {}),
-                "cup": {r: e.as_dict() for r, e in self.attach.items()}, **self._status_extra(),
+                "cup": {r: e.as_dict() for r, e in self.attach.items()},
+                **({"fpp_gate": {r: g.as_dict() for r, g in self.gates.items()}} if self.gates else {}), **self._status_extra(),
                 "t_pub_ns": self.get_clock().now().nanoseconds, **(extra or {})}
         self._pub_status.publish(self._String(data=json.dumps(body)))
 

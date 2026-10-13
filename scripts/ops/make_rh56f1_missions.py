@@ -74,7 +74,11 @@ EPISODE_RELAY = "/episode/objects/{}/pose"
 AGLT_LIVE_ARGS = ("-p", "cup_static:=false", "-p", "cup_latch:=false", "-p", "cup_hold_last:=true",
                   "-p", "attach_fallback_s:=0.7",
                   # ★10.13 실기 112100: 스친 오판 부착 뒤 FP++ 컵과 FK 추정이 9 cm 벌어졌다 — 4 cm 넘는 새 프레임 3 번 연속이면 떼고 live 로
-                  "-p", "attach_guard_m:=0.04", "-p", "attach_guard_frames:=3")
+                  "-p", "attach_guard_m:=0.04", "-p", "attach_guard_frames:=3",
+                  # ★10.13 A안(fpp_gate.py): 쥐기 전 손바닥 20 cm 안에서 2 cm 넘게 튀거나 테이블 아래(−2 cm)로 간 live 프레임은 버린다.
+                  #   sim(vision-3090 rg3s ep4700): 실기 같은 튐을 넣으면 진짜 성공 0.25, 거르면 0.83(튐 없을 때 0.89 · 거르기만 0.89).
+                  "-p", "fpp_gate_jump_m:=0.02", "-p", "fpp_gate_dz_m:=0.02", "-p", "fpp_gate_radius_m:=0.2",
+                  "-p", "fpp_gate_max_hold_s:=2.5")
 
 
 def _live(topic: str) -> str:
