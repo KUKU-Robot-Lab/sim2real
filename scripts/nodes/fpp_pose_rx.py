@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import fpp_udp as U  # noqa: E402
-from object_registry import input_topic, load_registry  # noqa: E402
+from object_registry import input_topic, live_input_topic, load_registry  # noqa: E402
 
 REPORT_S = 10.0
 RECV_TIMEOUT_S = 0.5
@@ -43,6 +43,7 @@ def main() -> None:
         def __init__(self) -> None:
             super().__init__("fpp_pose_rx")
             self.pubs = {n: self.create_publisher(PoseStamped, input_topic(n), 10) for n in names}
+            self.live_pubs = {n: self.create_publisher(PoseStamped, live_input_topic(n), 10) for n in names}   # ★10.13
             self.hz_pub = self.create_publisher(Float32, U.CAMERA_HZ_TOPIC, 10)
             self.gate = U.SeqGate()
             self.lock = threading.Lock()
@@ -80,20 +81,20 @@ def main() -> None:
                 return
             with self.lock:
                 self.sender = f"{addr[0]}:{addr[1]}"
-                key = "hb" if isinstance(packet, U.Heartbeat) else packet.name
+                key = "hb" if isinstance(packet, U.Heartbeat) else packet.key
                 if not self.gate.accept(key, packet.seq):
                     return
                 if isinstance(packet, U.Heartbeat):
                     self.heartbeat = (time.monotonic(), packet.camera_hz)
                     return
-                self.published[packet.name] += 1
+                self.published[packet.key] = self.published.get(packet.key, 0) + 1
             msg = PoseStamped()
             msg.header.frame_id = packet.frame
             msg.header.stamp.sec, msg.header.stamp.nanosec = packet.stamp
             (msg.pose.position.x, msg.pose.position.y, msg.pose.position.z) = packet.p
             (msg.pose.orientation.x, msg.pose.orientation.y, msg.pose.orientation.z,
              msg.pose.orientation.w) = packet.q
-            self.pubs[packet.name].publish(msg)
+            (self.live_pubs if packet.live else self.pubs)[packet.name].publish(msg)
 
         def _publish_hz(self) -> None:
             with self.lock:

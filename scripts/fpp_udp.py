@@ -12,6 +12,7 @@
 한 패킷 = JSON 한 개(utf-8). 종류 둘:
   pose       {"v":1,"kind":"pose","seq":n,"name":"cup_big_s100","frame":"camera_color_optical_frame",
               "stamp":[sec,nanosec],"p":[x,y,z],"q":[x,y,z,w]}          — FP++ 의 카메라 프레임 자세 그대로
+             (+ "live":true = live 추적 /…/live_pose, 10.13 — 없으면 찍기 /…/pose)
   heartbeat  {"v":1,"kind":"hb","seq":n,"camera_hz":29.8}              — 물체가 안 잡혀도 카메라가 사는지
 """
 from __future__ import annotations
@@ -42,6 +43,12 @@ class PosePacket:
     stamp: tuple[int, int]
     p: tuple[float, float, float]
     q: tuple[float, float, float, float]
+    live: bool = False          # ★10.13 live 추적(/…/live_pose) — 10.12 A안 정책 입력이 UDP 를 못 넘던 빈칸
+
+    @property
+    def key(self) -> str:
+        """seq · stamp 게이트 키 — 찍기와 live 는 따로 센다(같은 물체라도 서로를 막지 않게)."""
+        return f"{self.name}#live" if self.live else self.name
 
 
 @dataclass(frozen=True)
@@ -54,6 +61,8 @@ def encode(packet: PosePacket | Heartbeat) -> bytes:
     if isinstance(packet, PosePacket):
         body = {"v": VERSION, "kind": "pose", "seq": packet.seq, "name": packet.name, "frame": packet.frame,
                 "stamp": list(packet.stamp), "p": list(packet.p), "q": list(packet.q)}
+        if packet.live:
+            body["live"] = True
     else:
         body = {"v": VERSION, "kind": "hb", "seq": packet.seq, "camera_hz": round(float(packet.camera_hz), 2)}
     data = json.dumps(body, separators=(",", ":")).encode()
@@ -98,7 +107,10 @@ def decode(data: bytes, known: Collection[str]) -> PosePacket | Heartbeat:
     norm = math.sqrt(sum(v * v for v in q))
     if abs(norm - 1.0) > _QUAT_NORM_TOL:
         raise ValueError(f"q is not a unit quaternion (|q| = {norm:.3f})")
-    return PosePacket(seq=seq, name=str(name), frame=frame, stamp=(sec, nsec), p=p, q=q)
+    live = raw.get("live", False)
+    if not isinstance(live, bool):
+        raise ValueError(f"live must be a bool, got {live!r}")
+    return PosePacket(seq=seq, name=str(name), frame=frame, stamp=(sec, nsec), p=p, q=q, live=live)
 
 
 def _int(value, name: str) -> int:

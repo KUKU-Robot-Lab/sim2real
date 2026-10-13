@@ -87,3 +87,31 @@ def test_the_sender_sends_each_frame_once_per_object():
     assert not gate.accept("cyl60", (10, 4))
     assert gate.accept("cyl60_blue", (10, 5))
     assert gate.accept("cyl60", (11, 0))
+
+
+# ---- 10.13 live 추적도 UDP 로(arm4090 실기: 컨테이너 localhost DDS → 정책 노드가 live_pose 를 못 받았다)
+def test_a_live_pose_round_trips_and_is_marked():
+    live = U.PosePacket(**{**POSE.__dict__, "live": True})
+    got = U.decode(U.encode(live), KNOWN)
+    assert got == live and got.live and got.key == "cup_big_s100#live"
+    assert b'"live":true' in U.encode(live) and b"live" not in U.encode(POSE)   # 찍기 패킷은 예전 형식 그대로
+    assert U.decode(U.encode(POSE), KNOWN).key == "cup_big_s100"
+
+
+def test_a_non_bool_live_flag_is_refused():
+    raw = json.loads(U.encode(POSE)); raw["live"] = 1
+    with pytest.raises(ValueError):
+        U.decode(json.dumps(raw).encode(), KNOWN)
+
+
+def test_live_and_snapshot_seq_are_gated_separately():
+    g = U.SeqGate()
+    assert g.accept("cup_big_s100#live", 10)
+    assert g.accept("cup_big_s100", 5)                 # live 가 앞서 있어도 찍기는 막히지 않는다
+
+
+def test_the_relay_nodes_carry_the_live_topic():
+    src = Path(__file__).resolve().parents[1] / "scripts" / "nodes"
+    tx, rx = (src / "fpp_pose_tx.py").read_text(), (src / "fpp_pose_rx.py").read_text()
+    assert "live_input_topic(n)" in tx and "live=live" in tx
+    assert "live_input_topic(n)" in rx and "packet.live" in rx

@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import fpp_udp as U  # noqa: E402
-from object_registry import input_topic, load_registry  # noqa: E402
+from object_registry import input_topic, live_input_topic, load_registry  # noqa: E402
 
 CAMERA_INFO = "/camera/camera/color/camera_info"
 REPORT_S = 10.0
@@ -52,6 +52,8 @@ def main() -> None:
             self.camera = U.RateMeter()
             for n in names:
                 self.create_subscription(PoseStamped, input_topic(n), lambda m, n=n: self._on_pose(n, m), 10)
+                # ★10.13 live 추적도 넘긴다 — 없으면 로봇 PC 의 정책 노드가 쥘 때까지 받을 컵이 비었다(arm4090 실기)
+                self.create_subscription(PoseStamped, live_input_topic(n), lambda m, n=n: self._on_pose(n, m, True), 10)
             self.create_subscription(CameraInfo, CAMERA_INFO, lambda _m: self.camera.tick(time.monotonic()),
                                      qos_profile_sensor_data)
             self.create_timer(U.HEARTBEAT_S, self._heartbeat)
@@ -71,16 +73,16 @@ def main() -> None:
             self.seq += 1
             return self.seq
 
-        def _on_pose(self, name: str, msg) -> None:
+        def _on_pose(self, name: str, msg, live: bool = False) -> None:
             stamp = (int(msg.header.stamp.sec), int(msg.header.stamp.nanosec))
-            if not self.fresh.accept(name, stamp):
+            if not self.fresh.accept(f"{name}#live" if live else name, stamp):
                 return
             p, q = msg.pose.position, msg.pose.orientation
             packet = U.PosePacket(seq=self._next(), name=name, frame=msg.header.frame_id or "camera",
                                   stamp=(int(msg.header.stamp.sec), int(msg.header.stamp.nanosec)),
-                                  p=(p.x, p.y, p.z), q=(q.x, q.y, q.z, q.w))
+                                  p=(p.x, p.y, p.z), q=(q.x, q.y, q.z, q.w), live=live)
             if self._send(packet):
-                self.sent[name] += 1
+                self.sent[packet.key] = self.sent.get(packet.key, 0) + 1
 
         def _heartbeat(self) -> None:
             self._send(U.Heartbeat(seq=self._next(), camera_hz=self.camera.hz(time.monotonic())))
