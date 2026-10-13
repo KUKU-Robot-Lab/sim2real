@@ -99,6 +99,7 @@ class PlaceNode(PourFjNode):
         self.chain.joint_free_g = float(self.get_parameter("joint_free_g").value)
         self.chain.open_min_rad = float(self.get_parameter("release_open_min_rad").value)
         held = self._held(meas)
+        self.chain.fk = self.fk[self.contract.side().role]     # ★10.13 이송: 손바닥 자코비안(실측 FK)
         self.chain.reset(meas, holder=self._holder, held=held,
                          allow_measured=bool(self.get_parameter("allow_measured_start").value))
         rel = self.chain.rel[0]

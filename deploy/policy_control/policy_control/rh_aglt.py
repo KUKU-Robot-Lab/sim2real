@@ -340,7 +340,8 @@ def _dumped_obs_ok(env: Mapping, extra: int = 0) -> bool:
     덤프한다 — 10.13 rg3s(actor_tactile_obs False, 실제 94)도 96 으로 남았다. 실제 폭은 촉각 · 물체에서 다시 계산하고,
     체크포인트 running_mean 폭이 다르면 정책 로드에서 막힌다."""
     base, k = _base_dim(env), _k_obs(env)
-    return int(env.get("observation_space", 0)) in (base, base + k, base + k + extra, obs_dim_of(tactile=True))
+    dflt = obs_dim_of(tactile=True)                 # cfg 기본 96 — rh_place 는 계열 칸(latch)을 더해 97 로 덤프한다(10.13 rg3bfo)
+    return int(env.get("observation_space", 0)) in (base, base + k, base + k + extra, dflt, dflt + extra)
 
 
 def _actor_tactile(env: Mapping) -> bool:

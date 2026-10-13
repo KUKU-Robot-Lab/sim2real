@@ -19,6 +19,7 @@ from typing import Mapping, Sequence
 import numpy as np
 
 from policy_control import hand_block as HB
+from policy_control import place_carry as PC
 from policy_control import rh_aglt as A
 from policy_control.cup_attach import AttachCfg, grasp_signal
 
@@ -52,6 +53,8 @@ class PlaceContract(A.RaContract):
     # ★10.13 놓기 기울기 게이트(hdgp release_max_tilt_deg): 놓음 조건이 release_steps 틱 찬 틱에 컵 기울기(세계 z) ≤ 이 값일
     #   때만 놓음 — 배포는 지각 컵(손바닥 FK 부착) 자세로 같은 식. 0 = 게이트 없음(이 필드 전 계약).
     release_max_tilt_deg: float = 0.0
+    # ★10.13 IK 이송(hdgp carry_enable): 리셋 뒤 손바닥 DLS 로 슬롯 위까지 옮긴 다음 정책(place_carry). 빈 값 = 이송 없음.
+    carry: dict = field(default_factory=dict)
 
 
 def is_rh_place_run(env: Mapping) -> bool:
@@ -90,8 +93,13 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
     rule = str(env.get("release_rule", "contact"))
     open_rad = [float(v) for v in env.get("release_open_rad", ())] if rule == "block_follow_open" else []
     max_tilt = float(env.get("release_max_tilt_deg", 0.0))
+    try:
+        carry = PC.CarryCfg.from_env(env)
+    except PC.CarryError as exc:
+        raise RhPlaceError(f"{env_p}: {exc}") from exc
     _, origin_z = A.cup_geometry(env)                       # 컵 원점 → 바닥 = −origin_z
-    kw = {k: v for k, v in asdict(base).items() if not k.startswith("goal_")}
+    # 아래에서 다시 정하는 키는 뺀다(10.13 — 10.12 RaContract.extra_actor_obs 뒤로 이 빌더가 중복 키로 깨져 있었다)
+    kw = {k: v for k, v in asdict(base).items() if not k.startswith("goal_") and k not in ("extra_actor_obs", "obs_dim")}
     kw["sides"] = base.sides
     c = PlaceContract(**{**kw, "schema": SCHEMA, "task": TASK_PREFIX.format(base.side().side[0]),
                          "goal_offset": [0.0, 0.0, 0.0],
@@ -106,6 +114,7 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
                        release_steps=int(env["release_steps"]), settle_steps=int(env["settle_steps"]),
                        release_force_n=float(env["contact_force_threshold"]),
                        latch_obs=latch, release_rule=rule, release_open_rad=open_rad, release_max_tilt_deg=max_tilt,
+                       carry={} if carry is None else carry.as_dict(),
                        extra_actor_obs=["latch"] if latch else [],
                        obs_dim=base.obs_dim + (1 if latch else 0))
     if latch or rule != "contact":
@@ -119,6 +128,11 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
         c = replace(c, notes=list(c.notes) + [
             f"★놓기 기울기 게이트(10.13): 놓음 조건이 {int(env['release_steps'])} 틱 찬 틱에 지각 컵 기울기 ≤ {max_tilt}° 일 때만 "
             "놓음(sim 은 실제 컵 기울기) — 기울어진 채로는 놓지 않고 정책이 세울 때까지 기다린다"])
+    if carry is not None:
+        c = replace(c, notes=list(c.notes) + [
+            f"★IK 이송(10.13): 리셋 뒤 손바닥 DLS 로 컵을 (홀더 xy, 상판 + 원점 높이 + {carry.dz}) 까지 — 축당 {carry.speed} m/틱, "
+            f"{carry.min_steps} 틱 뒤 {carry.tol} m 안이거나 {carry.max_steps} 틱이면 정책. 이송 중 정책 forward 는 돌리고 출력은 버림"
+            f"(LSTM · prev_action 이어짐). 에피소드 {c.episode_s} s 는 이송 포함(sim 과 같음)"])
     validate(c)
     return c
 
@@ -137,6 +151,11 @@ def validate(c: PlaceContract) -> None:
         raise RhPlaceError(f"extra_actor_obs {c.extra_actor_obs} 인데 latch_obs 가 없다")
     if not 0.0 <= float(c.release_max_tilt_deg) < 90.0:
         raise RhPlaceError(f"release_max_tilt_deg {c.release_max_tilt_deg} — 0(없음) 또는 (0, 90)°")
+    if c.carry:
+        try:
+            PC.CarryCfg.from_dict(c.carry)
+        except PC.CarryError as exc:
+            raise RhPlaceError(str(exc)) from exc
     if c.release_rule not in RELEASE_RULES:
         raise RhPlaceError(f"release_rule {c.release_rule!r} — {RELEASE_RULES}")
     if c.release_rule == "block_follow_open":
@@ -156,16 +175,35 @@ def load_contract(path: str | Path) -> PlaceContract:
     return c
 
 
+def seat_dz_of(c: PlaceContract) -> float:
+    """홀더 원점 → 자리(컵 원점) 높이. 다물체면 고른 물체의 바닥으로(hdgp seat_pos: HOLDER_FLOOR_Z − bottom_z, env 별 물체)."""
+    if c.object_names and c.active_object:
+        return HOLDER_FLOOR_Z - float(c.object_geometry[c.active_object]["bottom_z"])
+    return c.seat_dz
+
+
+def origin_z_of(c: PlaceContract) -> float:
+    """물체 원점 높이(바닥 → 원점) — hdgp _geo_origin. 단일 물체 계약은 seat_dz 에서 되돌린다."""
+    if c.object_names and c.active_object:
+        return float(c.object_geometry[c.active_object]["origin_offset_z"])
+    return c.seat_dz - HOLDER_FLOOR_Z
+
+
 def seat_goal(c: PlaceContract, holder_pos: Sequence[float]) -> A.Goal:
-    return A.Goal(np.asarray(holder_pos, float) + np.array([0.0, 0.0, c.seat_dz]), np.array([1.0, 0.0, 0.0, 0.0]))
+    return A.Goal(np.asarray(holder_pos, float) + np.array([0.0, 0.0, seat_dz_of(c)]), np.array([1.0, 0.0, 0.0, 0.0]))
+
+
+def hand_action_of(c: PlaceContract, hand_q: Sequence[float]) -> np.ndarray:
+    """손 목표 → 행동값(sim _carry_hand · _a_open 과 같은 linear_grip_raw 역사상)."""
+    s = c.side()
+    o, g = np.asarray(s.hand_open, float), np.asarray(s.hand_grip, float)
+    lo, hi = np.minimum(o, g), np.maximum(o, g)
+    return np.clip(2.0 * (np.asarray(hand_q, float) - lo) / np.maximum(hi - lo, 1e-6) - 1.0, -1.0, 1.0)
 
 
 def open_hand_action(c: PlaceContract) -> np.ndarray:
     """편 손의 행동값 — sim _a_open(linear_grip_raw 역사상): (2·(open − lo)/(hi − lo) − 1), lo/hi = min/max(open, grip)."""
-    s = c.side()
-    o, g = np.asarray(s.hand_open, float), np.asarray(s.hand_grip, float)
-    lo, hi = np.minimum(o, g), np.maximum(o, g)
-    return np.clip(2.0 * (o - lo) / np.maximum(hi - lo, 1e-6) - 1.0, -1.0, 1.0)
+    return hand_action_of(c, c.side().hand_open)
 
 
 def _quat_mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -230,6 +268,8 @@ class PlaceChain:
         self.hand0: np.ndarray | None = None
         self.opened, self.tact_max, self.jf_max = 0.0, 0.0, None
         self.latch = False                              # 관측 래치(latch_obs) — 리셋까지 유지
+        self.fk = None                                  # ★10.13 이송: 노드가 넣는 UrdfChainFK(손바닥 자코비안용)
+        self.carry: PC.Carry | None = None
         self.q_g: np.ndarray | None = None              # block_follow_open: 마지막으로 쥐었던 틱의 실측(칸 단위)
         names = list(s.hand_joints)
         self._rel_idx = [next(i for i, n in enumerate(names) if n.endswith(HB.AXIS_SUFFIX[a])) for a in RELEASE_AXES]
@@ -267,6 +307,13 @@ class PlaceChain:
         self.prev = np.zeros(self.c.action_dim)
         self.step_i, self.free_streak, self.settle_t = 0, 0, -1
         self.latch, self.q_g = False, None
+        self.carry = None
+        if self.c.carry:
+            if self.fk is None:
+                raise RhPlaceError("이송(carry) 계약인데 FK 가 없다 — 노드가 chain.fk 를 넣어야 한다")
+            cfg = PC.CarryCfg.from_dict(self.c.carry)
+            self.carry = PC.Carry(cfg, PC.carry_target(holder, origin_z_of(self.c), cfg.dz), hand_action_of(self.c, hand0),
+                                  self.c.k_arm, self.c.arm_ema)
         if hasattr(self.policy, "reset"):
             self.policy.reset()
 
@@ -312,12 +359,15 @@ class PlaceChain:
             self.latch = self.latch or self._latch_now(pos, quat)
         extra = {"latch": 1.0 if self.latch else 0.0} if self.c.extra_actor_obs else None
         obs = A.build_obs(self.c, m, self.dec, self.goal, self.prev, extra=extra)
+        hand_q = np.array([m.hand_q[j] for j in self.c.side().hand_joints], float)
+        carrying = self.carry is not None and self.carry.on
         if self.settling:
             st = self.dec.state["arm"]
             a = np.concatenate([np.clip((self.start_q - st.arm_target) / self.c.k_arm, -1.0, 1.0), self._a_open])
         else:
             a = np.clip(np.asarray(self.policy.forward(obs), float), -self.c.action_clip, self.c.action_clip)
-        hand_q = np.array([m.hand_q[j] for j in self.c.side().hand_joints], float)
+            if carrying:                                # sim: 정책은 돌고(LSTM 진행) 출력은 이송 행동으로 바뀐다
+                a = self.carry.step(m.palm_pos, pos, quat, self._palm_jacobian(m.arm_q, hand_q), A.quat_apply)
         targets = self.dec.step(a, active=True, tactile_n=m.tactile_n, hand_q=hand_q)
         f = self._fingers
         self.opened = float(np.mean(self._close_dir[f] * (self.hand0[f] - targets["arm"][1][f])))
@@ -330,6 +380,7 @@ class PlaceChain:
                 free = self._free_block(hand_q, targets["arm"][1])
             else:
                 free = self.opened >= self.open_min_rad and is_free(self.c, m.tactile_n, m.joint_force, self.joint_free_g)
+            free = free and not carrying                  # 10.13 이송 틱은 놓음 판정 없음(q_g 갱신은 위에서 그대로)
             self.free_streak = self.free_streak + 1 if free else 0
             gate = self.latch or not self.c.latch_obs     # 관측 래치가 켜진 뒤에만(sim release_requires_latch)
             if self.c.release_max_tilt_deg > 0.0:         # 10.13 놓기 기울기 게이트(sim: 놓음 틱의 컵 기울기, streak 는 그대로 센다)
@@ -340,8 +391,17 @@ class PlaceChain:
         self.step_i += 1
         return obs, a, targets
 
+    def _palm_jacobian(self, arm_q: Sequence[float], hand_q: np.ndarray) -> np.ndarray:
+        """손바닥 몸체(sim palm_idx 와 같은 palm_body) 6D 자코비안 — 실측 팔 · 손으로 FK(physx 자코비안과 같은 지금 상태)."""
+        def pose(q: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+            p = self.fk.palm_pose(q, hand_q)
+            return np.asarray(p.palm_pos, float), np.asarray(p.extra["palm_rot"], float)
+        return PC.palm_jacobian(pose, arm_q)
+
     def as_dict(self) -> dict:
-        return {"phase": "done" if self.done else "settle" if self.settling else "place", "free_streak": self.free_streak,
+        return {"phase": "done" if self.done else "settle" if self.settling
+                else "carry" if (self.carry is not None and self.carry.on) else "place",
+                "carry": None if self.carry is None else self.carry.as_dict(), "free_streak": self.free_streak,
                 "settle_t": self.settle_t, "seat": None if self.goal is None else [round(float(v), 4) for v in self.goal.pos],
                 # 첫 실기 문턱 정하기용(PLACE 검토) — 손 목표가 인계보다 연 양 · 손끝 최대 · 관절 힘 최대
                 "opened": round(self.opened, 4), "tact_max": round(self.tact_max, 3), "latch": self.latch,
