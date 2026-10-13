@@ -322,6 +322,7 @@ class PourFjNode(LeanNodeMixin, Node):
                               ("attach_after_s", AttachCfg.attach_after_s), ("release_steps", AttachCfg.release_steps),
                               ("cup_static", AttachCfg.static_source), ("cup_latch", False), ("cup_hold_last", False),
                               ("attach_fallback_s", AttachCfg.fallback_after_s),
+                              ("attach_guard_m", AttachCfg.guard_m), ("attach_guard_frames", AttachCfg.guard_frames),
                               *((param, topic) for _, param, topic in self.fam.cups)):
             self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
@@ -360,7 +361,8 @@ class PourFjNode(LeanNodeMixin, Node):
                                     release_steps=int(p("release_steps")),
                                     # 에피소드는 컵을 snapshot 정지 기록으로 준다 — 파지 시작 시각 FK 로 붙인다(cup_attach static)
                                     static_source=bool(p("cup_static")),
-                                    fallback_after_s=float(p("attach_fallback_s")))
+                                    fallback_after_s=float(p("attach_fallback_s")),
+                                    guard_m=float(p("attach_guard_m")), guard_frames=int(p("attach_guard_frames")))
         self.attach = {r: CupAttach(self.attach_cfg) for r in self.fam.roles} if bool(p("cup_attach")) else {}
         # ★10.04 실기: 단독 aglt 단계에서 손이 다가가자 FP++ 컵이 1.5~2.6 s 끊겨(손이 가림) '컵 자세가 없다'로 집기 전에 멈췄다.
         #   cup_latch 면 reset 때 컵 자세를 한 번 잡아 두고 그 에피소드 동안 그 값을 쓴다(사용자 원칙 "FPP 는 정지 상태만" —
@@ -510,7 +512,7 @@ class PourFjNode(LeanNodeMixin, Node):
     def _srv_reset(self, _req, res):
         self._drain()
         for est in self.attach.values():           # 새 에피소드 — 컵은 다시 FP++ 부터
-            est.reset()
+            est.new_episode()
         if self.cup_latch:                         # 지금 신선한 FP++ 컵을 이 에피소드의 컵으로(없으면 아래 측정이 거부한다)
             self._latched = {}
             fresh = {r: self._cup(r) for r in self.fam.roles}

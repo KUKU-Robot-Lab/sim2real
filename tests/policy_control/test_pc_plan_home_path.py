@@ -189,3 +189,35 @@ def test_the_back_box_and_side_walls_are_in_the_world_by_default():
     assert boxes["wall_y_pos"]["lo"][1] == pytest.approx(0.45) and boxes["wall_y_neg"]["hi"][1] == pytest.approx(-0.45)
     assert np.all(boxes["wall_y_pos"]["hi"][2] > 1.0) and np.all(boxes["wall_y_pos"]["lo"][2] < 0.0)
     assert W.wall_boxes({}, None) == []
+
+
+# ---- 10.13 실기: 정책이 멈춘 자리의 손목 j7 1.5959 가 한계 1.5708 밖이라 rehome 이 거부됐다
+LIM = {f"r_aj_{i}": (-1.5708, 1.5708) for i in range(1, 8)}
+JOINTS = list(LIM)
+
+
+def test_a_start_just_past_the_limit_is_clipped_with_a_note():
+    q = np.zeros(7); q[6] = 1.5959
+    got, notes = P.clip_start_into_limits(q, JOINTS, LIM, 0.04)
+    assert got[6] == pytest.approx(1.5708) and len(notes) == 1 and "r_aj_7" in notes[0]
+    assert q[6] == 1.5959                                   # 입력은 그대로(복사본을 고친다)
+
+
+def test_a_start_far_past_the_limit_is_left_for_the_limit_check_to_refuse():
+    q = np.zeros(7); q[6] = 1.70; q[0] = -1.60
+    got, notes = P.clip_start_into_limits(q, JOINTS, LIM, 0.04)
+    assert got[6] == 1.70 and got[0] == pytest.approx(-1.5708) and len(notes) == 1
+
+
+def test_zero_slack_changes_nothing():
+    q = np.zeros(7); q[6] = 1.58
+    got, notes = P.clip_start_into_limits(q, JOINTS, LIM, 0.0)
+    assert got[6] == 1.58 and notes == []
+
+
+def test_rehome_passes_a_slack_smaller_than_the_path_start_check():
+    RH = _load("plan_rehome")
+    q = {f"r_aj_{i}": 0.1 for i in range(1, 8)} | {"r_hj_1": 0.2}
+    argv = RH.planner_argv("right", q, Path("/tmp/x.npz"), "rh56f1")
+    slack = float(argv[argv.index("--start-slack") + 1])
+    assert 0.0 < slack < 0.05 and slack == RH.START_SLACK

@@ -53,8 +53,15 @@ class AttachCfg:
     max_palm_dist_m: float = 0.0  # >0: 손바닥–컵 원점(FP++) 거리도 이 안이어야 쥔 것으로(오탐 대비, 기본 끔 — sim 쥔 상태 4~5 cm)
     static_source: bool = False   # 컵 자세가 정지 기록(에피소드 snapshot 재발행) — 파지 시작 시각 FK 로 붙인다(위 static)
     fallback_after_s: float = 0.0  # live 에서 파지 뒤 이만큼 프레임이 안 오면 파지 시작 FK 로(위 fallback, 0 = 끔)
+    # ★10.13 실기(20261013_112100): 손가락이 컵을 스친 오판으로 3 s 에 붙은 뒤 FP++ 실제 컵과 FK 추정이 9 cm 까지 벌어졌는데
+    #   check 는 기록만 했다. guard_m > 0 이면 그 차이가 guard_m 넘는 새 프레임이 guard_frames 번 연속일 때 떼고 FP++ 로 돌아간다.
+    #   뗀 뒤에는 쥔 판정이 한 번 끊길 때까지 다시 붙이지 않는다. 떨굼(releases)과 따로 센다(guard_drops) — 실행기가 떨굼으로 보지 않는다.
+    guard_m: float = 0.0
+    guard_frames: int = 3
 
     def __post_init__(self) -> None:
+        if not (np.isfinite(self.guard_m) and self.guard_m >= 0.0) or int(self.guard_frames) < 1:
+            raise ValueError(f"guard_m >= 0 and guard_frames >= 1, got {self.guard_m}, {self.guard_frames}")
         f = float(self.fallback_after_s)
         if f != 0.0 and not self.attach_after_s < f <= self.history_s:
             raise ValueError(f"fallback_after_s {f} — 0(끔) 또는 attach_after_s {self.attach_after_s} < x ≤ history_s "
@@ -113,7 +120,9 @@ class CupAttach:
     def __init__(self, cfg: AttachCfg = AttachCfg()) -> None:
         self.cfg = cfg
         self._hist: deque = deque()
+        self.guard_drops = 0                       # 에피소드 동안 감시가 뗀 횟수(reset 이 0 으로 — 떼기 경로의 reset 은 이어 간다)
         self.reset()
+        self.guard_drops = 0
 
     def reset(self) -> None:
         self.attached = False
@@ -129,7 +138,14 @@ class CupAttach:
         self._rel_R: np.ndarray | None = None
         self.releases = 0                          # 이 에피소드에서 붙었다가 떨어진 횟수(에피소드 실행기 OBJECT_DROPPED 신호)
         self.fallback = False                      # 마지막 부착이 프레임 없이 파지 시작 FK 로 붙었나(위 fallback)
+        self.guard_bad = 0                         # 감시: 연속으로 guard_m 을 넘은 새 프레임 수
+        self.guard_blocked = False                 # 감시가 뗀 뒤 쥠이 끊길 때까지 다시 안 붙인다
         self._hist.clear()
+
+    def new_episode(self) -> None:
+        """새 에피소드 — reset 에 더해 에피소드 누계(감시 뗌)도 0 으로."""
+        self.reset()
+        self.guard_drops = 0
 
     @property
     def source(self) -> str:
@@ -182,6 +198,8 @@ class CupAttach:
         self.check_n += 1
         self.check_last_m = d
         self.check_max_m = d if self.check_max_m is None else max(self.check_max_m, d)
+        if self.cfg.guard_m > 0.0:
+            self.guard_bad = self.guard_bad + 1 if d > self.cfg.guard_m else 0
 
     def step(self, grasped: bool, t: float, palm_pos, palm_R, live):
         """정책 스텝 하나(t = 이 손바닥 FK 의 시각): 기록 · 판정 · 붙이기 · 떼기 뒤 쓸 컵 자세."""
@@ -193,6 +211,8 @@ class CupAttach:
             if not self.cfg.static_source:            # 정지 기록은 손과 같이 움직이지 않는다 — 비교가 뜻이 없다
                 self._check(live)
             self.off_steps = 0 if grasped else self.off_steps + 1
+            if self.cfg.guard_m > 0.0 and self.guard_bad >= self.cfg.guard_frames:
+                return self._guard_release(live, grasped)
             if self.off_steps >= self.cfg.release_steps:
                 hist, last = list(self._hist), (self.attach_steps, self.check_n, self.check_last_m, self.check_max_m)
                 releases, fallback = self.releases + 1, self.fallback
@@ -204,6 +224,9 @@ class CupAttach:
             return self._from_palm(palm_pos, palm_R)
         if not grasped:
             self.grasp_since, self.grasp_steps = None, 0
+            self.guard_blocked = False
+            return live
+        if self.guard_blocked:                        # 감시가 뗀 뒤 쥠이 이어지는 동안 — FP++ 그대로
             return live
         if self.grasp_since is None:
             self.grasp_since = float(t)
@@ -228,12 +251,23 @@ class CupAttach:
                 return out
         return live
 
+    def _guard_release(self, live, grasped: bool):
+        """감시가 뗀다 — 부착 기록(check)은 남기고 FP++ 로. 쥠이 끊길 때까지 다시 안 붙인다."""
+        hist = list(self._hist)
+        last = (self.attach_steps, self.check_n, self.check_last_m, self.check_max_m, self.releases, self.fallback)
+        drops = self.guard_drops + 1
+        self.reset()
+        self._hist.extend(hist)
+        self.attach_steps, self.check_n, self.check_last_m, self.check_max_m, self.releases, self.fallback = last
+        self.guard_drops, self.guard_blocked = drops, bool(grasped)
+        return live
+
     def _attach(self, at, live, palm_pos, palm_R):
         """상대 자세 = (짝지은 시각의 손바닥)⁻¹ ∘ 컵 → 붙이고 지금 손바닥 FK 로 컵을 돌려준다."""
         p0, R0 = at
         self._rel_p = R0.T @ (np.asarray(live[0], float) - p0)
         self._rel_R = R0.T @ quat_to_matrix(live[1])
-        self.attached, self.off_steps, self.fallback = True, 0, False
+        self.attached, self.off_steps, self.fallback, self.guard_bad = True, 0, False, 0
         self.attach_steps = self.grasp_steps
         stamp = live[2] if len(live) > 2 else None
         self.check_n, self.check_last_m, self.check_max_m, self._check_stamp = 0, None, None, stamp
@@ -246,4 +280,5 @@ class CupAttach:
                 "grasp_steps": self.grasp_steps,
                 "off_steps": self.off_steps, "attach_steps": self.attach_steps, "releases": self.releases,
                 "check_n": self.check_n, "check_last_m": r(self.check_last_m), "check_max_m": r(self.check_max_m),
+                "guard_drops": self.guard_drops, "guard_blocked": self.guard_blocked,
                 "rel_pos": None if self._rel_p is None else [round(float(v), 4) for v in self._rel_p]}

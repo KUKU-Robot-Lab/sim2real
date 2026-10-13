@@ -576,10 +576,26 @@ def fmt_pair(k) -> str:
     return f"{k[0]}<->{k[1]}"
 
 
+def clip_start_into_limits(start, joints, limits, slack: float):
+    """한계를 slack[rad] 안으로만 넘은 관절은 한계로 자른다. 그보다 넘은 관절은 그대로 둬서 아래 한계 검사가 거부하게 한다."""
+    q = np.asarray(start, float).copy()
+    notes = []
+    for i, j in enumerate(joints):
+        lo, hi = limits[j]
+        for bound, over in ((lo, lo - q[i]), (hi, q[i] - hi)):
+            if 0.0 < over <= slack:
+                notes.append(f"{j} {q[i]:+.4f} → {bound:+.4f}")
+                q[i] = bound
+    return q, notes
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--side", choices=("right", "left"), default="right")
     ap.add_argument("--start", default="zeros", help="'zeros' 또는 7개 CSV [rad]")
+    ap.add_argument("--start-slack", type=float, default=0.0,
+                    help="시작 자세가 관절한계를 이만큼[rad] 안으로만 넘었으면 한계로 잘라 계획한다(10.13 실기 j7 +0.025). "
+                         "경로 시작점 검사(check_path_start --tol 0.05)보다 작아야 한다. 0 = 끔(넘으면 거부)")
     ap.add_argument("--goal", default="contract", help="'contract'(계약 home_arm) | 'env_reset'(env.yaml 리셋 자세) | CSV")
     ap.add_argument("--other-arm", choices=("home", "zero", "both"), default="both",
                     help="반대팔 고정 자세 — both 면 두 자세 모두에서 통과해야 한다")
@@ -673,6 +689,11 @@ def main(argv=None) -> int:
     scenes = build_scenes(contract, args.side, args.other_arm,
                           "contract" if args.hand_start == "sphere" else args.hand_start,
                           parse_hand_q(args.hand_q))
+    if not 0.0 <= args.start_slack < 0.05:
+        raise SystemExit(f"--start-slack {args.start_slack} 가 [0, 0.05) 밖 — 거부(경로 시작점 검사 허용 0.05 rad 보다 작아야 한다)")
+    start, slack_notes = clip_start_into_limits(start, world.moving_joints, limits, args.start_slack)
+    if slack_notes:
+        print(f"[plan] 시작 자세가 한계를 조금 넘어 한계로 잘라 계획한다(≤ {args.start_slack} rad): {slack_notes}")
     for name, q in (("start", start), ("goal", goal)):
         bad = [(j, round(float(v), 4), limits[j]) for j, v in zip(world.moving_joints, q)
                if not limits[j][0] - 1e-9 <= v <= limits[j][1] + 1e-9]

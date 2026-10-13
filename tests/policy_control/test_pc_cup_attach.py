@@ -298,3 +298,63 @@ def test_without_the_fallback_an_occluded_grasp_never_attaches():
 def test_the_fallback_must_come_after_the_attach_delay_and_inside_the_palm_history(bad):
     with pytest.raises(ValueError, match="fallback_after_s"):
         AttachCfg(fallback_after_s=bad)                               # 0 = 끔, 아니면 attach_after_s < x ≤ history_s
+
+
+# ---- 10.13 부착 감시(guard) — 실기 20261013_112100: 스친 오판으로 붙은 뒤 FP++ 컵과 FK 추정이 9 cm 까지 벌어졌다
+def _false_attach(cfg, seconds=3.0, palm_v=0.05, regrasp=True):
+    """컵(FP++, 지연 0)은 테이블에 그대로, 손바닥은 붙은 뒤 palm_v m/s 로 멀어진다 — 쥔 판정은 계속 참(오판)."""
+    c = CupAttach(cfg)
+    cup = (np.array([0.3, -0.1, 0.29]), Q0)
+    t, seen = 0.0, []
+    while t < seconds:
+        p = np.array([0.25, -0.1, 0.30]) + (np.array([0.0, palm_v, 0.0]) * max(0.0, t - 0.5))
+        out = c.step(True, t, p, I3, (cup[0], cup[1], t))
+        seen.append((t, c.source, np.linalg.norm(out[0] - cup[0])))
+        t += DT
+    return c, seen
+
+
+def test_without_guard_a_false_attachment_follows_the_hand_forever():
+    c, seen = _false_attach(AttachCfg())
+    assert seen[-1][1] == "attached" and seen[-1][2] > 0.1          # 10 cm 넘게 틀린 컵을 계속 준다
+
+
+def test_guard_drops_a_false_attachment_and_returns_the_live_cup():
+    c, seen = _false_attach(AttachCfg(guard_m=0.04, guard_frames=3))
+    drop_t = next(t for t, s, _ in seen if s == "live" and t > 0.5)
+    assert 0.5 + 0.04 / 0.05 <= drop_t <= 0.5 + 0.04 / 0.05 + 4 * DT   # 4 cm 넘은 뒤 3 프레임
+    assert seen[-1][1] == "live" and seen[-1][2] < 1e-9               # 그 뒤로는 FP++ 그대로
+    assert c.guard_drops == 1 and c.releases == 0 and c.guard_blocked  # 떨굼으로 세지 않는다
+    assert c.as_dict()["guard_drops"] == 1
+
+
+def test_guard_waits_for_the_grasp_to_break_before_attaching_again():
+    c, _ = _false_attach(AttachCfg(guard_m=0.04, guard_frames=3))
+    cup = (np.array([0.3, -0.1, 0.29]), Q0)
+    t = 3.0
+    for _ in range(30):                                                  # 쥠이 이어지는 동안: 다시 안 붙는다
+        c.step(True, t, cup[0] + [0, 0, 0.01], I3, (cup[0], cup[1], t)); t += DT
+    assert c.source == "live"
+    c.step(False, t, cup[0], I3, (cup[0], cup[1], t)); t += DT           # 한 번 끊기면
+    for _ in range(30):
+        c.step(True, t, cup[0] + [0, 0, 0.01], I3, (cup[0], cup[1], t)); t += DT
+    assert c.source == "attached"
+
+
+def test_guard_keeps_a_real_grasp_with_small_slip():
+    c, seen = _false_attach(AttachCfg(guard_m=0.04, guard_frames=3), palm_v=0.0)
+    assert seen[-1][1] == "attached" and c.guard_drops == 0
+
+
+def test_new_episode_clears_the_guard_count():
+    c, _ = _false_attach(AttachCfg(guard_m=0.04, guard_frames=3))
+    c.reset()
+    assert c.guard_drops == 1                                            # 떼기 경로의 reset 은 누계를 지우지 않는다
+    c.new_episode()
+    assert c.guard_drops == 0 and not c.guard_blocked
+
+
+@pytest.mark.parametrize("bad", [dict(guard_m=-0.01), dict(guard_m=float("nan")), dict(guard_frames=0)])
+def test_guard_refuses_bad_values(bad):
+    with pytest.raises(ValueError):
+        AttachCfg(**bad)

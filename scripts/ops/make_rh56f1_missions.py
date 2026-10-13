@@ -72,7 +72,9 @@ EPISODE_RELAY = "/episode/objects/{}/pose"
 #   손이 가려 끊기면 마지막 값(sim FP++ ZOH), 쥔 뒤는 sim PalmAttach 처럼 파지 + 100 ms 뒤 찍힌 프레임과 그 시각 손바닥 FK 로
 #   붙인다. 가려서 프레임이 안 오면 0.7 s(sim 이 붙는 시간 범위 위)에 파지 시작 FK 로. 10.04 의 정지 컵(cup_latch · cup_static) 대신.
 AGLT_LIVE_ARGS = ("-p", "cup_static:=false", "-p", "cup_latch:=false", "-p", "cup_hold_last:=true",
-                  "-p", "attach_fallback_s:=0.7")
+                  "-p", "attach_fallback_s:=0.7",
+                  # ★10.13 실기 112100: 스친 오판 부착 뒤 FP++ 컵과 FK 추정이 9 cm 벌어졌다 — 4 cm 넘는 새 프레임 3 번 연속이면 떼고 live 로
+                  "-p", "attach_guard_m:=0.04", "-p", "attach_guard_frames:=3")
 
 
 def _live(topic: str) -> str:

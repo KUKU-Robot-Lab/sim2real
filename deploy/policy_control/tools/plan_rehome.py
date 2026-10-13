@@ -48,6 +48,11 @@ def measure(side: str = "right", robot: str = "dg5f") -> dict[str, float]:
     return json.loads(out.stdout.strip().splitlines()[-1])["q"]
 
 
+#: ★10.13 실기: 정책이 멈춘 자리의 손목 j7 이 한계보다 0.025 rad 바깥이라 계획기가 거부했다(되돌림 실패 → safe_stop).
+#  이 안쪽으로만 넘었으면 한계로 잘라 계획한다 — 경로 시작점 검사(0.05 rad)가 실측과 잘린 시작점의 차이를 다시 본다.
+START_SLACK = 0.04
+
+
 def planner_argv(side: str, q: dict[str, float], out: Path, robot: str = "dg5f") -> list[str]:
     """실측 → plan_home_path 인자. 팔 7 관절이 없으면 SystemExit, 손은 있는 것만 넘긴다(측정 손 자세로 검사)."""
     p = side[0]
@@ -62,7 +67,7 @@ def planner_argv(side: str, q: dict[str, float], out: Path, robot: str = "dg5f")
         raise SystemExit(f"✗ 손 관절 상태가 없다({side}) — 손 드라이버가 떠 있는가(손 자세로 충돌을 검사한다)")
     return [sys.executable, str(HERE / "plan_home_path.py"), "--side", side,
             # `--opt=값` 으로 붙인다 — 값이 '-0.1…' 처럼 음수로 시작하면 argparse 가 옵션으로 읽는다(09.28 실기 rc=2)
-            "--start=" + ",".join(f"{q[j]:.5f}" for j in arm), "--goal", "contract",
+            "--start=" + ",".join(f"{q[j]:.5f}" for j in arm), "--start-slack", str(START_SLACK), "--goal", "contract",
             "--hand-start", "measured", "--hand-q=" + ",".join(f"{k}={v:.5f}" for k, v in sorted(hand.items())),
             "--out", str(out), *ROBOTS[robot]]
 

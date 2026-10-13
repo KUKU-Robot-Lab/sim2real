@@ -760,6 +760,10 @@ run:
     - -p
     - attach_fallback_s:=0.7
     - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
     - max_episode_s:={policy:aglt_right.max_episode_s}
     background: true
   - note: '[right] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + (0, 0, 0.14)'
@@ -1013,6 +1017,10 @@ run:
     - cup_hold_last:=true
     - -p
     - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
     - -p
     - max_episode_s:={policy:aglt_left.max_episode_s}
     background: true
@@ -1980,6 +1988,10 @@ run:
     - -p
     - attach_fallback_s:=0.7
     - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
     - max_episode_s:=15.0
     background: true
   - note: '[right] rh_place_r 노드(rh56f1/place/right_i09) — 홀더 1 · 놓은 뒤 스스로 끝남'
@@ -2095,6 +2107,10 @@ run:
     - cup_hold_last:=true
     - -p
     - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
     - -p
     - max_episode_s:=15.0
     background: true
@@ -2217,6 +2233,10 @@ run:
     - -p
     - attach_fallback_s:=0.7
     - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
     - max_episode_s:=15.0
     background: true
   - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
@@ -2314,6 +2334,10 @@ run:
     - cup_hold_last:=true
     - -p
     - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
     - -p
     - max_episode_s:=15.0
     background: true
