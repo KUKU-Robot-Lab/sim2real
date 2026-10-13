@@ -179,6 +179,18 @@ class AgltChain:
         self.base = c                               # 파일 계약 — 다물체면 reset 마다 select_object 로 self.c 를 고른다
         self.object_name: str | None = None         # ★10.12 노드 파라미터 object(에피소드 단계 policy_object)
         self.freeze = G.FreezeRule()                # ★10.13 노드 파라미터 freeze_rule · freeze_lift_m · freeze_hold_steps
+        # ★10.13 배포 전용 B(사용자 결정, rh_aglt.GripAssist 참고) — 쥔 판정이 꺼져 있어도 컵이 freeze_lift_m 넘게 들렸고
+        # 손바닥 이 거리 안이면 목표 · 멈춤(lift_hold) 판정에는 쥔 것으로 본다. 부착(PalmAttach)에는 쓰지 않는다. 0 = 끔.
+        #   왼손 165303 bag: 쉐이커 10~14 cm 들림 · 컵-손바닥 4~8 cm 인데 쥔 판정 0 틱 → 이 규칙이면 4.59 s 에 멈춘다.
+        self.lift_grasp_palm_m = 0.0
+
+    def lift_grasped(self, m: A.RaMeas) -> bool:
+        """B 들림 판정 — 관측 컵 z − 리셋 컵 z > freeze.lift_m AND |컵 − 손바닥| < lift_grasp_palm_m."""
+        if self.lift_grasp_palm_m <= 0.0 or self.goals is None:
+            return False
+        lift = float(np.asarray(m.cup_pos, float)[2] - np.asarray(self.goals.cup_reset, float)[2])
+        near = float(np.linalg.norm(np.asarray(m.cup_pos, float) - np.asarray(m.palm_pos, float)))
+        return bool(np.isfinite(lift) and lift > self.freeze.lift_m and near < self.lift_grasp_palm_m)
 
     @property
     def goal(self) -> A.Goal | None:
@@ -206,11 +218,13 @@ class AgltChain:
         a = np.clip(np.asarray(self.policy.forward(obs), float), -self.c.action_clip, self.c.action_clip)
         active = self.step_i >= self.c.hold_steps
         hand_q = np.array([m.hand_q[j] for j in self.c.side().hand_joints], float)
-        targets = self.dec.step(a, active=active, tactile_n=m.tactile_n, hand_q=hand_q)
+        targets = self.dec.step(a, active=active, tactile_n=m.tactile_n, hand_q=hand_q, joint_force=m.joint_force)
         if active:                                  # 학습 GoalState.step 도 대기 중에는 세지 않는다
             g = self.dec.grasped()                  # ★10.12 hand_block 계약: 막힘 신호 쥔 판정(sim _grasp_flag 와 같은 식)
             if g is None and self.grasp_cfg is not None:   # 이전 계약: 부착과 같은 쥠 신호(손끝 또는 관절 힘), 손끝 문턱은 계약 값
                 g = grasp_signal(m.tactile_n, m.joint_force, replace(self.grasp_cfg, force_n=self.c.grasp_threshold_n))
+            if not g and self.lift_grasped(m):      # ★10.13 B 들림 판정(배포 전용, 기본 끔)
+                g = True
             self.goals.step(m.cup_pos, m.cup_quat, m.tactile_n, is_grasped=g)
         self.prev = np.clip(a, -1.0, 1.0)
         self.step_i += 1
@@ -326,6 +340,7 @@ class PourFjNode(LeanNodeMixin, Node):
                               ("max_gap_ticks", 3), ("publish_target", True), ("max_episode_s", -1.0), ("ns", ""),
                               ("stop_on_target", False), ("goal_max", 0),
                               ("freeze_rule", "success"), ("freeze_lift_m", 0.07), ("freeze_hold_steps", 30), ("episode_topic", ""), ("object", ""),
+                              ("hand_unfreeze_on_grasp", False), ("thumb_support_g", 0.0), ("lift_grasp_palm_m", 0.0),
                               ("cup_attach", True), ("attach_force_n", AttachCfg.force_n),
                               ("attach_joint_force_g", AttachCfg.joint_force_g), ("attach_signal", AttachCfg.signal),
                               ("attach_max_palm_dist_m", AttachCfg.max_palm_dist_m),
@@ -609,6 +624,12 @@ class PourFjNode(LeanNodeMixin, Node):
             self.chain.freeze = G.FreezeRule(str(self.get_parameter("freeze_rule").value).strip(),
                                              float(self.get_parameter("freeze_lift_m").value),
                                              int(self.get_parameter("freeze_hold_steps").value))
+        if hasattr(self.chain, "lift_grasp_palm_m"):    # ★10.13 배포 전용 손 보조 A · B(rh_aglt.GripAssist) — 잘못된 값은 reset 거부
+            self.chain.dec.assist = A.GripAssist(bool(self.get_parameter("hand_unfreeze_on_grasp").value),
+                                                 float(self.get_parameter("thumb_support_g").value))
+            self.chain.lift_grasp_palm_m = float(self.get_parameter("lift_grasp_palm_m").value)
+            if not (np.isfinite(self.chain.lift_grasp_palm_m) and self.chain.lift_grasp_palm_m >= 0.0):
+                raise A.RhAgltError(f"lift_grasp_palm_m ≥ 0(0 = 끔): {self.chain.lift_grasp_palm_m}")
         self.chain.reset(meas)
 
     def _after_step(self) -> bool:

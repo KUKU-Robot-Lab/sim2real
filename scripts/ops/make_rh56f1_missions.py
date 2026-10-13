@@ -78,7 +78,11 @@ AGLT_LIVE_ARGS = ("-p", "cup_static:=false", "-p", "cup_latch:=false", "-p", "cu
                   # ★10.13 A안(fpp_gate.py): 쥐기 전 손바닥 20 cm 안에서 2 cm 넘게 튀거나 테이블 아래(−2 cm)로 간 live 프레임은 버린다.
                   #   sim(vision-3090 rg3s ep4700): 실기 같은 튐을 넣으면 진짜 성공 0.25, 거르면 0.83(튐 없을 때 0.89 · 거르기만 0.89).
                   "-p", "fpp_gate_jump_m:=0.02", "-p", "fpp_gate_dz_m:=0.02", "-p", "fpp_gate_radius_m:=0.2",
-                  "-p", "fpp_gate_max_hold_s:=2.5")
+                  "-p", "fpp_gate_max_hold_s:=2.5",
+                  # ★10.13 사용자 "a, b 둘 다 — 제어가 정책을 충실히 따라가게"(rh_aglt.GripAssist). bag 164845 · 165303 재생:
+                  #   A 쥔 뒤 막힘 고정 풀기 — 오른손 검지 목표 0.52 → 0.72 rad · 왼손 0.66 → 1.08(정책 목표)
+                  #   B 엄지 받침(엄지 굽힘 힘 > 80 g) + 들림(> 7 cm · 손바닥 8 cm 안) — 왼손 쥔 판정 0 틱 → 2.93 s, lift_hold 멈춤 4.59 s
+                  "-p", "hand_unfreeze_on_grasp:=true", "-p", "thumb_support_g:=80.0", "-p", "lift_grasp_palm_m:=0.08")
 
 
 def _live(topic: str) -> str:

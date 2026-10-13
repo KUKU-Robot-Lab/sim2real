@@ -536,10 +536,32 @@ class _State:
     hand_target: np.ndarray
 
 
+@dataclass(frozen=True)
+class GripAssist:
+    """★10.13 배포 전용 손 보조(사용자 결정 "a, b 둘 다 — 제어가 정책을 충실히 따라가게", s2r_1st). 기본 = 꺼짐(sim 과 같다).
+
+    실기 bag(20261013 164845 오른손 · 165303 왼손):
+      A unfreeze_on_grasp — 막힘 쥠 멈춤이 첫 접촉 자리에서 손가락 목표를 묶었다(오른손 검지: 정책 0.60~0.76 rad,
+        보낸 목표 0.51 에서 고정 → 쥐다가 들 때 빠짐). 쥔 판정이 켜진 뒤에는 고정을 풀어 정책 목표까지 닫는다.
+        힘 상한은 pd 앞섬 상한(0.2 rad)과 C 마스터 어드민턴스(f_max 800 g)가 그대로 맡는다.
+      B thumb_support_g — 엄지는 받치는 링크라 굽힘 명령이 거의 없고(0.00~0.04 rad), 실기 엄지 굽힘은 편 끝이
+        0.046(왼) · 0.049(오) rad 라 막힘 래치가 안 걸린다(왼손 쉐이커를 들고도 쥔 판정 0/899 틱 → lift_hold 멈춤 없음).
+        엄지 굽힘 관절 힘(g)이 이 값을 넘으면 엄지 래치 대신 받침으로 본다(손가락 막힘 래치는 그대로 필요).
+        bag: 빈손 −33~+28 g, 쥠 95~474 g. 0 = 끔.
+    """
+
+    unfreeze_on_grasp: bool = False
+    thumb_support_g: float = 0.0
+
+    def __post_init__(self) -> None:
+        if not (np.isfinite(self.thumb_support_g) and self.thumb_support_g >= 0.0):
+            raise RhAgltError(f"thumb_support_g ≥ 0(0 = 끔): {self.thumb_support_g}")
+
+
 class RaDecoder:
     """행동 13 → (팔 q* 7, 손 q* 6). 직전 목표를 든다 — 에피소드 시작에 reset()."""
 
-    def __init__(self, c: RaContract) -> None:
+    def __init__(self, c: RaContract, assist: GripAssist | None = None) -> None:
         self.c = c
         self.law = hand_law(c)
         s = c.side()
@@ -549,6 +571,8 @@ class RaDecoder:
                       if c.hand_block else None)
         self.hold = (HB.GraspHoldNp(self.block, c.grasp_release_open_rad, c.grasp_release_steps)
                      if self.block is not None and c.grasp_hold_rule else None)
+        self.assist = assist or GripAssist()
+        self._support = False                         # 직전 step 의 엄지 받침(B) — hold 는 직전 틱 판정을 받는다
         self.reset()
 
     def reset(self, arm_start: Sequence[float] | None = None, hand_start: Sequence[float] | None = None) -> None:
@@ -560,10 +584,27 @@ class RaDecoder:
             self.block.reset()
         if self.hold is not None:
             self.hold.reset()
+        self._support = False
+
+    def _thumb_support(self, joint_force: Sequence[float] | None) -> bool:
+        """B — 엄지 굽힘 관절 힘(RaMeas.joint_force[0], g) > thumb_support_g. 힘이 없으면(결손) 받침 아님."""
+        if self.assist.thumb_support_g <= 0.0 or joint_force is None:
+            return False
+        f = np.asarray(joint_force, float).reshape(-1)
+        return bool(f.size >= 1 and np.isfinite(f[0]) and f[0] > self.assist.thumb_support_g)
+
+    def _raw_grasped(self) -> bool:
+        """막힘 쥔 판정(엄지 굽힘 AND 손가락) — B 가 켜져 있으면 엄지 래치 대신 엄지 받침도 인정한다."""
+        b = self.block
+        if b is None:
+            return False
+        return bool(b.grasped() or (self._support and b.latch[b.fingers].any()))
 
     def step(self, action: Sequence[float], *, active: bool, tactile_n: Sequence[float] | None = None,
-             hand_q: Sequence[float] | None = None) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-        """hand_q = 실측 손 각도(계약 hand_joints 순, rad) — hand_block 계약이면 반드시(막힘 신호 쥠 멈춤)."""
+             hand_q: Sequence[float] | None = None,
+             joint_force: Sequence[float] | None = None) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+        """hand_q = 실측 손 각도(계약 hand_joints 순, rad) — hand_block 계약이면 반드시(막힘 신호 쥠 멈춤).
+        joint_force = RaMeas.joint_force(엄지 굽힘 먼저, g) — GripAssist B 만 쓴다."""
         a = np.clip(np.asarray(action, float).reshape(-1), -1.0, 1.0)
         if a.size != 13 or not np.all(np.isfinite(a)):
             raise RhAgltError(f"행동은 유한한 13 개: {a.size}")
@@ -577,8 +618,11 @@ class RaDecoder:
             if hand_q is None:
                 raise RhAgltError("hand_block 계약: 디코더에 실측 손 각도(hand_q)가 필요하다")
             if self.hold is not None:                 # 10.13 쥔 판정 유지 — 이번 block.step 전(sim tick 끝 색인)
-                self.hold.step(self.block.grasped(), st.hand_target, hand_q)
+                self.hold.step(self._raw_grasped(), st.hand_target, hand_q)
             freeze = self.block.step(st.hand_target, hand_q)
+            self._support = self._thumb_support(joint_force)
+            if self.assist.unfreeze_on_grasp and self.grasped():
+                freeze = None                         # A — 쥔 뒤에는 정책 목표까지 닫는다(배포 전용)
         else:
             freeze = self.law.touch_to_freeze(tactile_n)
         st.hand_target = self.law.step(st.hand_target, a[7:], active=active, freeze=freeze)
@@ -588,7 +632,7 @@ class RaDecoder:
         """막힘 신호 쥔 판정(직전 step 기준) — hand_block 계약이 아니면 None(호출자가 촉각 · 관절 힘 규칙을 쓴다)."""
         if self.block is None:
             return None
-        return self.hold.hold if self.hold is not None else self.block.grasped()
+        return self.hold.hold if self.hold is not None else self._raw_grasped()
 
 
 # ---------------------------------------------------------------- 관측

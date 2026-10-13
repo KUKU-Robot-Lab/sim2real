@@ -640,6 +640,12 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
     - max_episode_s:={policy:aglt_right.max_episode_s}
     background: true
   - note: '[right] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + (0, 0, 0.14)'
@@ -888,6 +894,12 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
     - -p
     - max_episode_s:={policy:aglt_left.max_episode_s}
     background: true
@@ -1906,6 +1918,12 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
     - max_episode_s:=15.0
     background: true
   - note: '[right] rh_place_r 노드(rh56f1/place/right_i09) — 홀더 1 · 놓은 뒤 스스로 끝남'
@@ -2057,6 +2075,12 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
     - max_episode_s:=15.0
     background: true
   - note: '[left] rh_place_l 노드(rh56f1/place/left_i01) — 홀더 1 · 놓은 뒤 스스로 끝남'
@@ -2198,6 +2222,12 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
     - max_episode_s:=15.0
     background: true
   - note: 에피소드 실행기 — grasp_rg3_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_rg3_right)
@@ -2312,6 +2342,12 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
     - -p
     - max_episode_s:=15.0
     background: true
