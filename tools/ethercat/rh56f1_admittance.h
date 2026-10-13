@@ -87,6 +87,28 @@ static inline double adm_base_g(const adm_base_t *b, int i, double reg) {
   return b->g[i][k - 1] + t * (b->g[i][k] - b->g[i][k - 1]);
 }
 
+/* ★10.13 손가락별 힘 입력 배율(s2r_1st) — 정책 배포 전용, 계약(robot_control) 밖의 실험 값.
+ * 실기 rg3 오른손 쥠 실패: 같은 손 명령을 sim 에 재생해 맞춘 접촉에서 실기 힘(기준선 뺌)이 sim 의 검지 1.9~3.6 배 ·
+ * 중지 1.6~2.9 배 · 엄지 굽힘 0.5~1.7 배 — 어드민턴스가 sim 보다 손가락을 더 풀어 준다. 기준선을 뺀 접촉 성분 c 에
+ * scale 을 곱해 sim 이 학습 때 본 크기로 맞춘다. 손 보호: c 가 guard_g 근처면 할인을 걷어 c = guard_g 에서
+ * 어드민턴스 f = f_max(빨리 여는 구간)가 되게 한다 — 출력은 늘 c 이하(배율은 힘을 줄이기만 한다).
+ * scale 전부 1 이면 c 그대로(10.13 전 동작). */
+#define ADM_FSCALE_GUARD_SLOPE 2.0
+typedef struct {
+  double scale[6];   /* 슬롯 순서, (0, 1] */
+  double guard_g;    /* 0 = 끔 */
+} adm_fscale_t;
+
+static inline double adm_fscale_g(const adm_fscale_t *q, const adm_params_t *p, int i, double c) {
+  double out = q->scale[i] * c;
+  if (q->guard_g > 0 && q->scale[i] < 1.0) {
+    double g = p->f_max_g + p->deadband_g + ADM_FSCALE_GUARD_SLOPE * (c - q->guard_g);
+    if (g > c) g = c;
+    if (g > out) out = g;
+  }
+  return out;
+}
+
 /* 한 축 한 주기. target · actual = 레지스터, force = g, tip = 손끝 법선(0.01 N, 모르면 -1). 반환 = 보낼 레지스터. */
 static inline double adm_step(const adm_params_t *p, adm_state_t *s, int i, double dt, double target, double actual,
                               double force, double tip, double current) {

@@ -340,6 +340,19 @@ def adm_base_arg(path: Path, side: str) -> str:
     return ",".join([str(n)] + [f"{k:g}" for k in knots] + [f"{v:g}" for v in vals])
 
 
+def adm_fscale_arg(block: dict, side: str) -> str:
+    """★10.13 손가락별 힘 입력 배율(yaml adm_fscale: guard_g · <side> 6 개, 슬롯 순서) → 마스터 --adm-fscale "s0..s5,guard"."""
+    if not isinstance(block, dict) or side not in block:
+        raise EcatError(f"adm_fscale 에 {side} 배율 6 개가 없다")
+    vals = [float(v) for v in block[side]]
+    if len(vals) != 6 or not all(0.0 < v <= 1.0 for v in vals):   # NaN 은 비교가 거짓이라 걸린다
+        raise EcatError(f"adm_fscale.{side}: 0 초과 1 이하 6 개(슬롯 순서) — {block[side]}")
+    guard = float(block.get("guard_g", 0.0))
+    if not (guard == 0.0 or 200.0 <= guard <= 3000.0):
+        raise EcatError(f"adm_fscale.guard_g: 0(끔) 또는 200~3000 g — {guard}")
+    return ",".join(f"{v:g}" for v in vals + [guard])
+
+
 def binary_knows(binary: str, option: str) -> bool:
     """마스터 실행 파일에 긴 옵션 이름이 박혀 있는지(getopt 표). 파일이 없으면 판단 보류 = True(존재 확인은 호출자)."""
     path = Path(binary)
@@ -380,6 +393,11 @@ def master_argv(binary: str, ifname: str, master_sock: str, node_sock: str, cfg:
             else:   # 10.12 전 빌드는 이 인자를 모르고 종료한다 — 빼고 띄우되 크게 알린다
                 print(f"⚠ 마스터 {binary} 가 --adm-base 를 모른다(옛 빌드) — 빈손 기준선 없이 띄운다. "
                       "bash tools/ethercat/build.sh 뒤 sudo setcap 하면 들어간다")
+        if cfg.get("adm_fscale") and side is not None:        # ★10.13 손가락별 힘 입력 배율(손마다)
+            if not binary_knows(binary, "adm-fscale"):   # 실험 값이 빠진 채 도는 것을 막는다 — 지우면 10.13 전 동작
+                raise EcatError(f"마스터 {binary} 가 --adm-fscale 를 모른다(옛 빌드) — bash tools/ethercat/build.sh 하거나 "
+                                "rh56f1_ports.yaml 의 adm_fscale 를 지운다")
+            argv += ["--adm-fscale", adm_fscale_arg(cfg["adm_fscale"], side)]
     if not 50 <= float(cfg.get("cycle_hz", 1000)) <= 4000:
         raise EcatError("cycle_hz 는 50~4000")
     if not 0 < float(cfg.get("state_hz", 100)) <= float(cfg.get("cycle_hz", 1000)):

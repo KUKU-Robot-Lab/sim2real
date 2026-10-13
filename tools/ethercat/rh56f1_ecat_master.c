@@ -122,6 +122,7 @@ typedef struct {
 static adm_params_t g_adm;
 static adm_state_t g_adm_state;
 static adm_base_t g_adm_base;   /* ★10.12 빈손 힘 기준선(--adm-base, 없으면 n = 0 → 0) */
+static adm_fscale_t g_adm_fscale = {{1, 1, 1, 1, 1, 1}, 0};   /* ★10.13 손가락별 힘 입력 배율(--adm-fscale, 없으면 1) */
 
 static void hold(ctl_t *c, const int16_t *in) {
   for (int i = 0; i < 6; i++) c->sent[i] = c->target[i] = (int16_t)clampi(in[IN_ANGLE + i], ANG_LO[i], ANG_HI[i]);
@@ -141,6 +142,7 @@ static void write_outputs(ctl_t *c, int16_t *out) {
 static void control(ctl_t *c, const int16_t *in, double dt) {
   for (int i = 0; i < 6; i++) {
     double force = in[IN_FORCE + i] - adm_base_g(&g_adm_base, i, in[IN_ANGLE + i]);   /* ★10.12 빈손 기준선을 뺀 접촉 성분 */
+    force = adm_fscale_g(&g_adm_fscale, &g_adm, i, force);   /* ★10.13 배율 — 쉼 값도 같은 단위로 잡힌다 */
     if (!c->commanded) {
       g_adm_state.bias[i] += 0.01 * (force - g_adm_state.bias[i]);
       g_adm_state.y[i] = 0;
@@ -460,11 +462,34 @@ static int parse_adm_base(const char *txt, adm_base_t *b) {
   return 1;
 }
 
+/* ★10.13 --adm-fscale "s0,..,s5,guard_g" — 배율 (0, 1] 여섯 개(슬롯 순서) + 원시 힘 보호 문턱(0 = 끔, 아니면 200~3000 g) */
+static int parse_adm_fscale(const char *txt, adm_fscale_t *f) {
+  double v[7];
+  int n = 0;
+  const char *q = txt;
+  while (*q && n < 7) {
+    char *end;
+    v[n++] = strtod(q, &end);
+    if (end == q) return 0;
+    if (*end == ',') { q = end + 1; if (!*q) return 0; }   /* 끝 쉼표 거부 */
+    else if (*end == '\0') q = end; else return 0;
+  }
+  if (n != 7 || *q) return 0;
+  adm_fscale_t a = {{0}, v[6]};
+  for (int i = 0; i < 6; i++) {
+    if (!(v[i] > 0.0 && v[i] <= 1.0)) return 0;
+    a.scale[i] = v[i];
+  }
+  if (!(a.guard_g == 0.0 || (a.guard_g >= 200.0 && a.guard_g <= 3000.0))) return 0;
+  *f = a;
+  return 1;
+}
+
 static void usage(const char *p) {
   fprintf(stderr, "usage: %s --ifname IF --master-sock P --node-sock P [--hz 1000] [--state-hz 100] [--speed 2000] "
                   "[--force 600] [--enable-value 1] [--hb-timeout-ms 500] [--no-op] [--op-enable] [--sync-type N] [--op-timeout-ms 3000] [--hz-op 1000] "
                   "[--clear-error] [--current-limit mA[,x6]] [--finger-mode m[,x6]] [--force-calibrate] [--adm 19 values] "
-                  "[--adm-base n,knots,6xn g]\n", p);
+                  "[--adm-base n,knots,6xn g] [--adm-fscale s0..s5,guard_g]\n", p);
 }
 
 int main(int argc, char **argv) {
@@ -480,7 +505,7 @@ int main(int argc, char **argv) {
                                  {"force", 1, 0, 'f'},  {"enable-value", 1, 0, 'e'}, {"hb-timeout-ms", 1, 0, 't'},
                                  {"no-op", 0, 0, 'o'},  {"op-enable", 0, 0, 'E'}, {"sync-type", 1, 0, 'y'},
                                  {"op-timeout-ms", 1, 0, 'T'}, {"hz-op", 1, 0, 'H'},
-                                 {"clear-error", 0, 0, 'C'}, {"force-calibrate", 0, 0, 'K'}, {"adm", 1, 0, 'A'}, {"adm-base", 1, 0, 'B'}, {"current-limit", 1, 0, 'L'}, {"finger-mode", 1, 0, 'M'},
+                                 {"clear-error", 0, 0, 'C'}, {"force-calibrate", 0, 0, 'K'}, {"adm", 1, 0, 'A'}, {"adm-base", 1, 0, 'B'}, {"adm-fscale", 1, 0, 'F'}, {"current-limit", 1, 0, 'L'}, {"finger-mode", 1, 0, 'M'},
                                  {0, 0, 0, 0}};
   for (int c; (c = getopt_long(argc, argv, "", opts, NULL)) != -1;) {
     switch (c) {
@@ -509,6 +534,12 @@ int main(int argc, char **argv) {
       case 'B':
         if (!parse_adm_base(optarg, &g_adm_base)) {
           fprintf(stderr, "--adm-base: n(2~%d), 매듭 n 개(오름차순 레지스터), 슬롯 6 x n 개(0~2000 g)\n", ADM_BASE_MAX);
+          return 2;
+        }
+        break;
+      case 'F':
+        if (!parse_adm_fscale(optarg, &g_adm_fscale)) {
+          fprintf(stderr, "--adm-fscale: 배율 여섯 개(0 초과 1 이하, 슬롯 순서) + guard_g(0 = 끔, 200~3000 g)\n");
           return 2;
         }
         break;
@@ -564,6 +595,9 @@ int main(int argc, char **argv) {
            g_adm_base.g[2][0], g_adm_base.g[3][0], g_adm_base.g[4][0], g_adm_base.g[5][0]);
   else
     printf("[master] ADM_BASE 없음 — 힘 = force_actual − 쉼 값(10.12 전)\n");
+  printf("[master] ADM_FSCALE [%g, %g, %g, %g, %g, %g] guard %g g%s\n", g_adm_fscale.scale[0], g_adm_fscale.scale[1],
+         g_adm_fscale.scale[2], g_adm_fscale.scale[3], g_adm_fscale.scale[4], g_adm_fscale.scale[5], g_adm_fscale.guard_g,
+         g_adm_fscale.guard_g > 0 ? "" : "(끔)");
   g_mode_thread_ok = pthread_create(&g_mode_thread, NULL, mode_worker, NULL) == 0;
   if (!g_mode_thread_ok) printf("[master] ⚠ 모드 전환 스레드를 못 띄움 — 실행 중 모드 전환 불가\n");
   ec_config_map(&IOmap);

@@ -128,7 +128,7 @@ def test_the_master_parses_the_launcher_string_and_refuses_bad_ones(tmp_path):
 
 
 def test_an_old_master_build_runs_without_the_baseline_instead_of_dying(tmp_path, capsys):
-    cfg = yaml.safe_load(PORTS.read_text())["ethercat"]
+    cfg = {k: v for k, v in yaml.safe_load(PORTS.read_text())["ethercat"].items() if k != "adm_fscale"}   # 10.13 배율은 옛 빌드면 거부(아래)
     old = tmp_path / "old_master"
     old.write_bytes(b"\x7fELF...adm\0current-limit\0")
     new = tmp_path / "new_master"
@@ -137,3 +137,84 @@ def test_an_old_master_build_runs_without_the_baseline_instead_of_dying(tmp_path
     a_new = E.master_argv(str(new), "eth0", "/a", "/b", cfg, no_op=False, side="right")
     assert "--adm-base" not in a_old and "--adm-base" in a_new
     assert "옛 빌드" in capsys.readouterr().out
+
+
+# ★10.13 손가락별 힘 입력 배율(--adm-fscale) ---------------------------------------------------------------------------
+
+def _fscale_harness(tmp_path, scale, guard, cases):
+    """헤더 adm_fscale_g 를 C 로 돌려 (슬롯, 원시 c) → 출력. f_max 800 · deadband 40(계약 기본)."""
+    if shutil.which("gcc") is None:
+        pytest.skip("gcc 없음")
+    src = tmp_path / "fs.c"
+    rows = "".join(f'printf("%.6f\\n", adm_fscale_g(&q, &p, {i}, {c}));\n' for i, c in cases)
+    src.write_text('#include <stdio.h>\n#include "rh56f1_admittance.h"\nint main(void){adm_params_t p = ADM_DEFAULTS; '
+                   f'adm_fscale_t q = {{{{{",".join(map(str, scale))}}}, {guard}}};\n{rows}return 0;}}\n')
+    exe = tmp_path / "fs"
+    subprocess.run(["gcc", "-O2", "-Wall", "-o", str(exe), str(src), "-I", str(HEADER.parent), "-lm"], check=True)
+    return [float(x) for x in subprocess.run([str(exe)], capture_output=True, text=True, check=True).stdout.split()]
+
+
+def test_fscale_one_is_identity_and_scale_only_discounts(tmp_path):
+    out = _fscale_harness(tmp_path, [1, 1, 0.45, 0.4, 0.7, 1], 1000,
+                          [(0, 500.0), (3, 100.0), (3, 500.0), (3, -20.0), (2, 300.0), (4, 300.0)])
+    assert out[0] == pytest.approx(500.0)                  # 배율 1 → 그대로(10.13 전 동작)
+    assert out[1] == pytest.approx(40.0)                   # 검지 0.4
+    assert out[2] == pytest.approx(200.0)
+    assert out[3] == pytest.approx(-8.0)                   # 음수(쉼 값 아래)도 같은 배율 — 쉼 값이 같은 단위로 잡힌다
+    assert out[4] == pytest.approx(135.0) and out[5] == pytest.approx(210.0)
+
+
+def test_fscale_guard_restores_f_max_at_raw_guard_and_never_exceeds_raw(tmp_path):
+    cs = [600.0, 750.0, 900.0, 1000.0, 1100.0, 1300.0, 2000.0]
+    out = _fscale_harness(tmp_path, [1, 1, 1, 0.4, 1, 1], 1000, [(3, c) for c in cs])
+    by = dict(zip(cs, out))
+    assert by[600.0] == pytest.approx(240.0)               # 문턱에서 먼 곳은 할인 그대로
+    assert by[1000.0] == pytest.approx(840.0)              # 원시 1000 g → f_max 800 + deadband 40(빨리 여는 구간 시작)
+    assert all(o <= c + 1e-9 for c, o in by.items())       # 원시 힘을 넘지 않는다
+    assert all(b >= a for a, b in zip(out, out[1:]))       # 단조 — 힘이 늘면 입력도 는다(출렁임 없음)
+    assert by[2000.0] == pytest.approx(2000.0)             # 멀리 넘으면 원시 그대로
+    off = _fscale_harness(tmp_path, [1, 1, 1, 0.4, 1, 1], 0, [(3, 1500.0)])
+    assert off[0] == pytest.approx(600.0)                  # guard 0 = 끔
+
+
+def test_master_parses_fscale_and_rejects_bad_values(tmp_path):
+    src = MASTER.read_text()
+    assert '{"adm-fscale", 1, 0, \'F\'}' in src and "parse_adm_fscale(optarg, &g_adm_fscale)" in src
+    i = src.index("static void control(")
+    body = src[i:src.index("static void request_modes", i)]
+    assert body.index("adm_fscale_g(") < body.index("g_adm_state.bias[i] +=")   # 쉼 값도 배율 뒤 단위로
+    if shutil.which("gcc") is None:
+        pytest.skip("gcc 없음")
+    s = src.index("static int parse_adm_fscale")
+    fn = src[s:src.index("static void usage", s)]
+    h = tmp_path / "p.c"
+    h.write_text('#include <stdio.h>\n#include <stdlib.h>\n#include "rh56f1_admittance.h"\n' + fn +
+                 'int main(int c, char **v){adm_fscale_t f; if(!parse_adm_fscale(v[1], &f)) {puts("BAD"); return 0;} '
+                 'printf("%g %g %g\\n", f.scale[3], f.scale[0], f.guard_g); return 0;}\n')
+    exe = tmp_path / "p"
+    subprocess.run(["gcc", "-O2", "-Wall", "-o", str(exe), str(h), "-I", str(HEADER.parent), "-lm"], check=True)
+    run = lambda a: subprocess.run([str(exe), a], capture_output=True, text=True, check=True).stdout.strip()
+    assert run("1,1,0.45,0.4,0.7,1,1000") == "0.4 1 1000"
+    assert run("1,1,1,1,1,1,0") == "1 1 0"
+    for bad in ("1,1,1,0,1,1,1000", "1,1,1,1.2,1,1,1000", "1,1,1,1,1,1,100", "1,1,1,1,1,1", "1,1,1,1,1,1,1000,", "a,1,1,1,1,1,0"):
+        assert run(bad) == "BAD", bad
+
+
+def test_ports_fscale_reaches_master_per_side_and_old_binary_is_refused(tmp_path):
+    eth = yaml.safe_load(PORTS.read_text())["ethercat"]
+    assert eth["adm_fscale"]["right"][3] < 1.0             # 실험 값이 실려 있다(지우면 10.13 전 동작)
+    new = tmp_path / "new_master"
+    new.write_bytes(b"\x7fELF...adm-base\0...adm-fscale\0")
+    for side in ("right", "left"):
+        argv = E.master_argv(str(new), "eth0", "/a", "/b", eth, no_op=False, side=side)
+        val = argv[argv.index("--adm-fscale") + 1].split(",")
+        assert [float(v) for v in val[:6]] == [float(v) for v in eth["adm_fscale"][side]]
+        assert float(val[6]) == float(eth["adm_fscale"]["guard_g"])
+    assert "--adm-fscale" not in E.master_argv(str(new), "eth0", "/a", "/b", eth, no_op=False)      # side 모르면 안 붙인다
+    old = tmp_path / "old_master"
+    old.write_bytes(b"\x7fELF...adm-base\0")
+    with pytest.raises(E.EcatError, match="adm-fscale"):
+        E.master_argv(str(old), "eth0", "/a", "/b", eth, no_op=False, side="right")
+    bad = {**eth, "adm_fscale": {"guard_g": 1000, "right": [1, 1, 1, 1.5, 1, 1]}}
+    with pytest.raises(E.EcatError):
+        E.master_argv(str(new), "eth0", "/a", "/b", bad, no_op=False, side="right")
