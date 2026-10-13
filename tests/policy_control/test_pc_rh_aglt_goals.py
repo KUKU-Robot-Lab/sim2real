@@ -180,3 +180,69 @@ def test_reached_means_the_requested_target_itself_was_achieved():
         if book.reached:
             break
     assert book.reached and np.allclose(book.anchor, [0.25, -0.12, 0.41])
+
+
+# ---------------------------------------------------------------- 10.13 방안 A(사용자): 첫 목표 성공 = 에피소드 끝(sim goal_max=1)
+RG3S = POL / "rh56f1/aglt/right_rg3s" / "rh_aglt_contract.json"
+
+
+def _rg3s() -> A.RaContract:
+    if not RG3S.is_file():
+        pytest.skip("right_rg3s 계약이 없다")
+    return A.load_contract(RG3S)
+
+
+def test_goal_max_ends_the_episode_at_the_first_success_without_any_setting():
+    c = _rg3s()
+    b = G.GoalBook.start(c, CUP_R, UP)
+    first = np.clip(CUP_R + [0.0, 0.0, 0.10], c.goal_box_min, c.goal_box_max)   # sim 첫 목표 = 컵 리셋 + 10 cm(박스로 자름)
+    assert b.current == pytest.approx(first) and b.queue == [] and b.target is None
+    for _ in range(c.goal_success_steps - 1):
+        b.step(b.current, UP, (0, 0, 0, 0, 0), is_grasped=True)
+        assert G.end_reason(b, stop_on_target=False, goal_max=1) is None
+    b.step(b.current, UP, (0, 0, 0, 0, 0), is_grasped=True)
+    why = G.end_reason(b, stop_on_target=False, goal_max=1)
+    assert why is not None and "goal 1/1" in why and "episode time" not in why
+
+
+def test_goal_max_counts_only_consecutive_near_steps_like_the_rg3s_run():
+    c = _rg3s()
+    assert c.goal_force_consecutive and c.goal_success_steps == 120
+    b = G.GoalBook.start(c, CUP_R, UP)
+    for _ in range(c.goal_success_steps - 1):
+        b.step(b.current, UP, (0, 0, 0, 0, 0), is_grasped=True)
+    b.step(b.current + [0.0, 0.0, 0.05], UP, (0, 0, 0, 0, 0), is_grasped=True)   # 한 틱 벗어남 → 0 부터
+    for _ in range(c.goal_success_steps - 1):
+        b.step(b.current, UP, (0, 0, 0, 0, 0), is_grasped=True)
+    assert G.end_reason(b, stop_on_target=False, goal_max=1) is None
+    b.step(b.current, UP, (0, 0, 0, 0, 0), is_grasped=True)
+    assert G.end_reason(b, stop_on_target=False, goal_max=1) is not None
+
+
+def test_goal_max_needs_the_grasp_at_the_success_tick():
+    c = _rg3s()
+    b = G.GoalBook.start(c, CUP_R, UP)
+    for _ in range(c.goal_success_steps + 5):
+        b.step(b.current, UP, (0, 0, 0, 0, 0), is_grasped=False)
+    assert G.end_reason(b, stop_on_target=False, goal_max=1) is None
+
+
+def test_without_goal_max_or_target_the_node_runs_until_time():
+    b = G.GoalBook.start(_right(), CUP_R, UP)
+    for _ in range(30):
+        b.step(b.current, UP, GRIP)
+    assert b.successes == 1
+    assert G.end_reason(b, stop_on_target=False, goal_max=0) is None
+    assert G.end_reason(b, stop_on_target=True, goal_max=0) is None     # SETTING 을 안 받았다 — 예전 동작
+    assert G.end_reason(None, stop_on_target=True, goal_max=1) is None
+
+
+def test_stop_on_target_still_ends_at_the_setting():
+    b = G.GoalBook.start(_right(), CUP_R, UP)
+    first = b.current.copy()
+    assert b.request(first) == []
+    for _ in range(30):
+        b.step(b.current, UP, GRIP)
+    assert b.reached
+    why = G.end_reason(b, stop_on_target=True, goal_max=0)
+    assert why is not None and why.startswith("goal target reached")

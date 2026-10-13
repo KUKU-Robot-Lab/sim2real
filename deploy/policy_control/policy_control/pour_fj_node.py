@@ -313,7 +313,7 @@ class PourFjNode(LeanNodeMixin, Node):
         self.node_name = self.get_name()          # -r __node:=rh_aglt_node_right 로 팔마다 이름을 가른다
         for name, default in (("contract", ""), ("robot", ""), ("device", "cpu"), ("reset_tol_rad", 0.15),
                               ("max_gap_ticks", 3), ("publish_target", True), ("max_episode_s", -1.0), ("ns", ""),
-                              ("stop_on_target", False), ("episode_topic", ""), ("object", ""),
+                              ("stop_on_target", False), ("goal_max", 0), ("episode_topic", ""), ("object", ""),
                               ("cup_attach", True), ("attach_force_n", AttachCfg.force_n),
                               ("attach_joint_force_g", AttachCfg.joint_force_g), ("attach_signal", AttachCfg.signal),
                               ("attach_max_palm_dist_m", AttachCfg.max_palm_dist_m),
@@ -584,12 +584,14 @@ class PourFjNode(LeanNodeMixin, Node):
         """스텝 뒤 계열 고유 끝내기. True = 에피소드를 끝냈다.
 
         rh_aglt: stop_on_target 이면 사용자 목표(에피소드 실행기의 SETTING) 자체를 달성한 스텝에 끝낸다(10.04 에피소드 실행기 —
-        다음 정책이 그 자세에서 이어받는다). 끄면 예전처럼 시간으로 끝난다."""
-        goals = getattr(self.chain, "goals", None)
-        if bool(self.get_parameter("stop_on_target").value) and goals is not None and goals.reached:
-            self._end("stop", f"goal target reached {goals.as_dict().get('target')}")
-            return True
-        return False
+        다음 정책이 그 자세에서 이어받는다). goal_max > 0 이면 목표 성공 그 횟수에 끝낸다(10.13 방안 A, sim goal_max).
+        둘 다 끄면 예전처럼 시간으로 끝난다."""
+        why = G.end_reason(getattr(self.chain, "goals", None), bool(self.get_parameter("stop_on_target").value),
+                         int(self.get_parameter("goal_max").value))
+        if why is None:
+            return False
+        self._end("stop", why)          # pd 가 끝난 순간의 q_setpoint · 마지막 손 목표로 붙든다(pd_arm.on_episode)
+        return True
 
     def _status_extra(self) -> dict:
         return {}

@@ -1,4 +1,4 @@
-"""rg3 파지 전용 에피소드(grasp_rg3_right · grasp_rg3_left) — 잡고 들어 SETTING 에 닿으면 팔을 멈추고 끝낸다(10.12 사용자).
+"""rg3 파지 전용 에피소드(grasp_rg3_right · grasp_rg3_left) — 제자리에서 잡고 들어 첫 목표 성공에 끝낸다(10.13 사용자 방안 A).
 
 기본 물체: 오른손 source240_real · 왼손 shaker_c_real. 실행기 파라미터로 바꾼다(override_grasp_object)."""
 from __future__ import annotations
@@ -35,7 +35,7 @@ def test_the_episode_grasps_lifts_and_ends_without_placing(side):
     assert {b.kind for b in ep.policies.values()} == {"aglt"}
     (b,) = ep.policies.values()
     assert b.policy == POLICY[side] and b.side == side
-    assert ep.nodes[2].expect == {"pose": "SETTING", f"{side}_hand": "CUP"}
+    assert ep.nodes[2].expect == {f"{side}_hand": "CUP"}
 
 
 @pytest.mark.parametrize("side", ["right", "left"])
@@ -47,12 +47,24 @@ def test_the_default_object_and_fpp_topic_follow_the_user_choice(side):
 
 
 @pytest.mark.parametrize("side", ["right", "left"])
-def test_the_setting_goal_is_inside_the_contract_goal_box(side):
+def test_the_lift_only_episode_sends_no_setting_so_the_goal_stays_the_sim_first_goal(side):
+    """10.13 방안 A: SETTING 을 보내면 GoalBook 이 중간 목표를 쪼개 넣는다(정책이 본 적 없는 목표 바꿈) — 보내지 않는다."""
     ep = _ep(side)
-    c = json.loads((REPO / "deploy/policies" / POLICY[side] / "rh_aglt_contract.json").read_text())
-    x, y, z = ep.setting[side]
-    lo, hi = c["goal_box_min"], c["goal_box_max"]
-    assert lo[0] <= x <= hi[0] and lo[1] <= y <= hi[1] and lo[2] <= z <= hi[2]
+    assert side not in ep.setting
+    m = EpisodeManager(ep, FakeExecutor(ep), approve=lambda what, why: True, episode_id="t")
+    (plan,) = m._plans(ep.nodes[2], m.world)
+    assert plan.setting is None
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_the_policy_node_ends_at_the_first_goal_like_training(side):
+    import yaml
+    for kind in ("control", "fake"):
+        m = yaml.safe_load((REPO / "config" / f"mission_rh56f1_{kind}.yaml").read_text(encoding="utf-8"))
+        argv = next(c["argv"] for c in m["run"][f"episode_grasp_rg3_{side}"]
+                    if any("rh_aglt_node.py" in a for a in c["argv"]))
+        assert "goal_max:=1" in argv and "stop_on_target:=true" not in argv
+        assert "max_episode_s:=15.0" in argv
 
 
 @pytest.mark.parametrize("side", ["right", "left"])

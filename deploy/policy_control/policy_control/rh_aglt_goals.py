@@ -142,3 +142,19 @@ class GoalBook:
         return {"goal": r(self.current), "queue": len(self.queue), "target": None if self.target is None else r(self.target),
                 "kp_dist": None if math.isnan(self.kp_dist) else round(self.kp_dist, 4), "near_steps": self.near_steps,
                 "successes": self.successes, "reached": self.reached}
+
+
+def end_reason(goals: "GoalBook | None", stop_on_target: bool, goal_max: int) -> str | None:
+    """정책 노드가 이번 스텝에 에피소드를 끝낼 사유(None = 계속).
+
+    ★10.13 사용자 방안 A: goal_max > 0 이면 sim 처럼 목표 성공 goal_max 번에 끝낸다(rg3s 학습 goal_max=1 — 첫 목표
+    = 컵 리셋 + 10 cm 를 연속 goal_success_steps 틱 유지 + 그 틱에 쥠). 정책은 성공 뒤를 본 적이 없어서 더 돌리면 팔이 흘러간다.
+    stop_on_target 이면 예전처럼 실행기가 보낸 SETTING 자체를 달성했을 때 끝낸다."""
+    if goals is None:
+        return None
+    if goal_max > 0 and goals.successes >= goal_max:
+        return f"goal {goals.successes}/{goal_max} reached (sim goal_max) {np.round(goals.anchor, 3).tolist()}"
+    if stop_on_target and goals.reached:
+        return f"goal target reached {goals.as_dict().get('target')}"
+    return None
+

@@ -528,11 +528,15 @@ def _episode_run(name: str, real: bool) -> list:
         if b.kind == "aglt":
             obj = next((j.target_object for n in ep.nodes for j in n.jobs if j.role == role and j.target_object), first_obj)
             # 10.12 A안: 컵 = FP++ live(끊기면 마지막 값) → 쥐면 파지 + 100 ms 뒤 찍힌 프레임 시각의 손바닥 FK(가리면 0.7 s 대체)
-            cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — SETTING 도달에 스스로 끝남 · 컵 = FP++ live"
+            # ★10.13 방안 A: SETTING 이 없는 에피소드(제자리 들기)는 sim 처럼 첫 목표 성공에 끝낸다(goal_max:=1)
+            lift_only = b.side not in ep.setting
+            end_arg, end_note = (("goal_max:=1", "첫 목표(컵 + 10 cm) 성공에 스스로 끝남") if lift_only
+                                 else ("stop_on_target:=true", "SETTING 도달에 스스로 끝남"))
+            cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — {end_note} · 컵 = FP++ live"
                              " · 쥐면 손바닥 FK 로 손에 붙임",
                              ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_aglt_node.py", "--ros-args",
                               "-r", f"__node:=rh_aglt_node_{b.side}", "-p", f"ns:={b.side}", "-p", f"contract:={contract}",
-                              "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", "stop_on_target:=true",
+                              "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", end_arg,
                               "-p", f"cup_topic:={_live(ep.objects[obj]['topic'])}", *AGLT_LIVE_ARGS,
                               "-p", "max_episode_s:=15.0"], background=True))
         elif b.kind == "place":
