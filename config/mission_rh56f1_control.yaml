@@ -32,6 +32,9 @@ groups:
   motion: true
 - id: finish
   title: 정리
+- id: recognize
+  title: 개별 인지 (선택)
+  optional: true
 - id: diagnose
   title: 진단 (선택)
   motion: true
@@ -82,6 +85,22 @@ stages:
   skippable: true
   touches_real: true
   title: 컵홀더 자세(마커 ID 0·1·2) — RealSense 컬러 → /objects/cup_holder_{0,1,2}/pose (base) · /cup_holders/status. 로봇은 움직이지 않는다. CPU 만
+- id: cups_right
+  group: recognize
+  lane: arm_right
+  needs:
+  - cups
+  skippable: true
+  touches_real: true
+  title: '[right] 컵 하나만 다시 인지 — source240b_blue (FP++ 컨테이너가 내려가 있으면 그것만 다시 띄우고, 이 컵의 묶음만 지금 카메라로 다시 찍는다)'
+- id: cups_left
+  group: recognize
+  lane: arm_left
+  needs:
+  - cups
+  skippable: true
+  touches_real: true
+  title: '[left] 컵 하나만 다시 인지 — shaker_c_orange (FP++ 컨테이너가 내려가 있으면 그것만 다시 띄우고, 이 컵의 묶음만 지금 카메라로 다시 찍는다)'
 - id: drivers
   group: connect
   lane: rig
@@ -624,7 +643,7 @@ run:
     execute_args:
     - --execute
   - note: 카메라 + FP++ 켜기 — 묶음 컨테이너(fpp_source240b · fpp_shaker_c)가 source240b_blue=오른팔 · shaker_c_orange=왼팔 를 차례로 한 번 찍는다. 이미 떠 있으면 그대로. 최대 150
-      s, 실패하면 이 단계도 실패
+      s. ★10.13 묶음 하나가 못 뜨면 경고만(나머지는 계속), 하나도 못 띄우면 실패
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
@@ -633,8 +652,8 @@ run:
     - shaker_c_orange
     - --wait
     - '150'
-  - note: 컵 좌표 추출 — 처음엔 FP++ 가 켜지며 찍는 회차를 기다리고, 이 단계를 다시 실행하면(컵을 옮긴 뒤 '↶ 여기서 다시') 컨테이너를 끄지 않고 지금 카메라로 다시 찍는다(10.08 사용자). 컵마다 base 좌표 · 판정을 찍고,
-      정책이 읽는 컵을 못 찾으면 실패
+  - note: 컵 좌표 추출 — 처음엔 FP++ 가 켜지며 찍는 회차를 기다리고, 이 단계를 다시 실행하면(컵을 옮긴 뒤 '↶ 여기서 다시') 컨테이너를 끄지 않고 지금 카메라로 다시 찍는다(10.08 사용자). 컵마다 base 좌표 · 판정을 찍는다.
+      ★10.13 하나라도 찾으면 통과 · 못 찾은 컵은 이유와 함께 경고(그 컵은 개별 인지 단계로 다시)
     argv:
     - python3
     - '{repo}/scripts/ops/fpp_rescan.py'
@@ -650,6 +669,52 @@ run:
     - -lc
     - 'true'
     manual: true
+  cups_right:
+  - note: ★[right] source240b_blue 가 테이블에 똑바로 서 있고 손이 가리지 않는가
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] FP++ 컨테이너 확인 — 내려간 묶음만 다시 띄운다(fpp_source240b · fpp_shaker_c). 최대 150 s'
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - source240b_blue
+    - shaker_c_orange
+    - --wait
+    - '150'
+  - note: '[right] source240b_blue 만 다시 찍기 — base 좌표 · 판정을 찍고, 못 찾으면 이유와 함께 실패'
+    argv:
+    - python3
+    - '{repo}/scripts/ops/fpp_rescan.py'
+    - source240b_blue
+    - --wait
+    - '120'
+  cups_left:
+  - note: ★[left] shaker_c_orange 가 테이블에 똑바로 서 있고 손이 가리지 않는가
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[left] FP++ 컨테이너 확인 — 내려간 묶음만 다시 띄운다(fpp_source240b · fpp_shaker_c). 최대 150 s'
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - source240b_blue
+    - shaker_c_orange
+    - --wait
+    - '150'
+  - note: '[left] shaker_c_orange 만 다시 찍기 — base 좌표 · 판정을 찍고, 못 찾으면 이유와 함께 실패'
+    argv:
+    - python3
+    - '{repo}/scripts/ops/fpp_rescan.py'
+    - shaker_c_orange
+    - --wait
+    - '120'
   policy_pourfj:
   - note: ★두 컵이 학습 배치(로봇 앞 x ≈ 0.38, y ≈ ∓0.16)에 서 있고 콘솔에 두 컵 자세가 들어오는가. 양팔 · 양손 주변이 비어 있는가. 정책은 팔을 스스로 움직이고 손가락을 쥔다 — 빈 컵만
     argv:

@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fpp_udp  # noqa: E402
 from object_registry import load_registry, output_topic, render_fpp_yaml, render_group_yaml  # noqa: E402
 from perception_launcher_core import (  # noqa: E402
-    LOCAL_HOSTS, build_status, parse_command, parse_remote_status, plan_actions, shell_argv,
+    LOCAL_HOSTS, build_status, parse_command, parse_remote_status, plan_actions, run_actions, shell_argv,
 )
 
 #: 저 PC 의 홈에서 본 상대 경로 — ssh 명령은 홈에서 시작한다. PC 마다 사용자 이름이 달라(usr · user) 절대 경로를 쓰지 않는다(09.29).
@@ -97,6 +97,7 @@ def main() -> None:
             self._lock = threading.Lock()
             self._busy = False
             self._error: str | None = None
+            self._warning: str | None = None      # ★10.13 일부 물체 컨테이너만 실패
             self._state = None
             self._last_pose: dict[str, float] = {}
             self._camera: tuple[float, float] | None = None       # (받은 시각, hz) — fpp_pose_rx 가 낸다
@@ -141,7 +142,7 @@ def main() -> None:
             ages = {n: (round(now - self._last_pose[n], 3) if n in self._last_pose else None)
                     for n in reg["now"].names()}
             payload = build_status(self._state, fpp_udp.camera_hz_at(self._camera, now), ages, self._busy, self._error,
-                                   group_of=group_of)
+                                   group_of=group_of, warning=self._warning)
             self._pub.publish(String(data=json.dumps(payload, ensure_ascii=False)))
 
         def _on_cmd(self, msg: String) -> None:
@@ -163,11 +164,16 @@ def main() -> None:
         def _execute(self, cmd) -> None:
             try:
                 self._error = None
+                self._warning = None
                 state = parse_remote_status(remote.run("status.sh"))
                 actions = plan_actions(cmd, state, group_of=group_of)
                 self.get_logger().info(f"{cmd.op}: {actions or '변경 없음'}")
-                for action in actions:
-                    self._do(action, cmd, state)
+                # ★10.13 물체 컨테이너 하나가 실패해도 나머지 물체 · pose_tx · 뷰어는 계속 띄운다(run_actions)
+                failed = run_actions(actions, lambda a: self._do(a, cmd, state),
+                                     errors=(RuntimeError, ValueError, subprocess.TimeoutExpired))
+                if failed:
+                    self._warning = f"{cmd.op}: 일부 물체 컨테이너 실패 — " + " · ".join(failed)
+                    self.get_logger().warning(self._warning)
                 self._state = parse_remote_status(remote.run("status.sh"))
             except (RuntimeError, ValueError, subprocess.TimeoutExpired) as err:
                 self._error = f"{cmd.op}: {err}"

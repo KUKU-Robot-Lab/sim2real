@@ -149,8 +149,36 @@ def plan_actions(cmd: Command, state: RemoteState,
     return actions
 
 
+#: 물체(묶음) 컨테이너 하나를 띄우는 액션 — 하나가 실패해도 나머지 물체는 계속 띄운다(★10.13 run_actions)
+FPP_UP_KINDS = ("fpp_up", "fpp_group_up")
+
+
+def run_actions(actions: list[tuple[str, ...]], do: Callable[[tuple[str, ...]], None],
+                errors: tuple[type[BaseException], ...] = (RuntimeError, ValueError)) -> list[str]:
+    """액션을 차례로 do 한다. 반환 = 실패한 물체 컨테이너 기동('<이름>: <오류>') — 빈 목록이면 전부 성공.
+
+    ★10.13 사용자 실기: 오렌지 · 블루 컵 중 하나가 막히면 단계 전체가 실패했다 — "둘중 하나라도 인지되게 해야함".
+    물체 컨테이너(FPP_UP_KINDS) 하나의 실패는 모아 두고 다음 액션(다른 물체 · pose_tx · 뷰어)을 계속한다. 물체 컨테이너를
+    띄우려다 **모두** 실패했거나, 공용 액션(카메라 · pose_tx · 뷰어 · 내리기)이 실패하면 예전처럼 바로 올린다."""
+    failed: list[str] = []
+    tried = 0
+    for action in actions:
+        if action[0] not in FPP_UP_KINDS:
+            do(action)
+            continue
+        tried += 1
+        try:
+            do(action)
+        except errors as err:
+            failed.append(f"{action[1]}: {err}")
+    if tried and len(failed) == tried:
+        raise RuntimeError("물체 컨테이너를 하나도 못 띄웠다 — " + " · ".join(failed))
+    return failed
+
+
 def build_status(state: RemoteState | None, camera_hz: float, pose_ages: dict[str, float | None],
-                 busy: bool, error: str | None, group_of: Callable[[str], str | None] | None = None) -> dict:
+                 busy: bool, error: str | None, group_of: Callable[[str], str | None] | None = None,
+                 warning: str | None = None) -> dict:
     objects = {}
     for name, age in pose_ages.items():
         cname = _container(name, group_of)
@@ -165,6 +193,8 @@ def build_status(state: RemoteState | None, camera_hz: float, pose_ages: dict[st
         "viewer": bool(state.viewer_up) if state else None,
         "busy": bool(busy),
         "error": error,
+        #: ★10.13 일부 물체 컨테이너만 실패(나머지는 떴다) — perception_ctl 이 경고로 찍고, --require-all 이면 실패로 본다
+        "warning": warning,
     }
 
 

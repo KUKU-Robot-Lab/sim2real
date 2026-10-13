@@ -73,6 +73,8 @@ def print_status(payload: dict) -> None:
               f"pose={'-' if age is None else f'{age:.2f}s ago'}")
     if payload.get("error"):
         print(f"  ERROR: {payload['error']}")
+    if payload.get("warning"):
+        print(f"  WARNING: {payload['warning']}")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -83,6 +85,9 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--viewer", action="store_true")
     s.add_argument("--wait", type=float, default=0.0,
                    help="런처가 일을 끝낼 때까지(busy=False) 최대 이 초만큼 기다리고, 오류면 1 로 끝난다(0 = 보내기만)")
+    # ★10.13 사용자 "둘중 하나라도 인지되게": 기본은 물체 컨테이너가 하나라도 뜨면 통과(못 뜬 물체는 경고)
+    s.add_argument("--require-all", action="store_true",
+                   help="요청한 물체 컨테이너가 전부 떠야 통과(하나라도 실패하면 1)")
     st = sub.add_parser("stop")
     st.add_argument("--camera", action="store_true", help="카메라까지 내린다")
     st.add_argument("--host", default="vision-3090", help="런처가 없을 때 직접 내릴 곳(ssh) · local = 이 PC")
@@ -136,7 +141,7 @@ def main() -> int:
     wait = float(getattr(args, "wait", 0.0) or 0.0)
     if wait > 0 and payload is not None:
         # 09.22 실기: start 는 보내기만 하고 0 으로 끝나 카메라 기동 실패(camera_up.sh rc=1)를 콘솔이 몰랐다.
-        rc = _wait_done(node, box, wait)
+        rc = _wait_done(node, box, wait, require_all=bool(getattr(args, "require_all", False)))
     elif box:
         print_status(json.loads(box[-1]))
     else:
@@ -149,18 +154,20 @@ def main() -> int:
 IDLE_AFTER_S = 3.0     # 보낸 뒤 이만큼 지났는데 busy 가 아니면 끝난 것(이미 켜져 있어 "변경 없음" 이면 busy 가 켜지지 않는다)
 
 
-def wait_verdict(seen_busy: bool, busy: bool, elapsed: float, error: str | None) -> str | None:
+def wait_verdict(seen_busy: bool, busy: bool, elapsed: float, error: str | None,
+                 warning: str | None = None, require_all: bool = False) -> str | None:
     """'ok' · 'fail' · None(계속 기다린다). 09.22 fake: 런처가 '변경 없음' 으로 즉시 끝나 busy 를 한 번도 안 켰는데
-    busy→끝 전환만 기다리다 150 s 를 넘겼다."""
+    busy→끝 전환만 기다리다 150 s 를 넘겼다. ★10.13 warning(일부 물체 컨테이너만 실패)은 기본 통과,
+    require_all 이면 실패."""
     if busy:
         return None
     if seen_busy or elapsed >= IDLE_AFTER_S:
-        return "fail" if error else "ok"
+        return "fail" if error or (require_all and warning) else "ok"
     return None
 
 
-def _wait_done(node, box: list, wait: float) -> int:
-    """런처가 일을 끝낼 때까지(또는 wait 초). 끝난 상태에 error 가 있으면 1."""
+def _wait_done(node, box: list, wait: float, require_all: bool = False) -> int:
+    """런처가 일을 끝낼 때까지(또는 wait 초). 끝난 상태에 error 가 있으면(require_all 이면 warning 도) 1."""
     import rclpy
 
     t0, seen_busy = time.monotonic(), False
@@ -170,13 +177,16 @@ def _wait_done(node, box: list, wait: float) -> int:
             continue
         st = json.loads(box[-1])
         seen_busy |= bool(st.get("busy"))
-        v = wait_verdict(seen_busy, bool(st.get("busy")), time.monotonic() - t0, st.get("error"))
+        v = wait_verdict(seen_busy, bool(st.get("busy")), time.monotonic() - t0, st.get("error"),
+                         st.get("warning"), require_all)
         if v is None:
             continue
         print_status(st)
         if v == "fail":
-            print(f"✗ 인지 기동 실패: {st['error']}", file=sys.stderr)
+            print(f"✗ 인지 기동 실패: {st.get('error') or st.get('warning')}", file=sys.stderr)
             return 1
+        if st.get("warning"):
+            print(f"⚠ 일부 물체만 떴다(나머지로 계속): {st['warning']}", file=sys.stderr)
         return 0
     print(f"✗ {wait:.0f} s 안에 런처가 끝나지 않았다", file=sys.stderr)
     if box:

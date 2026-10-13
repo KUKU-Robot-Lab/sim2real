@@ -75,6 +75,40 @@ def missing(status: dict, names: list[str]) -> list[str]:
     return [f"{n}: {objs.get(n, {}).get('why', '상태 없음')}" for n in names if not objs.get(n, {}).get("found")]
 
 
+#: ★10.13 사용자 "둘중 하나라도 인지되게": 한 물체의 상태가 먼저 오면 나머지 묶음 상태는 이만큼만 더 기다린다
+STATUS_GRACE_S = 5.0
+
+
+def found_names(st: dict, after: dict[str, int], names: list[str]) -> list[str]:
+    """after 보다 새 회차가 끝난 묶음에서 찾은 물체(names 순서)."""
+    hit = set()
+    for g, mine in groups_for(st, names).items():
+        if int(st[g].get("generation", 0)) <= after.get(g, 0):
+            continue
+        objs = st[g].get("objects", {})
+        hit |= {n for n in mine if objs.get(n, {}).get("found")}
+    return [n for n in names if n in hit]
+
+
+def enough_done(st: dict, after: dict[str, int], names: list[str], require_all: bool = False) -> bool:
+    """★10.13 다 찾았거나, (require_all 이 아니면) 물어본 물체가 든 묶음마다 새 회차가 끝났고 하나라도 찾았다."""
+    if all_done(st, after, names):
+        return True
+    if require_all or missing_names(st, names):
+        return False
+    groups = groups_for(st, names)
+    settled = all(int(st[g].get("generation", 0)) > after.get(g, 0) for g in groups)
+    return settled and bool(found_names(st, after, names))
+
+
+def lost_reasons(st: dict, names: list[str]) -> list[str]:
+    """★10.13 못 찾은 물체와 이유('<물체>: <이유>') — 상태가 아예 없는 물체(묶음 컨테이너가 안 떴다)도 넣는다."""
+    absent = missing_names(st, names)
+    out = [f"{n}: 상태 없음 — 이 물체의 fpp_<묶음> 컨테이너가 안 떠 있다" for n in absent]
+    out += [x for g, mine in groups_for(st, names).items() for x in missing(st[g], mine)]
+    return out
+
+
 def check_cup(name: str, xyz: tuple[float, float, float], tilt_deg: float, origin_above_bottom: float = CUP_ORIGIN_Z) -> list[str]:
     """테이블 위에 서 있는 물체 기준의 경고들(빈 목록 = 통과). 원점 높이는 물체마다(레지스트리, 쉐이커 0.065)."""
     x, _, z = xyz
@@ -104,6 +138,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("cups", nargs="+")
     ap.add_argument("--wait", type=float, default=120.0, help="전체 대기 상한(s)")
+    # ★10.13 기본은 하나라도 찾으면 통과(못 찾은 물체는 경고) — 전부 필요할 때만 --require-all
+    ap.add_argument("--require-all", action="store_true", help="물어본 물체를 전부 찾아야 통과")
     ap.add_argument("--phase", choices=("auto", "status", "full"), default="auto",
                     help="auto: 상황판(ROS_LOCALHOST_ONLY≠1)이면 상태 · 명령은 localhost DDS 자식이, base 좌표는 이 프로세스가")
     args = ap.parse_args(argv)
@@ -118,7 +154,8 @@ def _split_run(args) -> int:
     import subprocess
     env = {**os.environ, "ROS_LOCALHOST_ONLY": "1"}
     child = subprocess.run([sys.executable, str(Path(__file__).resolve()), *args.cups, "--wait", str(args.wait),
-                            "--phase", "status"], env=env, capture_output=True, text=True)
+                            "--phase", "status", *(["--require-all"] if args.require_all else [])],
+                           env=env, capture_output=True, text=True)
     st = None
     for line in child.stdout.splitlines():
         if line.startswith(STATUS_MARK):
@@ -158,26 +195,40 @@ def _run(args, only_status: bool, preset: dict | None = None) -> int:
         if preset is not None:                       # 상태는 localhost 자식이 끝냈다 — base 좌표만 본다
             box["st"] = preset
             return _report(node, box, args, spin_until)
-        if not spin_until(lambda: not missing_names(box["st"], args.cups)):
-            print(f"[rescan] {', '.join(missing_names(box['st'], args.cups))} 를 내는 묶음 FP++ 컨테이너 상태가 {args.wait:.0f} s 안에 "
+        # ★10.13 하나라도 상태가 오면 나머지 묶음은 STATUS_GRACE_S 만 더 기다린다(--require-all 이면 끝까지)
+        spin_until(lambda: len(missing_names(box["st"], args.cups)) < len(args.cups))
+        if args.require_all:
+            spin_until(lambda: not missing_names(box["st"], args.cups))
+        else:
+            t_grace = time.monotonic() + STATUS_GRACE_S
+            spin_until(lambda: not missing_names(box["st"], args.cups) or time.monotonic() > t_grace)
+        absent = missing_names(box["st"], args.cups)
+        if absent and (args.require_all or len(absent) == len(args.cups)):
+            print(f"[rescan] {', '.join(absent)} 를 내는 묶음 FP++ 컨테이너 상태가 {args.wait:.0f} s 안에 "
                   "안 온다 — fpp_<묶음> 이 떠 있는가 · docker logs 로 확인", file=sys.stderr)
             return 1
+        if absent:
+            print(f"[rescan] ⚠ {', '.join(absent)} 는 FP++ 상태가 안 온다(fpp_<묶음> 컨테이너) — 나머지로 계속",
+                  file=sys.stderr)
+        names = [n for n in args.cups if n not in absent]
         st = box["st"]
-        groups = groups_for(st, args.cups)
+        groups = groups_for(st, names)
         after = {g: int(st[g].get("generation", 0)) for g in groups}
         again = [n for g, mine in groups.items() if first_action(st[g]) == "command" for n in mine]
         if again:
             spin_until(lambda: pub.get_subscription_count() > 0)
             pub.publish(String(data=",".join(again)))
             print(f"[rescan] 다시 찍기 요청 — {', '.join(again)}")
-        if len(again) < len(args.cups):
-            print("[rescan] FP++ 가 켜지며 찍는 첫 회차를 기다린다 — " + ", ".join(n for n in args.cups if n not in again))
-        if not spin_until(lambda: all_done(box["st"], after, args.cups)):
-            lost = [x for g, mine in groups_for(box["st"], args.cups).items() for x in missing(box["st"][g], mine)]
+        if len(again) < len(names):
+            print("[rescan] FP++ 가 켜지며 찍는 첫 회차를 기다린다 — " + ", ".join(n for n in names if n not in again))
+        if not spin_until(lambda: enough_done(box["st"], after, names, args.require_all)):
+            lost = [x for g, mine in groups_for(box["st"], names).items() for x in missing(box["st"][g], mine)]
             errs = " · ".join(f"{g}: {s_.get('error')}" for g, s_ in box["st"].items() if s_.get("error"))
-            print(f"[rescan] {args.wait:.0f} s 안에 다 못 찾았다 — {' · '.join(lost) or '회차가 안 끝났다'} · 오류 {errs or '-'}",
-                  file=sys.stderr)
-            return 1
+            # ★10.13 시간 안에 하나라도 찾았으면 나머지는 경고로 남기고 통과(--require-all 이면 실패)
+            if args.require_all or not found_names(box["st"], after, names):
+                print(f"[rescan] {args.wait:.0f} s 안에 다 못 찾았다 — {' · '.join(lost) or '회차가 안 끝났다'} · "
+                      f"오류 {errs or '-'}", file=sys.stderr)
+                return 1
         if only_status:
             print(STATUS_MARK + json.dumps(box["st"], ensure_ascii=False))
             return 0
@@ -195,7 +246,9 @@ def _report(node, box: dict, args, spin_until) -> int:
         st = box["st"]
         groups = groups_for(st, args.cups)
         info_of = {n: st[g]["objects"][n] for g, mine in groups_for(st, args.cups).items() for n in mine}
-        lost = []
+        # ★10.13 못 찾은 물체는 경고로 찍고 찾은 물체만 base 좌표를 기다린다
+        lost = lost_reasons(st, args.cups)
+        why_lost = {x.split(":")[0]: x.split(": ", 1)[-1] for x in lost}
         t_round = time.time()
 
         def on_pose(name):
@@ -213,14 +266,20 @@ def _report(node, box: dict, args, spin_until) -> int:
             info = info_of.get(n, {})
             m = box["poses"].get(n)
             if m is None:
-                print(f"  {n:11s} 없음 — {info.get('why', 'base 자세가 안 온다(object_pose_node)')}")
+                print(f"  {n:11s} 없음 — {why_lost.get(n) or info.get('why', 'base 자세가 안 온다(object_pose_node)')}")
                 continue
             p, q = m.pose.position, m.pose.orientation
             tilt = math.degrees(math.acos(max(-1.0, min(1.0, 1 - 2 * (q.x * q.x + q.y * q.y)))))
             warn = check_cup(n, (p.x, p.y, p.z), tilt, origin.get(n, CUP_ORIGIN_Z))
             print(f"  {n:11s} x {p.x:.3f} y {p.y:+.3f} z {p.z:.3f} 기울기 {tilt:.1f}° · 색 {info.get('color_score')} · "
                   f"흔들림 {info.get('spread_mm')} mm  {'✓' if not warn else '⚠ ' + ' · '.join(warn)}")
-        return 1 if lost else 0
+        ok = [n for n in found if n in box["poses"]]
+        if lost or len(ok) < len(args.cups):
+            print(f"[rescan] ⚠ 못 찾은 물체 — {', '.join(n for n in args.cups if n not in ok)}"
+                  f" · 이 물체를 쓰는 에피소드는 정책 노드가 reset 을 거부한다(컵 자세 없음 → TARGET_NOT_FOUND)", file=sys.stderr)
+        if not ok:
+            return 1
+        return 1 if args.require_all and len(ok) < len(args.cups) else 0
 
 
 if __name__ == "__main__":

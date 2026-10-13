@@ -70,3 +70,12 @@ def test_local_host_runs_the_same_scripts_on_this_pc_without_ssh():
     assert shell_argv("localhost", "x")[0] == "bash"
     assert shell_argv("vision-3090", "x")[:2] == ["ssh", "-o"] and shell_argv("vision-3090", "x")[-2:] == ["vision-3090", "x"]
 
+
+
+def test_a_partial_container_failure_is_a_warning_that_passes_unless_require_all():
+    """★10.13 사용자 실기: 물체 컨테이너 하나만 못 떠도 단계 전체가 실패했다 — 기본 통과, --require-all 이면 실패."""
+    from perception_ctl import wait_verdict
+    warn = "일부 물체 컨테이너 실패 — fpp_shaker_c: rc=1"
+    assert wait_verdict(True, False, 12.0, None, warn) == "ok"
+    assert wait_verdict(True, False, 12.0, None, warn, require_all=True) == "fail"
+    assert wait_verdict(True, False, 12.0, "물체 컨테이너를 하나도 못 띄웠다", warn) == "fail"

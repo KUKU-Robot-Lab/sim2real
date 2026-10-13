@@ -31,6 +31,9 @@ groups:
   motion: true
 - id: finish
   title: 정리
+- id: recognize
+  title: 개별 인지 (선택)
+  optional: true
 - id: diagnose
   title: 진단 (선택)
   motion: true
@@ -77,6 +80,20 @@ stages:
   - head_home
   skippable: true
   title: fake — 카메라 없음(실기 순서를 맞추려고 둔 자리)
+- id: cups_right
+  group: recognize
+  lane: arm_right
+  needs:
+  - cups
+  skippable: true
+  title: '[right] fake — FP++ 없음(fake 컵은 cups 단계가 낸다)'
+- id: cups_left
+  group: recognize
+  lane: arm_left
+  needs:
+  - cups
+  skippable: true
+  title: '[left] fake — FP++ 없음(fake 컵은 cups 단계가 낸다)'
 - id: drivers
   group: connect
   lane: rig
@@ -515,6 +532,18 @@ run:
     - --topic
     - /objects/cup_rcv/live_pose
     background: true
+  cups_right:
+  - note: '[right] fake — FP++ 없음'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+  cups_left:
+  - note: '[left] fake — FP++ 없음'
+    argv:
+    - bash
+    - -lc
+    - 'true'
   policy_pourfj:
   - note: fake — 확인만
     argv:

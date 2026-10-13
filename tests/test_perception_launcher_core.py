@@ -135,3 +135,43 @@ def test_grouped_cups_start_one_container_and_status_points_each_cup_at_it():
     assert plan_actions(cmd, up, group_of=_group_of) == []
     st = build_status(up, 30.0, {"cyl60": 0.1, "cyl60_pink": None}, False, None, group_of=_group_of)
     assert st["objects"]["cyl60"]["container"] == "Up 5 s" and st["objects"]["cyl60_pink"]["container"] == "Up 5 s"
+
+
+def test_one_object_container_failure_does_not_stop_the_others():
+    """★10.13 사용자 실기: 오렌지 · 블루 중 하나가 막히면 단계 전체가 실패했다 — 실패를 모으고 나머지는 계속."""
+    from perception_launcher_core import run_actions
+    done = []
+
+    def do(action):
+        if action == ("fpp_group_up", "shaker_c"):
+            raise RuntimeError("rc=1")
+        done.append(action)
+
+    acts = [("camera_up",), ("fpp_group_up", "shaker_c"), ("fpp_group_up", "source240b"), ("pose_tx_up",)]
+    assert run_actions(acts, do) == ["shaker_c: rc=1"]
+    assert done == [("camera_up",), ("fpp_group_up", "source240b"), ("pose_tx_up",)]
+
+
+def test_all_object_containers_failing_or_a_shared_action_failing_still_raises():
+    from perception_launcher_core import run_actions
+
+    def fail_objects(action):
+        if action[0] == "fpp_group_up":
+            raise RuntimeError("rc=1")
+
+    with pytest.raises(RuntimeError, match="하나도"):
+        run_actions([("fpp_group_up", "shaker_c"), ("fpp_group_up", "source240b")], fail_objects)
+
+    def fail_camera(action):
+        if action[0] == "camera_up":
+            raise RuntimeError("no camera")
+
+    with pytest.raises(RuntimeError, match="no camera"):
+        run_actions([("camera_up",), ("fpp_group_up", "shaker_c")], fail_camera)
+    assert run_actions([], fail_camera) == []
+
+
+def test_status_carries_the_partial_failure_warning():
+    st = parse_remote_status('{"camera_up": true, "containers": {}, "viewer_up": false}')
+    assert build_status(st, 0.0, {}, False, None)["warning"] is None
+    assert build_status(st, 0.0, {}, False, None, warning="fpp_shaker_c: rc=1")["warning"] == "fpp_shaker_c: rc=1"

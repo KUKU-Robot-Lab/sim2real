@@ -144,6 +144,13 @@ def _stages(kind: str) -> list[dict]:
          "touches_real": real,
          "title": ("컵홀더 자세(마커 ID 0·1·2) — RealSense 컬러 → /objects/cup_holder_{0,1,2}/pose (base) · /cup_holders/status. "
                    "로봇은 움직이지 않는다. CPU 만" if real else "fake — 카메라 없음(실기 순서를 맞추려고 둔 자리)")},
+        # ★10.13 사용자 실기: "다음부턴 개별로 하고, 둘중 하나라도 인지되게 해야함. 개별로 다시 할수 있게 해야해" —
+        #   팔마다 그 팔의 컵 하나만 다시 인지하는 단계(선택 묶음, 차례에 끼지 않는다). cups 가 띄운 노드 위에서 돈다
+        *({"id": f"cups_{s}", "group": "recognize", "lane": f"arm_{s}", "needs": ["cups"], "skippable": True,
+           "touches_real": real,
+           "title": (f"[{s}] 컵 하나만 다시 인지 — {REAL_CUPS[s]} (FP++ 컨테이너가 내려가 있으면 그것만 다시 띄우고, 이 컵의 "
+                     f"묶음만 지금 카메라로 다시 찍는다)" if real else f"[{s}] fake — FP++ 없음(fake 컵은 cups 단계가 낸다)")}
+          for s in SIDES if s in REAL_CUPS),
         {"id": "drivers", "group": "connect", "lane": "rig", "needs": ["preflight"],
          "title": ("모터 전원 → CAN ×2 → 팔 브링업 → CAN 응답 확인 (토크는 들어가지만 팔은 제자리)" if real else
                    "fake 플랜트 — 양팔 MockArm(rate) · controller_manager 스텁 (손은 손 창에서 따로)"),
@@ -316,10 +323,10 @@ def _run(kind: str) -> dict:
               "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
         _cmd("FP++ 전 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)", HEAD_CHECK_ARGV, execute_args=["--execute"]),
         _cmd(f"카메라 + FP++ 켜기 — 묶음 컨테이너({_containers_txt()})가 {_cups_txt()} 를 차례로 한 번 찍는다. 이미 떠 있으면 그대로. "
-             "최대 150 s, 실패하면 이 단계도 실패",
+             "최대 150 s. ★10.13 묶음 하나가 못 뜨면 경고만(나머지는 계속), 하나도 못 띄우면 실패",
              ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", *_cups(), "--wait", "150"]),
         _cmd("컵 좌표 추출 — 처음엔 FP++ 가 켜지며 찍는 회차를 기다리고, 이 단계를 다시 실행하면(컵을 옮긴 뒤 '↶ 여기서 다시') "
-             "컨테이너를 끄지 않고 지금 카메라로 다시 찍는다(10.08 사용자). 컵마다 base 좌표 · 판정을 찍고, 정책이 읽는 컵을 못 찾으면 실패",
+             "컨테이너를 끄지 않고 지금 카메라로 다시 찍는다(10.08 사용자). 컵마다 base 좌표 · 판정을 찍는다. ★10.13 하나라도 찾으면 통과 · 못 찾은 컵은 이유와 함께 경고(그 컵은 개별 인지 단계로 다시)",
              ["python3", "{repo}/scripts/ops/fpp_rescan.py", *(REAL_CUPS[s] for s in SIDES if s in REAL_CUPS), "--wait", "120"]),
         _cmd(f"★컵 자세 확인(바로 위 추출 결과) — 테이블 위 컵 원점 z ≈ {0.205 + REAL_CUP_ORIGIN_Z:.3f}(상판 0.205 + 원점 {REAL_CUP_ORIGIN_Z}, ±8 mm) · 기울기 < 3° · "
              f"x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 {_side_cup('right')}(y < 0) · 왼팔 {_side_cup('left')}(y > 0) 인가"
@@ -331,6 +338,18 @@ def _run(kind: str) -> dict:
              background=True)
         for role, y in (("src", "-0.16"), ("rcv", "0.16"))
         for t in (f"/objects/cup_{role}/pose", _live(f"/objects/cup_{role}/pose"))]   # live = aglt 정책 입력(10.12 A안)
+    for s in SIDES:
+        if s not in REAL_CUPS:
+            continue
+        # ★10.13 개별 인지 — perception_ctl start 는 넘긴 물체 밖의 컨테이너를 내리므로 컵 전부를 넘긴다(떠 있는 것은 그대로,
+        #   내려간 것만 다시 띄운다). 다시 찍기는 이 컵 하나만 — 이 컵을 못 찾으면 이 단계만 실패한다
+        run[f"cups_{s}"] = [
+            _cmd(f"★[{s}] {REAL_CUPS[s]} 가 테이블에 똑바로 서 있고 손이 가리지 않는가", ["bash", "-lc", "true"], manual=True),
+            _cmd(f"[{s}] FP++ 컨테이너 확인 — 내려간 묶음만 다시 띄운다({_containers_txt()}). 최대 150 s",
+                 ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", *_cups(), "--wait", "150"]),
+            _cmd(f"[{s}] {REAL_CUPS[s]} 만 다시 찍기 — base 좌표 · 판정을 찍고, 못 찾으면 이유와 함께 실패",
+                 ["python3", "{repo}/scripts/ops/fpp_rescan.py", REAL_CUPS[s], "--wait", "120"]),
+        ] if real else [_cmd(f"[{s}] fake — FP++ 없음", ["bash", "-lc", "true"])]
     run["policy_pourfj"] = [
         _cmd("★두 컵이 학습 배치(로봇 앞 x ≈ 0.38, y ≈ ∓0.16)에 서 있고 콘솔에 두 컵 자세가 들어오는가. 양팔 · 양손 주변이 비어 있는가. "
              "정책은 팔을 스스로 움직이고 손가락을 쥔다 — 빈 컵만" if real else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
@@ -706,6 +725,7 @@ def mission(kind: str) -> dict:
         "groups": [{"id": "check", "title": "점검"}, {"id": "connect", "title": "연결"}, {"id": "prepare", "title": "준비"},
                    {"id": "motion", "title": "자세 이동", "motion": True}, {"id": "policy", "title": "정책 동작", "motion": True},
                    {"id": "finish", "title": "정리"},
+                   {"id": "recognize", "title": "개별 인지 (선택)", "optional": True},    # ★10.13 컵 하나씩 다시 인지
                    {"id": "diagnose", "title": "진단 (선택)", "motion": True, "optional": True}],
         "lanes": [{"id": "rig", "title": "드라이버"},
                   {"id": "arm_right", "title": "오른팔 · 오른손", "side": "right", "focus": "policy_aglt_right"},

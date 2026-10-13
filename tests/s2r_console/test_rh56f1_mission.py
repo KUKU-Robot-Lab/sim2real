@@ -439,3 +439,27 @@ def test_each_arms_policy_stage_records_under_its_own_name_and_stops_only_that(s
     cmds = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, f"policy_aglt_{side}")]
     assert any(f"rh56f1_record.sh start aglt_{side}" in c and f"HAND_SIDES='{side}'" in c for c in cmds)
     assert any(c.endswith(f"rh56f1_record.sh stop aglt_{side}") for c in cmds)
+
+
+@pytest.mark.parametrize("side", [s for s in ("right", "left") if s in ACTIVE_SIDES])
+def test_each_cup_can_be_recognized_again_on_its_own(side):
+    """★10.13 사용자 실기: "다음부턴 개별로 하고, 둘중 하나라도 인지되게 해야함. 개별로 다시 할수 있게 해야해".
+    팔마다 그 팔의 컵 하나만 다시 찍는 선택 단계 — 차례(선택 묶음)에 끼지 않고 cups 뒤에 언제든 누른다."""
+    cup = ACTIVE_SIDES[side]
+    st = next(s for s in REAL.stages if s.id == f"cups_{side}")
+    assert st.group == "recognize" and st.needs == ("cups",) and st.skippable and st.touches_real
+    assert next(g for g in REAL.groups if g.id == "recognize").optional
+    argv = [c.argv for c in _cmds(REAL, REAL_BOOK, f"cups_{side}")]
+    rescan = [a for a in argv if any("fpp_rescan.py" in x for x in a)]
+    assert len(rescan) == 1 and cup in rescan[0]
+    assert not [o for o in ACTIVE_SIDES.values() if o != cup and o in rescan[0]]     # 이 컵 하나만
+    start = [a for a in argv if any("perception_ctl.py" in x for x in a)]
+    assert start and set(ACTIVE_SIDES.values()) <= set(start[0])   # start 는 넘긴 물체 밖을 내리므로 컵 전부(떠 있으면 그대로)
+    assert not any(s.id == f"cups_{side}" for s in FAKE.stages if s.touches_real)
+
+
+def test_the_both_cup_stage_passes_with_one_cup_unless_asked_for_all():
+    """★10.13 cups 단계의 start · rescan 은 기본(하나라도) — --require-all 을 붙이지 않는다."""
+    flat = [x for c in _cmds(REAL, REAL_BOOK, "cups") for x in c.argv]
+    assert "--require-all" not in flat
+    assert any("fpp_rescan.py" in x for x in flat) and any("perception_ctl.py" in x for x in flat)
