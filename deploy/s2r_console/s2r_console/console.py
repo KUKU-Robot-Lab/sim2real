@@ -23,6 +23,7 @@ import yaml
 from . import _paths, ledger, survey
 from . import object_health as OH
 from . import robot_view as R
+from . import spawn_map as SM
 from . import units as U
 from .console_state import STALE_S, derive
 from .diagram import _LAUNCHER as PERCEPT_BOX
@@ -306,6 +307,8 @@ class Session:
         #: 로봇 상태 표가 쓰는 목표·한계 — 계약과 프로파일에서 한 번만 읽는다(09.23).
         self.contract_sides, self.joint_limits, self.joint_alias = _robot_reference(
             self.mission, repo, None if robot is None or not robot.joint_profile else (repo / robot.joint_profile).resolve())
+        #: 학습 가능 영역(10.13 사용자) — 쪽마다 정책 계약의 소환 박스 xy. 정책은 run 을 여는 순간 정해지니 한 번만 읽는다.
+        self.spawn_boxes = SM.boxes_from(self.mission.artifacts or {}, robot.slots if robot is not None else {}, repo)
         proc = self.run_dir / "proc"
         probe = probe_argv(profile, self.diagram) if bridge else None
         self.bridge = (_Pipe("bridge", bridge_argv(profile, self.diagram), self.feed.bridge_died, self.feed, self.feed_lock, env,
@@ -963,7 +966,8 @@ class Console:
         topics = object_topics(bridge_argv(s.profile, s.diagram))
         if not topics:
             return None
-        return OH.view(obs.objects, obs.objects_age_s, obs.perception, topics)
+        out = OH.view(obs.objects, obs.objects_age_s, obs.perception, topics)
+        return {**out, "map": SM.view(getattr(s, "spawn_boxes", []), obs.objects, out["stale"])}
 
     @staticmethod
     def _pd_sides(s: Session, obs=None) -> list[str]:

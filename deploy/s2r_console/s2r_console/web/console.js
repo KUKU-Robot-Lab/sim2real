@@ -727,6 +727,38 @@ function spark(cv, values, budget) {
   g.lineTo(x(values.length - 1), h); g.lineTo(x(0), h); g.closePath(); g.fillStyle = "rgba(77,163,255,.12)"; g.fill();
 }
 
+// 학습 가능 영역 지도(10.13 사용자: "Deploy 화면에 가능영역이 오버레이로") — 위에서 본 탁자, base 프레임.
+// 화면 위 = +x(앞) · 왼쪽 = +y(왼팔 쪽). 실선 박스 = 정책이 학습한 컵 소환 범위, 점선 = 시작 거부 여유. 판정은 서버(spawn_map.py).
+const MAP_TONE = { ok: "var(--ok)", warn: "var(--warn)", bad: "var(--bad)" };
+const MAP_SIDE = { right: "#4da3ff", left: "#a78bfa" };
+function spawnMap(m) {
+  if (!m || !m.boxes.length) return "";
+  const t = m.tol_m, xs = [0], ys = [0.3, -0.3];
+  m.boxes.forEach((b) => { xs.push(b.lo[0] - t, b.hi[0] + t); ys.push(b.lo[1] - t, b.hi[1] + t); });
+  m.objects.forEach((o) => { xs.push(o.x); ys.push(o.y); });
+  const pad = 0.04, x0 = Math.min(...xs) - pad, x1 = Math.max(...xs) + pad;
+  const yr = Math.max(...ys.map(Math.abs)) + pad;
+  const W = 360, k = W / (2 * yr), H = Math.round((x1 - x0) * k);
+  const u = (y) => (yr - y) * k, v = (x) => (x1 - x) * k;          // 위 = +x, 왼쪽 = +y
+  const rect = (lo, hi, d) => `x="${u(hi[1] + d).toFixed(1)}" y="${v(hi[0] + d).toFixed(1)}" width="${((hi[1] - lo[1] + 2 * d) * k).toFixed(1)}" height="${((hi[0] - lo[0] + 2 * d) * k).toFixed(1)}"`;
+  const boxes = m.boxes.map((b) => { const c = MAP_SIDE[b.side] || "#9aa6b2"; return `
+      <rect ${rect(b.lo, b.hi, t)} fill="none" stroke="${c}" stroke-dasharray="4 3" stroke-width="1"/>
+      <rect ${rect(b.lo, b.hi, 0)} fill="${c}" fill-opacity=".14" stroke="${c}" stroke-width="1.5"/>
+      <text x="${u((b.lo[1] + b.hi[1]) / 2).toFixed(1)}" y="${(v(b.hi[0] + t) - 4).toFixed(1)}" text-anchor="middle" fill="${c}" font-size="11">${esc(b.label)} · ${esc(b.policy)}</text>`; }).join("");
+  const grid = [];
+  for (let x = Math.ceil(x0 * 10) / 10; x <= x1; x += 0.1) grid.push(`<line x1="0" x2="${W}" y1="${v(x).toFixed(1)}" y2="${v(x).toFixed(1)}"/><text x="2" y="${(v(x) - 2).toFixed(1)}">x ${x.toFixed(1)}</text>`);
+  for (let y = -Math.floor(yr * 10) / 10; y <= yr; y += 0.1) grid.push(`<line y1="0" y2="${H}" x1="${u(y).toFixed(1)}" x2="${u(y).toFixed(1)}"/>`);
+  const base = v(0) <= H ? `<path d="M${u(0) - 7},${v(0)} L${u(0) + 7},${v(0)} L${u(0)},${v(0) - 10} Z" fill="#9aa6b2"/><text x="${u(0) + 10}" y="${v(0) - 2}" fill="#9aa6b2" font-size="10">base</text>` : "";
+  const dots = m.objects.map((o) => `<circle cx="${u(o.y).toFixed(1)}" cy="${v(o.x).toFixed(1)}" r="6" fill="${MAP_TONE[o.tone]}" stroke="#0d1117" stroke-width="1.5"/>
+      <text x="${(u(o.y) + (u(o.y) > W * 0.6 ? -9 : 9)).toFixed(1)}" y="${(v(o.x) + 4).toFixed(1)}" text-anchor="${u(o.y) > W * 0.6 ? "end" : "start"}" fill="#e6edf3" font-size="11" paint-order="stroke" stroke="#0d1117" stroke-width="3">${esc(o.name)}</text>`).join("");
+  const rows = m.objects.map((o) => `<dt><span class="lamp ${esc(o.tone)}"></span>${esc(o.name)}</dt><dd class="fpp-${esc(o.tone)}">x ${o.x.toFixed(3)} · y ${o.y.toFixed(3)} — ${esc(o.say)}</dd>`).join("");
+  const none = m.stale ? "브리지 보고가 늦다 — 물체 자리를 믿지 않는다" : "물체 자세가 아직 없다";
+  return `<div class="fpp-map"><div class="fpp-name"><b>학습 가능 영역</b><span class="hint">위 = 앞(+x) · 왼쪽 = 왼팔 쪽(+y) · 점선 = 시작 거부 여유 ${Math.round(t * 100)} cm</span></div>
+    <svg class="spawn-map" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="학습 가능 영역과 물체 위치">
+      <g class="spawn-grid">${grid.join("")}</g>${boxes}${base}${dots}</svg>
+    <dl class="kv fpp-kv">${rows || `<dt></dt><dd class="hint">${esc(none)}</dd>`}</dl></div>`;
+}
+
 // FP++ 칸 — 09.29 사용자: "fpp 가 제대로 되는지 … 상태창에서". 줄 · 판정은 서버(object_health.py)가 준다.
 // 그날 컨테이너는 Up 인데 추적 노드가 CUDA OOM 으로 죽어 자세가 0 이었다 — 컨테이너 상태만으로는 못 본다.
 function renderFpp(s) {
@@ -734,7 +766,7 @@ function renderFpp(s) {
   $("fpp-panel").hidden = !f;
   if (!f) return;
   put("fpp-meta", `<span class="badge ${f.tone === "mute" ? "" : esc(f.tone)}">${esc(f.say)}</span>`);
-  put("fpp", f.objects.map((o) => `<div class="fpp-obj"><div class="fpp-name"><span class="lamp ${esc(o.tone)}"></span><b>${esc(o.name)}</b>
+  put("fpp", spawnMap(f.map) + f.objects.map((o) => `<div class="fpp-obj"><div class="fpp-name"><span class="lamp ${esc(o.tone)}"></span><b>${esc(o.name)}</b>
     <span class="hint">${esc(o.topic)}${f.stale ? " · 브리지 보고가 늦다" : ""}</span></div>
     <dl class="kv fpp-kv">${o.rows.map((r) => `<dt><span class="lamp ${esc(r.tone)}"></span>${esc(r.label)}</dt><dd class="fpp-${esc(r.tone)}">${esc(r.value)}</dd>`).join("")}</dl></div>`).join(""));
 }

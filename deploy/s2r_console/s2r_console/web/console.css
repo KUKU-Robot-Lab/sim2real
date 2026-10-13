@@ -389,6 +389,9 @@ table.joints tr.j-missing td { color: var(--mute); }
 .fpp-kv { grid-template-columns: 128px 1fr; }
 .fpp-kv dt { display: flex; align-items: center; }
 .fpp-bad { color: var(--bad); } .fpp-warn { color: var(--warn); }
+.fpp-map { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.spawn-map { display: block; max-width: 100%; height: auto; margin: 6px 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; }
+.spawn-grid line { stroke: var(--line); stroke-width: .5; } .spawn-grid text { fill: var(--faint); font-size: 9px; }
 
 /* ── 첫 화면: 로봇 → 정책 → 실행 (09.29) ── */
 .steps { display: flex; gap: 8px; list-style: none; padding: 0; margin: 6px 0 14px; flex-wrap: wrap; }
