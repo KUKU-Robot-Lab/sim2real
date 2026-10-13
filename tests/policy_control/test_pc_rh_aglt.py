@@ -143,12 +143,28 @@ def test_the_chain_holds_then_moves_and_needs_the_cup_to_reset(c):
 
 
 def test_start_is_refused_away_from_home_or_with_a_fallen_cup(c):
-    m = _meas(c)
+    y = 0.16 if c.side().side == "left" else -0.16
+    m = _meas(c, cup=(0.35, y, 0.08))
     assert N.aglt_start_refusals(c, {"arm": m}, 0.15) == []
     far = A.RaMeas(**{**m.__dict__, "arm_q": np.asarray(c.side().arm_home) + 0.3})
     assert "training start pose" in N.aglt_start_refusals(c, {"arm": far}, 0.15)[0]
     fallen = A.RaMeas(**{**m.__dict__, "cup_quat": np.array([np.cos(0.6), np.sin(0.6), 0, 0])})
     assert "tilt" in N.aglt_start_refusals(c, {"arm": fallen}, 0.15)[0]
+
+
+def test_start_is_refused_with_the_cup_outside_the_training_spawn_box(c):
+    """10.13 실기 121432: 컵이 소환 박스 y 밖 9 cm — sim 에서 진짜 성공 0.05. 시작에서 막는다(여유 2 cm 는 받는다)."""
+    lo, hi = c.goal_box_min, c.goal_box_max
+    assert len(lo) == 3
+    sgn = 1.0 if c.side().side == "left" else -1.0
+    edge = hi[1] if sgn > 0 else lo[1]
+    cx = 0.5 * (lo[0] + hi[0])
+    ok = _meas(c, cup=(cx, edge + sgn * 0.015, 0.08))
+    assert N.aglt_start_refusals(c, {"arm": ok}, 0.15) == []
+    far = _meas(c, cup=(cx, edge + sgn * 0.094, 0.08))
+    r = N.aglt_start_refusals(c, {"arm": far}, 0.15)
+    assert len(r) == 1 and "spawn box" in r[0]
+    assert "spawn box" in N.aglt_start_refusals(c, {"arm": _meas(c, cup=(hi[0] + 0.05, edge - sgn * 0.05, 0.08))}, 0.15)[0]
 
 
 def test_the_checkpoint_loads_and_acts(c):

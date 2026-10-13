@@ -63,6 +63,9 @@ def _fresh(got):
 
 
 START_TILT_MAX_DEG = 15.0
+#: ★10.13 sim(vision-3090 rg3s ep4700): 실기 121432 컵 자리(0.342, −0.394) — 소환 박스 y 밖 9 cm — 에서 진짜 성공 0.05(시간 종료 0.95).
+#  rh_aglt 시작 = 컵 xy 가 학습 소환 박스(계약 goal_box xy, goal_box_xy_margin 0) 안 + 이 여유.
+START_SPAWN_TOL_M = 0.02
 
 
 class PourFjNodeError(RuntimeError):
@@ -146,6 +149,12 @@ def aglt_start_refusals(c: A.RaContract, meas: dict, tol: float) -> list:
     tilt = _cup_tilt_deg(m.cup_quat)
     if tilt > START_TILT_MAX_DEG:
         out.append(f"cup tilt {tilt:.1f} deg (> {START_TILT_MAX_DEG:.0f}) — a standing cup is expected")
+    if len(c.goal_box_min) == 3 and len(c.goal_box_max) == 3:
+        xy = np.asarray(m.cup_pos, float)[:2]
+        lo, hi = np.asarray(c.goal_box_min[:2], float), np.asarray(c.goal_box_max[:2], float)
+        if np.any(xy < lo - START_SPAWN_TOL_M) or np.any(xy > hi + START_SPAWN_TOL_M):
+            out.append(f"cup xy {np.round(xy, 3).tolist()} is outside the training spawn box "
+                       f"{np.round(lo, 3).tolist()}..{np.round(hi, 3).tolist()} (+{START_SPAWN_TOL_M} m) — move the cup inside")
     return out
 
 
