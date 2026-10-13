@@ -123,3 +123,29 @@ def test_the_status_phase_runs_on_the_perception_pc_when_fpp_lives_there():
     assert "--require-all" in R.status_argv(["a"], 5, True, "h")[-1]
     local = R.status_argv(["cyl60"], 120.0, True)
     assert local[0] == sys.executable and local[-4:] == ["120", "--phase", "status", "--require-all"]
+
+
+def _proc(tmp_path, *cmdlines):
+    for i, argv in enumerate(cmdlines, start=100):
+        d = tmp_path / str(i)
+        d.mkdir(parents=True)
+        (d / "cmdline").write_bytes(b"\0".join(a.encode() for a in argv) + b"\0")
+    (tmp_path / "self").mkdir()
+    return tmp_path
+
+
+def test_without_a_status_host_the_launchers_perception_pc_is_used(tmp_path):
+    """10.13 콘솔은 run 시작 때 명령을 고정한다 — 옛 명령(--status-host 없음)으로 cups 를 다시 실행해도 인지 PC 에서 상태를 본다."""
+    launcher = ["python3", "/x/scripts/nodes/perception_launcher_node.py"]
+    other = ["python3", "/x/scripts/nodes/fpp_pose_rx.py", "--host", "nope"]
+    assert R.launcher_host(_proc(tmp_path / "a", other, [*launcher, "--host", "vision-3090", "--pose-dest", "1.2.3.4"])) == "vision-3090"
+    assert R.launcher_host(_proc(tmp_path / "b", [*launcher, "--host=box"])) == "box"
+    assert R.launcher_host(_proc(tmp_path / "c", launcher)) == R.LAUNCHER_DEFAULT_HOST
+    assert R.launcher_host(_proc(tmp_path / "d", [*launcher, "--host", "local"])) == ""       # arm4090: 같은 PC
+    assert R.launcher_host(_proc(tmp_path / "e", other)) == ""                                 # 런처 없음 — 이 PC 의 DDS
+
+
+def test_the_default_host_matches_the_launchers_default():
+    import re
+    src = (Path(__file__).resolve().parents[1] / "scripts/nodes/perception_launcher_node.py").read_text(encoding="utf-8")
+    assert re.search(r'add_argument\("--host", default="([^"]+)"', src).group(1) == R.LAUNCHER_DEFAULT_HOST

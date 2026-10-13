@@ -145,6 +145,9 @@ def main(argv: list[str] | None = None) -> int:
     # ★10.13 5090 + vision-3090: FP++ 컨테이너 · 상태 토픽은 인지 PC 의 localhost DDS 에만 있다 — 상태 단계를 그 PC 에서 ssh 로
     ap.add_argument("--status-host", default="", help="FP++ 가 도는 인지 PC(ssh 이름). 비우면 이 PC 의 localhost DDS")
     args = ap.parse_args(argv)
+    if not args.status_host and args.phase == "auto":
+        # ★10.13 --status-host 가 없으면 이 PC 의 인지 런처가 맡은 PC — 콘솔은 run 시작 때 명령을 고정해 옛 명령으로 다시 실행해도 맞는다
+        args.status_host = launcher_host()
     if args.status_host and args.phase == "auto":
         return _split_run(args)
     if args.phase == "auto" and os.environ.get("ROS_LOCALHOST_ONLY") != "1":
@@ -179,6 +182,32 @@ def _split_run(args) -> int:
 STATUS_MARK = "FPP_STATUS "
 #: 인지 PC 의 저장소(홈 기준 — PC 마다 사용자 이름이 다르다, perception_launcher 와 같은 규약)
 REMOTE_SIM2REAL = "rl_ws/sim2real"
+
+
+#: perception_launcher_node.py 의 --host 기본값(인지 PC) — 테스트가 그 파일과 맞는지 본다
+LAUNCHER_DEFAULT_HOST = "vision-3090"
+LOCAL_HOSTS = ("local", "localhost", "127.0.0.1")
+
+
+def launcher_host(proc: Path = Path("/proc")) -> str:
+    """이 PC 에서 도는 perception_launcher_node 가 맡은 인지 PC(ssh 이름). 런처가 없거나 local 이면 '' — 이 PC 의 DDS."""
+    for d in proc.iterdir():
+        if not d.name.isdigit():
+            continue
+        try:
+            args = [a.decode(errors="replace") for a in (d / "cmdline").read_bytes().split(b"\0") if a]
+        except OSError:
+            continue
+        if not any(Path(a).name == "perception_launcher_node.py" for a in args):
+            continue
+        host = LAUNCHER_DEFAULT_HOST
+        for i, a in enumerate(args):
+            if a == "--host" and i + 1 < len(args):
+                host = args[i + 1]
+            elif a.startswith("--host="):
+                host = a.split("=", 1)[1]
+        return "" if host in LOCAL_HOSTS else host
+    return ""
 
 
 def status_argv(cups: list[str], wait: float, require_all: bool, host: str = "") -> list[str]:
