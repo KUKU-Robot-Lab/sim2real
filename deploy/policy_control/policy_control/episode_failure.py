@@ -15,6 +15,12 @@ from typing import Mapping
 from policy_control.episode_spec import Binding, Episode, Node
 
 SETTING_TOL_M = 0.04          # 손에 든 컵 원점 ↔ SETTING 점(aglt 도착 tol 0.02 · 인계 뱅크 분포 ±1.5 cm 를 덮는다)
+#: ★10.13 실기 bag 175321 · 175606: 붙은 컵(손바닥 FK)과 FP++ 실측 컵의 최대 거리(cup_attach check_max_m). 왼손 성공 0.007 m,
+#:   오른손이 컵을 놓친 에피소드 0.091 m. attach_guard_m(0.04)과 같은 값 — 넘으면 컵이 손에 없다(쥠 실패).
+LIVE_CUP_OFF_M = 0.04
+#: ★10.13 정책 노드가 freeze_rule lift_hold 로 끝낸 에피소드(제자리 들기)는 들기 자체가 성공 규칙이라 SETTING 거리를 보지 않는다
+#:   (왼손 175606: 쉐이커를 11 cm 들었는데 kp_dist 0.088 로 pose_mismatch → 쥔 채 홈으로 되돌아가 재시도에서 손을 펴 떨어뜨렸다).
+LIFT_HOLD_REASON = "lift_hold:"
 HOLDER_XY_TOL_M = 0.035       # 홀더 구멍 반지름(hdgp place_geom HOLDER_BORE_R)
 HOLDER_Z_TOL_M = 0.03
 
@@ -116,8 +122,11 @@ class FailureDetector:
                 return _side_code(side, F.OBJECT_DROPPED_RIGHT, F.OBJECT_DROPPED_LEFT)
             if s.get("attached") is False:
                 return _side_code(side, F.GRASP_FAILED_RIGHT, F.GRASP_FAILED_LEFT)
+            off = s.get("live_off_m")
+            if off is not None and float(off) > LIVE_CUP_OFF_M:
+                return _side_code(side, F.GRASP_FAILED_RIGHT, F.GRASP_FAILED_LEFT)
             err = s.get("setting_err_m")
-            if err is not None and float(err) > SETTING_TOL_M:
+            if err is not None and float(err) > SETTING_TOL_M and LIFT_HOLD_REASON not in (res.reason or ""):
                 return F.POSE_MISMATCH
         elif b.kind == "place":
             if s.get("cup_in_holder") is False or s.get("hand_empty") is False:

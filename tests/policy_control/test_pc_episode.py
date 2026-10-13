@@ -256,6 +256,15 @@ def test_the_detector_reads_refusal_text_and_signals():
     assert code(NodeResult("timeout", "episode time >= 15.0 s", role="rh_aglt_r")) is F.POLICY_TIMEOUT
     assert code(NodeResult("completed", "", role="rh_aglt_r", signals={"attached": True, "setting_err_m": 0.01})) is F.NONE
     place = ep.nodes[3]
+    lift = "lift_hold: cup +0.111 m above reset (> 0.07) and grasped for 30 ticks (sim freeze_rule lift_hold)"
+    # 10.13 실기 왼손: 들기 성공 규칙으로 끝났으면 SETTING 거리는 보지 않는다
+    assert code(NodeResult("completed", lift, role="rh_aglt_r",
+                           signals={"attached": True, "setting_err_m": 0.088, "live_off_m": 0.007})) is F.NONE
+    assert code(NodeResult("completed", "", role="rh_aglt_r",
+                           signals={"attached": True, "setting_err_m": 0.088})) is F.POSE_MISMATCH
+    # 10.13 실기 오른손: FP++ 실측 컵이 붙은 컵에서 9 cm 떨어졌다 — 손에 없다
+    assert code(NodeResult("completed", lift, role="rh_aglt_r",
+                           signals={"attached": True, "setting_err_m": 0.04, "live_off_m": 0.091})) is F.GRASP_FAILED_RIGHT
     assert d.evaluate(ep, place, [NodeResult("refused", "reset: holder pose missing — …", role="rh_place_r")])[0] \
         is F.HOLDER_NOT_FOUND
 

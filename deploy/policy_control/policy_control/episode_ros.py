@@ -371,7 +371,8 @@ class RosExecutor:
         if p.kind == "aglt":
             cup = (st.get("cup") or {}).get("arm") or {}
             return {"attached": cup.get("source") == "attached" if cup else None,
-                    "dropped": bool(cup.get("releases", 0)), "setting_err_m": st.get("kp_dist"), "reached": st.get("reached")}
+                    "dropped": bool(cup.get("releases", 0)), "setting_err_m": st.get("kp_dist"), "reached": st.get("reached"),
+                    "live_off_m": cup.get("check_max_m")}         # ★10.13 붙은 컵 ↔ FP++ 실측 최대 거리(episode_failure)
         if p.kind == "place":
             pl = st.get("place") or {}
             empty = pl.get("phase") == "done"
