@@ -40,6 +40,19 @@ def _active_groups() -> list[str]:
 PROFILES = SIM2REAL / "deploy" / "s2r_console" / "profiles"
 
 
+def _station():
+    """★10.13 로봇 PC 별 인지 호스트 — 미션 생성기의 표를 그대로 읽는다."""
+    import importlib.util
+    sys.path.insert(0, str(SIM2REAL / "scripts"))
+    spec = importlib.util.spec_from_file_location("make_rh56f1_missions", SIM2REAL / "scripts" / "ops" / "make_rh56f1_missions.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+GEN = _station()
+
+
 def _real():
     import mission_core as MC
     prof = load(PROFILES / "rh56f1_real.yaml", repo=SIM2REAL)
@@ -109,7 +122,9 @@ def test_an_input_only_one_stage_uses_names_that_stage(real):
 def test_in_the_episode_the_runner_gives_the_holder_and_goal_and_alone_the_holder_node_does(real):
     _, _, d = real
     holder = {w.src: w.units for w in d.wires if w.dst == "rh_place_node_right" and w.topic == "/objects/cup_holder_1/pose"}
-    assert holder == {"cup_holders": ("policy_place_right#1",), "episode_runner": ("episode_pick_place_right#4",)}
+    # ★10.13 원격 인지면 마커 노드가 없다 — 단독 놓기의 홀더는 미션 밖(바깥 상자)에서 온다
+    alone = "obj_cup_holder_1" if GEN.REMOTE_PERCEPTION else "cup_holders"
+    assert holder == {alone: ("policy_place_right#1",), "episode_runner": ("episode_pick_place_right#4",)}
     goal = {w.src: w for w in d.wires if w.dst == "rh_aglt_node_right" and w.topic == "/policy_control/right/goal"}
     assert set(goal) == {"episode_runner"} and all(w.on_demand for w in goal.values())
 
@@ -136,20 +151,22 @@ def test_the_rh56f1_hand_is_a_driver_box_and_a_state_box_each_with_its_own_switc
                                                                          "/hand_right/joint_forces"}
 
 
-def test_the_perception_chain_runs_on_this_pc_and_the_udp_receiver_switches_the_fpp_box(real):
+def test_the_perception_chain_runs_on_the_perception_pc_and_the_udp_receiver_switches_the_fpp_box(real):
     _, _, d = real
-    assert d.box("perception").host == "local" and d.box("camera").host == "local"
+    host = GEN.PERCEPTION_HOST                                                 # 10.01 arm4090 = local · 10.13 5090 = vision-3090
+    assert d.box("perception").host == host and d.box("camera").host == host
     groups, sides = _active_groups(), _ACTIVE["sides"]
     boxes = [d.box(f"fpp_{g}") for g in groups]  # 10.08 색 다른 같은 모양 = 묶음 컨테이너 하나 = 상자 하나(묶음마다)
-    assert all(b.units == ("cups#2",) and b.host == "local" for b in boxes)
+    assert all(b.units == ("cups#2",) and b.host == host for b in boxes)
     assert sum(b.ros == ("/fpp_pose_rx",) for b in boxes) == 1              # 수신 노드 하나 = 상자 하나
     assert not [b.id for b in d.boxes if b.id in {f"fpp_{n}" for n in sides.values()}]
     # 그림은 받는 쪽이 있는 물체만 잇는다 — 정책이 읽는 팔별 물체
     assert {w.topic for w in d.wires if w.src in {f"fpp_{g}" for g in groups} and w.dst == "object_pose"} == {
         f"/perception_plus_plus/{n}/pose" for n in sides.values()}
     assert d.box("object_pose").units == ("cups#3",)
-    assert {w.topic for w in d.wires if w.src == "camera" and w.dst == "cup_holders"} == {
-        "/camera/camera/color/image_raw", "/camera/camera/color/camera_info"}
+    holder_feed = {w.topic for w in d.wires if w.src == "camera" and w.dst == "cup_holders"}
+    assert holder_feed == (set() if GEN.REMOTE_PERCEPTION else {                # 10.13 원격 인지면 마커 노드가 없다
+        "/camera/camera/color/image_raw", "/camera/camera/color/camera_info"})
 
 
 def test_the_one_shot_goal_tool_is_not_drawn_as_a_node(real):
@@ -371,8 +388,9 @@ def test_a_topic_heard_from_two_boxes_names_the_sender_in_the_port(real):
     labels = {w.label for w in d.wires if w.dst == "pd" and w.topic == "/policy_control/joint_target"}
     assert labels == {"집기 ▸ joint_target", "놓기 ▸ joint_target"}                  # 내는 쪽이 앞 — 좁은 상자에서도 안 잘린다
     assert {w.label for w in d.wires if w.dst == "rh_aglt_node_right" and w.topic.endswith("/goal")} == {""}  # 하나뿐이면 이름 그대로
+    holder = "/objects/cup_holder_1/pose (바깥)" if GEN.REMOTE_PERCEPTION else "마커"     # 10.13 원격 인지면 마커 노드가 없다
     assert {w.label for w in d.wires if w.dst == "rh_place_node_right" and w.topic.endswith("cup_holder_1/pose")} == {
-        "마커 ▸ cup_holder_1/pose", "실행기 ▸ cup_holder_1/pose"}
+        f"{holder} ▸ cup_holder_1/pose", "실행기 ▸ cup_holder_1/pose"}
     assert not d.box("pd").title.count("무발행")                                # 제목은 노드, 무발행 · 발행은 칩과 스위치가 말한다
 
 
@@ -440,9 +458,10 @@ def test_the_fake_rh56f1_picture_has_the_real_pictures_boxes():
     titles = {b.title for b in real.boxes}
     # fake 에 없는 것: 인지(카메라 · FP++ · 런처 — 정지 컵을 fake 가 바로 낸다). fake 에만 있는 것: 막히지 않은 붓기 노드
     missing = {b.title for b in real.boxes} - {b.title for b in fake.boxes}
-    assert missing <= {"인지 런처 · local", "카메라 (RealSense)", *(f"FPP 추적 · {g}" for g in (*_active_groups(), "source240b"))}, missing   # rg3 파지 에피소드의 오른 컵 = source240b
+    assert missing <= {f"인지 런처 · {GEN.PERCEPTION_HOST}", "카메라 (RealSense)", "/objects/cup_holder_1/pose (바깥)", *(f"FPP 추적 · {g}" for g in (*_active_groups(), "source240b"))}, missing   # rg3 파지 에피소드의 오른 컵 = source240b
     extra = {b.title for b in fake.boxes} - titles
-    assert extra <= {"pour_fj_node · 붓기 정책 (오른팔 · 왼팔)"}, extra
+    # 10.13 원격 인지 실기에는 마커 노드가 없다 — fake 는 그대로 홀더 노드 상자를 그린다
+    assert extra <= {"pour_fj_node · 붓기 정책 (오른팔 · 왼팔)", *([W.HOLDER_TITLE] if GEN.REMOTE_PERCEPTION else [])}, extra
 
 
 def test_policy_nodes_and_the_runner_say_their_own_phase_and_the_bridge_listens():

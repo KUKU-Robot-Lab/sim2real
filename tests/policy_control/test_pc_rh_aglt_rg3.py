@@ -122,8 +122,13 @@ def test_the_contract_rebuilds_from_the_run_with_99(c, tmp_path):
     new, old = json.loads(out.read_text()), json.loads((run / "rh_aglt_contract.json").read_text())
     for d in (new, old):
         d.pop("run_dir"), d.pop("checkpoint")
-    if "actor_tactile_obs" not in old:              # 10.12 필드 전 계약 — 기본(촉각 있음)과 같아야 한다
-        assert new.pop("actor_tactile_obs") is True
+    # 계약보다 나중에 생긴 필드(10.12 actor_tactile_obs · 10.13 grasp_hold_rule 등)는 기본값(꺼짐)이어야 한다
+    import dataclasses
+    later = {f.name: (f.default if f.default is not dataclasses.MISSING else f.default_factory())
+             for f in dataclasses.fields(type(c)) if f.name in set(new) - set(old)}
+    assert set(new) - set(old) == set(later), set(new) - set(old) - set(later)
+    for k, v in later.items():
+        assert new.pop(k) == v, k
     assert new == old
 
 

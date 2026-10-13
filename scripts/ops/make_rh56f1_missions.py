@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RH56F1 로봇(arm4090) 미션 — 실기 · fake 두 벌을 **한 정의에서** 만든다.
+"""RH56F1 로봇 미션(로봇 PC = ROBOT_PC, 10.13 부터 5090 + 인지 vision-3090) — 실기 · fake 두 벌을 **한 정의에서** 만든다.
 
     python3 scripts/ops/make_rh56f1_missions.py            # config/mission_rh56f1_{control,fake}.yaml 을 다시 쓴다
     python3 scripts/ops/make_rh56f1_missions.py --check    # 커밋된 두 파일이 이 정의에서 나온 것인지(테스트가 부른다)
@@ -87,8 +87,30 @@ def _live(topic: str) -> str:
         raise ValueError(f"{topic!r} 는 …/pose 가 아니다")
     return topic[: -len("/pose")] + "/live_pose"
 REAL_CUP_ORIGIN_Z = 0.085                 # 원점 높이(바닥 위) — 컵 자세 확인 문구
-#: arm4090 머리 카메라 외부 파라미터 — 테이블 CAD 캘리브(scripts/calib/table_cad_extrinsics.py, 10.01 기본 방법)
-CAMERA_EXTRINSICS = "config/global_camera_extrinsics_arm4090.yaml"
+#: 실기 로봇 PC 구성 — 로봇(팔 CAN · 손 EtherCAT · 머리)이 붙은 PC 와 카메라 · FP++ 를 돌리는 PC.
+#  ★10.13 사용자: "5090 로봇 pc" · "인지 pc vision3090 이미 카메라 연결" — 실기 미션은 ROBOT_PC 하나로 만든다.
+#  arm4090 로 돌아가면 ROBOT_PC = "arm4090" 으로 바꾸고 다시 생성한다(--check 가 커밋 파일과 맞는지 본다).
+STATIONS = {
+    "5090": {
+        "perception_host": "vision-3090",            # 카메라 D435 · FP++ 컨테이너는 vision-3090, 자세만 UDP 로 이 PC 에
+        # 5090 머리 카메라 hand-eye(목 pan 0 · tilt −20 정적 스냅샷, b100d85 · head_v1 v2) — head_pose 블록이 없어
+        # head_pose_check 대신 head_home.py 가 그 자세로 맞추고 검증한다(DG-5F 5090 미션과 같은 방법)
+        "extrinsics": "config/global_camera_extrinsics.yaml",
+        "head_config": "config/head_home.yaml",
+        "head_tool": "head_home",
+    },
+    "arm4090": {
+        "perception_host": "local",                  # 10.01 arm4090 은 카메라 · FP++ 를 같은 PC 에서
+        "extrinsics": "config/global_camera_extrinsics_arm4090.yaml",   # 테이블 CAD 캘리브(10.01 기본 방법)
+        "head_config": "config/head_home_rh56f1.yaml",
+        "head_tool": "head_pose_check",
+    },
+}
+ROBOT_PC = "5090"
+STATION = STATIONS[ROBOT_PC]
+PERCEPTION_HOST = STATION["perception_host"]
+REMOTE_PERCEPTION = PERCEPTION_HOST != "local"
+CAMERA_EXTRINSICS = STATION["extrinsics"]
 
 
 def _cups() -> list[str]:
@@ -112,14 +134,31 @@ def _cups_txt() -> str:
     side = {v: k for k, v in REAL_CUPS.items()}
     return " · ".join(f"{c}{'=' + ('오른팔' if side[c] == 'right' else '왼팔') if c in side else ''}" for c in _cups())
 #: 머리 설정(포트 · 게인 · 모터 id) — head_home · head_pose_check 가 같이 쓴다
-HEAD_CONFIG = "config/head_home_rh56f1.yaml"
+HEAD_CONFIG = STATION["head_config"]
 #: ★10.04 사용자 "fpp 진행 전에 자동으로 각도 확인하고 세팅을 제대로 맞춘 다음에 진행" — 외부 파라미터를 잰 머리 자세
 #  (CAMERA_EXTRINSICS 의 head_pose)와 지금 자세를 비교하고, 실기 실행이면 그 자세로 맞춘다(pan 은 목표보다 18 틱 앞에서 멈춘다)
-HEAD_CHECK_ARGV = ["python3", "{repo}/scripts/head_pose_check.py", "--config", "{repo}/" + HEAD_CONFIG,
-                   "--extrinsics", "{repo}/" + CAMERA_EXTRINSICS]
+if STATION["head_tool"] == "head_pose_check":
+    HEAD_CHECK_ARGV = ["python3", "{repo}/scripts/head_pose_check.py", "--config", "{repo}/" + HEAD_CONFIG,
+                       "--extrinsics", "{repo}/" + CAMERA_EXTRINSICS]
+    HEAD_HOME_ARGV = HEAD_CHECK_ARGV + ["--home"]
+else:   # head_home.py — 설정의 기준 자세(pan · tilt)로 맞추고 검증한다. 외부 파라미터가 그 자세에서 잰 값이다
+    HEAD_CHECK_ARGV = ["python3", "{repo}/scripts/head_home.py", "--config", "{repo}/" + HEAD_CONFIG]
+    HEAD_HOME_ARGV = HEAD_CHECK_ARGV
 RECALIB_HINT = ("scripts/calib/table_cad_extrinsics.py --init " + CAMERA_EXTRINSICS + " --write --head-config " + HEAD_CONFIG)
+#: 원격 인지 PC 에서 도는 명령 — 홈에서 시작하는 ssh(사용자 이름이 PC 마다 달라 상대 경로, perception_launcher 와 같은 규약)
+REMOTE_SIM2REAL = "rl_ws/sim2real"
+
+
+def _on_perception_pc(script: str) -> list:
+    """인지 PC 에서 bash 한 줄을 돈다. 원격이면 ssh -tt(콘솔이 이 ssh 를 끝내면 저쪽 셸이 HUP 를 받는다)."""
+    if not REMOTE_PERCEPTION:
+        return ["bash", "-lc", script]
+    return ["ssh", "-tt", "-o", "BatchMode=yes", PERCEPTION_HOST,
+            f"cd {REMOTE_SIM2REAL} && source scripts/vision/common.sh && {script}"]
+
+
 HEADER = {
-    "real": "# RH56F1 로봇(arm4090) 실기 미션 — scripts/ops/make_rh56f1_missions.py 가 만든다. 손으로 고치지 말 것(--check 가 잡는다).\n",
+    "real": f"# RH56F1 로봇({ROBOT_PC}, 인지 {PERCEPTION_HOST if REMOTE_PERCEPTION else '같은 PC'}) 실기 미션 — scripts/ops/make_rh56f1_missions.py 가 만든다. 손으로 고치지 말 것(--check 가 잡는다).\n",
     "fake": "# RH56F1 로봇 fake 미션(도메인 97) — scripts/ops/make_rh56f1_missions.py 가 실기 미션과 같은 정의에서 만든다.\n",
 }
 
@@ -142,7 +181,7 @@ def _stages(kind: str) -> list[dict]:
                    if real else "fake — 머리 없음(실기 순서를 맞추려고 둔 자리)")},
         {"id": "cups", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
          "touches_real": real,
-         "title": (f"컵 자세(arm4090 FP++) — RealSense · FP++ 묶음 컨테이너({_containers_txt()}, 묶음마다 하나 · 색 · 모양으로 가르기 · 한 번 찍기: {_cups_txt()}) → /objects/<물체>/pose (base). GPU VRAM 컨테이너마다 약 2 GB" if real else
+         "title": (f"컵 자세({PERCEPTION_HOST if REMOTE_PERCEPTION else ROBOT_PC} FP++) — RealSense · FP++ 묶음 컨테이너({_containers_txt()}, 묶음마다 하나 · 색 · 모양으로 가르기 · 한 번 찍기: {_cups_txt()}) → /objects/<물체>/pose (base). GPU VRAM 컨테이너마다 약 2 GB" if real else
                    "fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채")},
         {"id": "cup_holders", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
          "touches_real": real,
@@ -254,7 +293,7 @@ def _run(kind: str) -> dict:
         ],
         "drivers": ([
             _cmd("★모터 전원(양팔) ON — 물리 스위치", ["bash", "-lc", "true"], manual=True),
-            _cmd("★CAN 설정(우 can0) — sudo, 운영자 셸에서. arm4090 의 CAN 이름이 다르면 그 이름으로",
+            _cmd(f"★CAN 설정(우 can0) — sudo, 운영자 셸에서. {ROBOT_PC} 의 CAN 이름이 다르면 그 이름으로",
                  ["bash", "-lc", "sudo ip link set can0 down && sudo ip link set can0 type can bitrate 1000000 dbitrate 5000000 fd on && sudo ip link set can0 up"],
                  manual=True),
             _cmd("★CAN 설정(좌 can1)",
@@ -283,9 +322,9 @@ def _run(kind: str) -> dict:
             *([_cmd("남은 bag 기록 마무리(rh56f1_record.sh stop)", ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop"])]
               if real else []),
             *([_cmd("카메라 · FP++ 내리기 — 런처가 없으면 이 PC 에서 직접 내린다",
-                    ["python3", "{repo}/scripts/ops/perception_ctl.py", "stop", "--camera", "--host", "local", "--wait", "60"]),
+                    ["python3", "{repo}/scripts/ops/perception_ctl.py", "stop", "--camera", "--host", PERCEPTION_HOST, "--wait", "60"]),
                _cmd("인지 런처 · 자세 수신기 · 물체 자세 노드 · 컵홀더 노드 정지",
-                    stop=["cups#1", "cups#2", "cups#3", "cup_holders#3"])] if real else []),
+                    stop=["cups#1", "cups#2", "cups#3", *(["cup_holders#3"] if not REMOTE_PERCEPTION else [])])] if real else []),
             _cmd("손 상태 노드 · 손 드라이버 정지 — 손가락은 마지막 자세에서 멈춘다(벤더 펌웨어가 잡는다)",
                  stop=[f"hand_{s}#{i}" for s in SIDES for i in ((2, 1) if real else (1, 0))]),
             _cmd("★팔 브링업 정지 — 모든 팔 모터가 꺼진다(받침으로 내려앉는다)" if real else "fake 플랜트 정지",
@@ -304,25 +343,34 @@ def _run(kind: str) -> dict:
         _cmd("★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.39 부근) · y 간격 ~0.12 · stable ✓ 인가 "
              f"(어긋나면 {RECALIB_HINT} · 겹친 영상은 scripts/calib/cup_holder_pose.py --png)",
              ["bash", "-lc", "timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String"], manual=True),
+    ] if real and not REMOTE_PERCEPTION else [
+        # ★10.13: 홀더 노드는 카메라 영상(localhost DDS)을 직접 읽어 카메라 PC 에서 돌아야 한다 — 원격 인지 구성은 아직 없다
+        _cmd(f"★{ROBOT_PC} + {PERCEPTION_HOST} 구성 — 홀더 마커 측정은 아직 없다(홀더 노드가 카메라 PC 의 영상을 직접 읽어야 한다). "
+             "놓기는 저장된 홀더 자세(config/cup_holder_poses_arm4090.yaml, base 좌표)를 그대로 쓴다 — 홀더를 옮기지 않았는가",
+             ["bash", "-lc", "true"], manual=True),
     ] if real else [_cmd("fake — 카메라 없음", ["bash", "-lc", "true"])]
     run["head_home"] = [
         # ★10.04: head_home.py 는 설정 목표(pan 2015)로 검증하는데 이 머리 pan 은 목표보다 18 틱 앞에서 멈춰 늘 ✗(19:35 실기 단계
         #   실패). 카메라가 맞는 자세는 그 목표가 아니라 캘리브 때 멈춘 자리(외부 파라미터 head_pose) — 거기로 맞추고 거기로 검증한다.
         _cmd("머리를 카메라 캘리브 자세로 — 토크 · 모드 · I 게인(RAM, 전원을 끄면 사라진다)이 다르면 먼저 적용하고, 외부 파라미터 "
              "head_pose 로 목표를 고쳐 가며 맞춘 뒤 ±4 틱으로 검증(머리가 조금 움직인다)",
-             HEAD_CHECK_ARGV + ["--home"], execute_args=["--execute"]),
+             HEAD_HOME_ARGV, execute_args=["--execute"]),
     ] if real else [_cmd("fake — 머리 없음", ["bash", "-lc", "true"])]
     run["cups"] = [
-        _cmd("★컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · arm4090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 "
-             "모자랄 수 있다). 머리 자세는 FP++ 를 켜기 전에 이 단계가 캘리브 자세로 맞춘다",
-             ["bash", "-lc", "nvidia-smi --query-compute-apps=pid,used_memory --format=csv; "
-                             "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader"], manual=True),
-        _cmd("인지 런처(이 PC) — 카메라 · FP++ 컨테이너를 같은 PC 의 스크립트로 켜고 끈다. 스스로는 아무것도 켜지 않는다",
-             ["python3", "{repo}/scripts/nodes/perception_launcher_node.py", "--host", "local",
+        _cmd(f"★컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · {PERCEPTION_HOST if REMOTE_PERCEPTION else ROBOT_PC} GPU 여유가 있는가"
+             "(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다). 머리 자세는 FP++ 를 켜기 전에 이 단계가 캘리브 자세로 맞춘다",
+             (["ssh", "-o", "BatchMode=yes", PERCEPTION_HOST] if REMOTE_PERCEPTION else ["bash", "-lc"])
+             + ["nvidia-smi --query-compute-apps=pid,used_memory --format=csv; "
+                "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader"], manual=True),
+        _cmd((f"인지 런처(이 PC) — {PERCEPTION_HOST} 의 카메라 · FP++ 컨테이너를 ssh 로 켜고 끈다. 스스로는 아무것도 켜지 않는다"
+              if REMOTE_PERCEPTION else
+              "인지 런처(이 PC) — 카메라 · FP++ 컨테이너를 같은 PC 의 스크립트로 켜고 끈다. 스스로는 아무것도 켜지 않는다"),
+             ["python3", "{repo}/scripts/nodes/perception_launcher_node.py", "--host", PERCEPTION_HOST,
               "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
-        _cmd("FP++ 자세 수신기 — 영상 · FP++ 는 localhost 전용 DDS 에서 돌고 자세만 UDP(127.0.0.1)로 넘어온다",
+        _cmd(("FP++ 자세 수신기 — 영상 · FP++ 는 " + (f"{PERCEPTION_HOST} 안" if REMOTE_PERCEPTION else "localhost 전용 DDS")
+              + f"에서 돌고 자세만 UDP({'저 PC → 이 PC' if REMOTE_PERCEPTION else '127.0.0.1'})로 넘어온다"),
              ["python3", "{repo}/scripts/nodes/fpp_pose_rx.py"], background=True),
-        _cmd("물체 자세 → base — arm4090 테이블 CAD 캘리브 외부 파라미터(+ depth z 보정). /objects/<물체>/pose(레지스트리의 모든 물체)",
+        _cmd(f"물체 자세 → base — {ROBOT_PC} 카메라 외부 파라미터({CAMERA_EXTRINSICS}, + depth z 보정). /objects/<물체>/pose(레지스트리의 모든 물체)",
              ["python3", "{repo}/scripts/nodes/object_pose_node.py",       # 레지스트리 전체 — 묶음을 바꿔도(activate) 다시 띄우지 않는다
               "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
         _cmd("FP++ 전 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)", HEAD_CHECK_ARGV, execute_args=["--execute"]),
@@ -628,10 +676,21 @@ def _record_start(name: str, sides: list, topics: list, objs: list | None = None
                                  f"bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh start {name}"]),
             _cpu_record(name),
             # ★10.09 사용자: 카메라 영상 5 Hz · FP++ 실시간 좌표(정책 입력 아님) — localhost DDS 라 따로 띄운다
-            _cmd("영상 · FP++ 실시간 좌표 기록(5 Hz JPEG · live_pose CSV) → logs/vision_runs",
-                 ["env", "ROS_LOCALHOST_ONLY=1", "python3", "{repo}/scripts/nodes/vision_recorder.py", "--name", name,
-                  "--objects", *(objs or [])],
-                 background=True)]
+            _vision_record(name, objs or [])]
+
+
+def _vision_record(name: str, objs: list) -> dict:
+    """영상 · FP++ 실시간 좌표 기록 — 카메라가 있는 PC 의 localhost DDS 에서 돈다(10.09 사용자)."""
+    if not REMOTE_PERCEPTION:
+        return _cmd("영상 · FP++ 실시간 좌표 기록(5 Hz JPEG · live_pose CSV) → logs/vision_runs",
+                    ["env", "ROS_LOCALHOST_ONLY=1", "python3", "{repo}/scripts/nodes/vision_recorder.py", "--name", name,
+                     "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS, "--objects", *objs], background=True)
+    # 원격: ssh -tt 를 콘솔이 끝내면 저쪽 셸이 HUP 를 받는다 → 기록기에 TERM(마무리 · CSV 닫기) 뒤 기다린다.
+    # 기록은 저 PC 의 sim2real/logs/vision_runs 에 남는다(로그는 /tmp/perception/vrec_<이름>.log).
+    rec = (f"python3 scripts/nodes/vision_recorder.py --name {name} --camera-extrinsics {CAMERA_EXTRINSICS} --objects {' '.join(objs)} "
+           f"> /tmp/perception/vrec_{name}.log 2>&1 & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P")
+    return _cmd(f"영상 · FP++ 실시간 좌표 기록({PERCEPTION_HOST}, 5 Hz JPEG · live_pose CSV) → 저 PC 의 logs/vision_runs",
+                _on_perception_pc(rec), background=True)
 
 
 def _record_stop(stage: str, cpu_index: int, name: str) -> list[dict]:

@@ -250,7 +250,11 @@ def check_host_specific(rep: Report, robot: str) -> None:
                 rep.miss(f"EtherCAT 마스터 setcap {master}", f"운영자: sudo setcap cap_net_raw,cap_net_admin=ep {master}")
             else:
                 rep.ok(f"EtherCAT 마스터 {master.name} (cap_net_raw)")
-        head = yaml.safe_load((SIM2REAL / "config/head_home_rh56f1.yaml").read_text())["port"]
+        # ★10.13 머리 설정은 로봇 PC 마다 다르다(arm4090 head_home_rh56f1 · 5090 head_home) — 실기 미션의 head_home 단계가 쓰는 것을 읽는다
+        run = yaml.safe_load((SIM2REAL / "config/mission_rh56f1_control.yaml").read_text())["run"]
+        argv = run["head_home"][0]["argv"]
+        head_cfg = argv[argv.index("--config") + 1].replace("{repo}", str(SIM2REAL))
+        head = yaml.safe_load(Path(head_cfg).read_text())["port"]
         (rep.ok if Path(head).exists() else
          lambda w: rep.warn(w, "U2D2 연결 확인 — 머리 pan · tilt 는 허브에 따로 꽂는다(직렬 연결 금지, docs/HOST_arm4090.md)"))(
             f"머리 U2D2 {head}")

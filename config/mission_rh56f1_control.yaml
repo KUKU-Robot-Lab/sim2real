@@ -1,4 +1,4 @@
-# RH56F1 로봇(arm4090) 실기 미션 — scripts/ops/make_rh56f1_missions.py 가 만든다. 손으로 고치지 말 것(--check 가 잡는다).
+# RH56F1 로봇(5090, 인지 vision-3090) 실기 미션 — scripts/ops/make_rh56f1_missions.py 가 만든다. 손으로 고치지 말 것(--check 가 잡는다).
 name: RH56F1 양팔 실기 손 연결 · pd 점검
 artifacts:
   contract: logs/policy/asset_openarm_rh56f1_bi_rl/deploy_contract.json
@@ -75,8 +75,8 @@ stages:
   - head_home
   skippable: true
   touches_real: true
-  title: '컵 자세(arm4090 FP++) — RealSense · FP++ 묶음 컨테이너(fpp_source240b · fpp_shaker_c, 묶음마다 하나 · 색 · 모양으로 가르기 · 한 번 찍기: source240b_blue=오른팔 ·
-    shaker_c_orange=왼팔) → /objects/<물체>/pose (base). GPU VRAM 컨테이너마다 약 2 GB'
+  title: '컵 자세(vision-3090 FP++) — RealSense · FP++ 묶음 컨테이너(fpp_source240b · fpp_shaker_c, 묶음마다 하나 · 색 · 모양으로 가르기 · 한 번 찍기: source240b_blue=오른팔
+    · shaker_c_orange=왼팔) → /objects/<물체>/pose (base). GPU VRAM 컨테이너마다 약 2 GB'
 - id: cup_holders
   group: connect
   lane: both
@@ -482,7 +482,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: ★CAN 설정(우 can0) — sudo, 운영자 셸에서. arm4090 의 CAN 이름이 다르면 그 이름으로
+  - note: ★CAN 설정(우 can0) — sudo, 운영자 셸에서. 5090 의 CAN 이름이 다르면 그 이름으로
     argv:
     - bash
     - -lc
@@ -545,7 +545,7 @@ run:
     - stop
     - --camera
     - --host
-    - local
+    - vision-3090
     - --wait
     - '60'
   - note: 인지 런처 · 자세 수신기 · 물체 자세 노드 · 컵홀더 노드 정지
@@ -553,7 +553,6 @@ run:
     - cups#1
     - cups#2
     - cups#3
-    - cup_holders#3
   - note: 손 상태 노드 · 손 드라이버 정지 — 손가락은 마지막 자세에서 멈춘다(벤더 펌웨어가 잡는다)
     stop:
     - hand_right#2
@@ -564,79 +563,51 @@ run:
     stop:
     - drivers#3
   cup_holders:
-  - note: ★홀더 세 개가 상판 위에 서 있고 -x 면 마커가 손 · 컵에 가리지 않는가(머리 자세는 다음 스텝이 캘리브 자세로 맞춘다)
+  - note: ★5090 + vision-3090 구성 — 홀더 마커 측정은 아직 없다(홀더 노드가 카메라 PC 의 영상을 직접 읽어야 한다). 놓기는 저장된 홀더 자세(config/cup_holder_poses_arm4090.yaml, base 좌표)를
+      그대로 쓴다 — 홀더를 옮기지 않았는가
     argv:
     - bash
     - -lc
     - 'true'
     manual: true
-  - note: 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)
-    argv: &id001
-    - python3
-    - '{repo}/scripts/head_pose_check.py'
-    - --config
-    - '{repo}/config/head_home_rh56f1.yaml'
-    - --extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090.yaml'
-    execute_args:
-    - --execute
-  - note: 카메라(RealSense) 켜기 — 이미 떠 있으면 그대로(cups 단계와 같이 써도 된다)
-    argv:
-    - bash
-    - '{repo}/scripts/vision/camera_up.sh'
-  - note: 컵홀더 자세 노드 — ArUco → 직전 자세 추적(0.2 s) → 놓친 id 만 무늬 전체 탐색(첫 장 ~6 s). x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 config/cup_holder_poses_arm4090.yaml
-      을 갱신
-    argv:
-    - python3
-    - '{repo}/scripts/nodes/cup_holder_pose_node.py'
-    - --write
-    background: true
-  - note: '★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.39 부근) · y 간격 ~0.12 · stable ✓ 인가 (어긋나면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090.yaml
-      --write --head-config config/head_home_rh56f1.yaml · 겹친 영상은 scripts/calib/cup_holder_pose.py --png)'
-    argv:
-    - bash
-    - -lc
-    - timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String
-    manual: true
   head_home:
   - note: 머리를 카메라 캘리브 자세로 — 토크 · 모드 · I 게인(RAM, 전원을 끄면 사라진다)이 다르면 먼저 적용하고, 외부 파라미터 head_pose 로 목표를 고쳐 가며 맞춘 뒤 ±4 틱으로 검증(머리가 조금 움직인다)
-    argv:
+    argv: &id001
     - python3
-    - '{repo}/scripts/head_pose_check.py'
+    - '{repo}/scripts/head_home.py'
     - --config
-    - '{repo}/config/head_home_rh56f1.yaml'
-    - --extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090.yaml'
-    - --home
+    - '{repo}/config/head_home.yaml'
     execute_args:
     - --execute
   cups:
-  - note: ★컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · arm4090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다). 머리 자세는 FP++ 를 켜기 전에 이 단계가 캘리브 자세로 맞춘다
+  - note: ★컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · vision-3090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다). 머리 자세는 FP++ 를 켜기 전에 이 단계가 캘리브 자세로 맞춘다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - vision-3090
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: 인지 런처(이 PC) — 카메라 · FP++ 컨테이너를 같은 PC 의 스크립트로 켜고 끈다. 스스로는 아무것도 켜지 않는다
+  - note: 인지 런처(이 PC) — vision-3090 의 카메라 · FP++ 컨테이너를 ssh 로 켜고 끈다. 스스로는 아무것도 켜지 않는다
     argv:
     - python3
     - '{repo}/scripts/nodes/perception_launcher_node.py'
     - --host
-    - local
+    - vision-3090
     - --camera-extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090.yaml'
+    - '{repo}/config/global_camera_extrinsics.yaml'
     background: true
-  - note: FP++ 자세 수신기 — 영상 · FP++ 는 localhost 전용 DDS 에서 돌고 자세만 UDP(127.0.0.1)로 넘어온다
+  - note: FP++ 자세 수신기 — 영상 · FP++ 는 vision-3090 안에서 돌고 자세만 UDP(저 PC → 이 PC)로 넘어온다
     argv:
     - python3
     - '{repo}/scripts/nodes/fpp_pose_rx.py'
     background: true
-  - note: 물체 자세 → base — arm4090 테이블 CAD 캘리브 외부 파라미터(+ depth z 보정). /objects/<물체>/pose(레지스트리의 모든 물체)
+  - note: 물체 자세 → base — 5090 카메라 외부 파라미터(config/global_camera_extrinsics.yaml, + depth z 보정). /objects/<물체>/pose(레지스트리의 모든 물체)
     argv:
     - python3
     - '{repo}/scripts/nodes/object_pose_node.py'
     - --camera-extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090.yaml'
+    - '{repo}/config/global_camera_extrinsics.yaml'
     background: true
   - note: FP++ 전 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)
     argv: *id001
@@ -662,8 +633,8 @@ run:
     - --wait
     - '120'
   - note: ★컵 자세 확인(바로 위 추출 결과) — 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y
-      < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090.yaml
-      --write --head-config config/head_home_rh56f1.yaml)
+      < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics.yaml --write
+      --head-config config/head_home.yaml)
     argv:
     - bash
     - -lc
@@ -788,16 +759,15 @@ run:
     - --out
     - '{repo}/logs/cpu/aglt_right.csv'
     background: true
-  - note: 영상 · FP++ 실시간 좌표 기록(5 Hz JPEG · live_pose CSV) → logs/vision_runs
+  - note: 영상 · FP++ 실시간 좌표 기록(vision-3090, 5 Hz JPEG · live_pose CSV) → 저 PC 의 logs/vision_runs
     argv:
-    - env
-    - ROS_LOCALHOST_ONLY=1
-    - python3
-    - '{repo}/scripts/nodes/vision_recorder.py'
-    - --name
-    - aglt_right
-    - --objects
-    - source240b_blue
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - vision-3090
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && python3 scripts/nodes/vision_recorder.py --name aglt_right --camera-extrinsics config/global_camera_extrinsics.yaml
+      --objects source240b_blue > /tmp/perception/vrec_aglt_right.log 2>&1 & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P
     background: true
   - note: '[right] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)'
     argv:
@@ -1054,16 +1024,15 @@ run:
     - --out
     - '{repo}/logs/cpu/aglt_left.csv'
     background: true
-  - note: 영상 · FP++ 실시간 좌표 기록(5 Hz JPEG · live_pose CSV) → logs/vision_runs
+  - note: 영상 · FP++ 실시간 좌표 기록(vision-3090, 5 Hz JPEG · live_pose CSV) → 저 PC 의 logs/vision_runs
     argv:
-    - env
-    - ROS_LOCALHOST_ONLY=1
-    - python3
-    - '{repo}/scripts/nodes/vision_recorder.py'
-    - --name
-    - aglt_left
-    - --objects
-    - shaker_c_orange
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - vision-3090
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && python3 scripts/nodes/vision_recorder.py --name aglt_left --camera-extrinsics config/global_camera_extrinsics.yaml
+      --objects shaker_c_orange > /tmp/perception/vrec_aglt_left.log 2>&1 & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P
     background: true
   - note: '[left] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)'
     argv:

@@ -647,7 +647,15 @@ _HANDLERS = {"policy_chain.launch.py": _policy_chain, "pour_chain.launch.py": _p
 def _shell_step(u: UnitCmd) -> bool:
     """전원 확인·sudo CAN·NIC 설정 같은 수동 셸 단계 — 노드가 아니라 사람이 하는 일이다.
     미션 패널이 메모와 함께 보여 주므로 그림에는 그리지 않는다(모르는 ROS·python 명령은 계속 상자로 남긴다)."""
-    return u.kind == "manual" and bool(u.argv) and Path(str(u.argv[0])).name in ("bash", "sh")
+    return u.kind == "manual" and bool(u.argv) and Path(str(u.argv[0])).name in ("bash", "sh", "ssh")
+
+
+def _remote_tool(u: UnitCmd) -> bool:
+    """★10.13 인지 PC(vision-3090)에서 ssh 로 도는 도구(영상 기록 등) — 이 PC 의 노드가 아니므로 그리지 않는다."""
+    if not u.argv or Path(str(u.argv[0])).name != "ssh":
+        return False
+    remote = " ".join(str(a) for a in u.argv[1:])
+    return any(tool in remote for tool in _TOOLS)
 
 
 def _unknown(g: _Graph, key: str, cmd: Cmd, why: str = "", note: str = "") -> None:
@@ -768,7 +776,7 @@ def generate(units: Mapping[str, UnitCmd], *, repo: Path, status_nodes: Sequence
                     _unknown(g, key, cmd, f"읽지 못했다: {exc}", units[key].note)
     known = set(_PROVIDERS) | set(_HANDLERS) | set(_TOOLS)
     for key, cmd in parsed:
-        if cmd.name not in known and not _shell_step(units[key]):
+        if cmd.name not in known and not _shell_step(units[key]) and not _remote_tool(units[key]):
             _unknown(g, key, cmd, note=units[key].note)
     _finish(g)
     _settle(g)

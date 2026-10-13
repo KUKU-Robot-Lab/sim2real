@@ -31,6 +31,19 @@ ACTIVE_SIDES = _ACTIVE["sides"]
 FAKE_RAW, FAKE, FAKE_BOOK = _load("mission_rh56f1_fake.yaml")
 
 
+def _generator():
+    """미션 생성기 — ★10.13 로봇 PC(STATIONS) 에 따라 인지 호스트 · 외부 파라미터 · 머리 도구가 바뀐다."""
+    import importlib.util
+    sys.path.insert(0, str(REPO / "scripts"))
+    spec = importlib.util.spec_from_file_location("make_rh56f1_missions", REPO / "scripts" / "ops" / "make_rh56f1_missions.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+GEN = _generator()
+
+
 # 10.12 사용자(A안): aglt 정책은 쥘 때까지 FP++ live 를 받고(끊기면 마지막 값), 쥔 뒤는 프레임 시각 FK(가리면 0.7 s 대체)
 AGLT_LIVE_ARGS = ("cup_static:=false", "cup_latch:=false", "cup_hold_last:=true", "attach_fallback_s:=0.7")
 
@@ -162,12 +175,14 @@ def test_only_the_two_cup_pour_is_blocked_on_the_real_robot():
     assert not any(s.blocked for s in FAKE.stages)
 
 
-def test_real_cups_run_fpp_on_this_pc_after_the_head_home_and_shutdown_takes_it_down():
-    """10.01 사용자: FP++ 를 arm4090 에. 런처 --host local · UDP 수신 · base 변환 · start, 머리 기준자세가 먼저."""
+def test_real_cups_run_fpp_on_the_perception_pc_after_the_head_home_and_shutdown_takes_it_down():
+    """10.01 사용자: FP++ 를 arm4090 에(--host local). 10.13 사용자: 로봇 PC 5090 · 인지 PC vision-3090(--host vision-3090).
+    런처 --host <인지 PC> · UDP 수신 · base 변환 · start, 머리 기준자세가 먼저."""
+    host, ext = GEN.PERCEPTION_HOST, GEN.CAMERA_EXTRINSICS
     by = {s.id: s for s in REAL.stages}
     assert by["cups"].needs == ("head_home",) and by["head_home"].touches_real and by["cups"].touches_real
     head = _cmds(REAL, REAL_BOOK, "head_home")
-    assert any("head_pose_check.py" in " ".join(c.argv) and "head_home_rh56f1.yaml" in " ".join(c.argv) for c in head)
+    assert any(Path(GEN.HEAD_CONFIG).name in " ".join(c.argv) for c in head)
     cups = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "cups")]
     sys.path.insert(0, str(REPO / "scripts"))
     from object_registry import group_members, load_registry
@@ -175,15 +190,17 @@ def test_real_cups_run_fpp_on_this_pc_after_the_head_home_and_shutdown_takes_it_
     reg = load_registry()
     groups = list(dict.fromkeys(reg.get(n).fpp["group"] for n in side))          # 팔마다 다른 묶음이어도 된다(10.09)
     objs = " ".join(dict.fromkeys([*side, *(n for g in groups for n in group_members(reg, g))]))
-    for want in ("perception_launcher_node.py --host local", "fpp_pose_rx.py", "object_pose_node.py --camera-extrinsics",
-                 "--camera-extrinsics", "global_camera_extrinsics_arm4090.yaml",
+    for want in (f"perception_launcher_node.py --host {host}", "fpp_pose_rx.py", "object_pose_node.py --camera-extrinsics",
+                 "--camera-extrinsics", ext,
                  f"perception_ctl.py start {objs} --wait 150",
                  f"fpp_rescan.py {' '.join(side)} --wait 120"):        # 10.08 다시 실행 = 지금 카메라로 다시 찍기
         assert any(want in a for a in cups), want
     bg = [c for c in _cmds(REAL, REAL_BOOK, "cups") if c.background]
     assert len(bg) == 3
     down = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "shutdown")]
-    assert any("perception_ctl.py stop --camera --host local" in a for a in down)
+    assert any(f"perception_ctl.py stop --camera --host {host}" in a for a in down)
+    if GEN.REMOTE_PERCEPTION:                                            # GPU 여유는 카메라 · FP++ 가 도는 PC 에서 본다
+        assert any(a.startswith(f"ssh -o BatchMode=yes {host} nvidia-smi") for a in cups)
     stops = {x for c in _cmds(REAL, REAL_BOOK, "shutdown") for x in c.stop}
     assert {"cups#1", "cups#2", "cups#3"} <= stops
 
@@ -285,17 +302,22 @@ def test_the_rh56f1_robot_offers_rh_aglt_for_each_arm():
 
 
 def test_real_cup_holders_run_the_marker_node_after_the_head_home_and_shutdown_stops_it():
-    """10.02 사용자: 컵홀더 마커 자동 추정. 카메라만 켜고(로봇 무동작) 노드를 배경으로, 머리 기준자세가 먼저."""
+    """10.02 사용자: 컵홀더 마커 자동 추정. 카메라만 켜고(로봇 무동작) 노드를 배경으로, 머리 기준자세가 먼저.
+    ★10.13 원격 인지(5090 + vision-3090): 홀더 노드는 카메라 PC 영상을 직접 읽어야 해 아직 없다 — 저장된 홀더 자세를 쓴다는 확인 하나."""
     by = {s.id: s for s in REAL.stages}
     assert by["cup_holders"].needs == ("head_home",)
     cmds = _cmds(REAL, REAL_BOOK, "cup_holders")
+    stops = {x for c in _cmds(REAL, REAL_BOOK, "shutdown") for x in c.stop}
+    if GEN.REMOTE_PERCEPTION:
+        assert len(cmds) == 1 and cmds[0].manual and "cup_holder_poses" in cmds[0].note
+        assert not any(c.background for c in cmds) and "cup_holders#3" not in stops
+        return
     argv = [" ".join(c.argv) for c in cmds]
     assert any("scripts/vision/camera_up.sh" in a for a in argv)
     bg = [c for c in cmds if c.background]
     assert len(bg) == 1 and "cup_holder_pose_node.py --write" in " ".join(bg[0].argv)
     assert cmds.index(bg[0]) == 3                                   # shutdown 의 cup_holders#3(앞에 머리 확인 · 맞춤)
     assert cmds[0].manual and cmds[-1].manual and "/cup_holders/status" in " ".join(cmds[-1].argv)
-    stops = {x for c in _cmds(REAL, REAL_BOOK, "shutdown") for x in c.stop}
     assert "cup_holders#3" in stops
     fake = {s.id for s in FAKE.stages}
     assert "cup_holders" in fake and not any(c.background for c in _cmds(FAKE, FAKE_BOOK, "cup_holders"))
@@ -385,18 +407,26 @@ def test_head_pose_is_checked_and_aligned_before_fpp_and_holder_poses():
     카메라 외부 파라미터를 잰 머리 자세(head_pose)와 비교 · 맞춤(실기 실행 = --execute)을 FP++ · 홀더 노드보다 먼저 한다."""
     def idx(cmds, needle):
         return next(i for i, c in enumerate(cmds) if needle in " ".join(c.argv))
-    for sid, then in (("head_home", None), ("cups", "perception_ctl.py start"), ("cup_holders", "cup_holder_pose_node.py")):
+    # ★10.13 머리 도구는 로봇 PC 마다 — arm4090 = head_pose_check(외부 파라미터의 head_pose), 5090 = head_home(그 자세가 설정 목표)
+    tool = f"{GEN.STATION['head_tool']}.py"
+    pairs = [("head_home", None), ("cups", "perception_ctl.py start")]
+    if not GEN.REMOTE_PERCEPTION:
+        pairs.append(("cup_holders", "cup_holder_pose_node.py"))
+    for sid, then in pairs:
         cmds = _cmds(REAL, REAL_BOOK, sid)
-        h = idx(cmds, "head_pose_check.py")
+        h = idx(cmds, tool)
         argv = " ".join(cmds[h].argv)
-        assert "--execute" in argv and "--extrinsics" in argv and "global_camera_extrinsics_arm4090.yaml" in argv, sid
-        assert "head_home_rh56f1.yaml" in argv
+        assert "--execute" in argv and Path(GEN.HEAD_CONFIG).name in argv, sid
+        if tool == "head_pose_check.py":
+            assert "--extrinsics" in argv and GEN.CAMERA_EXTRINSICS in argv, sid
         if then:
             assert h < idx(cmds, then), sid
-        assert not any("head_pose_check.py" in " ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, sid))   # fake 는 머리 없음
+        assert not any(tool in " ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, sid))   # fake 는 머리 없음
     # head_home 은 설정 목표(pan 2015 — 18 틱 앞에서 멈춰 늘 ✗, 10.04 실기 단계 실패)가 아니라 캘리브 자세로 맞추고 검증한다
     home = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "head_home")]
-    assert len(home) == 1 and "--home" in home[0] and "head_home.py" not in home[0]
+    assert len(home) == 1
+    if tool == "head_pose_check.py":
+        assert "--home" in home[0] and "head_home.py" not in home[0]
 
 
 @pytest.mark.parametrize("side", ["right", "left"])
