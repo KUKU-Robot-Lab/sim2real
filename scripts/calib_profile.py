@@ -7,6 +7,7 @@
   hand_eye.neck_to_camera.matrix   `head_extrinsics.yaml` 과 같은 형식의 T_neck_cam(4x4). 이 프로필이 쓰는 hand-eye.
   angle_tolerance_deg              목 실측 각도가 표의 각도와 이만큼 안이면 그 항목을 쓴다(pan·tilt 각각).
   strict                           표에 없는 각도면 거부한다(틀린 좌표는 없느니만 못하다). false 면 보정 0 으로 통과.
+  known_z                          (선택) table_top_m · tolerance_m. 정지 pose 의 z 를 상판 + 원점 높이로 맞춘다(live 추적은 제외).
   frame_anchor                     (선택) 출력 좌표계를 기존에 검증된 좌표계에 붙이는 변환: rot_deg(z 둘레), trans_xy_m, dz_m.
                                    각도별 보정까지 끝난 base 위치에 적용한다(회전 → 이동, z 는 더하기).
   angles[]                         보정한 각도: pan_deg, tilt_deg(실측 평균), bias_xy_m(그 각도에서 base xy 에 더할 값),
@@ -28,6 +29,9 @@ PROFILE_DIR = Path(__file__).resolve().parents[1] / "config" / "calib_profiles"
 MAX_BIAS_M = 0.02
 #: 검증된 기존 좌표계와의 차이는 mm~cm 이다. 이보다 크면 앵커가 아니라 잘못된 맞춤이다.
 MAX_ANCHOR_ROT_DEG, MAX_ANCHOR_TRANS_M, MAX_ANCHOR_DZ_M = 3.0, 0.05, 0.02
+#: 상판 높이는 줄자로 확정(0.205, TABLE_DATUM_2026-09-05). 벗어나면 입력 실수다.
+KNOWN_TABLE_RANGE_M = (0.15, 0.25)
+MAX_KNOWN_Z_TOL_M = 0.03
 DEFAULT_TOLERANCE_DEG = 1.0
 
 
@@ -54,6 +58,14 @@ class FrameAnchor:
 
 
 @dataclass(frozen=True)
+class KnownZ:
+    """테이블 위에 서 있는 물체의 z 를 아는 값(상판 + 원점 높이)으로 맞춘다. FP++ z 는 깊이 편향으로 2~4 mm 낮다."""
+
+    table_top_m: float
+    tolerance_m: float
+
+
+@dataclass(frozen=True)
 class CalibProfile:
     name: str
     neck_to_camera: np.ndarray
@@ -62,6 +74,7 @@ class CalibProfile:
     strict: bool = True
     notes: str = ""
     anchor: FrameAnchor | None = None
+    known_z: KnownZ | None = None
 
 
 def _resolve(path_or_name: str | Path) -> Path:
@@ -98,10 +111,16 @@ def load_profile(path_or_name: str | Path) -> CalibProfile:
         if (abs(anchor.rot_deg) > MAX_ANCHOR_ROT_DEG or max(abs(v) for v in anchor.trans_xy_m) > MAX_ANCHOR_TRANS_M
                 or abs(anchor.dz_m) > MAX_ANCHOR_DZ_M):
             raise ValueError(f"{path}: frame_anchor {anchor} 가 한도 밖이다 — anchor 가 아니라 잘못된 맞춤")
+    known_z = None
+    if raw.get("known_z") is not None:
+        k = raw["known_z"]
+        known_z = KnownZ(float(k["table_top_m"]), float(k["tolerance_m"]))
+        if not (KNOWN_TABLE_RANGE_M[0] <= known_z.table_top_m <= KNOWN_TABLE_RANGE_M[1]) or not (0 < known_z.tolerance_m <= MAX_KNOWN_Z_TOL_M):
+            raise ValueError(f"{path}: known_z {known_z} 가 한도 밖이다")
     meta = raw.get("profile") or {}
     return CalibProfile(name=str(meta.get("name", path.stem)), neck_to_camera=matrix, entries=tuple(entries),
                         angle_tolerance_deg=float(raw.get("angle_tolerance_deg", DEFAULT_TOLERANCE_DEG)),
-                        strict=bool(raw.get("strict", True)), notes=str(meta.get("notes", "")), anchor=anchor)
+                        strict=bool(raw.get("strict", True)), notes=str(meta.get("notes", "")), anchor=anchor, known_z=known_z)
 
 
 def lookup(profile: CalibProfile, pan_deg: float, tilt_deg: float) -> AngleEntry | None:
@@ -134,12 +153,21 @@ def anchor_position(profile: CalibProfile, pos: np.ndarray) -> np.ndarray:
     return out
 
 
+def snap_z(profile: CalibProfile, z: float, origin_above_bottom_m: float) -> float:
+    """known_z 가 있고 FP++ z 가 (상판 + 원점 높이)에서 허용 오차 안이면 그 아는 값으로, 아니면(들림·기움) 그대로."""
+    if profile.known_z is None:
+        return float(z)
+    target = profile.known_z.table_top_m + origin_above_bottom_m
+    return float(target) if abs(z - target) <= profile.known_z.tolerance_m else float(z)
+
+
 def save_profile(profile: CalibProfile, path: Path | str) -> None:
     body = {
         "profile": {"name": profile.name, "notes": profile.notes},
         "hand_eye": {"neck_to_camera": {"matrix": [[float(v) for v in row] for row in profile.neck_to_camera]}},
         "angle_tolerance_deg": profile.angle_tolerance_deg,
         "strict": profile.strict,
+        **({"known_z": {"table_top_m": profile.known_z.table_top_m, "tolerance_m": profile.known_z.tolerance_m}} if profile.known_z else {}),
         **({"frame_anchor": {"rot_deg": profile.anchor.rot_deg, "trans_xy_m": list(profile.anchor.trans_xy_m), "dz_m": profile.anchor.dz_m,
                              "source": profile.anchor.source}} if profile.anchor else {}),
         "angles": [{"pan_deg": round(e.pan_deg, 3), "tilt_deg": round(e.tilt_deg, 3), "bias_xy_m": [round(v, 6) for v in e.bias_xy_m],

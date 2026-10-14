@@ -19,6 +19,17 @@ python3 scripts/nodes/object_pose_node.py --head-joint-topic /head/joint_states 
 - **strict(기본)**: 목 각도가 프로필 표(허용 ±1°)에 없으면 그 pose 는 발행하지 않는다(경고만). 틀린 좌표는 없느니만 못하다.
 - 프로필을 안 주면 지금까지와 똑같이 동작한다(기본 hand-eye `config/head_extrinsics.yaml`).
 
+## 현재 권장 (10.14 저녁)
+- **프로필 `v9_1014_anchored_z`**: v6 hand-eye + 각도별 보정(22각도) + 기존 검증 좌표계 앵커 + **아는 z**(`known_z`).
+  정지 pose 의 z 를 (상판 0.205 + 물체 원점 높이)로 맞춘다. FP++ z 는 깊이 편향으로 2~4 mm 낮았다. 오차가 ±15 mm 를 넘으면(들림·기움) FP++ 값 그대로,
+  live 추적(`/live_pose`)은 쥐고 들면 높이가 변하므로 건드리지 않는다.
+- **운용 자세(tilt -30 고정, pan 만)**: pan -60, -40, -20, 0, +20, +40 (6곳). 병(24 cm) 통째로 보이는 테이블 77%, 낮은 컵(7 cm) 93%.
+  pan +60 은 오른손이 화면을 가린다. 이 자세만 프로필 각도 표에 있다(`locate_object.py --tilt -30 --calib-profile v9_1014_anchored_z`).
+- **tilt -30 에서는 FP++ 스냅샷 노드에 tilt -30 용 camera extrinsics 를 줘야 한다**: `config/global_camera_extrinsics_tilt30.yaml`
+  (`perception_launcher_node.py --camera-extrinsics ...`). 기준 자세 파일을 주면 후보 거르기가 후보를 버려 검출이 1/14 로 떨어졌다(5/11 로 회복).
+- 알려진 문제(미해결, FP++ 쪽 버그로 보임): 목을 돌린 뒤 검출에 실패하면 FP++ 가 이전 자세의 pose 를 그대로 다시 낸다 → 값이 같으면 낡은 값이다
+  (`survey.drop_stale` 이 걸러낸다). shaker 는 pan +20~+40 에서 사진에는 보이는데 새 값이 안 나온다.
+
 ## 프로필 두 개
 - `v6_1014`: CAD 볼트로 맞춘 좌표계(CAD 기준). 기존 검증된 FP++ 출력과 기준 자세에서 x -5~-12 · y +7.5 · z +3 mm 다르다.
 - `v6_1014_anchored`: 위와 같되 **기존 검증된 FP++ 좌표계에 붙였다**(`frame_anchor`: 회전 +1.02° · 이동 (+7.0, -14.0) mm · dz -3.1 mm).

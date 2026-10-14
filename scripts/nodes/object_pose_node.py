@@ -97,6 +97,7 @@ class PoseConverter:
         # 보정 프로필(10.14): hand-eye 와 목 각도별 보정을 파일로 고른다. 있으면 목 각도가 꼭 필요하다.
         self.profile = profiles.load_profile(calib_profile) if calib_profile is not None else None
         self._ext = {n: extrinsics_for(registry.get(n), camera_yaml) for n in self.names}
+        self._origin = {n: registry.get(n).origin_above_bottom_m for n in self.names}
         # 대칭축을 body 프레임으로 옮겨 둔다: a_body = R(q_cad_body)ᵀ · a_cad
         self._axis_body = {}
         for n in self.names:
@@ -108,7 +109,7 @@ class PoseConverter:
         self.base_frame = next(iter(self._ext.values())).base_frame if self._ext else "base_link"
 
     def convert(self, name: str, pos_cam: np.ndarray, quat_cam: np.ndarray,
-                head: tuple[float, float] | None = None) -> tuple[np.ndarray, np.ndarray]:
+                head: tuple[float, float] | None = None, live: bool = False) -> tuple[np.ndarray, np.ndarray]:
         ext = self._ext[name]
         bias = None
         if self.profile is not None:
@@ -130,6 +131,8 @@ class PoseConverter:
             pos = pos + np.array([0.0, 0.0, self.z_bias])
         if bias is not None:
             pos = profiles.anchor_position(self.profile, pos + bias)   # 각도별 보정 뒤 검증된 좌표계로 붙인다(앵커가 없으면 그대로)
+            if not live:   # 정지 기록은 서 있는 물체의 z 를 아는 값으로. live 추적은 쥐고 들면 높이가 변하므로 FP++ 값 그대로
+                pos[2] = profiles.snap_z(self.profile, pos[2], self._origin[name])
         return pos, quat
 
 
@@ -220,7 +223,7 @@ def main() -> None:
                 head = self._head
             p, q = msg.pose.position, msg.pose.orientation
             try:
-                pos, quat = state["conv"].convert(name, np.array([p.x, p.y, p.z]), np.array([q.w, q.x, q.y, q.z]), head)
+                pos, quat = state["conv"].convert(name, np.array([p.x, p.y, p.z]), np.array([q.w, q.x, q.y, q.z]), head, live=live)
             except profiles.UncalibratedAngle as err:        # 틀린 좌표는 없느니만 못하다 — 발행하지 않는다
                 self.get_logger().warning(f"발행 보류: {err}", throttle_duration_sec=5.0)
                 return

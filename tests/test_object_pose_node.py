@@ -205,3 +205,20 @@ def test_without_a_profile_nothing_changes():
     b, _ = PoseConverter(REG, ["shaker_closed"], calib_profile=None).convert(
         "shaker_closed", np.array([0.0363, -0.1111, 0.5877]), np.array([1.0, 0, 0, 0]), (10.0, -20.0))
     assert np.allclose(a, b)
+
+
+def test_known_z_applies_to_static_pose_but_not_to_live_pose(tmp_path):
+    import yaml
+    base = PoseConverter(REG, ["shaker_closed"], calib_profile=_profile(tmp_path, bias=(0.0, 0.0)))
+    args = ("shaker_closed", np.array([0.0363, -0.1111, 0.5877]), np.array([1.0, 0.0, 0.0, 0.0]), (15.0, -20.0))
+    z0 = float(base.convert(*args)[0][2])
+    origin = REG.get("shaker_closed").origin_above_bottom_m
+    table = z0 + 0.004 - origin          # FP++ 값이 아는 값보다 4 mm 낮게 나오는 상황
+    path = _profile(tmp_path, bias=(0.0, 0.0))
+    raw = yaml.safe_load(path.read_text())
+    raw["known_z"] = {"table_top_m": table, "tolerance_m": 0.015}
+    path.write_text(yaml.safe_dump(raw))
+    conv = PoseConverter(REG, ["shaker_closed"], calib_profile=path)
+    assert conv.convert(*args)[0][2] == pytest.approx(table + origin, abs=1e-9)          # 정지 pose: 아는 값
+    assert conv.convert(*args, live=True)[0][2] == pytest.approx(z0, abs=1e-9)            # live 추적: FP++ 값 그대로(쥔 뒤 높이가 변한다)
+    assert np.allclose(conv.convert(*args)[0][:2], base.convert(*args)[0][:2])           # xy 는 그대로

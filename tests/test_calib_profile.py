@@ -115,3 +115,19 @@ def test_anchor_roundtrips_and_is_sanity_checked(tmp_path):
     assert again.anchor is not None and again.anchor.trans_xy_m == (0.012, -0.008)
     with pytest.raises(ValueError, match="anchor"):
         cp.load_profile(_write(tmp_path, frame_anchor={"rot_deg": 20.0, "trans_xy_m": [0.0, 0.0], "dz_m": 0.0}))
+
+
+def test_known_z_snaps_a_standing_object_to_the_table_plus_origin_height(tmp_path):
+    profile = cp.load_profile(_write(tmp_path, known_z={"table_top_m": 0.205, "tolerance_m": 0.015}))
+    assert cp.snap_z(profile, 0.2863, 0.085) == pytest.approx(0.290)      # FP++ 깊이 편향으로 4 mm 낮게 나온 값
+    assert cp.snap_z(profile, 0.34, 0.085) == pytest.approx(0.34)         # 들렸거나 기운 물체는 그대로 둔다
+    assert cp.snap_z(cp.load_profile(_write(tmp_path)), 0.2863, 0.085) == pytest.approx(0.2863)  # known_z 없으면 그대로
+
+
+def test_known_z_roundtrips_and_is_sanity_checked(tmp_path):
+    profile = cp.load_profile(_write(tmp_path, known_z={"table_top_m": 0.205, "tolerance_m": 0.015}))
+    out = tmp_path / "z.yaml"
+    cp.save_profile(profile, out)
+    assert cp.load_profile(out).known_z.table_top_m == 0.205
+    with pytest.raises(ValueError, match="known_z"):
+        cp.load_profile(_write(tmp_path, known_z={"table_top_m": 0.5, "tolerance_m": 0.015}))
