@@ -1,0 +1,201 @@
+profile:
+  name: v8_1014_anchored
+  notes: v6 hand-eye + 각도별 볼트 평행이동 보정. tilt -20(1013f/h/j), tilt -25/-30(board_1014a),
+    tilt -30 pan -60~+60(1014b, 1014c). 2026-10-14 + 기존 FP++ 좌표계 앵커
+hand_eye:
+  neck_to_camera:
+    matrix:
+    - - -0.018783397
+      - -0.999743632
+      - 0.0126434
+      - 0.016458485
+    - - -0.999791853
+      - 0.018680564
+      - -0.008202885
+      - 0.058617555
+    - - 0.007964596
+      - -0.012794847
+      - -0.999886423
+      - -0.009904259
+    - - 0.0
+      - 0.0
+      - 0.0
+      - 1.0
+angle_tolerance_deg: 1.0
+strict: true
+frame_anchor:
+  rot_deg: 1.0177454357285247
+  trans_xy_m:
+  - 0.00696037130600477
+  - -0.014024040495743822
+  dz_m: -0.0031306822314261405
+  source: 기존 정적 camera 블록 기준 자세(pan 0.0/tilt -20.0), 볼트 36점
+angles:
+- pan_deg: -59.915
+  tilt_deg: -29.934
+  bias_xy_m:
+  - -0.00135
+  - -0.00071
+  n_frames: 1
+  n_bolts: 7
+  bolt_resid_mm: 2.108
+- pan_deg: -49.89
+  tilt_deg: -29.934
+  bias_xy_m:
+  - -0.002722
+  - -0.000887
+  n_frames: 1
+  n_bolts: 6
+  bolt_resid_mm: 1.134
+- pan_deg: -44.979
+  tilt_deg: -20.0
+  bias_xy_m:
+  - 0.000413
+  - -0.00055
+  n_frames: 3
+  n_bolts: 36
+  bolt_resid_mm: 2.042
+- pan_deg: -40.043
+  tilt_deg: -29.943
+  bias_xy_m:
+  - -0.002072
+  - -0.001893
+  n_frames: 3
+  n_bolts: 20
+  bolt_resid_mm: 1.521
+- pan_deg: -39.977
+  tilt_deg: -24.993
+  bias_xy_m:
+  - -0.001277
+  - -0.002676
+  n_frames: 1
+  n_bolts: 11
+  bolt_resid_mm: 1.361
+- pan_deg: -29.934
+  tilt_deg: -29.943
+  bias_xy_m:
+  - -0.000561
+  - -0.002636
+  n_frames: 1
+  n_bolts: 8
+  bolt_resid_mm: 1.336
+- pan_deg: -29.934
+  tilt_deg: -25.011
+  bias_xy_m:
+  - -0.000345
+  - -0.001602
+  n_frames: 1
+  n_bolts: 11
+  bolt_resid_mm: 1.79
+- pan_deg: -29.894
+  tilt_deg: -19.999
+  bias_xy_m:
+  - 0.000557
+  - -0.000559
+  n_frames: 4
+  n_bolts: 47
+  bolt_resid_mm: 2.257
+- pan_deg: -19.997
+  tilt_deg: -29.934
+  bias_xy_m:
+  - -6.4e-05
+  - -0.002909
+  n_frames: 2
+  n_bolts: 12
+  bolt_resid_mm: 1.199
+- pan_deg: -14.898
+  tilt_deg: -29.934
+  bias_xy_m:
+  - 0.000872
+  - -0.002462
+  n_frames: 1
+  n_bolts: 6
+  bolt_resid_mm: 0.982
+- pan_deg: -14.901
+  tilt_deg: -25.011
+  bias_xy_m:
+  - -1.4e-05
+  - -0.002072
+  n_frames: 1
+  n_bolts: 12
+  bolt_resid_mm: 1.703
+- pan_deg: -14.901
+  tilt_deg: -20.0
+  bias_xy_m:
+  - 0.000462
+  - -0.001327
+  n_frames: 3
+  n_bolts: 39
+  bolt_resid_mm: 1.783
+- pan_deg: 0.132
+  tilt_deg: -25.011
+  bias_xy_m:
+  - 0.000617
+  - -0.001053
+  n_frames: 1
+  n_bolts: 12
+  bolt_resid_mm: 1.823
+- pan_deg: 0.132
+  tilt_deg: -19.998
+  bias_xy_m:
+  - 0.000433
+  - -0.000305
+  n_frames: 4
+  n_bolts: 44
+  bolt_resid_mm: 1.798
+- pan_deg: 15.165
+  tilt_deg: -25.011
+  bias_xy_m:
+  - 0.000119
+  - 0.001381
+  n_frames: 1
+  n_bolts: 8
+  bolt_resid_mm: 1.692
+- pan_deg: 15.117
+  tilt_deg: -20.0
+  bias_xy_m:
+  - -0.000175
+  - 0.001768
+  n_frames: 4
+  n_bolts: 44
+  bolt_resid_mm: 1.765
+- pan_deg: 20.205
+  tilt_deg: -29.978
+  bias_xy_m:
+  - 0.000767
+  - 0.000508
+  n_frames: 2
+  n_bolts: 16
+  bolt_resid_mm: 0.882
+- pan_deg: 30.198
+  tilt_deg: -25.011
+  bias_xy_m:
+  - -0.002581
+  - 0.0006
+  n_frames: 1
+  n_bolts: 6
+  bolt_resid_mm: 1.203
+- pan_deg: 30.286
+  tilt_deg: -20.0
+  bias_xy_m:
+  - -0.002128
+  - 0.000417
+  n_frames: 3
+  n_bolts: 36
+  bolt_resid_mm: 1.555
+- pan_deg: 40.044
+  tilt_deg: -29.984
+  bias_xy_m:
+  - -0.002814
+  - -0.002074
+  n_frames: 1
+  n_bolts: 6
+  bolt_resid_mm: 1.121
+- pan_deg: 45.168
+  tilt_deg: -20.0
+  bias_xy_m:
+  - -0.003192
+  - -0.0017
+  n_frames: 3
+  n_bolts: 30
+  bolt_resid_mm: 2.013
