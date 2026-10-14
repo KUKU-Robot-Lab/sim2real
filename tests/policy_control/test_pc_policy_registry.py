@@ -88,6 +88,35 @@ def test_a_file_changed_after_fetch_is_caught(tmp_path):
     assert R.check(d, deep=False).ok                        # 얕은 점검은 크기만 본다
 
 
+def _count_reads(monkeypatch) -> list[str]:
+    seen: list[str] = []
+    real = R._read_digest
+    monkeypatch.setattr(R, "_read_digest", lambda p, a: (seen.append(str(p)), real(p, a))[1])
+    return seen
+
+
+def test_an_unchanged_checkpoint_is_hashed_once(tmp_path, monkeypatch):
+    """10.14 콘솔 '서버와 끊겼다': 첫 화면이 5 s 마다 등록부를 다시 읽으며 체크포인트 33 개 md5 를 매번 새로 세어 3.3 s 걸렸다."""
+    d = make(tmp_path, contract="rh_aglt_contract.json")
+    seen = _count_reads(monkeypatch)
+    for _ in range(3):
+        assert R.check(d, deep=False).ok
+    assert seen.count(str(d / "nn" / "a.pth")) == 1
+
+
+def test_a_rewritten_checkpoint_is_hashed_again_even_with_the_same_size(tmp_path, monkeypatch):
+    import os
+    d = make(tmp_path, contract="rh_aglt_contract.json")
+    pth = d / "nn" / "a.pth"
+    assert R.check(d, deep=False).ok
+    st = pth.stat()
+    pth.write_bytes(b"weights-v2")                          # 같은 크기, 다른 내용
+    os.utime(pth, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
+    seen = _count_reads(monkeypatch)
+    assert any("md5" in i for i in R.check(d, deep=False).issues)
+    assert seen == [str(pth)]
+
+
 def test_missing_manifest_is_an_issue_once_the_policy_claims_to_be_verified(tmp_path):
     # 손으로 옮긴 한 벌에는 매니페스트가 없다 — candidate 까지는 봐주고, verified 부터는 출처를 따진다.
     d = make(tmp_path, status="verified", contract="deploy_contract.json")

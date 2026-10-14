@@ -70,12 +70,30 @@ class Entry:
         return not self.issues
 
 
-def _hash(path: Path, algo: str) -> str:
+#: (경로, 알고리즘) → (크기, mtime_ns, inode, 해시). 10.14 콘솔 첫 화면이 5 s 마다 등록부를 다시 읽으며 체크포인트 33 개(수 GB)의
+#  md5 를 매번 새로 세어 3.3 s 가 걸렸고, 그동안 상태 스트림이 멈춰 화면이 "콘솔 서버와 끊겼다"(2.5 s)를 띄웠다.
+#  파일이 바뀌면(크기 · mtime · inode 중 하나라도) 다시 센다 — 새 프로세스(CLI · 시험)는 빈 표로 시작한다.
+_DIGESTS: dict[tuple[str, str], tuple[int, int, int, str]] = {}
+
+
+def _read_digest(path: Path, algo: str) -> str:
     h = hashlib.new(algo)
     with open(path, "rb") as fh:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _hash(path: Path, algo: str) -> str:
+    st = path.stat()
+    key = (str(path.resolve()), algo)
+    stamp = (st.st_size, st.st_mtime_ns, st.st_ino)
+    hit = _DIGESTS.get(key)
+    if hit is not None and hit[:3] == stamp:
+        return hit[3]
+    digest = _read_digest(path, algo)
+    _DIGESTS[key] = (*stamp, digest)
+    return digest
 
 
 def contract_checkpoint_md5(doc: Mapping) -> str:
