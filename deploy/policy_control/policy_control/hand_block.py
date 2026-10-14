@@ -11,6 +11,9 @@ sim 과 실기에서 같은 식으로 계산되고 g ↔ N 보정이 필요 없�
   latch  : blocked 면 걸리고, q* 가 여는 쪽으로 움직이거나 lead < G/2 면 풀린다
   쥔 판정 = latch[엄지굽힘] AND latch[네 손가락 중 하나]
 DR(G · ε · N 범위, 손가락 누락, 쥔 판정 지연)은 sim 전용 — 배포는 계약의 명목값 하나를 쓴다.
+★10.14 위치제어 런(hdgp hand_block_pos)의 두 키 — 계약에 없으면 10.12 동작 그대로:
+  g_axis_rad      {축: rad} 0 초과인 축은 G 를 그 값으로(검지 · 중지 35 칸 등), 나머지는 g_rad. 해제 G/2 도 축별.
+  release_on_open false 면 q* 가 여는 쪽으로 움직여도 안 풀리고 앞섬 < G/2 일 때만 풀린다.
 """
 from __future__ import annotations
 
@@ -26,6 +29,7 @@ FINGERS = ("index", "middle", "ring", "pinky")
 #: 레지스터 1 칸 [rad] — 손가락 약 550 칸/rad, 엄지굽힘 약 527 칸/rad(rh56f1_hand_map)
 CELL_THUMB_FLEX, CELL_FINGER = 1.0 / 527.0, 1.0 / 550.0
 KEYS = ("g_rad", "eps_rad", "n_ticks", "lag_ticks", "axes")
+OPTIONAL_KEYS = ("g_axis_rad", "release_on_open")         # 10.14 위치제어 런(없으면 10.12 동작)
 GRASP_RULES = ("thumb_flex_and_any_finger",)
 #: 10.13 쥔 판정 유지 규칙(hdgp grasp_hold_rule) — "none" 은 계약에 빈 값으로 둔다
 HOLD_RULES = ("block_follow_open",)
@@ -43,19 +47,28 @@ class BlockCfg:
     n_ticks: int
     lag_ticks: int
     axes: tuple
+    g_axis: tuple = ()                 # ((축, rad), ...) — 0 초과인 축만 G 덮어쓰기
+    release_on_open: bool = True
 
     @staticmethod
     def from_contract(raw: Mapping) -> "BlockCfg":
-        if not isinstance(raw, Mapping) or set(raw) != set(KEYS):
-            raise HandBlockError(f"hand_block 키는 {KEYS}: {sorted(raw) if isinstance(raw, Mapping) else raw}")
+        if not isinstance(raw, Mapping) or not set(KEYS) <= set(raw) <= set(KEYS + OPTIONAL_KEYS):
+            raise HandBlockError(f"hand_block 키는 {KEYS} (+ 선택 {OPTIONAL_KEYS}): "
+                                 f"{sorted(raw) if isinstance(raw, Mapping) else raw}")
+        gax = raw.get("g_axis_rad", {})
+        roo = raw.get("release_on_open", True)
+        if not isinstance(gax, Mapping) or not isinstance(roo, bool):
+            raise HandBlockError(f"hand_block.g_axis_rad 는 {{축: rad}}, release_on_open 은 bool: {gax!r} · {roo!r}")
         cfg = BlockCfg(float(raw["g_rad"]), float(raw["eps_rad"]), int(raw["n_ticks"]), int(raw["lag_ticks"]),
-                       tuple(str(a) for a in raw["axes"]))
+                       tuple(str(a) for a in raw["axes"]), tuple((str(k), float(v)) for k, v in gax.items()), roo)
         if not (cfg.g_rad > 0 and cfg.eps_rad > 0 and cfg.n_ticks >= 1 and cfg.lag_ticks >= 0):
             raise HandBlockError(f"hand_block: g_rad > 0 · eps_rad > 0 · n_ticks ≥ 1 · lag_ticks ≥ 0 — {raw}")
         bad = [a for a in cfg.axes if a not in AXIS_SUFFIX]
         if bad or len(set(cfg.axes)) != len(cfg.axes) or "thumb_flex" not in cfg.axes \
                 or not any(f in cfg.axes for f in FINGERS):
             raise HandBlockError(f"hand_block.axes {list(cfg.axes)} — {list(AXIS_SUFFIX)} 중, 엄지굽힘 + 손가락 하나 이상")
+        if any(a not in cfg.axes or not (np.isfinite(v) and v >= 0.0) for a, v in cfg.g_axis):
+            raise HandBlockError(f"hand_block.g_axis_rad {dict(cfg.g_axis)} — 대상 축 {list(cfg.axes)} 의 0 이상 유한값")
         return cfg
 
 
@@ -80,6 +93,10 @@ class HandBlockNp:
         sgn = np.sign(np.asarray(q_grip, float) - np.asarray(q_open, float))
         self.sgn = np.where(sgn == 0, 1.0, sgn)
         self.cell = np.array([CELL_THUMB_FLEX if n.endswith(AXIS_SUFFIX["thumb_flex"]) else CELL_FINGER for n in names])
+        self.g = np.full(self.h, cfg.g_rad)                         # (H) 축별 앞섬 문턱(hdgp HandBlock.g_mat, g_frac 1)
+        for a, v in cfg.g_axis:
+            if v > 0.0:
+                self.g[idx[a]] = v
         self.reset()
 
     @staticmethod
@@ -112,9 +129,10 @@ class HandBlockNp:
         ref = np.minimum(self._star[0] * self.sgn, s * self.sgn) * self.sgn   # 지금 더 열었으면 지금 값
         lead = (ref - qq) * self.sgn
         moved = np.abs(qq - old)
-        self.blocked = self.axes & (lead > self.cfg.g_rad) & (moved < self.cfg.eps_rad)
-        opening = ((s - self._prev_star) * self.sgn) < -1e-6
-        release = opening | (lead < 0.5 * self.cfg.g_rad)
+        self.blocked = self.axes & (lead > self.g) & (moved < self.cfg.eps_rad)
+        release = lead < 0.5 * self.g
+        if self.cfg.release_on_open:
+            release = release | (((s - self._prev_star) * self.sgn) < -1e-6)
         self.latch = (self.latch | self.blocked) & ~release & self.axes
         self.lead = lead
         self._prev_star = s.copy()
@@ -174,7 +192,7 @@ class GraspHoldNp:
                 self.q_g[on] = f[on] + np.maximum((qq[on] - f[on]) * b.sgn[on], 0.0) * b.sgn[on]
         self.hold = self.hold or bool(raw)
         open_amt = (self.q_g - qq) * b.sgn
-        follow = ((s - qq) * b.sgn) < b.cfg.g_rad
+        follow = ((s - qq) * b.sgn) < b.g
         no_latch = not (b.latch & b.axes).any()
         ok_f = bool((follow | ~b.axes).all())
         ok_o = bool(((open_amt >= self.x) | ~b.axes).all())

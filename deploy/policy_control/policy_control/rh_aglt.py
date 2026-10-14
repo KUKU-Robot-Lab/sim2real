@@ -490,14 +490,32 @@ def hand_block_of(env: Mapping) -> tuple[dict, str, float]:
     """hdgp hand_block_enable → (hand_block, grasp_rule, hand_lead_cap_rad). 꺼져 있으면 ({}, "", 0.0)."""
     if not bool(env.get("hand_block_enable", False)):
         return {}, "", 0.0
+    # ★10.14 위치제어 런(hdgp hand_block_pos): 축별 G(hand_block_g_axis_rad, 엄지굽힘·검지·중지·약지·새끼 순, 0 = env 의 g_rad)
+    #   · 여는 쪽으로 안 풀림. 이런 런은 g_rad DR 을 4~10 칸으로 낮춰 "실기 G 는 측정 뒤 이 범위에서 고른다"(hand_block_pos.py)
+    #   → 명목 12 칸이 범위 밖이면 범위 끝으로 붙인다(10.12 실기 검증값에 가장 가까운 학습 값). 축별 G 가 없는 옛 런은 그대로 거부.
+    #   축별 G 커리큘럼(hand_block_g_axis_steps)은 끝값을 쓴다 — 체크포인트가 끝까지 갔는지는 학습 summaries diag/g_axis_frac 로 본다.
+    gax = [float(v) for v in (env.get("hand_block_g_axis_rad") or ())]
+    if gax and (len(gax) != len(HAND_BLOCK_AXES) or any(not np.isfinite(v) or v < 0.0 for v in gax)):
+        raise RhAgltError(f"hand_block_g_axis_rad {gax} — {HAND_BLOCK_AXES} 순 {len(HAND_BLOCK_AXES)} 개, 0 이상")
+    if any(float(v) != 0.0 for v in (env.get("hand_block_hold_lead_rad") or (0.0, 0.0))):
+        raise RhAgltError(f"hand_block_hold_lead_rad {list(env['hand_block_hold_lead_rad'])} — 배포 막힘에 유지 앞섬이 없다")
+    nominal = dict(HAND_BLOCK_NOMINAL)
     for k, lo_hi in (("hand_block_g_rad", "g_rad"), ("hand_block_eps_rad", "eps_rad"), ("hand_block_n_ticks", "n_ticks")):
         lo, hi = (float(v) for v in env[k])
-        if not lo - 1e-9 <= HAND_BLOCK_NOMINAL[lo_hi] <= hi + 1e-9:
-            raise RhAgltError(f"{k} {list(env[k])} 가 배포 명목값 {lo_hi} {HAND_BLOCK_NOMINAL[lo_hi]} 를 안 덮는다")
+        if lo - 1e-9 <= nominal[lo_hi] <= hi + 1e-9:
+            continue
+        if gax and lo_hi == "g_rad":
+            nominal["g_rad"] = round(min(max(nominal["g_rad"], lo), hi), 4)
+            continue
+        raise RhAgltError(f"{k} {list(env[k])} 가 배포 명목값 {lo_hi} {HAND_BLOCK_NOMINAL[lo_hi]} 를 안 덮는다")
     if bool(env.get("hand_firmware_stop_enable", True)):
         raise RhAgltError("hand_block_enable 인데 hand_firmware_stop_enable 이 켜져 있다 — 실기 펌웨어 힘 멈춤은 증거가 없다(10.12)")
     cap = float(env.get("hand_lead_cap_rad", 0.0))
-    block = dict(HAND_BLOCK_NOMINAL, lag_ticks=int(env["hand_block_lag_ticks"]), axes=list(HAND_BLOCK_AXES))
+    block = dict(nominal, lag_ticks=int(env["hand_block_lag_ticks"]), axes=list(HAND_BLOCK_AXES))
+    if gax:
+        block["g_axis_rad"] = dict(zip(HAND_BLOCK_AXES, gax))
+    if not bool(env.get("hand_block_release_on_open", True)):
+        block["release_on_open"] = False
     return block, HB.GRASP_RULES[0], cap
 
 
