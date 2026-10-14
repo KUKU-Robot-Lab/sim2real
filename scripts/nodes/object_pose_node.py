@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 import calib_profile as profiles  # noqa: E402
+from pose_freshness import StaleGuard  # noqa: E402
 from cup_pose_relay import (  # noqa: E402
     cad_pose_to_base_body, extrinsics_at_head, head_state_is_usable,
 )
@@ -149,6 +150,8 @@ def main() -> None:
                     help="camera extrinsics yaml(기본: 레지스트리 공유 파일). 로봇 전용 캘리브 파일을 준다")
     ap.add_argument("--calib-profile", default=None,
                     help="보정 프로필(이름 또는 경로, config/calib_profiles/). hand-eye 와 목 각도별 보정을 쓰고, 보정한 각도가 아니면 발행하지 않는다. --head-joint-topic 필요")
+    ap.add_argument("--stale-move-deg", type=float, default=0.5,
+                    help="목이 이만큼 넘게 돌았는데 FP++ 원시 pose 가 그대로면 낡은 값으로 보고 발행하지 않는다(0 이면 끔). --head-joint-topic 과 같이 쓸 때만")
     ap.add_argument("--z-bias", type=float, default=None, help="출력 z 보정 [m](기본: 그 yaml 의 base_z_bias_m)")
     args = ap.parse_args()
     if args.calib_profile and not args.head_joint_topic:
@@ -169,6 +172,8 @@ def main() -> None:
                 self._wire(n)
             self._head: tuple[float, float] | None = None
             self._head_stamp: float | None = None
+            # 목을 돌린 뒤 FP++ 가 이전 pose 를 새 시각으로 다시 내는 것을 거른다(정지 기록만, live 추적은 매 프레임 바뀐다)
+            self._stale = StaleGuard(args.stale_move_deg) if args.head_joint_topic and args.stale_move_deg > 0 else None
             if args.head_joint_topic:
                 from sensor_msgs.msg import JointState
                 self.create_subscription(JointState, args.head_joint_topic, self._on_head, 10)
@@ -222,6 +227,9 @@ def main() -> None:
                     return
                 head = self._head
             p, q = msg.pose.position, msg.pose.orientation
+            if self._stale is not None and not live and self._stale.is_stale(name, (p.x, p.y, p.z, q.w, q.x, q.y, q.z), head):
+                self.get_logger().warning(f"{name}: 목이 돌았는데 FP++ 값이 그대로다(낡은 값) — 발행 보류", throttle_duration_sec=5.0)
+                return
             try:
                 pos, quat = state["conv"].convert(name, np.array([p.x, p.y, p.z]), np.array([q.w, q.x, q.y, q.z]), head, live=live)
             except profiles.UncalibratedAngle as err:        # 틀린 좌표는 없느니만 못하다 — 발행하지 않는다
