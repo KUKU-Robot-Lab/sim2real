@@ -50,8 +50,8 @@ ethercat:
   #   근거: 위치 경로엔 어드민턴스 current_hold(650 mA)가 없고, 10.06 모드 0 은 접촉 뒤 1.1~1.85 kg · 1 A 넘게 눌렀다.
   #   10.13 rg3 bag 7 개에서 두 문턱을 0.3 s 넘게 넘은 구간 0 회. 이 블록을 지우면 10.14 전 동작(보호 없음).
   pos_guard:
-    force_g: 1300
-    current_ma: 750
+    force_g: 0
+    current_ma: 0
     hold_s: 0.3
 
 # 옛 RS485(10.02 이전 · 비상용) — `rh56f1_driver.py --side <s> --transport rs485` 가 이 블록을 쓴다(벤더 드라이버 robot_control

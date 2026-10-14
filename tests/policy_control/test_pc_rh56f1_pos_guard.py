@@ -107,20 +107,20 @@ def test_the_master_parses_the_launcher_string_and_refuses_bad_ones(tmp_path):
     subprocess.run(["gcc", "-O2", "-Wall", "-o", str(exe), str(h), "-I", str(HEADER.parent)], check=True)
     run = lambda a: subprocess.run([str(exe), a], capture_output=True, text=True, check=True).stdout.strip()  # noqa: E731
     eth = yaml.safe_load(PORTS.read_text())["ethercat"]
-    assert run(E.pos_guard_arg(eth["pos_guard"])) == "1300 750 0.3"
+    assert run(E.pos_guard_arg(eth["pos_guard"])) == "0 0 0.3"
     assert run("0,0,0.3") == "0 0 0.3"
     for bad in ("100,750,0.3", "1300,50,0.3", "1300,750,0", "1300,750,3", "1300,750", "1300,750,0.3,", "a,750,0.3"):
         assert run(bad) == "BAD", bad
 
 
-def test_ports_turn_it_on_and_an_old_binary_is_refused(tmp_path):
+def test_ports_pass_the_guard_and_an_old_binary_is_refused(tmp_path):
     eth = yaml.safe_load(PORTS.read_text())["ethercat"]
-    assert eth["pos_guard"] == {"force_g": 1300, "current_ma": 750, "hold_s": 0.3}   # 사용자 10.14 값
+    assert eth["pos_guard"] == {"force_g": 0, "current_ma": 0, "hold_s": 0.3}   # 사용자 10.14 저녁: 끔(18:33 실기 가벼운 접촉에 검지 고정)
     new = tmp_path / "new_master"
     new.write_bytes(b"\x7fELF...adm-base\0...adm-fscale\0...pos-guard\0")
     for side in ("right", "left", None):
         argv = E.master_argv(str(new), "eth0", "/a", "/b", eth, no_op=False, side=side)
-        assert argv[argv.index("--pos-guard") + 1] == "1300,750,0.3"
+        assert argv[argv.index("--pos-guard") + 1] == "0,0,0.3"
     off = {k: v for k, v in eth.items() if k != "pos_guard"}
     assert "--pos-guard" not in E.master_argv(str(new), "eth0", "/a", "/b", off, no_op=False, side="right")
     old = tmp_path / "old_master"
