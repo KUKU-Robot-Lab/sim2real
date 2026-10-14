@@ -19,7 +19,13 @@ python3 scripts/nodes/object_pose_node.py --head-joint-topic /head/joint_states 
 - **strict(기본)**: 목 각도가 프로필 표(허용 ±1°)에 없으면 그 pose 는 발행하지 않는다(경고만). 틀린 좌표는 없느니만 못하다.
 - 프로필을 안 주면 지금까지와 똑같이 동작한다(기본 hand-eye `config/head_extrinsics.yaml`).
 
-## 프로필 v6_1014 (현재 하나)
+## 프로필 두 개
+- `v6_1014`: CAD 볼트로 맞춘 좌표계(CAD 기준). 기존 검증된 FP++ 출력과 기준 자세에서 x -5~-12 · y +7.5 · z +3 mm 다르다.
+- `v6_1014_anchored`: 위와 같되 **기존 검증된 FP++ 좌표계에 붙였다**(`frame_anchor`: 회전 +1.02° · 이동 (+7.0, -14.0) mm · dz -3.1 mm).
+  기준 자세에서 기존 출력과 x -1.2~-1.9 · y +0.3 · z ±0.4 mm 안으로 같고, 다른 각도도 같은 좌표계로 나온다. **기존 정책·궤적과 함께 쓸 때는 이쪽.**
+  만들기: perception_plus_plus `scripts/anchor_profile.py`.
+
+## 프로필 v6_1014 상세
 - hand-eye: CAD 볼트만으로 맞춘 v6(perception_plus_plus `head_extrinsics_cad_v6_candidate.yaml`).
 - 각도 표 17개: tilt -20 에서 pan -45~+45, tilt -25·-30 에서 pan -50~+30 일부. 보정은 0.3~3.2 mm 평행이동.
 - 근거 데이터: survey 1013f/h/j, board_1014a. 같은 영상에서 hand-eye 와 보정을 맞췄으므로 표의 각도에서 가장 정확하고,

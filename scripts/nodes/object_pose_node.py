@@ -129,7 +129,7 @@ class PoseConverter:
         if self.z_bias:
             pos = pos + np.array([0.0, 0.0, self.z_bias])
         if bias is not None:
-            pos = pos + bias
+            pos = profiles.anchor_position(self.profile, pos + bias)   # 각도별 보정 뒤 검증된 좌표계로 붙인다(앵커가 없으면 그대로)
         return pos, quat
 
 

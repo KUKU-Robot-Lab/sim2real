@@ -92,3 +92,26 @@ def test_dump_roundtrips(tmp_path):
     again = cp.load_profile(out)
     assert np.allclose(again.neck_to_camera, profile.neck_to_camera)
     assert [e.bias_xy_m for e in again.entries] == [e.bias_xy_m for e in profile.entries]
+
+
+def test_frame_anchor_rotates_and_shifts_xy_and_adds_dz(tmp_path):
+    path = _write(tmp_path, frame_anchor={"rot_deg": 2.0, "trans_xy_m": [0.01, -0.02], "dz_m": -0.003, "source": "t"})
+    profile = cp.load_profile(path)
+    out = cp.anchor_position(profile, np.array([0.3, 0.1, 0.29]))
+    c, s = np.cos(np.radians(2.0)), np.sin(np.radians(2.0))
+    assert np.allclose(out, [c * 0.3 - s * 0.1 + 0.01, s * 0.3 + c * 0.1 - 0.02, 0.287])
+
+
+def test_profile_without_anchor_leaves_positions_unchanged(tmp_path):
+    profile = cp.load_profile(_write(tmp_path))
+    assert np.allclose(cp.anchor_position(profile, np.array([0.3, 0.1, 0.29])), [0.3, 0.1, 0.29])
+
+
+def test_anchor_roundtrips_and_is_sanity_checked(tmp_path):
+    profile = cp.load_profile(_write(tmp_path, frame_anchor={"rot_deg": 0.4, "trans_xy_m": [0.012, -0.008], "dz_m": 0.003, "source": "t"}))
+    out = tmp_path / "o.yaml"
+    cp.save_profile(profile, out)
+    again = cp.load_profile(out)
+    assert again.anchor is not None and again.anchor.trans_xy_m == (0.012, -0.008)
+    with pytest.raises(ValueError, match="anchor"):
+        cp.load_profile(_write(tmp_path, frame_anchor={"rot_deg": 20.0, "trans_xy_m": [0.0, 0.0], "dz_m": 0.0}))
