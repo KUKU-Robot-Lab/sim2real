@@ -78,6 +78,10 @@ def parse_ids(text: str) -> tuple[int, int]:
 class HeadBus:
     def __init__(self, port: str, baud: int):
         from dynamixel_sdk import PortHandler, PacketHandler
+        import os as _os, sys as _sys  # noqa: E401
+        _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+        import port_lock  # 목 포트 단독 소유 — 드라이버(head_joint_publisher)가 떠 있으면 PortBusy 로 막는다
+        port_lock.acquire(port)
         self.port = PortHandler(port)
         self.packet = PacketHandler(PROTOCOL)
         if not self.port.openPort():
@@ -130,6 +134,10 @@ class HeadBus:
 def scan(port: str) -> None:
     """baud/ID 스윕(핑만, 모터 안 움직임)."""
     from dynamixel_sdk import PortHandler, PacketHandler, COMM_SUCCESS
+    import os as _os, sys as _sys  # noqa: E401
+    _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    import port_lock  # 목 포트 단독 소유 — 드라이버(head_joint_publisher)가 떠 있으면 PortBusy 로 막는다
+    port_lock.acquire(port)
     ph, pk = PortHandler(port), PacketHandler(PROTOCOL)
     if not ph.openPort():
         sys.exit(f"포트 열기 실패: {port}")

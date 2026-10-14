@@ -33,3 +33,13 @@ def test_other_ports_are_independent(tmp_path, monkeypatch):
     a, b = port_lock.acquire("/dev/ttyUSB1"), port_lock.acquire("/dev/ttyUSB2")
     port_lock.release(a)
     port_lock.release(b)
+
+
+def test_every_tool_that_opens_the_neck_port_directly_takes_the_lock():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "scripts"
+    offenders = [str(p.relative_to(root)) for p in root.rglob("*.py")
+                 if "PortHandler(" in p.read_text(encoding="utf-8") and "port_lock" not in p.read_text(encoding="utf-8")
+                 and "head" in p.name and p.name != "head_position_hold_node.py"]
+    assert offenders == []

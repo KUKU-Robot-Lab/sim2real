@@ -112,6 +112,10 @@ def _camera():
 def _reader(port: str, baud: int):
     from dynamixel_sdk import COMM_SUCCESS, PacketHandler, PortHandler
 
+    import os as _os, sys as _sys  # noqa: E401
+    _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    import port_lock  # 목 포트 단독 소유 — 드라이버(head_joint_publisher)가 떠 있으면 PortBusy 로 막는다
+    port_lock.acquire(port)
     ph, pk = PortHandler(port), PacketHandler(2.0)
     if not ph.openPort() or not ph.setBaudRate(baud):
         raise SystemExit(f"{port} @ {baud} 를 열지 못했다")

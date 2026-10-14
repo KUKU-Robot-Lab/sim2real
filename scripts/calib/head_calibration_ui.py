@@ -231,6 +231,10 @@ class DynamixelUiBus:
         from dynamixel_sdk import PacketHandler, PortHandler
 
         self.port_name = port_name
+        import os as _os, sys as _sys  # noqa: E401
+        _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+        import port_lock  # 목 포트 단독 소유 — 드라이버(head_joint_publisher)가 떠 있으면 PortBusy 로 막는다
+        port_lock.acquire(port_name)
         self.port = PortHandler(port_name)
         self.packet = PacketHandler(PROTOCOL)
         if not self.port.openPort():
