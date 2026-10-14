@@ -68,6 +68,11 @@ FAKE_HOLDER_Y = {0: 0.153, 1: -0.002, 2: -0.161}
 EPISODES = ("pick_place_right", "pick_place_left", "grasp_rg3_right", "grasp_rg3_left")
 #: 에피소드 snapshot 이 다시 내는 정지 물체 자세(episode_ros.OBJECT_RELAY) — aglt 는 이것을 컵으로 본다
 EPISODE_RELAY = "/episode/objects/{}/pose"
+# 제자리 들기(grasp_rg3) 정책 노드의 lift_hold 멈춤 = 컵 7 cm 위 + 쥠 연속 틱(60 Hz).
+# ★10.14 사용자(1안): 오른손은 7 cm 에서 0.5 s 만에 멈추면 정책이 sim 목표(10 cm, 2 s 유지)까지 못 가 약지 · 새끼가 감기기
+#   전에 끝난다(실기 190421 · 190758 엄지-검지만 쥠) — 목표 성공에 끝나게 늦춘다. sim hp3 ep1450 trace 32 에피소드: 7 cm →
+#   목표 성공 2.0~4.3 s. 5 s 는 그 뒤의 받침이다(정책 시간 15 s 를 넘기면 POLICY_TIMEOUT 복구가 손을 펴 컵을 떨군다).
+LIFT_HOLD_TICKS = {"right": 300, "left": 30}
 # ★10.12 사용자(A안): 실기를 sim 에 맞춘다 — aglt 정책은 쥘 때까지 FP++ live 추적(/objects/<물체>/live_pose, 약 10 Hz)을 받고
 #   손이 가려 끊기면 마지막 값(sim FP++ ZOH), 쥔 뒤는 sim PalmAttach 처럼 파지 + 100 ms 뒤 찍힌 프레임과 그 시각 손바닥 FK 로
 #   붙인다. 가려서 프레임이 안 오면 0.7 s(sim 이 붙는 시간 범위 위)에 파지 시작 FK 로. 10.04 의 정지 컵(cup_latch · cup_static) 대신.
@@ -647,10 +652,11 @@ def _episode_run(name: str, real: bool) -> list:
             # 10.12 A안: 컵 = FP++ live(끊기면 마지막 값) → 쥐면 파지 + 100 ms 뒤 찍힌 프레임 시각의 손바닥 FK(가리면 0.7 s 대체)
             # ★10.13 방안 A: SETTING 이 없는 에피소드(제자리 들기)는 sim 처럼 첫 목표 성공에 끝낸다(goal_max:=1)
             lift_only = b.side not in ep.setting
-            # ★10.13 grasping lift_hold(사용자 승인): 컵이 리셋보다 7 cm 위 + 쥠 30 틱 연속이어도 끝낸다(성공과 OR)
+            # ★10.13 grasping lift_hold(사용자 승인): 컵이 리셋보다 7 cm 위 + 쥠 N 틱 연속이어도 끝낸다(성공과 OR)
+            hold = LIFT_HOLD_TICKS[b.side]
             end_args, end_note = ((["goal_max:=1", "-p", "freeze_rule:=lift_hold", "-p", "freeze_lift_m:=0.07",
-                                    "-p", "freeze_hold_steps:=30"],
-                                   "첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 0.5 s 쥠 유지에 스스로 끝남") if lift_only
+                                    "-p", f"freeze_hold_steps:={hold}"],
+                                   f"첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 {hold / 60:g} s 쥠 유지에 스스로 끝남") if lift_only
                                  else (["stop_on_target:=true"], "SETTING 도달에 스스로 끝남"))
             cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — {end_note} · 컵 = FP++ live"
                              " · 쥐면 손바닥 FK 로 손에 붙임",

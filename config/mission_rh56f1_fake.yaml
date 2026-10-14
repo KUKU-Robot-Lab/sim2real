@@ -2184,7 +2184,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_rg3hp3) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 0.5 s 쥠 유지에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_rg3hp3) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 5 s 쥠 유지에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -2206,7 +2206,7 @@ run:
     - -p
     - freeze_lift_m:=0.07
     - -p
-    - freeze_hold_steps:=30
+    - freeze_hold_steps:=300
     - -p
     - cup_topic:=/objects/source240b_blue/live_pose
     - -p
