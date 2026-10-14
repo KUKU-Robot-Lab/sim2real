@@ -37,6 +37,24 @@ SNAPSHOT_WINDOW_S = 1.5
 SNAPSHOT_STILL_M = 0.005          # 창 안 위치 퍼짐 — 넘으면 컵이 움직이는 중
 SNAPSHOT_MIN_FRAMES = 5
 POLICY_MARGIN_S = 10.0            # 정책 에피소드 시간 + 이만큼 안에 이벤트가 안 오면 stop → timeout
+#: ★10.14 실기 183230: FP++ live 추적이 품질 검사(MASK_TOO_SMALL) 3번 실패마다 다시 등록하며 2.8~3.5 s 끊긴다(5~6 s 마다).
+#  정책 reset 은 0.5 s 안에 받은 live 컵만 받아서, 그 사이에 부르면 거부되고 에피소드가 안전 정지했다.
+#  reset 은 로봇을 움직이지 않는다 — 이 거부만 이 시간 안에서 다시 부른다(다른 거부는 그대로 판정으로 간다).
+RESET_CUP_STALE_TEXT = "FP++ live 컵 자세가"
+RESET_CUP_RETRY_S = 6.0
+RESET_CUP_RETRY_STEP_S = 0.2
+
+
+def reset_until_cup_fresh(call, *, retry_s: float = RESET_CUP_RETRY_S, step_s: float = RESET_CUP_RETRY_STEP_S,
+                          sleep=time.sleep, clock=time.monotonic, cancelled=lambda: False) -> tuple[bool, list]:
+    """reset 을 부르고, live 컵이 끊겨 거부되면 retry_s 안에서 다시 부른다. 마지막 답을 그대로 돌려준다."""
+    deadline = clock() + retry_s
+    while True:
+        ok, why = call()
+        stale = not ok and any(RESET_CUP_STALE_TEXT in str(w) for w in why)
+        if not stale or cancelled() or clock() >= deadline:
+            return ok, why
+        sleep(step_s)
 SEAT_DZ_CYL60 = HOLDER_FLOOR_Z + 0.085
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
 SIDES = ("right", "left")
@@ -289,9 +307,10 @@ class RosExecutor:
             ok, why = self._set_object(f"/{node_name}_{side}", str(p.policy_object))
             if not ok:
                 return NodeResult("refused", "; ".join(why), role=p.role)
-        ok, why = self._call(f"{NS}/{ns}/episode/reset")
+        ok, why = reset_until_cup_fresh(lambda: self._call(f"{NS}/{ns}/episode/reset"), cancelled=self.cancel.is_set)
         if not ok:
             return NodeResult("refused", "; ".join(why), role=p.role)
+        t0 = time.monotonic()                             # 정책 시간 한도는 reset 이 받아들여진 뒤부터 센다
         if p.kind == "aglt" and p.setting is not None:
             with self._lock:
                 self._goal_result.pop(side, None)

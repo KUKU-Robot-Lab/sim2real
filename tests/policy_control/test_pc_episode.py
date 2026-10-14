@@ -411,3 +411,57 @@ def test_the_shipped_pick_place_episodes_follow_the_active_objects():
     for name, side in (("pick_place_right", "right"), ("pick_place_left", "left")):
         ep = S.load(EPISODES / f"{name}.yaml")
         assert ep.objects["CUP"]["topic"] == f"/objects/{active['sides'][side]}/pose"
+
+
+STALE_CUP = (False, ["reset: FP++ live 컵 자세가 0.5 s 안에 없다 ['arm'] — 컵이 보이는지 · live 추적(fpp 컨테이너)이 도는지 본다"])
+
+
+class _Clock:
+    def __init__(self) -> None:
+        self.t = 0.0
+
+    def __call__(self) -> float:
+        return self.t
+
+    def sleep(self, s: float) -> None:
+        self.t += s
+
+
+def test_a_reset_refused_for_a_stale_live_cup_is_retried_until_the_cup_comes_back():
+    """10.14 실기 183230: FP++ live 추적이 5~6 s 마다 다시 등록하며 약 3.3 s 끊긴다 — 그 사이 reset 이 거부돼 에피소드가 안전 정지했다."""
+    from policy_control.episode_ros import reset_until_cup_fresh
+    answers = iter([STALE_CUP] * 3 + [(True, [])])
+    clock, calls = _Clock(), []
+
+    def call():
+        calls.append(clock())
+        return next(answers)
+
+    ok, why = reset_until_cup_fresh(call, retry_s=6.0, sleep=clock.sleep, clock=clock)
+    assert ok and why == [] and len(calls) == 4
+
+
+def test_other_refusals_and_a_cup_that_never_comes_back_are_not_hidden():
+    from policy_control.episode_ros import reset_until_cup_fresh
+    other = (False, ["reset: 측정이 아직 없다 ['arm']"])
+    calls = []
+    ok, why = reset_until_cup_fresh(lambda: (calls.append(1), other)[1], retry_s=6.0,
+                                    sleep=lambda s: None, clock=lambda: 0.0)
+    assert (ok, why, len(calls)) == (False, other[1], 1)
+    clock = _Clock()
+    ok, why = reset_until_cup_fresh(lambda: STALE_CUP, retry_s=6.0, sleep=clock.sleep, clock=clock)
+    assert not ok and why == STALE_CUP[1] and 6.0 <= clock() < 6.5
+
+
+def test_the_stale_cup_retry_stops_when_the_runner_is_stopped():
+    from policy_control.episode_ros import reset_until_cup_fresh
+    calls = []
+    ok, _ = reset_until_cup_fresh(lambda: (calls.append(1), STALE_CUP)[1], retry_s=6.0,
+                                  sleep=lambda s: None, clock=lambda: 0.0, cancelled=lambda: True)
+    assert not ok and len(calls) == 1
+
+
+def test_the_retried_refusal_text_is_the_one_the_policy_node_sends():
+    from policy_control.episode_ros import RESET_CUP_STALE_TEXT
+    node = Path(__file__).resolve().parents[2] / "deploy/policy_control/policy_control/pour_fj_node.py"
+    assert f"reset: {RESET_CUP_STALE_TEXT}" in node.read_text()
