@@ -1,0 +1,53 @@
+# ★이 파일은 camera 블록만 목 pan +0 / tilt -30 의 T_base_cam 으로 바꾼 사본이다(hand-eye head_extrinsics_cad_v6_candidate.yaml).
+#   만든 도구: perception_plus_plus scripts/make_camera_extrinsics_at.py. 원본은 config/global_camera_extrinsics.yaml.
+# 글로벌 D435i 카메라 extrinsics + 컵 CAD 프레임 정합
+#
+# cup_pose_relay.py 가 읽는다. Isaac ROS FoundationPose 출력(카메라 optical
+# 프레임의 컵 CAD 프레임 pose)을 robot base 프레임의 sim body 프레임 pose로
+# 변환해 /cup_pose 로 발행하기 위한 두 고정 변환:
+#
+#   T_base_body = T_base_cam ∘ T_cam_cad(FoundationPose 출력) ∘ T_cad_body
+#
+# 쿼터니언은 전부 wxyz 순서.
+
+# ── T_base_cam: robot base ← camera_color_optical_frame ────────────────────
+# FoundationPose 출력 프레임 = 입력 컬러 이미지의 optical 프레임
+# (RealSense: camera_color_optical_frame, x우/y하/z전방).
+# ★2026-09-01 갱신 — hand-eye 캘리브로 교체.
+#   구값(2026-08-02, 보드 CAD 고정, 1프레임 0.274px):
+#     position [0.0638473958, 0.0405343559, 0.827139699]
+#     orientation_wxyz [-0.137367707, 0.697932932, -0.688537236, 0.14119565]
+#   구값이 낡은 이유 셋: ⓐ목 모터를 교체해 인코더 영점이 다르다 ⓑ교정 자세
+#   (pan -90/tilt 280)가 지금 좌표계에 없다 ⓒ교정 방법이 다르다.
+#   기준 자세에서 신·구 차이 = 위치 15.5mm · 회전 4.19°(0.6m 컵에서 약 44mm).
+#
+# 신값 출처: config/head_extrinsics.yaml 의 T_neck_cam (hand-eye, 25프레임·553코너,
+#   RMS 재투영 1.214px, 조건수 5.45e2) 을 기준 자세로 합성:
+#     T_base_cam = T_base_neck(pan, tilt) ∘ T_neck_cam      (scripts/head_fk_chain.py)
+#
+# ★아래 값은 **목 자세 pan 0 / tilt -20 에서만** 유효한 정적 스냅샷이다.
+#   목을 돌리면 통째로 틀린다(pan 15° 면 카메라가 11mm 이동 + 큰 회전).
+#   목을 돌려 쓰려면 cup_pose_relay 의 --head-joint-topic 을 켠다 —
+#   그러면 이 블록 대신 목 각도로 매번 계산한다.
+#   자세 재현: scripts/head_home.py --execute
+# ★2026-09-05 갱신 — head_v1 CAD 사전 모델 hand-eye v2 (config/head_extrinsics.yaml 참조).
+#   RGB 렌즈 = head_v1 의 y+0.0326 개구부, tilt 영점 +90.51°. 테이블이 0.204(줄자 0.205)로 맞는다.
+#   v1(09-01) 기준 자세 값: position [0.0674838252, 0.038116775, 0.841995575] — 카메라 높이 +21 mm 오류가 있었다.
+camera:
+  frame: camera_color_optical_frame
+  position: [0.041705596, 0.047071555, 0.815654903]
+  orientation_wxyz: [0.186296823, -0.674662060, 0.688936699, -0.188390081]
+
+# ── T_cad_body: 컵 CAD 메시 프레임 → sim body 프레임 ───────────────────────
+# FoundationPose에 넣는 CAD 메시의 원점/축이 sim의 컵 body 프레임과 다르면
+# 여기서 보정. sim body 프레임은 "바닥 중심"이 아니라 mesh 원점 그대로다
+# (+z=위, bottom=-0.077m, rim=+0.100m).
+# cad_body_alignment.py 도출: cup.obj Y-up→sim body Z-up 회전만.
+# 원점=mesh 원점(hdgp pour_v5/pour_right_env_cfg.py:198 bottom=-0.077/rim=+0.100 ==
+# cup.obj Y-AABB 근거).
+cad_to_body:
+  position: [0.0, 0.0, 0.0]
+  orientation_wxyz: [0.707107, 0.707107, 0.0, 0.0]
+
+# /cup_pose 헤더에 기록할 base 프레임 이름 (소비자는 값만 사용, 정보성)
+base_frame: base_link
