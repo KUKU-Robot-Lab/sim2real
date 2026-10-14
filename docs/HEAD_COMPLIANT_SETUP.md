@@ -517,7 +517,8 @@ FoundationPose 출력을 base 프레임으로 옮긴다. 문제는 `T_base_cam` 
 목이 돌면 정적값은 통째로 틀린다 — `pan 15°` 면 카메라가 11 mm 이동 + 큰 회전이다.
 
 ```bash
-# local5090: 목 각도를 ROS 로 (읽기 전용 — 토크·게인을 안 건드린다)
+# local5090: 목 드라이버 — 포트 단독 소유, 각도를 ROS 로 발행하고 /head/move_request 이동 요청도 받는다(2026-10-15)
+#   이동은 scripts/head_move.py --execute [--pan P --tilt T]. 드라이버가 떠 있으면 head_home.py 등 직접 쓰기 도구는 포트 잠금에 막힌다
 python head_joint_publisher.py                      # 20 Hz → /head/joint_states
 
 # 릴레이: 목 각도로 T_base_cam 을 매번 계산

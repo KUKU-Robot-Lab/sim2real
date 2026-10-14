@@ -62,3 +62,17 @@ python3 scripts/calibrate_profile.py --name <이름> --surveys <이미 찍은 �
 | 동적 hand-eye v2 | (11, 5) mm | 18 mm |
 | 프로필 v6_1014 | (2.7, 1.0) mm | 5.1 mm |
 같은 영상에서 hand-eye 를 맞춘 값이라 표의 각도에서만 이 정도다. FP++ 자체의 깊이 편향(z 2~3 mm 낮음)은 별개다.
+
+## 목 시리얼 단독 소유 (2026-10-15, 사용자 결정 c)
+
+`head_joint_publisher.py` 한 프로세스가 `/dev/ttyUSB0` 를 혼자 맡는다. 각도 발행(20 Hz)과 이동 요청을 한 스레드에서 번갈아 처리하므로
+"Incorrect status packet" 이 나지 않는다(예전 충돌 원인: 읽기 프로세스와 쓰기 프로세스가 같은 버스를 같이 씀).
+
+- 이동: `scripts/head_move.py --execute [--pan P --tilt T]`(인자 없으면 기준 자세). 포트를 열지 않고 `/head/move_request` 로 요청, `/head/move_status` 로 결과. 출력 줄은 `head_home.py` 검증과 같은 형식이라 `survey.parse_head_home` 이 읽는다. 종료 코드 0 도달, 1 실패, 2 거절·드라이버 없음.
+- 이동 중에도 `/head/joint_states` 발행은 끊기지 않는다(object_pose_node 의 stale 보류가 그대로 동작).
+- 정착 검증은 드라이버가 읽은 현재 각도로 한다: 최근 20샘플 폭 ≤ 0.2° 이고 1 s 이상 지나면 정지, 평균이 목표 ±0.3° 안이면 ok. 20 s 안에 못 서면 실패.
+- 두 명령자 동시 금지: 이동 중 새 요청은 `busy` 로 거절. 다른 프로세스가 포트를 직접 열면(`head_home.py`·`head_compliant_hold.py`·`head_position_hold_node.py`) `port_lock` 이 거절한다.
+- 범위: tilt ≤ -10°(인코더, 위쪽은 제한 없음), pan ±180°. 범위 밖 요청은 모터에 닿지 않는다.
+- 하드웨어 없이 리허설: `ROS_DOMAIN_ID=99 python3 scripts/fakes/fake_head_driver.py`(같은 토픽·규약).
+- 기동 순서: 드라이버(`head_joint_publisher.py`)를 먼저 띄운 뒤 locate·survey·calibrate 를 쓴다. `head_home.py --execute` 는 드라이버를 내린 뒤에만 쓴다.
+- FP++ 스냅샷 노드의 camera 파일은 정책 운용(기준 자세 tilt -20)이면 기본 파일. tilt -30 스캔 때만 `global_camera_extrinsics_tilt30.yaml`.

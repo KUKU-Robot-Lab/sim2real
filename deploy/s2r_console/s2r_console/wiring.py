@@ -626,10 +626,10 @@ def _cup_holders(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
 
 
 def _head_publisher(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
-    """목 상태 퍼블리셔(읽기 전용) — 받는 노드가 없어도 상자로 둔다. 콘솔에서 head 까지 관리한다."""
+    """목 드라이버(포트 단독 소유 · 각도 발행 + 이동 요청 처리) — 받는 노드가 없어도 상자로 둔다. 콘솔에서 head 까지 관리한다."""
     topic = cmd.args.get("topic") or HEAD_TOPIC
     box = g.box("head", "목 상태 (head)", L_SENSE, ros=["/head_joint_publisher"], unit=key,
-                note="읽기 전용 — 토크·게인·목표를 건드리지 않는다")
+                note="목 포트 단독 소유 — 각도 발행 + /head/move_request 이동 요청(head_move.py)")
     g.providers.setdefault(topic, box)
 
 

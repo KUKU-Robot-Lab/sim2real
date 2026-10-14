@@ -235,10 +235,14 @@ class DynamixelPositionController:
     def __init__(self, port_name: str, baud: int):
         from dynamixel_sdk import PacketHandler, PortHandler
 
+        import port_lock
+
         self.port_name = port_name
+        self._lock_fd = port_lock.acquire(port_name)  # 두 프로세스가 한 포트를 열면 패킷이 깨진다 — 단독 소유
         self.port = PortHandler(port_name)
         self.packet = PacketHandler(PROTOCOL)
         if not self.port.openPort():
+            port_lock.release(self._lock_fd)
             raise RuntimeError(f"failed to open port: {port_name}")
         try:
             if not self.port.setBaudRate(baud):
@@ -248,7 +252,11 @@ class DynamixelPositionController:
             raise
 
     def close(self) -> None:
+        import port_lock
+
         self.port.closePort()
+        port_lock.release(self._lock_fd)
+        self._lock_fd = None
 
     def _check(self, comm_result: int, packet_error: int, context: str) -> None:
         from dynamixel_sdk import COMM_SUCCESS
