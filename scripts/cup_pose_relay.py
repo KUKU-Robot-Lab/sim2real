@@ -91,7 +91,7 @@ def load_extrinsics(path: str | Path) -> Extrinsics:
 
 
 def extrinsics_at_head(ext: Extrinsics, pan_encoder_deg: float,
-                       tilt_encoder_deg: float) -> Extrinsics:
+                       tilt_encoder_deg: float, neck_to_camera=None) -> Extrinsics:
     """목 각도에 맞는 `T_base_cam` 으로 **새 Extrinsics 를 만든다**(원본 불변).
 
     yaml 의 `camera:` 블록은 한 목 자세의 정적 스냅샷이라 목이 돌면 통째로 틀린다
@@ -99,10 +99,11 @@ def extrinsics_at_head(ext: Extrinsics, pan_encoder_deg: float,
     hand-eye `T_neck_cam` 과 URDF FK 로 자세마다 다시 만든다.
 
     ★`cad_to_body` 는 건드리지 않는다 — 그건 목과 무관한 CAD↔body 정합이다.
+    `neck_to_camera` 를 주면 그 hand-eye 를 쓴다(보정 프로필, `calib_profile.py`). 없으면 `config/head_extrinsics.yaml`.
     """
     from head_camera_pose import base_cam_pose
 
-    pos, quat = base_cam_pose(pan_encoder_deg, tilt_encoder_deg)
+    pos, quat = base_cam_pose(pan_encoder_deg, tilt_encoder_deg, neck_to_camera)
     return replace(ext, cam_pos=pos, cam_quat=quat)
 
 

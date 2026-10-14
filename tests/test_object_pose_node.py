@@ -155,3 +155,53 @@ def test_cyl60_upside_down_fpp_pose_comes_out_standing_with_the_same_position():
     a, b = quat_axis_direction(q_a, z), quat_axis_direction(q_b, z)
     assert a[2] > 0 and b[2] > 0 and np.dot(a, b) > 0.999
     assert REG.get("cyl60").symmetry_flip and not REG.get("cup_holder").symmetry_flip
+
+
+# ---- 보정 프로필(hand-eye + 목 각도별 보정) -------------------------------------------------
+def _profile(tmp_path, bias=(0.002, -0.001), strict=True, matrix=None):
+    import yaml
+
+    from head_camera_pose import load_neck_to_camera
+    T = load_neck_to_camera() if matrix is None else matrix
+    path = tmp_path / "p.yaml"
+    path.write_text(yaml.safe_dump({
+        "profile": {"name": "p"}, "hand_eye": {"neck_to_camera": {"matrix": np.asarray(T).tolist()}},
+        "angle_tolerance_deg": 1.0, "strict": strict,
+        "angles": [{"pan_deg": 15.0, "tilt_deg": -20.0, "bias_xy_m": list(bias)}]}), encoding="utf-8")
+    return path
+
+
+def test_profile_with_same_hand_eye_only_adds_the_angle_bias(tmp_path):
+    base = PoseConverter(REG, ["shaker_closed"])
+    prof = PoseConverter(REG, ["shaker_closed"], calib_profile=_profile(tmp_path))
+    args = ("shaker_closed", np.array([0.0363, -0.1111, 0.5877]), np.array([1.0, 0.0, 0.0, 0.0]), (15.2, -19.8))
+    p0, _ = base.convert(*args)
+    p1, _ = prof.convert(*args)
+    assert np.allclose(p1 - p0, [0.002, -0.001, 0.0], atol=1e-9)
+
+
+def test_profile_hand_eye_replaces_the_default_one(tmp_path):
+    from head_camera_pose import load_neck_to_camera
+    shifted = load_neck_to_camera().copy()
+    shifted[0, 3] += 0.010   # 카메라가 목 기준 10 mm 옮겨진 hand-eye
+    base = PoseConverter(REG, ["shaker_closed"])
+    prof = PoseConverter(REG, ["shaker_closed"], calib_profile=_profile(tmp_path, bias=(0.0, 0.0), matrix=shifted))
+    args = ("shaker_closed", np.array([0.0363, -0.1111, 0.5877]), np.array([1.0, 0.0, 0.0, 0.0]), (15.0, -20.0))
+    assert np.linalg.norm(prof.convert(*args)[0] - base.convert(*args)[0]) == pytest.approx(0.010, abs=2e-3)
+
+
+def test_strict_profile_raises_outside_calibrated_angles_and_needs_a_head_angle(tmp_path):
+    from calib_profile import UncalibratedAngle
+    prof = PoseConverter(REG, ["shaker_closed"], calib_profile=_profile(tmp_path))
+    with pytest.raises(UncalibratedAngle):
+        prof.convert("shaker_closed", np.zeros(3), np.array([1.0, 0, 0, 0]), (-45.0, -20.0))
+    with pytest.raises(ValueError, match="목 각도"):
+        prof.convert("shaker_closed", np.zeros(3), np.array([1.0, 0, 0, 0]))
+
+
+def test_without_a_profile_nothing_changes():
+    conv = PoseConverter(REG, ["shaker_closed"])
+    a, _ = conv.convert("shaker_closed", np.array([0.0363, -0.1111, 0.5877]), np.array([1.0, 0, 0, 0]), (10.0, -20.0))
+    b, _ = PoseConverter(REG, ["shaker_closed"], calib_profile=None).convert(
+        "shaker_closed", np.array([0.0363, -0.1111, 0.5877]), np.array([1.0, 0, 0, 0]), (10.0, -20.0))
+    assert np.allclose(a, b)

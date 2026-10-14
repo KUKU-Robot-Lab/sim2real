@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
+import calib_profile as profiles  # noqa: E402
 from cup_pose_relay import (  # noqa: E402
     cad_pose_to_base_body, extrinsics_at_head, head_state_is_usable,
 )
@@ -82,7 +83,7 @@ class PoseConverter:
     """순수부: 물체별 Extrinsics 를 미리 조립해 두고 변환만 한다."""
 
     def __init__(self, registry, names: list[str], camera_yaml: str | Path | None = None,
-                 z_bias: float | None = None) -> None:
+                 z_bias: float | None = None, calib_profile: str | Path | None = None) -> None:
         camera_yaml = Path(camera_yaml) if camera_yaml is not None else registry.camera_extrinsics
         self.z_bias = float(z_bias) if z_bias is not None else base_z_bias(camera_yaml)
         self.depth_bias = depth_bias(camera_yaml)
@@ -93,6 +94,8 @@ class PoseConverter:
             canon = registry.resolve(raw)
             if canon not in self.names:
                 self.names.append(canon)
+        # 보정 프로필(10.14): hand-eye 와 목 각도별 보정을 파일로 고른다. 있으면 목 각도가 꼭 필요하다.
+        self.profile = profiles.load_profile(calib_profile) if calib_profile is not None else None
         self._ext = {n: extrinsics_for(registry.get(n), camera_yaml) for n in self.names}
         # 대칭축을 body 프레임으로 옮겨 둔다: a_body = R(q_cad_body)ᵀ · a_cad
         self._axis_body = {}
@@ -107,7 +110,13 @@ class PoseConverter:
     def convert(self, name: str, pos_cam: np.ndarray, quat_cam: np.ndarray,
                 head: tuple[float, float] | None = None) -> tuple[np.ndarray, np.ndarray]:
         ext = self._ext[name]
-        if head is not None:
+        bias = None
+        if self.profile is not None:
+            if head is None:
+                raise ValueError("보정 프로필은 목 각도가 필요하다 — --head-joint-topic 을 같이 준다")
+            bias = profiles.bias_for(self.profile, *head)      # 표에 없는 각도면 UncalibratedAngle
+            ext = extrinsics_at_head(ext, *head, self.profile.neck_to_camera)
+        elif head is not None:
             ext = extrinsics_at_head(ext, *head)
         pos, quat = cad_pose_to_base_body(ext, correct_depth(pos_cam, self.depth_bias), np.asarray(quat_cam, float))
         if self._axis_body[name] is not None:
@@ -119,6 +128,8 @@ class PoseConverter:
             quat = remove_twist(quat, self._axis_body[name])
         if self.z_bias:
             pos = pos + np.array([0.0, 0.0, self.z_bias])
+        if bias is not None:
+            pos = pos + bias
         return pos, quat
 
 
@@ -133,10 +144,14 @@ def main() -> None:
     ap.add_argument("--head-max-age", type=float, default=1.0)
     ap.add_argument("--camera-extrinsics", default=None,
                     help="camera extrinsics yaml(기본: 레지스트리 공유 파일). 로봇 전용 캘리브 파일을 준다")
+    ap.add_argument("--calib-profile", default=None,
+                    help="보정 프로필(이름 또는 경로, config/calib_profiles/). hand-eye 와 목 각도별 보정을 쓰고, 보정한 각도가 아니면 발행하지 않는다. --head-joint-topic 필요")
     ap.add_argument("--z-bias", type=float, default=None, help="출력 z 보정 [m](기본: 그 yaml 의 base_z_bias_m)")
     args = ap.parse_args()
+    if args.calib_profile and not args.head_joint_topic:
+        ap.error("--calib-profile 은 --head-joint-topic 과 같이 쓴다(각도별 보정이라 목 각도가 필요)")
     registry = load_registry()
-    conv = PoseConverter(registry, args.objects or registry.names(), args.camera_extrinsics, args.z_bias)
+    conv = PoseConverter(registry, args.objects or registry.names(), args.camera_extrinsics, args.z_bias, args.calib_profile)
     state = {"conv": conv}      # --objects 없으면 레지스트리를 다시 읽어 새 물체를 더한다(10.09 fpp_object.py add 뒤 재기동 없이)
 
     import rclpy
@@ -160,7 +175,8 @@ def main() -> None:
                 self.create_timer(RELOAD_S, self._reload)
             self.get_logger().info(f"objects {conv.names} → {[output_topic(n) for n in conv.names]} · "
                                    f"camera {args.camera_extrinsics or registry.camera_extrinsics} · z 보정 {conv.z_bias:+.4f} m"
-                                   f" · 깊이 광선 보정 {conv.depth_bias}")
+                                   f" · 깊이 광선 보정 {conv.depth_bias}"
+                                   + (f" · 보정 프로필 {conv.profile.name}(각도 {len(conv.profile.entries)}개, strict={conv.profile.strict})" if conv.profile else ""))
 
         def _reload(self) -> None:
             try:
@@ -168,7 +184,7 @@ def main() -> None:
                 new = [n for n in reg.names() if n not in state["conv"].names]
                 if not new:
                     return
-                state["conv"] = PoseConverter(reg, reg.names(), args.camera_extrinsics, args.z_bias)
+                state["conv"] = PoseConverter(reg, reg.names(), args.camera_extrinsics, args.z_bias, args.calib_profile)
             except (OSError, ValueError) as err:            # 고치는 중인 파일 — 옛 것으로 계속
                 self.get_logger().error(f"레지스트리 다시 읽기 실패(옛 것 유지): {err}", throttle_duration_sec=30.0)
                 return
@@ -203,7 +219,11 @@ def main() -> None:
                     return
                 head = self._head
             p, q = msg.pose.position, msg.pose.orientation
-            pos, quat = state["conv"].convert(name, np.array([p.x, p.y, p.z]), np.array([q.w, q.x, q.y, q.z]), head)
+            try:
+                pos, quat = state["conv"].convert(name, np.array([p.x, p.y, p.z]), np.array([q.w, q.x, q.y, q.z]), head)
+            except profiles.UncalibratedAngle as err:        # 틀린 좌표는 없느니만 못하다 — 발행하지 않는다
+                self.get_logger().warning(f"발행 보류: {err}", throttle_duration_sec=5.0)
+                return
             out = PoseStamped()
             out.header.stamp = msg.header.stamp
             out.header.frame_id = state["conv"].base_frame
