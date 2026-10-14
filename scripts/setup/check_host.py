@@ -247,7 +247,7 @@ def check_host_specific(rep: Report, robot: str) -> None:
             if not master.exists():
                 rep.miss(f"EtherCAT 마스터 {master}", "bash tools/ethercat/build.sh (SOEM ~/rl_ws/SOEM)")
             elif "cap_net_raw" not in caps:
-                rep.miss(f"EtherCAT 마스터 setcap {master}", f"운영자: sudo setcap cap_net_raw,cap_net_admin=ep {master}")
+                rep.miss(f"EtherCAT 마스터 setcap {master}", f"운영자: sudo /usr/sbin/setcap cap_net_raw,cap_net_admin=eip {master}")
             else:
                 rep.ok(f"EtherCAT 마스터 {master.name} (cap_net_raw)")
         # ★10.13 머리 설정은 로봇 PC 마다 다르다(arm4090 head_home_rh56f1 · 5090 head_home) — 실기 미션의 head_home 단계가 쓰는 것을 읽는다

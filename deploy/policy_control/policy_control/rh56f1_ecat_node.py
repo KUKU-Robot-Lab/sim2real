@@ -131,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
             cfg[key] = vals[0] if len(vals) == 1 else vals
     binary = str((REPO / cfg.get("master", "tools/ethercat/rh56f1_ecat_master")).resolve())
     if not os.access(binary, os.X_OK):
-        print(f"✗ 마스터 {binary} 가 없다 — bash tools/ethercat/build.sh 뒤 sudo setcap cap_net_raw,cap_net_admin=ep {binary}")
+        print(f"✗ 마스터 {binary} 가 없다 — bash tools/ethercat/build.sh 뒤 sudo /usr/sbin/setcap cap_net_raw,cap_net_admin=eip {binary}")
         return 1
     link = MasterLink(args.side)
     margv = E.master_argv(binary, ifname, link.master_sock, link.node_sock, cfg, args.no_op, side=args.side)
