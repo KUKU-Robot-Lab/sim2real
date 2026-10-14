@@ -62,6 +62,20 @@ def _fresh(got):
     return None if got is None or time.monotonic() - got[0] > CUP_STALE_S else (got[1], got[2], got[3])
 
 
+ATTACH_SWITCH_MODES = ("auto", "on", "off")
+
+
+def attach_switch(mode: str, contract) -> bool:
+    """cup_attach_switch → 쥔 뒤 손바닥 FK 로 붙일지. ★10.14 사용자: auto = 위치제어 계약(hand_command position)이면 끈다
+    (실기 위치 모드는 접촉 뒤에도 손가락이 더 들어가 앞섬 래치가 거의 안 걸린다 — 들기 내내 FP++ live). 그 밖은 켠다."""
+    m = str(mode).strip().lower()
+    if m not in ATTACH_SWITCH_MODES:
+        raise ValueError(f"cup_attach_switch {mode!r} — {ATTACH_SWITCH_MODES}")
+    if m == "auto":
+        return getattr(contract, "hand_command", None) != "position"
+    return m == "on"
+
+
 START_TILT_MAX_DEG = 15.0
 #: ★10.13 sim(vision-3090 rg3s ep4700): 실기 121432 컵 자리(0.342, −0.394) — 소환 박스 y 밖 9 cm — 에서 진짜 성공 0.05(시간 종료 0.95).
 #  rh_aglt 시작 = 컵 xy 가 학습 소환 박스(계약 goal_box xy, goal_box_xy_margin 0) 안 + 이 여유.
@@ -342,7 +356,7 @@ class PourFjNode(LeanNodeMixin, Node):
                               ("freeze_rule", "success"), ("freeze_lift_m", 0.07), ("freeze_hold_steps", 30), ("episode_topic", ""), ("object", ""),
                               ("hand_unfreeze_on_grasp", False), ("thumb_support_g", 0.0), ("lift_grasp_palm_m", 0.0),
                               ("thumb_open_floor_rad", 0.0),
-                              ("cup_attach", True), ("attach_force_n", AttachCfg.force_n),
+                              ("cup_attach", True), ("cup_attach_switch", "auto"), ("attach_force_n", AttachCfg.force_n),
                               ("attach_joint_force_g", AttachCfg.joint_force_g), ("attach_signal", AttachCfg.signal),
                               ("attach_max_palm_dist_m", AttachCfg.max_palm_dist_m),
                               ("attach_after_s", AttachCfg.attach_after_s), ("release_steps", AttachCfg.release_steps),
@@ -390,7 +404,11 @@ class PourFjNode(LeanNodeMixin, Node):
                                     # 에피소드는 컵을 snapshot 정지 기록으로 준다 — 파지 시작 시각 FK 로 붙인다(cup_attach static)
                                     static_source=bool(p("cup_static")),
                                     fallback_after_s=float(p("attach_fallback_s")),
-                                    guard_m=float(p("attach_guard_m")), guard_frames=int(p("attach_guard_frames")))
+                                    guard_m=float(p("attach_guard_m")), guard_frames=int(p("attach_guard_frames")),
+                                    switch=attach_switch(str(p("cup_attach_switch")), self.contract))
+        self.get_logger().info(f"cup attach switch: {self.attach_cfg.switch} "
+                               f"(cup_attach_switch={p('cup_attach_switch')}, "
+                               f"hand_command={getattr(self.contract, 'hand_command', None)})")
         self.attach = {r: CupAttach(self.attach_cfg) for r in self.fam.roles} if bool(p("cup_attach")) else {}
         # ★10.13 A안(fpp_gate.py): 쥐기 전 손 근처에서 튄 FP++ live 프레임은 버리고 마지막 값(sim FppGate 와 같은 식).
         self.gate_cfg = GateCfg(jump_m=float(p("fpp_gate_jump_m")), dz_m=float(p("fpp_gate_dz_m")),

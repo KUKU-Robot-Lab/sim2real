@@ -358,3 +358,24 @@ def test_new_episode_clears_the_guard_count():
 def test_guard_refuses_bad_values(bad):
     with pytest.raises(ValueError):
         AttachCfg(**bad)
+
+
+def test_switch_off_never_attaches_and_keeps_the_live_cup():
+    """★10.14 사용자: 위치제어 정책은 붙이지 않는다 — 쥔 뒤에도 FP++ live, 쥠 기록만 남긴다."""
+    w, c = _World(), CupAttach(AttachCfg(switch=False, fallback_after_s=0.7))
+    t = 0.0
+    while t < 2.0:
+        p, R = w.palm(t)
+        live = w.fpp(t)
+        out = c.step(t >= w.grasp_t, t, p, R, live)
+        assert out is live                                           # 들기 내내 FP++ 그대로(대체 없음)
+        t += DT
+    d = c.as_dict()
+    assert c.source == "live" and d["switch"] is False and d["check_n"] == 0
+    assert d["grasp_since"] is not None and d["grasp_steps"] > 0 and d["releases"] == 0
+    c.step(False, t, *w.palm(t), w.fpp(t))
+    assert c.as_dict()["grasp_since"] is None                        # 쥠이 끊기면 기록도 0 부터
+
+
+def test_switch_defaults_on():
+    assert AttachCfg().switch is True and CupAttach().as_dict()["switch"] is True

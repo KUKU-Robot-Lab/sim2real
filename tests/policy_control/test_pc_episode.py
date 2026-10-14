@@ -273,6 +273,11 @@ def test_the_detector_reads_refusal_text_and_signals():
                            signals={"attached": False, "setting_err_m": 0.01})) is F.GRASP_FAILED_RIGHT
     assert code(NodeResult("completed", lift, role="rh_aglt_r",
                            signals={"attached": False, "dropped": True})) is F.OBJECT_DROPPED_RIGHT
+    # ★10.14 붙이기를 끈 위치제어 노드: attached = None(모름) — 안 붙은 것을 쥠 실패로 보지 않는다
+    assert code(NodeResult("completed", "", role="rh_aglt_r",
+                           signals={"attached": None, "setting_err_m": 0.01, "live_off_m": None})) is F.NONE
+    assert code(NodeResult("completed", "", role="rh_aglt_r",
+                           signals={"attached": None, "setting_err_m": 0.088})) is F.POSE_MISMATCH
     assert d.evaluate(ep, place, [NodeResult("refused", "reset: holder pose missing — …", role="rh_place_r")])[0] \
         is F.HOLDER_NOT_FOUND
 

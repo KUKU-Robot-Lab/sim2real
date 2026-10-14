@@ -58,6 +58,9 @@ class AttachCfg:
     #   뗀 뒤에는 쥔 판정이 한 번 끊길 때까지 다시 붙이지 않는다. 떨굼(releases)과 따로 센다(guard_drops) — 실행기가 떨굼으로 보지 않는다.
     guard_m: float = 0.0
     guard_frames: int = 3
+    # ★10.14 사용자(grasping 경유): 위치제어 정책은 붙이지 않는다 — 실기 위치 모드는 접촉 뒤에도 손가락이 더 들어가 앞섬 래치가
+    #   거의 안 걸린다. False 면 쥔 뒤에도 FP++ live(쥐기 전 거르기 · 마지막 값 규칙은 그대로). 쥠 기록(grasp_since)만 남긴다.
+    switch: bool = True
 
     def __post_init__(self) -> None:
         if not (np.isfinite(self.guard_m) and self.guard_m >= 0.0) or int(self.guard_frames) < 1:
@@ -207,6 +210,13 @@ class CupAttach:
         if grasped and self.cfg.max_palm_dist_m > 0 and not self.attached:
             if live is None or np.linalg.norm(np.asarray(live[0], float) - np.asarray(palm_pos, float)) > self.cfg.max_palm_dist_m:
                 grasped = False                      # 컵이 손바닥 근처에 없다 — 손가락끼리 · 관성 오탐
+        if not self.cfg.switch:                      # ★10.14 붙이지 않음 — 쥠 기록만 하고 FP++ 그대로
+            if grasped:
+                self.grasp_since = float(t) if self.grasp_since is None else self.grasp_since
+                self.grasp_steps += 1
+            else:
+                self.grasp_since, self.grasp_steps = None, 0
+            return live
         if self.attached:
             if not self.cfg.static_source:            # 정지 기록은 손과 같이 움직이지 않는다 — 비교가 뜻이 없다
                 self._check(live)
@@ -275,7 +285,7 @@ class CupAttach:
 
     def as_dict(self) -> dict:
         r = lambda v: None if v is None else round(float(v), 4)  # noqa: E731
-        return {"source": self.source, "static": self.cfg.static_source, "fallback": self.fallback,
+        return {"source": self.source, "switch": self.cfg.switch, "static": self.cfg.static_source, "fallback": self.fallback,
                 "grasp_since": self.grasp_since,
                 "grasp_steps": self.grasp_steps,
                 "off_steps": self.off_steps, "attach_steps": self.attach_steps, "releases": self.releases,

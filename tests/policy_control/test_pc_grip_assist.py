@@ -231,3 +231,18 @@ def test_bad_assist_parameters_refuse_the_reset(c, bad):
     node, _ = _fake_node(c, **bad)
     with pytest.raises(A.RhAgltError):
         N.PourFjNode._reset_chain(node, {})
+
+
+@pytest.mark.parametrize("mode,hand_command,want", [
+    ("auto", "position", False), ("auto", "admittance", True), ("auto", None, True),
+    ("on", "position", True), ("off", "admittance", False), (" OFF ", "position", False)])
+def test_attach_switch_follows_the_contract_hand_command(mode, hand_command, want):
+    """★10.14 사용자: 위치제어 계약이면 붙이지 않는다(auto). on · off 로 덮어쓸 수 있다."""
+    from types import SimpleNamespace
+    c = SimpleNamespace() if hand_command is None else SimpleNamespace(hand_command=hand_command)
+    assert N.attach_switch(mode, c) is want
+
+
+def test_attach_switch_refuses_unknown_modes():
+    with pytest.raises(ValueError, match="cup_attach_switch"):
+        N.attach_switch("maybe", None)
