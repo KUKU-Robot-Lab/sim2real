@@ -49,8 +49,11 @@ class FppGate:
         self.t_acc: float | None = None
         self.seen_stamp = None
         self.rejects = 0
+        # ★10.14 실기 204216: 마지막 새 프레임을 버려 옛 값을 붙들고 있는 중 — 노드는 이 동안 성공을 세지 않는다
+        self.holding = False
 
     def _accept(self, live, t: float):
+        self.holding = False
         self.last, self.t_acc = live, float(t)
         if self.z0 is None:
             self.z0 = float(np.asarray(live[0], float)[2])
@@ -74,6 +77,7 @@ class FppGate:
         young = self.t_acc is not None and float(t) - self.t_acc < self.cfg.max_hold_s
         if active and near and odd and young:
             self.rejects += 1
+            self.holding = True
             return self.last
         return self._accept(live, t)
 
@@ -81,4 +85,5 @@ class FppGate:
         return self.last if self.last is not None else live
 
     def as_dict(self) -> dict:
-        return {"rejects": int(self.rejects), "held_s": None if self.t_acc is None else round(float(self.t_acc), 3)}
+        return {"rejects": int(self.rejects), "held_s": None if self.t_acc is None else round(float(self.t_acc), 3),
+                "holding": bool(self.holding)}

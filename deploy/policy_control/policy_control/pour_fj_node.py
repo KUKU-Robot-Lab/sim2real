@@ -62,6 +62,12 @@ def _fresh(got):
     return None if got is None or time.monotonic() - got[0] > CUP_STALE_S else (got[1], got[2], got[3])
 
 
+def cup_is_fresh(attached: bool, live_ok: bool, gate_holding: bool) -> bool:
+    """★10.14 성공 · lift_hold 를 세도 되는 컵 자세인가 — 손바닥에 붙었거나(FK), CUP_STALE_S 안에 받은 live 를
+    FP++ 거르기가 버리지 않았을 때. 실기 204216: 떨어진 컵을 거르기가 2.5 s 붙드는 동안 성공 2 s 가 찼다."""
+    return bool(attached) or (bool(live_ok) and not bool(gate_holding))
+
+
 ATTACH_SWITCH_MODES = ("auto", "on", "off")
 
 
@@ -197,6 +203,7 @@ class AgltChain:
         # 손바닥 이 거리 안이면 목표 · 멈춤(lift_hold) 판정에는 쥔 것으로 본다. 부착(PalmAttach)에는 쓰지 않는다. 0 = 끔.
         #   왼손 165303 bag: 쉐이커 10~14 cm 들림 · 컵-손바닥 4~8 cm 인데 쥔 판정 0 틱 → 이 규칙이면 4.59 s 에 멈춘다.
         self.lift_grasp_palm_m = 0.0
+        self.cup_fresh = True                       # ★10.14 노드가 매 틱 넣는다 — False 면 성공 · lift_hold 카운터 멈춤
 
     def lift_grasped(self, m: A.RaMeas) -> bool:
         """B 들림 판정 — 관측 컵 z − 리셋 컵 z > freeze.lift_m AND |컵 − 손바닥| < lift_grasp_palm_m."""
@@ -239,7 +246,7 @@ class AgltChain:
                 g = grasp_signal(m.tactile_n, m.joint_force, replace(self.grasp_cfg, force_n=self.c.grasp_threshold_n))
             if not g and self.lift_grasped(m):      # ★10.13 B 들림 판정(배포 전용, 기본 끔)
                 g = True
-            self.goals.step(m.cup_pos, m.cup_quat, m.tactile_n, is_grasped=g)
+            self.goals.step(m.cup_pos, m.cup_quat, m.tactile_n, is_grasped=g, fresh=self.cup_fresh)
         self.prev = np.clip(a, -1.0, 1.0)
         self.step_i += 1
         return obs, a, targets
@@ -414,6 +421,7 @@ class PourFjNode(LeanNodeMixin, Node):
         self.gate_cfg = GateCfg(jump_m=float(p("fpp_gate_jump_m")), dz_m=float(p("fpp_gate_dz_m")),
                                 radius_m=float(p("fpp_gate_radius_m")), max_hold_s=float(p("fpp_gate_max_hold_s")))
         self.gates = {r: FppGate(self.gate_cfg) for r in self.attach} if self.gate_cfg.enabled else {}
+        self.cup_fresh: dict[str, bool] = {}       # ★10.14 역할별 '성공을 세도 되는 컵 자세' — _cup_for 가 매 정책 틱 채운다
         # ★10.04 실기: 단독 aglt 단계에서 손이 다가가자 FP++ 컵이 1.5~2.6 s 끊겨(손이 가림) '컵 자세가 없다'로 집기 전에 멈췄다.
         #   cup_latch 면 reset 때 컵 자세를 한 번 잡아 두고 그 에피소드 동안 그 값을 쓴다(사용자 원칙 "FPP 는 정지 상태만" —
         #   에피소드 snapshot 과 같다). 쥔 뒤는 손바닥 FK(cup_static 과 같이 쓴다). 다음 reset 에서 다시 잡는다.
@@ -528,7 +536,11 @@ class PourFjNode(LeanNodeMixin, Node):
                 if gate is not None:                      # ★10.13 A안 — 쥐기 전 · 붙기 전만 거른다(sim FppGate active)
                     seen = gate.step(live, time.monotonic(), palm_pos, active=not est.attached and not bool(g))
                 out = est.step(bool(g), float(t_palm), palm_pos, palm_R, seen)
-                if est.source != before:                  # 붙고 뗀 순간을 로그로 — 상태(status.cup)에도 같은 값이 계속 실린다
+                fresh_map = getattr(self, "cup_fresh", None)
+                if fresh_map is not None:                 # ★10.14 성공 판정용 — 붙었거나, 거르기가 안 붙든 신선한 live 일 때만
+                    live_ok = bool(getattr(self, "cup_latch", False)) or self._fresh_cup(role) is not None
+                    fresh_map[role] = cup_is_fresh(bool(est.attached), live_ok, gate is not None and gate.holding)
+                if est.source != before:                 # 붙고 뗀 순간을 로그로 — 상태(status.cup)에도 같은 값이 계속 실린다
                     self.get_logger().info(f"cup {role}: {before} → {est.source} · {est.as_dict()}")
                 return out
             return step
@@ -570,7 +582,8 @@ class PourFjNode(LeanNodeMixin, Node):
             est.new_episode()
         for gate in self.gates.values():
             gate.new_episode()
-        if self.cup_latch:                         # 지금 신선한 FP++ 컵을 이 에피소드의 컵으로(없으면 아래 측정이 거부한다)
+        self.cup_fresh.clear()
+        if self.cup_latch:                      # 지금 신선한 FP++ 컵을 이 에피소드의 컵으로(없으면 아래 측정이 거부한다)
             self._latched = {}
             fresh = {r: self._cup(r) for r in self.fam.roles}
             self._latched = {r: c for r, c in fresh.items() if c is not None}
@@ -690,7 +703,10 @@ class PourFjNode(LeanNodeMixin, Node):
             return
         t0 = time.perf_counter()
         try:
-            obs, action, targets = self.chain.step(self._measure(advance=True))
+            meas = self._measure(advance=True)       # _cup_for 가 이 안에서 cup_fresh 를 채운다
+            if hasattr(self.chain, "cup_fresh"):
+                self.chain.cup_fresh = bool(self.cup_fresh.get("arm", True))
+            obs, action, targets = self.chain.step(meas)
             names, q, qd = self.fam.targets(self.contract, targets)
         except self.fam.errors as exc:
             self._gap += 1

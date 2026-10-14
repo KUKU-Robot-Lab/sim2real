@@ -60,3 +60,21 @@ def test_bad_cfg_is_refused():
         GateCfg(jump_m=0.02, radius_m=0.0)
     with pytest.raises(ValueError):
         GateCfg(jump_m=float("nan"))
+
+
+def test_holding_is_true_only_while_the_latest_new_frame_was_rejected():
+    """10.14 실기 204216: 컵이 들린 채 떨어지자 이 거르기가 20 프레임을 버리고 들린 자리를 붙들었다 — 노드가 그 동안
+    성공을 세지 않도록 '지금 마지막 값을 붙들고 있다'를 알려 준다."""
+    g, palm = FppGate(CFG), (0.29, -0.20, 0.40)
+    assert not g.holding
+    g.step(_f(0.306, -0.180, 0.384, 1), 0.0, palm, True)
+    assert not g.holding
+    g.step(_f(0.310, -0.194, 0.328, 2), 0.1, palm, True)          # 들린 컵이 5.6 cm 떨어짐 = 튐으로 버림
+    assert g.holding and g.rejects == 1
+    g.step(_f(0.310, -0.194, 0.328, 2), 0.2, palm, True)          # 같은 프레임 — 판정도 상태도 그대로
+    assert g.holding
+    g.step(_f(0.314, -0.156, 0.290, 3), 2.6, palm, True)          # 2.5 s 지나 받음
+    assert not g.holding
+    g.step(_f(0.40, -0.156, 0.290, 4), 2.7, palm, True)
+    g.new_episode()
+    assert not g.holding

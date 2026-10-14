@@ -311,3 +311,36 @@ def test_goal_success_still_ends_with_lift_hold_on():
 def test_freeze_rule_refuses_bad_values(bad):
     with pytest.raises(G.GoalInputError):
         G.FreezeRule(*bad)
+
+
+def test_a_stale_cup_pose_does_not_count_toward_lift_hold_or_the_goal():
+    """10.14 실기 204216: 컵이 7.1 s 에 떨어졌는데 FP++ 거르기가 들린 자리를 붙든 2 s 동안 near 120 틱이 차서
+    '목표 달성'으로 끝났다. 신선하지 않은 컵 자세(fresh=False)로는 두 카운터가 늘지 않고, 신선해지면 이어서 센다."""
+    c, b = _lift_book()
+    for _ in range(20):
+        b.step(_up(0.08), UP, (0, 0, 0, 0, 0), is_grasped=True)
+    for _ in range(200):
+        assert not b.step(_up(0.08), UP, (0, 0, 0, 0, 0), is_grasped=True, fresh=False)
+    assert b.lift_steps == 20 and b.successes == 0
+    assert G.end_reason(b, stop_on_target=False, goal_max=1) is None
+    assert b.lift_dz == pytest.approx(0.08)                         # 상태에는 지금 보는 값이 그대로 실린다
+    for _ in range(10):
+        b.step(_up(0.08), UP, (0, 0, 0, 0, 0), is_grasped=True)
+    assert G.end_reason(b, stop_on_target=False, goal_max=1).startswith("lift_hold")
+
+
+def test_a_stale_cup_pose_does_not_complete_the_goal_success():
+    c, b = _lift_book(freeze=None)
+    goal = b.current.copy()
+    for _ in range(c.goal_success_steps - 1):
+        b.step(goal, UP, (0, 0, 0, 0, 0), is_grasped=True)
+    for _ in range(50):
+        assert not b.step(goal, UP, (0, 0, 0, 0, 0), is_grasped=True, fresh=False)
+    assert b.successes == 0 and b.near_steps == c.goal_success_steps - 1
+    assert b.step(goal, UP, (0, 0, 0, 0, 0), is_grasped=True) and b.successes == 1
+
+
+def test_the_aglt_chain_passes_cup_freshness_to_the_goal_book():
+    c = _rg3s()
+    ch = N.AgltChain(c, policy=None)
+    assert ch.cup_fresh is True

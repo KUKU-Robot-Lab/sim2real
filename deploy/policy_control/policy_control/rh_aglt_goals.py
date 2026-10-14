@@ -141,15 +141,20 @@ class GoalBook:
         return []
 
     def step(self, cup_pos: Sequence[float], cup_quat: Sequence[float], tactile_n: Sequence[float],
-             is_grasped: bool | None = None) -> bool:
-        """is_grasped 를 주면 그 판정(배포: 손끝 또는 관절 힘 — cup_attach.grasp_signal), 없으면 손끝 촉각 규칙."""
-        """한 스텝 갱신. 이번 스텝에 목표를 달성했으면 True(다음 중간 목표로 넘긴 뒤)."""
+             is_grasped: bool | None = None, fresh: bool = True) -> bool:
+        """한 스텝 갱신. 이번 스텝에 목표를 달성했으면 True(다음 중간 목표로 넘긴 뒤).
+
+        is_grasped 를 주면 그 판정(배포: 손끝 또는 관절 힘 — cup_attach.grasp_signal), 없으면 손끝 촉각 규칙.
+        ★10.14 fresh=False(FP++ 거르기가 옛 값을 붙듦 · 끊겨 마지막 값만 남음)면 kp_dist · lift_dz 만 갱신하고
+        near_steps · lift_steps 는 그대로 둔다 — 실기 204216 에서 떨어진 컵의 옛 자세로 '목표 달성'이 났다."""
         c = self.c
         kp_c = A.keypoints(c, cup_pos, cup_quat)
         kp_g = A.keypoints(c, self.current, self.quat)
         self.kp_dist = float(np.linalg.norm(kp_c - kp_g, axis=1).max())
         held = grasped(c, tactile_n) if is_grasped is None else bool(is_grasped)
         self.lift_dz = float(np.asarray(cup_pos, float)[2] - self.cup_reset[2])
+        if not fresh:
+            return False
         self.lift_steps = self.lift_steps + 1 if (self.lift_dz > self.freeze.lift_m and held) else 0
         if not has_goal_spec(c):
             return False

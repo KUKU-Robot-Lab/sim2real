@@ -472,3 +472,31 @@ def test_object_retrain_contracts_use_the_trained_object_geometry_and_act(pid):
     for _ in range(12):
         obs, a, _t = ch.step(meas)
     assert a.size == 13 and np.all(np.isfinite(a)) and np.all(np.isfinite(obs))
+
+
+def test_the_node_marks_the_cup_stale_while_the_fpp_gate_holds_the_last_frame(c):
+    """10.14 실기 204216: 떨어진 컵을 거르기가 버리는 동안 노드는 cup_fresh[arm] = False 로 둔다(성공 카운터 멈춤)."""
+    from types import SimpleNamespace
+    from policy_control.cup_attach import AttachCfg, CupAttach
+    from policy_control.fpp_gate import FppGate, GateCfg
+    s = c.side()
+    est = CupAttach(AttachCfg(attach_after_s=0.0))
+    gate = FppGate(GateCfg(jump_m=0.02, dz_m=0.02, radius_m=0.20, max_hold_s=2.5))
+    q = np.array([1.0, 0, 0, 0])
+    live = {"v": (np.array([0.306, -0.180, 0.384]), q, 1.0)}
+    fake = SimpleNamespace(attach={"arm": est}, gates={"arm": gate}, attach_cfg=AttachCfg(attach_after_s=0.0),
+                           _cup=lambda r: live["v"], _fresh_cup=lambda r: live["v"], cup_latch=False, cup_fresh={},
+                           get_clock=lambda: SimpleNamespace(now=lambda: SimpleNamespace(nanoseconds=0)),
+                           get_logger=lambda: SimpleNamespace(info=lambda *_a, **_k: None))
+    st = _St(s, tip=(0, 0, 0, 0, 0))
+    st.stamps = {"arm": 0.01}
+    palm = np.array([0.286, -0.200, 0.40])
+    N.PourFjNode._cup_for(fake, "arm", True)(palm, np.eye(3), np.asarray(st.tip_force), st)
+    assert fake.cup_fresh["arm"] is True
+    live["v"] = (np.array([0.310, -0.194, 0.328]), q, 2.0)            # 떨어짐 → 거르기가 버린다
+    N.PourFjNode._cup_for(fake, "arm", True)(palm, np.eye(3), np.asarray(st.tip_force), st)
+    assert gate.holding and fake.cup_fresh["arm"] is False
+    fake._fresh_cup = lambda r: None                                   # FP++ 가 끊겨 마지막 값만 남음(cup_hold_last)
+    gate.new_episode()
+    N.PourFjNode._cup_for(fake, "arm", True)(palm, np.eye(3), np.asarray(st.tip_force), st)
+    assert fake.cup_fresh["arm"] is False
