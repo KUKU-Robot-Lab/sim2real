@@ -19,6 +19,18 @@ python3 scripts/nodes/object_pose_node.py --head-joint-topic /head/joint_states 
 - **strict(기본)**: 목 각도가 프로필 표(허용 ±1°)에 없으면 그 pose 는 발행하지 않는다(경고만). 틀린 좌표는 없느니만 못하다.
 - 프로필을 안 주면 지금까지와 똑같이 동작한다(기본 hand-eye `config/head_extrinsics.yaml`).
 
+## 다른 환경에서 한 번에 만들기 (원테이크)
+대화로 값을 주고받지 않고 **명령 하나**로 프로필을 만든다(perception_plus_plus 저장소, 로봇 PC):
+```
+python3 scripts/calibrate_profile.py --name <이름> --tilt -30 --pans="-60,-40,-20,0,20,40" --execute   # 목이 움직인다: 사용자 허락 뒤 한 번
+python3 scripts/calibrate_profile.py --name <이름> --surveys <이미 찍은 서베이 폴더>...                  # 목 안 움직임
+```
+한 스크립트가 촬영(기준 자세 + tilt 고정 pan 목록, FP++ 포함) → CAD 구멍으로 시작 hand-eye → 구멍 짝짓기 → 맞춤 2회 → 각도별 보정 → 기존 정적 좌표계 앵커 →
+아는 z → 프레임 하나씩 빼는 검증 → `config/calib_profiles/<이름>.yaml` 과 `report/survey/calib_<이름>/report.md` 까지 한다. 이미 있는 이름이면 거부한다.
+필요한 것: 이 환경의 테이블이 CAD(env_v1)와 같을 것, 기준 자세(pan 0/tilt -20) 영상에서 구멍 12개 안팎이 보일 것, vision 호스트에서 FP++ 가 뜰 수 있을 것.
+환경마다 hand-eye 가 달라도(구멍이 수십 px 어긋나도) 기준 자세에서 CAD 전체 탐색으로 시작값을 얻는다. 다른 hand-eye 를 기준으로 삼으려면 `--base-hand-eye <yaml>`.
+10.14 실측(기존 서베이 6개, 41장)으로 같은 방법을 처음부터 돌려 보면 1.4 초에 프로필이 나오고, 앵커는 손으로 만든 것과 같다(회전 +1.1°, 이동 (+7.2, -14.3) mm).
+
 ## 현재 권장 (10.14 저녁)
 - **프로필 `v9_1014_anchored_z`**: v6 hand-eye + 각도별 보정(22각도) + 기존 검증 좌표계 앵커 + **아는 z**(`known_z`).
   정지 pose 의 z 를 (상판 0.205 + 물체 원점 높이)로 맞춘다. FP++ z 는 깊이 편향으로 2~4 mm 낮았다. 오차가 ±15 mm 를 넘으면(들림·기움) FP++ 값 그대로,
