@@ -13,7 +13,7 @@ from typing import Callable, Protocol
 
 import head_motion as hm
 from head_compliant_hold import tick_to_deg
-from head_home import HeadHome, apply_one
+from head_home import ADDR_GOAL_POSITION, HeadHome, apply_one, deg_to_tick
 
 
 class Controller(Protocol):
@@ -32,6 +32,8 @@ class HeadDriver:
         self._publish_angles, self._publish_status = publish_angles, publish_status
         self._clock, self._max_tilt, self._apply, self._log = clock, max_tilt_deg, apply, log
         self._active: tuple[hm.MoveRequest, hm.SettleTracker] | None = None
+        self._trims = 0  # 이 이동에서 이미 쓴 보정 횟수
+        self._goal: dict[int, float] = {}  # 지금 모터에 쓴 목표(보정 포함)
 
     @property
     def moving(self) -> bool:
@@ -60,6 +62,8 @@ class HeadDriver:
         except Exception as exc:  # noqa: BLE001 - 쓰기가 중간에 실패해도 상태를 알려야 한다
             self._publish_status(hm.status_message(req.request_id, hm.STATE_FAILED, ok=False, reason=f"모터 쓰기 실패: {exc}"))
             return
+        self._trims = 0
+        self._goal = {self.pan_id: pan, self.tilt_id: tilt}
         self._active = (req, hm.SettleTracker(pan, tilt, self._clock))
         self._publish_status(hm.status_message(req.request_id, hm.STATE_ACCEPTED, target_pan_deg=pan, target_tilt_deg=tilt))
         self._log(f"이동 요청 {req.request_id}: pan {pan:+.2f} tilt {tilt:+.2f}")
@@ -84,12 +88,37 @@ class HeadDriver:
         result = tracker.poll()
         if result is None:
             return
+        if self._trim(req, tracker, result):
+            return
         self._active = None
         self._publish_status(hm.status_message(
             req.request_id, hm.STATE_DONE if result.ok else hm.STATE_FAILED, ok=result.ok, reason=result.reason,
             pan_deg=result.pan_deg, tilt_deg=result.tilt_deg,
             pan_sigma_deg=result.pan_sigma_deg, tilt_sigma_deg=result.tilt_sigma_deg,
             target_pan_deg=tracker.target_pan_deg, target_tilt_deg=tracker.target_tilt_deg))
+
+
+    def _trim(self, req: hm.MoveRequest, tracker: hm.SettleTracker, result: hm.Settled) -> bool:
+        """정지했는데 목표와 어긋나면(마찰·불감대) 목표를 오차만큼 반대로 옮겨 다시 맞춘다(피드백 보정).
+
+        최대 `MAX_TRIMS` 회, 보정 폭은 `MAX_TRIM_DEG` 이하로 제한한다. 보정 목표를 쓴 뒤에도 판정은 원래 목표 기준이다.
+        """
+        if result.ok or not result.still or self._trims >= hm.MAX_TRIMS:
+            return False
+        err_pan, err_tilt = result.pan_deg - tracker.target_pan_deg, result.tilt_deg - tracker.target_tilt_deg
+        if max(abs(err_pan), abs(err_tilt)) > hm.MAX_TRIM_DEG:
+            return False
+        self._trims += 1
+        goal_pan, goal_tilt = self._goal[self.pan_id] - hm.TRIM_GAIN * err_pan, self._goal[self.tilt_id] - hm.TRIM_GAIN * err_tilt
+        self._goal = {self.pan_id: goal_pan, self.tilt_id: goal_tilt}
+        try:  # 토크·모드·게인은 건드리지 않고 목표 위치만 쓴다(토크를 끄면 처진다)
+            for dxl_id, deg in self._goal.items():
+                self.controller.write4(dxl_id, ADDR_GOAL_POSITION, deg_to_tick(deg), "goal trim")
+        except Exception:  # noqa: BLE001 - 보정 실패는 원래 결과로 끝낸다
+            return False
+        self._active = (req, hm.SettleTracker(tracker.target_pan_deg, tracker.target_tilt_deg, self._clock))
+        self._log(f"보정 {self._trims}: 오차 pan {err_pan:+.2f} tilt {err_tilt:+.2f} → 목표 {goal_pan:+.2f}/{goal_tilt:+.2f}")
+        return True
 
 
 def _id_of(text: str) -> str:

@@ -19,7 +19,7 @@ import json
 import math
 import statistics
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable
 
 REQUEST_TOPIC = "/head/move_request"
@@ -29,6 +29,12 @@ STATUS_TOPIC = "/head/move_status"
 MAX_TILT_DEG = -10.0
 PAN_RANGE_DEG = (-180.0, 180.0)
 TILT_MIN_DEG = -180.0
+
+#: 정지했는데 목표와 어긋나면 목표를 오차만큼 반대로 옮겨 다시 맞춘다(피드백 보정). 횟수·폭 상한.
+MAX_TRIMS = 3
+MAX_TRIM_DEG = 1.0
+#: 보정 이득. 1 이면 불감대·잔여 이동이 섞인 오차를 통째로 되돌려 오버슈트한다(2026-10-15 실기: +0.53 → -0.45). 절반만 되돌린다.
+TRIM_GAIN = 0.5
 
 STATE_ACCEPTED, STATE_DONE, STATE_FAILED, STATE_REJECTED = "accepted", "done", "failed", "rejected"
 
@@ -99,6 +105,7 @@ class Settled:
     tilt_sigma_deg: float
     ok: bool
     reason: str = ""
+    still: bool = False  # 정지해 있었는가(정지했지만 어긋난 경우와 미정착을 구분)
 
 
 @dataclass
@@ -147,8 +154,8 @@ class SettleTracker:
         if still and elapsed >= self.min_s:
             err = max(abs(statistics.fmean(self._pan) - self.target_pan_deg), abs(statistics.fmean(self._tilt) - self.target_tilt_deg))
             if err <= self.tol_deg:
-                return self._summary(True, "")
-            return self._summary(False, f"정지했지만 목표에서 {err:.2f}° 떨어져 있다(허용 {self.tol_deg}°)")
+                return replace(self._summary(True, ""), still=True)
+            return replace(self._summary(False, f"정지했지만 목표에서 {err:.2f}° 떨어져 있다(허용 {self.tol_deg}°)"), still=True)
         if elapsed >= self.timeout_s:
             return self._summary(False, f"{self.timeout_s:g}s 안에 정착하지 못했다")
         return None

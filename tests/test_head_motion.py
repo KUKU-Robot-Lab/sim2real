@@ -187,3 +187,42 @@ def test_read_failure_keeps_the_driver_alive_and_ends_a_move_with_failure():
         driver.tick()
     last = json.loads(statuses[-1])
     assert last["state"] == "failed" and not driver.moving and math.isnan(last["pan_deg"])
+
+
+def test_driver_trims_a_resting_offset_with_feedback_and_then_succeeds():
+    """정지했는데 0.5° 어긋나면 목표를 오차만큼 옮겨 다시 맞춘다(마찰·불감대 보정)."""
+    class Sticky(FakeBus):
+        offset = 0.5  # 목표에 못 미치는 정상상태 오차
+
+        def step(self, deg=4.0):
+            goal = (self.goal[0] - self.offset, self.goal[1])
+            self.pan += max(-deg, min(deg, goal[0] - self.pan))
+            self.tilt += max(-deg, min(deg, goal[1] - self.tilt))
+
+        def write4(self, dxl_id, addr, tick, label):
+            # 트림 목표 쓰기: 틱 → 도로 되돌려 목표에 반영
+            deg = tick * 360.0 / 4095 - 180.0
+            self.goal = (deg, self.goal[1]) if dxl_id == 1 else (self.goal[0], deg)
+
+    bus, clock = Sticky(), Clock()
+    driver, _, statuses = _driver(bus, clock)
+    driver.on_request(hm.encode_request(hm.MoveRequest("m1", 10.0, -20.0)))
+    for _ in range(300):
+        clock.t += 0.05
+        bus.step()
+        driver.tick()
+    last = json.loads(statuses[-1])
+    assert last["state"] == "done" and last["ok"] and abs(last["pan_deg"] - 10.0) <= 0.3
+    assert driver._trims >= 1
+
+
+def test_trim_is_bounded_and_big_errors_are_not_trimmed():
+    bus, clock = FakeBus(), Clock()
+    driver, _, statuses = _driver(bus, clock)
+    driver.on_request(hm.encode_request(hm.MoveRequest("m1", 20.0, -30.0)))
+    bus.goal = (5.0, -30.0)  # 모터가 엉뚱한 곳에 서게(오차 15° > 상한)
+    for _ in range(60):
+        clock.t += 0.05
+        bus.step()
+        driver.tick()
+    assert json.loads(statuses[-1])["state"] == "failed" and driver._trims == 0
