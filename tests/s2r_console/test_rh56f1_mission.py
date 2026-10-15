@@ -426,26 +426,23 @@ def test_head_pose_is_checked_and_aligned_before_fpp_and_holder_poses():
     카메라 외부 파라미터를 잰 머리 자세(head_pose)와 비교 · 맞춤(실기 실행 = --execute)을 FP++ · 홀더 노드보다 먼저 한다."""
     def idx(cmds, needle):
         return next(i for i, c in enumerate(cmds) if needle in " ".join(c.argv))
-    # ★10.13 머리 도구는 로봇 PC 마다 — arm4090 = head_pose_check(외부 파라미터의 head_pose), 5090 = head_home(그 자세가 설정 목표)
-    tool = f"{GEN.STATION['head_tool']}.py"
+    tool = 'head_move.py'
     pairs = [("head_home", None), ("cups", "perception_ctl.py start")]
     if not GEN.REMOTE_PERCEPTION:
         pairs.append(("cup_holders", "cup_holder_pose_node.py"))
     for sid, then in pairs:
         cmds = _cmds(REAL, REAL_BOOK, sid)
         h = idx(cmds, tool)
-        argv = " ".join(cmds[h].argv)
-        assert "--execute" in argv and Path(GEN.HEAD_CONFIG).name in argv, sid
-        if tool == "head_pose_check.py":
-            assert "--extrinsics" in argv and GEN.CAMERA_EXTRINSICS in argv, sid
+        assert '--execute' in cmds[h].argv
         if then:
             assert h < idx(cmds, then), sid
-        assert not any(tool in " ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, sid))   # fake 는 머리 없음
-    # head_home 은 설정 목표(pan 2015 — 18 틱 앞에서 멈춰 늘 ✗, 10.04 실기 단계 실패)가 아니라 캘리브 자세로 맞추고 검증한다
-    home = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "head_home")]
-    assert len(home) == 1
-    if tool == "head_pose_check.py":
-        assert "--home" in home[0] and "head_home.py" not in home[0]
+        assert not any(tool in " ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, sid))
+    home = _cmds(REAL, REAL_BOOK, 'head_home')
+    assert len(home) == 2
+    assert 'head_joint_publisher.py' in ' '.join(home[0].argv)
+    assert str(REPO / GEN.HEAD_CONFIG) in home[0].argv
+    assert home[0].background
+    assert not any('head_home.py' in ' '.join(c.argv) for c in home)
 
 
 @pytest.mark.parametrize("side", ["right", "left"])
@@ -558,7 +555,7 @@ def test_head_control_is_a_separate_approved_motion_using_the_head_settle_tool()
         cmds = _cmds(mission, book, 'head_control')
         if mission is REAL:
             assert st.touches_real
-            assert any('head_home.py' in ' '.join(c.argv) and '--execute' in c.argv for c in cmds)
+            assert any('head_move.py' in ' '.join(c.argv) and '--execute' in c.argv for c in cmds)
         else:
             assert not st.touches_real
             assert not any('head_home.py' in ' '.join(c.argv) for c in cmds)
@@ -572,3 +569,18 @@ def test_shutdown_releases_neck_torque_after_perception_and_before_pd():
     assert perception < head < pd
     assert '--execute' in cmds[head].argv
     assert not any('--release' in c.argv for c in _cmds(FAKE, FAKE_BOOK, 'shutdown'))
+
+
+def test_head_has_single_serial_owner_and_dynamic_camera_transform():
+    home = _cmds(REAL, REAL_BOOK, 'head_home')
+    assert any(c.background and 'head_joint_publisher.py' in ' '.join(c.argv) for c in home)
+    assert any('head_move.py' in ' '.join(c.argv) and '--execute' in c.argv for c in home)
+    control = _cmds(REAL, REAL_BOOK, 'head_control')
+    assert any('head_move.py' in ' '.join(c.argv) for c in control)
+    cups = _cmds(REAL, REAL_BOOK, 'cups')
+    converter = next(c for c in cups if 'object_pose_node.py' in ' '.join(c.argv))
+    assert '--head-joint-topic' in converter.argv and '/head/joint_states' in converter.argv
+    shutdown = _cmds(REAL, REAL_BOOK, 'shutdown')
+    stop = next(i for i, c in enumerate(shutdown) if 'head_home#0' in c.stop)
+    release = next(i for i, c in enumerate(shutdown) if '--release' in c.argv)
+    assert stop < release

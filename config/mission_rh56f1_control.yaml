@@ -569,6 +569,9 @@ run:
     - cups#2
     - cups#3
     - cup_holders#3
+  - note: 목 드라이버 정지 — 단독 소유한 시리얼 포트를 닫는다
+    stop:
+    - head_home#0
   - note: 목 토크 해제 — 받침 확인, pan · tilt 가 중력으로 처질 수 있다
     argv:
     - python3
@@ -603,9 +606,7 @@ run:
   - note: 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)
     argv: &id001
     - python3
-    - '{repo}/scripts/head_home.py'
-    - --config
-    - '{repo}/config/head_home.yaml'
+    - '{repo}/scripts/head_move.py'
     execute_args:
     - --execute
   - note: 카메라(RealSense, vision-3090) 켜기 — 이미 떠 있으면 그대로(cups 단계와 같이 써도 된다)
@@ -647,6 +648,19 @@ run:
     - vision-3090:rl_ws/sim2real/config/cup_holder_poses_5090_v1.yaml
     - '{repo}/config/cup_holder_poses_5090_v1.yaml'
   head_home:
+  - note: 목 드라이버 — 포트 단독 소유 · 실측 관절 발행 · 이동 요청 처리
+    argv:
+    - python3
+    - '{repo}/scripts/nodes/head_joint_publisher.py'
+    - --config
+    - '{repo}/config/head_home.yaml'
+    - --port
+    - /dev/ttyUSB0
+    - --baud
+    - '1000000'
+    - --ids
+    - 1,2
+    background: true
   - note: 머리를 카메라 캘리브 자세로 — 토크 · 모드 · I 게인(RAM, 전원을 끄면 사라진다)이 다르면 먼저 적용하고, 외부 파라미터 head_pose 로 목표를 고쳐 가며 맞춘 뒤 ±4 틱으로 검증(머리가 조금 움직인다)
     argv: *id001
     execute_args:
@@ -682,6 +696,8 @@ run:
     - '{repo}/scripts/nodes/object_pose_node.py'
     - --camera-extrinsics
     - '{repo}/config/global_camera_extrinsics.yaml'
+    - --head-joint-topic
+    - /head/joint_states
     background: true
   - note: FP++ 전 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)
     argv: *id001
@@ -2605,8 +2621,6 @@ run:
   - note: 목 pan · tilt 변경 후 실측 정착 확인
     argv:
     - python3
-    - '{repo}/scripts/head_home.py'
-    - --config
-    - '{repo}/config/head_home.yaml'
+    - '{repo}/scripts/head_move.py'
     execute_args:
     - --execute

@@ -803,10 +803,14 @@ class Console:
         (종료·끄기 규칙은 답이 하나여야 한다 — 한 팔이라도 잡고 있으면 잡고 있는 것으로 본다).
         """
         keys = self._robot_keys(s)
-        # None = 어느 단위가 pd 인지 모른다(그림 없음) · 빈 집합 = 그림은 있는데 pd 를 콘솔이 띄우지 않는다(역시 모른다)
-        pd_alive = None if not keys else any(procs.get(k, {}).get("alive") for k in keys)
         d = s.diagram
-        pd_ros = () if d is None else tuple(n for b in d.boxes if PD.is_pd(str(b.status or "")) for n in b.ros)
+        boxes = [] if d is None else [b for b in d.boxes if PD.is_pd(str(b.status or ''))]
+        if side and boxes:
+            boxes = [b for b in boxes if b.status in (PD.name(side), PD.LEGACY)]
+            keys = {key for b in boxes for key in b.units}
+        # None = 어느 단위가 pd 인지 모른다(그림 없음) · 빈 집합 = 그림은 있는데 pd 를 콘솔이 띄우지 않는다(역시 모른다)
+        pd_alive = None if keys is None else any(procs.get(k, {}).get("alive") for k in keys)
+        pd_ros = tuple(n for b in boxes for n in b.ros)
         seen = obs.rosgraph is not None and obs.rosgraph_age_s is not None and obs.rosgraph_age_s <= GRAPH_STALE_S
         pd_in_graph = bool(set(pd_ros) & set(obs.rosgraph.get("nodes") or ())) if seen and pd_ros else None
         names = [PD.name(side)] if side else list(PD.nodes(s.profile.status_nodes)) or [PD.LEGACY]

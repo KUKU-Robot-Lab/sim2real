@@ -158,13 +158,14 @@ def _cups_txt() -> str:
 HEAD_CONFIG = STATION["head_config"]
 #: ★10.04 사용자 "fpp 진행 전에 자동으로 각도 확인하고 세팅을 제대로 맞춘 다음에 진행" — 외부 파라미터를 잰 머리 자세
 #  (CAMERA_EXTRINSICS 의 head_pose)와 지금 자세를 비교하고, 실기 실행이면 그 자세로 맞춘다(pan 은 목표보다 18 틱 앞에서 멈춘다)
-if STATION["head_tool"] == "head_pose_check":
-    HEAD_CHECK_ARGV = ["python3", "{repo}/scripts/head_pose_check.py", "--config", "{repo}/" + HEAD_CONFIG,
-                       "--extrinsics", "{repo}/" + CAMERA_EXTRINSICS]
-    HEAD_HOME_ARGV = HEAD_CHECK_ARGV + ["--home"]
-else:   # head_home.py — 설정의 기준 자세(pan · tilt)로 맞추고 검증한다. 외부 파라미터가 그 자세에서 잰 값이다
-    HEAD_CHECK_ARGV = ["python3", "{repo}/scripts/head_home.py", "--config", "{repo}/" + HEAD_CONFIG]
-    HEAD_HOME_ARGV = HEAD_CHECK_ARGV
+# 포트는 head_joint_publisher 하나가 소유한다. 인자 없는 head_move 는
+# 드라이버가 읽은 station config 의 기준 자세로 이동하고 실측 정착을 확인한다.
+HEAD_CHECK_ARGV = ["python3", "{repo}/scripts/head_move.py"]
+HEAD_HOME_ARGV = HEAD_CHECK_ARGV
+_head_config = yaml.safe_load((REPO / HEAD_CONFIG).read_text())
+HEAD_DRIVER_ARGV = ["python3", "{repo}/scripts/nodes/head_joint_publisher.py", "--config", "{repo}/" + HEAD_CONFIG,
+                    "--port", str(_head_config['port']), "--baud", str(_head_config['baud']),
+                    "--ids", ','.join(str(_head_config['motors'][axis]['id']) for axis in ('pan', 'tilt'))]
 RECALIB_HINT = ("scripts/calib/table_cad_extrinsics.py --init " + CAMERA_EXTRINSICS + " --write --head-config " + HEAD_CONFIG)
 #: 원격 인지 PC 에서 도는 명령 — 홈에서 시작하는 ssh(사용자 이름이 PC 마다 달라 상대 경로, perception_launcher 와 같은 규약)
 REMOTE_SIM2REAL = "rl_ws/sim2real"
@@ -352,7 +353,8 @@ def _run(kind: str) -> dict:
                     ["python3", "{repo}/scripts/ops/perception_ctl.py", "stop", "--camera", "--host", PERCEPTION_HOST, "--wait", "60"]),
                _cmd("인지 런처 · 자세 수신기 · 물체 자세 노드 · 컵홀더 노드 정지",
                     stop=["cups#1", "cups#2", "cups#3", "cup_holders#3"])] if real else []),
-            *([_cmd("목 토크 해제 — 받침 확인, pan · tilt 가 중력으로 처질 수 있다",
+            *([_cmd("목 드라이버 정지 — 단독 소유한 시리얼 포트를 닫는다", stop=["head_home#0"]),
+               _cmd("목 토크 해제 — 받침 확인, pan · tilt 가 중력으로 처질 수 있다",
                     ["python3", "{repo}/scripts/head_home.py", "--config", "{repo}/" + HEAD_CONFIG, "--release"],
                     execute_args=["--execute"])] if real else []),
             _cmd("남은 pd 정지 — 정책과 인지를 정리한 뒤",
@@ -399,6 +401,8 @@ def _run(kind: str) -> dict:
              ["scp", "-o", "BatchMode=yes", f"{PERCEPTION_HOST}:{REMOTE_SIM2REAL}/{HOLDER_POSES}", "{repo}/" + HOLDER_POSES]),
     ] if real else [_cmd("fake — 카메라 없음", ["bash", "-lc", "true"])]
     run["head_home"] = [
+        _cmd("목 드라이버 — 포트 단독 소유 · 실측 관절 발행 · 이동 요청 처리",
+             HEAD_DRIVER_ARGV, background=True),
         # ★10.04: head_home.py 는 설정 목표(pan 2015)로 검증하는데 이 머리 pan 은 목표보다 18 틱 앞에서 멈춰 늘 ✗(19:35 실기 단계
         #   실패). 카메라가 맞는 자세는 그 목표가 아니라 캘리브 때 멈춘 자리(외부 파라미터 head_pose) — 거기로 맞추고 거기로 검증한다.
         _cmd("머리를 카메라 캘리브 자세로 — 토크 · 모드 · I 게인(RAM, 전원을 끄면 사라진다)이 다르면 먼저 적용하고, 외부 파라미터 "
@@ -422,7 +426,8 @@ def _run(kind: str) -> dict:
              ["python3", "{repo}/scripts/nodes/fpp_pose_rx.py"], background=True),
         _cmd(f"물체 자세 → base — {ROBOT_PC} 카메라 외부 파라미터({CAMERA_EXTRINSICS}, + depth z 보정). /objects/<물체>/pose(레지스트리의 모든 물체)",
              ["python3", "{repo}/scripts/nodes/object_pose_node.py",       # 레지스트리 전체 — 묶음을 바꿔도(activate) 다시 띄우지 않는다
-              "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
+              "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS,
+              "--head-joint-topic", "/head/joint_states"], background=True),
         _cmd("FP++ 전 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)", HEAD_CHECK_ARGV, execute_args=["--execute"]),
         _cmd(f"카메라 + FP++ 켜기 — 묶음 컨테이너({_containers_txt()})가 {_cups_txt()} 를 차례로 한 번 찍는다. 이미 떠 있으면 그대로. "
              "최대 150 s. ★10.13 묶음 하나가 못 뜨면 경고만(나머지는 계속), 하나도 못 띄우면 실패",
@@ -617,7 +622,7 @@ def _run(kind: str) -> dict:
         pd_index = next(i for i, c in enumerate(run["shutdown"]) if "pd_load_right#0" in c.get("stop", []))
         run["shutdown"].insert(pd_index, _cmd("fake 인지 물체 발행 정지", stop=perception_ids))
     run["head_control"] = [
-        _cmd("목 pan · tilt 변경 후 실측 정착 확인", ["python3", "{repo}/scripts/head_home.py", "--config", "{repo}/" + HEAD_CONFIG],
+        _cmd("목 pan · tilt 변경 후 실측 정착 확인", ["python3", "{repo}/scripts/head_move.py"],
              execute_args=["--execute"])
     ] if real else [_cmd("fake — 목 없음(승인한 자세 설정만 보관)", ["bash", "-lc", "true"])]
     return run

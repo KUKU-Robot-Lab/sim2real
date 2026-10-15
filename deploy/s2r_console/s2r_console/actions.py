@@ -10,6 +10,7 @@ import copy
 import json
 import math
 import os
+import re
 import signal
 import threading
 import time
@@ -29,6 +30,7 @@ class ActionManager:
         self.settle_s = settle_s
         self._status = {'active': False, 'outcome': None, 'steps': []}
         self._lock = threading.RLock()
+        self._scan_restore_ok = True
 
     def view(self):
         with self._lock:
@@ -64,6 +66,7 @@ class ActionManager:
         with self._lock:
             self._status = {'active': False, 'outcome': None, 'steps': []}
             self._runner = None
+            self._scan_restore_ok = True
 
     def _specs(self, session):
         known = {stage.id: stage for stage in session.mission.stages}
@@ -117,6 +120,8 @@ class ActionManager:
             self._status.get('id') == 'perception_refresh' and action_id == 'head_control')
         if self.view()['active'] and not interruptible:
             reasons.append('다른 관리 작업이 실행 중이다')
+        if action_id in ('head_control', 'perception_refresh') and not self.view()['active'] and not self._scan_restore_ok:
+            reasons.append('이전 목 스캔의 운용 자세 복귀 정착을 확인하지 못했다 — head_home 복구 필요')
         active = [r.stage_id for r in s.runners.values() if r.active]
         nonpolicy = [sid for sid in active if not sid.startswith(('policy_', 'episode_'))]
         if nonpolicy:
@@ -149,10 +154,17 @@ class ActionManager:
                 reasons.append('양팔 드라이버가 연결되지 않았다')
         if action_id == 'head_control':
             head = {**s.workspace.head, **parameters}
-            for axis, low, high in (('pan', -90, 90), ('tilt', -60, 30)):
+            for axis, low, high in (('pan', -90, 90), ('tilt', -60, -10)):
                 value = head.get(axis)
                 if not isinstance(value, (float, int)) or not math.isfinite(value) or not low <= value <= high:
                     reasons.append(f'{axis} 설정이 운용 한계를 벗어났다')
+            profile = head.get('calib_profile', '')
+            if profile and (not isinstance(profile, str) or not re.fullmatch(r'[A-Za-z0-9_-]+', profile) or
+                            not (s.repo / 'config/calib_profiles' / f'{profile}.yaml').is_file()):
+                reasons.append('선택한 카메라 보정 프로필이 등록되지 않았다')
+            drivers = [unit for unit in s.units.values() if any('head_joint_publisher.py' in a for a in unit.argv)]
+            if drivers and not any(s.supervisor.is_alive(unit.key) for unit in drivers):
+                reasons.append('목 드라이버가 연결되지 않았다 — setting head_home 필요')
         if group == 'policy':
             card = self._card(s, action_id)
             obj = next((o for o in s.workspace.objects if o['id'] == card['object_id']), None)
@@ -198,7 +210,14 @@ class ActionManager:
                                      'argv': list(effective.argv), 'stop': list(effective.stop), 'background': effective.background})
         targets = self._policy_targets(s)
         if group == 'control' and targets:
-            warnings.append('관련 정책과 실행기를 정지 → PD 현재 자세 유지 확인 → 요청 실행. 정책은 자동 재개하지 않는다.')
+            try:
+                needed = self._policy_sides(s, targets)
+                missing = needed - set(self.console._pd_sides(s))
+                if missing:
+                    reasons.append(f"정책 대상 {', '.join(sorted(missing))} PD 상태가 없거나 오래됐다")
+            except ConsoleError as exc:
+                reasons.append(str(exc))
+            warnings.append('정지 대상: ' + ', '.join(targets) + ' → PD 현재 자세 유지 확인 → 요청 실행. 정책은 자동 재개하지 않는다.')
         if action_id == 'shutdown':
             warnings.append('팔을 받침에 놓으십시오. PD 해제와 팔 드라이버 종료로 모터 토크가 해제됩니다.')
             with s.feed_lock:
@@ -211,6 +230,10 @@ class ActionManager:
             for source, cmd in self._perception_commands(s, parameters):
                 commands.append({'stage': source, 'index': 0, 'note': cmd.note,
                                  'argv': list(cmd.argv), 'stop': [], 'background': False})
+        if action_id in ('head_control', 'cups', 'perception_refresh'):
+            for key, command in self._converter_updates(s, parameters):
+                commands.append({'stage': 'cups', 'index': int(key.split('#')[1]), 'note': '카메라 좌표 변환 보정 변경',
+                                 'argv': list(command.argv), 'stop': [key], 'background': True})
         if action_id.startswith('engage_'):
             commands = [c for c in commands if 'pd_engage' in c['argv']]
             if not commands:
@@ -238,7 +261,7 @@ class ActionManager:
                     except ProcessLookupError:
                         pass
             self._thread.join(timeout=100)
-            if self._thread.is_alive():
+            if self._thread.is_alive() or not self._scan_restore_ok:
                 raise ConsoleError('목 스캔 취소 후 정착을 확인하지 못했다')
         # A control intervention cancels the monitored episode and waits for its
         # stop/hold/record cleanup before the new command can begin.
@@ -273,9 +296,20 @@ class ActionManager:
         return [self._transform(s, description['id'], description['parameters'], c) for c in commands]
 
     def _transform(self, s, action_id, parameters, cmd):
-        if action_id == 'head_control' and any('head_home.py' in a for a in cmd.argv):
+        if action_id in ('head_control', 'cups') and any('head_move.py' in a for a in cmd.argv):
             head = {**s.workspace.head, **parameters}
             cmd = replace(cmd, argv=(*cmd.argv, '--pan', str(head['pan']), '--tilt', str(head['tilt'])))
+        if any('object_pose_node.py' in a for a in cmd.argv):
+            argv = list(cmd.argv)
+            if '--head-joint-topic' not in argv:
+                argv += ['--head-joint-topic', '/head/joint_states']
+            if '--calib-profile' in argv:
+                index = argv.index('--calib-profile')
+                del argv[index:index + 2]
+            profile = parameters.get('calib_profile', s.workspace.head['calib_profile'])
+            if profile:
+                argv += ['--calib-profile', profile]
+            cmd = replace(cmd, argv=tuple(argv))
         if action_id.startswith('rg3_'):
             card = self._card(s, action_id)
             obj = next(o for o in s.workspace.objects if o['id'] == card['object_id'])
@@ -294,18 +328,49 @@ class ActionManager:
             cmd = replace(cmd, argv=tuple(a.replace('/objects/source240b_blue/', f"/objects/{obj['id']}/") for a in cmd.argv))
         return cmd
 
-    def _run_commands(self, s, sid, commands):
+    def _run_commands(self, s, sid, commands, *, process_keys=None):
         with self._lock:
             self._status['stage'] = sid
             self._runner = StageRunner(sid, commands, s.supervisor, on_done=lambda *args: None,
                                        settle_s=self.settle_s)
             runner = self._runner
+            if process_keys is not None:
+                for step, key in zip(runner.steps, process_keys):
+                    step.key = key
         runner.start()
         runner.join()
         with self._lock:
             self._status['steps'] = runner.view()['steps']
         if runner.outcome != DONE:
             raise ConsoleError(f'{sid}: {runner.note}')
+
+    def _converter_updates(self, s, parameters):
+        if not any(st.id == 'cups' for st in s.mission.stages):
+            return []
+        commands = commands_for(s.runbook, s.mission, 'cups', repo=self.console.repo, execute=True)
+        procs = {p['key']: p for p in s.supervisor.table()}
+        updates = []
+        for index, command in enumerate(commands):
+            if not command.background or not any('object_pose_node.py' in a for a in command.argv):
+                continue
+            key = f'cups#{index}'
+            existing = procs.get(key)
+            if not existing or not existing['alive']:
+                continue
+            desired = self._transform(s, 'head_control', parameters, command)
+            if tuple(existing['argv']) == desired.argv:
+                continue
+            updates.append((key, desired))
+        return updates
+
+    def _sync_converter(self, s, parameters):
+        """Keep the existing mission process key when changing camera calibration."""
+        for key, desired in self._converter_updates(s, parameters):
+            s.workspace.invalidate_results('camera conversion calibration changed')
+            s.supervisor.stop([key])
+            if s.supervisor.is_alive(key):
+                raise ConsoleError('카메라 좌표 변환 노드 정지 실패')
+            self._run_commands(s, 'cups', [desired], process_keys=[key])
 
     def _trigger(self, s, service, side, *, expect=()):
         from .console import _TRIGGER
@@ -319,6 +384,11 @@ class ActionManager:
         targets = self._policy_targets(s)
         if not targets:
             return
+        needed = self._policy_sides(s, targets)
+        fresh = set(self.console._pd_sides(s))
+        missing = needed - fresh
+        if missing:
+            raise ConsoleError(f"정책 대상 {', '.join(sorted(missing))} PD 상태가 없거나 오래됐다 — 정지/자세 유지 확인 필요")
         # Stop the sequencer first; otherwise it could advance while PD is held.
         from .console import _EPISODE_CMD
         with s.feed_lock:
@@ -327,10 +397,7 @@ class ActionManager:
             self._run_commands(s, 'action_episode_stop', [Command(
                 ('python3', str(_EPISODE_CMD), 'stop', '--execute', '--operator', self._status['operator']),
                 note='에피소드 실행기 정지')])
-        sides = self.console._pd_sides(s)
-        if not sides:
-            raise ConsoleError('정책 정지 후 PD 상태를 확인할 수 없다')
-        for side in sides:
+        for side in sorted(needed):
             self._trigger(s, 'episode/stop', side)
             began_ns = time.time_ns()
             self._trigger(s, 'pd/hold', side, expect=('TRACKING',))
@@ -342,6 +409,43 @@ class ActionManager:
         s.supervisor.stop(targets)
         if any(s.supervisor.is_alive(key) for key in targets):
             raise ConsoleError('정책 프로세스 정지 실패 — 요청을 실행하지 않는다')
+
+    @staticmethod
+    def _policy_sides(s, targets):
+        needed = set()
+        unknown = []
+        for proc in s.supervisor.table():
+            if proc['key'] not in targets:
+                continue
+            sides = set(re.findall(r'(?:^|_)(right|left)(?:_|$)', proc['stage']))
+            stage = next((st for st in s.mission.stages if st.id == proc['stage']), None)
+            if stage:
+                lane = next((la for la in s.mission.lanes if la.id == stage.lane), None)
+                if lane and lane.side in ('right', 'left'):
+                    sides.add(lane.side)
+                elif lane and lane.id == 'both':
+                    sides.update(('right', 'left'))
+            for arg in proc.get('argv', []):
+                if arg.startswith(('ns:=', 'side:=')) and arg.split(':=', 1)[1] in ('right', 'left'):
+                    sides.add(arg.split(':=', 1)[1])
+                if arg.startswith('contract:='):
+                    path = s.repo / arg.split(':=', 1)[1]
+                    try:
+                        contract = json.loads(path.read_text())
+                    except (OSError, ValueError):
+                        continue
+                    for name, spec in contract.get('sides', {}).items():
+                        side = spec.get('side', name)
+                        if side in ('right', 'left'):
+                            sides.add(side)
+            if not sides:
+                unknown.append(proc['key'])
+            needed.update(sides)
+        if unknown:
+            # Ancillary recorders share their policy's stage, so a stage whose
+            # side cannot be established must not be silently treated as free.
+            raise ConsoleError('정책 대상 팔을 확인할 수 없다: ' + ', '.join(unknown))
+        return needed
 
     @staticmethod
     def _confirm_hold(s, side, began_ns):
@@ -365,7 +469,10 @@ class ActionManager:
             if action == 'shutdown':
                 for side in self.console._pd_sides(s):
                     self._trigger(s, 'pd/release', side, expect=('IDLE',))
+            if action in ('head_home', 'head_control'):
+                s.workspace.invalidate_results('head motion or calibration changed')
             if action == 'perception_refresh':
+                self._sync_converter(s, description['parameters'])
                 self._refresh(s, description['parameters'])
             for sid in description['stages']:
                 if description['group'] == 'policy':
@@ -377,6 +484,10 @@ class ActionManager:
                         s.state = replace(s.state, completed=MC.settle_completed(s.mission, s.state.completed, sid))
             if action == 'head_control' and description['parameters']:
                 s.workspace.update({'head': description['parameters']})
+            if action == 'head_home':
+                self._scan_restore_ok = True
+            if action in ('head_control', 'cups'):
+                self._sync_converter(s, description['parameters'])
             if action == 'shutdown':
                 # Also cover managed children added after the generated stop list.
                 for prefix in ('episode', 'policy', 'cups', 'head', 'pd', 'hand', 'drivers'):
@@ -479,6 +590,9 @@ class ActionManager:
                 if source == 'fpp':
                     supported = [o['id'] for o in selected if o['model'] != 'holder']
                     if supported:
+                        workspace.invalidate_results('FPP acquisition restarted', sources=('fpp',))
+                        start = next(c for key, c in self._perception_commands(s, parameters) if key == 'action_fpp_start')
+                        self._run_commands(s, 'action_fpp_start', [start])
                         self._run_commands(s, 'action_fpp', [Command(tuple(workspace.fpp_argv(supported)), note='FPP 재추출')])
                 else:
                     for obj in selected:
@@ -488,9 +602,13 @@ class ActionManager:
                             workspace.set_result(obj['id'], source, {'valid': False, 'reason': obj['locate_reason']})
                             continue
                         key = f"action_locate_{obj['id']}"
-                        self._run_commands(s, key, [Command(tuple(workspace.locate_argv(obj['id'])), note='locate 재추출')])
-                        tail = s.supervisor.tail(f'{key}#0', 32768)
-                        result = next((json.loads(line) for line in reversed(tail.splitlines()) if line.startswith('{')), None)
+                        self._scan_restore_ok = False
+                        try:
+                            self._run_commands(s, key, [Command(tuple(workspace.locate_argv(obj['id'])), note='locate 재추출')])
+                        finally:
+                            tail = s.supervisor.tail(f'{key}#0', 32768)
+                            result = next((json.loads(line) for line in reversed(tail.splitlines()) if line.startswith('{')), None)
+                            self._scan_restore_ok = bool(result and result.get('home_ok') is True)
                         if not result:
                             raise ConsoleError('locate 결과가 없다')
                         workspace.set_result(obj['id'], source, result)
@@ -508,6 +626,10 @@ class ActionManager:
         if workspace.perception['fpp']:
             supported = [o['id'] for o in selected if o['model'] != 'holder']
             if supported:
+                all_enabled = [o['id'] for o in workspace.objects if o['enabled'] and o['model'] != 'holder']
+                commands.append(('action_fpp_start', Command(('python3', str(s.repo / 'scripts/ops/perception_ctl.py'),
+                                                              'start', *all_enabled, '--wait', '150', '--require-all'),
+                                                             note='선택한 모든 FPP 묶음 연결 확인')))
                 commands.append(('action_fpp', Command(tuple(workspace.fpp_argv(supported)), note='FPP 재추출')))
         if workspace.perception['locate']:
             for obj in selected:

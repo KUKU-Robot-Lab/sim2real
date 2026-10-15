@@ -22,6 +22,25 @@ def test_registry_matrix_preserves_measurement():
     assert len([o for o in objects if o['model'] == 'holder']) == 3
 
 
+def test_camera_change_rejects_cached_fpp_until_new_acquisition_stamp(tmp_path):
+    import time
+    ws = workspace(tmp_path)
+    old_stamp = time.time() - 1
+    topic = '/objects/source200_orange/live_pose'
+    ws.ingest_fpp({'objects': {topic: {'pos': [.2, .1, .3], 'age_s': 0, 'stamp': old_stamp}}})
+    ws.invalidate_results('camera changed')
+    ws.ingest_fpp({'objects': {topic: {'pos': [.2, .1, .3], 'age_s': 0, 'stamp': old_stamp}}})
+    assert not next(o for o in ws.objects if o['id'] == 'source200_orange')['results']['fpp']['valid']
+    ws.ingest_fpp({'objects': {topic: {'pos': [.2, .1, .3], 'age_s': 0, 'stamp': time.time()}}})
+    assert next(o for o in ws.objects if o['id'] == 'source200_orange')['results']['fpp']['valid']
+
+
+def test_head_workspace_respects_robot_upward_limit(tmp_path):
+    ws = workspace(tmp_path)
+    with pytest.raises(ValueError, match='tilt'):
+        ws.update({'head': {'tilt': -9}})
+
+
 def test_selection_atomic_invalidation_and_sources(tmp_path):
     ws = workspace(tmp_path)
     old = ws.fingerprint()

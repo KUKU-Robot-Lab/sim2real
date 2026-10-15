@@ -55,7 +55,7 @@ class PoseWindow:
             return None
         recent = [r for r in self._rows if r[0] >= now - self.keep_s]
         last = self._rows[-1]
-        out = {"hz": round(len(recent) / self.keep_s, 1), "age_s": round(now - last[0], 2),
+        out = {"hz": round(len(recent) / self.keep_s, 1), "age_s": round(now - last[0], 2), "stamp": last[1],
                "pos": [round(v, 4) for v in last[2]], "tilt_deg": round(tilt_deg(last[3]), 1),
                "lat_med_s": None, "lat_max_s": None, "gap_max_s": None, "still_mm": None}
         if recent:

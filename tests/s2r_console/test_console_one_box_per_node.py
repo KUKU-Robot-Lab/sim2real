@@ -456,9 +456,9 @@ def test_the_fake_rh56f1_picture_has_the_real_pictures_boxes():
     _, real = _profile_diagram("rh56f1_real")
     _, fake = _profile_diagram("rh56f1_fake")
     titles = {b.title for b in real.boxes}
-    # fake 에 없는 것: 인지(카메라 · FP++ · 런처 — 정지 컵을 fake 가 바로 낸다). fake 에만 있는 것: 막히지 않은 붓기 노드
+    # fake 에 없는 것: 인지(카메라 · FP++ · 런처 — 정지 컵을 fake 가 바로 낸다), 목 드라이버(fake 에는 목이 없다). fake 에만 있는 것: 막히지 않은 붓기 노드
     missing = {b.title for b in real.boxes} - {b.title for b in fake.boxes}
-    assert missing <= {f"인지 런처 · {GEN.PERCEPTION_HOST}", "카메라 (RealSense)", "/objects/cup_holder_1/pose (바깥)", *(f"FPP 추적 · {g}" for g in (*_active_groups(), "source240b"))}, missing   # rg3 파지 에피소드의 오른 컵 = source240b
+    assert missing <= {f"인지 런처 · {GEN.PERCEPTION_HOST}", "카메라 (RealSense)", "목 상태 (head)", "/objects/cup_holder_1/pose (바깥)", *(f"FPP 추적 · {g}" for g in (*_active_groups(), "source240b"))}, missing   # rg3 파지 에피소드의 오른 컵 = source240b
     extra = {b.title for b in fake.boxes} - titles
     # 10.13 원격 인지 실기에는 마커 노드가 없다 — fake 는 그대로 홀더 노드 상자를 그린다
     assert extra <= {"pour_fj_node · 붓기 정책 (오른팔 · 왼팔)", *([W.HOLDER_TITLE] if GEN.REMOTE_PERCEPTION else [])}, extra

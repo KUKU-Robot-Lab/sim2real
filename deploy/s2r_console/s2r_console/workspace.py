@@ -35,6 +35,7 @@ class Workspace:
         self.head = {'pan': 0.0, 'tilt': -20.0, 'calib_profile': ''}
         self.objects = []
         self.cards = []
+        self._fpp_after = {}
         registry_repo = self.repo if (self.repo / 'config/objects.yaml').exists() else _paths.SIM2REAL
         self.registry = load_registry(registry_repo / 'config/objects.yaml')
         for name, spec in self.registry.objects.items():
@@ -114,7 +115,7 @@ class Workspace:
         if any(type(v) is not bool for v in state['perception'].values()):
             raise ValueError('perception switches must be boolean')
         head = state['head']
-        for key, limits in (('pan', (-90, 90)), ('tilt', (-60, 30))):
+        for key, limits in (('pan', (-90, 90)), ('tilt', (-60, -10))):
             try:
                 value = float(head[key])
             except (TypeError, ValueError):
@@ -197,6 +198,14 @@ class Workspace:
     def object_topics(self):
         return [f"/objects/{o['id']}/{kind}" for o in self.objects for kind in ('pose', 'live_pose')]
 
+    def invalidate_results(self, reason, sources=('fpp', 'locate')):
+        cutoff = time.time()
+        for obj in self.objects:
+            for source in sources:
+                self.set_result(obj['id'], source, {'valid': False, 'reason': reason})
+                if source == 'fpp':
+                    self._fpp_after[obj['id']] = cutoff
+
     def ingest_fpp(self, observation):
         if isinstance(observation, dict):
             data = observation.get('objects', observation)
@@ -213,8 +222,10 @@ class Workspace:
                 self.set_result(obj['id'], 'fpp', {'valid': False, 'reason': 'FPP result unavailable'})
                 continue
             age = summary.get('age_s', float('inf')) + report_age
-            result = dict(position=summary.get('pos'), valid=math.isfinite(age) and age <= 1,
-                          timestamp=time.time() - age, reason='stale FPP result', live=live)
+            stamp = summary.get('stamp', time.time() - age)
+            fresh = math.isfinite(age) and age <= 1 and stamp > self._fpp_after.get(obj['id'], 0)
+            result = dict(position=summary.get('pos'), valid=fresh,
+                          timestamp=stamp, frame=summary.get('frame', 'base_link'), reason='stale FPP result', live=live)
             self.set_result(obj['id'], 'fpp', result)
 
     def locate_argv(self, object_id):

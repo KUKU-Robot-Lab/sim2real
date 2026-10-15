@@ -72,7 +72,7 @@ def test_control_guard_explains_missing_live_pd(console, tiny_repo):
 def test_preemption_stops_before_hold_and_blocks_if_stop_fails(console, tiny_repo, monkeypatch):
     m = setup_actions(console, tiny_repo, {'preflight': [{'argv': ['true']}]})
     s = console.session
-    s.supervisor.spawn('policy_test#0', stage='policy_test', note='policy', argv=['sleep', '30'], background=True, manual=False)
+    s.supervisor.spawn('policy_test_right#0', stage='policy_test_right', note='policy', argv=['sleep', '30'], background=True, manual=False)
     monkeypatch.setattr(console, '_pd_sides', lambda _: ['right'])
     calls = []
     def trigger(session, service, side, **kw):
@@ -83,13 +83,13 @@ def test_preemption_stops_before_hold_and_blocks_if_stop_fails(console, tiny_rep
     with pytest.raises(ConsoleError, match='stop failed'):
         m._preempt(s)
     assert calls == ['episode/stop']
-    assert s.supervisor.is_alive('policy_test#0')
+    assert s.supervisor.is_alive('policy_test_right#0')
 
 
 def test_preemption_order_and_pd_confirmation(console, tiny_repo, monkeypatch):
     m = setup_actions(console, tiny_repo, {'preflight': [{'argv': ['true']}]})
     s = console.session
-    s.supervisor.spawn('policy_test#0', stage='policy_test', note='policy', argv=['sleep', '30'], background=True, manual=False)
+    s.supervisor.spawn('policy_test_right#0', stage='policy_test_right', note='policy', argv=['sleep', '30'], background=True, manual=False)
     monkeypatch.setattr(console, '_pd_sides', lambda _: ['right'])
     calls = []
     monkeypatch.setattr(m, '_trigger', lambda _, service, side, **kw: calls.append((service, kw)))
@@ -97,7 +97,7 @@ def test_preemption_order_and_pd_confirmation(console, tiny_repo, monkeypatch):
     m._preempt(s)
     assert [name for name, _ in calls] == ['episode/stop', 'pd/hold']
     assert calls[-1][1]['expect'] == ('TRACKING',)
-    assert not s.supervisor.is_alive('policy_test#0')
+    assert not s.supervisor.is_alive('policy_test_right#0')
 
 
 def test_reset_retains_no_old_progress(console, tiny_repo):
@@ -153,9 +153,9 @@ def test_perception_preview_includes_exact_side_effects(console, tiny_repo):
     obj['enabled'] = True
     w.perception.update(fpp=True, locate=True)
     preview = m.describe('perception_refresh')
-    assert len(preview['commands']) == 2
-    assert preview['commands'][0]['argv'] == w.fpp_argv([obj['id']])
-    assert preview['commands'][1]['argv'] == w.locate_argv(obj['id'])
+    assert len(preview['commands']) == 3
+    assert preview['commands'][1]['argv'] == w.fpp_argv([obj['id']])
+    assert preview['commands'][2]['argv'] == w.locate_argv(obj['id'])
 
 
 def lifecycle(console, tiny_repo, monkeypatch):
@@ -253,3 +253,102 @@ def test_head_command_waits_for_cancelled_scan_to_settle(console, tiny_repo, mon
     assert wait(m)['outcome'] == 'DONE'
     assert calls == ['new head command']
     assert console.session.workspace.head['pan'] == 5
+
+
+def test_fpp_refresh_starts_all_enabled_groups_before_subset_rescan(console, tiny_repo, monkeypatch):
+    m = setup_actions(console, tiny_repo, {'preflight': [{'argv': ['true']}]})
+    obj = rg3_workspace(console)
+    import copy
+    second = copy.deepcopy(obj)
+    second['id'] = 'shaker_c_pink'
+    console.session.workspace.objects.append(second)
+    rows = m._perception_commands(console.session, {'object_ids': [obj['id']]})
+    assert 'perception_ctl.py' in rows[0][1].argv[1]
+    assert obj['id'] in rows[0][1].argv and second['id'] in rows[0][1].argv
+    assert rows[0][1].argv[-3:] == ('--wait', '150', '--require-all')
+    assert rows[1][1].argv == tuple(console.session.workspace.fpp_argv([obj['id']]))
+
+
+def test_preemption_requires_each_targeted_side_not_any_fresh_pd(console, tiny_repo, monkeypatch):
+    m = setup_actions(console, tiny_repo, {'preflight': [{'argv': ['true']}]})
+    s = console.session
+    s.supervisor.spawn('policy_left#0', stage='policy_left', note='left policy', argv=['sleep', '30'], background=True, manual=False)
+    monkeypatch.setattr(console, '_pd_sides', lambda _: ['right'])
+    calls = []
+    monkeypatch.setattr(m, '_trigger', lambda *args, **kw: calls.append(args))
+    monkeypatch.setattr(m, '_confirm_hold', lambda *args: None)
+    with pytest.raises(ConsoleError, match='left'):
+        m._preempt(s)
+    assert s.supervisor.is_alive('policy_left#0')
+    assert not calls
+
+
+def test_cancelled_scan_without_restored_pose_blocks_head_command(console, tiny_repo, monkeypatch):
+    import threading
+    m = setup_actions(console, tiny_repo, {'head_control': [{'argv': ['true']}]})
+    rg3_workspace(console)
+    begun = threading.Event()
+    def scan(s, parameters):
+        m._scan_restore_ok = False
+        begun.set()
+        m._cancel_scan.wait(2)
+    monkeypatch.setattr(m, '_refresh', scan)
+    m.execute('perception_refresh', operator='test')
+    assert begun.wait(2)
+    with pytest.raises(ConsoleError, match='복귀|정착'):
+        m.execute('head_control', {'pan': 0, 'tilt': -25}, operator='test')
+    assert not any(p['stage'] == 'head_control' for p in console.session.supervisor.table())
+
+
+@pytest.mark.parametrize('home_ok', [True, False])
+def test_scan_result_restoration_flag_survives_nonzero_cancel_exit(console, tiny_repo, monkeypatch, home_ok):
+    import threading
+    import json
+    m = setup_actions(console, tiny_repo, {'preflight': [{'argv': ['true']}]})
+    rg3_workspace(console)
+    console.session.workspace.perception.update(fpp=False, locate=True)
+    m._cancel_scan = threading.Event()
+    m._scan_restore_ok = True
+    monkeypatch.setattr(m, '_run_commands', lambda *args: (_ for _ in ()).throw(ConsoleError('cancelled rc=1')))
+    monkeypatch.setattr(console.session.supervisor, 'tail', lambda *args: json.dumps({'valid': False, 'home_ok': home_ok, 'reason': 'cancelled'}))
+    with pytest.raises(ConsoleError, match='cancelled'):
+        m._refresh(console.session, {})
+    assert m._scan_restore_ok is home_ok
+
+
+def test_head_profile_restarts_same_converter_key_and_invalidates_coordinates(console, tiny_repo):
+    script = tiny_repo / 'object_pose_node.py'
+    script.write_text('import time; time.sleep(30)\n')
+    m = setup_actions(console, tiny_repo, {
+        'head_control': [{'argv': ['true']}],
+        'cups': [{'argv': ['python3', str(script)], 'background': True}]})
+    rg3_workspace(console)
+    w = console.session.workspace
+    (tiny_repo / 'config/calib_profiles').mkdir()
+    (tiny_repo / 'config/calib_profiles/selected.yaml').write_text('profile: selected\n')
+    s = console.session
+    s.supervisor.spawn('cups#0', stage='cups', note='old converter', argv=['python3', str(script)], background=True, manual=False)
+    before = next(p['pid'] for p in s.supervisor.table() if p['key'] == 'cups#0')
+    parameters = {'pan': 10, 'tilt': -25, 'calib_profile': 'selected'}
+    preview = m.describe('head_control', parameters)
+    restart = next(c for c in preview['commands'] if c['stop'] == ['cups#0'])
+    assert '--head-joint-topic' in restart['argv']
+    assert restart['argv'][-2:] == ['--calib-profile', 'selected']
+    m.execute('head_control', parameters, operator='test')
+    assert wait(m)['outcome'] == 'DONE'
+    proc = next(p for p in s.supervisor.table() if p['key'] == 'cups#0')
+    assert proc['alive'] and proc['pid'] != before
+    assert proc['argv'] == restart['argv']
+    assert not w.objects[0]['results']['fpp']['valid']
+
+
+def test_fpp_execution_starts_all_groups_then_rescans(console, tiny_repo, monkeypatch):
+    m = setup_actions(console, tiny_repo, {'preflight': [{'argv': ['true']}]})
+    rg3_workspace(console)
+    calls = []
+    monkeypatch.setattr(m, '_run_commands', lambda s, sid, cmds: calls.append((sid, cmds[0].argv)))
+    m.execute('perception_refresh', operator='test')
+    assert wait(m)['outcome'] == 'DONE'
+    assert [sid for sid, _ in calls] == ['action_fpp_start', 'action_fpp']
+    assert '--require-all' in calls[0][1]
+    assert not console.session.workspace.objects[0]['results']['fpp']['valid']
