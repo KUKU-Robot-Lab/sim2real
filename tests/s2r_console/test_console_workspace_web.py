@@ -11,6 +11,7 @@ def test_workspace_tabs_and_stable_video_document():
     assert 'id="common-controls"' in html
     assert all(f'data-arg="{tab}"' in html for tab in ('setting', 'control', 'policy'))
     assert 'id="fpp-video"' in html
+    assert 'id="video-retry"' in html
     assert 'robotmod-panel' not in html
 
 

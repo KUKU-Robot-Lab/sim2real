@@ -1177,15 +1177,17 @@ function updateVideo(s) {
   const img = $("fpp-video");
   if (!videoAttached) {
     videoAttached = true;
-    img.addEventListener("error", () => { $("video-status").textContent = "영상 연결 끊김 · 마지막 화면을 사용하지 말 것"; });
-    img.addEventListener("load", () => { $("video-status").textContent = "영상 수신 중"; });
+    img.addEventListener("error", () => { $("video-retry").hidden = false; $("video-status").textContent = "영상 연결 끊김 · 마지막 화면을 사용하지 말 것"; });
+    img.addEventListener("load", () => { $("video-retry").hidden = true; $("video-status").textContent = "영상 수신 중"; });
     img.src = "/api/video";
   }
   const v = s.video || S.video;
+  if (v) $("video-retry").hidden = !(v.stale || v.connected === false);
   if (v) $("video-status").textContent = v.stale ? "오래된 영상 · 현재 화면 아님" : v.connected === false ? "영상 연결 끊김" : `영상 수신 중${v.age_s != null ? ` · ${fmt(v.age_s, 1)} s 전` : ""}`;
 }
 Object.assign(acts, {
   tab: selectTab,
+  "video-retry"() { $("fpp-video").removeAttribute("src"); $("fpp-video").src = "/api/video"; $("video-status").textContent = "영상 다시 연결 중"; $("video-retry").hidden = true; },
   "action-prepare": prepareAction,
   async "action-execute"() {
     if (!pendingConfirmation || executingConfirmation) return;
