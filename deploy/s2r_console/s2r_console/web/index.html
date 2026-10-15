@@ -19,7 +19,31 @@
 <main id="landing" class="landing" hidden></main>
 
 <main id="work" class="work" hidden>
-  <section id="common-bar" class="common-bar" aria-label="공통 제어"><b>control</b><div id="common-controls" class="action-grid"></div></section>
+  <section class="panel workspace-panel">
+    <nav class="workspace-tabs" role="tablist" aria-label="관리 영역">
+      <button id="tab-button-setting" class="btn" role="tab" data-act="tab" data-arg="setting">setting</button>
+      <button id="tab-button-control" class="btn" role="tab" data-act="tab" data-arg="control">control</button>
+      <button id="tab-button-policy" class="btn" role="tab" data-act="tab" data-arg="policy">policy</button>
+    </nav>
+    <section id="tab-setting" role="tabpanel"><div id="setting-actions" class="action-grid"></div><div id="management" role="status"></div>
+  <section id="control" class="control" hidden aria-label="제어 창">
+    <ol id="gb" class="gb" aria-label="진행 묶음"></ol>
+    <div id="cp" class="cp" aria-live="polite"></div>
+    <div id="lanes" class="lanes"></div>
+    <div id="hands" class="lanes hands"></div>
+  </section>
+  <details id="all-stages" class="panel all-stages">
+    <summary class="panel-head"><h2>전체 단계</h2><span id="mission-meta" class="meta"></span><span class="hint">읽기용 — 조작은 위 조작판에서</span></summary>
+    <ol id="stages" class="stages"></ol>
+  </details>
+    </section>
+    <section id="tab-control" role="tabpanel" hidden><div id="control-actions" class="action-grid"></div><div id="head-settings"></div><div id="management-control" role="status"></div></section>
+    <section id="tab-policy" role="tabpanel" hidden>
+      <section class="panel"><div class="panel-head"><h2>인지 노드 · 물체</h2></div><div id="perception-controls"></div><div id="perception-nodes"></div><div id="object-cards" class="object-cards"></div><details><summary>FP++ 상세 상태</summary><div id="fpp"></div></details></section>
+      <div id="policy-add" class="policy-add"></div><div id="policy-cards" class="policy-cards"></div>
+    </section>
+  </section>
+  <section id="common-bar" class="common-bar" aria-label="공통 제어" hidden><b>control</b><div id="common-controls" class="action-grid"></div></section>
   <section class="panel links-panel">
     <div class="panel-head"><h2>연결</h2><span id="links-meta" class="meta"></span><button id="dg-reset" class="btn btn-sm btn-ghost" data-act="layout-reset" hidden title="끌어 옮긴 상자를 원래 자리로">배치 초기화</button></div>
     <div id="diagram" class="dg" hidden><svg id="dg-wires" class="dg-wires" aria-hidden="true"></svg><div id="dg-cols" class="dg-cols"></div></div>
@@ -45,28 +69,7 @@
     <div class="panel-head"><h2>로봇 상태</h2><span id="robot-chan" class="meta"></span><span id="robot-meta" class="meta"></span></div>
     <div id="robot"></div>
   </section>
-  <section class="panel workspace-panel">
-    <nav class="workspace-tabs" role="tablist" aria-label="관리 영역">
-      <button id="tab-button-setting" class="btn" role="tab" data-act="tab" data-arg="setting">setting</button>
-      <button id="tab-button-control" class="btn" role="tab" data-act="tab" data-arg="control">control</button>
-      <button id="tab-button-policy" class="btn" role="tab" data-act="tab" data-arg="policy">policy</button>
-    </nav>
-    <section id="tab-setting" role="tabpanel"><div id="setting-actions" class="action-grid"></div><div id="management" role="status"></div>
-  <section id="control" class="control" hidden aria-label="제어 창">
-    <ol id="gb" class="gb" aria-label="진행 묶음"></ol>
-    <div id="cp" class="cp" aria-live="polite"></div>
-    <div id="lanes" class="lanes"></div>
-    <div id="hands" class="lanes hands"></div>
-  </section>
-  <details id="all-stages" class="panel all-stages">
-    <summary class="panel-head"><h2>전체 단계</h2><span id="mission-meta" class="meta"></span><span class="hint">읽기용 — 조작은 위 조작판에서</span></summary>
-    <ol id="stages" class="stages"></ol>
-  </details>
-    </section>
-    <section id="tab-control" role="tabpanel" hidden><div id="control-actions" class="action-grid"></div><div id="head-settings"></div></section>
-    <section id="tab-policy" role="tabpanel" hidden>
-      <section class="panel"><div class="panel-head"><h2>인지 노드 · 물체</h2></div><div id="perception-controls"></div><div id="perception-nodes"></div><div id="object-cards" class="object-cards"></div><details><summary>FP++ 상세 상태</summary><div id="fpp"></div></details></section>
-      <div id="policy-add" class="policy-add"></div><div id="policy-cards" class="policy-cards"></div>
+  <div id="retired" hidden>
   <section class="panel epf-panel" id="epf-panel" hidden aria-label="에피소드 흐름">
     <div class="panel-head"><h2>에피소드</h2><span id="epf-meta" class="meta" role="status" aria-atomic="true"></span></div>
     <div id="epf-ctl" class="epf-ctl"></div>
@@ -77,8 +80,7 @@
       <div class="panel-head"><h2>정책</h2><span id="policy-meta" class="meta"></span></div>
       <div id="policy"></div>
     </div>
-    </section>
-  </section>
+  </div>
 </main>
 
 <footer id="stopbar" class="stopbar" hidden>

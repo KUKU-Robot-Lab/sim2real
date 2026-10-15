@@ -8,6 +8,8 @@ asset: openarm_rh56f1_bi_rl
 task_prefixes: [open-rh_]
 hand: {model: RH56F1, vendor: Inspire, actuated: "6 / 손 (종속 6)"}
 profiles: [rh56f1_real, rh56f1_fake]
+# 로봇 상태 그림 — 팔은 같은 OpenArm 그림, 손은 다섯 손가락 그림을 함께 쓴다(RH56F1 은 손가락마다 첫 마디 축만 칠한다)
+art: {arms: robot_arms, right: robot_hand_right, left: robot_hand_left}
 joint_profile: ../robot_control/src/robot_control/profiles/openarm_rh56f1.yaml   # 로봇 상태 표의 한계 · 이름
 # 양팔 붓기(pour_fj) = 계약 하나가 두 팔(both) · rh_aglt(한 팔 접근 · 파지 · 이송, 09.30) = 팔마다
 joint_topics: [/joint_states, /hand_right/joint_states, /hand_left/joint_states]

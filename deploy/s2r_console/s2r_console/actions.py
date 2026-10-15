@@ -24,49 +24,165 @@ from mission_stages import Command, commands_for
 import mission_core as MC
 
 
+ARMS = ('right', 'left')
+ALL_RESOURCES = frozenset({'right', 'left', 'head', 'perception', 'drivers'})
+
+
+class _Job:
+    """One management action.  Jobs on disjoint resources run side by side."""
+
+    def __init__(self, action_id, group, operator, resources):
+        self.id, self.group, self.resources = action_id, group, frozenset(resources)
+        self.status = {'active': True, 'id': action_id, 'group': group, 'operator': operator,
+                       'outcome': None, 'stage': None, 'note': '', 'steps': [],
+                       'resources': sorted(self.resources), 'started': time.time()}
+        self.cancel_policy = threading.Event()
+        self.cancel_scan = threading.Event()
+        self.runner = None
+        self.thread = None
+
+    @property
+    def active(self):
+        return self.status['active']
+
+    def view(self):
+        result = copy.deepcopy(self.status)
+        if result['active'] and self.runner is not None:
+            result['steps'] = self.runner.view()['steps']
+        return result
+
+
 class ActionManager:
     def __init__(self, console, *, settle_s=2.0):
         self.console = console
         self.settle_s = settle_s
-        self._status = {'active': False, 'outcome': None, 'steps': []}
+        self._jobs = {}           # action id -> latest job for that action
+        self._order = []          # action ids, most recently started last
         self._lock = threading.RLock()
         self._scan_restore_ok = True
+        self._tls = threading.local()
+        self._detached = _Job('', '', 'direct', ())   # direct helper calls outside a job thread
+        self._detached.status = {'active': False, 'id': '', 'operator': 'direct', 'outcome': None, 'steps': []}
+
+    # The helpers below run inside a job thread and address "their" job.
+    def _job(self):
+        return getattr(self._tls, 'job', None) or self._detached
+
+    @property
+    def _status(self):
+        return self._job().status
+
+    @property
+    def _cancel_scan(self):
+        return self._job().cancel_scan
+
+    @_cancel_scan.setter
+    def _cancel_scan(self, event):
+        self._job().cancel_scan = event
+
+    @property
+    def _cancel_policy(self):
+        return self._job().cancel_policy
+
+    @_cancel_policy.setter
+    def _cancel_policy(self, event):
+        self._job().cancel_policy = event
+
+    @property
+    def _runner(self):
+        return self._job().runner
+
+    @_runner.setter
+    def _runner(self, runner):
+        self._job().runner = runner
+
+    def active_jobs(self):
+        with self._lock:
+            return [job for job in self._jobs.values() if job.active]
 
     def view(self):
+        """Every job, plus the most recently started one at top level (older callers read that)."""
         with self._lock:
-            result = copy.deepcopy(self._status)
-            runner = getattr(self, '_runner', None)
-            if result['active'] and runner is not None:
-                result['steps'] = runner.view()['steps']
+            if not self._jobs:
+                return {'active': False, 'outcome': None, 'steps': []}
+            jobs = [self._jobs[key].view() for key in self._order if key in self._jobs]
+            result = dict(jobs[-1])
+            result['active'] = any(job['active'] for job in jobs)
+            result['jobs'] = jobs
             return result
 
+    def workspace_busy(self, patch):
+        """A workspace edit must not change the inputs of a running perception/head/policy job."""
+        for job in self.active_jobs():
+            if job.id.startswith('rg3_') and set(patch) <= {'head'}:
+                continue
+            if job.resources & {'head', 'perception'} or job.id.startswith('rg3_'):
+                return job.id
+        return None
+
     def abort(self):
-        self._cancel_policy.set() if hasattr(self, '_cancel_policy') else None
-        if hasattr(self, '_cancel_scan'):
-            self._cancel_scan.set()
-        scanning = self._status.get('id') == 'perception_refresh' and self._status.get('active')
-        if scanning:
-            for proc in self.console._need().supervisor.alive():
-                if proc.stage.startswith('action_locate_'):
-                    try:
-                        os.killpg(proc.popen.pid, signal.SIGTERM)
-                    except ProcessLookupError:
-                        pass
-        runner = getattr(self, '_runner', None)
-        if runner is not None and runner.active and not self._status.get('id', '').startswith('rg3_') and not scanning:
-            runner.abort()
-        thread = getattr(self, '_thread', None)
-        if thread is not None:
-            thread.join(timeout=110 if scanning else 35)
-            if thread.is_alive():
-                raise ConsoleError('관리 작업이 아직 정지되지 않았다')
+        jobs = self.active_jobs()
+        for job in jobs:
+            job.cancel_policy.set()
+            job.cancel_scan.set()
+            if job.id == 'perception_refresh':
+                self._kill_scan()
+            elif job.runner is not None and job.runner.active and not job.id.startswith('rg3_'):
+                job.runner.abort()
+        for job in jobs:
+            if job.thread is not None:
+                job.thread.join(timeout=110 if job.id == 'perception_refresh' else 35)
+                if job.thread.is_alive():
+                    raise ConsoleError(f'관리 작업 {job.id} 이(가) 아직 정지되지 않았다')
+
+    def _kill_scan(self):
+        for proc in self.console._need().supervisor.alive():
+            if proc.stage.startswith('action_locate_'):
+                try:
+                    os.killpg(proc.popen.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
 
     def reset(self):
         self.abort()
         with self._lock:
-            self._status = {'active': False, 'outcome': None, 'steps': []}
-            self._runner = None
+            self._jobs, self._order = {}, []
             self._scan_restore_ok = True
+
+    def _resources(self, s, action_id, group, parameters):
+        if action_id == 'shutdown':
+            return ALL_RESOURCES
+        if action_id == 'drivers':
+            return frozenset({'drivers', *ARMS})
+        if action_id == 'preflight':                 # regenerates the contract both arms load
+            return frozenset(ARMS)
+        if action_id in ('head_home', 'head_control'):
+            return frozenset({'head'})
+        if action_id == 'cups':
+            return frozenset({'head', 'perception'})
+        if action_id == 'perception_refresh':      # locate moves the neck; FPP needs it still
+            return frozenset({'perception', 'head'})
+        if action_id == 'policy_stop':
+            return frozenset(ARMS)
+        if group == 'policy':                         # live FPP input + the arm
+            return frozenset({self._card(s, action_id)['side'], 'head', 'perception'})
+        side = action_id.rsplit('_', 1)[-1]
+        return frozenset({side}) if side in ARMS else frozenset({action_id})
+
+    @staticmethod
+    def _interrupts(job, action_id, group):
+        """A control command cancels a policy episode; a head command cancels a scan."""
+        return (job.id.startswith('rg3_') and group == 'control') or (
+            job.id == 'perception_refresh' and action_id == 'head_control')
+
+    def _conflicts(self, s, action_id, group, parameters):
+        resources = self._resources(s, action_id, group, parameters)
+        return [job for job in self.active_jobs()
+                if job.id == action_id or (job.resources & resources and not self._interrupts(job, action_id, group))]
+
+    @staticmethod
+    def _action_sides(resources):
+        return {side for side in ARMS if side in resources}
 
     def _specs(self, session):
         known = {stage.id: stage for stage in session.mission.stages}
@@ -116,11 +232,15 @@ class ActionManager:
             raise ConsoleError(f'모르는 관리 작업: {action_id}', code=404)
         title, group, stages = spec
         reasons = []
-        interruptible = (self._status.get('id', '').startswith('rg3_') and group == 'control') or (
-            self._status.get('id') == 'perception_refresh' and action_id == 'head_control')
-        if self.view()['active'] and not interruptible:
-            reasons.append('다른 관리 작업이 실행 중이다')
-        if action_id in ('head_control', 'perception_refresh') and not self.view()['active'] and not self._scan_restore_ok:
+        resources = self._resources(s, action_id, group, parameters)
+        for job in self._conflicts(s, action_id, group, parameters):
+            if job.id == action_id:
+                reasons.append(f'{action_id} 이(가) 이미 실행 중이다')
+            else:
+                shared = ', '.join(sorted(job.resources & resources))
+                reasons.append(f'{job.id} 실행 중 — 같은 대상({shared})을 쓴다')
+        scanning = any(job.id == 'perception_refresh' for job in self.active_jobs())
+        if action_id in ('head_control', 'perception_refresh') and not scanning and not self._scan_restore_ok:
             reasons.append('이전 목 스캔의 운용 자세 복귀 정착을 확인하지 못했다 — head_home 복구 필요')
         active = [r.stage_id for r in s.runners.values() if r.active]
         nonpolicy = [sid for sid in active if not sid.startswith(('policy_', 'episode_'))]
@@ -193,8 +313,11 @@ class ActionManager:
             if not any(s.workspace.perception.values()):
                 reasons.append('FPP 또는 locate 인지 노드를 선택할 것')
         commands, warnings = [], []
-        if self.view()['active'] and self._status.get('id') == 'perception_refresh' and action_id == 'head_control':
+        if scanning and action_id == 'head_control':
             warnings.append('목 스캔 취소 → 현재 이동과 운용 자세 복귀 정착 확인 → 새 목 자세 실행')
+        for job in self.active_jobs():
+            if job.id.startswith('rg3_') and group == 'control' and job.resources & resources:
+                warnings.append(f'{job.id} 에피소드를 멈추고 정리한 뒤 실행한다')
         for stage_index, sid in enumerate(stages):
             stage = MC.stage_by_id(s.mission, sid)
             independent = replace(stage, needs=() if group != 'setting' else stage.needs, touches_real=False)
@@ -208,7 +331,7 @@ class ActionManager:
                     effective = self._transform(s, action_id, parameters, cmd)
                     commands.append({'stage': sid, 'index': index, 'note': effective.note,
                                      'argv': list(effective.argv), 'stop': list(effective.stop), 'background': effective.background})
-        targets = self._policy_targets(s)
+        targets = self._policy_targets(s, self._preempt_sides(s, action_id, group, parameters)) if group == 'control' else []
         if group == 'control' and targets:
             try:
                 needed = self._policy_sides(s, targets)
@@ -239,50 +362,100 @@ class ActionManager:
             if not commands:
                 reasons.append('이 로봇에 독립 engage 명령이 등록되지 않았다')
         return {'id': action_id, 'title': title, 'group': group, 'enabled': not reasons,
+                'job': self._job_summary(action_id), 'live': self._live(s, action_id, stages),
                 'card_id': self._card(s, action_id)['id'] if group == 'policy' else None,
                 'reasons': reasons, 'commands': commands, 'warnings': warnings,
                 'stages': list(stages), 'parameters': parameters, 'stop_targets': targets if group == 'control' else []}
 
-    @staticmethod
-    def _policy_targets(s):
-        return [p['key'] for p in s.supervisor.table() if p['alive'] and
-                p['stage'].startswith(('policy_', 'episode_'))]
+    def _job_summary(self, action_id):
+        job = self._jobs.get(action_id)
+        if job is None:
+            return None
+        return {k: job.status.get(k) for k in ('active', 'outcome', 'note', 'stage', 'started', 'finished')}
+
+    def _live(self, s, action_id, stages):
+        """What this action left running: its background processes, and for an arm its PD phase."""
+        procs = [p for p in s.supervisor.table() if p['stage'] in stages]
+        alive = [p.get('note') or p['key'] for p in procs if p['alive']]
+        dead = [f"{p.get('note') or p['key']} rc={p.get('rc')}" for p in procs
+                if not p['alive'] and not p.get('stopped') and p.get('rc') not in (0, None) and p.get('background')]
+        result = {'alive': alive, 'dead': dead}
+        side = action_id.rsplit('_', 1)[-1]
+        if action_id.startswith(('connect_', 'home_', 'rehome_', 'return_', 'engage_')) and side in ARMS:
+            with s.feed_lock:
+                obs = s.feed.observed()
+            status = obs.status.get(PD.name(side))
+            fresh = status and obs.age_s.get(PD.name(side), 1e9) <= STALE_S
+            result['pd'] = (status.get('phase') if fresh else '상태 없음') if status else '상태 없음'
+            hold = (status or {}).get('hold') or {}
+            if fresh and hold.get('err') is not None:
+                result['pd_err'] = round(float(hold['err']), 3)
+                result['pd_settled'] = bool(hold.get('settled'))
+        return result
+
+    def _policy_targets(self, s, sides=None):
+        targets = [p['key'] for p in s.supervisor.table() if p['alive'] and
+                   p['stage'].startswith(('policy_', 'episode_'))]
+        if sides is None:
+            return targets
+        kept = []
+        for key in targets:
+            try:
+                if self._policy_sides(s, [key]) & set(sides):
+                    kept.append(key)
+            except ConsoleError:
+                kept.append(key)       # side unknown: treat as touching this arm
+        return kept
+
+    def _preempt_sides(self, s, action_id, group, parameters):
+        """Arm commands stop only that arm's policies; head/perception/stop-all commands stop every policy."""
+        if group == 'control':
+            sides = self._action_sides(self._resources(s, action_id, group, parameters))
+            if len(sides) == 1 and action_id != 'policy_stop':
+                return sides
+        return None
 
     def execute(self, action_id, parameters=None, *, operator):
-        if self.view()['active'] and self._status.get('id') == 'perception_refresh' and action_id == 'head_control':
-            preview = self.describe(action_id, parameters)
+        s = self.console._need()
+        preview = self.describe(action_id, parameters)
+        group = preview['group']
+        resources = self._resources(s, action_id, group, preview['parameters'])
+        # A head command cancels a running scan and waits for the return pose to settle; a control
+        # command on the same arm cancels the monitored episode and waits for stop/hold/record cleanup.
+        for job in self.active_jobs():
+            if job.id == action_id or not (job.resources & resources) or not self._interrupts(job, action_id, group):
+                continue
             if not preview['enabled']:
-                raise ConsoleError('목 제어 설정을 실행할 수 없다', reasons=tuple(preview['reasons']))
-            self._cancel_scan.set()
-            for proc in self.console._need().supervisor.alive():
-                if proc.stage.startswith('action_locate_'):
-                    try:
-                        os.killpg(proc.popen.pid, signal.SIGTERM)
-                    except ProcessLookupError:
-                        pass
-            self._thread.join(timeout=100)
-            if self._thread.is_alive() or not self._scan_restore_ok:
-                raise ConsoleError('목 스캔 취소 후 정착을 확인하지 못했다')
-        # A control intervention cancels the monitored episode and waits for its
-        # stop/hold/record cleanup before the new command can begin.
-        if self.view()['active'] and self._status.get('id', '').startswith('rg3_'):
-            preview = self.describe(action_id, parameters)
-            if preview['group'] == 'control' and preview['enabled']:
-                self._cancel_policy.set()
-                self._thread.join(timeout=30)
-                if self._thread.is_alive() or self._status.get('outcome') == 'FAILED':
+                raise ConsoleError('작업을 지금 실행할 수 없다', reasons=tuple(preview['reasons']))
+            if job.id == 'perception_refresh':
+                job.cancel_scan.set()
+                self._kill_scan()
+                job.thread.join(timeout=100)
+                if job.thread.is_alive() or not self._scan_restore_ok:
+                    raise ConsoleError('목 스캔 취소 후 정착을 확인하지 못했다')
+            else:
+                job.cancel_policy.set()
+                job.thread.join(timeout=30)
+                if job.thread.is_alive() or job.status.get('outcome') == 'FAILED':
                     raise ConsoleError('정책 정지와 PD 자세 유지 확인이 실패했다')
         with self._lock:
             description = self.describe(action_id, parameters)
             if not description['enabled']:
                 raise ConsoleError('작업을 지금 실행할 수 없다', reasons=tuple(description['reasons']))
-            s = self.console._need()
-            self._status = {'active': True, 'id': action_id, 'operator': operator,
-                            'outcome': None, 'stage': None, 'note': '', 'steps': []}
-            self._cancel_policy = threading.Event()
-            self._cancel_scan = threading.Event()
-            self._thread = threading.Thread(target=self._run, args=(s, description), daemon=True)
-            self._thread.start()
+            job = _Job(action_id, description['group'], operator,
+                       self._resources(s, action_id, description['group'], description['parameters']))
+            self._jobs[action_id] = job
+            self._order = [key for key in self._order if key != action_id] + [action_id]
+            job.thread = threading.Thread(target=self._run_job, args=(job, s, description), daemon=True,
+                                          name=f'action-{action_id}')
+            job.thread.start()
+
+    def _run_job(self, job, s, description):
+        self._tls.job = job
+        try:
+            self._run(s, description)
+        finally:
+            self._tls.job = None
 
     def _commands(self, s, sid, description):
         original = commands_for(s.runbook, s.mission, sid, repo=self.console.repo, execute=True)
@@ -380,8 +553,8 @@ class ActionManager:
             argv += ['--expect-pd', *expect, '--phase-timeout', '10']
         self._run_commands(s, f'action_{service.replace("/", "_")}_{side}', [Command(tuple(argv), note=service)])
 
-    def _preempt(self, s):
-        targets = self._policy_targets(s)
+    def _preempt(self, s, sides=None):
+        targets = self._policy_targets(s, sides)
         if not targets:
             return
         needed = self._policy_sides(s, targets)
@@ -465,7 +638,8 @@ class ActionManager:
         try:
             action = description['id']
             if description['group'] == 'control' or action == 'shutdown':
-                self._preempt(s)
+                sides = self._preempt_sides(s, action, description['group'], description['parameters'])
+                self._preempt(s) if sides is None else self._preempt(s, sides)
             if action == 'shutdown':
                 for side in self.console._pd_sides(s):
                     self._trigger(s, 'pd/release', side, expect=('IDLE',))
@@ -501,9 +675,9 @@ class ActionManager:
                 failure_stage, failure_runner = self._status.get('stage'), getattr(self, '_runner', None)
                 with s.feed_lock:
                     observed = s.feed.observed()
-                side = description['id'].rsplit('_', 1)[-1]
+                own = self._action_sides(self._job().resources)
                 for candidate in self.console._pd_sides(s):
-                    if side in ('left', 'right') and side != candidate:
+                    if candidate not in own:       # never disturb an arm another job may be driving
                         continue
                     if observed.status.get(PD.name(candidate), {}).get('phase') == 'TRACKING':
                         try:
@@ -513,7 +687,10 @@ class ActionManager:
                 self._status['stage'], self._runner = failure_stage, failure_runner
         finally:
             with self._lock:
-                self._status.update(active=False, outcome=outcome, note=note)
+                job = self._job()
+                if job.runner is not None:
+                    job.status['steps'] = job.runner.view()['steps']
+                job.status.update(active=False, outcome=outcome, note=note, finished=time.time())
             s.event('action', f"{description['id']} {outcome}")
 
     def _run_policy(self, s, sid, description):
@@ -554,7 +731,7 @@ class ActionManager:
             deadline = time.monotonic() + 300
             while True:
                 if self._cancel_policy.is_set():
-                    self._preempt(s)
+                    self._preempt(s, {card['side']})
                     break
                 with s.feed_lock:
                     obs = s.feed.observed()
@@ -572,7 +749,7 @@ class ActionManager:
             if launched:
                 # A service failure blocks cleanup rather than dropping a live
                 # external target and letting the watchdog release the posture.
-                self._preempt(s)
+                self._preempt(s, {card['side']})
                 self._run_commands(s, f'{sid}_cleanup', commands[boundary + 1:])
 
     def _refresh(self, s, parameters):

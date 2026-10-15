@@ -226,10 +226,12 @@ def test_the_stage_card_carries_every_stage_action():
     assert "cmdsHtml(cur, mine, can, true)" in panel, "수동 확인 버튼도 카드에"
 
 
-def test_the_control_panel_sits_under_the_robot_state_panel():
-    # 09.23 사용자: "robot stat 창 아래에 / 드라이버 창, vision 창 / 오른팔, 왼팔 / 오른손, 왼손"
+def test_the_management_tabs_sit_at_the_top_of_the_work_area():
+    # 10.15 사용자: "setting/control/policy 창을 맨 위 올려줘" (09.23 의 "robot stat 창 아래에" 를 바꿨다)
     assert HTML.index('id="work"') < HTML.index('id="control"'), "조작판은 작업 영역 안에"
-    assert HTML.index('class="panel robot-panel"') < HTML.index('id="control"')
+    tabs = HTML.index('class="panel workspace-panel"')
+    assert HTML.index('id="work"') < tabs < HTML.index('class="panel links-panel"') < HTML.index('class="panel robot-panel"')
+    assert tabs < HTML.index('id="control"')
     assert HTML.index('id="control"') < HTML.index('id="all-stages"')
     assert 'id="lanes"' in HTML and 'id="hands"' in HTML
 

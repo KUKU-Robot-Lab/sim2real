@@ -1116,17 +1116,38 @@ const acts = {
 let activeTab = "setting", pendingConfirmation = null, executingConfirmation = false;
 function selectTab(tab) {
   if (!["setting", "control", "policy"].includes(tab)) return;
+  // 탭을 바꾸면 아래 칸 높이가 바뀐다 — 탭 줄이 화면에서 제자리에 있게 스크롤을 맞춘다(10.15 "control 누르면 스크롤이 올라감")
+  const nav = document.querySelector?.(".workspace-tabs");
+  const y0 = nav && !nav.closest("[hidden]") ? nav.getBoundingClientRect().top : null;
+  const changed = activeTab !== tab;
   activeTab = tab;
   for (const key of ["setting", "control", "policy"]) {
     $("tab-" + key).hidden = key !== tab;
     $("tab-button-" + key).setAttribute?.("aria-selected", String(key === tab));
+    $("tab-button-" + key).classList?.toggle("on", key === tab);
+  }
+  if (changed && y0 !== null) {
+    const d = nav.getBoundingClientRect().top - y0;
+    if (Math.abs(d) >= 1) window.scrollBy(0, d);
   }
   if (S?.session) { drawEpWires(); drawWires(); }
+}
+// 작업마다 따로 돈다(10.15) — 버튼 아래에 그 작업의 실행 상태와, 그 작업이 띄운 것이 지금 살아 있는지를 적는다
+function actionState(a) {
+  const j = a.job, live = a.live || {}, out = [];
+  if (j?.active) out.push(`<span class="badge live">⟳ 실행 중${j.stage ? ` · ${esc(j.stage)}` : ""}</span>`);
+  else if (j?.outcome) out.push(`<span class="badge ${j.outcome === "DONE" ? "ok" : "bad"}">${j.outcome === "DONE" ? "✓ 완료" : "✗ 실패"}</span>`);
+  if ((live.alive || []).length) out.push(`<span class="badge ok" title="${esc(live.alive.join("\n"))}">● 켜짐 ${live.alive.length}</span>`);
+  else if (j?.outcome === "DONE" && a.group === "setting" && a.id !== "preflight" && a.id !== "shutdown") out.push(`<span class="badge mute">○ 띄운 프로세스 없음</span>`);
+  if ((live.dead || []).length) out.push(`<span class="badge bad" title="${esc(live.dead.join("\n"))}">✗ 죽음 ${live.dead.length}</span>`);
+  if (live.pd) out.push(`<span class="badge ${live.pd === "TRACKING" ? "ok" : live.pd === "IDLE" ? "mute" : "warn"}">PD ${esc(live.pd)}${live.pd_err != null ? ` · 오차 ${fmt(live.pd_err, 3)}${live.pd_settled ? " 정착" : ""}` : ""}</span>`);
+  const note = !j?.active && j?.outcome === "FAILED" && j.note ? `<small class="bad">${esc(j.note)}</small>` : "";
+  return out.length || note ? `<div class="action-state">${out.join("")}</div>${note}` : "";
 }
 function actionButton(a) {
   const reasons = a.reasons || [];
   const can = holding() && a.enabled;
-  return `<div class="workspace-action"><button class="btn" data-act="action-prepare" data-arg="${esc(a.id)}" ${can ? "" : "disabled"} title="${esc([a.title, ...reasons].filter(Boolean).join(" · "))}"><b>${esc(a.id)}</b>${a.title && a.title !== a.id ? `<span class="action-desc">${esc(a.title)}</span>` : ""}</button>${!can ? `<small>${esc(reasons.join(" · ") || "조작 권한 필요")}</small>` : ""}</div>`;
+  return `<div class="workspace-action"><button class="btn" data-act="action-prepare" data-arg="${esc(a.id)}" ${can ? "" : "disabled"} title="${esc([a.title, ...reasons].filter(Boolean).join(" · "))}"><b>${esc(a.id)}</b>${a.title && a.title !== a.id ? `<span class="action-desc">${esc(a.title)}</span>` : ""}</button>${actionState(a)}${!can && !a.job?.active ? `<small>${esc(reasons.join(" · ") || "조작 권한 필요")}</small>` : ""}</div>`;
 }
 async function prepareAction(action, extra = {}) {
   const prepared = await call("POST", "/api/actions/prepare", { action, ...extra });
@@ -1135,6 +1156,11 @@ async function prepareAction(action, extra = {}) {
   const commands = (prepared.commands || []).map(c => `<li><pre>${esc(typeof c === "string" ? c : c.argv ? shellLine(c.argv) : JSON.stringify(c))}</pre></li>`).join("");
   modal(`<h3>${esc(prepared.title || action)}</h3><p>표시된 명령과 설정을 한 번 실행한다. 설정 변경 시 승인은 무효다.</p><ul>${commands}</ul><ul class="reasons warn">${(prepared.warnings || []).map(w => `<li>${esc(w)}</li>`).join("")}</ul><div class="modal-actions"><button class="btn btn-ghost" data-act="modal-close">취소</button><button class="btn btn-real" id="action-execute" data-act="action-execute">승인 후 실행</button></div>`, S?.session?.profile.domain_class === "real");
 }
+// policy 탭의 인지 노드 칸 — 인지(FP++ · locate · 좌표 변환 · 홀더)만. 에피소드 실행기 · 정책 노드는 싣지 않는다(10.15 사용자)
+function perceptionNode(b) {
+  const name = [b.id, b.key, b.kind].join(" ");
+  return /fpp|locate|perception|object_pose|cup_holder/i.test(name) && !/episode|policy|aglt|place|pour|fabric|\bobs\b/i.test(name);
+}
 function workspaceNode(b) { return /policy|정책|입력|fabric|\bobs\b|fpp|locate|perception|object_pose|cup_holder|episode_runner/i.test([b.id, b.key, b.title, b.kind].join(" ")); }
 function baseDiagram(diagram) {
   if (!diagram) return diagram;
@@ -1142,28 +1168,56 @@ function baseDiagram(diagram) {
   const ids = new Set(cols.flat().map(b => b.id));
   return { ...diagram, cols, wires: (diagram.wires || []).filter(e => ids.has(e.from) && ids.has(e.to)) };
 }
+// 좌표는 소수 넷째 자리(0.1 mm)까지 — 10.15 사용자 "좌표는 0.xxxx 로"
+function coord4(v) {
+  if (Array.isArray(v)) return `[${v.map(x => typeof x === "number" ? x.toFixed(4) : String(x)).join(", ")}]`;
+  if (v && typeof v === "object") return JSON.stringify(v, (k, x) => typeof x === "number" ? Number(x.toFixed(4)) : x);
+  return v == null ? "—" : String(v);
+}
 function coordinateResult(result, source) {
   if (!result) return `<div class="coordinate missing"><b>${esc(source)}</b> · 미수신</div>`;
   const valid = result.valid === true;
-  return `<div class="coordinate ${valid ? "ok" : "bad"}"><b>${esc(source)}</b> · ${valid ? "유효" : "무효"}<dl class="kv"><dt>좌표</dt><dd>${esc(JSON.stringify(result.position ?? result.xyz ?? result.pose ?? null))}</dd><dt>좌표계</dt><dd>${esc(result.frame || result.frame_id || "—")}</dd><dt>취득 시각</dt><dd>${esc(result.acquired_at || result.timestamp || result.stamp || "—")}</dd><dt>출처</dt><dd>${esc(result.source || source)}</dd></dl>${esc(result.error || result.reason || "")}</div>`;
+  return `<div class="coordinate ${valid ? "ok" : "bad"}"><b>${esc(source)}</b> · ${valid ? "유효" : "무효"}<dl class="kv"><dt>좌표 [m]</dt><dd>${esc(coord4(result.position ?? result.xyz ?? result.pose ?? null))}</dd><dt>좌표계</dt><dd>${esc(result.frame || result.frame_id || "—")}</dd><dt>취득 시각</dt><dd>${esc(result.acquired_at || result.timestamp || result.stamp || "—")}</dd><dt>출처</dt><dd>${esc(result.source || source)}</dd></dl>${esc(result.error || result.reason || "")}</div>`;
 }
 // 관리 작업 진행 상황 — 원시 JSON 대신 작업 · 단계 · 결과 한 줄
-function managementStatus(m) {
+function managementStatus(m, group) {
   if (!m || (!m.active && !m.outcome)) return "";
+  if (m.jobs) {
+    const jobs = m.jobs.filter(j => j.active && (!group || j.group === group));
+    return jobs.map(j => managementStatus({ ...j, jobs: undefined })).join("");
+  }
   const head = m.active ? `실행 중 · ${esc(m.id || "")}${m.stage ? ` · ${esc(m.stage)}` : ""}` : `마지막 작업 ${esc(m.id || "")} · ${esc(m.outcome)}${m.note ? ` — ${esc(m.note)}` : ""}`;
   const steps = (m.steps || []).map(st => `<li>${esc(st.note || st.key || "")} · ${esc(stepLabel(st))}${st.detail ? ` — ${esc(st.detail)}` : ""}</li>`).join("");
   return `<div class="management-status"><b>${head}</b>${steps ? `<ul>${steps}</ul>` : ""}</div>`;
+}
+// 목 제어 — 각도를 고르고 [이 각도로 이동] 을 누르면 head_control 승인 창이 그 pan · tilt 로 뜬다(10.15 "정해진 각도로 움직이게 하는 모듈")
+const HEAD_PRESETS = [[0, -20, "기본"], [0, -30, ""], [0, -40, ""], [30, -30, ""], [-30, -30, ""]];
+let headDraft = null;
+function headModule(h, action) {
+  const d = headDraft || { pan: h.pan ?? 0, tilt: h.tilt ?? -20, calib_profile: h.calib_profile || "" };
+  const can = holding() && action && action.enabled;
+  const why = action ? (action.reasons || []).join(" · ") : "이 로봇에 head_control 단계가 없다";
+  return `<fieldset class="head-module"><legend>목 제어 — 지금 운용 자세 pan ${esc(h.pan ?? "—")}° · tilt ${esc(h.tilt ?? "—")}° · ${esc(h.calib_profile || "보정 미선택")}</legend>
+    <div class="actions">${HEAD_PRESETS.map(([p, t, n]) => `<button class="btn btn-sm${Number(d.pan) === p && Number(d.tilt) === t ? " on" : ""}" data-act="head-preset" data-arg="${p}:${t}">pan ${p} · tilt ${t}${n ? ` (${n})` : ""}</button>`).join("")}</div>
+    <label>pan [°] <input type="number" step="1" min="-90" max="90" data-head-draft="pan" value="${esc(d.pan)}"></label>
+    <label>tilt [°] <input type="number" step="1" min="-60" max="-10" data-head-draft="tilt" value="${esc(d.tilt)}"></label>
+    <label>보정 프로필 <input data-head-draft="calib_profile" value="${esc(d.calib_profile)}"></label>
+    <button class="btn btn-real" data-act="head-move" ${can ? "" : "disabled"}>이 각도로 이동 (head_control)</button>
+    <small>pan −90~90° · tilt −60~−10°. 이동 후 실측 정착을 확인하고, 카메라 좌표 변환 노드를 이 자세로 다시 띄운다.</small>
+    ${action ? actionState(action) : ""}${!can && why ? `<small>${esc(why)}</small>` : ""}</fieldset>`;
 }
 function renderWorkspace() {
   const w = S.workspace || {};
   const actions = S.actions || [];
   put("common-controls", actions.filter(a => a.group === "control").map(actionButton).join(""));
   for (const group of ["setting", "control"]) put(group + "-actions", actions.filter(a => a.group === group).map(actionButton).join(""));
-  put("management", managementStatus(S.management));
+  put("management", managementStatus(S.management, "setting"));
+  put("management-control", managementStatus(S.management, "control"));
   const h = w.head || {};
-  put("head-settings", `<fieldset><legend>카메라 운용 자세</legend><label>pan <input type="number" step="0.01" data-head="pan" value="${esc(h.pan ?? 0)}"></label><label>tilt <input type="number" step="0.01" data-head="tilt" value="${esc(h.tilt ?? 0)}"></label><label>보정 프로필 <input data-head="calib_profile" value="${esc(h.calib_profile || "")}"></label></fieldset>`);
+  const hs = $("head-settings");
+  if (!(hs.contains && hs.contains(document.activeElement))) put("head-settings", headModule(h, actions.find(a => a.id === "head_control")));
   put("perception-controls", `<fieldset><legend>인지 · ${esc(h.calib_profile || "보정 미선택")} · pan ${esc(h.pan ?? "—")} / tilt ${esc(h.tilt ?? "—")}</legend>${["fpp", "locate"].map(source => `<label class="chk"><input type="checkbox" data-perception="${source}" ${w.perception?.[source] ? "checked" : ""} ${holding() ? "" : "disabled"}>${source === "fpp" ? "FPP" : "locate"}</label>`).join("")}${(w.objects || []).map(o => `<label class="chk"><input type="checkbox" data-object="${esc(o.id)}" ${o.enabled ? "checked" : ""} ${holding() ? "" : "disabled"}>${esc(o.model || o.id)} · ${esc(o.color || o.marker_id || "마커")}${o.measured === false ? " (프리셋 · 미측정)" : ""}</label>`).join("")}</fieldset>`);
-  put("perception-nodes", (S.session?.diagram?.cols || []).flat().filter(b => workspaceNode(b) && !/policy|fabric|obs/i.test([b.id,b.title].join(" "))).map(boxHtml).join(""));
+  put("perception-nodes", (S.session?.diagram?.cols || []).flat().filter(perceptionNode).map(boxHtml).join(""));
   put("object-cards", (w.objects || []).filter(o => o.enabled).map(o => `<article class="object-card"><h3>${esc(o.model || o.id)} · ${esc(o.color || o.marker_id || "")}</h3>${o.model === "holder" ? '<p>색 기반 locate 미지원</p>' : ""}<label>정책 입력원 <select data-input-source="${esc(o.id)}" ${holding() ? "" : "disabled"}><option value="fpp" ${o.input_source === "fpp" ? "selected" : ""}>FPP</option><option value="locate" ${o.input_source === "locate" ? "selected" : ""} ${o.model === "holder" ? "disabled" : ""}>locate</option></select></label>${coordinateResult(o.results?.fpp, "FPP")}${coordinateResult(o.results?.locate, "locate")}<button class="btn btn-sm" data-act="object-perception" data-arg="${esc(o.id)}" ${holding() ? "" : "disabled"}>인지 실행 · 좌표 재추출</button>${actions.filter(a => a.object_id === o.id).map(actionButton).join("")}</article>`).join(""));
   put("policy-add", ["approaching", "grasping", "placing", "locking", "pouring"].map(task => `<button class="btn" data-act="policy-choose" data-arg="${task}" ${holding() ? "" : "disabled"}>＋ ${task}</button>`).join("") + '<button class="btn btn-ghost" data-act="policy-reset">배치 초기화</button>');
   put("policy-cards", (w.cards || []).map((card, i) => `<article class="policy-card" style="transform:translate(${Number(card.x) || 0}px,${Number(card.y) || 0}px)"><h3>${esc(card.task)} · ${esc(card.policy_id)}</h3><p>${esc(card.side)} · ${esc(card.object_id || "물체 미선택")}</p><span class="badge">${card.execution_supported ? "rg3 실행 연결" : "배치만 지원"}</span><label>물체 <select data-card-object="${esc(card.id)}"><option value="">물체 선택</option>${(w.objects || []).filter(o => o.enabled).map(o => `<option value="${esc(o.id)}" ${card.object_id === o.id ? "selected" : ""}>${esc(o.id)}</option>`).join("")}</select></label><div class="actions">${[["left","←"],["right","→"],["up","↑"],["down","↓"]].map(([d,label]) => `<button class="btn btn-sm" aria-label="${esc(card.id)} ${d}" data-act="policy-move" data-arg="${esc(card.id)}:${d}">${label}</button>`).join("")}<button class="btn btn-sm" data-act="policy-remove" data-arg="${esc(card.id)}">제거</button></div>${actions.filter(a => a.card_id === card.id).map(actionButton).join("")}</article>`).join(""));
@@ -1205,6 +1259,17 @@ Object.assign(acts, {
     try { await call("POST", "/api/actions/execute", { confirmation_id }); closeModal(); refresh(); }
     finally { executingConfirmation = false; }
   },
+  "head-preset"(arg) {
+    const [pan, tilt] = arg.split(":").map(Number), h = S.workspace?.head || {};
+    headDraft = { pan, tilt, calib_profile: headDraft?.calib_profile ?? h.calib_profile ?? "" };
+    html["head-settings"] = null; renderWorkspace();
+  },
+  "head-move"() {
+    const h = S.workspace?.head || {}, d = headDraft || { pan: h.pan ?? 0, tilt: h.tilt ?? -20, calib_profile: h.calib_profile || "" };
+    const extra = { pan: Number(d.pan), tilt: Number(d.tilt) };
+    if (d.calib_profile) extra.calib_profile = d.calib_profile;
+    return prepareAction("head_control", extra);
+  },
   "object-perception"(id) { return prepareAction("perception_refresh", {object_ids:[id]}); },
   "policy-choose": choosePolicy,
   async "policy-add-card"(arg) {
@@ -1225,7 +1290,7 @@ document.addEventListener("change", e => {
   if (d.perception) patch = {perception:{...S.workspace.perception,[d.perception]:t.checked}};
   if (d.object || d.inputSource) patch = {objects:S.workspace.objects.map(o => ({id:o.id,enabled:d.object === o.id ? t.checked : o.enabled,input_source:d.inputSource === o.id ? t.value : o.input_source}))};
   if (d.cardObject) patch = {cards:S.workspace.cards.map(c => c.id === d.cardObject ? {...c,object_id:t.value} : c)};
-  if (d.head) patch = {head:{...S.workspace.head,[d.head]:d.head === "calib_profile" ? t.value : Number(t.value)}};
+  if (d.headDraft) { headDraft = { ...(headDraft || { pan: S.workspace.head?.pan ?? 0, tilt: S.workspace.head?.tilt ?? -20, calib_profile: S.workspace.head?.calib_profile || "" }), [d.headDraft]: d.headDraft === "calib_profile" ? t.value : Number(t.value) }; return; }
   if (patch) saveWorkspace(patch).catch(() => refresh());
 });
 

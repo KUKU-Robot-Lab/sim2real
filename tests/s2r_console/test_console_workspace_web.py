@@ -44,6 +44,16 @@ vm.runInContext(fs.readFileSync(process.argv[1],'utf8').replace('refresh().then(
  assert.equal(calls[1][1].confirmation_id,'once');
  await vm.runInContext(`acts['action-execute']()`,ctx);
  assert.equal(calls.filter(c=>c[0]==='/api/actions/execute').length,1);
+ vm.runInContext(`S.actions=[{id:'connect_right',title:'c',group:'setting',enabled:true,reasons:[],job:{active:true,stage:'hand_right'},live:{alive:['hand'],dead:[],pd:'IDLE'}},{id:'head_control',title:'h',group:'control',enabled:true,reasons:[]}]; renderWorkspace();`,ctx);
+ assert.match(el('setting-actions').innerHTML,/실행 중 · hand_right/);
+ assert.match(el('setting-actions').innerHTML,/PD IDLE/);
+ assert.match(el('head-settings').innerHTML,/data-act="head-move"/);
+ calls.length=0;
+ vm.runInContext(`acts['head-preset']('0:-30')`,ctx);
+ await vm.runInContext(`acts['head-move']()`,ctx);
+ assert.equal(calls[0][0],'/api/actions/prepare');
+ assert.deepEqual([calls[0][1].action,calls[0][1].pan,calls[0][1].tilt],['head_control',0,-30]);
+ assert.equal(vm.runInContext(`coord4([0.123456,1,-0.5])`,ctx),'[0.1235, 1.0000, -0.5000]');
  vm.runInContext(`selectTab('policy')`,ctx);
  assert.equal(el('tab-policy').hidden,false);
  assert.equal(el('tab-setting').hidden,true);

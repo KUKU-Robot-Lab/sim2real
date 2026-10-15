@@ -177,7 +177,7 @@ def lifecycle(console, tiny_repo, monkeypatch):
                                   age_s={'episode_runner': 0, 'pd_right': 0}, joints_age_s=0, joint_ages={}, rosgraph=None, rosgraph_age_s=None)
     monkeypatch.setattr(console.session.feed, 'observed', lambda: observation)
     calls = []
-    monkeypatch.setattr(m, '_preempt', lambda s: calls.append('stop -> hold'))
+    monkeypatch.setattr(m, '_preempt', lambda s, *a: calls.append('stop -> hold'))
     monkeypatch.setattr(m, '_run_commands', lambda s, sid, cmds: calls.append((sid, cmds)))
     return m, status, calls
 
@@ -352,3 +352,61 @@ def test_fpp_execution_starts_all_groups_then_rescans(console, tiny_repo, monkey
     assert [sid for sid, _ in calls] == ['action_fpp_start', 'action_fpp']
     assert '--require-all' in calls[0][1]
     assert not console.session.workspace.objects[0]['results']['fpp']['valid']
+
+
+# 10.15 사용자: "connect_right 등 모두 독립사용 — 하나 누르면 관리자가 누른다고 진행이 안됨, 병렬 클릭 가능하게"
+def _side_bundle(seconds):
+    return {f'{part}_{side}': [{'argv': ['sleep', seconds]}]
+            for side in ('right', 'left') for part in ('hand', 'hand_check', 'pd_load', 'pd_arm')}
+
+
+def test_both_arm_connections_run_side_by_side(console, tiny_repo):
+    m = setup_actions(console, tiny_repo, {**_side_bundle('.3'), 'home_right': [{'argv': ['true']}]})
+    console.session.supervisor.spawn('drivers#0', stage='drivers', note='fake driver', argv=['sleep', '30'], background=True, manual=False)
+    began = time.monotonic()
+    m.execute('connect_right', operator='test')
+    assert not any('connect_right' in r or '실행 중' in r for r in m.describe('connect_left')['reasons'])
+    m.execute('connect_left', operator='test')
+    # the same arm stays exclusive, and says which job holds it
+    assert any('connect_right' in r for r in m.describe('home_right')['reasons'])
+    assert any('이미 실행 중' in r for r in m.describe('connect_right')['reasons'])
+    view = m.view()
+    assert {j['id'] for j in view['jobs'] if j['active']} == {'connect_right', 'connect_left'}
+    end = time.monotonic() + 10
+    while m.view()['active'] and time.monotonic() < end:
+        time.sleep(.02)
+    assert time.monotonic() - began < 2.4, 'two 4-step bundles of 0.3 s ran one after the other'
+    assert {j['id']: j['outcome'] for j in m.view()['jobs']} == {'connect_right': 'DONE', 'connect_left': 'DONE'}
+    item = next(a for a in m.catalog() if a['id'] == 'connect_right')
+    assert item['job']['outcome'] == 'DONE' and 'pd' in item['live']
+
+
+def test_perception_scan_does_not_block_arm_setup_but_blocks_head(console, tiny_repo, monkeypatch):
+    import threading
+    m = setup_actions(console, tiny_repo, {**_side_bundle('0'), 'head_home': [{'argv': ['true']}]})
+    rg3_workspace(console)
+    console.session.supervisor.spawn('drivers#0', stage='drivers', note='fake driver', argv=['sleep', '30'], background=True, manual=False)
+    release = threading.Event()
+    monkeypatch.setattr(m, '_refresh', lambda s, parameters: release.wait(5))
+    m.execute('perception_refresh', operator='test')
+    try:
+        assert not any('perception_refresh' in r for r in m.describe('connect_right')['reasons'])
+        assert any('perception_refresh' in r for r in m.describe('head_home')['reasons'])
+        m.execute('connect_right', operator='test')
+    finally:
+        release.set()
+    end = time.monotonic() + 5
+    while m.view()['active'] and time.monotonic() < end:
+        time.sleep(.02)
+    assert {j['id']: j['outcome'] for j in m.view()['jobs']} == {'perception_refresh': 'DONE', 'connect_right': 'DONE'}
+
+
+def test_arm_command_stops_only_that_arms_policy(console, tiny_repo, monkeypatch):
+    m = setup_actions(console, tiny_repo, {'home_right': [{'argv': ['true']}]})
+    s = console.session
+    s.supervisor.spawn('policy_a_right#0', stage='policy_a_right', note='r', argv=['sleep', '30'], background=True, manual=False)
+    s.supervisor.spawn('policy_a_left#0', stage='policy_a_left', note='l', argv=['sleep', '30'], background=True, manual=False)
+    assert m._policy_targets(s, {'right'}) == ['policy_a_right#0']
+    assert m._preempt_sides(s, 'home_right', 'control', {}) == {'right'}
+    assert m._preempt_sides(s, 'head_control', 'control', {}) is None
+    assert m._preempt_sides(s, 'policy_stop', 'control', {}) is None

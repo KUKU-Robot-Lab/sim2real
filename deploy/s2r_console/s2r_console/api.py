@@ -98,9 +98,9 @@ def _write(console: Console, method: str, path: str, data: dict, token: str | No
             return _fail(405, 'POST 만 지원한다')
         if path == '/api/workspace':
             with console._lock:
-                management = console.actions.view()
-                if management['active'] and not (str(management.get('id', '')).startswith('rg3_') and set(data) <= {'head'}):
-                    return _fail(409, '작업 실행 중에는 실행 설정을 바꿀 수 없다')
+                busy = console.actions.workspace_busy(data)
+                if busy:
+                    return _fail(409, f'{busy} 실행 중에는 인지 · 목 · 정책 설정을 바꿀 수 없다')
                 try:
                     workspace = console._need().workspace.update(data)
                 except (TypeError, ValueError) as exc:

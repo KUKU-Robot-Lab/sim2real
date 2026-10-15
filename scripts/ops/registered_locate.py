@@ -137,7 +137,7 @@ def main(argv=None):
         stopped = cancelled()
     valid = result.found and result.home_ok and not stopped
     print(json.dumps({'object_id': spec.name, 'source': 'locate', 'frame': 'base', 'timestamp': time.time(),
-                      'position': [result.x, result.y, result.z] if valid else None, 'valid': valid,
+                      'position': [round(float(v), 4) for v in (result.x, result.y, result.z)] if valid else None,  # m, 0.1 mm 'valid': valid,
                       'reason': 'cancelled' if stopped else result.reason if not valid else '', 'home_ok': result.home_ok}, allow_nan=False))
     return 0 if valid else 1
 

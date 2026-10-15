@@ -491,3 +491,15 @@ table.ptable tr.off td { color: var(--faint); }
 #perception-nodes { display: flex; flex-wrap: wrap; gap: 12px; padding: 12px; }
 #tab-policy > .panel { margin: 12px; }
 #modal-card { max-height: 85vh; overflow-y: auto; }
+/* 10.15 — 작업마다 따로 돈다: 버튼 아래 실행 상태 · 띄운 것의 생존 · PD 상태 */
+.badge.live { color: var(--live); border-color: var(--live); }
+.badge.mute { color: var(--dim); }
+.action-state { display: flex; flex-wrap: wrap; gap: 4px; }
+.workspace-action small.bad { color: var(--bad); }
+.workspace-panel > [role="tabpanel"] { min-height: 40vh; }
+.head-module { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px; margin: 0 10px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.head-module legend { padding: 0 6px; font-weight: 600; }
+.head-module input[type="number"] { width: 72px; }
+.head-module small { flex-basis: 100%; color: var(--dim); }
+.head-module .btn.on { border-color: var(--live); color: var(--live); }
+.head-module input { background: var(--bg); color: inherit; border: 1px solid var(--line-2); border-radius: 4px; padding: 3px 6px; }
