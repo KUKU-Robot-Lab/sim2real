@@ -472,6 +472,8 @@ table.ptable tr.off td { color: var(--faint); }
 .action-grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px; }
 .workspace-action { display: flex; flex-direction: column; max-width: 270px; gap: 4px; }
 .workspace-action small { color: var(--warn); }
+.workspace-action .btn { white-space: normal; text-align: left; display: flex; flex-direction: column; gap: 2px; }
+.workspace-action .action-desc { font-weight: 400; font-size: 11px; color: var(--dim); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 #management { padding: 0 12px; max-height: 240px; overflow: auto; }
 #head-settings fieldset, #perception-controls fieldset { display: flex; flex-wrap: wrap; gap: 14px; margin: 12px; border: 1px solid var(--line); }
 #head-settings input { width: 140px; }

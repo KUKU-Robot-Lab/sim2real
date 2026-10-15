@@ -1126,7 +1126,7 @@ function selectTab(tab) {
 function actionButton(a) {
   const reasons = a.reasons || [];
   const can = holding() && a.enabled;
-  return `<div class="workspace-action"><button class="btn" data-act="action-prepare" data-arg="${esc(a.id)}" ${can ? "" : "disabled"} title="${esc(reasons.join(" · "))}">${esc(a.title || a.id)}</button>${!can ? `<small>${esc(reasons.join(" · ") || "조작 권한 필요")}</small>` : ""}</div>`;
+  return `<div class="workspace-action"><button class="btn" data-act="action-prepare" data-arg="${esc(a.id)}" ${can ? "" : "disabled"} title="${esc([a.title, ...reasons].filter(Boolean).join(" · "))}"><b>${esc(a.id)}</b>${a.title && a.title !== a.id ? `<span class="action-desc">${esc(a.title)}</span>` : ""}</button>${!can ? `<small>${esc(reasons.join(" · ") || "조작 권한 필요")}</small>` : ""}</div>`;
 }
 async function prepareAction(action, extra = {}) {
   const prepared = await call("POST", "/api/actions/prepare", { action, ...extra });
@@ -1147,12 +1147,19 @@ function coordinateResult(result, source) {
   const valid = result.valid === true;
   return `<div class="coordinate ${valid ? "ok" : "bad"}"><b>${esc(source)}</b> · ${valid ? "유효" : "무효"}<dl class="kv"><dt>좌표</dt><dd>${esc(JSON.stringify(result.position ?? result.xyz ?? result.pose ?? null))}</dd><dt>좌표계</dt><dd>${esc(result.frame || result.frame_id || "—")}</dd><dt>취득 시각</dt><dd>${esc(result.acquired_at || result.timestamp || result.stamp || "—")}</dd><dt>출처</dt><dd>${esc(result.source || source)}</dd></dl>${esc(result.error || result.reason || "")}</div>`;
 }
+// 관리 작업 진행 상황 — 원시 JSON 대신 작업 · 단계 · 결과 한 줄
+function managementStatus(m) {
+  if (!m || (!m.active && !m.outcome)) return "";
+  const head = m.active ? `실행 중 · ${esc(m.id || "")}${m.stage ? ` · ${esc(m.stage)}` : ""}` : `마지막 작업 ${esc(m.id || "")} · ${esc(m.outcome)}${m.note ? ` — ${esc(m.note)}` : ""}`;
+  const steps = (m.steps || []).map(st => `<li>${esc(st.note || st.key || "")} · ${esc(stepLabel(st))}${st.detail ? ` — ${esc(st.detail)}` : ""}</li>`).join("");
+  return `<div class="management-status"><b>${head}</b>${steps ? `<ul>${steps}</ul>` : ""}</div>`;
+}
 function renderWorkspace() {
   const w = S.workspace || {};
   const actions = S.actions || [];
   put("common-controls", actions.filter(a => a.group === "control").map(actionButton).join(""));
   for (const group of ["setting", "control"]) put(group + "-actions", actions.filter(a => a.group === group).map(actionButton).join(""));
-  put("management", `<pre>${esc(JSON.stringify(S.management || {}, null, 2))}</pre>`);
+  put("management", managementStatus(S.management));
   const h = w.head || {};
   put("head-settings", `<fieldset><legend>카메라 운용 자세</legend><label>pan <input type="number" step="0.01" data-head="pan" value="${esc(h.pan ?? 0)}"></label><label>tilt <input type="number" step="0.01" data-head="tilt" value="${esc(h.tilt ?? 0)}"></label><label>보정 프로필 <input data-head="calib_profile" value="${esc(h.calib_profile || "")}"></label></fieldset>`);
   put("perception-controls", `<fieldset><legend>인지 · ${esc(h.calib_profile || "보정 미선택")} · pan ${esc(h.pan ?? "—")} / tilt ${esc(h.tilt ?? "—")}</legend>${["fpp", "locate"].map(source => `<label class="chk"><input type="checkbox" data-perception="${source}" ${w.perception?.[source] ? "checked" : ""} ${holding() ? "" : "disabled"}>${source === "fpp" ? "FPP" : "locate"}</label>`).join("")}${(w.objects || []).map(o => `<label class="chk"><input type="checkbox" data-object="${esc(o.id)}" ${o.enabled ? "checked" : ""} ${holding() ? "" : "disabled"}>${esc(o.model || o.id)} · ${esc(o.color || o.marker_id || "마커")}${o.measured === false ? " (프리셋 · 미측정)" : ""}</label>`).join("")}</fieldset>`);
@@ -1255,6 +1262,8 @@ async function pollLog() {
 // ── 흐름 ────────────────────────────────────────────────────────────────
 function accept(snapshot) {
   S = snapshot;
+  // 서버는 workspace · actions · management 를 run(session) 아래에 싣는다 — 관리 탭 코드는 S.<key> 로 읽는다
+  for (const key of ["workspace", "actions", "management"]) S[key] = S.session?.[key] ?? null;
   if (me.token && S.lease.holder !== me.name) me.token = "";   // 만료됐거나 남이 가져갔다
   try {
     render();
