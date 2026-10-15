@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qsl, urlsplit
+from urllib.request import urlopen
 
 from . import _paths
 from .api import handle, host_ok
@@ -34,6 +36,8 @@ def make_handler(console: Console):
             url = urlsplit(self.path)
             if url.path == "/api/stream":
                 return self._stream()
+            if url.path == '/api/video':
+                return self._video()
             if url.path.startswith("/api/"):
                 return self._api("GET", url, b"")
             return self._static(url.path)
@@ -107,6 +111,44 @@ def make_handler(console: Console):
                     time.sleep(STREAM_PERIOD_S)
             except (BrokenPipeError, ConnectionResetError, OSError):
                 return
+
+        def _video(self) -> None:
+            if not host_ok(self.headers.get('Host')):
+                return self._send(403, {'ok': False, 'error': 'Host'})
+            # Only operator configuration selects the upstream; HTTP input cannot proxy URLs.
+            source = os.environ.get('S2R_VIDEO_URL', 'http://127.0.0.1:8080/stream')
+            try:
+                upstream = urlopen(source, timeout=3.0)
+                kind = upstream.headers.get('Content-Type', '')
+                if not kind.lower().startswith('multipart/x-mixed-replace'):
+                    upstream.close()
+                    raise OSError('MJPEG 영상이 아니다')
+            except (OSError, ValueError) as exc:
+                console.video_update(connected=False, error=str(exc))
+                return self._send(502, {'ok': False, 'error': '영상 연결 실패'})
+            self.send_response(200)
+            self.send_header('Content-Type', kind)
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Connection', 'close')
+            self.end_headers()
+            self.close_connection = True
+            console.video_update(connected=True, error='')
+            previous = b''
+            try:
+                with upstream:
+                    while True:
+                        chunk = upstream.read1(65536)
+                        if not chunk:
+                            break
+                        if b'\xff\xd9' in previous + chunk:
+                            console.video_update(last_frame_at=time.time())
+                        previous = chunk[-1:]
+                        self.wfile.write(chunk)
+                        self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError, OSError) as exc:
+                console.video_update(error=str(exc))
+            finally:
+                console.video_update(connected=False)
 
     return Handler
 

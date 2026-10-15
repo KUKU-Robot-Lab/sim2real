@@ -93,6 +93,26 @@ def _write(console: Console, method: str, path: str, data: dict, token: str | No
     held = console.lease.check(token)
     console.lease.renew(held.token)
     who = held.holder
+    if path in ('/api/workspace', '/api/actions/prepare', '/api/actions/execute'):
+        if method != 'POST':
+            return _fail(405, 'POST 만 지원한다')
+        if path == '/api/workspace':
+            with console._lock:
+                management = console.actions.view()
+                if management['active'] and not (str(management.get('id', '')).startswith('rg3_') and set(data) <= {'head'}):
+                    return _fail(409, '작업 실행 중에는 실행 설정을 바꿀 수 없다')
+                try:
+                    workspace = console._need().workspace.update(data)
+                except (TypeError, ValueError) as exc:
+                    return _fail(400, str(exc))
+                console.confirmations.pending.clear()
+                return 200, {'ok': True, 'workspace': workspace}
+        if path == '/api/actions/prepare':
+            return 200, console.confirmations.prepare(data, token=held.token)
+        if set(data) != {'confirmation_id'} or not isinstance(data.get('confirmation_id'), str):
+            return _fail(400, 'confirmation_id 만 필요하다')
+        console.confirmations.execute(data['confirmation_id'], token=held.token, operator=who)
+        return 202, ok
     if path == "/api/run/open":
         picked = data.get("policies") or {}
         if not isinstance(picked, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in picked.items()):

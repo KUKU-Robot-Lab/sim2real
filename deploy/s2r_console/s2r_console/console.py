@@ -135,6 +135,8 @@ def _robot_reference(mission, repo: Path, joint_profile: Path | None = None) -> 
     try:
         from jtc_bridge_core import load_profile_joints                        # noqa: PLC0415 (scripts/)
         prof = load_profile_joints(joint_profile or _paths.ROBOT_PROFILE)
+        if not sides:
+            sides = R.profile_sides(prof)
         limits = {k: (v["lower"], v["upper"]) for k, v in prof.items() if "lower" in v and "upper" in v}
         alias = {v["source"]: k for k, v in prof.items() if v.get("source")}   # /joint_states 는 원본 이름으로 온다
     except Exception:                                                          # noqa: BLE001 — 표시용이라 막지 않는다
@@ -169,13 +171,16 @@ def diagram_of(profile: Profile, units: Mapping[str, U.UnitCmd], *, repo: Path) 
         return None
 
 
-def bridge_argv(profile: Profile, diagram: Diagram | None = None) -> list[str]:
+def bridge_argv(profile: Profile, diagram: Diagram | None = None, robot: RB.Robot | None = None,
+                workspace_topics: Sequence[str] = ()) -> list[str]:
     """구독 전용 브리지. 스택 토픽은 프로파일이 선언했을 때만 넘긴다. 순수."""
     diagram = diagram if diagram is not None else profile.diagram
     nodes = list(dict.fromkeys([*profile.status_nodes, EPISODE_NODE]))   # 에피소드 실행기 상태(떠 있을 때만 온다)
     # 그림의 정책 노드 · 실행기가 읽는 status — 상자가 phase · seq · 거부 사유를 직접 말하게 한다(떠 있을 때만 온다)
     nodes = list(dict.fromkeys([*nodes, *(b.status for b in (diagram.boxes if diagram is not None else ()) if b.status)]))
     argv = [sys.executable, "-m", "s2r_console.bridge", "--domain", str(profile.domain), "--nodes", *nodes]
+    if robot is not None:
+        argv += ['--joints', *robot.joint_topics, '--dynamic-joints', *robot.dynamic_joint_topics]
     topics = [] if profile.stack is None else [t.name for t in profile.stack.topics]
     watch: list[str] = []
     if diagram is not None:                             # 그림의 전선 — 세는 것과 그래프만 보는 것
@@ -185,7 +190,7 @@ def bridge_argv(profile: Profile, diagram: Diagram | None = None) -> list[str]:
     argv += ["--watch", *watch] if watch else []
     if diagram is not None and any(b.id == PERCEPT_BOX for b in diagram.boxes):
         argv += ["--perception", PERCEPT_STATUS]         # vision-3090 의 카메라·컨테이너는 런처만 안다
-    objects = object_topics(topics)
+    objects = list(dict.fromkeys([*object_topics(topics), *workspace_topics]))
     argv += ["--objects", *objects] if objects else []   # 상태창 FP++ 칸 — 정책이 읽는 base_link 자세
     return argv
 
@@ -309,9 +314,12 @@ class Session:
             self.mission, repo, None if robot is None or not robot.joint_profile else (repo / robot.joint_profile).resolve())
         #: 학습 가능 영역(10.13 사용자) — 쪽마다 정책 계약의 소환 박스 xy. 정책은 run 을 여는 순간 정해지니 한 번만 읽는다.
         self.spawn_boxes = SM.boxes_from(self.mission.artifacts or {}, robot.slots if robot is not None else {}, repo)
+        from .workspace import Workspace
+        self.workspace = Workspace(repo=repo, robot_id=robot.id if robot else profile.id,
+                                   slots=dict(robot.slots) if robot else {})
         proc = self.run_dir / "proc"
         probe = probe_argv(profile, self.diagram) if bridge else None
-        self.bridge = (_Pipe("bridge", bridge_argv(profile, self.diagram), self.feed.bridge_died, self.feed, self.feed_lock, env,
+        self.bridge = (_Pipe("bridge", bridge_argv(profile, self.diagram, robot, self.workspace.object_topics()), self.feed.bridge_died, self.feed, self.feed_lock, env,
                              proc / "bridge.log") if bridge else None)
         self.probe = (None if probe is None else
                       _Pipe("ctl_probe", probe, self.feed.probe_died, self.feed, self.feed_lock, env, proc / "ctl_probe.log"))
@@ -348,6 +356,12 @@ class Console:
         self.session: Session | None = None
         self._bridge = bridge
         self._lock = threading.RLock()
+        from .confirmations import Confirmations
+        from .actions import ActionManager
+        self.confirmations = Confirmations(self)
+        self.actions = ActionManager(self)
+        self._video = {'connected': False, 'last_frame_at': None, 'error': ''}
+        self._video_lock = threading.Lock()
 
     # ── 열고 닫기 ───────────────────────────────────────────────────────
     def open(self, profile_id: str, *, operator: str, policies: Mapping[str, str] | None = None) -> Session:
@@ -355,6 +369,7 @@ class Console:
         with self._lock:
             if self.session is not None:
                 raise ConsoleError(f"run {self.session.run_id} 이 열려 있다 — 먼저 끝낼 것")
+            self.actions.reset()
             good, bad = scan(self.profiles_dir, repo=self.repo)
             profile = next((p for p in good if p.id == profile_id), None)
             if profile is None:
@@ -372,6 +387,7 @@ class Console:
                     raise ConsoleError("고른 정책을 쓸 수 없다", code=400, reasons=tuple(str(exc).split("; "))) from exc
             self.session = Session(profile, repo=self.repo, operator=operator, bridge=self._bridge,
                                    robot=robot, picked=picked, artifacts=artifacts)
+            self.confirmations.pending.clear()
             chosen = " · ".join(f"{k} {v}" for k, v in picked.items()) or "미션 기본값"
             self.session.event("run", f"run 시작 — {profile.title} (도메인 {profile.domain}, {profile.domain_class}) · 정책 {chosen}")
             return self.session
@@ -447,6 +463,7 @@ class Console:
         return set() if s.diagram is None else {u for b in s.diagram.boxes if b.manager for u in b.units}
 
     def end(self, *, force: bool = False) -> int:
+        self.actions.abort()
         with self._lock:
             s = self._need()
             reasons = self.end_reasons()
@@ -470,6 +487,7 @@ class Console:
         실기에서는 팔·손 드라이버만 **남긴다** — 팔 브링업을 내리면 모터가 전부 풀린다(Ctrl+C 한 번에 팔이 떨어졌다).
         그 밖의 자식(인지 런처·목 퍼블리셔·pd …)과 브리지·프로브는 정지한다. 남긴 키를 돌려준다(없으면 빈 목록).
         """
+        self.actions.abort()
         with self._lock:
             s = self.session
             if s is None:
@@ -877,6 +895,8 @@ class Console:
                 raise ConsoleError("에피소드 실행기 상태가 안 온다 — episode 단계를 먼저 실행할 것", code=409)
             want = st.get("next_action") if action == "next" else f"episode:{st.get('episode')}" if action == "run" else ""
             if action in ("next", "run"):
+                if str(st.get('episode', '')).startswith('grasp_rg3_'):
+                    self._rg3_fpp_guard(s, obs)
                 if st.get("busy"):
                     raise ConsoleError(f"실행기가 {st.get('node')} 를 돌리는 중이다 — 끝나거나 정지 뒤에", code=409)
                 if not want:
@@ -897,6 +917,20 @@ class Console:
         threading.Thread(target=self._quick_wait, args=(s, key, f"에피소드 {action}"), daemon=True).start()
 
     @staticmethod
+    def _rg3_fpp_guard(s: Session, obs) -> None:
+        workspace = s.workspace
+        if not workspace.perception['fpp']:
+            raise ConsoleError('현재 rg3는 FPP 실시간 추적을 요구한다 — locate만으로 실행할 수 없다')
+        selected = [o for o in workspace.objects if o['enabled'] and o['model'] != 'holder']
+        if not selected:
+            raise ConsoleError('rg3의 FPP 입력 물체를 활성화할 것')
+        workspace.ingest_fpp(obs)
+        for obj in selected:
+            result = obj['results']['fpp']
+            if obj['input_source'] != 'fpp' or not result['valid'] or not result.get('live'):
+                raise ConsoleError(f"{obj['id']}: rg3는 신선한 FPP live_pose 입력을 요구한다")
+
+    @staticmethod
     def _quick_wait(s: Session, key: str, label: str) -> None:
         while s.supervisor.is_alive(key):
             time.sleep(0.1)
@@ -914,6 +948,17 @@ class Console:
             raise ConsoleError(str(exc), code=404) from exc
 
     # ── 화면 ────────────────────────────────────────────────────────────
+    def video_status(self) -> dict:
+        with self._video_lock:
+            value = dict(self._video)
+        stamp = value['last_frame_at']
+        age = None if stamp is None else max(0.0, time.time() - stamp)
+        return {**value, 'age_s': age, 'stale': age is None or age > 3.0}
+
+    def video_update(self, **values) -> None:
+        with self._video_lock:
+            self._video.update(values)
+
     def snapshot(self) -> dict:
         with self._lock:
             good, bad = scan(self.profiles_dir, repo=self.repo)
@@ -945,8 +990,11 @@ class Console:
         nodes = [{"name": n, "age_s": None if n not in obs.age_s else round(obs.age_s[n], 2),
                   "stale": obs.age_s.get(n, 1e9) > 2.0, "status": obs.status.get(n)} for n in s.profile.status_nodes]
         robot = R.view(obs.joints, s.contract_sides, s.joint_limits, age_s=obs.joints_age_s,
-                       alias=s.joint_alias)
+                       alias=s.joint_alias, joint_ages=obs.joint_ages)
+        s.workspace.ingest_fpp(obs)
         return {"robot": robot, "run_id": s.run_id, "run_dir": str(s.run_dir), "operator": s.operator,
+                'workspace': s.workspace.snapshot(), 'actions': self.actions.catalog(),
+                'management': self.actions.view(), 'video': self.video_status(),
                 "uptime_s": round(time.time() - s.started), "profile": s.profile.as_dict(),
                 "banner": banner.as_dict(), "links": links, "diagram": diagram, "rosgraph": rosgraph, "units": units, "bridge": bridge, "nodes": nodes, "episode": obs.episode,
                 "mission": self._mission_view(s), "pd_sides": self._pd_sides(s, obs),
