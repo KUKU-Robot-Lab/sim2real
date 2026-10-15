@@ -7,8 +7,10 @@ JSON result so the console can invalidate failed attempts instead of reusing pos
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import re
+import signal
 import sys
 import time
 from pathlib import Path
@@ -76,6 +78,23 @@ def run_scan(request, spec, head, camera, *, return_pose=(0.0, -20.0), **kwargs)
     return locate.locate_object(request, spec, OperatingHead(), camera, **kwargs)
 
 
+@contextmanager
+def cooperative_cancel():
+    """Finish the current move and let the scan restore the operating pose."""
+    stopped = False
+
+    def cancel(signum, frame):
+        nonlocal stopped
+        stopped = True
+
+    previous = {sig: signal.signal(sig, cancel) for sig in (signal.SIGTERM, signal.SIGINT)}
+    try:
+        yield lambda: stopped
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('object_id')
@@ -113,11 +132,13 @@ def main(argv=None):
         if busy:
             raise RuntimeError('another head commander is active: ' + '; '.join(busy))
         head, camera = adapters.Sim2RealHead(args.repo), adapters.SshCamera()
-    result = run_scan(request, spec, head, camera, return_pose=return_pose, profile=profile)
-    valid = result.found and result.home_ok
+    with cooperative_cancel() as cancelled:
+        result = run_scan(request, spec, head, camera, return_pose=return_pose, profile=profile, should_stop=cancelled)
+        stopped = cancelled()
+    valid = result.found and result.home_ok and not stopped
     print(json.dumps({'object_id': spec.name, 'source': 'locate', 'frame': 'base', 'timestamp': time.time(),
                       'position': [result.x, result.y, result.z] if valid else None, 'valid': valid,
-                      'reason': result.reason if not valid else '', 'home_ok': result.home_ok}, allow_nan=False))
+                      'reason': 'cancelled' if stopped else result.reason if not valid else '', 'home_ok': result.home_ok}, allow_nan=False))
     return 0 if valid else 1
 
 

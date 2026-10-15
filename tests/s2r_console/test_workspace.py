@@ -114,3 +114,26 @@ def test_fpp_live_tracking_is_distinguished_from_snapshot(tmp_path):
     obj = next(o for o in ws.snapshot()['objects'] if o['id'] == 'source200_orange')
     assert obj['results']['fpp']['live']
     assert obj['results']['fpp']['position'][0] == .21
+
+
+def test_cancelled_locate_returns_operating_pose_without_scanning():
+    import registered_locate
+    registered_locate.install_core(ROOT)
+    from perception_plus_plus_core.head_scan import fakes, locate
+    spec = registered_locate.load_spec(ROOT, 'source200_orange')
+    head = fakes.FakeHead()
+    result = registered_locate.run_scan(locate.LocateRequest(spec.name), spec, head, object(),
+                                        return_pose=(15, -30), should_stop=lambda: True)
+    assert not result.found and result.home_ok
+    assert head.moves == [(15, -30)]
+
+
+def test_locate_sigterm_requests_cooperative_cancellation():
+    import signal
+    import registered_locate
+    old = signal.getsignal(signal.SIGTERM)
+    with registered_locate.cooperative_cancel() as cancelled:
+        assert not cancelled()
+        signal.raise_signal(signal.SIGTERM)
+        assert cancelled()
+    assert signal.getsignal(signal.SIGTERM) == old
