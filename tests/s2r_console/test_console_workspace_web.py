@@ -33,6 +33,7 @@ vm.runInContext(fs.readFileSync(process.argv[1],'utf8').replace('refresh().then(
  assert.match(el('object-cards').innerHTML,/FPP/);
  assert.match(el('object-cards').innerHTML,/locate/);
  assert.match(el('object-cards').innerHTML,/failed/);
+ assert.match(el('object-cards').innerHTML,/data-act="object-perception"/);
  await vm.runInContext(`prepareAction('home_right')`,ctx);
  assert.equal(calls[0][0],'/api/actions/prepare');
  assert.match(el('modal-card').innerHTML,/승인 후 실행/);
