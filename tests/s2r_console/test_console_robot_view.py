@@ -96,3 +96,21 @@ def test_source_joint_names_are_mapped_to_canonical():
 def test_canonical_names_still_work_without_an_alias():
     v = R.view({"r_aj_1": [-1.19]}, SIDES, LIMITS, age_s=0.1)
     assert [g for g in v["groups"] if g["title"] == "오른팔"][0]["rows"][0]["pos"] == pytest.approx(-1.19)
+
+
+def test_profile_supplies_both_sides_and_only_actual_hand_joints_before_contract():
+    prof = {n: {} for n in ('r_aj_1', 'l_aj_1', 'r_hj_thumb_1', 'l_hj_index_1')}
+    sides = R.profile_sides(prof)
+    v = R.view({}, sides, {}, age_s=None)
+    assert [g['total'] for g in v['groups']] == [1, 1, 1, 1]
+    assert all(r['pos'] is None for g in v['groups'] for r in g['rows'])
+    assert all(r['target'] is None for g in v['groups'] for r in g['rows'])
+
+
+def test_a_stopped_hand_stays_stale_while_the_arm_keeps_reporting():
+    v = R.view({'r_aj_1': [0.1], 'r_hj_index_2': [0.4]}, SIDES, LIMITS,
+               age_s=0.1, joint_ages={'r_aj_1': 0.1, 'r_hj_index_2': 4.0})
+    hand = next(g for g in v['groups'] if g['title'] == '오른손')
+    assert hand['rows'][0]['stale'] and hand['rows'][0]['age_s'] == 4.0
+    assert hand['rows'][1]['state'] == 'missing'
+    assert v['stale']

@@ -10,6 +10,8 @@ hand: {model: RH56F1, vendor: Inspire, actuated: "6 / 손 (종속 6)"}
 profiles: [rh56f1_real, rh56f1_fake]
 joint_profile: ../robot_control/src/robot_control/profiles/openarm_rh56f1.yaml   # 로봇 상태 표의 한계 · 이름
 # 양팔 붓기(pour_fj) = 계약 하나가 두 팔(both) · rh_aglt(한 팔 접근 · 파지 · 이송, 09.30) = 팔마다
+joint_topics: [/joint_states, /hand_right/joint_states, /hand_left/joint_states]
+dynamic_joint_topics: [/dynamic_joint_states]
 slots: {both: pourfj_both, right: aglt_right, left: aglt_left}
 settings:
   - {label: 팔, value: "OpenArm v10 × 2 · CAN FD (DG-5F 로봇과 같은 팔 스택)"}

@@ -98,3 +98,24 @@ def test_torque_off_comes_first(tmp_path):
     """Operating Mode 는 EEPROM 이라 토크가 켜져 있으면 쓰기가 거부된다."""
     order = _addresses(_apply(tmp_path))
     assert order[0] == "torque off"
+
+
+def test_release_never_changes_goal_or_gains(tmp_path, monkeypatch):
+    import head_home
+    cfg = _write(tmp_path, GOOD)
+    rec = RecordingController()
+    rec.closed = False
+    rec.close = lambda: setattr(rec, 'closed', True)
+    monkeypatch.setattr(head_home, 'CompliantController', lambda *_: rec)
+    assert head_home.main(['--config', str(cfg), '--release', '--execute']) == 0
+    assert rec.closed
+    assert rec.writes == [('torque off', head_home.ADDR_TORQUE_ENABLE, head_home.TORQUE_OFF)] * 2
+
+
+def test_release_without_execute_never_opens_a_serial_port(tmp_path, monkeypatch):
+    import head_home
+    cfg = _write(tmp_path, GOOD)
+    def forbidden(*_):
+        raise AssertionError('dry run must not open serial')
+    monkeypatch.setattr(head_home, 'CompliantController', forbidden)
+    assert head_home.main(['--config', str(cfg), '--release']) == 0

@@ -35,6 +35,13 @@ def hand_joints(side: str) -> list[str]:
     return [f"{side[0]}_hj_{f}_{j}" for f in FINGERS for j in range(1, 5)]
 
 
+def profile_sides(profile: Mapping[str, Mapping]) -> dict:
+    """관절 프로필만으로 실측 표를 구성한다. 계약 목표를 만들어내지 않는다."""
+    return {side: {"arm_joints": [n for n in profile if n.startswith(f"{side[0]}_aj_")],
+                   "hand_joints": [n for n in profile if n.startswith(f"{side[0]}_hj_")]}
+            for side in ("right", "left")}
+
+
 def _chan(q: Sequence | None, i: int) -> float | None:
     """브리지가 준 [위치, 속도, 토크, …] 의 i 번째. 없으면 None — 0 으로 채우지 않는다."""
     if not q or i >= len(q) or q[i] is None:
@@ -84,9 +91,15 @@ def by_canonical(joints: Mapping[str, Sequence], alias: Mapping[str, str] | None
 
 def view(joints: Mapping[str, Sequence], contract_sides: Mapping[str, Mapping],
          limits: Mapping[str, Sequence], *, age_s: float | None,
-         alias: Mapping[str, str] | None = None) -> dict:
+         alias: Mapping[str, str] | None = None,
+         joint_ages: Mapping[str, float] | None = None) -> dict:
     """화면이 그대로 그리는 모양. `contract_sides` 는 계약의 `sides`(팔·손 홈이 목표다)."""
     joints = by_canonical(joints, alias)
+    ages = None if joint_ages is None else dict(joint_ages)
+    if ages is not None:
+        for src, canon in (alias or {}).items():
+            if src in ages:
+                ages[canon] = ages[src]
     groups = []
     for side in ("right", "left"):
         if side not in contract_sides:            # 계약에 없는 팔은 그리지 않는다(한 팔짜리 계약)
@@ -98,7 +111,12 @@ def view(joints: Mapping[str, Sequence], contract_sides: Mapping[str, Mapping],
         groups.append(group(f"{ko}팔", cfg.get("arm_joints") or arm_joints(side), joints, arm_t, limits, ARM_OFF_RAD))
         groups.append(group(f"{ko}손", cfg.get("hand_joints") or hand_joints(side), joints, hand_t, limits,
                             HAND_OFF_RAD))
+    for g in groups:
+        for row in g["rows"]:
+            age = age_s if ages is None else ages.get(row["joint"])
+            row["age_s"] = None if age is None else round(age, 2)
+            row["stale"] = age is None or age > 2.0
     return {"groups": [g for g in groups if g["total"]],
             "channels": [{"key": k, "name": n, "unit": u} for k, n, u in CHANNELS],
             "age_s": None if age_s is None else round(age_s, 2),
-            "stale": age_s is None or age_s > 2.0}
+            "stale": age_s is None or age_s > 2.0 or any(r["stale"] for g in groups for r in g["rows"] if r["pos"] is not None)}

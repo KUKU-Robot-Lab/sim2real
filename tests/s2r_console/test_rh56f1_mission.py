@@ -532,3 +532,43 @@ def test_the_remote_vision_recorder_runs_on_the_perception_pc_venv():
         return
     recs = [" ".join(c.argv) for st in REAL.stages for c in _cmds(REAL, REAL_BOOK, st.id) if "vision_recorder.py" in " ".join(c.argv)]
     assert recs and all(f"{GEN.REMOTE_PY} scripts/nodes/vision_recorder.py" in r for r in recs)
+
+
+def test_shutdown_handles_partial_connections_and_orders_policy_perception_pd_hands_arms():
+    for mission, book in ((REAL, REAL_BOOK), (FAKE, FAKE_BOOK)):
+        assert not next(s for s in mission.stages if s.id == 'shutdown').needs
+        cmds = _cmds(mission, book, 'shutdown')
+        positions = {key: i for i, c in enumerate(cmds) for key in c.stop}
+        policy = positions[f'policy_aglt_right#{GEN.AGLT_NODE_IDX[mission is REAL]}']
+        perception = positions['cups#1' if mission is REAL else 'cups#0']
+        pd = positions['pd_arm_right#1']
+        hand = positions['hand_right#1']
+        arm = positions['drivers#3' if mission is REAL else 'drivers#0']
+        assert policy < perception < pd < hand < arm
+        for stage in mission.stages:
+            for i, command in enumerate(_cmds(mission, book, stage.id)):
+                if command.background:
+                    assert f'{stage.id}#{i}' in positions, f'unmanaged at shutdown: {stage.id}#{i}'
+
+
+def test_head_control_is_a_separate_approved_motion_using_the_head_settle_tool():
+    for mission, book in ((REAL, REAL_BOOK), (FAKE, FAKE_BOOK)):
+        st = next(s for s in mission.stages if s.id == 'head_control')
+        assert st.group == 'motion' and st.skippable
+        cmds = _cmds(mission, book, 'head_control')
+        if mission is REAL:
+            assert st.touches_real
+            assert any('head_home.py' in ' '.join(c.argv) and '--execute' in c.argv for c in cmds)
+        else:
+            assert not st.touches_real
+            assert not any('head_home.py' in ' '.join(c.argv) for c in cmds)
+
+
+def test_shutdown_releases_neck_torque_after_perception_and_before_pd():
+    cmds = _cmds(REAL, REAL_BOOK, 'shutdown')
+    head = next(i for i, c in enumerate(cmds) if 'head_home.py' in ' '.join(c.argv) and '--release' in c.argv)
+    perception = next(i for i, c in enumerate(cmds) if 'cups#1' in c.stop)
+    pd = next(i for i, c in enumerate(cmds) if 'pd_arm_right#1' in c.stop)
+    assert perception < head < pd
+    assert '--execute' in cmds[head].argv
+    assert not any('--release' in c.argv for c in _cmds(FAKE, FAKE_BOOK, 'shutdown'))

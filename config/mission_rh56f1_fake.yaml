@@ -66,6 +66,11 @@ stages:
   - preflight
   skippable: true
   title: fake — 머리 없음(실기 순서를 맞추려고 둔 자리)
+- id: head_control
+  group: motion
+  lane: rig
+  skippable: true
+  title: 목 pan · tilt 변경 — 승인한 보정 프로필과 자세로 이동 후 실측 정착 확인
 - id: cups
   group: connect
   lane: both
@@ -401,9 +406,7 @@ stages:
 - id: shutdown
   group: finish
   lane: rig
-  needs:
-  - drivers
-  title: 안전 종료 — 팔 받침 확인 → 남은 pd → 손 상태 · 드라이버 → 팔 브링업 (★팔 토크가 풀린다)
+  title: 안전 종료 — 팔 받침 확인 → 정책 → 인지 → 목 → pd → 손 → 팔 (★목 · 팔 토크가 풀린다)
 run:
   preflight:
   - note: RH56F1 변환표 · 백엔드 · 상태 노드 · 계약 · 미션 테스트(수 초)
@@ -449,11 +452,43 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: 남은 정책 노드 · pd 정지
+  - note: 남은 정책 노드 정지
     stop:
     - policy_pourfj#1
     - policy_aglt_right#1
     - policy_aglt_left#1
+    - policy_place_right#0
+    - policy_place_right#2
+    - policy_place_left#0
+    - policy_place_left#2
+    - episode_pick_place_right#0
+    - episode_pick_place_right#1
+    - episode_pick_place_right#2
+    - episode_pick_place_right#6
+    - episode_pick_place_right#7
+    - episode_pick_place_right#8
+    - episode_pick_place_left#0
+    - episode_pick_place_left#1
+    - episode_pick_place_left#2
+    - episode_pick_place_left#6
+    - episode_pick_place_left#7
+    - episode_pick_place_left#8
+    - episode_grasp_rg3_right#0
+    - episode_grasp_rg3_right#1
+    - episode_grasp_rg3_right#5
+    - episode_grasp_rg3_right#6
+    - episode_grasp_rg3_left#0
+    - episode_grasp_rg3_left#1
+    - episode_grasp_rg3_left#5
+    - episode_grasp_rg3_left#6
+  - note: fake 인지 물체 발행 정지
+    stop:
+    - cups#0
+    - cups#1
+    - cups#2
+    - cups#3
+  - note: 남은 pd 정지 — 정책과 인지를 정리한 뒤
+    stop:
     - pd_load_right#0
     - pd_arm_right#1
     - pd_load_left#0
@@ -2385,3 +2420,9 @@ run:
     - episode_grasp_rg3_left#5
     - episode_grasp_rg3_left#1
     - episode_grasp_rg3_left#0
+  head_control:
+  - note: fake — 목 없음(승인한 자세 설정만 보관)
+    argv:
+    - bash
+    - -lc
+    - 'true'

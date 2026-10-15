@@ -27,7 +27,7 @@ SLOT_CONTRACTS = {"joint": ("joint_contract.json",), "pour": ("pour_contract.jso
                   "pourfj": ("pour_fj_contract.json",),     # RH56F1 양팔 붓기(pour_fj, 09.29)
                   "aglt": ("rh_aglt_contract.json",)}       # RH56F1 한 팔 접근 · 파지 · 이송(rh_aglt, 09.30)
 _KEYS = {"schema", "id", "title", "host", "asset", "hand", "profiles", "slots", "task_prefixes", "art", "settings", "note",
-         "joint_profile"}
+         "joint_profile", "joint_topics", "dynamic_joint_topics"}
 
 
 @dataclass(frozen=True)
@@ -47,11 +47,16 @@ class Robot:
     #: robot_control 관절 프로파일(repo 상대) — 로봇 상태 표의 한계 · 원본 이름. 비면 콘솔 기본(openarm_tesollo)
     joint_profile: str = ""
 
+    joint_topics: tuple[str, ...] = ("/joint_states", "/dg5f_right/joint_states", "/dg5f_left/joint_states")
+    dynamic_joint_topics: tuple[str, ...] = ("/dynamic_joint_states", "/dg5f_right/dynamic_joint_states",
+                                             "/dg5f_left/dynamic_joint_states")
+
     def as_dict(self) -> dict:
         return {"id": self.id, "title": self.title, "host": self.host, "asset": self.asset, "hand": dict(self.hand),
                 "profiles": list(self.profiles), "slots": dict(self.slots), "art": dict(self.art),
                 "settings": [{"label": k, "value": v} for k, v in self.settings], "note": self.note,
-                "joint_profile": self.joint_profile}
+                "joint_profile": self.joint_profile, "joint_topics": list(self.joint_topics),
+                "dynamic_joint_topics": list(self.dynamic_joint_topics)}
 
 
 def slot_contracts(artifact_key: str) -> tuple[str, ...]:
@@ -78,6 +83,10 @@ def parse(raw: object, *, path: Path) -> Robot:
     bad = [k for k in slots.values() if not slot_contracts(str(k))]
     if bad:
         raise ProfileError(f"{path}: 슬롯 산출물 키 {bad} — 접두어가 {sorted(SLOT_CONTRACTS)} 중 하나여야 한다")
+    for key in ("joint_topics", "dynamic_joint_topics"):
+        if key in raw and (not isinstance(raw[key], list)
+                           or any(not isinstance(t, str) or not t.startswith("/") for t in raw[key])):
+            raise ProfileError(f"{path}: {key} 는 절대 ROS 토픽 이름 목록이어야 한다")
     settings = []
     for item in raw.get("settings") or ():
         if not isinstance(item, Mapping) or set(item) != {"label", "value"}:
@@ -90,7 +99,9 @@ def parse(raw: object, *, path: Path) -> Robot:
                  task_prefixes=tuple(str(p) for p in raw.get("task_prefixes") or ()),
                  art={str(k): str(v) for k, v in (raw.get("art") or {}).items()},
                  settings=tuple(settings), note=str(raw.get("note", "")), path=path,
-                 joint_profile=str(raw.get("joint_profile", "")))
+                 joint_profile=str(raw.get("joint_profile", "")),
+                 joint_topics=tuple(raw.get("joint_topics", Robot.joint_topics)),
+                 dynamic_joint_topics=tuple(raw.get("dynamic_joint_topics", Robot.dynamic_joint_topics)))
 
 
 def scan(directory: Path) -> tuple[list[Robot], dict[str, str]]:

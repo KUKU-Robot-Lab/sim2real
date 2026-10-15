@@ -68,6 +68,12 @@ stages:
   skippable: true
   touches_real: true
   title: 머리를 카메라 캘리브 자세(외부 파라미터 head_pose)로 + I 게인 — 카메라 좌표가 이 자세에서만 맞다(머리가 조금 움직인다)
+- id: head_control
+  group: motion
+  lane: rig
+  skippable: true
+  touches_real: true
+  title: 목 pan · tilt 변경 — 승인한 보정 프로필과 자세로 이동 후 실측 정착 확인
 - id: cups
   group: connect
   lane: both
@@ -76,7 +82,7 @@ stages:
   skippable: true
   touches_real: true
   title: '컵 자세(vision-3090 FP++) — RealSense · FP++ 묶음 컨테이너(fpp_source240b · fpp_shaker_c, 묶음마다 하나 · 색 · 모양으로 가르기 · 한 번 찍기: source240b_blue=오른팔
-    · shaker_c_orange=왼팔) → /objects/<물체>/pose (base). GPU VRAM 컨테이너마다 약 2 GB'
+    · shaker_c_orange=왼팔 · shaker_c_blue · shaker_c_pink) → /objects/<물체>/pose (base). GPU VRAM 컨테이너마다 약 2 GB'
 - id: cup_holders
   group: connect
   lane: both
@@ -294,7 +300,8 @@ stages:
   lane: both
   skippable: true
   touches_real: true
-  blocked: '붓기는 보류(10.07 사용자: 성공 전 정책은 직접 확인 뒤) — 실기 인지는 10.08 부터 색으로 두 컵(source240b_blue=오른팔 · shaker_c_orange=왼팔)을 낸다'
+  blocked: '붓기는 보류(10.07 사용자: 성공 전 정책은 직접 확인 뒤) — 실기 인지는 10.08 부터 색으로 두 컵(source240b_blue=오른팔 · shaker_c_orange=왼팔 · shaker_c_blue · shaker_c_pink)을
+    낸다'
   needs:
   - home_right
   - home_left
@@ -437,10 +444,8 @@ stages:
 - id: shutdown
   group: finish
   lane: rig
-  needs:
-  - drivers
   touches_real: true
-  title: 안전 종료 — 팔 받침 확인 → 남은 pd → 손 상태 · 드라이버 → 팔 브링업 (★팔 토크가 풀린다)
+  title: 안전 종료 — 팔 받침 확인 → 정책 → 인지 → 목 → pd → 손 → 팔 (★목 · 팔 토크가 풀린다)
 run:
   preflight:
   - note: CPU — 실시간 한도(EtherCAT 마스터 FIFO 80 · controller_manager 50) · 코어 배치(이 PC 의 코어를 읽어 노드가 스스로 정한다). 한도가 안 열렸으면 MISS — 운영자가 sudo bash scripts/setup/rt_setup.sh
@@ -518,21 +523,31 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: 남은 정책 노드 · pd 정지
+  - note: 남은 정책 노드 정지
     stop:
     - policy_pourfj#1
     - policy_aglt_right#4
     - policy_aglt_left#4
     - policy_aglt_right#2
     - policy_aglt_left#2
-    - pd_load_right#0
-    - pd_arm_right#1
-    - pd_load_left#0
-    - pd_arm_left#1
     - episode_pick_place_right#6
     - episode_pick_place_left#6
     - episode_grasp_rg3_right#5
     - episode_grasp_rg3_left#5
+    - policy_aglt_right#3
+    - policy_place_right#1
+    - policy_aglt_left#3
+    - policy_place_left#1
+    - episode_pick_place_right#3
+    - episode_pick_place_right#4
+    - episode_pick_place_right#7
+    - episode_pick_place_left#3
+    - episode_pick_place_left#4
+    - episode_pick_place_left#7
+    - episode_grasp_rg3_right#3
+    - episode_grasp_rg3_right#6
+    - episode_grasp_rg3_left#3
+    - episode_grasp_rg3_left#6
   - note: 남은 bag 기록 마무리(rh56f1_record.sh stop)
     argv:
     - bash
@@ -554,6 +569,21 @@ run:
     - cups#2
     - cups#3
     - cup_holders#3
+  - note: 목 토크 해제 — 받침 확인, pan · tilt 가 중력으로 처질 수 있다
+    argv:
+    - python3
+    - '{repo}/scripts/head_home.py'
+    - --config
+    - '{repo}/config/head_home.yaml'
+    - --release
+    execute_args:
+    - --execute
+  - note: 남은 pd 정지 — 정책과 인지를 정리한 뒤
+    stop:
+    - pd_load_right#0
+    - pd_arm_right#1
+    - pd_load_left#0
+    - pd_arm_left#1
   - note: 손 상태 노드 · 손 드라이버 정지 — 손가락은 마지막 자세에서 멈춘다(벤더 펌웨어가 잡는다)
     stop:
     - hand_right#2
@@ -657,14 +687,16 @@ run:
     argv: *id001
     execute_args:
     - --execute
-  - note: 카메라 + FP++ 켜기 — 묶음 컨테이너(fpp_source240b · fpp_shaker_c)가 source240b_blue=오른팔 · shaker_c_orange=왼팔 를 차례로 한 번 찍는다. 이미 떠 있으면 그대로. 최대 150
-      s. ★10.13 묶음 하나가 못 뜨면 경고만(나머지는 계속), 하나도 못 띄우면 실패
+  - note: 카메라 + FP++ 켜기 — 묶음 컨테이너(fpp_source240b · fpp_shaker_c)가 source240b_blue=오른팔 · shaker_c_orange=왼팔 · shaker_c_blue · shaker_c_pink 를 차례로
+      한 번 찍는다. 이미 떠 있으면 그대로. 최대 150 s. ★10.13 묶음 하나가 못 뜨면 경고만(나머지는 계속), 하나도 못 띄우면 실패
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - source240b_blue
     - shaker_c_orange
+    - shaker_c_blue
+    - shaker_c_pink
     - --wait
     - '150'
   - note: 컵 좌표 추출 — 처음엔 FP++ 가 켜지며 찍는 회차를 기다리고, 이 단계를 다시 실행하면(컵을 옮긴 뒤 '↶ 여기서 다시') 컨테이너를 끄지 않고 지금 카메라로 다시 찍는다(10.08 사용자). 컵마다 base 좌표 · 판정을 찍는다.
@@ -700,6 +732,8 @@ run:
     - start
     - source240b_blue
     - shaker_c_orange
+    - shaker_c_blue
+    - shaker_c_pink
     - --wait
     - '150'
   - note: '[right] source240b_blue 만 다시 찍기 — base 좌표 · 판정을 찍고, 못 찾으면 이유와 함께 실패'
@@ -725,6 +759,8 @@ run:
     - start
     - source240b_blue
     - shaker_c_orange
+    - shaker_c_blue
+    - shaker_c_pink
     - --wait
     - '150'
   - note: '[left] shaker_c_orange 만 다시 찍기 — base 좌표 · 판정을 찍고, 못 찾으면 이유와 함께 실패'
@@ -2565,3 +2601,12 @@ run:
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
     - episode_grasp_rg3_left
+  head_control:
+  - note: 목 pan · tilt 변경 후 실측 정착 확인
+    argv:
+    - python3
+    - '{repo}/scripts/head_home.py'
+    - --config
+    - '{repo}/config/head_home.yaml'
+    execute_args:
+    - --execute

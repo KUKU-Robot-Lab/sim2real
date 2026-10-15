@@ -205,6 +205,8 @@ def _stages(kind: str) -> list[dict]:
         {"id": "head_home", "group": "motion", "lane": "rig", "needs": ["preflight"], "skippable": True, "touches_real": real,
          "title": ("머리를 카메라 캘리브 자세(외부 파라미터 head_pose)로 + I 게인 — 카메라 좌표가 이 자세에서만 맞다(머리가 조금 움직인다)"
                    if real else "fake — 머리 없음(실기 순서를 맞추려고 둔 자리)")},
+        {"id": "head_control", "group": "motion", "lane": "rig", "skippable": True, "touches_real": real,
+         "title": "목 pan · tilt 변경 — 승인한 보정 프로필과 자세로 이동 후 실측 정착 확인"},
         {"id": "cups", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
          "touches_real": real,
          "title": (f"컵 자세({PERCEPTION_HOST if REMOTE_PERCEPTION else ROBOT_PC} FP++) — RealSense · FP++ 묶음 컨테이너({_containers_txt()}, 묶음마다 하나 · 색 · 모양으로 가르기 · 한 번 찍기: {_cups_txt()}) → /objects/<물체>/pose (base). GPU VRAM 컨테이너마다 약 2 GB" if real else
@@ -293,8 +295,8 @@ def _stages(kind: str) -> list[dict]:
                    "needs_why": "에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵" + (" · 고정 홀더 자세 파일" if ep.holders else "") + " 위에서 정책을 잇는다",
                    "title": f"[에피소드] {name} — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 "
                             f"진행: {' → '.join(n.id for n in ep.nodes if n.type != 'terminal')}"})
-    st.append({"id": "shutdown", "group": "finish", "lane": "rig", "needs": ["drivers"], "touches_real": real,
-               "title": "안전 종료 — 팔 받침 확인 → 남은 pd → 손 상태 · 드라이버 → 팔 브링업 (★팔 토크가 풀린다)"})
+    st.append({"id": "shutdown", "group": "finish", "lane": "rig", "touches_real": real,
+               "title": "안전 종료 — 팔 받침 확인 → 정책 → 인지 → 목 → pd → 손 → 팔 (★목 · 팔 토크가 풀린다)"})
     if not real:
         for x in st:
             x.pop("touches_real", None)
@@ -341,9 +343,8 @@ def _run(kind: str) -> dict:
             _cmd("★양팔을 받침 위 · 안전 자세에 두었는가. 두 팔 모두 pd 해제를 끝냈는가. 다음 스텝부터 토크가 풀린다",
                  ["bash", "-lc", "true"], manual=True),
             # 실기 aglt 단계는 맨 앞에 기록(bag · CPU) 두 줄이 붙어 정책 노드가 #3, CPU 기록이 #2(10.08)
-            _cmd("남은 정책 노드 · pd 정지", stop=["policy_pourfj#1"] + [f"policy_aglt_{s}#{AGLT_NODE_IDX[real]}" for s in SIDES]
-                 + ([f"policy_aglt_{s}#2" for s in SIDES] if real else [])
-                 + [f"{p}_{s}#{i}" for s in SIDES for p, i in (("pd_load", 0), ("pd_arm", 1))]),
+            _cmd("남은 정책 노드 정지", stop=["policy_pourfj#1"] + [f"policy_aglt_{s}#{AGLT_NODE_IDX[real]}" for s in SIDES]
+                 + ([f"policy_aglt_{s}#2" for s in SIDES] if real else [])),
             # 정책 · 에피소드 단계가 도중에 실패하면 bag 기록기가 남는다(setsid) — 기록 중이 아니면 그렇다고만 찍는다(10.08)
             *([_cmd("남은 bag 기록 마무리(rh56f1_record.sh stop)", ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop"])]
               if real else []),
@@ -351,6 +352,11 @@ def _run(kind: str) -> dict:
                     ["python3", "{repo}/scripts/ops/perception_ctl.py", "stop", "--camera", "--host", PERCEPTION_HOST, "--wait", "60"]),
                _cmd("인지 런처 · 자세 수신기 · 물체 자세 노드 · 컵홀더 노드 정지",
                     stop=["cups#1", "cups#2", "cups#3", "cup_holders#3"])] if real else []),
+            *([_cmd("목 토크 해제 — 받침 확인, pan · tilt 가 중력으로 처질 수 있다",
+                    ["python3", "{repo}/scripts/head_home.py", "--config", "{repo}/" + HEAD_CONFIG, "--release"],
+                    execute_args=["--execute"])] if real else []),
+            _cmd("남은 pd 정지 — 정책과 인지를 정리한 뒤",
+                 stop=[f"{p}_{s}#{i}" for s in SIDES for p, i in (("pd_load", 0), ("pd_arm", 1))]),
             _cmd("손 상태 노드 · 손 드라이버 정지 — 손가락은 마지막 자세에서 멈춘다(벤더 펌웨어가 잡는다)",
                  stop=[f"hand_{s}#{i}" for s in SIDES for i in ((2, 1) if real else (1, 0))]),
             _cmd("★팔 브링업 정지 — 모든 팔 모터가 꺼진다(받침으로 내려앉는다)" if real else "fake 플랜트 정지",
@@ -597,6 +603,23 @@ def _run(kind: str) -> dict:
     if cpu:
         stop = next(c for c in run["shutdown"] if c.get("stop") and "policy_pourfj#1" in c["stop"])
         stop["stop"] = [*stop["stop"], *cpu]
+    # 부분 연결 / 중간 실패도 정리한다. 명령 번호를 중복 관리하지 않고 생성된 배경 작업에서 모은다.
+    policy_stop = next(c for c in run["shutdown"] if c.get("stop") and "policy_pourfj#1" in c["stop"])
+    policy_stop["stop"] = list(dict.fromkeys([*policy_stop["stop"],
+        *(f"{stage}#{i}" for stage, cmds in run.items() for i, c in enumerate(cmds)
+          if c.get("background") and (stage.startswith("policy_") or stage.startswith("episode_")))]))
+    perception_ids = [f"{stage}#{i}" for stage in ("cups", "cup_holders")
+                      for i, c in enumerate(run.get(stage, [])) if c.get("background")]
+    if real:
+        perception_stop = next(c for c in run["shutdown"] if "cups#1" in c.get("stop", []))
+        perception_stop["stop"] = list(dict.fromkeys([*perception_stop["stop"], *perception_ids]))
+    elif perception_ids:
+        pd_index = next(i for i, c in enumerate(run["shutdown"]) if "pd_load_right#0" in c.get("stop", []))
+        run["shutdown"].insert(pd_index, _cmd("fake 인지 물체 발행 정지", stop=perception_ids))
+    run["head_control"] = [
+        _cmd("목 pan · tilt 변경 후 실측 정착 확인", ["python3", "{repo}/scripts/head_home.py", "--config", "{repo}/" + HEAD_CONFIG],
+             execute_args=["--execute"])
+    ] if real else [_cmd("fake — 목 없음(승인한 자세 설정만 보관)", ["bash", "-lc", "true"])]
     return run
 
 

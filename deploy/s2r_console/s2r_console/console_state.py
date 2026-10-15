@@ -65,6 +65,8 @@ class Observed:
     joints: Mapping[str, Sequence] = field(default_factory=dict)
     #: 관절 상태를 받은 지 몇 초 — 한 번도 못 받았으면 None
     joints_age_s: float | None = None
+    #: Driver-specific position receipt ages, independent of other live drivers.
+    joint_ages: Mapping[str, float] = field(default_factory=dict)
     #: 스택 토픽 이름 → {"pubs": 내는 쪽 수, "n": 지난 구간에 받은 수, "age_ms": 마지막 도착 뒤 ms | None}
     topics: Mapping[str, Mapping] = field(default_factory=dict)
     #: topics 보고를 받은 지 몇 초 — 한 번도 못 받았으면 None

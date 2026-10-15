@@ -131,20 +131,34 @@ def verify(controller: CompliantController, config: HeadHome) -> bool:
     return ok
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--config", default=str(DEFAULT_CONFIG))
     parser.add_argument("--pan", type=float, default=None, help="일회성 덮어쓰기")
     parser.add_argument("--tilt", type=float, default=None)
     parser.add_argument("--execute", action="store_true")
-    args = parser.parse_args()
+    parser.add_argument("--release", action="store_true", help="목 토크 해제만 수행(받침 확인 후 --execute)")
+    args = parser.parse_args(argv)
 
     try:
         config = load_head_home(Path(args.config))
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"❌ 설정을 읽을 수 없다: {exc}", file=sys.stderr)
         return 2
+
+    if args.release:
+        print(f"목 토크 해제 — {config.port} · 모터 {list(config.targets_deg)} (중력으로 처질 수 있다)")
+        if not args.execute:
+            print("--execute 없이 실행함 — 아무것도 쓰지 않았다")
+            return 0
+        controller = CompliantController(config.port, config.baud)
+        try:
+            for dxl_id in config.targets_deg:
+                controller.write1(dxl_id, ADDR_TORQUE_ENABLE, TORQUE_OFF, "torque off")
+            return 0
+        finally:
+            controller.close()
 
     overrides = {"pan": args.pan, "tilt": args.tilt}
     targets = dict(config.targets_deg)

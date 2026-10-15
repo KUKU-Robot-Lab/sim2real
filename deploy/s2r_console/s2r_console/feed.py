@@ -57,6 +57,7 @@ class Feed:
         self._topics_at: float | None = None
         self._joints: Mapping[str, Sequence] = {}
         self._joints_at: float | None = None
+        self._joint_received: dict[str, float] = {}
         self._objects: Mapping[str, Mapping | None] = {}
         self._objects_at: float | None = None
         self._rosgraph: Mapping | None = None
@@ -110,6 +111,10 @@ class Feed:
             data = msg.get("data")
             if isinstance(data, Mapping):
                 self._joints, self._joints_at = data, now
+                ages = msg.get("ages")
+                self._joint_received = {str(k): now - max(0.0, float(v))
+                                        for k, v in ages.items() if isinstance(v, (int, float))} \
+                    if isinstance(ages, Mapping) else {str(k): now for k in data}
         elif ch == "topics":
             data = msg.get("data")
             if isinstance(data, Mapping):
@@ -177,6 +182,7 @@ class Feed:
                         bridge_down_why=None if self.bridge_up() else self._down_why,
                         graph=self.graph, topics=dict(self._topics),
                         joints=dict(self._joints),
+                        joint_ages={k: now - t for k, t in self._joint_received.items()},
                         joints_age_s=None if self._joints_at is None else now - self._joints_at,
                         topics_age_s=None if self._topics_at is None else now - self._topics_at,
                         rosgraph=self._rosgraph,

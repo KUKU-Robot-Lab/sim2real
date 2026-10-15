@@ -126,3 +126,18 @@ def test_object_pose_summaries_reach_observed_with_their_age():
     o = f.observed()
     assert o.objects["/objects/cup/pose"]["hz"] == 13.0 and o.objects["/objects/x/pose"] is None
     assert o.objects_age_s == 1.5
+
+
+def test_joint_ages_include_driver_age_and_time_since_bridge_report():
+    f, clock = feed()
+    f.ingest(line('joints', data={'r_hj_index_1': [0.4], 'r_aj_1': [0.1]},
+                  ages={'r_hj_index_1': 4.0, 'r_aj_1': 0.1}))
+    clock.t = 1.0
+    assert f.observed().joint_ages == {'r_hj_index_1': 5.0, 'r_aj_1': 1.1}
+
+
+def test_legacy_joint_envelopes_still_have_receipt_ages():
+    f, clock = feed()
+    f.ingest(line('joints', data={'r_aj_1': [0.1]}))
+    clock.t = 0.2
+    assert f.observed().joint_ages == {'r_aj_1': 0.2}

@@ -189,3 +189,12 @@ def test_a_registry_path_id_is_the_default_the_pick_and_the_slot_now(picker, tin
     s = picker.open("t_fake", operator="pytest", policies={"left": "hand_a/task_x/left_n1"})
     assert s.mission.artifacts["joint_left"] == "deploy/policies/hand_a/task_x/left_n1/joint_contract.json"
     assert picker.snapshot()["session"]["robot_module"]["slots_now"] == {"left": "hand_a/task_x/left_n1"}
+
+
+def test_robot_modules_select_their_own_read_only_joint_topics():
+    bots = {b.id: b for b in RB.scan(ROBOTS)[0]}
+    rh = bots['openarm_rh56f1']
+    assert rh.joint_topics == ('/joint_states', '/hand_right/joint_states', '/hand_left/joint_states')
+    dg = bots['openarm_dg5f_m_short']
+    assert dg.joint_topics == ('/joint_states', '/dg5f_right/joint_states', '/dg5f_left/joint_states')
+    assert rh.as_dict()['joint_topics'] == list(rh.joint_topics)

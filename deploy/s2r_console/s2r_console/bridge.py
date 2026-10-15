@@ -75,6 +75,26 @@ class TopicMeter:
         return out
 
 
+class JointSamples:
+    """Latest channels and receipt age per joint; one live driver cannot freshen another."""
+
+    def __init__(self) -> None:
+        self.values: dict[str, list] = {}
+        self.received: dict[str, float] = {}
+
+    def update(self, name: str, channels: Mapping[int, float | None], *, now: float) -> None:
+        row = self.values.setdefault(str(name), [None] * 5)
+        for slot, value in channels.items():
+            row[slot] = value
+        # Temperature alone does not make a stopped position stream fresh.
+        if 0 in channels:
+            self.received[str(name)] = now
+
+    def report(self, *, now: float) -> tuple[dict, dict]:
+        return ({k: list(v) for k, v in self.values.items()},
+                {k: max(0.0, now - t) for k, t in self.received.items()})
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--domain", type=int, required=True)
@@ -132,35 +152,30 @@ def main(argv: list[str] | None = None) -> int:
 
     #: 관절 상태는 100 Hz 로 오므로 그대로 흘리면 콘솔이 잠긴다 — 최신값만 모아 `--joints-hz` 로 보낸다.
     #: 칸 순서는 화면의 채널 순서(robot_view.CHANNELS)다 — 위치 · 속도 · 토크 · 로터온도 · MOS온도.
-    SLOTS = 5
-    joints: dict[str, list] = {}
+    samples = JointSamples()
     last_joint_emit = [0.0]
-
-    def _slot(name: str) -> list:
-        return joints.setdefault(str(name), [None] * SLOTS)
 
     def _beat_joints() -> None:
         now = time.monotonic()
-        if joints and now - last_joint_emit[0] >= 1.0 / max(args.joints_hz, 0.1):
+        if samples.values and now - last_joint_emit[0] >= 1.0 / max(args.joints_hz, 0.1):
             last_joint_emit[0] = now
-            _emit(line("joints", data={k: list(v) for k, v in joints.items()}))
+            data, ages = samples.report(now=now)
+            _emit(line("joints", data=data, ages=ages))
 
     def on_joints(msg) -> None:
+        now = time.monotonic()
         for i, name in enumerate(msg.name):
-            row = _slot(name)
-            row[0] = float(msg.position[i]) if i < len(msg.position) else None
-            row[1] = float(msg.velocity[i]) if i < len(msg.velocity) else None
-            row[2] = float(msg.effort[i]) if i < len(msg.effort) else None
+            samples.update(name, {slot: float(vals[i]) if i < len(vals) else None
+                                  for slot, vals in enumerate((msg.position, msg.velocity, msg.effort))}, now=now)
         _beat_joints()
 
     def on_dynamic(msg) -> None:
-        """온도는 `/dynamic_joint_states` 에만 있다 — 드라이버가 내는 인터페이스를 그대로 읽는다(09.23 사용자)."""
+        """온도는 position 의 수신 시각을 갱신하지 않는다."""
         for name, iv in zip(msg.joint_names, msg.interface_values):
             vals = dict(zip(list(iv.interface_names), list(iv.values)))
-            row = _slot(name)
-            for slot, key in ((3, "temperature_rotor"), (4, "temperature_mos")):
-                if key in vals:
-                    row[slot] = float(vals[key])
+            samples.update(name, {slot: float(vals[key]) for slot, key in
+                                 ((3, "temperature_rotor"), (4, "temperature_mos")) if key in vals},
+                           now=time.monotonic())
         _beat_joints()
 
     from .object_health import PoseWindow                                     # noqa: PLC0415
