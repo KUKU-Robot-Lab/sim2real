@@ -1190,20 +1190,36 @@ function managementStatus(m, group) {
   const steps = (m.steps || []).map(st => `<li>${esc(st.note || st.key || "")} · ${esc(stepLabel(st))}${st.detail ? ` — ${esc(st.detail)}` : ""}</li>`).join("");
   return `<div class="management-status"><b>${head}</b>${steps ? `<ul>${steps}</ul>` : ""}</div>`;
 }
-// 목 제어 — 각도를 고르고 [이 각도로 이동] 을 누르면 head_control 승인 창이 그 pan · tilt 로 뜬다(10.15 "정해진 각도로 움직이게 하는 모듈")
-const HEAD_PRESETS = [[0, -20, "기본"], [0, -30, ""], [0, -40, ""], [30, -30, ""], [-30, -30, ""]];
+// 목 제어 — camera 세션이 보정한 각도로만 간다(10.15 사용자: "camera 세션에 만든 특정 각도로 가야 locate 사용 가능").
+// 보정 프로필을 고르면 그 프로필의 각도표가 버튼으로 뜬다. 버튼 = 그 각도 그대로(pan · tilt), [이 각도로 이동] = head_control 승인 창.
+const HEAD_PROFILE_PREFERRED = "v9_1014_anchored_z";   // camera 세션 권장(10.14)
 let headDraft = null;
+function headDefaults(h, profiles) {
+  const names = Object.keys(profiles || {});
+  const profile = h.calib_profile || (names.includes(HEAD_PROFILE_PREFERRED) ? HEAD_PROFILE_PREFERRED : names[0] || "");
+  return { pan: h.pan ?? 0, tilt: h.tilt ?? -20, calib_profile: profile };
+}
 function headModule(h, action) {
-  const d = headDraft || { pan: h.pan ?? 0, tilt: h.tilt ?? -20, calib_profile: h.calib_profile || "" };
+  const profiles = action?.calib_profiles || {};
+  const d = headDraft || headDefaults(h, profiles);
+  const prof = profiles[d.calib_profile];
   const can = holding() && action && action.enabled;
   const why = action ? (action.reasons || []).join(" · ") : "이 로봇에 head_control 단계가 없다";
+  const tilts = prof && !prof.error ? [...new Set(prof.angles.map(a => Math.round(a.tilt)))].sort((a, b) => b - a) : [];
+  const hit = (a) => prof && Math.abs(a.pan - Number(d.pan)) <= prof.tolerance && Math.abs(a.tilt - Number(d.tilt)) <= prof.tolerance;
+  const rows = tilts.map(t => `<div class="head-row"><span class="head-tilt">tilt ${t}°</span>${prof.angles.filter(a => Math.round(a.tilt) === t).sort((a, b) => a.pan - b.pan)
+    .map(a => `<button class="btn btn-sm${hit(a) ? " on" : ""}" data-act="head-preset" data-arg="${a.pan}:${a.tilt}" title="볼트 ${a.n_bolts}개 · 잔차 ${a.resid_mm ?? "—"} mm">pan ${Math.round(a.pan)}</button>`).join("")}</div>`).join("");
+  const onTable = !prof || prof.error || !prof.strict || prof.angles.some(hit);
   return `<fieldset class="head-module"><legend>목 제어 — 지금 운용 자세 pan ${esc(h.pan ?? "—")}° · tilt ${esc(h.tilt ?? "—")}° · ${esc(h.calib_profile || "보정 미선택")}</legend>
-    <div class="actions">${HEAD_PRESETS.map(([p, t, n]) => `<button class="btn btn-sm${Number(d.pan) === p && Number(d.tilt) === t ? " on" : ""}" data-act="head-preset" data-arg="${p}:${t}">pan ${p} · tilt ${t}${n ? ` (${n})` : ""}</button>`).join("")}</div>
-    <label>pan [°] <input type="number" step="1" min="-90" max="90" data-head-draft="pan" value="${esc(d.pan)}"></label>
-    <label>tilt [°] <input type="number" step="1" min="-60" max="-10" data-head-draft="tilt" value="${esc(d.tilt)}"></label>
-    <label>보정 프로필 <input data-head-draft="calib_profile" value="${esc(d.calib_profile)}"></label>
+    <label>보정 프로필 <select data-head-draft="calib_profile">${Object.keys(profiles).map(n => `<option value="${esc(n)}" ${n === d.calib_profile ? "selected" : ""}>${esc(n)}${n === HEAD_PROFILE_PREFERRED ? " (camera 권장)" : ""}</option>`).join("")}</select></label>
+    ${prof?.error ? `<small class="bad">${esc(prof.error)}</small>` : ""}
+    <div class="head-angles">${rows || '<small>이 프로필에 보정 각도가 없다</small>'}</div>
+    <span class="head-target">목표 pan ${fmt(Number(d.pan), 3)}° · tilt ${fmt(Number(d.tilt), 3)}°${onTable ? "" : ' <b class="bad">— 보정 각도 아님(locate · FP++ 좌표 불가)</b>'}</span>
+    <details class="head-free"><summary>직접 입력</summary>
+      <label>pan [°] <input type="number" step="0.1" min="-90" max="90" data-head-draft="pan" value="${esc(d.pan)}"></label>
+      <label>tilt [°] <input type="number" step="0.1" min="-60" max="-10" data-head-draft="tilt" value="${esc(d.tilt)}"></label></details>
     <button class="btn btn-real" data-act="head-move" ${can ? "" : "disabled"}>이 각도로 이동 (head_control)</button>
-    <small>pan −90~90° · tilt −60~−10°. 이동 후 실측 정착을 확인하고, 카메라 좌표 변환 노드를 이 자세로 다시 띄운다.</small>
+    <small>보정 각도(±${esc(prof?.tolerance ?? 1)}°)로 이동 → 실측 정착 확인 → 카메라 좌표 변환 노드를 이 프로필로 다시 띄운다. 그 뒤 인지 재추출.</small>
     ${action ? actionState(action) : ""}${!can && why ? `<small>${esc(why)}</small>` : ""}</fieldset>`;
 }
 function renderWorkspace() {
@@ -1260,12 +1276,13 @@ Object.assign(acts, {
     finally { executingConfirmation = false; }
   },
   "head-preset"(arg) {
-    const [pan, tilt] = arg.split(":").map(Number), h = S.workspace?.head || {};
-    headDraft = { pan, tilt, calib_profile: headDraft?.calib_profile ?? h.calib_profile ?? "" };
+    const [pan, tilt] = arg.split(":").map(Number), action = (S.actions || []).find(a => a.id === "head_control");
+    headDraft = { ...(headDraft || headDefaults(S.workspace?.head || {}, action?.calib_profiles)), pan, tilt };
     html["head-settings"] = null; renderWorkspace();
   },
   "head-move"() {
-    const h = S.workspace?.head || {}, d = headDraft || { pan: h.pan ?? 0, tilt: h.tilt ?? -20, calib_profile: h.calib_profile || "" };
+    const action = (S.actions || []).find(a => a.id === "head_control");
+    const d = headDraft || headDefaults(S.workspace?.head || {}, action?.calib_profiles);
     const extra = { pan: Number(d.pan), tilt: Number(d.tilt) };
     if (d.calib_profile) extra.calib_profile = d.calib_profile;
     return prepareAction("head_control", extra);
@@ -1290,7 +1307,12 @@ document.addEventListener("change", e => {
   if (d.perception) patch = {perception:{...S.workspace.perception,[d.perception]:t.checked}};
   if (d.object || d.inputSource) patch = {objects:S.workspace.objects.map(o => ({id:o.id,enabled:d.object === o.id ? t.checked : o.enabled,input_source:d.inputSource === o.id ? t.value : o.input_source}))};
   if (d.cardObject) patch = {cards:S.workspace.cards.map(c => c.id === d.cardObject ? {...c,object_id:t.value} : c)};
-  if (d.headDraft) { headDraft = { ...(headDraft || { pan: S.workspace.head?.pan ?? 0, tilt: S.workspace.head?.tilt ?? -20, calib_profile: S.workspace.head?.calib_profile || "" }), [d.headDraft]: d.headDraft === "calib_profile" ? t.value : Number(t.value) }; return; }
+  if (d.headDraft) {
+    const action = (S.actions || []).find(a => a.id === "head_control");
+    headDraft = { ...(headDraft || headDefaults(S.workspace.head || {}, action?.calib_profiles)), [d.headDraft]: d.headDraft === "calib_profile" ? t.value : Number(t.value) };
+    if (d.headDraft === "calib_profile") { html["head-settings"] = null; t.blur(); renderWorkspace(); }
+    return;
+  }
   if (patch) saveWorkspace(patch).catch(() => refresh());
 });
 

@@ -1,5 +1,6 @@
 """Management actions use fake processes, never a robot domain."""
 import time
+from pathlib import Path
 
 import pytest
 
@@ -325,11 +326,13 @@ def test_head_profile_restarts_same_converter_key_and_invalidates_coordinates(co
     rg3_workspace(console)
     w = console.session.workspace
     (tiny_repo / 'config/calib_profiles').mkdir()
-    (tiny_repo / 'config/calib_profiles/selected.yaml').write_text('profile: selected\n')
+    import shutil
+    shutil.copy(Path(__file__).resolve().parents[2] / 'config/calib_profiles/v9_1014_anchored_z.yaml',
+                tiny_repo / 'config/calib_profiles/selected.yaml')
     s = console.session
     s.supervisor.spawn('cups#0', stage='cups', note='old converter', argv=['python3', str(script)], background=True, manual=False)
     before = next(p['pid'] for p in s.supervisor.table() if p['key'] == 'cups#0')
-    parameters = {'pan': 10, 'tilt': -25, 'calib_profile': 'selected'}
+    parameters = {'pan': 0.132, 'tilt': -29.934, 'calib_profile': 'selected'}
     preview = m.describe('head_control', parameters)
     restart = next(c for c in preview['commands'] if c['stop'] == ['cups#0'])
     assert '--head-joint-topic' in restart['argv']
@@ -410,3 +413,19 @@ def test_arm_command_stops_only_that_arms_policy(console, tiny_repo, monkeypatch
     assert m._preempt_sides(s, 'home_right', 'control', {}) == {'right'}
     assert m._preempt_sides(s, 'head_control', 'control', {}) is None
     assert m._preempt_sides(s, 'policy_stop', 'control', {}) is None
+
+
+# 10.15 사용자: "camera 세션에 만든 특정 각도로 가야 locate 사용 가능"
+def test_head_control_only_goes_to_calibrated_angles(console, tiny_repo):
+    import shutil
+    m = setup_actions(console, tiny_repo, {'head_control': [{'argv': ['true']}]})
+    (tiny_repo / 'config/calib_profiles').mkdir()
+    shutil.copy(Path(__file__).resolve().parents[2] / 'config/calib_profiles/v9_1014_anchored_z.yaml',
+                tiny_repo / 'config/calib_profiles/v9_1014_anchored_z.yaml')
+    off = m.describe('head_control', {'pan': 10, 'tilt': -25, 'calib_profile': 'v9_1014_anchored_z'})
+    assert any('보정한 각도' in r for r in off['reasons'])
+    on = m.describe('head_control', {'pan': -59.915, 'tilt': -29.933, 'calib_profile': 'v9_1014_anchored_z'})
+    assert not any('보정한 각도' in r for r in on['reasons'])
+    table = on['calib_profiles']['v9_1014_anchored_z']
+    assert table['strict'] and table['tolerance'] == 1.0
+    assert {'pan': -59.915, 'tilt': -29.933} in [{k: a[k] for k in ('pan', 'tilt')} for a in table['angles']]

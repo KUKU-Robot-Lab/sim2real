@@ -61,6 +61,7 @@ class ActionManager:
         self._lock = threading.RLock()
         self._scan_restore_ok = True
         self._tls = threading.local()
+        self._profile_cache = {}  # calib profile path -> (mtime, summary)
         self._detached = _Job('', '', 'direct', ())   # direct helper calls outside a job thread
         self._detached.status = {'active': False, 'id': '', 'operator': 'direct', 'outcome': None, 'steps': []}
 
@@ -282,6 +283,14 @@ class ActionManager:
             if profile and (not isinstance(profile, str) or not re.fullmatch(r'[A-Za-z0-9_-]+', profile) or
                             not (s.repo / 'config/calib_profiles' / f'{profile}.yaml').is_file()):
                 reasons.append('선택한 카메라 보정 프로필이 등록되지 않았다')
+            known = self.head_profiles(s).get(profile) if profile else None
+            if known is not None and known.get('error'):
+                reasons.append(f"보정 프로필을 읽지 못했다: {known['error']}")
+            elif known is not None and known['strict'] and all(isinstance(head.get(k), (int, float)) for k in ('pan', 'tilt')):
+                tol = known['tolerance']
+                if not any(abs(a['pan'] - head['pan']) <= tol and abs(a['tilt'] - head['tilt']) <= tol for a in known['angles']):
+                    reasons.append(f"pan {head['pan']} · tilt {head['tilt']} 는 {profile} 가 보정한 각도(±{tol}°)가 아니다 "
+                                   "— 이 자세에서는 locate · FP++ 좌표를 쓸 수 없다")
             drivers = [unit for unit in s.units.values() if any('head_joint_publisher.py' in a for a in unit.argv)]
             if drivers and not any(s.supervisor.is_alive(unit.key) for unit in drivers):
                 reasons.append('목 드라이버가 연결되지 않았다 — setting head_home 필요')
@@ -365,7 +374,28 @@ class ActionManager:
                 'job': self._job_summary(action_id), 'live': self._live(s, action_id, stages),
                 'card_id': self._card(s, action_id)['id'] if group == 'policy' else None,
                 'reasons': reasons, 'commands': commands, 'warnings': warnings,
-                'stages': list(stages), 'parameters': parameters, 'stop_targets': targets if group == 'control' else []}
+                'stages': list(stages), 'parameters': parameters, 'stop_targets': targets if group == 'control' else [],
+                **({'calib_profiles': self.head_profiles(s)} if action_id == 'head_control' else {})}
+
+    def head_profiles(self, s):
+        """config/calib_profiles 의 보정 각도표 — 목 제어는 camera 세션이 보정한 각도로만 간다(10.15 사용자: 그래야 locate 사용 가능)."""
+        import calib_profile as CP
+        out = {}
+        for path in sorted((s.repo / 'config/calib_profiles').glob('*.yaml')):
+            try:
+                mtime = path.stat().st_mtime
+                cached = self._profile_cache.get(path)
+                if cached is None or cached[0] != mtime:
+                    prof = CP.load_profile(path)
+                    summary = {'strict': bool(prof.strict), 'tolerance': float(prof.angle_tolerance_deg),
+                               'angles': [{'pan': round(e.pan_deg, 3), 'tilt': round(e.tilt_deg, 3), 'n_bolts': int(e.n_bolts),
+                                           'resid_mm': None if not math.isfinite(e.bolt_resid_mm) else round(e.bolt_resid_mm, 2)}
+                                          for e in prof.entries]}
+                    self._profile_cache[path] = cached = (mtime, summary)
+                out[path.stem] = cached[1]
+            except Exception as exc:      # 한 파일이 깨져도 나머지 프로필은 보인다
+                out[path.stem] = {'error': str(exc), 'strict': True, 'tolerance': 0.0, 'angles': []}
+        return out
 
     def _job_summary(self, action_id):
         job = self._jobs.get(action_id)
