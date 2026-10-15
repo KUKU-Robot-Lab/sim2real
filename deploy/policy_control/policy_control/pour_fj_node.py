@@ -239,7 +239,9 @@ class AgltChain:
         a = np.clip(np.asarray(self.policy.forward(obs), float), -self.c.action_clip, self.c.action_clip)
         active = self.step_i >= self.c.hold_steps
         hand_q = np.array([m.hand_q[j] for j in self.c.side().hand_joints], float)
-        targets = self.dec.step(a, active=active, tactile_n=m.tactile_n, hand_q=hand_q, joint_force=m.joint_force)
+        near = float(np.linalg.norm(np.asarray(m.cup_pos, float) - np.asarray(m.palm_pos, float)))   # 10.14 grasp_near_m
+        targets = self.dec.step(a, active=active, tactile_n=m.tactile_n, hand_q=hand_q, joint_force=m.joint_force,
+                                obj_palm_m=near)
         if active:                                  # 학습 GoalState.step 도 대기 중에는 세지 않는다
             g = self.dec.grasped()                  # ★10.12 hand_block 계약: 막힘 신호 쥔 판정(sim _grasp_flag 와 같은 식)
             if g is None and self.grasp_cfg is not None:   # 이전 계약: 부착과 같은 쥠 신호(손끝 또는 관절 힘), 손끝 문턱은 계약 값

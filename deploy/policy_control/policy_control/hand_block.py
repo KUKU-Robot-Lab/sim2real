@@ -14,6 +14,9 @@ DR(G · ε · N 범위, 손가락 누락, 쥔 판정 지연)은 sim 전용 — �
 ★10.14 위치제어 런(hdgp hand_block_pos)의 두 키 — 계약에 없으면 10.12 동작 그대로:
   g_axis_rad      {축: rad} 0 초과인 축은 G 를 그 값으로(검지 · 중지 35 칸 등), 나머지는 g_rad. 해제 G/2 도 축별.
   release_on_open false 면 q* 가 여는 쪽으로 움직여도 안 풀리고 앞섬 < G/2 일 때만 풀린다.
+★10.14 쥔 규칙 "latched_axes_at_least"(hdgp hand_block_pos HandBlockPos · HandBlockOpp): 판정 축(judge_axes) 중 래치 축이
+  min_axes 개 이상이면 쥔 것. pos = 엄지굽힘 + 네 손가락(또는 hand_block_judge_axes), opp = 네 손가락(엄지굽힘 제외).
+  막힘 · 래치 · 쥠 멈춤 · 유지는 규칙과 상관없이 같다.
 """
 from __future__ import annotations
 
@@ -30,7 +33,9 @@ FINGERS = ("index", "middle", "ring", "pinky")
 CELL_THUMB_FLEX, CELL_FINGER = 1.0 / 527.0, 1.0 / 550.0
 KEYS = ("g_rad", "eps_rad", "n_ticks", "lag_ticks", "axes")
 OPTIONAL_KEYS = ("g_axis_rad", "release_on_open")         # 10.14 위치제어 런(없으면 10.12 동작)
-GRASP_RULES = ("thumb_flex_and_any_finger",)
+#: thumb_flex_and_any_finger = 10.12 엄지굽힘 AND 손가락 하나(hdgp HandBlock) · latched_axes_at_least = 10.14 판정 축 중
+#:   래치 min_axes 개 이상(hdgp HandBlockPos · HandBlockOpp)
+GRASP_RULES = ("thumb_flex_and_any_finger", "latched_axes_at_least")
 #: 10.13 쥔 판정 유지 규칙(hdgp grasp_hold_rule) — "none" 은 계약에 빈 값으로 둔다
 HOLD_RULES = ("block_follow_open",)
 HOLD_AXES = ("thumb_flex", "index", "middle", "ring", "pinky")   # grasp_release_open_rad 순서
@@ -75,7 +80,8 @@ class BlockCfg:
 class HandBlockNp:
     """한 손 막힘 상태. `step(q_star_prev, q)` 를 매 정책 틱 한 번(대기 hold 중에도) — 에피소드 시작에 reset()."""
 
-    def __init__(self, cfg: BlockCfg, joint_names: Sequence[str], q_open: Sequence[float], q_grip: Sequence[float]) -> None:
+    def __init__(self, cfg: BlockCfg, joint_names: Sequence[str], q_open: Sequence[float], q_grip: Sequence[float],
+                 rule: str = GRASP_RULES[0], judge_axes: Sequence[str] = (), min_axes: int = 0) -> None:
         names = list(joint_names)
         idx = {}
         for a in cfg.axes:
@@ -97,11 +103,28 @@ class HandBlockNp:
         for a, v in cfg.g_axis:
             if v > 0.0:
                 self.g[idx[a]] = v
+        self.rule, self.judge, self.min_axes = self._judge_of(rule, judge_axes, min_axes)
         self.reset()
 
+    def _judge_of(self, rule: str, judge_axes: Sequence[str], min_axes: int) -> tuple[str, list, int]:
+        """쥔 규칙 검사 → (규칙, 판정 축 색인, k). 옛 규칙은 판정 축 · k 를 받지 않는다(계약에 반만 들어온 값 거부)."""
+        axes = [str(a) for a in judge_axes]
+        if rule == GRASP_RULES[0]:
+            if axes or int(min_axes):
+                raise HandBlockError(f"쥔 규칙 {rule}: 판정 축 · min_axes 를 받지 않는다 — {axes} · {min_axes}")
+            return rule, [], 0
+        if rule != GRASP_RULES[1]:
+            raise HandBlockError(f"쥔 규칙 {rule!r} — {GRASP_RULES}")
+        if not axes or len(set(axes)) != len(axes) or any(a not in self.idx for a in axes):
+            raise HandBlockError(f"쥔 규칙 {rule}: 판정 축 {axes} 는 대상 축 {list(self.cfg.axes)} 의 겹치지 않는 부분집합")
+        if not 1 <= int(min_axes) <= len(axes):
+            raise HandBlockError(f"쥔 규칙 {rule}: min_axes 는 1~{len(axes)} — {min_axes}")
+        return rule, [self.idx[a] for a in axes], int(min_axes)
+
     @staticmethod
-    def from_contract(raw: Mapping, joint_names: Sequence[str], q_open, q_grip) -> "HandBlockNp":
-        return HandBlockNp(BlockCfg.from_contract(raw), joint_names, q_open, q_grip)
+    def from_contract(raw: Mapping, joint_names: Sequence[str], q_open, q_grip, rule: str = GRASP_RULES[0],
+                      judge_axes: Sequence[str] = (), min_axes: int = 0) -> "HandBlockNp":
+        return HandBlockNp(BlockCfg.from_contract(raw), joint_names, q_open, q_grip, rule, judge_axes, min_axes)
 
     def reset(self) -> None:
         self._q: deque = deque(maxlen=self.cfg.n_ticks + 1)          # [-1] = 지금
@@ -139,7 +162,9 @@ class HandBlockNp:
         return self.latch.copy()
 
     def grasped(self) -> bool:
-        """엄지굽힘 멈춤 AND 네 손가락 중 하나 멈춤."""
+        """옛 규칙 = 엄지굽힘 멈춤 AND 네 손가락 중 하나 멈춤 · latched_axes_at_least = 판정 축 래치 수 ≥ min_axes."""
+        if self.rule == GRASP_RULES[1]:
+            return bool(int(self.latch[self.judge].sum()) >= self.min_axes)
         return bool(self.latch[self.thumb_flex] and self.latch[self.fingers].any())
 
     def as_dict(self) -> dict:

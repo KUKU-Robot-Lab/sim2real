@@ -53,6 +53,8 @@ class PlaceContract(A.RaContract):
     # ★10.13 놓기 기울기 게이트(hdgp release_max_tilt_deg): 놓음 조건이 release_steps 틱 찬 틱에 컵 기울기(세계 z) ≤ 이 값일
     #   때만 놓음 — 배포는 지각 컵(손바닥 FK 부착) 자세로 같은 식. 0 = 게이트 없음(이 필드 전 계약).
     release_max_tilt_deg: float = 0.0
+    # ★10.14 A안(hdgp release_open_zero_skip): True 면 release_open_rad 가 0 인 축은 연 양 조건에서 뺀다(기본 False = 이전 동작)
+    release_open_zero_skip: bool = False
     # ★10.13 IK 이송(hdgp carry_enable): 리셋 뒤 손바닥 DLS 로 슬롯 위까지 옮긴 다음 정책(place_carry). 빈 값 = 이송 없음.
     carry: dict = field(default_factory=dict)
 
@@ -93,6 +95,7 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
     rule = str(env.get("release_rule", "contact"))
     open_rad = [float(v) for v in env.get("release_open_rad", ())] if rule == "block_follow_open" else []
     max_tilt = float(env.get("release_max_tilt_deg", 0.0))
+    zero_skip = bool(env.get("release_open_zero_skip", False))
     try:
         carry = PC.CarryCfg.from_env(env)
     except PC.CarryError as exc:
@@ -113,7 +116,7 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
                        seat_dz=HOLDER_FLOOR_Z + origin_z, target_holders=[int(h) for h in env["target_holders"]],
                        release_steps=int(env["release_steps"]), settle_steps=int(env["settle_steps"]),
                        release_force_n=float(env["contact_force_threshold"]),
-                       latch_obs=latch, release_rule=rule, release_open_rad=open_rad, release_max_tilt_deg=max_tilt,
+                       latch_obs=latch, release_rule=rule, release_open_rad=open_rad, release_max_tilt_deg=max_tilt, release_open_zero_skip=zero_skip,
                        carry={} if carry is None else carry.as_dict(),
                        extra_actor_obs=["latch"] if latch else [],
                        obs_dim=base.obs_dim + (1 if latch else 0))
@@ -343,7 +346,9 @@ class PlaceChain:
         sgn = blk.sgn[i]
         opened = (self.q_g[i] - qq[i]) * sgn
         follow = (np.asarray(q_star, float)[i] - qq[i]) * sgn < blk.cfg.g_rad
-        return bool(not blk.latch.any() and follow.all() and np.all(opened >= np.asarray(self.c.release_open_rad, float)))
+        x = np.asarray(self.c.release_open_rad, float)
+        need = x > 0.0 if self.c.release_open_zero_skip else np.ones_like(x, dtype=bool)   # 10.14 A안 — sim 과 같은 식
+        return bool(not blk.latch.any() and follow.all() and np.all((opened >= x) | ~need))
 
     def cup_from_palm(self, palm_pos: np.ndarray, palm_R: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         if self.rel is None:
