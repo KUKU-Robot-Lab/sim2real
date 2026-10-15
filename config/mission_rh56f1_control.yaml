@@ -487,18 +487,14 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: ★CAN 설정(우 can0) — sudo, 운영자 셸에서. 5090 의 CAN 이름이 다르면 그 이름으로
+  - note: CAN 자동 설정(우 can0 · 좌 can1, FD 1M/5M) — 꺼져 있거나 설정이 다르거나 BUS-OFF 면 다시 올린다. 5090 의 CAN 이름이 다르면 scripts/setup/can_up.py 와 sudoers 를 같이 고칠
+      것
     argv:
-    - bash
-    - -lc
-    - sudo ip link set can0 down && sudo ip link set can0 type can bitrate 1000000 dbitrate 5000000 fd on && sudo ip link set can0 up
-    manual: true
-  - note: ★CAN 설정(좌 can1)
-    argv:
-    - bash
-    - -lc
-    - sudo ip link set can1 down && sudo ip link set can1 type can bitrate 1000000 dbitrate 5000000 fd on && sudo ip link set can1 up
-    manual: true
+    - python3
+    - '{repo}/scripts/setup/can_up.py'
+    - can0
+    - can1
+    - --execute
   - note: 팔 브링업(robot_control) — 콘솔이 띄우고 감독한다
     argv:
     - ros2
@@ -595,7 +591,7 @@ run:
     - hand_left#1
   - note: ★팔 브링업 정지 — 모든 팔 모터가 꺼진다(받침으로 내려앉는다)
     stop:
-    - drivers#3
+    - drivers#2
   cup_holders:
   - note: ★홀더 세 개가 상판 위에 서 있고 -x 면 마커가 손 · 컵에 가리지 않는가(머리 자세는 다음 스텝이 캘리브 자세로 맞춘다)
     argv:

@@ -322,12 +322,11 @@ def _run(kind: str) -> dict:
         ],
         "drivers": ([
             _cmd("★모터 전원(양팔) ON — 물리 스위치", ["bash", "-lc", "true"], manual=True),
-            _cmd(f"★CAN 설정(우 can0) — sudo, 운영자 셸에서. {ROBOT_PC} 의 CAN 이름이 다르면 그 이름으로",
-                 ["bash", "-lc", "sudo ip link set can0 down && sudo ip link set can0 type can bitrate 1000000 dbitrate 5000000 fd on && sudo ip link set can0 up"],
-                 manual=True),
-            _cmd("★CAN 설정(좌 can1)",
-                 ["bash", "-lc", "sudo ip link set can1 down && sudo ip link set can1 type can bitrate 1000000 dbitrate 5000000 fd on && sudo ip link set can1 up"],
-                 manual=True),
+            # 10.15 사용자: "can ip up 을 sudo 로 맨날 내가 했다 — 자동으로". 이미 FD 1M/5M 로 올라와 있으면 건드리지 않는다.
+            # 비밀번호 없는 허용은 scripts/setup/sudoers-s2r-can(운영자가 한 번 설치) — 없으면 이 줄이 실패하고 설치 명령을 낸다.
+            _cmd(f"CAN 자동 설정(우 can0 · 좌 can1, FD 1M/5M) — 꺼져 있거나 설정이 다르거나 BUS-OFF 면 다시 올린다. "
+                 f"{ROBOT_PC} 의 CAN 이름이 다르면 scripts/setup/can_up.py 와 sudoers 를 같이 고칠 것",
+                 ["python3", "{repo}/scripts/setup/can_up.py", "can0", "can1", "--execute"]),
             _cmd("팔 브링업(robot_control) — 콘솔이 띄우고 감독한다",
                  ["ros2", "launch", "openarm_bringup", "openarm.bimanual.launch.py", "use_fake_hardware:=false",
                   "right_can_interface:=can0", "left_can_interface:=can1", "use_rviz:=false"], background=True),
@@ -362,7 +361,7 @@ def _run(kind: str) -> dict:
             _cmd("손 상태 노드 · 손 드라이버 정지 — 손가락은 마지막 자세에서 멈춘다(벤더 펌웨어가 잡는다)",
                  stop=[f"hand_{s}#{i}" for s in SIDES for i in ((2, 1) if real else (1, 0))]),
             _cmd("★팔 브링업 정지 — 모든 팔 모터가 꺼진다(받침으로 내려앉는다)" if real else "fake 플랜트 정지",
-                 stop=["drivers#3" if real else "drivers#0"]),
+                 stop=["drivers#2" if real else "drivers#0"]),
         ],
     }
     run["cup_holders"] = [

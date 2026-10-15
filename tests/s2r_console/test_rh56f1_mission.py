@@ -540,7 +540,7 @@ def test_shutdown_handles_partial_connections_and_orders_policy_perception_pd_ha
         perception = positions['cups#1' if mission is REAL else 'cups#0']
         pd = positions['pd_arm_right#1']
         hand = positions['hand_right#1']
-        arm = positions['drivers#3' if mission is REAL else 'drivers#0']
+        arm = positions['drivers#2' if mission is REAL else 'drivers#0']
         assert policy < perception < pd < hand < arm
         for stage in mission.stages:
             for i, command in enumerate(_cmds(mission, book, stage.id)):

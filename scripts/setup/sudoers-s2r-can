@@ -1,0 +1,13 @@
+# /etc/sudoers.d/s2r-can — 팔 CAN(can0 · can1)을 CAN FD 1M/5M 로 다시 올리는 ip 명령 여섯 줄만 비밀번호 없이 허용한다.
+# scripts/setup/can_up.py --execute(미션 drivers 단계)가 `sudo --non-interactive` 로 쓴다.
+# 설치(운영자 한 번):
+#   sudo install -m 0440 -o root -g root scripts/setup/sudoers-s2r-can /etc/sudoers.d/s2r-can
+#   sudo visudo -c        # 문법 확인 — 실패하면 sudo rm /etc/sudoers.d/s2r-can
+# 범위: 아래 줄과 인자 글자까지 같은 명령만. 다른 인터페이스 · 다른 bitrate · 다른 ip 명령은 여전히 비밀번호를 묻는다.
+# 스크립트 경로가 아니라 /usr/sbin/ip 의 고정 인자를 허용한다 — user 가 쓸 수 있는 파일은 root 로 돌지 않는다.
+user ALL=(root) NOPASSWD: /usr/sbin/ip link set can0 down
+user ALL=(root) NOPASSWD: /usr/sbin/ip link set can0 type can bitrate 1000000 dbitrate 5000000 fd on
+user ALL=(root) NOPASSWD: /usr/sbin/ip link set can0 up
+user ALL=(root) NOPASSWD: /usr/sbin/ip link set can1 down
+user ALL=(root) NOPASSWD: /usr/sbin/ip link set can1 type can bitrate 1000000 dbitrate 5000000 fd on
+user ALL=(root) NOPASSWD: /usr/sbin/ip link set can1 up
