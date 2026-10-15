@@ -256,8 +256,9 @@ def test_restart_is_offered_only_when_the_stage_has_live_units_and_it_says_what_
     panel = re.search(r"function stageCard[\s\S]*?\n}\n", JS).group(0)
     assert re.search(r'if \(liveUnits\(cur\.id\)\.length\) actions \+= `<button[^`]*data-act="restart"', panel)
     act = re.search(r"async restart\(id\) \{[\s\S]*?\n  \},", JS).group(0)
-    assert "confirm(" in act and "liveUnits(id)" in act                    # 무엇을 내리는지 보여주고 묻는다
-    assert 'restart: true' in act and '"/api/stage/run"' in act
+    assert 'prepareAction("stage"' in act and 'restart: true' in act
+    approval = re.search(r"async function prepareAction[\s\S]*?\n}\n", JS).group(0)
+    assert "liveUnits(extra.stage)" in approval and "승인 후 실행" in approval
 
 
 def test_the_full_stage_list_is_folded_and_read_only():

@@ -119,7 +119,7 @@ function renderAll() {
   renderFpp(s);
   renderPolicy(s);
   renderEpisode(s);
-  renderSetupPanel(s);
+  renderWorkspace();
   renderRobot(s);
   put("quick", stopButtons(s));
 }
@@ -523,7 +523,7 @@ function boxHtml(b) {
 }
 
 function renderDiagram(s) {
-  const D = s.diagram;
+  const D = baseDiagram(s.diagram);
   $("diagram").hidden = !D;
   lastDiagram = D;
   if (!D) return;
@@ -660,7 +660,7 @@ function renderLinks(s) {
   const broken = s.links.filter((b) => ["warn", "bad"].includes(b.tone));
   $("links-table").open = s.diagram ? $("links-table").open : true;      // 그림이 없는 프로파일은 표가 본문이다
   if (!s.diagram) put("links-meta", broken.length ? `끊긴 곳: ${broken.map((b) => esc(b.title)).join(" · ")}` : s.links.every((b) => b.tone === "ok") ? "전부 이어짐" : "");
-  put("links", s.links.map((b) => {
+  put("links", s.links.filter((b) => !workspaceNode(b)).map((b) => {
     const rows = b.rows.map((r) => `<tr class="tone-${esc(r.tone)}"><td><span class="lamp ${esc(r.tone)}"></span>${esc(r.name)}</td>
       <td class="num">${ageText(r.age_ms)}</td><td class="link-state">${esc(LINK_WORD[r.state] || r.state)}</td><td class="link-note">${esc(r.note)}</td></tr>`).join("");
     return `<div class="link tone-${esc(b.tone)}"><div class="link-head"><span class="lamp ${esc(b.tone)}"></span><b>${esc(b.title)}</b>
@@ -763,7 +763,8 @@ function spawnMap(m) {
 // 그날 컨테이너는 Up 인데 추적 노드가 CUDA OOM 으로 죽어 자세가 0 이었다 — 컨테이너 상태만으로는 못 본다.
 function renderFpp(s) {
   const f = s.fpp;
-  $("fpp-panel").hidden = !f;
+  $("fpp-panel").hidden = false;
+  updateVideo(s);
   if (!f) return;
   put("fpp-meta", `<span class="badge ${f.tone === "mute" ? "" : esc(f.tone)}">${esc(f.say)}</span>`);
   put("fpp", spawnMap(f.map) + f.objects.map((o) => `<div class="fpp-obj"><div class="fpp-name"><span class="lamp ${esc(o.tone)}"></span><b>${esc(o.name)}</b>
@@ -885,20 +886,7 @@ function drawEpWires() {
   if (paths !== lastEpWires) { lastEpWires = paths; svg.innerHTML = paths; }
 }
 
-function episodeModal(action, want) {
-  const title = action === "run" ? "연속 실행 — 끝까지(사용자 개입 없이)" : `구분 실행 — ${want}`;
-  const body = action === "run"
-    ? "승인 한 번으로 남은 노드를 끝까지 실행한다. 실패하면 정해진 복구(재시도 상한 · 빈손 홈으로 되돌아가기)를 스스로 하거나 멈춘다. 안전 정지(pd HOLD · 비상정지 · 시간 초과 · 노드 오류)는 자동이다."
-    : "이 노드(또는 기다리는 복구) 하나만 실행한다.";
-  modal(`<h3>${esc(title)}</h3><p>${esc(body)}</p>
-    <p style="margin-top:12px">로봇 주변이 비어 있고 물리 비상정지에 손이 닿는지 확인한 뒤 <code>${esc(want)}</code> 를 그대로 입력할 것.</p>
-    <input type="text" id="ep-typed" autocomplete="off" style="width:100%" placeholder="${esc(want)}">
-    <div class="modal-actions"><button class="btn btn-ghost" data-act="modal-close">취소</button>
-    <button class="btn btn-real" id="ep-go" data-act="ep-go" data-arg="${esc(action)}" disabled>실행</button></div>`, true);
-  const input = $("ep-typed");
-  input.addEventListener("input", () => { $("ep-go").disabled = input.value !== want; });
-  input.focus();
-}
+function episodeModal(action, want) { return prepareAction("episode", { episode_action: action, want }); }
 
 function renderPolicy(s) {
   const p = s.policy;
@@ -938,7 +926,7 @@ function jointRows(g, chan) {
     return `<tr class="jr j-${esc(row.state)}"><td class="jn mono">${esc(row.joint.replace(/^[rl]_[ah][jl]_/, ""))}</td>
       <td class="jv mono">${v === null || v === undefined ? "—" : fmt(v, 3)}</td>
       <td class="je mono">${err === null ? "" : fmt(err, 3)}</td>
-      <td class="jm">${row.state === "limit" ? "끝점" : row.state === "off" ? "벗어남" : ""}</td></tr>`;
+      <td class="jm">${row.state === "missing" ? "미수신" : row.stale ? "오래됨" : row.state === "limit" ? "끝점" : row.state === "off" ? "벗어남" : ""}</td></tr>`;
   }).join("");
 }
 
@@ -976,16 +964,6 @@ function artWith(key, groups) {
 }
 
 // 로봇 모듈 칸 — 어느 로봇 · 어느 정책(고른 것 · 미션 기본값)으로 열었는가, 로봇 설정(09.29 사용자: "robot setting 및 state")
-function renderSetupPanel(s) {
-  const m = s.robot_module;
-  $("robotmod-panel").hidden = !m;
-  if (!m) return;
-  put("robotmod-meta", `${esc(m.host)} · ${esc(m.hand.model || "")}`);
-  const slots = Object.entries(m.slots_now || {}).map(([side, id]) =>
-    `<tr><th>${esc(SLOT_KO[side] || side)} 정책</th><td><code>${esc(id)}</code> ${m.picked[side] ? "(첫 화면에서 고름)" : "(미션 기본값)"}</td></tr>`).join("");
-  const rows = m.settings.map((x) => `<tr><th>${esc(x.label)}</th><td>${esc(x.value)}</td></tr>`).join("");
-  put("robotmod", `<table class="settings">${slots}</table>${det("robotmod-settings", "로봇 설정", `<table class="settings">${rows}</table>`)}`);
-}
 
 function renderRobot(s) {
   const r = s.robot;
@@ -1012,23 +990,9 @@ function modal(markup, real = false) {
   $("modal-card").innerHTML = markup;
   $("modal").hidden = false;
 }
-const closeModal = () => { $("modal").hidden = true; };
+const closeModal = () => { pendingConfirmation = null; $("modal").hidden = true; };
 
-function approveModal(stageId) {
-  const r = S.session.mission.rows.find((x) => x.id === stageId);
-  const cmds = r.commands.map((c) => `<li class="cmd"><span class="cmd-kind ${esc(c.kind)}">${esc(c.kind)}</span><span>${esc(c.note)}<span class="cmd-argv">${esc(shellLine(c.argv))}</span></span><span></span></li>`).join("");
-  modal(`<h3>실기 단계 승인 — ${esc(stageId)}</h3>
-    <p>${esc(r.title)}</p>
-    <p>이 승인은 아래 명령을 <b>한 번</b> 실행하는 것에 대한 것이다. 승인한 뒤 계약이나 체크포인트 파일이 바뀌면 승인은 무효가 된다.</p>
-    <ul class="cmds">${cmds}</ul>
-    <p style="margin-top:12px">로봇 주변이 비어 있고 물리 비상정지에 손이 닿는지 확인한 뒤, 단계 id <code>${esc(stageId)}</code> 를 그대로 입력할 것.</p>
-    <input type="text" id="approve-typed" autocomplete="off" style="width:100%" placeholder="${esc(stageId)}">
-    <div class="modal-actions"><button class="btn btn-ghost" data-act="modal-close">취소</button>
-    <button class="btn btn-real" id="approve-go" data-act="approve-go" data-arg="${esc(stageId)}" disabled>승인</button></div>`, true);
-  const input = $("approve-typed");
-  input.addEventListener("input", () => { $("approve-go").disabled = input.value !== stageId; });
-  input.focus();
-}
+function approveModal(stageId) { return prepareAction("stage", { stage: stageId }); }
 
 function endModal() {
   const s = S.session, why = s.end_reasons, alive = s.procs.filter((p) => p.alive).length;
@@ -1041,7 +1005,7 @@ function endModal() {
 const acts = {
   "ep-next"(want) { if (want) episodeModal("next", want); },
   "ep-run"(want) { episodeModal("run", want); },
-  async "ep-go"(action) { await call("POST", "/api/episode", { action, typed: $("ep-typed").value }); closeModal(); refresh(); },
+  async "ep-go"() { return acts["action-execute"](); },
   async "ep-stop"() { await call("POST", "/api/episode/stop"); refresh(); },
   async "ep-reset"() { await call("POST", "/api/episode", { action: "reset" }); refresh(); },
   async "lease-take"() {
@@ -1067,15 +1031,10 @@ const acts = {
     refresh();
   },
   approve(id) { approveModal(id); },
-  async "approve-go"(id) { await call("POST", "/api/approve", { stage: id, typed: $("approve-typed").value }); closeModal(); refresh(); },
+  async "approve-go"() { return acts["action-execute"](); },
   "robot-chan"(key) { robotChan = key; refresh(); },
-  async run(id) { await call("POST", "/api/stage/run", { stage: id }); refresh(); },
-  async restart(id) {
-    const live = liveUnits(id);
-    if (!confirm(`${id} 가 띄운 ${live.length} 개를 내리고 다시 띄운다.\n\n${live.map((u) => `· ${u.note || u.key} (pid ${u.pid})`).join("\n")}`)) return;
-    await call("POST", "/api/stage/run", { stage: id, restart: true });
-    refresh();
-  },
+  async run(id) { return prepareAction("stage", { stage: id }); },
+  async restart(id) { return prepareAction("stage", { stage: id, restart: true }); },
   async ack(arg) {
     const [stage, i, ok] = arg.split(":");
     await call("POST", "/api/stage/ack", { stage, index: Number(i), ok: ok === "1" });
@@ -1152,6 +1111,114 @@ const acts = {
   async "rewind-go"(id) { await call("POST", "/api/stage/rewind", { stage: id }); closeModal(); refresh(); },
   async "skip-go"(id) { await call("POST", "/api/stage/skip", { stage: id }); closeModal(); refresh(); },
 };
+
+// Workspace selections are server state. Polling never starts a policy or replaces the video element.
+let activeTab = "setting", pendingConfirmation = null, executingConfirmation = false;
+function selectTab(tab) {
+  if (!["setting", "control", "policy"].includes(tab)) return;
+  activeTab = tab;
+  for (const key of ["setting", "control", "policy"]) {
+    $("tab-" + key).hidden = key !== tab;
+    $("tab-button-" + key).setAttribute?.("aria-selected", String(key === tab));
+  }
+  if (S?.session) { drawEpWires(); drawWires(); }
+}
+function actionButton(a) {
+  const reasons = a.reasons || [];
+  const can = holding() && a.enabled;
+  return `<div class="workspace-action"><button class="btn" data-act="action-prepare" data-arg="${esc(a.id)}" ${can ? "" : "disabled"} title="${esc(reasons.join(" · "))}">${esc(a.title || a.id)}</button>${!can ? `<small>${esc(reasons.join(" · ") || "조작 권한 필요")}</small>` : ""}</div>`;
+}
+async function prepareAction(action, extra = {}) {
+  const prepared = await call("POST", "/api/actions/prepare", { action, ...extra });
+  pendingConfirmation = prepared.confirmation_id;
+  if (extra.restart) prepared.warnings = [...(prepared.warnings || []), ...liveUnits(extra.stage).map(u => `정지 후 다시 연결: ${u.note || u.key} (pid ${u.pid})`)];
+  const commands = (prepared.commands || []).map(c => `<li><pre>${esc(typeof c === "string" ? c : c.argv ? shellLine(c.argv) : JSON.stringify(c))}</pre></li>`).join("");
+  modal(`<h3>${esc(prepared.title || action)}</h3><p>표시된 명령과 설정을 한 번 실행한다. 설정 변경 시 승인은 무효다.</p><ul>${commands}</ul><ul class="reasons warn">${(prepared.warnings || []).map(w => `<li>${esc(w)}</li>`).join("")}</ul><div class="modal-actions"><button class="btn btn-ghost" data-act="modal-close">취소</button><button class="btn btn-real" id="action-execute" data-act="action-execute">승인 후 실행</button></div>`, S?.session?.profile.domain_class === "real");
+}
+function workspaceNode(b) { return /policy|정책|입력|fabric|\bobs\b|fpp|locate|perception|object_pose|cup_holder|episode_runner/i.test([b.id, b.key, b.title, b.kind].join(" ")); }
+function baseDiagram(diagram) {
+  if (!diagram) return diagram;
+  const cols = diagram.cols.map(col => col.filter(b => !workspaceNode(b))).filter(col => col.length);
+  const ids = new Set(cols.flat().map(b => b.id));
+  return { ...diagram, cols, wires: (diagram.wires || []).filter(e => ids.has(e.from) && ids.has(e.to)) };
+}
+function coordinateResult(result, source) {
+  if (!result) return `<div class="coordinate missing"><b>${esc(source)}</b> · 미수신</div>`;
+  const valid = result.valid === true;
+  return `<div class="coordinate ${valid ? "ok" : "bad"}"><b>${esc(source)}</b> · ${valid ? "유효" : "무효"}<dl class="kv"><dt>좌표</dt><dd>${esc(JSON.stringify(result.position ?? result.xyz ?? result.pose ?? null))}</dd><dt>좌표계</dt><dd>${esc(result.frame || result.frame_id || "—")}</dd><dt>취득 시각</dt><dd>${esc(result.acquired_at || result.timestamp || result.stamp || "—")}</dd><dt>출처</dt><dd>${esc(result.source || source)}</dd></dl>${esc(result.error || result.reason || "")}</div>`;
+}
+function renderWorkspace() {
+  const w = S.workspace || {};
+  const actions = S.actions || [];
+  put("common-controls", actions.filter(a => a.group === "control").map(actionButton).join(""));
+  for (const group of ["setting", "control"]) put(group + "-actions", actions.filter(a => a.group === group).map(actionButton).join(""));
+  put("management", `<pre>${esc(JSON.stringify(S.management || {}, null, 2))}</pre>`);
+  const h = w.head || {};
+  put("head-settings", `<fieldset><legend>카메라 운용 자세</legend><label>pan <input type="number" step="0.01" data-head="pan" value="${esc(h.pan ?? 0)}"></label><label>tilt <input type="number" step="0.01" data-head="tilt" value="${esc(h.tilt ?? 0)}"></label><label>보정 프로필 <input data-head="calib_profile" value="${esc(h.calib_profile || "")}"></label></fieldset>`);
+  put("perception-controls", `<fieldset><legend>인지 · ${esc(h.calib_profile || "보정 미선택")} · pan ${esc(h.pan ?? "—")} / tilt ${esc(h.tilt ?? "—")}</legend>${["fpp", "locate"].map(source => `<label class="chk"><input type="checkbox" data-perception="${source}" ${w.perception?.[source] ? "checked" : ""} ${holding() ? "" : "disabled"}>${source === "fpp" ? "FPP" : "locate"}</label>`).join("")}${(w.objects || []).map(o => `<label class="chk"><input type="checkbox" data-object="${esc(o.id)}" ${o.enabled ? "checked" : ""} ${holding() ? "" : "disabled"}>${esc(o.model || o.id)} · ${esc(o.color || o.marker_id || "마커")}${o.measured === false ? " (프리셋 · 미측정)" : ""}</label>`).join("")}</fieldset>`);
+  put("perception-nodes", (S.session?.diagram?.cols || []).flat().filter(b => workspaceNode(b) && !/policy|fabric|obs/i.test([b.id,b.title].join(" "))).map(boxHtml).join(""));
+  put("object-cards", (w.objects || []).filter(o => o.enabled).map(o => `<article class="object-card"><h3>${esc(o.model || o.id)} · ${esc(o.color || o.marker_id || "")}</h3>${o.model === "holder" ? '<p>색 기반 locate 미지원</p>' : ""}<label>정책 입력원 <select data-input-source="${esc(o.id)}" ${holding() ? "" : "disabled"}><option value="fpp" ${o.input_source === "fpp" ? "selected" : ""}>FPP</option><option value="locate" ${o.input_source === "locate" ? "selected" : ""} ${o.model === "holder" ? "disabled" : ""}>locate</option></select></label>${coordinateResult(o.results?.fpp, "FPP")}${coordinateResult(o.results?.locate, "locate")}${actions.filter(a => a.object_id === o.id).map(actionButton).join("")}</article>`).join(""));
+  put("policy-add", ["approaching", "grasping", "placing", "locking", "pouring"].map(task => `<button class="btn" data-act="policy-choose" data-arg="${task}" ${holding() ? "" : "disabled"}>＋ ${task}</button>`).join("") + '<button class="btn btn-ghost" data-act="policy-reset">배치 초기화</button>');
+  put("policy-cards", (w.cards || []).map((card, i) => `<article class="policy-card" style="transform:translate(${Number(card.x) || 0}px,${Number(card.y) || 0}px)"><h3>${esc(card.task)} · ${esc(card.policy_id)}</h3><p>${esc(card.side)} · ${esc(card.object_id || "물체 미선택")}</p><span class="badge">${card.execution_supported ? "rg3 실행 연결" : "배치만 지원"}</span><label>물체 <select data-card-object="${esc(card.id)}"><option value="">물체 선택</option>${(w.objects || []).filter(o => o.enabled).map(o => `<option value="${esc(o.id)}" ${card.object_id === o.id ? "selected" : ""}>${esc(o.id)}</option>`).join("")}</select></label><div class="actions">${[["left","←"],["right","→"],["up","↑"],["down","↓"]].map(([d,label]) => `<button class="btn btn-sm" aria-label="${esc(card.id)} ${d}" data-act="policy-move" data-arg="${esc(card.id)}:${d}">${label}</button>`).join("")}<button class="btn btn-sm" data-act="policy-remove" data-arg="${esc(card.id)}">제거</button></div>${actions.filter(a => a.card_id === card.id).map(actionButton).join("")}</article>`).join(""));
+  selectTab(activeTab);
+}
+async function saveWorkspace(patch) {
+  pendingConfirmation = null;
+  closeModal();
+  await call("POST", "/api/workspace", patch);
+  await refresh();
+}
+function choosePolicy(task) {
+  const catalog = [...(S.workspace?.catalog || [])].sort((a, b) => Number(b.task === task) - Number(a.task === task));
+  modal(`<h3>${esc(task)} 정책 선택</h3><p>파일 선택과 화면 복원은 정책을 실행하지 않는다.</p>${catalog.map(p => `<article class="object-card"><h4>${esc(p.id)}</h4><dl class="kv"><dt>정책 파일</dt><dd>${esc(p.file || p.path || p.id)}</dd><dt>체크포인트</dt><dd>${esc(p.checkpoint || "—")}</dd><dt>계약</dt><dd>${esc(p.contract || "—")}</dd><dt>팔</dt><dd>${esc(p.side)}</dd><dt>지원 물체</dt><dd>${esc((p.supported_objects || p.objects || []).join(", "))}</dd></dl><button class="btn" data-act="policy-add-card" data-arg="${esc(task)}:${esc(p.id)}">노드 추가</button></article>`).join("") || '<p>등록된 배포 정책이 없다.</p>'}<button class="btn" data-act="modal-close">취소</button>`);
+}
+let videoAttached = false;
+function updateVideo(s) {
+  const img = $("fpp-video");
+  if (!videoAttached) {
+    videoAttached = true;
+    img.addEventListener("error", () => { $("video-status").textContent = "영상 연결 끊김 · 마지막 화면을 사용하지 말 것"; });
+    img.addEventListener("load", () => { $("video-status").textContent = "영상 수신 중"; });
+    img.src = "/api/video";
+  }
+  const v = s.video || S.video;
+  if (v) $("video-status").textContent = v.stale ? "오래된 영상 · 현재 화면 아님" : v.connected === false ? "영상 연결 끊김" : `영상 수신 중${v.age_s != null ? ` · ${fmt(v.age_s, 1)} s 전` : ""}`;
+}
+Object.assign(acts, {
+  tab: selectTab,
+  "action-prepare": prepareAction,
+  async "action-execute"() {
+    if (!pendingConfirmation || executingConfirmation) return;
+    const confirmation_id = pendingConfirmation;
+    pendingConfirmation = null;
+    executingConfirmation = true;
+    if ($("action-execute")) $("action-execute").disabled = true;
+    try { await call("POST", "/api/actions/execute", { confirmation_id }); closeModal(); refresh(); }
+    finally { executingConfirmation = false; }
+  },
+  "policy-choose": choosePolicy,
+  async "policy-add-card"(arg) {
+    const [task, ...parts] = arg.split(":"), policy_id = parts.join(":");
+    const p = S.workspace.catalog.find(p => p.id === policy_id);
+    await saveWorkspace({cards:[...S.workspace.cards, {id:`card-${Date.now()}`,task,policy_id,side:p.side,object_id:"",x:0,y:0}]});
+  },
+  "policy-remove"(id) { return saveWorkspace({cards:S.workspace.cards.filter(c => c.id !== id)}); },
+  "policy-reset"() { return saveWorkspace({cards:S.workspace.cards.map(c => ({...c,x:0,y:0}))}); },
+  "policy-move"(arg) {
+    const index = arg.lastIndexOf(":"), id = arg.slice(0,index), d = arg.slice(index+1);
+    return saveWorkspace({cards:S.workspace.cards.map(c => c.id !== id ? c : {...c,x:(c.x || 0)+(d === "left" ? -24 : d === "right" ? 24 : 0),y:(c.y || 0)+(d === "up" ? -24 : d === "down" ? 24 : 0)})});
+  },
+});
+document.addEventListener("change", e => {
+  const t = e.target, d = t.dataset || {};
+  let patch;
+  if (d.perception) patch = {perception:{...S.workspace.perception,[d.perception]:t.checked}};
+  if (d.object || d.inputSource) patch = {objects:S.workspace.objects.map(o => ({id:o.id,enabled:d.object === o.id ? t.checked : o.enabled,input_source:d.inputSource === o.id ? t.value : o.input_source}))};
+  if (d.cardObject) patch = {cards:S.workspace.cards.map(c => c.id === d.cardObject ? {...c,object_id:t.value} : c)};
+  if (d.head) patch = {head:{...S.workspace.head,[d.head]:d.head === "calib_profile" ? t.value : Number(t.value)}};
+  if (patch) saveWorkspace(patch).catch(() => refresh());
+});
+
 
 document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-act]");

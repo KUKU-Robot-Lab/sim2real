@@ -460,3 +460,32 @@ table.ptable tr.off td { color: var(--faint); }
 .epf-info { padding: 0 12px 10px; }
 .epf-kv { grid-template-columns: max-content 1fr max-content 1fr max-content 1fr; }
 .note.warn { border-left: 3px solid #e3a008; }
+
+/* Management workspace and always available controls. */
+.work { grid-template-columns: minmax(0, 1fr); }
+.common-bar { position: sticky; top: 0; z-index: 15; display: flex; align-items: center; gap: 12px; background: var(--panel-2); border: 1px solid var(--line-2); padding: 10px; border-radius: 8px; }
+.col-live { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(330px, 1fr) minmax(360px, 1fr); overflow-x: auto; align-items: start; }
+.col-live > .panel { min-width: 330px; }
+.workspace-panel { overflow: visible; }
+.workspace-tabs { display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line); }
+.workspace-tabs [aria-selected="true"] { background: var(--live); color: var(--bg); }
+.action-grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px; }
+.workspace-action { display: flex; flex-direction: column; max-width: 270px; gap: 4px; }
+.workspace-action small { color: var(--warn); }
+#management { padding: 0 12px; max-height: 240px; overflow: auto; }
+#head-settings fieldset, #perception-controls fieldset { display: flex; flex-wrap: wrap; gap: 14px; margin: 12px; border: 1px solid var(--line); }
+#head-settings input { width: 140px; }
+#fpp-video { display: block; width: 100%; min-height: 180px; object-fit: contain; background: #080c10; }
+#video-status { margin: 8px 12px; color: var(--warn); }
+.object-cards, .policy-cards { display: flex; flex-wrap: wrap; gap: 12px; padding: 12px; }
+.object-card, .policy-card { flex: 0 0 320px; max-width: 100%; padding: 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel-2); overflow-wrap: anywhere; }
+.object-card h3, .policy-card h3 { margin-top: 0; }
+.coordinate { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line); }
+.coordinate.missing { color: var(--mute); }
+.coordinate.bad { color: var(--bad); }
+.coordinate.ok { color: var(--ok); }
+.policy-add { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; }
+.policy-cards { min-height: 180px; overflow: auto; padding-bottom: 70px; }
+#perception-nodes { display: flex; flex-wrap: wrap; gap: 12px; padding: 12px; }
+#tab-policy > .panel { margin: 12px; }
+#modal-card { max-height: 85vh; overflow-y: auto; }
