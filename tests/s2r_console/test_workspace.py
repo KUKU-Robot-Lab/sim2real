@@ -1,0 +1,116 @@
+from pathlib import Path
+import shutil
+
+import pytest
+from s2r_console.workspace import Workspace
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def workspace(tmp_path):
+    shutil.copytree(ROOT / 'config', tmp_path / 'config')
+    return Workspace(tmp_path, 'openarm_rh56f1')
+
+
+def test_registry_matrix_preserves_measurement():
+    ws = Workspace(ROOT, 'openarm_rh56f1')
+    objects = ws.snapshot()['objects']
+    for model in ('src200', 'src240', 'shaker'):
+        assert {o['color'] for o in objects if o['model'] == model} == {'skyblue', 'orange', 'pink'}
+    measured = next(o for o in objects if o['id'] == 'source200_orange')
+    assert measured['measured'] and measured['hue_range'] == [1.8, 23.0]
+    assert len([o for o in objects if o['model'] == 'holder']) == 3
+
+
+def test_selection_atomic_invalidation_and_sources(tmp_path):
+    ws = workspace(tmp_path)
+    old = ws.fingerprint()
+    ws.update({'perception': {'fpp': True, 'locate': True}, 'objects': [
+        {'id': 'source200_orange', 'enabled': True, 'input_source': 'locate'},
+        {'id': 'source200_pink', 'enabled': True}]})
+    assert old != ws.fingerprint()
+    ws.set_result('source200_orange', 'locate', {'position': [0.2, 0.1, 0.3], 'frame': 'base', 'timestamp': 10, 'valid': True})
+    ws.set_result('source200_orange', 'locate', {'valid': False, 'reason': 'not found'})
+    obj = next(o for o in ws.snapshot()['objects'] if o['id'] == 'source200_orange')
+    assert obj['results']['locate']['position'] is None
+    assert not obj['results']['fpp']['valid']
+    before = ws.snapshot()
+    with pytest.raises(ValueError):
+        ws.update({'perception': {'fpp': False}, 'objects': [{'id': 'missing', 'enabled': True}]})
+    assert ws.snapshot() == before
+
+
+def test_card_layout_restore_and_validation(tmp_path):
+    shutil.copytree(ROOT / 'deploy/policies', tmp_path / 'deploy/policies', ignore=shutil.ignore_patterns('*.pth', '*.npz'))
+    ws = workspace(tmp_path)
+    policy = next(p for p in ws.snapshot()['catalog'] if p['default_rg3'])
+    state = ws.update({'cards': [{'id': 'a', 'task': 'grasping', 'policy_id': policy['id'], 'side': policy['side'], 'object_id': 'source200_orange', 'x': 20, 'y': 40}]})
+    assert state['cards'][0]['x'] == 20
+    assert Workspace(tmp_path, 'openarm_rh56f1').snapshot()['cards'][0]['x'] == 20
+    with pytest.raises(ValueError):
+        ws.update({'cards': [{'id': 'a', 'task': 'grasping', 'policy_id': '../bad', 'object_id': 'source200_orange'}]})
+    ws.update({'reset_layout': True})
+    assert ws.snapshot()['cards'][0]['x'] == 0
+    ws.update({'cards': []})
+    assert ws.snapshot()['cards'] == []
+
+
+def test_safe_registered_commands_and_holder_rejection(tmp_path):
+    ws = workspace(tmp_path)
+    ws.update({'head': {'pan': 10, 'tilt': -30, 'calib_profile': 'v9_1014_anchored_z'}})
+    argv = ws.locate_argv('source200_orange')
+    assert '--return-pan' in argv and argv[argv.index('--return-pan') + 1] == '10.0'
+    with pytest.raises(ValueError):
+        ws.locate_argv('cup_holder_0')
+    with pytest.raises(ValueError):
+        ws.update({'head': {'calib_profile': '../../bad'}})
+
+
+def test_locate_uses_registry_and_returns_operating_pose_on_failure():
+    import sys
+    sys.path.insert(0, str(ROOT / 'scripts/ops'))
+    import registered_locate
+    core_root = ROOT.parent / 'perception_plus_plus'
+    if not core_root.exists():
+        pytest.skip('sibling locate core unavailable')
+    registered_locate.install_core(ROOT)
+    from perception_plus_plus_core.head_scan import fakes, locate
+    spec = registered_locate.load_spec(ROOT, 'source200_orange')
+    assert spec.origin_above_bottom == .085
+    assert spec.hue == pytest.approx(12.4)
+    assert len(spec.vertices) > 0
+    head = fakes.FakeHead()
+    class BrokenCamera:
+        def capture(self, n_frames=1):
+            raise RuntimeError('camera disconnected')
+    result = registered_locate.run_scan(locate.LocateRequest('source200_orange', poses=[(0, -20)]), spec,
+                                        head, BrokenCamera(), return_pose=(10, -30))
+    assert not result.found
+    assert result.home_ok
+    assert head.moves[-1] == (10, -30)
+
+
+def test_fpp_observation_age_invalidates_old_coordinates(tmp_path):
+    from s2r_console.console_state import Observed
+    ws = workspace(tmp_path)
+    obs = Observed(objects={'/objects/source200_orange/pose': {'pos': [.2, .1, .3], 'age_s': .1}}, objects_age_s=.1)
+    ws.ingest_fpp(obs)
+    obj = next(o for o in ws.snapshot()['objects'] if o['id'] == 'source200_orange')
+    assert obj['results']['fpp']['valid']
+    ws.ingest_fpp(Observed(objects=obs.objects, objects_age_s=5))
+    obj = next(o for o in ws.snapshot()['objects'] if o['id'] == 'source200_orange')
+    assert not obj['results']['fpp']['valid']
+    assert obj['results']['fpp']['position'] is None
+
+
+def test_fpp_live_tracking_is_distinguished_from_snapshot(tmp_path):
+    ws = workspace(tmp_path)
+    topic = '/objects/source200_orange'
+    ws.ingest_fpp({topic + '/pose': {'pos': [.2, .1, .3], 'age_s': .1}})
+    obj = next(o for o in ws.snapshot()['objects'] if o['id'] == 'source200_orange')
+    assert obj['results']['fpp']['valid'] and not obj['results']['fpp']['live']
+    ws.ingest_fpp({topic + '/pose': {'pos': [.2, .1, .3], 'age_s': .1},
+                   topic + '/live_pose': {'pos': [.21, .1, .3], 'age_s': .05}})
+    obj = next(o for o in ws.snapshot()['objects'] if o['id'] == 'source200_orange')
+    assert obj['results']['fpp']['live']
+    assert obj['results']['fpp']['position'][0] == .21
