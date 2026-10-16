@@ -214,6 +214,9 @@ class Workspace:
             data = observation.objects
             report_age = observation.objects_age_s
         for obj in self.objects:
+            if not self.perception['fpp']:
+                self.set_result(obj['id'], 'fpp', {'valid': False, 'reason': 'FPP not selected'})
+                continue
             topic = f"/objects/{obj['id']}/pose"
             live_topic = f"/objects/{obj['id']}/live_pose"
             live = data.get(live_topic) is not None

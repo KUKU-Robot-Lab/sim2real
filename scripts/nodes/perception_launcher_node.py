@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import socket
 import subprocess
 import sys
 import threading
@@ -47,6 +48,42 @@ _SCRIPT_FOR = {"camera_up": "camera_up.sh", "camera_down": "camera_down.sh",
 class RemoteExec:
     def __init__(self, host: str, timeout_s: float = 120.0) -> None:
         self.host, self.timeout_s = host, timeout_s
+        self._video_tunnel = None
+
+    def ensure_video_tunnel(self) -> None:
+        """Forward only the remote ROS-image viewer; never open the camera device."""
+        if self.host in LOCAL_HOSTS:
+            return
+        try:
+            with socket.create_connection(('127.0.0.1', 8080), timeout=1):
+                return  # An existing operator tunnel is not ours to stop.
+        except OSError:
+            pass
+        self.close_video_tunnel()
+        self._video_tunnel = subprocess.Popen(
+            ['ssh', '-N', '-o', 'BatchMode=yes', '-o', 'ExitOnForwardFailure=yes',
+             '-o', 'ConnectTimeout=10', '-o', 'ServerAliveInterval=15',
+             '-o', 'ServerAliveCountMax=3', '-L', '127.0.0.1:8080:127.0.0.1:8080', self.host],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        try:
+            self._video_tunnel.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            return
+        assert self._video_tunnel.stderr is not None  # Popen uses stderr=PIPE.
+        error = self._video_tunnel.stderr.read().decode(errors='replace')
+        self.close_video_tunnel()
+        raise RuntimeError(f'video tunnel: {error.strip()}')
+
+    def close_video_tunnel(self) -> None:
+        proc = self._video_tunnel
+        if proc is None:
+            return
+        if proc.poll() is None:
+            proc.terminate()
+            proc.wait(timeout=5)
+        assert proc.stderr is not None  # Popen uses stderr=PIPE.
+        proc.stderr.close()
+        self._video_tunnel = None
 
     def _ssh(self, command: str, stdin: str | None = None) -> str:
         proc = subprocess.run(shell_argv(self.host, command), input=stdin, capture_output=True, text=True,
@@ -177,6 +214,10 @@ def main() -> None:
                 if failed:
                     self._warning = f"{cmd.op}: 일부 물체 컨테이너 실패 — " + " · ".join(failed)
                     self.get_logger().warning(self._warning)
+                if cmd.viewer is True:
+                    remote.ensure_video_tunnel()
+                elif cmd.op == 'stop' or cmd.viewer is False:
+                    remote.close_video_tunnel()
                 self._state = parse_remote_status(remote.run("status.sh"))
             except (RuntimeError, ValueError, subprocess.TimeoutExpired) as err:
                 self._error = f"{cmd.op}: {err}"
@@ -218,6 +259,7 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        remote.close_video_tunnel()
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

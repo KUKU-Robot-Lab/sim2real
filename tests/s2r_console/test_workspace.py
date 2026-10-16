@@ -156,3 +156,26 @@ def test_locate_sigterm_requests_cooperative_cancellation():
         signal.raise_signal(signal.SIGTERM)
         assert cancelled()
     assert signal.getsignal(signal.SIGTERM) == old
+
+
+@pytest.mark.parametrize('found,home_ok', [(True, True), (False, True), (True, False)])
+def test_locate_cli_reports_explicit_validity(monkeypatch, capsys, found, home_ok):
+    import json
+    from types import SimpleNamespace
+    import registered_locate
+    monkeypatch.setattr(registered_locate, 'run_scan', lambda *a, **kw: SimpleNamespace(
+        found=found, home_ok=home_ok, x=.2622, y=-.1526, z=.29, reason='not found'))
+    rc = registered_locate.main(['source240b_blue', '--repo', str(ROOT), '--fake', '.26,-.15'])
+    result = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert result['valid'] is (found and home_ok)
+    assert rc == (0 if found and home_ok else 1)
+    assert (result['position'] is not None) is result['valid']
+
+
+def test_unselected_fpp_does_not_repopulate_results(tmp_path):
+    ws = workspace(tmp_path)
+    ws.update({'perception': {'fpp': False, 'locate': True}})
+    ws.ingest_fpp({'/objects/source240b_blue/live_pose': {'pos': [.2, -.1, .29], 'age_s': 0}})
+    obj = next(o for o in ws.objects if o['id'] == 'source240b_blue')
+    assert not obj['results']['fpp']['valid']
+    assert obj['results']['fpp']['reason'] == 'FPP not selected'

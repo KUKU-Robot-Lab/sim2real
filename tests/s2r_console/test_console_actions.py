@@ -147,6 +147,34 @@ def test_rg3_locate_only_and_snapshot_inputs_blocked(console, tiny_repo):
     assert any('신선한' in reason for reason in m.describe('rg3_chosen')['reasons'])
 
 
+def test_rg3_candidate_with_contract_can_be_approved_for_trial(console, tiny_repo, monkeypatch):
+    from types import SimpleNamespace
+    m = setup_actions(console, tiny_repo, {'episode_grasp_rg3_right': [{'argv': ['true']}]})
+    rg3_workspace(console)
+    monkeypatch.setattr(console.session.feed, 'observed', lambda: SimpleNamespace(
+        status={'pd_right': {'execute': True, 'phase': 'TRACKING'}},
+        age_s={'pd_right': 0}, joints_age_s=0, joint_ages={}, rosgraph=None, rosgraph_age_s=None))
+    console.session.workspace.catalog[0]['status'] = 'candidate'
+    preview = m.describe('rg3_chosen')
+    assert preview['enabled'], preview['reasons']
+    assert any('candidate' in warning for warning in preview['warnings'])
+
+
+@pytest.mark.parametrize('status,contract,issues', [
+    ('hold', '/registered/contract.json', []),
+    ('candidate', '', []),
+    ('candidate', '/registered/contract.json', ['checkpoint md5 mismatch']),
+    ('unknown', '/registered/contract.json', []),
+])
+def test_rg3_trial_still_requires_usable_registered_policy(console, tiny_repo, status, contract, issues):
+    m = setup_actions(console, tiny_repo, {'episode_grasp_rg3_right': [{'argv': ['true']}]})
+    rg3_workspace(console)
+    console.session.workspace.catalog[0].update(status=status, contract=contract, issues=issues)
+    preview = m.describe('rg3_chosen')
+    assert not preview['enabled']
+    assert any('정책' in reason for reason in preview['reasons'])
+
+
 def test_perception_preview_includes_exact_side_effects(console, tiny_repo):
     m = setup_actions(console, tiny_repo, {'preflight': [{'argv': ['true']}]})
     w = console.session.workspace
@@ -267,7 +295,29 @@ def test_fpp_refresh_starts_all_enabled_groups_before_subset_rescan(console, tin
     assert 'perception_ctl.py' in rows[0][1].argv[1]
     assert obj['id'] in rows[0][1].argv and second['id'] in rows[0][1].argv
     assert rows[0][1].argv[-3:] == ('--wait', '150', '--require-all')
+    assert '--viewer' in rows[0][1].argv
     assert rows[1][1].argv == tuple(console.session.workspace.fpp_argv([obj['id']]))
+
+
+def test_failed_fpp_still_runs_locate_and_keeps_its_result(console, tiny_repo, monkeypatch):
+    import json
+    m = setup_actions(console, tiny_repo, {'preflight': [{'argv': ['true']}]})
+    obj = rg3_workspace(console)
+    console.session.workspace.perception.update(fpp=True, locate=True)
+    calls = []
+    def run(session, stage, commands):
+        calls.append(stage)
+        if stage == 'action_fpp':
+            raise ConsoleError('no color candidate')
+    monkeypatch.setattr(m, '_run_commands', run)
+    monkeypatch.setattr(console.session.supervisor, 'tail', lambda *a: json.dumps(
+        {'valid': True, 'position': [.2622, -.1526, .29], 'home_ok': True}))
+    with pytest.raises(ConsoleError, match='FPP:.*no color candidate'):
+        m._refresh(console.session, {})
+    assert calls[-1] == 'action_locate_' + obj['id']
+    assert obj['results']['locate']['valid']
+    assert obj['results']['locate']['position'] == [.2622, -.1526, .29]
+    assert not obj['results']['fpp']['valid']
 
 
 def test_preemption_requires_each_targeted_side_not_any_fresh_pd(console, tiny_repo, monkeypatch):

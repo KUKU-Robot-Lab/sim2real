@@ -310,8 +310,9 @@ class ActionManager:
                 reasons.append('선택 물체의 신선한 FPP 추적 좌표가 없다')
             if not result.get('live'):
                 reasons.append('rg3는 FPP live_pose 추적을 요구한다 — 저장한 pose 좌표만으로 실행할 수 없다')
-            if policy['status'] not in ('verified', 'deployed') or policy.get('issues'):
-                reasons.append('선택 정책이 배포 검사를 통과하지 않았다')
+            if (policy['status'] not in ('candidate', 'verified', 'deployed') or
+                    not policy.get('contract') or policy.get('issues')):
+                reasons.append('선택 정책을 실행할 수 없다 — 계약·등록부 검사와 hold 상태를 확인할 것')
         if action_id == 'perception_refresh':
             ids = parameters.get('object_ids')
             selected = [o for o in s.workspace.objects if o['enabled'] and (ids is None or o['id'] in ids)]
@@ -322,6 +323,8 @@ class ActionManager:
             if not any(s.workspace.perception.values()):
                 reasons.append('FPP 또는 locate 인지 노드를 선택할 것')
         commands, warnings = [], []
+        if group == 'policy' and policy['status'] == 'candidate':
+            warnings.append('candidate 정책 실기 시험 — 실기 검증 전 정책입니다. 계약·등록부 검사 후 운영자 승인으로 실행합니다.')
         if scanning and action_id == 'head_control':
             warnings.append('목 스캔 취소 → 현재 이동과 운용 자세 복귀 정착 확인 → 새 목 자세 실행')
         for job in self.active_jobs():
@@ -786,6 +789,7 @@ class ActionManager:
         workspace = s.workspace
         ids = parameters.get('object_ids')
         selected = [o for o in workspace.objects if o['enabled'] and (ids is None or o['id'] in ids)]
+        failures = []
         for source in ('fpp', 'locate'):
             if self._cancel_scan.is_set():
                 raise ConsoleError('목 스캔 취소 후 운용 자세 정착 완료')
@@ -819,10 +823,14 @@ class ActionManager:
                         if not result:
                             raise ConsoleError('locate 결과가 없다')
                         workspace.set_result(obj['id'], source, result)
-            except Exception:
+            except Exception as exc:
                 for obj in selected:
-                    workspace.set_result(obj['id'], source, {'valid': False, 'reason': 'acquisition failed'})
-                raise
+                    workspace.set_result(obj['id'], source, {'valid': False, 'reason': f'acquisition failed: {exc}'})
+                if source != 'fpp' or self._cancel_scan.is_set():
+                    raise
+                failures.append(f'FPP: {exc}')
+        if failures:
+            raise ConsoleError(' · '.join(failures))
 
     @staticmethod
     def _perception_commands(s, parameters):
@@ -835,7 +843,7 @@ class ActionManager:
             if supported:
                 all_enabled = [o['id'] for o in workspace.objects if o['enabled'] and o['model'] != 'holder']
                 commands.append(('action_fpp_start', Command(('python3', str(s.repo / 'scripts/ops/perception_ctl.py'),
-                                                              'start', *all_enabled, '--wait', '150', '--require-all'),
+                                                              'start', *all_enabled, '--viewer', '--wait', '150', '--require-all'),
                                                              note='선택한 모든 FPP 묶음 연결 확인')))
                 commands.append(('action_fpp', Command(tuple(workspace.fpp_argv(supported)), note='FPP 재추출')))
         if workspace.perception['locate']:
