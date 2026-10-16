@@ -11,7 +11,7 @@ policies:
   rh_aglt_l: {policy: rh56f1/aglt/left_rg3s, kind: aglt, side: left}
 trajectories:
   go_home: {kind: rehome, sides: [left]}
-failure_policy: {default: 1}
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 rehome으로 복구한다.
 sequence:
   - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
   - {id: scene, type: snapshot}

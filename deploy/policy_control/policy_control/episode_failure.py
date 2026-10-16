@@ -173,7 +173,6 @@ _TABLE = {
     F.POSE_MISMATCH: (ROLLBACK, ()),
     F.POUR_FAILED: (RETRY, ()),
     F.LOCK_FAILED: (RETRY, ()),
-    F.POLICY_TIMEOUT: (ROLLBACK, ("open_hand",)),       # aglt 만(쥔 게 없을 때) — 아래에서 거른다
 }
 
 
@@ -181,14 +180,13 @@ class RecoveryManager:
     """실패 → 복구 결정. 재시도는 노드마다 episode.failure_policy 상한까지(무한 재시도 금지, 가이드 2-8)."""
 
     def decide(self, ep: Episode, node: Node, code: FailureCode, attempts: int, world, checkpoints: Mapping) -> Recovery:
+        if code is F.POLICY_TIMEOUT:
+            return Recovery(SAFE_STOP, "policy_timeout — 현재 팔·손 목표 유지, 복구는 운영자 rehome")
         if code in SAFETY:
             return Recovery(SAFE_STOP, f"{code.value} — 안전 규칙: 복구 없이 정지")
         if attempts >= ep.max_retry(node):
             return Recovery(SAFE_STOP, f"{code.value} — 재시도 {attempts}/{ep.max_retry(node)} 다 씀")
         action, pre = _TABLE.get(code, (SAFE_STOP, ()))
-        kinds = {ep.policies[j.role].kind for j in node.jobs if j.role in ep.policies}
-        if code is F.POLICY_TIMEOUT and kinds - {"aglt"}:
-            return Recovery(SAFE_STOP, "policy_timeout — 컵을 든 채 끝났을 수 있다(aglt 밖) · 정지")
         if action == ROLLBACK:
             cp = rollback_point(ep, node, world, checkpoints)
             if cp is None:

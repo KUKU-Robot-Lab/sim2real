@@ -34,7 +34,10 @@ class Confirmations:
             gate = MC.gate(s.mission, stage.id, s.state, evidence)
             if not gate.ok:
                 raise self._error('지금 실행할 수 없다: ' + '; '.join(gate.reasons))
-            commands = commands_for(s.runbook, s.mission, stage.id, repo=c.repo, execute=True)
+            try:
+                commands = commands_for(s.runbook, s.mission, stage.id, repo=c.repo, execute=True)
+            except (KeyError, ValueError, OSError) as exc:
+                raise self._error(f'{stage.id}: 명령 구성 불가: {exc}') from exc
             targets = [p['key'] for p in s.supervisor.table() if p['alive'] and p['stage'] == stage.id] if parameters.get('restart') else []
             warnings = ['실기 로봇을 움직이는 명령이다'] if stage.touches_real else []
             if targets:

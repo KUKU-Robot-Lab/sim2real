@@ -102,7 +102,7 @@ def test_override_cup_object_alone_moves_only_the_fpp_topic():
 def test_an_unknown_policy_object_is_refused_by_availability():
     from policy_control import policy_registry as R
     entries = {e.id: e for e in R.scan(REPO / "deploy" / "policies", deep=False)}
-    if not all(entries[p].ok for p in POLICY.values()):
+    if POLICY['right'] not in entries or not entries[POLICY['right']].ok:
         pytest.skip("rg3 가중치(nn/)가 이 호스트에 없다")
     bad = S.override_grasp_object(_ep("right"), policy_object="cyl60", cup_object="")
     assert "cyl60" in S.availability(bad, entries)["rh_aglt_r"]
@@ -118,6 +118,12 @@ def test_the_grasp_episode_stage_does_not_wait_for_cup_holders(side):
         stages = {s["id"]: s for s in m["stages"]}
         assert "cup_holders" not in stages[f"episode_grasp_rg3_{side}"]["needs"]
         assert "cup_holders" in stages[f"episode_pick_place_{side}"]["needs"]
+
+
+@pytest.mark.parametrize('side', ['right', 'left'])
+def test_grasp_recovery_is_operator_only(side):
+    ep = _ep(side)
+    assert all(ep.max_retry(node) == 0 for node in ep.nodes)
 
 
 def test_a_multi_object_policy_node_keeps_its_parameter_services():

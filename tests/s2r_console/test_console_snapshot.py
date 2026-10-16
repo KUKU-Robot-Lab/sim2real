@@ -30,6 +30,36 @@ def test_a_profile_without_a_stack_shows_no_stack_block(console):
     assert "stack" not in _block_ids(console)
 
 
+def test_missing_policy_only_blocks_its_stage_even_after_reopen(console, tiny_repo):
+    import yaml
+    raw = yaml.safe_load((tiny_repo / 'mission.yaml').read_text())
+    raw['artifacts']['policy'] = 'deploy/policies/removed/contract.json'
+    raw['run']['move'] = [{'argv': ['policy', '{policy:policy.max_episode_s}']}]
+    (tiny_repo / 'mission.yaml').write_text(yaml.safe_dump(raw))
+    console.open('t_fake', operator='test')
+    rows = {r['id']: r for r in console.snapshot()['session']['mission']['rows']}
+    assert not rows['move']['can_run']
+    assert any('policy.yaml' in reason for reason in rows['move']['reasons'])
+    assert rows['check']['commands'][0]['argv'] == ['true']
+
+
+def test_policy_removed_during_run_does_not_break_snapshot(console, tiny_repo):
+    import yaml
+    card = tiny_repo / 'deploy/policies/removed/policy.yaml'
+    card.parent.mkdir(parents=True)
+    card.write_text('deploy: {max_episode_s: 15}')
+    raw = yaml.safe_load((tiny_repo / 'mission.yaml').read_text())
+    raw['artifacts']['policy'] = 'deploy/policies/removed/contract.json'
+    raw['run']['move'] = [{'argv': ['policy', '{policy:policy.max_episode_s}']}]
+    (tiny_repo / 'mission.yaml').write_text(yaml.safe_dump(raw))
+    console.open('t_fake', operator='test')
+    card.unlink()
+    rows = {r['id']: r for r in console.snapshot()['session']['mission']['rows']}
+    assert rows['move']['commands'] == []
+    assert not rows['move']['can_approve']
+    assert rows['check']['can_run']
+
+
 def test_a_declared_stack_reaches_the_snapshot(console, tiny_repo):
     # Arrange
     path = tiny_repo / "profiles" / "t_fake.yaml"

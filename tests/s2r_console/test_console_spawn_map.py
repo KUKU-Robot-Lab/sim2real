@@ -22,6 +22,17 @@ ARTS = {"aglt_right": RIGHT, "aglt_left": LEFT}
 JS = (REPO / "deploy/s2r_console/s2r_console/web/console.js").read_text(encoding="utf-8")
 
 
+@pytest.fixture(autouse=True)
+def isolated_contracts(tmp_path, monkeypatch):
+    """Geometry tests do not require optional deployed policy bundles."""
+    for side, relative in [('right', RIGHT), ('left', LEFT)]:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lo_y, hi_y = (-.3, -.1) if side == 'right' else (.1, .3)
+        path.write_text(json.dumps({'goal_box_min': [.1, lo_y, .37], 'goal_box_max': [.4, hi_y, .51]}))
+    monkeypatch.setitem(globals(), 'REPO', tmp_path)
+
+
 def summ(x, y, z=0.29):
     return {"pos": [x, y, z], "age_s": 0.05}
 

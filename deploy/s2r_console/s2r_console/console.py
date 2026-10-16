@@ -143,12 +143,27 @@ def _robot_reference(mission, repo: Path, joint_profile: Path | None = None) -> 
         limits, alias = {}, {}
     return sides, limits, alias
 
+def _available_units(mission, runbook, repo):
+    available_commands = {}
+    for st in mission.stages:
+        try:
+            commands = commands_for(runbook, mission, st.id, repo=repo, execute=True)
+            available_commands[st.id] = tuple(
+                replace(cmd, background=False, manual=False)
+                if any(Path(arg).name in ('rh_aglt_node.py', 'rh_place_node.py') for arg in cmd.argv)
+                and any(arg.startswith('contract:=') and not (repo / arg.split(':=', 1)[1]).is_file() for arg in cmd.argv)
+                else cmd for cmd in commands)  # Preserve command indices; unavailable nodes have no unit switch.
+        except (KeyError, ValueError, OSError):
+            available_commands[st.id] = ()  # The stage view reports the error; other controls stay available.
+    return U.index_units(mission, available_commands)
+
+
 def mission_units(profile: Profile, *, repo: Path) -> dict[str, U.UnitCmd]:
     """프로파일의 미션이 가진 배경·수동 명령 — 그림의 스위치와 자동 생성의 재료. argv 는 미션 yaml 에서만 온다."""
     raw = yaml.safe_load(profile.mission.read_text(encoding="utf-8"))
     mission = MC.load_mission(raw)
     runbook = load_runbook(raw.get("run", {}), mission)
-    return U.index_units(mission, {st.id: commands_for(runbook, mission, st.id, repo=repo, execute=True) for st in mission.stages})
+    return _available_units(mission, runbook, repo)
 
 
 def drawable_units(mission, units: Mapping[str, U.UnitCmd]) -> dict[str, U.UnitCmd]:
@@ -303,8 +318,7 @@ class Session:
         self.started = time.time()
         self._dead_seen: set[str] = set()
         #: 그림의 스위치가 다루는 것 — 미션의 배경·수동 명령. argv 는 여기(미션 yaml)에서만 온다.
-        self.units = U.index_units(self.mission, {st.id: commands_for(self.runbook, self.mission, st.id, repo=repo, execute=True)
-                                                  for st in self.mission.stages})
+        self.units = _available_units(self.mission, self.runbook, repo)
         #: 연결 그림 — 프로파일이 적지 않았으면 미션·계약·robot yaml 에서 만든다. 정책을 바꾸면 그림이 따라 바뀐다.
         self.diagram = diagram_of(profile, drawable_units(self.mission, self.units), repo=repo)
         #: 운영자가 끈 것 {키: 그때의 pid} — 죽은 것과 구별한다. pid 까지 적어야 그 뒤 다시 뜬 프로세스의 크래시를 가리지 않는다.
@@ -554,7 +568,10 @@ class Console:
             result = MC.gate(s.mission, stage_id, s.state, self._evidence(s))
             if not result.ok:
                 raise ConsoleError(f"{stage_id} 를 지금 실행할 수 없다", reasons=tuple(result.reasons))
-            commands = commands_for(s.runbook, s.mission, stage_id, repo=self.repo, execute=True)
+            try:
+                commands = commands_for(s.runbook, s.mission, stage_id, repo=self.repo, execute=True)
+            except (KeyError, ValueError, OSError) as exc:
+                raise ConsoleError(f'{stage_id}: 명령 구성 불가: {exc}') from exc
             # 창 모드는 커서가 없다 — 기록 파일의 `stage` 는 **마지막으로 시작한 단계**를 가리킨다.
             # (그대로 두면 selftest 가 도는데 state.json 이 home_right RUNNING 으로 보인다.)
             s.state = (MC.MissionState(stage=stage_id, status=MC.STATUS_RUNNING, completed=s.state.completed,
@@ -1077,7 +1094,11 @@ class Console:
             lane_why = (U.skip_reasons(skippable=st.skippable, busy=bool(lane_busy), pd_phase=pd_phase)
                         + structural) if lanes else []
             approved = st.id in valid
-            cmds = commands_for(s.runbook, s.mission, st.id, repo=self.repo, execute=True)
+            try:
+                cmds = commands_for(s.runbook, s.mission, st.id, repo=self.repo, execute=True)
+            except (KeyError, ValueError, OSError) as exc:
+                cmds = ()
+                structural.append(f'명령 구성 불가: {exc}')
             rows.append({
                 "id": st.id, "title": st.title, "touches_real": st.touches_real, "lane": lane,
                 "done": st.id in s.state.completed, "current": current,

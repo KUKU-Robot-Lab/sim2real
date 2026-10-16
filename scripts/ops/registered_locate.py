@@ -78,6 +78,69 @@ def run_scan(request, spec, head, camera, *, return_pose=(0.0, -20.0), **kwargs)
     return locate.locate_object(request, spec, OperatingHead(), camera, **kwargs)
 
 
+def read_current_head(timeout_s=3.0):
+    """Read a fresh, stationary encoder pose from ROS. Never publish a head command."""
+    import numpy as np
+    import rclpy
+    from rclpy.node import Node
+    from sensor_msgs.msg import JointState
+    from head_fk_chain import encoder_from_urdf
+    from perception_plus_plus_core.head_scan.survey import HeadReading
+    rclpy.init()
+    node = Node('locate_current_head')
+    samples = []
+
+    def receive(msg):
+        names = list(msg.name)
+        try:
+            angles = [msg.position[names.index(n)] for n in ('head_j_pan', 'head_j_tilt')]
+        except (ValueError, IndexError):
+            return
+        stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        if not np.all(np.isfinite(angles)) or abs(time.time() - stamp) > .5:
+            return
+        samples.append((time.monotonic(), encoder_from_urdf(*np.degrees(angles))))
+
+    node.create_subscription(JointState, '/head/joint_states', receive, 10)
+    began = time.monotonic()
+    try:
+        while time.monotonic() - began < timeout_s:
+            rclpy.spin_once(node, timeout_sec=.05)
+            if len(samples) >= 3 and samples[-1][0] - samples[0][0] >= .2:
+                values = np.asarray([angles for _, angles in samples])
+                if np.any(np.ptp(values, axis=0) > .3):
+                    raise RuntimeError('목이 움직이고 있다 — 정착 후 현재 자세 재추출 필요')
+                pan, tilt = values.mean(axis=0)
+                return HeadReading(float(pan), float(tilt), True)
+        raise RuntimeError('현재 목 실측이 없다 — /head/joint_states 확인 필요')
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+def run_current_pose(spec, camera, read_pose, **kwargs):
+    """Use several frames at the measured pose, with no move or return command."""
+    from perception_plus_plus_core.head_scan import locate
+    initial = read_pose()
+
+    class StationaryHead:
+        def read(self):
+            current = read_pose()
+            if not current.ok or max(abs(current.pan_deg - initial.pan_deg),
+                                     abs(current.tilt_deg - initial.tilt_deg)) > .3:
+                raise RuntimeError('촬영 중 목 자세가 바뀌었다 — 현재 자세에서 다시 추출할 것')
+            return current
+
+        def move(self, pan_deg, tilt_deg):
+            return self.read()
+
+        def go_home(self):
+            return self.read()
+
+    request = locate.LocateRequest(spec.name, poses=[(initial.pan_deg, initial.tilt_deg)], n_frames=3)
+    return locate.locate_object(request, spec, StationaryHead(), camera, **kwargs)
+
+
 @contextmanager
 def cooperative_cancel():
     """Finish the current move and let the scan restore the operating pose."""
@@ -103,6 +166,7 @@ def main(argv=None):
     parser.add_argument('--return-tilt', type=float, default=-20)
     parser.add_argument('--calib-profile', default='')
     parser.add_argument('--execute', action='store_true')
+    parser.add_argument('--current-pose', action='store_true', help='현재 목 실측 자세에서만 촬영·추출(목 이동 없음)')
     parser.add_argument('--fake', metavar='X,Y')
     args = parser.parse_args(argv)
     if args.calib_profile and not re.fullmatch(r'[A-Za-z0-9_-]+', args.calib_profile):
@@ -124,6 +188,8 @@ def main(argv=None):
         if len(truth) != 2 or not all(np.isfinite(truth)):
             parser.error('--fake requires finite X,Y')
         head = fakes.FakeHead()
+        if args.current_pose:
+            head.moves.append(return_pose)  # Synthetic camera's already-measured pose; no command is sent.
         pixel = cv2.cvtColor(np.array([[[int(spec.hue), 255, 255]]], np.uint8), cv2.COLOR_HSV2RGB)[0, 0]
         color = (int(pixel[0]), int(pixel[1]), int(pixel[2]))
         camera = fakes.FakeCamera(head, truth, spec, color)
@@ -131,9 +197,14 @@ def main(argv=None):
         busy = adapters.busy_head_commanders()
         if busy:
             raise RuntimeError('another head commander is active: ' + '; '.join(busy))
-        head, camera = adapters.Sim2RealHead(args.repo), adapters.SshCamera()
+        head = None if args.current_pose else adapters.Sim2RealHead(args.repo)
+        camera = adapters.SshCamera()
     with cooperative_cancel() as cancelled:
-        result = run_scan(request, spec, head, camera, return_pose=return_pose, profile=profile, should_stop=cancelled)
+        if args.current_pose:
+            read_pose = (lambda: survey.HeadReading(*return_pose, True)) if args.fake else read_current_head
+            result = run_current_pose(spec, camera, read_pose, profile=profile, should_stop=cancelled)
+        else:
+            result = run_scan(request, spec, head, camera, return_pose=return_pose, profile=profile, should_stop=cancelled)
         stopped = cancelled()
     valid = result.found and result.home_ok and not stopped
     print(json.dumps({'object_id': spec.name, 'source': 'locate', 'frame': 'base', 'timestamp': time.time(),

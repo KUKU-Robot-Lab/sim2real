@@ -79,7 +79,7 @@ def test_availability_names_what_blocks_a_real_run():
     entries = {e.id: e for e in R.scan(REPO / "deploy" / "policies", deep=False)}
     av = S.availability(_ep("bead_mix_episode"), entries)
     assert "없다" in av["rh_pour"] and "없다" in av["rh_lock"] and "없다" in av["rh_shake"]
-    if all(e.ok for e in entries.values()):
+    if all(b.policy in entries and entries[b.policy].ok for b in _ep().policies.values()):
         assert S.availability(_ep(), entries) == {"rh_aglt_r": "", "rh_place_r": ""}
 
 
@@ -288,6 +288,15 @@ def test_a_timeout_after_the_grasp_is_not_retried_from_home():
     assert m.run() == FAILURE and "timeout" in m.last["code"]
 
 
+def test_grasp_timeout_never_opens_hand_rolls_back_or_retries():
+    ep = S.parse(_raw(failure_policy={'default': 3}))
+    ex = FakeExecutor(ep, inject={'pick_cup': [F.POLICY_TIMEOUT]})
+    m = EpisodeManager(ep, ex, approve=_yes())
+    assert m.run() == FAILURE
+    assert not any(c[0] == 'prepare' for c in ex.calls)
+    assert sum(c[:2] == ('trajectory', 'go_home_start') for c in ex.calls) == 1
+
+
 # ---------------------------------------------------------------- 명령 · 승인 파일 · ROS 순수부
 def test_the_command_tool_only_sends_the_name_the_runner_will_ask_for():
     import importlib.util
@@ -354,8 +363,11 @@ def test_the_plan_tool_refuses_a_real_run_without_the_holder_file(tmp_path, monk
     (tmp_path / "none.yaml").write_text("holders:\n  cup_holder_1: {marker_id: 1, position: [0.38, -0.002, 0.235], yaw_rad: 0.0}\n")
     rc = tool.main(["--episode", str(path), "--plan", "--require-holders"])
     from policy_control import policy_registry as R
-    if all(e.ok for e in R.scan(REPO / "deploy" / "policies", deep=False)):
+    entries = {e.id: e for e in R.scan(REPO / "deploy" / "policies", deep=False)}
+    if all(b.policy in entries and entries[b.policy].ok for b in S.load(path).policies.values()):
         assert rc == 0
+    else:
+        assert rc == 1  # Deleted policy bundles must remain unavailable.
 
 
 # ---------------------------------------------------------------- 흐름 그림(상황판)

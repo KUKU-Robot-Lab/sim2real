@@ -91,10 +91,10 @@ def test_a_blocked_stage_is_left_out_of_the_picture_but_not_out_of_the_units(rea
 
 
 def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both_switches(real):
-    _, _, d = real
+    _, units, d = real
     aglt = d.box("rh_aglt_node_right")
     assert aglt.ros == ("/rh_aglt_node_right", "/rh_aglt_node_right_poll")    # 센서는 폴링 노드가 구독한다
-    assert set(aglt.units) == {"policy_aglt_right#4", "episode_pick_place_right#3", "episode_grasp_rg3_right#3"}   # 실기 단독 단계: 기록(bag · CPU · 영상) 세 줄 뒤(10.09)
+    assert set(aglt.units) == {"policy_aglt_right#4", "episode_pick_place_right#3", "episode_grasp_rg3_right#3"} & set(units)
     place = d.box("rh_place_node_right")
     assert set(place.units) == {"policy_place_right#1", "episode_pick_place_right#4"}
     runner = d.box("episode_runner")
@@ -469,6 +469,9 @@ def test_policy_nodes_and_the_runner_say_their_own_phase_and_the_bridge_listens(
     prof, d = _profile_diagram("rh56f1_real")
     assert prof.status_nodes == ("pd_right", "pd_left")                    # 노드 표 · 배너 · 지연 기준은 그대로
     want = {"rh_aglt_node_right", "rh_aglt_node_left", "rh_place_node_right", "rh_place_node_left", "episode_runner"}
+    units = mission_units(prof, repo=SIM2REAL)
+    if not any('__node:=rh_aglt_node_left' in u.argv for u in units.values()):
+        want.discard('rh_aglt_node_left')
     assert {b.id: b.status for b in d.boxes if b.id in want} == {n: n for n in want}
     argv = bridge_argv(prof, d)
     nodes = argv[argv.index("--nodes") + 1:argv.index("--topics")]

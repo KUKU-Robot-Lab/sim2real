@@ -175,6 +175,29 @@ def test_rg3_trial_still_requires_usable_registered_policy(console, tiny_repo, s
     assert any('정책' in reason for reason in preview['reasons'])
 
 
+def test_deleted_selected_policy_disables_card_without_breaking_catalog(console, tiny_repo):
+    m = setup_actions(console, tiny_repo, {'episode_grasp_rg3_right': [{'argv': ['true']}]})
+    rg3_workspace(console)
+    console.session.workspace.catalog = []
+    item = next(a for a in m.catalog() if a['id'] == 'rg3_chosen')
+    assert not item['enabled']
+    assert '정책 파일' in ' '.join(item['reasons'])
+
+
+def test_missing_policy_command_only_disables_that_management_action(console, tiny_repo):
+    import yaml
+    raw = {'name': 'missing', 'artifacts': {'removed': 'deploy/policies/gone/contract.json'},
+           'stages': [{'id': 'preflight'}, {'id': 'shutdown'}],
+           'run': {'preflight': [{'argv': ['policy', '{policy:removed.max_episode_s}']}],
+                   'shutdown': [{'argv': ['true']}]}}
+    (tiny_repo / 'mission.yaml').write_text(yaml.safe_dump(raw))
+    console.open('t_fake', operator='test')
+    items = {a['id']: a for a in console.actions.catalog()}
+    assert not items['preflight']['enabled']
+    assert 'policy.yaml' in ' '.join(items['preflight']['reasons'])
+    assert items['shutdown']['commands'][0]['argv'] == ['true']
+
+
 def test_perception_preview_includes_exact_side_effects(console, tiny_repo):
     m = setup_actions(console, tiny_repo, {'preflight': [{'argv': ['true']}]})
     w = console.session.workspace

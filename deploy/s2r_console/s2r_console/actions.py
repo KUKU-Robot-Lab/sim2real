@@ -301,7 +301,11 @@ class ActionManager:
                 return {'id': action_id, 'title': title, 'group': group, 'enabled': False,
                         'reasons': ['정책 물체를 선택할 것'], 'commands': [], 'warnings': [], 'stages': list(stages), 'parameters': parameters}
             result = obj['results']['fpp']
-            policy = next(p for p in s.workspace.catalog if p['id'] == card['policy_id'])
+            policy = next((p for p in s.workspace.catalog if p['id'] == card['policy_id']), None)
+            if policy is None:
+                return {'id': action_id, 'title': title, 'group': group, 'enabled': False,
+                        'reasons': ['정책 파일이 없거나 등록되지 않았다'], 'commands': [], 'warnings': [],
+                        'stages': list(stages), 'parameters': parameters, 'card_id': card['id']}
             if not obj['enabled']:
                 reasons.append('정책 물체를 활성화할 것')
             if not s.workspace.perception['fpp'] or obj['input_source'] != 'fpp':
@@ -336,7 +340,12 @@ class ActionManager:
             mission = replace(s.mission, stages=tuple(independent if x.id == sid else x for x in s.mission.stages))
             planned = replace(s.state, completed=tuple(dict.fromkeys((*s.state.completed, *stages[:stage_index]))))
             reasons.extend(MC.gate(mission, sid, planned, self.console._evidence(s)).reasons)
-            for index, cmd in enumerate(commands_for(s.runbook, s.mission, sid, repo=self.console.repo, execute=True)):
+            try:
+                stage_commands = commands_for(s.runbook, s.mission, sid, repo=self.console.repo, execute=True)
+            except (KeyError, ValueError, OSError) as exc:
+                reasons.append(f'{sid}: 명령 구성 불가: {exc}')
+                continue
+            for index, cmd in enumerate(stage_commands):
                 if cmd.manual:
                     warnings.append(cmd.note)
                 else:

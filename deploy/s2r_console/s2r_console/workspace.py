@@ -58,6 +58,7 @@ class Workspace:
                                      locate_supported=False, locate_reason='marker holder: color locate unsupported',
                                      results={s: _empty(s) for s in ('fpp', 'locate')}))
         self.catalog = self._catalog(slots or {})
+        self._catalog_at = time.monotonic()
         key = hashlib.sha256(self.robot_id.encode()).hexdigest()[:20]
         self.layout_path = self.repo / 'runs/s2r_console/workspaces' / (key + '.json')
         if self.layout_path.is_file():
@@ -94,6 +95,9 @@ class Workspace:
         return out
 
     def snapshot(self) -> dict[str, Any]:
+        if time.monotonic() - self._catalog_at >= 5:
+            self.catalog = self._catalog({})
+            self._catalog_at = time.monotonic()
         return copy.deepcopy(dict(revision=self.revision, perception=self.perception, head=self.head,
                                   objects=self.objects, cards=self.cards, catalog=self.catalog))
 
@@ -236,7 +240,7 @@ class Workspace:
         if not obj or not obj['locate_supported']:
             raise ValueError('color locate unsupported for this object')
         argv = [sys.executable, str(self.repo / 'scripts/ops/registered_locate.py'), object_id,
-                '--repo', str(self.repo), '--return-pan', str(self.head['pan']), '--return-tilt', str(self.head['tilt']), '--execute']
+                '--repo', str(self.repo), '--current-pose', '--execute']
         if self.head['calib_profile']:
             argv += ['--calib-profile', self.head['calib_profile']]
         return argv

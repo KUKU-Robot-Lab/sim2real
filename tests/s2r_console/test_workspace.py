@@ -78,7 +78,8 @@ def test_safe_registered_commands_and_holder_rejection(tmp_path):
     ws = workspace(tmp_path)
     ws.update({'head': {'pan': 10, 'tilt': -30, 'calib_profile': 'v9_1014_anchored_z'}})
     argv = ws.locate_argv('source200_orange')
-    assert '--return-pan' in argv and argv[argv.index('--return-pan') + 1] == '10.0'
+    assert '--current-pose' in argv
+    assert argv[argv.index('--calib-profile') + 1] == 'v9_1014_anchored_z'
     with pytest.raises(ValueError):
         ws.locate_argv('cup_holder_0')
     with pytest.raises(ValueError):
@@ -179,3 +180,56 @@ def test_unselected_fpp_does_not_repopulate_results(tmp_path):
     obj = next(o for o in ws.objects if o['id'] == 'source240b_blue')
     assert not obj['results']['fpp']['valid']
     assert obj['results']['fpp']['reason'] == 'FPP not selected'
+
+
+def test_console_locate_uses_current_pose_without_return_motion(tmp_path):
+    ws = workspace(tmp_path)
+    argv = ws.locate_argv('source240b_blue')
+    assert '--current-pose' in argv
+    assert '--return-pan' not in argv and '--return-tilt' not in argv
+
+
+def test_current_pose_locate_never_moves_and_rejects_pose_changes(monkeypatch):
+    from types import SimpleNamespace
+    import registered_locate
+    registered_locate.install_core(ROOT)
+    from perception_plus_plus_core.head_scan import locate, survey
+    calls = []
+    def core(request, spec, head, camera, **kwargs):
+        assert request.poses == [(12.0, -20.0)]
+        assert request.n_frames >= 2
+        assert head.move(12, -20).pan_deg == 12
+        calls.append(head.go_home().pan_deg)
+        return SimpleNamespace(found=True, home_ok=True)
+    monkeypatch.setattr(locate, 'locate_object', core)
+    reading = survey.HeadReading(12, -20, True)
+    result = registered_locate.run_current_pose(SimpleNamespace(name='cup'), object(), lambda: reading)
+    assert result.found and calls == [12]
+    readings = iter([reading, survey.HeadReading(13, -20, True)])
+    with pytest.raises(RuntimeError, match='목'):
+        registered_locate.run_current_pose(SimpleNamespace(name='cup'), object(), lambda: next(readings))
+
+
+def test_fixed_pose_fake_cli_extracts_coordinates_without_scanning(capsys):
+    import json
+    import registered_locate
+    rc = registered_locate.main(['source240b_blue', '--repo', str(ROOT), '--current-pose', '--fake', '.26,-.15'])
+    result = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert rc == 0 and result['valid']
+    assert result['position'][:2] == pytest.approx([.26, -.15], abs=.003)
+
+
+def test_current_pose_missing_measurement_never_falls_back_to_a_head_move(monkeypatch):
+    import registered_locate
+    registered_locate.install_core(ROOT)
+    from perception_plus_plus_core.head_scan import adapters
+    monkeypatch.setattr(adapters, 'busy_head_commanders', lambda: [])
+    monkeypatch.setattr(adapters, 'SshCamera', lambda: object())
+    def forbidden(*args, **kwargs):
+        pytest.fail('current-pose extraction must not create a head motion adapter')
+    monkeypatch.setattr(adapters, 'Sim2RealHead', forbidden)
+    def missing():
+        raise RuntimeError('현재 목 실측이 없다')
+    monkeypatch.setattr(registered_locate, 'read_current_head', missing)
+    with pytest.raises(RuntimeError, match='현재 목 실측'):
+        registered_locate.main(['source240b_blue', '--repo', str(ROOT), '--current-pose', '--execute'])
