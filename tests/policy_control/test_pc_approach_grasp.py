@@ -333,3 +333,70 @@ def test_forced_grasp_values_are_range_checked(text):
     with pytest.raises(AG.ApproachGraspError):
         AG.ApproachGraspCfg.parse(text)
 
+
+
+# ---------------------------------------------------------------- 10.18 접촉 고정 · 앞섬 상한(과전류 방지)
+def _close_ticks(ch, plant, n=60 * 12):
+    """닫기 · 들기 · 유지 동안 (스텝 전 실측, 스텝 뒤 q_cmd, pinned) 기록."""
+    rows = []
+    ch.reset(plant.meas())
+    for _ in range(n):
+        meas = plant.meas()
+        hand = np.array([meas["arm"].hand_q[j] for j in plant.names])
+        _, _, tg = ch.step(meas)
+        plant.apply(tg)
+        if ch.ag.phase in ("close", "lift", "settle") and ch.ag.q_cmd is not None:
+            rows.append((hand, ch.ag.q_cmd.copy(), ch.ag.pinned.copy()))
+        if ch.ag.end is not None:
+            break
+    return rows
+
+
+def test_forced_grasp_pins_each_touching_finger_at_its_measured_angle(c, fk):
+    """사용자 10.18 "접촉 판단이 되면 멈추면 됨" — 막힘이 걸린 축은 그 순간 실측에 고정되고 더 밀지 않는다(래치가 풀려도)."""
+    plant = Plant(c, fk, stop=CUP_STOP)
+    ch = _chain(c, fk)
+    rows = _close_ticks(ch, plant)
+    assert ch.ag.end is not None and ch.ag.end[0] == "stop", ch.ag.as_dict()
+    sgn = np.sign(plant.g - plant.o)
+    pinned = rows[-1][2]
+    i = [k for k, n in enumerate(plant.names) if n.endswith("index_1")][0]
+    assert pinned[i], "컵에 닿는 검지가 고정되지 않았다"
+    first = next(k for k, r in enumerate(rows) if r[2][i])
+    pin = rows[first][1][i]
+    assert all(r[1][i] == pytest.approx(pin) for r in rows[first:])            # 고정 뒤 지령이 안 움직인다
+    assert sgn[i] * (pin - rows[first][0][i]) <= 1e-9                          # 실측(+ pin_lead 0)에 — 더 밀지 않는다
+    assert sgn[i] * (pin - plant.limit[i]) <= 1e-9                              # 컵 각도를 넘어 미는 간극이 없다
+
+
+class CreepPlant(Plant):
+    """막힌 축이 조금씩 밀려(관절 탄성 · 패드 눌림) 막힘 신호(moved < ε)가 안 걸리는 손 — 앞섬 상한만이 미는 간극을 묶는다."""
+
+    def __init__(self, *a, creep=0.005, **kw):
+        super().__init__(*a, **kw)
+        self.creep, self.start = creep, self.limit.copy()
+
+    def apply(self, targets):
+        sgn = np.sign(self.g - self.o)
+        blocked = sgn * (np.asarray(targets["arm"][1], float) - self.limit) > 0
+        self.limit = np.where(blocked, self.limit + sgn * self.creep, self.limit)
+        self.limit = np.where(sgn > 0, np.minimum(self.limit, self.g), np.maximum(self.limit, self.g))
+        super().apply(targets)
+
+
+def test_forced_grasp_caps_the_lead_when_the_block_signal_misses(c, fk):
+    """막힘을 놓쳐도 닫는 축 지령은 실측 + close_lead_rad 를 넘지 않는다(pd 0.2 rad 대신) — 과전류 방지(사용자 10.18)."""
+    cfg = AG.ApproachGraspCfg()
+    plant = CreepPlant(c, fk, stop=CUP_STOP)
+    ch = _chain(c, fk, cfg)
+    rows = _close_ticks(ch, plant)
+    sgn = np.sign(plant.g - plant.o)
+    lead = [max(sgn[k] * (q[k] - h[k]) for k in range(6) if not p[k]) if (~p).any() else 0.0 for h, q, p in rows]
+    assert max(lead) <= cfg.close_lead_rad + 1e-9
+    assert max(lead) >= cfg.close_lead_rad - 0.02                              # 상한이 실제로 걸렸다(밀림이 지령보다 느림)
+
+
+@pytest.mark.parametrize("text", ["pin_lead_rad=0.2", "close_lead_rad=0.01", "close_lead_rad=0.5"])
+def test_lead_values_are_range_checked(text):
+    with pytest.raises(AG.ApproachGraspError):
+        AG.ApproachGraspCfg.parse(text)
