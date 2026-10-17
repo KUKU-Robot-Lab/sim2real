@@ -1,8 +1,9 @@
 # tilt 기본 궤적 실기 평가 — 경로 A(파지 정책 rg3wo) · 10.17 사용자 결정 1 · 8 · 9 · 10 · 12 (docs/PLAN_GRASP_TILT_EVAL_2026-10-17.md)
 # 오른손 병(source240) 잡기 → 왼손 shaker 잡기(각각 7 cm 위 2 s 쥠에서 정책 멈춤, 손은 마지막 지령 유지)
-# → 두 팔 ready_carry 로 붓기 시작 자세(SETTING = rh56f1_pour_start.yaml) → D4 기본 궤적(잔차 0, 1 배속) + 복귀 → 끝.
+# → ready_carry 로 붓기 시작 자세(SETTING = rh56f1_pour_start.yaml), 한 팔씩(오른팔 → 왼팔, 계획 "ready_carry(한 팔씩)")
+# → D4 기본 궤적(잔차 0, 1 배속) + 복귀 → 끝.
 # 비드 10 개를 병에 넣고 시작한다(결정 11). 끝난 뒤 옮긴 · 흘린 비드를 센다 — 손을 펴거나 홈으로 가는 것은 운영자가 한다.
-episode: {name: tilt_base_a, version: 1}
+episode: {name: tilt_base_a, version: 2}
 objects:
   SRC: {topic: /objects/source240b_blue/pose}
   RCV: {topic: /objects/shaker_c_orange/pose}
@@ -11,7 +12,8 @@ policies:
   rh_aglt_l: {policy: rh56f1/aglt/left_rg3wo, kind: aglt, side: left}
 trajectories:
   go_home: {kind: rehome, sides: [right, left]}
-  to_tilt_start: {kind: carry, sides: [right, left], asset: tilt/base_arc6}
+  to_tilt_start_r: {kind: carry, sides: [right], asset: tilt/base_arc6}
+  to_tilt_start_l: {kind: carry, sides: [left], asset: tilt/base_arc6}
   tilt: {kind: tilt, sides: [right, left], asset: tilt/base_arc6, rate_scale: 1.0}
 failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 판단한다(컵을 쥔 채 rehome 은 거부된다).
 sequence:
@@ -19,6 +21,7 @@ sequence:
   - {id: scene, type: snapshot}
   - {id: grasp_right, type: policy, name: rh_aglt_r, target_object: SRC, policy_object: source240_real, expect: {right_hand: SRC}}
   - {id: grasp_left, type: policy, name: rh_aglt_l, target_object: RCV, policy_object: shaker_c_real, expect: {left_hand: RCV}}
-  - {id: to_tilt_start, type: trajectory, name: to_tilt_start, expect: {pose: SETTING}}
+  - {id: to_tilt_start_r, type: trajectory, name: to_tilt_start_r}
+  - {id: to_tilt_start_l, type: trajectory, name: to_tilt_start_l, expect: {pose: SETTING}}
   - {id: tilt, type: trajectory, name: tilt, expect: {pose: SETTING}}
   - {id: done, type: terminal, result: SUCCESS}

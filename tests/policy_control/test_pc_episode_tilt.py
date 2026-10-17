@@ -32,16 +32,19 @@ def _raw(**traj):
     return d
 
 
-def test_the_episode_parses_with_two_arm_carry_and_tilt():
+def test_the_episode_parses_with_one_arm_carries_and_a_two_arm_tilt():
     ep = S.load(EPISODE)
-    t, c = ep.trajectories["tilt"], ep.trajectories["to_tilt_start"]
+    t = ep.trajectories["tilt"]
     assert (t.kind, t.sides, t.asset, t.rate_scale) == ("tilt", ("right", "left"), "tilt/base_arc6", 1.0)
-    assert (c.kind, c.asset) == ("carry", "tilt/base_arc6")
-    assert [n.id for n in ep.nodes] == ["go_home_start", "scene", "grasp_right", "grasp_left", "to_tilt_start", "tilt", "done"]
+    # 계획 경로 A "ready_carry(한 팔씩)" — 오른팔 → 왼팔
+    assert [(ep.trajectories[k].kind, ep.trajectories[k].sides, ep.trajectories[k].cups)
+            for k in ("to_tilt_start_r", "to_tilt_start_l")] == [("carry", ("right",), True), ("carry", ("left",), True)]
+    assert [n.id for n in ep.nodes] == ["go_home_start", "scene", "grasp_right", "grasp_left", "to_tilt_start_r",
+                                        "to_tilt_start_l", "tilt", "done"]
 
 
 @pytest.mark.parametrize("bad", [{"sides": ["right"]}, {"asset": "tilt/nope"}, {"asset": ""}, {"rate_scale": 0.0},
-                                 {"rate_scale": 1.5}])
+                                 {"rate_scale": 1.5}, {"cups": False}, {"cups": "yes"}])
 def test_bad_tilt_trajectories_are_refused(bad):
     with pytest.raises(S.EpisodeSpecError):
         S.parse(_raw(**bad), path=str(EPISODE))
@@ -60,7 +63,7 @@ def test_the_fake_run_ends_at_the_setting_pose_with_both_cups_in_hand():
     m = EpisodeManager(ep, ex, approve=lambda what, why: True, episode_id="t")
     m.run()
     assert m.status == SUCCESS and m.world.hand("right") == "SRC" and m.world.hand("left") == "RCV"
-    assert [c[2] for c in ex.calls if c[0] == "trajectory"] == ["go_home", "to_tilt_start", "tilt"]
+    assert [c[2] for c in ex.calls if c[0] == "trajectory"] == ["go_home", "to_tilt_start_r", "to_tilt_start_l", "tilt"]
 
 
 def _ros_self(tmp_path, holds: dict, rcs: list[int]):
@@ -153,3 +156,19 @@ def test_plan_carry_reaches_the_setting_pose_exactly_from_a_lift_pose(tmp_path):
     z = np.load(tmp_path / "o" / "carry_cmd.npz")["arm_target"]
     assert np.abs(z[0] - (q["right"] + q["left"])).max() < 1e-5
     assert np.abs(z[-1] - (Q_START["right"] + Q_START["left"])).max() < 0.05
+
+
+@needs_hdgp
+def test_plan_carry_one_arm_writes_only_that_arm_and_home_start_reaches_the_setting(tmp_path):
+    # 경로 B: 빈손으로 홈(rh_aglt 시작 자세)에서 붓기 시작 자세까지 — 한 팔씩
+    home = yaml.safe_load((REPO / "deploy/policy_control/config/homes/rh56f1_aglt.yaml").read_text())
+    q = {s: [float(v) for v in home[s]] for s in ("right", "left")}
+    (tmp_path / "q.json").write_text(json.dumps(q))
+    rc = _tool("plan_carry").main(["--q-json", str(tmp_path / "q.json"), "--out", str(tmp_path / "o"), "--sides", "left"])
+    chk = json.loads((tmp_path / "o" / "check.json").read_text())
+    assert rc == 0 and chk["ok"] and chk["sides"] == ["left"] and list(chk["checks"]) == ["left"]
+    assert chk["arms_clear"]["ok"] and chk["arms_clear"]["min_cup_gap_m"] >= 0.03     # 오른팔은 홈에 선 채
+    z = np.load(tmp_path / "o" / "carry_cmd.npz")
+    assert z["arm_target"].shape[1] == 7 and [str(n) for n in z["joint_names"]] == [f"l_aj_{i}" for i in range(1, 8)]
+    assert np.abs(z["arm_target"][-1] - np.asarray(Q_START["left"])).max() < 0.05
+    assert _tool("plan_carry").main(["--q-json", str(tmp_path / "q.json"), "--out", str(tmp_path / "p"), "--sides", "up"]) == 1

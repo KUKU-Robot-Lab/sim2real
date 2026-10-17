@@ -61,3 +61,51 @@ vm.runInContext(fs.readFileSync(process.argv[1],'utf8').replace('refresh().then(
 '''
     result = subprocess.run(['node', '-e', script, str(WEB / 'console.js')], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_policy_tab_shows_the_tilt_paths_the_live_confirm_the_checks_and_the_records():
+    """10.17 사용자 "policy 부분에 내가 말한 부분들이 시각화 잘되게" — tilt 평가 묶음이 policy 탭에 있고 값이 보인다."""
+    html = (WEB / 'index.html').read_text()
+    tab = html[html.index('id="tab-policy"'):html.index('id="common-bar"')]
+    for pid in ('tilt-panel', 'epf-panel', 'tilt-run-panel', 'tilt-rec-panel'):
+        assert f'id="{pid}"' in tab                      # 에피소드 흐름도 policy 탭 안(예전 retired 에서 꺼냄)
+    script = r'''
+const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+const els = new Map();
+const el = id => { if (!els.has(id)) els.set(id, {id, innerHTML:'', hidden:true, dataset:{}, style:{}, classList:{toggle(){}}, addEventListener(){}}); return els.get(id); };
+const ctx = vm.createContext({console, Date, JSON, Set, Map, Number, String, Object, Array, Math,
+ document:{getElementById:el, addEventListener(){}, querySelectorAll(){return [];}, body:{classList:{toggle(){}}}},
+ localStorage:{getItem(){return 'operator';}},sessionStorage:{getItem(){return 'token';}},
+ window:{addEventListener(){}}, setInterval(){}, setTimeout(){}, fetch:async()=>({ok:true,json:async()=>({})}),
+ EventSource:function(){this.addEventListener=()=>{}}, requestAnimationFrame(){}});
+vm.runInContext(fs.readFileSync(process.argv[1],'utf8').replace('refresh().then(connect);',''),ctx);
+const node = (id,type) => ({id,type,title:type,line:id});
+const tilt = {errors:[], paths:[
+  {key:'A',episode:'tilt_base_a',title:'파지 정책(rg3wo)',when:'먼저',stage:'episode_tilt_base_a',policies:{rh_aglt_r:'rh56f1/aglt/right_rg3wo'},
+   nodes:[node('go_home_start','trajectory'),node('grasp_right','policy'),node('tilt','trajectory'),node('done','terminal')],confirms:0,problems:[],ok:true},
+  {key:'B',episode:'tilt_base_b',title:'수동 파지(확인 두 번)',when:'A · C 가 안 되면',stage:'episode_tilt_base_b',policies:{},
+   nodes:[node('go_home_start','trajectory'),node('confirm_cup_right','confirm'),node('confirm_close_right','confirm'),node('grasp_right','hand'),node('done','terminal')],
+   confirms:2,problems:[],ok:true},
+  {key:'C',episode:'tilt_base_c',title:'접근 정책',when:'A 4/5 미만',stage:'episode_tilt_base_c',policies:{},nodes:[],confirms:0,problems:['rh_aglt_r: 등록부에 없다'],ok:false}],
+ run:{episode:'tilt_base_b',run_dir:'/x/sim2real/logs/episode/r',cards:[
+  {node:'to_tilt_start_r',kind:'carry',ok:true,T_end_s:4,rows:[{name:'오른팔 탁자 여유',value:11.96,unit:'cm',limit:1,ok:true},{name:'두 컵 겉면 사이',value:2.1,unit:'cm',limit:3,ok:false}]},
+  {node:'grasp_right',kind:'hand',side:'right',ok:false,phase:'failed',why:'not grasped',latched:0}]},
+ records:{day:'20261018',summary:{tilt:{A:{n:2,success:1,fill_mean:0.85,spilled_total:2}},grasp:{right:{n:5,success:4}}},
+  tilt:[{trial:1,path:'A',in_rcv:10,n_beads:10,in_src:0,spilled:0,success:true,grasp_right:'ok',grasp_left:'ok',video:'a.mov'}],grasp:[],
+  criterion:'받는 컵 10/10',grasp_rule:'3 s 유지',command:'eval_record.py tilt'}};
+vm.runInContext(`renderTilt(${JSON.stringify({tilt, episode_runner:{episode:'tilt_base_b',phase:'READY',index:1,busy:false,confirm:{node:'confirm_cup_right',text:'병'}}})})`,ctx);
+for (const id of ['tilt-panel','tilt-run-panel','tilt-rec-panel']) assert.equal(el(id).hidden,false);
+const p = el('tilt-paths').innerHTML;
+assert.match(p,/경로 A/); assert.match(p,/✓ 쓸 수 있음/); assert.match(p,/✗ 못 씀/); assert.match(p,/등록부에 없다/);
+assert.match(p,/실행 중 · READY/); assert.match(p,/확인 노드 2 개/);
+assert.match(p,/tn tn-confirm wait/);                    // 지금 기다리는 확인 노드가 따로 보인다
+assert.match(el('tilt-meta').innerHTML,/2\/3 경로/);
+const r = el('tilt-run').innerHTML;
+assert.match(r,/오른팔 탁자 여유/); assert.match(r,/11\.96/); assert.match(r,/✗ 걸림/); assert.match(r,/not grasped/);
+const rec = el('tilt-rec').innerHTML;
+assert.match(rec,/1\/2/); assert.match(rec,/4\/5 이상 → 경로 A/); assert.match(rec,/✓ 성공/); assert.match(rec,/받는 컵 10\/10/);
+vm.runInContext(`renderTilt({tilt:null})`,ctx);
+assert.equal(el('tilt-panel').hidden,true);
+'''
+    result = subprocess.run(['node', '-e', script, str(WEB / 'console.js')], capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr

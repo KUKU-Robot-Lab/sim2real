@@ -571,6 +571,10 @@ class ArmUnit:
                 "hold": None if self.hold is None else {"settle": self.hold.settle, "settled": self.hold.settled,
                                                         "err": self.hold.err},
                 "target": "internal" if self.hold is not None else ("external" if self.target is not None else None),
+                # ★10.17 지금 팔 세트포인트 — 팔을 제자리에 두고 손만 움직이는 도구(tools/hand_grasp.py)가 실측(처짐만큼 다름)
+                #   대신 이 값을 팔 목표로 보낸다(리뷰: 실측으로 다시 잡으면 처짐만큼 팔이 움직인다)
+                "q_set": (None if self.stage.state.law is None
+                          else [round(float(v), 5) for v in self.stage.state.law.q_setpoint]),
                 "hand_command": self.hand_command}
 
     # ---------------------------------------------------------------- services

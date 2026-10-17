@@ -29,7 +29,8 @@ ROBOTS = {
     "rh56f1": ["--urdf", str(RL_WS / "hdgp/assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf"),
                "--contract", str(SIM2REAL / "logs/policy/asset_openarm_rh56f1_bi_rl/deploy_contract.json"),
                "--profile", str(RL_WS / "robot_control/src/robot_control/profiles/openarm_rh56f1.yaml"),
-               "--env-yaml", str(SIM2REAL / "deploy/policies/rh56f1/aglt/right_cyl60g/params/env.yaml"),
+               # 10.17 정책 폴더(right_cyl60g) 대신 설정 사본 — 같은 파일(git HEAD 4ae16f7), 정책을 지워도 홈 복귀가 막히지 않게
+               "--env-yaml", str(SIM2REAL / "deploy/policy_control/config/home_path/rh56f1_world_env.yaml"),
                "--pd-config", str(SIM2REAL / "deploy/policy_control/config/pd_rh56f1.yaml")],
 }
 

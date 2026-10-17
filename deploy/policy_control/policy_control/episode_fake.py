@@ -72,6 +72,17 @@ class FakeExecutor:
             return NodeResult(status, reason, signals=signals)
         return NodeResult("completed", "", 2.0)
 
+    def run_hand(self, node: Node, world) -> NodeResult:
+        """★10.17 경로 B 손 노드 — 쥠 실패 주입은 실기 도구(hand_grasp.py rc 2)와 같은 문구로."""
+        self.calls.append(("hand", node.id, node.action, tuple(node.sides)))
+        code = self._take(node.id)
+        if code in (F.GRASP_FAILED_LEFT, F.GRASP_FAILED_RIGHT):
+            return NodeResult("aborted", "hand_grasp rc 2: not grasped — 4.0 s 안에 래치 손가락 0 < 2", 4.0)
+        if code is not None:
+            status, reason, signals = _FAIL[code]
+            return NodeResult(status, reason, signals=signals)
+        return NodeResult("completed", "", 3.5)
+
     def prepare(self, step: str, plans: list, world) -> NodeResult:
         self.calls.append(("prepare", step, tuple(p.role for p in plans)))
         return NodeResult("completed", "")

@@ -11,7 +11,8 @@ from __future__ import annotations
 from policy_control.episode_spec import EMPTY, HAND_KEYS, Episode, Node
 from policy_control.episode_world import World
 
-TYPE_LABEL = {"snapshot": "배치 기록", "trajectory": "궤적", "policy": "정책", "parallel_policy": "병렬 정책", "terminal": "끝"}
+TYPE_LABEL = {"snapshot": "배치 기록", "trajectory": "궤적", "policy": "정책", "parallel_policy": "병렬 정책", "terminal": "끝",
+              "confirm": "운영자 확인", "hand": "손(팔 제자리)"}
 ROLLBACK_LABEL = "집기 실패 · 시간 초과 → 손 펴고 빈손 홈으로 → 배치 다시 기록 → 다시"
 RETRY_LABEL = "컵 · 홀더를 못 찾으면 인지 갱신 후 다시"
 
@@ -30,9 +31,14 @@ def _expect_text(expect) -> str:
 def _lines(ep: Episode, n: Node) -> list[str]:
     if n.type == "trajectory":
         t = ep.trajectories[n.name]
-        how = {"rehome": "실측 → 경로 재계획 → 재생 → 정착", "carry": "실측 → ready_carry 이송 계획 · 검사 → 두 팔 재생",
+        how = {"rehome": "실측 → 경로 재계획 → 재생 → 정착",
+               "carry": "실측 → ready_carry 이송 계획 · 검사 → 재생" + ("" if t.cups else " (빈손)"),
                "tilt": "실측 → D4 기본 궤적 IK · 검사 → 두 팔 재생 → 복귀"}
         return [f"{n.name} · 팔 {', '.join(t.sides)}", how.get(t.kind, t.kind)]
+    if n.type == "confirm":
+        return [n.text]
+    if n.type == "hand":
+        return [{"open": "손 펴기", "grasp": "닿을 때까지 닫기 → 막힘 래치 쥠 → 3 s 유지"}[n.action] + f" · {', '.join(n.sides)}"]
     if n.type == "snapshot":
         return [f"FP++ {', '.join(ep.objects)}", "정지 · 신선 1.5 s 중앙값"]
     if n.type == "terminal":

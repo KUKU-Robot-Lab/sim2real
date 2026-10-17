@@ -43,16 +43,18 @@ class Approvals:
     def __init__(self, path: Path, since: float) -> None:
         self.path, self.since, self.used = path, since, set()
 
-    def take(self, what: str) -> bool:
+    def take(self, what: str, since: float | None = None) -> bool:
+        """since = 이 시각 뒤에 쓰인 승인만(없으면 노드가 뜬 뒤 전부)."""
         if not self.path.is_file():
             return False
+        floor = self.since if since is None else max(self.since, float(since))
         for i, line in enumerate(self.path.read_text(encoding="utf-8").splitlines()):
             try:
                 row = json.loads(line)
             except ValueError:
                 continue
             key = (i, row.get("what"), row.get("t"))
-            if row.get("what") == what and float(row.get("t", 0)) >= self.since and key not in self.used:
+            if row.get("what") == what and float(row.get("t", 0)) >= floor and key not in self.used:
                 self.used.add(key)
                 return True
         return False
@@ -115,7 +117,10 @@ def _main_node():
             self.manager = EpisodeManager(self.ep, ex, approve=self._approve, log=log, episode_id=eid)
 
         def _approve(self, what: str, why: str) -> bool:
-            ok = self.auto or self.approvals.take(what)
+            # ★10.17 확인 노드(경로 B)는 그 노드에 온 뒤 쓰인 승인만 받는다 — 옛 승인 줄이 나중에 저절로 통과하지 않게
+            node = self.manager.node if self.manager is not None else None
+            since = self.manager.node_since if node is not None and node.type == "confirm" and node.id == what else None
+            ok = self.auto or self.approvals.take(what, since)
             self.get_logger().info(f"승인 {'✓' if ok else '없음'} {what} — {why}")
             return ok
 

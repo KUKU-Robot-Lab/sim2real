@@ -96,14 +96,17 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
     assert aglt.ros == ("/rh_aglt_node_right", "/rh_aglt_node_right_poll")    # 센서는 폴링 노드가 구독한다
     assert set(aglt.units) == {"policy_aglt_right#4", "episode_pick_place_right#3", "episode_grasp_rg3_right#3",
                                "episode_grasp_c_right#3",                       # 10.17 경로 C(접근 정책 + 스크립트 파지)
-                               "episode_tilt_base_a#3"} & set(units)            # 10.17 tilt 기본 궤적 경로 A(두 손 잡기)
+                               "episode_tilt_base_a#3",                         # 10.17 tilt 기본 궤적 경로 A(두 손 잡기)
+                               "episode_tilt_base_c#3"} & set(units)            # 10.17 tilt 기본 궤적 경로 C
     place = d.box("rh_place_node_right")
     assert set(place.units) == {"policy_place_right#1", "episode_pick_place_right#4"}
     runner = d.box("episode_runner")
     assert set(runner.units) == {"episode_pick_place_right#7", "episode_pick_place_left#7",
                               "episode_grasp_rg3_right#6", "episode_grasp_rg3_left#6",
                               "episode_grasp_c_right#6", "episode_grasp_c_left#6",
-                              "episode_tilt_base_a#7"}   # 실기: 앞에 CPU 기록 한 줄(10.08) · tilt_base_a 는 정책 노드 둘
+                              "episode_tilt_base_a#7",   # 실기: 앞에 CPU 기록 한 줄(10.08) · tilt_base_a 는 정책 노드 둘
+                              "episode_tilt_base_c#7",   # 10.17 경로 C — 정책 노드 둘(A 와 같은 자리)
+                              "episode_tilt_base_b#5"}   # 10.17 경로 B — 정책 노드 없음(사람이 컵을 댄다)
 
 
 def test_one_arms_pd_without_and_with_publishing_is_one_box_and_only_the_quiet_one_mutes_the_drive(real):
@@ -372,8 +375,11 @@ def test_a_unitless_repeat_does_not_rename_the_box_and_a_new_command_merges_the_
 
 def test_a_handler_that_fails_after_joining_a_box_leaves_that_box_as_it_was(tmp_path):
     # 실행기 둘(우 · 좌 에피소드)이 같은 상자다. 두 번째가 상자에 제 명령을 더한 뒤 실패하면 그 명령은 상자에서 빠져야 한다
-    (tmp_path / "good.yaml").write_text(yaml.safe_dump({"objects": {"CUP": {"topic": "/objects/cyl60/pose"}}}), encoding="utf-8")
-    (tmp_path / "bad.yaml").write_text(yaml.safe_dump({"objects": {"CUP": {"name": "no topic"}}}), encoding="utf-8")
+    # 10.17 실행기는 배치 기록(snapshot)이 있는 에피소드에서만 컵 토픽을 받는다 — 두 파일 모두 snapshot 을 둔다
+    snap = [{"id": "s", "type": "snapshot"}]
+    (tmp_path / "good.yaml").write_text(yaml.safe_dump({"objects": {"CUP": {"topic": "/objects/cyl60/pose"}}, "sequence": snap}),
+                                        encoding="utf-8")
+    (tmp_path / "bad.yaml").write_text(yaml.safe_dump({"objects": {"CUP": {"name": "no topic"}}, "sequence": snap}), encoding="utf-8")
 
     def runner(key, path):
         return UnitCmd(key=key, stage=key.split("#")[0], index=6, note="", needs=(), kind="background", touches_real=False,
@@ -465,7 +471,7 @@ def test_the_fake_rh56f1_picture_has_the_real_pictures_boxes():
     assert missing <= {f"인지 런처 · {GEN.PERCEPTION_HOST}", "카메라 (RealSense)", "목 상태 (head)", "/objects/cup_holder_1/pose (바깥)", *(f"FPP 추적 · {g}" for g in (*_active_groups(), "source240b"))}, missing   # rg3 파지 에피소드의 오른 컵 = source240b
     extra = {b.title for b in fake.boxes} - titles
     # 10.13 원격 인지 실기에는 마커 노드가 없다 — fake 는 그대로 홀더 노드 상자를 그린다
-    assert extra <= {"pour_fj_node · 붓기 정책 (오른팔 · 왼팔)", *([W.HOLDER_TITLE] if GEN.REMOTE_PERCEPTION else [])}, extra
+    assert extra <= {"pour_fj_node · tilt 정책 (오른팔 · 왼팔)", *([W.HOLDER_TITLE] if GEN.REMOTE_PERCEPTION else [])}, extra
 
 
 def test_policy_nodes_and_the_runner_say_their_own_phase_and_the_bridge_listens():
@@ -522,3 +528,16 @@ def test_only_a_real_node_box_says_its_commands_run_one_at_a_time():
                          path=Path("p.yaml"))
     (box,) = build(_obs((), {}), fake, units={})["cols"][0]
     assert box["single"] is False                                               # fake 컵 대역 여럿은 같이 뜬다
+
+
+def test_an_episode_without_a_snapshot_draws_no_fpp_cup_for_the_runner(tmp_path):
+    # 10.17 경로 B(tilt_base_b): 사람이 컵을 손에 댄다 — 실행기가 FP++ 컵을 안 받으니 '끊긴 곳'으로 그리지 않는다
+    def runner(key, path):
+        return UnitCmd(key=key, stage=key.split("#")[0], index=5, note="", needs=(), kind="background", touches_real=False,
+                       argv=("python3", "/x/episode_runner_node.py", "--ros-args", "-p", f"episode:={path}"))
+
+    for name, want in (("tilt_base_b", False), ("tilt_base_a", True)):
+        d = W.generate({f"ep_{name[-1]}#5": runner(f"ep_{name[-1]}#5", SIM2REAL / "config" / "episodes" / f"{name}.yaml")},
+                       repo=SIM2REAL, status_nodes=())
+        cups = [w for w in d.wires if w.dst == "episode_runner" and w.topic.startswith("/objects/")]
+        assert bool(cups) is want, name

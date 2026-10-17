@@ -50,7 +50,8 @@ def main(argv=None) -> int:
         print(f"[episode] {ep.name} v{ep.version} · 노드 {len(ep.nodes)} · 물체 {list(ep.objects)} · 홀더 {dict(ep.holders)}")
         for n in ep.nodes:
             what = n.name if n.type in ("trajectory",) else " + ".join(
-                f"{j.role}→{ep.policies[j.role].policy or '없음'}" for j in n.jobs) or n.result or ""
+                f"{j.role}→{ep.policies[j.role].policy or '없음'}" for j in n.jobs) or n.result or (
+                f"{n.action} {','.join(n.sides)}" if n.type == "hand" else n.text[:40])
             print(f"  {n.id:<24} {n.type:<16} {what}  {json.dumps(dict(n.expect), ensure_ascii=False) if n.expect else ''}"
                   + (f"  [checkpoint {n.checkpoint}]" if n.checkpoint else ""))
         bad = {r: why for r, why in av.items() if why}
@@ -65,7 +66,10 @@ def main(argv=None) -> int:
                 print(f"  ✗ 홀더: {why}")
             if not holders and ep.holders:
                 print(f"  ✓ 홀더 {dict(ep.holders)} — {ep.holder_poses}")
-        return 1 if bad or holders else 0
+        hands = S.hand_problems(ep, _paths.SIM2REAL / "deploy" / "policies")      # ★10.17 경로 B 손 쥐기 계약
+        for nid, why in hands.items():
+            print(f"  {'✓' if not why else '✗'} 손 {nid}: {why or 'hand_contract 있음'}")
+        return 1 if bad or holders or any(hands.values()) else 0
     ex = FakeExecutor(ep, inject=_inject(args.inject))
     rows: list[dict] = []
     m = EpisodeManager(ep, ex, approve=lambda what, why: True, log=rows.append, episode_id="dry-run")

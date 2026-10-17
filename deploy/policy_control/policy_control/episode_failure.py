@@ -75,7 +75,7 @@ _REASON_RULES = (
 )
 
 
-def _from_reason(reason: str, b: Binding | None) -> FailureCode:
+def _from_reason(reason: str, b: Binding | None, side: str | None = None) -> FailureCode:
     r = reason.lower()
     for keys, kind in _REASON_RULES:
         if any(k.lower() in r for k in keys):
@@ -84,7 +84,7 @@ def _from_reason(reason: str, b: Binding | None) -> FailureCode:
             if kind == "target":
                 return F.LID_NOT_FOUND if b is not None and b.kind == "lock" else F.TARGET_NOT_FOUND
             if kind == "grasp":
-                return _side_code(b.side if b else "right", F.GRASP_FAILED_RIGHT, F.GRASP_FAILED_LEFT)
+                return _side_code(b.side if b else (side or "right"), F.GRASP_FAILED_RIGHT, F.GRASP_FAILED_LEFT)
             if kind == "pose":
                 return F.POSE_MISMATCH
             return F.CONTROLLER_ERROR if kind == "controller" else F.OBSERVATION_ERROR
@@ -109,12 +109,13 @@ class FailureDetector:
         if res.status == "error":
             return F.CONTROLLER_ERROR if node.type == "trajectory" else F.OBSERVATION_ERROR
         if res.status in ("refused", "aborted"):
-            return _from_reason(res.reason, b)
+            # ★10.17 손 노드(경로 B)는 정책 역할이 없다 — 팔은 노드 sides 로(못 쥠 = 그 손의 grasp_failed)
+            return _from_reason(res.reason, b, node.sides[0] if node.type == "hand" and node.sides else None)
         if res.status == "timeout":
             return F.POLICY_TIMEOUT
         if res.status != "completed":
             return F.UNKNOWN
-        if node.type == "trajectory" or b is None:
+        if node.type in ("trajectory", "hand") or b is None:
             return F.NONE
         side = b.side
         if b.kind == "aglt":

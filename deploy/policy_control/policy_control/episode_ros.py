@@ -4,6 +4,8 @@
          aglt 는 reset 뒤 /policy_control/<팔>/goal 에 SETTING 을 주고(노드 stop_on_target 이 도달 때 끝낸다), place 는 그대로.
   궤적   rehome = plan_rehome(실측 → RRT, 로봇 세계) → check_path_start → replay_to_pd --execute → pd goto_home 정착.
          물체를 든 손이 있는 팔은 거부한다(계획기가 든 컵을 모른다).
+         carry · tilt(10.17) = plan_<kind>.py(실측 → 계획 · 검사, 움직이지 않음) → replay_to_pd(그 팔 관절) — 손 상태(cups)가 다르면 거부.
+  손     hand open = pd hand_release(빈손에서만) · hand grasp = tools/hand_grasp.py(팔 제자리, 닿을 때까지 닫고 쥔 판정) — 10.17 경로 B.
   배치   snapshot = 물체 토픽(FP++)을 창(1.5 s) 동안 모아 정지 · 신선이면 중앙값을 기록 → /episode/objects/<이름>/pose 로
          30 Hz 다시 낸다(집기 전 정지 컵 — 10.04 사용자 "처음에 FP++ 로 각 컵 배치를 한 번에 기록"). 집힌 물체는 그만 낸다.
   홀더   고정(10.04 사용자) — holder_poses 파일(cup_holder_pose_node --write)을 /objects/cup_holder_<id>/pose 로 latched 발행.
@@ -56,6 +58,11 @@ def reset_until_cup_fresh(call, *, retry_s: float = RESET_CUP_RETRY_S, step_s: f
             return ok, why
         sleep(step_s)
 SEAT_DZ_CYL60 = HOLDER_FLOOR_Z + 0.085
+HAND_OPEN_WAIT_S = 3.0            # 손 펴기 — RH56F1 전 행정 약 1 s(벤더 speedSet 기본) + 여유. 그 안에 실측이 펴져야 한다
+HAND_OPEN_TOL_RAD = 0.15          # 펴짐 = 엄지 굽힘 · 네 손가락이 0(편 끝)에서 이 안(엄지 회전은 보지 않는다). pd 홈 손 경로 검사와 같은 값
+                                  # (pd 는 손 목표를 한계 안쪽 0.05 로 물린다 — fake 실측 0.07~0.09 에서 섰다)
+HAND_OPEN_AXES = ("thumb_2", "index_1", "middle_1", "ring_1", "pinky_1")
+HAND_STATE = "/hand_{side}/joint_states"   # rh56f1_state_node — canonical r_hj_* · l_hj_*
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
 SIDES = ("right", "left")
 NODES = {"aglt": "rh_aglt_node", "place": "rh_place_node"}
@@ -117,6 +124,7 @@ class RosExecutor:
         self._status: dict[str, dict] = {}
         self._pd: dict[str, dict] = {}
         self._frames: dict[str, list] = {name: [] for name in ep.objects}
+        self._hand: dict[str, dict] = {s: {} for s in SIDES}   # ★10.17 손 실측(손 펴짐 확인) — 이름 → (rad, 시각)
         self._goal_result: dict[str, dict] = {}
         self._relay: dict[str, tuple] = {}            # 물체 → (pos, quat) — snapshot 뒤 집힐 때까지
         self._proc: subprocess.Popen | None = None
@@ -131,8 +139,12 @@ class RosExecutor:
             for kind in ("rh_aglt_node", "rh_place_node"):
                 name = f"{kind}_{side}"
                 node.create_subscription(String, f"{NS}/status/{name}", self._on_json(self._status, name), QoSProfile(depth=10))
-        for name, obj in ep.objects.items():
+        for name, obj in ep.objects.items() if any(n.type == "snapshot" for n in ep.nodes) else ():   # 경로 B 는 FP++ 를 안 받는다
             node.create_subscription(PoseStamped, obj["topic"], self._on_frame(name), qos_profile_sensor_data)
+        if any(n.type == "hand" for n in ep.nodes):
+            from sensor_msgs.msg import JointState
+            for side in SIDES:
+                node.create_subscription(JointState, HAND_STATE.format(side=side), self._on_hand(side), qos_profile_sensor_data)
         self._goal_pub = {s: node.create_publisher(Point, f"{NS}/{s}/goal", QoSProfile(depth=10)) for s in SIDES}
         self._relay_pub = {name: node.create_publisher(PoseStamped, OBJECT_RELAY.format(name), 10) for name in ep.objects}
         self._holder_pub = {}
@@ -161,6 +173,22 @@ class RosExecutor:
             with self._lock:
                 store[key] = {**body, "_t": time.monotonic()}
         return cb
+
+    def _on_hand(self, side: str):
+        def cb(msg) -> None:
+            now = time.monotonic()
+            with self._lock:
+                self._hand[side].update({n: (float(p), now) for n, p in zip(msg.name, msg.position)})
+        return cb
+
+    def _hand_open_err(self, side: str) -> float | None:
+        """펴짐 오차 max |q| [rad](엄지 굽힘 · 네 손가락) — 실측이 0.5 s 안에 없으면 None."""
+        names = [f"{side[0]}_hj_{a}" for a in HAND_OPEN_AXES]
+        with self._lock:
+            got = [self._hand[side].get(n) for n in names]
+        if any(g is None or time.monotonic() - g[1] > 0.5 for g in got):
+            return None
+        return max(abs(g[0]) for g in got)
 
     def _on_frame(self, name: str):
         def cb(msg) -> None:
@@ -452,22 +480,28 @@ class RosExecutor:
         return NodeResult("completed", "", time.monotonic() - t0)
 
     def _run_planned(self, node: Node, traj, world) -> NodeResult:
-        """10.17 carry(ready_carry → 붓기 시작 자세) · tilt(D4 기본 궤적 + 복귀): 두 팔 실측에서 계획 · 검사(움직이지 않음)
-        → 14 관절을 한 시각표로 재생. 계획 · 검사 실패(rc ≠ 0)면 움직이지 않고 refused. 손 목표는 그대로(팔 관절만 보낸다)."""
+        """10.17 carry(ready_carry → 붓기 시작 자세, 한 팔씩 또는 두 팔) · tilt(D4 기본 궤적 + 복귀, 두 팔): 실측에서 계획 · 검사
+        (움직이지 않음) → 그 팔 관절을 한 시각표로 재생. 계획 · 검사 실패(rc ≠ 0)면 움직이지 않고 refused. 손 목표는 그대로
+        (팔 관절만 보낸다). cups = 그 팔 손이 컵을 쥐었을 때만(False = 빈손일 때만 — 경로 B 는 컵 없이 시작 자세로 간다)."""
         t0 = time.monotonic()
-        for side in SIDES:
+        sides = [s for s in SIDES if s in traj.sides]
+        for side in sides:
             if not self._wait_pd_tracking(side):
                 pd = self._pd_view(side)
                 return NodeResult("error", f"pd_{side} 가 TRACKING 이 아니다 · {pd['pd_phase']} {pd['pd_reasons']}",
                                   signals={"pd_fault": pd["pd_phase"] or "unknown"})
-            if world.hand(side) == EMPTY:
-                return NodeResult("refused", f"{traj.kind}: {side} 손이 비었다 — 두 손이 컵을 쥔 상태에서만(손 안 컵 자리 기준)")
+            held = world.hand(side)
+            if traj.cups and held == EMPTY:
+                return NodeResult("refused", f"{traj.kind}: {side} 손이 비었다 — 컵을 쥔 상태에서만(손 안 컵 자리 기준)")
+            if not traj.cups and held != EMPTY:
+                return NodeResult("refused", f"{traj.kind}(빈손): {side} 손에 {held} — 빈손 이송은 손이 빈 때만")
         asset = TRAJ_ASSETS / traj.asset
         cfg = yaml.safe_load((asset / "policy.yaml").read_text(encoding="utf-8")) or {}
         out = self.run_dir / f"{traj.kind}_{node.id}"
-        joints = ",".join([f"r_aj_{i}" for i in range(1, 8)] + [f"l_aj_{i}" for i in range(1, 8)])
+        joints = ",".join(f"{s[0]}_aj_{i}" for s in sides for i in range(1, 8))
+        side_arg = ["--sides", ",".join(sides)] if traj.kind == "carry" else []
         steps = [
-            [sys.executable, str(TOOLS / f"plan_{traj.kind}.py"), "--asset", str(asset), "--out", str(out)],
+            [sys.executable, str(TOOLS / f"plan_{traj.kind}.py"), "--asset", str(asset), "--out", str(out), *side_arg],
             [sys.executable, str(TOOLS / "replay_to_pd.py"), "--npz", str(out / f"{traj.kind}_cmd.npz"), "--joints", joints,
              "--rate-scale", repr(float(traj.rate_scale)), "--max-start-gap", repr(float(cfg.get("start_gap_rad", 0.05))),
              "--execute"],
@@ -480,6 +514,54 @@ class RosExecutor:
                 status = "refused" if k == 0 else "error"
                 return NodeResult(status, f"{Path(argv[1]).name} rc {rc}: {tail}", time.monotonic() - t0)
         return NodeResult("completed", "", time.monotonic() - t0)
+
+    def run_hand(self, node: Node, world) -> NodeResult:
+        """★10.17 경로 B: open = 손을 계약 홈 손(편 손)으로(pd hand_release, 팔은 pd 가 그 자리에 붙든 채) — 빈손에서만.
+        grasp = 한 손을 닿을 때까지 닫고 쥔 판정 · 3 s 유지(tools/hand_grasp.py, 팔 제자리). 못 쥐면 aborted(not grasped)."""
+        t0 = time.monotonic()
+        for side in node.sides:
+            if not self._wait_pd_tracking(side):
+                pd = self._pd_view(side)
+                return NodeResult("error", f"pd_{side} 가 TRACKING 이 아니다 · {pd['pd_phase']} {pd['pd_reasons']}",
+                                  signals={"pd_fault": pd["pd_phase"] or "unknown"})
+            if world.hand(side) != EMPTY:
+                return NodeResult("refused", f"hand {node.action}: {side} 손에 {world.hand(side)} — 빈손에서만(펴면 떨어진다)")
+        if node.action == "open":
+            for side in node.sides:
+                rc, tail = self._run([sys.executable, str(TOOLS / "trigger.py"), "pd/hand_release", "--side", side, "--execute"])
+                if self.cancel.is_set():
+                    return NodeResult("aborted", "episode runner stop", time.monotonic() - t0)
+                if rc != 0:
+                    pd = self._pd_view(side)
+                    return NodeResult("error", f"hand_release {side} 거부 · pd {pd['pd_phase']} {pd['pd_reasons']}: {tail}",
+                                      time.monotonic() - t0)
+            deadline = time.monotonic() + HAND_OPEN_WAIT_S        # 리뷰: 대기만 하지 않고 실측이 펴졌는지 본다
+            errs: dict = {}
+            while time.monotonic() < deadline and not self.cancel.is_set():
+                errs = {side: self._hand_open_err(side) for side in node.sides}
+                if all(e is not None and e <= HAND_OPEN_TOL_RAD for e in errs.values()):
+                    return NodeResult("completed", f"손 펴짐 {errs}", time.monotonic() - t0)
+                time.sleep(0.1)
+            if self.cancel.is_set():
+                return NodeResult("aborted", "episode runner stop", time.monotonic() - t0)
+            return NodeResult("error", f"손이 {HAND_OPEN_WAIT_S:.0f} s 안에 안 펴졌다 — max|q| {errs}(허용 {HAND_OPEN_TOL_RAD} rad, "
+                                       f"None = 손 실측 없음)", time.monotonic() - t0)
+        side = node.sides[0]
+        contract = _paths.SIM2REAL / "deploy" / "policies" / node.hand_contract / "rh_aglt_contract.json"
+        if not contract.is_file():
+            return NodeResult("refused", f"hand grasp: {contract} 가 없다(hand_contract {node.hand_contract})")
+        rc, tail = self._run([sys.executable, str(TOOLS / "hand_grasp.py"), "--side", side, "--contract", str(contract),
+                              "--cfg", json.dumps(dict(node.cfg)), "--out", str(self.run_dir / f"hand_{node.id}"), "--execute"])
+        dur = time.monotonic() - t0
+        if self.cancel.is_set():
+            return NodeResult("aborted", "episode runner stop", dur)
+        if rc == 0:
+            return NodeResult("completed", tail, dur)
+        if rc == 2:                                    # 못 쥠 — 들지 않았다(손은 그 자리, pd 가 붙든다)
+            return NodeResult("aborted", f"hand_grasp rc 2: {tail}", dur)
+        if rc == 3:
+            return NodeResult("error", f"hand_grasp rc 3: {tail}", dur, signals={"pd_fault": self._pd_view(side)["pd_phase"] or "pd"})
+        return NodeResult("error", f"hand_grasp rc {rc}: {tail}", dur)
 
     def _run(self, argv: list) -> tuple[int, str]:
         log = self.run_dir / "tools.log"

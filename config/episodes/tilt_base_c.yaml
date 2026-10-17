@@ -1,0 +1,29 @@
+# tilt 기본 궤적 실기 평가 — 경로 C(접근 정책 + 스크립트 파지) · 10.17 사용자 결정 5 · 7 · 8 · 9 · 12 (docs/PLAN_GRASP_TILT_EVAL_2026-10-17.md)
+# 경로 A(rg3wo)가 쪽당 4/5 미만일 때 쓴다(결정 5). 잡기는 grasp_c_{right,left} 와 같다:
+#   접근 정책(rg3wc ep800 원본, 손을 편 채 다가감) → 손바닥–컵 ≤ 6 cm · 팔 정지 0.5 s(또는 15 s)에 정책을 끈다 → 손을 닫고
+#   막힘 래치로 쥔 판정(네 손가락 2 개 + 8 cm, 0.25 s) → 10 cm 수직 들기 → 3 s 유지. 못 쥐면 들지 않고 멈춘다(abort).
+# 그 뒤는 경로 A 와 같다: ready_carry 로 붓기 시작 자세(한 팔씩, 오른팔 → 왼팔) → D4 기본 궤적(잔차 0, 1 배속) + 복귀 → 끝.
+# 비드 10 개를 병에 넣고 시작한다(결정 11). 끝난 뒤 옮긴 · 흘린 비드를 센다(tools/eval_record.py tilt) — 손을 펴거나 홈으로 가는 것은
+# 운영자가 한다. 값 조정: policies.<역할>.approach_grasp 에 키: 값(approach_grasp.ApproachGraspCfg).
+episode: {name: tilt_base_c, version: 1}
+objects:
+  SRC: {topic: /objects/source240b_blue/pose}
+  RCV: {topic: /objects/shaker_c_orange/pose}
+policies:
+  rh_aglt_r: {policy: rh56f1/aglt/right_approach_rg3wc, kind: aglt, side: right, approach_grasp: {}}
+  rh_aglt_l: {policy: rh56f1/aglt/left_approach_rg3wc, kind: aglt, side: left, approach_grasp: {}}
+trajectories:
+  go_home: {kind: rehome, sides: [right, left]}
+  to_tilt_start_r: {kind: carry, sides: [right], asset: tilt/base_arc6}
+  to_tilt_start_l: {kind: carry, sides: [left], asset: tilt/base_arc6}
+  tilt: {kind: tilt, sides: [right, left], asset: tilt/base_arc6, rate_scale: 1.0}
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 판단한다(컵을 쥔 채 rehome 은 거부된다).
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  - {id: grasp_right, type: policy, name: rh_aglt_r, target_object: SRC, policy_object: source240_real, expect: {right_hand: SRC}}
+  - {id: grasp_left, type: policy, name: rh_aglt_l, target_object: RCV, policy_object: shaker_c_real, expect: {left_hand: RCV}}
+  - {id: to_tilt_start_r, type: trajectory, name: to_tilt_start_r}
+  - {id: to_tilt_start_l, type: trajectory, name: to_tilt_start_l, expect: {pose: SETTING}}
+  - {id: tilt, type: trajectory, name: tilt, expect: {pose: SETTING}}
+  - {id: done, type: terminal, result: SUCCESS}

@@ -13,7 +13,14 @@
     sequence 의 aglt 단계(또는 parallel_policy 항목)에 policy_object: source240_real — 다물체 정책(rg3)의 물체 one-hot(10.12)
     trajectories: {go_home: {kind: rehome, sides: [right, left]}}
     failure_policy: {default: 1, rh_aglt_r: 2}     # 노드당 재시도 상한(Step 2)
-    sequence: [ {id, type: snapshot|trajectory|policy|parallel_policy|terminal, name, ..., expect: {...}, checkpoint: NAME} ]
+    sequence: [ {id, type: snapshot|trajectory|policy|parallel_policy|confirm|hand|terminal, name, ..., expect: {...}, checkpoint: NAME} ]
+
+★10.17 경로 B(수동 파지, docs/PLAN_GRASP_TILT_EVAL_2026-10-17.md) 노드 둘:
+    confirm  {id, type: confirm, text: "운영자가 확인할 것"} — 로봇을 움직이지 않는다. 연속 실행도 여기서 멈추고 이 노드 이름의
+             승인을 따로 받는다(사용자 "확인 두 번 — 컵 대기 전, 닫기 전").
+    hand     {id, type: hand, action: open, sides: [right, left]} — 팔은 제자리, 손을 계약 홈 손(편 손)으로(pd hand_release).
+             {id, type: hand, action: grasp, sides: [right], hand_contract: <aglt 정책 id>, expect: {right_hand: SRC}}
+             — 팔은 제자리, 손을 닿을 때까지 닫고 막힘 래치로 쥔 판정(tools/hand_grasp.py · 경로 C 와 같은 규칙). 빈손에서만.
 
 snapshot = 10.04 사용자 "처음에 FP++ 로 각 컵들 배치를 한번에 기록" — objects 의 자세를 한 번에 재서(정지 · 신선) 기록하고,
 그 뒤 정책은 그 기록을 본다(컵은 잡히기 전까지 움직이지 않는다 · 잡은 뒤는 손바닥 FK).
@@ -27,12 +34,15 @@ from typing import Mapping
 
 import yaml
 
-NODE_TYPES = ("snapshot", "trajectory", "policy", "parallel_policy", "terminal")
+NODE_TYPES = ("snapshot", "trajectory", "policy", "parallel_policy", "confirm", "hand", "terminal")
+HAND_ACTIONS = ("open", "grasp")
 KINDS = ("aglt", "place", "pour", "lock", "shake")
 SIDES = ("right", "left", "both")
 TRAJ_KINDS = ("rehome", "noop", "carry", "tilt")
-#: 10.17 두 팔 실측에서 계획 · 검사한 뒤 14 관절을 한 번에 재생하는 궤적(tools/plan_<kind>.py → replay_to_pd).
-#: carry = 잡기 뒤 ready_carry 로 붓기 시작 자세(SETTING)까지 · tilt = D4 기본 궤적(잔차 0) + 복귀. 자산 = config/<asset>/policy.yaml
+#: 10.17 실측에서 계획 · 검사한 뒤 재생하는 궤적(tools/plan_<kind>.py → replay_to_pd).
+#: carry = 잡기 뒤 ready_carry 로 붓기 시작 자세(SETTING)까지 — 한 팔씩(sides: [right]) 또는 두 팔(계획 경로 A "한 팔씩").
+#:   cups: false = 빈손으로(경로 B, 사람이 컵을 손에 댄다 — 컵 없이 같은 경로).
+#: tilt = D4 기본 궤적(잔차 0) + 복귀, 두 팔 14 관절 한 시각표 · 두 손이 컵을 쥔 때만. 자산 = config/<asset>/policy.yaml
 PLANNED_TRAJ = ("carry", "tilt")
 TRAJ_ASSETS = Path(__file__).resolve().parents[1] / "config"
 POSES = ("HOME", "SETTING")
@@ -74,6 +84,11 @@ class Node:
     expect: Mapping = field(default_factory=dict)
     checkpoint: str | None = None
     result: str | None = None     # terminal
+    text: str = ""                # confirm — 운영자가 확인할 것
+    action: str = ""              # hand — open | grasp
+    sides: tuple = ()             # hand — 팔들(grasp 는 하나)
+    hand_contract: str = ""       # hand grasp — 손 열림 · 쥠 자세 · 막힘 명목값을 줄 aglt 정책(등록부 id)
+    cfg: Mapping = field(default_factory=dict)   # hand grasp — 닫기 · 판정 값 덮어쓰기(tools/hand_grasp.GraspCfg)
 
 
 @dataclass(frozen=True)
@@ -83,6 +98,7 @@ class Trajectory:
     sides: tuple
     asset: str = ""              # carry · tilt: config/ 기준 자산 폴더(policy.yaml · ref/)
     rate_scale: float = 1.0      # carry · tilt 재생 배속(0, 1]
+    cups: bool = True            # carry · tilt: 그 팔 손이 컵을 쥐었을 때만(False = 빈손일 때만, carry 만)
 
 
 @dataclass(frozen=True)
@@ -134,8 +150,39 @@ def _node(raw: Mapping, i: int) -> Node:
             raise EpisodeSpecError(f"{where}: parallel_policy 는 정책 둘 이상")
     elif t == "trajectory" and not raw.get("name"):
         raise EpisodeSpecError(f"{where}: trajectory name 이 없다")
+    elif t == "confirm" and not str(raw.get("text") or "").strip():
+        raise EpisodeSpecError(f"{where}: confirm 은 text(운영자가 확인할 것)가 있어야 한다")
+    elif t == "hand":
+        _check_hand(raw, where)
     return Node(id=str(raw["id"]), type=t, name=str(raw.get("name") or ""), jobs=jobs, expect=dict(raw.get("expect") or {}),
-                checkpoint=raw.get("checkpoint"), result=raw.get("result"))
+                checkpoint=raw.get("checkpoint"), result=raw.get("result"), text=str(raw.get("text") or ""),
+                action=str(raw.get("action") or ""), sides=tuple(raw.get("sides") or ()),
+                hand_contract=str(raw.get("hand_contract") or ""), cfg=dict(raw.get("cfg") or {}))
+
+
+def _check_hand(raw: Mapping, where: str) -> None:
+    action, sides = raw.get("action"), list(raw.get("sides") or [])
+    if action not in HAND_ACTIONS:
+        raise EpisodeSpecError(f"{where}: hand action 은 {HAND_ACTIONS}")
+    if not sides or any(s not in ("right", "left") for s in sides) or len(set(sides)) != len(sides):
+        raise EpisodeSpecError(f"{where}: hand sides 는 right · left 중 겹치지 않게")
+    if action == "grasp":
+        if len(sides) != 1:
+            raise EpisodeSpecError(f"{where}: hand grasp 는 한 손씩 — sides: [right] 또는 [left]")
+        if not raw.get("hand_contract"):
+            raise EpisodeSpecError(f"{where}: hand grasp 는 hand_contract(손 자세 · 막힘 명목값을 줄 aglt 정책 id)가 필요하다")
+        key = f"{sides[0]}_hand"
+        if not (raw.get("expect") or {}).get(key) or (raw.get("expect") or {}).get(key) == EMPTY:
+            raise EpisodeSpecError(f"{where}: hand grasp 는 expect.{key} 에 쥘 물체 이름을 둔다")
+        if not isinstance(raw.get("cfg") or {}, Mapping):
+            raise EpisodeSpecError(f"{where}: hand grasp cfg 는 {{키: 값}}")
+        from policy_control.hand_grasp import GraspCfg, HandGraspError     # 무거운 의존은 쓸 때만
+        try:
+            GraspCfg.from_mapping(raw.get("cfg") or {})
+        except HandGraspError as exc:
+            raise EpisodeSpecError(f"{where}: {exc}") from exc
+    elif raw.get("hand_contract") or raw.get("cfg"):
+        raise EpisodeSpecError(f"{where}: hand open 은 hand_contract · cfg 를 받지 않는다")
 
 
 #: 실기 FP++ 활성 물체(scripts/ops/fpp_object.py activate) — 에피소드 objects 의 {active: <팔>} 이 이것을 따른다(10.09)
@@ -202,19 +249,33 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
 
 
 def _trajectory(name: str, t: Mapping) -> Trajectory:
+    cups = t.get("cups", True)
+    if not isinstance(cups, bool):
+        raise EpisodeSpecError(f"trajectories.{name}: cups 는 true/false")
     tr = Trajectory(name=name, kind=str(t["kind"]), sides=tuple(t.get("sides") or ("right", "left")),
-                    asset=str(t.get("asset") or ""), rate_scale=float(t.get("rate_scale", 1.0)))
+                    asset=str(t.get("asset") or ""), rate_scale=float(t.get("rate_scale", 1.0)), cups=cups)
     if tr.kind not in PLANNED_TRAJ:
-        if tr.asset:
-            raise EpisodeSpecError(f"trajectories.{name}: asset 은 {PLANNED_TRAJ} 에만")
+        if tr.asset or "cups" in t:
+            raise EpisodeSpecError(f"trajectories.{name}: asset · cups 는 {PLANNED_TRAJ} 에만")
         return tr
-    if tuple(tr.sides) != ("right", "left"):
-        raise EpisodeSpecError(f"trajectories.{name}: {tr.kind} 는 두 팔 한 번에 — sides: [right, left]")
+    if tr.kind == "tilt" and (tuple(tr.sides) != ("right", "left") or not tr.cups):
+        raise EpisodeSpecError(f"trajectories.{name}: tilt 는 두 팔 한 번에, 두 손이 컵을 쥔 채 — sides: [right, left] · cups: true")
+    if tr.kind == "carry" and tuple(tr.sides) not in (("right",), ("left",), ("right", "left")):
+        raise EpisodeSpecError(f"trajectories.{name}: carry sides 는 [right] · [left] · [right, left]")
     if not tr.asset or not (TRAJ_ASSETS / tr.asset / "policy.yaml").is_file():
         raise EpisodeSpecError(f"trajectories.{name}: asset {tr.asset!r} 에 policy.yaml 이 없다({TRAJ_ASSETS})")
     if not 0.0 < tr.rate_scale <= 1.0:
         raise EpisodeSpecError(f"trajectories.{name}: rate_scale 은 (0, 1] — {tr.rate_scale}")
     return tr
+
+
+def episode_sides(ep: Episode) -> list[str]:
+    """에피소드가 움직이는 팔(정책 · 실행 노드의 궤적 · 손 노드) — 미션 단계가 그 팔 홈 · pd 를 기다린다. 우 → 좌 순."""
+    used = {ep.policies[j.role].side for n in ep.nodes for j in n.jobs if j.role in ep.policies}
+    used |= {s for n in ep.nodes if n.type == "trajectory" and n.name in ep.trajectories for s in ep.trajectories[n.name].sides}
+    used |= {s for n in ep.nodes if n.type == "hand" for s in n.sides}
+    out = [s for s in ("right", "left") if s in used or "both" in used]
+    return out
 
 
 def load(path: str | Path) -> Episode:
@@ -270,6 +331,18 @@ def validate(ep: Episode) -> None:
                 errs.append(f"{n.id}: policy_object {j.policy_object!r} 는 {OBJECT_KINDS} 정책 단계에만(물체 one-hot 이름)")
         if n.type == "trajectory" and n.name not in ep.trajectories:
             errs.append(f"{n.id}: trajectory {n.name!r} 가 trajectories 에 없다")
+        if n.type in ("confirm", "terminal") and (n.expect or n.checkpoint):
+            errs.append(f"{n.id}: {n.type} 는 expect · checkpoint 를 받지 않는다")
+        if n.type == "hand" and n.action == "open" and any(k in n.expect for k in HAND_KEYS):
+            errs.append(f"{n.id}: hand open 은 빈손에서만 한다 — expect 에 손 물체를 두지 않는다")
+        if n.type == "hand" and n.action == "grasp":
+            i = ep.nodes.index(n)
+            # 사용자 "확인 두 번(컵 대기 전, 닫기 전)" — 바로 앞 두 노드가 confirm 이어야 한다(YAML 편집 실수로 빠지지 않게)
+            if i < 2 or any(ep.nodes[k].type != "confirm" for k in (i - 2, i - 1)):
+                errs.append(f"{n.id}: hand grasp 바로 앞에 confirm 두 개(컵 대기 전 · 닫기 전)가 있어야 한다")
+            # 재시도 · 되돌아가기는 확인 없이 다시 닫거나 사람이 컵을 든 채 팔을 옮긴다(리뷰) — 실패면 언제나 정지
+            if ep.max_retry(n) != 0:
+                errs.append(f"{n.id}: hand grasp 는 재시도 상한 0 이어야 한다(failure_policy default 0) — 실패면 정지")
         pose = n.expect.get("pose")
         if pose is not None and pose not in POSES:
             errs.append(f"{n.id}: expect.pose {pose!r} 는 {POSES}")
@@ -280,7 +353,7 @@ def validate(ep: Episode) -> None:
         bad = [k for k, v in flags.items() if not isinstance(v, bool)]
         if bad:
             errs.append(f"{n.id}: 진행 플래그는 true/false: {bad}")
-        if n.checkpoint is not None and n.type not in ("snapshot", "trajectory", "policy", "parallel_policy"):
+        if n.checkpoint is not None and n.type not in ("snapshot", "trajectory", "policy", "parallel_policy", "hand"):
             errs.append(f"{n.id}: checkpoint 는 실행 노드에만")
         sides = [ep.policies[j.role].side for j in n.jobs if j.role in ep.policies]
         if n.type == "parallel_policy" and len(set(sides)) != len(sides):
@@ -308,6 +381,25 @@ def availability(ep: Episode, entries: Mapping[str, object]) -> dict[str, str]:
             out[role] = f"{b.policy}: " + " / ".join(e.issues)
         else:
             out[role] = _object_problem(ep, role, e)
+    return out
+
+
+def hand_problems(ep: Episode, policies_root: Path) -> dict[str, str]:
+    """★10.17 hand grasp 노드 → 못 쓰는 이유(쓸 수 있으면 ""). 계약 파일이 있고 그 손 계약이어야 한다(tools/hand_grasp.py 가 읽는다)."""
+    out = {}
+    for n in ep.nodes:
+        if n.type != "hand" or n.action != "grasp":
+            continue
+        p = Path(policies_root) / n.hand_contract / "rh_aglt_contract.json"
+        if not p.is_file():
+            out[n.id] = f"{p} 가 없다"
+            continue
+        try:
+            hand = list(((json.loads(p.read_text()).get("sides") or {}).get("arm") or {}).get("hand_joints") or [])
+        except (OSError, ValueError) as exc:
+            out[n.id] = f"{p}: 읽지 못함({exc})"
+            continue
+        out[n.id] = "" if hand and hand[0].startswith(n.sides[0][0] + "_") else f"{n.hand_contract} 는 {n.sides[0]} 손 계약이 아니다"
     return out
 
 

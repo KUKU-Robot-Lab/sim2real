@@ -80,7 +80,8 @@ OBJECT_RELAY = "/episode/objects/{}/pose"        # episode_ros.OBJECT_RELAY — 
 POLICY_NODES = {
     "rh_aglt_node.py": ("rh_aglt_node", "집기 정책", (("cup_topic", "/objects/aglt_cup_s065/pose"),)),
     "rh_place_node.py": ("rh_place_node", "놓기 정책", (("cup_topic", "/objects/cyl60/pose"),)),
-    "pour_fj_node.py": ("pour_fj_node", "붓기 정책", (("cup_src_topic", "/objects/cup_src/pose"),
+    # 10.17 사용자 결정 3: 화면 · 에피소드 · 보고서는 tilt(코드 모듈 pour_fj_node 이름은 그대로)
+    "pour_fj_node.py": ("pour_fj_node", "tilt 정책", (("cup_src_topic", "/objects/cup_src/pose"),
                                                     ("cup_rcv_topic", "/objects/cup_rcv/pose"))),
 }
 _POLICY_INPUTS = ("arm", "ee", "tip_force", "joint_force")     # pour_fj_node 가 robot yaml 에서 폴링하는 소스 역할
@@ -347,7 +348,7 @@ def _policy_node(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
     box = g.box(node, f"{node} · {what} ({arms})", L_POLICY, status=node, ros=[f"/{node}", POLICY_POLL_NODE.format(node=node)],
                 unit=key, own_status=True,
                 stages=[f"obs {contract.get('obs_dim', '?')}", f"policy → {contract.get('action_dim', '?')}", "decoder"])
-    g.tags[box] = what.split()[0]                                         # 집기 · 놓기 · 붓기
+    g.tags[box] = what.split()[0]                                         # 집기 · 놓기 · tilt
     for role, side in roles.items():
         for r, own, cfg in _sources(robot, side):
             if r in _POLICY_INPUTS:
@@ -378,7 +379,9 @@ def _episode_runner(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
                 note="정책 노드의 episode 서비스를 부른다 — 그림에는 토픽만 그린다")
     g.tags[box] = "실행기"
     stage = key.split("#")[0]
-    for name, spec in (episode.get("objects") or {}).items():
+    # ★10.17 배치 기록(snapshot)이 없는 에피소드(경로 B — 사람이 컵을 댄다)는 FP++ 컵을 받지 않는다(끊긴 곳으로 그리지 않는다)
+    perceives = any((n or {}).get("type") == "snapshot" for n in (episode.get("sequence") or []))
+    for name, spec in (episode.get("objects") or {}).items() if perceives else ():
         g.need(str(spec["topic"]), "object", "", box, [], STALE_MS, unit=key, how="link")
         relay = OBJECT_RELAY.format(name)
         g.providers.setdefault(relay, box)

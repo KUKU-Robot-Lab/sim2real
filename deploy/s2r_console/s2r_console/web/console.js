@@ -119,6 +119,7 @@ function renderAll() {
   renderFpp(s);
   renderPolicy(s);
   renderEpisode(s);
+  renderTilt(s);
   renderWorkspace();
   renderRobot(s);
   put("quick", stopButtons(s));
@@ -776,7 +777,8 @@ function renderFpp(s) {
 // 상자 = 노드(순서 번호 · 무엇 · 기대 상태 · 몇 번 돌았나 · 걸린 시간), 실선 = 다음 노드, 주황 점선 = 실패 시 되돌아가는 길.
 // 버튼: [다음](구분 실행 — 노드 이름 입력) · [연속 실행](episode:<이름> 한 번) · [새 에피소드] · ■ 정지(lease 없이).
 const EP_TONE = { READY: "", RUNNING: "warn", SUCCESS: "ok", FAILURE: "bad", STOPPED: "bad" };
-const EP_STATE = { pending: "대기", running: "실행 중", done: "완료", failed: "실패", recovering: "복구 대기", stopped: "정지" };
+const EP_STATE = { pending: "대기", running: "실행 중", done: "완료", failed: "실패", recovering: "복구 대기", stopped: "정지",
+                   waiting: "확인 대기" };
 let lastEpFlow = null, lastEpWires = "";
 
 function epNodeState(e, n, i) {
@@ -825,16 +827,94 @@ function renderEpisode(s) {
   // 사유가 "policy_timeout — 재시도 2/2 다 씀" 처럼 코드로 시작하면 코드를 한 번만 쓴다
   const lc = (e.last && e.last.code) || "", lr = String((e.last && e.last.reason) || "");
   const why = (lc && lr.startsWith(lc) ? lr.slice(lc.length) : lr).replace(/^\s*[—-]\s*/, "").trim();
-  const last = e.last && e.last.node ? `<div class="note${lc && lc !== "none" ? " warn" : ""}">${esc(e.last.node)} → <b>${esc(lc)}</b>${why ? ` — ${esc(why)}` : ""}</div>` : "";
+  // 확인 대기는 아래 conf 줄이 말한다 — 같은 문장을 두 번 쓰지 않는다
+  const last = e.last && e.last.node && lc !== "waiting_confirm" ? `<div class="note${lc && lc !== "none" ? " warn" : ""}">${esc(e.last.node)} → <b>${esc(lc)}</b>${why ? ` — ${esc(why)}` : ""}</div>` : "";
   const pend = e.pending ? `<div class="note warn">복구 대기: <b>${esc(e.pending.action)}</b> — ${esc(e.pending.reason)} · [다음] 으로 승인</div>` : "";
+  // 10.17 경로 B 확인 노드 — 연속 실행도 여기서 멈춘다. 확인할 것을 크게 보이고 [다음] 으로 승인한다
+  const conf = e.confirm ? `<div class="note warn epf-confirm">운영자 확인 <b>${esc(e.confirm.node)}</b> — ${esc(e.confirm.text)} · 확인했으면 [다음]</div>` : "";
   // .events li 는 3열 그리드(시각·점·본문) — 자식을 꼭 3개로 묶는다(ui-pages.md 사고 기록)
   const hist = (e.history || []).slice(-12).reverse().map((h) => `<li class="ev-episode"><time>${esc(String(h.timestamp || "").slice(11, 19))}</time><span class="ev-dot"></span>
     <span>${esc(h.event)} <b>${esc(h.state_id || "")}</b> ${esc(h.result || "")} <span class="hint">${esc(h.termination_reason || "")}</span></span></li>`).join("");
   put("epf-info", `<dl class="kv epf-kv"><dt>자세</dt><dd>${esc(w.pose)}</dd><dt>오른손</dt><dd>${esc(w.right_hand)}</dd>
     <dt>왼손</dt><dd>${esc(w.left_hand)}</dd><dt>진행</dt><dd>${esc((w.task_flags || []).join(", ") || "—")}</dd>
     <dt>물체</dt><dd>${objs}</dd><dt>기록</dt><dd class="hint">${esc(rel(e.run_dir || ""))}</dd></dl>
-    ${pend}${last}${det("ep-hist", "최근 기록", `<ol class="events">${hist}</ol>`)}`);
+    ${conf}${pend}${last}${det("ep-hist", "최근 기록", `<ol class="events">${hist}</ol>`)}`);
   requestAnimationFrame(drawEpWires);
+}
+
+// ── 10.17 policy 탭 tilt 평가(사용자 "policy 부분에 내가 말한 부분들이 시각화 잘되게") ─────────────────
+// 경로 A · C · B(에피소드 노드 순서 · 쓸 수 있는지 · 언제) → 지금 에피소드(위 epf 패널, 확인 대기) → 이번 실행 계획 검사 · 손 쥐기
+// → 회차 기록. 값은 서버 tilt_view 가 모은다(읽기만). 성공 · 실패는 색과 글자(✓ · ✗) 둘 다로 보인다.
+const TILT_NODE = { trajectory: "궤적", policy: "정책", parallel_policy: "정책", snapshot: "배치", confirm: "확인", hand: "손", terminal: "끝" };
+function tiltValue(v, unit) {
+  const one = (x) => (typeof x === "number" ? (Math.abs(x) >= 100 ? x.toFixed(0) : String(Number(x.toFixed(3)))) : esc(x ?? "—"));
+  const body = Array.isArray(v) ? v.map((x) => (Array.isArray(x) ? `[${x.map(one).join(", ")}]` : one(x))).join(" · ") : one(v);
+  return `${body}${unit ? ` <small>${esc(unit)}</small>` : ""}`;
+}
+function tiltPathCard(p, e) {
+  if (p.error) return `<article class="tilt-path bad"><header><b>경로 ${esc(p.key)}</b> ${esc(p.title)}</header><p class="bad">${esc(p.error)}</p></article>`;
+  const live = e && e.episode === p.episode, idx = live ? Number(e.index) : -1, done = live && ["SUCCESS", "FAILURE", "STOPPED"].includes(e.phase);
+  const st = (i) => (!live ? "" : i < idx || (done && e.phase === "SUCCESS") ? " done" : i === idx ? (e.confirm ? " wait" : e.busy ? " run" : " next") : "");
+  const chain = p.nodes.map((n, i) => `<li class="tn tn-${esc(n.type)}${st(i)}" title="${esc(n.line || n.title)}"><small>${esc(TILT_NODE[n.type] || n.type)}</small>${esc(n.id)}</li>`).join("");
+  const badge = live ? `<span class="badge ${e.phase === "FAILURE" || e.phase === "STOPPED" ? "bad" : e.phase === "SUCCESS" ? "ok" : "warn"}">실행 중 · ${esc(e.phase)}</span>`
+    : `<span class="badge ${p.ok ? "ok" : "bad"}">${p.ok ? "✓ 쓸 수 있음" : "✗ 못 씀"}</span>`;
+  const pols = Object.entries(p.policies || {}).map(([r, id]) => `${esc(r)} = ${esc(id || "—")}`).join(" · ");
+  return `<article class="tilt-path${live ? " live" : ""}${p.ok ? "" : " bad"}">
+    <header><b>경로 ${esc(p.key)}</b><span>${esc(p.title)}</span>${badge}</header>
+    <p class="hint">${esc(p.when)}${p.confirms ? ` · 확인 노드 ${p.confirms} 개(연속 실행도 멈춘다)` : ""}</p>
+    <ol class="tilt-chain">${chain}</ol>
+    <p class="tilt-foot">미션 단계 <code>${esc(p.stage)}</code>${pols ? ` · ${pols}` : " · 정책 없음(사람이 컵을 댄다)"}</p>
+    ${(p.problems || []).length ? `<ul class="reasons bad">${p.problems.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</article>`;
+}
+function tiltRunCard(c) {
+  const head = `<header><b>${esc(c.node)}</b><span>${esc({ carry: "이송 계획", tilt: "tilt 계획", hand: "손 쥐기" }[c.kind] || c.kind)}</span>
+    <span class="badge ${c.ok ? "ok" : "bad"}">${c.ok ? "✓ 통과" : "✗ 걸림"}</span>
+    ${c.T_end_s != null ? `<span class="meta">${fmt(c.T_end_s, 1)} s</span>` : ""}${c.tilt_max_deg != null ? `<span class="meta">최대 기울기 ${fmt(c.tilt_max_deg, 1)}°</span>` : ""}</header>`;
+  if (c.error) return `<article class="tilt-card bad">${head}<p>${esc(c.error)}</p></article>`;
+  if (c.kind === "hand") {
+    return `<article class="tilt-card${c.ok ? "" : " bad"}">${head}<dl class="kv"><dt>손</dt><dd>${esc(SIDE_KO[c.side] || c.side)}</dd>
+      <dt>결과</dt><dd>${esc(c.phase)}</dd><dt>래치 손가락</dt><dd>${esc(c.latched)}</dd><dt>이유</dt><dd>${esc(c.why || "—")}</dd></dl></article>`;
+  }
+  const rows = (c.rows || []).map((r) => `<tr class="${r.ok ? "ok" : "bad"}"><td>${esc(r.name)}</td><td>${tiltValue(r.value, r.unit)}</td>
+    <td>${r.limit == null ? "—" : tiltValue(r.limit, r.unit)}</td><td>${r.ok ? "✓" : "✗"}</td></tr>`).join("");
+  return `<article class="tilt-card${c.ok ? "" : " bad"}">${head}<table class="tilt-tbl"><thead><tr><th>검사</th><th>값</th><th>한계</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></article>`;
+}
+function renderTilt(s) {
+  const t = s.tilt, e = s.episode_runner;
+  for (const id of ["tilt-panel", "tilt-run-panel", "tilt-rec-panel"]) $(id).hidden = !t;
+  if (!t) return;
+  const paths = t.paths || [];
+  const ok = paths.filter((p) => p.ok).length;
+  put("tilt-meta", `${ok}/${paths.length} 경로 쓸 수 있음${e && String(e.episode || "").startsWith("tilt_base_") ? ` · 지금 ${esc(e.episode)} ${esc(e.phase)}` : ""}`
+    + ((t.errors || []).length ? ` · 집계 오류 ${t.errors.length}` : ""));
+  put("tilt-paths", paths.map((p) => tiltPathCard(p, e)).join("")
+    + ((t.errors || []).length ? `<ul class="reasons bad">${t.errors.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""));
+  const run = t.run;
+  $("tilt-run-panel").hidden = !run;
+  if (run) {
+    put("tilt-run-meta", `${esc(run.episode)} · ${esc(rel(run.run_dir))}`);
+    put("tilt-run", (run.cards || []).length ? run.cards.map(tiltRunCard).join("")
+      : `<p class="hint">아직 계획한 궤적 · 손 쥐기가 없다 — 이송 · tilt 노드가 돌면 여기에 검사 값이 뜬다(움직이기 전에 계산한다).</p>`);
+  }
+  const r = t.records;
+  if (!r) return;
+  const sum = r.summary || {}, tl = sum.tilt || {}, gr = sum.grasp || {};
+  put("tilt-rec-meta", `${esc(r.day)} · logs/eval_real`);
+  const tiltRows = (r.tilt || []).slice().reverse().map((x) => `<tr class="${x.success ? "ok" : "bad"}"><td>${esc(x.trial)}</td><td>${esc(x.path)}</td>
+    <td>${esc(x.in_rcv)}/${esc(x.n_beads)}</td><td>${esc(x.in_src)}</td><td>${esc(x.spilled)}</td><td>${x.success ? "✓ 성공" : "✗ 실패"}</td>
+    <td>${esc(x.grasp_right)} · ${esc(x.grasp_left)}</td><td>${esc(x.video || "—")}</td></tr>`).join("");
+  const graspRows = (r.grasp || []).slice().reverse().map((x) => `<tr class="${x.success ? "ok" : "bad"}"><td>${esc(x.trial)}</td><td>${esc(SIDE_KO[x.side] || x.side)}</td>
+    <td>${esc(x.result)}</td><td>${x.lift_cm == null ? "—" : fmt(x.lift_cm, 1) + " cm"}</td><td>${x.hold_s == null ? "—" : fmt(x.hold_s, 1) + " s"}</td><td>${x.success ? "✓" : "✗"}</td></tr>`).join("");
+  const tiles = [...Object.entries(tl).map(([k, v]) => `<div class="tilt-tile"><small>tilt 경로 ${esc(k)}</small><b>${esc(v.success)}/${esc(v.n)}</b>
+      <span>받는 비율 평균 ${fmt(v.fill_mean, 2)} · 흘림 ${esc(v.spilled_total)} 개</span></div>`),
+    ...Object.entries(gr).map(([k, v]) => `<div class="tilt-tile"><small>파지 확인 ${esc(SIDE_KO[k] || k)}</small><b>${esc(v.success)}/${esc(v.n)}</b>
+      <span>${v.n >= 5 ? (v.success >= 4 ? "4/5 이상 → 경로 A" : "4/5 미만 → 경로 C") : `${5 - v.n} 회 남음`}</span></div>`)].join("");
+  put("tilt-rec", `<div class="tilt-tiles">${tiles || '<p class="hint">오늘 기록이 없다.</p>'}</div>
+    <p class="tilt-rule"><b>tilt 성공</b> ${esc(r.criterion)}</p><p class="tilt-rule"><b>파지</b> ${esc(r.grasp_rule)}</p>
+    ${tiltRows ? `<table class="tilt-tbl"><thead><tr><th>회</th><th>경로</th><th>받는 컵</th><th>병에 남음</th><th>흘림</th><th>판정</th><th>파지 우 · 좌</th><th>영상</th></tr></thead><tbody>${tiltRows}</tbody></table>` : ""}
+    ${graspRows ? `<table class="tilt-tbl"><thead><tr><th>회</th><th>손</th><th>결과</th><th>들림</th><th>유지</th><th></th></tr></thead><tbody>${graspRows}</tbody></table>` : ""}
+    ${det("tilt-rec-cmd", "기록하는 법", `<pre class="tilt-cmd">${esc(r.command)}\npython3 deploy/policy_control/tools/eval_record.py grasp --side right --ok --lift-cm 7 --hold-s 3\npython3 deploy/policy_control/tools/eval_record.py summary</pre>`)}`);
 }
 
 // 화살표는 상자가 자리를 잡은 뒤에 잰다. 다음 노드 = 오른쪽 변 → 왼쪽 변(실선), 되돌아가기 = 아래로 돌아 앞 상자 밑으로(주황),
@@ -1113,7 +1193,9 @@ const acts = {
 };
 
 // Workspace selections are server state. Polling never starts a policy or replaces the video element.
-let activeTab = "setting", pendingConfirmation = null, executingConfirmation = false;
+// 10.17 주소 #policy · #control · #setting 이면 그 탭으로 연다(정책 탭 바로가기 · 화면 확인 도구)
+let activeTab = ["setting", "control", "policy"].find((t) => globalThis.location?.hash === `#${t}`) || "setting",
+  pendingConfirmation = null, executingConfirmation = false;
 function selectTab(tab) {
   if (!["setting", "control", "policy"].includes(tab)) return;
   // 탭을 바꾸면 아래 칸 높이가 바뀐다 — 탭 줄이 화면에서 제자리에 있게 스크롤을 맞춘다(10.15 "control 누르면 스크롤이 올라감")
@@ -1235,10 +1317,13 @@ function renderWorkspace() {
   put("perception-controls", `<fieldset><legend>인지 · ${esc(h.calib_profile || "보정 미선택")} · pan ${esc(h.pan ?? "—")} / tilt ${esc(h.tilt ?? "—")}</legend>${["fpp", "locate"].map(source => `<label class="chk"><input type="checkbox" data-perception="${source}" ${w.perception?.[source] ? "checked" : ""} ${holding() ? "" : "disabled"}>${source === "fpp" ? "FPP" : "locate"}</label>`).join("")}${(w.objects || []).map(o => `<label class="chk"><input type="checkbox" data-object="${esc(o.id)}" ${o.enabled ? "checked" : ""} ${holding() ? "" : "disabled"}>${esc(o.model || o.id)} · ${esc(o.color || o.marker_id || "마커")}${o.measured === false ? " (프리셋 · 미측정)" : ""}</label>`).join("")}</fieldset>`);
   put("perception-nodes", (S.session?.diagram?.cols || []).flat().filter(perceptionNode).map(boxHtml).join(""));
   put("object-cards", (w.objects || []).filter(o => o.enabled).map(o => `<article class="object-card"><h3>${esc(o.model || o.id)} · ${esc(o.color || o.marker_id || "")}</h3>${o.model === "holder" ? '<p>색 기반 locate 미지원</p>' : ""}<label>정책 입력원 <select data-input-source="${esc(o.id)}" ${holding() ? "" : "disabled"}><option value="fpp" ${o.input_source === "fpp" ? "selected" : ""}>FPP</option><option value="locate" ${o.input_source === "locate" ? "selected" : ""} ${o.model === "holder" ? "disabled" : ""}>locate</option></select></label>${coordinateResult(o.results?.fpp, "FPP")}${coordinateResult(o.results?.locate, "locate")}<button class="btn btn-sm" data-act="object-perception" data-arg="${esc(o.id)}" ${holding() ? "" : "disabled"}>인지 실행 · 좌표 재추출</button>${actions.filter(a => a.object_id === o.id).map(actionButton).join("")}</article>`).join(""));
-  put("policy-add", ["approaching", "grasping", "placing", "locking", "pouring"].map(task => `<button class="btn" data-act="policy-choose" data-arg="${task}" ${holding() ? "" : "disabled"}>＋ ${task}</button>`).join("") + '<button class="btn btn-ghost" data-act="policy-reset">배치 초기화</button>');
-  put("policy-cards", (w.cards || []).map((card, i) => `<article class="policy-card" style="transform:translate(${Number(card.x) || 0}px,${Number(card.y) || 0}px)"><h3>${esc(card.task)} · ${esc(card.policy_id)}</h3><p>${esc(card.side)} · ${esc(card.object_id || "물체 미선택")}</p><span class="badge">${card.execution_supported ? "rg3 실행 연결" : "배치만 지원"}</span><label>물체 <select data-card-object="${esc(card.id)}"><option value="">물체 선택</option>${(w.objects || []).filter(o => o.enabled).map(o => `<option value="${esc(o.id)}" ${card.object_id === o.id ? "selected" : ""}>${esc(o.id)}</option>`).join("")}</select></label><div class="actions">${[["left","←"],["right","→"],["up","↑"],["down","↓"]].map(([d,label]) => `<button class="btn btn-sm" aria-label="${esc(card.id)} ${d}" data-act="policy-move" data-arg="${esc(card.id)}:${d}">${label}</button>`).join("")}<button class="btn btn-sm" data-act="policy-remove" data-arg="${esc(card.id)}">제거</button></div>${actions.filter(a => a.card_id === card.id).map(actionButton).join("")}</article>`).join(""));
+  put("policy-add", ["approaching", "grasping", "placing", "locking", "pouring"].map(task => `<button class="btn" data-act="policy-choose" data-arg="${task}" ${holding() ? "" : "disabled"}>＋ ${esc(taskLabel(task))}</button>`).join("") + '<button class="btn btn-ghost" data-act="policy-reset">배치 초기화</button>');
+  put("policy-cards", (w.cards || []).map((card, i) => `<article class="policy-card" style="transform:translate(${Number(card.x) || 0}px,${Number(card.y) || 0}px)"><h3>${esc(taskLabel(card.task))} · ${esc(card.policy_id)}</h3><p>${esc(card.side)} · ${esc(card.object_id || "물체 미선택")}</p><span class="badge">${card.execution_supported ? "rg3 실행 연결" : "배치만 지원"}</span><label>물체 <select data-card-object="${esc(card.id)}"><option value="">물체 선택</option>${(w.objects || []).filter(o => o.enabled).map(o => `<option value="${esc(o.id)}" ${card.object_id === o.id ? "selected" : ""}>${esc(o.id)}</option>`).join("")}</select></label><div class="actions">${[["left","←"],["right","→"],["up","↑"],["down","↓"]].map(([d,label]) => `<button class="btn btn-sm" aria-label="${esc(card.id)} ${d}" data-act="policy-move" data-arg="${esc(card.id)}:${d}">${label}</button>`).join("")}<button class="btn btn-sm" data-act="policy-remove" data-arg="${esc(card.id)}">제거</button></div>${actions.filter(a => a.card_id === card.id).map(actionButton).join("")}</article>`).join(""));
   selectTab(activeTab);
 }
+// 10.17 사용자 결정 3: 화면 · 에피소드 · 보고서만 tilt — 작업 공간 키(pouring)와 코드 모듈(pour_*.py)은 그대로
+const TASK_LABEL = { pouring: "tilt" };
+function taskLabel(task) { return TASK_LABEL[task] || task; }
 async function saveWorkspace(patch) {
   pendingConfirmation = null;
   closeModal();

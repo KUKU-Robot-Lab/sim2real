@@ -8,7 +8,10 @@
   snapshot(node, world)            → (NodeResult, {물체: (pos, quat)})
   run_policies(node, plans, world) → [NodeResult, …]   plans = [PolicyPlan] (병렬이면 둘 이상)
   run_trajectory(node, traj, world)→ NodeResult
+  run_hand(node, world)            → NodeResult           ★10.17 경로 B — 손 펴기 · 닿을 때까지 닫고 쥔 판정(팔 제자리)
   prepare(step, plans, world)      → NodeResult           refresh_perception · open_hand
+★10.17 confirm 노드(경로 B "확인 두 번"): 로봇을 움직이지 않고, 연속 실행 중에도 그 노드 이름의 승인을 따로 받는다 —
+  승인이 없으면 거기서 멈추고(waiting) 상황판 [다음] 으로 그 노드를 승인하면 지나간다.
   safe_stop(reason)                → None
   joints()                         → dict                 checkpoint 기록용(없으면 {})
 로그(JSONL, 가이드 1-10): timestamp · episode_id · state_id · executor_type · policy_name · start/end/duration ·
@@ -60,6 +63,7 @@ class Executor(Protocol):
     def snapshot(self, node: Node, world: World) -> tuple[NodeResult, dict]: ...
     def run_policies(self, node: Node, plans: list, world: World) -> list: ...
     def run_trajectory(self, node: Node, traj, world: World) -> NodeResult: ...
+    def run_hand(self, node: Node, world: World) -> NodeResult: ...
     def prepare(self, step: str, plans: list, world: World) -> NodeResult: ...
     def safe_stop(self, reason: str) -> None: ...
     def joints(self) -> dict: ...
@@ -88,6 +92,10 @@ class EpisodeManager:
     pending: tuple | None = None                        # 구분 실행: 승인을 기다리는 복구 (node, Recovery)
     runs: dict = field(default_factory=dict)            # 노드 id → {state, n(실행 횟수), s(마지막 걸린 시간), code} — 흐름 그림
     flow: dict = field(default_factory=dict)            # 흐름 그림의 고정 부분(episode_flow.flow_of)
+    waiting: str | None = None                          # ★10.17 운영자 확인(confirm 노드)을 기다리는 노드 id
+    #: ★10.17 지금 노드에 온 시각(wall) — 확인 노드 승인은 이 뒤에 쓰인 것만 받는다(리뷰: 서비스 실패로 남은 옛 승인 줄이
+    #:   나중에 같은 노드에서 저절로 통과하지 않게, episode_runner_node 가 읽는다)
+    node_since: float = field(default_factory=time.time)
     _auto: bool = False
 
     def __post_init__(self) -> None:
@@ -127,6 +135,8 @@ class EpisodeManager:
         try:
             while self.status in (READY, RUNNING):
                 self._advance()
+                if self.waiting is not None:            # confirm 노드 — 연속 실행도 여기서 운영자 확인을 기다린다
+                    break
         finally:
             self._auto = False
         return self.status
@@ -158,6 +168,8 @@ class EpisodeManager:
                 "pending": None if self.pending is None else {"node": self.pending[0].id, "action": self.pending[1].action,
                                                               "reason": self.pending[1].reason},
                 "next_action": self.next_action(), "flow": self.flow, "runs": {k: dict(v) for k, v in self.runs.items()},
+                "confirm": (None if self.node is None or self.node.type != "confirm" or self.status not in (READY,)
+                            else {"node": self.node.id, "text": self.node.text}),
                 "history": self.history[-20:]}
 
     # ---------------------------------------------------------------- 내부
@@ -170,8 +182,10 @@ class EpisodeManager:
             self.status = SUCCESS if (node.result or SUCCESS) == SUCCESS else FAILURE
             self._mark(node.id, "done" if self.status == SUCCESS else "failed", n=1)
             self._log("terminal", node, result=self.status)
-            self.index += 1
+            self._next_node()
             return self.status
+        if node.type == "confirm":
+            return self._confirm(node)
         if not self._auto and not self.approve(node.id, self._describe(node)):
             return self._declined(node, node.id)
         self.status = RUNNING
@@ -199,7 +213,7 @@ class EpisodeManager:
             if node.checkpoint:
                 self.checkpoints[node.checkpoint] = {"world": self.world, "joints": self.executor.joints(), "node": node.id,
                                                      "at": _now()}
-            self.index += 1
+            self._next_node()
             self._log("exit", node, start_time=start, end_time=_now(), duration=round(dur, 3), result="COMPLETED",
                       termination_reason=reason, next=None if self.node is None else self.node.id)
             self.status = READY if self.node is not None else SUCCESS
@@ -217,6 +231,8 @@ class EpisodeManager:
                 return [res], located
             if node.type == "trajectory":
                 return [self.executor.run_trajectory(node, self.ep.trajectories[node.name], world)], {}
+            if node.type == "hand":
+                return [self.executor.run_hand(node, world)], {}
             return list(self.executor.run_policies(node, self._plans(node, world), world)), {}
         except Exception as exc:                                       # 실행기 예외 = 관측 · 컨트롤러 이상 → safe stop
             return [NodeResult("error", f"{type(exc).__name__}: {exc}")], {}
@@ -241,6 +257,10 @@ class EpisodeManager:
         for name, pose in located.items():                          # snapshot — 물체는 테이블 위, 자세를 기록
             w = w.locate(name, "table", pose[0])
             w = _with_pose(w, name, pose)
+        if node.type == "hand" and node.action == "grasp":          # 사람이 댄 컵을 쥐었다 — 물체는 그 손에
+            for side in node.sides:
+                if w.hand(side) != EMPTY:
+                    w = w.locate(w.hand(side), f"{side}_hand")
         for j in node.jobs:
             b = self.ep.policies[j.role]
             if b.kind == "aglt" and j.target_object and w.hand(b.side) == j.target_object:
@@ -293,6 +313,28 @@ class EpisodeManager:
         self.status = READY
         return self.status
 
+    def _next_node(self) -> None:
+        self.index += 1
+        self.node_since = time.time()
+
+    def _confirm(self, node: Node) -> str:
+        """운영자 확인 — 로봇을 움직이지 않는다. 연속 실행이어도 이 노드 이름의 승인을 따로 받는다(사용자 "확인 두 번")."""
+        if not self.approve(node.id, f"확인: {node.text}"):
+            self.waiting = node.id
+            self._mark(node.id, "waiting")
+            self.last = {"node": node.id, "code": "waiting_confirm", "reason": f"운영자 확인을 기다린다 — {node.text}"}
+            self._log("confirm_wait", node, termination_reason=node.text)
+            self.status = READY
+            return self.status
+        self.waiting = None
+        self._mark(node.id, "done", n=self.runs.get(node.id, {"n": 0})["n"] + 1, code="CONFIRMED")
+        self.last = {"node": node.id, "code": "confirmed", "reason": node.text}
+        self._next_node()
+        self._log("confirm", node, result="CONFIRMED", termination_reason=node.text,
+                  next=None if self.node is None else self.node.id)
+        self.status = READY if self.node is not None else SUCCESS
+        return self.status
+
     def _declined(self, node: Node | None, what: str) -> str:
         """승인이 없다 — 아무것도 움직이지 않았다. 에피소드는 그 자리에서 기다린다(실패 아님)."""
         self.last = {"node": None if node is None else node.id, "code": F.OPERATOR_DECLINED.value,
@@ -312,6 +354,11 @@ class EpisodeManager:
             return f"궤적 {node.name} (팔 {', '.join(self.ep.trajectories[node.name].sides)})"
         if node.type == "snapshot":
             return f"물체 배치 기록 {', '.join(self.ep.objects)}"
+        if node.type == "confirm":
+            return f"확인: {node.text}"
+        if node.type == "hand":
+            what = {"open": "손 펴기(팔 제자리)", "grasp": "닿을 때까지 닫고 쥔 판정(팔 제자리)"}[node.action]
+            return f"{what} · {', '.join(node.sides)}"
         return " + ".join(f"{j.role}({self.ep.policies[j.role].policy or '정책 없음'}"
                           + (f", {j.target_object or j.source_object}" if (j.target_object or j.source_object) else "")
                           + (f" → {j.target_holder}" if j.target_holder else "") + ")" for j in node.jobs)

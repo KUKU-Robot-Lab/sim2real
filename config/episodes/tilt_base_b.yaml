@@ -1,0 +1,34 @@
+# tilt 기본 궤적 실기 평가 — 경로 B(수동 파지) · 10.17 사용자 (docs/PLAN_GRASP_TILT_EVAL_2026-10-17.md)
+# "팔을 tilt 시작 자세로 → 손 펴기 → 사용자가 컵을 손에 댐 → 닿을 때까지 닫고 래치. 확인 두 번(컵 대기 전, 닫기 전)."
+# 경로 A · C 가 안 될 때 쓴다(갈림길 순서 A → C → B). 정책 · FP++ 를 쓰지 않는다.
+#   빈손으로 붓기 시작 자세까지(ready_carry, 한 팔씩 — A 와 같은 끝 자세) → 두 손 펴기
+#   → [확인] 오른손에 병을 대도 되는가(로봇 정지) → 병을 손에 댄다 → [확인] 닫아도 되는가 → 닫기 · 쥔 판정 · 3 s 유지
+#   → 왼손도 같은 순서(shaker) → D4 기본 궤적(잔차 0, 1 배속) + 복귀 → 끝.
+# 확인 노드는 연속 실행이어도 거기서 멈춘다 — 상황판 [다음] 으로 그 노드를 승인해야 지나간다.
+# 닫기는 경로 C 와 같은 규칙(policy_control/hand_grasp.py): 엄지 회전 고정, 0.6 rad/s 로 닫고 막힌 손가락은 그 자리에서 멈춤,
+#   네 손가락 중 2 개 래치가 0.25 s 이어지면 쥠, 4 s 안에 못 쥐면 실패(손은 그 자리 — 펴는 것은 운영자).
+#   ★닫는 동안 사람 손가락을 로봇 손가락 사이에 두지 않는다(컵 몸통을 손바닥 쪽에서 받친다).
+# 컵 자리는 실측이 아니다 — tilt 는 기준 출발(single734_t120)의 손 안 컵 자리로 계획한다. 그 자리(손바닥 안쪽, 병 입구가 위)에 댄다.
+episode: {name: tilt_base_b, version: 1}
+objects:
+  SRC: {topic: /objects/source240b_blue/pose}
+  RCV: {topic: /objects/shaker_c_orange/pose}
+trajectories:
+  go_home: {kind: rehome, sides: [right, left]}
+  to_tilt_start_r: {kind: carry, sides: [right], asset: tilt/base_arc6, cups: false}
+  to_tilt_start_l: {kind: carry, sides: [left], asset: tilt/base_arc6, cups: false}
+  tilt: {kind: tilt, sides: [right, left], asset: tilt/base_arc6, rate_scale: 1.0}
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 못 쥐면 손은 그 자리 — 운영자가 판단한다.
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: to_tilt_start_r, type: trajectory, name: to_tilt_start_r}
+  - {id: to_tilt_start_l, type: trajectory, name: to_tilt_start_l, expect: {pose: SETTING}}
+  - {id: open_hands, type: hand, action: open, sides: [right, left]}
+  - {id: confirm_cup_right, type: confirm, text: "오른손에 병(source240, 비드 10 개)을 댈 차례 — 로봇이 멈춰 있는가. 확인하면 병을 손바닥에 댄다"}
+  - {id: confirm_close_right, type: confirm, text: "병이 오른손 손바닥 안에 있고 사람 손가락이 로봇 손가락 사이에 없는가 — 확인하면 오른손을 닫는다"}
+  - {id: grasp_right, type: hand, action: grasp, sides: [right], hand_contract: rh56f1/aglt/right_approach_rg3wc, expect: {right_hand: SRC}}
+  - {id: confirm_cup_left, type: confirm, text: "왼손에 shaker 를 댈 차례 — 로봇이 멈춰 있는가. 확인하면 shaker 를 손바닥에 댄다"}
+  - {id: confirm_close_left, type: confirm, text: "shaker 가 왼손 손바닥 안에 있고 사람 손가락이 로봇 손가락 사이에 없는가 — 확인하면 왼손을 닫는다"}
+  - {id: grasp_left, type: hand, action: grasp, sides: [left], hand_contract: rh56f1/aglt/left_approach_rg3wc, expect: {left_hand: RCV}}
+  - {id: tilt, type: trajectory, name: tilt, expect: {pose: SETTING}}
+  - {id: done, type: terminal, result: SUCCESS}

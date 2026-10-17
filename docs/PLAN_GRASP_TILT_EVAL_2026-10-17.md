@@ -111,4 +111,29 @@
   (홈에서 시작이라 4.0 s 상한), 끝 ↔ 붓기 시작 자세 0.0000 rad · tilt 계획 2.7 s · 재생 1045 프레임 18.7 s, 끝 ↔ 출발 0.0000 rad ·
   두 팔 모두 stop 뒤 pd 내부 유지(internal). 홈 단계(한 팔 재생)도 고친 replay_to_pd 로 통과. fake 는 robot_control/ros_ws/install
   overlay 를 source 해야 RH56F1 가짜 손이 뜬다(첫 시도 실패 원인).
+- 10.17 결정 4 성공 정의(숫자): D4 params/env.yaml 판정 = success_fill_ratio 1.0 · success_spill_max 0.25 · success_xy_thresh 0.20 m ·
+  success_hold_steps 20(1/3 s). 실기 = tilt(복귀까지) 끝난 뒤 받는 컵(shaker) 비드 = 넣은 10 개 전부. sim 은 에피소드 중 한 순간이라도
+  1/3 s 성립하면 성공이고 실기는 끝에 센다(복귀 중 흘림까지 실패 — 보수적). 기록: `tools/eval_record.py tilt|grasp|summary`
+  → logs/eval_real/<날짜>/{tilt,grasp}.{jsonl,csv}(세 칸 합이 넣은 수와 다르면 거부, 결정 1 파지 성공 = ok + 3 s 유지).
+- 10.17 경로 A 이송을 계획대로 한 팔씩(오른팔 → 왼팔): carry sides [right] · [left], plan_carry `--sides`, 재생은 그 팔 7 관절.
+- 10.17 경로 C 에피소드 `tilt_base_c`(grasp_c 두 손 → 한 팔씩 이송 → tilt), 경로 B 에피소드 `tilt_base_b`:
+  빈손 이송(carry cups: false) → 손 펴기(hand open = pd hand_release) → 확인 노드 둘(컵 대기 전 · 닫기 전) → hand grasp
+  (`policy_control/hand_grasp.py` + `tools/hand_grasp.py`, 경로 C 와 같은 닫기 · 막힘 래치 판정, 거리 조건 없음, 3 s 유지, 팔은 시작
+  실측에 고정) → 왼손 같은 순서 → tilt. 확인 노드(confirm)는 연속 실행에서도 멈추고 그 노드 이름의 승인([다음])을 따로 받는다.
+  엄지 회전(thumb_1)은 편 손 값 1.57 그대로(경로 C 의 "엄지 회전 고정"과 같은 규칙) — 실기에서 컵 대향이 부족하면 조정 항목.
+- 10.17 결정 3 이름: 콘솔 정책 상자 "tilt 정책", 작업 공간 과제 버튼 · 카드 "tilt"(내부 키 pouring 그대로), 미션 pour_fj 단계 제목,
+  에피소드 tilt_base_*. 코드 모듈 pour_*.py · hdgp 이름은 그대로.
+- 10.17 fake 손 '손 안 컵'(`/fake/hand_<side>/cup` Bool, `--cup-stop`) — 켜면 손가락이 그 각도에서 막혀 막힘 신호가 실기처럼 생긴다.
+- 10.17 리뷰(코드 리뷰어, CRITICAL · HIGH 없음) 반영: hand_grasp 도구가 SIGTERM(실행기 정지)에도 stop 을 내고 끝남 · 팔 목표 = pd 세트포인트
+  (pd status arms.<팔>.q_set 추가, 실측과 0.1 rad 넘게 다르면 거부) · hand grasp 바로 앞 confirm 두 개 강제 · hand grasp 재시도 상한 0 강제 ·
+  손 펴기는 실측이 펴질 때까지(3 s, 0.1 rad) · plan_carry 두 팔 사이 검사(팔 관절 4~7 · 손바닥 점 ≥ 0.10 m, 두 컵 겉면 ≥ 0.03 m —
+  경로 A · B 한 팔씩 실측 0.30 m · 0.14 m 이상) · 확인 노드는 그 노드에 온 뒤 쓴 승인만 받음(남은 옛 승인 줄 무시).
+- 10.18 발견: 작업 트리에서 지워진 옛 정책 폴더 right_cyl60g 의 env.yaml 을 홈 복귀 계획기(plan_rehome)가 세계로 읽어, 모든 에피소드의
+  첫 홈 복귀가 "경로를 못 만들었다"로 멈췄다(fake 경로 B 첫 리허설). 같은 파일(git HEAD, md5 같음)을
+  `deploy/policy_control/config/home_path/rh56f1_world_env.yaml` 로 두고 계획기가 그것을 읽게 했다. 지워진 폴더를 쓰는 다른 곳
+  (미션 pick_place 에피소드 · policy_aglt 단계의 right_src21c · left_g5362 · 테스트 166 건)은 그대로다(이 작업 범위 밖).
+- 10.18 sim 세팅(사용자 "다른 기능 다 구현한 뒤 sim"): hdgp `scripts/tools/pour_bank/tilt_base_sim_eval.py`(D4 env 사본 · 궤적만 ·
+  비드 10 · 기준 출발 · 판정 = D4 성공(1/3 s 전부)과 끝 판정(실기와 같음)) · `scripts/tools/rh_aglt_approach_close_eval.py`(1-C —
+  접근 정책 → 배포 approach_grasp 단계 기계를 env 마다 torch 로, 막힘 명목값 · 실기 규격 · substep 4, 결과 = 스크립트 성공 · 실제 들림 ·
+  거짓 성공 · 접근 끝 거리). 둘 다 GPU 가 필요하다 — 결정 6 의 로컬 5090 은 10.18 00시 다른 세션 프로브 둘(29 GB / 32 GB)이 쓰는 중.
 

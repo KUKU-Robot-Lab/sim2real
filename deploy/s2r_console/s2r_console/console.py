@@ -24,6 +24,7 @@ from . import _paths, ledger, survey
 from . import object_health as OH
 from . import robot_view as R
 from . import spawn_map as SM
+from . import tilt_view as TV
 from . import units as U
 from .console_state import STALE_S, derive
 from .diagram import _LAUNCHER as PERCEPT_BOX
@@ -1013,6 +1014,9 @@ class Console:
         robot = R.view(obs.joints, s.contract_sides, s.joint_limits, age_s=obs.joints_age_s,
                        alias=s.joint_alias, joint_ages=obs.joint_ages)
         s.workspace.ingest_fpp(obs)
+        runner = None if obs.status.get(EPISODE_NODE) is None else {
+            **obs.status[EPISODE_NODE], "age_s": round(obs.age_s.get(EPISODE_NODE, 1e9), 2),
+            "stale": obs.age_s.get(EPISODE_NODE, 1e9) > STALE_S}
         return {"robot": robot, "run_id": s.run_id, "run_dir": str(s.run_dir), "operator": s.operator,
                 'workspace': s.workspace.snapshot(), 'actions': self.actions.catalog(),
                 'management': self.actions.view(), 'video': self.video_status(),
@@ -1025,9 +1029,9 @@ class Console:
                 "robot_module": None if s.robot is None else {**s.robot.as_dict(), "picked": s.picked,
                                                               "slots_now": self._slots_now(s)},
                 "fpp": self._fpp_view(s, obs),
-                "episode_runner": None if obs.status.get(EPISODE_NODE) is None else {
-                    **obs.status[EPISODE_NODE], "age_s": round(obs.age_s.get(EPISODE_NODE, 1e9), 2),
-                    "stale": obs.age_s.get(EPISODE_NODE, 1e9) > STALE_S}}
+                "episode_runner": runner,
+                # ★10.17 policy 탭 tilt 평가 묶음(경로 A · C · B · 계획 검사 · 손 쥐기 · 회차 기록) — RH56F1 프로파일만
+                "tilt": TV.view(self.repo, runner) if s.profile.id.startswith("rh56f1") else None}
 
     @staticmethod
     def _fpp_view(s: Session, obs) -> dict | None:
