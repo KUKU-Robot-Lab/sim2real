@@ -1,0 +1,16 @@
+id: rh56f1/aglt/right_approach_rg3wg
+task: open-rh_r_aglt-lstm
+side: right
+checkpoint: last_open-rh_r_aglt-lstm_ep_300_rew_2998.1052.pth
+md5: 04dd459d86c257aeb66f43117cf6ea18
+source: server:/home/oem/rl_ws/hdgp_grasp_w/log/rl_games/open-rh/right/aglt/aglt_r_rg3wg/nn/last_open-rh_r_aglt-lstm_ep_300_rew_2998.1052.pth
+summary: 경로 C 접근 정책 — rg3wg ep300(잡기 · 들기 단계 런 rh_aglt_gl iter_01 의 초기, 접근 rg3wc ep800 에서 이어 학습). 편 손(닫힘 0.07~0.09)으로
+  컵 옆까지 깊이 들어가 머문다. 지연 · FP++ · ADR 없이 학습, 손 = position
+status: candidate
+eval: 'sim 1-C(arm4090 · 학습 조건 substep 1 · mimic nf500 · 끝까지 밀어 쥐기, 10.18): 우 30/60 · 좌 31/60. 접촉 손가락 고정(substep
+  4 · nf0 · pin_lead 0)은 sim 에서 쥐는 힘이 안 남아 우 6/60 — 사용자: sim 실패는 중요하지 않음'
+interface: obs 94 (91 + 물체 one-hot 3, 맨 끝) · action 13 (팔 관절 증분 7 · 손 6) — rg3wo 와 해석 같음
+deploy:
+  max_episode_s: 29.0
+note: '10.18 s2r_1st 등록(경로 C 접근 후보 grasping 1순위, 사용자 승인). 쥠 판정 키(contact)는 쓰지 않는다 — 경로 C 는 강제 파지(judge=0): 닫기 때
+  막힌 축은 실측에 고정, 안 닿은 축은 앞섬 0.08 rad.'

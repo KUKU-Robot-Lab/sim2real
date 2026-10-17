@@ -526,7 +526,9 @@ def hand_block_of(env: Mapping) -> tuple[dict, str, float]:
     if any(float(v) != 0.0 for v in (env.get("hand_block_hold_lead_rad") or (0.0, 0.0))):
         raise RhAgltError(f"hand_block_hold_lead_rad {list(env['hand_block_hold_lead_rad'])} — 배포 막힘에 유지 앞섬이 없다")
     nominal = dict(HAND_BLOCK_NOMINAL)
-    pos_judge = str(env.get("hand_grasp_judge", "block")) in POS_JUDGES   # 10.14 위치제어 판정 런(G 4~10 칸)
+    judge = str(env.get("hand_grasp_judge", "block"))
+    # 10.14 위치제어 판정 런(G 4~10 칸). ★10.18 contact 판정 위치제어 런(rg3wg)도 같은 G DR 로 학습했다 — 막힘은 쥠 멈춤에만 쓴다
+    pos_judge = judge in POS_JUDGES or (judge == "contact" and not bool(env.get("hand_adm_enable", False)))
     for k, lo_hi in (("hand_block_g_rad", "g_rad"), ("hand_block_eps_rad", "eps_rad"), ("hand_block_n_ticks", "n_ticks")):
         lo, hi = (float(v) for v in env[k])
         end = env.get(f"{k}_end") or ()

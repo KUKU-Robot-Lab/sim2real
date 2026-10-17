@@ -3,7 +3,7 @@
 rh_aglt 노드(AgltChain) 안에서 단계만 바꾼다. 스크립트 단계도 정책과 같은 13 칸 행동을 만들어 같은 디코더(RaDecoder)를 거친다 —
 팔 관절 범위 · 손 EMA · 손 속도 상한 · 막힘 쥠 멈춤(hand_block)이 정책 때와 같다.
 
-  approach  접근 정책(rg3wc ep800 원본, 손을 편 채 다가감)을 그대로 돌린다.
+  approach  접근 정책(10.18 rg3wg ep300 — 편 손으로 컵 옆까지 깊이 들어감. 10.17 은 rg3wc ep800)을 그대로 돌린다.
             끝 = |컵 − 손바닥| ≤ stop_palm_m AND 팔 관절 속도 최대 < still_rad_s 가 still_s 이어짐, 또는 approach_max_s.
   close     팔 목표 고정(팔 행동 0). 엄지 회전(thumb_1)은 접근 끝 목표 그대로. 엄지 굽힘(thumb_delay_s 뒤)과 네 손가락은
             close_rad_s 로 쥔 자세(q_grip) 쪽으로 닫는다. 막힘이 래치된 축은 그 자리에서 더 닫지 않는다(사용자 규칙: 닿을 때까지

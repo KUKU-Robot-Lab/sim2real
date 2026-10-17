@@ -2705,8 +2705,8 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_rg3wc) — 경로 C: 접근 정책 → 정책 끄고 손 닫기 → 쥠 확인(네 손가락 2 개 · 8 cm) → 10 cm 들기 → 3 s 유지, 못 쥐면
-      들지 않고 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_rg3wg) — 경로 C: 접근 정책 → 정책 끄고 손 닫기(닿은 손가락은 실측에 고정 · 안 닿은 손가락 앞섬 0.08 rad) → 판정 없이 10
+      cm 들기 → 3 s 유지, 들기 미달만 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -2716,7 +2716,7 @@ run:
     - -p
     - ns:=right
     - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_rg3wc/rh_aglt_contract.json
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_rg3wg/rh_aglt_contract.json
     - -p
     - robot:={artifact:robot_right}
     - -p
@@ -2818,8 +2818,8 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_rg3wc) — 경로 C: 접근 정책 → 정책 끄고 손 닫기 → 쥠 확인(네 손가락 2 개 · 8 cm) → 10 cm 들기 → 3 s 유지, 못 쥐면
-      들지 않고 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_rg3wg) — 경로 C: 접근 정책 → 정책 끄고 손 닫기(닿은 손가락은 실측에 고정 · 안 닿은 손가락 앞섬 0.08 rad) → 판정 없이 10 cm
+      들기 → 3 s 유지, 들기 미달만 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -2829,7 +2829,7 @@ run:
     - -p
     - ns:=left
     - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_rg3wc/rh_aglt_contract.json
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_rg3wg/rh_aglt_contract.json
     - -p
     - robot:={artifact:robot_left}
     - -p
@@ -3171,8 +3171,8 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_rg3wc) — 경로 C: 접근 정책 → 정책 끄고 손 닫기 → 쥠 확인(네 손가락 2 개 · 8 cm) → 10 cm 들기 → 3 s 유지, 못 쥐면
-      들지 않고 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_rg3wg) — 경로 C: 접근 정책 → 정책 끄고 손 닫기(닿은 손가락은 실측에 고정 · 안 닿은 손가락 앞섬 0.08 rad) → 판정 없이 10
+      cm 들기 → 3 s 유지, 들기 미달만 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -3182,7 +3182,7 @@ run:
     - -p
     - ns:=right
     - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_rg3wc/rh_aglt_contract.json
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_rg3wg/rh_aglt_contract.json
     - -p
     - robot:={artifact:robot_right}
     - -p
@@ -3222,8 +3222,8 @@ run:
     - -p
     - max_episode_s:=29.0
     background: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_rg3wc) — 경로 C: 접근 정책 → 정책 끄고 손 닫기 → 쥠 확인(네 손가락 2 개 · 8 cm) → 10 cm 들기 → 3 s 유지, 못 쥐면
-      들지 않고 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_rg3wg) — 경로 C: 접근 정책 → 정책 끄고 손 닫기(닿은 손가락은 실측에 고정 · 안 닿은 손가락 앞섬 0.08 rad) → 판정 없이 10 cm
+      들기 → 3 s 유지, 들기 미달만 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -3233,7 +3233,7 @@ run:
     - -p
     - ns:=left
     - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_rg3wc/rh_aglt_contract.json
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_rg3wg/rh_aglt_contract.json
     - -p
     - robot:={artifact:robot_left}
     - -p

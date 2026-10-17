@@ -717,7 +717,11 @@ def _episode_run(name: str, real: bool) -> list:
             if b.approach_grasp is not None:            # ★10.17 경로 C — 접근 정책 뒤 스크립트 닫기 · 쥠 확인 · 들기 · 유지
                 from policy_control.approach_grasp import ApproachGraspCfg, episode_s
                 end_args = [f"approach_grasp:={ApproachGraspCfg.to_param(b.approach_grasp)}"]
-                end_note = "경로 C: 접근 정책 → 정책 끄고 손 닫기 → 쥠 확인(네 손가락 2 개 · 8 cm) → 10 cm 들기 → 3 s 유지, 못 쥐면 들지 않고 멈춤"
+                ag = ApproachGraspCfg.parse(ApproachGraspCfg.to_param(b.approach_grasp))
+                end_note = ("경로 C: 접근 정책 → 정책 끄고 손 닫기 → 쥠 확인(네 손가락 2 개 · 8 cm) → 10 cm 들기 → 3 s 유지, 못 쥐면 들지 않고 멈춤"
+                            if ag is not None and ag.judge else      # ★10.18 사용자: 기본 강제 파지(판정 없음)
+                            "경로 C: 접근 정책 → 정책 끄고 손 닫기(닿은 손가락은 실측에 고정 · 안 닿은 손가락 앞섬 "
+                            f"{(ag or ApproachGraspCfg()).close_lead_rad:g} rad) → 판정 없이 10 cm 들기 → 3 s 유지, 들기 미달만 멈춤")
                 max_s = f"{episode_s(b.approach_grasp):.1f}"   # 최악 경로 + 3 s(실행기는 PolicyPlan.max_s + 10 s 를 기다린다)
             cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — {end_note} · 컵 = FP++ live"
                              " · 쥐면 손바닥 FK 로 손에 붙임",

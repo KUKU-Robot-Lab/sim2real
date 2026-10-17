@@ -219,6 +219,19 @@ def test_the_builder_reads_the_block_from_the_run_env():
         A.hand_block_of(dict(env, hand_block_g_rad=[0.0145, 0.018]))             # 배포 G 12 칸을 sim 이 학습하지 않았다
 
 
+def test_a_position_contact_judge_run_clamps_g_to_its_trained_range():
+    """10.18 rg3wg: contact 판정 위치제어 런(G 7 칸 고정)은 pos 판정 런처럼 G 를 학습 범위 끝으로 붙인다. 어드민턴스면 그대로 거부."""
+    env = {"hand_block_enable": True, "hand_block_g_rad": [0.0128, 0.0128], "hand_block_eps_rad": [0.0109, 0.0109],
+           "hand_block_n_ticks": [3, 3], "hand_block_lag_ticks": 6, "hand_firmware_stop_enable": False,
+           "hand_grasp_judge": "contact", "hand_adm_enable": False}
+    block, _rule, _cap = A.hand_block_of(env)
+    assert block["g_rad"] == 0.0128 and block["eps_rad"] == 0.0109 and block["n_ticks"] == 3
+    with pytest.raises(A.RhAgltError, match="명목값"):
+        A.hand_block_of(dict(env, hand_adm_enable=True))
+    with pytest.raises(A.RhAgltError, match="명목값"):
+        A.hand_block_of(dict(env, hand_block_eps_rad=[0.02, 0.03]))               # G 말고는 붙이지 않는다
+
+
 # ---------------------------------------------------------------- 10.14 위치제어 블록(축별 G · 여는 쪽으로 안 풀림)
 #: grasping aglt_r_rg3hp3 env(hand_block_pos): 엄지굽힘 15 칸 · 검지 · 중지 35 칸, 약지 · 새끼 = env 의 g_rad
 GAX = {"thumb_flex": 0.0285, "index": 0.0636, "middle": 0.0636, "ring": 0.0, "pinky": 0.0}

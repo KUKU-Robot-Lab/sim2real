@@ -169,3 +169,14 @@
   왼손: rg3wh 왼손은 접촉 없이 반쯤 닫는 정책이라 후보가 아니다. 결과 sim2real logs/sim/1018_1c_right_{wh300,wh3100,wh3100b,wh3100c,wh3100r,wcc}
   (arm5080 같은 경로) · 도구 hdgp 40d717737 · a4dd7421b(손가락 접촉 · 래치 기록, --judge contact).
 
+- 10.18 사용자 "1-C 접근만 하게 하고 스크립트처럼 파지를 하게 우리가 강제하는 거니까 쥠 판정 따위 필요 없음" → approach_grasp 기본
+  judge=0(강제 파지): 닫기 끝(모든 축 막힘 · 쥔 자세, 늦어도 close_max_s 4 s) 뒤 판정 없이 든다. 들기 높이 미달만 실패(d4aca04).
+  사용자 "스크립트 기준 접촉 판단이 되면 멈추면 됨 · 실기는 핸드에 과도한 토크(과전류)가 걸리지 않게만 조정 · sim 에서 안 되는 건 별로 중요하지 않음"
+  → 막힘(래치) 축은 그 순간 실측 + pin_lead_rad(기본 0)에 고정, 안 닿은 축은 지령이 실측을 close_lead_rad 0.08 rad 넘게 앞서지 않음
+  (pd HAND_MAX_LEAD 0.2 대신). 펌웨어 전류 한계 800 mA · FORCE_SET 그대로(4035a2a). sim 1-C 도구도 같은 규칙(접촉력으로 멈춤,
+  substep 4 · mimic nf0, hdgp 6d459152f).
+- 10.18 경로 C 접근 정책 rg3wc ep800 → rg3wg ep300 양손(grasping 1순위, 사용자 승인): `aglt/{right,left}_approach_rg3wg`
+  (server hdgp_grasp_w open-rh, md5 04dd459d… · 19ccc867…, 학습 = 지연 · FP++ · ADR 없음 · 손 position · 판정 contact).
+  계약 생성기가 contact 판정 위치제어 런의 G(0.0128, 학습 고정)를 거부해 pos 판정 런과 같게 학습 범위 끝으로 붙인다(rh_aglt.hand_block_of)
+  — 경로 C 닫기는 close_contract 가 막힘 명목값(0.0218)을 다시 씌우므로 실기 닫기 동작은 같다. 에피소드 grasp_c_{right,left} · tilt_base_c,
+  미션 재생성. 경로 B(tilt_base_b)의 hand_contract 는 rg3wc 그대로(막힘 명목값만 쓴다).
