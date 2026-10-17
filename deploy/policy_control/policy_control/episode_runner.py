@@ -45,6 +45,15 @@ class PolicyPlan:
     setting: tuple | None
     object_pose: tuple | None        # snapshot 이 기록한 물체 자세(pos, quat) — 집기 전 정지 컵
     policy_object: str | None = None  # ★10.12 다물체 aglt 정책의 물체 이름 → 노드 파라미터 object(reset 전)
+    max_s: float = 15.0               # ★10.17 노드 max_episode_s(경로 C 는 최악 경로로 늘어난다) — 실행기 대기 한도의 바탕
+
+
+def _node_max_s(b) -> float:
+    """정책 노드 한 번의 시간 한도 — 미션 생성기와 같은 식(approach_grasp.episode_s)."""
+    if getattr(b, "approach_grasp", None) is None:
+        return 15.0
+    from policy_control.approach_grasp import episode_s     # 무거운 의존은 경로 C 에서만
+    return episode_s(b.approach_grasp)
 
 
 class Executor(Protocol):
@@ -224,7 +233,7 @@ class EpisodeManager:
                                   source_object=j.source_object, target_holder=j.target_holder,
                                   holder_id=self.ep.holders.get(j.target_holder) if j.target_holder else None,
                                   setting=self.ep.setting.get(side) if side else None, object_pose=pose,
-                                  policy_object=j.policy_object))
+                                  policy_object=j.policy_object, max_s=_node_max_s(b)))
         return out
 
     def _after_success(self, node: Node, before: World, located: Mapping) -> World:

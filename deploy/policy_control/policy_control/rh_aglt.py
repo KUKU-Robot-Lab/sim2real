@@ -302,8 +302,15 @@ CUP_OUTER_R = {"source240_real": 0.030, "source200_real": 0.030, "shaker_c_real"
 GEOM_FIELDS = ("origin_offset_z", "mouth_z", "bottom_z", "radius", "half_height")
 
 
+#: ★10.17 hdgp OBJECTS 의 충돌체만 바꾼 사본(10.15 _solid 속 찬 회전체 · _cvx 볼록 조각) → 같은 실물 _real. unit · 질량 ·
+#:   visual 이 _real 과 같고(hdgp rh_aglt_env_cfg.py :94-111, 808f39d7) 실기에는 충돌체가 없다 → 계약 물체 이름은 _real 로 적는다.
+#:   one-hot 순서는 학습 object_names 순서 그대로(이름만 바뀐다) — 콘솔 · 에피소드 policy_object(source240_real …)가 그대로 맞는다.
+SIM_COLLIDER_ALIAS = {f"{b}_{k}": f"{b}_real" for b in ("source240", "source200", "shaker_c") for k in ("cvx", "solid")}
+
+
 def _names(env: Mapping) -> list[str]:
     names = [str(n) for n in (env.get("object_names") or ())] or [str(env.get("object_name", "shaker"))]
+    names = [SIM_COLLIDER_ALIAS.get(n, n) for n in names]
     unknown = [n for n in names if n not in CUP_OBJECTS]
     if unknown:
         raise RhAgltError(f"object_name(s) {unknown} 을 모른다 — {sorted(CUP_OBJECTS)} (hdgp OBJECTS 를 옮겨 와라)")
@@ -522,6 +529,14 @@ def hand_block_of(env: Mapping) -> tuple[dict, str, float]:
     pos_judge = str(env.get("hand_grasp_judge", "block")) in POS_JUDGES   # 10.14 위치제어 판정 런(G 4~10 칸)
     for k, lo_hi in (("hand_block_g_rad", "g_rad"), ("hand_block_eps_rad", "eps_rad"), ("hand_block_n_ticks", "n_ticks")):
         lo, hi = (float(v) for v in env[k])
+        end = env.get(f"{k}_end") or ()
+        if end and bool(env.get("adr_env_mix", False)) and bool(env.get("enable_adr", False)):
+            # ★10.17 rg3wo: hdgp adr_env_mix 는 env 마다 세기 s~U(0, 진행도) 로 시작 범위 → 종점 범위(*_end)를 선형 보간한다
+            #   (rh_aglt_env.py :542-548, HandBlock p_end). 끝까지 간 런은 두 범위를 잇는 구간 전체를 봤다 → 합집합으로 덮는지 본다.
+            #   진행도가 1 에 닿았는지는 env.yaml 로 알 수 없다 — 카드(policy.yaml)의 학습 끝 epoch 로 사람이 확인한다.
+            if len(end) != 2:
+                raise RhAgltError(f"{k}_end {list(end)} — [하한, 상한] 두 값이어야 한다")
+            lo, hi = min(lo, float(end[0])), max(hi, float(end[1]))
         if lo - 1e-9 <= nominal[lo_hi] <= hi + 1e-9:
             continue
         if (gax or pos_judge) and lo_hi == "g_rad":

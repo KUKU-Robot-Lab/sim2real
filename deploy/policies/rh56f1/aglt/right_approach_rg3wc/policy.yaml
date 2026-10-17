@@ -1,0 +1,18 @@
+id: rh56f1/aglt/right_approach_rg3wc
+task: open-rh_r_aglt-lstm
+side: right
+checkpoint: aglt_r_approach_rg3wc_ep800.pth
+md5: fff6c4aac16853d11d52c8d2efbf51b4
+source: server:/home/oem/rl_ws/our_source/rh_aglt_runs/approach/aglt_r_approach_rg3wc_ep800.pth
+  (+ _env.yaml · _agent.yaml)
+summary: 경로 C 접근 정책 — rg3wc ep800 원본(손을 편 채 다가감, oppose 0.98). FP++ 꺼짐 · 지연 학습 없음
+  · 컵 위치 잡음 ≤ 15 mm. 노드 파라미터 approach_grasp 로 접근 뒤 스크립트 닫기 · 쥠 확인 · 10 cm 들기 · 3 s
+  유지(approach_grasp.py)
+status: candidate
+eval: 'sim: rg3wn·rg3wo 출발점(10.14). 접근 끝 손바닥–컵 분포는 1-C 시뮬에서 잰다'
+interface: obs 94 (91 + 물체 one-hot 3, 맨 끝) · action 13 (팔 관절 증분 7 · 손 6) — rg3wo 와
+  해석 같음
+deploy:
+  max_episode_s: 29.0
+note: 10.17 s2r_1st 등록(경로 C, docs/PLAN_GRASP_TILT_EVAL_2026-10-17.md). 쥠 판정 키는 쓰지
+  않는다 — 닫기 때 approach_grasp.close_contract 가 막힘 명목값 + opp k=2 + 8 cm 로 바꾼다.

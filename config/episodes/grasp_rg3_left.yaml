@@ -8,7 +8,7 @@ episode: {name: grasp_rg3_left, version: 1}
 objects:
   CUP: {topic: /objects/shaker_c_orange/pose}
 policies:
-  rh_aglt_l: {policy: rh56f1/aglt/left_rg3s, kind: aglt, side: left}
+  rh_aglt_l: {policy: rh56f1/aglt/left_rg3wo, kind: aglt, side: left}
 trajectories:
   go_home: {kind: rehome, sides: [left]}
 failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 rehome으로 복구한다.

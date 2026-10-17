@@ -1,0 +1,210 @@
+{
+  "schema": "policy_control/rh_aglt_contract/v1",
+  "task": "open-rh_r_aglt",
+  "run_dir": "/home/user/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_rg3wo",
+  "checkpoint": "/home/user/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_rg3wo/nn/last_open-rh_r_aglt-lstm_ep_10000_rew_6647.8843.pth",
+  "checkpoint_md5": "624e55dc641631a2e98b90cbad060483",
+  "env_yaml_sha1": "5fb51287a980f81d1c148e4275889f6ba029c3ed",
+  "agent_yaml_sha1": "51244d61a7388e37f30db10111c366c0fb4a9589",
+  "asset": "openarm_rh56f1_bi_rl",
+  "profile": "rh56f1_right",
+  "policy_hz": 60.0,
+  "episode_s": 15.0,
+  "obs_dim": 94,
+  "action_dim": 13,
+  "obs_clip": 5.0,
+  "action_clip": 1.0,
+  "recurrent": true,
+  "hold_steps": 10,
+  "k_arm": 0.05,
+  "arm_ema": 0.1,
+  "hand_ema": 0.1,
+  "hand_full_range_s": 1.0,
+  "freeze_threshold_n": 1.0,
+  "joint_err_norm": 1.2,
+  "tactile_clip_n": 10.0,
+  "tactile_tanh_n": 3.0,
+  "cup_half_height": 0.085,
+  "goal_offset": [
+    0.0,
+    0.0,
+    0.1
+  ],
+  "hand_obs_order_source": "profile(hdgp rh_aglt_env hand_ids = 이름 순)",
+  "sides": {
+    "arm": {
+      "role": "arm",
+      "side": "right",
+      "arm_joints": [
+        "r_aj_1",
+        "r_aj_2",
+        "r_aj_3",
+        "r_aj_4",
+        "r_aj_5",
+        "r_aj_6",
+        "r_aj_7"
+      ],
+      "arm_home": [
+        -1.2127,
+        0.2026,
+        0.6538,
+        1.7608,
+        0.3791,
+        0.5785,
+        0.6646
+      ],
+      "arm_lo": [
+        -1.396263,
+        -0.17453267320510335,
+        -1.570796,
+        0.0,
+        -1.570796,
+        -0.785398,
+        -1.570796
+      ],
+      "arm_hi": [
+        3.490659,
+        3.3161253267948965,
+        1.570796,
+        2.443461,
+        1.570796,
+        0.785398,
+        1.570796
+      ],
+      "hand_joints": [
+        "r_hj_thumb_1",
+        "r_hj_thumb_2",
+        "r_hj_index_1",
+        "r_hj_middle_1",
+        "r_hj_ring_1",
+        "r_hj_pinky_1"
+      ],
+      "hand_open": [
+        1.57,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "hand_grip": [
+        1.2,
+        0.24,
+        1.08,
+        1.08,
+        0.85,
+        0.85
+      ],
+      "hand_lim_lo": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "hand_lim_hi": [
+        2.0943951023931953,
+        0.4745550236172582,
+        1.5285593588966337,
+        1.5285593588966337,
+        1.5285593588966337,
+        1.5285593588966337
+      ],
+      "palm_body": "r_hl_palm_sensor",
+      "tip_bodies": [
+        "r_hl_thumb_tip",
+        "r_hl_index_tip",
+        "r_hl_middle_tip",
+        "r_hl_ring_tip",
+        "r_hl_pinky_tip"
+      ]
+    }
+  },
+  "notes": [
+    "첫 목표 기본 = 리셋 때 컵 + (0, 0, 0.10) — 학습 분포 xy ±0.0 m · z [0.1, 0.1]",
+    "목표 입력: 박스 밖 거부 · 먼 목표는 축마다 ±0.08 m 이내 중간 목표로 나눔",
+    "목표 달성 = 키포인트 최대거리 ≤ tol_floor 0.03 m 누적 120 스텝 + 쥠(엄지 AND 다른 손가락 촉각 > 1.0 N — 학습은 첫마디+손끝 컵 접촉, 실기는 손끝 촉각)",
+    "학습 실기 반응(sim 전용, 배포 디코더는 따라 하지 않는다 — 실기가 스스로 낸다): arm_cmd_delay_steps [0, 0] · arm_cmd_delay_joint_steps [3.5, 3.2, 3.3, 2.3, 4.1, 8.6, 7.3] · arm_cmd_delay_joint_jitter 1 · hand_cmd_delay_steps [3, 5] · hand_open_floor_deg_lo [0.0, 1.0, 2.0, 2.0, 2.0, 2.0] · hand_open_floor_deg_hi [0.0, 3.0, 5.5, 5.5, 5.5, 5.5] · thumb1_reset_range [1.4, 1.57]",
+    "컵 스칼라(첫 물체 source240_real — 물체별 값은 object_geometry): 반높이 0.0850 · 원점 높이 0.0850 m — env.yaml 덤프(0.0569 · 0.0599)는 hydra 오버라이드 전 기본 shaker 값이라 쓰지 않았다",
+    "★actor 촉각 없음(actor_tactile_obs False): 관측 91(+물체 one-hot) — 손끝 촉각은 critic 에만. 쥠 멈춤 · 쥔 판정은 여전히 촉각 · 관절 힘을 쓴다(디코더 · cup_attach)",
+    "★다물체 한 정책: 관측 91 + 물체 one-hot 3 (id 순 ['source240_real', 'source200_real', 'shaker_c_real']) — 에피소드 reset 때 노드 파라미터 object 로 물체를 고른다(모르면 reset 거부). 컵 반높이 · 목표 박스 높이는 물체를 따른다: source240_real 반높이 0.0850 원점 0.0850 · source200_real 반높이 0.0850 원점 0.0850 · shaker_c_real 반높이 0.0650 원점 0.0650",
+    "학습 강건화(sim 전용, 배포 디코더 · 관측은 따라 하지 않는다): cmd_delay_adr True · cmd_delay_adr_mix True · cmd_delay_adr_scale_end 1.5 · fpp_enable True · critic_delay_obs True",
+    "★쥠 멈춤 · 쥔 판정 = 막힘 신호(hand_block {'g_rad': 0.0218, 'eps_rad': 0.0109, 'n_ticks': 3, 'lag_ticks': 6, 'axes': ['thumb_flex', 'index', 'middle', 'ring', 'pinky'], 'release_on_open': False} · thumb_flex_and_any_finger) — 손끝 촉각 · 접촉력 문턱 대신. sim DR(배포는 따라 하지 않는다): G [0.0128, 0.0128] · ε [0.0109, 0.0109] · N [3, 3] · 누락 [0.0, 0.0] · 쥔 판정 지연 [0, 0] 틱 · firmware_stop False"
+  ],
+  "goal_box_min": [
+    0.1,
+    -0.42000000000000004,
+    0.37
+  ],
+  "goal_box_max": [
+    0.33999999999999997,
+    0.1,
+    0.51
+  ],
+  "goal_first_xy_range": 0.0,
+  "goal_first_z_range": [
+    0.1,
+    0.1
+  ],
+  "goal_delta_distance": 0.08,
+  "goal_success_steps": 120,
+  "goal_tol": 0.03,
+  "grasp_threshold_n": 1.0,
+  "hand_command": "position",
+  "hand_admittance": {},
+  "object_names": [
+    "source240_real",
+    "source200_real",
+    "shaker_c_real"
+  ],
+  "object_geometry": {
+    "source240_real": {
+      "origin_offset_z": 0.085,
+      "mouth_z": 0.085,
+      "bottom_z": -0.085,
+      "radius": 0.03,
+      "half_height": 0.085
+    },
+    "source200_real": {
+      "origin_offset_z": 0.085,
+      "mouth_z": 0.085,
+      "bottom_z": -0.085,
+      "radius": 0.03,
+      "half_height": 0.085
+    },
+    "shaker_c_real": {
+      "origin_offset_z": 0.065,
+      "mouth_z": 0.065,
+      "bottom_z": -0.065,
+      "radius": 0.0354,
+      "half_height": 0.065
+    }
+  },
+  "goal_force_consecutive": true,
+  "active_object": "",
+  "actor_tactile_obs": false,
+  "hand_block": {
+    "g_rad": 0.0218,
+    "eps_rad": 0.0109,
+    "n_ticks": 3,
+    "lag_ticks": 6,
+    "axes": [
+      "thumb_flex",
+      "index",
+      "middle",
+      "ring",
+      "pinky"
+    ],
+    "release_on_open": false
+  },
+  "grasp_rule": "thumb_flex_and_any_finger",
+  "hand_lead_cap_rad": 0.2,
+  "grasp_hold_rule": "",
+  "grasp_release_open_rad": [],
+  "grasp_release_steps": 0,
+  "grasp_judge_axes": [],
+  "grasp_min_axes": 0,
+  "grasp_near_m": 0.0,
+  "extra_actor_obs": []
+}

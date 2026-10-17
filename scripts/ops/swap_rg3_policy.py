@@ -70,7 +70,8 @@ def write_index(new_id: str) -> None:
 
 def card(template: dict, a: argparse.Namespace, mode: str) -> dict:
     c = dict(template)
-    c.update(id=f"rh56f1/aglt/{a.tag}", status="candidate", checkpoint=a.checkpoint,
+    c.update(id=f"rh56f1/aglt/{a.tag}", status="candidate", checkpoint=a.checkpoint, side=a.side,
+             task=f"open-rh_{a.side[0]}_aglt-lstm",          # 다른 쪽 템플릿(--template)을 써도 쪽은 이 등록을 따른다
              source=f"{a.host}:{a.run}/nn/{a.checkpoint}",
              summary=f"{template.get('summary', '')} · ★손 = {mode}(10.14 위치제어 재학습)".replace("어드민턴스 · ", ""))
     c["note"] = f"swap_rg3_policy.py 로 등록(템플릿 {template.get('id')}). 학습 env.yaml 덤프 그대로."
@@ -85,6 +86,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--checkpoint", required=True, help="nn/ 의 .pth 이름")
     ap.add_argument("--tag", required=True, help="deploy/policies/rh56f1/aglt/<tag>")
     ap.add_argument("--expect", choices=("position", "admittance"), required=True, help="계약 hand_command 가 이것이 아니면 멈춘다")
+    ap.add_argument("--template", default=None,
+                    help="카드 템플릿 정책 tag(기본 = 에피소드의 지금 정책). 지금 정책 폴더가 지워졌을 때(10.17 left_rg3s) 쓴다")
     ap.add_argument("--execute", action="store_true")
     a = ap.parse_args(argv)
     ep_path = Path(str(EPISODE).format(side=a.side))
@@ -107,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
     if not m:
         raise SystemExit("env.yaml 에 reward_code_path 가 없다")
     run(["scp", "-q", f"{a.host}:{m.group(1)}", str(dst / "reward" / "compute_reward.py")])
-    template = yaml.safe_load((POL / "rh56f1" / "aglt" / old / "policy.yaml").read_text())
+    template = yaml.safe_load((POL / "rh56f1" / "aglt" / (a.template or old) / "policy.yaml").read_text())
     (dst / "policy.yaml").write_text(yaml.safe_dump(card(template, a, a.expect), allow_unicode=True, sort_keys=False))
     run([PY, "deploy/policy_control/tools/build_rh_aglt_contract.py", "--run", str(dst)], cwd=REPO)   # 계약 → 그다음 미션
     sys.path.insert(0, str(REPO / "deploy" / "policy_control"))

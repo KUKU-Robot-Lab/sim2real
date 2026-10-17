@@ -39,6 +39,7 @@ from policy_control.fpp_gate import FppGate, GateCfg  # noqa: E402
 from policy_control import pour_fj as F  # noqa: E402
 from policy_control import rh_aglt as A  # noqa: E402
 from policy_control import rh_aglt_goals as G  # noqa: E402
+from policy_control import approach_grasp as AG  # noqa: E402
 from policy_control import rh_place as P  # noqa: E402
 from policy_control.episode_master import EpisodeBook  # noqa: E402
 from policy_control.joint_obs import quat_to_matrix  # noqa: E402
@@ -204,6 +205,8 @@ class AgltChain:
         #   왼손 165303 bag: 쉐이커 10~14 cm 들림 · 컵-손바닥 4~8 cm 인데 쥔 판정 0 틱 → 이 규칙이면 4.59 s 에 멈춘다.
         self.lift_grasp_palm_m = 0.0
         self.cup_fresh = True                       # ★10.14 노드가 매 틱 넣는다 — False 면 성공 · lift_hold 카운터 멈춤
+        self.ag = None                              # ★10.17 경로 C(approach_grasp.ApproachGrasp) — 노드 파라미터 approach_grasp
+        self.fk = None                              # ★10.17 경로 C IK 들기 — 노드가 넣는다
 
     def lift_grasped(self, m: A.RaMeas) -> bool:
         """B 들림 판정 — 관측 컵 z − 리셋 컵 z > freeze.lift_m AND |컵 − 손바닥| < lift_grasp_palm_m."""
@@ -226,6 +229,9 @@ class AgltChain:
         if meas is None:
             raise PourFjNodeError("rh_aglt reset needs the cup pose (goal = cup at reset + offset)")
         self.c = A.select_object(self.base, self.object_name)   # 물체를 모르면 RhAgltError(조용한 0 one-hot 금지)
+        if self.ag is not None:                     # ★10.17 경로 C 는 닫기 때 디코더를 바꾼다 — 에피소드마다 접근 정책 디코더로
+            self.dec = A.RaDecoder(self.c, self.dec.assist)
+            self.ag.reset()
         self.dec.reset()
         self.prev = np.zeros(self.c.action_dim)
         self.step_i = 0
@@ -234,6 +240,8 @@ class AgltChain:
             self.policy.reset()
 
     def step(self, meas: dict) -> tuple[np.ndarray, np.ndarray, dict]:
+        if self.ag is not None and self.ag.scripted:   # ★10.17 경로 C — 접근 뒤는 스크립트 닫기 · 판정 · 들기
+            return self.ag.step(self, meas)
         m = meas["arm"]
         obs = A.build_obs(self.c, m, self.dec, self.goal, self.prev)
         a = np.clip(np.asarray(self.policy.forward(obs), float), -self.c.action_clip, self.c.action_clip)
@@ -251,6 +259,8 @@ class AgltChain:
             self.goals.step(m.cup_pos, m.cup_quat, m.tactile_n, is_grasped=g, fresh=self.cup_fresh)
         self.prev = np.clip(a, -1.0, 1.0)
         self.step_i += 1
+        if self.ag is not None:
+            self.ag.after_policy(self, m)
         return obs, a, targets
 
 
@@ -364,7 +374,7 @@ class PourFjNode(LeanNodeMixin, Node):
                               ("stop_on_target", False), ("goal_max", 0),
                               ("freeze_rule", "success"), ("freeze_lift_m", 0.07), ("freeze_hold_steps", 30), ("episode_topic", ""), ("object", ""),
                               ("hand_unfreeze_on_grasp", False), ("thumb_support_g", 0.0), ("lift_grasp_palm_m", 0.0),
-                              ("thumb_open_floor_rad", 0.0),
+                              ("thumb_open_floor_rad", 0.0), ("approach_grasp", ""),
                               ("cup_attach", True), ("cup_attach_switch", "auto"), ("attach_force_n", AttachCfg.force_n),
                               ("attach_joint_force_g", AttachCfg.joint_force_g), ("attach_signal", AttachCfg.signal),
                               ("attach_max_palm_dist_m", AttachCfg.max_palm_dist_m),
@@ -665,6 +675,11 @@ class PourFjNode(LeanNodeMixin, Node):
             self.chain.lift_grasp_palm_m = float(self.get_parameter("lift_grasp_palm_m").value)
             if not (np.isfinite(self.chain.lift_grasp_palm_m) and self.chain.lift_grasp_palm_m >= 0.0):
                 raise A.RhAgltError(f"lift_grasp_palm_m ≥ 0(0 = 끔): {self.chain.lift_grasp_palm_m}")
+        if hasattr(self.chain, "ag"):                   # ★10.17 경로 C — 잘못된 값은 reset 거부("" = 끔, "on", "키=값,…")
+            cfg = AG.ApproachGraspCfg.parse(str(self.get_parameter("approach_grasp").value))
+            self.chain.ag = None if cfg is None else AG.ApproachGrasp(cfg, float(self.contract.policy_hz))
+            if cfg is not None:
+                self.chain.fk = self.fk["arm"]
         self.chain.reset(meas)
 
     def _after_step(self) -> bool:
@@ -673,6 +688,10 @@ class PourFjNode(LeanNodeMixin, Node):
         rh_aglt: stop_on_target 이면 사용자 목표(에피소드 실행기의 SETTING) 자체를 달성한 스텝에 끝낸다(10.04 에피소드 실행기 —
         다음 정책이 그 자세에서 이어받는다). goal_max > 0 이면 목표 성공 그 횟수에 끝낸다(10.13 방안 A, sim goal_max).
         둘 다 끄면 예전처럼 시간으로 끝난다."""
+        ag = getattr(self.chain, "ag", None)
+        if ag is not None and ag.end is not None:       # ★10.17 경로 C — 성공은 stop(pd 가 붙든다), 실패는 abort(들지 않고 멈춤)
+            self._end(*ag.end)
+            return True
         why = G.end_reason(getattr(self.chain, "goals", None), bool(self.get_parameter("stop_on_target").value),
                          int(self.get_parameter("goal_max").value))
         if why is None:
@@ -681,7 +700,8 @@ class PourFjNode(LeanNodeMixin, Node):
         return True
 
     def _status_extra(self) -> dict:
-        return {}
+        ag = getattr(self.chain, "ag", None)
+        return {"approach_grasp": ag.as_dict()} if ag is not None else {}
 
     # ---------------------------------------------------------------- tick
     def _status(self, ok: bool, reasons, extra=None) -> None:
@@ -727,7 +747,11 @@ class PourFjNode(LeanNodeMixin, Node):
         if self._after_step():
             return
         if self.max_s > 0 and time.monotonic() - self._t_start >= self.max_s:
-            self._end("stop", f"episode time >= {self.max_s:.1f} s (학습 episode_length_s)")
+            ag = getattr(self.chain, "ag", None)
+            if ag is not None:                      # ★10.17 경로 C 가 끝나기 전 시간 초과는 성공이 아니다(쥠 · 들기 · 유지 미완)
+                self._end("abort", f"경로 C 시간 초과 {self.max_s:.1f} s — 단계 {ag.phase}")
+            else:
+                self._end("stop", f"episode time >= {self.max_s:.1f} s (학습 episode_length_s)")
 
 
 def main(argv=None, family: str = "pour_fj", node_cls=None) -> int:

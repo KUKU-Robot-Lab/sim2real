@@ -1,0 +1,19 @@
+# 경로 C(10.17 사용자 승인, docs/PLAN_GRASP_TILT_EVAL_2026-10-17.md) — right 손 source240(파란 병, FP++ source240b_blue).
+# 접근 정책(rg3wc ep800 원본, 손을 편 채 다가감) → 손바닥–컵 ≤ 6 cm · 팔 정지 0.5 s(또는 15 s)에 정책을 끈다 → 엄지 회전 고정,
+# 엄지 굽힘(0.3 s 늦게) · 네 손가락을 0.6 rad/s 로 닫고 막힌 축은 그 자리에서 멈춘다 → 쥠 = 네 손가락 중 2 축 래치 + 컵–손바닥 < 8 cm
+# (0.25 s) → 손바닥 방향 고정 10 cm 수직 들기 → 3 s 유지 = 성공. 못 쥐면 들지 않고 멈춘다(abort, pd 가 그 자세로 붙듦 — 복구는 rehome).
+# rg3wo(경로 A)가 쪽당 4/5 미만일 때 쓴다(결정 5). 값 조정: policies.rh_aglt_r.approach_grasp 에 키: 값(approach_grasp.ApproachGraspCfg).
+# 물체 바꾸기: 실행기 파라미터 -p policy_object:=<source240_real|source200_real|shaker_c_real> -p cup_object:=<FP++ 물체 이름>.
+episode: {name: grasp_c_right, version: 1}
+objects:
+  CUP: {topic: /objects/source240b_blue/pose}
+policies:
+  rh_aglt_r: {policy: rh56f1/aglt/right_approach_rg3wc, kind: aglt, side: right, approach_grasp: {}}
+trajectories:
+  go_home: {kind: rehome, sides: [right]}
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 rehome으로 복구한다.
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  - {id: grasp_lift, type: policy, name: rh_aglt_r, target_object: CUP, policy_object: source240_real, expect: {right_hand: CUP}}
+  - {id: done, type: terminal, result: SUCCESS}

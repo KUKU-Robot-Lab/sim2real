@@ -1,0 +1,16 @@
+id: rh56f1/aglt/left_approach_rg3wc
+task: open-rh_l_aglt-lstm
+side: left
+checkpoint: aglt_l_approach_rg3wc_ep800_mirror.pth
+md5: 45e245150536ccad53c381433ea1edf6
+source: server:/home/oem/rl_ws/our_source/rh_aglt_runs/approach/aglt_l_approach_rg3wc_ep800_mirror.pth
+summary: 경로 C 접근 정책(왼손) — 오른손 rg3wc ep800 을 거울로 뒤집은 체크포인트(왼손 전용 접근 정책은 없다, rg3wo 왼손의
+  출발점). params = left_rg3wo 의 env · agent(관측 · 행동 해석이 접근 런과 같음 — 오른손 계약 비교로 확인)
+status: candidate
+eval: 'sim: rg3wn·rg3wo 출발점(10.14). 접근 끝 손바닥–컵 분포는 1-C 시뮬에서 잰다'
+interface: obs 94 (91 + 물체 one-hot 3, 맨 끝) · action 13 (팔 관절 증분 7 · 손 6) — rg3wo 와
+  해석 같음
+deploy:
+  max_episode_s: 29.0
+note: 10.17 s2r_1st 등록(경로 C, docs/PLAN_GRASP_TILT_EVAL_2026-10-17.md). 쥠 판정 키는 쓰지
+  않는다 — 닫기 때 approach_grasp.close_contract 가 막힘 명목값 + opp k=2 + 8 cm 로 바꾼다.

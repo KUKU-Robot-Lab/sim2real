@@ -329,7 +329,7 @@ class RosExecutor:
         ok, why = self._call(f"{NS}/{ns}/episode/start")
         if not ok:
             return NodeResult("refused", "; ".join(why), role=p.role)
-        limit = 15.0 + POLICY_MARGIN_S
+        limit = float(getattr(p, "max_s", 15.0)) + POLICY_MARGIN_S     # ★10.17 경로 C 는 노드 한도가 길다
         while True:
             time.sleep(0.05)
             if self.cancel.is_set():

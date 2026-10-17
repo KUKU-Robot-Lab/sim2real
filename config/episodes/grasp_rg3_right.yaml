@@ -8,7 +8,7 @@ episode: {name: grasp_rg3_right, version: 1}
 objects:
   CUP: {topic: /objects/source240b_blue/pose}
 policies:
-  rh_aglt_r: {policy: rh56f1/aglt/right_rg3hp3, kind: aglt, side: right}
+  rh_aglt_r: {policy: rh56f1/aglt/right_rg3wo, kind: aglt, side: right}
 trajectories:
   go_home: {kind: rehome, sides: [right]}
 failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 rehome으로 복구한다.

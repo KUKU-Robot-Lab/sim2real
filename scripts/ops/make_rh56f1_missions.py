@@ -65,7 +65,7 @@ PLACE_HOLDER = {"right": 1, "left": 1}
 #: fake 홀더 y — hdgp rh_place env holder_ys(0.153, −0.002, −0.161)
 FAKE_HOLDER_Y = {0: 0.153, 1: -0.002, 2: -0.161}
 #: 상황판에서 굴리는 에피소드(10.04 사용자: 구분 실행 → 연속 실행) — config/episodes/<이름>.yaml, 실기에 쓸 수 있는 것만
-EPISODES = ("pick_place_right", "pick_place_left", "grasp_rg3_right", "grasp_rg3_left")
+EPISODES = ("pick_place_right", "pick_place_left", "grasp_rg3_right", "grasp_rg3_left", "grasp_c_right", "grasp_c_left")
 #: 에피소드 snapshot 이 다시 내는 정지 물체 자세(episode_ros.OBJECT_RELAY) — aglt 는 이것을 컵으로 본다
 EPISODE_RELAY = "/episode/objects/{}/pose"
 # 제자리 들기(grasp_rg3) 정책 노드의 lift_hold 멈춤 = 컵 7 cm 위 + 쥠 연속 틱(60 Hz).
@@ -687,13 +687,19 @@ def _episode_run(name: str, real: bool) -> list:
                                     "-p", f"freeze_hold_steps:={hold}"],
                                    f"첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 {hold / 60:g} s 쥠 유지에 스스로 끝남") if lift_only
                                  else (["stop_on_target:=true"], "SETTING 도달에 스스로 끝남"))
+            max_s = "15.0"
+            if b.approach_grasp is not None:            # ★10.17 경로 C — 접근 정책 뒤 스크립트 닫기 · 쥠 확인 · 들기 · 유지
+                from policy_control.approach_grasp import ApproachGraspCfg, episode_s
+                end_args = [f"approach_grasp:={ApproachGraspCfg.to_param(b.approach_grasp)}"]
+                end_note = "경로 C: 접근 정책 → 정책 끄고 손 닫기 → 쥠 확인(네 손가락 2 개 · 8 cm) → 10 cm 들기 → 3 s 유지, 못 쥐면 들지 않고 멈춤"
+                max_s = f"{episode_s(b.approach_grasp):.1f}"   # 최악 경로 + 3 s(실행기는 PolicyPlan.max_s + 10 s 를 기다린다)
             cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — {end_note} · 컵 = FP++ live"
                              " · 쥐면 손바닥 FK 로 손에 붙임",
                              ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_aglt_node.py", "--ros-args",
                               "-r", f"__node:=rh_aglt_node_{b.side}", "-p", f"ns:={b.side}", "-p", f"contract:={contract}",
                               "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", *end_args,
                               "-p", f"cup_topic:={_live(ep.objects[obj]['topic'])}", *AGLT_LIVE_ARGS,
-                              "-p", "max_episode_s:=15.0"], background=True))
+                              "-p", f"max_episode_s:={max_s}"], background=True))
         elif b.kind == "place":
             src = next((j for n in ep.nodes for j in n.jobs if j.role == role), None)
             obj = src.source_object if src and src.source_object else first_obj

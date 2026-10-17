@@ -46,6 +46,9 @@ class Binding:
     kind: str
     side: str
     policy: str | None            # 등록부 id — None 이면 아직 없는 정책(dry-run 에서만 돈다)
+    #: ★10.17 경로 C(approach_grasp.py) — aglt 노드가 접근 뒤 스크립트 닫기 · 쥠 확인 · 들기 · 유지를 한다. None = 끔,
+    #:   {} = 기본값, 키 = ApproachGraspCfg 필드 덮어쓰기(모르는 키 거부)
+    approach_grasp: Mapping | None = None
 
 
 @dataclass(frozen=True)
@@ -164,7 +167,18 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
     for role, b in (raw.get("policies") or {}).items():
         if b.get("kind") not in KINDS or b.get("side") not in SIDES:
             raise EpisodeSpecError(f"policies.{role}: kind {KINDS} · side {SIDES} 가 필요하다")
-        pols[str(role)] = Binding(role=str(role), kind=str(b["kind"]), side=str(b["side"]), policy=b.get("policy"))
+        ag = b.get("approach_grasp")
+        if ag is not None:
+            if b.get("kind") != "aglt" or not isinstance(ag, Mapping):
+                raise EpisodeSpecError(f"policies.{role}: approach_grasp 는 aglt 정책의 {{키: 값}}(빈 {{}} = 기본값)")
+            from policy_control.approach_grasp import ApproachGraspCfg, ApproachGraspError   # 무거운 의존은 쓸 때만
+            try:
+                ApproachGraspCfg.to_param(dict(ag))
+            except (ApproachGraspError, TypeError, ValueError) as exc:
+                raise EpisodeSpecError(f"policies.{role}: approach_grasp — {exc}") from exc
+            ag = dict(ag)
+        pols[str(role)] = Binding(role=str(role), kind=str(b["kind"]), side=str(b["side"]), policy=b.get("policy"),
+                                  approach_grasp=ag)
     trajs = {}
     for name, t in (raw.get("trajectories") or {}).items():
         if t.get("kind") not in TRAJ_KINDS:
