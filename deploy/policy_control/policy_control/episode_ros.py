@@ -28,7 +28,7 @@ import yaml
 
 from policy_control import _paths
 from policy_control.episode_failure import NodeResult
-from policy_control.episode_spec import EMPTY, Episode, Node
+from policy_control.episode_spec import EMPTY, PLANNED_TRAJ, TRAJ_ASSETS, Episode, Node
 from policy_control.rh_place import HOLDER_FLOOR_Z
 
 NS = "/policy_control"
@@ -421,6 +421,8 @@ class RosExecutor:
     def run_trajectory(self, node: Node, traj, world) -> NodeResult:
         if traj.kind == "noop":
             return NodeResult("completed", "noop")
+        if traj.kind in PLANNED_TRAJ:
+            return self._run_planned(node, traj, world)
         t0 = time.monotonic()
         for side in traj.sides:
             if not self._wait_pd_tracking(side):
@@ -447,6 +449,36 @@ class RosExecutor:
                     status = "refused" if k < 2 else "error"
                     return NodeResult(status, f"{'no safe path — ' if k < 2 else ''}{Path(argv[1]).name} rc {rc}: {tail}",
                                       time.monotonic() - t0)
+        return NodeResult("completed", "", time.monotonic() - t0)
+
+    def _run_planned(self, node: Node, traj, world) -> NodeResult:
+        """10.17 carry(ready_carry → 붓기 시작 자세) · tilt(D4 기본 궤적 + 복귀): 두 팔 실측에서 계획 · 검사(움직이지 않음)
+        → 14 관절을 한 시각표로 재생. 계획 · 검사 실패(rc ≠ 0)면 움직이지 않고 refused. 손 목표는 그대로(팔 관절만 보낸다)."""
+        t0 = time.monotonic()
+        for side in SIDES:
+            if not self._wait_pd_tracking(side):
+                pd = self._pd_view(side)
+                return NodeResult("error", f"pd_{side} 가 TRACKING 이 아니다 · {pd['pd_phase']} {pd['pd_reasons']}",
+                                  signals={"pd_fault": pd["pd_phase"] or "unknown"})
+            if world.hand(side) == EMPTY:
+                return NodeResult("refused", f"{traj.kind}: {side} 손이 비었다 — 두 손이 컵을 쥔 상태에서만(손 안 컵 자리 기준)")
+        asset = TRAJ_ASSETS / traj.asset
+        cfg = yaml.safe_load((asset / "policy.yaml").read_text(encoding="utf-8")) or {}
+        out = self.run_dir / f"{traj.kind}_{node.id}"
+        joints = ",".join([f"r_aj_{i}" for i in range(1, 8)] + [f"l_aj_{i}" for i in range(1, 8)])
+        steps = [
+            [sys.executable, str(TOOLS / f"plan_{traj.kind}.py"), "--asset", str(asset), "--out", str(out)],
+            [sys.executable, str(TOOLS / "replay_to_pd.py"), "--npz", str(out / f"{traj.kind}_cmd.npz"), "--joints", joints,
+             "--rate-scale", repr(float(traj.rate_scale)), "--max-start-gap", repr(float(cfg.get("start_gap_rad", 0.05))),
+             "--execute"],
+        ]
+        for k, argv in enumerate(steps):
+            rc, tail = self._run(argv)
+            if self.cancel.is_set():
+                return NodeResult("aborted", "episode runner stop", time.monotonic() - t0)
+            if rc != 0:                                # 계획 · 검사 실패 = 움직이지 않았다
+                status = "refused" if k == 0 else "error"
+                return NodeResult(status, f"{Path(argv[1]).name} rc {rc}: {tail}", time.monotonic() - t0)
         return NodeResult("completed", "", time.monotonic() - t0)
 
     def _run(self, argv: list) -> tuple[int, str]:

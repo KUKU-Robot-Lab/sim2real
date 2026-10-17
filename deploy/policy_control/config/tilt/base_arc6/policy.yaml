@@ -1,0 +1,45 @@
+# RH56F1 양팔 tilt(붓기) 기본 궤적(잔차 0) — 10.17 사용자 결정 8 · 9 · 12 (docs/PLAN_GRASP_TILT_EVAL_2026-10-17.md)
+#
+# 궤적 = D4 rh_ref_s2h4 ep5000 의 기본 궤적(arc6: 양손 동시 원호, 최대 기울기 128.6°, 4.86 s) + 복귀(유지 2 s → 원호 4 s 되짚기
+#   → 1 s) + 측정 출발 관절까지 관절 최소 저크(0.5 rad/s, 최소 2 s) + 1 s. 실기 출발마다 hdgp tilt_real_start.py 로 다시 푼다
+#   (학습과 같은 traj_retarget_starts 계산). 오른손 = 붓는 병(source240_real), 왼손 = 받는 컵(shaker_c_real).
+# 이송 = 잡기(7 cm 들림) 뒤 ready_carry(hdgp Mover, q_goal = 붓기 시작 자세 rh56f1_pour_start.yaml) — 컵을 세운 채 곧게.
+# 손 안 컵 자리 = 기준 출발 single734_t120 행 0 의 자리(실측 아님). 실제 쥔 자리가 다르면 컵 경로가 그만큼 어긋난다.
+#
+# 계획 · 검사 도구: deploy/policy_control/tools/plan_carry.py · plan_tilt.py (움직이지 않는다). 재생: replay_to_pd.py(14 관절).
+name: tilt/base_arc6
+kind: tilt_base
+objects: {right: source240_real, left: shaker_c_real}
+start_pose: deploy/policy_control/config/homes/rh56f1_pour_start.yaml
+rate_scale: 1.0              # D4 학습과 같은 빠르기. 병 쪽 60 Hz 명령 최대 1.89 rad/s(검사 한계 2.0)
+start_gap_rad: 0.05          # 계획한 자세 ↔ 재생 직전 실측 최대 간극
+table:
+  from: config/head_extrinsics.yaml   # table_top_z(hand-eye CAD 사슬, 줄자 0.205)
+  margin_m: 0.01                      # 컵 최저점 − 탁자 윗면. 받는 컵은 붓는 동안 sim 탁자(0.20) 위 약 2 cm
+hdgp:
+  commit: 68e4620e3          # 핀을 만든 hdgp main
+  md5:                       # hdgp 루트 기준. 하나라도 다르면 plan_* 가 계획하지 않는다(policy_control/hdgp_pin.py)
+    scripts/tools/pour_bank/tilt_real_start.py: fbdded55c7b217c5e206a35774ad3935
+    scripts/tools/pour_bank/traj_retarget_starts.py: db46c84bceb719fab5da9772bf9b1e4c
+    scripts/tools/pour_bank/retarget_real_start.py: bbf57967381d21bb5f3ceb2ef9e80db9
+    scripts/tools/pour_bank/export_s2r_traj.py: 200e7307d6145e2682fc596fabd80d14
+    scripts/tools/pour_bank/demo_retarget.py: 432501a22f3657f9e660b6609257cf9d
+    scripts/tools/pour_teach_ik.py: 1f43ca0e2d3ba6b64a1c4e3bd909d615
+    scripts/tools/replay_chain/chain_pour.py: 38e8bfb45e587bbff7c33e8e5fd7d376
+    scripts/tools/replay_chain/pose_hub.py: 0bf5fcb621588e975ead134b4f90206e
+    source/openarm/openarm/agnostic/modules/ready_carry/__init__.py: 6a921e20ba3ea5fa3c943e175a39bf3d
+    source/openarm/openarm/agnostic/modules/ready_carry/chain.py: e93981f98a8e74bada451eb3b0a59568
+    source/openarm/openarm/agnostic/modules/ready_carry/posture.py: 84539be194cf9f27f245d82e0473f762
+    source/openarm/openarm/agnostic/modules/ready_carry/mover.py: 5c8f015fda6cdb3e7ae590abf5ba6e25
+    assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf: f338d043ce3481f72e37ec4c79e20d43
+# 학습 정책이 아니라 궤적 자산이라 deploy/policies(정책 등록부)가 아니라 여기 둔다. ref/ 는 홈 경로 npz(deploy/policy_control/paths)
+# 처럼 저장소에 추적한다(합 0.7 MB). 원본: ~/rl_ws/s2r_2nd/replay_chain/pour/ref/
+#   (server · arm4090 에도 같은 폴더). D4 teach/arc6_meta.json 이 쓴 것과 같은 파일(뱅크 원본 md5 4d85d657…).
+#   bank_env17_startdr_x4.npz 는 범위 검사(export_s2r_traj.bank_box)에 쓰는 키만 남긴 사본:
+#     python3 -c "import numpy as np; d=np.load('<원본>'); np.savez_compressed('ref/bank_env17_startdr_x4.npz',
+#       **{k: d[k] for k in ('joint_names','joint_pos','src_root','rcv_root')})"
+#     다시 만들면 zip 시각 때문에 md5 가 바뀐다 — 그때 아래 값을 고친다.
+ref:
+  collect_q_A_g25.npz: 96a5e063e896bec7bc59e1fbae1678e6
+  single734_t120.npz: ff07baee8978f1bdfec5336a8605b230
+  bank_env17_startdr_x4.npz: b0d720ed14efba1ea99963e53db666aa

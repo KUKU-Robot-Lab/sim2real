@@ -30,7 +30,9 @@ def _expect_text(expect) -> str:
 def _lines(ep: Episode, n: Node) -> list[str]:
     if n.type == "trajectory":
         t = ep.trajectories[n.name]
-        return [f"{n.name} · 팔 {', '.join(t.sides)}", "실측 → 경로 재계획 → 재생 → 정착" if t.kind == "rehome" else t.kind]
+        how = {"rehome": "실측 → 경로 재계획 → 재생 → 정착", "carry": "실측 → ready_carry 이송 계획 · 검사 → 두 팔 재생",
+               "tilt": "실측 → D4 기본 궤적 IK · 검사 → 두 팔 재생 → 복귀"}
+        return [f"{n.name} · 팔 {', '.join(t.sides)}", how.get(t.kind, t.kind)]
     if n.type == "snapshot":
         return [f"FP++ {', '.join(ep.objects)}", "정지 · 신선 1.5 s 중앙값"]
     if n.type == "terminal":

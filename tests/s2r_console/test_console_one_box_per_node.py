@@ -95,13 +95,15 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
     aglt = d.box("rh_aglt_node_right")
     assert aglt.ros == ("/rh_aglt_node_right", "/rh_aglt_node_right_poll")    # 센서는 폴링 노드가 구독한다
     assert set(aglt.units) == {"policy_aglt_right#4", "episode_pick_place_right#3", "episode_grasp_rg3_right#3",
-                               "episode_grasp_c_right#3"} & set(units)          # 10.17 경로 C(접근 정책 + 스크립트 파지)
+                               "episode_grasp_c_right#3",                       # 10.17 경로 C(접근 정책 + 스크립트 파지)
+                               "episode_tilt_base_a#3"} & set(units)            # 10.17 tilt 기본 궤적 경로 A(두 손 잡기)
     place = d.box("rh_place_node_right")
     assert set(place.units) == {"policy_place_right#1", "episode_pick_place_right#4"}
     runner = d.box("episode_runner")
     assert set(runner.units) == {"episode_pick_place_right#7", "episode_pick_place_left#7",
                               "episode_grasp_rg3_right#6", "episode_grasp_rg3_left#6",
-                              "episode_grasp_c_right#6", "episode_grasp_c_left#6"}   # 실기: 앞에 CPU 기록 한 줄(10.08)
+                              "episode_grasp_c_right#6", "episode_grasp_c_left#6",
+                              "episode_tilt_base_a#7"}   # 실기: 앞에 CPU 기록 한 줄(10.08) · tilt_base_a 는 정책 노드 둘
 
 
 def test_one_arms_pd_without_and_with_publishing_is_one_box_and_only_the_quiet_one_mutes_the_drive(real):

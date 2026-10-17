@@ -30,7 +30,11 @@ import yaml
 NODE_TYPES = ("snapshot", "trajectory", "policy", "parallel_policy", "terminal")
 KINDS = ("aglt", "place", "pour", "lock", "shake")
 SIDES = ("right", "left", "both")
-TRAJ_KINDS = ("rehome", "noop")
+TRAJ_KINDS = ("rehome", "noop", "carry", "tilt")
+#: 10.17 두 팔 실측에서 계획 · 검사한 뒤 14 관절을 한 번에 재생하는 궤적(tools/plan_<kind>.py → replay_to_pd).
+#: carry = 잡기 뒤 ready_carry 로 붓기 시작 자세(SETTING)까지 · tilt = D4 기본 궤적(잔차 0) + 복귀. 자산 = config/<asset>/policy.yaml
+PLANNED_TRAJ = ("carry", "tilt")
+TRAJ_ASSETS = Path(__file__).resolve().parents[1] / "config"
 POSES = ("HOME", "SETTING")
 EMPTY = "EMPTY"
 HAND_KEYS = {"right_hand": "right", "left_hand": "left"}
@@ -77,6 +81,8 @@ class Trajectory:
     name: str
     kind: str
     sides: tuple
+    asset: str = ""              # carry · tilt: config/ 기준 자산 폴더(policy.yaml · ref/)
+    rate_scale: float = 1.0      # carry · tilt 재생 배속(0, 1]
 
 
 @dataclass(frozen=True)
@@ -183,7 +189,7 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
     for name, t in (raw.get("trajectories") or {}).items():
         if t.get("kind") not in TRAJ_KINDS:
             raise EpisodeSpecError(f"trajectories.{name}: kind 는 {TRAJ_KINDS}")
-        trajs[str(name)] = Trajectory(name=str(name), kind=str(t["kind"]), sides=tuple(t.get("sides") or ("right", "left")))
+        trajs[str(name)] = _trajectory(str(name), t)
     ep = Episode(name=str(meta.get("name", Path(path).stem)), version=int(meta.get("version", 1)),
                  nodes=tuple(_node(n, i) for i, n in enumerate(raw["sequence"])), policies=pols, trajectories=trajs,
                  objects=resolve_objects(raw.get("objects") or {}, path),
@@ -193,6 +199,22 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
                  holder_poses=str(raw.get("holder_poses") or ""), path=path)
     validate(ep)
     return ep
+
+
+def _trajectory(name: str, t: Mapping) -> Trajectory:
+    tr = Trajectory(name=name, kind=str(t["kind"]), sides=tuple(t.get("sides") or ("right", "left")),
+                    asset=str(t.get("asset") or ""), rate_scale=float(t.get("rate_scale", 1.0)))
+    if tr.kind not in PLANNED_TRAJ:
+        if tr.asset:
+            raise EpisodeSpecError(f"trajectories.{name}: asset 은 {PLANNED_TRAJ} 에만")
+        return tr
+    if tuple(tr.sides) != ("right", "left"):
+        raise EpisodeSpecError(f"trajectories.{name}: {tr.kind} 는 두 팔 한 번에 — sides: [right, left]")
+    if not tr.asset or not (TRAJ_ASSETS / tr.asset / "policy.yaml").is_file():
+        raise EpisodeSpecError(f"trajectories.{name}: asset {tr.asset!r} 에 policy.yaml 이 없다({TRAJ_ASSETS})")
+    if not 0.0 < tr.rate_scale <= 1.0:
+        raise EpisodeSpecError(f"trajectories.{name}: rate_scale 은 (0, 1] — {tr.rate_scale}")
+    return tr
 
 
 def load(path: str | Path) -> Episode:

@@ -69,3 +69,21 @@ def test_reverse_allows_a_small_gap_because_the_arm_droops():
 def test_forward_may_start_anywhere_the_ramp_is_the_point():
     plan, _, ramp = R.build_plan(FRAMES, start=np.array([-1.5, 2.0]), pub_dt=DT, reverse=False)
     assert ramp > 1 and np.allclose(plan[ramp:], FRAMES)
+
+
+def test_both_arms_in_one_stream_keep_first_seen_order():
+    """10.17 tilt: 14 관절을 한 JointState 로 — 팔 목록과 실측 이름(openarm_<side>_joint<i>)."""
+    joints = [f"r_aj_{i}" for i in range(1, 8)] + [f"l_aj_{i}" for i in range(1, 8)]
+    assert R.arm_sides(joints) == ["right", "left"]
+    assert R.arm_sides(joints[7:]) == ["left"]
+    assert R.measured_name("l_aj_4") == "openarm_left_joint4" and R.measured_name("r_aj_7") == "openarm_right_joint7"
+    with pytest.raises(SystemExit):
+        R.arm_sides(["r_aj_1", "x_aj_1"])
+
+
+def test_start_gap_refuses_a_plan_made_before_the_arm_moved():
+    first = np.zeros(14)
+    assert R.check_start_gap(first + 0.01, first, 0.05) == pytest.approx(0.01)
+    assert R.check_start_gap(first + 0.5, first, None) == pytest.approx(0.5)      # 기본은 검사 안 함(옛 동작)
+    with pytest.raises(SystemExit):
+        R.check_start_gap(first + 0.06, first, 0.05)

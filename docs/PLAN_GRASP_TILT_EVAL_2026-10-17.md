@@ -23,6 +23,7 @@
 | 9 | 복귀 | 정책은 7.0 s 궤적에서만, 복귀는 잔차 0 으로 원호 4 s 되짚기 |
 | 10 | 경로 A 멈춤 | 양손 모두 컵 7 cm 위 + 쥠 2 s(120 틱)에 정책 멈춤(첫 목표 성공도 멈춤). 그 뒤 3 s 유지로 성공 판정. 10.14 의 오른손 5 s(약지 · 새끼 감기 기다림)와 0.5 s 사이 값 |
 | 11 | 비드 수 | 10 개(D4 sim 전량 82.4 %) |
+| 12 | 잡기 뒤 이송 | ready_carry(10.13 규칙) + 끝 = 고정 이정표 붓기 시작 자세(10.12 규칙). hdgp Mover 에 끝 관절 지정(q_goal) 인자 추가 |
 
 ## 경로
 
@@ -94,3 +95,20 @@
   0.6 rad/s, 출발 합류 1 s) · teach_rcv_follow + rcv 잔차 · 관측 끝 15 칸(위상 1 + 소스 기준 7 + 리시버 기준 7).
   실기 출발 궤적은 hdgp retarget_real_start.py(출발 하나 IK, check.json) 로 만들되 arc6 옵션을 넘겨야 한다.
   D4 README 의 실기 순서도 "잔차 0(궤적만) 기준 → 정책 잔차"다.
+- 10.17 경로 A 멈춤 양손 2 s(120 틱)로 통일(결정 10, sim2real 2679811).
+- 10.17 tilt 기본 궤적(3-3): hdgp `tilt_real_start.py`(5b4be2371 · c237f04a5) — 실기 출발(측정 팔 q + 손 안 컵 자리)을 1 항목 출발
+  뱅크로 바꿔 `traj_retarget_starts` 를 그대로 부른다(옵션 = chain_pour.teach_args). 기준 출발에서 D4 arc6_meta 와 같은 값
+  (최대 기울기 128.609°, 4.86 s, 입구 이동 0.1263 m). 복귀 끝 받는 컵이 시연 출발점(탁자 위 2 cm)이라 측정 출발 관절까지
+  최소 저크를 붙였다 → 17.4 s, 끝 = 출발 관절. 검사: IK 오차 · 관절 여유 · 60 Hz 속도(병 최대 1.89 rad/s, 한계 2.0) · sim 출발 범위 ·
+  탁자 여유(실기 탁자 0.2037 에서 받는 컵 최저점 1.57 cm, 한계 1 cm).
+- 10.17 이송(결정 12): hdgp ready_carry `Mover.start(q_goal=)`(68e4620e3, 기존 시험 32 + 1 통과). sim2real `plan_carry.py` 가
+  열린 고리로 굴려 60 Hz 목표를 만든다. 들린 자세(컵 (0.25, ∓0.20, 0.36))에서 2.0 s, 끝 관절 오차 0, 최대 0.32 rad/s, 탁자 여유 7.1 cm.
+- 10.17 sim2real: 자산 `deploy/policy_control/config/tilt/base_arc6/`(policy.yaml 에 hdgp 파일 13 개 md5 · 기준 파일 md5 고정,
+  다르면 계획 거부), `plan_tilt.py` · `plan_carry.py`(움직이지 않음), `replay_to_pd.py` 14 관절 한 스트림 + `--max-start-gap`,
+  에피소드 궤적 종류 `carry` · `tilt`(두 손이 컵을 쥐었을 때만, 계획 실패면 refused), 에피소드 `tilt_base_a`, 미션 재생성.
+  손 안 컵 자리는 기준 출발(single734)의 값이다 — 실제 쥔 자리와 다르면 컵 경로가 그만큼 어긋난다(실기 확인 항목).
+- 10.17 fake 도메인 97 리허설(두 팔 pd 홈 → plan_carry → 14 관절 재생 → plan_tilt → 재생 → shutdown): 이송 계획 2.4 s · 재생 241 프레임
+  (홈에서 시작이라 4.0 s 상한), 끝 ↔ 붓기 시작 자세 0.0000 rad · tilt 계획 2.7 s · 재생 1045 프레임 18.7 s, 끝 ↔ 출발 0.0000 rad ·
+  두 팔 모두 stop 뒤 pd 내부 유지(internal). 홈 단계(한 팔 재생)도 고친 replay_to_pd 로 통과. fake 는 robot_control/ros_ws/install
+  overlay 를 source 해야 RH56F1 가짜 손이 뜬다(첫 시도 실패 원인).
+

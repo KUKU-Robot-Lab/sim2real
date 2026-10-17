@@ -9,6 +9,9 @@ velocity 인터페이스를 처음 쓰는 지점이다. 시작은 실측에서 �
         --joints l_aj_1,...,l_aj_7 --rate-scale 0.25 --execute
     python3 deploy/policy_control/tools/replay_to_pd.py --hdf5 tests/fixtures/policy_control/g1_y00.hdf5 --key arm_q_cmd ...
 ★실기 동작이다 — 사용자 승인 후에만 --execute.
+
+10.17 두 팔 동시 재생(tilt · 양팔 이송): --joints 에 r_aj_* 와 l_aj_* 를 같이 주면 한 JointState 에 14 관절을 실어
+한 시각표로 보낸다(pd 는 이름으로 팔별 분배). pd 상태 구독 · 끝의 episode stop 은 팔마다 그 팔 토픽으로 낸다.
 """
 from __future__ import annotations
 
@@ -34,6 +37,23 @@ STOP_WAIT_S = 1.0          # episode stop 이 pd 에 닿을 때까지(pd_selftes
 # npz 안 관절목표 열 후보 — 앞에서부터 있는 것을 쓴다
 NPZ_JOINT_KEYS = ("fabric_q", "arm_target", "arm_q_cmd")
 STATE_TOPIC = "/joint_states"
+
+
+def arm_sides(joints: list[str]) -> list[str]:
+    """관절 이름 접두어(r_ · l_) → 팔 목록(처음 나온 순서). 다른 접두어는 거부한다."""
+    sides: list[str] = []
+    for j in joints:
+        side = {"r_": "right", "l_": "left"}.get(j[:2])
+        if side is None:
+            raise SystemExit(f"[replay] 관절 이름 {j!r} — r_ · l_ 접두어만(canonical)")
+        if side not in sides:
+            sides.append(side)
+    return sides
+
+
+def measured_name(joint: str) -> str:
+    """canonical(l_aj_i · r_aj_i) → /joint_states 이름(openarm_<side>_joint<i>)."""
+    return f"openarm_{arm_sides([joint])[0]}_joint{joint.split('_')[-1]}"
 
 
 def load_frames(args) -> tuple[np.ndarray, float]:
@@ -92,6 +112,15 @@ def build_plan(frames: np.ndarray, start: np.ndarray, pub_dt: float, reverse: bo
     return plan, vel, len(ramp)
 
 
+def check_start_gap(start: np.ndarray, first: np.ndarray, tol: float | None) -> float:
+    """실측 ↔ 첫 프레임 최대 간극 [rad]. tol 을 주면 넘을 때 거부 — 실측에서 계획한 궤적(tilt · 이송)은 계획 뒤
+    팔이 움직였으면 진입 램프(관절공간 직선)가 검사하지 않은 길로 간다."""
+    gap = float(np.abs(np.asarray(start, dtype=float) - np.asarray(first, dtype=float)).max())
+    if tol is not None and gap > tol:
+        raise SystemExit(f"[replay] 거부: 실측이 첫 프레임에서 {gap:.3f} rad 떨어져 있다(한계 {tol}) — 궤적을 다시 계획할 것")
+    return gap
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     src = ap.add_mutually_exclusive_group(required=True)
@@ -110,6 +139,8 @@ def main() -> int:
                          "goto_home 은 관절공간 직선이라 테이블을 모른다(2026-09-07 실기)")
     ap.add_argument("--max-ramp-rad", type=float, default=REVERSE_MAX_RAMP_RAD,
                     help="되짚기 진입 램프가 메워도 되는 최대 간극 [rad]")
+    ap.add_argument("--max-start-gap", type=float, default=None,
+                    help="정방향도 실측 ↔ 첫 프레임 간극이 이보다 크면 거부 [rad](실측에서 계획한 궤적용, 기본 검사 안 함)")
     ap.add_argument("--execute", action="store_true")
     ap.add_argument("--no-stop-event", action="store_true", default=False,
                     help="끝에 episode stop 을 내지 않는다(그러면 스트림 두절로 pd 가 watchdog HOLD 로 간다)")
@@ -136,28 +167,30 @@ def main() -> int:
     from sensor_msgs.msg import JointState
     from std_msgs.msg import String
 
+    sides = arm_sides(args.joints)
     rclpy.init()
     node = Node("replay_to_pd")
     meas: dict = {}
-    pd = {"target": None}
+    pd = {side: None for side in sides}                      # 팔마다 pd 목표 출처
     node.create_subscription(JointState, STATE_TOPIC,
                              lambda m: meas.update(zip(m.name, m.position)), qos_profile_sensor_data)
-    side = "left" if args.joints[0].startswith("l_") else "right"
-    node.create_subscription(String, PD_STATUS.format(side=side),
-                             lambda m: pd.update(target=_target_of(m.data)), 10)
+    for side in sides:
+        node.create_subscription(String, PD_STATUS.format(side=side),
+                                 lambda m, side=side: pd.update({side: _target_of(m.data)}), 10)
     pub = node.create_publisher(JointState, TOPIC, 10)
     # episode stop 발행자는 **지금** 만든다 — 끝에 만들면 discovery 전에 끝나 latched 메시지가 사라진다(pd_selftest 와 같은 이유)
     latched = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
     # ★10.01 실기: 공용 /policy_control/episode 로 stop 을 내면 **다른 팔의 pd** 도 받아 홈에서 정착한 hold 를 새 hold(settle False)로
     #   덮었다(좌 재생 뒤 우 hold err 0.037 굳음). pd 는 팔마다 /policy_control/<side>/episode 를 그 팔에만 적용한다 — 이 팔 토픽으로 낸다.
-    ep_pub = node.create_publisher(String, EPISODE_TOPIC_SIDE.format(side=side), latched)
+    ep_pubs = [node.create_publisher(String, EPISODE_TOPIC_SIDE.format(side=side), latched) for side in sides]
     t0 = time.time()
     while time.time() - t0 < 5.0 and not meas:
         rclpy.spin_once(node, timeout_sec=0.1)
     if not meas:
         raise SystemExit(f"[replay] {STATE_TOPIC} 수신 없음")
     # canonical → source 이름은 pd 가 처리한다; 여기서는 실측을 이름으로 찾는다(l_aj_i ↔ openarm_left_jointi)
-    start = np.array([meas[f"openarm_{side}_joint{j.split('_')[-1]}"] for j in args.joints])
+    start = np.array([meas[measured_name(j)] for j in args.joints])
+    check_start_gap(start, frames[::-1][0] if args.reverse else frames[0], args.max_start_gap)
     plan, vel, n_ramp = build_plan(frames, start, pub_dt, args.reverse, args.max_ramp_rad)
     # ★10.04 실기: 목표 프레임 'replay:k' 와 stop 사건(episode 0)의 번호가 달라, 끝에서 pd 가 stop 을 받아 붙든 뒤에도
     #   stop 확인용으로 보내던 마지막 프레임이 붙들기를 지웠다(pd stopped_episode 는 같은 번호만 거른다) → 1 s 뒤 스트림이
@@ -177,13 +210,15 @@ def main() -> int:
     if not args.no_stop_event:
         # 재생이 끝났다는 뜻으로 episode stop — pd 가 마지막 세트포인트를 내부 목표로 붙든다(스트림 두절 HOLD 가 아니라).
         # 그래야 뒤의 goto_home 정착 · pd/hand_home 이 받아들여진다(09.22 홈 경로 재생).
-        ep_pub.publish(String(data=json.dumps({"episode": ep_id, "event": "stop", "object_anchor": None, "home_q": {},
-                                               "reasons": ["replay_to_pd done"], "t_ns": time.time_ns()})))
+        stop = json.dumps({"episode": ep_id, "event": "stop", "object_anchor": None, "home_q": {},
+                           "reasons": ["replay_to_pd done"], "t_ns": time.time_ns()})
+        for ep_pub in ep_pubs:
+            ep_pub.publish(String(data=stop))
         t1 = time.time()
-        while time.time() - t1 < STOP_WAIT_S and pd["target"] != "internal":
+        while time.time() - t1 < STOP_WAIT_S and any(v != "internal" for v in pd.values()):
             send(len(plan), plan[-1], np.zeros_like(plan[-1]))
             time.sleep(pub_dt)
-        print(f"[replay] episode stop → pd target {pd['target']!r}")
+        print(f"[replay] episode stop → pd target {pd!r}")
     print(f"[replay] 완료 · 램프 {n_ramp} + 기록 {len(frames)} 프레임"
           f"{' (되짚기)' if args.reverse else ''}")
     node.destroy_node()
