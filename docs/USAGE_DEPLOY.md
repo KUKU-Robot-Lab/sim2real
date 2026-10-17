@@ -29,7 +29,7 @@ python3 -m pytest tests -q -m "not gpu"    # 실패 0 이어야 한다. GPU 를 
 ## 1. 정책 등록 — `deploy/policies/`
 
 무엇을 쓸 수 있는지에 답하는 곳은 `deploy/policies/` 하나다(`logs/` 에는 옛 기록이 섞여 있다).
-정책 폴더는 **`<로봇 손>/<정책 과제>/<팔>_<태그>`** 이고(10.06, 예: `rh56f1/aglt/right_env17` · `dg5f_m/pour_fab/both_i18`),
+정책 폴더는 **`<로봇 손>/<정책 과제>/<팔>_<태그>`** 이고(10.06, 예: `rh56f1/aglt/right_rg3wo` · `dg5f_m/pour_fab/both_i18`),
 그 상대 경로가 정책 id 다(에피소드 `policy:` · 콘솔 고르기 · 아래 `<id>`). 손 = `rh56f1`(arm4090) · `dg5f_m`(DG-5F-M short, 테솔로).
 규칙을 벗어난 폴더는 `policies.py` 가 문제로 센다.
 

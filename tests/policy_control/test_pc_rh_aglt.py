@@ -1,4 +1,7 @@
-"""rh_aglt 계열(RH56F1 한 팔 aglt) — 계약 · 디코더 · 관측 96 · 노드 체인. 09.30 사용자: RH56F1 정책을 deploy 에 연결."""
+"""rh_aglt 계열(RH56F1 한 팔 aglt) — 계약 · 디코더 · 관측 96 · 노드 체인. 09.30 사용자: RH56F1 정책을 deploy 에 연결.
+
+10.18 사용자가 옛 정책 폴더(i03 · i05 · cyl60g · env17 · g5362 · src21c 등)를 지웠다 — 96 계열 계약은 tests/policy_control/fixtures
+사본(가중치 없음)으로 디코더 · 관측 · 노드를 본다. 지금 배포 정책(rg3wo · rg3wc 등)은 test_pc_rh_aglt_rg3.py 와 아래 거울 시험이 본다."""
 from __future__ import annotations
 
 import importlib.util
@@ -16,7 +19,11 @@ from policy_control import rh_aglt as A
 
 REPO = Path(__file__).resolve().parents[2]
 POL = REPO / "deploy" / "policies"
-RIGHT, LEFT = POL / "rh56f1/aglt/right_i03" / "rh_aglt_contract.json", POL / "rh56f1/aglt/left_i05" / "rh_aglt_contract.json"
+FIX = Path(__file__).resolve().parent / "fixtures"
+#: 09.30 i03(우) · i05(좌) 계약 사본 — 촉각 96 · 단일 물체 · 위치 제어(10.18 정책 폴더 삭제 뒤 시험용)
+RIGHT, LEFT = FIX / "rh_aglt_right_i03_contract.json", FIX / "rh_aglt_left_i05_contract.json"
+#: 10.08 g5362b 계약 사본 — 손 어드민턴스(hand_command admittance) 계열
+ADM = FIX / "rh_aglt_right_g5362b_contract.json"
 HOMES = REPO / "deploy/policy_control/config/homes/rh56f1_aglt.yaml"
 HDGP = Path.home() / "rl_ws/hdgp/source/openarm/openarm/agnostic"
 
@@ -201,31 +208,25 @@ def test_the_cup_geometry_follows_the_object_like_the_training_env():
         A.cup_geometry({"object_name": "mug", "cup_scale": 0.65})
 
 
-@pytest.mark.parametrize("pid", ["rh56f1/aglt/right_cyl60g", "rh56f1/aglt/left_cyl60gmir", "rh56f1/aglt/right_env17", "rh56f1/aglt/left_env17mir",
-                                 "rh56f1/aglt/left_env17f", "rh56f1/aglt/right_g5362b", "rh56f1/aglt/left_g5362"])
-def test_the_cylinder_contracts_carry_the_cylinder_not_the_stale_shaker_dump(pid):
-    """10.04: train.py 는 hydra 가 object_name=cyl60 을 덮은 뒤 · env 가 resolve_cfg 를 다시 부르기 전에 env.yaml 을 덤프한다.
-    덤프의 파생 값(반높이 0.0569 · 원점 높이 0.0599)은 기본 shaker × 0.65 값이고 학습 env 는 cyl60(0.085 · 0.085)으로 돌았다 —
-    계약이 덤프를 믿으면 키포인트가 축으로 2.8 cm 짧고 목표 박스가 2.5 cm 낮다."""
-    run = POL / pid
-    env = yaml.unsafe_load((run / "params" / "env.yaml").read_text())
-    assert env["object_name"] == "cyl60" and env["cup_half_height"] == pytest.approx(0.056875)     # 덤프는 낡았다
-    c = A.load_contract(run / "rh_aglt_contract.json")
-    assert c.cup_half_height == pytest.approx(0.085)
-    z0, zb = float(env["table_surface_z"]) + 0.085, env["goal_box_z_range"]
-    assert (c.goal_box_min[2], c.goal_box_max[2]) == pytest.approx((z0 + zb[0], z0 + zb[1]))
-
-
-#: (오른팔, 왼팔) 거울 쌍 — 09.30 은 오른팔이 왼팔 i05 의 거울, 10.04 · 10.06 은 왼팔이 오른팔의 거울. D · S 가 ±1 이라 관계식은 같다.
-MIRROR_PAIRS = {"mirror_l5": ("rh56f1/aglt/right_mirror_l5", "rh56f1/aglt/left_i05"),
-                "cyl60g": ("rh56f1/aglt/right_cyl60g", "rh56f1/aglt/left_cyl60gmir"),
-                "env17": ("rh56f1/aglt/right_env17", "rh56f1/aglt/left_env17mir")}
+#: (오른팔, 왼팔) 거울 쌍 — 10.17 경로 C 접근: 왼팔 = 오른팔 rg3wc ep800 의 거울(hdgp scripts/tools/mirror_rh_aglt_ckpt.py).
+#: 09.30 ~ 10.06 쌍(mirror_l5 · cyl60g · env17)은 10.18 정책 폴더 삭제로 빠졌다.
+MIRROR_PAIRS = {"approach_rg3wc": ("rh56f1/aglt/right_approach_rg3wc", "rh56f1/aglt/left_approach_rg3wc")}
 ARM_MIRROR_SIGN = (-1.0, -1.0, -1.0, 1.0, -1.0, -1.0, -1.0)
 _M, _MN = (1.0, -1.0, 1.0), (-1.0, 1.0, -1.0)
-#: hdgp scripts/tools/mirror_rh_aglt_ckpt.py actor_sign — 관측 96 칸별 좌우 부호(팔 부호 · 손 +1 · 위치 (1,−1,1) · 손바닥 x 열 (−1,1,−1))
-OBS_MIRROR = (list(ARM_MIRROR_SIGN) * 3 + [1.0] * 12 + list(_M) + list(_MN) + list(_M) + list(_M) + list(_M)
-              + list(_M) * 5 + list(_M) * 4 + list(_M) + [1.0] * 5 + list(ARM_MIRROR_SIGN) + [1.0] * 6)
 ACT_MIRROR = list(ARM_MIRROR_SIGN) + [1.0] * 6
+
+
+def obs_mirror(tactile: bool, k_obj: int) -> list[float]:
+    """hdgp mirror_rh_aglt_ckpt.actor_sign — 관측 칸별 좌우 부호(팔 부호 · 손 +1 · 위치 (1,−1,1) · 손바닥 x 열 (−1,1,−1)).
+    촉각 5 칸은 tactile 일 때만, 물체 one-hot 은 끝에 +1."""
+    s = list(ARM_MIRROR_SIGN) * 3 + [1.0] * 12 + list(_M) + list(_MN) + list(_M) + list(_M) + list(_M) + list(_M) * 5 \
+        + list(_M) * 4 + list(_M)
+    s += [1.0] * 5 if tactile else []
+    return s + list(ARM_MIRROR_SIGN) + [1.0] * 6 + [1.0] * k_obj
+
+
+def test_the_mirror_signs_have_the_actor_widths():
+    assert (len(obs_mirror(True, 0)), len(obs_mirror(False, 0)), len(obs_mirror(False, 3))) == (96, 91, 94)
 
 
 @pytest.mark.parametrize("pair", list(MIRROR_PAIRS))
@@ -235,10 +236,12 @@ def test_the_mirrored_right_policy_is_the_left_policy_seen_in_a_mirror(pair):
     cr, cl = (A.load_contract(POL / pid / "rh_aglt_contract.json") for pid in MIRROR_PAIRS[pair])
     if not (Path(cr.checkpoint).is_file() and Path(cl.checkpoint).is_file()):
         pytest.skip("가중치 없음(.gitignore)")
+    if cr.object_names:
+        cr = A.select_object(cr, cr.object_names[0])
     from policy_control.joint_policy import JointPolicy
     pr, pl = JointPolicy(cr, "cpu"), JointPolicy(cl, "cpu")
-    assert len(OBS_MIRROR) == 96
-    D, S = np.array(OBS_MIRROR), np.array(ACT_MIRROR)
+    D, S = np.array(obs_mirror(cr.actor_tactile_obs, len(cr.object_names))), np.array(ACT_MIRROR)
+    assert D.size == cr.obs_dim
     dec = A.RaDecoder(cr)
     m = _meas(cr)
     goal = A.first_goal(cr, m.cup_pos, m.cup_quat)
@@ -246,11 +249,11 @@ def test_the_mirrored_right_policy_is_the_left_policy_seen_in_a_mirror(pair):
     prev = np.zeros(13)
     worst = 0.0
     for _ in range(60):
-        o = A.build_obs(cr, m, dec, goal, prev) + rng.normal(0, 0.05, 96)     # 배포 관측 + 흔들기(LSTM 상태가 쌓인다)
+        o = A.build_obs(cr, m, dec, goal, prev) + rng.normal(0, 0.05, cr.obs_dim)   # 배포 관측 + 흔들기(LSTM 상태가 쌓인다)
         a_r, a_l = pr.forward(o), pl.forward(D * o)
         worst = max(worst, float(np.abs(a_r - S * a_l).max()))
         prev = np.clip(a_r, -1, 1)
-        dec.step(a_r, active=True)
+        dec.step(a_r, active=True, hand_q=dec.state["arm"].hand_target.copy())   # 막힘 계약은 실측 손이 필요 — 명령을 그대로 따른 손
     assert worst < 1e-4, worst
 
 
@@ -337,7 +340,7 @@ def test_the_node_feeds_joint_forces_into_the_grasp_signal(c):
 def test_a_place_run_is_not_taken_for_rh_aglt_even_with_the_same_dimensions():
     """rh_place 는 관측 96 · 행동 13 · rh56f1 프로필로 rh_aglt 와 같지만 목표(홀더 자리) · 시작(인계 뱅크)이 다르다 —
     rh_aglt 계약을 만들면 콘솔이 aglt 자리에 그대로 내보인다(10.04)."""
-    env = A.read_env(POL / "rh56f1/aglt/right_cyl60g" / "params" / "env.yaml")
+    env = A.read_env(POL / "rh56f1/aglt/right_rg3wo" / "params" / "env.yaml")
     assert A.is_rh_aglt_run(env)
     assert not A.is_rh_aglt_run({**env, "target_holders": (1, 2)})
     place = POL / "rh56f1/place/right_i09" / "params" / "env.yaml"
@@ -346,19 +349,15 @@ def test_a_place_run_is_not_taken_for_rh_aglt_even_with_the_same_dimensions():
 
 
 # ---------------------------------------------------------------- ★10.08 손 어드민턴스 정책
-ADM_RUNS = ("rh56f1/aglt/right_g5362b", "rh56f1/aglt/left_g5362")
-
-
-@pytest.mark.parametrize("pid", ADM_RUNS)
-def test_admittance_runs_carry_the_hand_command_and_the_training_admittance(pid):
-    """10.08 T2R Grasping: 어드민턴스 전제 학습(hand_adm_enable) — 계약이 손 명령 입력과 학습 값을 싣는다. 디코더 · 관측은 env17 과 같다."""
-    c = A.load_contract(POL / pid / "rh_aglt_contract.json")
-    env = yaml.unsafe_load((POL / pid / "params" / "env.yaml").read_text())
-    assert env["hand_adm_enable"] is True and c.hand_command == "admittance"
-    assert c.hand_admittance == {"k_g_per_rad": env["hand_adm_k_g_per_rad"], "f_max_g": env["hand_adm_f_max_g"],
-                                 "tau_contact_s": env["hand_adm_tau_contact_s"], "rate_rad_s": env["hand_adm_rate_rad_s"],
-                                 "dr_frac": env["hand_adm_dr_frac"]}
-    old = A.load_contract(POL / ("rh56f1/aglt/right_env17" if "right" in pid else "rh56f1/aglt/left_env17f") / "rh_aglt_contract.json")
+def test_admittance_contracts_carry_the_hand_command_and_the_training_admittance():
+    """10.08 T2R Grasping: 어드민턴스 전제 학습(hand_adm_enable) — 계약이 손 명령 입력과 학습 값을 싣는다. 디코더 · 관측은 위치 제어 계약과 같다."""
+    c = A.load_contract(ADM)
+    adm = c.hand_admittance
+    env = {"hand_adm_enable": True, "hand_adm_k_g_per_rad": adm["k_g_per_rad"], "hand_adm_f_max_g": adm["f_max_g"],
+           "hand_adm_tau_contact_s": adm["tau_contact_s"], "hand_adm_rate_rad_s": adm["rate_rad_s"],
+           "hand_adm_dr_frac": adm["dr_frac"]}
+    assert c.hand_command == "admittance" and A.hand_command_of(env) == ("admittance", adm)
+    old = A.load_contract(RIGHT)
     assert old.hand_command == "position" and old.hand_admittance == {}          # 이 필드 전 계약 = 위치 제어
     for k in ("k_arm", "arm_ema", "hand_ema", "hand_full_range_s", "freeze_threshold_n", "goal_offset", "goal_tol", "hold_steps"):
         assert getattr(c, k) == getattr(old, k), k
@@ -369,7 +368,7 @@ def test_a_run_without_the_admittance_switch_stays_position_and_a_half_switch_is
     assert A.hand_command_of({"hand_adm_enable": False, "hand_adm_k_g_per_rad": 1.0}) == ("position", {})
     with pytest.raises(A.RhAgltError, match="hand_adm"):
         A.hand_command_of({"hand_adm_enable": True, "hand_adm_k_g_per_rad": 1980.0})
-    c = A.load_contract(POL / ADM_RUNS[0] / "rh_aglt_contract.json")
+    c = A.load_contract(ADM)
     with pytest.raises(A.RhAgltError, match="hand_command"):
         A.with_run(c, hand_command="force")
     with pytest.raises(A.RhAgltError, match="같이"):
@@ -386,27 +385,20 @@ def test_training_admittance_must_equal_the_real_driver_admittance():
     except SystemExit as exc:
         pytest.skip(f"정본 손 계약 없음: {exc}")
     assert reg_per_rad == pytest.approx(549.5, abs=0.5)
-    for pid in ADM_RUNS:
-        assert A.admittance_mismatch(A.load_contract(POL / pid / "rh_aglt_contract.json").hand_admittance, real, reg_per_rad) == []
+    for path in (ADM, *sorted(POL.glob("rh56f1/aglt/*/rh_aglt_contract.json"))):   # 10.08 사본 + 배포 중인 어드민턴스 계약
+        c = A.load_contract(path)
+        if c.hand_command == "admittance":
+            assert A.admittance_mismatch(c.hand_admittance, real, reg_per_rad) == [], path
     train = {"k_g_per_rad": 1980.0, "f_max_g": 800.0, "tau_contact_s": 0.3, "rate_rad_s": 0.3}
     assert A.admittance_mismatch(train, {**real, "tau_contact_s": 0.5}, reg_per_rad) == ["tau_contact_s: 학습 0.3 ≠ 실기 0.5"]
     assert len(A.admittance_mismatch(train, {**real, "k_g_per_reg": 4.0}, reg_per_rad)) == 1
 
 
 def test_the_episode_body_tells_pd_which_hand_command_to_use():
-    c = A.load_contract(POL / ADM_RUNS[0] / "rh_aglt_contract.json")
+    c = A.load_contract(ADM)
     body = N.episode_body({"episode": 3, "event": "reset"}, "rh_aglt_node", 7, c)
     assert body == {"episode": 3, "event": "reset", "node": "rh_aglt_node", "t_ns": 7, "hand_command": "admittance"}
     assert N.episode_body({"event": "reset"}, "n", 0, object())["hand_command"] == "position"     # 손 명령 입력 없는 계열
-
-
-@pytest.mark.parametrize("pid", ADM_RUNS)
-def test_the_admittance_checkpoints_load_and_act(pid):
-    pytest.importorskip("torch")
-    c = A.load_contract(POL / pid / "rh_aglt_contract.json")
-    if not Path(c.checkpoint).is_file():
-        pytest.skip("가중치 없음(.gitignore) — our_source/policy 에서 복사")
-    test_the_checkpoint_loads_and_acts(c)
 
 
 def test_the_hand_command_names_match_the_pd_backend():
@@ -443,35 +435,6 @@ def test_cup_geometry_follows_object_names_like_hdgp_resolve_cfg():
     assert A.cup_geometry({"object_name": "shaker_c", "object_names": [], "cup_scale": 0.65}) == pytest.approx((0.065, 0.065))
     with pytest.raises(A.RhAgltError, match="unit"):
         A.cup_geometry({"object_name": "shaker", "object_names": ["source240_pla", "shaker_c"], "cup_scale": 0.65})
-
-
-# ---------------------------------------------------------------- ★10.09 물체별 재학습(OBJ_RETRAIN) — 병 · 쉐이커
-OBJ_RUNS = {"rh56f1/aglt/right_src21c": 0.085, "rh56f1/aglt/right_s200": 0.085, "rh56f1/aglt/right_s240": 0.085,
-            "rh56f1/aglt/left_shk21": 0.065}
-
-
-@pytest.mark.parametrize("pid", sorted(OBJ_RUNS))
-def test_object_retrain_contracts_use_the_trained_object_geometry_and_act(pid):
-    """10.09 사용자: 새 Grasping 정책(src200 · 240 을 잘 잡는다)을 sim2real 로. 덤프의 object_name 은 기본값 shaker 로 남는다 —
-    object_name(s) 로 다시 푼 반높이(병 0.085 · 쉐이커 0.065)와 목표 박스 높이를 계약이 싣고, 손은 어드민턴스, 가중치가 돈다."""
-    run = POL / pid
-    env = yaml.unsafe_load((run / "params" / "env.yaml").read_text())
-    c = A.load_contract(run / "rh_aglt_contract.json")
-    half = OBJ_RUNS[pid]
-    assert env["cup_half_height"] == pytest.approx(0.056875)                     # 덤프는 낡았다
-    assert c.cup_half_height == pytest.approx(half) and c.hand_command == "admittance"
-    z0, zb = float(env["table_surface_z"]) + half, env["goal_box_z_range"]
-    assert (c.goal_box_min[2], c.goal_box_max[2]) == pytest.approx((z0 + zb[0], z0 + zb[1]))
-    if not Path(c.checkpoint).is_file():
-        pytest.skip("가중치 없음(.gitignore)")
-    pytest.importorskip("torch")
-    from policy_control.joint_policy import JointPolicy
-    ch = N.AgltChain(c, JointPolicy(c, "cpu"))
-    meas = {"arm": _meas(c)}
-    ch.reset(meas)
-    for _ in range(12):
-        obs, a, _t = ch.step(meas)
-    assert a.size == 13 and np.all(np.isfinite(a)) and np.all(np.isfinite(obs))
 
 
 def test_the_node_marks_the_cup_stale_while_the_fpp_gate_holds_the_last_frame(c):

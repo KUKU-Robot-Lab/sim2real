@@ -17,15 +17,18 @@ from policy_control import rh_aglt_goals as G
 
 REPO = Path(__file__).resolve().parents[2]
 POL = REPO / "deploy" / "policies"
-RG3S = {"right": POL / "rh56f1/aglt/right_rg3s/rh_aglt_contract.json",
-        "left": POL / "rh56f1/aglt/left_rg3s/rh_aglt_contract.json"}
+#: 10.13 rg3s 계약 = 막힘(hand_block) + 쥔 뒤 유지 규칙 block_follow_open. 10.18 rg3s 폴더 삭제 — 같은 막힘 계약인 배포 rg3wo 에
+#: rg3s 의 유지 규칙(열림 문턱 · 스텝)만 얹어 만든다(rg3s 와 rg3wo 계약은 그 규칙 · 목표 박스 · 손 명령 입력만 다르다).
+RG3WO = {"right": POL / "rh56f1/aglt/right_rg3wo/rh_aglt_contract.json",
+         "left": POL / "rh56f1/aglt/left_rg3wo/rh_aglt_contract.json"}
+RG3S_HOLD = {"grasp_hold_rule": "block_follow_open", "grasp_release_open_rad": [0.0, 0.1, 0.1, 0.1, 0.1], "grasp_release_steps": 5}
 THUMB_FLOOR, CUP_INDEX = 0.05, 0.45
 I_THUMB_FLEX, I_INDEX = 1, 2                          # hand_joints 순(엄지 회전 · 엄지 굽힘 · 검지 · 중지 · 약지 · 새끼)
 
 
 @pytest.fixture(scope="module", params=["right", "left"])
 def c(request):
-    c = A.load_contract(RG3S[request.param])
+    c = A.with_run(A.load_contract(RG3WO[request.param]), **RG3S_HOLD)
     assert c.hand_block and c.grasp_hold_rule == "block_follow_open"   # 이 보조는 막힘 계약 위에서만 뜻이 있다
     return c
 
@@ -206,7 +209,7 @@ def _fake_node(c, **params):
     from types import SimpleNamespace
     vals = {"object": "", "freeze_rule": "lift_hold", "freeze_lift_m": 0.07, "freeze_hold_steps": 30,
             "hand_unfreeze_on_grasp": False, "thumb_support_g": 0.0, "lift_grasp_palm_m": 0.0,
-            "thumb_open_floor_rad": 0.0, **params}
+            "thumb_open_floor_rad": 0.0, "approach_grasp": "", **params}   # 10.17 경로 C — 노드 기본 꺼짐
     chain = N.AgltChain(c, policy=None)
     chain.reset = lambda meas: None                   # 체인 리셋 자체는 다른 테스트가 본다 — 여기선 파라미터 배선만
     return SimpleNamespace(chain=chain, get_parameter=lambda n: SimpleNamespace(value=vals[n])), chain

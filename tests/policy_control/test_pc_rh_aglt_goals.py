@@ -12,7 +12,9 @@ from policy_control import rh_aglt as A
 from policy_control import rh_aglt_goals as G
 
 POL = Path(__file__).resolve().parents[2] / "deploy" / "policies"
-RIGHT, LEFT = POL / "rh56f1/aglt/right_mirror_l5" / "rh_aglt_contract.json", POL / "rh56f1/aglt/left_i05" / "rh_aglt_contract.json"
+#: 09.30 목표 분포 계약 — 우 mirror_l5(= i03 과 계약 같음) · 좌 i05. 10.18 정책 폴더 삭제 뒤 tests/policy_control/fixtures 사본
+FIX = Path(__file__).resolve().parent / "fixtures"
+RIGHT, LEFT = FIX / "rh_aglt_right_i03_contract.json", FIX / "rh_aglt_left_i05_contract.json"
 UP = np.array([1.0, 0.0, 0.0, 0.0])
 GRIP = (2.0, 1.5, 0.0, 0.0, 0.0)          # 엄지 + 검지
 CUP_R = np.array([0.25, -0.20, 0.264865])   # 오른팔 소환 박스 가운데, 정착고
@@ -183,12 +185,11 @@ def test_reached_means_the_requested_target_itself_was_achieved():
 
 
 # ---------------------------------------------------------------- 10.13 방안 A(사용자): 첫 목표 성공 = 에피소드 끝(sim goal_max=1)
-RG3S = POL / "rh56f1/aglt/right_rg3s" / "rh_aglt_contract.json"
+#: 10.13 rg3s 의 목표 규칙(컵 + 10 cm · 연속 120 틱) — 10.18 rg3s 폴더 삭제 뒤 같은 규칙의 배포 정책 rg3wo 로 본다
+RG3S = POL / "rh56f1/aglt/right_rg3wo" / "rh_aglt_contract.json"
 
 
 def _rg3s() -> A.RaContract:
-    if not RG3S.is_file():
-        pytest.skip("right_rg3s 계약이 없다")
     return A.load_contract(RG3S)
 
 

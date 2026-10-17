@@ -4,7 +4,7 @@
 여기는 그 질문 하나에만 답한다. 정책 하나 = 디렉터리 하나, 경로는 로봇 손 / 정책 과제 / 팔_태그
 (10.06 사용자: "로봇핸드, 정책 테스크, tag(i**) 이렇게 구분되어야 함"). id 는 그 상대 경로다:
 
-    deploy/policies/<손>/<과제>/<팔>_<태그>/          예: rh56f1/aglt/right_env17 · dg5f_m/pour_fab/both_i18
+    deploy/policies/<손>/<과제>/<팔>_<태그>/          예: rh56f1/aglt/right_rg3wo · dg5f_m/pour_fab/both_i18
       policy.yaml            사람이 쓰는 카드 — id · status · task · side · checkpoint · note  (도구가 덮어쓰지 않는다)
       params/env.yaml, agent.yaml                                                 (계약의 모든 숫자의 원천)
       nn/<하나>.pth          한 개면 그것이 후보다
@@ -243,7 +243,7 @@ def layout_issues(e: Entry) -> tuple[str, ...]:
     정책을 못 쓰게 막지는 않는다(콘솔 선택 사유에 안 들어간다) — policies.py · INDEX · 등록부 테스트가 잡는다."""
     parts = e.id.split("/")
     if len(parts) != 3:
-        return (f"경로 {e.id!r} 는 <손>/<과제>/<팔>_<태그> 여야 한다 (예: rh56f1/aglt/right_env17)",)
+        return (f"경로 {e.id!r} 는 <손>/<과제>/<팔>_<태그> 여야 한다 (예: rh56f1/aglt/right_rg3wo)",)
     hand, _task, leaf = parts
     side, task = str(e.card.get("side") or ""), str(e.card.get("task") or "")
     out = []

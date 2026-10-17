@@ -10,13 +10,21 @@ import yaml
 from policy_control import rh_aglt as A
 
 REPO = Path(__file__).resolve().parents[2]
-RUN = REPO / "deploy" / "policies" / "rh56f1" / "aglt" / "right_rg3mft"
+#: 10.18 옛 정책 폴더(rg3mft 등) 삭제 — 배포 촉각 없는 다물체 계약(rg3wo, 91 + 3)을 기준으로 둔다
+RUN = REPO / "deploy" / "policies" / "rh56f1" / "aglt" / "right_rg3wo"
+OLD = Path(__file__).resolve().parent / "fixtures" / "rh_aglt_right_i03_contract.json"   # actor_tactile_obs 필드 전 계약(09.30 i03)
 NAMES = ["source240_real", "source200_real", "shaker_c_real"]
 
 
 @pytest.fixture(scope="module")
-def c():
+def nt():
     return A.load_contract(RUN / "rh_aglt_contract.json")
+
+
+@pytest.fixture(scope="module")
+def c(nt):
+    """촉각을 가진 다물체 계약(10.12 rg3mft 와 같은 모양, 96 + 3) — rg3wo 에서 촉각만 켜서 만든다."""
+    return A.with_run(nt, actor_tactile_obs=True, obs_dim=99)
 
 
 def _meas(c, tactile):
@@ -37,14 +45,16 @@ def _span(layout, name):
 
 
 def test_old_contracts_keep_the_tactile_and_96_plus_k(c):
+    old = A.load_contract(OLD)
+    assert old.actor_tactile_obs is True and old.obs_dim == 96          # 필드가 없는 계약 = 촉각 있음
     assert c.actor_tactile_obs is True and c.obs_dim == 99
     assert [n for n, _ in A.actor_layout(c)].count("tactile") == 1
     assert A.ACTOR_BASE_DIMS == (96, 91)
 
 
-def test_a_no_tactile_contract_is_91_plus_k_and_drops_only_the_tactile(c):
-    nt = A.with_run(c, actor_tactile_obs=False, obs_dim=94)
-    assert A.obs_dim_of(nt) == 94
+def test_a_no_tactile_contract_is_91_plus_k_and_drops_only_the_tactile(c, nt):
+    assert nt.actor_tactile_obs is False and A.obs_dim_of(nt) == 94
+    assert A.with_run(c, actor_tactile_obs=False, obs_dim=94) == nt
     assert [n for n, _ in A.actor_layout(nt)] == [n for n, _ in A.actor_layout(c) if n != "tactile"]
     assert A.actor_layout(nt)[-1] == ("object_id", 3)                # hdgp layout: 촉각을 뺀 base 뒤에 one-hot
     with pytest.raises(A.RhAgltError, match="obs/action"):
@@ -52,9 +62,9 @@ def test_a_no_tactile_contract_is_91_plus_k_and_drops_only_the_tactile(c):
 
 
 @pytest.mark.parametrize("name", NAMES)
-def test_the_no_tactile_obs_is_the_full_obs_without_the_tactile_slice(c, name):
+def test_the_no_tactile_obs_is_the_full_obs_without_the_tactile_slice(c, nt, name):
     cc = A.select_object(c, name)
-    nt = A.select_object(A.with_run(c, actor_tactile_obs=False, obs_dim=94), name)
+    nt = A.select_object(nt, name)
     m = _meas(cc, [3.0, 2.0, 1.0, 0.5, 0.2])
     goal = A.first_goal(cc, m.cup_pos, m.cup_quat)
     full = A.build_obs(cc, m, A.RaDecoder(cc), goal, np.zeros(13))
@@ -68,7 +78,8 @@ def test_the_no_tactile_obs_is_the_full_obs_without_the_tactile_slice(c, name):
 def test_a_no_tactile_run_is_recognised_and_its_flag_is_read():
     env = yaml.unsafe_load((RUN / "params" / "env.yaml").read_text())
     env = env.get("env", env)
-    assert A.is_rh_aglt_run(env) and A._actor_tactile(env) is True
+    assert A.is_rh_aglt_run(env) and A._actor_tactile(env) is False and A._base_dim(env) == 91
+    assert A._actor_tactile(dict(env, actor_tactile_obs=True)) is True
     nt = dict(env, actor_tactile_obs=False, observation_space=91)
     assert A.is_rh_aglt_run(nt) and A._actor_tactile(nt) is False and A._base_dim(nt) == 91
     assert A.is_rh_aglt_run(dict(nt, observation_space=94))         # 해석 뒤 값(+물체 one-hot)도

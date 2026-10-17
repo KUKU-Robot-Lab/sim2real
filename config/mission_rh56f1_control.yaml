@@ -11,8 +11,8 @@ artifacts:
   path_left: deploy/policy_control/paths/home_rh56f1_left.npz
   pourfj_both: deploy/policies/rh56f1/pour_fj/both_f01/pour_fj_contract.json
   robot_bi: deploy/policy_control/config/robots/rh56f1_bi_real.yaml
-  aglt_right: deploy/policies/rh56f1/aglt/right_src21c/rh_aglt_contract.json
-  aglt_left: deploy/policies/rh56f1/aglt/left_g5362/rh_aglt_contract.json
+  aglt_right: deploy/policies/rh56f1/aglt/right_rg3wo/rh_aglt_contract.json
+  aglt_left: deploy/policies/rh56f1/aglt/left_rg3wo/rh_aglt_contract.json
   place_right: deploy/policies/rh56f1/place/right_i09/rh_place_contract.json
   place_left: deploy/policies/rh56f1/place/left_i01/rh_place_contract.json
   rh56f1_ports: deploy/policy_control/config/rh56f1_ports.yaml
@@ -958,6 +958,8 @@ run:
     - -p
     - cup_topic:=/objects/source240b_blue/live_pose
     - -p
+    - object:=source240_real
+    - -p
     - cup_static:=false
     - -p
     - cup_latch:=false
@@ -988,7 +990,7 @@ run:
     - -p
     - max_episode_s:={policy:aglt_right.max_episode_s}
     background: true
-  - note: '[right] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + (0, 0, 0.14)'
+  - note: '[right] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + 계약 goal_offset(rg3wo 0.10 m)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
@@ -1232,6 +1234,8 @@ run:
     - -p
     - cup_topic:=/objects/shaker_c_orange/live_pose
     - -p
+    - object:=shaker_c_real
+    - -p
     - cup_static:=false
     - -p
     - cup_latch:=false
@@ -1262,7 +1266,7 @@ run:
     - -p
     - max_episode_s:={policy:aglt_left.max_episode_s}
     background: true
-  - note: '[left] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + (0, 0, 0.14)'
+  - note: '[left] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + 계약 goal_offset(rg3wo 0.10 m)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'

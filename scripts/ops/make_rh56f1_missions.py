@@ -155,6 +155,17 @@ def _side_cup(s: str) -> str:
     return REAL_CUPS.get(s, REAL_CUP)
 
 
+def _policy_object(s: str) -> str:
+    """그 팔 FP++ 물체 → 다물체 aglt(rg3) 정책 물체 이름(노드 파라미터 object). 묶음 → 이름 표는 콘솔 workspace.MODELS 하나."""
+    from object_registry import load_registry
+    sys.path.insert(0, str(REPO / "deploy" / "s2r_console"))
+    from s2r_console.workspace import MODELS
+    group = load_registry().get(_side_cup(s)).fpp.get("group")
+    if group not in MODELS:
+        raise SystemExit(f"{_side_cup(s)}: 묶음 {group!r} 의 정책 물체 이름이 없다 — s2r_console/workspace.py MODELS 에 더한다")
+    return MODELS[group][1]
+
+
 def _cups_txt() -> str:
     side = {v: k for k, v in REAL_CUPS.items()}
     return " · ".join(f"{c}{'=' + ('오른팔' if side[c] == 'right' else '왼팔') if c in side else ''}" for c in _cups())
@@ -498,10 +509,11 @@ def _run(kind: str) -> dict:
                   "-r", f"__node:=rh_aglt_node_{s}", "-p", f"ns:={s}",
                   "-p", f"contract:={{artifact:aglt_{s}}}", "-p", f"robot:={{artifact:robot_{s}}}", "-p", "device:=cpu",
                   "-p", f"cup_topic:={_live(cup_t)}",
+                  "-p", f"object:={_policy_object(s)}",   # 10.18 기본 rg3wo = 다물체 — 물체를 모르면 reset 이 거부한다
                   *AGLT_LIVE_ARGS,                       # 10.12 A안 — 쥘 때까지 live(끊기면 마지막 값), 쥔 뒤 프레임 시각 FK
                   "-p", f"max_episode_s:={{policy:aglt_{s}.max_episode_s}}"],
                  background=True),
-            _cmd(f"[{s}] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + (0, 0, 0.14)",
+            _cmd(f"[{s}] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + 계약 goal_offset(rg3wo 0.10 m)",
                  ["python3", f"{PC}/tools/trigger.py", "episode/reset", "--episode-ns", s], execute_args=["--execute"]),
             _cmd(f"★[{s}] episode start — 팔이 시작 자세 0.15 rad 안 · 컵이 서 있어야 받는다",
                  ["python3", f"{PC}/tools/trigger.py", "episode/start", "--episode-ns", s], execute_args=["--execute"]),
@@ -880,16 +892,11 @@ def mission(kind: str) -> dict:
         "pourfj_both": "deploy/policies/rh56f1/pour_fj/both_f01/pour_fj_contract.json",
         "robot_bi": f"deploy/policy_control/config/robots/rh56f1_bi_{robot}.yaml",
         # 한 팔 rh_aglt 정책(첫 화면의 '오른팔 · 왼팔' 자리가 바꾼다) — 09.30
-        # 10.01 사용자: 기본 = iter_10 ②(실측 지연 적응) i10d 좌우. 이전 기본은 우 mirror_l5 · 좌 i05(09.30).
-        # 10.04 cyl60g(FP++ 지각 · 파지 후 부착으로 학습) — 계약은 i10d 와 체크포인트 외 같아 홈 · 저장 경로는 그대로
-        # ★10.06 env17(T2R Grasping 새 s2r 후보, 보상 iter_17 · 쥔 높이 컵 중심 위 +2.0 cm, cyl60g +4.3 cm) — 계약은 cyl60g 와 체크포인트 외 같다.
-        #   단독 aglt 점검 자리만 바꾼다. 에피소드(config/episodes/*.yaml)는 cyl60g 그대로 — 놓기 i09 · i01 시작 뱅크(our_source/place_bank/
-        #   bank_{r,l}_cyl60_keep.npz)의 쥔 높이가 p5~p95 4.3~5.3 cm(우) · 3.1~5.5 cm(좌), 3 cm 아래 0 %(우) · 4 %(좌)다(10.06 실측)
-        #   ★10.08 기본 = 손 어드민턴스 다지 파지 최종(T2R Grasping, 사용자 "이 정책으로 실기 테스트") — 계약 hand_command admittance 로
-        #   pd 가 손 목표를 /hand_<s>/angle_target 으로 보낸다. env17 · env17f(위치 제어)는 첫 화면에서 고를 수 있다.
-        "aglt_right": "deploy/policies/rh56f1/aglt/right_src21c/rh_aglt_contract.json",   # 10.09 source 병 겸용(이전 right_g5362b · cyl60)
-        #   10.06 왼팔은 env17 거울(left_env17mir) 대신 그 거울을 왼팔 env 에서 200 epoch 이어 학습한 left_env17f(T2R Grasping)
-        "aglt_left": "deploy/policies/rh56f1/aglt/left_g5362/rh_aglt_contract.json",
+        # ★10.18 사용자: 옛 정책 폴더(i03 ~ src21c · g5362 · cyl60g · env17 · rg3s · rg3mft 등 24개) 삭제 → 기본 = rg3wo 좌우
+        #   (10.17 grasping 파지 배포, 다물체 · 위치 제어). 노드에 그 팔 FP++ 물체의 정책 물체(object)를 넘긴다(_policy_object).
+        #   옛 기본 이력은 git log 에 있다(10.09 right_src21c · left_g5362).
+        "aglt_right": "deploy/policies/rh56f1/aglt/right_rg3wo/rh_aglt_contract.json",
+        "aglt_left": "deploy/policies/rh56f1/aglt/left_rg3wo/rh_aglt_contract.json",
         # 한 팔 컵 홀더 놓기(10.04 PLACE 세션, aglt cyl60 인계) — 콘솔 자리는 아직 없다(팔마다 한 자리 = aglt)
         "place_right": "deploy/policies/rh56f1/place/right_i09/rh_place_contract.json",
         "place_left": "deploy/policies/rh56f1/place/left_i01/rh_place_contract.json",

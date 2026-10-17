@@ -1,7 +1,10 @@
 """★10.12 rh_aglt 다물체 한 정책(rg3) — 관측 96 + 물체 one-hot 3(맨 끝) · 물체별 컵 기하 · 물체를 모르면 거부 · 에피소드 단계 물체.
 
 사용자 10.12: grasping 최종(right_rg3mft · left_rg3)을 sim2real 에 등록. 실기에서는 물체가 단계마다 고정이라 에피소드 단계 설정
-(policy_object)으로 물체를 넣는다. hdgp 참조: tasks/rh_aglt_r/{rh_aglt_env.py `_actor_parts`, obj_geometry.py, goals.py}."""
+(policy_object)으로 물체를 넣는다. hdgp 참조: tasks/rh_aglt_r/{rh_aglt_env.py `_actor_parts`, obj_geometry.py, goals.py}.
+
+10.18 사용자가 옛 정책 폴더(rg3mft · rg3 · rg3s · s240 등)를 지웠다 — 배포 다물체 정책 rg3wo(10.17, 촉각 없는 actor 91 + one-hot 3 = 94 ·
+위치 제어)로 본다. 단일 물체 계약은 tests/policy_control/fixtures 의 09.30 i03 사본."""
 from __future__ import annotations
 
 import importlib.util
@@ -20,8 +23,10 @@ from policy_control import rh_aglt_goals as G
 
 REPO = Path(__file__).resolve().parents[2]
 POL = REPO / "deploy" / "policies"
-RG3 = {"right": "rh56f1/aglt/right_rg3mft", "left": "rh56f1/aglt/left_rg3"}
-MD5 = {"right": "89a0180df28dc2d63fdc3ee32ae137d6", "left": "da6106478d1cbcf42b5af0154c6e4419"}
+RG3 = {"right": "rh56f1/aglt/right_rg3wo", "left": "rh56f1/aglt/left_rg3wo"}
+MD5 = {"right": "624e55dc641631a2e98b90cbad060483", "left": "7cf1bd191587ab484cdf3e3d0a6d6f7b"}
+FIX = Path(__file__).resolve().parent / "fixtures"
+SINGLE = FIX / "rh_aglt_right_i03_contract.json"                   # 단일 물체 · 촉각 96(09.30 i03 사본)
 NAMES = ["source240_real", "source200_real", "shaker_c_real"]
 #: hdgp 다물체 코드가 있는 곳(main 병합 전에는 사다리 worktree) — 없으면 그 비교만 건너뛴다
 HDGP_RH = [Path.home() / "rl_ws/hdgp/source/openarm/openarm/agnostic/tasks/rh_aglt_r",
@@ -55,15 +60,17 @@ def _meas(c, cup=None) -> A.RaMeas:
 
 
 # ---------------------------------------------------------------- 계약
-def test_the_rg3_contracts_are_99_with_the_three_objects_in_one_hot_order(c):
+def test_the_rg3_contracts_are_94_with_the_three_objects_in_one_hot_order(c):
     env = yaml.unsafe_load((POL / RG3[c.side().side] / "params" / "env.yaml").read_text())
-    assert env["observation_space"] == 96                          # 덤프는 해석 전 값 — 실제 actor 는 99
-    assert (c.obs_dim, c.action_dim) == (99, 13) and A.obs_dim_of(c) == 99
-    assert c.object_names == NAMES == list(dict.fromkeys(env["object_names"]))
-    assert c.checkpoint_md5 == MD5[c.side().side] and c.hand_command == "admittance"
+    assert env["observation_space"] == 96                          # 덤프는 해석 전 cfg 기본값 — 실제 actor 는 91 + 3
+    assert (c.obs_dim, c.action_dim) == (94, 13) and A.obs_dim_of(c) == 94 and not c.actor_tactile_obs
+    trained = [A.SIM_COLLIDER_ALIAS.get(n, n) for n in dict.fromkeys(env["object_names"])]   # 10.17 학습 _cvx 충돌체 = 실물 _real
+    assert c.object_names == NAMES == trained
+    assert c.checkpoint_md5 == MD5[c.side().side] and c.hand_command == "position"
     assert c.goal_offset == pytest.approx([0, 0, 0.10]) and c.goal_tol == pytest.approx(0.03)     # 컵 위 10 cm · 3 cm
     assert c.goal_success_steps == 120 and c.goal_force_consecutive                               # 2 s 연속(60 Hz)
-    assert A.actor_layout(c)[-1] == ("object_id", 3) and A.actor_layout(c)[:-1] == A.ACTOR_LAYOUT
+    assert A.actor_layout(c)[-1] == ("object_id", 3)
+    assert A.actor_layout(c)[:-1] == tuple(x for x in A.ACTOR_LAYOUT if x[0] != "tactile")
     assert c.active_object == ""                                   # 파일 계약에는 물체가 정해져 있지 않다
 
 
@@ -98,15 +105,15 @@ def test_a_bad_object_table_is_refused(c):
     with pytest.raises(A.RhAgltError, match="obs/action"):
         A.with_run(c, obs_dim=96)
     with pytest.raises(A.RhAgltError, match="중복"):
-        A.with_run(c, object_names=NAMES + NAMES[:1], obs_dim=100)
+        A.with_run(c, object_names=NAMES + NAMES[:1], obs_dim=c.obs_dim + 1)
     with pytest.raises(A.RhAgltError, match="object_geometry"):
         A.with_run(c, object_geometry={k: v for k, v in c.object_geometry.items() if k != "shaker_c_real"})
     with pytest.raises(A.RhAgltError, match="active_object"):
         A.with_run(c, active_object="cyl60")
 
 
-def test_the_contract_rebuilds_from_the_run_with_99(c, tmp_path):
-    """계약 빌더가 env.yaml(observation_space 96 덤프)에서 99 · 물체 표를 다시 만든다 — 커밋한 계약과 경로 말고 같다."""
+def test_the_contract_rebuilds_from_the_run_with_the_one_hot(c, tmp_path):
+    """계약 빌더가 env.yaml(observation_space 96 덤프)에서 91 + 3 · 물체 표를 다시 만든다 — 커밋한 계약과 경로 말고 같다."""
     import json
     import subprocess
     run = POL / RG3[c.side().side]
@@ -140,13 +147,14 @@ def test_the_one_hot_is_the_last_three_and_follows_the_object(c, name):
     dec = A.RaDecoder(cc)
     goal = A.first_goal(cc, m.cup_pos, m.cup_quat)
     obs = A.build_obs(cc, m, dec, goal, np.zeros(13))
-    assert obs.size == 99
+    assert obs.size == c.obs_dim
     want = np.zeros(3)
     want[NAMES.index(name)] = 1.0
     assert obs[-3:] == pytest.approx(want)
-    base = A.build_obs(A.with_run(cc, object_names=[], object_geometry={}, active_object="", obs_dim=96), m, dec, goal,
+    k = c.obs_dim - 3
+    base = A.build_obs(A.with_run(cc, object_names=[], object_geometry={}, active_object="", obs_dim=k), m, dec, goal,
                        np.zeros(13))
-    assert obs[:96] == pytest.approx(base)                          # 앞 96 은 단일 물체 관측과 같은 순서 · 값
+    assert obs[:k] == pytest.approx(base)                           # 앞 91 은 단일 물체 관측과 같은 순서 · 값
 
 
 def test_the_cup_geometry_and_goal_box_follow_the_object(c):
@@ -172,7 +180,7 @@ def test_an_unknown_or_missing_object_is_refused_not_zero_filled(c, name):
 
 
 def test_single_object_contracts_are_unchanged_and_refuse_an_object():
-    old = A.load_contract(POL / "rh56f1/aglt/right_s240" / "rh_aglt_contract.json")
+    old = A.load_contract(SINGLE)
     assert old.object_names == [] and A.obs_dim_of(old) == 96 and A.actor_layout(old) == A.ACTOR_LAYOUT
     assert A.select_object(old, None) is old
     with pytest.raises(A.RhAgltError, match="단일 물체"):
@@ -220,7 +228,7 @@ def test_the_chain_picks_the_object_at_reset_and_refuses_without_one(c):
     assert ch.c.active_object == "shaker_c_real" and ch.c.cup_half_height == pytest.approx(0.065)
     for _ in range(c.hold_steps + 2):
         ch.step(meas)
-    assert pol.seen and all(o.size == 99 and o[-3:].tolist() == [0, 0, 1] for o in pol.seen)
+    assert pol.seen and all(o.size == c.obs_dim and o[-3:].tolist() == [0, 0, 1] for o in pol.seen)
     ch.object_name = "source200_real"                               # 다음 에피소드 다른 물체 — reset 이 다시 고른다
     ch.reset(meas)
     pol.seen.clear()
@@ -238,15 +246,15 @@ def _local(c) -> A.RaContract:
     return A.with_run(c, run_dir=str(run), checkpoint=str(ckpt))
 
 
-def test_the_checkpoint_input_is_99_and_its_md5_is_the_handed_over_md5(c):
+def test_the_checkpoint_input_is_the_contract_width_and_its_md5_is_the_handed_over_md5(c):
     torch = pytest.importorskip("torch")
     import hashlib
     cl = _local(c)
     assert hashlib.md5(Path(cl.checkpoint).read_bytes()).hexdigest() == MD5[c.side().side]
     sd = torch.load(cl.checkpoint, map_location="cpu", weights_only=False)["model"]
     first = [v for k, v in sd.items() if k.endswith("rnn.weight_ih_l0")]
-    assert first and first[0].shape[1] == 99                         # actor 첫 층(LSTM) 입력 폭
-    assert sd["running_mean_std.running_mean"].shape == (99,)
+    assert first and first[0].shape[1] == c.obs_dim                  # actor 첫 층(LSTM) 입력 폭
+    assert sd["running_mean_std.running_mean"].shape == (c.obs_dim,)
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -260,11 +268,11 @@ def test_the_policy_acts_on_cpu_for_every_object(c, name):
     ch.reset(meas)
     for _ in range(cl.hold_steps + 5):
         obs, a, _t = ch.step(meas)
-    assert obs.size == 99 and a.size == 13 and np.all(np.isfinite(a))
+    assert obs.size == cl.obs_dim and a.size == 13 and np.all(np.isfinite(a))
 
 
 # ---------------------------------------------------------------- 에피소드 단계 물체
-def _raw(obj, policy="rh56f1/aglt/right_rg3mft", **job):
+def _raw(obj, policy="rh56f1/aglt/right_rg3wo", **job):
     raw = yaml.safe_load((REPO / "config/episodes/pick_place_right.yaml").read_text())
     raw["policies"]["rh_aglt_r"]["policy"] = policy
     for n in raw["sequence"]:
@@ -312,13 +320,16 @@ def test_a_policy_object_on_a_non_policy_kind_is_refused():
 
 
 def test_availability_needs_a_known_object_for_the_multi_object_policy():
+    from types import SimpleNamespace
     from policy_control import policy_registry as R
     entries = {e.id: e for e in R.scan(POL, deep=False)}
-    assert "rh56f1/aglt/right_rg3mft" in entries
+    assert "rh56f1/aglt/right_rg3wo" in entries
+    # 단일 물체 정책은 10.18 에 모두 지웠다 — 등록부 항목 모양만 맞춘 사본(09.30 i03 계약)
+    entries["rh56f1/aglt/right_single"] = SimpleNamespace(path=FIX, contract=SINGLE.name, status="", issues=())
     ok = S.availability(S.parse(_raw("source240_real")), entries)
     missing = S.availability(S.parse(_raw(None)), entries)
     wrong = S.availability(S.parse(_raw("cyl60")), entries)
     assert "policy_object" not in ok["rh_aglt_r"] and "다물체" not in ok["rh_aglt_r"]
     assert "다물체" in missing["rh_aglt_r"] and "cyl60" in wrong["rh_aglt_r"]
-    single = S.availability(S.parse(_raw("source240_real", policy="rh56f1/aglt/right_s240")), entries)
+    single = S.availability(S.parse(_raw("source240_real", policy="rh56f1/aglt/right_single")), entries)
     assert "단일 물체" in single["rh_aglt_r"]

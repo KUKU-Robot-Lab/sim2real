@@ -6,7 +6,7 @@
 
     # 무발행(기본): 계획 · 한계 · 속도만 본다
     python3 deploy/policy_control/tools/replay_traj_rh.py --npz <후보>.npz \
-        --contract deploy/policies/rh56f1/aglt/left_shk21/rh_aglt_contract.json --rate-scale 0.2
+        --contract deploy/policies/rh56f1/aglt/left_rg3wo/rh_aglt_contract.json --rate-scale 0.2
     # ★실기 — 사용자 승인 뒤에만
     ... --object-topic /objects/shaker_c_orange/pose --execute
 

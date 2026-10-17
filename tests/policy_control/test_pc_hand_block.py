@@ -130,7 +130,7 @@ def test_the_numpy_block_matches_the_sim_torch_block_tick_by_tick(stop_at, lag):
 # ---------------------------------------------------------------- 계약 · 디코더 · 체인(rh_aglt)
 from policy_control import rh_aglt as A  # noqa: E402
 
-RUN = Path(__file__).resolve().parents[2] / "deploy/policies/rh56f1/aglt/right_rg3mft"
+RUN = Path(__file__).resolve().parents[2] / "deploy/policies/rh56f1/aglt/right_rg3wo"   # 10.18 rg3mft 폴더 삭제 — 같은 다물체 rg3 계열 배포 정책
 BLOCK = dict(NOM)
 
 
@@ -149,7 +149,7 @@ def test_the_block_contract_validates_and_refuses_half_settings(cb):
         A.with_run(cb, grasp_rule="any")
     with pytest.raises(A.RhAgltError, match="grasp_rule"):
         A.with_run(cb, hand_block={}, hand_lead_cap_rad=0.0)
-    old = A.load_contract(RUN / "rh_aglt_contract.json")
+    old = A.load_contract(Path(__file__).resolve().parent / "fixtures" / "rh_aglt_right_i03_contract.json")   # 09.30 i03 사본
     assert old.hand_block == {} and A.RaDecoder(old).grasped() is None   # 이전 계약은 촉각 멈춤 그대로
 
 

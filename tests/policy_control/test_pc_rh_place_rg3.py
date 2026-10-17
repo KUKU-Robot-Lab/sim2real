@@ -10,7 +10,7 @@ import pytest
 from policy_control import rh_aglt as A
 from policy_control import rh_place as P
 
-RUN = Path(__file__).resolve().parents[2] / "deploy/policies/rh56f1/aglt/right_rg3mft"
+RUN = Path(__file__).resolve().parents[2] / "deploy/policies/rh56f1/aglt/right_rg3wo"   # 10.18 rg3mft 폴더 삭제 — 같은 다물체 rg3 계열 배포 정책
 BLOCK = {"g_rad": 0.0218, "eps_rad": 0.0109, "n_ticks": 3, "lag_ticks": 6,
          "axes": ["thumb_flex", "index", "middle", "ring", "pinky"]}
 LATCH = {"dz": 0.055, "dxy": 0.004, "tilt_deg": 20.0, "bottom_xy": True}

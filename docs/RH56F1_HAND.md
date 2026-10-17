@@ -59,7 +59,7 @@ q*       = clip(q* + Δ, lo, hi)
 
 ## 5. 정책별
 
-| | pour_fj (`rh56f1/pour_fj/both_f01`) | rh_aglt (`rh56f1/aglt/right_i03` · `rh56f1/aglt/left_i05`) |
+| | pour_fj (`rh56f1/pour_fj/both_f01`) | rh_aglt (09.30 `right_i03` · `left_i05` 기준, 10.18 폴더 삭제) |
 |---|---|---|
 | 행동 | 26 = [오른팔 7 · 오른손 6][왼팔 7 · 왼손 6] | 13 = 팔 7 · 손 6 |
 | 손 범위 · 동결 | f01: 한계 전 범위 · 동결 없음 (f02~: grip · 1 N) | grip · 1 N |
@@ -68,7 +68,7 @@ q*       = clip(q* + Δ, lo, hi)
 | 대기 | 30 스텝, 손은 따른다 | 10 스텝, 편 손 |
 | 노드 | `pour_fj_node.py` | `rh_aglt_node.py` (같은 모듈의 rh_aglt 계열) |
 | 컵 | /objects/cup_src · cup_rcv | 오른팔 cup_src · 왼팔 cup_rcv, 첫 목표 = 리셋 때 컵 + 14 cm, 그 뒤 목표 직접 입력(아래) |
-| 기본 정책(10.08) | rh56f1/pour_fj/both_f01 | 단독 aglt 점검(미션 policy_aglt_<side>): ★10.08 손 어드민턴스 rh56f1/aglt/right_g5362b · rh56f1/aglt/left_g5362(아래 문단). 이전 기본(10.06): 오른팔 rh56f1/aglt/right_env17 · 왼팔 rh56f1/aglt/left_env17f(오른팔 거울을 왼팔 env 에서 이어 학습, 거울 left_env17mir 는 hold)(cyl60 · 보상 iter_17 · 붓기 하중으로 이어 학습, T2R Grasping, 실기 점검 전). 쥔 높이(컵 중심 위 손바닥, 컵 축)가 +2.0 cm 로 cyl60g(+4.3 cm)보다 낮다. 놓기 i09 · i01 시작 뱅크의 쥔 높이는 p5~p95 4.3~5.3 cm(우) · 3.1~5.5 cm(좌)이고 3 cm 아래는 0 %(우) · 4 %(좌)라 env17 인계는 놓기 학습 분포 밖(우) · 끝자락(좌)이다. 그래서 에피소드(config/episodes)는 10.04 기본 rh56f1/aglt/right_cyl60g · rh56f1/aglt/left_cyl60gmir(cyl60 · FP++ 지각 · 파지 후 부착) 그대로. 실기 컵 cyl60. 이전 기본 i10d(aglt_cup_s065) · mirror_l5 · i05, i03 은 hold |
+| 기본 정책(10.18) | rh56f1/pour_fj/both_f01 | 단독 aglt 점검(미션 policy_aglt_<side>): ★10.18 rh56f1/aglt/right_rg3wo · left_rg3wo(다물체 · 위치 제어, 노드에 그 팔 FP++ 물체의 object 를 넘긴다). 10.18 사용자가 옛 정책 폴더 24개(i03 · i05 · cyl60g · env17 · g5362 · src21c · rg3s · rg3mft 등)를 지웠다 — 아래는 이력, 시험용 계약 사본은 tests/policy_control/fixtures. ★10.08 손 어드민턴스 rh56f1/aglt/right_g5362b · rh56f1/aglt/left_g5362(아래 문단). 이전 기본(10.06): 오른팔 rh56f1/aglt/right_env17 · 왼팔 rh56f1/aglt/left_env17f(오른팔 거울을 왼팔 env 에서 이어 학습, 거울 left_env17mir 는 hold)(cyl60 · 보상 iter_17 · 붓기 하중으로 이어 학습, T2R Grasping, 실기 점검 전). 쥔 높이(컵 중심 위 손바닥, 컵 축)가 +2.0 cm 로 cyl60g(+4.3 cm)보다 낮다. 놓기 i09 · i01 시작 뱅크의 쥔 높이는 p5~p95 4.3~5.3 cm(우) · 3.1~5.5 cm(좌)이고 3 cm 아래는 0 %(우) · 4 %(좌)라 env17 인계는 놓기 학습 분포 밖(우) · 끝자락(좌)이다. 그래서 에피소드(config/episodes)는 10.04 기본 rh56f1/aglt/right_cyl60g · rh56f1/aglt/left_cyl60gmir(cyl60 · FP++ 지각 · 파지 후 부착) 그대로. 실기 컵 cyl60. 이전 기본 i10d(aglt_cup_s065) · mirror_l5 · i05, i03 은 hold |
 
 **★10.08 손 어드민턴스 정책 — 기본 단독 aglt = `rh56f1/aglt/right_g5362b` · `rh56f1/aglt/left_g5362`(T2R Grasping 최종, 사용자 "이 정책으로 실기 테스트").**
 학습 env `hand_adm_enable` → 계약 `hand_command: admittance` · `hand_admittance`(학습 k 1980 g/rad · f_max 800 g · tau 0.3 s · 0.3 rad/s · DR ±20 %).
