@@ -64,8 +64,8 @@ def test_the_policy_node_ends_at_the_first_goal_like_training(side):
         argv = next(c["argv"] for c in m["run"][f"episode_grasp_rg3_{side}"]
                     if any("rh_aglt_node.py" in a for a in c["argv"]))
         assert "goal_max:=1" in argv and "stop_on_target:=true" not in argv
-        # ★10.13 lift_hold · ★10.14 오른손은 5 s(300 틱) — 정책이 sim 목표 성공(10 cm, 2 s 유지)까지 가게 늦춘다
-        hold = {"right": 300, "left": 30}[side]
+        # ★10.13 lift_hold · ★10.17 양손 2 s(120 틱) — 10.14 오른손 5 s · 왼손 0.5 s 를 하나로(사용자)
+        hold = {"right": 120, "left": 120}[side]
         for kv in ("freeze_rule:=lift_hold", "freeze_lift_m:=0.07", f"freeze_hold_steps:={hold}"):
             assert argv[argv.index(kv) - 1] == "-p"
         assert "max_episode_s:=15.0" in argv

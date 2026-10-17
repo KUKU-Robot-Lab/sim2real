@@ -72,7 +72,9 @@ EPISODE_RELAY = "/episode/objects/{}/pose"
 # ★10.14 사용자(1안): 오른손은 7 cm 에서 0.5 s 만에 멈추면 정책이 sim 목표(10 cm, 2 s 유지)까지 못 가 약지 · 새끼가 감기기
 #   전에 끝난다(실기 190421 · 190758 엄지-검지만 쥠) — 목표 성공에 끝나게 늦춘다. sim hp3 ep1450 trace 32 에피소드: 7 cm →
 #   목표 성공 2.0~4.3 s. 5 s 는 그 뒤의 받침이다(정책 시간 15 s 를 넘기면 POLICY_TIMEOUT 복구가 손을 펴 컵을 떨군다).
-LIFT_HOLD_TICKS = {"right": 300, "left": 30}
+# ★10.17 사용자: 양손 2 s(120 틱) — 오른손 5 s 는 hp3 처럼 들고 나서 정책이 손을 열 시간을 주고, 0.5 s 는 약지 · 새끼가
+#   감기기 전에 끝난다(10.14). sim hp3 의 7 cm → 목표 성공 최소 2.0 s 에 맞춘다. 첫 목표 성공도 멈춤(goal_max:=1).
+LIFT_HOLD_TICKS = {"right": 120, "left": 120}
 # ★10.12 사용자(A안): 실기를 sim 에 맞춘다 — aglt 정책은 쥘 때까지 FP++ live 추적(/objects/<물체>/live_pose, 약 10 Hz)을 받고
 #   손이 가려 끊기면 마지막 값(sim FP++ ZOH), 쥔 뒤는 sim PalmAttach 처럼 파지 + 100 ms 뒤 찍힌 프레임과 그 시각 손바닥 FK 로
 #   붙인다. 가려서 프레임이 안 오면 0.7 s(sim 이 붙는 시간 범위 위)에 파지 시작 FK 로. 10.04 의 정지 컵(cup_latch · cup_static) 대신.

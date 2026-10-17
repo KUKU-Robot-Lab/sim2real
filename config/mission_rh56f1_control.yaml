@@ -2424,7 +2424,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_rg3wo) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 5 s 쥠 유지에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_rg3wo) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -2446,7 +2446,7 @@ run:
     - -p
     - freeze_lift_m:=0.07
     - -p
-    - freeze_hold_steps:=300
+    - freeze_hold_steps:=120
     - -p
     - cup_topic:=/objects/source240b_blue/live_pose
     - -p
@@ -2542,7 +2542,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_rg3wo) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 0.5 s 쥠 유지에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_rg3wo) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -2564,7 +2564,7 @@ run:
     - -p
     - freeze_lift_m:=0.07
     - -p
-    - freeze_hold_steps:=30
+    - freeze_hold_steps:=120
     - -p
     - cup_topic:=/objects/shaker_c_orange/live_pose
     - -p
