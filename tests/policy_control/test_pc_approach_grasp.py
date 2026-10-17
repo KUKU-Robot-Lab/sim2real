@@ -110,6 +110,7 @@ def _run(ch, plant, n):
 
 
 CUP_STOP = {"thumb_2": 0.55, "index_1": 0.5, "middle_1": 0.5, "ring_1": 0.6, "pinky_1": 0.65}
+JUDGE = AG.ApproachGraspCfg(judge=1)          # 옛 동작(래치 판정) — 10.18 기본은 강제 파지(judge=0)
 
 
 def test_cfg_param_off_on_overrides_and_unknown_keys():
@@ -178,9 +179,9 @@ def test_thumb_flex_waits_and_latched_axes_stop_closing(c, fk):
     assert np.all(ch.ag.q_cmd[blk.latch] == pytest.approx(q[blk.latch]))   # 래치 축은 더 닫지 않는다
 
 
-def test_no_cup_means_no_lift_and_abort(c, fk):
+def test_judge_mode_no_cup_means_no_lift_and_abort(c, fk):
     plant = Plant(c, fk, stop={})                                   # 아무 축도 막히지 않는다(빈손)
-    ch = _chain(c, fk)
+    ch = _chain(c, fk, JUDGE)
     ch.reset(plant.meas())
     phases = _run(ch, plant, 60 * 20)
     assert ch.ag.end is not None and ch.ag.end[0] == "abort" and "못 쥠" in ch.ag.end[1]
@@ -188,8 +189,8 @@ def test_no_cup_means_no_lift_and_abort(c, fk):
     assert plant.palm()[0] == pytest.approx(plant.palm_mid, abs=2e-3)   # 팔은 접근 끝 자리 그대로(들지 않는다)
 
 
-def test_far_cup_is_not_a_grasp(c, fk):
-    cfg = AG.ApproachGraspCfg(approach_max_s=1.0)                     # 멀어서 거리 조건으로는 안 멈춘다 → 시간으로 닫기
+def test_judge_mode_far_cup_is_not_a_grasp(c, fk):
+    cfg = AG.ApproachGraspCfg(approach_max_s=1.0, judge=1)            # 멀어서 거리 조건으로는 안 멈춘다 → 시간으로 닫기
     plant = Plant(c, fk, cup_rel=(0.0, 0.0, -0.12), stop=CUP_STOP)   # 손가락은 막혀도(다른 물건) 컵이 12 cm 밖
     ch = _chain(c, fk, cfg)
     ch.reset(plant.meas())
@@ -198,9 +199,9 @@ def test_far_cup_is_not_a_grasp(c, fk):
     assert ch.ag.end[0] == "abort"
 
 
-def test_grasp_loss_during_settle_aborts(c, fk):
+def test_judge_mode_grasp_loss_during_settle_aborts(c, fk):
     plant = Plant(c, fk, stop=CUP_STOP)
-    ch = _chain(c, fk)
+    ch = _chain(c, fk, JUDGE)
     ch.reset(plant.meas())
     while ch.ag.phase != "settle" and ch.ag.end is None:
         _, _, tg = ch.step(plant.meas())
@@ -271,7 +272,7 @@ def test_unsafe_values_are_refused_so_no_value_can_switch_off_a_gate(text):
 
 def test_episode_length_covers_the_slowest_path_and_off_keeps_the_aglt_default():
     cfg = AG.ApproachGraspCfg()
-    slowest = cfg.approach_max_s + cfg.close_max_s + cfg.lift_m / cfg.lift_speed + cfg.lift_extra_s + cfg.hold_s
+    slowest = cfg.approach_max_s + cfg.close_max_s + cfg.squeeze_s + cfg.lift_m / cfg.lift_speed + cfg.lift_extra_s + cfg.hold_s
     assert AG.episode_s({}) >= slowest + AG.EPISODE_PAD_S - 1e-9
     assert AG.episode_s({"approach_max_s": 20}) == AG.episode_s({}) + 5.0
     assert AG.episode_s(None) == AG.DEFAULT_EPISODE_S == 15.0
@@ -287,3 +288,48 @@ def test_the_mission_and_the_runner_use_the_same_node_time_limit():
     mission = yaml.safe_load((repo / "config" / "mission_rh56f1_fake.yaml").read_text())
     text = json.dumps(mission)
     assert f"max_episode_s:={AG.episode_s({}):.1f}" in text
+
+
+# ---------------------------------------------------------------- 10.18 강제 파지(기본 judge=0)
+def test_forced_grasp_is_the_default_and_lifts_without_a_judge(c, fk):
+    """사용자 10.18: 접근만 정책, 파지는 스크립트로 강제 — 쥔 판정 없이 닫기가 끝나면 든다. 빈손이어도 판정으로 멈추지 않는다."""
+    assert AG.ApproachGraspCfg().judge == 0 and AG.ApproachGraspCfg.parse("on").judge == 0
+    for stop in (CUP_STOP, {}):
+        plant = Plant(c, fk, stop=stop)
+        ch = _chain(c, fk)
+        ch.reset(plant.meas())
+        phases = _run(ch, plant, 60 * 25)
+        assert ch.ag.end is not None and ch.ag.end[0] == "stop", (stop, ch.ag.as_dict())
+        assert {"close", "lift", "settle"} <= set(phases) and "강제 파지" in ch.ag.why
+        assert plant.palm()[0][2] - ch.ag.z0 >= 0.09 - 1e-3
+
+
+def test_forced_grasp_lifts_soon_after_every_closing_axis_stops(c, fk):
+    plant = Plant(c, fk, stop=CUP_STOP)
+    ch = _chain(c, fk)
+    ch.reset(plant.meas())
+    phases = _run(ch, plant, 60 * 25)
+    n_close = phases.count("close")
+    cfg = AG.ApproachGraspCfg()
+    assert n_close < round(cfg.close_max_s * c.policy_hz)                     # 상한 전에 — 모든 축이 막혀서 넘어갔다
+    assert n_close >= round(cfg.squeeze_s * c.policy_hz)                       # 막힌 뒤 squeeze_s 기다림
+
+
+def test_squeeze_keeps_pushing_latched_axes_to_the_grip_pose(c, fk):
+    plant = Plant(c, fk, stop=CUP_STOP)
+    ch = _chain(c, fk, AG.ApproachGraspCfg(squeeze=1))
+    ch.reset(plant.meas())
+    while ch.ag.phase in ("approach", "close") and ch.ag.end is None:
+        _, _, tg = ch.step(plant.meas())
+        plant.apply(tg)
+    g = np.asarray(c.side().hand_grip, float)
+    i = [k for k, n in enumerate(plant.names) if n.endswith("index_1")][0]
+    assert ch.ag.q_cmd[i] == pytest.approx(g[i])                               # 래치돼도 쥔 자세까지
+    assert plant.hand[i] < g[i]                                                # 실제 손가락은 컵에서 멈춤
+
+
+@pytest.mark.parametrize("text", ["judge=2", "squeeze=-1", "squeeze_s=9"])
+def test_forced_grasp_values_are_range_checked(text):
+    with pytest.raises(AG.ApproachGraspError):
+        AG.ApproachGraspCfg.parse(text)
+

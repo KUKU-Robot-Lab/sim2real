@@ -8,10 +8,14 @@ rh_aglt 노드(AgltChain) 안에서 단계만 바꾼다. 스크립트 단계도 
   close     팔 목표 고정(팔 행동 0). 엄지 회전(thumb_1)은 접근 끝 목표 그대로. 엄지 굽힘(thumb_delay_s 뒤)과 네 손가락은
             close_rad_s 로 쥔 자세(q_grip) 쪽으로 닫는다. 막힘이 래치된 축은 그 자리에서 더 닫지 않는다(사용자 규칙: 닿을 때까지
             닫기 · 모양에 맞춘 파지 금지 · 엄지 끝 접촉은 요구하지 않음).
-  judge     쥔 판정 = HandBlockOpp(네 손가락 중 judge_min_axes 축 이상 래치) AND |컵 − 손바닥| < near_m 가 judge_ticks 이어짐.
-            close_max_s 안에 못 쥐면 실패 — 들지 않고 멈춘다(abort, pd 가 그 자세로 붙든다. 복구는 운영자 rehome).
+  ★10.18 사용자 "접근만 하게 하고 스크립트처럼 파지를 하게 우리가 강제하는 거니까 쥠 판정 따위 필요 없음, 무조건 잡을 수밖에 없을 것"
+  → 기본 judge=0(강제 파지): 닫는 축이 모두 막히거나(래치) 쥔 자세에 닿으면 squeeze_s 더 기다린 뒤(또는 close_max_s) 판정 없이 든다.
+     들기 · 유지 중에도 풀림 판정으로 멈추지 않는다(들기 높이 미달 = 팔이 못 따라온 것만 실패).
+     squeeze=1 이면 래치된 축도 멈추지 않고 쥔 자세까지 계속 민다(pd 손 앞섬 상한 0.2 rad 가 미는 힘을 묶는다).
+  judge=1   (옛 동작) 쥔 판정 = HandBlockOpp(네 손가락 중 judge_min_axes 축 이상 래치) AND |컵 − 손바닥| < near_m 가 judge_ticks
+            이어짐. close_max_s 안에 못 쥐면 실패 — 들지 않고 멈춘다(abort, pd 가 그 자세로 붙든다. 복구는 운영자 rehome).
   lift      손바닥 방향 고정, 수직 lift_m 를 lift_speed 로(DLS IK, rh_cap.ik_lift_action 과 같은 식 → 증분 팔 행동).
-  settle    hold_s 동안 그대로 유지 — 네 손가락 래치 수가 judge_min_axes 아래로 loss_ticks 넘게 떨어지면 실패.
+  settle    hold_s 동안 그대로 유지 — (judge=1 만) 네 손가락 래치 수가 judge_min_axes 아래로 loss_ticks 넘게 떨어지면 실패.
             (들린 뒤에는 FP++ 컵이 가려 옛 값으로 남을 수 있어 거리 조건을 보지 않는다.)
   done      성공 → 노드가 stop 으로 끝낸다(pd 가 마지막 팔 · 손 목표로 붙든다 — 다음 단계 ready_carry 가 이어받는다).
 
@@ -47,6 +51,7 @@ SAFE_RANGE: Mapping[str, tuple] = {
     "judge_min_axes": (1, len(HB.FINGERS)), "near_m": (0.02, 0.12), "judge_ticks": (1, 120),
     "lift_m": (0.02, 0.20), "lift_speed": (0.01, 0.10), "lift_damping": (0.01, 0.5), "lift_extra_s": (0.0, 5.0),
     "lift_tol_m": (0.002, 0.05), "hold_s": (0.5, 10.0), "loss_ticks": (1, 60),
+    "judge": (0, 1), "squeeze": (0, 1), "squeeze_s": (0.0, 3.0),
 }
 
 
@@ -69,6 +74,9 @@ class ApproachGraspCfg:
     lift_tol_m: float = 0.01
     hold_s: float = 3.0                # 결정 1(10.17): 들어 올린 뒤 3 s 유지 = 1 회 성공
     loss_ticks: int = 30
+    judge: int = 0                     # ★10.18 사용자: 0 = 강제 파지(판정 없이 든다) · 1 = 래치 판정(옛 동작)
+    squeeze: int = 0                   # 1 = 래치된 축도 쥔 자세까지 계속 민다(강제 파지 힘)
+    squeeze_s: float = 0.5             # 닫기 끝(모든 축 막힘 · 쥔 자세) 뒤 들기 전 대기
 
     def __post_init__(self) -> None:
         bad = [f"{f.name}={getattr(self, f.name)} (허용 {SAFE_RANGE[f.name][0]:g}~{SAFE_RANGE[f.name][1]:g})"
@@ -83,7 +91,8 @@ class ApproachGraspCfg:
     @property
     def worst_s(self) -> float:
         """가장 늦게 끝나는 경로(접근 시간 초과 → 닫기 시간 초과 직전 판정 → 들기 램프 + 대기 → 유지) [s]."""
-        return self.approach_max_s + self.close_max_s + self.lift_m / self.lift_speed + self.lift_extra_s + self.hold_s
+        return (self.approach_max_s + self.close_max_s + self.squeeze_s + self.lift_m / self.lift_speed + self.lift_extra_s
+                + self.hold_s)
 
     @staticmethod
     def parse(text: str) -> "ApproachGraspCfg | None":
@@ -169,6 +178,7 @@ class ApproachGrasp:
         self.still = 0
         self.g_streak = 0
         self.lost = 0
+        self.closed_t = -1               # 강제 파지: 닫기가 끝난(모든 축 막힘 · 쥔 자세) 틱
         self.why = ""
         self.end: tuple[str, str] | None = None
         self.q_cmd: np.ndarray | None = None
@@ -256,18 +266,40 @@ class ApproachGrasp:
         flex = dec.block.thumb_flex
         if self.phase == "close" and self.t <= round(self.cfg.thumb_delay_s * self.hz):
             step[flex] = 0.0
-        step[dec.block.latch] = 0.0
+        if not self.cfg.squeeze:
+            step[dec.block.latch] = 0.0
         nxt = self.q_cmd + sgn * step
         self.q_cmd = np.where(sgn > 0, np.minimum(nxt, np.maximum(g, self.q_cmd)), np.maximum(nxt, np.minimum(g, self.q_cmd)))
 
     def _latched_fingers(self, dec) -> int:
         return int(dec.block.latch[dec.block.fingers].sum())
 
+    def _close_done(self, dec, c: A.RaContract) -> bool:
+        """닫는 축(엄지 굽힘 · 네 손가락)이 모두 막혔거나(래치) 쥔 자세에 닿았는가 — 강제 파지가 들기로 넘어가는 조건.
+        squeeze 면 래치를 보지 않는다 — 지령이 쥔 자세에 닿아야 끝(래치된 축도 끝까지 민다)."""
+        assert self.q_cmd is not None
+        s = c.side()
+        g = np.asarray(s.hand_grip, float)
+        idx = [dec.block.thumb_flex, *dec.block.fingers]
+        at_grip = [abs(float(self.q_cmd[i]) - float(g[i])) < 1e-6 for i in idx]
+        if self.cfg.squeeze:
+            return all(at_grip)
+        return all(bool(dec.block.latch[i]) or a for i, a in zip(idx, at_grip))
+
     def _advance(self, chain, m: A.RaMeas, d: float) -> None:
         dec, cfg = chain.dec, self.cfg
         n = self._latched_fingers(dec)
         self.last = {"palm_cup_m": round(d, 4), "latched_fingers": n, "latch": dec.block.latch.astype(int).tolist(),
                      "t_s": round(self.t / self.hz, 2)}
+        if self.phase == "close" and not cfg.judge:             # ★10.18 강제 파지 — 판정 없이 든다
+            if self.closed_t < 0 and self._close_done(dec, chain.c):
+                self.closed_t = self.t
+            self.last["closed"] = self.closed_t >= 0
+            waited = self.closed_t >= 0 and self.t - self.closed_t >= round(cfg.squeeze_s * self.hz)
+            if waited or self.t >= round(cfg.close_max_s * self.hz):
+                self._go("lift", f"강제 파지 — 래치 손가락 {n} · 거리 {d:.3f} m"
+                                 + ("" if waited else f" · 닫기 {cfg.close_max_s:.1f} s 상한"))
+            return
         if self.phase == "close":
             self.g_streak = self.g_streak + 1 if dec.grasped() else 0
             self.last["g_streak"] = self.g_streak
@@ -277,7 +309,7 @@ class ApproachGrasp:
                 self._go("failed", f"{cfg.close_max_s:.1f} s 안에 못 쥠(래치 손가락 {n} < {cfg.judge_min_axes} 또는 "
                                    f"거리 {d:.3f} ≥ {cfg.near_m} m) — 들지 않고 멈춘다")
             return
-        self.lost = self.lost + 1 if n < cfg.judge_min_axes else 0
+        self.lost = self.lost + 1 if (cfg.judge and n < cfg.judge_min_axes) else 0
         self.last["lost"] = self.lost
         if self.lost > cfg.loss_ticks:
             self._go("failed", f"{self.phase} 중 쥠이 풀림(래치 손가락 {n} 이 {cfg.loss_ticks} 틱 넘게 {cfg.judge_min_axes} 미만)")
