@@ -188,6 +188,10 @@ def records_view(root: Path | None = None) -> dict:
     return {**_cached(f"rec:{day}", files, make), "criterion": CRITERION, "grasp_rule": GRASP_RULE, "command": RECORD_CMD}
 
 
+#: 1-C result.json 의 judge(없으면 10.18 이전 = 래치) → 카드 문구. none = 배포 기본 강제 파지(사용자 10.18 "쥠판정따위 필요없음")
+JUDGE_LABEL = {"none": "강제 파지(판정 없음)", "latch": "래치 판정", "contact": "판정 접촉(sim 진단)"}
+
+
 def sim_view(repo: Path) -> list[dict]:
     """sim 비교 기준(10.18 '다른 기능 다 구현 뒤 sim') — logs/sim/*/judge.json(기본 궤적 비드) · result.json(1-C)."""
     root = repo / "logs" / "sim"
@@ -210,8 +214,7 @@ def sim_view(repo: Path) -> list[dict]:
                 ds = sorted(r["d_stop_true_m"] for r in rows if r.get("d_stop_true_m") is not None)
                 tip = sum("tipped" in (r.get("why") or "") for r in rows)
                 out.append({"kind": "1c", "name": f.parent.name, "ok": sum(bool(r["script_ok"] and r["true_lift"]) for r in rows),
-                            "n": len(rows), "note": f"{d.get('cond', 'real')}"
-                                                    + (" · 판정 접촉(sim 진단)" if d.get("judge") == "contact" else "")
+                            "n": len(rows), "note": f"{d.get('cond', 'real')} · {JUDGE_LABEL.get(d.get('judge', 'latch'), d.get('judge'))}"
                                                     + f" · 멈춤 {d['cfg']['stop_palm_m']} m · 접근 끝 거리 중앙값 "
                                                     f"{ds[len(ds) // 2] if ds else '—'} m · 컵 넘어짐 {tip}"})
         return out
