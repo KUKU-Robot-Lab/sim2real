@@ -188,10 +188,39 @@ def records_view(root: Path | None = None) -> dict:
     return {**_cached(f"rec:{day}", files, make), "criterion": CRITERION, "grasp_rule": GRASP_RULE, "command": RECORD_CMD}
 
 
+def sim_view(repo: Path) -> list[dict]:
+    """sim 비교 기준(10.18 '다른 기능 다 구현 뒤 sim') — logs/sim/*/judge.json(기본 궤적 비드) · result.json(1-C)."""
+    root = repo / "logs" / "sim"
+    files = sorted(root.glob("*/judge.json")) + sorted(root.glob("*/result.json"))
+
+    def make() -> list:
+        out = []
+        for f in files:
+            try:
+                d = json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if f.name == "judge.json" and "summary" in d:
+                s = d["summary"]
+                n = s.get("n_valid", s.get("n"))
+                out.append({"kind": "tilt_base", "name": f.parent.name, "ok": s.get("success_end"), "n": n,
+                            "note": f"받는 컵 평균 {s.get('in_rcv_mean')} · 흘림 {s.get('spill_total')} 개 · 1/3 s 성공 {s.get('success_any')}"})
+            elif f.name == "result.json" and "rows" in d and "cfg" in d:
+                rows = d["rows"]
+                ds = sorted(r["d_stop_true_m"] for r in rows if r.get("d_stop_true_m") is not None)
+                tip = sum("tipped" in (r.get("why") or "") for r in rows)
+                out.append({"kind": "1c", "name": f.parent.name, "ok": sum(bool(r["script_ok"] and r["true_lift"]) for r in rows),
+                            "n": len(rows), "note": f"{d.get('cond', 'real')} · 멈춤 {d['cfg']['stop_palm_m']} m · 접근 끝 거리 중앙값 "
+                                                    f"{ds[len(ds) // 2] if ds else '—'} m · 컵 넘어짐 {tip}"})
+        return out
+    return _cached(f"sim:{root}", files + [root], make)
+
+
 def view(repo: Path, runner: Mapping | None) -> dict:
     """상황판 스냅샷 session.tilt — 한 칸이 실패해도 다른 칸은 낸다(이유는 errors)."""
     out: dict = {"errors": []}
-    for key, fn in (("paths", lambda: paths_view(repo)), ("run", lambda: run_view(runner)), ("records", records_view)):
+    for key, fn in (("paths", lambda: paths_view(repo)), ("run", lambda: run_view(runner)), ("records", records_view),
+                    ("sim", lambda: sim_view(repo))):
         try:
             out[key] = fn()
         except Exception as exc:                      # noqa: BLE001 — 표시용 집계가 상황판을 멈추지 않게

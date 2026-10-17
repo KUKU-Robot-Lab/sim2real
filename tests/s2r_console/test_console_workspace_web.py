@@ -92,7 +92,8 @@ const tilt = {errors:[], paths:[
   {node:'grasp_right',kind:'hand',side:'right',ok:false,phase:'failed',why:'not grasped',latched:0}]},
  records:{day:'20261018',summary:{tilt:{A:{n:2,success:1,fill_mean:0.85,spilled_total:2}},grasp:{right:{n:5,success:4}}},
   tilt:[{trial:1,path:'A',in_rcv:10,n_beads:10,in_src:0,spilled:0,success:true,grasp_right:'ok',grasp_left:'ok',video:'a.mov'}],grasp:[],
-  criterion:'받는 컵 10/10',grasp_rule:'3 s 유지',command:'eval_record.py tilt'}};
+  criterion:'받는 컵 10/10',grasp_rule:'3 s 유지',command:'eval_record.py tilt'},
+ sim:[{kind:'tilt_base',name:'1018_tilt_base_ref',ok:62,n:63,note:'받는 컵 평균 0.998'},{kind:'1c',name:'1018_1c_right',ok:0,n:60,note:'컵 넘어짐 20'}]};
 vm.runInContext(`renderTilt(${JSON.stringify({tilt, episode_runner:{episode:'tilt_base_b',phase:'READY',index:1,busy:false,confirm:{node:'confirm_cup_right',text:'병'}}})})`,ctx);
 for (const id of ['tilt-panel','tilt-run-panel','tilt-rec-panel']) assert.equal(el(id).hidden,false);
 const p = el('tilt-paths').innerHTML;
@@ -104,8 +105,35 @@ const r = el('tilt-run').innerHTML;
 assert.match(r,/오른팔 탁자 여유/); assert.match(r,/11\.96/); assert.match(r,/✗ 걸림/); assert.match(r,/not grasped/);
 const rec = el('tilt-rec').innerHTML;
 assert.match(rec,/1\/2/); assert.match(rec,/4\/5 이상 → 경로 A/); assert.match(rec,/✓ 성공/); assert.match(rec,/받는 컵 10\/10/);
+assert.match(rec,/sim 기본 궤적 · 1018_tilt_base_ref/); assert.match(rec,/62\/63/); assert.match(rec,/1-C 경로 C/);
 vm.runInContext(`renderTilt({tilt:null})`,ctx);
 assert.equal(el('tilt-panel').hidden,true);
 '''
     result = subprocess.run(['node', '-e', script, str(WEB / 'console.js')], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_tilt_view_reads_the_sim_baselines_and_the_run_checks(tmp_path):
+    import json, sys
+    sys.path.insert(0, str(ROOT / 'deploy/policy_control'))
+    sys.path.insert(0, str(ROOT / 'deploy/s2r_console'))
+    from s2r_console import tilt_view as TV
+    (tmp_path / 'logs/sim/a').mkdir(parents=True)
+    (tmp_path / 'logs/sim/a/judge.json').write_text(json.dumps({'summary': {'n': 4, 'n_valid': 3, 'success_end': 2, 'in_rcv_mean': 0.9,
+                                                                           'spill_total': 1, 'success_any': 2}}))
+    (tmp_path / 'logs/sim/b').mkdir(parents=True)
+    (tmp_path / 'logs/sim/b/result.json').write_text(json.dumps({'cfg': {'stop_palm_m': 0.06}, 'cond': 'train', 'rows': [
+        {'script_ok': True, 'true_lift': True, 'd_stop_true_m': 0.05, 'why': ''},
+        {'script_ok': True, 'true_lift': False, 'd_stop_true_m': 0.07, 'why': "['tipped']"}]}))
+    sim = {x['name']: x for x in TV.sim_view(tmp_path)}
+    assert (sim['a']['ok'], sim['a']['n']) == (2, 3) and (sim['b']['ok'], sim['b']['n']) == (1, 2) and '넘어짐 1' in sim['b']['note']
+    run = tmp_path / 'run'
+    (run / 'carry_to_tilt_start_r').mkdir(parents=True)
+    (run / 'carry_to_tilt_start_r/check.json').write_text(json.dumps({'ok': False, 'T_end_s': 2.0, 'sides': ['right'], 'checks': {
+        'right': {'table_clear_m': 0.005, 'vmax_rad_s': 0.4, 'arrived': True, 'plan_ok': True, 'end_q_err_rad': 0.0, 'end_cup_err_mm': 0.1}},
+        'arms_clear': {'min_arm_point_m': 0.3, 'min_cup_gap_m': 0.2, 'ok': True}}))
+    v = TV.run_view({'episode': 'tilt_base_a', 'run_dir': str(run), 'nodes': [{'id': 'to_tilt_start_r'}]})
+    (card,) = v['cards']
+    assert card['kind'] == 'carry' and not card['ok']
+    assert [r['ok'] for r in card['rows'] if '탁자' in r['name']] == [False]          # 탁자 여유 0.5 cm < 1 cm
+    assert TV.run_view({'episode': 'grasp_rg3_right', 'run_dir': str(run)}) is None

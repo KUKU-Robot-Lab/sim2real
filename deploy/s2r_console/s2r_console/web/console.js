@@ -910,7 +910,11 @@ function renderTilt(s) {
       <span>받는 비율 평균 ${fmt(v.fill_mean, 2)} · 흘림 ${esc(v.spilled_total)} 개</span></div>`),
     ...Object.entries(gr).map(([k, v]) => `<div class="tilt-tile"><small>파지 확인 ${esc(SIDE_KO[k] || k)}</small><b>${esc(v.success)}/${esc(v.n)}</b>
       <span>${v.n >= 5 ? (v.success >= 4 ? "4/5 이상 → 경로 A" : "4/5 미만 → 경로 C") : `${5 - v.n} 회 남음`}</span></div>`)].join("");
+  // 10.18 sim 비교 기준 — 실기 회차와 같은 판정(끝에 받는 컵 전부)으로 센 sim 값 · 1-C(경로 C 시뮬)
+  const sim = (t.sim || []).map((x) => `<div class="tilt-tile sim"><small>sim ${esc(x.kind === "1c" ? "1-C 경로 C" : "기본 궤적")} · ${esc(x.name)}</small>
+      <b>${esc(x.ok)}/${esc(x.n)}</b><span>${esc(x.note)}</span></div>`).join("");
   put("tilt-rec", `<div class="tilt-tiles">${tiles || '<p class="hint">오늘 기록이 없다.</p>'}</div>
+    ${sim ? `<p class="tilt-rule"><b>sim 비교 기준</b> 같은 판정으로 센 sim 값(logs/sim)</p><div class="tilt-tiles">${sim}</div>` : ""}
     <p class="tilt-rule"><b>tilt 성공</b> ${esc(r.criterion)}</p><p class="tilt-rule"><b>파지</b> ${esc(r.grasp_rule)}</p>
     ${tiltRows ? `<table class="tilt-tbl"><thead><tr><th>회</th><th>경로</th><th>받는 컵</th><th>병에 남음</th><th>흘림</th><th>판정</th><th>파지 우 · 좌</th><th>영상</th></tr></thead><tbody>${tiltRows}</tbody></table>` : ""}
     ${graspRows ? `<table class="tilt-tbl"><thead><tr><th>회</th><th>손</th><th>결과</th><th>들림</th><th>유지</th><th></th></tr></thead><tbody>${graspRows}</tbody></table>` : ""}
