@@ -210,7 +210,9 @@ def sim_view(repo: Path) -> list[dict]:
                 ds = sorted(r["d_stop_true_m"] for r in rows if r.get("d_stop_true_m") is not None)
                 tip = sum("tipped" in (r.get("why") or "") for r in rows)
                 out.append({"kind": "1c", "name": f.parent.name, "ok": sum(bool(r["script_ok"] and r["true_lift"]) for r in rows),
-                            "n": len(rows), "note": f"{d.get('cond', 'real')} · 멈춤 {d['cfg']['stop_palm_m']} m · 접근 끝 거리 중앙값 "
+                            "n": len(rows), "note": f"{d.get('cond', 'real')}"
+                                                    + (" · 판정 접촉(sim 진단)" if d.get("judge") == "contact" else "")
+                                                    + f" · 멈춤 {d['cfg']['stop_palm_m']} m · 접근 끝 거리 중앙값 "
                                                     f"{ds[len(ds) // 2] if ds else '—'} m · 컵 넘어짐 {tip}"})
         return out
     return _cached(f"sim:{root}", files + [root], make)

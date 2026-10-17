@@ -122,11 +122,11 @@ def test_tilt_view_reads_the_sim_baselines_and_the_run_checks(tmp_path):
     (tmp_path / 'logs/sim/a/judge.json').write_text(json.dumps({'summary': {'n': 4, 'n_valid': 3, 'success_end': 2, 'in_rcv_mean': 0.9,
                                                                            'spill_total': 1, 'success_any': 2}}))
     (tmp_path / 'logs/sim/b').mkdir(parents=True)
-    (tmp_path / 'logs/sim/b/result.json').write_text(json.dumps({'cfg': {'stop_palm_m': 0.06}, 'cond': 'train', 'rows': [
+    (tmp_path / 'logs/sim/b/result.json').write_text(json.dumps({'cfg': {'stop_palm_m': 0.06}, 'cond': 'train', 'judge': 'contact', 'rows': [
         {'script_ok': True, 'true_lift': True, 'd_stop_true_m': 0.05, 'why': ''},
         {'script_ok': True, 'true_lift': False, 'd_stop_true_m': 0.07, 'why': "['tipped']"}]}))
     sim = {x['name']: x for x in TV.sim_view(tmp_path)}
-    assert (sim['a']['ok'], sim['a']['n']) == (2, 3) and (sim['b']['ok'], sim['b']['n']) == (1, 2) and '넘어짐 1' in sim['b']['note']
+    assert (sim['a']['ok'], sim['a']['n']) == (2, 3) and (sim['b']['ok'], sim['b']['n']) == (1, 2) and '넘어짐 1' in sim['b']['note'] and '판정 접촉' in sim['b']['note']
     run = tmp_path / 'run'
     (run / 'carry_to_tilt_start_r').mkdir(parents=True)
     (run / 'carry_to_tilt_start_r/check.json').write_text(json.dumps({'ok': False, 'T_end_s': 2.0, 'sides': ['right'], 'checks': {
