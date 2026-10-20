@@ -44,10 +44,12 @@ def test_three_paths_parse_and_share_the_carry_and_tilt():
         assert ep.trajectories["tilt"].sides == ("right", "left") and ep.trajectories["tilt"].cups
         assert (ep.trajectories["to_tilt_start_r"].sides, ep.trajectories["to_tilt_start_l"].sides) == (("right",), ("left",))
     assert not eps["b"].trajectories["to_tilt_start_r"].cups and eps["a"].trajectories["to_tilt_start_r"].cups
-    # ★10.20 C = ap05 사전 파지 자리에서 멈춤(stop_ready) · D = 같은 자리에서 rcg03 이 넘겨받음(handoff)
+    # ★10.20 C = ap05 사전 파지 자리에서 멈춤(stop_ready) · ★10.20 저녁 D = 1-B 접근(reach stop pregrasp) 뒤 rcg03 정책 노드
+    #   (사용자 "grasp_d 를 1-b 접근에 rcg03 으로 교체", 옛 D 의 ap05 넘김 대체)
     assert all(b.approach_grasp == {"stop_ready": 1} for b in eps["c"].policies.values())
-    assert {b.handoff for b in eps["d"].policies.values()} == {"rh56f1/aglt/right_rcg03", "rh56f1/aglt/left_rcg03"}
-    assert all(b.approach_grasp == {"handoff": 1} for b in eps["d"].policies.values())
+    assert {b.policy for b in eps["d"].policies.values()} == {"rh56f1/aglt/right_rcg03", "rh56f1/aglt/left_rcg03"}
+    assert all(b.handoff is None and b.approach_grasp is None for b in eps["d"].policies.values())
+    assert {t.stop for t in eps["d"].trajectories.values() if t.kind == "reach"} == {"pregrasp"}
     b = eps["b"]
     assert not b.policies and not any(n.type == "snapshot" for n in b.nodes)
     assert [n.id for n in b.nodes if n.type == "confirm"] == ["confirm_cup_right", "confirm_close_right", "confirm_cup_left",

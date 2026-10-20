@@ -23,6 +23,8 @@
     몸통 · 머리 · 반대팔 실측 자세) 여유 2 cm · 같은 팔 사슬 이웃 관절은 관통만 금지 · 관절 여유 ≥ 5°(URDF · 프로필 중 좁은 쪽) ·
     60 Hz 관절 속도 ≤ 2 rad/s · 실측 탁자 높이 위 손 점 1.5 cm · 팔 관절 3 cm · 손 점 ↔ 컵 겉면.
   하나도 없으면 종료 코드 2(재생 금지) — check.json tries 에 후보마다 걸린 이유.
+  ★10.20 --stop pregrasp(경로 D, 사용자 "grasp_d 를 1-b 접근에 rcg03 으로 교체"): 2) 들어가기를 하지 않고 사전 파지 자리에서
+    끝난다(rcg03 학습 시작 자세 = aglt_new ReadyApproach). 그 뒤 rcg03 정책 노드가 넘겨받는다. 이송 · 검사는 같다.
 
     python3 deploy/policy_control/tools/plan_reach.py --side right --object source240b_blue --cup 0.244,-0.116,0.288 \\
         --out logs/x/reach
@@ -78,6 +80,7 @@ CUP_TILT_MAX_DEG = 10.0
 POS_TOL_M = 0.002
 ANG_TOL_DEG = 1.0
 MARGIN_MIN_DEG = 5.0
+STOPS = ("grasp", "pregrasp")   # ★10.20 끝 자리: 손 안 컵(1-B) · 사전 파지(경로 D → rcg03)
 VMAX_RAD_S = 2.0
 LINE_DEV_M = 0.003
 HAND_TABLE_M = 0.015
@@ -387,7 +390,9 @@ def plan(side: str, cup_fpp, cup_quat, obj: str, out: Path, q: dict, hdgp: Path,
 
 
 def _plan(side: str, cup_fpp, cup_quat, obj: str, q: dict, hdgp: Path, *, asset: Path = ASSET,
-          contract: Path | None = None):
+          contract: Path | None = None, stop: str = "grasp"):
+    if stop not in STOPS:
+        raise ReachError(f"stop 은 {STOPS} — {stop!r}")
     tm, tk = {}, [time.monotonic()]
 
     def lap(k):
@@ -423,7 +428,7 @@ def _plan(side: str, cup_fpp, cup_quat, obj: str, q: dict, hdgp: Path, *, asset:
             "cup_tilt_deg": None if tilt is None else round(tilt, 1), "cup_origin_d4": [round(float(v), 4) for v in cup],
             "cup_radius_m": radius, "cup_z_lo": round(z_lo, 4), "cup_z_hi": round(z_hi, 4), "table_z": tz,
             "q_start": [round(float(v), 4) for v in q_now], "hdgp": str(hdgp), "hdgp_commit_pin": cfg["hdgp"].get("commit"),
-            "ready_cfg": {"file": READY_CFG, "source": rcfg.get("source")}, "problems": [], "timing_s": tm}
+            "ready_cfg": {"file": READY_CFG, "source": rcfg.get("source")}, "problems": [], "timing_s": tm, "stop": stop}
     lap("load")
     if tilt is not None and tilt > CUP_TILT_MAX_DEG:
         meta["problems"].append(f"컵이 {tilt:.1f}° 기울었다(한계 {CUP_TILT_MAX_DEG:.0f}°) — 세워 둘 것")
@@ -505,6 +510,9 @@ def _plan(side: str, cup_fpp, cup_quat, obj: str, q: dict, hdgp: Path, *, asset:
         # 들어가기는 이송이 실제로 끝난 자세에서 푼다 — 관절 공간 이송은 경유점 → 사전 파지 직선 IK 끝이 q_pre 와 다른
         # 팔 자세(같은 손바닥)일 수 있고, Mover 도 q* 에 0.05 rad 안까지만 맞춘다(10.20 왼손 중심선: 이음매 8.6 rad/s).
         q_pre = appr[-1]
+        if stop == "pregrasp":                     # ★10.20 경로 D — 사전 파지에서 끝(들어가기 없음), rcg03 이 넘겨받는다
+            chosen = (h, off, appr, aj, ainfo, methods[-1]["method"], appr[-1:], {"ok": True, "skipped": "stop pregrasp"})
+            continue
         R_g, p_g, az_g, rot_g = grasp_target(ch, q_pre, T_to, cup)
         p_g, deeper = deepen(p_g, cup, radius)
         path_in, dinfo = line_path(P, ch, q_pre, p_g, R_g, DEEP_SPEED_M_S, DEEP_ROT_DEG_S, DEEP_QD_RAD_S)
@@ -539,7 +547,7 @@ def _plan(side: str, cup_fpp, cup_quat, obj: str, q: dict, hdgp: Path, *, asset:
     meta["vmax_rad_s"] = round(float(np.abs(np.diff(full, axis=0)).max()) * RATE_HZ, 3)
     meta["n_cmd"] = int(len(full))
     meta["T_end_s"] = round((len(full) - 1) / RATE_HZ, 2)
-    meta["q_grasp"] = [round(float(v), 4) for v in path_in[-1]]
+    meta["q_pregrasp" if stop == "pregrasp" else "q_grasp"] = [round(float(v), 4) for v in path_in[-1]]
     hard = [x for x in meta["problems"] if "FP++ 자세 확인" not in x]
     meta["ok"] = bool(not hard and meta["vmax_rad_s"] <= VMAX_RAD_S)
     return meta["ok"], meta, full
@@ -572,12 +580,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--contract", type=Path, default=None, help="편 손 · 손끝 FK 계약(기본 그 팔 접근 정책 계약)")
     ap.add_argument("--q-json", default="", help='{"right": [7], "left": [7]} — 없으면 실측')
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--stop", choices=STOPS, default="grasp",
+                    help="grasp = 손 안 컵 자리까지(1-B) · pregrasp = 사전 파지 자리에서 끝(경로 D, rcg03 이 넘겨받는다)")
     a = ap.parse_args(argv)
     try:
         cup = parse_vec(a.cup, 3, "--cup")
         quat = parse_vec(a.quat, 4, "--quat") if a.quat else None
         ok, meta = plan(a.side, cup, quat, a.object, a.out, current_q(a.q_json), H.hdgp_dir(), asset=a.asset,
-                        contract=a.contract)
+                        contract=a.contract, stop=a.stop)
     except H.PinError as exc:
         print(f"✗ {exc}")
         return 3

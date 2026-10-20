@@ -14,6 +14,6 @@ eval: 'sim: 학습 ep/approach_success 0.98~0.99(ADR 20/20) · 영상 3물체 �
 interface: obs 94 (91 + 물체 one-hot 3, 맨 끝) · action 13 (팔 관절 증분 7 · 손 6) · 손 = position
 deploy:
   max_episode_s: 15.0
-  flow: '★10.20 사용자 "경로 a는 폐지, -> 경로d가 대체함" · "1-c : ap05+grasp" — 카드 = 경로 C(grasp_c_right: 사전 파지 자리 정지 → 스크립트 닫기 · 들기) · 경로 D(grasp_d_right) 의 접근 단계'
+  flow: '★10.20 사용자 "경로 a는 폐지, -> 경로d가 대체함" · "1-c : ap05+grasp" — 카드 = 경로 C(grasp_c_right: 사전 파지 자리 정지 → 스크립트 닫기 · 들기)(10.20 저녁부터 경로 D(grasp_d_right) 의 접근은 1-B ready_carry — 사용자 "grasp_d 를 1-b 접근에 rcg03 으로 교체")'
 note: '10.20 s2r_1st 등록(사용자: 전달받은 grasp · approach 정책만 남기고 옛 정책 제거). 학습 env.yaml ·
   agent.yaml 그대로.'

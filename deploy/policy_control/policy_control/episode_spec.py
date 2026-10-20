@@ -46,6 +46,9 @@ TRAJ_KINDS = ("rehome", "noop", "carry", "tilt", "reach", "lift")
 #: ★10.19 1-B(정책 없이 제어 모듈만): reach = ready_carry 로 컵 뒤까지 → 편 손으로 곧게 들어가 tilt 기준 손 안 컵 자리
 #:   (tools/plan_reach.py — 빈손, 한 팔, object = 그 팔이 쥘 episode 물체 이름) · lift = 쥔 뒤 손바닥 방향 고정 수직 10 cm
 #:   + 3 s 유지(tools/plan_lift.py — 컵을 쥔 손, 한 팔, object 가 있으면 끝에 FP++ 로 컵이 들렸는지 본다).
+#: ★10.20 경로 D(사용자 "grasp_d 를 1-b 접근에 rcg03 으로 교체"): reach stop = pregrasp 면 사전 파지 자리(aglt_new ReadyApproach,
+#:   rcg03 학습 시작 자세)에서 멈추고 들어가기를 하지 않는다 — 그 뒤 rcg03 정책 노드가 넘겨받는다. grasp(기본) = 1-B 그대로.
+REACH_STOPS = ("grasp", "pregrasp")
 PLANNED_TRAJ = ("carry", "tilt", "reach", "lift")
 ONE_ARM_TRAJ = ("reach", "lift")
 TRAJ_ASSETS = Path(__file__).resolve().parents[1] / "config"
@@ -107,6 +110,7 @@ class Trajectory:
     rate_scale: float = 1.0      # carry · tilt 재생 배속(0, 1]
     cups: bool = True            # carry · tilt: 그 팔 손이 컵을 쥐었을 때만(False = 빈손일 때만, carry 만)
     object: str = ""             # reach · lift: episode objects 의 이름(컵 자세 FP++ 토픽)
+    stop: str = "grasp"          # reach: grasp = 손 안 컵 자리까지(1-B) · pregrasp = 사전 파지 자리에서 멈춤(경로 D, 10.20)
 
 
 @dataclass(frozen=True)
@@ -267,7 +271,11 @@ def _trajectory(name: str, t: Mapping) -> Trajectory:
         raise EpisodeSpecError(f"trajectories.{name}: cups 는 true/false")
     tr = Trajectory(name=name, kind=str(t["kind"]), sides=tuple(t.get("sides") or ("right", "left")),
                     asset=str(t.get("asset") or ""), rate_scale=float(t.get("rate_scale", 1.0)), cups=cups,
-                    object=str(t.get("object") or ""))
+                    object=str(t.get("object") or ""), stop=str(t.get("stop") or "grasp"))
+    if "stop" in t and tr.kind != "reach":
+        raise EpisodeSpecError(f"trajectories.{name}: stop 은 reach 에만")
+    if tr.stop not in REACH_STOPS:
+        raise EpisodeSpecError(f"trajectories.{name}: stop 은 {REACH_STOPS} — {tr.stop!r}")
     if tr.object and tr.kind not in ONE_ARM_TRAJ:
         raise EpisodeSpecError(f"trajectories.{name}: object 는 {ONE_ARM_TRAJ} 에만")
     if tr.kind not in PLANNED_TRAJ:

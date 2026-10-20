@@ -494,8 +494,8 @@ stages:
   - home_right
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
-  title: '[에피소드] tilt_base_d — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_right → grasp_left → to_tilt_start_r
-    → to_tilt_start_l → tilt'
+  title: '[에피소드] tilt_base_d — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → open_hand_r → reach_r → grasp_right →
+    open_hand_l → reach_l → grasp_left → to_tilt_start_r → to_tilt_start_l → tilt'
 - id: episode_grasp_b_right
   group: policy
   lane: arm_right
@@ -527,7 +527,7 @@ stages:
   - home_right
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
-  title: '[에피소드] grasp_d_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+  title: '[에피소드] grasp_d_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → open_hand → reach → grasp_lift'
 - id: episode_grasp_d_left
   group: policy
   lane: arm_left
@@ -537,7 +537,7 @@ stages:
   - home_left
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
-  title: '[에피소드] grasp_d_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+  title: '[에피소드] grasp_d_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → open_hand → reach → grasp_lift'
 - id: shutdown
   group: finish
   lane: rig
@@ -3062,8 +3062,8 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 D: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/right_rcg03 로 넘김
-      → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_rcg03) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -3073,15 +3073,11 @@ run:
     - -p
     - ns:=right
     - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_rcg03/rh_aglt_contract.json
     - -p
     - robot:={artifact:robot_right}
     - -p
     - device:=cpu
-    - -p
-    - approach_grasp:=handoff=1
-    - -p
-    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/right_rcg03/rh_aglt_contract.json
     - -p
     - goal_max:=1
     - -p
@@ -3129,10 +3125,10 @@ run:
     - -p
     - hand_squeeze:=true
     - -p
-    - max_episode_s:=33.0
+    - max_episode_s:=15.0
     background: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 D: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/left_rcg03 로 넘김 →
-      첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_rcg03) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) ·
+      컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -3142,15 +3138,11 @@ run:
     - -p
     - ns:=left
     - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_rcg03/rh_aglt_contract.json
     - -p
     - robot:={artifact:robot_left}
     - -p
     - device:=cpu
-    - -p
-    - approach_grasp:=handoff=1
-    - -p
-    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/left_rcg03/rh_aglt_contract.json
     - -p
     - goal_max:=1
     - -p
@@ -3198,7 +3190,7 @@ run:
     - -p
     - hand_squeeze:=true
     - -p
-    - max_episode_s:=33.0
+    - max_episode_s:=15.0
     background: true
   - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
@@ -3391,8 +3383,8 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 D: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/right_rcg03 로 넘김
-      → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_rcg03) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -3402,15 +3394,11 @@ run:
     - -p
     - ns:=right
     - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_rcg03/rh_aglt_contract.json
     - -p
     - robot:={artifact:robot_right}
     - -p
     - device:=cpu
-    - -p
-    - approach_grasp:=handoff=1
-    - -p
-    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/right_rcg03/rh_aglt_contract.json
     - -p
     - goal_max:=1
     - -p
@@ -3458,7 +3446,7 @@ run:
     - -p
     - hand_squeeze:=true
     - -p
-    - max_episode_s:=33.0
+    - max_episode_s:=15.0
     background: true
   - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
@@ -3524,8 +3512,8 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 D: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/left_rcg03 로 넘김 →
-      첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_rcg03) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) ·
+      컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -3535,15 +3523,11 @@ run:
     - -p
     - ns:=left
     - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_rcg03/rh_aglt_contract.json
     - -p
     - robot:={artifact:robot_left}
     - -p
     - device:=cpu
-    - -p
-    - approach_grasp:=handoff=1
-    - -p
-    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/left_rcg03/rh_aglt_contract.json
     - -p
     - goal_max:=1
     - -p
@@ -3591,7 +3575,7 @@ run:
     - -p
     - hand_squeeze:=true
     - -p
-    - max_episode_s:=33.0
+    - max_episode_s:=15.0
     background: true
   - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:

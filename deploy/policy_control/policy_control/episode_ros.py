@@ -564,7 +564,7 @@ class RosExecutor:
             if not real:
                 return NodeResult("refused", f"reach: {traj.object} 토픽에서 실물 이름을 못 읽었다", time.monotonic() - t0)
             side_arg = ["--side", sides[0], "--object", real, "--cup", ",".join(f"{v:.5f}" for v in snap[0]),
-                        "--quat", ",".join(f"{v:.6f}" for v in snap[1])]
+                        "--quat", ",".join(f"{v:.6f}" for v in snap[1]), "--stop", traj.stop]   # ★10.20 pregrasp = 경로 D
         elif traj.kind == "lift":
             side_arg = ["--side", sides[0]]
             if traj.object:

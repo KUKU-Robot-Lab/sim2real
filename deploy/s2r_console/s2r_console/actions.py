@@ -37,8 +37,8 @@ CARD_PREFIXES = ('rg3_', 'simplan_', 'simrun_')
 #  에피소드 파일 · 물체는 미션 단계(episode_<에피소드>_<팔>) 그대로다.
 CONTROL_PREFIX = 'ctl_'
 CONTROL_EPISODES = {'grasp_b': '1-B 제어 모듈(정책 없음) — FP++ 컵 → ready_carry 접근 → [확인] 닫기 → 10 cm 들기 3 s',
-                    # ★10.20 사용자 "ap_05로 가까이 가게한 다음에, rcg_03 행하면 잡을 것 같음" — 에피소드 파일의 정책 · 컵 그대로
-                    'grasp_d': '경로 D — ap05 접근 → 사전 파지 자리에서 rcg03 이 넘겨받아 쥐고 10 cm 들기(확인 노드 없음)'}
+                    # ★10.20 사용자 "grasp_d 를 1-b 접근에 rcg03 으로 교체" — 에피소드 파일의 정책 · 컵 그대로
+                    'grasp_d': '경로 D — 1-B 접근(ready_carry, 사전 파지 자리에서 멈춤) → rcg03 이 쥐고 10 cm 들기(확인 노드 없음)'}
 #: 실행 기록 · 오류 글의 이름
 CONTROL_LABELS = {'grasp_b': '1-B', 'grasp_d': '경로 D'}
 #: 확인 노드(닫기 전)에서 사람을 기다리는 시간까지 — rg3(300 s)보다 길다
@@ -86,9 +86,9 @@ RG3_DEFAULT_OBJECTS = ('source240b_blue', 'shaker_c_orange')
 
 
 def card_stage(card) -> str:
-    """카드 → 실행 단계. ★10.19 접근 카드 = 경로 C(접근 정책 → 스크립트 잡기) · ★10.20 잡기 카드 = 경로 D(에피소드의 ap05 접근 →
-    사전 파지 자리에서 카드 정책이 넘겨받는다, 사용자 "경로 a는 폐지, -> 경로d가 대체함"). 두 에피소드 모두 정책 노드 하나 · 컵 하나 —
-    카드의 정책(C 는 접근 정책, D 는 넘겨받는 정책) · 물체로 바꿔 돌린다."""
+    """카드 → 실행 단계. ★10.19 접근 카드 = 경로 C(접근 정책 → 스크립트 잡기) · ★10.20 잡기 카드 = 경로 D(에피소드의 1-B 접근이
+    사전 파지 자리에서 멈추면 카드 정책이 시작한다, 사용자 "grasp_d 를 1-b 접근에 rcg03 으로 교체"). 두 에피소드 모두 정책 노드 하나 ·
+    컵 하나 — 카드의 정책(C 는 접근 정책, D 는 사전 파지에서 시작하는 정책) · 물체로 바꿔 돌린다."""
     return f"episode_grasp_c_{card['side']}" if card.get('task') == 'approaching' else f"episode_grasp_d_{card['side']}"
 
 
@@ -689,8 +689,9 @@ class ActionManager:
             card = self._card(s, action_id)
             obj = next(o for o in s.workspace.objects if o['id'] == card['object_id'])
             policy = next(p for p in s.workspace.catalog if p['id'] == card['policy_id'])
-            # ★10.20 경로 D 는 노드 계약(ap05)을 두고 넘겨받는 계약(handoff_contract)을 카드 정책으로 바꾼다
-            key = 'handoff_contract:=' if card_stage(card).startswith('episode_grasp_d_') else 'contract:='
+            # ★10.20 넘김(handoff_contract) 이 있는 노드는 넘겨받는 계약을, 아니면 노드 계약을 카드 정책으로 바꾼다(경로 D 는 이제
+            #   1-B 접근 뒤 정책 노드 하나라 contract 다 — 사용자 "grasp_d 를 1-b 접근에 rcg03 으로 교체")
+            key = 'handoff_contract:=' if any(a.startswith('handoff_contract:=') for a in cmd.argv) else 'contract:='
             argv = tuple(f"{key}{policy['contract']}" if a.startswith(key) else
                          f"cup_topic:=/objects/{obj['id']}/live_pose" if a.startswith('cup_topic:=') else a for a in cmd.argv)
             episode_path = str(s.run_dir / f"rg3_{card['id']}.yaml")
@@ -981,7 +982,7 @@ class ActionManager:
         card = self._card(s, description['id'])
         doc = yaml.safe_load((self.console.repo / f"config/episodes/{sid.removeprefix('episode_')}.yaml").read_text())
         for policy in doc['policies'].values():
-            policy['handoff' if 'handoff' in policy else 'policy'] = card['policy_id']   # ★10.20 경로 D — 넘겨받는 정책
+            policy['handoff' if 'handoff' in policy else 'policy'] = card['policy_id']   # 넘김이 있으면 넘겨받는 정책, 아니면 그 정책
         obj = next(o for o in s.workspace.objects if o['id'] == card['object_id'])
         doc['objects']['CUP']['topic'] = f"/objects/{obj['id']}/pose"
         for node in doc['sequence']:

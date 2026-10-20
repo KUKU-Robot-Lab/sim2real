@@ -14,7 +14,7 @@ eval: 'sim 결정론 격자(Newton · 실기 반응 조건 · 15칸 x 컵 3 x �
 interface: obs 94 (91 + 물체 one-hot 3, 맨 끝) · action 13 (팔 관절 증분 7 · 손 6) · 손 = position
 deploy:
   max_episode_s: 15.0
-  flow: '★10.20 사용자 "경로 a는 폐지, -> 경로d가 대체함" · "1-c : ap05+grasp" — 카드 = 경로 D(grasp_d_right: ap05 접근 → 사전 파지 자리에서 이 정책이 넘겨받는다). 홈에서 단독으로는 돌리지 않는다'
+  flow: '★10.20 사용자 "경로 a는 폐지, -> 경로d가 대체함" · "1-c : ap05+grasp" — 카드 = 경로 D(grasp_d_right: 1-B 접근(ready_carry)이 사전 파지 자리에서 멈추면 이 정책이 시작한다 — 10.20 저녁 사용자 "grasp_d 를 1-b 접근에 rcg03 으로 교체", 옛 ap05 넘김 대체). 홈에서 단독으로는 돌리지 않는다'
 note: 10.20 s2r_1st 등록(newton 전달, 사용자 '학습 둘다 종료하고 결정론적 평가 진행 · s2r_1st에 최종 정책 이관'). rcg02 를 대체(rcg02 는 deploy/policies_retired
   로). 학습 env.yaml · agent.yaml 그대로 — rcg02 와 다른 키는 학습 전용(ready_begin_every 4 · adr_start_increment · adr_metric_source/approach_succ_*
   · 재질 이벤트 캐시)이라 계약은 체크포인트 · 해시만 다르다.

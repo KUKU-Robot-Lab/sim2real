@@ -67,11 +67,12 @@ FAKE_HOLDER_Y = {0: 0.153, 1: -0.002, 2: -0.161}
 #: 상황판에서 굴리는 에피소드(10.04 사용자: 구분 실행 → 연속 실행) — config/episodes/<이름>.yaml, 실기에 쓸 수 있는 것만
 # ★10.20 사용자 "경로 a는 폐지, -> 경로d가 대체함": grasp_rg3_<팔> · tilt_base_a 를 빼고 grasp_d_<팔> · tilt_base_d
 EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_left",
-            # ★10.17 tilt 기본 궤적 — B(수동 파지, 확인 두 번) · C(ap05 + 스크립트 파지) · ★10.20 D(ap05 → rcg03 넘김, 옛 A 대체)
+            # ★10.17 tilt 기본 궤적 — B(수동 파지, 확인 두 번) · C(ap05 + 스크립트 파지) · ★10.20 D(1-B 접근 → rcg03, 옛 A 대체)
             "tilt_base_b", "tilt_base_c", "tilt_base_d",
             # ★10.19 1-B — 정책 없이 제어 모듈만(ready_carry 접근 → [확인] 닫기 → 10 cm 들기 · 3 s), 팔마다 따로
             "grasp_b_right", "grasp_b_left",
-            # ★10.20 경로 D — 접근 ap05 → 사전 파지 자리에서 같은 노드가 rcg03 으로 넘겨 쥐고 들기(사용자 "ap_05 … 다음에 rcg_03")
+            # ★10.20 경로 D — 1-B 접근(ready_carry, 사전 파지 자리에서 멈춤) → rcg03 이 쥐고 들기(사용자 "grasp_b 는 그대로 두고,
+            #   grasp_d 를 1-b 접근에 rcg03 으로 교체" — 옛 D 의 ap05 넘김은 실기 넘김 방위가 rcg03 학습 시작과 15~25° 달랐다)
             "grasp_d_right", "grasp_d_left")
 #: ★10.20 사용자 "영상은 필요 없음. 일단 기본 off" — 카메라 영상 · FP++ 실시간 좌표 기록(vision-3090)과 끝난 뒤 보고서 영상
 #   만들기(episode_media.py)를 기본으로 끈다. 10.20 실기: 보고서 영상 정리가 옛 회까지 다시 가져오며 6 분 넘게 팔 작업을 붙잡아

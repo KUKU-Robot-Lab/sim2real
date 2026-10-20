@@ -264,29 +264,8 @@ def test_episode_needs_both_the_handoff_key_and_the_policy_id():
         S.parse(raw)
 
 
-def test_path_d_episodes_check_both_policies_in_the_registry():
-    from policy_control import episode_spec as S
-    from policy_control import policy_registry as R
-    entries = {e.id: e for e in R.scan(REPO / "deploy" / "policies")}
-    for side in ("right", "left"):
-        ep = S.load(REPO / "config" / "episodes" / f"grasp_d_{side}.yaml")
-        b = next(iter(ep.policies.values()))
-        assert b.handoff == f"rh56f1/aglt/{side}_rcg03"
-        assert not any(S.availability(ep, entries).values())
-        gone = {k: v for k, v in entries.items() if k != b.handoff}
-        assert any(b.handoff in why for why in S.availability(ep, gone).values())
-
-
-def test_the_mission_starts_one_node_with_the_handoff_contract():
-    import yaml
-    from policy_control import episode_runner as RUN
-    from policy_control import episode_spec as S
-    ep = S.load(REPO / "config" / "episodes" / "grasp_d_right.yaml")
-    assert RUN._node_max_s(ep.policies["rh_aglt_r"]) == 33.0
-    text = json.dumps(yaml.safe_load((REPO / "config" / "mission_rh56f1_control.yaml").read_text()), ensure_ascii=False)
-    for side in ("right", "left"):
-        assert f"handoff_contract:={{repo}}/deploy/policies/rh56f1/aglt/{side}_rcg03/rh_aglt_contract.json" in text
-    assert "max_episode_s:=33.0" in text
+# ★10.20 저녁 사용자 "grasp_d 를 1-b 접근에 rcg03 으로 교체": grasp_d · tilt_base_d 는 더 이상 넘김을 쓰지 않는다 —
+#   에피소드 · 미션 검사는 test_pc_path_d_reach.py. 넘김 기구(approach_grasp handoff)는 위 시험이 그대로 지킨다.
 
 
 # ---------------------------------------------------------------- ★10.20 멈춤 = 학습 접근 성공(pos · 손바닥 still)

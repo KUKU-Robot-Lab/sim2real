@@ -69,7 +69,7 @@ def test_the_policy_node_ends_at_the_first_goal_like_training(side):
         hold = {"right": 120, "left": 120}[side]
         for kv in ("freeze_rule:=lift_hold", "freeze_lift_m:=0.07", f"freeze_hold_steps:={hold}"):
             assert argv[argv.index(kv) - 1] == "-p"
-        assert "max_episode_s:=33.0" in argv   # ★10.20 D = 접근 15 s + 넘겨받은 정책 15 s + 여유 3 s
+        assert "max_episode_s:=15.0" in argv   # ★10.20 저녁 D = 1-B 접근(궤적) 뒤 rcg03 정책 노드 하나 — 정책 15 s
 
 
 @pytest.mark.parametrize("side", ["right", "left"])
