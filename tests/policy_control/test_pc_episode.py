@@ -345,6 +345,29 @@ def test_snapshot_needs_enough_still_frames_and_the_holder_check_uses_the_seat()
     assert load_holder_poses(Path("/nonexistent.yaml")) == {}
 
 
+def test_holder_numbers_come_from_the_name_not_the_marker(tmp_path):
+    """★10.20 사용자 "순서를 다시 0,1,2로" — 번호는 이름에서 읽는다. 예: 왼쪽부터 마커 0·2·1 이면 CENTER_HOLDER 1 은 가운데 홀더(마커 2)."""
+    from policy_control.episode_ros import load_holder_poses
+    f = tmp_path / "holders.yaml"
+    f.write_text("holders:\n"
+                 "  cup_holder_0: {marker_id: 0, position: [0.38, 0.154, 0.235], yaw_rad: 0.0}\n"
+                 "  cup_holder_1: {marker_id: 2, position: [0.38, -0.052, 0.235], yaw_rad: 0.0}\n"
+                 "  cup_holder_2: {marker_id: 1, position: [0.38, -0.329, 0.235], yaw_rad: 0.0}\n")
+    poses = load_holder_poses(f)
+    assert {h: p[1] for h, (p, _) in poses.items()} == {0: 0.154, 1: -0.052, 2: -0.329}
+    f.write_text("holders:\n  holder_left: {marker_id: 0, position: [0.38, 0.15, 0.235]}\n")
+    with pytest.raises(ValueError, match="cup_holder_"):
+        load_holder_poses(f)
+
+
+def test_the_holder_config_numbers_holders_left_to_right():
+    """설정의 홀더 이름은 cup_holder_0·1·2 순서이고 마커는 겹치지 않는다(마커 번호는 실물 따라 자유)."""
+    raw = yaml.safe_load((REPO / "config/cup_holders.yaml").read_text())
+    hs = raw["holders"]
+    assert [h["name"] for h in hs] == [f"cup_holder_{i}" for i in range(len(hs))]
+    assert len({h["marker_id"] for h in hs}) == len(hs)
+
+
 def test_holder_problems_names_missing_files_and_ids():
     ep = _ep()
     assert S.holder_problems(ep, {1: ((0.38, -0.002, 0.235), 0.0)}) == []

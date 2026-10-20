@@ -380,7 +380,22 @@ def summarize(log: ScanLog, profile: cp.CalibProfile, cfg: HolderCfg, min_poses:
     shared, spreads, shared_errs = apply_shared({i: r.pose for i, r in results.items()}, cfg.shared)
     if shared_errs:
         return results, None, shared_errs
-    return results, {i: to_fpp_frame(profile, cfg, p) for i, p in shared.items()}, []
+    out = {i: to_fpp_frame(profile, cfg, p) for i, p in shared.items()}
+    order_err = left_to_right_problem(cfg, out)
+    return results, (None if order_err else out), ([order_err] if order_err else [])
+
+
+def left_to_right_problem(cfg: HolderCfg, poses: dict) -> str:
+    """★10.20 홀더 번호(이름 끝 숫자)는 로봇 왼쪽(+y)부터 0·1·2 — 에피소드 LEFT_HOLDER 0 · RIGHT_HOLDER 2.
+    실물을 옮겨 마커 짝이 자리와 어긋나면 사유를, 맞으면 '' 를 돌려준다."""
+    by_number = [i for _, i in sorted(zip(cfg.names, cfg.ids), key=lambda t: int(t[0].rsplit("_", 1)[-1]))]
+    ys = [float(poses[i][1]) for i in by_number]
+    if all(a > b for a, b in zip(ys, ys[1:])):
+        return ""
+    real = sorted(poses, key=lambda i: -float(poses[i][1]))
+    pairs = " · ".join(f"cup_holder_{n}←마커 {i}" for n, i in enumerate(real))
+    return (f"홀더 번호가 로봇 왼쪽부터 순서가 아니다: 실측 왼쪽부터 마커 {'·'.join(map(str, real))} "
+            f"(y {', '.join(f'{float(poses[i][1]):+.3f}' for i in real)}) → config/cup_holders.yaml 을 {pairs} 로 고친 뒤 다시 스캔")
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────

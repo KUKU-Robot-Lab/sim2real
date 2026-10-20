@@ -238,6 +238,10 @@ def _tracker(**kw) -> TR.HolderTracker:
     return TR.HolderTracker(CFG, ARM4090, table_z=0.205, **kw)
 
 
+#: 마커 id → 홀더 이름(설정이 정한 짝 — 10.20 부터 홀더 번호와 마커 번호가 같지 않다)
+NAME = dict(zip(CFG.ids, CFG.names))
+
+
 def test_tracker_searches_once_then_tracks_and_becomes_stable():
     tr, truth = _tracker(), _same_x(REAL)
     for n in range(5):
@@ -248,8 +252,8 @@ def test_tracker_searches_once_then_tracks_and_becomes_stable():
     assert st["ok"] and st["error"] == ""
     poses = tr.poses()
     assert set(poses) == {"cup_holder_0", "cup_holder_1", "cup_holder_2"}
-    for (name, p), (i, q) in zip(sorted(poses.items()), sorted(truth.items())):
-        assert np.allclose(p[:2], q[:2], atol=0.003), (name, p, q)
+    for i, q in truth.items():
+        assert np.allclose(poses[NAME[i]][:2], q[:2], atol=0.003), (NAME[i], poses[NAME[i]], q)
     assert np.ptp([p[0] for p in poses.values()]) < 1e-9          # 공유 축 x
 
 
@@ -261,7 +265,7 @@ def test_tracker_follows_a_holder_that_moves_a_little():
     for n in range(5):
         tr.update(_scene(moved, seed=10 + n), K)
     assert tr.states[1].src == "track"
-    assert abs(tr.poses()["cup_holder_1"][1] - moved[1][1]) < 0.003
+    assert abs(tr.poses()[NAME[1]][1] - moved[1][1]) < 0.003
 
 
 def test_tracker_drops_a_holder_that_disappears_and_reports_not_ok():
@@ -271,10 +275,10 @@ def test_tracker_drops_a_holder_that_disappears_and_reports_not_ok():
     gone = {i: p for i, p in truth.items() if i != 2}
     for n in range(3):
         tr.update(_scene(gone, seed=20 + n), K)
-    assert "cup_holder_2" not in tr.poses()
+    assert NAME[2] not in tr.poses()
     st = tr.status()
-    assert not st["ok"] and st["holders"]["cup_holder_2"]["seen"] is False
-    assert st["holders"]["cup_holder_0"]["stable"]
+    assert not st["ok"] and st["holders"][NAME[2]]["seen"] is False
+    assert st["holders"][NAME[0]]["stable"]
 
 
 def test_tracker_discards_a_frame_that_breaks_the_shared_axis():

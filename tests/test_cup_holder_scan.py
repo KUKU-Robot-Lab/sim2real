@@ -19,7 +19,9 @@ CFG = load_cfg()
 K, SIZE = S.nominal_camera()
 Z_FK = S.fk_table_z(PROFILE) - CFG.base_bottom_m
 #: sim(rh_place_r) 배치. 클램프가 상판 끝에 닿아 x 가 같다
-TRUTH = {0: (0.38, 0.083, Z_FK, 0.0), 1: (0.38, -0.034, Z_FK, 0.0), 2: (0.38, -0.153, Z_FK, 0.0)}
+#: 마커 id → 자세. 홀더 번호 n(로봇 왼쪽부터)의 자리에 설정이 짝지은 마커가 있다.
+SEATS_Y = (0.083, -0.034, -0.153)
+TRUTH = {CFG.ids[n]: (0.38, y, Z_FK, 0.0) for n, y in enumerate(SEATS_Y)}
 
 
 @dataclass(frozen=True)
@@ -202,7 +204,9 @@ def test_execute_writes_three_holders_in_fpp_frame(tmp_path, monkeypatch):
     assert S.main(["--execute", "--nice", "0", "--out", str(out)], head=head, camera=cam) == 0
     assert head.moves == list(S.plan_scan(PROFILE, CFG, K, SIZE).poses) and head.homed == 1
     holders = yaml.safe_load(out.read_text())["holders"]
-    assert [h["marker_id"] for h in holders.values()] == [0, 1, 2]
+    # 이름(홀더 번호) 순서로 쓰고, 마커는 설정이 정한 대로(10.20 12:20 실물 왼쪽부터 마커 2·1·0)
+    assert list(holders) == list(CFG.names)
+    assert [h["marker_id"] for h in holders.values()] == list(CFG.ids)
     for h in holders.values():
         want = S.to_fpp_frame(PROFILE, CFG, TRUTH[h["marker_id"]])
         assert np.allclose(h["position"], want[:3], atol=0.004)
@@ -212,8 +216,21 @@ def test_execute_writes_three_holders_in_fpp_frame(tmp_path, monkeypatch):
     assert len({h["position"][0] for h in holders.values()}) == 3
 
 
+def test_moved_holders_are_not_written_and_the_new_pairing_is_named(tmp_path, monkeypatch, capsys):
+    """★10.20 실물을 옮겨 마커 짝이 자리와 어긋나면(번호가 로봇 왼쪽부터가 아니면) 기록하지 않고 새 짝을 알려 준다."""
+    a, b, c = CFG.ids
+    swapped = {a: TRUTH[c], b: TRUTH[b], c: TRUTH[a]}          # 왼쪽 끝과 오른쪽 끝 홀더를 맞바꿈
+    monkeypatch.setattr(S, "estimate", fake_estimate(swapped))
+    out, head = tmp_path / "holders.yaml", Head()
+    assert S.main(["--execute", "--nice", "0", "--out", str(out)], head=head, camera=Camera()) == 1
+    assert not out.exists() and head.homed == 1
+    text = capsys.readouterr().out
+    assert "로봇 왼쪽부터 순서가 아니다" in text
+    assert f"cup_holder_0←마커 {c} · cup_holder_1←마커 {b} · cup_holder_2←마커 {a}" in text
+
+
 def test_partial_result_does_not_write(tmp_path, monkeypatch):
-    monkeypatch.setattr(S, "estimate", fake_estimate({i: TRUTH[i] for i in (0, 1)}))
+    monkeypatch.setattr(S, "estimate", fake_estimate({i: TRUTH[i] for i in CFG.ids[:2]}))
     out, head = tmp_path / "holders.yaml", Head()
     assert S.main(["--execute", "--nice", "0", "--out", str(out)], head=head, camera=Camera()) == 1
     assert not out.exists() and head.homed == 1

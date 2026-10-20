@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -104,13 +105,23 @@ def real_object_name(topic: str) -> str:
     return parts[1] if len(parts) == 3 and parts[0] == "objects" else ""
 
 
+#: 홀더 번호 = 이름 끝 숫자(테이블 왼쪽부터, config/cup_holders.yaml) — 에피소드 holders · /objects/cup_holder_N/pose 와 같은 번호.
+HOLDER_NAME = re.compile(r"cup_holder_(\d+)")
+
+
 def load_holder_poses(path: Path) -> dict[int, tuple]:
-    """holder_poses 파일 → {마커 id: (pos, yaw)}. 없으면 빈 dict."""
+    """holder_poses 파일 → {홀더 번호: (pos, yaw)}. 없으면 빈 dict.
+    ★10.20 번호는 이름에서 읽는다 — marker_id 가 아니다(사용자 "순서를 다시 0,1,2로", 마커 짝은 config/cup_holders.yaml)."""
     if not path.is_file():
         return {}
     raw = yaml.safe_load(path.read_text()) or {}
-    return {int(h["marker_id"]): (tuple(float(v) for v in h["position"]), float(h.get("yaw_rad", 0.0)))
-            for h in (raw.get("holders") or {}).values()}
+    out: dict[int, tuple] = {}
+    for name, h in (raw.get("holders") or {}).items():
+        m = HOLDER_NAME.fullmatch(str(name))
+        if m is None:
+            raise ValueError(f"{path}: 홀더 이름 {name!r} 은 cup_holder_<번호> 꼴이어야 한다")
+        out[int(m.group(1))] = (tuple(float(v) for v in h["position"]), float(h.get("yaw_rad", 0.0)))
+    return out
 
 
 def snapshot_of(frames: list) -> tuple | None:

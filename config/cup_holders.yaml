@@ -19,9 +19,14 @@ marker:
   up_stl: [0.0, 0.0, 1.0]        # 마커 y(인쇄 위쪽) 가정값 — 실제로 붙은 방향(0/90/180/270°)은 도구가 고른다
 
 holders:                         # 테이블 왼쪽부터(사용자 10.03) — sim(rh_place_r) 배치 y +0.083 · −0.034 · −0.153
-  - {name: cup_holder_0, marker_id: 0}
+  # 홀더 번호(이름 끝 숫자) = 테이블 왼쪽부터 순서. 에피소드 holders · /objects/cup_holder_N/pose · 고정 자세 파일 모두
+  #   이 번호를 쓴다. marker_id 는 그 자리 홀더에 붙은 실물 마커일 뿐이다.
+  # 왼쪽 = 로봇 왼쪽(+y) — 에피소드 LEFT_HOLDER 0 · CENTER_HOLDER 1 · RIGHT_HOLDER 2.
+  # 10.20 사용자 "지금 순서를 다시 0,1,2로": 번호는 자리 순서로 고정하고 마커 짝만 실물에 맞춘다.
+  #   12:20 스캔 실물 로봇 왼쪽부터 마커 2 · 1 · 0 (11:30 에는 0 · 2 · 1). 홀더를 옮기면 스캔이 기록을 거절하고 새 짝을 알려 준다.
+  - {name: cup_holder_0, marker_id: 2}
   - {name: cup_holder_1, marker_id: 1}
-  - {name: cup_holder_2, marker_id: 2}
+  - {name: cup_holder_2, marker_id: 0}
 
 constraints:
   upright: true                  # STL z = base z (roll·pitch 0). 추정은 x · y · z · yaw 만
