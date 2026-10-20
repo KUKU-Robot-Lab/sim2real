@@ -268,18 +268,20 @@ def test_episode_needs_both_the_handoff_key_and_the_policy_id():
 #   에피소드 · 미션 검사는 test_pc_path_d_reach.py. 넘김 기구(approach_grasp handoff)는 위 시험이 그대로 지킨다.
 # ★10.20 밤 사용자 "Ap+rg3는 기존 방법이 된다고 보고 … 정책2개가 연달아 진행되는 세트를 만들어 두기 · 내일 실험1":
 #   넘김은 경로 E(grasp_e_<팔>)가 쓴다 — 옛 경로 D v1 의 에피소드 · 미션 검사를 그대로 옮긴다.
+# ★10.21 사용자 "ap05 + rcg_04 또한 준비 필요": 경로 F(grasp_f_<팔>) — 같은 넘김, 넘겨받는 정책만 rcg04
+@pytest.mark.parametrize("route,rcg", [("e", "rcg03"), ("f", "rcg04")])
 @pytest.mark.parametrize("side", ["right", "left"])
-def test_path_e_runs_ap05_then_hands_over_to_rcg03_in_one_node(side):
+def test_path_e_runs_ap05_then_hands_over_to_rcg03_in_one_node(side, route, rcg):
     from policy_control import episode_spec as S
     from policy_control import policy_registry as R
     entries = {e.id: e for e in R.scan(REPO / "deploy" / "policies")}
-    ep = S.load(REPO / "config" / "episodes" / f"grasp_e_{side}.yaml")
+    ep = S.load(REPO / "config" / "episodes" / f"grasp_{route}_{side}.yaml")
     assert [n.id for n in ep.nodes] == ["go_home_start", "scene", "grasp_lift", "done"]
     (b,) = ep.policies.values()
-    assert (b.policy, b.handoff) == (f"rh56f1/aglt/{side}_approach_ap05", f"rh56f1/aglt/{side}_rcg03")
+    assert (b.policy, b.handoff) == (f"rh56f1/aglt/{side}_approach_ap05", f"rh56f1/aglt/{side}_{rcg}")
     assert AG.ApproachGraspCfg.parse(AG.ApproachGraspCfg.to_param(b.approach_grasp)).handoff == 1
     assert A.load_contract(POL / f"{side}_approach_ap05" / "rh_aglt_contract.json").arm_start == "home"
-    assert A.load_contract(POL / f"{side}_rcg03" / "rh_aglt_contract.json").arm_start == "ready"
+    assert A.load_contract(POL / f"{side}_{rcg}" / "rh_aglt_contract.json").arm_start == "ready"
     assert not any(S.availability(ep, entries).values())
     gone = {k: v for k, v in entries.items() if k != b.handoff}
     assert any(b.handoff in why for why in S.availability(ep, gone).values())
@@ -289,15 +291,17 @@ def test_the_mission_starts_one_node_with_the_handoff_contract():
     import yaml
     from policy_control import episode_runner as RUN
     from policy_control import episode_spec as S
-    ep = S.load(REPO / "config" / "episodes" / "grasp_e_right.yaml")
-    assert RUN._node_max_s(ep.policies["rh_aglt_r"]) == 33.0
+    for route in ("e", "f"):
+        ep = S.load(REPO / "config" / "episodes" / f"grasp_{route}_right.yaml")
+        assert RUN._node_max_s(ep.policies["rh_aglt_r"]) == 33.0
     for name in ("control", "fake"):
         doc = yaml.safe_load((REPO / "config" / f"mission_rh56f1_{name}.yaml").read_text())
         for side in ("right", "left"):
-            argv = [a for c in doc["run"][f"episode_grasp_e_{side}"] for a in c.get("argv", [])]
-            assert f"contract:={{repo}}/deploy/policies/rh56f1/aglt/{side}_approach_ap05/rh_aglt_contract.json" in argv
-            assert f"handoff_contract:={{repo}}/deploy/policies/rh56f1/aglt/{side}_rcg03/rh_aglt_contract.json" in argv
-            assert "max_episode_s:=33.0" in argv and "goal_max:=1" in argv
+            for route, rcg in (("e", "rcg03"), ("f", "rcg04")):   # ★10.21 경로 F = 경로 E + rcg04
+                argv = [a for c in doc["run"][f"episode_grasp_{route}_{side}"] for a in c.get("argv", [])]
+                assert f"contract:={{repo}}/deploy/policies/rh56f1/aglt/{side}_approach_ap05/rh_aglt_contract.json" in argv
+                assert f"handoff_contract:={{repo}}/deploy/policies/rh56f1/aglt/{side}_{rcg}/rh_aglt_contract.json" in argv
+                assert "max_episode_s:=33.0" in argv and "goal_max:=1" in argv
 
 
 # ---------------------------------------------------------------- ★10.20 멈춤 = 학습 접근 성공(pos · 손바닥 still)

@@ -1,0 +1,19 @@
+id: rh56f1/aglt/right_rcg04
+task: open-rh_r_aglt-lstm
+side: right
+checkpoint: last_open-rh_r_aglt-lstm_ep_2800_rew_9215.9375.pth
+md5: 7a8340e1aca1f46d874be90f1fe39b1a
+source: server:/home/oem/rl_ws/hdgp/log/rl_games/open-rh/right/aglt/rcg_04_nr/nn/last_open-rh_r_aglt-lstm_ep_2800_rew_9215.9375.pth
+  · 10.21 s2r_1st 가 server 에서 직접 받음(rsync, md5 같음)
+summary: 파지 · 들기 정책 rcg_04_nr ep2800(rcg_03_nr ep1400 이어 학습, ADR 20) · ★시작 자세 = ReadyApproach 사전 파지(aglt_start=ready)
+  · 쥐고 10 cm 들어 2 s 유지 · Newton 학습(Isaac Lab 3) · 2판 손 USD · 보상 rh_aglt_neo iter_04 · hdgp 87b96e6d
+status: candidate
+eval: 'sim 결정론 격자(10.20 newton, server ~/rl_ws/our_source/rh_aglt_runs/eval/1020_rcg04_grid · Newton · 실기 반응 조건 · 15칸 x 컵 3 x 시드 10 = 450회 ·
+  배포 판정 lift_hold, 허용 0.02 m): ap05 출발 98.9 %(시드 95.6~100) · 스크립트 출발 87.3 %(80.0~91.1) · 물리 오류 0/450 · s240/s200/shaker(ap) 148/149/148 · ★성공 중 5지 유지 51 %(rcg03_nr 86 %) · 기울기 p50 12.2° p90 16.9°(rcg03_nr 11.9° · 21.4°) · rcg03_nr 같은 격자 스크립트 출발 87.8 % · 10.21 s2r_1st 집계'
+interface: obs 94 (91 + 물체 one-hot 3, 맨 끝) · action 13 (팔 관절 증분 7 · 손 6) · 손 = position
+deploy:
+  max_episode_s: 15.0
+  flow: '★10.21 사용자 "ap05 + rcg_04 또한 준비 필요" — 카드 = 경로 F(grasp_f_right: ap05 접근이 사전 파지 자리에 멈추면 같은 노드에서 이 정책으로 넘김).
+    경로 E(ap05 → rcg03)와 같은 넘김 기구 · 홈에서 단독으로는 돌리지 않는다'
+note: 10.21 s2r_1st 등록. rcg03 과 학습 env.yaml 차이는 학습 전용 키뿐(adr_start_increment · newton_dr_once · 보상 경로 iter_03 → iter_04),
+  agent.yaml 은 load_path · 실험 이름만 다르다 — 계약은 체크포인트 · 해시만 다르다(rh_aglt_contract.json diff 로 확인). rcg03 은 그대로 둔다.

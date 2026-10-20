@@ -76,7 +76,9 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             "grasp_d_right", "grasp_d_left",
             # ★10.20 밤 경로 E — ap05 접근 → 사전 파지 자리에서 같은 노드가 rcg03 으로 넘겨 쥐고 들기(사용자 "Ap+rg3는 기존 방법이
             #   된다고 보고 이전처럼 끊어서 진행이 아니라 정책2개가 연달아 진행되는 세트를 만들어 두기 · 내일 실험1")
-            "grasp_e_right", "grasp_e_left")
+            "grasp_e_right", "grasp_e_left",
+            # ★10.21 경로 F — 경로 E 와 같은 넘김, 넘겨받는 정책만 rcg04(사용자 "ap05 + rcg_04 또한 준비 필요")
+            "grasp_f_right", "grasp_f_left")
 #: ★10.20 사용자 "영상은 필요 없음. 일단 기본 off" — 카메라 영상 · FP++ 실시간 좌표 기록(vision-3090)과 끝난 뒤 보고서 영상
 #   만들기(episode_media.py)를 기본으로 끈다. 10.20 실기: 보고서 영상 정리가 옛 회까지 다시 가져오며 6 분 넘게 팔 작업을 붙잡아
 #   rehome · tilt_now 승인이 막혔다. 켜려면 True 로 바꾸고 이 생성기를 다시 돌린다(미션 YAML 이 바뀐다).
@@ -801,7 +803,8 @@ def _episode_run(name: str, real: bool) -> list:
                             "-p", f"handoff_contract:={{repo}}/deploy/policies/{b.handoff}/rh_aglt_contract.json",
                             "-p", "goal_max:=1", "-p", "freeze_rule:=lift_hold", "-p", "freeze_lift_m:=0.07",
                             "-p", f"freeze_hold_steps:={hold_}"]
-                end_note = (f"경로 E: 접근 정책 → 사전 파지 자리(2 cm)에 {ag.still_s:g} s 멈추면 같은 노드에서 {b.handoff} 로 넘김 → "
+                route = {"grasp_f": "경로 F"}.get(name[:7], "경로 E")   # ★10.21 경로 F(ap05 → rcg04) — 같은 넘김, 이름만
+                end_note = (f"{route}: 접근 정책 → 사전 파지 자리(2 cm)에 {ag.still_s:g} s 멈추면 같은 노드에서 {b.handoff} 로 넘김 → "
                             f"첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 {hold_ / 60:g} s 쥠 유지에 끝남 · 접근 {ag.approach_max_s:g} s 안에 못 오면 멈춤")
                 max_s = f"{episode_s(b.approach_grasp):.1f}"   # 접근 최악 + 넘겨받은 정책 15 s + 3 s(실행기 _node_max_s 와 같은 식)
             # ★10.19 사용자: "sim 은 세게 쥐면 물리가 터져 적당히 쥐게 학습했다 — 실기는 제어로 더 세게"(rh_aglt.GripAssist D).
