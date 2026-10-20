@@ -25,13 +25,10 @@ dg5f_m/
     both_i24  (hold)
 rh56f1/
   aglt/
-    left_approach_rg3wc
-    left_approach_rg3wg
-    left_rg3wo
-    right_approach_rg3wc
-    right_approach_rg3wg
-    right_rg3hp3
-    right_rg3wo
+    left_approach_ap05
+    left_rcg03
+    right_approach_ap05
+    right_rcg03
   place/
     left_i01
     right_i09
@@ -47,25 +44,19 @@ rh56f1/
 
 | id | 쪽 | status | 체크포인트 | 설명 | sim 평가 | 미션 기본 |
 |---|---|---|---|---|---|---|
-| `rh56f1/aglt/left_approach_rg3wc` | left | candidate | ep800 | 경로 C 접근 정책(왼손) — 오른손 rg3wc ep800 을 거울로 뒤집은 체크포인트(왼손 전용 접근 정책은 없다, rg3wo 왼손의 출발점). params = left_rg3wo 의 env · agent(관측 · 행동 해석이 접근 런과 같음 — 오른손 계약 비교로 확인) | sim: rg3wn·rg3wo 출발점(10.14). 접근 끝 손바닥–컵 분포는 1-C 시뮬에서 잰다 | – |
-| `rh56f1/aglt/left_approach_rg3wg` | left | candidate | ep300 | 경로 C 접근 정책 — rg3wg ep300(잡기 · 들기 단계 런 rh_aglt_gl iter_01 의 초기, 접근 rg3wc ep800 에서 이어 학습). 편 손(닫힘 0.07~0.09)으로 컵 옆까지 깊이 들어가 머문다. 지연 · FP++ · ADR 없이 학습, 손 = position | sim 1-C(arm4090 · 학습 조건 substep 1 · mimic nf500 · 끝까지 밀어 쥐기, 10.18): 우 30/60 · 좌 31/60. 접촉 손가락 고정(substep 4 · nf0 · pin_lead 0)은 sim 에서 쥐는 힘이 안 남아 우 6/60 — 사용자: sim 실패는 중요하지 않음 | rh56f1_control, rh56f1_fake |
-| `rh56f1/aglt/left_rg3wo` | left | candidate | ep10000 | rg3wo ep10000(rew 7852.018) · 물체 3개(학습 *_cvx 볼록 충돌체 = 실물 *_real) 한 정책 · actor 촉각 없음(91 + one-hot 3) · ★손 = position · 쥔 판정 contact(엄지 AND 다른 손가락 2 개 > 1 N, 배포는 막힘 thumb_flex_and_any_finger) · FP++ · 지연 ADR(0~1.5배) · 손 막힘 ADR 종점 · 보상 rh_aglt_gl iter_08 · 접근 rg3wc ep800 warmstart(mu+0.6) | sim 1017d_grid75(실기 규격, 75 env × 시드 10): 왼손 3 cm 75.7 % (shaker 77.6 %) | rh56f1_control, rh56f1_fake |
-| `rh56f1/aglt/right_approach_rg3wc` | right | candidate | ep800 | 경로 C 접근 정책 — rg3wc ep800 원본(손을 편 채 다가감, oppose 0.98). FP++ 꺼짐 · 지연 학습 없음 · 컵 위치 잡음 ≤ 15 mm. 노드 파라미터 approach_grasp 로 접근 뒤 스크립트 닫기 · 쥠 확인 · 10 cm 들기 · 3 s 유지(approach_grasp.py) | sim: rg3wn·rg3wo 출발점(10.14). 접근 끝 손바닥–컵 분포는 1-C 시뮬에서 잰다 | – |
-| `rh56f1/aglt/right_approach_rg3wg` | right | candidate | ep300 | 경로 C 접근 정책 — rg3wg ep300(잡기 · 들기 단계 런 rh_aglt_gl iter_01 의 초기, 접근 rg3wc ep800 에서 이어 학습). 편 손(닫힘 0.07~0.09)으로 컵 옆까지 깊이 들어가 머문다. 지연 · FP++ · ADR 없이 학습, 손 = position | sim 1-C(arm4090 · 학습 조건 substep 1 · mimic nf500 · 끝까지 밀어 쥐기, 10.18): 우 30/60 · 좌 31/60. 접촉 손가락 고정(substep 4 · nf0 · pin_lead 0)은 sim 에서 쥐는 힘이 안 남아 우 6/60 — 사용자: sim 실패는 중요하지 않음 | rh56f1_control, rh56f1_fake |
-| `rh56f1/aglt/right_rg3hp3` | right | candidate | ep1450 | 물체 3개(source240_real · source200_real · shaker_c_real) 한 정책 · actor 촉각 없음(91 + one-hot 3) · 막힘 쥠 멈춤/쥔 판정(hand_block) · 쥔 판정 유지(block_follow_open) · FP++ · 지연 ADR(0~1.5배) · 팔 오프셋 DR · 보상 rh_aglt_d6 iter_03 · ★손 = position(10.14 위치제어 재학습) | – | – |
-| `rh56f1/aglt/right_rg3wo` | right | candidate | ep10000 | rg3wo ep10000(rew 6647.8843) · 물체 3개(학습 *_cvx 볼록 충돌체 = 실물 *_real) 한 정책 · actor 촉각 없음(91 + one-hot 3) · ★손 = position · 쥔 판정 contact(엄지 AND 다른 손가락 2 개 > 1 N, 배포는 막힘 thumb_flex_and_any_finger) · FP++ · 지연 ADR(0~1.5배) · 손 막힘 ADR 종점 · 보상 rh_aglt_gl iter_08 · 접근 rg3wc ep800 warmstart(mu+0.6) | sim 1017d_grid75(실기 규격, 75 env × 시드 10): 오른손 3 cm 69.2 % (src240 66.8 %) | rh56f1_control, rh56f1_fake |
+| `rh56f1/aglt/left_approach_ap05` | left | candidate | ep2600 | 접근(approach) 정책 ap_05_l ep2600 · 홈에서 출발해 ReadyApproach 사전 파지 자세(컵 축 2.5R 고리, 높이 = 컵 원점, 손바닥이 컵을 향하고 손은 편다)까지 간다 · 잡지 않는다 — 닫기 · 들기는 배포 제어 모듈(1-B 이음점) · 2판 손 USD(rh56f1_v2) · 보상 rh_aglt_ap iter_03 · hdgp 55098d226 | sim: 학습 ep/approach_success 0.98~0.99(ADR 20/20) · 영상 3물체 성공(videos/grasp/1020_ap05) · 고해상도 격자 평가 아직 | rh56f1_control, rh56f1_fake |
+| `rh56f1/aglt/left_rcg03` | left | candidate | ep1500 | 파지 · 들기 정책 rcg_03_nl ep1500(ADR 20/20, rcg_02_nlm ep300 이어 학습) · ★시작 자세 = ReadyApproach 사전 파지(aglt_start=ready) · 쥐고 10 cm 들어 2 s 유지 · Newton 학습(Isaac Lab 3) · 2판 손 USD · 보상 rh_aglt_neo iter_03 · hdgp 0b79f245 | sim 결정론 격자(Newton · 실기 반응 조건 · 15칸 x 컵 3 x 시드 10 = 450회 · lift_hold 7 cm 2 s): 성공 88.0 %(시드 82.2~91.1) · 물리 오류 뺀 값 88.4 % · s240/s200/shaker 87/91/86 · ★성공 중 5지 유지 55 %(들고 있는 동안 약지 · 새끼가 자주 떨어짐) · 기울기 p50 12.6° (rcg02_nlm 80.9 % · 5지 84 %) · eval1020/ | rh56f1_control, rh56f1_fake |
+| `rh56f1/aglt/right_approach_ap05` | right | candidate | ep2300 | 접근(approach) 정책 ap_05_r ep2300 · 홈에서 출발해 ReadyApproach 사전 파지 자세(컵 축 2.5R 고리, 높이 = 컵 원점, 손바닥이 컵을 향하고 손은 편다)까지 간다 · 잡지 않는다 — 닫기 · 들기는 배포 제어 모듈(1-B 이음점) · 2판 손 USD(rh56f1_v2) · 보상 rh_aglt_ap iter_03 · hdgp 55098d226 | sim: 학습 ep/approach_success 0.98~0.99(ADR 20/20) · 영상 3물체 성공(videos/grasp/1020_ap05) · 고해상도 격자 평가 아직 | rh56f1_control, rh56f1_fake |
+| `rh56f1/aglt/right_rcg03` | right | candidate | ep1400 | 파지 · 들기 정책 rcg_03_nr ep1400(ADR 20/20, rcg_02_nr ep1300 이어 학습) · ★시작 자세 = ReadyApproach 사전 파지(aglt_start=ready) · 쥐고 10 cm 들어 2 s 유지 · Newton 학습(Isaac Lab 3) · 2판 손 USD · 보상 rh_aglt_neo iter_03 · hdgp 0b79f245 | sim 결정론 격자(Newton · 실기 반응 조건 · 15칸 x 컵 3 x 시드 10 = 450회 · lift_hold 7 cm 2 s): 성공 87.8 %(시드 82.2~91.1) · 물리 오류 뺀 값 88.8 % · s240/s200/shaker 89/89/86 · 성공 중 5지 유지 86 % · 기울기 p50 11.9° (rcg02 87.1 % · 5지 59 %) · 약한 곳 x 0.10 바깥 칸 · eval1020/ | rh56f1_control, rh56f1_fake |
 
 학습 조건(각 폴더 `params/env.yaml` 에서 읽음):
 
 | id | 보상 | 학습 물체 | 명령 지연 | FP++ (학습) | 공차 | 시작 |
 |---|---|---|---|---|---|---|
-| `rh56f1/aglt/left_approach_rg3wc` | rh_aglt_gl/iter_08 | source240_cvx · source200_cvx · shaker_c_cvx (one-hot) | 팔 관절별 실측 × 0.0–1.5 (ADR) · 손 3–5 스텝 | 지각 | 0.1→0.03 | 홈 · hold 10 |
-| `rh56f1/aglt/left_approach_rg3wg` | rh_aglt_gl/iter_01 | source240_real · source200_real · shaker_c_real (one-hot) | 없음 | 없음 | 0.1→0.03 | 홈 · hold 10 |
-| `rh56f1/aglt/left_rg3wo` | rh_aglt_gl/iter_08 | source240_cvx · source200_cvx · shaker_c_cvx (one-hot) | 팔 관절별 실측 × 0.0–1.5 (ADR) · 손 3–5 스텝 | 지각 | 0.1→0.03 | 홈 · hold 10 |
-| `rh56f1/aglt/right_approach_rg3wc` | rh_aglt_ap/iter_02 | source240_real · source200_real · shaker_c_real (one-hot) | 없음 | 없음 | 0.1→0.03 | 홈 · hold 10 |
-| `rh56f1/aglt/right_approach_rg3wg` | rh_aglt_gl/iter_01 | source240_real · source200_real · shaker_c_real (one-hot) | 없음 | 없음 | 0.1→0.03 | 홈 · hold 10 |
-| `rh56f1/aglt/right_rg3hp3` | rh_aglt_d6/iter_06 | source240_real · source200_real · shaker_c_real (one-hot) | 팔 관절별 실측 × 0.0–1.5 (ADR) · 손 4–6 스텝 | 지각 | 0.03 | 홈 · hold 10 (ADR 30 부터) |
-| `rh56f1/aglt/right_rg3wo` | rh_aglt_gl/iter_08 | source240_cvx · source200_cvx · shaker_c_cvx (one-hot) | 팔 관절별 실측 × 0.0–1.5 (ADR) · 손 3–5 스텝 | 지각 | 0.1→0.03 | 홈 · hold 10 |
+| `rh56f1/aglt/left_approach_ap05` | rh_aglt_ap/iter_03 | source240_cvx · source200_cvx · shaker_c_cvx (one-hot) | 팔 관절별 실측 × 0.0–1.5 (ADR) · 손 3–5 스텝 | 지각 | 0.1→0.03 | 홈 · hold 10 |
+| `rh56f1/aglt/left_rcg03` | rh_aglt_neo/iter_03 | source240_cvx · source200_cvx · shaker_c_cvx (one-hot) | 팔 관절별 실측 × 0.0–1.5 (ADR) · 손 3–5 스텝 | 지각 | 0.1→0.03 | 홈 · hold 10 (ADR 8 부터) |
+| `rh56f1/aglt/right_approach_ap05` | rh_aglt_ap/iter_03 | source240_cvx · source200_cvx · shaker_c_cvx (one-hot) | 팔 관절별 실측 × 0.0–1.5 (ADR) · 손 3–5 스텝 | 지각 | 0.1→0.03 | 홈 · hold 10 |
+| `rh56f1/aglt/right_rcg03` | rh_aglt_neo/iter_03 | source240_cvx · source200_cvx · shaker_c_cvx (one-hot) | 팔 관절별 실측 × 0.0–1.5 (ADR) · 손 3–5 스텝 | 지각 | 0.1→0.03 | 홈 · hold 10 (ADR 10 부터) |
 
 ## RH56F1 한 팔 컵 홀더 놓기 (rh_place)
 
@@ -162,13 +153,10 @@ python scripts/reinforcement_learning/rl_games/play.py --task open-short_l_grasp
 python scripts/reinforcement_learning/rl_games/play.py --task open-short_r_grasp_fj_t2r_rand-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/dg5f_m/grasp_fj_rand/right_i01/nn/fj_rand_i01_best_ep5000.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-short_b_pour_fab-play --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/dg5f_m/pour_fab/both_i18/nn/last_open-short_b_pour_fab_ep_2500_rew_36408.105.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-short_b_pour_fab-play --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/dg5f_m/pour_fab/both_i24/nn/open-short_b_pour_fab.pth
-python scripts/reinforcement_learning/rl_games/play.py --task open-rh_l_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/left_approach_rg3wc/nn/aglt_l_approach_rg3wc_ep800_mirror.pth
-python scripts/reinforcement_learning/rl_games/play.py --task open-rh_l_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/left_approach_rg3wg/nn/last_open-rh_l_aglt-lstm_ep_300_rew_3164.2104.pth
-python scripts/reinforcement_learning/rl_games/play.py --task open-rh_l_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/left_rg3wo/nn/last_open-rh_l_aglt-lstm_ep_10000_rew_7852.018.pth
-python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_approach_rg3wc/nn/aglt_r_approach_rg3wc_ep800.pth
-python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_approach_rg3wg/nn/last_open-rh_r_aglt-lstm_ep_300_rew_2998.1052.pth
-python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_rg3hp3/nn/last_open-rh_r_aglt-lstm_ep_1450_rew_804.31274.pth
-python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_rg3wo/nn/last_open-rh_r_aglt-lstm_ep_10000_rew_6647.8843.pth
+python scripts/reinforcement_learning/rl_games/play.py --task open-rh_l_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/left_approach_ap05/nn/last_open-rh_l_aglt-lstm_ep_2600_rew_2399.0876.pth
+python scripts/reinforcement_learning/rl_games/play.py --task open-rh_l_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/left_rcg03/nn/last_open-rh_l_aglt-lstm_ep_1500_rew_8914.653.pth
+python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_approach_ap05/nn/last_open-rh_r_aglt-lstm_ep_2300_rew_2408.0603.pth
+python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_rcg03/nn/last_open-rh_r_aglt-lstm_ep_1400_rew_8038.287.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_l_place-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/place/left_i01/nn/last_open-rh_l_place-lstm_ep_800_rew_935.48755.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_place-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/place/right_i09/nn/place_r_i09_ep4000.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_b_pour_fj-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/pour_fj/both_f01/nn/last_open-rh_b_pour_fj-lstm_ep_2300_rew_1107.8425.pth
@@ -192,13 +180,10 @@ python scripts/reinforcement_learning/rl_games/play.py --task open-rh_b_pour_fj-
 - `dg5f_m/grasp_fj_rand/right_i01` — 09.28 hold — 오른팔 첫 실험은 dg5f_m/cup_pick/right_m15(cup_pick 세션 s2r 후보, 사용자 선택)으로 한다. 인터페이스는 같다. s2r 후보. 먼 출발 성공 0.85 · 공차 0.019 · 컵 기울기 4.3°. sha256 앞 16자리 e76f9c6079663b61. 계약 없음 — obs 133 / action 26(팔 7 관절 증분 + 손 19 절대)은 기존 세 family 어디에도 안 맞는다. build_deploy_contract 가 grasp_s2r 로 판정했다가 인터페이스 차이로 거절한다. 새 family 가 필요하다. 같은 한 벌의 fj_rand_i01_final.pth 는 공차 바닥 뒤 열화(성공 0.61)라 쓰지 않는다.
 - `dg5f_m/pour_fab/both_i18` — 09.28 사용자 결정: 붓기는 i18 을 쓴다(i24 는 hold), 다만 당장 진행하지 않는다. checkpoint 는 검증된 계약 (logs/policy/pour_i18/pour_contract.json, md5 f50b09a6)과 같은 ep_2500 으로 바꿨다. ★가중치가 계약과 다르다: 여기 nn/open-short_b_pour_fab.pth 는 md5 e473c709…, 검증된 pour_contract.json 은 f50b09a6…(logs/policy/pour_i18/nn/last_..._ep_2500_rew_36408.105.pth)로 만들어졌다. 크기도 4,667,063 vs 4,669,209 로 다르다 — 같은 런의 다른 내보내기다. 이 파일로 쓰려면 계약을 다시 만들어야 한다. hold 인 본래 이유: ckpt_gate 탈락 3건 — 소스컵 최대 기울기 155.1°(한계 120) · 이탈 0.344 m(한계 0.25) · 중앙선 교차 64/64 env. 실기에서는 pour_guard_node 가 같은 두 조건으로 episode/abort 를 건다. 검증된 쪽(계약·trace·actor 재현 2.1e-6)은 logs/policy/pour_i18/ 에 그대로 있다. 다음 후보는 dg5f_m/pour_fab/both_i24(09.28 등록, 붓기 세션 s2r 1순위).
 - `dg5f_m/pour_fab/both_i24` — 09.28 hold — 사용자 결정: 붓기 s2r 기준은 i18. 계약 · 재현 · fake 체인은 통과한 채로 둔다. t2r_i24 best(epoch 1557, 학습 커밋 8cc6c6c6). ADR30 결정론 평가 64env: env 성공 0.719 · in_target 0.925 · 흘림 중앙값 0 · 최고 기울기 116°(i18 은 155°). 들기 순간 파지 유지 드리프트 1.08~1.56 cm. 약점: 리시버 팔 떨림이 소스의 약 1.5배(액션 부호반전 0.445 대 0.294) · 작업이 중심선 왼쪽(소스 y +0.16, 리시버 +0.22) · 전이 60 에피소드 중 14 개 env 성공 실패. trace.npz · trace_meta.json 은 그 ADR30 평가(best) 궤적이다. 재생 코드 주의: hdgp main 은 관측 224/294(c6708ec7) — 223 인 이 정책은 d5c80a4c 또는 2d1c1c78 이전 코드로 재생한다.
-- `rh56f1/aglt/left_approach_rg3wc` — 10.17 s2r_1st 등록(경로 C, docs/PLAN_GRASP_TILT_EVAL_2026-10-17.md). 쥠 판정 키는 쓰지 않는다 — 닫기 때 approach_grasp.close_contract 가 막힘 명목값 + opp k=2 + 8 cm 로 바꾼다.
-- `rh56f1/aglt/left_approach_rg3wg` — 10.18 s2r_1st 등록(경로 C 접근 후보 grasping 1순위, 사용자 승인). 쥠 판정 키(contact)는 쓰지 않는다 — 경로 C 는 강제 파지(judge=0): 닫기 때 막힌 축은 실측에 고정, 안 닿은 축은 앞섬 0.08 rad.
-- `rh56f1/aglt/left_rg3wo` — swap_rg3_policy.py 로 등록(템플릿 rh56f1/aglt/right_rg3wo). 학습 env.yaml 덤프 그대로. 10.17 s2r_1st: grasping 회신(md5 · 판정 · 격자) 그대로. 실기 파지 s2r 확인 후보(docs/PLAN_GRASP_TILT_EVAL_2026-10-17.md).
-- `rh56f1/aglt/right_approach_rg3wc` — 10.17 s2r_1st 등록(경로 C, docs/PLAN_GRASP_TILT_EVAL_2026-10-17.md). 쥠 판정 키는 쓰지 않는다 — 닫기 때 approach_grasp.close_contract 가 막힘 명목값 + opp k=2 + 8 cm 로 바꾼다.
-- `rh56f1/aglt/right_approach_rg3wg` — 10.18 s2r_1st 등록(경로 C 접근 후보 grasping 1순위, 사용자 승인). 쥠 판정 키(contact)는 쓰지 않는다 — 경로 C 는 강제 파지(judge=0): 닫기 때 막힌 축은 실측에 고정, 안 닿은 축은 앞섬 0.08 rad.
-- `rh56f1/aglt/right_rg3hp3` — swap_rg3_policy.py 로 등록(템플릿 rh56f1/aglt/right_rg3s). 학습 env.yaml 덤프 그대로.
-- `rh56f1/aglt/right_rg3wo` — swap_rg3_policy.py 로 등록(템플릿 rh56f1/aglt/right_rg3hp3). 학습 env.yaml 덤프 그대로. 10.17 s2r_1st: grasping 회신(md5 · 판정 · 격자) 그대로. 실기 파지 s2r 확인 후보(docs/PLAN_GRASP_TILT_EVAL_2026-10-17.md).
+- `rh56f1/aglt/left_approach_ap05` — 10.20 s2r_1st 등록(사용자: 전달받은 grasp · approach 정책만 남기고 옛 정책 제거). 학습 env.yaml · agent.yaml 그대로.
+- `rh56f1/aglt/left_rcg03` — 10.20 s2r_1st 등록(newton 전달, 사용자 '학습 둘다 종료하고 결정론적 평가 진행 · s2r_1st에 최종 정책 이관'). rcg02 를 대체(rcg02 는 deploy/policies_retired 로). 학습 env.yaml · agent.yaml 그대로 — rcg02 와 다른 키는 학습 전용(ready_begin_every 4 · adr_start_increment · adr_metric_source/approach_succ_* · 재질 이벤트 캐시)이라 계약은 체크포인트 · 해시만 다르다.
+- `rh56f1/aglt/right_approach_ap05` — 10.20 s2r_1st 등록(사용자: 전달받은 grasp · approach 정책만 남기고 옛 정책 제거). 학습 env.yaml · agent.yaml 그대로.
+- `rh56f1/aglt/right_rcg03` — 10.20 s2r_1st 등록(newton 전달, 사용자 '학습 둘다 종료하고 결정론적 평가 진행 · s2r_1st에 최종 정책 이관'). rcg02 를 대체(rcg02 는 deploy/policies_retired 로). 학습 env.yaml · agent.yaml 그대로 — rcg02 와 다른 키는 학습 전용(ready_begin_every 4 · adr_start_increment · adr_metric_source/approach_succ_* · 재질 이벤트 캐시)이라 계약은 체크포인트 · 해시만 다르다.
 - `rh56f1/place/left_i01` — server GPU0 place_l_i01(보상 reward_gen/rh_place_l/iter_01). 평가는 홀더 고정 배치(holder_y_shift_fixed 0 · DR 축소), params/ 는 학습 런 그대로(평가 때 바꾼 홀더 DR 값 아님). 목표 y 구간 −0.06~0 완벽 0.85 · 0~+0.20 완벽 0.851. 배포는 rh56f1/place/right_i09 note 와 같다(rh_place_contract.json · rh_place_node · policy_place_left). FP++ 지각 · 부착 없이 학습, 명령 지연 0. hdgp 51013e96. 놓음 게이트(release_open_min_rad 0.15) sim 검증(PLACE 10.04): 인계 때 쥔 양 중앙 0.53 rad(0.40~0.64), 놓음 때 연 양 중앙 0.334 · 하위 1 % 0.217 — 0.15 미만 0 %. 실기 파지가 덜 쥔 채 넘어오면 '쥔 양 대비 비율' 게이트로 바꾼다.
 - `rh56f1/place/right_i09` — server GPU0 place_r_i09(보상 reward_gen/rh_place_r/iter_09) ep4000. 좌 place_l_i01 의 출발점. 학습 코드 hdgp 51013e96. 10.04 배포 연결: rh_place_contract.json(tools/build_rh_aglt_contract.py 가 place 런을 알아본다) · rh_place_node · 미션 단계 policy_place_<팔>. 목표 = 홀더 원점 + 0.060 m, 시작 = pd 가 붙잡은 aglt 마지막 joint_target, 컵은 reset 때 FP++ 한 장으로 손바닥에 붙인다(학습 attached), 놓음 판정 = 손끝 촉각 < 1 N · 관절 힘 < 300 g(임시) 5 스텝. FP++ 지각 · 부착 없이 학습(fpp_enable · fpp_attach_enable false), 명령 지연 0. 홀더 x 0.380 · 목표 홀더 1 · 2. 놓음 게이트(release_open_min_rad 0.15) sim 검증(PLACE 10.04, 128 env 결정론): 인계 때 쥔 양 중앙 0.41 rad(0.38~0.46), 놓음 때 연 양 중앙 0.257 · 하위 1 % 0.209 — 0.15 미만 0.2~0.4 %. 실기 문턱은 0.25 를 넘기지 않는다(쥔 양 상한).
 - `rh56f1/pour_fj/both_f01` — t2r_rh4_f01(pour_bi_rh 4번째 사이클 첫 full-joint 런). 손 direct 범위가 관절 한계 전 범위 · 접촉 동결 없음 — 그 뒤 런(de926392 grip 범위 + 1 N 동결, da3e33fb 팔 절대 목표)과 행동 규칙이 다르다. 계약이 런의 env.yaml 에서 그 시대 규칙을 읽는다. 손 관측 순서는 추정(assumed) — verified 전. 실기 성능 후보가 아니라 배관 · fake 확인용.

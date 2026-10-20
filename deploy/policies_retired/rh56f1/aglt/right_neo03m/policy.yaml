@@ -1,0 +1,17 @@
+id: rh56f1/aglt/right_neo03m
+status: candidate
+task: open-rh_r_aglt-lstm
+side: right
+checkpoint: last_open-rh_r_aglt-lstm_ep_2200_rew_5451.0635.pth
+summary: rg3wo ep10000(rew 6647.8843) · 물체 3개(학습 *_cvx 볼록 충돌체 = 실물 *_real) 한 정책 ·
+  actor 촉각 없음(91 + one-hot 3) · ★손 = position · 쥔 판정 contact(엄지 AND 다른 손가락 2 개 > 1
+  N, 배포는 막힘 thumb_flex_and_any_finger) · FP++ · 지연 ADR(0~1.5배) · 손 막힘 ADR 종점 · 보상
+  rh_aglt_gl iter_08 · 접근 rg3wc ep800 warmstart(mu+0.6) · ★손 = position(10.14 위치제어
+  재학습)
+source: server:/home/oem/rl_ws/hdgp_grasp_p/log/rl_games/open-rh/right/aglt/aglt_r_neo03m/nn/last_open-rh_r_aglt-lstm_ep_2200_rew_5451.0635.pth
+interface: obs 94 (91 + 물체 one-hot 3, 맨 끝) · action 13 (팔 관절 증분 7 · 손 6)
+deploy:
+  max_episode_s: 15.0
+note: swap_rg3_policy.py 로 등록(템플릿 rh56f1/aglt/right_rg3wo). 학습 env.yaml 덤프 그대로.
+eval: 'sim 1017d_grid75(실기 규격, 75 env × 시드 10): 오른손 3 cm 69.2 % (src240 66.8 %)'
+md5: 624e55dc641631a2e98b90cbad060483

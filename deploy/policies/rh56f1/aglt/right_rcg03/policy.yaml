@@ -1,0 +1,20 @@
+id: rh56f1/aglt/right_rcg03
+task: open-rh_r_aglt-lstm
+side: right
+checkpoint: last_open-rh_r_aglt-lstm_ep_1400_rew_8038.287.pth
+md5: a5a20d750d52a11e25feccff11e3a8cc
+source: server:/home/oem/rl_ws/hdgp/log/rl_games/open-rh/right/aglt/rcg_03_nr/nn/last_open-rh_r_aglt-lstm_ep_1400_rew_8038.287.pth
+  · newton 10.20 전달 ~/rl_ws/our_source/policy/rcg_03_nr_ep1400
+summary: 파지 · 들기 정책 rcg_03_nr ep1400(ADR 20/20, rcg_02_nr ep1300 이어 학습) · ★시작 자세 = ReadyApproach 사전 파지(aglt_start=ready)
+  · 쥐고 10 cm 들어 2 s 유지 · Newton 학습(Isaac Lab 3) · 2판 손 USD · 보상 rh_aglt_neo iter_03 · hdgp 0b79f245
+status: candidate
+eval: 'sim 결정론 격자(Newton · 실기 반응 조건 · 15칸 x 컵 3 x 시드 10 = 450회 · lift_hold 7 cm 2 s): 성공 87.8 %(시드 82.2~91.1) ·
+  물리 오류 뺀 값 88.8 % · s240/s200/shaker 89/89/86 · 성공 중 5지 유지 86 % · 기울기 p50 11.9° (rcg02 87.1 % · 5지 59 %) · 약한 곳
+  x 0.10 바깥 칸 · eval1020/'
+interface: obs 94 (91 + 물체 one-hot 3, 맨 끝) · action 13 (팔 관절 증분 7 · 손 6) · 손 = position
+deploy:
+  max_episode_s: 15.0
+  flow: '★10.20 사용자 "경로 a는 폐지, -> 경로d가 대체함" · "1-c : ap05+grasp" — 카드 = 경로 D(grasp_d_right: ap05 접근 → 사전 파지 자리에서 이 정책이 넘겨받는다). 홈에서 단독으로는 돌리지 않는다'
+note: 10.20 s2r_1st 등록(newton 전달, 사용자 '학습 둘다 종료하고 결정론적 평가 진행 · s2r_1st에 최종 정책 이관'). rcg02 를 대체(rcg02 는 deploy/policies_retired
+  로). 학습 env.yaml · agent.yaml 그대로 — rcg02 와 다른 키는 학습 전용(ready_begin_every 4 · adr_start_increment · adr_metric_source/approach_succ_*
+  · 재질 이벤트 캐시)이라 계약은 체크포인트 · 해시만 다르다.

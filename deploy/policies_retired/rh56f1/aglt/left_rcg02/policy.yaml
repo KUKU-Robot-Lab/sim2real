@@ -1,0 +1,22 @@
+id: rh56f1/aglt/left_rcg02
+task: open-rh_l_aglt-lstm
+side: left
+checkpoint: last_open-rh_l_aglt-lstm_ep_300_rew_6332.1284.pth
+md5: 7970864e6a09a93efd853becc9a29665
+source: server:/home/oem/rl_ws/hdgp/log/rl_games/open-rh/left/aglt/rcg_02_nlm/nn/last_open-rh_l_aglt-lstm_ep_300_rew_6332.1284.pth
+  · newton 10.20 전달 ~/rl_ws/our_source/policy/rcg_02_nlm_ep300(권장 ep300 · 영상 확인본 ep200
+  은 그 폴더에)
+summary: 파지 · 들기 정책 rcg_02_nlm ep300(ADR 8/20, 오른손 rcg_02_nr ep900 거울 출발) · ★시작 자세
+  = ReadyApproach 사전 파지(aglt_start=ready) · 쥐고 10 cm 들어 2 s 유지 · Newton 학습 · 2판 손
+  USD · 보상 rh_aglt_neo iter_03 · hdgp 164e85c3
+status: candidate
+eval: 'sim: 학습 로그 성공 0.91(epoch 328) · 결정론 영상은 ep200 만(source240 약지 접촉 18 %, source200
+  엄지 첫마디 · 기울기 12.4°) · 고해상도 격자 평가 아직'
+interface: obs 94 (91 + 물체 one-hot 3, 맨 끝) · action 13 (팔 관절 증분 7 · 손 6) · 손 = position
+deploy:
+  max_episode_s: 15.0
+  execution: false
+  execution_reason: rcg 는 사전 파지 자세(ReadyApproach 접근 뒤 정착)에서 시작해야 한다 — 그 시작 흐름 에피소드가
+    아직 없다. 홈에서 바로 돌리지 않는다
+note: '10.20 s2r_1st 등록(사용자: 전달받은 grasp · approach 정책만 남기고 옛 정책 제거). 학습 env.yaml ·
+  agent.yaml 그대로.'

@@ -1,0 +1,19 @@
+id: rh56f1/aglt/right_approach_ap05
+task: open-rh_r_aglt-lstm
+side: right
+checkpoint: last_open-rh_r_aglt-lstm_ep_2300_rew_2408.0603.pth
+md5: bb9a19516296a03cde68244ac62fc4cd
+source: local:~/rl_ws/hdgp/log/rl_games/open-rh/right/aglt/ap_05_r/nn/last_open-rh_r_aglt-lstm_ep_2300_rew_2408.0603.pth
+  · aglt_new 10.20 전달 ~/rl_ws/our_source/policy/ap_05_r_ep2300
+summary: 접근(approach) 정책 ap_05_r ep2300 · 홈에서 출발해 ReadyApproach 사전 파지 자세(컵 축 2.5R
+  고리, 높이 = 컵 원점, 손바닥이 컵을 향하고 손은 편다)까지 간다 · 잡지 않는다 — 닫기 · 들기는 배포 제어 모듈(1-B 이음점) · 2판
+  손 USD(rh56f1_v2) · 보상 rh_aglt_ap iter_03 · hdgp 55098d226
+status: candidate
+eval: 'sim: 학습 ep/approach_success 0.98~0.99(ADR 20/20) · 영상 3물체 성공(videos/grasp/1020_ap05)
+  · 고해상도 격자 평가 아직'
+interface: obs 94 (91 + 물체 one-hot 3, 맨 끝) · action 13 (팔 관절 증분 7 · 손 6) · 손 = position
+deploy:
+  max_episode_s: 15.0
+  flow: '★10.20 사용자 "경로 a는 폐지, -> 경로d가 대체함" · "1-c : ap05+grasp" — 카드 = 경로 C(grasp_c_right: 사전 파지 자리 정지 → 스크립트 닫기 · 들기) · 경로 D(grasp_d_right) 의 접근 단계'
+note: '10.20 s2r_1st 등록(사용자: 전달받은 grasp · approach 정책만 남기고 옛 정책 제거). 학습 env.yaml ·
+  agent.yaml 그대로.'

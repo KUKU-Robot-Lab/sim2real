@@ -1,8 +1,8 @@
 {
   "schema": "policy_control/rh_aglt_contract/v1",
   "task": "open-rh_r_aglt",
-  "run_dir": "/home/user/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_approach_rg3wc",
-  "checkpoint": "/home/user/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_approach_rg3wc/nn/aglt_r_approach_rg3wc_ep800.pth",
+  "run_dir": "/home/user/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_approach",
+  "checkpoint": "/home/user/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_approach/nn/approach_r.pth",
   "checkpoint_md5": "fff6c4aac16853d11d52c8d2efbf51b4",
   "env_yaml_sha1": "fc6c157c8367fafb19025dd7a3c8e5941c75bf15",
   "agent_yaml_sha1": "f02bc43bff7300a65efbf9d64491aa349fbdac64",

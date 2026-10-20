@@ -1,10 +1,11 @@
-id: rh56f1/aglt/left_approach_rg3wc
+id: rh56f1/aglt/left_approach
 task: open-rh_l_aglt-lstm
 side: left
-checkpoint: aglt_l_approach_rg3wc_ep800_mirror.pth
+checkpoint: approach_l.pth
 md5: 45e245150536ccad53c381433ea1edf6
-source: server:/home/oem/rl_ws/our_source/rh_aglt_runs/approach/aglt_l_approach_rg3wc_ep800_mirror.pth
-summary: 경로 C 접근 정책(왼손) — 오른손 rg3wc ep800 을 거울로 뒤집은 체크포인트(왼손 전용 접근 정책은 없다, rg3wo 왼손의
+source: server:/home/oem/rl_ws/hdgp/log/rl_games/open-rh/left/approach/approach_l/nn/approach_l.pth.
+  옛 이름(10.19 까지) rh56f1/aglt/left_approach_rg3wc · server our_source/rh_aglt_runs/approach/aglt_l_approach_rg3wc_ep800_mirror.pth
+summary: 경로 C 접근 정책 approach_l(왼손) — 오른손 approach_r(rg3wc ep800)을 거울로 뒤집은 체크포인트(왼손 전용 접근 정책은 없다, rg3wo 왼손의
   출발점). params = left_rg3wo 의 env · agent(관측 · 행동 해석이 접근 런과 같음 — 오른손 계약 비교로 확인)
 status: candidate
 eval: 'sim: rg3wn·rg3wo 출발점(10.14). 접근 끝 손바닥–컵 분포는 1-C 시뮬에서 잰다'

@@ -1,0 +1,210 @@
+{
+ "rcg_02_nlm_ep300": {
+  "n": 450,
+  "seeds": 10,
+  "succ": 0.8088888888888889,
+  "seed_min": 0.7333333333333333,
+  "seed_max": 0.8666666666666667,
+  "succ_nophys": 0.8088888888888889,
+  "phys_frac": 0.0,
+  "cups": {
+   "source240_cvx": 0.84,
+   "source200_cvx": 0.713,
+   "shaker_c_cvx": 0.873
+  },
+  "lift_frac": 0.8177777777777778,
+  "grasp_frac": 0.8644444444444445,
+  "kept5": 0.8379120879120879,
+  "kept_mean": 4.818681318681318,
+  "tilt_p50": 10.6,
+  "tilt_p90": 18.5,
+  "t_succ_p50": 7.2,
+  "fail_ends": {
+   "tipped": 37,
+   "dropped+tipped": 14,
+   "dropped+out+tipped": 13,
+   "time_out": 12,
+   "floor": 5,
+   "dropped": 3
+  },
+  "worst_cells": [
+   [
+    0.37,
+    [
+     0.1,
+     0.42
+    ]
+   ],
+   [
+    0.5,
+    [
+     0.1,
+     0.21
+    ]
+   ],
+   [
+    0.57,
+    [
+     0.34,
+     0.42
+    ]
+   ]
+  ]
+ },
+ "rcg_02_nr_ep1300": {
+  "n": 450,
+  "seeds": 10,
+  "succ": 0.8711111111111111,
+  "seed_min": 0.8444444444444444,
+  "seed_max": 0.9111111111111111,
+  "succ_nophys": 0.8769574944071589,
+  "phys_frac": 0.006666666666666667,
+  "cups": {
+   "source240_cvx": 0.887,
+   "source200_cvx": 0.86,
+   "shaker_c_cvx": 0.867
+  },
+  "lift_frac": 0.8733333333333333,
+  "grasp_frac": 0.8822222222222222,
+  "kept5": 0.5918367346938775,
+  "kept_mean": 4.520408163265306,
+  "tilt_p50": 15.1,
+  "tilt_p90": 24.7,
+  "t_succ_p50": 7.17,
+  "fail_ends": {
+   "tipped": 23,
+   "dropped+out+tipped": 14,
+   "dropped+tipped": 11,
+   "dropped+tipped+phys_tip_pen": 3,
+   "floor": 3,
+   "out": 2
+  },
+  "worst_cells": [
+   [
+    0.27,
+    [
+     0.1,
+     -0.42
+    ]
+   ],
+   [
+    0.5,
+    [
+     0.1,
+     -0.21
+    ]
+   ],
+   [
+    0.83,
+    [
+     0.1,
+     -0.105
+    ]
+   ]
+  ]
+ },
+ "rcg_03_nl_ep1500": {
+  "n": 450,
+  "seeds": 10,
+  "succ": 0.88,
+  "seed_min": 0.8222222222222222,
+  "seed_max": 0.9111111111111111,
+  "succ_nophys": 0.8839285714285714,
+  "phys_frac": 0.0044444444444444444,
+  "cups": {
+   "source240_cvx": 0.867,
+   "source200_cvx": 0.913,
+   "shaker_c_cvx": 0.86
+  },
+  "lift_frac": 0.8888888888888888,
+  "grasp_frac": 0.9044444444444445,
+  "kept5": 0.5454545454545454,
+  "kept_mean": 4.431818181818182,
+  "tilt_p50": 12.55,
+  "tilt_p90": 22.3,
+  "t_succ_p50": 7.9,
+  "fail_ends": {
+   "tipped": 18,
+   "dropped+tipped": 14,
+   "dropped+out+tipped": 13,
+   "time_out": 3,
+   "floor": 3,
+   "phys_contact": 2
+  },
+  "worst_cells": [
+   [
+    0.33,
+    [
+     0.1,
+     0.42
+    ]
+   ],
+   [
+    0.43,
+    [
+     0.1,
+     0.21
+    ]
+   ],
+   [
+    0.77,
+    [
+     0.1,
+     0.105
+    ]
+   ]
+  ]
+ },
+ "rcg_03_nr_ep1400": {
+  "n": 450,
+  "seeds": 10,
+  "succ": 0.8777777777777778,
+  "seed_min": 0.8222222222222222,
+  "seed_max": 0.9111111111111111,
+  "succ_nophys": 0.8876404494382022,
+  "phys_frac": 0.011111111111111112,
+  "cups": {
+   "source240_cvx": 0.887,
+   "source200_cvx": 0.887,
+   "shaker_c_cvx": 0.86
+  },
+  "lift_frac": 0.88,
+  "grasp_frac": 0.8866666666666667,
+  "kept5": 0.8632911392405064,
+  "kept_mean": 4.853164556962025,
+  "tilt_p50": 11.9,
+  "tilt_p90": 20.4,
+  "t_succ_p50": 7.42,
+  "fail_ends": {
+   "tipped": 18,
+   "dropped+out+tipped": 16,
+   "dropped+tipped": 13,
+   "phys_contact": 3,
+   "floor": 3,
+   "dropped+tipped+phys_tip_pen": 2
+  },
+  "worst_cells": [
+   [
+    0.23,
+    [
+     0.1,
+     -0.42
+    ]
+   ],
+   [
+    0.47,
+    [
+     0.1,
+     -0.21
+    ]
+   ],
+   [
+    0.8,
+    [
+     0.1,
+     -0.105
+    ]
+   ]
+  ]
+ }
+}
