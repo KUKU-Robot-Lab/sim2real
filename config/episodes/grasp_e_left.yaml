@@ -1,0 +1,26 @@
+# 경로 E — left 손 shaker(주황, FP++ shaker_c_orange). ap05 → rcg03 두 정책을 한 노드에서 끊지 않고 잇는다.
+# ★10.20 밤 사용자 "Ap+rg3는 기존 방법이 된다고 보고 이전처럼 끊어서 진행이 아니라 정책2개가 연달아 진행되는 세트를 만들어 두기 · 내일 실험1".
+#   근거: aglt_new sim 측정(hdgp b8cf1fdbf, rcg_03, Newton 결정론 450 회) — 배포 넘김 순서(판정 pos+still · 넘긴 뒤 10 틱 · LSTM 0 ·
+#   15 s 멈춤)로 돌려도 ap05 → rcg03 성공 오른손 97.6 % · 왼손 97.6 %(학습 순서 97.6 · 96.0 %). 넘김 기구는 옛 경로 D v1 그대로.
+# 흐름: 홈 → 장면 → 접근 정책 ap05(홈 출발) → 손바닥이 사전 파지 자리(컵 축 r/R 2.5 · 높이 0, 2 cm 안)에서 손바닥 선속도 0.03 m/s 이하
+#   0.5 s(30 틱, 학습 approach_success 와 같은 식)면 같은 rh_aglt 노드가 rcg03(aglt_start=ready)으로 넘긴다 — 디코더는 실측 팔 · 편 손,
+#   목표 = 넘김 순간 컵 + 10 cm, LSTM 0 에서 대기 10 틱, 넘김 때 컵 가림 시계 다시 시작(6c352a7). rcg03 이 쥐고 첫 목표 성공 또는
+#   7 cm 위 2 s 쥠 유지에 끝난다(pd 가 붙듦). 사람 확인 노드는 없다.
+# 접근 15 s 안에 사전 파지 자리에 못 멈추거나, 잡기 전 손 근처 컵 가림 2.5 s 를 넘거나, 넘긴 뒤 시간 초과면 실패(abort, pd 가 그 자세로 붙듦 —
+#   복구는 rehome). 10.20 실기 왼손(130748)은 ap05 접근 중 FP++ 가림이 2.5 s 를 넘어 넘기기 전에 멈췄다.
+# 경로 D(grasp_d_left, 1-B 접근 → rcg03)는 그대로 둔다.
+# 값 조정: policies.rh_aglt_l.approach_grasp 에 키: 값(approach_grasp.ApproachGraspCfg — still_s · still_mps · approach_max_s).
+# 물체 바꾸기: 실행기 파라미터 -p policy_object:=<source240_real|source200_real|shaker_c_real> -p cup_object:=<FP++ 물체 이름>.
+episode: {name: grasp_e_left, version: 1}
+objects:
+  CUP: {topic: /objects/shaker_c_orange/pose}
+policies:
+  rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg03}
+trajectories:
+  go_home: {kind: rehome, sides: [left]}
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 rehome으로 복구한다.
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  - {id: grasp_lift, type: policy, name: rh_aglt_l, target_object: CUP, policy_object: shaker_c_real, expect: {left_hand: CUP}}
+  - {id: done, type: terminal, result: SUCCESS}

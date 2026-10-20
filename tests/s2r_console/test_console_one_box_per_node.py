@@ -97,7 +97,8 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
     # ★10.20 영상 기록 기본 끔(VISION_RECORD) — 정책 단계의 aglt 노드가 #4 → #3
     assert set(aglt.units) == {"policy_aglt_right#3", "episode_pick_place_right#3",
                                "episode_grasp_c_right#3",                       # 10.17 경로 C(접근 정책 + 스크립트 파지)
-                               "episode_grasp_d_right#3",                       # ★10.20 경로 D(ap05 → rcg03 넘김)
+                               "episode_grasp_d_right#3",                       # ★10.20 경로 D(1-B 접근 → rcg03)
+                               "episode_grasp_e_right#3",                       # ★10.20 밤 경로 E(ap05 → rcg03 넘김)
                                "episode_tilt_base_d#3",                         # ★10.20 경로 A 폐지 → tilt 경로 D(ap05 → rcg03)
                                "episode_tilt_base_c#3"} & set(units)            # 10.17 tilt 기본 궤적 경로 C
     place = d.box("rh_place_node_right")
@@ -112,7 +113,8 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                                               f"episode_grasp_c_{side}#6",
                                                               # ★10.19 1-B — 정책 노드 없음, 기록 bag · CPU 뒤(★10.20 영상 기본 끔 → #5)
                                                               f"episode_grasp_b_{side}#5",
-                                                              f"episode_grasp_d_{side}#6"}   # ★10.20 경로 D(aglt 노드 하나)
+                                                              f"episode_grasp_d_{side}#6",   # ★10.20 경로 D(aglt 노드 하나)
+                                                              f"episode_grasp_e_{side}#6"}   # ★10.20 밤 경로 E(aglt 노드 하나, 넘김)
 
 
 def test_one_arms_pd_without_and_with_publishing_is_one_box_and_only_the_quiet_one_mutes_the_drive(real):

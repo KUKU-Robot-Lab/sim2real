@@ -3,6 +3,8 @@
 이 저장소의 명령은 실기(OpenArm 양팔, DG-5F 양손, 목)를 움직인다. 코드 작업보다 실기 안전이 먼저다.
 
 ## 실기 허락
+- 이 절은 실기 도메인(`ROS_DOMAIN_ID=126`)에만 적용된다. fake 도메인(97/99)은 실기가 아니므로 아래 명령(`--execute` · `--approve` ·
+  pd engage · 노드 기동/kill · 연속 실행 포함)도 묻지 않고 진행한다(10.20 사용자 "Fake 실험은 실기가 아니기때문에 허락요청 안해도됨").
 - 로봇이 움직이거나 힘을 내는 명령은 실행 직전에 매번 "이 명령을 지금 실행할까요?"로 멈추고 답을 기다린다.
 - 대상: `--execute`, `execute:=true`, `--approve <id>`, pd engage·goto_home·preset·`replay_to_pd`, `ep_start`, 손 지령 발행, 로봇 명령 토픽에 쓰는 `ros2 topic pub`·`ros2 service call`·`ros2 action send_goal`, 실하드웨어 launch.
 - 허락은 그 명령 한 번에만 유효하다. 같은 단계를 다시 돌려도 다시 묻는다.
@@ -15,7 +17,7 @@
 - 발열·충돌 같은 긴급 상황도 같다. 상태를 즉시 보고하고 조치안을 내되 실행은 허락 뒤에 한다.
 - 드라이버·pd·FPP 노드의 기동과 kill, 남은 프레임워크(이전 세션 노드, Isaac) 종료도 허락 뒤에 한다.
 - sudo·물리 조작(모터 전원, CAN, 손 네트워크)은 운영자가 한다. Claude 는 실행하지 않는다.
-- 허락 없이 해도 되는 것: 상태 토픽 구독, bag·로그 분석, fake 도메인(97/99) 리허설, sim probe, 코드 읽기·수정.
+- 허락 없이 해도 되는 것: 상태 토픽 구독, bag·로그 분석, fake 도메인(97/99) 실험 전부, sim probe, 코드 읽기·수정.
 
 ## bringup 점검 순서
 단계의 정본은 `config/mission_dg5f_m_control.yaml` 이다. 요지:

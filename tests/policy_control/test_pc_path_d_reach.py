@@ -125,9 +125,10 @@ def test_the_runner_passes_the_reach_stop_to_the_planner(tmp_path, episode, stop
 def test_the_mission_starts_rcg03_itself_after_the_reach():
     from policy_control import episode_runner as RUN
     m = yaml.safe_load((REPO / "config" / "mission_rh56f1_control.yaml").read_text())
-    text = json.dumps(m, ensure_ascii=False)
-    assert "handoff_contract:=" not in text and "approach_grasp:=handoff" not in text
     for side in ("right", "left"):
+        # ★10.20 밤 넘김은 경로 E(grasp_e_<팔>)만 쓴다 — 경로 D 단계에는 없다
+        text = json.dumps(m["run"][f"episode_grasp_d_{side}"], ensure_ascii=False)
+        assert "handoff_contract:=" not in text and "approach_grasp:=handoff" not in text
         ep = S.load(REPO / "config" / "episodes" / f"grasp_d_{side}.yaml")
         assert RUN._node_max_s(next(iter(ep.policies.values()))) == 15.0
         node = next(c["argv"] for c in m["run"][f"episode_grasp_d_{side}"] if "rh_aglt_node.py" in " ".join(c.get("argv", [])))

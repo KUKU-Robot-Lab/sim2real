@@ -38,9 +38,11 @@ CARD_PREFIXES = ('rg3_', 'simplan_', 'simrun_')
 CONTROL_PREFIX = 'ctl_'
 CONTROL_EPISODES = {'grasp_b': '1-B 제어 모듈(정책 없음) — FP++ 컵 → ready_carry 접근 → [확인] 닫기 → 10 cm 들기 3 s',
                     # ★10.20 사용자 "grasp_d 를 1-b 접근에 rcg03 으로 교체" — 에피소드 파일의 정책 · 컵 그대로
-                    'grasp_d': '경로 D — 1-B 접근(ready_carry, 사전 파지 자리에서 멈춤) → rcg03 이 쥐고 10 cm 들기(확인 노드 없음)'}
+                    'grasp_d': '경로 D — 1-B 접근(ready_carry, 사전 파지 자리에서 멈춤) → rcg03 이 쥐고 10 cm 들기(확인 노드 없음)',
+                    # ★10.20 밤 사용자 "정책2개가 연달아 진행되는 세트를 만들어 두기 · 내일 실험1" — 에피소드 파일의 정책 · 컵 그대로
+                    'grasp_e': '경로 E — ap05 접근 → 사전 파지 자리에서 같은 노드가 rcg03 으로 넘겨 쥐고 10 cm 들기(확인 노드 없음)'}
 #: 실행 기록 · 오류 글의 이름
-CONTROL_LABELS = {'grasp_b': '1-B', 'grasp_d': '경로 D'}
+CONTROL_LABELS = {'grasp_b': '1-B', 'grasp_d': '경로 D', 'grasp_e': '경로 E'}
 #: 확인 노드(닫기 전)에서 사람을 기다리는 시간까지 — rg3(300 s)보다 길다
 CONTROL_TIMEOUT_S = 600.0
 #: 팔을 움직이는 카드 작업 — 같은 팔 제어 명령 · 정책 정지가 끊고, 도는 동안 작업 공간 설정을 못 바꾼다
@@ -1010,7 +1012,7 @@ class ActionManager:
             return f'에피소드 컵을 읽지 못했다({path.name}: {exc}) — scene 단계에서 멈춘다'
         obj = topic.split('/')[2] if topic.startswith('/objects/') else topic
         confirm = (' · 닫기 전 확인은 지금 에피소드 패널 [다음]' if 'grasp_b' in sid
-                   else ' · 확인 노드 없이 끝까지 돈다(멈추려면 정책 정지)')        # ★10.20 경로 D
+                   else ' · 확인 노드 없이 끝까지 돈다(멈추려면 정책 정지)')        # ★10.20 경로 D · E
         return f'컵 = {obj}(FP++ {topic}) — 컵을 세우고 FP++ 가 잡은 뒤 실행. scene 단계는 신선한 정지 좌표가 아니면 멈춘다' + confirm
 
     def _drive_episode(self, s, sid, original, commands, side, *, label, timeout_s):
