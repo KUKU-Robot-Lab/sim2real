@@ -43,6 +43,12 @@ SHARED_WARN_PX = 2.0
 SHARED_FAIL_PX = 5.0     # 공유 제약 뒤 rms 가 이보다 크면 가정이 틀린 것 — 기록하지 않는다
 MIN_MARKER_DISTANCE_RATE = 0.02   # OpenCV 기본 0.05 — detect_markers 주석 참고
 SHARED_WARN_SPREAD = {"x": 0.01, "y": 0.01, "z": 0.01, "yaw": math.radians(5.0)}
+#: ★10.20 실기 홀더 스캔: 상판 위 ChArUco 보정 보드(가운데 · 오른쪽 끝)가 홀더와 같은 사전 · 같은 id 0~2 를 가져
+#  홀더 id 가 두세 번 보였다. 홀더 마커는 −x 패드에 서 있고 보드 마커는 상판에 누워 있다 → 네 모서리를 상판 평면에
+#  되비추면 보드 마커만 정사각형이 된다. 그 1080p 6 장: 보드 마커 변 비 ≥ 0.95 · 대각 비 0.98~1.01,
+#  홀더 마커 변 비 0.46~0.74 · 대각 비 0.37~1.53. 누운 마커는 위치와 상관없이 버린다(on_table_square).
+FLAT_SIDE_RATIO_MIN = 0.85   # 네 변 중 가장 짧은 변 / 가장 긴 변
+FLAT_DIAG_TOL = 0.10         # |두 대각선 비 − 1|
 
 
 # ── 설정 · 형상 ─────────────────────────────────────────────────────────────
@@ -154,7 +160,49 @@ def wrap(a: float) -> float:
 
 # ── 검출 ──────────────────────────────────────────────────────────────────
 def detect_markers(gray: np.ndarray, dictionary: str = "DICT_6X6_250") -> dict[int, np.ndarray]:
-    """{id: (4,2) 모서리 px(TL,TR,BR,BL)}. OpenCV 4.5(구 API) · 4.7+(ArucoDetector) 둘 다."""
+    """{id: (4,2) 모서리 px(TL,TR,BR,BL)}. 같은 id 가 두 번 이상이면 어느 쪽인지 모르니 그 id 는 버린다."""
+    return unique_markers(detect_marker_list(gray, dictionary))
+
+
+def unique_markers(found: list[tuple[int, np.ndarray]]) -> dict[int, np.ndarray]:
+    out: dict[int, np.ndarray] = {}
+    dup: set[int] = set()
+    for i, c in found:
+        if i in out:
+            dup.add(i)
+        out[i] = c
+    return {k: v for k, v in out.items() if k not in dup}
+
+
+def on_table_square(corners_px: np.ndarray, K: np.ndarray, T_base_cam: np.ndarray, plane_z: float) -> bool:
+    """네 모서리를 z = plane_z 평면에 되비춘 사각형이 정사각형(네 변 · 두 대각선이 같다)이면 True — 상판에 누운 마커.
+
+    서 있는 홀더 마커는 되비추면 시선 방향으로 눌리거나 늘고 비스듬히 밀려 정사각형이 되지 않는다(FLAT_* 주석)."""
+    R, o = T_base_cam[:3, :3], T_base_cam[:3, 3]
+    rays = (R @ (np.linalg.inv(K) @ np.c_[np.asarray(corners_px, float), np.ones(4)].T)).T
+    with np.errstate(divide="ignore", invalid="ignore"):
+        s = (plane_z - o[2]) / rays[:, 2]
+    if not np.all(np.isfinite(s)) or np.any(s <= 0):
+        return False                       # 평면에 닿지 않는 시선 — 누운 마커일 수 없다
+    P = o + rays * s[:, None]
+    sides = np.linalg.norm(np.roll(P, -1, axis=0) - P, axis=1)
+    d1, d2 = np.linalg.norm(P[2] - P[0]), np.linalg.norm(P[3] - P[1])
+    if sides.max() <= 0 or min(d1, d2) <= 0:
+        return False
+    return bool(sides.min() / sides.max() >= FLAT_SIDE_RATIO_MIN and abs(d1 / d2 - 1.0) <= FLAT_DIAG_TOL)
+
+
+def _overlaps(corners_px: np.ndarray, others: list[np.ndarray]) -> bool:
+    """무늬 맞춤 결과의 중심이 누운 마커(보통 같은 id) 중심에서 그 마커의 가장 긴 변보다 가까우면 True."""
+    c = np.asarray(corners_px, float).mean(0)
+    for o in others:
+        if np.linalg.norm(c - o.mean(0)) < np.linalg.norm(np.roll(o, -1, axis=0) - o, axis=1).max():
+            return True
+    return False
+
+
+def detect_marker_list(gray: np.ndarray, dictionary: str = "DICT_6X6_250") -> list[tuple[int, np.ndarray]]:
+    """[(id, (4,2) 모서리 px(TL,TR,BR,BL))] — 같은 id 도 모두. OpenCV 4.5(구 API) · 4.7+(ArucoDetector) 둘 다."""
     import cv2
     ar = cv2.aruco
     d = (ar.getPredefinedDictionary if hasattr(ar, "getPredefinedDictionary") else ar.Dictionary_get)(
@@ -170,14 +218,8 @@ def detect_markers(gray: np.ndarray, dictionary: str = "DICT_6X6_250") -> dict[i
     else:
         corners, ids, _ = ar.detectMarkers(gray, d, parameters=p)
     if ids is None:
-        return {}
-    out: dict[int, np.ndarray] = {}
-    dup: set[int] = set()
-    for c, i in zip(corners, ids.reshape(-1)):
-        if int(i) in out:      # 같은 id 가 두 번 — 어느 쪽인지 모르니 버린다
-            dup.add(int(i))
-        out[int(i)] = np.asarray(c, float).reshape(4, 2)
-    return {k: v for k, v in out.items() if k not in dup}
+        return []
+    return [(int(i), np.asarray(c, float).reshape(4, 2)) for c, i in zip(corners, ids.reshape(-1))]
 
 
 # ── 풀이 ──────────────────────────────────────────────────────────────────
@@ -386,6 +428,7 @@ class Estimate:
     hits: dict                           # id → TemplateHit (다음 장 추적용)
     missing: list[int]
     shared: tuple[str, ...]
+    flat: tuple[int, ...] = ()           # 상판에 누운 마커라 버린 홀더 id(보정 보드) — 같은 id 가 여러 번이면 여러 번
 
     @property
     def worst_rms(self) -> float:
@@ -399,9 +442,18 @@ class Estimate:
 def estimate(gray: np.ndarray, K: np.ndarray, T_bc: np.ndarray, cfg: HolderCfg, *,
              shared: tuple[str, ...] | None = None, table_z: float = TABLE_TOP_Z, use_template: bool = True,
              prev_hits: dict | None = None) -> Estimate:
-    """ArUco → (못 찾은 id) 직전 자세 추적 → (그래도 없으면) 전체 무늬 탐색 → 홀더별 4자유도 → shared 공유."""
+    """ArUco(상판에 누운 마커는 버림) → (못 찾은 id) 직전 자세 추적 → (그래도 없으면) 전체 무늬 탐색
+    → 홀더별 4자유도 → shared 공유. 추적 · 무늬 탐색이 버린 누운 마커 자리를 잡으면 그것도 버린다."""
     shared = cfg.shared if shared is None else shared
-    det_all = detect_markers(gray, cfg.dictionary)
+    lying: list[tuple[int, np.ndarray]] = []
+    standing: list[tuple[int, np.ndarray]] = []
+    for i, c in detect_marker_list(gray, cfg.dictionary):
+        (lying if on_table_square(c, K, T_bc, table_z) else standing).append((i, c))
+
+    def on_lying(i: int, corners_px: np.ndarray) -> bool:   # 무늬 맞춤이 같은 id 의 누운 마커를 잡았나
+        return _overlaps(corners_px, [c for j, c in lying if j == i])
+
+    det_all = unique_markers(standing)
     det = {i: det_all[i] for i in cfg.ids if i in det_all}
     src = {i: "aruco" for i in det}
     hits: dict = {}
@@ -412,11 +464,14 @@ def estimate(gray: np.ndarray, K: np.ndarray, T_bc: np.ndarray, cfg: HolderCfg, 
             _, z_origin = _template_geometry(cfg, table_z)
             tracked = track_templates(gray, K, T_bc, cfg.corners_stl, cfg.dictionary, z_origin,
                                       {i: h for i, h in prev_hits.items() if i in todo})
+            tracked = {i: h for i, h in tracked.items() if not on_lying(i, h.corners_px)}
             for i, h in tracked.items():
                 det[i], src[i], hits[i] = h.corners_px, "track", h
             todo = [i for i in todo if i not in tracked]
         if todo:
             for i, h in template_fallback(gray, K, T_bc, cfg, todo, table_z).items():
+                if on_lying(i, h.corners_px):
+                    continue
                 det[i], src[i], hits[i] = h.corners_px, "template", h
             todo = [i for i in todo if i not in hits]
     free = {i: fit_one(det[i], K, T_bc, cfg) for i in det}
@@ -424,7 +479,8 @@ def estimate(gray: np.ndarray, K: np.ndarray, T_bc: np.ndarray, cfg: HolderCfg, 
     fixed = {"z": z_origin} if cfg.on_table else {}
     poses = fit_shared(det, free, K, T_bc, cfg, shared, fixed) if free else {}
     rms = {i: rms_of(p, det[i], K, T_bc, cfg, free[i].k) for i, p in poses.items()}
-    return Estimate(det=det, src=src, free=free, poses=poses, rms=rms, hits=hits, missing=todo, shared=shared)
+    return Estimate(det=det, src=src, free=free, poses=poses, rms=rms, hits=hits, missing=todo, shared=shared,
+                    flat=tuple(sorted(i for i, _ in lying if i in cfg.ids)))
 
 
 def yaw_quat_wxyz(yaw: float) -> tuple[float, float, float, float]:

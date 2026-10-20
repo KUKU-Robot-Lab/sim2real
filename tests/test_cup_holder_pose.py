@@ -306,3 +306,42 @@ def test_node_rewrites_only_when_the_holders_moved():
     assert NODE.should_rewrite(a, {"cup_holder_0": a["cup_holder_0"] + [0.004, 0, 0, 0]})
     assert NODE.should_rewrite(a, {"cup_holder_0": a["cup_holder_0"] + [0, 0, 0, math.radians(3)]})
     assert NODE.should_rewrite(a, {**a, "cup_holder_1": a["cup_holder_0"]})
+
+
+def _paste(img: np.ndarray, marker_id: int, uv: np.ndarray, Kc=None) -> None:
+    """마커(흰 여백 4/30) 를 영상의 네 점(TL,TR,BR,BL, 여백 포함 바깥 모서리)에 붙인다."""
+    ar = cv2.aruco
+    d = (ar.getPredefinedDictionary if hasattr(ar, "getPredefinedDictionary") else ar.Dictionary_get)(
+        ar.DICT_6X6_250)
+    draw = ar.generateImageMarker if hasattr(ar, "generateImageMarker") else ar.drawMarker
+    tile = np.full((240 + 64, 240 + 64), 255, np.uint8)
+    tile[32:272, 32:272] = np.where(draw(d, marker_id, 240) > 127, 255, 30)
+    src = np.float32([[0, 0], [tile.shape[1], 0], [tile.shape[1], tile.shape[0]], [0, tile.shape[0]]])
+    Hm = cv2.getPerspectiveTransform(src, uv.astype(np.float32))
+    warped = cv2.warpPerspective(tile, Hm, (img.shape[1], img.shape[0]), flags=cv2.INTER_LINEAR)
+    mask = cv2.warpPerspective(np.full_like(tile, 255), Hm, (img.shape[1], img.shape[0]), flags=cv2.INTER_NEAREST)
+    img[mask > 0] = warped[mask > 0]
+
+
+def test_a_board_marker_with_the_same_id_lying_on_the_table_is_ignored():
+    """★10.20 실기: 보정 보드의 id 1 이 상판에 누워 있으면 예전에는 id 1 이 두 번이라 둘 다 버렸다(홀더 1 못 찾음)."""
+    Kh = np.array([[1500.0, 0.0, 640.0], [0.0, 1500.0, 360.0], [0.0, 0.0, 1.0]])
+    T_bc = _look_at(np.array([0.0, 0.0, 0.80]), np.array([0.30, 0.0, 0.21]))
+    truth = (0.36, -0.02, 0.235, math.radians(3.0))
+    img = np.full((HH, W), 90, np.uint8)
+    c = CFG.corners_stl
+    ctr = c.mean(0)
+    big = ctr + (c - ctr) * 304 / 240
+    T = H.T_planar(*truth)
+    uv, _ = H.project(T_bc, Kh, big @ T[:3, :3].T + T[:3, 3])
+    _paste(img, 1, uv)
+    for mid, (x, y) in ((1, (0.27, 0.06)), (5, (0.27, -0.06))):        # 보드 마커 두 개(같은 id 1 하나)
+        h = 0.022 / 2 * 304 / 240
+        sq = np.array([[x + h, y + h, 0.205], [x + h, y - h, 0.205], [x - h, y - h, 0.205], [x - h, y + h, 0.205]])
+        uv, _ = H.project(T_bc, Kh, sq)
+        _paste(img, mid, uv)
+    assert 1 not in H.detect_markers(img)                              # 예전 동작: 같은 id 두 번 → 버림
+    est = H.estimate(img, Kh, T_bc, CFG, table_z=0.205, use_template=False)
+    assert est.flat == (1,) and est.src.get(1) == "aruco"
+    assert np.allclose(est.poses[1][:2], truth[:2], atol=0.004), est.poses[1]
+    assert abs(math.degrees(H.wrap(est.poses[1][3] - truth[3]))) < 2.0
