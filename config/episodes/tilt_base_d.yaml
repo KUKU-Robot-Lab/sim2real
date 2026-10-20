@@ -1,0 +1,27 @@
+# tilt 기본 궤적 실기 평가 — 경로 D(10.20 사용자 "경로 a는 폐지, -> 경로d가 대체함").
+# 잡기는 grasp_d_{right,left} 와 같다: 접근 정책 ap05 → 사전 파지 자리(컵 축 2.5R · 높이 0, 2 cm 안)에 0.5 s 멈추면 같은 rh_aglt 노드가
+# rcg03(aglt_start=ready)으로 넘겨 쥐고 든다 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남(pd 가 붙듦).
+# 오른손(source240) 다음 왼손(shaker). 그 뒤는 옛 경로 A 와 같다: ready_carry 로 붓기 시작 자세(오른팔 → 왼팔) → D4 기본 궤적(잔차 0, 1 배속)
+# + 복귀 → 끝. 붓기 궤적은 아직 손 안 컵 자리를 기준값(single734)으로 계획한다(쥔 자리 측정 반영은 미구현).
+episode: {name: tilt_base_d, version: 1}
+objects:
+  SRC: {topic: /objects/source240b_blue/pose}
+  RCV: {topic: /objects/shaker_c_orange/pose}
+policies:
+  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/right_rcg03}
+  rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg03}
+trajectories:
+  go_home: {kind: rehome, sides: [right, left]}
+  to_tilt_start_r: {kind: carry, sides: [right], asset: tilt/base_arc6}
+  to_tilt_start_l: {kind: carry, sides: [left], asset: tilt/base_arc6}
+  tilt: {kind: tilt, sides: [right, left], asset: tilt/base_arc6, rate_scale: 1.0}
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 판단한다(컵을 쥔 채 rehome 은 거부된다).
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  - {id: grasp_right, type: policy, name: rh_aglt_r, target_object: SRC, policy_object: source240_real, expect: {right_hand: SRC}}
+  - {id: grasp_left, type: policy, name: rh_aglt_l, target_object: RCV, policy_object: shaker_c_real, expect: {left_hand: RCV}}
+  - {id: to_tilt_start_r, type: trajectory, name: to_tilt_start_r}
+  - {id: to_tilt_start_l, type: trajectory, name: to_tilt_start_l, expect: {pose: SETTING}}
+  - {id: tilt, type: trajectory, name: tilt, expect: {pose: SETTING}}
+  - {id: done, type: terminal, result: SUCCESS}

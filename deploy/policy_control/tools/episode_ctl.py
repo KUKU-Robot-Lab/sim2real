@@ -350,11 +350,23 @@ def safe_tail(runner: Runner, done: set[str], steps: int) -> None:
 ENGAGED = ("RAMPING", "TRACKING")
 
 
+def watchdog_hold(status: dict | None) -> bool:
+    """pd status 가 워치독(목표 끊김) 하나로만 HOLD 인가 — pd/hold 로 그 자리 붙들기가 된다(10.20). 순수."""
+    reasons = [str(r) for r in (status or {}).get("reasons") or ()]
+    return (status or {}).get("phase") == "HOLD" and bool(reasons) and all(r.startswith("watchdog") for r in reasons)
+
+
 def already_engaged(runner, wait_s: float = 3.0) -> bool:
-    """pd 가 이미 팔을 붙들고 있나(RAMPING · TRACKING) — status 를 wait_s 동안 기다려 본다."""
+    """pd 가 이미 팔을 붙들고 있나(RAMPING · TRACKING) — status 를 wait_s 동안 기다려 본다.
+
+    ★10.20 실기 1-B: 에피소드가 멈추며 목표가 끊겨 워치독 HOLD 면 engage(IDLE 에서만)가 거부돼 rehome 이 첫 단계에서
+    막혔다. 그때는 pd/hold 로 얼린 자리를 내부 목표로 붙들고(HOLD 가 풀린다) engage 를 건너뛴다."""
     t_end = time.monotonic() + wait_s
     while runner.pd_status is None and time.monotonic() < t_end:
         runner.spin(0.1)
+    if watchdog_hold(runner.pd_status):
+        print(f"    · pd 워치독 HOLD({'; '.join(runner.pd_status.get('reasons') or [])}) — pd/hold 로 그 자리를 붙든다")
+        return run_stage(runner, stage_by_id("pd_hold"), 0)
     return (runner.pd_status or {}).get("phase") in ENGAGED
 
 
@@ -367,7 +379,7 @@ def execute(steps: int, service_timeout: float, phase_timeout: float, only: tupl
         for stage in selected(only):
             if stage.id == "pd_engage" and skip_engaged and already_engaged(runner):
                 # 10.04 rehome: 정책이 멈춘 뒤에는 pd 가 그 자리를 붙들고 있다(TRACKING) — engage 는 IDLE 에서만 받는다
-                print(f"\n▶ pd_engage — 이미 {runner.pd_status.get('phase')} — 건너뛴다(지금 자리를 붙들고 있다)")
+                print(f"\n▶ pd_engage — 이미 {(runner.pd_status or {}).get('phase')} — 건너뛴다(지금 자리를 붙들고 있다)")
                 done.add(stage.id)
                 continue
             if not run_stage(runner, stage, steps):

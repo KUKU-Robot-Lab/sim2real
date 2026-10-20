@@ -73,7 +73,7 @@ def test_the_rh56f1_real_mission_draws_every_node_once_and_knows_every_command(r
     ros = Counter(n for b in d.boxes for n in b.ros)
     assert not {n: c for n, c in ros.items() if c > 1}                        # 같은 ROS 노드를 두 상자가 주장하지 않는다
     assert len({b.title for b in d.boxes}) == len(d.boxes)
-    assert len(d.boxes) <= 20, [b.id for b in d.boxes]
+    assert len(d.boxes) <= 22, [b.id for b in d.boxes]                       # ★10.19 팔마다 실행기 상자 둘(좌우 동시 실행)
 
 
 def test_no_wire_is_drawn_twice(real):
@@ -94,19 +94,25 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
     _, units, d = real
     aglt = d.box("rh_aglt_node_right")
     assert aglt.ros == ("/rh_aglt_node_right", "/rh_aglt_node_right_poll")    # 센서는 폴링 노드가 구독한다
-    assert set(aglt.units) == {"policy_aglt_right#4", "episode_pick_place_right#3", "episode_grasp_rg3_right#3",
+    # ★10.20 영상 기록 기본 끔(VISION_RECORD) — 정책 단계의 aglt 노드가 #4 → #3
+    assert set(aglt.units) == {"policy_aglt_right#3", "episode_pick_place_right#3",
                                "episode_grasp_c_right#3",                       # 10.17 경로 C(접근 정책 + 스크립트 파지)
-                               "episode_tilt_base_a#3",                         # 10.17 tilt 기본 궤적 경로 A(두 손 잡기)
+                               "episode_grasp_d_right#3",                       # ★10.20 경로 D(ap05 → rcg03 넘김)
+                               "episode_tilt_base_d#3",                         # ★10.20 경로 A 폐지 → tilt 경로 D(ap05 → rcg03)
                                "episode_tilt_base_c#3"} & set(units)            # 10.17 tilt 기본 궤적 경로 C
     place = d.box("rh_place_node_right")
     assert set(place.units) == {"policy_place_right#1", "episode_pick_place_right#4"}
+    # ★10.19 사용자 "좌우 동시 실행": 한 팔 에피소드는 팔마다 실행기(episode_runner_<팔>), 두 팔 tilt 는 기본 실행기
     runner = d.box("episode_runner")
-    assert set(runner.units) == {"episode_pick_place_right#7", "episode_pick_place_left#7",
-                              "episode_grasp_rg3_right#6", "episode_grasp_rg3_left#6",
-                              "episode_grasp_c_right#6", "episode_grasp_c_left#6",
-                              "episode_tilt_base_a#7",   # 실기: 앞에 CPU 기록 한 줄(10.08) · tilt_base_a 는 정책 노드 둘
-                              "episode_tilt_base_c#7",   # 10.17 경로 C — 정책 노드 둘(A 와 같은 자리)
-                              "episode_tilt_base_b#5"}   # 10.17 경로 B — 정책 노드 없음(사람이 컵을 댄다)
+    assert set(runner.units) == {"episode_tilt_base_d#7",   # 실기: 앞에 CPU 기록 한 줄(10.08) · ★10.20 경로 A 폐지 → D, 정책 노드 둘
+                                 "episode_tilt_base_c#7",   # 10.17 경로 C — 정책 노드 둘(D 와 같은 자리)
+                                 "episode_tilt_base_b#5"}   # 10.17 경로 B — 정책 노드 없음(사람이 컵을 댄다)
+    for side in ("right", "left"):
+        assert set(d.box(f"episode_runner_{side}").units) == {f"episode_pick_place_{side}#7",
+                                                              f"episode_grasp_c_{side}#6",
+                                                              # ★10.19 1-B — 정책 노드 없음, 기록 bag · CPU 뒤(★10.20 영상 기본 끔 → #5)
+                                                              f"episode_grasp_b_{side}#5",
+                                                              f"episode_grasp_d_{side}#6"}   # ★10.20 경로 D(aglt 노드 하나)
 
 
 def test_one_arms_pd_without_and_with_publishing_is_one_box_and_only_the_quiet_one_mutes_the_drive(real):
@@ -131,9 +137,40 @@ def test_in_the_episode_the_runner_gives_the_holder_and_goal_and_alone_the_holde
     holder = {w.src: w.units for w in d.wires if w.dst == "rh_place_node_right" and w.topic == "/objects/cup_holder_1/pose"}
     # ★10.13 원격 인지면 마커 노드가 없다 — 단독 놓기의 홀더는 미션 밖(바깥 상자)에서 온다
     alone = "obj_cup_holder_1" if GEN.REMOTE_PERCEPTION else "cup_holders"
-    assert holder == {alone: ("policy_place_right#1",), "episode_runner": ("episode_pick_place_right#4",)}
+    assert holder == {alone: ("policy_place_right#1",), "episode_runner_right": ("episode_pick_place_right#4",)}
     goal = {w.src: w for w in d.wires if w.dst == "rh_aglt_node_right" and w.topic == "/policy_control/right/goal"}
-    assert set(goal) == {"episode_runner"} and all(w.on_demand for w in goal.values())
+    # ★10.19 한 팔 에피소드는 오른팔 실행기, 두 팔 tilt 는 기본 실행기가 목표를 낸다
+    # ★10.20 옛 정책 정리 뒤: 계약이 없는 정책 노드는 단위에서 빠진다 → 목표를 내는 실행기는 오른손 aglt 노드를 실제로 띄우는 단계의 것만
+    assert set(goal) == set(_goal_runners(real[1])) and all(w.on_demand for w in goal.values())
+
+
+def _goal_runners(units) -> dict[str, str]:
+    """오른손 aglt 노드를 띄우는 에피소드 단계의 실행기 노드 → 그림 이름표(우 실행기 · 실행기)."""
+    def node(u):
+        return next((a.split(":=", 1)[1].lstrip("/") for a in u.argv if a.startswith("__node:=")), "")
+    aglt = {u.stage for u in units.values() if node(u) == "rh_aglt_node_right"}
+    out = {}
+    for u in units.values():
+        if u.stage in aglt and any(str(a).endswith("episode_runner_node.py") for a in u.argv):
+            n = node(u) or "episode_runner"
+            out[n] = {"episode_runner_right": "우 실행기", "episode_runner_left": "좌 실행기"}.get(n, "실행기")
+    return out
+
+
+def test_an_episode_stage_that_launches_the_aglt_node_gets_its_goal_from_that_runner(real, tmp_path):
+    """★10.20 실기 미션의 aglt 에피소드가 모두 옛 정책이라 빠졌다 — 같은 규칙을 지금 등록된 aglt 노드 명령으로 따로 본다."""
+    from dataclasses import replace
+    units = real[1]
+    node = next(u for u in units.values() if "__node:=rh_aglt_node_right" in u.argv)
+    ep = tmp_path / "ep.yaml"
+    ep.write_text(yaml.safe_dump({"policies": {"rh_aglt_r": {"policy": "x", "kind": "aglt", "side": "right"}},
+                                  "sequence": [{"id": "n", "type": "policy"}]}), encoding="utf-8")
+    runner = UnitCmd(key="ep_x#6", stage="ep_x", index=6, note="", needs=(), kind="background", touches_real=False,
+                     argv=("python3", "/x/episode_runner_node.py", "--ros-args", "-r", "__node:=episode_runner_right",
+                           "-p", f"episode:={ep}"))
+    d = W.generate({"ep_x#3": replace(node, key="ep_x#3", stage="ep_x"), "ep_x#6": runner}, repo=SIM2REAL, status_nodes=())
+    goal = [w for w in d.wires if w.dst == "rh_aglt_node_right" and w.topic == "/policy_control/right/goal"]
+    assert [(w.src, w.on_demand) for w in goal] == [("episode_runner_right", True)]   # 내는 쪽이 하나면 이름표는 비운다
 
 
 def test_policy_nodes_feed_only_their_own_arms_pd(real):
@@ -397,10 +434,14 @@ def test_a_topic_heard_from_two_boxes_names_the_sender_in_the_port(real):
     _, _, d = real
     labels = {w.label for w in d.wires if w.dst == "pd" and w.topic == "/policy_control/joint_target"}
     assert labels == {"집기 ▸ joint_target", "놓기 ▸ joint_target"}                  # 내는 쪽이 앞 — 좁은 상자에서도 안 잘린다
-    assert {w.label for w in d.wires if w.dst == "rh_aglt_node_right" and w.topic.endswith("/goal")} == {""}  # 하나뿐이면 이름 그대로
+    # ★10.19 목표는 오른팔 실행기 · 두 팔 실행기 둘이 낸다 — 내는 쪽 이름이 앞
+    # ★10.20 aglt 노드를 띄우는 단계의 실행기만 — 둘 이상일 때만 이름이 앞에 붙는다(옛 정책을 내린 뒤 지금은 오른팔 실행기 하나)
+    goal_tags = set(_goal_runners(real[1]).values())
+    assert {w.label for w in d.wires if w.dst == "rh_aglt_node_right" and w.topic.endswith("/goal")} == (
+        {f"{tag} ▸ right/goal" for tag in goal_tags} if len(goal_tags) > 1 else {""})
     holder = "/objects/cup_holder_1/pose (바깥)" if GEN.REMOTE_PERCEPTION else "마커"     # 10.13 원격 인지면 마커 노드가 없다
     assert {w.label for w in d.wires if w.dst == "rh_place_node_right" and w.topic.endswith("cup_holder_1/pose")} == {
-        f"{holder} ▸ cup_holder_1/pose", "실행기 ▸ cup_holder_1/pose"}
+        f"{holder} ▸ cup_holder_1/pose", "우 실행기 ▸ cup_holder_1/pose"}        # ★10.19 놓기 에피소드는 오른팔 실행기
     assert not d.box("pd").title.count("무발행")                                # 제목은 노드, 무발행 · 발행은 칩과 스위치가 말한다
 
 

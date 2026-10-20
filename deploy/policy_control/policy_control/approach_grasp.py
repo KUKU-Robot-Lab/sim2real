@@ -39,7 +39,7 @@ from policy_control import hand_block as HB
 from policy_control import rh_aglt as A
 from policy_control.rh_cap import _rotvec, palm_jacobian
 
-PHASES = ("approach", "close", "lift", "settle", "done", "failed")
+PHASES = ("approach", "close", "lift", "settle", "policy", "done", "failed")   # policy = ★10.20 경로 D 넘김 뒤 다음 정책
 #: 10.12 실기 검증 명목값(rh_aglt.HAND_BLOCK_NOMINAL) — 접근 런의 학습 값(0.0128, pos 판정)이 아니라 배포 막힘 명목값을 쓴다
 CLOSE_BLOCK = dict(A.HAND_BLOCK_NOMINAL)
 
@@ -58,7 +58,11 @@ SAFE_RANGE: Mapping[str, tuple] = {
     "lift_tol_m": (0.002, 0.05), "hold_s": (0.5, 10.0), "loss_ticks": (1, 60),
     "judge": (0, 1), "squeeze": (0, 1), "squeeze_s": (0.0, 3.0),
     "pin_lead_rad": (0.0, 0.1), "close_lead_rad": (0.03, 0.2),
+    "handoff": (0, 1), "stop_ready": (0, 1),
 }
+#: ★10.20 handoff 끝 = 손바닥이 사전 파지 자리(계약 ready_r_mult · ready_h_m) 이 거리 안에서 멈춤 — ap05 학습 접근 성공 반경
+#  (approach_succ_pos_m 0.02)과 같다. 다음 정책(rcg) 시작 검사는 3 cm(pour_fj_node.READY_POSE_TOL_M)라 잡음에 여유가 있다.
+HANDOFF_TOL_M = 0.02
 
 
 @dataclass(frozen=True)
@@ -85,6 +89,14 @@ class ApproachGraspCfg:
     squeeze_s: float = 0.5             # 닫기 끝(모든 축 막힘 · 쥔 자세) 뒤 들기 전 대기
     pin_lead_rad: float = 0.0          # ★10.18 강제 파지: 막힘(접촉) 축 고정 = 실측 + 이만큼 닫는 쪽(0 = 실측에 멈춤 — 더 밀지 않음)
     close_lead_rad: float = 0.08       # ★10.18 강제 파지: 닫는 축 지령이 실측을 앞서는 상한(막힘 G 0.0218 보다 커야 래치가 걸린다)
+    # ★10.20 사용자 "ap_05로 가까이 가게한 다음에, rcg_03 행하면 잡을 것 같음" — 1 = 접근 정책이 사전 파지 자리에서 멈추면
+    #   스크립트 닫기 대신 stop 으로 끝낸다(pd 가 그 자세로 붙들고, 미션 다음 단계의 rcg 정책이 그 자리에서 넘겨받는다).
+    #   끝 = 사전 파지 자리(HANDOFF_TOL_M) + 팔 정지 still_s. approach_max_s 안에 못 오면 실패(abort). stop_palm_m 은 안 쓴다.
+    handoff: int = 0
+    # ★10.20 사용자 "1-c : ap05+grasp(가능성 있음)" — 1 = 접근 정책(ap05)이 사전 파지 자리(HANDOFF_TOL_M)에 still_s 멈추면
+    #   스크립트 닫기 · 들기(경로 C)로 넘어간다. ap05 는 컵 축 2.5R(source240 7.5 cm)에서 멈춰 stop_palm_m(6 cm)에 못 닿는다.
+    #   approach_max_s 안에 못 오면 실패(abort — 허공에서 닫지 않는다). handoff 와 같이 쓰지 않는다.
+    stop_ready: int = 0
 
     def __post_init__(self) -> None:
         bad = [f"{f.name}={getattr(self, f.name)} (허용 {SAFE_RANGE[f.name][0]:g}~{SAFE_RANGE[f.name][1]:g})"
@@ -93,12 +105,16 @@ class ApproachGraspCfg:
                        and SAFE_RANGE[f.name][0] <= getattr(self, f.name) <= SAFE_RANGE[f.name][1])]
         if bad:
             raise ApproachGraspError(f"approach_grasp: 안전 범위 밖 — {bad}")
+        if self.handoff and self.stop_ready:
+            raise ApproachGraspError("approach_grasp: handoff(다음 정책) 와 stop_ready(스크립트 닫기) 는 같이 쓰지 않는다")
         if not self.lift_tol_m < self.lift_m:
             raise ApproachGraspError(f"approach_grasp: lift_tol_m {self.lift_tol_m} 는 lift_m {self.lift_m} 보다 작아야 한다")
 
     @property
     def worst_s(self) -> float:
         """가장 늦게 끝나는 경로(접근 시간 초과 → 닫기 시간 초과 직전 판정 → 들기 램프 + 대기 → 유지) [s]."""
+        if self.handoff:                     # ★10.20 경로 D — 접근 뒤 같은 노드에서 넘겨받은 정책이 aglt 기본 시간을 더 쓴다
+            return self.approach_max_s + DEFAULT_EPISODE_S
         return (self.approach_max_s + self.close_max_s + self.squeeze_s + self.lift_m / self.lift_speed + self.lift_extra_s
                 + self.hold_s)
 
@@ -178,6 +194,7 @@ class ApproachGrasp:
 
     def __init__(self, cfg: ApproachGraspCfg, hz: float) -> None:
         self.cfg, self.hz = cfg, float(hz)
+        self.next: tuple | None = None   # ★10.20 경로 D — (계약, 정책): 노드가 넣는다. None 이면 넘김 = stop(미션 다음 단계가 이어받음)
         self.reset()
 
     def reset(self) -> None:
@@ -194,13 +211,19 @@ class ApproachGrasp:
         self.p0 = self.R0 = None
         self.z0 = float("nan")
         self.last: dict = {}
+        self.grip: dict | None = None    # ★10.19 쥔 순간(닫기 → 들기) 관절 상태 — 물체마다 기록해 학습 세션에 넘긴다(사용자)
 
     @property
     def scripted(self) -> bool:
-        return self.phase != "approach"
+        return self.phase not in ("approach", "policy")
 
     def _go(self, phase: str, why: str = "") -> None:
         self.phase, self.t, self.why = phase, 0, why or self.why
+        if self.grip is not None:
+            if self.last.get("rise_m") is not None:          # 들기 끝(→ settle · 실패)의 높이 — settle 에서는 last 가 바뀐다
+                self.grip["rise_m"] = self.last["rise_m"]
+            if phase in ("done", "failed"):
+                self.grip.update(outcome=phase, end_why=why)
         if phase == "done":
             self.end = ("stop", f"approach_grasp: 들어 올려 {self.cfg.hold_s:.1f} s 유지({self.why})")
         elif phase == "failed":
@@ -209,17 +232,44 @@ class ApproachGrasp:
     # ------------------------------------------------------------ approach
     def after_policy(self, chain, m: A.RaMeas) -> None:
         """정책 한 스텝 뒤 — 멈춤 조건을 보고 닫기로 넘긴다. 대기(hold_steps) 중에는 세지 않는다."""
+        if self.phase == "policy":                       # 경로 D 넘김 뒤 — 끝은 다음 정책의 목표 · lift_hold(노드 end_reason)
+            return
         self.t += 1
         if chain.step_i <= chain.c.hold_steps:
             return
         d = float(np.linalg.norm(np.asarray(m.cup_pos, float) - np.asarray(m.palm_pos, float)))
         v = float(np.max(np.abs(np.asarray(m.arm_qd, float))))
+        if self.cfg.handoff or self.cfg.stop_ready:
+            self._after_policy_ready(chain, m, d, v)
+            return
         self.still = self.still + 1 if (np.isfinite(d) and d <= self.cfg.stop_palm_m and v < self.cfg.still_rad_s) else 0
         self.last = {"palm_cup_m": round(d, 4), "arm_qd_max": round(v, 3), "still": self.still}
         if self.still >= max(1, round(self.cfg.still_s * self.hz)):
             self._start_close(chain, f"접근 끝 거리 {d:.3f} m · 정지 {self.cfg.still_s:.1f} s")
         elif self.t >= round(self.cfg.approach_max_s * self.hz):
             self._start_close(chain, f"접근 시간 {self.cfg.approach_max_s:.1f} s · 거리 {d:.3f} m")
+
+    def _after_policy_ready(self, chain, m: A.RaMeas, d: float, v: float) -> None:
+        """★10.20 사전 파지 자리에 멈추면 — handoff: 다음 정책(같은 노드) 또는 stop · stop_ready: 스크립트 닫기. 시간 안에 못 오면 abort."""
+        rr, out_h, out_r = A.ready_pose_error(chain.c, m.cup_pos, m.palm_pos)
+        at = bool(np.isfinite(rr) and out_r <= HANDOFF_TOL_M and out_h <= HANDOFF_TOL_M)
+        self.still = self.still + 1 if (at and v < self.cfg.still_rad_s) else 0
+        self.last = {"palm_cup_m": round(d, 4), "r_over_R": round(rr, 2), "off_r_m": round(out_r, 4), "off_h_m": round(out_h, 4),
+                     "arm_qd_max": round(v, 3), "still": self.still}
+        where = f"r/R {rr:.2f}(학습 {chain.c.ready_r_mult}) · 반경 밖 {out_r * 100:.1f} cm · 높이 밖 {out_h * 100:.1f} cm"
+        if self.still >= max(1, round(self.cfg.still_s * self.hz)):
+            if self.cfg.stop_ready:                      # 경로 C(1-C): 그 자리에서 닫고 든다
+                self._start_close(chain, f"사전 파지 자리 정지 {self.cfg.still_s:.1f} s · {where}")
+                return
+            if self.next is not None:                    # 같은 노드에서 다음 정책이 이 자세로 넘겨받는다
+                chain.handover(self.next[0], self.next[1], m)
+                self.last = {**self.last, "handoff_t_s": round(self.t / self.hz, 2)}   # 접근 틱(대기 포함) → 넘긴 시각
+                self.phase, self.t, self.why = "policy", 0, f"넘김 {where}"
+                return
+            self.phase, self.t, self.why = "done", 0, where
+            self.end = ("stop", f"approach_grasp handoff: 사전 파지 자리 도착 · 정지 {self.cfg.still_s:.1f} s — 다음 정책에 넘김({where})")
+        elif self.t >= round(self.cfg.approach_max_s * self.hz):
+            self._go("failed", f"접근 시간 {self.cfg.approach_max_s:.1f} s 안에 사전 파지 자리에 멈추지 못함({where})")
 
     def _start_close(self, chain, why: str) -> None:
         st = chain.dec.state["arm"]
@@ -325,6 +375,7 @@ class ApproachGrasp:
             self.last["closed"] = self.closed_t >= 0
             waited = self.closed_t >= 0 and self.t - self.closed_t >= round(cfg.squeeze_s * self.hz)
             if waited or self.t >= round(cfg.close_max_s * self.hz):
+                self.grip = self._grip_now(chain, m, d)
                 self._go("lift", f"강제 파지 — 접촉 고정 축 {int(self.pinned.sum())} · 거리 {d:.3f} m"
                                  + ("" if waited else f" · 닫기 {cfg.close_max_s:.1f} s 상한"))
             return
@@ -332,6 +383,7 @@ class ApproachGrasp:
             self.g_streak = self.g_streak + 1 if dec.grasped() else 0
             self.last["g_streak"] = self.g_streak
             if self.g_streak >= cfg.judge_ticks:
+                self.grip = self._grip_now(chain, m, d)
                 self._go("lift", f"쥠 {n} 손가락 · 거리 {d:.3f} m")
             elif self.t >= round(cfg.close_max_s * self.hz):
                 self._go("failed", f"{cfg.close_max_s:.1f} s 안에 못 쥠(래치 손가락 {n} < {cfg.judge_min_axes} 또는 "
@@ -354,5 +406,15 @@ class ApproachGrasp:
         elif self.phase == "settle" and self.t >= round(cfg.hold_s * self.hz):
             self._go("done")
 
+    def _grip_now(self, chain, m: A.RaMeas, d: float) -> dict:
+        """쥔 순간(닫기 끝 → 들기 시작)의 손 관절 — 실측 · 스크립트 지령 · 접촉 고정 축 · 래치(계약 hand_joints 순, rad)."""
+        names = list(chain.c.side().hand_joints)
+        dec = chain.dec
+        return {"hand_joints": names, "q_meas_rad": [round(float(m.hand_q[n]), 4) for n in names],
+                "q_cmd_rad": None if self.q_cmd is None else [round(float(v), 4) for v in self.q_cmd],
+                "pinned": self.pinned.astype(int).tolist(),
+                "latch": dec.block.latch.astype(int).tolist() if dec.block is not None else None,
+                "palm_cup_m": round(d, 4), "stop_palm_m": self.stop_palm, "close_s": round(self.t / self.hz, 2)}
+
     def as_dict(self) -> dict:
-        return {"phase": self.phase, "why": self.why, **self.last}
+        return {"phase": self.phase, "why": self.why, **self.last, **({"grip": self.grip} if self.grip is not None else {})}

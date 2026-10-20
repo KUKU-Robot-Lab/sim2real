@@ -34,6 +34,15 @@ PD_SERVICES = ("pd/engage", "pd/goto_home", "pd/release", "pd/hand_home", "pd/ha
 SERVICES = PD_SERVICES + ("episode/reset", "episode/start", "episode/stop", "episode/abort")
 #: 로봇을 **덜** 움직이게 하는 쪽 — 승인 없이 언제든 불러도 되는 것들.
 DESCENDING = ("episode/stop", "episode/abort", "pd/release", "pd/hold")   # hold = 그 자리에 얼린다(10.09)
+#: ★10.20 실기 1-B: 정책 노드가 없는 제어 모듈 에피소드에서 rehome 이 선행 episode/stop 실패(rc 1)로 막혔다.
+#: stop 은 멱등이다 — 서비스가 그래프에 아예 없으면(노드가 안 떠 있으면) 멈출 것이 없으니 성공으로 본다.
+#: 떠 있는데 응답이 없는 것(timeout)·거절은 그대로 실패다. abort · reset 은 그대로 엄격하다.
+ABSENT_OK = ("episode/stop",)
+
+
+def absent_ok(service: str) -> bool:
+    """서비스가 없을 때 '할 일 없음 = 성공'으로 볼 서비스인가. 순수."""
+    return service in ABSENT_OK
 
 
 def domain_refusal(env: Mapping[str, str], allow_zero: bool) -> str | None:
@@ -102,6 +111,8 @@ def _call_every_policy(node, service: str, timeout: float) -> tuple[bool, list[s
         rclpy.spin_once(node, timeout_sec=0.1)
         paths = every_policy_paths(service, [n for n, _ in node.get_service_names_and_types()])
     if not paths:
+        if absent_ok(service):
+            return True, ["떠 있는 정책 노드가 없다 — 멈출 것이 없다"]
         return False, [f"떠 있는 정책 노드가 없다 ({', '.join(resolve(service, 'right', n) for n in EPISODE_NS_ALL)})"]
     ok_all, reasons = True, []
     for path in paths:
@@ -151,6 +162,8 @@ def call(service: str, *, side: str, episode_ns: str = "", expect_pd: Sequence[s
         path = resolve(service, side, episode_ns)
         client = node.create_client(Trigger, path)
         if not client.wait_for_service(timeout_sec=service_timeout):
+            if absent_ok(service):
+                return True, [f"{path} 없음 — 떠 있는 정책 노드가 없어 멈출 것이 없다"]
             return False, [f"service {path} unavailable ({service_timeout:.0f}s)"]
         retry_until = time.monotonic() + RESET_RETRY_S
         while True:

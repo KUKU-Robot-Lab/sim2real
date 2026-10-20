@@ -56,7 +56,9 @@ def main(argv=None) -> int:
                   + (f"  [checkpoint {n.checkpoint}]" if n.checkpoint else ""))
         bad = {r: why for r, why in av.items() if why}
         for r, why in av.items():
-            print(f"  {'✓' if not why else '✗'} {r}: {why or ep.policies[r].policy}")
+            b = ep.policies[r]
+            print(f"  {'✓' if not why else '✗'} {r}: {why or b.policy}"
+                  + (f" → 넘김 {b.handoff}(경로 D)" if b.handoff and not why else ""))
         holders = []
         if args.require_holders:
             from policy_control.episode_ros import load_holder_poses

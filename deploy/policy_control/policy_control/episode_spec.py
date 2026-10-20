@@ -38,12 +38,16 @@ NODE_TYPES = ("snapshot", "trajectory", "policy", "parallel_policy", "confirm", 
 HAND_ACTIONS = ("open", "grasp")
 KINDS = ("aglt", "place", "pour", "lock", "shake")
 SIDES = ("right", "left", "both")
-TRAJ_KINDS = ("rehome", "noop", "carry", "tilt")
+TRAJ_KINDS = ("rehome", "noop", "carry", "tilt", "reach", "lift")
 #: 10.17 실측에서 계획 · 검사한 뒤 재생하는 궤적(tools/plan_<kind>.py → replay_to_pd).
 #: carry = 잡기 뒤 ready_carry 로 붓기 시작 자세(SETTING)까지 — 한 팔씩(sides: [right]) 또는 두 팔(계획 경로 A "한 팔씩").
 #:   cups: false = 빈손으로(경로 B, 사람이 컵을 손에 댄다 — 컵 없이 같은 경로).
 #: tilt = D4 기본 궤적(잔차 0) + 복귀, 두 팔 14 관절 한 시각표 · 두 손이 컵을 쥔 때만. 자산 = config/<asset>/policy.yaml
-PLANNED_TRAJ = ("carry", "tilt")
+#: ★10.19 1-B(정책 없이 제어 모듈만): reach = ready_carry 로 컵 뒤까지 → 편 손으로 곧게 들어가 tilt 기준 손 안 컵 자리
+#:   (tools/plan_reach.py — 빈손, 한 팔, object = 그 팔이 쥘 episode 물체 이름) · lift = 쥔 뒤 손바닥 방향 고정 수직 10 cm
+#:   + 3 s 유지(tools/plan_lift.py — 컵을 쥔 손, 한 팔, object 가 있으면 끝에 FP++ 로 컵이 들렸는지 본다).
+PLANNED_TRAJ = ("carry", "tilt", "reach", "lift")
+ONE_ARM_TRAJ = ("reach", "lift")
 TRAJ_ASSETS = Path(__file__).resolve().parents[1] / "config"
 POSES = ("HOME", "SETTING")
 EMPTY = "EMPTY"
@@ -63,6 +67,9 @@ class Binding:
     #: ★10.17 경로 C(approach_grasp.py) — aglt 노드가 접근 뒤 스크립트 닫기 · 쥠 확인 · 들기 · 유지를 한다. None = 끔,
     #:   {} = 기본값, 키 = ApproachGraspCfg 필드 덮어쓰기(모르는 키 거부)
     approach_grasp: Mapping | None = None
+    #: ★10.20 경로 D — approach_grasp {handoff: 1} 일 때 접근 정책이 사전 파지 자리에 멈추면 같은 노드에서 넘겨받는 정책의
+    #:   등록부 id(aglt · arm_start ready, 예 rh56f1/aglt/right_rcg03). None = 넘김 없음
+    handoff: str | None = None
 
 
 @dataclass(frozen=True)
@@ -87,7 +94,7 @@ class Node:
     text: str = ""                # confirm — 운영자가 확인할 것
     action: str = ""              # hand — open | grasp
     sides: tuple = ()             # hand — 팔들(grasp 는 하나)
-    hand_contract: str = ""       # hand grasp — 손 열림 · 쥠 자세 · 막힘 명목값을 줄 aglt 정책(등록부 id)
+    hand_contract: str = ""       # hand grasp — 손 열림 · 쥠 자세 · 막힘 명목값을 줄 계약(등록부 id 또는 저장소 기준 .json, 10.20)
     cfg: Mapping = field(default_factory=dict)   # hand grasp — 닫기 · 판정 값 덮어쓰기(tools/hand_grasp.GraspCfg)
 
 
@@ -99,6 +106,7 @@ class Trajectory:
     asset: str = ""              # carry · tilt: config/ 기준 자산 폴더(policy.yaml · ref/)
     rate_scale: float = 1.0      # carry · tilt 재생 배속(0, 1]
     cups: bool = True            # carry · tilt: 그 팔 손이 컵을 쥐었을 때만(False = 빈손일 때만, carry 만)
+    object: str = ""             # reach · lift: episode objects 의 이름(컵 자세 FP++ 토픽)
 
 
 @dataclass(frozen=True)
@@ -230,8 +238,13 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
             except (ApproachGraspError, TypeError, ValueError) as exc:
                 raise EpisodeSpecError(f"policies.{role}: approach_grasp — {exc}") from exc
             ag = dict(ag)
+        handoff = b.get("handoff")
+        if (handoff is not None) != bool(ag and int(ag.get("handoff", 0))):
+            raise EpisodeSpecError(f"policies.{role}: handoff(넘겨받을 정책 id)와 approach_grasp {{handoff: 1}} 은 같이 쓴다")
+        if handoff is not None and not (isinstance(handoff, str) and handoff.strip()):
+            raise EpisodeSpecError(f"policies.{role}: handoff 는 등록부 정책 id 문자열")
         pols[str(role)] = Binding(role=str(role), kind=str(b["kind"]), side=str(b["side"]), policy=b.get("policy"),
-                                  approach_grasp=ag)
+                                  approach_grasp=ag, handoff=handoff)
     trajs = {}
     for name, t in (raw.get("trajectories") or {}).items():
         if t.get("kind") not in TRAJ_KINDS:
@@ -253,11 +266,21 @@ def _trajectory(name: str, t: Mapping) -> Trajectory:
     if not isinstance(cups, bool):
         raise EpisodeSpecError(f"trajectories.{name}: cups 는 true/false")
     tr = Trajectory(name=name, kind=str(t["kind"]), sides=tuple(t.get("sides") or ("right", "left")),
-                    asset=str(t.get("asset") or ""), rate_scale=float(t.get("rate_scale", 1.0)), cups=cups)
+                    asset=str(t.get("asset") or ""), rate_scale=float(t.get("rate_scale", 1.0)), cups=cups,
+                    object=str(t.get("object") or ""))
+    if tr.object and tr.kind not in ONE_ARM_TRAJ:
+        raise EpisodeSpecError(f"trajectories.{name}: object 는 {ONE_ARM_TRAJ} 에만")
     if tr.kind not in PLANNED_TRAJ:
         if tr.asset or "cups" in t:
             raise EpisodeSpecError(f"trajectories.{name}: asset · cups 는 {PLANNED_TRAJ} 에만")
         return tr
+    if tr.kind in ONE_ARM_TRAJ:
+        if tuple(tr.sides) not in (("right",), ("left",)):
+            raise EpisodeSpecError(f"trajectories.{name}: {tr.kind} 는 한 팔 — sides: [right] · [left]")
+        if "cups" not in t or tr.cups != (tr.kind == "lift"):
+            raise EpisodeSpecError(f"trajectories.{name}: reach 는 빈손(cups: false) · lift 는 쥔 손(cups: true) — 적어 둘 것")
+        if tr.kind == "reach" and not tr.object:
+            raise EpisodeSpecError(f"trajectories.{name}: reach 는 object(쥘 episode 물체)가 있어야 한다")
     if tr.kind == "tilt" and (tuple(tr.sides) != ("right", "left") or not tr.cups):
         raise EpisodeSpecError(f"trajectories.{name}: tilt 는 두 팔 한 번에, 두 손이 컵을 쥔 채 — sides: [right, left] · cups: true")
     if tr.kind == "carry" and tuple(tr.sides) not in (("right",), ("left",), ("right", "left")):
@@ -331,6 +354,8 @@ def validate(ep: Episode) -> None:
                 errs.append(f"{n.id}: policy_object {j.policy_object!r} 는 {OBJECT_KINDS} 정책 단계에만(물체 one-hot 이름)")
         if n.type == "trajectory" and n.name not in ep.trajectories:
             errs.append(f"{n.id}: trajectory {n.name!r} 가 trajectories 에 없다")
+        elif n.type == "trajectory" and ep.trajectories[n.name].object and ep.trajectories[n.name].object not in ep.objects:
+            errs.append(f"{n.id}: trajectory {n.name!r} 의 object {ep.trajectories[n.name].object!r} 가 objects 에 없다")
         if n.type in ("confirm", "terminal") and (n.expect or n.checkpoint):
             errs.append(f"{n.id}: {n.type} 는 expect · checkpoint 를 받지 않는다")
         if n.type == "hand" and n.action == "open" and any(k in n.expect for k in HAND_KEYS):
@@ -338,8 +363,16 @@ def validate(ep: Episode) -> None:
         if n.type == "hand" and n.action == "grasp":
             i = ep.nodes.index(n)
             # 사용자 "확인 두 번(컵 대기 전, 닫기 전)" — 바로 앞 두 노드가 confirm 이어야 한다(YAML 편집 실수로 빠지지 않게)
-            if i < 2 or any(ep.nodes[k].type != "confirm" for k in (i - 2, i - 1)):
-                errs.append(f"{n.id}: hand grasp 바로 앞에 confirm 두 개(컵 대기 전 · 닫기 전)가 있어야 한다")
+            # ★10.19 1-B: 로봇이 reach 로 컵에 다가간 경우(사람이 컵을 대지 않는다)는 사용자 결정 "승인 = 닫기 전만" —
+            #   바로 앞이 confirm 하나이고 그 앞이 같은 팔 reach 궤적이어야 한다.
+            prev2 = ep.nodes[i - 2] if i >= 2 else None
+            reached = (prev2 is not None and prev2.type == "trajectory" and prev2.name in ep.trajectories
+                       and ep.trajectories[prev2.name].kind == "reach" and tuple(ep.trajectories[prev2.name].sides) == tuple(n.sides))
+            if i < 1 or ep.nodes[i - 1].type != "confirm":
+                errs.append(f"{n.id}: hand grasp 바로 앞에 confirm(닫기 전)이 있어야 한다")
+            elif not reached and (prev2 is None or prev2.type != "confirm"):
+                errs.append(f"{n.id}: hand grasp 바로 앞에 confirm 두 개(컵 대기 전 · 닫기 전)가 있어야 한다"
+                            f"(같은 팔 reach 바로 뒤면 닫기 전 하나)")
             # 재시도 · 되돌아가기는 확인 없이 다시 닫거나 사람이 컵을 든 채 팔을 옮긴다(리뷰) — 실패면 언제나 정지
             if ep.max_retry(n) != 0:
                 errs.append(f"{n.id}: hand grasp 는 재시도 상한 0 이어야 한다(failure_policy default 0) — 실패면 정지")
@@ -368,20 +401,33 @@ def availability(ep: Episode, entries: Mapping[str, object]) -> dict[str, str]:
     out = {}
     for role in sorted(used):
         b = ep.policies[role]
-        e = entries.get(b.policy) if b.policy else None
-        if b.policy is None:
-            out[role] = "정책이 아직 없다(policy 칸 비움)"
-        elif e is None:
-            out[role] = f"등록부에 {b.policy} 가 없다"
-        elif not getattr(e, "contract", ""):
-            out[role] = f"{b.policy}: 계약이 없다"
-        elif getattr(e, "status", "") == "hold":
-            out[role] = f"{b.policy}: status hold"
-        elif getattr(e, "issues", ()):
-            out[role] = f"{b.policy}: " + " / ".join(e.issues)
-        else:
-            out[role] = _object_problem(ep, role, e)
+        out[role] = ""
+        for pid in (b.policy, *((b.handoff,) if b.handoff else ())):   # ★10.20 경로 D 는 넘겨받는 정책도 써야 한다
+            e = entries.get(pid) if pid else None
+            if pid is None:
+                out[role] = "정책이 아직 없다(policy 칸 비움)"
+            elif e is None:
+                out[role] = f"등록부에 {pid} 가 없다"
+            elif not getattr(e, "contract", ""):
+                out[role] = f"{pid}: 계약이 없다"
+            elif getattr(e, "status", "") == "hold":
+                out[role] = f"{pid}: status hold"
+            elif getattr(e, "issues", ()):
+                out[role] = f"{pid}: " + " / ".join(e.issues)
+            else:
+                out[role] = _object_problem(ep, role, e)
+            if out[role]:
+                break
     return out
+
+
+def hand_contract_file(hand_contract: str, policies_root: Path) -> Path:
+    """hand grasp 손 계약 파일. ★10.20 1-B 는 정책과 떼어 고정 파일(config/hand/rh56f1_<팔>_hand.json — 옛 접근 정책 rg3wc 계약
+    그대로, 정책을 지워도 손 닫기가 안 바뀐다)을 쓴다: 값이 .json 이면 저장소(policies_root 의 두 단계 위) 기준 파일,
+    아니면 등록 정책 id(<policies_root>/<id>/rh_aglt_contract.json). 순수."""
+    if str(hand_contract).endswith(".json"):
+        return Path(policies_root).resolve().parents[1] / hand_contract
+    return Path(policies_root) / hand_contract / "rh_aglt_contract.json"
 
 
 def hand_problems(ep: Episode, policies_root: Path) -> dict[str, str]:
@@ -390,7 +436,7 @@ def hand_problems(ep: Episode, policies_root: Path) -> dict[str, str]:
     for n in ep.nodes:
         if n.type != "hand" or n.action != "grasp":
             continue
-        p = Path(policies_root) / n.hand_contract / "rh_aglt_contract.json"
+        p = hand_contract_file(n.hand_contract, policies_root)
         if not p.is_file():
             out[n.id] = f"{p} 가 없다"
             continue

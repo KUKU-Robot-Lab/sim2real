@@ -32,7 +32,7 @@ ROOT = SIM2REAL / "logs" / "eval_real"
 #: D4 rh_ref_s2h4 ep5000 params/env.yaml(hdgp pour_fabric_mimic 성공 판정) — 결정 4 의 숫자
 D4_SUCCESS = {"success_fill_ratio": 1.0, "success_spill_max": 0.25, "success_xy_thresh": 0.20, "success_hold_steps": 20}
 N_BEADS = 10                                   # 결정 11
-PATHS = ("A", "B", "C")
+PATHS = ("A", "B", "C", "D")   # ★10.20 A 폐지(옛 기록 읽기용으로 남김) → D(ap05 → rcg03 넘김)가 대체
 GRASP_RESULTS = ("ok", "approach_miss", "pushed", "dropped_in_lift", "released_in_hold", "not_closed", "other")
 GRASP_FAILS = GRASP_RESULTS[1:]
 

@@ -1,0 +1,12 @@
+# ★10.20 배포가 고정 커밋에서 읽는 hdgp 코드(policy_control/hdgp_pin.py HdgpView · snapshot).
+# 공유 작업 트리를 다른 세션이 고쳐도(커밋 전이라도) 실기 계획은 이 커밋 사본(~/.cache/s2r_hdgp/<커밋>)을 읽는다.
+# 여기 없는 경로(URDF · 메쉬 · tilt 스크립트)는 작업 트리 + md5 핀(config/tilt/base_arc6/policy.yaml · config/ready_approach/rh56f1.yaml).
+# md5 핀은 사본에도 그대로 건다 — commit 을 올리면 md5 핀도 같이 고친다.
+# 올리는 법: 옛 · 새 커밋으로 같은 컵 자리를 계획해 arm_target 이 같은지(또는 차이를 보고 받아들일지) 본다
+#   HDGP_SNAPSHOT_COMMIT=<새 커밋> .venv/bin/python deploy/policy_control/tools/plan_reach.py ... 로 새 커밋만 따로 돌릴 수 있다.
+# 10.20: 225abc056(aglt_new 방위 재시도 한 배치) — 8e122d36 판과 같은 컵 11 자리 arm_target 차이 0.0 rad.
+commit: 225abc0567e45d8950a9c53f938cf77efd9fab87
+paths:
+  - source/openarm/openarm/agnostic/modules/ready_carry
+  - source/openarm/openarm/agnostic/tasks/rh_aglt_r/ready_approach.py
+  - source/openarm/openarm/agnostic/tasks/rh_aglt_l/ready_approach.py

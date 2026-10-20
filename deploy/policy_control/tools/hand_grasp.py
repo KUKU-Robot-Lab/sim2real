@@ -10,7 +10,7 @@
           세트포인트 없음) · 4 = 측정 없음 · 5 = 정지 신호(SIGTERM) · 1 = 그 밖. ★실기 동작이다 — 사용자 승인 후에만 --execute(에피소드 실행기는 confirm 노드 뒤에 부른다).
 
     python3 deploy/policy_control/tools/hand_grasp.py --side right \\
-        --contract deploy/policies/rh56f1/aglt/right_approach_rg3wc/rh_aglt_contract.json --out logs/x --execute
+        --contract config/hand/rh56f1_right_hand.json --out logs/x --execute
 """
 from __future__ import annotations
 

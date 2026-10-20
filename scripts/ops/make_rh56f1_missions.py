@@ -65,11 +65,22 @@ PLACE_HOLDER = {"right": 1, "left": 1}
 #: fake 홀더 y — hdgp rh_place env holder_ys(0.153, −0.002, −0.161)
 FAKE_HOLDER_Y = {0: 0.153, 1: -0.002, 2: -0.161}
 #: 상황판에서 굴리는 에피소드(10.04 사용자: 구분 실행 → 연속 실행) — config/episodes/<이름>.yaml, 실기에 쓸 수 있는 것만
-EPISODES = ("pick_place_right", "pick_place_left", "grasp_rg3_right", "grasp_rg3_left", "grasp_c_right", "grasp_c_left",
-            # ★10.17 tilt 기본 궤적 — 경로 A(파지 정책) · B(수동 파지, 확인 두 번) · C(접근 정책 + 스크립트 파지)
-            "tilt_base_a", "tilt_base_b", "tilt_base_c")
+# ★10.20 사용자 "경로 a는 폐지, -> 경로d가 대체함": grasp_rg3_<팔> · tilt_base_a 를 빼고 grasp_d_<팔> · tilt_base_d
+EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_left",
+            # ★10.17 tilt 기본 궤적 — B(수동 파지, 확인 두 번) · C(ap05 + 스크립트 파지) · ★10.20 D(ap05 → rcg03 넘김, 옛 A 대체)
+            "tilt_base_b", "tilt_base_c", "tilt_base_d",
+            # ★10.19 1-B — 정책 없이 제어 모듈만(ready_carry 접근 → [확인] 닫기 → 10 cm 들기 · 3 s), 팔마다 따로
+            "grasp_b_right", "grasp_b_left",
+            # ★10.20 경로 D — 접근 ap05 → 사전 파지 자리에서 같은 노드가 rcg03 으로 넘겨 쥐고 들기(사용자 "ap_05 … 다음에 rcg_03")
+            "grasp_d_right", "grasp_d_left")
+#: ★10.20 사용자 "영상은 필요 없음. 일단 기본 off" — 카메라 영상 · FP++ 실시간 좌표 기록(vision-3090)과 끝난 뒤 보고서 영상
+#   만들기(episode_media.py)를 기본으로 끈다. 10.20 실기: 보고서 영상 정리가 옛 회까지 다시 가져오며 6 분 넘게 팔 작업을 붙잡아
+#   rehome · tilt_now 승인이 막혔다. 켜려면 True 로 바꾸고 이 생성기를 다시 돌린다(미션 YAML 이 바뀐다).
+VISION_RECORD = False
+#: ★10.19 사용자 "작성할 보고서 사진/영상도 필요함" — VISION_RECORD 일 때 이 에피소드들은 카메라 영상을 보고서용 빈도로 남긴다(기본 5 Hz)
+REPORT_VIDEO_HZ = {"grasp_b_right": 15.0, "grasp_b_left": 15.0}
 #: 에피소드 snapshot 이 다시 내는 정지 물체 자세(episode_ros.OBJECT_RELAY) — aglt 는 이것을 컵으로 본다
-EPISODE_RELAY = "/episode/objects/{}/pose"
+EPISODE_RELAY = "/episode/objects/{}/pose"        # ★10.19 한 팔 실행기는 episode_ros.relay_topic(실행기 이름 아래)
 # 제자리 들기(grasp_rg3) 정책 노드의 lift_hold 멈춤 = 컵 7 cm 위 + 쥠 연속 틱(60 Hz).
 # ★10.14 사용자(1안): 오른손은 7 cm 에서 0.5 s 만에 멈추면 정책이 sim 목표(10 cm, 2 s 유지)까지 못 가 약지 · 새끼가 감기기
 #   전에 끝난다(실기 190421 · 190758 엄지-검지만 쥠) — 목표 성공에 끝나게 늦춘다. sim hp3 ep1450 trace 32 에피소드: 7 cm →
@@ -88,6 +99,10 @@ AGLT_LIVE_ARGS = ("-p", "cup_static:=false", "-p", "cup_latch:=false", "-p", "cu
                   #   sim(vision-3090 rg3s ep4700): 실기 같은 튐을 넣으면 진짜 성공 0.25, 거르면 0.83(튐 없을 때 0.89 · 거르기만 0.89).
                   "-p", "fpp_gate_jump_m:=0.02", "-p", "fpp_gate_dz_m:=0.02", "-p", "fpp_gate_radius_m:=0.2",
                   "-p", "fpp_gate_max_hold_s:=2.5",
+                  # ★10.19 사용자 승인(cup_dropout.py): live 컵이 끊기면 — 잡기 전 1 s(손바닥 20 cm 안은 학습 가림 DR 상한 2.5 s)
+                  #   넘으면 멈춤 · 쥔 상태면 손바닥 FK 로 따라감 · 쥠이 풀린 뒤 0.5 s 면 멈춤. 실기 19:09 오른손: 떨어진 컵의 마지막
+                  #   값(공중)을 쫓다 팔이 비틀렸다(j2 +2.2 rad). 오늘 실기 잡기 전 최장 끊김 0.18 s.
+                  "-p", "cup_dropout_stop_s:=1.0", "-p", "cup_dropout_near_m:=0.2", "-p", "cup_dropout_near_max_s:=2.5",
                   # ★10.13 사용자 "a, b 둘 다 — 제어가 정책을 충실히 따라가게"(rh_aglt.GripAssist). bag 164845 · 165303 재생:
                   #   A 쥔 뒤 막힘 고정 풀기 — 오른손 검지 목표 0.52 → 0.72 rad · 왼손 0.66 → 1.08(정책 목표)
                   #   B 엄지 받침(엄지 굽힘 힘 > 80 g) + 들림(> 7 cm · 손바닥 8 cm 안) — 왼손 쥔 판정 0 틱 → 2.93 s, lift_hold 멈춤 4.59 s
@@ -303,6 +318,19 @@ def _stages(kind: str) -> list[dict]:
                    "artifacts": ["contract", f"robot_{s}"],
                    "title": f"[{s}] 정책 시작 자세(홈)로 되돌아오기 — 손 먼저 펴기 → 실측에서 경로 계획(직선이 막히면 RRT) → 재생 → 정착. "
                             "정책이 멈춘 자리에서 다시 정책 · return · 에피소드로(10.04 사용자: DG-5F 처럼 rehome)"})
+    # ★10.19 사용자: "tilt_now 는 틸트 초기 자세(세팅 자세)로 가라고 하는 것(rehome 처럼)" — 상황판 control 탭 버튼(actions.py).
+    #   한 팔씩(오른팔 → 왼팔) 계획 · 검사 → 재생. 손은 건드리지 않는다. pd 가 IDLE 이면 그 자리에서 engage(rehome 과 같다).
+    st.append({"id": "tilt_now", "group": "policy", "lane": "both", "skippable": True, "touches_real": real,
+               "needs": ["pd_arm_right", "pd_arm_left"],
+               "needs_why": "pd 가 떠 있어야 경로를 재생한다(IDLE 이면 지금 자리에서 engage)",
+               "title": "tilt 시작 자세(세팅 자세)로 — 두 팔 한 팔씩(오른팔 → 왼팔): 실측에서 계획 · 검사(걸리면 그 팔부터 움직이지 "
+                        "않음) → 재생. 손은 그대로(rehome 처럼)"})
+    # ★10.19 사용자: "내가 미리 세팅 자세를 만들어 둘 테니 그 상태에서 바로 틸팅" — 컵을 쥔 채라 engage 하지 않는다(TRACKING 이어야).
+    st.append({"id": "tilt_pour", "group": "policy", "lane": "both", "skippable": True, "touches_real": real,
+               "needs": ["pd_arm_right", "pd_arm_left"],
+               "needs_why": "두 팔 pd 가 지금 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다",
+               "title": "tilt 붓기 — 지금 두 팔 자세(세팅 자세, 컵을 쥔 채)에서 바로: 실측 → D4 기본 궤적 계획 · 검사(걸리면 움직이지 "
+                        "않음) → 두 팔 재생 → 시작 자세 복귀"})
     for name in EPISODES:
         ep = _episode(name)
         sides = sorted(_episode_sides(ep))
@@ -509,11 +537,11 @@ def _run(kind: str) -> dict:
                   "-r", f"__node:=rh_aglt_node_{s}", "-p", f"ns:={s}",
                   "-p", f"contract:={{artifact:aglt_{s}}}", "-p", f"robot:={{artifact:robot_{s}}}", "-p", "device:=cpu",
                   "-p", f"cup_topic:={_live(cup_t)}",
-                  "-p", f"object:={_policy_object(s)}",   # 10.18 기본 rg3wo = 다물체 — 물체를 모르면 reset 이 거부한다
+                  "-p", f"object:={_policy_object(s)}",   # 다물체 정책 — 물체를 모르면 reset 이 거부한다
                   *AGLT_LIVE_ARGS,                       # 10.12 A안 — 쥘 때까지 live(끊기면 마지막 값), 쥔 뒤 프레임 시각 FK
                   "-p", f"max_episode_s:={{policy:aglt_{s}.max_episode_s}}"],
                  background=True),
-            _cmd(f"[{s}] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + 계약 goal_offset(rg3wo 0.10 m)",
+            _cmd(f"[{s}] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + 계약 goal_offset",
                  ["python3", f"{PC}/tools/trigger.py", "episode/reset", "--episode-ns", s], execute_args=["--execute"]),
             _cmd(f"★[{s}] episode start — 팔이 시작 자세 0.15 rad 안 · 컵이 서 있어야 받는다",
                  ["python3", f"{PC}/tools/trigger.py", "episode/start", "--episode-ns", s], execute_args=["--execute"]),
@@ -621,6 +649,24 @@ def _run(kind: str) -> dict:
                      ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_release"], execute_args=["--execute"]),
                 _cmd(f"[{s}] 이 팔의 pd 정지 — IDLE 이라 토크는 JTC 가 잡는다", stop=[f"pd_arm_{s}#1"])],
         })
+    run["tilt_now"] = [
+        _cmd("★두 팔 주변과 경로(테이블 앞 · 몸통 앞 · 두 팔 사이)가 비었는가. 오른팔 → 왼팔 순서로 tilt 시작 자세(세팅 자세)로 간다 "
+             "— 손은 그대로" if real else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
+        *(_cmd(f"[{s}] pd 가 IDLE 이면 지금 자리에서 engage — 이미 붙들고 있으면(TRACKING) 건너뜀",
+               ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_engage", "--skip-engaged", "--hold-s", "2"],
+               execute_args=["--execute", "--approve", "pd_engage"]) for s in ("right", "left")),
+        _cmd("tilt 시작 자세로 — 팔마다 계획 · 검사(plan_carry, 걸리면 그 팔부터 움직이지 않음) → 재생(replay_to_pd) · "
+             "기록 logs/tilt/<시각>_setting",
+             ["python3", f"{PC}/tools/tilt_now.py"], execute_args=["--execute"]),
+    ]
+    run["tilt_pour"] = [
+        _cmd("★두 팔이 세팅 자세(붓기 시작 자세)에서 컵을 쥐고 있는가 — 오른손 병(입구 위) · 왼손 shaker · 두 팔 주변과 붓는 길"
+             "(테이블 위 · 몸통 앞)이 비었는가. 지금 자세에서 계획 · 검사하고 통과하면 재생한 뒤 시작 자세로 돌아온다" if real
+             else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
+        _cmd("tilt 붓기 — 지금 자세에서 계획 · 검사(plan_tilt, 걸리면 움직이지 않음) → 두 팔 재생(replay_to_pd) · 기록 logs/tilt/<시각>_pour"
+             + (" · bag tilt_pour" if real else ""),
+             ["python3", f"{PC}/tools/tilt_pour.py", *([] if real else ["--no-record"])], execute_args=["--execute"]),
+    ]
     for name in EPISODES:
         run[f"episode_{name}"] = _episode_run(name, real)
     # 에피소드 단계가 도중에 실패하면 CPU 기록기가 남는다 — shutdown 의 정지 목록에 더한다(10.08 리뷰)
@@ -674,11 +720,15 @@ def _episode_run(name: str, real: bool) -> list:
     perceives = _perceives(ep)
     if not real and perceives:
         for oname, obj in ep.objects.items():
-            side = next((ep.policies[j.role].side for n in ep.nodes for j in n.jobs if j.target_object == oname), "right")
+            side = next((ep.policies[j.role].side for n in ep.nodes for j in n.jobs if j.target_object == oname),
+                        # ★10.19 1-B(정책 없음) — 그 물체로 다가가는 궤적(reach)의 팔
+                        next((tr.sides[0] for tr in ep.trajectories.values() if tr.object == oname), "right"))
+            # ★10.20 1-B: 궤적으로 다가가 쥐는 물체는 fake 손 '손 안 컵'(/fake/hand_<팔>/cup)이 켜지면 손바닥을 따라간다 — 들기 판정 시험
+            follow = ["--follow-side", side] if any(tr.object == oname for tr in ep.trajectories.values()) else []
             for t in (obj["topic"], _live(obj["topic"])):           # live = aglt 정책 입력(10.12 A안)
                 cmds.append(_cmd(f"fake 물체 — {t}(aglt 학습 배치 x 0.25)",
                                  ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--x", "0.25",
-                                  "--y", "0.20" if side == "left" else "-0.20", "--z", "0.29", "--topic", t],
+                                  "--y", "0.20" if side == "left" else "-0.20", "--z", "0.29", "--topic", t, *follow],
                                  background=True))
         for hid in sorted(set(ep.holders.values())):
             cmds.append(_cmd(f"fake 홀더 {hid} — /objects/cup_holder_{hid}/pose (latched)",
@@ -687,8 +737,12 @@ def _episode_run(name: str, real: bool) -> list:
                              background=True))
     first_obj = next(iter(ep.objects))
     sides = sorted(_episode_sides(ep))
+    from policy_control.episode_ros import relay_topic
+    # ★10.19 사용자 "좌우 동시 실행": 한 팔 에피소드는 그 팔 이름의 실행기(episode_runner_<팔>) — 서비스 · 상태 · 승인 · snapshot
+    #   재발행이 팔마다 따로라 오른팔 · 왼팔 에피소드가 같이 돈다. 두 팔 에피소드(tilt 등)는 기본 실행기 하나.
+    runner = f"episode_runner_{sides[0]}" if len(sides) == 1 else "episode_runner"
     left = "|".join([*(f"(rh_aglt_node|rh_place_node)_{s}" for s in sorted({b.side for b in ep.policies.values()})),
-                     "episode_runner"])
+                     runner])
     cmds.append(_cmd("시작 검사 — 정책이 등록부에서 쓸 수 있고" + (f" 고정 홀더 자세({ep.holder_poses})에 쓰는 홀더가 다 있는가"
                      if real else "") + " (읽기만)",
                      ["python3", "{repo}/deploy/policy_control/tools/episode_run.py", "--episode", f"config/episodes/{name}.yaml",
@@ -735,12 +789,29 @@ def _episode_run(name: str, real: bool) -> list:
                             "경로 C: 접근 정책 → 정책 끄고 손 닫기(닿은 손가락은 실측에 고정 · 안 닿은 손가락 앞섬 "
                             f"{(ag or ApproachGraspCfg()).close_lead_rad:g} rad) → 판정 없이 10 cm 들기 → 3 s 유지, 들기 미달만 멈춤")
                 max_s = f"{episode_s(b.approach_grasp):.1f}"   # 최악 경로 + 3 s(실행기는 PolicyPlan.max_s + 10 s 를 기다린다)
+            if b.handoff:                               # ★10.20 경로 D(사용자 "ap_05로 가까이 가게한 다음에, rcg_03 행하면 잡을 것 같음")
+                from policy_control.approach_grasp import ApproachGraspCfg, episode_s
+                ag = ApproachGraspCfg.parse(ApproachGraspCfg.to_param(b.approach_grasp))
+                hold_ = LIFT_HOLD_TICKS[b.side]
+                end_args = [f"approach_grasp:={ApproachGraspCfg.to_param(b.approach_grasp)}",
+                            "-p", f"handoff_contract:={{repo}}/deploy/policies/{b.handoff}/rh_aglt_contract.json",
+                            "-p", "goal_max:=1", "-p", "freeze_rule:=lift_hold", "-p", "freeze_lift_m:=0.07",
+                            "-p", f"freeze_hold_steps:={hold_}"]
+                end_note = (f"경로 D: 접근 정책 → 사전 파지 자리(2 cm)에 {ag.still_s:g} s 멈추면 같은 노드에서 {b.handoff} 로 넘김 → "
+                            f"첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 {hold_ / 60:g} s 쥠 유지에 끝남 · 접근 {ag.approach_max_s:g} s 안에 못 오면 멈춤")
+                max_s = f"{episode_s(b.approach_grasp):.1f}"   # 접근 최악 + 넘겨받은 정책 15 s + 3 s(실행기 _node_max_s 와 같은 식)
+            # ★10.19 사용자: "sim 은 세게 쥐면 물리가 터져 적당히 쥐게 학습했다 — 실기는 제어로 더 세게"(rh_aglt.GripAssist D).
+            #   정책이 쥐는 에피소드(제자리 들기 · 경로 D)만. 경로 C 는 닫기가 스크립트라 끈다.
+            squeeze = lift_only and (b.approach_grasp is None or bool(b.handoff))
+            if squeeze:
+                end_note += " · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)"
             cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — {end_note} · 컵 = FP++ live"
                              " · 쥐면 손바닥 FK 로 손에 붙임",
                              ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_aglt_node.py", "--ros-args",
                               "-r", f"__node:=rh_aglt_node_{b.side}", "-p", f"ns:={b.side}", "-p", f"contract:={contract}",
                               "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", *end_args,
                               "-p", f"cup_topic:={_live(ep.objects[obj]['topic'])}", *AGLT_LIVE_ARGS,
+                              *(["-p", "hand_squeeze:=true"] if squeeze else []),
                               "-p", f"max_episode_s:={max_s}"], background=True))
         elif b.kind == "place":
             src = next((j for n in ep.nodes for j in n.jobs if j.role == role), None)
@@ -756,20 +827,25 @@ def _episode_run(name: str, real: bool) -> list:
     if real:                                         # 첫 실기는 놓음 문턱(손끝 · 관절 힘 · 손 목표)을 bag 으로 정한다(PLACE 10.04)
         extra = [f"/policy_control/{x}" for x in ("joint_target", *(f"status/pd_{s}" for s in sides),
                                                    *(f"status/rh_aglt_node_{s}" for s in sides),
-                                                   *(f"status/rh_place_node_{s}" for s in sides), "status/episode_runner",
+                                                   *(f"status/rh_place_node_{s}" for s in sides), f"status/{runner}",
                                                    *(f"{s}/episode" for s in sides))]
-        extra += [EPISODE_RELAY.format(o) for o in ep.objects] + [o["topic"] for o in ep.objects.values()]
+        extra += [relay_topic(runner, o) for o in ep.objects] + [o["topic"] for o in ep.objects.values()]
         extra += [_live(o["topic"]) for o in ep.objects.values()]          # 10.12 A안 — aglt 가 받은 live 컵
         extra += [f"/objects/cup_holder_{h}/pose" for h in sorted(set(ep.holders.values()))]
         extra += [f"/policy_control/pd_{s}/applied" for s in sides]       # 10.08 팔 지연 도구(arm_latency_report)가 쓴다
         # ★10.12 실기: 관측 · 행동이 bag 에 없어 실패 원인(어느 입력이 정책을 sim 과 갈랐나)을 역산 · 재구성으로만 쟀다
         extra += [f"/policy_control/{s}/{x}" for s in sides for x in ("obs", "action")]
+        hands = f"HAND_SIDES='{' '.join(sides)}' " if len(sides) == 1 else ""      # 한 팔 에피소드는 그 손만(다른 팔 기록과 겹치지 않게)
         cmds.append(_cmd("기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더",
-                         ["bash", "-lc", f"EXTRA='{' '.join(extra)}' bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh "
+                         ["bash", "-lc", f"{hands}EXTRA='{' '.join(extra)}' bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh "
                                          f"start episode_{name}"]))
         cmds.append(_cpu_record(f"episode_{name}"))
-    cmds.append(_cmd(f"에피소드 실행기 — {name} · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:{name})",
+        if VISION_RECORD and name in REPORT_VIDEO_HZ:   # ★10.19 보고서 사진 · 영상 — 카메라 PC 에서 따로(tools/episode_media.py 가 묶는다)
+            cmds.append(_vision_record(f"episode_{name}", [real_object(o["topic"]) for o in ep.objects.values()],
+                                       REPORT_VIDEO_HZ[name]))
+    cmds.append(_cmd(f"에피소드 실행기 {runner} — {name} · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:{name})",
                      ["{repo}/.venv/bin/python", f"{PC}/policy_control/episode_runner_node.py", "--ros-args",
+                      *(["-r", f"__node:={runner}"] if runner != "episode_runner" else []),
                       "-p", f"episode:=config/episodes/{name}.yaml", "-p", "robot:=rh56f1"], background=True))
     cmds.append(_cmd("★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 "
                      "(이상하면 '에피소드 실행기 정지' · 정지 바)", ["bash", "-lc", "true"], manual=True))
@@ -778,11 +854,22 @@ def _episode_run(name: str, real: bool) -> list:
     if real:
         cmds.append(_cmd("기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)",
                          ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop", f"episode_{name}"]))
+        if VISION_RECORD and name in REPORT_VIDEO_HZ:   # ★10.19 보고서 사진 · 영상 — 이 단계에서 돈 회마다(아직 안 만든 것)
+            cmds.append(_cmd(f"보고서 영상 · 장면 사진 — 카메라 영상({PERCEPTION_HOST}) + 노드 시각 → logs/report_media/<회>"
+                             "(video.mp4 · 시작 · 다가간 뒤 · 쥔 뒤 · 들어 올린 뒤 · sheet.jpg)",
+                             ["python3", f"{PC}/tools/episode_media.py", "--pending", name,
+                              "--host", PERCEPTION_HOST if REMOTE_PERCEPTION else "local"]))
     return cmds
 
 
 #: 단독 aglt 단계에서 정책 노드 명령 번호 — 실기는 앞에 기록 시작(bag) · CPU 기록이 붙는다
-AGLT_NODE_IDX = {True: 4, False: 1}     # 실기: 0 확인 · 1 bag · 2 CPU · 3 영상 · 4 정책 노드
+AGLT_NODE_IDX = {True: 4 if VISION_RECORD else 3, False: 1}     # 실기: 0 확인 · 1 bag · 2 CPU · (3 영상) · 정책 노드
+
+
+def real_object(topic: str) -> str:
+    """/objects/<실물>/pose → 실물 이름."""
+    from policy_control.episode_ros import real_object_name
+    return real_object_name(topic)
 
 
 def _cpu_record(name: str) -> dict:
@@ -802,26 +889,28 @@ def _record_start(name: str, sides: list, topics: list, objs: list | None = None
                  ["bash", "-lc", f"EXTRA='{' '.join(extra)}' HAND_SIDES='{' '.join(sides)}' "
                                  f"bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh start {name}"]),
             _cpu_record(name),
-            # ★10.09 사용자: 카메라 영상 5 Hz · FP++ 실시간 좌표(정책 입력 아님) — localhost DDS 라 따로 띄운다
-            _vision_record(name, objs or [])]
+            # ★10.09 사용자: 카메라 영상 5 Hz · FP++ 실시간 좌표(정책 입력 아님) — localhost DDS 라 따로 띄운다(10.20 기본 끔)
+            *([_vision_record(name, objs or [])] if VISION_RECORD else [])]
 
 
-def _vision_record(name: str, objs: list) -> dict:
+def _vision_record(name: str, objs: list, hz: float = 5.0) -> dict:
     """영상 · FP++ 실시간 좌표 기록 — 카메라가 있는 PC 의 localhost DDS 에서 돈다(10.09 사용자)."""
+    rate = [] if hz == 5.0 else ["--hz", f"{hz:g}"]
     if not REMOTE_PERCEPTION:
-        return _cmd("영상 · FP++ 실시간 좌표 기록(5 Hz JPEG · live_pose CSV) → logs/vision_runs",
+        return _cmd(f"영상 · FP++ 실시간 좌표 기록({hz:g} Hz JPEG · live_pose CSV) → logs/vision_runs",
                     ["env", "ROS_LOCALHOST_ONLY=1", "python3", "{repo}/scripts/nodes/vision_recorder.py", "--name", name,
-                     "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS, "--objects", *objs], background=True)
+                     "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS, *rate, "--objects", *objs], background=True)
     # 원격: ssh -tt 를 콘솔이 끝내면 저쪽 셸이 HUP 를 받는다 → 기록기에 TERM(마무리 · CSV 닫기) 뒤 기다린다.
     # 기록은 저 PC 의 sim2real/logs/vision_runs 에 남는다(로그는 /tmp/perception/vrec_<이름>.log).
-    rec = (f"{REMOTE_PY} scripts/nodes/vision_recorder.py --name {name} --camera-extrinsics {CAMERA_EXTRINSICS} --objects {' '.join(objs)} "
-           f"> /tmp/perception/vrec_{name}.log 2>&1 & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P")
-    return _cmd(f"영상 · FP++ 실시간 좌표 기록({PERCEPTION_HOST}, 5 Hz JPEG · live_pose CSV) → 저 PC 의 logs/vision_runs",
+    rec = (f"{REMOTE_PY} scripts/nodes/vision_recorder.py --name {name} --camera-extrinsics {CAMERA_EXTRINSICS} {' '.join(rate)} "
+           f"--objects {' '.join(objs)} > /tmp/perception/vrec_{name}.log 2>&1 & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P")
+    return _cmd(f"영상 · FP++ 실시간 좌표 기록({PERCEPTION_HOST}, {hz:g} Hz JPEG · live_pose CSV) → 저 PC 의 logs/vision_runs",
                 _on_perception_pc(rec), background=True)
 
 
 def _record_stop(stage: str, cpu_index: int, name: str) -> list[dict]:
-    return [_cmd("CPU · 영상 기록 끝(요약은 그 단계 로그)", stop=[f"{stage}#{cpu_index + 1}", f"{stage}#{cpu_index}"]),
+    return [_cmd("CPU · 영상 기록 끝(요약은 그 단계 로그)" if VISION_RECORD else "CPU 기록 끝(요약은 그 단계 로그)",
+                 stop=[*([f"{stage}#{cpu_index + 1}"] if VISION_RECORD else []), f"{stage}#{cpu_index}"]),
             _cmd(f"기록 끝 — {name} bag 두 개 마무리(SIGINT, 이 단계 기록만)",
                  ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop", name])]
 
@@ -895,8 +984,10 @@ def mission(kind: str) -> dict:
         # ★10.18 사용자: 옛 정책 폴더(i03 ~ src21c · g5362 · cyl60g · env17 · rg3s · rg3mft 등 24개) 삭제 → 기본 = rg3wo 좌우
         #   (10.17 grasping 파지 배포, 다물체 · 위치 제어). 노드에 그 팔 FP++ 물체의 정책 물체(object)를 넘긴다(_policy_object).
         #   옛 기본 이력은 git log 에 있다(10.09 right_src21c · left_g5362).
-        "aglt_right": "deploy/policies/rh56f1/aglt/right_rg3wo/rh_aglt_contract.json",
-        "aglt_left": "deploy/policies/rh56f1/aglt/left_rg3wo/rh_aglt_contract.json",
+        # ★10.20 사용자: 전달받은 정책만 남김(옛 9개 → deploy/policies_retired). 기본 = 접근 ap05 — 홈에서 출발하는 정책은 이것뿐이다.
+        #   rcg03(파지 · 들기, 10.20 rcg02 대체)는 사전 파지 자세에서 시작해야 해서 이 단계(홈 출발)에 고르지 않는다.
+        "aglt_right": "deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json",
+        "aglt_left": "deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json",
         # 한 팔 컵 홀더 놓기(10.04 PLACE 세션, aglt cyl60 인계) — 콘솔 자리는 아직 없다(팔마다 한 자리 = aglt)
         "place_right": "deploy/policies/rh56f1/place/right_i09/rh_place_contract.json",
         "place_left": "deploy/policies/rh56f1/place/left_i01/rh_place_contract.json",

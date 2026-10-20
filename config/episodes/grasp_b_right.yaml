@@ -1,0 +1,25 @@
+# 1-B 잡기(right) — 정책 없이 제어 모듈만(10.19 사용자 "1-B: READY CARRY 로 컵으로 접근 + 스크립트 파지/리프트,
+# 파지는 사용자 승인으로 · 왼손/오른손 독립 실행", "지금부터는 정책이 아니라 제어 모듈들로 모든 걸").
+# 사용자 결정(10.19): 쥐는 자리 = tilt 기준 자리(경로 B · tilt 가 쓰는 손 안 컵 자리) · 접근 = 앞에서 곧게 · 승인 = 닫기 전만.
+#   홈 → 컵 배치 기록(FP++) → 손 펴기 → reach(ready_carry 로 컵 뒤 10~12 cm → 편 손으로 손가락 방향 곧게, tools/plan_reach.py)
+#   → [확인] 닫아도 되는가 → 닫기 · 쥔 판정 · 3 s(경로 B 와 같은 tools/hand_grasp.py, 엄지 회전 1.57 그대로)
+#   → lift(손바닥 방향 고정 수직 10 cm · 3 s 유지, tools/plan_lift.py — 끝에 FP++ 로 컵이 7 cm 넘게 들렸는지) → 끝.
+# 계획 · 검사가 걸리면 그 단계에서 움직이지 않고 멈춘다(refused). 자동 복구 없음 — 못 쥐면 손은 그 자리, 복구는 운영자(rehome).
+# 물체는 tilt 와 같은 짝(오른손 = 붓는 병 source240b · 왼손 = 받는 shaker) — 손 안 컵 자리가 그 짝으로 정의돼 있다.
+episode: {name: grasp_b_right, version: 1}
+objects:
+  CUP: {topic: /objects/source240b_blue/pose}
+trajectories:
+  go_home: {kind: rehome, sides: [right]}
+  reach: {kind: reach, sides: [right], asset: tilt/base_arc6, cups: false, object: CUP}
+  lift: {kind: lift, sides: [right], asset: tilt/base_arc6, cups: true, object: CUP}
+failure_policy: {default: 0}
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  - {id: open_hand, type: hand, action: open, sides: [right]}
+  - {id: reach, type: trajectory, name: reach}
+  - {id: confirm_close, type: confirm, text: "오른손이 병(source240b · 파랑) 앞까지 들어왔다 — 컵이 손바닥과 엄지 사이에 있고 사람 손이 근처에 없는가. 확인하면 닫는다(닫은 뒤 10 cm 들기 · 3 s 유지는 자동)"}
+  - {id: grasp, type: hand, action: grasp, sides: [right], hand_contract: config/hand/rh56f1_right_hand.json, expect: {right_hand: CUP}}
+  - {id: lift, type: trajectory, name: lift}
+  - {id: done, type: terminal, result: SUCCESS}

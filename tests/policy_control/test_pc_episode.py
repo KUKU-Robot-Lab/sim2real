@@ -105,6 +105,8 @@ def test_step_mode_asks_for_every_node_and_ends_in_success():
     assert m.world.objects["CUP"]["at"] == "holder:CENTER_HOLDER"
     assert [c[0] for c in ex.calls] == ["trajectory", "snapshot", "policy", "policy", "trajectory"]
     assert "HOME_START" in m.checkpoints
+    # ★10.20 마지막 동작 노드의 [다음] 한 번으로 끝난다 — terminal 은 묻지 않고 바로 닫는다(남는 READY 없음)
+    assert states[-1] == SUCCESS and len(states) == len(asked) and m.next_action() is None
 
 
 def test_the_snapshot_pose_is_handed_to_the_grasp_policy():

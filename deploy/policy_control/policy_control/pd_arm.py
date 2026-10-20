@@ -27,7 +27,7 @@ from .pd_gains import GainsError, expected_hand_gains, load_and_check
 from .pd_gravity import make_gravity
 from .pd_law import (PdCommand, PdConfig, blend_engage, blend_fraction, blend_release, law_cfg_from_config,
                      limits_from_profile, settle_bias)
-from .pd_state import (EngageCheck, Phase, engage_refusals, hold_is_self_clearing, recv_ages_ms,
+from .pd_state import (EngageCheck, Phase, engage_refusals, hold_is_self_clearing, hold_is_watchdog_only, recv_ages_ms,
                        thermal_act_joints, thermal_init, thermal_levels, thermal_stale_joints, thermal_step,
                        thermal_unknown_joints)
 from .sources import RobotCfg, SourceSet, select_side
@@ -244,6 +244,14 @@ def _follows_live_target(unit) -> bool:
     return (time.monotonic() - float(target.t_recv)) <= float(unit.cfg.watchdog_sec)
 
 
+def _holdable(unit) -> bool:
+    """내부 붙들기를 줄 수 있는 phase — engage 된 팔, 또는 워치독(목표 끊김)만으로 얼린 HOLD(★10.20)."""
+    if unit.phase in _MOVING:
+        return True
+    fsm = getattr(getattr(unit.stage, "state", None), "fsm", None)
+    return fsm is not None and hold_is_watchdog_only(fsm)
+
+
 def _hold_with_hand(unit, hand) -> None:
     """지금 세트포인트를 내부 목표로 붙든다(이미 붙들었으면 그 자리) — 손만 바꾼다. 외부 목표는 버린다.
     ★10.09 실기: 정책이 시작 전에 실패하거나 pd 를 해제했다 다시 engage 한 팔은 hold 도 산 목표도 없었다."""
@@ -399,6 +407,10 @@ class ArmUnit:
         self.target = PdTarget(q=q.copy(), qd=qd.copy(), tau_ff=np.zeros(n), seq=int(seq), t_recv=now)
         if self.hand_joints and all(j in sample.names for j in self.hand_joints):
             self.hand_target = select_joints(sample, self.hand_joints)[0].copy()
+        elif self.hold is not None and self.hold.hand is not None:
+            # ★10.19 실기: 팔만 싣는 목표(rehome 재생)는 붙들던 손을 이어받는다. 전에는 정책의 마지막 손 목표(쥔 자세)가
+            # 남아 hand_release 로 편 손가락이 복귀 중 다시 굽었고, rehome 을 한 번 더 눌러야 펴졌다.
+            self.hand_target = self.hold.hand.copy()
         self.hold = None                                    # 외부 목표가 내부 유지를 대체한다
         return True
 
@@ -707,8 +719,8 @@ class ArmUnit:
         return bool(err.max() <= tol), float(err.max()), self.hand_joints[i]
 
     def hold_refusals(self) -> list[str]:
-        """팔을 지금 자리에 붙들 수 없는 이유 — engage 된 팔에서만(IDLE · HOLD 는 이미 움직이지 않는다)."""
-        if self.phase not in _MOVING:
+        """팔을 지금 자리에 붙들 수 없는 이유 — engage 된 팔 · 워치독 HOLD 에서만(IDLE · 다른 사유 HOLD 는 아니다)."""
+        if not _holdable(self):
             return [f"{self.side}: phase {self.phase.value} — engage 된 팔에서만"]
         return []
 
@@ -739,7 +751,7 @@ class ArmUnit:
         """
         if self.home_hand is None:
             return [f"{self.side}: 계약에 이 팔의 홈 손 자세가 없다"]
-        if self.phase not in _MOVING:
+        if not _holdable(self):
             return [f"{self.side}: phase {self.phase.value} — engage 된 팔에서만"]
         if _follows_live_target(self):
             return [f"{self.side}: 팔이 외부 목표를 따르는 중이다 — 에피소드 정지 뒤에"]

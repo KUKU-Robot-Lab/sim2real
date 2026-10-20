@@ -19,13 +19,14 @@ from typing import Mapping
 from . import _paths
 
 #: (경로, 에피소드, 이름, 언제) — 결정 5 의 순서
-PATHS = (("A", "tilt_base_a", "파지 정책(rg3wo)", "먼저 — 파지 확인(결정 1) 쪽당 4/5 이상이면"),
-         ("C", "tilt_base_c", "접근 정책 + 스크립트 파지", "A 가 쪽당 4/5 미만이면(결정 5)"),
-         ("B", "tilt_base_b", "수동 파지(확인 두 번)", "A · C 가 안 되면 — 사람이 컵을 손에 댄다"))
+#: ★10.20 사용자 "경로 a는 폐지, -> 경로d가 대체함" · "1-c : ap05+grasp"
+PATHS = (("D", "tilt_base_d", "접근 ap05 → 사전 파지 자리에서 rcg03 넘김", "먼저 — 파지 확인(결정 1) 쪽당 4/5 이상이면"),
+         ("C", "tilt_base_c", "접근 ap05 + 스크립트 파지", "D 가 쪽당 4/5 미만이면(결정 5)"),
+         ("B", "tilt_base_b", "수동 파지(확인 두 번)", "D · C 가 안 되면 — 사람이 컵을 손에 댄다"))
 CRITERION = ("성공 = tilt(복귀까지) 끝난 뒤 받는 컵(shaker)에 넣은 비드 10 개 전부 — D4 판정 success_fill_ratio 1.0(결정 4 · 11). "
              "sim 은 붓는 중 1/3 s 성립이면 성공, 실기는 끝에 센다(복귀 중 흘림도 실패)")
-GRASP_RULE = "파지 확인 = 쪽당 5 회, 7 cm 들고 정책이 멈춘 뒤 손이 3 s 유지되면 1 회 성공 · 4/5 이상이면 경로 A(결정 1 · 5)"
-RECORD_CMD = "python3 deploy/policy_control/tools/eval_record.py tilt --path A --in-rcv 10 --in-src 0 --spilled 0 --video <파일>"
+GRASP_RULE = "파지 확인 = 쪽당 5 회, 7 cm 들고 정책이 멈춘 뒤 손이 3 s 유지되면 1 회 성공 · 4/5 이상이면 경로 D(결정 1 · 5, 10.20 A → D)"
+RECORD_CMD = "python3 deploy/policy_control/tools/eval_record.py tilt --path D --in-rcv 10 --in-src 0 --spilled 0 --video <파일>"
 #: tilt check.json 검사 이름 → (보이는 이름, 단위 배율, 단위)
 TILT_LABEL = {"src_cup_table_clear_m": ("병 · 탁자 여유", 100.0, "cm"), "rcv_cup_table_clear_m": ("받는 컵 · 탁자 여유", 100.0, "cm"),
               "src_vmax_rad_s": ("병 팔 최대 속도", 1.0, "rad/s"), "rcv_vmax_rad_s": ("받는 팔 최대 속도", 1.0, "rad/s"),

@@ -349,6 +349,9 @@ class WorldSpec:
     #: 고정이라 볼 이유가 없었다). 실측 자세에서 손을 접을 때는 이것이 판정의 전부다(09.23 사용자:
     #: "손가락들이 서로 충돌이 일어나지 않게 모을 순 없는건가? 현재 joint state 기반해서").
     hand_self: bool = False
+    #: ★10.20 1-B 접근: 세계에 둘 물체 원기둥 — {"name": "cup", "center": (x, y, z), "radius": r, "half_height": h}.
+    #: 이름이 cup 으로 시작하면 세계 쪽(테이블과 같은 규칙)이다. 여유는 검사기가 쌍마다 정한다(plan_reach 의 ReachChecker).
+    objects: tuple = ()
 
 
 @dataclass
@@ -388,7 +391,7 @@ class World:
         return out
 
     def is_world(self, body: str) -> bool:
-        return body.startswith("table_") or body == "cup"
+        return body.startswith("table_") or body.startswith("cup")
 
 
 def build_world(spec: WorldSpec) -> World:
@@ -494,6 +497,12 @@ def build_world(spec: WorldSpec) -> World:
         cup_box = {"name": "cup", "lo": origin + lo, "hi": origin + hi}
         c, h = (cup_box["lo"] + cup_box["hi"]) / 2, (cup_box["hi"] - cup_box["lo"]) / 2
         world_geoms.append(f'<body name="cup" pos="{_fmt(c)}"><geom type="box" size="{_fmt(h)}"/></body>')
+
+    for o in spec.objects:
+        if not str(o["name"]).startswith("cup"):
+            raise ValueError(f"세계 물체 이름은 cup 으로 시작해야 한다(세계 쪽 판정): {o['name']!r}")
+        world_geoms.append(f'<body name="{o["name"]}" pos="{_fmt(np.asarray(o["center"], float))}">'
+                           f'<geom type="cylinder" size="{float(o["radius"]):.7g} {float(o["half_height"]):.7g}"/></body>')
 
     # 충돌 비트: 움직이는 쪽(group>0) contype 1 / conaffinity 3, 나머지 contype 2 / conaffinity 1
     #  -> 고정-고정 쌍은 아예 계산하지 않는다.

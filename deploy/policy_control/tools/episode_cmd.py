@@ -6,6 +6,7 @@
     python3 deploy/policy_control/tools/episode_cmd.py run --approve episode:pick_place_right --execute   # 연속 실행
     python3 deploy/policy_control/tools/episode_cmd.py stop --execute                  # 멈춤(승인 없음 — 로봇을 덜 움직인다)
     python3 deploy/policy_control/tools/episode_cmd.py reset --execute
+    ... --runner episode_runner_right                                             # ★10.19 팔마다 띄운 실행기(기본 episode_runner)
 
 규약(trigger.py 와 같다): `--execute` 없이는 아무것도 부르지 않는다 · ROS_DOMAIN_ID 0/unset 거부.
 next · run 은 `--approve` 가 실행기가 물을 이름(status 의 next_action · run 은 episode:<이름>)과 같아야 한다 — 다르면
@@ -16,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -51,13 +53,13 @@ def refusal(action: str, approve: str | None, status: dict) -> str | None:
     return None
 
 
-def read_status(timeout: float = 3.0) -> dict:
+def read_status(timeout: float = 3.0, runner: str = NAME) -> dict:
     import rclpy
     from std_msgs.msg import String
     rclpy.init()
     node = rclpy.create_node("episode_cmd_probe")
     got: dict = {}
-    node.create_subscription(String, f"{NS}/status/{NAME}", lambda m: got.update(json.loads(m.data)), 10)
+    node.create_subscription(String, f"{NS}/status/{runner}", lambda m: got.update(json.loads(m.data)), 10)
     try:
         t0 = time.monotonic()
         while not got and time.monotonic() - t0 < timeout:
@@ -68,15 +70,15 @@ def read_status(timeout: float = 3.0) -> dict:
         rclpy.try_shutdown()
 
 
-def call(action: str, timeout: float = 5.0) -> tuple[bool, list]:
+def call(action: str, timeout: float = 5.0, runner: str = NAME) -> tuple[bool, list]:
     import rclpy
     from std_srvs.srv import Trigger
     rclpy.init()
     node = rclpy.create_node("episode_cmd")
-    cli = node.create_client(Trigger, f"{NS}/{NAME}/{action}")
+    cli = node.create_client(Trigger, f"{NS}/{runner}/{action}")
     try:
         if not cli.wait_for_service(timeout_sec=3.0):
-            return False, [f"{NS}/{NAME}/{action}: 서비스 없음 — episode_runner_node 가 떠 있는가"]
+            return False, [f"{NS}/{runner}/{action}: 서비스 없음 — episode_runner_node 가 떠 있는가"]
         fut = cli.call_async(Trigger.Request())
         rclpy.spin_until_future_complete(node, fut, timeout_sec=timeout)
         if not fut.done():
@@ -94,6 +96,7 @@ def main(argv=None) -> int:
     ap.add_argument("action", choices=ACTIONS)
     ap.add_argument("--approve", default=None, help="next · run 의 승인 이름(status 의 next_action · episode:<이름>)")
     ap.add_argument("--operator", default=os.environ.get("USER", "operator"))
+    ap.add_argument("--runner", default=NAME, help="실행기 노드 이름(기본 episode_runner · 팔마다 episode_runner_<팔>)")
     ap.add_argument("--execute", action="store_true")
     ap.add_argument("--allow-domain-0", action="store_true")
     args = ap.parse_args(argv)
@@ -101,9 +104,12 @@ def main(argv=None) -> int:
     if why:
         print(f"[episode] {why}")
         return 1
-    status = read_status()
+    if not re.fullmatch(r"episode_runner(_[a-z]+)?", args.runner):
+        print(f"[episode] --runner {args.runner!r} — episode_runner 또는 episode_runner_<팔>")
+        return 1
+    status = read_status(runner=args.runner)
     if not status:
-        print("[episode] episode_runner 상태가 안 온다 — 노드가 떠 있는가")
+        print(f"[episode] {args.runner} 상태가 안 온다 — 노드가 떠 있는가")
         return 1
     print(f"[episode] {status.get('episode')} · {status.get('phase')} · 노드 {status.get('node')} · "
           f"다음 승인 {status.get('next_action')} · busy {status.get('busy')}")
@@ -118,8 +124,8 @@ def main(argv=None) -> int:
         print(f"[episode] 계획만 — {args.action}" + (f" (승인 {args.approve})" if args.approve else "") + " · --execute 로 실행")
         return 0
     if args.approve:
-        write_approval(args.approve, args.operator, APPROVALS)
-    ok, reasons = call(args.action)
+        write_approval(args.approve, args.operator, APPROVALS, runner=args.runner)
+    ok, reasons = call(args.action, runner=args.runner)
     print(f"[episode] {args.action}: {'받음' if ok else '거부'} {reasons}")
     return 0 if ok else 1
 

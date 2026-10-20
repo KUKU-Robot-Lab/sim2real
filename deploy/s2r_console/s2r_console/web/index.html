@@ -40,6 +40,11 @@
     <section id="tab-control" role="tabpanel" hidden><div id="control-actions" class="action-grid"></div><div id="head-settings"></div><div id="management-control" role="status"></div></section>
     <section id="tab-policy" role="tabpanel" hidden>
       <!-- 10.17 사용자 "policy 부분에 내가 말한 부분들이 시각화 잘되게": tilt 평가(경로 A · C · B) · 지금 에피소드(확인 대기) · 계획 검사 · 회차 기록 -->
+      <!-- ★10.20 사용자 "policy 창서도 보이게": 정책 없는 제어 모듈 에피소드(1-B) — 팔마다 실행 버튼, 진행은 아래 지금 에피소드 패널 -->
+      <section class="panel" id="control-ep-panel" hidden aria-label="제어 모듈 에피소드">
+        <div class="panel-head"><h2>제어 모듈 에피소드 — 1-B (정책 없음)</h2><span class="meta">FP++ 컵 → 접근 → [확인] 닫기 → 들기 · 진행은 지금 에피소드 패널</span></div>
+        <div id="control-ep-actions" class="action-grid"></div>
+      </section>
       <section class="panel tilt-panel" id="tilt-panel" hidden aria-label="tilt 평가 경로">
         <div class="panel-head"><h2>tilt 평가 — 경로 A · C · B</h2><span id="tilt-meta" class="meta" role="status" aria-atomic="true"></span></div>
         <div id="tilt-paths" class="tilt-paths"></div>

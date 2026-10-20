@@ -5,13 +5,16 @@
 # 그 뒤는 경로 A 와 같다: ready_carry 로 붓기 시작 자세(한 팔씩, 오른팔 → 왼팔) → D4 기본 궤적(잔차 0, 1 배속) + 복귀 → 끝.
 # 비드 10 개를 병에 넣고 시작한다(결정 11). 끝난 뒤 옮긴 · 흘린 비드를 센다(tools/eval_record.py tilt) — 손을 펴거나 홈으로 가는 것은
 # 운영자가 한다. 값 조정: policies.<역할>.approach_grasp 에 키: 값(approach_grasp.ApproachGraspCfg).
-episode: {name: tilt_base_c, version: 1}
+# ★10.20 사용자 "1-c : ap05+grasp(가능성 있음)" — 접근 정책을 ap05(홈 출발, 사전 파지 자리 = 컵 축 2.5R · 높이 0 에서 멈춤)로 바꾼다.
+#   ap05 는 손바닥–컵 6 cm 에 못 닿으므로 끝 = 사전 파지 자리 2 cm 안 · 팔 정지 0.5 s(approach_grasp stop_ready: 1), 15 s 안에 못 오면
+#   실패(허공에서 닫지 않음). 그 뒤 스크립트 닫기 · 들기 · 유지는 아래 그대로. 손가락이 컵에 못 닿으면 '들어가기' 단계를 더한다(미구현).
+episode: {name: tilt_base_c, version: 2}
 objects:
   SRC: {topic: /objects/source240b_blue/pose}
   RCV: {topic: /objects/shaker_c_orange/pose}
 policies:
-  rh_aglt_r: {policy: rh56f1/aglt/right_approach_rg3wg, kind: aglt, side: right, approach_grasp: {}}
-  rh_aglt_l: {policy: rh56f1/aglt/left_approach_rg3wg, kind: aglt, side: left, approach_grasp: {}}
+  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {stop_ready: 1}}
+  rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {stop_ready: 1}}
 trajectories:
   go_home: {kind: rehome, sides: [right, left]}
   to_tilt_start_r: {kind: carry, sides: [right], asset: tilt/base_arc6}

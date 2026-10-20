@@ -14,7 +14,7 @@ from policy_control.episode_runner import SUCCESS, EpisodeManager
 
 REPO = Path(__file__).resolve().parents[2]
 EPISODES = REPO / "config" / "episodes"
-POLICY = {"right": "rh56f1/aglt/right_rg3wo", "left": "rh56f1/aglt/left_rg3wo"}   # 10.13 rg3s(actor 94 · hand_block · grasp_hold)
+POLICY = {"right": "rh56f1/aglt/right_neo03m", "left": "rh56f1/aglt/left_neo03"}   # 10.13 rg3s(actor 94 · hand_block · grasp_hold)
 DEFAULT_OBJECT = {"right": "source240_real", "left": "shaker_c_real"}
 CUP_TOPIC = {"right": "/objects/source240b_blue/pose", "left": "/objects/shaker_c_orange/pose"}
 
@@ -61,14 +61,15 @@ def test_the_policy_node_ends_at_the_first_goal_like_training(side):
     import yaml
     for kind in ("control", "fake"):
         m = yaml.safe_load((REPO / "config" / f"mission_rh56f1_{kind}.yaml").read_text(encoding="utf-8"))
-        argv = next(c["argv"] for c in m["run"][f"episode_grasp_rg3_{side}"]
+        # ★10.20 경로 A(grasp_rg3) 는 미션에서 빠졌다 — 같은 멈춤 규칙을 대신 맡은 경로 D(grasp_d) 단계에서 본다
+        argv = next(c["argv"] for c in m["run"][f"episode_grasp_d_{side}"]
                     if any("rh_aglt_node.py" in a for a in c["argv"]))
         assert "goal_max:=1" in argv and "stop_on_target:=true" not in argv
         # ★10.13 lift_hold · ★10.17 양손 2 s(120 틱) — 10.14 오른손 5 s · 왼손 0.5 s 를 하나로(사용자)
         hold = {"right": 120, "left": 120}[side]
         for kv in ("freeze_rule:=lift_hold", "freeze_lift_m:=0.07", f"freeze_hold_steps:={hold}"):
             assert argv[argv.index(kv) - 1] == "-p"
-        assert "max_episode_s:=15.0" in argv
+        assert "max_episode_s:=33.0" in argv   # ★10.20 D = 접근 15 s + 넘겨받은 정책 15 s + 여유 3 s
 
 
 @pytest.mark.parametrize("side", ["right", "left"])
@@ -116,7 +117,7 @@ def test_the_grasp_episode_stage_does_not_wait_for_cup_holders(side):
     for kind in ("control", "fake"):
         m = yaml.safe_load((REPO / "config" / f"mission_rh56f1_{kind}.yaml").read_text(encoding="utf-8"))
         stages = {s["id"]: s for s in m["stages"]}
-        assert "cup_holders" not in stages[f"episode_grasp_rg3_{side}"]["needs"]
+        assert "cup_holders" not in stages[f"episode_grasp_d_{side}"]["needs"]
         assert "cup_holders" in stages[f"episode_pick_place_{side}"]["needs"]
 
 

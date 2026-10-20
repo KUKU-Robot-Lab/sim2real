@@ -19,6 +19,7 @@ from policy_control import rh_aglt as A
 
 REPO = Path(__file__).resolve().parents[2]
 POL = REPO / "deploy" / "policies"
+RET = POL.parent / "policies_retired"   # ★10.20 옛 배포 정책(시험 고정본) — 등록부 밖
 FIX = Path(__file__).resolve().parent / "fixtures"
 #: 09.30 i03(우) · i05(좌) 계약 사본 — 촉각 96 · 단일 물체 · 위치 제어(10.18 정책 폴더 삭제 뒤 시험용)
 RIGHT, LEFT = FIX / "rh_aglt_right_i03_contract.json", FIX / "rh_aglt_left_i05_contract.json"
@@ -210,7 +211,7 @@ def test_the_cup_geometry_follows_the_object_like_the_training_env():
 
 #: (오른팔, 왼팔) 거울 쌍 — 10.17 경로 C 접근: 왼팔 = 오른팔 rg3wc ep800 의 거울(hdgp scripts/tools/mirror_rh_aglt_ckpt.py).
 #: 09.30 ~ 10.06 쌍(mirror_l5 · cyl60g · env17)은 10.18 정책 폴더 삭제로 빠졌다.
-MIRROR_PAIRS = {"approach_rg3wc": ("rh56f1/aglt/right_approach_rg3wc", "rh56f1/aglt/left_approach_rg3wc")}
+MIRROR_PAIRS = {"approach": ("rh56f1/aglt/right_approach", "rh56f1/aglt/left_approach")}
 ARM_MIRROR_SIGN = (-1.0, -1.0, -1.0, 1.0, -1.0, -1.0, -1.0)
 _M, _MN = (1.0, -1.0, 1.0), (-1.0, 1.0, -1.0)
 ACT_MIRROR = list(ARM_MIRROR_SIGN) + [1.0] * 6
@@ -233,7 +234,7 @@ def test_the_mirror_signs_have_the_actor_widths():
 def test_the_mirrored_right_policy_is_the_left_policy_seen_in_a_mirror(pair):
     """09.30 사용자 "오른팔 미러 되는지": 배포 로더로 두 체크포인트를 불러 a_R(o) = S_a · π_L(D_o · o) 를 LSTM 연속 60 스텝에서 확인."""
     pytest.importorskip("torch")
-    cr, cl = (A.load_contract(POL / pid / "rh_aglt_contract.json") for pid in MIRROR_PAIRS[pair])
+    cr, cl = (A.load_contract(RET / pid / "rh_aglt_contract.json") for pid in MIRROR_PAIRS[pair])
     if not (Path(cr.checkpoint).is_file() and Path(cl.checkpoint).is_file()):
         pytest.skip("가중치 없음(.gitignore)")
     if cr.object_names:
@@ -340,7 +341,7 @@ def test_the_node_feeds_joint_forces_into_the_grasp_signal(c):
 def test_a_place_run_is_not_taken_for_rh_aglt_even_with_the_same_dimensions():
     """rh_place 는 관측 96 · 행동 13 · rh56f1 프로필로 rh_aglt 와 같지만 목표(홀더 자리) · 시작(인계 뱅크)이 다르다 —
     rh_aglt 계약을 만들면 콘솔이 aglt 자리에 그대로 내보인다(10.04)."""
-    env = A.read_env(POL / "rh56f1/aglt/right_rg3wo" / "params" / "env.yaml")
+    env = A.read_env(RET / "rh56f1/aglt/right_rg3wo" / "params" / "env.yaml")
     assert A.is_rh_aglt_run(env)
     assert not A.is_rh_aglt_run({**env, "target_holders": (1, 2)})
     place = POL / "rh56f1/place/right_i09" / "params" / "env.yaml"
@@ -463,3 +464,30 @@ def test_the_node_marks_the_cup_stale_while_the_fpp_gate_holds_the_last_frame(c)
     gate.new_episode()
     N.PourFjNode._cup_for(fake, "arm", True)(palm, np.eye(3), np.asarray(st.tip_force), st)
     assert fake.cup_fresh["arm"] is False
+
+
+def test_the_node_follows_the_palm_when_a_held_cup_leaves_the_camera(c):
+    """10.19 cup_dropout: 위치제어 계약(붙이기 끔)도 쥔 상태에서 FP++ 가 끊기면 손바닥 FK 로 따라가고, 성공을 센다."""
+    import time
+    from types import SimpleNamespace
+    from policy_control.cup_attach import AttachCfg, CupAttach
+    from policy_control.cup_dropout import CupDropout, DropoutCfg
+    s = c.side()
+    cfg = AttachCfg(switch=False)                                      # hand_command position — 쥔 뒤에도 FP++ live
+    est, drop = CupAttach(cfg), CupDropout(DropoutCfg(stop_s=1.0))
+    q = np.array([1.0, 0, 0, 0])
+    got = {"arm": (time.monotonic() - 0.6, np.array([0.30, -0.10, 0.26]), q, 0.0)}   # 마지막 프레임은 쥐기 전 · 0.6 s 전
+    fake = SimpleNamespace(attach={"arm": est}, gates={}, attach_cfg=cfg, dropouts={"arm": drop}, cups=got,
+                           _cup=lambda r: got[r][1:], _fresh_cup=lambda r: None, cup_latch=False, cup_fresh={},
+                           get_clock=lambda: SimpleNamespace(now=lambda: SimpleNamespace(nanoseconds=0)),
+                           get_logger=lambda: SimpleNamespace(info=lambda *_a, **_k: None))
+    st = _St(s, tip=(1.5, 1.2, 0, 0, 0))                                 # 쥠
+    palm = np.array([0.30, -0.10, 0.30])
+    for k in range(20):
+        st.stamps = {"arm": 0.01 * (k + 1)}
+        N.PourFjNode._cup_for(fake, "arm", True)(palm, np.eye(3), np.asarray(st.tip_force), st)
+    st.stamps = {"arm": 0.30}
+    out = N.PourFjNode._cup_for(fake, "arm", True)(palm + [0, 0, 0.05], np.eye(3), np.asarray(st.tip_force), st)
+    assert drop.mode == "follow" and est.source == "live"
+    assert out[0] == pytest.approx([0.30, -0.10, 0.31])                 # 쥔 시각 손바닥 기준 4 cm 아래 → 5 cm 든 만큼
+    assert fake.cup_fresh["arm"] is True

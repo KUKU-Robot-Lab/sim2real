@@ -30,14 +30,33 @@ import yaml
 
 from policy_control import _paths
 from policy_control.episode_failure import NodeResult
-from policy_control.episode_spec import EMPTY, PLANNED_TRAJ, TRAJ_ASSETS, Episode, Node
+from policy_control.episode_spec import EMPTY, PLANNED_TRAJ, TRAJ_ASSETS, Episode, Node, episode_sides, hand_contract_file
 from policy_control.rh_place import HOLDER_FLOOR_Z
 
 NS = "/policy_control"
 OBJECT_RELAY = "/episode/objects/{}/pose"
+#: ★10.19 팔마다 띄운 실행기(episode_runner_<팔>)는 자기 이름 아래로 다시 낸다 — 두 팔 에피소드가 같은 물체 이름(CUP)을 써도
+#  /episode/objects/CUP/pose 에 두 실행기가 섞여 내지 않게. 기본 실행기(두 팔 tilt 등)는 그대로.
+DEFAULT_RUNNER = "episode_runner"
+
+
+def relay_topic(runner: str, name: str) -> str:
+    """snapshot 재발행 토픽 — 기본 실행기는 /episode/objects/<이름>/pose, 그 밖은 /episode/<실행기 꼬리>/objects/<이름>/pose."""
+    if runner in ("", DEFAULT_RUNNER):
+        return OBJECT_RELAY.format(name)
+    tail = runner[len(DEFAULT_RUNNER) + 1:] if runner.startswith(DEFAULT_RUNNER + "_") else runner
+    return f"/episode/{tail}/objects/{name}/pose"
+
+
+def live_topic(topic: str) -> str | None:
+    """FP++ 물체 snapshot 토픽 …/pose → 같은 물체의 live 추적 토픽 …/live_pose(object_pose_node 규약). 아니면 None."""
+    return topic[: -len("/pose")] + "/live_pose" if topic.endswith("/pose") else None
+
+
 SNAPSHOT_WINDOW_S = 1.5
 SNAPSHOT_STILL_M = 0.005          # 창 안 위치 퍼짐 — 넘으면 컵이 움직이는 중
 SNAPSHOT_MIN_FRAMES = 5
+LIFT_RISE_MIN_M = 0.07            # ★10.19 1-B lift 판정 — 손바닥 10 cm 중 컵이 7 cm 넘게(결정 10 의 7 cm 위와 같은 선)
 POLICY_MARGIN_S = 10.0            # 정책 에피소드 시간 + 이만큼 안에 이벤트가 안 오면 stop → timeout
 #: ★10.14 실기 183230: FP++ live 추적이 품질 검사(MASK_TOO_SMALL) 3번 실패마다 다시 등록하며 2.8~3.5 s 끊긴다(5~6 s 마다).
 #  정책 reset 은 0.5 s 안에 받은 live 컵만 받아서, 그 사이에 부르면 거부되고 에피소드가 안전 정지했다.
@@ -79,6 +98,12 @@ def _q(msg) -> tuple:
     return (p.x, p.y, p.z), (o.w, o.x, o.y, o.z)
 
 
+def real_object_name(topic: str) -> str:
+    """/objects/<실물>/pose → 실물 이름(config/objects 등록 이름). 아니면 ""."""
+    parts = [x for x in str(topic).split("/") if x]
+    return parts[1] if len(parts) == 3 and parts[0] == "objects" else ""
+
+
 def load_holder_poses(path: Path) -> dict[int, tuple]:
     """holder_poses 파일 → {마커 id: (pos, yaw)}. 없으면 빈 dict."""
     if not path.is_file():
@@ -107,14 +132,18 @@ class RosExecutor:
     """EpisodeManager 의 실행기 — rclpy 노드(콜백은 다른 스레드의 executor 가 돌린다)를 받아 쓴다."""
 
     def __init__(self, node, ep: Episode, *, robot: str = "rh56f1", run_dir: Path | None = None,
-                 contract: str = "logs/policy/asset_openarm_rh56f1_bi_rl/deploy_contract.json") -> None:
+                 contract: str = "logs/policy/asset_openarm_rh56f1_bi_rl/deploy_contract.json",
+                 runner: str = DEFAULT_RUNNER) -> None:
         from geometry_msgs.msg import Point, PoseStamped
         from rclpy.callback_groups import ReentrantCallbackGroup
         from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
         from std_msgs.msg import String
         from std_srvs.srv import Trigger
 
-        self.node, self.ep, self.robot = node, ep, robot
+        self.node, self.ep, self.robot, self.runner = node, ep, robot, runner
+        # ★10.19 이 에피소드가 움직이는 팔 — safe_stop 은 이 팔의 정책만 멈춘다(다른 팔 실행기가 따로 도는 정책을 건드리지 않는다).
+        #   못 찾으면 두 팔(옛 동작).
+        self.sides = tuple(episode_sides(ep)) or SIDES
         self.run_dir = run_dir or (_paths.SIM2REAL / "logs" / "episode" / time.strftime("%Y%m%d_%H%M%S"))
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.contract = str(_paths.SIM2REAL / contract)
@@ -124,6 +153,7 @@ class RosExecutor:
         self._status: dict[str, dict] = {}
         self._pd: dict[str, dict] = {}
         self._frames: dict[str, list] = {name: [] for name in ep.objects}
+        self._live: dict[str, list] = {name: [] for name in ep.objects}   # ★10.20 lift 판정용 FP++ live 추적
         self._hand: dict[str, dict] = {s: {} for s in SIDES}   # ★10.17 손 실측(손 펴짐 확인) — 이름 → (rad, 시각)
         self._goal_result: dict[str, dict] = {}
         self._relay: dict[str, tuple] = {}            # 물체 → (pos, quat) — snapshot 뒤 집힐 때까지
@@ -141,12 +171,18 @@ class RosExecutor:
                 node.create_subscription(String, f"{NS}/status/{name}", self._on_json(self._status, name), QoSProfile(depth=10))
         for name, obj in ep.objects.items() if any(n.type == "snapshot" for n in ep.nodes) else ():   # 경로 B 는 FP++ 를 안 받는다
             node.create_subscription(PoseStamped, obj["topic"], self._on_frame(name), qos_profile_sensor_data)
+        #: ★10.20 실기 1-B: 들림 판정은 live 추적으로 본다. …/pose 는 locate 때 한 번 찍은 자리를 계속 다시 내서
+        #  032511 shaker 가 live 로 9.6 cm 들렸는데 before = after 로 0.0 cm 판정 → 들고 멈춤.
+        for name in {t.object for t in ep.trajectories.values() if t.kind == "lift" and t.object}:
+            topic = live_topic(ep.objects.get(name, {}).get("topic", ""))
+            if topic:
+                node.create_subscription(PoseStamped, topic, self._on_frame(name, self._live), qos_profile_sensor_data)
         if any(n.type == "hand" for n in ep.nodes):
             from sensor_msgs.msg import JointState
             for side in SIDES:
                 node.create_subscription(JointState, HAND_STATE.format(side=side), self._on_hand(side), qos_profile_sensor_data)
         self._goal_pub = {s: node.create_publisher(Point, f"{NS}/{s}/goal", QoSProfile(depth=10)) for s in SIDES}
-        self._relay_pub = {name: node.create_publisher(PoseStamped, OBJECT_RELAY.format(name), 10) for name in ep.objects}
+        self._relay_pub = {name: node.create_publisher(PoseStamped, relay_topic(runner, name), 10) for name in ep.objects}
         self._holder_pub = {}
         self.holders = load_holder_poses(_paths.SIM2REAL / ep.holder_poses) if ep.holder_poses else {}
         for hid in sorted(set(ep.holders.values())):
@@ -190,10 +226,12 @@ class RosExecutor:
             return None
         return max(abs(g[0]) for g in got)
 
-    def _on_frame(self, name: str):
+    def _on_frame(self, name: str, store: dict | None = None):
+        store = self._frames if store is None else store
+
         def cb(msg) -> None:
             with self._lock:
-                fr = self._frames[name]
+                fr = store[name]
                 fr.append((*_q(msg), time.monotonic()))
                 cutoff = time.monotonic() - SNAPSHOT_WINDOW_S
                 while fr and fr[0][2] < cutoff:
@@ -433,18 +471,23 @@ class RosExecutor:
             return sig
         return {}
 
-    def _fresh_object(self, name: str | None, wait_s: float = 2.0):
+    def _fresh_object(self, name: str | None, wait_s: float = 2.0, store: dict | None = None):
         """놓은 뒤 물체 자리 — 그 물체의 FP++ 토픽 새 프레임(창 안 중앙값). 없으면 None(판정 보류)."""
-        if not name or name not in self._frames:
+        store = self._frames if store is None else store
+        if not name or name not in store:
             return None
         deadline = time.monotonic() + wait_s
         while time.monotonic() < deadline:
             with self._lock:
-                fr = [f for f in self._frames[name] if time.monotonic() - f[2] < 0.5]
+                fr = [f for f in store[name] if time.monotonic() - f[2] < 0.5]
             if len(fr) >= 3:
                 return tuple(float(v) for v in np.median(np.array([f[0] for f in fr]), axis=0))
             time.sleep(0.1)
         return None
+
+    def _live_object(self, name: str | None, wait_s: float = 2.0):
+        """lift 판정용 물체 자리 — FP++ live 추적(…/live_pose) 새 프레임 중앙값. 없으면 None(판정 보류)."""
+        return self._fresh_object(name, wait_s, self._live)
 
     def run_trajectory(self, node: Node, traj, world) -> NodeResult:
         if traj.kind == "noop":
@@ -500,6 +543,21 @@ class RosExecutor:
         out = self.run_dir / f"{traj.kind}_{node.id}"
         joints = ",".join(f"{s[0]}_aj_{i}" for s in sides for i in range(1, 8))
         side_arg = ["--sides", ",".join(sides)] if traj.kind == "carry" else []
+        before = None
+        if traj.kind == "reach":                      # ★10.19 1-B: 지금 FP++ 컵 자세(창 안 중앙값, 멈춰 있어야)로 계획
+            snap = self._still_object(traj.object)
+            if snap is None:
+                return NodeResult("refused", f"reach: {traj.object} 컵 자세가 없거나 움직인다({SNAPSHOT_WINDOW_S} s 창, "
+                                             f"{SNAPSHOT_STILL_M * 1000:.0f} mm) — FP++ 확인", time.monotonic() - t0)
+            real = real_object_name(self.ep.objects[traj.object].get("topic", ""))
+            if not real:
+                return NodeResult("refused", f"reach: {traj.object} 토픽에서 실물 이름을 못 읽었다", time.monotonic() - t0)
+            side_arg = ["--side", sides[0], "--object", real, "--cup", ",".join(f"{v:.5f}" for v in snap[0]),
+                        "--quat", ",".join(f"{v:.6f}" for v in snap[1])]
+        elif traj.kind == "lift":
+            side_arg = ["--side", sides[0]]
+            if traj.object:
+                before = self._live_object(traj.object)
         steps = [
             [sys.executable, str(TOOLS / f"plan_{traj.kind}.py"), "--asset", str(asset), "--out", str(out), *side_arg],
             [sys.executable, str(TOOLS / "replay_to_pd.py"), "--npz", str(out / f"{traj.kind}_cmd.npz"), "--joints", joints,
@@ -513,7 +571,30 @@ class RosExecutor:
             if rc != 0:                                # 계획 · 검사 실패 = 움직이지 않았다
                 status = "refused" if k == 0 else "error"
                 return NodeResult(status, f"{Path(argv[1]).name} rc {rc}: {tail}", time.monotonic() - t0)
+        if traj.kind == "lift" and traj.object:       # ★10.19 1-B: 컵이 손과 같이 올라갔는가(유지 끝 FP++ — 없으면 판정 보류)
+            after = self._live_object(traj.object)
+            if before is None or after is None:
+                return NodeResult("completed", f"들기 끝 · FP++ 컵 {'전' if before is None else '뒤'} 프레임 없음 — 들림 판정 보류",
+                                  time.monotonic() - t0, signals={"cup_rise_m": None})
+            rise = float(after[2] - before[2])
+            sig = {"cup_rise_m": round(rise, 4), "cup_before": [round(v, 4) for v in before], "cup_after": [round(v, 4) for v in after]}
+            if rise < LIFT_RISE_MIN_M:
+                return NodeResult("aborted", f"컵이 {rise * 100:.1f} cm 만 올라갔다(< {LIFT_RISE_MIN_M * 100:.0f} cm) — 못 쥐었거나 놓쳤다",
+                                  time.monotonic() - t0, signals=sig)
+            return NodeResult("completed", f"컵 {rise * 100:.1f} cm 들림 · 유지 끝", time.monotonic() - t0, signals=sig)
         return NodeResult("completed", "", time.monotonic() - t0)
+
+    def _still_object(self, name: str, wait_s: float = 3.0):
+        """reach 계획용 컵 자세 — 창(SNAPSHOT_WINDOW_S) 안 프레임이 멈춰 있으면 (pos 중앙값, 마지막 quat wxyz), 아니면 None."""
+        deadline = time.monotonic() + wait_s
+        while time.monotonic() < deadline and not self.cancel.is_set():
+            with self._lock:
+                fr = [f for f in self._frames.get(name, []) if time.monotonic() - f[2] < SNAPSHOT_WINDOW_S]
+            snap = snapshot_of(fr)
+            if snap is not None:
+                return snap
+            time.sleep(0.1)
+        return None
 
     def run_hand(self, node: Node, world) -> NodeResult:
         """★10.17 경로 B: open = 손을 계약 홈 손(편 손)으로(pd hand_release, 팔은 pd 가 그 자리에 붙든 채) — 빈손에서만.
@@ -547,7 +628,7 @@ class RosExecutor:
             return NodeResult("error", f"손이 {HAND_OPEN_WAIT_S:.0f} s 안에 안 펴졌다 — max|q| {errs}(허용 {HAND_OPEN_TOL_RAD} rad, "
                                        f"None = 손 실측 없음)", time.monotonic() - t0)
         side = node.sides[0]
-        contract = _paths.SIM2REAL / "deploy" / "policies" / node.hand_contract / "rh_aglt_contract.json"
+        contract = hand_contract_file(node.hand_contract, _paths.SIM2REAL / "deploy" / "policies")
         if not contract.is_file():
             return NodeResult("refused", f"hand grasp: {contract} 가 없다(hand_contract {node.hand_contract})")
         rc, tail = self._run([sys.executable, str(TOOLS / "hand_grasp.py"), "--side", side, "--contract", str(contract),
@@ -620,7 +701,7 @@ class RosExecutor:
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
             except (ProcessLookupError, PermissionError):
                 pass
-        for side in SIDES:
+        for side in self.sides:                       # ★10.19 이 에피소드의 팔만 — 다른 팔 실행기의 정책은 그대로
             for kind in NODES:
                 self._call(f"{NS}/{service_ns(kind, side)}/episode/stop", timeout=2.0, wait=0.3)
 

@@ -109,6 +109,15 @@ def ctl():
     return _load(TOOLS / "episode_ctl.py", "episode_ctl_t")
 
 
+def test_episode_ctl_sees_a_watchdog_only_hold(ctl):
+    """★10.20 rehome: 워치독 하나뿐인 HOLD 는 engage 대신 pd/hold 로 붙든다 — 다른 사유가 섞이면 아니다."""
+    assert ctl.watchdog_hold({"phase": "HOLD", "reasons": ["watchdog: target stale 0.252 s > 0.25 s"]})
+    assert not ctl.watchdog_hold({"phase": "HOLD", "reasons": ["watchdog: x", "tracking: err 0.4"]})
+    assert not ctl.watchdog_hold({"phase": "HOLD", "reasons": []})
+    assert not ctl.watchdog_hold({"phase": "TRACKING", "reasons": []})
+    assert not ctl.watchdog_hold(None)
+
+
 def test_episode_ctl_plan_only_without_execute(ctl, capsys):
     before = set(sys.modules)
     assert ctl.main(["--steps", "10"]) == 0

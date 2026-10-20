@@ -18,6 +18,19 @@ from object_registry import load_registry
 from policy_control.policy_registry import scan
 
 TASKS = ('approaching', 'grasping', 'placing', 'locking', 'pouring')
+
+
+def task_of(policy_id: str) -> str:
+    """정책 id → 작업(카드 종류). <로봇>/<계열>/<이름>: 이름에 approach → approaching(경로 C 접근) · 계열 pour* → pouring ·
+    place* → placing · lock* → locking · 그 밖(aglt · cup_grasp · cup_pick · grasp_fj …) → grasping. 순수."""
+    parts = policy_id.split('/')
+    family, name = (parts[1] if len(parts) > 2 else ''), parts[-1]
+    if 'approach' in name:
+        return 'approaching'
+    for prefix, task in (('pour', 'pouring'), ('place', 'placing'), ('lock', 'locking')):
+        if family.startswith(prefix):
+            return task
+    return 'grasping'
 MODELS = {'source200': ('src200', 'source200_real'), 'source240': ('src240', 'source240_real'),
           'source240b': ('src240', 'source240_real'), 'shaker_c': ('shaker', 'shaker_c_real')}
 
@@ -25,6 +38,16 @@ MODELS = {'source200': ('src200', 'source200_real'), 'source240': ('src240', 'so
 def _empty(source, reason='not acquired') -> dict[str, Any]:
     return dict(position=None, frame='base', timestamp=None, source=source, valid=False, reason=reason, live=False)
 
+
+
+def _arm_start(entry) -> str:
+    """★10.20 계약의 학습 시작 자세(home | ready) — 없거나 못 읽으면 home(옛 계약)."""
+    if not getattr(entry, 'contract', ''):
+        return 'home'
+    try:
+        return str(json.loads((entry.path / entry.contract).read_text()).get('arm_start') or 'home')
+    except (OSError, ValueError):
+        return 'home'
 
 class Workspace:
     def __init__(self, repo: Path, robot_id: str, slots: dict | None = None):
@@ -69,19 +92,22 @@ class Workspace:
                 self.cards = []
 
     def _catalog(self, slots):
-        defaults = {}
-        for side in ('right', 'left'):
-            file = self.repo / f'config/episodes/grasp_rg3_{side}.yaml'
-            if file.exists():
-                doc = yaml.safe_load(file.read_text())
-                for policy in doc.get('policies', {}).values():
-                    defaults[policy['policy']] = side
         out = []
         for entry in scan(self.repo / 'deploy/policies', deep=False):
             if entry.id.split('/')[0] not in self.robot_id and ('rh56f1' in self.robot_id or 'dg5f' in self.robot_id):
                 continue
-            rg3 = entry.id in defaults or 'rg3' in entry.id
-            task = 'grasping' if '/aglt/' in entry.id else 'pouring' if '/pour' in entry.id else 'placing' if '/place' in entry.id else 'approaching'
+            task = task_of(entry.id)
+            # ★10.20 사용자 "경로 a는 폐지, -> 경로d가 대체함" · "1-c : ap05+grasp": 잡기 카드 = 경로 D(ap05 접근 → 사전 파지 자리에서
+            #   이 정책이 넘겨받는다) — 사전 파지 자리에서 시작하는 정책(계약 arm_start ready)만. 홈에서 잡는 옛 rg3 흐름(경로 A)은 없앴다.
+            #   접근 카드 = 경로 C(이 접근 정책 → 사전 파지 자리 정지 → 스크립트 닫기 · 들기).
+            rg3 = False
+            path_d = task == 'grasping' and _arm_start(entry) == 'ready'
+            path_c = task == 'approaching'
+            deploy = entry.card.get('deploy') if isinstance(entry.card.get('deploy'), dict) else {}
+            blocked = deploy.get('execution') is False
+            if blocked:
+                rg3 = path_c = path_d = False
+            reason = str(deploy.get('execution_reason') or '실행 흐름 준비 전') if blocked else '배치만 지원'
             out.append(dict(id=entry.id, policy_id=entry.id, file=str(entry.path / 'policy.yaml'),
                             checkpoint=str(entry.path / 'nn' / entry.checkpoint) if entry.checkpoint else '',
                             contract=str(entry.path / entry.contract) if entry.contract else '',
@@ -89,9 +115,9 @@ class Workspace:
                             checkpoint_path=str((entry.path / 'nn' / entry.checkpoint).relative_to(self.repo)) if entry.checkpoint else '',
                             contract_path=str((entry.path / entry.contract).relative_to(self.repo)) if entry.contract else '',
                             side=entry.card.get('side'), task=task, status=entry.status, issues=list(entry.issues),
-                            supported_objects=['src200', 'src240', 'shaker'] if rg3 else [],
-                            default_rg3=entry.id in defaults, execution_supported=rg3,
-                            execution_reason='' if rg3 else '배치만 지원'))
+                            supported_objects=['src200', 'src240', 'shaker'] if rg3 or path_c or path_d else [],
+                            default_rg3=False, execution_supported=rg3 or path_c or path_d,
+                            execution_reason='' if rg3 or path_c or path_d else reason))
         return out
 
     def snapshot(self) -> dict[str, Any]:
@@ -170,8 +196,8 @@ class Workspace:
                         raise ValueError('invalid card position') from None
                     if not math.isfinite(card[axis]) or abs(card[axis]) > 100000:
                         raise ValueError('invalid card position')
-                card['execution_supported'] = policy['execution_supported'] and card['task'] == 'grasping'
-                card['execution_reason'] = '' if card['execution_supported'] else '배치만 지원'
+                card['execution_supported'] = policy['execution_supported'] and card['task'] in ('grasping', 'approaching')
+                card['execution_reason'] = '' if card['execution_supported'] else (policy['execution_reason'] or '배치만 지원')   # ★10.20 정책이 막은 이유를 카드에도
                 state['cards'].append(card)
         if patch.get('reset_layout'):
             for i, card in enumerate(state['cards']):

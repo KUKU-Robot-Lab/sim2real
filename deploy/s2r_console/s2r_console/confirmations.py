@@ -20,7 +20,7 @@ class Confirmations:
         return ConsoleError(text, code=code)
 
     def describe(self, action, parameters):
-        from .console import EPISODE_NODE, STALE_S, MC
+        from .console import MC, RUNNER_NODES, primary_runner, runner_views
         from mission_stages import commands_for
         c, s = self.console, self.console._need()
         if action == 'stage':
@@ -45,21 +45,27 @@ class Confirmations:
             return {'title': stage.title, 'commands': [asdict(cmd) for cmd in commands],
                     'warnings': warnings, 'stop_targets': targets}
         if action == 'episode':
-            if set(parameters) - {'episode_action', 'want'}:
+            if set(parameters) - {'episode_action', 'want', 'runner'}:
                 raise self._error('에피소드 설정이 올바르지 않다', 400)
             requested = parameters.get('episode_action')
             if requested not in ('next', 'run', 'reset'):
                 raise self._error('지원하지 않는 에피소드 동작', 400)
+            runner = parameters.get('runner') or ''
+            if runner and runner not in RUNNER_NODES:
+                raise self._error(f'모르는 에피소드 실행기: {runner}', 400)
             with s.feed_lock:
                 obs = s.feed.observed()
-            state = obs.status.get(EPISODE_NODE)
-            if state is None or obs.age_s.get(EPISODE_NODE, float('inf')) > STALE_S:
+            views = {n: v for n, v in runner_views(obs).items() if not v['stale']}   # ★10.19 팔마다 실행기
+            runner = runner or primary_runner(views) or ''
+            state = views.get(runner)
+            if state is None:
                 raise self._error('에피소드 실행기 상태가 안 온다')
             want = state.get('next_action') if requested == 'next' else f"episode:{state.get('episode')}" if requested == 'run' else ''
             if requested != 'reset' and (state.get('busy') or not want):
                 raise self._error('실행기가 실행 중이거나 다음 동작이 없다')
-            return {'title': f'에피소드 {requested} {want}', 'commands': [{'episode_action': requested, 'approve': want}],
-                    'warnings': [], 'want': want}
+            return {'title': f'에피소드 {requested} {want} · {runner}', 'commands': [{'episode_action': requested, 'approve': want,
+                                                                                    'runner': runner}],
+                    'warnings': [], 'want': want, 'runner': runner}
         description = c.actions.describe(action, parameters)
         if not description['enabled']:
             raise self._error('지금 실행할 수 없다: ' + '; '.join(description['reasons']))
@@ -122,7 +128,8 @@ class Confirmations:
                     if stage.touches_real:
                         c.revoke(stage.id, operator=operator, note='일회용 승인 사용 완료')
             elif action == 'episode':
-                c.episode(params['episode_action'], operator=operator, typed=description.get('want', ''))
+                c.episode(params['episode_action'], operator=operator, typed=description.get('want', ''),
+                          runner=description.get('runner', ''))
             else:
                 c.actions.execute(action, params, operator=operator)
             c._intent(s, 'actions/execute', {'action_id': action, 'parameters': params, 'operator': operator,

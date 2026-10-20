@@ -20,3 +20,11 @@ def test_only_a_reset_refused_for_a_not_yet_received_source_is_retried():
     assert not T.retry_reason("episode/reset", ["start: arm 0.31 rad from start pose > 0.15"])
     assert not T.retry_reason("episode/start", ["start: left: source 'arm' is missing"])   # start 는 사람이 보고 다시
     assert not T.retry_reason("episode/reset", [])
+
+
+def test_only_stop_counts_an_absent_policy_node_as_nothing_to_stop():
+    """10.20 실기 1-B: 정책 노드가 없는 제어 모듈 에피소드에서 rehome 앞의 episode/stop 이 '서비스 없음' rc 1 로 막혔다.
+    stop 은 멱등이라 노드가 없으면 성공 — reset · start · abort · pd 서비스는 그대로 엄격하다."""
+    assert T.absent_ok("episode/stop")
+    for s in ("episode/reset", "episode/start", "episode/abort", "pd/engage", "pd/goto_home", "pd/release", "pd/hold"):
+        assert not T.absent_ok(s), s

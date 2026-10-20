@@ -130,7 +130,7 @@ def test_the_numpy_block_matches_the_sim_torch_block_tick_by_tick(stop_at, lag):
 # ---------------------------------------------------------------- 계약 · 디코더 · 체인(rh_aglt)
 from policy_control import rh_aglt as A  # noqa: E402
 
-RUN = Path(__file__).resolve().parents[2] / "deploy/policies/rh56f1/aglt/right_rg3wo"   # 10.18 rg3mft 폴더 삭제 — 같은 다물체 rg3 계열 배포 정책
+RUN = Path(__file__).resolve().parents[2] / "deploy/policies_retired/rh56f1/aglt/right_rg3wo"   # 10.18 rg3mft 폴더 삭제 — 같은 다물체 rg3 계열 배포 정책
 BLOCK = dict(NOM)
 
 

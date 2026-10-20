@@ -11,8 +11,8 @@ artifacts:
   path_left: deploy/policy_control/paths/home_rh56f1_left.npz
   pourfj_both: deploy/policies/rh56f1/pour_fj/both_f01/pour_fj_contract.json
   robot_bi: deploy/policy_control/config/robots/rh56f1_bi_fake.yaml
-  aglt_right: deploy/policies/rh56f1/aglt/right_rg3wo/rh_aglt_contract.json
-  aglt_left: deploy/policies/rh56f1/aglt/left_rg3wo/rh_aglt_contract.json
+  aglt_right: deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
+  aglt_left: deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
   place_right: deploy/policies/rh56f1/place/right_i09/rh_place_contract.json
   place_left: deploy/policies/rh56f1/place/left_i01/rh_place_contract.json
 checkpoints: {}
@@ -365,6 +365,24 @@ stages:
   - contract
   - robot_left
   title: '[left] 정책 시작 자세(홈)로 되돌아오기 — 손 먼저 펴기 → 실측에서 경로 계획(직선이 막히면 RRT) → 재생 → 정착. 정책이 멈춘 자리에서 다시 정책 · return · 에피소드로(10.04 사용자: DG-5F 처럼 rehome)'
+- id: tilt_now
+  group: policy
+  lane: both
+  skippable: true
+  needs:
+  - pd_arm_right
+  - pd_arm_left
+  needs_why: pd 가 떠 있어야 경로를 재생한다(IDLE 이면 지금 자리에서 engage)
+  title: 'tilt 시작 자세(세팅 자세)로 — 두 팔 한 팔씩(오른팔 → 왼팔): 실측에서 계획 · 검사(걸리면 그 팔부터 움직이지 않음) → 재생. 손은 그대로(rehome 처럼)'
+- id: tilt_pour
+  group: policy
+  lane: both
+  skippable: true
+  needs:
+  - pd_arm_right
+  - pd_arm_left
+  needs_why: 두 팔 pd 가 지금 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
+  title: 'tilt 붓기 — 지금 두 팔 자세(세팅 자세, 컵을 쥔 채)에서 바로: 실측 → D4 기본 궤적 계획 · 검사(걸리면 움직이지 않음) → 두 팔 재생 → 시작 자세 복귀'
 - id: episode_pick_place_right
   group: policy
   lane: arm_right
@@ -385,24 +403,6 @@ stages:
   - cup_holders
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 노드를 잇는다
   title: '[에피소드] pick_place_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → pick_cup → place_cup → go_home_end'
-- id: episode_grasp_rg3_right
-  group: policy
-  lane: arm_right
-  skippable: true
-  needs:
-  - home_right
-  - cups
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
-  title: '[에피소드] grasp_rg3_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
-- id: episode_grasp_rg3_left
-  group: policy
-  lane: arm_left
-  skippable: true
-  needs:
-  - home_left
-  - cups
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
-  title: '[에피소드] grasp_rg3_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
 - id: episode_grasp_c_right
   group: policy
   lane: arm_right
@@ -421,17 +421,6 @@ stages:
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
   title: '[에피소드] grasp_c_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
-- id: episode_tilt_base_a
-  group: policy
-  lane: arm_left
-  skippable: true
-  needs:
-  - home_left
-  - home_right
-  - cups
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
-  title: '[에피소드] tilt_base_a — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_right → grasp_left → to_tilt_start_r
-    → to_tilt_start_l → tilt'
 - id: episode_tilt_base_b
   group: policy
   lane: arm_left
@@ -453,6 +442,55 @@ stages:
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
   title: '[에피소드] tilt_base_c — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_right → grasp_left → to_tilt_start_r
     → to_tilt_start_l → tilt'
+- id: episode_tilt_base_d
+  group: policy
+  lane: arm_left
+  skippable: true
+  needs:
+  - home_left
+  - home_right
+  - cups
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
+  title: '[에피소드] tilt_base_d — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_right → grasp_left → to_tilt_start_r
+    → to_tilt_start_l → tilt'
+- id: episode_grasp_b_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  needs:
+  - home_right
+  - cups
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
+  title: '[에피소드] grasp_b_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → open_hand → reach → confirm_close →
+    grasp → lift'
+- id: episode_grasp_b_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  needs:
+  - home_left
+  - cups
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
+  title: '[에피소드] grasp_b_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → open_hand → reach → confirm_close →
+    grasp → lift'
+- id: episode_grasp_d_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  needs:
+  - home_right
+  - cups
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
+  title: '[에피소드] grasp_d_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+- id: episode_grasp_d_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  needs:
+  - home_left
+  - cups
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
+  title: '[에피소드] grasp_d_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
 - id: shutdown
   group: finish
   lane: rig
@@ -523,14 +561,6 @@ run:
     - episode_pick_place_left#6
     - episode_pick_place_left#7
     - episode_pick_place_left#8
-    - episode_grasp_rg3_right#0
-    - episode_grasp_rg3_right#1
-    - episode_grasp_rg3_right#5
-    - episode_grasp_rg3_right#6
-    - episode_grasp_rg3_left#0
-    - episode_grasp_rg3_left#1
-    - episode_grasp_rg3_left#5
-    - episode_grasp_rg3_left#6
     - episode_grasp_c_right#0
     - episode_grasp_c_right#1
     - episode_grasp_c_right#5
@@ -539,13 +569,6 @@ run:
     - episode_grasp_c_left#1
     - episode_grasp_c_left#5
     - episode_grasp_c_left#6
-    - episode_tilt_base_a#0
-    - episode_tilt_base_a#1
-    - episode_tilt_base_a#2
-    - episode_tilt_base_a#3
-    - episode_tilt_base_a#7
-    - episode_tilt_base_a#8
-    - episode_tilt_base_a#9
     - episode_tilt_base_b#3
     - episode_tilt_base_c#0
     - episode_tilt_base_c#1
@@ -554,6 +577,27 @@ run:
     - episode_tilt_base_c#7
     - episode_tilt_base_c#8
     - episode_tilt_base_c#9
+    - episode_tilt_base_d#0
+    - episode_tilt_base_d#1
+    - episode_tilt_base_d#2
+    - episode_tilt_base_d#3
+    - episode_tilt_base_d#7
+    - episode_tilt_base_d#8
+    - episode_tilt_base_d#9
+    - episode_grasp_b_right#0
+    - episode_grasp_b_right#1
+    - episode_grasp_b_right#5
+    - episode_grasp_b_left#0
+    - episode_grasp_b_left#1
+    - episode_grasp_b_left#5
+    - episode_grasp_d_right#0
+    - episode_grasp_d_right#1
+    - episode_grasp_d_right#5
+    - episode_grasp_d_right#6
+    - episode_grasp_d_left#0
+    - episode_grasp_d_left#1
+    - episode_grasp_d_left#5
+    - episode_grasp_d_left#6
   - note: fake 인지 물체 발행 정지
     stop:
     - cups#0
@@ -750,6 +794,12 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
     - hand_unfreeze_on_grasp:=true
     - -p
     - thumb_support_g:=80.0
@@ -760,7 +810,7 @@ run:
     - -p
     - max_episode_s:={policy:aglt_right.max_episode_s}
     background: true
-  - note: '[right] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + 계약 goal_offset(rg3wo 0.10 m)'
+  - note: '[right] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + 계약 goal_offset'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
@@ -1009,6 +1059,12 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
     - hand_unfreeze_on_grasp:=true
     - -p
     - thumb_support_g:=80.0
@@ -1019,7 +1075,7 @@ run:
     - -p
     - max_episode_s:={policy:aglt_left.max_episode_s}
     background: true
-  - note: '[left] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + 계약 goal_offset(rg3wo 0.10 m)'
+  - note: '[left] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + 계약 goal_offset'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
@@ -1933,6 +1989,63 @@ run:
   - note: '[left] 이 팔의 pd 정지 — IDLE 이라 토크는 JTC 가 잡는다'
     stop:
     - pd_arm_left#1
+  tilt_now:
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] pd 가 IDLE 이면 지금 자리에서 engage — 이미 붙들고 있으면(TRACKING) 건너뜀'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - right
+    - --only
+    - pd_engage
+    - --skip-engaged
+    - --hold-s
+    - '2'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_engage
+  - note: '[left] pd 가 IDLE 이면 지금 자리에서 engage — 이미 붙들고 있으면(TRACKING) 건너뜀'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - left
+    - --only
+    - pd_engage
+    - --skip-engaged
+    - --hold-s
+    - '2'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_engage
+  - note: tilt 시작 자세로 — 팔마다 계획 · 검사(plan_carry, 걸리면 그 팔부터 움직이지 않음) → 재생(replay_to_pd) · 기록 logs/tilt/<시각>_setting
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/tilt_now.py'
+    execute_args:
+    - --execute
+  tilt_pour:
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: tilt 붓기 — 지금 자세에서 계획 · 검사(plan_tilt, 걸리면 움직이지 않음) → 두 팔 재생(replay_to_pd) · 기록 logs/tilt/<시각>_pour
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/tilt_pour.py'
+    - --no-record
+    execute_args:
+    - --execute
   episode_pick_place_right:
   - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
     argv:
@@ -1987,7 +2100,7 @@ run:
     argv:
     - bash
     - -lc
-    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner)$'''
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
   - note: fake — 확인만
     argv:
     - bash
@@ -2034,6 +2147,12 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
     - hand_unfreeze_on_grasp:=true
     - -p
     - thumb_support_g:=80.0
@@ -2068,11 +2187,13 @@ run:
     - -p
     - require_grasp:=false
     background: true
-  - note: 에피소드 실행기 — pick_place_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_right)
+  - note: 에피소드 실행기 episode_runner_right — pick_place_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_right)
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
     - --ros-args
+    - -r
+    - __node:=episode_runner_right
     - -p
     - episode:=config/episodes/pick_place_right.yaml
     - -p
@@ -2146,7 +2267,7 @@ run:
     argv:
     - bash
     - -lc
-    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner)$'''
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
   - note: fake — 확인만
     argv:
     - bash
@@ -2193,6 +2314,12 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
     - hand_unfreeze_on_grasp:=true
     - -p
     - thumb_support_g:=80.0
@@ -2227,11 +2354,13 @@ run:
     - -p
     - require_grasp:=false
     background: true
-  - note: 에피소드 실행기 — pick_place_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_left)
+  - note: 에피소드 실행기 episode_runner_left — pick_place_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_left)
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
     - --ros-args
+    - -r
+    - __node:=episode_runner_left
     - -p
     - episode:=config/episodes/pick_place_left.yaml
     - -p
@@ -2251,252 +2380,6 @@ run:
     - episode_pick_place_left#2
     - episode_pick_place_left#1
     - episode_pick_place_left#0
-  episode_grasp_rg3_right:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
-    argv:
-    - python3
-    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
-    - --x
-    - '0.25'
-    - --y
-    - '-0.20'
-    - --z
-    - '0.29'
-    - --topic
-    - /objects/source240b_blue/pose
-    background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
-    argv:
-    - python3
-    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
-    - --x
-    - '0.25'
-    - --y
-    - '-0.20'
-    - --z
-    - '0.29'
-    - --topic
-    - /objects/source240b_blue/live_pose
-    background: true
-  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/episode_run.py'
-    - --episode
-    - config/episodes/grasp_rg3_right.yaml
-    - --plan
-  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
-    argv:
-    - bash
-    - -lc
-    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: fake — 확인만
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_rg3wo) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
-    argv:
-    - '{repo}/.venv/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
-    - --ros-args
-    - -r
-    - __node:=rh_aglt_node_right
-    - -p
-    - ns:=right
-    - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/right_rg3wo/rh_aglt_contract.json
-    - -p
-    - robot:={artifact:robot_right}
-    - -p
-    - device:=cpu
-    - -p
-    - goal_max:=1
-    - -p
-    - freeze_rule:=lift_hold
-    - -p
-    - freeze_lift_m:=0.07
-    - -p
-    - freeze_hold_steps:=120
-    - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
-    - -p
-    - cup_static:=false
-    - -p
-    - cup_latch:=false
-    - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
-    - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - max_episode_s:=15.0
-    background: true
-  - note: 에피소드 실행기 — grasp_rg3_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_rg3_right)
-    argv:
-    - '{repo}/.venv/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
-    - --ros-args
-    - -p
-    - episode:=config/episodes/grasp_rg3_right.yaml
-    - -p
-    - robot:=rh56f1
-    background: true
-  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
-  - note: 에피소드 노드들 정지
-    stop:
-    - episode_grasp_rg3_right#6
-    - episode_grasp_rg3_right#5
-    - episode_grasp_rg3_right#1
-    - episode_grasp_rg3_right#0
-  episode_grasp_rg3_left:
-  - note: fake 물체 — /objects/shaker_c_orange/pose(aglt 학습 배치 x 0.25)
-    argv:
-    - python3
-    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
-    - --x
-    - '0.25'
-    - --y
-    - '0.20'
-    - --z
-    - '0.29'
-    - --topic
-    - /objects/shaker_c_orange/pose
-    background: true
-  - note: fake 물체 — /objects/shaker_c_orange/live_pose(aglt 학습 배치 x 0.25)
-    argv:
-    - python3
-    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
-    - --x
-    - '0.25'
-    - --y
-    - '0.20'
-    - --z
-    - '0.29'
-    - --topic
-    - /objects/shaker_c_orange/live_pose
-    background: true
-  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/episode_run.py'
-    - --episode
-    - config/episodes/grasp_rg3_left.yaml
-    - --plan
-  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
-    argv:
-    - bash
-    - -lc
-    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner)$'''
-  - note: fake — 확인만
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_rg3wo) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
-    argv:
-    - '{repo}/.venv/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
-    - --ros-args
-    - -r
-    - __node:=rh_aglt_node_left
-    - -p
-    - ns:=left
-    - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/left_rg3wo/rh_aglt_contract.json
-    - -p
-    - robot:={artifact:robot_left}
-    - -p
-    - device:=cpu
-    - -p
-    - goal_max:=1
-    - -p
-    - freeze_rule:=lift_hold
-    - -p
-    - freeze_lift_m:=0.07
-    - -p
-    - freeze_hold_steps:=120
-    - -p
-    - cup_topic:=/objects/shaker_c_orange/live_pose
-    - -p
-    - cup_static:=false
-    - -p
-    - cup_latch:=false
-    - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
-    - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - max_episode_s:=15.0
-    background: true
-  - note: 에피소드 실행기 — grasp_rg3_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_rg3_left)
-    argv:
-    - '{repo}/.venv/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
-    - --ros-args
-    - -p
-    - episode:=config/episodes/grasp_rg3_left.yaml
-    - -p
-    - robot:=rh56f1
-    background: true
-  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
-  - note: 에피소드 노드들 정지
-    stop:
-    - episode_grasp_rg3_left#6
-    - episode_grasp_rg3_left#5
-    - episode_grasp_rg3_left#1
-    - episode_grasp_rg3_left#0
   episode_grasp_c_right:
   - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
     argv:
@@ -2535,14 +2418,14 @@ run:
     argv:
     - bash
     - -lc
-    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner)$'''
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
   - note: fake — 확인만
     argv:
     - bash
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_rg3wg) — 경로 C: 접근 정책 → 정책 끄고 손 닫기(닿은 손가락은 실측에 고정 · 안 닿은 손가락 앞섬 0.08 rad) → 판정 없이 10
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 C: 접근 정책 → 정책 끄고 손 닫기(닿은 손가락은 실측에 고정 · 안 닿은 손가락 앞섬 0.08 rad) → 판정 없이 10
       cm 들기 → 3 s 유지, 들기 미달만 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
@@ -2553,13 +2436,13 @@ run:
     - -p
     - ns:=right
     - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_rg3wg/rh_aglt_contract.json
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
     - -p
     - robot:={artifact:robot_right}
     - -p
     - device:=cpu
     - -p
-    - approach_grasp:=on
+    - approach_grasp:=stop_ready=1
     - -p
     - cup_topic:=/objects/source240b_blue/live_pose
     - -p
@@ -2583,6 +2466,12 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
     - hand_unfreeze_on_grasp:=true
     - -p
     - thumb_support_g:=80.0
@@ -2593,11 +2482,13 @@ run:
     - -p
     - max_episode_s:=29.0
     background: true
-  - note: 에피소드 실행기 — grasp_c_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_c_right)
+  - note: 에피소드 실행기 episode_runner_right — grasp_c_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_c_right)
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
     - --ros-args
+    - -r
+    - __node:=episode_runner_right
     - -p
     - episode:=config/episodes/grasp_c_right.yaml
     - -p
@@ -2653,14 +2544,14 @@ run:
     argv:
     - bash
     - -lc
-    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner)$'''
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
   - note: fake — 확인만
     argv:
     - bash
     - -lc
     - 'true'
     manual: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_rg3wg) — 경로 C: 접근 정책 → 정책 끄고 손 닫기(닿은 손가락은 실측에 고정 · 안 닿은 손가락 앞섬 0.08 rad) → 판정 없이 10 cm
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 C: 접근 정책 → 정책 끄고 손 닫기(닿은 손가락은 실측에 고정 · 안 닿은 손가락 앞섬 0.08 rad) → 판정 없이 10 cm
       들기 → 3 s 유지, 들기 미달만 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
@@ -2671,13 +2562,13 @@ run:
     - -p
     - ns:=left
     - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_rg3wg/rh_aglt_contract.json
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
     - -p
     - robot:={artifact:robot_left}
     - -p
     - device:=cpu
     - -p
-    - approach_grasp:=on
+    - approach_grasp:=stop_ready=1
     - -p
     - cup_topic:=/objects/shaker_c_orange/live_pose
     - -p
@@ -2701,6 +2592,12 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
     - hand_unfreeze_on_grasp:=true
     - -p
     - thumb_support_g:=80.0
@@ -2711,11 +2608,13 @@ run:
     - -p
     - max_episode_s:=29.0
     background: true
-  - note: 에피소드 실행기 — grasp_c_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_c_left)
+  - note: 에피소드 실행기 episode_runner_left — grasp_c_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_c_left)
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
     - --ros-args
+    - -r
+    - __node:=episode_runner_left
     - -p
     - episode:=config/episodes/grasp_c_left.yaml
     - -p
@@ -2733,214 +2632,6 @@ run:
     - episode_grasp_c_left#5
     - episode_grasp_c_left#1
     - episode_grasp_c_left#0
-  episode_tilt_base_a:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
-    argv:
-    - python3
-    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
-    - --x
-    - '0.25'
-    - --y
-    - '-0.20'
-    - --z
-    - '0.29'
-    - --topic
-    - /objects/source240b_blue/pose
-    background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
-    argv:
-    - python3
-    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
-    - --x
-    - '0.25'
-    - --y
-    - '-0.20'
-    - --z
-    - '0.29'
-    - --topic
-    - /objects/source240b_blue/live_pose
-    background: true
-  - note: fake 물체 — /objects/shaker_c_orange/pose(aglt 학습 배치 x 0.25)
-    argv:
-    - python3
-    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
-    - --x
-    - '0.25'
-    - --y
-    - '0.20'
-    - --z
-    - '0.29'
-    - --topic
-    - /objects/shaker_c_orange/pose
-    background: true
-  - note: fake 물체 — /objects/shaker_c_orange/live_pose(aglt 학습 배치 x 0.25)
-    argv:
-    - python3
-    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
-    - --x
-    - '0.25'
-    - --y
-    - '0.20'
-    - --z
-    - '0.29'
-    - --topic
-    - /objects/shaker_c_orange/live_pose
-    background: true
-  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/episode_run.py'
-    - --episode
-    - config/episodes/tilt_base_a.yaml
-    - --plan
-  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
-    argv:
-    - bash
-    - -lc
-    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: fake — 확인만
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_rg3wo) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
-    argv:
-    - '{repo}/.venv/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
-    - --ros-args
-    - -r
-    - __node:=rh_aglt_node_right
-    - -p
-    - ns:=right
-    - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/right_rg3wo/rh_aglt_contract.json
-    - -p
-    - robot:={artifact:robot_right}
-    - -p
-    - device:=cpu
-    - -p
-    - goal_max:=1
-    - -p
-    - freeze_rule:=lift_hold
-    - -p
-    - freeze_lift_m:=0.07
-    - -p
-    - freeze_hold_steps:=120
-    - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
-    - -p
-    - cup_static:=false
-    - -p
-    - cup_latch:=false
-    - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
-    - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - max_episode_s:=15.0
-    background: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_rg3wo) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
-    argv:
-    - '{repo}/.venv/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
-    - --ros-args
-    - -r
-    - __node:=rh_aglt_node_left
-    - -p
-    - ns:=left
-    - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/left_rg3wo/rh_aglt_contract.json
-    - -p
-    - robot:={artifact:robot_left}
-    - -p
-    - device:=cpu
-    - -p
-    - goal_max:=1
-    - -p
-    - freeze_rule:=lift_hold
-    - -p
-    - freeze_lift_m:=0.07
-    - -p
-    - freeze_hold_steps:=120
-    - -p
-    - cup_topic:=/objects/shaker_c_orange/live_pose
-    - -p
-    - cup_static:=false
-    - -p
-    - cup_latch:=false
-    - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
-    - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - max_episode_s:=15.0
-    background: true
-  - note: 에피소드 실행기 — tilt_base_a · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:tilt_base_a)
-    argv:
-    - '{repo}/.venv/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
-    - --ros-args
-    - -p
-    - episode:=config/episodes/tilt_base_a.yaml
-    - -p
-    - robot:=rh56f1
-    background: true
-  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
-  - note: 에피소드 노드들 정지
-    stop:
-    - episode_tilt_base_a#9
-    - episode_tilt_base_a#8
-    - episode_tilt_base_a#7
-    - episode_tilt_base_a#3
-    - episode_tilt_base_a#2
-    - episode_tilt_base_a#1
-    - episode_tilt_base_a#0
   episode_tilt_base_b:
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -2960,7 +2651,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: 에피소드 실행기 — tilt_base_b · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:tilt_base_b)
+  - note: 에피소드 실행기 episode_runner — tilt_base_b · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:tilt_base_b)
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
@@ -3050,7 +2741,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_rg3wg) — 경로 C: 접근 정책 → 정책 끄고 손 닫기(닿은 손가락은 실측에 고정 · 안 닿은 손가락 앞섬 0.08 rad) → 판정 없이 10
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 C: 접근 정책 → 정책 끄고 손 닫기(닿은 손가락은 실측에 고정 · 안 닿은 손가락 앞섬 0.08 rad) → 판정 없이 10
       cm 들기 → 3 s 유지, 들기 미달만 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
@@ -3061,13 +2752,13 @@ run:
     - -p
     - ns:=right
     - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_rg3wg/rh_aglt_contract.json
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
     - -p
     - robot:={artifact:robot_right}
     - -p
     - device:=cpu
     - -p
-    - approach_grasp:=on
+    - approach_grasp:=stop_ready=1
     - -p
     - cup_topic:=/objects/source240b_blue/live_pose
     - -p
@@ -3091,6 +2782,12 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
     - hand_unfreeze_on_grasp:=true
     - -p
     - thumb_support_g:=80.0
@@ -3101,7 +2798,7 @@ run:
     - -p
     - max_episode_s:=29.0
     background: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_rg3wg) — 경로 C: 접근 정책 → 정책 끄고 손 닫기(닿은 손가락은 실측에 고정 · 안 닿은 손가락 앞섬 0.08 rad) → 판정 없이 10 cm
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 C: 접근 정책 → 정책 끄고 손 닫기(닿은 손가락은 실측에 고정 · 안 닿은 손가락 앞섬 0.08 rad) → 판정 없이 10 cm
       들기 → 3 s 유지, 들기 미달만 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
@@ -3112,13 +2809,13 @@ run:
     - -p
     - ns:=left
     - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_rg3wg/rh_aglt_contract.json
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
     - -p
     - robot:={artifact:robot_left}
     - -p
     - device:=cpu
     - -p
-    - approach_grasp:=on
+    - approach_grasp:=stop_ready=1
     - -p
     - cup_topic:=/objects/shaker_c_orange/live_pose
     - -p
@@ -3142,6 +2839,12 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
     - hand_unfreeze_on_grasp:=true
     - -p
     - thumb_support_g:=80.0
@@ -3152,7 +2855,7 @@ run:
     - -p
     - max_episode_s:=29.0
     background: true
-  - note: 에피소드 실행기 — tilt_base_c · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:tilt_base_c)
+  - note: 에피소드 실행기 episode_runner — tilt_base_c · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:tilt_base_c)
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
@@ -3177,6 +2880,660 @@ run:
     - episode_tilt_base_c#2
     - episode_tilt_base_c#1
     - episode_tilt_base_c#0
+  episode_tilt_base_d:
+  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '-0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/source240b_blue/pose
+    background: true
+  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '-0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/source240b_blue/live_pose
+    background: true
+  - note: fake 물체 — /objects/shaker_c_orange/pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/shaker_c_orange/pose
+    background: true
+  - note: fake 물체 — /objects/shaker_c_orange/live_pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/shaker_c_orange/live_pose
+    background: true
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/tilt_base_d.yaml
+    - --plan
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 D: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/right_rcg03 로 넘김
+      → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_right
+    - -p
+    - ns:=right
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/right_rcg03/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/source240b_blue/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - hand_squeeze:=true
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 D: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/left_rcg03 로 넘김 →
+      첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_left
+    - -p
+    - ns:=left
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/left_rcg03/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/shaker_c_orange/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - hand_squeeze:=true
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: 에피소드 실행기 episode_runner — tilt_base_d · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:tilt_base_d)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -p
+    - episode:=config/episodes/tilt_base_d.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_tilt_base_d#9
+    - episode_tilt_base_d#8
+    - episode_tilt_base_d#7
+    - episode_tilt_base_d#3
+    - episode_tilt_base_d#2
+    - episode_tilt_base_d#1
+    - episode_tilt_base_d#0
+  episode_grasp_b_right:
+  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '-0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/source240b_blue/pose
+    - --follow-side
+    - right
+    background: true
+  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '-0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/source240b_blue/live_pose
+    - --follow-side
+    - right
+    background: true
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_b_right.yaml
+    - --plan
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/(episode_runner_right)$'''
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 실행기 episode_runner_right — grasp_b_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_b_right)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_right
+    - -p
+    - episode:=config/episodes/grasp_b_right.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_b_right#5
+    - episode_grasp_b_right#1
+    - episode_grasp_b_right#0
+  episode_grasp_b_left:
+  - note: fake 물체 — /objects/shaker_c_orange/pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/shaker_c_orange/pose
+    - --follow-side
+    - left
+    background: true
+  - note: fake 물체 — /objects/shaker_c_orange/live_pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/shaker_c_orange/live_pose
+    - --follow-side
+    - left
+    background: true
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_b_left.yaml
+    - --plan
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/(episode_runner_left)$'''
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 실행기 episode_runner_left — grasp_b_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_b_left)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_left
+    - -p
+    - episode:=config/episodes/grasp_b_left.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_b_left#5
+    - episode_grasp_b_left#1
+    - episode_grasp_b_left#0
+  episode_grasp_d_right:
+  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '-0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/source240b_blue/pose
+    background: true
+  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '-0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/source240b_blue/live_pose
+    background: true
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_d_right.yaml
+    - --plan
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 D: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/right_rcg03 로 넘김
+      → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_right
+    - -p
+    - ns:=right
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/right_rcg03/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/source240b_blue/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - hand_squeeze:=true
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: 에피소드 실행기 episode_runner_right — grasp_d_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_d_right)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_right
+    - -p
+    - episode:=config/episodes/grasp_d_right.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_d_right#6
+    - episode_grasp_d_right#5
+    - episode_grasp_d_right#1
+    - episode_grasp_d_right#0
+  episode_grasp_d_left:
+  - note: fake 물체 — /objects/shaker_c_orange/pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/shaker_c_orange/pose
+    background: true
+  - note: fake 물체 — /objects/shaker_c_orange/live_pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/shaker_c_orange/live_pose
+    background: true
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_d_left.yaml
+    - --plan
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 D: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/left_rcg03 로 넘김 →
+      첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_left
+    - -p
+    - ns:=left
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/left_rcg03/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/shaker_c_orange/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - hand_squeeze:=true
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: 에피소드 실행기 episode_runner_left — grasp_d_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_d_left)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_left
+    - -p
+    - episode:=config/episodes/grasp_d_left.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_d_left#6
+    - episode_grasp_d_left#5
+    - episode_grasp_d_left#1
+    - episode_grasp_d_left#0
   head_control:
   - note: fake — 목 없음(승인한 자세 설정만 보관)
     argv:

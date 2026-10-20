@@ -1,3 +1,4 @@
+# ★10.20 폐지(사용자 "경로 a는 폐지, -> 경로d가 대체함") — 미션 · 상황판에서 뺐다. 대신 grasp_d_<팔> · tilt_base_d. 시험 고정본으로만 남긴다.
 # tilt 기본 궤적 실기 평가 — 경로 A(파지 정책 rg3wo) · 10.17 사용자 결정 1 · 8 · 9 · 10 · 12 (docs/PLAN_GRASP_TILT_EVAL_2026-10-17.md)
 # 오른손 병(source240) 잡기 → 왼손 shaker 잡기(각각 7 cm 위 2 s 쥠에서 정책 멈춤, 손은 마지막 지령 유지)
 # → ready_carry 로 붓기 시작 자세(SETTING = rh56f1_pour_start.yaml), 한 팔씩(오른팔 → 왼팔, 계획 "ready_carry(한 팔씩)")

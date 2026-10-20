@@ -89,7 +89,34 @@ def failure_actions(stage_id: str, sides: Sequence[str]) -> list[tuple[str, str]
 #: 10.04 에피소드 실행기 — 상황판 [다음 노드] · [연속 실행] · [정지] 가 부르는 도구(승인 한 줄 + 서비스). argv 는 여기에만.
 _EPISODE_CMD = _paths.POLICY_CONTROL / "tools" / "episode_cmd.py"
 EPISODE_NODE = "episode_runner"
+#: ★10.19 사용자 "좌우 동시 실행" — 한 팔 에피소드는 팔마다 실행기(episode_runner_<팔>), 두 팔 에피소드(tilt)는 기본 실행기.
+RUNNER_NODES = (EPISODE_NODE, f"{EPISODE_NODE}_right", f"{EPISODE_NODE}_left")
 EPISODE_ACTIONS = ("next", "run", "stop", "reset")
+
+
+def runner_views(obs) -> dict:
+    """상태가 온 실행기만 {이름: 상태 + runner · age_s · stale}(RUNNER_NODES 순). 순수."""
+    out = {}
+    for name in RUNNER_NODES:
+        st = obs.status.get(name)
+        if st is None:
+            continue
+        age = obs.age_s.get(name, 1e9)
+        out[name] = {**st, "runner": name, "age_s": round(age, 2), "stale": age > STALE_S}
+    return out
+
+
+def runner_key(action: str, runner: str) -> str:
+    """실행기 명령 프로세스 키 — 기본 실행기는 옛 키(episode#<동작>), 팔 실행기는 episode#<동작>#<이름>. 순수."""
+    return f"episode#{action}" if runner == EPISODE_NODE else f"episode#{action}#{runner}"
+
+
+def primary_runner(views: Mapping[str, dict]) -> str | None:
+    """하나만 보일 때 고르는 실행기 — 신선한 것 → 실행 중 → 기본 · 오른팔 · 왼팔 순. 없으면 None. 순수."""
+    if not views:
+        return None
+    order = {n: i for i, n in enumerate(RUNNER_NODES)}
+    return min(views, key=lambda n: (bool(views[n].get("stale")), not views[n].get("busy"), order.get(n, 99)))
 #: 여러 팔의 phase 를 한 줄로 합칠 때의 무게 순서 — 하나라도 잡고 있으면 잡고 있는 것.
 _PD_ORDER = (U.PD_UNKNOWN, "HOLD", "RELEASING", "RAMPING", "TRACKING", "IDLE")
 _BRIDGE_RESTART_S = 3.0
@@ -191,7 +218,7 @@ def bridge_argv(profile: Profile, diagram: Diagram | None = None, robot: RB.Robo
                 workspace_topics: Sequence[str] = ()) -> list[str]:
     """구독 전용 브리지. 스택 토픽은 프로파일이 선언했을 때만 넘긴다. 순수."""
     diagram = diagram if diagram is not None else profile.diagram
-    nodes = list(dict.fromkeys([*profile.status_nodes, EPISODE_NODE]))   # 에피소드 실행기 상태(떠 있을 때만 온다)
+    nodes = list(dict.fromkeys([*profile.status_nodes, *RUNNER_NODES]))   # 에피소드 실행기 상태(떠 있을 때만 온다)
     # 그림의 정책 노드 · 실행기가 읽는 status — 상자가 phase · seq · 거부 사유를 직접 말하게 한다(떠 있을 때만 온다)
     nodes = list(dict.fromkeys([*nodes, *(b.status for b in (diagram.boxes if diagram is not None else ()) if b.status)]))
     argv = [sys.executable, "-m", "s2r_console.bridge", "--domain", str(profile.domain), "--nodes", *nodes]
@@ -895,48 +922,62 @@ class Console:
             self._intent(s, f"quick/{name}", {"client": client})
             if name in ("episode_stop", "episode_abort"):  # 에피소드 실행기도 멈춘다 — 안 그러면 연속 실행이 복구 동작으로 이어 간다
                 with s.feed_lock:
-                    alive = s.feed.observed().status.get(EPISODE_NODE) is not None
-                if alive and not s.supervisor.is_alive("episode#stop"):
-                    s.supervisor.spawn("episode#stop", stage="episode", note="에피소드 실행기 정지",
-                                       argv=["python3", str(_EPISODE_CMD), "stop", "--execute", "--operator", client],
-                                       background=False, manual=False)
+                    alive = list(runner_views(s.feed.observed()))      # ★10.19 떠 있는 실행기 전부(팔마다 따로 돈다)
+                for runner in alive:
+                    if not s.supervisor.is_alive(runner_key("stop", runner)):
+                        s.supervisor.spawn(runner_key("stop", runner), stage="episode", note=f"에피소드 실행기 정지 · {runner}",
+                                           argv=["python3", str(_EPISODE_CMD), "stop", "--execute", "--operator", client,
+                                                 "--runner", runner],
+                                           background=False, manual=False)
         threading.Thread(target=self._quick_wait, args=(s, key, label), daemon=True).start()
 
-    def episode(self, action: str, *, operator: str, typed: str = "") -> None:
+    def episode(self, action: str, *, operator: str, typed: str = "", runner: str = "") -> None:
         """에피소드 실행기 명령(10.04). next · run 은 실행기가 물을 이름을 그대로 입력해야 한다 — 구분 실행은 노드마다,
-        연속 실행은 episode:<이름> 한 번(그 안의 복구도). stop 은 lease 없이 언제나(api 가 거른다)."""
+        연속 실행은 episode:<이름> 한 번(그 안의 복구도). stop 은 lease 없이 언제나(api 가 거른다).
+        ★10.19 runner = 대상 실행기(RUNNER_NODES) — 비우면 화면이 보이는 실행기(primary_runner), stop 은 떠 있는 실행기 전부."""
         if action not in EPISODE_ACTIONS:
             raise ConsoleError(f"모르는 에피소드 동작: {action}", code=404)
+        if runner and runner not in RUNNER_NODES:
+            raise ConsoleError(f"모르는 에피소드 실행기: {runner}", code=400)
         with self._lock:
             s = self._need()
             with s.feed_lock:
                 obs = s.feed.observed()
-            st = obs.status.get(EPISODE_NODE)
-            age = obs.age_s.get(EPISODE_NODE)
-            if st is None or age is None or age > STALE_S:
+            views = {n: v for n, v in runner_views(obs).items() if not v["stale"]}
+            if action == "stop" and not runner:
+                targets = list(views)
+            else:
+                name = runner or primary_runner(views)
+                targets = [name] if name in views else []
+            if not targets:
                 raise ConsoleError("에피소드 실행기 상태가 안 온다 — episode 단계를 먼저 실행할 것", code=409)
-            want = st.get("next_action") if action == "next" else f"episode:{st.get('episode')}" if action == "run" else ""
-            if action in ("next", "run"):
-                if str(st.get('episode', '')).startswith('grasp_rg3_'):
-                    self._rg3_fpp_guard(s, obs)
-                if st.get("busy"):
-                    raise ConsoleError(f"실행기가 {st.get('node')} 를 돌리는 중이다 — 끝나거나 정지 뒤에", code=409)
-                if not want:
-                    raise ConsoleError(f"할 노드가 없다(상태 {st.get('phase')})", code=409)
-                if typed != want:
-                    raise ConsoleError(f"확인 입력이 {want!r} 와 다르다", code=400)
-            argv = ["python3", str(_EPISODE_CMD), action, "--execute", "--operator", operator]
-            if action in ("next", "run"):
-                argv += ["--approve", want]
-            key = f"episode#{action}"
-            try:
-                s.supervisor.spawn(key, stage="episode", note=f"에피소드 {action} {want}".strip(), argv=argv,
-                                   background=False, manual=False)
-            except SupervisorError as exc:
-                raise ConsoleError(str(exc)) from exc
-            s.event("episode", f"▶ 에피소드 {action} {want} ({operator})".replace("  ", " "))
-            self._intent(s, f"episode/{action}", {"operator": operator, "approve": want})
-        threading.Thread(target=self._quick_wait, args=(s, key, f"에피소드 {action}"), daemon=True).start()
+            planned = []
+            for name in targets:
+                st = views[name]
+                want = st.get("next_action") if action == "next" else f"episode:{st.get('episode')}" if action == "run" else ""
+                if action in ("next", "run"):
+                    if str(st.get('episode', '')).startswith(('grasp_rg3_', 'grasp_c_', 'grasp_d_')):   # ★10.19 경로 C · ★10.20 D 도 FP++ 실시간 컵
+                        self._rg3_fpp_guard(s, obs)
+                    if st.get("busy"):
+                        raise ConsoleError(f"{name} 가 {st.get('node')} 를 돌리는 중이다 — 끝나거나 정지 뒤에", code=409)
+                    if not want:
+                        raise ConsoleError(f"{name}: 할 노드가 없다(상태 {st.get('phase')})", code=409)
+                    if typed != want:
+                        raise ConsoleError(f"확인 입력이 {want!r} 와 다르다", code=400)
+                argv = ["python3", str(_EPISODE_CMD), action, "--execute", "--operator", operator, "--runner", name]
+                if action in ("next", "run"):
+                    argv += ["--approve", want]
+                planned.append((runner_key(action, name), name, want, argv))
+            for key, name, want, argv in planned:
+                try:
+                    s.supervisor.spawn(key, stage="episode", note=f"에피소드 {action} {want} · {name}".replace("  ", " "),
+                                       argv=argv, background=False, manual=False)
+                except SupervisorError as exc:
+                    raise ConsoleError(str(exc)) from exc
+                s.event("episode", f"▶ 에피소드 {action} {want} · {name} ({operator})".replace("  ", " "))
+                self._intent(s, f"episode/{action}", {"operator": operator, "approve": want, "runner": name})
+        for key, name, _want, _argv in planned:
+            threading.Thread(target=self._quick_wait, args=(s, key, f"에피소드 {action} · {name}"), daemon=True).start()
 
     @staticmethod
     def _rg3_fpp_guard(s: Session, obs) -> None:
@@ -1014,9 +1055,9 @@ class Console:
         robot = R.view(obs.joints, s.contract_sides, s.joint_limits, age_s=obs.joints_age_s,
                        alias=s.joint_alias, joint_ages=obs.joint_ages)
         s.workspace.ingest_fpp(obs)
-        runner = None if obs.status.get(EPISODE_NODE) is None else {
-            **obs.status[EPISODE_NODE], "age_s": round(obs.age_s.get(EPISODE_NODE, 1e9), 2),
-            "stale": obs.age_s.get(EPISODE_NODE, 1e9) > STALE_S}
+        runners = runner_views(obs)                     # ★10.19 팔마다 실행기 — 화면 하나는 primary, 전부는 episode_runners
+        primary = primary_runner(runners)
+        runner = runners.get(primary) if primary else None
         return {"robot": robot, "run_id": s.run_id, "run_dir": str(s.run_dir), "operator": s.operator,
                 'workspace': s.workspace.snapshot(), 'actions': self.actions.catalog(),
                 'management': self.actions.view(), 'video': self.video_status(),
@@ -1029,9 +1070,10 @@ class Console:
                 "robot_module": None if s.robot is None else {**s.robot.as_dict(), "picked": s.picked,
                                                               "slots_now": self._slots_now(s)},
                 "fpp": self._fpp_view(s, obs),
-                "episode_runner": runner,
+                "episode_runner": runner, "episode_runners": list(runners.values()),
                 # ★10.17 policy 탭 tilt 평가 묶음(경로 A · C · B · 계획 검사 · 손 쥐기 · 회차 기록) — RH56F1 프로파일만
-                "tilt": TV.view(self.repo, runner) if s.profile.id.startswith("rh56f1") else None}
+                #   tilt 에피소드는 두 팔이라 기본 실행기가 돈다
+                "tilt": TV.view(self.repo, runners.get(EPISODE_NODE) or runner) if s.profile.id.startswith("rh56f1") else None}
 
     @staticmethod
     def _fpp_view(s: Session, obs) -> dict | None:

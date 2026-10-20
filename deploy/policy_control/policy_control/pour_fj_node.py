@@ -35,6 +35,7 @@ if __package__ in (None, ""):
 from policy_control import _paths  # noqa: F401,E402
 from policy_control import codec  # noqa: E402
 from policy_control.cup_attach import AttachCfg, CupAttach, grasp_signal  # noqa: E402
+from policy_control.cup_dropout import CupDropout, DropoutCfg, DropoutStop  # noqa: E402
 from policy_control.fpp_gate import FppGate, GateCfg  # noqa: E402
 from policy_control import pour_fj as F  # noqa: E402
 from policy_control import rh_aglt as A  # noqa: E402
@@ -87,6 +88,9 @@ START_TILT_MAX_DEG = 15.0
 #: ★10.13 sim(vision-3090 rg3s ep4700): 실기 121432 컵 자리(0.342, −0.394) — 소환 박스 y 밖 9 cm — 에서 진짜 성공 0.05(시간 종료 0.95).
 #  rh_aglt 시작 = 컵 xy 가 학습 소환 박스(계약 goal_box xy, goal_box_xy_margin 0) 안 + 이 여유.
 START_SPAWN_TOL_M = 0.02
+#: ★10.20 arm_start ready(rcg_02·03) 시작 = 손바닥이 사전 파지 자리(r/R · h 학습 범위)에서 이 거리 안.
+#  ap05 학습 접근 성공 = 사전 파지 점 2 cm 안(approach_succ_pos_m) + FP++ 컵 위치 잡음 1 cm 쯤 → 3 cm.
+READY_POSE_TOL_M = 0.03
 
 
 class PourFjNodeError(RuntimeError):
@@ -164,9 +168,16 @@ def target_arrays(c: F.FjContract, targets: dict) -> tuple[tuple, np.ndarray, np
 def aglt_start_refusals(c: A.RaContract, meas: dict, tol: float) -> list:
     m, s = meas["arm"], c.side()
     out = []
-    err = float(np.abs(m.arm_q - np.asarray(s.arm_home)).max())
-    if err > tol:
-        out.append(f"{s.side} arm is {err:.3f} rad from the training start pose (tol {tol})")
+    if c.arm_start == "ready":                  # ★10.20 rcg_02·03: 학습은 사전 파지 자리에서 넘겨받는다 — 앞 단계(ap05)가 데려와야 한다
+        rr, out_h, out_r = A.ready_pose_error(c, m.cup_pos, m.palm_pos)
+        if out_r > READY_POSE_TOL_M or out_h > READY_POSE_TOL_M:
+            out.append(f"{s.side} palm is not at the pre-grasp pose: r/R {rr:.2f} (train {c.ready_r_mult}), "
+                       f"{out_r * 100:.1f} cm off in radius · {out_h * 100:.1f} cm off in height (tol {READY_POSE_TOL_M * 100:.0f} cm)"
+                       " — run the approach policy first")
+    else:
+        err = float(np.abs(m.arm_q - np.asarray(s.arm_home)).max())
+        if err > tol:
+            out.append(f"{s.side} arm is {err:.3f} rad from the training start pose (tol {tol})")
     tilt = _cup_tilt_deg(m.cup_quat)
     if tilt > START_TILT_MAX_DEG:
         out.append(f"cup tilt {tilt:.1f} deg (> {START_TILT_MAX_DEG:.0f}) — a standing cup is expected")
@@ -192,6 +203,7 @@ class AgltChain:
 
     def __init__(self, c: A.RaContract, policy) -> None:
         self.c, self.policy = c, policy
+        self.base_policy = policy                   # ★10.20 경로 D 는 넘김 때 정책을 바꾼다 — reset 마다 접근 정책으로
         self.dec = A.RaDecoder(c)
         self.prev = np.zeros(c.action_dim)
         self.step_i = 0
@@ -229,15 +241,37 @@ class AgltChain:
         if meas is None:
             raise PourFjNodeError("rh_aglt reset needs the cup pose (goal = cup at reset + offset)")
         self.c = A.select_object(self.base, self.object_name)   # 물체를 모르면 RhAgltError(조용한 0 one-hot 금지)
+        self.policy = self.base_policy
         if self.ag is not None:                     # ★10.17 경로 C 는 닫기 때 디코더를 바꾼다 — 에피소드마다 접근 정책 디코더로
             self.dec = A.RaDecoder(self.c, self.dec.assist)
             self.ag.reset()
-        self.dec.reset()
+        if self.c.arm_start == "ready":             # ★10.20 rcg_02·03: sim 은 사전 파지 자리에서 Mover 마지막 명령 · 편 손 목표로 넘긴다
+            self.dec.reset(arm_start=[float(v) for v in meas["arm"].arm_q])
+        else:
+            self.dec.reset()
         self.prev = np.zeros(self.c.action_dim)
         self.step_i = 0
         self.goals = G.GoalBook.start(self.c, meas["arm"].cup_pos, meas["arm"].cup_quat, freeze=self.freeze)
         if hasattr(self.policy, "reset"):
             self.policy.reset()
+
+    def handover(self, base: A.RaContract, policy, m: A.RaMeas) -> None:
+        """★10.20 경로 D — 같은 에피소드 안에서 다음 정책(arm_start ready, rcg)이 지금 자세에서 넘겨받는다.
+
+        sim(hdgp aglt_start=ready): 사전 파지 자리에 정착한 팔 목표(Mover 마지막 명령) · 편 손 목표에서 정책이 시작한다 — 배포는
+        접근 정책이 이 틱에 보낸 팔 목표에서 이어 간다(명령이 끊기지 않는다, 정지 판정 뒤라 실측과 거의 같다). 목표는 리셋 때
+        컵 + goal_offset 이다. 배포는 넘김 순간의 컵으로 목표를 다시 잡는다(접근은 컵을 건드리지 않는 단계). LSTM 은 0 에서
+        hold_steps 동안 정지 자세를 보며 예열한다(sim 은 홈 대기 · 접근 · 정착을 보고 온다 — 이 차이는 실기에서 본다)."""
+        c = A.select_object(base, self.object_name)
+        arm = self.dec.state["arm"].arm_target.copy()
+        self.c, self.policy = c, policy
+        self.dec = A.RaDecoder(c, self.dec.assist)
+        self.dec.reset(arm_start=arm)
+        self.prev = np.zeros(c.action_dim)
+        self.step_i = 0
+        self.goals = G.GoalBook.start(c, m.cup_pos, m.cup_quat, freeze=self.freeze)
+        if hasattr(policy, "reset"):
+            policy.reset()
 
     def step(self, meas: dict) -> tuple[np.ndarray, np.ndarray, dict]:
         if self.ag is not None and self.ag.scripted:   # ★10.17 경로 C — 접근 뒤는 스크립트 닫기 · 판정 · 들기
@@ -249,7 +283,7 @@ class AgltChain:
         hand_q = np.array([m.hand_q[j] for j in self.c.side().hand_joints], float)
         near = float(np.linalg.norm(np.asarray(m.cup_pos, float) - np.asarray(m.palm_pos, float)))   # 10.14 grasp_near_m
         targets = self.dec.step(a, active=active, tactile_n=m.tactile_n, hand_q=hand_q, joint_force=m.joint_force,
-                                obj_palm_m=near)
+                                obj_palm_m=near, cup_z=float(np.asarray(m.cup_pos, float)[2]))   # ★10.19 팔 들림 래치
         if active:                                  # 학습 GoalState.step 도 대기 중에는 세지 않는다
             g = self.dec.grasped()                  # ★10.12 hand_block 계약: 막힘 신호 쥔 판정(sim _grasp_flag 와 같은 식)
             if g is None and self.grasp_cfg is not None:   # 이전 계약: 부착과 같은 쥠 신호(손끝 또는 관절 힘), 손끝 문턱은 계약 값
@@ -257,7 +291,9 @@ class AgltChain:
             if not g and self.lift_grasped(m):      # ★10.13 B 들림 판정(배포 전용, 기본 끔)
                 g = True
             self.goals.step(m.cup_pos, m.cup_quat, m.tactile_n, is_grasped=g, fresh=self.cup_fresh)
-        self.prev = np.clip(a, -1.0, 1.0)
+        # ★10.20 arm_start ready: sim 대기(hold · 접근 · 정착) 기록 행동 = (팔 0, 손 폄) — 관측 직전 행동도 그 값이다.
+        #   배포는 앞 단계(ap05)가 데려온 자리에서 hold_steps 만 기다린다(LSTM 은 그동안 정지한 사전 파지 자세를 본다).
+        self.prev = A.ready_hold_action(self.c) if (self.c.arm_start == "ready" and not active) else np.clip(a, -1.0, 1.0)
         self.step_i += 1
         if self.ag is not None:
             self.ag.after_policy(self, m)
@@ -374,7 +410,10 @@ class PourFjNode(LeanNodeMixin, Node):
                               ("stop_on_target", False), ("goal_max", 0),
                               ("freeze_rule", "success"), ("freeze_lift_m", 0.07), ("freeze_hold_steps", 30), ("episode_topic", ""), ("object", ""),
                               ("hand_unfreeze_on_grasp", False), ("thumb_support_g", 0.0), ("lift_grasp_palm_m", 0.0),
-                              ("thumb_open_floor_rad", 0.0), ("approach_grasp", ""),
+                              ("thumb_open_floor_rad", 0.0), ("approach_grasp", ""), ("handoff_contract", ""),
+                              ("hand_squeeze", False), ("squeeze_trigger_frac", A.GripAssist.squeeze_trigger_frac),
+                              ("squeeze_near_m", A.GripAssist.squeeze_near_m), ("squeeze_rate_rad_s", A.GripAssist.squeeze_rate_rad_s),
+                              ("squeeze_boost_rad", A.GripAssist.squeeze_boost_rad),
                               ("cup_attach", True), ("cup_attach_switch", "auto"), ("attach_force_n", AttachCfg.force_n),
                               ("attach_joint_force_g", AttachCfg.joint_force_g), ("attach_signal", AttachCfg.signal),
                               ("attach_max_palm_dist_m", AttachCfg.max_palm_dist_m),
@@ -384,8 +423,14 @@ class PourFjNode(LeanNodeMixin, Node):
                               ("attach_guard_m", AttachCfg.guard_m), ("attach_guard_frames", AttachCfg.guard_frames),
                               ("fpp_gate_jump_m", GateCfg.jump_m), ("fpp_gate_dz_m", GateCfg.dz_m),
                               ("fpp_gate_radius_m", GateCfg.radius_m), ("fpp_gate_max_hold_s", GateCfg.max_hold_s),
+                              ("cup_dropout_stop_s", DropoutCfg.stop_s), ("cup_dropout_near_m", DropoutCfg.near_m),
+                              ("cup_dropout_near_max_s", DropoutCfg.near_max_s), ("cup_dropout_follow_s", CUP_STALE_S),
                               *((param, topic) for _, param, topic in self.fam.cups)):
-            self.declare_parameter(name, default)
+            if name == "approach_grasp":            # ★10.19 -p approach_grasp:=on 을 ROS 는 YAML 불리언 True 로 읽는다 —
+                from rcl_interfaces.msg import ParameterDescriptor   # 문자열로만 선언하면 노드가 뜨자마자 죽었다(경로 C rc=1)
+                self.declare_parameter(name, default, ParameterDescriptor(dynamic_typing=True))
+            else:
+                self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
         ns = str(p("ns")).strip("/")
         #: 한 세션에서 정책을 팔마다 동시에(09.30 사용자): ns 를 주면 에피소드 서비스 · 토픽 · 관측 · 행동을 /policy_control/<ns>/ 아래로.
@@ -444,6 +489,13 @@ class PourFjNode(LeanNodeMixin, Node):
         if self.cup_latch and self.cup_hold_last:
             raise ValueError("cup_latch 와 cup_hold_last 는 같이 쓰지 않는다(정지 컵 · live 컵 중 하나)")
         self._latched: dict = {}
+        # ★10.19 사용자 승인(cup_dropout.py): live 컵이 끊기면 — 잡기 전 1 s(손 근처 2.5 s) 넘으면 멈춤 · 쥔 상태면 손바닥 FK 로
+        #   따라감 · 쥠이 풀린 뒤면 멈춤. 실기 19:09 오른손: 떨어진 컵의 마지막 값을 쫓다 팔이 비틀렸다.
+        self.dropout_cfg = DropoutCfg(stop_s=float(p("cup_dropout_stop_s")), near_m=float(p("cup_dropout_near_m")),
+                                      near_max_s=float(p("cup_dropout_near_max_s")), follow_s=float(p("cup_dropout_follow_s")))
+        if self.dropout_cfg.enabled and not (self.cup_hold_last and self.attach):
+            raise ValueError("cup_dropout_stop_s > 0 은 cup_hold_last:=true · cup_attach:=true(live 컵 · 손바닥 기록)와 같이 쓴다")
+        self.dropouts = {r: CupDropout(self.dropout_cfg) for r in self.attach} if self.dropout_cfg.enabled else {}
         self._seq, self._gap, self._errors, self._t_start = 0, 0, {}, 0.0
 
         chain_qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
@@ -548,10 +600,17 @@ class PourFjNode(LeanNodeMixin, Node):
                 if gate is not None:                      # ★10.13 A안 — 쥐기 전 · 붙기 전만 거른다(sim FppGate active)
                     seen = gate.step(live, time.monotonic(), palm_pos, active=not est.attached and not bool(g))
                 out = est.step(bool(g), float(t_palm), palm_pos, palm_R, seen)
+                drop = getattr(self, "dropouts", {}).get(role)
+                if drop is not None and not est.attached:  # ★10.19 끊김 — 따라가기면 손바닥 FK, 멈출 때는 DropoutStop
+                    mode = drop.mode
+                    out = drop.step(time.monotonic(), self.cups.get(role), bool(g), float(t_palm), palm_pos, palm_R, out)
+                    if drop.mode != mode and "follow" in (mode, drop.mode):
+                        self.get_logger().info(f"cup {role}: {mode} → {drop.mode} · {drop.as_dict()}")
+                following = drop is not None and drop.following
                 fresh_map = getattr(self, "cup_fresh", None)
-                if fresh_map is not None:                 # ★10.14 성공 판정용 — 붙었거나, 거르기가 안 붙든 신선한 live 일 때만
+                if fresh_map is not None:                 # ★10.14 성공 판정용 — 붙었거나(따라가기 포함), 거르기가 안 붙든 신선한 live 일 때만
                     live_ok = bool(getattr(self, "cup_latch", False)) or self._fresh_cup(role) is not None
-                    fresh_map[role] = cup_is_fresh(bool(est.attached), live_ok, gate is not None and gate.holding)
+                    fresh_map[role] = cup_is_fresh(bool(est.attached) or following, live_ok, gate is not None and gate.holding)
                 if est.source != before:                 # 붙고 뗀 순간을 로그로 — 상태(status.cup)에도 같은 값이 계속 실린다
                     self.get_logger().info(f"cup {role}: {before} → {est.source} · {est.as_dict()}")
                 return out
@@ -594,6 +653,8 @@ class PourFjNode(LeanNodeMixin, Node):
             est.new_episode()
         for gate in self.gates.values():
             gate.new_episode()
+        for drop in self.dropouts.values():
+            drop.new_episode()
         self.cup_fresh.clear()
         if self.cup_latch:                      # 지금 신선한 FP++ 컵을 이 에피소드의 컵으로(없으면 아래 측정이 거부한다)
             self._latched = {}
@@ -636,7 +697,8 @@ class PourFjNode(LeanNodeMixin, Node):
         if self.chain is None:
             return self._reply(res, False, ["start: reset first"])
         try:
-            refusals = self.fam.refusals(self.contract, self._measure(), self.reset_tol)
+            # ★10.20 reset 이 고른 물체의 계약(chain.c) — arm_start ready 검사가 물체 반지름을 쓴다(xy 소환 박스는 같다)
+            refusals = self.fam.refusals(getattr(self.chain, "c", self.contract), self._measure(), self.reset_tol)
         except self.fam.errors as exc:
             return self._reply(res, False, [f"start: {exc}"])
         if refusals:
@@ -661,6 +723,31 @@ class PourFjNode(LeanNodeMixin, Node):
         return self._reply(res, True, [])
 
     # ---------------------------------------------------------------- 계열 고리(rh_place_node.PlaceNode 가 덮는다)
+    #: 경로 D 넘김에서 두 계약이 같아야 하는 값 — pd 는 손 명령 입력을 에피소드 reset 때만 받고, 관측 · 행동 모양은 노드가 하나다
+    HANDOFF_SAME = ("task", "asset", "hand_command", "obs_dim", "action_dim", "policy_hz", "object_names")
+
+    def _handoff_policy(self) -> tuple:
+        """★10.20 경로 D — 노드 파라미터 handoff_contract 의 (계약, 정책). 처음 한 번 읽어 둔다(넘김 순간 지연 없게)."""
+        path = Path(str(self.get_parameter("handoff_contract").value or ""))
+        cached = getattr(self, "_handoff", None)
+        if cached is not None and cached[0] == path:
+            return cached[1:]
+        if not path.is_file():
+            raise A.RhAgltError(f"approach_grasp handoff=1 은 handoff_contract(넘겨받을 정책 계약 파일)가 있어야 한다: {str(path)!r}")
+        c = A.load_contract(path)
+        diff = [k for k in self.HANDOFF_SAME if getattr(c, k) != getattr(self.contract, k)]
+        if c.side().side != self.contract.side().side:
+            diff.append("side")
+        if diff:
+            raise A.RhAgltError(f"handoff_contract {path.name}: 접근 정책과 다르다 {diff}")
+        if c.arm_start != "ready":
+            raise A.RhAgltError(f"handoff_contract {path.parent.name}: arm_start {c.arm_start!r} — 사전 파지 자리에서 시작하는 정책(ready)만 넘겨받는다")
+        from policy_control.joint_policy import JointPolicy
+        policy = JointPolicy(c, self.device)
+        self._handoff = (path, c, policy)
+        self.get_logger().info(f"경로 D: 사전 파지 자리에서 {path.parent.name} 로 넘김(계약 {path})")
+        return c, policy
+
     def _reset_chain(self, meas: dict) -> None:
         if hasattr(self.chain, "object_name"):          # ★10.12 rh_aglt 다물체 정책 — reset 때 파라미터 object 로 물체를 고른다
             self.chain.object_name = str(self.get_parameter("object").value).strip() or None
@@ -671,13 +758,22 @@ class PourFjNode(LeanNodeMixin, Node):
         if hasattr(self.chain, "lift_grasp_palm_m"):    # ★10.13 배포 전용 손 보조 A · B · C(rh_aglt.GripAssist) — 잘못된 값은 reset 거부
             self.chain.dec.assist = A.GripAssist(bool(self.get_parameter("hand_unfreeze_on_grasp").value),
                                                  float(self.get_parameter("thumb_support_g").value),
-                                                 float(self.get_parameter("thumb_open_floor_rad").value))
+                                                 float(self.get_parameter("thumb_open_floor_rad").value),
+                                                 # ★10.19 D squeeze(사용자: 실기는 제어로 더 세게 쥔다)
+                                                 squeeze=bool(self.get_parameter("hand_squeeze").value),
+                                                 squeeze_trigger_frac=float(self.get_parameter("squeeze_trigger_frac").value),
+                                                 squeeze_near_m=float(self.get_parameter("squeeze_near_m").value),
+                                                 squeeze_rate_rad_s=float(self.get_parameter("squeeze_rate_rad_s").value),
+                                                 squeeze_boost_rad=float(self.get_parameter("squeeze_boost_rad").value))
             self.chain.lift_grasp_palm_m = float(self.get_parameter("lift_grasp_palm_m").value)
             if not (np.isfinite(self.chain.lift_grasp_palm_m) and self.chain.lift_grasp_palm_m >= 0.0):
                 raise A.RhAgltError(f"lift_grasp_palm_m ≥ 0(0 = 끔): {self.chain.lift_grasp_palm_m}")
         if hasattr(self.chain, "ag"):                   # ★10.17 경로 C — 잘못된 값은 reset 거부("" = 끔, "on", "키=값,…")
-            cfg = AG.ApproachGraspCfg.parse(str(self.get_parameter("approach_grasp").value))
+            v = self.get_parameter("approach_grasp").value   # ★10.19 "on" 이 불리언 True 로 들어온다(선언부 참고)
+            cfg = AG.ApproachGraspCfg.parse("on" if v is True else "" if v is False or v is None else str(v))
             self.chain.ag = None if cfg is None else AG.ApproachGrasp(cfg, float(self.contract.policy_hz))
+            if cfg is not None and cfg.handoff:         # ★10.20 경로 D — 접근 정책(ap05)이 사전 파지 자리에 멈추면 이 정책(rcg)으로
+                self.chain.ag.next = self._handoff_policy()
             if cfg is not None:
                 self.chain.fk = self.fk["arm"]
         self.chain.reset(meas)
@@ -690,6 +786,7 @@ class PourFjNode(LeanNodeMixin, Node):
         둘 다 끄면 예전처럼 시간으로 끝난다."""
         ag = getattr(self.chain, "ag", None)
         if ag is not None and ag.end is not None:       # ★10.17 경로 C — 성공은 stop(pd 가 붙든다), 실패는 abort(들지 않고 멈춤)
+            self._log_grip(ag)
             self._end(*ag.end)
             return True
         why = G.end_reason(getattr(self.chain, "goals", None), bool(self.get_parameter("stop_on_target").value),
@@ -699,9 +796,29 @@ class PourFjNode(LeanNodeMixin, Node):
         self._end("stop", why)          # pd 가 끝난 순간의 q_setpoint · 마지막 손 목표로 붙든다(pd_arm.on_episode)
         return True
 
+    GRIP_LOG = _paths.SIM2REAL / "logs" / "grasp_c" / "grips.jsonl"
+
+    def _log_grip(self, ag) -> None:
+        """★10.19 사용자: 경로 C 스크립트 잡기는 물체마다 쥔 관절 상태가 나온다 — 한 줄씩 남겨 학습 세션에 넘긴다."""
+        if ag.grip is None:
+            return
+        par = lambda n: str(self.get_parameter(n).value) if self.has_parameter(n) else ""   # noqa: E731
+        rec = {"t": time.time(), "node": self.node_name, "episode": self.book.episode, "contract": par("contract"),
+               "object": getattr(self.chain, "object_name", None) or par("object"), "cup_topic": par("cup_topic"),
+               "end": list(ag.end), **ag.grip}
+        try:
+            self.GRIP_LOG.parent.mkdir(parents=True, exist_ok=True)
+            with self.GRIP_LOG.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except OSError as exc:                          # 기록 실패로 에피소드 끝내기를 막지 않는다
+            self.get_logger().warning(f"쥔 관절 기록 실패 {self.GRIP_LOG}: {exc}")
+
     def _status_extra(self) -> dict:
         ag = getattr(self.chain, "ag", None)
-        return {"approach_grasp": ag.as_dict()} if ag is not None else {}
+        dec = getattr(self.chain, "dec", None)
+        hold = dec.arm_hold_view() if hasattr(dec, "arm_hold_view") else {}   # ★10.19 팔 들림 래치(계약에 있을 때만)
+        sq = dec.squeeze_view() if hasattr(dec, "squeeze_view") else {}       # ★10.19 D squeeze(켰을 때만)
+        return {**({"approach_grasp": ag.as_dict()} if ag is not None else {}), **hold, **sq}
 
     # ---------------------------------------------------------------- tick
     def _status(self, ok: bool, reasons, extra=None) -> None:
@@ -710,7 +827,9 @@ class PourFjNode(LeanNodeMixin, Node):
                 "hand_obs_order": self.contract.hand_obs_order_source.split(":")[0],
                 **(self.chain.goals.as_dict() if getattr(self.chain, "goals", None) is not None else {}),
                 "cup": {r: e.as_dict() for r, e in self.attach.items()},
-                **({"fpp_gate": {r: g.as_dict() for r, g in self.gates.items()}} if self.gates else {}), **self._status_extra(),
+                **({"fpp_gate": {r: g.as_dict() for r, g in self.gates.items()}} if self.gates else {}),
+                **({"cup_dropout": {r: d.as_dict() for r, d in self.dropouts.items()}} if getattr(self, "dropouts", None) else {}),
+                **self._status_extra(),
                 "t_pub_ns": self.get_clock().now().nanoseconds, **(extra or {})}
         self._pub_status.publish(self._String(data=json.dumps(body)))
 
@@ -730,6 +849,10 @@ class PourFjNode(LeanNodeMixin, Node):
                 self.chain.cup_fresh = bool(self.cup_fresh.get("arm", True))
             obs, action, targets = self.chain.step(meas)
             names, q, qd = self.fam.targets(self.contract, targets)
+        except DropoutStop as exc:                    # ★10.19 컵 끊김 규칙 — 틱을 더 기다리지 않고 멈춘다(pd 가 지금 자세로 붙든다)
+            self._status(False, [str(exc)])
+            self._end("abort", str(exc))
+            return
         except self.fam.errors as exc:
             self._gap += 1
             self._status(False, [str(exc)], {"gap": self._gap})
@@ -749,7 +872,8 @@ class PourFjNode(LeanNodeMixin, Node):
         if self.max_s > 0 and time.monotonic() - self._t_start >= self.max_s:
             ag = getattr(self.chain, "ag", None)
             if ag is not None:                      # ★10.17 경로 C 가 끝나기 전 시간 초과는 성공이 아니다(쥠 · 들기 · 유지 미완)
-                self._end("abort", f"경로 C 시간 초과 {self.max_s:.1f} s — 단계 {ag.phase}")
+                path = "경로 D" if getattr(ag, "next", None) is not None else "경로 C"   # ★10.20 D = 넘겨받은 정책이 목표 전
+                self._end("abort", f"{path} 시간 초과 {self.max_s:.1f} s — 단계 {ag.phase}")
             else:
                 self._end("stop", f"episode time >= {self.max_s:.1f} s (학습 episode_length_s)")
 

@@ -333,7 +333,12 @@ def test_engage_stream_watchdog_release(rig, left):
     for seq in range(30):
         caller.target(q_goal, seq)
         time.sleep(0.02)
+    # 이미 TRACKING 이면 wait_phase 가 바로 돌아와, 부하가 크면 마지막 목표(seq 29) 반영 전 상태를 읽는다(10.20 전체 시험 28 == 29)
+    t0 = time.monotonic()
     st = plant.wait_phase(("TRACKING",))
+    while st is not None and st.get("seq") != 29 and time.monotonic() - t0 < 2.0:
+        time.sleep(0.01)
+        st = plant.last_status()
     assert st["phase"] == "TRACKING" and st["seq"] == 29 and st["ok"] is True
     assert np.abs(plant.fwd["position"][-1] - q_goal).max() < 0.02
     # 스트림 두절 → watchdog HOLD(세트포인트 동결·q̇ 0)
@@ -939,6 +944,77 @@ def test_hand_release_refuses_only_while_the_arm_follows_a_live_policy_target():
     idle = _recovery_unit()
     idle.phase = A.Phase.IDLE
     assert any("engage" in r for r in A.ArmUnit.hand_release_refusals(idle))
+
+
+def test_a_watchdog_hold_can_be_held_and_released_in_place():
+    """★10.20 실기 1-B: 에피소드가 멈추며 목표가 끊겨 워치독 HOLD → 상황판 rehome 이 engage('not IDLE') · hand_release
+    ('engage 된 팔에서만')에서 막혀 손으로 풀었다. 워치독 하나뿐인 HOLD 는 내부 붙들기로 풀린다 — hold · hand_release 를 받는다.
+    추종오차 · 관절한계 · 발열처럼 사람이 볼 사유가 섞인 HOLD 와 IDLE 은 그대로 거부한다."""
+    from types import SimpleNamespace
+    from policy_control import pd_arm as A
+    from policy_control.pd_state import FsmState, Phase, hold_is_watchdog_only
+
+    def held(reason):
+        unit = _recovery_unit()
+        unit.phase = Phase.HOLD
+        unit.stage = SimpleNamespace(state=SimpleNamespace(law=unit.stage.state.law, fsm=FsmState(
+            phase=Phase.HOLD, hold_reason=reason, zero_ticks=0, release_zero_ticks=5)))
+        return unit
+
+    wd = held("watchdog: target stale 0.252 s > 0.25 s")
+    assert hold_is_watchdog_only(wd.stage.state.fsm)
+    assert A.ArmUnit.hold_refusals(wd) == [] and A.ArmUnit.hand_release_refusals(wd) == []
+    A.ArmUnit.start_hand_release(wd)
+    assert wd.hold is not None and list(wd.hold.q) == [0.3] * 7 and list(wd.hold.hand) == [0.0] * 6   # 얼린 자리 그대로
+    for reason in ("watchdog: target stale 0.3 s; tracking: err 0.4 rad", "thermal: j4 72 C", "joint limit: j2"):
+        unit = held(reason)
+        assert not hold_is_watchdog_only(unit.stage.state.fsm), reason
+        assert A.ArmUnit.hold_refusals(unit) and A.ArmUnit.hand_release_refusals(unit), reason
+    idle = _recovery_unit()
+    idle.phase = Phase.IDLE
+    idle.stage = SimpleNamespace(state=SimpleNamespace(law=idle.stage.state.law,
+                                                       fsm=FsmState(Phase.IDLE, None, 0, 5)))
+    assert A.ArmUnit.hold_refusals(idle) and A.ArmUnit.hand_release_refusals(idle)
+
+
+def test_a_held_watchdog_hold_resumes_on_the_next_tick():
+    """내부 붙들기는 매 tick 새 목표다 — 워치독 하나뿐인 HOLD 는 그 목표로 풀려 RAMPING 으로(세트포인트가 실측에서 다시 접근)."""
+    from policy_control.pd_state import FsmState, Phase, _target_fresh
+    st = FsmState(Phase.HOLD, "watchdog: target stale 0.252 s > 0.25 s", 0, 5)
+    assert _target_fresh(st).phase is Phase.RAMPING
+    assert _target_fresh(FsmState(Phase.HOLD, "watchdog: x; thermal: j4", 0, 5)).phase is Phase.HOLD
+
+
+def test_rehome_replay_keeps_the_released_hand_open():
+    """★10.19 실기: 정책이 쥔 채 끝남 → rehome(hand_release 로 손 폄 → 팔만 싣는 재생 → goto_home). 재생 목표가 붙들기를
+    지우면서 정책의 마지막 손 목표(쥔 자세)가 되살아나 복귀 중 손가락이 다시 굽었다. 팔만 싣는 목표는 붙들던 손을 잇는다."""
+    import numpy as np
+    from policy_control import pd_arm as A
+    from policy_control.codec import JointSample
+    arm = [f"r_aj_{i}" for i in range(1, 8)]
+    hand = [f"r_hj_{i}" for i in range(6)]
+
+    def sample(names, q):
+        return JointSample(names=tuple(names), position=np.asarray(q, float), velocity=np.zeros(len(names)),
+                           effort=None, stamp=0.0)
+
+    unit = _recovery_unit()
+    unit.arm_joints, unit.hand_joints, unit.hand_command = arm, hand, "position"
+    grip = [0.8] * 6
+    assert A.ArmUnit.take_target(unit, sample(arm + hand, [0.1] * 7 + grip), 1, 0.0, episode="1")   # 정책: 쥔 손
+    assert list(unit.hand_target) == grip
+    A.ArmUnit.on_episode(unit, "stop", 1)
+    assert list(unit.hold.hand) == grip                                                      # 정책 끝 — 쥔 채 붙듦
+    A.ArmUnit.start_hand_release(unit)
+    assert list(unit.hold.hand) == [0.0] * 6                                                  # rehome 첫 단계: 손 폄
+    assert A.ArmUnit.take_target(unit, sample(arm, [0.2] * 7), 1, 0.0, episode="99")          # 재생: 팔만
+    assert unit.hold is None and list(unit.hand_target) == [0.0] * 6                          # 편 손 유지(쥔 자세 아님)
+    A.ArmUnit.on_episode(unit, "stop", 99)
+    assert list(unit.hold.hand) == [0.0] * 6                                                  # 재생 끝 붙들기도 편 손
+    fresh = _recovery_unit()                                                                  # 붙든 손이 없으면 손 목표를 건드리지 않는다
+    fresh.arm_joints, fresh.hand_joints, fresh.hand_target = arm, hand, np.full(6, 0.4)
+    assert A.ArmUnit.take_target(fresh, sample(arm, [0.2] * 7), 1, 0.0)
+    assert list(fresh.hand_target) == [0.4] * 6
 
 
 def test_hand_rest_follows_the_same_rule():

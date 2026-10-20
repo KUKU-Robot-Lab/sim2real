@@ -1,7 +1,7 @@
 """경로 C(10.17 사용자 승인) — 접근 정책 → 스크립트 닫기 → 쥠 확인(네 손가락 2 축 래치 + 8 cm) → IK 들기 → 3 s 유지.
 
 정책은 0 행동(팔 · 손 그대로)으로 대신하고, 손은 컵에 닿는 축만 그 각도에서 멈추는 간단한 플랜트로 돌린다.
-계약은 deploy/policies/rh56f1/aglt/right_approach_rg3wc(rg3wc ep800 원본 — 관측 94 · 행동 13, rg3wo 와 해석이 같다).
+계약은 deploy/policies/rh56f1/aglt/right_approach(rg3wc ep800 원본 — 관측 94 · 행동 13, rg3wo 와 해석이 같다).
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from policy_control import rh_aglt as A
 from policy_control.pour_fj_node import AgltChain
 
 REPO = Path(__file__).resolve().parents[2]
-CONTRACT = REPO / "deploy/policies/rh56f1/aglt/right_approach_rg3wc/rh_aglt_contract.json"
+CONTRACT = REPO / "deploy/policies_retired/rh56f1/aglt/right_approach/rh_aglt_contract.json"
 URDF = Path.home() / "rl_ws/hdgp/assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf"
 Q_MID = np.array([-0.6, 0.2026, 0.6538, 1.7608, 0.3791, 0.2, 0.6646])   # test_pc_rh_cap 과 같은 관절 한계에서 먼 자세
 
@@ -155,6 +155,44 @@ def test_approach_stops_near_and_still_then_full_success(c, fk):
     assert plant.hand[i_rot] == pytest.approx(np.asarray(c.side().hand_open)[i_rot], abs=1e-6)   # 엄지 회전은 접근 끝 그대로
 
 
+def test_the_grip_joint_state_is_kept_from_the_moment_the_lift_starts(c, fk):
+    """★10.19 사용자: 스크립트 잡기는 물체마다 쥔 관절 상태가 나온다 → 들기 시작 순간의 실측 · 지령을 남겨 학습 세션에 넘긴다."""
+    plant = Plant(c, fk, cup_rel=(0.0, 0.0, -0.05), stop=CUP_STOP)
+    ch = _chain(c, fk)
+    ch.reset(plant.meas())
+    seen = None
+    for _ in range(60 * 20):
+        before = ch.ag.phase
+        _run(ch, plant, 1)
+        if before == "close" and ch.ag.phase == "lift":
+            seen = plant.hand.copy()
+        if ch.ag.end is not None:
+            break
+    g = ch.ag.as_dict()["grip"]
+    assert seen is not None and g["hand_joints"] == list(c.side().hand_joints)
+    assert np.allclose(g["q_meas_rad"], seen, atol=0.06)                     # 들기 직전 실측(한 스텝 차)
+    assert len(g["q_cmd_rad"]) == 6 and g["outcome"] == "done" and g["rise_m"] >= 0.09 - 1e-3
+    ch.reset(plant.meas())
+    assert "grip" not in ch.ag.as_dict()                                       # 에피소드마다 처음부터
+
+
+def test_the_node_appends_one_grip_line_per_episode(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+    from policy_control import pour_fj_node as N
+    monkeypatch.setattr(N.PourFjNode, "GRIP_LOG", tmp_path / "grips.jsonl")
+    ag = SimpleNamespace(grip={"hand_joints": ["a"], "q_meas_rad": [0.5], "outcome": "done"}, end=("stop", "ok"))
+    params = {"contract": "c.json", "object": "", "cup_topic": "/objects/x/live_pose"}
+    node = SimpleNamespace(node_name="rh_aglt_node_left", book=SimpleNamespace(episode=3),
+                           chain=SimpleNamespace(object_name="source240_real"), GRIP_LOG=N.PourFjNode.GRIP_LOG,
+                           has_parameter=lambda n: n in params, get_parameter=lambda n: SimpleNamespace(value=params[n]))
+    N.PourFjNode._log_grip(node, ag)
+    N.PourFjNode._log_grip(node, SimpleNamespace(grip=None, end=("abort", "x")))     # 쥔 적 없음 = 안 쓴다
+    rows = [json.loads(x) for x in (tmp_path / "grips.jsonl").read_text().splitlines()]
+    assert len(rows) == 1 and rows[0]["object"] == "source240_real" and rows[0]["q_meas_rad"] == [0.5]
+    assert rows[0]["cup_topic"] == "/objects/x/live_pose" and rows[0]["end"] == ["stop", "ok"]
+
+
 def test_thumb_flex_waits_and_latched_axes_stop_closing(c, fk):
     plant = Plant(c, fk, stop=CUP_STOP)
     ch = _chain(c, fk)
@@ -227,7 +265,7 @@ def test_reset_brings_back_the_approach_decoder(c, fk):
 def test_contract_matches_rg3wo_interpretation():
     """접근 정책과 rg3wo 는 관측 · 행동 해석이 같다(10.17 계약 비교) — 쥠 판정 키만 다르다."""
     a = json.loads(CONTRACT.read_text())
-    b = json.loads((REPO / "deploy/policies/rh56f1/aglt/right_rg3wo/rh_aglt_contract.json").read_text())
+    b = json.loads((REPO / "deploy/policies_retired/rh56f1/aglt/right_rg3wo/rh_aglt_contract.json").read_text())
     skip = {"checkpoint", "checkpoint_md5", "env_yaml_sha1", "agent_yaml_sha1", "run_dir", "notes", "hand_block",
             "grasp_rule", "grasp_judge_axes", "grasp_min_axes", "grasp_near_m"}
     assert {k: v for k, v in a.items() if k not in skip} == {k: v for k, v in b.items() if k not in skip}
@@ -237,9 +275,9 @@ def test_the_left_approach_is_the_right_one_seen_in_a_mirror():
     """왼손 접근 = 오른손 rg3wc ep800 거울 체크포인트(10.17) — 관측 94(촉각 없음 + one-hot 3)에서 a_R(o) = S · π_L(D · o)."""
     pytest.importorskip("torch")
     import test_pc_rh_aglt as T
-    pol = REPO / "deploy/policies/rh56f1/aglt"
-    cr = A.select_object(A.load_contract(pol / "right_approach_rg3wc/rh_aglt_contract.json"), "source240_real")
-    cl = A.select_object(A.load_contract(pol / "left_approach_rg3wc/rh_aglt_contract.json"), "source240_real")
+    pol = REPO / "deploy/policies_retired/rh56f1/aglt"   # ★10.20 옛 접근 정책(시험 고정본)
+    cr = A.select_object(A.load_contract(pol / "right_approach/rh_aglt_contract.json"), "source240_real")
+    cl = A.select_object(A.load_contract(pol / "left_approach/rh_aglt_contract.json"), "source240_real")
     if not (Path(cr.checkpoint).is_file() and Path(cl.checkpoint).is_file()):
         pytest.skip("가중치 없음(.gitignore)")
     from policy_control.joint_policy import JointPolicy

@@ -374,16 +374,18 @@ def _episode_runner(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
     ep_path = _resolve(cmd.args["episode"], repo)
     episode = yaml.safe_load(ep_path.read_text(encoding="utf-8")) or {}
     episode["objects"] = resolve_objects(episode.get("objects") or {}, str(ep_path))   # {active: 팔} → 토픽(10.09)
-    box = g.box(RUNNER_NODE.lstrip("/"), "episode_runner · 에피소드 실행기", L_OBS, status=RUNNER_NODE.lstrip("/"),
-                ros=[RUNNER_NODE], unit=key, own_status=True, stages=["snapshot", "정책 순서", "복구"],
+    from policy_control.episode_ros import relay_topic
+    node = str(cmd.args.get("__node") or RUNNER_NODE).lstrip("/")   # ★10.19 한 팔 에피소드는 episode_runner_<팔>
+    box = g.box(node, f"{node} · 에피소드 실행기", L_OBS, status=node,
+                ros=[f"/{node}"], unit=key, own_status=True, stages=["snapshot", "정책 순서", "복구"],
                 note="정책 노드의 episode 서비스를 부른다 — 그림에는 토픽만 그린다")
-    g.tags[box] = "실행기"
+    g.tags[box] = {"episode_runner_right": "우 실행기", "episode_runner_left": "좌 실행기"}.get(node, "실행기")
     stage = key.split("#")[0]
     # ★10.17 배치 기록(snapshot)이 없는 에피소드(경로 B — 사람이 컵을 댄다)는 FP++ 컵을 받지 않는다(끊긴 곳으로 그리지 않는다)
     perceives = any((n or {}).get("type") == "snapshot" for n in (episode.get("sequence") or []))
     for name, spec in (episode.get("objects") or {}).items() if perceives else ():
         g.need(str(spec["topic"]), "object", "", box, [], STALE_MS, unit=key, how="link")
-        relay = OBJECT_RELAY.format(name)
+        relay = relay_topic(node, name)
         g.providers.setdefault(relay, box)
         g.stage_providers[(stage, relay)] = box
     for holder in (episode.get("holders") or {}).values():

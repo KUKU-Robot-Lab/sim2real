@@ -122,11 +122,13 @@ def rg3_workspace(console):
 
 def test_rg3_exact_registered_policy_and_source_mapping(console, tiny_repo):
     from mission_stages import Command
-    m = setup_actions(console, tiny_repo, {'episode_grasp_rg3_right': [{'argv': ['true']}]})
+    m = setup_actions(console, tiny_repo, {'episode_grasp_d_right': [{'argv': ['true']}]})
     obj = rg3_workspace(console)
-    cmd = Command(('python3', 'rh_aglt_node.py', '-p', 'contract:=default', '-p', 'cup_topic:=/objects/source240b_blue/live_pose'))
+    # ★10.20 경로 D: 노드 계약(ap05 접근)은 그대로, 넘겨받는 계약(handoff_contract)만 카드 정책으로 바꾼다
+    cmd = Command(('python3', 'rh_aglt_node.py', '-p', 'contract:=default', '-p', 'handoff_contract:=default',
+                   '-p', 'cup_topic:=/objects/source240b_blue/live_pose'))
     out = m._transform(console.session, 'rg3_chosen', {}, cmd)
-    assert 'contract:=/registered/contract.json' in out.argv
+    assert 'handoff_contract:=/registered/contract.json' in out.argv and 'contract:=default' in out.argv
     assert f"cup_topic:=/objects/{obj['id']}/live_pose" in out.argv
     runner = m._transform(console.session, 'rg3_chosen', {}, Command(('episode_runner_node.py', '-p', 'episode:=default')))
     assert f"policy_object:={obj['policy_object']}" in runner.argv
@@ -135,8 +137,20 @@ def test_rg3_exact_registered_policy_and_source_mapping(console, tiny_repo):
     assert fake.argv[-1] == f"/objects/{obj['id']}/pose"
 
 
+def test_rg3_recording_follows_the_card_object_on_the_left_default_too(console, tiny_repo):
+    """★10.19 bag 133007: 왼팔 기본 물체(shaker_c_orange) 토픽이 그대로 남아 카드 물체(source240) 원본이 기록에서 빠졌다."""
+    from mission_stages import Command
+    m = setup_actions(console, tiny_repo, {'episode_grasp_d_right': [{'argv': ['true']}]})
+    obj = rg3_workspace(console)
+    console.session.workspace.objects.append({'id': 'shaker_c_orange', 'model': 'shaker', 'enabled': False})
+    rec = Command(('bash', '-lc', "EXTRA='/policy_control/joint_target /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose' "
+                   'bash rh56f1_record.sh start episode_grasp_d_left'))
+    out = m._transform(console.session, 'rg3_chosen', {}, rec)
+    assert f"/objects/{obj['id']}/pose /objects/{obj['id']}/live_pose" in out.argv[-1] and 'shaker_c_orange' not in out.argv[-1]
+
+
 def test_rg3_locate_only_and_snapshot_inputs_blocked(console, tiny_repo):
-    m = setup_actions(console, tiny_repo, {'episode_grasp_rg3_right': [{'argv': ['true']}]})
+    m = setup_actions(console, tiny_repo, {'episode_grasp_d_right': [{'argv': ['true']}]})
     obj = rg3_workspace(console)
     obj['input_source'] = 'locate'
     assert any('locate' in reason for reason in m.describe('rg3_chosen')['reasons'])
@@ -149,7 +163,7 @@ def test_rg3_locate_only_and_snapshot_inputs_blocked(console, tiny_repo):
 
 def test_rg3_candidate_with_contract_can_be_approved_for_trial(console, tiny_repo, monkeypatch):
     from types import SimpleNamespace
-    m = setup_actions(console, tiny_repo, {'episode_grasp_rg3_right': [{'argv': ['true']}]})
+    m = setup_actions(console, tiny_repo, {'episode_grasp_d_right': [{'argv': ['true']}]})
     rg3_workspace(console)
     monkeypatch.setattr(console.session.feed, 'observed', lambda: SimpleNamespace(
         status={'pd_right': {'execute': True, 'phase': 'TRACKING'}},
@@ -167,7 +181,7 @@ def test_rg3_candidate_with_contract_can_be_approved_for_trial(console, tiny_rep
     ('unknown', '/registered/contract.json', []),
 ])
 def test_rg3_trial_still_requires_usable_registered_policy(console, tiny_repo, status, contract, issues):
-    m = setup_actions(console, tiny_repo, {'episode_grasp_rg3_right': [{'argv': ['true']}]})
+    m = setup_actions(console, tiny_repo, {'episode_grasp_d_right': [{'argv': ['true']}]})
     rg3_workspace(console)
     console.session.workspace.catalog[0].update(status=status, contract=contract, issues=issues)
     preview = m.describe('rg3_chosen')
@@ -176,7 +190,7 @@ def test_rg3_trial_still_requires_usable_registered_policy(console, tiny_repo, s
 
 
 def test_deleted_selected_policy_disables_card_without_breaking_catalog(console, tiny_repo):
-    m = setup_actions(console, tiny_repo, {'episode_grasp_rg3_right': [{'argv': ['true']}]})
+    m = setup_actions(console, tiny_repo, {'episode_grasp_d_right': [{'argv': ['true']}]})
     rg3_workspace(console)
     console.session.workspace.catalog = []
     item = next(a for a in m.catalog() if a['id'] == 'rg3_chosen')
@@ -217,16 +231,17 @@ def lifecycle(console, tiny_repo, monkeypatch):
                 {'argv': ['true']},
                 {'argv': ['true'], 'manual': True},
                 {'argv': ['true'], 'note': 'record stop'}]
-    m = setup_actions(console, tiny_repo, {'episode_grasp_rg3_right': commands, 'home_right': [{'argv': ['true']}]})
+    m = setup_actions(console, tiny_repo, {'episode_grasp_d_right': commands, 'home_right': [{'argv': ['true']}]})
     rg3_workspace(console)
     (tiny_repo / 'config/episodes').mkdir()
-    (tiny_repo / 'config/episodes/grasp_rg3_right.yaml').write_text(yaml.safe_dump({
+    (tiny_repo / 'config/episodes/grasp_d_right.yaml').write_text(yaml.safe_dump({
         'objects': {'CUP': {'topic': '/objects/source240b_blue/pose'}},
         'policies': {'rg3': {'policy': 'default'}},
         'sequence': [{'type': 'policy', 'policy_object': 'source240_real'}]}))
-    status = {'episode': 'grasp_rg3_right', 'phase': 'READY'}
-    observation = SimpleNamespace(status={'episode_runner': status, 'pd_right': {'execute': True, 'phase': 'TRACKING'}},
-                                  age_s={'episode_runner': 0, 'pd_right': 0}, joints_age_s=0, joint_ages={}, rosgraph=None, rosgraph_age_s=None)
+    status = {'episode': 'grasp_d_right', 'phase': 'READY'}
+    # ★10.19 팔마다 실행기 — 오른팔 rg3 는 episode_runner_right
+    observation = SimpleNamespace(status={'episode_runner_right': status, 'pd_right': {'execute': True, 'phase': 'TRACKING'}},
+                                  age_s={'episode_runner_right': 0, 'pd_right': 0}, joints_age_s=0, joint_ages={}, rosgraph=None, rosgraph_age_s=None)
     monkeypatch.setattr(console.session.feed, 'observed', lambda: observation)
     calls = []
     monkeypatch.setattr(m, '_preempt', lambda s, *a: calls.append('stop -> hold'))
@@ -239,13 +254,13 @@ def test_rg3_terminal_holds_and_finishes_recording(console, tiny_repo, monkeypat
     original = m._run_commands
     def run(s, sid, cmds):
         original(s, sid, cmds)
-        if sid == 'action_episode_run':
+        if sid == 'action_episode_run_right':
             status['phase'] = 'SUCCESS'
     monkeypatch.setattr(m, '_run_commands', run)
     m.execute('rg3_chosen', operator='test')
     assert wait(m)['outcome'] == 'DONE'
     assert calls[-2] == 'stop -> hold'
-    assert calls[-1][0] == 'episode_grasp_rg3_right_cleanup'
+    assert calls[-1][0] == 'episode_grasp_d_right_cleanup'
     assert calls[-1][1][0].note == 'record stop'
     import yaml
     doc = yaml.safe_load((console.session.run_dir / 'rg3_chosen.yaml').read_text())
@@ -261,7 +276,7 @@ def test_rg3_control_intervention_joins_without_console_lock_deadlock(console, t
     started = __import__('threading').Event()
     def run(s, sid, cmds):
         original(s, sid, cmds)
-        if sid == 'action_episode_run':
+        if sid == 'action_episode_run_right':
             status['phase'] = 'RUNNING'
             started.set()
     monkeypatch.setattr(m, '_run_commands', run)
@@ -270,11 +285,11 @@ def test_rg3_control_intervention_joins_without_console_lock_deadlock(console, t
     with console._lock:
         m.execute('home_right', operator='test')
     assert wait(m)['outcome'] == 'DONE'
-    assert sum(isinstance(row, tuple) and row[0] == 'action_episode_run' for row in calls) == 1
+    assert sum(isinstance(row, tuple) and row[0] == 'action_episode_run_right' for row in calls) == 1
     cleanup = next(i for i, row in enumerate(calls) if isinstance(row, tuple) and row[0].endswith('_cleanup'))
     home = next(i for i, row in enumerate(calls) if isinstance(row, tuple) and row[0] == 'home_right')
     assert cleanup < home
-    assert 'episode_grasp_rg3_right' not in console.session.state.completed
+    assert 'episode_grasp_d_right' not in console.session.state.completed
 
 
 def test_head_command_waits_for_cancelled_scan_to_settle(console, tiny_repo, monkeypatch):
@@ -502,3 +517,53 @@ def test_head_control_only_goes_to_calibrated_angles(console, tiny_repo):
     table = on['calib_profiles']['v9_1014_anchored_z']
     assert table['strict'] and table['tolerance'] == 1.0
     assert {'pan': -59.915, 'tilt': -29.933} in [{k: a[k] for k in ('pan', 'tilt')} for a in table['angles']]
+
+
+def test_path_c_card_runs_the_grasp_c_episode_with_its_approach_policy_and_object(console, tiny_repo, monkeypatch):
+    """★10.19 사용자 "경로 C 접근 정책을 세팅했는데 실행 버튼이 안 켜진다 · 스크립트 잡기가 안 보인다": 접근 카드 = grasp_c 에피소드
+    (접근 정책 → 스크립트 닫기 · 들기). 같은 팔의 rg3 단계가 아니라 episode_grasp_c_<팔> 을 돌리고 approach_grasp 설정은 그대로."""
+    from types import SimpleNamespace
+    import yaml
+    commands = [{'argv': ['true'], 'manual': True}, {'argv': ['true']}, {'argv': ['true'], 'manual': True},
+                {'argv': ['true'], 'note': 'record stop'}]
+    m = setup_actions(console, tiny_repo, {'episode_grasp_c_right': commands, 'episode_grasp_d_right': commands})
+    rg3_workspace(console)
+    w = console.session.workspace
+    w.catalog.append({'id': 'rh56f1/aglt/right_approach_rg3wg', 'contract': '/registered/approach.json', 'status': 'verified', 'issues': []})
+    w.cards = [{'id': 'chosen', 'task': 'approaching', 'side': 'right', 'policy_id': 'rh56f1/aglt/right_approach_rg3wg',
+                'object_id': 'source200_blue', 'execution_supported': True}]
+    (tiny_repo / 'config/episodes').mkdir()
+    (tiny_repo / 'config/episodes/grasp_c_right.yaml').write_text(yaml.safe_dump({
+        'episode': {'name': 'grasp_c_right'}, 'objects': {'CUP': {'topic': '/objects/source240b_blue/pose'}},
+        'policies': {'rh_aglt_r': {'policy': 'default', 'approach_grasp': {}}},
+        'sequence': [{'type': 'policy', 'policy_object': 'source240_real'}]}))
+    status = {'episode': 'grasp_c_right', 'phase': 'READY'}
+    ag = {'phase': 'close', 'why': '접근 끝 거리 0.050 m'}
+    observation = SimpleNamespace(status={'episode_runner_right': status, 'pd_right': {'execute': True, 'phase': 'TRACKING'},
+                                          'rh_aglt_node_right': {'approach_grasp': ag}},
+                                  age_s={'episode_runner_right': 0, 'pd_right': 0, 'rh_aglt_node_right': 0},
+                                  joints_age_s=0, joint_ages={}, rosgraph=None, rosgraph_age_s=None)
+    monkeypatch.setattr(console.session.feed, 'observed', lambda: observation)
+    item = m.describe('rg3_chosen')
+    assert item['stages'] == ['episode_grasp_c_right'] and '스크립트 잡기' in item['title']
+    assert item['live']['script']['phase'] == 'close' and '접근 정책' in item['live']['script']['steps']
+    log = tiny_repo / 'logs/grasp_c/grips.jsonl'
+    log.parent.mkdir(parents=True)
+    log.write_text('{"node": "rh_aglt_node_right", "cup_topic": "/objects/source200_blue/live_pose", "q_meas_rad": [0.1], '
+                   '"hand_joints": ["r_hj_index_1"], "outcome": "done", "rise_m": 0.1}\n')
+    assert m.describe('rg3_chosen')['live']['script']['last_grip']['q_meas_rad'] == [0.1]
+    calls = []
+    monkeypatch.setattr(m, '_preempt', lambda s, *a: calls.append('stop -> hold'))
+
+    def run(s, sid, cmds):
+        calls.append((sid, cmds))
+        if sid == 'action_episode_run_right':
+            status['phase'] = 'SUCCESS'
+    monkeypatch.setattr(m, '_run_commands', run)
+    m.execute('rg3_chosen', operator='test')
+    assert wait(m)['outcome'] == 'DONE'
+    assert calls[0][0] == 'episode_grasp_c_right' and calls[-1][0] == 'episode_grasp_c_right_cleanup'
+    doc = yaml.safe_load((console.session.run_dir / 'rg3_chosen.yaml').read_text())
+    assert doc['episode']['name'] == 'grasp_c_right' and doc['objects']['CUP']['topic'] == '/objects/source200_blue/pose'
+    assert doc['policies']['rh_aglt_r'] == {'policy': 'rh56f1/aglt/right_approach_rg3wg', 'approach_grasp': {}}
+    assert doc['sequence'][0]['policy_object'] == 'source200_real'

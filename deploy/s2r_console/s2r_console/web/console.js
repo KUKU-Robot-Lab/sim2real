@@ -358,8 +358,9 @@ function renderBanner(s) {
     : br.up ? `<div class="pill good"><small>브리지 · 구독 전용</small><b>도메인 ${esc(br.domain)}</b></div>`
       : `<div class="pill warn"><small>브리지</small><b>끊김</b></div>`;
   // 에피소드 실행기가 떠 있으면 그 상태를, 아니면 정책 노드의 episode 이벤트를 보인다
-  const er = s.episode_runner;
-  const ep = er ? `${esc(er.episode)} ${esc(er.phase)}` : s.episode ? `#${esc(s.episode.episode)} ${esc(s.episode.event)}` : "—";
+  const ers = s.episode_runners || [];          // ★10.19 팔마다 실행기 — 떠 있는 것 전부
+  const ep = ers.length ? ers.map((er) => `${esc(er.episode)} ${esc(er.phase)}`).join(" · ")
+    : s.episode ? `#${esc(s.episode.episode)} ${esc(s.episode.event)}` : "—";
   const m = s.mission;
   put("banner", `<div class="banner-state">${esc(b.state)}</div><div class="banner-reasons">${reasons}</div>
     <div class="pills">${pArmed}${pBridge}
@@ -803,22 +804,34 @@ function epBoxHtml(e, n, i) {
     ${foot.length ? `<div class="epf-foot">${foot.map((x) => `<span>${esc(x)}</span>`).join("")}</div>` : ""}</div>`;
 }
 
+// ★10.19 사용자 "좌우 동시 실행": 한 팔 에피소드는 팔마다 실행기(episode_runner_right · _left), 두 팔(tilt)은 episode_runner.
+// 패널은 고른 실행기 하나를 보인다(고르지 않았으면 서버가 고른 것) — 명령은 그 실행기로만 간다.
+const RUNNER_LABEL = { episode_runner: "두 팔", episode_runner_right: "오른팔", episode_runner_left: "왼팔" };
+let epRunner = "";
+function shownRunner(s) {
+  const all = s.episode_runners || [];
+  return all.find((r) => r.runner === epRunner) || s.episode_runner;
+}
 function renderEpisode(s) {
-  const e = s.episode_runner;
+  const e = shownRunner(s);
   $("epf-panel").hidden = !e;
   lastEpFlow = e && e.flow ? e : null;
   if (!e) return;
+  const all = s.episode_runners || [];
+  const tabs = all.length > 1 ? `<div class="actions ep-runners" role="group" aria-label="에피소드 실행기">${all.map((r) => `<button class="btn btn-sm${r.runner === e.runner ? " on" : ""}"
+    data-act="ep-runner" data-arg="${esc(r.runner)}" aria-pressed="${r.runner === e.runner}">${esc(RUNNER_LABEL[r.runner] || r.runner)} · ${esc(r.episode)}
+    <span class="badge ${EP_TONE[r.phase] || ""}">${esc(r.phase)}${r.busy ? " · 실행 중" : ""}</span></button>`).join("")}</div>` : "";
   const can = holding() && !e.stale;
   put("epf-meta", `<span class="badge ${EP_TONE[e.phase] || ""}">${esc(e.phase)}${e.busy ? " · 실행 중" : ""}</span>
     <span class="hint">${esc(e.episode)} · ${esc(e.episode_id)}${e.stale ? " · 상태가 늦다" : ""}</span>`);
   const next = e.next_action, done = ["SUCCESS", "FAILURE", "STOPPED"].includes(e.phase);
-  put("epf-ctl", `<div class="actions">
+  put("epf-ctl", `${tabs}<div class="actions">
     <button class="btn btn-sm btn-real" data-act="ep-next" data-arg="${esc(next || "")}" ${can && next && !e.busy ? "" : "disabled"}
       title="노드 하나(구분 실행) — 이름을 입력해 승인">다음: ${esc(next || "—")}</button>
     <button class="btn btn-sm btn-real" data-act="ep-run" data-arg="episode:${esc(e.episode)}" ${can && !done && !e.busy ? "" : "disabled"}
       title="끝까지(연속 실행) — 승인 한 번, 실패면 정해진 복구 또는 정지">연속 실행</button>
     <button class="btn btn-sm btn-ghost" data-act="ep-reset" ${can && !e.busy ? "" : "disabled"} title="WorldState 처음부터">새 에피소드</button>
-    <button class="btn-stop" data-act="ep-stop" title="실행기 정지 — 정책 노드 episode/stop(pd 가 붙든다) · 재생 중단">■ 에피소드 실행기 정지</button>
+    <button class="btn-stop" data-act="ep-stop" title="이 실행기 정지 — 정책 노드 episode/stop(pd 가 붙든다) · 재생 중단">■ ${esc(RUNNER_LABEL[e.runner] || e.runner || "")} 실행기 정지</button>
     ${e.auto_approve ? '<span class="hint">auto_approve(fake)</span>' : ""}</div>`);
   const nodes = (e.flow && e.flow.nodes) || [];
   put("epf-row", nodes.map((n, i) => epBoxHtml(e, n, i)).join(""));
@@ -881,7 +894,8 @@ function tiltRunCard(c) {
     <tbody>${rows}</tbody></table></article>`;
 }
 function renderTilt(s) {
-  const t = s.tilt, e = s.episode_runner;
+  // tilt 에피소드는 두 팔이라 기본 실행기(episode_runner)가 돈다
+  const t = s.tilt, e = (s.episode_runners || []).find((r) => r.runner === "episode_runner") || s.episode_runner;
   for (const id of ["tilt-panel", "tilt-run-panel", "tilt-rec-panel"]) $(id).hidden = !t;
   if (!t) return;
   const paths = t.paths || [];
@@ -970,7 +984,11 @@ function drawEpWires() {
   if (paths !== lastEpWires) { lastEpWires = paths; svg.innerHTML = paths; }
 }
 
-function episodeModal(action, want) { return prepareAction("episode", { episode_action: action, want }); }
+function episodeModal(action, want) {
+  const e = S && S.session ? shownRunner(S.session) : null;
+  return prepareAction("episode", { episode_action: action, want, ...(e && e.runner ? { runner: e.runner } : {}) });
+}
+function shownRunnerName() { const e = S && S.session ? shownRunner(S.session) : null; return (e && e.runner) || ""; }
 
 function renderPolicy(s) {
   const p = s.policy;
@@ -1090,8 +1108,9 @@ const acts = {
   "ep-next"(want) { if (want) episodeModal("next", want); },
   "ep-run"(want) { episodeModal("run", want); },
   async "ep-go"() { return acts["action-execute"](); },
-  async "ep-stop"() { await call("POST", "/api/episode/stop"); refresh(); },
-  async "ep-reset"() { await call("POST", "/api/episode", { action: "reset" }); refresh(); },
+  async "ep-stop"() { await call("POST", "/api/episode/stop", { runner: shownRunnerName() }); refresh(); },
+  async "ep-reset"() { await call("POST", "/api/episode", { action: "reset", runner: shownRunnerName() }); refresh(); },
+  "ep-runner"(name) { epRunner = name; refresh(); },
   async "lease-take"() {
     const name = ($("op-name")?.value || "").trim();
     if (!name) return toast("운영자 이름을 넣을 것");
@@ -1230,6 +1249,24 @@ function actionState(a) {
   const note = !j?.active && j?.outcome === "FAILED" && j.note ? `<small class="bad">${esc(j.note)}</small>` : "";
   return out.length || note ? `<div class="action-state">${out.join("")}</div>${note}` : "";
 }
+// ★10.19 경로 C 카드 — 스크립트 잡기 단계(접근 정책 → 닫기 → 들기 → 유지)와 이 물체에서 마지막으로 쥔 관절(도)
+const GRIP_PHASE = { approach: "접근 정책", close: "스크립트 닫기", lift: "들기", settle: "유지", done: "성공", failed: "실패" };
+function scriptGrip(a) {
+  const sc = a.live?.script;
+  if (!sc) return "";
+  const now = sc.phase ? `<span class="badge ${sc.phase === "failed" ? "bad" : sc.phase === "done" ? "ok" : "warn"}">${esc(GRIP_PHASE[sc.phase] || sc.phase)}</span> ${esc(sc.why || "")}` : '<span class="badge mute">대기</span>';
+  const g = sc.last_grip;
+  const grip = g ? `<p class="hint">마지막 쥔 관절(${esc(g.outcome || "진행 중")}${g.rise_m != null ? ` · 들기 ${fmt(g.rise_m * 100, 1)} cm` : ""}): ${(g.hand_joints || []).map((n, i) => `${esc(String(n).replace(/^[rl]_hj_/, ""))} ${fmt((g.q_meas_rad?.[i] ?? NaN) * 180 / Math.PI, 0)}°`).join(" · ")}</p>` : '<p class="hint">이 물체로 쥔 기록 없음 — 쥐면 logs/grasp_c/grips.jsonl 에 남는다</p>';
+  return `<div class="script-grip"><p class="hint">스크립트 잡기: ${esc(sc.steps)}</p><p>${now}</p>${grip}</div>`;
+}
+// ★10.19 sim 궤적 — 카드의 마지막 계획(시각 · 컵 자리 · sim 성공). 계획 버튼 아래에만 적는다(재생은 이 계획을 쓴다)
+function simPlan(a) {
+  if (!String(a.id).startsWith("simplan_")) return "";
+  const p = a.live?.sim;
+  if (!p) return '<p class="hint">계획 없음 — 재생 전에 sim 궤적 계획(server, 약 10 분 · 컵을 그대로 둘 것)</p>';
+  const vid = p.video ? ` · 영상 ${esc(String(p.video).split("/").pop())}` : "";
+  return `<p class="hint">재생할 계획: ${esc(p.made || "")} · 컵 (${fmt(p.cup_xy?.[0], 3)}, ${fmt(p.cup_xy?.[1], 3)}) · sim 성공 ${esc(String(p.n_ok))}/${esc(String(p.n))}${vid}</p>`;
+}
 function actionButton(a) {
   const reasons = a.reasons || [];
   const can = holding() && a.enabled;
@@ -1313,6 +1350,10 @@ function renderWorkspace() {
   const actions = S.actions || [];
   put("common-controls", actions.filter(a => a.group === "control").map(actionButton).join(""));
   for (const group of ["setting", "control"]) put(group + "-actions", actions.filter(a => a.group === group).map(actionButton).join(""));
+  // ★10.20 1-B 제어 모듈 에피소드(정책 카드 없음) — policy 탭 맨 위
+  const controlEp = actions.filter(a => a.control);
+  $("control-ep-panel").hidden = !controlEp.length;
+  put("control-ep-actions", controlEp.map(actionButton).join(""));
   put("management", managementStatus(S.management, "setting"));
   put("management-control", managementStatus(S.management, "control"));
   const h = w.head || {};
@@ -1322,7 +1363,7 @@ function renderWorkspace() {
   put("perception-nodes", (S.session?.diagram?.cols || []).flat().filter(perceptionNode).map(boxHtml).join(""));
   put("object-cards", (w.objects || []).filter(o => o.enabled).map(o => `<article class="object-card"><h3>${esc(o.model || o.id)} · ${esc(o.color || o.marker_id || "")}</h3>${o.model === "holder" ? '<p>색 기반 locate 미지원</p>' : ""}<label>정책 입력원 <select data-input-source="${esc(o.id)}" ${holding() ? "" : "disabled"}><option value="fpp" ${o.input_source === "fpp" ? "selected" : ""}>FPP</option><option value="locate" ${o.input_source === "locate" ? "selected" : ""} ${o.model === "holder" ? "disabled" : ""}>locate</option></select></label>${coordinateResult(o.results?.fpp, "FPP")}${coordinateResult(o.results?.locate, "locate")}<button class="btn btn-sm" data-act="object-perception" data-arg="${esc(o.id)}" ${holding() ? "" : "disabled"}>인지 실행 · 좌표 재추출</button>${actions.filter(a => a.object_id === o.id).map(actionButton).join("")}</article>`).join(""));
   put("policy-add", ["approaching", "grasping", "placing", "locking", "pouring"].map(task => `<button class="btn" data-act="policy-choose" data-arg="${task}" ${holding() ? "" : "disabled"}>＋ ${esc(taskLabel(task))}</button>`).join("") + '<button class="btn btn-ghost" data-act="policy-reset">배치 초기화</button>');
-  put("policy-cards", (w.cards || []).map((card, i) => `<article class="policy-card" style="transform:translate(${Number(card.x) || 0}px,${Number(card.y) || 0}px)"><h3>${esc(taskLabel(card.task))} · ${esc(card.policy_id)}</h3><p>${esc(card.side)} · ${esc(card.object_id || "물체 미선택")}</p><span class="badge">${card.execution_supported ? "rg3 실행 연결" : "배치만 지원"}</span><label>물체 <select data-card-object="${esc(card.id)}"><option value="">물체 선택</option>${(w.objects || []).filter(o => o.enabled).map(o => `<option value="${esc(o.id)}" ${card.object_id === o.id ? "selected" : ""}>${esc(o.id)}</option>`).join("")}</select></label><div class="actions">${[["left","←"],["right","→"],["up","↑"],["down","↓"]].map(([d,label]) => `<button class="btn btn-sm" aria-label="${esc(card.id)} ${d}" data-act="policy-move" data-arg="${esc(card.id)}:${d}">${label}</button>`).join("")}<button class="btn btn-sm" data-act="policy-remove" data-arg="${esc(card.id)}">제거</button></div>${actions.filter(a => a.card_id === card.id).map(actionButton).join("")}</article>`).join(""));
+  put("policy-cards", (w.cards || []).map((card, i) => `<article class="policy-card" style="transform:translate(${Number(card.x) || 0}px,${Number(card.y) || 0}px)"><h3>${esc(taskLabel(card.task))} · ${esc(card.policy_id)}</h3><p>${esc(card.side)} · ${esc(card.object_id || "물체 미선택")}</p><span class="badge">${card.execution_supported ? (card.task === "approaching" ? "경로 C 실행 연결" : actions.some(a => a.card_id === card.id && String(a.id).startsWith("simrun_")) ? "정책 live · sim 궤적 재생" : "rg3 실행 연결") : "배치만 지원"}</span><label>물체 <select data-card-object="${esc(card.id)}"><option value="">물체 선택</option>${(w.objects || []).filter(o => o.enabled).map(o => `<option value="${esc(o.id)}" ${card.object_id === o.id ? "selected" : ""}>${esc(o.id)}</option>`).join("")}</select></label><div class="actions">${[["left","←"],["right","→"],["up","↑"],["down","↓"]].map(([d,label]) => `<button class="btn btn-sm" aria-label="${esc(card.id)} ${d}" data-act="policy-move" data-arg="${esc(card.id)}:${d}">${label}</button>`).join("")}<button class="btn btn-sm" data-act="policy-remove" data-arg="${esc(card.id)}">제거</button></div>${actions.filter(a => a.card_id === card.id).map(a => actionButton(a) + scriptGrip(a) + simPlan(a)).join("")}</article>`).join(""));
   selectTab(activeTab);
 }
 // 10.17 사용자 결정 3: 화면 · 에피소드 · 보고서만 tilt — 작업 공간 키(pouring)와 코드 모듈(pour_*.py)은 그대로
@@ -1335,8 +1376,11 @@ async function saveWorkspace(patch) {
   await refresh();
 }
 function choosePolicy(task) {
-  const catalog = [...(S.workspace?.catalog || [])].sort((a, b) => Number(b.task === task) - Number(a.task === task));
-  modal(`<h3>${esc(task)} 정책 선택</h3><p>파일 선택과 화면 복원은 정책을 실행하지 않는다.</p>${catalog.map(p => `<article class="object-card"><h4>${esc(p.id)}</h4><dl class="kv"><dt>정책 파일</dt><dd>${esc(p.file || p.path || p.id)}</dd><dt>체크포인트</dt><dd>${esc(p.checkpoint || "—")}</dd><dt>계약</dt><dd>${esc(p.contract || "—")}</dd><dt>팔</dt><dd>${esc(p.side)}</dd><dt>지원 물체</dt><dd>${esc((p.supported_objects || p.objects || []).join(", "))}</dd></dl><button class="btn" data-act="policy-add-card" data-arg="${esc(task)}:${esc(p.id)}">노드 추가</button></article>`).join("") || '<p>등록된 배포 정책이 없다.</p>'}<button class="btn" data-act="modal-close">취소</button>`);
+  // ★10.19 사용자 "각 해당 정책들만 보여지게": 고른 작업의 정책만(작업은 서버 workspace.task_of) — 오른팔 → 왼팔 순
+  const order = { right: 0, left: 1, both: 2 };
+  const catalog = (S.workspace?.catalog || []).filter(p => p.task === task)
+    .sort((a, b) => (order[a.side] ?? 3) - (order[b.side] ?? 3) || String(a.id).localeCompare(String(b.id)));
+  modal(`<h3>${esc(taskLabel(task))} 정책 선택</h3><p>파일 선택과 화면 복원은 정책을 실행하지 않는다.</p>${catalog.map(p => `<article class="object-card"><h4>${esc(p.id)}</h4><dl class="kv"><dt>정책 파일</dt><dd>${esc(p.file || p.path || p.id)}</dd><dt>체크포인트</dt><dd>${esc(p.checkpoint || "—")}</dd><dt>계약</dt><dd>${esc(p.contract || "—")}</dd><dt>팔</dt><dd>${esc(p.side)}</dd><dt>지원 물체</dt><dd>${esc((p.supported_objects || p.objects || []).join(", "))}</dd></dl>${p.execution_supported ? "" : `<p class="hint">${esc(p.execution_reason || "배치만 지원")}</p>`}<button class="btn" data-act="policy-add-card" data-arg="${esc(task)}:${esc(p.id)}">노드 추가</button></article>`).join("") || `<p>등록된 ${esc(taskLabel(task))} 정책이 없다.</p>`}<button class="btn" data-act="modal-close">취소</button>`);
 }
 let videoAttached = false;
 function updateVideo(s) {

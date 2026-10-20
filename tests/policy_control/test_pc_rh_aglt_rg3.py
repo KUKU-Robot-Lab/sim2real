@@ -22,7 +22,7 @@ from policy_control import rh_aglt as A
 from policy_control import rh_aglt_goals as G
 
 REPO = Path(__file__).resolve().parents[2]
-POL = REPO / "deploy" / "policies"
+POL = REPO / "deploy" / "policies_retired"   # ★10.20 옛 rg3wo(시험 고정본) — 등록부 밖
 RG3 = {"right": "rh56f1/aglt/right_rg3wo", "left": "rh56f1/aglt/left_rg3wo"}
 MD5 = {"right": "624e55dc641631a2e98b90cbad060483", "left": "7cf1bd191587ab484cdf3e3d0a6d6f7b"}
 FIX = Path(__file__).resolve().parent / "fixtures"

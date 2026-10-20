@@ -1,15 +1,17 @@
 """episode_runner_node — 에피소드 하나를 들고 상황판 · CLI 의 명령으로 굴린다(10.04 사용자: 구분 실행 → 최종 연속 실행).
 
-  srv  /policy_control/episode_runner/{next,run,stop,reset}  (std_srvs/Trigger, 응답 message = {"ok","reasons"} JSON)
+  srv  /policy_control/<이름>/{next,run,stop,reset}  (std_srvs/Trigger, 응답 message = {"ok","reasons"} JSON)
+         <이름> = 노드 이름(기본 episode_runner). ★10.19 한 팔 에피소드는 -r __node:=episode_runner_<팔> 로 띄워 두 팔이 따로 돈다.
          next  지금 노드 하나(또는 기다리는 복구 하나) — 승인 = 그 이름(next_action)
          run   끝까지 — 승인 = "episode:<이름>" 한 번(복구도 그 안, 재시도 상한 · 안전 정지는 그대로)
          stop  돌던 것을 멈춘다(정책 노드 episode/stop → pd 가 붙든다 · 재생 프로세스 SIGTERM) — 승인 없음
          reset 새 에피소드(WorldState 처음부터) — 도는 중이면 거부
-  out  /policy_control/status/episode_runner (2 Hz JSON — EpisodeManager.view() + busy · auto_approve)
+  out  /policy_control/status/<이름> (2 Hz JSON — EpisodeManager.view() + busy · auto_approve)
   log  logs/episode/<episode_id>/episode.jsonl · scene.json · tools.log
 
 승인: auto_approve(fake 도메인만 — 실기 126 이면 노드가 거부) 또는 approvals 파일(JSONL, tools/episode_cmd.py 와 상황판이
-쓴다)에 이 노드가 뜬 뒤 쓰인 {"what": <이름>, "t": epoch} 가 있고 아직 안 쓴 것. 한 줄은 한 번만 쓴다.
+쓴다)에 이 노드가 뜬 뒤 쓰인 {"what": <이름>, "t": epoch, "runner": <노드 이름>} 가 있고 아직 안 쓴 것. 한 줄은 한 번만 쓴다.
+runner 가 없는 옛 줄은 기본 이름(episode_runner)의 것 — 팔마다 띄운 실행기는 자기 이름이 적힌 줄만 받는다.
 
     python3 deploy/policy_control/policy_control/episode_runner_node.py --ros-args \\
         -p episode:=config/episodes/pick_place_right.yaml -p robot:=rh56f1 [-p auto_approve:=true]
@@ -40,8 +42,8 @@ APPROVALS = _paths.SIM2REAL / "logs" / "episode" / "approvals.jsonl"
 class Approvals:
     """approvals 파일에서 이 이름의 새 승인 한 줄을 꺼낸다(뜬 뒤 쓰인 것 · 한 번만)."""
 
-    def __init__(self, path: Path, since: float) -> None:
-        self.path, self.since, self.used = path, since, set()
+    def __init__(self, path: Path, since: float, runner: str = NAME) -> None:
+        self.path, self.since, self.used, self.runner = path, since, set(), runner
 
     def take(self, what: str, since: float | None = None) -> bool:
         """since = 이 시각 뒤에 쓰인 승인만(없으면 노드가 뜬 뒤 전부)."""
@@ -54,14 +56,16 @@ class Approvals:
             except ValueError:
                 continue
             key = (i, row.get("what"), row.get("t"))
+            if row.get("runner", NAME) != self.runner:          # ★10.19 다른 실행기(다른 팔)의 승인
+                continue
             if row.get("what") == what and float(row.get("t", 0)) >= floor and key not in self.used:
                 self.used.add(key)
                 return True
         return False
 
 
-def write_approval(what: str, operator: str, path: Path = APPROVALS) -> dict:
-    row = {"what": what, "t": time.time(), "operator": operator, "at": time.strftime("%F %T")}
+def write_approval(what: str, operator: str, path: Path = APPROVALS, runner: str = NAME) -> dict:
+    row = {"what": what, "t": time.time(), "operator": operator, "at": time.strftime("%F %T"), "runner": runner}
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -79,6 +83,7 @@ def _main_node():
     class EpisodeRunnerNode(Node):
         def __init__(self) -> None:
             super().__init__(NAME)
+            self.runner = self.get_name()               # ★10.19 -r __node:=episode_runner_<팔> — 서비스 · 상태 · 승인이 이 이름
             for name, default in (("episode", ""), ("robot", "rh56f1"), ("auto_approve", False),
                                   ("approvals", str(APPROVALS)), ("policy_object", ""), ("cup_object", "")):
                 self.declare_parameter(name, default)
@@ -90,26 +95,26 @@ def _main_node():
             self.auto = bool(p("auto_approve"))
             if self.auto and os.environ.get("ROS_DOMAIN_ID", "") in ("", "0", REAL_DOMAIN):
                 raise SystemExit(f"auto_approve 는 fake 도메인에서만 — ROS_DOMAIN_ID={os.environ.get('ROS_DOMAIN_ID')!r}")
-            self.approvals = Approvals(Path(str(p("approvals"))), time.time())
+            self.approvals = Approvals(Path(str(p("approvals"))), time.time(), self.runner)
             self.robot = str(p("robot"))
             self._busy = threading.Lock()
             self._worker: threading.Thread | None = None
             self._String = String
-            self._pub = self.create_publisher(String, f"{NS}/status/{NAME}", QoSProfile(depth=10))
+            self._pub = self.create_publisher(String, f"{NS}/status/{self.runner}", QoSProfile(depth=10))
             self.executor_ros = None
             self.manager = None
             self._new_episode()
             for name in ("next", "run", "stop", "reset"):
-                self.create_service(Trigger, f"{NS}/{NAME}/{name}", getattr(self, f"_srv_{name}"))
+                self.create_service(Trigger, f"{NS}/{self.runner}/{name}", getattr(self, f"_srv_{name}"))
             self.create_timer(0.5, self._publish)
-            self.get_logger().info(f"{NAME} up · {self.ep.name} ({len(self.ep.nodes)} 노드) · 승인 "
+            self.get_logger().info(f"{self.runner} up · {self.ep.name} ({len(self.ep.nodes)} 노드) · 승인 "
                                    f"{'auto(fake)' if self.auto else self.approvals.path}")
 
         def _new_episode(self) -> None:
             if self.executor_ros is None:
                 eid = time.strftime("%Y%m%d_%H%M%S")
                 run_dir = _paths.SIM2REAL / "logs" / "episode" / f"{eid}_{self.ep.name}"
-                self.executor_ros = RosExecutor(self, self.ep, robot=self.robot, run_dir=run_dir)
+                self.executor_ros = RosExecutor(self, self.ep, robot=self.robot, run_dir=run_dir, runner=self.runner)
             ex = self.executor_ros
             ex.clear_cancel()
             eid = time.strftime("%Y%m%d_%H%M%S")
@@ -151,7 +156,7 @@ def _main_node():
             return self._start(self.manager.run, "run", res)
 
         def _srv_stop(self, _req, res):
-            self.manager.stop("operator stop (episode_runner/stop)")
+            self.manager.stop(f"operator stop ({self.runner}/stop)")
             return self._reply(res, True, ["stopped"])
 
         def _srv_reset(self, _req, res):
@@ -161,7 +166,7 @@ def _main_node():
             return self._reply(res, True, [f"new episode {self.manager.episode_id}"])
 
         def _publish(self) -> None:
-            body = {"node": NAME, "phase": self.manager.status, "ok": self.manager.status != "FAILURE",
+            body = {"node": self.runner, "runner": self.runner, "phase": self.manager.status, "ok": self.manager.status != "FAILURE",
                     "busy": bool(self._worker is not None and self._worker.is_alive()), "auto_approve": self.auto,
                     "run_dir": str(self.executor_ros.run_dir), **self.manager.view(),
                     "t_pub_ns": self.get_clock().now().nanoseconds}

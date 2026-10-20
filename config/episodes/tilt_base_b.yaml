@@ -26,9 +26,9 @@ sequence:
   - {id: open_hands, type: hand, action: open, sides: [right, left]}
   - {id: confirm_cup_right, type: confirm, text: "오른손에 병(source240, 비드 10 개)을 댈 차례 — 로봇이 멈춰 있는가. 확인하면 병을 손바닥에 댄다"}
   - {id: confirm_close_right, type: confirm, text: "병이 오른손 손바닥 안에 있고 사람 손가락이 로봇 손가락 사이에 없는가 — 확인하면 오른손을 닫는다"}
-  - {id: grasp_right, type: hand, action: grasp, sides: [right], hand_contract: rh56f1/aglt/right_approach_rg3wc, expect: {right_hand: SRC}}
+  - {id: grasp_right, type: hand, action: grasp, sides: [right], hand_contract: config/hand/rh56f1_right_hand.json, expect: {right_hand: SRC}}
   - {id: confirm_cup_left, type: confirm, text: "왼손에 shaker 를 댈 차례 — 로봇이 멈춰 있는가. 확인하면 shaker 를 손바닥에 댄다"}
   - {id: confirm_close_left, type: confirm, text: "shaker 가 왼손 손바닥 안에 있고 사람 손가락이 로봇 손가락 사이에 없는가 — 확인하면 왼손을 닫는다"}
-  - {id: grasp_left, type: hand, action: grasp, sides: [left], hand_contract: rh56f1/aglt/left_approach_rg3wc, expect: {left_hand: RCV}}
+  - {id: grasp_left, type: hand, action: grasp, sides: [left], hand_contract: config/hand/rh56f1_left_hand.json, expect: {left_hand: RCV}}
   - {id: tilt, type: trajectory, name: tilt, expect: {pose: SETTING}}
   - {id: done, type: terminal, result: SUCCESS}

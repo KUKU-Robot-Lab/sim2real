@@ -110,12 +110,18 @@ def main(argv: list[str] | None = None) -> int:
     for n in args.objects:
         node.create_subscription(PoseStamped, f"/perception_plus_plus/{n}/live_pose", on_pose(n), 50)
     last = time.time()
-    while not stop["now"] and rclpy.ok():
-        rclpy.spin_once(node, timeout_sec=0.1)
-        if time.time() - last > 10:
-            fh.flush()
-            last = time.time()
+    from rclpy.executors import ExternalShutdownException
+    try:
+        while not stop["now"] and rclpy.ok():
+            rclpy.spin_once(node, timeout_sec=0.1)
+            if time.time() - last > 10:
+                fh.flush()
+                last = time.time()
+    except (ExternalShutdownException, KeyboardInterrupt):
+        pass                     # ★10.19 rclpy 가 TERM · INT 를 먼저 받아 context 를 닫는다 — 그래도 아래 마무리(CSV 닫기 · 요약)
     fh.close()
+    (out / "meta.json").write_text(json.dumps({**json.loads((out / "meta.json").read_text()), "end": time.time(), **counts},
+                                              ensure_ascii=False, indent=1))
     node.destroy_node()
     rclpy.try_shutdown()
     print(f"[vision] {out} · 영상 {counts['frames']} 장 · 실시간 좌표 {counts['poses']} 줄")

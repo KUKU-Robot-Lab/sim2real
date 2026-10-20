@@ -1,0 +1,37 @@
+# 1-B reach 의 컵 앞 사전 파지 자세 · 이동 — aglt_new 의 ReadyApproach(hdgp tasks/rh_aglt_{r,l}/ready_approach.py)를 그대로 쓴다.
+# 10.20 사용자 "컵 접근은 ready-carry 세팅을 aglt_new 세션에 물어봐". 값은 hdgp cff27786d 의 rh_aglt_{r,l}/rh_aglt_env_cfg.py
+# ready_* 기본값을 옮겼다(학습 cfg 는 다른 세션이 계속 고치므로 배포는 여기 고정한다 — 바꿀 때는 diff 를 보고 손으로).
+#   손바닥 원점 = 컵 원점(FP++ 원점 = 몸통 가운데) + 2.5 R · e_r + 0 · 위 (10.19 사용자: 손 중심 높이 = 병 원점)
+#   방위 φ(e_r) = a + b x + c y [deg] — approach_r 2판 재생 16 자리 회귀 −15°. 왼손은 y 거울.
+#   손바닥 법선 · 손가락 방향 = 컵 틀(e_r, e_t, 위) 고정 성분. 경유점 = 사전 파지 + 바깥 4 cm + 위 4 cm(바깥 위에서 들어온다).
+#   IK 실패면 방위 ±10 · 20 · 30° 를 작은 것부터 다시 푼다.
+# 배포만 다른 점: 방위 흔들기 jitter 0(학습은 ±10°) — 같은 컵 자리면 같은 계획.
+source: {hdgp_commit: cff27786d, file: "source/openarm/openarm/agnostic/tasks/rh_aglt_{r,l}/rh_aglt_env_cfg.py"}
+# 10.20 02:03 aglt_new 225abc056 이 begin() 방위 재시도를 한 배치로 바꿔 md5 가 8e122d36 → bb7b0aa8(ready_* 키 · 값 그대로).
+#   실기 reach 가 이 핀에 걸려 계획 전에 멈췄다. 옛 파일(임시 트리) 대 새 파일로 같은 컵 11 자리(오늘 두 컵 · 중심선 · 가장자리,
+#   방위 ±10° 고른 자리 포함)를 계획해 arm_target 차이 0.0 rad · 방법 · 여유 · 시간 모두 같음을 보고 옮겼다.
+hdgp_md5:                     # hdgp 루트 기준. 다르면 plan_reach 가 계획하지 않는다(policy_control/hdgp_pin.py)
+  source/openarm/openarm/agnostic/tasks/rh_aglt_r/ready_approach.py: bb7b0aa8b7d0495403f9ffc1b6f64859
+common: &common
+  ready_pre_r_mult: [2.5, 2.5]
+  ready_pre_h_m: [0.0, 0.0]
+  ready_phi_search_deg: [10.0, 20.0, 30.0]
+  ready_pre_phi_jitter_deg: 0.0
+  ready_via_out_m: 0.04
+  ready_via_up_m: 0.04
+  ready_v_max: 0.004          # 손바닥 점 [m/스텝] at 60 Hz = 24 cm/s
+  ready_qd_max: 0.012         # [rad/스텝] = 0.72 rad/s
+  ready_max_steps: 360
+  ready_plan_seeds: 8
+  ready_settle_q_rad: 0.02
+  ready_settle_max_steps: 30
+right:
+  <<: *common
+  ready_pre_phi_coef: [-104.8, -35.2, 193.5]
+  ready_pre_n_cup: [-0.50, -0.86, 0.0]
+  ready_pre_f_cup: [-0.86, 0.50, 0.0]
+left:
+  <<: *common
+  ready_pre_phi_coef: [104.8, 35.2, 193.5]
+  ready_pre_n_cup: [-0.50, 0.86, 0.0]
+  ready_pre_f_cup: [-0.86, -0.50, 0.0]

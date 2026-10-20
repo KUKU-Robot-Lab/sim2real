@@ -168,7 +168,7 @@ def test_the_builder_reads_pos_axes_and_refuses_what_the_deploy_cannot_do():
 
 
 # ---------------------------------------------------------------- 계약 · 디코더(거리 조건)
-RUN = Path(__file__).resolve().parents[2] / "deploy/policies/rh56f1/aglt/right_rg3wo"   # 10.18 rg3mft 폴더 삭제 — 같은 다물체 rg3 계열 배포 정책
+RUN = Path(__file__).resolve().parents[2] / "deploy/policies_retired/rh56f1/aglt/right_rg3wo"   # 10.18 rg3mft 폴더 삭제 — 같은 다물체 rg3 계열 배포 정책
 
 
 @pytest.fixture(scope="module")

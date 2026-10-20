@@ -62,7 +62,7 @@ def test_selection_atomic_invalidation_and_sources(tmp_path):
 def test_card_layout_restore_and_validation(tmp_path):
     shutil.copytree(ROOT / 'deploy/policies', tmp_path / 'deploy/policies', ignore=shutil.ignore_patterns('*.pth', '*.npz'))
     ws = workspace(tmp_path)
-    policy = next(p for p in ws.snapshot()['catalog'] if p['default_rg3'])
+    policy = next(p for p in ws.snapshot()['catalog'] if p['task'] == 'grasping')   # ★10.20 옛 rg3 기본 정책은 치웠다 — 배치는 잡기 정책이면 된다
     state = ws.update({'cards': [{'id': 'a', 'task': 'grasping', 'policy_id': policy['id'], 'side': policy['side'], 'object_id': 'source200_orange', 'x': 20, 'y': 40}]})
     assert state['cards'][0]['x'] == 20
     assert Workspace(tmp_path, 'openarm_rh56f1').snapshot()['cards'][0]['x'] == 20

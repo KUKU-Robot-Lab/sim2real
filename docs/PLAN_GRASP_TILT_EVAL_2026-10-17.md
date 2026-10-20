@@ -180,3 +180,87 @@
   계약 생성기가 contact 판정 위치제어 런의 G(0.0128, 학습 고정)를 거부해 pos 판정 런과 같게 학습 범위 끝으로 붙인다(rh_aglt.hand_block_of)
   — 경로 C 닫기는 close_contract 가 막힘 명목값(0.0218)을 다시 씌우므로 실기 닫기 동작은 같다. 에피소드 grasp_c_{right,left} · tilt_base_c,
   미션 재생성. 경로 B(tilt_base_b)의 hand_contract 는 rg3wc 그대로(막힘 명목값만 쓴다).
+- 10.19 이름 바꿈(사용자 지시, aglt_new 전달 — 학습 쪽 hdgp/log/rl_games/open-rh/{right,left}/approach/approach_{r,l}):
+  `aglt/{right,left}_approach_rg3wc` → `aglt/{right,left}_approach`(10.06 경로 규칙 <팔>_<태그> 때문에 approach_r 대신, 사용자 선택),
+  체크포인트 approach_r.pth · approach_l.pth(md5 그대로 fff6c4aa… · 45e24515…). 계약은 경로 두 칸만 고쳤다. 이 문서 위쪽의
+  rg3wc 폴더 이름은 그때 기록이다. rg3wg 두 폴더 이름은 그대로(사용자 결정).
+- 10.19 1-C 기본 접근 정책 rg3wg ep300 → `aglt/{right,left}_approach`(rg3wc ep800, 사용자 결정 "접근은 rg3wc ep800 을 일단 써 본다").
+  에피소드 grasp_c_{right,left} 와 미션 재생성. 콘솔 접근 카드는 전부터 카드 정책으로 바꿔 돌렸다. tilt_base_c 는 rg3wg 그대로.
+- 10.19 콘솔 잡기 카드(경로 A aglt)에 sim 궤적 버튼 둘(사용자 "정책 live 와 sim 궤적 재생 둘 다 고르게"): simplan_<카드> = FP++ live
+  컵 자리로 server sim 계획(tools/sim_traj.py plan, 로봇 안 움직임) · simrun_<카드> = 그 카드의 마지막 계획을 pd 로 재생(run --execute,
+  정책 노드 없음, 컵이 계획 자리 1 cm 안). 계획은 logs/sim_traj/card_<카드>/. 정지는 SIGTERM → sim_traj 가 episode stop → pd/hold 확인.
+- 10.19 실기(22:07~22:19) 결과와 방향 전환:
+  · 1-C 접근 카드(approach_r/l = rg3wc ep800): 손바닥이 3 s 에 컵에서 8.7 cm(정책 보상 목표 = 2.5 반지름 + 3 cm 위)까지 온 뒤
+    바깥으로 10~15 cm 흘러감 → 6 cm 멈춤 조건이 안 맞아 15 s 시간 초과로 허공에서 닫고 들었다(오른손) · 컵 1 s 끊김으로 멈춤(왼손).
+    10.18 1-C sim(0/60, 실기 규격 접근 끝 13.5 cm)이 이미 예측한 결과. 사용자: "1-C 는 보류"(2.5R 이 눈으로 보이지 않아 판단 보류) ·
+    "파지도 내가 명령을 내리는 것이었는데 자동이 됐다".
+  · 1-A neo03 왼손: FP++ 는 끝까지 잡았고(끊김 처리 안 걸림) 컵을 앞으로 4.7 cm 밀고 쥔 뒤 뒤로 10.7 · 바깥 12 cm 끌며 10 cm 들었다.
+    같은 칸 sim 도 바깥 7.4 cm 로 휜다(학습 성공 판정이 높이만 본다).
+  · 사용자: "그냥 지금부터는 1-B 처럼 정책이 아니라 제어 모듈들로 모든 걸 진행해야 함 · 작성할 보고서 사진/영상도 필요함".
+- 10.19 1-B(정책 없이 제어 모듈만) — 사용자 결정: 쥐는 자리 = tilt 기준 자리(single734 행 0 의 손 안 컵 자리) · 접근 = 앞에서 곧게 ·
+  승인 = 닫기 전만 · 왼손 / 오른손 독립 · sim 은 로컬 5090(1-A1, 정책 궤적이라 보류).
+  · 에피소드 `config/episodes/grasp_b_{right,left}.yaml`: 홈 → 배치 기록 → 손 펴기 → reach → [확인] 닫기 → hand grasp(경로 B 와 같은
+    hand_grasp.py) → lift → 끝. 미션 단계 `episode_grasp_b_<팔>`(팔마다 실행기 episode_runner_<팔>) + bag · CPU · 카메라 15 Hz 기록 →
+    끝에 `tools/episode_media.py --pending`(logs/report_media/<회>/video.mp4 · 01_start · 02_reached · 03_grasped · 04_lifted · sheet.jpg).
+  · `tools/plan_reach.py`: tilt 기준 자리 = 컵 중심이 손가락 방향 4.1 cm · 손바닥 앞 3.2 cm(깊은 쥠). 편 손(엄지 회전 1.57)은 엄지 끝이
+    손바닥 앞 7.7 cm 라 손바닥 법선으로 들어가면 엄지가 막는다 → 손가락 방향 수평으로 곧게(컵이 손가락 면과 엄지 사이로, 틈 src240 2.4 ·
+    shaker 1.3 cm). 컵 FP++ 원점 → 바닥 맞춤(shaker_c +2 cm). 쥔 자세 = 어깨 → 컵 방위 ±45°(15°) × 시드 8 의 손바닥 자세 IK, 곧게
+    들어가기까지 풀어 경로 전체 관절 여유가 큰 것. standoff 12 → 11 → 10 cm(손끝이 컵 중심보다 6.3 cm 앞; 오른손 오늘 칸은 12 cm 면
+    들어가기 시작에서 j7 이 한계 2° 안 → 10 cm 6.2°). 이송 = ready_carry(q_goal). 검사: IK · 여유 ≥ 5° · 직선 3 mm · 2 rad/s ·
+    손 점(손바닥 + 손끝) 탁자 + 1.5 cm · 팔 관절 탁자 + 3 cm · 이송 중 컵 겉면 2 cm · 들어가는 동안 컵 안 아님 · 다른 팔(실측) 10 cm.
+    오프라인(홈 출발, 오늘 칸): 오른손 src240b (0.244, −0.116) 9.0 s(여유 6.2°, 들어가며 손끝–컵 7.8 mm) · 왼손 shaker (0.259, 0.078)
+    10.0 s(여유 15.3°, 3.8 mm — 빠듯).
+  · `tools/plan_lift.py`: 지금 자세에서 손바닥 방향 고정 수직 10 cm(최소 저크 3 s) + 3 s 유지. 실행기가 끝에 FP++ 로 컵 상승 ≥ 7 cm 판정
+    (없으면 보류). episode_spec: 궤적 reach · lift(한 팔 · object), reach 바로 뒤 hand grasp 는 확인 하나(사람이 컵을 대는 경로 B 는 둘).
+  · 카메라 PC vision_recorder: TERM 에서 rclpy 가 먼저 context 를 닫아 예외로 끝나 CSV 마지막 10 s · 요약이 빠졌다 → 예외를 잡고 마무리
+    (vision-3090 사본도 같은 파일로 교체, 옛 것은 /tmp/vision_recorder.py.bak_1019).
+- 10.20 1-B 접근을 aglt_new ReadyApproach 로 바꿈(사용자 "컵 접근은 ready-carry 세팅을 aglt_new 세션에 물어봐 여기는 금방하던데",
+  "가짜 리허설에서 실패하면 안 되는 것 아닌가", "로봇 실기는 local 5090 사용해야지").
+  · 옛 계획(쥔 자세 7 방위 × 시드 8 IK + 331 스텝 직선 IK × standoff 12→10 재시도)은 로봇 PC 에서 50 s. 이제: hdgp
+    tasks/rh_aglt_r/ready_approach.py(md5 8e122d36 고정)를 그대로 — 사전 파지(컵 축 2.5 R · 원점 높이 · 방위 회귀 · 손 방향 컵 틀 고정)
+    6D IK 한 자세 → Mover 경유점(바깥 4 · 위 4 cm) 60 Hz 굴림. 값 = config/ready_approach/rh56f1.yaml(cff27786d cfg 사본, jitter 0).
+    그 뒤 tilt 기준 쥔 자리까지 짧게(위치 직선 · 방향 구면 보간 · 손바닥 2 cm/s · 회전 15°/s · 관절 0.38 rad/s 평균 중 느린 쪽 최소 저크).
+  · 오늘 칸 홈 출발: 오른손 src240b 계획 0.5 s · 이동 2.7 s + 들어가기 2.6 cm 5.5° 1.3 s · 손끝–컵 16.6 mm · 왼손 shaker 0.9 s ·
+    4.0 s + 5.8 cm 7.6° 3.1 s(사전 파지에서 팔꿈치 j4 0.221 rad — 첫 칸에서 j4 0.076 rad 고쳐 잡음, 손바닥 0.45 mm 안) · 탁자 위 19 mm.
+    관절 여유 최소: 이동 중 j6 7.8°(오) · 5.9°(왼), 들어가기 j7 18.9° · 12.0°.
+  · fake 리허설(도메인 97) 양손 SUCCESS: 홈 → 배치 → 손 펴기 → reach → [확인] → hand_grasp(4 손가락 · 3 s) → lift(컵 10.0 cm).
+    fake 컵(fake_cup_pose_pub --follow-side)이 fake 손 '손 안 컵'(/fake/hand_<팔>/cup) 켜진 동안 손바닥을 따라가 들기 판정까지 시험.
+    (확인 대기 13 분으로 에피소드 900 s 제한에 걸린 첫 회 · 손 안 컵 없이 래치 0 · 컵이 안 따라와 0.0 cm 는 리허설 쪽 문제였다)
+- 10.20 1-B 계획에 조건 추가(사용자 "1-b 세팅은 ready-carry 에 좀더 조건이 많아야함. 테이블, 자기 충돌, 관절 제약 등을 고려해야함").
+  · 세계 = 홈 경로 계획기와 같은 것(`tools/reach_world.py` → home_path_world · plan_home_path.Checker): 1판 URDF 충돌 메쉬 · env USD
+    테이블 상자 · 뒤 박스 · 옆 벽 · 몸통 · 머리 · 반대팔(실측 자세) 2 cm, 같은 팔 사슬 2 관절 이내는 관통만 금지, FP++ 컵 원기둥
+    (이송 1 cm · 들어가기 관통 금지). 관절 여유 = URDF 와 robot_control 프로필 한계 중 좁은 쪽에서 5°. 세계 쌍 거리는 볼록 조각
+    꼭짓점으로 다시 잰다(MuJoCo MPR 이 얇은 상판에 수평 '관통' −254 mm 를 냈다, 실제 13.6 mm 위).
+  · 이송: aglt_new ReadyApproach(Mover) 경로가 걸리면 → 관절 공간 직선 → RRT-Connect + 지름길, 사전 파지 높이 × 방위 후보
+    (0 · ±10 · ±20 · ±30°)를 차례로. 모두 걸리면 후보마다 이유를 남기고 거부. 들기(plan_lift)도 같은 세계 · 관절 검사.
+  · 오프라인(홈 출발): 오른손 src240b (0.244, −0.116) ready_carry 그대로 2.5 s · 관절 여유 7.9°(j6) · 세계 13 mm(컵–엄지) ·
+    왼손 shaker (0.259, 0.078) joint_line 10.8 s · 10.5°(j2). 중심선 컵(aglt_new 격자에서 j6 한계에 닿은 칸) 오 (0.25, 0 · −0.06) ·
+    왼 (0.25, 0 · +0.06) 모두 통과(여유 ≥ 8.9°). 들기: 자기 사슬 45 · 47 mm, 관절 여유 18.9 · 23.0°.
+  · fake 리허설(도메인 97) 양손 SUCCESS(reach → [확인] → 쥠 4 손가락 3 s → 컵 10.0 cm). 1-B · 홈 경로 테스트 59 통과.
+- 10.20 02:06 · 02:08 실기 1-B reach 가 계획 전에 두 번 안전 정지(팔 안 움직임). 원인 = aglt_new hdgp 225abc056(02:03, begin() 방위 재시도를
+  한 배치로 — 속도만)으로 ready_approach.py md5 8e122d36 → bb7b0aa8 → 배포 핀 불일치. 옛 · 새 파일로 같은 컵 11 자리 계획이 arm_target
+  차이 0.0 rad 로 같아 핀을 bb7b0aa8 로 옮김(config/ready_approach/rh56f1.yaml). aglt_new 에 "바꾸기 전에 알림" 다시 요청.
+- 10.20 사용자 "위치 세팅이 이상함 policy 창서도 보이게 해야지": 상황판 policy 탭 맨 위에 "제어 모듈 에피소드 — 1-B" 칸(작업
+  ctl_grasp_b_right · _left, 정책 카드 없음). 실행 = 미션 단계 episode_grasp_b_<팔> 그대로 띄움 → 승인한 연속 실행(닫기 전 확인은
+  지금 에피소드 패널 [다음]) → 끝(성공 · 실패 · 정지)이면 pd 붙듦 · 기록 마무리 · 보고 사진 · 영상. 시간 상한 600 s. rg3 카드 실행과
+  같은 함수(_drive_episode)를 쓴다. 상황판을 다시 띄워야 보인다(로봇 스택이 상황판 자식이라 안전 종료 뒤).
+- 10.20 실기 1-B 첫 회(03:25, 오른손 src240b · 왼손 shaker) 뒤 수정.
+  · 사용자: "src240 은 엄지가 닿을 정도로 접근은 했는데 좀 더 깊숙이 들어가야 함. 손끝 쪽에 몰려 있어 파지할 때 컵이 밀려남 · shaker 는
+    깊숙이 들어가서 잡힘. 리프트까지 잘 했는데 오류 남 · rehome 이 안 먹혀 제자리로 못 돌아옴(episode/stop rc=1)".
+  · 원인: tilt 기준 쥔 자리는 손바닥을 컵 축에서 늘 52 mm 에 둔다 → 반지름 30 mm src240 은 손바닥–겉면 22 mm(손끝 파지), shaker(35.4)는
+    15.7 mm. 들기 판정은 locate 때 찍은 …/pose 를 계속 다시 내는 토픽을 봐서 실제 9.6 cm 들림을 0.0 cm 로 판정 → 정지. rehome 은 에피소드
+    실행기가 내려간 뒤 episode/stop 서비스가 없어 rc=1 로 멈췄고, pd 가 워치독 HOLD 라 engage 를 거부했다.
+  · 고침: `plan_reach.deepen` — 손바닥–컵 겉면 수평 거리가 16 mm(shaker 깊이, GRASP_PALM_GAP_M)를 넘으면 그만큼 컵 축 쪽으로(src240b 오늘 칸
+    +6.3 mm, 왼손 자리 +5.1 mm, shaker 0). 들기 판정 = FP++ live_pose. trigger.py: 서비스가 없는 episode/stop 은 멈출 것이 없음 = 성공.
+    pd: 워치독 HOLD 에서 pd_engage 를 받아 풀고 붙듦. 구분 실행에서 마지막 노드 뒤 terminal 을 바로 닫는다(가짜 리허설이 done 에서 15 분 대기).
+  · 확인: 1-B 시험 36 · 에피소드 139 통과. 가짜(97) 왼손 shaker 1-B(단계 실행) → lift 10 cm → control rehome_left 7 단계 27 s DONE.
+- 10.20 정책 정리(사용자 "newton 세션하고 aglt_new 세션에서 전달해준 grasp, approach 정책들로만 policy 노드의 grasping, approach 탭에 존재하게
+  해줘 그전 것들은 제거. 이것들을 기반으로 s2r 할 예정임").
+  · 등록: rh56f1/aglt/right_approach_ap05(ap_05_r ep2300, bb9a1951) · left_approach_ap05(ap_05_l ep2600, 3be01dfa) · right_rcg02(rcg_02_nr
+    ep1300, cc2cf6a4) · left_rcg02(rcg_02_nlm ep300, 7970864e). 관측 94 · 행동 13 · 손 position · 2판 손 USD(프로필 rh56f1_v2_*, hdgp 프로필은 이름 ·
+    USD 경로만 다름). 계약 빌더가 rh56f1_v2_left 를 오른팔로 읽던 것 고침(이름 끝 _left). 4 개 모두 배포 체인 12 스텝 로드 확인.
+  · 옛 9 개(rg3wo · neo03 · rg3hp3 · approach · approach_rg3wg) → `deploy/policies_retired/`(등록부 · 상황판 밖, 시험 고정본). 1-B 손 닫기
+    계약은 `config/hand/rh56f1_<팔>_hand.json`(옛 approach 계약 그대로, md5 같음)으로 떼어 1-B 동작은 그대로.
+  · 실행은 아직 막음(policy.yaml deploy.execution false): rcg 는 사전 파지 자세(ReadyApproach 접근 뒤 정착)에서 시작해야 하고, ap05 는 사전
+    파지에서 멈춰 그 뒤 들어가기 · 닫기 · 들기가 필요하다. 옛 rg3 · 경로 C 에피소드는 시작 · 이음 자세가 달라 그대로 돌리지 않는다.
+    grasp_rg3 · grasp_c · tilt A · C 에피소드는 옛 정책 id 그대로라 '정책 없음'으로 보인다. 미션 단독 정책 단계 기본 = ap05(홈 출발).

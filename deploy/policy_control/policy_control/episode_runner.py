@@ -217,7 +217,7 @@ class EpisodeManager:
             self._log("exit", node, start_time=start, end_time=_now(), duration=round(dur, 3), result="COMPLETED",
                       termination_reason=reason, next=None if self.node is None else self.node.id)
             self.status = READY if self.node is not None else SUCCESS
-            return self.status
+            return self._close_terminal()
         self.world = before
         self._mark(node.id, "failed", s=round(dur, 2), code=code.value)
         self._log("failure", node, start_time=start, end_time=_now(), duration=round(dur, 3), result=code.value,
@@ -333,6 +333,13 @@ class EpisodeManager:
         self._log("confirm", node, result="CONFIRMED", termination_reason=node.text,
                   next=None if self.node is None else self.node.id)
         self.status = READY if self.node is not None else SUCCESS
+        return self._close_terminal()
+
+    def _close_terminal(self) -> str:
+        """다음 노드가 terminal 이면 바로 닫는다 — 로봇을 움직이지 않고 묻을 이름(next_action)도 없어서, 구분 실행에서는
+        마지막 노드 뒤 READY 로 남아 에피소드가 끝나지 않았다(★10.20 가짜 1-B: lift 뒤 done 에서 15 분 대기)."""
+        if self.status == READY and self.node is not None and self.node.type == "terminal":
+            return self._advance()
         return self.status
 
     def _declined(self, node: Node | None, what: str) -> str:

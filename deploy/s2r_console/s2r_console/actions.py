@@ -20,12 +20,41 @@ from .console import ConsoleError
 from .console_state import STALE_S
 from .runner import StageRunner, DONE
 from . import pd_names as PD
+from . import simtraj as ST
 from mission_stages import Command, commands_for
 import mission_core as MC
 
 
 ARMS = ('right', 'left')
 ALL_RESOURCES = frozenset({'right', 'left', 'head', 'perception', 'drivers'})
+#: ★10.19 사용자 "좌우 동시 실행": 정책 카드는 목 · 인지를 읽기만 한다(목이 움직이면 FP++ 좌표가 틀린다) — 정책끼리는 같이 쓰고,
+#  목 · 인지를 움직이는 작업(head_control · perception_refresh · cups)과만 겹친다.
+SHARED_BY_POLICIES = frozenset({'head', 'perception'})
+EPISODE_RUNNER = 'episode_runner'
+#: 카드 작업 id 머리 — rg3_ 정책 live(경로 A · C) · ★10.19 simplan_ sim 궤적 계획(server, 로봇 안 움직임) · simrun_ sim 궤적 재생
+CARD_PREFIXES = ('rg3_', 'simplan_', 'simrun_')
+#: ★10.20 사용자 "policy 창서도 보이게": 정책 없는 제어 모듈 에피소드(1-B) — 카드 없이 팔마다 고정 작업 ctl_<에피소드>_<팔>.
+#  에피소드 파일 · 물체는 미션 단계(episode_<에피소드>_<팔>) 그대로다.
+CONTROL_PREFIX = 'ctl_'
+CONTROL_EPISODES = {'grasp_b': '1-B 제어 모듈(정책 없음) — FP++ 컵 → ready_carry 접근 → [확인] 닫기 → 10 cm 들기 3 s',
+                    # ★10.20 사용자 "ap_05로 가까이 가게한 다음에, rcg_03 행하면 잡을 것 같음" — 에피소드 파일의 정책 · 컵 그대로
+                    'grasp_d': '경로 D — ap05 접근 → 사전 파지 자리에서 rcg03 이 넘겨받아 쥐고 10 cm 들기(확인 노드 없음)'}
+#: 실행 기록 · 오류 글의 이름
+CONTROL_LABELS = {'grasp_b': '1-B', 'grasp_d': '경로 D'}
+#: 확인 노드(닫기 전)에서 사람을 기다리는 시간까지 — rg3(300 s)보다 길다
+CONTROL_TIMEOUT_S = 600.0
+#: 팔을 움직이는 카드 작업 — 같은 팔 제어 명령 · 정책 정지가 끊고, 도는 동안 작업 공간 설정을 못 바꾼다
+CARD_RUNS = ('rg3_', 'simrun_', CONTROL_PREFIX)
+
+
+def control_side(action_id: str) -> str:
+    """ctl_<에피소드>_<팔> → 팔."""
+    return action_id.rsplit('_', 1)[-1]
+
+
+def runner_of(side):
+    """한 팔 에피소드 실행기 이름(미션 생성기 make_rh56f1_missions._episode_run 과 같다)."""
+    return f'{EPISODE_RUNNER}_{side}'
 
 
 class _Job:
@@ -50,6 +79,17 @@ class _Job:
         if result['active'] and self.runner is not None:
             result['steps'] = self.runner.view()['steps']
         return result
+
+
+# rg3 에피소드 파일(config/episodes/grasp_rg3_<팔>.yaml)의 기본 컵 — 카드 물체로 바꿀 대상(목록에 없어도)
+RG3_DEFAULT_OBJECTS = ('source240b_blue', 'shaker_c_orange')
+
+
+def card_stage(card) -> str:
+    """카드 → 실행 단계. ★10.19 접근 카드 = 경로 C(접근 정책 → 스크립트 잡기) · ★10.20 잡기 카드 = 경로 D(에피소드의 ap05 접근 →
+    사전 파지 자리에서 카드 정책이 넘겨받는다, 사용자 "경로 a는 폐지, -> 경로d가 대체함"). 두 에피소드 모두 정책 노드 하나 · 컵 하나 —
+    카드의 정책(C 는 접근 정책, D 는 넘겨받는 정책) · 물체로 바꿔 돌린다."""
+    return f"episode_grasp_c_{card['side']}" if card.get('task') == 'approaching' else f"episode_grasp_d_{card['side']}"
 
 
 class ActionManager:
@@ -115,9 +155,9 @@ class ActionManager:
     def workspace_busy(self, patch):
         """A workspace edit must not change the inputs of a running perception/head/policy job."""
         for job in self.active_jobs():
-            if job.id.startswith('rg3_') and set(patch) <= {'head'}:
+            if job.id.startswith(CARD_RUNS) and set(patch) <= {'head'}:
                 continue
-            if job.resources & {'head', 'perception'} or job.id.startswith('rg3_'):
+            if job.resources & {'head', 'perception'} or job.id.startswith(CARD_RUNS):
                 return job.id
         return None
 
@@ -128,7 +168,7 @@ class ActionManager:
             job.cancel_scan.set()
             if job.id == 'perception_refresh':
                 self._kill_scan()
-            elif job.runner is not None and job.runner.active and not job.id.startswith('rg3_'):
+            elif job.runner is not None and job.runner.active and not job.id.startswith(CARD_RUNS):
                 job.runner.abort()
         for job in jobs:
             if job.thread is not None:
@@ -163,23 +203,32 @@ class ActionManager:
             return frozenset({'head', 'perception'})
         if action_id == 'perception_refresh':      # locate moves the neck; FPP needs it still
             return frozenset({'perception', 'head'})
-        if action_id == 'policy_stop':
+        if action_id in ('policy_stop', 'tilt_now', 'tilt_pour'):
             return frozenset(ARMS)
         if group == 'policy':                         # live FPP input + the arm
-            return frozenset({self._card(s, action_id)['side'], 'head', 'perception'})
+            side = control_side(action_id) if action_id.startswith(CONTROL_PREFIX) else self._card(s, action_id)['side']
+            return frozenset({side, 'head', 'perception'})
+        if group == 'sim':                            # ★10.19 server GPU 한 대 — 계획은 하나씩(팔 · 목 · 인지는 안 잡는다)
+            return frozenset({'sim_server'})
         side = action_id.rsplit('_', 1)[-1]
         return frozenset({side}) if side in ARMS else frozenset({action_id})
 
     @staticmethod
     def _interrupts(job, action_id, group):
         """A control command cancels a policy episode; a head command cancels a scan."""
-        return (job.id.startswith('rg3_') and group == 'control') or (
+        return (job.id.startswith(CARD_RUNS) and group == 'control') or (
             job.id == 'perception_refresh' and action_id == 'head_control')
+
+    @staticmethod
+    def _shared(job, resources, group):
+        """겹치는 자원 — 정책 카드끼리는 목 · 인지를 같이 읽는다(팔이 다르면 같이 돈다)."""
+        both = job.resources & resources
+        return both - SHARED_BY_POLICIES if group == 'policy' and job.group == 'policy' else both
 
     def _conflicts(self, s, action_id, group, parameters):
         resources = self._resources(s, action_id, group, parameters)
         return [job for job in self.active_jobs()
-                if job.id == action_id or (job.resources & resources and not self._interrupts(job, action_id, group))]
+                if job.id == action_id or (self._shared(job, resources, group) and not self._interrupts(job, action_id, group))]
 
     @staticmethod
     def _action_sides(resources):
@@ -203,18 +252,37 @@ class ActionManager:
                 specs[f'engage_{side}'] = (f'{side} PD engage', 'control', (f'home_{side}',))
         if 'head_control' in known:
             specs['head_control'] = (known['head_control'].title, 'control', ('head_control',))
+        if 'tilt_now' in known:                       # ★10.19 사용자: tilt 초기 자세(세팅 자세)로 — rehome 처럼(두 팔, 한 팔씩)
+            specs['tilt_now'] = ('tilt 시작 자세(세팅 자세)로 — 두 팔', 'control', ('tilt_now',))
+        if 'tilt_pour' in known:                      # ★10.19 사용자: 세팅 자세에서 바로 tilt(컵을 쥔 채, 두 팔)
+            specs['tilt_pour'] = ('tilt 붓기 — 지금 자세에서 바로(두 팔)', 'control', ('tilt_pour',))
+        for name, title in CONTROL_EPISODES.items():  # ★10.20 1-B — 정책 카드 없이 policy 탭에서 바로
+            for side in ARMS:
+                sid = f'episode_{name}_{side}'
+                if sid in known:
+                    specs[f'{CONTROL_PREFIX}{name}_{side}'] = (f'{side} {title}', 'policy', (sid,))
         if getattr(session, 'workspace', None) is not None:
             specs['perception_refresh'] = ('선택 물체 인지 재추출', 'control', ())
             specs['policy_stop'] = ('정책 정지 · 기록 마무리', 'control', ())
             for card in session.workspace.cards:
-                sid = f"episode_grasp_rg3_{card['side']}"
+                sid = card_stage(card)
                 if card.get('execution_supported') and sid in known:
-                    specs['rg3_' + card['id']] = (f"rg3 {card['side']} {card['object_id']}", 'policy', (sid,))
+                    title = (f"경로 C {card['side']} {card['object_id']} — 접근 정책 → 스크립트 잡기(닫기 · 10 cm 들기)"
+                             if card.get('task') == 'approaching' else f"rg3 {card['side']} {card['object_id']}")
+                    specs['rg3_' + card['id']] = (title, 'policy', (sid,))
+                if ST.supported(card):               # ★10.19 사용자: 정책 live 와 sim 궤적 재생 둘 다 고른다
+                    specs['simplan_' + card['id']] = (
+                        f"sim 궤적 계획 {card['side']} {card['object_id']} — FP++ 컵 자리로 server sim(로봇 안 움직임 · 약 10 분)",
+                        'sim', ())
+                    specs['simrun_' + card['id']] = (
+                        f"sim 궤적 재생 {card['side']} {card['object_id']} — 계획한 관절 궤적을 pd 로(정책 노드 없이)",
+                        'policy', ())
         return specs
 
     @staticmethod
     def _card(s, action_id):
-        return next(c for c in s.workspace.cards if 'rg3_' + c['id'] == action_id)
+        cid = next(action_id[len(p):] for p in CARD_PREFIXES if action_id.startswith(p))
+        return next(c for c in s.workspace.cards if c['id'] == cid)
 
     def catalog(self):
         s = self.console._need()
@@ -238,7 +306,7 @@ class ActionManager:
             if job.id == action_id:
                 reasons.append(f'{action_id} 이(가) 이미 실행 중이다')
             else:
-                shared = ', '.join(sorted(job.resources & resources))
+                shared = ', '.join(sorted(self._shared(job, resources, group)))
                 reasons.append(f'{job.id} 실행 중 — 같은 대상({shared})을 쓴다')
         scanning = any(job.id == 'perception_refresh' for job in self.active_jobs())
         if action_id in ('head_control', 'perception_refresh') and not scanning and not self._scan_restore_ok:
@@ -248,28 +316,38 @@ class ActionManager:
         if nonpolicy:
             reasons.append(f"단계 {', '.join(nonpolicy)} 가 실행 중이다")
         if (group == 'control' and action_id not in ('perception_refresh', 'head_control', 'policy_stop')) or group == 'policy':
-            side = self._card(s, action_id)['side'] if group == 'policy' else action_id.rsplit('_', 1)[-1]
+            if group == 'policy':
+                sides = [control_side(action_id) if action_id.startswith(CONTROL_PREFIX) else self._card(s, action_id)['side']]
+            elif action_id in ('tilt_now', 'tilt_pour'):
+                sides = list(ARMS)
+            else:
+                sides = [action_id.rsplit('_', 1)[-1]]
             with s.feed_lock:
                 obs = s.feed.observed()
-            st = obs.status.get(PD.name(side))
-            if not st or obs.age_s.get(PD.name(side), 1e9) > STALE_S:
-                reasons.append(f'{side} PD 실시간 상태가 없다 — 발행 모드 연결과 상태 수신 필요')
-            elif not st.get('execute', False):
-                reasons.append(f'{side} PD 가 무발행 모드다')
-            elif st.get('phase') in ('HOLD', 'UNKNOWN', 'RELEASING', 'RAMPING'):
-                reasons.append(f"{side} PD 상태 {st.get('phase')} — 안전 복구/정착 필요")
+            for side in sides:
+                st = obs.status.get(PD.name(side))
+                if not st or obs.age_s.get(PD.name(side), 1e9) > STALE_S:
+                    reasons.append(f'{side} PD 실시간 상태가 없다 — 발행 모드 연결과 상태 수신 필요')
+                elif not st.get('execute', False):
+                    reasons.append(f'{side} PD 가 무발행 모드다')
+                elif st.get('phase') in ('HOLD', 'UNKNOWN', 'RELEASING', 'RAMPING'):
+                    reasons.append(f"{side} PD 상태 {st.get('phase')} — 안전 복구/정착 필요")
+                elif action_id == 'tilt_pour' and st.get('phase') != 'TRACKING':
+                    # 컵을 쥔 채라 여기서 engage 하지 않는다 — 세팅 자세를 만든 뒤 pd 가 그 자세를 붙들고 있어야 한다
+                    reasons.append(f"{side} PD 상태 {st.get('phase')} — tilt 붓기는 두 팔 pd 가 지금 자세를 붙들고(TRACKING) 있어야 한다")
             if obs.joints_age_s is None or obs.joints_age_s > STALE_S:
                 reasons.append('관절 실측이 없거나 오래됐다')
             joint_ages = getattr(obs, 'joint_ages', {})
             if joint_ages:
-                expected = [n for values in s.contract_sides.values() if values.get('side') == side
-                            for kind in ('arm_joints', 'hand_joints') for n in values.get(kind, [])]
                 ages = dict(joint_ages)
                 for source, canonical in s.joint_alias.items():
                     if source in ages:
                         ages[canonical] = ages[source]
-                if any(ages.get(n, 1e9) > STALE_S for n in expected):
-                    reasons.append(f'{side} 팔 또는 손 관절 실측이 없거나 오래됐다')
+                for side in sides:
+                    expected = [n for values in s.contract_sides.values() if values.get('side') == side
+                                for kind in ('arm_joints', 'hand_joints') for n in values.get(kind, [])]
+                    if any(ages.get(n, 1e9) > STALE_S for n in expected):
+                        reasons.append(f'{side} 팔 또는 손 관절 실측이 없거나 오래됐다')
         if action_id.startswith('connect_'):
             if not any(p['alive'] and p['stage'] == 'drivers' for p in s.supervisor.table()):
                 reasons.append('양팔 드라이버가 연결되지 않았다')
@@ -294,12 +372,15 @@ class ActionManager:
             drivers = [unit for unit in s.units.values() if any('head_joint_publisher.py' in a for a in unit.argv)]
             if drivers and not any(s.supervisor.is_alive(unit.key) for unit in drivers):
                 reasons.append('목 드라이버가 연결되지 않았다 — setting head_home 필요')
-        if group == 'policy':
+        card = obj = policy = None
+        control = action_id.startswith(CONTROL_PREFIX)
+        if group in ('policy', 'sim') and not control:  # sim(★10.19 계획)도 카드 물체의 FP++ live 컵을 읽는다
             card = self._card(s, action_id)
             obj = next((o for o in s.workspace.objects if o['id'] == card['object_id']), None)
             if obj is None:
                 return {'id': action_id, 'title': title, 'group': group, 'enabled': False,
-                        'reasons': ['정책 물체를 선택할 것'], 'commands': [], 'warnings': [], 'stages': list(stages), 'parameters': parameters}
+                        'reasons': ['정책 물체를 선택할 것'], 'commands': [], 'warnings': [], 'stages': list(stages), 'parameters': parameters,
+                        'card_id': card['id']}
             result = obj['results']['fpp']
             policy = next((p for p in s.workspace.catalog if p['id'] == card['policy_id']), None)
             if policy is None:
@@ -327,13 +408,17 @@ class ActionManager:
             if not any(s.workspace.perception.values()):
                 reasons.append('FPP 또는 locate 인지 노드를 선택할 것')
         commands, warnings = [], []
-        if group == 'policy' and policy['status'] == 'candidate':
+        if control:
+            warnings.append(self._control_object_note(s, stages[0]))
+        if group == 'policy' and policy is not None and policy['status'] == 'candidate':
             warnings.append('candidate 정책 실기 시험 — 실기 검증 전 정책입니다. 계약·등록부 검사 후 운영자 승인으로 실행합니다.')
         if scanning and action_id == 'head_control':
             warnings.append('목 스캔 취소 → 현재 이동과 운용 자세 복귀 정착 확인 → 새 목 자세 실행')
         for job in self.active_jobs():
-            if job.id.startswith('rg3_') and group == 'control' and job.resources & resources:
+            if job.id.startswith(CARD_RUNS) and group == 'control' and job.resources & resources:
                 warnings.append(f'{job.id} 에피소드를 멈추고 정리한 뒤 실행한다')
+        if action_id.startswith(('simplan_', 'simrun_')) and card is not None and obj is not None:
+            self._describe_sim(action_id, card, obj, reasons, commands, warnings)
         for stage_index, sid in enumerate(stages):
             stage = MC.stage_by_id(s.mission, sid)
             independent = replace(stage, needs=() if group != 'setting' else stage.needs, touches_real=False)
@@ -384,10 +469,50 @@ class ActionManager:
                 reasons.append('이 로봇에 독립 engage 명령이 등록되지 않았다')
         return {'id': action_id, 'title': title, 'group': group, 'enabled': not reasons,
                 'job': self._job_summary(action_id), 'live': self._live(s, action_id, stages),
-                'card_id': self._card(s, action_id)['id'] if group == 'policy' else None,
+                'card_id': self._card(s, action_id)['id'] if group in ('policy', 'sim') and not control else None,
+                'control': control,
                 'reasons': reasons, 'commands': commands, 'warnings': warnings,
                 'stages': list(stages), 'parameters': parameters, 'stop_targets': targets if group == 'control' else [],
                 **({'calib_profiles': self.head_profiles(s)} if action_id == 'head_control' else {})}
+
+    def _sim_commands(self, action_id, card, obj):
+        """★10.19 sim 궤적 작업 명령 — 미리보기와 실행이 같은 함수에서 나온다(승인한 명령 = 도는 명령). (계획, 명령들)."""
+        repo = self.console.repo
+        python = str(repo / '.venv/bin/python')
+        if action_id.startswith('simplan_'):
+            return None, [Command(ST.plan_argv(python, repo, card, obj),
+                                  note=f"sim 궤적 계획 · {card['policy_id']} · {obj['id']}(server sim)")]
+        plan = ST.latest_plan(repo, card, obj)
+        if plan is None:
+            return None, []
+        side = card['side']
+        return plan, [Command(ST.record_start_argv(repo, side, obj), note='기록 시작 — 팔 · 손 bag'),
+                      Command(ST.run_argv(python, repo, plan, obj), note=f"sim 궤적 재생 · {plan['path'].parent.name}",
+                              background=True),
+                      Command(ST.record_stop_argv(repo, side), note='기록 끝 — bag 마무리')]
+
+    def _describe_sim(self, action_id, card, obj, reasons, commands, warnings):
+        plan, cmds = self._sim_commands(action_id, card, obj)
+        stage = f"{action_id.split('_', 1)[0]}_{card['side']}"
+        for index, cmd in enumerate(cmds):
+            commands.append({'stage': stage, 'index': index, 'note': cmd.note, 'argv': list(cmd.argv),
+                             'stop': [], 'background': cmd.background})
+        if action_id.startswith('simplan_'):
+            warnings.append('server sim(GPU1) 약 10 분 — 로봇은 움직이지 않는다. 계획이 끝나 재생할 때까지 컵을 그대로 둘 것'
+                            '(재생은 계획 자리 1 cm 안에서만 된다).')
+            return
+        info = ST.summary(plan)
+        if info is None:
+            reasons.append('이 카드 · 물체의 sim 궤적 계획이 없다 — sim 궤적 계획을 먼저')
+            return
+        gap = ST.cup_gap(plan, obj['results']['fpp'].get('position'))
+        if gap is not None and gap > ST.CUP_TOL_M:
+            reasons.append(f'컵이 계획 자리에서 {gap * 100:.1f} cm(한계 {ST.CUP_TOL_M * 100:.0f} cm) — 다시 계획')
+        # 승인 근거에 들어간다 — 계획 파일 값만(지금 컵 같은 실시간 값은 넣지 않는다)
+        warnings.append(f"★실기 동작 — 정책 노드 없이 sim 관절 궤적을 pd 로 0.5배속 재생. 계획 {info['made']} · "
+                        f"컵 ({info['cup_xy'][0]:.3f}, {info['cup_xy'][1]:.3f}) · sim 성공 {info['n_ok']}/{info['n']}")
+        warnings.append('팔이 홈(계획 첫 자세 0.15 rad 안)에 있어야 시작한다. 닫기 전 팔이 계획 자세(손바닥 1 cm)에 3 s 안에 못 들어오면 '
+                        '멈춘다. 끝나면 pd 가 마지막 자세 · 손을 붙든다(컵을 쥔 채) — 복구는 rehome.')
 
     def head_profiles(self, s):
         """config/calib_profiles 의 보정 각도표 — 목 제어는 camera 세션이 보정한 각도로만 간다(10.15 사용자: 그래야 locate 사용 가능)."""
@@ -433,7 +558,42 @@ class ActionManager:
             if fresh and hold.get('err') is not None:
                 result['pd_err'] = round(float(hold['err']), 3)
                 result['pd_settled'] = bool(hold.get('settled'))
+        if action_id.startswith('rg3_') and getattr(s, 'workspace', None) is not None:
+            card = next((c for c in s.workspace.cards if 'rg3_' + c['id'] == action_id), None)
+            if card is not None and card.get('task') == 'approaching':
+                result['script'] = self._script_view(s, card)
+        if action_id.startswith(('simplan_', 'simrun_')) and getattr(s, 'workspace', None) is not None:
+            cid = action_id.split('_', 1)[1]
+            card = next((c for c in s.workspace.cards if c['id'] == cid), None)
+            obj = next((o for o in s.workspace.objects if card is not None and o['id'] == card['object_id']), None)
+            if card is not None:                       # ★10.19 카드에 마지막 계획(시각 · 컵 자리 · sim 성공)을 보인다
+                result['sim'] = ST.summary(ST.latest_plan(self.console.repo, card, obj))
         return result
+
+    def _script_view(self, s, card):
+        """★10.19 경로 C 카드 — 스크립트 잡기 단계(정책 노드 approach_grasp 상태)와 이 물체의 마지막 쥔 관절 기록."""
+        node = f"rh_aglt_node_{card['side']}"
+        with s.feed_lock:
+            obs = s.feed.observed()
+        st = obs.status.get(node) or {}
+        fresh = bool(st) and obs.age_s.get(node, 1e9) <= STALE_S
+        ag = st.get('approach_grasp') if fresh else None
+        out = {'steps': '접근 정책 → 닫기(닿은 손가락 고정) → 10 cm 들기 → 3 s 유지',
+               'phase': (ag or {}).get('phase'), 'why': (ag or {}).get('why'), 'last_grip': None}
+        log = self.console.repo / 'logs' / 'grasp_c' / 'grips.jsonl'
+        try:
+            lines = log.read_text(encoding='utf-8').splitlines()[-200:] if log.is_file() else []
+        except OSError:
+            lines = []
+        for line in reversed(lines):
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if row.get('node') == node and f"/objects/{card.get('object_id')}/" in str(row.get('cup_topic', '')):
+                out['last_grip'] = {k: row.get(k) for k in ('t', 'object', 'hand_joints', 'q_meas_rad', 'outcome', 'rise_m', 'palm_cup_m')}
+                break
+        return out
 
     def _policy_targets(self, s, sides=None):
         targets = [p['key'] for p in s.supervisor.table() if p['alive'] and
@@ -529,7 +689,9 @@ class ActionManager:
             card = self._card(s, action_id)
             obj = next(o for o in s.workspace.objects if o['id'] == card['object_id'])
             policy = next(p for p in s.workspace.catalog if p['id'] == card['policy_id'])
-            argv = tuple(f"contract:={policy['contract']}" if a.startswith('contract:=') else
+            # ★10.20 경로 D 는 노드 계약(ap05)을 두고 넘겨받는 계약(handoff_contract)을 카드 정책으로 바꾼다
+            key = 'handoff_contract:=' if card_stage(card).startswith('episode_grasp_d_') else 'contract:='
+            argv = tuple(f"{key}{policy['contract']}" if a.startswith(key) else
                          f"cup_topic:=/objects/{obj['id']}/live_pose" if a.startswith('cup_topic:=') else a for a in cmd.argv)
             episode_path = str(s.run_dir / f"rg3_{card['id']}.yaml")
             argv = tuple(f'episode:={episode_path}' if a.startswith('episode:=') else a for a in argv)
@@ -540,7 +702,15 @@ class ActionManager:
             if any('episode_runner_node.py' in a for a in argv):
                 argv += ('-p', f"policy_object:={obj['policy_object']}", '-p', f"cup_object:={obj['id']}")
             cmd = replace(cmd, argv=argv)
-            cmd = replace(cmd, argv=tuple(a.replace('/objects/source240b_blue/', f"/objects/{obj['id']}/") for a in cmd.argv))
+            # ★10.19 실기 bag 133007: 왼팔 기본 물체는 shaker_c_orange 라 source240b_blue 만 바꾸면 카드 물체(source240) 토픽이
+            #   기록에서 빠졌다 — rg3 에피소드는 컵이 하나이니 목록의 다른 물체 토픽을 모두 카드 물체로 바꾼다.
+            others = sorted(({o['id'] for o in s.workspace.objects} | set(RG3_DEFAULT_OBJECTS)) - {obj['id']})
+
+            def to_card(a: str) -> str:
+                for other in others:
+                    a = a.replace(f'/objects/{other}/', f"/objects/{obj['id']}/")
+                return a
+            cmd = replace(cmd, argv=tuple(to_card(a) for a in cmd.argv))
         return cmd
 
     def _run_commands(self, s, sid, commands, *, process_keys=None):
@@ -605,13 +775,16 @@ class ActionManager:
         if missing:
             raise ConsoleError(f"정책 대상 {', '.join(sorted(missing))} PD 상태가 없거나 오래됐다 — 정지/자세 유지 확인 필요")
         # Stop the sequencer first; otherwise it could advance while PD is held.
+        # ★10.19 팔마다 실행기 — 이 팔의 실행기와 두 팔 실행기(기본)만 멈춘다. 다른 팔 실행기는 그대로 돈다.
         from .console import _EPISODE_CMD
         with s.feed_lock:
-            sequencer = s.feed.observed().status.get('episode_runner')
-        if sequencer:
-            self._run_commands(s, 'action_episode_stop', [Command(
-                ('python3', str(_EPISODE_CMD), 'stop', '--execute', '--operator', self._status['operator']),
-                note='에피소드 실행기 정지')])
+            status = s.feed.observed().status
+        runners = [EPISODE_RUNNER, *(runner_of(side) for side in sorted(needed))]
+        for runner in [r for r in runners if status.get(r)]:
+            sid = 'action_episode_stop' if runner == EPISODE_RUNNER else f"action_episode_stop_{runner[len(EPISODE_RUNNER) + 1:]}"
+            self._run_commands(s, sid, [Command(
+                ('python3', str(_EPISODE_CMD), 'stop', '--execute', '--operator', self._status['operator'],
+                 '--runner', runner), note=f'에피소드 실행기 정지 · {runner}')])
         for side in sorted(needed):
             self._trigger(s, 'episode/stop', side)
             began_ns = time.time_ns()
@@ -619,6 +792,9 @@ class ActionManager:
             self._confirm_hold(s, side, began_ns)
         for runner in s.runners.values():
             if runner.active and runner.stage_id.startswith(('policy_', 'episode_')):
+                found = set(re.findall(r'(?:^|_)(right|left)(?:_|$)', runner.stage_id))
+                if sides is not None and found and not found & set(sides):
+                    continue                           # ★10.19 다른 팔 단계는 그대로
                 runner.abort()
                 runner.join(timeout=8)
         s.supervisor.stop(targets)
@@ -690,9 +866,14 @@ class ActionManager:
             if action == 'perception_refresh':
                 self._sync_converter(s, description['parameters'])
                 self._refresh(s, description['parameters'])
+            if action.startswith('simplan_'):
+                self._run_simplan(s, description)
+            elif action.startswith('simrun_'):
+                self._run_simrun(s, description)
             for sid in description['stages']:
                 if description['group'] == 'policy':
-                    self._run_policy(s, sid, description)
+                    run = self._run_control if action.startswith(CONTROL_PREFIX) else self._run_policy
+                    run(s, sid, description)
                 else:
                     self._run_commands(s, sid, self._commands(s, sid, description))
                 if not (description['group'] == 'policy' and self._cancel_policy.is_set()):
@@ -735,24 +916,110 @@ class ActionManager:
                 job.status.update(active=False, outcome=outcome, note=note, finished=time.time())
             s.event('action', f"{description['id']} {outcome}")
 
+    def _sim_job(self, s, description):
+        """승인한 명령과 지금 만든 명령이 같은지 — 그 사이 새 계획이 생기면 다시 준비한다."""
+        card = self._card(s, description['id'])
+        obj = next(o for o in s.workspace.objects if o['id'] == card['object_id'])
+        plan, cmds = self._sim_commands(description['id'], card, obj)
+        if not cmds or [list(c.argv) for c in cmds] != [c['argv'] for c in description['commands']]:
+            raise ConsoleError('승인한 sim 궤적 명령이 바뀌었다(새 계획 · 카드 변경) — 다시 준비할 것')
+        return card, plan, cmds
+
+    def _run_simplan(self, s, description):
+        """★10.19 sim 궤적 계획 — 카드 물체의 FP++ live 컵 자리로 server sim. 로봇은 움직이지 않는다(중단 = 프로세스 정지)."""
+        card, _plan, cmds = self._sim_job(s, description)
+        self._run_commands(s, f"simplan_{card['side']}", cmds)
+
+    def _run_simrun(self, s, description):
+        """★10.19 sim 궤적 재생 — 승인한 계획을 sim_traj run --execute 로 pd 에 보낸다(정책 노드 없음).
+
+        정지(정책 정지 · 같은 팔 제어 명령 · 콘솔 중단)는 재생 프로세스에 SIGTERM → sim_traj 가 episode stop 을 보내 pd 가 그 자리를
+        붙든다 → pd/hold 로 내부 목표를 확인. rg3 의 _preempt 는 쓰지 않는다 — 정책 노드의 episode/stop 서비스가 없다."""
+        card, _plan, cmds = self._sim_job(s, description)
+        side = card['side']
+        sid = f'simtraj_{side}'
+        key = f'{sid}#1'
+        errors = []
+        try:
+            self._run_commands(s, sid, cmds[:2])
+            while s.supervisor.is_alive(key):
+                if self._cancel_policy.is_set():
+                    s.supervisor.stop([key])
+                    break
+                time.sleep(.1)
+            rc = s.supervisor.rc(key)
+            if not self._cancel_policy.is_set() and rc != 0:
+                raise ConsoleError(f'sim 궤적 재생 rc={rc}')
+        except Exception as exc:
+            errors.append(str(exc))
+            try:
+                if s.supervisor.rc(key) not in (None, 0):
+                    errors.append(ST.refusal(s.supervisor.tail(key, 8192)))
+            except Exception:
+                pass
+        if s.supervisor.is_alive(key):
+            s.supervisor.stop([key])
+        with s.feed_lock:
+            phase = (s.feed.observed().status.get(PD.name(side)) or {}).get('phase')
+        if side in self.console._pd_sides(s) and phase == 'TRACKING':
+            try:
+                began = time.time_ns()
+                self._trigger(s, 'pd/hold', side, expect=('TRACKING',))
+                self._confirm_hold(s, side, began)
+            except Exception as exc:
+                errors.append(f'자세 유지 확인 실패: {exc}')
+        try:
+            self._run_commands(s, f'{sid}_cleanup', cmds[2:])
+        except Exception as exc:
+            errors.append(f'기록 마무리 실패: {exc}')
+        if errors:
+            raise ConsoleError(' · '.join(e for e in errors if e))
+
     def _run_policy(self, s, sid, description):
-        from .console import _EPISODE_CMD
         original = commands_for(s.runbook, s.mission, sid, repo=self.console.repo, execute=True)
         commands = self._commands(s, sid, description)
         card = self._card(s, description['id'])
-        doc = yaml.safe_load((self.console.repo / f"config/episodes/grasp_rg3_{card['side']}.yaml").read_text())
+        doc = yaml.safe_load((self.console.repo / f"config/episodes/{sid.removeprefix('episode_')}.yaml").read_text())
         for policy in doc['policies'].values():
-            policy['policy'] = card['policy_id']
+            policy['handoff' if 'handoff' in policy else 'policy'] = card['policy_id']   # ★10.20 경로 D — 넘겨받는 정책
         obj = next(o for o in s.workspace.objects if o['id'] == card['object_id'])
         doc['objects']['CUP']['topic'] = f"/objects/{obj['id']}/pose"
         for node in doc['sequence']:
             if node.get('type') == 'policy':
                 node['policy_object'] = obj['policy_object']
         (s.run_dir / f"rg3_{card['id']}.yaml").write_text(yaml.safe_dump(doc, sort_keys=False))
+        label = '경로 D' if sid.startswith('episode_grasp_d_') else '경로 C'
+        self._drive_episode(s, sid, original, commands, card['side'], label=label, timeout_s=300.0)
+
+    def _run_control(self, s, sid, description):
+        """★10.20 1-B — 정책 없는 제어 모듈 에피소드. 미션 단계의 에피소드 파일 그대로(정책 · 물체 바꿈 없음) rg3 와 같은 순서로 돈다:
+        노드 · 기록 띄움 → 승인한 연속 실행(닫기 전 확인 노드에서 멈춘다 — 지금 에피소드 패널 [다음]) → 끝나면 정지 · pd 붙듦 · 기록 마무리 · 보고 사진 · 영상."""
+        original = commands_for(s.runbook, s.mission, sid, repo=self.console.repo, execute=True)
+        commands = self._commands(s, sid, description)
+        name = description['id'].removeprefix(CONTROL_PREFIX).rsplit('_', 1)[0]
+        self._drive_episode(s, sid, original, commands, control_side(description['id']), label=CONTROL_LABELS.get(name, name),
+                            timeout_s=CONTROL_TIMEOUT_S)
+
+    def _control_object_note(self, s, sid):
+        """1-B 는 에피소드 파일의 컵 하나를 쓴다 — 무엇을 FP++ 로 보는지 미리 보인다(막지는 않는다: scene 단계가 신선한 정지 좌표를 본다)."""
+        path = self.console.repo / f"config/episodes/{sid.removeprefix('episode_')}.yaml"
+        try:
+            topic = str(yaml.safe_load(path.read_text())['objects']['CUP']['topic'])
+        except (OSError, KeyError, TypeError, yaml.YAMLError) as exc:
+            return f'에피소드 컵을 읽지 못했다({path.name}: {exc}) — scene 단계에서 멈춘다'
+        obj = topic.split('/')[2] if topic.startswith('/objects/') else topic
+        confirm = (' · 닫기 전 확인은 지금 에피소드 패널 [다음]' if 'grasp_b' in sid
+                   else ' · 확인 노드 없이 끝까지 돈다(멈추려면 정책 정지)')        # ★10.20 경로 D
+        return f'컵 = {obj}(FP++ {topic}) — 컵을 세우고 FP++ 가 잡은 뒤 실행. scene 단계는 신선한 정지 좌표가 아니면 멈춘다' + confirm
+
+    def _drive_episode(self, s, sid, original, commands, side, *, label, timeout_s):
+        """한 팔 에피소드 실행 — 정리 경계(마지막 수동 단계) 앞까지 띄우고, 승인한 연속 실행, 끝(성공 · 실패 · 정지)까지 본 뒤 정리."""
+        from .console import _EPISODE_CMD
         manuals = [i for i, c in enumerate(original) if c.manual]
         if len(manuals) < 2:
-            raise ConsoleError('rg3 에피소드 완료/정리 경계가 등록되지 않았다')
+            raise ConsoleError(f'{label} 에피소드 완료/정리 경계가 등록되지 않았다')
         boundary = manuals[-1]
+        runner = runner_of(side)                        # ★10.19 팔마다 실행기 — 다른 팔 에피소드와 같이 돈다
         launched = False
         try:
             launched = True
@@ -761,37 +1028,37 @@ class ActionManager:
             while True:
                 with s.feed_lock:
                     obs = s.feed.observed()
-                status = obs.status.get('episode_runner')
-                if status and obs.age_s.get('episode_runner', 1e9) <= STALE_S:
+                status = obs.status.get(runner)
+                if status and obs.age_s.get(runner, 1e9) <= STALE_S:
                     break
                 if time.monotonic() >= deadline:
-                    raise ConsoleError('rg3 실행기 상태 수신 시간 초과')
+                    raise ConsoleError(f'{label} 실행기({runner}) 상태 수신 시간 초과')
                 time.sleep(.1)
-            self._run_commands(s, 'action_episode_run', [Command(
+            self._run_commands(s, f"action_episode_run_{side}", [Command(
                 ('python3', str(_EPISODE_CMD), 'run', '--execute', '--operator', self._status['operator'],
-                 '--approve', f"episode:{status['episode']}"), note='승인한 rg3 에피소드 실행')])
-            deadline = time.monotonic() + 300
+                 '--approve', f"episode:{status['episode']}", '--runner', runner), note=f'승인한 {label} 에피소드 실행 · {runner}')])
+            deadline = time.monotonic() + timeout_s
             while True:
                 if self._cancel_policy.is_set():
-                    self._preempt(s, {card['side']})
+                    self._preempt(s, {side})
                     break
                 with s.feed_lock:
                     obs = s.feed.observed()
-                status = obs.status.get('episode_runner', {})
-                if obs.age_s.get('episode_runner', 1e9) > STALE_S:
-                    raise ConsoleError('rg3 실행기 상태가 오래됐다')
+                status = obs.status.get(runner, {})
+                if obs.age_s.get(runner, 1e9) > STALE_S:
+                    raise ConsoleError(f'{label} 실행기({runner}) 상태가 오래됐다')
                 if status.get('phase') in ('SUCCESS', 'FAILURE', 'STOPPED', 'ABORTED'):
                     if status['phase'] != 'SUCCESS':
-                        raise ConsoleError(f"rg3 종료: {status['phase']}")
+                        raise ConsoleError(f"{label} 종료: {status['phase']}")
                     break
                 if time.monotonic() > deadline:
-                    raise ConsoleError('rg3 실행 시간 초과')
+                    raise ConsoleError(f'{label} 실행 시간 초과')
                 time.sleep(.1)
         finally:
             if launched:
                 # A service failure blocks cleanup rather than dropping a live
                 # external target and letting the watchdog release the posture.
-                self._preempt(s, {card['side']})
+                self._preempt(s, {side})
                 self._run_commands(s, f'{sid}_cleanup', commands[boundary + 1:])
 
     def _refresh(self, s, parameters):

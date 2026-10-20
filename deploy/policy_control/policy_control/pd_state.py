@@ -123,6 +123,15 @@ def hold_is_self_clearing(state: FsmState) -> bool:
             and all(k.startswith(SELF_CLEARING_KINDS) for k in kinds))
 
 
+def hold_is_watchdog_only(state: FsmState) -> bool:
+    """HOLD 사유가 워치독(목표 끊김) 하나뿐인가 — 내부 붙들기(pd/hold · hand_release)를 주면 그 자체로 풀린다.
+
+    ★10.20 실기 1-B: 들기 뒤 에피소드가 멈추며 목표가 끊겨 워치독 HOLD 에 들어갔고, 상황판 rehome 이 engage
+    ('phase HOLD is not IDLE') · hand_release('engage 된 팔에서만') 에서 막혀 손으로 풀어야 했다. 내부 붙들기는
+    매 tick 새 목표를 내므로 다음 tick 에 `_target_fresh` 가 HOLD 를 푼다(RAMPING → TRACKING, 세트포인트는 얼린 자리)."""
+    return state.phase is Phase.HOLD and set(_kinds(state)) == {WATCHDOG_KIND}
+
+
 def _target_fresh(state: FsmState) -> FsmState:
     """목표가 다시 들어왔다. **워치독만이 사유이면** HOLD 를 푼다.
 

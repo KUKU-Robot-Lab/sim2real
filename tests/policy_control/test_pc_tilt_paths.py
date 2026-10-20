@@ -22,9 +22,9 @@ from policy_control.episode_runner import FAILURE, READY, SUCCESS, EpisodeManage
 from policy_control.hand_grasp import GraspCfg, HandGrasp, HandGraspError
 
 REPO = Path(__file__).resolve().parents[2]
-EP = {k: REPO / "config" / "episodes" / f"tilt_base_{k}.yaml" for k in "abc"}
+EP = {k: REPO / "config" / "episodes" / f"tilt_base_{k}.yaml" for k in "abcd"}   # ★10.20 A 는 폐지(시험 고정본), D 가 대신
 TOOLS = REPO / "deploy" / "policy_control" / "tools"
-CONTRACT = REPO / "deploy" / "policies" / "rh56f1" / "aglt" / "right_approach_rg3wc" / "rh_aglt_contract.json"
+CONTRACT = REPO / "config" / "hand" / "rh56f1_right_hand.json"   # ★10.20 1-B 손 계약 고정본(옛 right_approach 계약 그대로)
 
 
 def _tool(name: str, path: Path = TOOLS):
@@ -44,7 +44,10 @@ def test_three_paths_parse_and_share_the_carry_and_tilt():
         assert ep.trajectories["tilt"].sides == ("right", "left") and ep.trajectories["tilt"].cups
         assert (ep.trajectories["to_tilt_start_r"].sides, ep.trajectories["to_tilt_start_l"].sides) == (("right",), ("left",))
     assert not eps["b"].trajectories["to_tilt_start_r"].cups and eps["a"].trajectories["to_tilt_start_r"].cups
-    assert all(b.approach_grasp == {} for b in eps["c"].policies.values())
+    # ★10.20 C = ap05 사전 파지 자리에서 멈춤(stop_ready) · D = 같은 자리에서 rcg03 이 넘겨받음(handoff)
+    assert all(b.approach_grasp == {"stop_ready": 1} for b in eps["c"].policies.values())
+    assert {b.handoff for b in eps["d"].policies.values()} == {"rh56f1/aglt/right_rcg03", "rh56f1/aglt/left_rcg03"}
+    assert all(b.approach_grasp == {"handoff": 1} for b in eps["d"].policies.values())
     b = eps["b"]
     assert not b.policies and not any(n.type == "snapshot" for n in b.nodes)
     assert [n.id for n in b.nodes if n.type == "confirm"] == ["confirm_cup_right", "confirm_close_right", "confirm_cup_left",
@@ -187,7 +190,7 @@ def test_hand_open_refuses_a_held_cup_and_grasp_maps_the_tool_exit_codes(tmp_pat
     assert r.status == "aborted" and "not grasped" in r.reason
     argv = calls[0]
     assert Path(argv[1]).name == "hand_grasp.py" and argv[argv.index("--side") + 1] == "left" and "--execute" in argv
-    assert argv[argv.index("--contract") + 1].endswith("left_approach_rg3wc/rh_aglt_contract.json")
+    assert argv[argv.index("--contract") + 1].endswith("config/hand/rh56f1_left_hand.json")   # ★10.20 1-B 손 계약 고정본
     r = R.run_hand(me, node["grasp_left"], world)
     assert r.status == "completed"
 
@@ -305,7 +308,7 @@ def test_the_start_check_names_a_missing_or_wrong_hand_contract(tmp_path):
     ep = S.load(EP["b"])
     assert S.hand_problems(ep, REPO / "deploy" / "policies") == {"grasp_right": "", "grasp_left": ""}
     from dataclasses import replace
-    swapped = replace(ep, nodes=tuple(replace(n, hand_contract="rh56f1/aglt/left_approach_rg3wc") if n.id == "grasp_right" else n
+    swapped = replace(ep, nodes=tuple(replace(n, hand_contract="config/hand/rh56f1_left_hand.json") if n.id == "grasp_right" else n
                                       for n in ep.nodes))
     assert "right 손 계약이 아니다" in S.hand_problems(swapped, REPO / "deploy" / "policies")["grasp_right"]
     assert "가 없다" in S.hand_problems(ep, tmp_path)["grasp_left"]

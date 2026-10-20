@@ -85,8 +85,8 @@ def _write(console: Console, method: str, path: str, data: dict, token: str | No
         console.quick(rest[0], client=client, side=rest[1] if len(rest) > 1 else "")
         return 202, ok
 
-    if path == "/api/episode/stop":                      # 에피소드 정지도 lease 없이(10.04)
-        console.episode("stop", operator=client)
+    if path == "/api/episode/stop":                      # 에피소드 정지도 lease 없이(10.04) — runner 가 없으면 떠 있는 실행기 전부
+        console.episode("stop", operator=client, runner=str(data.get("runner", "") or ""))
         return 202, ok
 
     # ── 나머지는 lease 가 있어야 ────────────────────────────────────────
@@ -144,7 +144,8 @@ def _write(console: Console, method: str, path: str, data: dict, token: str | No
         return 202, ok
     if path == "/api/episode":
         # 오는 것은 동작 이름과 확인 입력뿐 — argv 는 console.py 에만 있다
-        console.episode(str(data.get("action", "")), operator=who, typed=str(data.get("typed", "")))
+        console.episode(str(data.get("action", "")), operator=who, typed=str(data.get("typed", "")),
+                        runner=str(data.get("runner", "") or ""))
         return 202, ok
     if path == "/api/unit":
         # 오는 것은 키와 켬/끔뿐이다. argv 는 미션 yaml 에서만 온다 — 본문의 다른 필드는 읽지 않는다.

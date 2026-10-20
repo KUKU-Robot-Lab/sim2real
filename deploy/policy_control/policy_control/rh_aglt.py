@@ -131,6 +131,22 @@ class RaContract:
     grasp_near_m: float = 0.0                            # > 0 이면 쥔 판정 = 손 판정 AND |물체 원점 − 손바닥| < 이 값(hdgp hand_grasp_near_m)
     # ★10.12 계열 고유 관측 칸(폭 1씩, 물체 one-hot 뒤) — rh_place 관측 래치("latch", hdgp extra_actor_obs). 값은 체인이 준다.
     extra_actor_obs: list = field(default_factory=list)
+    # ★10.19 팔 들림 래치(hdgp arm_hold_rise_m — tasks/rh_aglt_l/arm_action.py update_arm_latch · step_arm_hold,
+    #   rh_aglt_env.py :957-966 · :1355-1358, 51094780). 관측 컵 z 가 처음 높이(정책이 처음 움직이는 스텝의 관측 컵 z)보다
+    #   arm_hold_rise_m 위가 되는 스텝에 직전 팔 목표를 래치 자세로 둔다 → 그 뒤 팔 목표 = EMA(직전, 래치 + k_arm·a)(증분 누적 없음).
+    #   래치 중 들림 < arm_hold_release_m 이 arm_hold_release_steps 연속이면 풀고 증분으로 돌아간다(다시 오르면 새로 래치).
+    #   0 = 끔(이 필드 전 계약 전부).
+    arm_hold_rise_m: float = 0.0
+    arm_hold_release_m: float = 0.0
+    arm_hold_release_steps: int = 30
+    # ★10.20 학습 시작 자세(hdgp aglt_start, 10.19 d43340d11) — "home" = 홈에서 정책(이 필드 전 계약 전부),
+    #   "ready" = ReadyApproach 사전 파지 자세(컵 축 r_mult·R · 높이 h)까지 스크립트로 간 뒤 정책(rcg_02 · rcg_03).
+    #   ready 면 노드는 홈 대신 사전 파지 자리 근처에서만 reset 을 받고(pour_fj_node.aglt_start_refusals), 디코더는 실측 팔에서
+    #   시작하며 대기(hold_steps) 동안 관측 직전 행동 = (팔 0 · 손 폄)(ready_hold_action, sim 기록 행동과 같다).
+    arm_start: str = "home"
+    #   사전 파지 손바닥 원점 = 물체 원점 + r_mult × 반지름 × (수평 바깥) + h × 위 — 학습 범위 [lo, hi](hdgp ready_pre_*)
+    ready_r_mult: list = field(default_factory=list)
+    ready_h_m: list = field(default_factory=list)
 
     def side(self, role: str = "arm") -> RaSide:
         return self.sides[role]
@@ -194,6 +210,33 @@ def actor_layout(c: RaContract | None = None, *, tactile: bool | None = None) ->
 ACTOR_BASE_DIMS = (obs_dim_of(tactile=True), obs_dim_of(tactile=False))
 
 
+#: hdgp rh_aglt_env._make_ready_approach 가 받는 aglt_start 값
+ARM_STARTS = ("home", "ready")
+
+
+def ready_hold_action(c: RaContract) -> np.ndarray:
+    """arm_start ready 의 대기 중 기록 행동 = (팔 0, 손 폄) — hdgp _a_open_rdy 와 같은 식(q_open 을 [min, max](open, grip) 로)."""
+    lo, hi = hand_law(c).bounds()
+    span = np.where(hi - lo > 1e-9, hi - lo, 1.0)
+    a_open = np.clip(2.0 * (np.asarray(c.side().hand_open, float) - lo) / span - 1.0, -1.0, 1.0)
+    return np.concatenate([np.zeros(len(c.side().arm_joints)), a_open])
+
+
+def ready_pose_error(c: RaContract, cup_pos: Sequence[float], palm_pos: Sequence[float]) -> tuple[float, float, float]:
+    """사전 파지 자리 오차 — (수평 거리 / 반지름 = r/R, 높이 − h 범위 밖 거리[m], 수평 거리 − r 범위 밖 거리[m]). 범위 안이면 0."""
+    if len(c.ready_r_mult) != 2 or len(c.ready_h_m) != 2:
+        raise RhAgltError("ready_pose_error: 계약에 사전 파지 범위(ready_r_mult · ready_h_m)가 없다 — 학습 env 에 ready_pre_* 가 없던 정책")
+    if not c.active_object:
+        raise RhAgltError("ready_pose_error: 물체를 먼저 고른다(select_object) — 반지름이 물체마다 다르다")
+    radius = float(c.object_geometry[c.active_object]["radius"])
+    d = np.asarray(palm_pos, float) - np.asarray(cup_pos, float)
+    horiz, dz = float(np.hypot(d[0], d[1])), float(d[2])
+    r_lo, r_hi = (radius * float(v) for v in c.ready_r_mult)
+    out_r = max(r_lo - horiz, horiz - r_hi, 0.0)
+    out_h = max(float(c.ready_h_m[0]) - dz, dz - float(c.ready_h_m[1]), 0.0)
+    return horiz / radius, out_h, out_r
+
+
 def validate(c: RaContract) -> None:
     if c.action_dim != 13 or c.obs_dim != obs_dim_of(c):
         raise RhAgltError(f"obs/action {c.obs_dim}/{c.action_dim} ≠ 레이아웃 {obs_dim_of(c)}/13")
@@ -206,6 +249,14 @@ def validate(c: RaContract) -> None:
         raise RhAgltError("arm_home 이 관절 한계 밖")
     if not (c.k_arm > 0 and 0 < c.arm_ema <= 1 and c.cup_half_height > 0 and c.joint_err_norm > 0):
         raise RhAgltError("k_arm · arm_ema · cup_half_height · joint_err_norm")
+    if c.arm_start not in ARM_STARTS:
+        raise RhAgltError(f"arm_start {c.arm_start!r} 는 {ARM_STARTS}(hdgp aglt_start)")
+    if c.arm_start == "ready" or c.ready_r_mult or c.ready_h_m:
+        if not c.object_geometry:
+            raise RhAgltError("사전 파지 범위는 물체 반지름(object_geometry)이 있어야 쓴다 — 사전 파지 거리 = r_mult × 반지름")
+        if not (len(c.ready_r_mult) == 2 and len(c.ready_h_m) == 2 and 1.0 < c.ready_r_mult[0] <= c.ready_r_mult[1]
+                and c.ready_h_m[0] <= c.ready_h_m[1]):
+            raise RhAgltError(f"arm_start ready: ready_r_mult {c.ready_r_mult} · ready_h_m {c.ready_h_m} 는 [lo, hi](r 은 1 초과)")
     hand_law(c)                                    # 손 자세 · 한계 검사
     if c.hand_command not in HAND_COMMANDS:
         raise RhAgltError(f"hand_command {c.hand_command!r} — {HAND_COMMANDS}")
@@ -213,6 +264,7 @@ def validate(c: RaContract) -> None:
         raise RhAgltError("hand_command admittance 와 hand_admittance(학습 값)는 같이 있어야 한다")
     _validate_objects(c)
     _validate_block(c)
+    _validate_arm_hold(c)
 
 
 def make_block(c: RaContract) -> HB.HandBlockNp:
@@ -247,6 +299,14 @@ def _validate_block(c: RaContract) -> None:
     if abs(float(c.hand_lead_cap_rad) - HAND_MAX_LEAD) > 1e-9:
         raise RhAgltError(f"hand_lead_cap_rad {c.hand_lead_cap_rad} ≠ 실기 pd HAND_MAX_LEAD {HAND_MAX_LEAD} — "
                           "막힘 신호를 학습한 sim 의 앞섬 상한이 실기와 달라진다")
+
+
+def _validate_arm_hold(c: RaContract) -> None:
+    rise, rel, n = float(c.arm_hold_rise_m), float(c.arm_hold_release_m), int(c.arm_hold_release_steps)
+    if not (np.isfinite(rise) and np.isfinite(rel) and rise >= 0.0 and rel >= 0.0 and n >= 1):
+        raise RhAgltError(f"arm_hold_rise_m {rise} · arm_hold_release_m {rel} ≥ 0 · arm_hold_release_steps {n} ≥ 1")
+    if rel > 0.0 and not rel < rise:
+        raise RhAgltError(f"arm_hold_release_m {rel} 는 arm_hold_rise_m {rise} 보다 작아야 한다(0 = 풀지 않음)")
 
 
 def _validate_objects(c: RaContract) -> None:
@@ -403,7 +463,8 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
     env_p, agent_p = run_dir / "params" / "env.yaml", run_dir / "params" / "agent.yaml"
     agent = yaml.safe_load(agent_p.read_text())
     net, cfg_a = agent["params"]["network"], agent["params"]["config"]
-    side = "left" if env["profile_name"] == "rh56f1_left" else "right"
+    # ★10.20 2판 손 USD 프로필(rh56f1_v2_left · ap_05 · rcg_02 · rcg_03)도 왼팔 — hdgp 프로필은 이름 · USD 경로만 다르다
+    side = "left" if str(env["profile_name"]).endswith("_left") else "right"
     rename = _left if side == "left" else (lambda n: n)
     p = side[0]
     arm = [f"{p}_aj_{i}" for i in range(1, 8)]
@@ -475,6 +536,22 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
                      f"sim DR(배포는 따라 하지 않는다): G {env.get('hand_block_g_rad')} · ε {env.get('hand_block_eps_rad')} · "
                      f"N {env.get('hand_block_n_ticks')} · 누락 {env.get('hand_block_miss_p')} · 쥔 판정 지연 "
                      f"{env.get('hand_grasp_delay_steps')} 틱 · firmware_stop {env.get('hand_firmware_stop_enable', True)}")
+    arm_hold = {"arm_hold_rise_m": float(env.get("arm_hold_rise_m", 0.0) or 0.0),
+                "arm_hold_release_m": float(env.get("arm_hold_release_m", 0.0) or 0.0),
+                "arm_hold_release_steps": int(env.get("arm_hold_release_steps", 30) or 30)}
+    if arm_hold["arm_hold_rise_m"] > 0.0:
+        notes.append(f"★팔 들림 래치(10.18 arm_hold_rise_m): 관측 컵 z 가 처음 높이(정책 첫 스텝)보다 +{arm_hold['arm_hold_rise_m']} m "
+                     f"넘으면 그 스텝의 팔 목표를 래치 → 팔 목표 = EMA(직전, 래치 + k_arm·a) · 해제 들림 < "
+                     f"{arm_hold['arm_hold_release_m']} m {arm_hold['arm_hold_release_steps']} 스텝 연속(0 = 풀지 않음)")
+    arm_start = str(env.get("aglt_start") or "home")
+    # 사전 파지 범위 — ready 시작 정책(rcg)은 시작 검사에, 같은 env 의 접근 정책(ap05, home 시작)은 넘김 끝 판정에 쓴다
+    has_ready = bool(env.get("ready_pre_r_mult")) and bool(env.get("ready_pre_h_m"))
+    ready_range: dict = ({"ready_r_mult": [float(v) for v in env["ready_pre_r_mult"]], "ready_h_m": [float(v) for v in env["ready_pre_h_m"]]}
+                         if has_ready else {})
+    if arm_start == "ready":
+        notes.append("★시작 자세 = ReadyApproach 사전 파지(10.19 aglt_start=ready): 학습은 홈 → 스크립트 접근 · 정착 뒤 정책이 넘겨받는다"
+                     "(그동안 기록 행동 = 팔 0 · 손 폄). 배포는 사전 파지 고리 근처에서만 reset 을 받고 대기 동안 팔을 실측 자리에 둔다"
+                     " — 앞 단계(ap05 접근 정책 · 1-B reach)가 그 자리까지 데려와야 한다")
     if hand_cmd == "admittance":
         notes.append("손 = 어드민턴스 전제(hand_adm_enable): pd 가 손 목표를 /hand_<s>/angle_target 으로 보낸다 — 학습 "
                      + " · ".join(f"{k} {v:g}" for k, v in adm.items()) + "(엄지 회전은 위치만 — 드라이버 joints 와 같다)")
@@ -500,7 +577,8 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
         goal_tol=float(env["tol_floor"]), grasp_threshold_n=float(env["contact_force_threshold"]),
         hand_command=hand_cmd, hand_admittance=adm, object_names=obj_names, object_geometry=geo,
         goal_force_consecutive=bool(env.get("goal_force_consecutive", False)), actor_tactile_obs=tactile,
-        hand_block=block, grasp_rule=grasp_rule, hand_lead_cap_rad=lead_cap, **hold, **judge)
+        hand_block=block, grasp_rule=grasp_rule, hand_lead_cap_rad=lead_cap, **hold, **judge, **arm_hold,
+        arm_start=arm_start, **ready_range)
     validate(c)
     return c
 
@@ -646,12 +724,47 @@ class GripAssist:
     unfreeze_on_grasp: bool = False
     thumb_support_g: float = 0.0
     thumb_open_floor_rad: float = 0.0
+    # ★10.19 D squeeze — 사용자: "sim 은 세게 쥐면 물리가 터져 적당히 쥐게 학습했다. 실기는 그럴 이유가 없으니 제어로 더 세게 쥐게".
+    #   bag 20261019_133007(왼손 neo03 · source240): 접근은 맞았는데 손가락을 0.55~0.85 rad(grip 1.08 · 0.85)까지만 닫고
+    #   목표에 그대로 도달(막힘 0) → 첫 시도는 병을 못 감싸고 팔만 들림, 둘째 시도는 10 cm 들었다가 정책이 검지 · 중지를 풀어 떨굼.
+    #   ★10.19 저녁 다시 봄(같은 bag): 정책 목표(EMA)는 쥔 자세의 0.7~0.85 까지 가고 손가락이 그 목표에 그대로 닿아
+    #     (hand_err ≈ 0) 힘이 2~50 g 뿐 — 5.9 s 에 잠깐 1.3 kg 눌렀다가 정책이 0.1 rad 풀어 힘이 0 이 됐다. = 덜(약하게) 쥠.
+    #   사용자 10.19: "정책은 원래 상태를 보고, 제어가 움직임을 보조해 더 닫게" → 보조는 보내는 명령에만 얹는다. 정책 자기 목표
+    #     (law 상태 · 관측 hand_err · 막힘 래치)는 그대로 둔다 — 덮어쓰면 다음 스텝 EMA 가 보조 값에서 시작해 정책 뜻과 갈린다.
+    #   켜기: 정책 자기 목표의 네 손가락 평균 닫힘(open 0 · grip 1)이 squeeze_trigger_frac 이상이고 컵이 손바닥 squeeze_near_m 안.
+    #   보조: 보내는 네 손가락 = 정책 목표 + 닫는 쪽 boost. boost 는 squeeze_rate_rad_s 로 squeeze_boost_rad 까지 오르고, 들리기
+    #     전에는 정책이 손을 펴는 만큼 줄어든다(닫힘 trigger → 1 배, release → 0 배). 팔 들림 래치 동안에는 보낸 명령보다 펴지 않는다
+    #     (bag: 10 cm 든 뒤 정책이 검지 · 중지를 풀어 떨굼). 앞섬 ≤ 실측 + hand_lead_cap(= pd HAND_MAX_LEAD) · 관절 끝 앞.
+    #     힘 상한은 손 펌웨어 FORCESET(pd hw_force)가 맡는다. 엄지는 정책 그대로.
+    #   풀기: (헛잡음) 정책이 닫는 중(trigger 이상)이고 boost 가 다 오른 뒤 네 손가락 모두 보낸 명령을 squeeze_miss_rad 안으로
+    #     따라오면(막는 것이 없음) squeeze_miss_s · (정책이 다시 시도) 들리지 않았고 정책 닫힘이 squeeze_release_frac 아래로 squeeze_release_s.
+    #     푼 뒤에는 정책이 손을 반 넘게 편 뒤에야 다시 켠다. 켜진 동안 둘 이상의 손가락이 명령보다 squeeze_miss_rad 넘게 뒤처진 채
+    #     멈춰 있으면(밀고 있음) 쥔 것으로 본다(엄지 래치 · 받침 없이도).
+    squeeze: bool = False
+    squeeze_trigger_frac: float = 0.5
+    squeeze_near_m: float = 0.10
+    squeeze_rate_rad_s: float = 1.5
+    squeeze_boost_rad: float = 0.2
+    squeeze_release_frac: float = 0.15
+    squeeze_release_s: float = 1.0
+    squeeze_miss_rad: float = 0.04
+    squeeze_miss_s: float = 0.25
 
     def __post_init__(self) -> None:
         if not (np.isfinite(self.thumb_support_g) and self.thumb_support_g >= 0.0):
             raise RhAgltError(f"thumb_support_g ≥ 0(0 = 끔): {self.thumb_support_g}")
         if not (np.isfinite(self.thumb_open_floor_rad) and 0.0 <= self.thumb_open_floor_rad <= THUMB_OPEN_FLOOR_MAX):
             raise RhAgltError(f"thumb_open_floor_rad 0~{THUMB_OPEN_FLOOR_MAX} rad(0 = 끔): {self.thumb_open_floor_rad}")
+        checks = (("squeeze_trigger_frac", 0.05, 1.0), ("squeeze_near_m", 0.0, 0.3), ("squeeze_rate_rad_s", 0.05, 5.0),
+                  ("squeeze_boost_rad", 0.02, 0.5),
+                  ("squeeze_release_frac", 0.0, 0.9), ("squeeze_release_s", 0.0, 10.0), ("squeeze_miss_rad", 0.005, 0.2),
+                  ("squeeze_miss_s", 0.0, 5.0))
+        for name, lo, hi in checks:
+            v = float(getattr(self, name))
+            if not (np.isfinite(v) and lo <= v <= hi):
+                raise RhAgltError(f"{name} {lo}~{hi}: {v}")
+        if self.squeeze_release_frac >= self.squeeze_trigger_frac:
+            raise RhAgltError(f"squeeze_release_frac {self.squeeze_release_frac} < squeeze_trigger_frac {self.squeeze_trigger_frac} 이어야")
 
 
 class RaDecoder:
@@ -669,6 +782,22 @@ class RaDecoder:
         self.assist = assist or GripAssist()
         self._support = False                         # 직전 step 의 엄지 받침(B) — hold 는 직전 틱 판정을 받는다
         self._near = True                             # 직전 step 의 물체-손바닥 거리 조건(grasp_near_m 이 0 이면 늘 참)
+        self.arm_latched = False                      # ★10.19 팔 들림 래치(계약 arm_hold_rise_m > 0 일 때만)
+        self.arm_rise = float("nan")                  # 관측 컵 z − 처음 높이(직전 step)
+        self._q_latch = self._home.copy()
+        self._below = 0
+        self._z0: float | None = None
+        names = list(s.hand_joints)                   # ★10.19 D squeeze — 네 손가락(검지 · 중지 · 약지 · 새끼 첫 마디)
+        self._sq_f = np.array([i for i, n in enumerate(names) if any(n.endswith(f"_{f}_1") for f in ("index", "middle", "ring", "pinky"))],
+                              int)
+        o, g = np.asarray(s.hand_open, float), np.asarray(s.hand_grip, float)
+        sgn = np.sign(g - o)
+        self._sq_sgn = np.where(sgn == 0, 1.0, sgn)
+        self._sq_open, self._sq_span = o, np.where(np.abs(g - o) > 1e-9, g - o, 1.0)
+        margin = 0.02                                 # pd hand_safe_target 처럼 관절 끝 바로 앞
+        self._sq_close = np.where(self._sq_sgn > 0, np.asarray(s.hand_lim_hi, float) - margin, np.asarray(s.hand_lim_lo, float) + margin)
+        self._sq_lead = float(c.hand_lead_cap_rad) if c.hand_lead_cap_rad > 0.0 else 0.2
+        self.squeeze_counts = {"on": 0, "miss": 0, "open": 0}
         self.reset()
 
     def reset(self, arm_start: Sequence[float] | None = None, hand_start: Sequence[float] | None = None) -> None:
@@ -676,12 +805,123 @@ class RaDecoder:
         arm = self._home if arm_start is None else np.clip(np.asarray(arm_start, float), self._lo, self._hi)
         hand = self.c.side().hand_open if hand_start is None else hand_start
         self.state = {"arm": _State(np.array(arm, float), np.array(hand, float))}
+        # ★10.20 대기(active=False) 동안 팔 목표 = reset 자세 — 기본은 홈(sim q_idle = q_home 그대로), arm_start ready 는 사전 파지
+        #   자리 실측(sim 정착 뒤 Mover 명령). 예전엔 늘 홈이라 ready 정책을 대기 동안 홈으로 끌고 갔다.
+        self._idle = np.array(arm, float)
         if self.block is not None:
             self.block.reset()
         if self.hold is not None:
             self.hold.reset()
         self._support = False
         self._near = True
+        self.arm_latched, self.arm_rise, self._below, self._z0 = False, float("nan"), 0, None
+        self._q_latch = self._home.copy()
+        self.squeeze_on = False                       # ★10.19 D squeeze — 에피소드마다 처음부터
+        self._sq_cmd: np.ndarray | None = None        # 직전에 보낸 네 손가락 명령(보조가 켜진 동안)
+        self._sq_meas: np.ndarray | None = None       # 직전 실측(멈춤 판정)
+        self._sq_d, self._sq_boost, self._sq_blocked = 0.0, 0.0, 0
+        self._sq_armed, self._sq_open_n, self._sq_miss_n = True, 0, 0
+        self._sq_frac = float("nan")
+        self._sq_last = ""
+        self.squeeze_counts = {"on": 0, "miss": 0, "open": 0}
+
+    def _squeeze(self, target: np.ndarray, hand_q: Sequence[float] | None, obj_palm_m: float | None) -> np.ndarray:
+        """D squeeze 한 스텝(active 스텝만) — 정책 자기 목표(law 상태, 바꾸지 않는다) → 손에 보낼 명령. 끄면 그대로."""
+        A, F = self.assist, self._sq_f
+        if not A.squeeze or F.size != 4:
+            return target
+        s = self._sq_sgn[F]
+        frac = float(np.mean((target[F] - self._sq_open[F]) / self._sq_span[F]))   # 정책 자기 목표의 닫힘(open 0 · grip 1)
+        self._sq_frac = frac
+        hz = float(self.c.policy_hz)
+        meas = None if hand_q is None else np.asarray(hand_q, float).reshape(-1)
+        mf = None if meas is None else meas[F]
+        if self._sq_cmd is not None and mf is not None:     # 직전 명령보다 뒤처진 채 멈춘 손가락 = 무언가를 밀고 있다
+            lag = (self._sq_cmd - mf) * s
+            still = np.ones(4, bool) if self._sq_meas is None else np.abs(mf - self._sq_meas) < 0.006
+            self._sq_blocked = int(np.sum((lag > A.squeeze_miss_rad) & still))
+            free = bool(np.all(lag <= A.squeeze_miss_rad))
+        else:
+            self._sq_blocked, free = 0, False
+        self._sq_meas = None if mf is None else mf.copy()
+        if not self.squeeze_on:
+            if not self._sq_armed and frac < 0.5 * A.squeeze_trigger_frac:
+                self._sq_armed = True
+            near = obj_palm_m is not None and bool(np.isfinite(obj_palm_m)) and float(obj_palm_m) <= A.squeeze_near_m
+            if not (self._sq_armed and frac >= A.squeeze_trigger_frac and near):
+                return target
+            self.squeeze_on, self._sq_open_n, self._sq_miss_n, self._sq_d = True, 0, 0, 0.0
+            self._sq_cmd, self._sq_blocked = None, 0
+            self.squeeze_counts["on"] += 1
+            self._sq_last = f"on frac {frac:.2f} · 손바닥 {float(obj_palm_m):.3f} m"
+        self._sq_open_n = self._sq_open_n + 1 if (frac < A.squeeze_release_frac and not self.arm_latched) else 0
+        full = self._sq_d >= A.squeeze_boost_rad - 1e-9
+        self._sq_miss_n = self._sq_miss_n + 1 if (full and free and frac >= A.squeeze_trigger_frac) else 0   # 정책이 닫는 중일 때만
+        why = ("open" if self._sq_open_n >= max(1, round(A.squeeze_release_s * hz))
+               else "miss" if self._sq_miss_n >= max(1, round(A.squeeze_miss_s * hz)) else "")
+        if why:
+            self.squeeze_on, self._sq_cmd, self._sq_armed = False, None, False
+            self._sq_d, self._sq_boost, self._sq_blocked = 0.0, 0.0, 0
+            self.squeeze_counts[why] += 1
+            self._sq_last = "off " + ("헛잡음(막는 것 없이 명령까지 닫힘)" if why == "miss" else "정책이 손을 폄(들리지 않음)")
+            return target
+        self._sq_d = min(A.squeeze_boost_rad, self._sq_d + A.squeeze_rate_rad_s / hz)
+        span = A.squeeze_trigger_frac - A.squeeze_release_frac
+        fade = 1.0 if self.arm_latched else float(np.clip((frac - A.squeeze_release_frac) / span, 0.0, 1.0))
+        self._sq_boost = self._sq_d * fade
+        q = target[F] + s * self._sq_boost
+        if self.arm_latched and self._sq_cmd is not None:                       # 들린 동안 보낸 명령보다 펴지 않는다
+            q = np.where((self._sq_cmd - q) * s > 0, self._sq_cmd, q)
+        q = np.where((q - self._sq_close[F]) * s > 0, self._sq_close[F], q)        # 관절 끝 앞까지
+        if mf is not None:                                                       # 앞섬 ≤ 실측 + lead(pd 와 같다)
+            cap = mf + s * self._sq_lead
+            q = np.where((q - cap) * s > 0, cap, q)
+        q = np.where((target[F] - q) * s > 0, target[F], q)                       # 정책이 더 닫으면 정책 값
+        self._sq_cmd = q.copy()
+        out = target.copy()
+        out[F] = q
+        return out
+
+    def squeeze_view(self) -> dict:
+        """상태용 — D 를 끄면 {}."""
+        if not self.assist.squeeze:
+            return {}
+        frac = None if not np.isfinite(self._sq_frac) else round(self._sq_frac, 2)
+        return {"squeeze": {"on": bool(self.squeeze_on), "frac": frac, "armed": bool(self._sq_armed), "n": dict(self.squeeze_counts),
+                            "boost_rad": round(float(self._sq_boost), 3), "pushing": int(self._sq_blocked), "last": self._sq_last}}
+
+    def _arm_hold(self, q_prev: np.ndarray, a_arm: np.ndarray, q_inc: np.ndarray, cup_z: float | None) -> np.ndarray:
+        """hdgp update_arm_latch + step_arm_hold 한 스텝(active 스텝만). q_prev = 직전 팔 목표 · q_inc = 증분 결과.
+        처음 높이 z0 = 첫 active 스텝의 관측 컵 z(hdgp _fz_z0 — 정책이 처음 움직이는 스텝의 관측). 래치 스텝의 래치 자세는
+        q_prev 라 그 스텝 값은 증분과 같다(튀지 않음). 유한하지 않은 컵 z 는 래치 · 해제 판정에 쓰지 않는다(해제 연속은 끊긴다)."""
+        if cup_z is None:
+            raise RhAgltError("arm_hold_rise_m 계약: 디코더에 관측 컵 z(cup_z)가 필요하다")
+        z = float(cup_z)
+        if self._z0 is None and np.isfinite(z):
+            self._z0 = z
+        rise = z - self._z0 if self._z0 is not None and np.isfinite(z) else float("nan")
+        self.arm_rise = rise
+        if rise > self.c.arm_hold_rise_m:             # nan 이면 거짓
+            if not self.arm_latched:
+                self._q_latch = np.array(q_prev, float)
+            self.arm_latched = True
+        if self.c.arm_hold_release_m > 0.0:
+            low = self.arm_latched and rise < self.c.arm_hold_release_m
+            self._below = self._below + 1 if low else 0
+            if self._below >= max(1, int(self.c.arm_hold_release_steps)):
+                self.arm_latched, self._below = False, 0
+        if not self.arm_latched:
+            return q_inc
+        q_raw = np.clip(self._q_latch + self.c.k_arm * a_arm, self._lo, self._hi)
+        return np.clip(self.c.arm_ema * q_raw + (1.0 - self.c.arm_ema) * q_prev, self._lo, self._hi)
+
+    def arm_hold_view(self) -> dict:
+        """상태용 — 계약에 래치가 없으면 {}."""
+        if self.c.arm_hold_rise_m <= 0.0:
+            return {}
+        rise = None if not np.isfinite(self.arm_rise) else round(float(self.arm_rise), 4)
+        z0 = None if self._z0 is None else round(float(self._z0), 4)    # 처음 높이 — 실기에서 첫 컵 z 가 튀었는지 본다
+        return {"arm_latched": bool(self.arm_latched), "arm_rise": rise, "arm_z0": z0}
 
     def _thumb_support(self, joint_force: Sequence[float] | None) -> bool:
         """B — 엄지 굽힘 관절 힘(RaMeas.joint_force[0], g) > thumb_support_g. 힘이 없으면(결손) 받침 아님."""
@@ -704,7 +944,8 @@ class RaDecoder:
         b = self.block
         if b is None:
             return False
-        return bool((b.grasped() or (self._support and b.latch[b.fingers].any())) and self._near)
+        squeezed = self.squeeze_on and self._sq_blocked >= 2                  # ★10.19 D — 보조 명령을 둘 이상이 밀고 있음 = 쥠
+        return bool((b.grasped() or (self._support and b.latch[b.fingers].any()) or squeezed) and self._near)
 
     def _near_of(self, obj_palm_m: float | None) -> bool:
         """grasp_near_m 거리 조건 — 0 이면 참. 켜져 있는데 거리가 없거나 유한하지 않으면 거짓(쥔 것으로 치지 않는다)."""
@@ -715,19 +956,24 @@ class RaDecoder:
     def step(self, action: Sequence[float], *, active: bool, tactile_n: Sequence[float] | None = None,
              hand_q: Sequence[float] | None = None,
              joint_force: Sequence[float] | None = None,
-             obj_palm_m: float | None = None) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+             obj_palm_m: float | None = None,
+             cup_z: float | None = None) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         """hand_q = 실측 손 각도(계약 hand_joints 순, rad) — hand_block 계약이면 반드시(막힘 신호 쥠 멈춤).
         joint_force = RaMeas.joint_force(엄지 굽힘 먼저, g) — GripAssist B 만 쓴다.
-        obj_palm_m = 지금 |물체 원점 − 손바닥| [m](RaMeas cup_pos · palm_pos) — 계약 grasp_near_m > 0 이면 반드시."""
+        obj_palm_m = 지금 |물체 원점 − 손바닥| [m](RaMeas cup_pos · palm_pos) — 계약 grasp_near_m > 0 이면 반드시.
+        cup_z = 이 관측의 컵 z [m](RaMeas cup_pos[2], base) — 계약 arm_hold_rise_m > 0 이면 반드시(팔 들림 래치)."""
         a = np.clip(np.asarray(action, float).reshape(-1), -1.0, 1.0)
         if a.size != 13 or not np.all(np.isfinite(a)):
             raise RhAgltError(f"행동은 유한한 13 개: {a.size}")
         st = self.state["arm"]
         if active:
             q_raw = np.clip(st.arm_target + self.c.k_arm * a[:7], self._lo, self._hi)
-            st.arm_target = np.clip(self.c.arm_ema * q_raw + (1.0 - self.c.arm_ema) * st.arm_target, self._lo, self._hi)
+            q_inc = np.clip(self.c.arm_ema * q_raw + (1.0 - self.c.arm_ema) * st.arm_target, self._lo, self._hi)
+            if self.c.arm_hold_rise_m > 0.0:          # ★10.19 팔 들림 래치(hdgp _pre_physics_step 957-966 순서)
+                q_inc = self._arm_hold(st.arm_target, a[:7], q_inc, cup_z)
+            st.arm_target = q_inc
         else:
-            st.arm_target = self._home.copy()
+            st.arm_target = self._idle.copy()
         if self.block is not None:                    # 10.12 막힘 쥠 멈춤 — 직전 q* 와 지금 실측(hdgp _pre_physics_step 순서)
             if hand_q is None:
                 raise RhAgltError("hand_block 계약: 디코더에 실측 손 각도(hand_q)가 필요하다")
@@ -743,7 +989,10 @@ class RaDecoder:
         else:
             freeze = self.law.touch_to_freeze(tactile_n)
         st.hand_target = self.law.step(st.hand_target, a[7:], active=active, freeze=freeze)
-        return {"arm": (st.arm_target.copy(), st.hand_target.copy())}
+        hand_cmd = st.hand_target                     # ★10.19 D squeeze(배포 전용, 끄면 그대로) — 보내는 명령에만 얹는다.
+        if active:                                    #   정책 자기 목표(st.hand_target)는 law · 관측 hand_err · 막힘 래치가 그대로 쓴다
+            hand_cmd = self._squeeze(st.hand_target, hand_q, obj_palm_m)
+        return {"arm": (st.arm_target.copy(), hand_cmd.copy())}
 
     def grasped(self) -> bool | None:
         """막힘 신호 쥔 판정(직전 step 기준) — hand_block 계약이 아니면 None(호출자가 촉각 · 관절 힘 규칙을 쓴다)."""

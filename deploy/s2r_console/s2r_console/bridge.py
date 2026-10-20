@@ -27,6 +27,9 @@ from .feed import line
 from .rosgraph import change_key, is_due, is_noise_topic, observe
 
 NS = "/policy_control"
+#: 물체 자세 요약을 콘솔로 보내는 주기 [s]. 10.19 실기: 1 s(beat 와 같이)로 보내면 콘솔의 "FP++ 1 s 안" 검사가
+#: 보고 나이(0~1 s)에 따라 켜졌다 꺼졌다 했다(rg3 카드 40% 꺼짐, 토픽은 7~8 Hz · 지연 0.2 s 로 멀쩡했다).
+OBJECTS_PERIOD_S = 0.2
 
 
 def _emit(text: str) -> None:
@@ -108,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="관절 상태 토픽 — 화면의 로봇 상태 표가 쓴다(구독만). 빈 목록이면 받지 않는다")
     ap.add_argument("--joints-hz", type=float, default=4.0, help="관절 상태를 콘솔로 보내는 상한 [Hz]")
     ap.add_argument("--objects", nargs="*", default=[],
-                    help="물체 자세 토픽(PoseStamped) — 주기 · 지연 · 기울기 · 흔들림을 1 Hz 로 요약한다(상태창 FP++ 칸, 09.29)")
+                    help="물체 자세 토픽(PoseStamped) — 주기 · 지연 · 기울기 · 흔들림을 5 Hz 로 요약한다(상태창 FP++ 칸, 09.29 · 10.19)")
     ap.add_argument("--dynamic-joints", nargs="*",
                     default=["/dynamic_joint_states", "/dg5f_right/dynamic_joint_states",
                              "/dg5f_left/dynamic_joint_states"],
@@ -230,9 +233,6 @@ def main(argv: list[str] | None = None) -> int:
     def beat() -> None:
         names = sorted({(ns.rstrip("/") + "/" + n) for n, ns in node.get_node_names_and_namespaces()})
         _emit(line("beat", graph=names))
-        if poses:                                    # 지연은 두 PC 벽시계 차 — 벽시계로 잰다
-            now = time.time()
-            _emit(line("objects", data={t: w.summary(now) for t, w in poses.items()}))
         send_rosgraph(dict(node.get_topic_names_and_types()))
         if meter.all:
             subscribe_new()
@@ -260,6 +260,12 @@ def main(argv: list[str] | None = None) -> int:
         for t in args.dynamic_joints:
             node.create_subscription(DynamicJointState, t, on_dynamic, qos_profile_sensor_data)
     node.create_timer(1.0, beat)
+
+    def emit_objects() -> None:
+        now = time.time()                            # 지연은 두 PC 벽시계 차 — 벽시계로 잰다
+        _emit(line("objects", data={t: w.summary(now) for t, w in poses.items()}))
+    if poses:
+        node.create_timer(OBJECTS_PERIOD_S, emit_objects)
 
     _emit(line("hello", domain=args.domain, nodes=list(args.nodes)))
     try:

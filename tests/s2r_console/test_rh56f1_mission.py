@@ -545,8 +545,15 @@ def test_the_remote_vision_recorder_runs_on_the_perception_pc_venv():
     """10.13 vision-3090 시스템 python3 는 scipy 가 깨져(~/.local numpy 2.2) 기록기가 _base_from_camera 에서 죽는다."""
     if not GEN.REMOTE_PERCEPTION:
         return
-    recs = [" ".join(c.argv) for st in REAL.stages for c in _cmds(REAL, REAL_BOOK, st.id) if "vision_recorder.py" in " ".join(c.argv)]
-    assert recs and all(f"{GEN.REMOTE_PY} scripts/nodes/vision_recorder.py" in r for r in recs)
+    rec = GEN._vision_record("episode_x", ["source240b_blue"], 15.0)
+    assert f"{GEN.REMOTE_PY} scripts/nodes/vision_recorder.py" in " ".join(map(str, rec["argv"]))
+
+
+def test_video_recording_and_report_media_are_off_by_default():
+    """★10.20 사용자 "영상은 필요 없음. 일단 기본 off" — 보고서 영상 정리가 팔 작업을 6 분 넘게 붙잡아 rehome · tilt_now 승인이 막혔다."""
+    assert GEN.VISION_RECORD is False
+    argvs = [" ".join(c.argv) for st in REAL.stages for c in _cmds(REAL, REAL_BOOK, st.id)]
+    assert not [a for a in argvs if "vision_recorder.py" in a or "episode_media.py" in a]
 
 
 def test_shutdown_handles_partial_connections_and_orders_policy_perception_pd_hands_arms():

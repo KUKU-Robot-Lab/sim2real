@@ -11,7 +11,7 @@ from policy_control import rh_aglt as A
 
 REPO = Path(__file__).resolve().parents[2]
 #: 10.18 옛 정책 폴더(rg3mft 등) 삭제 — 배포 촉각 없는 다물체 계약(rg3wo, 91 + 3)을 기준으로 둔다
-RUN = REPO / "deploy" / "policies" / "rh56f1" / "aglt" / "right_rg3wo"
+RUN = REPO / "deploy" / "policies_retired" / "rh56f1" / "aglt" / "right_rg3wo"   # ★10.20 시험 고정본
 OLD = Path(__file__).resolve().parent / "fixtures" / "rh_aglt_right_i03_contract.json"   # actor_tactile_obs 필드 전 계약(09.30 i03)
 NAMES = ["source240_real", "source200_real", "shaker_c_real"]
 

@@ -1,0 +1,20 @@
+# 경로 D(10.20 사용자 "ap_05로 가까이 가게한 다음에, rcg_03 행하면 잡을 것 같음") — left 손 shaker(주황, FP++ shaker_c_orange).
+# 접근 정책 ap05(홈 출발, 학습 = ReadyApproach 사전 파지 자리 2 cm 안 정지) → 손바닥이 사전 파지 자리(r/R 2.5 · 높이 0, 2 cm 안)에
+# 0.5 s 멈추면 같은 rh_aglt 노드에서 rcg03(학습 시작 = 그 자리, aglt_start=ready)으로 넘긴다 — 디코더는 실측 팔 · 편 손에서,
+# 목표는 넘김 순간 컵 + 10 cm, LSTM 은 0 에서 대기 10 틱. rcg03 이 쥐고 첫 목표 성공 또는 7 cm 위 2 s 쥠 유지에 끝난다(pd 가 붙듦).
+# 접근 15 s 안에 사전 파지 자리에 못 멈추거나 넘긴 뒤 시간 초과면 실패(abort, pd 가 그 자세로 붙듦 — 복구는 rehome).
+# 값 조정: policies.rh_aglt_l.approach_grasp 에 키: 값(approach_grasp.ApproachGraspCfg — still_s · still_rad_s · approach_max_s).
+# 물체 바꾸기: 실행기 파라미터 -p policy_object:=<source240_real|source200_real|shaker_c_real> -p cup_object:=<FP++ 물체 이름>.
+episode: {name: grasp_d_left, version: 1}
+objects:
+  CUP: {topic: /objects/shaker_c_orange/pose}
+policies:
+  rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg03}
+trajectories:
+  go_home: {kind: rehome, sides: [left]}
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 rehome으로 복구한다.
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  - {id: grasp_lift, type: policy, name: rh_aglt_l, target_object: CUP, policy_object: shaker_c_real, expect: {left_hand: CUP}}
+  - {id: done, type: terminal, result: SUCCESS}

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import signal
 import sys
 import time
 from pathlib import Path
@@ -88,7 +89,14 @@ def drive(con, mode: str, name: str, on_step=None) -> dict:
     return _episode_status(con) or {}
 
 
+def _term(signum: int, _frame: object) -> None:
+    """★10.20 SIGTERM(kill · `timeout`)도 finally 의 con.shutdown() 을 거치게 한다 — 스택은 start_new_session 이라
+    이 프로세스만 죽으면 가짜 노드(pd · 손 · 컵)가 고아로 남아 다음 리허설과 같은 도메인에서 겹쳤다."""
+    raise SystemExit(128 + signum)
+
+
 def main() -> int:
+    signal.signal(signal.SIGTERM, _term)
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("--episode", default="pick_place_right")
     ap.add_argument("--mode", choices=("step", "run"), default="step")

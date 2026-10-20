@@ -1,3 +1,4 @@
+# ★10.20 폐지(사용자 "경로 a는 폐지, -> 경로d가 대체함") — 미션 · 상황판에서 뺐다. 대신 grasp_d_<팔> · tilt_base_d. 시험 고정본으로만 남긴다.
 # 왼손 shaker_c(주황, FP++ shaker_c_orange) 파지 → 들기 — rg3 한 정책(10.12 grasping 최종) 실기 첫 시험. 사용자 10.13: 제자리에서 잡고 10 cm 들어 2 s 버티면 끝낸다(놓기 · 홈 복귀 없음).
 # 물체 바꾸기: 실행기 파라미터 -p policy_object:=<source240_real|source200_real|shaker_c_real> -p cup_object:=<FP++ 물체 이름> (둘이 같은 물체여야 한다).
 # 실행: 상황판 미션 단계 episode_grasp_rg3_left · CLI tools/episode_run.py --episode config/episodes/grasp_rg3_left.yaml
@@ -8,7 +9,7 @@ episode: {name: grasp_rg3_left, version: 1}
 objects:
   CUP: {topic: /objects/shaker_c_orange/pose}
 policies:
-  rh_aglt_l: {policy: rh56f1/aglt/left_rg3wo, kind: aglt, side: left}
+  rh_aglt_l: {policy: rh56f1/aglt/left_neo03, kind: aglt, side: left}
 trajectories:
   go_home: {kind: rehome, sides: [left]}
 failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 rehome으로 복구한다.
