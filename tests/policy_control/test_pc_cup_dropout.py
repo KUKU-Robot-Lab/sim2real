@@ -165,3 +165,40 @@ def test_the_node_ends_the_episode_with_abort_on_a_dropout_stop():
             _status=lambda ok, reasons, extra=None: status.append((ok, reasons)))
     pour_fj_node.PourFjNode._on_tick(me)
     assert ended == [("abort", "컵 위치 끊김 0.6 s — 쥠이 풀린 뒤 · 멈춤")] and status[-1][0] is False
+
+
+# ---------------------------------------------------------------- ★10.20 경로 D 넘김
+def test_a_handoff_restarts_the_near_hand_clock_with_the_same_last_cup():
+    """실기 10.20 좌: 사전 파지 자리에서 기다리는 동안 FP++ 가 끊겼다 — 넘겨받은 정책은 손 근처 2.5 s 창을 새로 받는다."""
+    d = CupDropout(CFG)
+    c = Clock(d)
+    c.frame()
+    near = [0.30, -0.10, 0.36]
+    c.tick(near, n=120)                                  # 2.0 s 끊김 — 넘김 직전
+    assert d.rebase(c.t) and d.age_s == 0.0
+    out = c.tick(near, n=140)                            # 넘김 뒤 2.33 s — 옛 시계면 4.3 s 로 멈췄다
+    assert out[0] == pytest.approx(CUP[0]) and d.mode == "hold"
+    with pytest.raises(DropoutStop, match="손 근처 2.5 s"):
+        c.tick(near, n=20)                               # 넘김 뒤 2.5 s 를 넘으면 그대로 멈춘다
+
+
+def test_rebase_does_nothing_without_a_frame_or_once_held():
+    d = CupDropout(CFG)
+    assert not d.rebase(100.0)                           # 프레임을 한 번도 못 받았다
+    c = Clock(d)
+    c.frame()
+    c.tick([0.30, -0.10, 0.30], grasped=True, n=CFG.hold_steps)
+    assert d.held and not d.rebase(c.t)                  # 쥔 뒤는 손바닥 따라가기 규칙이 맡는다
+
+
+def test_the_node_rebases_only_on_the_tick_that_hands_over():
+    from policy_control.pour_fj_node import handoff_rebase
+    d = CupDropout(CFG)
+    Clock(d).frame()
+    d.step(100.0, (100.0, CUP[0], Q, 99.7), False, 100.0, np.array([0.3, -0.1, 0.36]), np.eye(3), CUP)
+    drops = {"arm": d}
+    assert handoff_rebase("approach", NS(phase="approach"), drops, 101.0) == []
+    assert handoff_rebase("policy", NS(phase="policy"), drops, 101.0) == []      # 이미 넘긴 뒤
+    assert handoff_rebase(None, None, drops, 101.0) == []
+    assert handoff_rebase("approach", NS(phase="policy"), drops, 101.0) == ["arm"]
+    assert d._t_new == 101.0

@@ -287,3 +287,72 @@ def test_the_mission_starts_one_node_with_the_handoff_contract():
     for side in ("right", "left"):
         assert f"handoff_contract:={{repo}}/deploy/policies/rh56f1/aglt/{side}_rcg03/rh_aglt_contract.json" in text
     assert "max_episode_s:=33.0" in text
+
+
+# ---------------------------------------------------------------- ★10.20 멈춤 = 학습 접근 성공(pos · 손바닥 still)
+class Jitter(Plant):
+    """실기 10.20: 손바닥은 서 있는데 관절 속도 실측이 0.3 rad/s 안팎(팔꿈치 · 손목을 계속 돌림)."""
+
+    def meas(self):
+        m = super().meas()
+        return {"arm": A.RaMeas(**{**m["arm"].__dict__, "arm_qd": np.full(7, 0.3)})}
+
+
+def test_joint_speed_noise_does_not_block_the_handoff(ap05, rcg03, fk):
+    nxt = Grasp()
+    ch = _chain(ap05, (rcg03, nxt))
+    plant = Jitter(A.select_object(ap05, OBJ), fk)
+    ch.reset(plant.meas())
+    _run(ch, plant, 60 * 10, until=lambda ch: ch.ag.phase == "policy")
+    assert ch.ag.phase == "policy" and ch.policy is nxt          # 옛 규칙(관절 < 0.05 rad/s)이면 시간 초과로 abort
+
+
+def _ring(c, cup, out_r=0.0, out_h=0.0):
+    r = float(c.object_geometry[OBJ]["radius"]) * float(c.ready_r_mult[0])
+    return cup + np.array([r + out_r, 0.0, out_h])
+
+
+def _feed(ag, chain, palms, cup):
+    for p in palms:
+        m = A.RaMeas(arm_q=Q_MID, arm_qd=np.zeros(7), hand_q={}, palm_pos=np.asarray(p, float), palm_R=np.eye(3),
+                     tips=np.zeros((5, 3)), cup_pos=cup, cup_quat=np.array([1.0, 0, 0, 0]), tactile_n=np.zeros(5))
+        ag.after_policy(chain, m)
+        if ag.phase != "approach":
+            return
+
+
+def _bare(ap05):
+    from types import SimpleNamespace as NS
+    c = A.select_object(ap05, OBJ)
+    seen = []
+    chain = NS(c=c, step_i=10 ** 6, handover=lambda base, pol, m: seen.append(m))
+    ag = AG.ApproachGrasp(AG.ApproachGraspCfg(handoff=1), c.policy_hz)
+    ag.next = (None, None)
+    return ag, chain, seen, c
+
+
+def test_a_palm_moving_faster_than_the_training_limit_is_not_still(ap05):
+    ag, chain, seen, c = _bare(ap05)
+    cup = np.array([0.3, -0.2, 0.3])
+    wob = [_ring(c, cup) + [0.0, (-1) ** k * 0.0004, 0.0] for k in range(240)]   # 0.0008 m/틱 = 0.048 m/s
+    _feed(ag, chain, wob, cup)
+    assert ag.phase == "approach" and not seen and ag.last["palm_mps"] == pytest.approx(0.048)
+    _feed(ag, chain, [_ring(c, cup)] * 40, cup)
+    assert ag.phase == "policy" and len(seen) == 1                         # 서고 30 틱(0.5 s)
+    assert 0.5 - 1e-9 <= ag.last["handoff_t_s"] - 240 / c.policy_hz <= 0.55
+
+
+def test_the_ring_distance_is_the_hypot_like_training(ap05):
+    ag, chain, seen, c = _bare(ap05)
+    cup = np.array([0.3, -0.2, 0.3])
+    _feed(ag, chain, [_ring(c, cup, 0.015, 0.015)] * 120, cup)            # 각 1.5 cm · 합 2.1 cm — 옛 상자 규칙은 통과
+    assert ag.phase == "approach" and not seen
+    _feed(ag, chain, [_ring(c, cup, 0.012, 0.012)] * 60, cup)             # 합 1.7 cm
+    assert ag.phase == "policy"
+
+
+def test_still_mps_is_range_checked():
+    assert AG.ApproachGraspCfg().still_mps == 0.03                        # hdgp approach_succ_speed_mps
+    for bad in ("still_mps=0", "still_mps=0.5"):
+        with pytest.raises(AG.ApproachGraspError):
+            AG.ApproachGraspCfg.parse(bad)

@@ -58,10 +58,11 @@ SAFE_RANGE: Mapping[str, tuple] = {
     "lift_tol_m": (0.002, 0.05), "hold_s": (0.5, 10.0), "loss_ticks": (1, 60),
     "judge": (0, 1), "squeeze": (0, 1), "squeeze_s": (0.0, 3.0),
     "pin_lead_rad": (0.0, 0.1), "close_lead_rad": (0.03, 0.2),
-    "handoff": (0, 1), "stop_ready": (0, 1),
+    "handoff": (0, 1), "stop_ready": (0, 1), "still_mps": (0.005, 0.1),
 }
 #: ★10.20 handoff 끝 = 손바닥이 사전 파지 자리(계약 ready_r_mult · ready_h_m) 이 거리 안에서 멈춤 — ap05 학습 접근 성공 반경
 #  (approach_succ_pos_m 0.02)과 같다. 다음 정책(rcg) 시작 검사는 3 cm(pour_fj_node.READY_POSE_TOL_M)라 잡음에 여유가 있다.
+#  거리 = hypot(반경 밖, 높이 밖) — 학습 approach_success pos 와 같은 식(hypot(r − r_mult·R, h − h_m) ≤ 0.02).
 HANDOFF_TOL_M = 0.02
 
 
@@ -97,6 +98,11 @@ class ApproachGraspCfg:
     #   스크립트 닫기 · 들기(경로 C)로 넘어간다. ap05 는 컵 축 2.5R(source240 7.5 cm)에서 멈춰 stop_palm_m(6 cm)에 못 닿는다.
     #   approach_max_s 안에 못 오면 실패(abort — 허공에서 닫지 않는다). handoff 와 같이 쓰지 않는다.
     stop_ready: int = 0
+    # ★10.20 실기 경로 D 좌 · 우 실패: handoff · stop_ready 의 "멈춤" 을 팔 관절 속도(still_rad_s)로 재면 ap05 가 사전 파지 자리에서
+    #   손바닥은 세운 채 팔꿈치 · 손목을 계속 돌려(좌 j3~j7 0.3~0.6 rad, 관절 속도 중앙 0.1~0.3 rad/s) 끝까지 멈춤이 안 걸렸다.
+    #   학습 접근 성공(hdgp rh_aglt approach_success still)은 손바닥 선속도 ≤ approach_succ_speed_mps(0.03) 가 30 스텝 — 같은 식으로
+    #   잰다(손바닥 FK 한 틱 차분 × policy_hz). 경로 C(stop_palm_m)의 옛 규칙은 그대로 still_rad_s 를 쓴다.
+    still_mps: float = 0.03
 
     def __post_init__(self) -> None:
         bad = [f"{f.name}={getattr(self, f.name)} (허용 {SAFE_RANGE[f.name][0]:g}~{SAFE_RANGE[f.name][1]:g})"
@@ -212,6 +218,7 @@ class ApproachGrasp:
         self.z0 = float("nan")
         self.last: dict = {}
         self.grip: dict | None = None    # ★10.19 쥔 순간(닫기 → 들기) 관절 상태 — 물체마다 기록해 학습 세션에 넘긴다(사용자)
+        self.palm_prev: np.ndarray | None = None   # ★10.20 handoff · stop_ready 멈춤 — 직전 틱 손바닥(선속도 차분)
 
     @property
     def scripted(self) -> bool:
@@ -250,12 +257,17 @@ class ApproachGrasp:
             self._start_close(chain, f"접근 시간 {self.cfg.approach_max_s:.1f} s · 거리 {d:.3f} m")
 
     def _after_policy_ready(self, chain, m: A.RaMeas, d: float, v: float) -> None:
-        """★10.20 사전 파지 자리에 멈추면 — handoff: 다음 정책(같은 노드) 또는 stop · stop_ready: 스크립트 닫기. 시간 안에 못 오면 abort."""
+        """★10.20 사전 파지 자리에 멈추면 — handoff: 다음 정책(같은 노드) 또는 stop · stop_ready: 스크립트 닫기. 시간 안에 못 오면 abort.
+        멈춤 = 학습 접근 성공의 pos · still 과 같은 식: hypot(반경 밖, 높이 밖) ≤ HANDOFF_TOL_M AND 손바닥 선속도 ≤ still_mps 가 still_s."""
         rr, out_h, out_r = A.ready_pose_error(chain.c, m.cup_pos, m.palm_pos)
-        at = bool(np.isfinite(rr) and out_r <= HANDOFF_TOL_M and out_h <= HANDOFF_TOL_M)
-        self.still = self.still + 1 if (at and v < self.cfg.still_rad_s) else 0
+        off = float(np.hypot(out_r, out_h))
+        at = bool(np.isfinite(rr) and off <= HANDOFF_TOL_M)
+        palm = np.asarray(m.palm_pos, float)
+        vp = float("inf") if self.palm_prev is None else float(np.linalg.norm(palm - self.palm_prev)) * self.hz
+        self.palm_prev = palm.copy()
+        self.still = self.still + 1 if (at and vp <= self.cfg.still_mps) else 0
         self.last = {"palm_cup_m": round(d, 4), "r_over_R": round(rr, 2), "off_r_m": round(out_r, 4), "off_h_m": round(out_h, 4),
-                     "arm_qd_max": round(v, 3), "still": self.still}
+                     "palm_mps": None if not np.isfinite(vp) else round(vp, 4), "arm_qd_max": round(v, 3), "still": self.still}
         where = f"r/R {rr:.2f}(학습 {chain.c.ready_r_mult}) · 반경 밖 {out_r * 100:.1f} cm · 높이 밖 {out_h * 100:.1f} cm"
         if self.still >= max(1, round(self.cfg.still_s * self.hz)):
             if self.cfg.stop_ready:                      # 경로 C(1-C): 그 자리에서 닫고 든다

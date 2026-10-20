@@ -76,6 +76,19 @@ class CupDropout:
         self.stop_reason: str | None = None
         self._hist.clear()
 
+    def rebase(self, now: float) -> bool:
+        """★10.20 경로 D 넘김 — 잡기 전 끊김 시계를 지금부터 다시 센다(마지막 값 · 영상 stamp 는 그대로). True = 다시 셌다.
+
+        실기 10.20 좌: ap05 가 사전 파지 자리에서 기다리는 동안 손이 컵을 가려 FP++ live 가 4.17 s 에 끊겼고, 2.5 s 뒤 멈췄다.
+        넘김은 손바닥이 사전 파지 고리(축에서 r_mult·R)에 서 있을 때만 일어나고, 접근 정책은 컵을 건드리지 않는 단계(학습 접근 성공
+        clean) — 컵은 마지막 값 자리에 그대로다. 넘겨받은 정책은 학습 FP++ 가림 DR(손 근처 0.5~2.5 s 마지막 값)과 같은 창을 새로 받는다.
+        쥔 상태 · 놓친 뒤 · 프레임을 한 번도 못 받은 경우는 바꾸지 않는다."""
+        if self._t_new is None or self.held or self.released:
+            return False
+        self._t_new = float(now)
+        self.age_s = 0.0
+        return True
+
     # ---------------------------------------------------------------- 손바닥 기록
     def _record(self, t: float, palm_pos, palm_R) -> None:
         if self._hist and t <= self._hist[-1][0]:

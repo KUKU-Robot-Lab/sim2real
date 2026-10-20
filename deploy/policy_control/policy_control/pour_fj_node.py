@@ -97,6 +97,14 @@ class PourFjNodeError(RuntimeError):
     pass
 
 
+def handoff_rebase(phase_before, ag, dropouts: dict, now: float) -> list:
+    """★10.20 경로 D — 이 틱에 접근 정책이 다음 정책으로 넘겼으면(단계 → "policy") 잡기 전 컵 끊김 시계를 다시 센다
+    (CupDropout.rebase). 다시 센 역할 목록을 돌려준다(로그용)."""
+    if ag is None or phase_before == "policy" or ag.phase != "policy":
+        return []
+    return [role for role, drop in dropouts.items() if drop.rebase(now)]
+
+
 # ---------------------------------------------------------------- ROS 없는 절반
 def _side_raw(s, st, arm_names, fk, cup, role: str) -> dict:
     """sources.RobotState(한 팔) + 컵 (pos, quat) → 측정 칸들. s 는 계열의 한 팔(arm_joints · hand_joints …)."""
@@ -847,7 +855,12 @@ class PourFjNode(LeanNodeMixin, Node):
             meas = self._measure(advance=True)       # _cup_for 가 이 안에서 cup_fresh 를 채운다
             if hasattr(self.chain, "cup_fresh"):
                 self.chain.cup_fresh = bool(self.cup_fresh.get("arm", True))
+            ag = getattr(self.chain, "ag", None)
+            phase = None if ag is None else ag.phase
             obs, action, targets = self.chain.step(meas)
+            for role in handoff_rebase(phase, ag, getattr(self, "dropouts", {}), time.monotonic()):
+                self.get_logger().info(f"cup {role}: 경로 D 넘김 — 끊김 시계를 넘김 순간부터 다시 센다 · "
+                                       f"{self.dropouts[role].as_dict()}")
             names, q, qd = self.fam.targets(self.contract, targets)
         except DropoutStop as exc:                    # ★10.19 컵 끊김 규칙 — 틱을 더 기다리지 않고 멈춘다(pd 가 지금 자세로 붙든다)
             self._status(False, [str(exc)])
