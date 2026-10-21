@@ -65,6 +65,9 @@ class Profile:
     path: Path
     #: 지연을 재는 두 끝 (먼저 도는 노드, 마지막 노드). 없으면 status_nodes 의 처음과 끝.
     latency: tuple[str, str] | None = None
+    #: ★10.21 False = status 노드가 사슬이 아니다(RH56F1 은 팔마다 따로 도는 PD). 사슬 지연을 잴 수 없으니
+    #: 화면의 타이밍 칸을 숨긴다(사용자 "타이밍 · 노드는 무슨 의미인지 모르겠네").
+    timing: bool = True
     stack: Stack | None = None
     diagram: Diagram | None = None
 
@@ -79,6 +82,7 @@ class Profile:
                 "policy_dir": None if self.policy_dir is None else str(self.policy_dir),
                 "policy_dt": self.policy_dt, "path": str(self.path),
                 "latency": None if self.latency is None else list(self.latency),
+                "timing": self.timing,
                 "stack": None if self.stack is None else self.stack.as_dict(),
                 "diagram": None if self.diagram is None else self.diagram.as_dict()}
 
@@ -146,7 +150,7 @@ def parse(raw: Mapping, *, path: Path, repo: Path) -> Profile:
         raise ProfileError(f"{path}: 매핑이 아니다")
     if raw.get("schema") != SCHEMA:
         raise ProfileError(f"{path}: schema 가 {SCHEMA} 가 아니다: {raw.get('schema')!r}")
-    unknown = set(raw) - {"schema", "id", "title", "mission", "domain", "status_nodes", "policy", "policy_dt", "latency", "stack", "diagram"}
+    unknown = set(raw) - {"schema", "id", "title", "mission", "domain", "status_nodes", "policy", "policy_dt", "latency", "timing", "stack", "diagram"}
     if unknown:
         raise ProfileError(f"{path}: 모르는 키 {sorted(unknown)}")
     for key in ("id", "mission", "domain", "status_nodes"):
@@ -186,9 +190,14 @@ def parse(raw: Mapping, *, path: Path, repo: Path) -> Profile:
         for n in latency:
             if n not in nodes:
                 raise ProfileError(f"{path}: latency 노드 {n!r} 가 status_nodes 에 없다")
+    timing = raw.get("timing", True)
+    if not isinstance(timing, bool):
+        raise ProfileError(f"{path}: timing 은 true / false 여야 한다: {timing!r}")
+    if not timing and latency is not None:
+        raise ProfileError(f"{path}: timing: false 인데 latency 를 적었다 — 둘 중 하나만")
     return Profile(id=str(raw["id"]), title=str(raw.get("title", raw["id"])), mission=mission,
                    domain=domain, domain_class=str(dom["class"]), status_nodes=nodes,
-                   policy_dir=policy_dir, policy_dt=None if dt is None else float(dt), path=path, latency=latency,
+                   policy_dir=policy_dir, policy_dt=None if dt is None else float(dt), path=path, latency=latency, timing=timing,
                    stack=None if raw.get("stack") is None else parse_stack(raw["stack"], path=path),
                    diagram=None if raw.get("diagram") is None else parse_diagram(raw["diagram"], path=path, status_nodes=nodes))
 

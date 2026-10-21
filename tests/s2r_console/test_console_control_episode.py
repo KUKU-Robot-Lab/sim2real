@@ -68,6 +68,18 @@ def test_grasp_b_is_a_policy_tab_action_for_each_arm_without_a_card(console, tin
     assert all(not a['control'] for a in m.catalog() if not a['id'].startswith(CONTROL_PREFIX))
 
 
+def test_path_c_is_a_fixed_action_that_shows_the_script_grip(console, tiny_repo):
+    """★10.21 사용자 "카드 배치 일단 제거" — 카드로만 돌던 경로 C 는 ctl_grasp_c_<팔>. 에피소드 파일의 컵으로
+    카드 때처럼 스크립트 쥐기 단계 · 마지막 쥔 관절을 보인다."""
+    m = setup_actions(console, tiny_repo, {'episode_grasp_c_right': COMMANDS})
+    (tiny_repo / 'config/episodes').mkdir(parents=True, exist_ok=True)
+    (tiny_repo / 'config/episodes/grasp_c_right.yaml').write_text(yaml.safe_dump({
+        'objects': {'CUP': {'topic': '/objects/source240b_blue/pose'}}, 'policies': {}, 'sequence': []}))
+    a = {x['id']: x for x in m.catalog()}['ctl_grasp_c_right']
+    assert a['control'] is True and a['stages'] == ['episode_grasp_c_right'] and '경로 C' in a['title']
+    assert a['live']['script']['steps'].startswith('접근 정책') and a['live']['script']['phase'] is None
+
+
 def test_grasp_b_actions_appear_only_when_the_mission_has_the_stage(console, tiny_repo):
     m = setup_actions(console, tiny_repo, {'home_right': [{'argv': ['true']}]})
     assert not [a for a in m.catalog() if a['id'].startswith(CONTROL_PREFIX)]
@@ -118,12 +130,20 @@ def test_a_control_command_on_that_arm_cancels_the_episode(console, tiny_repo, m
     assert 'episode_grasp_b_right' not in console.session.state.completed
 
 
-def test_policy_tab_has_a_control_episode_panel():
+def test_policy_tab_runs_control_episodes_from_the_experiment_list():
+    """★10.21 사용자 "정책을 찾기 어렵고 실험 진행이 어려움": 제어 에피소드 버튼 8 개를 늘어놓던 칸 대신 실험 목록 —
+    고른 실험 · 팔의 ctl_<에피소드>_<팔> 을 같은 승인 창(action-prepare)으로 연다. 경로 C(카드로만 돌던 것)도 고정 작업이다."""
+    from s2r_console.actions import CONTROL_EPISODES, CONTROL_LABELS
+    from s2r_console.experiments import GRASP
+
     html = (REPO / 'deploy/s2r_console/s2r_console/web/index.html').read_text()
     js = (REPO / 'deploy/s2r_console/s2r_console/web/console.js').read_text()
-    tab = html[html.index('id="tab-policy"'):html.index('id="tilt-panel"')]
-    assert 'id="control-ep-panel"' in tab and 'id="control-ep-actions"' in tab
-    assert 'actions.filter(a => a.control)' in js and 'put("control-ep-actions"' in js
+    tab = html[html.index('id="tab-policy"'):html.index('id="common-bar"')]
+    assert 'id="xp-list"' in tab and 'id="xp-main"' in tab
+    assert 'control-ep-panel' not in html and 'control-ep-actions' not in js
+    assert 'data-act="action-prepare" data-arg="${esc(side.action)}"' in js
+    assert [head for _, head, _ in GRASP] == list(CONTROL_EPISODES) == list(CONTROL_LABELS)   # 목록 = 실행 작업
+    assert 'grasp_c' in CONTROL_EPISODES and CONTROL_LABELS['grasp_c'] == '경로 C'
 
 
 def test_real_mission_exposes_grasp_b_on_both_arms():

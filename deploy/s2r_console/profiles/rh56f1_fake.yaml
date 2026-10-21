@@ -6,6 +6,7 @@ mission: config/mission_rh56f1_fake.yaml
 domain: {id: 97, class: fake}
 policy_dt: 0.0166667
 status_nodes: [pd_right, pd_left]
+timing: false   # ★10.21 두 PD 는 팔마다 따로 돈다 — pd_right→pd_left 지연은 뜻이 없어 타이밍 칸을 숨긴다
 stack:
   title: fake 플랜트 + fake RH56F1 손 ×2 + 상태 노드 ×2
   nodes: [/fake_arm_bridge]

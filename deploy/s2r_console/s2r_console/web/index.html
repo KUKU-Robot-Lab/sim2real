@@ -39,15 +39,17 @@
     </section>
     <section id="tab-control" role="tabpanel" hidden><div id="control-actions" class="action-grid"></div><div id="head-settings"></div><div id="management-control" role="status"></div></section>
     <section id="tab-policy" role="tabpanel" hidden>
-      <!-- 10.17 사용자 "policy 부분에 내가 말한 부분들이 시각화 잘되게": tilt 평가(경로 A · C · B) · 지금 에피소드(확인 대기) · 계획 검사 · 회차 기록 -->
-      <!-- ★10.20 사용자 "policy 창서도 보이게": 정책 없는 제어 모듈 에피소드(1-B) — 팔마다 실행 버튼, 진행은 아래 지금 에피소드 패널 -->
-      <section class="panel" id="control-ep-panel" hidden aria-label="제어 모듈 에피소드">
-        <div class="panel-head"><h2>제어 모듈 에피소드 — 1-B (정책 없음)</h2><span class="meta">FP++ 컵 → 접근 → [확인] 닫기 → 들기 · 진행은 지금 에피소드 패널</span></div>
-        <div id="control-ep-actions" class="action-grid"></div>
-      </section>
-      <section class="panel tilt-panel" id="tilt-panel" hidden aria-label="tilt 평가 경로">
-        <div class="panel-head"><h2>tilt 평가 — 경로 A · C · B</h2><span id="tilt-meta" class="meta" role="status" aria-atomic="true"></span></div>
-        <div id="tilt-paths" class="tilt-paths"></div>
+      <!-- ★10.21 사용자 "정책을 찾기 어렵고 실험 진행이 어려움 · 깔끔하고 명확하게 · FPP 도 칸만 크고 쓸모없는 정보가 많음":
+           인지 한 줄(FP++ 판정 · 물체 자리) → 실험 목록 | 고른 실험(정책 사슬 · 조건 · 실행) → 지금 에피소드 → 접은 칸.
+           정책 카드 배치(←→↑↓)는 사용자 "일단 제거" — 카드로만 돌던 경로 C 는 고정 작업 ctl_grasp_c_<팔>. tilt 경로도 같은 목록. -->
+      <div class="pstrip tone-mute" id="pstrip" aria-label="FP++ 인지"></div>
+      <div class="pvideo" id="fpp-panel" hidden>
+        <img id="fpp-video" alt="FP++ 실시간 영상">
+        <div class="pvideo-foot"><p id="video-status" role="status">영상 연결 대기</p><button id="video-retry" class="btn btn-sm" data-act="video-retry" hidden>영상 다시 연결</button></div>
+      </div>
+      <section class="xp" id="xp" aria-label="실험">
+        <nav class="xp-list" id="xp-list" aria-label="실험 목록"></nav>
+        <div class="xp-main" id="xp-main"></div>
       </section>
       <section class="panel epf-panel" id="epf-panel" hidden aria-label="에피소드 흐름">
         <div class="panel-head"><h2>지금 에피소드</h2><span id="epf-meta" class="meta" role="status" aria-atomic="true"></span></div>
@@ -59,12 +61,13 @@
         <div class="panel-head"><h2>이번 실행 — 계획 검사 · 손 쥐기</h2><span id="tilt-run-meta" class="meta"></span></div>
         <div id="tilt-run" class="tilt-run"></div>
       </section>
-      <section class="panel tilt-panel" id="tilt-rec-panel" hidden aria-label="회차 기록">
-        <div class="panel-head"><h2>회차 기록(오늘)</h2><span id="tilt-rec-meta" class="meta"></span></div>
-        <div id="tilt-rec" class="tilt-rec"></div>
-      </section>
-      <section class="panel"><div class="panel-head"><h2>인지 노드 · 물체</h2></div><div id="perception-controls"></div><div id="perception-nodes"></div><div id="object-cards" class="object-cards"></div><details><summary>FP++ 상세 상태</summary><div id="fpp"></div></details></section>
-      <div id="policy-add" class="policy-add"></div><div id="policy-cards" class="policy-cards"></div>
+      <details class="panel fold" id="fold-pol"><summary class="panel-head"><h2>정책 목록</h2><span id="pol-meta" class="meta"></span></summary>
+        <div id="pol-table" class="pol-table"></div></details>
+      <details class="panel fold" id="tilt-rec-panel" hidden><summary class="panel-head"><h2>회차 기록 · sim 비교</h2><span id="tilt-rec-meta" class="meta"></span></summary>
+        <div id="tilt-rec" class="tilt-rec"></div></details>
+      <details class="panel fold" id="fold-per"><summary class="panel-head"><h2>인지 상세</h2><span class="meta">물체 고르기 · 좌표 · 인지 노드 · 학습 영역</span></summary>
+        <div id="perception-controls"></div><div id="object-cards" class="object-rows"></div>
+        <div id="perception-nodes" class="pnodes"></div><div id="fpp" class="fpp-detail"></div></details>
     </section>
   </section>
   <section id="common-bar" class="common-bar" aria-label="공통 제어" hidden><b>control</b><div id="common-controls" class="action-grid"></div></section>
@@ -74,18 +77,14 @@
     <details id="dg-extra" class="links-table" hidden><summary id="dg-extra-sum">그림 밖 연결</summary><div id="dg-extra-body" class="dg-extra"></div></details>
     <details id="links-table" class="links-table"><summary>표로 보기</summary><div id="links" class="links"></div></details>
   </section>
-  <section class="col col-live">
+  <section class="col col-live" id="col-live">
     <div class="panel">
-      <div class="panel-head"><h2>노드</h2><span id="bridge-meta" class="meta"></span></div>
+      <div class="panel-head"><h2>제어 노드 상태</h2><span id="bridge-meta" class="meta"></span></div>
       <div id="nodes"></div>
     </div>
-    <div class="panel">
-      <div class="panel-head"><h2>타이밍</h2><span id="metrics-meta" class="meta"></span></div>
+    <div class="panel" id="metrics-panel">
+      <div class="panel-head"><h2>노드 사이 명령 지연</h2><span id="metrics-meta" class="meta"></span></div>
       <div id="metrics"></div>
-    </div>
-    <div class="panel" id="fpp-panel" hidden>
-      <div class="panel-head"><h2>FP++ 영상</h2><span id="fpp-meta" class="meta"></span></div>
-      <img id="fpp-video" alt="FP++ 실시간 영상"><p id="video-status" role="status">영상 연결 대기</p><button id="video-retry" class="btn btn-sm" data-act="video-retry" hidden>영상 다시 연결</button>
     </div>
   </section>
 

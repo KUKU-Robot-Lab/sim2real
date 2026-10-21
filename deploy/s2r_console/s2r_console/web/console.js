@@ -118,9 +118,11 @@ function renderAll() {
   renderMetrics(s);
   renderFpp(s);
   renderPolicy(s);
+  renderExperiments(s);
   renderEpisode(s);
   renderTilt(s);
   renderWorkspace();
+  renderPolicyTable(s);
   renderRobot(s);
   put("quick", stopButtons(s));
 }
@@ -671,26 +673,34 @@ function renderLinks(s) {
   }).join('<div class="link-arrow">▸</div>'));
 }
 
+// ★10.21 사용자 "노드는 무슨 의미인지 모르겠네" — PD 상태 이름을 말로. 원래 이름(오류 문구에 나온다)은 옆에 작게.
+const PD_PHASE = { IDLE: "대기 · 잡지 않음", RAMPING: "힘 올리는 중", TRACKING: "목표 따라감", HOLD: "자세 유지", RELEASING: "푸는 중" };
+
 function renderNodes(s) {
   const br = s.bridge;
-  put("bridge-meta", br.enabled ? `ROS 그래프 ${br.graph.length}개 노드${br.bad_lines ? ` · 해석 못 한 줄 ${br.bad_lines}` : ""}` : "브리지 꺼짐");
+  put("bridge-meta", br.enabled ? `ROS 그래프 ${br.graph.length}개 노드${br.bad_lines ? ` · 해석 못 한 줄 ${br.bad_lines}` : ""}` : "ROS 연결 꺼짐 — 상태를 받지 않는다");
   const rows = s.nodes.map((n) => {
     const st = n.status;
-    if (!st) return `<tr class="stale"><td><span class="lamp"></span><span class="node-name">${esc(n.name)}</span></td><td colspan="5">status 가 아직 오지 않았다</td></tr>`;
+    if (!st) return `<tr class="stale"><td><span class="lamp"></span><span class="node-name">${esc(n.name)}</span></td><td colspan="5">아직 상태를 받지 않았다 — 노드가 떠 있지 않다</td></tr>`;
     const phase = String(st.phase ?? "");
     const busy = ["running", "TRACKING", "RAMPING"].includes(phase);
     const lamp = n.stale ? "" : st.ok === false ? "bad" : busy ? "live" : "ok";
     const why = (st.reasons || []).length ? `<div class="node-reasons">${st.reasons.map(esc).join("<br>")}</div>` : "";
     const raw = det(`node:${n.name}`, "원본 status", `<pre class="node-json">${esc(JSON.stringify(st, null, 1))}</pre>`);
     return `<tr class="${n.stale ? "stale" : ""}"><td><span class="lamp ${lamp}"></span><span class="node-name">${esc(n.name)}</span>${why}${raw}</td>
-      <td><span class="phase">${esc(phase || "—")}</span></td><td class="num">${esc(st.episode ?? "—")}</td><td class="num">${esc(st.seq ?? "—")}</td>
+      <td><span class="phase">${esc(PD_PHASE[phase] || phase || "—")}</span>${PD_PHASE[phase] ? ` <small class="phase-raw">${esc(phase)}</small>` : ""}</td><td class="num">${esc(st.episode ?? "—")}</td><td class="num">${esc(st.seq ?? "—")}</td>
       <td class="num">${fmt(st.proc_ms)}</td><td class="num">${n.stale ? "<b>" + fmt(n.age_s, 1) + " s</b>" : fmt(n.age_s, 1) + " s"}</td></tr>`;
   });
   const graph = br.graph.length ? det("graph", `보이는 ROS 노드 ${br.graph.length}개`, `<pre class="node-json">${br.graph.map(esc).join("\n")}</pre>`) : "";
-  put("nodes", `<table><thead><tr><th>노드</th><th>phase</th><th class="num">ep</th><th class="num">seq</th><th class="num">proc ms</th><th class="num">나이</th></tr></thead><tbody>${rows.join("")}</tbody></table><div style="padding:0 12px 10px">${graph}</div>`);
+  put("nodes", `<table><thead><tr><th>노드</th><th>상태</th><th class="num">에피소드</th><th class="num">명령 번호</th><th class="num">처리 ms</th><th class="num">마지막 수신</th></tr></thead><tbody>${rows.join("")}</tbody></table><p class="hint nodes-hint">제어 노드가 매 틱 보내는 상태 · 2 s 넘게 안 오면 흐리게</p><div style="padding:0 12px 10px">${graph}</div>`);
 }
 
 function renderMetrics(s) {
+  // ★10.21 timing: false 프로파일(RH56F1 — 두 PD 가 팔마다 따로) 은 사슬 지연이 없다. 칸째 숨기고 노드 칸이 폭을 쓴다.
+  const off = s.profile.timing === false;
+  $("metrics-panel").hidden = off;
+  $("col-live").classList.toggle("solo", off);
+  if (off) return;
   const M = s.metrics, L = M.latency_ms, lat = s.profile.latency || [s.profile.status_nodes[0], s.profile.status_nodes.at(-1)];
   put("metrics-meta", `에피소드 ${esc(M.episode ?? "—")} · 최근 ${M.rows} seq`);
   const over = (v) => (M.budget_ms !== null && v !== null && v > M.budget_ms ? " over" : "");
@@ -763,12 +773,30 @@ function spawnMap(m) {
 
 // FP++ 칸 — 09.29 사용자: "fpp 가 제대로 되는지 … 상태창에서". 줄 · 판정은 서버(object_health.py)가 준다.
 // 그날 컨테이너는 Up 인데 추적 노드가 CUDA OOM 으로 죽어 자세가 0 이었다 — 컨테이너 상태만으로는 못 본다.
+// ★10.21 사용자 "FPP 도 칸 비율만 많이 차지하고 쓸모없는 정보가 많음": policy 탭 맨 위 한 줄(판정 · 물체마다 램프 · 자리 · 한마디)로.
+//   영상은 [영상] 을 눌러야 열린다(닫으면 스트림을 끊는다) · 학습 영역 지도와 줄별 상태는 '인지 상세' 를 펼쳐야 보인다.
+let showVideo = false;
+function fppOf(s, name) {
+  const f = s.fpp || {}, o = (f.objects || []).find((x) => x.name === name);
+  const m = ((f.map && f.map.objects) || []).find((x) => x.name === name);
+  const worst = o && o.rows.find((r) => r.tone !== "ok");
+  return { tone: (worst && o.tone) || (m && m.tone) || (o && o.tone) || "mute", xy: m ? `(${fmt(m.x, 3)}, ${fmt(m.y, 3)})` : "",
+           say: worst ? `${worst.label} — ${worst.value}` : m ? m.say : o ? "자리 없음" : "FP++ 칸에 없는 물체" };
+}
 function renderFpp(s) {
   const f = s.fpp;
-  $("fpp-panel").hidden = false;
-  updateVideo(s);
-  if (!f) return;
-  put("fpp-meta", `<span class="badge ${f.tone === "mute" ? "" : esc(f.tone)}">${esc(f.say)}</span>`);
+  $("pstrip").hidden = !f;
+  $("fpp-panel").hidden = !(f && showVideo);
+  if (!f) return put("fpp", "");
+  if (showVideo) updateVideo(s);
+  $("pstrip").className = `pstrip tone-${f.tone}`;
+  // 물체마다 같은 이유(예: 인지 런처가 안 떴다)면 한 번만 쓴다 — 같은 문장 다섯 줄은 읽히지 않는다
+  const cs = f.objects.map((o) => ({ o, c: fppOf(s, o.name) }));
+  const same = cs.length > 1 && cs.every((x) => x.c.say === cs[0].c.say) ? cs[0].c.say : "";
+  const objs = cs.map(({ o, c }) => `<li class="ps-obj"><span class="lamp ${esc(c.tone)}"></span><b>${esc(o.name)}</b>${c.xy ? `<span class="mono">${esc(c.xy)}</span>` : ""}${same ? "" : `<span class="ps-say">${esc(c.say)}</span>`}</li>`).join("");
+  put("pstrip", `<span class="ps-tag">FP++</span><b class="ps-verdict">${esc(f.say)}${f.stale ? " · 브리지 보고가 늦다" : ""}</b>
+    <ul class="ps-objs">${objs || '<li class="hint">추적 물체가 없다</li>'}${same ? `<li class="ps-say ps-common">모두 ${esc(same)}</li>` : ""}</ul>
+    <button class="btn btn-sm btn-ghost${showVideo ? " on" : ""}" data-act="xp-video" aria-pressed="${showVideo}">${showVideo ? "영상 닫기" : "영상"}</button>`);
   put("fpp", spawnMap(f.map) + f.objects.map((o) => `<div class="fpp-obj"><div class="fpp-name"><span class="lamp ${esc(o.tone)}"></span><b>${esc(o.name)}</b>
     <span class="hint">${esc(o.topic)}${f.stale ? " · 브리지 보고가 늦다" : ""}</span></div>
     <dl class="kv fpp-kv">${o.rows.map((r) => `<dt><span class="lamp ${esc(r.tone)}"></span>${esc(r.label)}</dt><dd class="fpp-${esc(r.tone)}">${esc(r.value)}</dd>`).join("")}</dl></div>`).join(""));
@@ -856,28 +884,11 @@ function renderEpisode(s) {
 }
 
 // ── 10.17 policy 탭 tilt 평가(사용자 "policy 부분에 내가 말한 부분들이 시각화 잘되게") ─────────────────
-// 경로 A · C · B(에피소드 노드 순서 · 쓸 수 있는지 · 언제) → 지금 에피소드(위 epf 패널, 확인 대기) → 이번 실행 계획 검사 · 손 쥐기
-// → 회차 기록. 값은 서버 tilt_view 가 모은다(읽기만). 성공 · 실패는 색과 글자(✓ · ✗) 둘 다로 보인다.
-const TILT_NODE = { trajectory: "궤적", policy: "정책", parallel_policy: "정책", snapshot: "배치", confirm: "확인", hand: "손", terminal: "끝" };
+// 이번 실행 계획 검사 · 손 쥐기 → 회차 기록. 값은 서버 tilt_view 가 모은다(읽기만). 성공 · 실패는 색과 글자(✓ · ✗) 둘 다로 보인다.
 function tiltValue(v, unit) {
   const one = (x) => (typeof x === "number" ? (Math.abs(x) >= 100 ? x.toFixed(0) : String(Number(x.toFixed(3)))) : esc(x ?? "—"));
   const body = Array.isArray(v) ? v.map((x) => (Array.isArray(x) ? `[${x.map(one).join(", ")}]` : one(x))).join(" · ") : one(v);
   return `${body}${unit ? ` <small>${esc(unit)}</small>` : ""}`;
-}
-function tiltPathCard(p, e) {
-  if (p.error) return `<article class="tilt-path bad"><header><b>경로 ${esc(p.key)}</b> ${esc(p.title)}</header><p class="bad">${esc(p.error)}</p></article>`;
-  const live = e && e.episode === p.episode, idx = live ? Number(e.index) : -1, done = live && ["SUCCESS", "FAILURE", "STOPPED"].includes(e.phase);
-  const st = (i) => (!live ? "" : i < idx || (done && e.phase === "SUCCESS") ? " done" : i === idx ? (e.confirm ? " wait" : e.busy ? " run" : " next") : "");
-  const chain = p.nodes.map((n, i) => `<li class="tn tn-${esc(n.type)}${st(i)}" title="${esc(n.line || n.title)}"><small>${esc(TILT_NODE[n.type] || n.type)}</small>${esc(n.id)}</li>`).join("");
-  const badge = live ? `<span class="badge ${e.phase === "FAILURE" || e.phase === "STOPPED" ? "bad" : e.phase === "SUCCESS" ? "ok" : "warn"}">실행 중 · ${esc(e.phase)}</span>`
-    : `<span class="badge ${p.ok ? "ok" : "bad"}">${p.ok ? "✓ 쓸 수 있음" : "✗ 못 씀"}</span>`;
-  const pols = Object.entries(p.policies || {}).map(([r, id]) => `${esc(r)} = ${esc(id || "—")}`).join(" · ");
-  return `<article class="tilt-path${live ? " live" : ""}${p.ok ? "" : " bad"}">
-    <header><b>경로 ${esc(p.key)}</b><span>${esc(p.title)}</span>${badge}</header>
-    <p class="hint">${esc(p.when)}${p.confirms ? ` · 확인 노드 ${p.confirms} 개(연속 실행도 멈춘다)` : ""}</p>
-    <ol class="tilt-chain">${chain}</ol>
-    <p class="tilt-foot">미션 단계 <code>${esc(p.stage)}</code>${pols ? ` · ${pols}` : " · 정책 없음(사람이 컵을 댄다)"}</p>
-    ${(p.problems || []).length ? `<ul class="reasons bad">${p.problems.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</article>`;
 }
 function tiltRunCard(c) {
   const head = `<header><b>${esc(c.node)}</b><span>${esc({ carry: "이송 계획", tilt: "tilt 계획", hand: "손 쥐기" }[c.kind] || c.kind)}</span>
@@ -894,16 +905,10 @@ function tiltRunCard(c) {
     <tbody>${rows}</tbody></table></article>`;
 }
 function renderTilt(s) {
-  // tilt 에피소드는 두 팔이라 기본 실행기(episode_runner)가 돈다
-  const t = s.tilt, e = (s.episode_runners || []).find((r) => r.runner === "episode_runner") || s.episode_runner;
-  for (const id of ["tilt-panel", "tilt-run-panel", "tilt-rec-panel"]) $(id).hidden = !t;
+  // ★10.21 경로 카드(노드 사슬 · 쓸 수 있는지 · 언제)는 실험 목록이 보인다 — 여기는 이번 실행 계획 검사와 회차 기록(접은 칸)
+  const t = s.tilt;
+  for (const id of ["tilt-run-panel", "tilt-rec-panel"]) $(id).hidden = !t;
   if (!t) return;
-  const paths = t.paths || [];
-  const ok = paths.filter((p) => p.ok).length;
-  put("tilt-meta", `${ok}/${paths.length} 경로 쓸 수 있음${e && String(e.episode || "").startsWith("tilt_base_") ? ` · 지금 ${esc(e.episode)} ${esc(e.phase)}` : ""}`
-    + ((t.errors || []).length ? ` · 집계 오류 ${t.errors.length}` : ""));
-  put("tilt-paths", paths.map((p) => tiltPathCard(p, e)).join("")
-    + ((t.errors || []).length ? `<ul class="reasons bad">${t.errors.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""));
   const run = t.run;
   $("tilt-run-panel").hidden = !run;
   if (run) {
@@ -914,7 +919,7 @@ function renderTilt(s) {
   const r = t.records;
   if (!r) return;
   const sum = r.summary || {}, tl = sum.tilt || {}, gr = sum.grasp || {};
-  put("tilt-rec-meta", `${esc(r.day)} · logs/eval_real`);
+  put("tilt-rec-meta", `${esc(r.day)} · logs/eval_real${(t.errors || []).length ? ` · 집계 오류 ${t.errors.length}` : ""}`);
   const tiltRows = (r.tilt || []).slice().reverse().map((x) => `<tr class="${x.success ? "ok" : "bad"}"><td>${esc(x.trial)}</td><td>${esc(x.path)}</td>
     <td>${esc(x.in_rcv)}/${esc(x.n_beads)}</td><td>${esc(x.in_src)}</td><td>${esc(x.spilled)}</td><td>${x.success ? "✓ 성공" : "✗ 실패"}</td>
     <td>${esc(x.grasp_right)} · ${esc(x.grasp_left)}</td><td>${esc(x.video || "—")}</td></tr>`).join("");
@@ -933,6 +938,170 @@ function renderTilt(s) {
     ${tiltRows ? `<table class="tilt-tbl"><thead><tr><th>회</th><th>경로</th><th>받는 컵</th><th>병에 남음</th><th>흘림</th><th>판정</th><th>파지 우 · 좌</th><th>영상</th></tr></thead><tbody>${tiltRows}</tbody></table>` : ""}
     ${graspRows ? `<table class="tilt-tbl"><thead><tr><th>회</th><th>손</th><th>결과</th><th>들림</th><th>유지</th><th></th></tr></thead><tbody>${graspRows}</tbody></table>` : ""}
     ${det("tilt-rec-cmd", "기록하는 법", `<pre class="tilt-cmd">${esc(r.command)}\npython3 deploy/policy_control/tools/eval_record.py grasp --side right --ok --lift-cm 7 --hold-s 3\npython3 deploy/policy_control/tools/eval_record.py summary</pre>`)}`);
+}
+
+// ── ★10.21 policy 탭 실험(사용자 "정책을 찾기 어렵고 실험 진행이 어려움 · 깔끔하고 명확하게") ─────────────────────
+// 실험 = 경로 하나(팔마다 또는 두 팔). 목록에서 고르면 그 실험의 정책 사슬 · 컵 · 조건 · 실행 버튼이 한 칸에 모인다.
+// 사슬 · 컵 · 쓸 수 있는지는 서버(experiments.py — 에피소드 파일 · 정책 등록부)가, 실행할 수 있는지 · 사유는 관리 작업(ctl_* —
+// 파지 · 들기) · 미션 단계(tilt)가 정한다. 여기서는 그것을 그릴 뿐이다. 정책 카드 배치(←→↑↓)는 사용자 "일단 제거".
+const XP_KEY = "s2r.xp";
+let xpSel = (() => { try { const v = JSON.parse(localStorage.getItem(XP_KEY) || "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; } })();
+let xpPol = "";                 // 펼친 정책 칩(id) — 다시 누르면 닫는다
+const XP_STEP = { policy: "정책", handoff: "넘김", script: "스크립트", move: "궤적", confirm: "사람 확인", hand: "손" };
+const SIDE_SHORT = { right: "R", left: "L" };
+const POL_STATUS = { candidate: "후보", verified: "검증", deployed: "배포", hold: "보류" };
+const xpSave = () => { try { localStorage.setItem(XP_KEY, JSON.stringify(xpSel)); } catch { /* 저장이 막혀도 이 화면에서는 유지된다 */ } };
+
+// 실험 한 쪽의 지금 — 실행 중 · 준비됨 · 막힘. 서버가 준 것(작업 enabled · reasons · 단계 can_run · 실행기 phase)만 쓴다.
+function xpState(s, side) {
+  const runner = (s.episode_runners || []).find((r) => r.runner === side.runner);
+  const mine = runner && runner.episode === side.episode ? runner : null;
+  const busy = !!(mine && (mine.busy || mine.phase === "RUNNING"));
+  const problems = side.problems || [];
+  if (side.action) {
+    const a = (S.actions || []).find((x) => x.id === side.action) || null;
+    const reasons = [...problems, ...(a ? a.reasons || [] : ["이 미션에 실행 작업이 없다"])];
+    return { kind: "action", a, runner: mine, live: busy || !!(a && a.job && a.job.active), ok: !!(a && a.enabled) && !problems.length, reasons };
+  }
+  const row = ((s.mission && s.mission.rows) || []).find((r) => r.id === side.stage) || null;
+  const reasons = [...problems, ...(row ? row.reasons || [] : ["이 미션에 단계가 없다"])];
+  return { kind: "stage", row, runner: mine, live: busy || !!(row && row.status === "RUNNING"), ok: !!(row && row.can_run) && !problems.length, reasons };
+}
+const xpTone = (st) => (st.live ? "live" : st.ok ? "ok" : "bad");
+const xpWord = (st) => (st.live ? "실행 중" : st.ok ? "준비됨" : "막힘");
+const sideName = (k) => SIDE_KO[k] || "두 팔";
+
+// 고른 실험 · 쪽. 고른 적이 없거나 사라졌으면 지금 도는 실험, 그것도 없으면 첫 실험.
+function xpPick(s, X) {
+  const items = X.items || [];
+  const it = items.find((i) => i.id === xpSel.id)
+    || items.find((i) => Object.values(i.sides).some((sd) => xpState(s, sd).live)) || items[0];
+  if (!it) return [null, "", null];
+  const keys = Object.keys(it.sides), key = keys.includes(xpSel.side) ? xpSel.side : keys[0];
+  return [it, key, it.sides[key]];
+}
+// 고르면 '지금 에피소드' 칸도 그 실험의 실행기를 보인다
+function xpSyncRunner() {
+  const X = S && S.session && S.session.experiments;
+  if (!X) return;
+  const side = xpPick(S.session, X)[2];
+  if (side) epRunner = side.runner;
+}
+
+function renderExperiments(s) {
+  const X = s.experiments;
+  $("xp").hidden = !X;
+  if (!X) return;
+  const [it, key, side] = xpPick(s, X);
+  const groups = [["grasp", "파지 · 들기", "한 팔"], ["tilt", "tilt", "두 팔"]];
+  put("xp-list", (X.error ? `<p class="reasons bad">${esc(X.error)}</p>` : "") + groups.map(([g, title, sub]) => {
+    const rows = (X.items || []).filter((i) => i.group === g).map((i) => {
+      const on = !!it && i.id === it.id;
+      const dots = Object.entries(i.sides).map(([k, sd]) => {
+        const st = xpState(s, sd);
+        return `<span class="xp-dot ${xpTone(st)}" title="${esc(`${sideName(k)} · ${xpWord(st)}${st.reasons.length && !st.ok ? ` — ${st.reasons[0]}` : ""}`)}">${esc(SIDE_SHORT[k] || "R+L")}</span>`;
+      }).join("");
+      return `<button class="xp-item${on ? " on" : ""}" data-act="xp-pick" data-arg="${esc(i.id)}" aria-pressed="${on}">
+        <span class="xp-key">${esc(i.key)}</span><span class="xp-sum">${esc(i.summary)}</span><span class="xp-dots">${dots}</span></button>`;
+    }).join("");
+    return rows ? `<div class="xp-group"><h2>${esc(title)}<small>${esc(sub)}</small></h2>${rows}</div>` : "";
+  }).join(""));
+  put("xp-main", it ? xpMain(s, X, it, key, side) : `<p class="hint xp-empty">이 미션에 실험이 없다.</p>`);
+}
+
+function xpMain(s, X, it, key, side) {
+  const st = xpState(s, side), tone = xpTone(st);
+  const sides = Object.entries(it.sides);
+  const seg = sides.length > 1 ? `<div class="seg" role="group" aria-label="팔">${sides.map(([k, sd]) =>
+      `<button class="seg-b${k === key ? " on" : ""}" data-act="xp-side" data-arg="${esc(k)}" aria-pressed="${k === key}"><span class="lamp ${xpTone(xpState(s, sd))}"></span>${esc(sideName(k))}</button>`).join("")}</div>` : "";
+  const head = `<header class="xp-head"><span class="xp-key xp-key-lg">${esc(it.key)}</span>
+    <div class="xp-title"><h3>${esc(it.label)} <span>· ${esc(sideName(key))}</span></h3><p>${esc(it.summary)}</p></div>
+    ${seg}<span class="badge ${tone}">${esc(xpWord(st))}</span></header>`;
+  const open = xpPol && side.steps.some((x) => x.id === xpPol) ? xpPolicy((X.policies || {})[xpPol], xpPol) : "";
+  const ready = st.live ? `<div class="xp-ready live">⟳ 실행 중 — 진행 · 확인 · 정지는 아래 <b>지금 에피소드</b></div>`
+    : st.ok ? `<div class="xp-ready ok">✓ 실행할 수 있다</div>`
+    : `<div class="xp-ready bad"><b>✕ 지금 실행할 수 없다</b><ul>${st.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div>`;
+  return head + (side.error ? `<p class="reasons bad">${esc(side.error)}</p>` : "") + xpRail(X, side, st.runner) + open
+    + xpFacts(s, it, side) + ready + xpGo(s, it, key, side, st);
+}
+
+// 사슬 — 칸 = 궤적 · 사람 확인 · 손 · 정책(누르면 체크포인트 · 계약 · sim 근거) · 넘김(조건). 실행기가 이 실험을 돌리면 지난 칸 ✓ · 지금 칸 강조.
+function xpRail(X, side, runner) {
+  const idx = runner ? Number(runner.index) : -1, won = !!runner && runner.phase === "SUCCESS";
+  const two = !side.action;                        // 두 팔 실험은 칸마다 팔을 적는다
+  return `<ol class="xp-rail">${side.steps.map((x) => {
+    const at = !runner ? "" : won || x.index < idx ? " done" : x.index === idx ? (runner.confirm ? " wait" : " run") : "";
+    const arm = two && x.sides.length ? `<i class="xs-arm">${esc(x.sides.map((k) => SIDE_SHORT[k] || k).join("+"))}</i>` : "";
+    if (x.kind === "handoff") return `<li class="xs xs-handoff${at}"><div class="xs-box"><small>넘김</small><span>${esc(x.sub)}</span></div></li>`;
+    const p = x.kind === "policy" ? (X.policies || {})[x.id] : null;
+    const meta = p ? `${p.ep != null ? `ep ${p.ep} · ` : ""}${POL_STATUS[p.status] || p.status || "—"}` : x.kind === "policy" ? "등록부에 없다" : x.sub;
+    const body = `<small>${esc(x.kind === "policy" ? x.sub : XP_STEP[x.kind] || x.kind)}${arm}</small><b>${esc(x.text)}</b><span class="xs-meta">${esc(meta)}</span>`;
+    if (x.kind !== "policy") return `<li class="xs xs-${esc(x.kind)}${at}" title="${esc(x.sub)}"><div class="xs-box">${body}</div></li>`;
+    const bad = !p || (p.issues || []).length;
+    return `<li class="xs xs-policy${at}${xpPol === x.id ? " open" : ""}${bad ? " bad" : ""}"><button class="xs-box" data-act="xp-pol" data-arg="${esc(x.id)}"
+      aria-expanded="${xpPol === x.id}" title="${esc(x.id)} — 눌러서 체크포인트 · 계약 · sim 근거">${body}</button></li>`;
+  }).join("")}</ol>`;
+}
+
+function xpPolicy(p, id) {
+  if (!p) return `<div class="xp-pol"><p class="reasons bad">${esc(id)} — 등록부에 없다</p></div>`;
+  return `<div class="xp-pol"><header><b>${esc(p.short)}</b><code>${esc(p.id)}</code>
+      <span class="badge ${(p.issues || []).length ? "bad" : p.status === "hold" ? "warn" : ""}">${esc(POL_STATUS[p.status] || p.status || "—")}</span>
+      <span class="spacer"></span><button class="btn btn-sm btn-ghost" data-act="xp-pol" data-arg="${esc(id)}">닫기</button></header>
+    ${p.summary ? `<p>${esc(p.summary)}</p>` : ""}${p.eval ? `<p class="xp-eval"><b>sim 근거</b>${esc(p.eval)}</p>` : ""}
+    <dl class="kv"><dt>체크포인트</dt><dd class="mono">${esc(p.checkpoint || "—")}</dd><dt>계약</dt><dd class="mono">${esc(p.contract || "—")}</dd>
+      <dt>카드</dt><dd class="mono">${esc(p.path)}/policy.yaml</dd></dl>
+    ${(p.issues || []).length ? `<ul class="reasons bad">${p.issues.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>`;
+}
+
+function xpFacts(s, it, side) {
+  const cups = Object.entries(side.cups || {});
+  const cupHtml = cups.map(([role, name]) => {
+    const c = fppOf(s, name);
+    return `<span class="xp-cup"><span class="lamp ${esc(c.tone)}"></span>${cups.length > 1 ? `<small>${esc(role)}</small>` : ""}<b>${esc(name)}</b>${c.xy ? `<span class="mono">${esc(c.xy)}</span>` : ""}<span class="hint">${esc(c.say)}</span></span>`;
+  }).join("");
+  const conf = side.confirms ? `확인 노드 ${side.confirms} 개 — 연속 실행도 거기서 멈춘다([다음] 으로 승인)` : "확인 노드 없음 — 끝까지 돈다(멈추려면 ■ 정지)";
+  const route = side.action ? `관리 작업 <code>${esc(side.action)}</code>` : `미션 단계 <code>${esc(side.stage)}</code>`;
+  return `<dl class="xp-facts"><dt>컵</dt><dd>${cupHtml || "—"}</dd>${it.when ? `<dt>언제</dt><dd>${esc(it.when)}</dd>` : ""}<dt>확인</dt><dd>${esc(conf)}</dd>
+    <dt>실행</dt><dd>${route} · 실행기 <code>${esc(side.runner)}</code> · <code>config/episodes/${esc(side.episode)}.yaml</code></dd></dl>`;
+}
+
+function xpGo(s, it, key, side, st) {
+  const real = s.profile.domain_class === "real", can = holding(), clean = !(side.problems || []).length;
+  const name = `${it.label} ${sideName(key)}`;
+  if (st.kind === "action") {
+    const a = st.a, ok = can && !!a && a.enabled && clean;
+    return `<div class="xp-go"><button class="btn ${real ? "btn-real" : "btn-primary"} xp-run" data-act="action-prepare" data-arg="${esc(side.action)}" ${ok ? "" : "disabled"}>▶ ${esc(name)} 실행</button>
+      <span class="hint">${can ? "승인 창에서 명령을 보고 실행한다 — 진행 · 정지는 아래 지금 에피소드" : "먼저 조작 권한을 잡을 것"}</span>
+      ${a ? actionState(a) + scriptGrip(a) : ""}</div>`;
+  }
+  const r = st.row;
+  if (!r) return "";
+  const approve = r.touches_real && !r.approved
+    ? `<button class="btn btn-real" data-act="approve" data-arg="${esc(r.id)}" ${can && r.can_approve ? "" : "disabled"}>승인…</button>` : "";
+  return `<div class="xp-go">${approve}<button class="btn ${r.touches_real ? "btn-real" : "btn-primary"} xp-run" data-act="run" data-arg="${esc(r.id)}" ${can && r.can_run && clean ? "" : "disabled"}>▶ ${esc(name)} 단계 실행</button>
+    <span class="hint">${can ? "단계가 실행기 · 정책 노드를 띄운다 — 그다음 아래 지금 에피소드의 [연속 실행]" : "먼저 조작 권한을 잡을 것"}</span></div>`;
+}
+
+// 정책 목록(접은 칸) — 등록부 전부. 실험에 쓰는 것은 그 실험으로 바로 간다.
+const shortPolicy = (id) => String(id || "").split("/").pop().replace(/^(right|left|both)_/, "").replace(/^approach_/, "");
+function renderPolicyTable(s) {
+  const X = s.experiments, cat = (S.workspace && S.workspace.catalog) || [];
+  const uses = {};
+  for (const it of (X && X.items) || []) for (const sd of Object.values(it.sides)) for (const x of sd.steps) {
+    if (x.kind === "policy" && x.id) (uses[x.id] = uses[x.id] || new Map()).set(it.id, it.label);
+  }
+  const order = { right: 0, left: 1, both: 2 };
+  const rows = [...cat].sort((a, b) => String(a.task).localeCompare(String(b.task)) || (order[a.side] ?? 3) - (order[b.side] ?? 3)
+      || String(a.id).localeCompare(String(b.id))).map((p) => {
+    const ep = /ep_?(\d+)/.exec(String(p.checkpoint || ""));
+    const used = [...(uses[p.id] || new Map()).entries()].map(([id, label]) => `<button class="btn btn-sm btn-ghost" data-act="xp-pick" data-arg="${esc(id)}">${esc(label)}</button>`).join("");
+    return `<tr class="${(p.issues || []).length ? "bad" : ""}"><td><b>${esc(shortPolicy(p.id))}</b></td><td>${esc(sideName(p.side))}</td><td>${esc(taskLabel(p.task))}</td>
+      <td>${ep ? esc(ep[1]) : "—"}</td><td>${esc(POL_STATUS[p.status] || p.status || "—")}</td><td class="pol-uses">${used || '<span class="hint">—</span>'}</td><td class="mono hint">${esc(p.id)}</td></tr>`;
+  }).join("");
+  put("pol-meta", `${cat.length} 개 · 실험에 쓰는 것 ${cat.filter((p) => uses[p.id]).length}`);
+  put("pol-table", rows ? `<table class="tilt-tbl pol-tbl"><thead><tr><th>정책</th><th>팔</th><th>작업</th><th>ep</th><th>상태</th><th>쓰는 실험</th><th>id</th></tr></thead><tbody>${rows}</tbody></table>`
+    : `<p class="hint">등록된 정책이 없다.</p>`);
 }
 
 // 화살표는 상자가 자리를 잡은 뒤에 잰다. 다음 노드 = 오른쪽 변 → 왼쪽 변(실선), 되돌아가기 = 아래로 돌아 앞 상자 밑으로(주황),
@@ -1259,14 +1428,6 @@ function scriptGrip(a) {
   const grip = g ? `<p class="hint">마지막 쥔 관절(${esc(g.outcome || "진행 중")}${g.rise_m != null ? ` · 들기 ${fmt(g.rise_m * 100, 1)} cm` : ""}): ${(g.hand_joints || []).map((n, i) => `${esc(String(n).replace(/^[rl]_hj_/, ""))} ${fmt((g.q_meas_rad?.[i] ?? NaN) * 180 / Math.PI, 0)}°`).join(" · ")}</p>` : '<p class="hint">이 물체로 쥔 기록 없음 — 쥐면 logs/grasp_c/grips.jsonl 에 남는다</p>';
   return `<div class="script-grip"><p class="hint">스크립트 잡기: ${esc(sc.steps)}</p><p>${now}</p>${grip}</div>`;
 }
-// ★10.19 sim 궤적 — 카드의 마지막 계획(시각 · 컵 자리 · sim 성공). 계획 버튼 아래에만 적는다(재생은 이 계획을 쓴다)
-function simPlan(a) {
-  if (!String(a.id).startsWith("simplan_")) return "";
-  const p = a.live?.sim;
-  if (!p) return '<p class="hint">계획 없음 — 재생 전에 sim 궤적 계획(server, 약 10 분 · 컵을 그대로 둘 것)</p>';
-  const vid = p.video ? ` · 영상 ${esc(String(p.video).split("/").pop())}` : "";
-  return `<p class="hint">재생할 계획: ${esc(p.made || "")} · 컵 (${fmt(p.cup_xy?.[0], 3)}, ${fmt(p.cup_xy?.[1], 3)}) · sim 성공 ${esc(String(p.n_ok))}/${esc(String(p.n))}${vid}</p>`;
-}
 function actionButton(a) {
   const reasons = a.reasons || [];
   const can = holding() && a.enabled;
@@ -1297,10 +1458,22 @@ function coord4(v) {
   if (v && typeof v === "object") return JSON.stringify(v, (k, x) => typeof x === "number" ? Number(x.toFixed(4)) : x);
   return v == null ? "—" : String(v);
 }
-function coordinateResult(result, source) {
-  if (!result) return `<div class="coordinate missing"><b>${esc(source)}</b> · 미수신</div>`;
-  const valid = result.valid === true;
-  return `<div class="coordinate ${valid ? "ok" : "bad"}"><b>${esc(source)}</b> · ${valid ? "유효" : "무효"}<dl class="kv"><dt>좌표 [m]</dt><dd>${esc(coord4(result.position ?? result.xyz ?? result.pose ?? null))}</dd><dt>좌표계</dt><dd>${esc(result.frame || result.frame_id || "—")}</dd><dt>취득 시각</dt><dd>${esc(result.acquired_at || result.timestamp || result.stamp || "—")}</dd><dt>출처</dt><dd>${esc(result.source || source)}</dd></dl>${esc(result.error || result.reason || "")}</div>`;
+// ★10.21 인지 상세의 물체 줄 — 좌표 한 칸(좌표계 · 취득 시각은 올리면 보인다), 무효면 이유
+function coordShort(result, source) {
+  if (!result) return `<span class="coord missing"><small>${esc(source)}</small>미수신</span>`;
+  const ok = result.valid === true;
+  const when = `좌표계 ${result.frame || result.frame_id || "—"} · 취득 ${result.acquired_at || result.timestamp || result.stamp || "—"} · 출처 ${result.source || source}`;
+  return `<span class="coord ${ok ? "ok" : "bad"}" title="${esc(when)}"><small>${esc(source)}</small>${ok ? esc(coord4(result.position ?? result.xyz ?? result.pose ?? null)) : esc(result.error || result.reason || "무효")}</span>`;
+}
+// ★10.21 policy 탭 인지 노드 — 상자 머리 · 상태 줄 · 떠 있는 유닛만(띄우는 단계 수십 줄은 아래 연결 그림에 있다)
+function boxCompact(b) {
+  const us = boxUnits(b), alive = us.filter((u) => u.alive), show = alive.length ? alive : us.slice(0, 1);
+  const lines = (b.lines || []).map((l) => `<div class="dg-line tone-${esc(l.tone)}">${esc(l.text)}</div>`).join("");
+  const rest = us.length - show.length;
+  return `<div class="pnode tone-${esc(b.tone)}"><div class="pnode-head"><span class="lamp ${esc(b.tone)}"></span><b>${esc(b.title)}</b>
+      <span class="dg-state">${esc(LINK_WORD[b.state] || b.state)}</span>${b.host ? `<span class="dg-host">${esc(b.host)}</span>` : ""}</div>
+    ${b.detail ? `<div class="dg-detail">${esc(b.detail)}</div>` : ""}${lines}${show.map((u, i) => unitRow(b, u, true, i === 0)).join("")}
+    ${rest > 0 ? `<div class="hint pnode-more">띄우는 단계 ${us.length} 개 중 ${show.length} 개 — 나머지는 아래 연결 그림</div>` : ""}</div>`;
 }
 // 관리 작업 진행 상황 — 원시 JSON 대신 작업 · 단계 · 결과 한 줄
 function managementStatus(m, group) {
@@ -1350,20 +1523,15 @@ function renderWorkspace() {
   const actions = S.actions || [];
   put("common-controls", actions.filter(a => a.group === "control").map(actionButton).join(""));
   for (const group of ["setting", "control"]) put(group + "-actions", actions.filter(a => a.group === group).map(actionButton).join(""));
-  // ★10.20 1-B 제어 모듈 에피소드(정책 카드 없음) — policy 탭 맨 위
-  const controlEp = actions.filter(a => a.control);
-  $("control-ep-panel").hidden = !controlEp.length;
-  put("control-ep-actions", controlEp.map(actionButton).join(""));
+  // ★10.21 제어 모듈 에피소드(ctl_*)는 policy 탭 실험 목록이 실행한다 — 여기서 따로 버튼을 늘어놓지 않는다
   put("management", managementStatus(S.management, "setting"));
   put("management-control", managementStatus(S.management, "control"));
   const h = w.head || {};
   const hs = $("head-settings");
   if (!(hs.contains && hs.contains(document.activeElement))) put("head-settings", headModule(h, actions.find(a => a.id === "head_control")));
-  put("perception-controls", `<fieldset><legend>인지 · ${esc(h.calib_profile || "보정 미선택")} · pan ${esc(h.pan ?? "—")} / tilt ${esc(h.tilt ?? "—")}</legend>${["fpp", "locate"].map(source => `<label class="chk"><input type="checkbox" data-perception="${source}" ${w.perception?.[source] ? "checked" : ""} ${holding() ? "" : "disabled"}>${source === "fpp" ? "FPP" : "locate"}</label>`).join("")}${(w.objects || []).map(o => `<label class="chk"><input type="checkbox" data-object="${esc(o.id)}" ${o.enabled ? "checked" : ""} ${holding() ? "" : "disabled"}>${esc(o.model || o.id)} · ${esc(o.color || o.marker_id || "마커")}${o.measured === false ? " (프리셋 · 미측정)" : ""}</label>`).join("")}</fieldset>`);
-  put("perception-nodes", (S.session?.diagram?.cols || []).flat().filter(perceptionNode).map(boxHtml).join(""));
-  put("object-cards", (w.objects || []).filter(o => o.enabled).map(o => `<article class="object-card"><h3>${esc(o.model || o.id)} · ${esc(o.color || o.marker_id || "")}</h3>${o.model === "holder" ? '<p>색 기반 locate 미지원</p>' : ""}<label>정책 입력원 <select data-input-source="${esc(o.id)}" ${holding() ? "" : "disabled"}><option value="fpp" ${o.input_source === "fpp" ? "selected" : ""}>FPP</option><option value="locate" ${o.input_source === "locate" ? "selected" : ""} ${o.model === "holder" ? "disabled" : ""}>locate</option></select></label>${coordinateResult(o.results?.fpp, "FPP")}${coordinateResult(o.results?.locate, "locate")}<button class="btn btn-sm" data-act="object-perception" data-arg="${esc(o.id)}" ${holding() ? "" : "disabled"}>인지 실행 · 좌표 재추출</button>${actions.filter(a => a.object_id === o.id).map(actionButton).join("")}</article>`).join(""));
-  put("policy-add", ["approaching", "grasping", "placing", "locking", "pouring"].map(task => `<button class="btn" data-act="policy-choose" data-arg="${task}" ${holding() ? "" : "disabled"}>＋ ${esc(taskLabel(task))}</button>`).join("") + '<button class="btn btn-ghost" data-act="policy-reset">배치 초기화</button>');
-  put("policy-cards", (w.cards || []).map((card, i) => `<article class="policy-card" style="transform:translate(${Number(card.x) || 0}px,${Number(card.y) || 0}px)"><h3>${esc(taskLabel(card.task))} · ${esc(card.policy_id)}</h3><p>${esc(card.side)} · ${esc(card.object_id || "물체 미선택")}</p><span class="badge">${card.execution_supported ? (card.task === "approaching" ? "경로 C 실행 연결" : actions.some(a => a.card_id === card.id && String(a.id).startsWith("simrun_")) ? "정책 live · sim 궤적 재생" : "rg3 실행 연결") : "배치만 지원"}</span><label>물체 <select data-card-object="${esc(card.id)}"><option value="">물체 선택</option>${(w.objects || []).filter(o => o.enabled).map(o => `<option value="${esc(o.id)}" ${card.object_id === o.id ? "selected" : ""}>${esc(o.id)}</option>`).join("")}</select></label><div class="actions">${[["left","←"],["right","→"],["up","↑"],["down","↓"]].map(([d,label]) => `<button class="btn btn-sm" aria-label="${esc(card.id)} ${d}" data-act="policy-move" data-arg="${esc(card.id)}:${d}">${label}</button>`).join("")}<button class="btn btn-sm" data-act="policy-remove" data-arg="${esc(card.id)}">제거</button></div>${actions.filter(a => a.card_id === card.id).map(a => actionButton(a) + scriptGrip(a) + simPlan(a)).join("")}</article>`).join(""));
+  put("perception-controls", `<fieldset class="pctl"><legend>인지 · ${esc(h.calib_profile || "보정 미선택")} · pan ${esc(h.pan ?? "—")} / tilt ${esc(h.tilt ?? "—")}</legend>${["fpp", "locate"].map(source => `<label class="chk"><input type="checkbox" data-perception="${source}" ${w.perception?.[source] ? "checked" : ""} ${holding() ? "" : "disabled"}>${source === "fpp" ? "FPP" : "locate"}</label>`).join("")}${(w.objects || []).map(o => `<label class="chk"><input type="checkbox" data-object="${esc(o.id)}" ${o.enabled ? "checked" : ""} ${holding() ? "" : "disabled"}>${esc(o.model || o.id)} · ${esc(o.color || o.marker_id || "마커")}${o.measured === false ? " (프리셋 · 미측정)" : ""}</label>`).join("")}</fieldset>`);
+  put("perception-nodes", (S.session?.diagram?.cols || []).flat().filter(perceptionNode).map(boxCompact).join(""));
+  put("object-cards", (w.objects || []).filter(o => o.enabled).map(o => `<div class="obj-row"><b>${esc(o.model || o.id)} · ${esc(o.color || o.marker_id || "")}</b>${o.model === "holder" ? '<span class="hint">색 기반 locate 미지원</span>' : ""}<label>정책 입력 <select data-input-source="${esc(o.id)}" ${holding() ? "" : "disabled"}><option value="fpp" ${o.input_source === "fpp" ? "selected" : ""}>FPP</option><option value="locate" ${o.input_source === "locate" ? "selected" : ""} ${o.model === "holder" ? "disabled" : ""}>locate</option></select></label>${coordShort(o.results?.fpp, "FPP")}${coordShort(o.results?.locate, "locate")}<button class="btn btn-sm" data-act="object-perception" data-arg="${esc(o.id)}" ${holding() ? "" : "disabled"}>인지 · 좌표 재추출</button>${actions.filter(a => a.object_id === o.id).map(actionButton).join("")}</div>`).join("") || '<p class="hint obj-none">고른 물체가 없다 — 위에서 고른다</p>');
   selectTab(activeTab);
 }
 // 10.17 사용자 결정 3: 화면 · 에피소드 · 보고서만 tilt — 작업 공간 키(pouring)와 코드 모듈(pour_*.py)은 그대로
@@ -1375,22 +1543,15 @@ async function saveWorkspace(patch) {
   await call("POST", "/api/workspace", patch);
   await refresh();
 }
-function choosePolicy(task) {
-  // ★10.19 사용자 "각 해당 정책들만 보여지게": 고른 작업의 정책만(작업은 서버 workspace.task_of) — 오른팔 → 왼팔 순
-  const order = { right: 0, left: 1, both: 2 };
-  const catalog = (S.workspace?.catalog || []).filter(p => p.task === task)
-    .sort((a, b) => (order[a.side] ?? 3) - (order[b.side] ?? 3) || String(a.id).localeCompare(String(b.id)));
-  modal(`<h3>${esc(taskLabel(task))} 정책 선택</h3><p>파일 선택과 화면 복원은 정책을 실행하지 않는다.</p>${catalog.map(p => `<article class="object-card"><h4>${esc(p.id)}</h4><dl class="kv"><dt>정책 파일</dt><dd>${esc(p.file || p.path || p.id)}</dd><dt>체크포인트</dt><dd>${esc(p.checkpoint || "—")}</dd><dt>계약</dt><dd>${esc(p.contract || "—")}</dd><dt>팔</dt><dd>${esc(p.side)}</dd><dt>지원 물체</dt><dd>${esc((p.supported_objects || p.objects || []).join(", "))}</dd></dl>${p.execution_supported ? "" : `<p class="hint">${esc(p.execution_reason || "배치만 지원")}</p>`}<button class="btn" data-act="policy-add-card" data-arg="${esc(task)}:${esc(p.id)}">노드 추가</button></article>`).join("") || `<p>등록된 ${esc(taskLabel(task))} 정책이 없다.</p>`}<button class="btn" data-act="modal-close">취소</button>`);
-}
 let videoAttached = false;
 function updateVideo(s) {
   const img = $("fpp-video");
   if (!videoAttached) {
     videoAttached = true;
-    img.addEventListener("error", () => { $("video-retry").hidden = false; $("video-status").textContent = "영상 연결 끊김 · 마지막 화면을 사용하지 말 것"; });
+    img.addEventListener("error", () => { if (showVideo) { $("video-retry").hidden = false; $("video-status").textContent = "영상 연결 끊김 · 마지막 화면을 사용하지 말 것"; } });
     img.addEventListener("load", () => { $("video-retry").hidden = true; $("video-status").textContent = "영상 수신 중"; });
-    img.src = "/api/video";
   }
+  if (!img.getAttribute("src")) img.src = "/api/video";
   const v = s.video || S.video;
   if (v) $("video-retry").hidden = !(v.stale || v.connected === false);
   if (v) $("video-status").textContent = v.stale ? "오래된 영상 · 현재 화면 아님" : v.connected === false ? "영상 연결 끊김" : `영상 수신 중${v.age_s != null ? ` · ${fmt(v.age_s, 1)} s 전` : ""}`;
@@ -1421,17 +1582,13 @@ Object.assign(acts, {
     return prepareAction("head_control", extra);
   },
   "object-perception"(id) { return prepareAction("perception_refresh", {object_ids:[id]}); },
-  "policy-choose": choosePolicy,
-  async "policy-add-card"(arg) {
-    const [task, ...parts] = arg.split(":"), policy_id = parts.join(":");
-    const p = S.workspace.catalog.find(p => p.id === policy_id);
-    await saveWorkspace({cards:[...S.workspace.cards, {id:`card-${Date.now()}`,task,policy_id,side:p.side,object_id:"",x:0,y:0}]});
-  },
-  "policy-remove"(id) { return saveWorkspace({cards:S.workspace.cards.filter(c => c.id !== id)}); },
-  "policy-reset"() { return saveWorkspace({cards:S.workspace.cards.map(c => ({...c,x:0,y:0}))}); },
-  "policy-move"(arg) {
-    const index = arg.lastIndexOf(":"), id = arg.slice(0,index), d = arg.slice(index+1);
-    return saveWorkspace({cards:S.workspace.cards.map(c => c.id !== id ? c : {...c,x:(c.x || 0)+(d === "left" ? -24 : d === "right" ? 24 : 0),y:(c.y || 0)+(d === "up" ? -24 : d === "down" ? 24 : 0)})});
+  "xp-pick"(id) { xpSel = { ...xpSel, id }; xpPol = ""; xpSave(); xpSyncRunner(); render(); },
+  "xp-side"(side) { xpSel = { ...xpSel, side }; xpSave(); xpSyncRunner(); render(); },
+  "xp-pol"(id) { xpPol = xpPol === id ? "" : id; render(); },
+  "xp-video"() {
+    showVideo = !showVideo;
+    if (!showVideo) $("fpp-video").removeAttribute("src");   // 닫으면 스트림을 끊는다(열 때 다시 붙인다)
+    render();
   },
 });
 document.addEventListener("change", e => {
@@ -1439,7 +1596,6 @@ document.addEventListener("change", e => {
   let patch;
   if (d.perception) patch = {perception:{...S.workspace.perception,[d.perception]:t.checked}};
   if (d.object || d.inputSource) patch = {objects:S.workspace.objects.map(o => ({id:o.id,enabled:d.object === o.id ? t.checked : o.enabled,input_source:d.inputSource === o.id ? t.value : o.input_source}))};
-  if (d.cardObject) patch = {cards:S.workspace.cards.map(c => c.id === d.cardObject ? {...c,object_id:t.value} : c)};
   if (d.headDraft) {
     const action = (S.actions || []).find(a => a.id === "head_control");
     headDraft = { ...(headDraft || headDefaults(S.workspace.head || {}, action?.calib_profiles)), [d.headDraft]: d.headDraft === "calib_profile" ? t.value : Number(t.value) };

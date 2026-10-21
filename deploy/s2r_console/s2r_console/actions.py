@@ -37,6 +37,9 @@ CARD_PREFIXES = ('rg3_', 'simplan_', 'simrun_')
 #  에피소드 파일 · 물체는 미션 단계(episode_<에피소드>_<팔>) 그대로다.
 CONTROL_PREFIX = 'ctl_'
 CONTROL_EPISODES = {'grasp_b': '1-B 제어 모듈(정책 없음) — FP++ 컵 → ready_carry 접근 → [확인] 닫기 → 10 cm 들기 3 s',
+                    # ★10.21 사용자 "정책 카드 배치는 일단 제거": 카드로만 돌던 경로 C(ap05 접근 → 스크립트 쥐기)를 고정 작업으로 —
+                    #   에피소드 파일의 정책 · 컵 그대로(카드 물체 · 정책 바꿈 없음)
+                    'grasp_c': '경로 C — ap05 접근이 사전 파지 자리에서 멈추면 스크립트로 닫고 10 cm 들기(확인 노드 없음)',
                     # ★10.20 사용자 "grasp_d 를 1-b 접근에 rcg03 으로 교체" — 에피소드 파일의 정책 · 컵 그대로
                     'grasp_d': '경로 D — 1-B 접근(ready_carry, 사전 파지 자리에서 멈춤) → rcg03 이 쥐고 10 cm 들기(확인 노드 없음)',
                     # ★10.20 밤 사용자 "정책2개가 연달아 진행되는 세트를 만들어 두기 · 내일 실험1" — 에피소드 파일의 정책 · 컵 그대로
@@ -44,7 +47,7 @@ CONTROL_EPISODES = {'grasp_b': '1-B 제어 모듈(정책 없음) — FP++ 컵 �
                     # ★10.21 사용자 "ap05 + rcg_04 또한 준비 필요" — 경로 E 와 같은 넘김, 넘겨받는 정책만 rcg04
                     'grasp_f': '경로 F — ap05 접근 → 사전 파지 자리에서 같은 노드가 rcg04 로 넘겨 쥐고 10 cm 들기(확인 노드 없음)'}
 #: 실행 기록 · 오류 글의 이름
-CONTROL_LABELS = {'grasp_b': '1-B', 'grasp_d': '경로 D', 'grasp_e': '경로 E', 'grasp_f': '경로 F'}
+CONTROL_LABELS = {'grasp_b': '1-B', 'grasp_c': '경로 C', 'grasp_d': '경로 D', 'grasp_e': '경로 E', 'grasp_f': '경로 F'}
 #: 확인 노드(닫기 전)에서 사람을 기다리는 시간까지 — rg3(300 s)보다 길다
 CONTROL_TIMEOUT_S = 600.0
 #: 팔을 움직이는 카드 작업 — 같은 팔 제어 명령 · 정책 정지가 끊고, 도는 동안 작업 공간 설정을 못 바꾼다
@@ -566,6 +569,9 @@ class ActionManager:
             card = next((c for c in s.workspace.cards if 'rg3_' + c['id'] == action_id), None)
             if card is not None and card.get('task') == 'approaching':
                 result['script'] = self._script_view(s, card)
+        if action_id.startswith(f'{CONTROL_PREFIX}grasp_c_') and side in ARMS:
+            # ★10.21 경로 C 고정 작업(카드 대신) — 카드 때처럼 스크립트 쥐기 단계 · 이 컵의 마지막 쥔 관절을 보인다
+            result['script'] = self._script_view(s, {'side': side, 'object_id': self._episode_cup(stages[0])})
         if action_id.startswith(('simplan_', 'simrun_')) and getattr(s, 'workspace', None) is not None:
             cid = action_id.split('_', 1)[1]
             card = next((c for c in s.workspace.cards if c['id'] == cid), None)
@@ -1004,6 +1010,15 @@ class ActionManager:
         name = description['id'].removeprefix(CONTROL_PREFIX).rsplit('_', 1)[0]
         self._drive_episode(s, sid, original, commands, control_side(description['id']), label=CONTROL_LABELS.get(name, name),
                             timeout_s=CONTROL_TIMEOUT_S)
+
+    def _episode_cup(self, sid):
+        """에피소드 파일의 컵(objects.CUP) FP++ 물체 이름 — 못 읽으면 ""."""
+        try:
+            topic = str(yaml.safe_load((self.console.repo / f"config/episodes/{sid.removeprefix('episode_')}.yaml")
+                                       .read_text())['objects']['CUP']['topic'])
+        except (OSError, KeyError, TypeError, yaml.YAMLError):
+            return ''
+        return topic.split('/')[2] if topic.startswith('/objects/') else topic
 
     def _control_object_note(self, s, sid):
         """1-B 는 에피소드 파일의 컵 하나를 쓴다 — 무엇을 FP++ 로 보는지 미리 보인다(막지는 않는다: scene 단계가 신선한 정지 좌표를 본다)."""

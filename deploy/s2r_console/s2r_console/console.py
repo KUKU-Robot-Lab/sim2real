@@ -25,6 +25,7 @@ from . import object_health as OH
 from . import robot_view as R
 from . import spawn_map as SM
 from . import tilt_view as TV
+from . import experiments as XV
 from . import units as U
 from .console_state import STALE_S, derive
 from .diagram import _LAUNCHER as PERCEPT_BOX
@@ -1073,7 +1074,9 @@ class Console:
                 "episode_runner": runner, "episode_runners": list(runners.values()),
                 # ★10.17 policy 탭 tilt 평가 묶음(경로 A · C · B · 계획 검사 · 손 쥐기 · 회차 기록) — RH56F1 프로파일만
                 #   tilt 에피소드는 두 팔이라 기본 실행기가 돈다
-                "tilt": TV.view(self.repo, runners.get(EPISODE_NODE) or runner) if s.profile.id.startswith("rh56f1") else None}
+                "tilt": TV.view(self.repo, runners.get(EPISODE_NODE) or runner) if s.profile.id.startswith("rh56f1") else None,
+                # ★10.21 사용자 "정책을 찾기 어렵고 실험 진행이 어려움": policy 탭 실험 목록(경로 → 정책 사슬 · 실행 길)
+                "experiments": XV.view(self.repo, [st.id for st in s.mission.stages]) if s.profile.id.startswith("rh56f1") else None}
 
     @staticmethod
     def _fpp_view(s: Session, obs) -> dict | None:

@@ -42,10 +42,19 @@ def test_a_fake_profile_on_the_real_domain_does_not_load(repo):
     {"schema": "v0"}, {"extra": 1}, {"domain": {"id": 97}}, {"domain": {"id": "x", "class": "fake"}},
     {"status_nodes": []}, {"mission": "nope.yaml"}, {"policy": "no/such/dir"},
     {"latency": {"from": "obs", "to": "ghost"}}, {"latency": {"from": "obs"}},
+    {"timing": "no"}, {"timing": False, "latency": {"from": "obs", "to": "pd"}},   # ★10.21 끈 지연을 재라고 적지 않는다
 ])
 def test_malformed_profiles_are_refused(repo, over):
     with pytest.raises(ProfileError):
         parse(raw(**over), path=repo / "p.yaml", repo=repo)
+
+
+def test_rh56f1_profiles_hide_the_chain_timing_because_the_two_pd_run_side_by_side(repo):
+    for name in ("rh56f1_fake", "rh56f1_real"):
+        p = parse(__import__("yaml").safe_load((SIM2REAL / f"deploy/s2r_console/profiles/{name}.yaml").read_text()),
+                  path=SIM2REAL / f"deploy/s2r_console/profiles/{name}.yaml", repo=SIM2REAL)
+        assert p.timing is False and p.as_dict()["timing"] is False
+    assert parse(raw(), path=repo / "p.yaml", repo=repo).timing is True
 
 
 def test_missing_required_key(repo):

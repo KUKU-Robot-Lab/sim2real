@@ -213,12 +213,15 @@ def test_policy_task_of():
     assert task_of("dg5f_m/cup_grasp/left_i14") == "grasping"
 
 
-def test_choose_policy_lists_only_that_task():
+def test_policy_card_placement_is_removed_from_the_screen():
+    """★10.21 사용자 "카드 배치(←→↑↓)는 일단 제거" — 화면에 카드 추가 · 옮기기 · 지우기가 없다(실험 목록이 대신 실행한다)."""
     from pathlib import Path
 
-    js = (Path(__file__).resolve().parents[2] / "deploy/s2r_console/s2r_console/web/console.js").read_text()
-    body = js[js.index("function choosePolicy(task)"):js.index("let videoAttached")]
-    assert ".filter(p => p.task === task)" in body
+    web = Path(__file__).resolve().parents[2] / "deploy/s2r_console/s2r_console/web"
+    js, html = (web / "console.js").read_text(), (web / "index.html").read_text()
+    for gone in ("policy-move", "policy-add-card", "policy-choose", "policy-reset", "function choosePolicy"):
+        assert gone not in js
+    assert 'id="policy-cards"' not in html and 'id="policy-add"' not in html
 
 
 def test_approach_policies_are_runnable_as_path_c_cards():
@@ -241,4 +244,5 @@ def test_approach_policies_are_runnable_as_path_c_cards():
     assert card_stage({"task": "approaching", "side": "left"}) == "episode_grasp_c_left"
     assert card_stage({"task": "grasping", "side": "right"}) == "episode_grasp_d_right"   # ★10.20 경로 A 폐지 → D
     js = (repo / "deploy/s2r_console/s2r_console/web/console.js").read_text()
-    assert "경로 C 실행 연결" in js and "function scriptGrip(a)" in js
+    # ★10.21 카드 배치를 화면에서 뺐다 — 경로 C 는 실험 목록의 고정 작업 ctl_grasp_c_<팔>, 스크립트 쥐기 단계는 그 실행 칸에 보인다
+    assert "function scriptGrip(a)" in js and "actionState(a) + scriptGrip(a)" in js
