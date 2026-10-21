@@ -1,0 +1,22 @@
+id: rh56f1/place/right_n05
+task: open-rh_r_place-lstm
+side: right
+checkpoint: last_open-rh_r_place-lstm_ep_3400_rew_843.9791.pth
+md5: b656b78e0120c7e493d8185821ca3c57
+source: server:/home/oem/rl_ws/hdgp/log/rl_games/open-rh/right/place/newton_05_r/nn/last_open-rh_r_place-lstm_ep_3400_rew_843.9791.pth
+  · 10.22 s2r 가 server 에서 직접 받음(rsync, md5 같음)
+summary: 놓기 정책 newton_05 ep3400 — 들기 끝(rcg 잡기 뒤) 쥔 컵을 컵홀더 자리에 놓고 팔을 뺀다 · 물체 3종(source240 · source200 · shaker)
+  · Newton 학습(Isaac Lab 3) · 래치 GRU 연결 학습 · hdgp origin/main(rh_place_r 마지막 16f25c219)
+status: candidate
+eval: 'learn:place sim(Newton, 손마다 360 회): 기준(FP++ 스냅숏 붙임) 98.1 % · 완벽 90.6 % · ★ev08(hdgp b846472af, FP++ 없이 grasp_state 인계
+  자세 + 파지 축 15° 안 실측 오차 짝) 오른손 96.4 % · 물리 오류 0 · report server ~/rl_ws/our_source/rh_place_runs/report_1021_newton05/'
+interface: obs 101 (91 + 물체 one-hot 3 + 래치 1 + 이웃 홀더 6 = 0) · action 13 (팔 관절 증분 7 · 손 6) · 손 = position
+deploy:
+  max_episode_s: 5.0
+  flow: '★10.22 사용자 "Place 세팅 진행" — 카드 = pick_place_f_right(경로 F 잡고 들기 → 이 정책). 붙인 자세 = 잡기 노드의 grasp_state
+    넘김 묶음(attach_source bundle), 래치 컵 = 손바닥 FK ⊗ 래치 GRU(latch/est_r.pt md5 fdf46702d8765853e41c638a4bdd2d13). 홀더 1(10.20 스캔 기준 학습 범위 안)'
+note: >-
+  10.22 s2r 등록. learn:place 인계(10.21) · 확정(10.22: 재학습 없음). 계약 = tools/build_rh_aglt_contract.py --run <이 폴더> --attach bundle.
+  래치 GRU(latch/est_r.pt)는 git 밖 — server ~/logs/place_newton/est/est_r.pt 에서 받는다(같은 폴더 est_*_np1.pt 는 newton_05 가 쓴 파일이 아님).
+  학습 목표 홀더 = sim 슬롯 1(오른손 y −0.223~−0.037 · 왼손 +0.037~+0.223, x 0.375~0.380) — 노드 holder 는 실물 번호, 자세 범위로 거른다.
+  이웃 홀더 관측 6 칸은 학습 내내 0(시작 뱅크에 홀더 자세 없음) — 배포도 0. 운용(learn:place): 바깥쪽 이웃 칸은 비워 둔다(차 있으면 63~84 %).

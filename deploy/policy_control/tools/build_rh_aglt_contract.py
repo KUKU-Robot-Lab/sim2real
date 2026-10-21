@@ -3,6 +3,7 @@
 
     python3 tools/build_rh_aglt_contract.py --run deploy/policies/rh56f1/aglt/right_rg3wo [--checkpoint nn/<pth>] [--out …]
     python3 tools/build_rh_aglt_contract.py --run deploy/policies/rh56f1/place/right_i09    # rh_place 런 → rh_place_contract.json(10.04)
+    python3 tools/build_rh_aglt_contract.py --run deploy/policies/rh56f1/place/right_n05 --attach bundle   # 10.22 newton_05
 
 손 관측 순서는 문제가 없다 — rh_aglt 는 손 관절을 이름(프로필 순)으로 찾는다. 왼팔은 hdgp tasks/rh_aglt_l/profile.py 와
 같은 규칙(이름 r_ → l_, 손 값 그대로)으로 RH56F1_RIGHT 에서 만든다.
@@ -56,11 +57,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--checkpoint", help="nn/ 에 하나가 아니면 명시")
     ap.add_argument("--hdgp", default=str(_paths.RL_WS / "hdgp"))
     ap.add_argument("--out", help="기본 <run>/rh_aglt_contract.json")
+    ap.add_argument("--attach", choices=P.ATTACH_SOURCES, default="fpp",
+                    help="rh_place 붙인 자세: fpp(리셋 순간 FP++ 한 장) | bundle(잡기의 grasp_state 넘김 묶음, 10.22 newton_05)")
     args = ap.parse_args(argv)
     run = Path(args.run).resolve()
     place = P.is_rh_place_run(A.read_env(run / "params" / "env.yaml"))
+    if args.attach != "fpp" and not place:
+        raise SystemExit("--attach 는 rh_place 런에만")
+    kw = {"attach": args.attach} if place else {}
     c = (P.build if place else A.build)(run, _checkpoint(run, args.checkpoint), load_profile(Path(args.hdgp), "rh56f1_right"),
-                                        URDF, asset=ASSET)
+                                        URDF, asset=ASSET, **kw)
     if c.hand_command == "admittance":          # ★10.08 학습 어드민턴스 명목값 = 실기 드라이버 값이어야 한다
         real, reg_per_rad = real_admittance()
         bad = A.admittance_mismatch(c.hand_admittance, real, reg_per_rad)

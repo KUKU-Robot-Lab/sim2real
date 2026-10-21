@@ -17,7 +17,8 @@ from . import tilt_view as TV
 ARMS = ("right", "left")
 #: (화면 키, 에피소드 머리, 이름) — 한 팔 파지 · 들기. 머리는 actions.CONTROL_EPISODES 의 키와 같다(시험이 맞춘다).
 GRASP = (("1-B", "grasp_b", "1-B"), ("C", "grasp_c", "경로 C"), ("D", "grasp_d", "경로 D"),
-         ("E", "grasp_e", "경로 E"), ("F", "grasp_f", "경로 F"))
+         ("E", "grasp_e", "경로 E"), ("F", "grasp_f", "경로 F"),
+         ("FP", "pick_place_f", "경로 F + 놓기"))     # ★10.22 잡고 들기 → newton_05 놓기
 CONTROL_PREFIX = "ctl_"
 SIDE_KO = {"right": "오른팔", "left": "왼팔"}
 #: 사슬에서 빼는 노드 — 홈 출발 · 배치 사진 · 끝 · 손 펴기는 모든 실험에 같다
@@ -89,7 +90,8 @@ def _steps(ep) -> list[dict]:
                     out += [{**one, "kind": "policy", "id": b.policy, "text": short_name(b.policy), "sub": f"접근 · {stop}"},
                             {**one, "kind": "script", "text": "스크립트 쥐기", "sub": "닫기 → 10 cm 들기 → 3 s 유지"}]
                 else:
-                    out.append({**one, "kind": "policy", "id": b.policy, "text": short_name(b.policy), "sub": "파지 · 들기"})
+                    sub = "놓기 · 손 빼기" if b.kind == "place" else "파지 · 들기"     # ★10.22 경로 F + 놓기(n05)
+                    out.append({**one, "kind": "policy", "id": b.policy, "text": short_name(b.policy), "sub": sub})
     return out
 
 

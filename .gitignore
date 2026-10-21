@@ -48,6 +48,7 @@ logs/policy/**/trace.npz
 deploy/policies/**/nn/*.pth
 # ★10.21 손 안 컵 추정기 ckpt(정책 폴더 inhand/, md5 는 inhand/inhand.yaml) — 가중치처럼 git 밖
 deploy/policies/**/inhand/*.pt
+deploy/policies/**/latch/*.pt
 # 10.20 은퇴 정책(deploy/policies_retired/README.md) 체크포인트도 git 밖
 deploy/policies_retired/**/nn/*.pth
 deploy/policies/**/*.npz

@@ -218,12 +218,16 @@ def test_experiments_view_reads_the_chain_from_the_episode_files():
     v = XV.view(ROOT, ids)
     assert not v.get('error')
     items = {i['id']: i for i in v['items']}
-    assert [i['key'] for i in v['items'] if i['group'] == 'grasp'] == ['1-B', 'C', 'D', 'E', 'F']
+    assert [i['key'] for i in v['items'] if i['group'] == 'grasp'] == ['1-B', 'C', 'D', 'E', 'F', 'FP']
     assert [i['key'] for i in v['items'] if i['group'] == 'tilt'] == ['D', 'C', 'B']
     f = items['grasp_f']['sides']['right']
     assert [(s['kind'], s['text']) for s in f['steps']] == [('policy', 'ap05'), ('handoff', '넘김'), ('policy', 'rcg04')]
     assert f['action'] == 'ctl_grasp_f_right' and f['runner'] == 'episode_runner_right' and f['cups'] == {'CUP': 'source240b_blue'}
     assert '2 cm' in f['steps'][1]['sub'] and '0.03 m/s' in f['steps'][1]['sub']
+    fp = items['pick_place_f']['sides']['left']                                   # ★10.22 경로 F + 놓기(n05)
+    assert [(s['kind'], s['text']) for s in fp['steps']] == [('policy', 'ap05'), ('handoff', '넘김'), ('policy', 'rcg04'), ('policy', 'n05')]
+    assert fp['steps'][-1]['sub'] == '놓기 · 손 빼기' and fp['action'] == 'ctl_pick_place_f_left'
+    assert items['pick_place_f']['summary'] == 'ap05 → rcg04 → n05'
     assert items['grasp_c']['summary'] == 'ap05 → 스크립트 쥐기'
     assert items['grasp_b']['sides']['left']['confirms'] == 1
     d = items['tilt_base_d']['sides']['both']

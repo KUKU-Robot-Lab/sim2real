@@ -371,6 +371,9 @@ class Family:
                                                                                       errors, label)
 
 
+#: 에피소드 실행기가 reset 전에 노드 파라미터 object 를 SetParameters 로 넣는 가족(episode_ros._set_object, 정책 kind aglt · place)
+OBJECT_PARAM_FAMILIES = ("rh_aglt", "rh_place")
+
 FAMILIES = {
     "pour_fj": Family(name="pour_fj_node", schema=F.SCHEMA, load=F.load_contract, roles=F.ROLES,
                       cups=(("src", "cup_src_topic", "/objects/cup_src/pose"), ("rcv", "cup_rcv_topic", "/objects/cup_rcv/pose")),
@@ -418,8 +421,9 @@ class PourFjNode(LeanNodeMixin, Node):
         from policy_control.fk_numpy import UrdfChainFK
 
         self.fam = FAMILIES[family]
-        # ★10.03 CPU(lean_node). rh_aglt 는 에피소드 실행기가 reset 전에 object 를 SetParameters 로 넣는다(10.12 다물체) — 서비스를 둔다
-        super().__init__(self.fam.name, **{**lean_node_kwargs(parameter_services=family == "rh_aglt"), **kw})
+        # ★10.03 CPU(lean_node). rh_aglt · rh_place 는 에피소드 실행기가 reset 전에 object 를 SetParameters 로 넣는다(10.12 다물체,
+        #   ★10.22 다물체 place newton_05) — 서비스를 둔다
+        super().__init__(self.fam.name, **{**lean_node_kwargs(parameter_services=family in OBJECT_PARAM_FAMILIES), **kw})
         self.node_name = self.get_name()          # -r __node:=rh_aglt_node_right 로 팔마다 이름을 가른다
         for name, default in (("contract", ""), ("robot", ""), ("device", "cpu"), ("reset_tol_rad", 0.15),
                               ("max_gap_ticks", 3), ("publish_target", True), ("max_episode_s", -1.0), ("ns", ""),

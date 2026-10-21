@@ -33,7 +33,9 @@ rh56f1/
     right_rcg04
   place/
     left_i01
+    left_n05
     right_i09
+    right_n05
   pour_fj/
     both_f01
 ```
@@ -73,14 +75,18 @@ rh_aglt 가 cyl60 을 쥐고 (0.25, ∓0.12, +0.12)에 멈춘 상태를 인계�
 | id | 쪽 | status | 체크포인트 | 설명 | sim 평가 | 미션 기본 |
 |---|---|---|---|---|---|---|
 | `rh56f1/place/left_i01` | left | candidate | ep800 | 우 place i09 ep4000 거울 → 보상 iter_01 로 이어 학습 ep800 | 결정론 128 env × 1800 스텝(2511 에피소드) 완벽 0.851 · 부분 0.066 · 실패 0.084 · 같은 조건 거울 원본 0.306 | rh56f1_control, rh56f1_fake |
+| `rh56f1/place/left_n05` | left | candidate | ep3400 | 놓기 정책 newton_05 ep3400 — 들기 끝(rcg 잡기 뒤) 쥔 컵을 컵홀더 자리에 놓고 팔을 뺀다 · 물체 3종(source240 · source200 · shaker) · Newton 학습(Isaac Lab 3) · 래치 GRU 연결 학습 · hdgp origin/main(rh_place_r 마지막 16f25c219) | learn:place sim(Newton, 손마다 360 회): 기준(FP++ 스냅숏 붙임) 97.5 % · 완벽 91.7 % · ★ev08(hdgp b846472af, FP++ 없이 grasp_state 인계 자세 + 파지 축 15° 안 실측 오차 짝) 왼손 95.6 % · 물리 오류 0 · report server ~/rl_ws/our_source/rh_place_runs/report_1021_newton05/ | rh56f1_control, rh56f1_fake |
 | `rh56f1/place/right_i09` | right | candidate | ep4000 | cyl60 을 쥔 채 인계받아 홀더 1 · 2 에 내려놓기(보상 iter_09) | 결정론 128 env 완벽 0.907 · 부분 0.067 · 실패 0.026 · 실측 오차 넣으면 완벽 0.825 | rh56f1_control, rh56f1_fake |
+| `rh56f1/place/right_n05` | right | candidate | ep3400 | 놓기 정책 newton_05 ep3400 — 들기 끝(rcg 잡기 뒤) 쥔 컵을 컵홀더 자리에 놓고 팔을 뺀다 · 물체 3종(source240 · source200 · shaker) · Newton 학습(Isaac Lab 3) · 래치 GRU 연결 학습 · hdgp origin/main(rh_place_r 마지막 16f25c219) | learn:place sim(Newton, 손마다 360 회): 기준(FP++ 스냅숏 붙임) 98.1 % · 완벽 90.6 % · ★ev08(hdgp b846472af, FP++ 없이 grasp_state 인계 자세 + 파지 축 15° 안 실측 오차 짝) 오른손 96.4 % · 물리 오류 0 · report server ~/rl_ws/our_source/rh_place_runs/report_1021_newton05/ | rh56f1_control, rh56f1_fake |
 
 학습 조건(각 폴더 `params/env.yaml` 에서 읽음):
 
 | id | 보상 | 학습 물체 | 명령 지연 | FP++ (학습) | 시작 | 목표 |
 |---|---|---|---|---|---|---|
 | `rh56f1/place/left_i01` | rh_place_l/iter_01 | cyl60 (노란 원통 Ø60×170) | 없음 | 없음 | 인계 뱅크 (hold 0) | 홀더 0 · 1 |
+| `rh56f1/place/left_n05` | rh_place_r/iter_36 | source240_real · source200_real · shaker_c_real (one-hot) | 팔 관절별 실측 × 0.0–1.5 (ADR) · 손 4–6 스텝 | 없음 | 인계 뱅크 (hold 0) | 홀더 1 |
 | `rh56f1/place/right_i09` | rh_place_r/iter_09 | cyl60 (노란 원통 Ø60×170) | 없음 | 없음 | 인계 뱅크 (hold 0) | 홀더 1 · 2 |
+| `rh56f1/place/right_n05` | rh_place_r/iter_36 | source240_real · source200_real · shaker_c_real (one-hot) | 팔 관절별 실측 × 0.0–1.5 (ADR) · 손 4–6 스텝 | 없음 | 인계 뱅크 (hold 0) | 홀더 1 |
 
 ## RH56F1 양팔 붓기 (pour_fj)
 
@@ -166,7 +172,9 @@ python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_aglt-pla
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_rcg03/nn/last_open-rh_r_aglt-lstm_ep_1400_rew_8038.287.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_aglt-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_rcg04/nn/last_open-rh_r_aglt-lstm_ep_2800_rew_9215.9375.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_l_place-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/place/left_i01/nn/last_open-rh_l_place-lstm_ep_800_rew_935.48755.pth
+python scripts/reinforcement_learning/rl_games/play.py --task open-rh_l_place-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/place/left_n05/nn/last_open-rh_l_place-lstm_ep_3400_rew_806.58496.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_place-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/place/right_i09/nn/place_r_i09_ep4000.pth
+python scripts/reinforcement_learning/rl_games/play.py --task open-rh_r_place-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/place/right_n05/nn/last_open-rh_r_place-lstm_ep_3400_rew_843.9791.pth
 python scripts/reinforcement_learning/rl_games/play.py --task open-rh_b_pour_fj-play-lstm --headless --num_envs 64 --seed 42 --checkpoint ~/rl_ws/sim2real/deploy/policies/rh56f1/pour_fj/both_f01/nn/last_open-rh_b_pour_fj-lstm_ep_2300_rew_1107.8425.pth
 ```
 
@@ -195,5 +203,7 @@ python scripts/reinforcement_learning/rl_games/play.py --task open-rh_b_pour_fj-
 - `rh56f1/aglt/right_rcg03` — 10.20 s2r_1st 등록(newton 전달, 사용자 '학습 둘다 종료하고 결정론적 평가 진행 · s2r_1st에 최종 정책 이관'). rcg02 를 대체(rcg02 는 deploy/policies_retired 로). 학습 env.yaml · agent.yaml 그대로 — rcg02 와 다른 키는 학습 전용(ready_begin_every 4 · adr_start_increment · adr_metric_source/approach_succ_* · 재질 이벤트 캐시)이라 계약은 체크포인트 · 해시만 다르다.
 - `rh56f1/aglt/right_rcg04` — 10.21 s2r_1st 등록. rcg03 과 학습 env.yaml 차이는 학습 전용 키뿐(adr_start_increment · newton_dr_once · 보상 경로 iter_03 → iter_04), agent.yaml 은 load_path · 실험 이름만 다르다 — 계약은 체크포인트 · 해시만 다르다(rh_aglt_contract.json diff 로 확인). rcg03 은 그대로 둔다. ★10.21 손 안 컵 추정기 기본 켬(inhand/inhand.yaml, 노드 inhand_est:=auto) — 끊김(지각 손바닥–컵 < 0.10 m) 뒤 정책 컵 = 손바닥 FK ⊗ GRU, 들기 성공 끝 grasp_state 넘김 묶음(logs/inhand/). learn:grasp/lift rcg_04 전용 · 실기 검증 전.
 - `rh56f1/place/left_i01` — server GPU0 place_l_i01(보상 reward_gen/rh_place_l/iter_01). 평가는 홀더 고정 배치(holder_y_shift_fixed 0 · DR 축소), params/ 는 학습 런 그대로(평가 때 바꾼 홀더 DR 값 아님). 목표 y 구간 −0.06~0 완벽 0.85 · 0~+0.20 완벽 0.851. 배포는 rh56f1/place/right_i09 note 와 같다(rh_place_contract.json · rh_place_node · policy_place_left). FP++ 지각 · 부착 없이 학습, 명령 지연 0. hdgp 51013e96. 놓음 게이트(release_open_min_rad 0.15) sim 검증(PLACE 10.04): 인계 때 쥔 양 중앙 0.53 rad(0.40~0.64), 놓음 때 연 양 중앙 0.334 · 하위 1 % 0.217 — 0.15 미만 0 %. 실기 파지가 덜 쥔 채 넘어오면 '쥔 양 대비 비율' 게이트로 바꾼다.
+- `rh56f1/place/left_n05` — 10.22 s2r 등록. learn:place 인계(10.21) · 확정(10.22: 재학습 없음). 계약 = tools/build_rh_aglt_contract.py --run <이 폴더> --attach bundle. 래치 GRU(latch/est_l.pt)는 git 밖 — server ~/logs/place_newton/est/est_l.pt 에서 받는다(같은 폴더 est_*_np1.pt 는 newton_05 가 쓴 파일이 아님). 학습 목표 홀더 = sim 슬롯 1(오른손 y −0.223~−0.037 · 왼손 +0.037~+0.223, x 0.375~0.380) — 노드 holder 는 실물 번호, 자세 범위로 거른다. 이웃 홀더 관측 6 칸은 학습 내내 0(시작 뱅크에 홀더 자세 없음) — 배포도 0. 운용(learn:place): 바깥쪽 이웃 칸은 비워 둔다(차 있으면 63~84 %).
 - `rh56f1/place/right_i09` — server GPU0 place_r_i09(보상 reward_gen/rh_place_r/iter_09) ep4000. 좌 place_l_i01 의 출발점. 학습 코드 hdgp 51013e96. 10.04 배포 연결: rh_place_contract.json(tools/build_rh_aglt_contract.py 가 place 런을 알아본다) · rh_place_node · 미션 단계 policy_place_<팔>. 목표 = 홀더 원점 + 0.060 m, 시작 = pd 가 붙잡은 aglt 마지막 joint_target, 컵은 reset 때 FP++ 한 장으로 손바닥에 붙인다(학습 attached), 놓음 판정 = 손끝 촉각 < 1 N · 관절 힘 < 300 g(임시) 5 스텝. FP++ 지각 · 부착 없이 학습(fpp_enable · fpp_attach_enable false), 명령 지연 0. 홀더 x 0.380 · 목표 홀더 1 · 2. 놓음 게이트(release_open_min_rad 0.15) sim 검증(PLACE 10.04, 128 env 결정론): 인계 때 쥔 양 중앙 0.41 rad(0.38~0.46), 놓음 때 연 양 중앙 0.257 · 하위 1 % 0.209 — 0.15 미만 0.2~0.4 %. 실기 문턱은 0.25 를 넘기지 않는다(쥔 양 상한).
+- `rh56f1/place/right_n05` — 10.22 s2r 등록. learn:place 인계(10.21) · 확정(10.22: 재학습 없음). 계약 = tools/build_rh_aglt_contract.py --run <이 폴더> --attach bundle. 래치 GRU(latch/est_r.pt)는 git 밖 — server ~/logs/place_newton/est/est_r.pt 에서 받는다(같은 폴더 est_*_np1.pt 는 newton_05 가 쓴 파일이 아님). 학습 목표 홀더 = sim 슬롯 1(오른손 y −0.223~−0.037 · 왼손 +0.037~+0.223, x 0.375~0.380) — 노드 holder 는 실물 번호, 자세 범위로 거른다. 이웃 홀더 관측 6 칸은 학습 내내 0(시작 뱅크에 홀더 자세 없음) — 배포도 0. 운용(learn:place): 바깥쪽 이웃 칸은 비워 둔다(차 있으면 63~84 %).
 - `rh56f1/pour_fj/both_f01` — t2r_rh4_f01(pour_bi_rh 4번째 사이클 첫 full-joint 런). 손 direct 범위가 관절 한계 전 범위 · 접촉 동결 없음 — 그 뒤 런(de926392 grip 범위 + 1 N 동결, da3e33fb 팔 절대 목표)과 행동 규칙이 다르다. 계약이 런의 env.yaml 에서 그 시대 규칙을 읽는다. 손 관측 순서는 추정(assumed) — verified 전. 실기 성능 후보가 아니라 배관 · fake 확인용.

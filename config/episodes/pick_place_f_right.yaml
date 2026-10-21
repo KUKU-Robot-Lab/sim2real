@@ -1,0 +1,28 @@
+# 경로 F + 놓기 — right 손: ap05 접근 → rcg04 쥐고 들기(grasp_f_right 와 같은 노드 · 값) → newton_05 가 홀더 1 에 놓기.
+# ★10.22 사용자 "Place 세팅 진행" — learn:place 확정(재학습 없음, newton_05 ep3400 · sim ev08: FP++ 없이 grasp_state 인계 자세에서
+#   오른손 96.4 % · 왼손 95.6 %, 손마다 360 회).
+#   · 놓기 시작 = 들기 끝 자세 그대로(학습 시작 뱅크 = rcg 들기 끝 상태). 붙인 자세 = 잡기 노드가 남긴 grasp_state 넘김 묶음
+#     (logs/inhand/, place 노드 bundle:=auto) — 묶음이 없으면 놓기 reset 이 거부한다(FP++ 로 붙이지 않는다).
+#   · 홀더 1 = 학습 목표 홀더 범위(right: 계약 holder_range) 안의 실물 홀더(10.20 스캔 config/cup_holder_poses_5090_v1.yaml).
+#     실물 x 는 학습 범위(0.375~0.380)보다 1 cm 남짓 바깥 — 노드 holder_tol_m 0.02 안이라 경고만 남기고 진행.
+#   · learn:place 운용 주의: 바깥쪽 이웃 칸에 컵이 있으면 성공률이 63~84 % 로 떨어진다 — 이웃 칸은 비워 둔다.
+# 흐름: 홈 → 장면 기록 → 잡고 들기(경로 F) → 놓기(래치 = 자리 위 · 정렬 3 틱 → 손 펴기 15 틱 → 놓음 → 정책이 팔을 뺌) → 홈.
+episode: {name: pick_place_f_right, version: 1}
+objects:
+  CUP: {topic: /objects/source240b_blue/pose}
+holders: {PLACE_HOLDER: 1}
+holder_poses: config/cup_holder_poses_5090_v1.yaml
+policies:
+  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/right_rcg04}
+  rh_place_r: {policy: rh56f1/place/right_n05, kind: place, side: right}
+trajectories:
+  go_home: {kind: rehome, sides: [right]}
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 rehome으로 복구한다.
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  - {id: grasp_lift, type: policy, name: rh_aglt_r, target_object: CUP, policy_object: source240_real, expect: {right_hand: CUP}}
+  - {id: place_cup, type: policy, name: rh_place_r, source_object: CUP, target_holder: PLACE_HOLDER, policy_object: source240_real,
+     expect: {right_hand: EMPTY, cup_placed: true}}
+  - {id: go_home_end, type: trajectory, name: go_home, expect: {pose: HOME}}
+  - {id: done, type: terminal, result: SUCCESS}

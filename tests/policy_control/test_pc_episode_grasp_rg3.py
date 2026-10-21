@@ -132,3 +132,9 @@ def test_a_multi_object_policy_node_keeps_its_parameter_services():
     from policy_control.lean_node import lean_node_kwargs
     assert lean_node_kwargs() == {"start_parameter_services": False}
     assert lean_node_kwargs(parameter_services=True) == {"start_parameter_services": True}
+    # ★10.22 다물체 place(newton_05)도 실행기가 object 를 넣는다 — 10.22 fake 에서 place 노드에 서비스가 없어 멈췄다
+    import inspect
+    from policy_control import episode_ros
+    from policy_control.pour_fj_node import FAMILIES, OBJECT_PARAM_FAMILIES
+    assert 'p.kind in ("aglt", "place")' in inspect.getsource(episode_ros)
+    assert {f"rh_{k}" for k in ("aglt", "place")} <= set(OBJECT_PARAM_FAMILIES) <= set(FAMILIES)

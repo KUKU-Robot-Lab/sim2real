@@ -22,6 +22,7 @@ cyl60 · 왼쪽 파랑 cyl60_blue — FP++ 가 색으로 가른다. 10.04~10.07 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -78,7 +79,9 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             #   된다고 보고 이전처럼 끊어서 진행이 아니라 정책2개가 연달아 진행되는 세트를 만들어 두기 · 내일 실험1")
             "grasp_e_right", "grasp_e_left",
             # ★10.21 경로 F — 경로 E 와 같은 넘김, 넘겨받는 정책만 rcg04(사용자 "ap05 + rcg_04 또한 준비 필요")
-            "grasp_f_right", "grasp_f_left")
+            "grasp_f_right", "grasp_f_left",
+            # ★10.22 사용자 "Place 세팅 진행" — 경로 F 잡고 들기 → newton_05 놓기(붙인 자세 = 잡기의 grasp_state 넘김 묶음)
+            "pick_place_f_right", "pick_place_f_left")
 #: ★10.20 사용자 "영상은 필요 없음. 일단 기본 off" — 카메라 영상 · FP++ 실시간 좌표 기록(vision-3090)과 끝난 뒤 보고서 영상
 #   만들기(episode_media.py)를 기본으로 끈다. 10.20 실기: 보고서 영상 정리가 옛 회까지 다시 가져오며 6 분 넘게 팔 작업을 붙잡아
 #   rehome · tilt_now 승인이 막혔다. 켜려면 True 로 바꾸고 이 생성기를 다시 돌린다(미션 YAML 이 바뀐다).
@@ -717,6 +720,14 @@ def _episode(name: str):
     return S.load(REPO / "config" / "episodes" / f"{name}.yaml")
 
 
+def _place_attach(contract: Path) -> str:
+    """rh_place 계약의 붙인 자세 출처(★10.22 newton_05 = bundle) — 못 읽으면 ""."""
+    try:
+        return str(json.loads(contract.read_text()).get("attach_source", "fpp"))
+    except (OSError, ValueError):
+        return ""
+
+
 def _episode_run(name: str, real: bool) -> list:
     """에피소드 단계: (fake 컵 · 홀더) → 정책 노드들 → episode_runner_node → 상황판에서 진행(수동 확인) → 내린다."""
     from policy_control import policy_registry as R
@@ -736,10 +747,16 @@ def _episode_run(name: str, real: bool) -> list:
                                  ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--x", "0.25",
                                   "--y", "0.20" if side == "left" else "-0.20", "--z", "0.29", "--topic", t, *follow],
                                  background=True))
+        # ★10.22 홀더 자세 파일이 있으면 fake 홀더도 그 자세 — 실행기도 같은 파일을 같은 토픽에 낸다(두 발행이 어긋나지 않게)
+        from policy_control.episode_ros import load_holder_poses
+        real_h = load_holder_poses(REPO / ep.holder_poses) if ep.holder_poses else {}
         for hid in sorted(set(ep.holders.values())):
-            cmds.append(_cmd(f"fake 홀더 {hid} — /objects/cup_holder_{hid}/pose (latched)",
-                             ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--latched", "--rate", "2", "--x", "0.38",
-                              "--y", str(FAKE_HOLDER_Y[hid]), "--z", "0.235", "--topic", f"/objects/cup_holder_{hid}/pose"],
+            hx, hy, hz = ((float(real_h[hid][0][0]), float(real_h[hid][0][1]), float(real_h[hid][0][2])) if hid in real_h
+                          else (0.38, FAKE_HOLDER_Y[hid], 0.235))
+            cmds.append(_cmd(f"fake 홀더 {hid} — /objects/cup_holder_{hid}/pose (latched"
+                             + (f", {ep.holder_poses} 자세)" if hid in real_h else ")"),
+                             ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--latched", "--rate", "2", "--x", f"{hx:.4f}",
+                              "--y", f"{hy:.4f}", "--z", f"{hz:.4f}", "--topic", f"/objects/cup_holder_{hid}/pose"],
                              background=True))
     first_obj = next(iter(ep.objects))
     sides = sorted(_episode_sides(ep))
@@ -803,7 +820,7 @@ def _episode_run(name: str, real: bool) -> list:
                             "-p", f"handoff_contract:={{repo}}/deploy/policies/{b.handoff}/rh_aglt_contract.json",
                             "-p", "goal_max:=1", "-p", "freeze_rule:=lift_hold", "-p", "freeze_lift_m:=0.07",
                             "-p", f"freeze_hold_steps:={hold_}"]
-                route = {"grasp_f": "경로 F"}.get(name[:7], "경로 E")   # ★10.21 경로 F(ap05 → rcg04) — 같은 넘김, 이름만
+                route = "경로 F" if b.handoff.endswith("_rcg04") else "경로 E"   # ★10.21 경로 F(ap05 → rcg04) — 같은 넘김 · ★10.22 pick_place_f 도
                 end_note = (f"{route}: 접근 정책 → 사전 파지 자리(2 cm)에 {ag.still_s:g} s 멈추면 같은 노드에서 {b.handoff} 로 넘김 → "
                             f"첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 {hold_ / 60:g} s 쥠 유지에 끝남 · 접근 {ag.approach_max_s:g} s 안에 못 오면 멈춤")
                 max_s = f"{episode_s(b.approach_grasp):.1f}"   # 접근 최악 + 넘겨받은 정책 15 s + 3 s(실행기 _node_max_s 와 같은 식)
@@ -824,7 +841,9 @@ def _episode_run(name: str, real: bool) -> list:
             src = next((j for n in ep.nodes for j in n.jobs if j.role == role), None)
             obj = src.source_object if src and src.source_object else first_obj
             hid = ep.holders.get(src.target_holder) if src and src.target_holder else PLACE_HOLDER[b.side]
-            cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — 홀더 {hid} · 놓은 뒤 스스로 끝남",
+            bundle_note = (" · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)" if e is not None and e.contract
+                           and _place_attach(REPO / "deploy" / "policies" / b.policy / e.contract) == "bundle" else "")
+            cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — 홀더 {hid} · 놓은 뒤 스스로 끝남{bundle_note}",
                              ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_place_node.py", "--ros-args",
                               # 한 팔에 aglt 와 같이 뜬다 — 서비스는 <팔>_place, 이벤트는 그 팔 토픽(pd 가 reset · stop 적용)
                               "-r", f"__node:=rh_place_node_{b.side}", "-p", f"ns:={b.side}_place",

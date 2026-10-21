@@ -100,10 +100,12 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                "episode_grasp_d_right#3",                       # ★10.20 경로 D(1-B 접근 → rcg03)
                                "episode_grasp_e_right#3",                       # ★10.20 밤 경로 E(ap05 → rcg03 넘김)
                                "episode_grasp_f_right#3",                       # ★10.21 경로 F(ap05 → rcg04 넘김)
+                               "episode_pick_place_f_right#3",                  # ★10.22 경로 F + 놓기(newton_05)
                                "episode_tilt_base_d#3",                         # ★10.20 경로 A 폐지 → tilt 경로 D(ap05 → rcg03)
                                "episode_tilt_base_c#3"} & set(units)            # 10.17 tilt 기본 궤적 경로 C
     place = d.box("rh_place_node_right")
-    assert set(place.units) == {"policy_place_right#1", "episode_pick_place_right#4"}
+    assert set(place.units) == {"policy_place_right#1", "episode_pick_place_right#4",
+                                "episode_pick_place_f_right#4"}                 # ★10.22 경로 F + 놓기(newton_05)
     # ★10.19 사용자 "좌우 동시 실행": 한 팔 에피소드는 팔마다 실행기(episode_runner_<팔>), 두 팔 tilt 는 기본 실행기
     runner = d.box("episode_runner")
     assert set(runner.units) == {"episode_tilt_base_d#7",   # 실기: 앞에 CPU 기록 한 줄(10.08) · ★10.20 경로 A 폐지 → D, 정책 노드 둘
@@ -116,7 +118,8 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                                               f"episode_grasp_b_{side}#5",
                                                               f"episode_grasp_d_{side}#6",   # ★10.20 경로 D(aglt 노드 하나)
                                                               f"episode_grasp_e_{side}#6",   # ★10.20 밤 경로 E(aglt 노드 하나, 넘김)
-                                                              f"episode_grasp_f_{side}#6"}   # ★10.21 경로 F(경로 E + rcg04)
+                                                              f"episode_grasp_f_{side}#6",   # ★10.21 경로 F(경로 E + rcg04)
+                                                              f"episode_pick_place_f_{side}#7"}   # ★10.22 경로 F + 놓기
 
 
 def test_one_arms_pd_without_and_with_publishing_is_one_box_and_only_the_quiet_one_mutes_the_drive(real):
@@ -141,7 +144,8 @@ def test_in_the_episode_the_runner_gives_the_holder_and_goal_and_alone_the_holde
     holder = {w.src: w.units for w in d.wires if w.dst == "rh_place_node_right" and w.topic == "/objects/cup_holder_1/pose"}
     # ★10.13 원격 인지면 마커 노드가 없다 — 단독 놓기의 홀더는 미션 밖(바깥 상자)에서 온다
     alone = "obj_cup_holder_1" if GEN.REMOTE_PERCEPTION else "cup_holders"
-    assert holder == {alone: ("policy_place_right#1",), "episode_runner_right": ("episode_pick_place_right#4",)}
+    assert holder == {alone: ("policy_place_right#1",),
+                      "episode_runner_right": ("episode_pick_place_right#4", "episode_pick_place_f_right#4")}   # ★10.22 경로 F + 놓기
     goal = {w.src: w for w in d.wires if w.dst == "rh_aglt_node_right" and w.topic == "/policy_control/right/goal"}
     # ★10.19 한 팔 에피소드는 오른팔 실행기, 두 팔 tilt 는 기본 실행기가 목표를 낸다
     # ★10.20 옛 정책 정리 뒤: 계약이 없는 정책 노드는 단위에서 빠진다 → 목표를 내는 실행기는 오른손 aglt 노드를 실제로 띄우는 단계의 것만
@@ -230,8 +234,8 @@ def test_the_fake_profile_gets_the_same_picture_with_fake_hands():
     assert not [b.id for b in d.boxes if b.id.startswith("unit_")]
     assert d.box("hand_right_drive").ros == ("/fake_rh56f1_right",)
     assert d.box("hand_right_state").ros == ("/rh56f1_state_right",)        # hands:=none — fake 플랜트의 손 상자가 없다
-    holders = d.box("cup_holders")                                          # fake 홀더 넷 = 실기 홀더 노드 상자 하나
-    assert len(holders.units) == 4 and holders.title == W.HOLDER_TITLE and not holders.ros
+    holders = d.box("cup_holders")                                          # fake 홀더 여섯(★10.22 경로 F + 놓기 둘 추가) = 실기 홀더 노드 상자 하나
+    assert len(holders.units) == 6 and holders.title == W.HOLDER_TITLE and not holders.ros
 
 
 # ── 노드 소스의 이름 ────────────────────────────────────────────────────
