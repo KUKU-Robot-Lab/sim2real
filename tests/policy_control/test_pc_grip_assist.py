@@ -216,7 +216,8 @@ def _fake_node(c, **params):
             "squeeze_boost_rad": A.GripAssist.squeeze_boost_rad, **params}
     chain = N.AgltChain(c, policy=None)
     chain.reset = lambda meas: None                   # 체인 리셋 자체는 다른 테스트가 본다 — 여기선 파라미터 배선만
-    return SimpleNamespace(chain=chain, get_parameter=lambda n: SimpleNamespace(value=vals[n])), chain
+    # ★10.21 손 안 컵 추정기(_inhand_run)는 test_pc_inhand_est 가 본다 — 여기선 끔
+    return SimpleNamespace(chain=chain, get_parameter=lambda n: SimpleNamespace(value=vals[n]), _inhand_run=lambda handoff: None), chain
 
 
 def test_the_node_wires_the_assist_parameters_into_the_chain_at_reset(c):

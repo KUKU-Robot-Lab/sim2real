@@ -17,3 +17,5 @@ deploy:
     경로 E(ap05 → rcg03)와 같은 넘김 기구 · 홈에서 단독으로는 돌리지 않는다'
 note: 10.21 s2r_1st 등록. rcg03 과 학습 env.yaml 차이는 학습 전용 키뿐(adr_start_increment · newton_dr_once · 보상 경로 iter_03 → iter_04),
   agent.yaml 은 load_path · 실험 이름만 다르다 — 계약은 체크포인트 · 해시만 다르다(rh_aglt_contract.json diff 로 확인). rcg03 은 그대로 둔다.
+  ★10.21 손 안 컵 추정기 기본 켬(inhand/inhand.yaml, 노드 inhand_est:=auto) — 끊김(지각 손바닥–컵 < 0.10 m) 뒤 정책 컵 = 손바닥 FK ⊗ GRU,
+  들기 성공 끝 grasp_state 넘김 묶음(logs/inhand/). learn:grasp/lift rcg_04 전용 · 실기 검증 전.

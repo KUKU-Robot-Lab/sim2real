@@ -46,6 +46,8 @@ logs/policy/**/trace.npz
 # deploy/policies/ — 배포 후보 정책 등록소 (deploy/policy_control/tools/fetch_run.py 가 채운다).
 #   카드(policy.yaml)·fetch.json·params·계약은 추적하고, 무거운 산출물만 뺀다.
 deploy/policies/**/nn/*.pth
+# ★10.21 손 안 컵 추정기 ckpt(정책 폴더 inhand/, md5 는 inhand/inhand.yaml) — 가중치처럼 git 밖
+deploy/policies/**/inhand/*.pt
 # 10.20 은퇴 정책(deploy/policies_retired/README.md) 체크포인트도 git 밖
 deploy/policies_retired/**/nn/*.pth
 deploy/policies/**/*.npz

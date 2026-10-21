@@ -69,7 +69,7 @@ class CupDropout:
         self.held_since: float | None = None   # 쥔 신호가 켜진 손바닥 시각(쥔 상태가 된 그 연속 구간의 처음)
         self._on_since: float | None = None
         self.released = False             # 쥔 상태였다가 풀렸다(다시 쥔 상태가 되면 False)
-        self.mode = "live"                # live | hold(잡기 전 마지막 값) | follow(손바닥 FK)
+        self.mode = "live"                # live | hold(잡기 전 마지막 값) | follow(손바닥 FK) | est(★10.21 손 안 컵 추정기)
         self.age_s = 0.0
         self.follows = 0                  # 이 에피소드에서 따라가기를 시작한 횟수
         self._rel = None                  # 따라가기 상대 자세 (p, R) — 새 프레임이 오면 버린다
@@ -129,15 +129,23 @@ class CupDropout:
         self.stop_reason = f"컵 위치 끊김 {self.age_s:.1f} s — {why} · 멈춤"
         raise DropoutStop(self.stop_reason)
 
-    def step(self, now: float, got, grasped: bool, t_palm: float, palm_pos, palm_R, cup):
+    def step(self, now: float, got, grasped: bool, t_palm: float, palm_pos, palm_R, cup, covered: bool = False):
         """got = 노드가 마지막으로 받은 (받은 시각, pos, quat, stamp) 또는 None. cup = 지금까지 고른 컵 자세.
-        반환 = 정책이 볼 컵 자세(따라가기면 손바닥 FK). 멈출 때는 DropoutStop."""
+        반환 = 정책이 볼 컵 자세(따라가기면 손바닥 FK). 멈출 때는 DropoutStop.
+
+        ★10.21 covered = 손 안 컵 추정기(inhand_est)가 끊김 뒤 컵을 내는 중(체인이 컵을 손바닥 FK ⊗ GRU 로 바꾼다) — 잡기 전 끊김
+        한도 · 쥔 상태 따라가기는 하지 않는다(mode est). 쥠이 풀린 뒤 끊김 멈춤은 그대로(떨어진 컵을 추정기로 쫓지 않는다)."""
         self._record(t_palm, palm_pos, palm_R)
         self._grasp(bool(grasped), t_palm)
         if got is not None and got[3] != self._stamp:
             self._stamp, self._t_new, self._rel = got[3], float(got[0]), None
         self.age_s = float("inf") if self._t_new is None else max(0.0, float(now) - self._t_new)
         c = self.cfg
+        if covered:
+            if self.released and self.age_s > c.follow_s:
+                self._stop("쥠이 풀린 뒤")
+            self.mode = "live" if self.age_s <= c.follow_s else "est"
+            return cup
         if self.held:
             if self.age_s <= c.follow_s:
                 self.mode = "live"

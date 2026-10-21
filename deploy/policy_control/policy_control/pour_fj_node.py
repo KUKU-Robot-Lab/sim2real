@@ -41,6 +41,7 @@ from policy_control import pour_fj as F  # noqa: E402
 from policy_control import rh_aglt as A  # noqa: E402
 from policy_control import rh_aglt_goals as G  # noqa: E402
 from policy_control import approach_grasp as AG  # noqa: E402
+from policy_control import inhand_est as IE  # noqa: E402
 from policy_control import rh_place as P  # noqa: E402
 from policy_control.episode_master import EpisodeBook  # noqa: E402
 from policy_control.joint_obs import quat_to_matrix  # noqa: E402
@@ -227,6 +228,7 @@ class AgltChain:
         self.cup_fresh = True                       # ★10.14 노드가 매 틱 넣는다 — False 면 성공 · lift_hold 카운터 멈춤
         self.ag = None                              # ★10.17 경로 C(approach_grasp.ApproachGrasp) — 노드 파라미터 approach_grasp
         self.fk = None                              # ★10.17 경로 C IK 들기 — 노드가 넣는다
+        self.inhand = None                          # ★10.21 손 안 컵 추정기(inhand_est.InhandRun) — 노드가 reset 때 넣는다
 
     def lift_grasped(self, m: A.RaMeas) -> bool:
         """B 들림 판정 — 관측 컵 z − 리셋 컵 z > freeze.lift_m AND |컵 − 손바닥| < lift_grasp_palm_m."""
@@ -250,6 +252,8 @@ class AgltChain:
             raise PourFjNodeError("rh_aglt reset needs the cup pose (goal = cup at reset + offset)")
         self.c = A.select_object(self.base, self.object_name)   # 물체를 모르면 RhAgltError(조용한 0 one-hot 금지)
         self.policy = self.base_policy
+        if self.inhand is not None:                 # ★10.21 래치 · GRU · grasp_state 를 새 에피소드로(물체 = 넘김 묶음 one-hot)
+            self.inhand.reset(self.c.active_object)
         if self.ag is not None:                     # ★10.17 경로 C 는 닫기 때 디코더를 바꾼다 — 에피소드마다 접근 정책 디코더로
             self.dec = A.RaDecoder(self.c, self.dec.assist)
             self.ag.reset()
@@ -284,11 +288,15 @@ class AgltChain:
     def step(self, meas: dict) -> tuple[np.ndarray, np.ndarray, dict]:
         if self.ag is not None and self.ag.scripted:   # ★10.17 경로 C — 접근 뒤는 스크립트 닫기 · 판정 · 들기
             return self.ag.step(self, meas)
-        m = meas["arm"]
+        m = m_meas = meas["arm"]
+        hand_q = np.array([m.hand_q[j] for j in self.c.side().hand_joints], float)
+        if self.inhand is not None:                 # ★10.21 끊긴 뒤 정책이 보는 컵 = 손바닥 FK ⊗ GRU(sim gru_loop_hook perceive)
+            m = self.inhand.perceive(m, self.dec.state["arm"].hand_target, hand_q)   # 관측 · 디코더 · 목표(들기 판정)가 쓴다
         obs = A.build_obs(self.c, m, self.dec, self.goal, self.prev)
+        if self.inhand is not None:                 # 다음 틱 GRU 입력 = 이번 행동을 낸 관측(sim obs_buf)
+            self.inhand.remember(obs)
         a = np.clip(np.asarray(self.policy.forward(obs), float), -self.c.action_clip, self.c.action_clip)
         active = self.step_i >= self.c.hold_steps
-        hand_q = np.array([m.hand_q[j] for j in self.c.side().hand_joints], float)
         near = float(np.linalg.norm(np.asarray(m.cup_pos, float) - np.asarray(m.palm_pos, float)))   # 10.14 grasp_near_m
         targets = self.dec.step(a, active=active, tactile_n=m.tactile_n, hand_q=hand_q, joint_force=m.joint_force,
                                 obj_palm_m=near, cup_z=float(np.asarray(m.cup_pos, float)[2]))   # ★10.19 팔 들림 래치
@@ -303,8 +311,8 @@ class AgltChain:
         #   배포는 앞 단계(ap05)가 데려온 자리에서 hold_steps 만 기다린다(LSTM 은 그동안 정지한 사전 파지 자세를 본다).
         self.prev = A.ready_hold_action(self.c) if (self.c.arm_start == "ready" and not active) else np.clip(a, -1.0, 1.0)
         self.step_i += 1
-        if self.ag is not None:
-            self.ag.after_policy(self, m)
+        if self.ag is not None:                     # ★10.21 넘김 판정 · 넘김 목표는 측정 컵(sim 은 참값 컵 — 쥐기 전 컵은 월드에 서 있다)
+            self.ag.after_policy(self, m_meas)
         return obs, a, targets
 
 
@@ -433,6 +441,8 @@ class PourFjNode(LeanNodeMixin, Node):
                               ("fpp_gate_radius_m", GateCfg.radius_m), ("fpp_gate_max_hold_s", GateCfg.max_hold_s),
                               ("cup_dropout_stop_s", DropoutCfg.stop_s), ("cup_dropout_near_m", DropoutCfg.near_m),
                               ("cup_dropout_near_max_s", DropoutCfg.near_max_s), ("cup_dropout_follow_s", CUP_STALE_S),
+                              # ★10.21 손 안 컵 추정기(inhand_est): auto = 정책 폴더 inhand/inhand.yaml 이 있으면 켬 · off · <yaml 경로>
+                              ("inhand_est", "auto"), ("inhand_drop_m", 0.0),
                               *((param, topic) for _, param, topic in self.fam.cups)):
             if name == "approach_grasp":            # ★10.19 -p approach_grasp:=on 을 ROS 는 YAML 불리언 True 로 읽는다 —
                 from rcl_interfaces.msg import ParameterDescriptor   # 문자열로만 선언하면 노드가 뜨자마자 죽었다(경로 C rc=1)
@@ -609,16 +619,20 @@ class PourFjNode(LeanNodeMixin, Node):
                     seen = gate.step(live, time.monotonic(), palm_pos, active=not est.attached and not bool(g))
                 out = est.step(bool(g), float(t_palm), palm_pos, palm_R, seen)
                 drop = getattr(self, "dropouts", {}).get(role)
+                inh = getattr(getattr(self, "chain", None), "inhand", None)
+                covered = inh is not None and inh.dropped  # ★10.21 끊긴 뒤 컵은 추정기(손바닥 FK ⊗ GRU)가 낸다 — 체인이 바꾼다
                 if drop is not None and not est.attached:  # ★10.19 끊김 — 따라가기면 손바닥 FK, 멈출 때는 DropoutStop
                     mode = drop.mode
-                    out = drop.step(time.monotonic(), self.cups.get(role), bool(g), float(t_palm), palm_pos, palm_R, out)
+                    out = drop.step(time.monotonic(), self.cups.get(role), bool(g), float(t_palm), palm_pos, palm_R, out,
+                                    covered=covered)
                     if drop.mode != mode and "follow" in (mode, drop.mode):
                         self.get_logger().info(f"cup {role}: {mode} → {drop.mode} · {drop.as_dict()}")
                 following = drop is not None and drop.following
                 fresh_map = getattr(self, "cup_fresh", None)
                 if fresh_map is not None:                 # ★10.14 성공 판정용 — 붙었거나(따라가기 포함), 거르기가 안 붙든 신선한 live 일 때만
                     live_ok = bool(getattr(self, "cup_latch", False)) or self._fresh_cup(role) is not None
-                    fresh_map[role] = cup_is_fresh(bool(est.attached) or following, live_ok, gate is not None and gate.holding)
+                    fresh_map[role] = covered or cup_is_fresh(bool(est.attached) or following, live_ok,
+                                                              gate is not None and gate.holding)
                 if est.source != before:                 # 붙고 뗀 순간을 로그로 — 상태(status.cup)에도 같은 값이 계속 실린다
                     self.get_logger().info(f"cup {role}: {before} → {est.source} · {est.as_dict()}")
                 return out
@@ -784,7 +798,58 @@ class PourFjNode(LeanNodeMixin, Node):
                 self.chain.ag.next = self._handoff_policy()
             if cfg is not None:
                 self.chain.fk = self.fk["arm"]
+        if hasattr(self.chain, "inhand"):               # ★10.21 손 안 컵 추정기 — 잘못된 설정 · 파일이면 reset 거부
+            nxt = getattr(getattr(self.chain, "ag", None), "next", None)
+            self.chain.inhand = self._inhand_run(None if nxt is None else nxt[0])
         self.chain.reset(meas)
+
+    def _inhand_run(self, handoff):
+        """★10.21 사용자 "추정기들 붙여야 s2r 될것 같은 디폴트 세팅으로 해둬야함" — inhand_est.InhandRun 또는 None(끔).
+
+        inhand_est auto(기본): 경로 D 면 넘겨받는 정책(rcg) 폴더, 아니면 이 노드 계약 폴더의 inhand/inhand.yaml 이 있으면 켠다
+        (지금은 rcg_04 만 — 경로 E 의 rcg03 은 추정기가 학습되지 않아 꺼진 채). off = 끔. 그 밖 = inhand.yaml 경로.
+        처음 한 번 읽어 둔다(ckpt · hdgp 사본 — reset 마다 다시 읽지 않는다)."""
+        v = str(self.get_parameter("inhand_est").value or "auto").strip()
+        if v == "off":
+            return None
+        hand_path = Path(str(self.get_parameter("handoff_contract").value)) if handoff is not None else None
+        cands = ([(hand_path, handoff)] if handoff is not None else []) + [(Path(str(self.get_parameter("contract").value)), self.contract)]
+        if v == "auto":
+            hit = next(((p, c) for p, c in cands if IE.find_spec(p) is not None), None)
+            if hit is None:
+                return None
+            spec, c = IE.find_spec(hit[0]), hit[1]
+        else:
+            spec = IE.load_spec(v)
+            c = next((c for p, c in cands if p.resolve().parent == spec.root.parent), handoff or self.contract)
+        drop = float(self.get_parameter("inhand_drop_m").value)
+        key = (spec.path, drop, id(c))
+        cached = getattr(self, "_inhand", None)
+        if cached is None or cached[0] != key:
+            run = IE.InhandRun(spec, c, drop_m=drop if drop > 0.0 else None)
+            self._inhand = (key, run)
+            self.get_logger().info(f"손 안 컵 추정기 켬: {spec.path} · 끊김 {run.drop_m:.3f} m · GRU {spec.gru} · "
+                                   f"grasp_state {spec.grasp_state} · hdgp {spec.commit[:9]}")
+        return self._inhand[1]
+
+    def _inhand_capture(self, reason: str) -> None:
+        """★10.21 들기 성공으로 끝날 때 grasp_state 넘김 묶음을 남긴다(다음 정책 place · tilt 입력). 실패해도 끝내기를 막지 않는다."""
+        inh = getattr(self.chain, "inhand", None)
+        if inh is None:
+            return
+        dec = getattr(self.chain, "dec", None)
+        try:                                            # 손 관절 = 마지막 정책 틱 측정(perceive 가 기록) — sim 훅 _capture 와 같다
+            path = inh.save_bundle(None, {"node": self.node_name, "episode": self.book.episode, "reason": reason,
+                                            "contract": str(self.get_parameter("contract").value),
+                                            "handoff_contract": str(self.get_parameter("handoff_contract").value),
+                                            "hand_target": None if dec is None else [round(float(x), 4) for x in dec.state["arm"].hand_target]})
+        except Exception as exc:                        # noqa: BLE001 — 기록 실패로 에피소드 끝내기를 막지 않는다
+            self.get_logger().warning(f"손 안 컵 넘김 묶음 기록 실패: {exc}")
+            return
+        if path is None:
+            self.get_logger().warning(f"손 안 컵 넘김 묶음 없음 — 끊기지 않았다(거리 {inh.dist_m} m ≥ {inh.drop_m} m) · 물체 {inh.object}")
+        else:
+            self.get_logger().info(f"손 안 컵 넘김 묶음 {path} · {inh.as_dict()}")
 
     def _after_step(self) -> bool:
         """스텝 뒤 계열 고유 끝내기. True = 에피소드를 끝냈다.
@@ -795,12 +860,15 @@ class PourFjNode(LeanNodeMixin, Node):
         ag = getattr(self.chain, "ag", None)
         if ag is not None and ag.end is not None:       # ★10.17 경로 C — 성공은 stop(pd 가 붙든다), 실패는 abort(들지 않고 멈춤)
             self._log_grip(ag)
+            if ag.end[0] == "stop":
+                self._inhand_capture(str(ag.end[1]))
             self._end(*ag.end)
             return True
         why = G.end_reason(getattr(self.chain, "goals", None), bool(self.get_parameter("stop_on_target").value),
                          int(self.get_parameter("goal_max").value))
         if why is None:
             return False
+        self._inhand_capture(why)       # ★10.21 들기 성공 끝 = 넘김 시점 — grasp_state 묶음(sim grasp_handover_hook _capture)
         self._end("stop", why)          # pd 가 끝난 순간의 q_setpoint · 마지막 손 목표로 붙든다(pd_arm.on_episode)
         return True
 
@@ -826,7 +894,10 @@ class PourFjNode(LeanNodeMixin, Node):
         dec = getattr(self.chain, "dec", None)
         hold = dec.arm_hold_view() if hasattr(dec, "arm_hold_view") else {}   # ★10.19 팔 들림 래치(계약에 있을 때만)
         sq = dec.squeeze_view() if hasattr(dec, "squeeze_view") else {}       # ★10.19 D squeeze(켰을 때만)
-        return {**({"approach_grasp": ag.as_dict()} if ag is not None else {}), **hold, **sq}
+        inh = {}
+        if hasattr(self.chain, "inhand"):              # ★10.21 손 안 컵 추정기 — 꺼져 있으면 on False 만
+            inh = {"inhand": self.chain.inhand.as_dict() if self.chain.inhand is not None else {"on": False}}
+        return {**({"approach_grasp": ag.as_dict()} if ag is not None else {}), **hold, **sq, **inh}
 
     # ---------------------------------------------------------------- tick
     def _status(self, ok: bool, reasons, extra=None) -> None:

@@ -1,0 +1,34 @@
+# ★10.21 사용자: "추정기들 붙여야 s2r 될것 같은 디폴트 세팅으로 해둬야함" — 이 폴더가 있으면 rh_aglt 노드가 기본으로 켠다
+#   (노드 파라미터 inhand_est: auto(기본) | off | <inhand.yaml 경로>). 코드 = deploy/policy_control/policy_control/inhand_est.py.
+# 오른손 rcg_04 전용(learn:grasp/lift 10.21 회신). 정책을 바꾸면 GRU · grasp_state 를 둘 다 다시 맞춘다.
+side: r
+# 끊김 거리 — 지각 컵과 손바닥 거리가 처음 이 값 미만인 틱에 끊고 그 뒤 컵 = 손바닥 FK ⊗ GRU.
+#   sim 학습 · 폐루프 = 참값 거리 U(0.065, 0.16) m. 0.10 = 그 범위 안, 사전 파지 고리(약 7.5~9 cm)에 닿기 전 —
+#   넘김(ap05 → rcg) 때는 늘 끊긴 상태다. 실기 10.20: 오른손 7.8 cm 까지 FP++ live · 왼손 8.6 cm 에서 3.2 s 끊김.
+drop_m: 0.10
+hdgp:
+  commit: b23642a4278c35e7b241bc13b73455b018a7280d   # feat(modules): inhand_pose.FppDropLatch (10.21 20:29)
+  module: source/openarm/openarm/agnostic/modules/inhand_pose
+  md5:
+    __init__.py: 172fb1a066507487a174deacde5818d1
+    geometry.py: 99256656bf53e3ce6c620668ca348252
+    grasp_state.py: dad94efc518a906a3d78d2fd32c82e87
+    latch.py: 3698362c48cf68e0e66d46b0a2671208
+    model.py: 14812946a30a5bcd5c0d91438ffd0ed0
+    proprio.py: e4daf8335773cd2bf3e90a3a9ddc087a
+    recorder.py: 06e60bc725f0a81ab36c4428368ee22c
+    runtime.py: d07f9c6cee3491536a750690b670f974
+gru:
+  file: gru_rcg04_obs_r.pt
+  md5: 2007815a3e67f8a059f6d748cd07d337
+  source: server:/home/oem/rl_ws/our_source/rh_aglt_runs/eval/1021_rcg04_gru_trace/fit/rcg04_obs_r.pt
+  # 과제 관측판(입력 = actor 관측 94 중 컵 칸 뺀 70 + 사전값) · 학습 rcg_04 grid trace 시드 1~7, 검증 8·9, 시험 10.
+  # 시험 손바닥 좌표 위치 중앙값/p90 = 4.6/10.0 mm · 각 4.8/11.2° (사전값만 고정하면 44.1/72.3 mm).
+  # sim 폐루프 성공 %(팁 파지 제외) base · frozen · gru: ap_r 86.0 · 26.0 · 74.4 / ready_r 79.3 · 31.1 · 78.4
+grasp_state:
+  file: grasp_state_r.pt
+  md5: 62c5dd5dc02a12c0e1acc10345d08b80
+  source: /home/user/rl_ws/our_source/rh_aglt_runs/eval/1021_rcg04_gs_train/fit/grasp_state_r.pt (local · server 같음)
+  # ★10.21 21:10 learn:grasp/lift 재학습판(배포 기본값 교체 요청) — rcg_04 grid 폐루프(Newton) 시드 1~10 × ready · ap 출발,
+  #   끊긴 순간 실제 FP++ 모델 출력을 사전값으로(hdgp 16dd2aa09, inhand_pose 모듈 코드는 고정 커밋과 같다). 앞 판 md5 132e795bffbb3046c512517d262e13b5.
+  # 들기 성공 끝 넘김 묶음(끝 30 틱 평균). 시험(시드 10) 위치 중앙값/p90 앞 판 → 이 판 = 4.1/8.3 → 3.2/7.2 mm · 축 2.0/5.1 → 1.3/3.3°. 실기 검증 전.

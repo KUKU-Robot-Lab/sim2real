@@ -167,7 +167,8 @@ def test_the_node_wires_hand_squeeze(c):
             "squeeze_boost_rad": 0.3}
     chain = N.AgltChain(c, policy=None)
     chain.reset = lambda meas: None
-    N.PourFjNode._reset_chain(SimpleNamespace(chain=chain, get_parameter=lambda n: SimpleNamespace(value=vals[n])), {})
+    N.PourFjNode._reset_chain(SimpleNamespace(chain=chain, get_parameter=lambda n: SimpleNamespace(value=vals[n]),
+                                              _inhand_run=lambda handoff: None), {})   # ★10.21 추정기는 test_pc_inhand_est
     a = chain.dec.assist
     assert a.squeeze and (a.squeeze_trigger_frac, a.squeeze_near_m, a.squeeze_rate_rad_s, a.squeeze_boost_rad) == (0.6, 0.08, 1.0, 0.3)
     assert chain.dec.squeeze_view()["squeeze"]["on"] is False
