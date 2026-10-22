@@ -366,3 +366,31 @@ def test_the_drop_distance_can_be_overridden_by_the_node(ap05, rcg04):
     _spec_or_skip("right")
     node = _Node(CON["right_approach_ap05"], ap05, handoff_path=CON["right_rcg04"], drop=0.08)
     assert PourFjNode._inhand_run(node, rcg04).drop_m == pytest.approx(0.08)
+
+
+# ---------------------------------------------------------------- ★10.23 A/B 후보 rcg04t(기본값 아님)
+AB = {"right": ("r", "a195b699058c8274293a970940413b2b"), "left": ("l", "bf91cf8bc2c0200e42c51d6383d1fd38")}
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_the_rcg04t_candidate_differs_from_the_default_only_in_the_gru(side):
+    t, md5 = AB[side]
+    base = yaml.safe_load((POL / f"{side}_rcg04" / "inhand" / "inhand.yaml").read_text(encoding="utf-8"))
+    cand = yaml.safe_load((POL / f"{side}_rcg04" / "inhand" / "inhand_rcg04t.yaml").read_text(encoding="utf-8"))
+    assert cand["gru"]["file"] == f"gru_rcg04t_obs_{t}.pt" and cand["gru"]["md5"] == md5
+    assert {k: v for k, v in cand.items() if k != "gru"} == {k: v for k, v in base.items() if k != "gru"}
+    assert IE.find_spec(CON[f"{side}_rcg04"]).gru == f"gru_rcg04_obs_{t}.pt"     # auto(기본) = 원래 GRU 그대로
+
+
+def test_the_node_picks_the_rcg04t_candidate_by_path(ap05, rcg04):
+    p = POL / "right_rcg04" / "inhand" / "inhand_rcg04t.yaml"
+    spec = IE.load_spec(p)
+    if not (spec.root / spec.gru).is_file():
+        pytest.skip(f"추정기 ckpt {spec.root / spec.gru} 없음(git 밖)")
+    _spec_or_skip("right")
+    node = _Node(CON["right_approach_ap05"], ap05, inhand_est=str(p), handoff_path=CON["right_rcg04"])
+    run = PourFjNode._inhand_run(node, rcg04)
+    assert run is not None and run.spec.gru == "gru_rcg04t_obs_r.pt" and run.drop_m == pytest.approx(0.10)
+    assert [tuple(x) for x in run.gru.layout] == [tuple(x) for x in A.actor_layout(rcg04)]
+    auto = PourFjNode._inhand_run(_Node(CON["right_approach_ap05"], ap05, handoff_path=CON["right_rcg04"]), rcg04)
+    assert auto.spec.gru == "gru_rcg04_obs_r.pt"

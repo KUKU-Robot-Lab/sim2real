@@ -1,0 +1,42 @@
+# ★10.23 A/B 후보 — 손 안 컵 GRU 기울기 보강판 rcg04t(learn:e2e-aglt 10.22, 사용자 10.23 "넣어"). 기본값 아님:
+#   노드 파라미터 inhand_est:=<이 파일 경로> 일 때만 쓴다(auto 는 여전히 inhand.yaml = 원래 GRU). 실기 이득 미확인 — 실기 A/B 는 사용자 승인 뒤.
+#   GRU 말고는 inhand.yaml 과 같다(drop_m · prior_twist · hdgp 핀 · grasp_state). inhand.yaml 을 고치면 이 파일도 같이 맞춘다.
+# ★10.21 사용자: "추정기들 붙여야 s2r 될것 같은 디폴트 세팅으로 해둬야함" — 이 폴더가 있으면 rh_aglt 노드가 기본으로 켠다
+#   (노드 파라미터 inhand_est: auto(기본) | off | <inhand.yaml 경로>). 코드 = deploy/policy_control/policy_control/inhand_est.py.
+# 왼손 rcg_04 전용(learn:grasp/lift 10.21 회신). 정책을 바꾸면 GRU · grasp_state 를 둘 다 다시 맞춘다.
+side: l
+# 끊김 거리 — 지각 컵과 손바닥 거리가 처음 이 값 미만인 틱에 끊고 그 뒤 컵 = 손바닥 FK ⊗ GRU.
+#   sim 학습 · 폐루프 = 참값 거리 U(0.065, 0.16) m. 0.10 = 그 범위 안, 사전 파지 고리(약 7.5~9 cm)에 닿기 전 —
+#   넘김(ap05 → rcg) 때는 늘 끊긴 상태다. 실기 10.20: 오른손 7.8 cm 까지 FP++ live · 왼손 8.6 cm 에서 3.2 s 끊김.
+drop_m: 0.10
+# ★10.22 사전값 twist 정규화(사용자 10.22 승인, learn:e2e-aglt) — 컵은 축대칭이라 FP++ 회전의 축 둘레 성분은 임의값.
+#   rcg_04 학습 끊김 순간 참값 twist = 0(월드 x)이므로 FP++ twist 를 0 으로 두고 사전값을 만든다(축 방향은 FP++ 그대로).
+#   sim FP++ 렌더 20 에피소드: GRU 끊긴 뒤 위치 오차 18.7 → 9.3 mm(회전 전체 참값과 같음). 실기 효과 미확인.
+#   근거 our_source/rh_aglt_runs/eval/1022_sim_fpp/SUMMARY.md. 끄려면 이 줄을 지운다(앞 동작 = 그대로).
+prior_twist: world_x
+hdgp:
+  commit: 5e08376edae379c8d8058039d881a0dcb49a41bf   # feat(inhand_pose): 사전값 twist 정규화 (10.22) — 앞 핀 b23642a42 와 geometry.py · latch.py 만 다르다
+  module: source/openarm/openarm/agnostic/modules/inhand_pose
+  md5:
+    __init__.py: 172fb1a066507487a174deacde5818d1
+    geometry.py: 4b1937b5a4bb0fbd10fcdf9e64717bd9
+    grasp_state.py: dad94efc518a906a3d78d2fd32c82e87
+    latch.py: 5959d62dbb22d534a1e9711c8099b4f4
+    model.py: 14812946a30a5bcd5c0d91438ffd0ed0
+    proprio.py: e4daf8335773cd2bf3e90a3a9ddc087a
+    recorder.py: 06e60bc725f0a81ab36c4428368ee22c
+    runtime.py: d07f9c6cee3491536a750690b670f974
+gru:
+  file: gru_rcg04t_obs_l.pt
+  md5: bf91cf8bc2c0200e42c51d6383d1fd38
+  source: server:/home/oem/rl_ws/our_source/rh_aglt_runs/eval/1022_gru_tilt_trace/fit/rcg04t_obs_l.pt (local 사본 ~/rl_ws/our_source/policy/inhand_gru_rcg04t_1022/)
+  # 원래 rcg_04 grid trace + 들기 뒤 손목 기울기 trace 40(ready·ap × r·l × 시드 1~10) · 시드 1~7 학습 · 8·9 검증 · 10 시험. 형식 = gru_rcg04_obs 와 같다.
+  # 같은 시험셋: 기울기 trace p90 17~22 → 7~14 mm, 원래 trace 같음 · 실기 bag 기울기 입력 분포 밖 10.2 → 1.9 % · 실기 FP++ 대비 차 28.2 → 29.8 mm(그대로).
+  # sim 폐루프(시드 10): 끊김 0.065·0.10 m 성공률 원래와 같음(1 %p 안) · 0.16 m 왼손 69.8 → 76.9 %. 근거 ~/rl_ws/report/inhand_paper/experiments/(E4·E5).
+grasp_state:
+  file: grasp_state_l.pt
+  md5: c8a836f24416424c39d9ed4cee5e6a78
+  source: /home/user/rl_ws/our_source/rh_aglt_runs/eval/1021_rcg04_gs_train/fit/grasp_state_l.pt (local · server 같음)
+  # ★10.21 21:10 learn:grasp/lift 재학습판(배포 기본값 교체 요청) — rcg_04 grid 폐루프(Newton) 시드 1~10 × ready · ap 출발,
+  #   끊긴 순간 실제 FP++ 모델 출력을 사전값으로(hdgp 16dd2aa09, inhand_pose 모듈 코드는 고정 커밋과 같다). 앞 판 md5 cdb6a0413ca210aa8bf425ce4a702285.
+  # 들기 성공 끝 넘김 묶음(끝 30 틱 평균). 시험(시드 10) 위치 중앙값/p90 앞 판 → 이 판 = 6.8/20.4 → 3.1/7.3 mm · 축 1.8/5.3 → 1.1/2.8°. 실기 검증 전.
