@@ -10,8 +10,13 @@
 #   마스터는 cap_net_raw 가 필요하다: bash tools/ethercat/build.sh → sudo setcap cap_net_raw,cap_net_admin=ep tools/ethercat/rh56f1_ecat_master
 #   10.02 실측(SAFE_OP 1 kHz 3000 회): 잃음 0 · PDO 왕복 오른손 p50 68 us · 왼손 41 us.
 #   10.09 실측(ecat_rtt BRD, 두 손 동시 5000 회 × 3): 오른손 · 왼손 p50 79 us · p99 90~95 us · 잃음 0.
-right: {transport: ethercat, ifname: enx705dccf5a065, hand_id: 1}
-left:  {transport: ethercat, ifname: enx00e04c6806e1, hand_id: 1}
+#   ★10.22 5090 배선(사용자): 두 손 = CBS220 스위치 VLAN. 스위치 GE1 = 5090 eno1(트렁크, VLAN 10·20 태그) · GE2 = vision-3090(VLAN 1)
+#   · GE3 = 오른손(VLAN 10 untagged) · GE5 = 왼손(VLAN 20 untagged), 스위치 설정은 startup-config 저장(전원 재기동 뒤 유지 확인).
+#   PC 쪽 VLAN 인터페이스는 NetworkManager 연결 rh56f1_r(eno1.10) · rh56f1_l(eno1.20), autoconnect.
+#   10.22 실측(ecat_rtt BRD, 두 손 동시 20000 회 + vision ping): 잃음 0 · 응답 slave 각 1 · p50 53 us · p99 94 us.
+#   태그 없는 eno1 에서는 손이 보이지 않는다(정상). 손을 다른 스위치 포트에 꽂으면 좌우가 바뀌거나 끊긴다.
+right: {transport: ethercat, ifname: eno1.10, hand_id: 1}
+left:  {transport: ethercat, ifname: eno1.20, hand_id: 1}
 
 ethercat:
   master: tools/ethercat/rh56f1_ecat_master   # sim2real 기준 경로
