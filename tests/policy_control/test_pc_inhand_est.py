@@ -139,6 +139,35 @@ def test_far_cups_pass_through_and_the_first_near_tick_latches(run, rcg04):
     assert np.allclose(run.latch.prior_p[0].numpy(), [0.0, -0.09, 0.0], atol=1e-6)   # 사전값은 끊긴 순간 그대로
 
 
+def test_the_prior_twist_is_normalized_to_world_x(run, rcg04):
+    """★10.22 prior_twist: world_x — 직립 컵의 FP++ twist(축 둘레)가 달라도 사전값 회전은 같다(twist 0), 위치는 그대로."""
+    assert run.spec.twist_ref == "world_x" and run.latch.twist_ref == "world_x"
+    q = np.asarray(rcg04.side().hand_open, float)
+    priors = []
+    for yaw in (0.0, 1.3, -2.8):
+        run.reset(OBJ)
+        run.perceive(_meas(rcg04, [0.3, 0.0, 0.2], [0.3, -0.2, 0.2]), q, q)    # 첫 틱은 live 아님
+        run.remember(np.zeros(94))
+        m = _meas(rcg04, [0.3, 0.0, 0.2], [0.3, -0.09, 0.2])
+        m = A.RaMeas(**{**m.__dict__, "cup_quat": np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)])})
+        run.perceive(m, q, q)
+        assert run.dropped
+        priors.append((run.latch.prior_p[0].numpy().copy(), run.latch.prior_q[0].numpy().copy()))
+    for p_, q_ in priors:
+        assert np.allclose(p_, [0.0, -0.09, 0.0], atol=1e-6)
+        assert np.allclose(q_, [1.0, 0.0, 0.0, 0.0], atol=1e-5)
+
+
+def test_without_prior_twist_the_spec_keeps_the_old_behaviour(tmp_path):
+    src = _spec_or_skip("right").path.read_text(encoding="utf-8")
+    p = tmp_path / "inhand.yaml"
+    p.write_text("\n".join(l for l in src.splitlines() if not l.startswith("prior_twist:")), encoding="utf-8")
+    assert IE.load_spec(p).twist_ref is None
+    p.write_text(src.replace("prior_twist: world_x", "prior_twist: palm"), encoding="utf-8")
+    with pytest.raises(IE.InhandError):
+        IE.load_spec(p)
+
+
 def test_reset_clears_the_latch_and_the_first_tick_is_not_live(run, rcg04):
     q = np.asarray(rcg04.side().hand_open, float)
     run.reset(OBJ)

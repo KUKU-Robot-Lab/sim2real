@@ -6,14 +6,19 @@ side: r
 #   sim 학습 · 폐루프 = 참값 거리 U(0.065, 0.16) m. 0.10 = 그 범위 안, 사전 파지 고리(약 7.5~9 cm)에 닿기 전 —
 #   넘김(ap05 → rcg) 때는 늘 끊긴 상태다. 실기 10.20: 오른손 7.8 cm 까지 FP++ live · 왼손 8.6 cm 에서 3.2 s 끊김.
 drop_m: 0.10
+# ★10.22 사전값 twist 정규화(사용자 10.22 승인, learn:e2e-aglt) — 컵은 축대칭이라 FP++ 회전의 축 둘레 성분은 임의값.
+#   rcg_04 학습 끊김 순간 참값 twist = 0(월드 x)이므로 FP++ twist 를 0 으로 두고 사전값을 만든다(축 방향은 FP++ 그대로).
+#   sim FP++ 렌더 20 에피소드: GRU 끊긴 뒤 위치 오차 18.7 → 9.3 mm(회전 전체 참값과 같음). 실기 효과 미확인.
+#   근거 our_source/rh_aglt_runs/eval/1022_sim_fpp/SUMMARY.md. 끄려면 이 줄을 지운다(앞 동작 = 그대로).
+prior_twist: world_x
 hdgp:
-  commit: b23642a4278c35e7b241bc13b73455b018a7280d   # feat(modules): inhand_pose.FppDropLatch (10.21 20:29)
+  commit: 5e08376edae379c8d8058039d881a0dcb49a41bf   # feat(inhand_pose): 사전값 twist 정규화 (10.22) — 앞 핀 b23642a42 와 geometry.py · latch.py 만 다르다
   module: source/openarm/openarm/agnostic/modules/inhand_pose
   md5:
     __init__.py: 172fb1a066507487a174deacde5818d1
-    geometry.py: 99256656bf53e3ce6c620668ca348252
+    geometry.py: 4b1937b5a4bb0fbd10fcdf9e64717bd9
     grasp_state.py: dad94efc518a906a3d78d2fd32c82e87
-    latch.py: 3698362c48cf68e0e66d46b0a2671208
+    latch.py: 5959d62dbb22d534a1e9711c8099b4f4
     model.py: 14812946a30a5bcd5c0d91438ffd0ed0
     proprio.py: e4daf8335773cd2bf3e90a3a9ddc087a
     recorder.py: 06e60bc725f0a81ab36c4428368ee22c

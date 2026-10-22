@@ -60,6 +60,7 @@ class InhandSpec:
     grasp_state: str
     grasp_state_md5: str
     drop_m: float
+    twist_ref: str | None = None     # ★10.22 사전값 twist 정규화(FppDropLatch twist_ref). None = 그대로, "world_x" = 월드 x 기준 0
 
     @property
     def root(self) -> Path:
@@ -76,7 +77,8 @@ def load_spec(path: str | Path) -> InhandSpec:
         spec = InhandSpec(path=p.resolve(), side=str(raw["side"]), commit=str(hd["commit"]), module=str(hd["module"]),
                           module_md5={str(k): str(v) for k, v in dict(hd["md5"]).items()},
                           gru=str(gru["file"]), gru_md5=str(gru["md5"]),
-                          grasp_state=str(gs["file"]), grasp_state_md5=str(gs["md5"]), drop_m=float(raw["drop_m"]))
+                          grasp_state=str(gs["file"]), grasp_state_md5=str(gs["md5"]), drop_m=float(raw["drop_m"]),
+                          twist_ref=None if raw.get("prior_twist") is None else str(raw["prior_twist"]))
     except (KeyError, TypeError, ValueError) as exc:
         raise InhandError(f"{p}: side · drop_m · hdgp{{commit, module, md5}} · gru{{file, md5}} · grasp_state{{file, md5}} 가 필요하다 ({exc})") from exc
     if spec.side not in SIDES.values():
@@ -85,6 +87,8 @@ def load_spec(path: str | Path) -> InhandSpec:
         raise InhandError(f"{p}: drop_m 은 0 < x ≤ 0.3 m: {spec.drop_m}")
     if not spec.module_md5:
         raise InhandError(f"{p}: hdgp.md5 가 비었다")
+    if spec.twist_ref not in (None, "world_x"):
+        raise InhandError(f"{p}: prior_twist 는 없음 또는 world_x: {spec.twist_ref!r}")
     return spec
 
 
@@ -191,7 +195,8 @@ class InhandRun:
         if object_name is not None and object_name not in self.names:
             raise InhandError(f"물체 {object_name!r} 는 추정기 물체 {list(self.names)} 밖이다")
         self.object = object_name
-        self.latch = self.pkg.latch.FppDropLatch(1, "cpu", self.drop_m)
+        self.latch = (self.pkg.latch.FppDropLatch(1, "cpu", self.drop_m) if self.spec.twist_ref is None else
+                      self.pkg.latch.FppDropLatch(1, "cpu", self.drop_m, twist_ref=self.spec.twist_ref))
         self.gru.reset(slice(None))
         self.gs.reset()
         self._oh = None if object_name is None else self.gs.onehot([self.names[object_name]])
@@ -264,7 +269,7 @@ class InhandRun:
         d = Path(out_dir or BUNDLE_DIR) / now.strftime("%Y%m%d")
         tag = "_".join(str(meta.get(k, "")) for k in ("node", "episode") if meta.get(k) not in (None, ""))
         path = d / f"{now.strftime('%H%M%S')}_{tag or 'inhand'}.npz"
-        full = {"spec": str(self.spec.path), "gru_md5": self.spec.gru_md5, "grasp_state_md5": self.spec.grasp_state_md5,
+        full = {"spec": str(self.spec.path), "prior_twist": self.spec.twist_ref, "gru_md5": self.spec.gru_md5, "grasp_state_md5": self.spec.grasp_state_md5,
                 "hdgp_commit": self.spec.commit, "drop_m": self.drop_m, "drop_tick": self.drop_tick, "ticks": self.k,
                 "object_contract": self.object, **dict(meta)}
         self.pkg.grasp_state.save_bundle(path, b, full)
