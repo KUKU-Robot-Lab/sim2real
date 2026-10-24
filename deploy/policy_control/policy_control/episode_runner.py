@@ -215,13 +215,14 @@ class EpisodeManager:
                                                      "at": _now()}
             self._next_node()
             self._log("exit", node, start_time=start, end_time=_now(), duration=round(dur, 3), result="COMPLETED",
-                      termination_reason=reason, next=None if self.node is None else self.node.id)
+                      termination_reason=reason, next=None if self.node is None else self.node.id,
+                      signals=self._signal_rows(results))
             self.status = READY if self.node is not None else SUCCESS
             return self._close_terminal()
         self.world = before
         self._mark(node.id, "failed", s=round(dur, 2), code=code.value)
         self._log("failure", node, start_time=start, end_time=_now(), duration=round(dur, 3), result=code.value,
-                  termination_reason=reason, failed_role=who)
+                  termination_reason=reason, failed_role=who, signals=self._signal_rows(results))
         return self._recover(node, code)
 
     def _execute(self, node: Node, world: World) -> tuple[list, dict]:
@@ -369,6 +370,11 @@ class EpisodeManager:
         return " + ".join(f"{j.role}({self.ep.policies[j.role].policy or '정책 없음'}"
                           + (f", {j.target_object or j.source_object}" if (j.target_object or j.source_object) else "")
                           + (f" → {j.target_holder}" if j.target_holder else "") + ")" for j in node.jobs)
+
+    @staticmethod
+    def _signal_rows(results) -> dict:
+        """★10.25 정책 노드 판정 신호(손 비움 · 홀더 안 · 이송 등)를 역할별로 jsonl 에 남긴다 — 실기 e2e CSV(tools/real_e2e_csv.py) 입력."""
+        return {r.role: dict(r.signals) for r in results if getattr(r, "role", None) and r.signals}
 
     def _log(self, event: str, node: Node | None, **kw) -> None:
         w = self.world.as_dict()
