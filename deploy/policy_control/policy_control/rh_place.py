@@ -20,6 +20,7 @@ import numpy as np
 
 from policy_control import hand_block as HB
 from policy_control import place_carry as PC
+from policy_control import place_ready_carry as RCY
 from policy_control import rh_aglt as A
 from policy_control.cup_attach import AttachCfg, grasp_signal
 
@@ -68,6 +69,9 @@ class PlaceContract(A.RaContract):
     neighbor_obs: str = ""                   # "" | "zero" — 관측 끝 이웃 홀더 6 칸(학습 내내 0 이던 런)
     attach_source: str = "fpp"               # 붙인 자세: fpp(리셋 순간 FP++ 한 장) | bundle(잡기의 grasp_state 넘김 묶음)
     holder_range: dict = field(default_factory=dict)    # 학습 목표 홀더 원점 범위 {x: [lo, hi], y: [lo, hi]} (base m)
+    # ★10.25 준비 자세 이송(place_ready_carry): 이송 끝 뱅크로 학습한 런(newton_07_r · 06_l) — 리셋 뒤 Mover 로 슬롯 위까지 옮긴 다음
+    #   정책(RNN · 직전 행동 · 래치 추정기 0 에서). 빈 값 = 이송 없음(들기 끝에서 바로 정책).
+    ready_carry: dict = field(default_factory=dict)
 
 
 #: ★10.22 hdgp _nb_obs 순서 — +y 이웃(슬롯 0) (dx, dy, 있음), −y 이웃(슬롯 2) (dx, dy, 있음)
@@ -200,7 +204,8 @@ def s2r_fields(env: Mapping, run_dir: Path, latch: dict, obs_dim: int) -> tuple[
     return out, notes
 
 
-def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: str, attach: str = "fpp") -> PlaceContract:
+def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: str, attach: str = "fpp",
+          ready_carry_max: int = 0) -> PlaceContract:
     env_p = Path(run_dir) / "params" / "env.yaml"
     env = A.read_env(env_p)
     if not is_rh_place_run(env):
@@ -224,6 +229,15 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
         carry = PC.CarryCfg.from_env(env)
     except PC.CarryError as exc:
         raise RhPlaceError(f"{env_p}: {exc}") from exc
+    rcy = None
+    if ready_carry_max > 0:
+        try:
+            rcy = RCY.ReadyCarryCfg.from_env(env, ready_carry_max)
+        except RCY.ReadyCarryError as exc:
+            raise RhPlaceError(f"{env_p}: {exc}") from exc
+    elif "carry_end" in str(env.get("start_bank_path", "")):
+        raise RhPlaceError(f"{env_p}: 이송 끝 뱅크({env['start_bank_path']})로 학습한 런 — --ready-carry 가 필요하다"
+                           "(이송 없이 들기 끝에서 바로 시작하면 시작 분포가 다르다)")
     _, origin_z = A.cup_geometry(env)                       # 컵 원점 → 바닥 = −origin_z
     # 아래에서 다시 정하는 키는 뺀다(10.13 — 10.12 RaContract.extra_actor_obs 뒤로 이 빌더가 중복 키로 깨져 있었다)
     kw = {k: v for k, v in asdict(base).items() if not k.startswith("goal_") and k not in ("extra_actor_obs", "obs_dim")}
@@ -243,7 +257,8 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
                        latch_obs=latch, release_rule=rule, release_open_rad=open_rad, release_max_tilt_deg=max_tilt, release_open_zero_skip=zero_skip,
                        carry={} if carry is None else carry.as_dict(),
                        extra_actor_obs=(["latch"] if latch else []) + nb,
-                       obs_dim=obs_dim, attach_source=attach, holder_range=holder_range_of(env), **s2r)
+                       obs_dim=obs_dim, attach_source=attach, holder_range=holder_range_of(env),
+                       ready_carry={} if rcy is None else rcy.as_dict(), **s2r)
     if (latch or rule != "contact") and not c.latch_s2r:
         c = replace(c, notes=list(c.notes) + [
             f"★관측 래치(10.12): 관측 끝 1 칸 — 지각 컵 원점 z − 자리 z ≤ {latch.get('dz')} · 바닥 중심 xy ≤ {latch.get('dxy')} m · "
@@ -260,6 +275,12 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
             f"★IK 이송(10.13): 리셋 뒤 손바닥 DLS 로 컵을 (홀더 xy, 상판 + 원점 높이 + {carry.dz}) 까지 — 축당 {carry.speed} m/틱, "
             f"{carry.min_steps} 틱 뒤 {carry.tol} m 안이거나 {carry.max_steps} 틱이면 정책. 이송 중 정책 forward 는 돌리고 출력은 버림"
             f"(LSTM · prev_action 이어짐). 에피소드 {c.episode_s} s 는 이송 포함(sim 과 같음)"])
+    if rcy is not None:
+        c = replace(c, notes=list(c.notes) + [
+            f"★준비 자세 이송(10.25, place_ready_carry): 리셋 뒤 ready_carry Mover 로 컵을 (홀더 xy, 상판 + 원점 높이 + {rcy.dz}) 앵커까지"
+            f"(작업 공간 하강 {rcy.plan_down} · xy ±{rcy.plan_xy} · 기울기 ±{rcy.plan_tilt_deg}° · {rcy.v_max} m/틱 · {rcy.qd_max} rad/틱, "
+            f"상한 {rcy.max_steps} 틱) — 학습 시작 뱅크 = 이송 끝({env.get('start_bank_path')}). 이송 중 정책 · 래치 추정기는 돌리지 않고, "
+            f"끝난 다음 틱부터 정책(RNN · 직전 행동 · 추정기 0). 에피소드 {c.episode_s} s 는 이송 뒤부터 센다. 배포 잡음 0"])
     if s2r_notes or attach == "bundle" or c.holder_range:
         c = replace(c, notes=[n for n in c.notes if not (c.latch_s2r and n.startswith(("놓음 =", "★관측 래치(10.12)", "★놓음(10.12)")))]
                     + s2r_notes
@@ -290,6 +311,13 @@ def validate(c: PlaceContract) -> None:
         try:
             PC.CarryCfg.from_dict(c.carry)
         except PC.CarryError as exc:
+            raise RhPlaceError(str(exc)) from exc
+    if c.ready_carry:
+        if c.carry or not c.latch_s2r:
+            raise RhPlaceError("ready_carry 는 latch_s2r 계약에서만, IK 이송(carry)과 같이 쓰지 않는다")
+        try:
+            RCY.ReadyCarryCfg.from_dict(c.ready_carry)
+        except RCY.ReadyCarryError as exc:
             raise RhPlaceError(str(exc)) from exc
     if c.release_rule not in RELEASE_RULES:
         raise RhPlaceError(f"release_rule {c.release_rule!r} — {RELEASE_RULES}")
@@ -450,6 +478,8 @@ class PlaceChain:
         self.latch = False                              # 관측 래치(latch_obs) — 리셋까지 유지
         self.fk = None                                  # ★10.13 이송: 노드가 넣는 UrdfChainFK(손바닥 자코비안용)
         self.carry: PC.Carry | None = None
+        self.rc_chain = None                            # ★10.25 준비 자세 이송: 노드가 넣는 (ready_carry 패키지, Mover 사슬)
+        self.rcarry: RCY.ReadyCarry | None = None
         self.q_g: np.ndarray | None = None              # block_follow_open: 마지막으로 쥐었던 틱의 실측(칸 단위)
         names = list(s.hand_joints)
         self._rel_idx = [next(i for i, n in enumerate(names) if n.endswith(HB.AXIS_SUFFIX[a])) for a in RELEASE_AXES]
@@ -519,8 +549,52 @@ class PlaceChain:
             cfg = PC.CarryCfg.from_dict(self.c.carry)
             self.carry = PC.Carry(cfg, PC.carry_target(holder, origin_z_of(self.c), cfg.dz), hand_action_of(self.c, hand0),
                                   self.c.k_arm, self.c.arm_ema)
+        self.rcarry = None
+        if self.c.ready_carry:                           # ★10.25 끝 자세를 지금 푼다(움직이지 않음) — 이송 틱은 _step_s2r
+            if self.rc_chain is None:
+                raise RhPlaceError("준비 자세 이송 계약인데 Mover 사슬이 없다 — 노드가 chain.rc_chain 을 넣어야 한다")
+            cfg = RCY.ReadyCarryCfg.from_dict(self.c.ready_carry)
+            self.rcarry = RCY.ReadyCarry(cfg, *self.rc_chain, k_arm=self.c.k_arm, arm_ema=self.c.arm_ema,
+                                         hand_action=hand_action_of(self.c, hand0))
+            pos, quat = self.cup_from_palm(m.palm_pos, m.palm_R)
+            self.rcarry.start(np.asarray(m.arm_q, float), pos, quat, PC.carry_target(holder, origin_z_of(self.c), cfg.dz))
+        self._policy_reset()
+
+    def _policy_reset(self) -> None:
         if hasattr(self.policy, "reset"):
             self.policy.reset()
+
+    def _place_begin(self) -> None:
+        """★10.25 이송이 끝난 틱 — 다음 틱부터 정책. place_grid_eval rand 처럼 RNN · 직전 행동 0, 래치 추정기 상태 0(sim 은 이송 중
+        추정기를 돌리지 않는다), 래치 · 시간 기준 놓음 셈은 처음부터."""
+        self._policy_reset()
+        self.prev = np.zeros(self.c.action_dim)
+        if self.est is not None:
+            self.est.reset()
+        self.latch, self.latch_t, self.latch_geo_n = False, 0, 0
+        self.latch_cup = None
+        self.step_i = 0
+
+    @property
+    def carrying(self) -> bool:
+        return self.rcarry is not None and self.rcarry.on
+
+    def _carry_tick(self, meas: Mapping) -> tuple[np.ndarray, np.ndarray, dict]:
+        """★10.25 준비 자세 이송 한 틱 — 행동 = Mover(실측 팔 q) · 손 = 리셋 손 목표. 관측은 기록용으로만 만든다."""
+        c = self.c
+        m = meas["arm"]
+        pos, quat = self.cup_from_palm(m.palm_pos, m.palm_R)
+        m = replace(m, cup_pos=pos, cup_quat=quat)
+        obs = A.build_obs(c, m, self.dec, self.goal, self.prev, extra=self._extra())
+        a = self.rcarry.step(np.asarray(m.arm_q, float))
+        hand_q = np.array([m.hand_q[j] for j in c.side().hand_joints], float)
+        targets = self.dec.step(a, active=True, tactile_n=m.tactile_n, hand_q=hand_q)
+        self.tact_max = float(np.max(np.asarray(m.tactile_n, float)))
+        self.jf_max = None if m.joint_force is None else float(np.max(np.asarray(m.joint_force, float)))
+        self.prev = np.clip(a, -1.0, 1.0)
+        if not self.rcarry.on:
+            self._place_begin()
+        return obs, a, targets
 
     @staticmethod
     def _tilt_deg(quat: np.ndarray) -> float:
@@ -591,6 +665,8 @@ class PlaceChain:
            손이 놓은 컵에서 clear_m 떨어졌거나 max_steps 면 끝
         ② 관측(컵 = 붙인 자세) → 추정기 한 틱(래치 칸은 갱신 전) → 래치 기하 조건 debounce 틱 연속 · 놓기 전이면 래치(유지)
         ③ 정책 → 래치 뒤 놓기 전 · 빼기 중 손 = 편 손 행동(팔은 정책) → 디코더. prev_action = 실행한 행동."""
+        if self.carrying:                                   # ★10.25 준비 자세 이송 — 정책 · 래치는 이송 뒤
+            return self._carry_tick(meas)
         c = self.c
         m = meas["arm"]
         if self.step_i > 0:                                 # ① 리셋 뒤 첫 틱에는 직전 행동이 없다
@@ -685,7 +761,8 @@ class PlaceChain:
 
     def as_dict(self) -> dict:
         return {"phase": "done" if self.done else ("withdraw" if self.c.withdraw else "settle") if self.settling
-                else "carry" if (self.carry is not None and self.carry.on) else "latched" if self.latch else "place",
+                else "carry" if (self.carry is not None and self.carry.on) or self.carrying else "latched" if self.latch else "place",
+                **({"ready_carry": self.rcarry.as_dict()} if self.rcarry is not None else {}),
                 "carry": None if self.carry is None else self.carry.as_dict(), "free_streak": self.free_streak,
                 "settle_t": self.settle_t, "seat": None if self.goal is None else [round(float(v), 4) for v in self.goal.pos],
                 # 첫 실기 문턱 정하기용(PLACE 검토) — 손 목표가 인계보다 연 양 · 손끝 최대 · 관절 힘 최대

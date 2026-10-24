@@ -17,6 +17,9 @@
   · holder = 실물 홀더 번호(로봇 왼쪽 +y 부터 0 · 1 · 2). 학습 목표 홀더는 sim 슬롯 번호라 번호로 거르지 않고, 그 홀더 원점이 학습
     범위(holder_range)에서 holder_tol_m 넘게 밖이면 reset 거부.
   · 시간 초과(학습 episode_length_s): 놓기 전이면 abort, 놓은 뒤(빼기 중)면 stop.
+★10.25 준비 자세 이송(계약 ready_carry — newton_07_r · 06_l): reset 때 끝 자세를 풀고(Mover, 움직이지 않음) start 뒤 첫 틱부터
+  Mover 행동으로 슬롯 위까지 옮긴 다음 정책. 에피소드 시간은 이송이 끝난 틱부터 센다. 이송 자체 상한 =
+  (max_steps + settle_steps) 틱 + READY_CARRY_SLACK_S — 넘으면 abort(Mover 가 그 전에 끝나야 한다).
 """
 from __future__ import annotations
 
@@ -30,6 +33,8 @@ if __package__ in (None, ""):
     __package__ = "policy_control"     # noqa: A001
 
 import time  # noqa: E402
+
+READY_CARRY_SLACK_S = 2.0
 
 from policy_control import codec  # noqa: E402
 from policy_control import place_handover as PH  # noqa: E402
@@ -76,6 +81,13 @@ class PlaceNode(PourFjNode):
             from policy_control.place_latch_est import LatchEst
             root = Path(str(p("contract"))).resolve().parent
             self._latch_est = LatchEst(root / self.contract.latch_est["file"], self.contract.latch_est["md5"], self.contract.obs_dim)
+        self._rc_chain = None
+        if self.contract.ready_carry:                        # ★10.25 Mover 사슬(고정 hdgp 사본 URDF) — 한 번만 읽는다
+            from policy_control import place_ready_carry as RCY
+            s = self.contract.side()
+            self._rc_chain = RCY.load_chain(s.palm_body, list(s.arm_joints))
+            self.get_logger().info(f"준비 자세 이송 켬 · {self.contract.ready_carry}")
+        self._carry_t0: float | None = None
         self.holder_topic = str(p("holder_topic")) or f"/objects/cup_holder_{self.holder_id}/pose"
         self.attach = {}                                   # 붙은 컵은 PlaceChain 이 든다(인계 순간 한 번, sim attached)
         self._holder: np.ndarray | None = None
@@ -192,11 +204,14 @@ class PlaceNode(PourFjNode):
                 self.get_logger().warning(f"홀더 {self.holder_id} {np.round(self._holder, 4).tolist()} 가 학습 범위 밖 "
                                           f"{self._holder_excess} m(허용 {self.holder_tol} m 안이라 진행)")
         self.chain.est = self._latch_est
+        self.chain.rc_chain = self._rc_chain
         b = self._bundle
         self.chain.attach_info = {} if b is None else b.as_dict()
         self.chain.reset(meas, holder=self._holder, held=held,
                          allow_measured=bool(self.get_parameter("allow_measured_start").value),
                          attach=None if b is None else (b.rel_p, b.rel_q))
+        if self.chain.rcarry is not None:
+            self.get_logger().info(f"준비 자세 이송 계획 · {self.chain.rcarry.plan}")
         rel = self.chain.rel[0]
         self.get_logger().info(f"place reset · 자리 {self.chain.as_dict()['seat']} · 시작 목표 "
                                f"{'pd 마지막 joint_target' if held is not None else '실측(allow_measured_start)'} · "
@@ -204,6 +219,19 @@ class PlaceNode(PourFjNode):
 
     def _after_step(self) -> bool:
         c = self.contract
+        if self._carry_t0 is not None:                     # ★10.25 이송 중 — 에피소드 시계는 이송이 끝난 틱부터
+            now = time.monotonic()
+            rc = self.chain.rcarry
+            if rc is not None and rc.on:
+                self._t_start = now
+                lim = (rc.cfg.max_steps + rc.mv.cfg.settle_steps) / float(c.policy_hz) + READY_CARRY_SLACK_S
+                if now - self._carry_t0 > lim:
+                    self._end("abort", f"준비 자세 이송 시간 초과 {lim:.1f} s · {rc.as_dict()}")
+                    return True
+                return False
+            self._carry_t0 = None
+            self._t_start = now
+            self.get_logger().info(f"준비 자세 이송 끝 → 정책 · {None if rc is None else rc.as_dict()}")
         if self.chain.settle_t == 0:                       # 놓음이 난 스텝 — 첫 실기 문턱 정하기용 값
             self.get_logger().info(f"place 놓음 판정 · {self.chain.as_dict()}")
         if c.latch_s2r and self.chain.latch and self.chain.latch_t == 0 and not self.chain.settling and not getattr(self, "_latch_logged", False):
@@ -224,7 +252,10 @@ class PlaceNode(PourFjNode):
 
     def _srv_start(self, req, res):
         self._latch_logged = False
-        return super()._srv_start(req, res)
+        out = super()._srv_start(req, res)
+        rc = getattr(self.chain, "rcarry", None)
+        self._carry_t0 = time.monotonic() if rc is not None and rc.on else None
+        return out
 
     def _status_extra(self) -> dict:
         return {"holder": self.holder_id, "holder_pose": None if self._holder is None else [round(float(v), 4) for v in self._holder],

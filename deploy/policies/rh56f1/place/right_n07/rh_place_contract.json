@@ -1,0 +1,304 @@
+{
+  "schema": "policy_control/rh_place_contract/v1",
+  "task": "open-rh_r_place",
+  "run_dir": "/home/user/rl_ws/sim2real/deploy/policies/rh56f1/place/right_n07",
+  "checkpoint": "/home/user/rl_ws/sim2real/deploy/policies/rh56f1/place/right_n07/nn/last_open-rh_r_place-lstm_ep_2000_rew_776.9702.pth",
+  "checkpoint_md5": "4afccc50cd87d7592689b2e036b42c77",
+  "env_yaml_sha1": "f9f8c7c84298d70bd3805c1670dcbe651d84707a",
+  "agent_yaml_sha1": "d0729ca4220551545500485b252d9466d0231a00",
+  "asset": "openarm_rh56f1_bi_rl",
+  "profile": "rh56f1_v2_right",
+  "policy_hz": 60.0,
+  "episode_s": 5.0,
+  "obs_dim": 101,
+  "action_dim": 13,
+  "obs_clip": 5.0,
+  "action_clip": 1.0,
+  "recurrent": true,
+  "hold_steps": 0,
+  "k_arm": 0.05,
+  "arm_ema": 0.1,
+  "hand_ema": 0.1,
+  "hand_full_range_s": 1.0,
+  "freeze_threshold_n": 1.0,
+  "joint_err_norm": 1.2,
+  "tactile_clip_n": 10.0,
+  "tactile_tanh_n": 3.0,
+  "cup_half_height": 0.085,
+  "goal_offset": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "hand_obs_order_source": "profile(hdgp rh_aglt_env hand_ids = 이름 순)",
+  "sides": {
+    "arm": {
+      "role": "arm",
+      "side": "right",
+      "arm_joints": [
+        "r_aj_1",
+        "r_aj_2",
+        "r_aj_3",
+        "r_aj_4",
+        "r_aj_5",
+        "r_aj_6",
+        "r_aj_7"
+      ],
+      "arm_home": [
+        -1.2127,
+        0.2026,
+        0.6538,
+        1.7608,
+        0.3791,
+        0.5785,
+        0.6646
+      ],
+      "arm_lo": [
+        -1.396263,
+        -0.17453267320510335,
+        -1.570796,
+        0.0,
+        -1.570796,
+        -0.785398,
+        -1.570796
+      ],
+      "arm_hi": [
+        3.490659,
+        3.3161253267948965,
+        1.570796,
+        2.443461,
+        1.570796,
+        0.785398,
+        1.570796
+      ],
+      "hand_joints": [
+        "r_hj_thumb_1",
+        "r_hj_thumb_2",
+        "r_hj_index_1",
+        "r_hj_middle_1",
+        "r_hj_ring_1",
+        "r_hj_pinky_1"
+      ],
+      "hand_open": [
+        1.57,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "hand_grip": [
+        1.2,
+        0.24,
+        1.08,
+        1.08,
+        0.85,
+        0.85
+      ],
+      "hand_lim_lo": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "hand_lim_hi": [
+        2.0943951023931953,
+        0.4745550236172582,
+        1.5285593588966337,
+        1.5285593588966337,
+        1.5285593588966337,
+        1.5285593588966337
+      ],
+      "palm_body": "r_hl_palm_sensor",
+      "tip_bodies": [
+        "r_hl_thumb_tip",
+        "r_hl_index_tip",
+        "r_hl_middle_tip",
+        "r_hl_ring_tip",
+        "r_hl_pinky_tip"
+      ]
+    }
+  },
+  "notes": [
+    "학습 실기 반응(sim 전용, 배포 디코더는 따라 하지 않는다 — 실기가 스스로 낸다): arm_cmd_delay_steps [0, 0] · arm_cmd_delay_joint_steps [3.5, 3.2, 3.3, 2.3, 4.1, 8.6, 7.3] · arm_cmd_delay_joint_jitter 1 · hand_cmd_delay_steps [4, 6] · hand_open_floor_deg_lo [0.0, 1.0, 2.0, 2.0, 2.0, 2.0] · hand_open_floor_deg_hi [0.0, 3.0, 5.5, 5.5, 5.5, 5.5] · thumb1_reset_range [1.4, 1.57]",
+    "★actor 촉각 없음(actor_tactile_obs False): 관측 91(+물체 one-hot) — 손끝 촉각은 critic 에만. 쥠 멈춤 · 쥔 판정은 여전히 촉각 · 관절 힘을 쓴다(디코더 · cup_attach)",
+    "★다물체 한 정책: 관측 91 + 물체 one-hot 3 (id 순 ['source240_real', 'source200_real', 'shaker_c_real']) — 에피소드 reset 때 노드 파라미터 object 로 물체를 고른다(모르면 reset 거부). 컵 반높이 · 목표 박스 높이는 물체를 따른다: source240_real 반높이 0.0850 원점 0.0850 · source200_real 반높이 0.0850 원점 0.0850 · shaker_c_real 반높이 0.0650 원점 0.0650",
+    "학습 강건화(sim 전용, 배포 디코더 · 관측은 따라 하지 않는다): cmd_delay_adr True · cmd_delay_adr_mix True · cmd_delay_adr_scale_end 1.5 · critic_delay_obs True",
+    "★쥔 규칙(10.14 pos): 판정 축 ['thumb_flex', 'index', 'middle', 'ring', 'pinky'] 중 래치 2 개 이상",
+    "★쥔 판정 유지(10.13 block_follow_open): 막힘 쥔 판정이 한 번 참이면 유지 — 실측 손가락이 쥔 자세보다 [0.0, 0.1, 0.1, 0.1, 0.1] rad 이상 열리고 래치 없음 · 목표 따라감이 5 틱 연속이면 풀림",
+    "★쥠 멈춤 · 쥔 판정 = 막힘 신호(hand_block {'g_rad': 0.0182, 'eps_rad': 0.0109, 'n_ticks': 3, 'lag_ticks': 6, 'axes': ['thumb_flex', 'index', 'middle', 'ring', 'pinky']} · latched_axes_at_least) — 손끝 촉각 · 접촉력 문턱 대신. sim DR(배포는 따라 하지 않는다): G [0.0073, 0.0182] · ε [0.0073, 0.0182] · N [2, 4] · 누락 [0.0, 0.15] · 쥔 판정 지연 [0, 6] 틱 · firmware_stop False",
+    "목표 = 홀더 원점 + (0, 0, 0.060) · 세운 컵 — 학습 목표 홀더 [1] (/objects/cup_holder_<k>/pose)",
+    "시작 = aglt 가 쥐고 멈춘 상태: 팔 · 손 목표는 pd 가 붙잡은 마지막 joint_target, hold 0, LSTM 0",
+    "★준비 자세 이송(10.25, place_ready_carry): 리셋 뒤 ready_carry Mover 로 컵을 (홀더 xy, 상판 + 원점 높이 + 0.085) 앵커까지(작업 공간 하강 0.04 · xy ±0.015 · 기울기 ±5.0° · 0.0015 m/틱 · 0.012 rad/틱, 상한 600 틱) — 학습 시작 뱅크 = 이송 끝(/home/oem/rl_ws/our_source/rh_aglt_runs/eval/1023_grasp_bank/carry_end_rcg04_r.npz). 이송 중 정책 · 래치 추정기는 돌리지 않고, 끝난 다음 틱부터 정책(RNN · 직전 행동 · 추정기 0). 에피소드 5.0 s 는 이송 뒤부터 센다. 배포 잡음 0",
+    "★래치 컵 = 손바닥 FK ⊗ 추정기(GRU) 보정 자세(latch/est_r.pt md5 fdf46702) — 입력 = 정책 관측(래치 칸은 갱신 전), 리셋 뒤 첫 틱은 보정 0. 정책 관측의 컵은 붙인 자세 그대로",
+    "★이웃 홀더 관측 6 칸 = 0 — 학습 시작 뱅크에 홀더 자세가 없어 이웃 칸이 늘 꺼져 있었다(래치 추정기 데이터 mu 0 · std 0.001 로 확인). 이웃 홀더 자체는 sim 장면에 ±0.15 m 간격으로 있었다",
+    "★s2r 래치(10.14): 래치 컵 원점 z − 자리 z ≤ 0.04(물체별 {'shaker_c_real': 0.07}) · 바닥 중심 xy ≤ 0.012 m · 기울기 ≤ 8.0° 가 3 틱 연속이면 켜지고 리셋까지 유지 — 관측 래치 칸 = 손 펴기 래치(쥠 조건 없음)",
+    "★놓기(10.14): 래치 뒤 손 = 편 손 행동 · 팔 = 정책 → 래치 15 틱 뒤 놓음(손가락 · 접촉 판정 없음) → 빼기: 손 편 손 고정 · 팔 정책, 손바닥 · 손끝이 놓은 컵에서 0.05 m 떨어지거나 120 틱이면 끝(stop). 놓기 전 시간 초과는 abort",
+    "학습 전용(배포는 따라 하지 않는다): lost_terminate(참값 손–컵 거리) · goal_obs_err · s2r_adr · fpp_bias(붙일 때 FP++ 편향 — 배포는 attach_source 가 정한다)",
+    "★붙인 자세 = 잡기의 grasp_state 넘김 묶음 rel_p · rel_q(learn:place 10.21 · 10.22 'FP++ 는 처음부터 없음') — 리셋 순간 FP++ 스냅숏을 쓰지 않는다. 묶음이 없거나 이번 잡기 것이 아니면 reset 거부",
+    "학습 목표 홀더 원점 범위 x [0.375, 0.38] · y [-0.223, -0.037] m — 실물 홀더가 밖이면 노드가 holder_tol_m 까지만 받는다"
+  ],
+  "goal_box_min": [],
+  "goal_box_max": [],
+  "goal_first_xy_range": 0.0,
+  "goal_first_z_range": [],
+  "goal_delta_distance": 0.0,
+  "goal_success_steps": 0,
+  "goal_tol": 0.0,
+  "grasp_threshold_n": 1.0,
+  "hand_command": "position",
+  "hand_admittance": {},
+  "object_names": [
+    "source240_real",
+    "source200_real",
+    "shaker_c_real"
+  ],
+  "object_geometry": {
+    "source240_real": {
+      "origin_offset_z": 0.085,
+      "mouth_z": 0.085,
+      "bottom_z": -0.085,
+      "radius": 0.03,
+      "half_height": 0.085
+    },
+    "source200_real": {
+      "origin_offset_z": 0.085,
+      "mouth_z": 0.085,
+      "bottom_z": -0.085,
+      "radius": 0.03,
+      "half_height": 0.085
+    },
+    "shaker_c_real": {
+      "origin_offset_z": 0.065,
+      "mouth_z": 0.065,
+      "bottom_z": -0.065,
+      "radius": 0.0354,
+      "half_height": 0.065
+    }
+  },
+  "goal_force_consecutive": false,
+  "active_object": "",
+  "actor_tactile_obs": false,
+  "hand_block": {
+    "g_rad": 0.0182,
+    "eps_rad": 0.0109,
+    "n_ticks": 3,
+    "lag_ticks": 6,
+    "axes": [
+      "thumb_flex",
+      "index",
+      "middle",
+      "ring",
+      "pinky"
+    ]
+  },
+  "grasp_rule": "latched_axes_at_least",
+  "hand_lead_cap_rad": 0.2,
+  "grasp_hold_rule": "block_follow_open",
+  "grasp_release_open_rad": [
+    0.0,
+    0.1,
+    0.1,
+    0.1,
+    0.1
+  ],
+  "grasp_release_steps": 5,
+  "grasp_judge_axes": [
+    "thumb_flex",
+    "index",
+    "middle",
+    "ring",
+    "pinky"
+  ],
+  "grasp_min_axes": 2,
+  "grasp_near_m": 0.0,
+  "extra_actor_obs": [
+    "latch",
+    "nb_py_dx",
+    "nb_py_dy",
+    "nb_py_on",
+    "nb_ny_dx",
+    "nb_ny_dy",
+    "nb_ny_on"
+  ],
+  "arm_hold_rise_m": 0.0,
+  "arm_hold_release_m": 0.0,
+  "arm_hold_release_steps": 30,
+  "arm_start": "home",
+  "ready_r_mult": [
+    2.5,
+    2.5
+  ],
+  "ready_h_m": [
+    0.0,
+    0.0
+  ],
+  "seat_dz": 0.060000000000000005,
+  "target_holders": [
+    1
+  ],
+  "release_steps": 5,
+  "settle_steps": 45,
+  "release_force_n": 1.0,
+  "latch_obs": {
+    "dz": 0.04,
+    "dxy": 0.012,
+    "tilt_deg": 8.0,
+    "bottom_xy": true
+  },
+  "release_rule": "block_follow_open",
+  "release_open_rad": [
+    0.0,
+    0.1,
+    0.1,
+    0.1,
+    0.1
+  ],
+  "release_max_tilt_deg": 5.0,
+  "release_open_zero_skip": false,
+  "carry": {},
+  "latch_debounce": 3,
+  "latch_dz_objs": {
+    "shaker_c_real": 0.07
+  },
+  "latch_s2r": true,
+  "latch_est": {
+    "file": "latch/est_r.pt",
+    "md5": "fdf46702d8765853e41c638a4bdd2d13",
+    "source": "/home/oem/logs/place_newton/est/est_r.pt"
+  },
+  "latch_arm_free": true,
+  "release_timed_steps": 15,
+  "withdraw": {
+    "clear_m": 0.05,
+    "max_steps": 120,
+    "hand_open": true
+  },
+  "neighbor_obs": "zero",
+  "attach_source": "bundle",
+  "holder_range": {
+    "x": [
+      0.375,
+      0.38
+    ],
+    "y": [
+      -0.223,
+      -0.037
+    ]
+  },
+  "ready_carry": {
+    "dz": 0.085,
+    "plan_down": 0.04,
+    "plan_xy": 0.015,
+    "plan_tilt_deg": 5.0,
+    "seeds": 8,
+    "v_max": 0.0015,
+    "qd_max": 0.012,
+    "min_steps": 20,
+    "tol": 0.01,
+    "q_tol": 0.05,
+    "max_steps": 600
+  }
+}

@@ -4,6 +4,7 @@
     python3 tools/build_rh_aglt_contract.py --run deploy/policies/rh56f1/aglt/right_rg3wo [--checkpoint nn/<pth>] [--out …]
     python3 tools/build_rh_aglt_contract.py --run deploy/policies/rh56f1/place/right_i09    # rh_place 런 → rh_place_contract.json(10.04)
     python3 tools/build_rh_aglt_contract.py --run deploy/policies/rh56f1/place/right_n05 --attach bundle   # 10.22 newton_05
+    python3 tools/build_rh_aglt_contract.py --run deploy/policies/rh56f1/place/right_n07 --attach bundle --ready-carry 600   # 10.25
 
 손 관측 순서는 문제가 없다 — rh_aglt 는 손 관절을 이름(프로필 순)으로 찾는다. 왼팔은 hdgp tasks/rh_aglt_l/profile.py 와
 같은 규칙(이름 r_ → l_, 손 값 그대로)으로 RH56F1_RIGHT 에서 만든다.
@@ -59,12 +60,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", help="기본 <run>/rh_aglt_contract.json")
     ap.add_argument("--attach", choices=P.ATTACH_SOURCES, default="fpp",
                     help="rh_place 붙인 자세: fpp(리셋 순간 FP++ 한 장) | bundle(잡기의 grasp_state 넘김 묶음, 10.22 newton_05)")
+    ap.add_argument("--ready-carry", type=int, default=0, metavar="MAX_STEPS",
+                    help="rh_place: 정책 앞 준비 자세 이송(ready_carry Mover, 이송 끝 뱅크로 학습한 런) 상한 틱. 0 = 끔. "
+                         "e2e 계약 3_carry 평가 상한 600(학습 240)")
     args = ap.parse_args(argv)
     run = Path(args.run).resolve()
     place = P.is_rh_place_run(A.read_env(run / "params" / "env.yaml"))
     if args.attach != "fpp" and not place:
         raise SystemExit("--attach 는 rh_place 런에만")
-    kw = {"attach": args.attach} if place else {}
+    if args.ready_carry and not place:
+        raise SystemExit("--ready-carry 는 rh_place 런에만")
+    kw = {"attach": args.attach, "ready_carry_max": args.ready_carry} if place else {}
     c = (P.build if place else A.build)(run, _checkpoint(run, args.checkpoint), load_profile(Path(args.hdgp), "rh56f1_right"),
                                         URDF, asset=ASSET, **kw)
     if c.hand_command == "admittance":          # ★10.08 학습 어드민턴스 명목값 = 실기 드라이버 값이어야 한다
