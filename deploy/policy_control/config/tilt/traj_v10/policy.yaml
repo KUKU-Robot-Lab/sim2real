@@ -1,0 +1,38 @@
+# RH56F1 양팔 tilt 1차 — tilt_traj 궤적 재생(잔차 0) · 컵별 최종 CMA 파라미터. 10.26 learn:e2e-aglt 요청(sim grasp2tilt, hdgp 24bfd4dc).
+#
+# 흐름: 잡기 → plan_carry(ready_carry, 끝 = rh56f1_pour_start.yaml) → plan_tilt_traj.py(이 자산) → replay_to_pd 14 관절.
+# sim 근거(server eval/1026_grasp2tilt): 이송 240 249/250 · 200 248/250 → 궤적 재생 성공(구슬 전부 / ≥90 %)
+#   240 0.815/0.992 · 200 0.805/0.988 — 학습 뱅크(v10 0.834/0.995 · v10b 0.778/0.957)와 ±4 %p 안.
+# ref/ 는 tools/build_tilt_traj_asset.py 가 server 에서 sim Context 로 만든 것(asset_meta.json 에 출처 md5 · 기준 궤적 정보).
+#   setup_<컵>.npz: q0 · mouth_ref(CMA 기준점 = tilt_rl/v9/cma<컵>/grasps 파지 0) · D4 표 · Geo · 여유 설정 · 기본 T_in · 기준 궤적
+#   params_<컵>.json: 240 = tilt_rl/v10/cma240/final_params.json(35a58ca5…) · 200 = tilt_rl/v10b/final_params_200.json(97792a52…)
+# 2차(잔차 RL tilt_bi_v10b)는 이 궤적 위에 정책을 얹는 구조로 나중에 바꿔 끼운다(이 자산은 잔차 0).
+name: tilt/traj_v10
+kind: tilt_traj
+objects: {right: source240_real 또는 source200_real, left: shaker_c_real}
+start_pose: deploy/policy_control/config/homes/rh56f1_pour_start.yaml   # md5 99bdbe88… = sim inputs 와 같음
+pre_s: 0.5                   # 실측 → 궤적 첫 knot 관절 min-jerk(sim --start capture --pre_s 0.5)
+rate_scale: 1.0              # sim 과 같은 빠르기(knot 1/30 s → 60 Hz 선형 보간)
+start_gap_rad: 0.05          # 계획한 실측 ↔ 재생 직전 실측 최대 간극(replay_to_pd --max-start-gap)
+table:
+  from: config/head_extrinsics.yaml   # table_top_z 0.2037(sim 0.205)
+holders:
+  default: config/cup_holder_poses_5090_v1.yaml   # sim 과 같은 옛 배치(86d3f8c9…). 10.27 새 배치 재스캔 뒤 --holders 로 새 파일
+hdgp:
+  commit: e62ae529           # 핀을 만든 hdgp(server). laptop 작업 트리 md5 같음 확인(10.26)
+  md5:
+    source/openarm/openarm/agnostic/modules/tilt_traj/__init__.py: 13fe9614b896dd51be03007635e3355e
+    source/openarm/openarm/agnostic/modules/tilt_traj/plan.py: 30d90081e1c4aa83147c27f4485328f5
+    source/openarm/openarm/agnostic/modules/tilt_traj/traj.py: 35f77477d604021ae96b29208fae0415
+    source/openarm/openarm/agnostic/modules/tilt_traj/clearance.py: 451cd8bc132dff0a328d901ad3cb724a
+    source/openarm/openarm/agnostic/modules/tilt_traj/fast_ik.py: 873bab5bf280406291c850654d570372
+    source/openarm/openarm/agnostic/modules/ready_carry/__init__.py: 6a921e20ba3ea5fa3c943e175a39bf3d
+    source/openarm/openarm/agnostic/modules/ready_carry/chain.py: e93981f98a8e74bada451eb3b0a59568
+    source/openarm/openarm/agnostic/modules/ready_carry/posture.py: b89b1e8f943d59dd0df901111adfb048
+    assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf: f338d043ce3481f72e37ec4c79e20d43
+ref:
+  asset_meta.json: aa897f540a17560c9441080ad20680b2
+  params_200.json: 06019832dc9ddcc1fa4c56c4645d1c78
+  params_240.json: 5927532a4249819bbb17e77260967652
+  setup_200.npz: 94bf9280e423265ea8f5e5c6de00a24c
+  setup_240.npz: fd9e2af3bf83cc953b3f4092b085c3d7
