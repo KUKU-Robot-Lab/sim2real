@@ -1,6 +1,21 @@
 # sim2real 작업 규칙
 
-이 저장소의 명령은 실기(OpenArm 양팔, DG-5F 양손, 목)를 움직인다. 코드 작업보다 실기 안전이 먼저다.
+이 저장소의 명령은 실기(OpenArm 양팔, 양손, 목)를 움직인다. 코드 작업보다 실기 안전이 먼저다.
+손은 RH56F1 과 DG-5F-M 두 종류이고 미션·설정·토픽이 따로다(아래 "손 하드웨어" 절).
+
+## 손 하드웨어 (10.26 사용자 — RH56F1 과 DG-5F-M 을 나눠 다룬다)
+- 작업마다 어느 손인지 먼저 정하고 그 손의 미션·설정·토픽만 쓴다. 한 손의 파일·토픽 이름을 다른 손 작업에 섞지 않는다.
+- 손을 밝히지 않은 문서·로그·메모는 손을 적은 뒤에 쓴다. 10.13 이후 실기 기본 손은 RH56F1 이다.
+
+| | RH56F1 (Inspire) | DG-5F-M short (Tesollo) |
+|---|---|---|
+| 상태 | 실기 기본. 10.13 부터 5090 에 연결(팔 CAN can0 우 · can1 좌, 손 EtherCAT USB 랜, 목 U2D2) | 09.14 실기 손을 short base 로 교체. 10.19 사용자: DG-5F 자산 작업은 우선순위 낮음 |
+| 자산 · 계약 | `openarm_rh56f1_bi_rl` · `logs/policy/asset_openarm_rh56f1_bi_rl/deploy_contract.json` | `openarm_dg5f-m-short_bi_rl` · `logs/policy/asset_openarm_dg5f-m-short_bi_rl/deploy_contract.json`(옛 `openarm_dg5f-m_bi_rl` 계약은 쓰지 않는다) |
+| 미션 | `config/mission_rh56f1_control.yaml` · `mission_rh56f1_fake.yaml`(생성 `scripts/ops/make_rh56f1_missions.py`) | `config/mission_dg5f_m_control.yaml` · `mission_dg5f_m_fake.yaml` |
+| 로봇 설정 | `deploy/policy_control/config/robots/rh56f1_{right,left,bi}_{real,fake}.yaml`, 변환표 `rh56f1_hand_map.yaml` | `deploy/policy_control/config/robots/dg5f_m_{right,left,bi}_{real,fake}.yaml` |
+| 손 상태 토픽 | `/hand_right/joint_states` · `/hand_left/joint_states`(rh56f1_state_node, 구동 6 + 종속 6, rad) | `/dg5f_right/joint_states` · `/dg5f_left/joint_states`(손 namespace 의 controller_manager) |
+| 팔 상태 토픽 | `/pd_state_broadcaster/joint_states`(250 Hz pd 전용 사본) | `/joint_states` |
+| CPU 점검 | `check_host.py --robot rh56f1` | `check_host.py --robot dg5f` |
 
 ## 실기 허락
 - 이 절은 실기 도메인(`ROS_DOMAIN_ID=126`)에만 적용된다. fake 도메인(97/99)은 실기가 아니므로 아래 명령(`--execute` · `--approve` ·
@@ -20,11 +35,11 @@
 - 허락 없이 해도 되는 것: 상태 토픽 구독, bag·로그 분석, fake 도메인(97/99) 실험 전부, sim probe, 코드 읽기·수정.
 
 ## bringup 점검 순서
-단계의 정본은 `config/mission_dg5f_m_control.yaml` 이다. 요지:
+단계의 정본은 그 손의 미션 파일이다(RH56F1 `config/mission_rh56f1_control.yaml`, DG-5F-M `config/mission_dg5f_m_control.yaml`). 요지:
 1. 드라이버·노드 PID 와 남은 프로세스를 확인한다. 이전 세션 노드가 남아 있으면 보고하고 허락 뒤 내린다.
    CPU 도 이때 본다: `python3 scripts/setup/check_host.py --robot <rh56f1|dg5f> --only cpu`(미션 preflight 가 자동으로 부른다).
    실시간 한도 MISS 면 운영자에게 `sudo bash scripts/setup/rt_setup.sh` → 재부팅을 요청한다. 코어 배치는 노드가 PC 마다 스스로 정한다.
-2. 상태 토픽(`/joint_states`, `/dg5f_*/joint_states`, `/head/joint_states`) 수신과 관절 방향을 실기와 대조한다.
+2. 상태 토픽(그 손의 팔·손 상태 토픽(위 표)과 `/head/joint_states`) 수신과 관절 방향을 실기와 대조한다.
 3. pd 는 무발행(`execute:=false`)으로 먼저 띄워 게인·입력을 확인한다. 발행 모드 전환은 허락 뒤.
 4. 자세 이동(home, preset, 경로 재생)은 pd 가 한다. 한 팔씩, 단계마다 허락.
 5. 제어 점검이 끝나기 전에는 정책 단계로 가지 않는다.
