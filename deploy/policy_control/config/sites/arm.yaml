@@ -20,7 +20,7 @@ links_measured_1026:
     hand_left:  {nic: enx00e04c36034e, chip: RTL8152 USB 2.0 랜(임시), usb: "480 Mbps (USB 2.0, 1-11)", ethernet: "100 Mbps full",
                  ecat_rtt_us: {n: 3000, lost: 0, p50: 545.4, p90: 563.6, p99: 660.5, max: 701.0},
                  note: "10.09 같은 칩 p50 545 us · 잃음 1.8 % 기록과 같은 지연(이번 잃음 0). 오른손의 14배"}
-    hand_left_eno1_2152_0252:  {nic: eno1, chip: Intel igc 메인보드 랜, ethernet: "100 Mbps full",
+    hand_left_eno1_2152_to_2202:  {nic: eno1, chip: Intel igc 메인보드 랜, ethernet: "100 Mbps full",
                  ecat_rtt_us: {n: 3000, lost: 0, p50: 245.0, p90: 331.3, p99: 366.1, max: 507.8},
                  note: "오른손의 6배 — igc 인터럽트 묶기 추정. 줄이려면 운영자 sudo ethtool -C eno1 rx-usecs 0"}
     arm_can: {adapter: PCAN-USB Pro FD, usb: "480 Mbps (USB 2.0, 1-5)", bus: "CAN FD 1M / 5M (미션 설정값, 측정 때 can0 · can1 DOWN)"}
