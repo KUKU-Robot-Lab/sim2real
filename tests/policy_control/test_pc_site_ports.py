@@ -26,15 +26,15 @@ def test_kitech_equals_base_file():
     assert got["ethercat"] == base["ethercat"]
 
 
-def test_arm_left_only():
+def test_arm_right_only():
     got = SITE.load_ports(PORTS, "arm")
     assert got["site"] == "arm"
-    ifname, cfg = NODE.ecat_config(got, "left")
+    ifname, cfg = NODE.ecat_config(got, "right")
     assert ifname == "enx00e04c6806e1"
     assert cfg == yaml.safe_load(PORTS.read_text())["ethercat"]
-    SITE.check_side(got, "left")
-    with pytest.raises(SITE.SiteError, match="right 손 NIC 미정"):
-        SITE.check_side(got, "right")
+    SITE.check_side(got, "right")
+    with pytest.raises(SITE.SiteError, match="left 손 NIC 미정"):
+        SITE.check_side(got, "left")
 
 
 def test_apply_does_not_mutate():
