@@ -340,8 +340,9 @@ def test_real_cup_holders_run_the_marker_node_after_the_head_home_and_shutdown_s
     bg = [c for c in cmds if c.background]
     node = " ".join(bg[0].argv)
     assert len(bg) == 1 and "cup_holder_pose_node.py --write" in node
-    assert f"--out {GEN.HOLDER_POSES}" in node.replace("{repo}/", "")
-    assert f"--extrinsics {GEN.CAMERA_EXTRINSICS}" in node.replace("{repo}/", "")
+    rel = node.replace("{repo}/", "").replace(f"{REPO}/", "")      # 로컬 인지(10.27 5090)는 {repo} 가 풀린 절대 경로
+    assert f"--out {GEN.HOLDER_POSES}" in rel
+    assert f"--extrinsics {GEN.CAMERA_EXTRINSICS}" in rel
     assert cmds.index(bg[0]) == 3                                   # shutdown 의 cup_holders#3(앞에 머리 확인 · 맞춤)
     assert "cup_holders#3" in stops
     status = next(c for c in cmds if "/cup_holders/status" in " ".join(c.argv))

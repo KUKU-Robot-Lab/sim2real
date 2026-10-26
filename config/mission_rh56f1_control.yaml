@@ -1,4 +1,4 @@
-# RH56F1 로봇(5090, 인지 vision-3090) 실기 미션 — scripts/ops/make_rh56f1_missions.py 가 만든다. 손으로 고치지 말 것(--check 가 잡는다).
+# RH56F1 로봇(5090, 인지 같은 PC) 실기 미션 — scripts/ops/make_rh56f1_missions.py 가 만든다. 손으로 고치지 말 것(--check 가 잡는다).
 name: RH56F1 양팔 실기 손 연결 · pd 점검
 artifacts:
   contract: logs/policy/asset_openarm_rh56f1_bi_rl/deploy_contract.json
@@ -81,8 +81,8 @@ stages:
   - head_home
   skippable: true
   touches_real: true
-  title: '컵 자세(vision-3090 FP++) — RealSense · FP++ 묶음 컨테이너(fpp_source240b · fpp_shaker_c, 묶음마다 하나 · 색 · 모양으로 가르기 · 한 번 찍기: source240b_blue=오른팔
-    · shaker_c_orange=왼팔 · shaker_c_blue · shaker_c_pink) → /objects/<물체>/pose (base). GPU VRAM 컨테이너마다 약 2 GB'
+  title: '컵 자세(5090 FP++) — RealSense · FP++ 묶음 컨테이너(fpp_source240b · fpp_shaker_c, 묶음마다 하나 · 색 · 모양으로 가르기 · 한 번 찍기: source240b_blue=오른팔 · shaker_c_orange=왼팔
+    · shaker_c_blue · shaker_c_pink) → /objects/<물체>/pose (base). GPU VRAM 컨테이너마다 약 2 GB'
 - id: cup_holders
   group: connect
   lane: both
@@ -753,7 +753,7 @@ run:
     - stop
     - --camera
     - --host
-    - vision-3090
+    - local
     - --wait
     - '60'
   - note: 인지 런처 · 자세 수신기 · 물체 자세 노드 · 컵홀더 노드 정지
@@ -796,50 +796,34 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)
+  - note: 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)
     argv: &id001
     - python3
     - '{repo}/scripts/head_move.py'
     execute_args:
     - --execute
-  - note: 카메라(RealSense, vision-3090) 켜기 — 이미 떠 있으면 그대로(cups 단계와 같이 써도 된다)
+  - note: 카메라(RealSense) 켜기 — 이미 떠 있으면 그대로(cups 단계와 같이 써도 된다)
     argv:
-    - ssh
-    - -tt
-    - -o
-    - BatchMode=yes
-    - vision-3090
-    - cd rl_ws/sim2real && source scripts/vision/common.sh && bash scripts/vision/camera_up.sh
-  - note: 컵홀더 자세 노드(vision-3090 에서, 영상을 그 PC 안에서 읽는다) — ArUco → 직전 자세 추적 → 놓친 id 만 무늬 전체 탐색(첫 장 ~6 s). x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 저 PC
-      의 config/cup_holder_poses_5090_v1.yaml 을 갱신. 파이썬은 저 PC 의 .venv/bin/python(없으면 scripts/vision/venv_setup.sh)
+    - bash
+    - '{repo}/scripts/vision/camera_up.sh'
+  - note: 컵홀더 자세 노드 — ArUco → 직전 자세 추적(0.2 s) → 놓친 id 만 무늬 전체 탐색(첫 장 ~6 s). x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 config/cup_holder_poses_5090_v1.yaml
+      을 갱신
     argv:
-    - ssh
-    - -tt
-    - -o
-    - BatchMode=yes
-    - vision-3090
-    - cd rl_ws/sim2real && source scripts/vision/common.sh && .venv/bin/python scripts/nodes/cup_holder_pose_node.py --write --out config/cup_holder_poses_5090_v1.yaml
-      --extrinsics config/global_camera_extrinsics.yaml > /tmp/perception/cup_holders.log 2>&1 & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM
-      INT; wait $P
-    background: true
-  - note: '★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y 간격 ~0.12 · stable ✓ 인가 (어긋나면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics.yaml
-      --write --head-config config/head_home.yaml)'
-    argv:
-    - ssh
-    - -tt
-    - -o
-    - BatchMode=yes
-    - vision-3090
-    - cd rl_ws/sim2real && source scripts/vision/common.sh && timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String
-    manual: true
-  - note: 홀더 자세 파일을 이 PC 로 — vision-3090:config/cup_holder_poses_5090_v1.yaml → config/cup_holder_poses_5090_v1.yaml(놓기 에피소드가 읽는다). 파일이 아직 없으면
-      세 홀더가 안정되지 않은 것이다 — 확인 스텝부터 다시
-    argv:
-    - scp
-    - -o
-    - BatchMode=yes
-    - vision-3090:rl_ws/sim2real/config/cup_holder_poses_5090_v1.yaml
+    - python3
+    - '{repo}/scripts/nodes/cup_holder_pose_node.py'
+    - --write
+    - --out
     - '{repo}/config/cup_holder_poses_5090_v1.yaml'
+    - --extrinsics
+    - '{repo}/config/global_camera_extrinsics.yaml'
+    background: true
+  - note: '★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.39 부근) · y 간격 ~0.12 · stable ✓ 인가 (어긋나면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics.yaml
+      --write --head-config config/head_home.yaml · 겹친 영상은 scripts/calib/cup_holder_pose.py --png)'
+    argv:
+    - bash
+    - -lc
+    - timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String
+    manual: true
   head_home:
   - note: 목 드라이버 — 포트 단독 소유 · 실측 관절 발행 · 이동 요청 처리
     argv:
@@ -859,26 +843,22 @@ run:
     execute_args:
     - --execute
   cups:
-  - note: ★컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · vision-3090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다). 머리 자세는 FP++ 를 켜기 전에 이 단계가 캘리브 자세로 맞춘다
+  - note: ★컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · 5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다). 머리 자세는 FP++ 를 켜기 전에 이 단계가 캘리브 자세로 맞춘다
     argv:
-    - ssh
-    - -o
-    - BatchMode=yes
-    - vision-3090
+    - bash
+    - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: 인지 런처(이 PC) — vision-3090 의 카메라 · FP++ 컨테이너를 ssh 로 켜고 끈다. 스스로는 아무것도 켜지 않는다
+  - note: 인지 런처(이 PC) — 카메라 · FP++ 컨테이너를 같은 PC 의 스크립트로 켜고 끈다. 스스로는 아무것도 켜지 않는다
     argv:
     - python3
     - '{repo}/scripts/nodes/perception_launcher_node.py'
     - --host
-    - vision-3090
-    - --pose-dest
-    - 169.254.186.1
+    - local
     - --camera-extrinsics
     - '{repo}/config/global_camera_extrinsics.yaml'
     background: true
-  - note: FP++ 자세 수신기 — 영상 · FP++ 는 vision-3090 안에서 돌고 자세만 UDP(저 PC → 이 PC 169.254.186.1)로 넘어온다
+  - note: FP++ 자세 수신기 — 영상 · FP++ 는 localhost 전용 DDS에서 돌고 자세만 UDP(127.0.0.1)로 넘어온다
     argv:
     - python3
     - '{repo}/scripts/nodes/fpp_pose_rx.py'
@@ -918,8 +898,6 @@ run:
     - shaker_c_orange
     - --wait
     - '120'
-    - --status-host
-    - vision-3090
   - note: ★컵 자세 확인(바로 위 추출 결과) — 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y
       < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics.yaml --write
       --head-config config/head_home.yaml)
@@ -953,8 +931,6 @@ run:
     - source240b_blue
     - --wait
     - '120'
-    - --status-host
-    - vision-3090
   cups_left:
   - note: ★[left] shaker_c_orange 가 테이블에 똑바로 서 있고 손이 가리지 않는가
     argv:
@@ -980,8 +956,6 @@ run:
     - shaker_c_orange
     - --wait
     - '120'
-    - --status-host
-    - vision-3090
   policy_pourfj:
   - note: ★두 컵이 학습 배치(로봇 앞 x ≈ 0.38, y ≈ ∓0.16)에 서 있고 콘솔에 두 컵 자세가 들어오는가. 양팔 · 양손 주변이 비어 있는가. 정책은 팔을 스스로 움직이고 손가락을 쥔다 — 빈 컵만
     argv:

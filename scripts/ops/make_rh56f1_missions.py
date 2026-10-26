@@ -131,7 +131,20 @@ REAL_CUP_ORIGIN_Z = 0.085                 # 원점 높이(바닥 위) — 컵 �
 #  ★10.13 사용자: "5090 로봇 pc" · "인지 pc vision3090 이미 카메라 연결" — 실기 미션은 ROBOT_PC 하나로 만든다.
 #  arm4090 로 돌아가면 ROBOT_PC = "arm4090" 으로 바꾸고 다시 생성한다(--check 가 커밋 파일과 맞는지 본다).
 STATIONS = {
+    # ★10.27 사용자 "2번 일부 진행"(vision + 정책 + 로봇 제어 모두 5090) — D435i 를 5090 USB 3(Bus 02)에 꽂았다.
+    #   카메라 · FP++ · 홀더 노드를 같은 PC 에서 돈다(arm4090 과 같은 local 경로). 머리 · 외부 파라미터는 5090 머리 그대로.
+    #   FP++ 이미지는 5090 용(sm_120) 재빌드 perception-plus-plus:humble-cup-sm120 을 humble-cup 으로 tag 해서 쓴다.
+    #   남은 것(sudo): ros-humble-realsense2-camera 설치.
     "5090": {
+        "perception_host": "local",
+        "extrinsics": "config/global_camera_extrinsics.yaml",
+        "head_config": "config/head_home.yaml",
+        "head_tool": "head_home",
+        "pose_dest": "",                             # 같은 PC — 런처가 127.0.0.1 로 받는다
+        "holder_poses": "config/cup_holder_poses_5090_v1.yaml",
+    },
+    # 10.13~10.26: 로봇 5090 + 인지 vision-3090(원격, 자세 UDP). 돌아가면 ROBOT_PC = "5090_vision3090".
+    "5090_vision3090": {
         "perception_host": "vision-3090",            # 카메라 D435 · FP++ 컨테이너는 vision-3090, 자세만 UDP 로 이 PC 에
         # 5090 머리 카메라 hand-eye(목 pan 0 · tilt −20 정적 스냅샷, b100d85 · head_v1 v2) — head_pose 블록이 없어
         # head_pose_check 대신 head_home.py 가 그 자세로 맞추고 검증한다(DG-5F 5090 미션과 같은 방법)
