@@ -26,12 +26,20 @@ def test_kitech_equals_base_file():
     assert got["ethercat"] == base["ethercat"]
 
 
-def test_arm_right_only():
+def test_arm_both_hands():
     got = SITE.load_ports(PORTS, "arm")
     assert got["site"] == "arm"
-    ifname, cfg = NODE.ecat_config(got, "right")
-    assert ifname == "enx00e04c6806e1"
+    assert NODE.ecat_config(got, "right")[0] == "enx00e04c6806e1"
+    ifname, cfg = NODE.ecat_config(got, "left")
+    assert ifname == "eno1"
     assert cfg == yaml.safe_load(PORTS.read_text())["ethercat"]
+    for side in SITE.SIDES:
+        SITE.check_side(got, side)
+
+
+def test_unconnected_side_is_refused():
+    site = {"site": "x", "rh56f1": {"right": {"ifname": "eth9"}, "left": {"ifname": None}}}
+    got = SITE.apply_site(yaml.safe_load(PORTS.read_text()), site)
     SITE.check_side(got, "right")
     with pytest.raises(SITE.SiteError, match="left 손 NIC 미정"):
         SITE.check_side(got, "left")
