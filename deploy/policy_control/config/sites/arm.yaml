@@ -25,7 +25,12 @@ links_measured_1026:
                      ftdi_latency_timer_ms: 16, note: "기본값 16 ms — Dynamixel 권장 1 ms(udev 규칙 없음). 운영자 설정 필요"}
     network: {wifi: "wlp131s0 ARM_416_5G 270 Mbit/s 신호 63", lan_ip: 192.168.1.127}
   vision_arm4090:
-    camera_d435i: "USB 에 안 잡힘(lsusb Intel 8086 없음, /dev/video 없음, librealsense 미설치)"
-    ethernet: "enp6s0 링크 없음"
+    camera_d435i: {serial: "254343066627", fw: 5.16.0.1, usb: "5000 Mbps (USB 3.2, 4-1)", pyrealsense2: 2.58.4,
+                   by_id: /dev/v4l/by-id/usb-Intel_R__RealSense_TM__Depth_Camera_435i_Intel_R__RealSense_TM__Depth_Camera_435i_254343066627-video-index0,
+                   color_depth_30hz_5s: {"640x480": "29.3 fps · 간격 p50 34.1 · max 34.5 ms · depth 잃음 0",
+                                         "848x480": "29.7 fps · 간격 p50 33.6 · max 33.9 ms · depth 잃음 0",
+                                         "1280x720": "29.9 fps · 간격 p50 33.5 · max 33.9 ms · depth 잃음 0"},
+                   note: "21:58 재연결 뒤 인식(처음엔 USB 에 안 잡힘)"}
+    ethernet: "enp6s0 (RTL8125 2.5G) 링크 없음 · Thunderbolt/USB4 없음"
     wifi: ["wlx90de80261bdb ARM_416_5G 270 Mbit/s 신호 89 · 192.168.1.153", "wlx40a5ef5eea48 arm_419 270 Mbit/s 신호 25"]
     to_5090: "같은 서브넷 직접 ping 0/30(AP 단말 격리 추정) · tailscale ping 20/20 왕복 avg 393 ms · max 846 ms"
