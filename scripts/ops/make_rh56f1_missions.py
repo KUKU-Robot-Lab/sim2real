@@ -445,7 +445,7 @@ def _run(kind: str) -> dict:
              f"x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 {HOLDER_POSES} 을 갱신",
              ["python3", "{repo}/scripts/nodes/cup_holder_pose_node.py", "--write", "--out", "{repo}/" + HOLDER_POSES,
               "--extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
-        _cmd("★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.39 부근) · y 간격 ~0.12 · stable ✓ 인가 "
+        _cmd("★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y ≈ l +0.16 / r −0.06 / r 바깥 −0.28(간격 0.22 · 10.27 A1 배치) · stable ✓ 인가 "
              f"(어긋나면 {RECALIB_HINT} · 겹친 영상은 scripts/calib/cup_holder_pose.py --png)",
              ["bash", "-lc", "timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String"], manual=True),
     ] if real and not REMOTE_PERCEPTION else [
@@ -463,7 +463,7 @@ def _run(kind: str) -> dict:
              _on_perception_pc(f"{REMOTE_PY} scripts/nodes/cup_holder_pose_node.py --write --out {HOLDER_POSES} "
                                f"--extrinsics {CAMERA_EXTRINSICS} > /tmp/perception/cup_holders.log 2>&1 & P=$!; "
                                "trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P"), background=True),
-        _cmd("★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y 간격 ~0.12 · stable ✓ 인가 "
+        _cmd("★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y ≈ l +0.16 / r −0.06 / r 바깥 −0.28(간격 0.22 · 10.27 A1 배치) · stable ✓ 인가 "
              f"(어긋나면 {RECALIB_HINT})",
              _on_perception_pc("timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String"), manual=True),
         _cmd(f"홀더 자세 파일을 이 PC 로 — {PERCEPTION_HOST}:{HOLDER_POSES} → {HOLDER_POSES}(놓기 에피소드가 읽는다). "

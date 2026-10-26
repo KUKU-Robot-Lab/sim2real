@@ -817,8 +817,8 @@ run:
     - --extrinsics
     - '{repo}/config/global_camera_extrinsics.yaml'
     background: true
-  - note: '★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.39 부근) · y 간격 ~0.12 · stable ✓ 인가 (어긋나면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics.yaml
-      --write --head-config config/head_home.yaml · 겹친 영상은 scripts/calib/cup_holder_pose.py --png)'
+  - note: '★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y ≈ l +0.16 / r −0.06 / r 바깥 −0.28(간격 0.22 · 10.27 A1 배치) · stable ✓ 인가 (어긋나면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics.yaml --write --head-config config/head_home.yaml · 겹친 영상은 scripts/calib/cup_holder_pose.py --png)'
     argv:
     - bash
     - -lc
