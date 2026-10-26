@@ -226,9 +226,26 @@ def check_host_specific(rep: Report, robot: str) -> None:
              lambda w: rep.warn(w, "USB-CAN 연결 · 이름 확인(미션 drivers 단계가 can0 · can1 을 쓴다)"))(f"CAN {can}")
     if robot in ("rh56f1", "all"):
         import yaml   # noqa: PLC0415
-        ports = yaml.safe_load((SIM2REAL / "deploy/policy_control/config/rh56f1_ports.yaml").read_text())
+        sys.path.insert(0, str(SIM2REAL / "deploy/policy_control"))
+        from policy_control import site_ports as SITE   # noqa: PLC0415
+        site = SITE.resolve_name()
+        ports = SITE.load_ports(SIM2REAL / "deploy/policy_control/config/rh56f1_ports.yaml", site)
+        (rep.ok if site else lambda w: rep.warn(w, f"설치 장소를 고른다: export S2R_SITE=<{'|'.join(SITE.available())}> 또는 ~/.config/s2r/site"))(
+            f"사이트 {site or '(없음 — rh56f1_ports.yaml 기본)'}")
+        if site:
+            meta = SITE.load_site(site)
+            for side, can in (meta.get("can") or {}).items():
+                (rep.ok if Path(f"/sys/class/net/{can}").exists() else
+                 lambda w: rep.warn(w, f"USB-CAN 연결 · 이름 확인(config/sites/{site}.yaml)"))(f"사이트 {site} CAN {side} {can}")
+            hp = meta.get("head_port")
+            if hp:
+                (rep.ok if Path(hp).exists() else
+                 lambda w: rep.warn(w, f"목 U2D2 연결 확인(config/sites/{site}.yaml head_port)"))(f"사이트 {site} 목 {hp}")
         for side in ("right", "left"):
             hand = ports[side]
+            if hand.get("unconnected"):
+                rep.warn(f"RH56F1 {side} 연결 전", hand["unconnected"])
+                continue
             if hand["transport"] == "ethercat":        # 10.02 — 손 하나 = NIC 하나
                 ifn = hand["ifname"]
                 oper = Path(f"/sys/class/net/{ifn}/operstate")

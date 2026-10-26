@@ -34,6 +34,7 @@ import yaml
 if __package__ in (None, ""):              # 파일 경로로 띄울 때(미션 명령)
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from policy_control import rh56f1_ecat as E  # noqa: E402
+from policy_control import site_ports as SITE  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[3]
 DEFAULT_PORTS = Path(__file__).resolve().parents[1] / "config" / "rh56f1_ports.yaml"
@@ -110,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--side", choices=("right", "left"), required=True)
     ap.add_argument("--ports", default=str(DEFAULT_PORTS))
+    ap.add_argument("--site", default=None, help="설치 장소 포트(config/sites/<이름>.yaml) — 없으면 S2R_SITE · ~/.config/s2r/site")
     ap.add_argument("--no-op", action="store_true", help="SAFE_OP 에 머문다 — 상태만 읽고 손은 명령을 쓰지 않는다")
     ap.add_argument("--op-enable", action="store_true", help="OP 실험: 명령 전에도 ENABLE_SET 을 켠다(목표 = 지금 각도)")
     ap.add_argument("--sync-type", type=int, default=None, help="OP 실험: 0x1C32/33:01 에 쓸 값(0 free run · 1 SM 동기)")
@@ -118,7 +120,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--finger-mode", default=None, help="손 동작 모드 0 속도 · 힘 보호 · 1 힘 폐루프 · 2 임피던스(하나 또는 여섯)")
     args, _ = ap.parse_known_args(argv)
 
-    ifname, cfg = ecat_config(yaml.safe_load(Path(args.ports).read_text()) or {}, args.side)
+    ports = SITE.load_ports(args.ports, SITE.resolve_name(args.site))
+    SITE.check_side(ports, args.side)
+    ifname, cfg = ecat_config(ports, args.side)
     if args.op_enable:
         cfg["op_enable"] = True
     if args.sync_type is not None:

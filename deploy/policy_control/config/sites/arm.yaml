@@ -1,0 +1,11 @@
+# 사이트 arm — 10.26 새 배선(사용자). 손 프로토콜 값은 ../rh56f1_ports.yaml.
+# 고르기: export S2R_SITE=arm 또는 echo arm > ~/.config/s2r/site (policy_control/site_ports.py)
+# 손 = 이더넷-USB 허브(USB 3.0 랜)로 손마다 직결, 스위치 없음(eno1 링크 없음).
+# 10.26 실측: enx00e04c6806e1(RTL8156 2.5G, 5 Gbps 포트) 에 EtherCAT slave 1 · 잃음 0/500 · p50 40 us → 왼손(사용자 "왼손 먼저").
+# 오른손은 아직 연결 전(null) — 꽂은 뒤 ip -br link 의 이름을 넣는다.
+site: arm
+rh56f1:
+  right: {ifname: null}
+  left:  {ifname: enx00e04c6806e1}
+can: {right: can0, left: can1}          # PCAN-USB Pro FD(10.26 연결 확인), 미션이 FD 1M/5M 로 올린다
+head_port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0   # Dynamixel(목) → /dev/ttyUSB0

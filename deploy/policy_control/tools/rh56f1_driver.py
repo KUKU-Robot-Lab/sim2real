@@ -21,6 +21,8 @@ DEFAULT = Path(__file__).resolve().parents[1] / "config" / "rh56f1_ports.yaml"
 VENDOR_TRANSPORTS = ("rs485", "canfd")
 TRANSPORTS = VENDOR_TRANSPORTS + ("ethercat",)
 ECAT_NODE = Path(__file__).resolve().parents[1] / "policy_control" / "rh56f1_ecat_node.py"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from policy_control import site_ports as SITE  # noqa: E402
 
 
 def argv_for(cfg: dict, side: str, ports_path: str | Path = DEFAULT, no_op: bool = False,
@@ -60,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--side", choices=("right", "left"), required=True)
     ap.add_argument("--ports", default=str(DEFAULT))
+    ap.add_argument("--site", default=None, help="설치 장소 포트(config/sites/<이름>.yaml) — 없으면 S2R_SITE · ~/.config/s2r/site")
     ap.add_argument("--print", action="store_true", dest="dry", help="명령만 보인다")
     ap.add_argument("--no-op", action="store_true", help="ethercat: SAFE_OP 에 머문다(상태만 · 손은 명령을 쓰지 않는다)")
     ap.add_argument("--transport", choices=("ethercat", "rs485"), default=None,
@@ -77,8 +80,13 @@ def main(argv: list[str] | None = None) -> int:
     extra += (["--force-calibrate"] if args.force_calibrate else [])
     if extra and args.transport == "rs485":
         raise SystemExit("--op-enable · --sync-type · --current-limit · --finger-mode · --force-calibrate 는 ethercat 전용")
-    cmd = argv_for(yaml.safe_load(Path(args.ports).read_text()) or {}, args.side, args.ports, args.no_op,
-                   transport=args.transport, extra=extra)
+    site = SITE.resolve_name(args.site)
+    cfg = SITE.load_ports(args.ports, site)
+    if args.transport != "rs485":
+        SITE.check_side(cfg, args.side)
+    extra += (["--site", site] if site and args.transport != "rs485" else [])
+    print(f"사이트: {site or '(없음 — rh56f1_ports.yaml 의 right · left)'}", file=sys.stderr, flush=True)
+    cmd = argv_for(cfg, args.side, args.ports, args.no_op, transport=args.transport, extra=extra)
     print(" ".join(cmd), flush=True)
     if args.dry:
         return 0
