@@ -1,6 +1,6 @@
 # 사이트 arm — 10.26 새 배선(사용자). 손 프로토콜 값은 ../rh56f1_ports.yaml.
 # 고르기: export S2R_SITE=arm 또는 echo arm > ~/.config/s2r/site (policy_control/site_ports.py)
-# 손마다 NIC 직결, 스위치 없음: 오른손 USB 3.0 랜 · 왼손 메인보드 랜.
+# 손마다 NIC 직결, 스위치 없음: 오른손 USB 3.0 랜 · 왼손 USB 2.0 랜(22:06 임시, 그 전 21:52~22:02 메인보드 랜 eno1).
 # 10.26 실측: enx00e04c6806e1(RTL8156 2.5G, 5 Gbps 포트) 에 EtherCAT slave 1 · 잃음 0/500 · p50 40 us.
 #   사용자가 오른손을 끄자 21:47:30 이 NIC carrier off → 이 NIC 는 오른손(처음에 왼손으로 넣은 것을 고침).
 # 왼손 = 메인보드 랜 eno1(Intel igc) 직결, VLAN 없음. 10.26 21:52 링크 100 Mbps · ecat_rtt slave 1 · 잃음 0/500 · p50 245 us
@@ -8,7 +8,7 @@
 site: arm
 rh56f1:
   right: {ifname: enx00e04c6806e1}
-  left:  {ifname: eno1}
+  left:  {ifname: enx00e04c36034e}   # ★10.26 22:06 임시 — USB 2.0 랜 RTL8152(rh56f1_ports.yaml 10.09 '쓰지 않는다'). USB 3 랜으로 바꾸면 고친다
 can: {right: can0, left: can1}          # PCAN-USB Pro FD(10.26 연결 확인), 미션이 FD 1M/5M 로 올린다
 head_port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0   # Dynamixel(목) → /dev/ttyUSB0
 
@@ -17,7 +17,10 @@ links_measured_1026:
   robot_pc_5090:
     hand_right: {nic: enx00e04c6806e1, chip: RTL8156 USB 랜, usb: "5000 Mbps (USB 3.2, 4-2)", ethernet: "100 Mbps full",
                  ecat_rtt_us: {n: 3000, lost: 0, p50: 40.0, p90: 40.6, p99: 73.8, max: 247.3}}
-    hand_left:  {nic: eno1, chip: Intel igc 메인보드 랜, ethernet: "100 Mbps full",
+    hand_left:  {nic: enx00e04c36034e, chip: RTL8152 USB 2.0 랜(임시), usb: "480 Mbps (USB 2.0, 1-11)", ethernet: "100 Mbps full",
+                 ecat_rtt_us: {n: 3000, lost: 0, p50: 545.4, p90: 563.6, p99: 660.5, max: 701.0},
+                 note: "10.09 같은 칩 p50 545 us · 잃음 1.8 % 기록과 같은 지연(이번 잃음 0). 오른손의 14배"}
+    hand_left_eno1_2152_0252:  {nic: eno1, chip: Intel igc 메인보드 랜, ethernet: "100 Mbps full",
                  ecat_rtt_us: {n: 3000, lost: 0, p50: 245.0, p90: 331.3, p99: 366.1, max: 507.8},
                  note: "오른손의 6배 — igc 인터럽트 묶기 추정. 줄이려면 운영자 sudo ethtool -C eno1 rx-usecs 0"}
     arm_can: {adapter: PCAN-USB Pro FD, usb: "480 Mbps (USB 2.0, 1-5)", bus: "CAN FD 1M / 5M (미션 설정값, 측정 때 can0 · can1 DOWN)"}

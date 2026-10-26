@@ -31,7 +31,7 @@ def test_arm_both_hands():
     assert got["site"] == "arm"
     assert NODE.ecat_config(got, "right")[0] == "enx00e04c6806e1"
     ifname, cfg = NODE.ecat_config(got, "left")
-    assert ifname == "eno1"
+    assert ifname == "enx00e04c36034e"
     assert cfg == yaml.safe_load(PORTS.read_text())["ethercat"]
     for side in SITE.SIDES:
         SITE.check_side(got, side)
