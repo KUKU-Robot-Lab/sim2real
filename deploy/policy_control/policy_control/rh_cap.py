@@ -319,6 +319,8 @@ class CapChain:
             R = np.asarray(m.palm_R, float)
             self.rel = (R.T @ (np.asarray(m.cup_pos, float) - np.asarray(m.palm_pos, float)),
                         _quat_mul(_quat_conj(_matrix_to_quat(R)), np.asarray(m.cup_quat, float)))
+        # ★10.27 hdgp 연결 평가 분해: 이전 정책(capg)의 직전 행동이 seat 관측에 이어지면 63 %, 0 으로 지우면 70 %
+        #   (caps_n12 ep9000 · 시드 31-35 · 넘김 장면 210). 학습은 직전 행동 0 에서만 출발한다 — 지우지 말 것.
         self.prev = np.zeros(self.c.action_dim)
         self._reset_counters()
         self.cap_z0 = float(m.cup_pos[2])

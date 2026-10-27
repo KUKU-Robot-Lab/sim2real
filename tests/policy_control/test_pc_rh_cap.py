@@ -155,6 +155,44 @@ def test_seat_attached_cap_moves_with_palm(cs, fk):
     assert np.linalg.norm(pos - p2.palm_pos) == pytest.approx(np.linalg.norm(cap - pose.palm_pos), abs=1e-9)
 
 
+class Rec:
+    """일정한 행동(0.4)을 내고 받은 관측 · reset 횟수를 적는다."""
+
+    def __init__(self):
+        self.obs, self.resets = [], 0
+
+    def forward(self, obs):
+        self.obs.append(np.array(obs, float))
+        return np.full(13, 0.4)
+
+    def reset(self):
+        self.resets += 1
+
+
+def test_seat_reset_clears_prev_actions(cs, fk):
+    """10.27 hdgp 연결 평가 분해(caps_n12 ep9000 · 시드 31-35): 직전 행동이 seat 에 이어지면 63 %, 0 으로 지우면 70 %.
+    reset 은 직전 행동 · LSTM 을 지우고, 다시 시작한 첫 관측이 새 체인의 첫 관측과 같아야 한다."""
+    hand = np.asarray(cs.side().hand_grip, float) * 0.8
+    pose = fk.palm_pose(Q_PRE, hand)
+    cap = pose.palm_pos + [0.0, 0.0, -0.05]
+    rcv = (cap - [0.0, 0.0, cs.seat_offset], np.array([1.0, 0, 0, 0]))
+    m = _meas(cs, fk, Q_PRE, hand, cap)
+    used = Rec()
+    ch = C.CapChain(cs, used)
+    ch.reset(m, receiver=rcv, held=(Q_PRE, hand))
+    for _ in range(5):
+        ch.step(m)
+    assert np.abs(ch.prev).max() > 0
+    ch.reset(m, receiver=rcv, held=(Q_PRE, hand))
+    assert used.resets == 2 and not ch.prev.any()
+    ch.step(m)
+    fresh = Rec()
+    ch2 = C.CapChain(cs, fresh)
+    ch2.reset(m, receiver=rcv, held=(Q_PRE, hand))
+    ch2.step(m)
+    np.testing.assert_array_equal(used.obs[-1], fresh.obs[0])
+
+
 def test_reset_needs_receiver(cg, fk):
     ch = C.CapChain(cg, Zero())
     hand = np.asarray(cg.side().hand_open, float)
