@@ -82,7 +82,10 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             "grasp_f_right", "grasp_f_left",
             # ★10.22 사용자 "Place 세팅 진행" — 경로 F 잡고 들기 → 놓기(붙인 자세 = 잡기의 grasp_state 넘김 묶음)
             #   ★10.27 결정 1: 놓기 newton_05 → 오른손 n07 · 왼손 n06(ready_carry 이송 뒤 놓기, sim A1 확인)
-            "pick_place_f_right", "pick_place_f_left")
+            "pick_place_f_right", "pick_place_f_left",
+            # ★10.27 실기 2단계 grasp2tilt(sim_e2e 실기 계획) — 경로 F 양손 잡기 → ready_carry 로 tilt 시작 자세 → tilt_traj(컵 240).
+            #   컵 200(grasp2tilt_f_200)은 source200 FP++ 묶음이 새로 들어가 콘솔 그림(fake 짝 · 노드 상한)을 먼저 정해야 해 뒤로 미룬다
+            "grasp2tilt_f_240")
 #: ★10.20 사용자 "영상은 필요 없음. 일단 기본 off" — 카메라 영상 · FP++ 실시간 좌표 기록(vision-3090)과 끝난 뒤 보고서 영상
 #   만들기(episode_media.py)를 기본으로 끈다. 10.20 실기: 보고서 영상 정리가 옛 회까지 다시 가져오며 6 분 넘게 팔 작업을 붙잡아
 #   rehome · tilt_now 승인이 막혔다. 켜려면 True 로 바꾸고 이 생성기를 다시 돌린다(미션 YAML 이 바뀐다).

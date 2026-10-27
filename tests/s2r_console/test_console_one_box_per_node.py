@@ -101,6 +101,7 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                "episode_grasp_e_right#3",                       # ★10.20 밤 경로 E(ap05 → rcg03 넘김)
                                "episode_grasp_f_right#3",                       # ★10.21 경로 F(ap05 → rcg04 넘김)
                                "episode_pick_place_f_right#3",                  # ★10.22 경로 F + 놓기(newton_05)
+                               "episode_grasp2tilt_f_240#3",                    # ★10.27 실기 2단계 grasp2tilt(컵 240)
                                "episode_tilt_base_d#3",                         # ★10.20 경로 A 폐지 → tilt 경로 D(ap05 → rcg03)
                                "episode_tilt_base_c#3"} & set(units)            # 10.17 tilt 기본 궤적 경로 C
     place = d.box("rh_place_node_right")
@@ -110,7 +111,8 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
     runner = d.box("episode_runner")
     assert set(runner.units) == {"episode_tilt_base_d#7",   # 실기: 앞에 CPU 기록 한 줄(10.08) · ★10.20 경로 A 폐지 → D, 정책 노드 둘
                                  "episode_tilt_base_c#7",   # 10.17 경로 C — 정책 노드 둘(D 와 같은 자리)
-                                 "episode_tilt_base_b#5"}   # 10.17 경로 B — 정책 노드 없음(사람이 컵을 댄다)
+                                 "episode_tilt_base_b#5",   # 10.17 경로 B — 정책 노드 없음(사람이 컵을 댄다)
+                                 "episode_grasp2tilt_f_240#7"}   # ★10.27 실기 2단계 grasp2tilt — 두 팔 에피소드라 기본 실행기
     for side in ("right", "left"):
         assert set(d.box(f"episode_runner_{side}").units) == {f"episode_pick_place_{side}#7",
                                                               f"episode_grasp_c_{side}#6",
