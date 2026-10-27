@@ -68,7 +68,9 @@ config/episodes/<이름>.yaml ── episode_spec(검증 · 역할 → 등록부
 |---|---|---|
 | pick_place_right / left | 홈 → snapshot → 집기(aglt → SETTING) → 놓기(홀더 1) → 홈 | 가능 |
 | pick_place_both | 홈 → snapshot → 양팔 동시 집기 → 놓기 우 → 놓기 좌 → 홈 | 두 컵 구분(색 · FP++ 항목) 뒤 |
-| bead_mix_episode | 가이드 1-2 전체 | 모의만 — 붓기 성공 후보 · 뚜껑 · 흔들기 정책 · 색 컵 인지 없음 |
+| bead_mix_episode | 가이드 1-2 전체(옛 정의 — 칵테일은 아래 cocktail_1 · 2 가 10.27 사용자 정의) | 모의만 — 붓기 성공 후보 · 뚜껑 · 흔들기 정책 · 색 컵 인지 없음 |
+| cocktail_1 | 홈 → snapshot → 잡기 우 src240 파랑 · 좌 shaker → ready_carry → tilt 1차 + 복귀 → 놓기 우 파랑 → 홀더 2 → 오른팔 홈 → 잡기 우 src240 분홍 → ready_carry(우) → tilt 1차 + 복귀 → 놓기 우 분홍 → 홀더 1 · 좌 shaker → 홀더 0 → 홈 | 모의만 — sim 영상 먼저. SETTING → 놓기 시작 이송 단계 없음 · n07/n06 등록 미완(policy.yaml) |
+| cocktail_2 | cocktail_1 의 분홍 놓기까지 → 오른팔 홈 → 뚜껑 닫기(capg → caps) → 오른팔 홈 → 놓기 좌 shaker → 홀더 0 | 모의만 — 뚜껑 정책 · 뚜껑 FP++ 항목 없음 |
 
 SETTING = aglt 고정 목표 (0.25, ∓0.12, 0.41)(손에 든 컵 원점) — rh_place · pour 인계 뱅크가 이 자세에서 만들어졌다.
 

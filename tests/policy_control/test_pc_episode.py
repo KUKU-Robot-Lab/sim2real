@@ -143,6 +143,22 @@ def test_the_whole_guide_episode_runs_in_the_dry_run():
     assert m.world.hand("left") == "EMPTY" and m.world.pose == "HOME"
 
 
+@pytest.mark.parametrize("name, flags, pose", [
+    ("cocktail_1", {"blue_poured", "blue_placed", "pink_poured", "pink_placed", "shaker_placed"}, "HOME"),
+    ("cocktail_2", {"blue_poured", "blue_placed", "pink_poured", "pink_placed", "shaker_capped", "shaker_placed"}, "SETTING"),
+])
+def test_the_cocktail_episodes_run_in_the_dry_run(name, flags, pose):
+    """10.27 사용자 칵테일 순서 — 파랑 → 홀더 2 · 분홍 → 홀더 1 · shaker → 홀더 0, 오른팔만 홈 동안 왼손은 shaker 를 든다."""
+    ep = _ep(name)
+    S.validate(ep)
+    holders = {j.target_holder for n in ep.nodes for j in n.jobs if j.target_holder}
+    assert {ep.holders[h] for h in holders} == {0, 1, 2}
+    m = EpisodeManager(ep, FakeExecutor(ep), approve=_yes())
+    assert m.run() == SUCCESS
+    assert flags <= m.world.flags
+    assert m.world.hand("right") == m.world.hand("left") == "EMPTY" and m.world.pose == pose
+
+
 def test_a_node_without_approval_does_not_run_and_the_episode_waits():
     ep = _ep()
     ex = FakeExecutor(ep)

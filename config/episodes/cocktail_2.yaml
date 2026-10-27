@@ -1,0 +1,55 @@
+# 칵테일 제조 2차 에피소드(10.27 사용자 정의) — 1차(cocktail_1)와 같이 두 컵을 붓고, 분홍을 놓은 뒤 오른손이 shaker 뚜껑을 닫고
+# 왼손이 shaker 를 홀더 0 에 둔다(사용자 목록 그대로 — 끝에 양팔 home 이 없다).
+# 사용자 순서: … 놓기(오른 분홍 → 홀더 1) → 오른팔만 home → capg → caps(shaker 뚜껑 닫기) → 오른팔만 home → 놓기(왼 shaker → 홀더 0).
+# 지금은 모의 실행(--dry-run)만 — 뚜껑 정책(capg → caps, learn:capg/s)이 등록부에 없고 뚜껑 FP++ 항목도 없다.
+#   뚜껑 단계는 계열 lock(뚜껑 체결) 한 노드로 둔다. capg(뚜껑 잡기) · caps(닫기) 두 정책 넘김은 정책이 등록될 때 handoff 로 묶는다.
+# 1차와 같은 주의(놓기 시작 자세 · 이웃 칸 컵 · 홀더 재스캔)는 cocktail_1.yaml 머리말.
+episode: {name: cocktail_2, version: 1}
+objects:
+  SRC_BLUE: {topic: /objects/source240b_blue/pose}
+  SRC_PINK: {topic: /objects/source240_pink/pose}
+  SHAKER: {topic: /objects/shaker_c_orange/pose}
+  LID: {topic: /objects/shaker_lid/pose}                            # FP++ 항목 없음(뚜껑 등록 전)
+holders: {HOLDER_0: 0, HOLDER_1: 1, HOLDER_2: 2}
+holder_poses: config/cup_holder_poses_5090_v1.yaml
+policies:
+  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/right_rcg04}
+  rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg04}
+  rh_place_r: {policy: rh56f1/place/right_n07, kind: place, side: right}
+  rh_place_l: {policy: rh56f1/place/left_n06, kind: place, side: left}
+  rh_cap_r: {policy: null, kind: lock, side: right}                # capg → caps(learn:capg/s) — 등록되면 채운다
+trajectories:
+  go_home: {kind: rehome, sides: [right, left]}
+  go_home_r: {kind: rehome, sides: [right]}                         # 왼손은 shaker 를 든 채
+  to_tilt_start_r: {kind: carry, sides: [right], asset: tilt/base_arc6}
+  to_tilt_start_l: {kind: carry, sides: [left], asset: tilt/base_arc6}
+  tilt: {kind: tilt, sides: [right, left], asset: tilt/traj_v10, rate_scale: 1.0}   # D4 궤적(잔차 0) + 복귀 = tilt 시작 자세로
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 판단한다(컵을 쥔 채 rehome 은 거부된다).
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  # 1) 파랑 붓기
+  - {id: grasp_blue, type: policy, name: rh_aglt_r, target_object: SRC_BLUE, policy_object: source240_real, expect: {right_hand: SRC_BLUE}}
+  - {id: grasp_shaker, type: policy, name: rh_aglt_l, target_object: SHAKER, policy_object: shaker_c_real,
+     expect: {right_hand: SRC_BLUE, left_hand: SHAKER}}
+  - {id: to_tilt_start_r1, type: trajectory, name: to_tilt_start_r}
+  - {id: to_tilt_start_l, type: trajectory, name: to_tilt_start_l, expect: {pose: SETTING}}
+  - {id: tilt_blue, type: trajectory, name: tilt, expect: {pose: SETTING, blue_poured: true}}
+  - {id: place_blue, type: policy, name: rh_place_r, source_object: SRC_BLUE, target_holder: HOLDER_2, policy_object: source240_real,
+     expect: {right_hand: EMPTY, left_hand: SHAKER, blue_placed: true}}
+  - {id: home_r_after_blue, type: trajectory, name: go_home_r, expect: {right_hand: EMPTY, left_hand: SHAKER}}
+  # 2) 분홍 붓기
+  - {id: grasp_pink, type: policy, name: rh_aglt_r, target_object: SRC_PINK, policy_object: source240_real,
+     expect: {right_hand: SRC_PINK, left_hand: SHAKER}}
+  - {id: to_tilt_start_r2, type: trajectory, name: to_tilt_start_r, expect: {pose: SETTING}}
+  - {id: tilt_pink, type: trajectory, name: tilt, expect: {pose: SETTING, pink_poured: true}}
+  - {id: place_pink, type: policy, name: rh_place_r, source_object: SRC_PINK, target_holder: HOLDER_1, policy_object: source240_real,
+     expect: {right_hand: EMPTY, left_hand: SHAKER, pink_placed: true}}
+  - {id: home_r_after_pink, type: trajectory, name: go_home_r, expect: {right_hand: EMPTY, left_hand: SHAKER}}
+  # 3) 뚜껑 닫기 → 정리
+  - {id: cap_shaker, type: policy, name: rh_cap_r, source_object: LID, target_object: SHAKER,
+     expect: {right_hand: EMPTY, left_hand: SHAKER, shaker_capped: true}}
+  - {id: home_r_after_cap, type: trajectory, name: go_home_r, expect: {right_hand: EMPTY, left_hand: SHAKER}}
+  - {id: place_shaker, type: policy, name: rh_place_l, source_object: SHAKER, target_holder: HOLDER_0, policy_object: shaker_c_real,
+     expect: {right_hand: EMPTY, left_hand: EMPTY, shaker_placed: true}}
+  - {id: done, type: terminal, result: SUCCESS}
