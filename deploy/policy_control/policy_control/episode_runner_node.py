@@ -114,7 +114,10 @@ def _main_node():
             if self.executor_ros is None:
                 eid = time.strftime("%Y%m%d_%H%M%S")
                 run_dir = _paths.SIM2REAL / "logs" / "episode" / f"{eid}_{self.ep.name}"
-                self.executor_ros = RosExecutor(self, self.ep, robot=self.robot, run_dir=run_dir, runner=self.runner)
+                # ★10.28 사람이 놓은 물체 다시 찍기(FP++) — auto_approve 와 같은 선: fake 도메인 밖(실기 · 미설정)이면 한다
+                rescan = os.environ.get("ROS_DOMAIN_ID", "") in ("", "0", REAL_DOMAIN)
+                self.executor_ros = RosExecutor(self, self.ep, robot=self.robot, run_dir=run_dir, runner=self.runner,
+                                                fpp_rescan=rescan)
             ex = self.executor_ros
             ex.clear_cancel()
             eid = time.strftime("%Y%m%d_%H%M%S")

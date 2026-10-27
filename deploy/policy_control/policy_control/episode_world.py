@@ -18,7 +18,8 @@ class World:
     pose: str = UNKNOWN
     hands: Mapping[str, str] = field(default_factory=lambda: {"right": EMPTY, "left": EMPTY})
     flags: frozenset = frozenset()             # 참인 진행 플래그(blue_poured …)
-    objects: Mapping[str, Mapping] = field(default_factory=dict)   # 물체 → {"at": table|right_hand|left_hand|holder:<이름>, "pos"}
+    #: 물체 → {"at": table|away|right_hand|left_hand|holder:<이름>, "pos"} — away = ★10.28 사람이 아직 놓지 않았다(at_start away)
+    objects: Mapping[str, Mapping] = field(default_factory=dict)
 
     def hand(self, side: str) -> str:
         return self.hands.get(side, EMPTY)

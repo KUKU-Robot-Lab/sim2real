@@ -159,6 +159,107 @@ def test_the_cocktail_episodes_run_in_the_dry_run(name, flags, pose):
     assert m.world.hand("right") == m.world.hand("left") == "EMPTY" and m.world.pose == pose
 
 
+# ---------------------------------------------------------------- ★10.28 사람이 나중에 놓는 물체(칵테일 1 분홍)
+def _pink_gate():
+    """분홍 확인만 따로 허락하는 승인 — ok 를 바꿔 운영자 확인을 흉내 낸다(나머지는 허락)."""
+    ok = {"confirm_pink_placed": False}
+    return ok, (lambda what, _why: ok.get(what, True))
+
+
+def test_cocktail_1_starts_without_pink_and_waits_for_the_operator_to_place_it():
+    """10.28 사용자 "블루컵 놓기 이후에, 내가 핑크컵을 놓아주는 식" — 처음 snapshot 은 분홍을 찾지 않는다. 파랑을 홀더 2 에
+    놓고 오른팔이 홈에 가면 확인에서 멈추고(왼손은 shaker), 확인하면 분홍만 다시 찍어 잡기 → 붓기 → 홀더 1 로 잇는다."""
+    ep = _ep("cocktail_1")
+    ok, approve = _pink_gate()
+    ex = FakeExecutor(ep)
+    m = EpisodeManager(ep, ex, approve=approve)
+    assert m.world.objects["SRC_PINK"]["at"] == "away"
+    assert m.run() == READY and m.waiting == "confirm_pink_placed"
+    assert m.world.objects["SRC_BLUE"]["at"] == "holder:HOLDER_2" and m.world.objects["SRC_PINK"]["at"] == "away"
+    assert m.world.hand("right") == "EMPTY" and m.world.hand("left") == "SHAKER"
+    assert m.view()["confirm"]["node"] == "confirm_pink_placed"
+    ok["confirm_pink_placed"] = True
+    assert m.run() == SUCCESS
+    assert [c[1] for c in ex.calls if c[0] == "snapshot"] == ["scene", "scene_pink"]
+    assert m.world.objects["SRC_PINK"]["at"] == "holder:HOLDER_1"
+    back = [f for f in m.flow["feedback"] if f["from"] == "scene_pink"]
+    assert [(f["to"], f["max"]) for f in back] == [("confirm_pink_placed", S.PLACED_SNAPSHOT_TRIES - 1)]
+
+
+def test_a_failed_pink_rescan_goes_back_to_the_confirm_and_the_third_stops():
+    """못 찾으면 로봇은 움직이지 않았다 — 그 확인으로 돌아가 운영자를 다시 기다린다(연속 실행도 멈춘다). 세 번째 실패는
+    보통 복구(재시도 0) = 정지 — fake 자동 승인이 끝없이 돌지 않게."""
+    ep = _ep("cocktail_1")
+    ok, approve = _pink_gate()
+    ex = FakeExecutor(ep, inject={"scene_pink": ["target_not_found"] * 3})
+    m = EpisodeManager(ep, ex, approve=approve)
+    m.run()
+    for k in (1, 2):
+        ok["confirm_pink_placed"] = True
+        since = m.node_since
+        assert m.run() == READY and m.waiting == "confirm_pink_placed" and m.node.id == "confirm_pink_placed"
+        assert m.placed_tries == {"scene_pink": k} and m.last["code"] == "waiting_confirm"
+        assert m.runs["confirm_pink_placed"]["state"] == "waiting" and m.node_since >= since   # 옛 승인은 다시 안 쓴다
+        assert not any(c[0] == "policy" and c[1] == "grasp_pink" for c in ex.calls) and not ex.stopped
+    assert m.run() == FAILURE and m.last["code"] == "target_not_found" and ex.stopped
+
+
+def test_a_pink_outside_the_verified_box_is_refused_and_not_recorded():
+    """region = sim e2e 오른손 잡기 검증 상자(x 0.20~0.30 · y −0.20~−0.10) — 밖이면 기록하지 않고 확인으로 돌아간다."""
+    ep = _ep("cocktail_1")
+
+    class Off(FakeExecutor):
+        def snapshot(self, node, world):
+            res, poses = super().snapshot(node, world)
+            if node.id == "scene_pink":
+                poses = {k: ((0.35, -0.15, 0.29), q) for k, (_p, q) in poses.items()}
+            return res, poses
+
+    ok, approve = _pink_gate()
+    m = EpisodeManager(ep, Off(ep), approve=approve)
+    m.run()
+    ok["confirm_pink_placed"] = True
+    assert m.run() == READY and m.node.id == "confirm_pink_placed"
+    assert "cup outside region" in m.last["reason"] and "x 0.350" in m.last["reason"]
+    assert m.world.objects["SRC_PINK"]["at"] == "away"
+
+
+def _cocktail_raw():
+    return yaml.safe_load((EPISODES / "cocktail_1.yaml").read_text(encoding="utf-8"))
+
+
+def _without(raw, *ids):
+    raw["sequence"] = [n for n in raw["sequence"] if n["id"] not in ids]
+    return raw
+
+
+@pytest.mark.parametrize("edit, match", [
+    (lambda r: _without(r, "confirm_pink_placed", "scene_pink"), "at_start away"),     # 찍지 않은 분홍으로 손을 뻗는다
+    (lambda r: _without(r, "confirm_pink_placed"), "바로 앞이 confirm"),                  # 사람 확인 없이 다시 찍기
+    (lambda r: r["objects"]["SRC_PINK"].update(at_start="later") or r, "at_start"),
+    (lambda r: r["objects"]["SRC_PINK"].update(region={"x": [0.3, 0.2]}) or r, "lo < hi"),
+    (lambda r: r["objects"]["SRC_PINK"].update(region={"z": [0.2, 0.3]}) or r, "x · y"),
+    (lambda r: r["sequence"][0].update(objects=["SRC_PINK"]) or r, "snapshot 에만"),
+])
+def test_bad_placed_later_setups_are_refused(edit, match):
+    with pytest.raises(S.EpisodeSpecError, match=match):
+        S.parse(edit(_cocktail_raw()))
+
+
+def test_the_pink_rescan_asks_fpp_for_the_real_object_and_needs_it_found():
+    """scene_pink = 미션 cups 단계와 같은 도구(fpp_rescan)로 그 물체만 다시 찍기 — 다 찾아야 통과(--require-all)."""
+    from dataclasses import replace
+
+    from policy_control.episode_ros import RESCAN_TOOL, rescan_argv
+    ep = _ep("cocktail_1")
+    argv = rescan_argv(ep, ["SRC_PINK"])
+    assert argv[1] == str(RESCAN_TOOL) and RESCAN_TOOL.is_file()
+    assert argv[2] == "source240_pink" and "--require-all" in argv
+    odd = replace(ep, objects={**ep.objects, "SRC_PINK": {"topic": "/camera/pink"}})
+    with pytest.raises(ValueError, match="실물 이름"):
+        rescan_argv(odd, ["SRC_PINK"])
+
+
 def test_a_node_without_approval_does_not_run_and_the_episode_waits():
     ep = _ep()
     ex = FakeExecutor(ep)

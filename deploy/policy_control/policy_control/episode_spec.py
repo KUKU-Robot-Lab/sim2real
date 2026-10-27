@@ -24,6 +24,13 @@
 
 snapshot = 10.04 사용자 "처음에 FP++ 로 각 컵들 배치를 한번에 기록" — objects 의 자세를 한 번에 재서(정지 · 신선) 기록하고,
 그 뒤 정책은 그 기록을 본다(컵은 잡히기 전까지 움직이지 않는다 · 잡은 뒤는 손바닥 FK).
+
+★10.28 사람이 나중에 놓는 물체(사용자 "블루컵 놓기 이후에, 내가 핑크컵을 놓아주는 식으로 진행(컵 분리해서 놓기)"):
+    objects: {SRC_PINK: {topic: …, at_start: away, region: {x: [0.20, 0.30], y: [-0.20, -0.10]}}}
+      at_start away = 시작 때 탁자에 없다 — 처음 snapshot 이 찾지 않는다. region = 기록한 자리가 이 상자(base m) 안이어야 한다.
+    {id: …, type: confirm, text: "…"} 바로 뒤 {id: …, type: snapshot, objects: [SRC_PINK]}
+      — 사람이 놓고 확인하면 그 물체만 FP++ 로 다시 찍어 기록한다(놓는 손이 있을 때 찍힌 자리를 쓰지 않게).
+      못 찾거나 상자 밖이면 로봇은 움직이지 않은 채 그 confirm 으로 돌아가 다시 기다린다(PLACED_SNAPSHOT_TRIES 번째 실패는 정지).
 """
 from __future__ import annotations
 
@@ -56,6 +63,10 @@ TRAJ_ASSETS = Path(__file__).resolve().parents[1] / "config"
 POSES = ("HOME", "SETTING")
 EMPTY = "EMPTY"
 HAND_KEYS = {"right_hand": "right", "left_hand": "left"}
+#: ★10.28 물체 시작 자리 — table(기본) · away(사람이 confirm 뒤에 놓는다, 머리말)
+AT_START = ("table", "away")
+#: ★10.28 사람이 놓은 물체 다시 찍기(confirm 바로 뒤 snapshot objects) — 이 번째 실패는 confirm 으로 돌아가지 않고 정지
+PLACED_SNAPSHOT_TRIES = 3
 
 
 class EpisodeSpecError(ValueError):
@@ -100,6 +111,7 @@ class Node:
     sides: tuple = ()             # hand — 팔들(grasp 는 하나)
     hand_contract: str = ""       # hand grasp — 손 열림 · 쥠 자세 · 막힘 명목값을 줄 계약(등록부 id 또는 저장소 기준 .json, 10.20)
     cfg: Mapping = field(default_factory=dict)   # hand grasp — 닫기 · 판정 값 덮어쓰기(tools/hand_grasp.GraspCfg)
+    objects: tuple = ()           # ★10.28 snapshot — 이 물체만 FP++ 로 다시 찍어 기록(사람이 놓은 물체). 비면 탁자 위 물체 전부
 
 
 @dataclass(frozen=True)
@@ -168,10 +180,42 @@ def _node(raw: Mapping, i: int) -> Node:
         raise EpisodeSpecError(f"{where}: confirm 은 text(운영자가 확인할 것)가 있어야 한다")
     elif t == "hand":
         _check_hand(raw, where)
+    objs = raw.get("objects")
+    if objs is not None and (t != "snapshot" or not isinstance(objs, list) or not objs
+                             or not all(isinstance(o, str) and o for o in objs) or len(set(objs)) != len(objs)):
+        raise EpisodeSpecError(f"{where}: objects 는 snapshot 에만 — 다시 찍을 물체 이름 목록(겹치지 않게)")
     return Node(id=str(raw["id"]), type=t, name=str(raw.get("name") or ""), jobs=jobs, expect=dict(raw.get("expect") or {}),
                 checkpoint=raw.get("checkpoint"), result=raw.get("result"), text=str(raw.get("text") or ""),
                 action=str(raw.get("action") or ""), sides=tuple(raw.get("sides") or ()),
-                hand_contract=str(raw.get("hand_contract") or ""), cfg=dict(raw.get("cfg") or {}))
+                hand_contract=str(raw.get("hand_contract") or ""), cfg=dict(raw.get("cfg") or {}),
+                objects=tuple(objs or ()))
+
+
+def region_box(raw) -> dict[str, tuple[float, float]]:
+    """★10.28 물체 region {x: [lo, hi], y: [lo, hi]}(base m) → {축: (lo, hi)}. 축은 x · y, lo < hi. 틀리면 ValueError."""
+    if not isinstance(raw, Mapping) or not raw:
+        raise ValueError("{x: [lo, hi], y: [lo, hi]}(base m) 이어야 한다")
+    out = {}
+    for ax, v in raw.items():
+        if ax not in ("x", "y"):
+            raise ValueError(f"축 {ax!r} — x · y 만")
+        try:
+            lo, hi = (float(t) for t in v)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{ax} 는 [lo, hi] 두 수 — {v!r}") from exc
+        if not lo < hi:
+            raise ValueError(f"{ax} [{lo:g}, {hi:g}] — lo < hi 여야 한다")
+        out[str(ax)] = (lo, hi)
+    return out
+
+
+def region_miss(obj: Mapping, pos) -> str:
+    """물체 자리(base m)가 그 물체 region 밖이면 이유, 안이거나 region 이 없으면 ""."""
+    if not obj or obj.get("region") is None:
+        return ""
+    bad = [f"{ax} {float(pos['xy'.index(ax)]):.3f} ∉ [{lo:g}, {hi:g}]"
+           for ax, (lo, hi) in region_box(obj["region"]).items() if not lo <= float(pos["xy".index(ax)]) <= hi]
+    return " · ".join(bad)
 
 
 def _check_hand(raw: Mapping, where: str) -> None:
@@ -410,8 +454,42 @@ def validate(ep: Episode) -> None:
         sides = [ep.policies[j.role].side for j in n.jobs if j.role in ep.policies]
         if n.type == "parallel_policy" and len(set(sides)) != len(sides):
             errs.append(f"{n.id}: 같은 팔 정책을 동시에 돌릴 수 없다 {sides}")
+    errs += _placed_later_errors(ep)
     if errs:
         raise EpisodeSpecError(f"{ep.path}: " + " · ".join(errs))
+
+
+def _placed_later_errors(ep: Episode) -> list[str]:
+    """★10.28 at_start · region · snapshot objects 규칙 — 사람이 나중에 놓는 물체(at_start away)는 confirm 바로 뒤
+    snapshot(objects)이 찍기 전에는 어떤 정책 · 궤적도 쓰지 않는다(찍지 않은 자리로 손을 뻗지 않게)."""
+    errs = []
+    for name, o in ep.objects.items():
+        if o.get("at_start", "table") not in AT_START:
+            errs.append(f"objects.{name}: at_start 는 {AT_START}")
+        if o.get("region") is not None:
+            try:
+                region_box(o["region"])
+            except ValueError as exc:
+                errs.append(f"objects.{name}: region — {exc}")
+    away = {k for k, o in ep.objects.items() if o.get("at_start") == "away"}
+    recorded: set = set()
+    for i, n in enumerate(ep.nodes):
+        if n.objects:
+            unknown = [o for o in n.objects if o not in ep.objects]
+            if unknown:
+                errs.append(f"{n.id}: snapshot objects {unknown} 가 objects 에 없다")
+            if i < 1 or ep.nodes[i - 1].type != "confirm":
+                errs.append(f"{n.id}: objects 를 준 snapshot(사람이 놓은 물체 다시 찍기)은 바로 앞이 confirm 이어야 한다")
+            recorded |= set(n.objects)
+        used = {o for j in n.jobs for o in (j.target_object, j.source_object) if o}
+        if n.type == "trajectory" and n.name in ep.trajectories and ep.trajectories[n.name].object:
+            used.add(ep.trajectories[n.name].object)
+        early = sorted((used & away) - recorded)
+        if early:
+            errs.append(f"{n.id}: {early} 는 at_start away(시작 때 탁자에 없다) — 앞에 confirm + snapshot(objects) 이 있어야 한다")
+    if away - recorded:
+        errs.append(f"at_start away 물체 {sorted(away - recorded)} 를 찍는 snapshot(objects) 이 없다")
+    return errs
 
 
 def availability(ep: Episode, entries: Mapping[str, object]) -> dict[str, str]:

@@ -67,7 +67,7 @@ def _side_code(side: str, right: FailureCode, left: FailureCode) -> FailureCode:
 #: 거부 · 중단 사유 문구 → 실패(정책 노드 · pd · 노드 측정의 실제 문구, 소문자로 찾는다)
 _REASON_RULES = (
     (("holder pose missing",), "holder"),
-    (("컵 자세가 없다", "cup pose missing", "goal comes from the cup"), "target"),
+    (("컵 자세가 없다", "cup pose missing", "goal comes from the cup", "cup outside region"), "target"),   # ★10.28 region 밖
     (("not grasped",), "grasp"),
     (("held target", "training start pose", "rad from", "start pose"), "pose"),
     (("estop", "thermal", "controller", "pd phase", "watchdog"), "controller"),

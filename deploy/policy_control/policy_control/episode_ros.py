@@ -65,6 +65,19 @@ POLICY_MARGIN_S = 10.0            # 정책 에피소드 시간 + 이만큼 안�
 RESET_CUP_STALE_TEXT = "FP++ live 컵 자세가"
 RESET_CUP_RETRY_S = 6.0
 RESET_CUP_RETRY_STEP_S = 0.2
+#: ★10.28 사람이 놓은 물체(snapshot objects) — FP++ 묶음 컨테이너가 그 물체를 지금 카메라로 다시 찍게 하고(다시 찍는 동안
+#  옛 좌표를 내지 않는다) 그 뒤에 온 프레임만 기록한다. 컨테이너는 못 찾은 물체를 3 s 마다 스스로 찾으므로, 사람이 놓는
+#  도중(손이 컵을 가린 채) 찍힌 자리가 고정돼 있을 수 있다. 미션 cups 단계와 같은 도구 · 물어본 물체를 다 찾아야 통과.
+RESCAN_TOOL = _paths.SIM2REAL / "scripts" / "ops" / "fpp_rescan.py"
+RESCAN_WAIT_S = 60
+
+
+def rescan_argv(ep: Episode, names) -> list[str]:
+    """그 물체들을 FP++ 로 다시 찍는 명령 — 토픽이 /objects/<실물>/pose 가 아니면 ValueError(다시 찍을 실물 이름이 없다)."""
+    real = [real_object_name(str((ep.objects.get(n) or {}).get("topic", ""))) for n in names]
+    if not all(real):
+        raise ValueError(f"FP++ 실물 이름을 모른다 — {[n for n, r in zip(names, real) if not r]} 의 토픽이 /objects/<실물>/pose 가 아니다")
+    return [sys.executable, str(RESCAN_TOOL), *real, "--wait", str(RESCAN_WAIT_S), "--require-all"]
 
 
 def reset_until_cup_fresh(call, *, retry_s: float = RESET_CUP_RETRY_S, step_s: float = RESET_CUP_RETRY_STEP_S,
@@ -144,7 +157,7 @@ class RosExecutor:
 
     def __init__(self, node, ep: Episode, *, robot: str = "rh56f1", run_dir: Path | None = None,
                  contract: str = "logs/policy/asset_openarm_rh56f1_bi_rl/deploy_contract.json",
-                 runner: str = DEFAULT_RUNNER) -> None:
+                 runner: str = DEFAULT_RUNNER, fpp_rescan: bool = True) -> None:
         from geometry_msgs.msg import Point, PoseStamped
         from rclpy.callback_groups import ReentrantCallbackGroup
         from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
@@ -152,6 +165,8 @@ class RosExecutor:
         from std_srvs.srv import Trigger
 
         self.node, self.ep, self.robot, self.runner = node, ep, robot, runner
+        #: ★10.28 snapshot objects 를 FP++ 로 다시 찍는가 — fake 도메인은 FP++ 가 없다(fake 컵이 고정 자세를 낸다)
+        self.fpp_rescan = fpp_rescan
         # ★10.19 이 에피소드가 움직이는 팔 — safe_stop 은 이 팔의 정책만 멈춘다(다른 팔 실행기가 따로 도는 정책을 건드리지 않는다).
         #   못 찾으면 두 팔(옛 동작).
         self.sides = tuple(episode_sides(ep)) or SIDES
@@ -328,15 +343,28 @@ class RosExecutor:
 
     # ---------------------------------------------------------------- 실행기 계약
     def snapshot(self, node: Node, world) -> tuple[NodeResult, dict]:
+        since = 0.0                                       # 이 시각(monotonic) 뒤에 온 프레임만
+        if node.objects:                                  # ★10.28 사람이 방금 놓은 물체만 — FP++ 로 다시 찍은 뒤의 자리
+            names = list(node.objects)
+            if self.fpp_rescan:
+                try:
+                    argv = rescan_argv(self.ep, names)
+                except ValueError as exc:
+                    return NodeResult("refused", f"cup pose missing — {exc}"), {}
+                rc, tail = self._run(argv)
+                if rc != 0:
+                    return NodeResult("refused", f"cup pose missing — FP++ 다시 찍기 rc {rc}: {tail}"), {}
+                since = time.monotonic()
+        else:
+            names = [n for n in self.ep.objects if (world.objects.get(n) or {}).get("at", "table") == "table"]
         deadline = time.monotonic() + SNAPSHOT_WINDOW_S + 3.0
-        names = [n for n in self.ep.objects if (world.objects.get(n) or {}).get("at", "table") == "table"]
         got, why = {}, {}
         while time.monotonic() < deadline and len(got) < len(names) and not self.cancel.is_set():
             time.sleep(0.1)
             with self._lock:
                 frames = {n: list(self._frames[n]) for n in names}
             for n in names:
-                fresh = [f for f in frames[n] if time.monotonic() - f[2] < SNAPSHOT_WINDOW_S]
+                fresh = [f for f in frames[n] if time.monotonic() - f[2] < SNAPSHOT_WINDOW_S and f[2] >= since]
                 snap = snapshot_of(fresh)
                 if snap is not None:
                     got[n] = snap

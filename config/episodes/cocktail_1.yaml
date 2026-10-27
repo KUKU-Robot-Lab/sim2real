@@ -1,17 +1,26 @@
 # 칵테일 제조 1차 에피소드(10.27 사용자 정의) — 파랑 · 분홍 source240 두 컵을 오른손으로 차례로 shaker(왼손)에 붓고 홀더에 둔다.
 # 사용자 순서: home → 잡기(오른 src240 파랑 · 왼 shaker 주황) → ready_carry 로 tilt 시작 자세 → tilt 1차 궤적(src240 → shaker) + 복귀
-#   → 놓기(오른 파랑 → 홀더 2, 맨 우측) → 오른팔만 home → 잡기(오른 src240 분홍) → ready_carry(오른팔) → tilt 1차 + 복귀
-#   → 놓기(오른 분홍 → 홀더 1 · 왼 shaker → 홀더 0) → home.
-# 지금은 모의 실행(--dry-run) · sim 영상(learn:e2e-aglt)이 먼저다. 실기 전 남은 것:
-#   · 놓기 정책은 sim 확인 조합(n07_r ep2000 · n06_l ep5000, 시작 = ready_carry 이송 끝)이다. 여기서는 tilt 복귀 자세(SETTING)에서
-#     놓기를 시작하므로, 실기는 SETTING → 놓기 시작 자세 이송 단계가 필요하다(궤적 종류 미구현). 배포 n05 로 바꿀지는 사용자 결정.
-#   · 분홍을 홀더 1 에 놓을 때 바깥 이웃(홀더 2)에 파랑이 있다 — learn:place 운용 주의(이웃 칸 컵 = 63~84 %)에 해당.
-#   · 홀더 자세는 A1 배치 재스캔 뒤 새 파일로 바꾼다(지금 = 10.20 스캔). 번호: 0 = 왼쪽(marker 2) · 1 = 가운데(marker 1) · 2 = 맨 우측(marker 0).
+#   → 놓기(오른 파랑 → 홀더 2, 맨 우측) → 오른팔만 home → [사람이 분홍을 놓는다] → 잡기(오른 src240 분홍) → ready_carry(오른팔)
+#   → tilt 1차 + 복귀 → 놓기(오른 분홍 → 홀더 1 · 왼 shaker → 홀더 0) → home.
+# ★10.28 사용자(sim_e2e 경유): "위 방법이 SIM에서 성공하긴 전까진 … 블루컵 놓기 이후에, 내가 핑크컵을 놓아주는 식으로 진행(컵 분리해서
+#   놓기)" — 분홍을 처음부터 탁자에 두는 순서는 sim 에서 아직 통과하지 못했다. 그래서 시작 때 탁자에 분홍이 없다(at_start away).
+#   파랑 놓기 · 오른팔 홈 뒤 confirm 에서 사람이 분홍을 놓고, 확인하면 분홍만 FP++ 로 다시 찍어(scene_pink) 잡기로 잇는다.
+#   놓을 자리 = sim e2e 오른손 잡기 검증 상자 x 0.20~0.30 · y −0.20~−0.10(이 상자에서 잡으면 잡기 → 붓기 연결 240 병 0.84) =
+#   탁자 로봇 쪽 끝 선(x 0.07)에서 13~23 cm · 오른쪽 끝 선(y −0.45)에서 25~35 cm. 못 찾거나 상자 밖이면 로봇은 그대로 두고
+#   confirm 으로 돌아간다(세 번째 실패는 정지).
+# 지금은 모의 실행(--dry-run)만 된다. 실기 전 남은 것:
+#   · 콘솔 미션에 아직 없다 — 분홍 FP++ 묶음(source240) 컨테이너 · fake 컵 짝, 그리고 같은 오른손 노드가 파랑 → 분홍 · 홀더 2 → 1 로
+#     바꾸는 것(지금 미션은 역할마다 컵 토픽 · 홀더를 고정해 노드를 띄운다).
+#   · 놓기는 tilt 시작 자세에서 놓기 노드의 ready_carry 이송으로 시작한다(10.27 사용자) — sim mc 에서 tilt 끝 출발 놓기는 파랑 66 % ·
+#     분홍 40 %(넘김 자세 출발 84 · 92 %, sim_e2e 10.27)라 실기에서 지켜본다.
+#   · 홀더 = 10.27 A1 실측(cup_holder_poses_5090_v1). 번호: 0 = 왼쪽 · 1 = 가운데(오른손 안쪽) · 2 = 맨 우측(오른손 바깥) — 마커 번호는
+#     그 파일에. sim A1 실측 배치에서 이웃 홀더 컵의 영향은 1 %p 이하(sim_e2e 10.27).
 #   · 잡기 · 놓기는 한 팔씩 차례로 쓴다(사용자 목록은 한 줄 — 동시 실행은 팔 충돌 검사 뒤 parallel_policy 로 바꿀 수 있다).
-episode: {name: cocktail_1, version: 1}
+episode: {name: cocktail_1, version: 2}
 objects:
   SRC_BLUE: {topic: /objects/source240b_blue/pose}
-  SRC_PINK: {topic: /objects/source240_pink/pose}
+  # ★10.28 사람이 파랑 놓기 뒤에 놓는다 — 처음 snapshot 이 찾지 않고, scene_pink 는 이 상자 안 자리만 받는다
+  SRC_PINK: {topic: /objects/source240_pink/pose, at_start: away, region: {x: [0.20, 0.30], y: [-0.20, -0.10]}}
   SHAKER: {topic: /objects/shaker_c_orange/pose}
 holders: {HOLDER_0: 0, HOLDER_1: 1, HOLDER_2: 2}
 holder_poses: config/cup_holder_poses_5090_v1.yaml
@@ -40,7 +49,11 @@ sequence:
   - {id: place_blue, type: policy, name: rh_place_r, source_object: SRC_BLUE, target_holder: HOLDER_2, policy_object: source240_real,
      expect: {right_hand: EMPTY, left_hand: SHAKER, blue_placed: true}}
   - {id: home_r_after_blue, type: trajectory, name: go_home_r, expect: {right_hand: EMPTY, left_hand: SHAKER}}
-  # 2) 분홍 붓기(왼손은 tilt 시작 자세에서 shaker 를 든 채 기다린다)
+  # 2) 분홍 붓기(왼손은 tilt 시작 자세에서 shaker 를 든 채 기다린다) — ★10.28 분홍은 사람이 여기서 놓는다
+  - {id: confirm_pink_placed, type: confirm,
+     text: "분홍(source240)을 탁자 로봇 쪽 끝 선에서 13~23 cm · 오른쪽 끝 선에서 25~35 cm(x 0.20~0.30 · y −0.20~−0.10)에 똑바로 세우고
+            손을 뺐는가(왼팔은 shaker 를 든 채 멈춰 있다) — 확인하면 분홍만 FP++ 로 다시 찍는다"}
+  - {id: scene_pink, type: snapshot, objects: [SRC_PINK]}
   - {id: grasp_pink, type: policy, name: rh_aglt_r, target_object: SRC_PINK, policy_object: source240_real,
      expect: {right_hand: SRC_PINK, left_hand: SHAKER}}
   - {id: to_tilt_start_r2, type: trajectory, name: to_tilt_start_r, expect: {pose: SETTING}}

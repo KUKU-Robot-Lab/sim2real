@@ -8,13 +8,14 @@
 """
 from __future__ import annotations
 
-from policy_control.episode_spec import EMPTY, HAND_KEYS, Episode, Node
+from policy_control.episode_spec import EMPTY, HAND_KEYS, PLACED_SNAPSHOT_TRIES, Episode, Node
 from policy_control.episode_world import World
 
 TYPE_LABEL = {"snapshot": "배치 기록", "trajectory": "궤적", "policy": "정책", "parallel_policy": "병렬 정책", "terminal": "끝",
               "confirm": "운영자 확인", "hand": "손(팔 제자리)"}
 ROLLBACK_LABEL = "집기 실패 · 시간 초과 → 손 펴고 빈손 홈으로 → 배치 다시 기록 → 다시"
 RETRY_LABEL = "컵 · 홀더를 못 찾으면 인지 갱신 후 다시"
+PLACED_LABEL = "못 찾음 · 상자 밖 → 로봇은 그대로, 다시 놓고 확인"     # ★10.28 사람이 놓은 물체 다시 찍기
 
 
 def _expect_text(expect) -> str:
@@ -40,7 +41,9 @@ def _lines(ep: Episode, n: Node) -> list[str]:
     if n.type == "hand":
         return [{"open": "손 펴기", "grasp": "닿을 때까지 닫기 → 막힘 래치 쥠 → 3 s 유지"}[n.action] + f" · {', '.join(n.sides)}"]
     if n.type == "snapshot":
-        return [f"FP++ {', '.join(ep.objects)}", "정지 · 신선 1.5 s 중앙값"]
+        if n.objects:                                   # ★10.28 사람이 놓은 물체만 다시 찍기
+            return [f"FP++ 다시 찍기 {', '.join(n.objects)}", "사람이 놓은 물체 · 정지 · 신선 1.5 s 중앙값"]
+        return [f"FP++ {', '.join(k for k, o in ep.objects.items() if o.get('at_start') != 'away')}", "정지 · 신선 1.5 s 중앙값"]
     if n.type == "terminal":
         return [str(n.result or "SUCCESS")]
     out = []
@@ -65,6 +68,9 @@ def flow_of(ep: Episode) -> dict:
               "expect": _expect_text(n.expect), "checkpoint": n.checkpoint} for n in ep.nodes]
     feedback = []
     for i, n in enumerate(ep.nodes):
+        if n.type == "snapshot" and n.objects and i >= 1 and ep.nodes[i - 1].type == "confirm":
+            feedback.append({"from": n.id, "to": ep.nodes[i - 1].id, "kind": "rollback", "max": PLACED_SNAPSHOT_TRIES - 1,
+                             "label": PLACED_LABEL})
         if n.type not in ("policy", "parallel_policy"):
             continue
         mx = ep.max_retry(n)

@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Mapping
 
 from policy_control.episode_failure import F, FailureCode, NodeResult
-from policy_control.episode_spec import Episode, Node
+from policy_control.episode_spec import Episode, Node, region_box
 
 _OK = {"aglt": {"attached": True, "setting_err_m": 0.01}, "place": {"cup_in_holder": True, "hand_empty": True},
        "pour": {"pour_ok": True}, "lock": {"locked": True}, "shake": {}}
@@ -31,6 +31,14 @@ _FAIL = {
 }
 
 
+def _fake_pos(obj: Mapping, i: int) -> tuple:
+    """모의 물체 자리 — region(★10.28 검증 상자)이 있으면 그 가운데, 아니면 앞 물체부터 번갈아 오른쪽 · 왼쪽."""
+    box = region_box(obj["region"]) if obj.get("region") is not None else {}
+    x = sum(box["x"]) / 2 if "x" in box else 0.25
+    y = sum(box["y"]) / 2 if "y" in box else (-0.20 if i % 2 == 0 else 0.20)
+    return (x, y, 0.29)
+
+
 class FakeExecutor:
     def __init__(self, ep: Episode, inject: Mapping[str, list] | None = None) -> None:
         self.ep = ep
@@ -48,8 +56,10 @@ class FakeExecutor:
         if code is not None:
             status, reason, signals = _FAIL[code]
             return NodeResult(status, reason, signals=signals), {}
-        poses = {name: ((0.25, (-0.20 if i % 2 == 0 else 0.20), 0.29), (1.0, 0.0, 0.0, 0.0))
-                 for i, name in enumerate(self.ep.objects)}
+        # 실제 실행기와 같은 물체만 — ★10.28 이름을 준 snapshot 은 그 물체, 아니면 탁자 위(at_start away 는 아직 없다)
+        names = set(node.objects) or {n for n in self.ep.objects if (world.objects.get(n) or {}).get("at", "table") == "table"}
+        poses = {name: (_fake_pos(self.ep.objects[name], i), (1.0, 0.0, 0.0, 0.0))
+                 for i, name in enumerate(self.ep.objects) if name in names}
         return NodeResult("completed", "", signals={"objects": sorted(poses)}), poses
 
     def run_policies(self, node: Node, plans: list, world) -> list:

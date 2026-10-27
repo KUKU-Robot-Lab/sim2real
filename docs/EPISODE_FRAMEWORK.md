@@ -69,10 +69,19 @@ config/episodes/<이름>.yaml ── episode_spec(검증 · 역할 → 등록부
 | pick_place_right / left | 홈 → snapshot → 집기(aglt → SETTING) → 놓기(홀더 1) → 홈 | 가능 |
 | pick_place_both | 홈 → snapshot → 양팔 동시 집기 → 놓기 우 → 놓기 좌 → 홈 | 두 컵 구분(색 · FP++ 항목) 뒤 |
 | bead_mix_episode | 가이드 1-2 전체(옛 정의 — 칵테일은 아래 cocktail_1 · 2 가 10.27 사용자 정의) | 모의만 — 붓기 성공 후보 · 뚜껑 · 흔들기 정책 · 색 컵 인지 없음 |
-| cocktail_1 | 홈 → snapshot → 잡기 우 src240 파랑 · 좌 shaker → ready_carry → tilt 1차 + 복귀 → 놓기 우 파랑 → 홀더 2 → 오른팔 홈 → 잡기 우 src240 분홍 → ready_carry(우) → tilt 1차 + 복귀 → 놓기 우 분홍 → 홀더 1 · 좌 shaker → 홀더 0 → 홈 | 모의만 — sim 영상 먼저. SETTING → 놓기 시작 이송 단계 없음 · n07/n06 등록 미완(policy.yaml) |
+| cocktail_1 | 홈 → snapshot(파랑 · shaker) → 잡기 우 src240 파랑 · 좌 shaker → ready_carry → tilt 1차 + 복귀 → 놓기 우 파랑 → 홀더 2 → 오른팔 홈 → **[확인] 사람이 분홍을 놓는다 → 분홍만 다시 찍기**(10.28) → 잡기 우 src240 분홍 → ready_carry(우) → tilt 1차 + 복귀 → 놓기 우 분홍 → 홀더 1 · 좌 shaker → 홀더 0 → 홈 | 모의만 — 콘솔 미션 미등록(분홍 FP++ 묶음 source240 · 같은 오른손 노드의 컵 · 홀더 바꾸기 · fake 컵 짝) |
 | cocktail_2 | cocktail_1 의 분홍 놓기까지 → 오른팔 홈 → 뚜껑 닫기(capg → caps) → 오른팔 홈 → 놓기 좌 shaker → 홀더 0 | 모의만 — 뚜껑 정책 · 뚜껑 FP++ 항목 없음 |
 
 SETTING = aglt 고정 목표 (0.25, ∓0.12, 0.41)(손에 든 컵 원점) — rh_place · pour 인계 뱅크가 이 자세에서 만들어졌다.
+
+사람이 나중에 놓는 물체(★10.28 사용자 "블루컵 놓기 이후에, 내가 핑크컵을 놓아주는 식으로 진행(컵 분리해서 놓기)"):
+`objects` 의 물체에 `at_start: away` 를 두면 시작 때 탁자에 없는 것으로 보고 처음 snapshot 이 찾지 않는다.
+`{type: confirm}` 바로 뒤 `{type: snapshot, objects: [그 물체]}` 가 사람이 놓고 확인한 뒤 그 물체만 다시 찍는다 — 실기는
+`scripts/ops/fpp_rescan.py <실물> --require-all`(미션 cups 단계와 같은 도구)로 FP++ 가 지금 카메라로 다시 찍게 하고 그 뒤 프레임만
+기록한다. FP++ 는 못 찾은 물체를 3 s 마다 스스로 찾으므로, 놓는 손이 가린 채 찍힌 자리가 고정돼 있을 수 있기 때문이다
+(fake 도메인은 FP++ 가 없어 건너뛴다). `region: {x: [lo, hi], y: [lo, hi]}`(base m)가 있으면 기록한 자리가 그 안이어야 한다.
+못 찾거나 상자 밖이면 로봇은 움직이지 않은 채 그 confirm 으로 돌아가 운영자를 다시 기다린다(그 노드에 돌아온 뒤 쓴 승인만
+받는다). 세 번째 실패는 보통 복구(failure_policy)로 간다. 찍기 전의 물체를 정책 · 궤적이 쓰면 정의 검사가 거부한다.
 
 컵 자세: aglt 는 snapshot 정지 기록(/episode/objects/CUP/pose)을 받고, reset 때 그 값을 붙잡아(`cup_latch:=true`) 에피소드 동안 FP++ 출력을 더 보지 않는다(10.04 사용자: "처음 FP++ 로 인식하면 그때 움직이기만 — 컵은 가만히 있다"). 단독 aglt 단계도 같다. 쥐면(엄지 + 다른 손가락) 100 ms 뒤 **파지 시작 시각**의
 손바닥 FK 와 기록 자세로 손에 붙이고(rh_aglt_node `cup_static:=true`, cup_attach static), 그 뒤 컵 = 손바닥 FK. 실시간 FP++ 를

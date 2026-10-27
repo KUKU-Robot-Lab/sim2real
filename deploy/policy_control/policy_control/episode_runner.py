@@ -28,7 +28,7 @@ from typing import Callable, Mapping, Protocol
 from policy_control.episode_failure import (F, FailureCode, FailureDetector, NodeResult, Recovery, RecoveryManager,
                                             ROLLBACK, SAFE_STOP)
 from policy_control.episode_flow import flow_of
-from policy_control.episode_spec import EMPTY, Episode, Node
+from policy_control.episode_spec import EMPTY, PLACED_SNAPSHOT_TRIES, Episode, Node, region_miss
 from policy_control.episode_world import World
 
 SUCCESS, FAILURE, RUNNING, READY, STOPPED = "SUCCESS", "FAILURE", "RUNNING", "READY", "STOPPED"
@@ -96,11 +96,16 @@ class EpisodeManager:
     #: ★10.17 지금 노드에 온 시각(wall) — 확인 노드 승인은 이 뒤에 쓰인 것만 받는다(리뷰: 서비스 실패로 남은 옛 승인 줄이
     #:   나중에 같은 노드에서 저절로 통과하지 않게, episode_runner_node 가 읽는다)
     node_since: float = field(default_factory=time.time)
+    #: ★10.28 사람이 놓은 물체 다시 찍기(confirm 바로 뒤 snapshot objects) 실패 횟수 — 노드 id → 횟수
+    placed_tries: dict = field(default_factory=dict)
     _auto: bool = False
 
     def __post_init__(self) -> None:
         if not self.flow:
             self.flow = flow_of(self.ep)
+        for name, o in self.ep.objects.items():         # ★10.28 사람이 나중에 놓는 물체 — 처음 snapshot 이 찾지 않는다
+            if o.get("at_start") == "away" and name not in self.world.objects:
+                self.world = self.world.locate(name, "away")
 
     def _mark(self, node_id: str, state: str, **kw) -> None:
         prev = self.runs.get(node_id, {"n": 0})
@@ -223,12 +228,38 @@ class EpisodeManager:
         self._mark(node.id, "failed", s=round(dur, 2), code=code.value)
         self._log("failure", node, start_time=start, end_time=_now(), duration=round(dur, 3), result=code.value,
                   termination_reason=reason, failed_role=who, signals=self._signal_rows(results))
+        if self._placed_retry(node, code):
+            return self._back_to_confirm(node, code, reason)
         return self._recover(node, code)
+
+    def _placed_retry(self, node: Node, code: FailureCode) -> bool:
+        """★10.28 사람이 놓은 물체 다시 찍기(confirm 바로 뒤 snapshot objects)를 못 찾음 · 상자 밖으로 실패 — 상한 안이면 참."""
+        if (node.type != "snapshot" or not node.objects or code is not F.TARGET_NOT_FOUND or self.index < 1
+                or self.ep.nodes[self.index - 1].type != "confirm"):
+            return False
+        self.placed_tries[node.id] = self.placed_tries.get(node.id, 0) + 1
+        return self.placed_tries[node.id] < PLACED_SNAPSHOT_TRIES
+
+    def _back_to_confirm(self, node: Node, code: FailureCode, reason: str) -> str:
+        """★10.28 로봇은 움직이지 않았다 — 바로 앞 confirm 으로 돌아가 운영자가 다시 놓고 확인하기를 기다린다(연속 실행도
+        거기서 멈춘다). 그 노드에 돌아온 시각을 새로 찍어, 앞서 쓴 확인 승인이 저절로 다시 통과하지 않게 한다."""
+        self.index -= 1
+        self.node_since = time.time()
+        back = self.ep.nodes[self.index]
+        self.waiting = back.id
+        self._mark(back.id, "waiting")
+        self.last = {**self.last, "node": back.id, "code": "waiting_confirm",
+                     "reason": f"{node.id} 실패 {self.placed_tries[node.id]}/{PLACED_SNAPSHOT_TRIES}({code.value}: {reason})"
+                               f" — 다시 놓고 확인: {back.text}"}
+        self._log("back_to_confirm", node, result=code.value, termination_reason=reason, next=back.id,
+                  tries=self.placed_tries[node.id])
+        self.status = READY
+        return self.status
 
     def _execute(self, node: Node, world: World) -> tuple[list, dict]:
         try:
             if node.type == "snapshot":
-                res, located = self.executor.snapshot(node, world)
+                res, located = self._snapshot(node, world)
                 return [res], located
             if node.type == "trajectory":
                 return [self.executor.run_trajectory(node, self.ep.trajectories[node.name], world)], {}
@@ -237,6 +268,17 @@ class EpisodeManager:
             return list(self.executor.run_policies(node, self._plans(node, world), world)), {}
         except Exception as exc:                                       # 실행기 예외 = 관측 · 컨트롤러 이상 → safe stop
             return [NodeResult("error", f"{type(exc).__name__}: {exc}")], {}
+
+    def _snapshot(self, node: Node, world: World) -> tuple[NodeResult, dict]:
+        """실행기 snapshot + ★10.28 물체 region(검증 상자) — 밖이면 거부한다(로봇은 움직이지 않았다 · 기록하지 않는다)."""
+        res, located = self.executor.snapshot(node, world)
+        if res.status != "completed":
+            return res, located
+        miss = [f"{name} {why}" for name, pose in located.items()
+                for why in (region_miss(self.ep.objects.get(name) or {}, pose[0]),) if why]
+        if miss:
+            return NodeResult("refused", "cup outside region — " + "; ".join(miss), res.duration_s), {}
+        return res, located
 
     def _plans(self, node: Node, world: World) -> list:
         out = []
@@ -304,7 +346,7 @@ class EpisodeManager:
             self.world = World(pose=cp["world"].pose, hands=self.world.hands, flags=self.world.flags,
                                objects=self.world.objects)
             # 실패한 집기가 컵을 밀었을 수 있다 — 테이블 위 물체 자리를 다시 기록한다(10.04 사용자: 배치는 FP++ 로 기록)
-            res, located = self.executor.snapshot(Node(id=f"{node.id}:resnap", type="snapshot"), self.world)
+            res, located = self._snapshot(Node(id=f"{node.id}:resnap", type="snapshot"), self.world)
             if res.status != "completed":
                 return self._fail(node, F.TARGET_NOT_FOUND, f"되돌아간 뒤 배치 재기록 실패: {res.reason}")
             for name, pose in located.items():
@@ -361,7 +403,10 @@ class EpisodeManager:
         if node.type == "trajectory":
             return f"궤적 {node.name} (팔 {', '.join(self.ep.trajectories[node.name].sides)})"
         if node.type == "snapshot":
-            return f"물체 배치 기록 {', '.join(self.ep.objects)}"
+            if node.objects:                            # ★10.28 사람이 놓은 물체
+                return f"FP++ 로 다시 찍어 기록 {', '.join(node.objects)}(사람이 놓은 물체)"
+            on_table = [n for n in self.ep.objects if (self.world.objects.get(n) or {}).get("at", "table") == "table"]
+            return f"물체 배치 기록 {', '.join(on_table)}"
         if node.type == "confirm":
             return f"확인: {node.text}"
         if node.type == "hand":
