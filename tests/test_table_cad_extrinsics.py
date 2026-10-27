@@ -78,6 +78,29 @@ def test_joint_refine_keeps_truth_when_normal_agrees():
     assert np.allclose(out[:3, :3] @ n_cam, [0, 0, 1], atol=1e-3)
 
 
+
+def _tilt_deg(R, n_cam):
+    return float(np.degrees(np.arccos(np.clip((R @ n_cam)[2], -1.0, 1.0))))
+
+
+def test_joint_refine_pins_tilt_to_depth_plane_by_default_sigma():
+    """10.27 기본(--tilt-sigma 0.05°): 구멍 영상이 2° 기울어진 자세를 가리켜도 기울기는 depth 상판 법선을 따른다.
+
+    실기에서 구멍 PnP 기울기는 컬러/IR 끼리 2.3° 갈렸다 — 1° 가 테이블에서 약 10 mm 라 구멍 쪽 기울기를 믿지 않는다.
+    """
+    holes = _holes()
+    obj = np.array([h.xyz for h in holes])
+    c, s_ = np.cos(np.radians(2.0)), np.sin(np.radians(2.0))
+    pitch = np.array([[1, 0, 0], [0, c, -s_], [0, s_, c]])           # 카메라 x 축 둘레 2°
+    tilted = TRUE.copy()
+    tilted[:3, :3] = TRUE[:3, :3] @ pitch
+    img, _ = T.project(tilted, K, obj)                               # 영상은 기울어진 자세에서
+    n_cam = TRUE[:3, :3].T @ np.array([0.0, 0.0, 1.0])               # depth 는 참 수평
+    pinned = T.joint_refine(INIT, obj, img, K, n_cam, sigma_deg=0.05)
+    loose = T.joint_refine(INIT, obj, img, K, n_cam, sigma_deg=5.0)
+    assert _tilt_deg(pinned[:3, :3], n_cam) < 0.15
+    assert _tilt_deg(loose[:3, :3], n_cam) > 1.0                     # 약하게 걸면 구멍 쪽 기울기를 따라간다
+
 def test_quat_roundtrip():
     q = np.array([0.130161, -0.69891, 0.696068, -0.100366])
     q /= np.linalg.norm(q)

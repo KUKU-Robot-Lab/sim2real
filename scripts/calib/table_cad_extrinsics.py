@@ -6,17 +6,21 @@
 (컵 xy ≈ 3 cm). 머리 조립 · 카메라 장착이 로봇마다 달라 남의 값을 빌려 쓸 수 없다.
 
 방법(머리는 기준 자세 — head_home 을 먼저 한다. 이 값은 그 자세 하나에서만 맞는 정적 스냅샷이다):
-  ① RGB + 정렬 depth + K 한 장(라이브: scripts/vision/grab_rgbd.py, 또는 --npz)
+  ① RGB + 정렬 depth + K — 라이브 3장(기본 --frames 3, scripts/vision/grab_rgbd.py) 또는 --npz 1장
   ② CAD 기준점: hdgp env_v1 상판(PaintedMetal, z 0.205)의 구멍 원 — 꼭짓점을 군집해 **원 맞춤**(최소제곱)으로 중심을 낸다
      (점 평균은 꼭짓점이 원에 고르게 없어 ~3 mm 치우친다). 은색 와셔가 끼워진 구멍과 빈 검은 구멍 모두 쓴다.
   ③ 초기 외부 파라미터(--init)로 CAD 점을 투영 → 그 주변 창에서 밝기 대비 부호로 와셔(밝음)/구멍(어두움)을 가려 중심을 다듬는다
   ④ RANSAC PnP → 재투영 → 다시 다듬기(반복) → T_base_cam
+  ④' 기울기는 depth 상판 법선으로 고정한다(10.27 기본, --tilt-sigma 0.05°). 구멍 PnP 만으로 낸 앞뒤 · 좌우 기울기는 믿지 않는다
+     — 같은 자세에서 컬러/IR 영상끼리 2.3° 갈렸고, 1° 가 테이블(0.6 m)에서 약 10 mm 다. 평면을 못 찾으면 멈춘다.
+     장마다 따로 풀어 평균하고, 장끼리 카메라 위치 차가 --max-spread-mm(5) 를 넘거나 재투영 평균이 --max-res-px(8) 를
+     넘으면 --write 를 거부한다
   ⑤ 확인: 상판 외곽 + 구멍 원을 초기/새 값으로 겹친 PNG · depth RANSAC 테이블 평면(z 0.205 · 수평이어야 한다)
   ⑥ --write 일 때만 --out yaml 의 camera 블록(position · orientation_wxyz)을 바꾼다(다른 줄 보존)
   ⑦ --head-config 를 주면 사진을 찍은 머리 자세(틱, 읽기만)를 같은 파일 head_pose 에 적는다 — 미션이 FP++ 전에
      scripts/head_pose_check.py 로 그 자세와 비교해 맞춘다(10.04). head_pose 가 있는 파일은 --head-config 없이 쓰지 않는다
 
-    python3 scripts/calib/table_cad_extrinsics.py                                   # 라이브 1장 · 보고만
+    python3 scripts/calib/table_cad_extrinsics.py                                   # 라이브 3장 평균 · 보고만
     python3 scripts/calib/table_cad_extrinsics.py --npz /tmp/rgbd.npz --png /tmp/overlay.png
     python3 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090.yaml \
         --write --head-config config/head_home_rh56f1.yaml                      # arm4090(머리 자세도 기록)
@@ -416,6 +420,12 @@ def main(argv=None) -> int:
     ap.add_argument("--usda", type=Path, default=ENV_USDA)
     ap.add_argument("--no-depth-tilt", action="store_true", help="깊이 상판 법선 제약을 빼고 PnP 만")
     ap.add_argument("--domain", type=int, default=126, help="카메라 노드 도메인(실기 126 · localhost 전용) — 셸의 ROS_DOMAIN_ID 를 믿지 않는다")
+    ap.add_argument("--tilt-sigma", type=float, default=0.05,
+                    help="깊이 상판 법선 제약 세기(°) — 기본 0.05 = 사실상 고정. 10.27: 구멍 PnP 의 기울기는 컬러/IR 끼리도 2.3° 갈려 믿지 않는다")
+    ap.add_argument("--frames", type=int, default=None,
+                    help="라이브로 N 장 찍어 각각 풀고 평균(장끼리 차이로 거부) — 기본 라이브 3 · --npz 1")
+    ap.add_argument("--max-spread-mm", type=float, default=5.0, help="장끼리 카메라 위치 차이 상한(--write 거부)")
+    ap.add_argument("--max-res-px", type=float, default=8.0, help="재투영 평균 상한(--write 거부)")
     ap.add_argument("--head-config", type=Path, default=None,
                     help="머리 설정(head_home_rh56f1.yaml) — 주면 찍을 때의 머리 자세(틱)를 읽어 --write 때 head_pose 에 적는다")
     args = ap.parse_args(argv)
@@ -430,27 +440,49 @@ def main(argv=None) -> int:
         head_ticks = read_head_ticks(args.head_config)
         print(f"[head] 찍을 때 머리 자세 {head_ticks}")
 
-    npz = args.npz or grab_live(args.domain)
-    d = np.load(npz)
-    rgb, K = d["rgb"], d["K"].astype(float)
-    depth = d["depth"].astype(float)
-    if depth.max() > 50:
-        depth = depth / 1000.0
     import cv2
-    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
-
     init = load_extrinsics(args.init)
     T0 = T_from(init.cam_pos, init.cam_quat)
     holes = cad_holes(args.usda)
-    T, used, img, res, shift = solve(holes, gray, K, T0)
-    print(f"[coarse] 초기 투영 평행이동 {shift.tolist()} px")
-    print(f"[pnp] 재투영 평균 {res.mean():.2f} px (깊이 제약 전)")
-    obj_used = np.array([holes[i].xyz for i in used])
-    n_cam = plane_normal_cam(depth, K, T)
-    if n_cam is not None and not args.no_depth_tilt:
-        T = joint_refine(T, obj_used, img, K, n_cam)
-        proj, _ = project(T, K, obj_used)
-        res = np.linalg.norm(proj - img, axis=1)
+    if args.npz is not None and (args.frames or 1) > 1:
+        raise SystemExit("✗ --frames 2 이상은 라이브일 때만")
+    n_frames = args.frames or (1 if args.npz is not None else 3)
+    sols = []
+    for k in range(n_frames):
+        npz = args.npz or grab_live(args.domain)
+        d = np.load(npz)
+        rgb, K = d["rgb"], d["K"].astype(float)
+        depth = d["depth"].astype(float)
+        if depth.max() > 50:
+            depth = depth / 1000.0
+        gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+        Tk, used, img, res, shift = solve(holes, gray, K, T0)
+        print(f"[{k}] coarse {shift.tolist()} px · pnp 재투영 {res.mean():.2f} px (깊이 제약 전)")
+        obj_used = np.array([holes[i].xyz for i in used])
+        n_cam = plane_normal_cam(depth, K, Tk)
+        if n_cam is None and not args.no_depth_tilt:
+            raise SystemExit("✗ 깊이 상판 평면을 못 찾았다 — 기울기를 구멍만으로 정하지 않는다(--no-depth-tilt 로 강제)")
+        if not args.no_depth_tilt:
+            Tk = joint_refine(Tk, obj_used, img, K, n_cam, sigma_deg=args.tilt_sigma)
+            proj, _ = project(Tk, K, obj_used)
+            res = np.linalg.norm(proj - img, axis=1)
+        print(f"[{k}] 위치 {np.round(Tk[:3, 3] * 1000, 1).tolist()} mm · 재투영 {res.mean():.2f} px")
+        sols.append((Tk, res, used))
+    P = np.array([s_[0][:3, 3] for s_ in sols])
+    Q = np.array([R_to_quat_wxyz(s_[0][:3, :3]) for s_ in sols])
+    Q *= np.sign(Q @ Q[0])[:, None]
+    qm = Q.mean(0); qm /= np.linalg.norm(qm)
+    T = np.eye(4); T[:3, :3] = quat_wxyz_to_R(qm); T[:3, 3] = P.mean(0)
+    spread = float(np.linalg.norm(P - P.mean(0), axis=1).max() * 1000)
+    res = np.concatenate([s_[1] for s_ in sols]); used = sols[-1][2]
+    bad = []
+    if spread > args.max_spread_mm:
+        bad.append(f"장끼리 위치 차 {spread:.1f} mm > {args.max_spread_mm}")
+    if res.mean() > args.max_res_px:
+        bad.append(f"재투영 {res.mean():.2f} px > {args.max_res_px}")
+    print(f"[avg] {len(sols)} 장 · 위치 차 최대 {spread:.1f} mm" + (f" ✗ {'; '.join(bad)}" if bad else " ✓"))
+    if bad and args.write:
+        raise SystemExit("✗ 쓰지 않는다 — " + "; ".join(bad))
     q = R_to_quat_wxyz(T[:3, :3])
     dR = T[:3, :3] @ T0[:3, :3].T
     ang = float(np.degrees(np.arccos(np.clip((np.trace(dR) - 1) / 2, -1, 1))))

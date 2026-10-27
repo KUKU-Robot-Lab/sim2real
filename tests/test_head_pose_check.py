@@ -59,7 +59,7 @@ def test_align_gives_up_on_a_stuck_head():
 
 def test_the_arm4090_calibration_records_its_head_pose(tmp_path):
     hp = load_head_pose(ARM4090)
-    assert hp is not None and hp.ticks == {"pan": 2033, "tilt": 2865} and hp.tol_tick == 4
+    assert hp is not None and hp.ticks == {"pan": 2033, "tilt": 2864} and hp.tol_tick == 4   # 10.27 다시 캘리브
     bare = tmp_path / "cam.yaml"
     bare.write_text("camera:\n  position: [0, 0, 0]\n")
     assert load_head_pose(bare) is None                            # 머리 자세를 적지 않은 캘리브 → 확인 도구가 rc 2
@@ -71,7 +71,7 @@ def test_calibration_write_updates_or_adds_the_head_pose_block():
     out = update_head_pose_yaml(text, {"pan": 2040, "tilt": 2866})
     hp = out[out.index("head_pose:"):]
     assert "pan_tick: 2040       # −1.27°" in hp and "tilt_tick: 2866" in hp and "tol_tick: 4" in hp
-    assert out.replace("2040", "2033").replace("tilt_tick: 2866", "tilt_tick: 2865") == text   # 다른 줄 그대로
+    assert out.replace("2040", "2033").replace("tilt_tick: 2866", "tilt_tick: 2864") == text   # 다른 줄 그대로
     plain = "camera:\n  frame: x\n  position: [0, 0, 0]\n\ndepth_bias:\n  offset_m: 0.0\n"
     added = update_head_pose_yaml(plain, {"pan": 2033, "tilt": 2865})
     assert added.index("head_pose:") < added.index("depth_bias:") and "  pan_tick: 2033\n" in added
