@@ -80,7 +80,8 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             "grasp_e_right", "grasp_e_left",
             # ★10.21 경로 F — 경로 E 와 같은 넘김, 넘겨받는 정책만 rcg04(사용자 "ap05 + rcg_04 또한 준비 필요")
             "grasp_f_right", "grasp_f_left",
-            # ★10.22 사용자 "Place 세팅 진행" — 경로 F 잡고 들기 → newton_05 놓기(붙인 자세 = 잡기의 grasp_state 넘김 묶음)
+            # ★10.22 사용자 "Place 세팅 진행" — 경로 F 잡고 들기 → 놓기(붙인 자세 = 잡기의 grasp_state 넘김 묶음)
+            #   ★10.27 결정 1: 놓기 newton_05 → 오른손 n07 · 왼손 n06(ready_carry 이송 뒤 놓기, sim A1 확인)
             "pick_place_f_right", "pick_place_f_left")
 #: ★10.20 사용자 "영상은 필요 없음. 일단 기본 off" — 카메라 영상 · FP++ 실시간 좌표 기록(vision-3090)과 끝난 뒤 보고서 영상
 #   만들기(episode_media.py)를 기본으로 끈다. 10.20 실기: 보고서 영상 정리가 옛 회까지 다시 가져오며 6 분 넘게 팔 작업을 붙잡아

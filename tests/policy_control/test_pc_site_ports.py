@@ -31,7 +31,7 @@ def test_arm_both_hands():
     assert got["site"] == "arm"
     assert NODE.ecat_config(got, "right")[0] == "enx00e04c6806e1"
     ifname, cfg = NODE.ecat_config(got, "left")
-    assert ifname == "enx00e04c36034e"
+    assert ifname == "eno1"                        # ★10.27 사용자: 왼손 = 메인보드 랜 eno1 직결(임시 USB 2.0 랜에서 되돌림)
     assert cfg == yaml.safe_load(PORTS.read_text())["ethercat"]
     for side in SITE.SIDES:
         SITE.check_side(got, side)
