@@ -132,13 +132,16 @@ REAL_CUP_ORIGIN_Z = 0.085                 # 원점 높이(바닥 위) — 컵 �
 #  arm4090 로 돌아가면 ROBOT_PC = "arm4090" 으로 바꾸고 다시 생성한다(--check 가 커밋 파일과 맞는지 본다).
 STATIONS = {
     # ★10.27 사용자 "2번 일부 진행"(vision + 정책 + 로봇 제어 모두 5090) — D435i 를 5090 USB 3(Bus 02)에 꽂았다.
-    #   카메라 · FP++ · 홀더 노드를 같은 PC 에서 돈다(arm4090 과 같은 local 경로). 머리 · 외부 파라미터는 5090 머리 그대로.
+    #   카메라 · FP++ · 홀더 노드를 같은 PC 에서 돈다(arm4090 과 같은 local 경로).
+    #   머리 · 외부 파라미터는 이 PC 에 붙은 RH56F1 머리(FT763P8T)의 것을 쓴다(10.27 수정): head_home_rh56f1.yaml ·
+    #   global_camera_extrinsics_arm4090.yaml(10.27 이 머리 pan 2033 · tilt 2864 틱에서 잼). KITECH 머리 파일을 쓰면 머리가 tilt
+    #   약 92° 다른 자세로 가고, 홀더 노드가 그 값으로 홀더 파일을 덮어쓴다.
     #   FP++ 이미지는 5090 용(sm_120) 재빌드 perception-plus-plus:humble-cup-sm120 을 humble-cup 으로 tag 해서 쓴다.
     #   남은 것(sudo): ros-humble-realsense2-camera 설치.
     "5090": {
         "perception_host": "local",
-        "extrinsics": "config/global_camera_extrinsics.yaml",
-        "head_config": "config/head_home.yaml",
+        "extrinsics": "config/global_camera_extrinsics_arm4090.yaml",
+        "head_config": "config/head_home_rh56f1.yaml",
         "head_tool": "head_home",
         "pose_dest": "",                             # 같은 PC — 런처가 127.0.0.1 로 받는다
         "holder_poses": "config/cup_holder_poses_5090_v1.yaml",

@@ -2165,9 +2165,9 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3911'
+    - '0.3783'
     - --y
-    - '-0.0609'
+    - '-0.0586'
     - --z
     - '0.2350'
     - --topic
@@ -2332,9 +2332,9 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3911'
+    - '0.3783'
     - --y
-    - '-0.0609'
+    - '-0.0586'
     - --z
     - '0.2350'
     - --topic
@@ -4205,9 +4205,9 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3911'
+    - '0.3783'
     - --y
-    - '-0.0609'
+    - '-0.0586'
     - --z
     - '0.2350'
     - --topic
@@ -4300,7 +4300,7 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: '[right] rh_place_r 노드(rh56f1/place/right_n05) — 홀더 1 · 놓은 뒤 스스로 끝남 · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)'
+  - note: '[right] rh_place_r 노드(rh56f1/place/right_n07) — 홀더 1 · 놓은 뒤 스스로 끝남 · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_place_node.py'
@@ -4312,7 +4312,7 @@ run:
     - -p
     - episode_topic:=/policy_control/right/episode
     - -p
-    - contract:={repo}/deploy/policies/rh56f1/place/right_n05/rh_place_contract.json
+    - contract:={repo}/deploy/policies/rh56f1/place/right_n07/rh_place_contract.json
     - -p
     - robot:={artifact:robot_right}
     - -p
@@ -4385,9 +4385,9 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3876'
+    - '0.3787'
     - --y
-    - '0.1364'
+    - '0.1635'
     - --z
     - '0.2350'
     - --topic
@@ -4480,7 +4480,7 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: '[left] rh_place_l 노드(rh56f1/place/left_n05) — 홀더 0 · 놓은 뒤 스스로 끝남 · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)'
+  - note: '[left] rh_place_l 노드(rh56f1/place/left_n06) — 홀더 0 · 놓은 뒤 스스로 끝남 · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_place_node.py'
@@ -4492,7 +4492,7 @@ run:
     - -p
     - episode_topic:=/policy_control/left/episode
     - -p
-    - contract:={repo}/deploy/policies/rh56f1/place/left_n05/rh_place_contract.json
+    - contract:={repo}/deploy/policies/rh56f1/place/left_n06/rh_place_contract.json
     - -p
     - robot:={artifact:robot_left}
     - -p

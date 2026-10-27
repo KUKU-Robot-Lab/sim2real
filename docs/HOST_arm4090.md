@@ -52,9 +52,10 @@ OpenArm 양팔 + Inspire RH56F1 양손 + 머리(XC330 ×2) + RealSense 가 모�
 
   맞춘 품질: 숙임 18.93°(기준 18.9) · 테이블 거리 0.61 m(0.614) · 볼트 무리 5~10 px · 회전 약 0.7°.
   도구 `scripts/calib/head_view_align.py`(읽기) · `head_view_autoalign.py`(--execute 로만 움직임) · 기준 `config/head_view_ref_5090.npz`.
-- 카메라 외부 파라미터: FP++ 는 고정 `config/global_camera_extrinsics.yaml`(5090 홈 화면 스냅샷)을 쓴다 — 머리를
-  `head_home_rh56f1` 에 두면 화면이 5090 홈과 같으므로 그대로 맞다(미션 cups 가 head_home 뒤). 목 각도로 다시 계산하는
-  `object_pose_node --head-joint-topic`(`head_extrinsics.yaml`)은 영점이 이 표만큼 달라 아직 쓰지 않는다.
+- 카메라 외부 파라미터(10.27~): 이 머리에서 잰 `config/global_camera_extrinsics_arm4090.yaml` 을 쓴다(머리 pan 2033 · tilt 2864 틱에서
+  잰 고정 스냅샷, 파일의 head_pose). 미션(`make_rh56f1_missions.py` 5090 설정)이 이 파일과 `head_home_rh56f1.yaml` 을 쓰고,
+  head_home 단계가 드라이버로 머리를 그 자세에 둔다. 그 전에는 5090 홈 화면 스냅샷 `config/global_camera_extrinsics.yaml` 을 썼다.
+  목 각도로 다시 계산하는 `object_pose_node --head-joint-topic`(`head_extrinsics.yaml`)은 영점이 이 표만큼 달라 아직 쓰지 않는다.
 - 혼을 다시 조립하면 offset · `head_home_rh56f1.yaml` · 위 표를 다시 맞춘다.
 
 ## 소프트웨어
