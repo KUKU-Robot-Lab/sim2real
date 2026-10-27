@@ -317,7 +317,10 @@ class EpisodeManager:
         rec: Recovery = self.recovery.decide(self.ep, node, code, n, self.world, self.checkpoints)
         self._log("recovery", node, result=rec.action, termination_reason=rec.reason, checkpoint=rec.checkpoint)
         if rec.action == SAFE_STOP:
-            return self._fail(node, code, rec.reason)
+            # ★10.28 그 노드가 실패한 원인도 붙인다 — 콘솔 경고 줄은 last.reason 만 보여 "재시도 0/0 다 씀" 만으로는 무엇을
+            #   고칠지 모른다(예: 순서 B 분홍이 자리 밖 → 다시 놓는다). last 는 바로 앞(step)에서 이 노드 결과로 채웠다.
+            cause = str(self.last.get("reason") or "")
+            return self._fail(node, code, f"{rec.reason} · {cause}" if cause and cause not in rec.reason else rec.reason)
         if not self._auto:                              # 구분 실행: 다음 명령(step)이 승인받고 복구한다
             self.pending = (node, rec)
             self._mark(node.id, "recovering", recovery=rec.action)

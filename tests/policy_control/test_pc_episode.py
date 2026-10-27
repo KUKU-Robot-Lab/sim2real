@@ -145,10 +145,12 @@ def test_the_whole_guide_episode_runs_in_the_dry_run():
 
 @pytest.mark.parametrize("name, flags, pose", [
     ("cocktail_1", {"blue_poured", "blue_placed", "pink_poured", "pink_placed", "shaker_placed"}, "HOME"),
+    ("cocktail_1b", {"blue_poured", "blue_placed", "pink_poured", "pink_placed", "shaker_placed"}, "HOME"),
     ("cocktail_2", {"blue_poured", "blue_placed", "pink_poured", "pink_placed", "shaker_capped", "shaker_placed"}, "SETTING"),
 ])
 def test_the_cocktail_episodes_run_in_the_dry_run(name, flags, pose):
-    """10.27 사용자 칵테일 순서 — 파랑 → 홀더 2 · 분홍 → 홀더 1 · shaker → 홀더 0, 오른팔만 홈 동안 왼손은 shaker 를 든다."""
+    """10.27 사용자 칵테일 순서 — 세 홀더를 다 쓰고(shaker → 홀더 0, 파랑 · 분홍 배정은 순서 A · B 가 다르다 — 아래),
+    오른팔만 홈 동안 왼손은 shaker 를 든다."""
     ep = _ep(name)
     S.validate(ep)
     holders = {j.target_holder for n in ep.nodes for j in n.jobs if j.target_holder}
@@ -224,8 +226,13 @@ def test_a_pink_outside_the_verified_box_is_refused_and_not_recorded():
     assert m.world.objects["SRC_PINK"]["at"] == "away"
 
 
+def _episode_raw(name):
+    """커밋된 에피소드 파일 그대로(dict) — 위 _raw(**over) 는 손으로 만든 최소 에피소드다."""
+    return yaml.safe_load((EPISODES / f"{name}.yaml").read_text(encoding="utf-8"))
+
+
 def _cocktail_raw():
-    return yaml.safe_load((EPISODES / "cocktail_1.yaml").read_text(encoding="utf-8"))
+    return _episode_raw("cocktail_1")
 
 
 def _without(raw, *ids):
@@ -258,6 +265,64 @@ def test_the_pink_rescan_asks_fpp_for_the_real_object_and_needs_it_found():
     odd = replace(ep, objects={**ep.objects, "SRC_PINK": {"topic": "/camera/pink"}})
     with pytest.raises(ValueError, match="실물 이름"):
         rescan_argv(odd, ["SRC_PINK"])
+
+
+# ---------------------------------------------------------------- ★10.28 칵테일 1 순서 B(cocktail_1b)
+def test_cocktail_1b_has_pink_on_the_table_from_the_start_and_swaps_the_holders():
+    """순서 B(10.27 사용자 정의 · 10.28 sim 통과 뒤 추가) — 분홍은 처음부터 탁자에 있어 처음 snapshot 이 함께 찍고(사람 확인 ·
+    다시 찍기 없음), 파랑 → 홀더 1 · 분홍 → 홀더 2 · shaker → 홀더 0."""
+    ep = _ep("cocktail_1b")
+    ex = FakeExecutor(ep)
+    m = EpisodeManager(ep, ex, approve=_yes())
+    assert not any(n.type == "confirm" for n in ep.nodes) and "at_start" not in ep.objects["SRC_PINK"]
+    assert m.run() == SUCCESS
+    assert [c[1] for c in ex.calls if c[0] == "snapshot"] == ["scene"]
+    assert {k: m.world.objects[k]["at"] for k in ("SRC_BLUE", "SRC_PINK", "SHAKER")} == {
+        "SRC_BLUE": "holder:HOLDER_1", "SRC_PINK": "holder:HOLDER_2", "SHAKER": "holder:HOLDER_0"}
+
+
+def test_cocktail_1b_differs_from_cocktail_1_only_where_order_b_says():
+    """B 는 A 의 변형 — 정책 · 궤적 · 실패 정책 · 홀더가 같고, 순서는 사람 확인 · 다시 찍기를 빼고 파랑 ↔ 분홍 홀더만 바꾼다.
+    분홍은 at_start 가 없고(처음부터 탁자) region 만 다르다. A 를 고치면 B 도 같이 고치라는 알림."""
+    a, b = _episode_raw("cocktail_1"), _episode_raw("cocktail_1b")
+    for k in ("policies", "trajectories", "failure_policy", "holders", "holder_poses"):
+        assert a[k] == b[k], k
+    swap = {"HOLDER_1": "HOLDER_2", "HOLDER_2": "HOLDER_1"}
+    want = [{**n, "target_holder": swap[n["target_holder"]]} if n.get("source_object") in ("SRC_BLUE", "SRC_PINK") else n
+            for n in a["sequence"] if n["id"] not in ("confirm_pink_placed", "scene_pink")]
+    assert b["sequence"] == want
+    pa, pb = a["objects"].pop("SRC_PINK"), b["objects"].pop("SRC_PINK")
+    assert a["objects"] == b["objects"] and pa["topic"] == pb["topic"]
+    assert pa["at_start"] == "away" and "at_start" not in pb
+    assert pb["region"] == {"x": [0.27, 0.29], "y": [-0.355, -0.350]}          # sim_e2e 10.28 시험 범위
+
+
+@pytest.mark.parametrize("xy, ok", [
+    ((0.28, -0.3525), True), ((0.27, -0.355), True), ((0.29, -0.350), True),   # sim 시험 범위 안(끝 포함)
+    ((0.30, -0.3525), False), ((0.28, -0.345), False),                         # 잡는 동안 병이 홀더 2 에 닿는다(sim)
+    ((0.28, -0.36), False), ((0.26, -0.3525), False),                          # 10.23 불가 자세 규칙 밖 · 시험하지 않은 쪽
+])
+def test_cocktail_1b_stops_at_the_first_snapshot_when_pink_is_off_its_spot(xy, ok):
+    """분홍이 sim 시험 범위(x 0.27~0.29 · y −0.355~−0.350) 밖이면 처음 snapshot 이 거부하고 정지한다 — 로봇은 홈에서 아무것도
+    쥐지 않았다. 콘솔 경고 줄(last.reason)에 어디가 벗어났는지 보여 운영자가 다시 놓고 새로 시작한다."""
+    ep = _ep("cocktail_1b")
+
+    class At(FakeExecutor):
+        def snapshot(self, node, world):
+            res, poses = super().snapshot(node, world)
+            if "SRC_PINK" in poses:
+                poses["SRC_PINK"] = ((*xy, 0.29), poses["SRC_PINK"][1])
+            return res, poses
+
+    ex = At(ep)
+    m = EpisodeManager(ep, ex, approve=_yes())
+    if ok:
+        assert m.run() == SUCCESS
+        return
+    assert m.run() == FAILURE and m.last["node"] == "scene" and m.last["code"] == "target_not_found" and ex.stopped
+    assert "cup outside region" in m.last["reason"] and "SRC_PINK" in m.last["reason"]
+    assert not any(c[0] == "policy" for c in ex.calls)
+    assert m.world.hand("right") == m.world.hand("left") == "EMPTY"
 
 
 def test_a_node_without_approval_does_not_run_and_the_episode_waits():
