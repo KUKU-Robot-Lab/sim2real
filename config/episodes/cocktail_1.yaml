@@ -25,7 +25,7 @@ trajectories:
   go_home_r: {kind: rehome, sides: [right]}                         # 왼손은 shaker 를 든 채
   to_tilt_start_r: {kind: carry, sides: [right], asset: tilt/base_arc6}
   to_tilt_start_l: {kind: carry, sides: [left], asset: tilt/base_arc6}
-  tilt: {kind: tilt, sides: [right, left], asset: tilt/traj_v10, rate_scale: 1.0}   # D4 궤적(잔차 0) + 복귀 = tilt 시작 자세로
+  tilt: {kind: tilt, sides: [right, left], asset: tilt/traj_v10, rate_scale: 1.0, cup: "240"}   # D4 궤적(잔차 0) + 복귀 = tilt 시작 자세로 · 붓는 컵 source240
 failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 판단한다(컵을 쥔 채 rehome 은 거부된다).
 sequence:
   - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}

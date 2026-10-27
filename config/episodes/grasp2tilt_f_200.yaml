@@ -1,0 +1,29 @@
+# grasp2tilt(경로 F + tilt 1차) — 컵 source200(오른손) · shaker_c(왼손). ★10.27 사용자 결정 2 "새 에피소드 만들기".
+# sim 확인(learn:e2e-aglt server eval/1027_a1_g2t, 240 0.847 · 200 0.787): rcg04(경로 F) → ready_carry(rh56f1_pour_start) → tilt/traj_v10.
+# 흐름: 홈 → 장면 → 오른손 ap05 → rcg04 쥐고 들기(grasp_f_right 와 같다) → 왼손 같은 방식(grasp_f_left) →
+#   ready_carry 로 붓기 시작 자세(오른팔 → 왼팔, plan_carry · 자산 traj_v10 의 start_pose) →
+#   tilt_traj 궤적(잔차 0, plan_tilt_traj --cup 200 --holders <holder_poses>) → 끝.
+# 실기 회차마다 사용자 승인. 구슬 10 개. 홀더 = A1 재스캔 파일(tilt 여유 검사에만 쓴다).
+episode: {name: grasp2tilt_f_200, version: 1}
+objects:
+  SRC: {topic: /objects/source200_orange/pose}
+  RCV: {topic: /objects/shaker_c_orange/pose}
+holder_poses: config/cup_holder_poses_5090_v1.yaml
+policies:
+  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/right_rcg04}
+  rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg04}
+trajectories:
+  go_home: {kind: rehome, sides: [right, left]}
+  to_tilt_start_r: {kind: carry, sides: [right], asset: tilt/traj_v10}
+  to_tilt_start_l: {kind: carry, sides: [left], asset: tilt/traj_v10}
+  tilt: {kind: tilt, sides: [right, left], asset: tilt/traj_v10, rate_scale: 1.0, cup: "200"}
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 판단한다(컵을 쥔 채 rehome 은 거부된다).
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  - {id: grasp_right, type: policy, name: rh_aglt_r, target_object: SRC, policy_object: source200_real, expect: {right_hand: SRC}}
+  - {id: grasp_left, type: policy, name: rh_aglt_l, target_object: RCV, policy_object: shaker_c_real, expect: {left_hand: RCV}}
+  - {id: to_tilt_start_r, type: trajectory, name: to_tilt_start_r}
+  - {id: to_tilt_start_l, type: trajectory, name: to_tilt_start_l, expect: {pose: SETTING}}
+  - {id: tilt, type: trajectory, name: tilt, expect: {pose: SETTING}}
+  - {id: done, type: terminal, result: SUCCESS}

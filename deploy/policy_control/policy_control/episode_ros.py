@@ -566,12 +566,16 @@ class RosExecutor:
                 return NodeResult("refused", f"reach: {traj.object} 토픽에서 실물 이름을 못 읽었다", time.monotonic() - t0)
             side_arg = ["--side", sides[0], "--object", real, "--cup", ",".join(f"{v:.5f}" for v in snap[0]),
                         "--quat", ",".join(f"{v:.6f}" for v in snap[1]), "--stop", traj.stop]   # ★10.20 pregrasp = 경로 D
+        elif traj.kind == "tilt" and cfg.get("kind") == "tilt_traj":   # ★10.27 traj_v10: 컵별 궤적 · 실측 홀더로 여유 검사
+            side_arg = ["--cup", traj.cup]
+            if self.ep.holder_poses:
+                side_arg += ["--holders", str(_paths.SIM2REAL / self.ep.holder_poses)]
         elif traj.kind == "lift":
             side_arg = ["--side", sides[0]]
             if traj.object:
                 before = self._live_object(traj.object)
         steps = [
-            [sys.executable, str(TOOLS / f"plan_{traj.kind}.py"), "--asset", str(asset), "--out", str(out), *side_arg],
+            [sys.executable, str(TOOLS / ("plan_tilt_traj.py" if cfg.get("kind") == "tilt_traj" else f"plan_{traj.kind}.py")), "--asset", str(asset), "--out", str(out), *side_arg],
             [sys.executable, str(TOOLS / "replay_to_pd.py"), "--npz", str(out / f"{traj.kind}_cmd.npz"), "--joints", joints,
              "--rate-scale", repr(float(traj.rate_scale)), "--max-start-gap", repr(float(cfg.get("start_gap_rad", 0.05))),
              "--execute"],

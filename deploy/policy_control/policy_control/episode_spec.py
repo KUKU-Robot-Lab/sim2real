@@ -49,6 +49,7 @@ TRAJ_KINDS = ("rehome", "noop", "carry", "tilt", "reach", "lift")
 #: ★10.20 경로 D(사용자 "grasp_d 를 1-b 접근에 rcg03 으로 교체"): reach stop = pregrasp 면 사전 파지 자리(aglt_new ReadyApproach,
 #:   rcg03 학습 시작 자세)에서 멈추고 들어가기를 하지 않는다 — 그 뒤 rcg03 정책 노드가 넘겨받는다. grasp(기본) = 1-B 그대로.
 REACH_STOPS = ("grasp", "pregrasp")
+TILT_TRAJ_CUPS = ("240", "200")
 PLANNED_TRAJ = ("carry", "tilt", "reach", "lift")
 ONE_ARM_TRAJ = ("reach", "lift")
 TRAJ_ASSETS = Path(__file__).resolve().parents[1] / "config"
@@ -111,6 +112,7 @@ class Trajectory:
     cups: bool = True            # carry · tilt: 그 팔 손이 컵을 쥐었을 때만(False = 빈손일 때만, carry 만)
     object: str = ""             # reach · lift: episode objects 의 이름(컵 자세 FP++ 토픽)
     stop: str = "grasp"          # reach: grasp = 손 안 컵 자리까지(1-B) · pregrasp = 사전 파지 자리에서 멈춤(경로 D, 10.20)
+    cup: str = ""                # tilt + tilt_traj 자산(traj_v10): 붓는 컵 "240" · "200"(plan_tilt_traj --cup, 10.27)
 
 
 @dataclass(frozen=True)
@@ -271,7 +273,10 @@ def _trajectory(name: str, t: Mapping) -> Trajectory:
         raise EpisodeSpecError(f"trajectories.{name}: cups 는 true/false")
     tr = Trajectory(name=name, kind=str(t["kind"]), sides=tuple(t.get("sides") or ("right", "left")),
                     asset=str(t.get("asset") or ""), rate_scale=float(t.get("rate_scale", 1.0)), cups=cups,
-                    object=str(t.get("object") or ""), stop=str(t.get("stop") or "grasp"))
+                    object=str(t.get("object") or ""), stop=str(t.get("stop") or "grasp"),
+                    cup=str(t.get("cup") or ""))
+    if "cup" in t and tr.kind != "tilt":
+        raise EpisodeSpecError(f"trajectories.{name}: cup 은 tilt 에만")
     if "stop" in t and tr.kind != "reach":
         raise EpisodeSpecError(f"trajectories.{name}: stop 은 reach 에만")
     if tr.stop not in REACH_STOPS:
@@ -295,6 +300,12 @@ def _trajectory(name: str, t: Mapping) -> Trajectory:
         raise EpisodeSpecError(f"trajectories.{name}: carry sides 는 [right] · [left] · [right, left]")
     if not tr.asset or not (TRAJ_ASSETS / tr.asset / "policy.yaml").is_file():
         raise EpisodeSpecError(f"trajectories.{name}: asset {tr.asset!r} 에 policy.yaml 이 없다({TRAJ_ASSETS})")
+    if tr.kind == "tilt":                      # ★10.27 tilt_traj 자산은 붓는 컵을 골라야 계획된다
+        akind = (yaml.safe_load((TRAJ_ASSETS / tr.asset / "policy.yaml").read_text(encoding="utf-8")) or {}).get("kind")
+        if akind == "tilt_traj" and tr.cup not in TILT_TRAJ_CUPS:
+            raise EpisodeSpecError(f"trajectories.{name}: tilt_traj 자산은 cup {TILT_TRAJ_CUPS} 이 필요하다 — {tr.cup!r}")
+        if akind != "tilt_traj" and tr.cup:
+            raise EpisodeSpecError(f"trajectories.{name}: cup 은 tilt_traj 자산에만({tr.asset} = {akind})")
     if not 0.0 < tr.rate_scale <= 1.0:
         raise EpisodeSpecError(f"trajectories.{name}: rate_scale 은 (0, 1] — {tr.rate_scale}")
     return tr

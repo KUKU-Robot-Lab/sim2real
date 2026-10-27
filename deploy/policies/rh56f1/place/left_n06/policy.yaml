@@ -1,0 +1,16 @@
+id: rh56f1/place/left_n06
+task: open-rh_l_place-lstm
+side: left
+checkpoint: last_open-rh_l_place-lstm_ep_5000_rew_799.7323.pth
+md5: 2c8b54650f68521fc45462e56d287366
+source: server:/home/oem/rl_ws/hdgp/log/rl_games/open-rh/left/place/newton_06_l/nn/last_open-rh_l_place-lstm_ep_5000_rew_799.7323.pth
+summary: 놓기 정책 newton_06_l — 이송 끝(ready_carry 600) 출발, 놓기 노드가 정책 전에 Mover 로 홀더 위까지 옮긴 뒤 놓고 팔을 뺀다 · 물체 3종
+status: candidate
+eval: 'learn:e2e-aglt sim A1 배치(server eval/1027_a1: ap05 → rcg04 → lift_hold 30 → ready_carry → left_n06) 95.6 %'
+interface: obs 101 (91 + 물체 one-hot 3 + 래치 1 + 이웃 홀더 6 = 0) · action 13 (팔 관절 증분 7 · 손 6) · 손 = position
+deploy:
+  max_episode_s: 5.0
+  flow: '★10.27 사용자 결정 1 "교체 진행" — 카드 = pick_place_f_left version 2(n05 대체). 이송 중 래치 판정 없음(배포 노드 = sim latch_off_in_carry)'
+note: >-
+  10.27 s2r 등록(README 의 10.25 후보 → 기본). 계약 = tools/build_rh_aglt_contract.py --run <이 폴더> --attach bundle --ready-carry 600.
+  래치 GRU 는 n05 와 같은 파일(git 밖, README 참고). 알려진 문제: 배포 Mover 끝 자세 빔(10.25 dry-run r 70/75 · l 60/75).
