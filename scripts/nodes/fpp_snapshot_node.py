@@ -41,6 +41,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import fpp_color_pick as C  # noqa: E402
+import torch_checkpoint_globals as TG  # noqa: E402
 
 STATUS_TOPIC = "/perception_plus_plus/snapshot/status"
 LIVE_RETRY_S = 30.0       # 추적 중 못 찾은 물체를 다시 찾는 간격
@@ -128,8 +129,10 @@ def main(argv=None) -> None:
             self.create_timer(1.0 / float(cfg.get("republish_hz", 5.0)), self._republish)
             self.create_timer(1.0, self._publish_status)
             self.adapter = FoundationPosePlusPlusAdapter()
-            self.detector = YoloCupDetector(cfg.get("yolo_weights", "models/yolo/yolov8m-seg.pt"),
-                                            int(cfg.get("cup_class_id", 41)), yolo_conf, pick="confidence")
+            weights = cfg.get("yolo_weights", "models/yolo/yolov8m-seg.pt")
+            # ★10.28 torch ≥ 2.6 이미지(5090 sm120): 옛 ultralytics 가중치의 모듈 클래스만 읽는 동안 허용한다(torch_checkpoint_globals)
+            with TG.allow_checkpoint_globals(weights):
+                self.detector = YoloCupDetector(weights, int(cfg.get("cup_class_id", 41)), yolo_conf, pick="confidence")
             self.error = ""
             threading.Thread(target=self._worker, name="fpp-snapshot", daemon=True).start()
             listing = ", ".join(f"{n}({o['color']})" for n, o in objects.items())
