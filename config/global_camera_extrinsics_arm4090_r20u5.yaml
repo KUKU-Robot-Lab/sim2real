@@ -1,0 +1,56 @@
+# arm4090(RH56F1 로봇) 머리 D435i 카메라 extrinsics — ★목 camset 자세(10.28) 전용. home 자세는 global_camera_extrinsics_arm4090.yaml.
+#
+# 형식은 global_camera_extrinsics.yaml 과 같다(cup_pose_relay.load_extrinsics). 쿼터니언은 wxyz.
+#   T_base_body = T_base_cam ∘ T_cam_cad(FP++ 출력) ∘ T_cad_body
+#
+# ── T_base_cam: robot base ← camera_color_optical_frame ────────────────────
+# ★2026-10-28 사용자(sim_e2e 경유): shaker · 파랑 · 분홍을 놓는 영역이 한 화면에 다 드는 목 자세("pan 세팅").
+#   sim_e2e 후보 = home 에서 pan 오른쪽 20° · 위 5°(목 FK 근사, handoff 2026-10-28_camset · hdgp regions_overlay d7c3087c).
+#   실기를 그 sim 시야에 맞췄다(처짐 · FK 근사 오차를 가르지 않고 시야로): 목표 1805/2807 → 멈춘 자리 1824/2810 에서 잰
+#   외부 파라미터로 볼트 3개를 sim 과 같은 K 로 투영해 비교(sim_e2e 1틱당 du·dv 표 최소제곱) → 멈춘 자리 +1/+5 틱.
+#   그래서 목표 pan 1806 · tilt 2812 → 멈춘 자리 1825/2815 에서 이 값을 쟀다(table_cad_extrinsics.py · 라이브 3장 평균 ·
+#   기울기는 depth 상판 법선에 고정). 상판에 shaker · 파랑 · 분홍 · 홀더가 있어 구멍 일부만 쓴다.
+# ★머리 자세 하나에서만 맞는 정적 스냅샷이다 — 그 자세(멈춘 자리)를 아래 head_pose 에 적었다. FP++ 전에
+#   scripts/head_pose_check.py --extrinsics 이 파일 --execute 로 맞춘다. 이 머리는 목표보다 pan 19 틱 · tilt 3 틱 home 쪽에서
+#   멈춘다(10.28 실측 — 펌웨어 궤적 끝(Position Trajectory)부터 목표와 다르다). head_pose_check 가 '목표 += 캘리브 자세 − 멈춘
+#   자리'로 맞춘다. 다시 캘리브: 머리를 이 자세로 맞춘 뒤
+#     python3 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml \
+#             --write --head-config config/head_home_rh56f1.yaml
+camera:
+  frame: camera_color_optical_frame
+  position: [0.0694975123, 0.0234528384, 0.814648347]
+  orientation_wxyz: [0.110889849, -0.584176968, 0.788950799, -0.154910778]
+
+# ── 이 외부 파라미터를 잰 머리 자세(틱 = 멈춘 자리) — scripts/head_pose_check.py 가 FP++ 전에 비교하고 맞춘다 ─────
+# 10.28: 목표 pan 1806 · tilt 2812 를 보내면 멈추는 자리. 캘리브 사진 앞뒤로 읽기만 해서 같았다.
+head_pose:
+  pan_tick: 1825       # −19.56°(home 2033 에서 오른쪽 208 틱)
+  tilt_tick: 2815      # +67.47°(home 2864 에서 위 49 틱)
+  tol_tick: 4          # ±0.35°
+
+# ── depth 보정: object_pose_node 가 FP++ 자세(카메라 프레임)를 광선 방향으로 늘린다 ───────────────
+# D435i depth 가 표면을 가깝게 본다 — 외부 파라미터는 depth 를 쓰지 않는 PnP 라 이 치우침은 FP++(depth 정합) 쪽에만 있다.
+# ★10.04 상판 평면(CAD 0.205)을 정답으로 화면 전체(프레임 2 장 · 약 44 만 픽셀)를 맞췄다: 측정 깊이 z(광학축)에서
+#   e(z) = offset_m + per_m · z 만큼 짧다(z 0.60 → −6.8 mm · 0.70 → −12.7 mm, 맞춘 범위 0.55~0.75 m, 맞춘 뒤 σ 2.6 mm).
+#   홀더 2(z 0.64) FP++ − 마커 정답: 보정 전 13.3 mm · z 만 −8 mm 보정 8.6 mm · 이 광선 보정 3.6 mm.
+#   깊이 밖(valid_z_m)에서는 끝값으로 자른다. 도구: logs/cup_holders_1003/*.npz · docs/RH56F1_ECAT_RUNBOOK.md.
+# 10.27 확인(위 10.27 외부 파라미터 기준, 상판 2장 · 약 24 만 픽셀, 깊이 0.59~0.69 m): 원시 depth 는 거리와 상관없이
+#   4.1 mm 짧다(σ 1.9 mm). 이 값으로 바꾸지 않는다 — depth_bias 는 FP++ 출력용이고, 10.04 홀더 2 의 FP++ − 마커 비교
+#   (카메라 프레임이라 외부 파라미터와 무관, tests/test_object_pose_node.py)는 0.64 m 에서 약 9 mm 를 늘려야 맞는다
+#   (아래 값 3.6 mm · 4.1 mm 상수면 8.9 mm). 다만 per_m(거리 기울기)은 10.04 외부 파라미터의 기울기 오차를 일부 메운
+#   값일 수 있다(새 외부 파라미터로 원시 상판에 걸면 z 0.200 · 앞뒤 −0.85°) → 다음 FP++ 실행 때 컵 · 홀더로 다시 확인한다.
+# 10.28 camset: depth_bias 는 home 파일 값을 그대로 옮겼다(같은 카메라). 이 자세에서 탁자 깊이는 0.59~0.65 m 로
+#   맞춘 범위(0.55~0.75 m) 안이다 — 이 자세로 FP++ 를 처음 돌릴 때 홀더로 다시 확인한다.
+depth_bias:
+  offset_m: 0.0286
+  per_m: -0.0590
+  valid_z_m: [0.45, 0.90]
+# 10.01 의 z 만 보정(−8 mm, 상판이 0.213 으로 보였다)은 위 광선 보정으로 대신한다 — 둘을 같이 쓰지 않는다.
+base_z_bias_m: 0.0
+
+# ── T_cad_body: global_camera_extrinsics.yaml 과 같다(물체별 값은 objects.yaml cad_to_body 가 이긴다) ──
+cad_to_body:
+  position: [0.0, 0.0, 0.0]
+  orientation_wxyz: [0.707107, 0.707107, 0.0, 0.0]
+
+base_frame: base_link

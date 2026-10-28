@@ -14,6 +14,9 @@
 # ★10.27 pan 목표를 2015 → 2033(캘리브 자세)으로 바꿨다. 미션 head_home · cup_holders 는 head_move.py 로 드라이버(head_joint_publisher)에
 #   기준 자세를 요청한다. 드라이버는 목표 ±0.3° 안이면 성공, 1.0° 안이면 목표 쪽으로 다시 맞추고, 더 멀면 실패로 끝낸다(head_motion).
 #   목표 2015 는 캘리브 자세와 1.6° 차라 보정 범위 밖이다. 외부 파라미터를 다시 재서 head_pose 가 바뀌면 이 값도 같이 맞춘다.
+# ★10.28 그런데 목표 2033 을 그대로 쓰면 2051 에 선다 — 이 머리는 목표 레지스터보다 일정 틱 큰 자리에 선다(펌웨어 궤적 끝부터,
+#   camset 실측 pan +19 · tilt +3). 그래서 deg 는 캘리브 자세로 두고 쓸 때만 pan goal_bias_tick −18 을 더한다(10.04 실측 목표
+#   2015 → 2033). tilt 는 home 에서 재지 않았다(0 — +3 이어도 판정 ±0.3° 안). 미션은 10.28 부터 head_camset_rh56f1.yaml 을 쓴다.
 port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
 baud: 1000000
 
@@ -21,6 +24,7 @@ motors:
   pan:
     id: 1
     deg: -1.27         # 틱 2033(offset +1024 적용 후) = 외부 파라미터 head_pose pan (10.27, 전에는 -2.9 = 틱 2015)
+    goal_bias_tick: -18  # 목표 2015 를 쓰면 2033 에 선다(10.04 실측)
   tilt:
     id: 2
     deg: 71.8          # 틱 2864(offset −1024 적용 후) = 외부 파라미터 head_pose tilt

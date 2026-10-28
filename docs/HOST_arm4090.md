@@ -55,6 +55,11 @@ OpenArm 양팔 + Inspire RH56F1 양손 + 머리(XC330 ×2) + RealSense 가 모�
 - 카메라 외부 파라미터(10.27~): 이 머리에서 잰 `config/global_camera_extrinsics_arm4090.yaml` 을 쓴다(머리 pan 2033 · tilt 2864 틱에서
   잰 고정 스냅샷, 파일의 head_pose). 미션(`make_rh56f1_missions.py` 5090 설정)이 이 파일과 `head_home_rh56f1.yaml` 을 쓰고,
   head_home 단계가 드라이버로 머리를 그 자세에 둔다. 그 전에는 5090 홈 화면 스냅샷 `config/global_camera_extrinsics.yaml` 을 썼다.
+- ★10.28~ 미션은 camset 자세를 쓴다(사용자: shaker · 파랑 · 분홍이 한 화면에 드는 목 자세): `config/head_camset_rh56f1.yaml`
+  (멈춘 자리 pan 1825 · tilt 2815) · `config/global_camera_extrinsics_arm4090_r20u5.yaml`(그 자리에서 잰 스냅샷). 이 머리는 목표
+  레지스터보다 pan 19 · tilt 3 틱 큰 자리에 서서, 머리 설정의 `goal_bias_tick` 만큼 빼서 쓴다(head_home · 목 드라이버).
+  head_pose 가 있는 외부 파라미터는 정적 스냅샷이라 `object_pose_node` 가 목 FK(hand-eye, 다른 머리 것)로 바꾸지 않고, 목이 그
+  자세 ±4 틱일 때만 좌표를 낸다.
   목 각도로 다시 계산하는 `object_pose_node --head-joint-topic`(`head_extrinsics.yaml`)은 영점이 이 표만큼 달라 아직 쓰지 않는다.
 - 혼을 다시 조립하면 offset · `head_home_rh56f1.yaml` · 위 표를 다시 맞춘다.
 

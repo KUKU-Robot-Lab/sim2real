@@ -38,6 +38,22 @@ from object_registry import (  # noqa: E402
     extrinsics_for, input_topic, live_input_topic, live_output_topic, load_registry, output_topic,
 )
 from pose_symmetry import point_axis_up, quat_axis_direction, quat_conj, remove_twist  # noqa: E402
+from head_fk_chain import encoder_from_urdf  # noqa: E402
+from head_pose_check import load_head_pose  # noqa: E402
+from head_position_hold_node import deg_to_tick  # noqa: E402
+
+
+class HeadOffCalibPose(ValueError):
+    """정적 스냅샷 camera 파일(head_pose)인데 목이 그 자세(± tol_tick)에 있지 않다 — 그 변환은 틀리므로 발행하지 않는다."""
+
+
+def check_head_at(head_pose, head_joint_deg: tuple[float, float]) -> None:
+    """목 각(/head/joint_states 가 싣는 URDF 규약 각, 도)이 head_pose ± tol_tick 안인가 — 아니면 HeadOffCalibPose. 순수."""
+    pan_enc, tilt_enc = encoder_from_urdf(*head_joint_deg)
+    now = {"pan": deg_to_tick(pan_enc), "tilt": deg_to_tick(tilt_enc)}
+    off = {k: now[k] - t for k, t in head_pose.ticks.items() if k in now and abs(now[k] - t) > head_pose.tol_tick}
+    if off:
+        raise HeadOffCalibPose(f"목이 카메라 캘리브 자세가 아니다 — 틱 차이 {off}(허용 ±{head_pose.tol_tick}). 머리 단계를 먼저")
 
 
 def base_z_bias(camera_yaml: str | Path) -> float:
@@ -97,6 +113,12 @@ class PoseConverter:
                 self.names.append(canon)
         # 보정 프로필(10.14): hand-eye 와 목 각도별 보정을 파일로 고른다. 있으면 목 각도가 꼭 필요하다.
         self.profile = profiles.load_profile(calib_profile) if calib_profile is not None else None
+        # ★정적 스냅샷(10.28): camera 파일에 head_pose 가 있으면 그 머리 자세 하나에서 잰 값이다(RH56F1 — 이 머리는 hand-eye 가
+        #   없다). 목 FK 로 바꾸지 않고 camera 블록을 그대로 쓴다 — config/head_extrinsics.yaml 은 다른 머리(head_v1) 것이라
+        #   이 머리에 쓰면 광축이 약 90° 틀린다. 목 각도가 오면 그 자세(± tol_tick)인지만 본다(HeadOffCalibPose).
+        self.head_pose = load_head_pose(camera_yaml)
+        if self.head_pose is not None and self.profile is not None:
+            raise ValueError(f"{camera_yaml}: 정적 스냅샷(head_pose) 파일에는 보정 프로필(목 FK)을 같이 쓰지 않는다")
         self._ext = {n: extrinsics_for(registry.get(n), camera_yaml) for n in self.names}
         self._origin = {n: registry.get(n).origin_above_bottom_m for n in self.names}
         # 대칭축을 body 프레임으로 옮겨 둔다: a_body = R(q_cad_body)ᵀ · a_cad
@@ -113,7 +135,10 @@ class PoseConverter:
                 head: tuple[float, float] | None = None, live: bool = False) -> tuple[np.ndarray, np.ndarray]:
         ext = self._ext[name]
         bias = None
-        if self.profile is not None:
+        if self.head_pose is not None:
+            if head is not None:
+                check_head_at(self.head_pose, head)
+        elif self.profile is not None:
             if head is None:
                 raise ValueError("보정 프로필은 목 각도가 필요하다 — --head-joint-topic 을 같이 준다")
             bias = profiles.bias_for(self.profile, *head)      # 표에 없는 각도면 UncalibratedAngle
@@ -232,7 +257,7 @@ def main() -> None:
                 return
             try:
                 pos, quat = state["conv"].convert(name, np.array([p.x, p.y, p.z]), np.array([q.w, q.x, q.y, q.z]), head, live=live)
-            except profiles.UncalibratedAngle as err:        # 틀린 좌표는 없느니만 못하다 — 발행하지 않는다
+            except (profiles.UncalibratedAngle, HeadOffCalibPose) as err:   # 틀린 좌표는 없느니만 못하다 — 발행하지 않는다
                 self.get_logger().warning(f"발행 보류: {err}", throttle_duration_sec=5.0)
                 return
             out = PoseStamped()

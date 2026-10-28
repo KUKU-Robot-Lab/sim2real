@@ -142,10 +142,14 @@ STATIONS = {
     #   약 92° 다른 자세로 가고, 홀더 노드가 그 값으로 홀더 파일을 덮어쓴다.
     #   FP++ 이미지는 5090 용(sm_120) 재빌드 perception-plus-plus:humble-cup-sm120 을 humble-cup 으로 tag 해서 쓴다.
     #   남은 것(sudo): ros-humble-realsense2-camera 설치.
+    # ★10.28 사용자 "미션 연결 진행" — 목 기준 자세를 camset(shaker · 파랑 · 분홍이 한 화면에 드는 자세, 멈춘 자리 pan 1825 ·
+    #   tilt 2815 틱)으로 바꾸고 그 자세에서 잰 외부 파라미터를 쓴다: head_camset_rh56f1.yaml(goal_bias_tick 으로 목표보다 큰
+    #   자리에 서는 이 머리를 맞춘다) · global_camera_extrinsics_arm4090_r20u5.yaml. 두 파일의 자세는 테스트가 같은지 본다.
+    #   head_pose 가 있는 외부 파라미터는 정적 스냅샷이라 object_pose_node 가 목 FK 로 바꾸지 않고 그 자세(± 4 틱)에서만 낸다.
     "5090": {
         "perception_host": "local",
-        "extrinsics": "config/global_camera_extrinsics_arm4090.yaml",
-        "head_config": "config/head_home_rh56f1.yaml",
+        "extrinsics": "config/global_camera_extrinsics_arm4090_r20u5.yaml",
+        "head_config": "config/head_camset_rh56f1.yaml",
         "head_tool": "head_home",
         "pose_dest": "",                             # 같은 PC — 런처가 127.0.0.1 로 받는다
         "holder_poses": "config/cup_holder_poses_5090_v1.yaml",

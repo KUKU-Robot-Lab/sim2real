@@ -23,7 +23,7 @@ import argparse
 import statistics
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -46,6 +46,8 @@ GAIN_MAX = 16383
 SETTLE_SECONDS = 4.0
 VERIFY_SAMPLES = 30
 VERIFY_TOLERANCE_DEG = 0.3
+#: goal_bias_tick 상한(5.3°) — head_pose_check.MAX_GOAL_OFFSET 과 같다. 이보다 크면 보정이 아니라 다른 문제다
+GOAL_BIAS_MAX = 60
 
 _REQUIRED = ("port", "baud", "motors", "position_i_gain", "operating_mode",
              "profile_acceleration", "profile_velocity")
@@ -61,6 +63,16 @@ class HeadHome:
     operating_mode: int
     profile_acceleration: int
     profile_velocity: int
+    #: 목표 레지스터에 더해 쓰는 틱(모터별, 없으면 0). ★2026-10-28 RH56F1 머리는 목표보다 일정 틱 큰 자리에 선다 —
+    #  펌웨어 궤적 끝(Position Trajectory)부터 목표와 다르다(pan +19 · tilt +3, 1805→1824 · 1815→1834 · 2807→2810).
+    #  pan 1.67° 는 드라이버 보정 상한(1°)을 넘어 트림으로 못 메운다. 판정(verify · 드라이버)은 원래 목표 기준이다.
+    goal_bias_tick: dict[int, int] = field(default_factory=dict)
+
+
+def goal_tick(config: HeadHome, dxl_id: int, deg: float | None = None) -> int:
+    """모터에 쓸 목표 틱 = 목표 각(없으면 설정 목표)의 틱 + 그 모터의 goal_bias_tick."""
+    target = config.targets_deg[dxl_id] if deg is None else deg
+    return deg_to_tick(target) + int(config.goal_bias_tick.get(dxl_id, 0))
 
 
 def load_head_home(path: Path) -> HeadHome:
@@ -76,6 +88,7 @@ def load_head_home(path: Path) -> HeadHome:
 
     targets: dict[int, float] = {}
     names: dict[int, str] = {}
+    biases: dict[int, int] = {}
     for name, motor in dict(raw["motors"]).items():
         dxl_id = int(motor["id"])
         deg = float(motor["deg"])
@@ -83,14 +96,20 @@ def load_head_home(path: Path) -> HeadHome:
             raise ValueError(f"id 가 중복이다: {dxl_id}")
         if not -180.0 <= deg <= 180.0:
             raise ValueError(f"{name}: 각도는 -180~180: {deg}")
+        bias = int(motor.get("goal_bias_tick", 0))
+        if abs(bias) > GOAL_BIAS_MAX:
+            raise ValueError(f"{name}: goal_bias_tick 은 ±{GOAL_BIAS_MAX} 틱 안: {bias}")
         targets[dxl_id] = deg
         names[dxl_id] = str(name)
+        if bias:
+            biases[dxl_id] = bias
 
     return HeadHome(
         port=str(raw["port"]), baud=int(raw["baud"]), targets_deg=targets, names=names,
         position_i_gain=gain, operating_mode=int(raw["operating_mode"]),
         profile_acceleration=int(raw["profile_acceleration"]),
         profile_velocity=int(raw["profile_velocity"]),
+        goal_bias_tick=biases,
     )
 
 
@@ -105,7 +124,7 @@ def check_reach(controller: CompliantController, config: HeadHome, dxl_ids) -> d
     2026-10-28 RH 머리 tilt: 위치 모드는 토크를 켤 때 '한 바퀴 안 값 + Homing Offset' 으로 다시 맞춘다. 고개가 경계
     (홈보다 18° 더 숙인 곳) 너머에 있으면 반대쪽 끝으로 잡혀 홈까지 더 숙이는 쪽으로 ~340° 를 돈다(head_turns).
     """
-    goals = {dxl_id: deg_to_tick(config.targets_deg[dxl_id]) for dxl_id in dxl_ids}
+    goals = {dxl_id: goal_tick(config, dxl_id) for dxl_id in dxl_ids}   # 실제로 쓸 목표(goal_bias_tick 포함)
     return torque_on_starts(_read4(controller), goals, operating_mode=config.operating_mode, names=config.names)
 
 
@@ -135,8 +154,7 @@ def apply_one(controller: CompliantController, config: HeadHome, dxl_id: int) ->
     controller.write4(dxl_id, ADDR_PROFILE_ACCELERATION, config.profile_acceleration, "accel")
     controller.write4(dxl_id, ADDR_PROFILE_VELOCITY, config.profile_velocity, "vel")
     controller.write1(dxl_id, ADDR_TORQUE_ENABLE, TORQUE_ON, "torque on")
-    controller.write4(dxl_id, ADDR_GOAL_POSITION,
-                      deg_to_tick(config.targets_deg[dxl_id]), "goal")
+    controller.write4(dxl_id, ADDR_GOAL_POSITION, goal_tick(config, dxl_id), "goal")
 
 
 def verify(controller: CompliantController, config: HeadHome) -> bool:
@@ -196,8 +214,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"포트 {config.port} @ {config.baud} · 모드 {config.operating_mode} · "
           f"Position I Gain {config.position_i_gain}")
     for dxl_id, target in config.targets_deg.items():
+        bias = config.goal_bias_tick.get(dxl_id, 0)
         print(f"  {config.names[dxl_id]}(id={dxl_id}) → {target:+.2f}° "
-              f"(tick {deg_to_tick(target)})")
+              f"(tick {deg_to_tick(target)}" + (f" · 쓰는 목표 {goal_tick(config, dxl_id)} = 보정 {bias:+d}" if bias else "") + ")")
     print("순서: 토크off → 모드 → 게인 → 목표 → 토크on  "
           "(모드가 게인을 리셋하므로 뒤바꾸면 안 된다)")
 

@@ -13,7 +13,7 @@ from typing import Callable, Protocol
 
 import head_motion as hm
 from head_compliant_hold import tick_to_deg
-from head_home import ADDR_GOAL_POSITION, HeadHome, apply_one, check_reach, deg_to_tick
+from head_home import ADDR_GOAL_POSITION, HeadHome, apply_one, check_reach, goal_tick
 from head_turns import HeadReachError
 
 
@@ -118,8 +118,8 @@ class HeadDriver:
         goal_pan, goal_tilt = self._goal[self.pan_id] - hm.TRIM_GAIN * err_pan, self._goal[self.tilt_id] - hm.TRIM_GAIN * err_tilt
         self._goal = {self.pan_id: goal_pan, self.tilt_id: goal_tilt}
         try:  # 토크·모드·게인은 건드리지 않고 목표 위치만 쓴다(토크를 끄면 처진다)
-            for dxl_id, deg in self._goal.items():
-                self.controller.write4(dxl_id, ADDR_GOAL_POSITION, deg_to_tick(deg), "goal trim")
+            for dxl_id, deg in self._goal.items():   # goal_bias_tick 도 같이(apply_one 과 같은 목표 규약)
+                self.controller.write4(dxl_id, ADDR_GOAL_POSITION, goal_tick(self.config, dxl_id, deg), "goal trim")
         except Exception:  # noqa: BLE001 - 보정 실패는 원래 결과로 끝낸다
             return False
         self._active = (req, hm.SettleTracker(tracker.target_pan_deg, tracker.target_tilt_deg, self._clock))

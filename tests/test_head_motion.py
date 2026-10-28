@@ -261,3 +261,64 @@ def test_trim_is_bounded_and_big_errors_are_not_trimmed():
         bus.step()
         driver.tick()
     assert json.loads(statuses[-1])["state"] == "failed" and driver._trims == 0
+
+
+class OffsetBus:
+    """RH56F1 머리처럼 목표 레지스터보다 일정 틱 큰 자리에 서는 모터(10.28 실측 pan +19 · tilt +3) — 진짜 apply_one 을 받는다."""
+    STOPS_PAST = {1: 19, 2: 3}
+
+    def __init__(self, pan=2033, tilt=2864):
+        self.tick = {1: pan, 2: tilt}
+        self.goal = dict(self.tick)
+
+    def write1(self, dxl_id, address, value, label):
+        if address == 116:                       # Goal Position
+            self.goal[dxl_id] = int(value)
+
+    write2 = write4 = write1
+
+    def read4_signed(self, dxl_id, address, label):
+        return {132: self.tick[dxl_id], 20: 0, 52: 0, 48: 4095}[address]
+
+    def read_present_tick(self, dxl_id):
+        return self.tick[dxl_id]
+
+    def step(self, ticks=40):
+        for i in self.tick:
+            self.tick[i] += max(-ticks, min(ticks, self.goal[i] + self.STOPS_PAST[i] - self.tick[i]))
+
+
+CAMSET_YAML = """
+port: p
+baud: 1000000
+motors:
+  pan: {id: 1, deg: -19.56, goal_bias_tick: -19}
+  tilt: {id: 2, deg: 67.473, goal_bias_tick: -3}
+position_i_gain: 400
+operating_mode: 3
+profile_acceleration: 20
+profile_velocity: 50
+"""
+
+
+@pytest.mark.parametrize("bias, state", [(True, "done"), (False, "failed")])
+def test_a_head_that_stops_past_every_goal_reaches_home_only_with_its_goal_bias(tmp_path, bias, state):
+    """10.28 RH 머리는 목표보다 pan 19 · tilt 3 틱 큰 자리에 선다 — pan 1.67° 는 보정 상한(1°)을 넘어 트림으로 못 메운다.
+    설정의 goal_bias_tick 만큼 빼서 쓰면 기준 자세(camset 1825/2815)에 그대로 선다."""
+    from head_home import load_head_home
+    text = CAMSET_YAML if bias else CAMSET_YAML.replace(", goal_bias_tick: -19", "").replace(", goal_bias_tick: -3", "")
+    path = tmp_path / "head.yaml"
+    path.write_text(text, encoding="utf-8")
+    bus, clock, statuses = OffsetBus(), Clock(), []
+    driver = HeadDriver(bus, load_head_home(path), pan_id=1, tilt_id=2, publish_angles=lambda p, t: None,
+                        publish_status=statuses.append, clock=clock)
+    driver.on_request(hm.encode_request(hm.MoveRequest("home", None, None)))
+    for _ in range(400):
+        clock.t += 0.05
+        bus.step()
+        driver.tick()
+        if not driver.moving:
+            break
+    assert json.loads(statuses[-1])["state"] == state
+    if bias:
+        assert (bus.tick[1], bus.tick[2]) == (1825, 2815)

@@ -786,7 +786,7 @@ run:
     - python3
     - '{repo}/scripts/head_home.py'
     - --config
-    - '{repo}/config/head_home_rh56f1.yaml'
+    - '{repo}/config/head_camset_rh56f1.yaml'
     - --release
     execute_args:
     - --execute
@@ -831,10 +831,10 @@ run:
     - --out
     - '{repo}/config/cup_holder_poses_5090_v1.yaml'
     - --extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090.yaml'
+    - '{repo}/config/global_camera_extrinsics_arm4090_r20u5.yaml'
     background: true
   - note: '★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y ≈ l +0.16 / r −0.06 / r 바깥 −0.28(간격 0.22 · 10.27 A1 배치) · stable ✓ 인가 (어긋나면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090.yaml --write --head-config config/head_home_rh56f1.yaml · 겹친 영상은 scripts/calib/cup_holder_pose.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml · 겹친 영상은 scripts/calib/cup_holder_pose.py
       --png)'
     argv:
     - bash
@@ -847,7 +847,7 @@ run:
     - python3
     - '{repo}/scripts/nodes/head_joint_publisher.py'
     - --config
-    - '{repo}/config/head_home_rh56f1.yaml'
+    - '{repo}/config/head_camset_rh56f1.yaml'
     - --port
     - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
     - --baud
@@ -873,19 +873,19 @@ run:
     - --host
     - local
     - --camera-extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090.yaml'
+    - '{repo}/config/global_camera_extrinsics_arm4090_r20u5.yaml'
     background: true
   - note: FP++ 자세 수신기 — 영상 · FP++ 는 localhost 전용 DDS에서 돌고 자세만 UDP(127.0.0.1)로 넘어온다
     argv:
     - python3
     - '{repo}/scripts/nodes/fpp_pose_rx.py'
     background: true
-  - note: 물체 자세 → base — 5090 카메라 외부 파라미터(config/global_camera_extrinsics_arm4090.yaml, + depth z 보정). /objects/<물체>/pose(레지스트리의 모든 물체)
+  - note: 물체 자세 → base — 5090 카메라 외부 파라미터(config/global_camera_extrinsics_arm4090_r20u5.yaml, + depth z 보정). /objects/<물체>/pose(레지스트리의 모든 물체)
     argv:
     - python3
     - '{repo}/scripts/nodes/object_pose_node.py'
     - --camera-extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090.yaml'
+    - '{repo}/config/global_camera_extrinsics_arm4090_r20u5.yaml'
     - --head-joint-topic
     - /head/joint_states
     background: true
@@ -916,8 +916,8 @@ run:
     - --wait
     - '120'
   - note: ★컵 자세 확인(바로 위 추출 결과) — 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y
-      < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090.yaml
-      --write --head-config config/head_home_rh56f1.yaml)
+      < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
+      --write --head-config config/head_camset_rh56f1.yaml)
     argv:
     - bash
     - -lc

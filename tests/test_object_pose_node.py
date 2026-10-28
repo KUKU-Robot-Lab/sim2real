@@ -207,6 +207,36 @@ def test_without_a_profile_nothing_changes():
     assert np.allclose(a, b)
 
 
+# ---- 정적 스냅샷 camera 파일(head_pose 가 있는 파일, 10.28 RH56F1) -----------------------------------------
+def _joint_deg_at(pan_tick, tilt_tick):
+    """/head/joint_states 가 싣는 각(URDF 규약, 도) — 그 틱에 서 있는 머리."""
+    from head_compliant_hold import tick_to_deg
+    from head_fk_chain import urdf_from_encoder
+    return urdf_from_encoder(tick_to_deg(pan_tick), tick_to_deg(tilt_tick))
+
+
+def test_a_static_snapshot_camera_file_is_not_replaced_by_the_neck_fk():
+    """10.28: head_pose 가 있는 camera 파일(RH56F1)은 그 머리 자세 하나에서 잰 값이다. 목 각도가 와도 그 camera 블록을 쓴다 —
+    목 FK 의 hand-eye(config/head_extrinsics.yaml)는 다른 머리(head_v1) 것이라 이 머리에 쓰면 광축이 약 90° 틀린다."""
+    conv = PoseConverter(REG, ["cyl60"], ARM4090_CAMERA)
+    cam, q = np.array([0.02, -0.05, 0.62]), np.array([1.0, 0.0, 0.0, 0.0])
+    p0, q0 = conv.convert("cyl60", cam, q)
+    p1, q1 = conv.convert("cyl60", cam, q, _joint_deg_at(2033, 2864))
+    assert np.allclose(p0, p1) and np.allclose(q0, q1)
+
+
+def test_a_static_snapshot_holds_poses_back_when_the_head_is_off_its_pose():
+    """틀린 좌표는 없느니만 못하다 — 목이 head_pose ± tol_tick(4) 밖이면 변환하지 않는다(노드는 발행을 보류한다)."""
+    from object_pose_node import HeadOffCalibPose
+    conv = PoseConverter(REG, ["cyl60"], ARM4090_CAMERA)
+    args = ("cyl60", np.array([0.02, -0.05, 0.62]), np.array([1.0, 0.0, 0.0, 0.0]))
+    conv.convert(*args, _joint_deg_at(2033 + 4, 2864 - 4))
+    with pytest.raises(HeadOffCalibPose, match="pan"):
+        conv.convert(*args, _joint_deg_at(2033 + 5, 2864))
+    with pytest.raises(HeadOffCalibPose, match="tilt"):
+        conv.convert(*args, _joint_deg_at(2033, 2864 + 49))
+
+
 def test_known_z_applies_to_static_pose_but_not_to_live_pose(tmp_path):
     import yaml
     base = PoseConverter(REG, ["shaker_closed"], calib_profile=_profile(tmp_path, bias=(0.0, 0.0)))

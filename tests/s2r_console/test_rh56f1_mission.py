@@ -610,3 +610,22 @@ def test_head_has_single_serial_owner_and_dynamic_camera_transform():
     stop = next(i for i, c in enumerate(shutdown) if 'head_home#0' in c.stop)
     release = next(i for i, c in enumerate(shutdown) if '--release' in c.argv)
     assert stop < release
+
+
+def test_the_5090_station_uses_the_camset_pose_where_all_three_objects_are_in_view():
+    """10.28 사용자 "미션 연결 진행" — shaker · 파랑 · 분홍이 한 화면에 드는 목 자세(camset)와 그 자세에서 잰 외부 파라미터."""
+    assert GEN.ROBOT_PC == "5090"
+    assert GEN.CAMERA_EXTRINSICS == "config/global_camera_extrinsics_arm4090_r20u5.yaml"
+    assert GEN.HEAD_CONFIG == "config/head_camset_rh56f1.yaml"
+
+
+def test_the_station_head_goes_to_the_pose_its_camera_file_was_measured_at():
+    """목 드라이버의 기준 자세(HEAD_CONFIG 목표) = 카메라 외부 파라미터를 잰 자세(head_pose) — 다르면 FP++ 좌표가 틀린다."""
+    from head_home import load_head_home
+    from head_pose_check import load_head_pose
+    from head_position_hold_node import deg_to_tick
+    hp = load_head_pose(REPO / GEN.CAMERA_EXTRINSICS)
+    if hp is None:
+        pytest.skip("hand-eye 스테이션 — 정적 자세가 없다")
+    cfg = load_head_home(REPO / GEN.HEAD_CONFIG)
+    assert {name: deg_to_tick(cfg.targets_deg[i]) for i, name in cfg.names.items()} == hp.ticks

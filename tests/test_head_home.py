@@ -175,3 +175,44 @@ def test_release_without_execute_never_opens_a_serial_port(tmp_path, monkeypatch
         raise AssertionError('dry run must not open serial')
     monkeypatch.setattr(head_home, 'CompliantController', forbidden)
     assert head_home.main(['--config', str(cfg), '--release']) == 0
+
+
+# ---------- 목표 보정 goal_bias_tick (2026-10-28 RH 머리) ----------
+# RH56F1 머리는 목표 레지스터보다 일정 틱 큰 자리에 선다 — 펌웨어 궤적 끝(Position Trajectory)부터 목표와 다르다
+# (10.28 실측 pan +19 · tilt +3: 1805→1824 · 1815→1834 · 1806→1825 · 2807→2810 · 2812→2815). 설정의 goal_bias_tick 을
+# 더해 쓰면 목표 그 자리에 선다. 판정(verify · 드라이버)은 원래 목표 기준이다.
+RH_CAMSET = """
+port: /dev/ttyUSB0
+baud: 1000000
+motors:
+  pan: {id: 1, deg: -19.56, goal_bias_tick: -19}
+  tilt: {id: 2, deg: 67.473, goal_bias_tick: -3}
+position_i_gain: 400
+operating_mode: 3
+profile_acceleration: 20
+profile_velocity: 50
+"""
+RH_AT_1028 = {1: {132: 1982, 20: 1024, 52: 0, 48: 4095}, 2: {132: 2465, 20: -1024, 52: 0, 48: 4095}}
+
+
+def test_goal_bias_is_read_per_motor_and_is_zero_when_absent(tmp_path):
+    from head_home import goal_tick
+    from head_position_hold_node import deg_to_tick
+    cfg = load_head_home(_write(tmp_path, RH_CAMSET))
+    assert (goal_tick(cfg, 1), goal_tick(cfg, 2)) == (1825 - 19, 2815 - 3)
+    plain = load_head_home(_write(tmp_path, GOOD))
+    assert goal_tick(plain, 2) == deg_to_tick(-20.0)
+
+
+def test_a_goal_bias_beyond_60_ticks_is_refused(tmp_path):
+    with pytest.raises(ValueError, match="goal_bias_tick"):
+        load_head_home(_write(tmp_path, RH_CAMSET.replace("goal_bias_tick: -19", "goal_bias_tick: -61")))
+
+
+def test_apply_writes_the_goal_with_the_bias_so_the_head_stops_on_target(tmp_path):
+    from head_home import apply_one
+    cfg = load_head_home(_write(tmp_path, RH_CAMSET))
+    rec = RecordingController(RH_AT_1028)
+    apply_one(rec, cfg, 1)
+    apply_one(rec, cfg, 2)
+    assert [v for label, _a, v in rec.writes if label == "goal"] == [1806, 2812]
