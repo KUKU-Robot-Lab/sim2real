@@ -195,8 +195,9 @@ def test_read_failure_keeps_the_driver_alive_and_ends_a_move_with_failure():
 
 
 def test_a_tilt_past_the_wrap_boundary_moves_neither_motor():
-    """10.28 RH 머리: 고개가 경계(홈 +18°) 위면 위치 모드 토크가 반대쪽으로 ~340° 돈다 — 둘 다 쓰지 않고 실패로 알린다."""
-    class Raised(FakeBus):
+    """10.28 RH 머리: 고개가 경계(홈보다 18° 더 숙인 곳) 너머면 위치 모드 토크가 반대쪽으로 ~340° 돈다 — 둘 다 쓰지 않고
+    실패로 알린다."""
+    class PastEdge(FakeBus):
         def read4_signed(self, dxl_id, address, label):
             if dxl_id == 2:
                 return {132: 3100, 20: -1024, 52: 0, 48: 4095}[address]
@@ -204,7 +205,7 @@ def test_a_tilt_past_the_wrap_boundary_moves_neither_motor():
 
     applied, statuses = [], []
     config = HeadHome("p", 1_000_000, {1: 0.0, 2: 71.8}, {1: "pan", 2: "tilt"}, 400, 3, 20, 50)
-    driver = HeadDriver(Raised(), config, pan_id=1, tilt_id=2, publish_angles=lambda p, t: None,
+    driver = HeadDriver(PastEdge(), config, pan_id=1, tilt_id=2, publish_angles=lambda p, t: None,
                         publish_status=statuses.append, clock=Clock(), apply=lambda c, g, i: applied.append(i))
     driver.on_request(hm.encode_request(hm.MoveRequest("home", None, None)))
     last = json.loads(statuses[-1])

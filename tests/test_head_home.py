@@ -120,21 +120,21 @@ def test_torque_off_comes_first(tmp_path):
 
 RH = HeadHome("p", 1_000_000, {1: -1.27, 2: 71.8}, {1: "pan", 2: "tilt"}, 400, 3, 20, 50)
 RH_PAN = {132: 1981, 20: 1024, 52: 0, 48: 4095}
-SAGGED_TILT = {132: -1631, 20: -1024, 52: 0, 48: 4095}   # 10.28 토크 꺼짐 — 한 바퀴 낮게 셌다(실제 2465)
-RAISED_TILT = {132: 3100, 20: -1024, 52: 0, 48: 4095}    # 경계(홈 +18°) 너머로 들린 고개
+TURN_LOW_TILT = {132: -1631, 20: -1024, 52: 0, 48: 4095}  # 10.28 토크 꺼짐 — 한 바퀴 낮게 셌다(실제 2465 = 홈보다 35° 들림)
+PAST_EDGE_TILT = {132: 3100, 20: -1024, 52: 0, 48: 4095}  # 경계(3071 = 홈보다 18° 더 숙인 곳) 너머로 숙인 고개
 
 
 def test_a_tilt_past_the_boundary_is_refused_before_any_write():
     from head_home import HeadReachError, apply_one
-    rec = RecordingController({1: RH_PAN, 2: RAISED_TILT})
+    rec = RecordingController({1: RH_PAN, 2: PAST_EDGE_TILT})
     with pytest.raises(HeadReachError, match="tilt"):
         apply_one(rec, RH, 2)
     assert rec.writes == []
 
 
-def test_the_1028_sagged_tilt_is_applied_and_goes_home():
+def test_the_1028_one_turn_low_tilt_is_applied_and_goes_home():
     from head_home import apply_one
-    rec = RecordingController({1: RH_PAN, 2: SAGGED_TILT})
+    rec = RecordingController({1: RH_PAN, 2: TURN_LOW_TILT})
     apply_one(rec, RH, 2)
     assert rec.writes[-1] == ("goal", 116, 2864)
 
@@ -142,13 +142,13 @@ def test_the_1028_sagged_tilt_is_applied_and_goes_home():
 def test_here_tick_is_where_the_motor_reads_after_torque_on():
     """head_pose_check 가 '지금 자리'를 목표로 쓸 때 — 토크 꺼짐 값(−1631)을 쓰면 한 바퀴를 돈다."""
     from head_home import here_tick
-    assert here_tick(RecordingController({1: RH_PAN, 2: SAGGED_TILT}), RH, 2) == 2465
+    assert here_tick(RecordingController({1: RH_PAN, 2: TURN_LOW_TILT}), RH, 2) == 2465
 
 
 def test_cli_checks_both_motors_before_writing_to_either(tmp_path, monkeypatch, capsys):
     """pan 만 움직이고 tilt 에서 멈추지 않는다 — 하나라도 걸리면 아무것도 쓰지 않는다."""
     import head_home
-    rec = RecordingController({1: RH_PAN, 2: RAISED_TILT})
+    rec = RecordingController({1: RH_PAN, 2: PAST_EDGE_TILT})
     monkeypatch.setattr(head_home, "CompliantController", lambda *_: rec)
     cfg = _write(tmp_path, GOOD.replace("deg: 0.0", "deg: -1.27").replace("deg: -20.0", "deg: 71.8"))
     assert head_home.main(["--config", str(cfg), "--execute"]) == 1

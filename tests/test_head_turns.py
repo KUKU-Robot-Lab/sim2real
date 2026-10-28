@@ -33,7 +33,7 @@ def test_signed32_reads_a_4_byte_register_as_signed(raw, want):
 @pytest.mark.parametrize("present, offset, want", [
     (-1631, -1024, 2465),   # 10.28 재부팅 실측
     (2465, -1024, 2465),    # 이미 한 바퀴 안이면 그대로
-    (3100, -1024, -996),    # tilt 경계(3071 = 홈 +18°) 너머로 들린 고개 → 반대쪽 끝
+    (3100, -1024, -996),    # tilt 경계(3071 = 홈보다 18° 더 숙인 곳) 너머로 숙인 고개 → 반대쪽 끝
     (1981, 1024, 1981),     # pan 은 1024~5119 안이면 그대로
     (1000, 1024, 5096),     # pan 경계(1024 = 홈 오른쪽 89°) 너머 → 위쪽 끝
 ])
@@ -46,12 +46,13 @@ def test_multi_turn_modes_keep_the_count_when_torque_turns_on(mode):
     assert torque_on_tick(-1631, -1024, operating_mode=mode) == -1631
 
 
-def test_the_1028_sagged_tilt_passes_and_starts_where_the_motor_will_read():
+def test_the_1028_one_turn_low_tilt_passes_and_starts_where_the_motor_will_read():
     assert torque_on_starts(_read4({2: _motor(-1631, -1024)}), {2: TILT_HOME}) == {2: 2465}
 
 
-def test_a_tilt_raised_past_the_boundary_is_refused_with_the_boundary_angle():
-    # 3100 = 홈 +21°: 토크를 켜면 −996 으로 잡혀 목표까지 위로 339° 를 돈다. 경계는 목표 +18°
+def test_a_tilt_bent_past_the_boundary_is_refused_with_the_boundary_angle():
+    # 3100 = 홈보다 21° 더 숙인 자리: 토크를 켜면 −996 으로 잡혀 목표까지 더 숙이는 쪽으로 339° 를 돈다.
+    # 경계는 목표 +18°(틱이 커지는 쪽 = 숙임)
     with pytest.raises(HeadReachError, match=r"tilt: .*-996.*339°.*목표 \+18°"):
         torque_on_starts(_read4({2: _motor(3100, -1024)}), {2: TILT_HOME}, names={2: "tilt"})
 

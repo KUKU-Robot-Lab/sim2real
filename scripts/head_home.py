@@ -103,7 +103,7 @@ def check_reach(controller: CompliantController, config: HeadHome, dxl_ids) -> d
     """토크를 켜기 전에 — 켜는 순간 목이 반대쪽으로 거의 한 바퀴 돌 자리면 HeadReachError(아무것도 쓰지 않는다).
 
     2026-10-28 RH 머리 tilt: 위치 모드는 토크를 켤 때 '한 바퀴 안 값 + Homing Offset' 으로 다시 맞춘다. 고개가 경계
-    (홈 +18°) 너머에 있으면 반대쪽 끝으로 잡혀 홈까지 위로 ~340° 를 돈다(head_turns).
+    (홈보다 18° 더 숙인 곳) 너머에 있으면 반대쪽 끝으로 잡혀 홈까지 더 숙이는 쪽으로 ~340° 를 돈다(head_turns).
     """
     goals = {dxl_id: deg_to_tick(config.targets_deg[dxl_id]) for dxl_id in dxl_ids}
     return torque_on_starts(_read4(controller), goals, operating_mode=config.operating_mode, names=config.names)
