@@ -24,6 +24,7 @@ import numpy as np
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
 sys.path.insert(0, str(_HERE.parent))
+from head_turns import HeadReachError, torque_on_starts, torque_on_tick  # noqa: E402
 from head_view_align import (DEFAULT_HOME, DEFAULT_REF, _camera, load_ref, orb_shift_px,  # noqa: E402
                              proposed_homing_offset, targets_from_home, view_metrics)
 
@@ -48,6 +49,17 @@ def clamp_step(error: float, gain: float, max_step: float) -> float:
 def within_window(target_tick: int, start_tick: int, window_deg: float) -> int:
     lim = int(round(window_deg * TICKS_PER_DEG))
     return int(np.clip(target_tick, start_tick - lim, start_tick + lim))
+
+
+def checked_start(read4, coarse_tilt_to: int | None = None) -> dict[int, int]:
+    """토크를 켠 뒤 모터가 읽을 시작 자리 — 토크를 켜기 전에 확인한다(경계 너머 · 반 바퀴 넘는 큰 이동이면 HeadReachError).
+
+    토크가 꺼진 채 읽은 값은 바퀴 수가 어긋나 있을 수 있다(10.28 tilt −1631 = 실제 2465). 위치 모드(3)는 토크를 켤 때
+    한 바퀴 안 값 + offset 으로 다시 잡으므로 창(--window-deg)과 큰 이동은 그 값 기준이어야 한다.
+    """
+    here = {i: torque_on_tick(read4(i, ADDR_PRESENT), read4(i, ADDR_HOMING_OFFSET)) for i in (PAN, TILT)}
+    goals = here if coarse_tilt_to is None else {**here, TILT: int(coarse_tilt_to)}
+    return torque_on_starts(read4, goals, names={PAN: "pan", TILT: "tilt"})
 
 
 class Bus:
@@ -145,7 +157,11 @@ def main(argv: list[str] | None = None) -> int:
     pipe, grab = _camera()
     bus = Bus(args.port, args.baud)
     try:
-        start = {i: bus.read(i, ADDR_PRESENT, 4) for i in (PAN, TILT)}
+        try:
+            start = checked_start(lambda i, a: bus.read(i, a, 4), args.coarse_tilt_to)
+        except HeadReachError as exc:
+            print(f"✗ {exc}", flush=True)
+            return 1
         m = measure(grab, ref)
         print(f"시작: pan {start[PAN]} · tilt {start[TILT]} 틱 · 숙임 {m['pitch']:+.1f}°(기준 {ref_pitch:+.1f}) · "
               f"좌우 {m['shift']} px · 평면 {m['inliers']:.2f}", flush=True)

@@ -19,6 +19,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from head_turns import signed32
+
 
 TICK_MAX = 4095
 PROTOCOL = 2.0
@@ -283,7 +285,7 @@ class DynamixelPositionController:
             self.port, dxl_id, ADDR_PRESENT_POSITION
         )
         self._check(comm, err, f"present position id={dxl_id}")
-        return int(value)
+        return signed32(value)  # 부호 있는 4바이트 — 토크가 꺼져 있으면 바퀴 수까지 세어 음수가 된다(10.28 tilt −1631)
 
     def configure_position_mode(
         self, dxl_id: int, profile_acceleration: int, profile_velocity: int

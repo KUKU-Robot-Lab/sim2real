@@ -39,6 +39,7 @@ from head_compliant_hold import (
     tick_to_deg,
 )
 from head_position_hold_node import ADDR_PROFILE_ACCELERATION, ADDR_PROFILE_VELOCITY, deg_to_tick
+from head_turns import ADDR_HOMING_OFFSET, ADDR_PRESENT_POSITION, HeadReachError, torque_on_starts, torque_on_tick
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "head_home.yaml"
 GAIN_MAX = 16383
@@ -93,17 +94,41 @@ def load_head_home(path: Path) -> HeadHome:
     )
 
 
+def _read4(controller: CompliantController):
+    """제어표 4바이트 칸을 부호 있는 값으로 읽는 함수 — head_turns 는 이것만 쓴다(읽기 전용)."""
+    return lambda dxl_id, address: controller.read4_signed(dxl_id, address, f"addr {address}")
+
+
+def check_reach(controller: CompliantController, config: HeadHome, dxl_ids) -> dict[int, int]:
+    """토크를 켜기 전에 — 켜는 순간 목이 반대쪽으로 거의 한 바퀴 돌 자리면 HeadReachError(아무것도 쓰지 않는다).
+
+    2026-10-28 RH 머리 tilt: 위치 모드는 토크를 켤 때 '한 바퀴 안 값 + Homing Offset' 으로 다시 맞춘다. 고개가 경계
+    (홈 +18°) 너머에 있으면 반대쪽 끝으로 잡혀 홈까지 위로 ~340° 를 돈다(head_turns).
+    """
+    goals = {dxl_id: deg_to_tick(config.targets_deg[dxl_id]) for dxl_id in dxl_ids}
+    return torque_on_starts(_read4(controller), goals, operating_mode=config.operating_mode, names=config.names)
+
+
+def here_tick(controller: CompliantController, config: HeadHome, dxl_id: int) -> int:
+    """토크를 켠 뒤 모터가 읽을 지금 자리 — '지금 자리를 목표로' 쓸 때는 토크 꺼짐 값 대신 이것을 쓴다."""
+    read4 = _read4(controller)
+    return torque_on_tick(read4(dxl_id, ADDR_PRESENT_POSITION), read4(dxl_id, ADDR_HOMING_OFFSET),
+                          config.operating_mode)
+
+
 def apply_one(controller: CompliantController, config: HeadHome, dxl_id: int) -> None:
     """★순서가 전부다. 두 가지 펌웨어 동작에 각각 물린 적이 있다(2026-09-01).
 
+    0. **토크를 켜기 전에 역회전 검사**(check_reach, 2026-10-28) — 걸리면 아무것도 쓰지 않는다.
     1. **Operating Mode 를 쓰면 제어 게인이 그 모드 기본값으로 리셋된다**
        → 게인은 모드 **뒤에**.
     2. **Torque Enable 이 0→1 이 되면 Goal Position 이 Present Position 으로 덮어써진다**
        (급격한 점프 방지) → 목표는 토크 **뒤에**. 앞에 쓰면 토크가 꺼진 동안 중력에
        떨어진 자리가 목표가 되어 조용히 어긋난다.
 
-        토크off → 모드 → 게인 → 프로파일 → 토크on → 목표
+        검사 → 토크off → 모드 → 게인 → 프로파일 → 토크on → 목표
     """
+    check_reach(controller, config, (dxl_id,))
     controller.write1(dxl_id, ADDR_TORQUE_ENABLE, TORQUE_OFF, "torque off")
     controller.write1(dxl_id, ADDR_OPERATING_MODE, config.operating_mode, "operating mode")
     controller.write2(dxl_id, ADDR_POSITION_I_GAIN, config.position_i_gain, "position i gain")
@@ -184,11 +209,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         for dxl_id in config.targets_deg:
             controller.ping(dxl_id)
+        check_reach(controller, config, tuple(config.targets_deg))  # 둘 다 확인한 뒤에만 쓴다 — 한쪽만 움직이지 않게
+        for dxl_id in config.targets_deg:
             apply_one(controller, config, dxl_id)
         print(f"\n{SETTLE_SECONDS:g}s 정착 후 검증")
         ok = verify(controller, config)
         print("\n★Position I Gain 은 RAM 이다 — 전원을 끄면 사라진다. bringup 마다 실행할 것")
         return 0 if ok else 1
+    except HeadReachError as exc:
+        print(f"\n❌ {exc}", file=sys.stderr)
+        return 1
     finally:
         controller.close()
 

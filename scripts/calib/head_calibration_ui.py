@@ -10,6 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from tkinter import messagebox
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ — head_turns
+from head_turns import signed32  # noqa: E402
+
 
 TICK_MAX = 4095
 PROTOCOL = 2.0
@@ -266,7 +269,7 @@ class DynamixelUiBus:
             self.port, dxl_id, ADDR_PRESENT_POSITION
         )
         self._check(comm, err, f"present position id={dxl_id}")
-        return int(value)
+        return signed32(value)  # 확장 위치 모드는 이음매를 넘으면 음수가 된다
 
     def write1(self, dxl_id: int, address: int, value: int, label: str) -> None:
         comm, err = self.packet.write1ByteTxRx(self.port, dxl_id, address, value)

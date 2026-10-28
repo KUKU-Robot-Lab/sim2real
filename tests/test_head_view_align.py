@@ -65,6 +65,32 @@ def test_autoalign_steps_toward_zero_and_never_leave_the_window():
     assert within_window(5000, 2048, 25.0) == 2048 + lim and within_window(0, 2048, 25.0) == 2048 - lim
 
 
+_RH_PAN = {132: 1981, 20: 1024, 52: 0, 48: 4095}   # 제어표 칸: Present 132 · Homing Offset 20 · Min/Max Limit 52/48
+
+
+def test_autoalign_starts_from_where_the_motor_reads_after_torque_on():
+    """10.28: 토크 꺼짐 −1631 을 시작으로 잡으면 창(±25°)이 한 바퀴 어긋난 곳에 생긴다 — 위치 모드가 잡을 2465 여야 한다."""
+    from head_view_autoalign import PAN, TILT, checked_start
+    table = {PAN: _RH_PAN, TILT: {132: -1631, 20: -1024, 52: 0, 48: 4095}}
+    assert checked_start(lambda i, a: table[i][a]) == {PAN: 1981, TILT: 2465}
+
+
+def test_autoalign_refuses_a_tilt_past_the_boundary_before_torque_on():
+    from head_turns import HeadReachError
+    from head_view_autoalign import PAN, TILT, checked_start
+    table = {PAN: _RH_PAN, TILT: {132: 3100, 20: -1024, 52: 0, 48: 4095}}
+    with pytest.raises(HeadReachError, match="tilt"):
+        checked_start(lambda i, a: table[i][a])
+
+
+def test_autoalign_refuses_a_coarse_tilt_target_on_the_far_side():
+    from head_turns import HeadReachError
+    from head_view_autoalign import PAN, TILT, checked_start
+    table = {PAN: _RH_PAN, TILT: {132: 2465, 20: -1024, 52: 0, 48: 4095}}
+    with pytest.raises(HeadReachError):
+        checked_start(lambda i, a: table[i][a], coarse_tilt_to=365)   # 2100 틱 = 185° — 반 바퀴 넘음
+
+
 def test_the_rh56f1_head_home_loads_and_is_not_the_5090_file():
     """arm4090 머리는 오프셋 한도(±90°) 때문에 5090 숫자로 못 맞춰 따로 둔다(09.30)."""
     import sys

@@ -17,6 +17,10 @@ import argparse
 import math
 import sys
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ — head_turns(순수 계산, SDK 불필요)
+from head_turns import HeadReachError, signed32, torque_on_starts  # noqa: E402
 
 # --- XC330 상수 ---
 RES_RAD_PER_TICK = 0.0015339807878856412
@@ -121,11 +125,13 @@ class HeadBus:
             self.port, dxl_id, ADDR_GOAL_POSITION, clamp_tick(tick))
         self._check(comm, err, f"goal({dxl_id})")
 
+    def read4_signed(self, dxl_id: int, address: int, label: str = "read4") -> int:
+        val, comm, err = self.packet.read4ByteTxRx(self.port, dxl_id, address)
+        self._check(comm, err, f"{label}({dxl_id})")
+        return signed32(val)  # 부호 있는 4바이트 — 토크가 꺼져 있으면 위치가 바퀴 수까지 세어 음수가 된다
+
     def read_present(self, dxl_id: int) -> int:
-        val, comm, err = self.packet.read4ByteTxRx(
-            self.port, dxl_id, ADDR_PRESENT_POSITION)
-        self._check(comm, err, f"present({dxl_id})")
-        return val
+        return self.read4_signed(dxl_id, ADDR_PRESENT_POSITION, "present")
 
     def close(self):
         self.port.closePort()
@@ -168,12 +174,14 @@ def goto_hold(port, baud, pan_id, tilt_id, pan_rad, tilt_rad, hold,
         for dxl_id in (pan_id, tilt_id):
             if bus.ping(dxl_id) is None:
                 raise RuntimeError(f"id={dxl_id} 핑 실패 → --scan 으로 ID/baud 확인")
-        # 2) position mode(토크 off 상태) → 현재값을 goal 로 seed(토크 on 시 점프 방지) → 토크 on
+        # 2) 토크를 켜기 전에 — 켜는 순간 위치가 다시 잡혀 반대쪽으로 거의 한 바퀴 돌 자리면 아무것도 쓰지 않고 멈춘다
+        starts = torque_on_starts(bus.read4_signed, targets, names={pan_id: "pan", tilt_id: "tilt"})
+        # 3) position mode(토크 off 상태) → 토크를 켜면 모터가 읽을 자리를 goal 로 seed(점프 방지) → 토크 on
         for dxl_id in (pan_id, tilt_id):
             bus.set_position_mode(dxl_id)
-            bus.write_goal(dxl_id, bus.read_present(dxl_id))
+            bus.write_goal(dxl_id, starts[dxl_id])
             bus.torque(dxl_id, True)
-        # 3) 목표 write
+        # 4) 목표 write
         for dxl_id, tick in targets.items():
             bus.write_goal(dxl_id, tick)
             print(f"  id={dxl_id} → tick={tick} ({math.degrees(tick_to_rad(tick)):.1f}°)")
@@ -223,8 +231,11 @@ def main():
         sys.exit(f"입력 오류: {e}")
 
     tol = max(1, rad_to_tick(math.radians(a.tolerance_deg)) - rad_to_tick(0.0))
-    reached = goto_hold(a.port, a.baud, pan_id, tilt_id, pan, tilt,
-                        hold=not a.no_hold, tolerance_tick=tol, timeout_s=a.timeout)
+    try:
+        reached = goto_hold(a.port, a.baud, pan_id, tilt_id, pan, tilt,
+                            hold=not a.no_hold, tolerance_tick=tol, timeout_s=a.timeout)
+    except HeadReachError as e:
+        sys.exit(f"거부: {e}")
     sys.exit(0 if reached else 1)             # 미도달을 실패로 전파(파이프라인 안전)
 
 

@@ -72,3 +72,66 @@ def test_control_table_addresses():
     assert (ADDR_OPERATING_MODE, ADDR_TORQUE_ENABLE) == (11, 64)
     assert (ADDR_GOAL_POSITION, ADDR_PRESENT_POSITION) == (116, 132)
     assert OP_MODE_POSITION == 3
+
+
+# ---------- 부호 있는 읽기 · 토크를 켜기 전 역회전 검사 (2026-10-28) ----------
+
+def test_head_bus_reads_present_and_offset_as_signed():
+    from head_goto_hold import HeadBus
+
+    class Packet:
+        def read4ByteTxRx(self, port, dxl_id, address):
+            return {132: 0xFFFF_F9A1, 20: 0xFFFF_FC00}[address], 0, 0   # −1631 · −1024
+
+    bus = object.__new__(HeadBus)
+    bus.port, bus.packet = None, Packet()
+    assert bus.read_present(2) == -1631 and bus.read4_signed(2, 20) == -1024
+
+
+class _FakeBus:
+    """제어표 4바이트 칸만 아는 가짜 목 버스 — 쓰기는 순서대로 기록한다."""
+
+    def __init__(self, table):
+        self.table, self.writes = table, []
+
+    def ping(self, dxl_id):
+        return 1240
+
+    def read4_signed(self, dxl_id, address):
+        return self.table[dxl_id][address]
+
+    def read_present(self, dxl_id):
+        return self.table[dxl_id][132]
+
+    def set_position_mode(self, dxl_id):
+        self.writes.append(("mode", dxl_id))
+
+    def write_goal(self, dxl_id, tick):
+        self.writes.append(("goal", dxl_id, tick))
+
+    def torque(self, dxl_id, on):
+        self.writes.append(("torque", dxl_id, on))
+
+    def close(self):
+        pass
+
+
+_PAN_AT_CENTER = {132: 2048, 20: 0, 52: 0, 48: 4095}
+
+
+def test_goto_hold_refuses_before_any_write_when_the_tilt_is_past_the_boundary(monkeypatch):
+    import head_goto_hold as g
+    bus = _FakeBus({1: _PAN_AT_CENTER, 2: {132: 3100, 20: -1024, 52: 0, 48: 4095}})
+    monkeypatch.setattr(g, "HeadBus", lambda port, baud: bus)
+    with pytest.raises(g.HeadReachError):
+        g.goto_hold("p", 1, 1, 2, 0.0, math.radians(30), hold=True, tolerance_tick=10, timeout_s=0.0)
+    assert bus.writes == []
+
+
+def test_goto_hold_seeds_the_goal_with_where_the_motor_reads_after_torque_on(monkeypatch):
+    """예전에는 −1631 을 부호 없이 읽어 4095 로 잘라 seed 했다. 위치 모드가 다시 잡을 2465 여야 한다."""
+    import head_goto_hold as g
+    bus = _FakeBus({1: _PAN_AT_CENTER, 2: {132: -1631, 20: -1024, 52: 0, 48: 4095}})
+    monkeypatch.setattr(g, "HeadBus", lambda port, baud: bus)
+    g.goto_hold("p", 1, 1, 2, 0.0, math.radians(30), hold=True, tolerance_tick=10, timeout_s=0.0)
+    assert bus.writes.index(("goal", 2, 2465)) < bus.writes.index(("torque", 2, True))

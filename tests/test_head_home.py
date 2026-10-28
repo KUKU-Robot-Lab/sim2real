@@ -58,16 +58,32 @@ def test_rejects_bad_i_gain(tmp_path):
 
 # ---------- 쓰기 순서 (2026-09-01 에 두 번 물린 곳) ----------
 
-class RecordingController:
-    """쓰기 순서만 기록하는 가짜 컨트롤러."""
+# 제어표의 4바이트 칸(부호 있는 값): Present Position 132 · Homing Offset 20 · Min/Max Position Limit 52/48
+AT_GOOD_PAN = {132: 2048, 20: 0, 52: 0, 48: 4095}     # GOOD pan 0° 자리
+AT_GOOD_TILT = {132: 1820, 20: 0, 52: 0, 48: 4095}    # GOOD tilt −20° 자리
 
-    def __init__(self):
+
+class RecordingController:
+    """쓰기 순서를 기록하는 가짜 컨트롤러. 읽기는 제어표 칸에서 준다(기본: GOOD 자세에 서 있는 모터)."""
+
+    def __init__(self, table=None):
         self.writes: list[tuple[str, int, int]] = []
+        self.table = table or {1: AT_GOOD_PAN, 2: AT_GOOD_TILT}
+        self.closed = False
 
     def write1(self, dxl_id, address, value, label):
         self.writes.append((label, address, value))
 
     write2 = write4 = write1
+
+    def read4_signed(self, dxl_id, address, label):
+        return self.table[dxl_id][address]
+
+    def ping(self, dxl_id):
+        pass
+
+    def close(self):
+        self.closed = True
 
 
 def _addresses(recorder):
@@ -98,6 +114,46 @@ def test_torque_off_comes_first(tmp_path):
     """Operating Mode 는 EEPROM 이라 토크가 켜져 있으면 쓰기가 거부된다."""
     order = _addresses(_apply(tmp_path))
     assert order[0] == "torque off"
+
+
+# ---------- 토크를 켜기 전 역회전 검사 (2026-10-28 RH 머리 tilt) ----------
+
+RH = HeadHome("p", 1_000_000, {1: -1.27, 2: 71.8}, {1: "pan", 2: "tilt"}, 400, 3, 20, 50)
+RH_PAN = {132: 1981, 20: 1024, 52: 0, 48: 4095}
+SAGGED_TILT = {132: -1631, 20: -1024, 52: 0, 48: 4095}   # 10.28 토크 꺼짐 — 한 바퀴 낮게 셌다(실제 2465)
+RAISED_TILT = {132: 3100, 20: -1024, 52: 0, 48: 4095}    # 경계(홈 +18°) 너머로 들린 고개
+
+
+def test_a_tilt_past_the_boundary_is_refused_before_any_write():
+    from head_home import HeadReachError, apply_one
+    rec = RecordingController({1: RH_PAN, 2: RAISED_TILT})
+    with pytest.raises(HeadReachError, match="tilt"):
+        apply_one(rec, RH, 2)
+    assert rec.writes == []
+
+
+def test_the_1028_sagged_tilt_is_applied_and_goes_home():
+    from head_home import apply_one
+    rec = RecordingController({1: RH_PAN, 2: SAGGED_TILT})
+    apply_one(rec, RH, 2)
+    assert rec.writes[-1] == ("goal", 116, 2864)
+
+
+def test_here_tick_is_where_the_motor_reads_after_torque_on():
+    """head_pose_check 가 '지금 자리'를 목표로 쓸 때 — 토크 꺼짐 값(−1631)을 쓰면 한 바퀴를 돈다."""
+    from head_home import here_tick
+    assert here_tick(RecordingController({1: RH_PAN, 2: SAGGED_TILT}), RH, 2) == 2465
+
+
+def test_cli_checks_both_motors_before_writing_to_either(tmp_path, monkeypatch, capsys):
+    """pan 만 움직이고 tilt 에서 멈추지 않는다 — 하나라도 걸리면 아무것도 쓰지 않는다."""
+    import head_home
+    rec = RecordingController({1: RH_PAN, 2: RAISED_TILT})
+    monkeypatch.setattr(head_home, "CompliantController", lambda *_: rec)
+    cfg = _write(tmp_path, GOOD.replace("deg: 0.0", "deg: -1.27").replace("deg: -20.0", "deg: 71.8"))
+    assert head_home.main(["--config", str(cfg), "--execute"]) == 1
+    assert rec.writes == []
+    assert "경계" in capsys.readouterr().err
 
 
 def test_release_never_changes_goal_or_gains(tmp_path, monkeypatch):

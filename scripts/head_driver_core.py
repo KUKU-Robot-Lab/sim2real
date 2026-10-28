@@ -13,7 +13,8 @@ from typing import Callable, Protocol
 
 import head_motion as hm
 from head_compliant_hold import tick_to_deg
-from head_home import ADDR_GOAL_POSITION, HeadHome, apply_one, deg_to_tick
+from head_home import ADDR_GOAL_POSITION, HeadHome, apply_one, check_reach, deg_to_tick
+from head_turns import HeadReachError
 
 
 class Controller(Protocol):
@@ -56,9 +57,14 @@ class HeadDriver:
         pan = self.config.targets_deg[self.pan_id] if req.is_home else req.pan_deg
         tilt = self.config.targets_deg[self.tilt_id] if req.is_home else req.tilt_deg
         goal = replace(self.config, targets_deg={**self.config.targets_deg, self.pan_id: pan, self.tilt_id: tilt})
+        ids = (self.pan_id, self.tilt_id)
         try:
-            for dxl_id in (self.pan_id, self.tilt_id):
+            check_reach(self.controller, goal, ids)  # 둘 다 확인한 뒤에만 쓴다 — 한쪽만 움직이고 멈추지 않게
+            for dxl_id in ids:
                 self._apply(self.controller, goal, dxl_id)
+        except HeadReachError as exc:
+            self._publish_status(hm.status_message(req.request_id, hm.STATE_FAILED, ok=False, reason=str(exc)))
+            return
         except Exception as exc:  # noqa: BLE001 - 쓰기가 중간에 실패해도 상태를 알려야 한다
             self._publish_status(hm.status_message(req.request_id, hm.STATE_FAILED, ok=False, reason=f"모터 쓰기 실패: {exc}"))
             return

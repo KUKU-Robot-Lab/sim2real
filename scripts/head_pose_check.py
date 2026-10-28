@@ -117,7 +117,8 @@ def main(argv=None) -> int:
               "scripts/calib/table_cad_extrinsics.py --write --head-config <머리 설정> 으로 다시 캘리브한다")
         return 2
     from head_compliant_hold import ADDR_POSITION_I_GAIN, ADDR_TORQUE_ENABLE, CompliantController, tick_to_deg
-    from head_home import HeadHome, apply_one, load_head_home
+    from head_home import HeadHome, apply_one, here_tick, load_head_home
+    from head_turns import HeadReachError
     from head_position_hold_node import ADDR_GOAL_POSITION, ADDR_OPERATING_MODE
 
     cfg = load_head_home(args.config)
@@ -149,7 +150,7 @@ def main(argv=None) -> int:
                      and c.read2_signed(i, ADDR_POSITION_I_GAIN, "i") == cfg.position_i_gain)
             if not ready:
                 print(f"  {n}: 토크 · 모드 · I 게인이 설정과 다르다 — head_home 순서로 적용(목표 = 지금 자리, 옮기기는 다음에)")
-                here = c.read_present_tick(i)
+                here = here_tick(c, cfg, i)  # 토크를 켠 뒤 읽힐 자리 — 토크 꺼짐 값은 바퀴 수가 어긋날 수 있다(10.28)
                 one = HeadHome(**{**cfg.__dict__, "targets_deg": {**cfg.targets_deg, i: tick_to_deg(here)}})
                 apply_one(c, one, i)
         time.sleep(SETTLE_S)
@@ -161,6 +162,9 @@ def main(argv=None) -> int:
         print("[head] OK — 캘리브 자세로 맞췄다" if ok else
               "[head] ✗ 맞추지 못했다 — 머리 전원 · 걸림을 보고, 이 자세에서 다시 캘리브한다(table_cad_extrinsics.py)")
         return 0 if ok else 1
+    except HeadReachError as exc:
+        print(f"[head] ✗ {exc}")
+        return 1
     finally:
         c.close()
 

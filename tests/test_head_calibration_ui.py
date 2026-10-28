@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from head_calibration_ui import (
+    DynamixelUiBus,
     MotorCalibration,
     deg_to_tick,
     equivalent_signed_deg,
@@ -115,3 +116,14 @@ def test_save_calibration_yaml_writes_stable_file(tmp_path: Path):
         "    max_deg: 145.0\n"
         "    inverted: true\n"
     )
+
+
+def test_present_position_is_read_as_signed():
+    """확장 위치 모드는 이음매를 넘으면 음수가 된다 — 부호 없이 읽으면 4294965665 처럼 보인다."""
+    class Packet:
+        def read4ByteTxRx(self, port, dxl_id, address):
+            return 0xFFFF_F9A1, 0, 0
+
+    bus = object.__new__(DynamixelUiBus)
+    bus.port, bus.packet = None, Packet()
+    assert bus.read_present_tick(2) == -1631

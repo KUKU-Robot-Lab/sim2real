@@ -1,6 +1,7 @@
 import pytest
 
 from head_position_hold_node import (
+    DynamixelPositionController,
     MotorCalibration,
     TICK_MAX,
     deg_to_tick,
@@ -12,6 +13,18 @@ from head_position_hold_node import (
     unwrap_calibrated_range,
     unwrap_target_for_current,
 )
+
+
+def test_present_position_is_read_as_a_signed_32_bit_value():
+    """토크가 꺼진 채 한 바퀴 낮게 센 위치(10.28 tilt −1631)는 음수다 — 부호 없이 읽으면 4294965665 = 3.8억 도."""
+    class Packet:
+        def read4ByteTxRx(self, port, dxl_id, address):
+            assert address == 132
+            return 0xFFFF_F9A1, 0, 0
+
+    controller = object.__new__(DynamixelPositionController)
+    controller.port, controller.packet = None, Packet()
+    assert controller.read_present_tick(2) == -1631
 
 
 def test_signed_absolute_degrees_map_to_encoder_ticks():

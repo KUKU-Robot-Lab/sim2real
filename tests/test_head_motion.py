@@ -115,6 +115,11 @@ class FakeBus:
         deg = self.pan if dxl_id == 1 else self.tilt
         return round((deg + 180.0) * 4095 / 360.0)
 
+    def read4_signed(self, dxl_id, address, label):
+        """토크를 켜기 전 검사가 읽는 칸 — Homing Offset 0 · 위치 한계 0~4095 인 모터."""
+        deg = self.pan if dxl_id == 1 else self.tilt
+        return {132: round((deg + 180.0) * 4095 / 360.0), 20: 0, 52: 0, 48: 4095}[address]
+
 
 def _driver(bus, clock, max_tilt=-10.0):
     published, statuses = [], []
@@ -187,6 +192,35 @@ def test_read_failure_keeps_the_driver_alive_and_ends_a_move_with_failure():
         driver.tick()
     last = json.loads(statuses[-1])
     assert last["state"] == "failed" and not driver.moving and math.isnan(last["pan_deg"])
+
+
+def test_a_tilt_past_the_wrap_boundary_moves_neither_motor():
+    """10.28 RH 머리: 고개가 경계(홈 +18°) 위면 위치 모드 토크가 반대쪽으로 ~340° 돈다 — 둘 다 쓰지 않고 실패로 알린다."""
+    class Raised(FakeBus):
+        def read4_signed(self, dxl_id, address, label):
+            if dxl_id == 2:
+                return {132: 3100, 20: -1024, 52: 0, 48: 4095}[address]
+            return super().read4_signed(dxl_id, address, label)
+
+    applied, statuses = [], []
+    config = HeadHome("p", 1_000_000, {1: 0.0, 2: 71.8}, {1: "pan", 2: "tilt"}, 400, 3, 20, 50)
+    driver = HeadDriver(Raised(), config, pan_id=1, tilt_id=2, publish_angles=lambda p, t: None,
+                        publish_status=statuses.append, clock=Clock(), apply=lambda c, g, i: applied.append(i))
+    driver.on_request(hm.encode_request(hm.MoveRequest("home", None, None)))
+    last = json.loads(statuses[-1])
+    assert last["state"] == "failed" and "tilt" in last["reason"] and "경계" in last["reason"]
+    assert applied == [] and not driver.moving
+
+
+def test_a_read_failure_before_torque_on_refuses_the_move():
+    class Deaf(FakeBus):
+        def read4_signed(self, dxl_id, address, label):
+            raise RuntimeError("Incorrect status packet")
+
+    bus, clock = Deaf(), Clock()
+    driver, _, statuses = _driver(bus, clock)
+    driver.on_request(hm.encode_request(hm.MoveRequest("m1", 20.0, -30.0)))
+    assert json.loads(statuses[-1])["state"] == "failed" and bus.goal == (0.0, -20.0) and not driver.moving
 
 
 def test_driver_trims_a_resting_offset_with_feedback_and_then_succeeds():
