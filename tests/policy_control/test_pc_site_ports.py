@@ -1,4 +1,4 @@
-"""사이트별 포트(config/sites/*.yaml) — 10.26 사용자: kitech(기존 배선) · arm(새 배선)."""
+"""사이트별 포트(config/sites/*.yaml) — 10.26 사용자: kitech(기존 배선) · arm(새 배선) · 10.28 arm_v1(5090 only + e2c 어댑터)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,7 +14,7 @@ PORTS = PC / "config" / "rh56f1_ports.yaml"
 
 
 def test_sites_present():
-    assert {"kitech", "arm"} <= set(SITE.available())
+    assert {"kitech", "arm", "arm_v1"} <= set(SITE.available())
 
 
 def test_kitech_equals_base_file():
@@ -35,6 +35,23 @@ def test_arm_both_hands():
     assert cfg == yaml.safe_load(PORTS.read_text())["ethercat"]
     for side in SITE.SIDES:
         SITE.check_side(got, side)
+
+
+def test_arm_v1_both_hands():
+    """10.28 사용자: v1 = 5090 only + e2c 어댑터(왼손 USB 10/100 랜). 사용자 표기 ARM_v1 로 골라도 같은 파일."""
+    name = SITE.resolve_name("ARM_v1")
+    assert name == "arm_v1"
+    got = SITE.load_ports(PORTS, name)
+    assert got["site"] == "arm_v1"
+    assert NODE.ecat_config(got, "right")[0] == "enx00e04c6806e1"
+    ifname, cfg = NODE.ecat_config(got, "left")
+    assert ifname == "enxc817f5b9f11e"
+    assert cfg == yaml.safe_load(PORTS.read_text())["ethercat"]
+    for side in SITE.SIDES:
+        SITE.check_side(got, side)
+    site = SITE.load_site(name)
+    assert site["tag"] == "5090 only + e2c adapter"
+    assert (site["can"], site["head_port"]) == ((a := SITE.load_site("arm"))["can"], a["head_port"])
 
 
 def test_unconnected_side_is_refused():

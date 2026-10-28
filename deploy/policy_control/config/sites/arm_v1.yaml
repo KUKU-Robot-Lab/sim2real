@@ -1,0 +1,57 @@
+# 사이트 arm_v1 — tag "5090 only + e2c adapter"(10.28 사용자: 오늘은 이걸로 진행). 손 프로토콜 값은 ../rh56f1_ports.yaml.
+# 고르기: export S2R_SITE=arm_v1 또는 echo arm_v1 > ~/.config/s2r/site (policy_control/site_ports.py).
+#   로더가 이름을 소문자로 찾는다 — 사용자 표기 ARM_v1 로 골라도 이 파일이다(파일 이름은 소문자여야 찾는다).
+# 판 이름(10.28 사용자): v1 = 5090 only + e2c 어댑터(이 파일) · v2 = 5090/4090 + 허브(나중에 다시 세팅 — 그때 arm_v2.yaml 을 만든다).
+# arm(10.26~10.27)과 다른 점
+#   - 왼손 = e2c 어댑터 안의 USB 10/100 랜(wch.cn 1a86:5394 · cdc_ether · USB 2.0 허브 1a86:809d 1-11 의 5 번 포트).
+#     메인보드 랜 eno1 은 비었다(링크 없음).
+#   - 머리 카메라 D435i 가 arm4090 이 아니라 5090 에 꽂혀 있다(5090 only).
+# 좌우 근거(커널 로그): 10.27 21:58:40 eno1 · enx00e04c6806e1 동시에 끊김(손 전원 끔) → 10.28 09:56:18 둘 다 동시에 연결(손 전원 켬)
+#   → 09:56:20 eno1 끊김 → 09:56:26 e2c 어댑터 연결. enx00e04c6806e1 은 그 뒤 끊긴 적 없다 → 오른손 그대로(10.26 전원 끄기로 확인한 NIC),
+#   eno1 에 있던 왼손이 e2c 어댑터로 옮겨졌다. 두 손은 EtherCAT 데이터로는 구별되지 않는다 — 배선을 또 바꾸면 손 하나를 끄고 carrier 로 확인.
+site: arm_v1
+tag: "5090 only + e2c adapter"
+rh56f1:
+  right: {ifname: enx00e04c6806e1}   # RTL8156 USB 3.0 랜(arm 과 같음)
+  left:  {ifname: enxc817f5b9f11e}   # e2c 어댑터 USB 10/100 랜(10.28)
+can: {right: can0, left: can1}          # PCAN-USB Pro FD(arm 과 같음), 미션이 FD 1M/5M 로 올린다
+head_port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0   # Dynamixel U2D2(목) → /dev/ttyUSB0
+
+# 통신 속도 기록(10.28 10:00~10:35 실측, 무동작 — 로더는 이 블록을 쓰지 않는다). 배선을 바꾸면 다시 재서 고친다.
+# 손 · 팔 값은 SCHED_FIFO 80, 두 손(두 팔)을 같은 때 잼. 손 = OP 요청 없음(SAFE_OP 까지), 팔 = 0x7FF 0xCC 상태 읽기만(토크 켜기 없음).
+links_measured_1028:
+  robot_pc_5090:
+    hand_right: {nic: enx00e04c6806e1, chip: RTL8156 USB 랜(r8152), usb: "5000 Mbps (USB 3.2, 4-2)", ethernet: "100 Mbps full",
+                 ecat_rtt_us: {n: 3000, lost: 0, p50: 40.0, p90: 41.6, p99: 78.9, max: 463.9},
+                 pdo_500hz_5s_us: {n: 2500, lost: 0, rtt_p50: 76.7, rtt_p90: 196.1, rtt_p99: 210.8, rtt_max: 528.0,
+                                   cycle_p50: 2000.0, cycle_p99: 2005.9, cycle_max: 2213.9},
+                 hand: "slave 1 · 출력 38 B · 입력 152 B · ERROR 0 · 40~42 °C"}
+    hand_left:  {nic: enxc817f5b9f11e, chip: "e2c 어댑터 USB 10/100 LAN(wch.cn 1a86:5394, cdc_ether, 시리얼 C817F5B9F11E)",
+                 usb: "480 Mbps (USB 2.0 허브 1-11 → 1-11.5)", ethernet: "100 Mbps (커널 표시 half — cdc_ether 는 이중 방식을 알려 주지 않는다, 추정)",
+                 ecat_rtt_us: {n: 3000, lost: 0, p50: 81.3, p90: 90.0, p99: 99.5, max: 472.0},
+                 pdo_500hz_5s_us: {n: 2500, lost: 0, rtt_p50: 94.8, rtt_p90: 114.2, rtt_p99: 147.7, rtt_max: 498.7,
+                                   cycle_p50: 2000.0, cycle_p99: 2005.2, cycle_max: 2156.4},
+                 hand: "slave 1 · 출력 38 B · 입력 152 B · ERROR 0 · 40~42 °C",
+                 note: "10.26 eno1 p50 245 us · 옛 USB 2.0 RTL8152 p50 545 us 보다 빠르다. 실시간 우선순위 없이 재면 max 2.2 ms(한 번)"}
+    eno1: "링크 없음(10.28 09:56:20 부터 — 케이블을 e2c 로 옮김)"
+    arm_can: {adapter: "PCAN-USB Pro FD (0c72:0011, peak_usb)", usb: "480 Mbps (USB 2.0, 1-5)",
+              bus: "CAN FD 1M / 5M (scripts/setup/can_up.py --execute 로 올림 · 잰 뒤 ERROR-ACTIVE · berr 0)",
+              right_can0: {motors: "id 1~7 응답 7/7(id 8 = OpenArm 그리퍼 없음 — 손은 RH56F1)", state: "전부 꺼짐(disabled) · MOS 28~30 °C · 코일 25~28 °C",
+                           one_motor_rtt_us: {n: 2100, lost: 0, p50: 245, p90: 336, p99: 379, max: 605},
+                           seven_motor_round_us: {n: 300, incomplete: 0, p50: 838, p90: 915, p99: 1077, max: 2186}},
+              left_can1:  {motors: "id 1~7 응답 7/7", state: "전부 꺼짐(disabled) · MOS 28~30 °C · 코일 26~28 °C",
+                           one_motor_rtt_us: {n: 2100, lost: 0, p50: 205, p90: 227, p99: 252, max: 547},
+                           seven_motor_round_us: {n: 300, incomplete: 0, p50: 830, p90: 856, p99: 883, max: 1069}},
+              note: "7 개 한 바퀴(요청 7 + 응답 7) p50 0.83 ms — controller_manager 750 Hz 주기 1.33 ms 안. 좌우 팔 구별은 안 함(PCAN 배선 arm 과 같음)"}
+    head_dynamixel: {adapter: "U2D2 FTDI FT232H FT763P8T → /dev/ttyUSB0", usb: "480 Mbps (USB 2.0, 1-10.2)", baud: 1000000,
+                     motors: "id 1 pan · id 2 tilt (model 1240) · ping 각 100/100 · 토크 꺼짐 · hw_err 0",
+                     ping_rtt_ms: {p50: 16.00, max: 16.03}, read_position_ms: {p50: 16.00, max: 17.17},
+                     ftdi_latency_timer_ms: 16,
+                     note: "왕복이 FTDI latency_timer(기본 16 ms)에 묶인다 — 10.26 과 같음. 1 ms 로 줄이려면 운영자 udev 규칙"}
+    camera_d435i: {usb_serial: "254343066627", rs_serial: "348122071637", fw: 5.16.0.1, usb: "5000 Mbps (USB 3.2, 2-1)",
+                   driver: "realsense2_camera(ROS_DOMAIN_ID 126 · localhost only, align_depth on)",
+                   rate_hz: {"color 1280x720": 29.98, "depth 848x480": 29.88, "aligned_depth_to_color": 29.88},
+                   max_interval_ms: {color: 39, depth: 67, aligned: 65},
+                   note: "camera_info 로 잼(300 장). 파이썬 ros2 topic hz 로 원본 영상을 받으면 2~8 Hz — 측정 도구 한계. 10.26 에는 arm4090 에 꽂혀 있었다"}
+    network: {wifi: "wlp131s0 ARM_416_5G 270 Mbit/s 신호 71", lan_ip: 192.168.1.127, tailscale: 100.103.21.126,
+              nm_note: "NetworkManager 'Wired connection 2' 가 왼손 NIC(enxc817f5b9f11e)에서 DHCP 를 45 s 마다 시도 · 실패(손 통신 잃음 0). 끄려면 운영자 nmcli"}
