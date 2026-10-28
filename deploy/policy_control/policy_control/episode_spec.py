@@ -575,3 +575,21 @@ def holder_problems(ep: Episode, poses: Mapping[int, object]) -> list[str]:
     if not poses:
         return [f"{ep.holder_poses or '홀더 자세 파일'} 이 없거나 비었다 — 미션 cup_holders 단계(--write)로 만든다"]
     return [f"{name}(마커 {hid})이 {ep.holder_poses} 에 없다" for name, hid in ep.holders.items() if hid not in poses]
+
+
+def place_holder_problems(ep: Episode, poses: Mapping[int, object], contracts: Mapping[str, object],
+                          tol_m: float) -> list[str]:
+    """★10.28 놓기 job 의 홀더가 그 역할 놓기 계약의 학습 범위(holder_range)에서 tol_m 넘게 밖인가 — 놓기 노드 reset 과 같은
+    검사(rh_place.holder_refusals)를 움직이기 전에 한다. 칵테일은 두 번 붓고 난 뒤에야 분홍 놓기 reset 이 거부돼 두 컵을 쥔
+    채 서게 된다. contracts = 역할 → 읽은 놓기 계약(holder_range 없는 옛 계약은 거르지 않는다). 빈 목록 = 된다."""
+    from policy_control.rh_place import holder_refusals
+    out = []
+    for n in ep.nodes:
+        for j in n.jobs:
+            hid = ep.holders.get(j.target_holder) if j.target_holder else None
+            c = contracts.get(j.role)
+            if c is None or hid is None or hid not in poses:
+                continue
+            bad, _ = holder_refusals(c, poses[hid][0], tol_m)
+            out += [f"{n.id}: {j.role} → {j.target_holder}({hid}) — {why}" for why in bad]
+    return out

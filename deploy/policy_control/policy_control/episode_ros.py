@@ -107,6 +107,25 @@ def service_ns(kind: str, side: str) -> str:
     return side if kind == "aglt" else f"{side}_{kind}"
 
 
+def job_params(ep: Episode, p) -> dict:
+    """★10.28 정책 노드에 reset 전에 넣는 파라미터 — 노드는 첫 job 값으로 뜨고 reset 마다 이것을 다시 읽는다.
+
+    object = 다물체 정책의 물체 이름(10.12, YAML 에 적힌 단계만) · aglt cup_topic = 잡을 물체의 FP++ live 토픽(미션 생성기
+    _live 와 같은 규칙) · place holder = 실물 홀더 번호. 같은 팔이 두 물체를 잡고 두 홀더에 놓는 칵테일(cocktail_1 · 1b)이
+    쓴다 — 전에는 노드가 컵 · 홀더를 시작 때만 읽어 분홍 잡기가 파랑을 쫓고 분홍 놓기가 홀더 1 을 노렸다.
+    place 의 cup_topic 은 넣지 않는다(넘김 묶음 계약은 FP++ 컵을 표시에만 쓴다)."""
+    out: dict = {}
+    if p.kind in ("aglt", "place") and getattr(p, "policy_object", None):
+        out["object"] = str(p.policy_object)
+    if p.kind == "aglt" and p.target_object:
+        topic = live_topic(str((ep.objects.get(p.target_object) or {}).get("topic", "")))
+        if topic:
+            out["cup_topic"] = topic
+    if p.kind == "place" and p.holder_id is not None:
+        out["holder"] = int(p.holder_id)
+    return out
+
+
 def _q(msg) -> tuple:
     p, o = msg.pose.position, msg.pose.orientation
     return (p.x, p.y, p.z), (o.w, o.x, o.y, o.z)
@@ -309,8 +328,8 @@ class RosExecutor:
         finally:
             self.node.destroy_client(cli)
 
-    def _set_object(self, node: str, name: str, timeout: float = 5.0, wait: float = 2.0) -> tuple[bool, list]:
-        """정책 노드 파라미터 object(다물체 aglt 정책의 물체 이름)를 SetParameters 로 — 다음 reset 이 읽는다."""
+    def _set_params(self, node: str, params: Mapping, timeout: float = 5.0, wait: float = 2.0) -> tuple[bool, list]:
+        """정책 노드 파라미터(job_params — object · cup_topic · holder)를 SetParameters 한 번으로 — 다음 reset 이 읽는다."""
         from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
         from rcl_interfaces.srv import SetParameters
 
@@ -320,8 +339,10 @@ class RosExecutor:
             if not cli.wait_for_service(timeout_sec=wait):
                 return False, [f"{path}: 서비스가 없다(노드가 떠 있는가)"]
             req = SetParameters.Request()
-            req.parameters.append(Parameter(name="object", value=ParameterValue(
-                type=ParameterType.PARAMETER_STRING, string_value=name)))
+            for name, v in params.items():               # 노드가 선언한 타입 그대로(holder 는 정수, 나머지는 문자열)
+                req.parameters.append(Parameter(name=name, value=(
+                    ParameterValue(type=ParameterType.PARAMETER_INTEGER, integer_value=v) if isinstance(v, int)
+                    else ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=str(v)))))
             fut = cli.call_async(req)
             t0 = time.monotonic()
             while not fut.done() and time.monotonic() - t0 < timeout:
@@ -329,7 +350,7 @@ class RosExecutor:
             if not fut.done():
                 return False, [f"{path}: 응답 없음({timeout:.0f} s)"]
             bad = [r.reason for r in fut.result().results if not r.successful]
-            return (False, [f"{path} object={name}: {bad}"]) if bad else (True, [])
+            return (False, [f"{path} {dict(params)}: {bad}"]) if bad else (True, [])
         finally:
             self.node.destroy_client(cli)
 
@@ -408,8 +429,9 @@ class RosExecutor:
         t0 = time.monotonic()
         with self._lock:
             last_ep = int((self._events.get(status_key) or {}).get("episode", 0))
-        if p.kind in ("aglt", "place") and getattr(p, "policy_object", None):   # ★10.12 다물체 정책 — reset 이 물체 one-hot 을 고른다
-            ok, why = self._set_object(f"/{node_name}_{side}", str(p.policy_object))
+        params = job_params(self.ep, p)                   # ★10.12 물체 one-hot · ★10.28 컵 · 홀더 — 노드 reset 이 다시 읽는다
+        if params:
+            ok, why = self._set_params(f"/{node_name}_{side}", params)
             if not ok:
                 return NodeResult("refused", "; ".join(why), role=p.role)
         ok, why = reset_until_cup_fresh(lambda: self._call(f"{NS}/{ns}/episode/reset"), cancelled=self.cancel.is_set)

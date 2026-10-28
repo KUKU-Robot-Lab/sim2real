@@ -371,7 +371,8 @@ class Family:
                                                                                       errors, label)
 
 
-#: 에피소드 실행기가 reset 전에 노드 파라미터 object 를 SetParameters 로 넣는 가족(episode_ros._set_object, 정책 kind aglt · place)
+#: 에피소드 실행기가 reset 전에 노드 파라미터(object · ★10.28 cup_topic · holder)를 SetParameters 로 넣는 가족
+#  (episode_ros.job_params · _set_params, 정책 kind aglt · place) — 노드는 reset 마다 다시 읽는다(_switch_cups · _select_holder)
 OBJECT_PARAM_FAMILIES = ("rh_aglt", "rh_place")
 
 FAMILIES = {
@@ -542,8 +543,9 @@ class PourFjNode(LeanNodeMixin, Node):
             for src in select_side(cfg, self.contract.sides[r].side).sources.values():
                 if src.type in msgs and (src.role or src.name) in ("arm", "ee", "tip_force", "joint_force"):
                     self._poll_srcs.append((r, src, msgs[src.type], poll_subscription(self._poll, msgs[src.type], src.topic, _sensor)))
-        self._poll_cups = {role: poll_subscription(self._poll, PoseStamped, str(p(param)), _sensor)
-                           for role, param, _ in self.fam.cups}
+        self._cup_qos = _sensor
+        self._cup_topics = {role: str(p(param)) for role, param, _ in self.fam.cups}
+        self._poll_cups = {role: self._make_cup_poll(topic) for role, topic in self._cup_topics.items()}
         for name in EVENTS:
             self.create_service(Trigger, f"{self.base}/episode/{name}", getattr(self, f"_srv_{name}"))
         if family == "rh_aglt":                     # 10.01 사용자: 목표 직접 입력(base 좌표 m) — 결과는 goal_result(latched JSON)
@@ -590,6 +592,31 @@ class PourFjNode(LeanNodeMixin, Node):
         if poll is not None:
             poll.destroy_node()
         super().destroy_node()
+
+    def _make_cup_poll(self, topic: str):
+        from policy_control.raw_poll import poll_subscription
+        return poll_subscription(self._poll, self._Pose, topic, self._cup_qos)
+
+    def _switch_cups(self) -> list[str]:
+        """★10.28 같은 팔이 두 물체를 잡는 칵테일(파랑 → 분홍): reset 마다 컵 토픽 파라미터를 다시 읽는다 — 실행기가 reset 전에
+        넣는다(episode_ros.job_params). 바뀌었으면 폴링 구독을 그 토픽으로 바꾸고 옛 물체의 컵을 버린다(옛 값으로 새 물체를
+        쫓지 않는다). 새 구독은 아직 받은 것이 없어 live 컵 reset 은 낡음으로 거부되고, 실행기가 RESET_CUP_RETRY_S 안에서 다시
+        부른다(FP++ live 가 오면 통과)."""
+        out = []
+        for role, param, _ in self.fam.cups:
+            topic = str(self.get_parameter(param).value)
+            if not topic or topic == self._cup_topics.get(role):
+                continue
+            old = self._poll_cups.pop(role, None)
+            if old is not None:
+                self._poll.destroy_subscription(old)
+            self._poll_cups[role] = self._make_cup_poll(topic)
+            self._cup_topics[role] = topic
+            self.cups.pop(role, None)
+            out.append(f"{role} → {topic}")
+        if out:
+            self.get_logger().info("컵 토픽 바꿈 · " + " · ".join(out))
+        return out
 
     def _fresh_cup(self, role):
         """CUP_STALE_S 안에 받은 컵(pos, quat, stamp) — 없으면 None."""
@@ -674,6 +701,7 @@ class PourFjNode(LeanNodeMixin, Node):
         self.get_logger().info(f"episode {event.episode} {event.event} {list(event.reasons)}")
 
     def _srv_reset(self, _req, res):
+        self._switch_cups()                        # ★10.28 이번 job 의 물체(실행기가 reset 전에 cup_topic 을 넣는다)
         self._drain()
         for est in self.attach.values():           # 새 에피소드 — 컵은 다시 FP++ 부터
             est.new_episode()

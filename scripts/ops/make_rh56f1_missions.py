@@ -85,7 +85,11 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             "pick_place_f_right", "pick_place_f_left",
             # ★10.27 실기 2단계 grasp2tilt(sim_e2e 실기 계획) — 경로 F 양손 잡기 → ready_carry 로 tilt 시작 자세 → tilt_traj(컵 240).
             #   컵 200(grasp2tilt_f_200)은 source200 FP++ 묶음이 새로 들어가 콘솔 그림(fake 짝 · 노드 상한)을 먼저 정해야 해 뒤로 미룬다
-            "grasp2tilt_f_240")
+            "grasp2tilt_f_240",
+            # ★10.28 사용자 "SEP, B 과정 모두 세팅 완료 해둬야 함"(sim_e2e 경유) — 칵테일 1: 분리 놓기(SEP · 파랑 놓은 뒤 사람이 분홍을
+            #   놓는다) · 순서 B(분홍이 처음부터 B 둘레 영역). 같은 오른손 노드가 job 마다 컵(파랑 → 분홍) · 홀더(1 → 2)를 바꾼다
+            #   (실행기 episode_ros.job_params → 노드 reset). 분홍 FP++ = 분홍만 든 묶음 source240p
+            "cocktail_1", "cocktail_1b")
 #: ★10.20 사용자 "영상은 필요 없음. 일단 기본 off" — 카메라 영상 · FP++ 실시간 좌표 기록(vision-3090)과 끝난 뒤 보고서 영상
 #   만들기(episode_media.py)를 기본으로 끈다. 10.20 실기: 보고서 영상 정리가 옛 회까지 다시 가져오며 6 분 넘게 팔 작업을 붙잡아
 #   rehome · tilt_now 승인이 막혔다. 켜려면 True 로 바꾸고 이 생성기를 다시 돌린다(미션 YAML 이 바뀐다).
@@ -186,17 +190,38 @@ CAMERA_EXTRINSICS = STATION["extrinsics"]
 HOLDER_POSES = STATION["holder_poses"]
 
 
+def _episode_cups() -> list[str]:
+    """★10.28 에피소드가 FP++ 로 찍는 실물(토픽 /objects/<실물>/pose) — 팔 물체 묶음 밖의 것(칵테일 분홍 source240p_pink)도 cups
+    단계가 그 묶음 컨테이너를 띄우게 한다. 지금 다른 에피소드는 팔 물체(source240b_blue · shaker_c_orange)만 찍는다."""
+    sys.path.insert(0, str(REPO / "deploy" / "policy_control"))
+    from policy_control.episode_ros import real_object_name
+    out = []
+    for name in EPISODES:
+        ep = _episode(name)
+        if _perceives(ep):
+            out += [r for o in ep.objects.values() if (r := real_object_name(str(o.get("topic", ""))))]
+    return out
+
+
 def _cups() -> list[str]:
-    """실기 FP++ 물체 — 팔별(오른쪽 · 왼쪽) 다음 묶음의 나머지, 중복 없이. 묶음 컨테이너는 묶음 전부를 찍는다."""
+    """실기 FP++ 물체 — 팔별(오른쪽 · 왼쪽) 다음 묶음의 나머지, 그다음 에피소드가 찍는 물체, 중복 없이. 묶음 컨테이너는 묶음
+    전부를 찍는다."""
     from object_registry import group_members, load_registry
     reg = load_registry()
     members = [n for g in REAL_GROUPS for n in group_members(reg, g)]
     side = [REAL_CUPS[s] for s in SIDES if s in REAL_CUPS]
-    return list(dict.fromkeys([*side, *members]))
+    return list(dict.fromkeys([*side, *members, *_episode_cups()]))
+
+
+def _groups() -> list[str]:
+    """cups 단계가 띄우는 FP++ 묶음 컨테이너 — _cups() 물체의 묶음(fpp.group), 순서대로 중복 없이."""
+    from object_registry import load_registry
+    reg = load_registry()
+    return list(dict.fromkeys(reg.get(n).fpp.get("group") or n for n in _cups()))
 
 
 def _containers_txt() -> str:
-    return " · ".join(f"fpp_{g}" for g in REAL_GROUPS)
+    return " · ".join(f"fpp_{g}" for g in _groups())
 
 
 def _side_cup(s: str) -> str:
@@ -766,10 +791,14 @@ def _episode_run(name: str, real: bool) -> list:
                         next((tr.sides[0] for tr in ep.trajectories.values() if tr.object == oname), "right"))
             # ★10.20 1-B: 궤적으로 다가가 쥐는 물체는 fake 손 '손 안 컵'(/fake/hand_<팔>/cup)이 켜지면 손바닥을 따라간다 — 들기 판정 시험
             follow = ["--follow-side", side] if any(tr.object == oname for tr in ep.trajectories.values()) else []
+            # ★10.28 자리 상자(region)가 있는 물체는 상자 가운데 — 칵테일 파랑 · 분홍이 한 점에 겹치고 B 분홍은 상자 밖이 됐다
+            reg = obj.get("region") or {}
+            xy = ((f"{(float(reg['x'][0]) + float(reg['x'][1])) / 2:.4f}", f"{(float(reg['y'][0]) + float(reg['y'][1])) / 2:.4f}")
+                  if reg else ("0.25", "0.20" if side == "left" else "-0.20"))
             for t in (obj["topic"], _live(obj["topic"])):           # live = aglt 정책 입력(10.12 A안)
-                cmds.append(_cmd(f"fake 물체 — {t}(aglt 학습 배치 x 0.25)",
-                                 ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--x", "0.25",
-                                  "--y", "0.20" if side == "left" else "-0.20", "--z", "0.29", "--topic", t, *follow],
+                cmds.append(_cmd(f"fake 물체 — {t}({'자리 상자 가운데' if reg else 'aglt 학습 배치 x 0.25'})",
+                                 ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--x", xy[0],
+                                  "--y", xy[1], "--z", "0.29", "--topic", t, *follow],
                                  background=True))
         # ★10.22 홀더 자세 파일이 있으면 fake 홀더도 그 자세 — 실행기도 같은 파일을 같은 토픽에 낸다(두 발행이 어긋나지 않게)
         from policy_control.episode_ros import load_holder_poses
@@ -797,7 +826,11 @@ def _episode_run(name: str, real: bool) -> list:
     cmds.append(_cmd("시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)",
                      ["bash", "-lc", f"! ros2 node list 2>/dev/null | grep -E '^/({left})$'"]))
     if perceives:
-        check = (f"★[에피소드 {name}] 물체({', '.join(ep.objects)})가 학습 배치에 서 있고 FP++ 가 잡고 있는가"
+        # ★10.28 사람이 나중에 놓는 물체(at_start away — 칵테일 SEP 분홍)는 시작 때 탁자에 두지 않는다
+        later = [o for o, v in ep.objects.items() if v.get("at_start", "table") == "away"]
+        check = (f"★[에피소드 {name}] 물체({', '.join(o for o in ep.objects if o not in later)})가 학습 배치에 서 있고 FP++ 가 "
+                 "잡고 있는가"
+                 + (f" · {', '.join(later)} 는 아직 탁자에 두지 않는다(에피소드 확인 단계에서 놓는다)" if later else "")
                  + (f" · 홀더 {', '.join(f'{k}={v}' for k, v in ep.holders.items())} 위가 비었는가 · {ep.holder_poses} 가 있는가"
                     "(cup_holders 단계 --write)" if ep.holders else ""))
     else:                                            # ★10.17 경로 B — 사람이 컵을 손에 댄다(FP++ · 정책 없음)
@@ -865,15 +898,21 @@ def _episode_run(name: str, real: bool) -> list:
             src = next((j for n in ep.nodes for j in n.jobs if j.role == role), None)
             obj = src.source_object if src and src.source_object else first_obj
             hid = ep.holders.get(src.target_holder) if src and src.target_holder else PLACE_HOLDER[b.side]
+            # ★10.28 칵테일 — 같은 팔이 두 홀더에 놓는다(파랑 → 1 · 분홍 → 2): 놓기 노드가 그 역할 job 의 홀더를 다 구독해 두고
+            #   reset 에서 고른다(실행기가 job 마다 holder 를 넣는다). 쉼표가 있어야 문자열이라 두 개 이상일 때만 넣는다.
+            hids = sorted({ep.holders[j.target_holder] for n in ep.nodes for j in n.jobs if j.role == role and j.target_holder})
+            holders_arg = ["-p", f"holders:={','.join(map(str, hids))}"] if len(hids) > 1 else []
             bundle_note = (" · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)" if e is not None and e.contract
                            and _place_attach(REPO / "deploy" / "policies" / b.policy / e.contract) == "bundle" else "")
-            cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — 홀더 {hid} · 놓은 뒤 스스로 끝남{bundle_note}",
+            where = f"홀더 {' → '.join(map(str, hids))}(job 마다)" if holders_arg else f"홀더 {hid}"
+            cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — {where} · 놓은 뒤 스스로 끝남{bundle_note}",
                              ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_place_node.py", "--ros-args",
                               # 한 팔에 aglt 와 같이 뜬다 — 서비스는 <팔>_place, 이벤트는 그 팔 토픽(pd 가 reset · stop 적용)
                               "-r", f"__node:=rh_place_node_{b.side}", "-p", f"ns:={b.side}_place",
                               "-p", f"episode_topic:=/policy_control/{b.side}/episode", "-p", f"contract:={contract}",
                               "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", f"cup_topic:={ep.objects[obj]['topic']}",
-                              "-p", f"holder:={hid}", *([] if real else ["-p", "require_grasp:=false"])], background=True))
+                              "-p", f"holder:={hid}", *holders_arg, *([] if real else ["-p", "require_grasp:=false"])],
+                             background=True))
     if real:                                         # 첫 실기는 놓음 문턱(손끝 · 관절 힘 · 손 목표)을 bag 으로 정한다(PLACE 10.04)
         extra = [f"/policy_control/{x}" for x in ("joint_target", *(f"status/pd_{s}" for s in sides),
                                                    *(f"status/rh_aglt_node_{s}" for s in sides),

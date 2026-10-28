@@ -73,7 +73,8 @@ def test_the_rh56f1_real_mission_draws_every_node_once_and_knows_every_command(r
     ros = Counter(n for b in d.boxes for n in b.ros)
     assert not {n: c for n, c in ros.items() if c > 1}                        # 같은 ROS 노드를 두 상자가 주장하지 않는다
     assert len({b.title for b in d.boxes}) == len(d.boxes)
-    assert len(d.boxes) <= 22, [b.id for b in d.boxes]                       # ★10.19 팔마다 실행기 상자 둘(좌우 동시 실행)
+    # ★10.19 팔마다 실행기 상자 둘(좌우 동시 실행) → 22 · ★10.28 칵테일 분홍 FP++ 묶음(source240p) 컨테이너 상자 하나 → 23
+    assert len(d.boxes) <= 23, [b.id for b in d.boxes]
 
 
 def test_no_wire_is_drawn_twice(real):
@@ -103,16 +104,19 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                "episode_pick_place_f_right#3",                  # ★10.22 경로 F + 놓기(newton_05)
                                "episode_grasp2tilt_f_240#3",                    # ★10.27 실기 2단계 grasp2tilt(컵 240)
                                "episode_tilt_base_d#3",                         # ★10.20 경로 A 폐지 → tilt 경로 D(ap05 → rcg03)
-                               "episode_tilt_base_c#3"} & set(units)            # 10.17 tilt 기본 궤적 경로 C
+                               "episode_tilt_base_c#3",                         # 10.17 tilt 기본 궤적 경로 C
+                               "episode_cocktail_1#3", "episode_cocktail_1b#3"} & set(units)   # ★10.28 칵테일 SEP · B
     place = d.box("rh_place_node_right")
     assert set(place.units) == {"policy_place_right#1", "episode_pick_place_right#4",
-                                "episode_pick_place_f_right#4"}                 # ★10.22 경로 F + 놓기(newton_05)
+                                "episode_pick_place_f_right#4",                 # ★10.22 경로 F + 놓기(newton_05)
+                                "episode_cocktail_1#5", "episode_cocktail_1b#5"}   # ★10.28 칵테일 — 같은 노드가 홀더 1 → 2
     # ★10.19 사용자 "좌우 동시 실행": 한 팔 에피소드는 팔마다 실행기(episode_runner_<팔>), 두 팔 tilt 는 기본 실행기
     runner = d.box("episode_runner")
     assert set(runner.units) == {"episode_tilt_base_d#7",   # 실기: 앞에 CPU 기록 한 줄(10.08) · ★10.20 경로 A 폐지 → D, 정책 노드 둘
                                  "episode_tilt_base_c#7",   # 10.17 경로 C — 정책 노드 둘(D 와 같은 자리)
                                  "episode_tilt_base_b#5",   # 10.17 경로 B — 정책 노드 없음(사람이 컵을 댄다)
-                                 "episode_grasp2tilt_f_240#7"}   # ★10.27 실기 2단계 grasp2tilt — 두 팔 에피소드라 기본 실행기
+                                 "episode_grasp2tilt_f_240#7",   # ★10.27 실기 2단계 grasp2tilt — 두 팔 에피소드라 기본 실행기
+                                 "episode_cocktail_1#9", "episode_cocktail_1b#9"}   # ★10.28 칵테일 — 정책 노드 넷
     for side in ("right", "left"):
         assert set(d.box(f"episode_runner_{side}").units) == {f"episode_pick_place_{side}#7",
                                                               f"episode_grasp_c_{side}#6",
@@ -147,7 +151,8 @@ def test_in_the_episode_the_runner_gives_the_holder_and_goal_and_alone_the_holde
     # ★10.13 원격 인지면 마커 노드가 없다 — 단독 놓기의 홀더는 미션 밖(바깥 상자)에서 온다
     alone = "obj_cup_holder_1" if GEN.REMOTE_PERCEPTION else "cup_holders"
     assert holder == {alone: ("policy_place_right#1",),
-                      "episode_runner_right": ("episode_pick_place_right#4", "episode_pick_place_f_right#4")}   # ★10.22 경로 F + 놓기
+                      "episode_runner_right": ("episode_pick_place_right#4", "episode_pick_place_f_right#4"),   # ★10.22 경로 F + 놓기
+                      "episode_runner": ("episode_cocktail_1#5", "episode_cocktail_1b#5")}   # ★10.28 칵테일(두 팔 = 기본 실행기)
     goal = {w.src: w for w in d.wires if w.dst == "rh_aglt_node_right" and w.topic == "/policy_control/right/goal"}
     # ★10.19 한 팔 에피소드는 오른팔 실행기, 두 팔 tilt 는 기본 실행기가 목표를 낸다
     # ★10.20 옛 정책 정리 뒤: 계약이 없는 정책 노드는 단위에서 빠진다 → 목표를 내는 실행기는 오른손 aglt 노드를 실제로 띄우는 단계의 것만
@@ -236,8 +241,9 @@ def test_the_fake_profile_gets_the_same_picture_with_fake_hands():
     assert not [b.id for b in d.boxes if b.id.startswith("unit_")]
     assert d.box("hand_right_drive").ros == ("/fake_rh56f1_right",)
     assert d.box("hand_right_state").ros == ("/rh56f1_state_right",)        # hands:=none — fake 플랜트의 손 상자가 없다
-    holders = d.box("cup_holders")                                          # fake 홀더 여섯(★10.22 경로 F + 놓기 둘 추가) = 실기 홀더 노드 상자 하나
-    assert len(holders.units) == 6 and holders.title == W.HOLDER_TITLE and not holders.ros
+    # fake 홀더 여섯(★10.22 경로 F + 놓기 둘 추가) · ★10.28 칵테일 둘 × 홀더 셋 → 열둘 = 실기 홀더 노드 상자 하나
+    holders = d.box("cup_holders")
+    assert len(holders.units) == 12 and holders.title == W.HOLDER_TITLE and not holders.ros
 
 
 # ── 노드 소스의 이름 ────────────────────────────────────────────────────
@@ -451,7 +457,8 @@ def test_a_topic_heard_from_two_boxes_names_the_sender_in_the_port(real):
         {f"{tag} ▸ right/goal" for tag in goal_tags} if len(goal_tags) > 1 else {""})
     holder = "/objects/cup_holder_1/pose (바깥)" if GEN.REMOTE_PERCEPTION else "마커"     # 10.13 원격 인지면 마커 노드가 없다
     assert {w.label for w in d.wires if w.dst == "rh_place_node_right" and w.topic.endswith("cup_holder_1/pose")} == {
-        f"{holder} ▸ cup_holder_1/pose", "우 실행기 ▸ cup_holder_1/pose"}        # ★10.19 놓기 에피소드는 오른팔 실행기
+        f"{holder} ▸ cup_holder_1/pose", "우 실행기 ▸ cup_holder_1/pose",        # ★10.19 놓기 에피소드는 오른팔 실행기
+        "실행기 ▸ cup_holder_1/pose"}                                             # ★10.28 칵테일(두 팔) — 기본 실행기
     assert not d.box("pd").title.count("무발행")                                # 제목은 노드, 무발행 · 발행은 칩과 스위치가 말한다
 
 
@@ -519,7 +526,7 @@ def test_the_fake_rh56f1_picture_has_the_real_pictures_boxes():
     titles = {b.title for b in real.boxes}
     # fake 에 없는 것: 인지(카메라 · FP++ · 런처 — 정지 컵을 fake 가 바로 낸다), 목 드라이버(fake 에는 목이 없다). fake 에만 있는 것: 막히지 않은 붓기 노드
     missing = {b.title for b in real.boxes} - {b.title for b in fake.boxes}
-    assert missing <= {f"인지 런처 · {GEN.PERCEPTION_HOST}", "카메라 (RealSense)", "목 상태 (head)", "/objects/cup_holder_1/pose (바깥)", *(f"FPP 추적 · {g}" for g in (*_active_groups(), "source240b"))}, missing   # rg3 파지 에피소드의 오른 컵 = source240b
+    assert missing <= {f"인지 런처 · {GEN.PERCEPTION_HOST}", "카메라 (RealSense)", "목 상태 (head)", "/objects/cup_holder_1/pose (바깥)", *(f"FPP 추적 · {g}" for g in (*_active_groups(), "source240b", "source240p"))}, missing   # rg3 파지 에피소드의 오른 컵 = source240b
     extra = {b.title for b in fake.boxes} - titles
     # 10.13 원격 인지 실기에는 마커 노드가 없다 — fake 는 그대로 홀더 노드 상자를 그린다
     assert extra <= {"pour_fj_node · tilt 정책 (오른팔 · 왼팔)", *([W.HOLDER_TITLE] if GEN.REMOTE_PERCEPTION else [])}, extra
@@ -592,3 +599,12 @@ def test_an_episode_without_a_snapshot_draws_no_fpp_cup_for_the_runner(tmp_path)
                        repo=SIM2REAL, status_nodes=())
         cups = [w for w in d.wires if w.dst == "episode_runner" and w.topic.startswith("/objects/")]
         assert bool(cups) is want, name
+
+
+def test_the_cocktail_place_node_hears_both_of_its_holders(real):
+    """★10.28 칵테일 — 같은 오른손 놓기 노드가 홀더 1 · 2 를 다 구독해 두고 job 마다 고른다(holders:=1,2). 그림에도 두 홀더 선이
+    실행기(두 팔 에피소드 = 기본 실행기)에서 온다."""
+    _, _, d = real
+    for h in (1, 2):
+        srcs = {w.src: w.units for w in d.wires if w.dst == "rh_place_node_right" and w.topic == f"/objects/cup_holder_{h}/pose"}
+        assert set(srcs.get("episode_runner", ())) == {"episode_cocktail_1#5", "episode_cocktail_1b#5"}, (h, srcs)

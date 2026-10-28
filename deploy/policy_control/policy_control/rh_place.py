@@ -358,6 +358,10 @@ def latch_dz_of(c: PlaceContract) -> float:
     return float(c.latch_dz_objs.get(c.active_object or "", c.latch_obs["dz"]))
 
 
+#: 실물 홀더가 학습 범위(holder_range) 밖으로 나가도 되는 거리 — 놓기 노드 holder_tol_m 기본 · 에피소드 --plan 검사가 같이 쓴다
+HOLDER_TOL_M = 0.02
+
+
 def holder_refusals(c: PlaceContract, holder_pos: Sequence[float], tol_m: float) -> tuple[list, dict]:
     """실물 홀더 원점이 학습 목표 홀더 범위에서 tol_m 넘게 밖이면 거부 이유. (이유, 축별 밖으로 나간 양 m)."""
     if not c.holder_range:

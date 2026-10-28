@@ -32,7 +32,9 @@ def task_of(policy_id: str) -> str:
             return task
     return 'grasping'
 MODELS = {'source200': ('src200', 'source200_real'), 'source240': ('src240', 'source240_real'),
-          'source240b': ('src240', 'source240_real'), 'shaker_c': ('shaker', 'shaker_c_real')}
+          'source240b': ('src240', 'source240_real'), 'shaker_c': ('shaker', 'shaker_c_real'),
+          # ★10.28 칵테일 분홍 — 분홍만 든 묶음(파랑 source240b 와 같은 방식, 정책 물체는 같은 source240)
+          'source240p': ('src240', 'source240_real')}
 
 
 def _empty(source, reason='not acquired') -> dict[str, Any]:

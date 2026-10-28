@@ -63,7 +63,15 @@ def main(argv=None) -> int:
         if args.require_holders:
             from policy_control.episode_ros import load_holder_poses
             hp = Path(ep.holder_poses)
-            holders = S.holder_problems(ep, load_holder_poses(hp if hp.is_absolute() else _paths.SIM2REAL / hp))
+            poses = load_holder_poses(hp if hp.is_absolute() else _paths.SIM2REAL / hp)
+            holders = S.holder_problems(ep, poses)
+            if not holders:                        # ★10.28 놓기 홀더가 계약 학습 범위 안인가 — 놓기 노드 reset 과 같은 검사를 미리
+                from policy_control import rh_place as P
+                root = _paths.SIM2REAL / "deploy" / "policies"
+                contracts = {r: P.load_contract(root / b.policy / (getattr(entries.get(b.policy), "contract", "")
+                                                                   or "rh_place_contract.json"))
+                             for r, b in ep.policies.items() if b.kind == "place" and b.policy and not av.get(r)}
+                holders = S.place_holder_problems(ep, poses, contracts, P.HOLDER_TOL_M)
             for why in holders:
                 print(f"  ✗ 홀더: {why}")
             if not holders and ep.holders:

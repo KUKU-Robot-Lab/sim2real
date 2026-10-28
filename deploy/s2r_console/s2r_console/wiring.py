@@ -360,6 +360,9 @@ def _policy_node(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
         holder = holder if holder.lstrip("-").isdigit() and int(holder) >= 0 else str((contract.get("target_holders") or [0])[0])
         g.need(str(cmd.args.get("holder_topic") or HOLDER_TOPIC.format(holder)), "holder", "", box, [], STALE_MS,
                unit=key, how="link")
+        for k in str(cmd.args.get("holders", "")).split(","):   # ★10.28 칵테일 — holders:=1,2 를 다 구독해 두고 job 마다 고른다
+            if k.strip().isdigit() and k.strip() != holder:
+                g.need(HOLDER_TOPIC.format(k.strip()), "holder", "", box, [], STALE_MS, unit=key, how="link")
     if cmd.name == "rh_aglt_node.py":
         g.need(f"{base}/goal", "goal", "", box, [], STALE_MS, unit=key, how="on_demand")
     g.makers.append((box, tuple(sides), key, str(cmd.args.get("episode_topic") or f"{base}/episode")))

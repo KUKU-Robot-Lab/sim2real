@@ -10,19 +10,28 @@
 #   놓을 자리 = sim e2e 오른손 잡기 검증 상자 x 0.20~0.30 · y −0.20~−0.10(이 상자에서 잡으면 잡기 → 붓기 연결 240 병 0.84) =
 #   탁자 로봇 쪽 끝 선(x 0.07)에서 13~23 cm · 오른쪽 끝 선(y −0.45)에서 25~35 cm. 못 찾거나 상자 밖이면 로봇은 그대로 두고
 #   confirm 으로 돌아간다(세 번째 실패는 정지).
-# 지금은 모의 실행(--dry-run)만 된다. 실기 전 남은 것:
-#   · 콘솔 미션에 아직 없다 — 분홍 FP++ 묶음(source240) 컨테이너 · fake 컵 짝, 그리고 같은 오른손 노드가 파랑 → 분홍 · 홀더 1 → 2 로
-#     바꾸는 것(지금 미션은 역할마다 컵 토픽 · 홀더를 고정해 노드를 띄운다).
+# ★10.28 사용자 "SEP, B 과정 모두 세팅 완료 해둬야 함"(sim_e2e 경유) — 이 분리 놓기(SEP)와 B(cocktail_1b)를 콘솔 미션 에피소드로
+#   넣었다(v4). 실기 동작은 사용자 승인 뒤. 두 순서는 분홍이 처음 있는 자리만 다르다.
+#   · 같은 오른손 노드가 job 마다 컵(파랑 → 분홍)과 홀더(1 → 2)를 바꾼다 — 실행기가 reset 전에 object · cup_topic · holder 를
+#     넣고(episode_ros.job_params) 노드가 reset 마다 읽는다. 놓기 노드는 미션이 준 홀더(holders:=1,2)를 다 구독해 두고 고른다.
+#   · 분홍 FP++ = 분홍만 든 묶음 source240p(objects.d/source240p.yaml) — 묶음 컨테이너는 처음 찾은 물체 하나만 live 추적해서
+#     (fpp_snapshot_node), 주황 · 분홍이 같이 든 source240 묶음으로는 분홍 live(잡기 정책 입력)가 안 나올 수 있다(파랑 source240b 와
+#     같은 방식). ★색(calib)은 로봇 PC 카메라로 s2r:vision 이 사용자와 잰다 — 재기 전에는 분홍을 못 찾을 수 있다.
+#   · ★막힌 것: 홀더 2(y −0.283)가 놓기 right_n07 학습 범위 y [−0.223, −0.037] 에서 6.0 cm 밖(허용 2 cm) — 에피소드 시작 검사
+#     (episode_run --plan --require-holders)가 막는다(전에는 두 번 붓고 난 뒤 분홍 놓기 reset 에서 두 컵을 쥔 채 섰다). server 에서
+#     newton_08_r(목표 y [−0.33, −0.01], n07 ep2000 이어 학습)이 학습 중 — 통과하면 sim_e2e 가 ckpt · md5 · holder_range 를 보내고,
+#     rh_place_r 정책(두 에피소드 같이)과 계약을 바꾸면 풀린다. 놓기 목표 입력은 홀더 2 실물 자세(사용자 "홀더 2 를 정책 입장에선
+#     홀더 1 로 간주") — 놓기 노드가 holder:=2 의 자세를 목표로 쓴다.
 #   · 놓기는 tilt 시작 자세에서 놓기 노드의 ready_carry 이송으로 시작한다(10.27 사용자) — sim mc 에서 tilt 끝 출발 놓기는 파랑 66 % ·
 #     분홍 40 %(넘김 자세 출발 84 · 92 %, sim_e2e 10.27 · v2 배정 파랑 → 홀더 2 · 분홍 → 홀더 1 기준)라 실기에서 지켜본다.
 #   · 홀더 = 10.27 A1 실측(cup_holder_poses_5090_v1). 번호: 0 = 왼쪽 · 1 = 가운데(오른손 안쪽) · 2 = 맨 우측(오른손 바깥) — 마커 번호는
 #     그 파일에. sim A1 실측 배치에서 이웃 홀더 컵의 영향은 1 %p 이하(sim_e2e 10.27).
 #   · 잡기 · 놓기는 한 팔씩 차례로 쓴다(사용자 목록은 한 줄 — 동시 실행은 팔 충돌 검사 뒤 parallel_policy 로 바꿀 수 있다).
-episode: {name: cocktail_1, version: 3}
+episode: {name: cocktail_1, version: 4}
 objects:
   SRC_BLUE: {topic: /objects/source240b_blue/pose}
-  # ★10.28 사람이 파랑 놓기 뒤에 놓는다 — 처음 snapshot 이 찾지 않고, scene_pink 는 이 상자 안 자리만 받는다
-  SRC_PINK: {topic: /objects/source240_pink/pose, at_start: away, region: {x: [0.20, 0.30], y: [-0.20, -0.10]}}
+  # ★10.28 사람이 파랑 놓기 뒤에 놓는다 — 처음 snapshot 이 찾지 않고, scene_pink 는 이 상자 안 자리만 받는다 · FP++ 묶음 source240p
+  SRC_PINK: {topic: /objects/source240p_pink/pose, at_start: away, region: {x: [0.20, 0.30], y: [-0.20, -0.10]}}
   SHAKER: {topic: /objects/shaker_c_orange/pose}
 holders: {HOLDER_0: 0, HOLDER_1: 1, HOLDER_2: 2}
 holder_poses: config/cup_holder_poses_5090_v1.yaml

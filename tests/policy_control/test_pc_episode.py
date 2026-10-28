@@ -263,7 +263,7 @@ def test_the_pink_rescan_asks_fpp_for_the_real_object_and_needs_it_found():
     ep = _ep("cocktail_1")
     argv = rescan_argv(ep, ["SRC_PINK"])
     assert argv[1] == str(RESCAN_TOOL) and RESCAN_TOOL.is_file()
-    assert argv[2] == "source240_pink" and "--require-all" in argv
+    assert argv[2] == "source240p_pink" and "--require-all" in argv              # ★10.28 분홍만 든 FP++ 묶음 source240p
     odd = replace(ep, objects={**ep.objects, "SRC_PINK": {"topic": "/camera/pink"}})
     with pytest.raises(ValueError, match="실물 이름"):
         rescan_argv(odd, ["SRC_PINK"])
@@ -294,17 +294,18 @@ def test_cocktail_1b_differs_from_cocktail_1_only_where_order_b_says():
     pa, pb = a["objects"].pop("SRC_PINK"), b["objects"].pop("SRC_PINK")
     assert a["objects"] == b["objects"] and pa["topic"] == pb["topic"]
     assert pa["at_start"] == "away" and "at_start" not in pb
-    assert pb["region"] == {"x": [0.27, 0.29], "y": [-0.355, -0.350]}          # sim_e2e 10.28 시험 범위
+    assert pb["region"] == {"x": [0.23, 0.29], "y": [-0.355, -0.30]}           # ★10.28 사용자 B 둘레 영역(v2 · sim b2 53.5 %)
 
 
 @pytest.mark.parametrize("xy, ok", [
-    ((0.28, -0.3525), True), ((0.27, -0.355), True), ((0.29, -0.350), True),   # sim 시험 범위 안(끝 포함)
-    ((0.30, -0.3525), False), ((0.28, -0.345), False),                         # 잡는 동안 병이 홀더 2 에 닿는다(sim)
-    ((0.28, -0.36), False), ((0.26, -0.3525), False),                          # 10.23 불가 자세 규칙 밖 · 시험하지 않은 쪽
+    ((0.26, -0.3275), True), ((0.23, -0.355), True), ((0.29, -0.30), True),    # ★10.28 B 둘레 영역 안(끝 포함)
+    ((0.28, -0.3525), True),                                                   # v1(sim 시험 자리)도 그 안
+    ((0.30, -0.33), False), ((0.22, -0.33), False),                            # x 밖
+    ((0.26, -0.36), False), ((0.26, -0.29), False),                            # y 밖(−0.36 바깥은 10.23 불가 자세 규칙 밖)
 ])
 def test_cocktail_1b_stops_at_the_first_snapshot_when_pink_is_off_its_spot(xy, ok):
-    """분홍이 sim 시험 범위(x 0.27~0.29 · y −0.355~−0.350) 밖이면 처음 snapshot 이 거부하고 정지한다 — 로봇은 홈에서 아무것도
-    쥐지 않았다. 콘솔 경고 줄(last.reason)에 어디가 벗어났는지 보여 운영자가 다시 놓고 새로 시작한다."""
+    """분홍이 B 둘레 영역(x 0.23~0.29 · y −0.355~−0.30, 사용자 10.28) 밖이면 처음 snapshot 이 거부하고 정지한다 — 로봇은 홈에서
+    아무것도 쥐지 않았다. 콘솔 경고 줄(last.reason)에 어디가 벗어났는지 보여 운영자가 다시 놓고 새로 시작한다."""
     ep = _ep("cocktail_1b")
 
     class At(FakeExecutor):

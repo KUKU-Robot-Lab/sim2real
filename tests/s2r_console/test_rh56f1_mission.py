@@ -207,7 +207,8 @@ def test_real_cups_run_fpp_on_the_perception_pc_after_the_head_home_and_shutdown
     side = [ACTIVE_SIDES[s] for s in ("right", "left") if s in ACTIVE_SIDES]
     reg = load_registry()
     groups = list(dict.fromkeys(reg.get(n).fpp["group"] for n in side))          # 팔마다 다른 묶음이어도 된다(10.09)
-    objs = " ".join(dict.fromkeys([*side, *(n for g in groups for n in group_members(reg, g))]))
+    # ★10.28 칵테일 분홍 — 에피소드가 찍는 실물도 띄운다(팔 물체 묶음 밖은 분홍만 든 묶음 source240p 하나)
+    objs = " ".join(dict.fromkeys([*side, *(n for g in groups for n in group_members(reg, g)), "source240p_pink"]))
     for want in (f"perception_launcher_node.py --host {host}", "fpp_pose_rx.py", "object_pose_node.py --camera-extrinsics",
                  "--camera-extrinsics", ext,
                  f"perception_ctl.py start {objs} --viewer --wait 150",

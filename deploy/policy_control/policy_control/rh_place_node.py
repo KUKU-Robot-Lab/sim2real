@@ -39,7 +39,16 @@ READY_CARRY_SLACK_S = 2.0
 from policy_control import codec  # noqa: E402
 from policy_control import place_handover as PH  # noqa: E402
 from policy_control.pour_fj_node import NS, Family, PourFjNode, PourFjNodeError, main  # noqa: E402
-from policy_control.rh_place import JOINT_FREE_G, OPEN_MIN_RAD, RhPlaceError, holder_refusals  # noqa: E402
+from policy_control.rh_place import HOLDER_TOL_M, JOINT_FREE_G, OPEN_MIN_RAD, RhPlaceError, holder_refusals  # noqa: E402
+
+
+def holder_candidates(text: str, first: int) -> list[int]:
+    """★10.28 holders:="1,2" → 구독할 실물 홀더 번호(시작 holder 를 늘 넣는다 · 정렬). 빈 문자열이면 시작 holder 하나."""
+    try:
+        got = {int(x) for x in str(text).split(",") if x.strip()}
+    except ValueError as exc:
+        raise PourFjNodeError(f"holders:={text!r} 는 쉼표로 가른 홀더 번호여야 한다") from exc
+    return sorted(got | {int(first)})
 
 
 class PlaceNode(PourFjNode):
@@ -50,25 +59,16 @@ class PlaceNode(PourFjNode):
         from sensor_msgs.msg import JointState
         from policy_control.raw_poll import poll_subscription
 
-        for name, default in (("holder", -1), ("holder_topic", ""), ("allow_measured_start", False),
+        for name, default in (("holder", -1), ("holders", ""), ("holder_topic", ""), ("allow_measured_start", False),
                               ("joint_free_g", JOINT_FREE_G), ("release_open_min_rad", OPEN_MIN_RAD), ("require_grasp", True),
                               # ★10.22 newton_05 — 넘김 묶음 · 홀더 범위
                               ("bundle", "auto"), ("bundle_max_age_s", 900.0), ("bundle_hand_tol_rad", 0.05),
-                              ("holder_tol_m", 0.02)):
+                              ("holder_tol_m", HOLDER_TOL_M)):
             self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
         if not bool(p("require_grasp")):                   # fake 손은 촉각이 0 — 리허설에서만 끈다
             self.fam = Family(**{**self.fam.__dict__, "refusals": lambda _c, _m, _t: []})
-        k = int(p("holder"))
-        if self.contract.holder_range:                     # ★10.22 학습 목표 = sim 슬롯 번호 — 실물 번호는 자세 범위로 거른다
-            if k < 0:
-                raise PourFjNodeError("holder:=<실물 홀더 번호> 가 필요하다(학습 목표 홀더 번호는 sim 슬롯이라 실물 번호가 아니다) — "
-                                      f"학습 범위 x {self.contract.holder_range['x']} · y {self.contract.holder_range['y']}")
-            self.holder_id = k
-        else:
-            self.holder_id = self.contract.target_holders[0] if k < 0 else k
-            if self.holder_id not in self.contract.target_holders:
-                raise PourFjNodeError(f"holder {self.holder_id} 는 학습 목표 홀더 {self.contract.target_holders} 가 아니다")
+        self.holder_id = self._check_holder_id(int(p("holder")))
         self.holder_tol = float(p("holder_tol_m"))
         self.bundle_param = str(p("bundle") or "auto").strip()
         self.bundle_max_age = float(p("bundle_max_age_s"))
@@ -89,11 +89,17 @@ class PlaceNode(PourFjNode):
             self.get_logger().info(f"준비 자세 이송 켬 · {self.contract.ready_carry}")
         self._carry_t0: float | None = None
         self.holder_topic = str(p("holder_topic")) or f"/objects/cup_holder_{self.holder_id}/pose"
+        # ★10.28 칵테일(같은 팔이 홀더 1 · 2 에 놓는다) — 그 팔 놓기 job 의 홀더를 모두 구독해 두고 reset 에서 고른다
+        #   (holders:=1,2, 미션 생성기가 넣는다 · 없으면 holder 하나). holder_topic 은 시작 holder 에만 쓴다.
+        self._holder_topics = {k: (self.holder_topic if k == self.holder_id else f"/objects/cup_holder_{k}/pose")
+                               for k in holder_candidates(str(p("holders")), self.holder_id)}
+        self._holder_poses: dict[int, np.ndarray] = {}
         self.attach = {}                                   # 붙은 컵은 PlaceChain 이 든다(인계 순간 한 번, sim attached)
         self._holder: np.ndarray | None = None
         self._held_q: dict[str, float] = {}
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        self.create_subscription(PoseStamped, self.holder_topic, self._on_holder, latched)
+        for k, topic in self._holder_topics.items():
+            self.create_subscription(PoseStamped, topic, lambda msg, k=k: self._on_holder(msg, k), latched)
         self._JointState = JointState
         self._poll_held = poll_subscription(self._poll, JointState, f"{NS}/joint_target",
                                             QoSProfile(depth=50, reliability=ReliabilityPolicy.RELIABLE))
@@ -109,12 +115,46 @@ class PlaceNode(PourFjNode):
                                    f"{c.release_force_n} N · 관절 힘 < {float(p('joint_free_g'))} g · 손 목표가 "
                                    f"{float(p('release_open_min_rad'))} rad 넘게 열린 뒤")
 
+    def _check_holder_id(self, k: int) -> int:
+        """홀더 번호 → 쓸 번호. holder_range 계약은 실물 번호(≥ 0)를 받아 자세 범위로 거르고(reset), 옛 계약은 학습 목표 홀더만."""
+        c = self.contract
+        if c.holder_range:                                 # ★10.22 학습 목표 = sim 슬롯 번호 — 실물 번호는 자세 범위로 거른다
+            if k < 0:
+                raise PourFjNodeError("holder:=<실물 홀더 번호> 가 필요하다(학습 목표 홀더 번호는 sim 슬롯이라 실물 번호가 아니다) — "
+                                      f"학습 범위 x {c.holder_range['x']} · y {c.holder_range['y']}")
+            return k
+        h = c.target_holders[0] if k < 0 else k
+        if h not in c.target_holders:
+            raise PourFjNodeError(f"holder {h} 는 학습 목표 홀더 {c.target_holders} 가 아니다")
+        return h
+
+    def _select_holder(self) -> None:
+        """★10.28 같은 팔이 두 홀더에 놓는 칵테일(파랑 → 1 · 분홍 → 2): reset 마다 holder 파라미터를 다시 읽는다 — 실행기가
+        reset 전에 넣는다(episode_ros.job_params). 자세는 시작 때 holders:= 의 홀더를 모두 구독해 두고 고른다(reset 은 콜백을
+        기다릴 수 없다). 바꿀 수 없으면 PourFjNodeError — reset 이 움직이기 전에 거부한다."""
+        k = self._check_holder_id(int(self.get_parameter("holder").value))
+        if k not in self._holder_topics:
+            raise PourFjNodeError(f"홀더 {k} 는 이 노드가 구독하지 않는다(holders {sorted(self._holder_topics)}) — "
+                                  "미션 생성기가 그 팔 놓기 job 의 홀더를 holders:= 로 다 넣는다")
+        if k != self.holder_id:
+            pose = self._holder_poses.get(k)
+            if pose is None:
+                raise PourFjNodeError(f"홀더 {k} 자세({self._holder_topics[k]})를 아직 못 받았다 — cup_holders 단계가 내는지 본다")
+            self.get_logger().info(f"홀더 바꿈 {self.holder_id} → {k} {np.round(pose, 4).tolist()}")
+            self.holder_id, self._holder_excess = k, {}
+        self._holder = self._holder_poses.get(k, self._holder)
+
     # ---------------------------------------------------------------- inputs
-    def _on_holder(self, msg) -> None:
+    def _on_holder(self, msg, k: int | None = None) -> None:
+        k = self.holder_id if k is None else k
         try:
-            self._holder = np.asarray(codec.decode_pose(msg).pos, float)
+            pos = np.asarray(codec.decode_pose(msg).pos, float)
         except (codec.CodecError, ValueError) as exc:
             self._errors["holder"] = str(exc)
+            return
+        self._holder_poses[k] = pos
+        if k == self.holder_id:
+            self._holder = pos
 
     def _drain(self) -> None:
         super()._drain()
@@ -172,6 +212,12 @@ class PlaceNode(PourFjNode):
         return b
 
     def _srv_reset(self, req, res):
+        try:
+            self._select_holder()                          # ★10.28 이번 job 의 홀더(실행기가 reset 전에 holder 를 넣는다)
+        except PourFjNodeError as exc:
+            if self.book.phase == "armed":
+                self.book.phase = "idle"
+            return self._reply(res, False, [f"reset: {exc}"])
         if self.chain is not None:
             self.chain.rel = None                          # 새 인계 — 컵은 다시 붙인다(FP++ 한 번 또는 넘김 묶음)
         self._bundle = None
