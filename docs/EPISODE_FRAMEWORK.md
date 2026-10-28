@@ -69,8 +69,8 @@ config/episodes/<이름>.yaml ── episode_spec(검증 · 역할 → 등록부
 | pick_place_right / left | 홈 → snapshot → 집기(aglt → SETTING) → 놓기(홀더 1) → 홈 | 가능 |
 | pick_place_both | 홈 → snapshot → 양팔 동시 집기 → 놓기 우 → 놓기 좌 → 홈 | 두 컵 구분(색 · FP++ 항목) 뒤 |
 | bead_mix_episode | 가이드 1-2 전체(옛 정의 — 칵테일은 아래 cocktail_1 · 2 가 10.27 사용자 정의) | 모의만 — 붓기 성공 후보 · 뚜껑 · 흔들기 정책 · 색 컵 인지 없음 |
-| cocktail_1 | 홈 → snapshot(파랑 · shaker) → 잡기 우 src240 파랑 · 좌 shaker → ready_carry → tilt 1차 + 복귀 → 놓기 우 파랑 → 홀더 2 → 오른팔 홈 → **[확인] 사람이 분홍을 놓는다 → 분홍만 다시 찍기**(10.28) → 잡기 우 src240 분홍 → ready_carry(우) → tilt 1차 + 복귀 → 놓기 우 분홍 → 홀더 1 · 좌 shaker → 홀더 0 → 홈 | 모의만 — 콘솔 미션 미등록(분홍 FP++ 묶음 source240 · 같은 오른손 노드의 컵 · 홀더 바꾸기 · fake 컵 짝) |
-| cocktail_1b | 순서 B(★10.28 sim 통과 뒤 사용자 지시로 추가 — cocktail_1 은 그대로): 홈 → snapshot(파랑 · **분홍** · shaker, 분홍이 자리 밖이면 정지) → 잡기 우 파랑 · 좌 shaker → ready_carry → tilt 1차 + 복귀 → 놓기 우 파랑 → **홀더 1** → 오른팔 홈 → 잡기 우 분홍 → ready_carry(우) → tilt 1차 + 복귀 → 놓기 우 분홍 → **홀더 2** · 좌 shaker → 홀더 0 → 홈 | 모의만 — cocktail_1 과 같은 콘솔 미등록 + 분홍 자리(머리 home 시야 오른쪽 끝, 24 cm 병은 옆면 약 30 % 만 프레임 안)에서 FP++ 가 찾는지 실기 확인 필요 |
+| cocktail_1 | 홈 → snapshot(파랑 · shaker) → 잡기 우 src240 파랑 · 좌 shaker → ready_carry → tilt 1차 + 복귀 → 놓기 우 파랑 → 홀더 1 → 오른팔 홈 → **[확인] 사람이 분홍을 놓는다 → 분홍만 다시 찍기**(10.28) → 잡기 우 src240 분홍 → ready_carry(우) → tilt 1차 + 복귀 → 놓기 우 분홍 → 홀더 2 · 좌 shaker → 홀더 0 → 홈(★10.28 v3 — 홀더 배정을 cocktail_1b 와 같게. v2 까지는 파랑 → 2 · 분홍 → 1) | 모의만 — 콘솔 미션 미등록(분홍 FP++ 묶음 source240 · 같은 오른손 노드의 컵 · 홀더 바꾸기 · fake 컵 짝) |
+| cocktail_1b | 순서 B(★10.28 sim 통과 뒤 사용자 지시로 추가 — 사람 확인 · 다시 찍기가 없는 것만 cocktail_1 과 다르다): 홈 → snapshot(파랑 · **분홍** · shaker, 분홍이 자리 밖이면 정지) → 잡기 우 파랑 · 좌 shaker → ready_carry → tilt 1차 + 복귀 → 놓기 우 파랑 → 홀더 1 → 오른팔 홈 → 잡기 우 분홍 → ready_carry(우) → tilt 1차 + 복귀 → 놓기 우 분홍 → 홀더 2 · 좌 shaker → 홀더 0 → 홈 | 모의만 — cocktail_1 과 같은 콘솔 미등록 + 분홍 자리(머리 home 시야 오른쪽 끝, 24 cm 병은 옆면 약 30 % 만 프레임 안)에서 FP++ 가 찾는지 실기 확인 필요 |
 | cocktail_2 | cocktail_1 의 분홍 놓기까지 → 오른팔 홈 → 뚜껑 닫기(capg → caps) → 오른팔 홈 → 놓기 좌 shaker → 홀더 0 | 모의만 — 뚜껑 정책 · 뚜껑 FP++ 항목 없음 |
 
 SETTING = aglt 고정 목표 (0.25, ∓0.12, 0.41)(손에 든 컵 원점) — rh_place · pour 인계 뱅크가 이 자세에서 만들어졌다.

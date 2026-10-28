@@ -169,21 +169,23 @@ def _pink_gate():
 
 
 def test_cocktail_1_starts_without_pink_and_waits_for_the_operator_to_place_it():
-    """10.28 사용자 "블루컵 놓기 이후에, 내가 핑크컵을 놓아주는 식" — 처음 snapshot 은 분홍을 찾지 않는다. 파랑을 홀더 2 에
-    놓고 오른팔이 홈에 가면 확인에서 멈추고(왼손은 shaker), 확인하면 분홍만 다시 찍어 잡기 → 붓기 → 홀더 1 로 잇는다."""
+    """10.28 사용자 "블루컵 놓기 이후에, 내가 핑크컵을 놓아주는 식" — 처음 snapshot 은 분홍을 찾지 않는다. 파랑을 홀더 1 에
+    놓고 오른팔이 홈에 가면 확인에서 멈추고(왼손은 shaker), 확인하면 분홍만 다시 찍어 잡기 → 붓기 → 홀더 2 로 잇는다.
+    홀더 배정은 순서 B 와 같다(10.28 사용자 "놓는순서 그러면 통일시켜주고")."""
     ep = _ep("cocktail_1")
     ok, approve = _pink_gate()
     ex = FakeExecutor(ep)
     m = EpisodeManager(ep, ex, approve=approve)
     assert m.world.objects["SRC_PINK"]["at"] == "away"
     assert m.run() == READY and m.waiting == "confirm_pink_placed"
-    assert m.world.objects["SRC_BLUE"]["at"] == "holder:HOLDER_2" and m.world.objects["SRC_PINK"]["at"] == "away"
+    assert m.world.objects["SRC_BLUE"]["at"] == "holder:HOLDER_1" and m.world.objects["SRC_PINK"]["at"] == "away"
     assert m.world.hand("right") == "EMPTY" and m.world.hand("left") == "SHAKER"
     assert m.view()["confirm"]["node"] == "confirm_pink_placed"
     ok["confirm_pink_placed"] = True
     assert m.run() == SUCCESS
     assert [c[1] for c in ex.calls if c[0] == "snapshot"] == ["scene", "scene_pink"]
-    assert m.world.objects["SRC_PINK"]["at"] == "holder:HOLDER_1"
+    assert {k: m.world.objects[k]["at"] for k in ("SRC_BLUE", "SRC_PINK", "SHAKER")} == {
+        "SRC_BLUE": "holder:HOLDER_1", "SRC_PINK": "holder:HOLDER_2", "SHAKER": "holder:HOLDER_0"}
     back = [f for f in m.flow["feedback"] if f["from"] == "scene_pink"]
     assert [(f["to"], f["max"]) for f in back] == [("confirm_pink_placed", S.PLACED_SNAPSHOT_TRIES - 1)]
 
@@ -268,7 +270,7 @@ def test_the_pink_rescan_asks_fpp_for_the_real_object_and_needs_it_found():
 
 
 # ---------------------------------------------------------------- ★10.28 칵테일 1 순서 B(cocktail_1b)
-def test_cocktail_1b_has_pink_on_the_table_from_the_start_and_swaps_the_holders():
+def test_cocktail_1b_has_pink_on_the_table_from_the_start_and_places_blue_1_pink_2():
     """순서 B(10.27 사용자 정의 · 10.28 sim 통과 뒤 추가) — 분홍은 처음부터 탁자에 있어 처음 snapshot 이 함께 찍고(사람 확인 ·
     다시 찍기 없음), 파랑 → 홀더 1 · 분홍 → 홀더 2 · shaker → 홀더 0."""
     ep = _ep("cocktail_1b")
@@ -282,15 +284,13 @@ def test_cocktail_1b_has_pink_on_the_table_from_the_start_and_swaps_the_holders(
 
 
 def test_cocktail_1b_differs_from_cocktail_1_only_where_order_b_says():
-    """B 는 A 의 변형 — 정책 · 궤적 · 실패 정책 · 홀더가 같고, 순서는 사람 확인 · 다시 찍기를 빼고 파랑 ↔ 분홍 홀더만 바꾼다.
-    분홍은 at_start 가 없고(처음부터 탁자) region 만 다르다. A 를 고치면 B 도 같이 고치라는 알림."""
+    """B 는 A 의 변형 — 정책 · 궤적 · 실패 정책 · 홀더 · 홀더 배정이 같고, 순서는 사람 확인 · 다시 찍기만 뺀다(홀더 배정은
+    10.28 사용자 "놓는순서 그러면 통일시켜주고" — A v3 부터 파랑 → 1 · 분홍 → 2). 분홍은 at_start 가 없고(처음부터 탁자)
+    region 만 다르다. A 를 고치면 B 도 같이 고치라는 알림."""
     a, b = _episode_raw("cocktail_1"), _episode_raw("cocktail_1b")
     for k in ("policies", "trajectories", "failure_policy", "holders", "holder_poses"):
         assert a[k] == b[k], k
-    swap = {"HOLDER_1": "HOLDER_2", "HOLDER_2": "HOLDER_1"}
-    want = [{**n, "target_holder": swap[n["target_holder"]]} if n.get("source_object") in ("SRC_BLUE", "SRC_PINK") else n
-            for n in a["sequence"] if n["id"] not in ("confirm_pink_placed", "scene_pink")]
-    assert b["sequence"] == want
+    assert b["sequence"] == [n for n in a["sequence"] if n["id"] not in ("confirm_pink_placed", "scene_pink")]
     pa, pb = a["objects"].pop("SRC_PINK"), b["objects"].pop("SRC_PINK")
     assert a["objects"] == b["objects"] and pa["topic"] == pb["topic"]
     assert pa["at_start"] == "away" and "at_start" not in pb
