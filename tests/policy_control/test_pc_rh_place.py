@@ -94,7 +94,9 @@ def test_reset_starts_from_the_held_targets_and_glues_the_cup_to_the_palm(c):
     held = (np.asarray(c.side().arm_home) + 0.01, np.asarray(c.side().hand_grip) * 0.9)
     ch.reset({"arm": _meas(c)}, holder=[0.38, -0.002, 0.235], held=held)
     st = ch.dec.state["arm"]
-    assert st.arm_target == pytest.approx(held[0]) and st.hand_target == pytest.approx(held[1])   # sim 뱅크 arm_q_target · hand_target
+    assert st.arm_target == pytest.approx(held[0])                                               # sim 뱅크 arm_q_target
+    # ★10.29 손은 held(aglt squeeze 얹힌 명령)가 아니라 실측 q 에서 시작한다 — 학습 뱅크 hand_target ≈ q(err ≈ 0)
+    assert st.hand_target == pytest.approx(np.asarray(c.side().hand_grip)) and ch.hand0 == pytest.approx(c.side().hand_grip)
     pos, quat = ch.cup_from_palm(np.array([0.40, 0.0, 0.50]), _rz(90))       # 손바닥이 돌고 옮겨 가도 컵은 손바닥에 붙어 따라온다
     assert pos == pytest.approx([0.40, 0.0, 0.45]) and abs(abs(quat[0]) - np.cos(np.radians(45))) < 1e-9
     assert ch.goal.pos == pytest.approx([0.38, -0.002, 0.295])
