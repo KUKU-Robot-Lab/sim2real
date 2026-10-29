@@ -31,6 +31,10 @@ snapshot = 10.04 사용자 "처음에 FP++ 로 각 컵들 배치를 한번에 �
     {id: …, type: confirm, text: "…"} 바로 뒤 {id: …, type: snapshot, objects: [SRC_PINK]}
       — 사람이 놓고 확인하면 그 물체만 FP++ 로 다시 찍어 기록한다(놓는 손이 있을 때 찍힌 자리를 쓰지 않게).
       못 찾거나 상자 밖이면 로봇은 움직이지 않은 채 그 confirm 으로 돌아가 다시 기다린다(PLACED_SNAPSHOT_TRIES 번째 실패는 정지).
+
+★10.29 놓기 job 의 holder_tol_m(m, 0 < 값 ≤ 0.10) — 그 job 의 홀더가 놓기 계약 학습 범위(holder_range) 밖이어도 이 거리까지는
+    받는다(기본 rh_place.HOLDER_TOL_M 0.02). 시작 검사(episode_run --plan --require-holders)와 놓기 노드 reset 이 같은 값을 쓴다
+    (실행기가 job 마다 노드 파라미터로 넣는다). 사용자 "n07 이 범위 밖 홀더도 받도록 시작 검사를 풀어 주세요"(칵테일 홀더 2).
 """
 from __future__ import annotations
 
@@ -95,6 +99,12 @@ class Job:
     target_holder: str | None = None
     #: ★10.12 다물체 aglt 정책(rh_aglt object_names)의 물체 이름(one-hot id, 예 source240_real) — 실기 물체는 단계마다 고정
     policy_object: str | None = None
+    #: ★10.29 놓기 job 이 학습 범위(holder_range) 밖 홀더를 받는 거리(m). None = rh_place.HOLDER_TOL_M. 시작 검사(--plan)와
+    #:   놓기 노드 reset 이 같이 쓴다(실행기가 job 마다 노드 파라미터 holder_tol_m 으로 넣는다)
+    holder_tol_m: float | None = None
+
+
+JOB_KEYS = ("name", "source_object", "target_object", "target_holder", "policy_object", "holder_tol_m")
 
 
 @dataclass(frozen=True)
@@ -150,14 +160,28 @@ class Episode:
 
 
 def _job(raw: Mapping, where: str) -> Job:
-    unknown = set(raw) - {"name", "source_object", "target_object", "target_holder", "policy_object"}
+    unknown = set(raw) - set(JOB_KEYS)
     if unknown:
         raise EpisodeSpecError(f"{where}: 모르는 키 {sorted(unknown)}")
     if not raw.get("name"):
         raise EpisodeSpecError(f"{where}: name(정책 역할)이 없다")
     return Job(role=str(raw["name"]), source_object=raw.get("source_object"), target_object=raw.get("target_object"),
                target_holder=raw.get("target_holder"),
-               policy_object=None if raw.get("policy_object") is None else str(raw["policy_object"]))
+               policy_object=None if raw.get("policy_object") is None else str(raw["policy_object"]),
+               holder_tol_m=_holder_tol(raw, where))
+
+
+def _holder_tol(raw: Mapping, where: str) -> float | None:
+    """★10.29 job 의 holder_tol_m — target_holder 가 있는 job 에만, 0 < 값 ≤ rh_place.HOLDER_TOL_MAX_M."""
+    if raw.get("holder_tol_m") is None:
+        return None
+    if not raw.get("target_holder"):
+        raise EpisodeSpecError(f"{where}: holder_tol_m 은 target_holder 가 있는 놓기 job 에만")
+    from policy_control.rh_place import RhPlaceError, holder_tol_of
+    try:
+        return holder_tol_of(raw["holder_tol_m"])
+    except RhPlaceError as exc:
+        raise EpisodeSpecError(f"{where}: {exc}") from exc
 
 
 def _node(raw: Mapping, i: int) -> Node:
@@ -169,7 +193,7 @@ def _node(raw: Mapping, i: int) -> Node:
         raise EpisodeSpecError(f"{where}: id 가 없다")
     jobs: tuple = ()
     if t == "policy":
-        jobs = (_job({k: raw[k] for k in ("name", "source_object", "target_object", "target_holder", "policy_object") if k in raw}, where),)
+        jobs = (_job({k: raw[k] for k in JOB_KEYS if k in raw}, where),)
     elif t == "parallel_policy":
         jobs = tuple(_job(j, f"{where}.policies[{k}]") for k, j in enumerate(raw.get("policies") or []))
         if len(jobs) < 2:
@@ -415,6 +439,8 @@ def validate(ep: Episode) -> None:
             b = ep.policies.get(j.role)
             if j.policy_object is not None and (b is None or b.kind not in OBJECT_KINDS or not j.policy_object):
                 errs.append(f"{n.id}: policy_object {j.policy_object!r} 는 {OBJECT_KINDS} 정책 단계에만(물체 one-hot 이름)")
+            if j.holder_tol_m is not None and (b is None or b.kind != "place"):
+                errs.append(f"{n.id}: holder_tol_m 은 놓기(place) 정책 단계에만")
         if n.type == "trajectory" and n.name not in ep.trajectories:
             errs.append(f"{n.id}: trajectory {n.name!r} 가 trajectories 에 없다")
         elif n.type == "trajectory" and ep.trajectories[n.name].object and ep.trajectories[n.name].object not in ep.objects:
@@ -577,19 +603,27 @@ def holder_problems(ep: Episode, poses: Mapping[int, object]) -> list[str]:
     return [f"{name}(마커 {hid})이 {ep.holder_poses} 에 없다" for name, hid in ep.holders.items() if hid not in poses]
 
 
-def place_holder_problems(ep: Episode, poses: Mapping[int, object], contracts: Mapping[str, object],
-                          tol_m: float) -> list[str]:
-    """★10.28 놓기 job 의 홀더가 그 역할 놓기 계약의 학습 범위(holder_range)에서 tol_m 넘게 밖인가 — 놓기 노드 reset 과 같은
+def place_holder_checks(ep: Episode, poses: Mapping[int, object], contracts: Mapping[str, object],
+                        tol_m: float) -> tuple[list[str], list[str]]:
+    """★10.28 놓기 job 의 홀더가 그 역할 놓기 계약의 학습 범위(holder_range)에서 허용 넘게 밖인가 — 놓기 노드 reset 과 같은
     검사(rh_place.holder_refusals)를 움직이기 전에 한다. 칵테일은 두 번 붓고 난 뒤에야 분홍 놓기 reset 이 거부돼 두 컵을 쥔
-    채 서게 된다. contracts = 역할 → 읽은 놓기 계약(holder_range 없는 옛 계약은 거르지 않는다). 빈 목록 = 된다."""
+    채 서게 된다. 허용 = job 의 holder_tol_m(★10.29 카드) 또는 tol_m. contracts = 역할 → 읽은 놓기 계약(holder_range 없는 옛
+    계약은 거르지 않는다). (막는 이유, 범위 밖이지만 허용 안이라 진행하는 알림) — 막는 이유가 비면 된다."""
     from policy_control.rh_place import holder_refusals
-    out = []
+    refusals, notes = [], []
     for n in ep.nodes:
         for j in n.jobs:
             hid = ep.holders.get(j.target_holder) if j.target_holder else None
             c = contracts.get(j.role)
             if c is None or hid is None or hid not in poses:
                 continue
-            bad, _ = holder_refusals(c, poses[hid][0], tol_m)
-            out += [f"{n.id}: {j.role} → {j.target_holder}({hid}) — {why}" for why in bad]
-    return out
+            tol = tol_m if j.holder_tol_m is None else j.holder_tol_m
+            bad, excess = holder_refusals(c, poses[hid][0], tol)
+            head = f"{n.id}: {j.role} → {j.target_holder}({hid})"
+            refusals += [f"{head} — {why}" for why in bad]
+            far = {k: v for k, v in excess.items() if v > 0}
+            if far and not bad:
+                notes.append(f"{head} — 학습 범위 밖 " + " · ".join(f"{k} {v * 100:.1f} cm" for k, v in far.items())
+                             + f" · 허용 {tol * 100:.1f} cm" + ("(카드 holder_tol_m)" if j.holder_tol_m is not None else "")
+                             + " 안이라 진행")
+    return refusals, notes

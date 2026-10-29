@@ -15,7 +15,8 @@
     bundle_max_age_s 안 · 아직 안 쓴 것 · 손 실측이 묶음과 bundle_hand_tol_rad 안) 또는 파일 경로. 없으면 reset 거부(FP++ 로 안 붙인다).
   · 래치 컵 = 손바닥 FK ⊗ 래치 추정기(정책 폴더 latch/, md5 핀) — place_latch_est.
   · holder = 실물 홀더 번호(로봇 왼쪽 +y 부터 0 · 1 · 2). 학습 목표 홀더는 sim 슬롯 번호라 번호로 거르지 않고, 그 홀더 원점이 학습
-    범위(holder_range)에서 holder_tol_m 넘게 밖이면 reset 거부.
+    범위(holder_range)에서 holder_tol_m 넘게 밖이면 reset 거부. ★10.29 holder_tol_m 은 reset 마다 다시 읽는다(실행기가 job 마다
+    넣는다 · 카드가 그 job 에 넓힌 허용, 없으면 0.02).
   · 시간 초과(학습 episode_length_s): 놓기 전이면 abort, 놓은 뒤(빼기 중)면 stop.
 ★10.25 준비 자세 이송(계약 ready_carry — newton_07_r · 06_l): reset 때 끝 자세를 풀고(Mover, 움직이지 않음) start 뒤 첫 틱부터
   Mover 행동으로 슬롯 위까지 옮긴 다음 정책. 에피소드 시간은 이송이 끝난 틱부터 센다. 이송 자체 상한 =
@@ -39,7 +40,8 @@ READY_CARRY_SLACK_S = 2.0
 from policy_control import codec  # noqa: E402
 from policy_control import place_handover as PH  # noqa: E402
 from policy_control.pour_fj_node import NS, Family, PourFjNode, PourFjNodeError, main  # noqa: E402
-from policy_control.rh_place import HOLDER_TOL_M, JOINT_FREE_G, OPEN_MIN_RAD, RhPlaceError, holder_refusals  # noqa: E402
+from policy_control.rh_place import (HOLDER_TOL_M, JOINT_FREE_G, OPEN_MIN_RAD, RhPlaceError,  # noqa: E402
+                                     holder_refusals, holder_tol_of)
 
 
 def holder_candidates(text: str, first: int) -> list[int]:
@@ -69,7 +71,7 @@ class PlaceNode(PourFjNode):
         if not bool(p("require_grasp")):                   # fake 손은 촉각이 0 — 리허설에서만 끈다
             self.fam = Family(**{**self.fam.__dict__, "refusals": lambda _c, _m, _t: []})
         self.holder_id = self._check_holder_id(int(p("holder")))
-        self.holder_tol = float(p("holder_tol_m"))
+        self.holder_tol = holder_tol_of(p("holder_tol_m"))    # ★10.29 reset 과 같은 검사(0 < 값 ≤ 0.10 m)
         self.bundle_param = str(p("bundle") or "auto").strip()
         self.bundle_max_age = float(p("bundle_max_age_s"))
         self.bundle_hand_tol = float(p("bundle_hand_tol_rad"))
@@ -131,7 +133,12 @@ class PlaceNode(PourFjNode):
     def _select_holder(self) -> None:
         """★10.28 같은 팔이 두 홀더에 놓는 칵테일(파랑 → 1 · 분홍 → 2): reset 마다 holder 파라미터를 다시 읽는다 — 실행기가
         reset 전에 넣는다(episode_ros.job_params). 자세는 시작 때 holders:= 의 홀더를 모두 구독해 두고 고른다(reset 은 콜백을
-        기다릴 수 없다). 바꿀 수 없으면 PourFjNodeError — reset 이 움직이기 전에 거부한다."""
+        기다릴 수 없다). 바꿀 수 없으면 PourFjNodeError — reset 이 움직이기 전에 거부한다.
+        ★10.29 holder_tol_m 도 job 마다 다시 읽는다(카드가 분홍 → 홀더 2 에만 넓힌 허용 · 다른 job 은 0.02)."""
+        try:
+            tol = holder_tol_of(self.get_parameter("holder_tol_m").value)
+        except RhPlaceError as exc:
+            raise PourFjNodeError(str(exc)) from exc
         k = self._check_holder_id(int(self.get_parameter("holder").value))
         if k not in self._holder_topics:
             raise PourFjNodeError(f"홀더 {k} 는 이 노드가 구독하지 않는다(holders {sorted(self._holder_topics)}) — "
@@ -143,6 +150,7 @@ class PlaceNode(PourFjNode):
             self.get_logger().info(f"홀더 바꿈 {self.holder_id} → {k} {np.round(pose, 4).tolist()}")
             self.holder_id, self._holder_excess = k, {}
         self._holder = self._holder_poses.get(k, self._holder)
+        self.holder_tol = tol
 
     # ---------------------------------------------------------------- inputs
     def _on_holder(self, msg, k: int | None = None) -> None:

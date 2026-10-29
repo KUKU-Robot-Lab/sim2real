@@ -59,7 +59,7 @@ def main(argv=None) -> int:
             b = ep.policies[r]
             print(f"  {'✓' if not why else '✗'} {r}: {why or b.policy}"
                   + (f" → 넘김 {b.handoff}(경로 D)" if b.handoff and not why else ""))
-        holders = []
+        holders, notes = [], []
         if args.require_holders:
             from policy_control.episode_ros import load_holder_poses
             hp = Path(ep.holder_poses)
@@ -71,9 +71,11 @@ def main(argv=None) -> int:
                 contracts = {r: P.load_contract(root / b.policy / (getattr(entries.get(b.policy), "contract", "")
                                                                    or "rh_place_contract.json"))
                              for r, b in ep.policies.items() if b.kind == "place" and b.policy and not av.get(r)}
-                holders = S.place_holder_problems(ep, poses, contracts, P.HOLDER_TOL_M)
+                holders, notes = S.place_holder_checks(ep, poses, contracts, P.HOLDER_TOL_M)
             for why in holders:
                 print(f"  ✗ 홀더: {why}")
+            for why in notes:                      # ★10.29 카드 holder_tol_m 로 받은 범위 밖 홀더 — 막지 않고 보인다
+                print(f"  ! 홀더: {why}")
             if not holders and ep.holders:
                 print(f"  ✓ 홀더 {dict(ep.holders)} — {ep.holder_poses}")
         hands = S.hand_problems(ep, _paths.SIM2REAL / "deploy" / "policies")      # ★10.17 경로 B 손 쥐기 계약

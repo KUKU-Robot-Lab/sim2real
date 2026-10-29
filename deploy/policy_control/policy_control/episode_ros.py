@@ -32,7 +32,7 @@ import yaml
 from policy_control import _paths
 from policy_control.episode_failure import NodeResult
 from policy_control.episode_spec import EMPTY, PLANNED_TRAJ, TRAJ_ASSETS, Episode, Node, episode_sides, hand_contract_file
-from policy_control.rh_place import HOLDER_FLOOR_Z
+from policy_control.rh_place import HOLDER_FLOOR_Z, HOLDER_TOL_M
 
 NS = "/policy_control"
 OBJECT_RELAY = "/episode/objects/{}/pose"
@@ -113,7 +113,9 @@ def job_params(ep: Episode, p) -> dict:
     object = 다물체 정책의 물체 이름(10.12, YAML 에 적힌 단계만) · aglt cup_topic = 잡을 물체의 FP++ live 토픽(미션 생성기
     _live 와 같은 규칙) · place holder = 실물 홀더 번호. 같은 팔이 두 물체를 잡고 두 홀더에 놓는 칵테일(cocktail_1 · 1b)이
     쓴다 — 전에는 노드가 컵 · 홀더를 시작 때만 읽어 분홍 잡기가 파랑을 쫓고 분홍 놓기가 홀더 1 을 노렸다.
-    place 의 cup_topic 은 넣지 않는다(넘김 묶음 계약은 FP++ 컵을 표시에만 쓴다)."""
+    place 의 cup_topic 은 넣지 않는다(넘김 묶음 계약은 FP++ 컵을 표시에만 쓴다).
+    ★10.29 place holder_tol_m = 카드가 그 job 에 넓힌 홀더 허용, 없으면 HOLDER_TOL_M. 놓기 job 마다 늘 넣는다 — 앞 job 의
+    넓힌 값이 노드에 남아 다음 홀더 검사를 느슨하게 하지 않게."""
     out: dict = {}
     if p.kind in ("aglt", "place") and getattr(p, "policy_object", None):
         out["object"] = str(p.policy_object)
@@ -123,6 +125,8 @@ def job_params(ep: Episode, p) -> dict:
             out["cup_topic"] = topic
     if p.kind == "place" and p.holder_id is not None:
         out["holder"] = int(p.holder_id)
+        tol = getattr(p, "holder_tol_m", None)
+        out["holder_tol_m"] = float(HOLDER_TOL_M if tol is None else tol)
     return out
 
 
@@ -329,7 +333,7 @@ class RosExecutor:
             self.node.destroy_client(cli)
 
     def _set_params(self, node: str, params: Mapping, timeout: float = 5.0, wait: float = 2.0) -> tuple[bool, list]:
-        """정책 노드 파라미터(job_params — object · cup_topic · holder)를 SetParameters 한 번으로 — 다음 reset 이 읽는다."""
+        """정책 노드 파라미터(job_params — object · cup_topic · holder · holder_tol_m)를 SetParameters 한 번으로 — 다음 reset 이 읽는다."""
         from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
         from rcl_interfaces.srv import SetParameters
 
@@ -339,9 +343,10 @@ class RosExecutor:
             if not cli.wait_for_service(timeout_sec=wait):
                 return False, [f"{path}: 서비스가 없다(노드가 떠 있는가)"]
             req = SetParameters.Request()
-            for name, v in params.items():               # 노드가 선언한 타입 그대로(holder 는 정수, 나머지는 문자열)
+            for name, v in params.items():               # 노드가 선언한 타입 그대로(holder 는 정수, holder_tol_m 은 실수, 나머지는 문자열)
                 req.parameters.append(Parameter(name=name, value=(
                     ParameterValue(type=ParameterType.PARAMETER_INTEGER, integer_value=v) if isinstance(v, int)
+                    else ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=v) if isinstance(v, float)
                     else ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=str(v)))))
             fut = cli.call_async(req)
             t0 = time.monotonic()

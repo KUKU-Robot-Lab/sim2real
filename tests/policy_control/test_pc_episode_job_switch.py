@@ -38,10 +38,10 @@ def test_each_job_gets_its_own_cup_and_holder(name):
            for nid in ("grasp_blue", "grasp_shaker", "place_blue", "grasp_pink", "place_pink", "place_shaker")}
     assert got == {"grasp_blue": {"object": "source240_real", "cup_topic": BLUE_LIVE},
                    "grasp_shaker": {"object": "shaker_c_real", "cup_topic": "/objects/shaker_c_orange/live_pose"},
-                   "place_blue": {"object": "source240_real", "holder": 1},
+                   "place_blue": {"object": "source240_real", "holder": 1, "holder_tol_m": 0.02},
                    "grasp_pink": {"object": "source240_real", "cup_topic": PINK_LIVE},
-                   "place_pink": {"object": "source240_real", "holder": 2},
-                   "place_shaker": {"object": "shaker_c_real", "holder": 0}}
+                   "place_pink": {"object": "source240_real", "holder": 2, "holder_tol_m": 0.07},   # ★10.29 카드 허용
+                   "place_shaker": {"object": "shaker_c_real", "holder": 0, "holder_tol_m": 0.02}}
 
 
 def _runner(ep, set_reply=(True, []), reset_reply=(False, ["reset: 홀더 2: y 가 학습 범위 밖"])):
@@ -58,7 +58,7 @@ def test_the_runner_sets_the_job_params_before_reset():
     me, calls = _runner(ep)
     r = RosExecutor._policy(me, _plan(ep, "place_pink"))
     assert r.status == "refused" and "학습 범위 밖" in r.reason
-    assert calls == [("set", "/rh_place_node_right", {"object": "source240_real", "holder": 2}),
+    assert calls == [("set", "/rh_place_node_right", {"object": "source240_real", "holder": 2, "holder_tol_m": 0.07}),
                      ("call", "/policy_control/right_place/episode/reset")]
 
 
@@ -68,6 +68,30 @@ def test_a_refused_param_set_stops_before_reset():
     r = RosExecutor._policy(me, _plan(ep, "grasp_pink"))
     assert r.status == "refused" and "서비스가 없다" in r.reason
     assert calls == [("set", "/rh_aglt_node_right", {"object": "source240_real", "cup_topic": PINK_LIVE})]
+
+
+def test_the_param_set_sends_the_holder_tolerance_as_a_double():
+    """★10.29 노드의 holder_tol_m 은 double 로 선언돼 있다. 문자열로 보내면 SetParameters 가 타입을 거부해 놓기 job 이 모두
+    reset 전에 막힌다."""
+    from rcl_interfaces.msg import ParameterType
+    sent = []
+
+    class _Cli:
+        def wait_for_service(self, timeout_sec):
+            return True
+
+        def call_async(self, req):
+            sent.append(req)
+            done = SimpleNamespace(results=[SimpleNamespace(successful=True)] * len(req.parameters))
+            return SimpleNamespace(done=lambda: True, result=lambda: done)
+
+    me = SimpleNamespace(node=SimpleNamespace(create_client=lambda *a, **k: _Cli(), destroy_client=lambda cli: None), _cbg=None)
+    ok, why = RosExecutor._set_params(me, "/rh_place_node_right", {"object": "source240_real", "holder": 2, "holder_tol_m": 0.07})
+    assert ok and why == []
+    got = {p.name: p.value for p in sent[0].parameters}
+    assert got["object"].type == ParameterType.PARAMETER_STRING and got["object"].string_value == "source240_real"
+    assert got["holder"].type == ParameterType.PARAMETER_INTEGER and got["holder"].integer_value == 2
+    assert got["holder_tol_m"].type == ParameterType.PARAMETER_DOUBLE and got["holder_tol_m"].double_value == 0.07
 
 
 # ---------------------------------------------------------------- 잡기 노드 — 컵 토픽
@@ -118,10 +142,11 @@ def test_holder_candidates_reject_garbage():
         RPN.holder_candidates("1,b", 1)
 
 
-def _place(*, active=1, wanted=2, poses=None, holder_range=True):
+def _place(*, active=1, wanted=2, poses=None, holder_range=True, tol=0.02):
     contract = SimpleNamespace(holder_range={"x": [0.375, 0.38], "y": [-0.223, -0.037]} if holder_range else None,
                                target_holders=[1])
-    me = SimpleNamespace(contract=contract, holder_id=active, get_parameter=lambda n: SimpleNamespace(value=wanted),
+    params = {"holder": wanted, "holder_tol_m": tol}
+    me = SimpleNamespace(contract=contract, holder_id=active, holder_tol=0.02, get_parameter=lambda n: SimpleNamespace(value=params[n]),
                          _holder_topics={1: "/objects/cup_holder_1/pose", 2: "/objects/cup_holder_2/pose"},
                          _holder_poses=dict(poses or {}), _holder=None, _holder_excess={"y": 0.06},
                          get_logger=lambda: SimpleNamespace(info=lambda m: None))
@@ -136,6 +161,26 @@ def test_reset_moves_the_place_to_the_requested_holder():
     me = _place(poses={1: H1, 2: H2})
     RPN.PlaceNode._select_holder(me)
     assert me.holder_id == 2 and np.allclose(me._holder, H2) and me._holder_excess == {}
+
+
+def test_reset_takes_the_jobs_holder_tolerance():
+    """★10.29 실행기가 job 마다 넣은 holder_tol_m 을 reset 이 다시 읽는다. 분홍 → 홀더 2 만 넓히고, 다음 파랑 → 홀더 1 은
+    0.02 로 돌아온다."""
+    me = _place(poses={1: H1, 2: H2}, tol=0.07)
+    RPN.PlaceNode._select_holder(me)
+    assert me.holder_id == 2 and me.holder_tol == 0.07
+    back = _place(active=2, wanted=1, poses={1: H1, 2: H2}, tol=0.02)
+    back.holder_tol = 0.07
+    RPN.PlaceNode._select_holder(back)
+    assert back.holder_id == 1 and back.holder_tol == 0.02
+
+
+@pytest.mark.parametrize("tol", [0.0, 0.5, float("nan")])
+def test_a_bad_holder_tolerance_refuses_the_reset_before_the_switch(tol):
+    me = _place(poses={1: H1, 2: H2}, tol=tol)
+    with pytest.raises(PourFjNodeError, match="holder_tol_m"):
+        RPN.PlaceNode._select_holder(me)
+    assert me.holder_id == 1 and me.holder_tol == 0.02
 
 
 def test_the_same_holder_keeps_its_latest_pose():
@@ -195,27 +240,66 @@ def _place_contracts(ep):
 
 
 @pytest.mark.parametrize("name", ["cocktail_1", "cocktail_1b"])
-def test_plan_flags_pink_into_holder_2_outside_the_n07_training_range(name):
+def test_plan_takes_pink_into_holder_2_with_the_cards_tolerance(name):
+    """★10.29 사용자(sim_e2e 경유) 2번: 홀더 2(y −0.2827)는 n07 학습 범위에서 6.0 cm 밖이지만 그 자리에 두고 받는다(sim B
+    평가가 이 자리에서 잰 값). 카드 place_pink 의 holder_tol_m 0.07 안이라 막지 않고 알림만 남긴다."""
     from policy_control.episode_ros import load_holder_poses
     from policy_control.rh_place import HOLDER_TOL_M
     ep = S.load(EPISODES / f"{name}.yaml")
-    got = S.place_holder_problems(ep, load_holder_poses(HOLDERS_5090), _place_contracts(ep), HOLDER_TOL_M)
-    assert len(got) == 1, got                                  # 파랑 → 1 · shaker → 0 은 범위 안
-    assert got[0].startswith("place_pink: rh_place_r → HOLDER_2(2)") and "6.0 cm 밖" in got[0]
+    bad, notes = S.place_holder_checks(ep, load_holder_poses(HOLDERS_5090), _place_contracts(ep), HOLDER_TOL_M)
+    assert bad == []
+    assert len(notes) == 1, notes                              # 파랑 → 1 · shaker → 0 은 범위 안
+    assert notes[0].startswith("place_pink: rh_place_r → HOLDER_2(2)") and "y 6.0 cm" in notes[0] and "허용 7.0 cm" in notes[0]
+
+
+@pytest.mark.parametrize("name", ["cocktail_1", "cocktail_1b"])
+def test_without_the_cards_tolerance_holder_2_is_still_refused(name):
+    """넓힌 허용은 카드에 적은 그 job 에만 있다. 빼면 기본 2 cm 로 다시 막는다(다른 job · 다른 에피소드의 검사는 그대로)."""
+    from dataclasses import replace
+    from policy_control.episode_ros import load_holder_poses
+    from policy_control.rh_place import HOLDER_TOL_M
+    ep = S.load(EPISODES / f"{name}.yaml")
+    bare = replace(ep, nodes=tuple(replace(n, jobs=tuple(replace(j, holder_tol_m=None) for j in n.jobs)) for n in ep.nodes))
+    bad, _ = S.place_holder_checks(bare, load_holder_poses(HOLDERS_5090), _place_contracts(bare), HOLDER_TOL_M)
+    assert len(bad) == 1, bad
+    assert bad[0].startswith("place_pink: rh_place_r → HOLDER_2(2)") and "6.0 cm 밖(허용 2.0 cm)" in bad[0]
 
 
 def test_plan_passes_holders_inside_the_range():
     ep = S.load(EPISODES / "cocktail_1b.yaml")
     wide = SimpleNamespace(holder_range={"x": [0.37, 0.39], "y": [-0.33, 0.20]})
     poses = {k: ((0.38, y, 0.235), 0.0) for k, y in ((0, 0.16), (1, -0.06), (2, -0.28))}
-    assert S.place_holder_problems(ep, poses, {"rh_place_r": wide, "rh_place_l": wide}, 0.02) == []
+    assert S.place_holder_checks(ep, poses, {"rh_place_r": wide, "rh_place_l": wide}, 0.02) == ([], [])
 
 
-def test_the_plan_tool_stops_the_b_episode_before_it_moves(capsys):
+def _raw(name: str) -> dict:
+    import yaml
+    return yaml.safe_load((EPISODES / f"{name}.yaml").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("where, value", [
+    ("place_pink", 0.5),             # 상한 0.10 m 위(오타로 검사가 꺼지지 않게)
+    ("place_pink", 0),
+    ("place_pink", "7cm"),
+    ("grasp_pink", 0.07),            # 홀더가 없는 잡기 job
+])
+def test_the_card_tolerance_is_only_a_small_distance_on_a_place_job_with_a_holder(where, value):
+    raw = _raw("cocktail_1")
+    seq = [dict(n, holder_tol_m=value) if n["id"] == where else n for n in raw["sequence"]]
+    with pytest.raises(S.EpisodeSpecError, match="holder_tol_m"):
+        S.validate(S.parse({**raw, "sequence": seq}, path="t"))
+
+
+@pytest.mark.parametrize("name", ["cocktail_1", "cocktail_1b"])
+def test_the_plan_tool_passes_with_holder_2_and_shows_the_accepted_tolerance(name, capsys, monkeypatch):
+    """시작 검사(--plan --require-holders)가 홀더 2 로 막지 않고, 받은 범위 밖 홀더를 알림 줄(!)로 보인다. 정책 파일(ckpt)이
+    없는 PC 에서도 홀더 검사만 보도록 등록부 판정은 통과로 둔다."""
     import importlib.util
     spec = importlib.util.spec_from_file_location("episode_run", REPO / "deploy/policy_control/tools/episode_run.py")
     tool = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(tool)
-    rc = tool.main(["--episode", str(EPISODES / "cocktail_1b.yaml"), "--plan", "--require-holders"])
+    monkeypatch.setattr(S, "availability", lambda ep, entries: {j.role: "" for n in ep.nodes for j in n.jobs})
+    rc = tool.main(["--episode", str(EPISODES / f"{name}.yaml"), "--plan", "--require-holders"])
     out = capsys.readouterr().out
-    assert rc == 1 and "✗ 홀더: place_pink: rh_place_r → HOLDER_2(2)" in out
+    assert "✗ 홀더" not in out and "! 홀더: place_pink: rh_place_r → HOLDER_2(2)" in out
+    assert rc == 0, out

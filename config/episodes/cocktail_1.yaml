@@ -17,17 +17,19 @@
 #   · 분홍 FP++ = 분홍만 든 묶음 source240p(objects.d/source240p.yaml) — 묶음 컨테이너는 처음 찾은 물체 하나만 live 추적해서
 #     (fpp_snapshot_node), 주황 · 분홍이 같이 든 source240 묶음으로는 분홍 live(잡기 정책 입력)가 안 나올 수 있다(파랑 source240b 와
 #     같은 방식). ★색(calib)은 로봇 PC 카메라로 s2r:vision 이 사용자와 잰다 — 재기 전에는 분홍을 못 찾을 수 있다.
-#   · ★막힌 것: 홀더 2(y −0.283)가 놓기 right_n07 학습 범위 y [−0.223, −0.037] 에서 6.0 cm 밖(허용 2 cm) — 에피소드 시작 검사
-#     (episode_run --plan --require-holders)가 막는다(전에는 두 번 붓고 난 뒤 분홍 놓기 reset 에서 두 컵을 쥔 채 섰다). server 에서
-#     newton_08_r(목표 y [−0.33, −0.01], n07 ep2000 이어 학습)이 학습 중 — 통과하면 sim_e2e 가 ckpt · md5 · holder_range 를 보내고,
-#     rh_place_r 정책(두 에피소드 같이)과 계약을 바꾸면 풀린다. 놓기 목표 입력은 홀더 2 실물 자세(사용자 "홀더 2 를 정책 입장에선
-#     홀더 1 로 간주") — 놓기 노드가 holder:=2 의 자세를 목표로 쓴다.
+#   · 홀더 2(y −0.2827)는 놓기 right_n07 학습 범위 y [−0.223, −0.037] 에서 6.0 cm 밖이다(기본 허용 2 cm). ★10.29 사용자(sim_e2e
+#     경유) "2번 — 홀더 2 는 지금 자리 그대로 두고, n07 이 범위 밖 홀더도 받도록 시작 검사를 풀어 주세요"(sim B 평가 n07 27.7 % 가
+#     이 자리에서 잰 값 · n08 교체는 10.29 사용자 결정으로 폐기 — n07 ep2000 유지). 그래서 place_pink 한 job 에만 holder_tol_m 0.07
+#     (6.0 cm + 1 cm 여유)을 적었다. 시작 검사(episode_run --plan --require-holders)는 이 job 을 막지 않고 "! 홀더" 알림만 남기고,
+#     실행기가 이 값을 놓기 노드에 넣어 reset 도 같은 허용으로 받는다. 다른 놓기 job(파랑 → 1 · shaker → 0)은 기본 2 cm 그대로
+#     (전에는 두 번 붓고 난 뒤 분홍 놓기 reset 에서 두 컵을 쥔 채 섰다 — 시작 검사와 reset 이 같은 값을 써야 하는 이유).
+#     놓기 목표 입력은 홀더 2 실물 자세(사용자 "홀더 2 를 정책 입장에선 홀더 1 로 간주") — 놓기 노드가 holder:=2 의 자세를 쓴다.
 #   · 놓기는 tilt 시작 자세에서 놓기 노드의 ready_carry 이송으로 시작한다(10.27 사용자) — sim mc 에서 tilt 끝 출발 놓기는 파랑 66 % ·
 #     분홍 40 %(넘김 자세 출발 84 · 92 %, sim_e2e 10.27 · v2 배정 파랑 → 홀더 2 · 분홍 → 홀더 1 기준)라 실기에서 지켜본다.
 #   · 홀더 = 10.27 A1 실측(cup_holder_poses_5090_v1). 번호: 0 = 왼쪽 · 1 = 가운데(오른손 안쪽) · 2 = 맨 우측(오른손 바깥) — 마커 번호는
 #     그 파일에. sim A1 실측 배치에서 이웃 홀더 컵의 영향은 1 %p 이하(sim_e2e 10.27).
 #   · 잡기 · 놓기는 한 팔씩 차례로 쓴다(사용자 목록은 한 줄 — 동시 실행은 팔 충돌 검사 뒤 parallel_policy 로 바꿀 수 있다).
-episode: {name: cocktail_1, version: 4}
+episode: {name: cocktail_1, version: 5}   # v5(10.29): place_pink holder_tol_m 0.07
 objects:
   SRC_BLUE: {topic: /objects/source240b_blue/pose}
   # ★10.28 사람이 파랑 놓기 뒤에 놓는다 — 처음 snapshot 이 찾지 않고, scene_pink 는 이 상자 안 자리만 받는다 · FP++ 묶음 source240p
@@ -69,9 +71,9 @@ sequence:
      expect: {right_hand: SRC_PINK, left_hand: SHAKER}}
   - {id: to_tilt_start_r2, type: trajectory, name: to_tilt_start_r, expect: {pose: SETTING}}
   - {id: tilt_pink, type: trajectory, name: tilt, expect: {pose: SETTING, pink_poured: true}}
-  # 3) 정리
+  # 3) 정리 — ★10.29 홀더 2 는 n07 학습 범위 y 에서 6.0 cm 밖 · 사용자 2번 결정으로 이 job 만 7 cm 까지 받는다(머리말)
   - {id: place_pink, type: policy, name: rh_place_r, source_object: SRC_PINK, target_holder: HOLDER_2, policy_object: source240_real,
-     expect: {right_hand: EMPTY, left_hand: SHAKER, pink_placed: true}}
+     holder_tol_m: 0.07, expect: {right_hand: EMPTY, left_hand: SHAKER, pink_placed: true}}
   - {id: place_shaker, type: policy, name: rh_place_l, source_object: SHAKER, target_holder: HOLDER_0, policy_object: shaker_c_real,
      expect: {right_hand: EMPTY, left_hand: EMPTY, shaker_placed: true}}
   - {id: go_home_end, type: trajectory, name: go_home, expect: {pose: HOME}}

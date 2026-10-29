@@ -360,6 +360,19 @@ def latch_dz_of(c: PlaceContract) -> float:
 
 #: 실물 홀더가 학습 범위(holder_range) 밖으로 나가도 되는 거리 — 놓기 노드 holder_tol_m 기본 · 에피소드 --plan 검사가 같이 쓴다
 HOLDER_TOL_M = 0.02
+#: ★10.29 에피소드 카드가 놓기 job 하나에 넓혀 줄 수 있는 허용의 상한(m). 오타로 범위 검사가 꺼지지 않게 막는다
+HOLDER_TOL_MAX_M = 0.10
+
+
+def holder_tol_of(value) -> float:
+    """holder_tol_m(m) 값 검사: 0 < 값 ≤ HOLDER_TOL_MAX_M 이면 float, 아니면 RhPlaceError(카드 · 노드 파라미터가 같이 쓴다)."""
+    try:
+        tol = float(value)
+    except (TypeError, ValueError) as exc:
+        raise RhPlaceError(f"holder_tol_m {value!r} 는 m 단위 수여야 한다") from exc
+    if not 0.0 < tol <= HOLDER_TOL_MAX_M:
+        raise RhPlaceError(f"holder_tol_m {tol} 는 0 보다 크고 {HOLDER_TOL_MAX_M} m 이하여야 한다")
+    return tol
 
 
 def holder_refusals(c: PlaceContract, holder_pos: Sequence[float], tol_m: float) -> tuple[list, dict]:
