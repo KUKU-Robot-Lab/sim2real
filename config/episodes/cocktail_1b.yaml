@@ -4,11 +4,12 @@
 #   · 분홍(source240)은 시작 때부터 탁자에 서 있다 — 처음 snapshot 이 파랑 · 분홍 · shaker 를 함께 찍고, 사람 확인 단계는 없다.
 #   · 홀더: 파랑 → 홀더 1(가운데) · 분홍 → 홀더 2(맨 우측) · shaker → 홀더 0. 처음에는 A 와 반대였으나 ★10.28 사용자 "놓는순서
 #     그러면 통일시켜주고"로 A(cocktail_1 v3)도 이 배정이 됐다 — 이제는 다른 점이 아니다.
-#   · 분홍 자리 = ★10.28 사용자(sim_e2e 경유) "B 둘레 영역" x 0.23~0.29 · y −0.355~−0.30 base_link(region), yaw 고정(병은
-#     축대칭이라 실기는 자리만 맞춘다) — 밖이면 처음 snapshot 이 거부하고 정지한다(로봇은 홈에서 아무것도 쥐지 않았다 → 다시 놓고
-#     새로 시작). = 컵 중심이 탁자 로봇 쪽 끝 선(x 0.07)에서 16~22 cm · 오른쪽 끝 선(y −0.45)에서 9.5~15 cm.
-#     sim(b2 영역 · 흘림 ≤ 2 · 한 흐름 기준) 53.5 %(SEP 54.0 %), 손실은 분홍 → 홀더 2 놓기에서 가장 크다(sim_e2e 10.28).
-#     v1(10.28 오전)은 sim 시험 범위 x 0.27~0.29 · y −0.355~−0.350 이었다 — 그때 메모: x 0.30 이상 · y −0.345 이상이면 잡는 동안
+#   · 분홍 자리 = ★10.29 사용자 "테이블 구멍 근처에서만 소환 · 성공 영상 자리" → v1 상자로 되돌림: x 0.27~0.29 · y −0.355~−0.350
+#     base_link(region, 가운데 (0.28, −0.3525) = 볼트 구멍 묶음 중심에서 로봇 오른쪽 5.5 cm · 먼 쪽 1 cm), yaw 고정(병은 축대칭이라
+#     실기는 자리만 맞춘다) — 밖이면 처음 snapshot 이 거부하고 정지한다(로봇은 홈에서 아무것도 쥐지 않았다 → 다시 놓고 새로 시작).
+#     10.28 저녁 v2 는 "B 둘레 영역" x 0.23~0.29 · y −0.355~−0.30 으로 넓혔으나, 10.29 oneshot(16 env, hdgp b076c47e)에서
+#     x < 0.27 자리 분홍이 파랑을 들어 올리는 오른 손목(r_al_7 · 손 베이스)에 맞아 12 env 중 거의 다 쓰러졌다(x 0.27~0.29 는 4 중 3 멀쩡).
+#     v1 메모: x 0.30 이상 · y −0.345 이상이면 잡는 동안
 #     병이 홀더 2 에 닿고(sim), y −0.36 바깥은 10.23 불가 자세 규칙 밖이다.
 #   · ★카메라: 머리 home 은 이 자리가 시야 오른쪽 끝이라(병 옆면 약 30 %) ★10.28 camset 목 자세(pan 1825 · tilt 2815, 외부
 #     파라미터 r20u5 — 미션 head_home 이 간다)로 바꿨다 — 세 물체가 다 화면에 든다(sim_e2e 투영, 여유 shaker 35 · 파랑 98 ·
@@ -19,11 +20,11 @@
 #   (대부분 놓지 못함, A 도 같은 약점).
 # 나머지(콘솔 미션 · 분홍 FP++ · ★홀더 2 허용 0.07(10.29 사용자 2번) · 놓기 시작 자세 · 한 팔씩 · 홀더 실측)는 cocktail_1.yaml 머리말과 같다. 정책 ·
 #   궤적 · 실패 정책 · 홀더 배정은 cocktail_1 과 같아야 한다(tests/policy_control/test_pc_episode.py 가 비교한다).
-episode: {name: cocktail_1b, version: 3}   # v3(10.29): place_pink holder_tol_m 0.07(cocktail_1 v5 와 같이)
+episode: {name: cocktail_1b, version: 4}   # v4(10.29): 분홍 region v1 상자로 · v3(10.29): place_pink holder_tol_m 0.07(cocktail_1 v5 와 같이)
 objects:
   SRC_BLUE: {topic: /objects/source240b_blue/pose}
-  # ★10.28 순서 B — 처음부터 탁자에 있다. B 둘레 영역만 받는다 · FP++ 는 분홍만 든 묶음 source240p(cocktail_1 머리말)
-  SRC_PINK: {topic: /objects/source240p_pink/pose, region: {x: [0.23, 0.29], y: [-0.355, -0.30]}}
+  # ★10.28 순서 B — 처음부터 탁자에 있다. ★10.29 구멍 옆 v1 상자만 받는다 · FP++ 는 분홍만 든 묶음 source240p(cocktail_1 머리말)
+  SRC_PINK: {topic: /objects/source240p_pink/pose, region: {x: [0.27, 0.29], y: [-0.355, -0.350]}}
   SHAKER: {topic: /objects/shaker_c_orange/pose}
 holders: {HOLDER_0: 0, HOLDER_1: 1, HOLDER_2: 2}
 holder_poses: config/cup_holder_poses_5090_v1.yaml
