@@ -9,6 +9,9 @@
 #     실기는 자리만 맞춘다) — 밖이면 처음 snapshot 이 거부하고 정지한다(로봇은 홈에서 아무것도 쥐지 않았다 → 다시 놓고 새로 시작).
 #     10.28 저녁 v2 는 "B 둘레 영역" x 0.23~0.29 · y −0.355~−0.30 으로 넓혔으나, 10.29 oneshot(16 env, hdgp b076c47e)에서
 #     x < 0.27 자리 분홍이 파랑을 들어 올리는 오른 손목(r_al_7 · 손 베이스)에 맞아 12 env 중 거의 다 쓰러졌다(x 0.27~0.29 는 4 중 3 멀쩡).
+#     ★10.29 사용자 "1 진행"(v5): 놓는 자리는 v1 상자 그대로, 처음 snapshot 이 거부하는 region 만 각 변 ±1 cm(x 0.26~0.30 ·
+#     y −0.365~−0.340). 상자 y 폭이 5 mm 라 인식 잡음(sim FP++ 모사 p50 3.5 · p95 6.3 mm)만으로 oneshot 16 env 중 5 env 가
+#     y −0.355 로 읽혀 거부됐다(hdgp ea585fae, 1029_oneshot/16_s0_pinkv1). 운영자는 여전히 v1 상자에 놓는다.
 #     v1 메모: x 0.30 이상 · y −0.345 이상이면 잡는 동안
 #     병이 홀더 2 에 닿고(sim), y −0.36 바깥은 10.23 불가 자세 규칙 밖이다.
 #   · ★카메라: 머리 home 은 이 자리가 시야 오른쪽 끝이라(병 옆면 약 30 %) ★10.28 camset 목 자세(pan 1825 · tilt 2815, 외부
@@ -20,11 +23,11 @@
 #   (대부분 놓지 못함, A 도 같은 약점).
 # 나머지(콘솔 미션 · 분홍 FP++ · ★홀더 2 허용 0.07(10.29 사용자 2번) · 놓기 시작 자세 · 한 팔씩 · 홀더 실측)는 cocktail_1.yaml 머리말과 같다. 정책 ·
 #   궤적 · 실패 정책 · 홀더 배정은 cocktail_1 과 같아야 한다(tests/policy_control/test_pc_episode.py 가 비교한다).
-episode: {name: cocktail_1b, version: 4}   # v4(10.29): 분홍 region v1 상자로 · v3(10.29): place_pink holder_tol_m 0.07(cocktail_1 v5 와 같이)
+episode: {name: cocktail_1b, version: 5}   # v5(10.29): 분홍 거부 범위 = 놓는 상자 ±1 cm · v4(10.29): 분홍 region v1 상자로 · v3(10.29): place_pink holder_tol_m 0.07(cocktail_1 v5 와 같이)
 objects:
   SRC_BLUE: {topic: /objects/source240b_blue/pose}
   # ★10.28 순서 B — 처음부터 탁자에 있다. ★10.29 구멍 옆 v1 상자만 받는다 · FP++ 는 분홍만 든 묶음 source240p(cocktail_1 머리말)
-  SRC_PINK: {topic: /objects/source240p_pink/pose, region: {x: [0.27, 0.29], y: [-0.355, -0.350]}}
+  SRC_PINK: {topic: /objects/source240p_pink/pose, region: {x: [0.26, 0.30], y: [-0.365, -0.340]}}
   SHAKER: {topic: /objects/shaker_c_orange/pose}
 holders: {HOLDER_0: 0, HOLDER_1: 1, HOLDER_2: 2}
 holder_poses: config/cup_holder_poses_5090_v1.yaml

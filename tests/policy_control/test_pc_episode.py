@@ -294,17 +294,18 @@ def test_cocktail_1b_differs_from_cocktail_1_only_where_order_b_says():
     pa, pb = a["objects"].pop("SRC_PINK"), b["objects"].pop("SRC_PINK")
     assert a["objects"] == b["objects"] and pa["topic"] == pb["topic"]
     assert pa["at_start"] == "away" and "at_start" not in pb
-    assert pb["region"] == {"x": [0.27, 0.29], "y": [-0.355, -0.350]}          # ★10.29 사용자 구멍 옆 v1 상자(v2 둘레 영역은 손목이 분홍을 침)
+    assert pb["region"] == {"x": [0.26, 0.30], "y": [-0.365, -0.340]}          # ★10.29 사용자 v1 상자 ±1 cm(인식 잡음 여유, v5)
 
 
 @pytest.mark.parametrize("xy, ok", [
-    ((0.28, -0.3525), True), ((0.27, -0.355), True), ((0.29, -0.350), True),   # ★10.29 구멍 옆 v1 상자 안(끝 포함)
+    ((0.28, -0.3525), True), ((0.27, -0.355), True), ((0.29, -0.350), True),   # ★10.29 구멍 옆 v1 상자 안
+    ((0.26, -0.365), True), ((0.30, -0.340), True), ((0.28, -0.359), True),    # v5 ±1 cm 인식 여유(끝 포함)
     ((0.26, -0.3275), False), ((0.25, -0.3525), False),                        # 10.28 v2 둘레 영역 · x 밖(손목이 분홍을 침)
-    ((0.30, -0.3525), False),                                                  # x 밖(잡는 동안 병이 홀더 2 에 닿음)
-    ((0.28, -0.36), False), ((0.28, -0.345), False),                           # y 밖(−0.36 바깥은 10.23 불가 자세 규칙 밖)
+    ((0.31, -0.3525), False),                                                  # x 밖(잡는 동안 병이 홀더 2 에 닿음)
+    ((0.28, -0.37), False), ((0.28, -0.335), False),                           # y 밖(−0.36 바깥은 10.23 불가 자세 규칙 밖)
 ])
 def test_cocktail_1b_stops_at_the_first_snapshot_when_pink_is_off_its_spot(xy, ok):
-    """분홍이 구멍 옆 v1 상자(x 0.27~0.29 · y −0.355~−0.350, 사용자 10.29) 밖이면 처음 snapshot 이 거부하고 정지한다 — 로봇은 홈에서
+    """분홍이 구멍 옆 v1 상자 ±1 cm(x 0.26~0.30 · y −0.365~−0.340, 사용자 10.29 v5) 밖이면 처음 snapshot 이 거부하고 정지한다 — 로봇은 홈에서
     아무것도 쥐지 않았다. 콘솔 경고 줄(last.reason)에 어디가 벗어났는지 보여 운영자가 다시 놓고 새로 시작한다."""
     ep = _ep("cocktail_1b")
 
