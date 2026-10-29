@@ -532,12 +532,12 @@ class PlaceChain:
         if held is None and not allow_measured:
             raise RhPlaceError("held target missing — pd 가 붙잡은 마지막 joint_target 이 없다(aglt 뒤에 띄울 것, "
                                "실측에서 시작하려면 allow_measured)")
-        arm0, hand_held = (m.arm_q, hand_meas) if held is None else held
-        if len(arm0) != len(s.arm_joints) or len(hand_held) != len(s.hand_joints):
+        arm0, hand0 = (m.arm_q, hand_meas) if held is None else held
+        if len(arm0) != len(s.arm_joints) or len(hand0) != len(s.hand_joints):
             raise RhPlaceError("held target 은 팔 7 · 손 6")
-        # ★10.29 손 시작 목표 = 실측 q. held 의 손은 aglt 배포 전용 squeeze 가 얹힌 명령이라 hand_err 0.2~0.35 로
-        # 학습(뱅크 hand_target ≈ q, err ≈ 0) 분포 밖에서 시작했다(oneshot 16_s0_obsdump · 1029_oneshot 관측 대조).
-        hand0 = hand_meas
+        # ★10.29 held 의 손은 aglt 배포 전용 squeeze 가 얹힌 명령이다. 이송(Mover) 동안은 그대로 쥐고(실기 bag 20261019_133007:
+        # hand_err ≈ 0 이면 RH56F1 힘이 2~50 g 로 빠져 병을 떨굼), 정책이 시작하는 틱에 정책 손 목표를 그 틱 실측 q 로 맞춘다
+        # (_policy_hand_from_meas). 학습 뱅크 hand_target ≈ q(err ≈ 0) — oneshot 16_s0_obsdump 에서 err 0.2~0.35 로 분포 밖이었다.
         self.dec.reset(arm_start=arm0, hand_start=hand0)
         self.hand0 = np.asarray(hand0, float).copy()
         self.opened, self.tact_max, self.jf_max = 0.0, 0.0, None
@@ -578,16 +578,25 @@ class PlaceChain:
                                          hand_action=hand_action_of(self.c, hand0))
             pos, quat = self.cup_from_palm(m.palm_pos, m.palm_R)
             self.rcarry.start(np.asarray(m.arm_q, float), pos, quat, PC.carry_target(holder, origin_z_of(self.c), cfg.dz))
+        else:                                            # 이송 없음 — 정책이 지금부터라 손 목표를 지금 실측으로
+            self._policy_hand_from_meas(hand_meas)
         self._policy_reset()
+
+    def _policy_hand_from_meas(self, hand_q: np.ndarray) -> None:
+        """★10.29 정책 시작 틱 — 정책 자기 손 목표와 놓음(opened) 기준을 실측 q 로(학습 뱅크 hand_target ≈ q)."""
+        st = self.dec.state["arm"]
+        self.dec.state["arm"] = replace(st, hand_target=np.asarray(hand_q, float).copy())
+        self.hand0 = np.asarray(hand_q, float).copy()
 
     def _policy_reset(self) -> None:
         if hasattr(self.policy, "reset"):
             self.policy.reset()
 
-    def _place_begin(self) -> None:
+    def _place_begin(self, hand_q: np.ndarray) -> None:
         """★10.25 이송이 끝난 틱 — 다음 틱부터 정책. place_grid_eval rand 처럼 RNN · 직전 행동 0, 래치 추정기 상태 0(sim 은 이송 중
         추정기를 돌리지 않는다), 래치 · 시간 기준 놓음 셈은 처음부터."""
         self._policy_reset()
+        self._policy_hand_from_meas(hand_q)
         self.prev = np.zeros(self.c.action_dim)
         if self.est is not None:
             self.est.reset()
@@ -613,7 +622,7 @@ class PlaceChain:
         self.jf_max = None if m.joint_force is None else float(np.max(np.asarray(m.joint_force, float)))
         self.prev = np.clip(a, -1.0, 1.0)
         if not self.rcarry.on:
-            self._place_begin()
+            self._place_begin(hand_q)
         return obs, a, targets
 
     @staticmethod
