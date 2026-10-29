@@ -5232,9 +5232,9 @@ run:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
     - --x
-    - '0.2600'
+    - '0.2800'
     - --y
-    - '-0.3275'
+    - '-0.3525'
     - --z
     - '0.29'
     - --topic
@@ -5245,9 +5245,9 @@ run:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
     - --x
-    - '0.2600'
+    - '0.2800'
     - --y
-    - '-0.3275'
+    - '-0.3525'
     - --z
     - '0.29'
     - --topic
