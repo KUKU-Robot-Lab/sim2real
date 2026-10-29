@@ -114,7 +114,7 @@ def _ros_self(tmp_path, kind: str, holds: str, rcs: list[int], frames=None, fres
         return rcs[len(calls) - 1], "tail"
     ep = S.load(REPO / "config/episodes/grasp_b_right.yaml")
     seq = iter(fresh or [])
-    me = SimpleNamespace(_wait_pd_tracking=lambda side: True, _pd_view=lambda side: {}, run_dir=tmp_path, _run=run,
+    me = SimpleNamespace(_wait_pd_tracking=lambda side: True, _wait_arm_still=lambda sides: {"arm_still": None}, _pd_view=lambda side: {}, run_dir=tmp_path, _run=run,
                          cancel=threading.Event(), ep=ep, _lock=threading.Lock(), _frames={"CUP": frames or []},
                          _fresh_object=lambda name, wait_s=2.0: (0.244, -0.116, 0.288),   # locate snapshot(그대로)
                          _live_object=lambda name, wait_s=2.0: next(seq, None))

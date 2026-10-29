@@ -159,7 +159,7 @@ def _ros(tmp_path, holds: dict, rcs: list[int], open_err: float | None = 0.01):
     def run(argv):
         calls.append(argv)
         return rcs[len(calls) - 1], "tail not grasped"
-    me = SimpleNamespace(_wait_pd_tracking=lambda side: True, _pd_view=lambda side: {"pd_phase": "TRACKING", "pd_reasons": []},
+    me = SimpleNamespace(_wait_pd_tracking=lambda side: True, _wait_arm_still=lambda sides: {"arm_still": None}, _pd_view=lambda side: {"pd_phase": "TRACKING", "pd_reasons": []},
                          run_dir=tmp_path, _run=run, cancel=threading.Event(), _hand_open_err=lambda side: open_err)
     world = SimpleNamespace(hand=lambda side: holds[side])
     return me, world, calls, RosExecutor

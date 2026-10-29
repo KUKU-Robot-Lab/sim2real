@@ -106,7 +106,7 @@ def _plan_argv(tmp_path, episode: str) -> list:
     ep = S.load(REPO / "config" / "episodes" / f"{episode}.yaml")
     now = time.monotonic()
     frames = [((0.27, -0.13, 0.288), (1.0, 0.0, 0.0, 0.0), now - 0.05 * k) for k in range(8)]
-    me = SimpleNamespace(_wait_pd_tracking=lambda side: True, _pd_view=lambda side: {}, run_dir=tmp_path, _run=run,
+    me = SimpleNamespace(_wait_pd_tracking=lambda side: True, _wait_arm_still=lambda sides: {"arm_still": None}, _pd_view=lambda side: {}, run_dir=tmp_path, _run=run,
                          cancel=threading.Event(), ep=ep, _lock=threading.Lock(), _frames={"CUP": frames},
                          _live_object=lambda name, wait_s=2.0: None)
     me._still_object = lambda name, wait_s=0.2: RosExecutor._still_object(me, name, wait_s)

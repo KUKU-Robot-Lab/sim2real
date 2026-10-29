@@ -96,6 +96,13 @@ HAND_OPEN_TOL_RAD = 0.15          # 펴짐 = 엄지 굽힘 · 네 손가락이 0
                                   # (pd 는 손 목표를 한계 안쪽 0.05 로 물린다 — fake 실측 0.07~0.09 에서 섰다)
 HAND_OPEN_AXES = ("thumb_2", "index_1", "middle_1", "ring_1", "pinky_1")
 HAND_STATE = "/hand_{side}/joint_states"   # rh56f1_state_node — canonical r_hj_* · l_hj_*
+ARM_STATE = "/joint_states"                 # 팔 실측(openarm_<side>_joint<i>) — replay_to_pd 가 시작 간격을 재는 토픽
+#: ★10.30 계획 전 팔 정지 대기(사용자 1번 결정). 잡기 정책이 끝난 직후 팔은 마지막 목표로 아직 움직인다(oneshot 64 env:
+#  분홍 잡기 끝 6번 관절이 0.4~0.8 s 동안 0.05~0.07 rad 더 감). 그 자세로 계획하면 계획하는 동안(실기 약 3 s) 팔이 계획 첫
+#  프레임에서 멀어져 replay 시작 검사(0.05 rad)가 거부한다(to_tilt_start_r2 10/31). 창 안 관절 변화가 문턱 아래가 되면 계획한다.
+ARM_STILL_WINDOW_S = 0.3
+ARM_STILL_RAD = 0.003              # 창 안 관절마다 (max − min) — 0.01 rad/s 수준
+ARM_STILL_WAIT_S = 2.0             # 이 안에 안 멈추면 그대로 계획한다(시작 검사가 여전히 막는다)
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
 SIDES = ("right", "left")
 NODES = {"aglt": "rh_aglt_node", "place": "rh_place_node"}
@@ -143,6 +150,7 @@ def real_object_name(topic: str) -> str:
 
 #: 홀더 번호 = 이름 끝 숫자(테이블 왼쪽부터, config/cup_holders.yaml) — 에피소드 holders · /objects/cup_holder_N/pose 와 같은 번호.
 HOLDER_NAME = re.compile(r"cup_holder_(\d+)")
+ARM_JOINT_NAME = re.compile(r"openarm_(right|left)_joint([1-7])")   # /joint_states 이름 → canonical r_aj_i · l_aj_i
 
 
 def load_holder_poses(path: Path) -> dict[int, tuple]:
@@ -168,6 +176,20 @@ def snapshot_of(frames: list) -> tuple | None:
     if float(np.max(np.linalg.norm(pos - np.median(pos, axis=0), axis=1))) > SNAPSHOT_STILL_M:
         return None
     return tuple(float(v) for v in np.median(pos, axis=0)), tuple(frames[-1][1])
+
+
+def arm_still(frames: list, joints: list, window_s: float = ARM_STILL_WINDOW_S,
+              tol_rad: float = ARM_STILL_RAD) -> tuple[bool, float | None]:
+    """팔 실측 프레임 [(시각, {이름: rad}), ...] → (멈췄나, 창 안 관절별 변화의 최댓값). 창을 덮을 만큼 프레임이 없으면 (False, None)."""
+    if not frames or frames[-1][0] - frames[0][0] < window_s:
+        return False, None
+    t_end = frames[-1][0]
+    win = [f for f in frames if t_end - f[0] <= window_s]
+    if len(win) < 2 or any(j not in f[1] for f in win for j in joints):
+        return False, None
+    q = np.array([[f[1][j] for j in joints] for f in win], float)
+    span = float(np.max(q.max(axis=0) - q.min(axis=0)))
+    return span < tol_rad, span
 
 
 def cup_in_holder(cup_pos, holder_pos, seat_dz: float, xy_tol: float = 0.035, z_tol: float = 0.03) -> bool:
@@ -204,6 +226,7 @@ class RosExecutor:
         self._frames: dict[str, list] = {name: [] for name in ep.objects}
         self._live: dict[str, list] = {name: [] for name in ep.objects}   # ★10.20 lift 판정용 FP++ live 추적
         self._hand: dict[str, dict] = {s: {} for s in SIDES}   # ★10.17 손 실측(손 펴짐 확인) — 이름 → (rad, 시각)
+        self._arm: list = []                          # ★10.30 팔 실측 [(시각, {canonical 이름: rad})] — 계획 전 정지 대기
         self._goal_result: dict[str, dict] = {}
         self._relay: dict[str, tuple] = {}            # 물체 → (pos, quat) — snapshot 뒤 집힐 때까지
         self._proc: subprocess.Popen | None = None
@@ -226,6 +249,9 @@ class RosExecutor:
             topic = live_topic(ep.objects.get(name, {}).get("topic", ""))
             if topic:
                 node.create_subscription(PoseStamped, topic, self._on_frame(name, self._live), qos_profile_sensor_data)
+        if any(t.kind in PLANNED_TRAJ for t in ep.trajectories.values()):
+            from sensor_msgs.msg import JointState
+            node.create_subscription(JointState, ARM_STATE, self._on_arm, qos_profile_sensor_data)
         if any(n.type == "hand" for n in ep.nodes):
             from sensor_msgs.msg import JointState
             for side in SIDES:
@@ -265,6 +291,39 @@ class RosExecutor:
             with self._lock:
                 self._hand[side].update({n: (float(p), now) for n, p in zip(msg.name, msg.position)})
         return cb
+
+    def _on_arm(self, msg) -> None:
+        now = time.monotonic()
+        q = {}
+        for n, p in zip(msg.name, msg.position):
+            m = ARM_JOINT_NAME.fullmatch(n)
+            if m:
+                q[f"{m.group(1)[0]}_aj_{m.group(2)}"] = float(p)
+        if not q:
+            return
+        with self._lock:
+            self._arm.append((now, q))
+            cut = now - 2 * ARM_STILL_WINDOW_S
+            while self._arm and self._arm[0][0] < cut:
+                self._arm.pop(0)
+
+    def _wait_arm_still(self, sides) -> dict:
+        """★10.30 계획 전: 그 팔 관절이 ARM_STILL_WINDOW_S 동안 ARM_STILL_RAD 안에 머물 때까지(최대 ARM_STILL_WAIT_S) 기다린다.
+        팔 실측이 한 번도 안 왔으면(실측 없는 fake 등) 기다리지 않는다. 결과는 기록용(안 멈춰도 계획은 한다)."""
+        joints = [f"{s[0]}_aj_{i}" for s in sides for i in range(1, 8)]
+        t0 = time.monotonic()
+        span = None
+        while not self.cancel.is_set():
+            with self._lock:
+                fr = list(self._arm)
+            if not fr and time.monotonic() - t0 > ARM_STILL_WINDOW_S:
+                return {"arm_still": None, "arm_wait_s": 0.0}
+            ok, span = arm_still(fr, joints)
+            if ok or time.monotonic() - t0 >= ARM_STILL_WAIT_S:
+                return {"arm_still": ok, "arm_wait_s": round(time.monotonic() - t0, 2),
+                        "arm_span_rad": None if span is None else round(span, 4)}
+            time.sleep(0.02)
+        return {"arm_still": None, "arm_wait_s": round(time.monotonic() - t0, 2)}
 
     def _hand_open_err(self, side: str) -> float | None:
         """펴짐 오차 max |q| [rad](엄지 굽힘 · 네 손가락) — 실측이 0.5 s 안에 없으면 None."""
@@ -605,6 +664,11 @@ class RosExecutor:
                 return NodeResult("refused", f"{traj.kind}: {side} 손이 비었다 — 컵을 쥔 상태에서만(손 안 컵 자리 기준)")
             if not traj.cups and held != EMPTY:
                 return NodeResult("refused", f"{traj.kind}(빈손): {side} 손에 {held} — 빈손 이송은 손이 빈 때만")
+        still = self._wait_arm_still(sides)          # ★10.30 실측에서 계획하기 전에 팔이 멈추기를 기다린다
+        if self.cancel.is_set():
+            return NodeResult("aborted", "episode runner stop", time.monotonic() - t0)
+        if still.get("arm_still") is False:
+            self.node.get_logger().warning(f"[{node.id}] 팔이 {ARM_STILL_WAIT_S:.0f} s 안에 안 멈췄다 {still} — 그대로 계획")
         asset = TRAJ_ASSETS / traj.asset
         cfg = yaml.safe_load((asset / "policy.yaml").read_text(encoding="utf-8")) or {}
         out = self.run_dir / f"{traj.kind}_{node.id}"

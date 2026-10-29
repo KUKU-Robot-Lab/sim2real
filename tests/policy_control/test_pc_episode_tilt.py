@@ -74,7 +74,7 @@ def _ros_self(tmp_path, holds: dict, rcs: list[int]):
     def run(argv):
         calls.append(argv)
         return rcs[len(calls) - 1], "tail"
-    me = SimpleNamespace(_wait_pd_tracking=lambda side: True, _pd_view=lambda side: {}, run_dir=tmp_path, _run=run,
+    me = SimpleNamespace(_wait_pd_tracking=lambda side: True, _wait_arm_still=lambda sides: {"arm_still": None}, _pd_view=lambda side: {}, run_dir=tmp_path, _run=run,
                          cancel=threading.Event())
     world = SimpleNamespace(hand=lambda side: holds[side])
     traj = S.load(EPISODE).trajectories["tilt"]
@@ -172,3 +172,32 @@ def test_plan_carry_one_arm_writes_only_that_arm_and_home_start_reaches_the_sett
     assert z["arm_target"].shape[1] == 7 and [str(n) for n in z["joint_names"]] == [f"l_aj_{i}" for i in range(1, 8)]
     assert np.abs(z["arm_target"][-1] - np.asarray(Q_START["left"])).max() < 0.05
     assert _tool("plan_carry").main(["--q-json", str(tmp_path / "q.json"), "--out", str(tmp_path / "p"), "--sides", "up"]) == 1
+
+
+def test_arm_still_needs_a_full_quiet_window():
+    """★10.30 계획 전 팔 정지 판정 — 창(0.3 s)을 덮는 실측이 문턱(0.003 rad) 안에 머물러야 멈춤."""
+    from policy_control.episode_ros import ARM_STILL_RAD, arm_still
+    j = [f"r_aj_{i}" for i in range(1, 8)]
+    still = [(0.01 * k, {n: 0.5 + 0.0005 * (k % 2) for n in j}) for k in range(40)]
+    assert arm_still(still, j)[0]
+    assert arm_still(still[:10], j) == (False, None)                              # 창보다 짧다
+    moving = [(0.01 * k, {**{n: 0.5 for n in j}, "r_aj_6": 0.5 + 0.02 * 0.01 * k}) for k in range(40)]   # 0.02 rad/s
+    ok, span = arm_still(moving, j)
+    assert not ok and span > ARM_STILL_RAD
+    assert arm_still(still, j + ["l_aj_1"]) == (False, None)                      # 다른 팔 실측이 없다
+
+
+def test_planned_trajectory_waits_for_the_arm_before_planning(tmp_path):
+    """계획 도구보다 정지 대기가 먼저 — 그 노드 팔(sides)로 기다린다."""
+    from policy_control.episode_ros import RosExecutor
+    order = []
+
+    def run(argv):
+        order.append(Path(argv[1]).name)
+        return 0, "tail"
+    me = SimpleNamespace(_wait_pd_tracking=lambda side: True, _pd_view=lambda side: {}, run_dir=tmp_path, _run=run,
+                         cancel=threading.Event(), _wait_arm_still=lambda sides: order.append(("still", tuple(sides))) or {"arm_still": True})
+    traj = S.load(EPISODE).trajectories["tilt"]
+    r = RosExecutor._run_planned(me, SimpleNamespace(id="tilt"), traj, SimpleNamespace(hand=lambda side: "SRC"))
+    assert r.status == "completed"
+    assert order[0] == ("still", tuple(s for s in ("right", "left") if s in traj.sides)) and len(order) == 3
