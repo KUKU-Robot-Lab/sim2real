@@ -117,6 +117,53 @@ def test_unfreeze_does_nothing_before_a_grasp(c):
     np.testing.assert_allclose(a_on.state["arm"].hand_target, a_off.state["arm"].hand_target)
 
 
+def _meas_now(dec: A.RaDecoder) -> np.ndarray:
+    """_close_on_cup 과 같은 실측 모형: 엄지 굽힘은 편 끝, 검지는 컵에서 막힌다."""
+    q = dec.state["arm"].hand_target.copy()
+    q[I_THUMB_FLEX], q[I_INDEX] = max(q[I_THUMB_FLEX], THUMB_FLOOR), min(q[I_INDEX], CUP_INDEX)
+    return q
+
+
+def test_est_hand_target_keeps_the_estimator_input_near_the_blocked_finger_after_unfreeze(c):
+    """★10.29 A 가 막힘 멈춤을 푼 뒤 정책 목표(검지 1.08)는 실측(0.45)보다 0.6 rad 앞선다 — grasp_state 학습 입력(목표−실측 p50
+    0.005~0.047)의 밖. 추정기 입력은 sim 막힘 멈춤처럼 실측 ± g 안에 둔다. 정책 목표 자체는 바꾸지 않는다."""
+    dec = A.RaDecoder(c, A.GripAssist(unfreeze_on_grasp=True, thumb_support_g=80.0))
+    _close_on_cup(dec, ticks=240, thumb_g=130.0)
+    q = _meas_now(dec)
+    t = dec.state["arm"].hand_target
+    est = dec.est_hand_target(q)
+    assert t[I_INDEX] - q[I_INDEX] > 0.3                                    # 정책 목표는 그대로 앞서 있다
+    assert np.all(np.abs(est - q) <= dec.block.g + 1e-12)
+    assert est[I_INDEX] == pytest.approx(q[I_INDEX] + dec.block.g[I_INDEX])
+    np.testing.assert_allclose(dec.state["arm"].hand_target, t)             # 읽기만 한다
+
+
+def test_est_hand_target_is_the_policy_target_without_unfreeze(c):
+    """A 가 꺼져 있으면(sim 과 같은 막힘 멈춤) 추정기 입력 = 정책 목표 그대로."""
+    dec = A.RaDecoder(c, A.GripAssist(thumb_support_g=80.0))
+    _close_on_cup(dec, ticks=240, thumb_g=130.0)
+    np.testing.assert_array_equal(dec.est_hand_target(_meas_now(dec)), dec.state["arm"].hand_target)
+
+
+def test_est_hand_target_is_the_policy_target_before_a_grasp_and_after_reset(c):
+    dec = A.RaDecoder(c, A.GripAssist(unfreeze_on_grasp=True))         # 엄지 받침 없음 → 쥔 판정 없음 → A 가 풀지 않는다
+    _close_on_cup(dec, ticks=240, thumb_g=130.0)
+    np.testing.assert_array_equal(dec.est_hand_target(_meas_now(dec)), dec.state["arm"].hand_target)
+    on = A.RaDecoder(c, A.GripAssist(unfreeze_on_grasp=True, thumb_support_g=80.0))
+    _close_on_cup(on, ticks=240, thumb_g=130.0)
+    on.reset()
+    np.testing.assert_array_equal(on.est_hand_target(np.zeros(6)), on.state["arm"].hand_target)
+
+
+def test_est_hand_target_refuses_a_bad_measurement(c):
+    dec = A.RaDecoder(c, A.GripAssist(unfreeze_on_grasp=True, thumb_support_g=80.0))
+    _close_on_cup(dec, ticks=240, thumb_g=130.0)
+    with pytest.raises(A.RhAgltError):
+        dec.est_hand_target([0.1] * 5)
+    with pytest.raises(A.RhAgltError):
+        dec.est_hand_target([float("nan")] * 6)
+
+
 def test_reset_clears_the_thumb_support(c):
     dec = A.RaDecoder(c, A.GripAssist(thumb_support_g=80.0))
     _close_on_cup(dec, ticks=240, thumb_g=130.0)

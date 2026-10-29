@@ -824,6 +824,23 @@ class RaDecoder:
         self._sq_frac = float("nan")
         self._sq_last = ""
         self.squeeze_counts = {"on": 0, "miss": 0, "open": 0}
+        self._unfrozen = False                        # 직전 step 에서 A 가 막힘 멈춤을 풀었나(est_hand_target)
+
+    def est_hand_target(self, hand_q: Sequence[float] | None) -> np.ndarray:
+        """손 안 추정기(grasp_state · 넘김 묶음)에 줄 손 목표 = sim 막힘 멈춤이 들었을 목표.
+
+        ★10.29 oneshot 16_s0_real5090: A(unfreeze_on_grasp)가 쥔 뒤 정책 목표를 풀어 검지 · 중지 목표가 1.08, 실측 0.65
+        (목표−실측 0.2~0.45 rad, 엄지 회전 0.24)가 됐다. grasp_state 학습 입력(rcg_04 sim, 막힘 멈춤 켜짐)은 목표−실측
+        p50 0.005~0.047 rad 다. 분포 밖 입력으로 넘김 묶음 컵 축이 참값과 13~22° 어긋났다(같은 기록을 실측 ± g 로 자른
+        목표로 다시 돌리면 중앙값 4°). A 가 막힘 멈춤을 푼 동안만 실측 ± g(막힘 앞섬 문턱)로 자른다. 정책 · 관측 · 보내는
+        명령은 그대로 둔다."""
+        t = self.state["arm"].hand_target
+        if not self._unfrozen or self.block is None or hand_q is None:
+            return t.copy()
+        q = np.asarray(hand_q, float).reshape(-1)
+        if q.size != t.size or not np.all(np.isfinite(q)):
+            raise RhAgltError(f"est_hand_target: 손 실측은 유한한 {t.size} 개: {q}")
+        return q + np.clip(t - q, -self.block.g, self.block.g)
 
     def _squeeze(self, target: np.ndarray, hand_q: Sequence[float] | None, obj_palm_m: float | None) -> np.ndarray:
         """D squeeze 한 스텝(active 스텝만) — 정책 자기 목표(law 상태, 바꾸지 않는다) → 손에 보낼 명령. 끄면 그대로."""
@@ -984,7 +1001,8 @@ class RaDecoder:
             freeze = self.block.step(st.hand_target, hand_q)
             self._support = self._thumb_support(joint_force)
             self._near = self._near_of(obj_palm_m)
-            if self.assist.unfreeze_on_grasp and self.grasped():
+            self._unfrozen = bool(self.assist.unfreeze_on_grasp and self.grasped())
+            if self._unfrozen:
                 freeze = None                         # A — 쥔 뒤에는 정책 목표까지 닫는다(배포 전용)
         else:
             freeze = self.law.touch_to_freeze(tactile_n)

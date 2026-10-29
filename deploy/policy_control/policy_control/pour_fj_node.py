@@ -291,7 +291,8 @@ class AgltChain:
         m = m_meas = meas["arm"]
         hand_q = np.array([m.hand_q[j] for j in self.c.side().hand_joints], float)
         if self.inhand is not None:                 # ★10.21 끊긴 뒤 정책이 보는 컵 = 손바닥 FK ⊗ GRU(sim gru_loop_hook perceive)
-            m = self.inhand.perceive(m, self.dec.state["arm"].hand_target, hand_q)   # 관측 · 디코더 · 목표(들기 판정)가 쓴다
+            # 관측 · 디코더 · 목표(들기 판정)가 쓴다. ★10.29 grasp_state 손 목표 = sim 막힘 멈춤 목표(A 가 푼 동안 실측 ± g)
+            m = self.inhand.perceive(m, self.dec.est_hand_target(hand_q), hand_q)
         obs = A.build_obs(self.c, m, self.dec, self.goal, self.prev)
         if self.inhand is not None:                 # 다음 틱 GRU 입력 = 이번 행동을 낸 관측(sim obs_buf)
             self.inhand.remember(obs)
@@ -874,7 +875,9 @@ class PourFjNode(LeanNodeMixin, Node):
             path = inh.save_bundle(None, {"node": self.node_name, "episode": self.book.episode, "reason": reason,
                                             "contract": str(self.get_parameter("contract").value),
                                             "handoff_contract": str(self.get_parameter("handoff_contract").value),
-                                            "hand_target": None if dec is None else [round(float(x), 4) for x in dec.state["arm"].hand_target]})
+                                            "hand_target": None if dec is None else [round(float(x), 4) for x in dec.state["arm"].hand_target],
+                                            "est_hand_target": None if not hasattr(dec, "est_hand_target") or inh.hand_q is None else
+                                            [round(float(x), 4) for x in dec.est_hand_target(inh.hand_q)]})
         except Exception as exc:                        # noqa: BLE001 — 기록 실패로 에피소드 끝내기를 막지 않는다
             self.get_logger().warning(f"손 안 컵 넘김 묶음 기록 실패: {exc}")
             return
