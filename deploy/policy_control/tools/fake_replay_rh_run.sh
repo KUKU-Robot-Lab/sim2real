@@ -9,6 +9,7 @@ cd "$(dirname "$0")/../../.."
 source /opt/ros/humble/setup.bash && . .venv/bin/activate
 [ -f "$HOME/rl_ws/robot_control/ros_ws/install/setup.bash" ] && source "$HOME/rl_ws/robot_control/ros_ws/install/setup.bash"
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-113}" ROS_LOCALHOST_ONLY=1
+unset FASTRTPS_DEFAULT_PROFILES_FILE   # 10.30 랜 프로파일(config/dds/lan_profile.sh)이 남아 있으면 localhost 격리가 깨진다
 source "$(dirname "$0")/../../../config/ros_domain.env"   # 실기 도메인 한 곳(10.30)
 case "$ROS_DOMAIN_ID" in 0|"$S2R_REAL_DOMAIN") echo "✗ ROS_DOMAIN_ID $ROS_DOMAIN_ID 은 실기 도메인이다"; exit 3 ;; esac
 : "${NPZ:?NPZ=<s2r_replay_v1 npz>}"

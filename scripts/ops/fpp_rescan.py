@@ -156,10 +156,15 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _split_run(args) -> int:
-    """10.09 실기: FP++ 컨테이너는 localhost 전용 DDS(ROS_LOCALHOST_ONLY=1)라 상황판 노드(=0)가 상태 토픽을 못 본다.
-    상태 · 명령은 localhost 자식이 하고(결과를 FPP_STATUS 줄로), base 좌표(/objects, 로봇 쪽 DDS)는 이 프로세스가 본다."""
+    """10.09 실기: FP++ 컨테이너가 localhost 전용 DDS(ROS_LOCALHOST_ONLY=1)이던 때 상황판 노드(=0)가 상태 토픽을 못 봤다.
+    상태 · 명령은 인지 묶음과 같은 localhost 값의 자식이 하고(결과를 FPP_STATUS 줄로), base 좌표(/objects, 로봇 쪽 DDS)는 이 프로세스가 본다.
+    10.30: 인지 묶음은 common.sh 의 S2R_VISION_LOCALHOST(기본 0)를 쓴다 — 자식도 같은 값. 원격(ssh)이면 저쪽 common.sh 가 정한다.
+    1 이면 랜 프로파일(config/dds/lan_profile.sh)을 지운다 — 둘이 같이 있으면 localhost 격리가 깨진다."""
     import subprocess
-    env = {**os.environ, "ROS_LOCALHOST_ONLY": "1"}
+    vision_localhost = os.environ.get("S2R_VISION_LOCALHOST", "0")
+    env = {**os.environ, "ROS_LOCALHOST_ONLY": vision_localhost}
+    if vision_localhost == "1":
+        env.pop("FASTRTPS_DEFAULT_PROFILES_FILE", None)
     try:
         child = subprocess.run(status_argv(args.cups, args.wait, args.require_all, args.status_host),
                                env=env, capture_output=True, text=True, timeout=args.wait + 60)

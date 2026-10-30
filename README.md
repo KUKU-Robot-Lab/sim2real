@@ -71,6 +71,7 @@ ssh -L 8091:127.0.0.1:8091 <이 PC>
 | 실기 단계는 **단계마다 승인**. 실기 단계의 명령은 스위치로 켜지 않는다 | 미션 러너 · 콘솔 스위치 규칙 |
 | `수동` 명령(sudo · 물리 조작)은 콘솔이 절대 실행하지 않는다 | 러너가 확인을 기다린다 |
 | 실기 도메인은 `ROS_DOMAIN_ID=50`(config/ros_domain.env), 가짜는 97/99 | 브리지는 env 와 프로파일 도메인이 다르면 뜨기 전에 거부한다 |
+| 실기 DDS 는 허브 랜 NIC 에만 묶인다(config/dds/lan_profile.sh, Fast-DDS `interfaceWhiteList`) | console.sh · vision/common.sh 가 `FASTRTPS_DEFAULT_PROFILES_FILE` 을 내보낸다. `ROS_LOCALHOST_ONLY=1` 명령은 그 변수를 지운다(tests/test_dds_lan_profile.py 가 검사) |
 | 콘솔은 로봇 명령을 발행하지 않는다 | 브리지는 구독 전용 별도 프로세스, API 프로세스는 rclpy 를 import 하지 않는다 |
 | 명령(argv)은 미션 yaml 에서만 온다 | HTTP 로는 이름만 온다 |
 

@@ -1047,11 +1047,13 @@ def _record_start(name: str, sides: list, topics: list, objs: list | None = None
 
 
 def _vision_record(name: str, objs: list, hz: float = 5.0) -> dict:
-    """영상 · FP++ 실시간 좌표 기록 — 카메라가 있는 PC 의 localhost DDS 에서 돈다(10.09 사용자)."""
+    """영상 · FP++ 실시간 좌표 기록 — 카메라가 있는 PC 의 DDS 에서 돈다(10.09 사용자).
+    10.30: 인지 묶음(camera_up · fpp_up)이 common.sh 의 ROS_LOCALHOST_ONLY(기본 0)를 쓰므로 기록기도 그 값을 그대로 받는다 —
+    여기서 1 로 못 박으면 0 인 카메라 · FP++ 를 못 본다(0 과 1 은 같은 PC 안에서도 서로 안 보인다, 10.30 실측)."""
     rate = [] if hz == 5.0 else ["--hz", f"{hz:g}"]
     if not REMOTE_PERCEPTION:
         return _cmd(f"영상 · FP++ 실시간 좌표 기록({hz:g} Hz JPEG · live_pose CSV) → logs/vision_runs",
-                    ["env", "ROS_LOCALHOST_ONLY=1", "python3", "{repo}/scripts/nodes/vision_recorder.py", "--name", name,
+                    ["python3", "{repo}/scripts/nodes/vision_recorder.py", "--name", name,
                      "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS, *rate, "--objects", *objs], background=True)
     # 원격: ssh -tt 를 콘솔이 끝내면 저쪽 셸이 HUP 를 받는다 → 기록기에 TERM(마무리 · CSV 닫기) 뒤 기다린다.
     # 기록은 저 PC 의 sim2real/logs/vision_runs 에 남는다(로그는 /tmp/perception/vrec_<이름>.log).

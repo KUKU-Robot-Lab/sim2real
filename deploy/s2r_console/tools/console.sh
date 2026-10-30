@@ -15,6 +15,10 @@ PY="$SIM2REAL/.venv/bin/python"
 if [ -f "$ROS_SETUP" ]; then
   # shellcheck disable=SC1090
   source "$ROS_SETUP"
+  # ★10.30 DDS 를 허브 랜 NIC 에만 묶는다(config/dds/lan_profile.sh) — 자식(브리지 · 미션 노드 · bringup · 손 드라이버)이 그대로 받는다.
+  #  랜 IP 가 없는 PC(laptop)에서는 경고만 내고 기본 DDS 로 뜬다. ROS_LOCALHOST_ONLY=1 로 띄우는 fake 도구는 스스로 지운다.
+  # shellcheck disable=SC1091
+  source "$SIM2REAL/config/dds/lan_profile.sh"
 else
   echo "[console.sh] $ROS_SETUP 가 없다 — 브리지 없이 화면만 뜬다 (--no-bridge 와 같다)" >&2
   set -- --no-bridge "$@"

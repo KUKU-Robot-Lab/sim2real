@@ -275,7 +275,9 @@ def test_the_drivers_stage_ends_by_checking_that_the_motors_answer_on_can():
 
 def test_only_the_object_pose_crosses_from_the_vision_pc():
     """09.26 사용자: "vision3090 에서 fpp 를 통해서 받은 것만 노드로 5090 에 넘겨주면 되는거 아닌가" —
-    영상 · FP++ 는 저 PC 안에서만(localhost) 돌고, 자세는 UDP 로 와서 이 PC 의 수신기가 다시 낸다."""
+    자세는 UDP 로 와서 이 PC 의 수신기가 다시 낸다. 10.30 까지는 영상 · FP++ 를 저 PC 안에만(localhost 1) 두어 막았다.
+    10.30 부터 인지 묶음도 랜 DDS(localhost 0, s2r:vision · 사용자 승인 — 목 피드백이 카메라 IMU 와 목 관절을 한 DDS 에서 봐야 한다)에
+    있되, config/dds/lan_profile.sh 가 DDS 를 허브 랜 NIC 에만 묶어 wifi · tailscale 로 새지 않는다(세부는 tests/test_dds_lan_profile.py)."""
     cmds = _cmds("sensors")
     rx = [i for i, c in enumerate(cmds) if any(a.endswith("fpp_pose_rx.py") for a in c.argv)]
     ctl = [i for i, c in enumerate(cmds) if any(a.endswith("perception_ctl.py") for a in c.argv)]
@@ -285,7 +287,8 @@ def test_only_the_object_pose_crosses_from_the_vision_pc():
         assert any(key in c.stop for c in _cmds(stage) if c.stop), stage              # 끌 때 같이 내린다
     common = (PATH.parents[1] / "scripts/vision/common.sh").read_text(encoding="utf-8")
     fpp = (PATH.parents[1] / "scripts/vision/fpp_up.sh").read_text(encoding="utf-8")
-    assert "export ROS_LOCALHOST_ONLY=1" in common and "-e ROS_LOCALHOST_ONLY=1" in fpp
+    assert 'export ROS_LOCALHOST_ONLY="${S2R_VISION_LOCALHOST:-0}"' in common and "config/dds/lan_profile.sh" in common
+    assert "-e ROS_LOCALHOST_ONLY=$ROS_LOCALHOST_ONLY" in fpp and '"${FPP_DDS_ARGS[@]}"' in fpp   # 컨테이너도 같은 값 · 같은 랜 프로파일
 
 
 def test_every_execute_flag_is_one_the_tool_actually_takes():

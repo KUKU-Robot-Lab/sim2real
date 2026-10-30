@@ -742,7 +742,22 @@ def test_no_thermistor_refuses_engage_instead_of_silently_disarming_the_guard(ri
     """드라이버가 온도를 안 주면 engage 를 거부한다 — 0 °C 를 '차갑다'로 읽으면 보호가 죽는다."""
     node, plant, caller, stub = rig
     plant.temps_on = False
-    node.units["left"].thermal = S.thermal_init(node.units["left"].thermal_rules)   # 받은 적 없는 상태로
+    unit = node.units["left"]
+    # 워밍업(rig 0.5 s) 동안 플랜트가 100 Hz 로 보낸 온도가 큐에 남아 있고, 유닛의 temps · t_temp_recv 는 stale_sec(0.5 s) 동안
+    # 신선해서 제어 틱이 IDLE 에서도 thermal_step 으로 ever 를 되살린다. thermal 만 초기화하고 바로 engage 를 부르면 요청이 틱 하나보다
+    # 늦게 처리될 때 통과해 버린다(10.30 전체 묶음 · 8 코어 부하 재현: ok True). '받은 적 없는 상태' 를 잠금 아래에서 만들고 조용해질
+    # 때까지 기다린다.
+    deadline = time.monotonic() + 5.0
+    while True:
+        with node._lock:
+            unit.temps, unit.t_temp_recv = {}, None
+            unit.thermal = S.thermal_init(unit.thermal_rules)
+        time.sleep(0.2)
+        with node._lock:
+            quiet = unit.t_temp_recv is None and not any(unit.thermal.ever)
+        if quiet or time.monotonic() > deadline:
+            break
+    assert quiet, "플랜트가 온도를 계속 보낸다 — temps_on 이 안 먹음"
     ok, reasons = caller.trigger("engage")
     assert ok is False
     assert any("temperature" in r for r in reasons), reasons
