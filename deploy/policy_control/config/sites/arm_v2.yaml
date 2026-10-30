@@ -1,0 +1,75 @@
+# 사이트 arm_v2: tag "5090/4090 + hub"(10.30 사용자). 손 프로토콜 값은 ../rh56f1_ports.yaml.
+# 고르기: export S2R_SITE=arm_v2 또는 echo arm_v2 > ~/.config/s2r/site (policy_control/site_ports.py).
+#   로더가 이름을 소문자로 찾는다. 사용자 표기 ARM_v2 로 골라도 이 파일이다(파일 이름은 소문자여야 찾는다).
+# 판 이름(10.28 사용자): v1 = 5090 only + e2c 어댑터(arm_v1.yaml), v2 = 5090/4090 + 허브(이 파일).
+# 역할(10.30 사용자): 5090 = 로봇 제어(팔 CAN, 손 EtherCAT)와 정책 실행, 4090 = 카메라 D435i, 목 다이나믹셀, FP++.
+#   rh56f1 · can 은 5090 값이다. 목과 카메라는 4090 에 있어 hosts.vision 에 적고 head_port 는 비운다
+#   (5090 에서 check_host 가 목 U2D2 를 찾지 않는다).
+# 허브: 관리형 스위치(관리 주소 192.168.0.239, 웹 로그인). VLAN 10 · 20 은 손, 태그 없는 랜은 5090 · 4090 사이.
+#   5090 eno1 은 트렁크(eno1.10 · eno1.20 + 태그 없음 192.168.0.50). 4090 enp6s0 도 트렁크라 손 VLAN 프레임을 받는다
+#   (enp6s0.10 · .20, NM rh56f1_r · rh56f1_l). 4090 에서 손 드라이버를 띄우면 5090 마스터와 겹치니 띄우지 않는다.
+#   4090 의 로컬 사이트 파일 arm4090.yaml(git 밖, ~/.config/s2r/site=arm4090)은 손을 enp6s0.10 · .20 로 잡는다.
+# 좌우: VLAN 10 = 오른손, 20 = 왼손은 NM 연결 이름(rh56f1_r = eno1.10 · rh56f1_l = eno1.20)과 kitech 스위치 배치
+#   (GE3 오른손 VLAN 10 · GE5 왼손 VLAN 20)를 따랐다. 두 손은 EtherCAT 데이터로 구별되지 않는다.
+#   손 하나를 끄고 어느 VLAN 에서 slave 가 사라지는지로 확인한다(10.30 확인 대기).
+# 받는 쪽 포화 주의: 4090 -> 5090 을 TCP 로 꽉 채우면(939 Mbit/s) 두 손 SAFE_OP 설정이 실패했다(아래 기록).
+#   실기 중에는 4090 -> 5090 큰 복사(scp · rsync · 영상 원본 스트림)를 하지 않는다. tailscale 도 이 랜으로 간다.
+site: arm_v2
+tag: "5090/4090 + hub"
+rh56f1:
+  right: {ifname: eno1.10}   # 5090 메인보드 랜(Intel igc) VLAN 10
+  left:  {ifname: eno1.20}   # VLAN 20
+can: {right: can0, left: can1}          # PCAN-USB Pro FD(5090, arm_v1 과 같음), 미션이 FD 1M/5M 로 올린다
+head_port: null                         # 목 U2D2 는 4090 에 있다(hosts.vision.head_port)
+hosts:
+  control: {name: "5090", ifname: eno1, ip: 192.168.0.50, tailscale: 100.103.21.126,
+            role: "로봇 제어(팔 CAN · 손 EtherCAT) · 정책 실행"}
+  vision:  {name: arm4090, ifname: enp6s0, ip: 192.168.0.40, tailscale: 100.104.123.85,
+            role: "카메라 D435i · 목 다이나믹셀 · FP++",
+            head_port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0,
+            camera_rs_serial: "348122071637"}
+hub: {mgmt_ip: 192.168.0.239, vlan: {right_hand: 10, left_hand: 20}}
+
+# 통신 속도 기록(10.30 09:20~09:50 실측, 무동작. 로더는 이 블록을 쓰지 않는다). 배선을 바꾸면 다시 재서 고친다.
+# 손 = SAFE_OP 까지(OP 요청 없음), 두 손 동시, SCHED_FIFO 80. 20 s 판은 cpu_plan 과 같은 코어(오른손 23 · 왼손 22).
+links_measured_1030:
+  control_5090:
+    lan: {nic: eno1, chip: "Intel igc(메인보드)", ethernet: "1000 Mbps full", ip: 192.168.0.50,
+          note: "192.168.0.50 은 NM 연결 hand-right(169.254.186.1/32 · 172.16.0.50/24)에 없는 손 주소라 재부팅하면 사라진다"}
+    hand_right: {nic: eno1.10, path: "스위치 VLAN 10",
+                 ecat_rtt_us: {n: 3000, lost: 0, p50: 49.0, p90: 54.6, p99: 59.0, max: 238.0},
+                 pdo_500hz_20s_us: {n: 10000, lost: 0, rtt_p50: 55.3, rtt_p90: 58.3, rtt_p99: 67.4, rtt_max: 939.1,
+                                    cycle_p50: 2000.0, cycle_p99: 2006.5, cycle_max: 3384.7},
+                 hand: "slave 1 · 출력 38 B · 입력 152 B · 끝나면 INIT",
+                 note: "코어 고정 없이 잰 5 s 판 두 번은 max 1040 · 3337 us. 마스터처럼 고정하면 20 s 에 max 939 us 한 번"}
+    hand_left:  {nic: eno1.20, path: "스위치 VLAN 20",
+                 ecat_rtt_us: {n: 3000, lost: 0, p50: 49.0, p90: 54.8, p99: 63.2, max: 260.5},
+                 pdo_500hz_20s_us: {n: 10000, lost: 0, rtt_p50: 52.6, rtt_p90: 57.0, rtt_p99: 66.1, rtt_max: 375.7,
+                                    cycle_p50: 2000.0, cycle_p99: 2036.8, cycle_max: 2235.0},
+                 hand: "slave 1 · 출력 38 B · 입력 152 B · 끝나면 INIT"}
+    hand_isolation: "태그 없는 eno1 로 BRD 200 번: 응답 0(손은 VLAN 밖에서 보이지 않는다)"
+    hand_under_lan_load_5s:
+      "5090 -> 4090 TCP 939 Mbit/s": "두 손 잃음 0 · PDO 왕복 p50 146 / 140 us · max 515 / 390 us"
+      "4090 -> 5090 UDP 100 Mbit/s": "두 손 잃음 0 · p99 67 / 76 us · max 267 / 364 us"
+      "4090 -> 5090 UDP 300 Mbit/s": "두 손 잃음 0 · p99 114 / 111 us · max 2390 / 226 us"
+      "4090 -> 5090 UDP 600 Mbit/s": "두 손 잃음 0 · p99 162 / 152 us · max 271 / 292 us"
+      "4090 -> 5090 TCP 939 Mbit/s": "두 손 SAFE_OP 실패(설정 중 프레임을 잃음, 왼손 끝 0x11). 부하를 멈추면 바로 정상"
+    arm_can: {adapter: "PCAN-USB Pro FD (0c72:0011)", bus: "CAN FD 1M / 5M(can_up.py --execute 로 올림, 그대로 UP)",
+              result: "두 팔 모두 상태 새로고침(0xCC) 응답 0/8 · ERROR-PASSIVE(ACK 없음). 팔 전원이 꺼진 것으로 추정(10.28 은 7/7)"}
+  vision_4090:
+    lan: {nic: enp6s0, chip: "Realtek r8169", ethernet: "1000 Mbps full", ip: 192.168.0.40,
+          note: "NM '유선 연결 1' 고정 주소. enp6s0.10 · .20 도 올라와 손 VLAN 프레임을 받는다(5090 SAFE_OP 한 번에 VLAN 마다 약 8.5k 패킷)"}
+    camera_d435i: {rs_serial: "348122071637", fw: 5.16.0.1, usb: "5000 Mbps (USB 3.2, 4-2)",
+                   rate: "color 1280x720 · depth 848x480 30 Hz 6 s: 30.02 fps · 간격 p50 33.4 · max 33.4 ms · 빠진 프레임 0",
+                   tool: "pyrealsense2 2.58.4(ROS 없이)"}
+    head_dynamixel: {adapter: "U2D2 FT232H FT763P8T -> /dev/ttyUSB0", usb: "480 Mbps (3-1.2)", baud: 1000000,
+                     ftdi_latency_timer_ms: 1,
+                     result: "09:4x 이 probe 는 id 1 · 2 ping · 위치 읽기 응답 0/400(그때 s2r:vision 이 같은 포트로 head_joint_publisher 를 띄우고 있었을 수 있다). 09:5x s2r:vision 이 4090 에서 레지스터를 읽음(id1 2040 · id2 -799, 토크 0, 모드 3) — 응답한다",
+                     note: "latency_timer 가 1 ms 라 전원이 들어오면 왕복은 5090 의 16 ms 보다 짧을 것"}
+  between_5090_4090:
+    icmp: "300 회 10 ms 간격: 잃음 0 · 평균 0.153 · max 0.249 ms"
+    udp_rtt_100hz: {"200 B": "1000 회 잃음 0 · 왕복 p50 235 · p99 464 · max 3514 us",
+                    "1400 B": "1000 회 잃음 0 · 왕복 p50 302 · p99 429 · max 1090 us"}
+    tcp_mbps: {"5090 -> 4090": 941, "4090 -> 5090": 941}
+    tailscale: "5090 -> arm4090 은 직접 192.168.0.40:41641(이 랜)로 간다"
+    ros2_domain_126: "5090 에서 LAN 으로 4090 의 SenseGlove 노드(motion_acq_nova2_sdk · senseglove/glove*)와 /tf · /tf_static 이 보인다"

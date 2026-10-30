@@ -215,6 +215,27 @@ def check_missions(rep: Report, robot: str) -> None:
                 rep.miss(f"{Path(rel).stem}: {key} 를 만든 계약 ≠ 지금 계약", "홈 경로를 다시 계획(plan_home_path.py)")
 
 
+def vision_elsewhere(site: dict | None, local_ips: set[str]) -> dict | None:
+    """사이트가 목 · 카메라를 다른 PC(hosts.vision)에 두고 이 PC 가 그 PC 가 아니면 그 dict, 아니면 None.
+
+    10.30 사용자 arm_v2: 5090 = 로봇 제어 · 정책 실행, 4090 = 카메라 · 목 다이나믹셀 · FP++. 그 PC 를 랜 주소로 가린다."""
+    vision = ((site or {}).get("hosts") or {}).get("vision")
+    return vision if vision and vision.get("ip") not in local_ips else None
+
+
+def _vision_away() -> dict | None:
+    sys.path.insert(0, str(SIM2REAL / "deploy/policy_control"))
+    from policy_control import site_ports as SITE   # noqa: PLC0415
+    name = SITE.resolve_name()
+    try:
+        site = SITE.load_site(name) if name else None
+    except SITE.SiteError:
+        return None
+    out = subprocess.run(["ip", "-o", "-4", "addr", "show"], capture_output=True, text=True).stdout
+    local = {tok.split("/")[0] for line in out.splitlines() for tok in line.split() if "/" in tok and tok[:1].isdigit()}
+    return vision_elsewhere(site, local)
+
+
 def check_host_specific(rep: Report, robot: str) -> None:
     rep.section("이 PC 에만 있는 것")
     dom = os.environ.get("ROS_DOMAIN_ID", "")
@@ -272,15 +293,20 @@ def check_host_specific(rep: Report, robot: str) -> None:
         argv = run["head_home"][0]["argv"]
         head_cfg = argv[argv.index("--config") + 1].replace("{repo}", str(SIM2REAL))
         head = yaml.safe_load(Path(head_cfg).read_text())["port"]
-        (rep.ok if Path(head).exists() else
+        away = _vision_away()          # ★10.30 arm_v2: 목 · 카메라는 4090(hosts.vision)에 있다
+        away_note = f" · 이 PC 에 없음(사이트 hosts.vision = {away.get('name')} {away.get('ip')})" if away else ""
+        has_head = Path(head).exists()
+        (rep.ok if has_head or away else
          lambda w: rep.warn(w, "U2D2 연결 확인 — 머리 pan · tilt 는 허브에 따로 꽂는다(직렬 연결 금지, docs/HOST_arm4090.md)"))(
-            f"머리 U2D2 {head}")
+            f"머리 U2D2 {head}" + ("" if has_head else away_note))
         for can in ("can0", "can1"):
             flags = Path(f"/sys/class/net/{can}/flags")
             if flags.exists() and not int(flags.read_text(), 16) & 0x1:
                 rep.warn(f"CAN {can} 이 꺼져 있다(DOWN)", "운영자가 sudo ip link set … fd on && up (docs/HOST_arm4090.md)")
         usb = subprocess.run(["lsusb"], capture_output=True, text=True).stdout
-        (rep.ok if "RealSense" in usb else lambda w: rep.warn(w, "RealSense 를 USB3 포트에 꽂는다"))("RealSense 카메라")
+        has_rs = "RealSense" in usb
+        (rep.ok if has_rs or away else lambda w: rep.warn(w, "RealSense 를 USB3 포트에 꽂는다"))(
+            "RealSense 카메라" + ("" if has_rs else away_note))
     if robot in ("dg5f", "all"):
         rep.warn("DG-5F 손 네트워크(/32 경로)는 미션 hand_<side> 단계의 hand_net_dual.sh --apply 로(최초 1회)")
 

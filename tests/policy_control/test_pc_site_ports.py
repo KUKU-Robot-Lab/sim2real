@@ -1,4 +1,5 @@
-"""사이트별 포트(config/sites/*.yaml) — 10.26 사용자: kitech(기존 배선) · arm(새 배선) · 10.28 arm_v1(5090 only + e2c 어댑터)."""
+"""사이트별 포트(config/sites/*.yaml) — 10.26 사용자: kitech(기존 배선) · arm(새 배선) · 10.28 arm_v1(5090 only + e2c 어댑터)
+· 10.30 arm_v2(5090/4090 + 허브)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,7 +15,7 @@ PORTS = PC / "config" / "rh56f1_ports.yaml"
 
 
 def test_sites_present():
-    assert {"kitech", "arm", "arm_v1"} <= set(SITE.available())
+    assert {"kitech", "arm", "arm_v1", "arm_v2"} <= set(SITE.available())
 
 
 def test_kitech_equals_base_file():
@@ -52,6 +53,27 @@ def test_arm_v1_both_hands():
     site = SITE.load_site(name)
     assert site["tag"] == "5090 only + e2c adapter"
     assert (site["can"], site["head_port"]) == ((a := SITE.load_site("arm"))["can"], a["head_port"])
+
+
+def test_arm_v2_hands_on_hub_vlans():
+    """10.30 사용자: v2 = 5090/4090 + 허브. 5090 = 로봇 제어 · 정책 실행(손은 eno1 VLAN), 4090 = 카메라 · 목 · FP++."""
+    name = SITE.resolve_name("ARM_v2")
+    assert name == "arm_v2"
+    got = SITE.load_ports(PORTS, name)
+    assert got["site"] == "arm_v2"
+    assert NODE.ecat_config(got, "right")[0] == "eno1.10"
+    ifname, cfg = NODE.ecat_config(got, "left")
+    assert ifname == "eno1.20"
+    assert cfg == yaml.safe_load(PORTS.read_text())["ethercat"]
+    for side in SITE.SIDES:
+        SITE.check_side(got, side)
+    site = SITE.load_site(name)
+    v1 = SITE.load_site("arm_v1")
+    assert site["tag"] == "5090/4090 + hub"
+    assert site["can"] == v1["can"]                                   # 팔 CAN 은 5090 그대로
+    assert site["head_port"] is None                                  # 목은 4090 에 있어 5090 check_host 가 찾지 않는다
+    assert site["hosts"]["vision"]["head_port"] == v1["head_port"]
+    assert (site["hosts"]["control"]["ip"], site["hosts"]["vision"]["ip"]) == ("192.168.0.50", "192.168.0.40")
 
 
 def test_unconnected_side_is_refused():
