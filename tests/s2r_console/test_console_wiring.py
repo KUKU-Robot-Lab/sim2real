@@ -119,6 +119,18 @@ def test_a_script_command_gives_its_flags_and_ros_parameters():
     assert guard.args["src_cup_topic"] == "/objects/a/pose"
 
 
+def test_an_ssh_wrapped_script_is_read_like_a_local_one_and_remembers_its_host():
+    """★10.30 arm_v2: 목 드라이버가 4090 에서 ssh -tt 로 돌고 토픽은 랜 DDS 로 온다 — 저쪽 명령 줄을 낱말로 풀어 같은 꼴로 읽는다."""
+    head = parse_cmd(("ssh", "-tt", "-o", "BatchMode=yes", "arm4090",
+                      "cd rl_ws/sim2real && source scripts/vision/common.sh && exec env ROS_LOCALHOST_ONLY=0 "
+                      "python3 scripts/nodes/head_joint_publisher.py --config config/head_camset_rh56f1.yaml --port /dev/u2d2 --baud 1000000",
+                      "--ids", "1,2"))
+    assert head.name == "head_joint_publisher.py" and head.args["ssh_host"] == "arm4090"
+    assert (head.args["config"], head.args["port"], head.args["baud"], head.args["ids"]) == ("config/head_camset_rh56f1.yaml", "/dev/u2d2", "1000000", "1,2")
+    plain = parse_cmd(("ssh", "-o", "BatchMode=yes", "arm4090", "nvidia-smi"))
+    assert (plain.name, plain.args) == ("nvidia-smi", {"ssh_host": "arm4090"})
+
+
 # ── pour 계열 ───────────────────────────────────────────────────────────
 def test_the_pour_chain_is_wired_from_its_contract_roles_and_the_robot_yaml(repo):
     d = generate(pour_units(repo), repo=repo, status_nodes=("pour_node", "pd", "pour_guard"))

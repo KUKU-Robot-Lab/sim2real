@@ -134,8 +134,11 @@ def test_every_execute_flag_is_one_the_tool_takes():
             for spec in book.commands.get(s.id, ()):
                 if not spec.execute_args:
                     continue
-                tool = next(a for a in spec.argv if a.endswith(".py"))
+                # ★10.30 arm_v2: ssh 로 감싼 명령은 도구 경로가 한 원소 안의 낱말(저 PC 의 저장소 상대 경로)이다 — 같은 저장소라 여기서 읽는다
+                tool = next(t for a in spec.argv for t in a.split() if t.endswith(".py"))
                 path = Path(tool.replace("{repo}", str(REPO)))
+                if not path.is_absolute():
+                    path = REPO / path
                 text = path.read_text(encoding="utf-8")
                 assert all(f'"{f}"' in text for f in spec.execute_args if f.startswith("--")), (s.id, tool)
 
@@ -458,9 +461,13 @@ def test_head_pose_is_checked_and_aligned_before_fpp_and_holder_poses():
             assert h < idx(cmds, then), sid
         assert not any(tool in " ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, sid))
     home = _cmds(REAL, REAL_BOOK, 'head_home')
-    assert len(home) == 2
+    assert len(home) == (3 if GEN.REMOTE_HEAD else 2)      # ★10.30 arm_v2: 드라이버 · 랜 토픽 확인 · 맞춤
     assert 'head_joint_publisher.py' in ' '.join(home[0].argv)
-    assert str(REPO / GEN.HEAD_CONFIG) in home[0].argv
+    if GEN.REMOTE_HEAD:
+        assert list(home[0].argv[:4]) == ["ssh", "-tt", "-o", "BatchMode=yes"] and home[0].argv[4] == GEN.HEAD_HOST
+        assert GEN.HEAD_CONFIG in ' '.join(home[0].argv) and "ROS_LOCALHOST_ONLY=0" in ' '.join(home[0].argv)
+    else:
+        assert str(REPO / GEN.HEAD_CONFIG) in home[0].argv
     assert home[0].background
     assert not any('head_home.py' in ' '.join(c.argv) for c in home)
 
@@ -614,10 +621,33 @@ def test_head_has_single_serial_owner_and_dynamic_camera_transform():
 
 
 def test_the_5090_station_uses_the_camset_pose_where_all_three_objects_are_in_view():
-    """10.28 사용자 "미션 연결 진행" — shaker · 파랑 · 분홍이 한 화면에 드는 목 자세(camset)와 그 자세에서 잰 외부 파라미터."""
-    assert GEN.ROBOT_PC == "5090"
+    """10.28 사용자 "미션 연결 진행" — shaker · 파랑 · 분홍이 한 화면에 드는 목 자세(camset)와 그 자세에서 잰 외부 파라미터.
+    ★10.30 arm_v2(5090 + 4090): 머리 · 카메라 조립체는 그대로(USB 만 4090 으로)라 같은 자세 · 같은 파일을 쓴다."""
+    assert GEN.ROBOT_PC == "5090_arm4090"
     assert GEN.CAMERA_EXTRINSICS == "config/global_camera_extrinsics_arm4090_r20u5.yaml"
     assert GEN.HEAD_CONFIG == "config/head_camset_rh56f1.yaml"
+
+
+def test_arm_v2_runs_the_head_driver_and_release_on_the_vision_pc_and_poses_come_over_the_hub_lan():
+    """★10.30 사용자 "4090 : 카메라+다이나셀 동작 및 fpp 관련 / 5090 : 로봇 제어 및 정책 실행 관련" — 목 U2D2 · 카메라 · FP++ 는
+    4090, 미션은 5090 에서 ssh 로 띄운다. 자세 UDP 는 허브 랜(사이트 arm_v2 hosts.control.ip)으로, 목 포트는 사이트 hosts.vision 과 같다."""
+    if not GEN.REMOTE_HEAD:
+        pytest.skip("목이 로봇 PC 에 있는 스테이션")
+    import yaml as _y
+    site = _y.safe_load((REPO / "deploy/policy_control/config/sites/arm_v2.yaml").read_text(encoding="utf-8"))
+    assert GEN.HEAD_HOST == GEN.PERCEPTION_HOST == site["hosts"]["vision"]["ssh"]
+    assert GEN.STATION["pose_dest"] == site["hosts"]["control"]["ip"]
+    assert GEN._head_config["port"] == site["hosts"]["vision"]["head_port"]
+    home = _cmds(REAL, REAL_BOOK, "head_home")
+    assert "/head/joint_states" in " ".join(home[1].argv) and not home[1].background     # 랜 토픽 확인이 맞춤보다 먼저
+    assert "head_move.py" in " ".join(home[2].argv) and "--execute" in home[2].argv
+    shutdown = _cmds(REAL, REAL_BOOK, "shutdown")
+    release = next(c for c in shutdown if "--release" in c.argv)
+    assert release.argv[4] == GEN.HEAD_HOST and "head_home.py" in release.argv[5]
+    assert release.argv.index("--release") < release.argv.index("--execute")      # 콘솔이 붙인 execute_args 가 ssh 명령 끝에 간다
+    cups = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "cups")]
+    assert any(f"perception_launcher_node.py --host {GEN.PERCEPTION_HOST} --pose-dest {GEN.STATION['pose_dest']}" in a for a in cups)
+    assert not any("ssh" in a for a in (" ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, "head_home")))
 
 
 def test_the_station_head_goes_to_the_pose_its_camera_file_was_measured_at():

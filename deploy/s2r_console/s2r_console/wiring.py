@@ -105,10 +105,36 @@ class Cmd:
     args: Mapping[str, str]
 
 
+#: ssh 옵션 가운데 값을 하나 더 먹는 것 — 호스트를 찾을 때 건너뛴다
+_SSH_VALUE_OPTS = ("-o", "-i", "-p", "-l", "-F", "-J", "-L", "-R", "-W")
+
+
+def _ssh_remote(tokens: Sequence[str]) -> tuple[str, list[str]]:
+    """`ssh [옵션…] <호스트> <저쪽 명령…>` → (호스트, 저쪽 명령 낱말들). 저쪽 명령은 한 원소에 한 줄로 오므로 공백으로 푼다."""
+    i = 1
+    while i < len(tokens):
+        t = tokens[i]
+        if t in _SSH_VALUE_OPTS:
+            i += 2
+            continue
+        if t.startswith("-"):
+            i += 1
+            continue
+        return t, [w for a in tokens[i + 1:] for w in a.split()]
+    return "", []
+
+
 def parse_cmd(argv: Sequence[str]) -> Cmd:
-    """`ros2 launch [<pkg>] <file> k:=v …` 또는 `python3 <script> --flag v -p k:=v …`."""
+    """`ros2 launch [<pkg>] <file> k:=v …` 또는 `python3 <script> --flag v -p k:=v …`.
+    ★10.30 arm_v2: `ssh … <호스트> "cd … && python3 <script> --flag v"` 는 저쪽 명령 줄을 낱말로 풀어 같은 꼴로 읽고
+    args["ssh_host"] 에 호스트를 둔다(목 드라이버가 4090 에서 돌고 토픽은 랜 DDS 로 온다 — 이 PC 의 상자로 그린다)."""
     tokens = [str(a) for a in argv]
+    ssh_host = ""
+    if tokens and Path(tokens[0]).name == "ssh":
+        ssh_host, tokens = _ssh_remote(tokens)
     args = dict(t.split(":=", 1) for t in tokens if ":=" in t)
+    if ssh_host:
+        args["ssh_host"] = ssh_host
     if tokens[:2] == ["ros2", "launch"]:
         name = next((Path(t).name for t in tokens[2:] if t.endswith(".launch.py")), "")
         return Cmd(name=name, args=args)
@@ -636,8 +662,10 @@ def _cup_holders(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
 def _head_publisher(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
     """목 드라이버(포트 단독 소유 · 각도 발행 + 이동 요청 처리) — 받는 노드가 없어도 상자로 둔다. 콘솔에서 head 까지 관리한다."""
     topic = cmd.args.get("topic") or HEAD_TOPIC
-    box = g.box("head", "목 상태 (head)", L_SENSE, ros=["/head_joint_publisher"], unit=key,
-                note="목 포트 단독 소유 — 각도 발행 + /head/move_request 이동 요청(head_move.py)")
+    host = cmd.args.get("ssh_host")                                      # ★10.30 arm_v2: 목 U2D2 가 4090 — 드라이버는 저 PC, 토픽은 랜 DDS
+    box = g.box("head", "목 상태 (head)", L_SENSE, ros=["/head_joint_publisher"], unit=key, **({"host": host} if host else {}),
+                note="목 포트 단독 소유 — 각도 발행 + /head/move_request 이동 요청(head_move.py)"
+                     + (f" · {host} 에서 ssh 로 돌고 토픽은 랜 DDS(도메인 126)로 온다" if host else ""))
     g.providers.setdefault(topic, box)
 
 
@@ -780,7 +808,8 @@ def generate(units: Mapping[str, UnitCmd], *, repo: Path, status_nodes: Sequence
     parsed = [(key, parse_cmd(u.argv)) for key, u in units.items()]
     for table in (_PROVIDERS, _HANDLERS):                                # 내는 쪽을 먼저 — 받는 쪽이 누가 내는지 알아야 한다
         for key, cmd in parsed:
-            if cmd.name in table:
+            if cmd.name in table and not _remote_tool(units[key]):      # 저 PC 안에서 끝나는 노드(홀더 노드)는 ssh 라도 그리지 않는다
+
                 mark = g.mark()
                 try:
                     table[cmd.name](g, key, cmd, repo)

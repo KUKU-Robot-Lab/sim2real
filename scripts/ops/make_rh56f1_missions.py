@@ -181,13 +181,34 @@ STATIONS = {
         "pose_dest": "",                             # 같은 PC — 런처가 127.0.0.1 로 받는다
         "holder_poses": "config/cup_holder_poses_arm4090.yaml",
     },
+    # ★10.30 사용자 "ARM_v2.yaml으로 새롭게 세팅 진행" · "4090 : 카메라+다이나셀 동작 및 fpp 관련 / 5090 : 로봇 제어 및 정책 실행 관련"
+    #   — 사이트 arm_v2(deploy/policy_control/config/sites/arm_v2.yaml): 5090 = 팔 CAN · 손 EtherCAT(허브 VLAN 10 · 20) · 정책,
+    #   4090 = D435i · 목 U2D2(FT763P8T) · FP++. 10.13 vision-3090 의 원격 인지 경로에 "목도 저 PC"(head_host)가 더해졌다:
+    #   목 드라이버 · 토크 해제가 4090 에서 돌고(ssh -tt), 관절 · 이동 요청 토픽은 랜 DDS(도메인 126, 양쪽 ROS_LOCALHOST_ONLY 0)로 온다.
+    #   머리 · 카메라 조립체는 그대로(USB 만 4090 으로)라 camset 자세 · r20u5 외부 파라미터를 그대로 쓴다. 홀더 노드는 10.13 처럼
+    #   카메라 PC 에서 돌고 파일만 scp 로 온다(저 PC 의 .venv 는 10.30 만듦).
+    #   ssh 는 tailscale 별칭 arm4090(5090 → 4090 은 랜으로 직접 간다. 랜 전용 키는 10.30 아직 없음). 자세 UDP 는 ssh 가 온 주소
+    #   (tailscale 100.103.21.126)가 아니라 허브 랜 192.168.0.50 으로 명시한다.
+    #   ★4090 → 5090 TCP 를 꽉 채우면 손 SAFE_OP 설정이 실패했다(arm_v2.yaml links_measured_1030) — 실기 중 큰 복사 금지.
+    "5090_arm4090": {
+        "perception_host": "arm4090",
+        "head_host": "arm4090",                      # 목 U2D2 가 이 PC 에 있다 — 드라이버 · 토크 해제를 여기서 돌린다
+        "extrinsics": "config/global_camera_extrinsics_arm4090_r20u5.yaml",
+        "head_config": "config/head_camset_rh56f1.yaml",
+        "head_tool": "head_home",
+        "pose_dest": "192.168.0.50",                 # 5090 eno1 태그 없는 랜(arm_v2.yaml hosts.control.ip, 테스트가 같은지 본다)
+        "holder_poses": "config/cup_holder_poses_5090_v1.yaml",
+    },
 }
-ROBOT_PC = "5090"
+ROBOT_PC = "5090_arm4090"
 STATION = STATIONS[ROBOT_PC]
 PERCEPTION_HOST = STATION["perception_host"]
 REMOTE_PERCEPTION = PERCEPTION_HOST != "local"
 CAMERA_EXTRINSICS = STATION["extrinsics"]
 HOLDER_POSES = STATION["holder_poses"]
+#: ★10.30 arm_v2: 목(U2D2)이 다른 PC 에 있으면 목 드라이버 · 토크 해제를 그 PC 에서 돌린다(토픽은 랜 DDS). local = 이 PC
+HEAD_HOST = STATION.get("head_host", "local")
+REMOTE_HEAD = HEAD_HOST != "local"
 
 
 def _episode_cups() -> list[str]:
@@ -251,9 +272,8 @@ HEAD_CONFIG = STATION["head_config"]
 HEAD_CHECK_ARGV = ["python3", "{repo}/scripts/head_move.py"]
 HEAD_HOME_ARGV = HEAD_CHECK_ARGV
 _head_config = yaml.safe_load((REPO / HEAD_CONFIG).read_text())
-HEAD_DRIVER_ARGV = ["python3", "{repo}/scripts/nodes/head_joint_publisher.py", "--config", "{repo}/" + HEAD_CONFIG,
-                    "--port", str(_head_config['port']), "--baud", str(_head_config['baud']),
-                    "--ids", ','.join(str(_head_config['motors'][axis]['id']) for axis in ('pan', 'tilt'))]
+_HEAD_DRIVER_ARGS = ["--port", str(_head_config['port']), "--baud", str(_head_config['baud']),
+                     "--ids", ','.join(str(_head_config['motors'][axis]['id']) for axis in ('pan', 'tilt'))]
 RECALIB_HINT = ("scripts/calib/table_cad_extrinsics.py --init " + CAMERA_EXTRINSICS + " --write --head-config " + HEAD_CONFIG)
 #: 원격 인지 PC 에서 도는 명령 — 홈에서 시작하는 ssh(사용자 이름이 PC 마다 달라 상대 경로, perception_launcher 와 같은 규약)
 REMOTE_SIM2REAL = "rl_ws/sim2real"
@@ -270,6 +290,26 @@ def _on_perception_pc(script: str) -> list:
         return ["bash", "-lc", script]
     return ["ssh", "-tt", "-o", "BatchMode=yes", PERCEPTION_HOST,
             f"cd {REMOTE_SIM2REAL} && source scripts/vision/common.sh && {script}"]
+
+
+def _on_head_pc(script: str, *tail: str) -> list:
+    """목 PC(arm_v2: 4090)에서 bash 한 줄을 ssh -tt 로 돈다. tail 과 콘솔이 붙이는 execute_args 는 ssh 가 공백으로 이어
+    저쪽 명령 끝에 붙는다(--release · --execute 가 argv 의 낱개 원소로 남아 테스트 · 콘솔 표시가 로컬과 같다)."""
+    assert REMOTE_HEAD, "목이 이 PC 에 있으면 로컬 argv 를 쓴다"
+    return ["ssh", "-tt", "-o", "BatchMode=yes", HEAD_HOST,
+            f"cd {REMOTE_SIM2REAL} && source scripts/vision/common.sh && {script}", *tail]
+
+
+#: 목 드라이버 — 포트를 단독 소유하고 /head/joint_states 와 이동 요청 · 상태 토픽을 낸다
+HEAD_DRIVER_ARGV = (["python3", "{repo}/scripts/nodes/head_joint_publisher.py", "--config", "{repo}/" + HEAD_CONFIG, *_HEAD_DRIVER_ARGS]
+                    if not REMOTE_HEAD else
+                    # ★10.30 arm_v2: 목 PC 에서. common.sh 는 영상용 ROS_LOCALHOST_ONLY=1 이라 드라이버만 0 으로 되돌려 토픽이 랜(도메인 126)
+                    #   으로 이 PC 에 온다. exec 라 콘솔이 ssh 를 끝내면(HUP) 드라이버가 바로 죽고 포트가 닫힌다(토크는 그대로).
+                    _on_head_pc("exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config " + HEAD_CONFIG
+                                + " " + " ".join(_HEAD_DRIVER_ARGS)))
+#: 목 토크 해제(shutdown) — 포트가 있는 PC 에서. --release 뒤에 콘솔이 --execute 를 붙인다
+HEAD_RELEASE_ARGV = (["python3", "{repo}/scripts/head_home.py", "--config", "{repo}/" + HEAD_CONFIG, "--release"]
+                     if not REMOTE_HEAD else _on_head_pc(f"python3 scripts/head_home.py --config {HEAD_CONFIG}", "--release"))
 
 
 HEADER = {
@@ -460,9 +500,9 @@ def _run(kind: str) -> dict:
                _cmd("인지 런처 · 자세 수신기 · 물체 자세 노드 · 컵홀더 노드 정지",
                     stop=["cups#1", "cups#2", "cups#3", "cup_holders#3"])] if real else []),
             *([_cmd("목 드라이버 정지 — 단독 소유한 시리얼 포트를 닫는다", stop=["head_home#0"]),
-               _cmd("목 토크 해제 — 받침 확인, pan · tilt 가 중력으로 처질 수 있다",
-                    ["python3", "{repo}/scripts/head_home.py", "--config", "{repo}/" + HEAD_CONFIG, "--release"],
-                    execute_args=["--execute"])] if real else []),
+               _cmd("목 토크 해제 — 받침 확인, pan · tilt 가 중력으로 처질 수 있다"
+                    + (f"({HEAD_HOST} 에서 — 받침 없이 풀고 전원을 끄면 다음 전원에서 한 바퀴 낮게 잡힌다, 10.30)" if REMOTE_HEAD else ""),
+                    HEAD_RELEASE_ARGV, execute_args=["--execute"])] if real else []),
             _cmd("남은 pd 정지 — 정책과 인지를 정리한 뒤",
                  stop=[f"{p}_{s}#{i}" for s in SIDES for p, i in (("pd_load", 0), ("pd_arm", 1))]),
             _cmd("손 상태 노드 · 손 드라이버 정지 — 손가락은 마지막 자세에서 멈춘다(벤더 펌웨어가 잡는다)",
@@ -507,8 +547,14 @@ def _run(kind: str) -> dict:
              ["scp", "-o", "BatchMode=yes", f"{PERCEPTION_HOST}:{REMOTE_SIM2REAL}/{HOLDER_POSES}", "{repo}/" + HOLDER_POSES]),
     ] if real else [_cmd("fake — 카메라 없음", ["bash", "-lc", "true"])]
     run["head_home"] = [
-        _cmd("목 드라이버 — 포트 단독 소유 · 실측 관절 발행 · 이동 요청 처리",
+        _cmd("목 드라이버 — 포트 단독 소유 · 실측 관절 발행 · 이동 요청 처리"
+             + (f"({HEAD_HOST} 에서 ssh -tt, 토픽은 랜 DDS 로 이 PC 에)" if REMOTE_HEAD else ""),
              HEAD_DRIVER_ARGV, background=True),
+        # ★10.30 arm_v2: 목이 저 PC 에 있으면 관절 토픽이 랜을 건너오는지 먼저 본다(안 오면 head_move 가 상태 대기에서 막힌다)
+        *([_cmd(f"목 관절 토픽이 이 PC 에 오는가 — {HEAD_HOST} 드라이버 → 랜 DDS(도메인 126 · 양쪽 ROS_LOCALHOST_ONLY 0). "
+                "안 오면 이 PC 의 ROS_DOMAIN_ID · ROS_LOCALHOST_ONLY 와 저 PC 드라이버 출력(바로 위 스텝)을 본다",
+                ["bash", "-lc", "timeout 20 ros2 topic echo --once /head/joint_states sensor_msgs/msg/JointState"])]
+          if REMOTE_HEAD else []),
         # ★10.04: head_home.py 는 설정 목표(pan 2015)로 검증하는데 이 머리 pan 은 목표보다 18 틱 앞에서 멈춰 늘 ✗(19:35 실기 단계
         #   실패). 카메라가 맞는 자세는 그 목표가 아니라 캘리브 때 멈춘 자리(외부 파라미터 head_pose) — 거기로 맞추고 거기로 검증한다.
         _cmd("머리를 카메라 캘리브 자세로 — 토크 · 모드 · I 게인(RAM, 전원을 끄면 사라진다)이 다르면 먼저 적용하고, 외부 파라미터 "

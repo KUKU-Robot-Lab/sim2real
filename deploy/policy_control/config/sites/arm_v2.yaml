@@ -11,7 +11,7 @@
 #   4090 의 로컬 사이트 파일 arm4090.yaml(git 밖, ~/.config/s2r/site=arm4090)은 손을 enp6s0.10 · .20 로 잡는다.
 # 좌우: VLAN 10 = 오른손, 20 = 왼손은 NM 연결 이름(rh56f1_r = eno1.10 · rh56f1_l = eno1.20)과 kitech 스위치 배치
 #   (GE3 오른손 VLAN 10 · GE5 왼손 VLAN 20)를 따랐다. 두 손은 EtherCAT 데이터로 구별되지 않는다.
-#   손 하나를 끄고 어느 VLAN 에서 slave 가 사라지는지로 확인한다(10.30 확인 대기).
+#   ★10.30 확인됨: 사용자가 왼손만 켠 상태에서 tools/ethercat/ecat_rtt(BRD 읽기만) 가 eno1.20 만 응답(slave 1) · eno1.10 은 200 번 모두 timeout.
 # 받는 쪽 포화 주의: 4090 -> 5090 을 TCP 로 꽉 채우면(939 Mbit/s) 두 손 SAFE_OP 설정이 실패했다(아래 기록).
 #   실기 중에는 4090 -> 5090 큰 복사(scp · rsync · 영상 원본 스트림)를 하지 않는다. tailscale 도 이 랜으로 간다.
 site: arm_v2
@@ -25,6 +25,7 @@ hosts:
   control: {name: "5090", ifname: eno1, ip: 192.168.0.50, tailscale: 100.103.21.126,
             role: "로봇 제어(팔 CAN · 손 EtherCAT) · 정책 실행"}
   vision:  {name: arm4090, ifname: enp6s0, ip: 192.168.0.40, tailscale: 100.104.123.85,
+            ssh: arm4090,                 # 미션(make_rh56f1_missions STATIONS["5090_arm4090"])이 쓰는 ssh 별칭 — tailscale(랜으로 직접 감). 랜 전용 키 없음(10.30)
             role: "카메라 D435i · 목 다이나믹셀 · FP++",
             head_port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0,
             camera_rs_serial: "348122071637"}
@@ -35,7 +36,7 @@ hub: {mgmt_ip: 192.168.0.239, vlan: {right_hand: 10, left_hand: 20}}
 links_measured_1030:
   control_5090:
     lan: {nic: eno1, chip: "Intel igc(메인보드)", ethernet: "1000 Mbps full", ip: 192.168.0.50,
-          note: "192.168.0.50 은 NM 연결 hand-right(169.254.186.1/32 · 172.16.0.50/24)에 없는 손 주소라 재부팅하면 사라진다"}
+          note: "192.168.0.50 은 10.30 NM 연결 hand-right(169.254.186.1/32 · 172.16.0.50/24)에 넣어 재부팅해도 남는다(사용자 1번)"}
     hand_right: {nic: eno1.10, path: "스위치 VLAN 10",
                  ecat_rtt_us: {n: 3000, lost: 0, p50: 49.0, p90: 54.6, p99: 59.0, max: 238.0},
                  pdo_500hz_20s_us: {n: 10000, lost: 0, rtt_p50: 55.3, rtt_p90: 58.3, rtt_p99: 67.4, rtt_max: 939.1,
