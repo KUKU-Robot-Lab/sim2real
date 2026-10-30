@@ -129,7 +129,7 @@ tail -f /tmp/rh56f1_hand/right.log      # "[master] OP" 가 나오면 성공
 ## 4. 손가락 하나 (★실기 — 승인 뒤, OP 가 된 뒤에만)
 
 ```bash
-source /opt/ros/humble/setup.bash; source ~/rl_ws/robot_control/ros_ws/install/setup.bash; export ROS_DOMAIN_ID=126
+source /opt/ros/humble/setup.bash; source ~/rl_ws/robot_control/ros_ws/install/setup.bash; export ROS_DOMAIN_ID=50
 python3 deploy/policy_control/tools/rh56f1_axis_probe.py --side right --axis index_1 --by 0.15 --back            # 계획만
 python3 deploy/policy_control/tools/rh56f1_axis_probe.py --side right --axis index_1 --by 0.15 --back --execute  # 실기
 ```

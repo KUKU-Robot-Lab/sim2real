@@ -14,6 +14,10 @@
 #   ★10.30 확인됨: 사용자가 왼손만 켠 상태에서 tools/ethercat/ecat_rtt(BRD 읽기만) 가 eno1.20 만 응답(slave 1) · eno1.10 은 200 번 모두 timeout.
 # 받는 쪽 포화 주의: 4090 -> 5090 을 TCP 로 꽉 채우면(939 Mbit/s) 두 손 SAFE_OP 설정이 실패했다(아래 기록).
 #   실기 중에는 4090 -> 5090 큰 복사(scp · rsync · 영상 원본 스트림)를 하지 않는다. tailscale 도 이 랜으로 간다.
+# ★10.30 사용자: 5090 ↔ 4090 은 tailscale 이 아니라 허브 랜 포트로 통신한다. ssh 별칭 arm4090-lan = 5090 ~/.ssh/config
+#   (HostName 192.168.0.40 · User user · IdentityFile ~/.ssh/s2r_lan · IdentitiesOnly yes). 4090 ~/.ssh/authorized_keys 에
+#   5090 의 ~/.ssh/s2r_lan.pub 이 있어야 열린다 — 사용자가 넣는다(이 세션은 자격 증명을 설치하지 않는다).
+#   DDS 도메인은 config/ros_domain.env(126 → 50, motion_acq 와 분리) · FP++ 자세 UDP 는 192.168.0.50. 셋 다 이 랜이다.
 site: arm_v2
 tag: "5090/4090 + hub"
 rh56f1:
@@ -25,7 +29,7 @@ hosts:
   control: {name: "5090", ifname: eno1, ip: 192.168.0.50, tailscale: 100.103.21.126,
             role: "로봇 제어(팔 CAN · 손 EtherCAT) · 정책 실행"}
   vision:  {name: arm4090, ifname: enp6s0, ip: 192.168.0.40, tailscale: 100.104.123.85,
-            ssh: arm4090,                 # 미션(make_rh56f1_missions STATIONS["5090_arm4090"])이 쓰는 ssh 별칭 — tailscale(랜으로 직접 감). 랜 전용 키 없음(10.30)
+            ssh: arm4090-lan,              # 미션이 쓰는 ssh 별칭 = 5090 ~/.ssh/config 의 허브 랜 192.168.0.40(키 ~/.ssh/s2r_lan 만, 머리말)
             role: "카메라 D435i · 목 다이나믹셀 · FP++",
             head_port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0,
             camera_rs_serial: "348122071637"}

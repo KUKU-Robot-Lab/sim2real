@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """joint family 입력 점검 — 실기 토픽을 **구독만** 해서 정책 관측이 조립되는지 본다. 아무것도 발행하지 않는다.
 
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/joint_obs_probe.py \
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/joint_obs_probe.py \
         --contract deploy/policies/dg5f_m/cup_pick/right_m15/joint_contract.json --robot dg5f_m_right_real --seconds 5
 
 보는 것: 소스별 수신 속도 · 결손 · stale, 계약 관절이 소스에 다 있는가, 손 속도가 오는가, 관측 조각(팔 · 손 ·

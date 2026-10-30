@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """vision-3090 — FP++ 자세(카메라 프레임)와 카메라 fps 를 로봇 PC 로 UDP 로 보낸다. 형식은 scripts/fpp_udp.py.
 
-    ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=126 python3 fpp_pose_tx.py --dest 100.103.21.126
+    ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=50 python3 fpp_pose_tx.py --dest 192.168.0.50
     (보통은 scripts/vision/pose_tx_up.sh 가 띄운다 — 인지 런처가 ssh 로 부른다)
 
 카메라 · FP++ 와 같은 localhost 전용 DDS 안에서 구독하고, 밖으로는 UDP 만 낸다. 소켓은 non-blocking 이다 —

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """지금 자세 → 저장 홈 경로의 시작점까지 짧은 접근 구간을 만들고 충돌 검사한다. 구독만 한다(발행 없음).
 
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/plan_approach_to_start.py \
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/plan_approach_to_start.py \
         --npz deploy/policy_control/paths/home_right.npz
 
 09.23 사용자: "실기 세팅이 trajectory 시작과 다르면 먼저 자세를 맞추고 시작하게 만들면 되는 것 아니냐" — 맞다.

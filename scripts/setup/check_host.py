@@ -238,8 +238,11 @@ def _vision_away() -> dict | None:
 
 def check_host_specific(rep: Report, robot: str) -> None:
     rep.section("이 PC 에만 있는 것")
+    sys.path.insert(0, str(SIM2REAL / "deploy/policy_control"))
+    from policy_control.ros_domain import REAL_DOMAIN_STR   # noqa: PLC0415  config/ros_domain.env 한 곳(10.30 motion_acq 와 분리)
     dom = os.environ.get("ROS_DOMAIN_ID", "")
-    (rep.ok if dom == "126" else lambda w: rep.warn(w, "실기는 export ROS_DOMAIN_ID=126 (fake 는 콘솔이 97 로 띄운다)"))(
+    (rep.ok if dom == REAL_DOMAIN_STR else
+     lambda w: rep.warn(w, f"실기는 export ROS_DOMAIN_ID={REAL_DOMAIN_STR} (fake 는 콘솔이 97 로 띄운다)"))(
         f"ROS_DOMAIN_ID={dom or '(없음)'}")
     if robot in ("dg5f", "rh56f1", "all"):
         for can in ("can0", "can1"):

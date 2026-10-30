@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """지금 손 자세를 **경로 기준 자세**로 기록한다 — pd 설정 `hand_path_pose` 에 쓴다. 구독만 한다(발행 없음).
 
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/capture_hand_pose.py --side both            # 보기만
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/capture_hand_pose.py --side both --write    # 설정에 기록
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/capture_hand_pose.py --side both            # 보기만
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/capture_hand_pose.py --side both --write    # 설정에 기록
 
 09.23 사용자: "오른손/왼손 모두 주먹과 비슷한 자세로 내가 만들 거고, 팔처럼 트래젝토리 세팅 자세로 두 손들도
 만든 다음에 실행되게 하면 되잖아?" — 그 순서다. 손을 원하는 모양(주먹)으로 만들어 두고 이 도구로 기록하면,

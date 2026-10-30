@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """저장된 홈 경로를 지금 재생해도 되는가 — 팔이 경로의 시작점에 있고, 경로가 지금 계약으로 만든 것인가. 구독만 한다.
 
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/check_path_start.py --npz deploy/policy_control/paths/home_right.npz
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/check_path_start.py --npz deploy/policy_control/paths/home_right.npz
 
 09.22 사용자: "실기 동작의 경우 미리 최적 경로를 저장해두고 진행해야 함" — 경로는 오프라인에서 한 번 계획 · 충돌 검사 ·
 Isaac 확인을 거쳐 저장소에 둔다(deploy/policy_control/paths/). 실기에서는 다시 계산하지 않고 이 검사만 한다.

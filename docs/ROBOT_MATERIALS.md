@@ -115,7 +115,7 @@ Step 1~3,5 = control 역할).
     필요(범위 밖, 하드웨어 대기).
   - 소비자: `sim2real_inference.py`(grasp 단계에서 실시간 구독),
     `pour_inference.py`(pour 는 FK 라 1회 capture 후 relay 죽어도 계속 동작).
-- **ROS_DOMAIN_ID=126** 를 perception PC / sim2real PC / 로봇제어 PC 모두
+- **ROS_DOMAIN_ID=50** 를 perception PC / sim2real PC / 로봇제어 PC 모두
   동일하게 export 해야 DDS 로 서로 보인다(`INSTALL.md` Step 2,
   `scripts/setup/setup_check.sh` 에서 확인).
 - **점검 스크립트**: `sim2real/scripts/check_cup_pose_link.sh [domain_id]`
@@ -127,7 +127,7 @@ Step 1~3,5 = control 역할).
 ## 4. 디렉토리 유기적 연계 (데이터 흐름)
 
 ```
-perception(/cup_pose, ROS_DOMAIN_ID=126) ──────────────┐
+perception(/cup_pose, ROS_DOMAIN_ID=50) ──────────────┐
                                                         │
 hdgp/log(grasp-v1 .pth + agent.yaml, READ-ONLY) ───────┼──▶ sim2real
                                                         │    (cup_pose_relay.py,
@@ -147,7 +147,7 @@ tesollo_control/ + isaacsim_bridge (sim2real 내부) ─────┘     sim2
   그 위에 얹힌 control 패키지(`openarm_control`, `tesollo_control`,
   `integrated_control`, `isaacsim_bridge`)는 sim2real 안에서 colcon build.
 - 세 디렉토리(perception / hdgp / sim2real)는 서로 다른 PC 에 있을 수
-  있으나 **ROS_DOMAIN_ID=126 공유 DDS** 하나로 연결된다(perception →
+  있으나 **ROS_DOMAIN_ID=50 공유 DDS** 하나로 연결된다(perception →
   `/cup_pose`, sim2real → 컨트롤러 명령 토픽). hdgp 는 네트워크 연결이
   아니라 **파일(체크포인트) 참조**로만 연결된다(런타임에 hdgp 프로세스가
   떠 있을 필요 없음).
@@ -168,7 +168,7 @@ tesollo_control/ + isaacsim_bridge (sim2real 내부) ─────┘     sim2
       `tesollo_control`(또는 `integrated_control` 통합) + `isaacsim_bridge`
       launch 기동.
 - [ ] perception `/cup_pose` 기동(FoundationPose 현행 모드 or FP++) +
-      모든 PC `ROS_DOMAIN_ID=126` 확인 (`scripts/setup/check_cup_pose_link.sh`).
+      모든 PC `ROS_DOMAIN_ID=50` 확인 (`scripts/setup/check_cup_pose_link.sh`).
 - [ ] extrinsics 캘리브(`T_base_cam`, 현재 `config/global_camera_extrinsics.yaml`
       은 PLACEHOLDER) — 카메라 장착 후 perception `tools/calibrate_extrinsics.py`
       (ArUco)로 1회 수행, 이전에는 실기 구동 금지.

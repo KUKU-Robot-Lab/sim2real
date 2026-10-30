@@ -58,7 +58,8 @@ start)
   for s in ${HAND_SIDES:-right left}; do for t in angle_actual force_actual current_actual touch_data joint_states tip_forces \
       joint_forces ecat_status angle_set angle_target admittance_offset finger_mode; do
     HAND="$HAND /hand_$s/$t"; done; done
-  ENV=${RH56F1_RECORD_ENV:-"source /opt/ros/humble/setup.bash; source \$HOME/rl_ws/robot_control/ros_ws/install/setup.bash; export ROS_DOMAIN_ID=\${ROS_DOMAIN_ID:-126}"}
+  source "$(dirname "$0")/../../../config/ros_domain.env"   # 실기 도메인 한 곳(10.30 motion_acq 와 분리)
+  ENV=${RH56F1_RECORD_ENV:-"source /opt/ros/humble/setup.bash; source \$HOME/rl_ws/robot_control/ros_ws/install/setup.bash; export ROS_DOMAIN_ID=\${ROS_DOMAIN_ID:-$S2R_REAL_DOMAIN}"}
   setsid bash -c "echo \$\$ > '$D/arm.pid'; $ENV; exec ros2 bag record -o '$OUT/arm' /joint_states $EXTRA" </dev/null >"$D/arm.log" 2>&1 &
   setsid bash -c "echo \$\$ > '$D/hand.pid'; $ENV; exec ros2 bag record -o '$OUT/hand' $HAND" </dev/null >"$D/hand.log" 2>&1 &
   for _ in $(seq 1 20); do [ -f "$D/arm.pid" ] && [ -f "$D/hand.pid" ] && break; sleep 0.1; done

@@ -22,10 +22,10 @@ force 등(src200 은 길이만 다르고 잡는 자리 형상은 같다) · 3번
           있으면 거부한다(둘이 번갈아 보내면 손가락이 떤다).
 기록: logs/finger_meas/<날짜_시각>_<side>_<mode>[_<object>]/ — summary.json · samples.npz · levels.csv(sweep)
 
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/rh56f1_finger_meas.py sweep --side right            # 계획만
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/rh56f1_finger_meas.py sweep --side right --execute  # ★실기
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/rh56f1_finger_meas.py grip --side right --object src240 --execute
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/rh56f1_finger_meas.py record --side right --object shaker
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/rh56f1_finger_meas.py sweep --side right            # 계획만
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/rh56f1_finger_meas.py sweep --side right --execute  # ★실기
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/rh56f1_finger_meas.py grip --side right --object src240 --execute
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/rh56f1_finger_meas.py record --side right --object shaker
 종료 코드: 0 = 끝 · 1 = 입력 · 연결 문제(보내지 않음) · 2 = 막힘 · 3 = pd 이상(HOLD · estop · TRACKING 아님) 또는 다른 발행자.
 """
 from __future__ import annotations
@@ -649,7 +649,7 @@ def main(argv: list[str] | None = None) -> int:
     hmap = rh56f1_map.load()
     domain = str(os.environ.get("ROS_DOMAIN_ID", "")).strip()
     if domain in ("", "0"):
-        print(f"✗ ROS_DOMAIN_ID={domain or 'unset'} — 실기 126 · fake 97/99 를 정할 것")
+        print(f"✗ ROS_DOMAIN_ID={domain or 'unset'} — 실기 config/ros_domain.env · fake 97/99 를 정할 것")
         return 1
     try:
         axes, levels = _validate(hmap, a)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """DG-5F 손끝 F/T 센서 영점 — 드라이버 서비스 `set_ft_sensor_offset`(std_srvs/Trigger)을 부른다. 로봇은 움직이지 않는다.
 
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/ft_zero.py --side left
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/ft_zero.py --side left
 
 09.28 사용자: "ft 센서 키는것 까진 좋은데 처음에 bias 잡아야해. 0으로 세팅해야함 home 자세로 갔을때 기준으로".
 정책 단계가 팔을 정책 시작 자세(home)에 세우고 손을 초기 자세로 둔 뒤, 아무것도 닿지 않은 때 부른다 — 반복할 때마다

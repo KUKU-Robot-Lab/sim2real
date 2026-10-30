@@ -650,6 +650,27 @@ def test_arm_v2_runs_the_head_driver_and_release_on_the_vision_pc_and_poses_come
     assert not any("ssh" in a for a in (" ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, "head_home")))
 
 
+def test_arm_v2_reaches_the_vision_pc_over_the_hub_lan_only_and_checks_it_in_preflight():
+    """★10.30 사용자 "5090과 4090은 ssh가 아니라 lan포트 연결로 통신해야함" · 도메인은 motion_acq 와 분리(config/ros_domain.env) ·
+    "4 번 수정": 저 PC 에 손 마스터가 없어야 한다. ssh 별칭은 사이트 hosts.vision.ssh(랜 전용 arm4090-lan, 5090 ~/.ssh/config 가
+    192.168.0.40 · 키 s2r_lan 로 간다)이고 tailscale 별칭 arm4090 이 아니다. preflight 가 랜 ssh · 같은 커밋 · 손 마스터 없음을 먼저 본다."""
+    if not GEN.REMOTE_PERCEPTION:
+        pytest.skip("인지가 로봇 PC 에 있는 스테이션")
+    assert GEN.PERCEPTION_HOST == GEN.HEAD_HOST == "arm4090-lan"
+    pre = _cmds(REAL, REAL_BOOK, "preflight")
+    lan, master = pre[0], pre[1]
+    assert list(lan.argv[:2]) == ["bash", "-lc"]
+    assert f"ssh -o BatchMode=yes -o ConnectTimeout=5 {GEN.PERCEPTION_HOST} 'cd {GEN.REMOTE_SIM2REAL} && git rev-parse HEAD'" in lan.argv[2]
+    assert f"git -C {REPO} rev-parse HEAD" in lan.argv[2]                       # {repo} 가 이 PC 의 저장소로 치환됐다
+    assert list(master.argv[:5]) == ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5"] and master.argv[5] == GEN.PERCEPTION_HOST
+    assert "pgrep" in master.argv[6] and "exit 1" in master.argv[6] and ".py" not in master.argv[6]   # 그림이 노드 상자로 읽지 않게
+    home = _cmds(REAL, REAL_BOOK, "head_home")
+    assert f"도메인 {GEN.REAL_DOMAIN}" in home[1].note and "126" not in home[1].note
+    for c in pre + home:
+        assert "arm4090 " not in " ".join(c.argv) + " "                           # tailscale 별칭이 argv 에 없다
+    assert not any("ssh" in " ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, "preflight"))
+
+
 def test_the_station_head_goes_to_the_pose_its_camera_file_was_measured_at():
     """목 드라이버의 기준 자세(HEAD_CONFIG 목표) = 카메라 외부 파라미터를 잰 자세(head_pose) — 다르면 FP++ 좌표가 틀린다."""
     from head_home import load_head_home

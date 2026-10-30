@@ -60,7 +60,7 @@ fi
 if [[ -n "${ROS_DOMAIN_ID:-}" ]]; then
   ok "ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
 else
-  miss "ROS_DOMAIN_ID 미설정" "export ROS_DOMAIN_ID=126 — 모든 PC 동일해야 통신됨 (INSTALL.md Step 2)"
+  miss "ROS_DOMAIN_ID 미설정" "export ROS_DOMAIN_ID=$(. "$(dirname "$0")/../../config/ros_domain.env"; echo "$S2R_REAL_DOMAIN") — 모든 PC 동일해야 통신됨 (config/ros_domain.env)"
 fi
 
 for pkg in numpy yaml pytest; do

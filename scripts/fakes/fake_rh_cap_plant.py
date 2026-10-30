@@ -22,6 +22,7 @@ _S2R = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_S2R / "deploy" / "policy_control"))
 
 from policy_control import rh_cap as C  # noqa: E402
+from policy_control.ros_domain import REAL_DOMAIN  # noqa: E402  config/ros_domain.env 한 곳(10.30)
 from policy_control.fk_numpy import UrdfChainFK  # noqa: E402
 from policy_control.contract_assets import ASSETS  # noqa: E402
 
@@ -36,7 +37,7 @@ def main() -> int:
     ap.add_argument("--cap-below", type=float, default=0.06, help="시작 캡 = 손바닥 아래 이만큼 [m]")
     args = ap.parse_args()
     dom = int(os.environ.get("ROS_DOMAIN_ID", "0"))
-    if dom in (0, 126):
+    if dom in (0, REAL_DOMAIN):
         raise SystemExit(f"fake 도메인에서만(지금 ROS_DOMAIN_ID={dom})")
     import rclpy
     from geometry_msgs.msg import PoseStamped

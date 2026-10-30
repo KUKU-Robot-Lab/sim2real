@@ -9,7 +9,8 @@ cd "$(dirname "$0")/../../.."
 source /opt/ros/humble/setup.bash && . .venv/bin/activate
 [ -f "$HOME/rl_ws/robot_control/ros_ws/install/setup.bash" ] && source "$HOME/rl_ws/robot_control/ros_ws/install/setup.bash"
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-113}" ROS_LOCALHOST_ONLY=1
-case "$ROS_DOMAIN_ID" in 0|126) echo "✗ ROS_DOMAIN_ID $ROS_DOMAIN_ID 은 실기 도메인이다"; exit 3 ;; esac
+source "$(dirname "$0")/../../../config/ros_domain.env"   # 실기 도메인 한 곳(10.30)
+case "$ROS_DOMAIN_ID" in 0|"$S2R_REAL_DOMAIN") echo "✗ ROS_DOMAIN_ID $ROS_DOMAIN_ID 은 실기 도메인이다"; exit 3 ;; esac
 : "${NPZ:?NPZ=<s2r_replay_v1 npz>}"
 SIDE="${SIDE:-left}"; RATE="${RATE:-0.25}"
 CONTRACT=logs/policy/asset_openarm_rh56f1_bi_rl/deploy_contract.json

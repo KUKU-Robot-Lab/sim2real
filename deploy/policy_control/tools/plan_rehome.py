@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """정책이 끝난 자리 → 정책 시작 자세(계약 home_arm = 홈 경로 끝)까지 경로를 실측에서 계획한다. 구독만 한다(발행 없음).
 
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/plan_rehome.py --side left
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/plan_rehome.py --side left
     → logs/policy_control/rehome_<side>.npz (replay_to_pd 가 재생한다)
 
 09.28 사용자: "정책 진행하고 종료한 뒤에 다시 홈자세로 하고 반복해야할수도". 그날 dg5f_m/cup_pick/left_a01 은 팔을 1.1 rad 옮겨

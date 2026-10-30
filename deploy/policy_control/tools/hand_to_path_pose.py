@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """손을 **저장 홈 경로가 검사한 자세**로 맞춘다 — 검사하고 나서 보낸다. 팔은 움직이지 않는다.
 
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/hand_to_path_pose.py --side right            # 검사만
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/hand_to_path_pose.py --side right --execute  # 실제 이동
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/hand_to_path_pose.py --side right            # 검사만
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/hand_to_path_pose.py --side right --execute  # 실제 이동
 
 09.23 사용자: "어떤 hand 자세든 trajectory 시작 자세로 세팅을 맞추게 하는 거지?" — 그렇다. 손 전원을 껐다 켜면
 손가락이 다른 자세로 자리 잡아 경로 시작점 검사(check_path_start)가 막는다. 저장 경로를 다시 계획하는 대신

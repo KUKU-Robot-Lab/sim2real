@@ -6,7 +6,7 @@ ROS 노드와 점유 충돌)의 하이브리드: **ROS 토픽을 구독**하므�
 MJPEG 라 local5090 브라우저에서 본다 (head_view_up.sh 의 8080 터널 재사용).
 
     # vision-3090
-    source /opt/ros/humble/setup.bash; export ROS_DOMAIN_ID=126
+    source /opt/ros/humble/setup.bash; source scripts/vision/common.sh   # 도메인은 config/ros_domain.env
     python3 cup_view_stream.py --port 8080
     # local5090 브라우저: http://127.0.0.1:8080
 """

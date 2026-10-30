@@ -1,4 +1,4 @@
-# RH56F1 로봇(5090_arm4090, 인지 arm4090) 실기 미션 — scripts/ops/make_rh56f1_missions.py 가 만든다. 손으로 고치지 말 것(--check 가 잡는다).
+# RH56F1 로봇(5090_arm4090, 인지 arm4090-lan) 실기 미션 — scripts/ops/make_rh56f1_missions.py 가 만든다. 손으로 고치지 말 것(--check 가 잡는다).
 name: RH56F1 양팔 실기 손 연결 · pd 점검
 artifacts:
   contract: logs/policy/asset_openarm_rh56f1_bi_rl/deploy_contract.json
@@ -81,7 +81,7 @@ stages:
   - head_home
   skippable: true
   touches_real: true
-  title: '컵 자세(arm4090 FP++) — RealSense · FP++ 묶음 컨테이너(fpp_source240b · fpp_shaker_c · fpp_source240p, 묶음마다 하나 · 색 · 모양으로 가르기 · 한 번 찍기: source240b_blue=오른팔
+  title: '컵 자세(arm4090-lan FP++) — RealSense · FP++ 묶음 컨테이너(fpp_source240b · fpp_shaker_c · fpp_source240p, 묶음마다 하나 · 색 · 모양으로 가르기 · 한 번 찍기: source240b_blue=오른팔
     · shaker_c_orange=왼팔 · shaker_c_blue · shaker_c_pink · source240p_pink) → /objects/<물체>/pose (base). GPU VRAM 컨테이너마다 약 2 GB'
 - id: cup_holders
   group: connect
@@ -646,6 +646,23 @@ stages:
   title: 안전 종료 — 팔 받침 확인 → 정책 → 인지 → 목 → pd → 손 → 팔 (★목 · 팔 토크가 풀린다)
 run:
   preflight:
+  - note: arm4090-lan 랜 ssh 가 되고 저 PC 의 sim2real 이 이 PC 와 같은 커밋인가(별칭 → 192.168.0.40 · 키 ~/.ssh/s2r_lan). 거부되면 4090 ~/.ssh/authorized_keys 에 5090
+      의 ~/.ssh/s2r_lan.pub 을 넣는다(사용자) · 커밋이 다르면 저 PC 에서 git pull --ff-only
+    argv:
+    - bash
+    - -lc
+    - R=$(ssh -o BatchMode=yes -o ConnectTimeout=5 arm4090-lan 'cd rl_ws/sim2real && git rev-parse HEAD') && L=$(git -C {repo} rev-parse HEAD)
+      && echo "remote $R" && echo "local  $L" && [ "$R" = "$L" ]
+  - note: arm4090-lan 에 손 마스터가 없는가 — 한 손에 마스터는 한 PC(이 PC). 저 PC 의 rh56f1 드라이버 · motion_acq 손 노드가 떠 있으면 멈춘다
+    argv:
+    - ssh
+    - -o
+    - BatchMode=yes
+    - -o
+    - ConnectTimeout=5
+    - arm4090-lan
+    - if pgrep -af 'rh56f1_[e]cat_node|rh56f1_[d]river|fake_rh56f1_[n]ode|motion_acq_hand.*[h]and_node'; then echo '손 마스터 후보가 돌고 있다 — 끄고 다시';
+      exit 1; fi; echo '손 마스터 없음'
   - note: CPU — 실시간 한도(EtherCAT 마스터 FIFO 80 · controller_manager 50) · 코어 배치(이 PC 의 코어를 읽어 노드가 스스로 정한다). 한도가 안 열렸으면 MISS — 운영자가 sudo bash scripts/setup/rt_setup.sh
       한 번 → 재부팅(10.03)
     argv:
@@ -808,7 +825,7 @@ run:
     - stop
     - --camera
     - --host
-    - arm4090
+    - arm4090-lan
     - --wait
     - '60'
   - note: 인지 런처 · 자세 수신기 · 물체 자세 노드 · 컵홀더 노드 정지
@@ -820,13 +837,13 @@ run:
   - note: 목 드라이버 정지 — 단독 소유한 시리얼 포트를 닫는다
     stop:
     - head_home#0
-  - note: 목 토크 해제 — 받침 확인, pan · tilt 가 중력으로 처질 수 있다(arm4090 에서 — 받침 없이 풀고 전원을 끄면 다음 전원에서 한 바퀴 낮게 잡힌다, 10.30)
+  - note: 목 토크 해제 — 받침 확인, pan · tilt 가 중력으로 처질 수 있다(arm4090-lan 에서 — 받침 없이 풀고 전원을 끄면 다음 전원에서 한 바퀴 낮게 잡힌다, 10.30)
     argv:
     - ssh
     - -tt
     - -o
     - BatchMode=yes
-    - arm4090
+    - arm4090-lan
     - cd rl_ws/sim2real && source scripts/vision/common.sh && python3 scripts/head_home.py --config config/head_camset_rh56f1.yaml
     - --release
     execute_args:
@@ -859,22 +876,22 @@ run:
     - '{repo}/scripts/head_move.py'
     execute_args:
     - --execute
-  - note: 카메라(RealSense, arm4090) 켜기 — 이미 떠 있으면 그대로(cups 단계와 같이 써도 된다)
+  - note: 카메라(RealSense, arm4090-lan) 켜기 — 이미 떠 있으면 그대로(cups 단계와 같이 써도 된다)
     argv:
     - ssh
     - -tt
     - -o
     - BatchMode=yes
-    - arm4090
+    - arm4090-lan
     - cd rl_ws/sim2real && source scripts/vision/common.sh && bash scripts/vision/camera_up.sh
-  - note: 컵홀더 자세 노드(arm4090 에서, 영상을 그 PC 안에서 읽는다) — ArUco → 직전 자세 추적 → 놓친 id 만 무늬 전체 탐색(첫 장 ~6 s). x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 저 PC 의
-      config/cup_holder_poses_5090_v1.yaml 을 갱신. 파이썬은 저 PC 의 .venv/bin/python(없으면 scripts/vision/venv_setup.sh)
+  - note: 컵홀더 자세 노드(arm4090-lan 에서, 영상을 그 PC 안에서 읽는다) — ArUco → 직전 자세 추적 → 놓친 id 만 무늬 전체 탐색(첫 장 ~6 s). x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 저 PC
+      의 config/cup_holder_poses_5090_v1.yaml 을 갱신. 파이썬은 저 PC 의 .venv/bin/python(없으면 scripts/vision/venv_setup.sh)
     argv:
     - ssh
     - -tt
     - -o
     - BatchMode=yes
-    - arm4090
+    - arm4090-lan
     - cd rl_ws/sim2real && source scripts/vision/common.sh && .venv/bin/python scripts/nodes/cup_holder_pose_node.py --write --out config/cup_holder_poses_5090_v1.yaml
       --extrinsics config/global_camera_extrinsics_arm4090_r20u5.yaml > /tmp/perception/cup_holders.log 2>&1 & P=$!; trap 'kill -TERM $P; wait
       $P' HUP TERM INT; wait $P
@@ -886,30 +903,30 @@ run:
     - -tt
     - -o
     - BatchMode=yes
-    - arm4090
+    - arm4090-lan
     - cd rl_ws/sim2real && source scripts/vision/common.sh && timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String
     manual: true
-  - note: 홀더 자세 파일을 이 PC 로 — arm4090:config/cup_holder_poses_5090_v1.yaml → config/cup_holder_poses_5090_v1.yaml(놓기 에피소드가 읽는다). 파일이 아직 없으면 세 홀더가
-      안정되지 않은 것이다 — 확인 스텝부터 다시
+  - note: 홀더 자세 파일을 이 PC 로 — arm4090-lan:config/cup_holder_poses_5090_v1.yaml → config/cup_holder_poses_5090_v1.yaml(놓기 에피소드가 읽는다). 파일이 아직 없으면
+      세 홀더가 안정되지 않은 것이다 — 확인 스텝부터 다시
     argv:
     - scp
     - -o
     - BatchMode=yes
-    - arm4090:rl_ws/sim2real/config/cup_holder_poses_5090_v1.yaml
+    - arm4090-lan:rl_ws/sim2real/config/cup_holder_poses_5090_v1.yaml
     - '{repo}/config/cup_holder_poses_5090_v1.yaml'
   head_home:
-  - note: 목 드라이버 — 포트 단독 소유 · 실측 관절 발행 · 이동 요청 처리(arm4090 에서 ssh -tt, 토픽은 랜 DDS 로 이 PC 에)
+  - note: 목 드라이버 — 포트 단독 소유 · 실측 관절 발행 · 이동 요청 처리(arm4090-lan 에서 ssh -tt, 토픽은 랜 DDS 로 이 PC 에)
     argv:
     - ssh
     - -tt
     - -o
     - BatchMode=yes
-    - arm4090
+    - arm4090-lan
     - cd rl_ws/sim2real && source scripts/vision/common.sh && exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config
       config/head_camset_rh56f1.yaml --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2
     background: true
-  - note: 목 관절 토픽이 이 PC 에 오는가 — arm4090 드라이버 → 랜 DDS(도메인 126 · 양쪽 ROS_LOCALHOST_ONLY 0). 안 오면 이 PC 의 ROS_DOMAIN_ID · ROS_LOCALHOST_ONLY 와 저 PC
-      드라이버 출력(바로 위 스텝)을 본다
+  - note: 목 관절 토픽이 이 PC 에 오는가 — arm4090-lan 드라이버 → 랜 DDS(도메인 50 · 양쪽 ROS_LOCALHOST_ONLY 0). 안 오면 이 PC 의 ROS_DOMAIN_ID · ROS_LOCALHOST_ONLY 와 저
+      PC 드라이버 출력(바로 위 스텝)을 본다
     argv:
     - bash
     - -lc
@@ -919,26 +936,26 @@ run:
     execute_args:
     - --execute
   cups:
-  - note: ★컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · arm4090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다). 머리 자세는 FP++ 를 켜기 전에 이 단계가 캘리브 자세로 맞춘다
+  - note: ★컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다). 머리 자세는 FP++ 를 켜기 전에 이 단계가 캘리브 자세로 맞춘다
     argv:
     - ssh
     - -o
     - BatchMode=yes
-    - arm4090
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: 인지 런처(이 PC) — arm4090 의 카메라 · FP++ 컨테이너를 ssh 로 켜고 끈다. 스스로는 아무것도 켜지 않는다
+  - note: 인지 런처(이 PC) — arm4090-lan 의 카메라 · FP++ 컨테이너를 ssh 로 켜고 끈다. 스스로는 아무것도 켜지 않는다
     argv:
     - python3
     - '{repo}/scripts/nodes/perception_launcher_node.py'
     - --host
-    - arm4090
+    - arm4090-lan
     - --pose-dest
     - 192.168.0.50
     - --camera-extrinsics
     - '{repo}/config/global_camera_extrinsics_arm4090_r20u5.yaml'
     background: true
-  - note: FP++ 자세 수신기 — 영상 · FP++ 는 arm4090 안에서 돌고 자세만 UDP(저 PC → 이 PC 192.168.0.50)로 넘어온다
+  - note: FP++ 자세 수신기 — 영상 · FP++ 는 arm4090-lan 안에서 돌고 자세만 UDP(저 PC → 이 PC 192.168.0.50)로 넘어온다
     argv:
     - python3
     - '{repo}/scripts/nodes/fpp_pose_rx.py'
@@ -981,7 +998,7 @@ run:
     - --wait
     - '120'
     - --status-host
-    - arm4090
+    - arm4090-lan
   - note: ★컵 자세 확인(바로 위 추출 결과) — 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y
       < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
       --write --head-config config/head_camset_rh56f1.yaml)
@@ -1017,7 +1034,7 @@ run:
     - --wait
     - '120'
     - --status-host
-    - arm4090
+    - arm4090-lan
   cups_left:
   - note: ★[left] shaker_c_orange 가 테이블에 똑바로 서 있고 손이 가리지 않는가
     argv:
@@ -1045,7 +1062,7 @@ run:
     - --wait
     - '120'
     - --status-host
-    - arm4090
+    - arm4090-lan
   policy_pourfj:
   - note: ★두 컵이 학습 배치(로봇 앞 x ≈ 0.38, y ≈ ∓0.16)에 서 있고 콘솔에 두 컵 자세가 들어오는가. 양팔 · 양손 주변이 비어 있는가. 정책은 팔을 스스로 움직이고 손가락을 쥔다 — 빈 컵만
     argv:

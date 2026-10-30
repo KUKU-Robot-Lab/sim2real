@@ -15,7 +15,7 @@ mkdir -p "$CACHE/torch" "$CACHE/warp"
 GENERAL_CPUS="$(python3 "$SIM2REAL/deploy/policy_control/policy_control/cpu_plan.py" --general 2>/dev/null || true)"
 CPUSET=()
 [ -n "$GENERAL_CPUS" ] && CPUSET=(--cpuset-cpus "$GENERAL_CPUS")
-docker run -d --name "fpp_$NAME" --network host --ipc=host --gpus all "${CPUSET[@]}" -e ROS_DOMAIN_ID=126 -e ROS_LOCALHOST_ONLY=1 \
+docker run -d --name "fpp_$NAME" --network host --ipc=host --gpus all "${CPUSET[@]}" -e ROS_DOMAIN_ID=$ROS_DOMAIN_ID -e ROS_LOCALHOST_ONLY=1 \
   -v $PPP/perception_plus_plus_core/detection/yolo.py:/workspace/perception_plus_plus/perception_plus_plus_core/detection/yolo.py:ro \
   -v $PPP/perception_plus_plus_core/fp_adapter/foundationpose_plus_plus.py:/workspace/perception_plus_plus/perception_plus_plus_core/fp_adapter/foundationpose_plus_plus.py:ro \
   -v $PPP/ros_ws/src/perception_plus_plus_ros/perception_plus_plus_ros/node.py:/opt/perception_plus_plus/lib/python3.10/site-packages/perception_plus_plus_ros/node.py:ro \

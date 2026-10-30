@@ -1,6 +1,6 @@
 """s2r_console 테스트 — 패키지 루트를 sys.path 에 넣는다 (colcon 설치 없이 돈다).
 
-★여기 테스트는 **실기 도메인(126)에 아무것도 띄우지 않는다**. 흐름 테스트의 프로파일은 전부 fake/도메인 98 이고,
+★여기 테스트는 **실기 도메인(config/ros_domain.env)에 아무것도 띄우지 않는다**. 흐름 테스트의 프로파일은 전부 fake/도메인 98 이고,
 정지 동작(trigger.py)은 아무 일도 하지 않는 스크립트로 바꿔 끼운다.
 """
 from __future__ import annotations

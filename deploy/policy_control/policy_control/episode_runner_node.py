@@ -9,7 +9,7 @@
   out  /policy_control/status/<이름> (2 Hz JSON — EpisodeManager.view() + busy · auto_approve)
   log  logs/episode/<episode_id>/episode.jsonl · scene.json · tools.log
 
-승인: auto_approve(fake 도메인만 — 실기 126 이면 노드가 거부) 또는 approvals 파일(JSONL, tools/episode_cmd.py 와 상황판이
+승인: auto_approve(fake 도메인만 — 실기 도메인(config/ros_domain.env)이면 노드가 거부) 또는 approvals 파일(JSONL, tools/episode_cmd.py 와 상황판이
 쓴다)에 이 노드가 뜬 뒤 쓰인 {"what": <이름>, "t": epoch, "runner": <노드 이름>} 가 있고 아직 안 쓴 것. 한 줄은 한 번만 쓴다.
 runner 가 없는 옛 줄은 기본 이름(episode_runner)의 것 — 팔마다 띄운 실행기는 자기 이름이 적힌 줄만 받는다.
 
@@ -31,11 +31,12 @@ if __package__ in (None, ""):
 
 from policy_control import _paths  # noqa: E402
 from policy_control import episode_spec as S  # noqa: E402
+from policy_control import ros_domain  # noqa: E402
 from policy_control.episode_runner import EpisodeManager, jsonl_logger  # noqa: E402
 
 NS = "/policy_control"
 NAME = "episode_runner"
-REAL_DOMAIN = "126"
+REAL_DOMAIN = ros_domain.REAL_DOMAIN_STR     # config/ros_domain.env 한 곳(10.30 motion_acq 와 분리)
 APPROVALS = _paths.SIM2REAL / "logs" / "episode" / "approvals.jsonl"
 
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """실기 팔을 **저장 경로를 거꾸로 되짚어** 차렷(경로 시작 자세)으로 되돌린다. 실패한 자리에서 빠져나오는 길.
 
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/reset_to_rest.py --side right            # 검사만
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/reset_to_rest.py --side right --execute  # 실제 이동
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/reset_to_rest.py --side right            # 검사만
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/reset_to_rest.py --side right --execute  # 실제 이동
 
 09.23 사용자: "이 상태에서 원래 차렷 자세로 돌아가는 방법이 필요해". 그날 그 복귀를 손으로 밟은 절차 그대로다.
 

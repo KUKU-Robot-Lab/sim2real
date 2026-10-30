@@ -65,7 +65,7 @@ sudo apt update && sudo apt install -y \
     python3-colcon-common-extensions
 
 # 모든 PC에서 동일한 도메인 ID (이 프로젝트 관례: 126)
-echo 'export ROS_DOMAIN_ID=126' >> ~/.bashrc
+echo 'export ROS_DOMAIN_ID=50' >> ~/.bashrc   # 값은 config/ros_domain.env(S2R_REAL_DOMAIN)와 같아야 한다. 10.30 126 → 50(motion_acq 와 분리)
 echo 'source /opt/ros/humble/setup.bash' >> ~/.bashrc
 source ~/.bashrc
 ```

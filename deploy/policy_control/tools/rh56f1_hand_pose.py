@@ -6,8 +6,8 @@
 pd/hand_path(episode_ctl --only pd_hand_path)는 팔 engage 가 있어야 해서 이 순간에는 못 쓴다.
 
   bash deploy/policy_control/tools/rh56f1_hand_up.sh right                                   # 드라이버(OP)
-  ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/rh56f1_hand_pose.py --side right             # 계획만
-  ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/rh56f1_hand_pose.py --side right --execute   # ★보낸다
+  ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/rh56f1_hand_pose.py --side right             # 계획만
+  ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/rh56f1_hand_pose.py --side right --execute   # ★보낸다
   bash deploy/policy_control/tools/rh56f1_hand_down.sh right                                 # 드라이버 내림
 
 보내는 값은 변환표(config/rh56f1_hand_map.yaml)로 rad → 레지스터. 확인 안 된 축은 -1(그대로).

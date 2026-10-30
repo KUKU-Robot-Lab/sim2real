@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """지금 팔 관절을 재서 그 자리에서 계약 홈(정책 에피소드 시작 자세)까지 충돌 없는 경로를 계획한다. 구독만 한다.
 
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/plan_home_from_robot.py --side right
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/plan_home_from_robot.py --side right
 
 1. `/joint_states` 를 잠깐 구독해 이 팔의 7관절을 잰다(deploy/s2r_console/tools/sample_joints.py).
 2. 그 값을 시작점으로 plan_home_path.py 를 부른다 — 손은 계약 home_hand · 전부 0 두 자세, 반대 팔은 홈 · 0 두 자세

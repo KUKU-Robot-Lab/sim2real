@@ -25,7 +25,7 @@
     python3 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090.yaml \
         --write --head-config config/head_home_rh56f1.yaml                      # arm4090(머리 자세도 기록)
 
-라이브 캡처는 카메라 노드(scripts/vision/camera_up.sh, 도메인 126 · localhost)가 떠 있어야 한다. 로봇은 움직이지 않는다.
+라이브 캡처는 카메라 노드(scripts/vision/camera_up.sh, 도메인 config/ros_domain.env · localhost)가 떠 있어야 한다. 로봇은 움직이지 않는다.
 """
 from __future__ import annotations
 
@@ -407,6 +407,13 @@ def grab_live(domain: int, timeout: float = 15.0) -> Path:
         raise SystemExit(f"✗ 라이브 캡처 실패(카메라 노드가 떠 있는가):\n{(r.stdout + r.stderr)[-800:]}")
     return out
 
+def _real_domain() -> int:
+    """실기 도메인 — config/ros_domain.env 한 곳(10.30 motion_acq 와 분리)."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "deploy" / "policy_control"))
+    from policy_control.ros_domain import REAL_DOMAIN  # noqa: PLC0415
+    return REAL_DOMAIN
+
 
 def main(argv=None) -> int:
     from cup_pose_relay import load_extrinsics
@@ -419,7 +426,7 @@ def main(argv=None) -> int:
     ap.add_argument("--png", type=Path, default=Path("/tmp/table_cad_overlay.png"), help="겹친 영상")
     ap.add_argument("--usda", type=Path, default=ENV_USDA)
     ap.add_argument("--no-depth-tilt", action="store_true", help="깊이 상판 법선 제약을 빼고 PnP 만")
-    ap.add_argument("--domain", type=int, default=126, help="카메라 노드 도메인(실기 126 · localhost 전용) — 셸의 ROS_DOMAIN_ID 를 믿지 않는다")
+    ap.add_argument("--domain", type=int, default=_real_domain(), help="카메라 노드 도메인(실기 config/ros_domain.env · localhost 전용) — 셸의 ROS_DOMAIN_ID 를 믿지 않는다")
     ap.add_argument("--tilt-sigma", type=float, default=0.05,
                     help="깊이 상판 법선 제약 세기(°) — 기본 0.05 = 사실상 고정. 10.27: 구멍 PnP 의 기울기는 컬러/IR 끼리도 2.3° 갈려 믿지 않는다")
     ap.add_argument("--frames", type=int, default=None,

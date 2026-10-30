@@ -30,6 +30,8 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "scripts"))   # object_registry — 묶음 물체 목록
+sys.path.insert(0, str(REPO / "deploy" / "policy_control"))   # policy_control.ros_domain — 실기 도메인 한 곳
+from policy_control.ros_domain import REAL_DOMAIN  # noqa: E402  config/ros_domain.env(10.30 motion_acq 와 분리)
 OUT = {"real": REPO / "config" / "mission_rh56f1_control.yaml", "fake": REPO / "config" / "mission_rh56f1_fake.yaml"}
 SIDES = ("right", "left")
 PC = "{repo}/deploy/policy_control"
@@ -138,6 +140,11 @@ REAL_CUP_ORIGIN_Z = 0.085                 # 원점 높이(바닥 위) — 컵 �
 #: 실기 로봇 PC 구성 — 로봇(팔 CAN · 손 EtherCAT · 머리)이 붙은 PC 와 카메라 · FP++ 를 돌리는 PC.
 #  ★10.13 사용자: "5090 로봇 pc" · "인지 pc vision3090 이미 카메라 연결" — 실기 미션은 ROBOT_PC 하나로 만든다.
 #  arm4090 로 돌아가면 ROBOT_PC = "arm4090" 으로 바꾸고 다시 생성한다(--check 가 커밋 파일과 맞는지 본다).
+#: ★10.30 사용자: 5090 ↔ 4090 은 tailscale 이 아니라 허브 랜 포트로 — ssh 별칭 · 자세 UDP 주소를 사이트 arm_v2.yaml 에서 읽는다
+#   (hosts.vision.ssh = arm4090-lan: 5090 ~/.ssh/config 가 192.168.0.40 · 키 ~/.ssh/s2r_lan 로 간다. hosts.control.ip = 192.168.0.50).
+_SITE_V2 = yaml.safe_load((REPO / "deploy/policy_control/config/sites/arm_v2.yaml").read_text(encoding="utf-8"))
+_V2_VISION_SSH = _SITE_V2["hosts"]["vision"]["ssh"]
+_V2_CONTROL_IP = _SITE_V2["hosts"]["control"]["ip"]
 STATIONS = {
     # ★10.27 사용자 "2번 일부 진행"(vision + 정책 + 로봇 제어 모두 5090) — D435i 를 5090 USB 3(Bus 02)에 꽂았다.
     #   카메라 · FP++ · 홀더 노드를 같은 PC 에서 돈다(arm4090 과 같은 local 경로).
@@ -184,19 +191,19 @@ STATIONS = {
     # ★10.30 사용자 "ARM_v2.yaml으로 새롭게 세팅 진행" · "4090 : 카메라+다이나셀 동작 및 fpp 관련 / 5090 : 로봇 제어 및 정책 실행 관련"
     #   — 사이트 arm_v2(deploy/policy_control/config/sites/arm_v2.yaml): 5090 = 팔 CAN · 손 EtherCAT(허브 VLAN 10 · 20) · 정책,
     #   4090 = D435i · 목 U2D2(FT763P8T) · FP++. 10.13 vision-3090 의 원격 인지 경로에 "목도 저 PC"(head_host)가 더해졌다:
-    #   목 드라이버 · 토크 해제가 4090 에서 돌고(ssh -tt), 관절 · 이동 요청 토픽은 랜 DDS(도메인 126, 양쪽 ROS_LOCALHOST_ONLY 0)로 온다.
+    #   목 드라이버 · 토크 해제가 4090 에서 돌고(ssh -tt), 관절 · 이동 요청 토픽은 랜 DDS(도메인 config/ros_domain.env, 양쪽 ROS_LOCALHOST_ONLY 0)로 온다.
     #   머리 · 카메라 조립체는 그대로(USB 만 4090 으로)라 camset 자세 · r20u5 외부 파라미터를 그대로 쓴다. 홀더 노드는 10.13 처럼
     #   카메라 PC 에서 돌고 파일만 scp 로 온다(저 PC 의 .venv 는 10.30 만듦).
-    #   ssh 는 tailscale 별칭 arm4090(5090 → 4090 은 랜으로 직접 간다. 랜 전용 키는 10.30 아직 없음). 자세 UDP 는 ssh 가 온 주소
+    #   ssh 는 랜 전용 별칭(사이트 hosts.vision.ssh = arm4090-lan → 192.168.0.40, 키 s2r_lan. 사용자 10.30 "ssh 가 아니라 랜포트"). 자세 UDP 는 ssh 가 온 주소
     #   (tailscale 100.103.21.126)가 아니라 허브 랜 192.168.0.50 으로 명시한다.
     #   ★4090 → 5090 TCP 를 꽉 채우면 손 SAFE_OP 설정이 실패했다(arm_v2.yaml links_measured_1030) — 실기 중 큰 복사 금지.
     "5090_arm4090": {
-        "perception_host": "arm4090",
-        "head_host": "arm4090",                      # 목 U2D2 가 이 PC 에 있다 — 드라이버 · 토크 해제를 여기서 돌린다
+        "perception_host": _V2_VISION_SSH,            # 사이트 hosts.vision.ssh(랜 전용 별칭)
+        "head_host": _V2_VISION_SSH,                      # 목 U2D2 가 이 PC 에 있다 — 드라이버 · 토크 해제를 여기서 돌린다
         "extrinsics": "config/global_camera_extrinsics_arm4090_r20u5.yaml",
         "head_config": "config/head_camset_rh56f1.yaml",
         "head_tool": "head_home",
-        "pose_dest": "192.168.0.50",                 # 5090 eno1 태그 없는 랜(arm_v2.yaml hosts.control.ip, 테스트가 같은지 본다)
+        "pose_dest": _V2_CONTROL_IP,                 # 5090 eno1 태그 없는 랜(arm_v2.yaml hosts.control.ip, 테스트가 같은지 본다)
         "holder_poses": "config/cup_holder_poses_5090_v1.yaml",
     },
 }
@@ -303,7 +310,7 @@ def _on_head_pc(script: str, *tail: str) -> list:
 #: 목 드라이버 — 포트를 단독 소유하고 /head/joint_states 와 이동 요청 · 상태 토픽을 낸다
 HEAD_DRIVER_ARGV = (["python3", "{repo}/scripts/nodes/head_joint_publisher.py", "--config", "{repo}/" + HEAD_CONFIG, *_HEAD_DRIVER_ARGS]
                     if not REMOTE_HEAD else
-                    # ★10.30 arm_v2: 목 PC 에서. common.sh 는 영상용 ROS_LOCALHOST_ONLY=1 이라 드라이버만 0 으로 되돌려 토픽이 랜(도메인 126)
+                    # ★10.30 arm_v2: 목 PC 에서. common.sh 는 영상용 ROS_LOCALHOST_ONLY=1 이라 드라이버만 0 으로 되돌려 토픽이 랜(도메인 config/ros_domain.env)
                     #   으로 이 PC 에 온다. exec 라 콘솔이 ssh 를 끝내면(HUP) 드라이버가 바로 죽고 포트가 닫힌다(토크는 그대로).
                     _on_head_pc("exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config " + HEAD_CONFIG
                                 + " " + " ".join(_HEAD_DRIVER_ARGS)))
@@ -456,6 +463,17 @@ def _run(kind: str) -> dict:
     fake_arg = [] if real else ["fake:=true"]
     run = {
         "preflight": [
+            # ★10.30 사용자 "5090과 4090은 ssh가 아니라 lan포트 연결로 통신해야함": 저 PC 로는 허브 랜 별칭(arm4090-lan)으로만 간다.
+            #   먼저 랜 ssh 가 열리는지 · 저 PC 의 sim2real 이 같은 커밋인지 · 저 PC 에 손 마스터가 없는지(사용자 4 번) 본다.
+            *([_cmd(f"{PERCEPTION_HOST} 랜 ssh 가 되고 저 PC 의 sim2real 이 이 PC 와 같은 커밋인가(별칭 → 192.168.0.40 · 키 ~/.ssh/s2r_lan). "
+                    "거부되면 4090 ~/.ssh/authorized_keys 에 5090 의 ~/.ssh/s2r_lan.pub 을 넣는다(사용자) · 커밋이 다르면 저 PC 에서 git pull --ff-only",
+                    ["bash", "-lc", f"R=$(ssh -o BatchMode=yes -o ConnectTimeout=5 {PERCEPTION_HOST} 'cd {REMOTE_SIM2REAL} && git rev-parse HEAD') "
+                                    "&& L=$(git -C {repo} rev-parse HEAD) && echo \"remote $R\" && echo \"local  $L\" && [ \"$R\" = \"$L\" ]"]),
+               _cmd(f"{PERCEPTION_HOST} 에 손 마스터가 없는가 — 한 손에 마스터는 한 PC(이 PC). 저 PC 의 rh56f1 드라이버 · motion_acq 손 노드가 떠 있으면 멈춘다",
+                    ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", PERCEPTION_HOST,
+                     "if pgrep -af 'rh56f1_[e]cat_node|rh56f1_[d]river|fake_rh56f1_[n]ode|motion_acq_hand.*[h]and_node'; "
+                     "then echo '손 마스터 후보가 돌고 있다 — 끄고 다시'; exit 1; fi; echo '손 마스터 없음'"])]
+              if real and REMOTE_PERCEPTION else []),
             *([_cmd("CPU — 실시간 한도(EtherCAT 마스터 FIFO 80 · controller_manager 50) · 코어 배치(이 PC 의 코어를 읽어 노드가 "
                     "스스로 정한다). 한도가 안 열렸으면 MISS — 운영자가 sudo bash scripts/setup/rt_setup.sh 한 번 → 재부팅(10.03)",
                     ["python3", "{repo}/scripts/setup/check_host.py", "--robot", "rh56f1", "--only", "cpu"])] if real else []),
@@ -551,7 +569,7 @@ def _run(kind: str) -> dict:
              + (f"({HEAD_HOST} 에서 ssh -tt, 토픽은 랜 DDS 로 이 PC 에)" if REMOTE_HEAD else ""),
              HEAD_DRIVER_ARGV, background=True),
         # ★10.30 arm_v2: 목이 저 PC 에 있으면 관절 토픽이 랜을 건너오는지 먼저 본다(안 오면 head_move 가 상태 대기에서 막힌다)
-        *([_cmd(f"목 관절 토픽이 이 PC 에 오는가 — {HEAD_HOST} 드라이버 → 랜 DDS(도메인 126 · 양쪽 ROS_LOCALHOST_ONLY 0). "
+        *([_cmd(f"목 관절 토픽이 이 PC 에 오는가 — {HEAD_HOST} 드라이버 → 랜 DDS(도메인 {REAL_DOMAIN} · 양쪽 ROS_LOCALHOST_ONLY 0). "
                 "안 오면 이 PC 의 ROS_DOMAIN_ID · ROS_LOCALHOST_ONLY 와 저 PC 드라이버 출력(바로 위 스텝)을 본다",
                 ["bash", "-lc", "timeout 20 ros2 topic echo --once /head/joint_states sensor_msgs/msg/JointState"])]
           if REMOTE_HEAD else []),

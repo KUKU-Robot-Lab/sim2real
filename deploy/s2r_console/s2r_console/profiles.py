@@ -3,8 +3,8 @@
 프로파일은 계약을 복제하지 않는다. 미션 yaml 과 정책 카드를 **가리키기만** 하고,
 콘솔이 스스로 소유하는 사실은 둘뿐이다: 어느 DDS 도메인인가, 그것이 실기인가 fake 인가.
 
-도메인 방어: 실기 도메인(126)과 fake 가 섞이는 조합은 **로드 시점에** 거부한다.
-기존 launch 의 `_refuse_real_domain` 은 ""/"0" 만 막는다 — 실기가 126 에서 도는 이 작업장에서는
+도메인 방어: 실기 도메인(config/ros_domain.env — 10.30 motion_acq 와 분리)과 fake 가 섞이는 조합은 **로드 시점에** 거부한다.
+기존 launch 의 `_refuse_real_domain` 은 ""/"0" 만 막는다 — 실기가 0 이 아닌 도메인에서 도는 이 작업장에서는
 그것만으로는 fake 가 실기 그래프에 붙는 것을 막지 못한다.
 """
 from __future__ import annotations
@@ -18,9 +18,12 @@ import yaml
 from .diagram_spec import Diagram, parse_diagram
 from .errors import ProfileError
 
+from . import _paths
+
+_paths.install()
+from policy_control.ros_domain import REAL_DOMAIN  # noqa: E402  실기 DDS 도메인은 config/ros_domain.env 한 곳(10.30)
+
 SCHEMA = "s2r_console/profile/v1"
-#: 이 작업장의 실기 DDS 도메인 (docs/ROBOT_MATERIALS.md, INSTALL.md).
-REAL_DOMAIN = 126
 CLASSES = ("real", "fake")
 
 

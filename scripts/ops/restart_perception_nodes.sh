@@ -4,7 +4,8 @@
 set -eo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 source /opt/ros/humble/setup.bash
-export ROS_DOMAIN_ID=126
+source "$HERE/../../config/ros_domain.env"   # 배포 도메인 한 곳(10.30 motion_acq 와 분리)
+export ROS_DOMAIN_ID="$S2R_REAL_DOMAIN"
 WHAT=${1:-all}
 restart() {  # $1 = 스크립트 파일명, $2 = 로그
   pkill -f "python3 $1" || true

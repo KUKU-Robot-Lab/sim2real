@@ -38,6 +38,10 @@ from object_registry import INPUT_NS, OUTPUT_NS, container_for, input_topic, loa
 from policy_control.pd_backends import FORWARD_KINDS, forward_topic  # noqa: E402
 from policy_control.sources import split_role  # noqa: E402
 from policy_control.episode_spec import resolve_objects  # noqa: E402
+from . import _paths
+
+_paths.install()
+from policy_control.ros_domain import REAL_DOMAIN  # noqa: E402  실기 DDS 도메인은 config/ros_domain.env 한 곳(10.30)
 
 NS = "/policy_control"
 TOPIC = {"obs": f"{NS}/obs", "action": f"{NS}/action", "target": f"{NS}/joint_target", "episode": f"{NS}/episode",
@@ -665,7 +669,7 @@ def _head_publisher(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
     host = cmd.args.get("ssh_host")                                      # ★10.30 arm_v2: 목 U2D2 가 4090 — 드라이버는 저 PC, 토픽은 랜 DDS
     box = g.box("head", "목 상태 (head)", L_SENSE, ros=["/head_joint_publisher"], unit=key, **({"host": host} if host else {}),
                 note="목 포트 단독 소유 — 각도 발행 + /head/move_request 이동 요청(head_move.py)"
-                     + (f" · {host} 에서 ssh 로 돌고 토픽은 랜 DDS(도메인 126)로 온다" if host else ""))
+                     + (f" · {host} 에서 ssh 로 돌고 토픽은 랜 DDS(도메인 {REAL_DOMAIN})로 온다" if host else ""))
     g.providers.setdefault(topic, box)
 
 

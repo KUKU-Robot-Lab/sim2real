@@ -1,10 +1,10 @@
-# 양팔 DG-5F-M short — **실기**. 도메인 126. 지금 로봇의 실제 구성(2026-09-14 손 교체 이후).
+# 양팔 DG-5F-M short — **실기**. 도메인 50(config/ros_domain.env). 지금 로봇의 실제 구성(2026-09-14 손 교체 이후).
 # 정책 없는 제어 전용 점검: pd(engage · selftest · goto_home) → fabric direct(palm_cmd · hand_cmd) 까지, 한 팔씩.
 schema: s2r_console/profile/v1
 id: dg5f_m_real
 title: 양팔 DG-5F-M · 실기 제어 점검
 mission: config/mission_dg5f_m_control.yaml
-domain: {id: 126, class: real}
+domain: {id: 50, class: real}
 policy_dt: 0.02
 status_nodes: [episode_master, fabric, pd_right, pd_left]   # pd 는 팔마다 따로 뜬다(09.23)
 

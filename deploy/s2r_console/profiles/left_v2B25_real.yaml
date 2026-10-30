@@ -1,9 +1,9 @@
-# 좌팔 그리퍼 grasp (V2B25) — **실기**. 도메인 126.
+# 좌팔 그리퍼 grasp (V2B25) — **실기**. 도메인 50(config/ros_domain.env).
 schema: s2r_console/profile/v1
 id: left_v2B25_real
 title: 좌팔 그리퍼 grasp · 실기 (V2B25)
 mission: config/mission_policy_control.yaml
-domain: {id: 126, class: real}
+domain: {id: 50, class: real}
 policy_dt: 0.02                # 50 Hz
 status_nodes: [obs, policy, fabric, pd_left]        # 왼팔 정책 — pd 는 그 팔 하나(09.23)
 

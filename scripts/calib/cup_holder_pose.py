@@ -486,6 +486,13 @@ def estimate(gray: np.ndarray, K: np.ndarray, T_bc: np.ndarray, cfg: HolderCfg, 
 def yaw_quat_wxyz(yaw: float) -> tuple[float, float, float, float]:
     return (math.cos(yaw / 2), 0.0, 0.0, math.sin(yaw / 2))
 
+def _real_domain() -> int:
+    """실기 도메인 — config/ros_domain.env 한 곳(10.30 motion_acq 와 분리)."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "deploy" / "policy_control"))
+    from policy_control.ros_domain import REAL_DOMAIN  # noqa: PLC0415
+    return REAL_DOMAIN
+
 
 def main(argv=None) -> int:
     from cup_pose_relay import load_extrinsics
@@ -498,7 +505,7 @@ def main(argv=None) -> int:
     ap.add_argument("--png", type=Path, default=Path("/tmp/cup_holder_overlay.png"))
     ap.add_argument("--write", action="store_true", help=f"결과를 {DEFAULT_OUT.relative_to(SIM2REAL)} 에 쓴다")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    ap.add_argument("--domain", type=int, default=126, help="카메라 노드 도메인(실기 126 · localhost 전용)")
+    ap.add_argument("--domain", type=int, default=_real_domain(), help="카메라 노드 도메인(실기 config/ros_domain.env · localhost 전용)")
     ap.add_argument("--no-template", action="store_true",
                     help="ArUco 가 못 찾은 마커에 무늬 맞춤 대체 검출(marker_template_fit)을 쓰지 않는다")
     ap.add_argument("--table-z", type=float, default=TABLE_TOP_Z,

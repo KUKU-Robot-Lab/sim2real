@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # vision ↔ 로봇 제어 PC 간 /cup_pose 연계 점검. 각 PC 에서 실행.
-#   기대: ROS_DOMAIN_ID=126 동일 + (vision 기동 상태면) /cup_pose 가 보인다.
+#   기대: ROS_DOMAIN_ID 가 config/ros_domain.env 값으로 동일 + (vision 기동 상태면) /cup_pose 가 보인다.
 set -uo pipefail
-EXPECT_DOMAIN="${1:-126}"
+source "$(dirname "$0")/../../config/ros_domain.env"
+EXPECT_DOMAIN="${1:-$S2R_REAL_DOMAIN}"
 fail=0
 if [[ "${ROS_DOMAIN_ID:-unset}" != "$EXPECT_DOMAIN" ]]; then
   echo "[FAIL] ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-unset} (기대 $EXPECT_DOMAIN) — export ROS_DOMAIN_ID=$EXPECT_DOMAIN"

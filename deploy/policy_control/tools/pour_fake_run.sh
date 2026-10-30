@@ -13,13 +13,14 @@
 #          이 PC 에 없다. 09.05 자산 정리 때 사라진 것으로 보인다) ·
 #          DEVICE(기본 cpu) · FILL(기본 0.85, 계약에 기본값이 없어 반드시 넣어야 한다)
 #
-#   ROS_DOMAIN_ID 는 실기(126)도 0/unset 도 아니어야 한다 — launch 가 0/unset 을 거부하고,
-#   이 스크립트가 126 을 거부한다.
+#   ROS_DOMAIN_ID 는 실기(config/ros_domain.env)도 0/unset 도 아니어야 한다 — launch 가 0/unset 을 거부하고,
+#   이 스크립트가 실기 도메인(config/ros_domain.env)을 거부한다.
 set -o pipefail
 cd "$(dirname "$0")/../../.."   # deploy/policy_control/tools → 저장소 루트
 source /opt/ros/humble/setup.bash && . .venv/bin/activate
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-97}"
-[ "$ROS_DOMAIN_ID" = "126" ] && { echo "[pour_fake] 실기 도메인 126 에서는 돌리지 않는다"; exit 3; }
+source "$(dirname "$0")/../../../config/ros_domain.env"   # 실기 도메인 한 곳(10.30)
+[ "$ROS_DOMAIN_ID" = "$S2R_REAL_DOMAIN" ] && { echo "[pour_fake] 실기 도메인 $S2R_REAL_DOMAIN 에서는 돌리지 않는다"; exit 3; }
 
 RUN="${RUN:-pour_i18}"
 SEC="${1:-20}"; LOG="${2:-logs/policy_control/pour_fake_$(date +%m%d_%H%M%S)}"; mkdir -p "$LOG"

@@ -18,7 +18,7 @@
 | CPU 점검 | `check_host.py --robot rh56f1` | `check_host.py --robot dg5f` |
 
 ## 실기 허락
-- 이 절은 실기 도메인(`ROS_DOMAIN_ID=126`)에만 적용된다. fake 도메인(97/99)은 실기가 아니므로 아래 명령(`--execute` · `--approve` ·
+- 이 절은 실기 도메인(`ROS_DOMAIN_ID=50`, config/ros_domain.env)에만 적용된다. fake 도메인(97/99)은 실기가 아니므로 아래 명령(`--execute` · `--approve` ·
   pd engage · 노드 기동/kill · 연속 실행 포함)도 묻지 않고 진행한다(10.20 사용자 "Fake 실험은 실기가 아니기때문에 허락요청 안해도됨").
 - 로봇이 움직이거나 힘을 내는 명령은 실행 직전에 매번 "이 명령을 지금 실행할까요?"로 멈추고 답을 기다린다.
 - 대상: `--execute`, `execute:=true`, `--approve <id>`, pd engage·goto_home·preset·`replay_to_pd`, `ep_start`, 손 지령 발행, 로봇 명령 토픽에 쓰는 `ros2 topic pub`·`ros2 service call`·`ros2 action send_goal`, 실하드웨어 launch.
@@ -44,7 +44,7 @@
 4. 자세 이동(home, preset, 경로 재생)은 pd 가 한다. 한 팔씩, 단계마다 허락.
 5. 제어 점검이 끝나기 전에는 정책 단계로 가지 않는다.
 6. 끝낼 때는 받침 확인 → pd 해제 → 손 → 팔 순서로 내린다.
-실기 도메인은 `ROS_DOMAIN_ID=126`, fake 는 97/99 다. 도메인을 섞지 않는다.
+실기 도메인은 `ROS_DOMAIN_ID=50`(config/ros_domain.env 한 곳 — 10.30 사용자: motion_acq 의 126 · 7 과 분리), fake 는 97/99 다. 도메인을 섞지 않는다.
 
 ## 사용자 소유 영역
 - 이 저장소, `rl_ws/robot_control/`, `rl_ws/urdf/`, USD 자산은 사용자가 요청한 작업 범위 안에서만 고친다. 범위 밖은 제안만 한다.

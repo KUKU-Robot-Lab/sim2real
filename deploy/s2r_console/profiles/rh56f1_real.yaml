@@ -1,10 +1,10 @@
-# OpenArm 양팔 + Inspire RH56F1 — **실기**(arm4090). 도메인 126. 09.29 사용자: rh56f1 제어 연결.
+# OpenArm 양팔 + Inspire RH56F1 — **실기**(arm4090). 도메인 50(config/ros_domain.env). 09.29 사용자: rh56f1 제어 연결.
 # 미션은 scripts/ops/make_rh56f1_missions.py 가 fake 와 같은 정의에서 만든다 — 손 연결 · 점검 · 방향 확인 · 팔 pd.
 schema: s2r_console/profile/v1
 id: rh56f1_real
 title: 양팔 RH56F1 · 실기 손 연결 · pd 점검
 mission: config/mission_rh56f1_control.yaml
-domain: {id: 126, class: real}
+domain: {id: 50, class: real}
 policy_dt: 0.0166667
 status_nodes: [pd_right, pd_left]
 timing: false   # ★10.21 두 PD 는 팔마다 따로 돈다 — pd_right→pd_left 지연은 뜻이 없어 타이밍 칸을 숨긴다

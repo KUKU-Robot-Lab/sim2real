@@ -10,7 +10,7 @@
         없으면 상태 노드가 joint_forces 를 못 내 정책 입력이 비고 상황판이 '끊긴 곳' 으로 본다)
 
 손가락은 목표 레지스터로 **전 행정 1 s**(벤더 speedSet 2000 기본)의 속도로 간다. 접촉 · 힘 제한은 흉내내지 않는다.
-실기 도메인(126)과 0 은 거부한다.
+실기 도메인(config/ros_domain.env)과 0 은 거부한다.
 ★10.17 손 안 컵 흉내(경로 B · C 리허설): /fake/hand_<side>/cup (std_msgs/Bool) 이 참이면 --cup-stop 각도에서 손가락이 더 닫히지
   못한다(목표는 받되 실측이 멈춘다 = 막힘 신호가 그대로 생긴다). 거짓이면 평소대로. 여는 쪽은 언제나 움직인다.
 
@@ -28,8 +28,8 @@ import numpy as np
 _SIM2REAL = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_SIM2REAL / "deploy" / "policy_control"))
 from policy_control import rh56f1_map  # noqa: E402
+from policy_control.ros_domain import REAL_DOMAIN  # noqa: E402  config/ros_domain.env 한 곳(10.30 motion_acq 와 분리)
 
-REAL_DOMAIN = 126
 RATE_HZ = 250.0           # 10.03 손 = EtherCAT(state_hz 250) — hand_check 가 그 80 % 를 기대한다(50 Hz RS485 시절 값이면 fake 미션이 멈춘다)
 #: 전 행정(레지스터 끝 ↔ 끝) 걸리는 시간 [s]
 STROKE_S = 1.0

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """**지금 손 자세에서** 손가락을 접는다 — 손가락끼리 닿지 않는 만큼만, 봉투 구 안에 들 때까지.
 
-    ROS_DOMAIN_ID=126 python3 deploy/policy_control/tools/plan_hand_fold.py --side left          # 실측에서
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/plan_hand_fold.py --side left          # 실측에서
     python3 deploy/policy_control/tools/plan_hand_fold.py --side left --q 'l_hj_index_2=0.3,...'  # 오프라인
 
 09.23 사용자: "손가락들이 서로 충돌이 일어나지 않게 모을 순 없는건가? 현재 JOINT STATE 기반해서."
