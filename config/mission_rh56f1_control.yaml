@@ -931,7 +931,7 @@ run:
     - BatchMode=yes
     - arm4090-lan
     - cd rl_ws/sim2real && source scripts/vision/common.sh && .venv/bin/python scripts/nodes/cup_holder_pose_node.py --write --out config/cup_holder_poses_5090_v1.yaml
-      --extrinsics config/global_camera_extrinsics_arm4090_r20u5.yaml > /tmp/perception/cup_holders.log 2>&1 & P=$!; trap 'kill -TERM $P; wait
+      --extrinsics config/global_camera_extrinsics_arm4090_r20u5.yaml > logs/perception/cup_holders.log 2>&1 & P=$!; trap 'kill -TERM $P; wait
       $P' HUP TERM INT; wait $P
     background: true
   - note: '★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y ≈ l +0.16 / r −0.06 / r 바깥 −0.28(간격 0.22 · 10.27 A1 배치) · stable ✓ 인가 (어긋나면 scripts/calib/table_cad_extrinsics.py

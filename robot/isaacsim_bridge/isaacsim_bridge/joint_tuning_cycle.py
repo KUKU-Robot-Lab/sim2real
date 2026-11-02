@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from copy import deepcopy
 
 from isaacsim_bridge.joint_tuning_report import _build_report, _load_stats
@@ -240,7 +241,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--input-csv",
-        default="/tmp/isaacsim_joint_error.csv",
+        default="logs/isaacsim/isaacsim_joint_error.csv",
         help="CSV from joint_error_recorder",
     )
     parser.add_argument(
@@ -250,12 +251,12 @@ def main() -> None:
     )
     parser.add_argument(
         "--output-report",
-        default="/tmp/isaacsim_joint_tuning_report.json",
+        default="logs/isaacsim/isaacsim_joint_tuning_report.json",
         help="JSON report snapshot output path",
     )
     parser.add_argument(
         "--output-drive-config",
-        default="/tmp/isaacsim_next_joint_drive_config.json",
+        default="logs/isaacsim/isaacsim_next_joint_drive_config.json",
         help="Next Isaac Sim drive config JSON output path",
     )
     args = parser.parse_args()
@@ -263,6 +264,9 @@ def main() -> None:
     report = _build_report(_load_stats(args.input_csv))
     current_config = _load_drive_config(args.input_drive_config)
     next_config = _compute_next_drive_config(report, current_config)
+
+    for path in (args.output_report, args.output_drive_config):
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 
     with open(args.output_report, "w", encoding="utf-8") as handle:
         json.dump(report, handle, indent=2, sort_keys=True)

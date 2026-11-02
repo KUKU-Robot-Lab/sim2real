@@ -185,7 +185,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--input",
-        default="/tmp/isaacsim_joint_error.csv",
+        default="logs/isaacsim/isaacsim_joint_error.csv",
         help="Path to CSV produced by joint_error_recorder",
     )
     parser.add_argument(

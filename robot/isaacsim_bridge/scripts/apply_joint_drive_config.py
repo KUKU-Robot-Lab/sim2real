@@ -6,7 +6,7 @@ Use in Isaac Sim Script Editor after the robot USD is loaded:
     Open this file in Isaac Sim Script Editor and run it.
 
 By default this reads:
-    /tmp/isaacsim_next_joint_drive_config.json
+    ~/rl_ws/sim2real/logs/isaacsim/isaacsim_next_joint_drive_config.json
 
 To use another file, edit CONFIG_PATH below before running.
 """
@@ -14,9 +14,11 @@ To use another file, edit CONFIG_PATH below before running.
 from __future__ import annotations
 
 import json
+import os
 
 
-CONFIG_PATH = "/tmp/isaacsim_next_joint_drive_config.json"
+# Script Editor 의 작업 폴더는 Isaac Sim 쪽이라 홈 기준으로 적는다
+CONFIG_PATH = os.path.expanduser("~/rl_ws/sim2real/logs/isaacsim/isaacsim_next_joint_drive_config.json")
 
 
 def _find_joint_prim(stage, robot_root: str, joint_name: str):

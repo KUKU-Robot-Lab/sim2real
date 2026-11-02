@@ -21,6 +21,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/../../config/dds/lan_profile.sh"
 SIM2REAL="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PPP="${PPP:-$(dirname "$SIM2REAL")/perception_plus_plus}"
 export SIM2REAL
-LOGDIR=/tmp/perception
+LOGDIR="$SIM2REAL/logs/perception"
 mkdir -p "$LOGDIR"
 source /opt/ros/humble/setup.bash

@@ -366,6 +366,7 @@ def overlay(rgb: np.ndarray, K: np.ndarray, holes: list[Hole], cands: dict, path
                     cv2.circle(vis, (int(u), int(v)), 1, col, -1)
     label = "  ".join(f"{'red' if i == 0 else 'green'}={n}" for i, n in enumerate(cands))
     cv2.putText(vis, label, (20, 40), 0, 0.9, (255, 255, 255), 2)
+    path.parent.mkdir(parents=True, exist_ok=True)   # 폴더가 없으면 imwrite 는 말없이 실패한다
     cv2.imwrite(str(path), vis)
 
 
@@ -423,7 +424,7 @@ def main(argv=None) -> int:
     ap.add_argument("--init", type=Path, default=DEFAULT_INIT, help="초기 외부 파라미터 yaml(투영 · 대응용)")
     ap.add_argument("--out", type=Path, default=None, help="--write 대상 yaml (기본: --init)")
     ap.add_argument("--write", action="store_true", help="camera 블록을 실제로 바꾼다(없으면 보고만)")
-    ap.add_argument("--png", type=Path, default=Path("/tmp/table_cad_overlay.png"), help="겹친 영상")
+    ap.add_argument("--png", type=Path, default=_HERE.parents[1] / "logs" / "calib" / "table_cad_overlay.png", help="겹친 영상")
     ap.add_argument("--usda", type=Path, default=ENV_USDA)
     ap.add_argument("--no-depth-tilt", action="store_true", help="깊이 상판 법선 제약을 빼고 PnP 만")
     ap.add_argument("--domain", type=int, default=_real_domain(), help="카메라 노드 도메인(실기 config/ros_domain.env · localhost 전용) — 셸의 ROS_DOMAIN_ID 를 믿지 않는다")

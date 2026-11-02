@@ -274,7 +274,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--capture-timeout", type=float, default=30.0, help="캡처 서브프로세스 워치독(s)")
     parser.add_argument("--width", type=int, default=None)
     parser.add_argument("--height", type=int, default=None)
-    parser.add_argument("--out-dir", default="/tmp/tiltsweep")
+    parser.add_argument("--out-dir", default=str(_HERE.parents[1] / "logs" / "calib" / "tiltsweep"))
     parser.add_argument("--settle-timeout", type=float, default=3.0)
     parser.add_argument("--tolerance-deg", type=float, default=1.0)
     parser.add_argument("--profile-acceleration", type=int, default=20)

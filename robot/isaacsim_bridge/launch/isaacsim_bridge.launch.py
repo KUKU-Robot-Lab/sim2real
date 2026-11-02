@@ -40,7 +40,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "recorder_output_path",
-                default_value="/tmp/isaacsim_joint_error.csv",
+                default_value="logs/isaacsim/isaacsim_joint_error.csv",
             ),
             DeclareLaunchArgument(
                 "recorder_real_joint_states_topic",

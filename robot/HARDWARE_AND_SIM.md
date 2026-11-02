@@ -317,7 +317,7 @@ ros2 run isaacsim_bridge joint_error_recorder \
   --ros-args \
   -p real_joint_states_topic:=/isaacsim/joint_states \
   -p sim_joint_states_topic:=/isaacsim/sim_joint_states \
-  -p output_path:=/tmp/isaacsim_joint_error.csv
+  -p output_path:=logs/isaacsim/isaacsim_joint_error.csv
 ```
 
 또는 런치에서 같이 실행:
@@ -326,7 +326,7 @@ ros2 run isaacsim_bridge joint_error_recorder \
 ros2 launch isaacsim_bridge isaacsim_bridge.launch.py \
   with_hardware:=true \
   with_recorder:=true \
-  recorder_output_path:=/tmp/isaacsim_joint_error.csv
+  recorder_output_path:=logs/isaacsim/isaacsim_joint_error.csv
 ```
 
 #### 2) 오차 리포트 생성
@@ -336,8 +336,8 @@ source /opt/ros/humble/setup.bash
 REPO_DIR="/path/to/sim2real_control"
 source "${REPO_DIR}/install/setup.bash"
 ros2 run isaacsim_bridge joint_tuning_report -- \
-  --input /tmp/isaacsim_joint_error.csv \
-  --output /tmp/isaacsim_joint_tuning_report.json
+  --input logs/isaacsim/isaacsim_joint_error.csv \
+  --output logs/isaacsim/isaacsim_joint_tuning_report.json
 ```
 
 이 도구는 joint별로 아래를 계산합니다.
@@ -356,15 +356,15 @@ source /opt/ros/humble/setup.bash
 REPO_DIR="/path/to/sim2real_control"
 source "${REPO_DIR}/install/setup.bash"
 ros2 run isaacsim_bridge joint_tuning_cycle -- \
-  --input-csv /tmp/isaacsim_joint_error.csv \
-  --output-report /tmp/isaacsim_joint_tuning_report.json \
-  --output-drive-config /tmp/isaacsim_next_joint_drive_config.json
+  --input-csv logs/isaacsim/isaacsim_joint_error.csv \
+  --output-report logs/isaacsim/isaacsim_joint_tuning_report.json \
+  --output-drive-config logs/isaacsim/isaacsim_next_joint_drive_config.json
 ```
 
 생성물:
 
-- `/tmp/isaacsim_joint_tuning_report.json`
-- `/tmp/isaacsim_next_joint_drive_config.json`
+- `logs/isaacsim/isaacsim_joint_tuning_report.json`
+- `logs/isaacsim/isaacsim_next_joint_drive_config.json`
 
 `isaacsim_next_joint_drive_config.json` 에는 joint별 다음 값이 들어갑니다.
 
@@ -376,7 +376,7 @@ ros2 run isaacsim_bridge joint_tuning_cycle -- \
 
 `robot/isaacsim_bridge/scripts/apply_joint_drive_config.py` 를 Isaac Sim Script Editor에서 실행합니다.
 
-이 스크립트는 기본적으로 `/tmp/isaacsim_next_joint_drive_config.json` 을 읽습니다.
+이 스크립트는 기본적으로 `logs/isaacsim/isaacsim_next_joint_drive_config.json` 을 읽습니다.
 
 ### 권장 튜닝 루프
 

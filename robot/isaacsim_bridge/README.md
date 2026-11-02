@@ -221,7 +221,7 @@ source "${REPO_DIR}/install/setup.bash"
 ros2 launch isaacsim_bridge isaacsim_bridge.launch.py \
   with_hardware:=true \
   with_recorder:=true \
-  recorder_output_path:=/tmp/isaacsim_joint_error.csv
+  recorder_output_path:=logs/isaacsim/isaacsim_joint_error.csv
 ```
 
 ## Isaac Sim 설정
@@ -270,7 +270,7 @@ Isaac Sim Script Editor에서 아래 파일을 열어 실행합니다.
 
 기본 입력 파일:
 
-- `/tmp/isaacsim_next_joint_drive_config.json`
+- `logs/isaacsim/isaacsim_next_joint_drive_config.json`
 
 ## 오차 기록 및 튜닝
 
@@ -286,12 +286,12 @@ ros2 run isaacsim_bridge joint_error_recorder \
   --ros-args \
   -p real_joint_states_topic:=/isaacsim/joint_states \
   -p sim_joint_states_topic:=/isaacsim/sim_joint_states \
-  -p output_path:=/tmp/isaacsim_joint_error.csv
+  -p output_path:=logs/isaacsim/isaacsim_joint_error.csv
 ```
 
 출력:
 
-- `/tmp/isaacsim_joint_error.csv`
+- `logs/isaacsim/isaacsim_joint_error.csv`
 - `/isaacsim/joint_error_summary`
 
 ### 2) 튜닝 리포트 생성
@@ -303,13 +303,13 @@ source /opt/ros/humble/setup.bash
 REPO_DIR="/path/to/sim2real_control"
 source "${REPO_DIR}/install/setup.bash"
 ros2 run isaacsim_bridge joint_tuning_report -- \
-  --input /tmp/isaacsim_joint_error.csv \
-  --output /tmp/isaacsim_joint_tuning_report.json
+  --input logs/isaacsim/isaacsim_joint_error.csv \
+  --output logs/isaacsim/isaacsim_joint_tuning_report.json
 ```
 
 출력:
 
-- `/tmp/isaacsim_joint_tuning_report.json`
+- `logs/isaacsim/isaacsim_joint_tuning_report.json`
 
 ### 3) 자동 1회 튜닝 사이클
 
@@ -323,15 +323,15 @@ source /opt/ros/humble/setup.bash
 REPO_DIR="/path/to/sim2real_control"
 source "${REPO_DIR}/install/setup.bash"
 ros2 run isaacsim_bridge joint_tuning_cycle -- \
-  --input-csv /tmp/isaacsim_joint_error.csv \
-  --output-report /tmp/isaacsim_joint_tuning_report.json \
-  --output-drive-config /tmp/isaacsim_next_joint_drive_config.json
+  --input-csv logs/isaacsim/isaacsim_joint_error.csv \
+  --output-report logs/isaacsim/isaacsim_joint_tuning_report.json \
+  --output-drive-config logs/isaacsim/isaacsim_next_joint_drive_config.json
 ```
 
 출력:
 
-- `/tmp/isaacsim_joint_tuning_report.json`
-- `/tmp/isaacsim_next_joint_drive_config.json`
+- `logs/isaacsim/isaacsim_joint_tuning_report.json`
+- `logs/isaacsim/isaacsim_next_joint_drive_config.json`
 
 ### 4) 권장 튜닝 순서
 

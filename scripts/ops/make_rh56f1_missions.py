@@ -557,7 +557,7 @@ def _run(kind: str) -> dict:
              f"탐색(첫 장 ~6 s). x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 저 PC 의 {HOLDER_POSES} 을 갱신. "
              f"파이썬은 저 PC 의 {REMOTE_PY}(없으면 scripts/vision/venv_setup.sh)",
              _on_perception_pc(f"{REMOTE_PY} scripts/nodes/cup_holder_pose_node.py --write --out {HOLDER_POSES} "
-                               f"--extrinsics {CAMERA_EXTRINSICS} > /tmp/perception/cup_holders.log 2>&1 & P=$!; "
+                               f"--extrinsics {CAMERA_EXTRINSICS} > logs/perception/cup_holders.log 2>&1 & P=$!; "
                                "trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P"), background=True),
         _cmd("★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y ≈ l +0.16 / r −0.06 / r 바깥 −0.28(간격 0.22 · 10.27 A1 배치) · stable ✓ 인가 "
              f"(어긋나면 {RECALIB_HINT})",
@@ -1058,9 +1058,9 @@ def _vision_record(name: str, objs: list, hz: float = 5.0) -> dict:
                     ["python3", "{repo}/scripts/nodes/vision_recorder.py", "--name", name,
                      "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS, *rate, "--objects", *objs], background=True)
     # 원격: ssh -tt 를 콘솔이 끝내면 저쪽 셸이 HUP 를 받는다 → 기록기에 TERM(마무리 · CSV 닫기) 뒤 기다린다.
-    # 기록은 저 PC 의 sim2real/logs/vision_runs 에 남는다(로그는 /tmp/perception/vrec_<이름>.log).
+    # 기록은 저 PC 의 sim2real/logs/vision_runs 에 남는다(로그는 logs/perception/vrec_<이름>.log).
     rec = (f"{REMOTE_PY} scripts/nodes/vision_recorder.py --name {name} --camera-extrinsics {CAMERA_EXTRINSICS} {' '.join(rate)} "
-           f"--objects {' '.join(objs)} > /tmp/perception/vrec_{name}.log 2>&1 & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P")
+           f"--objects {' '.join(objs)} > logs/perception/vrec_{name}.log 2>&1 & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P")
     return _cmd(f"영상 · FP++ 실시간 좌표 기록({PERCEPTION_HOST}, {hz:g} Hz JPEG · live_pose CSV) → 저 PC 의 logs/vision_runs",
                 _on_perception_pc(rec), background=True)
 

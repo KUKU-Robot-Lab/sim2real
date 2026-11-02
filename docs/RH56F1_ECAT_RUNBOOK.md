@@ -118,7 +118,7 @@ bash deploy/policy_control/tools/rh56f1_hand_down.sh right
 
 ```bash
 bash deploy/policy_control/tools/rh56f1_hand_up.sh right
-tail -f /tmp/rh56f1_hand/right.log      # "[master] OP" 가 나오면 성공
+tail -f logs/rh56f1_hand/right.log      # "[master] OP" 가 나오면 성공
 ```
 - 3 s 안에 OP 가 안 되면 `[master] ESC 레지스터: …` 줄이 찍힌다(DL · AL · AL event · SM2/SM3 · 워치독 · DC). 그 줄을 보고 판단.
 - 안 되면 실험을 하나씩(각각 내린 뒤 다시 띄운다):

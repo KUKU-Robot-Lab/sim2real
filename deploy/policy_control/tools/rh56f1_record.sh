@@ -16,8 +16,8 @@
 # 시험용 덮어쓰기: RH56F1_RECORD_DIR(PID) · RH56F1_RECORD_ENV(ROS 환경 명령) · RH56F1_RECORD_OUT(bag 위치) · RH56F1_RECORD_NO_INFO.
 set -eo pipefail
 CMD=${1:?start|stop}; NAME=${2:-}
-ROOT=${RH56F1_RECORD_DIR:-/tmp/rh56f1_record}; mkdir -p "$ROOT"
 SIM2REAL="$(cd "$(dirname "$0")/../../.." && pwd)"
+ROOT=${RH56F1_RECORD_DIR:-$SIM2REAL/logs/rh56f1_record}; mkdir -p "$ROOT"
 
 stop_one() {   # $1 = 이름 디렉터리
   local d=$1 k PID
@@ -39,6 +39,7 @@ stop_one() {   # $1 = 이름 디렉터리
     source /opt/ros/humble/setup.bash
     for k in arm hand; do ros2 bag info "$(cat "$d/last_out")/$k" 2>/dev/null | grep -E "Duration|Messages" || true; done
   fi
+  rm -f "$d/last_out"   # 폴더가 재부팅 뒤에도 남는다 — 이름 없는 stop 이 끝난 기록을 다시 요약하지 않게
 }
 
 case "$CMD" in

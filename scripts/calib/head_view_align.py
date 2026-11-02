@@ -10,7 +10,7 @@ pan ID 1 · tilt ID 2 · 1M 로 이미 맞았지만 원점(Homing Offset)은 조
   컬러 + 컬러 정렬 깊이[mm] + K. 목표 틱은 config/head_home.yaml 의 deg(pan 0 · tilt −20)를 틱으로 바꾼 값.
 
   python3 scripts/calib/head_view_align.py --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
-  → 한 줄씩: Δ숙임 · Δ옆기울기 · Δ거리 · Δ좌우(px) · pan/tilt 틱 · 제안 offset.  겹친 영상은 --overlay 파일(기본 /tmp/head_align.png)
+  → 한 줄씩: Δ숙임 · Δ옆기울기 · Δ거리 · Δ좌우(px) · pan/tilt 틱 · 제안 offset.  겹친 영상은 --overlay 파일(기본 logs/calib/head_align.png)
 
 숙임 · 옆 기울기 · 거리는 깊이로 맞춘 테이블 평면에서 나온다(scripts/calib/depth_table_plane.py 의 RANSAC).
 좌우(pan)는 평면으로는 안 보인다 — 기준 영상과의 ORB 특징 대응에서 가로 이동의 중앙값을 낸다. 테이블 판이 달라 대응이
@@ -135,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--baud", type=int, default=1_000_000)
     ap.add_argument("--ref", type=Path, default=DEFAULT_REF)
     ap.add_argument("--home", type=Path, default=DEFAULT_HOME)
-    ap.add_argument("--overlay", type=Path, default=Path("/tmp/head_align.png"))
+    ap.add_argument("--overlay", type=Path, default=REPO / "logs" / "calib" / "head_align.png")
     ap.add_argument("--period", type=float, default=1.0)
     ap.add_argument("--count", type=int, default=0, help="0 = Ctrl-C 까지")
     args = ap.parse_args(argv)
@@ -163,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Δ숙임 {m['pitch_deg'] - ref_m['pitch_deg']:+6.1f}° · Δ옆 {m['roll_deg'] - ref_m['roll_deg']:+5.1f}° · "
                   f"Δ거리 {m['dist_m'] - ref_m['dist_m']:+.3f} m · Δ좌우 {'-' if du is None else f'{du:+.0f} px'} "
                   f"(대응 {nm}) · 평면 {m['inliers']:.2f} | pan {ticks['pan']} · tilt {ticks['tilt']}", flush=True)
+            args.overlay.parent.mkdir(parents=True, exist_ok=True)   # 폴더가 없으면 imwrite 는 말없이 실패한다
             cv2.imwrite(str(args.overlay), cv2.addWeighted(ref["rgb"], 0.5, rgb, 0.5, 0)[:, :, ::-1])
             n += 1
             time.sleep(args.period)

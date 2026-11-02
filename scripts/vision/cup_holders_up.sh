@@ -4,7 +4,7 @@
 # 내릴 때는 cup_holders_down.sh — 이 스크립트가 남긴 PID 파일의 프로세스만 끈다(패턴 kill 안 함).
 source "$(dirname "$0")/common.sh"
 PIDFILE="$LOGDIR/cup_holders.pid"
-if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then echo "cup holders already up (pid $(cat "$PIDFILE"))"; exit 0; fi
+if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null && tr '\0' ' ' <"/proc/$(cat "$PIDFILE")/cmdline" | grep -q cup_holder_pose_node.py; then echo "cup holders already up (pid $(cat "$PIDFILE"))"; exit 0; fi
 # 10.13 vision-3090 은 시스템 python3 의 scipy 가 깨져 있다(scripts/vision/venv_setup.sh) — .venv 가 있으면 그것을 쓴다.
 #       상대 경로 인자(--out config/… · --extrinsics config/…)는 저장소 기준이다
 PY="$SIM2REAL/.venv/bin/python"; [ -x "$PY" ] || PY=python3

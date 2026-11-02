@@ -39,7 +39,7 @@ from policy_control import rh_aglt as A  # noqa: E402
 
 SERVER = "server"
 HDGP = "~/rl_ws/our_source/s2r_simtraj/hdgp_51094780"      # neo03 학습 커밋 고정본(README 참고)
-JOBS = "/tmp/s2r_simtraj"
+JOBS = "rl_ws/sim2real/logs/s2r_simtraj"     # server 홈 기준(ssh · scp 는 홈에서 시작한다)
 OUT = _paths.SIM2REAL / "logs" / "sim_traj"
 SIDE_KEY = {"left": "l", "right": "r"}
 CLOSE_RISE_RAD = 0.08        # 손가락(검지~새끼) 목표가 접근 중 값보다 이만큼 굽기 시작하면 닫기 시작
@@ -284,7 +284,7 @@ def respec(spec: dict, x: float, y: float, trials: int) -> dict:
 
 def server_plan(a, pdir: Path, c: A.RaContract, ck: Path, x: float, y: float, out: Path) -> Path:
     """server 에 정책을 올리고 prep → spec 고침 → hook(백그라운드) → 끝나면 받아 온다. 반환 = 받은 폴더."""
-    job = f"{JOBS}/{out.name}"
+    job = f"{ssh('pwd', 60).strip()}/{JOBS}/{out.name}"   # prep · job.sh 는 cd {a.hdgp} 뒤에 돌므로 절대 경로
     side = SIDE_KEY[c.sides["arm"].side]
     # --ckpt 를 주면 grid eval 은 --ep 를 쓰지 않는다(필수 인자라 받기만 함). 10.19 이름 바꾼 approach_r.pth 처럼
     # _ep_<n>_ 이 없는 이름은 0 을 넘긴다.

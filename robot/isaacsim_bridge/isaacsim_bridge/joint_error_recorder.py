@@ -30,7 +30,7 @@ class JointErrorRecorder(Node):
 
         self.declare_parameter("real_joint_states_topic", "/isaacsim/joint_states")
         self.declare_parameter("sim_joint_states_topic", "/isaacsim/sim_joint_states")
-        self.declare_parameter("output_path", "/tmp/isaacsim_joint_error.csv")
+        self.declare_parameter("output_path", "logs/isaacsim/isaacsim_joint_error.csv")
         self.declare_parameter("sample_period_sec", 0.05)
         self.declare_parameter("max_state_age_sec", 0.25)
         self.declare_parameter("tracked_joints", [])

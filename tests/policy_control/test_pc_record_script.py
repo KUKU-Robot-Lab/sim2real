@@ -58,3 +58,12 @@ def test_restarting_the_same_name_finishes_its_leftover_first(env):
     subprocess.run(["bash", str(SCRIPT), "start", "aglt_right"], env=env, capture_output=True, timeout=30)
     time.sleep(0.3)
     assert not any(map(_alive, old)) and all(map(_alive, _pids(env, "aglt_right")))
+
+
+def test_stop_forgets_the_finished_recording(env):
+    # 폴더가 logs/ 에 남으므로 이름 없는 stop 이 끝난 기록마다 bag info 를 다시 돌리면 안 된다
+    subprocess.run(["bash", str(SCRIPT), "start", "aglt_right"], env=env, capture_output=True, timeout=30)
+    last_out = Path(env["RH56F1_RECORD_DIR"]) / "aglt_right" / "last_out"
+    assert last_out.exists()
+    subprocess.run(["bash", str(SCRIPT), "stop", "aglt_right"], env=env, capture_output=True, timeout=30)
+    assert not last_out.exists()
