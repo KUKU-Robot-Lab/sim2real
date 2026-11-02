@@ -136,7 +136,9 @@ class FailureDetector:
             if err is not None and float(err) > SETTING_TOL_M and not lifted:
                 return F.POSE_MISMATCH
         elif b.kind == "place":
-            if s.get("cup_in_holder") is False or s.get("hand_empty") is False:
+            # ★11.02 sim_e2e: 놓은 뒤 손이 컵에서 못 빠진 채 max_steps 가 차면(withdraw_timeout) 노드는 clear 와 같이
+            #   stop · placed 로 끝난다 — 그대로 복귀 궤적을 돌리면 손이 컵을 친다(sim ep4000 16건 중 8건). safe stop.
+            if s.get("cup_in_holder") is False or s.get("hand_empty") is False or s.get("outcome") == "withdraw_timeout":
                 return F.PLACE_FAILED
         elif b.kind == "pour":
             if s.get("dropped"):

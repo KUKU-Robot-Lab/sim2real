@@ -468,6 +468,25 @@ def test_the_detector_reads_refusal_text_and_signals():
         is F.HOLDER_NOT_FOUND
 
 
+def test_a_place_that_could_not_withdraw_the_hand_is_a_place_failure():
+    """★11.02 sim_e2e: 놓은 뒤 손이 컵에서 못 빠진 채 max_steps 가 차도 노드는 stop · placed 로 끝난다(phase done).
+    그대로 복귀 궤적을 돌리면 손이 컵을 치므로 PLACE_FAILED → 복구표에 없어 safe stop."""
+    ep, d = _ep(), FailureDetector()
+    place = ep.nodes[3]
+
+    def code(**sig):
+        return d.evaluate(ep, place, [NodeResult("completed", "placed — …", role="rh_place_r", signals=sig)])[0]
+
+    ok = {"hand_empty": True, "cup_in_holder": True, "phase": "done"}
+    assert code(**ok, outcome="clear") is F.NONE
+    assert code(**ok) is F.NONE                                      # withdraw 없는 옛 설정 — outcome None
+    assert code(**ok, outcome="withdraw_timeout") is F.PLACE_FAILED
+    assert code(hand_empty=True, phase="done", outcome="withdraw_timeout") is F.PLACE_FAILED   # 홀더 판정 보류여도
+    ep2 = _ep()
+    ex = FakeExecutor(ep2, inject={"place_cup": [F.PLACE_FAILED]})
+    assert EpisodeManager(ep2, ex, approve=_yes()).run() == FAILURE   # 재시도 없이 멈춘다
+
+
 def test_a_timeout_after_the_grasp_is_not_retried_from_home():
     ep = S.parse({**yaml.safe_load((EPISODES / "pick_place_right.yaml").read_text()), "failure_policy": {"default": 2}})
     m = EpisodeManager(ep, FakeExecutor(ep, inject={"place_cup": [F.POLICY_TIMEOUT]}), approve=_yes())

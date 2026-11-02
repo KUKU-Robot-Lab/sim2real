@@ -588,7 +588,8 @@ class RosExecutor:
             pl = st.get("place") or {}
             empty = pl.get("phase") == "done"
             sig = {"hand_empty": empty, "opened": pl.get("opened"), "tact_max": pl.get("tact_max"), "jf_max": pl.get("jf_max"),
-                   "phase": pl.get("phase"), "ready_carry": pl.get("ready_carry")}      # ★10.25 이송 결과(없으면 None)
+                   "phase": pl.get("phase"), "ready_carry": pl.get("ready_carry"),      # ★10.25 이송 결과(없으면 None)
+                   "outcome": pl.get("outcome")}       # ★11.02 빼기 결과 clear | withdraw_timeout(episode_failure 가 본다)
             pos = self._fresh_object(p.source_object)
             hold = self.holders.get(p.holder_id) if p.holder_id is not None else None
             if pos is not None and hold is not None:
