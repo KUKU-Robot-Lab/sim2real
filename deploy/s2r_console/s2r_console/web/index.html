@@ -24,6 +24,7 @@
       <button id="tab-button-setting" class="btn" role="tab" data-act="tab" data-arg="setting">setting</button>
       <button id="tab-button-control" class="btn" role="tab" data-act="tab" data-arg="control">control</button>
       <button id="tab-button-policy" class="btn" role="tab" data-act="tab" data-arg="policy">policy</button>
+      <button id="tab-button-eval" class="btn" role="tab" data-act="tab" data-arg="eval">eval · 실기 평가</button>
     </nav>
     <section id="tab-setting" role="tabpanel"><div id="setting-actions" class="action-grid"></div><div id="management" role="status"></div>
   <section id="control" class="control" hidden aria-label="제어 창">
@@ -68,6 +69,40 @@
       <details class="panel fold" id="fold-per"><summary class="panel-head"><h2>인지 상세</h2><span class="meta">물체 고르기 · 좌표 · 인지 노드 · 학습 영역</span></summary>
         <div id="perception-controls"></div><div id="object-cards" class="object-rows"></div>
         <div id="perception-nodes" class="pnodes"></div><div id="fpp" class="fpp-detail"></div></details>
+    </section>
+    <!-- ★11.02 실기 평가: 칵테일 에피소드 고르기 → 시작 · 정지(기존 길: 미션 단계 → 연속 실행 승인) → 회차 기록(CSV).
+         폼은 여기 고정이다 — 상황판이 0.5 s 마다 다시 그려도 입력 중인 값이 지워지지 않게 JS 는 값과 목록만 바꾼다. -->
+    <section id="tab-eval" role="tabpanel" hidden aria-label="실기 평가">
+      <div class="ev">
+        <section class="ev-block" aria-labelledby="ev-h-ep">
+          <h2 id="ev-h-ep" class="ev-h">에피소드</h2>
+          <div id="ev-cards" class="ev-cards" role="radiogroup" aria-labelledby="ev-h-ep"></div>
+        </section>
+        <section class="ev-block ev-runbox" aria-label="실행">
+          <div id="ev-run" class="ev-run"></div>
+        </section>
+        <section class="ev-block" aria-labelledby="ev-h-rec">
+          <div class="ev-headrow">
+            <h2 id="ev-h-rec" class="ev-h">오늘 기록</h2>
+            <span id="ev-summary" class="ev-summary" role="status" aria-atomic="true"></span>
+            <label class="ev-date">날짜 <input type="date" id="ev-date"></label>
+          </div>
+          <form id="ev-form" class="ev-form" autocomplete="off" aria-label="회차 기록">
+            <div id="ev-form-head" class="ev-form-head"></div>
+            <div class="ev-result" role="radiogroup" aria-label="결과">
+              <button type="button" class="ev-res res-ok" role="radio" aria-checked="false" data-act="ev-result" data-arg="성공">성공</button>
+              <button type="button" class="ev-res res-bad" role="radio" aria-checked="false" data-act="ev-result" data-arg="실패">실패</button>
+              <button type="button" class="ev-res res-mute" role="radio" aria-checked="false" data-act="ev-result" data-arg="중단">중단</button>
+            </div>
+            <label class="ev-field">실패 단계<select id="ev-fail-stage"><option value="">없음</option></select></label>
+            <label class="ev-field">실패 유형<input type="text" id="ev-fail-type" list="ev-fail-types" maxlength="80" placeholder="예: 놓지 못함"></label>
+            <datalist id="ev-fail-types"></datalist>
+            <label class="ev-field ev-note">메모<input type="text" id="ev-note" maxlength="500"></label>
+            <button type="submit" id="ev-save" class="btn btn-primary ev-save" disabled>저장</button>
+          </form>
+          <div id="ev-table" class="ev-table"></div>
+        </section>
+      </div>
     </section>
   </section>
   <section id="common-bar" class="common-bar" aria-label="공통 제어" hidden><b>control</b><div id="common-controls" class="action-grid"></div></section>

@@ -1,0 +1,54 @@
+# 칵테일 1차 에피소드 — 순서 B 의 oneshot 세팅판(★11.02 사용자 지시, sim_e2e 경유 "지금 oneshot 세팅(e2e 191/256 = 74.6 %)을 실기에서
+#   그대로"). 순서 · 궤적 · 홀더 배정(파랑 1 · 분홍 2 · shaker 0) · 분홍 상자 · 실패 정책은 cocktail_1b v5 와 같다. 다른 점은 놓기 정책 둘뿐:
+#   · rh_place_r = rh56f1/place/right_n10_e4000  (newton_10_r ep4000, 물체 1종 source240_real · 래치 0.04 · cup_obs_mode 'true' → 계약 cup_obs live)
+#   · rh_place_l = rh56f1/place/left_n09_e3800 (newton_09_l ep3800, 물체 1종 shaker_c_real · 래치 0.07 → 0.04)
+#   오른손 ep1000/ep4000 비교용으로 파일이 둘(cocktail_1c_e1000 · cocktail_1c_e4000)이다 — 콘솔 '실기 평가' 탭에서 고른다.
+#   ★cup_obs live: 두 정책은 actor 컵 자세를 sim 참값으로 학습했다. 실기는 FP++ 생방송(신선하면 그 값, 끊기면 손바닥 FK ⊗ 넘김 묶음).
+#   학습이 본 적 없는 지연 · 가림이 들어오므로 attached 로 학습한 n07 보다 흔들릴 수 있다(fake 재생으로 먼저 봄).
+#   ★왼손 래치 0.04: 셰이커 잡는 자세의 손끝 높이는 실기에서 다시 잰다(place_lab 지적) — 그 전에는 place_shaker 가 래치를 못 걸 수 있다.
+#   실행기 대기(tilt 끝 4.0 s · 이송 끝 3.0 s)는 sim oneshot 실행기 값이고 실기는 e02668d 의 팔 정지 대기(/joint_states)가 대신한다.
+episode: {name: cocktail_1c_e4000, version: 1}   # v1(11.02): 1b v5 + 놓기 정책 right_n10_e4000 · left_n09_e3800
+objects:
+  SRC_BLUE: {topic: /objects/source240b_blue/pose}
+  # ★10.28 순서 B — 처음부터 탁자에 있다. ★10.29 구멍 옆 v1 상자만 받는다 · FP++ 는 분홍만 든 묶음 source240p(cocktail_1 머리말)
+  SRC_PINK: {topic: /objects/source240p_pink/pose, region: {x: [0.26, 0.30], y: [-0.365, -0.340]}}
+  SHAKER: {topic: /objects/shaker_c_orange/pose}
+holders: {HOLDER_0: 0, HOLDER_1: 1, HOLDER_2: 2}
+holder_poses: config/cup_holder_poses_5090_v1.yaml
+policies:
+  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/right_rcg04}
+  rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg04}
+  rh_place_r: {policy: rh56f1/place/right_n10_e4000, kind: place, side: right}
+  rh_place_l: {policy: rh56f1/place/left_n09_e3800, kind: place, side: left}
+trajectories:
+  go_home: {kind: rehome, sides: [right, left]}
+  go_home_r: {kind: rehome, sides: [right]}                         # 왼손은 shaker 를 든 채
+  to_tilt_start_r: {kind: carry, sides: [right], asset: tilt/base_arc6}
+  to_tilt_start_l: {kind: carry, sides: [left], asset: tilt/base_arc6}
+  tilt: {kind: tilt, sides: [right, left], asset: tilt/traj_v10, rate_scale: 1.0, cup: "240"}   # D4 궤적(잔차 0) + 복귀 = tilt 시작 자세로 · 붓는 컵 source240
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 판단한다(컵을 쥔 채 rehome 은 거부된다).
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}                                     # 파랑 · 분홍 · shaker — 분홍이 상자 밖이면 여기서 정지
+  # 1) 파랑 붓기 — 분홍은 탁자에 서 있다
+  - {id: grasp_blue, type: policy, name: rh_aglt_r, target_object: SRC_BLUE, policy_object: source240_real, expect: {right_hand: SRC_BLUE}}
+  - {id: grasp_shaker, type: policy, name: rh_aglt_l, target_object: SHAKER, policy_object: shaker_c_real,
+     expect: {right_hand: SRC_BLUE, left_hand: SHAKER}}
+  - {id: to_tilt_start_r1, type: trajectory, name: to_tilt_start_r}
+  - {id: to_tilt_start_l, type: trajectory, name: to_tilt_start_l, expect: {pose: SETTING}}
+  - {id: tilt_blue, type: trajectory, name: tilt, expect: {pose: SETTING, blue_poured: true}}
+  - {id: place_blue, type: policy, name: rh_place_r, source_object: SRC_BLUE, target_holder: HOLDER_1, policy_object: source240_real,
+     expect: {right_hand: EMPTY, left_hand: SHAKER, blue_placed: true}}
+  - {id: home_r_after_blue, type: trajectory, name: go_home_r, expect: {right_hand: EMPTY, left_hand: SHAKER}}
+  # 2) 분홍 붓기(왼손은 tilt 시작 자세에서 shaker 를 든 채 기다린다)
+  - {id: grasp_pink, type: policy, name: rh_aglt_r, target_object: SRC_PINK, policy_object: source240_real,
+     expect: {right_hand: SRC_PINK, left_hand: SHAKER}}
+  - {id: to_tilt_start_r2, type: trajectory, name: to_tilt_start_r, expect: {pose: SETTING}}
+  - {id: tilt_pink, type: trajectory, name: tilt, expect: {pose: SETTING, pink_poured: true}}
+  # 3) 정리 — ★10.29 홀더 2 는 n07 학습 범위 y 에서 6.0 cm 밖 · 사용자 2번 결정으로 이 job 만 7 cm 까지 받는다(cocktail_1 머리말)
+  - {id: place_pink, type: policy, name: rh_place_r, source_object: SRC_PINK, target_holder: HOLDER_2, policy_object: source240_real,
+     holder_tol_m: 0.07, expect: {right_hand: EMPTY, left_hand: SHAKER, pink_placed: true}}
+  - {id: place_shaker, type: policy, name: rh_place_l, source_object: SHAKER, target_holder: HOLDER_0, policy_object: shaker_c_real,
+     expect: {right_hand: EMPTY, left_hand: EMPTY, shaker_placed: true}}
+  - {id: go_home_end, type: trajectory, name: go_home, expect: {pose: HOME}}
+  - {id: done, type: terminal, result: SUCCESS}

@@ -186,6 +186,12 @@ class PlaceNode(PourFjNode):
     # ---------------------------------------------------------------- 고리
     def _cup_for(self, role: str, advance: bool):
         if getattr(self.chain, "rel", None) is not None:
+            if self.contract.cup_obs == "live":            # ★11.02 'true' 런 — FP++ 신선분을 사슬에 넣고, 없으면 FK(끊김 · 가림)
+                def live(palm_pos, palm_R, _tact, _st):
+                    got = self._fresh_cup(role)
+                    self.chain.live_cup = None if got is None else (np.asarray(got[0], float), np.asarray(got[1], float))
+                    return self.chain.cup_obs(np.asarray(palm_pos, float), np.asarray(palm_R, float))
+                return live
             return lambda palm_pos, palm_R, _tact, _st: self.chain.cup_from_palm(palm_pos, palm_R)
         if self._bundle is not None:                       # ★10.22 reset 측정 — 컵 = 손바닥 FK ⊗ 넘김 묶음(FP++ 안 봄)
             from policy_control.place_latch_est import _quat_mul

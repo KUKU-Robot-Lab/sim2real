@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from typing import Mapping
 
+from . import eval_log as EV
 from .console import Console, ConsoleError
 from .lease import LeaseError
 
@@ -53,6 +54,8 @@ def handle(console: Console, method: str, path: str, *, query: Mapping[str, str]
         return _fail(409, str(exc))
     except ConsoleError as exc:
         return _fail(exc.code, str(exc), exc.reasons)
+    except EV.EvalError as exc:
+        return _fail(400, str(exc))
 
 
 def _get(console: Console, path: str, query: Mapping[str, str]) -> tuple[int, dict]:
@@ -60,6 +63,8 @@ def _get(console: Console, path: str, query: Mapping[str, str]) -> tuple[int, di
         return 200, console.snapshot()
     if path == "/api/log":
         return 200, {"ok": True, "key": query.get("key", ""), "text": console.log_tail(query.get("key", ""))}
+    if path == "/api/eval/rounds":                     # ★11.02 eval 탭 — 날짜별 회차 기록(?date=YYYY-MM-DD, 없으면 오늘)
+        return 200, EV.rounds_view(console.repo, query.get("date") or None)
     return _fail(404, f"없는 경로: {path}")
 
 
@@ -88,6 +93,15 @@ def _write(console: Console, method: str, path: str, data: dict, token: str | No
     if path == "/api/episode/stop":                      # 에피소드 정지도 lease 없이(10.04) — runner 가 없으면 떠 있는 실행기 전부
         console.episode("stop", operator=client, runner=str(data.get("runner", "") or ""))
         return 202, ok
+
+    if path == "/api/eval/rounds":                     # ★11.02 회차 기록 저장도 lease 없이 — 로봇에 아무것도 보내지 않는다(기록일 뿐)
+        if method != "POST":
+            return _fail(405, "POST 만 지원한다")
+        row = EV.append_round(console.repo, data)
+        if console.session is not None:
+            stage = f" · {row['fail_stage']}" if row["fail_stage"] else ""
+            console.session.event("eval", f"회차 {row['round']} 기록 · {row['episode']} · {row['result']}{stage} ({client})")
+        return 200, {"ok": True, "row": row}
 
     # ── 나머지는 lease 가 있어야 ────────────────────────────────────────
     held = console.lease.check(token)

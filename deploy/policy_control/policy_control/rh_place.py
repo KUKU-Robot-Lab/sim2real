@@ -72,6 +72,10 @@ class PlaceContract(A.RaContract):
     # ★10.25 준비 자세 이송(place_ready_carry): 이송 끝 뱅크로 학습한 런(newton_07_r · 06_l) — 리셋 뒤 Mover 로 슬롯 위까지 옮긴 다음
     #   정책(RNN · 직전 행동 · 래치 추정기 0 에서). 빈 값 = 이송 없음(들기 끝에서 바로 정책).
     ready_carry: dict = field(default_factory=dict)
+    # ★11.02 actor 컵 자세 출처(hdgp cup_obs_mode): "attached" = 손바닥 FK ⊗ 붙인 상대 자세(이 필드 전 계약 전부) |
+    #   "live" = 'true' 런(매 스텝 sim 참값으로 학습, newton_10_r · 09_l) — 실기는 참값이 없어 FP++ 생방송(신선하면 그 값, 끊기면
+    #   손바닥 FK ⊗ 붙인 자세, 10.21 "추정기 전환은 FP++ 끊김 때만"). 래치 입력도 같은 자세. 준비 이송(ready_carry)은 FK 그대로.
+    cup_obs: str = "attached"
 
 
 #: ★10.22 hdgp _nb_obs 순서 — +y 이웃(슬롯 0) (dx, dy, 있음), −y 이웃(슬롯 2) (dx, dy, 있음)
@@ -80,9 +84,37 @@ LATCH_DIR = "latch"
 ATTACH_SOURCES = ("fpp", "bundle")
 
 
+CUP_OBS_MODES = {"attached": "attached", "true": "live"}     # hdgp cup_obs_mode → 계약 cup_obs ("fpp" 런은 받지 않는다)
+
+
 def is_rh_place_run(env: Mapping) -> bool:
-    return ("target_holders" in env and str(env.get("cup_obs_mode", "")) == "attached"
+    return ("target_holders" in env and str(env.get("cup_obs_mode", "")) in CUP_OBS_MODES
             and int(env.get("hold_steps", -1)) == 0 and str(env.get("profile_name", "")).startswith("rh56f1_"))
+
+
+def bank_holder_range(bank: Path, targets, shift: float) -> tuple[dict, list[int]]:
+    """★11.02 뱅크가 홀더를 덮는 런(occ_from_bank, 10.30 place_lab): 학습 홀더 자리 = 뱅크 holder_pos(목표 홀더) ± bank_layout_shift.
+    env.yaml holder_ys 로 계산한 범위는 이런 런에서 틀린다(newton_09_l: [0.187, 0.373] 인데 홀더 0 은 y 0.163 → 노드 시작 거부).
+    뱅크에 target 이 있으면 그 번호들이 목표(env target_holders 보다 우선). (범위, 목표 번호들)."""
+    z = np.load(bank, allow_pickle=True)
+    hp = np.asarray(z["holder_pos"], float)                    # (N, H, 3)
+    t = sorted(set(int(v) for v in np.asarray(z["target"], int).tolist())) if "target" in z.files else [int(v) for v in targets]
+    if not t:
+        raise RhPlaceError(f"뱅크 {bank.name}: 목표 홀더가 없다")
+    sel = np.concatenate([hp[:, k, :2] for k in t], axis=0)
+    lo, hi = sel.min(axis=0) - float(shift), sel.max(axis=0) + float(shift)
+    return {"x": [round(float(lo[0]), 4), round(float(hi[0]), 4)], "y": [round(float(lo[1]), 4), round(float(hi[1]), 4)]}, t
+
+
+def find_bank(env: Mapping, run_dir: Path) -> Path:
+    """start_bank_path 는 학습 호스트 경로다 — 정책 폴더 bank/<이름> 사본을 먼저, 없으면 그 경로."""
+    p = Path(str(env.get("start_bank_path", "")))
+    local = Path(run_dir) / "bank" / p.name
+    if local.is_file():
+        return local
+    if p.is_file():
+        return p
+    raise RhPlaceError(f"occ_from_bank 런인데 뱅크를 못 읽는다 — {local} 에 {p.name} 사본을 둔다(git 밖, README 에 md5)")
 
 
 RELEASE_RULES = ("contact", "block_follow_open")
@@ -209,9 +241,10 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
     env_p = Path(run_dir) / "params" / "env.yaml"
     env = A.read_env(env_p)
     if not is_rh_place_run(env):
-        raise RhPlaceError(f"{env_p}: rh_place 런이 아니다(target_holders · cup_obs_mode attached · hold 0)")
+        raise RhPlaceError(f"{env_p}: rh_place 런이 아니다(target_holders · cup_obs_mode attached|true · hold 0)")
     if attach not in ATTACH_SOURCES:
         raise RhPlaceError(f"attach {attach!r} — {ATTACH_SOURCES}")
+    cup_obs = CUP_OBS_MODES[str(env["cup_obs_mode"])]
     latch = latch_obs_of(env)
     base = A.build_from_env(Path(run_dir), checkpoint, right_profile, urdf, asset=asset, env=env, extra_obs=1 if latch else 0)
     nb = list(NB_OBS) if bool(env.get("neighbor_obs", False)) else []
@@ -257,8 +290,19 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
                        latch_obs=latch, release_rule=rule, release_open_rad=open_rad, release_max_tilt_deg=max_tilt, release_open_zero_skip=zero_skip,
                        carry={} if carry is None else carry.as_dict(),
                        extra_actor_obs=(["latch"] if latch else []) + nb,
-                       obs_dim=obs_dim, attach_source=attach, holder_range=holder_range_of(env),
+                       obs_dim=obs_dim, attach_source=attach, holder_range=holder_range_of(env), cup_obs=cup_obs,
                        ready_carry={} if rcy is None else rcy.as_dict(), **s2r)
+    if bool(env.get("occ_from_bank", False)):          # ★11.02 뱅크가 홀더를 덮는 런 — 범위 · 목표 홀더는 뱅크에서
+        bank = find_bank(env, Path(run_dir))
+        rng, targets = bank_holder_range(bank, c.target_holders, float(env.get("bank_layout_shift", 0.0) or 0.0))
+        c = replace(c, holder_range=rng, target_holders=targets, notes=list(c.notes) + [
+            f"★홀더 범위 = 뱅크 {bank.name} 의 목표 홀더 {targets} 자세 ± {env.get('bank_layout_shift')} (occ_from_bank, "
+            f"holder_ys 계산 {holder_range_of(env)} 대신)"])
+    if cup_obs == "live":
+        c = replace(c, notes=list(c.notes) + [
+            "★actor 컵 = FP++ 생방송(cup_obs live, hdgp cup_obs_mode true — 학습은 지연 · 잡음 · 편향 0 인 sim 참값): 틱마다 FP++ 가 "
+            "신선(CUP_STALE_S 안)하면 그 자세, 아니면 손바닥 FK ⊗ 붙인 자세. 래치 입력도 같은 자세. "
+            "준비 이송은 FK. 학습이 본 적 없는 지연 · 가림이 실기에 들어온다(11.02 사용자 결정 1)"])
     if (latch or rule != "contact") and not c.latch_s2r:
         c = replace(c, notes=list(c.notes) + [
             f"★관측 래치(10.12): 관측 끝 1 칸 — 지각 컵 원점 z − 자리 z ≤ {latch.get('dz')} · 바닥 중심 xy ≤ {latch.get('dxy')} m · "
@@ -321,6 +365,10 @@ def validate(c: PlaceContract) -> None:
             raise RhPlaceError(str(exc)) from exc
     if c.release_rule not in RELEASE_RULES:
         raise RhPlaceError(f"release_rule {c.release_rule!r} — {RELEASE_RULES}")
+    if c.cup_obs not in CUP_OBS_MODES.values():
+        raise RhPlaceError(f"cup_obs {c.cup_obs!r} — {sorted(CUP_OBS_MODES.values())}")
+    if c.cup_obs == "live" and not c.latch_s2r:
+        raise RhPlaceError("cup_obs live 는 latch_s2r 계약에서만(10.30 'true' 런은 전부 newton_05 계열)")
     if c.release_rule == "block_follow_open":
         if not c.hand_block or len(c.release_open_rad) != len(RELEASE_AXES) or min(c.release_open_rad) < 0 \
                 or max(c.release_open_rad) <= 0:
@@ -508,6 +556,8 @@ class PlaceChain:
         self.clearance: float | None = None
         self.outcome: str | None = None                # "clear" | "withdraw_timeout" — 빼기 끝(stop)
         self.attach_info: dict = {}
+        self.cup_src: dict = {"live": 0, "fk": 0}     # ★11.02 cup_obs live — 틱별 컵 출처 셈(진단)
+        self.live_cup: tuple[np.ndarray, np.ndarray] | None = None   # 노드가 틱마다 넣는 FP++ 신선 컵(base), 없으면 None
 
     @property
     def settling(self) -> bool:
@@ -661,8 +711,22 @@ class PlaceChain:
         R = np.asarray(palm_R, float)
         return np.asarray(palm_pos, float) + R @ self.rel[0], _quat_mul(_matrix_to_quat(R), self.rel[1])
 
-    def latch_pose(self, palm_pos: np.ndarray, palm_R: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """래치 입력 컵(월드) — 추정기가 있으면 손바닥 FK ⊗ 보정 자세(sim _latch_pose), 없으면 붙인 자세."""
+    def cup_obs(self, palm_pos: np.ndarray, palm_R: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """★11.02 이 틱 actor 컵 자세. attached = 손바닥 FK ⊗ 붙인 자세. live = 측정에 든 컵(노드가 FP++ 신선분을 넣는다 —
+        m.cup_src "live")이면 그 값, 아니면 FK(끊김 · 가림 → "fk")."""
+        live = self.live_cup
+        if self.c.cup_obs == "live" and live is not None:
+            self.cup_src["live"] += 1
+            return np.asarray(live[0], float).copy(), np.asarray(live[1], float).copy()
+        if self.c.cup_obs == "live":
+            self.cup_src["fk"] += 1
+        return self.cup_from_palm(palm_pos, palm_R)
+
+    def latch_pose(self, palm_pos: np.ndarray, palm_R: np.ndarray, m=None) -> tuple[np.ndarray, np.ndarray]:
+        """래치 입력 컵(월드) — 추정기가 있으면 손바닥 FK ⊗ 보정 자세(sim _latch_pose), 없으면 붙인 자세.
+        cup_obs live 면 actor 와 같은 자세(sim 'true' 런의 _latch_pose = _perc_last)."""
+        if self.c.cup_obs == "live" and m is not None:
+            return np.asarray(m.cup_pos, float), np.asarray(m.cup_quat, float)
         if self.est is None:
             return self.cup_from_palm(palm_pos, palm_R)
         rp, rq = self.est.rel_pose(*self.rel)
@@ -713,12 +777,12 @@ class PlaceChain:
                     self.outcome = "clear"
                 elif self.settle_t >= int(c.withdraw["max_steps"]):
                     self.outcome = "withdraw_timeout"
-        pos, quat = self.cup_from_palm(m.palm_pos, m.palm_R)
+        pos, quat = self.cup_obs(m.palm_pos, m.palm_R)
         m = replace(m, cup_pos=pos, cup_quat=quat)
         obs = A.build_obs(c, m, self.dec, self.goal, self.prev, extra=self._extra())    # ② 래치 칸 = 갱신 전
         if self.est is not None:
             self.est.step(obs)
-        self.latch_cup = self.latch_pose(m.palm_pos, m.palm_R)
+        self.latch_cup = self.latch_pose(m.palm_pos, m.palm_R, m)
         now = self._latch_now(*self.latch_cup)
         self.latch_geo_n = self.latch_geo_n + 1 if now else 0
         if self.latch_geo_n >= int(c.latch_debounce) and not self.settling and not self.latch:
@@ -743,7 +807,7 @@ class PlaceChain:
         if self.c.latch_s2r:
             return self._step_s2r(meas)
         m = meas["arm"]
-        pos, quat = self.cup_from_palm(m.palm_pos, m.palm_R)
+        pos, quat = self.cup_obs(m.palm_pos, m.palm_R)
         m = replace(m, cup_pos=pos, cup_quat=quat)
         if self.c.latch_obs and not self.settling:     # 정책 출력 전 같은 스텝의 지각 자세로(놓은 뒤에는 그대로)
             self.latch = self.latch or self._latch_now(pos, quat)
@@ -801,7 +865,8 @@ class PlaceChain:
                 **({"latch_t": self.latch_t, "latch_geo_n": self.latch_geo_n, "outcome": self.outcome,
                     "clearance": None if self.clearance is None else round(self.clearance, 4),
                     "latch_cup": None if self.latch_cup is None else [round(float(v), 4) for v in self.latch_cup[0]],
-                    "est": None if self.est is None else self.est.as_dict(), "attach": self.attach_info}
+                    "est": None if self.est is None else self.est.as_dict(), "attach": self.attach_info,
+                    **({"cup_src": dict(self.cup_src)} if self.c.cup_obs == "live" else {})}
                    if self.c.latch_s2r else {})}
 
 

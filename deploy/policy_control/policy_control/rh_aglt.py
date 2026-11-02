@@ -318,8 +318,11 @@ def _validate_objects(c: RaContract) -> None:
     for k, g in c.object_geometry.items():
         if set(g) != set(GEOM_FIELDS) or float(g["half_height"]) <= 0:
             raise RhAgltError(f"object_geometry[{k}] = {g} — {GEOM_FIELDS}, 반높이 > 0")
-    if c.active_object and c.active_object not in names:
-        raise RhAgltError(f"active_object {c.active_object!r} 가 object_names {names} 에 없다")
+    if not names and len(c.object_geometry) > 1:
+        raise RhAgltError(f"object_names 없이 object_geometry {sorted(c.object_geometry)} — one-hot 없는 런은 물체 하나만")
+    known = names or list(c.object_geometry)
+    if c.active_object and c.active_object not in known:
+        raise RhAgltError(f"active_object {c.active_object!r} 가 object_names {names} · object_geometry {sorted(c.object_geometry)} 에 없다")
 
 
 def load_contract(path: str | Path) -> RaContract:
@@ -433,6 +436,16 @@ def _base_dim(env: Mapping) -> int:
     return obs_dim_of(tactile=_actor_tactile(env))
 
 
+def _base_obs_dim(env: Mapping, base: int, obj_names: list, extra_obs: int) -> int:
+    """계약 기본 관측 폭(계열 칸 extra 는 호출자가 더한다). one-hot 런은 base + K. 아니면 덤프 observation_space 인데, 덤프가
+    cfg 기본(96, 96 + extra — hdgp 는 env 초기화 전 값을 덤프) 또는 base + extra 이면 base(★11.02 newton_10_r: 촉각 없음 91 +
+    래치 1 = 체크포인트 92 인데 덤프 97 = 96 + 1 — 전에는 97 을 그대로 써서 98 로 거부됐다)."""
+    if obj_names:
+        return base + len(obj_names)
+    dumped, dflt = int(env["observation_space"]), obs_dim_of(tactile=True)
+    return base if dumped in (dflt, dflt + extra_obs, base + extra_obs) else dumped
+
+
 def _k_obs(env: Mapping) -> int:
     """물체 one-hot 폭 — 덤프된 observation_space 는 96(해석 전) 또는 96+K 일 수 있다."""
     try:
@@ -510,6 +523,12 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
     if obj_names and not _dumped_obs_ok(env, extra_obs):
         raise RhAgltError(f"object_id_obs: observation_space {env['observation_space']} ≠ {base}(+{len(obj_names)})")
     geo = {k: object_geometry(k, float(env.get("cup_scale", 1.0))) for k in obj_names}
+    single = single_object_of(env)
+    if single:                                      # ★11.02 물체 1종 · one-hot 없음(object_id_obs False) — 기하는 싣고 관측은 그대로
+        geo = {single: object_geometry(single, float(env.get("cup_scale", 1.0)))}
+        notes.append(f"★물체 1종 {single}(one-hot 없음): 기하 반높이 {geo[single]['half_height']:.4f} 원점 "
+                     f"{geo[single]['origin_offset_z']:.4f} — 준비 이송 범위 · 래치 bottom_xy 가 이 기하를 쓴다. "
+                     "에피소드 policy_object 는 이 이름이거나 비어야 한다(10.30 place_lab · oneshot true_place 와 같은 채움)")
     if obj_names:
         notes.append(f"★다물체 한 정책: 관측 {base} + 물체 one-hot {len(obj_names)} (id 순 {obj_names}) — 에피소드 reset 때 "
                      "노드 파라미터 object 로 물체를 고른다(모르면 reset 거부). 컵 반높이 · 목표 박스 높이는 물체를 따른다: "
@@ -561,7 +580,7 @@ def build_from_env(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *
         env_yaml_sha1=hashlib.sha1(env_p.read_bytes()).hexdigest(),
         agent_yaml_sha1=hashlib.sha1(agent_p.read_bytes()).hexdigest(), asset=asset, profile=str(env["profile_name"]),
         policy_hz=1.0 / (float(env["sim"]["dt"]) * int(env["decimation"])), episode_s=float(env["episode_length_s"]),
-        obs_dim=base + len(obj_names) if obj_names else int(env["observation_space"]), action_dim=int(env["action_space"]),
+        obs_dim=_base_obs_dim(env, base, obj_names, extra_obs), action_dim=int(env["action_space"]),
         obs_clip=float(agent["params"]["env"].get("clip_observations", 5.0)),
         action_clip=float(agent["params"]["env"].get("clip_actions", 1.0)), recurrent=bool(net.get("rnn")),
         hold_steps=int(env["hold_steps"]), k_arm=float(env["k_arm"]), arm_ema=float(env["arm_ema"]),
@@ -677,12 +696,27 @@ def grasp_hold_of(env: Mapping, block: dict) -> dict:
             "grasp_release_steps": int(env["grasp_release_steps"])}
 
 
+def single_object_of(env: Mapping) -> str | None:
+    """★11.02 one-hot 없는 물체 1종 런이면 그 이름(object_names 하나 또는 object_name), 아니면 None.
+    기하(CUP_OBJECTS + CUP_OUTER_R)를 아는 물체만 — 옛 런(right_i09 cyl60 등)은 전처럼 기하 없이 짓는다."""
+    if object_ids(env):
+        return None
+    names = [str(n) for n in (env.get("object_names") or ())] or [str(env.get("object_name") or "")]
+    names = [n for n in names if n and n in CUP_OBJECTS and n in CUP_OUTER_R]
+    return names[0] if len(set(names)) == 1 else None
+
+
 def select_object(c: RaContract, name: str | None) -> RaContract:
     """에피소드에서 지금 잡는 물체 → 그 물체의 계약 보기. 다물체 계약이 아니면 그대로(name 무시하지 않고 비어 있어야 한다).
 
     hdgp rh_aglt_env(10.11 per_env_geometry): 키포인트 반높이 = 물체 반높이, 목표 박스 z = 첫 물체 원점 기준 박스 +
     (물체 원점 − 첫 물체 원점)(GoalState box_z_shift). 첫 목표 오프셋 · xy 박스는 그대로."""
     if not c.object_names:
+        if c.object_geometry and len(c.object_geometry) == 1:        # ★11.02 물체 1종(one-hot 없음) — 그 이름만 받는다
+            only = next(iter(c.object_geometry))
+            if name and name != only:
+                raise RhAgltError(f"물체 {name!r}: 이 정책은 {only!r} 하나로 학습했다(one-hot 없음) — policy_object 를 {only!r} 로")
+            return c if c.active_object == only else with_run(c, active_object=only)
         if name:
             raise RhAgltError(f"물체 {name!r}: 이 계약은 물체 관측이 없다(단일 물체 정책) — object 를 비워라")
         return c

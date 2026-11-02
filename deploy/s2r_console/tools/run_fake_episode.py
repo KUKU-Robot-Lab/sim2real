@@ -24,7 +24,21 @@ EPISODE_TIMEOUT_S = 900.0
 PREP = {"right": ("preflight", "head_home", "cups", "cup_holders", "drivers", "hand_right", "hand_check_right",
                   "pd_load_right", "pd_arm_right", "home_right"),
         "left": ("preflight", "head_home", "cups", "cup_holders", "drivers", "hand_left", "hand_check_left",
-                 "pd_load_left", "pd_arm_left", "home_left")}
+                 "pd_load_left", "pd_arm_left", "home_left"),
+        # ★11.02 두 팔 에피소드(cocktail_* · pick_place_both · grasp2tilt_*) — 미션 needs 에 home_left · home_right 가 다 있다
+        "both": ("preflight", "head_home", "cups", "cup_holders", "drivers", "hand_right", "hand_check_right",
+                 "pd_load_right", "pd_arm_right", "home_right", "hand_left", "hand_check_left", "pd_load_left", "pd_arm_left",
+                 "home_left")}
+
+
+def prep_side(episode: str, needs) -> str:
+    """에피소드 단계의 needs 로 준비할 팔을 고른다 — 둘 다 있으면 both, 아니면 이름 끝(_left) 또는 right."""
+    need = set(needs or ())
+    if {"home_left", "home_right"} <= need:
+        return "both"
+    if "home_left" in need or episode.endswith("_left"):
+        return "left"
+    return "right"
 
 
 def _wait_stage(con, s, stage: str, *, stop_at_manual: str = "") -> object:
@@ -111,7 +125,9 @@ def main() -> int:
     if s.profile.is_real:
         con.shutdown()
         raise SystemExit("실기 프로파일에는 쓰지 않는다")
-    side = "left" if args.episode.endswith("_left") else "right"
+    stage_def = next((st for st in getattr(s.mission, "stages", ()) if getattr(st, "id", None) == f"episode_{args.episode}"), None)
+    side = prep_side(args.episode, getattr(stage_def, "needs", ()))
+    print(f"[fake-episode] 준비 팔 {side}", flush=True)
     rows = []
     server = None
     if args.serve:

@@ -573,15 +573,23 @@ def hand_problems(ep: Episode, policies_root: Path) -> dict[str, str]:
 
 
 def _object_problem(ep: Episode, role: str, e: object) -> str:
-    """★10.12 다물체 aglt 계약(object_names)이면 그 역할의 단계마다 policy_object 가 계약 물체 중 하나여야 한다."""
+    """★10.12 다물체 aglt 계약(object_names)이면 그 역할의 단계마다 policy_object 가 계약 물체 중 하나여야 한다.
+    ★11.02 object_names 없이 object_geometry 가 하나인 계약(물체 1종 · one-hot 없음, oneshot newton_10_r 등)은 그 이름(또는 빈 값)만
+    받는다 — rh_aglt.select_object 와 같은 규칙."""
     path = getattr(e, "path", None)
     cpath = Path(path) / e.contract if path is not None else None
     try:
-        names = list(json.loads(cpath.read_text()).get("object_names") or []) if cpath and cpath.is_file() else []
+        contract = json.loads(cpath.read_text()) if cpath and cpath.is_file() else {}
     except (OSError, ValueError) as exc:
         return f"{e.contract}: 읽지 못함({exc})"
+    names = list(contract.get("object_names") or [])
     given = [j.policy_object for n in ep.nodes for j in n.jobs if j.role == role]
     if not names:
+        geometry = contract.get("object_geometry") or {}
+        if len(geometry) == 1:
+            only = next(iter(geometry))
+            bad = sorted({str(g) for g in given if g and g != only})
+            return f"물체 1종 정책 {only!r}(one-hot 없음): 단계 policy_object {bad} — {only!r} 로 적거나 비운다" if bad else ""
         return f"policy_object {sorted({g for g in given if g})} — 단일 물체 정책(계약에 object_names 없음)" if any(given) else ""
     bad = sorted({str(g) for g in given if g not in names})
     return f"다물체 정책 {names}: 단계 policy_object {bad} — 계약 물체 중 하나를 단계마다 준다" if bad else ""

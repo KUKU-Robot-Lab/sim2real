@@ -1,0 +1,16 @@
+id: rh56f1/place/right_n10_e1000
+task: open-rh_r_place-lstm
+side: right
+checkpoint: last_open-rh_r_place-lstm_ep_1000_rew_793.51764.pth
+md5: ab26d3736f64939eefe2c62cf352602d
+source: 5090:/home/user/rl_ws/our_source/rh_aglt_runs/eval/1030_place_fresh/params/newton_10_r/last_open-rh_r_place-lstm_ep_1000_rew_793.51764.pth
+summary: 놓기 정책 newton_10_r ep1000 — oneshot 세팅(sim_e2e 10.31 e2e 191/256 = 74.6 %) · 물체 1종 source240_real(one-hot 없음) · 래치 dz 0.04 · actor 컵 = sim 참값(cup_obs_mode true → 계약 cup_obs live = FP++ 생방송)
+status: candidate
+eval: 'sim_e2e oneshot(e2e_chain/oneshot, hdgp) 1030_place_fresh: 오른손 ep1000 조합 191/256 = 74.6 % · 오른손 ep4000 은 네 시드 판정 중(11.02)'
+interface: obs 92 (91 촉각 없음 + 래치 1) · action 13 (팔 관절 증분 7 · 손 6) · 손 = position
+deploy:
+  max_episode_s: 5.0
+  flow: '★11.02 사용자 지시(sim_e2e 경유) — cocktail_1c_e1000 · cocktail_1c_e4000 에피소드(1b v5 + 놓기 정책만 교체). 이송 중 래치 판정 없음'
+note: >-
+  11.02 s2r 등록. 계약 = tools/build_rh_aglt_contract.py --run <이 폴더> --checkpoint nn/last_open-rh_r_place-lstm_ep_1000_rew_793.51764.pth --attach bundle --ready-carry 600.
+  뱅크 bank/bank_right_train.npz(git 밖, md5 a428d42c6a8822a120d0221883cce124)가 홀더 범위를 정한다(occ_from_bank). 래치 추정기 없음(actor_cup_est false).

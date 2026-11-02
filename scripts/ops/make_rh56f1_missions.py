@@ -91,7 +91,9 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             # ★10.28 사용자 "SEP, B 과정 모두 세팅 완료 해둬야 함"(sim_e2e 경유) — 칵테일 1: 분리 놓기(SEP · 파랑 놓은 뒤 사람이 분홍을
             #   놓는다) · 순서 B(분홍이 처음부터 B 둘레 영역). 같은 오른손 노드가 job 마다 컵(파랑 → 분홍) · 홀더(1 → 2)를 바꾼다
             #   (실행기 episode_ros.job_params → 노드 reset). 분홍 FP++ = 분홍만 든 묶음 source240p
-            "cocktail_1", "cocktail_1b")
+            "cocktail_1", "cocktail_1b",
+            # ★11.02 사용자 지시(sim_e2e 경유) oneshot 세팅 실기 — 1b v5 + 놓기 정책 right_n10_e1000|e4000 · left_n09_e3800(cup_obs live)
+            "cocktail_1c_e1000", "cocktail_1c_e4000")
 #: ★10.20 사용자 "영상은 필요 없음. 일단 기본 off" — 카메라 영상 · FP++ 실시간 좌표 기록(vision-3090)과 끝난 뒤 보고서 영상
 #   만들기(episode_media.py)를 기본으로 끈다. 10.20 실기: 보고서 영상 정리가 옛 회까지 다시 가져오며 6 분 넘게 팔 작업을 붙잡아
 #   rehome · tilt_now 승인이 막혔다. 켜려면 True 로 바꾸고 이 생성기를 다시 돌린다(미션 YAML 이 바뀐다).

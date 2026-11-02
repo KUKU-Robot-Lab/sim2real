@@ -105,18 +105,18 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                "episode_grasp2tilt_f_240#3",                    # ★10.27 실기 2단계 grasp2tilt(컵 240)
                                "episode_tilt_base_d#3",                         # ★10.20 경로 A 폐지 → tilt 경로 D(ap05 → rcg03)
                                "episode_tilt_base_c#3",                         # 10.17 tilt 기본 궤적 경로 C
-                               "episode_cocktail_1#3", "episode_cocktail_1b#3"} & set(units)   # ★10.28 칵테일 SEP · B
+                               "episode_cocktail_1#3", "episode_cocktail_1b#3", "episode_cocktail_1c_e1000#3", "episode_cocktail_1c_e4000#3"} & set(units)   # ★10.28 칵테일 SEP · B
     place = d.box("rh_place_node_right")
     assert set(place.units) == {"policy_place_right#1", "episode_pick_place_right#4",
                                 "episode_pick_place_f_right#4",                 # ★10.22 경로 F + 놓기(newton_05)
-                                "episode_cocktail_1#5", "episode_cocktail_1b#5"}   # ★10.28 칵테일 — 같은 노드가 홀더 1 → 2
+                                "episode_cocktail_1#5", "episode_cocktail_1b#5", "episode_cocktail_1c_e1000#5", "episode_cocktail_1c_e4000#5"}   # ★10.28 칵테일 — 같은 노드가 홀더 1 → 2
     # ★10.19 사용자 "좌우 동시 실행": 한 팔 에피소드는 팔마다 실행기(episode_runner_<팔>), 두 팔 tilt 는 기본 실행기
     runner = d.box("episode_runner")
     assert set(runner.units) == {"episode_tilt_base_d#7",   # 실기: 앞에 CPU 기록 한 줄(10.08) · ★10.20 경로 A 폐지 → D, 정책 노드 둘
                                  "episode_tilt_base_c#7",   # 10.17 경로 C — 정책 노드 둘(D 와 같은 자리)
                                  "episode_tilt_base_b#5",   # 10.17 경로 B — 정책 노드 없음(사람이 컵을 댄다)
                                  "episode_grasp2tilt_f_240#7",   # ★10.27 실기 2단계 grasp2tilt — 두 팔 에피소드라 기본 실행기
-                                 "episode_cocktail_1#9", "episode_cocktail_1b#9"}   # ★10.28 칵테일 — 정책 노드 넷
+                                 "episode_cocktail_1#9", "episode_cocktail_1b#9", "episode_cocktail_1c_e1000#9", "episode_cocktail_1c_e4000#9"}   # ★10.28 칵테일 — 정책 노드 넷
     for side in ("right", "left"):
         assert set(d.box(f"episode_runner_{side}").units) == {f"episode_pick_place_{side}#7",
                                                               f"episode_grasp_c_{side}#6",
@@ -152,7 +152,7 @@ def test_in_the_episode_the_runner_gives_the_holder_and_goal_and_alone_the_holde
     alone = "obj_cup_holder_1" if GEN.REMOTE_PERCEPTION else "cup_holders"
     assert holder == {alone: ("policy_place_right#1",),
                       "episode_runner_right": ("episode_pick_place_right#4", "episode_pick_place_f_right#4"),   # ★10.22 경로 F + 놓기
-                      "episode_runner": ("episode_cocktail_1#5", "episode_cocktail_1b#5")}   # ★10.28 칵테일(두 팔 = 기본 실행기)
+                      "episode_runner": ("episode_cocktail_1#5", "episode_cocktail_1b#5", "episode_cocktail_1c_e1000#5", "episode_cocktail_1c_e4000#5")}   # ★10.28 칵테일(두 팔 = 기본 실행기)
     goal = {w.src: w for w in d.wires if w.dst == "rh_aglt_node_right" and w.topic == "/policy_control/right/goal"}
     # ★10.19 한 팔 에피소드는 오른팔 실행기, 두 팔 tilt 는 기본 실행기가 목표를 낸다
     # ★10.20 옛 정책 정리 뒤: 계약이 없는 정책 노드는 단위에서 빠진다 → 목표를 내는 실행기는 오른손 aglt 노드를 실제로 띄우는 단계의 것만
@@ -243,7 +243,7 @@ def test_the_fake_profile_gets_the_same_picture_with_fake_hands():
     assert d.box("hand_right_state").ros == ("/rh56f1_state_right",)        # hands:=none — fake 플랜트의 손 상자가 없다
     # fake 홀더 여섯(★10.22 경로 F + 놓기 둘 추가) · ★10.28 칵테일 둘 × 홀더 셋 → 열둘 = 실기 홀더 노드 상자 하나
     holders = d.box("cup_holders")
-    assert len(holders.units) == 12 and holders.title == W.HOLDER_TITLE and not holders.ros
+    assert len(holders.units) == 18 and holders.title == W.HOLDER_TITLE and not holders.ros
 
 
 # ── 노드 소스의 이름 ────────────────────────────────────────────────────
@@ -607,4 +607,4 @@ def test_the_cocktail_place_node_hears_both_of_its_holders(real):
     _, _, d = real
     for h in (1, 2):
         srcs = {w.src: w.units for w in d.wires if w.dst == "rh_place_node_right" and w.topic == f"/objects/cup_holder_{h}/pose"}
-        assert set(srcs.get("episode_runner", ())) == {"episode_cocktail_1#5", "episode_cocktail_1b#5"}, (h, srcs)
+        assert set(srcs.get("episode_runner", ())) == {"episode_cocktail_1#5", "episode_cocktail_1b#5", "episode_cocktail_1c_e1000#5", "episode_cocktail_1c_e4000#5"}, (h, srcs)
