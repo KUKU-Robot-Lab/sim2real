@@ -6,6 +6,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 source /opt/ros/humble/setup.bash
 source "$HERE/../../config/ros_domain.env"   # 배포 도메인 한 곳(10.30 motion_acq 와 분리)
 export ROS_DOMAIN_ID="$S2R_REAL_DOMAIN"
+LOGDIR="$(cd "$HERE/../.." && pwd)/logs/perception"; mkdir -p "$LOGDIR"   # 재시작 서브셸이 cd 하므로 절대 경로
 WHAT=${1:-all}
 restart() {  # $1 = 스크립트 파일명, $2 = 로그
   pkill -f "python3 $1" || true
@@ -14,5 +15,5 @@ restart() {  # $1 = 스크립트 파일명, $2 = 로그
   sleep 1.5
   pgrep -f "python3 $1" >/dev/null && echo "$1 up (log $2)" || { echo "$1 failed"; cat "$2"; exit 1; }
 }
-[ "$WHAT" = pose ] || restart perception_launcher_node.py /tmp/perception_launcher.log
-[ "$WHAT" = launcher ] || restart object_pose_node.py /tmp/object_pose_node.log
+[ "$WHAT" = pose ] || restart perception_launcher_node.py "$LOGDIR/perception_launcher.log"
+[ "$WHAT" = launcher ] || restart object_pose_node.py "$LOGDIR/object_pose_node.log"
