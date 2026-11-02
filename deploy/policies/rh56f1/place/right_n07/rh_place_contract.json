@@ -4,7 +4,7 @@
   "run_dir": "/home/user/rl_ws/sim2real/deploy/policies/rh56f1/place/right_n07",
   "checkpoint": "/home/user/rl_ws/sim2real/deploy/policies/rh56f1/place/right_n07/nn/last_open-rh_r_place-lstm_ep_2000_rew_776.9702.pth",
   "checkpoint_md5": "4afccc50cd87d7592689b2e036b42c77",
-  "env_yaml_sha1": "f9f8c7c84298d70bd3805c1670dcbe651d84707a",
+  "env_yaml_sha1": "d32824a043e0a4777b0b287c96e02259e701ca59",
   "agent_yaml_sha1": "d0729ca4220551545500485b252d9466d0231a00",
   "asset": "openarm_rh56f1_bi_rl",
   "profile": "rh56f1_v2_right",

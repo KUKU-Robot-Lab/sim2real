@@ -113,5 +113,5 @@ params:
       deterministic: true
       games_num: 100000
       print_stats: true
-    train_dir: /tmp/hdgp_gru_171f7bda8/log/rl_games/open-rh/left/place
+    train_dir: ../rl_ws/hdgp/log/rl_games/open-rh/left/place
     full_experiment_name: newton_05_l
