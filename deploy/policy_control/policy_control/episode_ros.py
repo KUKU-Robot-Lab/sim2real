@@ -56,6 +56,8 @@ def live_topic(topic: str) -> str | None:
 
 SNAPSHOT_WINDOW_S = 1.5
 SNAPSHOT_STILL_M = 0.005          # 창 안 위치 퍼짐 — 넘으면 컵이 움직이는 중
+PLACE_JUDGE_WAIT_S = 1.0          # ★11.02 놓기 판정은 정책 stop 뒤 이 시간 이후 수신한 FP++ 프레임만 — 지연 0.4~0.5 s + 창 0.5 s 가
+                                  #   놓기 전(손에 든) 영상으로 PLACE_FAILED 를 내던 것(sim_e2e 재현 dz 65~73 mm). sim 은 nodes.py 0.7 s
 SNAPSHOT_MIN_FRAMES = 5
 LIFT_RISE_MIN_M = 0.07            # ★10.19 1-B lift 판정 — 손바닥 10 cm 중 컵이 7 cm 넘게(결정 10 의 7 cm 위와 같은 선)
 POLICY_MARGIN_S = 10.0            # 정책 에피소드 시간 + 이만큼 안에 이벤트가 안 오면 stop → timeout
@@ -590,7 +592,7 @@ class RosExecutor:
             sig = {"hand_empty": empty, "opened": pl.get("opened"), "tact_max": pl.get("tact_max"), "jf_max": pl.get("jf_max"),
                    "phase": pl.get("phase"), "ready_carry": pl.get("ready_carry"),      # ★10.25 이송 결과(없으면 None)
                    "outcome": pl.get("outcome")}       # ★11.02 빼기 결과 clear | withdraw_timeout(episode_failure 가 본다)
-            pos = self._fresh_object(p.source_object)
+            pos = self._fresh_object(p.source_object, after=time.monotonic() + PLACE_JUDGE_WAIT_S)   # stop 시각 + 1.0 s 뒤 프레임만
             hold = self.holders.get(p.holder_id) if p.holder_id is not None else None
             if pos is not None and hold is not None:
                 sig["cup_in_holder"] = cup_in_holder(pos, hold[0], SEAT_DZ_CYL60)
@@ -598,15 +600,16 @@ class RosExecutor:
             return sig
         return {}
 
-    def _fresh_object(self, name: str | None, wait_s: float = 2.0, store: dict | None = None):
-        """놓은 뒤 물체 자리 — 그 물체의 FP++ 토픽 새 프레임(창 안 중앙값). 없으면 None(판정 보류)."""
+    def _fresh_object(self, name: str | None, wait_s: float = 2.0, store: dict | None = None, after: float | None = None):
+        """놓은 뒤 물체 자리 — 그 물체의 FP++ 토픽 새 프레임(창 안 중앙값). 없으면 None(판정 보류).
+        after: 이 monotonic 시각 이후 수신한 프레임만 쓴다(놓기 판정 — 지연된 놓기 전 영상 배제). 최대 대기 wait_s 는 지금부터."""
         store = self._frames if store is None else store
         if not name or name not in store:
             return None
         deadline = time.monotonic() + wait_s
         while time.monotonic() < deadline:
             with self._lock:
-                fr = [f for f in store[name] if time.monotonic() - f[2] < 0.5]
+                fr = [f for f in store[name] if time.monotonic() - f[2] < 0.5 and (after is None or f[2] >= after)]
             if len(fr) >= 3:
                 return tuple(float(v) for v in np.median(np.array([f[0] for f in fr]), axis=0))
             time.sleep(0.1)

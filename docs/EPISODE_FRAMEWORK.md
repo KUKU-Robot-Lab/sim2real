@@ -104,7 +104,7 @@ SETTING = aglt 고정 목표 (0.25, ∓0.12, 0.41)(손에 든 컵 원점) — rh
 | POLICY_TIMEOUT | 이벤트 "episode time ≥" · 실행기 시한 | aglt 만 위와 같이, 나머지 정지 |
 | POSE_MISMATCH | 거부 "rad from the training start pose" · "held target" · SETTING 오차 > 4 cm | 빈손 홈 checkpoint 가 있으면 되돌아가 재시도, 아니면 정지 |
 | OBJECT_DROPPED_* | aglt cup.releases > 0 | 정지(장면 재평가 = Step 3) |
-| PLACE_FAILED | 놓은 뒤 FP++ 컵이 홀더 자리 밖(xy 3.5 cm · z 3 cm) · 손이 안 비었다 · 손이 컵에서 못 빠진 채 끝남(withdraw_timeout, 11.02) | 정지(재파지 기술 없음) |
+| PLACE_FAILED | 놓은 뒤 FP++ 컵이 홀더 자리 밖(xy 3.5 cm · z 3 cm — 정책 stop + 1.0 s 뒤 수신 프레임만, 11.02 지연 영상 오판 방지) · 손이 안 비었다 · 손이 컵에서 못 빠진 채 끝남(withdraw_timeout, 11.02) | 정지(재파지 기술 없음) |
 | POUR_* · LOCK_FAILED · SHAKE_ABORTED | 정책이 생기면 신호를 붙인다 | 표대로 |
 | CONTROLLER_ERROR · OBSERVATION_ERROR | pd HOLD · estop · 노드 오류 · 결손 | 복구 없이 즉시 정지 |
 

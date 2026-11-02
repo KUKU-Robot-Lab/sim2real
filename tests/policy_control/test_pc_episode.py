@@ -548,6 +548,58 @@ def test_snapshot_needs_enough_still_frames_and_the_holder_check_uses_the_seat()
     assert load_holder_poses(Path("/nonexistent.yaml")) == {}
 
 
+def _delayed_fpp(store, lock, delay_s, z_of_image_time, t_place, hz=13.0):
+    """FP++ 흉내: 수신 시각 now 의 프레임은 delay_s 전 영상. 실행기 _on_frame 처럼 수신 시각(monotonic)으로 저장한다."""
+    import threading
+    import time
+    stop = threading.Event()
+
+    def pub():
+        while not stop.is_set():
+            now = time.monotonic()
+            with lock:
+                store["SRC"].append(((0.38, 0.20, z_of_image_time(now - delay_s - t_place)), (1.0, 0.0, 0.0, 0.0), now))
+            time.sleep(1.0 / hz)
+    th = threading.Thread(target=pub, daemon=True)
+    th.start()
+    return lambda: (stop.set(), th.join())
+
+
+@pytest.mark.parametrize("delay_s", [0.3, 0.4, 0.5])
+def test_the_place_judgment_waits_for_frames_taken_after_the_stop(delay_s):
+    """★11.02 sim_e2e: FP++ 지연 0.3~0.5 s + 수신 시각 기준 0.5 s 창 → stop 직후 판정이 놓기 전(손에 든, 60~90 mm 위) 영상으로
+    PLACE_FAILED. 수정 — stop 시각 + PLACE_JUDGE_WAIT_S 이후 수신 프레임만. 홀더 밖에 놓인 컵은 여전히 False."""
+    import threading
+    import time
+    from types import SimpleNamespace
+    from policy_control.episode_ros import PLACE_JUDGE_WAIT_S, SEAT_DZ_CYL60, RosExecutor, cup_in_holder
+    assert PLACE_JUDGE_WAIT_S == pytest.approx(1.0)
+    holder = (0.38, 0.20, 0.0)
+    seated = SEAT_DZ_CYL60
+
+    def in_hand_then_seated(dt_img):              # 영상 시각이 놓기 전이면 손에 들린 높이, 뒤면 안착
+        return seated if dt_img >= 0 else seated + 0.06 + 0.03 * (-dt_img)
+
+    def run(z_fn, after):
+        store, lock = {"SRC": []}, threading.Lock()
+        me = SimpleNamespace(_lock=lock, _frames=store)
+        t_place = time.monotonic()
+        done = _delayed_fpp(store, lock, delay_s, z_fn, t_place)
+        try:
+            time.sleep(0.1)                       # 정책 stop 은 안착 0.1 s 뒤
+            t_stop = time.monotonic()
+            pos = RosExecutor._fresh_object(me, "SRC", after=(t_stop + PLACE_JUDGE_WAIT_S) if after else None)
+        finally:
+            done()
+        assert pos is not None
+        return cup_in_holder(pos, holder, seated), time.monotonic() - t_stop
+
+    assert run(in_hand_then_seated, after=False)[0] is False          # 예전 판정(수정 전 흐름) — 지연된 영상으로 실패
+    ok, took = run(in_hand_then_seated, after=True)
+    assert ok is True and PLACE_JUDGE_WAIT_S < took < 2.0            # 수정 뒤 — 최대 대기 2 s 안에서 안착 영상으로 성공
+    assert run(lambda dt: seated + 0.08, after=True)[0] is False      # 정말 홀더 밖(링 위 80 mm)이면 여전히 실패
+
+
 def test_holder_numbers_come_from_the_name_not_the_marker(tmp_path):
     """★10.20 사용자 "순서를 다시 0,1,2로" — 번호는 이름에서 읽는다. 예: 왼쪽부터 마커 0·2·1 이면 CENTER_HOLDER 1 은 가운데 홀더(마커 2)."""
     from policy_control.episode_ros import load_holder_poses
