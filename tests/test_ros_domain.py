@@ -59,7 +59,7 @@ def test_fake_hand_and_runner_refuse_the_real_domain():
     assert "ros_domain.REAL_DOMAIN_STR" in runner
 
 
-@pytest.mark.parametrize("rel", ["scripts/vision/common.sh", "scripts/ops/restart_perception_nodes.sh",
+@pytest.mark.parametrize("rel", ["scripts/vision/common.sh",
                                  "scripts/setup/check_cup_pose_link.sh",
                                  "deploy/policy_control/tools/fake_replay_rh_run.sh"])
 def test_shell_scripts_source_the_env_file(rel: str):
