@@ -541,8 +541,8 @@ class RosExecutor:
                 return NodeResult("timeout", f"no stop event in {limit:.0f} s", time.monotonic() - t0, p.role)
         reasons = "; ".join(ev.get("reasons", []))
         dur = time.monotonic() - t0
-        if ev.get("event") == "abort":
-            return NodeResult("aborted", reasons, dur, p.role)
+        if ev.get("event") == "abort":                # ★11.02 abort(경로 D 시간 초과)도 신호를 남긴다 — 못 쥔 건지 들다 만 건지 구분
+            return NodeResult("aborted", reasons, dur, p.role, self._signals(p, st))
         if "user stop" in reasons:                    # 사람이 정지 바로 멈췄다 — 복구하지 않고 실행기도 멈춘다
             return NodeResult("aborted", f"operator stopped the policy node ({reasons})", dur, p.role)
         if "episode time" in reasons:
