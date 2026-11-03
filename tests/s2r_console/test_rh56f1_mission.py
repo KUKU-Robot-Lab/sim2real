@@ -201,7 +201,7 @@ def test_real_cups_run_fpp_on_the_perception_pc_after_the_head_home_and_shutdown
     런처 --host <인지 PC> · UDP 수신 · base 변환 · start, 머리 기준자세가 먼저."""
     host, ext = GEN.PERCEPTION_HOST, GEN.CAMERA_EXTRINSICS
     by = {s.id: s for s in REAL.stages}
-    assert by["cups"].needs == ("head_home",) and by["head_home"].touches_real and by["cups"].touches_real
+    assert by["cups"].needs == ("head_view_check",) and by["head_home"].touches_real and by["cups"].touches_real
     head = _cmds(REAL, REAL_BOOK, "head_home")
     assert any(Path(GEN.HEAD_CONFIG).name in " ".join(c.argv) for c in head)
     cups = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "cups")]
@@ -331,6 +331,30 @@ def test_the_rh56f1_robot_offers_rh_aglt_for_each_arm():
     assert RB.slot_contracts("aglt_right") == ("rh_aglt_contract.json",)
 
 
+def test_view_check_reads_the_imu_between_head_home_and_cups_without_moving_the_head():
+    """11.03 사용자 "sim 과 real 의 카메라 시야가 같아야 의미가 있다": head_home 뒤 · cups 앞에 IMU 숙임을 외부 파라미터와
+    비교만 하는 단계. 머리를 움직이는 명령(--execute · head_move)이 없고, 카메라(IMU)를 켠 뒤 카메라 PC 에서 잰다."""
+    for m in (REAL, FAKE):
+        by = {s.id: s for s in m.stages}
+        ids = [s.id for s in m.stages]
+        assert by["head_view_check"].needs == ("head_home",) and by["cups"].needs == ("head_view_check",)
+        assert ids.index("head_home") < ids.index("head_view_check") < ids.index("cups")
+        assert by["head_view_check"].skippable and not by["head_view_check"].touches_real
+    cmds = _cmds(REAL, REAL_BOOK, "head_view_check")
+    flat = [" ".join(c.argv) for c in cmds]
+    assert not any(c.background for c in cmds)            # execute=True 로 풀었으니 execute_args 가 있으면 아래 --execute 에 걸린다
+    assert not any("--execute" in a or "head_move" in a for a in flat)
+    assert "camera_up.sh" in flat[0]
+    check = flat[1]
+    assert f"head_view_feedback.py --check --extrinsics {GEN.CAMERA_EXTRINSICS}" in check
+    if GEN.REMOTE_PERCEPTION:
+        assert list(cmds[1].argv[:5]) == ["ssh", "-tt", "-o", "BatchMode=yes", GEN.PERCEPTION_HOST]
+    assert not any("head_view_feedback" in " ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, "head_view_check"))
+    sys.path.insert(0, str(REPO / "scripts"))
+    import head_view_feedback as hv
+    assert hv.DEFAULT_EXTRINSICS == REPO / GEN.CAMERA_EXTRINSICS
+
+
 def test_real_cup_holders_run_the_marker_node_after_the_head_home_and_shutdown_stops_it():
     """10.02 사용자: 컵홀더 마커 자동 추정. 카메라만 켜고(로봇 무동작) 노드를 배경으로, 머리 기준자세가 먼저.
     ★10.13 원격 인지(5090 + vision-3090): 노드는 카메라 PC 에서(영상을 그 PC 안에서 읽는다) 그 PC 의 venv 로 돌고,
@@ -412,7 +436,10 @@ def test_the_episode_stage_brings_up_both_policies_and_the_runner(side):
         assert f"episode:=config/episodes/pick_place_{side}.yaml" in argv["episode_runner_node"]
         assert "auto_approve" not in argv["episode_runner_node"]                                 # 승인은 상황판에서
         by = {s.id: s for s in m.stages}
-        assert {f"home_{side}", "cups", "cup_holders"} <= set(by[sid].needs)
+        assert {f"home_{side}", "cups"} <= set(by[sid].needs) and "cup_holders" not in by[sid].needs   # ★11.03 홀더 고정 — 저장 파일
+        if m is REAL:
+            plan = next(c.argv for c in cmds if "episode_run.py" in " ".join(c.argv) and "--plan" in c.argv)
+            assert "--require-holders" in plan                     # 파일이 없거나 홀더가 빠지면 시작 검사가 이유를 찍고 막는다
         assert any(c.manual and "상황판" in c.note for c in cmds)
     assert REAL.stages[[s.id for s in REAL.stages].index(sid)].touches_real
 

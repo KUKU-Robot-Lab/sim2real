@@ -1,0 +1,23 @@
+# scripts/head_view_feedback.py 설정 — arm4090 머리 D435i IMU 0점 · 시야 검사 허용치.
+#
+# imu_pitch_bias = (기준 시야와 맞춘 자세의 IMU 숙임) − (그 시야 외부 파라미터의 숙임). IMU 와 컬러 광학 프레임 사이 어긋남 ·
+#   가속도계 0점이라 카메라에 붙은 값이다 — 기준 파일이 home(global_camera_extrinsics_arm4090.yaml)에서 camset(…_r20u5.yaml)으로
+#   바뀌어도 그대로 쓴다. 10.30 tilt 2859(인코더 +71.20°, 깊이 · ChArUco 로 10.27 home 시야와 회전 0.09° 안 확인한 자세)에서
+#   IMU 72.13° · 옆 −3.05° − home 외부 파라미터 72.668°.
+# 다시 잴 때: 기준 시야와 맞춘 자세(외부 파라미터를 막 잰 자세)에서 python3 scripts/head_view_feedback.py --calib-bias
+#   (--calib-bias 는 yaml.safe_dump 로 다시 써서 이 주석이 사라진다 — 쓴 뒤 주석을 되살린다)
+imu_pitch_bias: -0.54
+imu_roll_bias: -0.42
+ratio_guess: 0.98   # Δ숙임/Δ인코더, 10.30 71.20 → 61.32° 에서 0.978
+bias_measured_at: {pan_deg: -1.27, tilt_deg: 71.20, time: "2026-10-30", extrinsics: global_camera_extrinsics_arm4090.yaml}
+
+# 미션 head_view_check 허용치(deg) = |IMU 숙임 − r20u5 숙임|. 근거(10.30 처짐 지도 config/head_view/sag_table_arm4090_2026-10-30.json,
+#   arm4090 에만): 같은 인코더 자리를 올라가며/내려가며 잰 숙임 차(오르내림)가 평균 0.5° · 최대 1.13°(112 쌍), 같은 칸을 다른
+#   회차에 잰 차 약 0.4°, IMU 흔들림 σ 0.012 m/s². 1° 숙임은 테이블(광선 약 0.66 m, 68° 숙임)에서 약 1.2 cm 로 cups 단계
+#   컵 원점 z 확인(±8 mm)을 넘는다 — 그보다 큰 차는 시야가 외부 파라미터를 잰 때와 다르다는 뜻이다.
+view_check_tol_deg: 1.0
+# sim 카메라 숙임(참고로만 찍는다, 판정은 r20u5 기준): hdgp scripts/tools/e2e_chain/cocktail/headcam.py
+#   --static config/global_camera_extrinsics_arm4090.yaml(10.27 home) --static_rel -20,-5(URDF 목 FK 근사, 보정 없음)
+#   → ~/rl_ws/videos/cocktail_1028_b/headcam_static/headcam_1028.json static_dpan-20_dtilt-5(sim_e2e camset 후보) 숙임.
+#   r20u5 숙임(HEAD 68.03° · 11.03 작업 트리 68.25°)과의 차는 10.28 볼트 맞춤 잔차다.
+sim_pitch_deg: 67.674

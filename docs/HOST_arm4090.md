@@ -63,6 +63,22 @@ OpenArm 양팔 + Inspire RH56F1 양손 + 머리(XC330 ×2) + RealSense 가 모�
   목 각도로 다시 계산하는 `object_pose_node --head-joint-topic`(`head_extrinsics.yaml`)은 영점이 이 표만큼 달라 아직 쓰지 않는다.
 - 혼을 다시 조립하면 offset · `head_home_rh56f1.yaml` · 위 표를 다시 맞춘다.
 
+### 시야 검사 (11.03~)
+
+- 사용자: "FP++ 를 받는 것도 중요하지만 sim 과 real 의 카메라 시야가 같아야 의미가 있다." 미션 `head_view_check` 단계
+  (head_home 뒤 · cups 앞)가 머리를 움직이지 않고 `scripts/head_view_feedback.py --check` 로 D435i IMU(중력)로 잰 카메라
+  숙임을 r20u5 외부 파라미터의 숙임과 비교한다. 허용치는 `config/head_view_feedback_arm4090.yaml` 의 `view_check_tol_deg`
+  (1.0°, 근거는 그 파일 주석)이다. 넘으면 rc 1 과 "시야가 sim 과 다르다" 를 낸다. yaw(pan 방향)는 중력으로 못 잰다.
+- 카메라는 IMU 를 켜고 띄운다(`scripts/vision/camera_up.sh`). IMU 없이 떠 있던 카메라면 검사가 "IMU 가 안 들어온다" 로
+  실패하니 카메라를 내렸다 다시 켠다.
+- 실패하면 먼저 카메라 · 머리를 건드렸는지 본다. 머리를 시야에 맞춰 옮기려면(`head_view_feedback.py --execute`, 목이
+  움직인다, 허락 뒤) 그 자세에서 외부 파라미터를 다시 잰다. 순서: 목 드라이버를 내림 →
+  `python3 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_home_rh56f1.yaml`
+  → 새 head_pose 틱에 맞춰 `config/head_camset_rh56f1.yaml` 을 고침 → 드라이버를 다시 띄움 → `--calib-bias` 로 IMU 0점을 다시 잼
+  → `--check` 가 ✓ 인지 확인. 옮기기만 하고 다시 재지 않으면 head_pose ±4 틱 밖이라 object_pose_node 가 발행을 멈춘다.
+- 홀더는 고정이다(11.03 사용자). 에피소드는 저장된 `holder_poses` 파일을 쓰고, 파일이 없거나 홀더가 빠졌으면 시작 검사
+  (`episode_run.py --plan --require-holders`)가 막는다. `cup_holders` 단계는 홀더를 옮겼을 때 다시 재는 데만 쓴다.
+
 ## 소프트웨어
 
 - 저장소 네 개(sim2real main · robot_control humble · hdgp main · urdf main) — hdgp 는 비공개라 ssh 주소로 받는다.

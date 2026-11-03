@@ -21,12 +21,12 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 STAGE_TIMEOUT_S = 900.0
 EPISODE_TIMEOUT_S = 900.0
-PREP = {"right": ("preflight", "head_home", "cups", "cup_holders", "drivers", "hand_right", "hand_check_right",
+PREP = {"right": ("preflight", "head_home", "head_view_check", "cups", "cup_holders", "drivers", "hand_right", "hand_check_right",
                   "pd_load_right", "pd_arm_right", "home_right"),
-        "left": ("preflight", "head_home", "cups", "cup_holders", "drivers", "hand_left", "hand_check_left",
+        "left": ("preflight", "head_home", "head_view_check", "cups", "cup_holders", "drivers", "hand_left", "hand_check_left",
                  "pd_load_left", "pd_arm_left", "home_left"),
         # ★11.02 두 팔 에피소드(cocktail_* · pick_place_both · grasp2tilt_*) — 미션 needs 에 home_left · home_right 가 다 있다
-        "both": ("preflight", "head_home", "cups", "cup_holders", "drivers", "hand_right", "hand_check_right",
+        "both": ("preflight", "head_home", "head_view_check", "cups", "cup_holders", "drivers", "hand_right", "hand_check_right",
                  "pd_load_right", "pd_arm_right", "home_right", "hand_left", "hand_check_left", "pd_load_left", "pd_arm_left",
                  "home_left")}
 

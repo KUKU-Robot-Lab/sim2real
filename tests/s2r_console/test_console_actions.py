@@ -198,6 +198,18 @@ def test_deleted_selected_policy_disables_card_without_breaking_catalog(console,
     assert '정책 파일' in ' '.join(item['reasons'])
 
 
+def test_setting_tab_has_view_check_and_holder_remeasure_sharing_head_and_camera(console, tiny_repo):
+    """11.03: 시야 검사 · 홀더 다시 재기를 setting 버튼으로 — 목 자세 확인 · 카메라를 쓰니 cups 와 같은 자원(동시에 안 돈다)."""
+    m = setup_actions(console, tiny_repo, {k: [{'argv': ['true']}] for k in ('head_home', 'head_view_check', 'cups', 'cup_holders')})
+    items = {a['id']: a for a in m.catalog()}
+    assert [k for k in items if k in ('head_home', 'head_view_check', 'cups', 'cup_holders')] == \
+        ['head_home', 'head_view_check', 'cups', 'cup_holders']
+    assert all(items[k]['group'] == 'setting' for k in ('head_view_check', 'cup_holders'))
+    s = console.session
+    assert m._resources(s, 'cup_holders', 'setting', {}) == m._resources(s, 'cups', 'setting', {}) == {'head', 'perception'}
+    assert m._resources(s, 'head_view_check', 'setting', {}) == {'head', 'perception'}
+
+
 def test_missing_policy_command_only_disables_that_management_action(console, tiny_repo):
     import yaml
     raw = {'name': 'missing', 'artifacts': {'removed': 'deploy/policies/gone/contract.json'},

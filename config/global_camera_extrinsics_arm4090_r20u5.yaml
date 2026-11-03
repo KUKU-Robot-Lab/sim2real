@@ -4,6 +4,8 @@
 #   T_base_body = T_base_cam ∘ T_cam_cad(FP++ 출력) ∘ T_cad_body
 #
 # ── T_base_cam: robot base ← camera_color_optical_frame ────────────────────
+# ★2026-11-03 다시 잼(사용자 "다시 리셋하고 calibration 필요" — 홀더 2번 마커를 고친 뒤): 같은 camset 자세(±4 틱)에서
+#   table_cad_extrinsics.py --write. 10.28 값과 위치 차 약 (0.1, 2.9, 2.5) mm. 이전 값 = git 10.28 커밋(efe8dc4 계열).
 # ★2026-10-28 사용자(sim_e2e 경유): shaker · 파랑 · 분홍을 놓는 영역이 한 화면에 다 드는 목 자세("pan 세팅").
 #   sim_e2e 후보 = home 에서 pan 오른쪽 20° · 위 5°(목 FK 근사, handoff 2026-10-28_camset · hdgp regions_overlay d7c3087c).
 #   실기를 그 sim 시야에 맞췄다(처짐 · FK 근사 오차를 가르지 않고 시야로): 목표 1805/2807 → 멈춘 자리 1824/2810 에서 잰
@@ -18,8 +20,8 @@
 #             --write --head-config config/head_home_rh56f1.yaml
 camera:
   frame: camera_color_optical_frame
-  position: [0.0694975123, 0.0234528384, 0.814648347]
-  orientation_wxyz: [0.110889849, -0.584176968, 0.788950799, -0.154910778]
+  position: [0.0696330641, 0.0263116984, 0.817149725]
+  orientation_wxyz: [0.110268528, -0.580544883, 0.792075461, -0.153052128]
 
 # ── 이 외부 파라미터를 잰 머리 자세(틱 = 멈춘 자리) — scripts/head_pose_check.py 가 FP++ 전에 비교하고 맞춘다 ─────
 # 10.28: 목표 pan 1806 · tilt 2812 를 보내면 멈추는 자리. 캘리브 사진 앞뒤로 읽기만 해서 같았다.

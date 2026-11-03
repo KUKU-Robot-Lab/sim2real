@@ -209,7 +209,7 @@ class ActionManager:
             return frozenset(ARMS)
         if action_id in ('head_home', 'head_control'):
             return frozenset({'head'})
-        if action_id == 'cups':
+        if action_id in ('cups', 'head_view_check', 'cup_holders'):   # 목 자세 확인(맞춤) · 카메라를 같이 쓴다
             return frozenset({'head', 'perception'})
         if action_id == 'perception_refresh':      # locate moves the neck; FPP needs it still
             return frozenset({'perception', 'head'})
@@ -247,7 +247,8 @@ class ActionManager:
     def _specs(self, session):
         known = {stage.id: stage for stage in session.mission.stages}
         specs = {}
-        for name in ('preflight', 'drivers', 'head_home', 'cups', 'shutdown'):
+        # ★11.03 시야 검사(읽기) · 홀더 다시 재기(홀더를 옮겼을 때만)도 setting 버튼으로
+        for name in ('preflight', 'drivers', 'head_home', 'head_view_check', 'cups', 'cup_holders', 'shutdown'):
             if name in known:
                 specs[name] = (known[name].title, 'setting', (name,))
         for side in ('right', 'left'):

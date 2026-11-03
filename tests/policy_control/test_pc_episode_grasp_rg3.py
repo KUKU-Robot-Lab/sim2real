@@ -118,7 +118,7 @@ def test_the_grasp_episode_stage_does_not_wait_for_cup_holders(side):
         m = yaml.safe_load((REPO / "config" / f"mission_rh56f1_{kind}.yaml").read_text(encoding="utf-8"))
         stages = {s["id"]: s for s in m["stages"]}
         assert "cup_holders" not in stages[f"episode_grasp_d_{side}"]["needs"]
-        assert "cup_holders" in stages[f"episode_pick_place_{side}"]["needs"]
+        assert "cup_holders" not in stages[f"episode_pick_place_{side}"]["needs"]   # ★11.03 홀더 고정 — 저장 파일(시작 검사)
 
 
 @pytest.mark.parametrize('side', ['right', 'left'])

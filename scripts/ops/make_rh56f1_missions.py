@@ -343,16 +343,24 @@ def _stages(kind: str) -> list[dict]:
         {"id": "head_home", "group": "motion", "lane": "rig", "needs": ["preflight"], "skippable": True, "touches_real": real,
          "title": ("머리를 카메라 캘리브 자세(외부 파라미터 head_pose)로 + I 게인 — 카메라 좌표가 이 자세에서만 맞다(머리가 조금 움직인다)"
                    if real else "fake — 머리 없음(실기 순서를 맞추려고 둔 자리)")},
+        # ★11.03 사용자 "sim 과 real 의 카메라 시야가 같아야 의미가 있다" — 머리를 움직이지 않고 IMU 숙임을 외부 파라미터 숙임과 비교만
+        {"id": "head_view_check", "group": "check", "lane": "rig", "needs": ["head_home"], "skippable": True,
+         "title": (f"시야 검사(읽기 전용, {PERCEPTION_HOST if REMOTE_PERCEPTION else '이 PC'}) — D435i IMU 숙임 − 외부 파라미터 숙임이 허용치 "
+                   "(config/head_view_feedback_arm4090.yaml view_check_tol_deg) 안인가. 머리는 움직이지 않는다. yaw 는 못 잰다"
+                   if real else "fake — IMU 없음(실기 순서를 맞추려고 둔 자리)")},
         {"id": "head_control", "group": "motion", "lane": "rig", "skippable": True, "touches_real": real,
          "title": "목 pan · tilt 변경 — 승인한 보정 프로필과 자세로 이동 후 실측 정착 확인"},
-        {"id": "cups", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
+        {"id": "cups", "group": "connect", "lane": "both", "needs": ["head_view_check"], "skippable": True,
          "touches_real": real,
+         "needs_why": "FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다",
          "title": (f"컵 자세({PERCEPTION_HOST if REMOTE_PERCEPTION else ROBOT_PC} FP++) — RealSense · FP++ 묶음 컨테이너({_containers_txt()}, 묶음마다 하나 · 색 · 모양으로 가르기 · 한 번 찍기: {_cups_txt()}) → /objects/<물체>/pose (base). GPU VRAM 컨테이너마다 약 2 GB" if real else
                    "fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채")},
         {"id": "cup_holders", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
          "touches_real": real,
-         "title": ("컵홀더 자세(마커 ID 0·1·2) — RealSense 컬러 → /objects/cup_holder_{0,1,2}/pose (base) · /cup_holders/status. "
-                   "로봇은 움직이지 않는다. CPU 만" if real else "fake — 카메라 없음(실기 순서를 맞추려고 둔 자리)")},
+         # ★11.03 사용자 "홀더는 고정이다": 에피소드는 저장된 {HOLDER_POSES} 를 그대로 쓴다 — 이 단계는 홀더를 옮겼을 때만
+         "title": (f"홀더 자리 다시 재기(홀더를 옮겼을 때만) — 마커 ID 0·1·2 → {HOLDER_POSES} 갱신 · /objects/cup_holder_{{0,1,2}}/pose "
+                   "(base). 홀더는 고정이라 에피소드는 이 단계를 기다리지 않고 저장된 파일을 쓴다. 로봇은 움직이지 않는다. CPU 만"
+                   if real else "fake — 카메라 없음(실기 순서를 맞추려고 둔 자리)")},
         # ★10.13 사용자 실기: "다음부턴 개별로 하고, 둘중 하나라도 인지되게 해야함. 개별로 다시 할수 있게 해야해" —
         #   팔마다 그 팔의 컵 하나만 다시 인지하는 단계(선택 묶음, 차례에 끼지 않는다). cups 가 띄운 노드 위에서 돈다
         *({"id": f"cups_{s}", "group": "recognize", "lane": f"arm_{s}", "needs": ["cups"], "skippable": True,
@@ -444,12 +452,12 @@ def _stages(kind: str) -> list[dict]:
         perceives = _perceives(ep)
         st.append({"id": f"episode_{name}", "group": "policy", "lane": f"arm_{sides[0]}", "skippable": True,
                    "touches_real": real,
-                   # 10.12 홀더가 없는 에피소드(파지 전용)는 홀더 자세 단계를 기다리지 않는다
                    # ★10.17 배치 기록(snapshot)이 없는 에피소드(경로 B, 사람이 컵을 댄다)는 FP++ 컵 단계를 기다리지 않는다
-                   "needs": [*(f"home_{s}" for s in sides), *(["cups"] if perceives else []),
-                             *(["cup_holders"] if ep.holders else [])],
-                   "needs_why": "에피소드는 홈(rh_aglt 시작 자세)" + (" · FP++ 컵" if perceives else "")
-                                + (" · 고정 홀더 자세 파일" if ep.holders else "") + " 위에서 노드를 잇는다",
+                   # ★11.03 사용자 "홀더는 고정이다": cup_holders 단계를 기다리지 않는다 — 저장된 holder_poses 파일을 쓰고,
+                   #   파일이 없거나 홀더가 빠지면 시작 검사(episode_run.py --plan --require-holders)가 이유를 찍고 막는다
+                   "needs": [*(f"home_{s}" for s in sides), *(["cups"] if perceives else [])],
+                   "needs_why": "에피소드는 홈(rh_aglt 시작 자세)" + (" · FP++ 컵" if perceives else "") + " 위에서 노드를 잇는다"
+                                + (f" · 홀더는 저장된 {ep.holder_poses}(없으면 시작 검사가 막는다)" if ep.holders else ""),
                    "title": f"[에피소드] {name} — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 "
                             f"진행: {' → '.join(n.id for n in ep.nodes if n.type != 'terminal')}"})
     st.append({"id": "shutdown", "group": "finish", "lane": "rig", "touches_real": real,
@@ -581,6 +589,15 @@ def _run(kind: str) -> dict:
              "head_pose 로 목표를 고쳐 가며 맞춘 뒤 ±4 틱으로 검증(머리가 조금 움직인다)",
              HEAD_HOME_ARGV, execute_args=["--execute"]),
     ] if real else [_cmd("fake — 머리 없음", ["bash", "-lc", "true"])]
+    run["head_view_check"] = [
+        _cmd("카메라(RealSense, IMU 켬) 켜기 — 이미 떠 있으면 그대로. IMU 없이 떠 있던 카메라면 다음 스텝이 'IMU 가 안 들어온다'로 "
+             "실패한다 — 카메라를 내렸다 다시 켠다",
+             _on_perception_pc("bash scripts/vision/camera_up.sh") if REMOTE_PERCEPTION else ["bash", "{repo}/scripts/vision/camera_up.sh"]),
+        _cmd(f"시야 검사 — IMU 중력으로 잰 카메라 숙임과 {CAMERA_EXTRINSICS} 숙임의 차가 허용치를 넘으면 실패(머리는 움직이지 않는다). "
+             "실패하면 카메라 · 머리를 건드렸는지 보고 캘리브 자세를 다시 잡는다(scripts/head_view_feedback.py --help 끝)",
+             _on_perception_pc(f"python3 scripts/head_view_feedback.py --check --extrinsics {CAMERA_EXTRINSICS}") if REMOTE_PERCEPTION
+             else ["python3", "{repo}/scripts/head_view_feedback.py", "--check", "--extrinsics", "{repo}/" + CAMERA_EXTRINSICS]),
+    ] if real else [_cmd("fake — IMU 없음", ["bash", "-lc", "true"])]
     run["cups"] = [
         _cmd(f"★컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · {PERCEPTION_HOST if REMOTE_PERCEPTION else ROBOT_PC} GPU 여유가 있는가"
              "(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다). 머리 자세는 FP++ 를 켜기 전에 이 단계가 캘리브 자세로 맞춘다",
@@ -897,8 +914,8 @@ def _episode_run(name: str, real: bool) -> list:
         check = (f"★[에피소드 {name}] 물체({', '.join(o for o in ep.objects if o not in later)})가 학습 배치에 서 있고 FP++ 가 "
                  "잡고 있는가"
                  + (f" · {', '.join(later)} 는 아직 탁자에 두지 않는다(에피소드 확인 단계에서 놓는다)" if later else "")
-                 + (f" · 홀더 {', '.join(f'{k}={v}' for k, v in ep.holders.items())} 위가 비었는가 · {ep.holder_poses} 가 있는가"
-                    "(cup_holders 단계 --write)" if ep.holders else ""))
+                 + (f" · 홀더 {', '.join(f'{k}={v}' for k, v in ep.holders.items())} 위가 비었고 저장된 자리({ep.holder_poses})에 "
+                    "그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다)" if ep.holders else ""))
     else:                                            # ★10.17 경로 B — 사람이 컵을 손에 댄다(FP++ · 정책 없음)
         check = (f"★[에피소드 {name}] 물체({', '.join(ep.objects)})와 비드를 손 닿는 곳에 준비했는가. 로봇이 컵 없이 시작 자세로 간 뒤 "
                  "확인 노드마다 멈춘다 — 컵은 확인한 뒤에만 손에 댄다")

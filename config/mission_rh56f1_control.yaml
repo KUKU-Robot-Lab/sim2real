@@ -68,6 +68,14 @@ stages:
   skippable: true
   touches_real: true
   title: 머리를 카메라 캘리브 자세(외부 파라미터 head_pose)로 + I 게인 — 카메라 좌표가 이 자세에서만 맞다(머리가 조금 움직인다)
+- id: head_view_check
+  group: check
+  lane: rig
+  needs:
+  - head_home
+  skippable: true
+  title: 시야 검사(읽기 전용, arm4090-lan) — D435i IMU 숙임 − 외부 파라미터 숙임이 허용치 (config/head_view_feedback_arm4090.yaml view_check_tol_deg) 안인가. 머리는 움직이지
+    않는다. yaw 는 못 잰다
 - id: head_control
   group: motion
   lane: rig
@@ -78,9 +86,10 @@ stages:
   group: connect
   lane: both
   needs:
-  - head_home
+  - head_view_check
   skippable: true
   touches_real: true
+  needs_why: FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다
   title: '컵 자세(arm4090-lan FP++) — RealSense · FP++ 묶음 컨테이너(fpp_source240b · fpp_shaker_c · fpp_source240p, 묶음마다 하나 · 색 · 모양으로 가르기 · 한 번 찍기: source240b_blue=오른팔
     · shaker_c_orange=왼팔 · shaker_c_blue · shaker_c_pink · source240p_pink) → /objects/<물체>/pose (base). GPU VRAM 컨테이너마다 약 2 GB'
 - id: cup_holders
@@ -90,7 +99,8 @@ stages:
   - head_home
   skippable: true
   touches_real: true
-  title: 컵홀더 자세(마커 ID 0·1·2) — RealSense 컬러 → /objects/cup_holder_{0,1,2}/pose (base) · /cup_holders/status. 로봇은 움직이지 않는다. CPU 만
+  title: 홀더 자리 다시 재기(홀더를 옮겼을 때만) — 마커 ID 0·1·2 → config/cup_holder_poses_5090_v1.yaml 갱신 · /objects/cup_holder_{0,1,2}/pose (base). 홀더는 고정이라 에피소드는
+    이 단계를 기다리지 않고 저장된 파일을 쓴다. 로봇은 움직이지 않는다. CPU 만
 - id: cups_right
   group: recognize
   lane: arm_right
@@ -427,8 +437,7 @@ stages:
   needs:
   - home_right
   - cups
-  - cup_holders
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 노드를 잇는다
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] pick_place_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → pick_cup → place_cup → go_home_end'
 - id: episode_pick_place_left
   group: policy
@@ -438,8 +447,7 @@ stages:
   needs:
   - home_left
   - cups
-  - cup_holders
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 노드를 잇는다
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] pick_place_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → pick_cup → place_cup → go_home_end'
 - id: episode_grasp_c_right
   group: policy
@@ -586,8 +594,7 @@ stages:
   needs:
   - home_right
   - cups
-  - cup_holders
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 노드를 잇는다
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] pick_place_f_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift → place_cup → go_home_end'
 - id: episode_pick_place_f_left
   group: policy
@@ -597,8 +604,7 @@ stages:
   needs:
   - home_left
   - cups
-  - cup_holders
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 노드를 잇는다
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] pick_place_f_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift → place_cup → go_home_end'
 - id: episode_grasp2tilt_f_240
   group: policy
@@ -621,8 +627,7 @@ stages:
   - home_left
   - home_right
   - cups
-  - cup_holders
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 노드를 잇는다
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
     → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → confirm_pink_placed → scene_pink → grasp_pink → to_tilt_start_r2 → tilt_pink
     → place_pink → place_shaker → go_home_end'
@@ -635,8 +640,7 @@ stages:
   - home_left
   - home_right
   - cups
-  - cup_holders
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 노드를 잇는다
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1b — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
     → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → place_shaker → go_home_end'
 - id: episode_cocktail_1c_e1000
@@ -648,8 +652,7 @@ stages:
   - home_left
   - home_right
   - cups
-  - cup_holders
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 노드를 잇는다
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1c_e1000 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
     → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → place_shaker → go_home_end'
 - id: episode_cocktail_1c_e4000
@@ -661,8 +664,7 @@ stages:
   - home_left
   - home_right
   - cups
-  - cup_holders
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 · 고정 홀더 자세 파일 위에서 노드를 잇는다
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1c_e4000 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
     → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → place_shaker → go_home_end'
 - id: shutdown
@@ -973,6 +975,24 @@ run:
     argv: *id001
     execute_args:
     - --execute
+  head_view_check:
+  - note: 카메라(RealSense, IMU 켬) 켜기 — 이미 떠 있으면 그대로. IMU 없이 떠 있던 카메라면 다음 스텝이 'IMU 가 안 들어온다'로 실패한다 — 카메라를 내렸다 다시 켠다
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && bash scripts/vision/camera_up.sh
+  - note: 시야 검사 — IMU 중력으로 잰 카메라 숙임과 config/global_camera_extrinsics_arm4090_r20u5.yaml 숙임의 차가 허용치를 넘으면 실패(머리는 움직이지 않는다). 실패하면 카메라 · 머리를 건드렸는지
+      보고 캘리브 자세를 다시 잡는다(scripts/head_view_feedback.py --help 끝)
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && python3 scripts/head_view_feedback.py --check --extrinsics config/global_camera_extrinsics_arm4090_r20u5.yaml
   cups:
   - note: ★컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다). 머리 자세는 FP++ 를 켜기 전에 이 단계가 캘리브 자세로 맞춘다
     argv:
@@ -2485,8 +2505,8 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★[에피소드 pick_place_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었는가 · config/cup_holder_poses_5090_v1.yaml 가 있는가(cup_holders
-      단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★[에피소드 pick_place_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
+      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
     argv:
     - bash
     - -lc
@@ -2629,8 +2649,8 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★[에피소드 pick_place_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었는가 · config/cup_holder_poses_5090_v1.yaml 가 있는가(cup_holders
-      단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★[에피소드 pick_place_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
+      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
     argv:
     - bash
     - -lc
@@ -4368,8 +4388,8 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★[에피소드 pick_place_f_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=1 위가 비었는가 · config/cup_holder_poses_5090_v1.yaml 가 있는가(cup_holders
-      단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★[에피소드 pick_place_f_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
+      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
     argv:
     - bash
     - -lc
@@ -4525,8 +4545,8 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★[에피소드 pick_place_f_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=0 위가 비었는가 · config/cup_holder_poses_5090_v1.yaml 가 있는가(cup_holders
-      단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★[에피소드 pick_place_f_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=0 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
+      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
     argv:
     - bash
     - -lc
@@ -4886,7 +4906,7 @@ run:
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
   - note: ★[에피소드 cocktail_1] 물체(SRC_BLUE, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · SRC_PINK 는 아직 탁자에 두지 않는다(에피소드 확인 단계에서 놓는다) · 홀더 HOLDER_0=0, HOLDER_1=1,
-      HOLDER_2=2 위가 비었는가 · config/cup_holder_poses_5090_v1.yaml 가 있는가(cup_holders 단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+      HOLDER_2=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
     argv:
     - bash
     - -lc
@@ -5138,8 +5158,8 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★[에피소드 cocktail_1b] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었는가 · config/cup_holder_poses_5090_v1.yaml
-      가 있는가(cup_holders 단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★[에피소드 cocktail_1b] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
+      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
     argv:
     - bash
     - -lc
@@ -5391,8 +5411,8 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★[에피소드 cocktail_1c_e1000] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었는가
-      · config/cup_holder_poses_5090_v1.yaml 가 있는가(cup_holders 단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★[에피소드 cocktail_1c_e1000] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고 저장된
+      자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
     argv:
     - bash
     - -lc
@@ -5644,8 +5664,8 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★[에피소드 cocktail_1c_e4000] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었는가
-      · config/cup_holder_poses_5090_v1.yaml 가 있는가(cup_holders 단계 --write). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★[에피소드 cocktail_1c_e4000] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고 저장된
+      자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
     argv:
     - bash
     - -lc
