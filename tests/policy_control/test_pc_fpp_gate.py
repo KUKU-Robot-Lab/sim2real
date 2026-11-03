@@ -78,3 +78,42 @@ def test_holding_is_true_only_while_the_latest_new_frame_was_rejected():
     g.step(_f(0.40, -0.156, 0.290, 4), 2.7, palm, True)
     g.new_episode()
     assert not g.holding
+
+
+# ---------------------------------------------------------------- ★11.03 기준점 거르기(anchor_m)
+ANCHOR = GateCfg(jump_m=0.02, dz_m=0.02, radius_m=0.20, max_hold_s=2.5, anchor_m=0.03)
+
+
+def test_anchor_stops_the_15_03_slow_slide_and_keeps_rejecting_after_max_hold():
+    """실기 15:03 오른손: 프레임당 2 cm 미만으로 +y 3.7 cm 미끄러짐(jump_m 통과) → 14 cm 튐 · z −6 cm → 2.5 s 뒤에도 틀린 값."""
+    g, palm = FppGate(ANCHOR), (0.30, -0.05, 0.30)
+    first = _f(0.282, -0.146, 0.292, 1)
+    g.step(first, 0.0, palm, True)
+    seen = [g.step(_f(0.282, -0.146 + 0.0074 * k, 0.292, 1 + k), 0.1 * k, palm, True)[0] for k in range(1, 6)]   # 0.74 cm 씩
+    assert [round(p[1], 4) for p in seen[:4]] == [-0.1386, -0.1312, -0.1238, -0.1164]   # 3 cm 안은 받는다
+    assert seen[4] == first[0]                                                          # 3.7 cm = 기준점으로 되돌림
+    assert g.step(_f(0.30, -0.006, 0.23, 7), 0.7, palm, True) == first                  # 14 cm 튐 · z −6 cm
+    assert g.step(_f(0.295, -0.005, 0.29, 8), 3.5, palm, True) == first                 # max_hold_s 지나도 버린다
+    assert g.holding and g.anchor_rejects == 3 and g.as_dict()["anchor_rejects"] == 3
+    assert g.peek(None) == first
+
+
+def test_anchor_does_not_apply_far_from_the_hand_after_grasp_or_when_off():
+    g = FppGate(ANCHOR)
+    g.step(_f(0.30, -0.20, 0.29, 1), 0.0, (0.30, -0.20, 0.50), True)        # 손 21 cm
+    assert g.step(_f(0.30, -0.15, 0.29, 2), 0.1, (0.30, -0.20, 0.55), True)[0][1] == pytest.approx(-0.15)   # 손이 멀다
+    assert g.step(_f(0.30, -0.20, 0.29, 3), 0.2, (0.30, -0.20, 0.33), False)[0][1] == pytest.approx(-0.20)  # 쥔 뒤
+    assert g.step(_f(0.30, -0.10, 0.39, 4), 0.3, (0.30, -0.20, 0.33), False)[0][1] == pytest.approx(-0.10)
+    assert g.anchor_rejects == 0
+    g = FppGate(CFG)                                                            # anchor_m 0 = 옛 규칙 그대로
+    g.step(_f(0.30, -0.20, 0.29, 1), 0.0, (0.30, -0.20, 0.33), True)
+    for k in range(1, 5):
+        g.step(_f(0.30, -0.20 + 0.01 * k, 0.29, 1 + k), 0.1 * k, (0.30, -0.20, 0.33), True)
+    assert g.last[0][1] == pytest.approx(-0.16) and g.anchor_rejects == 0
+
+
+def test_anchor_needs_the_jump_gate():
+    with pytest.raises(ValueError):
+        GateCfg(anchor_m=0.03)
+    with pytest.raises(ValueError):
+        GateCfg(jump_m=0.02, anchor_m=-0.01)

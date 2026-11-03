@@ -39,8 +39,8 @@ def _handoff_text(ag: dict) -> str:
     """넘김 조건 — approach_grasp 값(ApproachGraspCfg)에서. 학습 접근 성공의 pos · still 과 같은 식."""
     from policy_control import approach_grasp as AG
     cfg = AG.ApproachGraspCfg.parse(AG.ApproachGraspCfg.to_param(dict(ag or {})))
-    return (f"사전 파지 자리 {AG.HANDOFF_TOL_M * 100:.0f} cm 안 · 손바닥 ≤ {cfg.still_mps:g} m/s "
-            f"{cfg.still_s:g} s · 못 오면 {cfg.approach_max_s:g} s 에 멈춤")
+    return (f"사전 파지 자리 {cfg.ready_tol_m * 100:g} cm 안 · 손바닥 {cfg.still_s:g} s 평균 ≤ {cfg.still_mps:g} m/s "
+            f"· 못 오면 {cfg.approach_max_s:g} s 에 멈춤")
 
 
 def _sides_of(node, ep) -> list[str]:

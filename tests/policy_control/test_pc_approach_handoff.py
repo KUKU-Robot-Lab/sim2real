@@ -347,23 +347,57 @@ def _bare(ap05):
 
 
 def test_a_palm_moving_faster_than_the_training_limit_is_not_still(ap05):
+    """★11.03 창 평균: 사전 파지 고리를 따라 0.048 m/s 로 도는 손바닥(자리 안이지만 움직임)은 멈춤이 아니다."""
     ag, chain, seen, c = _bare(ap05)
     cup = np.array([0.3, -0.2, 0.3])
-    wob = [_ring(c, cup) + [0.0, (-1) ** k * 0.0004, 0.0] for k in range(240)]   # 0.0008 m/틱 = 0.048 m/s
+    r = float(c.object_geometry[OBJ]["radius"]) * float(c.ready_r_mult[0])
+    circle = [cup + r * np.array([np.cos(0.0008 * k / r), np.sin(0.0008 * k / r), 0.0]) for k in range(240)]
+    _feed(ag, chain, circle, cup)
+    assert ag.phase == "approach" and not seen and ag.last["palm_mps_win"] == pytest.approx(0.048, abs=0.001)
+    _feed(ag, chain, [circle[-1]] * 40, cup)
+    assert ag.phase == "policy" and len(seen) == 1
+    # 창 평균이 0.03 m/s 아래로 = 창(0.5 s) 안 움직인 틱이 18 이하 — 선 지 0.2 s 뒤
+    assert ag.last["handoff_t_s"] - 240 / c.policy_hz == pytest.approx(0.2, abs=0.02)
+
+
+def test_one_tick_jitter_at_the_spot_still_hands_over(ap05):
+    """★11.03 실기 12:23 왼손 shaker: 자리 안에서 한 틱 차분은 0.02~0.035 m/s 로 오르내렸다 — 창 평균은 그 잡음을 넘긴다."""
+    ag, chain, seen, c = _bare(ap05)
+    cup = np.array([0.3, -0.2, 0.3])
+    wob = [_ring(c, cup, 0.005) + [0.0, (-1) ** k * 0.0003, 0.0] for k in range(60)]   # 한 틱 0.036 m/s · 창 평균 0
     _feed(ag, chain, wob, cup)
-    assert ag.phase == "approach" and not seen and ag.last["palm_mps"] == pytest.approx(0.048)
-    _feed(ag, chain, [_ring(c, cup)] * 40, cup)
-    assert ag.phase == "policy" and len(seen) == 1                         # 서고 30 틱(0.5 s)
-    assert 0.5 - 1e-9 <= ag.last["handoff_t_s"] - 240 / c.policy_hz <= 0.55
+    assert ag.phase == "policy" and len(seen) == 1
+    assert ag.last["handoff_t_s"] == pytest.approx(31 / c.policy_hz, abs=0.006)   # 자리 안 30 틱 + 창 31 표본
 
 
-def test_the_ring_distance_is_the_hypot_like_training(ap05):
+def test_the_ring_distance_is_the_hypot_with_the_2_5cm_ready_tolerance(ap05):
     ag, chain, seen, c = _bare(ap05)
     cup = np.array([0.3, -0.2, 0.3])
-    _feed(ag, chain, [_ring(c, cup, 0.015, 0.015)] * 120, cup)            # 각 1.5 cm · 합 2.1 cm — 옛 상자 규칙은 통과
+    _feed(ag, chain, [_ring(c, cup, 0.02, 0.02)] * 120, cup)              # 각 2 cm · 합 2.8 cm — 축별 3 cm 상자는 통과
     assert ag.phase == "approach" and not seen
-    _feed(ag, chain, [_ring(c, cup, 0.012, 0.012)] * 60, cup)             # 합 1.7 cm
+    assert ag.last["dz_m"] == pytest.approx(0.02) and ag.last["h_side"] == 1          # 기록: 손바닥이 학습 높이 범위 위
+    _feed(ag, chain, [_ring(c, cup, 0.0, -0.01)], cup)
+    assert ag.last["dz_m"] == pytest.approx(-0.01) and ag.last["h_side"] == -1
+    _feed(ag, chain, [_ring(c, cup, 0.017, 0.017)] * 60, cup)             # 합 2.4 cm(12:23 오른손 2.0~2.4 cm 도 이제 넘긴다)
     assert ag.phase == "policy"
+    assert AG.ApproachGraspCfg().ready_tol_m == 0.025                      # 사용자 11.03
+    assert AG.ApproachGraspCfg().ready_tol_m <= READY_POSE_TOL_M           # 넘긴 자리는 다음 정책 시작 검사도 통과한다
+    for bad in ("ready_tol_m=0.005", "ready_tol_m=0.05"):
+        with pytest.raises(AG.ApproachGraspError):
+            AG.ApproachGraspCfg.parse(bad)
+
+
+def test_the_approach_aborts_at_once_when_the_palm_runs_away_from_the_cup(ap05):
+    """★11.03 실기 15:03 오른손: 틀린 컵을 쫓아 손바닥이 80 cm 위로 — 0.35 m 를 넘는 순간 멈춘다(15 s 를 기다리지 않음)."""
+    ag, chain, seen, c = _bare(ap05)
+    cup = np.array([0.3, -0.2, 0.3])
+    _feed(ag, chain, [cup + [0.0, 0.0, 0.29 + 0.002 * k] for k in range(60)], cup)   # 0.29 → 0.408 m
+    assert ag.phase == "failed" and ag.end[0] == "abort" and "손바닥-컵" in ag.end[1] and not seen
+    assert ag.last["palm_cup_m"] == pytest.approx(0.352, abs=0.002)
+    ag, chain, seen, c = _bare(ap05)
+    ag.cfg = AG.ApproachGraspCfg(handoff=1, far_abort_m=0.0)               # 0 = 끔
+    _feed(ag, chain, [cup + [0.0, 0.0, 0.5]] * 10, cup)
+    assert ag.phase == "approach"
 
 
 def test_still_mps_is_range_checked():

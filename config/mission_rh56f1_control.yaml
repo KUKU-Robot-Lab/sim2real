@@ -1175,6 +1175,8 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
@@ -1444,6 +1446,8 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
     - -p
     - cup_dropout_stop_s:=1.0
     - -p
@@ -2493,6 +2497,8 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
@@ -2636,6 +2642,8 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
     - -p
     - cup_dropout_stop_s:=1.0
     - -p
@@ -2781,6 +2789,8 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
@@ -2901,6 +2911,8 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
     - -p
     - cup_dropout_stop_s:=1.0
     - -p
@@ -3086,6 +3098,8 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
@@ -3142,6 +3156,8 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
     - -p
     - cup_dropout_stop_s:=1.0
     - -p
@@ -3271,6 +3287,8 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
@@ -3335,6 +3353,8 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
     - -p
     - cup_dropout_stop_s:=1.0
     - -p
@@ -3592,6 +3612,8 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
@@ -3721,6 +3743,8 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
@@ -3803,8 +3827,9 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 E: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/right_rcg03 로 넘김
-      → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 E: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg03
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -3853,6 +3878,8 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
     - -p
     - cup_dropout_stop_s:=1.0
     - -p
@@ -3936,8 +3963,9 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 E: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/left_rcg03 로 넘김 →
-      첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 E: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg03
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -3986,6 +4014,8 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
     - -p
     - cup_dropout_stop_s:=1.0
     - -p
@@ -4069,8 +4099,9 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04 로 넘김
-      → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4119,6 +4150,8 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
     - -p
     - cup_dropout_stop_s:=1.0
     - -p
@@ -4202,8 +4235,9 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04 로 넘김 →
-      첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4252,6 +4286,8 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
     - -p
     - cup_dropout_stop_s:=1.0
     - -p
@@ -4336,8 +4372,9 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04 로 넘김
-      → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4386,6 +4423,8 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
     - -p
     - cup_dropout_stop_s:=1.0
     - -p
@@ -4493,8 +4532,9 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04 로 넘김 →
-      첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4543,6 +4583,8 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
     - -p
     - cup_dropout_stop_s:=1.0
     - -p
@@ -4649,8 +4691,9 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04 로 넘김
-      → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4700,6 +4743,8 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
@@ -4718,8 +4763,9 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04 로 넘김 →
-      첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4768,6 +4814,8 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
     - -p
     - cup_dropout_stop_s:=1.0
     - -p
@@ -4853,8 +4901,9 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04 로 넘김
-      → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4904,6 +4953,8 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
@@ -4922,8 +4973,9 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04 로 넘김 →
-      첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4972,6 +5024,8 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
     - -p
     - cup_dropout_stop_s:=1.0
     - -p
@@ -5106,8 +5160,9 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04 로 넘김
-      → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5157,6 +5212,8 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
@@ -5175,8 +5232,9 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04 로 넘김 →
-      첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5225,6 +5283,8 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
     - -p
     - cup_dropout_stop_s:=1.0
     - -p
@@ -5359,8 +5419,9 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04 로 넘김
-      → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5410,6 +5471,8 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
@@ -5428,8 +5491,9 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04 로 넘김 →
-      첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5478,6 +5542,8 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
     - -p
     - cup_dropout_stop_s:=1.0
     - -p
@@ -5612,8 +5678,9 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04 로 넘김
-      → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5663,6 +5730,8 @@ run:
     - -p
     - fpp_gate_max_hold_s:=2.5
     - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
@@ -5681,8 +5750,9 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2 cm)에 0.5 s 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04 로 넘김 →
-      첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5731,6 +5801,8 @@ run:
     - fpp_gate_radius_m:=0.2
     - -p
     - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
     - -p
     - cup_dropout_stop_s:=1.0
     - -p

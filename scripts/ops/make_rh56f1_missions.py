@@ -120,6 +120,9 @@ AGLT_LIVE_ARGS = ("-p", "cup_static:=false", "-p", "cup_latch:=false", "-p", "cu
                   #   sim(vision-3090 rg3s ep4700): 실기 같은 튐을 넣으면 진짜 성공 0.25, 거르면 0.83(튐 없을 때 0.89 · 거르기만 0.89).
                   "-p", "fpp_gate_jump_m:=0.02", "-p", "fpp_gate_dz_m:=0.02", "-p", "fpp_gate_radius_m:=0.2",
                   "-p", "fpp_gate_max_hold_s:=2.5",
+                  # ★11.03 실기 15:03 오른손: 손이 다가오자 live 가 프레임당 2 cm 미만으로 3.7 cm 미끄러진 뒤 14 cm 튀었고 2.5 s 뒤 틀린
+                  #   값을 받았다. 쥐기 전 · 손바닥 20 cm 안에서 에피소드 첫 값에서 3 cm 넘게 벗어난 프레임은 시간과 상관없이 버린다.
+                  "-p", "fpp_gate_anchor_m:=0.03",
                   # ★10.19 사용자 승인(cup_dropout.py): live 컵이 끊기면 — 잡기 전 1 s(손바닥 20 cm 안은 학습 가림 DR 상한 2.5 s)
                   #   넘으면 멈춤 · 쥔 상태면 손바닥 FK 로 따라감 · 쥠이 풀린 뒤 0.5 s 면 멈춤. 실기 19:09 오른손: 떨어진 컵의 마지막
                   #   값(공중)을 쫓다 팔이 비틀렸다(j2 +2.2 rad). 오늘 실기 잡기 전 최장 끊김 0.18 s.
@@ -968,8 +971,10 @@ def _episode_run(name: str, real: bool) -> list:
                             "-p", "goal_max:=1", "-p", "freeze_rule:=lift_hold", "-p", "freeze_lift_m:=0.07",
                             "-p", f"freeze_hold_steps:={hold_}"]
                 route = "경로 F" if b.handoff.endswith("_rcg04") else "경로 E"   # ★10.21 경로 F(ap05 → rcg04) — 같은 넘김 · ★10.22 pick_place_f 도
-                end_note = (f"{route}: 접근 정책 → 사전 파지 자리(2 cm)에 {ag.still_s:g} s 멈추면 같은 노드에서 {b.handoff} 로 넘김 → "
-                            f"첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 {hold_ / 60:g} s 쥠 유지에 끝남 · 접근 {ag.approach_max_s:g} s 안에 못 오면 멈춤")
+                end_note = (f"{route}: 접근 정책 → 사전 파지 자리({ag.ready_tol_m * 100:g} cm)에서 {ag.still_s:g} s 평균 "
+                            f"{ag.still_mps:g} m/s 이하로 멈추면 같은 노드에서 {b.handoff} 로 넘김 → "
+                            f"첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 {hold_ / 60:g} s 쥠 유지에 끝남 · 접근 {ag.approach_max_s:g} s 안에 못 오면 멈춤"
+                            + (f" · 접근 중 손바닥-컵 {ag.far_abort_m * 100:g} cm 넘으면 바로 멈춤" if ag.far_abort_m > 0 else ""))
                 max_s = f"{episode_s(b.approach_grasp):.1f}"   # 접근 최악 + 넘겨받은 정책 15 s + 3 s(실행기 _node_max_s 와 같은 식)
             # ★10.19 사용자: "sim 은 세게 쥐면 물리가 터져 적당히 쥐게 학습했다 — 실기는 제어로 더 세게"(rh_aglt.GripAssist D).
             #   정책이 쥐는 에피소드(제자리 들기 · 경로 D)만. 경로 C 는 닫기가 스크립트라 끈다.

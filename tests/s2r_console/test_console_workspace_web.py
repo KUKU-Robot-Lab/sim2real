@@ -223,7 +223,7 @@ def test_experiments_view_reads_the_chain_from_the_episode_files():
     f = items['grasp_f']['sides']['right']
     assert [(s['kind'], s['text']) for s in f['steps']] == [('policy', 'ap05'), ('handoff', '넘김'), ('policy', 'rcg04')]
     assert f['action'] == 'ctl_grasp_f_right' and f['runner'] == 'episode_runner_right' and f['cups'] == {'CUP': 'source240b_blue'}
-    assert '2 cm' in f['steps'][1]['sub'] and '0.03 m/s' in f['steps'][1]['sub']
+    assert '2.5 cm' in f['steps'][1]['sub'] and '0.03 m/s' in f['steps'][1]['sub']
     fp = items['pick_place_f']['sides']['left']           # ★10.27 결정 1: 놓기 n05 → 오른손 n07 · 왼손 n06(ready_carry 이송 뒤)
     assert [(s['kind'], s['text']) for s in fp['steps']] == [('policy', 'ap05'), ('handoff', '넘김'), ('policy', 'rcg04'), ('policy', 'n06')]
     assert fp['steps'][-1]['sub'] == '놓기 · 손 빼기' and fp['action'] == 'ctl_pick_place_f_left'

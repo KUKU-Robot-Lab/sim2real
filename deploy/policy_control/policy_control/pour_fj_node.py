@@ -450,6 +450,7 @@ class PourFjNode(LeanNodeMixin, Node):
                               ("attach_guard_m", AttachCfg.guard_m), ("attach_guard_frames", AttachCfg.guard_frames),
                               ("fpp_gate_jump_m", GateCfg.jump_m), ("fpp_gate_dz_m", GateCfg.dz_m),
                               ("fpp_gate_radius_m", GateCfg.radius_m), ("fpp_gate_max_hold_s", GateCfg.max_hold_s),
+                              ("fpp_gate_anchor_m", GateCfg.anchor_m),
                               ("cup_dropout_stop_s", DropoutCfg.stop_s), ("cup_dropout_near_m", DropoutCfg.near_m),
                               ("cup_dropout_near_max_s", DropoutCfg.near_max_s), ("cup_dropout_follow_s", CUP_STALE_S),
                               # ★10.21 손 안 컵 추정기(inhand_est): auto = 정책 폴더 inhand/inhand.yaml 이 있으면 켬 · off · <yaml 경로>
@@ -505,7 +506,8 @@ class PourFjNode(LeanNodeMixin, Node):
         self.attach = {r: CupAttach(self.attach_cfg) for r in self.fam.roles} if bool(p("cup_attach")) else {}
         # ★10.13 A안(fpp_gate.py): 쥐기 전 손 근처에서 튄 FP++ live 프레임은 버리고 마지막 값(sim FppGate 와 같은 식).
         self.gate_cfg = GateCfg(jump_m=float(p("fpp_gate_jump_m")), dz_m=float(p("fpp_gate_dz_m")),
-                                radius_m=float(p("fpp_gate_radius_m")), max_hold_s=float(p("fpp_gate_max_hold_s")))
+                                radius_m=float(p("fpp_gate_radius_m")), max_hold_s=float(p("fpp_gate_max_hold_s")),
+                                anchor_m=float(p("fpp_gate_anchor_m")))   # ★11.03 쥐기 전 기준점 거르기(fpp_gate.py)
         self.gates = {r: FppGate(self.gate_cfg) for r in self.attach} if self.gate_cfg.enabled else {}
         self.cup_fresh: dict[str, bool] = {}       # ★10.14 역할별 '성공을 세도 되는 컵 자세' — _cup_for 가 매 정책 틱 채운다
         # ★10.04 실기: 단독 aglt 단계에서 손이 다가가자 FP++ 컵이 1.5~2.6 s 끊겨(손이 가림) '컵 자세가 없다'로 집기 전에 멈췄다.

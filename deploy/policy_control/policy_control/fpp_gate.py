@@ -8,6 +8,12 @@ sim(vision-3090, rg3s ep4700, 배포와 같은 설정)에서 같은 튐을 넣�
   마지막으로 받은 값에서 jump_m 넘게 떨어졌거나 · z 가 에피소드 첫 프레임보다 dz_m 넘게 낮으면 버리고 마지막 값을 쓴다.
   마지막으로 받은 뒤 max_hold_s 가 지나면 다음 프레임은 받는다(진짜로 밀렸을 수 있다 — 학습 가림 DR 상한 2.5 s).
 마지막 값 유지는 학습 FP++ 가림 DR(손 10 cm 안에서 0.5~2.5 s 마지막 값 고정)과 같은 모양이라 정책이 본 분포 안이다.
+
+★11.03 기준점 거르기(anchor_m > 0, 배포 전용 — sim FppGate 에는 없다): 실기 15:03 오른손 bag 에서 손바닥이 컵 10 cm 근처에 오자
+  live 가 프레임당 2 cm 미만으로 +y 3.7 cm 미끄러져 jump_m 을 통과했고, 이어 14 cm 튐 · z −6 cm 를 버리다 max_hold_s 뒤 틀린 값을
+  받았다(스냅숏은 내내 그 자리). 12:23 오른손도 손이 다가오자 live 가 +y 3 cm 미끄러졌다(재생: 스냅숏 대비 손바닥 오차 0.1~0.4 cm,
+  live 대비 2.0~2.4 cm — scripts/analysis/replay_handoff_gate_1103.py). 켜면 쥐기 전 · 손바닥 radius_m 안에서 에피소드 첫 받은 값(기준점)에서 anchor_m 넘게 벗어난
+  프레임은 버리고 기준점을 쓴다. max_hold_s 가 지나도 받지 않는다 — 쥐기 전 컵은 서 있다. 밀렸다면 옛 자리로 가서 실패하는 쪽이 안전.
 """
 
 from __future__ import annotations
@@ -23,13 +29,16 @@ class GateCfg:
     dz_m: float = 0.02
     radius_m: float = 0.20
     max_hold_s: float = 2.5
+    anchor_m: float = 0.0        # ★11.03 > 0 이면 기준점 거르기(jump_m 과 같이 켠다)
 
     def __post_init__(self) -> None:
-        vals = (self.jump_m, self.dz_m, self.radius_m, self.max_hold_s)
+        vals = (self.jump_m, self.dz_m, self.radius_m, self.max_hold_s, self.anchor_m)
         if not all(np.isfinite(v) and v >= 0.0 for v in vals):
             raise ValueError(f"GateCfg 값은 유한한 ≥ 0: {vals}")
         if self.jump_m > 0.0 and min(self.dz_m, self.radius_m, self.max_hold_s) <= 0.0:
             raise ValueError(f"GateCfg: 켜면(jump_m > 0) dz_m · radius_m · max_hold_s > 0: {vals}")
+        if self.anchor_m > 0.0 and self.jump_m <= 0.0:
+            raise ValueError(f"GateCfg: anchor_m 은 jump_m > 0 일 때만 켠다: {vals}")
 
     @property
     def enabled(self) -> bool:
@@ -44,18 +53,21 @@ class FppGate:
         self.new_episode()
 
     def new_episode(self) -> None:
-        self.last = None             # 마지막으로 받은 (pos, quat, stamp)
+        self.last = None             # 마지막으로 받은 (pos, quat, stamp) — 기준점으로 버린 뒤에는 기준점
+        self.anchor = None           # ★11.03 에피소드 첫 받은 값
         self.z0: float | None = None
         self.t_acc: float | None = None
         self.seen_stamp = None
         self.rejects = 0
+        self.anchor_rejects = 0
         # ★10.14 실기 204216: 마지막 새 프레임을 버려 옛 값을 붙들고 있는 중 — 노드는 이 동안 성공을 세지 않는다
         self.holding = False
 
     def _accept(self, live, t: float):
         self.holding = False
         self.last, self.t_acc = live, float(t)
-        if self.z0 is None:
+        if self.anchor is None:
+            self.anchor = live
             self.z0 = float(np.asarray(live[0], float)[2])
         return live
 
@@ -72,6 +84,12 @@ class FppGate:
         pos = np.asarray(live[0], float)
         last = np.asarray(self.last[0], float)
         near = float(np.linalg.norm(last - np.asarray(palm_pos, float))) < self.cfg.radius_m
+        if active and near and self.cfg.anchor_m > 0.0 and \
+                float(np.linalg.norm(pos - np.asarray(self.anchor[0], float))) > self.cfg.anchor_m:
+            self.anchor_rejects += 1
+            self.holding = True
+            self.last = self.anchor          # t_acc 는 그대로 — 기준점 거르기는 max_hold_s 를 보지 않는다
+            return self.anchor
         z0 = float(pos[2]) if self.z0 is None else self.z0
         odd = float(np.linalg.norm(pos - last)) > self.cfg.jump_m or pos[2] < z0 - self.cfg.dz_m
         young = self.t_acc is not None and float(t) - self.t_acc < self.cfg.max_hold_s
@@ -85,5 +103,5 @@ class FppGate:
         return self.last if self.last is not None else live
 
     def as_dict(self) -> dict:
-        return {"rejects": int(self.rejects), "held_s": None if self.t_acc is None else round(float(self.t_acc), 3),
+        return {"rejects": int(self.rejects), "anchor_rejects": int(self.anchor_rejects), "held_s": None if self.t_acc is None else round(float(self.t_acc), 3),
                 "holding": bool(self.holding)}
