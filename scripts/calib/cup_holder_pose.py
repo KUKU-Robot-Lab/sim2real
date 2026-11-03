@@ -524,7 +524,7 @@ def main(argv=None) -> int:
     depth = None
     if "depth" in d.files:
         depth = d["depth"].astype(float)
-        depth = depth / 1000.0 if depth.max() > 50 else depth
+        depth = depth / 1000.0 if np.median(depth[depth > 0]) > 50 else depth  # 최댓값 판정은 무효 픽셀에 뒤집힌다(11.03)
     import cv2
     gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
 

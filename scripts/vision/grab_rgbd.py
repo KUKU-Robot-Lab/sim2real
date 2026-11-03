@@ -33,7 +33,8 @@ class Grab(Node):
         if msg.encoding != "16UC1":
             raise SystemExit(f"depth encoding {msg.encoding} 미지원")
         d = np.frombuffer(msg.data, np.uint16).reshape(msg.height, msg.width)
-        self.depth = d.astype(np.float32) * 1e-3
+        # 65535 = 측정 실패(11.03: 이 값이 65.535 m 로 남아 읽는 쪽의 단위 판정을 뒤집었다) → 0(무효)
+        self.depth = np.where(d == 0xFFFF, 0, d).astype(np.float32) * 1e-3
 
     def _info(self, msg: CameraInfo) -> None:
         self.k = np.asarray(msg.k, dtype=np.float64).reshape(3, 3)

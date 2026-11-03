@@ -461,7 +461,7 @@ def main(argv=None) -> int:
         d = np.load(npz)
         rgb, K = d["rgb"], d["K"].astype(float)
         depth = d["depth"].astype(float)
-        if depth.max() > 50:
+        if np.median(depth[depth > 0]) > 50:  # mm — 최댓값은 무효 픽셀(65.535) 하나로 뒤집힌다(11.03)
             depth = depth / 1000.0
         gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
         Tk, used, img, res, shift = solve(holes, gray, K, T0)
