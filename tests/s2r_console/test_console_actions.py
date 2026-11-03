@@ -567,3 +567,14 @@ def test_path_c_card_runs_the_grasp_c_episode_with_its_approach_policy_and_objec
     assert doc['episode']['name'] == 'grasp_c_right' and doc['objects']['CUP']['topic'] == '/objects/source200_blue/pose'
     assert doc['policies']['rh_aglt_r'] == {'policy': 'rh56f1/aglt/right_approach_rg3wg', 'approach_grasp': {}}
     assert doc['sequence'][0]['policy_object'] == 'source200_real'
+
+
+def test_cups_keeps_the_calibrated_head_pose_until_the_user_sets_an_angle(console, tiny_repo):
+    # ★11.03 기본 (0, −20) 을 붙이면 RH56F1 머리가 정면을 봐 테이블을 못 본다 — 정하지 않았으면 head_move 가 설정 홈으로 간다.
+    m = setup_actions(console, tiny_repo, {'preflight': [{'argv': ['true']}]})
+    s = console.session
+    from mission_stages import Command
+    move = Command(argv=('python3', 'scripts/head_move.py', '--execute'))
+    assert m._transform(s, 'cups', {}, move).argv == move.argv
+    s.workspace.update({'head': {'pan': 5, 'tilt': -25}}, persist=False)
+    assert m._transform(s, 'cups', {}, move).argv[-4:] == ('--pan', '5.0', '--tilt', '-25.0')

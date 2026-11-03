@@ -684,7 +684,8 @@ class ActionManager:
         return [self._transform(s, description['id'], description['parameters'], c) for c in commands]
 
     def _transform(self, s, action_id, parameters, cmd):
-        if action_id in ('head_control', 'cups') and any('head_move.py' in a for a in cmd.argv):
+        if action_id in ('head_control', 'cups') and any('head_move.py' in a for a in cmd.argv) and (
+                action_id == 'head_control' or s.workspace.head_set or {'pan', 'tilt'} & set(parameters)):
             head = {**s.workspace.head, **parameters}
             cmd = replace(cmd, argv=(*cmd.argv, '--pan', str(head['pan']), '--tilt', str(head['tilt'])))
         if any('object_pose_node.py' in a for a in cmd.argv):

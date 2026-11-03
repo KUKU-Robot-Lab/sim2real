@@ -58,6 +58,9 @@ class Workspace:
         self.revision = 0
         self.perception = {'fpp': True, 'locate': False}
         self.head = {'pan': 0.0, 'tilt': -20.0, 'calib_profile': ''}
+        # ★11.03 사용자가 머리 각도를 정했는가 — 아니면 cups 는 각도를 붙이지 않고 head_move 가 설정 홈(카메라 캘리브 자세)으로 간다.
+        #   기본값 (0, −20) 은 옛 머리 규약이라 RH56F1 머리에서는 정면을 본다(11.03 cups 에서 테이블을 못 봄).
+        self.head_set = False
         self.objects = []
         self.cards = []
         self._fpp_after = {}
@@ -205,6 +208,7 @@ class Workspace:
             for i, card in enumerate(state['cards']):
                 card.update(x=i * 260, y=0)
         self.perception, self.head, self.objects, self.cards = (state[k] for k in ('perception', 'head', 'objects', 'cards'))
+        self.head_set = self.head_set or 'head' in patch
         self.revision += 1
         if persist:
             self.layout_path.parent.mkdir(parents=True, exist_ok=True)
