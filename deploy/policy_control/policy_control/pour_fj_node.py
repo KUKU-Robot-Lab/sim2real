@@ -275,6 +275,8 @@ class AgltChain:
         컵 + goal_offset 이다. 배포는 넘김 순간의 컵으로 목표를 다시 잡는다(접근은 컵을 건드리지 않는 단계). LSTM 은 0 에서
         hold_steps 동안 정지 자세를 보며 예열한다(sim 은 홈 대기 · 접근 · 정착을 보고 온다 — 이 차이는 실기에서 본다)."""
         c = A.select_object(base, self.object_name)
+        if self.inhand is not None:                 # ★11.03 추정기는 넘김부터 — 첫 live 틱 측정 컵이 끊김 사전값(고리 < 0.10 m)
+            self.inhand.reset(c.active_object)      #   물체 검사가 실패하면 체인을 바꾸기 전에 멈춘다
         arm = self.dec.state["arm"].arm_target.copy()
         self.c, self.policy = c, policy
         self.dec = A.RaDecoder(c, self.dec.assist)
@@ -290,12 +292,15 @@ class AgltChain:
             return self.ag.step(self, meas)
         m = m_meas = meas["arm"]
         hand_q = np.array([m.hand_q[j] for j in self.c.side().hand_joints], float)
-        if self.inhand is not None:                 # ★10.21 끊긴 뒤 정책이 보는 컵 = 손바닥 FK ⊗ GRU(sim gru_loop_hook perceive)
+        # ★11.03 접근 정책(ap05 — 경로 C · D) 동안은 추정기를 쓰지 않는다. 접근 중 CupDropout 은 추정기 없는 때와 같다(covered 아님) — 실기 grasp_shaker: 0.10 m 끊김 뒤 쥐지 않은 손의 추정 컵이
+        #   손바닥에 붙어 14.6 cm 어긋났고, 접근 정책이 그 컵을 따라 사전 파지 자리를 벗어났다(sim e2e 는 접근부터 켠다 — 일부러 다르다).
+        inh = self.inhand if (self.ag is None or self.ag.phase != "approach") else None
+        if inh is not None:                         # ★10.21 끊긴 뒤 정책이 보는 컵 = 손바닥 FK ⊗ GRU(sim gru_loop_hook perceive)
             # 관측 · 디코더 · 목표(들기 판정)가 쓴다. ★10.29 grasp_state 손 목표 = sim 막힘 멈춤 목표(A 가 푼 동안 실측 ± g)
-            m = self.inhand.perceive(m, self.dec.est_hand_target(hand_q), hand_q)
+            m = inh.perceive(m, self.dec.est_hand_target(hand_q), hand_q)
         obs = A.build_obs(self.c, m, self.dec, self.goal, self.prev)
-        if self.inhand is not None:                 # 다음 틱 GRU 입력 = 이번 행동을 낸 관측(sim obs_buf)
-            self.inhand.remember(obs)
+        if inh is not None:                         # 다음 틱 GRU 입력 = 이번 행동을 낸 관측(sim obs_buf)
+            inh.remember(obs)
         a = np.clip(np.asarray(self.policy.forward(obs), float), -self.c.action_clip, self.c.action_clip)
         active = self.step_i >= self.c.hold_steps
         near = float(np.linalg.norm(np.asarray(m.cup_pos, float) - np.asarray(m.palm_pos, float)))   # 10.14 grasp_near_m

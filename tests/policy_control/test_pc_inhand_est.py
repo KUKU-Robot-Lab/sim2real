@@ -280,17 +280,16 @@ def test_route_f_runs_the_estimator_through_the_handover(ap05, rcg04, run, fk):
         plant.apply(tg)
         if ch.ag.phase == "policy":
             break
-    assert ch.ag.phase == "policy" and run.dropped               # 사전 파지 고리(7.5 cm) < 끊김 0.10 m — 넘길 때는 늘 끊긴 상태
+    assert ch.ag.phase == "policy"
     assert np.allclose(ch.goals.cup_reset, plant.cup)            # 넘김 판정 · 목표는 측정 컵(sim 참값 컵) — 추정 컵이 아니다
-    first = next(i for i, s in enumerate(seen) if s[0])
-    assert seen[first - 1][1] >= run.drop_m > seen[first][1]     # 처음 0.10 m 안으로 든 틱
-    for dropped, _, cup_obs, m in seen[:first]:                  # 그 전 = FP++ 그대로
+    assert any(d < run.drop_m for _, d, _, _ in seen)            # 접근 중 0.10 m 안에 들어왔어도
+    for _, _, cup_obs, m in seen:                                # ★11.03 접근 정책은 끝까지 FP++ 컵을 본다(추정기 안 돎)
         assert np.allclose(cup_obs, np.clip(m.cup_pos - m.palm_pos, -5, 5), atol=1e-9)
-    k0 = run.k
-    for _ in range(20):                                          # 넘겨받은 rcg 도 같은 GRU 상태로 잇는다(리셋 없음)
+    assert run.k == 0 and not run.dropped                        # 넘김 때 새 에피소드로 리셋 — 아직 한 틱도 안 봤다
+    for _ in range(20):                                          # 넘겨받은 rcg 둘째 틱에 끊긴다(고리 < 0.10 m · 리셋 첫 틱은 live 아님 = sim 규약)
         obs, _, tg = ch.step(plant.meas())
         plant.apply(tg)
-    assert run.k == k0 + 20 and len(nxt.obs) == 20
+    assert run.k == 20 and run.drop_tick == 1 and len(nxt.obs) == 20
     assert np.allclose(run.prev_obs, nxt.obs[-1])                # 다음 틱 GRU 입력 = 이번 행동을 낸 관측
     m = plant.meas()["arm"]
     assert not np.allclose(_cup_obs(rcg04, nxt.obs[-1]), m.cup_pos - m.palm_pos, atol=1e-6)   # 정책은 추정 컵을 본다
