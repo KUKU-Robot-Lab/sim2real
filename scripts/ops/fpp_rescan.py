@@ -28,13 +28,26 @@ TILT_MAX_DEG = 3.0
 X_RANGE = (0.1, 0.4)
 
 
-def first_action(status: dict | None) -> str:
-    """처음 할 일 — 상태가 아직 없으면 기다리고, 첫 회차(generation 0)가 안 끝났으면 그것을 기다리고, 아니면 다시 찍게 한다."""
+def first_action(status: dict | None, fresh_s: float = 0.0) -> str:
+    """처음 할 일 — 상태가 아직 없으면 기다리고, 첫 회차(generation 0)가 안 끝났으면 그것을 기다리고, 아니면 다시 찍게 한다.
+    ★11.03 실기: 묶음을 하나씩 띄우자 perception_ctl 이 끝날 때 첫 회차가 이미 끝나 있었고(generation ≥ 1), 다시 찍기의 2.6 GiB
+    할당이 다른 묶음의 라이브 추적 옆에서 OOM 으로 실패했다(cups rc 1). 컨테이너가 이번에 새로 떴으면(fresh_s 안에 떴고 아무도
+    명령하지 않았다) 첫 회차를 그대로 받는다('take'). 이미 떠 있던 컨테이너('↶ 여기서 다시', 받은 뒤 seen)는 지금처럼 다시 찍는다.
+    cmds · up_s 가 없는 옛 노드는 다시 찍는다."""
     if status is None:
         return "wait_status"
     if int(status.get("generation", 0)) == 0:
         return "wait_round"
+    if status.get("cmds") == 0 and float(status.get("up_s", float("inf"))) <= fresh_s:
+        return "take"
     return "command"
+
+
+def fresh_window_s(n_groups: int) -> float:
+    """'이번에 새로 뜬' 컨테이너로 볼 기동 경과 상한 — perception_ctl start 의 기다림(묶음을 하나씩) + rescan 여유."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from perception_launcher_core import start_wait_s
+    return float(start_wait_s(n_groups)) + 60.0
 
 
 def round_done(status: dict, after: int, names: list[str]) -> bool:
@@ -266,14 +279,23 @@ def _run(args, only_status: bool, preset: dict | None = None) -> int:
         names = [n for n in args.cups if n not in absent]
         st = box["st"]
         groups = groups_for(st, names)
-        after = {g: int(st[g].get("generation", 0)) for g in groups}
-        again = [n for g, mine in groups.items() if first_action(st[g]) == "command" for n in mine]
+        fresh = fresh_window_s(len(st))
+        act = {g: first_action(st[g], fresh) for g in groups}
+        # 'take' = 이미 끝난 첫 회차를 받는다 — 그 회차부터 새 회차로 센다
+        after = {g: int(st[g].get("generation", 0)) - (act[g] == "take") for g in groups}
+        again = [n for g, mine in groups.items() if act[g] == "command" for n in mine]
+        took = [g for g in groups if act[g] == "take"]
+        if took:
+            spin_until(lambda: pub.get_subscription_count() > 0)
+            pub.publish(String(data="seen:" + ",".join(took)))
+            print(f"[rescan] 이번에 새로 뜬 컨테이너의 첫 회차를 그대로 받는다 — {', '.join(took)}")
         if again:
             spin_until(lambda: pub.get_subscription_count() > 0)
             pub.publish(String(data=",".join(again)))
             print(f"[rescan] 다시 찍기 요청 — {', '.join(again)}")
-        if len(again) < len(names):
-            print("[rescan] FP++ 가 켜지며 찍는 첫 회차를 기다린다 — " + ", ".join(n for n in names if n not in again))
+        waiting = [n for g, mine in groups.items() if act[g] == "wait_round" for n in mine]
+        if waiting:
+            print("[rescan] FP++ 가 켜지며 찍는 첫 회차를 기다린다 — " + ", ".join(waiting))
         if not spin_until(lambda: enough_done(box["st"], after, names, args.require_all)):
             lost = [x for g, mine in groups_for(box["st"], names).items() for x in missing(box["st"][g], mine)]
             errs = " · ".join(f"{g}: {s_.get('error')}" for g, s_ in box["st"].items() if s_.get("error"))

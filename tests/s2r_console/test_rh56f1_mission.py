@@ -211,9 +211,11 @@ def test_real_cups_run_fpp_on_the_perception_pc_after_the_head_home_and_shutdown
     # ★11.03 사용자 "shaker는 현재 orange" — 묶음의 나머지 색은 넣지 않는다(GPU 24 GB)
     objs = " ".join(dict.fromkeys([*side, "source240p_pink"]))
     assert not {"shaker_c_blue", "shaker_c_pink"} & set(objs.split())
+    from perception_launcher_core import FIRST_ROUND_S
+    assert GEN._start_wait() >= len(GEN._groups()) * FIRST_ROUND_S          # 11.03 묶음을 하나씩 — 묶음마다 첫 회차 상한
     for want in (f"perception_launcher_node.py --host {host}", "fpp_pose_rx.py", "object_pose_node.py --camera-extrinsics",
                  "--camera-extrinsics", ext,
-                 f"perception_ctl.py start {objs} --viewer --wait {GEN.PERCEPTION_START_WAIT_S}",
+                 f"perception_ctl.py start {objs} --viewer --wait {GEN._start_wait()}",
                  f"fpp_rescan.py {' '.join(side)} --wait 120"):        # 10.08 다시 실행 = 지금 카메라로 다시 찍기
         assert any(want in a for a in cups), want
     rescan = next(c.argv for c in _cmds(REAL, REAL_BOOK, "cups") if any("fpp_rescan.py" in str(x) for x in c.argv))

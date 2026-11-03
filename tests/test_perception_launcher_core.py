@@ -192,8 +192,9 @@ def test_next_group_starts_only_after_previous_first_round():
     """★11.03 실기: 묶음 셋이 동시에 첫 회차를 하며 4090 24 GB 가 차 셋 다 warp alloc 실패 — 하나씩 띄운다."""
     from perception_launcher_core import FIRST_ROUND_MARK, run_actions, wait_first_round
     clock, events = _Clock(), []
-    logs = {"source240b": ["true\nloading", "true\nloading", f"true\n{FIRST_ROUND_MARK} · 오류 없음"],
-            "shaker_c": ["true\n", f"true\nPerceptionError: x\n{FIRST_ROUND_MARK} · 오류 PerceptionError: x"]}
+    logs = {"source240b": ["true\nloading", "true\nloading", f"true\n{FIRST_ROUND_MARK} · generation 1 · 오류 없음"],
+            "shaker_c": ["true\n", f"true\n{FIRST_ROUND_MARK} · generation 0 · 오류 PerceptionError: x"]}
+    notes = []
 
     def probe(group):
         events.append(("probe", group))
@@ -201,24 +202,85 @@ def test_next_group_starts_only_after_previous_first_round():
 
     def do(action):
         events.append(("up", action[1]))
-        assert wait_first_round(lambda: probe(action[1]), clock=clock, sleep=clock.sleep) is None
+        notes.append(wait_first_round(lambda: probe(action[1]), clock=clock, sleep=clock.sleep))
 
     assert run_actions([("fpp_group_up", "source240b"), ("fpp_group_up", "shaker_c")], do) == []
     assert events == [("up", "source240b"), *[("probe", "source240b")] * 3, ("up", "shaker_c"), *[("probe", "shaker_c")] * 2]
+    assert notes[0] is None and "PerceptionError: x" in notes[1]          # 첫 회차 오류는 참고로만(다음은 계속)
 
 
-def test_first_round_wait_warns_after_limit_or_when_container_stops():
+def test_first_round_wait_warns_after_limit_and_raises_when_container_stops():
     from perception_launcher_core import FIRST_ROUND_S, wait_first_round
     clock = _Clock()
     warn = wait_first_round(lambda: "true\nloading", clock=clock, sleep=clock.sleep)
     assert warn and "90 s" in warn and FIRST_ROUND_S <= clock.t < FIRST_ROUND_S + 2.1
     clock = _Clock()
-    warn = wait_first_round(lambda: "false\nTraceback (most recent call last):\nRuntimeError: boom", clock=clock,
-                            sleep=clock.sleep)
-    assert warn and "멈췄다" in warn and "RuntimeError: boom" in warn and clock.t == 0.0
+    with pytest.raises(RuntimeError, match="멈췄다.*RuntimeError: boom"):
+        wait_first_round(lambda: "false\nTraceback (most recent call last):\nRuntimeError: boom", clock=clock,
+                         sleep=clock.sleep)
+    assert clock.t == 0.0
 
 
-def test_snapshot_node_logs_the_first_round_mark():
+def test_probe_errors_are_unknown_and_polling_continues():
+    """리뷰 H1: ssh 오류 · 시간 초과로 대기를 건너뛰면 다음 묶음이 바로 떠 다시 동시 첫 회차가 된다."""
+    import subprocess
+    from perception_launcher_core import FIRST_ROUND_MARK, wait_first_round
+    clock, calls = _Clock(), []
+    seq = [RuntimeError("ssh rc=255"), subprocess.TimeoutExpired("ssh", 15), f"true\n{FIRST_ROUND_MARK} · generation 1 · 오류 없음"]
+
+    def probe():
+        calls.append(1)
+        item = seq.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    assert wait_first_round(probe, clock=clock, sleep=clock.sleep) is None and len(calls) == 3
+
+    def always_fail():
+        raise RuntimeError("ssh down")
+
+    clock = _Clock()
+    warn = wait_first_round(always_fail, clock=clock, sleep=clock.sleep)
+    assert warn and "90 s" in warn and clock.t >= 90.0
+
+
+def test_probe_cmd_finds_the_mark_even_after_long_logs(tmp_path):
+    """리뷰 M4: --tail 로 읽으면 표시 줄이 밀려난다 — grep -m1 로 첫 줄을 찾는다. docker 를 흉내 내는 스크립트로 bash 에서 돌린다."""
+    import os
+    import subprocess
+    from perception_launcher_core import FIRST_ROUND_MARK, first_round_probe_cmd
+    fake = tmp_path / "docker"
+    fake.write_text('#!/bin/bash\nif [ "$1" = inspect ]; then [ -f "$STATE" ] && cat "$STATE" || exit 1; exit 0; fi\n'
+                    'cat "$LOG"\n')
+    fake.chmod(0o755)
+    log, state = tmp_path / "log", tmp_path / "state"
+    env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}", "LOG": str(log), "STATE": str(state)}
+    run = lambda: subprocess.run(["bash", "-c", first_round_probe_cmd("fpp_x")], env=env,  # noqa: E731
+                                 capture_output=True, text=True, check=True).stdout
+    state.write_text("true\n")
+    log.write_text(f"{FIRST_ROUND_MARK} · generation 1 · 오류 없음\n" + "추적 줄\n" * 500)
+    assert run().splitlines() == ["true", f"{FIRST_ROUND_MARK} · generation 1 · 오류 없음"]
+    log.write_text("loading\n")
+    assert run().splitlines() == ["true", "loading"]
+    state.unlink()                                                        # 컨테이너 없음 = false
+    assert run().splitlines()[0] == "false"
+
+
+def test_start_wait_covers_each_group_first_round():
+    from perception_launcher_core import FIRST_ROUND_S, start_wait_s
+    assert start_wait_s(3) >= 3 * FIRST_ROUND_S and start_wait_s(3) > start_wait_s(2)
+
+
+def test_snapshot_node_logs_the_first_round_mark_also_without_camera():
+    """리뷰 M3: 카메라 영상이 없으면 찍기에 못 들어간다 — 그때도 표시 줄을 찍어 런처가 상한까지 기다리지 않는다."""
     from perception_launcher_core import FIRST_ROUND_MARK
     src = (Path(__file__).resolve().parents[1] / "scripts/nodes/fpp_snapshot_node.py").read_text(encoding="utf-8")
-    assert f'f"{FIRST_ROUND_MARK} ·' in src
+    assert src.count(f'f"{FIRST_ROUND_MARK} · generation') == 2
+
+
+def test_notes_are_kept_apart_from_the_warning():
+    """리뷰 M1: 첫 회차 지연 · 오류는 참고 — warning 에 섞으면 --require-all 이 떠 있는 컨테이너를 실패로 본다."""
+    st = parse_remote_status('{"camera_up": true, "containers": {}, "viewer_up": false}')
+    out = build_status(st, 0.0, {}, False, None, notes=["shaker_c: 첫 회차가 90 s 안에 안 끝났다"])
+    assert out["warning"] is None and out["notes"] == ["shaker_c: 첫 회차가 90 s 안에 안 끝났다"]

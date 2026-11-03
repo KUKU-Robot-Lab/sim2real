@@ -21,6 +21,24 @@ def test_the_first_snapshot_still_running_is_waited_for_not_restarted():
     assert R.first_action({"generation": 2, "pending": ["cyl60"]}) == "command"
 
 
+def test_a_freshly_started_containers_first_round_is_taken_not_rescanned():
+    """★11.03 실기: 순차 기동 뒤 첫 회차가 이미 끝나 있었는데 다시 찍기를 요청해 OOM(cups rc 1)."""
+    fresh = R.fresh_window_s(3)
+    assert fresh >= 3 * 90
+    new = {"generation": 1, "cmds": 0, "up_s": 120.0}
+    assert R.first_action(new, fresh) == "take"
+    assert R.first_action({**new, "cmds": 1}, fresh) == "command"           # 받은 뒤(seen) · 사용자 '↶ 여기서 다시'
+    assert R.first_action({**new, "up_s": fresh + 1}, fresh) == "command"   # 오래전에 떠 있던 컨테이너
+    assert R.first_action({"generation": 1}, fresh) == "command"            # cmds · up_s 가 없는 옛 노드
+    assert R.first_action({**new, "generation": 0}, fresh) == "wait_round"
+
+
+def test_the_snapshot_node_counts_commands_and_seen_only_for_its_group():
+    src = (Path(__file__).resolve().parents[1] / "scripts/nodes/fpp_snapshot_node.py").read_text(encoding="utf-8")
+    assert '"cmds": self.cmds, "up_s"' in src and 'text.startswith("seen:")' in src
+    assert 'group_name in text[5:].split(",")' in src
+
+
 def test_a_round_is_done_when_a_newer_pass_found_every_asked_cup():
     """회차(generation) = 찍기 한 바퀴. 물어본 컵만 본다 — 묶음의 다른 컵(핑크)이 테이블에 없어도 끝난다."""
     found = {"cyl60": {"found": True}, "cyl60_blue": {"found": True}, "cyl60_pink": {"found": False}}

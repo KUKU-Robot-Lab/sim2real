@@ -34,8 +34,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fpp_udp  # noqa: E402
 from object_registry import load_registry, output_topic, render_fpp_yaml, render_group_yaml  # noqa: E402
 from perception_launcher_core import (  # noqa: E402
-    FIRST_ROUND_S, LOCAL_HOSTS, build_status, parse_command, parse_remote_status, plan_actions, run_actions, shell_argv,
-    wait_first_round,
+    FIRST_ROUND_S, LOCAL_HOSTS, build_status, first_round_probe_cmd, parse_command, parse_remote_status, plan_actions,
+    run_actions, shell_argv, wait_first_round,
 )
 
 #: 저 PC 의 홈에서 본 상대 경로 — ssh 명령은 홈에서 시작한다. PC 마다 사용자 이름이 달라(usr · user) 절대 경로를 쓰지 않는다(09.29).
@@ -86,9 +86,9 @@ class RemoteExec:
         proc.stderr.close()
         self._video_tunnel = None
 
-    def _ssh(self, command: str, stdin: str | None = None) -> str:
+    def _ssh(self, command: str, stdin: str | None = None, timeout_s: float | None = None) -> str:
         proc = subprocess.run(shell_argv(self.host, command), input=stdin, capture_output=True, text=True,
-                              timeout=self.timeout_s, cwd=str(Path.home()))
+                              timeout=timeout_s or self.timeout_s, cwd=str(Path.home()))
         if proc.returncode != 0:
             raise RuntimeError(f"ssh {self.host} '{command[:60]}…' rc={proc.returncode}: "
                                f"{(proc.stderr or proc.stdout).strip()[-300:]}")
@@ -141,6 +141,7 @@ def main() -> None:
             self._busy = False
             self._error: str | None = None
             self._warning: str | None = None      # ★10.13 일부 물체 컨테이너만 실패
+            self._notes: list[str] = []           # ★11.03 묶음 첫 회차 참고(상한 넘김 · 첫 회차 오류) — warning 과 따로
             self._state = None
             self._last_pose: dict[str, float] = {}
             self._camera: tuple[float, float] | None = None       # (받은 시각, hz) — fpp_pose_rx 가 낸다
@@ -185,7 +186,7 @@ def main() -> None:
             ages = {n: (round(now - self._last_pose[n], 3) if n in self._last_pose else None)
                     for n in reg["now"].names()}
             payload = build_status(self._state, fpp_udp.camera_hz_at(self._camera, now), ages, self._busy, self._error,
-                                   group_of=group_of, warning=self._warning)
+                                   group_of=group_of, warning=self._warning, notes=self._notes)
             self._pub.publish(String(data=json.dumps(payload, ensure_ascii=False)))
 
         def _on_cmd(self, msg: String) -> None:
@@ -208,7 +209,7 @@ def main() -> None:
             try:
                 self._error = None
                 self._warning = None
-                self._notes: list[str] = []
+                self._notes = []
                 state = parse_remote_status(remote.run("status.sh"))
                 actions = plan_actions(cmd, state, group_of=group_of)
                 self.get_logger().info(f"{cmd.op}: {actions or '변경 없음'}")
@@ -218,8 +219,6 @@ def main() -> None:
                 if failed:
                     self._warning = f"{cmd.op}: 일부 물체 컨테이너 실패 — " + " · ".join(failed)
                     self.get_logger().warning(self._warning)
-                if self._notes:
-                    self._warning = " · ".join([*([self._warning] if self._warning else []), *self._notes])
                 if cmd.viewer is True:
                     remote.ensure_video_tunnel()
                 elif cmd.op == 'stop' or cmd.viewer is False:
@@ -246,10 +245,9 @@ def main() -> None:
                 remote.put(render_group_yaml(reg["now"], group, camera_yaml=args.camera_extrinsics, only=asked), path)
                 out = remote.run("fpp_group_up.sh", group, path)
                 # ★11.03 다음 묶음은 이 컨테이너의 첫 회차가 끝난 뒤에(동시 첫 회차 = GPU 24 GB 초과)
-                cname = f"fpp_{group}"
-                warn = wait_first_round(lambda: remote._ssh(
-                    f"S=$(docker inspect -f '{{{{.State.Running}}}}' {cname} 2>/dev/null) || S=false; echo $S; "
-                    f"docker logs --tail 100 {cname} 2>&1 || true"), limit_s=args.first_round_s)
+                # 첫 회차 전에 멈추면 raise → run_actions 가 이 묶음을 실패로 모은다(기동 실패라 warning 에 남는 게 맞다)
+                probe = first_round_probe_cmd(f"fpp_{group}")
+                warn = wait_first_round(lambda: remote._ssh(probe, timeout_s=15.0), limit_s=args.first_round_s)
                 if warn:
                     self._notes.append(f"{group}: {warn}")
                     self.get_logger().warning(f"  {group}: {warn}")

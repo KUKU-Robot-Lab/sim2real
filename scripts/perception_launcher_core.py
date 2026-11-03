@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import sys
 import re
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -179,20 +180,40 @@ def run_actions(actions: list[tuple[str, ...]], do: Callable[[tuple[str, ...]], 
 
 #: ★11.03 실기: 묶음 셋을 0.8 s 간격으로 띄우자 셋이 동시에 첫 회차(모델 로드 + 등록)를 하며 arm4090 4090 24 GB 가 차서
 #: 셋 다 warp alloc 실패했다. 묶음은 하나씩 — 앞 컨테이너의 첫 회차가 끝난 뒤(성공이든 오류든) 다음을 띄운다.
-FIRST_ROUND_MARK = "첫 회차 끝"           # fpp_snapshot_node 가 첫 찍기 시도 뒤 한 번 찍는 로그 줄
+FIRST_ROUND_MARK = "첫 회차 끝"           # fpp_snapshot_node 가 첫 찍기 시도 뒤(카메라 영상이 없을 때도) 한 번 찍는 로그 줄
 FIRST_ROUND_S = 90.0                      # 묶음 하나의 첫 회차 상한 — 넘기면 경고하고 다음 묶음으로
+START_MARGIN_S = 30.0                     # 카메라 · pose_tx · 뷰어 기동과 ssh 왕복 여유
+
+
+def start_wait_s(n_groups: int) -> int:
+    """perception_ctl start --wait — 묶음을 하나씩 띄우므로 묶음 수 × 첫 회차 상한 + 여유. 미션 생성기 · 콘솔이 같이 쓴다."""
+    return int(max(1, n_groups) * FIRST_ROUND_S + START_MARGIN_S)
+
+
+def first_round_probe_cmd(cname: str) -> str:
+    """인지 PC 에서 돌릴 확인 명령 — 첫 줄 State.Running(없는 컨테이너는 false), 다음은 첫 회차 줄(grep -m1, 로그가 길어도
+    밀려나지 않는다). 그 줄이 아직 없으면 오류 줄을 가리려고 로그 끝 200 줄."""
+    return (f"S=$(docker inspect -f '{{{{.State.Running}}}}' {cname} 2>/dev/null) || S=false; echo $S; "
+            f"docker logs {cname} 2>&1 | grep -m1 -F '{FIRST_ROUND_MARK}' || docker logs --tail 200 {cname} 2>&1 || true")
 
 
 def wait_first_round(probe: Callable[[], str], limit_s: float = FIRST_ROUND_S, poll_s: float = 2.0,
                      clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep) -> str | None:
-    """probe() = 첫 줄 docker inspect State.Running(true/false) + docker logs. None = 첫 회차 끝, 문자열 = 경고."""
+    """probe() = first_round_probe_cmd 출력. None = 첫 회차가 오류 없이 끝남, 문자열 = 참고(지연 · 첫 회차 오류 — 로그용).
+    첫 회차 전에 컨테이너가 멈추면 RuntimeError(기동 실패 — run_actions 가 실패로 모은다).
+    probe 가 실패(ssh 오류 · 시간 초과)하면 상태를 모르는 것으로 보고 상한까지 계속 묻는다."""
     t0 = clock()
     while True:
-        out = probe()
-        if FIRST_ROUND_MARK in out:
-            return None
-        if out.split("\n", 1)[0].strip() == "false":
-            return "첫 회차 전에 컨테이너가 멈췄다 — " + (last_crash(out) or "오류 줄 없음")
+        try:
+            out = probe()
+        except (RuntimeError, OSError, subprocess.SubprocessError):
+            out = None
+        if out is not None:
+            mark = next((ln for ln in out.splitlines() if FIRST_ROUND_MARK in ln), None)
+            if mark is not None:
+                return None if mark.rstrip().endswith("오류 없음") else mark.strip()[-200:]
+            if out.split("\n", 1)[0].strip() == "false":
+                raise RuntimeError("첫 회차 전에 컨테이너가 멈췄다 — " + (last_crash(out) or "오류 줄 없음"))
         if clock() - t0 >= limit_s:
             return f"첫 회차가 {limit_s:.0f} s 안에 안 끝났다 — 다음으로 넘어간다"
         sleep(poll_s)
@@ -200,7 +221,7 @@ def wait_first_round(probe: Callable[[], str], limit_s: float = FIRST_ROUND_S, p
 
 def build_status(state: RemoteState | None, camera_hz: float, pose_ages: dict[str, float | None],
                  busy: bool, error: str | None, group_of: Callable[[str], str | None] | None = None,
-                 warning: str | None = None) -> dict:
+                 warning: str | None = None, notes: list[str] | None = None) -> dict:
     objects = {}
     for name, age in pose_ages.items():
         cname = _container(name, group_of)
@@ -217,6 +238,8 @@ def build_status(state: RemoteState | None, camera_hz: float, pose_ages: dict[st
         "error": error,
         #: ★10.13 일부 물체 컨테이너만 실패(나머지는 떴다) — perception_ctl 이 경고로 찍고, --require-all 이면 실패로 본다
         "warning": warning,
+        #: ★11.03 묶음 첫 회차 참고(상한 넘김 · 첫 회차 오류) — 컨테이너는 떠 있다. warning 과 섞지 않는다(--require-all 이 실패로 본다)
+        "notes": list(notes or []),
     }
 
 

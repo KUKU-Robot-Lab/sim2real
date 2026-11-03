@@ -344,7 +344,8 @@ def test_fpp_refresh_starts_all_enabled_groups_before_subset_rescan(console, tin
     rows = m._perception_commands(console.session, {'object_ids': [obj['id']]})
     assert 'perception_ctl.py' in rows[0][1].argv[1]
     assert obj['id'] in rows[0][1].argv and second['id'] in rows[0][1].argv
-    assert rows[0][1].argv[-3:] == ('--wait', '300', '--require-all')
+    from perception_launcher_core import start_wait_s
+    assert rows[0][1].argv[-3:] == ('--wait', str(start_wait_s(2)), '--require-all')
     assert '--viewer' in rows[0][1].argv
     assert rows[1][1].argv == tuple(console.session.workspace.fpp_argv([obj['id']]))
 

@@ -111,6 +111,9 @@ def main(argv=None) -> None:
             self.candidates: list = []
             self.pending: set[str] = set(objects)
             self.generation = 0                     # 끝낸 찍기 바퀴 수 — fpp_rescan 이 '새 회차'를 가린다
+            # ★11.03 fpp_rescan 이 '이번에 새로 뜬 컨테이너의 첫 회차'를 다시 찍지 않고 받게(받은 뒤 seen 으로 cmds 를 올린다)
+            self.cmds = 0
+            self.t_boot = time.monotonic()
             self.wake = threading.Event()
             self.pubs = {n: self.create_publisher(PoseStamped, o["pose_topic"], 10) for n, o in objects.items()}
             self.live_pubs = {n: self.create_publisher(PoseStamped, o["pose_topic"].replace("/pose", "/live_pose"), 10)
@@ -151,6 +154,13 @@ def main(argv=None) -> None:
 
         def _on_cmd(self, msg) -> None:
             text = msg.data.strip()
+            if text.startswith("seen:"):            # fpp_rescan 이 첫 회차를 그대로 받았다 — 다음부터는 다시 찍는다
+                if group_name in text[5:].split(","):
+                    with self.lock:
+                        self.cmds += 1
+                return
+            with self.lock:
+                self.cmds += 1
             names = set(objects) if text in ("", "all") else {n.strip() for n in text.split(",")} & set(objects)
             with self.lock:
                 for n in names:
@@ -247,6 +257,9 @@ def main(argv=None) -> None:
                 frame, seq = self._next_frame(seq, timeout=5.0)
                 if frame is None:
                     self.error = "카메라 영상이 없다"
+                    if not first_done:             # 런처가 상한까지 기다리지 않게 — 첫 회차 줄을 오류와 함께 찍는다
+                        first_done = True
+                        self.get_logger().info(f"첫 회차 끝 · generation {self.generation} · 오류 {self.error}")
                     continue
                 try:
                     self._snapshot(frame, seq, todo)
@@ -373,6 +386,7 @@ def main(argv=None) -> None:
             with self.lock:
                 live = {k: self.live[k] for k in ("name", "ok", "why", "n", "invalid")}
                 body = {"group": group_name, "live": live, "ok": not self.pending and not self.error, "generation": self.generation,
+                        "cmds": self.cmds, "up_s": round(time.monotonic() - self.t_boot, 1),
                         "pending": sorted(self.pending), "error": self.error,
                         "objects": dict(self.info), "candidates": self.candidates}
             self.status_pub.publish(String(data=json.dumps(body, ensure_ascii=False)))

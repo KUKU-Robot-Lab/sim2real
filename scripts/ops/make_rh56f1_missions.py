@@ -220,10 +220,6 @@ HEAD_HOST = STATION.get("head_host", "local")
 REMOTE_HEAD = HEAD_HOST != "local"
 
 
-#: ★11.03 런처가 묶음 컨테이너를 하나씩 띄우고 각 첫 회차(상한 90 s)를 기다린다 — 묶음 3 × 90 s + 카메라 · pose_tx · 뷰어 여유
-PERCEPTION_START_WAIT_S = 300
-
-
 def _episode_cups() -> list[str]:
     """★10.28 에피소드가 FP++ 로 찍는 실물(토픽 /objects/<실물>/pose) — 팔 물체 묶음 밖의 것(칵테일 분홍 source240p_pink)도 cups
     단계가 그 묶음 컨테이너를 띄우게 한다. 지금 다른 에피소드는 팔 물체(source240b_blue · shaker_c_orange)만 찍는다."""
@@ -249,6 +245,12 @@ def _groups() -> list[str]:
     from object_registry import load_registry
     reg = load_registry()
     return list(dict.fromkeys(reg.get(n).fpp.get("group") or n for n in _cups()))
+
+
+def _start_wait() -> int:
+    """★11.03 런처가 묶음을 하나씩 띄우고 각 첫 회차를 기다린다 — perception_launcher_core.start_wait_s(묶음 수)."""
+    from perception_launcher_core import start_wait_s
+    return start_wait_s(len(_groups()))
 
 
 def _containers_txt() -> str:
@@ -620,8 +622,8 @@ def _run(kind: str) -> dict:
               "--head-joint-topic", "/head/joint_states"], background=True),
         _cmd("FP++ 전 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)", HEAD_CHECK_ARGV, execute_args=["--execute"]),
         _cmd(f"카메라 + FP++ 켜기 — 묶음 컨테이너({_containers_txt()})가 {_cups_txt()} 를 차례로 한 번 찍는다. 이미 떠 있으면 그대로. "
-             f"최대 {PERCEPTION_START_WAIT_S} s(묶음을 하나씩 — 앞 묶음 첫 회차 뒤 다음, 11.03). ★10.13 묶음 하나가 못 뜨면 경고만(나머지는 계속), 하나도 못 띄우면 실패",
-             ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", *_cups(), "--viewer", "--wait", str(PERCEPTION_START_WAIT_S)]),
+             f"최대 {_start_wait()} s(묶음을 하나씩 — 앞 묶음 첫 회차 뒤 다음, 11.03). ★10.13 묶음 하나가 못 뜨면 경고만(나머지는 계속), 하나도 못 띄우면 실패",
+             ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", *_cups(), "--viewer", "--wait", str(_start_wait())]),
         _cmd("컵 좌표 추출 — 처음엔 FP++ 가 켜지며 찍는 회차를 기다리고, 이 단계를 다시 실행하면(컵을 옮긴 뒤 '↶ 여기서 다시') "
              "컨테이너를 끄지 않고 지금 카메라로 다시 찍는다(10.08 사용자). 컵마다 base 좌표 · 판정을 찍는다. ★10.13 하나라도 찾으면 통과 · 못 찾은 컵은 이유와 함께 경고(그 컵은 개별 인지 단계로 다시)",
              ["python3", "{repo}/scripts/ops/fpp_rescan.py", *(REAL_CUPS[s] for s in SIDES if s in REAL_CUPS), "--wait", "120",
@@ -643,8 +645,8 @@ def _run(kind: str) -> dict:
         #   내려간 것만 다시 띄운다). 다시 찍기는 이 컵 하나만 — 이 컵을 못 찾으면 이 단계만 실패한다
         run[f"cups_{s}"] = [
             _cmd(f"★[{s}] {REAL_CUPS[s]} 가 테이블에 똑바로 서 있고 손이 가리지 않는가", ["bash", "-lc", "true"], manual=True),
-            _cmd(f"[{s}] FP++ 컨테이너 확인 — 내려간 묶음만 다시 띄운다({_containers_txt()}). 최대 {PERCEPTION_START_WAIT_S} s",
-                 ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", *_cups(), "--wait", str(PERCEPTION_START_WAIT_S)]),
+            _cmd(f"[{s}] FP++ 컨테이너 확인 — 내려간 묶음만 다시 띄운다({_containers_txt()}). 최대 {_start_wait()} s",
+                 ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", *_cups(), "--wait", str(_start_wait())]),
             _cmd(f"[{s}] {REAL_CUPS[s]} 만 다시 찍기 — base 좌표 · 판정을 찍고, 못 찾으면 이유와 함께 실패",
                  ["python3", "{repo}/scripts/ops/fpp_rescan.py", REAL_CUPS[s], "--wait", "120", *RESCAN_HOST]),
         ] if real else [_cmd(f"[{s}] fake — FP++ 없음", ["bash", "-lc", "true"])]
