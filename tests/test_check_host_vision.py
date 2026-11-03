@@ -31,3 +31,14 @@ def test_single_pc_sites_keep_the_local_check():
     v1 = yaml.safe_load((SITES / "arm_v1.yaml").read_text())
     assert CH.vision_elsewhere(v1, {"192.168.0.50"}) is None
     assert CH.vision_elsewhere(None, set()) is None
+
+
+def test_head_config_found_inside_ssh_command_string_list_argv_or_missing():
+    ssh = [{"argv": ["ssh", "-tt", "arm4090-lan",
+                     "cd rl_ws/sim2real && exec python3 scripts/nodes/head_joint_publisher.py --config config/head_camset_rh56f1.yaml --ids 1,2"]}]
+    assert CH.head_config_path(ssh, Path("/r")) == Path("/r/config/head_camset_rh56f1.yaml")
+    local = [{"argv": ["python3", "{repo}/scripts/head_home.py", "--config", "{repo}/config/head_home.yaml"]}]
+    assert CH.head_config_path(local, Path("/r")) == Path("/r/config/head_home.yaml")
+    assert CH.head_config_path([{"argv": ["python3", "{repo}/scripts/head_move.py"]}], Path("/r")) is None
+    run = yaml.safe_load((ROOT / "config/mission_rh56f1_control.yaml").read_text())["run"]
+    assert CH.head_config_path(run["head_home"], ROOT).exists()     # 지금 미션이 가리키는 머리 설정

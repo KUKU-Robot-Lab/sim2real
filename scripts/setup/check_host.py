@@ -17,6 +17,7 @@ import argparse
 import hashlib
 import json
 import os
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -236,6 +237,24 @@ def _vision_away() -> dict | None:
     return vision_elsewhere(site, local)
 
 
+def head_config_path(steps: list, repo: Path) -> Path | None:
+    """미션 head_home 단계들의 argv 에서 --config 값(없으면 None).
+
+    ★10.30 arm_v2 는 목 드라이버를 ssh 로 4090 에서 돌려 --config 가 argv 원소가 아니라 원격 셸 명령 문자열 안에 있다
+    (`cd rl_ws/sim2real && … --config config/head_camset_rh56f1.yaml`). 상대 경로는 같은 저장소의 이 PC 사본으로 읽는다."""
+    for step in steps:
+        toks: list[str] = []
+        for a in step.get("argv") or []:
+            try:
+                toks += shlex.split(str(a))
+            except ValueError:            # 짝 안 맞는 따옴표 — 그 원소는 통째로 본다
+                toks.append(str(a))
+        if "--config" in toks[:-1]:
+            p = Path(toks[toks.index("--config") + 1].replace("{repo}", str(repo)))
+            return p if p.is_absolute() else repo / p
+    return None
+
+
 def check_host_specific(rep: Report, robot: str) -> None:
     rep.section("이 PC 에만 있는 것")
     sys.path.insert(0, str(SIM2REAL / "deploy/policy_control"))
@@ -293,15 +312,20 @@ def check_host_specific(rep: Report, robot: str) -> None:
                 rep.ok(f"EtherCAT 마스터 {master.name} (cap_net_raw)")
         # ★10.13 머리 설정은 로봇 PC 마다 다르다(arm4090 head_home_rh56f1 · 5090 head_home) — 실기 미션의 head_home 단계가 쓰는 것을 읽는다
         run = yaml.safe_load((SIM2REAL / "config/mission_rh56f1_control.yaml").read_text())["run"]
-        argv = run["head_home"][0]["argv"]
-        head_cfg = argv[argv.index("--config") + 1].replace("{repo}", str(SIM2REAL))
-        head = yaml.safe_load(Path(head_cfg).read_text())["port"]
+        head_cfg = head_config_path(run.get("head_home") or [], SIM2REAL)
         away = _vision_away()          # ★10.30 arm_v2: 목 · 카메라는 4090(hosts.vision)에 있다
         away_note = f" · 이 PC 에 없음(사이트 hosts.vision = {away.get('name')} {away.get('ip')})" if away else ""
-        has_head = Path(head).exists()
-        (rep.ok if has_head or away else
-         lambda w: rep.warn(w, "U2D2 연결 확인 — 머리 pan · tilt 는 허브에 따로 꽂는다(직렬 연결 금지, docs/HOST_arm4090.md)"))(
-            f"머리 U2D2 {head}" + ("" if has_head else away_note))
+        head = None
+        if head_cfg is not None and head_cfg.exists():
+            head = (yaml.safe_load(head_cfg.read_text()) or {}).get("port")
+        if head is None:               # 여기서 죽으면 뒤의 CAN 점검까지 못 본다
+            rep.warn(f"머리 U2D2 모름(건너뜀) — 미션 head_home 의 --config({head_cfg})에서 port 를 못 읽음",
+                     "scripts/ops/make_rh56f1_missions.py 의 head_home 단계 확인")
+        else:
+            has_head = Path(head).exists()
+            (rep.ok if has_head or away else
+             lambda w: rep.warn(w, "U2D2 연결 확인 — 머리 pan · tilt 는 허브에 따로 꽂는다(직렬 연결 금지, docs/HOST_arm4090.md)"))(
+                f"머리 U2D2 {head}" + ("" if has_head else away_note))
         for can in ("can0", "can1"):
             flags = Path(f"/sys/class/net/{can}/flags")
             if flags.exists() and not int(flags.read_text(), 16) & 0x1:
