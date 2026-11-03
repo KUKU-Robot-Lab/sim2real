@@ -162,10 +162,15 @@ class SettleTracker:
 
 
 def format_result_lines(status: dict) -> list[str]:
-    """done/failed 상태를 `head_home.py` 검증 출력과 같은 줄 형식으로 만든다(survey.parse_head_home 이 그대로 읽는다)."""
+    """done/failed 상태를 `head_home.py` 검증 출력과 같은 줄 형식으로 만든다(survey.parse_head_home 이 그대로 읽는다).
+
+    움직이기 전에 실패한 상태(검사 · 쓰기 실패)에는 목표 · 실측 칸이 없다 — 그 축은 건너뛴다(사유는 호출자가 보인다).
+    """
     ok = bool(status.get("ok"))
     lines = []
     for axis in ("pan", "tilt"):
+        if any(k not in status for k in (f"target_{axis}_deg", f"{axis}_deg", f"{axis}_sigma_deg")):
+            continue
         target, actual = float(status[f"target_{axis}_deg"]), float(status[f"{axis}_deg"])
         sigma = float(status[f"{axis}_sigma_deg"])
         good = ok and abs(actual - target) <= 0.3

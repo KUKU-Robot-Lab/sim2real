@@ -13,8 +13,8 @@ from typing import Callable, Protocol
 
 import head_motion as hm
 from head_compliant_hold import tick_to_deg
-from head_home import ADDR_GOAL_POSITION, HeadHome, apply_one, check_reach, goal_tick
-from head_turns import HeadReachError
+from head_home import ADDR_GOAL_POSITION, HeadHome, apply_one, bring_to, goal_tick
+from head_turns import HeadReachError, physical_tick
 
 
 class Controller(Protocol):
@@ -41,8 +41,13 @@ class HeadDriver:
         return self._active is not None
 
     def _read(self) -> tuple[float, float]:
-        return (tick_to_deg(self.controller.read_present_tick(self.pan_id)),
-                tick_to_deg(self.controller.read_present_tick(self.tilt_id)))
+        return self._deg(self.pan_id), self._deg(self.tilt_id)
+
+    def _deg(self, dxl_id: int) -> float:
+        """처짐 하한이 있는 모터는 실제 자리 하나로 펼쳐 읽는다 — 처짐 복구가 실패해 모드 4 로 남으면 Present 가 −1284 처럼 센다."""
+        tick = self.controller.read_present_tick(dxl_id)
+        limit = self.config.droop_limit_tick.get(dxl_id)
+        return tick_to_deg(tick if limit is None else physical_tick(tick, limit))
 
     def on_request(self, text: str) -> None:
         try:
@@ -59,9 +64,9 @@ class HeadDriver:
         goal = replace(self.config, targets_deg={**self.config.targets_deg, self.pan_id: pan, self.tilt_id: tilt})
         ids = (self.pan_id, self.tilt_id)
         try:
-            check_reach(self.controller, goal, ids)  # 둘 다 확인한 뒤에만 쓴다 — 한쪽만 움직이고 멈추지 않게
-            for dxl_id in ids:
-                self._apply(self.controller, goal, dxl_id)
+            # 둘 다 확인한 뒤에만 쓴다. 처진 tilt 는 여기서 먼저 올린다.
+            # shortcut: 처짐 복구(약 1 s)는 이 스레드를 막아 그동안 각도 발행이 멈춘다, 복구가 잦아지면 tick 상태기계로 옮긴다
+            bring_to(self.controller, goal, ids, apply=self._apply)
         except HeadReachError as exc:
             self._publish_status(hm.status_message(req.request_id, hm.STATE_FAILED, ok=False, reason=str(exc)))
             return

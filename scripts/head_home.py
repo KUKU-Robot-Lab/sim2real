@@ -38,8 +38,23 @@ from head_compliant_hold import (
     CompliantController,
     tick_to_deg,
 )
-from head_position_hold_node import ADDR_PROFILE_ACCELERATION, ADDR_PROFILE_VELOCITY, deg_to_tick
-from head_turns import ADDR_HOMING_OFFSET, ADDR_PRESENT_POSITION, HeadReachError, torque_on_starts, torque_on_tick
+from head_position_hold_node import (
+    ADDR_PROFILE_ACCELERATION,
+    ADDR_PROFILE_VELOCITY,
+    OP_MODE_EXTENDED_POSITION,
+    deg_to_tick,
+)
+from head_turns import (
+    ADDR_HOMING_OFFSET,
+    ADDR_PRESENT_POSITION,
+    OP_MODE_POSITION,
+    TICKS_PER_TURN,
+    HeadReachError,
+    droop_tick,
+    physical_tick,
+    torque_on_starts,
+    torque_on_tick,
+)
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "head_home.yaml"
 GAIN_MAX = 16383
@@ -48,6 +63,13 @@ VERIFY_SAMPLES = 30
 VERIFY_TOLERANCE_DEG = 0.3
 #: goal_bias_tick 상한(5.3°) — head_pose_check.MAX_GOAL_OFFSET 과 같다. 이보다 크면 보정이 아니라 다른 문제다
 GOAL_BIAS_MAX = 60
+#: 처짐 복구(lift_droop): 확장 위치(4)로 올라가 이 틱 안에 닿기를 기다린다. 42° 위로 · 프로파일 속도 50(약 69°/s)이면 1 s 안이다
+LIFT_TOL_TICK = 12
+LIFT_TIMEOUT_S = 5.0
+#: 위치 모드(3)로 돌아가며 토크를 잠깐 끌 때 고개와 경계 사이에 남아야 하는 여유
+LIFT_EDGE_MARGIN_DEG = 10.0
+#: 설정 droop_limit_tick 이 경계(offset+4096) 너머 이 범위 안이어야 한다(실측 3298 = 경계 + 22.9°)
+DROOP_LIMIT_SPAN_TICK = round(30.0 * TICKS_PER_TURN / 360.0)
 
 _REQUIRED = ("port", "baud", "motors", "position_i_gain", "operating_mode",
              "profile_acceleration", "profile_velocity")
@@ -67,6 +89,8 @@ class HeadHome:
     #  펌웨어 궤적 끝(Position Trajectory)부터 목표와 다르다(pan +19 · tilt +3, 1805→1824 · 1815→1834 · 2807→2810).
     #  pan 1.67° 는 드라이버 보정 상한(1°)을 넘어 트림으로 못 메운다. 판정(verify · 드라이버)은 원래 목표 기준이다.
     goal_bias_tick: dict[int, int] = field(default_factory=dict)
+    #: 토크를 풀면 고개가 중력으로 내려가 구조물에 막히는 자리(모터별 틱, offset 적용 후 프레임). 있는 모터만 처짐 복구를 한다.
+    droop_limit_tick: dict[int, int] = field(default_factory=dict)
 
 
 def goal_tick(config: HeadHome, dxl_id: int, deg: float | None = None) -> int:
@@ -89,6 +113,7 @@ def load_head_home(path: Path) -> HeadHome:
     targets: dict[int, float] = {}
     names: dict[int, str] = {}
     biases: dict[int, int] = {}
+    droops: dict[int, int] = {}
     for name, motor in dict(raw["motors"]).items():
         dxl_id = int(motor["id"])
         deg = float(motor["deg"])
@@ -103,6 +128,8 @@ def load_head_home(path: Path) -> HeadHome:
         names[dxl_id] = str(name)
         if bias:
             biases[dxl_id] = bias
+        if motor.get("droop_limit_tick") is not None:
+            droops[dxl_id] = int(motor["droop_limit_tick"])
 
     return HeadHome(
         port=str(raw["port"]), baud=int(raw["baud"]), targets_deg=targets, names=names,
@@ -110,6 +137,7 @@ def load_head_home(path: Path) -> HeadHome:
         profile_acceleration=int(raw["profile_acceleration"]),
         profile_velocity=int(raw["profile_velocity"]),
         goal_bias_tick=biases,
+        droop_limit_tick=droops,
     )
 
 
@@ -155,6 +183,93 @@ def apply_one(controller: CompliantController, config: HeadHome, dxl_id: int) ->
     controller.write4(dxl_id, ADDR_PROFILE_VELOCITY, config.profile_velocity, "vel")
     controller.write1(dxl_id, ADDR_TORQUE_ENABLE, TORQUE_ON, "torque on")
     controller.write4(dxl_id, ADDR_GOAL_POSITION, goal_tick(config, dxl_id), "goal")
+
+
+def droop_ticks(controller: CompliantController, config: HeadHome, dxl_ids) -> dict[int, int]:
+    """경계 너머로 처져 짧은 길로 올라올 수 있는 모터 {id: 펼친 실제 틱}(head_turns.droop_tick) — 읽기만 한다."""
+    if int(config.operating_mode) != OP_MODE_POSITION:
+        return {}
+    read4 = _read4(controller)
+    found: dict[int, int] = {}
+    edge_ticks = round(LIFT_EDGE_MARGIN_DEG * TICKS_PER_TURN / 360.0)
+    for dxl_id in dxl_ids:
+        limit = config.droop_limit_tick.get(dxl_id)
+        if limit is None:
+            continue
+        name = config.names.get(dxl_id, f"id {dxl_id}")
+        offset, goal = read4(dxl_id, ADDR_HOMING_OFFSET), goal_tick(config, dxl_id)
+        edge = offset + TICKS_PER_TURN  # 위치 모드(3) 프레임 offset ~ offset+4095 바로 너머
+        if not edge <= limit <= edge + DROOP_LIMIT_SPAN_TICK:
+            raise HeadReachError(f"{name}: 설정 오류 — droop_limit_tick {limit} 은 경계 {edge} ~ {edge + DROOP_LIMIT_SPAN_TICK}"
+                                 f" 안이어야 한다(offset {offset})")
+        actual = droop_tick(read4(dxl_id, ADDR_PRESENT_POSITION), offset, goal, limit)
+        if actual is None:
+            continue
+        if not (goal < actual and offset <= goal <= edge - 1 - edge_ticks):
+            raise HeadReachError(f"{name}: 처짐 복구 거부 — 목표 {goal} 이 위치 모드 경계 안쪽 {LIFT_EDGE_MARGIN_DEG:g}° "
+                                 f"({offset} ~ {edge - 1 - edge_ticks})에 없거나 처진 자리({actual})보다 위가 아니다")
+        found[dxl_id] = actual
+    return found
+
+
+def lift_droop(controller: CompliantController, config: HeadHome, dxl_id: int) -> None:
+    """경계 너머로 처진 고개를 확장 위치(4)로 짧은 길(위로)로 목표까지 올린다 — 위치 모드(3) 복귀는 apply_one 이 한다.
+
+    2026-11-03: 토크를 풀면 tilt 가 기계 하한(+109.85° ≈ 3298)까지 내려가 경계(3071) 너머에 선다. 위치 모드로 켜면 −798 로
+    잡혀 ~317° 를 반대로 돈다. 확장 위치는 토크를 켜도 바퀴 수를 다시 맞추지 않고 위치 한계도 안 쓴다. 목표 = 토크를 켠 뒤
+    읽은 자리 − 펼친 거리라서 Present 가 어느 바퀴로 세든(3298 이든 −798 이든) 같은 물리 자리다.
+    순서는 apply_one 과 같다: 토크off → 모드(게인 리셋) → 게인 → 프로파일 → 토크on(Goal=Present, 제자리) → 목표.
+    실패하면 토크는 켜진 채 모드 4 로 지금 자리를 잡는다. 다음 이동 요청의 bring_to 가 다시 검사해 모드 3 으로 돌린다.
+    """
+    name = config.names.get(dxl_id, f"id {dxl_id}")
+    goal, limit = goal_tick(config, dxl_id), config.droop_limit_tick[dxl_id]
+    controller.write1(dxl_id, ADDR_TORQUE_ENABLE, TORQUE_OFF, "torque off")
+    controller.write1(dxl_id, ADDR_OPERATING_MODE, OP_MODE_EXTENDED_POSITION, "operating mode 4")
+    controller.write2(dxl_id, ADDR_POSITION_I_GAIN, config.position_i_gain, "position i gain")
+    controller.write4(dxl_id, ADDR_PROFILE_ACCELERATION, config.profile_acceleration, "accel")
+    controller.write4(dxl_id, ADDR_PROFILE_VELOCITY, config.profile_velocity, "vel")
+    controller.write1(dxl_id, ADDR_TORQUE_ENABLE, TORQUE_ON, "torque on")
+    read4 = _read4(controller)
+    present = read4(dxl_id, ADDR_PRESENT_POSITION)
+    lift = physical_tick(present, limit) - goal  # 토크를 켠 뒤 자리로 다시 잰다(검사 뒤 고개가 움직였어도)
+    if not 0 < lift < TICKS_PER_TURN // 2:
+        controller.write4(dxl_id, ADDR_GOAL_POSITION, present, "lift stop")
+        raise HeadReachError(f"{name}: 처짐 복구 — 토크를 켠 뒤 자리({present})에서 올릴 거리 {lift} 틱이 반 바퀴 안의 양수가"
+                             f" 아니다. 토크는 켜진 채(모드 4) 지금 자리를 잡고 있다")
+    goal4 = present - lift
+    controller.write4(dxl_id, ADDR_GOAL_POSITION, goal4, "lift goal")
+    deadline = time.monotonic() + LIFT_TIMEOUT_S
+    try:
+        while abs((present := read4(dxl_id, ADDR_PRESENT_POSITION)) - goal4) > LIFT_TOL_TICK:
+            if time.monotonic() > deadline:
+                raise HeadReachError(f"{name}: 처짐 복구 — 확장 위치로 {LIFT_TIMEOUT_S:g}s 안에 목표 {goal4} 에 닿지 못했다"
+                                     f"(지금 {present}). 토크는 켜진 채(모드 4) 지금 자리를 잡고 있다")
+            time.sleep(0.05)
+    except Exception:
+        try:
+            controller.write4(dxl_id, ADDR_GOAL_POSITION, present, "lift stop")  # 막힌 채 계속 밀지 않게(마지막으로 읽은 자리)
+        except Exception:  # noqa: BLE001 - 원래 오류를 올린다
+            pass
+        raise
+    offset = read4(dxl_id, ADDR_HOMING_OFFSET)
+    margin = (offset + TICKS_PER_TURN - 1 - torque_on_tick(present, offset)) * 360.0 / TICKS_PER_TURN
+    if margin < LIFT_EDGE_MARGIN_DEG:  # 위치 모드로 돌아가며 토크를 끄는 순간 처져 경계를 넘으면 안 된다
+        raise HeadReachError(f"{name}: 처짐 복구 — 올라온 자리가 경계까지 {margin:.1f}° 뿐이다(필요 "
+                             f"{LIFT_EDGE_MARGIN_DEG:g}°). 토크는 켜진 채(모드 4) 둔다")
+
+
+def bring_to(controller: CompliantController, config: HeadHome, dxl_ids, apply=apply_one) -> None:
+    """모든 모터를 쓰기 전에 확인하고(처진 모터는 droop_ticks, 나머지는 check_reach), 처진 모터를 먼저 올린 뒤 모두 apply.
+
+    head_home.py --execute 와 목 드라이버(head_driver_core) 가 같이 쓴다. 걸리면 아무것도 쓰지 않는다 — 한쪽만 움직이지 않게.
+    """
+    drooped = droop_ticks(controller, config, dxl_ids)
+    check_reach(controller, config, tuple(i for i in dxl_ids if i not in drooped))
+    for dxl_id, actual in drooped.items():
+        print(f"  {config.names.get(dxl_id, dxl_id)}: 경계 너머로 처져 있다(실제 {actual} 틱) — 확장 위치로 짧은 길로 올린다")
+        lift_droop(controller, config, dxl_id)
+    for dxl_id in dxl_ids:
+        apply(controller, config, dxl_id)
 
 
 def verify(controller: CompliantController, config: HeadHome) -> bool:
@@ -228,9 +343,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         for dxl_id in config.targets_deg:
             controller.ping(dxl_id)
-        check_reach(controller, config, tuple(config.targets_deg))  # 둘 다 확인한 뒤에만 쓴다 — 한쪽만 움직이지 않게
-        for dxl_id in config.targets_deg:
-            apply_one(controller, config, dxl_id)
+        bring_to(controller, config, tuple(config.targets_deg))
         print(f"\n{SETTLE_SECONDS:g}s 정착 후 검증")
         ok = verify(controller, config)
         print("\n★Position I Gain 은 RAM 이다 — 전원을 끄면 사라진다. bringup 마다 실행할 것")

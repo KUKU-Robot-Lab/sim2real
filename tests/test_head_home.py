@@ -216,3 +216,154 @@ def test_apply_writes_the_goal_with_the_bias_so_the_head_stops_on_target(tmp_pat
     apply_one(rec, cfg, 1)
     apply_one(rec, cfg, 2)
     assert [v for label, _a, v in rec.writes if label == "goal"] == [1806, 2812]
+
+
+# ---------- 처짐 복구 (2026-11-03 RH 머리 tilt) ----------
+# 토크를 풀면 tilt 가 기계 하한(+109.85° ≈ 3298)까지 처져 위치 모드 경계(3071) 너머에 선다. 위치 모드로 켜면 −798 로 잡혀
+# ~317° 를 반대로 돈다 — 확장 위치(4)로 짧은 길(위로 486 틱)로 올린 뒤 위치 모드(3)로 돌아간다.
+RH_CAMSET_DROOP = RH_CAMSET.replace("goal_bias_tick: -3}", "goal_bias_tick: -3, droop_limit_tick: 3298}")
+
+
+class MovingController(RecordingController):
+    """목표를 쓰면 그 자리로 가고, 모드 3 을 쓰면 한 바퀴 안 값 + offset 으로 다시 세는 가짜 모터."""
+
+    def write1(self, dxl_id, address, value, label):
+        from head_home import ADDR_GOAL_POSITION, ADDR_OPERATING_MODE
+        from head_turns import torque_on_tick
+        self.writes.append((label, address, value))
+        row = self.table[dxl_id]
+        if address == ADDR_OPERATING_MODE and value == 3:
+            row[132] = torque_on_tick(row[132], row[20])
+        if address == ADDR_GOAL_POSITION:
+            row[132] = value
+
+    write2 = write4 = write1
+
+    def read_present_tick(self, dxl_id):
+        return self.table[dxl_id][132]
+
+
+def _drooped(present):
+    return {1: dict(RH_AT_1028[1]), 2: {132: present, 20: -1024, 52: 0, 48: 4095}}
+
+
+@pytest.mark.parametrize("present, lift_goal", [(-798, 2812 - 4096), (3298, 2812)])  # 어느 바퀴로 세든 같은 물리 자리
+def test_a_drooped_tilt_lifts_the_short_way_in_mode_4_then_returns_to_mode_3(tmp_path, present, lift_goal):
+    from head_home import ADDR_OPERATING_MODE, bring_to
+    cfg = load_head_home(_write(tmp_path, RH_CAMSET_DROOP))
+    assert cfg.droop_limit_tick == {2: 3298}
+    rec = MovingController(_drooped(present))
+    bring_to(rec, cfg, (1, 2))
+    labels = _addresses(rec)
+    assert labels[:7] == ["torque off", "operating mode 4", "position i gain", "accel", "vel", "torque on", "lift goal"]
+    assert rec.writes[1] == ("operating mode 4", ADDR_OPERATING_MODE, 4)
+    assert rec.writes[6][2] == lift_goal
+    modes = [v for _l, a, v in rec.writes if a == ADDR_OPERATING_MODE]
+    assert modes == [4, 3, 3]                                    # tilt 4 → pan 3 → tilt 3
+    assert [v for label, _a, v in rec.writes if label == "goal"] == [1806, 2812]
+    assert rec.table[2][132] == 2812
+
+
+@pytest.mark.parametrize("present", [3600, 0, -1024 + 4096 + 400])   # 기계 하한 + 5° 밖 · 한 바퀴 넘게 떨어진 자리
+def test_a_tilt_beyond_the_droop_limit_is_refused_before_any_write(tmp_path, present):
+    from head_home import HeadReachError, bring_to
+    cfg = load_head_home(_write(tmp_path, RH_CAMSET_DROOP))
+    rec = MovingController(_drooped(present))
+    with pytest.raises(HeadReachError, match="tilt"):
+        bring_to(rec, cfg, (1, 2))
+    assert rec.writes == []
+
+
+def test_a_head_in_range_is_applied_exactly_as_before(tmp_path):
+    from head_home import apply_one, bring_to
+    cfg = load_head_home(_write(tmp_path, RH_CAMSET_DROOP))
+    before = RecordingController({k: dict(v) for k, v in RH_AT_1028.items()})
+    for dxl_id in (1, 2):
+        apply_one(before, cfg, dxl_id)
+    now = RecordingController({k: dict(v) for k, v in RH_AT_1028.items()})
+    bring_to(now, cfg, (1, 2))
+    assert now.writes == before.writes
+
+
+def test_a_lift_that_never_arrives_stops_pushing_and_refuses_mode_3(tmp_path, monkeypatch):
+    import head_home
+    monkeypatch.setattr(head_home, "LIFT_TIMEOUT_S", -1.0)
+    cfg = load_head_home(_write(tmp_path, RH_CAMSET_DROOP))
+    rec = RecordingController(_drooped(3298))              # 목표를 써도 움직이지 않는다(막힘)
+    with pytest.raises(head_home.HeadReachError, match="닿지 못했다"):
+        head_home.bring_to(rec, cfg, (1, 2))
+    assert rec.writes[-1] == ("lift stop", head_home.ADDR_GOAL_POSITION, 3298)
+    assert 3 not in [v for _l, a, v in rec.writes if a == head_home.ADDR_OPERATING_MODE]
+
+
+def test_a_drooped_tilt_with_a_goal_past_the_edge_is_refused_before_any_write(tmp_path):
+    """목표가 경계(3071) 안쪽 10° 밖이면 mode 4 로 올려도 mode 3 으로 못 돌아간다 — 하한 쪽을 누르지 않게 쓰기 전에 멈춘다."""
+    from head_home import HeadReachError, bring_to
+    cfg = load_head_home(_write(tmp_path, RH_CAMSET_DROOP.replace("deg: 67.473", "deg: 100.0")))
+    rec = MovingController(_drooped(3298))
+    with pytest.raises(HeadReachError, match="처짐 복구 거부"):
+        bring_to(rec, cfg, (1, 2))
+    assert rec.writes == []
+
+
+@pytest.mark.parametrize("limit", [3000, 3500])   # 경계(3072) 안쪽 · 경계 + 30° 너머
+def test_a_droop_limit_outside_the_edge_window_is_a_config_error(tmp_path, limit):
+    from head_home import HeadReachError, bring_to
+    cfg = load_head_home(_write(tmp_path, RH_CAMSET_DROOP.replace("3298", str(limit))))
+    rec = MovingController({k: dict(v) for k, v in RH_AT_1028.items()})
+    with pytest.raises(HeadReachError, match="설정 오류"):
+        bring_to(rec, cfg, (1, 2))
+    assert rec.writes == []
+
+
+def test_a_read_failure_while_lifting_tries_to_stop_and_reraises(tmp_path):
+    import head_home
+
+    class Deaf(MovingController):
+        def read4_signed(self, dxl_id, address, label):
+            if address == 132 and dxl_id == 2 and any(l == "lift goal" for l, _a, _v in self.writes):
+                raise OSError("no status packet")
+            return super().read4_signed(dxl_id, address, label)
+
+    cfg = load_head_home(_write(tmp_path, RH_CAMSET_DROOP))
+    rec = Deaf(_drooped(3298))
+    with pytest.raises(OSError):
+        head_home.bring_to(rec, cfg, (1, 2))
+    assert rec.writes[-1] == ("lift stop", head_home.ADDR_GOAL_POSITION, 3298)  # 마지막으로 읽은 자리(토크를 켠 직후)
+
+
+def test_driver_publishes_the_real_tilt_while_left_in_mode_4_and_the_next_request_returns_to_mode_3(tmp_path, monkeypatch):
+    import json
+
+    import head_home
+    import head_motion as hm
+    from head_driver_core import HeadDriver
+    from head_position_hold_node import tick_to_deg
+
+    class Stuck(MovingController):
+        stuck = True
+
+        def write1(self, dxl_id, address, value, label):
+            if self.stuck and label == "lift goal":
+                self.writes.append((label, address, value))
+                return
+            super().write1(dxl_id, address, value, label)
+
+        write2 = write4 = write1
+
+    cfg = load_head_home(_write(tmp_path, RH_CAMSET_DROOP))
+    rec, published, statuses = Stuck(_drooped(-798)), [], []      # 모드 4 로 켜진 뒤 Present 가 −798 로 세는 경우
+    driver = HeadDriver(rec, cfg, pan_id=1, tilt_id=2, publish_angles=lambda p, t: published.append(t),
+                        publish_status=statuses.append)
+    monkeypatch.setattr(head_home, "LIFT_TIMEOUT_S", -1.0)
+    driver.on_request(hm.encode_request(hm.MoveRequest("a", None, None)))
+    failed = json.loads(statuses[-1])
+    assert failed["state"] == "failed" and "모드 4" in failed["reason"]
+    driver.tick()
+    assert published[-1] == pytest.approx(tick_to_deg(3298))        # −798 을 그대로 쓰면 −250°
+    rec.stuck = False
+    monkeypatch.setattr(head_home, "LIFT_TIMEOUT_S", 5.0)
+    driver.on_request(hm.encode_request(hm.MoveRequest("b", None, None)))
+    assert json.loads(statuses[-1])["state"] == "accepted"
+    assert [v for _l, a, v in rec.writes if a == head_home.ADDR_OPERATING_MODE][-2:] == [3, 3]
+    assert rec.table[2][132] == 2812

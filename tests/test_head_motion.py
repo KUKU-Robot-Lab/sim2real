@@ -98,6 +98,11 @@ def test_result_lines_match_head_home_format():
     assert all(line.match(x) and "✓" in x for x in lines)
 
 
+def test_result_lines_of_a_failure_before_moving_do_not_crash():
+    """검사에서 멈춘 failed 상태에는 목표 · 실측 칸이 없다 — 사유만 보이도록 줄을 비운다(head_move.py 가 사유를 찍는다)."""
+    assert hm.format_result_lines({"id": "x", "state": hm.STATE_FAILED, "ok": False, "reason": "경계 너머"}) == []
+
+
 # ---------- 드라이버 상태기계 ----------
 
 class FakeBus:

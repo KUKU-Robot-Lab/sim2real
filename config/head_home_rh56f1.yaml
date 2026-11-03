@@ -28,6 +28,9 @@ motors:
   tilt:
     id: 2
     deg: 71.8          # 틱 2864(offset −1024 적용 후) = 외부 파라미터 head_pose tilt
+    # 토크를 풀면 고개가 중력으로 내려가 구조물에 막히는 자리(2026-11-03 실측 +109.85°, 사용자 확인). 위치 모드 경계(3071)
+    #   너머라 그대로 토크를 켜면 반대로 ~317° 를 돈다 — head_home.lift_droop 이 확장 위치로 짧은 길(위로)로 먼저 올린다
+    droop_limit_tick: 3298
 
 position_i_gain: 400
 

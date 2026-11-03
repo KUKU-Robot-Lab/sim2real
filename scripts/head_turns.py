@@ -25,6 +25,7 @@ ADDR_MAX_POSITION_LIMIT = 48
 ADDR_MIN_POSITION_LIMIT = 52
 ADDR_PRESENT_POSITION = 132
 MAX_TRAVEL_DEG = 180.0  # 이보다 길면 짧은 쪽이 아니라 반대쪽으로 도는 것이다
+DROOP_MARGIN_DEG = 5.0  # 기계 하한 실측값 너머로 이만큼까지는 처진 자리로 본다(인코더 · 실측 오차)
 
 
 class HeadReachError(RuntimeError):
@@ -94,3 +95,23 @@ def _edge_deg(goal: int, offset: int) -> float:
     """목표에서 가장 가까운 위치 모드 경계까지의 각 — + 는 틱이 커지는 쪽."""
     up, down = offset + TICKS_PER_TURN - goal, goal - offset
     return (up if up <= down else -down) * 360.0 / TICKS_PER_TURN
+
+
+def physical_tick(tick: int, droop_limit_tick: int, *, margin_deg: float = DROOP_MARGIN_DEG) -> int:
+    """어느 모드 · 어느 바퀴로 센 값이든 실제 자리 하나로 — 고개 범위가 한 바퀴보다 작아 (하한+여유 − 4095 ~ 하한+여유) 창이 유일하다."""
+    hi = int(droop_limit_tick) + round(margin_deg * TICKS_PER_TURN / 360.0)
+    lo = hi - (TICKS_PER_TURN - 1)
+    return (int(tick) - lo) % TICKS_PER_TURN + lo
+
+
+def droop_tick(present: int, offset: int, goal: int, droop_limit_tick: int, *,
+               margin_deg: float = DROOP_MARGIN_DEG, max_travel_deg: float = MAX_TRAVEL_DEG) -> int | None:
+    """위치 모드 경계 너머로 처진 고개의 펼친 실제 위치(경계 ~ 기계 하한 + 여유, 목표까지 반 바퀴 미만) — 아니면 None.
+
+    고개가 움직이는 범위가 한 바퀴보다 훨씬 작아 한 바퀴 안 값으로 실제 자리가 하나로 정해진다. 처지면 틱이 커진다
+    (10.28 머리 카메라로 확인) — 위치 모드가 다시 맞춘 값(offset ~ offset+4095)에 한 바퀴를 더하면 경계 너머 자리다.
+    """
+    unwrapped = torque_on_tick(present, offset) + TICKS_PER_TURN  # 늘 경계(offset+4096) 이상
+    in_zone = unwrapped <= droop_limit_tick + round(margin_deg * TICKS_PER_TURN / 360.0)
+    short = abs(unwrapped - int(goal)) * 360.0 / TICKS_PER_TURN < max_travel_deg
+    return unwrapped if in_zone and short else None

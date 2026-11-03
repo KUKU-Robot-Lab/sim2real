@@ -102,7 +102,8 @@ def main() -> int:
         print(f"❌ {exc}", file=sys.stderr)
         return 2
     if status is not None and status.get("state") in (hm.STATE_DONE, hm.STATE_FAILED):
-        print("\n".join(hm.format_result_lines(status)))
+        if lines := hm.format_result_lines(status):
+            print("\n".join(lines))
         if status.get("reason"):
             print(f"  사유: {status['reason']}")
     return code
