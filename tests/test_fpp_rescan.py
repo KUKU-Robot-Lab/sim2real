@@ -37,6 +37,9 @@ def test_the_snapshot_node_counts_commands_and_seen_only_for_its_group():
     src = (Path(__file__).resolve().parents[1] / "scripts/nodes/fpp_snapshot_node.py").read_text(encoding="utf-8")
     assert '"cmds": self.cmds, "up_s"' in src and 'text.startswith("seen:")' in src
     assert 'group_name in text[5:].split(",")' in src
+    # 리뷰 M2: 다른 묶음 컵만 다시 찍는 명령은 이 묶음의 cmds 를 올리지 않는다
+    body = src[src.index("def _on_cmd"):src.index("def _next_frame")]
+    assert body.index("names = set(objects)") < body.index("if names:") < body.rindex("self.cmds += 1")
 
 
 def test_a_round_is_done_when_a_newer_pass_found_every_asked_cup():

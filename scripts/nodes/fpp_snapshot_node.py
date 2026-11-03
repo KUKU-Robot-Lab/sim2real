@@ -159,10 +159,10 @@ def main(argv=None) -> None:
                     with self.lock:
                         self.cmds += 1
                 return
-            with self.lock:
-                self.cmds += 1
             names = set(objects) if text in ("", "all") else {n.strip() for n in text.split(",")} & set(objects)
             with self.lock:
+                if names:                           # 다른 묶음 컵만 다시 찍는 명령은 이 묶음의 첫 회차 받기를 막지 않는다
+                    self.cmds += 1
                 for n in names:
                     self.poses.pop(n, None)
                     self.info[n] = {"found": False}

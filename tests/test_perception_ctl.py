@@ -79,3 +79,14 @@ def test_a_partial_container_failure_is_a_warning_that_passes_unless_require_all
     assert wait_verdict(True, False, 12.0, None, warn) == "ok"
     assert wait_verdict(True, False, 12.0, None, warn, require_all=True) == "fail"
     assert wait_verdict(True, False, 12.0, "물체 컨테이너를 하나도 못 띄웠다", warn) == "fail"
+
+
+def test_notes_are_printed_but_do_not_decide(capsys):
+    """리뷰 M3: 묶음 첫 회차 참고(오류 · 카메라 없음 · 상한 넘김)를 화면에 NOTE 로 보인다."""
+    import perception_ctl as P
+    payload = {"camera_up": True, "camera_hz": 30.0, "viewer": True, "busy": False, "objects": {},
+               "error": None, "warning": None, "notes": ["shaker_c: 첫 회차가 90 s 안에 안 끝났다"]}
+    P.print_status(payload)
+    assert "  NOTE: shaker_c: 첫 회차가 90 s 안에 안 끝났다" in capsys.readouterr().out.splitlines()
+    P.print_status({**payload, "notes": None})
+    assert "NOTE" not in capsys.readouterr().out

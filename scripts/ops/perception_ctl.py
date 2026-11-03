@@ -75,6 +75,8 @@ def print_status(payload: dict) -> None:
         print(f"  ERROR: {payload['error']}")
     if payload.get("warning"):
         print(f"  WARNING: {payload['warning']}")
+    for note in payload.get("notes") or []:       # ★11.03 묶음 첫 회차 참고(오류 · 카메라 없음 · 상한 넘김) — 판정에는 안 쓴다
+        print(f"  NOTE: {note}")
 
 
 def parser() -> argparse.ArgumentParser:
