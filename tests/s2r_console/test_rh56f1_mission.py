@@ -347,7 +347,8 @@ def test_view_check_reads_the_imu_between_head_home_and_cups_without_moving_the_
     assert not any("--execute" in a or "head_move" in a for a in flat)
     assert "camera_up.sh" in flat[0]
     check = flat[1]
-    assert f"head_view_feedback.py --check --extrinsics {GEN.CAMERA_EXTRINSICS}" in check
+    ext = GEN.CAMERA_EXTRINSICS if GEN.REMOTE_PERCEPTION else f"{REPO}/{GEN.CAMERA_EXTRINSICS}"   # 로컬 argv 는 {repo} 가 풀린다
+    assert f"head_view_feedback.py --check --extrinsics {ext}" in check
     if GEN.REMOTE_PERCEPTION:
         assert list(cmds[1].argv[:5]) == ["ssh", "-tt", "-o", "BatchMode=yes", GEN.PERCEPTION_HOST]
     assert not any("head_view_feedback" in " ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, "head_view_check"))
@@ -650,8 +651,14 @@ def test_head_has_single_serial_owner_and_dynamic_camera_transform():
 
 def test_the_5090_station_uses_the_camset_pose_where_all_three_objects_are_in_view():
     """10.28 사용자 "미션 연결 진행" — shaker · 파랑 · 분홍이 한 화면에 드는 목 자세(camset)와 그 자세에서 잰 외부 파라미터.
-    ★10.30 arm_v2(5090 + 4090): 머리 · 카메라 조립체는 그대로(USB 만 4090 으로)라 같은 자세 · 같은 파일을 쓴다."""
-    assert GEN.ROBOT_PC == "5090_arm4090"
+    ★10.30 arm_v2(5090 + 4090): 머리 · 카메라 조립체는 그대로(USB 만 4090 으로)라 같은 자세 · 같은 파일을 쓴다.
+    ★11.03 사용자: 카메라 · 목 · FP++ 를 다시 5090 에(사이트 arm_v2 유지) — 같은 자세 · 같은 파일, 목 포트는 사이트 head_port."""
+    import yaml as _y
+    site = _y.safe_load((REPO / "deploy/policy_control/config/sites/arm_v2.yaml").read_text(encoding="utf-8"))
+    assert GEN.ROBOT_PC == "5090"
+    assert not GEN.REMOTE_HEAD and not GEN.REMOTE_PERCEPTION and GEN.STATION["pose_dest"] == ""
+    assert GEN._head_config["port"] == site["head_port"]
+    assert site["hosts"]["arm4090"]["ssh"] not in (REPO / "config/mission_rh56f1_control.yaml").read_text(encoding="utf-8")
     assert GEN.CAMERA_EXTRINSICS == "config/global_camera_extrinsics_arm4090_r20u5.yaml"
     assert GEN.HEAD_CONFIG == "config/head_camset_rh56f1.yaml"
 
@@ -663,9 +670,9 @@ def test_arm_v2_runs_the_head_driver_and_release_on_the_vision_pc_and_poses_come
         pytest.skip("목이 로봇 PC 에 있는 스테이션")
     import yaml as _y
     site = _y.safe_load((REPO / "deploy/policy_control/config/sites/arm_v2.yaml").read_text(encoding="utf-8"))
-    assert GEN.HEAD_HOST == GEN.PERCEPTION_HOST == site["hosts"]["vision"]["ssh"]
+    assert GEN.HEAD_HOST == GEN.PERCEPTION_HOST == site["hosts"]["arm4090"]["ssh"]
     assert GEN.STATION["pose_dest"] == site["hosts"]["control"]["ip"]
-    assert GEN._head_config["port"] == site["hosts"]["vision"]["head_port"]
+    assert GEN._head_config["port"] == site["head_port"]           # 같은 U2D2(by-id)
     home = _cmds(REAL, REAL_BOOK, "head_home")
     assert "/head/joint_states" in " ".join(home[1].argv) and not home[1].background     # 랜 토픽 확인이 맞춤보다 먼저
     assert "head_move.py" in " ".join(home[2].argv) and "--execute" in home[2].argv
@@ -680,7 +687,7 @@ def test_arm_v2_runs_the_head_driver_and_release_on_the_vision_pc_and_poses_come
 
 def test_arm_v2_reaches_the_vision_pc_over_the_hub_lan_only_and_checks_it_in_preflight():
     """★10.30 사용자 "5090과 4090은 ssh가 아니라 lan포트 연결로 통신해야함" · 도메인은 motion_acq 와 분리(config/ros_domain.env) ·
-    "4 번 수정": 저 PC 에 손 마스터가 없어야 한다. ssh 별칭은 사이트 hosts.vision.ssh(랜 전용 arm4090-lan, 5090 ~/.ssh/config 가
+    "4 번 수정": 저 PC 에 손 마스터가 없어야 한다. ssh 별칭은 사이트 hosts.vision.ssh(11.03 부터 hosts.arm4090.ssh, 랜 전용 arm4090-lan, 5090 ~/.ssh/config 가
     192.168.0.40 · 키 s2r_lan 로 간다)이고 tailscale 별칭 arm4090 이 아니다. preflight 가 랜 ssh · 같은 커밋 · 손 마스터 없음을 먼저 본다."""
     if not GEN.REMOTE_PERCEPTION:
         pytest.skip("인지가 로봇 PC 에 있는 스테이션")

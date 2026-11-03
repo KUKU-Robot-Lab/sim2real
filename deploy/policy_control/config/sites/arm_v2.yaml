@@ -3,8 +3,9 @@
 #   로더가 이름을 소문자로 찾는다. 사용자 표기 ARM_v2 로 골라도 이 파일이다(파일 이름은 소문자여야 찾는다).
 # 판 이름(10.28 사용자): v1 = 5090 only + e2c 어댑터(arm_v1.yaml), v2 = 5090/4090 + 허브(이 파일).
 # 역할(10.30 사용자): 5090 = 로봇 제어(팔 CAN, 손 EtherCAT)와 정책 실행, 4090 = 카메라 D435i, 목 다이나믹셀, FP++.
-#   rh56f1 · can 은 5090 값이다. 목과 카메라는 4090 에 있어 hosts.vision 에 적고 head_port 는 비운다
-#   (5090 에서 check_host 가 목 U2D2 를 찾지 않는다).
+# ★11.03 사용자: 머리 D435i · 목 U2D2(FT763P8T)를 5090 에 꽂은 채 두고 FP++ · 정책도 5090 에서 돌린다(팔 · 손은 그대로).
+#   그래서 hosts.vision 을 없앴다 — check_host 는 hosts.vision 이 다른 PC 면 목 · 카메라 검사를 넘기는데, 이제 5090 이 직접 본다.
+#   4090 은 허브 랜에 남아 hosts.arm4090 에 적는다(역할 없음 · 미션 스테이션 5090_arm4090 으로 되돌릴 때 ssh 별칭을 여기서 읽는다).
 # 허브: 관리형 스위치(관리 주소 192.168.0.239, 웹 로그인). VLAN 10 · 20 은 손, 태그 없는 랜은 5090 · 4090 사이.
 #   5090 eno1 은 트렁크(eno1.10 · eno1.20 + 태그 없음 192.168.0.50). 4090 enp6s0 도 트렁크라 손 VLAN 프레임을 받는다
 #   (enp6s0.10 · .20, NM rh56f1_r · rh56f1_l). 4090 에서 손 드라이버를 띄우면 5090 마스터와 겹치니 띄우지 않는다.
@@ -24,15 +25,14 @@ rh56f1:
   right: {ifname: eno1.10}   # 5090 메인보드 랜(Intel igc) VLAN 10
   left:  {ifname: eno1.20}   # VLAN 20
 can: {right: can0, left: can1}          # PCAN-USB Pro FD(5090, arm_v1 과 같음), 미션이 FD 1M/5M 로 올린다
-head_port: null                         # 목 U2D2 는 4090 에 있다(hosts.vision.head_port)
+head_port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0   # 목 U2D2 — 11.03 부터 5090
+camera_rs_serial: "348122071637"        # 10.30 4090 에서 잰 D435i. 11.03 5090 에 꽂은 카메라가 이 장치인지는 아직 미확인
 hosts:
   control: {name: "5090", ifname: eno1, ip: 192.168.0.50, tailscale: 100.103.21.126,
-            role: "로봇 제어(팔 CAN · 손 EtherCAT) · 정책 실행"}
-  vision:  {name: arm4090, ifname: enp6s0, ip: 192.168.0.40, tailscale: 100.104.123.85,
-            ssh: arm4090-lan,              # 미션이 쓰는 ssh 별칭 = 5090 ~/.ssh/config 의 허브 랜 192.168.0.40(키 ~/.ssh/s2r_lan 만, 머리말)
-            role: "카메라 D435i · 목 다이나믹셀 · FP++",
-            head_port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0,
-            camera_rs_serial: "348122071637"}
+            role: "로봇 제어(팔 CAN · 손 EtherCAT) · 정책 실행 · 카메라 D435i · 목 다이나믹셀 · FP++(11.03)"}
+  arm4090: {name: arm4090, ifname: enp6s0, ip: 192.168.0.40, tailscale: 100.104.123.85,
+            ssh: arm4090-lan,              # ssh 별칭 = 5090 ~/.ssh/config 의 허브 랜 192.168.0.40(키 ~/.ssh/s2r_lan 만, 머리말)
+            role: "11.03 부터 실기 역할 없음(10.30~11.03 카메라 · 목 · FP++). 되돌리면 이 항목을 vision 으로"}
 hub: {mgmt_ip: 192.168.0.239, vlan: {right_hand: 10, left_hand: 20}}
 
 # 통신 속도 기록(10.30 09:20~09:50 실측, 무동작. 로더는 이 블록을 쓰지 않는다). 배선을 바꾸면 다시 재서 고친다.

@@ -1,4 +1,5 @@
-"""check_host 의 목 · 카메라 위치 판단. 10.30 사용자 arm_v2: 5090 = 로봇 제어 · 정책 실행, 4090 = 카메라 · 목 · FP++."""
+"""check_host 의 목 · 카메라 위치 판단. 10.30 사용자 arm_v2: 5090 = 로봇 제어 · 정책 실행, 4090 = 카메라 · 목 · FP++.
+★11.03 사용자: 카메라 · 목 · FP++ 도 5090 — arm_v2 에 hosts.vision 이 없어 5090 이 목 · 카메라를 직접 검사한다."""
 from __future__ import annotations
 
 import importlib.util
@@ -17,14 +18,23 @@ spec.loader.exec_module(CH)
 ARM_V2 = yaml.safe_load((SITES / "arm_v2.yaml").read_text())
 
 
+#: 10.30~11.03 의 두 PC 판(목 · 카메라가 4090) — 판단 규칙 자체는 남아 있어 그대로 본다
+SPLIT = {"hosts": {"control": {"ip": "192.168.0.50"}, "vision": {"name": "arm4090", "ip": "192.168.0.40"}}}
+
+
+def test_arm_v2_control_pc_checks_its_own_head_and_camera_since_1103():
+    assert "vision" not in ARM_V2["hosts"]
+    assert CH.vision_elsewhere(ARM_V2, {"127.0.0.1", "192.168.0.50", "100.103.21.126"}) is None
+
+
 def test_control_pc_expects_head_and_camera_on_the_vision_host():
-    away = CH.vision_elsewhere(ARM_V2, {"127.0.0.1", "192.168.0.50", "100.103.21.126"})
+    away = CH.vision_elsewhere(SPLIT, {"127.0.0.1", "192.168.0.50", "100.103.21.126"})
     assert away is not None
     assert (away["name"], away["ip"]) == ("arm4090", "192.168.0.40")
 
 
 def test_vision_pc_still_checks_its_own_head_and_camera():
-    assert CH.vision_elsewhere(ARM_V2, {"127.0.0.1", "192.168.0.40"}) is None
+    assert CH.vision_elsewhere(SPLIT, {"127.0.0.1", "192.168.0.40"}) is None
 
 
 def test_single_pc_sites_keep_the_local_check():

@@ -143,9 +143,10 @@ REAL_CUP_ORIGIN_Z = 0.085                 # 원점 높이(바닥 위) — 컵 �
 #  ★10.13 사용자: "5090 로봇 pc" · "인지 pc vision3090 이미 카메라 연결" — 실기 미션은 ROBOT_PC 하나로 만든다.
 #  arm4090 로 돌아가면 ROBOT_PC = "arm4090" 으로 바꾸고 다시 생성한다(--check 가 커밋 파일과 맞는지 본다).
 #: ★10.30 사용자: 5090 ↔ 4090 은 tailscale 이 아니라 허브 랜 포트로 — ssh 별칭 · 자세 UDP 주소를 사이트 arm_v2.yaml 에서 읽는다
-#   (hosts.vision.ssh = arm4090-lan: 5090 ~/.ssh/config 가 192.168.0.40 · 키 ~/.ssh/s2r_lan 로 간다. hosts.control.ip = 192.168.0.50).
+#   (hosts.arm4090.ssh = arm4090-lan: 5090 ~/.ssh/config 가 192.168.0.40 · 키 ~/.ssh/s2r_lan 로 간다. hosts.control.ip = 192.168.0.50).
+#   11.03 부터 사이트에 hosts.vision 이 없다(카메라 · 목 · FP++ 모두 5090) — 4090 은 hosts.arm4090 에 남아 있다.
 _SITE_V2 = yaml.safe_load((REPO / "deploy/policy_control/config/sites/arm_v2.yaml").read_text(encoding="utf-8"))
-_V2_VISION_SSH = _SITE_V2["hosts"]["vision"]["ssh"]
+_V2_VISION_SSH = _SITE_V2["hosts"]["arm4090"]["ssh"]
 _V2_CONTROL_IP = _SITE_V2["hosts"]["control"]["ip"]
 STATIONS = {
     # ★10.27 사용자 "2번 일부 진행"(vision + 정책 + 로봇 제어 모두 5090) — D435i 를 5090 USB 3(Bus 02)에 꽂았다.
@@ -196,11 +197,11 @@ STATIONS = {
     #   목 드라이버 · 토크 해제가 4090 에서 돌고(ssh -tt), 관절 · 이동 요청 토픽은 랜 DDS(도메인 config/ros_domain.env, 양쪽 ROS_LOCALHOST_ONLY 0)로 온다.
     #   머리 · 카메라 조립체는 그대로(USB 만 4090 으로)라 camset 자세 · r20u5 외부 파라미터를 그대로 쓴다. 홀더 노드는 10.13 처럼
     #   카메라 PC 에서 돌고 파일만 scp 로 온다(저 PC 의 .venv 는 10.30 만듦).
-    #   ssh 는 랜 전용 별칭(사이트 hosts.vision.ssh = arm4090-lan → 192.168.0.40, 키 s2r_lan. 사용자 10.30 "ssh 가 아니라 랜포트"). 자세 UDP 는 ssh 가 온 주소
+    #   ssh 는 랜 전용 별칭(사이트 hosts.vision.ssh, 11.03 부터 hosts.arm4090.ssh = arm4090-lan → 192.168.0.40, 키 s2r_lan. 사용자 10.30 "ssh 가 아니라 랜포트"). 자세 UDP 는 ssh 가 온 주소
     #   (tailscale 100.103.21.126)가 아니라 허브 랜 192.168.0.50 으로 명시한다.
     #   ★4090 → 5090 TCP 를 꽉 채우면 손 SAFE_OP 설정이 실패했다(arm_v2.yaml links_measured_1030) — 실기 중 큰 복사 금지.
     "5090_arm4090": {
-        "perception_host": _V2_VISION_SSH,            # 사이트 hosts.vision.ssh(랜 전용 별칭)
+        "perception_host": _V2_VISION_SSH,            # 사이트 hosts.arm4090.ssh(랜 전용 별칭)
         "head_host": _V2_VISION_SSH,                      # 목 U2D2 가 이 PC 에 있다 — 드라이버 · 토크 해제를 여기서 돌린다
         "extrinsics": "config/global_camera_extrinsics_arm4090_r20u5.yaml",
         "head_config": "config/head_camset_rh56f1.yaml",
@@ -209,7 +210,9 @@ STATIONS = {
         "holder_poses": "config/cup_holder_poses_5090_v1.yaml",
     },
 }
-ROBOT_PC = "5090_arm4090"
+#: ★11.03 사용자: 머리 D435i · 목 U2D2 를 5090 에 꽂은 채 두고 FP++ · 정책도 5090 — 사이트 arm_v2(팔 · 손 그대로) 위에서 한 PC 스테이션.
+#   4090 으로 다시 나누면 "5090_arm4090" 으로 바꾸고 사이트에 hosts.vision 을 되살린다.
+ROBOT_PC = "5090"
 STATION = STATIONS[ROBOT_PC]
 PERCEPTION_HOST = STATION["perception_host"]
 REMOTE_PERCEPTION = PERCEPTION_HOST != "local"

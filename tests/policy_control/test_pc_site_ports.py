@@ -71,9 +71,9 @@ def test_arm_v2_hands_on_hub_vlans():
     v1 = SITE.load_site("arm_v1")
     assert site["tag"] == "5090/4090 + hub"
     assert site["can"] == v1["can"]                                   # 팔 CAN 은 5090 그대로
-    assert site["head_port"] is None                                  # 목은 4090 에 있어 5090 check_host 가 찾지 않는다
-    assert site["hosts"]["vision"]["head_port"] == v1["head_port"]
-    assert (site["hosts"]["control"]["ip"], site["hosts"]["vision"]["ip"]) == ("192.168.0.50", "192.168.0.40")
+    assert site["head_port"] == v1["head_port"]                       # ★11.03 목 U2D2 는 다시 5090(check_host 가 직접 본다)
+    assert "vision" not in site["hosts"]
+    assert (site["hosts"]["control"]["ip"], site["hosts"]["arm4090"]["ip"]) == ("192.168.0.50", "192.168.0.40")
 
 
 def test_unconnected_side_is_refused():

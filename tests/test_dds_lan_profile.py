@@ -66,7 +66,7 @@ def test_subnet_in_env_file_matches_the_site_lan_addresses():
     assert m, "config/ros_domain.env 에 S2R_LAN_SUBNET= 줄이 없다"
     subnet = m.group(1)
     hosts = yaml.safe_load(SITE_V2.read_text(encoding="utf-8"))["hosts"]
-    for role in ("control", "vision"):
+    for role in ("control", "arm4090"):
         assert hosts[role]["ip"].startswith(subnet), (role, hosts[role]["ip"], subnet)
 
 
