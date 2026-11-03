@@ -5568,7 +5568,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source240b_blue/pose
+    - cup_topic:=/objects/source240b_blue/live_pose
     - -p
     - holder:=1
     - -p
@@ -5592,7 +5592,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/shaker_c_orange/pose
+    - cup_topic:=/objects/shaker_c_orange/live_pose
     - -p
     - holder:=0
     background: true
@@ -5821,7 +5821,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source240b_blue/pose
+    - cup_topic:=/objects/source240b_blue/live_pose
     - -p
     - holder:=1
     - -p
@@ -5845,7 +5845,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/shaker_c_orange/pose
+    - cup_topic:=/objects/shaker_c_orange/live_pose
     - -p
     - holder:=0
     background: true

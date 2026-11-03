@@ -855,12 +855,13 @@ def _episode(name: str):
     return S.load(REPO / "config" / "episodes" / f"{name}.yaml")
 
 
-def _place_attach(contract: Path) -> str:
-    """rh_place 계약의 붙인 자세 출처(★10.22 newton_05 = bundle) — 못 읽으면 ""."""
-    try:
-        return str(json.loads(contract.read_text()).get("attach_source", "fpp"))
-    except (OSError, ValueError):
-        return ""
+def _place_contract(contract: Path) -> dict:
+    """rh_place 계약 JSON(★10.22 attach_source bundle · ★11.02 cup_obs live). 못 읽으면 생성을 멈춘다 —
+    조용히 {} 로 넘기면 live 계약 놓기 노드가 옛 /pose 로 생성된다(11.03 리뷰)."""
+    doc = json.loads(contract.read_text())
+    if not isinstance(doc, dict):
+        raise ValueError(f"{contract}: 계약이 JSON 객체가 아니다")
+    return doc
 
 
 def _episode_run(name: str, real: bool) -> list:
@@ -988,15 +989,18 @@ def _episode_run(name: str, real: bool) -> list:
             #   reset 에서 고른다(실행기가 job 마다 holder 를 넣는다). 쉼표가 있어야 문자열이라 두 개 이상일 때만 넣는다.
             hids = sorted({ep.holders[j.target_holder] for n in ep.nodes for j in n.jobs if j.role == role and j.target_holder})
             holders_arg = ["-p", f"holders:={','.join(map(str, hids))}"] if len(hids) > 1 else []
-            bundle_note = (" · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)" if e is not None and e.contract
-                           and _place_attach(REPO / "deploy" / "policies" / b.policy / e.contract) == "bundle" else "")
+            pc = _place_contract(REPO / "deploy" / "policies" / b.policy / e.contract) if e is not None and e.contract else {}
+            bundle_note = " · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)" if pc.get("attach_source") == "bundle" else ""
+            # ★11.03 cup_obs live 계약은 actor 컵이 틱마다 FP++ — …/pose 는 잡기 전 테이블 자세를 새 stamp 로 다시 내므로 live 토픽
+            cup_t = ep.objects[obj]["topic"]
+            cup_t = _live(cup_t) if pc.get("cup_obs") == "live" else cup_t
             where = f"홀더 {' → '.join(map(str, hids))}(job 마다)" if holders_arg else f"홀더 {hid}"
             cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — {where} · 놓은 뒤 스스로 끝남{bundle_note}",
                              ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_place_node.py", "--ros-args",
                               # 한 팔에 aglt 와 같이 뜬다 — 서비스는 <팔>_place, 이벤트는 그 팔 토픽(pd 가 reset · stop 적용)
                               "-r", f"__node:=rh_place_node_{b.side}", "-p", f"ns:={b.side}_place",
                               "-p", f"episode_topic:=/policy_control/{b.side}/episode", "-p", f"contract:={contract}",
-                              "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", f"cup_topic:={ep.objects[obj]['topic']}",
+                              "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", f"cup_topic:={cup_t}",
                               "-p", f"holder:={hid}", *holders_arg, *([] if real else ["-p", "require_grasp:=false"])],
                              background=True))
     if real:                                         # 첫 실기는 놓음 문턱(손끝 · 관절 힘 · 손 목표)을 bag 으로 정한다(PLACE 10.04)

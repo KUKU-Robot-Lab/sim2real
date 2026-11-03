@@ -63,6 +63,16 @@ def test_the_grasp_node_starts_on_blue_with_the_topic_the_runner_uses(name):
     assert f"cup_topic:={job_params(ep, plan)['cup_topic']}" in argv     # 생성기 _live 와 실행기 live_topic 이 같은 규칙
 
 
+@pytest.mark.parametrize("name", ("cocktail_1c_e1000", "cocktail_1c_e4000"))
+def test_a_live_cup_place_node_starts_on_the_live_topic(name):
+    """★11.03 cup_obs live 놓기 계약은 …/live_pose — …/pose 는 잡기 전 테이블 자세를 새 stamp 로 다시 낸다."""
+    cmds = GEN._episode_run(name, True)
+    assert "cup_topic:=/objects/source240b_blue/live_pose" in _node_argv(cmds, "rh_place_node.py", "right")
+    assert "cup_topic:=/objects/shaker_c_orange/live_pose" in _node_argv(cmds, "rh_place_node.py", "left")
+    old = GEN._episode_run("cocktail_1b", True)                          # attached 계약(n07 · n06)은 그대로
+    assert "cup_topic:=/objects/source240b_blue/pose" in _node_argv(old, "rh_place_node.py", "right")
+
+
 @pytest.mark.parametrize("name", COCKTAILS)
 def test_fake_objects_sit_inside_their_regions(name):
     ep = GEN._episode(name)

@@ -116,13 +116,27 @@ def service_ns(kind: str, side: str) -> str:
     return side if kind == "aglt" else f"{side}_{kind}"
 
 
+def _place_cup_obs(policy: str | None) -> str:
+    """등록부 놓기 정책 계약의 cup_obs(★11.02 live | attached). 계약 파일 이름은 등록부(policy_registry.check)가 정한다 —
+    미션 생성기와 같은 규칙. 계약이 있는데 못 읽으면 크게 실패한다(조용히 넘기면 놓기가 옛 /pose 에 남는다 · 11.03 리뷰)."""
+    from policy_control import policy_registry as R
+    d = _paths.SIM2REAL / "deploy" / "policies" / str(policy)
+    e = R.check(d, deep=False)
+    if not e.contract:
+        return ""
+    doc = json.loads((d / e.contract).read_text())
+    if not isinstance(doc, dict):
+        raise ValueError(f"{d / e.contract}: 계약이 JSON 객체가 아니다")
+    return str(doc.get("cup_obs", "attached"))
+
+
 def job_params(ep: Episode, p) -> dict:
     """★10.28 정책 노드에 reset 전에 넣는 파라미터 — 노드는 첫 job 값으로 뜨고 reset 마다 이것을 다시 읽는다.
 
     object = 다물체 정책의 물체 이름(10.12, YAML 에 적힌 단계만) · aglt cup_topic = 잡을 물체의 FP++ live 토픽(미션 생성기
     _live 와 같은 규칙) · place holder = 실물 홀더 번호. 같은 팔이 두 물체를 잡고 두 홀더에 놓는 칵테일(cocktail_1 · 1b)이
     쓴다 — 전에는 노드가 컵 · 홀더를 시작 때만 읽어 분홍 잡기가 파랑을 쫓고 분홍 놓기가 홀더 1 을 노렸다.
-    place 의 cup_topic 은 넣지 않는다(넘김 묶음 계약은 FP++ 컵을 표시에만 쓴다).
+    ★11.03 place cup_topic = 계약 cup_obs live 일 때만 놓을 물체(source_object)의 live 토픽(미션 생성기와 같은 규칙, attached 계약은 안 넣는다).
     ★10.29 place holder_tol_m = 카드가 그 job 에 넓힌 홀더 허용, 없으면 HOLDER_TOL_M. 놓기 job 마다 늘 넣는다 — 앞 job 의
     넓힌 값이 노드에 남아 다음 홀더 검사를 느슨하게 하지 않게."""
     out: dict = {}
@@ -130,6 +144,10 @@ def job_params(ep: Episode, p) -> dict:
         out["object"] = str(p.policy_object)
     if p.kind == "aglt" and p.target_object:
         topic = live_topic(str((ep.objects.get(p.target_object) or {}).get("topic", "")))
+        if topic:
+            out["cup_topic"] = topic
+    if p.kind == "place" and p.source_object and _place_cup_obs(p.policy) == "live":   # 파랑 → 분홍 놓기가 파랑 live 에 머물지 않게
+        topic = live_topic(str((ep.objects.get(p.source_object) or {}).get("topic", "")))
         if topic:
             out["cup_topic"] = topic
     if p.kind == "place" and p.holder_id is not None:
