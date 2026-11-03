@@ -1480,12 +1480,22 @@ function evRunHtml(s, ep) {
   const startBtn = p.act ? `<button type="button" class="btn ${real ? "btn-real" : "btn-primary"} ev-go" data-act="${p.act}" data-arg="${esc(ep.name)}" ${can && p.ok ? "" : "disabled"}>
       시작<small>${esc(p.sub)}</small></button>` : "";
   const resetBtn = p.reset ? `<button type="button" class="btn ev-go" data-act="ev-reset" data-arg="${esc(r.runner)}" ${can ? "" : "disabled"}>초기화<small>다음 회차 준비</small></button>` : "";
-  const nextBtn = r && (r.confirm || r.pending) && r.next_action && !r.busy
+  // ★11.03 사용자 "[다음] 구분 실행 창이 안 보임": 실행기가 떠 있고 쉬면 확인 대기가 아니어도 [다음](노드 하나)을 단다
+  const nextBtn = r && r.next_action && !r.busy && !EV_DONE[r.phase]
     ? `<button type="button" class="btn btn-real ev-go" data-act="ev-next" data-arg="${esc(r.runner)}" ${can ? "" : "disabled"}>확인 · 다음<small>${esc(r.next_action)}</small></button>` : "";
   const stopBtn = `<button type="button" class="btn-stop ev-go ev-stop" data-act="ev-stop" data-arg="${esc(r ? r.runner : "")}" ${live.length ? "" : "disabled"}>정지<small>${r ? esc(RUNNER_LABEL[r.runner] || r.runner) + " 실행기" : "떠 있는 실행기 전부"}</small></button>`;
   const why = (p.why || []).length ? `<ul class="reasons ${p.reset ? "warn" : "bad"}">${p.why.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
   const lease = can ? "" : `<p class="hint">시작 · 초기화는 조작 권한이 있어야 한다(오른쪽 위). 정지 · 기록 저장은 권한 없이 된다.</p>`;
-  return `<div class="ev-ctl">${startBtn}${nextBtn}${resetBtn}${stopBtn}</div>${why}${lease}${evStatus(s, r)}`;
+  // ★11.03 사용자 "eval 에서 실행했는데 setting 칸에서 보임": 노드를 띄우는 중 수동 확인 단계(배치 확인 등)를 여기서도 누른다
+  let ackBox = "";
+  if (!r && row && row.status === "RUNNING") {
+    const lane = Object.values(s.runners || {}).find((x) => x && x.stage === ep.stage);
+    const st = lane && (lane.steps || []).find((x) => x.status === "waiting");
+    if (st) ackBox = `<div class="manual-box"><b>확인 대기</b> — ${esc(st.note || "")}
+      <div class="actions"><button class="btn btn-primary btn-sm" data-act="ack" data-arg="${esc(row.id)}:${st.index}:1" ${can ? "" : "disabled"}>확인했고 정상이다 → 다음</button>
+      <button class="btn btn-sm" data-act="ack" data-arg="${esc(row.id)}:${st.index}:0" ${can ? "" : "disabled"}>정상이 아니다 → 중단</button></div></div>`;
+  }
+  return `<div class="ev-ctl">${startBtn}${nextBtn}${resetBtn}${stopBtn}</div>${ackBox}${why}${lease}${evStatus(s, r)}`;
 }
 
 // 지금 단계 · 진행 — 에피소드 실행기 상태(policy 탭 '지금 에피소드' 와 같은 값) + 미션 진행 묶음(control 탭 #gb 와 같은 값)
