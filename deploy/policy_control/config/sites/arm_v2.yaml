@@ -26,7 +26,7 @@ rh56f1:
   left:  {ifname: eno1.20}   # VLAN 20
 can: {right: can0, left: can1}          # PCAN-USB Pro FD(5090, arm_v1 과 같음), 미션이 FD 1M/5M 로 올린다
 head_port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0   # 목 U2D2 — 11.03 부터 5090
-camera_rs_serial: "348122071637"        # 10.30 4090 에서 잰 D435i. 11.03 5090 에 꽂은 카메라가 이 장치인지는 아직 미확인
+camera_rs_serial: "348122071637"        # 머리 D435i(fw 5.16.0.1). 11.03 5090 USB 3.2 에서 같은 시리얼 확인(logs/head_d435i_camera_info_1103)
 hosts:
   control: {name: "5090", ifname: eno1, ip: 192.168.0.50, tailscale: 100.103.21.126,
             role: "로봇 제어(팔 CAN · 손 EtherCAT) · 정책 실행 · 카메라 D435i · 목 다이나믹셀 · FP++(11.03)"}
