@@ -34,7 +34,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fpp_udp  # noqa: E402
 from object_registry import load_registry, output_topic, render_fpp_yaml, render_group_yaml  # noqa: E402
 from perception_launcher_core import (  # noqa: E402
-    LOCAL_HOSTS, build_status, parse_command, parse_remote_status, plan_actions, run_actions, shell_argv,
+    FIRST_ROUND_S, LOCAL_HOSTS, build_status, parse_command, parse_remote_status, plan_actions, run_actions, shell_argv,
+    wait_first_round,
 )
 
 #: 저 PC 의 홈에서 본 상대 경로 — ssh 명령은 홈에서 시작한다. PC 마다 사용자 이름이 달라(usr · user) 절대 경로를 쓰지 않는다(09.29).
@@ -119,6 +120,8 @@ def main() -> None:
                          "왕복 3~130 ms)로 가서 자세도 wifi 로 왔다 — 이더넷 허브 쪽 주소를 준다(왕복 0.4 ms)")
     ap.add_argument("--camera-extrinsics", default=None,
                     help="묶음 FP++ 의 테이블 밖 후보 거르기에 쓰는 base←카메라(실기 외부 파라미터 yaml)")
+    ap.add_argument("--first-round-s", type=float, default=FIRST_ROUND_S,
+                    help="묶음 FP++ 컨테이너 하나의 첫 회차를 기다리는 상한(s) — 넘기면 경고하고 다음 묶음을 띄운다(11.03)")
     args = ap.parse_args()
     reg = {"now": load_registry()}       # 10.09 명령마다 다시 읽는다 — fpp_object.py add 로 물체를 더해도 런처를 다시 띄우지 않는다
 
@@ -205,6 +208,7 @@ def main() -> None:
             try:
                 self._error = None
                 self._warning = None
+                self._notes: list[str] = []
                 state = parse_remote_status(remote.run("status.sh"))
                 actions = plan_actions(cmd, state, group_of=group_of)
                 self.get_logger().info(f"{cmd.op}: {actions or '변경 없음'}")
@@ -214,6 +218,8 @@ def main() -> None:
                 if failed:
                     self._warning = f"{cmd.op}: 일부 물체 컨테이너 실패 — " + " · ".join(failed)
                     self.get_logger().warning(self._warning)
+                if self._notes:
+                    self._warning = " · ".join([*([self._warning] if self._warning else []), *self._notes])
                 if cmd.viewer is True:
                     remote.ensure_video_tunnel()
                 elif cmd.op == 'stop' or cmd.viewer is False:
@@ -235,8 +241,18 @@ def main() -> None:
             elif kind == "fpp_group_up":
                 group = action[1]
                 path = f"{REMOTE_PARAMS}/group_{group}.yaml"
-                remote.put(render_group_yaml(reg["now"], group, camera_yaml=args.camera_extrinsics), path)
+                # ★11.03 요청한 물체만 등록한다(shaker 는 orange 만 — 안 쓰는 색이 다른 물체에 붙어 GPU 를 쓰지 않게)
+                asked = [n for n in cmd.objects if group_of(n) == group]
+                remote.put(render_group_yaml(reg["now"], group, camera_yaml=args.camera_extrinsics, only=asked), path)
                 out = remote.run("fpp_group_up.sh", group, path)
+                # ★11.03 다음 묶음은 이 컨테이너의 첫 회차가 끝난 뒤에(동시 첫 회차 = GPU 24 GB 초과)
+                cname = f"fpp_{group}"
+                warn = wait_first_round(lambda: remote._ssh(
+                    f"S=$(docker inspect -f '{{{{.State.Running}}}}' {cname} 2>/dev/null) || S=false; echo $S; "
+                    f"docker logs --tail 100 {cname} 2>&1 || true"), limit_s=args.first_round_s)
+                if warn:
+                    self._notes.append(f"{group}: {warn}")
+                    self.get_logger().warning(f"  {group}: {warn}")
             elif kind == "viewer_up":
                 # viewer 단독 명령엔 물체 목록이 없다 — 떠 있는 컨테이너에서 이름을 되찾는다.
                 names = list(cmd.objects) or [c[len("fpp_"):] for c, st in state.containers.items()

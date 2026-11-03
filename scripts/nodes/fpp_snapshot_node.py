@@ -223,6 +223,7 @@ def main(argv=None) -> None:
         def _worker(self) -> None:
             seq = 0
             last_pass = 0.0
+            first_done = False
             while rclpy.ok():
                 with self.lock:
                     todo = sorted(self.pending)
@@ -255,6 +256,10 @@ def main(argv=None) -> None:
                 except Exception as exc:  # noqa: BLE001 — 노드는 살아서 오류를 상태로 낸다
                     self.error = f"{type(exc).__name__}: {exc}"[:200]
                     self.get_logger().error(self.error)
+                if not first_done:
+                    # ★11.03 런처가 이 줄을 docker logs 에서 보고 다음 묶음을 띄운다(perception_launcher_core.FIRST_ROUND_MARK)
+                    first_done = True
+                    self.get_logger().info(f"첫 회차 끝 · generation {self.generation} · 오류 {self.error or '없음'}")
                 self.live["init"] = False              # 찍기가 엔진을 다시 썼다 — 추적은 새로 시작
                 with self.lock:
                     left = bool(self.pending)

@@ -154,6 +154,9 @@ def test_three_colour_cups_share_one_fpp_container():
     assert [o["name"] for o in doc["objects"]] == list(cups)
     assert {o["name"]: o["color"] for o in doc["objects"]} == cups
     assert {o["pose_topic"] for o in doc["objects"]} == {input_topic(n) for n in cups}
+    # ★11.03 런처가 start 로 요청한 물체만 넘기면 그것만 등록한다(shaker 는 orange 만)
+    doc = yaml.safe_load(render_group_yaml(reg, "cups", only=["cyl60_blue", "not_in_group"]))
+    assert [o["name"] for o in doc["objects"]] == ["cyl60_blue"]
 
 
 def test_a_group_member_needs_a_known_colour(tmp_path):

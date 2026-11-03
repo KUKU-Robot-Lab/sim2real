@@ -223,10 +223,12 @@ def _base_from_camera(camera_yaml: str | Path) -> list[list[float]]:
     return T.round(9).tolist()
 
 
-def render_group_yaml(registry: Registry, group: str, camera_yaml: str | Path | None = None) -> str:
-    """묶음 컨테이너(fpp_snapshot_node --config) 설정 — 묶음의 물체 전부(요청에 없는 것도, 못 찾으면 비워 둔다).
-    camera_yaml(실기 외부 파라미터)을 주면 base←카메라를 실어 작업 영역 밖 후보를 버리게 한다."""
-    names = group_members(registry, group)
+def render_group_yaml(registry: Registry, group: str, camera_yaml: str | Path | None = None,
+                      only: list[str] | None = None) -> str:
+    """묶음 컨테이너(fpp_snapshot_node --config) 설정 — 묶음의 물체 전부(못 찾으면 비워 둔다). only 를 주면(비어 있지 않으면)
+    그중 묶음 물체만(11.03 런처가 start 로 요청한 물체만 넘긴다). camera_yaml(실기 외부 파라미터)을 주면 base←카메라를 실어
+    작업 영역 밖 후보를 버리게 한다."""
+    names = [n for n in group_members(registry, group) if not only or n in only]
     if not names:
         raise ValueError(f"묶음 {group!r} 에 물체가 없다")
     objs = []

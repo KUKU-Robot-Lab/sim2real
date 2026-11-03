@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import sys
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -174,6 +175,27 @@ def run_actions(actions: list[tuple[str, ...]], do: Callable[[tuple[str, ...]], 
     if tried and len(failed) == tried:
         raise RuntimeError("물체 컨테이너를 하나도 못 띄웠다 — " + " · ".join(failed))
     return failed
+
+
+#: ★11.03 실기: 묶음 셋을 0.8 s 간격으로 띄우자 셋이 동시에 첫 회차(모델 로드 + 등록)를 하며 arm4090 4090 24 GB 가 차서
+#: 셋 다 warp alloc 실패했다. 묶음은 하나씩 — 앞 컨테이너의 첫 회차가 끝난 뒤(성공이든 오류든) 다음을 띄운다.
+FIRST_ROUND_MARK = "첫 회차 끝"           # fpp_snapshot_node 가 첫 찍기 시도 뒤 한 번 찍는 로그 줄
+FIRST_ROUND_S = 90.0                      # 묶음 하나의 첫 회차 상한 — 넘기면 경고하고 다음 묶음으로
+
+
+def wait_first_round(probe: Callable[[], str], limit_s: float = FIRST_ROUND_S, poll_s: float = 2.0,
+                     clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep) -> str | None:
+    """probe() = 첫 줄 docker inspect State.Running(true/false) + docker logs. None = 첫 회차 끝, 문자열 = 경고."""
+    t0 = clock()
+    while True:
+        out = probe()
+        if FIRST_ROUND_MARK in out:
+            return None
+        if out.split("\n", 1)[0].strip() == "false":
+            return "첫 회차 전에 컨테이너가 멈췄다 — " + (last_crash(out) or "오류 줄 없음")
+        if clock() - t0 >= limit_s:
+            return f"첫 회차가 {limit_s:.0f} s 안에 안 끝났다 — 다음으로 넘어간다"
+        sleep(poll_s)
 
 
 def build_status(state: RemoteState | None, camera_hz: float, pose_ages: dict[str, float | None],

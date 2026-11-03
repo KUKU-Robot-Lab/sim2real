@@ -206,15 +206,14 @@ def test_real_cups_run_fpp_on_the_perception_pc_after_the_head_home_and_shutdown
     assert any(Path(GEN.HEAD_CONFIG).name in " ".join(c.argv) for c in head)
     cups = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "cups")]
     sys.path.insert(0, str(REPO / "scripts"))
-    from object_registry import group_members, load_registry
     side = [ACTIVE_SIDES[s] for s in ("right", "left") if s in ACTIVE_SIDES]
-    reg = load_registry()
-    groups = list(dict.fromkeys(reg.get(n).fpp["group"] for n in side))          # 팔마다 다른 묶음이어도 된다(10.09)
     # ★10.28 칵테일 분홍 — 에피소드가 찍는 실물도 띄운다(팔 물체 묶음 밖은 분홍만 든 묶음 source240p 하나)
-    objs = " ".join(dict.fromkeys([*side, *(n for g in groups for n in group_members(reg, g)), "source240p_pink"]))
+    # ★11.03 사용자 "shaker는 현재 orange" — 묶음의 나머지 색은 넣지 않는다(GPU 24 GB)
+    objs = " ".join(dict.fromkeys([*side, "source240p_pink"]))
+    assert not {"shaker_c_blue", "shaker_c_pink"} & set(objs.split())
     for want in (f"perception_launcher_node.py --host {host}", "fpp_pose_rx.py", "object_pose_node.py --camera-extrinsics",
                  "--camera-extrinsics", ext,
-                 f"perception_ctl.py start {objs} --viewer --wait 150",
+                 f"perception_ctl.py start {objs} --viewer --wait {GEN.PERCEPTION_START_WAIT_S}",
                  f"fpp_rescan.py {' '.join(side)} --wait 120"):        # 10.08 다시 실행 = 지금 카메라로 다시 찍기
         assert any(want in a for a in cups), want
     rescan = next(c.argv for c in _cmds(REAL, REAL_BOOK, "cups") if any("fpp_rescan.py" in str(x) for x in c.argv))

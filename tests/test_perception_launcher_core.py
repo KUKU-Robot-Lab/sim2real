@@ -175,3 +175,50 @@ def test_status_carries_the_partial_failure_warning():
     st = parse_remote_status('{"camera_up": true, "containers": {}, "viewer_up": false}')
     assert build_status(st, 0.0, {}, False, None)["warning"] is None
     assert build_status(st, 0.0, {}, False, None, warning="fpp_shaker_c: rc=1")["warning"] == "fpp_shaker_c: rc=1"
+
+
+class _Clock:
+    def __init__(self) -> None:
+        self.t = 0.0
+
+    def __call__(self) -> float:
+        return self.t
+
+    def sleep(self, dt: float) -> None:
+        self.t += dt
+
+
+def test_next_group_starts_only_after_previous_first_round():
+    """★11.03 실기: 묶음 셋이 동시에 첫 회차를 하며 4090 24 GB 가 차 셋 다 warp alloc 실패 — 하나씩 띄운다."""
+    from perception_launcher_core import FIRST_ROUND_MARK, run_actions, wait_first_round
+    clock, events = _Clock(), []
+    logs = {"source240b": ["true\nloading", "true\nloading", f"true\n{FIRST_ROUND_MARK} · 오류 없음"],
+            "shaker_c": ["true\n", f"true\nPerceptionError: x\n{FIRST_ROUND_MARK} · 오류 PerceptionError: x"]}
+
+    def probe(group):
+        events.append(("probe", group))
+        return logs[group].pop(0)
+
+    def do(action):
+        events.append(("up", action[1]))
+        assert wait_first_round(lambda: probe(action[1]), clock=clock, sleep=clock.sleep) is None
+
+    assert run_actions([("fpp_group_up", "source240b"), ("fpp_group_up", "shaker_c")], do) == []
+    assert events == [("up", "source240b"), *[("probe", "source240b")] * 3, ("up", "shaker_c"), *[("probe", "shaker_c")] * 2]
+
+
+def test_first_round_wait_warns_after_limit_or_when_container_stops():
+    from perception_launcher_core import FIRST_ROUND_S, wait_first_round
+    clock = _Clock()
+    warn = wait_first_round(lambda: "true\nloading", clock=clock, sleep=clock.sleep)
+    assert warn and "90 s" in warn and FIRST_ROUND_S <= clock.t < FIRST_ROUND_S + 2.1
+    clock = _Clock()
+    warn = wait_first_round(lambda: "false\nTraceback (most recent call last):\nRuntimeError: boom", clock=clock,
+                            sleep=clock.sleep)
+    assert warn and "멈췄다" in warn and "RuntimeError: boom" in warn and clock.t == 0.0
+
+
+def test_snapshot_node_logs_the_first_round_mark():
+    from perception_launcher_core import FIRST_ROUND_MARK
+    src = (Path(__file__).resolve().parents[1] / "scripts/nodes/fpp_snapshot_node.py").read_text(encoding="utf-8")
+    assert f'f"{FIRST_ROUND_MARK} ·' in src

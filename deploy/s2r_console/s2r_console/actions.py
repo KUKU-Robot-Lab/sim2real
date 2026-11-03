@@ -1144,7 +1144,7 @@ class ActionManager:
             if supported:
                 all_enabled = [o['id'] for o in workspace.objects if o['enabled'] and o['model'] != 'holder']
                 commands.append(('action_fpp_start', Command(('python3', str(s.repo / 'scripts/ops/perception_ctl.py'),
-                                                              'start', *all_enabled, '--viewer', '--wait', '150', '--require-all'),
+                                                              'start', *all_enabled, '--viewer', '--wait', '300', '--require-all'),  # 11.03 묶음을 하나씩(첫 회차 상한 90 s)
                                                              note='선택한 모든 FPP 묶음 연결 확인')))
                 commands.append(('action_fpp', Command(tuple(workspace.fpp_argv(supported)), note='FPP 재추출')))
         if workspace.perception['locate']:
