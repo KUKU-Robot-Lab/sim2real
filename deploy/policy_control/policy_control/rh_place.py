@@ -521,6 +521,12 @@ def start_refusals(c: PlaceContract, meas: Mapping) -> list:
     return []
 
 
+#: ★11.04 실기 131817 place_blue: tilt 뒤 FP++ live 가 쥔 컵을 놓쳐 (0.74, −0.12, −0.14)(탁자 아래)를 냈고, 놓기 정책이 그 컵을
+#  보고 5 s 동안 내려놓지 않았다(cup_src live 386 · fk 584). 손바닥 FK ⊗ 붙인 자세에서 이보다 멀면 live 를 버리고 FK 를 쓴다
+#  (쥔 컵은 손에서 몇 cm 이상 못 벗어난다).
+LIVE_FK_TOL_M = 0.05
+
+
 class PlaceChain:
     """rh_place 한 스텝 — 붙은 컵 · 홀더 자리 목표로 관측 → 정책(놓은 뒤에는 스크립트) → rh_aglt 디코더."""
 
@@ -556,7 +562,7 @@ class PlaceChain:
         self.clearance: float | None = None
         self.outcome: str | None = None                # "clear" | "withdraw_timeout" — 빼기 끝(stop)
         self.attach_info: dict = {}
-        self.cup_src: dict = {"live": 0, "fk": 0}     # ★11.02 cup_obs live — 틱별 컵 출처 셈(진단)
+        self.cup_src: dict = {"live": 0, "fk": 0, "rejected": 0}     # ★11.02 cup_obs live — 틱별 컵 출처 셈(진단)
         self.live_cup: tuple[np.ndarray, np.ndarray] | None = None   # 노드가 틱마다 넣는 FP++ 신선 컵(base), 없으면 None
 
     @property
@@ -716,8 +722,12 @@ class PlaceChain:
         m.cup_src "live")이면 그 값, 아니면 FK(끊김 · 가림 → "fk")."""
         live = self.live_cup
         if self.c.cup_obs == "live" and live is not None:
-            self.cup_src["live"] += 1
-            return np.asarray(live[0], float).copy(), np.asarray(live[1], float).copy()
+            fk = self.cup_from_palm(palm_pos, palm_R)
+            if float(np.linalg.norm(np.asarray(live[0], float) - fk[0])) <= LIVE_FK_TOL_M:
+                self.cup_src["live"] += 1
+                return np.asarray(live[0], float).copy(), np.asarray(live[1], float).copy()
+            self.cup_src["rejected"] = self.cup_src.get("rejected", 0) + 1     # ★11.04 FP++ 가 쥔 컵을 놓쳤다 — FK
+            return fk
         if self.c.cup_obs == "live":
             self.cup_src["fk"] += 1
         return self.cup_from_palm(palm_pos, palm_R)

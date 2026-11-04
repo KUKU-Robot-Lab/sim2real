@@ -121,7 +121,7 @@ class _Chain:
     def __init__(self, cup_obs: str):
         self.c = replace(_contract("right_n10_e1000"), cup_obs=cup_obs)
         self.rel = (np.array([0.0, 0.0, 0.10]), np.array([1.0, 0.0, 0.0, 0.0]))
-        self.cup_src = {"live": 0, "fk": 0}
+        self.cup_src = {"live": 0, "fk": 0, "rejected": 0}
         self.live_cup = None
 
     cup_obs = P.PlaceChain.cup_obs
@@ -131,20 +131,32 @@ class _Chain:
 def test_live_contract_uses_the_fresh_fpp_cup_and_falls_back_to_the_palm():
     ch = _Chain("live")
     palm, R = np.array([0.3, -0.1, 0.4]), np.eye(3)
-    ch.live_cup = (np.array([0.31, -0.12, 0.33]), np.array([0.0, 0.0, 0.0, 1.0]))
+    ch.live_cup = (np.array([0.31, -0.12, 0.49]), np.array([0.0, 0.0, 0.0, 1.0]))
     pos, quat = ch.cup_obs(palm, R)
-    assert np.allclose(pos, [0.31, -0.12, 0.33]) and np.allclose(quat, [0, 0, 0, 1])
+    assert np.allclose(pos, [0.31, -0.12, 0.49]) and np.allclose(quat, [0, 0, 0, 1])
     ch.live_cup = None                                          # 끊김 · 가림 → FK ⊗ 붙인 자세
     pos, quat = ch.cup_obs(palm, R)
     assert np.allclose(pos, [0.3, -0.1, 0.5]) and np.allclose(quat, [1, 0, 0, 0])
-    assert ch.cup_src == {"live": 1, "fk": 1}
+    assert ch.cup_src == {"live": 1, "fk": 1, "rejected": 0}
+
+
+def test_a_live_cup_far_from_the_palm_is_dropped_for_the_fk_cup():
+    """★11.04 실기 131817: tilt 뒤 FP++ 가 쥔 컵을 놓치고 탁자 아래 자세를 냈다 — 손바닥 FK 에서 5 cm 넘게 멀면 FK."""
+    ch = _Chain("live")
+    palm, R = np.array([0.38, -0.06, 0.40]), np.eye(3)
+    ch.live_cup = (np.array([0.739, -0.118, -0.141]), np.array([0.0, 0.0, 0.0, 1.0]))
+    pos, quat = ch.cup_obs(palm, R)
+    assert np.allclose(pos, [0.38, -0.06, 0.50]) and np.allclose(quat, [1, 0, 0, 0])
+    ch.live_cup = (np.array([0.38 + 0.9 * P.LIVE_FK_TOL_M, -0.06, 0.50]), np.array([1.0, 0.0, 0.0, 0.0]))
+    assert np.allclose(ch.cup_obs(palm, R)[0], [0.38 + 0.9 * P.LIVE_FK_TOL_M, -0.06, 0.50])
+    assert ch.cup_src == {"live": 1, "fk": 0, "rejected": 1}
 
 
 def test_attached_contract_ignores_any_live_cup():
     ch = _Chain("attached")
     ch.live_cup = (np.array([9.0, 9.0, 9.0]), np.array([1.0, 0.0, 0.0, 0.0]))
     pos, _ = ch.cup_obs(np.array([0.3, -0.1, 0.4]), np.eye(3))
-    assert np.allclose(pos, [0.3, -0.1, 0.5]) and ch.cup_src == {"live": 0, "fk": 0}
+    assert np.allclose(pos, [0.3, -0.1, 0.5]) and ch.cup_src == {"live": 0, "fk": 0, "rejected": 0}
 
 
 def test_the_episodes_point_at_the_new_policies():
