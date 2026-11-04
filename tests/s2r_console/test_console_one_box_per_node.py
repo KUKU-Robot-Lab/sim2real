@@ -207,7 +207,7 @@ def test_the_rh56f1_hand_is_a_driver_box_and_a_state_box_each_with_its_own_switc
     (cmd,) = [w for w in d.wires if w.dst == "hand_right_drive"]
     assert cmd.topic == "/hand_right/angle_set" and (cmd.heard_by or drive.ros) == ("/rh56f1_ecat_right",)
     assert {w.topic for w in d.wires if w.src == "hand_right_state"} >= {"/hand_right/joint_states", "/hand_right/tip_forces",
-                                                                         "/hand_right/joint_forces"}
+                                                                         "/hand_right/joint_forces_zeroed"}   # 11.04 쥠 판정은 영점 뺀 값
 
 
 def test_the_perception_chain_runs_on_the_perception_pc_and_the_udp_receiver_switches_the_fpp_box(real):

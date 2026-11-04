@@ -445,3 +445,92 @@ def test_tip_zero_refuses_a_moving_hand_noisy_values_or_no_data():
     assert not ok and any("튄다" in w for w in why)
     _fill(z, 5.0, [0] * 5)
     assert not z.capture(5.5)[0]                                                         # 0.5 s 넘게 끊겼다
+
+
+# ---------------------------------------------------------------- ★11.04 관절 힘 소프트웨어 영점
+def _fill_jf(z, t_end, jf, q=(1.57, 0, 0, 0, 0, 0), hz=200, span=0.6):
+    _fill(z, t_end, [0] * 5, q=q, hz=hz, span=span)
+    for k in range(int(span * hz)):
+        z.add_joint_force(t_end - span + k / hz, jf)
+
+
+def test_joint_force_bias_is_not_published_before_the_first_capture_and_a_jump_is_taken_with_a_warning():
+    """11.04 실기: 오른손 엄지 굽힘이 편 손에서 +207 g 로 떠 엄지 받침 B(80 g)가 늘 참. 영점 전에는 zeroed 를 내지 않고(None),
+    직전 bias 에서 30 g 넘게 옮겨 가도 받되 joint_jump_g 에 남긴다. 손끝 영점과 따로 받아들인다."""
+    from policy_control.rh56f1_state_node import TipZero
+    z = TipZero(HMAP)
+    assert z.joint_zeroed([207, 0, 45, 0, 0, 0]) is None                                         # 영점 전 = 내지 않는다
+    _fill_jf(z, 1.0, [207, 0, 45, 0, 0, 0])
+    ok, _, info = z.capture(1.0)
+    assert ok and info["joint_accepted"] and info["joint_jump_g"] == {} and info["joint_bias_g"] == pytest.approx([207, 0, 45, 0, 0, 0])
+    assert z.joint_zeroed([290, 5, 45, 0, 0, 0]) == pytest.approx([83, 5, 0, 0, 0, 0])
+    assert z.joint_zeroed([150, 0, 0, 0, 0, 0])[0] == pytest.approx(-57)                         # 부호 그대로(자르지 않는다)
+    _fill_jf(z, 2.0, [237, 0, 75.5, 0, 0, 0])                                                     # 엄지 +30(경계, 경고 아님) · 검지 +30.5
+    _, _, info = z.capture(2.0)
+    assert info["joint_accepted"] and info["joint_jump_g"] == {"index": 30.5}
+    assert info["joint_bias_g"] == pytest.approx([237, 0, 75.5, 0, 0, 0])
+    z2 = TipZero(HMAP)
+    _fill(z2, 1.0, [0] * 5)                                                                       # 관절 힘이 안 왔다 — 손끝만 받는다
+    ok, _, info = z2.capture(1.0)
+    assert ok and not info["joint_accepted"] and not z2.joint_bias_set and z2.joint_zeroed([0] * 6) is None
+
+
+def test_joint_force_bias_refuses_noise_and_a_large_mean_and_force_only_skips_the_mean_limit():
+    from policy_control.rh56f1_state_node import JOINT_ZERO_MAX_ABS_G, JOINT_ZERO_MAX_STD_G, TipZero
+    z = TipZero(HMAP)
+    _fill_jf(z, 1.0, [JOINT_ZERO_MAX_ABS_G, -JOINT_ZERO_MAX_ABS_G, 0, 0, 0, 0])                    # 경계 = 받는다
+    assert z.capture(1.0)[2]["joint_accepted"]
+    _fill_jf(z, 2.0, [0, 0, 0, 0, 0, -JOINT_ZERO_MAX_ABS_G - 1])
+    _, _, info = z.capture(2.0)
+    assert not info["joint_accepted"] and any("pinky" in w and "tip_zero_force" in w for w in info["joint_reasons"])
+    assert info["joint_bias_g"][0] == pytest.approx(JOINT_ZERO_MAX_ABS_G)                         # 이전 bias 유지
+    _, _, info = z.capture(2.0, force_joint=True)                                                  # 강제 = 절대 상한만 넘는다
+    assert info["joint_accepted"] and info["joint_forced"] and info["joint_bias_g"][5] == pytest.approx(-JOINT_ZERO_MAX_ABS_G - 1)
+    _fill_jf(z, 3.0, [0] * 6, q=(1.57, 0, 0.6, 0, 0, 0))                                          # 강제여도 편 손 조건은 그대로
+    _, _, info = z.capture(3.0, force_joint=True)
+    assert not info["joint_accepted"] and any("펴지지 않았다" in w for w in info["joint_reasons"])
+
+    def alt(sd):                                                                                   # 검지가 ±sd 로 번갈아 = 표준편차 sd
+        z = TipZero(HMAP)
+        _fill(z, 1.0, [0] * 5)
+        for k in range(120):
+            z.add_joint_force(1.0 - 0.6 + k / 200, [0, 0, 100 + sd * (1 if k % 2 else -1), 0, 0, 0])
+        return z.capture(1.0, force_joint=True)[2]
+    assert alt(JOINT_ZERO_MAX_STD_G)["joint_accepted"]                                            # 경계 = 받는다
+    info = alt(JOINT_ZERO_MAX_STD_G + 0.1)
+    assert not info["joint_accepted"] and any("튄다" in w and "index" in w for w in info["joint_reasons"])  # 강제여도 sd 는 본다
+
+
+def test_trigger_warns_when_the_joint_zero_was_refused():
+    sys.path.insert(0, str(REPO / "deploy/policy_control/tools"))
+    import trigger as T
+    assert T.joint_zero_warning(json.dumps({"ok": True, "reasons": [], "joint_ok": False, "joint_reasons": ["관절 힘이 튄다"]}))
+    assert T.joint_zero_warning(json.dumps({"ok": True, "reasons": [], "joint_ok": True})) is None
+    assert T.joint_zero_warning(json.dumps({"ok": True, "reasons": []})) is None and T.joint_zero_warning("x") is None
+
+
+@pytest.mark.parametrize("name", ["rh56f1_right_real", "rh56f1_left_real", "rh56f1_right_fake", "rh56f1_left_fake",
+                                  "rh56f1_bi_real", "rh56f1_bi_fake"])
+def test_grasp_reads_the_zeroed_joint_forces_and_a_missing_topic_is_none_not_the_raw(name):
+    """11.04: 정책 노드의 joint_force(쥠 판정 · 엄지 받침 B · 놓기 is_free)는 영점 뺀 토픽. 안 오면 원값으로 돌아가지 않고 None
+    (B = 받침 아님) — 선택 소스라 reset 을 막지도 않는다."""
+    from policy_control import sources
+    cfg = sources.load_robot_cfg(REPO / f"deploy/policy_control/config/robots/{name}.yaml")
+    jf = {s.side or name.split("_")[1]: s for s in cfg.sources.values() if s.role == "joint_force"}
+    assert jf and all(s.topic == f"/hand_{side}/joint_forces_zeroed" and not s.required for side, s in jf.items())
+    for side in jf:
+        st = sources.SourceSet(sources.select_side(cfg, side) if "_bi_" in name else cfg).snapshot(0.0)
+        assert st.joint_force is None and not any("joint_force" in m for m in st.missing)
+
+
+def test_a_stale_joint_force_becomes_none_but_other_optional_sources_keep_the_last_value():
+    """11.04: stale_to_none 은 joint_force 만 켰다 — stale_sec(0.5 s) 넘게 끊기면 None, 경계 안이면 값. tip_force 는 예전대로 마지막 값."""
+    from policy_control import sources
+    cfg = sources.load_robot_cfg(REPO / "deploy/policy_control/config/robots/rh56f1_right_real.yaml")
+    assert cfg.sources["joint_force"].stale_to_none and not cfg.sources["tip_force"].stale_to_none
+    ss = sources.SourceSet(cfg)
+    ss._latest["joint_force"] = sources._Reading(value=np.zeros((6, 1)), t_recv=10.0, stamp=10.0)
+    ss._latest["tip_force"] = sources._Reading(value=np.zeros((5, 1)), t_recv=10.0, stamp=10.0)
+    assert ss.snapshot(10.5).joint_force is not None
+    st = ss.snapshot(10.51)
+    assert st.joint_force is None and st.tip_force is not None

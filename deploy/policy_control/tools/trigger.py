@@ -147,6 +147,18 @@ def retry_reason(service: str, reasons: Sequence[str]) -> bool:
     return service == "episode/reset" and any(("is missing" in r or "is stale" in r) and "source" in r for r in reasons)
 
 
+def joint_zero_warning(message: str) -> str | None:
+    """hand/tip_zero 응답에서 관절 힘 영점이 거부됐으면 경고 한 줄(11.04 — 손끝 ok 와 따로). 순수."""
+    try:
+        body = json.loads(message) if message else {}
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(body, dict) or body.get("joint_ok", True):
+        return None
+    return ("  ⚠ 관절 힘 영점 거부(이전 bias 유지 — 영점 전이면 joint_forces_zeroed 가 안 나가 엄지 받침 B · 놓기 판정이 관절 힘 없이 돈다): "
+            + "; ".join(str(r) for r in body.get("joint_reasons", [])))
+
+
 def call(service: str, *, side: str, episode_ns: str = "", expect_pd: Sequence[str], service_timeout: float, phase_timeout: float) -> tuple[bool, list[str]]:
     import rclpy  # noqa: PLC0415
     from std_msgs.msg import String
@@ -183,6 +195,9 @@ def call(service: str, *, side: str, episode_ns: str = "", expect_pd: Sequence[s
             print(f"  ← {path}: success={resp.success} message={resp.message}", flush=True)
             ok, reasons = parse_trigger(resp.success, resp.message)
             if ok or not retry_reason(service, reasons) or time.monotonic() > retry_until:
+                warn = joint_zero_warning(resp.message) if service == "hand/tip_zero" else None
+                if warn:
+                    print(warn, flush=True)
                 break
             print(f"  … 소스가 아직이다 — {RESET_RETRY_EVERY_S:.1f} s 뒤 다시({'; '.join(reasons)[:120]})", flush=True)
             time.sleep(RESET_RETRY_EVERY_S)

@@ -99,5 +99,5 @@ def test_hand_bag_keeps_the_raw_tips_and_the_tip_zero_topics(env):
     hand = int((Path(env["RH56F1_RECORD_DIR"]) / "episode_z" / "hand.pid").read_text())
     argv = Path(f"/proc/{hand}/cmdline").read_bytes().split(b"\0")
     for s in ("right", "left"):
-        for t in ("tip_forces", "tip_forces_zeroed", "tip_bias", "tip_zero_status"):
+        for t in ("tip_forces", "tip_forces_zeroed", "tip_bias", "tip_zero_status", "joint_forces", "joint_forces_zeroed"):
             assert f"/hand_{s}/{t}".encode() in argv, (s, t)

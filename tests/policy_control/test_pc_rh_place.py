@@ -132,7 +132,7 @@ class _Grip:
 
 def test_release_then_scripted_settle_then_done(c):
     ch = P.PlaceChain(c, _Open(c))
-    m_held, m_free = _meas(c), _meas(c, tact=(0.2, 0.1, 0, 0, 0))
+    m_held, m_free = _meas(c), _meas(c, tact=(0.2, 0.1, 0, 0, 0), jf=[0.0] * 6)
     ch.reset({"arm": m_held}, holder=[0.38, -0.002, 0.235], held=(np.asarray(c.side().arm_home) + 0.05,
                                                                  np.asarray(c.side().hand_grip)))
     for _ in range(10):                                                 # 정책이 손을 연다 — 아직 촉각은 남아 있다
@@ -180,6 +180,20 @@ def test_a_touch_breaks_the_release_streak(c):
     for _ in range(10):
         ch.step({"arm": jf_free})
     assert not ch.settling
+
+
+def test_a_missing_joint_force_is_unknown_not_free(c):
+    """11.04: 관절 힘 영점 전 · 끊김(None)은 '모름' — 손끝이 비고 손을 열어도 놓음을 선언하지 않는다. 문턱 경계는 미만만 빔."""
+    zero_tip = (0, 0, 0, 0, 0)
+    assert not P.is_free(c, zero_tip, None)
+    assert P.is_free(c, zero_tip, [P.JOINT_FREE_G - 0.1] + [0.0] * 5)
+    assert not P.is_free(c, zero_tip, [P.JOINT_FREE_G] + [0.0] * 5)
+    ch = P.PlaceChain(c, _Open(c))
+    ch.reset({"arm": _meas(c)}, holder=[0.38, -0.002, 0.235], held=(np.asarray(c.side().arm_home) + 0.05,
+                                                                 np.asarray(c.side().hand_grip)))
+    for _ in range(10 + 2 * c.release_steps):
+        ch.step({"arm": _meas(c, tact=zero_tip)})
+    assert ch.opened >= P.OPEN_MIN_RAD and not ch.settling and ch.as_dict()["jf_max"] is None
 
 
 def test_obs_sees_the_seat_as_the_goal_and_the_glued_cup(c):

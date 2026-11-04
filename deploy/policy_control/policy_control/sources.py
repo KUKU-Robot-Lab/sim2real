@@ -63,6 +63,7 @@ class SourceCfg:
     axes: int = 3
     frame: str = ""                    # pose
     mode: str = ""                     # pose(object): OBJECT_MODES
+    stale_to_none: bool = False        # ★11.04 선택 소스가 stale_sec 넘게 안 오면 스냅샷에서 None(마지막 값을 들고 있지 않는다)
 
 
 @dataclass(frozen=True)
@@ -142,6 +143,7 @@ def _source_cfg(name: str, raw: dict) -> SourceCfg:
         velocity=str(raw.get("velocity", "measured")), effort_unit=raw.get("effort_unit"),
         tips=tuple(raw.get("tips", ())), axes=int(raw.get("axes", 3)),
         frame=str(raw.get("frame", "")), mode=str(raw.get("mode", "")),
+        stale_to_none=bool(raw.get("stale_to_none", False)),
     )
     _check_source(cfg)
     return cfg
@@ -400,9 +402,15 @@ class SourceSet:
         self._latest[name] = _Reading(value=(sample.pos, sample.quat), stamp=sample.stamp, t_recv=float(now))
 
     # ---------------------------------------------------------------- snapshot
-    def _get(self, name: str):
+    def _get(self, name: str, now: float | None = None):
+        """최신 값. now 를 주면 stale_to_none 소스가 stale_sec 넘게 늦을 때 None."""
         r = self._latest.get(name)
-        return None if r is None else r.value
+        if r is None:
+            return None
+        s = self.cfg.sources.get(name)
+        if now is not None and s is not None and s.stale_to_none and float(now) - r.t_recv > s.stale_sec:
+            return None
+        return r.value
 
     def _ee(self) -> tuple[tuple, np.ndarray | None, np.ndarray | None]:
         s = self.cfg.sources.get("ee")
@@ -456,5 +464,5 @@ class SourceSet:
             head=_ro(None if head is None else head[0]),
             decoder_target=_ro(None if dec is None else dec[0]),
             stamps=stamps, stale=tuple(stale), missing=tuple(missing),
-            joint_force=_ro(self._get("joint_force")),
+            joint_force=_ro(self._get("joint_force", now)),
         )

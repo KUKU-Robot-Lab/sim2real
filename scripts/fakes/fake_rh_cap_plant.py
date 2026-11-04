@@ -3,7 +3,7 @@
 
   구독  /policy_control/joint_target (JointState) — 오른팔 7 · 오른손 6 목표
   발행  /joint_states(오른팔, 목표로 1차 지연 추종) · /hand_right/joint_states(손 6, 같은 추종) · /hand_right/tip_forces(5) ·
-        /hand_right/joint_forces(6) · /objects/cap/pose · /objects/receiver/pose(latched)
+        /hand_right/joint_forces_zeroed(6) · /objects/cap/pose · /objects/receiver/pose(latched)
   쥠 흉내: 네 손가락 평균 닫힘이 --grip-close 를 넘으면 엄지 · 검지 손끝 3 N(쥔 판정 참). 쥔 뒤 캡은 손바닥 아래에 붙어 따라간다
   (seat 모드는 처음부터 쥔 채). 손바닥 위치는 policy_control FK(UrdfChainFK)로 푼다.
 
@@ -64,7 +64,7 @@ def main() -> int:
     p_arm = node.create_publisher(JointState, "/joint_states", 10)
     p_hand = node.create_publisher(JointState, "/hand_right/joint_states", 10)
     p_tip = node.create_publisher(Float64MultiArray, "/hand_right/tip_forces", 10)
-    p_jf = node.create_publisher(Float64MultiArray, "/hand_right/joint_forces", 10)
+    p_jf = node.create_publisher(Float64MultiArray, "/hand_right/joint_forces_zeroed", 10)   # 11.04 robot yaml joint_force = 영점 뺀 토픽(상태 노드 대신)
     p_cap = node.create_publisher(PoseStamped, "/objects/cap/pose", 10)
     p_rcv = node.create_publisher(PoseStamped, "/objects/receiver/pose", latched)
 

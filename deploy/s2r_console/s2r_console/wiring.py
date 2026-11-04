@@ -69,7 +69,8 @@ _POUR_INPUT = {"arm": "arm", "ee": "hand", "tip_force": "force"}       # robot y
 HAND_DRIVER_NODE = {"rh56f1_driver.py": "/rh56f1_ecat_{side}", "fake_rh56f1_hand.py": "/fake_rh56f1_{side}"}
 #: rh56f1_state_node — 드라이버 레지스터 → rad · N · g
 HAND_STATE_NODE = "/rh56f1_state_{side}"
-HAND_STATE_TOPICS = ("/hand_{side}/joint_states", "/hand_{side}/tip_forces", "/hand_{side}/joint_forces")
+HAND_STATE_TOPICS = ("/hand_{side}/joint_states", "/hand_{side}/tip_forces", "/hand_{side}/joint_forces",
+                     "/hand_{side}/joint_forces_zeroed")   # 11.04 정책 노드 쥠 판정은 영점 뺀 관절 힘을 읽는다
 FPP_RX_NODE = "/fpp_pose_rx"                     # scripts/nodes/fpp_pose_rx.py — FP++ 자세를 UDP 로 받아 ROS 로
 OBJECT_POSE_NODE = "/object_pose_node"
 HOLDER_NODE = "/cup_holder_pose_node"

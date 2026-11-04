@@ -508,10 +508,12 @@ def _matrix_to_quat(R: np.ndarray) -> np.ndarray:
 
 def is_free(c: PlaceContract, tactile_n: Sequence[float], joint_force: Sequence[float] | None,
             joint_free_g: float = JOINT_FREE_G) -> bool:
-    """손이 컵에서 떨어졌다 — 손끝 촉각 전부 < 놓음 힘이고 관절 힘(있으면) 전부 < 문턱."""
-    if float(np.max(np.asarray(tactile_n, float))) >= c.release_force_n:
+    """손이 컵에서 떨어졌다 — 손끝 촉각 전부 < 놓음 힘이고 관절 힘 전부 < 문턱.
+    ★11.04 관절 힘이 없으면(영점 전 · 끊김 = None) 모름 → 떨어지지 않은 것으로 본다. 관절 힘은 첫마디로 쥔 것도 보는데 손끝 촉각은
+    거의 안 실린다(sim 18 %) — 손끝만 보고 놓음을 선언하면 쥔 채 팔을 뺀다. RH56F1 전용(놓기 정책은 이 손뿐)."""
+    if joint_force is None or float(np.max(np.asarray(tactile_n, float))) >= c.release_force_n:
         return False
-    return joint_force is None or float(np.max(np.asarray(joint_force, float))) < joint_free_g
+    return float(np.max(np.asarray(joint_force, float))) < joint_free_g
 
 
 def start_refusals(c: PlaceContract, meas: Mapping) -> list:

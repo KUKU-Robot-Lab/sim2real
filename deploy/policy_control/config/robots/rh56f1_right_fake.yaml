@@ -25,11 +25,12 @@ sources:
     stale_sec: 0.5
   joint_force:
     type: float_array
-    topic: /hand_right/joint_forces          # 10.04 손 관절 힘 6(엄지 굽힘 · 엄지 회전 · 검지 · 중지 · 약지 · 새끼, g) — 쥔 판정
+    topic: /hand_right/joint_forces_zeroed  # 10.04 손 관절 힘 6(엄지 굽힘 · 엄지 회전 · 검지 · 중지 · 약지 · 새끼, g) — 쥔 판정. ★11.04 영점 뺀 값(rh56f1_state_node tip_zero, 엄지 +207 g 영점 이동)
     tips: [r_jf_thumb_bend, r_jf_thumb_rot, r_jf_index, r_jf_middle, r_jf_ring, r_jf_pinky]
     axes: 1
     required: false
     stale_sec: 0.5
+    stale_to_none: true                  # 11.04 끊기면 마지막 값 대신 None(엄지 받침 B = 받침 아님 · 놓기 is_free = 모름)
   object:
     type: pose
     topic: /objects/cup_big_s100/pose

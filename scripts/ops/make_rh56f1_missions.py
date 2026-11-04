@@ -1122,8 +1122,9 @@ def _record_stop(stage: str, cpu_index: int, name: str) -> list[dict]:
 
 def _tip_zero(s: str) -> dict:
     """★11.04 사용자: home · rehome 끝(편 손 · 빈손)에서 손끝 촉각 bias 를 잡아 기록 — 손은 움직이지 않는다. 거부돼도 단계는 계속(trigger.py SOFT)."""
-    return _cmd(f"[{s}] 손끝 촉각 영점(/hand_{s}/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 거부면 이전 bias 유지) "
-                "→ tip_bias · tip_forces_zeroed · logs/rh56f1_tip_zero",
+    return _cmd(f"[{s}] 손끝 촉각 · 관절 힘 영점(/hand_{s}/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 관절 힘은 sd > 5 g · "
+                "|평균| > 400 g 면 거부, 30 g 넘게 옮겨 가면 받고 경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · "
+                "logs/rh56f1_tip_zero",
                 ["python3", f"{PC}/tools/trigger.py", "hand/tip_zero", "--side", s, "--service-timeout", "5"], execute_args=["--execute"])
 
 

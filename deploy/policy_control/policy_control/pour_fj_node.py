@@ -585,6 +585,9 @@ class PourFjNode(LeanNodeMixin, Node):
             for src in select_side(cfg, self.contract.sides[r].side).sources.values():
                 if src.type in msgs and (src.role or src.name) in ("arm", "ee", "tip_force", "joint_force"):
                     self._poll_srcs.append((r, src, msgs[src.type], poll_subscription(self._poll, msgs[src.type], src.topic, _sensor)))
+        # ★11.04 쥠 판정 · 엄지 받침 B 가 읽는 관절 힘 — robot yaml 이 joint_forces_zeroed(영점 뺀 값)를 가리킨다. 안 오면 None(받침 아님)
+        self.get_logger().info("관절 힘 입력(쥠 판정 · 엄지 받침 B): " + (", ".join(
+            f"{r}={src.topic}" for r, src, _, _ in self._poll_srcs if (src.role or src.name) == "joint_force") or "없음"))
         self._cup_qos = _sensor
         self._cup_topics = {role: str(p(param)) for role, param, _ in self.fam.cups}
         self._poll_cups = {role: self._make_cup_poll(topic) for role, topic in self._cup_topics.items()}

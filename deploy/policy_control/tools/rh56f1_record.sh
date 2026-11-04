@@ -65,7 +65,7 @@ start)
   # 10.08 명령(위치 angle_set · 어드민턴스 angle_target)과 어드민턴스가 연 칸 수 · 손가락 모드도 — 어드민턴스 정책 쥠 분석
   # 11.04 손끝 영점(tip_bias · tip_zero_status 는 transient_local — 기록 시작 전에 잡은 마지막 bias 도 bag 첫머리에 들어온다)
   for s in ${HAND_SIDES:-right left}; do for t in angle_actual force_actual current_actual touch_data joint_states tip_forces \
-      tip_forces_zeroed tip_bias tip_zero_status joint_forces ecat_status angle_set angle_target admittance_offset finger_mode; do
+      tip_forces_zeroed tip_bias tip_zero_status joint_forces joint_forces_zeroed ecat_status angle_set angle_target admittance_offset finger_mode; do
     HAND="$HAND /hand_$s/$t"; done; done
   source "$(dirname "$0")/../../../config/ros_domain.env"   # 실기 도메인 한 곳(10.30 motion_acq 와 분리)
   ENV=${RH56F1_RECORD_ENV:-"source /opt/ros/humble/setup.bash; source \$HOME/rl_ws/robot_control/ros_ws/install/setup.bash; export ROS_DOMAIN_ID=\${ROS_DOMAIN_ID:-$S2R_REAL_DOMAIN}"}
