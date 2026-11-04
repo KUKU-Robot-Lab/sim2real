@@ -209,3 +209,43 @@ def test_a_recording_without_a_grip_is_refused():
     t = _run(_teacher(), 600, _push_j4())
     with pytest.raises(P.TeachError, match="쥠"):
         P.build_recording(t)
+
+
+def _push_j4_wrist_flops(start_k=90, ticks=150, total=0.3, flop=0.06):
+    """관절 4 를 끄는 동안 손목이 손 무게로 flop 만큼 돌아간다(손목은 아무도 잡지 않았다)."""
+    def path(k, cmd):
+        if start_k <= k < start_k + ticks:
+            q = (Q0 - DROOP).copy()
+            frac = (k - start_k + 1) / ticks
+            q[3] += total * frac
+            q[P.WRIST] = cmd[P.WRIST] - DROOP[P.WRIST] - flop * min(1.0, 4 * frac)
+            return q
+        return None
+    return path
+
+
+def test_dragging_the_arm_does_not_carry_the_wrist_along():
+    t = _run(_teacher(), 600, _push_j4_wrist_flops())
+    cmds = np.vstack([r[2] for r in t.rows])
+    assert t.command[3] > Q0[3] + 0.25                            # 팔은 따라왔다
+    assert np.allclose(cmds[:, P.WRIST], Q0[P.WRIST])             # 손목 명령은 그 자리
+    assert "follow" in {r[4] for r in t.rows}
+
+
+def test_twisting_the_wrist_itself_is_followed():
+    def twist(k, cmd):
+        if 90 <= k < 240:
+            q = (Q0 - DROOP).copy()
+            q[P.WRIST] += 0.4 * (k - 89) / 150
+            return q
+        return None
+    t = _run(_teacher(), 600, twist)
+    assert t.command[P.WRIST] > Q0[P.WRIST] + 0.3
+
+
+def test_raw_rows_keep_every_tick_with_its_mode():
+    t = _run(_teacher(), 300, _push_j4(), keys={20: "g"})
+    raw = P.raw_rows(t)
+    assert raw["q_cmd"].shape == (300, 7) and raw["mode"].shape == (300,)
+    assert set(raw["mode"]) <= {"hold", "follow"} and list(raw["event_names"]) == ["grip"]
+

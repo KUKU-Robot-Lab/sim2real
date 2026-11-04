@@ -218,6 +218,7 @@ def run(side: str, teacher: P.Teacher, out: Path, seconds: float, execute: bool)
         except P.TeachError as error:
             return (rc or 2), {**info, "saved": None, "why": f"{why}; 저장 안 함: {error}"}
         P.save_recording(out, fields)
+        np.savez(Path(out).with_name(Path(out).stem + "_raw.npz"), **P.raw_rows(teacher))   # 진단용 — 재생은 out 만 읽는다
         segs = json.loads(str(fields["meta_segments"]))
         return rc, {**info, "saved": str(out), "frames": int(fields["arm_q"].shape[0]),
                     "seconds": round(float(fields["arm_q"].shape[0] * fields["meta_step_dt"]), 2), "segments": segs}

@@ -47,6 +47,10 @@ STILL_RAD_S = 0.03
 STILL_SEC = 0.5
 SETTLE_SEC = 1.0
 MAX_FOLLOW_SEC = 30.0
+#: 손목 회전(j7) — kp 가 가장 낮아 팔을 끌면 손 무게·관성만으로 따라 돌았다(11.04 holder1, 놓은 뒤 1.0→1.51→−0.31 rad).
+#: 그래서 j7 은 팔 따라가기에 끌려가지 않고, 손을 직접 잡고 이만큼 넘게 비틀 때만 따라간다.
+WRIST = 6
+WRIST_PUSH_RAD = 0.1
 
 
 class TeachError(ValueError):
@@ -74,7 +78,9 @@ def parse_pose(text: str | None, default: Sequence[float], flag: str) -> np.ndar
 
 
 def default_limits() -> TeachLimits:
-    return TeachLimits(push_rad=np.full(7, PUSH_RAD), still_rad_s=np.full(7, STILL_RAD_S), still_sec=STILL_SEC,
+    push = np.full(7, PUSH_RAD)
+    push[WRIST] = WRIST_PUSH_RAD
+    return TeachLimits(push_rad=push, still_rad_s=np.full(7, STILL_RAD_S), still_sec=STILL_SEC,
                        settle_sec=SETTLE_SEC, max_follow_sec=MAX_FOLLOW_SEC)
 
 
@@ -101,9 +107,12 @@ class Teacher:
     command: np.ndarray | None = None
     hand: np.ndarray | None = None
     events: list[HandEvent] = field(default_factory=list)
-    rows: list[tuple[float, np.ndarray, np.ndarray, np.ndarray]] = field(default_factory=list)  # t, 실측, 팔 목표, 손 목표
+    rows: list[tuple[float, np.ndarray, np.ndarray, np.ndarray, str]] = field(default_factory=list)  # t, 실측, 팔 목표, 손 목표, 모드
     #: g · o 가 건 잠금(기준선을 다시 잡으면 푼다). 사용자가 space 로 건 잠금은 건드리지 않는다.
     hand_lock: bool = False
+    #: 따라가기 동안 손목(j7)이 붙드는 자리 · 이번 따라가기에서 손목을 직접 비틀었는지.
+    wrist: float | None = None
+    wrist_follow: bool = False
 
     def __post_init__(self) -> None:
         if self.side not in ("right", "left"):
@@ -131,13 +140,24 @@ class Teacher:
         meas = np.asarray(q_meas, float)
         self.state, desired, event = step(self.state, self.limits, meas, t)
         prev = self.command
+        desired = np.asarray(desired, float).copy()
+        if self.state.mode is Mode.FOLLOW:
+            # 팔을 끄는 동안 손목은 직전 명령 자리를 붙든다 — 손목을 직접 비틀어 기준선 너머 WRIST_PUSH_RAD 를 넘기면 그때부터 따라간다.
+            if self.wrist is None:
+                self.wrist = float(prev[WRIST])
+            b = float(self.state.baseline[WRIST])
+            if self.wrist_follow or abs((self.wrist - meas[WRIST]) - b) > self.limits.push_rad[WRIST]:
+                self.wrist_follow, self.wrist = True, float(meas[WRIST]) + b
+            desired[WRIST] = self.wrist
+        else:
+            self.wrist, self.wrist_follow = None, False
         cmd = self._clip(prev + np.clip(np.asarray(desired, float) - prev, -self.max_vel * self.dt, self.max_vel * self.dt))
         self.state = acknowledge(self.state, cmd)
         self.command = cmd
         if self.hand_lock and self.state.rebaseline_at is None:
             self.state, self.hand_lock = replace(self.state, locked=False), False
             event = "기준선 다시 잡음(손 · 컵 무게 포함) — 잠금 풀림, 이제 밀면 따라간다"
-        self.rows.append((t, meas.copy(), cmd.copy(), self.hand.copy()))
+        self.rows.append((t, meas.copy(), cmd.copy(), self.hand.copy(), self.state.mode.value))
         return cmd, self.hand.copy(), event
 
     def key(self, k: str, t: float) -> str | None:
@@ -240,6 +260,21 @@ def build_recording(teacher: Teacher, step_dt: float = 1.0 / POLICY_HZ, trim_rad
         "hand_event_names": np.array([e.name for e in teacher.events], dtype=str),
         "hand_event_t": np.array([e.t - t0 for e in teacher.events], float),     # 녹화 첫 프레임 기준(음수 = 그 전)
         "hand_event_rad": np.array([e.q for e in teacher.events], float).reshape(-1, 6),
+    }
+
+
+def raw_rows(teacher: Teacher) -> dict[str, np.ndarray]:
+    """진단용 원본(모든 틱): 실측 · 팔 명령 · 손 명령 · 모드 · 손 사건. 재생 파일과 따로 저장한다."""
+    if not teacher.rows:
+        raise TeachError("녹화 행이 없다")
+    return {
+        "t": np.array([r[0] for r in teacher.rows], float),
+        "q_meas": np.vstack([r[1] for r in teacher.rows]),
+        "q_cmd": np.vstack([r[2] for r in teacher.rows]),
+        "hand_cmd": np.vstack([r[3] for r in teacher.rows]),
+        "mode": np.array([r[4] for r in teacher.rows], dtype=str),
+        "event_names": np.array([e.name for e in teacher.events], dtype=str),
+        "event_t": np.array([e.t for e in teacher.events], float),
     }
 
 
