@@ -6,6 +6,7 @@
 (팔 7 + 손 6)을 policy_hz 로 낸다. 법칙은 policy_control/place_teach.py(robot_control.teaching 상태기계).
 
     키: g = 쥠 · o = 폄 · space = 잠금(밀어도 안 따라감) · q = 끝(녹화 저장) · x = 버림(저장 안 함)
+    o 뒤에는 팔을 끌지 않는다 — 손이 다 펴지고 1 s 뒤 녹화가 끝나고, 후진은 들어온 길을 손을 편 채 되짚는 구간이 자동으로 붙는다.
 
 순서(팔마다): 콘솔 bringup → pd engage → home → 틸트 시작자세(pour_start) → 이 도구.
   python3 deploy/policy_control/tools/teach_place.py --side right --out logs/place_teach/holder1.npz [--execute]
@@ -170,6 +171,7 @@ def run(side: str, teacher: P.Teacher, out: Path, seconds: float, execute: bool)
         start = time.monotonic()
         teacher.start(q_set, q_arm, q_hand, 0.0)
         print(f"교시 시작({side}): g 쥠 · o 폄 · space 잠금 · q 끝(저장) · x 버림 — 최대 {seconds:g} s", flush=True)
+        print("  o 뒤에는 팔을 끌지 말고 2 s 기다린 뒤 q — 후진은 들어온 길을 손 편 채 되짚는다(자동)", flush=True)
         k, rc, why, keep = 0, 0, "q", True
         qa, qh = teacher.command, teacher.hand
         t_next = time.monotonic()

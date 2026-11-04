@@ -13,6 +13,9 @@ robot_control.teaching 상태기계 — 멈춰 있으면 목표 고정, 밀면(�
     pd 'reduced' 0.25 의 0.8 — replay_traj_rh.py 가 rate_scale 1.0 으로 받는 상한이라 녹화가 그대로 재생된다.
   · 녹화 npz = s2r_replay_v1(replay_traj_rh.py 가 읽는 팔 arm_q + 손 hand_q_cmd + 구간) + arm_target · meta_step_dt
     (replay_to_pd.py) + 손 사건(hand_event_*). 앞뒤 정지 구간은 잘라 내고, 쥔 손으로 PRE_ROLL_S, 편 뒤 POST_ROLL_S 를 남긴다.
+  · 후진(11.04 사용자 결정 b): 편 뒤에는 사람이 가르치지 않는다. 녹화는 폄 + 손이 다 펴짐 + POST_ROLL_S 에서 끝나고(그 뒤
+    움직임은 버린다), 거기서 들어온 팔 경로를 손을 편 채 거꾸로 되짚어 시작 자세로 돌아가는 'retreat' 구간을 붙인다.
+    자동 경로는 홀더의 다른 컵을 칠 수 있지만, 들어온 길은 컵에 닿지 않은 것이 확인된 길이다.
 """
 from __future__ import annotations
 
@@ -202,7 +205,8 @@ def _rate_limited(q: np.ndarray, step: float) -> np.ndarray:
 
 
 def build_recording(teacher: Teacher, step_dt: float = 1.0 / POLICY_HZ, trim_rad: float = TRIM_RAD,
-                    pre_roll: float = PRE_ROLL_S, post_roll: float = POST_ROLL_S) -> dict[str, np.ndarray]:
+                    pre_roll: float = PRE_ROLL_S, post_roll: float = POST_ROLL_S,
+                    retreat: bool = True) -> dict[str, np.ndarray]:
     """npz 필드. 팔 = 실측(사람이 실제로 옮긴 자리), 손 = 목표(쥔 힘 = 목표 − 실측, rh_replay 와 같은 선택)."""
     if len(teacher.rows) < 2:
         raise TeachError("녹화가 비었다")
@@ -224,12 +228,15 @@ def build_recording(teacher: Teacher, step_dt: float = 1.0 / POLICY_HZ, trim_rad
     if span is None:
         raise TeachError(f"쥔 뒤 팔이 {trim_rad} rad 넘게 움직이지 않았다 — 녹화할 궤적이 없다")
     opens = [e.t for e in teacher.events if e.name == OPEN and e.t >= span[0]]
-    # 편 뒤: 녹화 손이 HAND_VEL 로 다 펴질 때까지 + post_roll(컵이 떨어질 시간)
-    ends = [span[1] + post_roll]
-    for e in teacher.events:
-        if e.name == OPEN and e.t >= span[0]:
-            before = hand[max(int(np.searchsorted(t, e.t, side="left")) - 1, 0)]
-            ends.append(e.t + float(np.abs(np.asarray(e.q) - before).max()) / HAND_VEL_RAD_S + post_roll)
+    # 편 뒤: 녹화 손이 HAND_VEL 로 다 펴질 때까지 + post_roll(컵이 떨어질 시간). 폄이 있으면 그 뒤 팔 움직임은 버린다
+    # — 후진은 사람이 아니라 들어온 길을 되짚는 retreat 구간이 맡는다.
+    open_events = [e for e in teacher.events if e.name == OPEN and e.t >= span[0]]
+    ends = []
+    for e in open_events:
+        before = hand[max(int(np.searchsorted(t, e.t, side="left")) - 1, 0)]
+        ends.append(e.t + float(np.abs(np.asarray(e.q) - before).max()) / HAND_VEL_RAD_S + post_roll)
+    if not ends:
+        ends = [span[1] + post_roll]
     t0 = max(gripped, span[0] - pre_roll)
     t1 = min(t[-1], max(ends))
     grid = np.arange(int(np.floor((t1 - t0) / step_dt + 1e-9)) + 1) * step_dt + t0
@@ -244,6 +251,14 @@ def build_recording(teacher: Teacher, step_dt: float = 1.0 / POLICY_HZ, trim_rad
     else:
         segments = [{"label": "carry", "start": 0, "end": cut - 1, "hand_command": "position"},
                     {"label": "release", "start": cut, "end": n - 1, "hand_command": "position"}]
+        if retreat:
+            # 들어온 길을 거꾸로(마지막 프레임은 겹치므로 뺀다). 손은 편 자세 — 녹화 끝에 덜 펴졌으면 같은 속도로 마저 편다.
+            back = arm[-2::-1]
+            open_q = np.asarray(open_events[-1].q, float)
+            hand_back = _rate_limited(np.vstack([hand_q[-1:], np.repeat(open_q[None], len(back), 0)]),
+                                      HAND_VEL_RAD_S * step_dt)[1:]
+            segments.append({"label": "retreat", "start": n, "end": n + len(back) - 1, "hand_command": "position"})
+            arm, hand_q = np.vstack([arm, back]), np.vstack([hand_q, hand_back])
     side = teacher.side
     return {
         "meta_schema": np.array(SCHEMA),
@@ -253,6 +268,7 @@ def build_recording(teacher: Teacher, step_dt: float = 1.0 / POLICY_HZ, trim_rad
         "meta_step_dt": np.array(step_dt),
         "meta_segments": np.array(json.dumps(segments)),
         "meta_source": np.array("teach_place"),
+        "meta_retreat": np.array("reverse" if segments[-1]["label"] == "retreat" else "none"),
         "arm_q": arm,
         "hand_q_cmd": hand_q,
         "arm_target": arm,                                   # replay_to_pd.py (팔만)

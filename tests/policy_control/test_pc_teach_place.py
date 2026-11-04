@@ -143,10 +143,13 @@ def test_the_recording_is_trimmed_and_replays_through_rh_replay_at_full_rate(tmp
     traj = R.load_replay(path)
     assert traj.side == "right" and traj.names == R.expected_names("right")
     # 앞 정지(쥐기 전 기다림)는 잘려 밀기 시작 0.5 s 전부터, 끝은 폄(틱 400) 뒤 손이 다 펴지고(1.08 rad / 1.0 rad/s) 1 s 더
+    # 그 뒤 들어온 길을 거꾸로 되짚는 후진이 붙는다(같은 길이 − 겹친 1 프레임).
     first_s, last_s = 199 * DT - P.PRE_ROLL_S, 400 * DT + 1.08 / P.HAND_VEL_RAD_S + P.POST_ROLL_S
-    assert traj.n_frames == pytest.approx((last_s - first_s) / DT, abs=3)
+    fwd = traj.segments[1]["end"] + 1
+    assert fwd == pytest.approx((last_s - first_s) / DT, abs=3)
+    assert traj.n_frames == 2 * fwd - 1
     assert np.allclose(traj.q[0, 7:], P.GRIP_RAD) and np.allclose(traj.q[-1, 7:], P.OPEN_RAD)
-    assert [s["label"] for s in traj.segments] == ["carry", "release"]
+    assert [s["label"] for s in traj.segments] == ["carry", "release", "retreat"]
     # 그대로(rate_scale 1.0) 재생 가능 — replay_traj_rh 의 단계 한계(reduced 0.25 · 손 2.1 의 0.8)
     assert R.max_rate_scale(traj, arm_vmax=0.8 * 0.25, hand_vmax=0.8 * 2.1) == pytest.approx(1.0)
     plan = R.build_plan(traj, traj.q[0], rate_scale=1.0)
@@ -248,4 +251,38 @@ def test_raw_rows_keep_every_tick_with_its_mode():
     raw = P.raw_rows(t)
     assert raw["q_cmd"].shape == (300, 7) and raw["mode"].shape == (300,)
     assert set(raw["mode"]) <= {"hold", "follow"} and list(raw["event_names"]) == ["grip"]
+
+
+
+
+def test_the_retreat_retraces_the_carry_path_with_the_hand_open(tmp_path):
+    _, path = _taught(tmp_path)
+    traj = R.load_replay(path)
+    rel, ret = traj.segments[1], traj.segments[2]
+    fwd = traj.q[: rel["end"] + 1, :7]
+    back = traj.q[ret["start"]:, :7]
+    assert np.allclose(back, fwd[-2::-1])                       # 같은 길을 거꾸로
+    assert np.allclose(traj.q[-1, :7], traj.q[0, :7])           # 시작 자세로 돌아온다
+    assert np.allclose(traj.q[ret["start"]:, 7:], P.OPEN_RAD)   # 내내 편 손
+
+
+def test_arm_motion_after_the_open_is_dropped():
+    # 폄(틱 400) 뒤 손이 다 펴지고 1 s 지나(틱 ≈ 525) 사람이 팔을 다시 끌어도(틱 700~) 녹화에는 들어가지 않는다
+    def path(k, cmd):
+        a = _push_j4(start_k=200)(k, cmd)
+        return a if a is not None else _push_j4(start_k=700, ticks=100, total=0.1)(k, cmd)
+    t = _run(_teacher(), 1000, path, keys={30: "g", 400: "o"})
+    rec = P.build_recording(t)
+    segs = json.loads(str(rec["meta_segments"]))
+    fwd = rec["arm_q"][: segs[1]["end"] + 1]
+    assert np.abs(fwd[-60:, 3] - fwd[-1, 3]).max() < 0.005      # 끝 1 s 는 놓은 자리에 그대로
+    assert fwd[-1, 3] > Q0[3] + 0.25                             # 두 번째 끌기는 안 들어갔다
+    assert str(rec["meta_retreat"]) == "reverse"
+
+
+def test_without_an_open_there_is_no_retreat():
+    t = _run(_teacher(), 600, _push_j4(start_k=200), keys={30: "g"})
+    rec = P.build_recording(t)
+    assert [s["label"] for s in json.loads(str(rec["meta_segments"]))] == ["place"]
+    assert str(rec["meta_retreat"]) == "none"
 
