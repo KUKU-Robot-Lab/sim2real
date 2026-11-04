@@ -999,6 +999,9 @@ def _episode_run(name: str, real: bool) -> list:
                               "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", *end_args,
                               "-p", f"cup_topic:={_live(ep.objects[obj]['topic'])}", *AGLT_LIVE_ARGS,
                               *(["-p", "hand_squeeze:=true"] if squeeze else []),
+                              # ★11.04 접근 · 잡기 관측 컵 = 측정 컵 − t(카메라가 본 손 − FK 손). 0 이면 넣지 않는다(옛 미션 그대로)
+                              *(["-p", "cup_obs_offset_base_m:=[" + ",".join(f"{v:.4f}" for v in b.cup_obs_offset_base_m) + "]"]
+                                if b.cup_obs_offset_base_m and any(b.cup_obs_offset_base_m) else []),
                               "-p", f"max_episode_s:={max_s}"], background=True))
         elif b.kind == "place":
             src = next((j for n in ep.nodes for j in n.jobs if j.role == role), None)

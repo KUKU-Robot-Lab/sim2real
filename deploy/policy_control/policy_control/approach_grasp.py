@@ -49,6 +49,19 @@ class ApproachGraspError(A.RhAgltError):
     pass
 
 
+#: ★11.04 카메라가 본 손 − 팔 FK 손 보정(logs/analysis/frame_offset_1104) 축별 상한 [m]
+CUP_OBS_OFFSET_MAX_M = 0.05
+
+
+def cup_obs_offset(v) -> np.ndarray:
+    """cup_obs_offset_base_m([x, y, z] m, base) 검사 → 배열. None = 0. t = 카메라가 본 손 − FK 손 이고 접근 · 잡기 정책이 보는 컵은
+    C_obs = C_camera − t (정책은 FK 손 기준). 축마다 |값| ≤ CUP_OBS_OFFSET_MAX_M 가 아니면 ApproachGraspError."""
+    t = np.zeros(3) if v is None else np.asarray(v, float).reshape(-1)
+    if t.size != 3 or not np.all(np.isfinite(t)) or np.any(np.abs(t) > CUP_OBS_OFFSET_MAX_M):
+        raise ApproachGraspError(f"cup_obs_offset_base_m 는 [x, y, z] m, 축마다 |값| ≤ {CUP_OBS_OFFSET_MAX_M}: {v!r}")
+    return t
+
+
 #: 값마다 허용 범위(10.17 리뷰) — 값 하나로 판정 게이트 · 들기 상한 · 풀림 감지가 꺼지지 않게 한다.
 #: judge_ticks ≥ 1(0 이면 래치 없이 든다) · lift_damping ≥ 0.01(DLS 특이) · lift_m ≤ 0.2 · near_m ≤ 0.12 · loss_ticks ≤ 60.
 SAFE_RANGE: Mapping[str, tuple] = {

@@ -5942,6 +5942,8 @@ run:
     - -p
     - hand_squeeze:=true
     - -p
+    - cup_obs_offset_base_m:=[-0.0116,0.0338,-0.0143]
+    - -p
     - max_episode_s:=33.0
     background: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
@@ -6013,6 +6015,8 @@ run:
     - thumb_open_floor_rad:=0.06
     - -p
     - hand_squeeze:=true
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=33.0
     background: true

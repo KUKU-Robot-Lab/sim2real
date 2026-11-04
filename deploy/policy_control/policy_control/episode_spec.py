@@ -89,6 +89,9 @@ class Binding:
     #: ★10.20 경로 D — approach_grasp {handoff: 1} 일 때 접근 정책이 사전 파지 자리에 멈추면 같은 노드에서 넘겨받는 정책의
     #:   등록부 id(aglt · arm_start ready, 예 rh56f1/aglt/right_rcg03). None = 넘김 없음
     handoff: str | None = None
+    #: ★11.04 aglt 만 — 팔 FK 손 보정 t = 카메라가 본 손 − FK 손 [x, y, z] (base m, 축마다 |값| ≤ 0.05). 접근 · 잡기 정책이 보는 컵 =
+    #:   측정 컵 − t(노드 파라미터 cup_obs_offset_base_m). None = 0
+    cup_obs_offset_base_m: tuple | None = None
 
 
 @dataclass(frozen=True)
@@ -317,8 +320,17 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
             raise EpisodeSpecError(f"policies.{role}: handoff(넘겨받을 정책 id)와 approach_grasp {{handoff: 1}} 은 같이 쓴다")
         if handoff is not None and not (isinstance(handoff, str) and handoff.strip()):
             raise EpisodeSpecError(f"policies.{role}: handoff 는 등록부 정책 id 문자열")
+        off = b.get("cup_obs_offset_base_m")
+        if off is not None:
+            if b.get("kind") != "aglt":
+                raise EpisodeSpecError(f"policies.{role}: cup_obs_offset_base_m 는 aglt(접근 · 잡기) 정책만")
+            from policy_control.approach_grasp import ApproachGraspError, cup_obs_offset   # 무거운 의존은 쓸 때만
+            try:
+                off = tuple(float(v) for v in cup_obs_offset(off))
+            except (ApproachGraspError, TypeError, ValueError) as exc:
+                raise EpisodeSpecError(f"policies.{role}: {exc}") from exc
         pols[str(role)] = Binding(role=str(role), kind=str(b["kind"]), side=str(b["side"]), policy=b.get("policy"),
-                                  approach_grasp=ag, handoff=handoff)
+                                  approach_grasp=ag, handoff=handoff, cup_obs_offset_base_m=off)
     trajs = {}
     for name, t in (raw.get("trajectories") or {}).items():
         if t.get("kind") not in TRAJ_KINDS:

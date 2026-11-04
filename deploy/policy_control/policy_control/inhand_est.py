@@ -207,6 +207,7 @@ class InhandRun:
         self.est_p: np.ndarray | None = None
         self.est_q: np.ndarray | None = None
         self.hand_q: np.ndarray | None = None          # 마지막 perceive 의 손 관절(계약 순서 rad) — 넘김 묶음 hand_q
+        self.palm_R: np.ndarray | None = None          # 마지막 perceive 의 손바닥 FK 회전 — 넘김 묶음 틀 되돌림(cup_offset)
         self.bundle_path: str | None = None
 
     @property
@@ -237,6 +238,7 @@ class InhandRun:
                          L.prior_p, L.prior_q, L.palm0_p, L.palm0_q, pp, pq)
         self.k += 1
         self.hand_q = np.asarray(hand_q, float).reshape(-1).copy()
+        self.palm_R = np.asarray(m.palm_R, float).copy()
         self.est_p, self.est_q = ep[0].numpy().astype(float), eq[0].numpy().astype(float)
         if not self.dropped:
             return m
@@ -251,18 +253,36 @@ class InhandRun:
         self.prev_obs = o.copy()
 
     # ---------------------------------------------------------------- 넘김 묶음
-    def bundle(self, hand_q=None) -> dict | None:
+    def _palm_shift(self, cup_offset) -> np.ndarray:
+        """★11.04 넘김 순간 손바닥 좌표의 R_palmᵀ·t(t = 카메라가 본 손 − FK 손, base m). t 없음 · 0 이면 0.
+        R_palm = 마지막 perceive 틱의 손바닥 회전. t 가 0 이 아닌데 perceive 가 없었으면 InhandError(틀을 모른 채 쓰지 않는다)."""
+        t = np.zeros(3) if cup_offset is None else np.asarray(cup_offset, float).reshape(3)
+        if not t.any():
+            return np.zeros(3)
+        if self.palm_R is None:
+            raise InhandError(f"cup_offset {t.tolist()} 를 손바닥 틀로 옮길 손바닥 회전이 없다 — 이 에피소드에 perceive 가 한 번도 없었다")
+        return self.palm_R.T @ t
+
+    def bundle(self, hand_q=None, cup_offset=None) -> dict | None:
         """끊긴 뒤 쌓은 grasp_state 의 넘김 묶음(끝 창 평균). 끊기지 않았거나 물체 · 손 관절을 모르면 None.
-        hand_q 없으면 마지막 perceive 의 손 관절."""
+        hand_q 없으면 마지막 perceive 의 손 관절.
+        ★11.04 cup_offset(t) — 추정기는 보정 컵(측정 − t)으로 돌지만 place 는 FK 손바닥 ⊗ 묶음을 카메라 틀 홀더와 비교한다.
+        묶음은 보정 전 컵 기준: rel_p_raw = rel_p + R_palmᵀ·t(넘김 순간 손바닥). rel_q · 축은 그대로, grasp_height 는 같은 식으로 다시."""
         hand_q = self.hand_q if hand_q is None else hand_q
         if not self.dropped or self._oh is None or hand_q is None:
             return None
-        return self.gs.bundle([self.names[self.object]], self._t(hand_q, self.gs.n_hand))
+        b = self.gs.bundle([self.names[self.object]], self._t(hand_q, self.gs.n_hand))
+        d = self._palm_shift(cup_offset)
+        if not d.any():
+            return b
+        dt = self.torch.as_tensor(d, dtype=b["rel_p"].dtype)[None]
+        # grasp_height = −(물체 축 · rel_p) 이라 rel_p 를 d 만큼 옮기면 축 · d 만큼 줄어든다
+        return {**b, "rel_p": b["rel_p"] + dt, "grasp_height": b["grasp_height"] - (b["obj_axis_palm"] * dt).sum(-1)}
 
-    def save_bundle(self, hand_q, meta: Mapping, out_dir: Path | None = None) -> str | None:
+    def save_bundle(self, hand_q, meta: Mapping, out_dir: Path | None = None, cup_offset=None) -> str | None:
         """넘김 묶음을 grasp_handover/1 npz 로 쓴다 → 경로(묶음이 없으면 None). 파일 이름 = 시각 · 노드 · 에피소드.
-        hand_q 없으면 마지막 perceive 의 손 관절."""
-        b = self.bundle(hand_q)
+        hand_q 없으면 마지막 perceive 의 손 관절. cup_offset = 보정 t(bundle 참고) — meta 에 t 와 rel_p 에 더한 값을 남긴다."""
+        b = self.bundle(hand_q, cup_offset)
         if b is None:
             return None
         now = _dt.datetime.now()
@@ -271,7 +291,9 @@ class InhandRun:
         path = d / f"{now.strftime('%H%M%S')}_{tag or 'inhand'}.npz"
         full = {"spec": str(self.spec.path), "prior_twist": self.spec.twist_ref, "gru_md5": self.spec.gru_md5, "grasp_state_md5": self.spec.grasp_state_md5,
                 "hdgp_commit": self.spec.commit, "drop_m": self.drop_m, "drop_tick": self.drop_tick, "ticks": self.k,
-                "object_contract": self.object, **dict(meta)}
+                "object_contract": self.object,
+                "cup_obs_offset_base_m": [round(float(v), 5) for v in (np.zeros(3) if cup_offset is None else np.asarray(cup_offset, float).reshape(3))],
+                "cup_obs_offset_palm_m": [round(float(v), 5) for v in self._palm_shift(cup_offset)], **dict(meta)}
         self.pkg.grasp_state.save_bundle(path, b, full)
         self.bundle_path = str(path)
         return self.bundle_path

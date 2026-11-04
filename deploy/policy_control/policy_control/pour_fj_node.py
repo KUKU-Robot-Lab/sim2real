@@ -174,7 +174,17 @@ def target_arrays(c: F.FjContract, targets: dict) -> tuple[tuple, np.ndarray, np
     return tuple(names), arr, np.zeros(arr.size)
 
 
+def cup_offset_log_line(t) -> str:
+    """★11.04 rh_aglt 시작 로그 — 0 이어도 남긴다(조용한 0 막기)."""
+    if not np.asarray(t, float).any():
+        return "cup_obs_offset_base_m 보정 없음(0,0,0)"
+    return (f"cup_obs_offset_base_m {np.round(t, 4).tolist()} 적용 — 정책 관측 컵 = 측정 컵 − 이 값"
+            "(목표 SETTING · FP++ · cup attach 상태 · place 넘김 묶음은 원래 틀)")
+
+
 def aglt_start_refusals(c: A.RaContract, meas: dict, tol: float) -> list:
+    """meas = 정책 관측 틀(보정 컵, _srv_start 가 chain._obs_meas 를 거쳐 넘긴다). 네 검사 모두 학습 범위와 견주므로 이 틀이 맞다:
+    사전 파지 자리(컵 − FK 손바닥) · 팔 홈(관절) · 컵 기울기(회전, t 무관) · 소환 박스(학습 컵 분포). 세계 위치가 기준인 검사는 없다."""
     m, s = meas["arm"], c.side()
     out = []
     if c.arm_start == "ready":                  # ★10.20 rcg_02·03: 학습은 사전 파지 자리에서 넘겨받는다 — 앞 단계(ap05)가 데려와야 한다
@@ -229,6 +239,16 @@ class AgltChain:
         self.ag = None                              # ★10.17 경로 C(approach_grasp.ApproachGrasp) — 노드 파라미터 approach_grasp
         self.fk = None                              # ★10.17 경로 C IK 들기 — 노드가 넣는다
         self.inhand = None                          # ★10.21 손 안 컵 추정기(inhand_est.InhandRun) — 노드가 reset 때 넣는다
+        # ★11.04 t = 카메라가 본 손 − FK 손(base m, 노드 파라미터 cup_obs_offset_base_m) — 정책은 FK 손 기준이라 이 체인(접근 · 잡기)이
+        #   보는 컵 = 측정 컵 − t. 목표(SETTING)는 base 설정값이라 빼지 않는다. 원값: FP++ · cup attach 상태(status cup).
+        #   보정 틀: 목표 장부(goals.as_dict), ag.last · grip 의 palm_cup_m, grips.jsonl, 시작 거부 검사(_srv_start).
+        self.cup_offset = np.zeros(3)
+
+    def _obs_meas(self, meas: dict) -> dict:
+        if not self.cup_offset.any():
+            return meas
+        m = meas["arm"]
+        return {**meas, "arm": replace(m, cup_pos=np.asarray(m.cup_pos, float) - self.cup_offset)}
 
     def lift_grasped(self, m: A.RaMeas) -> bool:
         """B 들림 판정 — 관측 컵 z − 리셋 컵 z > freeze.lift_m AND |컵 − 손바닥| < lift_grasp_palm_m."""
@@ -245,11 +265,12 @@ class AgltChain:
     def request_goal(self, target) -> list:
         if self.goals is None:
             return ["goal: reset first (the first goal comes from the cup pose at reset)"]
-        return self.goals.request(target)
+        return self.goals.request(np.asarray(target, float))
 
     def reset(self, meas: dict | None = None) -> None:
         if meas is None:
             raise PourFjNodeError("rh_aglt reset needs the cup pose (goal = cup at reset + offset)")
+        meas = self._obs_meas(meas)
         self.c = A.select_object(self.base, self.object_name)   # 물체를 모르면 RhAgltError(조용한 0 one-hot 금지)
         self.policy = self.base_policy
         if self.inhand is not None:                 # ★10.21 래치 · GRU · grasp_state 를 새 에피소드로(물체 = 넘김 묶음 one-hot)
@@ -290,6 +311,7 @@ class AgltChain:
             policy.reset()
 
     def step(self, meas: dict) -> tuple[np.ndarray, np.ndarray, dict]:
+        meas = self._obs_meas(meas)
         if self.ag is not None and self.ag.scripted:   # ★10.17 경로 C — 접근 뒤는 스크립트 닫기 · 판정 · 들기
             return self.ag.step(self, meas)
         m = m_meas = meas["arm"]
@@ -440,6 +462,7 @@ class PourFjNode(LeanNodeMixin, Node):
                               ("freeze_rule", "success"), ("freeze_lift_m", 0.07), ("freeze_hold_steps", 30), ("episode_topic", ""), ("object", ""),
                               ("hand_unfreeze_on_grasp", False), ("thumb_support_g", 0.0), ("lift_grasp_palm_m", 0.0),
                               ("thumb_open_floor_rad", 0.0), ("approach_grasp", ""), ("handoff_contract", ""),
+                              ("cup_obs_offset_base_m", [0.0, 0.0, 0.0]),
                               ("hand_squeeze", False), ("squeeze_trigger_frac", A.GripAssist.squeeze_trigger_frac),
                               ("squeeze_near_m", A.GripAssist.squeeze_near_m), ("squeeze_rate_rad_s", A.GripAssist.squeeze_rate_rad_s),
                               ("squeeze_boost_rad", A.GripAssist.squeeze_boost_rad),
@@ -474,6 +497,14 @@ class PourFjNode(LeanNodeMixin, Node):
         if family_of(cpath) != family:
             raise PourFjNodeError(f"{cpath}: {family_of(cpath)} 계약 — 이 노드는 {family}")
         self.contract = self.fam.load(cpath)
+        # ★11.04 접근 · 잡기 정책이 보는 컵 = 측정 컵 − t(t = 카메라가 본 손 − FK 손, AgltChain.cup_offset). 범위 밖이면 여기서 멈춘다
+        self.cup_obs_offset = AG.cup_obs_offset(p("cup_obs_offset_base_m"))
+        if self.cup_obs_offset.any() and family != "rh_aglt":
+            raise PourFjNodeError(f"cup_obs_offset_base_m 는 rh_aglt(접근 · 잡기)만 — 이 노드는 {family}")
+        self._offset_status = {}
+        if family == "rh_aglt":
+            self.get_logger().info(cup_offset_log_line(self.cup_obs_offset))
+            self._offset_status = {"cup_obs_offset_base_m": [round(float(v), 5) for v in self.cup_obs_offset]}
         cfg = load_robot_cfg(rpath)
         self.srcs = {r: SourceSet(select_side(cfg, self.contract.sides[r].side)) for r in self.fam.roles}
         self.arm_names = {r: tuple(select_side(cfg, self.contract.sides[r].side).sources["arm"].joints)
@@ -762,7 +793,9 @@ class PourFjNode(LeanNodeMixin, Node):
             return self._reply(res, False, ["start: reset first"])
         try:
             # ★10.20 reset 이 고른 물체의 계약(chain.c) — arm_start ready 검사가 물체 반지름을 쓴다(xy 소환 박스는 같다)
-            refusals = self.fam.refusals(getattr(self.chain, "c", self.contract), self._measure(), self.reset_tol)
+            # ★11.04 정책과 같은 틀(보정 컵)로 학습 범위와 견준다 — rh_place 등 _obs_meas 가 없는 체인은 원값
+            obs_meas = getattr(self.chain, "_obs_meas", lambda m: m)
+            refusals = self.fam.refusals(getattr(self.chain, "c", self.contract), obs_meas(self._measure()), self.reset_tol)
         except self.fam.errors as exc:
             return self._reply(res, False, [f"start: {exc}"])
         if refusals:
@@ -840,6 +873,8 @@ class PourFjNode(LeanNodeMixin, Node):
                 self.chain.ag.next = self._handoff_policy()
             if cfg is not None:
                 self.chain.fk = self.fk["arm"]
+        if hasattr(self.chain, "cup_offset"):           # ★11.04 접근 · 잡기 관측 컵 보정(노드 시작 때 검사 끝)
+            self.chain.cup_offset = self.cup_obs_offset
         if hasattr(self.chain, "inhand"):               # ★10.21 손 안 컵 추정기 — 잘못된 설정 · 파일이면 reset 거부
             nxt = getattr(getattr(self.chain, "ag", None), "next", None)
             self.chain.inhand = self._inhand_run(None if nxt is None else nxt[0])
@@ -886,7 +921,8 @@ class PourFjNode(LeanNodeMixin, Node):
                                             "handoff_contract": str(self.get_parameter("handoff_contract").value),
                                             "hand_target": None if dec is None else [round(float(x), 4) for x in dec.state["arm"].hand_target],
                                             "est_hand_target": None if not hasattr(dec, "est_hand_target") or inh.hand_q is None else
-                                            [round(float(x), 4) for x in dec.est_hand_target(inh.hand_q)]})
+                                            [round(float(x), 4) for x in dec.est_hand_target(inh.hand_q)]},
+                                   cup_offset=getattr(self.chain, "cup_offset", None))   # ★11.04 place 로 가는 묶음만 보정 전(카메라) 틀
         except Exception as exc:                        # noqa: BLE001 — 기록 실패로 에피소드 끝내기를 막지 않는다
             self.get_logger().warning(f"손 안 컵 넘김 묶음 기록 실패: {exc}")
             return
@@ -925,7 +961,8 @@ class PourFjNode(LeanNodeMixin, Node):
         par = lambda n: str(self.get_parameter(n).value) if self.has_parameter(n) else ""   # noqa: E731
         rec = {"t": time.time(), "node": self.node_name, "episode": self.book.episode, "contract": par("contract"),
                "object": getattr(self.chain, "object_name", None) or par("object"), "cup_topic": par("cup_topic"),
-               "end": list(ag.end), **ag.grip}
+               "end": list(ag.end), **ag.grip,   # ★11.04 palm_cup_m 은 보정 틀 — 쓰인 t 를 같이 남긴다
+               "cup_obs_offset_base_m": [round(float(v), 5) for v in getattr(self.chain, "cup_offset", np.zeros(3))]}
         try:
             self.GRIP_LOG.parent.mkdir(parents=True, exist_ok=True)
             with self.GRIP_LOG.open("a", encoding="utf-8") as fh:
@@ -952,7 +989,7 @@ class PourFjNode(LeanNodeMixin, Node):
                 "cup": {r: e.as_dict() for r, e in self.attach.items()},
                 **({"fpp_gate": {r: g.as_dict() for r, g in self.gates.items()}} if self.gates else {}),
                 **({"cup_dropout": {r: d.as_dict() for r, d in self.dropouts.items()}} if getattr(self, "dropouts", None) else {}),
-                **self._status_extra(),
+                **self._status_extra(), **self._offset_status,
                 "t_pub_ns": self.get_clock().now().nanoseconds, **(extra or {})}
         self._pub_status.publish(self._String(data=json.dumps(body)))
 
