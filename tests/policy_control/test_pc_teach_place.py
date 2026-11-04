@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import sys
 
@@ -192,3 +193,19 @@ def test_tool_pd_gate():
     assert tool.pd_fault({"_t": 9.9, "phase": "RAMPING"}, 10.0, tool.MOVING) is None
     lo, hi = tool.arm_limits("left")
     assert lo.shape == (7,) and np.all(lo < hi)
+
+
+def test_the_recording_starts_with_the_hand_already_gripped(tmp_path):
+    """쥘 때 컵 무게로 처지는 것이 움직임으로 잡혀도, 첫 프레임 손은 쥔 자리 — 재생이 시작하며 손을 펴지 않는다."""
+    t = _run(_teacher(), 900, _loaded(30, _push_j4(start_k=200)), keys={30: "g", 400: "o"})
+    rec = P.build_recording(t)
+    assert np.allclose(rec["hand_q_cmd"][0], P.GRIP_RAD)
+    carry = json.loads(str(rec["meta_segments"]))[0]
+    assert np.allclose(rec["hand_q_cmd"][carry["start"]:carry["end"] + 1], P.GRIP_RAD)
+    assert np.all(rec["hand_event_t"][rec["hand_event_names"] == "grip"] < 0)   # 쥠은 녹화 앞
+
+
+def test_a_recording_without_a_grip_is_refused():
+    t = _run(_teacher(), 600, _push_j4())
+    with pytest.raises(P.TeachError, match="쥠"):
+        P.build_recording(t)

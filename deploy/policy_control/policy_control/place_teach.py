@@ -189,9 +189,20 @@ def build_recording(teacher: Teacher, step_dt: float = 1.0 / POLICY_HZ, trim_rad
     t = np.array([r[0] for r in teacher.rows])
     q = np.vstack([r[1] for r in teacher.rows])
     hand = np.vstack([r[3] for r in teacher.rows])
-    span = _motion_span(t, q, trim_rad)
+    # 녹화는 손이 컵을 다 쥔 뒤부터 — 쥐기 전 프레임이 들어가면 재생이 첫 프레임으로 가며 쥔 손을 편다.
+    # 쥘 때 컵 무게로 손목이 처지는 것도 '움직임'이라 시작점을 g 앞으로 끌어당길 수 있어서, 움직임도 그 뒤에서만 찾는다.
+    grips = [e for e in teacher.events if e.name == GRIP]
+    if not grips:
+        raise TeachError("g(쥠)가 없다 — 컵을 쥔 채 옮긴 궤적만 녹화한다")
+    g0 = grips[0]
+    g_before = hand[max(int(np.searchsorted(t, g0.t, side="left")) - 1, 0)]
+    gripped = g0.t + float(np.abs(np.asarray(g0.q) - g_before).max()) / HAND_VEL_RAD_S
+    after = t >= gripped
+    if after.sum() < 2:
+        raise TeachError("손을 다 쥔 뒤 녹화가 없다")
+    span = _motion_span(t[after], q[after], trim_rad)
     if span is None:
-        raise TeachError(f"팔이 {trim_rad} rad 넘게 움직이지 않았다 — 녹화할 궤적이 없다")
+        raise TeachError(f"쥔 뒤 팔이 {trim_rad} rad 넘게 움직이지 않았다 — 녹화할 궤적이 없다")
     opens = [e.t for e in teacher.events if e.name == OPEN and e.t >= span[0]]
     # 편 뒤: 녹화 손이 HAND_VEL 로 다 펴질 때까지 + post_roll(컵이 떨어질 시간)
     ends = [span[1] + post_roll]
@@ -199,7 +210,7 @@ def build_recording(teacher: Teacher, step_dt: float = 1.0 / POLICY_HZ, trim_rad
         if e.name == OPEN and e.t >= span[0]:
             before = hand[max(int(np.searchsorted(t, e.t, side="left")) - 1, 0)]
             ends.append(e.t + float(np.abs(np.asarray(e.q) - before).max()) / HAND_VEL_RAD_S + post_roll)
-    t0 = max(t[0], span[0] - pre_roll)
+    t0 = max(gripped, span[0] - pre_roll)
     t1 = min(t[-1], max(ends))
     grid = np.arange(int(np.floor((t1 - t0) / step_dt + 1e-9)) + 1) * step_dt + t0
     arm = np.column_stack([np.interp(grid, t, q[:, j]) for j in range(7)])
