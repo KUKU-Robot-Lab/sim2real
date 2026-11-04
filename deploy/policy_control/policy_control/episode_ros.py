@@ -106,6 +106,9 @@ ARM_STILL_WINDOW_S = 0.3
 ARM_STILL_RAD = 0.003              # 창 안 관절마다 (max − min) — 0.01 rad/s 수준
 ARM_STILL_WAIT_S = 2.0             # 이 안에 안 멈추면 그대로 계획한다(시작 검사가 여전히 막는다)
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
+#: ★11.04 사용자 "go_home_start 가 너무 오래 걸린다 · 보통 control 의 rehome 으로 고쳐 두고 시작한다": 팔이 이미 홈(계약 home_arm)
+#  이 안이고 멈춰 있으면 계획 · 재생 · goto_home 을 건너뛴다(실기 12:58 두 팔 차례로 26 s). 홈 밖이면 지금처럼 계획해서 간다.
+HOME_SKIP_RAD = 0.03
 SIDES = ("right", "left")
 NODES = {"aglt": "rh_aglt_node", "place": "rh_place_node"}
 
@@ -212,6 +215,28 @@ def arm_still(frames: list, joints: list, window_s: float = ARM_STILL_WINDOW_S,
     return span < tol_rad, span
 
 
+def home_arm(robot: str, side: str) -> list[float] | None:
+    """plan_rehome 이 목표로 쓰는 계약의 그 팔 home_arm(r_aj_1..7 순). 계약이 없으면 None(건너뛰기 안 함)."""
+    sys.path.insert(0, str(TOOLS))
+    try:
+        from plan_rehome import ROBOTS
+        argv = ROBOTS.get(robot, [])
+        path = Path(argv[argv.index("--contract") + 1]) if "--contract" in argv else None
+        return [float(v) for v in json.loads(path.read_text())["sides"][side]["home_arm"]] if path else None
+    except (ImportError, OSError, ValueError, KeyError, IndexError):
+        return None
+
+
+def at_home(frames: list, side: str, home: list[float] | None, tol_rad: float = HOME_SKIP_RAD) -> tuple[bool, float | None]:
+    """팔 실측 마지막 프레임이 홈 tol 안이고 멈춰 있나 → (그렇다, 관절 최대 차). 실측 · 홈이 없으면 (False, None)."""
+    joints = [f"{side[0]}_aj_{i}" for i in range(1, 8)]
+    if not home or not frames or any(j not in frames[-1][1] for j in joints):
+        return False, None
+    err = float(np.max(np.abs(np.array([frames[-1][1][j] for j in joints]) - np.array(home))))
+    still, _ = arm_still(frames, joints)
+    return err <= tol_rad and still, err
+
+
 def cup_in_holder(cup_pos, holder_pos, seat_dz: float, xy_tol: float = 0.035, z_tol: float = 0.03) -> bool:
     c, h = np.asarray(cup_pos, float), np.asarray(holder_pos, float)
     return bool(np.linalg.norm(c[:2] - h[:2]) < xy_tol and abs(c[2] - (h[2] + seat_dz)) < z_tol)
@@ -269,7 +294,7 @@ class RosExecutor:
             topic = live_topic(ep.objects.get(name, {}).get("topic", ""))
             if topic:
                 node.create_subscription(PoseStamped, topic, self._on_frame(name, self._live), qos_profile_sensor_data)
-        if any(t.kind in PLANNED_TRAJ for t in ep.trajectories.values()):
+        if ep.trajectories:                     # ★11.04 rehome 도 — 이미 홈이면 건너뛴다(at_home)
             from sensor_msgs.msg import JointState
             node.create_subscription(JointState, ARM_STATE, self._on_arm, qos_profile_sensor_data)
         if any(n.type == "hand" for n in ep.nodes):
@@ -643,6 +668,7 @@ class RosExecutor:
         if traj.kind in PLANNED_TRAJ:
             return self._run_planned(node, traj, world)
         t0 = time.monotonic()
+        skipped = []
         for side in traj.sides:
             if not self._wait_pd_tracking(side):
                 pd = self._pd_view(side)
@@ -650,6 +676,13 @@ class RosExecutor:
                                   signals={"pd_fault": pd["pd_phase"] or "unknown"})
             if world.hand(side) != EMPTY:
                 return NodeResult("refused", f"{side} hand holds {world.hand(side)} — rehome 계획기가 든 물체를 모른다")
+            with self._lock:
+                fr = list(self._arm)
+            home, err = at_home(fr, side, home_arm(self.robot, side))
+            if home:                                       # ★11.04 이미 홈 · 정지 — 움직이지 않는다
+                self._log_line(f"[rehome] {side} 이미 홈(관절 최대 차 {err:.4f} rad ≤ {HOME_SKIP_RAD}) — 계획 · 재생 건너뜀")
+                skipped.append(side)
+                continue
             out = self.run_dir / f"rehome_{side}_{node.id}.npz"
             joints = ",".join(f"{side[0]}_aj_{i}" for i in range(1, 8))
             steps = [
@@ -668,9 +701,12 @@ class RosExecutor:
                     status = "refused" if k < 2 else "error"
                     return NodeResult(status, f"{'no safe path — ' if k < 2 else ''}{Path(argv[1]).name} rc {rc}: {tail}",
                                       time.monotonic() - t0)
-            # ★11.04 사용자: 빈손 · 홈에서 손끝 촉각 bias 를 잡아 기록(tools.log 한 줄 + logs/rh56f1_tip_zero). 거부돼도 노드는 계속
-            self._run([sys.executable, str(TOOLS / "trigger.py"), "hand/tip_zero", "--side", side, "--service-timeout", "5", "--execute"])
-        return NodeResult("completed", "", time.monotonic() - t0)
+        # ★11.04 사용자: 빈손 · 홈에서 손끝 촉각 bias 를 잡아 기록(tools.log + logs/rh56f1_tip_zero). 거부돼도 노드는 계속.
+        #   두 팔을 한 번에(각자 프로세스) — 차례로 부르면 파이썬 기동만 팔마다 1~2 s
+        self._run_many([[sys.executable, str(TOOLS / "trigger.py"), "hand/tip_zero", "--side", side, "--service-timeout", "5",
+                         "--execute"] for side in traj.sides])
+        return NodeResult("completed", f"이미 홈: {','.join(skipped)}" if skipped else "", time.monotonic() - t0,
+                          signals={"home_skipped": skipped} if skipped else {})
 
     def _run_planned(self, node: Node, traj, world) -> NodeResult:
         """10.17 carry(ready_carry → 붓기 시작 자세, 한 팔씩 또는 두 팔) · tilt(D4 기본 궤적 + 복귀, 두 팔): 실측에서 계획 · 검사
@@ -802,6 +838,26 @@ class RosExecutor:
         if rc == 3:
             return NodeResult("error", f"hand_grasp rc 3: {tail}", dur, signals={"pd_fault": self._pd_view(side)["pd_phase"] or "pd"})
         return NodeResult("error", f"hand_grasp rc {rc}: {tail}", dur)
+
+    def _log_line(self, text: str) -> None:
+        with open(self.run_dir / "tools.log", "a") as fh:
+            fh.write(f"\n{text}\n")
+
+    def _run_many(self, argvs: list) -> list[int]:
+        """기록용 명령 여럿을 동시에 — 출력은 명령마다 tools.log 에 차례로 붙인다(섞이지 않게)."""
+        procs = [(argv, subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True,
+                                         env={**os.environ, "PYTHONUNBUFFERED": "1"})) for argv in argvs]
+        rcs = []
+        with open(self.run_dir / "tools.log", "a") as fh:
+            for argv, p in procs:
+                try:
+                    out, _ = p.communicate(timeout=30)
+                except subprocess.TimeoutExpired:
+                    p.kill()
+                    out, _ = p.communicate()
+                fh.write(f"\n$ {' '.join(argv)}\n{out}")
+                rcs.append(p.returncode)
+        return rcs
 
     def _run(self, argv: list) -> tuple[int, str]:
         log = self.run_dir / "tools.log"
