@@ -215,14 +215,23 @@ def run(side: str, teacher: P.Teacher, out: Path, seconds: float, execute: bool)
                 "events": [{"name": e.name, "t": round(e.t, 2)} for e in teacher.events]}
         if not keep:
             return rc, {**info, "saved": None}
+        # q 면 원본(모든 틱)은 언제나 남긴다 — g 없는 교시(볼트 구멍 짚기 등)도 데이터가 사라지지 않게. 재생은 out 만 읽는다.
+        raw_path = Path(out).with_name(Path(out).stem + "_raw.npz")
+        try:
+            raw = P.raw_rows(teacher)
+        except P.TeachError as error:
+            return (rc or 2), {**info, "saved": None, "why": f"{why}; 저장 안 함: {error}"}
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(raw_path, side=np.array(side), arm_names=np.array(arm_names, dtype=str),
+                 hand_names=np.array(hand_names, dtype=str), **raw)
         try:
             fields = P.build_recording(teacher)
         except P.TeachError as error:
-            return (rc or 2), {**info, "saved": None, "why": f"{why}; 저장 안 함: {error}"}
+            return (rc or 2), {**info, "saved": None, "raw": str(raw_path), "frames_raw": int(raw["t"].shape[0]),
+                               "why": f"{why}; place 녹화는 저장 안 함(원본만): {error}"}
         P.save_recording(out, fields)
-        np.savez(Path(out).with_name(Path(out).stem + "_raw.npz"), **P.raw_rows(teacher))   # 진단용 — 재생은 out 만 읽는다
         segs = json.loads(str(fields["meta_segments"]))
-        return rc, {**info, "saved": str(out), "frames": int(fields["arm_q"].shape[0]),
+        return rc, {**info, "saved": str(out), "raw": str(raw_path), "frames": int(fields["arm_q"].shape[0]),
                     "seconds": round(float(fields["arm_q"].shape[0] * fields["meta_step_dt"]), 2), "segments": segs}
     finally:
         signal.signal(signal.SIGTERM, prev_term)
