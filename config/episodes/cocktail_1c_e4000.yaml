@@ -16,8 +16,8 @@ objects:
 holders: {HOLDER_0: 0, HOLDER_1: 1, HOLDER_2: 2}
 holder_poses: config/cup_holder_poses_5090_v1.yaml
 policies:
-  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/right_rcg04}
-  rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg04}
+  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/right_rcg04, cup_obs_offset_base_m: [-0.0116, 0.0338, -0.0143]}   # 11.04 정지 자세 Rm(R1 접근 높이와 R2 쥐는 높이 사이), e1000 과 같은 값
+  rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg04, cup_obs_offset_base_m: [0.0028, 0.0283, 0.0046]}   # 11.04 정지 자세 L2(잡기 직전), logs/analysis/frame_offset_1104/measure2
   rh_place_r: {policy: rh56f1/place/right_n10_e4000, kind: place, side: right}
   rh_place_l: {policy: rh56f1/place/left_n09_e3800, kind: place, side: left}
 trajectories:
