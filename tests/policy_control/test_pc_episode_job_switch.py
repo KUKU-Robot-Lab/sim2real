@@ -238,7 +238,9 @@ def test_a_refused_holder_switch_refuses_the_reset_before_anything_else():
 
 # ---------------------------------------------------------------- --plan — 놓기 홀더가 계약 학습 범위 안인가
 REPO = Path(__file__).resolve().parents[2]
-HOLDERS_5090 = REPO / "config" / "cup_holder_poses_5090_v1.yaml"
+# 10.29 홀더 측정값 고정 — config/cup_holder_poses_5090_v1.yaml 은 gitignore 된 호스트 측정 파일이라 다시 재면 바뀐다(11.03 y2 −0.2792)
+HOLDERS_1029 = {0: ((0.3793, 0.1632, 0.2350), 0.0210), 1: ((0.3793, -0.0612, 0.2350), 0.0033),
+                2: ((0.3793, -0.2827, 0.2350), 0.0008)}
 
 
 def _place_contracts(ep):
@@ -251,10 +253,9 @@ def _place_contracts(ep):
 def test_plan_takes_pink_into_holder_2_with_the_cards_tolerance(name):
     """★10.29 사용자(sim_e2e 경유) 2번: 홀더 2(y −0.2827)는 n07 학습 범위에서 6.0 cm 밖이지만 그 자리에 두고 받는다(sim B
     평가가 이 자리에서 잰 값). 카드 place_pink 의 holder_tol_m 0.07 안이라 막지 않고 알림만 남긴다."""
-    from policy_control.episode_ros import load_holder_poses
     from policy_control.rh_place import HOLDER_TOL_M
     ep = S.load(EPISODES / f"{name}.yaml")
-    bad, notes = S.place_holder_checks(ep, load_holder_poses(HOLDERS_5090), _place_contracts(ep), HOLDER_TOL_M)
+    bad, notes = S.place_holder_checks(ep, HOLDERS_1029, _place_contracts(ep), HOLDER_TOL_M)
     assert bad == []
     assert len(notes) == 1, notes                              # 파랑 → 1 · shaker → 0 은 범위 안
     assert notes[0].startswith("place_pink: rh_place_r → HOLDER_2(2)") and "y 6.0 cm" in notes[0] and "허용 7.0 cm" in notes[0]
@@ -264,11 +265,10 @@ def test_plan_takes_pink_into_holder_2_with_the_cards_tolerance(name):
 def test_without_the_cards_tolerance_holder_2_is_still_refused(name):
     """넓힌 허용은 카드에 적은 그 job 에만 있다. 빼면 기본 2 cm 로 다시 막는다(다른 job · 다른 에피소드의 검사는 그대로)."""
     from dataclasses import replace
-    from policy_control.episode_ros import load_holder_poses
     from policy_control.rh_place import HOLDER_TOL_M
     ep = S.load(EPISODES / f"{name}.yaml")
     bare = replace(ep, nodes=tuple(replace(n, jobs=tuple(replace(j, holder_tol_m=None) for j in n.jobs)) for n in ep.nodes))
-    bad, _ = S.place_holder_checks(bare, load_holder_poses(HOLDERS_5090), _place_contracts(bare), HOLDER_TOL_M)
+    bad, _ = S.place_holder_checks(bare, HOLDERS_1029, _place_contracts(bare), HOLDER_TOL_M)
     assert len(bad) == 1, bad
     assert bad[0].startswith("place_pink: rh_place_r → HOLDER_2(2)") and "6.0 cm 밖(허용 2.0 cm)" in bad[0]
 
