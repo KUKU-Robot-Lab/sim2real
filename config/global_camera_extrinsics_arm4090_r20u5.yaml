@@ -4,6 +4,11 @@
 #   T_base_body = T_base_cam ∘ T_cam_cad(FP++ 출력) ∘ T_cad_body
 #
 # ── T_base_cam: robot base ← camera_color_optical_frame ────────────────────
+# ★2026-11-04 다시 잼(사용자 "캘리브 자세 다시 잡기"): 미션 head_view_check 가 IMU 숙임 − 이 파일 숙임 = +1.02~1.10°(허용 1.0°)로
+#   실패했다(11.03 14:10~14:52 은 +0.92~0.98° 로 경계 안). 같은 자세(/head/joint_states pan 1825 · tilt 2816, head_pose ±4 틱 안)에서
+#   table_cad_extrinsics.py(라이브 3장 · 재투영 3.39 px · 위치 차 2.8 mm)로 잰 값 — 11.03 값과 위치 (1.5, 1.1, 0.8) mm · 회전 0.98°,
+#   11.03 값에서 depth 상판 앞뒤 기울기 +0.90° → 새 값 +0.05°. 목은 움직이지 않았다(드라이버가 떠 있어 --head-config 대신
+#   joint_states 로 자세를 확인하고 camera 블록만 바꿨다). 이전 값 = git 242cc7a.
 # ★2026-11-03 다시 잼(사용자 "다시 리셋하고 calibration 필요" — 홀더 2번 마커를 고친 뒤): 같은 camset 자세(±4 틱)에서
 #   table_cad_extrinsics.py --write. 10.28 값과 위치 차 약 (0.1, 2.9, 2.5) mm. 이전 값 = git 10.28 커밋(efe8dc4 계열).
 # ★2026-10-28 사용자(sim_e2e 경유): shaker · 파랑 · 분홍을 놓는 영역이 한 화면에 다 드는 목 자세("pan 세팅").
@@ -20,8 +25,8 @@
 #             --write --head-config config/head_home_rh56f1.yaml
 camera:
   frame: camera_color_optical_frame
-  position: [0.0696330641, 0.0263116984, 0.817149725]
-  orientation_wxyz: [0.110268528, -0.580544883, 0.792075461, -0.153052128]
+  position: [0.071123, 0.027366, 0.817946]
+  orientation_wxyz: [0.103439, -0.579453, 0.794606, -0.14878]
 
 # ── 이 외부 파라미터를 잰 머리 자세(틱 = 멈춘 자리) — scripts/head_pose_check.py 가 FP++ 전에 비교하고 맞춘다 ─────
 # 10.28: 목표 pan 1806 · tilt 2812 를 보내면 멈추는 자리. 캘리브 사진 앞뒤로 읽기만 해서 같았다.
