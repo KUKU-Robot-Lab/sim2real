@@ -65,7 +65,10 @@ class PlaceNode(PourFjNode):
                               ("joint_free_g", JOINT_FREE_G), ("release_open_min_rad", OPEN_MIN_RAD), ("require_grasp", True),
                               # ★10.22 newton_05 — 넘김 묶음 · 홀더 범위
                               ("bundle", "auto"), ("bundle_max_age_s", 900.0), ("bundle_hand_tol_rad", 0.05),
-                              ("holder_tol_m", HOLDER_TOL_M)):
+                              ("holder_tol_m", HOLDER_TOL_M),
+                              # ★11.04 사용자 "place 는 묶은 값만": 계약이 cup_obs live 여도 FP++ 를 넣지 않고 손바닥 FK ⊗ 묶음만.
+                              #   실기 131817 — tilt 뒤 FP++ 가 쥔 컵을 놓치고 탁자 아래 자세를 내 놓기가 멈췄다. true 면 live(5 cm 문)
+                              ("place_live_cup", False)):
             self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
         if not bool(p("require_grasp")):                   # fake 손은 촉각이 0 — 리허설에서만 끈다
@@ -187,8 +190,10 @@ class PlaceNode(PourFjNode):
     def _cup_for(self, role: str, advance: bool):
         if getattr(self.chain, "rel", None) is not None:
             if self.contract.cup_obs == "live":            # ★11.02 'true' 런 — FP++ 신선분을 사슬에 넣고, 없으면 FK(끊김 · 가림)
+                use_live = bool(self.get_parameter("place_live_cup").value)
+
                 def live(palm_pos, palm_R, _tact, _st):
-                    got = self._fresh_cup(role)
+                    got = self._fresh_cup(role) if use_live else None
                     self.chain.live_cup = None if got is None else (np.asarray(got[0], float), np.asarray(got[1], float))
                     return self.chain.cup_obs(np.asarray(palm_pos, float), np.asarray(palm_R, float))
                 return live

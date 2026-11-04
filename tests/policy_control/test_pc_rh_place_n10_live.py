@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+from types import SimpleNamespace
 import numpy as np
 import pytest
 
@@ -192,3 +193,23 @@ def test_single_object_needs_a_known_radius():
     """옛 런(right_i09 cyl60): 반지름을 모르는 물체는 1종 기하로 싣지 않는다(빌더가 전처럼 기하 없이 짓는다)."""
     assert A.single_object_of(_env(object_name="cyl60")) is None
     assert A.single_object_of(_env(object_name="source240_real")) == "source240_real"
+
+
+def _node_self(live_param: bool, fresh):
+    ch = _Chain("live")
+    me = SimpleNamespace(chain=ch, contract=SimpleNamespace(cup_obs="live"), _fresh_cup=lambda role: fresh,
+                         get_parameter=lambda n: SimpleNamespace(value=live_param))
+    return me, ch
+
+
+def test_place_node_feeds_only_the_bound_cup_unless_live_is_asked_for():
+    """★11.04 사용자 "place 는 묶은 값만": 노드 기본은 FP++ live 를 사슬에 넣지 않는다(손바닥 FK ⊗ 묶음). 파라미터로만 켠다."""
+    from policy_control.rh_place_node import PlaceNode
+    fresh = (np.array([0.31, -0.12, 0.49]), np.array([0.0, 0.0, 0.0, 1.0]), 0.0)
+    palm, R = np.array([0.3, -0.1, 0.4]), np.eye(3)
+    me, ch = _node_self(False, fresh)
+    pos, _ = PlaceNode._cup_for(me, "src", True)(palm, R, None, None)
+    assert np.allclose(pos, [0.3, -0.1, 0.5]) and ch.cup_src == {"live": 0, "fk": 1, "rejected": 0}
+    me, ch = _node_self(True, fresh)
+    pos, _ = PlaceNode._cup_for(me, "src", True)(palm, R, None, None)
+    assert np.allclose(pos, [0.31, -0.12, 0.49]) and ch.cup_src == {"live": 1, "fk": 0, "rejected": 0}
