@@ -28,15 +28,18 @@ FIELDS = ["t", "name", "cx", "cy", "cz", "qx", "qy", "qz", "qw", "bx", "by", "bz
 
 
 class RateGate:
-    """주어진 주기로만 통과 — 카메라 30 Hz 에서 5 Hz 만 남긴다."""
+    """주어진 주기로만 통과 — 카메라 30 Hz 에서 5 Hz 만 남긴다.
+    11.04: 주기의 10 % 앞까지 받고 다음 문을 앞 문 + 주기로 둔다 — 전에는 프레임이 1 ms 만 일찍 와도 한 프레임 밀려
+    30 Hz → 10 Hz 가 7.5 Hz 로 떨어졌다. 프레임이 끊겼다 다시 오면 몰아서 받지 않고 그 자리부터 센다."""
 
     def __init__(self, hz: float) -> None:
         self.dt, self.next = 1.0 / float(hz), float("-inf")
 
     def take(self, t: float) -> bool:
-        if t + 1e-9 < self.next:
+        tol = 0.1 * self.dt
+        if t < self.next - tol:
             return False
-        self.next = t + self.dt
+        self.next = max(self.next + self.dt, t + self.dt - tol)
         return True
 
 

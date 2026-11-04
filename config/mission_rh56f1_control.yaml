@@ -1319,6 +1319,17 @@ run:
     - --execute
     - --approve
     - pd_goto_home
+  - note: '[right] 손끝 촉각 영점(/hand_right/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · logs/rh56f1_tip_zero'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - hand/tip_zero
+    - --side
+    - right
+    - --service-timeout
+    - '5'
+    execute_args:
+    - --execute
   policy_place_right:
   - note: ★[right] 직전 aglt 에피소드가 컵을 쥔 채 stop 했는가(pd 가 그 자세 · 손을 붙잡고 있다). 인계 자리로 옮기려면 aglt 를 다시 start 하고 aglt_goal.py --side right --handoff --execute
       로 목표를 준 뒤 도착하면 stop. 홀더 1 위 20 cm 가 비어 있는가 — 정책이 컵을 홀더에 내려놓고 손을 편다
@@ -1591,6 +1602,17 @@ run:
     - --execute
     - --approve
     - pd_goto_home
+  - note: '[left] 손끝 촉각 영점(/hand_left/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · logs/rh56f1_tip_zero'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - hand/tip_zero
+    - --side
+    - left
+    - --service-timeout
+    - '5'
+    execute_args:
+    - --execute
   policy_place_left:
   - note: ★[left] 직전 aglt 에피소드가 컵을 쥔 채 stop 했는가(pd 가 그 자세 · 손을 붙잡고 있다). 인계 자리로 옮기려면 aglt 를 다시 start 하고 aglt_goal.py --side left --handoff --execute
       로 목표를 준 뒤 도착하면 stop. 홀더 1 위 20 cm 가 비어 있는가 — 정책이 컵을 홀더에 내려놓고 손을 편다
@@ -1935,6 +1957,17 @@ run:
     - --execute
     - --approve
     - pd_hand_home
+  - note: '[right] 손끝 촉각 영점(/hand_right/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · logs/rh56f1_tip_zero'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - hand/tip_zero
+    - --side
+    - right
+    - --service-timeout
+    - '5'
+    execute_args:
+    - --execute
   return_right:
   - note: ★[right] 팔이 홈 근처에 있고(정책 뒤면 먼저 rehome_right 단계로 홈에) 손에 컵이 없는가 · 경로 주변이 비어 있는가. 홈 정착 → 주먹 → 저장 경로 역재생(약 15 s, 최대 0.3 rad/s) → pd 해제, 끊지
       않고 이어 간다
@@ -2296,6 +2329,17 @@ run:
     - --execute
     - --approve
     - pd_hand_home
+  - note: '[left] 손끝 촉각 영점(/hand_left/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · logs/rh56f1_tip_zero'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - hand/tip_zero
+    - --side
+    - left
+    - --service-timeout
+    - '5'
+    execute_args:
+    - --execute
   return_left:
   - note: ★[left] 팔이 홈 근처에 있고(정책 뒤면 먼저 rehome_left 단계로 홈에) 손에 컵이 없는가 · 경로 주변이 비어 있는가. 홈 정착 → 주먹 → 저장 경로 역재생(약 15 s, 최대 0.3 rad/s) → pd 해제, 끊지
       않고 이어 간다
@@ -2537,14 +2581,16 @@ run:
     - -p
     - holder:=1
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
-      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
-      /objects/source240b_blue/live_pose /objects/cup_holder_1/pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action'
-      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_pick_place_right
+    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /objects/cup_holder_1/pose
+      /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_pick_place_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -2576,7 +2622,7 @@ run:
     - episode_pick_place_right#6
     - episode_pick_place_right#4
     - episode_pick_place_right#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -2683,13 +2729,15 @@ run:
     - -p
     - holder:=1
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
-      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
-      /objects/cup_holder_1/pose /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
+      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /objects/cup_holder_1/pose
+      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_pick_place_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
@@ -2722,7 +2770,7 @@ run:
     - episode_pick_place_left#6
     - episode_pick_place_left#4
     - episode_pick_place_left#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -2807,14 +2855,15 @@ run:
     - -p
     - max_episode_s:=29.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
-      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
-      /objects/source240b_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_grasp_c_right
+    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
+      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_c_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -2845,7 +2894,7 @@ run:
     - episode_grasp_c_right#6
     - episode_grasp_c_right#5
     - episode_grasp_c_right#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -2930,14 +2979,15 @@ run:
     - -p
     - max_episode_s:=29.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
-      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
-      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_grasp_c_left
+    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
+      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied
+      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_c_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -2968,7 +3018,7 @@ run:
     - episode_grasp_c_left#6
     - episode_grasp_c_left#5
     - episode_grasp_c_left#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -2994,15 +3044,17 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
-      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
-      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose
-      /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied
-      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
+      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
+      /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose /objects/shaker_c_orange/pose
+      /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
+      /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_tilt_base_b
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
@@ -3031,7 +3083,7 @@ run:
     stop:
     - episode_tilt_base_b#5
     - episode_tilt_base_b#4
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -3175,15 +3227,17 @@ run:
     - -p
     - max_episode_s:=29.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
-      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
-      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose
-      /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied
-      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
+      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
+      /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose /objects/shaker_c_orange/pose
+      /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
+      /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_tilt_base_c
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
@@ -3214,7 +3268,7 @@ run:
     - episode_tilt_base_c#6
     - episode_tilt_base_c#4
     - episode_tilt_base_c#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -3374,15 +3428,17 @@ run:
     - -p
     - max_episode_s:=15.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
-      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
-      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose
-      /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied
-      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
+      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
+      /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose /objects/shaker_c_orange/pose
+      /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
+      /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_tilt_base_d
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
@@ -3413,7 +3469,7 @@ run:
     - episode_tilt_base_d#6
     - episode_tilt_base_d#4
     - episode_tilt_base_d#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -3439,14 +3495,15 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
-      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
-      /objects/source240b_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_grasp_b_right
+    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
+      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_b_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -3476,7 +3533,7 @@ run:
     stop:
     - episode_grasp_b_right#5
     - episode_grasp_b_right#4
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -3502,14 +3559,15 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
-      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
-      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_grasp_b_left
+    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
+      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied
+      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_b_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -3539,7 +3597,7 @@ run:
     stop:
     - episode_grasp_b_left#5
     - episode_grasp_b_left#4
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -3632,14 +3690,15 @@ run:
     - -p
     - max_episode_s:=15.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
-      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
-      /objects/source240b_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_grasp_d_right
+    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
+      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_d_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -3670,7 +3729,7 @@ run:
     - episode_grasp_d_right#6
     - episode_grasp_d_right#5
     - episode_grasp_d_right#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -3763,14 +3822,15 @@ run:
     - -p
     - max_episode_s:=15.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
-      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
-      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_grasp_d_left
+    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
+      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied
+      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_d_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -3801,7 +3861,7 @@ run:
     - episode_grasp_d_left#6
     - episode_grasp_d_left#5
     - episode_grasp_d_left#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -3899,14 +3959,15 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
-      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
-      /objects/source240b_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_grasp_e_right
+    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
+      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_e_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -3937,7 +3998,7 @@ run:
     - episode_grasp_e_right#6
     - episode_grasp_e_right#5
     - episode_grasp_e_right#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -4035,14 +4096,15 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
-      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
-      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_grasp_e_left
+    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
+      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied
+      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_e_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -4073,7 +4135,7 @@ run:
     - episode_grasp_e_left#6
     - episode_grasp_e_left#5
     - episode_grasp_e_left#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -4171,14 +4233,15 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
-      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
-      /objects/source240b_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_grasp_f_right
+    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
+      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -4209,7 +4272,7 @@ run:
     - episode_grasp_f_right#6
     - episode_grasp_f_right#5
     - episode_grasp_f_right#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -4307,14 +4370,15 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
-      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
-      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_grasp_f_left
+    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
+      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied
+      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -4345,7 +4409,7 @@ run:
     - episode_grasp_f_left#6
     - episode_grasp_f_left#5
     - episode_grasp_f_left#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -4466,14 +4530,16 @@ run:
     - -p
     - holder:=1
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
-      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
-      /objects/source240b_blue/live_pose /objects/cup_holder_1/pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action'
-      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_pick_place_f_right
+    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /objects/cup_holder_1/pose
+      /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_pick_place_f_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -4505,7 +4571,7 @@ run:
     - episode_pick_place_f_right#6
     - episode_pick_place_f_right#4
     - episode_pick_place_f_right#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -4626,13 +4692,15 @@ run:
     - -p
     - holder:=0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
-      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
-      /objects/cup_holder_0/pose /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
+      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /objects/cup_holder_0/pose
+      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_pick_place_f_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
@@ -4665,7 +4733,7 @@ run:
     - episode_pick_place_f_left#6
     - episode_pick_place_f_left#4
     - episode_pick_place_f_left#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -4835,15 +4903,17 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
-      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
-      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose
-      /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied
-      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
+      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
+      /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose /objects/shaker_c_orange/pose
+      /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
+      /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_grasp2tilt_f_240
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
@@ -4874,7 +4944,7 @@ run:
     - episode_grasp2tilt_f_240#6
     - episode_grasp2tilt_f_240#4
     - episode_grasp2tilt_f_240#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -5091,17 +5161,19 @@ run:
     - -p
     - holder:=0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
-      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
-      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose
-      /objects/source240b_blue/pose /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose
-      /objects/shaker_c_orange/live_pose /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied
-      /policy_control/pd_right/applied /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action'
-      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_cocktail_1
+    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
+      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
+      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240b_blue/pose
+      /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose /objects/shaker_c_orange/live_pose
+      /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
+      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_cocktail_1
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -5133,7 +5205,7 @@ run:
     - episode_cocktail_1#5
     - episode_cocktail_1#4
     - episode_cocktail_1#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -5350,17 +5422,19 @@ run:
     - -p
     - holder:=0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
-      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
-      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose
-      /objects/source240b_blue/pose /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose
-      /objects/shaker_c_orange/live_pose /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied
-      /policy_control/pd_right/applied /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action'
-      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_cocktail_1b
+    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
+      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
+      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240b_blue/pose
+      /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose /objects/shaker_c_orange/live_pose
+      /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
+      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_cocktail_1b
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -5392,7 +5466,7 @@ run:
     - episode_cocktail_1b#5
     - episode_cocktail_1b#4
     - episode_cocktail_1b#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -5609,17 +5683,19 @@ run:
     - -p
     - holder:=0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
-      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
-      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose
-      /objects/source240b_blue/pose /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose
-      /objects/shaker_c_orange/live_pose /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied
-      /policy_control/pd_right/applied /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action'
-      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_cocktail_1c_e1000
+    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
+      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
+      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240b_blue/pose
+      /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose /objects/shaker_c_orange/live_pose
+      /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
+      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_cocktail_1c_e1000
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -5651,7 +5727,7 @@ run:
     - episode_cocktail_1c_e1000#5
     - episode_cocktail_1c_e1000#4
     - episode_cocktail_1c_e1000#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
@@ -5868,17 +5944,19 @@ run:
     - -p
     - holder:=0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
     argv:
     - bash
     - -lc
-    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
-      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
-      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose
-      /objects/source240b_blue/pose /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose
-      /objects/shaker_c_orange/live_pose /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied
-      /policy_control/pd_right/applied /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action'
-      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_cocktail_1c_e4000
+    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
+      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
+      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240b_blue/pose
+      /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose /objects/shaker_c_orange/live_pose
+      /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
+      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_cocktail_1c_e4000
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
@@ -5910,7 +5988,7 @@ run:
     - episode_cocktail_1c_e4000#5
     - episode_cocktail_1c_e4000#4
     - episode_cocktail_1c_e4000#3
-  - note: 기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'

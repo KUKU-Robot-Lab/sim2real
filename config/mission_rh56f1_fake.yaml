@@ -1141,6 +1141,17 @@ run:
     - --execute
     - --approve
     - pd_goto_home
+  - note: '[right] 손끝 촉각 영점(/hand_right/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · logs/rh56f1_tip_zero'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - hand/tip_zero
+    - --side
+    - right
+    - --service-timeout
+    - '5'
+    execute_args:
+    - --execute
   policy_place_right:
   - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, 학습 배치 x 0.38)
     argv:
@@ -1408,6 +1419,17 @@ run:
     - --execute
     - --approve
     - pd_goto_home
+  - note: '[left] 손끝 촉각 영점(/hand_left/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · logs/rh56f1_tip_zero'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - hand/tip_zero
+    - --side
+    - left
+    - --service-timeout
+    - '5'
+    execute_args:
+    - --execute
   policy_place_left:
   - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, 학습 배치 x 0.38)
     argv:
@@ -1767,6 +1789,17 @@ run:
     - --execute
     - --approve
     - pd_hand_home
+  - note: '[right] 손끝 촉각 영점(/hand_right/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · logs/rh56f1_tip_zero'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - hand/tip_zero
+    - --side
+    - right
+    - --service-timeout
+    - '5'
+    execute_args:
+    - --execute
   return_right:
   - note: ★[right] 팔이 홈 근처에 있고(정책 뒤면 먼저 rehome_right 단계로 홈에) 손에 컵이 없는가 · 경로 주변이 비어 있는가. 홈 정착 → 주먹 → 저장 경로 역재생(약 15 s, 최대 0.3 rad/s) → pd 해제, 끊지
       않고 이어 간다
@@ -2123,6 +2156,17 @@ run:
     - --execute
     - --approve
     - pd_hand_home
+  - note: '[left] 손끝 촉각 영점(/hand_left/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · logs/rh56f1_tip_zero'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - hand/tip_zero
+    - --side
+    - left
+    - --service-timeout
+    - '5'
+    execute_args:
+    - --execute
   return_left:
   - note: ★[left] 팔이 홈 근처에 있고(정책 뒤면 먼저 rehome_left 단계로 홈에) 손에 컵이 없는가 · 경로 주변이 비어 있는가. 홈 정착 → 주먹 → 저장 경로 역재생(약 15 s, 최대 0.3 rad/s) → pd 해제, 끊지
       않고 이어 간다

@@ -24,3 +24,15 @@ def test_frames_are_kept_at_the_asked_rate():
     gate = V.RateGate(5.0)
     kept = [t for t in np.arange(0.0, 2.0, 1 / 30) if gate.take(float(t))]
     assert 9 <= len(kept) <= 11
+
+
+def test_rate_gate_keeps_the_rate_when_frames_jitter_early():
+    # 11.04: 30 Hz 에서 10 Hz — 전에는 1 ms 일찍 온 프레임 하나에 한 칸씩 밀려 7.5 Hz 로 떨어졌다
+    gate = V.RateGate(10.0)
+    rng = np.random.default_rng(0)
+    t = np.arange(0.0, 10.0, 1 / 30) + rng.uniform(-0.002, 0.002, 300)
+    kept = [x for x in t if gate.take(float(x))]
+    assert 98 <= len(kept) <= 101
+    gate = V.RateGate(10.0)                         # 끊겼다 다시 와도 몰아서 받지 않는다
+    kept = [x for x in [0.0, 0.1, 5.0, 5.033, 5.067, 5.1] if gate.take(x)]
+    assert kept == [0.0, 0.1, 5.0, 5.1]

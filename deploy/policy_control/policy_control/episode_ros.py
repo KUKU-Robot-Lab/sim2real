@@ -2,7 +2,7 @@
 
   정책   /policy_control/<팔>/episode/{reset,start,stop} (rh_aglt_node · rh_place_node, ns = 팔) · 이벤트 /policy_control/<팔>/episode
          aglt 는 reset 뒤 /policy_control/<팔>/goal 에 SETTING 을 주고(노드 stop_on_target 이 도달 때 끝낸다), place 는 그대로.
-  궤적   rehome = plan_rehome(실측 → RRT, 로봇 세계) → check_path_start → replay_to_pd --execute → pd goto_home 정착.
+  궤적   rehome = plan_rehome(실측 → RRT, 로봇 세계) → check_path_start → replay_to_pd --execute → pd goto_home 정착 → 손끝 영점(11.04).
          물체를 든 손이 있는 팔은 거부한다(계획기가 든 컵을 모른다).
          carry · tilt(10.17) = plan_<kind>.py(실측 → 계획 · 검사, 움직이지 않음) → replay_to_pd(그 팔 관절) — 손 상태(cups)가 다르면 거부.
   손     hand open = pd hand_release(빈손에서만) · hand grasp = tools/hand_grasp.py(팔 제자리, 닿을 때까지 닫고 쥔 판정) — 10.17 경로 B.
@@ -668,6 +668,8 @@ class RosExecutor:
                     status = "refused" if k < 2 else "error"
                     return NodeResult(status, f"{'no safe path — ' if k < 2 else ''}{Path(argv[1]).name} rc {rc}: {tail}",
                                       time.monotonic() - t0)
+            # ★11.04 사용자: 빈손 · 홈에서 손끝 촉각 bias 를 잡아 기록(tools.log 한 줄 + logs/rh56f1_tip_zero). 거부돼도 노드는 계속
+            self._run([sys.executable, str(TOOLS / "trigger.py"), "hand/tip_zero", "--side", side, "--service-timeout", "5", "--execute"])
         return NodeResult("completed", "", time.monotonic() - t0)
 
     def _run_planned(self, node: Node, traj, world) -> NodeResult:

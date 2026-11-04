@@ -244,7 +244,7 @@ def test_home_is_one_approval_then_runs_through(side):
         text = [" ".join(c.argv) for c in cmds]
         assert cmds[0].manual and not any(c.manual for c in cmds[1:])
         order = ["--only pd_engage --hold-s 10", "--only pd_hand_path", "check_path_start.py", "replay_to_pd.py",
-                 "--only pd_goto_home", "--only pd_hand_home"]
+                 "--only pd_goto_home", "--only pd_hand_home", f"trigger.py hand/tip_zero --side {side}"]   # 11.04 손끝 영점
         assert len(text) == 1 + len(order) and all(want in t for want, t in zip(order, text[1:]))
         assert f"home_rh56f1_{side}.npz" in text[3] and "--contract" in text[3] and "--at" not in text[3]
         assert f"home_rh56f1_{side}.npz" in text[4] and "--reverse" not in text[4] and "--execute" in cmds[4].argv
@@ -510,11 +510,12 @@ def test_rehome_brings_the_arm_back_from_where_a_policy_stopped(side):
         assert f"rehome_{side}" in by and by[f"rehome_{side}"].needs == (f"pd_arm_{side}",)
         cmds = [" ".join(c.argv) for c in _cmds(m, book, f"rehome_{side}")]
         order = ["--only pd_engage --skip-engaged", "--only pd_hand_release", f"plan_rehome.py --side {side} --robot rh56f1",
-                 "check_path_start.py", "replay_to_pd.py", "--only pd_goto_home"]
+                 "check_path_start.py", "replay_to_pd.py", "--only pd_goto_home", f"trigger.py hand/tip_zero --side {side}"]
         idx = [next(i for i, a in enumerate(cmds) if o in a) for o in order]
         assert idx == sorted(idx), cmds
         assert all("--execute" in cmds[i] for i in (idx[0], idx[1], idx[4], idx[5]))
         assert f"rehome_{side}.npz" in cmds[idx[3]] and f"rehome_{side}.npz" in cmds[idx[4]]
+        assert cmds[-1] == cmds[idx[6]] and "--execute" in cmds[-1]   # 11.04 끝(빈손 · 홈 정착 뒤)에 손끝 영점
     assert by[f"rehome_{side}"].touches_real is False                     # fake
     assert {s.id: s for s in REAL.stages}[f"rehome_{side}"].touches_real
 

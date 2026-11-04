@@ -67,3 +67,37 @@ def test_stop_forgets_the_finished_recording(env):
     assert last_out.exists()
     subprocess.run(["bash", str(SCRIPT), "stop", "aglt_right"], env=env, capture_output=True, timeout=30)
     assert not last_out.exists()
+
+
+def test_camera_gets_its_own_third_recorder_and_stops_with_the_name(env, tmp_path):
+    # 11.04 사용자: 머리 카메라 영상은 세 번째 묶음 — arm 에 섞으면 큰 메시지가 /joint_states 기록을 늦춘다
+    fake = tmp_path / "bin" / "camera_bag_recorder.py"
+    fake.write_text((tmp_path / "bin" / "ros2").read_text())
+    fake.chmod(0o755)
+    e = dict(env, CAMERA="/camera/camera/color/image_raw/compressed /head/joint_states", CAMERA_HZ="10",
+             RH56F1_CAMERA_CMD=str(fake))
+    r = subprocess.run(["bash", str(SCRIPT), "start", "episode_x"], env=e, capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    d = Path(env["RH56F1_RECORD_DIR"]) / "episode_x"
+    cam = int((d / "camera.pid").read_text())
+    assert _alive(cam) and len(_pids(env, "episode_x")) == 2
+    argv = Path(f"/proc/{cam}/cmdline").read_bytes().split(b"\0")
+    assert b"--hz" in argv and b"10" in argv and b"/head/joint_states" in argv and any(a.endswith(b"/camera") for a in argv)
+    subprocess.run(["bash", str(SCRIPT), "stop", "episode_x"], env=env, capture_output=True, timeout=30)
+    time.sleep(0.3)
+    assert not _alive(cam) and not (d / "camera.pid").exists()
+
+
+def test_without_camera_there_is_no_third_recorder(env):
+    subprocess.run(["bash", str(SCRIPT), "start", "episode_y"], env=env, capture_output=True, timeout=30)
+    assert not (Path(env["RH56F1_RECORD_DIR"]) / "episode_y" / "camera.pid").exists()
+
+
+def test_hand_bag_keeps_the_raw_tips_and_the_tip_zero_topics(env):
+    # 11.04 사용자: home · rehome 에서 잡은 손끝 bias 와 영점 뺀 값도 기록 — 원값 tip_forces 는 그대로 같이
+    subprocess.run(["bash", str(SCRIPT), "start", "episode_z"], env=env, capture_output=True, timeout=30)
+    hand = int((Path(env["RH56F1_RECORD_DIR"]) / "episode_z" / "hand.pid").read_text())
+    argv = Path(f"/proc/{hand}/cmdline").read_bytes().split(b"\0")
+    for s in ("right", "left"):
+        for t in ("tip_forces", "tip_forces_zeroed", "tip_bias", "tip_zero_status"):
+            assert f"/hand_{s}/{t}".encode() in argv, (s, t)

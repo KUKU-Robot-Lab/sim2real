@@ -10,7 +10,8 @@
 
 규약
   · `--execute` 없이는 아무 서비스도 부르지 않는다.
-  · 부를 수 있는 서비스는 아래 SERVICES 의 7개뿐이다(임의 서비스 이름을 받지 않는다).
+  · 부를 수 있는 서비스는 아래 SERVICES 뿐이다(임의 서비스 이름을 받지 않는다).
+  · hand/tip_zero(11.04, rh56f1_state_node 손끝 영점)는 기록용이라 거부 · 없음도 rc 0 — 홈 단계를 막지 않는다(이유는 찍는다).
   · `--expect-pd` 를 주면 호출 뒤 /policy_control/status/pd 의 phase 가 그 값이 될 때까지 기다린다.
   · ROS_DOMAIN_ID 0/unset 은 거부한다 — `--allow-domain-0` 로만 통과한다(`palm_cmd.py` 와 같다).
 """
@@ -31,7 +32,9 @@ NS = "/policy_control"
 #: pd 는 팔마다 서비스가 따로다 — `pd/engage --side right` → `/policy_control/pd_right/engage` (09.23).
 PD_SERVICES = ("pd/engage", "pd/goto_home", "pd/release", "pd/hand_home", "pd/hand_rest", "pd/hand_path",
                "pd/hand_release", "pd/hold")
-SERVICES = PD_SERVICES + ("episode/reset", "episode/start", "episode/stop", "episode/abort")
+SERVICES = PD_SERVICES + ("episode/reset", "episode/start", "episode/stop", "episode/abort", "hand/tip_zero")
+#: 실패해도 rc 0 — 손끝 bias 는 기록용(제어 입력 아님). 거부되면 이전 bias 가 남고 이유는 상태 토픽 · 로그에 남는다.
+SOFT = ("hand/tip_zero",)
 #: 로봇을 **덜** 움직이게 하는 쪽 — 승인 없이 언제든 불러도 되는 것들.
 DESCENDING = ("episode/stop", "episode/abort", "pd/release", "pd/hold")   # hold = 그 자리에 얼린다(10.09)
 #: ★10.20 실기 1-B: 정책 노드가 없는 제어 모듈 에피소드에서 rehome 이 선행 episode/stop 실패(rc 1)로 막혔다.
@@ -87,6 +90,8 @@ def resolve(service: str, side: str, episode_ns: str = "") -> str:
     (팔마다 동시에 도는 정책 노드 `-p ns:=<side>` — /policy_control/<ns>/episode/*, 09.30)."""
     if service in PD_SERVICES:
         return f"{NS}/pd_{side}/{service.split('/', 1)[1]}"
+    if service == "hand/tip_zero":
+        return f"/hand_{side}/tip_zero"
     ns = episode_ns.strip("/")
     return f"{NS}/{ns}/{service}" if ns else f"{NS}/{service}"
 
@@ -136,7 +141,9 @@ RESET_RETRY_S, RESET_RETRY_EVERY_S = 6.0, 0.4
 
 
 def retry_reason(service: str, reasons: Sequence[str]) -> bool:
-    """다시 불러 볼 거부인가 — reset 이 '아직 안 온 · 늦은 소스'로 거부된 것만. 순수."""
+    """다시 불러 볼 거부인가 — reset 이 '아직 안 온 · 늦은 소스'로 거부된 것, tip_zero 가 '손이 아직 움직인다'(hand_home 직후). 순수."""
+    if service == "hand/tip_zero":
+        return any("손이 아직 움직인다" in r for r in reasons)
     return service == "episode/reset" and any(("is missing" in r or "is stale" in r) and "source" in r for r in reasons)
 
 
@@ -232,8 +239,8 @@ def main(argv: list[str] | None = None) -> int:
                        service_timeout=args.service_timeout, phase_timeout=args.phase_timeout)
     for r in reasons:
         print(f"  {'·' if ok else '✗'} {r}")
-    print("  결과: " + ("ok" if ok else "거부/실패"))
-    return 0 if ok else 1
+    print("  결과: " + ("ok" if ok else "거부/실패") + (" — 기록용이라 단계는 계속(이전 bias 유지)" if not ok and args.service in SOFT else ""))
+    return 0 if ok or args.service in SOFT else 1
 
 
 if __name__ == "__main__":

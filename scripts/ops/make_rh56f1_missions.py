@@ -100,6 +100,16 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
 VISION_RECORD = False
 #: ★10.19 사용자 "작성할 보고서 사진/영상도 필요함" — VISION_RECORD 일 때 이 에피소드들은 카메라 영상을 보고서용 빈도로 남긴다(기본 5 Hz)
 REPORT_VIDEO_HZ = {"grasp_b_right": 15.0, "grasp_b_left": 15.0}
+#: ★11.04 사용자: 실기 에피소드 bag 에 머리 D435i 영상을 같이(세 번째 묶음 camera, rh56f1_record.sh CAMERA) — FP++ 자세 · 손바닥 ·
+#   rh_aglt 상태와 시간을 맞춰 겹쳐 본다(scripts/analysis/episode_video_overlay.py, shaker 를 손가락 3개로 바닥만 잡는 현상).
+#   10 Hz: 11.04 측정 JPEG q95 1280x720 약 276 KB · 정렬 깊이 PNG(level 3) 약 146 KB → 약 4.2 MB/s = 분당 약 250 MB(30 Hz 면 760 MB).
+#   FP++ live_pose 가 약 10 Hz 라 그보다 촘촘해도 겹칠 자세가 없다. /head/joint_states 는 목 FK(외부 파라미터를 잰 자세와의 차)용.
+#   카메라가 다른 PC(REMOTE_PERCEPTION)면 영상이 랜을 건너므로 싣지 않는다.
+CAMERA_BAG_HZ = 10.0
+CAMERA_BAG_TOPICS = ("/camera/camera/color/image_raw/compressed",
+                     "/camera/camera/aligned_depth_to_color/image_raw/compressedDepth",
+                     "/camera/camera/color/camera_info", "/camera/camera/aligned_depth_to_color/camera_info",
+                     "/head_depth/image", "/head/joint_states")
 #: 에피소드 snapshot 이 다시 내는 정지 물체 자세(episode_ros.OBJECT_RELAY) — aglt 는 이것을 컵으로 본다
 EPISODE_RELAY = "/episode/objects/{}/pose"        # ★10.19 한 팔 실행기는 episode_ros.relay_topic(실행기 이름 아래)
 # 제자리 들기(grasp_rg3) 정책 노드의 lift_hold 멈춤 = 컵 7 cm 위 + 쥠 연속 틱(60 Hz).
@@ -725,6 +735,7 @@ def _run(kind: str) -> dict:
             _cmd(f"[{s}] 정책 시작 자세에서 정착 — 이제 policy_aglt_{s} · return_{s} · 에피소드를 다시 돌릴 수 있다",
                  ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_goto_home", "--service-timeout", "45"],
                  execute_args=["--execute", "--approve", "pd_goto_home"]),
+            _tip_zero(s),
         ]
         hid = PLACE_HOLDER[s]
         run[f"policy_place_{s}"] = ([] if real else [
@@ -1023,8 +1034,10 @@ def _episode_run(name: str, real: bool) -> list:
         # ★10.12 실기: 관측 · 행동이 bag 에 없어 실패 원인(어느 입력이 정책을 sim 과 갈랐나)을 역산 · 재구성으로만 쟀다
         extra += [f"/policy_control/{s}/{x}" for s in sides for x in ("obs", "action")]
         hands = f"HAND_SIDES='{' '.join(sides)}' " if len(sides) == 1 else ""      # 한 팔 에피소드는 그 손만(다른 팔 기록과 겹치지 않게)
-        cmds.append(_cmd("기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더",
-                         ["bash", "-lc", f"{hands}EXTRA='{' '.join(extra)}' bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh "
+        cam = "" if REMOTE_PERCEPTION else f"CAMERA='{' '.join(CAMERA_BAG_TOPICS)}' CAMERA_HZ={CAMERA_BAG_HZ:g} "
+        cmds.append(_cmd("기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더"
+                         + ("" if REMOTE_PERCEPTION else f" + 머리 카메라 bag camera({CAMERA_BAG_HZ:g} Hz)"),
+                         ["bash", "-lc", f"{hands}{cam}EXTRA='{' '.join(extra)}' bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh "
                                          f"start episode_{name}"]))
         cmds.append(_cpu_record(f"episode_{name}"))
         if VISION_RECORD and name in REPORT_VIDEO_HZ:   # ★10.19 보고서 사진 · 영상 — 카메라 PC 에서 따로(tools/episode_media.py 가 묶는다)
@@ -1039,7 +1052,7 @@ def _episode_run(name: str, real: bool) -> list:
     bg = [i for i, c in enumerate(cmds) if c.get("background")]
     cmds.append(_cmd("에피소드 노드들 정지", stop=[f"episode_{name}#{i}" for i in reversed(bg)]))
     if real:
-        cmds.append(_cmd("기록 끝 — 이 에피소드의 bag 두 개 마무리(SIGINT)",
+        cmds.append(_cmd("기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손" + ("" if REMOTE_PERCEPTION else " · 카메라") + ")",
                          ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop", f"episode_{name}"]))
         if VISION_RECORD and name in REPORT_VIDEO_HZ:   # ★10.19 보고서 사진 · 영상 — 이 단계에서 돈 회마다(아직 안 만든 것)
             cmds.append(_cmd(f"보고서 영상 · 장면 사진 — 카메라 영상({PERCEPTION_HOST}) + 노드 시각 → logs/report_media/<회>"
@@ -1104,6 +1117,13 @@ def _record_stop(stage: str, cpu_index: int, name: str) -> list[dict]:
                  ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop", name])]
 
 
+def _tip_zero(s: str) -> dict:
+    """★11.04 사용자: home · rehome 끝(편 손 · 빈손)에서 손끝 촉각 bias 를 잡아 기록 — 손은 움직이지 않는다. 거부돼도 단계는 계속(trigger.py SOFT)."""
+    return _cmd(f"[{s}] 손끝 촉각 영점(/hand_{s}/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 거부면 이전 bias 유지) "
+                "→ tip_bias · tip_forces_zeroed · logs/rh56f1_tip_zero",
+                ["python3", f"{PC}/tools/trigger.py", "hand/tip_zero", "--side", s, "--service-timeout", "5"], execute_args=["--execute"])
+
+
 def _home(s: str) -> list[dict]:
     """차렷 → 홈, 한 번 승인으로 끝까지(10.01 사용자: "home 자세 진행하면 팔-손 한번에"). 사람 확인은 맨 앞 하나 —
     그 뒤는 도구가 실패하면 그 자리에서 멈춘다(engage 는 10 s HOLD 감시, 재생 전 시작점 검사, hand_home 은 pd 가 정착했을 때만 받는다)."""
@@ -1125,6 +1145,7 @@ def _home(s: str) -> list[dict]:
              execute_args=["--execute", "--approve", "pd_goto_home"]),
         _cmd(f"[{s}] 손을 계약 홈 손 자세로(pd/hand_home — 팔이 홈에 정착했을 때만 받는다)", ctl("pd_hand_home", "--service-timeout", "15"),
              execute_args=["--execute", "--approve", "pd_hand_home"]),
+        _tip_zero(s),
     ]
 
 

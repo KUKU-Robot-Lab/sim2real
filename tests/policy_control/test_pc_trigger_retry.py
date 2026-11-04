@@ -28,3 +28,12 @@ def test_only_stop_counts_an_absent_policy_node_as_nothing_to_stop():
     assert T.absent_ok("episode/stop")
     for s in ("episode/reset", "episode/start", "episode/abort", "pd/engage", "pd/goto_home", "pd/release", "pd/hold"):
         assert not T.absent_ok(s), s
+
+
+def test_tip_zero_goes_to_the_hand_state_node_retries_only_while_moving_and_never_fails_the_step():
+    """11.04: home 끝 hand_home 은 손이 움직이기 시작할 때 답한다 — '손이 아직 움직인다' 거부만 다시. 기록용이라 거부도 rc 0."""
+    from policy_control.rh56f1_state_node import ZERO_MOVING
+    assert T.resolve("hand/tip_zero", "left") == "/hand_left/tip_zero"
+    assert T.retry_reason("hand/tip_zero", [f"{ZERO_MOVING}(창 안 관절 범위 0.300 rad > 0.02)"])
+    assert not T.retry_reason("hand/tip_zero", ["손이 펴지지 않았다 {'index_1': 0.6} rad > 0.25"])
+    assert "hand/tip_zero" in T.SOFT and not set(T.SOFT) & set(T.PD_SERVICES)

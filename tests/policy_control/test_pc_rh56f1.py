@@ -387,3 +387,61 @@ def test_leaving_admittance_restarts_the_position_command_from_the_measured_hand
         b.write(HandCmd(q_star=closed, qd_star=None, dt=0.01, q_meas=blocked, mode="admittance"))
     w = b.write(HandCmd(q_star=closed, qd_star=None, dt=0.01, q_meas=blocked, mode="position"))
     assert np.max(np.abs(w.q_cmd - blocked)) <= 1.0 * 0.01 + 1e-9           # 실측 + 한 틱(max_vel 1 rad/s · 10 ms)
+
+
+# ---------------------------------------------------------------- ★11.04 손끝 소프트웨어 영점
+def _fill(z, t_end, normal, tang=(0,) * 5, q=(1.57, 0, 0, 0, 0, 0), hz=200, span=0.6):
+    for k in range(int(span * hz)):
+        t = t_end - span + k / hz
+        z.add_touch(t, normal, tang)
+        z.add_angle(t, q)
+
+
+def test_tip_zero_takes_the_window_mean_and_subtracts_it_from_raw_without_touching_tip_forces():
+    """11.04 사용자: home · rehome 에서 bias 를 잡아 영점. tip_forces 원값(정책 입력)은 그대로, zeroed 는 법선 · 접선에서 각각 뺀다."""
+    from policy_control.rh56f1_state_node import TipZero
+    z = TipZero(HMAP)
+    _fill(z, 10.0, [10, 0, 0, 40, 30], [0, 0, 0, 30, 0])
+    ok, why, info = z.capture(10.0)
+    assert ok, why
+    assert info["normal_bias_raw"] == pytest.approx([10, 0, 0, 40, 30]) and info["tangential_bias_raw"] == pytest.approx([0, 0, 0, 30, 0])
+    assert z.bias_n() == pytest.approx([0.3, 0.5, 0.0, 0.0, 0.1])                       # sim 순 엄지 → 새끼, N
+    n, t = [110, 0, 0, 40, 330], [0, 0, 0, 430, 0]
+    assert z.zeroed(n, t) == pytest.approx([3.0, 4.0, 0.0, 0.0, 1.0])
+    assert z.zeroed([0] * 5, [0] * 5) == pytest.approx([0.0] * 5)                       # 음수로 내려가지 않는다
+    assert HandStateCore(HMAP, "right").tip_forces(n, t)[0] == pytest.approx(3.3)        # 원값은 그대로
+
+
+@pytest.mark.parametrize("case, kw, needle", [
+    ("bent", dict(q=(1.57, 0, 0.6, 0, 0, 0)), "펴지지 않았다"),
+    ("touching", dict(normal=[0, 0, 0, 0, 900]), "원시값이 크다"),
+])
+def test_tip_zero_refuses_a_closed_hand_or_a_touching_tip_and_keeps_the_old_bias(case, kw, needle):
+    from policy_control.rh56f1_state_node import TipZero
+    z = TipZero(HMAP)
+    _fill(z, 1.0, [5, 5, 5, 5, 5])
+    assert z.capture(1.0)[0]
+    args = dict(normal=[5] * 5) | kw
+    _fill(z, 2.0, **args)
+    ok, why, info = z.capture(2.0)
+    assert not ok and any(needle in w for w in why), why
+    assert info["normal_bias_raw"] == pytest.approx([5] * 5)
+
+
+def test_tip_zero_refuses_a_moving_hand_noisy_values_or_no_data():
+    from policy_control.rh56f1_state_node import ZERO_MOVING, TipZero
+    z = TipZero(HMAP)
+    assert not z.capture(0.0)[0]                                                         # 아무것도 안 왔다
+    for k in range(120):                                                                 # 손가락이 펴지는 중
+        z.add_touch(k / 200, [0] * 5, [0] * 5)
+        z.add_angle(k / 200, (1.57, 0, 0.2 - k / 1000, 0, 0, 0))
+    ok, why, _ = z.capture(119 / 200)
+    assert not ok and any(ZERO_MOVING in w for w in why)
+    z = TipZero(HMAP)
+    for k in range(120):
+        z.add_touch(k / 200, [0, 0, 0, 0, 100 * (k % 2)], [0] * 5)
+        z.add_angle(k / 200, (1.57, 0, 0, 0, 0, 0))
+    ok, why, _ = z.capture(119 / 200)
+    assert not ok and any("튄다" in w for w in why)
+    _fill(z, 5.0, [0] * 5)
+    assert not z.capture(5.5)[0]                                                         # 0.5 s 넘게 끊겼다

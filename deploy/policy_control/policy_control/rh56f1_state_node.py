@@ -9,14 +9,24 @@ pd · 정책 · 콘솔은 rad JointState 를 읽는다 — 이 노드가 변환�
         /hand_<side>/tip_forces   (std_msgs/Float64MultiArray, 5, sim 순 엄지 → 새끼, N — √(법선² + 접선²), 단위 실측 전)
         /hand_<side>/joint_forces (std_msgs/Float64MultiArray, 6, 엄지 굽힘 · 엄지 회전 · 검지 · 중지 · 약지 · 새끼, g — 센서 위치,
                                    force_actual 그대로. 10.04 쥔 판정: 엄지를 첫마디로 감싸 쥐면 손끝 촉각엔 잘 안 잡힌다)
+        ★11.04 손끝 소프트웨어 영점(tip_forces 원값은 그대로 — 학습 정책 입력 계약):
+        /hand_<side>/tip_forces_zeroed (Float64MultiArray, 5, tip_forces 와 같은 순 · 단위 — 법선 · 접선 원시에서 각각 bias 를 빼고 합친 크기)
+        /hand_<side>/tip_bias          (Float64MultiArray, 5, transient_local — 마지막으로 받아들인 bias 의 크기, N)
+        /hand_<side>/tip_zero_status   (std_msgs/String JSON, transient_local — 시도마다: 시각 · 받아들임 · 거부 이유 · 원시 bias 법선/접선)
+  서비스 /hand_<side>/tip_zero (std_srvs/Trigger) — 직전 0.5 s 창의 촉각 평균을 bias 로. 손이 안 펴졌거나 · 움직이거나 · 값이 크거나
+        튀면 거부하고 이전 bias 를 둔다. 시도마다 logs/rh56f1_tip_zero/<날짜>.jsonl 에 한 줄.
 
     python3 deploy/policy_control/policy_control/rh56f1_state_node.py --side right
 """
 from __future__ import annotations
 
 import argparse
+import json
 import math
+import os
 import sys
+import time
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
@@ -41,6 +51,78 @@ def joint_forces_out(slots: Sequence[float]) -> list[float]:
     if len(slots) != 6:
         raise ValueError(f"force_actual 은 6 칸이어야 한다(got {len(slots)})")
     return [float(slots[i]) for i in JOINT_FORCE_ORDER]
+
+
+#: ★11.04 사용자 "데이터 모을 때 tip 센서도 home 이나 rehome 하면 bias 를 잡아 영점을 맞추고 기록". 하드웨어 영점(--force-calibrate)은 쓰지 않는다.
+ZERO_WINDOW_S = 0.5          # 부르기 직전 이 창의 평균
+ZERO_MIN_SAMPLES = 10        # 창 안 촉각 샘플 하한(EtherCAT 250 Hz ≈ 125 · RS485 50 Hz ≈ 25)
+ZERO_STALE_S = 0.2           # 마지막 촉각 · 각도가 이보다 오래면 거부
+ZERO_OPEN_MAX_RAD = 0.25     # 엄지 굽힘 · 네 손가락이 이 안 = 편 손(홈 손 0 rad). 엄지 회전(홈 1.57)은 안 본다
+ZERO_STILL_RAD = 0.02        # 창 안 관절 범위 — 넘으면 아직 움직인다
+ZERO_MAX_RAW = 300           # 창 평균 원시값(0.01 N 추정 → 3 N) — 넘으면 닿아 있다고 본다(09.30: 쉴 때 정확히 0)
+ZERO_MAX_STD_RAW = 20        # 창 안 표준편차 — 넘으면 튄다
+ZERO_MOVING = "손이 아직 움직인다"   # tools/trigger.py 가 이 거부만 다시 부른다(hand_home 직후)
+
+
+@dataclass
+class TipZero:
+    """촉각 원시(벤더 순 법선 5 · 접선 5) bias 를 잡고 뺀다. 순수 — 시각은 부르는 쪽이 준다."""
+
+    hmap: rh56f1_map.HandMap
+    normal_bias: np.ndarray = field(default_factory=lambda: np.zeros(5))
+    tangential_bias: np.ndarray = field(default_factory=lambda: np.zeros(5))
+    _touch: deque = field(default_factory=deque, init=False)
+    _angle: deque = field(default_factory=deque, init=False)
+
+    @staticmethod
+    def _push(buf: deque, t: float, row: np.ndarray) -> None:
+        buf.append((t, row))
+        while buf and buf[0][0] < t - 2 * ZERO_WINDOW_S:
+            buf.popleft()
+
+    def add_touch(self, t: float, normal: Sequence[float], tangential: Sequence[float]) -> None:
+        self._push(self._touch, t, np.concatenate([np.asarray(normal, float), np.asarray(tangential, float)]))
+
+    def add_angle(self, t: float, q6: Sequence[float]) -> None:
+        self._push(self._angle, t, np.asarray(q6, float))
+
+    def zeroed(self, normal: Sequence[float], tangential: Sequence[float]) -> np.ndarray:
+        n = np.clip(np.asarray(normal, float) - self.normal_bias, 0.0, None)
+        g = np.clip(np.asarray(tangential, float) - self.tangential_bias, 0.0, None)
+        return self.hmap.touch_sim_order(n, g)
+
+    def bias_n(self) -> np.ndarray:
+        return self.hmap.touch_sim_order(self.normal_bias, self.tangential_bias)
+
+    def capture(self, now: float) -> tuple[bool, list[str], dict]:
+        """창 [now − 0.5 s, now] 평균을 bias 로. 거부면 이전 bias 그대로. → (받아들임, 이유, 기록용 값)."""
+        touch = np.array([r for t, r in self._touch if t >= now - ZERO_WINDOW_S]).reshape(-1, 10)
+        angle = np.array([r for t, r in self._angle if t >= now - ZERO_WINDOW_S]).reshape(-1, 6)
+        why: list[str] = []
+        if len(touch) < ZERO_MIN_SAMPLES or now - self._touch[-1][0] > ZERO_STALE_S:
+            why.append(f"촉각 샘플이 모자라거나 늦다({len(touch)}개 / {ZERO_WINDOW_S} s)")
+        if len(angle) == 0 or now - self._angle[-1][0] > ZERO_STALE_S:
+            why.append("손 각도(angle_actual)가 안 온다")
+        else:
+            flex = [i for i, n in enumerate(self.hmap.joint_order) if n != "thumb_1"]
+            span = float((angle.max(0) - angle.min(0)).max())
+            bent = {self.hmap.joint_order[i]: round(float(angle[-1, i]), 3) for i in flex if angle[-1, i] > ZERO_OPEN_MAX_RAD}
+            if span > ZERO_STILL_RAD:
+                why.append(f"{ZERO_MOVING}(창 안 관절 범위 {span:.3f} rad > {ZERO_STILL_RAD})")
+            elif bent:
+                why.append(f"손이 펴지지 않았다 {bent} rad > {ZERO_OPEN_MAX_RAD}")
+        mean = touch.mean(0) if len(touch) else np.zeros(10)
+        std = touch.std(0) if len(touch) else np.zeros(10)
+        if mean.max() > ZERO_MAX_RAW:
+            why.append(f"원시값이 크다(평균 최대 {mean.max():.0f} > {ZERO_MAX_RAW}) — 손끝이 무엇에 닿아 있는가")
+        if std.max() > ZERO_MAX_STD_RAW:
+            why.append(f"값이 튄다(표준편차 최대 {std.max():.1f} > {ZERO_MAX_STD_RAW})")
+        if not why:
+            self.normal_bias, self.tangential_bias = mean[:5].copy(), mean[5:].copy()
+        info = {"samples": len(touch), "mean_raw": [round(float(v), 2) for v in mean], "std_raw": [round(float(v), 2) for v in std],
+                "normal_bias_raw": self.normal_bias.tolist(), "tangential_bias_raw": self.tangential_bias.tolist(),
+                "bias_n": self.bias_n().tolist()}
+        return not why, why or ["bias 갱신"], info
 
 
 @dataclass
@@ -78,7 +160,9 @@ class HandStateCore:
 def main(argv: list[str] | None = None) -> int:
     import rclpy
     from sensor_msgs.msg import JointState
-    from std_msgs.msg import Float64MultiArray
+    from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+    from std_msgs.msg import Float64MultiArray, String
+    from std_srvs.srv import Trigger
     from rh56f1_interfaces.msg import GetAngleAct1, GetForceAct1, TouchData1
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
@@ -96,6 +180,12 @@ def main(argv: list[str] | None = None) -> int:
     js_pub = node.create_publisher(JointState, f"{ns}/joint_states", 10)
     tip_pub = node.create_publisher(Float64MultiArray, f"{ns}/tip_forces", 10)
     jf_pub = node.create_publisher(Float64MultiArray, f"{ns}/joint_forces", 10)
+    zero = TipZero(core.hmap)
+    latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+    zeroed_pub = node.create_publisher(Float64MultiArray, f"{ns}/tip_forces_zeroed", 10)
+    bias_pub = node.create_publisher(Float64MultiArray, f"{ns}/tip_bias", latched)
+    zstat_pub = node.create_publisher(String, f"{ns}/tip_zero_status", latched)
+    zero_log = Path(__file__).resolve().parents[3] / "logs" / "rh56f1_tip_zero"
 
     def on_angle(msg) -> None:
         # ★10.03 원본 도장을 이어받는다(EtherCAT 노드 = 하드웨어 샘플 시각) — 없으면(0) 받은 시각. bag 정렬 · 속도 계산 모두 이 시각
@@ -106,9 +196,34 @@ def main(argv: list[str] | None = None) -> int:
         out.header.stamp = msg.header.stamp if (src.sec or src.nanosec) else node.get_clock().now().to_msg()
         out.name, out.position, out.velocity = names, pos.tolist(), vel.tolist()
         js_pub.publish(out)
+        zero.add_angle(time.monotonic(), pos[:6])          # names 앞 6 = joint_order(구동)
 
     def on_touch(msg) -> None:
-        tip_pub.publish(Float64MultiArray(data=core.tip_forces(list(msg.finger_forces), list(msg.finger_tangentials)).tolist()))
+        n, g = list(msg.finger_forces), list(msg.finger_tangentials)
+        tip_pub.publish(Float64MultiArray(data=core.tip_forces(n, g).tolist()))
+        zero.add_touch(time.monotonic(), n, g)
+        zeroed_pub.publish(Float64MultiArray(data=zero.zeroed(n, g).tolist()))
+
+    def on_tip_zero(req, resp):
+        ok, why, info = zero.capture(time.monotonic())
+        row = {"at": time.strftime("%F %T"), "side": args.side, "domain": os.environ.get("ROS_DOMAIN_ID", ""),
+               "accepted": ok, "reasons": why, **info}
+        zstat_pub.publish(String(data=json.dumps(row, ensure_ascii=False)))
+        if ok:
+            bias_pub.publish(Float64MultiArray(data=info["bias_n"]))
+        try:                                                # 기록 실패가 영점을 막지 않는다 — 상태 토픽 · bag 에는 남는다
+            zero_log.mkdir(parents=True, exist_ok=True)
+            with open(zero_log / f"{time.strftime('%Y%m%d')}.jsonl", "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except OSError as e:
+            node.get_logger().error(f"tip_zero 기록 실패 {zero_log}: {e}")
+        (node.get_logger().info if ok else node.get_logger().warning)(
+            f"tip_zero {'받아들임' if ok else '거부(이전 bias 유지)'}: {'; '.join(why)} · bias N {[round(v, 3) for v in info['bias_n']]}")
+        resp.success = ok
+        resp.message = json.dumps({"ok": ok, "reasons": why}, ensure_ascii=False)
+        return resp
+
+    node.create_service(Trigger, f"{ns}/tip_zero", on_tip_zero)
 
     node.create_subscription(GetAngleAct1, f"{ns}/angle_actual", on_angle, 10)
     node.create_subscription(TouchData1, f"{ns}/touch_data", on_touch, 10)
