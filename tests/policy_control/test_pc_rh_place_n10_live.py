@@ -169,7 +169,7 @@ def test_the_episodes_point_at_the_new_policies():
         steps = {s["id"]: s for s in ep["sequence"]}
         assert steps["place_blue"]["target_holder"] == "HOLDER_1" and steps["place_pink"]["target_holder"] == "HOLDER_2"
         assert steps["place_shaker"]["target_holder"] == "HOLDER_0" and steps["place_shaker"]["policy_object"] == "shaker_c_real"
-        assert ep["objects"]["SRC_PINK"]["region"] == {"x": [0.26, 0.30], "y": [-0.365, -0.340]}
+        assert ep["objects"]["SRC_PINK"]["region"] == {"x": [0.26, 0.305], "y": [-0.365, -0.330]}
 
 
 # ---------------------------------------------------------------- 에피소드 계획 검사(episode_spec)
