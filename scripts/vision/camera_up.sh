@@ -3,6 +3,7 @@
 # ★11.03 IMU 를 켠다(/camera/camera/imu) — 미션 head_view_check 가 중력으로 카메라 숙임을 잰다(scripts/head_view_feedback.py).
 #  realsense2_camera 4.58 기본은 gyro · accel 꺼짐 · unite_imu_method 0(합친 imu 토픽 없음).
 source "$(dirname "$0")/common.sh"
+ros2_daemon_heal
 if pgrep -f realsense2_camera_node >/dev/null; then
   # ★11.03 IMU 없이 떠 있던 카메라(이전 camera_up)면 내리고 IMU 를 켜서 다시 띄운다 — 그대로 두면 head_view_check 가 늘 실패한다.
   if timeout 5 ros2 topic list 2>/dev/null | grep -qx /camera/camera/imu; then echo "camera already up"; exit 0; fi

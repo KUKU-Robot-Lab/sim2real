@@ -3,6 +3,7 @@
 # usage: cup_holders_up.sh [노드 인자…]   예: cup_holders_up.sh --write
 # 내릴 때는 cup_holders_down.sh — 이 스크립트가 남긴 PID 파일의 프로세스만 끈다(패턴 kill 안 함).
 source "$(dirname "$0")/common.sh"
+ros2_daemon_heal
 PIDFILE="$LOGDIR/cup_holders.pid"
 if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null && tr '\0' ' ' <"/proc/$(cat "$PIDFILE")/cmdline" | grep -q cup_holder_pose_node.py; then echo "cup holders already up (pid $(cat "$PIDFILE"))"; exit 0; fi
 # 10.13 vision-3090 은 시스템 python3 의 scipy 가 깨져 있다(scripts/vision/venv_setup.sh) — .venv 가 있으면 그것을 쓴다.

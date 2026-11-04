@@ -24,3 +24,17 @@ export SIM2REAL
 LOGDIR="$SIM2REAL/logs/perception"
 mkdir -p "$LOGDIR"
 source /opt/ros/humble/setup.bash
+# ★11.04 ros2 daemon 이 깨지면(xmlrpc Fault '!rclpy.ok()') topic list · echo 가 0.2 s 만에 실패한다 — camera_up 이 떠 있는
+#  카메라를 'IMU 없음'으로 보고 다시 켠 뒤 camera_info 를 못 받아 rc=1 이 났다(11.04 10:15, 카메라는 내내 발행 중).
+#  --no-daemon 은 3 s 안에 발견을 못 끝내 대안이 못 된다(11.04 실측). 확인 전에 daemon 이 답하는지 보고, 아니면 다시 띄운다.
+ros2_daemon_heal() {
+  if ! timeout 8 ros2 topic list >/dev/null 2>&1; then
+    echo "ros2 daemon 이 답하지 않는다 — 다시 띄운다" >&2
+    timeout 10 ros2 daemon stop >/dev/null 2>&1 || true
+    # 멈춘 daemon 은 stop 에 답하지 않는다 — 이 사용자의 daemon PID 만 골라 끈다.
+    #  명령줄 시작에 고정한다 — 이 글자를 인자로 품은 셸까지 잡혀 꺼졌다(11.04 시험).
+    for p in $(pgrep -u "$(id -u)" -f "^[^ ]*python3? -c from ros2cli[.]daemon[.]daemonize"); do kill -9 "$p" 2>/dev/null || true; done
+    timeout 10 ros2 daemon start >/dev/null 2>&1 || true
+    sleep 2
+  fi
+}
