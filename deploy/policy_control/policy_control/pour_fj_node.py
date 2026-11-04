@@ -281,7 +281,9 @@ class AgltChain:
         self.c, self.policy = c, policy
         self.dec = A.RaDecoder(c, self.dec.assist)
         self.dec.reset(arm_start=arm)
-        self.prev = np.zeros(c.action_dim)
+        # ★11.04 sim_e2e: sim rcg04(aglt_start=ap) 첫 스텝의 직전 행동 = 접근 정지 0.5 s 동안 실행한 (팔 0, 손 폄)
+        #   (hdgp rh_aglt_env 1104~1113 · _a_open_rdy). 0 으로 두면 손 6 칸이 학습 분포 밖이다.
+        self.prev = A.ready_hold_action(c) if c.arm_start == "ready" else np.zeros(c.action_dim)
         self.step_i = 0
         self.goals = G.GoalBook.start(c, m.cup_pos, m.cup_quat, freeze=self.freeze)
         if hasattr(policy, "reset"):

@@ -208,6 +208,7 @@ def test_the_approach_hands_over_to_the_ready_policy_in_the_same_node(ap05, rcg0
     assert np.allclose(ch.dec.state["arm"].hand_target, ch.c.side().hand_open)
     assert np.allclose(ch.goals.cup_reset, plant.cup)                          # 목표 = 넘김 순간 컵 + 오프셋
     assert ch.step_i == 0 and ch.ag.last["handoff_t_s"] > 0
+    assert np.allclose(ch.prev, A.ready_hold_action(ch.c))   # ★11.04 sim 첫 스텝 직전 행동 = 접근 정지의 (팔 0, 손 폄)
     _run(ch, plant, 30)
     assert len(nxt.obs) == 30 and ch.ag.phase == "policy" and ch.ag.end is None   # 그 뒤는 넘겨받은 정책이 돈다
     assert not ch.ag.scripted
