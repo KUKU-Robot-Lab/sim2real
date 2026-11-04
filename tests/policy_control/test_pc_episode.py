@@ -757,3 +757,29 @@ def test_the_retried_refusal_text_is_the_one_the_policy_node_sends():
     from policy_control.episode_ros import RESET_CUP_STALE_TEXT
     node = Path(__file__).resolve().parents[2] / "deploy/policy_control/policy_control/pour_fj_node.py"
     assert f"reset: {RESET_CUP_STALE_TEXT}" in node.read_text()
+
+
+def test_place_judge_uses_live_or_the_bound_cup_never_the_table_snapshot():
+    """★11.04 …/pose 는 cups 때 찍은 테이블 자리를 계속 낸다 — 놓기 판정은 live 와 손을 연 순간의 묶은 컵(latch_cup)으로.
+    둘 중 하나라도 홀더 안이면 들어간 것(live 는 쥔 컵을 놓치면 엉뚱한 값, 131817). 둘 다 밖이면 실패, 둘 다 없으면 보류."""
+    import threading
+    from types import SimpleNamespace
+    from policy_control.episode_ros import SEAT_DZ_CYL60, RosExecutor
+    hold = (0.38, -0.06, 0.235)
+    seat = (0.38, -0.06, 0.235 + SEAT_DZ_CYL60)
+    table = (0.24, -0.10, 0.289)                                  # 잡기 전 자리(/pose 가 계속 내던 값)
+
+    def judge(live, latch):
+        me = SimpleNamespace(holders={1: (hold, 0.0)}, _frames={"SRC": [(table, None, 1e18)] * 5}, _live={"SRC": []},
+                             _lock=threading.Lock(),
+                             _fresh_object=lambda name, after=None, store=None, wait_s=2.0: live if store is not None else table)
+        p = SimpleNamespace(kind="place", source_object="SRC", holder_id=1)
+        return RosExecutor._signals_of(me, p, {"place": {"phase": "done", "latch_cup": latch}})
+
+    s = judge(seat, list(seat))
+    assert s["cup_in_holder"] is True and s["cup_in_holder_by"] == {"live": True, "fk": True}
+    s = judge((0.739, -0.118, -0.141), list(seat))                 # live 가 놓쳤다 — 묶은 컵이 홀더 안
+    assert s["cup_in_holder"] is True and s["cup_in_holder_by"] == {"live": False, "fk": True}
+    s = judge(None, [0.30, -0.06, 0.40])                           # live 없음 · 묶은 컵이 홀더 밖
+    assert s["cup_in_holder"] is False and s["cup_in_holder_by"] == {"fk": False}
+    assert "cup_in_holder" not in judge(None, None)               # 판정 보류

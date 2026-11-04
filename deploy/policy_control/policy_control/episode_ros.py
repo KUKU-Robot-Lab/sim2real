@@ -290,7 +290,9 @@ class RosExecutor:
             node.create_subscription(PoseStamped, obj["topic"], self._on_frame(name), qos_profile_sensor_data)
         #: ★10.20 실기 1-B: 들림 판정은 live 추적으로 본다. …/pose 는 locate 때 한 번 찍은 자리를 계속 다시 내서
         #  032511 shaker 가 live 로 9.6 cm 들렸는데 before = after 로 0.0 cm 판정 → 들고 멈춤.
-        for name in {t.object for t in ep.trajectories.values() if t.kind == "lift" and t.object}:
+        #: ★11.04 놓기 판정도 live — …/pose 는 cups 때 찍은 테이블 자리를 계속 내서 제대로 놓아도 cup_in_holder False 가 된다
+        place_src = {j.source_object for n in ep.nodes for j in getattr(n, "jobs", ()) or () if j.source_object}
+        for name in {t.object for t in ep.trajectories.values() if t.kind == "lift" and t.object} | place_src:
             topic = live_topic(ep.objects.get(name, {}).get("topic", ""))
             if topic:
                 node.create_subscription(PoseStamped, topic, self._on_frame(name, self._live), qos_profile_sensor_data)
@@ -635,11 +637,23 @@ class RosExecutor:
             sig = {"hand_empty": empty, "opened": pl.get("opened"), "tact_max": pl.get("tact_max"), "jf_max": pl.get("jf_max"),
                    "phase": pl.get("phase"), "ready_carry": pl.get("ready_carry"),      # ★10.25 이송 결과(없으면 None)
                    "outcome": pl.get("outcome")}       # ★11.02 빼기 결과 clear | withdraw_timeout(episode_failure 가 본다)
-            pos = self._fresh_object(p.source_object, after=time.monotonic() + PLACE_JUDGE_WAIT_S)   # stop 시각 + 1.0 s 뒤 프레임만
             hold = self.holders.get(p.holder_id) if p.holder_id is not None else None
-            if pos is not None and hold is not None:
-                sig["cup_in_holder"] = cup_in_holder(pos, hold[0], SEAT_DZ_CYL60)
-                sig["cup_pos"] = [round(v, 4) for v in pos]
+            # ★11.04 놓은 자리 = FP++ live(stop + 1.0 s 뒤 프레임) 와 손을 연 순간의 묶은 컵(손바닥 FK ⊗ 묶음, latch_cup).
+            #   …/pose(cups 때 찍은 테이블 자리)는 쓰지 않는다. live 는 쥔 컵을 놓치면 엉뚱한 값을 내므로(131817) 둘 중 하나라도
+            #   홀더 안이면 들어간 것, 둘 다 밖일 때만 실패. 둘 다 없으면 판정 보류(None).
+            pos = self._fresh_object(p.source_object, after=time.monotonic() + PLACE_JUDGE_WAIT_S, store=self._live)
+            fk = pl.get("latch_cup")
+            if hold is not None:
+                votes = {}
+                if pos is not None:
+                    votes["live"] = cup_in_holder(pos, hold[0], SEAT_DZ_CYL60)
+                    sig["cup_pos"] = [round(v, 4) for v in pos]
+                if fk is not None and len(fk) == 3:
+                    votes["fk"] = cup_in_holder(fk, hold[0], SEAT_DZ_CYL60)
+                    sig["cup_pos_fk"] = [round(float(v), 4) for v in fk]
+                if votes:
+                    sig["cup_in_holder"] = any(votes.values())
+                    sig["cup_in_holder_by"] = votes
             return sig
         return {}
 
