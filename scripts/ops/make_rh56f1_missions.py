@@ -642,7 +642,7 @@ def _run(kind: str) -> dict:
              ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", *_cups(), "--viewer", "--wait", str(_start_wait())]),
         _cmd("컵 좌표 추출 — 처음엔 FP++ 가 켜지며 찍는 회차를 기다리고, 이 단계를 다시 실행하면(컵을 옮긴 뒤 '↶ 여기서 다시') "
              "컨테이너를 끄지 않고 지금 카메라로 다시 찍는다(10.08 사용자). 컵마다 base 좌표 · 판정을 찍는다. ★10.13 하나라도 찾으면 통과 · 못 찾은 컵은 이유와 함께 경고(그 컵은 개별 인지 단계로 다시)",
-             ["python3", "{repo}/scripts/ops/fpp_rescan.py", *(REAL_CUPS[s] for s in SIDES if s in REAL_CUPS), "--wait", "120",
+             ["python3", "{repo}/scripts/ops/fpp_rescan.py", *_cups(), "--wait", "120",   # ★11.04 에피소드 물체(분홍)도 — 빠지면 옮긴 분홍이 /pose 에 안 들어갔다
               *RESCAN_HOST]),
         _cmd(f"★컵 자세 확인(바로 위 추출 결과) — 테이블 위 컵 원점 z ≈ {0.205 + REAL_CUP_ORIGIN_Z:.3f}(상판 0.205 + 원점 {REAL_CUP_ORIGIN_Z}, ±8 mm) · 기울기 < 3° · "
              f"x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 {_side_cup('right')}(y < 0) · 왼팔 {_side_cup('left')}(y > 0) 인가"

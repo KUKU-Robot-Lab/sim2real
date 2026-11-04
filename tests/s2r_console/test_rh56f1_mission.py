@@ -216,7 +216,7 @@ def test_real_cups_run_fpp_on_the_perception_pc_after_the_head_home_and_shutdown
     for want in (f"perception_launcher_node.py --host {host}", "fpp_pose_rx.py", "object_pose_node.py --camera-extrinsics",
                  "--camera-extrinsics", ext,
                  f"perception_ctl.py start {objs} --viewer --wait {GEN._start_wait()}",
-                 f"fpp_rescan.py {' '.join(side)} --wait 120"):        # 10.08 다시 실행 = 지금 카메라로 다시 찍기
+                 f"fpp_rescan.py {objs} --wait 120"):        # 10.08 다시 실행 = 지금 카메라로 다시 찍기(11.04 에피소드 물체 분홍도)
         assert any(want in a for a in cups), want
     rescan = next(c.argv for c in _cmds(REAL, REAL_BOOK, "cups") if any("fpp_rescan.py" in str(x) for x in c.argv))
     if GEN.REMOTE_PERCEPTION:                                    # 10.13 FP++ 상태는 인지 PC 에서만 보인다

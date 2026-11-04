@@ -1004,6 +1004,7 @@ run:
     - '{repo}/scripts/ops/fpp_rescan.py'
     - source240b_blue
     - shaker_c_orange
+    - source240p_pink
     - --wait
     - '120'
   - note: ★컵 자세 확인(바로 위 추출 결과) — 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y
