@@ -542,6 +542,7 @@ class PourFjNode(LeanNodeMixin, Node):
                                 radius_m=float(p("fpp_gate_radius_m")), max_hold_s=float(p("fpp_gate_max_hold_s")),
                                 anchor_m=float(p("fpp_gate_anchor_m")))   # ★11.03 쥐기 전 기준점 거르기(fpp_gate.py)
         self.gates = {r: FppGate(self.gate_cfg) for r in self.attach} if self.gate_cfg.enabled else {}
+        self.approach_g_dropped: dict[str, int] = {}   # ★11.04 접근 단계에서 버린 쥔 신호 틱(역할별, status approach_grasp.g_dropped)
         self.cup_fresh: dict[str, bool] = {}       # ★10.14 역할별 '성공을 세도 되는 컵 자세' — _cup_for 가 매 정책 틱 채운다
         # ★10.04 실기: 단독 aglt 단계에서 손이 다가가자 FP++ 컵이 1.5~2.6 s 끊겨(손이 가림) '컵 자세가 없다'로 집기 전에 멈췄다.
         #   cup_latch 면 reset 때 컵 자세를 한 번 잡아 두고 그 에피소드 동안 그 값을 쓴다(사용자 원칙 "FPP 는 정지 상태만" —
@@ -686,6 +687,12 @@ class PourFjNode(LeanNodeMixin, Node):
                 g = _chain_grasped(getattr(self, "chain", None))   # ★10.12 hand_block 계약: 직전 정책 틱의 막힘 쥔 판정(sim PalmAttach)
                 if g is None:
                     g = grasp_signal(tact, jf, self.attach_cfg)
+                ag = getattr(getattr(self, "chain", None), "ag", None)
+                if g and ag is not None and ag.phase == "approach":
+                    # ★11.04 사용자 지적("멈춤 규칙은 잘못"): 접근 정책(넘김 전)은 컵을 쥐지 않는다 — 쥔 신호를 버린다(dropout · attach · gate 공통).
+                    #   실기 134813 · 220906: 손바닥–컵 22 cm 에서 엄지 받침(B, 엄지 힘 상시 ~207 g > 80) + 검지 지연 래치로 거짓 쥠 → 놓친 뒤 멈춤.
+                    g = False
+                    self.approach_g_dropped[role] = self.approach_g_dropped.get(role, 0) + 1
                 seen = live
                 if gate is not None:                      # ★10.13 A안 — 쥐기 전 · 붙기 전만 거른다(sim FppGate active)
                     seen = gate.step(live, time.monotonic(), palm_pos, active=not est.attached and not bool(g))
@@ -751,6 +758,7 @@ class PourFjNode(LeanNodeMixin, Node):
         for drop in self.dropouts.values():
             drop.new_episode()
         self.cup_fresh.clear()
+        self.approach_g_dropped = {}
         if self.cup_latch:                      # 지금 신선한 FP++ 컵을 이 에피소드의 컵으로(없으면 아래 측정이 거부한다)
             self._latched = {}
             fresh = {r: self._cup(r) for r in self.fam.roles}
@@ -978,7 +986,8 @@ class PourFjNode(LeanNodeMixin, Node):
         inh = {}
         if hasattr(self.chain, "inhand"):              # ★10.21 손 안 컵 추정기 — 꺼져 있으면 on False 만
             inh = {"inhand": self.chain.inhand.as_dict() if self.chain.inhand is not None else {"on": False}}
-        return {**({"approach_grasp": ag.as_dict()} if ag is not None else {}), **hold, **sq, **inh}
+        agd = {"approach_grasp": {**ag.as_dict(), "g_dropped": dict(self.approach_g_dropped)}} if ag is not None else {}
+        return {**agd, **hold, **sq, **inh}
 
     # ---------------------------------------------------------------- tick
     def _status(self, ok: bool, reasons, extra=None) -> None:

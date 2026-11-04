@@ -491,3 +491,41 @@ def test_the_node_follows_the_palm_when_a_held_cup_leaves_the_camera(c):
     assert drop.mode == "follow" and est.source == "live"
     assert out[0] == pytest.approx([0.30, -0.10, 0.31])                 # 쥔 시각 손바닥 기준 4 cm 아래 → 5 cm 든 만큼
     assert fake.cup_fresh["arm"] is True
+
+
+@pytest.mark.parametrize("phase", ["approach", "policy"])
+def test_the_approach_phase_drops_a_false_grasp_so_a_dropout_does_not_stop(phase):
+    """★11.04 실기 134813 · 220906: 접근 정책(ap05) 단계, 손바닥–컵 22 cm 에서 hand_block 거짓 쥠 → held → 풀린 뒤 끊김 0.74 s
+    에 멈췄다. 접근 단계는 쥔 신호를 버려 잡기 전 규칙(stop_s 1 s)만 걸린다. 넘긴 뒤(policy)는 지금처럼 held 가 켜진다."""
+    import time
+    from types import SimpleNamespace as NS
+    from policy_control.cup_attach import AttachCfg, CupAttach
+    from policy_control.cup_dropout import CupDropout, DropoutCfg, DropoutStop
+    cfg = AttachCfg(switch=False)
+    est, drop = CupAttach(cfg), CupDropout(DropoutCfg(stop_s=1.0))
+    q = np.array([1.0, 0, 0, 0])
+    got = {"arm": (time.monotonic() - 0.74, np.array([0.30, -0.10, 0.26]), q, 0.0)}   # 0.74 s 끊김
+    grasped = {"v": True}
+    fake = NS(attach={"arm": est}, gates={}, attach_cfg=cfg, dropouts={"arm": drop}, cups=got,
+              chain=NS(dec=NS(grasped=lambda: grasped["v"]), ag=NS(phase=phase)), approach_g_dropped={},
+              _cup=lambda r: got[r][1:], _fresh_cup=lambda r: None, cup_latch=False, cup_fresh={},
+              get_clock=lambda: NS(now=lambda: NS(nanoseconds=0)), get_logger=lambda: NS(info=lambda *_a, **_k: None))
+    palm = np.array([0.30, -0.10, 0.48])                                 # 컵에서 22 cm
+    st = NS(stale=(), joint_force=None, stamps={"arm": 0.0})
+
+    def ticks(n, k0):
+        for k in range(n):
+            st.stamps = {"arm": 0.01 * (k0 + k + 1)}
+            N.PourFjNode._cup_for(fake, "arm", True)(palm, np.eye(3), np.zeros(5), st)
+
+    ticks(20, 0)                                                         # 거짓 쥠 20 틱(hold_steps 15 넘음)
+    if phase == "policy":
+        assert drop.held and fake.approach_g_dropped == {}
+        grasped["v"] = False
+        with pytest.raises(DropoutStop, match="쥠이 풀린 뒤"):
+            ticks(20, 20)
+        return
+    assert not drop.held and fake.approach_g_dropped == {"arm": 20}
+    grasped["v"] = False
+    ticks(20, 20)                                                        # 풀려도 멈추지 않는다(잡기 전 1 s 한도 안)
+    assert not drop.released and drop.stop_reason is None
