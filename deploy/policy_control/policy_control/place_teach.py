@@ -24,7 +24,7 @@ from typing import Any, Sequence
 import numpy as np
 
 from . import _paths  # noqa: F401  (robot_control on sys.path)
-from robot_control.teaching import TeachLimits, acknowledge, start, step, toggle_lock  # noqa: E402
+from robot_control.teaching import Mode, TeachLimits, acknowledge, start, step, toggle_lock  # noqa: E402
 
 SCHEMA = "s2r_replay_v1"
 HAND_AXES = ("thumb_1", "thumb_2", "index_1", "middle_1", "ring_1", "pinky_1")
@@ -102,6 +102,8 @@ class Teacher:
     hand: np.ndarray | None = None
     events: list[HandEvent] = field(default_factory=list)
     rows: list[tuple[float, np.ndarray, np.ndarray, np.ndarray]] = field(default_factory=list)  # t, 실측, 팔 목표, 손 목표
+    #: g · o 가 건 잠금(기준선을 다시 잡으면 푼다). 사용자가 space 로 건 잠금은 건드리지 않는다.
+    hand_lock: bool = False
 
     def __post_init__(self) -> None:
         if self.side not in ("right", "left"):
@@ -132,6 +134,9 @@ class Teacher:
         cmd = self._clip(prev + np.clip(np.asarray(desired, float) - prev, -self.max_vel * self.dt, self.max_vel * self.dt))
         self.state = acknowledge(self.state, cmd)
         self.command = cmd
+        if self.hand_lock and self.state.rebaseline_at is None:
+            self.state, self.hand_lock = replace(self.state, locked=False), False
+            event = "기준선 다시 잡음(손 · 컵 무게 포함) — 잠금 풀림, 이제 밀면 따라간다"
         self.rows.append((t, meas.copy(), cmd.copy(), self.hand.copy()))
         return cmd, self.hand.copy(), event
 
@@ -139,13 +144,24 @@ class Teacher:
         if self.state is None:
             return None
         if k == " ":
+            self.hand_lock = False
             self.state = toggle_lock(self.state)
             return "잠금: 밀어도 따라가지 않는다" if self.state.locked else "잠금 풀림"
         if k in ("g", "o"):
             name, q = (GRIP, self.grip) if k == "g" else (OPEN, self.open)
-            self.hand = np.asarray(q, float).copy()
+            q = np.asarray(q, float)
+            # 손이 컵을 쥐거나 놓으면 팔 처짐이 바뀐다(손목 kp 가 낮아 컵 무게만으로 push_rad 를 넘는다). 기준선을 그대로 두면
+            # 그 처짐을 미는 손으로 읽고, 따라가기 목표(실측 + 옛 기준선)가 다시 처지며 팔이 흘러내린다(11.04 실기 j7 −0.73 rad).
+            # 그래서 지금 목표에서 팔을 잠그고, 손이 다 움직이고 settle_sec 뒤 기준선을 다시 잡은 다음 푼다(tick).
+            settle = float(np.abs(q - self.hand).max()) / HAND_VEL_RAD_S + self.limits.settle_sec
+            user_lock = bool(self.state.locked) and not self.hand_lock
+            self.state = replace(self.state, mode=Mode.HOLD, target=np.asarray(self.command, float).copy(), locked=True,
+                                 rebaseline_at=float(t) + settle, follow_since=None, still_since=None, moving_since=None)
+            self.hand_lock = not user_lock
+            self.hand = q.copy()
             self.events.append(HandEvent(name, float(t), tuple(float(v) for v in q)))
-            return f"손 {name}: {' '.join(f'{v:.2f}' for v in q)}"
+            hold = f"{settle:.1f} s 잠그고 기준선을 다시 잡는다" if self.hand_lock else "space 잠금 유지 · 기준선만 다시 잡는다"
+            return f"손 {name}: {' '.join(f'{v:.2f}' for v in q)} — 팔 {hold}"
         return None
 
 

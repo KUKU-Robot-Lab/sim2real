@@ -97,8 +97,42 @@ def test_space_locks_the_arm_against_a_push():
     assert np.allclose(t.command, Q0, atol=1e-9)
 
 
+#: 쥔 컵 무게로 더 처지는 몫(손목 게인이 낮아 j5 · j7 이 push 0.02 rad 를 넘는다) — 11.04 실기: g 뒤 j7 이 −0.73 rad 까지 흘렀다.
+PAYLOAD = np.array([0.0, 0.0, 0.0, 0.0, 0.03, 0.0, 0.05])
+
+
+def _loaded(grip_k, then=None):
+    """grip_k 틱부터 컵 무게만큼 더 처지는 팔. then(k, cmd) 는 그 위에 손이 정한 실측(또는 None)."""
+    def path(k, cmd):
+        load = PAYLOAD if k >= grip_k else 0.0
+        imposed = then(k, cmd) if then else None
+        if imposed is not None:
+            return imposed - load                              # 밀어도 손목은 컵 무게만큼 처진 채
+        return cmd - DROOP - load
+    return path
+
+
+def test_the_weight_of_a_gripped_cup_is_not_followed_as_a_push():
+    t = _run(_teacher(), 900, _loaded(60), keys={60: "g"})
+    assert np.allclose(t.command, Q0, atol=1e-9)          # 처짐을 따라 내려가지 않는다
+    assert not t.state.locked                               # 기준선을 다시 잡은 뒤 잠금이 풀렸다
+
+
+def test_after_the_grip_rebaseline_a_push_is_still_followed():
+    t = _run(_teacher(), 900, _loaded(60, _push_j4(start_k=400)), keys={60: "g"})
+    assert t.command[3] > Q0[3] + 0.25
+    assert np.allclose(np.delete(t.command, 3), np.delete(Q0, 3), atol=0.02)
+
+
+def test_a_grip_keeps_a_lock_the_user_set():
+    t = _run(_teacher(), 900, _loaded(60, _push_j4(start_k=400)), keys={5: " ", 60: "g"})
+    assert t.state.locked
+    assert np.allclose(t.command, Q0, atol=1e-9)
+
+
 def _taught(tmp_path):
-    t = _run(_teacher(), 900, _push_j4(), keys={30: "g", 400: "o"})   # 끝 틱 900 = 15 s(녹화 끝보다 뒤)
+    # 쥔 뒤 팔이 잠긴 동안(손 이동 + settle_sec ≈ 1.4 s)은 기다렸다가 민다 — 틱 200 부터. 끝 틱 900 = 15 s(녹화 끝보다 뒤)
+    t = _run(_teacher(), 900, _push_j4(start_k=200), keys={30: "g", 400: "o"})
     path = P.save_recording(tmp_path / "holder1.npz", P.build_recording(t))
     return t, path
 
@@ -108,7 +142,7 @@ def test_the_recording_is_trimmed_and_replays_through_rh_replay_at_full_rate(tmp
     traj = R.load_replay(path)
     assert traj.side == "right" and traj.names == R.expected_names("right")
     # 앞 정지(쥐기 전 기다림)는 잘려 밀기 시작 0.5 s 전부터, 끝은 폄(틱 400) 뒤 손이 다 펴지고(1.08 rad / 1.0 rad/s) 1 s 더
-    first_s, last_s = 89 * DT - P.PRE_ROLL_S, 400 * DT + 1.08 / P.HAND_VEL_RAD_S + P.POST_ROLL_S
+    first_s, last_s = 199 * DT - P.PRE_ROLL_S, 400 * DT + 1.08 / P.HAND_VEL_RAD_S + P.POST_ROLL_S
     assert traj.n_frames == pytest.approx((last_s - first_s) / DT, abs=3)
     assert np.allclose(traj.q[0, 7:], P.GRIP_RAD) and np.allclose(traj.q[-1, 7:], P.OPEN_RAD)
     assert [s["label"] for s in traj.segments] == ["carry", "release"]
