@@ -8,6 +8,7 @@
 #   EXTRA="/policy_control/joint_target /status/pd_right" bash rh56f1_record.sh start x   # 팔 쪽 bag 에 더할 토픽
 #   HAND_SIDES="right" bash rh56f1_record.sh start aglt_right                             # 손 bag 에 그 손만(기본 양손)
 #   CAMERA="/camera/camera/color/image_raw/compressed …" CAMERA_HZ=10 bash rh56f1_record.sh start x   # 세 번째 bag camera
+#   CAMERA_ENCODE=1 …   # 압축을 드라이버 대신 기록기가 한다(--encode-raw, 11.05: 드라이버 압축이 원본 지연을 40 → 54 ms 로 밀었다). 기본 끔
 #
 # ★11.04 사용자: 머리 D435i 영상을 에피소드 bag 에 같이 — FP++ 자세 · 손바닥 · 정책 상태와 시간을 맞춰 겹쳐 본다
 #   (scripts/analysis/episode_video_overlay.py). 영상은 따로 묶음 camera 에 쓴다(arm 에 섞으면 큰 메시지가 /joint_states 기록을
@@ -74,7 +75,8 @@ start)
   if [ -n "${CAMERA:-}" ]; then
     # nice 10 — 정책 · FP++ 보다 뒤에 선다(늦으면 프레임만 버린다, best effort 구독)
     CAM_CMD=${RH56F1_CAMERA_CMD:-"python3 $SIM2REAL/scripts/nodes/camera_bag_recorder.py"}
-    setsid bash -c "echo \$\$ > '$D/camera.pid'; $ENV; exec nice -n 10 $CAM_CMD -o '$OUT/camera' --hz ${CAMERA_HZ:-10} $CAMERA" \
+    CAM_ENC=""; [ "${CAMERA_ENCODE:-0}" = 1 ] && CAM_ENC="--encode-raw"
+    setsid bash -c "echo \$\$ > '$D/camera.pid'; $ENV; exec nice -n 10 $CAM_CMD -o '$OUT/camera' --hz ${CAMERA_HZ:-10} $CAM_ENC $CAMERA" \
       </dev/null >"$D/camera.log" 2>&1 &
   fi
   for _ in $(seq 1 20); do [ -f "$D/arm.pid" ] && [ -f "$D/hand.pid" ] && { [ -z "${CAMERA:-}" ] || [ -f "$D/camera.pid" ]; } && break
