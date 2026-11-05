@@ -277,20 +277,38 @@ def main(argv: list[str] | None = None) -> int:
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
         except OSError as e:
             node.get_logger().error(f"tip_zero 기록 실패 {zero_log}: {e}")
-        (node.get_logger().info if ok else node.get_logger().warning)(
-            f"tip_zero {'받아들임' if ok else '거부(이전 bias 유지)'}: {'; '.join(why)} · bias N {[round(v, 3) for v in info['bias_n']]}")
+        # rclpy 는 호출 위치마다 심각도를 고정한다 — 한 줄에서 info/warning 을 번갈아 부르면 ValueError 로 노드가 죽는다(11.05)
+        msg = f"tip_zero {'받아들임' if ok else '거부(이전 bias 유지)'}: {'; '.join(why)} · bias N {[round(v, 3) for v in info['bias_n']]}"
+        if ok:
+            node.get_logger().info(msg)
+        else:
+            node.get_logger().warning(msg)
         jok = info["joint_accepted"]
-        (node.get_logger().info if jok else node.get_logger().warning)(
-            f"관절 힘 영점{'(강제)' if force else ''} {'받아들임' if jok else '거부(이전 bias 유지)'}: {'; '.join(info['joint_reasons'])} · "
-            f"창 평균 g {info['joint_mean_g']} · bias g {info['joint_bias_g']}")
+        msg = (f"관절 힘 영점{'(강제)' if force else ''} {'받아들임' if jok else '거부(이전 bias 유지)'}: {'; '.join(info['joint_reasons'])} · "
+               f"창 평균 g {info['joint_mean_g']} · bias g {info['joint_bias_g']}")
+        if jok:
+            node.get_logger().info(msg)
+        else:
+            node.get_logger().warning(msg)
         if info["joint_jump_g"]:
             node.get_logger().warning(f"관절 힘 영점이 직전 bias 에서 {JOINT_ZERO_JUMP_WARN_G:.0f} g 넘게 옮겨 갔다(받아들임) {info['joint_jump_g']} g")
         resp.success = ok
         resp.message = json.dumps({"ok": ok, "reasons": why, "joint_ok": jok, "joint_reasons": info["joint_reasons"]}, ensure_ascii=False)
         return resp
 
-    node.create_service(Trigger, f"{ns}/tip_zero", on_tip_zero)
-    node.create_service(Trigger, f"{ns}/tip_zero_force", lambda req, resp: on_tip_zero(req, resp, force=True))
+    def guarded_tip_zero(req, resp, force: bool = False):
+        # 이 노드는 pd 가 받는 손 측정의 유일한 출처다 — 영점 서비스의 예외로 노드가 죽으면 pd 오차가 NaN 이 되고
+        # 손을 못 움직인다(11.05 왼손). 영점은 실패로 답하고 측정 발행은 계속한다
+        try:
+            return on_tip_zero(req, resp, force)
+        except Exception as e:  # noqa: BLE001
+            node.get_logger().error(f"tip_zero 처리 실패(노드는 계속): {type(e).__name__}: {e}")
+            resp.success = False
+            resp.message = json.dumps({"ok": False, "reasons": [f"내부 오류 {type(e).__name__}: {e}"]}, ensure_ascii=False)
+            return resp
+
+    node.create_service(Trigger, f"{ns}/tip_zero", guarded_tip_zero)
+    node.create_service(Trigger, f"{ns}/tip_zero_force", lambda req, resp: guarded_tip_zero(req, resp, force=True))
 
     node.create_subscription(GetAngleAct1, f"{ns}/angle_actual", on_angle, 10)
     node.create_subscription(TouchData1, f"{ns}/touch_data", on_touch, 10)

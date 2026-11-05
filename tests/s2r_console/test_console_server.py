@@ -100,3 +100,22 @@ def test_an_error_reply_closes_the_connection(live):
 
     assert reply.count(b"HTTP/1.1 ") == 1
     assert b"Connection: close" in reply
+
+
+def test_state_json_never_carries_nan_the_browser_cannot_parse():
+    # 11.05: 손 상태 노드가 죽어 pd_err = NaN → JSON.parse 실패 → 콘솔이 "아직 아무것도 받지 못했다"로 멈췄다
+    import json
+    import math
+
+    payload = {"live": {"pd": "TRACKING", "pd_err": math.nan}, "xs": [1.0, math.inf, -math.inf, (2.0, math.nan)], "ok": 0.5}
+    raw = server.to_json(payload)
+    assert "NaN" not in raw and "Infinity" not in raw
+    back = json.loads(raw, parse_constant=lambda c: pytest.fail(f"비표준 상수 {c}"))
+    assert back == {"live": {"pd": "TRACKING", "pd_err": None}, "xs": [1.0, None, None, [2.0, None]], "ok": 0.5}
+
+
+def test_finite_state_json_is_unchanged():
+    import json
+
+    payload = {"a": [1, 2.5, "x", None, True], "한글": {"b": -0.0}}
+    assert json.loads(server.to_json(payload)) == payload

@@ -22,6 +22,7 @@ let S = null;                 // 마지막 스냅샷
 let robotChan = "pos";
 let lastAt = 0;               // 그것을 "끝까지 그린" 시각 [ms] — 받기만 하고 못 그린 것은 세지 않는다
 let drawError = null;         // 마지막 그리기 예외. 있으면 화면을 덮는다
+let parseError = null;        // 마지막 상태 해석 예외(JSON.parse). 있으면 화면을 덮는다
 const bootAt = Date.now();
 const html = {};              // 패널 id → 마지막으로 넣은 HTML (같으면 DOM 을 건드리지 않는다)
 const openKeys = new Set();   // 펼쳐 둔 <details> — 다시 그려도 유지한다
@@ -1910,7 +1911,10 @@ function accept(snapshot) {
 function cover() {
   const now = Date.now();
   let title = null, why = "";
-  if (drawError) {
+  if (parseError) {
+    title = "서버가 보낸 상태를 읽지 못했다";
+    why = `콘솔 버그다 — 보이는 값은 멈춘 것이다. 정지는 물리 버튼 또는 CLI(episode_ctl / trigger.py). [${String(parseError && parseError.message || parseError)}]`;
+  } else if (drawError) {
     title = "화면을 그리지 못했다";
     why = `콘솔 버그다 — 보이는 값은 멈춘 것이다. 정지는 물리 버튼 또는 CLI(episode_ctl / trigger.py). [${String(drawError && drawError.message || drawError)}]`;
   } else if (!lastAt) {
@@ -1927,7 +1931,13 @@ async function refresh() {
 }
 function connect() {
   const es = new EventSource("/api/stream");
-  es.addEventListener("state", (e) => accept(JSON.parse(e.data)));
+  es.addEventListener("state", (e) => {
+    let snap;
+    // 읽지 못한 상태를 조용히 버리면 "아직 아무것도 받지 못했다"로만 보인다(11.05 NaN) — 이유를 덮개에 쓴다
+    try { snap = JSON.parse(e.data); } catch (err) { parseError = err; console.error(err); cover(); return; }
+    parseError = null;
+    accept(snap);
+  });
   es.onerror = () => { es.close(); setTimeout(connect, 1500); };
 }
 setInterval(cover, 500);

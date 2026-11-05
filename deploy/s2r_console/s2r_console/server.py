@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import math
 import mimetypes
 import os
 import time
@@ -21,6 +22,28 @@ from .console import Console
 STREAM_PERIOD_S = 0.5
 _MAX_BODY = 1 << 16
 _CLOSE_FROM = 400   # 오류 응답 뒤에는 연결을 끊는다 — 읽지 않은 본문이 다음 요청이 되지 않게
+
+
+def _finite(obj):
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _finite(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_finite(v) for v in obj]
+    return obj
+
+
+def to_json(payload) -> str:
+    """브라우저로 가는 JSON. NaN·Infinity 는 null 로 바꾼다.
+
+    파이썬 json 은 NaN 을 그대로 쓰지만 브라우저 JSON.parse 는 읽지 못한다. 11.05 왼손 상태 노드가 죽어
+    pd_err 가 NaN 이 되자 상태 스트림 전체가 버려져 콘솔이 "아직 아무것도 받지 못했다"로 멈췄다.
+    """
+    try:
+        return json.dumps(payload, ensure_ascii=False, allow_nan=False)
+    except ValueError:
+        return json.dumps(_finite(payload), ensure_ascii=False, allow_nan=False)
 
 
 def make_handler(console: Console):
@@ -68,7 +91,7 @@ def make_handler(console: Console):
             self._send(code, payload)
 
         def _send(self, code: int, payload: dict) -> None:
-            raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            raw = to_json(payload).encode("utf-8")
             self.send_response(code)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(raw)))
@@ -105,7 +128,7 @@ def make_handler(console: Console):
             self.close_connection = True
             try:
                 while True:
-                    raw = json.dumps(console.snapshot(), ensure_ascii=False)
+                    raw = to_json(console.snapshot())
                     self.wfile.write(f"event: state\ndata: {raw}\n\n".encode("utf-8"))
                     self.wfile.flush()
                     time.sleep(STREAM_PERIOD_S)

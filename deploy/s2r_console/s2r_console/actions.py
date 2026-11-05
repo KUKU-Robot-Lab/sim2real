@@ -567,8 +567,10 @@ class ActionManager:
             result['pd'] = (status.get('phase') if fresh else '상태 없음') if status else '상태 없음'
             hold = (status or {}).get('hold') or {}
             if fresh and hold.get('err') is not None:
-                result['pd_err'] = round(float(hold['err']), 3)
-                result['pd_settled'] = bool(hold.get('settled'))
+                err = float(hold['err'])
+                # NaN = pd 가 손·팔 측정을 못 받는다(11.05 손 상태 노드가 죽었을 때) — 숫자로 보이면 안 된다
+                result['pd_err'] = round(err, 3) if math.isfinite(err) else None
+                result['pd_settled'] = bool(hold.get('settled')) and math.isfinite(err)
         if action_id.startswith('rg3_') and getattr(s, 'workspace', None) is not None:
             card = next((c for c in s.workspace.cards if 'rg3_' + c['id'] == action_id), None)
             if card is not None and card.get('task') == 'approaching':
