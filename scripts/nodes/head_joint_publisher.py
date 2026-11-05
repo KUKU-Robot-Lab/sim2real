@@ -158,7 +158,7 @@ def main() -> int:
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()  # SIGTERM 때 rclpy 가 먼저 종료해 두 번째 shutdown 이 RCLError 를 낸다
         controller.close()
         print("포트 닫음")
     return 0
