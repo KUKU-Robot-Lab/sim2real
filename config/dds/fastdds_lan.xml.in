@@ -12,6 +12,9 @@
     <transport_descriptor>
       <transport_id>s2r_shm</transport_id>
       <type>SHM</type>
+      <!-- 기본 512 KiB 면 1280x720 이미지(2~3 MB)가 조각나 RELIABLE p95 70~80 ms · BEST_EFFORT 7~12 Hz(11.05 dds_isolation_1105).
+           64 MB 면 합성 30 Hz 결측 0 · p50 3~6 ms. 효과는 발행자(카메라 노드) 쪽 participant 에서 난다. -->
+      <segment_size>67108864</segment_size>
     </transport_descriptor>
   </transport_descriptors>
   <participant profile_name="s2r_lan_only" is_default_profile="true">
