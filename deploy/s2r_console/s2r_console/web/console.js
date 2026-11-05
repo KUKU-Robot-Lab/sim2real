@@ -1386,14 +1386,13 @@ const acts = {
 };
 
 // ── ★11.02 eval 탭(실기 평가) ─────────────────────────────────────────────────
-// 칵테일 에피소드(config/episodes/cocktail_*.yaml)를 고르고 → [시작] 은 새 길을 만들지 않고 기존 길을 탄다:
+// 평가 에피소드(서버 eval_log.EVAL_EPISODES — 11.05 cocktail_1c_e4000 · grasp_s_right · grasp_s_left)를 고르고 → [시작] 은 새 길을 만들지 않고 기존 길을 탄다:
 //   실행기가 이 에피소드로 떠 있지 않으면 미션 단계 episode_<이름>(승인 창) → 떠 있으면 [연속 실행](승인 창, episode:<이름>).
 // [정지] = /api/episode/stop(lease 없이). 회차 기록은 서버가 round · time · policy id 를 채워 CSV 에 붙인다(lease 없이).
 // 폼은 index.html 에 고정이고 여기서는 값만 맞춘다 — 0.5 s 마다 다시 그려도 입력 중인 글자가 지워지지 않게.
 const EV_KEY = "s2r.eval.episode";
 const EV_DONE = { SUCCESS: "성공", FAILURE: "실패", STOPPED: "중단" };
 const EV_TONE = { "성공": "ok", "실패": "bad", "중단": "mute" };
-const EV_PREFIX = "cocktail_";
 let evSel = (() => { try { return localStorage.getItem(EV_KEY) || ""; } catch { return ""; } })();
 const evForm = { result: "", fail_stage: "", fail_type: "", note: "", from: "" };
 const evSeen = new Set();       // 이미 폼을 채운 끝난 실행(실행기 · episode_id · phase) — 한 번만 채운다
@@ -1418,11 +1417,11 @@ function evSyncInputs(force = false) {
   for (const b of document.querySelectorAll('[data-act="ev-result"]')) b.setAttribute("aria-checked", String(b.dataset.arg === evForm.result));
 }
 
-// 실행기가 cocktail 에피소드를 끝내면(SUCCESS · FAILURE · STOPPED) 결과 · 실패 단계 · 실패 코드를 한 번 채운다 — 저장은 사람이.
+// 실행기가 평가 에피소드(서버가 준 목록)를 끝내면(SUCCESS · FAILURE · STOPPED) 결과 · 실패 단계 · 실패 코드를 한 번 채운다 — 저장은 사람이.
 function evPrefill(s) {
   for (const r of s.episode_runners || []) {
     const result = EV_DONE[r.phase];
-    if (!result || !String(r.episode || "").startsWith(EV_PREFIX)) continue;
+    if (!result || !evEpisodes(s).some((e) => e.name === r.episode)) continue;
     const key = `${r.runner}|${r.episode_id}|${r.phase}`;
     if (evSeen.has(key)) continue;
     evSeen.add(key);
@@ -1471,7 +1470,7 @@ function evPlan(s, ep, r, row) {
 }
 
 function evRunHtml(s, ep) {
-  if (!ep) return `<p class="hint">config/episodes/${EV_PREFIX}*.yaml 이 없다.</p>`;
+  if (!ep) return `<p class="hint">평가 에피소드 파일(config/episodes)이 없다.</p>`;
   const can = holding(), real = s.profile.domain_class === "real";
   const r = evRunnerOf(s, ep.name);
   const row = ((s.mission && s.mission.rows) || []).find((x) => x.id === ep.stage) || null;
@@ -1538,7 +1537,7 @@ function evRenderRounds() {
   const sm = R.summary || {}, n = sm.n || 0;
   const rate = n ? `${Math.round((100 * (sm.success || 0)) / n)} %` : "—";
   const chips = (obj, fmtv) => Object.entries(obj || {}).sort((a, b) => (fmtv ? b[1].n - a[1].n : b[1] - a[1]))
-    .map(([k, v]) => `<span class="ev-chip">${esc(fmtv ? k.replace(EV_PREFIX, "") : k)} <b>${fmtv ? `${v.success}/${v.n}` : v}</b></span>`).join("");
+    .map(([k, v]) => `<span class="ev-chip">${esc(k)} <b>${fmtv ? `${v.success}/${v.n}` : v}</b></span>`).join("");
   const stages = chips(sm.by_stage), eps = chips(sm.by_episode, true);
   const day = R.date === R.today ? "오늘" : esc(R.date);
   put("ev-h-rec", `${day} 기록`);
@@ -1565,7 +1564,7 @@ function renderEval(s) {
   evPrefill(s);
   const ep = evPick(s), eps = evEpisodes(s);
   put("ev-cards", (X.error ? `<p class="reasons bad">${esc(X.error)}</p>` : "")
-    + (eps.length ? eps.map((e) => evCard(s, e, !!ep && e.name === ep.name)).join("") : `<p class="hint">config/episodes/${EV_PREFIX}*.yaml 이 없다.</p>`));
+    + (eps.length ? eps.map((e) => evCard(s, e, !!ep && e.name === ep.name)).join("") : `<p class="hint">평가 에피소드 파일(config/episodes)이 없다.</p>`));
   put("ev-run", evRunHtml(s, ep));
   evRenderForm(ep);
   evRenderRounds();

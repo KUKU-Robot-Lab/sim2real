@@ -1,7 +1,7 @@
-"""실기 평가 탭(11.02) — 칵테일 에피소드 목록과 회차 기록(CSV). 로봇에는 아무것도 보내지 않는다.
+"""실기 평가 탭(11.02) — 평가 에피소드 목록과 회차 기록(CSV). 로봇에는 아무것도 보내지 않는다.
 
-에피소드: `config/episodes/cocktail_*.yaml` 을 glob 으로 읽는다(파일이 늘거나 줄어도 그대로 따라간다). 실행은 이 모듈이 하지
-않는다 — 화면이 기존 길(미션 단계 episode_<이름> → 에피소드 실행기 [연속 실행] 승인)로 보낸다.
+에피소드: EVAL_EPISODES 에 적은 `config/episodes/<이름>.yaml` 만 그 순서로 읽는다(11.05 사용자, 파일 없는 이름은 건너뛴다).
+실행은 이 모듈이 하지 않는다 — 화면이 기존 길(미션 단계 episode_<이름> → 에피소드 실행기 [연속 실행] 승인)로 보낸다.
 
 회차 기록: `runs/s2r_console/eval/<YYYY-MM-DD>.csv`(utf-8, 머리 한 줄, 날짜마다 파일). 서버가 round · time · episode ·
 policy_r · policy_l 을 채운다(policy id 는 클라이언트가 아니라 에피소드 yaml 에서 읽는다). 기록일 뿐이라 lease 가 필요 없다.
@@ -20,7 +20,8 @@ import yaml
 
 from . import tilt_view as TV
 
-PREFIX = "cocktail_"
+#: ★11.05 사용자: 탭에는 이 셋만 — 다른 cocktail_* yaml 은 지우지 않고 목록에서만 뺀다
+EVAL_EPISODES = ("cocktail_1c_e4000", "grasp_s_right", "grasp_s_left")
 COLUMNS = ("round", "time", "episode", "policy_r", "policy_l", "result", "fail_stage", "fail_type", "note")
 RESULTS = ("성공", "실패", "중단")
 #: 화면 · 실행기 말을 저장 값으로 — 실행기 phase(SUCCESS · FAILURE · STOPPED)와 영어 별칭도 받는다
@@ -28,8 +29,8 @@ _RESULT_ALIAS = {"success": "성공", "fail": "실패", "failure": "실패", "ab
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _NAME = re.compile(r"^[A-Za-z0-9_]+$")
 _TEXT_MAX = {"fail_stage": 80, "fail_type": 80, "note": 500}
-#: CSV 열 → 에피소드 policies 의 역할(오른손 · 왼손 놓기 정책)
-PLACE_ROLES = {"policy_r": "rh_place_r", "policy_l": "rh_place_l"}
+#: CSV 열 → (놓기 역할, 손). 놓기 역할이 없는 에피소드(잡기)는 그 손 정책의 student(없으면 policy)를 쓴다
+PLACE_ROLES = {"policy_r": ("rh_place_r", "right"), "policy_l": ("rh_place_l", "left")}
 _LOCK = threading.Lock()
 
 
@@ -42,7 +43,8 @@ def eval_dir(repo: Path) -> Path:
 
 
 def episode_files(repo: Path) -> list[Path]:
-    return sorted((repo / "config" / "episodes").glob(f"{PREFIX}*.yaml"))
+    d = repo / "config" / "episodes"
+    return [d / f"{n}.yaml" for n in EVAL_EPISODES if (d / f"{n}.yaml").is_file()]
 
 
 def _holders(raw: Mapping) -> list[dict]:
@@ -74,21 +76,26 @@ def read_episode(path: Path) -> dict:
     pol = raw.get("policies") if isinstance(raw.get("policies"), Mapping) else {}
     head = raw.get("episode") if isinstance(raw.get("episode"), Mapping) else {}
 
-    def pid(role: str) -> str:
+    def pid(role: str, side: str) -> str:
         b = pol.get(role)
-        return str(b.get("policy", "")) if isinstance(b, Mapping) else ""
+        if isinstance(b, Mapping):
+            return str(b.get("policy", ""))
+        # 실행되는 것은 student 쪽(깊이 학생) — 같은 손 항목이 여럿이면 yaml 순서 첫 항목
+        b = next((v for v in pol.values() if isinstance(v, Mapping) and v.get("side") == side), {})
+        return str(b.get("student") or b.get("policy") or "")
 
     stages = [str(n.get("id")) for n in raw.get("sequence") or []
               if isinstance(n, Mapping) and n.get("id") and n.get("type") != "terminal"]
     return {"name": name, "error": "", "version": head.get("version"),
-            **{col: pid(role) for col, role in PLACE_ROLES.items()}, "holders": _holders(raw), "stages": stages}
+            **{col: pid(*rs) for col, rs in PLACE_ROLES.items()}, "holders": _holders(raw), "stages": stages}
 
 
 def episodes(repo: Path) -> list[dict]:
-    """cocktail_* 에피소드 전부. 파일 mtime · 개수가 같으면 다시 읽지 않는다."""
-    files = episode_files(repo)
-    return TV._cached(f"eval:{repo}", [repo / "config" / "episodes", *files],
-                      lambda: [read_episode(p) for p in files])
+    """EVAL_EPISODES 중 파일이 있는 것. 파일 mtime · 개수가 같으면 다시 읽지 않는다."""
+    d = repo / "config" / "episodes"
+    # 목록의 세 경로를 늘 넣는다(없으면 mtime 0) — 파일이 생기거나 지워지면 캐시가 풀린다
+    return TV._cached(f"eval:{repo}", [d, *(d / f"{n}.yaml" for n in EVAL_EPISODES)],
+                      lambda: [read_episode(p) for p in episode_files(repo)])
 
 
 def view(repo: Path, stage_ids) -> dict:
@@ -141,8 +148,8 @@ def append_round(repo: Path, data: Mapping, *, now: datetime | None = None) -> d
     """한 회차를 오늘 파일 끝에 붙인다. round · time · policy id 는 서버가 채운다. 돌려주는 값 = 쓴 행 + date."""
     now = now or datetime.now()
     name = data.get("episode")
-    if not isinstance(name, str) or not name.startswith(PREFIX) or not _NAME.match(name):
-        raise EvalError(f"episode 는 {PREFIX}* 이름이어야 한다: {name!r}")
+    if not isinstance(name, str) or name not in EVAL_EPISODES or not _NAME.match(name):
+        raise EvalError(f"episode 는 {' · '.join(EVAL_EPISODES)} 중 하나여야 한다: {name!r}")
     src = repo / "config" / "episodes" / f"{name}.yaml"
     if not src.is_file():
         raise EvalError(f"에피소드 파일이 없다: config/episodes/{name}.yaml")
