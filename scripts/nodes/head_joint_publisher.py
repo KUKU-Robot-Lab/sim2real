@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import math
 import sys
+import time
 
 from pathlib import Path
 # ★`scripts/` 를 임포트 경로에 넣는다 — 이 파일은 거기서 한 단계 내려와 있다.
@@ -39,9 +40,8 @@ from head_compliant_hold import (
     autodetect_port,
     discover_ports,
     parse_motor_ids,
-    tick_to_deg,
 )
-from head_driver_core import HeadDriver
+from head_driver_core import HeadDriver, stream_limits_for
 from head_fk_chain import urdf_from_encoder
 from head_home import DEFAULT_CONFIG, load_head_home
 import head_motion
@@ -68,6 +68,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--rate-hz", type=float, default=DEFAULT_RATE_HZ)
     p.add_argument("--config", default=str(DEFAULT_CONFIG), help="기준 자세·게인(head_home.yaml). 이동 요청이 이 게인 순서로 적용된다")
     p.add_argument("--max-tilt", type=float, default=head_motion.MAX_TILT_DEG, help="이동 요청에서 허용하는 tilt 상한(인코더 deg)")
+    p.add_argument("--stream-stale-s", type=float, default=head_motion.STREAM_STALE_S,
+                   help=f"연속 목표({head_motion.STREAM_TOPIC})가 이만큼 안 오면 마지막 goal 을 두고 한 번 이동 모드로")
+    p.add_argument("--stream-max-vel", type=float, default=head_motion.STREAM_MAX_VEL_DPS, help="연속 모드 속도 상한 °/s")
+    p.add_argument("--stream-max-acc", type=float, default=head_motion.STREAM_MAX_ACC_DPS2, help="연속 모드 가속 상한 °/s²")
+    for axis, (lo, hi) in (("pan", head_motion.STREAM_PAN_RANGE_DEG), ("tilt", head_motion.STREAM_TILT_RANGE_DEG)):
+        p.add_argument(f"--stream-{axis}-min", type=float, default=lo, help=f"연속 모드 {axis} 하한(인코더 deg)")
+        p.add_argument(f"--stream-{axis}-max", type=float, default=hi,
+                       help=f"연속 모드 {axis} 상한 — 이동 요청 범위 · 처짐 경계와 겹치는 쪽만 쓴다")
     p.add_argument("--dry-run", action="store_true")
     return p
 
@@ -86,6 +94,8 @@ def main() -> int:
     print(f"포트 {port} @ {args.baud} · ids {ids} → {args.topic} @ {args.rate_hz} Hz")
     print(f"관절 이름 {JOINT_NAMES} · 단위 라디안 · **URDF 규약**(pan 부호 반전 적용)")
     print(f"포트 단독 소유 · 이동 요청 {head_motion.REQUEST_TOPIC} → 상태 {head_motion.STATUS_TOPIC} · tilt 상한 {args.max_tilt}°")
+    print(f"연속 목표 {head_motion.STREAM_TOPIC} → 기록 {head_motion.STREAM_LOG_TOPIC} · stale {args.stream_stale_s} s · "
+          f"{args.stream_max_vel} °/s · {args.stream_max_acc} °/s²")
     if args.dry_run:
         names, pos = joint_state_fields(0.0, -20.0)
         print(f"\n예시(인코더 pan 0 / tilt -20): {names} = "
@@ -95,6 +105,7 @@ def main() -> int:
 
     import rclpy
     from rclpy.node import Node
+    from rclpy.time import Time
     from sensor_msgs.msg import JointState
     from std_msgs.msg import String
 
@@ -112,21 +123,34 @@ def main() -> int:
     node = Node("head_joint_publisher")
     pub = node.create_publisher(JointState, args.topic, 10)
     status_pub = node.create_publisher(String, head_motion.STATUS_TOPIC, 10)
+    stream_log_pub = node.create_publisher(String, head_motion.STREAM_LOG_TOPIC, 10)
     count = {"n": 0}
 
-    def publish_angles(pan: float, tilt: float) -> None:
+    def wall(monotonic_s: float) -> float:
+        """드라이버 시계(monotonic) 시각을 ROS 시계 초로."""
+        return node.get_clock().now().nanoseconds * 1e-9 - (time.monotonic() - monotonic_s)
+
+    def publish_angles(pan: float, tilt: float, read_s: float) -> None:
         msg = JointState()
-        msg.header.stamp = node.get_clock().now().to_msg()
+        msg.header.stamp = Time(nanoseconds=round(read_s * 1e9)).to_msg()  # 두 모터 읽기의 가운데 시각(11.05)
         msg.name, msg.position = joint_state_fields(pan, tilt)
         pub.publish(msg)
         count["n"] += 1
         if count["n"] % (round(args.rate_hz) * 10) == 1:
             node.get_logger().info(f"#{count['n']} 인코더 pan {pan:+.2f}° tilt {tilt:+.2f}°")
 
+    limits = stream_limits_for(
+        config, ids[0], ids[1], args.max_tilt,
+        pan_range=(args.stream_pan_min, args.stream_pan_max), tilt_range=(args.stream_tilt_min, args.stream_tilt_max),
+        max_vel_dps=args.stream_max_vel, max_acc_dps2=args.stream_max_acc)
+    node.get_logger().info(f"연속 모드 범위 pan {limits.pan} · tilt {limits.tilt} {limits.problem() or ''}")
     driver = HeadDriver(controller, config, pan_id=ids[0], tilt_id=ids[1], publish_angles=publish_angles,
                         publish_status=lambda text: status_pub.publish(String(data=text)), max_tilt_deg=args.max_tilt,
-                        log=node.get_logger().info)
+                        log=node.get_logger().info, period_s=1.0 / args.rate_hz, stream_limits=limits,
+                        stream_stale_s=args.stream_stale_s, wall=wall,
+                        publish_stream_log=lambda text: stream_log_pub.publish(String(data=text)))
     node.create_subscription(String, head_motion.REQUEST_TOPIC, lambda m: driver.on_request(m.data), 10)
+    node.create_subscription(String, head_motion.STREAM_TOPIC, lambda m: driver.on_stream(m.data), 10)
     node.create_timer(1.0 / args.rate_hz, driver.tick)
     try:
         rclpy.spin(node)

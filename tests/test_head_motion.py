@@ -133,7 +133,7 @@ def _driver(bus, clock, max_tilt=-10.0):
         bus.goal = (config.targets_deg[1], config.targets_deg[2]) if dxl_id == 2 else bus.goal
 
     config = HeadHome("p", 1_000_000, {1: 0.0, 2: -20.0}, {1: "pan", 2: "tilt"}, 400, 3, 20, 50)
-    driver = HeadDriver(bus, config, pan_id=1, tilt_id=2, publish_angles=lambda p, t: published.append((p, t)),
+    driver = HeadDriver(bus, config, pan_id=1, tilt_id=2, publish_angles=lambda p, t, _s: published.append((p, t)),
                         publish_status=statuses.append, clock=clock, max_tilt_deg=max_tilt, apply=apply)
     return driver, published, statuses
 
@@ -210,7 +210,7 @@ def test_a_tilt_past_the_wrap_boundary_moves_neither_motor():
 
     applied, statuses = [], []
     config = HeadHome("p", 1_000_000, {1: 0.0, 2: 71.8}, {1: "pan", 2: "tilt"}, 400, 3, 20, 50)
-    driver = HeadDriver(PastEdge(), config, pan_id=1, tilt_id=2, publish_angles=lambda p, t: None,
+    driver = HeadDriver(PastEdge(), config, pan_id=1, tilt_id=2, publish_angles=lambda p, t, _s: None,
                         publish_status=statuses.append, clock=Clock(), apply=lambda c, g, i: applied.append(i))
     driver.on_request(hm.encode_request(hm.MoveRequest("home", None, None)))
     last = json.loads(statuses[-1])
@@ -315,7 +315,7 @@ def test_a_head_that_stops_past_every_goal_reaches_home_only_with_its_goal_bias(
     path = tmp_path / "head.yaml"
     path.write_text(text, encoding="utf-8")
     bus, clock, statuses = OffsetBus(), Clock(), []
-    driver = HeadDriver(bus, load_head_home(path), pan_id=1, tilt_id=2, publish_angles=lambda p, t: None,
+    driver = HeadDriver(bus, load_head_home(path), pan_id=1, tilt_id=2, publish_angles=lambda p, t, _s: None,
                         publish_status=statuses.append, clock=clock)
     driver.on_request(hm.encode_request(hm.MoveRequest("home", None, None)))
     for _ in range(400):

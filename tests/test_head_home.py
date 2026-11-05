@@ -353,7 +353,7 @@ def test_driver_publishes_the_real_tilt_while_left_in_mode_4_and_the_next_reques
 
     cfg = load_head_home(_write(tmp_path, RH_CAMSET_DROOP))
     rec, published, statuses = Stuck(_drooped(-798)), [], []      # 모드 4 로 켜진 뒤 Present 가 −798 로 세는 경우
-    driver = HeadDriver(rec, cfg, pan_id=1, tilt_id=2, publish_angles=lambda p, t: published.append(t),
+    driver = HeadDriver(rec, cfg, pan_id=1, tilt_id=2, publish_angles=lambda p, t, _s: published.append(t),
                         publish_status=statuses.append)
     monkeypatch.setattr(head_home, "LIFT_TIMEOUT_S", -1.0)
     driver.on_request(hm.encode_request(hm.MoveRequest("a", None, None)))
