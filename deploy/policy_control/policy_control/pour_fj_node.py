@@ -690,8 +690,9 @@ class PourFjNode(LeanNodeMixin, Node):
                 g = _chain_grasped(getattr(self, "chain", None))   # ★10.12 hand_block 계약: 직전 정책 틱의 막힘 쥔 판정(sim PalmAttach)
                 if g is None:
                     g = grasp_signal(tact, jf, self.attach_cfg)
-                ag = getattr(getattr(self, "chain", None), "ag", None)
-                if g and ag is not None and ag.phase == "approach":
+                chain = getattr(self, "chain", None)
+                ag = getattr(chain, "ag", None)     # ★11.05 학생 체인(student_chain)은 ag 없이 chain.phase 로 단계를 낸다
+                if g and (ag.phase if ag is not None else getattr(chain, "phase", None)) == "approach":
                     # ★11.04 사용자 지적("멈춤 규칙은 잘못"): 접근 정책(넘김 전)은 컵을 쥐지 않는다 — 쥔 신호를 버린다(dropout · attach · gate 공통).
                     #   실기 134813 · 220906: 손바닥–컵 22 cm 에서 엄지 받침(B, 엄지 힘 상시 ~207 g > 80) + 검지 지연 래치로 거짓 쥠 → 놓친 뒤 멈춤.
                     g = False

@@ -180,7 +180,7 @@ def _available_units(mission, runbook, repo):
             commands = commands_for(runbook, mission, st.id, repo=repo, execute=True)
             available_commands[st.id] = tuple(
                 replace(cmd, background=False, manual=False)
-                if any(Path(arg).name in ('rh_aglt_node.py', 'rh_place_node.py') for arg in cmd.argv)
+                if any(Path(arg).name in ('rh_aglt_node.py', 'rh_aglt_student_node.py', 'rh_place_node.py') for arg in cmd.argv)
                 and any(arg.startswith('contract:=') and not (repo / arg.split(':=', 1)[1]).is_file() for arg in cmd.argv)
                 else cmd for cmd in commands)  # Preserve command indices; unavailable nodes have no unit switch.
         except (KeyError, ValueError, OSError):

@@ -667,6 +667,28 @@ stages:
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1c_e4000 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
     → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → place_shaker → go_home_end'
+- id: episode_grasp_s_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  touches_real: true
+  needs:
+  - home_right
+  - cups
+  - head_home
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
+  title: '[에피소드] grasp_s_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+- id: episode_grasp_s_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  touches_real: true
+  needs:
+  - home_left
+  - cups
+  - head_home
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
+  title: '[에피소드] grasp_s_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
 - id: shutdown
   group: finish
   lane: rig
@@ -774,6 +796,8 @@ run:
     - episode_cocktail_1b#8
     - episode_cocktail_1c_e1000#8
     - episode_cocktail_1c_e4000#8
+    - episode_grasp_s_right#6
+    - episode_grasp_s_left#6
     - policy_place_right#1
     - policy_place_left#1
     - episode_pick_place_right#3
@@ -836,6 +860,12 @@ run:
     - episode_cocktail_1c_e4000#5
     - episode_cocktail_1c_e4000#6
     - episode_cocktail_1c_e4000#9
+    - episode_grasp_s_right#3
+    - episode_grasp_s_right#4
+    - episode_grasp_s_right#7
+    - episode_grasp_s_left#3
+    - episode_grasp_s_left#4
+    - episode_grasp_s_left#7
   - note: 남은 bag 기록 마무리(rh56f1_record.sh stop)
     argv:
     - bash
@@ -1912,7 +1942,7 @@ run:
     - --execute
     - --approve
     - pd_hand_path
-  - note: '[right] 저장 경로를 재생해도 되는가 — 팔이 차렷(경로 시작점 0.05 rad 안) · 경로가 지금 계약으로 만든 것 · 관절 상태가 살아 있음'
+  - note: '[right] 저장 경로를 재생해도 되는가 — 팔이 차렷(경로 시작점 0.15 rad 안) · 경로가 지금 계약으로 만든 것 · 관절 상태가 살아 있음'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/check_path_start.py'
@@ -1920,6 +1950,8 @@ run:
     - '{artifact:path_right}'
     - --contract
     - '{artifact:contract}'
+    - --tol
+    - '0.15'
   - note: '[right] 저장 경로를 pd 로 재생(약 15 s, 최대 0.3 rad/s) — 끝나면 이 팔의 episode stop 으로 pd 가 마지막 자세를 붙든다'
     argv:
     - python3
@@ -2285,7 +2317,7 @@ run:
     - --execute
     - --approve
     - pd_hand_path
-  - note: '[left] 저장 경로를 재생해도 되는가 — 팔이 차렷(경로 시작점 0.05 rad 안) · 경로가 지금 계약으로 만든 것 · 관절 상태가 살아 있음'
+  - note: '[left] 저장 경로를 재생해도 되는가 — 팔이 차렷(경로 시작점 0.15 rad 안) · 경로가 지금 계약으로 만든 것 · 관절 상태가 살아 있음'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/check_path_start.py'
@@ -2293,6 +2325,8 @@ run:
     - '{artifact:path_left}'
     - --contract
     - '{artifact:contract}'
+    - --tol
+    - '0.15'
   - note: '[left] 저장 경로를 pd 로 재생(약 15 s, 최대 0.3 rad/s) — 끝나면 이 팔의 episode stop 으로 pd 가 마지막 자세를 붙든다'
     argv:
     - python3
@@ -6007,6 +6041,294 @@ run:
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
     - episode_cocktail_1c_e4000
+  episode_grasp_s_right:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_s_right.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
+  - note: ★[에피소드 grasp_s_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 머리 깊이 노드(학생 입력 160x90 깊이 + RGB) — 묶음의 얼린 외부 파라미터 md5 를 검사하고, /head/joint_states 가 그 head_pose(± 4 틱) 밖이거나 낡으면 깊이를 내지 않는다(정책은 깊이 없음으로
+      멈춘다). 이미 떠 있으면 그대로
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/scripts/nodes/head_depth_node.py'
+    - --policy-dir
+    - '{repo}/deploy/policies/rh56f1/aglt/right_student1104e'
+    background: true
+  - note: '[right] rh_aglt_r 노드(학생 rh56f1/aglt/right_student1104e · 계약 rh56f1/aglt/right_approach_ap05) — 경로 S: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지 자리에
+      멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live(래치 ·
+      lift_hold 판정에만)'
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_student_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_right
+    - -p
+    - ns:=right
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - student_dir:={repo}/deploy/policies/rh56f1/aglt/right_student1104e
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/source240b_blue/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - hand_squeeze:=true
+    - -p
+    - max_episode_s:=30.0
+    background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+    argv:
+    - bash
+    - -lc
+    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
+      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_s_right
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{repo}/logs/cpu/episode_grasp_s_right.csv'
+    background: true
+  - note: 에피소드 실행기 episode_runner_right — grasp_s_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_s_right)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_right
+    - -p
+    - episode:=config/episodes/grasp_s_right.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_s_right#7
+    - episode_grasp_s_right#6
+    - episode_grasp_s_right#4
+    - episode_grasp_s_right#3
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_s_right
+  episode_grasp_s_left:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_s_left.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
+  - note: ★[에피소드 grasp_s_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 머리 깊이 노드(학생 입력 160x90 깊이 + RGB) — 묶음의 얼린 외부 파라미터 md5 를 검사하고, /head/joint_states 가 그 head_pose(± 4 틱) 밖이거나 낡으면 깊이를 내지 않는다(정책은 깊이 없음으로
+      멈춘다). 이미 떠 있으면 그대로
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/scripts/nodes/head_depth_node.py'
+    - --policy-dir
+    - '{repo}/deploy/policies/rh56f1/aglt/left_student1104e'
+    background: true
+  - note: '[left] rh_aglt_l 노드(학생 rh56f1/aglt/left_student1104e · 계약 rh56f1/aglt/left_approach_ap05) — 경로 S: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지 자리에
+      멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live(래치 ·
+      lift_hold 판정에만)'
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_student_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_left
+    - -p
+    - ns:=left
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - student_dir:={repo}/deploy/policies/rh56f1/aglt/left_student1104e
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/shaker_c_orange/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - hand_squeeze:=true
+    - -p
+    - max_episode_s:=30.0
+    background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+    argv:
+    - bash
+    - -lc
+    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
+      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied
+      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_s_left
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{repo}/logs/cpu/episode_grasp_s_left.csv'
+    background: true
+  - note: 에피소드 실행기 episode_runner_left — grasp_s_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_s_left)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_left
+    - -p
+    - episode:=config/episodes/grasp_s_left.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_s_left#7
+    - episode_grasp_s_left#6
+    - episode_grasp_s_left#4
+    - episode_grasp_s_left#3
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_s_left
   head_control:
   - note: 목 pan · tilt 변경 후 실측 정착 확인
     argv:

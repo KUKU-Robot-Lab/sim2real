@@ -1,0 +1,17 @@
+# 경로 S — right 손 source240(파란 병, FP++ source240b_blue). 깊이 학생 1104e(깊이 + RGB, arch v3)가 홈에서 접근 · 잡기를 한 정책으로 한다(11.05).
+#   컵 위치는 관측에 넣지 않는다(학생은 머리 깊이 · RGB 로 본다). FP++ 컵은 팔 들림 래치와 lift_hold 판정에만 쓴다.
+#   노드 = rh_aglt_student_node(.venv-student) + head_depth_node(묶음의 얼린 외부 파라미터, 목이 그 head_pose 일 때만 깊이를 낸다).
+#   policy = 홈 출발 계약(디코더 · 물체 · 시작 검사, ap05 계약). 끝 = 첫 목표 성공 또는 7 cm 위 쥠 유지(lift_hold).
+episode: {name: grasp_s_right, version: 1}
+objects:
+  CUP: {topic: /objects/source240b_blue/pose}
+policies:
+  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, student: rh56f1/aglt/right_student1104e}
+trajectories:
+  go_home: {kind: rehome, sides: [right]}
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 rehome으로 복구한다.
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  - {id: grasp_lift, type: policy, name: rh_aglt_r, target_object: CUP, policy_object: source240_real, expect: {right_hand: CUP}}
+  - {id: done, type: terminal, result: SUCCESS}

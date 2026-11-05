@@ -53,7 +53,10 @@ class PolicyPlan:
 
 
 def _node_max_s(b) -> float:
-    """정책 노드 한 번의 시간 한도 — 미션 생성기와 같은 식(approach_grasp.episode_s)."""
+    """정책 노드 한 번의 시간 한도 — 미션 생성기와 같은 식(approach_grasp.episode_s · ★11.05 학생 = sim 평가 에피소드 길이)."""
+    if getattr(b, "student", None):
+        from policy_control.student_chain import bundle_limits
+        return bundle_limits(b.student)[1]
     if getattr(b, "approach_grasp", None) is None:
         return 15.0
     from policy_control.approach_grasp import episode_s     # 무거운 의존은 경로 C 에서만

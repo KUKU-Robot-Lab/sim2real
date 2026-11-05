@@ -92,6 +92,9 @@ class Binding:
     #: ★11.04 aglt 만 — 팔 FK 손 보정 t = 카메라가 본 손 − FK 손 [x, y, z] (base m, 축마다 |값| ≤ 0.05). 접근 · 잡기 정책이 보는 컵 =
     #:   측정 컵 − t(노드 파라미터 cup_obs_offset_base_m). None = 0
     cup_obs_offset_base_m: tuple | None = None
+    #: ★11.05 aglt 만 — 깊이 학생 묶음 id(예 rh56f1/aglt/right_student1104e). 있으면 노드 = rh_aglt_student_node(접근부터 학생),
+    #:   policy = 홈 출발 계약(디코더 · 물체). approach_grasp · handoff 와 같이 쓰지 않는다
+    student: str | None = None
 
 
 @dataclass(frozen=True)
@@ -329,8 +332,11 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
                 off = tuple(float(v) for v in cup_obs_offset(off))
             except (ApproachGraspError, TypeError, ValueError) as exc:
                 raise EpisodeSpecError(f"policies.{role}: {exc}") from exc
+        student = b.get("student")
+        if student is not None and (b.get("kind") != "aglt" or ag is not None or not (isinstance(student, str) and student.strip())):
+            raise EpisodeSpecError(f"policies.{role}: student 는 aglt 정책의 학생 묶음 id 문자열(approach_grasp · handoff 없이)")
         pols[str(role)] = Binding(role=str(role), kind=str(b["kind"]), side=str(b["side"]), policy=b.get("policy"),
-                                  approach_grasp=ag, handoff=handoff, cup_obs_offset_base_m=off)
+                                  approach_grasp=ag, handoff=handoff, cup_obs_offset_base_m=off, student=student)
     trajs = {}
     for name, t in (raw.get("trajectories") or {}).items():
         if t.get("kind") not in TRAJ_KINDS:

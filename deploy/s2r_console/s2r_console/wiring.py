@@ -61,6 +61,7 @@ L_LAUNCH = -1                                    # 인지 런처는 카메라보
 #: 카메라와 FP++ 컨테이너가 도는 PC. 런처가 tailscale ssh 로 `scripts/vision/*.sh` 를 부른다.
 VISION_HOST = "vision-3090"
 PERCEPTION_STATUS = "/perception/status"
+HEAD_DEPTH_TOPICS = ("/head_depth/image", "/head_depth/rgb")   # scripts/nodes/head_depth_node.py OUT_DEPTH · OUT_RGB
 HEAD_TOPIC = "/head/joint_states"                # scripts/nodes/head_joint_publisher.py 의 DEFAULT_TOPIC
 _POUR_INPUT = {"arm": "arm", "ee": "hand", "tip_force": "force"}       # robot yaml 역할 → pour_node 가 status 로 부르는 이름
 
@@ -85,6 +86,8 @@ OBJECT_RELAY = "/episode/objects/{}/pose"        # episode_ros.OBJECT_RELAY — 
 POLICY_NODES = {
     "rh_aglt_node.py": ("rh_aglt_node", "집기 정책", (("cup_topic", "/objects/aglt_cup_s065/pose"),)),
     "rh_place_node.py": ("rh_place_node", "놓기 정책", (("cup_topic", "/objects/cyl60/pose"),)),
+    # ★11.05 경로 S — rh_aglt 와 같은 노드 이름 · 서비스, 관측에 머리 깊이(+ RGB)를 더 받는다(head_depth_node)
+    "rh_aglt_student_node.py": ("rh_aglt_node", "집기 정책(깊이 학생)", (("cup_topic", "/objects/aglt_cup_s065/pose"),)),
     # 10.17 사용자 결정 3: 화면 · 에피소드 · 보고서는 tilt(코드 모듈 pour_fj_node 이름은 그대로)
     "pour_fj_node.py": ("pour_fj_node", "tilt 정책", (("cup_src_topic", "/objects/cup_src/pose"),
                                                     ("cup_rcv_topic", "/objects/cup_rcv/pose"))),
@@ -394,8 +397,11 @@ def _policy_node(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
         for k in str(cmd.args.get("holders", "")).split(","):   # ★10.28 칵테일 — holders:=1,2 를 다 구독해 두고 job 마다 고른다
             if k.strip().isdigit() and k.strip() != holder:
                 g.need(HOLDER_TOPIC.format(k.strip()), "holder", "", box, [], STALE_MS, unit=key, how="link")
-    if cmd.name == "rh_aglt_node.py":
+    if cmd.name in ("rh_aglt_node.py", "rh_aglt_student_node.py"):
         g.need(f"{base}/goal", "goal", "", box, [], STALE_MS, unit=key, how="on_demand")
+    if cmd.name == "rh_aglt_student_node.py":
+        for t in HEAD_DEPTH_TOPICS:
+            g.need(t, "depth", "", box, [], STALE_MS, unit=key)
     g.makers.append((box, tuple(sides), key, str(cmd.args.get("episode_topic") or f"{base}/episode")))
 
 
@@ -674,13 +680,23 @@ def _head_publisher(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
     g.providers.setdefault(topic, box)
 
 
+def _head_depth(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
+    """★11.05 머리 깊이(학생 입력) — 정렬 깊이 · color 를 160x90 으로 줄이고, 목이 외부 파라미터 head_pose 밖이면 내지 않는다."""
+    box = g.box("head_depth", "머리 깊이 (head_depth)", L_SENSE, ros=["/head_depth"], unit=key,
+                note="학생 깊이 · RGB 160x90 — 목이 얼린 외부 파라미터 head_pose(± 4 틱) 밖이거나 목 각이 낡으면 보류")
+    for t in (*HEAD_DEPTH_TOPICS, "/head_depth/config"):
+        g.providers.setdefault(t, box)
+    for t in (*CAMERA_TOPICS[:2], HEAD_TOPIC):
+        g.need(t, "camera", "", box, [], STALE_MS, unit=key, how="link")
+
+
 #: 내는 쪽 — 받는 쪽이 누가 내는지 알아야 하므로 먼저, 미션 순서대로 그린다(인지 런처 → 수신기 → 물체 자세)
 _PROVIDERS = {"fake_plant.launch.py": _fake_plant, "fake_cup_pose_pub.py": _fake_cup, "openarm.bimanual.launch.py": _bringup,
               "dg5f_right_driver.launch.py": _hand_driver, "dg5f_left_driver.launch.py": _hand_driver,
               "head_joint_publisher.py": _head_publisher, "perception_launcher_node.py": _perception_launcher,
               "fpp_pose_rx.py": _fpp_rx, "object_pose_node.py": _object_pose, "cup_holder_pose_node.py": _cup_holders,
               "rh56f1_driver.py": _rh56f1_driver, "fake_rh56f1_hand.py": _rh56f1_driver,
-              "rh56f1_state_node.py": _rh56f1_state, "episode_runner_node.py": _episode_runner}
+              "rh56f1_state_node.py": _rh56f1_state, "episode_runner_node.py": _episode_runner, "head_depth_node.py": _head_depth}
 _HANDLERS = {"policy_chain.launch.py": _policy_chain, "pour_chain.launch.py": _pour_chain, "pour_guard_node.py": _pour_guard,
              "pd_controller.launch.py": _pd, **{name: _policy_node for name in POLICY_NODES}}
 

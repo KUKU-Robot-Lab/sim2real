@@ -1,0 +1,518 @@
+{
+ "side": "r",
+ "task": "open-rh_r_aglt-play-lstm",
+ "ckpt": "/home/oem/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_rcg04/nn/last_open-rh_r_aglt-lstm_ep_2800_rew_9215.9375.pth",
+ "run_copy": "/home/oem/rl_ws/our_source/student_grasp/1104e_main_r/s1/run",
+ "objects": [
+  "source240_cvx",
+  "source200_cvx",
+  "shaker_c_cvx"
+ ],
+ "xs": [
+  0.135,
+  0.1813,
+  0.2275,
+  0.2737,
+  0.32
+ ],
+ "ys": [
+  -0.265,
+  -0.1988,
+  -0.1325,
+  -0.0663,
+  0.0
+ ],
+ "cells": [
+  [
+   0.135,
+   -0.1988
+  ],
+  [
+   0.135,
+   -0.1325
+  ],
+  [
+   0.1813,
+   -0.1988
+  ],
+  [
+   0.1813,
+   -0.1325
+  ],
+  [
+   0.1813,
+   -0.0663
+  ],
+  [
+   0.2275,
+   -0.1988
+  ],
+  [
+   0.2275,
+   -0.1325
+  ],
+  [
+   0.2275,
+   -0.0663
+  ],
+  [
+   0.2737,
+   -0.1988
+  ],
+  [
+   0.2737,
+   -0.1325
+  ],
+  [
+   0.2737,
+   -0.0663
+  ],
+  [
+   0.32,
+   -0.1988
+  ],
+  [
+   0.32,
+   -0.1325
+  ],
+  [
+   0.32,
+   -0.0663
+  ]
+ ],
+ "dropped": [
+  [
+   0.135,
+   -0.265
+  ],
+  [
+   0.135,
+   -0.0663
+  ],
+  [
+   0.135,
+   0.0
+  ],
+  [
+   0.1813,
+   -0.265
+  ],
+  [
+   0.1813,
+   0.0
+  ],
+  [
+   0.2275,
+   -0.265
+  ],
+  [
+   0.2737,
+   -0.265
+  ],
+  [
+   0.32,
+   -0.265
+  ]
+ ],
+ "excluded": [
+  [
+   0.2275,
+   0.0
+  ],
+  [
+   0.2737,
+   0.0
+  ],
+  [
+   0.32,
+   0.0
+  ]
+ ],
+ "trials": 1,
+ "friction": 1.0,
+ "real": {
+  "cmd_delay_adr": "false",
+  "cmd_delay_adr_mix": "false",
+  "arm_cmd_delay_joint_steps": [
+   3.5,
+   3.2,
+   3.3,
+   2.3,
+   4.1,
+   8.6,
+   7.3
+  ],
+  "arm_cmd_delay_joint_jitter": "1",
+  "hand_cmd_delay_steps": [
+   4,
+   5
+  ],
+  "fpp_enable": "true",
+  "fpp_attach_enable": "false",
+  "fpp_ramp_steps": "0",
+  "adr_env_mix": "false",
+  "adr_start_increment": "0",
+  "adr_increment_interval": "1000000000",
+  "hand_adm_enable": "false",
+  "fpp_lat_steps": [
+   12,
+   18
+  ],
+  "fpp_pos_sigma": [
+   0.0003,
+   0.001
+  ],
+  "fpp_gap_p": [
+   0.0,
+   0.02
+  ],
+  "fpp_occl_p": "0.35",
+  "fpp_occl_radius_m": "0.2"
+ },
+ "arm_coulomb_min_nm": [
+  0.75,
+  0.75,
+  0.75,
+  0.75,
+  0.0,
+  0.0,
+  0.0
+ ],
+ "judge": "deploy",
+ "phys": {
+  "sim_substeps": "1",
+  "aglt_start": "ap",
+  "ap_ckpt": "/home/oem/rl_ws/sim2real/deploy/policies/rh56f1/aglt/right_approach_ap05/nn/last_open-rh_r_aglt-lstm_ep_2300_rew_2408.0603.pth",
+  "ap_start_frac": "1.0",
+  "ap_max_steps": "900",
+  "episode_length_s": "30.0",
+  "spawn_center": [
+   0.2275,
+   -0.1325
+  ],
+  "spawn_half": [
+   0.0925,
+   0.1325
+  ],
+  "newton_nconmax": "400",
+  "fpp_enable": "false",
+  "fpp_attach_enable": "false",
+  "obs_cup_z_shift": "0.0",
+  "perception_delay_max_steps": "0",
+  "adr_obs_noise_object_xyz_max": "0.0",
+  "adr_obs_noise_object_rot_max_deg": "0.0",
+  "ready_pre_phi_jitter_deg": "0.0"
+ },
+ "tol": 0.02,
+ "tol_extra": [
+  0.03
+ ],
+ "envs": [
+  {
+   "cup": "source240_cvx",
+   "cell": 0,
+   "x": 0.135,
+   "y": -0.1988,
+   "trial": 0
+  },
+  {
+   "cup": "source200_cvx",
+   "cell": 0,
+   "x": 0.135,
+   "y": -0.1988,
+   "trial": 0
+  },
+  {
+   "cup": "shaker_c_cvx",
+   "cell": 0,
+   "x": 0.135,
+   "y": -0.1988,
+   "trial": 0
+  },
+  {
+   "cup": "source240_cvx",
+   "cell": 1,
+   "x": 0.135,
+   "y": -0.1325,
+   "trial": 0
+  },
+  {
+   "cup": "source200_cvx",
+   "cell": 1,
+   "x": 0.135,
+   "y": -0.1325,
+   "trial": 0
+  },
+  {
+   "cup": "shaker_c_cvx",
+   "cell": 1,
+   "x": 0.135,
+   "y": -0.1325,
+   "trial": 0
+  },
+  {
+   "cup": "source240_cvx",
+   "cell": 2,
+   "x": 0.1813,
+   "y": -0.1988,
+   "trial": 0
+  },
+  {
+   "cup": "source200_cvx",
+   "cell": 2,
+   "x": 0.1813,
+   "y": -0.1988,
+   "trial": 0
+  },
+  {
+   "cup": "shaker_c_cvx",
+   "cell": 2,
+   "x": 0.1813,
+   "y": -0.1988,
+   "trial": 0
+  },
+  {
+   "cup": "source240_cvx",
+   "cell": 3,
+   "x": 0.1813,
+   "y": -0.1325,
+   "trial": 0
+  },
+  {
+   "cup": "source200_cvx",
+   "cell": 3,
+   "x": 0.1813,
+   "y": -0.1325,
+   "trial": 0
+  },
+  {
+   "cup": "shaker_c_cvx",
+   "cell": 3,
+   "x": 0.1813,
+   "y": -0.1325,
+   "trial": 0
+  },
+  {
+   "cup": "source240_cvx",
+   "cell": 4,
+   "x": 0.1813,
+   "y": -0.0663,
+   "trial": 0
+  },
+  {
+   "cup": "source200_cvx",
+   "cell": 4,
+   "x": 0.1813,
+   "y": -0.0663,
+   "trial": 0
+  },
+  {
+   "cup": "shaker_c_cvx",
+   "cell": 4,
+   "x": 0.1813,
+   "y": -0.0663,
+   "trial": 0
+  },
+  {
+   "cup": "source240_cvx",
+   "cell": 5,
+   "x": 0.2275,
+   "y": -0.1988,
+   "trial": 0
+  },
+  {
+   "cup": "source200_cvx",
+   "cell": 5,
+   "x": 0.2275,
+   "y": -0.1988,
+   "trial": 0
+  },
+  {
+   "cup": "shaker_c_cvx",
+   "cell": 5,
+   "x": 0.2275,
+   "y": -0.1988,
+   "trial": 0
+  },
+  {
+   "cup": "source240_cvx",
+   "cell": 6,
+   "x": 0.2275,
+   "y": -0.1325,
+   "trial": 0
+  },
+  {
+   "cup": "source200_cvx",
+   "cell": 6,
+   "x": 0.2275,
+   "y": -0.1325,
+   "trial": 0
+  },
+  {
+   "cup": "shaker_c_cvx",
+   "cell": 6,
+   "x": 0.2275,
+   "y": -0.1325,
+   "trial": 0
+  },
+  {
+   "cup": "source240_cvx",
+   "cell": 7,
+   "x": 0.2275,
+   "y": -0.0663,
+   "trial": 0
+  },
+  {
+   "cup": "source200_cvx",
+   "cell": 7,
+   "x": 0.2275,
+   "y": -0.0663,
+   "trial": 0
+  },
+  {
+   "cup": "shaker_c_cvx",
+   "cell": 7,
+   "x": 0.2275,
+   "y": -0.0663,
+   "trial": 0
+  },
+  {
+   "cup": "source240_cvx",
+   "cell": 8,
+   "x": 0.2737,
+   "y": -0.1988,
+   "trial": 0
+  },
+  {
+   "cup": "source200_cvx",
+   "cell": 8,
+   "x": 0.2737,
+   "y": -0.1988,
+   "trial": 0
+  },
+  {
+   "cup": "shaker_c_cvx",
+   "cell": 8,
+   "x": 0.2737,
+   "y": -0.1988,
+   "trial": 0
+  },
+  {
+   "cup": "source240_cvx",
+   "cell": 9,
+   "x": 0.2737,
+   "y": -0.1325,
+   "trial": 0
+  },
+  {
+   "cup": "source200_cvx",
+   "cell": 9,
+   "x": 0.2737,
+   "y": -0.1325,
+   "trial": 0
+  },
+  {
+   "cup": "shaker_c_cvx",
+   "cell": 9,
+   "x": 0.2737,
+   "y": -0.1325,
+   "trial": 0
+  },
+  {
+   "cup": "source240_cvx",
+   "cell": 10,
+   "x": 0.2737,
+   "y": -0.0663,
+   "trial": 0
+  },
+  {
+   "cup": "source200_cvx",
+   "cell": 10,
+   "x": 0.2737,
+   "y": -0.0663,
+   "trial": 0
+  },
+  {
+   "cup": "shaker_c_cvx",
+   "cell": 10,
+   "x": 0.2737,
+   "y": -0.0663,
+   "trial": 0
+  },
+  {
+   "cup": "source240_cvx",
+   "cell": 11,
+   "x": 0.32,
+   "y": -0.1988,
+   "trial": 0
+  },
+  {
+   "cup": "source200_cvx",
+   "cell": 11,
+   "x": 0.32,
+   "y": -0.1988,
+   "trial": 0
+  },
+  {
+   "cup": "shaker_c_cvx",
+   "cell": 11,
+   "x": 0.32,
+   "y": -0.1988,
+   "trial": 0
+  },
+  {
+   "cup": "source240_cvx",
+   "cell": 12,
+   "x": 0.32,
+   "y": -0.1325,
+   "trial": 0
+  },
+  {
+   "cup": "source200_cvx",
+   "cell": 12,
+   "x": 0.32,
+   "y": -0.1325,
+   "trial": 0
+  },
+  {
+   "cup": "shaker_c_cvx",
+   "cell": 12,
+   "x": 0.32,
+   "y": -0.1325,
+   "trial": 0
+  },
+  {
+   "cup": "source240_cvx",
+   "cell": 13,
+   "x": 0.32,
+   "y": -0.0663,
+   "trial": 0
+  },
+  {
+   "cup": "source200_cvx",
+   "cell": 13,
+   "x": 0.32,
+   "y": -0.0663,
+   "trial": 0
+  },
+  {
+   "cup": "shaker_c_cvx",
+   "cell": 13,
+   "x": 0.32,
+   "y": -0.0663,
+   "trial": 0
+  }
+ ],
+ "record": null,
+ "phys_th": {
+  "cup_speed": 3.0,
+  "cup_angvel": 30.0,
+  "contact_n": 200.0,
+  "contact_steps": 2,
+  "tip_pen_m": 0.01
+ },
+ "out": "/home/oem/rl_ws/our_source/student_grasp/1104e_main_r/s1/result.json",
+ "seed": 1,
+ "start": "ap",
+ "backend": "newton"
+}

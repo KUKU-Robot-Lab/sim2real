@@ -1,0 +1,24 @@
+# 1104e 잡기 학생(깊이 + RGB, arch v3) left — 학생 전용 배포 묶음(11.05). 경로는 이 폴더 기준.
+# head_depth_node --policy-dir · StudentPolicy.from_dir 가 읽고, md5 가 하나라도 다르면 시작하지 않는다.
+# 외부 파라미터는 학습 때 값을 얼린 사본이다. config/global_camera_extrinsics_* (deploy 세션이 다시 재는 파일)를 읽지 않는다.
+kind: student_depth_rgb
+side: left
+task: rh_aglt_l
+one_obj: shaker_c_cvx
+rgb: true
+ckpt:
+  path: student/student_it02800.pt
+  md5: 15b640369c386c3a65ba949b9465c2c4
+  it: 2800
+  arch: v3
+extrinsics:
+  path: camera/extrinsics_r20u5_40e6496.yaml
+  md5: 624677fee7e8ff6502f33a3ed8a96a1f
+  from: sim2real 40e6496:config/global_camera_extrinsics_arm4090_r20u5.yaml
+hdgp:
+  commit: 0bd455a86537ee3f2d1f8c34d7199b5073c610b3
+  snapshot_cfg: deploy/policy_control/config/hdgp_student_snapshot.yaml
+source:
+  host: server
+  run: ~/rl_ws/our_source/student_grasp/1104e_main_l/s1
+  spec: student/spec.json

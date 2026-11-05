@@ -74,7 +74,8 @@ def test_the_rh56f1_real_mission_draws_every_node_once_and_knows_every_command(r
     assert not {n: c for n, c in ros.items() if c > 1}                        # 같은 ROS 노드를 두 상자가 주장하지 않는다
     assert len({b.title for b in d.boxes}) == len(d.boxes)
     # ★10.19 팔마다 실행기 상자 둘(좌우 동시 실행) → 22 · ★10.28 칵테일 분홍 FP++ 묶음(source240p) 컨테이너 상자 하나 → 23
-    assert len(d.boxes) <= 23, [b.id for b in d.boxes]
+    # ★11.05 경로 S 머리 깊이(head_depth) 상자 하나 → 24
+    assert len(d.boxes) <= 24, [b.id for b in d.boxes]
 
 
 def test_no_wire_is_drawn_twice(real):
@@ -101,6 +102,7 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                "episode_grasp_d_right#3",                       # ★10.20 경로 D(1-B 접근 → rcg03)
                                "episode_grasp_e_right#3",                       # ★10.20 밤 경로 E(ap05 → rcg03 넘김)
                                "episode_grasp_f_right#3",                       # ★10.21 경로 F(ap05 → rcg04 넘김)
+                               "episode_grasp_s_right#4",                       # ★11.05 경로 S(깊이 학생, 머리 깊이 노드가 #3)
                                "episode_pick_place_f_right#3",                  # ★10.22 경로 F + 놓기(newton_05)
                                "episode_grasp2tilt_f_240#3",                    # ★10.27 실기 2단계 grasp2tilt(컵 240)
                                "episode_tilt_base_d#3",                         # ★10.20 경로 A 폐지 → tilt 경로 D(ap05 → rcg03)
@@ -125,6 +127,7 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                                               f"episode_grasp_d_{side}#6",   # ★10.20 경로 D(aglt 노드 하나)
                                                               f"episode_grasp_e_{side}#6",   # ★10.20 밤 경로 E(aglt 노드 하나, 넘김)
                                                               f"episode_grasp_f_{side}#6",   # ★10.21 경로 F(경로 E + rcg04)
+                                                              f"episode_grasp_s_{side}#7",   # ★11.05 경로 S(머리 깊이 + 학생 노드)
                                                               f"episode_pick_place_f_{side}#7"}   # ★10.22 경로 F + 놓기
 
 

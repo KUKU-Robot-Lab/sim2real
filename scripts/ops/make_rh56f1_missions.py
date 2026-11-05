@@ -35,6 +35,9 @@ from policy_control.ros_domain import REAL_DOMAIN  # noqa: E402  config/ros_doma
 OUT = {"real": REPO / "config" / "mission_rh56f1_control.yaml", "fake": REPO / "config" / "mission_rh56f1_fake.yaml"}
 SIDES = ("right", "left")
 PC = "{repo}/deploy/policy_control"
+# 홈 경로 시작점 허용 [rad]. 11.05 사용자: 차렷에서 조금 벗어나도 replay_to_pd 진입 램프가 시작점으로 돌린다 —
+#   0.05 는 손으로 맞춘 차렷 오차보다 좁다(r_aj_6 -0.052 로 거부). 끝점 검사(--at end) · rehome 은 기본 0.05 그대로.
+HOME_START_TOL = 0.15
 #: 방향 확인 한 축씩 — 네 손가락은 굽힘 쪽(+), 엄지 굽힘 +, 엄지 회전은 지금에서 − (편 손 1.57 에서 grip 1.20 쪽)
 PROBES = (("index_1", "0.3"), ("middle_1", "0.3"), ("ring_1", "0.3"), ("pinky_1", "0.3"),
           ("thumb_2", "0.15"), ("thumb_1", "-0.3"))
@@ -93,7 +96,9 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             #   (실행기 episode_ros.job_params → 노드 reset). 분홍 FP++ = 분홍만 든 묶음 source240p
             "cocktail_1", "cocktail_1b",
             # ★11.02 사용자 지시(sim_e2e 경유) oneshot 세팅 실기 — 1b v5 + 놓기 정책 right_n10_e1000|e4000 · left_n09_e3800(cup_obs live)
-            "cocktail_1c_e1000", "cocktail_1c_e4000")
+            "cocktail_1c_e1000", "cocktail_1c_e4000",
+            # ★11.05 경로 S — 깊이 학생 1104e(깊이 + RGB)가 홈에서 탁자 위 컵 하나를 잡고 들기(lift_hold), 팔마다 따로
+            "grasp_s_right", "grasp_s_left")
 #: ★10.20 사용자 "영상은 필요 없음. 일단 기본 off" — 카메라 영상 · FP++ 실시간 좌표 기록(vision-3090)과 끝난 뒤 보고서 영상
 #   만들기(episode_media.py)를 기본으로 끈다. 10.20 실기: 보고서 영상 정리가 옛 회까지 다시 가져오며 6 분 넘게 팔 작업을 붙잡아
 #   rehome · tilt_now 승인이 막혔다. 켜려면 True 로 바꾸고 이 생성기를 다시 돌린다(미션 YAML 이 바뀐다).
@@ -474,7 +479,9 @@ def _stages(kind: str) -> list[dict]:
                    # ★10.17 배치 기록(snapshot)이 없는 에피소드(경로 B, 사람이 컵을 댄다)는 FP++ 컵 단계를 기다리지 않는다
                    # ★11.03 사용자 "홀더는 고정이다": cup_holders 단계를 기다리지 않는다 — 저장된 holder_poses 파일을 쓰고,
                    #   파일이 없거나 홀더가 빠지면 시작 검사(episode_run.py --plan --require-holders)가 이유를 찍고 막는다
-                   "needs": [*(f"home_{s}" for s in sides), *(["cups"] if perceives else [])],
+                   # ★11.05 경로 S: 학생은 camset 머리 시야로 배웠다 — head_home 이 그 자세로 맞춘 뒤에만(깊이 노드도 자세 밖이면 깊이를 막는다)
+                   "needs": [*(f"home_{s}" for s in sides), *(["cups"] if perceives else []),
+                             *(["head_home"] if any(b.student for b in ep.policies.values()) else [])],
                    "needs_why": "에피소드는 홈(rh_aglt 시작 자세)" + (" · FP++ 컵" if perceives else "") + " 위에서 노드를 잇는다"
                                 + (f" · 홀더는 저장된 {ep.holder_poses}(없으면 시작 검사가 막는다)" if ep.holders else ""),
                    "title": f"[에피소드] {name} — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 "
@@ -881,6 +888,32 @@ def _place_contract(contract: Path) -> dict:
     return doc
 
 
+def _student_cmds(b, contract: str, robot: str, cup_topic: str, squeeze: bool) -> list:
+    """경로 S 노드 둘 — head_depth_node(묶음의 얼린 외부 파라미터 · 목이 그 head_pose 일 때만 깊이) + rh_aglt_student_node."""
+    if REMOTE_PERCEPTION:   # shortcut: 깊이 노드는 카메라와 같은 PC(localhost 영상)에서만 — 카메라를 다른 PC 로 옮기면 그 PC 용 실행을 만든다
+        raise SystemExit(f"경로 S({b.student})는 카메라가 이 PC 에 있는 스테이션만 — ROBOT_PC={ROBOT_PC}")
+    from policy_control.student_chain import bundle_limits
+    sdir = f"{{repo}}/deploy/policies/{b.student}"
+    ap_s, max_s = bundle_limits(b.student)
+    hold = LIFT_HOLD_TICKS[b.side]
+    note = (f"경로 S: 홈에서 접근 · 잡기(접근 {ap_s:g} s 안에 사전 파지 자리에 멈추지 못하면 멈춤) → "
+            f"첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 {hold / 60:g} s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤"
+            + (" · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)" if squeeze else ""))
+    return [
+        _cmd("머리 깊이 노드(학생 입력 160x90 깊이 + RGB) — 묶음의 얼린 외부 파라미터 md5 를 검사하고, /head/joint_states 가 "
+             "그 head_pose(± 4 틱) 밖이거나 낡으면 깊이를 내지 않는다(정책은 깊이 없음으로 멈춘다). 이미 떠 있으면 그대로",
+             ["{repo}/.venv-student/bin/python", "{repo}/scripts/nodes/head_depth_node.py", "--policy-dir", sdir],
+             background=True),
+        _cmd(f"[{b.side}] {b.role} 노드(학생 {b.student} · 계약 {b.policy}) — {note} · 컵 = FP++ live(래치 · lift_hold 판정에만)",
+             ["{repo}/.venv-student/bin/python", f"{PC}/policy_control/rh_aglt_student_node.py", "--ros-args",
+              "-r", f"__node:=rh_aglt_node_{b.side}", "-p", f"ns:={b.side}", "-p", f"contract:={contract}",
+              "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", f"student_dir:={sdir}",
+              "-p", "goal_max:=1", "-p", "freeze_rule:=lift_hold", "-p", "freeze_lift_m:=0.07", "-p", f"freeze_hold_steps:={hold}",
+              "-p", f"cup_topic:={cup_topic}", *AGLT_LIVE_ARGS, *(["-p", "hand_squeeze:=true"] if squeeze else []),
+              "-p", f"max_episode_s:={max_s:.1f}"], background=True),
+    ]
+
+
 def _episode_run(name: str, real: bool) -> list:
     """에피소드 단계: (fake 컵 · 홀더) → 정책 노드들 → episode_runner_node → 상황판에서 진행(수동 확인) → 내린다."""
     from policy_control import policy_registry as R
@@ -990,6 +1023,9 @@ def _episode_run(name: str, real: bool) -> list:
             # ★10.19 사용자: "sim 은 세게 쥐면 물리가 터져 적당히 쥐게 학습했다 — 실기는 제어로 더 세게"(rh_aglt.GripAssist D).
             #   정책이 쥐는 에피소드(제자리 들기 · 경로 D)만. 경로 C 는 닫기가 스크립트라 끈다.
             squeeze = lift_only and (b.approach_grasp is None or bool(b.handoff))
+            if b.student:                               # ★11.05 경로 S — 깊이 학생(1104e)이 홈에서 접근 · 잡기, 컵은 관측에 없음
+                cmds.extend(_student_cmds(b, contract, robot, _live(ep.objects[obj]["topic"]), squeeze))
+                continue
             if squeeze:
                 end_note += " · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)"
             cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — {end_note} · 컵 = FP++ live"
@@ -1140,8 +1176,9 @@ def _home(s: str) -> list[dict]:
              execute_args=["--execute", "--approve", "pd_engage"]),
         _cmd(f"[{s}] 손을 차렷 손(주먹)으로(pd/hand_path) — 네 손가락 1.45 · 엄지 대향 0.8 · 굽힘 0.3. 홈 경로는 이 손으로 계획했다",
              ctl("pd_hand_path", "--service-timeout", "15"), execute_args=["--execute", "--approve", "pd_hand_path"]),
-        _cmd(f"[{s}] 저장 경로를 재생해도 되는가 — 팔이 차렷(경로 시작점 0.05 rad 안) · 경로가 지금 계약으로 만든 것 · 관절 상태가 살아 있음",
-             ["python3", f"{PC}/tools/check_path_start.py", "--npz", f"{{artifact:path_{s}}}", "--contract", "{artifact:contract}"]),
+        _cmd(f"[{s}] 저장 경로를 재생해도 되는가 — 팔이 차렷(경로 시작점 {HOME_START_TOL} rad 안) · 경로가 지금 계약으로 만든 것 · 관절 상태가 살아 있음",
+             ["python3", f"{PC}/tools/check_path_start.py", "--npz", f"{{artifact:path_{s}}}", "--contract", "{artifact:contract}",
+              "--tol", str(HOME_START_TOL)]),
         _cmd(f"[{s}] 저장 경로를 pd 로 재생(약 15 s, 최대 0.3 rad/s) — 끝나면 이 팔의 episode stop 으로 pd 가 마지막 자세를 붙든다",
              ["python3", f"{PC}/tools/replay_to_pd.py", "--npz", f"{{artifact:path_{s}}}", "--joints", joints,
               "--rate-scale", "1.0"], execute_args=["--execute"]),
