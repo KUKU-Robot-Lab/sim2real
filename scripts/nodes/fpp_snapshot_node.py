@@ -48,6 +48,21 @@ LIVE_RETRY_S = 30.0       # 추적 중 못 찾은 물체를 다시 찾는 간격
 CMD_TOPIC = "/perception_plus_plus/snapshot/cmd"
 
 
+def image_qos_spec(text: str | None) -> tuple[bool, int]:
+    """FPP_IMAGE_QOS("sensor" | "reliable" | "reliable:<depth>") → (reliable, history depth). 11.05 끊김 실험용.
+    sensor = 지금까지(qos_profile_sensor_data, BEST_EFFORT depth 5). reliable 기본 depth 1 — 밀리면 옛 프레임이 쌓여 늦는다."""
+    text = (text or "sensor").strip().lower()
+    if text == "sensor":
+        return False, 5
+    kind, _, depth = text.partition(":")
+    if kind != "reliable":
+        raise ValueError(f"FPP_IMAGE_QOS={text!r} — sensor | reliable[:depth]")
+    n = int(depth) if depth else 1
+    if n < 1:
+        raise ValueError(f"FPP_IMAGE_QOS depth {n} < 1")
+    return True, n
+
+
 def load_config(path: str | Path) -> dict:
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     objs = raw.get("objects")
@@ -75,7 +90,9 @@ def main(argv=None) -> None:
     from geometry_msgs.msg import PoseStamped
     from message_filters import ApproximateTimeSynchronizer, Subscriber
     from rclpy.node import Node
-    from rclpy.qos import qos_profile_sensor_data
+    import os
+
+    from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
     from sensor_msgs.msg import CameraInfo, Image
     from std_msgs.msg import String
 
@@ -118,15 +135,19 @@ def main(argv=None) -> None:
             self.pubs = {n: self.create_publisher(PoseStamped, o["pose_topic"], 10) for n, o in objects.items()}
             self.live_pubs = {n: self.create_publisher(PoseStamped, o["pose_topic"].replace("/pose", "/live_pose"), 10)
                               for n, o in objects.items()}
-            self.live = {"name": None, "init": False, "prev": None, "invalid": 0, "ok": False, "why": "", "n": 0}
+            self.live = {"name": None, "init": False, "prev": None, "invalid": 0, "ok": False, "why": "", "n": 0,
+                         "resets": 0, "steps": 0, "step_s": 0.0}
             self.status_pub = self.create_publisher(String, STATUS_TOPIC, 10)
             self.create_subscription(String, CMD_TOPIC, self._on_cmd, 10)
-            subs = [Subscriber(self, Image, cfg.get("rgb_topic", "/camera/camera/color/image_raw"),
-                               qos_profile=qos_profile_sensor_data),
+            reliable, depth = image_qos_spec(os.environ.get("FPP_IMAGE_QOS"))
+            self.image_qos = f"reliable:{depth}" if reliable else "sensor"
+            img_qos = QoSProfile(depth=depth, history=HistoryPolicy.KEEP_LAST,
+                                 reliability=ReliabilityPolicy.RELIABLE) if reliable else qos_profile_sensor_data
+            subs = [Subscriber(self, Image, cfg.get("rgb_topic", "/camera/camera/color/image_raw"), qos_profile=img_qos),
                     Subscriber(self, Image, cfg.get("depth_topic", "/camera/camera/aligned_depth_to_color/image_raw"),
-                               qos_profile=qos_profile_sensor_data),
+                               qos_profile=img_qos),
                     Subscriber(self, CameraInfo, cfg.get("camera_info_topic", "/camera/camera/color/camera_info"),
-                               qos_profile=qos_profile_sensor_data)]
+                               qos_profile=img_qos)]
             self.sync = ApproximateTimeSynchronizer(subs, 10, 0.04)
             self.sync.registerCallback(self._on_frame)
             self.create_timer(1.0 / float(cfg.get("republish_hz", 5.0)), self._republish)
@@ -188,6 +209,14 @@ def main(argv=None) -> None:
             frame, seq = self._next_frame(seq, timeout=1.0)
             if frame is None:
                 return seq
+            t0 = time.monotonic()
+            try:
+                return self._track_frame(frame, seq)
+            finally:        # 11.05 끊김 가르기: 처리 시간(상한) · 입력(frames) · 재초기화(resets)를 상태에 싣는다
+                self.live["steps"] += 1
+                self.live["step_s"] += time.monotonic() - t0
+
+        def _track_frame(self, frame, seq: int) -> int:
             name = self.live["name"]
             o = objects[name]
             try:
@@ -210,12 +239,13 @@ def main(argv=None) -> None:
                     if self.live["invalid"] >= 3:
                         self.adapter.reset()
                         self.live["init"] = False
+                        self.live["resets"] += 1
                     return seq
                 self.live.update(prev=result, invalid=0, ok=True, why="", n=self.live["n"] + 1)
                 self._publish_live(name, result.object_to_camera, frame.timestamp_ns)
             except Exception as exc:  # noqa: BLE001 — 추적이 깨져도 찍은 좌표 · 노드는 산다
                 self.adapter.reset()
-                self.live.update(init=False, ok=False, why=f"{type(exc).__name__}: {exc}"[:120])
+                self.live.update(init=False, ok=False, why=f"{type(exc).__name__}: {exc}"[:120], resets=self.live["resets"] + 1)
             return seq
 
         def _publish_live(self, name: str, T, stamp_ns: int) -> None:
@@ -384,8 +414,9 @@ def main(argv=None) -> None:
 
         def _publish_status(self) -> None:
             with self.lock:
-                live = {k: self.live[k] for k in ("name", "ok", "why", "n", "invalid")}
-                body = {"group": group_name, "live": live, "ok": not self.pending and not self.error, "generation": self.generation,
+                live = {k: self.live[k] for k in ("name", "ok", "why", "n", "invalid", "resets", "steps")}
+                live["step_s"] = round(self.live["step_s"], 3)
+                body = {"group": group_name, "live": live, "frames": self.frame_seq, "image_qos": self.image_qos,"ok": not self.pending and not self.error, "generation": self.generation,
                         "cmds": self.cmds, "up_s": round(time.monotonic() - self.t_boot, 1),
                         "pending": sorted(self.pending), "error": self.error,
                         "objects": dict(self.info), "candidates": self.candidates}
