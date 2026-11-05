@@ -23,14 +23,14 @@ EXTRINSICS = STUDENT / "camera/extrinsics_r20u5_40e6496.yaml"      # 학습 때 
 def test_to_small_matches_real_depth():
     rng = np.random.default_rng(0)
     d = rng.integers(200, 1500, size=(720, 1280), dtype=np.uint16)
-    d[rng.random(d.shape) < 0.2] = 0          # 흩어진 구멍
+    d[rng.random(d.shape) < 0.3] = 0          # 흩어진 구멍 30 %
     d[:8, :8] = 0                             # 블록 전체 구멍 → 0
     d[8:16, :8] = 1000
     d[8:13, :8] = 0                           # 유효 24/64 < 0.5 → 0
     out = hdn.to_small(d, hdn.real_depth.BLOCK, hdn.real_depth.MIN_VALID)
-    ref = hdn.real_depth.block_median(d.astype(np.float32) / 1000.0)
+    ref = hdn.real_depth.real_like(d.astype(np.float32) * 1e-3)    # 학습 경로: mm 반올림 → 블록 중앙값
     assert out.shape == (90, 160) and out.dtype == np.float32
-    np.testing.assert_allclose(out, ref, rtol=0, atol=1e-6)
+    np.testing.assert_array_equal(out, ref)
     assert out[0, 0] == 0.0 and out[1, 0] == 0.0
     assert (out > 0).mean() > 0.9
 
@@ -58,7 +58,7 @@ def test_floor_cut_matches_real_depth():
     cut = rd.floor_cut_frame(d, rd.D435I_K_1103, extr, hdn.TABLE_Z, rd.FLOOR_MARGIN_M)
     assert cut.dtype == np.uint16 and (cut[below] == 0).all() and (cut[~below] == d[~below]).all()
     out = hdn.to_small(d, rd.BLOCK, rd.MIN_VALID, hdn.make_cut(extr))
-    np.testing.assert_array_equal(out, rd.block_median(cut.astype(np.float32) * 1e-3, rd.BLOCK, rd.MIN_VALID))
+    np.testing.assert_array_equal(out, rd.block_median(rd.mm_quantize(cut.astype(np.float32) * 1e-3), rd.BLOCK, rd.MIN_VALID))
     assert not np.array_equal(out, hdn.to_small(d, rd.BLOCK, rd.MIN_VALID))
 
 
@@ -129,7 +129,8 @@ def test_rgb_to_small_is_block_mean_in_rgb_order():
     np.testing.assert_allclose(out, ref, rtol=0, atol=1e-6)
     bgr = hdn.rgb_to_small(encoding="bgr8", block=8, **{**f, "data": c[..., ::-1].copy().tobytes()})
     np.testing.assert_allclose(bgr, out, rtol=0, atol=1e-6)
-    for bad, match in [({"encoding": "mono8"}, "encoding"), ({"step": 1280}, "바이트"), ({"width": 640, "step": 1920}, "1280x720")]:
+    for bad, match in [({"encoding": "mono8"}, "encoding"), ({"step": 1280}, "바이트"), ({"width": 640, "step": 1920}, "1280x720"),
+                       ({"block": 7}, "정수배")]:
         with pytest.raises(hdn.FrameError, match=match):
             hdn.rgb_to_small(**{**f, "encoding": "rgb8", "block": 8, **bad})
 
@@ -139,6 +140,108 @@ def test_nearest_color_pairs_within_slop_only():
     assert hdn.nearest_color(buf, 1_030_000_000) == "b"
     assert hdn.nearest_color(buf, 1_000_000_000 - 10_000_000) == "a"
     assert hdn.nearest_color(buf, 1_100_000_000) is None and hdn.nearest_color([], 0) is None
+
+
+def _img(t_ns, enc, nbytes):
+    from types import SimpleNamespace as NS
+    return NS(header=NS(stamp=NS(sec=t_ns // 10**9, nanosec=t_ns % 10**9)), height=720, width=1280,
+              encoding=enc, step=nbytes // 720, data=bytes(nbytes))
+
+
+def _depth_msg(t_ns):
+    return _img(t_ns, "16UC1", 1280 * 720 * 2)
+
+
+def _color_msg(t_ns):
+    return _img(t_ns, "rgb8", 1280 * 720 * 3)
+
+
+def _node(monkeypatch):
+    """rclpy 없이 HeadDepth 콜백만 돌린다. 발행 msg 와 경고를 모은다."""
+    from collections import deque
+    from types import SimpleNamespace as NS
+    out, warns = [], []
+    pub = NS(publish=out.append)
+    info = NS(distortion_model="plumb_bob", d=[], k=np.eye(3).ravel().tolist())
+    h = object.__new__(hdn.HeadDepth)
+    h.__dict__.update(node=NS(get_clock=lambda: NS(now=lambda: NS(nanoseconds=0))), args=NS(block=8, min_valid=0.5),
+                      cut=None, log=NS(warning=lambda m, **k: warns.append(m), error=lambda m, **k: warns.append(m)),
+                      Image=lambda: NS(), CameraInfo=lambda: NS(), info=info, info_ok=True, lat_ms=[],
+                      pending=None, pending_t=0.0, last_ns=None, head_pose=None, head_deg=None, head_t=None,
+                      rgb=True, color=deque(maxlen=hdn.COLOR_BUF), pub=pub, pub_rgb=pub, pub_info=NS(publish=lambda m: None))
+    monkeypatch.setattr(hdn, "head_block", lambda *a: None)
+    return h, out, warns
+
+
+T0 = 5 * 10**9
+DT = 33_333_333
+
+
+def test_depth_before_its_color_waits_then_publishes(monkeypatch):
+    """짝 color 보다 먼저 온 깊이는 버리지 않고 color 가 오면 낸다. color 가 이미 지나갔으면 버린다."""
+    import array
+    h, out, _ = _node(monkeypatch)
+    h._color(_color_msg(T0 - DT))                 # 앞 프레임 color
+    h._depth(_depth_msg(T0))                      # 짝 color 아직 없음 → 대기
+    assert out == [] and h.pending is not None
+    h._color(_color_msg(T0))
+    assert [m.encoding for m in out] == ["32FC3", "32FC1"] and h.pending is None
+    assert all(isinstance(m.data, array.array) for m in out)    # bytes 대입은 rclpy 가 원소별 검사해 느리다
+    h._color(_color_msg(T0 + 3 * DT))
+    h._depth(_depth_msg(T0 + DT))                 # 짝 color 는 이미 지나감 → 버림
+    assert len(out) == 2 and h.pending is None
+
+
+def test_color_never_comes_warns_and_drops(monkeypatch):
+    h, out, warns = _node(monkeypatch)
+    for i in range(3):
+        h._depth(_depth_msg(T0 + i * DT))         # color 가 한 번도 안 옴
+    assert out == [] and _ns_of(h.pending) == T0 + 2 * DT
+    assert sum("짝 없이 깊이를 버린다" in w for w in warns) == 2
+
+
+def test_next_depth_replaces_pending_and_late_pending_expires(monkeypatch):
+    h, out, warns = _node(monkeypatch)
+    h._color(_color_msg(T0 - DT))
+    h._depth(_depth_msg(T0))
+    h._depth(_depth_msg(T0 + DT))                 # 앞 것은 사유와 함께 버린다
+    assert _ns_of(h.pending) == T0 + DT and any("다음 깊이가 왔다" in w for w in warns)
+    h._depth(_depth_msg(T0))                      # 보류 중인 것보다 이른 깊이 → 버림, 보류는 그대로
+    assert _ns_of(h.pending) == T0 + DT and out == []
+    h.pending_t -= 1.0                            # 보류가 PEND_MAX_S 를 넘김
+    h._color(_color_msg(T0 - DT // 2))            # 짝이 아닌 color → 보류 깊이를 버린다
+    assert h.pending is None and any("넘게 보류" in w for w in warns) and out == []
+
+
+def test_published_stamps_strictly_increase(monkeypatch):
+    h, out, warns = _node(monkeypatch)
+    for t in [T0, T0 + DT, T0 + 2 * DT]:
+        h._color(_color_msg(t))
+    for t in [T0 + DT, T0, T0 + DT, T0 + 2 * DT]:   # 역행 · 중복 stamp 섞음
+        h._depth(_depth_msg(t))
+    got = [_ns_of(m) for m in out if m.encoding == "32FC1"]
+    assert got == [T0 + DT, T0 + 2 * DT]
+    assert sum("이르거나 같아" in w for w in warns) == 2
+
+
+def _ns_of(m):
+    return m.header.stamp.sec * 10**9 + m.header.stamp.nanosec
+
+
+def test_torch_block_median_equals_numpy_on_bad_values():
+    """노드는 hdgp block_median 의 torch 경로를 쓴다. 학습 쪽 numpy 경로와 비트까지 같아야 한다."""
+    import torch
+    rd = hdn.real_depth
+    rng = np.random.default_rng(3)
+    m = rng.uniform(0.2, 1.5, size=(720, 1280)).astype(np.float32)
+    m[rng.random(m.shape) < 0.3] = 0.0            # 구멍 30 %
+    for v in (np.nan, np.inf, -np.inf, -0.5):
+        m[rng.random(m.shape) < 0.02] = v
+    m[:8, :8] = np.nan                            # 블록 전체가 비유효
+    m[8:16, :8] = -1.0
+    got = rd.block_median(torch.from_numpy(m), rd.BLOCK, rd.MIN_VALID).numpy()
+    np.testing.assert_array_equal(got, rd.block_median(m, rd.BLOCK, rd.MIN_VALID))
+    assert np.isfinite(got).all() and (got >= 0).all() and got[0, 0] == 0 and got[1, 0] == 0
 
 
 def test_extrinsics_must_be_frozen_and_match(tmp_path):

@@ -37,6 +37,7 @@
 from __future__ import annotations
 
 import argparse
+import array
 import hashlib
 import json
 import sys
@@ -44,7 +45,9 @@ import time
 from collections import deque
 from pathlib import Path
 
+import cv2
 import numpy as np
+import torch
 
 SRC_DEPTH = "/camera/camera/aligned_depth_to_color/image_raw"
 SRC_INFO = "/camera/camera/color/camera_info"
@@ -60,6 +63,7 @@ LOG_S = 5.0          # 오류 · 경고 throttle, 지연 통계 주기 [s]
 INFO_WAIT_S = 3.0    # 시작 뒤 이 시간 안에 camera_info 가 없으면 warn
 RGB_SLOP_S = 0.5 / 30.0   # 깊이 · color stamp 짝 허용(30 Hz 반 프레임)
 COLOR_BUF = 4
+PEND_MAX_S = max(RGB_SLOP_S, 1 / 30.0)   # 짝 color 를 기다리는 최대 시간(한 프레임)
 HEAD_TOPIC = "/head/joint_states"
 HEAD_MAX_AGE_S = 1.0      # object_pose_node --head-max-age 기본과 같다
 
@@ -118,10 +122,11 @@ def check_info(width: int, height: int, k) -> tuple[bool, str]:
 
 def to_small(d_mm: np.ndarray, block: int, min_valid: float, cut: tuple | None = None) -> np.ndarray:
     """(H, W) uint16 mm 깊이 → (바닥 컷, cut = make_cut(...) 이 있을 때) → (H/block, W/block) float32 m 블록 중앙값(0 = 구멍)."""
-    m = d_mm.astype(np.float32) * 1e-3
+    m = d_mm.astype(np.float32) / np.float32(1000.0)   # real_depth.mm_quantize 와 같은 나눗셈(* 1e-3 은 1 ulp 다르다)
     if cut is not None:
         m = real_depth.floor_cut(m, *cut)
-    return real_depth.block_median(m, block, min_valid)
+    # 같은 hdgp block_median 의 torch 경로(값 동일, 시험이 대조). numpy 경로는 1280x720 에 16 ms 라 30 Hz 를 못 맞춘다(11.05)
+    return real_depth.block_median(torch.from_numpy(m), block, min_valid).numpy()
 
 
 class FrameError(ValueError):
@@ -150,10 +155,19 @@ def rgb_to_small(height: int, width: int, encoding: str, step: int, data, block:
     if int(step) != int(width) * 3 or len(data) != int(step) * int(height):
         raise FrameError(f"color 바이트 {len(data)} · step {step} ≠ {width}x{height}x3")
     h, w, b = int(height), int(width), int(block)
-    x = np.frombuffer(data, np.uint8).reshape(h, w, 3).astype(np.float32) / 255.0
+    if h % b or w % b:
+        raise FrameError(f"color {w}x{h} 가 블록 {b} 의 정수배가 아니다(INTER_AREA ≠ 블록 평균)")
+    x = np.frombuffer(data, np.uint8).reshape(h, w, 3).astype(np.float32)
+    # INTER_AREA 는 정수배 축소에서 블록 평균과 같다(float 반올림 차 < 1e-6). numpy reshape 평균은 12 ms(11.05)
+    x = cv2.resize(x, (w // b, h // b), interpolation=cv2.INTER_AREA) / np.float32(255.0)
     if encoding == "bgr8":
         x = x[..., ::-1]
-    return np.ascontiguousarray(x.reshape(h // b, b, w // b, b, 3).mean((1, 3), dtype=np.float32))
+    return np.ascontiguousarray(x)
+
+
+def _ns(msg) -> int:
+    st = msg.header.stamp
+    return st.sec * 10**9 + st.nanosec
 
 
 def nearest_color(buf, stamp_ns: int, slop_s: float = RGB_SLOP_S):
@@ -202,6 +216,9 @@ class HeadDepth:
         self.info = None
         self.info_ok: bool | None = None       # None = camera_info 아직 못 받음(발행 안 함)
         self.lat_ms: list[float] = []
+        self.pending = None                    # 짝 color 를 기다리는 깊이 msg
+        self.pending_t = 0.0                   # 보류 시작(monotonic)
+        self.last_ns: int | None = None        # 마지막으로 낸 깊이 stamp
         self.head_pose, self.head_deg, self.head_t = head_pose, None, None
         node.create_subscription(JointState, HEAD_TOPIC, self._head, 10)
         latched = QoSProfile(depth=1, history=HistoryPolicy.KEEP_LAST, reliability=ReliabilityPolicy.RELIABLE,
@@ -212,11 +229,15 @@ class HeadDepth:
         self.pub_info = node.create_publisher(CameraInfo, OUT_INFO, qos_profile_sensor_data)
         self.rgb = bool(cfg["rgb"])
         self.color: deque = deque(maxlen=COLOR_BUF)
+        color_qos = QoSProfile(depth=COLOR_BUF, history=HistoryPolicy.KEEP_LAST, reliability=ReliabilityPolicy.RELIABLE,
+                               durability=DurabilityPolicy.VOLATILE)
         if self.rgb:
             self.pub_rgb = node.create_publisher(Image, OUT_RGB, qos_profile_sensor_data)
-            node.create_subscription(Image, SRC_COLOR, self._color, qos_profile_sensor_data)
-        newest = QoSProfile(depth=1, history=HistoryPolicy.KEEP_LAST, reliability=ReliabilityPolicy.BEST_EFFORT,
-                            durability=DurabilityPolicy.VOLATILE)       # 밀린 프레임은 버린다
+            node.create_subscription(Image, SRC_COLOR, self._color, color_qos)
+        # 11.05 실측: 1280x720 원본을 BEST_EFFORT 로 받으면 30 Hz 중 약 10 Hz 만 오고 color·depth stamp 짝이 53 % 였다.
+        # RELIABLE 은 26~28 Hz, 짝 95 %(logs/analysis/camera_stream_probe_1105_123002). KEEP_LAST 1 이라 최신 프레임만 남는다.
+        newest = QoSProfile(depth=1, history=HistoryPolicy.KEEP_LAST, reliability=ReliabilityPolicy.RELIABLE,
+                            durability=DurabilityPolicy.VOLATILE)
         node.create_subscription(CameraInfo, SRC_INFO, self._info, qos_profile_sensor_data)
         node.create_subscription(Image, SRC_DEPTH, self._depth, newest)
         self.wait = node.create_timer(INFO_WAIT_S, self._info_wait)
@@ -254,8 +275,25 @@ class HeadDepth:
     def _color(self, msg) -> None:
         st = msg.header.stamp
         self.color.append((st.sec * 10**9 + st.nanosec, msg))
+        if self.pending is not None:              # 짝 color 보다 먼저 온 깊이를 지금 처리한다
+            d, t0, self.pending = self.pending, self.pending_t, None
+            self._depth(d)
+            if self.pending is d:                 # 아직 짝이 없다
+                self.pending_t = t0
+                if time.monotonic() - t0 > PEND_MAX_S:
+                    self._drop_pending(f"{PEND_MAX_S * 1e3:.0f} ms 넘게 보류")
+
+    def _drop_pending(self, why: str) -> None:
+        self.pending = None
+        self.log.warning(f"{SRC_COLOR} 짝 없이 깊이를 버린다: {why}", throttle_duration_sec=LOG_S)
 
     def _depth(self, msg) -> None:
+        if self.pending is not None:
+            if _ns(msg) > _ns(self.pending):
+                self._drop_pending("다음 깊이가 왔다")
+            else:
+                self.log.warning("깊이 stamp 가 보류 중인 깊이보다 이르거나 같아 버린다", throttle_duration_sec=LOG_S)
+                return
         try:
             self._publish(msg)
         except FrameError as e:
@@ -273,10 +311,16 @@ class HeadDepth:
         if why:
             self.log.warning(f"깊이 발행 보류: {why}", throttle_duration_sec=LOG_S)
             return
+        t = _ns(msg)
+        if self.last_ns is not None and t <= self.last_ns:
+            self.log.warning("깊이 stamp 가 앞서 낸 것보다 이르거나 같아 버린다", throttle_duration_sec=LOG_S)
+            return
         rgb = None
         if self.rgb:
-            st = msg.header.stamp
-            c = nearest_color(self.color, st.sec * 10**9 + st.nanosec)
+            c = nearest_color(self.color, t)
+            if c is None and (not self.color or self.color[-1][0] < t + RGB_SLOP_S * 1e9):
+                self.pending, self.pending_t = msg, time.monotonic()   # 짝 color 가 아직 안 왔다(11.05 실측 깊이 절반이 color 보다 먼저 옴)
+                return
             if c is None:
                 self.log.warning(f"깊이 stamp 와 {RGB_SLOP_S * 1e3:.0f} ms 안의 {SRC_COLOR} 가 없어 이 프레임을 버린다",
                                  throttle_duration_sec=LOG_S)
@@ -290,16 +334,17 @@ class HeadDepth:
         out.height, out.width = small.shape
         out.encoding = "32FC1"
         out.step = out.width * 4
-        out.data = small.tobytes()
+        out.data = array.array("B", small.tobytes())   # bytes 대입은 rclpy 가 원소별 검사해 rgb 6.7 ms 든다
         if rgb is not None:                       # rgb 를 먼저 낸다 — 정책은 깊이를 받는 순간 같은 stamp rgb 를 찾는다
             ro = self.Image()
             ro.header = msg.header
             ro.height, ro.width = rgb.shape[:2]
             ro.encoding = "32FC3"
             ro.step = ro.width * 12
-            ro.data = rgb.tobytes()
+            ro.data = array.array("B", rgb.tobytes())
             self.pub_rgb.publish(ro)
         self.pub.publish(out)
+        self.last_ns = t
         info = self.CameraInfo()
         info.header = msg.header
         info.height, info.width = small.shape
@@ -337,14 +382,18 @@ def main() -> None:
 
     import rclpy
 
+    cv2.setNumThreads(2)                      # INTER_AREA 축소 1~2 ms 면 충분, 코어는 정책 · 제어 노드 몫
+    torch.set_num_threads(4)                  # block_median p50 5.5 ms. 8 은 p50 같고 꼬리만 길다(11.05). 정책 · 제어 노드 몫을 남긴다
     rclpy.init()
     node = rclpy.create_node("head_depth")
     HeadDepth(node, args, cut, cfg, head_pose)
     try:
         rclpy.spin(node)
+    except KeyboardInterrupt:                 # SIGINT 종료는 정상 경로 — traceback 을 남기지 않는다
+        pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()                  # SIGINT 때 rclpy 가 이미 shutdown 했으면 그냥 지나간다
 
 
 if __name__ == "__main__":
