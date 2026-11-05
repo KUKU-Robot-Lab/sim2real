@@ -126,16 +126,19 @@ def keep_on_exit(*, real: bool, stack_keys: Collection[str], procs: Mapping[str,
     return sorted(k for k in stack_keys if (procs.get(k) or {}).get("alive"))
 
 
-def skip_reasons(*, skippable: bool, busy: bool, pd_phase: str | None) -> list[str]:
+def skip_reasons(*, skippable: bool, busy: bool, pd_phase: str | None, arm_free: bool = False) -> list[str]:
     """이 단계를 실행하지 않고 넘길 수 없는 이유. 비어 있으면 넘겨도 된다.
 
-    pd 가 팔을 잡고 있으면 아무것도 넘기지 않는다 — 넘긴 단계가 release 였다면 잡힌 팔을 두고 지나가게 된다.
+    pd 가 팔을 잡고 있으면 팔 단계는 넘기지 않는다 — 넘긴 단계가 release 였다면 잡힌 팔을 두고 지나가게 된다.
+    ★11.05 팔을 움직이지 않는 단계(`arm_free`, 인지 · 목 · 홀더)는 pd 상태와 상관없이 넘긴다.
     """
     out = []
     if not skippable:
         out.append("이 단계는 건너뛸 수 없게 선언됐다")
     if busy:
         out.append("단계가 실행 중이다")
+    if arm_free:
+        return out
     if pd_phase == PD_UNKNOWN:
         out.append("pd 상태를 모른다 — 팔이 잡혀 있을 수 있어 건너뛰지 않는다")
     elif pd_phase not in PD_FREE:

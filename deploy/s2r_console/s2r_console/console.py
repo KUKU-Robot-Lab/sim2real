@@ -623,6 +623,10 @@ class Console:
             stage = self._current_stage(s, stage_id)
             reasons = self._skip_reasons(s, stage)
             if reasons:
+                try:
+                    self._intent(s, "stage/skip_denied", {"stage": stage_id, "operator": operator, "reasons": reasons})
+                except OSError as exc:              # 기록 실패가 거부 사유를 가리지 않게
+                    s.event("stage", f"건너뛰기 거부 기록 실패: {exc}")
                 raise ConsoleError(f"{stage_id} 를 건너뛸 수 없다", reasons=tuple(reasons))
             s.state = (self._settle(s, stage_id, MC.STATUS_DONE, f"건너뜀 ({operator})", ran=False) if s.mission.lanes
                        else MC.advance(s.mission, MC.begin(s.state), MC.STATUS_DONE, note=f"건너뜀 ({operator})"))
@@ -684,7 +688,8 @@ class Console:
         phase = self._pd_phase(s, obs, {p["key"]: p for p in s.supervisor.table()})
         lane = self._lane(s, stage)
         busy = s.runners.get(lane)
-        return U.skip_reasons(skippable=stage.skippable, busy=busy is not None and busy.active, pd_phase=phase)
+        return U.skip_reasons(skippable=stage.skippable, busy=busy is not None and busy.active, pd_phase=phase,
+                              arm_free=stage.arm_free)
 
     def _one_runner(self, s: Session, stage_id: str) -> StageRunner:
         """`stage_id` 가 있으면 그 단계의 러너, 없으면 도는 것이 정확히 하나일 때 그것."""
@@ -1143,7 +1148,7 @@ class Console:
             lane_busy = busy_by_lane.get(lane)
             current = (nxt.get(lane) == st.id) if lanes else (st.id == s.state.stage and not finished)
             structural = list(row.result.reasons)
-            lane_why = (U.skip_reasons(skippable=st.skippable, busy=bool(lane_busy), pd_phase=pd_phase)
+            lane_why = (U.skip_reasons(skippable=st.skippable, busy=bool(lane_busy), pd_phase=pd_phase, arm_free=st.arm_free)
                         + structural) if lanes else []
             approved = st.id in valid
             try:

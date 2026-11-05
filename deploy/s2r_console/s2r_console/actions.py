@@ -67,6 +67,11 @@ def runner_of(side):
     return f'{EPISODE_RUNNER}_{side}'
 
 
+def _preempts(action_id, group):
+    """제어 명령과 인지 적용은 도는 정책을 먼저 세운다 — 인지 적용은 setting 탭으로 옮겼어도(11.05) FP++ 컨테이너를 바꾼다."""
+    return group == 'control' or action_id == 'perception_refresh'
+
+
 class _Job:
     """One management action.  Jobs on disjoint resources run side by side."""
 
@@ -226,7 +231,7 @@ class ActionManager:
     @staticmethod
     def _interrupts(job, action_id, group):
         """A control command cancels a policy episode; a head command cancels a scan."""
-        return (job.id.startswith(CARD_RUNS) and group == 'control') or (
+        return (job.id.startswith(CARD_RUNS) and _preempts(action_id, group)) or (
             job.id == 'perception_refresh' and action_id == 'head_control')
 
     @staticmethod
@@ -273,7 +278,8 @@ class ActionManager:
                 if sid in known:
                     specs[f'{CONTROL_PREFIX}{name}_{side}'] = (f'{side} {title}', 'policy', (sid,))
         if getattr(session, 'workspace', None) is not None:
-            specs['perception_refresh'] = ('선택 물체 인지 재추출', 'control', ())
+            # ★11.05 사용자: 인지 설정은 setting 탭 한 곳 — 고른 물체로 컨테이너를 맞추고(start --require-all) 다시 찍는다
+            specs['perception_refresh'] = ('인지 적용 — 고른 물체로 FP++ 맞추기 → 다시 찍기', 'setting', ())
             specs['policy_stop'] = ('정책 정지 · 기록 마무리', 'control', ())
             for card in session.workspace.cards:
                 sid = card_stage(card)
@@ -326,6 +332,9 @@ class ActionManager:
         nonpolicy = [sid for sid in active if not sid.startswith(('policy_', 'episode_'))]
         if nonpolicy:
             reasons.append(f"단계 {', '.join(nonpolicy)} 가 실행 중이다")
+        if action_id == 'perception_refresh' and self._episode_busy(s, active):
+            # 맞추기 모드라 목록 밖 컨테이너를 내린다 — 에피소드가 확보한 물체 · 수동 확인 대기 · 도는 실행기를 끊지 않는다
+            reasons.append('에피소드 진행 중 — 인지 적용은 에피소드를 멈춘 뒤')
         if (group == 'control' and action_id not in ('perception_refresh', 'head_control', 'policy_stop')) or group == 'policy':
             if group == 'policy':
                 sides = [control_side(action_id) if action_id.startswith(CONTROL_PREFIX) else self._card(s, action_id)['side']]
@@ -448,8 +457,8 @@ class ActionManager:
                     effective = self._transform(s, action_id, parameters, cmd)
                     commands.append({'stage': sid, 'index': index, 'note': effective.note,
                                      'argv': list(effective.argv), 'stop': list(effective.stop), 'background': effective.background})
-        targets = self._policy_targets(s, self._preempt_sides(s, action_id, group, parameters)) if group == 'control' else []
-        if group == 'control' and targets:
+        targets = self._policy_targets(s, self._preempt_sides(s, action_id, group, parameters)) if _preempts(action_id, group) else []
+        if targets:
             try:
                 needed = self._policy_sides(s, targets)
                 missing = needed - set(self.console._pd_sides(s))
@@ -483,7 +492,7 @@ class ActionManager:
                 'card_id': self._card(s, action_id)['id'] if group in ('policy', 'sim') and not control else None,
                 'control': control,
                 'reasons': reasons, 'commands': commands, 'warnings': warnings,
-                'stages': list(stages), 'parameters': parameters, 'stop_targets': targets if group == 'control' else [],
+                'stages': list(stages), 'parameters': parameters, 'stop_targets': targets,
                 **({'calib_profiles': self.head_profiles(s)} if action_id == 'head_control' else {})}
 
     def _sim_commands(self, action_id, card, obj):
@@ -820,6 +829,18 @@ class ActionManager:
             raise ConsoleError('정책 프로세스 정지 실패 — 요청을 실행하지 않는다')
 
     @staticmethod
+    def _episode_busy(s, active_stages) -> bool:
+        """에피소드 단계(episode_*)가 돌거나(확보 · 수동 확인 대기 포함) RUNNING 이거나, 에피소드 실행기가 살아 있다(상태가 신선)."""
+        if any(sid.startswith('episode_') for sid in active_stages):
+            return True
+        if str(s.state.stage or '').startswith('episode_') and s.state.status == MC.STATUS_RUNNING:
+            return True
+        with s.feed_lock:
+            obs = s.feed.observed()
+        return any(obs.status.get(r) and obs.age_s.get(r, 1e9) <= STALE_S
+                   for r in (EPISODE_RUNNER, *(runner_of(side) for side in ARMS)))
+
+    @staticmethod
     def _policy_sides(s, targets):
         needed = set()
         unknown = []
@@ -873,7 +894,7 @@ class ActionManager:
         outcome, note = DONE, ''
         try:
             action = description['id']
-            if description['group'] == 'control' or action == 'shutdown':
+            if _preempts(action, description['group']) or action == 'shutdown':
                 sides = self._preempt_sides(s, action, description['group'], description['parameters'])
                 self._preempt(s) if sides is None else self._preempt(s, sides)
             if action == 'shutdown':

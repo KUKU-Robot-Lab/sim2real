@@ -34,7 +34,8 @@ vm.runInContext(fs.readFileSync(process.argv[1],'utf8').replace('refresh().then(
  assert.match(el('object-cards').innerHTML,/FPP/);
  assert.match(el('object-cards').innerHTML,/locate/);
  assert.match(el('object-cards').innerHTML,/failed/);
- assert.match(el('object-cards').innerHTML,/data-act="object-perception"/);
+ assert.doesNotMatch(el('object-cards').innerHTML,/data-act="object-perception"/);   // ★11.05 물체별 재추출 대신 setting 탭 "인지 적용" 하나
+ assert.match(el('per-meta').innerHTML,/인지 물체 1개 · 컨테이너 1개/);
  await vm.runInContext(`prepareAction('home_right')`,ctx);
  assert.equal(calls[0][0],'/api/actions/prepare');
  assert.match(el('modal-card').innerHTML,/승인 후 실행/);

@@ -101,6 +101,10 @@ def test_skip_is_refused_while_pd_holds_the_arm(flow, monkeypatch):
     with pytest.raises(ConsoleError) as exc:
         flow.skip_stage("extra", operator="pytest")
     assert any("TRACKING" in r for r in exc.value.reasons)
+    import json
+    lines = [json.loads(x) for x in flow.session.intents_path.read_text(encoding="utf-8").splitlines()]
+    denied = [x for x in lines if x["action"] == "stage/skip_denied"]
+    assert denied and denied[-1]["stage"] == "extra" and denied[-1]["reasons"] == list(exc.value.reasons)
 
 
 def test_the_last_stage_can_bring_everything_down_in_order(flow):

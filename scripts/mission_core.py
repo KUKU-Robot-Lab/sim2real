@@ -67,6 +67,8 @@ class Stage:
     #: 참이면 운영자가 실행하지 않고 넘길 수 있다(예: 오른팔만 할 때 왼팔 단계). 넘겨도 되는지는 호출자가
     #: 실기 상태로 한 번 더 판정한다 — 여기서는 "넘길 수 있게 선언됐다" 만 안다.
     skippable: bool = False
+    #: ★11.05 참이면 팔을 움직이지 않는 단계(인지 · 목 · 홀더) — pd 가 팔을 잡고 있어도 건너뛸 수 있다(넘겨도 팔이 남지 않는다)
+    arm_free: bool = False
     #: 이 단계가 **끝나면** 완료 표시를 지울 단계 — 켜기 · 끄기 짝(sensors ↔ sensors_off)처럼 그 단계가 만든 상태를
     #: 되돌리는 단계가 적는다. 09.29 사용자: "sensor-off 를 하면 두 번 다시 sensor 를 켤 수 없음" — sensors 가 완료로 남아
     #: 창 카드와 '다른 단계 고르기' 어디에도 다시 안 나왔다. 건너뜀은 아무것도 되돌리지 않았으므로 지우지 않는다.
@@ -329,6 +331,7 @@ def _stage_from_raw(raw: Mapping) -> Stage:
         group=str(raw.get("group", "")),
         lane=str(raw.get("lane", "")),
         skippable=bool(raw.get("skippable", False)),
+        arm_free=bool(raw.get("arm_free", False)),
         undoes=tuple(raw.get("undoes", ()) or ()),
     )
 

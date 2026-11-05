@@ -96,6 +96,8 @@ def test_build_status_shape():
     assert out["objects"]["cup_big_s100"] == {"container": None, "pose_age_s": None, "crash": None}
     assert out["viewer"] is False and out["busy"] is False and out["error"] is None
     assert build_status(None, 0.0, {}, True, "ssh failed")["error"] == "ssh failed"
+    # ★11.05 perception_ctl --add 는 modes 에 add 가 없으면 보내지 않는다 — 런처가 늘 알린다
+    assert out["modes"] == ["add"] and build_status(None, 0.0, {}, False, None)["modes"] == ["add"]
 
 
 OOM_LOG = """[cup_tracking_node-1] [INFO] tracking started
@@ -284,3 +286,15 @@ def test_notes_are_kept_apart_from_the_warning():
     st = parse_remote_status('{"camera_up": true, "containers": {}, "viewer_up": false}')
     out = build_status(st, 0.0, {}, False, None, notes=["shaker_c: 첫 회차가 90 s 안에 안 끝났다"])
     assert out["warning"] is None and out["notes"] == ["shaker_c: 첫 회차가 90 s 안에 안 끝났다"]
+
+
+def test_add_mode_keeps_other_containers_and_starts_only_missing_ones():
+    """★11.05 에피소드가 자기 물체를 확보할 때(perception_ctl --add) — 다른 물체 컨테이너를 내리지 않는다."""
+    cmd = parse_command(json.dumps({"op": "start", "objects": ["shaker_closed"], "add": True}), REG)
+    assert cmd.add
+    other = RemoteState(camera_up=True, containers={"fpp_cup_big_s100": "Up 1 minute"}, viewer_up=False, pose_tx_up=True)
+    assert plan_actions(cmd, other) == [("fpp_up", "shaker_closed")]
+    assert ("fpp_down", "fpp_cup_big_s100") in plan_actions(Command("start", ("shaker_closed",), None, False), other)
+    assert not parse_command(json.dumps({"op": "stop", "add": True}), REG).add          # stop 은 덧붙이기가 없다
+    with pytest.raises(ValueError, match="add"):
+        parse_command(json.dumps({"op": "start", "objects": ["shaker_closed"], "add": "yes"}), REG)

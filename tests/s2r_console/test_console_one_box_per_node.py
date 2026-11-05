@@ -97,38 +97,38 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
     aglt = d.box("rh_aglt_node_right")
     assert aglt.ros == ("/rh_aglt_node_right", "/rh_aglt_node_right_poll")    # 센서는 폴링 노드가 구독한다
     # ★10.20 영상 기록 기본 끔(VISION_RECORD) — 정책 단계의 aglt 노드가 #4 → #3
-    assert set(aglt.units) == {"policy_aglt_right#3", "episode_pick_place_right#3",
-                               "episode_grasp_c_right#3",                       # 10.17 경로 C(접근 정책 + 스크립트 파지)
-                               "episode_grasp_d_right#3",                       # ★10.20 경로 D(1-B 접근 → rcg03)
-                               "episode_grasp_e_right#3",                       # ★10.20 밤 경로 E(ap05 → rcg03 넘김)
-                               "episode_grasp_f_right#3",                       # ★10.21 경로 F(ap05 → rcg04 넘김)
-                               "episode_grasp_s_right#4",                       # ★11.05 경로 S(깊이 학생, 머리 깊이 노드가 #3)
-                               "episode_pick_place_f_right#3",                  # ★10.22 경로 F + 놓기(newton_05)
-                               "episode_grasp2tilt_f_240#3",                    # ★10.27 실기 2단계 grasp2tilt(컵 240)
-                               "episode_tilt_base_d#3",                         # ★10.20 경로 A 폐지 → tilt 경로 D(ap05 → rcg03)
-                               "episode_tilt_base_c#3",                         # 10.17 tilt 기본 궤적 경로 C
-                               "episode_cocktail_1#3", "episode_cocktail_1b#3", "episode_cocktail_1c_e1000#3", "episode_cocktail_1c_e4000#3"} & set(units)   # ★10.28 칵테일 SEP · B
+    assert set(aglt.units) == {"policy_aglt_right#3", "episode_pick_place_right#5",
+                               "episode_grasp_c_right#5",                       # 10.17 경로 C(접근 정책 + 스크립트 파지)
+                               "episode_grasp_d_right#5",                       # ★10.20 경로 D(1-B 접근 → rcg03)
+                               "episode_grasp_e_right#5",                       # ★10.20 밤 경로 E(ap05 → rcg03 넘김)
+                               "episode_grasp_f_right#5",                       # ★10.21 경로 F(ap05 → rcg04 넘김)
+                               "episode_grasp_s_right#6",                       # ★11.05 경로 S(깊이 학생, 머리 깊이 노드가 #3)
+                               "episode_pick_place_f_right#5",                  # ★10.22 경로 F + 놓기(newton_05)
+                               "episode_grasp2tilt_f_240#5",                    # ★10.27 실기 2단계 grasp2tilt(컵 240)
+                               "episode_tilt_base_d#5",                         # ★10.20 경로 A 폐지 → tilt 경로 D(ap05 → rcg03)
+                               "episode_tilt_base_c#5",                         # 10.17 tilt 기본 궤적 경로 C
+                               "episode_cocktail_1#5", "episode_cocktail_1b#5", "episode_cocktail_1c_e1000#5", "episode_cocktail_1c_e4000#5"} & set(units)   # ★10.28 칵테일 SEP · B
     place = d.box("rh_place_node_right")
-    assert set(place.units) == {"policy_place_right#1", "episode_pick_place_right#4",
-                                "episode_pick_place_f_right#4",                 # ★10.22 경로 F + 놓기(newton_05)
-                                "episode_cocktail_1#5", "episode_cocktail_1b#5", "episode_cocktail_1c_e1000#5", "episode_cocktail_1c_e4000#5"}   # ★10.28 칵테일 — 같은 노드가 홀더 1 → 2
+    assert set(place.units) == {"policy_place_right#1", "episode_pick_place_right#6",
+                                "episode_pick_place_f_right#6",                 # ★10.22 경로 F + 놓기(newton_05)
+                                "episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_1c_e4000#7"}   # ★10.28 칵테일 — 같은 노드가 홀더 1 → 2
     # ★10.19 사용자 "좌우 동시 실행": 한 팔 에피소드는 팔마다 실행기(episode_runner_<팔>), 두 팔 tilt 는 기본 실행기
     runner = d.box("episode_runner")
-    assert set(runner.units) == {"episode_tilt_base_d#7",   # 실기: 앞에 CPU 기록 한 줄(10.08) · ★10.20 경로 A 폐지 → D, 정책 노드 둘
-                                 "episode_tilt_base_c#7",   # 10.17 경로 C — 정책 노드 둘(D 와 같은 자리)
+    assert set(runner.units) == {"episode_tilt_base_d#9",   # 실기: 앞에 CPU 기록 한 줄(10.08) · ★10.20 경로 A 폐지 → D, 정책 노드 둘
+                                 "episode_tilt_base_c#9",   # 10.17 경로 C — 정책 노드 둘(D 와 같은 자리)
                                  "episode_tilt_base_b#5",   # 10.17 경로 B — 정책 노드 없음(사람이 컵을 댄다)
-                                 "episode_grasp2tilt_f_240#7",   # ★10.27 실기 2단계 grasp2tilt — 두 팔 에피소드라 기본 실행기
-                                 "episode_cocktail_1#9", "episode_cocktail_1b#9", "episode_cocktail_1c_e1000#9", "episode_cocktail_1c_e4000#9"}   # ★10.28 칵테일 — 정책 노드 넷
+                                 "episode_grasp2tilt_f_240#9",   # ★10.27 실기 2단계 grasp2tilt — 두 팔 에피소드라 기본 실행기
+                                 "episode_cocktail_1#11", "episode_cocktail_1b#11", "episode_cocktail_1c_e1000#11", "episode_cocktail_1c_e4000#11"}   # ★10.28 칵테일 — 정책 노드 넷
     for side in ("right", "left"):
-        assert set(d.box(f"episode_runner_{side}").units) == {f"episode_pick_place_{side}#7",
-                                                              f"episode_grasp_c_{side}#6",
-                                                              # ★10.19 1-B — 정책 노드 없음, 기록 bag · CPU 뒤(★10.20 영상 기본 끔 → #5)
-                                                              f"episode_grasp_b_{side}#5",
-                                                              f"episode_grasp_d_{side}#6",   # ★10.20 경로 D(aglt 노드 하나)
-                                                              f"episode_grasp_e_{side}#6",   # ★10.20 밤 경로 E(aglt 노드 하나, 넘김)
-                                                              f"episode_grasp_f_{side}#6",   # ★10.21 경로 F(경로 E + rcg04)
-                                                              f"episode_grasp_s_{side}#7",   # ★11.05 경로 S(머리 깊이 + 학생 노드)
-                                                              f"episode_pick_place_f_{side}#7"}   # ★10.22 경로 F + 놓기
+        assert set(d.box(f"episode_runner_{side}").units) == {f"episode_pick_place_{side}#9",
+                                                              f"episode_grasp_c_{side}#8",
+                                                              # ★10.19 1-B — 정책 노드 없음, 기록 bag · CPU 뒤(★10.20 영상 기본 끔 → #5, ★11.05 물체 확보 한 줄 → #6)
+                                                              f"episode_grasp_b_{side}#7",
+                                                              f"episode_grasp_d_{side}#8",   # ★10.20 경로 D(aglt 노드 하나)
+                                                              f"episode_grasp_e_{side}#8",   # ★10.20 밤 경로 E(aglt 노드 하나, 넘김)
+                                                              f"episode_grasp_f_{side}#8",   # ★10.21 경로 F(경로 E + rcg04)
+                                                              f"episode_grasp_s_{side}#9",   # ★11.05 경로 S(머리 깊이 + 학생 노드)
+                                                              f"episode_pick_place_f_{side}#9"}   # ★10.22 경로 F + 놓기
 
 
 def test_one_arms_pd_without_and_with_publishing_is_one_box_and_only_the_quiet_one_mutes_the_drive(real):
@@ -154,8 +154,8 @@ def test_in_the_episode_the_runner_gives_the_holder_and_goal_and_alone_the_holde
     # ★10.13 원격 인지면 마커 노드가 없다 — 단독 놓기의 홀더는 미션 밖(바깥 상자)에서 온다
     alone = "obj_cup_holder_1" if GEN.REMOTE_PERCEPTION else "cup_holders"
     assert holder == {alone: ("policy_place_right#1",),
-                      "episode_runner_right": ("episode_pick_place_right#4", "episode_pick_place_f_right#4"),   # ★10.22 경로 F + 놓기
-                      "episode_runner": ("episode_cocktail_1#5", "episode_cocktail_1b#5", "episode_cocktail_1c_e1000#5", "episode_cocktail_1c_e4000#5")}   # ★10.28 칵테일(두 팔 = 기본 실행기)
+                      "episode_runner_right": ("episode_pick_place_right#6", "episode_pick_place_f_right#6"),   # ★10.22 경로 F + 놓기
+                      "episode_runner": ("episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_1c_e4000#7")}   # ★10.28 칵테일(두 팔 = 기본 실행기)
     goal = {w.src: w for w in d.wires if w.dst == "rh_aglt_node_right" and w.topic == "/policy_control/right/goal"}
     # ★10.19 한 팔 에피소드는 오른팔 실행기, 두 팔 tilt 는 기본 실행기가 목표를 낸다
     # ★10.20 옛 정책 정리 뒤: 계약이 없는 정책 노드는 단위에서 빠진다 → 목표를 내는 실행기는 오른손 aglt 노드를 실제로 띄우는 단계의 것만
@@ -610,4 +610,4 @@ def test_the_cocktail_place_node_hears_both_of_its_holders(real):
     _, _, d = real
     for h in (1, 2):
         srcs = {w.src: w.units for w in d.wires if w.dst == "rh_place_node_right" and w.topic == f"/objects/cup_holder_{h}/pose"}
-        assert set(srcs.get("episode_runner", ())) == {"episode_cocktail_1#5", "episode_cocktail_1b#5", "episode_cocktail_1c_e1000#5", "episode_cocktail_1c_e4000#5"}, (h, srcs)
+        assert set(srcs.get("episode_runner", ())) == {"episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_1c_e4000#7"}, (h, srcs)

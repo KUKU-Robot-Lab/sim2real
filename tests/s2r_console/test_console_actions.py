@@ -236,6 +236,25 @@ def test_perception_preview_includes_exact_side_effects(console, tiny_repo):
     assert preview['commands'][2]['argv'] == w.locate_argv(obj['id'])
 
 
+
+def test_perception_refresh_refused_while_episode_in_progress(console, tiny_repo, monkeypatch):
+    # ★11.05 인지 적용은 맞추기라 목록 밖 컨테이너를 내린다 — 에피소드 준비 · 진행 중에는 막는다
+    from types import SimpleNamespace
+    import mission_core as MC
+    m = setup_actions(console, tiny_repo, {'preflight': [{'argv': ['true']}]})
+    s = console.session
+    why = '에피소드 진행 중 — 인지 적용은 에피소드를 멈춘 뒤'
+    idle = SimpleNamespace(status={}, age_s={}, joints_age_s=None, joint_ages={}, rosgraph=None, rosgraph_age_s=None)
+    monkeypatch.setattr(s.feed, 'observed', lambda: idle)
+    assert why not in m.describe('perception_refresh')['reasons']
+    live = SimpleNamespace(status={'episode_runner_left': {'phase': 'READY'}}, age_s={'episode_runner_left': 0},
+                           joints_age_s=None, joint_ages={}, rosgraph=None, rosgraph_age_s=None)
+    monkeypatch.setattr(s.feed, 'observed', lambda: live)
+    assert why in m.describe('perception_refresh')['reasons']
+    monkeypatch.setattr(s.feed, 'observed', lambda: idle)
+    monkeypatch.setattr(s, 'state', MC.MissionState(stage='episode_grasp_d_right', status=MC.STATUS_RUNNING))
+    assert why in m.describe('perception_refresh')['reasons']
+
 def lifecycle(console, tiny_repo, monkeypatch):
     from types import SimpleNamespace
     import yaml

@@ -776,7 +776,7 @@ function spawnMap(m) {
 // FP++ 칸 — 09.29 사용자: "fpp 가 제대로 되는지 … 상태창에서". 줄 · 판정은 서버(object_health.py)가 준다.
 // 그날 컨테이너는 Up 인데 추적 노드가 CUDA OOM 으로 죽어 자세가 0 이었다 — 컨테이너 상태만으로는 못 본다.
 // ★10.21 사용자 "FPP 도 칸 비율만 많이 차지하고 쓸모없는 정보가 많음": policy 탭 맨 위 한 줄(판정 · 물체마다 램프 · 자리 · 한마디)로.
-//   영상은 [영상] 을 눌러야 열린다(닫으면 스트림을 끊는다) · 학습 영역 지도와 줄별 상태는 '인지 상세' 를 펼쳐야 보인다.
+//   영상은 [영상] 을 눌러야 열린다(닫으면 스트림을 끊는다) · 학습 영역 지도와 줄별 상태는 '인지 설정' 의 '물체 좌표·영역' 을 펼쳐야 보인다.
 let showVideo = false;
 function fppOf(s, name) {
   const f = s.fpp || {}, o = (f.objects || []).find((x) => x.name === name);
@@ -1667,7 +1667,7 @@ function actionState(a) {
   if (j?.active) out.push(`<span class="badge live">⟳ 실행 중${j.stage ? ` · ${esc(j.stage)}` : ""}</span>`);
   else if (j?.outcome) out.push(`<span class="badge ${j.outcome === "DONE" ? "ok" : "bad"}">${j.outcome === "DONE" ? "✓ 완료" : "✗ 실패"}</span>`);
   if ((live.alive || []).length) out.push(`<span class="badge ok" title="${esc(live.alive.join("\n"))}">● 켜짐 ${live.alive.length}</span>`);
-  else if (j?.outcome === "DONE" && a.group === "setting" && a.id !== "preflight" && a.id !== "shutdown") out.push(`<span class="badge mute">○ 띄운 프로세스 없음</span>`);
+  else if (j?.outcome === "DONE" && a.group === "setting" && !["preflight", "shutdown", "perception_refresh"].includes(a.id)) out.push(`<span class="badge mute">○ 띄운 프로세스 없음</span>`);
   if ((live.dead || []).length) out.push(`<span class="badge bad" title="${esc(live.dead.join("\n"))}">✗ 죽음 ${live.dead.length}</span>`);
   if (live.pd) out.push(`<span class="badge ${live.pd === "TRACKING" ? "ok" : live.pd === "IDLE" ? "mute" : "warn"}">PD ${esc(live.pd)}${live.pd_err != null ? ` · 오차 ${fmt(live.pd_err, 3)}${live.pd_settled ? " 정착" : ""}` : ""}</span>`);
   const note = !j?.active && j?.outcome === "FAILED" && j.note ? `<small class="bad">${esc(j.note)}</small>` : "";
@@ -1713,7 +1713,7 @@ function coord4(v) {
   if (v && typeof v === "object") return JSON.stringify(v, (k, x) => typeof x === "number" ? Number(x.toFixed(4)) : x);
   return v == null ? "—" : String(v);
 }
-// ★10.21 인지 상세의 물체 줄 — 좌표 한 칸(좌표계 · 취득 시각은 올리면 보인다), 무효면 이유
+// ★10.21 인지 설정의 물체 줄 — 좌표 한 칸(좌표계 · 취득 시각은 올리면 보인다), 무효면 이유
 function coordShort(result, source) {
   if (!result) return `<span class="coord missing"><small>${esc(source)}</small>미수신</span>`;
   const ok = result.valid === true;
@@ -1784,9 +1784,12 @@ function renderWorkspace() {
   const h = w.head || {};
   const hs = $("head-settings");
   if (!(hs.contains && hs.contains(document.activeElement))) put("head-settings", headModule(h, actions.find(a => a.id === "head_control")));
-  put("perception-controls", `<fieldset class="pctl"><legend>인지 · ${esc(h.calib_profile || "보정 미선택")} · pan ${esc(h.pan ?? "—")} / tilt ${esc(h.tilt ?? "—")}</legend>${["fpp", "locate"].map(source => `<label class="chk"><input type="checkbox" data-perception="${source}" ${w.perception?.[source] ? "checked" : ""} ${holding() ? "" : "disabled"}>${source === "fpp" ? "FPP" : "locate"}</label>`).join("")}${(w.objects || []).map(o => `<label class="chk"><input type="checkbox" data-object="${esc(o.id)}" ${o.enabled ? "checked" : ""} ${holding() ? "" : "disabled"}>${esc(o.model || o.id)} · ${esc(o.color || o.marker_id || "마커")}${o.measured === false ? " (프리셋 · 미측정)" : ""}</label>`).join("")}</fieldset>`);
+  put("perception-controls", `<fieldset class="pctl"><legend>인지 · ${esc(h.calib_profile || "보정 미선택")} · pan ${esc(h.pan ?? "—")} / tilt ${esc(h.tilt ?? "—")}</legend>${["fpp", "locate"].map(source => `<label class="chk"><input type="checkbox" data-perception="${source}" ${w.perception?.[source] ? "checked" : ""} ${holding() ? "" : "disabled"}>${source === "fpp" ? "FPP" : "locate"}</label>`).join("")}${(w.objects || []).map(o => `<label class="chk"><input type="checkbox" data-object="${esc(o.id)}" ${o.enabled ? "checked" : ""} ${holding() ? "" : "disabled"}>${o.model === "holder" ? `홀더 · ${esc(o.id)}` : `${esc(o.group || o.model)} 묶음 · ${esc(o.model || o.id)} 모델 · ${esc(o.color || (o.marker_id ?? "마커"))}`}${o.measured === false ? " (프리셋 · 미측정)" : ""}</label>`).join("")}</fieldset>`);
+  // 묶음 하나 = FP++ 컨테이너 하나(런처 fpp_<묶음>) — 홀더는 FP++ 가 아니다
+  const fppOn = (w.objects || []).filter(o => o.enabled && o.model !== "holder");
+  put("per-meta", `인지 물체 ${fppOn.length}개 · 컨테이너 ${new Set(fppOn.map(o => o.group || o.id)).size}개`);
   put("perception-nodes", (S.session?.diagram?.cols || []).flat().filter(perceptionNode).map(boxCompact).join(""));
-  put("object-cards", (w.objects || []).filter(o => o.enabled).map(o => `<div class="obj-row"><b>${esc(o.model || o.id)} · ${esc(o.color || o.marker_id || "")}</b>${o.model === "holder" ? '<span class="hint">색 기반 locate 미지원</span>' : ""}<label>정책 입력 <select data-input-source="${esc(o.id)}" ${holding() ? "" : "disabled"}><option value="fpp" ${o.input_source === "fpp" ? "selected" : ""}>FPP</option><option value="locate" ${o.input_source === "locate" ? "selected" : ""} ${o.model === "holder" ? "disabled" : ""}>locate</option></select></label>${coordShort(o.results?.fpp, "FPP")}${coordShort(o.results?.locate, "locate")}<button class="btn btn-sm" data-act="object-perception" data-arg="${esc(o.id)}" ${holding() ? "" : "disabled"}>인지 · 좌표 재추출</button>${actions.filter(a => a.object_id === o.id).map(actionButton).join("")}</div>`).join("") || '<p class="hint obj-none">고른 물체가 없다 — 위에서 고른다</p>');
+  put("object-cards", (w.objects || []).filter(o => o.enabled).map(o => `<div class="obj-row"><b>${o.model === "holder" ? `홀더 · ${esc(o.id)}` : `${esc(o.model || o.id)} · ${esc(o.color || (o.marker_id ?? ""))}`}</b>${o.model === "holder" ? '<span class="hint">색 기반 locate 미지원</span>' : ""}<label>정책 입력 <select data-input-source="${esc(o.id)}" ${holding() ? "" : "disabled"}><option value="fpp" ${o.input_source === "fpp" ? "selected" : ""}>FPP</option><option value="locate" ${o.input_source === "locate" ? "selected" : ""} ${o.model === "holder" ? "disabled" : ""}>locate</option></select></label>${coordShort(o.results?.fpp, "FPP")}${coordShort(o.results?.locate, "locate")}${actions.filter(a => a.object_id === o.id).map(actionButton).join("")}</div>`).join("") || '<p class="hint obj-none">고른 물체가 없다 — 위에서 고른다</p>');
   selectTab(activeTab);
 }
 // 10.17 사용자 결정 3: 화면 · 에피소드 · 보고서만 tilt — 작업 공간 키(pouring)와 코드 모듈(pour_*.py)은 그대로
@@ -1836,7 +1839,6 @@ Object.assign(acts, {
     if (d.calib_profile) extra.calib_profile = d.calib_profile;
     return prepareAction("head_control", extra);
   },
-  "object-perception"(id) { return prepareAction("perception_refresh", {object_ids:[id]}); },
   "xp-pick"(id) { xpSel = { ...xpSel, id }; xpPol = ""; xpSave(); xpSyncRunner(); render(); },
   "xp-side"(side) { xpSel = { ...xpSel, side }; xpSave(); xpSyncRunner(); render(); },
   "xp-pol"(id) { xpPol = xpPol === id ? "" : id; render(); },

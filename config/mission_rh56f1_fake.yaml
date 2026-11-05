@@ -66,6 +66,7 @@ stages:
   - preflight
   skippable: true
   title: fake — 머리 없음(실기 순서를 맞추려고 둔 자리)
+  arm_free: true
 - id: head_view_check
   group: check
   lane: rig
@@ -73,11 +74,13 @@ stages:
   - head_home
   skippable: true
   title: fake — IMU 없음(실기 순서를 맞추려고 둔 자리)
+  arm_free: true
 - id: head_control
   group: motion
   lane: rig
   skippable: true
   title: 목 pan · tilt 변경 — 승인한 보정 프로필과 자세로 이동 후 실측 정착 확인
+  arm_free: true
 - id: cups
   group: connect
   lane: both
@@ -86,6 +89,7 @@ stages:
   skippable: true
   needs_why: FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다
   title: fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채
+  arm_free: true
 - id: cup_holders
   group: connect
   lane: both
@@ -93,6 +97,7 @@ stages:
   - head_home
   skippable: true
   title: fake — 카메라 없음(실기 순서를 맞추려고 둔 자리)
+  arm_free: true
 - id: cups_right
   group: recognize
   lane: arm_right
@@ -100,6 +105,7 @@ stages:
   - cups
   skippable: true
   title: '[right] fake — FP++ 없음(fake 컵은 cups 단계가 낸다)'
+  arm_free: true
 - id: cups_left
   group: recognize
   lane: arm_left
@@ -107,6 +113,7 @@ stages:
   - cups
   skippable: true
   title: '[left] fake — FP++ 없음(fake 컵은 cups 단계가 낸다)'
+  arm_free: true
 - id: drivers
   group: connect
   lane: rig

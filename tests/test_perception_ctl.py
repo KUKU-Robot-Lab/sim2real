@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from object_registry import DEFAULT_REGISTRY, load_registry  # noqa: E402
 from perception_ctl import build_payload  # noqa: E402
-from perception_launcher_core import Command, RemoteState, parse_command, plan_actions  # noqa: E402
+from perception_launcher_core import RemoteState, parse_command, plan_actions  # noqa: E402
 
 REG = load_registry(DEFAULT_REGISTRY)
 
@@ -90,3 +90,57 @@ def test_notes_are_printed_but_do_not_decide(capsys):
     assert "  NOTE: shaker_c: 첫 회차가 90 s 안에 안 끝났다" in capsys.readouterr().out.splitlines()
     P.print_status({**payload, "notes": None})
     assert "NOTE" not in capsys.readouterr().out
+
+
+def test_add_flag_goes_into_start_payload():
+    payload = build_payload(Namespace(op="start", objects=["shaker_closed"], viewer=False, add=True), REG)
+    assert payload["add"] is True and payload["objects"] == ["shaker_closed"]
+
+
+def test_add_refusal_tells_no_status_from_old_launcher():
+    from perception_ctl import LAUNCHER_UNIT, add_refusal
+    assert add_refusal(["add"]) is None
+    assert add_refusal(None).startswith("런처 상태를 못 받음") and LAUNCHER_UNIT in add_refusal(None)
+    assert add_refusal([]).startswith("옛 런처") and "cups 를 다시 실행" in add_refusal([])
+
+
+def test_launcher_unit_is_the_cups_launcher_command():
+    import make_rh56f1_missions as GEN
+    from perception_ctl import LAUNCHER_UNIT
+    stage, index = LAUNCHER_UNIT.split("#")
+    assert "perception_launcher_node.py" in " ".join(map(str, GEN._run("real")[stage][int(index)]["argv"]))
+
+
+def test_add_to_old_launcher_is_not_sent(monkeypatch):
+    import types
+    import perception_ctl
+    sent = []
+
+    class Pub:
+        def get_subscription_count(self):
+            return 1
+
+        def publish(self, msg):
+            sent.append(msg)
+
+    class FakeNode:
+        def __init__(self, name):
+            pass
+
+        def create_publisher(self, *a):
+            return Pub()
+
+        def create_subscription(self, *a):
+            return None
+
+        def destroy_node(self):
+            pass
+
+    rclpy = types.SimpleNamespace(init=lambda: None, shutdown=lambda: None, spin_once=lambda *a, **k: None)
+    monkeypatch.setitem(sys.modules, "rclpy", rclpy)
+    monkeypatch.setitem(sys.modules, "rclpy.node", types.SimpleNamespace(Node=FakeNode))
+    monkeypatch.setitem(sys.modules, "std_msgs", types.SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "std_msgs.msg", types.SimpleNamespace(String=lambda data: data))
+    monkeypatch.setattr(perception_ctl, "_launcher_modes", lambda node: [])
+    monkeypatch.setattr(sys, "argv", ["perception_ctl.py", "start", "--add", "shaker_closed"])
+    assert perception_ctl.main() == 1 and sent == []

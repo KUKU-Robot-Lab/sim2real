@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
 import math
 import re
 import sys
@@ -16,6 +17,8 @@ import yaml
 from . import _paths  # installs shared registry imports
 from object_registry import load_registry
 from policy_control.policy_registry import scan
+
+LOG = logging.getLogger(__name__)
 
 TASKS = ('approaching', 'grasping', 'placing', 'locking', 'pouring')
 
@@ -75,7 +78,7 @@ class Workspace:
             if color not in ('blue', 'orange', 'pink'):
                 continue
             model, policy_object = MODELS[group]
-            self.objects.append(dict(id=name, model=model, color='skyblue' if color == 'blue' else color,
+            self.objects.append(dict(id=name, model=model, group=group, color='skyblue' if color == 'blue' else color,
                                      policy_object=policy_object, enabled=False, input_source='fpp',
                                      measured='hue_measured' in spec.fpp, hue_range=copy.deepcopy(spec.fpp['color']),
                                      locate_supported=True, results={s: _empty(s) for s in ('fpp', 'locate')}))
@@ -90,11 +93,33 @@ class Workspace:
         key = hashlib.sha256(self.robot_id.encode()).hexdigest()[:20]
         self.layout_path = self.repo / 'runs/s2r_console/workspaces' / (key + '.json')
         if self.layout_path.is_file():
+            doc = {}
             try:
                 doc = json.loads(self.layout_path.read_text())
+                if not isinstance(doc, dict):
+                    doc = {}
+                    raise TypeError('top level is not an object')
                 self.update({'cards': doc.get('cards', [])}, persist=False)
-            except (OSError, ValueError, TypeError):
+            except (OSError, ValueError, TypeError) as exc:
+                LOG.warning('workspace %s: saved cards not restored (%s)', self.layout_path, exc)
                 self.cards = []
+            self._restore_objects(doc.get('objects', []))
+
+    def _restore_objects(self, saved):
+        """★11.05 인지 물체 선택을 항목별로 되살린다 — 레지스트리에서 빠진 id · 규칙에 어긋난 항목만 버리고 기록한다."""
+        if not isinstance(saved, list):
+            LOG.warning('workspace %s: saved objects is not a list — ignored', self.layout_path)
+            return
+        known = {o['id'] for o in self.objects}
+        for item in saved:
+            oid = item.get('id') if isinstance(item, dict) else None
+            if oid not in known:
+                LOG.warning('workspace %s: saved object %r not in registry — dropped', self.layout_path, oid)
+                continue
+            try:
+                self.update({'objects': [item]}, persist=False)
+            except (ValueError, TypeError) as exc:
+                LOG.warning('workspace %s: saved object %r not restored (%s)', self.layout_path, oid, exc)
 
     def _catalog(self, slots):
         out = []
@@ -213,7 +238,8 @@ class Workspace:
         if persist:
             self.layout_path.parent.mkdir(parents=True, exist_ok=True)
             temp = self.layout_path.with_suffix('.tmp')
-            temp.write_text(json.dumps({'cards': self.cards}, allow_nan=False))
+            selection = [{k: o[k] for k in ('id', 'enabled', 'input_source')} for o in self.objects]
+            temp.write_text(json.dumps({'cards': self.cards, 'objects': selection}, allow_nan=False))
             temp.replace(self.layout_path)
         return self.snapshot()
 

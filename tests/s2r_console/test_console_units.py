@@ -344,6 +344,10 @@ def test_skipping_is_refused_while_the_arm_may_be_held():
     assert any("실행 중" in r for r in skip_reasons(skippable=True, busy=True, pd_phase=None))
     assert any("TRACKING" in r for r in skip_reasons(skippable=True, busy=False, pd_phase="TRACKING"))
     assert any("모른다" in r for r in skip_reasons(skippable=True, busy=False, pd_phase=PD_UNKNOWN))
+    # ★11.05 팔을 움직이지 않는 단계(인지 · 목 · 홀더)는 pd 가 잡고 있어도 넘긴다 — 선언 · 실행 중 검사는 그대로
+    assert skip_reasons(skippable=True, busy=False, pd_phase="TRACKING", arm_free=True) == []
+    assert skip_reasons(skippable=True, busy=False, pd_phase=PD_UNKNOWN, arm_free=True) == []
+    assert skip_reasons(skippable=False, busy=True, pd_phase="TRACKING", arm_free=True)
 
 
 def test_a_unit_that_does_not_touch_the_robot_can_be_stopped_while_pd_holds():

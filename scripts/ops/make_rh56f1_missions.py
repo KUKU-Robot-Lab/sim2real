@@ -248,41 +248,47 @@ HEAD_HOST = STATION.get("head_host", "local")
 REMOTE_HEAD = HEAD_HOST != "local"
 
 
-def _episode_cups() -> list[str]:
-    """★10.28 에피소드가 FP++ 로 찍는 실물(토픽 /objects/<실물>/pose) — 팔 물체 묶음 밖의 것(칵테일 분홍 source240p_pink)도 cups
-    단계가 그 묶음 컨테이너를 띄우게 한다. 지금 다른 에피소드는 팔 물체(source240b_blue · shaker_c_orange)만 찍는다."""
+#: ★11.05 사용자: 팔을 움직이지 않는 단계(인지 · 목 · 홀더)는 pd 상태와 상관없이 건너뛸 수 있다(+ cups_<팔>)
+ARM_FREE_STAGES = ("head_home", "head_view_check", "head_control", "cups", "cup_holders")
+
+
+def _ep_objects(ep) -> list[str]:
+    """★11.05 한 에피소드가 FP++ 로 찍는 실물(토픽 /objects/<실물>/pose), 순서대로 중복 없이 — 에피소드 첫 명령이 이것만 확보한다."""
     sys.path.insert(0, str(REPO / "deploy" / "policy_control"))
     from policy_control.episode_ros import real_object_name
-    out = []
-    for name in EPISODES:
-        ep = _episode(name)
-        if _perceives(ep):
-            out += [r for o in ep.objects.values() if (r := real_object_name(str(o.get("topic", ""))))]
-    return out
+    return list(dict.fromkeys(r for o in ep.objects.values() if (r := real_object_name(str(o.get("topic", ""))))))
+
+
+def _episode_cups() -> list[str]:
+    """★10.28 에피소드들이 FP++ 로 찍는 실물 — 팔 물체 묶음 밖의 것(칵테일 분홍 source240p_pink)도 든다."""
+    return [r for name in EPISODES if _perceives(ep := _episode(name)) for r in _ep_objects(ep)]
 
 
 def _cups() -> list[str]:
-    """실기 FP++ 물체 — 팔별(오른쪽 · 왼쪽), 그다음 에피소드가 찍는 물체, 중복 없이. 묶음 컨테이너는 이 목록에 든 물체만 찍는다.
+    """실기 FP++ 물체 후보 — 팔별(오른쪽 · 왼쪽), 그다음 에피소드가 찍는 물체, 중복 없이. ★11.05 cups 단계는 이제 띄우지 않는다
+    (드라이버만) — 정책 단계 안내 문구와 시험이 쓴다. 실제로 띄우는 것은 에피소드 물체(_ep_objects) · cups_<팔> · 인지 적용.
     ★11.03 사용자 "shaker는 현재 orange": 묶음의 나머지 색(shaker_c_blue · pink)은 넣지 않는다 — 실기 4090 24 GB 가 모자랐다."""
     side = [REAL_CUPS[s] for s in SIDES if s in REAL_CUPS]
     return list(dict.fromkeys([*side, *_episode_cups()]))
 
 
-def _groups() -> list[str]:
-    """cups 단계가 띄우는 FP++ 묶음 컨테이너 — _cups() 물체의 묶음(fpp.group), 순서대로 중복 없이."""
+def _groups(objs: list[str] | None = None) -> list[str]:
+    """FP++ 묶음 컨테이너 — 물체(기본 _cups())의 묶음(fpp.group), 순서대로 중복 없이."""
     from object_registry import load_registry
     reg = load_registry()
-    return list(dict.fromkeys(reg.get(n).fpp.get("group") or n for n in _cups()))
+    return list(dict.fromkeys(reg.get(n).fpp.get("group") or n for n in (_cups() if objs is None else objs)))
 
 
-def _start_wait() -> int:
+def _start_wait(objs: list[str] | None = None) -> int:
     """★11.03 런처가 묶음을 하나씩 띄우고 각 첫 회차를 기다린다 — perception_launcher_core.start_wait_s(묶음 수)."""
     from perception_launcher_core import start_wait_s
-    return start_wait_s(len(_groups()))
+    return start_wait_s(len(_groups(objs)))
 
 
-def _containers_txt() -> str:
-    return " · ".join(f"fpp_{g}" for g in _groups())
+def _ensure_objects(objs: list[str]) -> list[str]:
+    """★11.05 덧붙이기 확보 — 없는 묶음만 띄우고(다른 컨테이너는 그대로) 전부 떠야 통과."""
+    return ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", "--add", *objs,
+            "--wait", str(_start_wait(objs)), "--require-all"]
 
 
 def _side_cup(s: str) -> str:
@@ -366,6 +372,22 @@ def _cmd(note: str, argv=None, **kw) -> dict:
     return out
 
 
+def _gpu_check(tail: str) -> dict:
+    """FP++ 컨테이너를 띄우기 전 GPU 여유 수동 확인(cups · 에피소드 확보가 같이 쓴다)."""
+    return _cmd(f"★{PERCEPTION_HOST if REMOTE_PERCEPTION else ROBOT_PC} GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, "
+                f"물체 컨테이너마다 약 2 GB). {tail}",
+                (["ssh", "-o", "BatchMode=yes", PERCEPTION_HOST] if REMOTE_PERCEPTION else ["bash", "-lc"])
+                + ["nvidia-smi --query-compute-apps=pid,used_memory --format=csv; "
+                   "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader"], manual=True)
+
+
+def _cup_pose_criteria() -> str:
+    """예전 cups 단계의 '컵 자세 확인' 기준(11.05 에피소드 수동 확인으로 옮김)."""
+    return (f"테이블 위 컵 원점 z ≈ {0.205 + REAL_CUP_ORIGIN_Z:.3f}(상판 0.205 + 원점 {REAL_CUP_ORIGIN_Z}, ±8 mm) · 기울기 < 3° · "
+            f"x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 {_side_cup('right')}(y < 0) · 왼팔 {_side_cup('left')}(y > 0) 인가"
+            f"(카메라를 건드렸으면 {RECALIB_HINT})")
+
+
 def _stages(kind: str) -> list[dict]:
     real = kind == "real"
     st = [
@@ -384,7 +406,9 @@ def _stages(kind: str) -> list[dict]:
         {"id": "cups", "group": "connect", "lane": "both", "needs": ["head_view_check"], "skippable": True,
          "touches_real": real,
          "needs_why": "FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다",
-         "title": (f"컵 자세({PERCEPTION_HOST if REMOTE_PERCEPTION else ROBOT_PC} FP++) — RealSense · FP++ 묶음 컨테이너({_containers_txt()}, 묶음마다 하나 · 색 · 모양으로 가르기 · 한 번 찍기: {_cups_txt()}) → /objects/<물체>/pose (base). GPU VRAM 컨테이너마다 약 2 GB" if real else
+         # ★11.05 사용자: cups = FP++ 드라이버만. 물체 컨테이너는 setting 탭 '인지 적용'(고른 물체) · 에피소드 첫 명령(그 에피소드 물체)이 띄운다
+         "title": (f"FP++ 드라이버({PERCEPTION_HOST if REMOTE_PERCEPTION else ROBOT_PC}) — 인지 런처 · 자세 수신기 · base 변환 노드 · 머리 자세 맞춤. "
+                   "물체는 띄우지 않는다(setting 탭 '인지 적용' 또는 에피소드가 자기 물체를 띄운다)" if real else
                    "fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채")},
         {"id": "cup_holders", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
          "touches_real": real,
@@ -495,6 +519,9 @@ def _stages(kind: str) -> list[dict]:
                             f"진행: {' → '.join(n.id for n in ep.nodes if n.type != 'terminal')}"})
     st.append({"id": "shutdown", "group": "finish", "lane": "rig", "touches_real": real,
                "title": "안전 종료 — 팔 받침 확인 → 정책 → 인지 → 목 → pd → 손 → 팔 (★목 · 팔 토크가 풀린다)"})
+    for x in st:                         # ★11.05 팔을 움직이지 않는 단계 — pd 가 팔을 잡고 있어도 건너뛸 수 있다
+        if x["id"] in ARM_FREE_STAGES or x["id"].startswith("cups_"):
+            x["arm_free"] = True
     if not real:
         for x in st:
             x.pop("touches_real", None)
@@ -632,11 +659,7 @@ def _run(kind: str) -> dict:
              else ["python3", "{repo}/scripts/head_view_feedback.py", "--check", "--extrinsics", "{repo}/" + CAMERA_EXTRINSICS]),
     ] if real else [_cmd("fake — IMU 없음", ["bash", "-lc", "true"])]
     run["cups"] = [
-        _cmd(f"★컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · {PERCEPTION_HOST if REMOTE_PERCEPTION else ROBOT_PC} GPU 여유가 있는가"
-             "(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다). 머리 자세는 FP++ 를 켜기 전에 이 단계가 캘리브 자세로 맞춘다",
-             (["ssh", "-o", "BatchMode=yes", PERCEPTION_HOST] if REMOTE_PERCEPTION else ["bash", "-lc"])
-             + ["nvidia-smi --query-compute-apps=pid,used_memory --format=csv; "
-                "nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader"], manual=True),
+        _gpu_check("머리 자세는 이 단계가 캘리브 자세로 맞춘다"),
         _cmd((f"인지 런처(이 PC) — {PERCEPTION_HOST} 의 카메라 · FP++ 컨테이너를 ssh 로 켜고 끈다. 스스로는 아무것도 켜지 않는다"
               if REMOTE_PERCEPTION else
               "인지 런처(이 PC) — 카메라 · FP++ 컨테이너를 같은 PC 의 스크립트로 켜고 끈다. 스스로는 아무것도 켜지 않는다"),
@@ -651,17 +674,6 @@ def _run(kind: str) -> dict:
               "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS,
               "--head-joint-topic", "/head/joint_states"], background=True),
         _cmd("FP++ 전 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)", HEAD_CHECK_ARGV, execute_args=["--execute"]),
-        _cmd(f"카메라 + FP++ 켜기 — 묶음 컨테이너({_containers_txt()})가 {_cups_txt()} 를 차례로 한 번 찍는다. 이미 떠 있으면 그대로. "
-             f"최대 {_start_wait()} s(묶음을 하나씩 — 앞 묶음 첫 회차 뒤 다음, 11.03). ★10.13 묶음 하나가 못 뜨면 경고만(나머지는 계속), 하나도 못 띄우면 실패",
-             ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", *_cups(), "--viewer", "--wait", str(_start_wait())]),
-        _cmd("컵 좌표 추출 — 처음엔 FP++ 가 켜지며 찍는 회차를 기다리고, 이 단계를 다시 실행하면(컵을 옮긴 뒤 '↶ 여기서 다시') "
-             "컨테이너를 끄지 않고 지금 카메라로 다시 찍는다(10.08 사용자). 컵마다 base 좌표 · 판정을 찍는다. ★10.13 하나라도 찾으면 통과 · 못 찾은 컵은 이유와 함께 경고(그 컵은 개별 인지 단계로 다시)",
-             ["python3", "{repo}/scripts/ops/fpp_rescan.py", *_cups(), "--wait", "120",   # ★11.04 에피소드 물체(분홍)도 — 빠지면 옮긴 분홍이 /pose 에 안 들어갔다
-              *RESCAN_HOST]),
-        _cmd(f"★컵 자세 확인(바로 위 추출 결과) — 테이블 위 컵 원점 z ≈ {0.205 + REAL_CUP_ORIGIN_Z:.3f}(상판 0.205 + 원점 {REAL_CUP_ORIGIN_Z}, ±8 mm) · 기울기 < 3° · "
-             f"x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 {_side_cup('right')}(y < 0) · 왼팔 {_side_cup('left')}(y > 0) 인가"
-             f"(카메라를 건드렸으면 {RECALIB_HINT})",
-             ["bash", "-lc", "true"], manual=True),
     ] if real else [
         _cmd(f"fake 컵({role}) — {t}", ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--x", "0.38",
                                          "--y", y, "--z", "0.264865", "--topic", t],
@@ -671,12 +683,12 @@ def _run(kind: str) -> dict:
     for s in SIDES:
         if s not in REAL_CUPS:
             continue
-        # ★10.13 개별 인지 — perception_ctl start 는 넘긴 물체 밖의 컨테이너를 내리므로 컵 전부를 넘긴다(떠 있는 것은 그대로,
-        #   내려간 것만 다시 띄운다). 다시 찍기는 이 컵 하나만 — 이 컵을 못 찾으면 이 단계만 실패한다
+        # ★10.13 개별 인지 · ★11.05 덧붙이기(--add) — 이 팔 물체 컨테이너만 없으면 띄우고 다른 컨테이너는 그대로 둔다.
+        #   다시 찍기는 이 컵 하나만 — 이 컵을 못 찾으면 이 단계만 실패한다
         run[f"cups_{s}"] = [
             _cmd(f"★[{s}] {REAL_CUPS[s]} 가 테이블에 똑바로 서 있고 손이 가리지 않는가", ["bash", "-lc", "true"], manual=True),
-            _cmd(f"[{s}] FP++ 컨테이너 확인 — 내려간 묶음만 다시 띄운다({_containers_txt()}). 최대 {_start_wait()} s",
-                 ["python3", "{repo}/scripts/ops/perception_ctl.py", "start", *_cups(), "--wait", str(_start_wait())]),
+            _cmd(f"[{s}] FP++ 컨테이너 확인 — {REAL_CUPS[s]} 묶음이 없으면 띄운다(다른 컨테이너는 그대로). 최대 {_start_wait([REAL_CUPS[s]])} s",
+                 _ensure_objects([REAL_CUPS[s]])),
             _cmd(f"[{s}] {REAL_CUPS[s]} 만 다시 찍기 — base 좌표 · 판정을 찍고, 못 찾으면 이유와 함께 실패",
                  ["python3", "{repo}/scripts/ops/fpp_rescan.py", REAL_CUPS[s], "--wait", "120", *RESCAN_HOST]),
         ] if real else [_cmd(f"[{s}] fake — FP++ 없음", ["bash", "-lc", "true"])]
@@ -969,6 +981,13 @@ def _episode_run(name: str, real: bool) -> list:
                       "--plan", *(["--require-holders"] if real else [])]))
     cmds.append(_cmd("시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)",
                      ["bash", "-lc", f"! ros2 node list 2>/dev/null | grep -E '^/({left})$'"]))
+    objs = _ep_objects(ep) if real and perceives else []
+    if objs:
+        # ★11.05 사용자: 화면에서 무엇을 골랐든 에피소드는 자기 물체로 돈다 — 읽기 전용 시작 검사 뒤, 수동 확인 앞에서
+        #   없는 컨테이너만 띄우고(덧붙이기) 전부 떠야 다음으로
+        cmds.append(_gpu_check("없는 물체 컨테이너만 띄운다"))
+        cmds.append(_cmd(f"FP++ 물체 확보 — {' · '.join(objs)} 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. "
+                         f"최대 {_start_wait(objs)} s", _ensure_objects(objs)))
     if perceives:
         # ★10.28 사람이 나중에 놓는 물체(at_start away — 칵테일 SEP 분홍)는 시작 때 탁자에 두지 않는다
         later = [o for o, v in ep.objects.items() if v.get("at_start", "table") == "away"]
@@ -976,7 +995,8 @@ def _episode_run(name: str, real: bool) -> list:
                  "잡고 있는가"
                  + (f" · {', '.join(later)} 는 아직 탁자에 두지 않는다(에피소드 확인 단계에서 놓는다)" if later else "")
                  + (f" · 홀더 {', '.join(f'{k}={v}' for k, v in ep.holders.items())} 위가 비었고 저장된 자리({ep.holder_poses})에 "
-                    "그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다)" if ep.holders else ""))
+                    "그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다)" if ep.holders else "")
+                 + " · 컵 자세(설정 탭 물체 좌표): " + _cup_pose_criteria())
     else:                                            # ★10.17 경로 B — 사람이 컵을 손에 댄다(FP++ · 정책 없음)
         check = (f"★[에피소드 {name}] 물체({', '.join(ep.objects)})와 비드를 손 닿는 곳에 준비했는가. 로봇이 컵 없이 시작 자세로 간 뒤 "
                  "확인 노드마다 멈춘다 — 컵은 확인한 뒤에만 손에 댄다")

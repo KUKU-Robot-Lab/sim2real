@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """노드 2 의 사용자 면 — 물체를 골라 인지 체인을 켜고 끈다.
 
-  perception_ctl.py start shaker_closed cup_big_s100 [--viewer]
+  perception_ctl.py start shaker_closed cup_big_s100 [--viewer] [--add]
   perception_ctl.py stop [--camera]
   perception_ctl.py viewer on|off
   perception_ctl.py status
@@ -33,6 +33,8 @@ def build_payload(args, registry) -> dict | None:
         payload = {"op": "start", "objects": [registry.resolve(n) for n in args.objects]}
         if args.viewer:
             payload["viewer"] = True      # 키를 빼면 런처는 뷰어를 건드리지 않는다(False 는 '내려라')
+        if getattr(args, "add", False):
+            payload["add"] = True         # ★11.05 목록 밖 컨테이너는 그대로 두고 없는 것만 띄운다
         return payload
     if args.op == "stop":
         return {"op": "stop", "camera": bool(args.camera)}
@@ -90,6 +92,8 @@ def parser() -> argparse.ArgumentParser:
     # ★10.13 사용자 "둘중 하나라도 인지되게": 기본은 물체 컨테이너가 하나라도 뜨면 통과(못 뜬 물체는 경고)
     s.add_argument("--require-all", action="store_true",
                    help="요청한 물체 컨테이너가 전부 떠야 통과(하나라도 실패하면 1)")
+    s.add_argument("--add", action="store_true",
+                   help="덧붙이기 — 목록 밖 컨테이너를 내리지 않고, 요청한 물체 중 없는 것만 띄운다(기본은 목록에 맞춘다)")
     st = sub.add_parser("stop")
     st.add_argument("--camera", action="store_true", help="카메라까지 내린다")
     st.add_argument("--host", default="vision-3090", help="런처가 없을 때 직접 내릴 곳(ssh) · local = 이 PC")
@@ -124,6 +128,13 @@ def main() -> int:
         deadline = time.monotonic() + 3.0
         while pub.get_subscription_count() == 0 and time.monotonic() < deadline:
             rclpy.spin_once(node, timeout_sec=0.1)
+        refusal = add_refusal(_launcher_modes(node)) if payload.get("add") and pub.get_subscription_count() else None
+        if refusal:
+            # ★11.05 옛 런처는 add 를 모르고 맞추기로 처리해 다른 물체 컨테이너를 내린다 — 보내지 않는다
+            print(refusal, file=sys.stderr)
+            node.destroy_node()
+            rclpy.shutdown()
+            return 1
         if pub.get_subscription_count() == 0:
             if args.op == "stop":
                 print(f"perception_launcher_node 가 안 떠 있다 — ssh 로 {args.host} 에서 직접 내린다", file=sys.stderr)
@@ -151,6 +162,36 @@ def main() -> int:
     node.destroy_node()
     rclpy.shutdown()
     return rc
+
+
+#: 런처 유닛 — 미션 cups 단계의 두 번째 명령(make_rh56f1_missions: GPU 확인 → 인지 런처)
+LAUNCHER_UNIT = "cups#1"
+#: 런처 상태는 1 s 마다 온다 — 원격 폴링 · 기동으로 executor 가 밀려도 놓치지 않게 넉넉히
+MODES_WAIT_S = 6.0
+
+
+def add_refusal(modes: list | None) -> str | None:
+    """덧붙이기(add)를 보내면 안 되는 이유(None = 보내도 된다). modes None = 상태를 못 받음. 순수."""
+    fix = f"런처 유닛({LAUNCHER_UNIT})을 정지하고 cups 를 다시 실행"
+    if modes is None:
+        return f"런처 상태를 못 받음(/perception/status {MODES_WAIT_S:.0f} s) — 덧붙이기를 보내지 않는다. {fix}"
+    if "add" not in modes:
+        return f"옛 런처 — 덧붙이기(add)를 모른다(맞추기로 처리해 다른 컨테이너를 내린다). {fix}"
+    return None
+
+
+def _launcher_modes(node, timeout_s: float = MODES_WAIT_S) -> list | None:
+    """런처 /perception/status 의 modes — 시간 안에 상태가 안 오면 None."""
+    import rclpy
+    from std_msgs.msg import String
+
+    box: list[str] = []
+    sub = node.create_subscription(String, "/perception/status", lambda m: box.append(m.data), 10)
+    deadline = time.monotonic() + timeout_s
+    while not box and time.monotonic() < deadline:
+        rclpy.spin_once(node, timeout_sec=0.1)
+    node.destroy_subscription(sub)
+    return list(json.loads(box[-1]).get("modes") or []) if box else None
 
 
 IDLE_AFTER_S = 3.0     # 보낸 뒤 이만큼 지났는데 busy 가 아니면 끝난 것(이미 켜져 있어 "변경 없음" 이면 busy 가 켜지지 않는다)

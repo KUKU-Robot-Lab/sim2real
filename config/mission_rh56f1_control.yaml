@@ -68,6 +68,7 @@ stages:
   skippable: true
   touches_real: true
   title: 머리를 카메라 캘리브 자세(외부 파라미터 head_pose)로 + I 게인 — 카메라 좌표가 이 자세에서만 맞다(머리가 조금 움직인다)
+  arm_free: true
 - id: head_view_check
   group: check
   lane: rig
@@ -76,12 +77,14 @@ stages:
   skippable: true
   title: 시야 검사(읽기 전용, 이 PC) — D435i IMU 숙임 − 외부 파라미터 숙임이 허용치 (config/head_view_feedback_arm4090.yaml view_check_tol_deg) 안인가. 머리는 움직이지 않는다. yaw
     는 못 잰다
+  arm_free: true
 - id: head_control
   group: motion
   lane: rig
   skippable: true
   touches_real: true
   title: 목 pan · tilt 변경 — 승인한 보정 프로필과 자세로 이동 후 실측 정착 확인
+  arm_free: true
 - id: cups
   group: connect
   lane: both
@@ -90,8 +93,8 @@ stages:
   skippable: true
   touches_real: true
   needs_why: FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다
-  title: '컵 자세(5090 FP++) — RealSense · FP++ 묶음 컨테이너(fpp_source240b · fpp_shaker_c · fpp_source240p, 묶음마다 하나 · 색 · 모양으로 가르기 · 한 번 찍기: source240b_blue=오른팔
-    · shaker_c_orange=왼팔 · source240p_pink) → /objects/<물체>/pose (base). GPU VRAM 컨테이너마다 약 2 GB'
+  title: FP++ 드라이버(5090) — 인지 런처 · 자세 수신기 · base 변환 노드 · 머리 자세 맞춤. 물체는 띄우지 않는다(setting 탭 '인지 적용' 또는 에피소드가 자기 물체를 띄운다)
+  arm_free: true
 - id: cup_holders
   group: connect
   lane: both
@@ -101,6 +104,7 @@ stages:
   touches_real: true
   title: 홀더 자리 다시 재기(홀더를 옮겼을 때만) — 마커 ID 0·1·2 → config/cup_holder_poses_5090_v1.yaml 갱신 · /objects/cup_holder_{0,1,2}/pose (base). 홀더는 고정이라 에피소드는
     이 단계를 기다리지 않고 저장된 파일을 쓴다. 로봇은 움직이지 않는다. CPU 만
+  arm_free: true
 - id: cups_right
   group: recognize
   lane: arm_right
@@ -109,6 +113,7 @@ stages:
   skippable: true
   touches_real: true
   title: '[right] 컵 하나만 다시 인지 — source240b_blue (FP++ 컨테이너가 내려가 있으면 그것만 다시 띄우고, 이 컵의 묶음만 지금 카메라로 다시 찍는다)'
+  arm_free: true
 - id: cups_left
   group: recognize
   lane: arm_left
@@ -117,6 +122,7 @@ stages:
   skippable: true
   touches_real: true
   title: '[left] 컵 하나만 다시 인지 — shaker_c_orange (FP++ 컨테이너가 내려가 있으면 그것만 다시 띄우고, 이 컵의 묶음만 지금 카메라로 다시 찍는다)'
+  arm_free: true
 - id: drivers
   group: connect
   lane: rig
@@ -774,98 +780,98 @@ run:
     - policy_aglt_left#3
     - policy_aglt_right#2
     - policy_aglt_left#2
-    - episode_pick_place_right#6
-    - episode_pick_place_left#6
-    - episode_grasp_c_right#5
-    - episode_grasp_c_left#5
+    - episode_pick_place_right#8
+    - episode_pick_place_left#8
+    - episode_grasp_c_right#7
+    - episode_grasp_c_left#7
     - episode_tilt_base_b#4
-    - episode_tilt_base_c#6
-    - episode_tilt_base_d#6
-    - episode_grasp_b_right#4
-    - episode_grasp_b_left#4
-    - episode_grasp_d_right#5
-    - episode_grasp_d_left#5
-    - episode_grasp_e_right#5
-    - episode_grasp_e_left#5
-    - episode_grasp_f_right#5
-    - episode_grasp_f_left#5
-    - episode_pick_place_f_right#6
-    - episode_pick_place_f_left#6
-    - episode_grasp2tilt_f_240#6
-    - episode_cocktail_1#8
-    - episode_cocktail_1b#8
-    - episode_cocktail_1c_e1000#8
-    - episode_cocktail_1c_e4000#8
-    - episode_grasp_s_right#6
-    - episode_grasp_s_left#6
+    - episode_tilt_base_c#8
+    - episode_tilt_base_d#8
+    - episode_grasp_b_right#6
+    - episode_grasp_b_left#6
+    - episode_grasp_d_right#7
+    - episode_grasp_d_left#7
+    - episode_grasp_e_right#7
+    - episode_grasp_e_left#7
+    - episode_grasp_f_right#7
+    - episode_grasp_f_left#7
+    - episode_pick_place_f_right#8
+    - episode_pick_place_f_left#8
+    - episode_grasp2tilt_f_240#8
+    - episode_cocktail_1#10
+    - episode_cocktail_1b#10
+    - episode_cocktail_1c_e1000#10
+    - episode_cocktail_1c_e4000#10
+    - episode_grasp_s_right#8
+    - episode_grasp_s_left#8
     - policy_place_right#1
     - policy_place_left#1
-    - episode_pick_place_right#3
-    - episode_pick_place_right#4
-    - episode_pick_place_right#7
-    - episode_pick_place_left#3
-    - episode_pick_place_left#4
-    - episode_pick_place_left#7
-    - episode_grasp_c_right#3
-    - episode_grasp_c_right#6
-    - episode_grasp_c_left#3
-    - episode_grasp_c_left#6
+    - episode_pick_place_right#5
+    - episode_pick_place_right#6
+    - episode_pick_place_right#9
+    - episode_pick_place_left#5
+    - episode_pick_place_left#6
+    - episode_pick_place_left#9
+    - episode_grasp_c_right#5
+    - episode_grasp_c_right#8
+    - episode_grasp_c_left#5
+    - episode_grasp_c_left#8
     - episode_tilt_base_b#5
-    - episode_tilt_base_c#3
-    - episode_tilt_base_c#4
-    - episode_tilt_base_c#7
-    - episode_tilt_base_d#3
-    - episode_tilt_base_d#4
-    - episode_tilt_base_d#7
-    - episode_grasp_b_right#5
-    - episode_grasp_b_left#5
-    - episode_grasp_d_right#3
-    - episode_grasp_d_right#6
-    - episode_grasp_d_left#3
-    - episode_grasp_d_left#6
-    - episode_grasp_e_right#3
-    - episode_grasp_e_right#6
-    - episode_grasp_e_left#3
-    - episode_grasp_e_left#6
-    - episode_grasp_f_right#3
-    - episode_grasp_f_right#6
-    - episode_grasp_f_left#3
-    - episode_grasp_f_left#6
-    - episode_pick_place_f_right#3
-    - episode_pick_place_f_right#4
-    - episode_pick_place_f_right#7
-    - episode_pick_place_f_left#3
-    - episode_pick_place_f_left#4
-    - episode_pick_place_f_left#7
-    - episode_grasp2tilt_f_240#3
-    - episode_grasp2tilt_f_240#4
-    - episode_grasp2tilt_f_240#7
-    - episode_cocktail_1#3
-    - episode_cocktail_1#4
+    - episode_tilt_base_c#5
+    - episode_tilt_base_c#6
+    - episode_tilt_base_c#9
+    - episode_tilt_base_d#5
+    - episode_tilt_base_d#6
+    - episode_tilt_base_d#9
+    - episode_grasp_b_right#7
+    - episode_grasp_b_left#7
+    - episode_grasp_d_right#5
+    - episode_grasp_d_right#8
+    - episode_grasp_d_left#5
+    - episode_grasp_d_left#8
+    - episode_grasp_e_right#5
+    - episode_grasp_e_right#8
+    - episode_grasp_e_left#5
+    - episode_grasp_e_left#8
+    - episode_grasp_f_right#5
+    - episode_grasp_f_right#8
+    - episode_grasp_f_left#5
+    - episode_grasp_f_left#8
+    - episode_pick_place_f_right#5
+    - episode_pick_place_f_right#6
+    - episode_pick_place_f_right#9
+    - episode_pick_place_f_left#5
+    - episode_pick_place_f_left#6
+    - episode_pick_place_f_left#9
+    - episode_grasp2tilt_f_240#5
+    - episode_grasp2tilt_f_240#6
+    - episode_grasp2tilt_f_240#9
     - episode_cocktail_1#5
     - episode_cocktail_1#6
-    - episode_cocktail_1#9
-    - episode_cocktail_1b#3
-    - episode_cocktail_1b#4
+    - episode_cocktail_1#7
+    - episode_cocktail_1#8
+    - episode_cocktail_1#11
     - episode_cocktail_1b#5
     - episode_cocktail_1b#6
-    - episode_cocktail_1b#9
-    - episode_cocktail_1c_e1000#3
-    - episode_cocktail_1c_e1000#4
+    - episode_cocktail_1b#7
+    - episode_cocktail_1b#8
+    - episode_cocktail_1b#11
     - episode_cocktail_1c_e1000#5
     - episode_cocktail_1c_e1000#6
-    - episode_cocktail_1c_e1000#9
-    - episode_cocktail_1c_e4000#3
-    - episode_cocktail_1c_e4000#4
+    - episode_cocktail_1c_e1000#7
+    - episode_cocktail_1c_e1000#8
+    - episode_cocktail_1c_e1000#11
     - episode_cocktail_1c_e4000#5
     - episode_cocktail_1c_e4000#6
-    - episode_cocktail_1c_e4000#9
-    - episode_grasp_s_right#3
-    - episode_grasp_s_right#4
-    - episode_grasp_s_right#7
-    - episode_grasp_s_left#3
-    - episode_grasp_s_left#4
-    - episode_grasp_s_left#7
+    - episode_cocktail_1c_e4000#7
+    - episode_cocktail_1c_e4000#8
+    - episode_cocktail_1c_e4000#11
+    - episode_grasp_s_right#5
+    - episode_grasp_s_right#6
+    - episode_grasp_s_right#9
+    - episode_grasp_s_left#5
+    - episode_grasp_s_left#6
+    - episode_grasp_s_left#9
   - note: 남은 bag 기록 마무리(rh56f1_record.sh stop)
     argv:
     - bash
@@ -982,7 +988,7 @@ run:
     - --extrinsics
     - '{repo}/config/global_camera_extrinsics_arm4090_r20u5.yaml'
   cups:
-  - note: ★컵이 테이블에 똑바로 서 있고 손이 가리지 않는가 · 5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다). 머리 자세는 FP++ 를 켜기 전에 이 단계가 캘리브 자세로 맞춘다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 머리 자세는 이 단계가 캘리브 자세로 맞춘다
     argv:
     - bash
     - -lc
@@ -1015,36 +1021,6 @@ run:
     argv: *id001
     execute_args:
     - --execute
-  - note: 카메라 + FP++ 켜기 — 묶음 컨테이너(fpp_source240b · fpp_shaker_c · fpp_source240p)가 source240b_blue=오른팔 · shaker_c_orange=왼팔 · source240p_pink
-      를 차례로 한 번 찍는다. 이미 떠 있으면 그대로. 최대 300 s(묶음을 하나씩 — 앞 묶음 첫 회차 뒤 다음, 11.03). ★10.13 묶음 하나가 못 뜨면 경고만(나머지는 계속), 하나도 못 띄우면 실패
-    argv:
-    - python3
-    - '{repo}/scripts/ops/perception_ctl.py'
-    - start
-    - source240b_blue
-    - shaker_c_orange
-    - source240p_pink
-    - --viewer
-    - --wait
-    - '300'
-  - note: 컵 좌표 추출 — 처음엔 FP++ 가 켜지며 찍는 회차를 기다리고, 이 단계를 다시 실행하면(컵을 옮긴 뒤 '↶ 여기서 다시') 컨테이너를 끄지 않고 지금 카메라로 다시 찍는다(10.08 사용자). 컵마다 base 좌표 · 판정을 찍는다.
-      ★10.13 하나라도 찾으면 통과 · 못 찾은 컵은 이유와 함께 경고(그 컵은 개별 인지 단계로 다시)
-    argv:
-    - python3
-    - '{repo}/scripts/ops/fpp_rescan.py'
-    - source240b_blue
-    - shaker_c_orange
-    - source240p_pink
-    - --wait
-    - '120'
-  - note: ★컵 자세 확인(바로 위 추출 결과) — 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y
-      < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
-      --write --head-config config/head_camset_rh56f1.yaml)
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
   cups_right:
   - note: ★[right] source240b_blue 가 테이블에 똑바로 서 있고 손이 가리지 않는가
     argv:
@@ -1052,16 +1028,16 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] FP++ 컨테이너 확인 — 내려간 묶음만 다시 띄운다(fpp_source240b · fpp_shaker_c · fpp_source240p). 최대 300 s'
+  - note: '[right] FP++ 컨테이너 확인 — source240b_blue 묶음이 없으면 띄운다(다른 컨테이너는 그대로). 최대 120 s'
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
+    - --add
     - source240b_blue
-    - shaker_c_orange
-    - source240p_pink
     - --wait
-    - '300'
+    - '120'
+    - --require-all
   - note: '[right] source240b_blue 만 다시 찍기 — base 좌표 · 판정을 찍고, 못 찾으면 이유와 함께 실패'
     argv:
     - python3
@@ -1076,16 +1052,16 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[left] FP++ 컨테이너 확인 — 내려간 묶음만 다시 띄운다(fpp_source240b · fpp_shaker_c · fpp_source240p). 최대 300 s'
+  - note: '[left] FP++ 컨테이너 확인 — shaker_c_orange 묶음이 없으면 띄운다(다른 컨테이너는 그대로). 최대 120 s'
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
-    - source240b_blue
+    - --add
     - shaker_c_orange
-    - source240p_pink
     - --wait
-    - '300'
+    - '120'
+    - --require-all
   - note: '[left] shaker_c_orange 만 다시 찍기 — base 좌표 · 판정을 찍고, 못 찾으면 이유와 함께 실패'
     argv:
     - python3
@@ -2533,8 +2509,26 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★[에피소드 pick_place_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
-      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240b_blue
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 pick_place_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
+      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
+      · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
+      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -2657,10 +2651,10 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_pick_place_right#7
+    - episode_pick_place_right#9
+    - episode_pick_place_right#8
     - episode_pick_place_right#6
-    - episode_pick_place_right#4
-    - episode_pick_place_right#3
+    - episode_pick_place_right#5
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -2681,8 +2675,26 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★[에피소드 pick_place_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
-      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - shaker_c_orange
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 pick_place_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
+      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
+      · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
+      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -2805,10 +2817,10 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_pick_place_left#7
+    - episode_pick_place_left#9
+    - episode_pick_place_left#8
     - episode_pick_place_left#6
-    - episode_pick_place_left#4
-    - episode_pick_place_left#3
+    - episode_pick_place_left#5
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -2829,7 +2841,26 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★[에피소드 grasp_c_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240b_blue
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_c_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -2930,9 +2961,9 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_c_right#6
+    - episode_grasp_c_right#8
+    - episode_grasp_c_right#7
     - episode_grasp_c_right#5
-    - episode_grasp_c_right#3
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -2953,7 +2984,26 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★[에피소드 grasp_c_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - shaker_c_orange
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_c_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -3054,9 +3104,9 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_c_left#6
+    - episode_grasp_c_left#8
+    - episode_grasp_c_left#7
     - episode_grasp_c_left#5
-    - episode_grasp_c_left#3
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -3142,7 +3192,27 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★[에피소드 tilt_base_c] 물체(SRC, RCV)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240b_blue · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 210 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240b_blue
+    - shaker_c_orange
+    - --wait
+    - '210'
+    - --require-all
+  - note: '★[에피소드 tilt_base_c] 물체(SRC, RCV)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) ·
+      기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -3303,10 +3373,10 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_tilt_base_c#7
+    - episode_tilt_base_c#9
+    - episode_tilt_base_c#8
     - episode_tilt_base_c#6
-    - episode_tilt_base_c#4
-    - episode_tilt_base_c#3
+    - episode_tilt_base_c#5
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -3327,7 +3397,27 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★[에피소드 tilt_base_d] 물체(SRC, RCV)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240b_blue · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 210 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240b_blue
+    - shaker_c_orange
+    - --wait
+    - '210'
+    - --require-all
+  - note: '★[에피소드 tilt_base_d] 물체(SRC, RCV)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) ·
+      기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -3504,10 +3594,10 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_tilt_base_d#7
+    - episode_tilt_base_d#9
+    - episode_tilt_base_d#8
     - episode_tilt_base_d#6
-    - episode_tilt_base_d#4
-    - episode_tilt_base_d#3
+    - episode_tilt_base_d#5
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -3528,7 +3618,26 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/(episode_runner_right)$'''
-  - note: ★[에피소드 grasp_b_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240b_blue
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_b_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -3570,8 +3679,8 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_b_right#5
-    - episode_grasp_b_right#4
+    - episode_grasp_b_right#7
+    - episode_grasp_b_right#6
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -3592,7 +3701,26 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/(episode_runner_left)$'''
-  - note: ★[에피소드 grasp_b_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - shaker_c_orange
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_b_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -3634,8 +3762,8 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_b_left#5
-    - episode_grasp_b_left#4
+    - episode_grasp_b_left#7
+    - episode_grasp_b_left#6
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -3656,7 +3784,26 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★[에피소드 grasp_d_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240b_blue
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_d_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -3765,9 +3912,9 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_d_right#6
+    - episode_grasp_d_right#8
+    - episode_grasp_d_right#7
     - episode_grasp_d_right#5
-    - episode_grasp_d_right#3
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -3788,7 +3935,26 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★[에피소드 grasp_d_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - shaker_c_orange
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_d_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -3897,9 +4063,9 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_d_left#6
+    - episode_grasp_d_left#8
+    - episode_grasp_d_left#7
     - episode_grasp_d_left#5
-    - episode_grasp_d_left#3
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -3920,7 +4086,26 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★[에피소드 grasp_e_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240b_blue
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_e_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -4034,9 +4219,9 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_e_right#6
+    - episode_grasp_e_right#8
+    - episode_grasp_e_right#7
     - episode_grasp_e_right#5
-    - episode_grasp_e_right#3
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -4057,7 +4242,26 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★[에피소드 grasp_e_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - shaker_c_orange
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_e_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -4171,9 +4375,9 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_e_left#6
+    - episode_grasp_e_left#8
+    - episode_grasp_e_left#7
     - episode_grasp_e_left#5
-    - episode_grasp_e_left#3
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -4194,7 +4398,26 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★[에피소드 grasp_f_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240b_blue
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_f_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -4308,9 +4531,9 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_f_right#6
+    - episode_grasp_f_right#8
+    - episode_grasp_f_right#7
     - episode_grasp_f_right#5
-    - episode_grasp_f_right#3
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -4331,7 +4554,26 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★[에피소드 grasp_f_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - shaker_c_orange
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_f_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -4445,9 +4687,9 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_f_left#6
+    - episode_grasp_f_left#8
+    - episode_grasp_f_left#7
     - episode_grasp_f_left#5
-    - episode_grasp_f_left#3
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -4468,8 +4710,26 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★[에피소드 pick_place_f_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
-      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240b_blue
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 pick_place_f_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
+      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
+      · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
+      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -4606,10 +4866,10 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_pick_place_f_right#7
+    - episode_pick_place_f_right#9
+    - episode_pick_place_f_right#8
     - episode_pick_place_f_right#6
-    - episode_pick_place_f_right#4
-    - episode_pick_place_f_right#3
+    - episode_pick_place_f_right#5
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -4630,8 +4890,26 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★[에피소드 pick_place_f_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=0 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
-      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - shaker_c_orange
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 pick_place_f_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=0 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
+      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
+      · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
+      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -4768,10 +5046,10 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_pick_place_f_left#7
+    - episode_pick_place_f_left#9
+    - episode_pick_place_f_left#8
     - episode_pick_place_f_left#6
-    - episode_pick_place_f_left#4
-    - episode_pick_place_f_left#3
+    - episode_pick_place_f_left#5
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -4792,7 +5070,27 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★[에피소드 grasp2tilt_f_240] 물체(SRC, RCV)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240b_blue · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 210 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240b_blue
+    - shaker_c_orange
+    - --wait
+    - '210'
+    - --require-all
+  - note: '★[에피소드 grasp2tilt_f_240] 물체(SRC, RCV)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm)
+      · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -4979,10 +5277,10 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp2tilt_f_240#7
+    - episode_grasp2tilt_f_240#9
+    - episode_grasp2tilt_f_240#8
     - episode_grasp2tilt_f_240#6
-    - episode_grasp2tilt_f_240#4
-    - episode_grasp2tilt_f_240#3
+    - episode_grasp2tilt_f_240#5
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -5003,8 +5301,29 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★[에피소드 cocktail_1] 물체(SRC_BLUE, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · SRC_PINK 는 아직 탁자에 두지 않는다(에피소드 확인 단계에서 놓는다) · 홀더 HOLDER_0=0, HOLDER_1=1,
-      HOLDER_2=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240b_blue · source240p_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240b_blue
+    - source240p_pink
+    - shaker_c_orange
+    - --wait
+    - '300'
+    - --require-all
+  - note: '★[에피소드 cocktail_1] 물체(SRC_BLUE, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · SRC_PINK 는 아직 탁자에 두지 않는다(에피소드 확인 단계에서 놓는다) · 홀더 HOLDER_0=0, HOLDER_1=1,
+      HOLDER_2=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판
+      0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -5238,12 +5557,12 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_cocktail_1#9
+    - episode_cocktail_1#11
+    - episode_cocktail_1#10
     - episode_cocktail_1#8
+    - episode_cocktail_1#7
     - episode_cocktail_1#6
     - episode_cocktail_1#5
-    - episode_cocktail_1#4
-    - episode_cocktail_1#3
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -5264,8 +5583,28 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★[에피소드 cocktail_1b] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
-      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240b_blue · source240p_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240b_blue
+    - source240p_pink
+    - shaker_c_orange
+    - --wait
+    - '300'
+    - --require-all
+  - note: '★[에피소드 cocktail_1b] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
+      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
+      · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
+      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -5499,12 +5838,12 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_cocktail_1b#9
+    - episode_cocktail_1b#11
+    - episode_cocktail_1b#10
     - episode_cocktail_1b#8
+    - episode_cocktail_1b#7
     - episode_cocktail_1b#6
     - episode_cocktail_1b#5
-    - episode_cocktail_1b#4
-    - episode_cocktail_1b#3
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -5525,8 +5864,29 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★[에피소드 cocktail_1c_e1000] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고 저장된
-      자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240b_blue · source240p_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240b_blue
+    - source240p_pink
+    - shaker_c_orange
+    - --wait
+    - '300'
+    - --require-all
+  - note: '★[에피소드 cocktail_1c_e1000] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고
+      저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점
+      0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -5764,12 +6124,12 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_cocktail_1c_e1000#9
+    - episode_cocktail_1c_e1000#11
+    - episode_cocktail_1c_e1000#10
     - episode_cocktail_1c_e1000#8
+    - episode_cocktail_1c_e1000#7
     - episode_cocktail_1c_e1000#6
     - episode_cocktail_1c_e1000#5
-    - episode_cocktail_1c_e1000#4
-    - episode_cocktail_1c_e1000#3
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -5790,8 +6150,29 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★[에피소드 cocktail_1c_e4000] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고 저장된
-      자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240b_blue · source240p_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240b_blue
+    - source240p_pink
+    - shaker_c_orange
+    - --wait
+    - '300'
+    - --require-all
+  - note: '★[에피소드 cocktail_1c_e4000] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고
+      저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점
+      0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -6029,12 +6410,12 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_cocktail_1c_e4000#9
+    - episode_cocktail_1c_e4000#11
+    - episode_cocktail_1c_e4000#10
     - episode_cocktail_1c_e4000#8
+    - episode_cocktail_1c_e4000#7
     - episode_cocktail_1c_e4000#6
     - episode_cocktail_1c_e4000#5
-    - episode_cocktail_1c_e4000#4
-    - episode_cocktail_1c_e4000#3
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -6055,7 +6436,26 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★[에피소드 grasp_s_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240b_blue
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_s_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -6175,10 +6575,10 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_s_right#7
+    - episode_grasp_s_right#9
+    - episode_grasp_s_right#8
     - episode_grasp_s_right#6
-    - episode_grasp_s_right#4
-    - episode_grasp_s_right#3
+    - episode_grasp_s_right#5
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -6199,7 +6599,26 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★[에피소드 grasp_s_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가. 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - shaker_c_orange
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_s_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
     argv:
     - bash
     - -lc
@@ -6319,10 +6738,10 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_s_left#7
+    - episode_grasp_s_left#9
+    - episode_grasp_s_left#8
     - episode_grasp_s_left#6
-    - episode_grasp_s_left#4
-    - episode_grasp_s_left#3
+    - episode_grasp_s_left#5
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash

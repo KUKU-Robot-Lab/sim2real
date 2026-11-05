@@ -27,6 +27,8 @@ class Command:
     objects: tuple[str, ...]
     viewer: bool | None
     camera: bool
+    #: ★11.05 덧붙이기(start 만) — 목록 밖 컨테이너를 내리지 않고 없는 것만 띄운다(에피소드가 자기 물체를 확보할 때)
+    add: bool = False
 
 
 @dataclass(frozen=True)
@@ -66,7 +68,10 @@ def parse_command(text: str, registry) -> Command:
         raise ValueError("'viewer'/'on' must be a boolean")
     if op == "viewer" and viewer is None:
         raise ValueError("viewer needs 'on': true|false")
-    return Command(op=op, objects=objects, viewer=viewer, camera=bool(raw.get("camera", False)))
+    add = raw.get("add", False)
+    if not isinstance(add, bool):
+        raise ValueError("'add' must be a boolean")
+    return Command(op=op, objects=objects, viewer=viewer, camera=bool(raw.get("camera", False)), add=op == "start" and add)
 
 
 def parse_remote_status(text: str) -> RemoteState:
@@ -116,7 +121,7 @@ def plan_actions(cmd: Command, state: RemoteState,
             actions.append(("camera_up",))
         wanted = {_container(n, group_of) for n in cmd.objects}
         for cname in sorted(state.containers):
-            if cname.startswith(CONTAINER_PREFIX) and cname not in wanted:
+            if not cmd.add and cname.startswith(CONTAINER_PREFIX) and cname not in wanted:
                 actions.append(("fpp_down", cname))
         started: set[str] = set()
         for name in cmd.objects:
@@ -240,6 +245,8 @@ def build_status(state: RemoteState | None, camera_hz: float, pose_ages: dict[st
         "warning": warning,
         #: ★11.03 묶음 첫 회차 참고(상한 넘김 · 첫 회차 오류) — 컨테이너는 떠 있다. warning 과 섞지 않는다(--require-all 이 실패로 본다)
         "notes": list(notes or []),
+        #: ★11.05 이 런처가 아는 start 모드 — perception_ctl --add 는 옛 런처(add 를 모르고 맞추기로 내림)에 보내지 않는다
+        "modes": ["add"],
     }
 
 

@@ -74,6 +74,43 @@ def test_card_layout_restore_and_validation(tmp_path):
     assert ws.snapshot()['cards'] == []
 
 
+def test_object_selection_survives_a_reload_and_binds_the_approval(tmp_path):
+    """★11.05 인지 물체 선택은 workspace 파일에 같이 남는다 — 새로고침 · 콘솔 재시작 뒤에도 같은 물체로 "인지 적용" 한다."""
+    ws = workspace(tmp_path)
+    before = ws.fingerprint()
+    ws.update({'objects': [{'id': 'source240b_blue', 'enabled': True}, {'id': 'shaker_c_orange', 'enabled': True}]})
+    assert ws.fingerprint() != before                                    # 승인 해시가 선택을 묶는다
+    again = Workspace(tmp_path, 'openarm_rh56f1')
+    assert sorted(o['id'] for o in again.objects if o['enabled']) == ['shaker_c_orange', 'source240b_blue']
+    assert again.fingerprint() == ws.fingerprint()
+
+
+
+def test_saved_selection_restores_item_by_item_and_logs_drops(tmp_path, caplog):
+    import json
+    ws = workspace(tmp_path)
+    ws.update({'objects': [{'id': 'source240b_blue', 'enabled': True}]})
+    doc = json.loads(ws.layout_path.read_text())
+    doc['objects'] += [{'id': 'gone_from_registry', 'enabled': True},          # 레지스트리에서 빠진 id
+                       {'id': 'shaker_c_orange', 'enabled': 'yes'},            # 잘못된 항목
+                       {'id': 'source200_orange', 'enabled': True}]
+    ws.layout_path.write_text(json.dumps(doc))
+    with caplog.at_level('WARNING', logger='s2r_console.workspace'):
+        again = Workspace(tmp_path, 'openarm_rh56f1')
+    assert sorted(o['id'] for o in again.objects if o['enabled']) == ['source200_orange', 'source240b_blue']
+    assert 'gone_from_registry' in caplog.text and 'shaker_c_orange' in caplog.text
+
+
+def test_old_layout_file_without_objects_restores_cards_only(tmp_path):
+    import json
+    ws = workspace(tmp_path)
+    ws.update({'objects': [{'id': 'source240b_blue', 'enabled': True}]})
+    doc = json.loads(ws.layout_path.read_text())
+    del doc['objects']
+    ws.layout_path.write_text(json.dumps(doc))
+    again = Workspace(tmp_path, 'openarm_rh56f1')
+    assert not any(o['enabled'] for o in again.objects) and again.cards == ws.cards
+
 def test_safe_registered_commands_and_holder_rejection(tmp_path):
     ws = workspace(tmp_path)
     ws.update({'head': {'pan': 10, 'tilt': -30, 'calib_profile': 'v9_1014_anchored_z'}})

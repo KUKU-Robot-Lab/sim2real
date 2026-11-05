@@ -214,15 +214,18 @@ def test_real_cups_run_fpp_on_the_perception_pc_after_the_head_home_and_shutdown
     from perception_launcher_core import FIRST_ROUND_S
     assert GEN._start_wait() >= len(GEN._groups()) * FIRST_ROUND_S          # 11.03 묶음을 하나씩 — 묶음마다 첫 회차 상한
     for want in (f"perception_launcher_node.py --host {host}", "fpp_pose_rx.py", "object_pose_node.py --camera-extrinsics",
-                 "--camera-extrinsics", ext,
-                 f"perception_ctl.py start {objs} --viewer --wait {GEN._start_wait()}",
-                 f"fpp_rescan.py {objs} --wait 120"):        # 10.08 다시 실행 = 지금 카메라로 다시 찍기(11.04 에피소드 물체 분홍도)
+                 "--camera-extrinsics", ext):
         assert any(want in a for a in cups), want
-    rescan = next(c.argv for c in _cmds(REAL, REAL_BOOK, "cups") if any("fpp_rescan.py" in str(x) for x in c.argv))
-    if GEN.REMOTE_PERCEPTION:                                    # 10.13 FP++ 상태는 인지 PC 에서만 보인다
-        assert list(rescan[-2:]) == ["--status-host", host]
-    else:
-        assert "--status-host" not in rescan
+    # ★11.05 사용자: cups = FP++ 드라이버만 — 물체는 에피소드 첫 명령(덧붙이기)과 setting 탭 "인지 적용" 이 띄운다
+    assert not any("perception_ctl.py start" in a or "fpp_rescan.py" in a for a in cups)
+    ep = _cmds(REAL, REAL_BOOK, "episode_cocktail_1c_e4000")
+    at = next(i for i, c in enumerate(ep) if "perception_ctl.py start --add " in " ".join(c.argv))
+    first = " ".join(ep[at].argv)
+    assert first.endswith("--require-all")
+    # ★11.05 확보는 읽기 전용 시작 검사 뒤, GPU · 수동 확인 사이 — 시작 검사가 막히면 컨테이너를 띄우지 않는다
+    assert [c.note.startswith("시작 검사") for c in ep[:at - 1]] == [True, True] and ep[at - 1].manual and "nvidia-smi" in " ".join(ep[at - 1].argv)
+    assert ep[at + 1].manual and "기울기 < 3°" in ep[at + 1].note
+    assert set(first.split("--add ")[1].split(" --wait")[0].split()) == set(objs.split())   # 화면 선택과 상관없이 물체 셋
     bg = [c for c in _cmds(REAL, REAL_BOOK, "cups") if c.background]
     assert len(bg) == 3
     down = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "shutdown")]
@@ -479,7 +482,7 @@ def test_head_pose_is_checked_and_aligned_before_fpp_and_holder_poses():
     def idx(cmds, needle):
         return next(i for i, c in enumerate(cmds) if needle in " ".join(c.argv))
     tool = 'head_move.py'
-    pairs = [("head_home", None), ("cups", "perception_ctl.py start")]
+    pairs = [("head_home", None), ("cups", None)]   # ★11.05 cups = 드라이버만 — 물체 촬영은 그 뒤 단계(에피소드 · 인지 적용)
     if not GEN.REMOTE_PERCEPTION:
         pairs.append(("cup_holders", "cup_holder_pose_node.py"))
     for sid, then in pairs:
@@ -558,15 +561,16 @@ def test_each_cup_can_be_recognized_again_on_its_own(side):
     assert ("--status-host" in rescan[0]) == GEN.REMOTE_PERCEPTION
     assert not [o for o in ACTIVE_SIDES.values() if o != cup and o in rescan[0]]     # 이 컵 하나만
     start = [a for a in argv if any("perception_ctl.py" in x for x in a)]
-    assert start and set(ACTIVE_SIDES.values()) <= set(start[0])   # start 는 넘긴 물체 밖을 내리므로 컵 전부(떠 있으면 그대로)
+    # ★11.05 덧붙이기 — 다른 물체 컨테이너는 내리지 않으니 이 팔 컵 하나만 넘긴다
+    assert len(start) == 1 and list(start[0][2:4]) == ["start", "--add"] and [o for o in ACTIVE_SIDES.values() if o in start[0]] == [cup]
     assert not any(s.id == f"cups_{side}" for s in FAKE.stages if s.touches_real)
 
 
-def test_the_both_cup_stage_passes_with_one_cup_unless_asked_for_all():
-    """★10.13 cups 단계의 start · rescan 은 기본(하나라도) — --require-all 을 붙이지 않는다."""
-    flat = [x for c in _cmds(REAL, REAL_BOOK, "cups") for x in c.argv]
-    assert "--require-all" not in flat
-    assert any("fpp_rescan.py" in x for x in flat) and any("perception_ctl.py" in x for x in flat)
+def test_stage_object_starts_add_and_never_take_down_other_objects():
+    """★11.05 사용자: 에피소드 · cups_<팔> 이 띄우는 물체는 덧붙이기(--add) — 목록 밖 컨테이너를 내리는 맞추기는 setting 탭 "인지 적용" 만 한다."""
+    starts = [list(c.argv) for st in REAL.stages if st.id.startswith(("episode_", "cups"))
+              for c in _cmds(REAL, REAL_BOOK, st.id) if "perception_ctl.py" in " ".join(c.argv) and "start" in c.argv]
+    assert starts and all(a[a.index("start") + 1] == "--add" and "--require-all" in a for a in starts)
 
 
 def test_episodes_with_holders_read_the_holder_file_this_station_writes():
@@ -717,3 +721,31 @@ def test_the_station_head_goes_to_the_pose_its_camera_file_was_measured_at():
         pytest.skip("hand-eye 스테이션 — 정적 자세가 없다")
     cfg = load_head_home(REPO / GEN.HEAD_CONFIG)
     assert {name: deg_to_tick(cfg.targets_deg[i]) for i, name in cfg.names.items()} == hp.ticks
+
+
+def test_arm_free_stages_never_start_arm_hand_or_pd_programs():
+    """★11.05 건너뛰기 · 팔 상태 무관 단계(arm_free)는 pd · 팔 드라이버 · 손 프로그램을 띄우지 않는다 — 불변식."""
+    import re
+    arm = re.compile(r"pd_|replay_to_pd|episode_ctl|trigger\.py|openarm|can_up|\bcan[01]\b|rh56f1_(driver|state)|ecat|hand/")
+    for raw in (REAL_RAW, FAKE_RAW):
+        free = [s["id"] for s in raw["stages"] if s.get("arm_free")]
+        assert "cups" in free
+        for sid in free:
+            for c in raw["run"].get(sid, []):
+                line = " ".join(map(str, c.get("argv") or []))
+                assert not arm.search(line), (sid, line)
+        # 같은 패턴이 실제 팔 · 손 · pd 단계는 잡는다(패턴이 헛돌지 않게)
+        hits = {s["id"] for s in raw["stages"] if not s.get("arm_free")
+                and any(arm.search(" ".join(map(str, c.get("argv") or []))) for c in raw["run"].get(s["id"], []))}
+        if raw is REAL_RAW:
+            assert {"drivers", "hand_right", "pd_arm_right", "home_right"} <= hits
+
+
+
+def test_episode_without_objects_has_no_perception_ensure():
+    """★11.05 확보할 물체가 없으면(FP++ 안 쓰는 에피소드 · fake) 확보 명령을 넣지 않는다."""
+    def ensures(raw, sid):
+        return [c for c in raw["run"].get(sid, []) if "perception_ctl.py" in " ".join(map(str, c.get("argv") or []))]
+    assert not any(ensures(FAKE_RAW, s["id"]) for s in FAKE_RAW["stages"] if s["id"].startswith("episode_"))
+    assert not ensures(REAL_RAW, "episode_tilt_base_b")              # FP++ 안 쓰는 tilt — 물체가 있어도 확보하지 않는다
+    assert ensures(REAL_RAW, "episode_tilt_base_c")
