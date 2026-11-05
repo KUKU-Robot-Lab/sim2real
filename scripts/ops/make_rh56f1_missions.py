@@ -115,6 +115,13 @@ CAMERA_BAG_TOPICS = ("/camera/camera/color/image_raw/compressed",
                      "/camera/camera/aligned_depth_to_color/image_raw/compressedDepth",
                      "/camera/camera/color/camera_info", "/camera/camera/aligned_depth_to_color/camera_info",
                      "/head_depth/image", "/head/joint_states")
+#: ★11.05 사용자 "1번만 … 최대한 지연 없게": 학생 시험(grasp_s_*)은 압축 토픽을 구독하지 않는다. 구독자가 있으면 카메라
+#   드라이버가 프레임마다 압축해 원본 지연이 p50 40 → 54 ms 로 밀린다(logs/analysis/camera_robot_1105). 학생 입력
+#   160x90(깊이 · RGB)만 30 Hz 로 싣는다(약 7 MB/s). 게이트 60 Hz = 30 Hz 프레임 간격이 흔들려도 버리지 않게.
+STUDENT_CAMERA_BAG_HZ = 60.0
+STUDENT_CAMERA_BAG_TOPICS = ("/head_depth/image", "/head_depth/rgb", "/head_depth/config",
+                             "/camera/camera/color/camera_info", "/head/joint_states")
+STUDENT_EPISODES = ("grasp_s_right", "grasp_s_left")
 #: 에피소드 snapshot 이 다시 내는 정지 물체 자세(episode_ros.OBJECT_RELAY) — aglt 는 이것을 컵으로 본다
 EPISODE_RELAY = "/episode/objects/{}/pose"        # ★10.19 한 팔 실행기는 episode_ros.relay_topic(실행기 이름 아래)
 # 제자리 들기(grasp_rg3) 정책 노드의 lift_hold 멈춤 = 컵 7 cm 위 + 쥠 연속 틱(60 Hz).
@@ -1073,9 +1080,12 @@ def _episode_run(name: str, real: bool) -> list:
         # ★10.12 실기: 관측 · 행동이 bag 에 없어 실패 원인(어느 입력이 정책을 sim 과 갈랐나)을 역산 · 재구성으로만 쟀다
         extra += [f"/policy_control/{s}/{x}" for s in sides for x in ("obs", "action")]
         hands = f"HAND_SIDES='{' '.join(sides)}' " if len(sides) == 1 else ""      # 한 팔 에피소드는 그 손만(다른 팔 기록과 겹치지 않게)
-        cam = "" if REMOTE_PERCEPTION else f"CAMERA='{' '.join(CAMERA_BAG_TOPICS)}' CAMERA_HZ={CAMERA_BAG_HZ:g} "
+        cam_topics, cam_hz = ((STUDENT_CAMERA_BAG_TOPICS, STUDENT_CAMERA_BAG_HZ) if name in STUDENT_EPISODES
+                              else (CAMERA_BAG_TOPICS, CAMERA_BAG_HZ))
+        cam = "" if REMOTE_PERCEPTION else f"CAMERA='{' '.join(cam_topics)}' CAMERA_HZ={cam_hz:g} "
         cmds.append(_cmd("기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더"
-                         + ("" if REMOTE_PERCEPTION else f" + 머리 카메라 bag camera({CAMERA_BAG_HZ:g} Hz)"),
+                         + ("" if REMOTE_PERCEPTION else
+                            f" + 머리 카메라 bag camera({cam_hz:g} Hz{', 학생 입력만 · 압축 없음' if name in STUDENT_EPISODES else ''})"),
                          ["bash", "-lc", f"{hands}{cam}EXTRA='{' '.join(extra)}' bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh "
                                          f"start episode_{name}"]))
         cmds.append(_cpu_record(f"episode_{name}"))
