@@ -22,6 +22,7 @@ from policy_control.pour_fj_node import PourFjNode, PourFjNodeError
 EPISODES = Path(__file__).resolve().parents[2] / "config" / "episodes"
 BLUE_LIVE = "/objects/source240b_blue/live_pose"
 PINK_LIVE = "/objects/source240p_pink/live_pose"
+NO_TIN = {"attach_source": "", "tin_json": ""}    # ★11.07 place job 마다 늘 넣는다(빈 값 = 계약 그대로)
 
 
 def _plan(ep, node_id: str):
@@ -38,10 +39,10 @@ def test_each_job_gets_its_own_cup_and_holder(name):
            for nid in ("grasp_blue", "grasp_shaker", "place_blue", "grasp_pink", "place_pink", "place_shaker")}
     assert got == {"grasp_blue": {"object": "source240_real", "cup_topic": BLUE_LIVE},
                    "grasp_shaker": {"object": "shaker_c_real", "cup_topic": "/objects/shaker_c_orange/live_pose"},
-                   "place_blue": {"object": "source240_real", "holder": 1, "holder_tol_m": 0.02},
+                   "place_blue": {"object": "source240_real", "holder": 1, "holder_tol_m": 0.02, **NO_TIN},
                    "grasp_pink": {"object": "source240_real", "cup_topic": PINK_LIVE},
-                   "place_pink": {"object": "source240_real", "holder": 2, "holder_tol_m": 0.07},   # ★10.29 카드 허용
-                   "place_shaker": {"object": "shaker_c_real", "holder": 0, "holder_tol_m": 0.02}}
+                   "place_pink": {"object": "source240_real", "holder": 2, "holder_tol_m": 0.07, **NO_TIN},   # ★10.29 카드 허용
+                   "place_shaker": {"object": "shaker_c_real", "holder": 0, "holder_tol_m": 0.02, **NO_TIN}}
 
 
 def test_a_live_cup_place_follows_the_cup_it_places():
@@ -55,7 +56,7 @@ def test_a_live_cup_place_follows_the_cup_it_places():
 def _runner(ep, set_reply=(True, []), reset_reply=(False, ["reset: 홀더 2: y 가 학습 범위 밖"])):
     calls = []
     me = SimpleNamespace(ep=ep, _wait_node_ready=lambda key: None, _lock=threading.Lock(), _events={},
-                         cancel=threading.Event(),
+                         cancel=threading.Event(), _tin_json={}, _tin_why={},
                          _set_params=lambda node, params: calls.append(("set", node, params)) or set_reply,
                          _call=lambda path: calls.append(("call", path)) or reset_reply)
     return me, calls
@@ -66,7 +67,7 @@ def test_the_runner_sets_the_job_params_before_reset():
     me, calls = _runner(ep)
     r = RosExecutor._policy(me, _plan(ep, "place_pink"))
     assert r.status == "refused" and "학습 범위 밖" in r.reason
-    assert calls == [("set", "/rh_place_node_right", {"object": "source240_real", "holder": 2, "holder_tol_m": 0.07}),
+    assert calls == [("set", "/rh_place_node_right", {"object": "source240_real", "holder": 2, "holder_tol_m": 0.07, **NO_TIN}),
                      ("call", "/policy_control/right_place/episode/reset")]
 
 

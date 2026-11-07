@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import math
 import os
@@ -133,7 +134,7 @@ def _place_cup_obs(policy: str | None) -> str:
     return str(doc.get("cup_obs", "attached"))
 
 
-def job_params(ep: Episode, p) -> dict:
+def job_params(ep: Episode, p, tin: Mapping | None = None) -> dict:
     """★10.28 정책 노드에 reset 전에 넣는 파라미터 — 노드는 첫 job 값으로 뜨고 reset 마다 이것을 다시 읽는다.
 
     object = 다물체 정책의 물체 이름(10.12, YAML 에 적힌 단계만) · aglt cup_topic = 잡을 물체의 FP++ live 토픽(미션 생성기
@@ -141,7 +142,9 @@ def job_params(ep: Episode, p) -> dict:
     쓴다 — 전에는 노드가 컵 · 홀더를 시작 때만 읽어 분홍 잡기가 파랑을 쫓고 분홍 놓기가 홀더 1 을 노렸다.
     ★11.03 place cup_topic = 계약 cup_obs live 일 때만 놓을 물체(source_object)의 live 토픽(미션 생성기와 같은 규칙, attached 계약은 안 넣는다).
     ★10.29 place holder_tol_m = 카드가 그 job 에 넓힌 홀더 허용, 없으면 HOLDER_TOL_M. 놓기 job 마다 늘 넣는다 — 앞 job 의
-    넓힌 값이 노드에 남아 다음 홀더 검사를 느슨하게 하지 않게."""
+    넓힌 값이 노드에 남아 다음 홀더 검사를 느슨하게 하지 않게.
+    ★11.07 place attach_source tin_json = 붙인 자세를 그 팔의 tilt 직전 T_in json(tin: 팔 → 경로, 없으면 "")으로.
+    place job 마다 늘 넣는다(바인딩 없으면 "" = 계약 그대로) — 노드가 앞 에피소드 · job 의 tin_json 을 들고 있지 않게."""
     out: dict = {}
     if p.kind in ("aglt", "place") and getattr(p, "policy_object", None):
         out["object"] = str(p.policy_object)
@@ -157,6 +160,11 @@ def job_params(ep: Episode, p) -> dict:
         out["holder"] = int(p.holder_id)
         tol = getattr(p, "holder_tol_m", None)
         out["holder_tol_m"] = float(HOLDER_TOL_M if tol is None else tol)
+    if p.kind == "place":
+        b = ep.policies.get(p.role)
+        on = b is not None and b.attach_source == "tin_json"
+        out["attach_source"] = "tin_json" if on else ""
+        out["tin_json"] = str((tin or {}).get(p.side, "")) if on else ""
     return out
 
 
@@ -199,6 +207,24 @@ def snapshot_of(frames: list) -> tuple | None:
     if float(np.max(np.linalg.norm(pos - np.median(pos, axis=0), axis=1))) > SNAPSHOT_STILL_M:
         return None
     return tuple(float(v) for v in np.median(pos, axis=0)), tuple(frames[-1][1])
+
+
+def pick_scene_pose(live: list, static: list, rescanned: bool, waited_s: float) -> tuple:
+    """★11.06 scene 자리 고르기 → (snap, 출처, 사유). snap None 이면 아직 못 정함.
+    다시 찍은 직후엔 …/pose 가 정본. 아니면 live 가 정본: live 가 멈춰 있으면 그 자리(z 는 known_z 보정된 …/pose 것),
+    live 가 움직이면 기다린다(옛 자리로 가지 않음). live 가 없거나 모자랄 때만 …/pose — 모자라면 창 하나만큼 기다린 뒤."""
+    s_snap, l_snap = snapshot_of(static), snapshot_of(live)
+    why = f"live {len(live)} · pose {len(static)} 프레임"
+    if rescanned:
+        return (s_snap, "pose", why) if s_snap else (None, None, why + " · 다시 찍은 자리 없음/움직임")
+    if l_snap:
+        (x, y, z), q = l_snap
+        return ((x, y, s_snap[0][2] if s_snap else z), q), "live", why
+    if len(live) >= SNAPSHOT_MIN_FRAMES:
+        return None, None, why + " · live 움직임"
+    if live and waited_s < SNAPSHOT_WINDOW_S:
+        return None, None, why + " · live 모자람"
+    return (s_snap, "pose", why) if s_snap else (None, None, why + (" · pose 움직임" if len(static) >= SNAPSHOT_MIN_FRAMES else ""))
 
 
 def arm_still(frames: list, joints: list, window_s: float = ARM_STILL_WINDOW_S,
@@ -272,6 +298,10 @@ class RosExecutor:
         self._live: dict[str, list] = {name: [] for name in ep.objects}   # ★10.20 lift 판정용 FP++ live 추적
         self._hand: dict[str, dict] = {s: {} for s in SIDES}   # ★10.17 손 실측(손 펴짐 확인) — 이름 → (rad, 시각)
         self._arm: list = []                          # ★10.30 팔 실측 [(시각, {canonical 이름: rad})] — 계획 전 정지 대기
+        self._tin_rec: dict | None = None             # ★11.07 tilt 직전 T_in 기록 중 {"live": {물체: [(시각, stamp, x7)]}, "arm": [(시각, q)]}
+        self._tin_json: dict[str, str] = {}           # 팔 → 이 에피소드 마지막 T_in json(place attach_source tin_json)
+        self._tin_why: dict[str, str] = {}            # 팔 → T_in 을 못 낸 사유(place 거부 문구)
+        self._tin_note: list = []                     # 이 tilt 노드의 T_in 출처 한 줄씩(노드 결과 reason 에 붙인다)
         self._goal_result: dict[str, dict] = {}
         self._relay: dict[str, tuple] = {}            # 물체 → (pos, quat) — snapshot 뒤 집힐 때까지
         self._proc: subprocess.Popen | None = None
@@ -286,13 +316,15 @@ class RosExecutor:
             for kind in ("rh_aglt_node", "rh_place_node"):
                 name = f"{kind}_{side}"
                 node.create_subscription(String, f"{NS}/status/{name}", self._on_json(self._status, name), QoSProfile(depth=10))
-        for name, obj in ep.objects.items() if any(n.type == "snapshot" for n in ep.nodes) else ():   # 경로 B 는 FP++ 를 안 받는다
-            node.create_subscription(PoseStamped, obj["topic"], self._on_frame(name), qos_profile_sensor_data)
+        snap_objs = set(ep.objects) if any(n.type == "snapshot" for n in ep.nodes) else set()   # 경로 B 는 FP++ 를 안 받는다
+        for name in snap_objs:
+            node.create_subscription(PoseStamped, ep.objects[name]["topic"], self._on_frame(name), qos_profile_sensor_data)
         #: ★10.20 실기 1-B: 들림 판정은 live 추적으로 본다. …/pose 는 locate 때 한 번 찍은 자리를 계속 다시 내서
         #  032511 shaker 가 live 로 9.6 cm 들렸는데 before = after 로 0.0 cm 판정 → 들고 멈춤.
         #: ★11.04 놓기 판정도 live — …/pose 는 cups 때 찍은 테이블 자리를 계속 내서 제대로 놓아도 cup_in_holder False 가 된다
         place_src = {j.source_object for n in ep.nodes for j in getattr(n, "jobs", ()) or () if j.source_object}
-        for name in {t.object for t in ep.trajectories.values() if t.kind == "lift" and t.object} | place_src:
+        #: ★11.06 scene snapshot 도 live 먼저 — …/pose 는 다시 찍기 전까지 옛 자리라 컵을 옮겨도 region 거부가 풀리지 않았다
+        for name in {t.object for t in ep.trajectories.values() if t.kind == "lift" and t.object} | place_src | snap_objs:
             topic = live_topic(ep.objects.get(name, {}).get("topic", ""))
             if topic:
                 node.create_subscription(PoseStamped, topic, self._on_frame(name, self._live), qos_profile_sensor_data)
@@ -350,6 +382,8 @@ class RosExecutor:
             return
         with self._lock:
             self._arm.append((now, q))
+            if self._tin_rec is not None:
+                self._tin_rec["arm"].append((now, q))
             cut = now - 2 * ARM_STILL_WINDOW_S
             while self._arm and self._arm[0][0] < cut:
                 self._arm.pop(0)
@@ -387,7 +421,11 @@ class RosExecutor:
         def cb(msg) -> None:
             with self._lock:
                 fr = store[name]
-                fr.append((*_q(msg), time.monotonic()))
+                pq, now = _q(msg), time.monotonic()
+                fr.append((*pq, now))
+                if self._tin_rec is not None and store is self._live:
+                    st = msg.header.stamp
+                    self._tin_rec["live"].setdefault(name, []).append((now, st.sec + st.nanosec * 1e-9, (*pq[0], *pq[1])))
                 cutoff = time.monotonic() - SNAPSHOT_WINDOW_S
                 while fr and fr[0][2] < cutoff:
                     fr.pop(0)
@@ -489,25 +527,33 @@ class RosExecutor:
                 since = time.monotonic()
         else:
             names = [n for n in self.ep.objects if (world.objects.get(n) or {}).get("at", "table") == "table"]
-        deadline = time.monotonic() + SNAPSHOT_WINDOW_S + 3.0
-        got, why = {}, {}
+        rescanned = since > 0.0
+        t0 = time.monotonic()
+        deadline = t0 + SNAPSHOT_WINDOW_S + 3.0
+        got, why, src, gap = {}, {}, {}, {}
         while time.monotonic() < deadline and len(got) < len(names) and not self.cancel.is_set():
             time.sleep(0.1)
             with self._lock:
+                live = {n: list(self._live.get(n, ())) for n in names}
                 frames = {n: list(self._frames[n]) for n in names}
+            now = time.monotonic()
             for n in names:
-                fresh = [f for f in frames[n] if time.monotonic() - f[2] < SNAPSHOT_WINDOW_S and f[2] >= since]
-                snap = snapshot_of(fresh)
+                if n in got:
+                    continue
+                lv, st = ([f for f in fr if now - f[2] < SNAPSHOT_WINDOW_S and f[2] >= since] for fr in (live[n], frames[n]))
+                snap, kind, why[n] = pick_scene_pose(lv, st, rescanned, now - t0)
                 if snap is not None:
-                    got[n] = snap
-                else:
-                    why[n] = f"{len(fresh)} 프레임" + (" · 움직임" if len(fresh) >= SNAPSHOT_MIN_FRAMES else "")
+                    got[n], src[n] = snap, kind
+                    other = snapshot_of(st if kind == "live" else lv)
+                    if other is not None:                 # live 와 …/pose 가 어긋난 정도 — scene.json 에 남김
+                        gap[n] = round(float(np.linalg.norm(np.subtract(snap[0][:2], other[0][:2]))), 4)
         missing = [n for n in names if n not in got]
         if missing:
             return NodeResult("refused", "cup pose missing — " + ", ".join(f"{n}({why.get(n, '없음')})" for n in missing)), {}
         with self._lock:
             self._relay.update(got)
-        (self.run_dir / "scene.json").write_text(json.dumps({"at": time.strftime("%F %T"), "objects": got}, indent=2))
+        (self.run_dir / "scene.json").write_text(json.dumps({"at": time.strftime("%F %T"), "objects": got, "source": src,
+                                                           "live_static_gap_m": gap}, indent=2))
         return NodeResult("completed", "", signals={"objects": sorted(got)}), got
 
     def run_policies(self, node: Node, plans: list, world) -> list:
@@ -540,7 +586,10 @@ class RosExecutor:
         t0 = time.monotonic()
         with self._lock:
             last_ep = int((self._events.get(status_key) or {}).get("episode", 0))
-        params = job_params(self.ep, p)                   # ★10.12 물체 one-hot · ★10.28 컵 · 홀더 — 노드 reset 이 다시 읽는다
+        params = job_params(self.ep, p, self._tin_json)   # ★10.12 물체 one-hot · ★10.28 컵 · 홀더 — 노드 reset 이 다시 읽는다
+        if params.get("attach_source") == "tin_json" and not params["tin_json"]:
+            why = self._tin_why.get(side, "이 에피소드에서 그 팔 tilt 가 돌지 않았다(tilt 가 먼저 돌아야 한다)")
+            return NodeResult("refused", f"place tin_json: {side} 팔 tilt 직전 T_in 없음 — {why}", role=p.role)
         if params:
             ok, why = self._set_params(f"/{node_name}_{side}", params)
             if not ok:
@@ -723,6 +772,18 @@ class RosExecutor:
                           signals={"home_skipped": skipped} if skipped else {})
 
     def _run_planned(self, node: Node, traj, world) -> NodeResult:
+        self._tin_note = []
+        try:
+            res = RosExecutor._run_planned_inner(self, node, traj, world)
+            if self._tin_note:                       # ★11.07 T_in 출처(measured | fallback)를 에피소드 로그(exit reason)에
+                res = dataclasses.replace(res, reason="; ".join([*([res.reason] if res.reason else []), *self._tin_note]))
+            return res
+        finally:
+            if self._tin_rec is not None:
+                with self._lock:
+                    self._tin_rec = None              # ★11.07 T_in 기록은 이 tilt 노드 안에서만
+
+    def _run_planned_inner(self, node: Node, traj, world) -> NodeResult:
         """10.17 carry(ready_carry → 붓기 시작 자세, 한 팔씩 또는 두 팔) · tilt(D4 기본 궤적 + 복귀, 두 팔): 실측에서 계획 · 검사
         (움직이지 않음) → 그 팔 관절을 한 시각표로 재생. 계획 · 검사 실패(rc ≠ 0)면 움직이지 않고 refused. 손 목표는 그대로
         (팔 관절만 보낸다). cups = 그 팔 손이 컵을 쥐었을 때만(False = 빈손일 때만 — 경로 B 는 컵 없이 시작 자세로 간다)."""
@@ -738,7 +799,16 @@ class RosExecutor:
                 return NodeResult("refused", f"{traj.kind}: {side} 손이 비었다 — 컵을 쥔 상태에서만(손 안 컵 자리 기준)")
             if not traj.cups and held != EMPTY:
                 return NodeResult("refused", f"{traj.kind}(빈손): {side} 손에 {held} — 빈손 이송은 손이 빈 때만")
+        tin_objs = ({s: world.hand(s) for s in sides if world.hand(s) != EMPTY}
+                    if traj.kind == "tilt" and self.ep.tin_fallback else {})   # ★11.07 tilt 직전 손 안 컵 T_in 을 잴 팔 → 쥔 물체
+        if tin_objs:
+            for s in tin_objs:
+                self._tin_json.pop(s, None)
+                self._tin_why[s] = f"[{node.id}] tilt 가 T_in 측정 전에 끝났다(정지 대기 · 계획 · 검사 실패나 정지)"
+            with self._lock:
+                self._tin_rec = {"live": {}, "arm": []}
         still = self._wait_arm_still(sides)          # ★10.30 실측에서 계획하기 전에 팔이 멈추기를 기다린다
+        tin_t0 = time.monotonic() - (ARM_STILL_WINDOW_S if still.get("arm_still") else 0.0)   # 정지 창 시작
         if self.cancel.is_set():
             return NodeResult("aborted", "episode runner stop", time.monotonic() - t0)
         if still.get("arm_still") is False:
@@ -774,6 +844,10 @@ class RosExecutor:
              "--execute"],
         ]
         for k, argv in enumerate(steps):
+            if k == 1 and tin_objs:                    # 계획 · 검사 끝(팔은 그대로) — 재생 직전에 정지 창을 닫고 잰다
+                why = self._measure_tin(node, tin_objs, tin_t0, still)
+                if why:
+                    return NodeResult("refused", why, time.monotonic() - t0)
             rc, tail = self._run(argv)
             if self.cancel.is_set():
                 return NodeResult("aborted", "episode runner stop", time.monotonic() - t0)
@@ -873,6 +947,58 @@ class RosExecutor:
                 rcs.append(p.returncode)
         return rcs
 
+    def _measure_tin(self, node: Node, objs: Mapping, t0: float, still: Mapping) -> str:
+        """★11.07 tilt 재생 직전 — 정지 창 [t0 + FP++ 지연, 지금](t0 + TL.WINDOW_S 까지 멈춘 채 기다린다)의 FP++ live 새 프레임 ×
+        손바닥 FK → 팔마다 T_in json(런 폴더, measured | fallback). 팔이 안 멈췄거나(still) 측정이 예외를 내도 fallback.
+        반환 = place tin_json 이 쓸 팔에서 값을 못 낸 사유(없으면 "")."""
+        from policy_control import tin_live as TL
+        wait = t0 + TL.WINDOW_S - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        t1 = time.monotonic()
+        with self._lock:
+            rec = self._tin_rec or {"live": {}, "arm": []}
+            self._tin_rec = None
+        need = {b.side for b in self.ep.policies.values() if b.attach_source == "tin_json"}
+        for side, obj in objs.items():
+            names = [f"{side[0]}_aj_{i}" for i in range(1, 8)]
+            arm = [(t, q) for t, q in rec["arm"] if all(n in q for n in names)]
+            fr = rec["live"].get(obj, [])
+            if still.get("arm_still") is not True:
+                meas = {"ok": False, "reason": f"팔이 멈추지 않아 측정 안 함 {dict(still)}"}
+            else:
+                try:
+                    meas = TL.measure(np.array([f[0] for f in fr]), np.array([f[1] for f in fr]),
+                                      np.array([f[2] for f in fr]).reshape(-1, 7), np.array([a[0] for a in arm]),
+                                      np.array([[a[1][n] for n in names] for a in arm]).reshape(-1, 7),
+                                      TL.palm_fk(side), t0 + TL.FPP_LATENCY_S, t1, z_off=TL.Z_OFF[side])
+                except Exception as exc:          # noqa: BLE001 — 측정 코드가 무엇을 던지든 fallback 으로(이유는 json 에)
+                    meas = {"ok": False, "reason": f"측정 실패({exc!r})"}
+            try:
+                out = TL.record(meas, side, _paths.SIM2REAL / self.ep.tin_fallback, fallback_file=self.ep.tin_fallback,
+                                node=node.id, object=obj, episode=self.ep.name)
+            except (TL.TinError, OSError, ValueError) as exc:
+                msg = f"[{node.id}] T_in {side} 측정 실패({meas.get('reason', '')}) · fallback {self.ep.tin_fallback} 못 읽음: {exc}"
+                self.node.get_logger().error(msg)
+                self._tin_why[side] = msg
+                if side in need:
+                    return msg + " — place tin_json 이 쓸 붙인 자세가 없어 tilt 를 시작하지 않는다"
+                self._tin_note.append(f"T_in {side} 없음({exc})")
+                continue
+            path = self.run_dir / f"tin_{node.id}_{side}.json"
+            path.write_text(json.dumps(out, indent=1, ensure_ascii=False), encoding="utf-8")
+            self._tin_json[side] = str(path)
+            self._tin_why.pop(side, None)
+            self._tin_note.append(f"T_in {side} measured" if out["source"] == "measured"
+                                  else f"T_in {side} fallback(실측 아님: {out.get('fallback_reason', '')})")
+            line = (f"[{node.id}] T_in {side}({obj}) = {out['source']} pos {np.round(np.asarray(out['pos_m']) * 1000, 1).tolist()} mm · "
+                    f"갱신 {meas.get('n_fresh')}/{meas.get('n_msgs')} · 흔들림 {meas.get('pos_dev_mm_max')} mm/{meas.get('ang_dev_deg_max')}° → {path.name}")
+            if out["source"] == "fallback":
+                self.node.get_logger().warning(f"{line} — 실측 아님, 고정값 사용: {out.get('fallback_reason', '')}")
+            else:
+                self.node.get_logger().info(line)
+        return ""
+
     def _run(self, argv: list) -> tuple[int, str]:
         log = self.run_dir / "tools.log"
         with open(log, "a") as fh:
@@ -939,3 +1065,4 @@ class RosExecutor:
 
     def clear_cancel(self) -> None:
         self.cancel.clear()
+        self._tin_json, self._tin_why = {}, {}       # ★11.07 새 에피소드 — 실행기는 에피소드를 넘어 살아 있다, 앞 T_in 을 쓰지 않는다

@@ -28,7 +28,7 @@ from typing import Callable, Mapping, Protocol
 from policy_control.episode_failure import (F, FailureCode, FailureDetector, NodeResult, Recovery, RecoveryManager,
                                             ROLLBACK, SAFE_STOP)
 from policy_control.episode_flow import flow_of
-from policy_control.episode_spec import EMPTY, PLACED_SNAPSHOT_TRIES, Episode, Node, region_miss
+from policy_control.episode_spec import EMPTY, HAND_KEYS, PLACED_SNAPSHOT_TRIES, Episode, Node, region_miss
 from policy_control.episode_world import World
 
 SUCCESS, FAILURE, RUNNING, READY, STOPPED = "SUCCESS", "FAILURE", "RUNNING", "READY", "STOPPED"
@@ -97,6 +97,7 @@ class EpisodeManager:
     runs: dict = field(default_factory=dict)            # 노드 id → {state, n(실행 횟수), s(마지막 걸린 시간), code} — 흐름 그림
     flow: dict = field(default_factory=dict)            # 흐름 그림의 고정 부분(episode_flow.flow_of)
     waiting: str | None = None                          # ★10.17 운영자 확인(confirm 노드)을 기다리는 노드 id
+    place_failed_continued: list = field(default_factory=list)   # ★11.07 놓기 실패 뒤 다음 노드로 넘어간 노드 id(이 에피소드)
     #: ★10.17 지금 노드에 온 시각(wall) — 확인 노드 승인은 이 뒤에 쓰인 것만 받는다(리뷰: 서비스 실패로 남은 옛 승인 줄이
     #:   나중에 같은 노드에서 저절로 통과하지 않게, episode_runner_node 가 읽는다)
     node_since: float = field(default_factory=time.time)
@@ -177,9 +178,10 @@ class EpisodeManager:
                 "pending": None if self.pending is None else {"node": self.pending[0].id, "action": self.pending[1].action,
                                                               "reason": self.pending[1].reason},
                 "next_action": self.next_action(), "flow": self.flow, "runs": {k: dict(v) for k, v in self.runs.items()},
-                "confirm": (None if self.node is None or self.node.type != "confirm" or self.status not in (READY,)
-                            else {"node": self.node.id, "text": self.node.text}),
-                "history": self.history[-20:]}
+                "confirm": (None if self.node is None or self.status not in (READY,)
+                            else {"node": self.node.id, "text": self.node.text} if self.node.type == "confirm"
+                            else None),
+                "place_failed_continued": list(self.place_failed_continued), "history": self.history[-20:]}
 
     # ---------------------------------------------------------------- 내부
     def _advance(self) -> str:
@@ -190,7 +192,7 @@ class EpisodeManager:
         if node.type == "terminal":
             self.status = SUCCESS if (node.result or SUCCESS) == SUCCESS else FAILURE
             self._mark(node.id, "done" if self.status == SUCCESS else "failed", n=1)
-            self._log("terminal", node, result=self.status)
+            self._log("terminal", node, result=self.status, place_failed_continued=list(self.place_failed_continued))
             self._next_node()
             return self.status
         if node.type == "confirm":
@@ -324,7 +326,10 @@ class EpisodeManager:
             # ★10.28 그 노드가 실패한 원인도 붙인다 — 콘솔 경고 줄은 last.reason 만 보여 "재시도 0/0 다 씀" 만으로는 무엇을
             #   고칠지 모른다(예: 순서 B 분홍이 자리 밖 → 다시 놓는다). last 는 바로 앞(step)에서 이 노드 결과로 채웠다.
             cause = str(self.last.get("reason") or "")
-            return self._fail(node, code, f"{rec.reason} · {cause}" if cause and cause not in rec.reason else rec.reason)
+            reason = f"{rec.reason} · {cause}" if cause and cause not in rec.reason else rec.reason
+            if self._continue_ok(node, code):
+                return self._continue_after_fail(node, code, reason)
+            return self._fail(node, code, reason)
         if not self._auto:                              # 구분 실행: 다음 명령(step)이 승인받고 복구한다
             self.pending = (node, rec)
             self._mark(node.id, "recovering", recovery=rec.action)
@@ -381,6 +386,33 @@ class EpisodeManager:
         self.last = {"node": node.id, "code": "confirmed", "reason": node.text}
         self._next_node()
         self._log("confirm", node, result="CONFIRMED", termination_reason=node.text,
+                  next=None if self.node is None else self.node.id)
+        self.status = READY if self.node is not None else SUCCESS
+        return self._close_terminal()
+
+    def _continue_ok(self, node: Node, code: FailureCode) -> bool:
+        """★11.07 continue_on_fail 에 든 kind 의 policy 노드 · 정책을 돌린 뒤의 POLICY_TIMEOUT · PLACE_FAILED 만(refused · 안전 코드 제외).
+        손이 컵을 못 놓았거나(hand_empty False) 못 빠진(withdraw_timeout) 놓기는 손이 컵에 걸려 있어 그대로 복귀하면 위험하다 —
+        기존대로 실패(episode_failure _one 의 place 절). last 는 바로 앞(step)에서 이 노드 결과로 채웠다."""
+        stuck = any(r["signals"].get("hand_empty") is False or r["signals"].get("outcome") == "withdraw_timeout"
+                    for r in self.last.get("results", []))
+        return (code in (F.POLICY_TIMEOUT, F.PLACE_FAILED) and not stuck and node.type == "policy" and bool(node.jobs)
+                and all(self.ep.policies[j.role].kind in self.ep.continue_on_fail for j in node.jobs))
+
+    def _continue_after_fail(self, node: Node, code: FailureCode, reason: str) -> str:
+        """★11.07 사용자 "어차피 place 이후엔 실패하든 성공하든 그냥 home 자세로 가는게 맞는데" — 기다리지 않고 다음 노드로.
+        손은 EMPTY(손이 빠졌다), 놓던 물체는 홀더로 단정하지 않고 자리 모름(unknown), *_placed 플래그는 세우지 않는다."""
+        w = self.world.apply({k: v for k, v in node.expect.items() if k in HAND_KEYS})
+        for j in node.jobs:
+            if j.source_object:
+                w = w.locate(j.source_object, "unknown")
+        self.world = w
+        self.place_failed_continued.append(node.id)
+        self._mark(node.id, "failed", code=code.value)
+        self.last = {**self.last, "node": node.id, "code": "place_failed_continued",
+                     "reason": f"놓기 실패({code.value}: {reason}) — 다음 노드로 넘어간다"}
+        self._next_node()
+        self._log("place_failed_continued", node, result=code.value, termination_reason=reason,
                   next=None if self.node is None else self.node.id)
         self.status = READY if self.node is not None else SUCCESS
         return self._close_terminal()

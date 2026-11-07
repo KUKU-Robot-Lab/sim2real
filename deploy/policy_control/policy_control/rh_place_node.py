@@ -40,8 +40,11 @@ READY_CARRY_SLACK_S = 2.0
 from policy_control import codec  # noqa: E402
 from policy_control import place_handover as PH  # noqa: E402
 from policy_control.pour_fj_node import NS, Family, PourFjNode, PourFjNodeError, main  # noqa: E402
-from policy_control.rh_place import (HOLDER_TOL_M, JOINT_FREE_G, OPEN_MIN_RAD, RhPlaceError,  # noqa: E402
-                                     holder_refusals, holder_tol_of)
+from policy_control.rh_place import (ATTACH_SOURCES, HOLDER_FLOOR_Z, HOLDER_TOL_M, JOINT_FREE_G,  # noqa: E402
+                                     OPEN_MIN_RAD, RhPlaceError, holder_refusals, holder_tol_of)
+from policy_control import tin_live as TL  # noqa: E402
+
+TIN_FPP_TILT_DEG = 15.0     # ★11.07 tin_json — FP++ 를 FK 와 비교해 남기는 조건(컵이 거의 서 있고 탁자 위)
 
 
 def holder_candidates(text: str, first: int) -> list[int]:
@@ -68,7 +71,9 @@ class PlaceNode(PourFjNode):
                               ("holder_tol_m", HOLDER_TOL_M),
                               # ★11.04 사용자 "place 는 묶은 값만": 계약이 cup_obs live 여도 FP++ 를 넣지 않고 손바닥 FK ⊗ 묶음만.
                               #   실기 131817 — tilt 뒤 FP++ 가 쥔 컵을 놓치고 탁자 아래 자세를 내 놓기가 멈췄다. true 면 live(5 cm 문)
-                              ("place_live_cup", False)):
+                              ("place_live_cup", False),
+                              # ★11.07 실행기가 job 마다 넣는다: attach_source:=tin_json(빈 값 = 계약) · tin_json:=런 폴더 T_in json
+                              ("attach_source", ""), ("tin_json", "")):
             self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
         if not bool(p("require_grasp")):                   # fake 손은 촉각이 0 — 리허설에서만 끈다
@@ -78,7 +83,8 @@ class PlaceNode(PourFjNode):
         self.bundle_param = str(p("bundle") or "auto").strip()
         self.bundle_max_age = float(p("bundle_max_age_s"))
         self.bundle_hand_tol = float(p("bundle_hand_tol_rad"))
-        self._bundle: PH.Bundle | None = None                # 이번 에피소드의 넘김 묶음(attach_source bundle)
+        self._bundle: PH.Bundle | None = None                # 이번 에피소드의 넘김 묶음(attach_source bundle) 또는 T_in(tin_json)
+        self._tin = False                                    # ★11.07 이번 reset 의 붙인 자세가 tin_json 인가
         self._bundles_used: list = []
         self._holder_excess: dict = {}
         self._latch_est = None
@@ -189,6 +195,8 @@ class PlaceNode(PourFjNode):
     # ---------------------------------------------------------------- 고리
     def _cup_for(self, role: str, advance: bool):
         if getattr(self.chain, "rel", None) is not None:
+            if self._tin:                                  # ★11.07 tin_json — 제어는 FK ⊗ T_in 만, FP++ 는 차이 기록만
+                return lambda palm_pos, palm_R, _tact, _st: self._tin_cup(role, palm_pos, palm_R)
             if self.contract.cup_obs == "live":            # ★11.02 'true' 런 — FP++ 신선분을 사슬에 넣고, 없으면 FK(끊김 · 가림)
                 use_live = bool(self.get_parameter("place_live_cup").value)
 
@@ -207,6 +215,50 @@ class PlaceNode(PourFjNode):
         if self.contract.attach_source == "bundle":       # 묶음 전 — 상태 표시만(이 계약은 FP++ 컵을 쓰지 않는다)
             return lambda palm_pos, _R, _tact, _st: (np.asarray(palm_pos, float), np.array([1.0, 0.0, 0.0, 0.0]))
         return super()._cup_for(role, advance)
+
+    def _tin_cup(self, role, palm_pos, palm_R):
+        """★11.07 손바닥 FK ⊗ T_in(정책 관측 · 래치 같은 값). FP++ 가 그럴듯하면(탁자 위 · 기울기 15° 안) 차이만 로그 — 미끄러짐 관찰용."""
+        self.chain.live_cup = None
+        fk = self.chain.cup_obs(np.asarray(palm_pos, float), np.asarray(palm_R, float))
+        got = self._fresh_cup(role)
+        if got is not None:
+            p, q = np.asarray(got[0], float), np.asarray(got[1], float)
+            tilt = TL.tilt_deg(q)
+            if p[2] > HOLDER_FLOOR_Z and tilt <= TIN_FPP_TILT_DEG:
+                d = (p - fk[0]) * 1000
+                self.get_logger().info(f"tin_json FP++ − FK 컵 {np.round(d, 1).tolist()} mm(|{np.linalg.norm(d):.1f}|) · "
+                                       f"기울기 FP++ {tilt:.1f}° / FK {TL.tilt_deg(fk[1]):.1f}°", throttle_duration_sec=1.0)
+        return fk
+
+    def _attach_source(self) -> str:
+        src = str(self.get_parameter("attach_source").value).strip() or self.contract.attach_source
+        if src not in ATTACH_SOURCES:
+            raise PourFjNodeError(f"attach_source {src!r} — {ATTACH_SOURCES} 중 하나")
+        return src
+
+    def _tin_bundle(self) -> PH.Bundle:
+        """★11.07 실행기가 넘긴 tilt 직전 T_in json → 붙인 자세(넘김 묶음과 같은 자리로). 이 값에는 cup_obs_offset 를 더하지 않는다 —
+        T_in 이 이미 FK 손바닥 → 카메라 컵이라, 묶음의 카메라−FK 보정을 또 더하면 두 번 옮긴다."""
+        path = str(self.get_parameter("tin_json").value).strip()
+        if not path:
+            raise TL.TinError("attach_source tin_json 인데 tin_json 경로가 비었다(실행기가 tilt 직전 T_in 을 못 냈다)")
+        side = self.contract.side().side
+        rel_p, rel_q, d = TL.load_tin(path, {"r": "right", "l": "left"}.get(side, side))
+        return PH.Bundle(path=Path(path), side=PH.SIDES.get(side, side), object_contract=str(d.get("object", "")), rel_p=rel_p, rel_q=rel_q,
+                         hand_q=np.zeros(0), valid=True, n_steps=int((d.get("measured") or {}).get("n_fresh") or 0),
+                         created=Path(path).stat().st_mtime,
+                         meta={"node": d.get("node"), "episode": d.get("episode"), "source": d.get("source"),
+                               "fallback_reason": d.get("fallback_reason", "")})
+
+    def _attach_info(self) -> dict:
+        """사슬 attach_info — 묶음 as_dict, tin_json 이면 출처(measured | fallback) · fallback 사유까지."""
+        b = self._bundle
+        if b is None:
+            return {}
+        if not self._tin:
+            return b.as_dict()
+        return {**b.as_dict(), "attach_source": "tin_json", "source": b.meta.get("source"),
+                "fallback_reason": b.meta.get("fallback_reason", "")}
 
     def _hand_now(self) -> np.ndarray:
         s = self.contract.side()
@@ -240,11 +292,19 @@ class PlaceNode(PourFjNode):
         if self.chain is not None:
             self.chain.rel = None                          # 새 인계 — 컵은 다시 붙인다(FP++ 한 번 또는 넘김 묶음)
         self._bundle = None
-        if self.contract.attach_source == "bundle":
+        self._tin = False
+        try:
+            src = self._attach_source()
+        except PourFjNodeError as exc:
+            if self.book.phase == "armed":
+                self.book.phase = "idle"
+            return self._reply(res, False, [f"reset: {exc}"])
+        if src in ("bundle", "tin_json"):
             self._drain()
             try:
-                self._bundle = self._pick_bundle()
-            except (PH.HandoverError, PourFjNodeError, KeyError) as exc:
+                self._bundle = self._tin_bundle() if src == "tin_json" else self._pick_bundle()
+                self._tin = src == "tin_json"
+            except (PH.HandoverError, PourFjNodeError, KeyError, TL.TinError, OSError, ValueError) as exc:
                 if self.book.phase == "armed":
                     self.book.phase = "idle"
                 return self._reply(res, False, [f"reset: {exc}"])
@@ -252,7 +312,10 @@ class PlaceNode(PourFjNode):
         ok = bool(getattr(out, "success", False))
         if ok and self._bundle is not None:
             self._bundles_used.append(str(self._bundle.path))
-            self.get_logger().info(f"place 붙인 자세 = 넘김 묶음 {self._bundle.as_dict()}")
+            self.get_logger().info(f"place 붙인 자세 = {'tilt 직전 T_in' if self._tin else '넘김 묶음'} {self._bundle.as_dict()}"
+                                   + (f" · 출처 {self._bundle.meta.get('source')}" if self._tin else ""))
+            if self._tin and self._bundle.meta.get("source") != "measured":
+                self.get_logger().warning(f"place 붙인 자세 = 고정 T_in(실측 아님): {self._bundle.meta.get('fallback_reason', '')}")
         return out
 
     def _reset_chain(self, meas: dict) -> None:
@@ -271,7 +334,7 @@ class PlaceNode(PourFjNode):
         self.chain.est = self._latch_est
         self.chain.rc_chain = self._rc_chain
         b = self._bundle
-        self.chain.attach_info = {} if b is None else b.as_dict()
+        self.chain.attach_info = self._attach_info()
         self.chain.reset(meas, holder=self._holder, held=held,
                          allow_measured=bool(self.get_parameter("allow_measured_start").value),
                          attach=None if b is None else (b.rel_p, b.rel_q))

@@ -15,10 +15,12 @@ objects:
   SHAKER: {topic: /objects/shaker_c_orange/pose}
 holders: {HOLDER_0: 0, HOLDER_1: 1, HOLDER_2: 2}
 holder_poses: config/cup_holder_poses_5090_v1.yaml
+tin_fallback: deploy/policy_control/config/tilt/traj_v12_240/ref/tin_fixed_1107.json   # tilt 직전 T_in 측정 실패 때 고정값(SIM2REAL 상대, git 추적 · 원본 logs/analysis/tilt_tin_1107/out 같은 md5)
 policies:
   rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/right_rcg04, cup_obs_offset_base_m: [-0.0116, 0.0338, -0.0143]}   # 11.04 정지 자세 Rm(R1 접근 높이와 R2 쥐는 높이 사이), e1000 과 같은 값
   rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg04, cup_obs_offset_base_m: [0.0028, 0.0283, 0.0046]}   # 11.04 정지 자세 L2(잡기 직전), logs/analysis/frame_offset_1104/measure2
-  rh_place_r: {policy: rh56f1/place/right_n10_e4000, kind: place, side: right}
+  # ★11.07 붙인 자세 = tilt 직전 정지 창 실측 T_in(묶음은 tilt 직전과 28~37 mm · 컵 기울기 10° 넘게 어긋났다, logs/analysis/tilt_tin_1107)
+  rh_place_r: {policy: rh56f1/place/right_n10_e4000, kind: place, side: right, attach_source: tin_json}
   rh_place_l: {policy: rh56f1/place/left_n09_e3800, kind: place, side: left}
 trajectories:
   go_home: {kind: rehome, sides: [right, left]}
@@ -27,6 +29,7 @@ trajectories:
   to_tilt_start_l: {kind: carry, sides: [left], asset: tilt/base_arc6}
   tilt: {kind: tilt, sides: [right, left], asset: tilt/traj_v10, rate_scale: 1.0, cup: "240"}   # D4 궤적(잔차 0) + 복귀 = tilt 시작 자세로 · 붓는 컵 source240
 failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 판단한다(컵을 쥔 채 rehome 은 거부된다).
+continue_on_fail: [place]     # ★11.07 사용자 "어차피 place 이후엔 실패하든 성공하든 그냥 home 자세로 가는게 맞는데" — 놓기 실패(시간 초과 포함, 손이 컵에 걸린 경우 제외)면 멈추지 않고 다음 노드로
 sequence:
   - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
   - {id: scene, type: snapshot}                                     # 파랑 · 분홍 · shaker — 분홍이 상자 밖이면 여기서 정지

@@ -1,0 +1,34 @@
+# RH56F1 양팔 tilt 1차 — traj_v11_240 에서 ref/setup_240.npz 의 T_in_r · T_in_l(손바닥 → 컵)만 실기 실측 평균으로 바꾼 판(11.07 사용자
+# "잡기 성공한 자세가 거의 동일하더라, 지금 컵을 생각보다 낮게 잡는다", "왼손 손 안 shaker 측정으로 일단 bag 파일들 많으니까").
+# 평균 = tilt 직전 정지 구간 FP++ live(신선 값만). 오른손 bag 3개(11.04 131813 · 11.06 113604 · 151437), 왼손은 11.06 두 개만(11.07 팀장:
+#   11.04 131817 은 손바닥-shaker 43.5 mm 로 지금 쥐는 방식 31 mm 안팎과 달라 뺌). 잡기 직후 값은 11~20 mm 달라 안 씀.
+#   T_in_r (9.9, 27.7, 68.2) mm(기본에서 축 19.9°), T_in_l (-28.9, 36.3, 3.6) mm(기본보다 z -30.8 mm, 축 20.9°). 축 둘레 회전은 기본 것(대칭 병).
+#   만든 곳 logs/analysis/tilt_tin_1107/{hold_windows,tin_all,build_v12}.py, 값 out/tin_fixed_1107.json. params · asset_meta · 나머지 npz 키는 v11 그대로.
+# 11.07 FK 검사(fk_compare.py): 최대 141.2° 입구 수평 3.2 mm(90°~최대 1.9~3.2) · 에피소드별 양손 T_in 11.06 113608 6.7 · 151440 4.3 mm, 뺀 11.04 131817 21.1 mm · IK 0.82 mm · 홀더 여유 33.1 mm · 통과. sim 재평가 전.
+name: tilt/traj_v12_240
+kind: tilt_traj
+objects: {right: source240_real, left: shaker_c_real}
+start_pose: deploy/policy_control/config/homes/rh56f1_pour_start.yaml   # md5 99bdbe88… = sim inputs 와 같음
+pre_s: 0.5                   # 실측 → 궤적 첫 knot 관절 min-jerk(sim --start capture --pre_s 0.5)
+rate_scale: 1.0              # sim 과 같은 빠르기(knot 1/30 s → 60 Hz 선형 보간)
+start_gap_rad: 0.05          # 계획한 실측 ↔ 재생 직전 실측 최대 간극(replay_to_pd --max-start-gap)
+table:
+  from: config/head_extrinsics.yaml   # table_top_z 0.2037(sim 0.205)
+holders:
+  default: config/cup_holder_poses_5090_v1.yaml   # sim 과 같은 옛 배치(86d3f8c9…). 10.27 새 배치 재스캔 뒤 --holders 로 새 파일
+hdgp:
+  commit: e62ae529           # 핀을 만든 hdgp(server). laptop 작업 트리 md5 같음 확인(10.26)
+  md5:
+    source/openarm/openarm/agnostic/modules/tilt_traj/__init__.py: 13fe9614b896dd51be03007635e3355e
+    source/openarm/openarm/agnostic/modules/tilt_traj/plan.py: 30d90081e1c4aa83147c27f4485328f5
+    source/openarm/openarm/agnostic/modules/tilt_traj/traj.py: 35f77477d604021ae96b29208fae0415
+    source/openarm/openarm/agnostic/modules/tilt_traj/clearance.py: 451cd8bc132dff0a328d901ad3cb724a
+    source/openarm/openarm/agnostic/modules/tilt_traj/fast_ik.py: 873bab5bf280406291c850654d570372
+    source/openarm/openarm/agnostic/modules/ready_carry/__init__.py: 6a921e20ba3ea5fa3c943e175a39bf3d
+    source/openarm/openarm/agnostic/modules/ready_carry/chain.py: e93981f98a8e74bada451eb3b0a59568
+    source/openarm/openarm/agnostic/modules/ready_carry/posture.py: b89b1e8f943d59dd0df901111adfb048
+    assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf: f338d043ce3481f72e37ec4c79e20d43
+ref:
+  asset_meta.json: aa897f540a17560c9441080ad20680b2
+  params_240.json: 327794d7bde624e03f541c6e44dcfe7a
+  setup_240.npz: fbd956978a60f526498b0c28f8020827   # v12: T_in_r · T_in_l 실측 평균(v10·v11 fd9e2af3…)

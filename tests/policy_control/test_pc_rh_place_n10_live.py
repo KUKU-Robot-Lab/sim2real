@@ -197,7 +197,7 @@ def test_single_object_needs_a_known_radius():
 
 def _node_self(live_param: bool, fresh):
     ch = _Chain("live")
-    me = SimpleNamespace(chain=ch, contract=SimpleNamespace(cup_obs="live"), _fresh_cup=lambda role: fresh,
+    me = SimpleNamespace(chain=ch, _tin=False, contract=SimpleNamespace(cup_obs="live"), _fresh_cup=lambda role: fresh,
                          get_parameter=lambda n: SimpleNamespace(value=live_param))
     return me, ch
 

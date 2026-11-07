@@ -74,7 +74,7 @@ def _ros_self(tmp_path, holds: dict, rcs: list[int]):
     def run(argv):
         calls.append(argv)
         return rcs[len(calls) - 1], "tail"
-    me = SimpleNamespace(_wait_pd_tracking=lambda side: True, _wait_arm_still=lambda sides: {"arm_still": None}, _pd_view=lambda side: {}, run_dir=tmp_path, _run=run,
+    me = SimpleNamespace(_tin_rec=None, ep=SimpleNamespace(tin_fallback=""), _wait_pd_tracking=lambda side: True, _wait_arm_still=lambda sides: {"arm_still": None}, _pd_view=lambda side: {}, run_dir=tmp_path, _run=run,
                          cancel=threading.Event())
     world = SimpleNamespace(hand=lambda side: holds[side])
     traj = S.load(EPISODE).trajectories["tilt"]
@@ -195,7 +195,7 @@ def test_planned_trajectory_waits_for_the_arm_before_planning(tmp_path):
     def run(argv):
         order.append(Path(argv[1]).name)
         return 0, "tail"
-    me = SimpleNamespace(_wait_pd_tracking=lambda side: True, _pd_view=lambda side: {}, run_dir=tmp_path, _run=run,
+    me = SimpleNamespace(_tin_rec=None, ep=SimpleNamespace(tin_fallback=""), _wait_pd_tracking=lambda side: True, _pd_view=lambda side: {}, run_dir=tmp_path, _run=run,
                          cancel=threading.Event(), _wait_arm_still=lambda sides: order.append(("still", tuple(sides))) or {"arm_still": True})
     traj = S.load(EPISODE).trajectories["tilt"]
     r = RosExecutor._run_planned(me, SimpleNamespace(id="tilt"), traj, SimpleNamespace(hand=lambda side: "SRC"))

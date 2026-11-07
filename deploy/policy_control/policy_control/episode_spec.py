@@ -48,6 +48,7 @@ import yaml
 NODE_TYPES = ("snapshot", "trajectory", "policy", "parallel_policy", "confirm", "hand", "terminal")
 HAND_ACTIONS = ("open", "grasp")
 KINDS = ("aglt", "place", "pour", "lock", "shake")
+CONTINUE_KINDS = ("place",)   # ★11.07 continue_on_fail: 실패해도 다음 노드(home 등)로 넘어갈 수 있는 정책 종류
 SIDES = ("right", "left", "both")
 TRAJ_KINDS = ("rehome", "noop", "carry", "tilt", "reach", "lift")
 #: 10.17 실측에서 계획 · 검사한 뒤 재생하는 궤적(tools/plan_<kind>.py → replay_to_pd).
@@ -95,6 +96,9 @@ class Binding:
     #: ★11.05 aglt 만 — 깊이 학생 묶음 id(예 rh56f1/aglt/right_student1104e). 있으면 노드 = rh_aglt_student_node(접근부터 학생),
     #:   policy = 홈 출발 계약(디코더 · 물체). approach_grasp · handoff 와 같이 쓰지 않는다
     student: str | None = None
+    #: ★11.07 place 만 — "tin_json" 이면 붙인 자세 = 그 팔의 tilt 직전 실측 T_in(런 폴더 json, 실패면 tin_fallback 고정값).
+    #:   None = 정책 계약 그대로(bundle · fpp)
+    attach_source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -111,6 +115,7 @@ class Job:
 
 
 JOB_KEYS = ("name", "source_object", "target_object", "target_holder", "policy_object", "holder_tol_m")
+BINDING_KEYS = ("policy", "kind", "side", "approach_grasp", "handoff", "cup_obs_offset_base_m", "student", "attach_source")
 
 
 @dataclass(frozen=True)
@@ -156,6 +161,8 @@ class Episode:
     failure_policy: Mapping[str, int]
     holder_poses: str = ""
     path: str = ""
+    continue_on_fail: tuple = ()    # ★11.07 정책 kind — 안전 코드 외 실패면 멈추지 않고 다음 노드로(기본 없음)
+    tin_fallback: str = ""          # ★11.07 tilt 직전 T_in 측정 실패 때 쓸 고정값 json(SIM2REAL 상대 경로) — 있으면 tilt 마다 잰다
 
     def max_retry(self, node: Node) -> int:
         roles = [j.role for j in node.jobs] or [node.name]
@@ -306,6 +313,9 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
     meta = raw.get("episode") or {}
     pols = {}
     for role, b in (raw.get("policies") or {}).items():
+        unknown = set(b) - set(BINDING_KEYS)
+        if unknown:                                  # ★11.07 오타(attach_sorce 등)가 조용히 계약 기본값으로 가지 않게
+            raise EpisodeSpecError(f"policies.{role}: 모르는 키 {sorted(unknown)}")
         if b.get("kind") not in KINDS or b.get("side") not in SIDES:
             raise EpisodeSpecError(f"policies.{role}: kind {KINDS} · side {SIDES} 가 필요하다")
         ag = b.get("approach_grasp")
@@ -335,8 +345,12 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
         student = b.get("student")
         if student is not None and (b.get("kind") != "aglt" or ag is not None or not (isinstance(student, str) and student.strip())):
             raise EpisodeSpecError(f"policies.{role}: student 는 aglt 정책의 학생 묶음 id 문자열(approach_grasp · handoff 없이)")
+        attach = b.get("attach_source")
+        if attach is not None and (b.get("kind") != "place" or attach != "tin_json"):
+            raise EpisodeSpecError(f"policies.{role}: attach_source 는 place 정책의 tin_json 만")
         pols[str(role)] = Binding(role=str(role), kind=str(b["kind"]), side=str(b["side"]), policy=b.get("policy"),
-                                  approach_grasp=ag, handoff=handoff, cup_obs_offset_base_m=off, student=student)
+                                  approach_grasp=ag, handoff=handoff, cup_obs_offset_base_m=off, student=student,
+                                  attach_source=attach)
     trajs = {}
     for name, t in (raw.get("trajectories") or {}).items():
         if t.get("kind") not in TRAJ_KINDS:
@@ -348,7 +362,11 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
                  holders={str(k): int(v) for k, v in (raw.get("holders") or {}).items()},
                  setting={str(k): tuple(float(x) for x in v) for k, v in (raw.get("setting") or {}).items()},
                  failure_policy={str(k): int(v) for k, v in (raw.get("failure_policy") or {"default": 1}).items()},
-                 holder_poses=str(raw.get("holder_poses") or ""), path=path)
+                 holder_poses=str(raw.get("holder_poses") or ""), path=path,
+                 continue_on_fail=tuple(str(k) for k in (raw.get("continue_on_fail") or ())),
+                 tin_fallback=str(raw.get("tin_fallback") or ""))
+    if set(ep.continue_on_fail) - set(CONTINUE_KINDS):
+        raise EpisodeSpecError(f"continue_on_fail: {list(ep.continue_on_fail)} — 받는 것은 {CONTINUE_KINDS}")
     validate(ep)
     return ep
 
@@ -439,6 +457,17 @@ def validate(ep: Episode) -> None:
     topics = [o.get("topic") for o in ep.objects.values()]
     if any(not t for t in topics) or len(set(topics)) != len(topics):
         errs.append("objects 마다 서로 다른 topic 이 있어야 한다(같은 토픽 둘 = FP++ 가 못 가른다)")
+    if any(b.attach_source == "tin_json" for b in ep.policies.values()) and not ep.tin_fallback:
+        errs.append("attach_source tin_json 은 tin_fallback(고정 T_in json, SIM2REAL 상대 경로)이 필요하다")
+    if ep.tin_fallback and (Path(ep.tin_fallback).is_absolute() or ".." in Path(ep.tin_fallback).parts):
+        errs.append(f"tin_fallback {ep.tin_fallback} — SIM2REAL 아래 상대 경로만(/tmp · 절대 경로 금지)")
+    elif ep.tin_fallback:                            # ★11.07 시작 전에 읽어 본다 — 실기 tilt 직전에 없다는 것을 알면 늦다
+        from policy_control.tin_live import TinError, load_fallback
+        for side in sorted({b.side for b in ep.policies.values() if b.attach_source == "tin_json"}):
+            try:
+                load_fallback(_REPO_CONFIG.parent / ep.tin_fallback, side)
+            except (TinError, OSError, ValueError) as exc:
+                errs.append(f"tin_fallback {ep.tin_fallback} ({side}): {exc}")
     if ep.holders and not ep.holder_poses:
         errs.append("holders 를 쓰면 holder_poses(고정 자세 파일)가 필요하다")
     if any(n.type in ("policy", "parallel_policy") for n in ep.nodes) and ep.objects:

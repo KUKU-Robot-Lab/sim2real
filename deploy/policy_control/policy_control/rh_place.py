@@ -68,6 +68,7 @@ class PlaceContract(A.RaContract):
     withdraw: dict = field(default_factory=dict)        # 놓은 뒤 정책이 팔을 뺀다 {clear_m, max_steps, hand_open}
     neighbor_obs: str = ""                   # "" | "zero" — 관측 끝 이웃 홀더 6 칸(학습 내내 0 이던 런)
     attach_source: str = "fpp"               # 붙인 자세: fpp(리셋 순간 FP++ 한 장) | bundle(잡기의 grasp_state 넘김 묶음)
+    #                                          | tin_json(★11.07 tilt 직전 정지 창 실측 T_in, 실행기가 런 폴더 json 을 넘긴다)
     holder_range: dict = field(default_factory=dict)    # 학습 목표 홀더 원점 범위 {x: [lo, hi], y: [lo, hi]} (base m)
     # ★10.25 준비 자세 이송(place_ready_carry): 이송 끝 뱅크로 학습한 런(newton_07_r · 06_l) — 리셋 뒤 Mover 로 슬롯 위까지 옮긴 다음
     #   정책(RNN · 직전 행동 · 래치 추정기 0 에서). 빈 값 = 이송 없음(들기 끝에서 바로 정책).
@@ -81,7 +82,7 @@ class PlaceContract(A.RaContract):
 #: ★10.22 hdgp _nb_obs 순서 — +y 이웃(슬롯 0) (dx, dy, 있음), −y 이웃(슬롯 2) (dx, dy, 있음)
 NB_OBS = ("nb_py_dx", "nb_py_dy", "nb_py_on", "nb_ny_dx", "nb_ny_dy", "nb_ny_on")
 LATCH_DIR = "latch"
-ATTACH_SOURCES = ("fpp", "bundle")
+ATTACH_SOURCES = ("fpp", "bundle", "tin_json")
 
 
 CUP_OBS_MODES = {"attached": "attached", "true": "live"}     # hdgp cup_obs_mode → 계약 cup_obs ("fpp" 런은 받지 않는다)
@@ -579,8 +580,8 @@ class PlaceChain:
 
     def reset(self, meas: Mapping, *, holder: Sequence[float] | None, held: tuple | None,
               allow_measured: bool = False, attach: tuple | None = None) -> None:
-        """attach = (rel_p, rel_q wxyz) 손바닥 좌표 컵 — 계약 attach_source bundle 이면 반드시(넘김 묶음), fpp 면 무시하고
-        지금 측정 컵(FP++ 한 장)에서 잡는다."""
+        """attach = (rel_p, rel_q wxyz) 손바닥 좌표 컵 — 주면 그것(넘김 묶음 · ★11.07 tilt 직전 실측 T_in), 없으면 fpp 계약만
+        지금 측정 컵(FP++ 한 장)에서 잡는다(bundle · tin_json 계약은 거부)."""
         m = meas["arm"]
         if holder is None:
             raise RhPlaceError("holder pose missing — /objects/cup_holder_<k>/pose 가 와야 목표(자리)를 안다")
@@ -600,9 +601,10 @@ class PlaceChain:
         self.hand0 = np.asarray(hand0, float).copy()
         self.opened, self.tact_max, self.jf_max = 0.0, 0.0, None
         self.goal = seat_goal(self.c, holder)
-        if self.c.attach_source == "bundle":
-            if attach is None:
-                raise RhPlaceError("attach_source bundle — 잡기의 넘김 묶음(rel_p · rel_q)이 없다(FP++ 로 붙이지 않는다)")
+        if attach is None and self.c.attach_source != "fpp":
+            what = "잡기의 넘김 묶음" if self.c.attach_source == "bundle" else "붙인 자세"
+            raise RhPlaceError(f"attach_source {self.c.attach_source} — {what}(rel_p · rel_q)이 없다(FP++ 로 붙이지 않는다)")
+        if attach is not None:                           # 노드가 고른 붙인 자세(계약 bundle 이어도 노드 attach_source:=tin_json 이면 T_in)
             q = np.asarray(attach[1], float).reshape(4)
             self.rel = (np.asarray(attach[0], float).reshape(3).copy(), q / np.linalg.norm(q))
         else:
