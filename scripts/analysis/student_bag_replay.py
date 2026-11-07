@@ -10,6 +10,8 @@
 
   .venv-student/bin/python scripts/analysis/student_bag_replay.py \
       --bag logs/bags/20261104_125804_episode_cocktail_1c_e4000 --out logs/analysis/student_bag_replay_1105
+  11.07 마스크 학생(1105mA): 먼저 .venv-yolo 로 color 를 비트 마스크로 바꿔 두고(scripts/analysis/mask_bag_bits.py, 키 = color stamp)
+      --bundle student1105mA --mask-bits <npz> 로 rgb 자리에 그 비트를 넣는다(head_mask_node 와 같은 stamp 짝).
 """
 from __future__ import annotations
 
@@ -29,6 +31,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "deploy" / "policy_control"))
 from policy_control import codec  # noqa: E402
 from policy_control import rh_aglt as A  # noqa: E402
+from policy_control import student_mask as SM  # noqa: E402
 from policy_control.contract_assets import ASSETS  # noqa: E402
 from policy_control.fk_numpy import UrdfChainFK  # noqa: E402
 from policy_control.pour_fj_node import _side_raw  # noqa: E402
@@ -49,6 +52,7 @@ PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 CD_HEADER = 12          # compressed_depth_image_transport ConfigHeader = int32 format + float depthParam[2]
 APPROACH_MAX_S = 6.0    # student_handover: sim ap_max_steps 6 s(on_max handover)
 N_PNG = 6
+MAX_GAP_TICKS = 3       # joint_node max_gap_ticks 기본(_student_cmds 가 바꾸지 않는다) — 연속 틱 오류가 이보다 많으면 abort
 
 
 def load_head_depth_node():
@@ -103,12 +107,37 @@ def stamp_ns(msg) -> int:
     return int(msg.header.stamp.sec) * 10**9 + int(msg.header.stamp.nanosec)
 
 
-def camera_frames(cam: list, hdn, cut, block: int, min_valid: float) -> tuple[list, dict]:
-    """camera 묶음 → [(recv_s, stamp_s, depth (90,160) m, rgb (90,160,3) 0~1)] · 세기."""
+def mask_events(cam: list, mask_bits: dict, lat_s: float) -> tuple[list, int]:
+    """마스크 학생: [(도착 s = color 수신 + YOLO 지연, color stamp ns, 비트)] 시간순 · npz 에 없는 color 수.
+    shortcut: 지연은 mask_bag_bits 의 처리 p90 고정값(프레임별 실측 아님) — 노드 수준 지연 분포가 필요하면 노드 재생으로 본다."""
+    ev, miss = [], 0
+    for recv, t, m in cam:
+        if t != T_COLOR:
+            continue
+        k = str(stamp_ns(m))
+        if k in mask_bits:
+            ev.append((recv * 1e-9 + lat_s, stamp_ns(m), mask_bits[k]))
+        else:
+            miss += 1
+    return sorted(ev, key=lambda e: e[0]), miss
+
+
+def _mask_msg(st_ns: int, bits: np.ndarray):
+    """MaskStream.on_msg 에 넣을 /head_mask/image 꼴(mono8) — 노드와 같은 검사(mask_array)를 타게."""
+    from types import SimpleNamespace as NS
+
+    h, w = bits.shape
+    return NS(encoding="mono8", height=h, width=w, step=w, data=bits.tobytes(),
+              header=NS(stamp=NS(sec=st_ns // 10**9, nanosec=st_ns % 10**9)))
+
+
+def camera_frames(cam: list, hdn, cut, block: int, min_valid: float, mask_bits=None) -> tuple[list, dict]:
+    """camera 묶음 → [(recv_s, stamp_s, depth (90,160) m, rgb (90,160,3) 0~1 | 마스크 비트 (90,160) uint8 | None, stamp_ns)] · 세기.
+    mask_bits 가 있으면 짝 color 가 없는 깊이도 남긴다(실기 노드처럼 마스크는 MaskStream 이 따로 고른다). rgb 칸은 짝 비트(그림용)."""
     colors = sorted((stamp_ns(m), m) for _, t, m in cam if t == T_COLOR)
     keys = [c[0] for c in colors]
     w, h = hdn.real_depth.D435I_WH
-    frames, n = [], {"depth_msgs": 0, "no_color_pair": 0, "decode_error": 0, "errors": []}
+    frames, n = [], {"depth_msgs": 0, "no_color_pair": 0, "no_mask": 0, "decode_error": 0, "errors": []}
     for recv, t, m in cam:
         if t != T_DEPTH:
             continue
@@ -118,17 +147,23 @@ def camera_frames(cam: list, hdn, cut, block: int, min_valid: float) -> tuple[li
         c = hdn.nearest_color(colors[max(0, i - 1):i + 1], s)
         if c is None:
             n["no_color_pair"] += 1
-            continue
+            if mask_bits is None:
+                continue
+        if mask_bits is not None and c is not None and str(stamp_ns(c)) not in mask_bits:
+            n["no_mask"] += 1
         try:
             d = decode_compressed_depth(m.format, bytes(m.data))
-            bgr = decode_jpeg_bgr(c.format, bytes(c.data))
             small = hdn.frame_to_small(d.shape[0], d.shape[1], "16UC1", d.shape[1] * 2, d.tobytes(), block, min_valid, cut)
-            rgb = hdn.rgb_to_small(bgr.shape[0], bgr.shape[1], "bgr8", bgr.shape[1] * 3, bgr.tobytes(), block)
+            if mask_bits is not None:
+                rgb = None if c is None else mask_bits.get(str(stamp_ns(c)))
+            else:
+                bgr = decode_jpeg_bgr(c.format, bytes(c.data))
+                rgb = hdn.rgb_to_small(bgr.shape[0], bgr.shape[1], "bgr8", bgr.shape[1] * 3, bgr.tobytes(), block)
         except (ValueError, hdn.FrameError) as e:
             n["decode_error"] += 1
             n["errors"] = (n["errors"] + [str(e)])[:5]
             continue
-        frames.append((recv * 1e-9, s * 1e-9, small, rgb))
+        frames.append((recv * 1e-9, s * 1e-9, small, rgb, s))
     n["frames"] = len(frames)
     n["wh"] = [w, h]
     return frames, n
@@ -153,7 +188,20 @@ class Side:
         self.prev = np.zeros(13)
         self.rows, self.lat, self.n = [], [], {"ticks": 0, "steps": 0, "stale_depth": 0, "meas_error": 0,
                                                "prop_nonfinite": 0, "act_nonfinite": 0, "errors": []}
+        self.ms = SM.MaskStream(self.pol.img_hw) if self.pol.mask_on else None
+        if self.ms is not None:
+            self.n.update(mask_stale=0, src={"paired": 0, "latest": 0}, mask_age_ms=[], abort=0, abort_at=[])
+        self.gap, self.t0 = 0, None
         self.pol.reset()
+
+    def _gap(self, t: float, ok: bool, why: str = "") -> None:
+        """실기 joint_node 와 같게 연속 틱 오류 > MAX_GAP_TICKS 면 abort(실기는 거기서 끝, 재생은 세고 이어 간다)."""
+        self.t0 = t if self.t0 is None else self.t0
+        self.gap = 0 if ok else self.gap + 1
+        if self.ms is not None and self.gap == MAX_GAP_TICKS + 1:
+            self.n["abort"] += 1
+            if len(self.n["abort_at"]) < 10:
+                self.n["abort_at"].append(f"{t - self.t0:.2f} s {why}")
 
     def tick(self, t: float, frame) -> None:
         self.n["ticks"] += 1
@@ -162,6 +210,7 @@ class Side:
                                       (np.zeros(3), np.array([1.0, 0.0, 0.0, 0.0])), "arm"))
         except Exception as e:  # noqa: BLE001 — 결손 · stale 은 세고 다음 틱(실기 노드도 그 틱을 건너뛴다)
             self._err("meas_error", e)
+            self._gap(t, False, "meas_error")
             return
         hand_q = [m.hand_q[j] for j in self.c.side().hand_joints]
         # shortcut: 디코더 목표 = 측정(arm_q_target = arm_q, hand_err = 0) — open-loop 이라 학생 행동으로 굴리면 실측에서 벗어난다
@@ -170,13 +219,24 @@ class Side:
         prop = build_student_obs(self.c, m, self.dec, self.prev, stage)
         if not np.isfinite(prop).all():
             self.n["prop_nonfinite"] += 1
-        _, stamp, depth, rgb = frame
+        _, stamp, depth, rgb, st_ns = frame
         t0 = time.perf_counter()
         try:
+            if self.ms is not None:
+                try:
+                    rgb = self.ms.bits_for(st_ns, self.pol.target)
+                except SM.MaskStale as e:
+                    self._err("mask_stale", e)
+                    self._gap(t, False, "MaskStale")
+                    return
+                self.n["src"][self.ms.src] += 1
+                self.n["mask_age_ms"].append(self.ms.age * 1e3)
             a = self.pol.step(depth, prop, t - stamp, rgb)
         except StaleDepth:
             self.n["stale_depth"] += 1
+            self._gap(t, False, "StaleDepth")
             return
+        self._gap(t, True)
         self.lat.append((time.perf_counter() - t0) * 1e3)
         self.n["steps"] += 1
         if not np.isfinite(a).all():
@@ -193,7 +253,15 @@ class Side:
         a = np.array([r[5:] for r in self.rows], float).reshape(-1, 13)
         fin = a[np.isfinite(a).all(1)]
         lat = np.array(self.lat) if self.lat else np.array([np.nan])
-        return {**self.n, "ckpt": str(self.pol.policy_cfg["ckpt"]["path"].relative_to(REPO)), "md5": self.pol.md5,
+        n = dict(self.n)
+        if self.ms is not None:
+            ages = np.array(n.pop("mask_age_ms") or [np.nan])
+            tot = max(1, n["ticks"] - n["meas_error"])
+            n["src_frac"] = {"paired": round(n["src"]["paired"] / tot, 4), "latest": round(n["src"]["latest"] / tot, 4),
+                             "none(MaskStale)": round(n["mask_stale"] / tot, 4)}
+            n["mask_age_ms_p50_p95"] = np.nanpercentile(ages, [50, 95]).round(1).tolist()
+            n["mask_stream"] = self.ms.status()
+        return {**n, "ckpt": str(self.pol.policy_cfg["ckpt"]["path"].relative_to(REPO)), "md5": self.pol.md5,
                 "object": self.c.active_object, "policy_hz": self.c.policy_hz,
                 "handover": self.ho.why, "grasp_ticks": sum(r[1] == "grasp" for r in self.rows),
                 "nan": int(np.isnan(a).sum()), "inf": int(np.isinf(a).sum()),
@@ -204,14 +272,18 @@ class Side:
 
 def image_stats(frames: list, d_min: float, d_max: float) -> dict:
     d = np.stack([f[2] for f in frames])
-    rgb = np.stack([f[3] for f in frames])
+    rgb = np.stack([f[3] for f in frames if f[3] is not None])
     v = d > 0
+    if rgb.ndim == 3:                                    # 마스크 비트(90,160) — 클래스 c 칸이 있는 프레임 비율
+        rgb_stats = {"mask_class_frame_frac": [float(((rgb >> c) & 1).any((1, 2)).mean()) for c in range(3)]}
+    else:
+        rgb_stats = {"rgb_mean": rgb.mean((0, 1, 2)).round(4).tolist(), "rgb_median": np.median(rgb.reshape(-1, 3), 0).round(4).tolist(),
+                     "rgb_nonfinite": int((~np.isfinite(rgb)).sum())}
     return {"depth_valid_frac": float(v.mean()), "depth_valid_frac_min_frame": float(v.mean((1, 2)).min()),
             "depth_in_ckpt_range_frac": float(((d >= d_min) & (d <= d_max)).mean()),
             "depth_valid_m_p5_p50_p95": np.percentile(d[v], [5, 50, 95]).round(3).tolist() if v.any() else [],
             "ckpt_d_min_max": [d_min, d_max],
-            "rgb_mean": rgb.mean((0, 1, 2)).round(4).tolist(), "rgb_median": np.median(rgb.reshape(-1, 3), 0).round(4).tolist(),
-            "depth_nonfinite": int((~np.isfinite(d)).sum()), "rgb_nonfinite": int((~np.isfinite(rgb)).sum())}
+            "depth_nonfinite": int((~np.isfinite(d)).sum()), **rgb_stats}
 
 
 def save_pngs(frames: list, out: Path, d_max: float) -> list:
@@ -219,10 +291,14 @@ def save_pngs(frames: list, out: Path, d_max: float) -> list:
 
     names = []
     for k in np.linspace(0, len(frames) - 1, N_PNG).astype(int):
-        _, s, d, rgb = frames[k]
+        _, s, d, rgb, _ = frames[k]
         g = (np.clip(d / d_max, 0, 1) * 255).astype(np.uint8)
         cv2.imwrite(str(out / f"depth_{k:04d}.png"), g)
-        cv2.imwrite(str(out / f"rgb_{k:04d}.png"), (rgb[..., ::-1] * 255).round().astype(np.uint8))
+        if rgb is None:                                  # 마스크 학생 · 짝 color 없는 깊이
+            names.append(f"depth_{k:04d}.png")
+            continue
+        img = rgb * np.uint8(4) if rgb.ndim == 2 else (rgb[..., ::-1] * 255).round().astype(np.uint8)   # 비트는 0~252 로 펼쳐 본다
+        cv2.imwrite(str(out / f"rgb_{k:04d}.png"), img)
         names += [f"depth_{k:04d}.png", f"rgb_{k:04d}.png"]
     return names
 
@@ -243,6 +319,8 @@ def main() -> None:
     ap.add_argument("--sides", default="right,left")
     ap.add_argument("--max-s", type=float, default=0.0, help="앞에서 이만큼만(0 = 전부)")
     ap.add_argument("--threads", type=int, default=4)
+    ap.add_argument("--bundle", default="student1104e", help="묶음 이름 꼬리(<side>_<bundle>)")
+    ap.add_argument("--mask-bits", help="마스크 학생: mask_bag_bits.py 출력 npz(키 = color stamp ns)")
     args = ap.parse_args()
     from sensor_msgs.msg import CameraInfo, CompressedImage, JointState
 
@@ -253,7 +331,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     hdn = load_head_depth_node()
     cfg_bi = load_robot_cfg(ROBOT)
-    sides = {s: Side(s, cfg_bi, AGLT / f"{s}_student1104e", AGLT / f"{s}_rcg04" / "rh_aglt_contract.json", args.threads)
+    sides = {s: Side(s, cfg_bi, AGLT / f"{s}_{args.bundle}", AGLT / f"{s}_rcg04" / "rh_aglt_contract.json", args.threads)
              for s in args.sides.split(",")}
 
     pc = next(iter(sides.values())).pol.policy_cfg       # 외부 파라미터 · rgb 는 두 묶음이 같다(아래에서 확인)
@@ -264,8 +342,19 @@ def main() -> None:
     cut = hdn.make_cut(t_base_cam)
     node_cfg = hdn.node_config(block, min_valid, hdn.TABLE_Z, hdn.real_depth.FLOOR_MARGIN_M, str(pc["extrinsics"]["path"]),
                                extr_md5, pc["rgb"])
+    mask_on = {s.pol.mask_on for s in sides.values()}
+    if mask_on != {bool(args.mask_bits)}:
+        raise SystemExit(f"묶음 마스크 {mask_on} 와 --mask-bits {args.mask_bits!r} 가 맞지 않는다")
+    mask_bits, mcfg = None, None
+    if args.mask_bits:
+        z = np.load(REPO / args.mask_bits)
+        mask_bits = {k: z[k] for k in z.files if k != "config"}
+        mcfg = json.loads(str(z["config"]))
+        for s in sides.values():                              # 검출 설정 = 묶음 yolo md5 · ckpt depth_pre
+            from policy_control.student_mask import check_mask_config
+            check_mask_config(mcfg, s.pol.yolo, s.pol.depth_pre)
     for s in sides.values():
-        check_depth_config(s.pol.depth_pre, node_cfg)         # 전처리 = ckpt depth_pre(어긋나면 RhAgltError)
+        check_depth_config(s.pol.depth_pre, node_cfg, mask=s.pol.mask_on)   # 전처리 = ckpt depth_pre(어긋나면 RhAgltError)
 
     cam = read_bag(bag / "camera", {T_DEPTH: CompressedImage, T_COLOR: CompressedImage, T_INFO: CameraInfo})
     info = next(m for _, t, m in cam if t == T_INFO)
@@ -275,7 +364,12 @@ def main() -> None:
     header = {"format": first_depth.format, "len": len(raw), "first16_hex": raw[:16].hex(),
               "png_magic_at": raw.find(PNG_MAGIC), "header_int32_float2": np.frombuffer(raw[:CD_HEADER], "<i4", 1).tolist()
               + np.frombuffer(raw[4:CD_HEADER], "<f4").tolist()}
-    frames, cam_n = camera_frames(cam, hdn, cut, block, min_valid)
+    frames, cam_n = camera_frames(cam, hdn, cut, block, min_valid, mask_bits)
+    mev = []
+    if mask_bits is not None:
+        lat_s = float(mcfg.get("proc_ms_p90", 0.0)) * 1e-3
+        mev, cam_n["color_without_bits"] = mask_events(cam, mask_bits, lat_s)
+        cam_n["mask_lat_ms_assumed"] = round(lat_s * 1e3, 2)
     del cam
     if not frames:
         raise SystemExit(f"깊이 프레임이 없다: {cam_n}")
@@ -285,8 +379,13 @@ def main() -> None:
     hz = next(iter(sides.values())).c.policy_hz
     t_end = frames[-1][0] if args.max_s <= 0 else min(frames[-1][0], frames[0][0] + args.max_s)
     ticks = np.arange(frames[0][0], t_end, 1.0 / hz)
-    ji = fi = 0
+    ji = fi = mi = 0
     for t in ticks:
+        while mi < len(mev) and mev[mi][0] <= t:            # 이 틱까지 도착한 /head_mask/image → 손별 MaskStream
+            msg = _mask_msg(mev[mi][1], mev[mi][2])
+            for sd in sides.values():
+                sd.ms.on_msg(msg)
+            mi += 1
         while ji < len(joints) and joints[ji][0] * 1e-9 <= t:
             recv, topic, msg = joints[ji]
             js = codec.decode_joint_state(msg)

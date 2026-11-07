@@ -1,0 +1,39 @@
+# 1105m 목표 마스크 학생 A(깊이 + 목표/이웃 마스크, arch v3) right — 학생 전용 배포 묶음(11.07). 경로는 이 폴더 기준.
+# 가중치(student/*.pt)는 git 밖: logs/policy/student_mask_A/r/student_it04400.pt · logs/policy/student_mask_A/yolo/seg_s640_A/best.pt 의 하드 링크.
+# head_depth_node --policy-dir(깊이, rgb 끔) · head_mask_node --policy-dir(YOLO) · StudentPolicy.from_dir 가 읽고 md5 가 다르면 시작하지 않는다.
+kind: student_depth_mask
+side: right
+task: rh_aglt
+one_obj: source240_cvx
+rgb: false
+mask:
+  mode: A
+  target_class: blue          # 기본 목표. 미션 · 노드 인자 -p target_class:=blue|pink|orange 로 바꾼다
+  yolo:
+    path: student/yolo_seg_s640_A.pt
+    md5: b6ac0cd679bee22c100f9fef105832b8
+    conf: 0.25                # 여기부터 다섯 값 = head_mask_node --policy-dir 가 쓰는 값 · /head_mask/config 와 대조(다르면 reset 거부)
+    imgsz: 640
+    retina_masks: true
+    top1_per_class: true      # 클래스마다 conf 최고 인스턴스 하나(탁자 밖 오검출 억제, 11.07 검증)
+    cross_class_iou: 0.5      # 다른 클래스 인스턴스와 마스크 IoU 가 이를 넘으면 conf 낮은 쪽을 버린다(0 = 끔)
+    from: logs/policy/student_mask_A/yolo/seg_s640_A/best.pt(server 1105_det seg_s640_A, ultralytics 8.4.202, imgsz 640)
+ckpt:
+  path: student/student_it04400.pt
+  md5: 8eaa61d43b5a397bc654c17200cc188c
+  it: 4400
+  arch: v3
+  from: logs/policy/student_mask_A/r/student_it04400.pt
+extrinsics:
+  path: camera/extrinsics_r20u5_40e6496.yaml
+  md5: 624677fee7e8ff6502f33a3ed8a96a1f
+  from: sim2real 40e6496:config/global_camera_extrinsics_arm4090_r20u5.yaml
+hdgp:
+  # 스냅숏 커밋(model.py · real_depth.py). 마스크 학습 기준 78e75059 와 두 파일 md5 가 같다(8c4c94b1 · 9bdcc2ac).
+  commit: 0bd455a86537ee3f2d1f8c34d7199b5073c610b3
+  snapshot_cfg: deploy/policy_control/config/hdgp_student_snapshot.yaml
+  mask_ref: 78e75059b75e3754733e34182fefc5569b7fd0a6:scripts/tools/student_adapters/mask_scene.py
+source:
+  host: server
+  run: ~/rl_ws/our_source/student_grasp/1105m_A_r/s1
+  spec: student/spec.json

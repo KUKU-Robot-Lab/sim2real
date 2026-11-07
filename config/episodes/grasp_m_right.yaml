@@ -1,0 +1,22 @@
+# 경로 M — right 손 source240(파란 병, FP++ source240b_blue). 목표 마스크 학생 A 1105m(깊이 + 목표/이웃 마스크, arch v3, it4400)가 홈에서 접근 · 잡기를 한 정책으로 한다(11.07).
+#   묶음 student.yaml: one_obj source240_cvx · mask.target_class blue · rgb false. 컵 위치는 관측에 넣지 않는다(학생은 머리 깊이 + YOLO 마스크로 본다).
+#   FP++ 컵은 팔 들림 래치와 lift_hold 판정에만 쓴다.
+#   ★목표 컵 하나만: 탁자에 이 컵(blue) 하나만 둔다. 학습은 one_obj(목표 하나) 장면이라 분홍 source240p · 주황 shaker 이 시야에 있으면 이웃 마스크로 들어가
+#   학습 밖 입력이 된다. 마스크는 클래스마다 최고 conf 하나(top1_per_class)라 같은 색 컵 둘도 안 된다.
+#   노드 = head_depth_node(깊이, --rgb 없음) + head_mask_node(.venv-yolo, /head_mask/image · /head_mask/config) + rh_aglt_student_node(.venv-student).
+#   목이 묶음 head_pose(pan 1825 · tilt 2815 ± 4 틱)일 때만 깊이 · 마스크가 나온다. 마스크 0.2 s 넘게 낡으면 StaleDepth 로 멈춘다.
+#   policy = 홈 출발 계약(디코더 · 물체 · 시작 검사, ap05 계약). 끝 = 첫 목표 성공 또는 7 cm 위 쥠 유지(lift_hold).
+#   시작 전: python3 scripts/ops/check_student_mask_A.py
+episode: {name: grasp_m_right, version: 1}
+objects:
+  CUP: {topic: /objects/source240b_blue/pose}
+policies:
+  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, student: rh56f1/aglt/right_student1105mA}
+trajectories:
+  go_home: {kind: rehome, sides: [right]}
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 rehome으로 복구한다.
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  - {id: grasp_lift, type: policy, name: rh_aglt_r, target_object: CUP, policy_object: source240_real, expect: {right_hand: CUP}}
+  - {id: done, type: terminal, result: SUCCESS}
