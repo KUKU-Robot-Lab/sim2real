@@ -98,7 +98,9 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             # ★11.02 사용자 지시(sim_e2e 경유) oneshot 세팅 실기 — 1b v5 + 놓기 정책 right_n10_e1000|e4000 · left_n09_e3800(cup_obs live)
             "cocktail_1c_e1000", "cocktail_1c_e4000",
             # ★11.05 경로 S — 깊이 학생 1104e(깊이 + RGB)가 홈에서 탁자 위 컵 하나를 잡고 들기(lift_hold), 팔마다 따로
-            "grasp_s_right", "grasp_s_left")
+            "grasp_s_right", "grasp_s_left",
+            # ★11.07 경로 M — 목표 마스크 학생 A 1105mA(깊이 + YOLO 목표/이웃 마스크), 경로 S 와 같은 홈 출발 잡기 · 들기
+            "grasp_m_right", "grasp_m_left")
 #: ★10.20 사용자 "영상은 필요 없음. 일단 기본 off" — 카메라 영상 · FP++ 실시간 좌표 기록(vision-3090)과 끝난 뒤 보고서 영상
 #   만들기(episode_media.py)를 기본으로 끈다. 10.20 실기: 보고서 영상 정리가 옛 회까지 다시 가져오며 6 분 넘게 팔 작업을 붙잡아
 #   rehome · tilt_now 승인이 막혔다. 켜려면 True 로 바꾸고 이 생성기를 다시 돌린다(미션 YAML 이 바뀐다).
@@ -121,7 +123,9 @@ CAMERA_BAG_TOPICS = ("/camera/camera/color/image_raw/compressed",
 STUDENT_CAMERA_BAG_HZ = 60.0
 STUDENT_CAMERA_BAG_TOPICS = ("/head_depth/image", "/head_depth/rgb", "/head_depth/config",
                              "/camera/camera/color/camera_info", "/head/joint_states")
-STUDENT_EPISODES = ("grasp_s_right", "grasp_s_left")
+STUDENT_EPISODES = ("grasp_s_right", "grasp_s_left", "grasp_m_right", "grasp_m_left")
+#: ★11.07 마스크 학생(student.yaml mask:) 에피소드는 head_mask_node 출력도 싣는다(160x90 mono8 비트 + latched 설정)
+MASK_CAMERA_BAG_TOPICS = ("/head_mask/image", "/head_mask/config")
 #: 에피소드 snapshot 이 다시 내는 정지 물체 자세(episode_ros.OBJECT_RELAY) — aglt 는 이것을 컵으로 본다
 EPISODE_RELAY = "/episode/objects/{}/pose"        # ★10.19 한 팔 실행기는 episode_ros.relay_topic(실행기 이름 아래)
 # 제자리 들기(grasp_rg3) 정책 노드의 lift_hold 멈춤 = 컵 7 cm 위 + 쥠 연속 틱(60 Hz).
@@ -547,13 +551,13 @@ def _run(kind: str) -> dict:
             *([_cmd("CPU — 실시간 한도(EtherCAT 마스터 FIFO 80 · controller_manager 50) · 코어 배치(이 PC 의 코어를 읽어 노드가 "
                     "스스로 정한다). 한도가 안 열렸으면 MISS — 운영자가 sudo bash scripts/setup/rt_setup.sh 한 번 → 재부팅(10.03)",
                     ["python3", "{repo}/scripts/setup/check_host.py", "--robot", "rh56f1", "--only", "cpu"])] if real else []),
-            _cmd("RH56F1 변환표 · 백엔드 · 상태 노드 · 계약 · 미션 테스트(수 초)",
-                 ["python3", "-m", "pytest", "-q", "-m", "not gpu", "-p", "no:cacheprovider",
-                  "{repo}/tests/policy_control/test_pc_rh56f1.py", "{repo}/tests/s2r_console/test_rh56f1_mission.py"]),
             _cmd("제어 전용 계약 재생성 — 자산 openarm_rh56f1_bi_rl, 홈 = hdgp rh_aglt 시작 자세(양팔 거울, config/homes/rh56f1_aglt.yaml), "
                  "손 = 편 손. 홈이 바뀌면 저장 경로의 계약 해시가 어긋나 home 단계가 멈춘다 — 경로를 다시 계획할 것",
                  ["python3", f"{PC}/tools/build_deploy_contract.py", "--asset", "openarm_rh56f1_bi_rl",
                   "--home", "arms:config/homes/rh56f1_aglt.yaml", "--out", "{artifact:contract}"]),
+            _cmd("RH56F1 변환표 · 백엔드 · 상태 노드 · 계약 · 미션 테스트(수 초)",
+                 ["python3", "-m", "pytest", "-q", "-m", "not gpu", "-p", "no:cacheprovider",
+                  "{repo}/tests/policy_control/test_pc_rh56f1.py", "{repo}/tests/s2r_console/test_rh56f1_mission.py"]),
         ],
         "drivers": ([
             _cmd("★모터 전원(양팔) ON — 물리 스위치", ["bash", "-lc", "true"], manual=True),
@@ -907,6 +911,13 @@ def _place_contract(contract: Path) -> dict:
     return doc
 
 
+def _student_mask(student_id: str) -> bool:
+    """학생 묶음 student.yaml 에 mask: 가 있는가(경로 M, 11.07)."""
+    from policy_control.student_chain import STUDENT_CARD
+    card = yaml.safe_load((REPO / "deploy" / "policies" / student_id / STUDENT_CARD).read_text(encoding="utf-8")) or {}
+    return bool(card.get("mask"))
+
+
 def _student_cmds(b, contract: str, robot: str, cup_topic: str, squeeze: bool) -> list:
     """경로 S 노드 둘 — head_depth_node(묶음의 얼린 외부 파라미터 · 목이 그 head_pose 일 때만 깊이) + rh_aglt_student_node."""
     if REMOTE_PERCEPTION:   # shortcut: 깊이 노드는 카메라와 같은 PC(localhost 영상)에서만 — 카메라를 다른 PC 로 옮기면 그 PC 용 실행을 만든다
@@ -915,22 +926,42 @@ def _student_cmds(b, contract: str, robot: str, cup_topic: str, squeeze: bool) -
     sdir = f"{{repo}}/deploy/policies/{b.student}"
     ap_s, max_s = bundle_limits(b.student)
     hold = LIFT_HOLD_TICKS[b.side]
-    note = (f"경로 S: 홈에서 접근 · 잡기(접근 {ap_s:g} s 안에 사전 파지 자리에 멈추지 못하면 멈춤) → "
+    # 학생 행동은 영상 입력으로 결정한다. FP++ 끊김은 접근 중단 사유로 쓰지 않고 판정용 마지막 값을 유지한다.
+    live_args = ["cup_dropout_stop_s:=0.0" if a.startswith("cup_dropout_stop_s:=") else a for a in AGLT_LIVE_ARGS]
+    mask = _student_mask(b.student)
+    note = (f"경로 {'M' if mask else 'S'}: 홈에서 접근 · 잡기(접근 {ap_s:g} s 안에 사전 파지 자리에 멈추지 못하면 멈춤) → "
             f"첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 {hold / 60:g} s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤"
             + (" · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)" if squeeze else ""))
-    return [
+    head = [
         _cmd("머리 깊이 노드(학생 입력 160x90 깊이 + RGB) — 묶음의 얼린 외부 파라미터 md5 를 검사하고, /head/joint_states 가 "
              "그 head_pose(± 4 틱) 밖이거나 낡으면 깊이를 내지 않는다(정책은 깊이 없음으로 멈춘다). 이미 떠 있으면 그대로",
              ["{repo}/.venv-student/bin/python", "{repo}/scripts/nodes/head_depth_node.py", "--policy-dir", sdir],
-             background=True),
+             background=True)]
+    if mask:   # ★11.07 경로 M — 마스크 노드는 학생 노드보다 먼저(학생은 마스크가 0.2 s 넘게 없으면 멈춘다)
+        head = [
+            _cmd(f"시작 검사 — 마스크 학생 A 묶음({b.side}) ckpt · YOLO · 외부 파라미터 md5 · head_pose · /head_mask · /head_depth 설정 · "
+                 "64 MB SHM 프로파일 (읽기만, 불일치면 실패)",
+                 ["{repo}/.venv-student/bin/python", "{repo}/scripts/ops/check_student_mask_A.py", "--sides", b.side]),
+            *head,
+            _cmd("머리 마스크 노드(YOLO11s-seg → 160x90 클래스 비트, /head_mask/image · /head_mask/config) — 묶음 mask.yolo md5 · "
+                 "conf · 인스턴스 규칙. 64 MB SHM 프로파일이 없으면 시작 거부. 양손 미션에도 하나만",
+                 ["nice", "-n", "5", "{repo}/.venv-yolo/bin/python", "{repo}/scripts/nodes/head_mask_node.py", "--policy-dir", sdir],
+                 background=True)]
+    return [
+        *head,
         _cmd(f"[{b.side}] {b.role} 노드(학생 {b.student} · 계약 {b.policy}) — {note} · 컵 = FP++ live(래치 · lift_hold 판정에만)",
              ["{repo}/.venv-student/bin/python", f"{PC}/policy_control/rh_aglt_student_node.py", "--ros-args",
               "-r", f"__node:=rh_aglt_node_{b.side}", "-p", f"ns:={b.side}", "-p", f"contract:={contract}",
-              "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", f"student_dir:={sdir}",
+              "-p", f"robot:={robot}", "-p", "device:=cuda", "-p", f"student_dir:={sdir}",
               "-p", "goal_max:=1", "-p", "freeze_rule:=lift_hold", "-p", "freeze_lift_m:=0.07", "-p", f"freeze_hold_steps:={hold}",
-              "-p", f"cup_topic:={cup_topic}", *AGLT_LIVE_ARGS, *(["-p", "hand_squeeze:=true"] if squeeze else []),
+              "-p", f"cup_topic:={cup_topic}", *live_args, *(["-p", "hand_squeeze:=true"] if squeeze else []),
               "-p", f"max_episode_s:={max_s:.1f}"], background=True),
     ]
+
+
+def _head_node(c: dict) -> str | None:
+    """머리 깊이 · 마스크 노드 스크립트 이름(그 외 None)."""
+    return next((Path(a).name for a in c.get("argv") or [] if a.endswith(("/head_depth_node.py", "/head_mask_node.py"))), None)
 
 
 def _episode_run(name: str, real: bool) -> list:
@@ -1051,7 +1082,11 @@ def _episode_run(name: str, real: bool) -> list:
             #   정책이 쥐는 에피소드(제자리 들기 · 경로 D)만. 경로 C 는 닫기가 스크립트라 끈다.
             squeeze = lift_only and (b.approach_grasp is None or bool(b.handoff))
             if b.student:                               # ★11.05 경로 S — 깊이 학생(1104e)이 홈에서 접근 · 잡기, 컵은 관측에 없음
-                cmds.extend(_student_cmds(b, contract, robot, _live(ep.objects[obj]["topic"]), squeeze))
+                # 머리 깊이 · 마스크 노드는 PC 에 하나 — 양손 학생 미션이면 두 번째 팔 것은 뺀다
+                #   (좌우 묶음이 다르면 첫 팔 묶음의 노드만 남는다 — 학생 reset 의 check_*_config 가 어긋남을 거부한다)
+                seen = {_head_node(x) for x in cmds} - {None}
+                cmds.extend([c for c in _student_cmds(b, contract, robot, _live(ep.objects[obj]["topic"]), squeeze)
+                             if not (c.get("background") and _head_node(c) in seen)])
                 continue
             if squeeze:
                 end_note += " · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)"
@@ -1102,6 +1137,8 @@ def _episode_run(name: str, real: bool) -> list:
         hands = f"HAND_SIDES='{' '.join(sides)}' " if len(sides) == 1 else ""      # 한 팔 에피소드는 그 손만(다른 팔 기록과 겹치지 않게)
         cam_topics, cam_hz = ((STUDENT_CAMERA_BAG_TOPICS, STUDENT_CAMERA_BAG_HZ) if name in STUDENT_EPISODES
                               else (CAMERA_BAG_TOPICS, CAMERA_BAG_HZ))
+        if any(b.student and _student_mask(b.student) for b in ep.policies.values()):
+            cam_topics = (*cam_topics, *MASK_CAMERA_BAG_TOPICS)
         cam = "" if REMOTE_PERCEPTION else f"CAMERA='{' '.join(cam_topics)}' CAMERA_HZ={cam_hz:g} "
         cmds.append(_cmd("기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더"
                          + ("" if REMOTE_PERCEPTION else

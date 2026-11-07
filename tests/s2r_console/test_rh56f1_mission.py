@@ -63,6 +63,33 @@ def test_the_committed_missions_come_from_the_generator():
     assert r.returncode == 0, r.stdout + r.stderr
 
 
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_student_approach_does_not_abort_on_fpp_dropout(side):
+    cmds = _cmds(REAL, REAL_BOOK, f"episode_grasp_s_{side}")
+    node = next(c.argv for c in cmds if any("rh_aglt_student_node.py" in a for a in c.argv))
+    assert "device:=cuda" in node
+    assert [a for a in node if a.startswith("cup_dropout_stop_s:=")] == ["cup_dropout_stop_s:=0.0"]
+    assert "cup_hold_last:=true" in node
+    teacher = _cmds(REAL, REAL_BOOK, "episode_cocktail_1c_e4000")
+    teacher_nodes = [c.argv for c in teacher if any(a.endswith("rh_aglt_node.py") for a in c.argv)]
+    assert teacher_nodes
+    assert all("cup_dropout_stop_s:=1.0" in a for a in teacher_nodes)
+
+
+@pytest.mark.parametrize("book", ["real", "fake"])
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_mask_student_episode_starts_the_mask_node_before_the_policy_node(side, book):
+    raw, b = (REAL, REAL_BOOK) if book == "real" else (FAKE, FAKE_BOOK)
+    cmds = _cmds(raw, b, f"episode_grasp_m_{side}")
+    at = {k: next(i for i, c in enumerate(cmds) if any(a.endswith(k) for a in c.argv))
+          for k in ("check_student_mask_A.py", "head_depth_node.py", "head_mask_node.py", "rh_aglt_student_node.py")}
+    assert at["check_student_mask_A.py"] < at["head_mask_node.py"] < at["rh_aglt_student_node.py"]
+    assert at["head_depth_node.py"] < at["rh_aglt_student_node.py"]
+    assert f"{REPO}/deploy/policies/rh56f1/aglt/{side}_student1105mA" in cmds[at["head_mask_node.py"]].argv
+    assert sum(any(a.endswith("head_mask_node.py") for a in c.argv) for c in cmds) == 1
+    assert not any(any(a.endswith("head_mask_node.py") for a in c.argv) for c in _cmds(raw, b, f"episode_grasp_s_{side}"))
+
+
 @pytest.mark.parametrize('partial', [False, True])
 def test_generator_keeps_missing_policy_unavailable_without_blocking_other_stages(monkeypatch, partial):
     from types import SimpleNamespace
@@ -749,3 +776,12 @@ def test_episode_without_objects_has_no_perception_ensure():
     assert not any(ensures(FAKE_RAW, s["id"]) for s in FAKE_RAW["stages"] if s["id"].startswith("episode_"))
     assert not ensures(REAL_RAW, "episode_tilt_base_b")              # FP++ 안 쓰는 tilt — 물체가 있어도 확보하지 않는다
     assert ensures(REAL_RAW, "episode_tilt_base_c")
+
+
+def test_preflight_builds_contract_before_contract_dependent_tests():
+    for name in ('mission_rh56f1_control.yaml', 'mission_rh56f1_fake.yaml'):
+        raw, _, _ = _load(name)
+        steps = raw['run']['preflight']
+        build = next(i for i, s in enumerate(steps) if any('build_deploy_contract.py' in a for a in s.get('argv', [])))
+        tests = next(i for i, s in enumerate(steps) if 'pytest' in s.get('argv', []))
+        assert build < tests

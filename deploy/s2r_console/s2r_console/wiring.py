@@ -62,6 +62,7 @@ L_LAUNCH = -1                                    # 인지 런처는 카메라보
 VISION_HOST = "vision-3090"
 PERCEPTION_STATUS = "/perception/status"
 HEAD_DEPTH_TOPICS = ("/head_depth/image", "/head_depth/rgb")   # scripts/nodes/head_depth_node.py OUT_DEPTH · OUT_RGB
+HEAD_MASK_TOPICS = ("/head_mask/image", "/head_mask/config")   # policy_control.student_mask MASK_TOPIC · MASK_CONFIG_TOPIC
 HEAD_TOPIC = "/head/joint_states"                # scripts/nodes/head_joint_publisher.py 의 DEFAULT_TOPIC
 _POUR_INPUT = {"arm": "arm", "ee": "hand", "tip_force": "force"}       # robot yaml 역할 → pour_node 가 status 로 부르는 이름
 
@@ -400,7 +401,9 @@ def _policy_node(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
     if cmd.name in ("rh_aglt_node.py", "rh_aglt_student_node.py"):
         g.need(f"{base}/goal", "goal", "", box, [], STALE_MS, unit=key, how="on_demand")
     if cmd.name == "rh_aglt_student_node.py":
-        for t in HEAD_DEPTH_TOPICS:
+        card = _resolve(str(cmd.args.get("student_dir", "")), repo) / "student.yaml"
+        mask = card.is_file() and bool((yaml.safe_load(card.read_text(encoding="utf-8")) or {}).get("mask"))
+        for t in (HEAD_DEPTH_TOPICS[0], HEAD_MASK_TOPICS[0]) if mask else HEAD_DEPTH_TOPICS:   # ★11.07 마스크 학생은 rgb 대신 마스크
             g.need(t, "depth", "", box, [], STALE_MS, unit=key)
     g.makers.append((box, tuple(sides), key, str(cmd.args.get("episode_topic") or f"{base}/episode")))
 
@@ -690,13 +693,23 @@ def _head_depth(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
         g.need(t, "camera", "", box, [], STALE_MS, unit=key, how="link")
 
 
+def _head_mask(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
+    """★11.07 머리 마스크(마스크 학생 입력) — color 1280x720 → YOLO11s-seg → 160x90 클래스 비트."""
+    box = g.box("head_mask", "머리 마스크 (head_mask)", L_SENSE, ros=["/head_mask"], unit=key,
+                note="목표 마스크 학생 입력 160x90 비트 — 묶음 mask.yolo md5 · 인스턴스 규칙, 64 MB SHM 프로파일 필요")
+    for t in HEAD_MASK_TOPICS:
+        g.providers.setdefault(t, box)
+    g.need(CAMERA_TOPICS[0], "camera", "", box, [], STALE_MS, unit=key, how="link")
+
+
 #: 내는 쪽 — 받는 쪽이 누가 내는지 알아야 하므로 먼저, 미션 순서대로 그린다(인지 런처 → 수신기 → 물체 자세)
 _PROVIDERS = {"fake_plant.launch.py": _fake_plant, "fake_cup_pose_pub.py": _fake_cup, "openarm.bimanual.launch.py": _bringup,
               "dg5f_right_driver.launch.py": _hand_driver, "dg5f_left_driver.launch.py": _hand_driver,
               "head_joint_publisher.py": _head_publisher, "perception_launcher_node.py": _perception_launcher,
               "fpp_pose_rx.py": _fpp_rx, "object_pose_node.py": _object_pose, "cup_holder_pose_node.py": _cup_holders,
               "rh56f1_driver.py": _rh56f1_driver, "fake_rh56f1_hand.py": _rh56f1_driver,
-              "rh56f1_state_node.py": _rh56f1_state, "episode_runner_node.py": _episode_runner, "head_depth_node.py": _head_depth}
+              "rh56f1_state_node.py": _rh56f1_state, "episode_runner_node.py": _episode_runner, "head_depth_node.py": _head_depth,
+              "head_mask_node.py": _head_mask}
 _HANDLERS = {"policy_chain.launch.py": _policy_chain, "pour_chain.launch.py": _pour_chain, "pour_guard_node.py": _pour_guard,
              "pd_controller.launch.py": _pd, **{name: _policy_node for name in POLICY_NODES}}
 
