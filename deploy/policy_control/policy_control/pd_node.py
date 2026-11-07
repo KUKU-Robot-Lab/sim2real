@@ -190,6 +190,7 @@ class PdNode(LeanNodeMixin, Node):
         self.declare_parameter("sides", "")
         self.declare_parameter("goto_home_timeout_sec", 30.0)
         self.declare_parameter("temperature_topic", "/dynamic_joint_states")
+        self.declare_parameter("robot_description_topic", "/robot_description")
 
     def _path(self, name: str) -> Path:
         p = Path(str(self.get_parameter(name).value)).expanduser()
@@ -206,9 +207,17 @@ class PdNode(LeanNodeMixin, Node):
         self.cb_srv = MutuallyExclusiveCallbackGroup()
         self._pub_applied = {s: self.create_publisher(JointState, f"{pd_ns(s)}/applied", _qos_chain())
                              for s in self.sides}
+        self._pub_diagnostics = {s: self.create_publisher(String, f"{pd_ns(s)}/diagnostics", _qos_chain())
+                                 for s in self.sides}
         self._pub_status = {s: self.create_publisher(String, f"{NS}/status/{status_node(s)}", _qos_chain())
                             for s in self.sides}
         main = self.cb_main
+        self.create_subscription(String, str(self.get_parameter("robot_description_topic").value),
+                                 self._on_robot_description, _qos_latched(), callback_group=main)
+        for side, unit in self.units.items():
+            self.create_subscription(Bool, f"{pd_ns(side)}/contact",
+                                     lambda msg, u=unit: u.on_contact(msg.data, time.monotonic()),
+                                     _qos_sensor(), callback_group=main)
         self.create_subscription(String, f"{NS}/episode", self._on_episode, _qos_latched(), callback_group=main)
         # 팔마다 따로 도는 정책(rh_aglt 양팔 동시, 09.30)은 /policy_control/<side>/episode 로 낸다 — 그 팔에만 적용
         for s in self.sides:
@@ -375,12 +384,20 @@ class PdNode(LeanNodeMixin, Node):
                 self._publish_status([(u, TickResult(None, None, u.idle_status())) for u in self.units.values()],
                                      t0, reasons=(f"tick: {exc}",))
 
+    def _on_robot_description(self, msg) -> None:
+        with self._lock:
+            for unit in self.units.values():
+                unit.on_robot_description(msg.data)
+
     def _tick(self, now: float, t0: float) -> None:
         results = [(u, u.tick(now, self._estop)) for u in self.units.values()]
         for unit, r in results:
             if r.error and unit.engaged:
                 self._note_error(f"no fresh joint state ({r.error}) — command frozen")
         self._publish_applied(results)
+        for unit, result in results:
+            if result.diagnostics is not None:
+                self._pub_diagnostics[unit.side].publish(codec.encode_status(result.diagnostics))
         self._publish_status(results, t0)
 
     def _publish_applied(self, results: list) -> None:

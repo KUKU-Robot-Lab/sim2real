@@ -313,6 +313,7 @@ class PdConfig:
     #: 09.23 실기: 손 전원을 껐다 켜자 손가락이 다른 자세로 자리 잡아 경로 시작점 검사가 막았다(엄지 0.9 rad 차이).
     #: 경로 계획(`plan_home_path --hand-start pd`)과 실기(`pd/hand_path`)가 이 한 값을 같이 읽는다.
     hand_path_pose: Mapping[str, Mapping[str, float]] | None = None
+    stationary_compensation: Mapping | None = None
 
 
 HOME_HAND_MODES = ("contract", "keep")
@@ -322,7 +323,7 @@ _SCALARS = {"pd_hz": float, "ramp_speed": float, "watchdog_sec": float, "lead_se
             "release_zero_ticks": int, "blend_sec": float}
 _KEYS = {"side", "execute", "max_vel", "settle", "gravity", "gains", "thermal", "gripper", "hand",
          *_SCALARS}
-_OPTIONAL = {"home_hand", "hand_path_pose"}
+_OPTIONAL = {"home_hand", "hand_path_pose", "stationary_compensation"}
 
 
 def load_pd_config(path: Path) -> PdConfig:
@@ -344,6 +345,14 @@ def load_pd_config(path: Path) -> PdConfig:
 
 
 def _build_config(raw: Mapping) -> PdConfig:
+    compensation = raw.get("stationary_compensation")
+    if compensation is not None:
+        from .stationary_compensation import CompensationConfig, validate_no_duplicate_integrators
+        cc = CompensationConfig.from_mapping(compensation)
+        if raw["gains"].get("experiment_profile") != "stationary_tracking":
+            raise PdConfigError("stationary_compensation requires stationary_tracking experiment_profile")
+        validate_no_duplicate_integrators(cc, home_integral=raw["settle"].get("gain", 0) != 0,
+                                         droop_integral=raw["gravity"]["mode"] == "integral_droop")
     if not isinstance(raw["execute"], bool):
         raise PdConfigError(f"execute must be a bool, got {raw['execute']!r}")
     home_hand = raw.get("home_hand", "contract")
@@ -360,7 +369,11 @@ def _build_config(raw: Mapping) -> PdConfig:
         settle=_block(Settle, raw["settle"], "settle"),
         gravity=_gravity_block(raw["gravity"]),
         gains=GainsBlock(yaml=_path(raw["gains"]["yaml"]),
-                         accept_sim_mismatch=raw["gains"]["accept_sim_mismatch"]),
+                         accept_sim_mismatch=raw["gains"]["accept_sim_mismatch"],
+                         experiment_profile=raw["gains"].get("experiment_profile", ""),
+                         arm_gains_override=(_path(raw["gains"]["arm_gains_override"])
+                                             if raw["gains"].get("arm_gains_override") else None)),
+        stationary_compensation=compensation,
         hand_path_pose=path_pose,
         thermal=thermal_rules_from_config(raw["thermal"] or []),
         gripper=None if raw["gripper"] is None else _block(GripperBlock, raw["gripper"], "gripper"),

@@ -23,7 +23,8 @@ from .contract import SIDES, DeployContract, GainMismatch, SideCfg, side_of_join
 from .controller_switch import ControllerSwitch, read_jtc_reference, source_arm_joints
 from .pd_backends import (ArmForwardBackend, Dg5fJtcBackend, GripperCmd, GripperJtcBackend, HandCmd, HandGainsClient,
                           Rh56f1AngleBackend, hand_command, hand_controller_name)
-from .pd_gains import GainsError, expected_hand_gains, load_and_check
+from .pd_gains import GainsError, expected_hand_gains, load_and_check, verify_runtime_gains
+from .pd_stationary import StationaryRuntime
 from .pd_gravity import make_gravity
 from .pd_law import (PdCommand, PdConfig, blend_engage, blend_fraction, blend_release, law_cfg_from_config,
                      limits_from_profile, settle_bias)
@@ -101,6 +102,7 @@ class TickResult:
     hand_written: np.ndarray | None
     status: StageStatus
     error: str | None = None       # 실측 결손/스테일 등 이번 tick 의 사유
+    diagnostics: dict | None = None
 
 
 # ------------------------------------------------------------------ side selection / wiring
@@ -297,6 +299,11 @@ class ArmUnit:
         self.temps: dict[str, float] = {}   # 관절 → 모터 온도 [°C] (없으면 키가 없다)
         self.t_temp_recv: float | None = None
         self.t_arm_recv: float | None = None
+        self.arm_source_stamp: float | None = None
+        self.contact: bool | None = None
+        self.t_contact_recv: float | None = None
+        self.runtime_gains_verified = not cfg.gains.require_live_description
+        self.runtime_gains_error = "live robot_description not received"
 
     # ---------------------------------------------------------------- setup
     def _setup_law(self, stage_name: str) -> None:
@@ -306,9 +313,18 @@ class ArmUnit:
             raise PdArmError(f"pd yaml lead_vel {self.cfg.lead_vel} ≠ profile joint velocity {vel.tolist()}")
         if list(self.side_cfg.sim_gains.joints) != self.arm_joints:
             raise PdArmError(f"side {self.side}: sim_gains.joints ≠ arm_joints")
-        self.kp = np.asarray(self.side_cfg.sim_gains.kp, dtype=float)
         self.gains_ok, self.gains_report = self._check_gains()
+        # Training gains remain evidence, but motor torque/blending use startup gains.
+        self.kp = np.asarray(self.gains_report.get("real_kp", self.side_cfg.sim_gains.kp), dtype=float)
+        self.kd = np.asarray(self.gains_report.get("real_kd", self.side_cfg.sim_gains.kd), dtype=float)
         self.gravity_fn = make_gravity(self.cfg.gravity, self.contract, side=self.side)
+        limits = [self.profile[j].get("effort") for j in self.arm_joints]
+        if self.cfg.stationary_compensation is not None and any(x is None for x in limits):
+            raise PdArmError("stationary compensation requires per-joint effort limits")
+        self.stationary = StationaryRuntime(
+            self.cfg.stationary_compensation, kp=self.kp, kd=self.kd,
+            torque_limit=np.array([min(self.cfg.effort_cap, x) if x else self.cfg.effort_cap for x in limits]),
+            blend_sec=self.cfg.blend_sec, gravity_chain=getattr(self.gravity_fn, "chain", None))
         ramp = law_cfg_from_config(self.cfg, self.contract, "ramp", lower, upper, side=self.side)
         track = law_cfg_from_config(self.cfg, self.contract, stage_name, lower, upper, side=self.side)
         self.dt = 1.0 / self.cfg.pd_hz
@@ -332,7 +348,25 @@ class ArmUnit:
         except GainsError as exc:
             raise PdArmError(f"gains: {exc}") from exc
         return True, {"ok": rep.ok, "reasons": rep.reasons, "kd_note": rep.kd_note,
+                      "real_kp": rep.real_kp, "real_kd": rep.real_kd,
+                      "training_kp": list(self.side_cfg.sim_gains.kp),
+                      "training_kd": list(self.side_cfg.sim_gains.kd),
                       "impossible_kd": list(rep.impossible_kd), "accepted_mismatch": rep.accepted_mismatch}
+
+    def on_robot_description(self, xml: str) -> None:
+        try:
+            evidence = verify_runtime_gains(xml, self.side, self.kp, self.kd)
+        except GainsError as exc:
+            self.runtime_gains_verified = False
+            self.runtime_gains_error = str(exc)
+            self.gains_report["runtime"] = {"verified": False, "reason": str(exc)}
+        else:
+            self.runtime_gains_verified = True
+            self.runtime_gains_error = ""
+            self.gains_report["runtime"] = {"verified": True, **evidence}
+
+    def on_contact(self, contact: bool, now: float) -> None:
+        self.contact, self.t_contact_recv = bool(contact), now
 
     @property
     def phase(self) -> Phase:
@@ -361,6 +395,7 @@ class ArmUnit:
             self.sources.update_from_joint_state(role, sample, now)
         if "arm" in roles:
             self.t_arm_recv = now
+            self.arm_source_stamp = sample.stamp
             self.efforts = self._arm_efforts(sample)
         if "ee" in roles:
             self.t_ee_recv = now
@@ -444,17 +479,45 @@ class ArmUnit:
         target = self._select_target(now, q_m)
         out = self.stage.tick(target, q_m, qd_m, now, estop=estop,
                               thermal_act=thermal_act_joints(self.thermal, self.thermal_rules),
-                              switch_failed=self.switch_failed,
+                              switch_failed=(self.switch_failed or (self.cfg.gains.require_live_description
+                                             and not self.runtime_gains_verified)),
                               thermal_stale=thermal_stale_joints(self.thermal, self.thermal_rules),
                               thermal_retreat=self.thermal_retreat)
         cmd = self._blend_cmd(out.cmd, q_m, now)
+        diagnostics = None
+        if cmd is not None and self.cfg.stationary_compensation is not None:
+            contact = self.contact if (self.t_contact_recv is not None
+                                       and now - self.t_contact_recv <= self.cfg.watchdog_sec) else None
+            scale = 1.
+            if self.blend is not None:
+                fraction = blend_fraction(now - self.blend.t0, self.cfg.blend_sec)
+                scale = fraction if self.blend.kind == "engage" else 1. - fraction
+            if out.state.fsm.phase in (Phase.RELEASING, Phase.IDLE) or cmd.effort_fault:
+                scale = 0.
+            selected = out.state.target
+            cmd, diagnostics = self.stationary.apply(
+                cmd, q_meas=q_m, qd_meas=qd_m,
+                target=selected.q if selected is not None else cmd.q,
+                target_velocity=selected.qd if selected is not None else np.zeros(len(q_m)),
+                phase=out.state.fsm.phase.value, contact=contact,
+                stale=selected is None or now - selected.t_recv > self.cfg.watchdog_sec,
+                episode=out.state.episode, dt=self.dt,
+                gravity=cmd.tau - (selected.tau_ff if selected is not None else np.zeros(len(q_m))),
+                request=selected.tau_ff if selected is not None else np.zeros(len(q_m)), output_scale=scale)
+            diagnostics.update(stamp=time.time(), t_mono=now, joint_names=self.arm_joints,
+                               pd_target=out.cmd.q.tolist(), arm_source_stamp=self.arm_source_stamp,
+                               arm_receive_time=self.t_arm_recv, gains=self.gains_report,
+                               torque_feedback=[self.efforts.get(j) for j in self.arm_joints],
+                               temperature=[self._fresh_temps(now).get(j) for j in self.arm_joints],
+                               hand_names=list(state.ee_names), measured_hand=np.asarray(state.ee_q).tolist())
+            diagnostics["compensation_config"] = self.cfg.stationary_compensation
         hand_written = self._write(cmd, out.state.fsm.phase, state)
         self.thermal = thermal_step(self.thermal, self.thermal_rules,
                                     {r.joint: self.efforts.get(r.joint, 0.0) for r in self.thermal_rules}, self.dt,
                                     temps=self._fresh_temps(now))
         if self.thermal_retreat and self.home_settled():
             self.thermal_retreat = False     # 저부하 자세에 닿았다 — 가드를 다시 켠다
-        return TickResult(cmd=cmd, hand_written=hand_written, status=out.status)
+        return TickResult(cmd=cmd, hand_written=hand_written, status=out.status, diagnostics=diagnostics)
 
     def measured_q(self, now: float) -> np.ndarray | None:
         return self._measured(self.sources.snapshot(now))[0]
@@ -607,7 +670,10 @@ class ArmUnit:
                                                       and states.get(self.backends.switch.forward[2]) == "active"),
                             estop_latched=estop, phase=self.phase,
                             thermal_unknown=thermal_unknown_joints(self.thermal, self.thermal_rules))
-        return engage_refusals(check)
+        reasons = engage_refusals(check)
+        if self.cfg.gains.require_live_description and not self.runtime_gains_verified:
+            reasons.append(f"runtime gains: {self.runtime_gains_error}")
+        return reasons
 
     def apply_hand_gains(self) -> tuple[bool, list[str]]:
         """블로킹 — 락 밖. 손이 없으면 (True, [])."""
@@ -656,6 +722,7 @@ class ArmUnit:
     def engage_stage(self, q_seed: np.ndarray, now: float) -> str:
         # 출발 때의 손 자세 — 홈 경로는 이 손으로 검사했다. 복귀 전에 손을 여기로 되돌린다(pd/hand_rest, 09.22).
         self.rest_hand = self._measured_hand(now)
+        self.stationary.reset()
         self.stage.engage(q_seed)
         self.blend = Blend("engage", now)
         self.hold, self.target, self.switch_failed = None, None, False

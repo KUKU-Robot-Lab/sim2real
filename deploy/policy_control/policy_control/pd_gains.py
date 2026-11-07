@@ -10,10 +10,13 @@ M7 노드가 GetParameters 로 한다.
 from __future__ import annotations
 
 import re
+import hashlib
+import math
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
-from .contract import (MIT_KD_MAX, ContractError, DeployContract, GainMismatch,
+from .contract import (MIT_KP_MAX, MIT_KD_MAX, ContractError, DeployContract, GainMismatch,
                        GainReport as _ContractReport, compare_gains)
 
 
@@ -26,8 +29,18 @@ class GainsBlock:
     """`gains:` section of pd_*.yaml."""
     yaml: Path
     accept_sim_mismatch: bool
+    experiment_profile: str = ""
+    arm_gains_override: Path | None = None
+
+    @property
+    def require_live_description(self) -> bool:
+        return self.experiment_profile == "stationary_tracking"
 
     def __post_init__(self) -> None:
+        if self.experiment_profile not in ("", "stationary_tracking"):
+            raise GainsError("unknown gains experiment_profile")
+        if self.arm_gains_override is not None and not self.require_live_description:
+            raise GainsError("arm_gains_override requires stationary_tracking experiment_profile")
         if not isinstance(self.accept_sim_mismatch, bool):
             raise GainsError(f"gains.accept_sim_mismatch must be a bool, got {self.accept_sim_mismatch!r}")
 
@@ -55,13 +68,15 @@ def load_and_check(cfg: GainsBlock, contract: DeployContract, side: str | None =
     ``side`` picks one arm of a bimanual contract (``contract.sides[side].sim_gains``); the default is
     the legacy top-level ``pd.sim_gains`` (= primary side).
     """
-    path = Path(cfg.yaml)
+    selected_side = side or contract.primary_side
+    path = Path(cfg.arm_gains_override if cfg.arm_gains_override else cfg.yaml)
     if not path.is_file():
         raise GainsError(f"driver gains file missing: {path}")
     try:
         rep: _ContractReport = compare_gains(contract, path, side=side)
-    except ContractError as exc:
+    except (ContractError, ValueError, TypeError, KeyError, AttributeError) as exc:
         raise GainsError(str(exc)) from exc
+    _validate_gains(rep.real_kp, rep.real_kd)
     if not rep.ok and not cfg.accept_sim_mismatch:
         raise GainMismatch("; ".join(rep.reasons))
     return GainReport(ok=rep.ok, reasons=list(rep.reasons), kd_note=rep.kd_note,
@@ -82,3 +97,53 @@ def expected_hand_gains(config) -> HandGains | None:
     if hand is None:
         return None
     return HandGains(pid_p=float(hand.pid_p), pid_d=float(hand.pid_d))
+
+
+def _validate_gains(kp, kd) -> None:
+    if len(kp) != 7 or len(kd) != 7:
+        raise GainsError("expected exactly seven kp and kd values")
+    for kind, values, maximum in (("kp", kp, MIT_KP_MAX), ("kd", kd, MIT_KD_MAX)):
+        if any(isinstance(v, bool) or not math.isfinite(float(v))
+               or float(v) < 0 or float(v) > maximum or (kind == "kp" and float(v) == 0)
+               for v in values):
+            raise GainsError(f"{kind} outside finite MIT bounds (kp must be positive)")
+
+
+def verify_runtime_gains(robot_description: str, side: str, expected_kp, expected_kd) -> dict:
+    """Verify startup XML received from the running driver, with reproducible evidence.
+
+    The caller must obtain XML from the live controller manager (or the matching
+    launch publisher), not a freshly expanded local xacro. Any missing or duplicate
+    parameter fails closed. This is startup configuration evidence, not motor readback.
+    """
+    if side not in ("left", "right"):
+        raise GainsError(f"invalid arm side: {side}")
+    _validate_gains(expected_kp, expected_kd)
+    try:
+        root = ET.fromstring(robot_description)
+        hardware_name = f"openarm_{side}_hardware_interface"
+        blocks = [el for el in root.findall("ros2_control") if el.get("name") == hardware_name]
+        if len(blocks) != 1:
+            raise GainsError(f"expected one {hardware_name}")
+        hardware = blocks[0].find("hardware")
+        if hardware is None:
+            raise GainsError("missing hardware block")
+        params = hardware.findall("param")
+        actual = {}
+        for kind in ("kp", "kd"):
+            values = []
+            for i in range(1, 8):
+                matches = [p for p in params if p.get("name") == f"{kind}{i}"]
+                if len(matches) != 1:
+                    raise GainsError(f"missing/duplicate hardware {kind}{i}")
+                values.append(float(matches[0].text))
+            actual[kind] = values
+        _validate_gains(actual["kp"], actual["kd"])
+        for kind, expected in (("kp", expected_kp), ("kd", expected_kd)):
+            if any(abs(a - float(e)) > 1e-6 for a, e in zip(actual[kind], expected)):
+                raise GainsError(f"live {side} {kind} mismatch: {actual[kind]} != {list(expected)}")
+    except (ET.ParseError, TypeError, ValueError) as exc:
+        raise GainsError(str(exc)) from exc
+    return {"robot_description_sha256": hashlib.sha256(robot_description.encode()).hexdigest(),
+            "hardware_name": hardware_name, "joint_order": [f"{side[0]}_aj_{i}" for i in range(1, 8)],
+            "evidence_kind": "startup_configuration_not_motor_readback", **actual}
