@@ -13,6 +13,8 @@ SIM2REAL = Path(__file__).resolve().parents[2]
 LAUNCH = SIM2REAL / "deploy" / "policy_control" / "launch"
 TOOLS = SIM2REAL / "deploy" / "policy_control" / "tools"
 CONTRACT = SIM2REAL / "logs" / "policy" / "left_v2B25" / "deploy_contract.json"
+# 11.08 사용자가 지운 파일 — 없으면 skip
+gone_CONTRACT = pytest.mark.skipif(not CONTRACT.exists(), reason="deleted by user 11.08: logs/policy/left_v2B25/deploy_contract.json")
 
 
 def _load(path: Path, name: str):
@@ -48,6 +50,7 @@ def test_generate_launch_description_types(chain, pd_launch):
     assert isinstance(pd_launch.generate_launch_description(), LaunchDescription)
 
 
+@gone_CONTRACT
 def test_fake_mode_refuses_domain_zero(chain, pd_launch, cfg, monkeypatch):
     for env in ("", "0"):
         monkeypatch.setenv("ROS_DOMAIN_ID", env)
@@ -59,11 +62,13 @@ def test_fake_mode_refuses_domain_zero(chain, pd_launch, cfg, monkeypatch):
     assert len(chain.chain_nodes({**cfg, "fake": "true"})) == 3
 
 
+@gone_CONTRACT
 def test_real_mode_allows_default_domain(chain, cfg, monkeypatch):
     monkeypatch.setenv("ROS_DOMAIN_ID", "")
     assert len(chain.chain_nodes({**cfg, "fake": "false"})) == 3
 
 
+@gone_CONTRACT
 def test_chain_and_pd_nodes_carry_params(chain, pd_launch, cfg, monkeypatch):
     monkeypatch.setenv("ROS_DOMAIN_ID", "99")
     nodes = chain.chain_nodes(cfg)
@@ -74,6 +79,7 @@ def test_chain_and_pd_nodes_carry_params(chain, pd_launch, cfg, monkeypatch):
     assert pd._Node__package == "policy_control" and pd._Node__node_executable == "pd_node"
 
 
+@gone_CONTRACT
 def test_use_source_runs_venv_python_or_refuses_missing_source(chain, pd_launch, cfg, monkeypatch):
     monkeypatch.setenv("ROS_DOMAIN_ID", "99")
     src = chain.PKG_ROOT / "policy_control" / "pd_node.py"
@@ -89,6 +95,7 @@ def test_use_source_runs_venv_python_or_refuses_missing_source(chain, pd_launch,
     assert cmd[0] == chain.PY and cmd[1].endswith("pd_node.py") and "--ros-args" in cmd
 
 
+@gone_CONTRACT
 def test_missing_contract_or_robot_is_refused(chain, cfg, monkeypatch):
     monkeypatch.setenv("ROS_DOMAIN_ID", "99")
     with pytest.raises(RuntimeError, match="contract"):
@@ -263,6 +270,7 @@ def test_pd_launch_sides_and_pd_config_shorthand(pd_launch, monkeypatch):
 
 
 # ------------------------------------------------------------------ 09.06 chain launch: side 인자 · 양팔 fabric 2개 · 제어 전용 계약
+@gone_CONTRACT
 def test_chain_side_param_and_single_fabric_by_default(chain, cfg, monkeypatch):
     monkeypatch.setenv("ROS_DOMAIN_ID", "99")
     nodes = chain.chain_nodes({**cfg, "side": "left"})

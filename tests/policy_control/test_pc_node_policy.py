@@ -19,6 +19,8 @@ pytestmark = pytest.mark.ros
 
 SIM2REAL = Path(__file__).resolve().parents[2]
 CONTRACT = SIM2REAL / "logs" / "policy" / "left_v2B25" / "deploy_contract.json"
+# 11.08 사용자가 지운 파일 — 없으면 skip
+gone_CONTRACT = pytest.mark.skipif(not CONTRACT.exists(), reason="deleted by user 11.08: logs/policy/left_v2B25/deploy_contract.json")
 ROBOT = SIM2REAL / "deploy" / "policy_control" / "config" / "robots" / "left_gripper_fake.yaml"
 NS = "/policy_control"
 
@@ -136,6 +138,7 @@ def rig(ros, contract):
 
 
 # ------------------------------------------------------------------ tests
+@gone_CONTRACT
 def test_action_copies_seq_and_seq0_resets(rig, contract):
     node, probe, backend = rig
     obs0 = probe.send_obs(0)
@@ -158,6 +161,7 @@ def test_action_copies_seq_and_seq0_resets(rig, contract):
     assert st and st[-1]["node"] == "policy" and "t_pub_ns" in st[-1] and st[-1]["proc_ms"] >= 0.0
 
 
+@gone_CONTRACT
 def test_episode_reset_event_resets_and_unstarted_seq_is_refused(rig, contract):
     node, probe, backend = rig
     probe.send_obs(0)
@@ -174,6 +178,7 @@ def test_episode_reset_event_resets_and_unstarted_seq_is_refused(rig, contract):
     assert probe.actions[-1].layout.data_offset == 0 and probe.status[-1]["episode"] == 7
 
 
+@gone_CONTRACT
 def test_malformed_obs_reports_not_ok_and_node_survives(rig, contract):
     from std_msgs.msg import Float64MultiArray, MultiArrayDimension, MultiArrayLayout
 

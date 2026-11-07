@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 import mission_run
@@ -10,6 +11,9 @@ from mission_core import load_mission
 from s2r_console import survey
 
 SIM2REAL = Path(__file__).resolve().parents[2]
+POUR_CONTRACT = SIM2REAL / "logs/policy/pour_i18/pour_contract.json"
+# 11.08 사용자가 지운 파일 — 없으면 skip
+gone_POUR_CONTRACT = pytest.mark.skipif(not POUR_CONTRACT.exists(), reason="deleted by user 11.08: logs/policy/pour_i18/pour_contract.json")
 
 
 def _mission(name):
@@ -44,6 +48,7 @@ def test_digest_of_a_missing_file_or_a_directory_is_none(tmp_path):
     assert cache.digest(tmp_path, "md5") is None
 
 
+@gone_POUR_CONTRACT
 def test_stage_basis_names_every_file_the_stage_leans_on():
     mission = _mission("mission_pour_fake.yaml")
     basis = survey.stage_basis(mission, "chain", repo=SIM2REAL, cache=survey.DigestCache())

@@ -21,6 +21,8 @@ RL_WS = SIM2REAL.parent
 ROBOTS = SIM2REAL / "deploy/policy_control/config/robots"
 LEFT_CONTRACT = SIM2REAL / "logs/policy/left_v2B25/deploy_contract.json"
 RIGHT_CONTRACT = SIM2REAL / "logs/policy/right_g1/deploy_contract.json"
+# 11.08 사용자가 지운 파일 — 없으면 skip
+gone_RIGHT_CONTRACT = pytest.mark.skipif(not RIGHT_CONTRACT.exists(), reason="deleted by user 11.08: logs/policy/right_g1/deploy_contract.json")
 
 needs_left = pytest.mark.skipif(not LEFT_CONTRACT.exists(), reason="left contract 없음")
 needs_right = pytest.mark.skipif(not RIGHT_CONTRACT.exists(), reason="right contract 없음")
@@ -101,6 +103,7 @@ def test_fabric_fk_adapter_converts_euler_zyx_and_orders_tips():
     assert pose.tip_names == TIPS and pose.tips.shape == (5, 3)
 
 
+@gone_RIGHT_CONTRACT
 def test_make_fk_fabric_kind_requires_callables():
     c = C.load_contract(RIGHT_CONTRACT)
     with pytest.raises(fk_numpy.FKError):

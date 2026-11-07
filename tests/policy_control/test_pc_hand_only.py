@@ -22,6 +22,9 @@ pytestmark = pytest.mark.unit
 SIM2REAL = Path(__file__).resolve().parents[2]
 FULL = SIM2REAL / "deploy/policy_control/config/robots/dg5f_m_right_real.yaml"
 HAND_ONLY = SIM2REAL / "deploy/policy_control/config/robots/dg5f_m_right_hand_only.yaml"
+DG5FM_CONTRACT = SIM2REAL / "logs/policy/asset_openarm_dg5f-m_bi_rl/deploy_contract.json"
+# 11.08 사용자가 지운 파일 — 없으면 skip
+gone_DG5FM_CONTRACT = pytest.mark.skipif(not DG5FM_CONTRACT.exists(), reason="deleted by user 11.08: logs/policy/asset_openarm_dg5f-m_bi_rl/deploy_contract.json")
 
 
 def test_hand_only_robot_yaml_exists_and_drops_only_the_arm_group():
@@ -35,6 +38,7 @@ def test_hand_only_robot_yaml_exists_and_drops_only_the_arm_group():
 
 
 @pytest.mark.ros
+@gone_DG5FM_CONTRACT
 def test_backends_build_without_an_arm_group(ros):
     from policy_control.contract import load_contract
     from policy_control.pd_arm import build_side_backends, hand_command_joints
@@ -58,6 +62,7 @@ def test_backends_build_without_an_arm_group(ros):
         node.destroy_node()
 
 
+@gone_DG5FM_CONTRACT
 def test_side_groups_allows_a_subset_but_never_an_undeclared_group():
     """계약이 선언한 그룹 중 **일부만** 제어하는 것은 의도적 선택(손 단독)이다.
     반대로 계약에 없는 그룹을 yaml 이 들고 오는 것은 배선 오류다."""
@@ -89,6 +94,7 @@ def test_side_groups_allows_a_subset_but_never_an_undeclared_group():
 
 # ---------------------------------------------------------------- 팔 상태 없이도 손이 나간다
 @pytest.mark.ros
+@gone_DG5FM_CONTRACT
 def test_hand_only_does_not_require_arm_joint_state(ros):
     """손 드라이버만 떠 있어도 손 지령이 나가야 한다.
 

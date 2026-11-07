@@ -16,6 +16,9 @@ import pytest
 
 SIM2REAL = Path(__file__).resolve().parents[2]
 TOOLS = SIM2REAL / "deploy/policy_control/tools"
+SHORT_CONTRACT = SIM2REAL / "logs/policy/asset_openarm_dg5f-m-short_bi_rl/deploy_contract.json"   # tools/home_path_world.CONTRACT_DEFAULT
+# 11.08 사용자가 지운 파일 — 없으면 skip
+gone_SHORT_CONTRACT = pytest.mark.skipif(not SHORT_CONTRACT.exists(), reason="deleted by user 11.08: logs/policy/asset_openarm_dg5f-m-short_bi_rl/deploy_contract.json")
 NPZ = SIM2REAL / "deploy/policy_control/paths/home_right.npz"   # 실기가 실제로 재생하는 저장 경로
 
 pytestmark = pytest.mark.unit
@@ -93,6 +96,8 @@ def test_saved_npz_within_profile_joint_limits():
 
 @pytest.fixture(scope="module")
 def checker():
+    if not SHORT_CONTRACT.exists():
+        pytest.skip("deleted by user 11.08: logs/policy/asset_openarm_dg5f-m-short_bi_rl/deploy_contract.json")
     pytest.importorskip("mujoco")
     pytest.importorskip("trimesh")
     W = _load("home_path_world")
@@ -125,6 +130,7 @@ def test_goal_pose_is_clear(checker):
     assert v.ok and v.min_clear >= 0.02
 
 
+@gone_SHORT_CONTRACT
 def test_saved_path_passes_dense_check():
     """저장 경로를 **그 경로 자신의 메타**(손 자세 · 반대팔 · 여유)로 다시 조밀 검사한다.
 

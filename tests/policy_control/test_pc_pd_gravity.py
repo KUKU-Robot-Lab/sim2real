@@ -23,6 +23,8 @@ CONFIG = SIM2REAL / "deploy" / "policy_control" / "config"
 DERIVED = SIM2REAL / "tests/fixtures/policy_control/derived"
 LEFT_CONTRACT = SIM2REAL / "logs/policy/left_v2B25/deploy_contract.json"
 RIGHT_CONTRACT = SIM2REAL / "logs/policy/right_g1/deploy_contract.json"
+# 11.08 사용자가 지운 파일 — 없으면 skip
+gone_LEFT_CONTRACT = pytest.mark.skipif(not LEFT_CONTRACT.exists(), reason="deleted by user 11.08: logs/policy/left_v2B25/deploy_contract.json")
 URDF = RL_WS / "urdf/generated/rl/openarm_tesollo_sensor_rl.urdf"
 ARM_R = [f"r_aj_{i}" for i in range(1, 8)]
 SCALE = [1.1, 1.1, 1.1, 1.0, 1.1, 0.9, 1.1]
@@ -189,6 +191,7 @@ def test_make_gravity_needs_contract_or_joint_count():
                                       scale=tuple(SCALE), cap_nm=20.0), contract=None, n_joints=7)
 
 
+@gone_LEFT_CONTRACT
 def test_droop_params_rejects_bad_contract_values():
     from dataclasses import replace
     contract = C.load_contract(LEFT_CONTRACT)
