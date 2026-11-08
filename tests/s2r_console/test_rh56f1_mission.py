@@ -785,3 +785,70 @@ def test_preflight_builds_contract_before_contract_dependent_tests():
         build = next(i for i, s in enumerate(steps) if any('build_deploy_contract.py' in a for a in s.get('argv', [])))
         tests = next(i for i, s in enumerate(steps) if 'pytest' in s.get('argv', []))
         assert build < tests
+
+
+def _drivers(raw):
+    """미션 run 의 목 드라이버 argv — {단계#번호: argv}."""
+    return {f"{sid}#{i}": c["argv"] for sid, cmds in raw["run"].items() for i, c in enumerate(cmds)
+            if any(str(a).endswith("head_joint_publisher.py") for a in c.get("argv") or [])}
+
+
+def test_only_the_place_student_episode_restarts_the_head_driver_with_tilt_82():
+    """★11.08 사용자: 목 tilt 상한 82 는 놓기 미션에서만. 드라이버는 포트를 혼자 쥐므로 에피소드가 head_home 것을 내리고
+    같은 인자 + --max-tilt 82 로 다시 띄운다. 시작 검사가 먼저 · 마스크 · 학생 노드는 그 뒤."""
+    run = REAL_RAW["run"]["episode_place_m_right"]
+    drv = _drivers(REAL_RAW)
+    assert drv["episode_place_m_right#9"] == [*drv["head_home#0"], "--max-tilt", "82"]
+    at = {k: next(i for i, c in enumerate(run) if any(str(a).endswith(k) for a in c.get("argv") or []))
+          for k in ("check_place_student.py", "head_joint_publisher.py", "head_mask_node.py", "rh_place_student_node.py")}
+    stop = next(i for i, c in enumerate(run) if c.get("stop") == ["head_home#0"])
+    assert at["check_place_student.py"] < stop < at["head_joint_publisher.py"] < at["head_mask_node.py"] < at["rh_place_student_node.py"]
+    check = run[at["check_place_student.py"]]["argv"]
+    assert check[check.index("--episode") + 1] == "place_m_right" and check[check.index("--side") + 1] == "right"
+    node = run[at["rh_place_student_node.py"]]["argv"]
+    assert "__node:=rh_place_node_right" in node and "ns:=right_place" in node and "device:=cuda" in node
+    assert "student_dir:={repo}/deploy/policies/rh56f1/place/right_student_place" in node
+    assert not _drivers(FAKE_RAW).get("episode_place_m_right#9")              # fake 는 목 드라이버가 없다
+
+
+def test_the_place_student_episode_ends_with_the_default_driver_and_head_home():
+    """★11.08 리뷰: 82 드라이버가 노드 정지로 내려가면 목 드라이버가 없는데 head_home 완료가 남는다 — 에피소드 끝 꼬리가
+    기본 드라이버를 다시 띄우고 head_home(콘솔 확인 --execute)으로 camset 에 되돌린다. 셧다운은 토크 해제 전에 그 드라이버를 내린다."""
+    run = REAL_RAW["run"]["episode_place_m_right"]
+    halt = next(i for i, c in enumerate(run) if c.get("note") == "에피소드 노드들 정지")
+    tail = halt + 1
+    assert run[tail]["argv"] == GEN.HEAD_DRIVER_ARGV and run[tail]["background"]
+    assert f"episode_place_m_right#{tail}" not in run[halt]["stop"]
+    assert run[tail + 1]["argv"] == GEN.HEAD_HOME_ARGV and run[tail + 1]["execute_args"] == ["--execute"]
+    shut = next(c for c in REAL_RAW["run"]["shutdown"] if "policy_pourfj#1" in (c.get("stop") or []))
+    release = next(i for i, c in enumerate(REAL_RAW["run"]["shutdown"]) if "--release" in (c.get("argv") or []))
+    assert f"episode_place_m_right#{tail}" in shut["stop"] and REAL_RAW["run"]["shutdown"].index(shut) < release
+    assert "head_move.py" not in " ".join(str(a) for c in FAKE_RAW["run"]["episode_place_m_right"] for a in c.get("argv") or [])
+
+
+def test_the_console_warns_when_a_failed_stage_left_no_head_driver():
+    from s2r_console.console import head_driver_gone
+    drv = {"argv": ["python3", "{repo}/scripts/nodes/head_joint_publisher.py", "--max-tilt", "82"], "alive": False}
+    remote = {"argv": ["ssh", "-tt", "h", "cd x && exec python3 scripts/nodes/head_joint_publisher.py --config c"], "alive": True}
+    assert head_driver_gone([drv, {"argv": ["x"], "alive": True}])
+    assert not head_driver_gone([drv, {**drv, "alive": True}])
+    assert not head_driver_gone([drv, remote])
+    assert not head_driver_gone([{"argv": ["bash", "-lc", "true"], "alive": False}])      # fake — 드라이버가 처음부터 없다
+
+
+def test_every_other_head_driver_keeps_the_default_tilt_limit():
+    """★11.08 다른 단계 · 미션의 목 드라이버 인자는 그대로(기본 −10, head_motion.MAX_TILT_DEG · 사용자 10.13)."""
+    for raw in (REAL_RAW, FAKE_RAW):
+        drv = _drivers(raw)
+        tilt82 = [k for k, v in drv.items() if "--max-tilt" in v]
+        assert tilt82 == (["episode_place_m_right#9"] if raw is REAL_RAW else []), tilt82
+        others = {k: v for k, v in drv.items() if k not in tilt82}     # 놓기 에피소드 끝 꼬리 드라이버 포함
+        assert all(v == GEN.HEAD_DRIVER_ARGV for v in others.values()), others
+    assert "head_home#0" in _drivers(REAL_RAW)
+
+
+def test_place_student_episode_records_the_mask_and_the_head_stream():
+    rec = next(c["argv"][-1] for c in REAL_RAW["run"]["episode_place_m_right"] if "rh56f1_record.sh start" in " ".join(c.get("argv") or []))
+    for t in ("/head_mask/image", "/head_mask/config", "/head/target_stream", "/head/stream_log"):
+        assert t in rec, t
+    assert "compressed" not in rec                                            # 학생 입력 지연(압축 구독) 없음

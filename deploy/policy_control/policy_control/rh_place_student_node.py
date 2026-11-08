@@ -117,8 +117,11 @@ class PlaceStudentNode(PlaceNode):
                 known = isinstance(exc, (ValueError, PS.PlaceInputStale))
                 err = str(exc) if known else f"{type(exc).__name__}: {exc}"
                 if re.sub(r"[-\d.]+", "#", err) != re.sub(r"[-\d.]+", "#", self._frame_err):   # 수치만 바뀐 같은 사유는 한 번만
-                    log = self.get_logger()
-                    (log.warning if known else log.error)(f"깊이 프레임 처리 실패 — {err}")
+                    msg = f"깊이 프레임 처리 실패 — {err}"
+                    if known:   # rclpy 는 호출 줄마다 심각도를 고정한다. 한 줄에서 바꾸면 ValueError 로 일꾼이 죽는다
+                        self.get_logger().warning(msg)
+                    else:
+                        self.get_logger().error(msg)
                 self._frame_err = err
 
     def _make_frame(self, msg) -> PS.Frame:

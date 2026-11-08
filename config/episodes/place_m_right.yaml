@@ -1,0 +1,39 @@
+# 놓기 학생 오른손(11.08) — cocktail_1c_e4000 의 파랑 한 번(잡기 · shaker 잡기 · tilt 시작 자세 · 붓기)까지 그대로 두고,
+#   놓기만 학생(깊이 + 홀더 CAD · 컵 YOLO 마스크 + 규칙 머리 look_at)으로 바꾼다. 놓기 학생은 tilt 뒤 홀더 위로 옮기는 시작 상태로 배웠다.
+#   tilt 는 두 팔 궤적이라 왼손 shaker 잡기가 남는다. 에피소드는 오른손 놓기 · 오른팔 홈으로 끝나고 왼손은 shaker 를 쥔 채다
+#   (학생 머리가 목을 옮긴 뒤라 FP++ 를 쓰는 왼손 놓기는 넣지 않았다 — head_home 으로 목을 되돌린 뒤 policy_place_left 단계로).
+#   학생 묶음 rh56f1/place/right_student_place 는 자리표시다(place_lab 재학습 중). 묶음이 없으면 미션의 시작 검사
+#   (scripts/ops/check_place_student.py)가 불일치로 막는다.
+#   목 드라이버: 이 에피소드만 --max-tilt 82(★11.08 사용자) — 미션이 head_home 드라이버를 내리고 82 로 다시 띄운다. 끝나면 드라이버가 없다.
+episode: {name: place_m_right, version: 1}
+objects:
+  SRC_BLUE: {topic: /objects/source240b_blue/pose}
+  SHAKER: {topic: /objects/shaker_c_orange/pose}
+holders: {HOLDER_1: 1}
+holder_poses: config/cup_holder_poses_5090_v1.yaml
+tin_fallback: deploy/policy_control/config/tilt/traj_v12_240/ref/tin_fixed_1107.json   # = cocktail_1c_e4000
+policies:
+  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/right_rcg04, cup_obs_offset_base_m: [-0.0116, 0.0338, -0.0143]}
+  rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg04, cup_obs_offset_base_m: [0.0028, 0.0283, 0.0046]}
+  rh_place_r: {policy: rh56f1/place/right_n10_e4000, kind: place, side: right, attach_source: tin_json, student: rh56f1/place/right_student_place}
+trajectories:
+  go_home: {kind: rehome, sides: [right, left]}
+  go_home_r: {kind: rehome, sides: [right]}                         # 왼손은 shaker 를 든 채
+  to_tilt_start_r: {kind: carry, sides: [right], asset: tilt/base_arc6}
+  to_tilt_start_l: {kind: carry, sides: [left], asset: tilt/base_arc6}
+  tilt: {kind: tilt, sides: [right, left], asset: tilt/traj_v12_240, rate_scale: 1.0, cup: "240"}
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 판단한다(컵을 쥔 채 rehome 은 거부된다).
+continue_on_fail: [place]     # = cocktail_1c_e4000(11.07 사용자): 놓기 실패면 멈추지 않고 오른팔 홈으로
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  - {id: grasp_blue, type: policy, name: rh_aglt_r, target_object: SRC_BLUE, policy_object: source240_real, expect: {right_hand: SRC_BLUE}}
+  - {id: grasp_shaker, type: policy, name: rh_aglt_l, target_object: SHAKER, policy_object: shaker_c_real,
+     expect: {right_hand: SRC_BLUE, left_hand: SHAKER}}
+  - {id: to_tilt_start_r1, type: trajectory, name: to_tilt_start_r}
+  - {id: to_tilt_start_l, type: trajectory, name: to_tilt_start_l, expect: {pose: SETTING}}
+  - {id: tilt_blue, type: trajectory, name: tilt, expect: {pose: SETTING, blue_poured: true}}
+  - {id: place_blue, type: policy, name: rh_place_r, source_object: SRC_BLUE, target_holder: HOLDER_1, policy_object: source240_real,
+     expect: {right_hand: EMPTY, left_hand: SHAKER, blue_placed: true}}
+  - {id: home_r_after_blue, type: trajectory, name: go_home_r, expect: {right_hand: EMPTY, left_hand: SHAKER}}
+  - {id: done, type: terminal, result: SUCCESS}

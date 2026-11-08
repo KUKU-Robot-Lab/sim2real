@@ -69,3 +69,32 @@ def test_ckpt_md5_mismatch_exits_nonzero(tmp_path):
     (d / "student.yaml").write_text(yaml.safe_dump(card, allow_unicode=True))
     assert {r[1]: r[4] for r in m.run(args)}["ckpt md5"] == m.BAD
     assert m.main(args) == 1
+
+
+def test_episode_scope_reads_only_the_place_episode_driver_and_a_missing_bundle_blocks(tmp_path):
+    """★11.08 --max-tilt 82 는 놓기 에피소드 드라이버에만 있다 — --episode 면 그 단계만 보고 OK, 미션 전체면 head_home 이 불일치.
+    묶음이 아직 없으면 student.yaml 불일치로 종료 코드 1."""
+    m = load_check()
+    args = ["--student-dir", str(tmp_path / "none"), "--side", "right"]
+    rows = m.run([*args, "--episode", "place_m_right"])
+    tilt = {r[1]: r[4] for r in rows if r[1].startswith("미션 --max-tilt")}
+    assert tilt and set(tilt.values()) == {m.OK} and all("episode_place_m_right" in k for k in tilt), tilt
+    assert {r[1]: r[4] for r in rows}["놓기 학생 묶음 student.yaml"] == m.BAD
+    assert m.main([*args, "--episode", "place_m_right"]) == 1
+    whole = {r[1]: r[4] for r in m.run(args) if r[1].startswith("미션 --max-tilt")}
+    assert m.BAD in whole.values() and m.OK in whole.values(), whole      # head_home 드라이버는 기본 −10 그대로
+    with pytest.raises(SystemExit):
+        m.run([*args, "--episode", "no_such_episode"])
+
+
+def test_episode_scope_skips_the_tail_driver_and_blocks_when_no_driver_is_found(tmp_path):
+    """★11.08 리뷰: 에피소드 끝 꼬리 드라이버(기본 −10)는 학생 뒤라 보지 않는다. 에피소드에 드라이버가 없으면 NA 가 아니라 BAD."""
+    m = load_check()
+    args = ["--student-dir", str(tmp_path / "none"), "--side", "right"]
+    tilt = [r for r in m.run([*args, "--episode", "place_m_right"]) if r[1].startswith("미션 --max-tilt")]
+    assert len(tilt) == 1, tilt
+    mission = tmp_path / "mission.yaml"
+    mission.write_text(yaml.safe_dump({"run": {"episode_x": [{"argv": ["bash", "-lc", "true"]}]}}))
+    rows = {r[1]: r[4] for r in m.run([*args, "--mission", str(mission), "--episode", "x"])}
+    assert rows["미션 목 드라이버"] == m.BAD
+    assert {r[1]: r[4] for r in m.run([*args, "--mission", str(mission)])}["미션 목 드라이버"] == m.NA

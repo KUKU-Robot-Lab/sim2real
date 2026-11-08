@@ -76,6 +76,14 @@ _TRIGGER = _paths.POLICY_CONTROL / "tools" / "trigger.py"
 POLICY_STAGE_PREFIXES = ("policy_", "episode_")
 
 
+def head_driver_gone(procs: Sequence[Mapping]) -> bool:
+    """감독자가 띄운 목 드라이버가 있었는데 지금 하나도 살아 있지 않은가. 순수.
+    ★11.08 놓기 학생 에피소드는 head_home 드라이버를 내리고 제 것을 띄운다 — 실패 정리로 그것까지 내려가면 목 드라이버가 없는데
+    head_home 완료는 남는다. 자동으로 목을 움직이지 않고 head_home 을 다시 돌리라고 알린다."""
+    drv = [p for p in procs if any("head_joint_publisher.py" in str(a) for a in p.get("argv") or ())]
+    return bool(drv) and not any(p.get("alive") for p in drv)
+
+
 def failure_actions(stage_id: str, sides: Sequence[str]) -> list[tuple[str, str]]:
     """실패 · 중단한 실기 단계 뒤 팔마다 부를 서비스(trigger 이름, 쪽). 순수.
 
@@ -180,7 +188,8 @@ def _available_units(mission, runbook, repo):
             commands = commands_for(runbook, mission, st.id, repo=repo, execute=True)
             available_commands[st.id] = tuple(
                 replace(cmd, background=False, manual=False)
-                if any(Path(arg).name in ('rh_aglt_node.py', 'rh_aglt_student_node.py', 'rh_place_node.py') for arg in cmd.argv)
+                if any(Path(arg).name in ('rh_aglt_node.py', 'rh_aglt_student_node.py', 'rh_place_node.py',
+                                          'rh_place_student_node.py') for arg in cmd.argv)
                 and any(arg.startswith('contract:=') and not (repo / arg.split(':=', 1)[1]).is_file() for arg in cmd.argv)
                 else cmd for cmd in commands)  # Preserve command indices; unavailable nodes have no unit switch.
         except (KeyError, ValueError, OSError):
@@ -747,7 +756,7 @@ class Console:
                          if failed and stage_id.startswith(POLICY_STAGE_PREFIXES) else [])
         # 실기 단계가 실패 · 중단했다 — 팔을 그 자리에 붙들고(해제하지 않는다, 10.09), 정책 단계에 남은 노드를 정리한다.
         # ★10.04 실기: pd 서비스는 팔마다 따로다 — 단계의 창(팔)으로 쪽을 고른다.
-        if sides or leftovers:
+        if sides or leftovers or failed:     # 붙들 팔 · 남은 노드가 없어도 목 드라이버 확인은 한다(11.08)
             threading.Thread(target=self._fail_safe, args=(s, stage_id, outcome, sides, leftovers), daemon=True).start()
 
     def _fail_safe(self, s: Session, stage_id: str, outcome: str, sides: list[str], leftovers: list[str]) -> None:
@@ -773,6 +782,11 @@ class Console:
             with self._lock:
                 if self.session is s:
                     s.event("quick", f"■ {client} → 남은 노드 {stopped} 개 정지 ({', '.join(leftovers)})")
+        if head_driver_gone(s.supervisor.table()):
+            with self._lock:
+                if self.session is s:
+                    s.event("quick", f"⚠ {client} → 목 드라이버가 없다 — head_home 단계를 다시 돌린다"
+                                     "(목이 camset 이 아닐 수 있다, 자동으로 움직이지 않는다)")
 
     def _release_sides(self, s: Session, stage) -> list[str]:
         """실패한 실기 단계 뒤 풀 pd 의 쪽 — 단계 창이 한 팔이면 그 팔, 아니면 status 가 오는 pd 전부(잡고 있는 쪽만)."""

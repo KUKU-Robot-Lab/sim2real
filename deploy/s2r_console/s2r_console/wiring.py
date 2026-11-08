@@ -89,6 +89,8 @@ POLICY_NODES = {
     "rh_place_node.py": ("rh_place_node", "놓기 정책", (("cup_topic", "/objects/cyl60/pose"),)),
     # ★11.05 경로 S — rh_aglt 와 같은 노드 이름 · 서비스, 관측에 머리 깊이(+ RGB)를 더 받는다(head_depth_node)
     "rh_aglt_student_node.py": ("rh_aglt_node", "집기 정책(깊이 학생)", (("cup_topic", "/objects/aglt_cup_s065/pose"),)),
+    # ★11.08 놓기 학생 — rh_place_node 와 같은 노드 이름 · 서비스, 원시 깊이 · 머리 마스크 · 목 각을 더 받고 /head/target_stream 을 낸다
+    "rh_place_student_node.py": ("rh_place_node", "놓기 정책(학생)", (("cup_topic", "/objects/cyl60/pose"),)),
     # 10.17 사용자 결정 3: 화면 · 에피소드 · 보고서는 tilt(코드 모듈 pour_fj_node 이름은 그대로)
     "pour_fj_node.py": ("pour_fj_node", "tilt 정책", (("cup_src_topic", "/objects/cup_src/pose"),
                                                     ("cup_rcv_topic", "/objects/cup_rcv/pose"))),
@@ -390,7 +392,7 @@ def _policy_node(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
                 g.need(str(cfg["topic"]), r, own or side, box, [f"{role}:{r}"], _stale_ms(cfg), unit=key)
     for param, topic in cups:                     # 컵은 reset 때 한 번 붙잡는다(cup_latch) — 주기는 인지 쪽 전선이 잰다
         g.need(str(cmd.args.get(param) or topic), "object", "", box, [], STALE_MS, unit=key, how="link")
-    if cmd.name == "rh_place_node.py":
+    if cmd.name in ("rh_place_node.py", "rh_place_student_node.py"):
         holder = str(cmd.args.get("holder", "-1"))
         holder = holder if holder.lstrip("-").isdigit() and int(holder) >= 0 else str((contract.get("target_holders") or [0])[0])
         g.need(str(cmd.args.get("holder_topic") or HOLDER_TOPIC.format(holder)), "holder", "", box, [], STALE_MS,
@@ -404,6 +406,9 @@ def _policy_node(g: _Graph, key: str, cmd: Cmd, repo: Path) -> None:
         card = _resolve(str(cmd.args.get("student_dir", "")), repo) / "student.yaml"
         mask = card.is_file() and bool((yaml.safe_load(card.read_text(encoding="utf-8")) or {}).get("mask"))
         for t in (HEAD_DEPTH_TOPICS[0], HEAD_MASK_TOPICS[0]) if mask else HEAD_DEPTH_TOPICS:   # ★11.07 마스크 학생은 rgb 대신 마스크
+            g.need(t, "depth", "", box, [], STALE_MS, unit=key)
+    if cmd.name == "rh_place_student_node.py":
+        for t in (CAMERA_TOPICS[1], HEAD_MASK_TOPICS[0], HEAD_TOPIC):
             g.need(t, "depth", "", box, [], STALE_MS, unit=key)
     g.makers.append((box, tuple(sides), key, str(cmd.args.get("episode_topic") or f"{base}/episode")))
 

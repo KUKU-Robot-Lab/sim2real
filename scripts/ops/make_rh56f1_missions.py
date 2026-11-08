@@ -100,7 +100,9 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             # ★11.05 경로 S — 깊이 학생 1104e(깊이 + RGB)가 홈에서 탁자 위 컵 하나를 잡고 들기(lift_hold), 팔마다 따로
             "grasp_s_right", "grasp_s_left",
             # ★11.07 경로 M — 목표 마스크 학생 A 1105mA(깊이 + YOLO 목표/이웃 마스크), 경로 S 와 같은 홈 출발 잡기 · 들기
-            "grasp_m_right", "grasp_m_left")
+            "grasp_m_right", "grasp_m_left",
+            # ★11.08 놓기 학생(규칙 머리) — cocktail_1c_e4000 파랑 붓기까지 그대로, 오른손 놓기만 학생. 이 에피소드만 목 --max-tilt 82
+            "place_m_right")
 #: ★10.20 사용자 "영상은 필요 없음. 일단 기본 off" — 카메라 영상 · FP++ 실시간 좌표 기록(vision-3090)과 끝난 뒤 보고서 영상
 #   만들기(episode_media.py)를 기본으로 끈다. 10.20 실기: 보고서 영상 정리가 옛 회까지 다시 가져오며 6 분 넘게 팔 작업을 붙잡아
 #   rehome · tilt_now 승인이 막혔다. 켜려면 True 로 바꾸고 이 생성기를 다시 돌린다(미션 YAML 이 바뀐다).
@@ -123,7 +125,7 @@ CAMERA_BAG_TOPICS = ("/camera/camera/color/image_raw/compressed",
 STUDENT_CAMERA_BAG_HZ = 60.0
 STUDENT_CAMERA_BAG_TOPICS = ("/head_depth/image", "/head_depth/rgb", "/head_depth/config",
                              "/camera/camera/color/camera_info", "/head/joint_states")
-STUDENT_EPISODES = ("grasp_s_right", "grasp_s_left", "grasp_m_right", "grasp_m_left")
+STUDENT_EPISODES = ("grasp_s_right", "grasp_s_left", "grasp_m_right", "grasp_m_left", "place_m_right")
 #: ★11.07 마스크 학생(student.yaml mask:) 에피소드는 head_mask_node 출력도 싣는다(160x90 mono8 비트 + latched 설정)
 MASK_CAMERA_BAG_TOPICS = ("/head_mask/image", "/head_mask/config")
 #: 에피소드 snapshot 이 다시 내는 정지 물체 자세(episode_ros.OBJECT_RELAY) — aglt 는 이것을 컵으로 본다
@@ -959,6 +961,40 @@ def _student_cmds(b, contract: str, robot: str, cup_topic: str, squeeze: bool) -
     ]
 
 
+#: ★11.08 사용자: 목 tilt 상한은 놓기 학생 에피소드에서만 82(학생 tilt 한계 = head_motion.STREAM_TILT_RANGE_DEG 상한). 다른 단계는 기본 −10
+PLACE_MAX_TILT = "82"
+
+
+def _place_student_pre(b, name: str, contract: str, sdir: str, real: bool) -> list:
+    """놓기 학생 노드 앞 — 시작 검사 → (실기) 목 드라이버를 --max-tilt 82 로 다시 → 마스크 노드."""
+    return [
+        _cmd(f"시작 검사 — 놓기 학생 묶음({b.side}) ckpt · 외부 파라미터 · check_meta · 목 동역학 · 이 에피소드 목 드라이버 "
+             f"--max-tilt ≥ {PLACE_MAX_TILT} · 홀더 CAD · YOLO · 64 MB SHM (읽기만, 불일치 · 묶음 없음이면 실패)",
+             ["{repo}/.venv-student/bin/python", "{repo}/scripts/ops/check_place_student.py", "--student-dir", sdir,
+              "--side", b.side, "--contract", contract, "--episode", name]),
+        # 드라이버는 포트를 혼자 쥔다 — head_home 것을 내리고 같은 인자 + tilt 상한만 바꿔 띄운다. 에피소드 끝 꼬리가 기본으로 되돌린다
+        *([_cmd("목 드라이버 정지(head_home) — 놓기 학생 머리가 tilt 82 까지 쓰므로 상한만 바꿔 다시 띄운다", stop=["head_home#0"]),
+           _cmd(f"목 드라이버 — 놓기 에피소드만 --max-tilt {PLACE_MAX_TILT}(속도 · 가속 · 처짐 여유는 기본). "
+                "이 상한은 이 에피소드 동안 이산 head_move 요청에도 같이 풀린다(드라이버가 한 상한으로 둘 다 검사). "
+                "에피소드 끝 꼬리가 기본 드라이버 + head_home 으로 되돌린다",
+                [*HEAD_DRIVER_ARGV, "--max-tilt", PLACE_MAX_TILT], background=True)] if real else []),
+        _cmd("머리 마스크 노드(YOLO11s-seg → 160x90 클래스 비트, /head_mask/image · /head_mask/config) — 놓기 학생 묶음 mask.yolo md5 · "
+             "conf · 인스턴스 규칙. 64 MB SHM 프로파일이 없으면 시작 거부",
+             ["nice", "-n", "5", "{repo}/.venv-yolo/bin/python", "{repo}/scripts/nodes/head_mask_node.py", "--policy-dir", sdir],
+             background=True),
+    ]
+
+
+def _place_student_tail() -> list:
+    """놓기 학생 에피소드 끝(실기) — 82 드라이버가 노드 정지로 내려간 뒤 기본 드라이버를 다시 띄우고 목을 camset 으로 되돌린다.
+    없으면 목 드라이버가 하나도 없는데 head_home 완료가 남아 다음 게이트를 통과시킨다(11.08 리뷰)."""
+    return [
+        _cmd("목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다)", list(HEAD_DRIVER_ARGV), background=True),
+        _cmd("머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시",
+             list(HEAD_HOME_ARGV), execute_args=["--execute"]),     # 복사 — yaml 별칭(*id) 없이 쓴다
+    ]
+
+
 def _head_node(c: dict) -> str | None:
     """머리 깊이 · 마스크 노드 스크립트 이름(그 외 None)."""
     return next((Path(a).name for a in c.get("argv") or [] if a.endswith(("/head_depth_node.py", "/head_mask_node.py"))), None)
@@ -1115,13 +1151,21 @@ def _episode_run(name: str, real: bool) -> list:
             cup_t = ep.objects[obj]["topic"]
             cup_t = _live(cup_t) if pc.get("cup_obs") == "live" else cup_t
             where = f"홀더 {' → '.join(map(str, hids))}(job 마다)" if holders_arg else f"홀더 {hid}"
+            sdir = f"{{repo}}/deploy/policies/{b.student}"
+            if b.student:     # ★11.08 놓기 학생 — rh_place_node 와 같은 이름 · 서비스, 정책만 학생(깊이 · 마스크 · 규칙 머리)
+                seen = {_head_node(x) for x in cmds} - {None}
+                cmds.extend(c for c in _place_student_pre(b, name, contract, sdir, real)
+                            if not (c.get("background") and _head_node(c) in seen))
+                where += f" · 학생 {b.student}(머리 look_at → /head/target_stream)"
             cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — {where} · 놓은 뒤 스스로 끝남{bundle_note}",
-                             ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_place_node.py", "--ros-args",
+                             [f"{{repo}}/{'.venv-student' if b.student else '.venv'}/bin/python",
+                              f"{PC}/policy_control/{'rh_place_student_node' if b.student else 'rh_place_node'}.py", "--ros-args",
                               # 한 팔에 aglt 와 같이 뜬다 — 서비스는 <팔>_place, 이벤트는 그 팔 토픽(pd 가 reset · stop 적용)
                               "-r", f"__node:=rh_place_node_{b.side}", "-p", f"ns:={b.side}_place",
                               "-p", f"episode_topic:=/policy_control/{b.side}/episode", "-p", f"contract:={contract}",
-                              "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", f"cup_topic:={cup_t}",
-                              "-p", f"holder:={hid}", *holders_arg, *([] if real else ["-p", "require_grasp:=false"])],
+                              "-p", f"robot:={robot}", "-p", f"device:={'cuda' if b.student else 'cpu'}", "-p", f"cup_topic:={cup_t}",
+                              "-p", f"holder:={hid}", *holders_arg, *([] if real else ["-p", "require_grasp:=false"]),
+                              *(["-p", f"student_dir:={sdir}"] if b.student else [])],
                              background=True))
     if real:                                         # 첫 실기는 놓음 문턱(손끝 · 관절 힘 · 손 목표)을 bag 으로 정한다(PLACE 10.04)
         extra = [f"/policy_control/{x}" for x in ("joint_target", *(f"status/pd_{s}" for s in sides),
@@ -1137,8 +1181,11 @@ def _episode_run(name: str, real: bool) -> list:
         hands = f"HAND_SIDES='{' '.join(sides)}' " if len(sides) == 1 else ""      # 한 팔 에피소드는 그 손만(다른 팔 기록과 겹치지 않게)
         cam_topics, cam_hz = ((STUDENT_CAMERA_BAG_TOPICS, STUDENT_CAMERA_BAG_HZ) if name in STUDENT_EPISODES
                               else (CAMERA_BAG_TOPICS, CAMERA_BAG_HZ))
-        if any(b.student and _student_mask(b.student) for b in ep.policies.values()):
+        # 놓기 학생(11.08)은 늘 마스크를 쓴다(묶음이 아직 없어도 생성은 된다)
+        if any(b.student and (b.kind == "place" or _student_mask(b.student)) for b in ep.policies.values()):
             cam_topics = (*cam_topics, *MASK_CAMERA_BAG_TOPICS)
+        if any(b.student and b.kind == "place" for b in ep.policies.values()):     # ★11.08 놓기 학생 머리 명령 · 드라이버 연속 모드 기록
+            extra += ["/head/target_stream", "/head/stream_log"]
         cam = "" if REMOTE_PERCEPTION else f"CAMERA='{' '.join(cam_topics)}' CAMERA_HZ={cam_hz:g} "
         cmds.append(_cmd("기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더"
                          + ("" if REMOTE_PERCEPTION else
@@ -1157,6 +1204,8 @@ def _episode_run(name: str, real: bool) -> list:
                      "(이상하면 '에피소드 실행기 정지' · 정지 바)", ["bash", "-lc", "true"], manual=True))
     bg = [i for i, c in enumerate(cmds) if c.get("background")]
     cmds.append(_cmd("에피소드 노드들 정지", stop=[f"episode_{name}#{i}" for i in reversed(bg)]))
+    if real and any(b.student and b.kind == "place" for b in ep.policies.values()):
+        cmds.extend(_place_student_tail())
     if real:
         cmds.append(_cmd("기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손" + ("" if REMOTE_PERCEPTION else " · 카메라") + ")",
                          ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop", f"episode_{name}"]))

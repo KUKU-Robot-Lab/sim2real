@@ -95,6 +95,7 @@ class Binding:
     cup_obs_offset_base_m: tuple | None = None
     #: ★11.05 aglt 만 — 깊이 학생 묶음 id(예 rh56f1/aglt/right_student1104e). 있으면 노드 = rh_aglt_student_node(접근부터 학생),
     #:   policy = 홈 출발 계약(디코더 · 물체). approach_grasp · handoff 와 같이 쓰지 않는다
+    #:   ★11.08 place 도 — 놓기 학생 묶음 id. 노드 = rh_place_student_node, policy = 놓기 계약
     student: str | None = None
     #: ★11.07 place 만 — "tin_json" 이면 붙인 자세 = 그 팔의 tilt 직전 실측 T_in(런 폴더 json, 실패면 tin_fallback 고정값).
     #:   None = 정책 계약 그대로(bundle · fpp)
@@ -112,9 +113,13 @@ class Job:
     #: ★10.29 놓기 job 이 학습 범위(holder_range) 밖 홀더를 받는 거리(m). None = rh_place.HOLDER_TOL_M. 시작 검사(--plan)와
     #:   놓기 노드 reset 이 같이 쓴다(실행기가 job 마다 노드 파라미터 holder_tol_m 으로 넣는다)
     holder_tol_m: float | None = None
+    #: ★11.08 잡기(aglt) job 의 들기 가드(sim G40H8) — (피할 물체, guard_mm, hstop_m). 실행기가 그 물체의 snapshot x · y 와 같이
+    #:   노드 파라미터 lift_guard_* 로 넣는다. None = 끔(같은 정책의 다른 job 에는 0 을 넣어 끈다)
+    lift_guard: tuple | None = None
 
 
-JOB_KEYS = ("name", "source_object", "target_object", "target_holder", "policy_object", "holder_tol_m")
+JOB_KEYS = ("name", "source_object", "target_object", "target_holder", "policy_object", "holder_tol_m", "lift_guard")
+LIFT_GUARD_KEYS = ("object", "guard_mm", "hstop_m")
 BINDING_KEYS = ("policy", "kind", "side", "approach_grasp", "handoff", "cup_obs_offset_base_m", "student", "attach_source")
 
 
@@ -181,7 +186,22 @@ def _job(raw: Mapping, where: str) -> Job:
     return Job(role=str(raw["name"]), source_object=raw.get("source_object"), target_object=raw.get("target_object"),
                target_holder=raw.get("target_holder"),
                policy_object=None if raw.get("policy_object") is None else str(raw["policy_object"]),
-               holder_tol_m=_holder_tol(raw, where))
+               holder_tol_m=_holder_tol(raw, where), lift_guard=_lift_guard(raw.get("lift_guard"), where))
+
+
+def _lift_guard(raw, where: str) -> tuple | None:
+    """★11.08 lift_guard: {object: SRC_PINK, guard_mm: 40, hstop_m: 0.08} — 범위는 노드(lift_guard.GuardCfg)와 같다."""
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping) or set(raw) - set(LIFT_GUARD_KEYS) or not raw.get("object"):
+        raise EpisodeSpecError(f"{where}: lift_guard 는 {{object, guard_mm, hstop_m}} — {raw!r}")
+    try:
+        g, h = float(raw.get("guard_mm", 0.0)), float(raw.get("hstop_m", 0.0))
+    except (TypeError, ValueError) as exc:
+        raise EpisodeSpecError(f"{where}: lift_guard 값이 수가 아니다 — {raw!r}") from exc
+    if not (0.0 <= g < 200.0 and 0.0 <= h < 0.2 and (g > 0 or h > 0)):
+        raise EpisodeSpecError(f"{where}: lift_guard guard_mm 0..200 · hstop_m 0..0.2(둘 중 하나는 > 0) — {raw!r}")
+    return (str(raw["object"]), g, h)
 
 
 def _holder_tol(raw: Mapping, where: str) -> float | None:
@@ -343,8 +363,9 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
             except (ApproachGraspError, TypeError, ValueError) as exc:
                 raise EpisodeSpecError(f"policies.{role}: {exc}") from exc
         student = b.get("student")
-        if student is not None and (b.get("kind") != "aglt" or ag is not None or not (isinstance(student, str) and student.strip())):
-            raise EpisodeSpecError(f"policies.{role}: student 는 aglt 정책의 학생 묶음 id 문자열(approach_grasp · handoff 없이)")
+        if student is not None and (b.get("kind") not in ("aglt", "place") or ag is not None
+                                    or not (isinstance(student, str) and student.strip())):
+            raise EpisodeSpecError(f"policies.{role}: student 는 aglt · place 정책의 학생 묶음 id 문자열(approach_grasp · handoff 없이)")
         attach = b.get("attach_source")
         if attach is not None and (b.get("kind") != "place" or attach != "tin_json"):
             raise EpisodeSpecError(f"policies.{role}: attach_source 는 place 정책의 tin_json 만")
@@ -488,6 +509,12 @@ def validate(ep: Episode) -> None:
                 errs.append(f"{n.id}: policy_object {j.policy_object!r} 는 {OBJECT_KINDS} 정책 단계에만(물체 one-hot 이름)")
             if j.holder_tol_m is not None and (b is None or b.kind != "place"):
                 errs.append(f"{n.id}: holder_tol_m 은 놓기(place) 정책 단계에만")
+            if j.lift_guard is not None and (b is None or b.kind != "aglt" or b.side != "right"):
+                errs.append(f"{n.id}: lift_guard 는 오른손 잡기(aglt) 정책 단계에만(메쉬 링크가 오른팔)")
+            if j.lift_guard is not None and j.lift_guard[0] not in ep.objects:
+                errs.append(f"{n.id}: lift_guard 물체 {j.lift_guard[0]!r} 가 objects 에 없다")
+            if j.lift_guard is not None and ep.max_retry(n) != 0:
+                errs.append(f"{n.id}: lift_guard 단계는 재시도 상한 0 이어야 한다(failure_policy) — 가드 실패는 언제나 정지")
         if n.type == "trajectory" and n.name not in ep.trajectories:
             errs.append(f"{n.id}: trajectory {n.name!r} 가 trajectories 에 없다")
         elif n.type == "trajectory" and ep.trajectories[n.name].object and ep.trajectories[n.name].object not in ep.objects:

@@ -50,11 +50,23 @@ class PolicyPlan:
     policy_object: str | None = None  # ★10.12 다물체 aglt 정책의 물체 이름 → 노드 파라미터 object(reset 전)
     max_s: float = 15.0               # ★10.17 노드 max_episode_s(경로 C 는 최악 경로로 늘어난다) — 실행기 대기 한도의 바탕
     holder_tol_m: float | None = None  # ★10.29 카드가 이 놓기 job 에 넓힌 홀더 허용 → 노드 파라미터 holder_tol_m(reset 전)
+    lift_guard: tuple | None = None    # ★11.08 (guard_mm, hstop_m, x, y) — 피할 물체 x · y 는 snapshot(base), 없으면 nan → 노드 reset 거부
+
+
+def _lift_guard(j, world) -> tuple | None:
+    if j.lift_guard is None:
+        return None
+    name, g, h = j.lift_guard
+    loc = world.objects.get(name) or {}
+    # 분홍 x · y 는 보정하지 않은 FP++ snapshot 원값(cup_obs_offset 빼지 않음): 실기 mesh_clear(logs/analysis/lift_sweep_1108)도
+    # 원값으로 쟀고, 그 틈으로 본 밀림 거리(약 15~17 mm)가 bag 의 분홍 실제 이동과 맞는다
+    xy = loc["pose"][0][:2] if loc.get("pose") is not None and loc.get("at", "table") == "table" else (float("nan"),) * 2
+    return (g, h, float(xy[0]), float(xy[1]))
 
 
 def _node_max_s(b) -> float:
     """정책 노드 한 번의 시간 한도 — 미션 생성기와 같은 식(approach_grasp.episode_s · ★11.05 학생 = sim 평가 에피소드 길이)."""
-    if getattr(b, "student", None):
+    if getattr(b, "student", None) and b.kind == "aglt":     # 놓기 학생(11.08)은 놓기 노드 한도 그대로
         from policy_control.student_chain import bundle_limits
         return bundle_limits(b.student)[1]
     if getattr(b, "approach_grasp", None) is None:
@@ -298,7 +310,8 @@ class EpisodeManager:
                                   source_object=j.source_object, target_holder=j.target_holder,
                                   holder_id=self.ep.holders.get(j.target_holder) if j.target_holder else None,
                                   setting=self.ep.setting.get(side) if side else None, object_pose=pose,
-                                  policy_object=j.policy_object, max_s=_node_max_s(b), holder_tol_m=j.holder_tol_m))
+                                  policy_object=j.policy_object, max_s=_node_max_s(b), holder_tol_m=j.holder_tol_m,
+                                  lift_guard=_lift_guard(j, world)))
         return out
 
     def _after_success(self, node: Node, before: World, located: Mapping) -> World:

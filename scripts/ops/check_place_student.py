@@ -3,6 +3,7 @@
 
     .venv-student/bin/python scripts/ops/check_place_student.py --student-dir <student.yaml 폴더> [--side right]
         [--contract <rh_place_contract.json>] [--mission config/mission_rh56f1_control.yaml] [--target-class blue]
+        [--episode place_m_right]   # 목 드라이버를 그 에피소드 단계(run.episode_<이름>)에서만 찾는다(미션 생성기가 넘긴다)
 
 ckpt md5 · hdgp 스냅숏 커밋 · 외부 파라미터(r20u5) md5 · place_student.check_meta · 목 동역학(meta head ↔ 미션 목 드라이버)
 · 미션 --max-tilt ≥ 82 · 홀더 CAD · 홀더 자세 · YOLO md5 와 /head_mask/config · target_class ↔ ckpt one_obj · head_sag md5 · 64 MB SHM.
@@ -43,8 +44,9 @@ META_GROUPS = (("arch", "'arch'"), ("prop_cols", "'prop_cols'"), ("mask", "'mask
                ("floor_cut_z_m", "'depth_pre.floor_cut_z_m'"))
 
 
-def head_drivers(mission: Path) -> list[tuple[str, list[str]]]:
-    """미션 yaml 안 head_joint_publisher.py argv 전부 → [(위치, argv)]."""
+def head_drivers(mission: Path, episode: str | None = None) -> list[tuple[str, list[str]]]:
+    """미션 yaml 안 head_joint_publisher.py argv 전부 → [(위치, argv)]. episode 면 그 에피소드 단계에서 학생 노드 앞까지만
+    (★11.08 --max-tilt 82 는 학생이 도는 동안의 드라이버에만 있다. head_home · 에피소드 끝 꼬리 드라이버는 기본 −10)."""
     import yaml
 
     out = []
@@ -60,7 +62,16 @@ def head_drivers(mission: Path) -> list[tuple[str, list[str]]]:
             for i, v in enumerate(x):
                 walk(v, f"{where}[{i}]")
 
-    walk(yaml.safe_load(mission.read_text(encoding="utf-8")), "")
+    doc = yaml.safe_load(mission.read_text(encoding="utf-8"))
+    if episode:
+        key = f"episode_{episode}"
+        if key not in (doc.get("run") or {}):
+            raise SystemExit(f"{mission.name} 에 run.{key} 가 없다")
+        cmds = doc["run"][key]
+        end = next((i for i, c in enumerate(cmds)
+                    if any("rh_place_student_node.py" in str(a) for a in c.get("argv") or [])), len(cmds))
+        doc, key = cmds[:end], f"run.{key}"
+    walk(doc, key if episode else "")
     return out
 
 
@@ -73,10 +84,11 @@ def _arg(argv: list[str], flag: str, default: float) -> float:
     return default
 
 
-def check_head(meta_head: dict, mission: Path, row) -> None:
-    drivers = head_drivers(mission)
+def check_head(meta_head: dict, mission: Path, row, episode: str | None = None) -> None:
+    drivers = head_drivers(mission, episode)
     if not drivers:
-        row("미션 목 드라이버", "head_joint_publisher argv", f"{mission.name} 에 없음", NA)
+        row("미션 목 드라이버", "head_joint_publisher argv", f"{mission.name}{f' run.episode_{episode}' if episode else ''} 에 없음",
+            BAD if episode else NA)     # 에피소드를 지정했는데 없으면 82 를 확인할 수 없다 — 막는다
     for where, argv in drivers:
         vel = _arg(argv, "--stream-max-vel", hm.STREAM_MAX_VEL_DPS)
         acc = _arg(argv, "--stream-max-acc", hm.STREAM_MAX_ACC_DPS2)
@@ -96,7 +108,7 @@ def check_head(meta_head: dict, mission: Path, row) -> None:
             OK if tilt >= TILT_NEED else BAD)
 
 
-def check_bundle(d: Path, c, mission: Path, target_class: str, rows: list) -> None:
+def check_bundle(d: Path, c, mission: Path, target_class: str, rows: list, episode: str | None = None) -> None:
     import torch
     import yaml
 
@@ -105,6 +117,10 @@ def check_bundle(d: Path, c, mission: Path, target_class: str, rows: list) -> No
     def row(item, want, got, verdict):
         rows.append((side, item, str(want), str(got), verdict))
 
+    if not (d / "student.yaml").is_file():     # 묶음 전(재학습 중) — 불일치로 막고 미션 목 드라이버만 본다
+        row("놓기 학생 묶음 student.yaml", "있음", f"{d} 없음", BAD)
+        check_head({}, mission, row, episode)
+        return
     card = yaml.safe_load((d / "student.yaml").read_text(encoding="utf-8")) or {}
     ck, ex, yo = card["ckpt"], card["extrinsics"], (card.get("mask") or {}).get("yolo") or {}
     # 1. ckpt · hdgp 핀 · 외부 파라미터
@@ -128,7 +144,7 @@ def check_bundle(d: Path, c, mission: Path, target_class: str, rows: list) -> No
     for name, key in META_GROUPS:
         row(f"check_meta {name}", "통과", "어긋남" if key in err else "통과", BAD if key in err else OK)
     # 3 · 4. 목 동역학 · tilt 상한
-    check_head(meta.get("head") if isinstance(meta.get("head"), dict) else {}, mission, row)
+    check_head(meta.get("head") if isinstance(meta.get("head"), dict) else {}, mission, row, episode)
     # 5. 홀더 CAD · 자세
     for p in (HPJ.HOLDER_MESH, HOLDER_POSES):
         row(f"{p.relative_to(ROOT)}", "있음", md5(p) if p.is_file() else "없음", OK if p.is_file() else BAD)
@@ -168,12 +184,13 @@ def run(argv: list[str] | None = None) -> list[tuple]:
     ap.add_argument("--contract", default=None, help="rh_place_contract.json(기본 = 손별 배포 놓기 계약)")
     ap.add_argument("--mission", default=str(MISSION))
     ap.add_argument("--target-class", default="", help="빈 값 = student.yaml mask.target_class")
+    ap.add_argument("--episode", default=None, help="목 드라이버를 이 에피소드 단계에서만 본다(빈 값 = 미션 전체)")
     args = ap.parse_args(argv)
     c = P.load_contract(Path(args.contract or CONTRACTS[args.side]))
     if c.side().side != args.side:
         raise SystemExit(f"계약 손 {c.side().side} ≠ --side {args.side}")
     rows: list[tuple] = []
-    check_bundle(Path(args.student_dir).expanduser().resolve(), c, Path(args.mission), args.target_class, rows)
+    check_bundle(Path(args.student_dir).expanduser().resolve(), c, Path(args.mission), args.target_class, rows, args.episode)
     G.check_shm(rows)                        # 8. 64 MB SHM
     return rows
 
