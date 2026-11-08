@@ -36,12 +36,22 @@ sequence:
   # 1) 파랑 붓기 — 분홍은 탁자에 서 있다
   # ★11.08 사용자 "일단 넣어주고": 들기 가드 G40H8(sim 1108_lift_guard G40H8_h120) — 들며 옆으로 도는 팔 · 손이 탁자 위 분홍에
   #   40 mm 안으로 오거나 컵이 8 cm 넘게 들려 쥔 채면 정책을 멈추고 직전 목표로 붙든다. 분홍 잡기 · 왼손에는 켜지 않는다
-  - {id: grasp_blue, type: policy, name: rh_aglt_r, target_object: SRC_BLUE, policy_object: source240_real,
-     lift_guard: {object: SRC_PINK, guard_mm: 40, hstop_m: 0.08}, expect: {right_hand: SRC_BLUE}}
-  - {id: grasp_shaker, type: policy, name: rh_aglt_l, target_object: SHAKER, policy_object: shaker_c_real,
-     expect: {right_hand: SRC_BLUE, left_hand: SHAKER}}
-  - {id: to_tilt_start_r1, type: trajectory, name: to_tilt_start_r}
-  - {id: to_tilt_start_l, type: trajectory, name: to_tilt_start_l, expect: {pose: SETTING}}
+  # ★11.08 사용자 "왼손, 오른손 정책들은 기본이 독립으로 운영되는게 맞음": 잡기 → tilt 시작 자세를 팔마다 따로(lanes).
+  #   먼저 끝난 팔은 다른 팔을 기다리지 않고 tilt 시작 자세로 간다. 두 줄이 다 끝나야 tilt_blue. 한 줄 실패 = 다른 줄도 정지.
+  - id: grasp_to_tilt_start
+    type: lanes
+    expect: {pose: SETTING}
+    lanes:
+      - side: right
+        nodes:
+          - {id: grasp_blue, type: policy, name: rh_aglt_r, target_object: SRC_BLUE, policy_object: source240_real,
+             lift_guard: {object: SRC_PINK, guard_mm: 40, hstop_m: 0.08}, expect: {right_hand: SRC_BLUE}}
+          - {id: to_tilt_start_r1, type: trajectory, name: to_tilt_start_r}
+      - side: left
+        nodes:
+          - {id: grasp_shaker, type: policy, name: rh_aglt_l, target_object: SHAKER, policy_object: shaker_c_real,
+             expect: {left_hand: SHAKER}}
+          - {id: to_tilt_start_l, type: trajectory, name: to_tilt_start_l}
   - {id: tilt_blue, type: trajectory, name: tilt, expect: {pose: SETTING, blue_poured: true}}
   - {id: place_blue, type: policy, name: rh_place_r, source_object: SRC_BLUE, target_holder: HOLDER_1, policy_object: source240_real,
      expect: {right_hand: EMPTY, left_hand: SHAKER, blue_placed: true}}

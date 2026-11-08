@@ -5,6 +5,7 @@
     python3 deploy/policy_control/tools/episode_run.py --episode … --dry-run                        # 정상 경로
     python3 deploy/policy_control/tools/episode_run.py --episode … --dry-run --inject pick_cup=grasp_failed_right
     python3 deploy/policy_control/tools/episode_run.py --episode … --dry-run --step                 # 노드마다(구분 실행 모양)
+    python3 deploy/policy_control/tools/episode_run.py --episode … --dry-run --delay grasp_shaker=2 --jsonl <경로>   # ★11.08 lanes 시각
 
 --plan: 순서 · 각 노드가 부를 정책(등록부) · 실기에서 못 쓰는 이유(availability). rc 1 = 실기 불가 역할이 있다.
 """
@@ -20,7 +21,7 @@ from policy_control import _paths  # noqa: E402
 from policy_control import episode_spec as S  # noqa: E402
 from policy_control import policy_registry as R  # noqa: E402
 from policy_control.episode_fake import FakeExecutor  # noqa: E402
-from policy_control.episode_runner import FAILURE, SUCCESS, EpisodeManager  # noqa: E402
+from policy_control.episode_runner import FAILURE, SUCCESS, EpisodeManager, jsonl_logger  # noqa: E402
 
 
 def _inject(items: list[str]) -> dict[str, list[str]]:
@@ -39,6 +40,8 @@ def main(argv=None) -> int:
     g.add_argument("--dry-run", action="store_true")
     ap.add_argument("--inject", action="append", default=[], help="노드=실패코드[,실패코드] (모의 실패)")
     ap.add_argument("--step", action="store_true", help="모의 실행을 노드 하나씩(구분 실행 모양)")
+    ap.add_argument("--delay", action="append", default=[], help="노드=초 — 모의 정책 · 궤적이 걸리는 시간(lanes 순서 보기)")
+    ap.add_argument("--jsonl", type=Path, help="모의 실행 기록을 실기 실행기와 같은 jsonl 로도 쓴다")
     ap.add_argument("--require-holders", action="store_true",
                     help="--plan: 고정 홀더 자세 파일에 쓰는 홀더가 다 있어야 rc 0(실기 에피소드 단계 시작 검사)")
     args = ap.parse_args(argv)
@@ -82,16 +85,19 @@ def main(argv=None) -> int:
         for nid, why in hands.items():
             print(f"  {'✓' if not why else '✗'} 손 {nid}: {why or 'hand_contract 있음'}")
         return 1 if bad or holders or any(hands.values()) else 0
-    ex = FakeExecutor(ep, inject=_inject(args.inject))
+    ex = FakeExecutor(ep, inject=_inject(args.inject),
+                      delay={k: float(v) for k, _, v in (d.partition("=") for d in args.delay)})
     rows: list[dict] = []
-    m = EpisodeManager(ep, ex, approve=lambda what, why: True, log=rows.append, episode_id="dry-run")
+    write = jsonl_logger(args.jsonl) if args.jsonl else (lambda row: None)
+    m = EpisodeManager(ep, ex, approve=lambda what, why: True, log=lambda row: (rows.append(row), write(row)),
+                       episode_id="dry-run")
     if args.step:
         while m.status not in (SUCCESS, FAILURE):
             m.step()
     else:
         m.run()
     for r in rows:
-        print(f"[{r['timestamp'][11:23]}] {r['event']:<17} {str(r['state_id']):<24} "
+        print(f"[{r['timestamp'][11:23]}] {r['event']:<17} {str(r['state_id']):<24} {r.get('lane', '') or '':<6}"
               f"{r.get('result', '') or ''} {r.get('termination_reason', '') or ''}".rstrip())
     print(f"[episode] {m.status} · {json.dumps(m.world.as_dict(), ensure_ascii=False)}")
     return 0 if m.status == SUCCESS else 1

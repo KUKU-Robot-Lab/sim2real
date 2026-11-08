@@ -128,6 +128,36 @@ ARM_STILL_WINDOW_S = 0.3
 ARM_STILL_RAD = 0.003              # 창 안 관절마다 (max − min) — 0.01 rad/s 수준
 ARM_STILL_WAIT_S = 2.0             # 이 안에 안 멈추면 그대로 계획한다(시작 검사가 여전히 막는다)
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
+#: ★11.08 리뷰 — 도구 대기 상한(s). 넘으면 끊고 controller_error(안전 정지). 재생은 rate-scale 0.25 로 2분 궤적 + 여유
+TOOL_TIMEOUT_S = {"plan_carry.py": 180.0, "plan_tilt_traj.py": 180.0, "plan_rehome.py": 120.0, "plan_reach.py": 180.0,
+                  "plan_lift.py": 180.0, "plan_tilt.py": 180.0, "check_path_start.py": 60.0, "replay_to_pd.py": 600.0, "episode_ctl.py": 120.0,
+                  "trigger.py": 150.0, "hand_grasp.py": 60.0, "fpp_rescan.py": RESCAN_WAIT_S + 30.0}
+TOOL_TIMEOUT_DEFAULT_S = 300.0
+REPLAY_TIMEOUT_MARGIN_S = 120.0    # 재생 상한 = 궤적 길이 / rate-scale + 이 여유(진입 램프 ≤ 0.5 s · 기동 · 정착)
+
+
+def _replay_limit(argv: list) -> float:
+    """★11.08 재검토 — replay_to_pd 상한을 npz 길이 / rate-scale 로 잰다(고정 600 s 는 rate 0.1 이면 60 s 궤적도 끊는다).
+    npz 를 못 읽으면 고정값으로 간다(재생 도구가 같은 파일로 따로 거부한다)."""
+    base = TOOL_TIMEOUT_S["replay_to_pd.py"]
+    try:
+        npz = Path(argv[argv.index("--npz") + 1])
+        rate = float(argv[argv.index("--rate-scale") + 1]) if "--rate-scale" in argv else 0.25
+        with np.load(npz) as d:
+            key = next(k for k in ("fabric_q", "arm_target", "arm_q_cmd") if k in d)   # replay_to_pd.NPZ_JOINT_KEYS
+            n = int(np.asarray(d[key]).shape[0])
+            dt = float(d["meta_step_dt"].item()) if "meta_step_dt" in d else (
+                float(d["meta_fabric_dt"].item()) if "meta_fabric_dt" in d else 0.02)
+        return max(base, n * dt / max(rate, 1e-3) + REPLAY_TIMEOUT_MARGIN_S)
+    except (ValueError, IndexError, OSError, KeyError, StopIteration):
+        return base
+
+
+def _killpg(proc, sig=signal.SIGTERM) -> None:
+    try:
+        os.killpg(os.getpgid(proc.pid), sig)
+    except (ProcessLookupError, PermissionError):
+        pass
 #: ★11.04 사용자 "go_home_start 가 너무 오래 걸린다 · 보통 control 의 rehome 으로 고쳐 두고 시작한다": 팔이 이미 홈(계약 home_arm)
 #  이 안이고 멈춰 있으면 계획 · 재생 · goto_home 을 건너뛴다(실기 12:58 두 팔 차례로 26 s). 홈 밖이면 지금처럼 계획해서 간다.
 HOME_SKIP_RAD = 0.03
@@ -330,7 +360,9 @@ class RosExecutor:
         self._tin_note: list = []                     # 이 tilt 노드의 T_in 출처 한 줄씩(노드 결과 reason 에 붙인다)
         self._goal_result: dict[str, dict] = {}
         self._relay: dict[str, tuple] = {}            # 물체 → (pos, quat) — snapshot 뒤 집힐 때까지
-        self._proc: subprocess.Popen | None = None
+        #: ★11.08 lanes — 두 줄이 도구(계획 · replay_to_pd)를 동시에 띄운다. safe_stop 이 다 끊게 하나가 아니라 모음
+        self._procs: set = set()
+        self._tool_seq = 0
         self._Point, self._Trigger, self._Pose = Point, Trigger, PoseStamped
         #: 서비스 응답은 다른 콜백(예: 노드의 stop 서비스) 안에서도 받아야 한다 — 서로 막지 않는 그룹
         self._cbg = ReentrantCallbackGroup()
@@ -622,10 +654,14 @@ class RosExecutor:
                 return NodeResult("refused", "; ".join(why), role=p.role)
         t_reset = time.monotonic()
         ok, why = reset_until_cup_fresh(lambda: self._call(f"{NS}/{ns}/episode/reset"), cancelled=self.cancel.is_set)
+        if self.cancel.is_set():                          # ★11.08 정지로 끊긴 reset 은 거부가 아니라 정지
+            return NodeResult("aborted", "episode runner stop", time.monotonic() - t0, p.role)
         if not ok:
             return NodeResult("refused", "; ".join(why), role=p.role)
         if getattr(p, "lift_guard", None) is not None:    # ★11.08 가드를 요청했으면 노드가 실제로 켰는지 start 전에 본다
             why = self._lift_guard_on(status_key, p.lift_guard, t_reset)
+            if self.cancel.is_set():                      # ★11.08 정지로 끊긴 가드 확인은 lift_guard 실패가 아니다
+                return NodeResult("aborted", "episode runner stop", time.monotonic() - t0, p.role)
             if why:
                 return NodeResult("refused", f"lift_guard: {why}", role=p.role)
         t0 = time.monotonic()                             # 정책 시간 한도는 reset 이 받아들여진 뒤부터 센다
@@ -644,6 +680,8 @@ class RosExecutor:
                 time.sleep(0.05)
             if not res or not res.get("ok"):
                 return NodeResult("refused", f"goal {p.setting} refused: {(res or {}).get('reasons', 'no answer')}", role=p.role)
+        if self.cancel.is_set():                          # ★11.08 정지가 reset · 목표 사이에 왔다 — 정책을 시작하지 않는다
+            return NodeResult("aborted", "episode runner stop", time.monotonic() - t0, p.role)
         ok, why = self._call(f"{NS}/{ns}/episode/start")
         if not ok:
             return NodeResult("refused", "; ".join(why), role=p.role)
@@ -676,6 +714,9 @@ class RosExecutor:
         if p.kind == "aglt" and any(str(r).startswith(GUARD_STOPS) for r in ev.get("reasons", [])) and not sig.get("dropped"):
             ok, why, hold = self._guard_hold(p, status_key)   # 떨어뜨렸으면(dropped) 판정 없이 episode_failure 가 OBJECT_DROPPED 로
             sig = {**sig, **hold, "guard_hold_ok": ok}
+            if hold.get("guard_hold_cancelled"):      # ★11.08 리뷰 3 — 판정 도중 정지: 판정 실패가 아니다
+                return NodeResult("aborted", f"episode runner stop — 가드 고정 판정 중 정지 ({reasons})",
+                                  time.monotonic() - t0, p.role, sig)
             if not ok:                                # GRASP_FAILED(되돌아가 손 펴기)가 아니라 lift_guard_failed — 언제나 safe stop
                 return NodeResult("aborted", f"{GUARD_FAIL_TEXT}: {why} ({reasons})", time.monotonic() - t0, p.role, sig)
         return NodeResult("completed", reasons, dur, p.role, sig)
@@ -751,6 +792,9 @@ class RosExecutor:
                     if best >= GUARD_HOLD_S:
                         return True, "", {"guard_hold_rise_min_m": round(rise_min, 4), "guard_hold_s": round(best, 2)}
             time.sleep(0.05)
+        if self.cancel.is_set():                      # ★11.08 리뷰 3 — 정지로 끊겼다(판정 실패와 구분)
+            return False, "episode runner stop — 판정 중 정지", {"guard_hold_rise_min_m": None if not rises else round(min(rises), 4),
+                                                              "guard_hold_s": round(best, 2), "guard_hold_cancelled": True}
         why = (f"FP++ 새 프레임 {len(rises)}개(반복 {n_rep} · 튐 {n_out} · 손바닥 {GUARD_HOLD_PALM_M * 100:.0f} cm 밖/모름 {n_far}) · "
                f"상승 ≥ {GUARD_HOLD_RISE_M * 100:.0f} cm 최장 {best:.2f} s < {GUARD_HOLD_S} s"
                + (f" · 상승 {min(rises) * 100:.1f}~{max(rises) * 100:.1f} cm" if rises else ""))
@@ -1113,15 +1157,46 @@ class RosExecutor:
         return ""
 
     def _run(self, argv: list) -> tuple[int, str]:
-        log = self.run_dir / "tools.log"
-        with open(log, "a") as fh:
-            fh.write(f"\n$ {' '.join(argv)}\n")
+        """도구 하나 — ★11.08 리뷰: 출력은 도구마다 tools/<번호>_<이름>.log(두 팔 줄이 동시에 띄워도 끝줄이 섞이지 않게),
+        tools.log 에는 명령과 그 파일만. 대기 상한(TOOL_TIMEOUT_S)을 넘으면 끊고 rc 124 · 'tool timeout'(→ controller_error,
+        안전 정지). 정지(cancel) 뒤에는 띄우지 않는다."""
+        name = Path(argv[1]).name if len(argv) > 1 else str(argv[0])
+        if self.cancel.is_set():
+            return 130, "episode runner stop — 도구를 띄우기 전 정지"
+        with self._lock:
+            self._tool_seq += 1
+            log = self.run_dir / "tools" / f"{self._tool_seq:03d}_{Path(name).stem}.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        limit = _replay_limit(argv) if name == "replay_to_pd.py" else TOOL_TIMEOUT_S.get(name, TOOL_TIMEOUT_DEFAULT_S)
+        self._log_line(f"$ {' '.join(argv)}\n  → {log.relative_to(self.run_dir)} (상한 {limit:.0f} s)")
+        timed_out = False
+        with open(log, "w") as fh:
+            fh.write(f"$ {' '.join(argv)}\n")
             fh.flush()
-            self._proc = subprocess.Popen(argv, stdout=fh, stderr=subprocess.STDOUT, start_new_session=True,
-                                          env={**os.environ, "PYTHONUNBUFFERED": "1"})
-            rc = self._proc.wait()
-            self._proc = None
+            proc = subprocess.Popen(argv, stdout=fh, stderr=subprocess.STDOUT, start_new_session=True,
+                                    env={**os.environ, "PYTHONUNBUFFERED": "1"})
+            with self._lock:
+                self._procs.add(proc)
+            if self.cancel.is_set():                   # safe_stop 이 add 바로 앞에서 지나갔다 — 이 도구도 끊는다
+                _killpg(proc)
+            try:
+                try:
+                    rc = proc.wait(timeout=limit)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    _killpg(proc)
+                    try:
+                        proc.wait(timeout=5.0)
+                    except subprocess.TimeoutExpired:
+                        _killpg(proc, signal.SIGKILL)
+                        proc.wait()
+                    rc = 124
+            finally:
+                with self._lock:
+                    self._procs.discard(proc)
         tail = log.read_text(errors="replace").strip().splitlines()[-1:] or [""]
+        if timed_out:
+            return rc, f"tool timeout {name} {limit:.0f} s 초과 — 끊음 · {tail[0][-200:]}"
         return rc, tail[0][-300:]
 
     def prepare(self, step: str, plans: list, world) -> NodeResult:
@@ -1163,12 +1238,11 @@ class RosExecutor:
 
     def safe_stop(self, reason: str) -> None:
         self.cancel.set()
-        proc = self._proc
-        if proc is not None and proc.poll() is None:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
-                pass
+        with self._lock:
+            procs = list(self._procs)
+        for proc in procs:
+            if proc.poll() is None:
+                _killpg(proc)
         for side in self.sides:                       # ★10.19 이 에피소드의 팔만 — 다른 팔 실행기의 정책은 그대로
             for kind in NODES:
                 self._call(f"{NS}/{service_ns(kind, side)}/episode/stop", timeout=2.0, wait=0.3)

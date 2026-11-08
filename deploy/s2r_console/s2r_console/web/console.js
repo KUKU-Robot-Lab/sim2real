@@ -814,7 +814,8 @@ let lastEpFlow = null, lastEpWires = "";
 
 function epNodeState(e, n, i) {
   const r = (e.runs || {})[n.id];
-  if (r && r.state && !(r.state === "done" && i >= e.index && e.phase !== "SUCCESS")) return r.state;
+  // ★11.08 lanes 항목(r.lane)은 lanes 노드가 current 인 동안 줄마다 끝나므로 index 뒤여도 자기 상태를 보인다
+  if (r && r.state && (r.lane || !(r.state === "done" && i >= e.index && e.phase !== "SUCCESS"))) return r.state;
   return i < e.index ? "done" : "pending";
 }
 

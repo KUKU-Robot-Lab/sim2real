@@ -70,6 +70,7 @@ _REASON_RULES = (
     # ★11.08 들기 가드(reset 거부 'lift_guard:' · 틱 'lift_guard tick:' · 판정 'lift_guard hold failed') — 맨 앞: 손을 편 채
     #   되돌아가는 GRASP_FAILED 가 아니라 언제나 safe stop(분홍 옆에서 컵을 든 채 멈춘 상태일 수 있다)
     (("lift_guard",), "lift_guard"),
+    (("tool timeout",), "controller"),        # ★11.08 도구 대기 상한 초과(episode_ros._run) — 안전 정지
     (("holder pose missing",), "holder"),
     (("컵 자세가 없다", "cup pose missing", "goal comes from the cup", "cup outside region"), "target"),   # ★10.28 region 밖
     (("not grasped",), "grasp"),

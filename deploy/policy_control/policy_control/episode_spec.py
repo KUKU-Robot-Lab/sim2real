@@ -35,6 +35,15 @@ snapshot = 10.04 사용자 "처음에 FP++ 로 각 컵들 배치를 한번에 �
 ★10.29 놓기 job 의 holder_tol_m(m, 0 < 값 ≤ 0.10) — 그 job 의 홀더가 놓기 계약 학습 범위(holder_range) 밖이어도 이 거리까지는
     받는다(기본 rh_place.HOLDER_TOL_M 0.02). 시작 검사(episode_run --plan --require-holders)와 놓기 노드 reset 이 같은 값을 쓴다
     (실행기가 job 마다 노드 파라미터로 넣는다). 사용자 "n07 이 범위 밖 홀더도 받도록 시작 검사를 풀어 주세요"(칵테일 홀더 2).
+
+★11.08 lanes(사용자 "왼손, 오른손 정책들은 기본이 독립으로 운영되는게 맞음") — 두 팔이 각자 자기 순서로, 둘 다 끝나면 다음 노드:
+    {id: grasp_to_tilt, type: lanes, expect: {pose: SETTING},
+     lanes: [{side: right, nodes: [{id: grasp_blue, type: policy, …}, {id: to_tilt_start_r1, type: trajectory, …}]},
+             {side: left,  nodes: [{id: grasp_shaker, type: policy, …}, {id: to_tilt_start_l, type: trajectory, …}]}]}
+    줄은 right · left 하나씩. 항목은 policy · trajectory 만(문법 그대로), 그 줄 팔만 쓴다. 항목 expect 는 그 팔 손 칸 · 플래그만
+    (자세는 lanes 노드 expect — 두 줄이 다 끝난 뒤 적용). 항목은 checkpoint 를 받지 않는다. 한 줄이 실패하면 다른 줄도 멈추고
+    재시도 · 되돌아가기 · continue_on_fail 없이 정지(episode_runner). 파싱하면 항목은 lanes 노드 바로 뒤 ep.nodes 에 lane · group 을
+    달고 들어간다(id 로 찾기 · 정책 · 물체 검사 · 미션 생성기가 그대로 본다). 실행기는 lanes 노드에서 그 항목들을 한꺼번에 돈다.
 """
 from __future__ import annotations
 
@@ -45,7 +54,8 @@ from typing import Mapping
 
 import yaml
 
-NODE_TYPES = ("snapshot", "trajectory", "policy", "parallel_policy", "confirm", "hand", "terminal")
+NODE_TYPES = ("snapshot", "trajectory", "policy", "parallel_policy", "confirm", "hand", "terminal", "lanes")
+LANE_ITEM_TYPES = ("policy", "trajectory")
 HAND_ACTIONS = ("open", "grasp")
 KINDS = ("aglt", "place", "pour", "lock", "shake")
 CONTINUE_KINDS = ("place",)   # ★11.07 continue_on_fail: 실패해도 다음 노드(home 등)로 넘어갈 수 있는 정책 종류
@@ -138,6 +148,8 @@ class Node:
     hand_contract: str = ""       # hand grasp — 손 열림 · 쥠 자세 · 막힘 명목값을 줄 계약(등록부 id 또는 저장소 기준 .json, 10.20)
     cfg: Mapping = field(default_factory=dict)   # hand grasp — 닫기 · 판정 값 덮어쓰기(tools/hand_grasp.GraspCfg)
     objects: tuple = ()           # ★10.28 snapshot — 이 물체만 FP++ 로 다시 찍어 기록(사람이 놓은 물체). 비면 탁자 위 물체 전부
+    lane: str = ""                # ★11.08 lanes 항목 — 그 줄의 팔(right · left). 비면 순서 노드
+    group: str = ""               # ★11.08 lanes 항목 — 묶은 lanes 노드 id
 
 
 @dataclass(frozen=True)
@@ -246,6 +258,31 @@ def _node(raw: Mapping, i: int) -> Node:
                 action=str(raw.get("action") or ""), sides=tuple(raw.get("sides") or ()),
                 hand_contract=str(raw.get("hand_contract") or ""), cfg=dict(raw.get("cfg") or {}),
                 objects=tuple(objs or ()))
+
+
+def _nodes(raw: Mapping, i: int) -> list[Node]:
+    """sequence 한 칸 → 노드들. lanes 는 [lanes 노드, 오른손 줄 항목…, 왼손 줄 항목…]."""
+    n = _node(raw, i)
+    if n.type != "lanes":
+        return [n]
+    where = f"sequence[{i}] {n.id}"
+    lanes = raw.get("lanes")
+    if not isinstance(lanes, list) or any(not isinstance(ln, Mapping) or set(ln) - {"side", "nodes"} for ln in lanes):
+        raise EpisodeSpecError(f"{where}: lanes 는 [{{side, nodes}}, …]")
+    sides = [ln.get("side") for ln in lanes]
+    if sorted(map(str, sides)) != ["left", "right"]:        # 같은 팔 두 줄 · 한 줄뿐 · 모르는 팔
+        raise EpisodeSpecError(f"{where}: lanes 는 right 줄 하나 · left 줄 하나 — {sides}")
+    out = [n]
+    for ln in sorted(lanes, key=lambda ln: ln["side"] != "right"):
+        items = ln.get("nodes")
+        if not isinstance(items, list) or not items:
+            raise EpisodeSpecError(f"{where}: {ln['side']} 줄 nodes 가 비었다")
+        for raw_it in items:
+            it = _node(raw_it if isinstance(raw_it, Mapping) else {}, i)
+            if it.type not in LANE_ITEM_TYPES:
+                raise EpisodeSpecError(f"{where}: 줄 항목 {it.id} 는 {LANE_ITEM_TYPES} 만(지금 {it.type})")
+            out.append(replace(it, lane=str(ln["side"]), group=n.id))
+    return out
 
 
 def region_box(raw) -> dict[str, tuple[float, float]]:
@@ -378,7 +415,7 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
             raise EpisodeSpecError(f"trajectories.{name}: kind 는 {TRAJ_KINDS}")
         trajs[str(name)] = _trajectory(str(name), t)
     ep = Episode(name=str(meta.get("name", Path(path).stem)), version=int(meta.get("version", 1)),
-                 nodes=tuple(_node(n, i) for i, n in enumerate(raw["sequence"])), policies=pols, trajectories=trajs,
+                 nodes=tuple(m for i, n in enumerate(raw["sequence"]) for m in _nodes(n, i)), policies=pols, trajectories=trajs,
                  objects=resolve_objects(raw.get("objects") or {}, path),
                  holders={str(k): int(v) for k, v in (raw.get("holders") or {}).items()},
                  setting={str(k): tuple(float(x) for x in v) for k, v in (raw.get("setting") or {}).items()},
@@ -552,11 +589,29 @@ def validate(ep: Episode) -> None:
         if n.checkpoint is not None and n.type not in ("snapshot", "trajectory", "policy", "parallel_policy", "hand"):
             errs.append(f"{n.id}: checkpoint 는 실행 노드에만")
         sides = [ep.policies[j.role].side for j in n.jobs if j.role in ep.policies]
+        if n.lane:
+            errs += _lane_item_errors(ep, n, sides)
+        if n.type == "lanes" and any(k in HAND_KEYS for k in n.expect):   # ★11.08 리뷰 — 손 칸은 줄 항목이 바꾼다
+            errs.append(f"{n.id}: lanes 노드 expect 는 자세 · 플래그만 — 손 칸 {[k for k in n.expect if k in HAND_KEYS]} 은 줄 항목 expect 로")
         if n.type == "parallel_policy" and len(set(sides)) != len(sides):
             errs.append(f"{n.id}: 같은 팔 정책을 동시에 돌릴 수 없다 {sides}")
     errs += _placed_later_errors(ep)
     if errs:
         raise EpisodeSpecError(f"{ep.path}: " + " · ".join(errs))
+
+
+def _lane_item_errors(ep: Episode, n: Node, sides: list) -> list[str]:
+    """★11.08 줄 항목은 그 줄 팔만 쓴다(반대 팔 정책 · 양팔 궤적 거부) · 그 팔 손 칸만 바꾼다 · 되돌아갈 자리가 없다."""
+    errs = []
+    arms = set(sides) if n.type == "policy" else set(ep.trajectories[n.name].sides) if n.name in ep.trajectories else {n.lane}
+    if arms != {n.lane}:
+        errs.append(f"{n.id}: {n.lane} 줄 항목이 팔 {sorted(arms)} 를 쓴다 — 줄 항목은 그 줄 팔 하나만")
+    bad = [k for k in n.expect if k == "pose" or HAND_KEYS.get(k, n.lane) != n.lane]
+    if bad:
+        errs.append(f"{n.id}: 줄 항목 expect {bad} — 그 팔 손 칸 · 플래그만(자세는 lanes 노드 expect)")
+    if n.checkpoint is not None:
+        errs.append(f"{n.id}: 줄 항목은 checkpoint 를 받지 않는다(줄 실패는 되돌아가지 않고 정지)")
+    return errs
 
 
 def _placed_later_errors(ep: Episode) -> list[str]:

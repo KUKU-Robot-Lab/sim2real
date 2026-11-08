@@ -7,7 +7,7 @@
          stop  돌던 것을 멈춘다(정책 노드 episode/stop → pd 가 붙든다 · 재생 프로세스 SIGTERM) — 승인 없음
          reset 새 에피소드(WorldState 처음부터) — 도는 중이면 거부
   out  /policy_control/status/<이름> (2 Hz JSON — EpisodeManager.view() + busy · auto_approve)
-  log  logs/episode/<episode_id>/episode.jsonl · scene.json · tools.log
+  log  logs/episode/<episode_id>/episode.jsonl · scene.json · tools.log(명령 목록) · tools/<번호>_<도구>.log(도구 출력)
 
 승인: auto_approve(fake 도메인만 — 실기 도메인(config/ros_domain.env)이면 노드가 거부) 또는 approvals 파일(JSONL, tools/episode_cmd.py 와 상황판이
 쓴다)에 이 노드가 뜬 뒤 쓰인 {"what": <이름>, "t": epoch, "runner": <노드 이름>} 가 있고 아직 안 쓴 것. 한 줄은 한 번만 쓴다.

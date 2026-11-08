@@ -2,9 +2,12 @@
 
 실패 주입: {노드 id: [FailureCode, …]} — 그 노드를 부를 때마다 앞에서 하나씩 꺼내 그 실패가 나는 결과를 만든다
 (실제 실행기가 싣는 신호와 같은 모양 — 판정은 episode_failure 가 한다). 비면 정상 결과.
+★11.08 delay: {노드 id: 초} — 그 노드(정책 · 궤적)가 그만큼 걸린다. 도는 중 safe_stop 이면 실제 실행기처럼 aborted
+(lanes: 한 줄 실패가 다른 줄을 멈추는지 · 먼저 끝난 줄이 기다리지 않는지 보는 데 쓴다).
 """
 from __future__ import annotations
 
+import threading
 from typing import Mapping
 
 from policy_control.episode_failure import F, FailureCode, NodeResult
@@ -40,11 +43,17 @@ def _fake_pos(obj: Mapping, i: int) -> tuple:
 
 
 class FakeExecutor:
-    def __init__(self, ep: Episode, inject: Mapping[str, list] | None = None) -> None:
+    def __init__(self, ep: Episode, inject: Mapping[str, list] | None = None, delay: Mapping[str, float] | None = None) -> None:
         self.ep = ep
+        self.delay = dict(delay or {})
+        self.cancel = threading.Event()
         self.inject = {k: [FailureCode(c) for c in v] for k, v in (inject or {}).items()}
         self.calls: list[tuple] = []
         self.stopped: list[str] = []
+
+    def _cut(self, node_id: str) -> bool:
+        """delay 를 준 노드만 기다린다 — 그 사이 safe_stop 이면 True(끊김)."""
+        return node_id in self.delay and self.cancel.wait(self.delay[node_id])
 
     def _take(self, key: str) -> FailureCode | None:
         q = self.inject.get(key) or []
@@ -64,6 +73,8 @@ class FakeExecutor:
 
     def run_policies(self, node: Node, plans: list, world) -> list:
         self.calls.append(("policy", node.id, tuple(p.role for p in plans)))
+        if self._cut(node.id):
+            return [NodeResult("aborted", "episode runner stop", 0.0, p.role) for p in plans]
         code = self._take(node.id)
         out = []
         for i, p in enumerate(plans):
@@ -76,6 +87,8 @@ class FakeExecutor:
 
     def run_trajectory(self, node: Node, traj, world) -> NodeResult:
         self.calls.append(("trajectory", node.id, traj.name))
+        if self._cut(node.id):
+            return NodeResult("aborted", "episode runner stop")
         code = self._take(node.id)
         if code is not None:
             status, reason, signals = _FAIL[code]
@@ -99,6 +112,7 @@ class FakeExecutor:
 
     def safe_stop(self, reason: str) -> None:
         self.stopped.append(reason)
+        self.cancel.set()
 
     def joints(self) -> dict:
         return {}

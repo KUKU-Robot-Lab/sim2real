@@ -12,7 +12,8 @@ from policy_control.episode_spec import EMPTY, HAND_KEYS, PLACED_SNAPSHOT_TRIES,
 from policy_control.episode_world import World
 
 TYPE_LABEL = {"snapshot": "배치 기록", "trajectory": "궤적", "policy": "정책", "parallel_policy": "병렬 정책", "terminal": "끝",
-              "confirm": "운영자 확인", "hand": "손(팔 제자리)"}
+              "confirm": "운영자 확인", "hand": "손(팔 제자리)", "lanes": "두 팔 따로(줄)"}
+LANE_LABEL = {"right": "오른손 줄", "left": "왼손 줄"}
 ROLLBACK_LABEL = "집기 실패 · 시간 초과 → 손 펴고 빈손 홈으로 → 배치 다시 기록 → 다시"
 RETRY_LABEL = "컵 · 홀더를 못 찾으면 인지 갱신 후 다시"
 PLACED_LABEL = "못 찾음 · 상자 밖 → 로봇은 그대로, 다시 놓고 확인"     # ★10.28 사람이 놓은 물체 다시 찍기
@@ -30,6 +31,9 @@ def _expect_text(expect) -> str:
 
 
 def _lines(ep: Episode, n: Node) -> list[str]:
+    if n.type == "lanes":                               # ★11.08 줄마다 한 줄 — 둘 다 끝나면 다음 노드
+        return [f"{LANE_LABEL[s]}: " + " → ".join(m.id for m in ep.nodes if m.group == n.id and m.lane == s)
+                for s in ("right", "left")] + ["한 줄 실패 → 다른 줄도 정지(복구 없음)"]
     if n.type == "trajectory":
         t = ep.trajectories[n.name]
         how = {"rehome": "실측 → 경로 재계획 → 재생 → 정착",
@@ -64,14 +68,15 @@ def flow_of(ep: Episode) -> dict:
         before.append(dict(world.hands))
         world = world.apply(n.expect)
         after.append(dict(world.hands))
-    nodes = [{"id": n.id, "type": n.type, "title": TYPE_LABEL.get(n.type, n.type), "lines": _lines(ep, n),
+    nodes = [{"id": n.id, "type": n.type, "lines": _lines(ep, n),
+              "title": TYPE_LABEL.get(n.type, n.type) + (f" · {LANE_LABEL[n.lane]}({n.group})" if n.lane else ""),
               "expect": _expect_text(n.expect), "checkpoint": n.checkpoint} for n in ep.nodes]
     feedback = []
     for i, n in enumerate(ep.nodes):
         if n.type == "snapshot" and n.objects and i >= 1 and ep.nodes[i - 1].type == "confirm":
             feedback.append({"from": n.id, "to": ep.nodes[i - 1].id, "kind": "rollback", "max": PLACED_SNAPSHOT_TRIES - 1,
                              "label": PLACED_LABEL})
-        if n.type not in ("policy", "parallel_policy"):
+        if n.type not in ("policy", "parallel_policy") or n.lane:   # 줄 항목은 복구 없이 정지
             continue
         mx = ep.max_retry(n)
         if mx <= 0:

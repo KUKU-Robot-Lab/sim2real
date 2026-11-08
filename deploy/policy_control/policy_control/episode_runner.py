@@ -19,14 +19,16 @@
 """
 from __future__ import annotations
 
+import dataclasses
 import json
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Mapping, Protocol
 
 from policy_control.episode_failure import (F, FailureCode, FailureDetector, NodeResult, Recovery, RecoveryManager,
-                                            ROLLBACK, SAFE_STOP)
+                                            ROLLBACK, SAFE_STOP, SAFETY)
 from policy_control.episode_flow import flow_of
 from policy_control.episode_spec import EMPTY, HAND_KEYS, PLACED_SNAPSHOT_TRIES, Episode, Node, region_miss
 from policy_control.episode_world import World
@@ -83,6 +85,16 @@ class Executor(Protocol):
     def prepare(self, step: str, plans: list, world: World) -> NodeResult: ...
     def safe_stop(self, reason: str) -> None: ...
     def joints(self) -> dict: ...
+
+
+#: ★11.08 lanes 승인 · 설명 문구 — plan_carry 의 arms_clear 는 다른 팔을 실측 그대로 멈춘 팔로 본다
+LANES_WARN = "두 팔 동시 진행: trajectory 는 한 팔씩, 정책 중인 팔과는 충돌 미검사"
+
+
+def _cancelled(res: list) -> bool:
+    """실행기가 정지(cancel)로 끊은 결과 — 실제 판정 실패와 구분한다."""
+    return any(r.status == "aborted" and (r.reason.startswith("episode runner stop") or r.signals.get("guard_hold_cancelled"))
+               for r in res)
 
 
 def _now() -> str:
@@ -151,7 +163,9 @@ class EpisodeManager:
         if self.status in (SUCCESS, FAILURE, STOPPED):
             return self.status
         rest = " → ".join(n.id for n in self.ep.nodes[self.index:])
-        if not self.approve(f"episode:{self.ep.name}", f"연속 실행 — {rest}"):
+        lanes = [n for n in self.ep.nodes[self.index:] if n.type == "lanes"]
+        warn = "".join(f" | {n.id}: {self._describe(n)}" for n in lanes)
+        if not self.approve(f"episode:{self.ep.name}", f"연속 실행 — {rest}{warn}"):
             return self._declined(self.node, f"episode:{self.ep.name}")
         self._auto = True
         try:
@@ -173,10 +187,10 @@ class EpisodeManager:
         return None if node is None or node.type == "terminal" else node.id
 
     def stop(self, reason: str = "operator stop") -> str:
+        self.status = STOPPED      # ★11.08 safe_stop 앞 — 그 사이 돌아온 aborted 를 줄 · 노드가 실패가 아니라 정지로 본다
         self.executor.safe_stop(reason)
         if self.node is not None and self.runs.get(self.node.id, {}).get("state") == "running":
             self._mark(self.node.id, "stopped")
-        self.status = STOPPED
         self._log("stop", self.node, termination_reason=reason)
         return self.status
 
@@ -216,23 +230,29 @@ class EpisodeManager:
         self._mark(node.id, "running", n=self.runs.get(node.id, {"n": 0})["n"] + 1)
         self._log("enter", node, start_time=start)
         before = self.world
-        self.world = self.world.running() if node.type in ("policy", "parallel_policy") else self.world
-        results, located = self._execute(node, before)
+        self.world = self.world.running() if node.type in ("policy", "parallel_policy", "lanes") else self.world
+        if node.type == "lanes":
+            results, code, who, why = self._run_lanes(node)
+            located, before = {}, self.world     # 줄 항목이 끝낸 것(쥔 컵)은 실패 · 정지에도 되돌리지 않는다 — 실제 상태
+        else:
+            results, located = self._execute(node, before)
+            why = ""
         if self.status == STOPPED:                       # 실행 중에 stop — 결과는 남기고 더 나가지 않는다
             self.world = before
             self._mark(node.id, "stopped", s=round(time.monotonic() - t0, 2))
             self._log("stopped", node, start_time=start, end_time=_now(),
                       termination_reason="; ".join(r.reason for r in results if r.reason))
             return self.status
-        code, who = self.detector.evaluate(self.ep, node, results)
+        if node.type != "lanes":
+            code, who = self.detector.evaluate(self.ep, node, results)
         dur = time.monotonic() - t0
-        reason = "; ".join(r.reason for r in results if r.reason)
+        reason = why or "; ".join(r.reason for r in results if r.reason)
         self.last = {"node": node.id, "code": code.value, "who": who, "reason": reason, "duration_s": round(dur, 2),
                      "results": [{"role": r.role, "status": r.status, "reason": r.reason, "signals": dict(r.signals)}
                                  for r in results]}
         if code is F.NONE:
             self._mark(node.id, "done", s=round(dur, 2), code="COMPLETED")
-            self.world = self._after_success(node, before, located)
+            self.world = self._after_success(node, before, located)   # lanes: 줄이 쌓은 World 에 lanes expect
             if node.checkpoint:
                 self.checkpoints[node.checkpoint] = {"world": self.world, "joints": self.executor.joints(), "node": node.id,
                                                      "at": _now()}
@@ -249,6 +269,109 @@ class EpisodeManager:
         if self._placed_retry(node, code):
             return self._back_to_confirm(node, code, reason)
         return self._recover(node, code)
+
+    def _run_lanes(self, node: Node) -> tuple[list, FailureCode, str, str]:
+        """★11.08 lanes — 줄마다 자기 항목을 차례로(스레드 하나씩), 두 줄은 동시에. 항목이 끝나면 그 expect · 집은 물체를
+        World 에 바로 적용한다(락). 한 줄 항목이 실패하면 그 자리에서 실행기 safe_stop 으로 다른 줄도 멈춘다. 돌아오는 것 =
+        (모든 항목 결과, 처음 실패 코드, 누구, 그 항목 사유). 항목은 enter · exit · failure · stopped 를 lane · group 과 같이 jsonl 에 남긴다."""
+        lanes: dict = {}
+        for it in self.ep.nodes:
+            if it.group == node.id:
+                lanes.setdefault(it.lane, []).append(it)
+                self.runs.setdefault(it.id, {"n": 0})
+                self.runs[it.id] = {**self.runs[it.id], "lane": it.lane}   # 상황판 view 가 도는 동안 키를 늘리지 않게 미리
+        lock, traj_lock, results, fail = threading.Lock(), threading.Lock(), [], []
+        busy: dict = {}                                   # 줄 → 지금 정책을 돌리는 항목 id
+
+        def other_policy(side: str) -> str:
+            return ", ".join(f"{s}:{i}" for s, i in busy.items() if s != side)
+
+        def run_item(it: Node, w: World) -> tuple[list, dict, dict]:
+            """궤적은 계획부터 재생 끝까지 traj_lock(★11.08 리뷰 1a) — 다른 팔 궤적은 기다리고, 정책과는 겹친다."""
+            if it.type != "trajectory":
+                if it.type in ("policy", "parallel_policy"):   # ★11.08 재검토 — 손 · 스냅샷은 "정책 진행 중" 이 아니다
+                    with lock:
+                        busy[it.lane] = it.id
+                try:
+                    res, located = self._execute(it, w)
+                finally:
+                    with lock:
+                        busy.pop(it.lane, None)
+                return res, located, {}
+            q0 = time.monotonic()
+            with traj_lock:
+                extra = {"traj_wait_s": round(time.monotonic() - q0, 3)}
+                with lock:
+                    if fail or self.status == STOPPED:
+                        return [NodeResult("aborted", "episode runner stop — 궤적 차례를 기다리는 중 정지")], {}, extra
+                    w = self.world                    # 기다리는 동안 다른 줄이 바꾼 World
+                    other = other_policy(it.lane)
+                    if other:                         # ★11.08 리뷰 1b — plan_carry 는 이 팔을 멈춘 팔로 보고 검사한다
+                        extra["other_arm_policy"] = f"다른 팔 정책 진행 중({other}) — 충돌 미검사"
+                        self.runs[it.id] = {**self.runs[it.id], "note": extra["other_arm_policy"]}
+                    self._log("plan", it, lane=it.lane, group=node.id, **extra)
+                res, located = self._execute(it, w)
+            if extra.get("other_arm_policy"):
+                res = [dataclasses.replace(r, reason="; ".join(x for x in (r.reason, extra["other_arm_policy"]) if x))
+                       for r in res]
+            return res, located, extra
+
+        def lane(items: list) -> None:
+            for it in items:
+                with lock:
+                    if fail or self.status == STOPPED:
+                        return
+                    w = self.world
+                    self._mark(it.id, "running", n=self.runs[it.id]["n"] + 1)
+                    start, t0 = _now(), time.monotonic()
+                    self._log("enter", it, start_time=start, lane=it.lane, group=node.id)
+                res, located, extra = run_item(it, w)
+                code, who = self.detector.evaluate(self.ep, it, res)
+                dur = round(time.monotonic() - t0, 3)
+                reason = "; ".join(r.reason for r in res if r.reason)
+                row = dict(start_time=start, end_time=_now(), duration=dur, lane=it.lane, group=node.id,
+                           signals=self._signal_rows(res), **extra)
+                with lock:
+                    results.extend(res)
+                    if code is F.NONE:
+                        self.world = self._after_success(it, self.world, located)
+                        self._mark(it.id, "done", s=round(dur, 2), code="COMPLETED")
+                        self._log("exit", it, result="COMPLETED", termination_reason=reason, **row)
+                        continue
+                    # ★11.08 리뷰 2 — 정지(다른 줄 실패 · 운영자 stop)가 끊은 항목은 실패가 아니라 정지, safe_stop 도 다시 안 부른다
+                    if self.status == STOPPED or (fail and _cancelled(res)):
+                        self._mark(it.id, "stopped", s=round(dur, 2))
+                        self._log("stopped", it, termination_reason=reason or "다른 줄 정지", code=code.value, **row)
+                        return
+                    first = not fail                  # ★11.08 리뷰 3 — 실패는 모두 모은다(정지 뒤 실제 판정 실패 포함)
+                    fail.append((code, f"{it.id}:{who or it.lane}", f"{it.id}({it.lane}) {code.value}: {reason or '-'}"))
+                    self._mark(it.id, "failed", s=round(dur, 2), code=code.value)
+                    self._log("failure", it, result=code.value, termination_reason=reason, failed_role=who, **row)
+                if first:                             # 한 팔이 실패한 채 다른 팔만 움직이지 않게 — 다른 줄을 지금 멈춘다
+                    self.executor.safe_stop(f"{it.id}({it.lane}) {code.value} — 다른 줄도 멈춘다")
+                return
+
+        def guarded(items: list) -> None:
+            try:
+                lane(items)
+            except Exception as exc:                  # noqa: BLE001 — 스레드가 조용히 죽으면 그 줄이 성공처럼 보인다
+                with lock:
+                    first = not fail
+                    fail.append((F.UNKNOWN, f"{items[0].lane}", f"{items[0].lane} 줄 오류 {type(exc).__name__}: {exc}"))
+                if first:
+                    self.executor.safe_stop(f"{items[0].lane} 줄 오류 {type(exc).__name__}: {exc}")
+
+        threads = [threading.Thread(target=guarded, args=(items,), daemon=True, name=f"lane_{side}")
+                   for side, items in lanes.items()]
+        for th in threads:
+            th.start()
+        for th in threads:
+            th.join()
+        if not fail:
+            return results, F.NONE, "", ""
+        # 안전 코드(SAFETY: 가드 · 제어기 · 관측 …)가 있으면 그것이 노드 코드 — 나머지 사유는 뒤에 붙인다
+        top = next((f for f in fail if f[0] in SAFETY), fail[0])
+        return results, top[0], top[1], " | ".join([top[2], *(f[2] for f in fail if f is not top)])
 
     def _placed_retry(self, node: Node, code: FailureCode) -> bool:
         """★10.28 사람이 놓은 물체 다시 찍기(confirm 바로 뒤 snapshot objects)를 못 찾음 · 상자 밖으로 실패 — 상한 안이면 참."""
@@ -332,6 +455,8 @@ class EpisodeManager:
         return w
 
     def _recover(self, node: Node, code: FailureCode) -> str:
+        if node.type == "lanes":                        # ★11.08 줄 노드 — 재시도 · 되돌아가기 · continue_on_fail 없이 정지
+            return self._fail(node, code, f"{self.last.get('reason') or code.value} — 줄 노드는 복구 없이 정지(다른 줄도 멈춤)")
         n = self.attempts.get(node.id, 0)
         rec: Recovery = self.recovery.decide(self.ep, node, code, n, self.world, self.checkpoints)
         self._log("recovery", node, result=rec.action, termination_reason=rec.reason, checkpoint=rec.checkpoint)
@@ -383,6 +508,8 @@ class EpisodeManager:
 
     def _next_node(self) -> None:
         self.index += 1
+        while self.node is not None and self.node.lane:   # ★11.08 줄 항목은 lanes 노드가 돌았다
+            self.index += 1
         self.node_since = time.time()
 
     def _confirm(self, node: Node) -> str:
@@ -461,12 +588,24 @@ class EpisodeManager:
             return f"물체 배치 기록 {', '.join(on_table)}"
         if node.type == "confirm":
             return f"확인: {node.text}"
+        if node.type == "lanes":
+            return " | ".join(f"{side} 팔: " + " → ".join(self._lane_item(n) for n in self.ep.nodes
+                                                       if n.group == node.id and n.lane == side)
+                              for side in ("right", "left")) + f" | {LANES_WARN}"
         if node.type == "hand":
             what = {"open": "손 펴기(팔 제자리)", "grasp": "닿을 때까지 닫고 쥔 판정(팔 제자리)"}[node.action]
             return f"{what} · {', '.join(node.sides)}"
         return " + ".join(f"{j.role}({self.ep.policies[j.role].policy or '정책 없음'}"
                           + (f", {j.target_object or j.source_object}" if (j.target_object or j.source_object) else "")
                           + (f" → {j.target_holder}" if j.target_holder else "") + ")" for j in node.jobs)
+
+    def _lane_item(self, n: Node) -> str:
+        if n.type == "trajectory":
+            return f"{n.id}(궤적 {n.name})"
+        return f"{n.id}(" + ", ".join(f"{j.role}={self.ep.policies[j.role].policy or '정책 없음'}"
+                                      + (f" → {j.target_object or j.source_object}" if (j.target_object or j.source_object) else "")
+                                      + (f" · 가드 {j.lift_guard[0]}({j.lift_guard[1]:.0f} mm · {j.lift_guard[2]} m)"
+                                         if j.lift_guard else "") for j in n.jobs) + ")"
 
     @staticmethod
     def _signal_rows(results) -> dict:
