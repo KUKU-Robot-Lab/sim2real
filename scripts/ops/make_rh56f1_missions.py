@@ -1024,15 +1024,13 @@ def _episode_run(name: str, real: bool) -> list:
                                   "--y", xy[1], "--z", "0.29", "--topic", t, *follow],
                                  background=True))
         # ★10.22 홀더 자세 파일이 있으면 fake 홀더도 그 자세 — 실행기도 같은 파일을 같은 토픽에 낸다(두 발행이 어긋나지 않게)
-        from policy_control.episode_ros import load_holder_poses
-        real_h = load_holder_poses(REPO / ep.holder_poses) if ep.holder_poses else {}
+        # ★11.08 파일은 PC 마다 다시 재는 gitignore 파일이라 생성 때 굽지 않고 발행기가 실행 때 읽는다(없으면 학습 배치 값)
         for hid in sorted(set(ep.holders.values())):
-            hx, hy, hz = ((float(real_h[hid][0][0]), float(real_h[hid][0][1]), float(real_h[hid][0][2])) if hid in real_h
-                          else (0.38, FAKE_HOLDER_Y[hid], 0.235))
             cmds.append(_cmd(f"fake 홀더 {hid} — /objects/cup_holder_{hid}/pose (latched"
-                             + (f", {ep.holder_poses} 자세)" if hid in real_h else ")"),
-                             ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--latched", "--rate", "2", "--x", f"{hx:.4f}",
-                              "--y", f"{hy:.4f}", "--z", f"{hz:.4f}", "--topic", f"/objects/cup_holder_{hid}/pose"],
+                             + (f", {ep.holder_poses} 자세 · 없으면 x 0.38)" if ep.holder_poses else ")"),
+                             ["python3", "{repo}/scripts/fakes/fake_cup_pose_pub.py", "--latched", "--rate", "2", "--x", "0.3800",
+                              "--y", f"{FAKE_HOLDER_Y[hid]:.4f}", "--z", "0.2350", "--topic", f"/objects/cup_holder_{hid}/pose",
+                              *(["--holder-file", ep.holder_poses, "--holder-id", str(hid)] if ep.holder_poses else [])],
                              background=True))
     first_obj = next(iter(ep.objects))
     sides = sorted(_episode_sides(ep))

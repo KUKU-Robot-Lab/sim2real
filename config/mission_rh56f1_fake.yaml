@@ -2434,7 +2434,7 @@ run:
     - --topic
     - /objects/source240b_blue/live_pose
     background: true
-  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -2442,13 +2442,17 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '-0.0612'
+    - '-0.0020'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_1/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '1'
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -2603,7 +2607,7 @@ run:
     - --topic
     - /objects/shaker_c_orange/live_pose
     background: true
-  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -2611,13 +2615,17 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '-0.0612'
+    - '-0.0020'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_1/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '1'
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -4510,7 +4518,7 @@ run:
     - --topic
     - /objects/source240b_blue/live_pose
     background: true
-  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -4518,13 +4526,17 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '-0.0612'
+    - '-0.0020'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_1/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '1'
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -4693,7 +4705,7 @@ run:
     - --topic
     - /objects/shaker_c_orange/live_pose
     background: true
-  - note: fake 홀더 0 — /objects/cup_holder_0/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 0 — /objects/cup_holder_0/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -4701,13 +4713,17 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '0.1632'
+    - '0.1530'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_0/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '0'
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -5168,7 +5184,7 @@ run:
     - --topic
     - /objects/shaker_c_orange/live_pose
     background: true
-  - note: fake 홀더 0 — /objects/cup_holder_0/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 0 — /objects/cup_holder_0/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -5176,15 +5192,19 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '0.1632'
+    - '0.1530'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_0/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '0'
     background: true
-  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -5192,15 +5212,19 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '-0.0612'
+    - '-0.0020'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_1/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '1'
     background: true
-  - note: fake 홀더 2 — /objects/cup_holder_2/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 2 — /objects/cup_holder_2/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -5208,13 +5232,17 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '-0.2792'
+    - '-0.1610'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_2/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '2'
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -5539,7 +5567,7 @@ run:
     - --topic
     - /objects/shaker_c_orange/live_pose
     background: true
-  - note: fake 홀더 0 — /objects/cup_holder_0/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 0 — /objects/cup_holder_0/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -5547,15 +5575,19 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '0.1632'
+    - '0.1530'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_0/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '0'
     background: true
-  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -5563,15 +5595,19 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '-0.0612'
+    - '-0.0020'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_1/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '1'
     background: true
-  - note: fake 홀더 2 — /objects/cup_holder_2/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 2 — /objects/cup_holder_2/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -5579,13 +5615,17 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '-0.2792'
+    - '-0.1610'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_2/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '2'
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -5910,7 +5950,7 @@ run:
     - --topic
     - /objects/shaker_c_orange/live_pose
     background: true
-  - note: fake 홀더 0 — /objects/cup_holder_0/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 0 — /objects/cup_holder_0/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -5918,15 +5958,19 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '0.1632'
+    - '0.1530'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_0/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '0'
     background: true
-  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -5934,15 +5978,19 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '-0.0612'
+    - '-0.0020'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_1/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '1'
     background: true
-  - note: fake 홀더 2 — /objects/cup_holder_2/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 2 — /objects/cup_holder_2/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -5950,13 +5998,17 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '-0.2792'
+    - '-0.1610'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_2/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '2'
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -6285,7 +6337,7 @@ run:
     - --topic
     - /objects/shaker_c_orange/live_pose
     background: true
-  - note: fake 홀더 0 — /objects/cup_holder_0/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 0 — /objects/cup_holder_0/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -6293,15 +6345,19 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '0.1632'
+    - '0.1530'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_0/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '0'
     background: true
-  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -6309,15 +6365,19 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '-0.0612'
+    - '-0.0020'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_1/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '1'
     background: true
-  - note: fake 홀더 2 — /objects/cup_holder_2/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 2 — /objects/cup_holder_2/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -6325,13 +6385,17 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '-0.2792'
+    - '-0.1610'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_2/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '2'
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -7262,7 +7326,7 @@ run:
     - --topic
     - /objects/shaker_c_orange/live_pose
     background: true
-  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세)
+  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -7270,13 +7334,17 @@ run:
     - --rate
     - '2'
     - --x
-    - '0.3793'
+    - '0.3800'
     - --y
-    - '-0.0612'
+    - '-0.0020'
     - --z
     - '0.2350'
     - --topic
     - /objects/cup_holder_1/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '1'
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:

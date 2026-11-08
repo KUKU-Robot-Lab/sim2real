@@ -97,7 +97,19 @@ def main() -> None:
     ap.add_argument("--contract", default="", help="손바닥 FK 계약(기본 config/hand/rh56f1_<side>_hand.json)")
     ap.add_argument("--robot-yaml", default="deploy/policy_control/config/robots/rh56f1_bi_fake.yaml",
                     help="/joint_states 이름 · 부호 프로필(저장소 기준)")
+    ap.add_argument("--holder-file", default="", help="홀더 자세 파일(저장소 기준). 그 안에 --holder-id 가 있으면 x·y·z 를 덮는다")
+    ap.add_argument("--holder-id", type=int, default=-1)
     args = ap.parse_args()
+    if args.holder_file:
+        # ★11.08 PC 마다 다른 측정 파일을 미션에 굽지 않고 실행 때 읽는다(실행기도 같은 파일을 같은 토픽에 낸다)
+        import sys
+        from pathlib import Path
+        repo = Path(__file__).resolve().parents[2]
+        sys.path.insert(0, str(repo / "deploy" / "policy_control"))
+        from policy_control.episode_ros import load_holder_poses
+        h = load_holder_poses(repo / args.holder_file).get(args.holder_id)
+        if h is not None:
+            args.x, args.y, args.z = (float(v) for v in h[0])
     r = hz = 0.0
     if args.orbit:
         r, hz = (float(v) for v in args.orbit.split(","))
