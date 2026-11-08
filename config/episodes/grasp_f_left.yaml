@@ -8,7 +8,7 @@ episode: {name: grasp_f_left, version: 1}
 objects:
   CUP: {topic: /objects/shaker_c_orange/pose}
 policies:
-  rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg04}
+  rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg04, cup_obs_offset_base_m: [0.0028, 0.0283, 0.0046]}   # 11.07 cocktail_1c_e4000 rh_aglt_l 과 같은 값(11.04 L2 측정)
 trajectories:
   go_home: {kind: rehome, sides: [left]}
 failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 rehome으로 복구한다.
