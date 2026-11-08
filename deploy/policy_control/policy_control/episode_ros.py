@@ -61,6 +61,27 @@ PLACE_JUDGE_WAIT_S = 1.0          # ★11.02 놓기 판정은 정책 stop 뒤 �
                                   #   놓기 전(손에 든) 영상으로 PLACE_FAILED 를 내던 것(sim_e2e 재현 dz 65~73 mm). sim 은 nodes.py 0.7 s
 SNAPSHOT_MIN_FRAMES = 5
 LIFT_RISE_MIN_M = 0.07            # ★10.19 1-B lift 판정 — 손바닥 10 cm 중 컵이 7 cm 넘게(결정 10 의 7 cm 위와 같은 선)
+#: ★11.08 들기 가드(guard · hstop)로 멈춘 잡기의 판정(사용자 승인 제안안) — 고정 구간 FP++ live 컵 상승(snapshot 정지 컵 z 기준)이
+#  GUARD_HOLD_RISE_M 이상인 채로 GUARD_HOLD_S(60 틱 @60 Hz) 이어져야 한다. 프레임 사이 GUARD_HOLD_GAP_S 넘게 끊기면 처음부터.
+#  기다림은 GUARD_HOLD_WAIT_S 까지(FP++ live 재등록 끊김 2.8~3.5 s 를 한 번 넘길 만큼). lift_hold 판정은 그대로다.
+GUARD_HOLD_RISE_M = 0.05
+GUARD_HOLD_S = 1.0
+#  ★11.08 리뷰: FP++ live 는 약 11 Hz 로 오지만 같은 값을 두 번씩 보내 값은 약 5.6 Hz(0.18~0.25 s)로 바뀐다(bag 113604 · 151437,
+#  logs/analysis/lift_sweep_1108/live_rate.txt). 같은 값이 반복되는 프레임은 세지 않고, 끊김은 그 두 배인 0.5 s 로 본다.
+GUARD_HOLD_GAP_S = 0.5
+GUARD_HOLD_WAIT_S = 6.0
+#: 손 안 판정 — live 컵 ↔ 손바닥 FK(노드 status lift_guard.palm) 거리 상한. 같은 bag 들린 뒤 실측 0.064~0.084 m
+#  (노드 lift_grasp_palm_m 0.08 은 오프셋 보정 컵 기준이라 원값 live 에는 좁다) + 여유 → 0.12 m. palm 은 0.5 s 안 status 만
+GUARD_HOLD_PALM_M = 0.12
+GUARD_HOLD_PALM_AGE_S = 0.5
+#: 이보다 큰 상승(m)은 FP++ 튐으로 버린다(들기 가드 hstop 0.08 · lift_hold 0.07 의 두 배 넘게)
+GUARD_HOLD_RISE_MAX_M = 0.20
+#: reset 직후 status 로 가드가 켜졌는지 확인 — 기다림 · 자리 허용(plan x · y 와)
+LG_CHECK_WAIT_S = 1.0
+LG_XY_TOL_M = 0.001
+#: 가드 판정 실패 문구 — episode_failure 가 lift_guard_failed(언제나 safe stop)로 나눈다
+GUARD_FAIL_TEXT = "lift_guard hold failed"
+GUARD_STOPS = ("guard:", "hstop:")
 POLICY_MARGIN_S = 10.0            # 정책 에피소드 시간 + 이만큼 안에 이벤트가 안 오면 stop → timeout
 #: ★10.14 실기 183230: FP++ live 추적이 품질 검사(MASK_TOO_SMALL) 3번 실패마다 다시 등록하며 2.8~3.5 s 끊긴다(5~6 s 마다).
 #  정책 reset 은 0.5 s 안에 받은 live 컵만 받아서, 그 사이에 부르면 거부되고 에피소드가 안전 정지했다.
@@ -165,6 +186,11 @@ def job_params(ep: Episode, p, tin: Mapping | None = None) -> dict:
         on = b is not None and b.attach_source == "tin_json"
         out["attach_source"] = "tin_json" if on else ""
         out["tin_json"] = str((tin or {}).get(p.side, "")) if on else ""
+    # ★11.08 들기 가드 — 오른손 잡기(aglt) job 이면 에피소드와 상관없이 늘 넣는다(끄는 job 은 0 · nan 을 명시).
+    #   노드는 reset 에서 읽자마자 끔으로 되돌리므로 값은 그 job 한 번만 쓰인다
+    if p.kind == "aglt" and p.side == "right":
+        g, h, x, y = getattr(p, "lift_guard", None) or (0.0, 0.0, float("nan"), float("nan"))
+        out.update(lift_guard_mm=float(g), lift_hstop_m=float(h), lift_guard_x=float(x), lift_guard_y=float(y))
     return out
 
 
@@ -594,9 +620,14 @@ class RosExecutor:
             ok, why = self._set_params(f"/{node_name}_{side}", params)
             if not ok:
                 return NodeResult("refused", "; ".join(why), role=p.role)
+        t_reset = time.monotonic()
         ok, why = reset_until_cup_fresh(lambda: self._call(f"{NS}/{ns}/episode/reset"), cancelled=self.cancel.is_set)
         if not ok:
             return NodeResult("refused", "; ".join(why), role=p.role)
+        if getattr(p, "lift_guard", None) is not None:    # ★11.08 가드를 요청했으면 노드가 실제로 켰는지 start 전에 본다
+            why = self._lift_guard_on(status_key, p.lift_guard, t_reset)
+            if why:
+                return NodeResult("refused", f"lift_guard: {why}", role=p.role)
         t0 = time.monotonic()                             # 정책 시간 한도는 reset 이 받아들여진 뒤부터 센다
         if p.kind == "aglt" and p.setting is not None:
             with self._lock:
@@ -641,7 +672,89 @@ class RosExecutor:
             return NodeResult("aborted", f"operator stopped the policy node ({reasons})", dur, p.role)
         if "episode time" in reasons:
             return NodeResult("timeout", reasons, dur, p.role, self._signals(p, st))
-        return NodeResult("completed", reasons, dur, p.role, self._signals(p, st))
+        sig = self._signals(p, st)
+        if p.kind == "aglt" and any(str(r).startswith(GUARD_STOPS) for r in ev.get("reasons", [])) and not sig.get("dropped"):
+            ok, why, hold = self._guard_hold(p, status_key)   # 떨어뜨렸으면(dropped) 판정 없이 episode_failure 가 OBJECT_DROPPED 로
+            sig = {**sig, **hold, "guard_hold_ok": ok}
+            if not ok:                                # GRASP_FAILED(되돌아가 손 펴기)가 아니라 lift_guard_failed — 언제나 safe stop
+                return NodeResult("aborted", f"{GUARD_FAIL_TEXT}: {why} ({reasons})", time.monotonic() - t0, p.role, sig)
+        return NodeResult("completed", reasons, dur, p.role, sig)
+
+    def _lift_guard_on(self, status_key: str, want: tuple, since: float) -> str:
+        """★11.08 reset 뒤 노드 status lift_guard 가 요청(plan.lift_guard)과 같은지 — 다르면 거부 사유(빈 문자열 = 켜짐)."""
+        g, h, x, y = (float(v) for v in want)
+        deadline, lg = time.monotonic() + LG_CHECK_WAIT_S, None
+        while time.monotonic() < deadline and not self.cancel.is_set():
+            with self._lock:
+                st = dict(self._status.get(status_key) or {})
+            if float(st.get("_t", 0.0)) > since and st.get("phase") == "armed":
+                lg = st.get("lift_guard") or {}
+                try:
+                    if (lg.get("on") is True and abs(float(lg["x"]) - x) <= LG_XY_TOL_M and abs(float(lg["y"]) - y) <= LG_XY_TOL_M
+                            and abs(float(lg["guard_mm"]) - g) < 0.05 and abs(float(lg["hstop_m"]) - h) < 1e-6):
+                        return ""
+                except (KeyError, TypeError, ValueError):
+                    pass
+            time.sleep(0.05)
+        return (f"reset 뒤 {LG_CHECK_WAIT_S:.0f} s 안에 노드 status 에서 요청한 가드({g:.0f} mm · {h} m · ({x:.4f}, {y:.4f}))가 "
+                f"켜진 것을 못 봤다 — status lift_guard {lg}")
+
+    def _guard_palm(self, status_key: str):
+        with self._lock:
+            st = dict(self._status.get(status_key) or {})
+        palm = (st.get("lift_guard") or {}).get("palm")
+        if palm is None or time.monotonic() - float(st.get("_t", 0.0)) > GUARD_HOLD_PALM_AGE_S:
+            return None
+        return np.asarray(palm, float)
+
+    def _guard_hold(self, p, status_key: str = "") -> tuple[bool, str, dict]:
+        """★11.08 가드 · 높이 정지 뒤 고정 구간 — FP++ live 컵이 손 안(손바닥 FK 와 GUARD_HOLD_PALM_M 안)에서 상승
+        GUARD_HOLD_RISE_M 이상인 채 GUARD_HOLD_S 이어지면 성공. 같은 값 반복 프레임은 세지 않고, 상승이 GUARD_HOLD_RISE_MAX_M
+        넘는 프레임은 튐으로 버린다. 값이 바뀐 프레임 사이 GUARD_HOLD_GAP_S 넘게 끊기면 처음부터."""
+        name = p.target_object
+        z0 = None if p.object_pose is None else float(p.object_pose[0][2])
+        if not name or name not in self._live or z0 is None:
+            return False, f"FP++ live {name!r} 또는 reset 컵 z 없음", {"guard_hold_rise_min_m": None, "guard_hold_s": 0.0}
+        t_stop = time.monotonic()
+        seen: set = set()
+        prev = run0 = last = None
+        best, rise_min, n_rep, n_out, n_far = 0.0, None, 0, 0, 0
+        rises: list = []
+        while time.monotonic() - t_stop < GUARD_HOLD_WAIT_S and not self.cancel.is_set():
+            with self._lock:
+                fr = [f for f in self._live[name] if f[2] >= t_stop and f[2] not in seen]
+            palm = self._guard_palm(status_key)
+            for f in sorted(fr, key=lambda f: f[2]):
+                seen.add(f[2])
+                pos = tuple(float(v) for v in f[0])
+                if pos == prev:                       # FP++ 가 같은 값을 다시 보냈다 — 새 관측이 아니다
+                    n_rep += 1
+                    continue
+                prev = pos
+                rise = pos[2] - z0
+                if not np.isfinite(rise) or rise > GUARD_HOLD_RISE_MAX_M:
+                    n_out += 1
+                    continue
+                rises.append(rise)
+                near = palm is not None and float(np.linalg.norm(np.asarray(pos) - palm[:3])) < GUARD_HOLD_PALM_M
+                n_far += not near
+                good = rise >= GUARD_HOLD_RISE_M and near
+                if not good or (last is not None and f[2] - last > GUARD_HOLD_GAP_S):
+                    run0, rise_min = (f[2], rise) if good else (None, None)
+                elif run0 is None:
+                    run0, rise_min = f[2], rise
+                else:
+                    rise_min = min(rise_min, rise)
+                last = f[2]
+                if run0 is not None:
+                    best = max(best, f[2] - run0)
+                    if best >= GUARD_HOLD_S:
+                        return True, "", {"guard_hold_rise_min_m": round(rise_min, 4), "guard_hold_s": round(best, 2)}
+            time.sleep(0.05)
+        why = (f"FP++ 새 프레임 {len(rises)}개(반복 {n_rep} · 튐 {n_out} · 손바닥 {GUARD_HOLD_PALM_M * 100:.0f} cm 밖/모름 {n_far}) · "
+               f"상승 ≥ {GUARD_HOLD_RISE_M * 100:.0f} cm 최장 {best:.2f} s < {GUARD_HOLD_S} s"
+               + (f" · 상승 {min(rises) * 100:.1f}~{max(rises) * 100:.1f} cm" if rises else ""))
+        return False, why, {"guard_hold_rise_min_m": None if not rises else round(min(rises), 4), "guard_hold_s": round(best, 2)}
 
     def _wait_node_ready(self, status_key: str, timeout: float = 5.0) -> None:
         """정책 노드 status 가 ok(측정 · 컵이 다 들어옴)일 때까지 잠깐 기다린다 — 안 되면 그대로 reset(거부 사유가 판정한다)."""

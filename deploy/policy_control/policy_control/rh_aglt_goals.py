@@ -97,6 +97,7 @@ class GoalBook:
     freeze: FreezeRule = field(default_factory=FreezeRule)
     lift_dz: float = float("nan")              # 관측 컵 z − 리셋 컵 z
     lift_steps: int = 0                        # (lift_dz > freeze.lift_m AND 쥠) 연속 틱
+    held: bool = False                         # ★11.08 이번 틱 쥠 판정(들기 가드 hstop 이 본다)
 
     @classmethod
     def start(cls, c: A.RaContract, cup_pos: Sequence[float], cup_quat: Sequence[float],
@@ -152,6 +153,7 @@ class GoalBook:
         kp_g = A.keypoints(c, self.current, self.quat)
         self.kp_dist = float(np.linalg.norm(kp_c - kp_g, axis=1).max())
         held = grasped(c, tactile_n) if is_grasped is None else bool(is_grasped)
+        self.held = held
         self.lift_dz = float(np.asarray(cup_pos, float)[2] - self.cup_reset[2])
         if not fresh:
             return False

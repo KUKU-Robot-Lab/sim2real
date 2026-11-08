@@ -34,7 +34,10 @@ sequence:
   - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
   - {id: scene, type: snapshot}                                     # 파랑 · 분홍 · shaker — 분홍이 상자 밖이면 여기서 정지
   # 1) 파랑 붓기 — 분홍은 탁자에 서 있다
-  - {id: grasp_blue, type: policy, name: rh_aglt_r, target_object: SRC_BLUE, policy_object: source240_real, expect: {right_hand: SRC_BLUE}}
+  # ★11.08 사용자 "일단 넣어주고": 들기 가드 G40H8(sim 1108_lift_guard G40H8_h120) — 들며 옆으로 도는 팔 · 손이 탁자 위 분홍에
+  #   40 mm 안으로 오거나 컵이 8 cm 넘게 들려 쥔 채면 정책을 멈추고 직전 목표로 붙든다. 분홍 잡기 · 왼손에는 켜지 않는다
+  - {id: grasp_blue, type: policy, name: rh_aglt_r, target_object: SRC_BLUE, policy_object: source240_real,
+     lift_guard: {object: SRC_PINK, guard_mm: 40, hstop_m: 0.08}, expect: {right_hand: SRC_BLUE}}
   - {id: grasp_shaker, type: policy, name: rh_aglt_l, target_object: SHAKER, policy_object: shaker_c_real,
      expect: {right_hand: SRC_BLUE, left_hand: SHAKER}}
   - {id: to_tilt_start_r1, type: trajectory, name: to_tilt_start_r}

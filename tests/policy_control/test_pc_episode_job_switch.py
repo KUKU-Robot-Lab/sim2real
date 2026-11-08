@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+import math
+
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,6 +27,15 @@ PINK_LIVE = "/objects/source240p_pink/live_pose"
 NO_TIN = {"attach_source": "", "tin_json": ""}    # ★11.07 place job 마다 늘 넣는다(빈 값 = 계약 그대로)
 
 
+def _lg_off(params: dict) -> dict:
+    """★11.08 오른손 잡기 job 은 들기 가드 4개를 늘 보낸다(끔 = 0 · nan) — 끔인지 보고 뺀 나머지."""
+    lg = {k: params[k] for k in ("lift_guard_mm", "lift_hstop_m", "lift_guard_x", "lift_guard_y") if k in params}
+    if lg:
+        assert lg["lift_guard_mm"] == 0.0 and lg["lift_hstop_m"] == 0.0, lg
+        assert math.isnan(lg["lift_guard_x"]) and math.isnan(lg["lift_guard_y"]), lg
+    return {k: v for k, v in params.items() if k not in lg}
+
+
 def _plan(ep, node_id: str):
     node = next(n for n in ep.nodes if n.id == node_id)
     (plan,) = EpisodeManager._plans(SimpleNamespace(ep=ep), node, SimpleNamespace(objects={}))
@@ -35,7 +46,7 @@ def _plan(ep, node_id: str):
 @pytest.mark.parametrize("name", ["cocktail_1", "cocktail_1b"])
 def test_each_job_gets_its_own_cup_and_holder(name):
     ep = S.load(EPISODES / f"{name}.yaml")
-    got = {nid: job_params(ep, _plan(ep, nid))
+    got = {nid: _lg_off(job_params(ep, _plan(ep, nid)))
            for nid in ("grasp_blue", "grasp_shaker", "place_blue", "grasp_pink", "place_pink", "place_shaker")}
     assert got == {"grasp_blue": {"object": "source240_real", "cup_topic": BLUE_LIVE},
                    "grasp_shaker": {"object": "shaker_c_real", "cup_topic": "/objects/shaker_c_orange/live_pose"},
@@ -76,7 +87,7 @@ def test_a_refused_param_set_stops_before_reset():
     me, calls = _runner(ep, set_reply=(False, ["/rh_aglt_node_right/set_parameters: 서비스가 없다"]))
     r = RosExecutor._policy(me, _plan(ep, "grasp_pink"))
     assert r.status == "refused" and "서비스가 없다" in r.reason
-    assert calls == [("set", "/rh_aglt_node_right", {"object": "source240_real", "cup_topic": PINK_LIVE})]
+    assert [(c[0], c[1], _lg_off(c[2])) for c in calls] == [("set", "/rh_aglt_node_right", {"object": "source240_real", "cup_topic": PINK_LIVE})]
 
 
 def test_the_param_set_sends_the_holder_tolerance_as_a_double():
@@ -133,7 +144,7 @@ def test_after_a_switch_the_live_cup_reset_is_refused_as_stale_so_the_runner_ret
     me, _ = _aglt(BLUE_LIVE, PINK_LIVE)
     me.__dict__.update(_drain=lambda: None, attach={}, gates={}, dropouts={}, cup_fresh=set(), cup_latch=False,
                        cup_hold_last=True, book=SimpleNamespace(phase="armed"), _fresh_cup=lambda role: None,
-                       _reply=lambda res, ok, why: (ok, why))
+                       _reply=lambda res, ok, why: (ok, why), _take_lift_guard=lambda: (0.0, 0.0, math.nan, math.nan))
     me._switch_cups = lambda: PourFjNode._switch_cups(me)
     ok, why = PourFjNode._srv_reset(me, None, None)
     assert not ok and RESET_CUP_STALE_TEXT in why[0] and me.book.phase == "idle"

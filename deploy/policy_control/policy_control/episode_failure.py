@@ -44,11 +44,12 @@ class FailureCode(str, Enum):
     CONTROLLER_ERROR = "controller_error"
     OBSERVATION_ERROR = "observation_error"
     OPERATOR_DECLINED = "operator_declined"
+    LIFT_GUARD_FAILED = "lift_guard_failed"     # ★11.08 들기 가드 — 켜짐 확인 · 계산 · 정지 뒤 고정 구간 판정 실패
     UNKNOWN = "unknown"
 
 
 F = FailureCode
-SAFETY = (F.CONTROLLER_ERROR, F.OBSERVATION_ERROR, F.UNKNOWN, F.OPERATOR_DECLINED)
+SAFETY = (F.CONTROLLER_ERROR, F.OBSERVATION_ERROR, F.UNKNOWN, F.OPERATOR_DECLINED, F.LIFT_GUARD_FAILED)
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,9 @@ def _side_code(side: str, right: FailureCode, left: FailureCode) -> FailureCode:
 
 #: 거부 · 중단 사유 문구 → 실패(정책 노드 · pd · 노드 측정의 실제 문구, 소문자로 찾는다)
 _REASON_RULES = (
+    # ★11.08 들기 가드(reset 거부 'lift_guard:' · 틱 'lift_guard tick:' · 판정 'lift_guard hold failed') — 맨 앞: 손을 편 채
+    #   되돌아가는 GRASP_FAILED 가 아니라 언제나 safe stop(분홍 옆에서 컵을 든 채 멈춘 상태일 수 있다)
+    (("lift_guard",), "lift_guard"),
     (("holder pose missing",), "holder"),
     (("컵 자세가 없다", "cup pose missing", "goal comes from the cup", "cup outside region"), "target"),   # ★10.28 region 밖
     (("not grasped",), "grasp"),
@@ -79,6 +83,8 @@ def _from_reason(reason: str, b: Binding | None, side: str | None = None) -> Fai
     r = reason.lower()
     for keys, kind in _REASON_RULES:
         if any(k.lower() in r for k in keys):
+            if kind == "lift_guard":
+                return F.LIFT_GUARD_FAILED
             if kind == "holder":
                 return F.HOLDER_NOT_FOUND
             if kind == "target":
@@ -121,7 +127,8 @@ class FailureDetector:
         if b.kind == "aglt":
             if s.get("dropped"):
                 return _side_code(side, F.OBJECT_DROPPED_RIGHT, F.OBJECT_DROPPED_LEFT)
-            lifted = LIFT_HOLD_REASON in (res.reason or "")
+            # ★11.08 들기 가드로 멈춘 잡기는 고정 구간 FP++ 상승 판정(episode_ros._guard_hold)을 통과했을 때만 들기 성공과 같다
+            lifted = LIFT_HOLD_REASON in (res.reason or "") or s.get("guard_hold_ok") is True
             # ★10.13 실기 223839: 붙지 않은 채 lift_hold 로 끝났으면 그 들림(+7 cm 넘게)은 FP++ 실측 컵이 직접 보인 것이다 —
             #   쥠 실패가 아니다. 이때 live_off_m 은 감시가 뗀 지난 부착의 기록이라 보지 않는다(실행기가 쥠 실패로 보고
             #   9.6 cm 든 컵을 손 펴 떨궜다).

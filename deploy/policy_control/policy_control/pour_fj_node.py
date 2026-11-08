@@ -42,6 +42,7 @@ from policy_control import rh_aglt as A  # noqa: E402
 from policy_control import rh_aglt_goals as G  # noqa: E402
 from policy_control import approach_grasp as AG  # noqa: E402
 from policy_control import inhand_est as IE  # noqa: E402
+from policy_control import lift_guard as LG  # noqa: E402
 from policy_control import rh_place as P  # noqa: E402
 from policy_control.episode_master import EpisodeBook  # noqa: E402
 from policy_control.joint_obs import quat_to_matrix  # noqa: E402
@@ -92,6 +93,19 @@ START_SPAWN_TOL_M = 0.02
 #: ★10.20 arm_start ready(rcg_02·03) 시작 = 손바닥이 사전 파지 자리(r/R · h 학습 범위)에서 이 거리 안.
 #  ap05 학습 접근 성공 = 사전 파지 점 2 cm 안(approach_succ_pos_m) + FP++ 컵 위치 잡음 1 cm 쯤 → 3 cm.
 READY_POSE_TOL_M = 0.03
+#: ★11.08 들기 가드 노드 파라미터와 끔 값 — reset 이 읽자마자 이 값으로 되돌린다(한 번만 쓰임)
+LG_PARAMS_OFF = (("lift_guard_mm", 0.0), ("lift_hstop_m", 0.0), ("lift_guard_x", float("nan")), ("lift_guard_y", float("nan")))
+#: ★11.08 높이 정지는 이 틱 수 연속일 때만 — 실기 FP++ 잡음 한 프레임으로 멈추지 않게
+LG_HSTOP_TICKS = 5
+
+
+def _finite(v):
+    """status JSON 용 — 비유한 float 은 None(★11.08 들기 가드 칸)."""
+    if isinstance(v, (list, tuple)):
+        return [_finite(x) for x in v]
+    if isinstance(v, float) and not np.isfinite(v):
+        return None
+    return v
 
 
 class PourFjNodeError(RuntimeError):
@@ -463,6 +477,8 @@ class PourFjNode(LeanNodeMixin, Node):
                               ("hand_unfreeze_on_grasp", False), ("thumb_support_g", 0.0), ("lift_grasp_palm_m", 0.0),
                               ("thumb_open_floor_rad", 0.0), ("approach_grasp", ""), ("handoff_contract", ""),
                               ("cup_obs_offset_base_m", [0.0, 0.0, 0.0]),
+                              # ★11.08 들기 가드(sim G40H8) — 0 = 끔. 에피소드 실행기가 job 마다 넣는다(분홍 x · y = scene snapshot)
+                              ("lift_guard_mm", 0.0), ("lift_hstop_m", 0.0), ("lift_guard_x", float("nan")), ("lift_guard_y", float("nan")),
                               ("hand_squeeze", False), ("squeeze_trigger_frac", A.GripAssist.squeeze_trigger_frac),
                               ("squeeze_near_m", A.GripAssist.squeeze_near_m), ("squeeze_rate_rad_s", A.GripAssist.squeeze_rate_rad_s),
                               ("squeeze_boost_rad", A.GripAssist.squeeze_boost_rad),
@@ -502,6 +518,8 @@ class PourFjNode(LeanNodeMixin, Node):
         if self.cup_obs_offset.any() and family != "rh_aglt":
             raise PourFjNodeError(f"cup_obs_offset_base_m 는 rh_aglt(접근 · 잡기)만 — 이 노드는 {family}")
         self._offset_status = {}
+        self._lg, self._lg_clear, self._lg_stop, self._lg_min, self._lg_last = LG.GuardCfg(), None, None, None, {}   # ★11.08 들기 가드
+        self._lg_hcount = 0
         if family == "rh_aglt":
             self.get_logger().info(cup_offset_log_line(self.cup_obs_offset))
             self._offset_status = {"cup_obs_offset_base_m": [round(float(v), 5) for v in self.cup_obs_offset]}
@@ -509,7 +527,7 @@ class PourFjNode(LeanNodeMixin, Node):
         self.srcs = {r: SourceSet(select_side(cfg, self.contract.sides[r].side)) for r in self.fam.roles}
         self.arm_names = {r: tuple(select_side(cfg, self.contract.sides[r].side).sources["arm"].joints)
                           for r in self.fam.roles}
-        urdf = ASSETS[self.contract.asset].urdf
+        urdf = self._urdf = ASSETS[self.contract.asset].urdf
         self.fk = {r: UrdfChainFK(urdf, s.arm_joints, s.hand_joints, s.palm_body, s.tip_bodies)
                    for r, s in self.contract.sides.items()}
         self.device, self._policy = str(p("device")), policy
@@ -753,6 +771,12 @@ class PourFjNode(LeanNodeMixin, Node):
         self.get_logger().info(f"episode {event.episode} {event.event} {list(event.reasons)}")
 
     def _srv_reset(self, _req, res):
+        try:                                       # ★11.08 가드 값은 맨 먼저 읽고 끈다 — 아래에서 거부돼도 다음 reset 에 남지 않게
+            lg_raw = self._take_lift_guard()
+        except PourFjNodeError as exc:
+            if self.book.phase == "armed":
+                self.book.phase = "idle"
+            return self._reply(res, False, [f"reset: {exc}"])
         self._switch_cups()                        # ★10.28 이번 job 의 물체(실행기가 reset 전에 cup_topic 을 넣는다)
         self._drain()
         for est in self.attach.values():           # 새 에피소드 — 컵은 다시 FP++ 부터
@@ -787,6 +811,7 @@ class PourFjNode(LeanNodeMixin, Node):
                 if hasattr(self.chain, "grasp_cfg") and self.attach:
                     self.chain.grasp_cfg = self.attach_cfg
             self._reset_chain(meas)                     # margin 계약은 meas 의 손 실측각이 q*_0(없으면 측정에서 이미 거부)
+            self._reset_lift_guard(lg_raw)              # ★11.08 들기 가드(노드 파라미터 lift_guard_*, 위에서 읽고 끔)
             q0 = getattr(self.chain.dec, "hand_q0", None) if hasattr(self.chain, "dec") else None
             if q0:
                 self.get_logger().info(f"인계 손 q*_0(실측) { {r: [round(float(v), 3) for v in q] for r, q in q0.items()} }")
@@ -856,6 +881,103 @@ class PourFjNode(LeanNodeMixin, Node):
         self._handoff = (path, c, policy)
         self.get_logger().info(f"경로 D: 사전 파지 자리에서 {path.parent.name} 로 넘김(계약 {path})")
         return c, policy
+
+    def _take_lift_guard(self) -> tuple:
+        """★11.08 들기 가드 파라미터를 읽고 곧바로 끔 값(LG_PARAMS_OFF)으로 되돌린다 — 실행기가 job 마다 넣은 값은 그 reset 한 번만
+        쓰인다(다음 job · 콘솔 수동 reset 에 이전 값이 남지 않는다). 지난 에피소드의 가드도 여기서 끈다."""
+        self._lg, self._lg_stop, self._lg_min, self._lg_last, self._lg_hcount = LG.GuardCfg(), None, None, {}, 0
+        raw = tuple(self.get_parameter(n).value for n, _ in LG_PARAMS_OFF)
+        from rclpy.parameter import Parameter
+        bad = [r.reason for r in self.set_parameters([Parameter(n, value=v) for n, v in LG_PARAMS_OFF]) if not r.successful]
+        if bad:
+            raise PourFjNodeError(f"lift_guard: 파라미터를 끔으로 되돌리지 못했다 {bad}")
+        return raw
+
+    def _reset_lift_guard(self, raw: tuple) -> None:
+        """★11.08 들기 가드 — 잘못된 값 · 분홍 자리 없음 · 메쉬를 못 읽음 · 가드를 받지 못하는 체인(lift_grasp_palm_m 없음) ·
+        cup_latch 와 높이 정지는 reset 거부(조용히 끄지 않는다)."""
+        try:
+            cfg = LG.GuardCfg(float(raw[0]) / 1000.0, float(raw[1]), float(raw[2]), float(raw[3]))
+            if cfg.on and not hasattr(self.chain, "lift_grasp_palm_m"):
+                raise LG.LiftGuardError(f"이 체인({type(self.chain).__name__})은 들기 가드를 받지 않는다(lift_grasp_palm_m 없음)")
+            if cfg.guard_m > 0 and self.contract.sides["arm"].side != "right":
+                raise LG.LiftGuardError(f"메쉬 링크(LINKS)는 오른팔뿐 — 이 노드는 {self.contract.sides['arm'].side}")
+            if cfg.hstop_m > 0 and getattr(self, "cup_latch", False):
+                raise LG.LiftGuardError("cup_latch(reset 컵 고정)에서는 컵 상승을 볼 수 없다 — 높이 정지(lift_hstop_m)를 쓰지 않는다")
+            if cfg.guard_m > 0 and self._lg_clear is None:
+                self._lg_clear = LG.Clearance(self.fk["arm"], self._urdf)
+        except (ValueError, OSError, LG.ET.ParseError, KeyError, IndexError, AttributeError, TypeError) as exc:
+            raise PourFjNodeError(f"lift_guard: {exc}") from exc     # LiftGuardError 는 ValueError
+        self._lg = cfg
+        if cfg.on:
+            self.get_logger().info(f"들기 가드 {cfg.guard_m * 1e3:.0f} mm · 높이 정지 {cfg.hstop_m} m({LG_HSTOP_TICKS} 틱) · "
+                                   f"분홍 중심 {np.round(cfg.center, 4).tolist()}")
+
+    def _lg_view(self) -> dict:
+        """status lift_guard — idle 포함 늘 싣는다(실행기가 reset 직후 켜졌는지 · 자리를 확인한다)."""
+        g = getattr(self, "_lg", None) or LG.GuardCfg()
+        return {"on": g.on, "guard_mm": round(g.guard_m * 1e3, 1), "hstop_m": g.hstop_m,
+                "x": _finite(round(float(g.x), 4)), "y": _finite(round(float(g.y), 4))}
+
+    def _lg_palm(self, meas: dict) -> dict:
+        """가드가 켜져 있으면 손바닥 FK(base m) — 정지 뒤 고정 구간 판정(episode_ros._guard_hold)이 live 컵과의 거리를 본다."""
+        m = meas.get("arm") if getattr(self, "_lg", None) is not None and self._lg.on else None
+        if m is None or getattr(m, "palm_pos", None) is None:
+            return {}
+        return {"lift_guard": {"palm": [round(float(v), 4) for v in np.asarray(m.palm_pos, float)[:3]]}}
+
+    def _lift_guard_tick(self, meas: dict, names=(), q=()) -> dict:
+        """★11.08 sim lg_hook G40H8 — 틈 < guard(실측 관절 · 이 틱 명령 관절 중 작은 쪽, 비유한이면 바로) 또는
+        (컵 상승 > hstop AND 쥠)이 LG_HSTOP_TICKS 연속이면 이번 틱에 정책을 멈춘다(_after_step). 멈춘 틱은 목표를 내지 않는다."""
+        self._lg_stop = None
+        if not self._lg.on:
+            return {}
+        t0 = time.perf_counter()
+        m, g = meas["arm"], getattr(self.chain, "goals", None)
+        info = self._lg_palm(meas).get("lift_guard", {})
+        if self._lg.guard_m > 0 and self._lg_clear is not None:   # hstop 만 켠 job 은 틈을 재지 않는다
+            fk = self.fk["arm"]
+            cmd = dict(zip(names, np.asarray(q, float).tolist()))
+            miss = [j for j in fk.arm_joints if j not in cmd]
+            if miss:
+                raise LG.LiftGuardError(f"이 틱 명령에 팔 관절 {miss} 가 없다")
+            hand = [m.hand_q[j] for j in fk.hand_joints]
+            dm, lm = self._lg_clear(m.arm_q, hand, self._lg.center)
+            dc, lc = self._lg_clear([cmd[j] for j in fk.arm_joints], [cmd.get(j, h) for j, h in zip(fk.hand_joints, hand)],
+                                    self._lg.center)
+            bad = [(d, k) for d, k in ((dm, lm), (dc, lc)) if not np.isfinite(d)]
+            d, link = bad[0] if bad else min((dm, lm), (dc, lc))
+            if not bad and (self._lg_min is None or d < self._lg_min[0]):
+                self._lg_min = (d, link)
+            info.update(clear_mm=round(d * 1e3, 1), clear_meas_mm=round(dm * 1e3, 1), clear_cmd_mm=round(dc * 1e3, 1), link=link,
+                        min_clear_mm=None if self._lg_min is None else round(self._lg_min[0] * 1e3, 1))
+            if bad:
+                self._lg_stop = "guard: nonfinite clearance"
+            elif self._lg.guard_m > 0 and d < self._lg.guard_m:
+                self._lg_stop = f"guard: clear {d * 1e3:.1f} mm < {self._lg.guard_m * 1e3:.0f} mm at {link}"
+        dz = float("nan") if g is None else float(g.lift_dz)
+        info["rise_m"] = round(dz, 4) if np.isfinite(dz) else None
+        if self._lg.hstop_m > 0 and g is None:
+            info["goals_none"] = True           # 표시만 — 접근 중 goals 가 없으면 높이 정지는 걸리지 않는다
+        if self._lg.hstop_m > 0 and g is not None and not np.isfinite(dz):
+            info["rise_nonfinite"] = True        # 표시만 — 높이 정지는 유한한 상승으로만 센다
+        up = (self._lg.hstop_m > 0 and g is not None and np.isfinite(dz) and dz > self._lg.hstop_m and g.held
+              and self.cup_fresh.get("arm", True))     # 붙든(ZOH) 컵 값으로 멈추지 않는다(인사이트 held-obs-fake-success)
+        self._lg_hcount = self._lg_hcount + 1 if up else 0
+        info["hstop_ticks"] = self._lg_hcount
+        if self._lg_stop is None and self._lg_hcount >= LG_HSTOP_TICKS:
+            self._lg_stop = f"hstop: cup {dz:+.3f} m above reset (> {self._lg.hstop_m}) and grasped {self._lg_hcount} ticks"
+        info["lg_ms"] = round((time.perf_counter() - t0) * 1e3, 2)
+        return {"lift_guard": info}
+
+    def _lg_suffix(self, why: str) -> str:
+        """멈춘 이유 뒤에 붙이는 기록 — stop(lift_hold | guard | hstop | 그 밖) · 그 틱 틈 · 가장 가까운 링크 · 컵 상승."""
+        if not self._lg.on:
+            return why
+        kind = next((k for k in ("lift_hold", "guard", "hstop") if why.startswith(k + ":")), "other")
+        st = self._lg_last
+        return (f"{why} [lift_guard stop={kind} clear_mm={st.get('clear_mm')} link={st.get('link')} "
+                f"rise_m={st.get('rise_m')} min_clear_mm={st.get('min_clear_mm')}]")
 
     def _reset_chain(self, meas: dict) -> None:
         if hasattr(self.chain, "object_name"):          # ★10.12 rh_aglt 다물체 정책 — reset 때 파라미터 object 로 물체를 고른다
@@ -957,9 +1079,10 @@ class PourFjNode(LeanNodeMixin, Node):
             self._end(*ag.end)
             return True
         why = G.end_reason(getattr(self.chain, "goals", None), bool(self.get_parameter("stop_on_target").value),
-                         int(self.get_parameter("goal_max").value))
+                         int(self.get_parameter("goal_max").value)) or self._lg_stop   # ★11.08 lift_hold 와 OR
         if why is None:
             return False
+        why = self._lg_suffix(why)
         self._inhand_capture(why)       # ★10.21 들기 성공 끝 = 넘김 시점 — grasp_state 묶음(sim grasp_handover_hook _capture)
         self._end("stop", why)          # pd 가 끝난 순간의 q_setpoint · 마지막 손 목표로 붙든다(pd_arm.on_episode)
         return True
@@ -1003,15 +1126,16 @@ class PourFjNode(LeanNodeMixin, Node):
                 **({"fpp_gate": {r: g.as_dict() for r, g in self.gates.items()}} if self.gates else {}),
                 **({"cup_dropout": {r: d.as_dict() for r, d in self.dropouts.items()}} if getattr(self, "dropouts", None) else {}),
                 **self._status_extra(), **self._offset_status,
-                "t_pub_ns": self.get_clock().now().nanoseconds, **(extra or {})}
+                "t_pub_ns": self.get_clock().now().nanoseconds, **(extra or {}),
+                "lift_guard": {**self._lg_view(), **{k: _finite(v) for k, v in ((extra or {}).get("lift_guard") or {}).items()}}}
         self._pub_status.publish(self._String(data=json.dumps(body)))
 
     def _on_tick(self) -> None:
         self._drain()
         if self.book.phase != "running" or self.chain is None:
             try:
-                self._measure()
-                self._status(True, list(self._errors.values()))
+                meas = self._measure()
+                self._status(True, list(self._errors.values()), self._lg_palm(meas))   # ★11.08 정지 뒤 손바닥(가드 켰을 때)
             except self.fam.errors as exc:
                 self._status(False, [*self._errors.values(), str(exc)])
             return
@@ -1039,12 +1163,19 @@ class PourFjNode(LeanNodeMixin, Node):
             return
         self._gap = 0
         self._seq += 1
+        try:
+            lg = self._lift_guard_tick(meas, names, q)
+        except Exception as exc:                    # ★11.08 가드를 못 재면 정책을 더 돌리지 않는다(pd 가 지금 목표를 붙든다)
+            self._status(False, [f"lift_guard tick: {exc}"])
+            self._end("abort", f"lift_guard tick: {type(exc).__name__}: {exc}")
+            return
+        self._lg_last = lg.get("lift_guard", {})
         self._pub_obs.publish(codec.encode_float_array(obs, ["obs"], [obs.size], self._seq))
         self._pub_action.publish(codec.encode_action(action, self._seq))
-        if self._publish:
+        if self._publish and self._lg_stop is None:   # ★11.08 가드가 멈춘 틱은 새 목표를 내지 않는다 — 직전 목표를 붙든다
             self._pub_target.publish(codec.encode_joint_target(names, q, qd, str(self.book.episode), self._seq))
         self._status(True, [], {"proc_ms": (time.perf_counter() - t0) * 1e3, "step": self.chain.step_i,
-                                "hold": self.chain.step_i <= self.contract.hold_steps})
+                                "hold": self.chain.step_i <= self.contract.hold_steps, **lg})
         if self._after_step():
             return
         if self.max_s > 0 and time.monotonic() - self._t_start >= self.max_s:
