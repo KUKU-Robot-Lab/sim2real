@@ -48,7 +48,7 @@ CONTROL_EPISODES = {'grasp_b': '1-B 제어 모듈(정책 없음) — FP++ 컵 �
                     'grasp_f': '경로 F — ap05 접근 → 사전 파지 자리에서 같은 노드가 rcg04 로 넘겨 쥐고 10 cm 들기(확인 노드 없음)',
                     # ★11.08 사용자 "핑크랑 주황도 바로" — 경로 F 와 같은 정책 · 값, 물체만 바꿈(오른팔만)
                     'grasp_fo': '경로 F 주황 shaker — ap05 접근 → rcg04 넘겨 쥐고 10 cm 들기(물체 shaker_c_orange)',
-                    'grasp_fk': '경로 F 분홍 병 — ap05 접근 → rcg04 넘겨 쥐고 10 cm 들기(물체 source240p_pink)',
+                    'grasp_fk': '경로 F 분홍 src200 — ap05 접근 → rcg04 넘겨 쥐고 10 cm 들기(물체 source200_pink)',
                     # ★10.22 사용자 "Place 세팅 진행" — 경로 F 뒤 newton_05 놓기(붙인 자세 = 잡기의 grasp_state 넘김 묶음)
                     'pick_place_f': '경로 F + 놓기 — 경로 F 로 쥐고 들기 → newton_05 가 홀더에 놓고 팔을 뺌 → 홈(확인 노드 없음)'}
 #: 실행 기록 · 오류 글의 이름

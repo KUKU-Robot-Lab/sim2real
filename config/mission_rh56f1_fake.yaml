@@ -4717,7 +4717,7 @@ run:
     - episode_grasp_fo_right#1
     - episode_grasp_fo_right#0
   episode_grasp_fk_right:
-  - note: fake 물체 — /objects/source240p_pink/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source200_pink/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -4728,9 +4728,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240p_pink/pose
+    - /objects/source200_pink/pose
     background: true
-  - note: fake 물체 — /objects/source240p_pink/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source200_pink/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -4741,7 +4741,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240p_pink/live_pose
+    - /objects/source200_pink/live_pose
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -4791,7 +4791,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240p_pink/live_pose
+    - cup_topic:=/objects/source200_pink/live_pose
     - -p
     - cup_static:=false
     - -p

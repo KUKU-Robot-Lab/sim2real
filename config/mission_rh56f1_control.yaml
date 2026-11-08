@@ -317,7 +317,7 @@ stages:
   skippable: true
   touches_real: true
   blocked: 'tilt 정책은 보류(10.07 사용자: 성공 전 정책은 직접 확인 뒤 · 10.17 기본 궤적은 에피소드 tilt_base_*) — 실기 인지는 10.08 부터 색으로 두 컵(source240b_blue=오른팔 · shaker_c_orange=왼팔
-    · source240p_pink)을 낸다'
+    · source200_pink · source240p_pink)을 낸다'
   needs:
   - home_right
   - home_left
@@ -5014,13 +5014,13 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240p_pink 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+  - note: FP++ 물체 확보 — source200_pink 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240p_pink
+    - source200_pink
     - --wait
     - '120'
     - --require-all
@@ -5063,7 +5063,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240p_pink/live_pose
+    - cup_topic:=/objects/source200_pink/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -5114,7 +5114,7 @@ run:
     - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240p_pink/pose /objects/source240p_pink/live_pose /policy_control/pd_right/applied
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source200_pink/pose /objects/source200_pink/live_pose /policy_control/pd_right/applied
       /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_fk_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
