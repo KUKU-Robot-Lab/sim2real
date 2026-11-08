@@ -1380,6 +1380,20 @@ run:
     - --execute
     - --approve
     - pd_goto_home
+  - note: '[right] 손을 차렷 손(주먹)으로(pd/hand_path) — 엄지를 크게 돌려야 다음 홈 손 자세에 들어간다'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - right
+    - --only
+    - pd_hand_path
+    - --service-timeout
+    - '15'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_hand_path
   - note: '[right] 손을 계약 홈 손 자세로(pd/hand_home — 팔이 홈에 정착했을 때만 받는다)'
     argv:
     - python3
@@ -1678,6 +1692,20 @@ run:
     - --execute
     - --approve
     - pd_goto_home
+  - note: '[left] 손을 차렷 손(주먹)으로(pd/hand_path) — 엄지를 크게 돌려야 다음 홈 손 자세에 들어간다'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - left
+    - --only
+    - pd_hand_path
+    - --service-timeout
+    - '15'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_hand_path
   - note: '[left] 손을 계약 홈 손 자세로(pd/hand_home — 팔이 홈에 정착했을 때만 받는다)'
     argv:
     - python3

@@ -768,6 +768,11 @@ def _run(kind: str) -> dict:
                  ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_goto_home", "--service-timeout", "45"],
                  execute_args=["--execute", "--approve", "pd_goto_home"]),
             # ★11.08 rehome 은 손을 펴기만 해 엄지가 1.31 로 남았다(home 1.57) → 다음 경로 F 0/5. home 과 같은 손 자세로
+            # ★11.08 편 손에서 바로 hand_home 을 주면 엄지 thumb_1 이 남은 0.19 rad 를 못 가고 1.38 에 멈춘다(명령 853 · 실측 962).
+            #   주먹(엄지 0.8)을 거쳐 크게 움직이면 1.57(852)까지 간다 — home_<팔> 과 같은 순서
+            _cmd(f"[{s}] 손을 차렷 손(주먹)으로(pd/hand_path) — 엄지를 크게 돌려야 다음 홈 손 자세에 들어간다",
+                 ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_hand_path", "--service-timeout", "15"],
+                 execute_args=["--execute", "--approve", "pd_hand_path"]),
             _cmd(f"[{s}] 손을 계약 홈 손 자세로(pd/hand_home — 팔이 홈에 정착했을 때만 받는다)",
                  ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_hand_home", "--service-timeout", "15"],
                  execute_args=["--execute", "--approve", "pd_hand_home"]),
