@@ -219,7 +219,7 @@ def test_experiments_view_reads_the_chain_from_the_episode_files():
     v = XV.view(ROOT, ids)
     assert not v.get('error')
     items = {i['id']: i for i in v['items']}
-    assert [i['key'] for i in v['items'] if i['group'] == 'grasp'] == ['1-B', 'C', 'D', 'E', 'F', 'FP']
+    assert [i['key'] for i in v['items'] if i['group'] == 'grasp'] == ['1-B', 'C', 'D', 'E', 'F', 'F주황', 'F분홍', 'FP']
     assert [i['key'] for i in v['items'] if i['group'] == 'tilt'] == ['D', 'C', 'B']
     f = items['grasp_f']['sides']['right']
     assert [(s['kind'], s['text']) for s in f['steps']] == [('policy', 'ap05'), ('handoff', '넘김'), ('policy', 'rcg04')]

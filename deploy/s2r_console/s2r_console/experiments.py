@@ -18,6 +18,7 @@ ARMS = ("right", "left")
 #: (화면 키, 에피소드 머리, 이름) — 한 팔 파지 · 들기. 머리는 actions.CONTROL_EPISODES 의 키와 같다(시험이 맞춘다).
 GRASP = (("1-B", "grasp_b", "1-B"), ("C", "grasp_c", "경로 C"), ("D", "grasp_d", "경로 D"),
          ("E", "grasp_e", "경로 E"), ("F", "grasp_f", "경로 F"),
+         ("F주황", "grasp_fo", "경로 F 주황 shaker"), ("F분홍", "grasp_fk", "경로 F 분홍 병"),   # ★11.08 오른팔만
          ("FP", "pick_place_f", "경로 F + 놓기"))     # ★10.22 잡고 들기 → newton_05 놓기
 CONTROL_PREFIX = "ctl_"
 SIDE_KO = {"right": "오른팔", "left": "왼팔"}

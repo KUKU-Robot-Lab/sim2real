@@ -85,6 +85,8 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             "grasp_e_right", "grasp_e_left",
             # ★10.21 경로 F — 경로 E 와 같은 넘김, 넘겨받는 정책만 rcg04(사용자 "ap05 + rcg_04 또한 준비 필요")
             "grasp_f_right", "grasp_f_left",
+            # ★11.08 사용자 "핑크랑 주황도 바로" — 경로 F 오른팔, 물체만 shaker 주황(fo) · source240 분홍(fk)
+            "grasp_fo_right", "grasp_fk_right",
             # ★10.22 사용자 "Place 세팅 진행" — 경로 F 잡고 들기 → 놓기(붙인 자세 = 잡기의 grasp_state 넘김 묶음)
             #   ★10.27 결정 1: 놓기 newton_05 → 오른손 n07 · 왼손 n06(ready_carry 이송 뒤 놓기, sim A1 확인)
             "pick_place_f_right", "pick_place_f_left",

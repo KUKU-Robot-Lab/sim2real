@@ -102,6 +102,7 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                "episode_grasp_d_right#5",                       # ★10.20 경로 D(1-B 접근 → rcg03)
                                "episode_grasp_e_right#5",                       # ★10.20 밤 경로 E(ap05 → rcg03 넘김)
                                "episode_grasp_f_right#5",                       # ★10.21 경로 F(ap05 → rcg04 넘김)
+                               "episode_grasp_fo_right#5", "episode_grasp_fk_right#5",   # ★11.08 경로 F 주황 shaker · 분홍 병
                                "episode_grasp_s_right#6",                       # ★11.05 경로 S(깊이 학생, 머리 깊이 노드가 #3)
                                "episode_grasp_m_right#8",                       # ★11.07 경로 M(마스크 검사 #3 · 머리 깊이 #4 · 마스크 #5 뒤)
                                "episode_pick_place_f_right#5",                  # ★10.22 경로 F + 놓기(newton_05)
@@ -133,7 +134,8 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                                               f"episode_grasp_f_{side}#8",   # ★10.21 경로 F(경로 E + rcg04)
                                                               f"episode_grasp_s_{side}#9",   # ★11.05 경로 S(머리 깊이 + 학생 노드)
                                                               f"episode_grasp_m_{side}#11",  # ★11.07 경로 M(경로 S + 마스크 검사 · 마스크 노드)
-                                                              f"episode_pick_place_f_{side}#9"}   # ★10.22 경로 F + 놓기
+                                                              f"episode_pick_place_f_{side}#9",   # ★10.22 경로 F + 놓기
+                                                              *(("episode_grasp_fo_right#8", "episode_grasp_fk_right#8") if side == "right" else ())}   # ★11.08 경로 F 주황 · 분홍(오른팔만)
 
 
 def test_one_arms_pd_without_and_with_publishing_is_one_box_and_only_the_quiet_one_mutes_the_drive(real):
@@ -148,7 +150,12 @@ def test_an_input_only_one_stage_uses_names_that_stage(real):
     _, _, d = real
     into = {(w.src, w.topic): w for w in d.wires if w.dst == "rh_aglt_node_right"}
     # 10.12 사용자(A안): 단독 · 에피소드 모두 쥘 때까지 FP++ live 컵을 직접 받는다 — snapshot 재발행(/episode/objects) 은 안 받는다
-    assert not into[("object_pose", f"/objects/{_ACTIVE['sides']['right']}/live_pose")].units                  # 세 단계 모두
+    # ★11.08 경로 F 주황 · 분홍(grasp_fo · grasp_fk)만 다른 컵의 live 를 받는다 — 나머지 단계는 모두 활성 컵 live
+    other = {"episode_grasp_fo_right#5": "shaker_c_orange", "episode_grasp_fk_right#5": "source240p_pink"}
+    active = into[("object_pose", f"/objects/{_ACTIVE['sides']['right']}/live_pose")].units
+    assert active and not set(active) & set(other)
+    for unit, obj in other.items():
+        assert unit in into[("object_pose", f"/objects/{obj}/live_pose")].units
     assert not [k for k in into if k[1].startswith("/episode/objects/")]
     assert not into[("hand_right_state", "/hand_right/joint_states")].units                       # 둘 다 쓴다 — 언제나
 
