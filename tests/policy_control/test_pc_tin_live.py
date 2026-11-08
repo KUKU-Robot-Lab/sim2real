@@ -177,10 +177,10 @@ def test_cocktail_place_jobs_get_the_tin_json_of_their_arm():
     assert ep.tin_fallback == "deploy/policy_control/config/tilt/traj_v12_240/ref/tin_fixed_1107.json"
     plans = [p for n in ep.nodes for p in EpisodeManager._plans(SimpleNamespace(ep=ep), n, SimpleNamespace(objects={}))
              if p.kind == "place"]
-    got = {p.role: job_params(ep, p, {"right": "run/tin_tilt_blue_right.json"}) for p in plans}
+    got = {p.role: job_params(ep, p, {"right": "run/tin_tilt_blue_right.json", "left": "run/tin_tilt_pink_left.json"}) for p in plans}
     assert [p.role for p in plans].count("rh_place_r") == 2                       # 파랑 · 분홍 놓기
     assert got["rh_place_r"]["attach_source"] == "tin_json" and got["rh_place_r"]["tin_json"] == "run/tin_tilt_blue_right.json"
-    assert all(g["attach_source"] == "" == g["tin_json"] for r, g in got.items() if r != "rh_place_r")   # 왼손 shaker 놓기는 계약
+    assert got["rh_place_l"]["attach_source"] == "tin_json" and got["rh_place_l"]["tin_json"] == "run/tin_tilt_pink_left.json"   # ★11.08 왼손 shaker 도
     # 앞 에피소드가 tin_json 이어도 바인딩 없는 다음 에피소드의 같은 노드엔 빈 값이 간다(노드에 남은 경로를 덮는다)
     import dataclasses
     plain = dataclasses.replace(ep, policies={**ep.policies, "rh_place_r": dataclasses.replace(ep.policies["rh_place_r"], attach_source=None)})

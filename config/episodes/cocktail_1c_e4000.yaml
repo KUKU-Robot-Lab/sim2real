@@ -21,7 +21,7 @@ policies:
   rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg04, cup_obs_offset_base_m: [0.0028, 0.0283, 0.0046]}   # 11.04 정지 자세 L2(잡기 직전), logs/analysis/frame_offset_1104/measure2
   # ★11.07 붙인 자세 = tilt 직전 정지 창 실측 T_in(묶음은 tilt 직전과 28~37 mm · 컵 기울기 10° 넘게 어긋났다, logs/analysis/tilt_tin_1107)
   rh_place_r: {policy: rh56f1/place/right_n10_e4000, kind: place, side: right, attach_source: tin_json}
-  rh_place_l: {policy: rh56f1/place/left_n09_e3800, kind: place, side: left}
+  rh_place_l: {policy: rh56f1/place/left_n09_e3800, kind: place, side: left, attach_source: tin_json}   # ★11.08 사용자 "왼손도 미리 넣어둬" — 붙인 자세 = tilt 직전 실측 T_in_l(셰이커, 실패면 tin_fallback T_in_l)
 trajectories:
   go_home: {kind: rehome, sides: [right, left]}
   go_home_r: {kind: rehome, sides: [right]}                         # 왼손은 shaker 를 든 채
