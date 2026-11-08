@@ -767,6 +767,10 @@ def _run(kind: str) -> dict:
             _cmd(f"[{s}] 정책 시작 자세에서 정착 — 이제 policy_aglt_{s} · return_{s} · 에피소드를 다시 돌릴 수 있다",
                  ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_goto_home", "--service-timeout", "45"],
                  execute_args=["--execute", "--approve", "pd_goto_home"]),
+            # ★11.08 rehome 은 손을 펴기만 해 엄지가 1.31 로 남았다(home 1.57) → 다음 경로 F 0/5. home 과 같은 손 자세로
+            _cmd(f"[{s}] 손을 계약 홈 손 자세로(pd/hand_home — 팔이 홈에 정착했을 때만 받는다)",
+                 ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_hand_home", "--service-timeout", "15"],
+                 execute_args=["--execute", "--approve", "pd_hand_home"]),
             _tip_zero(s),
         ]
         hid = PLACE_HOLDER[s]

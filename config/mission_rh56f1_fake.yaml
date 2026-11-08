@@ -1233,6 +1233,20 @@ run:
     - --execute
     - --approve
     - pd_goto_home
+  - note: '[right] 손을 계약 홈 손 자세로(pd/hand_home — 팔이 홈에 정착했을 때만 받는다)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - right
+    - --only
+    - pd_hand_home
+    - --service-timeout
+    - '15'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_hand_home
   - note: '[right] 손끝 촉각 · 관절 힘 영점(/hand_right/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 관절 힘은 sd > 5 g · |평균| > 400 g 면 거부, 30 g 넘게 옮겨 가면
       받고 경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/rh56f1_tip_zero'
     argv:
@@ -1512,6 +1526,20 @@ run:
     - --execute
     - --approve
     - pd_goto_home
+  - note: '[left] 손을 계약 홈 손 자세로(pd/hand_home — 팔이 홈에 정착했을 때만 받는다)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - left
+    - --only
+    - pd_hand_home
+    - --service-timeout
+    - '15'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_hand_home
   - note: '[left] 손끝 촉각 · 관절 힘 영점(/hand_left/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 관절 힘은 sd > 5 g · |평균| > 400 g 면 거부, 30 g 넘게 옮겨 가면 받고
       경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/rh56f1_tip_zero'
     argv:
