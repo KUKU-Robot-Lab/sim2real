@@ -108,7 +108,7 @@ def test_each_trial_captures_then_rebases_then_runs_the_rebased_plan(tuning, con
     d = m.describe("tune_right", {"folder": NAME})
     cap, reb, run = (" ".join(c["argv"]) for c in d["commands"][3:])
     rdir = re.search(r"--out (\S+)/capture", cap).group(1)
-    assert f"/{NAME}/setup/rebase/t1_" in rdir and "--side right --seconds 2" in cap
+    assert f"/{NAME}/setup/rebase/t1_" in rdir and "--side right --settle-s 3 --seconds 2" in cap
     assert f"--snapshot {rdir}/capture/snapshot.json" in reb and f"--out {rdir}/plan" in reb
     assert f"--plan {rdir}/plan/plan.json" in run and f"--out {TU.ROOT}/{NAME}/runs/t1" in run
 

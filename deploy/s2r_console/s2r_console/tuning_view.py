@@ -67,7 +67,7 @@ def commands(side: str, test: tuple, folder: str, remaining: list | None = None)
         "trials": (f"E=analysis/friction/{folder}; for t in {' '.join(remaining) if remaining else '$(cat $E/setup/trials.txt)'}; do "
                    "R=$E/setup/rebase/${t}_$(date +%y%m%d-%H%M%S); "
                    f"{DDS} .venv/bin/python deploy/policy_control/tools/stationary_tracking.py capture "
-                   f"--side {side} --seconds 2 --out $R/capture && "
+                   f"--side {side} --settle-s 3 --seconds 2 --out $R/capture && "
                    ".venv/bin/python analysis/friction/common/scripts/rebase_trial.py --plan $E/setup/plan/plan.json "
                    "--snapshot $R/capture/snapshot.json --trial $t --out $R/plan && "
                    f"{DDS} .venv/bin/python deploy/policy_control/tools/stationary_tracking.py run "
@@ -116,7 +116,7 @@ def plan(repo: Path, side: str, name) -> dict:
         R = f"{E}/setup/rebase/{t}_a{_attempt(repo / ROOT / name / 'setup/rebase', t):02d}"
         trials.append({"id": t, "plan": f"{R}/plan/plan.json",
                        "capture": _sh(f".venv/bin/python deploy/policy_control/tools/stationary_tracking.py capture "
-                                      f"--side {side} --seconds 2 --out {q(f'{R}/capture')}"),
+                                      f"--side {side} --settle-s 3 --seconds 2 --out {q(f'{R}/capture')}"),
                        "rebase": _sh(f".venv/bin/python analysis/friction/common/scripts/rebase_trial.py "
                                      f"--plan {q(f'{E}/setup/plan/plan.json')} --snapshot {q(f'{R}/capture/snapshot.json')} "
                                      f"--trial {q(t)} --out {q(f'{R}/plan')}"),

@@ -82,7 +82,21 @@ def save_npz(path: Path, rows: list[dict]) -> None:
                  header_stamp_ns=np.array([-1 if r["header_stamp_ns"] is None else r["header_stamp_ns"]
                                            for r in rows], dtype=np.int64),
                  topic=np.array([r["topic"] for r in rows], dtype=str),
-                 event_json=np.array([json.dumps(r, ensure_ascii=False, separators=(",", ":")) for r in rows], dtype=str))
+                 # 고정폭 str 배열은 가장 긴 줄(/robot_description) x 행 수로 부풀어 2 s 캡처가 1.3 GB 였다(11.09).
+                 # UTF-8 바이트를 이어 붙이고 줄 끝 위치만 둔다: event_bytes[ends[i-1]:ends[i]] 가 i 번째 JSON.
+                 **_packed_json(rows))
+
+
+def _packed_json(rows: list[dict]) -> dict:
+    blobs = [json.dumps(r, ensure_ascii=False, separators=(",", ":")).encode() for r in rows]
+    return {"event_bytes": np.frombuffer(b"".join(blobs), dtype=np.uint8),
+            "event_ends": np.cumsum([len(b) for b in blobs], dtype=np.int64)}
+
+
+def npz_event(data, i: int) -> dict:
+    """save_npz 로 쓴 i 번째 이벤트."""
+    ends = data["event_ends"]
+    return json.loads(data["event_bytes"][(ends[i - 1] if i else 0):ends[i]].tobytes())
 
 
 def selftest() -> None:
@@ -96,7 +110,7 @@ def selftest() -> None:
         save_npz(p, [r, r2])
         with np.load(p, allow_pickle=False) as data:
             assert data["header_stamp_ns"].tolist() == [7_000_000_012, -1]
-            assert json.loads(data["event_json"][0]) == r
+            assert npz_event(data, 0) == r and npz_event(data, 1) == r2
         try:
             save_npz(p, [])
         except FileExistsError:

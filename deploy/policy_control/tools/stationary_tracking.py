@@ -147,6 +147,10 @@ def analyze(args):
 
 
 def capture(args):
+    # engage 직후·이전 trial 복귀 직후의 팔은 아직 처지는 중이다 — 찍은 뒤 시작 전까지 0.11 deg 넘게 움직이면
+    # run 의 시작 자세 검사(0.002 rad)에 막힌다(11.09 r3). 멈출 시간을 두고 찍는다.
+    if args.settle_s > 0:
+        time.sleep(args.settle_s)
     S.new_run(
         args.out,
         {"urdf": args.urdf},
@@ -761,6 +765,7 @@ def main(argv=None):
             p.add_argument("--side", choices=("right", "left"), default="right")
             p.add_argument("--seconds", type=float, default=15.0)
             p.add_argument("--pose-id", default="captured_pose")
+            p.add_argument("--settle-s", type=float, default=0.0, help="wait before recording (arm sag settles)")
             p.add_argument("--split", choices=("fit", "holdout"), default="fit")
         if mode == "analyze":
             p.add_argument("--side", choices=("right", "left"), default="right")
