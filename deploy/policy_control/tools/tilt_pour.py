@@ -8,7 +8,7 @@
   2. replay_to_pd.py — 두 팔 관절(r_aj_1..7, l_aj_1..7)을 한 시각표로 재생(D4 기본 궤적 + 시작 자세 복귀). 손 목표는 그대로
      (pd 가 붙든 쥔 손). 재생 직전 실측이 계획 자세에서 start_gap_rad 넘게 벗어나면 replay 가 거부한다.
 
-기록: logs/tilt/<날짜_시각>_pour/(q.json · check.json · tilt_cmd.npz · plan_tilt.log) + 실기면 bag(rh56f1_record.sh tilt_pour).
+기록: logs/tilt/<날짜_시각>_pour_<자산>/(meta.json · q.json · check.json · tilt_cmd.npz · plan_tilt.log) + 실기면 bag(rh56f1_record.sh tilt_pour).
 
     python3 deploy/policy_control/tools/tilt_pour.py                  # 계획 · 검사만(움직이지 않음)
     python3 deploy/policy_control/tools/tilt_pour.py --execute        # 검사 통과면 재생
@@ -57,6 +57,24 @@ def fresh_dir(root: Path, tag: str) -> Path:
     return out
 
 
+def asset_tag(asset: Path) -> str:
+    """★11.09 사용자 "tilt v12 등 자료가 뭔지 구분" — 폴더 이름에 자산(궤적 버전) 이름을 넣는다(traj_v12_240 · base_arc6)."""
+    return Path(asset).resolve().name
+
+
+def write_meta(out: Path, **extra) -> None:
+    """런 폴더에 meta.json — git HEAD · dirty · argv · 자산(logs/README.md '새 코드를 쓸 때')."""
+    def git(*args: str) -> str:
+        try:
+            return subprocess.run(["git", "-C", str(SIM2REAL), *args], capture_output=True, text=True, timeout=5).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return ""
+    out.mkdir(parents=True, exist_ok=True)
+    meta = {"git": git("rev-parse", "HEAD"), "dirty": bool(git("status", "--short", "--untracked-files=no")),
+            "argv": sys.argv, "host": os.uname().nodename, "start": time.strftime("%F %T"), **extra}
+    (out / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
 def fail_summary(out: Path) -> str:
     """check.json 의 걸린 항목 — 콘솔 로그에서 rc 만 보이지 않게(10.19 사용자 rc=2)."""
     try:
@@ -78,7 +96,8 @@ def main(argv: list[str] | None = None) -> int:
     cfg = yaml.safe_load((a.asset / "policy.yaml").read_text(encoding="utf-8")) or {}
     rate = float(a.rate_scale if a.rate_scale is not None else cfg.get("rate_scale", 1.0))
     gap = float(cfg.get("start_gap_rad", 0.05))
-    out = fresh_dir(a.out_root, "pour")
+    out = fresh_dir(a.out_root, f"pour_{asset_tag(a.asset)}")
+    write_meta(out, tool="tilt_pour", asset=str(a.asset), rate_scale=rate, execute=a.execute)
     rc = run([sys.executable, str(TOOLS / "plan_tilt.py"), "--asset", str(a.asset), "--out", str(out)])
     if rc != 0:
         print(f"[tilt_pour] 계획 · 검사 rc {rc} — 움직이지 않았다 · 걸린 항목: {fail_summary(out) or '(check.json 없음)'} · "

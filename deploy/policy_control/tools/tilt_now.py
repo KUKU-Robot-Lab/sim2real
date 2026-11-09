@@ -13,7 +13,7 @@ carry)과 같은 두 걸음을 팔마다:
      start_gap_rad 넘게 벗어나면 replay 가 거부한다.
 
 손은 건드리지 않는다(빈손이든 쥔 손이든 그대로 — 손 안 컵 자리를 가상 컵으로 두고 탁자 · 두 팔 사이를 검사한다).
-기록: logs/tilt/<날짜_시각>_setting/carry_<팔>/(check.json · carry_cmd.npz).
+기록: logs/tilt/<날짜_시각>_setting_<자산>/(meta.json) carry_<팔>/(check.json · carry_cmd.npz).
 
     python3 deploy/policy_control/tools/tilt_now.py                 # 계획 · 검사만(왼팔은 오른팔이 끝 자세에 갔다고 보고 계획)
     python3 deploy/policy_control/tools/tilt_now.py --execute       # 오른팔 계획 → 재생 → 왼팔 계획 → 재생
@@ -28,7 +28,7 @@ from pathlib import Path
 
 import yaml
 
-from tilt_pour import ASSET, SIM2REAL, TOOLS, fresh_dir, run
+from tilt_pour import ASSET, SIM2REAL, TOOLS, asset_tag, fresh_dir, run, write_meta
 
 SIDES = ("right", "left")
 ARM_JOINTS = {s: [f"{s[0]}_aj_{i}" for i in range(1, 8)] for s in SIDES}
@@ -85,7 +85,8 @@ def main(argv: list[str] | None = None) -> int:
     cfg = yaml.safe_load((a.asset / "policy.yaml").read_text(encoding="utf-8")) or {}
     gap = float(cfg.get("start_gap_rad", 0.05))
     goal = yaml.safe_load((SIM2REAL / cfg["start_pose"]).read_text(encoding="utf-8"))
-    out = fresh_dir(a.out_root, "setting")
+    out = fresh_dir(a.out_root, f"setting_{asset_tag(a.asset)}")
+    write_meta(out, tool="tilt_now", asset=str(a.asset), sides=list(sides), execute=a.execute)
     q = None if a.execute else current_q()            # 계획만: 앞 팔은 끝 자세에 갔다고 보고 다음 팔을 계획한다
     for k, side in enumerate(sides):
         o = out / f"carry_{side}"

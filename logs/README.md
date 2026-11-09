@@ -51,6 +51,9 @@ logs/exp/<YYMMDD>_<이름>/          예: 261109_friction_right
 - 고정 파일명에 덮어쓰지 않는다. R 종류라면 새 이름으로 만든다.
 - 경로는 repo 루트 기준 절대 경로로 정한다. cwd 에 따라 상대경로 `logs/...` 가 다른 곳을 가리키면 안 된다.
 - 런 폴더에 `meta.json` 을 남긴다: `{"git": HEAD, "dirty": bool, "argv": [...], "host": ..., "start": ...}`.
+- 자산(궤적) 버전이 결과를 가르면 이름에 자산을 넣는다. 지금 적용된 곳(11.09):
+  - `logs/tilt/<시각>_setting_<자산>/`, `logs/tilt/<시각>_pour_<자산>/` (예: `_setting_base_arc6`, `_pour_traj_v12_240`) + `meta.json`
+  - `logs/episode/<시각>_<에피소드>/meta.json` 의 `assets` 에 궤적별 자산 버전(`tilt: tilt/traj_v12_240`)이 남는다. 같은 에피소드 이름이라도 v11·v12 가 여기서 갈린다.
 - 노드 로그가 같은 오류를 반복하면 파일이 GB 단위로 커진다. 오래 띄우는 노드는 로그 크기나 줄 수에 상한을 둔다.
 
 ## 정리 (주 1회 또는 실험을 마칠 때)

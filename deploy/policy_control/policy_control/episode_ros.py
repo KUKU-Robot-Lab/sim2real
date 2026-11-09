@@ -324,6 +324,25 @@ def cup_in_holder(cup_pos, holder_pos, seat_dz: float, xy_tol: float = 0.035, z_
     return bool(np.linalg.norm(c[:2] - h[:2]) < xy_tol and abs(c[2] - (h[2] + seat_dz)) < z_tol)
 
 
+def write_run_meta(run_dir: Path, ep: Episode, robot: str) -> None:
+    """★11.09 사용자 "tilt v12 등 자료가 뭔지 구분" — 런 폴더에 meta.json(git HEAD · 에피소드 · carry/tilt 자산 버전).
+    같은 에피소드 이름이라도 자산이 바뀌면(cocktail_1c_e4000: 11.08 v11 → v12) 여기서 갈린다. 실패해도 런은 계속한다."""
+    def git(*args: str) -> str:
+        try:
+            return subprocess.run(["git", "-C", str(_paths.SIM2REAL), *args], capture_output=True, text=True,
+                                  timeout=5).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return ""
+    assets = {name: t.asset for name, t in ep.trajectories.items() if t.asset}
+    meta = {"git": git("rev-parse", "HEAD"), "dirty": bool(git("status", "--short", "--untracked-files=no")),
+            "argv": sys.argv, "host": os.uname().nodename, "start": time.strftime("%F %T"), "episode": ep.name,
+            "episode_version": ep.version, "episode_path": ep.path, "robot": robot, "assets": assets}
+    try:
+        (run_dir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError:
+        pass
+
+
 class RosExecutor:
     """EpisodeManager 의 실행기 — rclpy 노드(콜백은 다른 스레드의 executor 가 돌린다)를 받아 쓴다."""
 
@@ -344,6 +363,7 @@ class RosExecutor:
         self.sides = tuple(episode_sides(ep)) or SIDES
         self.run_dir = run_dir or (_paths.SIM2REAL / "logs" / "episode" / time.strftime("%Y%m%d_%H%M%S"))
         self.run_dir.mkdir(parents=True, exist_ok=True)
+        write_run_meta(self.run_dir, ep, robot)
         self.contract = str(_paths.SIM2REAL / contract)
         self.cancel = threading.Event()
         self._lock = threading.Lock()
