@@ -208,3 +208,12 @@ def test_second_sigterm_still_publishes_abort_and_writes_manifest(tmp_path, monk
     saved = json.loads((tmp_path / "manifest.json").read_text())
     assert saved["metadata"]["failure"] == "operator_interrupt" and saved["commands_sent"] == count
     assert b.guard is None and b.sink is None
+
+
+def test_analysis_finish_after_direct_run_does_not_join_unstarted_thread(monkeypatch):
+    """11.09 F4 r2: 실패 경로에서 run() 직접 호출 뒤 finish() 가 RuntimeError 로 batch 를 죽였다."""
+    import stationary_batch as B
+    monkeypatch.setattr(B, "analyze_run", lambda *a: None)
+    job = B.Analysis("run_dir")
+    job.run()
+    job.finish()

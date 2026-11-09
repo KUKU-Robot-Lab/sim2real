@@ -168,7 +168,8 @@ class Analysis(threading.Thread):
             self.error = exc
 
     def finish(self):
-        self.join()
+        if self.ident is not None:       # 실패 경로는 run() 을 직접 불러 스레드가 시작되지 않았다
+            self.join()
         if self.error is not None:
             raise RuntimeError(f"analysis of {self.args[0]} failed: {self.error!r}") from self.error
 
@@ -448,7 +449,8 @@ class Batch:
                 raise ValueError("hand posture changed")
             live = {}
             for topic in ("/joint_states", "/head/joint_states", "/hand_left/joint_states", "/hand_right/joint_states"):
-                if now - received.get(topic, 0) <= 0.1:
+                # 머리는 20 Hz 이고 실험 중 움직이지 않는다 — 한 번 늦은 메시지로 trial 을 버리지 않게 0.5 s
+                if now - received.get(topic, 0) <= (0.5 if topic == "/head/joint_states" else 0.1):
                     message = latest[topic]
                     live.update(zip(message.get("name", []), message.get("position", [])))
             for joint in plan["scene_joints"]:
