@@ -22,9 +22,11 @@ ARM_V2 = yaml.safe_load((SITES / "arm_v2.yaml").read_text())
 SPLIT = {"hosts": {"control": {"ip": "192.168.0.50"}, "vision": {"name": "arm4090", "ip": "192.168.0.40"}}}
 
 
-def test_arm_v2_control_pc_checks_its_own_head_and_camera_since_1103():
-    assert "vision" not in ARM_V2["hosts"]
-    assert CH.vision_elsewhere(ARM_V2, {"127.0.0.1", "192.168.0.50", "100.103.21.126"}) is None
+def test_arm_v2_puts_head_and_camera_on_arm4090_again_since_1111():
+    """11.03~11.10 은 5090 이 목 · 카메라를 직접 봤고, ★11.11 다시 4090(hosts.vision) — 5090 은 저 PC 를 기대한다."""
+    away = CH.vision_elsewhere(ARM_V2, {"127.0.0.1", "192.168.0.50", "100.103.21.126"})
+    assert away is not None and away["ip"] == ARM_V2["hosts"]["arm4090"]["ip"]
+    assert CH.vision_elsewhere(ARM_V2, {"127.0.0.1", ARM_V2["hosts"]["arm4090"]["ip"]}) is None
 
 
 def test_control_pc_expects_head_and_camera_on_the_vision_host():

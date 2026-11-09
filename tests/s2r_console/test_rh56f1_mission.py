@@ -29,8 +29,6 @@ REAL_RAW, REAL, REAL_BOOK = _load("mission_rh56f1_control.yaml")
 _ACTIVE = yaml.safe_load((REPO / "config" / "fpp_active.yaml").read_text(encoding="utf-8"))
 ACTIVE_SIDES = _ACTIVE["sides"]
 FAKE_RAW, FAKE, FAKE_BOOK = _load("mission_rh56f1_fake.yaml")
-STUDENT_SKIP = pytest.mark.skipif("episode_place_m_right" not in REAL_RAW["run"],
-                                  reason="★11.11 카메라가 다른 PC(5090_arm4090) — 학생 에피소드(깊이 노드)가 미션에 없다")
 
 
 def _generator():
@@ -66,7 +64,6 @@ def test_the_committed_missions_come_from_the_generator():
 
 
 @pytest.mark.parametrize("side", ["right", "left"])
-@STUDENT_SKIP
 def test_student_approach_does_not_abort_on_fpp_dropout(side):
     cmds = _cmds(REAL, REAL_BOOK, f"episode_grasp_s_{side}")
     node = next(c.argv for c in cmds if any("rh_aglt_student_node.py" in a for a in c.argv))
@@ -81,17 +78,18 @@ def test_student_approach_does_not_abort_on_fpp_dropout(side):
 
 @pytest.mark.parametrize("book", ["real", "fake"])
 @pytest.mark.parametrize("side", ["right", "left"])
-@STUDENT_SKIP
 def test_mask_student_episode_starts_the_mask_node_before_the_policy_node(side, book):
     raw, b = (REAL, REAL_BOOK) if book == "real" else (FAKE, FAKE_BOOK)
     cmds = _cmds(raw, b, f"episode_grasp_m_{side}")
-    at = {k: next(i for i, c in enumerate(cmds) if any(a.endswith(k) for a in c.argv))
+    # ★11.11 카메라가 다른 PC 면 깊이 · 마스크 노드는 ssh 한 줄 안에 있다(상대 경로) — 이름 · 묶음은 문자열로 찾는다
+    has = lambda c, k: any(k in a for a in c.argv)  # noqa: E731
+    at = {k: next(i for i, c in enumerate(cmds) if has(c, k))
           for k in ("check_student_mask_A.py", "head_depth_node.py", "head_mask_node.py", "rh_aglt_student_node.py")}
     assert at["check_student_mask_A.py"] < at["head_mask_node.py"] < at["rh_aglt_student_node.py"]
     assert at["head_depth_node.py"] < at["rh_aglt_student_node.py"]
-    assert f"{REPO}/deploy/policies/rh56f1/aglt/{side}_student1105mA" in cmds[at["head_mask_node.py"]].argv
-    assert sum(any(a.endswith("head_mask_node.py") for a in c.argv) for c in cmds) == 1
-    assert not any(any(a.endswith("head_mask_node.py") for a in c.argv) for c in _cmds(raw, b, f"episode_grasp_s_{side}"))
+    assert has(cmds[at["head_mask_node.py"]], f"deploy/policies/rh56f1/aglt/{side}_student1105mA")
+    assert sum(has(c, "head_mask_node.py") for c in cmds) == 1
+    assert not any(has(c, "head_mask_node.py") for c in _cmds(raw, b, f"episode_grasp_s_{side}"))
 
 
 @pytest.mark.parametrize('partial', [False, True])
@@ -209,7 +207,7 @@ def test_the_console_opens_the_rh56f1_fake_profile_with_its_robot_module(tmp_pat
     try:
         snap = c.snapshot()
         (rh,) = [r for r in snap["robots"] if r["id"] == "openarm_rh56f1"]
-        assert [p["id"] for p in rh["profiles"]] == ["rh56f1_real", "rh56f1_fake"]
+        assert [p["id"] for p in rh["profiles"]] == ["rh56f1_real", "rh56f1_real_cam5090", "rh56f1_fake"]
         s = c.open("rh56f1_fake", operator="pytest")
         assert s.robot is not None and s.robot.id == "openarm_rh56f1"
         assert s.joint_limits.get("r_hj_thumb_1") == pytest.approx((0.0, 2.0944))          # 로봇 모듈의 프로필
@@ -798,7 +796,6 @@ def _drivers(raw):
             if any("head_joint_publisher.py" in str(a) for a in c.get("argv") or [])}   # ★11.11 원격 목은 ssh 한 줄 안에 있다
 
 
-@STUDENT_SKIP
 def test_only_the_place_student_episode_restarts_the_head_driver_with_tilt_82():
     """★11.08 사용자: 목 tilt 상한 82 는 놓기 미션에서만. 드라이버는 포트를 혼자 쥐므로 에피소드가 head_home 것을 내리고
     같은 인자 + --max-tilt 82 로 다시 띄운다. 시작 검사가 먼저 · 마스크 · 학생 노드는 그 뒤."""
@@ -807,7 +804,7 @@ def test_only_the_place_student_episode_restarts_the_head_driver_with_tilt_82():
     # 이름으로 찾는다 — 단계 번호는 에피소드 앞부분(경로 F 접근 등)이 바뀌면 움직인다
     tilt_idx = next(i for i, c in enumerate(run) if "--max-tilt" in (c.get("argv") or []))
     assert drv[f"episode_place_m_right#{tilt_idx}"] == [*drv["head_home#0"], "--max-tilt", "82"]
-    at = {k: next(i for i, c in enumerate(run) if any(str(a).endswith(k) for a in c.get("argv") or []))
+    at = {k: next(i for i, c in enumerate(run) if any(k in str(a) for a in c.get("argv") or []))   # ★11.11 원격은 ssh 한 줄
           for k in ("check_place_student.py", "head_joint_publisher.py", "head_mask_node.py", "rh_place_student_node.py")}
     stop = next(i for i, c in enumerate(run) if (c.get("stop") or [None])[0] == "head_home#0")   # 앞 단계(head_sweep) 드라이버도 같이 내린다
     assert at["check_place_student.py"] < stop < at["head_joint_publisher.py"] < at["head_mask_node.py"] < at["rh_place_student_node.py"]
@@ -819,7 +816,6 @@ def test_only_the_place_student_episode_restarts_the_head_driver_with_tilt_82():
     assert not [k for k in _drivers(FAKE_RAW) if k.startswith("episode_place_m_")]    # fake 는 목 드라이버가 없다
 
 
-@STUDENT_SKIP
 def test_the_place_student_episode_ends_with_the_default_driver_and_head_home():
     """★11.08 리뷰: 82 드라이버가 노드 정지로 내려가면 목 드라이버가 없는데 head_home 완료가 남는다 — 에피소드 끝 꼬리가
     기본 드라이버를 다시 띄우고 head_home(콘솔 확인 --execute)으로 camset 에 되돌린다. 셧다운은 토크 해제 전에 그 드라이버를 내린다."""
@@ -859,7 +855,6 @@ def test_every_other_head_driver_keeps_the_default_tilt_limit():
     assert "head_home#0" in _drivers(REAL_RAW)
 
 
-@STUDENT_SKIP
 def test_place_student_episode_records_the_mask_and_the_head_stream():
     rec = next(c["argv"][-1] for c in REAL_RAW["run"]["episode_place_m_right"] if "rh56f1_record.sh start" in " ".join(c.get("argv") or []))
     for t in ("/head_mask/image", "/head_mask/config", "/head/target_stream", "/head/stream_log"):
@@ -882,3 +877,21 @@ def test_head_sweep_swaps_to_the_82_driver_and_restores_the_default_driver_and_c
     for stage in [st for st in ("episode_place_m_right", "shutdown") if st in REAL_RAW["run"]]:   # ★11.11 학생 에피소드는 카메라가 같은 PC 일 때만
         stop = next(c["stop"] for c in REAL_RAW["run"][stage] if "head_home#0" in (c.get("stop") or []))
         assert {"head_sweep#1", "head_sweep#4"} <= set(stop), stage
+
+
+def test_both_stations_have_a_mission_and_the_student_head_nodes_follow_the_camera():
+    """★11.11 사용자 "5090이든 4090이 둘다 사용 가능하도록": 실기 미션은 스테이션마다 한 벌(카메라 · 목 4090 = 기본,
+    5090 = _cam5090). 학생 깊이 · 마스크 노드는 카메라 PC 에서(4090 이면 ssh), 학생 정책 노드는 늘 이 PC 에서."""
+    assert set(GEN.REAL_MISSIONS) == {"5090_arm4090", "5090"}
+    raws = {st: yaml.safe_load((REPO / rel).read_text(encoding="utf-8")) for st, rel in GEN.REAL_MISSIONS.items()}
+    for st, raw in raws.items():
+        run = raw["run"]
+        assert "episode_grasp_m_right" in run and "episode_place_m_right" in run, st
+        cmds = run["episode_grasp_m_right"]
+        depth = next(c["argv"] for c in cmds if any("head_depth_node.py" in a for a in c.get("argv") or []))
+        node = next(c["argv"] for c in cmds if any("rh_aglt_student_node.py" in a for a in c.get("argv") or []))
+        remote = GEN.STATIONS[st]["perception_host"] != "local"
+        assert (depth[0] == "ssh") == remote, (st, depth)
+        assert node[0] == "{repo}/.venv-student/bin/python", (st, node)
+        rec = next(c["argv"][-1] for c in cmds if "rh56f1_record.sh start" in " ".join(c.get("argv") or []))
+        assert "/head_depth/image" in rec and "/camera/camera/color/image_raw/compressed" not in rec, (st, rec)

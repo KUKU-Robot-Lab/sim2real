@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -280,14 +281,20 @@ STATIONS = {
 #: ★11.03 사용자: 머리 D435i · 목 U2D2 를 5090 에 꽂은 채 두고 FP++ · 정책도 5090 — 사이트 arm_v2(팔 · 손 그대로) 위에서 한 PC 스테이션.
 #   4090 으로 다시 나누면 "5090_arm4090" 으로 바꾸고 사이트에 hosts.vision 을 되살린다.
 #: ★11.11 사용자 "이번엔 4090에서 사용" — 카메라 · 목 USB 를 4090 으로 옮겼다(10.30 구성으로 복귀). 5090 = 팔 · 손 · 정책만.
-ROBOT_PC = "5090_arm4090"
+#: ★11.11 사용자 "5090이든 4090이 둘다 사용 가능하도록" — 실기 미션을 두 벌 만든다(같은 정의, 스테이션만 다르다).
+#   콘솔은 프로필로 고른다: rh56f1_real(카메라 · 목 4090) · rh56f1_real_cam5090(카메라 · 목 5090). 카메라 USB 를 옮긴 쪽을 고른다.
+#   이 모듈 상수는 S2R_RH56F1_STATION 으로 정해지고(기본 5090_arm4090), main 이 다른 스테이션 파일을 하위 프로세스로 만든다.
+REAL_MISSIONS = {"5090_arm4090": "config/mission_rh56f1_control.yaml",
+                 "5090": "config/mission_rh56f1_control_cam5090.yaml"}
+ROBOT_PC = os.environ.get("S2R_RH56F1_STATION", "5090_arm4090")
+if ROBOT_PC not in REAL_MISSIONS:
+    raise SystemExit(f"S2R_RH56F1_STATION={ROBOT_PC!r} — {sorted(REAL_MISSIONS)} 중 하나")
+MISSION_REL = REAL_MISSIONS[ROBOT_PC]
 STATION = STATIONS[ROBOT_PC]
 PERCEPTION_HOST = STATION["perception_host"]
 REMOTE_PERCEPTION = PERCEPTION_HOST != "local"
-#: ★11.11 shortcut: 학생(경로 S · M) 깊이 노드는 카메라와 같은 PC 에서만 돈다(_student_cmds) — 카메라가 다른 PC 면 그 에피소드를
-#   미션에서 뺀다. 4090 용 깊이 노드 실행을 만들면 되살린다.
-if REMOTE_PERCEPTION:
-    EPISODES = tuple(n for n in EPISODES if n not in STUDENT_EPISODES)
+#: ★11.11 학생(경로 S · M · 놓기 학생)은 카메라가 다른 PC 여도 돈다 — 깊이 · 마스크 노드는 카메라 PC 에서(ssh, 랜 DDS 로
+#   160x90 출력만 넘어온다), 학생 정책 노드는 이 PC(팔 · 손 · 컵 live 와 같은 곳)에서.
 CAMERA_EXTRINSICS = STATION["extrinsics"]
 HOLDER_POSES = STATION["holder_poses"]
 #: ★10.30 arm_v2: 목(U2D2)이 다른 PC 에 있으면 목 드라이버 · 토크 해제를 그 PC 에서 돌린다(토픽은 랜 DDS). local = 이 PC
@@ -999,10 +1006,19 @@ def _student_mask(student_id: str) -> bool:
     return bool(card.get("mask"))
 
 
+def _camera_pc_node(venv: str, script: str, *args: str, nice: bool = False) -> list:
+    """학생 머리 노드(깊이 · 마스크) argv — 카메라가 붙은 PC 에서. ★11.11 카메라가 다른 PC(4090)면 ssh -tt 로 그 PC 의 같은 venv
+    (scripts/setup/setup_student_env.sh · setup_venv_yolo.sh 로 만든다)에서 exec — 콘솔이 ssh 를 끝내면(HUP) 노드가 같이 죽는다.
+    common.sh 가 도메인 · 랜 DDS 프로파일(64 MB SHM)을 맞춰 출력(160x90)이 랜으로 이 PC 학생 노드에 온다. args 의 {repo} 는 상대 경로로."""
+    pre = ["nice", "-n", "5"] if nice else []
+    if not REMOTE_PERCEPTION:
+        return [*pre, f"{{repo}}/{venv}/bin/python", f"{{repo}}/{script}", *args]
+    rel = " ".join(a.replace("{repo}/", "") for a in args)
+    return _on_perception_pc(f"exec {' '.join(pre)} {venv}/bin/python {script} {rel}".replace("exec  ", "exec "))
+
+
 def _student_cmds(b, contract: str, robot: str, cup_topic: str, squeeze: bool) -> list:
     """경로 S 노드 둘 — head_depth_node(묶음의 얼린 외부 파라미터 · 목이 그 head_pose 일 때만 깊이) + rh_aglt_student_node."""
-    if REMOTE_PERCEPTION:   # shortcut: 깊이 노드는 카메라와 같은 PC(localhost 영상)에서만 — 카메라를 다른 PC 로 옮기면 그 PC 용 실행을 만든다
-        raise SystemExit(f"경로 S({b.student})는 카메라가 이 PC 에 있는 스테이션만 — ROBOT_PC={ROBOT_PC}")
     from policy_control.student_chain import bundle_limits
     sdir = f"{{repo}}/deploy/policies/{b.student}"
     ap_s, max_s = bundle_limits(b.student)
@@ -1016,7 +1032,7 @@ def _student_cmds(b, contract: str, robot: str, cup_topic: str, squeeze: bool) -
     head = [
         _cmd("머리 깊이 노드(학생 입력 160x90 깊이 + RGB) — 묶음의 얼린 외부 파라미터 md5 를 검사하고, /head/joint_states 가 "
              "그 head_pose(± 4 틱) 밖이거나 낡으면 깊이를 내지 않는다(정책은 깊이 없음으로 멈춘다). 이미 떠 있으면 그대로",
-             ["{repo}/.venv-student/bin/python", "{repo}/scripts/nodes/head_depth_node.py", "--policy-dir", sdir],
+             _camera_pc_node(".venv-student", "scripts/nodes/head_depth_node.py", "--policy-dir", sdir),
              background=True)]
     if mask:   # ★11.07 경로 M — 마스크 노드는 학생 노드보다 먼저(학생은 마스크가 0.2 s 넘게 없으면 멈춘다)
         head = [
@@ -1026,7 +1042,7 @@ def _student_cmds(b, contract: str, robot: str, cup_topic: str, squeeze: bool) -
             *head,
             _cmd("머리 마스크 노드(YOLO11s-seg → 160x90 클래스 비트, /head_mask/image · /head_mask/config) — 묶음 mask.yolo md5 · "
                  "conf · 인스턴스 규칙. 64 MB SHM 프로파일이 없으면 시작 거부. 양손 미션에도 하나만",
-                 ["nice", "-n", "5", "{repo}/.venv-yolo/bin/python", "{repo}/scripts/nodes/head_mask_node.py", "--policy-dir", sdir],
+                 _camera_pc_node(".venv-yolo", "scripts/nodes/head_mask_node.py", "--policy-dir", sdir, nice=True),
                  background=True)]
     return [
         *head,
@@ -1050,7 +1066,7 @@ def _place_student_pre(b, name: str, contract: str, sdir: str, real: bool) -> li
         _cmd(f"시작 검사 — 놓기 학생 묶음({b.side}) ckpt · 외부 파라미터 · check_meta · 목 동역학 · 이 에피소드 목 드라이버 "
              f"--max-tilt ≥ {PLACE_MAX_TILT} · 홀더 CAD · YOLO · 64 MB SHM (읽기만, 불일치 · 묶음 없음이면 실패)",
              ["{repo}/.venv-student/bin/python", "{repo}/scripts/ops/check_place_student.py", "--student-dir", sdir,
-              "--side", b.side, "--contract", contract, "--episode", name]),
+              "--side", b.side, "--contract", contract, "--episode", name, "--mission", "{repo}/" + MISSION_REL]),
         # 드라이버는 포트를 혼자 쥔다 — head_home 것을 내리고 같은 인자 + tilt 상한만 바꿔 띄운다. 에피소드 끝 꼬리가 기본으로 되돌린다
         *([_cmd("목 드라이버 정지(head_home) — 놓기 학생 머리가 tilt 82 까지 쓰므로 상한만 바꿔 다시 띄운다", stop=["head_home#0"]),
            _cmd(f"목 드라이버 — 놓기 에피소드만 --max-tilt {PLACE_MAX_TILT}(속도 · 가속 · 처짐 여유는 기본). "
@@ -1059,7 +1075,7 @@ def _place_student_pre(b, name: str, contract: str, sdir: str, real: bool) -> li
                 [*HEAD_DRIVER_ARGV, "--max-tilt", PLACE_MAX_TILT], background=True)] if real else []),
         _cmd("머리 마스크 노드(YOLO11s-seg → 160x90 클래스 비트, /head_mask/image · /head_mask/config) — 놓기 학생 묶음 mask.yolo md5 · "
              "conf · 인스턴스 규칙. 64 MB SHM 프로파일이 없으면 시작 거부",
-             ["nice", "-n", "5", "{repo}/.venv-yolo/bin/python", "{repo}/scripts/nodes/head_mask_node.py", "--policy-dir", sdir],
+             _camera_pc_node(".venv-yolo", "scripts/nodes/head_mask_node.py", "--policy-dir", sdir, nice=True),
              background=True),
     ]
 
@@ -1076,7 +1092,8 @@ def _place_student_tail() -> list:
 
 def _head_node(c: dict) -> str | None:
     """머리 깊이 · 마스크 노드 스크립트 이름(그 외 None)."""
-    return next((Path(a).name for a in c.get("argv") or [] if a.endswith(("/head_depth_node.py", "/head_mask_node.py"))), None)
+    return next((n for a in c.get("argv") or [] for n in ("head_depth_node.py", "head_mask_node.py")
+                 if f"/{n}" in a or a.endswith(n)), None)       # ★11.11 원격이면 ssh 명령 문자열 안에 있다
 
 
 def _episode_run(name: str, real: bool) -> list:
@@ -1263,9 +1280,12 @@ def _episode_run(name: str, real: bool) -> list:
             cam_topics = (*cam_topics, *MASK_CAMERA_BAG_TOPICS)
         if any(b.student and b.kind == "place" for b in ep.policies.values()):     # ★11.08 놓기 학생 머리 명령 · 드라이버 연속 모드 기록
             extra += ["/head/target_stream", "/head/stream_log"]
-        cam = "" if REMOTE_PERCEPTION else f"CAMERA='{' '.join(cam_topics)}' CAMERA_HZ={cam_hz:g} "
+        # ★11.11 카메라가 다른 PC 여도 학생 에피소드는 학생 입력(160x90 깊이 · 마스크 · 목 관절, 약 3 MB/s)을 싣는다 —
+        #   학생 노드가 어차피 랜으로 받는 토픽이다. 원본 영상(CAMERA_BAG_TOPICS)은 랜을 건너므로 싣지 않는다
+        cam_rec = not REMOTE_PERCEPTION or name in STUDENT_EPISODES
+        cam = f"CAMERA='{' '.join(cam_topics)}' CAMERA_HZ={cam_hz:g} " if cam_rec else ""
         cmds.append(_cmd("기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더"
-                         + ("" if REMOTE_PERCEPTION else
+                         + ("" if not cam_rec else
                             f" + 머리 카메라 bag camera({cam_hz:g} Hz{', 학생 입력만 · 압축 없음' if name in STUDENT_EPISODES else ''})"),
                          ["bash", "-lc", f"{hands}{cam}EXTRA='{' '.join(extra)}' bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh "
                                          f"start episode_{name}"]))
@@ -1284,7 +1304,8 @@ def _episode_run(name: str, real: bool) -> list:
     if real and any(b.student and b.kind == "place" for b in ep.policies.values()):
         cmds.extend(_place_student_tail())
     if real:
-        cmds.append(_cmd("기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손" + ("" if REMOTE_PERCEPTION else " · 카메라") + ")",
+        cam_rec = not REMOTE_PERCEPTION or name in STUDENT_EPISODES
+        cmds.append(_cmd("기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손" + (" · 카메라" if cam_rec else "") + ")",
                          ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop", f"episode_{name}"]))
         if VISION_RECORD and name in REPORT_VIDEO_HZ:   # ★10.19 보고서 사진 · 영상 — 이 단계에서 돈 회마다(아직 안 만든 것)
             cmds.append(_cmd(f"보고서 영상 · 장면 사진 — 카메라 영상({PERCEPTION_HOST}) + 노드 시각 → logs/runs/<날짜>/report_media/<회>"
@@ -1460,10 +1481,24 @@ def render(kind: str) -> str:
     return HEADER[kind] + yaml.safe_dump(mission(kind), allow_unicode=True, sort_keys=False, width=140)
 
 
+def _emit_other(station: str) -> str:
+    """다른 스테이션의 실기 미션 텍스트 — 같은 생성기를 S2R_RH56F1_STATION 으로 다시 돌린다."""
+    import subprocess
+    out = subprocess.run([sys.executable, __file__, "--emit-real"], capture_output=True, text=True,
+                         env={**os.environ, "S2R_RH56F1_STATION": station})
+    if out.returncode != 0:
+        raise SystemExit(f"스테이션 {station} 미션 생성 실패:\n{out.stderr[-2000:]}")
+    return out.stdout
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--check", action="store_true", help="쓰지 않고 커밋된 파일과 비교만")
+    ap.add_argument("--emit-real", action="store_true", help="이 스테이션(S2R_RH56F1_STATION) 실기 미션을 stdout 으로만(main 이 쓴다)")
     args = ap.parse_args(argv)
+    if args.emit_real:
+        sys.stdout.write(render("real"))
+        return 0
     bad = []
     for path, text in f_variant_files().items():          # ★11.09 경로 F 물체 변형 — 미션보다 먼저(미션이 이 파일을 읽는다)
         if args.check:
@@ -1473,8 +1508,11 @@ def main(argv: list[str] | None = None) -> int:
         if not path.exists() or path.read_text(encoding="utf-8") != text:
             path.write_text(text, encoding="utf-8")
             print(f"썼다: {path.relative_to(REPO)}")
-    for kind, path in OUT.items():
-        text = render(kind)
+    outs = {kind: (REPO / MISSION_REL if kind == "real" else path, lambda k=kind: render(k)) for kind, path in OUT.items()}
+    # ★11.11 다른 스테이션 실기 미션 — 모듈 상수가 스테이션마다 달라 하위 프로세스로 만든다
+    outs.update({f"real:{st}": (REPO / rel, lambda st=st: _emit_other(st)) for st, rel in REAL_MISSIONS.items() if st != ROBOT_PC})
+    for kind, (path, make) in outs.items():
+        text = make()
         if args.check:
             if not path.exists() or path.read_text(encoding="utf-8") != text:
                 bad.append(path.name)

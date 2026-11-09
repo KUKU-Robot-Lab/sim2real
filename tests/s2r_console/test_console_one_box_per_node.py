@@ -58,8 +58,7 @@ def _station():
 
 
 GEN = _station()
-#: ★11.11 카메라가 다른 PC(5090_arm4090)면 학생 에피소드(깊이 노드)가 미션에서 빠진다 — 기대값도 그에 맞춘다
-PM = ("episode_place_m_right#10",) if "place_m_right" in GEN.EPISODES else ()
+PM = ("episode_place_m_right#10",)
 
 
 def _real():
