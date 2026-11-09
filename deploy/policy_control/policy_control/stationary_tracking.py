@@ -20,6 +20,8 @@ JOINTS_BY_SIDE = {
 }
 JOINTS = JOINTS_BY_SIDE["right"]
 MATCH_S = 0.020
+# 표본 간격 한도는 정렬 한도와 따로 둔다 — 120 Hz pd 가 한 틱 늦으면 20 ms 를 넘는다(11.09 실측 20.1 ms)
+GAP_S = 0.050
 # 2026-11-08 static-friction block (experiment doc "2026-11-08 실기 대기 목록").
 FRICTION_STAGES = ("F1", "F2", "F3", "F4")
 
@@ -450,7 +452,7 @@ def evaluate(t, tip_error_mm, target, measured, *, path_end, invalid_reasons=())
         or any(not np.isfinite(v).all() for v in (t, tip, target, measured))
     ):
         reasons.append("missing_required_state")
-    if len(t) and (np.any(np.diff(t) <= 0) or np.any(np.diff(t) > MATCH_S + 1e-9)):
+    if len(t) and (np.any(np.diff(t) <= 0) or np.any(np.diff(t) > GAP_S)):
         reasons.append("sample_gap_or_nonmonotonic_time")
     if len(t) and (t[0] > path_end + MATCH_S or t[-1] < path_end + 10):
         reasons.append("insufficient_observation")
