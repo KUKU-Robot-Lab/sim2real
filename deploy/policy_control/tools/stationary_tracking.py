@@ -266,6 +266,9 @@ def prepare(args):
     )
 
     def check(frames):
+        # Checker leaves its start-pose exclusions on the shared world; a stale set makes the
+        # next Checker miss them and flip ok/fail on identical paths. Start each from none.
+        world.excluded_pairs = set()
         checker = P.Checker(world, [scene], 0.02, frames[0], (lo, hi))
         checker.lenient = False  # no contact/escape exemptions for this experiment
         report = checker.check_path(frames)
@@ -286,9 +289,12 @@ def prepare(args):
         )
 
     plan = S.prepare_trials(
-        poses, lo, hi, smooth, check, stage=args.stage, joints=joints
+        poses, lo, hi, smooth, check, stage=args.stage, joints=joints,
+        offset_deg=args.offset_deg, moved_joints=args.moved_joints,
+        repeats=args.repeats, pose_ids=args.only_pose,
     )
     initial_q = np.asarray([scene[j] for j in joints], dtype=float)
+    world.excluded_pairs = set()
     route_checker = P.Checker(world, [scene], 0.02, initial_q, (lo, hi))
     route_checker.lenient = False
     runnable, route_excluded = [], []
@@ -781,7 +787,11 @@ def main(argv=None):
                 p.add_argument("--" + name, type=Path, required=True)
             p.add_argument("--side", choices=("right", "left"), default="right")
             p.add_argument("--mirror-right", action="store_true", help="mirror right fingertip poses into the selected left-arm plan")
-            p.add_argument("--stage", choices=list("ABCDEFG"), default="A")
+            p.add_argument("--stage", choices=list("ABCDEFG") + list(S.FRICTION_STAGES), default="A")
+            p.add_argument("--offset-deg", type=float, default=2.0, help="approach offset from the target [deg]")
+            p.add_argument("--moved-joints", type=int, default=7, help="vary j1..jN only")
+            p.add_argument("--repeats", type=int, default=3)
+            p.add_argument("--only-pose", action="append", default=None, help="keep only these pose ids (after mirroring)")
             p.add_argument("--speed", type=float, default=0.05)
         if mode == "run":
             p.add_argument("--plan", type=Path, required=True)

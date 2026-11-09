@@ -87,6 +87,104 @@ def simulate(case, enabled):
     return {"summary": summary, "rows": rows, "t": t, "tip": tip, "config": config}
 
 
+def simulate_static_friction(fs, *, coulomb=0.6, ki=0.0, seconds=8.0):
+    """4-joint toy arm with stiction: stuck while |PD + ff| <= coulomb.
+
+    Starts at rest, stuck at 0.9·coulomb/kp off target (alternating sign) like
+    the real arm after a move; returns measured error [deg] per tick.
+    Unit inertia, 120 Hz, 0.00038 rad encoder step.
+    """
+    dt, kp, kd = 1.0 / 120.0, np.array([70.0, 70.0, 70.0, 60.0]), np.ones(4) * 8.0
+    config = {
+        "fs": [fs] * 4,
+        "integral_enabled": ki > 0,
+        "ki": [ki] * 4,
+        "integral_limit": [1.0] * 4,  # the 7-joint defaults for j1~j4
+        "integral_rate": [0.2] * 4,
+    }
+    controller = StationaryRuntime(
+        config, kp=kp, kd=kd, torque_limit=np.ones(4) * 7.0, blend_sec=1.0
+    )
+    q = 0.9 * coulomb / kp * np.array([1.0, -1.0, 1.0, -1.0])
+    velocity = np.zeros(4)
+    command = PdCommand(np.zeros(4), np.zeros(4), np.zeros(4), (), False)
+    errors = []
+    for _ in range(int(seconds / dt)):
+        measured = np.round(q / 0.00038) * 0.00038
+        cmd, _row = controller.apply(
+            command, q_meas=measured, qd_meas=velocity, target=np.zeros(4),
+            target_velocity=np.zeros(4), phase="TRACKING", contact=False,
+            stale=False, episode=1, dt=dt, gravity=np.zeros(4), request=np.zeros(4),
+        )
+        torque = kp * (-measured) - kd * velocity + cmd.tau
+        stuck = (velocity == 0.0) & (np.abs(torque) <= coulomb)
+        direction = np.where(velocity != 0.0, np.sign(velocity), np.sign(torque))
+        new_velocity = velocity + (torque - coulomb * direction) * dt
+        # Kinetic friction stops the joint; it cannot push it backwards.
+        new_velocity[stuck | (np.sign(new_velocity) == -direction)] = 0.0
+        velocity = new_velocity
+        q = q + velocity * dt
+        errors.append(np.rad2deg(-measured))
+    return np.asarray(errors)
+
+
+def simulate_move(config, move_deg, *, f_small=0.3, f_large=0.8, split_deg=2.0,
+                  offset=None, seconds=8.0):
+    """4-joint toy arm moving move_deg onto a held target with stiction that grows
+    with travel: coulomb f_small until the joint has moved split_deg, then f_large.
+
+    Returns measured error [deg] per tick (120 Hz, unit inertia, 0.00038 rad
+    encoder step). offset: constant load torque per joint (e.g. the j1 offset).
+    """
+    dt, kp, kd = 1.0 / 120.0, np.array([70.0, 70.0, 70.0, 60.0]), np.ones(4) * 8.0
+    controller = StationaryRuntime(
+        config, kp=kp, kd=kd, torque_limit=np.ones(4) * 7.0, blend_sec=1.0
+    )
+    load = np.zeros(4) if offset is None else np.asarray(offset, dtype=float)
+    q = np.deg2rad(move_deg) * np.array([1.0, -1.0, 1.0, -1.0])
+    velocity, travelled = np.zeros(4), np.zeros(4)
+    command = PdCommand(np.zeros(4), np.zeros(4), np.zeros(4), (), False)
+    errors = []
+    for _ in range(int(seconds / dt)):
+        measured = np.round(q / 0.00038) * 0.00038
+        cmd, _row = controller.apply(
+            command, q_meas=measured, qd_meas=velocity, target=np.zeros(4),
+            target_velocity=np.zeros(4), phase="TRACKING", contact=False,
+            stale=False, episode=1, dt=dt, gravity=np.zeros(4), request=np.zeros(4),
+        )
+        coulomb = np.where(np.rad2deg(travelled) > split_deg, f_large, f_small)
+        torque = kp * (-measured) - kd * velocity + cmd.tau - load
+        stuck = (velocity == 0.0) & (np.abs(torque) <= coulomb)
+        direction = np.where(velocity != 0.0, np.sign(velocity), np.sign(torque))
+        new_velocity = velocity + (torque - coulomb * direction) * dt
+        new_velocity[stuck | (np.sign(new_velocity) == -direction)] = 0.0
+        velocity = new_velocity
+        q = q + velocity * dt
+        travelled += np.abs(velocity) * dt
+        errors.append(np.rad2deg(-measured))
+    return np.asarray(errors)
+
+
+def move_metrics(errors, dt=1.0 / 120.0, band_deg=0.2):
+    """Per joint: final |error|, time it enters band_deg for good (nan = never),
+    overshoot past the target [deg], and error sign flips (chatter)."""
+    start = np.sign(errors[0])
+    out_band = np.abs(errors) >= band_deg
+    settle = [
+        np.nan if out_band[-1, j] else (np.flatnonzero(out_band[:, j])[-1] + 1) * dt
+        if out_band[:, j].any() else 0.0
+        for j in range(errors.shape[1])
+    ]
+    signs = np.sign(errors)
+    flips = [int(np.sum(np.diff(s[s != 0]) != 0)) for s in signs.T]
+    return {
+        "final_deg": np.abs(errors[-1]).round(3).tolist(),
+        "settle_s": [round(float(x), 3) for x in settle],
+        "overshoot_deg": np.maximum(-(errors * start).min(axis=0), 0.0).round(3).tolist(),
+        "flips": flips,
+    }
+
+
 def main():
     import argparse
 

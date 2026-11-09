@@ -13,6 +13,11 @@ from typing import Mapping
 
 import numpy as np
 
+# Static-friction cap [N·m] on fs, fs_large and |static + integral| (2026-11-08 fit:
+# j1~j4 0.41~0.78, wrist untested).
+FS_MAX = 1.0
+FS_JOINTS = 4
+
 
 def _vector(value, n, name, *, nonnegative=False, positive=False):
     v = np.asarray(value, dtype=float)
@@ -34,6 +39,16 @@ class CompensationConfig:
     fo: tuple = (0.0,) * 7
     vs: tuple = (0.01,) * 7
     ki: tuple = (0.0,) * 7
+    # Static friction pre-push f·s(e); 0 = off. j5~j7 must stay 0.
+    # fs = floor after a small move; fs_large (if any > 0) is used instead when the
+    # joint moved more than move_split_deg since the last target/episode change.
+    fs: tuple = (0.0,) * 7
+    fs_large: tuple = (0.0,) * 7
+    move_split_deg: float = 2.0
+    # 0.15 deg ≈ 7 counts of the 0.00038 rad encoder step (stationary_fake), well above
+    # quantization/standstill noise, so s(e) stays exactly 0 near the target (no chatter).
+    fs_deadband_deg: float = 0.15
+    fs_width_deg: float = 0.05
     integral_limit: tuple = (1.0,) * 4 + (0.3,) * 3
     integral_rate: tuple = (0.2,) * 4 + (0.05,) * 3
     deadband_stop_deg: float = 0.03
@@ -47,12 +62,14 @@ class CompensationConfig:
         n = len(self.ki)
         if n <= 0:
             raise ValueError("empty joint list")
-        for key in ("fc", "fv", "fo", "vs", "ki", "integral_limit", "integral_rate"):
+        for key in (
+            "fc", "fv", "fo", "vs", "ki", "fs", "fs_large", "integral_limit", "integral_rate"
+        ):
             v = _vector(
                 getattr(self, key),
                 n,
                 key,
-                nonnegative=key in ("fc", "fv", "ki", "integral_limit"),
+                nonnegative=key in ("fc", "fv", "ki", "fs", "fs_large", "integral_limit"),
                 positive=key in ("vs", "integral_rate"),
             )
             object.__setattr__(self, key, tuple(v))
@@ -61,7 +78,22 @@ class CompensationConfig:
             "payload_parameters",
             tuple(_vector(self.payload_parameters, 4, "payload_parameters")),
         )
-        for key in ("deadband_stop_deg", "deadband_resume_deg", "blend_sec"):
+        for key in ("fs", "fs_large"):
+            v = np.asarray(getattr(self, key))
+            if np.any(v > FS_MAX) or np.any(v[FS_JOINTS:]):
+                raise ValueError(
+                    f"{key} must be <= {FS_MAX} N·m on j1~j{FS_JOINTS} and 0 elsewhere"
+                )
+        if self.static_enabled and np.any(np.asarray(self.integral_limit) > FS_MAX):
+            raise ValueError(f"static friction needs integral_limit <= {FS_MAX} N·m")
+        for key in (
+            "deadband_stop_deg",
+            "deadband_resume_deg",
+            "blend_sec",
+            "fs_deadband_deg",
+            "fs_width_deg",
+            "move_split_deg",
+        ):
             if not np.isfinite(getattr(self, key)):
                 raise ValueError(f"{key} must be finite")
         if (
@@ -69,6 +101,8 @@ class CompensationConfig:
             or self.blend_sec <= 0
         ):
             raise ValueError("deadband requires 0 <= stop < resume; blend_sec > 0")
+        if min(self.fs_deadband_deg, self.fs_width_deg, self.move_split_deg) <= 0:
+            raise ValueError("fs_deadband_deg, fs_width_deg, move_split_deg must be > 0")
 
     @property
     def n(self):
@@ -76,7 +110,16 @@ class CompensationConfig:
 
     @property
     def enabled(self):
-        return self.gravity_enabled or self.friction_enabled or self.integral_enabled
+        return (
+            self.gravity_enabled
+            or self.friction_enabled
+            or self.integral_enabled
+            or self.static_enabled
+        )
+
+    @property
+    def static_enabled(self):
+        return any(self.fs) or any(self.fs_large)
 
     @classmethod
     def from_mapping(cls, mapping: Mapping | None, n=7):
@@ -87,7 +130,7 @@ class CompensationConfig:
                 f"unknown stationary compensation fields: {sorted(unknown)}"
             )
         if n != 7:
-            for key in ("fc", "fv", "fo", "ki"):
+            for key in ("fc", "fv", "fo", "ki", "fs", "fs_large"):
                 values.setdefault(key, (0.0,) * n)
             values.setdefault("vs", (0.01,) * n)
             values.setdefault("integral_limit", (0.3,) * n)
@@ -103,6 +146,12 @@ def validate_no_duplicate_integrators(
 ):
     if cfg.integral_enabled and (jog_integral or home_integral or droop_integral):
         raise ValueError("stationary integral conflicts with jog/home/droop integral")
+    # fs may run with the stationary integral (it is not an integrator, and the two
+    # share the integral_limit cap), but not with another static-error compensator.
+    if cfg.static_enabled and (jog_integral or home_integral or droop_integral):
+        raise ValueError("static friction fs conflicts with jog/home/droop integral")
+    if cfg.static_enabled and cfg.friction_enabled and (any(cfg.fc) or any(cfg.fo)):
+        raise ValueError("static friction fs duplicates friction fc/fo compensation")
 
 
 @dataclass(frozen=True)
@@ -114,6 +163,7 @@ class CompensationResult:
     estimated_total: np.ndarray
     saturated: np.ndarray
     updating: np.ndarray
+    static: np.ndarray
 
 
 class StationaryCompensator:
@@ -131,6 +181,10 @@ class StationaryCompensator:
         self._learning = np.ones(cfg.n, dtype=bool)
         self._fading = False
         self._fade_rate = np.zeros(cfg.n)
+        self._fs_armed = False
+        self._fs_gain = 0.0
+        self._fs_shape = np.zeros(cfg.n)
+        self._moved = np.zeros(cfg.n)  # |motion| [rad] since target/episode change
 
     def step(
         self,
@@ -167,6 +221,7 @@ class StationaryCompensator:
                 base.copy(),
                 np.zeros(n, bool),
                 np.zeros(n, bool),
+                zero.copy(),
             )
         gravity = zero.copy()
         if cfg.gravity_enabled:
@@ -202,6 +257,46 @@ class StationaryCompensator:
                 np.abs(self.integral) / cfg.blend_sec, cfg.integral_rate
             )
             self._learning[:] = True
+        if target_changed or episode_changed:
+            self._moved[:] = 0.0
+        # Static term: armed once settled, kept through the breakaway motion it
+        # causes, dropped on target/episode change or integral fade (slewed over
+        # blend_sec with the last direction frozen) and cut at once on contact/stale/stop.
+        if not safe or target_changed or episode_changed or self._fading:
+            self._fs_armed = False
+        elif settled:
+            self._fs_armed = True
+        step = dt / cfg.blend_sec
+        self._fs_gain = (
+            min(self._fs_gain + step, 1.0)
+            if self._fs_armed
+            else max(self._fs_gain - step, 0.0)
+        ) if safe else 0.0
+        if not self._fs_armed:
+            # Counted only until armed, so the breakaway motion fs causes is excluded.
+            self._moved += np.abs(v) * dt
+        if self._fs_armed:
+            f = np.asarray(cfg.fs)
+            if any(cfg.fs_large):
+                large = self._moved > np.deg2rad(cfg.move_split_deg)
+                f = np.where(large, np.asarray(cfg.fs_large), f)
+            over = np.maximum(np.abs(e) - np.deg2rad(cfg.fs_deadband_deg), 0.0)
+            self._fs_shape = (
+                f
+                * np.sign(e)
+                * np.tanh(over / np.deg2rad(cfg.fs_width_deg))
+            )
+        cap = np.asarray(cfg.integral_limit)
+        requested_static = self._fs_gain * self._fs_shape
+        static = np.clip(
+            requested_static,
+            np.maximum(low - model, -cap),
+            np.minimum(high - model, cap),
+        )
+        held = model + static
+        # Integral bounds: torque headroom and |static + integral| <= integral_limit.
+        ilow = np.maximum(low - held, -cap - static)
+        ihigh = np.minimum(high - held, cap - static)
         if self._fading:
             self.integral = np.sign(self.integral) * np.maximum(
                 np.abs(self.integral) - self._fade_rate * dt, 0.0
@@ -229,20 +324,29 @@ class StationaryCompensator:
                 before + delta, -np.asarray(cfg.integral_limit), cfg.integral_limit
             )
             # Conditional integration: never accumulate further into saturation.
-            total = base + model + candidate
-            blocked = (((total > limit) | (model + candidate > high)) & (delta > 0)) | (
-                ((total < -limit) | (model + candidate < low)) & (delta < 0)
+            total = base + held + candidate
+            blocked = (((total > limit) | (candidate > ihigh)) & (delta > 0)) | (
+                ((total < -limit) | (candidate < ilow)) & (delta < 0)
             )
             candidate = np.where(blocked, before, candidate)
             self.integral = candidate
             updating = self._learning & ~blocked & (delta != 0)
-        integral = np.clip(self.integral, low - model, high - model)
-        addition = model + integral
-        saturated = (np.abs(requested_model - model) > 1e-12) | (
-            np.abs(integral - self.integral) > 1e-12
+        integral = np.clip(self.integral, ilow, ihigh)
+        addition = held + integral
+        saturated = (
+            (np.abs(requested_model - model) > 1e-12)
+            | (np.abs(requested_static - static) > 1e-12)
+            | (np.abs(integral - self.integral) > 1e-12)
         )
         return CompensationResult(
-            addition, gravity, friction, integral, base + addition, saturated, updating
+            addition,
+            gravity,
+            friction,
+            integral,
+            base + addition,
+            saturated,
+            updating,
+            static,
         )
 
 

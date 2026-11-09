@@ -100,6 +100,7 @@ class StationaryRuntime:
             "torque_gravity_correction": (result.gravity * scale).tolist(),
             "torque_friction": (result.friction * scale).tolist(),
             "torque_integral": (result.integral * scale).tolist(),
+            "torque_static_friction": (result.static * scale).tolist(),
             "torque_feedforward": out.tau.tolist(),
             "torque_estimated_total": (pd + out.tau).tolist(),
             "compensation_saturated": result.saturated.tolist(),

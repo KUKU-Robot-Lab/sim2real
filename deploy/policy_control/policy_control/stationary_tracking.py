@@ -20,6 +20,8 @@ JOINTS_BY_SIDE = {
 }
 JOINTS = JOINTS_BY_SIDE["right"]
 MATCH_S = 0.020
+# 2026-11-08 static-friction block (experiment doc "2026-11-08 실기 대기 목록").
+FRICTION_STAGES = ("F1", "F2", "F3", "F4")
 
 
 def arm_joint_names(side="right"):
@@ -101,7 +103,7 @@ def capture_pose(events, side="right"):
 def validate_stage(stage, kp, kd, base_kp, base_kd, compensation):
     from .stationary_compensation import CompensationConfig
 
-    if stage not in ("A", "B", "C", "D", "E", "F", "G"):
+    if stage not in ("A", "B", "C", "D", "E", "F", "G") + FRICTION_STAGES:
         raise ValueError(f"unknown stage {stage!r}")
     c = CompensationConfig.from_mapping(compensation)
     kp, kd, base_kp, base_kd = [
@@ -131,8 +133,24 @@ def validate_stage(stage, kp, kd, base_kp, base_kd, compensation):
         or not any(np.allclose(c.ki, kp / ti) for ti in (10.0, 5.0, 2.5))
     ):
         raise ValueError("F requires Ki=Kp/Ti for Ti=10/5/2.5s")
+    if stage in FRICTION_STAGES and (
+        not np.allclose(kp, base_kp) or not np.allclose(kd, base_kd)
+    ):
+        raise ValueError(f"{stage} requires baseline gains")
+    if stage == "F1" and c.integral_enabled:
+        raise ValueError("F1 compares static friction off/on with the integral OFF")
+    if stage == "F2" and not (
+        c.integral_enabled
+        and c.static_enabled
+        and np.allclose(c.integral_limit[:4], 1.0)
+    ):
+        raise ValueError("F2 needs static friction + integral with a 1.0 N·m j1~j4 limit")
+    if stage in ("F3", "F4") and c.enabled:
+        raise ValueError(f"{stage} measures uncompensated error: compensation OFF")
+    # F2 sweeps the j1~j4 rate up to 2x the initial 0.2 N·m/s budget (user, 11.08).
+    rate_cap = [0.4 if stage == "F2" else 0.2] * 4 + [0.05] * 3
     if np.any(np.asarray(c.integral_limit) > [1.0] * 4 + [0.3] * 3) or np.any(
-        np.asarray(c.integral_rate) > [0.2] * 4 + [0.05] * 3
+        np.asarray(c.integral_rate) > rate_cap
     ):
         raise ValueError(
             "experiment integral limits/rates must not exceed initial budget"
@@ -346,6 +364,7 @@ def analyze_samples(
         np.asarray(r["torque_gravity_correction"])
         + r["torque_friction"]
         + r["torque_integral"]
+        + r.get("torque_static_friction", 0.0)
         for r in samples
         if all(
             k in r
@@ -474,9 +493,16 @@ def evaluate(t, tip_error_mm, target, measured, *, path_end, invalid_reasons=())
     }
 
 
-def prepare_trials(poses, lo, hi, smooth, collision_check, *, stage="A", joints=JOINTS):
-    if stage not in "ABCDEFG" or len(stage) != 1:
-        raise ValueError("stage must be A..G")
+def prepare_trials(
+    poses, lo, hi, smooth, collision_check, *, stage="A", joints=JOINTS,
+    offset_deg=2.0, moved_joints=7, repeats=3, pose_ids=None,
+):
+    if stage not in tuple("ABCDEFG") + FRICTION_STAGES:
+        raise ValueError("stage must be A..G or F1..F4")
+    if not (0 < offset_deg <= 5 and 1 <= moved_joints <= 7 and repeats >= 1):
+        raise ValueError("offset_deg in (0, 5], moved_joints 1..7, repeats >= 1")
+    if pose_ids is not None and not set(pose_ids) <= {p["id"] for p in poses}:
+        raise ValueError(f"unknown pose ids: {sorted(set(pose_ids) - {p['id'] for p in poses})}")
     if len(poses) != 6 or len({p["id"] for p in poses}) != 6:
         raise ValueError("six uniquely named safe poses required")
     if (
@@ -499,11 +525,13 @@ def prepare_trials(poses, lo, hi, smooth, collision_check, *, stage="A", joints=
             raise ValueError("pose must have seven finite radians")
         if p["split"] != ("holdout" if stage == "G" else "fit"):
             continue
-        for joint in range(7):
+        if pose_ids is not None and p["id"] not in pose_ids:
+            continue
+        for joint in range(moved_joints):
             for sign in (-1, 1):
                 start = q.copy()
-                start[joint] += sign * np.radians(2)
-                for repeat in range(3):
+                start[joint] += sign * np.radians(offset_deg)
+                for repeat in range(repeats):
                     row = {
                         "id": f"{stage}_{p['id']}_j{joint + 1}_{sign:+d}_r{repeat + 1}",
                         "pose": p["id"],
@@ -512,6 +540,7 @@ def prepare_trials(poses, lo, hi, smooth, collision_check, *, stage="A", joints=
                         "joint": joint,
                         "direction": sign,
                         "repeat": repeat + 1,
+                        "offset_deg": offset_deg,
                         "start": start.tolist(),
                         "target": q.tolist(),
                         "hold_s": 15.0,
@@ -532,6 +561,9 @@ def prepare_trials(poses, lo, hi, smooth, collision_check, *, stage="A", joints=
     return {
         "schema": "stationary_plan_v1",
         "stage": stage,
+        "offset_deg": offset_deg,
+        "moved_joints": moved_joints,
+        "repeats": repeats,
         "joint_names": list(joints),
         "trials": trials,
         "excluded": excluded,

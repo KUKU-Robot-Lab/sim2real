@@ -200,3 +200,59 @@ def test_planned_endpoint_uses_declared_target_despite_one_tick_transport_delay(
         rows, lambda q, h: q[:3], path_end=0.0, expected_target=[0.0] * 7
     )
     assert not summary["eligible"] and "target_changed" in summary["excluded_reasons"]
+
+
+def test_friction_block_options_and_stage_rules():
+    poses = [
+        {"id": f"p{i}", "split": "fit" if i < 3 else "holdout", "q": [0.0] * 7}
+        for i in range(6)
+    ]
+    plan = s.prepare_trials(
+        poses, np.full(7, -1.0), np.full(7, 1.0),
+        lambda path: np.linspace(path[0], path[-1], 10),
+        lambda path: {"ok": True},
+        stage="F3", offset_deg=3.0, moved_joints=4, repeats=4, pose_ids=["p0"],
+    )
+    # one pose x j1..j4 x two sides x four repeats, started 3 deg off the target
+    assert len(plan["trials"]) == 32 and not plan["excluded"]
+    assert {t["joint"] for t in plan["trials"]} == {0, 1, 2, 3}
+    assert max(abs(np.degrees(t["start"][t["joint"]])) for t in plan["trials"]) == pytest.approx(3.0)
+    assert plan["trials"][0]["id"] == "F3_p0_j1_-1_r1"
+    with pytest.raises(ValueError):
+        s.prepare_trials(poses, np.full(7, -1.0), np.ones(7), None, None, pose_ids=["nope"])
+
+    gains = ([70.0] * 7, [2.0] * 7, [70.0] * 7, [2.0] * 7)
+    fs = {"fs": [0.2] * 4 + [0.0] * 3}
+    s.validate_stage("F1", *gains, None)
+    s.validate_stage("F1", *gains, fs)
+    with pytest.raises(ValueError):
+        s.validate_stage("F1", *gains, {**fs, "integral_enabled": True})
+    rate = {**fs, "integral_enabled": True, "ki": [14.0] * 7}
+    s.validate_stage("F2", *gains, {**rate, "integral_rate": [0.4] * 4 + [0.05] * 3})
+    with pytest.raises(ValueError):  # 2x is an F2-only allowance
+        s.validate_stage("E", *gains, {"gravity_enabled": True, "integral_rate": [0.4] * 4 + [0.05] * 3})
+    with pytest.raises(ValueError):
+        s.validate_stage("F2", *gains, {**rate, "integral_rate": [0.8] * 4 + [0.05] * 3})
+    s.validate_stage("F4", *gains, None)
+    with pytest.raises(ValueError):
+        s.validate_stage("F4", *gains, fs)
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_1108_condition_profiles_fit_their_friction_stage(side):
+    from pathlib import Path
+    from policy_control.pd_law import load_pd_config
+    from policy_control.stationary_compensation import CompensationConfig
+
+    root = Path(__file__).resolve().parents[1] / "deploy/policy_control/config/stationary_1108"
+    gains = ([70.0] * 7, [2.0] * 7, [70.0] * 7, [2.0] * 7)
+    stages = {"off": ("F1", "F3", "F4"), "fs": ("F1",),
+              "fs_i050": ("F2",), "fs_i100": ("F2",), "fs_i200": ("F2",)}
+    for name, allowed in stages.items():
+        pd = load_pd_config(root / f"pd_rh56f1_stationary_{side}_{name}.yaml")
+        assert pd.side == side and pd.execute is True
+        for stage in allowed:
+            s.validate_stage(stage, *gains, pd.stationary_compensation)
+        c = CompensationConfig.from_mapping(pd.stationary_compensation)
+        if name.startswith("fs_i"):
+            assert list(c.integral_rate[:4]) == pytest.approx([int(name[-3:]) / 500] * 4)
