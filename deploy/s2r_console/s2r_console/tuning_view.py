@@ -224,7 +224,9 @@ def view(repo: Path) -> dict:
     try:
         folders = sorted(p for p in base.glob("[0-9]*_*") if p.is_dir())
         # runs/<trial>/ 이 생기거나 summary.json 이 써지면 다시 읽는다
+        # setup/trials.txt 는 준비가 끝날 때 늦게 써진다 — 안 보면 "준비 안 됨" 이 남는다(11.09)
         watch = [base, *folders, *(f / "runs" for f in folders), *(f / "result" for f in folders),
+                 *(f / "setup" / "trials.txt" for f in folders),
                  *(r / "summary.json" for f in folders for r in (f / "runs").glob("*"))]
         return _cached(f"tuning:{today}", watch, lambda: _build(repo, today))
     except Exception as exc:                          # noqa: BLE001 — 표시용 집계가 상황판을 멈추지 않게
