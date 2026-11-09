@@ -77,3 +77,7 @@ logs/bags/
 # 로봇 PC 가 cup_holders 단계(--write)로 만드는 홀더 자세 — 그 PC 의 실측 데이터(10.04)
 config/cup_holder_poses_*.yaml
 logs/vision_runs/
+
+# analysis: raw runs and large plans stay local (11.09 user)
+analysis/**/runs/
+analysis/**/setup/plan/plan.json

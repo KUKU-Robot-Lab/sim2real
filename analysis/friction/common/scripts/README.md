@@ -1,0 +1,2 @@
+- `new_experiment.sh` 실험 폴더 생성 + 설정 사본 + git 상태 + 오프라인 계획(명령 0개)
+- `rebase_trial.py` 확인한 trial 하나를 새로 잡은 장면으로 옮긴다(1108 사본)
