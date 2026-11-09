@@ -184,6 +184,11 @@ def main() -> int:
                                           durability=DurabilityPolicy.TRANSIENT_LOCAL) if is_latched(topic) else qos
                 node.create_subscription(message_type, topic, lambda msg, t=topic: callback(t, msg), selected_qos)
             print(f"read-only recording -> {out}", flush=True)
+            # 11.09: DDS 발견이 2 s 기록 창보다 늦으면 손·팔 상태가 0개로 빠진다 — 상태 토픽이 다 올 때까지(최대 5 s) 창을 늦춘다.
+            wanted = {t for t in ("/joint_states", "/head/joint_states", "/hand_left/joint_states", "/hand_right/joint_states") if t in message_types}
+            warm = time.monotonic() + 5.0
+            while rclpy.ok() and not stop and time.monotonic() < warm and not all(counts[t] for t in wanted):
+                rclpy.spin_once(node, timeout_sec=0.05)
             deadline, last_flush = time.monotonic() + args.seconds, time.monotonic()
             while rclpy.ok() and not stop and time.monotonic() < deadline:
                 rclpy.spin_once(node, timeout_sec=0.05)
