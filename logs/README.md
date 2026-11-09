@@ -64,15 +64,32 @@ logs/exp/<YYMMDD>_<이름>/          예: 261109_friction_right
 3. 어느 실험에도 등록되지 않았고 7일이 지난 S 런은 지운다. 지우기 전에 목록을 사용자에게 보여 준다.
 4. R 은 건드리지 않는다.
 
-## 지금 있는 폴더 분류 (11.09 기준, 아직 옮기지 않았다)
+## 지금 있는 폴더 (11.09 정리 후)
 
-| 폴더 | 종류 | 메모 |
+| 폴더 | 종류 | 무엇 |
 |---|---|---|
-| `policy/` | R | 계약과 마스크를 코드가 읽는다 |
-| `place_teach/*.npz` | R | 재생 `.log` 는 S |
-| `policy_control/*.npz`, `home_calib_*.log` | R | `fake_replay_*` 와 `press/` 는 S |
-| `calib/` 결과(yaml·csv·`hand_real_1014/`) | R | `calib/bags/`(4.3G) 와 `holder_1107/`(1.3G) 원시 데이터는 S 후보 |
-| `episode/`, `mission/`, `inhand/`, `tilt/`, `rh56f1_record/`, `rh56f1_tip_zero/`, `cpu/`, `console/`, `perception/*.log`, `monitor_1104/` | S | 실험 README 에 등록되지 않았다 |
-| `episodes/lanes_fake_1108` | S | 쓰는 코드가 없다. 가짜 실행 잔재로 보인다 |
-| `cup_seg_1107/`(671M), `holder_seg_1107/`(251M) | E (옛 형식) | 스크립트와 결과가 함께 있다. `exp/261107_cup_seg/` 로 옮길지 정해야 한다 |
-| `head_d435i_camera_info_1103/` | R(`camera_info.json`) + S(1.1G 오류 로그) | |
+| `policy/` | R | 배포 계약 · 학생 마스크. 코드가 읽는다 |
+| `place_teach/` | R | 놓기 teach npz(`.log` 는 S) |
+| `policy_control/` | R | `rehome_left/right.npz` |
+| `exp/` | E | 실험 폴더(`_template/` 틀) |
+| `episode/` | S | 에피소드 러너 런(`<시각>_<에피소드>/`) |
+| `mission/` | S | 미션 상태 · 로그 |
+| `tilt/` | S | `tilt_now.py`·`tilt_pour.py` 런(`<시각>_setting_<자산>` · `_pour_<자산>`) |
+| `inhand/` | S | 손 안 자세 추정 npz |
+| `rh56f1_record/`, `rh56f1_tip_zero/` | S | RH56F1 손 기록 · 손끝 영점 |
+| `cpu/`, `perception/` | S | CPU 기록 · 인식 노드 로그 |
+
+`calib/`, `console/`, `rh56f1_hand/` 처럼 지금 없는 폴더는 도구를 돌리면 다시 생긴다.
+
+### 옮긴 것 → `/media/user/DATA/261109/sim2real/logs/`
+
+| 원래 경로 | 무엇 |
+|---|---|
+| `cup_seg_1107/` | 11.07 컵 분할 분석. `place_cup_gate.py` 근거, `test_pc_place_inputs.py` 일부 시험은 이 폴더가 없으면 건너뛴다 |
+| `holder_seg_1107/`, `calib/holder_1107/` | 11.07 홀더 분할 데이터셋 · 원시 프레임 |
+| `head_d435i_camera_info_1103/` | 11.03 머리 D435i camera_info · 캡처(arm_v2.yaml 주석 근거) |
+| `monitor_1104/`, `perception/*1104.png`, `perception/realsense_board_jog.log` | 11.04~07 모니터 스크립트 · 외부 보정 확인 그림 |
+| `console/console_20261108.log`, `rh56f1_hand/right.log` | 11.08 콘솔 · 손 로그 |
+| `bags/` | (11.09 이전에 옮김) |
+
+지운 것: `episodes/lanes_fake_1108/`(가짜 실행 잔재), `realsense_try1_imu_denied.log`(1.1G, 권한 오류 반복).
