@@ -713,8 +713,10 @@ class ArmUnit:
             ref = np.array([float(ref_src[idx[self.profile[c]["source"]]]) * float(self.profile[c]["sign"])
                             for c in self.arm_joints])
             note = f"{self.side}: seed JTC reference"
-        seed, clipped = clip_seed(ref - np.asarray(self.gravity_fn(q_m), dtype=float) / self.kp,
-                                  self.lower, self.upper, self.arm_joints)
+        # ★11.09: 실측 q 는 이미 처진 자리다 — G/kp 를 또 빼면 engage 때 그만큼 더 처진다(rehome 처짐).
+        # JTC 세트포인트(처지기 전 목표)로 seed 할 때만 ref − G/kp 가 블렌드 종점이다.
+        sag = 0.0 if ref_src is None else np.asarray(self.gravity_fn(q_m), dtype=float) / self.kp
+        seed, clipped = clip_seed(ref - sag, self.lower, self.upper, self.arm_joints)
         if clipped:
             note += f" · 한계 안으로 자름 {clipped}"
         return seed, note

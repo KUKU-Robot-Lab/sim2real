@@ -534,3 +534,16 @@ def test_a_stale_joint_force_becomes_none_but_other_optional_sources_keep_the_la
     assert ss.snapshot(10.5).joint_force is not None
     st = ss.snapshot(10.51)
     assert st.joint_force is None and st.tip_force is not None
+
+
+def test_engage_seed_from_measured_q_does_not_subtract_gravity_again():
+    """★11.09 rehome 처짐: JTC 기준값이 없어 실측 q 로 seed 하면 팔은 이미 처진 자리다 — seed = q_m(G/kp 를 또 빼지 않음).
+    JTC 세트포인트로 seed 할 때만 ref − G/kp."""
+    from types import SimpleNamespace
+    from policy_control.pd_arm import ArmUnit
+    q_m = np.array([0.1, 0.4, 0.0])
+    arm = SimpleNamespace(side="right", measured_q=lambda now: q_m, gravity_fn=lambda q: np.array([7.0, 3.5, 0.0]),
+                          kp=np.array([70.0, 70.0, 10.0]), lower=-np.ones(3) * 3, upper=np.ones(3) * 3,
+                          arm_joints=["r_aj_1", "r_aj_2", "r_aj_3"])
+    seed, note = ArmUnit.seed_from(arm, None, 0.0)
+    assert np.allclose(seed, q_m) and "measured" in note
