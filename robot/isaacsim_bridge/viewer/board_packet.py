@@ -4,8 +4,8 @@
 
     {"t": float,                                   # 송신 시각(epoch s)
      "names": [str x 13],                          # canonical: r_aj_1..7 + 손 구동 6(r_hj_thumb_1, r_hj_thumb_2, r_hj_{index,middle,ring,pinky}_1)
-     "q_show": [float x len(names)],               # 보여 줄 자세. dry = 패널 가상 명령, pub = 실측(패널이 고른다)
-     "q_cmd": [float x len(names)] | null,         # 명령 목표(고스트). null 이면 고스트를 숨긴다
+     "q_show": [float x len(names)],               # 보여 줄 자세. 실측 우선(발행 여부 무관), 없으면 가상; state_source로 구분
+     "q_cmd": [float x len(names)] | null,         # 조그 목표(유지 보정 제외). null 이면 고스트를 숨긴다
      "boards": {"charuco": {"T_base_board": 4x4}}, # 보드 자세(board_jog BOARD_CONVENTION). charuco 외 키는 무시
      "target_xyz_base": [3] | null,                # 목표 교차점
      "tip_xyz_base": [3],                          # 실측(또는 dry 가상) 검지 끝 = <p>_hl_index_tip 원점
@@ -38,6 +38,9 @@ class BoardPacket:
     tip: tuple
     contact: bool
     mode: str
+    tip_goal: tuple | None = None      # tip pose(base), optional for old senders
+    state_source: str = "unknown"
+    tip_meas: tuple | None = None
 
 
 def _num(v, what: str) -> float:
@@ -87,6 +90,8 @@ def decode(data: bytes) -> BoardPacket:
             or not all(isinstance(n, str) and n for n in names)):
         raise ValueError(f"names 가 비었거나 중복·빈 이름·{MAX_JOINTS} 초과: {names!r}")
     n = len(names)
+    if obj.get("state_source", "unknown") not in ("measured", "virtual", "unknown"):
+        raise ValueError("state_source must be measured, virtual, or unknown")
     q_cmd = obj.get("q_cmd")
     target = obj.get("target_xyz_base")
     boards = obj.get("boards") or {}
@@ -104,7 +109,10 @@ def decode(data: bytes) -> BoardPacket:
         q_cmd=None if q_cmd is None else _vec(q_cmd, n, "q_cmd"),
         T_base_board=None if board is None else _rigid(board["T_base_board"]),
         target=None if target is None else _vec(target, 3, "target_xyz_base"),
-        tip=_vec(obj["tip_xyz_base"], 3, "tip_xyz_base"), contact=obj["contact"], mode=obj["mode"])
+        tip=_vec(obj["tip_xyz_base"], 3, "tip_xyz_base"), contact=obj["contact"], mode=obj["mode"],
+        tip_goal=None if obj.get("T_tip_goal") is None else _rigid(obj["T_tip_goal"]),
+        tip_meas=None if obj.get("T_tip_meas") is None else _rigid(obj["T_tip_meas"]),
+        state_source=obj.get("state_source", "unknown"))
 
 
 def encode(t: float, names, q_show, q_cmd, T_base_board, target, tip, contact: bool, mode: str) -> bytes:
@@ -117,3 +125,36 @@ def encode(t: float, names, q_show, q_cmd, T_base_board, target, tip, contact: b
     data = json.dumps(obj, separators=(",", ":")).encode("utf-8")
     decode(data)
     return data
+
+
+def state_audit(pkt, joint_names, applied_positions, physical_tip_world, usd_tip_world,
+                origin, received_at, applied_at, audit_origin):
+    """Compare decoded input to simulator readback; no FK model is substituted.
+
+    Physical tip comes from the articulation tensor API; USD tip is a separate
+    stage readback (Fabric may update these on different schedules).
+    """
+    names, positions = list(joint_names), list(applied_positions)
+    if len(names) != len(positions) or len(set(names)) != len(names):
+        raise ValueError("readback joint names/positions must match and be unique")
+    applied = {n: _num(v, "applied position") for n, v in zip(names, positions)}
+    reference = dict(zip(pkt.names, pkt.q_show))
+    errors = {n: applied[n] - q for n, q in reference.items() if n in applied}
+    base_origin = _vec(list(origin), 3, "origin")
+
+    def base_tip(world):
+        return None if world is None else [v - o for v, o in zip(_vec(list(world), 3, "world tip"), base_origin)]
+
+    physical, usd = base_tip(physical_tip_world), base_tip(usd_tip_world)
+
+    def error_mm(tip):
+        return None if tip is None else 1000 * math.sqrt(sum((a - b) ** 2 for a, b in zip(tip, pkt.tip)))
+
+    return {"audit_origin": audit_origin, "packet_t": pkt.t, "received_at": received_at,
+            "applied_at": applied_at, "state_source": pkt.state_source, "mode": pkt.mode,
+            "input_q_show": reference, "applied_positions": applied,
+            "missing_joints": [n for n in reference if n not in applied],
+            "joint_errors_rad": errors, "joint_max_abs_error_rad": max(map(abs, errors.values()), default=None),
+            "packet_tip_base_m": list(pkt.tip), "physical_tip_base_m": physical,
+            "usd_tip_base_m": usd, "physical_tip_error_mm": error_mm(physical),
+            "usd_tip_error_mm": error_mm(usd)}

@@ -63,7 +63,7 @@ def run_gui(ctl, kin, lo, hi, boards: dict, srcs: dict, smoke: str | None) -> in
     Qt = QtCore.Qt
     app = W.QApplication.instance() or W.QApplication(sys.argv[:1])
     win = W.QMainWindow()
-    win.setWindowTitle(f"board_jog — {kin.side} {'★EXECUTE' if ctl.execute else ('demo' if ctl.demo else 'dry')}")
+    win.setWindowTitle(f"board_jog [{'precise 120Hz' if ctl.precise else 'legacy 60Hz'}] — {kin.side} {'★EXECUTE' if ctl.execute else ('demo' if ctl.demo else 'dry')}")
     win.setStyleSheet(QSS)
     bids = list(boards)
     st = {"boards": {b: T.copy() for b, T in boards.items()}, "bid": bids[0], "target": 0, "rec_ver": -1, "closing": False,
@@ -180,7 +180,9 @@ def run_gui(ctl, kin, lo, hi, boards: dict, srcs: dict, smoke: str | None) -> in
     tl.addWidget(label("추종 오차", "cap"))
     tl.addWidget(lbl_tr)
     lbl_hold = label("", "note")
+    lbl_rpy = label("", "note")
     tl.addWidget(lbl_hold)
+    tl.addWidget(lbl_rpy)
     tl.addWidget(lbl_pd)
     sl.addWidget(tr_box)
     sl.addStretch(1)
@@ -188,6 +190,8 @@ def run_gui(ctl, kin, lo, hi, boards: dict, srcs: dict, smoke: str | None) -> in
     sl2.setSpacing(14)
     sv.addLayout(sl2)
     lbl_fit, lbl_auto = W.QLabel(), W.QLabel()
+    lbl_board_z = label("", "note")
+    sv.addWidget(lbl_board_z)
     lbl_fit.setToolTip(f"바깥 4 모서리 기록 → 강체 맞춤(대각선 차 > {B.A.DIAG_WARN_MM:g} mm 경고 · > {B.A.DIAG_REJECT_MM:g} mm 거부), "
                        f"산 기록 {B.A.REFIT_MIN} 점부터 전체 맞춤. FK 파라미터 보정은 fit_board.py")
     sl2.addWidget(lbl_fit, 2)
@@ -211,14 +215,15 @@ def run_gui(ctl, kin, lo, hi, boards: dict, srcs: dict, smoke: str | None) -> in
 
     # ---------------- 조그(누르고 있으면 반복: 이동이 끝나 idle 이 된 뒤에만 다음 단계, 쌓지 않는다)
     g_t, g_r = W.QButtonGroup(win), W.QButtonGroup(win)
-    tip_frame = W.QCheckBox("검지 끝 프레임 기준으로 조그(버튼의 방향 이름과 달라진다)")
+    tip_frame = W.QCheckBox("이동도 검지 tip 축 기준(기본: base 이동 / tip 회전)")
     tip_frame.setFocusPolicy(Qt.NoFocus)
 
     def send_jog(axis: str, sign: int) -> None:
         k = B.AXES.index(axis)
         step = B.TRANS_STEPS_MM[g_t.checkedId()] / 1000 if k < 3 else np.radians(B.ROT_STEPS_DEG[g_r.checkedId()])
-        ctl.call("jog", axis, sign, step, "tip" if tip_frame.isChecked() else "base")
+        ctl.call("jog", axis, sign, step, "tip" if k >= 3 or tip_frame.isChecked() else "base")
         hold["wait"], st["n_jog"] = ctl.n_put, st["n_jog"] + 1
+        hold["last_send"] = time.monotonic()
 
     def press(key: tuple) -> None:
         if st["dead"]:
@@ -231,10 +236,12 @@ def run_gui(ctl, kin, lo, hi, boards: dict, srcs: dict, smoke: str | None) -> in
             hold["key"] = None
 
     def hold_tick() -> None:
-        if hold["key"] is None or time.monotonic() - hold["t0"] < REPEAT_DELAY_S:
+        if hold["key"] is None or time.monotonic() - hold["t0"] < (0.06 if ctl.precise else REPEAT_DELAY_S):
             return
         s = ctl.get_snap()
-        if not s or s["n_done"] < hold["wait"] or s["mode"] != "idle":
+        if not s or s["n_done"] < hold["wait"] or s["mode"] not in (("idle", "move") if ctl.precise else ("idle",)):
+            return
+        if ctl.precise and time.monotonic() - hold.get("last_send", 0) < .06:
             return
         if not s["msg"].startswith("조그 "):   # 거부 · 접촉 정지 · 힘 상승 정지 뒤에는 반복을 끊는다
             hold["key"] = None
@@ -247,6 +254,8 @@ def run_gui(ctl, kin, lo, hi, boards: dict, srcs: dict, smoke: str | None) -> in
     def jbtn(text: str, key: tuple, tip: str, prop: str = "pad") -> W.QPushButton:
         b = btn(f"{text}\n[{keyname[key]}]", None, tip)
         b.setProperty(prop, True)
+        if prop == "rot":
+            b.setStyleSheet(f"color: {dict(roll='#DC2626', pitch='#16803C', yaw='#2563EB')[key[0]]};")
         b.pressed.connect(guarded("jog", lambda: press(key)))
         b.released.connect(lambda: release(key))
         return b
@@ -273,12 +282,15 @@ def run_gui(ctl, kin, lo, hi, boards: dict, srcs: dict, smoke: str | None) -> in
     ml.addStretch(1)
     pads.addWidget(g_move)
 
-    g_rot = W.QGroupBox("회전 — 검지 끝 점은 제자리, base 축 둘레")
+    g_rot = W.QGroupBox("회전 — 검지 tip 축 / 끝점 위치 유지")
     rl_ = W.QGridLayout(g_rot)
     rl_.setSpacing(8)
-    rot = (("⟲ 손목 돌리기", ("yaw", 1), "위에서 봐 반시계(base z 축 +)"), ("⟳ 손목 돌리기", ("yaw", -1), "위에서 봐 시계(base z 축 −)"),
-           ("앞으로 기울이기", ("pitch", 1), "손목이 전진(+x) 쪽으로(base y 축 +)"), ("뒤로 기울이기", ("pitch", -1), "손목이 후진(−x) 쪽으로(base y 축 −)"),
-           ("왼쪽으로 기울이기", ("roll", -1), "손목이 왼쪽(+y) 쪽으로(base x 축 −)"), ("오른쪽으로 기울이기", ("roll", 1), "손목이 오른쪽(−y) 쪽으로(base x 축 +)"))
+    rot = (("Roll + · 빨강 X", ("roll", 1), "검지 tip의 현재 +X 축 오른손 법칙 회전"),
+           ("Roll − · 빨강 X", ("roll", -1), "검지 tip의 현재 X 축 음의 회전"),
+           ("Pitch + · 초록 Y", ("pitch", 1), "검지 tip의 현재 +Y 축 오른손 법칙 회전"),
+           ("Pitch − · 초록 Y", ("pitch", -1), "검지 tip의 현재 Y 축 음의 회전"),
+           ("Yaw + · 파랑 Z", ("yaw", 1), "검지 tip의 현재 +Z 축 오른손 법칙 회전"),
+           ("Yaw − · 파랑 Z", ("yaw", -1), "검지 tip의 현재 Z 축 음의 회전"))
     for i, (text, key, tip) in enumerate(rot):
         rl_.addWidget(jbtn(text, key, tip, "rot"), i // 2, i % 2)
     pads.addWidget(g_rot)
@@ -379,7 +391,8 @@ def run_gui(ctl, kin, lo, hi, boards: dict, srcs: dict, smoke: str | None) -> in
     tg.addWidget(label("목표점", "cap"), 0, 2)
     tg.addWidget(cb_c, 0, 3)
     tg.addWidget(lbl_d, 1, 0, 1, 4)
-    tg.addWidget(label(("목표까지 = 명령 6D 손끝(유지 보정으로 실측이 갈 곳) 기준" if ctl.hold_on else "목표까지 = 현재 FK 기준")
+    tg.addWidget(label((("목표까지 = 명령 6D 손끝 기준 · 시작 보정 고정, 추종 오차 별도 확인" if not ctl.continuous_hold
+                        else "목표까지 = 명령 6D 손끝(연속 유지 보정) 기준") if ctl.hold_on else "목표까지 = 현재 FK 기준")
                        + ". 실물 손끝 · 보드와 다를 수 있다(풀이 전)", "note"), 2, 0, 1, 4)
 
     fig = Figure(figsize=(6.4, 4.6), tight_layout=True)
@@ -662,8 +675,13 @@ def run_gui(ctl, kin, lo, hi, boards: dict, srcs: dict, smoke: str | None) -> in
         lbl_lim.setStyleSheet(f"color:{tone(mj[j], 0.05, 0.1)}")
         lbl_tr.setText("— (dry)" if not s["pub"] or s["track"] is None else f"{s['track']:.3f} rad")
         e6 = B.pose_err(Tc, T)   # 손끝 실측 FK − 명령 6D(유지 켬이면 0 으로 간다)
-        lbl_hold.setText(f"유지 보정 c 최대 {np.abs(s['hold_c']).max():.3f} rad · {s['hold_state']} · 손끝 실측−명령 "
+        lbl_hold.setText(f"{s['control']} {s['control_hz']:.0f}Hz / 실제 틱 {s['loop_dt']*1000:.1f}ms · 유지 보정 c 최대 {np.abs(s['hold_c']).max():.3f} rad · {s['hold_state']} · 손끝 실측−명령 "
                          f"{np.linalg.norm(e6[:3]) * 1000:.1f} mm {np.degrees(np.linalg.norm(e6[3:])):.1f}°")
+        rpy_goal = B.Rot.from_matrix(Tc[:3, :3]).as_euler("xyz", degrees=True)
+        rpy_meas = B.Rot.from_matrix(T[:3, :3]).as_euler("xyz", degrees=True)
+        lbl_rpy.setText("tip R/P/Y ° (base 기준 자세)\n목표 " + " / ".join(f"{x:+.1f}" for x in rpy_goal)
+                        + "\n실측 " + " / ".join(f"{x:+.1f}" for x in rpy_meas))
+        lbl_rpy.setToolTip("표시: base에 대한 고정축 XYZ Euler 각. 조작: tip의 현재 X/Y/Z 축 증분 회전. +는 오른손 법칙.")
         if ctl.cam is not None:
             o = ctl.cam.owner()
             b_cam_on.setEnabled(o == "none")   # 제어 스레드가 죽어도 카메라는 다룬다
@@ -673,6 +691,9 @@ def run_gui(ctl, kin, lo, hi, boards: dict, srcs: dict, smoke: str | None) -> in
         lbl_cam.setToolTip(lbl_cam.text())
         pd = s["pd"]
         lbl_pd.setText(f"pd {pd['phase']} · {pd['target']} · estop {pd['estop']}")
+        board_z = st["boards"][st["bid"]][2, 3] * 1000
+        lbl_board_z.setText(f"보드 표시 z {board_z:.1f} mm · 초기값=CAD 205 + 표시 오프셋 {ctl.doc.get('fk_dz_mm', 0) if ctl.doc else 0:g} mm"
+                            " · FK 보정/실측 높이 아님(사람 점 맞춤 전)")
         # 보드 자세: 받아들인 맞춤이 표시 자세를 덮고(그림 · 목표 · sim), 맞춤이 사라지면 추정으로 되돌린다
         redraw = False
         if s["fit_ver"] != st["fit_ver"]:

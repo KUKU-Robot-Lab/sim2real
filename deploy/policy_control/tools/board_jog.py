@@ -2,6 +2,14 @@
 """보드 조그 기록 — 창(PyQt5)에서 한 팔을 조그해 검지 끝을 탁자 위 보드 목표점(ChArUco 교차점 · ArUco GridBoard 마커 모서리)에 대고, 접촉한 채 관절각을 기록한다.
 
 11.05 사용자: 이 기록으로 관절 영점 · 손끝 오프셋 · 보드 자세를 함께 푼다(풀이는 따로). 기록 형식 = 아래 JSON 계약 board_jog_v1.
+
+정밀 모드(--control precise): 120 Hz, 수동 명목 경로 최대 0.30 rad/s · 0.60 rad/s²의 정지 시작/종료 5차 경로.
+기본은 발행 시작 때 현재 PD 목표와 일치시킨 보정값 c를 고정한다. 경로 완료 후 발행 목표도 고정된다.
+--continuous_hold 실험 모드에서만 실측 손 FK 기준으로 연속 적분한다(K=2/s, 변화율 0.03 rad/s · 크기 0.12 rad).
+위 가속도 제한은 명목 경로에만 해당한다. 실제 발행 cmd+c에는 보정이 더해지므로 같은 가속도 제한을 보장하지 않는다.
+접촉 · 측정/힘 끊김 · 하강 때는 보정을 얼린다. 기존 모터 PD·중력보상은 바꾸지 않는다. 실기 성능 미검증.
+손 POINT는 기존 변환표의 명령 레지스터 범위를 반영한다(오른손 index 0 요청 → 약 0.064 rad).
+보드 초기 z=CAD205+표시오프셋12 mm는 이번 보정 결과나 독립 실측 높이가 아니다.
 발행 길은 teach_place · touch_probe 와 같다: pd 가 그 팔을 TRACKING 으로 붙든 채 /policy_control/joint_target 에 팔 7 + 손 6 을 60 Hz 로 낸다.
 
     deploy/policy_control/tools/board_jog.sh --side right --out logs/analysis/fk_board_jog_1105/rec/right_1.json            # dry(발행 0)
@@ -15,9 +23,10 @@
 발행 안전: --execute 없이는 발행 0(조그는 가상 명령만 바꾸고 회색 골격으로 그린다). --execute 여도 창의 '실기 발행' 체크를 켜기 전까지 0.
 체크를 켜는 순간 시작 검사 통과 · pd TRACKING(pd_fault) · 측정 신선 · pd 세트포인트(arm_hold_target) · 정지 처짐 e0(start_e0)를 본다.
 명령 cmd = 조그 · IK 가 정한 관절, 뜻한 관절 q_int = cmd + e0(실측 공간). 발행 = cmd + c(유지 보정, 11.05 사용자 "입력한 관절 상태를 유지").
-유지 보정(--no_hold 로 끔): 팔 7 관절 c += HOLD_K·(q_int − 실측)·dt, 관절당 |Δc| ≤ HOLD_RATE·dt · |c| ≤ HOLD_MAX_RAD.
-유지 켬이면 e0 = 0(발행을 켤 때 잰 처짐은 c 첫값 −e0 로 흡수)이라 q_int = cmd = 명령 6D 손끝 자세의 IK 해 — 실측 FK 손끝이 명령 6D 로 간다.
-자세마다 다른 처짐(손목 kp 낮음)을 c 가 메워 실측이 q_int 에 머문다. 이동 중 · 끝난 뒤 HOLD_SETTLE_S · 접촉(+ 뒤 REC_WIN) · 힘 끊김 ·
+유지 보정은 기본적으로 발행 시작의 c를 고정한다. --continuous_hold에서만 팔 7 관절 c를 계속 적분한다.
+--no_hold는 초기 c도 쓰지 않는 기존 e0 방식이다. 고정 c 모드는 자세에 따른 정상상태 추종 오차를 없애지 않는다.
+유지 켬이면 e0 = 0(발행을 켤 때 잰 처짐은 c 첫값 −e0 로 흡수)이라 q_int = cmd = 명령 6D 손끝 자세의 IK 해다.
+연속 적분 모드에서만 자세마다 다른 처짐을 c로 보정한다. 이동 중 · 끝난 뒤 HOLD_SETTLE_S · 접촉(+ 뒤 REC_WIN) · 힘 끊김 ·
 하강 전 정지 · 하강 · 자동 approach · hover · descend · settle · 발행 꺼짐(dry) · 측정 끊김 · c 가 발행 손끝을 z 하한 아래로 더 내릴 때는
 c 를 그 자리에 얼린다(0 으로 되돌리지 않는다). 자동 확인 대기(위 10 mm 정지)에서는 돈다 — 상태 띠 '손끝 실측−명령' 이 작아진 뒤 Enter.
 발행 중 매 틱: 팔 측정 0.5 s 끊김 · pd 이상 · 추종 오차 |실측 − q_int| > TRACK_TOL_MOVE 면 명령 = 실측 − e0(발행 = 그 + c)로 해제하고
@@ -235,7 +244,16 @@ def pose_err(Tg: np.ndarray, T: np.ndarray) -> np.ndarray:
     return np.r_[Tg[:3, 3] - T[:3, 3], rotvec(Tg[:3, :3] @ T[:3, :3].T)]
 
 
-def ik(kin: Kin, q0: np.ndarray, Tg: np.ndarray, lo: np.ndarray, hi: np.ndarray, h=None) -> tuple[np.ndarray | None, str]:
+def ik(kin: Kin, q0: np.ndarray, Tg: np.ndarray, lo: np.ndarray, hi: np.ndarray, h=None,
+       bounded: bool = False) -> tuple[np.ndarray | None, str]:
+    q, why = _ik_dls(kin, q0, Tg, lo, hi, h)
+    if q is None and bounded:
+        from bounded_jog_ik import solve
+        return solve(kin, q0, Tg, lo, hi, h)
+    return q, why
+
+
+def _ik_dls(kin: Kin, q0: np.ndarray, Tg: np.ndarray, lo: np.ndarray, hi: np.ndarray, h=None, bounded: bool = False) -> tuple[np.ndarray | None, str]:
     """목표 손끝 자세 Tg 에 가는 팔 관절. (q, "") 또는 (None, 이유). lo · hi 는 이미 여유를 뺀 한계. 순수."""
     q = np.asarray(q0, float).copy()
     for _ in range(IK_ITERS):
@@ -327,6 +345,13 @@ def can_record(contact: bool, ts, qs, flags) -> tuple[bool, str]:
         return False, f"창 안 접촉 비율 {fr:.0%} < {REC_CONTACT_FRAC:.0%}"
     v = arm_speed(ts, qs)
     return (True, "") if v < STILL_V else (False, f"팔이 아직 움직인다({v:.4f} rad/s ≥ {STILL_V})")
+
+
+def reachable_grip(grip: np.ndarray, side: str) -> np.ndarray:
+    """Existing command-range projection; never redefine the measured joint zero."""
+    from policy_control.rh56f1_map import load
+    hand_map = load(S2R / "deploy/policy_control/config/rh56f1_hand_map.yaml")
+    return hand_map.to_rad(hand_map.to_register(grip, side=side), side=side)
 
 
 def dir_count(dirs: list) -> int:
@@ -535,9 +560,9 @@ def new_doc(kin: Kin, urdf: Path, grip: np.ndarray, fk_dz_mm: float, poses: dict
 
 
 def save_raw(path: Path, rows: list, side: str) -> int:
-    cols = list(zip(*rows)) if rows else [[]] * 12
+    cols = list(zip(*rows)) if rows else [[]] * 17
     names = ("t", "t_wall_ns", "tick", "q_meas", "q_cmd", "hand_meas", "hand_cmd", "jf_zeroed", "tip_zeroed", "contact", "publishing",
-             "hold_c")   # 팔 발행 = q_cmd + hold_c(관절 한계로 자른 값)
+             "hold_c", "hold_state", "loop_dt", "T_tip_reference", "T_tip_measured", "q_sent")   # 팔 발행 = q_cmd + hold_c(관절 한계로 자른 값)
     arrs = {n: np.asarray(c) for n, c in zip(names, cols)}
     tmp = path.with_name(path.name + ".tmp.npz")
     np.savez(tmp, side=np.array(side), arm_names=np.array(P.arm_names(side)), hand_names=np.array(P.hand_names(side)), **arrs)
@@ -549,10 +574,11 @@ def save_raw(path: Path, rows: list, side: str) -> int:
 class Jogger:
     """가상 · 실기 공통 팔 명령. mode: idle · move(goal 로 JOG_VEL) · dwell(하강 전 정지 — Ctl 이 끝낸다) · descend."""
 
-    def __init__(self, kin: Kin, lo: np.ndarray, hi: np.ndarray, cmd: np.ndarray, hand: np.ndarray, z_floor: float = -np.inf):
+    def __init__(self, kin: Kin, lo: np.ndarray, hi: np.ndarray, cmd: np.ndarray, hand: np.ndarray, z_floor: float = -np.inf, precise: bool = False):
         self.kin, self.lo, self.hi = kin, lo + P.LIMIT_MARGIN_RAD, hi - P.LIMIT_MARGIN_RAD
         self.cmd, self.hand, self.hand_goal = np.asarray(cmd, float).copy(), np.asarray(hand, float).copy(), np.asarray(hand, float).copy()
         self.e0, self.z_floor = np.zeros(7), float(z_floor)
+        self.precise, self.path, self.path_elapsed = precise, None, 0.0
         self.c = np.zeros(7)   # 유지 보정 — 발행 = cmd + c(Ctl._hold_step 이 바꾼다)
         self.mode, self.goal, self.down, self.t_mode, self.vmax = "idle", None, False, 0.0, JOG_VEL
         self.T0: np.ndarray | None = None
@@ -571,8 +597,21 @@ class Jogger:
                 return why
         return None
 
-    def hold(self, meas: np.ndarray | None, t: float = 0.0) -> None:
+    def hold(self, meas: np.ndarray | None, t: float = 0.0, contact: bool = False, emergency: bool = False) -> None:
         """명령 = 실측 − e0(누름 없음, 발행 = 그 + c). 실측이 없으면 지금 명령 그대로. c 는 그대로 둔다."""
+        if self.precise and not emergency:
+            if self.mode == "brake":
+                return
+            self.mode, self.goal, self.t_mode = "idle", None, t
+            if meas is not None:
+                target = np.clip(np.asarray(meas, float) - self.e0,
+                                 np.maximum(self.lo, self.lo - self.c), np.minimum(self.hi, self.hi - self.c))
+                if np.all(np.isfinite(target)) and self.refuse_path(target, self.hand, True, False) is None:
+                    from precise_jog import QuinticPath
+                    self.path = QuinticPath(self.cmd, target, max_vel=0.15, max_acc=0.60)
+                    self.path_elapsed, self.goal, self.mode = 0.0, target.copy(), "brake"
+                    self.f_ref, self.c_prev = None, contact
+            return
         if meas is not None:
             c = np.clip(np.asarray(meas, float) - self.e0, self.lo, self.hi)
             if np.all(np.isfinite(c)):
@@ -582,11 +621,13 @@ class Jogger:
     def z_now(self) -> float:
         return float(self.kin.tip(self.cmd, self.hand)[2, 3])
 
-    def plan(self, Tg: np.ndarray, contact: bool, stale: bool, tip_v: float | None = None) -> str | None:
+    def plan(self, Tg: np.ndarray, contact: bool, stale: bool, tip_v: float | None = None, retarget: bool = False) -> str | None:
         """목표 손끝 자세로 이동 시작. 거부면 이유. tip_v(m/s) = 이 이동의 손끝 속도 상한(관절 속도를 JOG_VEL 아래로만 낮춘다)."""
-        if self.mode != "idle":
+        if self.mode != "idle" and not (self.precise and retarget and self.mode == "move"):
             return f"{self.mode} 중 — 끝난 뒤에 받는다"
-        q, why = ik(self.kin, self.cmd, Tg, self.lo, self.hi, self.hand)
+        lower = np.maximum(self.lo, self.lo - self.c) if self.precise else self.lo
+        upper = np.minimum(self.hi, self.hi - self.c) if self.precise else self.hi
+        q, why = ik(self.kin, self.cmd, Tg, lower, upper, self.hand, bounded=self.precise)
         if q is None:
             return why
         vmax = JOG_VEL
@@ -594,18 +635,42 @@ class Jogger:
             L, m = float(np.linalg.norm(Tg[:3, 3] - self.kin.tip(self.cmd, self.hand)[:3, 3])), float(np.abs(q - self.cmd).max())
             if L > 0 and m > 0:
                 vmax = min(JOG_VEL, tip_v * m / L)
-        return self.go(q, contact, stale, vmax=vmax)
+        return self.go(q, contact, stale, vmax=vmax, precise_fast=tip_v is None, retarget=retarget)
 
-    def go(self, q: np.ndarray, contact: bool, stale: bool, t: float = 0.0, vmax: float = JOG_VEL) -> str | None:
-        if self.mode != "idle":
+    def go(self, q: np.ndarray, contact: bool, stale: bool, t: float = 0.0, vmax: float = JOG_VEL, precise_fast: bool = True, retarget: bool = False) -> str | None:
+        if self.mode != "idle" and not (self.precise and retarget and self.mode == "move"):
             return f"{self.mode} 중 — 끝난 뒤에 받는다"
         if any(np.any(v < self.lo) or np.any(v > self.hi) for v in (q, q + self.c)):
             return "목표가 관절 한계(여유 포함) 밖" + ("(유지 보정 c 포함)" if self.c.any() else "")
         if why := self.refuse_path(q, self.hand, contact, stale):
             return why
+        path = None
+        if self.precise:
+            from precise_jog import RetargetablePath
+            cap = 0.30 if precise_fast else min(float(vmax), 0.30)
+            v, acc = (np.zeros(7), np.zeros(7)) if self.mode != "move" else self.path.sample_state(self.path_elapsed)[1:]
+            try:
+                path = RetargetablePath(self.cmd, q, velocity=v, acceleration=acc, max_vel=cap, max_acc=0.60)
+            except ValueError as error:
+                return f"연속 경로 거부: {error}"
+            low, high = path.position_bounds()
+            if np.any(low + np.minimum(self.c, 0) < self.lo - 1e-10) or np.any(high + np.maximum(self.c, 0) > self.hi + 1e-10):
+                return "연속 경로 제동 여유 부족(관절 한계)"
+            # Bound distance between actual curved-path samples by PATH_DQ.
+            count = max(2, int(np.ceil(path.duration * cap / PATH_DQ)) + 1)
+            offsets = [np.zeros(7)] + ([self.c] if self.c.any() else [])
+            initial_z = [float(self.kin.tip(self.cmd + d, self.hand)[2, 3]) for d in offsets]
+            for elapsed in np.linspace(0, path.duration, count):
+                point = path.sample(elapsed)[0]
+                for d, z0 in zip(offsets, initial_z):
+                    z = float(self.kin.tip(point + d, self.hand)[2, 3])
+                    if why := refuse_down(z0, z, contact, stale) or refuse_floor(z, z0, self.z_floor):
+                        return why
         z0, z1 = self.z_now(), self.kin.tip(q, self.hand)[2, 3]
         self.goal, self.down, self.mode, self.t_mode = np.asarray(q, float).copy(), z1 < z0 - DOWN_EPS, "move", t
         self.vmax = min(float(vmax), JOG_VEL)
+        if self.precise:
+            self.path, self.path_elapsed = path, 0.0
         self.c_prev, self.f_ref = contact, None
         return None
 
@@ -615,40 +680,65 @@ class Jogger:
     def tick(self, t: float, dt: float, meas: np.ndarray | None, contact: bool, stale: bool, force=None) -> str | None:
         """한 틱. force = (|검지 관절 Δ| g, 촉각 Δ N)(Detector 기준선 대비) 또는 None. → 알림 문구(멈춘 이유 등) 또는 None."""
         self.hand = step_toward(self.hand, self.hand_goal, HAND_VEL, dt)
+        if self.mode == "brake":
+            if contact and not self.c_prev:
+                self.mode, self.goal = "idle", None
+                return "제동 중 새 접촉 — 현재 명령 유지"
+            self.c_prev = contact
+            if contact and force is not None:
+                if self.f_ref is not None and (force[0] - self.f_ref[0] > FORCE_G or force[1] - self.f_ref[1] > TIP_N):
+                    self.mode, self.goal = "idle", None
+                    return "접촉 힘 상승 — 제동 경로 중단, 현재 명령 유지"
+                if self.f_ref is None:
+                    self.f_ref = force
+            if stale:
+                self.mode, self.goal = "idle", None
+                return "힘 끊김 — 정지 유지"
+            self.path_elapsed += dt
+            self.cmd = self.path.sample(self.path_elapsed)[0]
+            if self.path_elapsed >= self.path.duration:
+                self.mode, self.goal = "idle", None
+            return None
         if self.mode == "move":
             if self.down and stale:
-                self.hold(meas, t)
+                self.hold(meas, t, contact=contact)
                 return "힘 끊김 — 내려가던 이동 멈춤"
             if contact and not self.c_prev:   # 방향과 상관없이(M2)
-                self.hold(meas, t)
+                self.hold(meas, t, contact=contact)
                 return "이동 중 접촉 — 멈추고 명령 = 실측"
             self.c_prev = contact
             if contact and force is not None:
                 if self.f_ref is None:
                     self.f_ref = force
                 elif force[0] - self.f_ref[0] > FORCE_G or force[1] - self.f_ref[1] > TIP_N:
-                    self.hold(meas, t)
+                    self.hold(meas, t, contact=contact)
                     return (f"접촉 중 힘 상승(검지 {force[0] - self.f_ref[0]:+.0f} g · 촉각 {force[1] - self.f_ref[1]:+.2f} N) — "
                             "멈추고 명령 = 실측")
-            self.cmd = step_toward(self.cmd, self.goal, self.vmax, dt)
+            if self.precise:
+                self.path_elapsed += dt
+                self.cmd = self.path.sample(self.path_elapsed)[0]
+            else:
+                self.cmd = step_toward(self.cmd, self.goal, self.vmax, dt)
             if np.array_equal(self.cmd, self.goal):
                 self.mode, self.goal = "idle", None
         elif self.mode == "descend":
             if contact or stale:
-                self.hold(meas, t)
+                self.hold(meas, t, contact=contact)
                 return "접촉 — 하강 멈춤, 명령 = 실측(누름 풂)" if contact else "힘 끊김 — 하강 멈춤"
             s = min(DESC_V * (t - self.t_mode), DESC_MAX)
             Tg = self.T0.copy()
             Tg[2, 3] -= s
             if Tg[2, 3] < self.z_floor:
-                self.hold(meas, t)
+                self.hold(meas, t, contact=contact)
                 return f"하강 멈춤 — 손끝 z 하한 {self.z_floor * 1000:.1f} mm(무접촉, 보드 자세를 확인한다)"
-            q, why = ik(self.kin, self.cmd, Tg, self.lo, self.hi, self.hand)
+            lower = np.maximum(self.lo, self.lo - self.c) if self.precise else self.lo
+            upper = np.minimum(self.hi, self.hi - self.c) if self.precise else self.hi
+            q, why = ik(self.kin, self.cmd, Tg, lower, upper, self.hand)
             if q is None:
-                self.hold(meas, t)
+                self.hold(meas, t, contact=contact)
                 return f"하강 멈춤 — {why}"
             if self.c.any() and self.kin.tip(q + self.c, self.hand)[2, 3] < self.z_floor:   # 발행값(+ 얼린 c)도 하한 위
-                self.hold(meas, t)
+                self.hold(meas, t, contact=contact)
                 return f"하강 멈춤 — 발행값(+ 유지 보정 c) 손끝 z 하한 {self.z_floor * 1000:.1f} mm"
             self.cmd = step_toward(self.cmd, q, JOG_VEL, dt)
             if s >= DESC_MAX:
@@ -838,11 +928,14 @@ class FakeIO:
 class Ctl:
     def __init__(self, io, kin: Kin, lo, hi, home: np.ndarray, grip: np.ndarray, execute: bool, demo: bool,
                  out: Path | None, doc: dict | None, clock=time.monotonic, z_floor: float = -np.inf, hold: bool = True,
-                 auto_all: bool = False, confirm_first: int = 2, photo_dir: Path | None = None, extrinsics: Path | None = None):
+                 auto_all: bool = False, confirm_first: int = 2, photo_dir: Path | None = None, extrinsics: Path | None = None, precise: bool = False,
+                 continuous_hold: bool = True):
         self.io, self.kin, self.home, self.grip, self.execute, self.demo, self.out, self.doc = io, kin, home, grip, execute, demo, out, doc
+        self.precise, self.dt = precise, 1.0 / 120.0 if precise else DT
         self.hold_on, self.hold_state, self.t_contact, self.t_move = bool(hold), "dry", -np.inf, -np.inf   # 유지 보정 켬 · 상태 · 마지막 접촉 · 이동
+        self.continuous_hold = bool(continuous_hold)
         self.clock, self.lo, self.hi, self.z_floor = clock, lo, hi, float(z_floor)
-        self.jog = Jogger(kin, lo, hi, home, grip, self.z_floor)
+        self.jog = Jogger(kin, lo, hi, home, grip, self.z_floor, precise=self.precise)
         self.det = Detector()
         self.rows: list = []
         self.req: queue.Queue = queue.Queue()
@@ -889,7 +982,7 @@ class Ctl:
         self.det.begin(now, *(base or (0.0, 0.0)), 0.0)
         q_set = arm_hold_target(r["pd"], self.kin.side, meas)[0] if meas is not None else None
         cmd = q_set if q_set is not None else (meas if meas is not None else self.home)
-        self.jog = Jogger(self.kin, self.lo, self.hi, cmd, hmeas if hmeas is not None else self.grip, self.z_floor)
+        self.jog = Jogger(self.kin, self.lo, self.hi, cmd, hmeas if hmeas is not None else self.grip, self.z_floor, precise=self.precise)
         self.q_start = cmd.copy()
         if isinstance(self.io, FakeIO):
             self.io.jog = self.jog
@@ -937,7 +1030,7 @@ class Ctl:
             t_next = self.clock()
             while not self.quit.is_set():
                 self.step(self.clock())
-                t_next = max(t_next + DT, self.clock())
+                t_next = max(t_next + self.dt, self.clock())
                 time.sleep(max(0.0, t_next - self.clock()))
         except BaseException as error:   # noqa: BLE001 — 어떤 오류든 누름을 풀고 stop 으로
             self.fatal = f"{type(error).__name__}: {error}"
@@ -1005,7 +1098,11 @@ class Ctl:
                           nan(6, np.nan) if r.get("hmeas") is None else r["hmeas"], self.jog.hand.copy(),
                           nan(6, np.nan) if r["jf"] is None or len(r["jf"]) != 6 else r["jf"],
                           nan(5, np.nan) if r["tip"] is None or len(r["tip"]) != 5 else r["tip"],
-                          self.sig in ("index_force", "tip_touch"), self.pub, self.jog.c.copy()))
+                          self.sig in ("index_force", "tip_touch"), self.pub, self.jog.c.copy(),
+                          self.hold_state, getattr(self, "actual_dt", self.dt),
+                          self.kin.tip(self.jog.cmd, self.jog.hand),
+                          nan((4, 4), np.nan) if r["meas"] is None or r.get("hmeas") is None else self.kin.tip(r["meas"], r["hmeas"]),
+                          self.jog.pub().copy() if self.pub else nan(7, np.nan)))
 
     def _window(self, now: float, w: float) -> list:
         out = []
@@ -1021,6 +1118,7 @@ class Ctl:
 
     def step(self, now: float) -> None:
         dt = 0.0 if self.t_prev is None else min(max(now - self.t_prev, 0.0), 0.1)
+        self.actual_dt = self.dt if self.t_prev is None else now - self.t_prev
         self.t_prev = now
         self.io.spin()
         r = self.r = self.io.read(now)
@@ -1087,20 +1185,43 @@ class Ctl:
             self.t_move = now
         why = ("끔(--no_hold)" if not self.hold_on else "dry" if not (self.pub or self.demo) else "측정 끊김" if meas is None
                else "힘 끊김" if stale else "접촉" if now - self.t_contact < REC_WIN   # 접촉 뒤 기록 창 길이까지
-               else jg.mode if jg.mode in ("dwell", "descend") else "이동 중" if now - self.t_move < HOLD_SETTLE_S else f"자동 {a['phase']}" if a and a.get("phase") in HOLD_FREEZE_AUTO
+               else jg.mode if jg.mode in ("dwell", "descend", "brake") else "이동 중" if not self.precise and now - self.t_move < HOLD_SETTLE_S else f"자동 {a['phase']}" if a and a.get("phase") in HOLD_FREEZE_AUTO
                else None)
         self.hold_state = why or "동작"
         if why or dt <= 0:
             return
-        dc = np.clip(HOLD_K * (jg.cmd + jg.e0 - meas) * dt, -HOLD_RATE * dt, HOLD_RATE * dt)
-        c = np.clip(jg.c + dc, -HOLD_MAX_RAD, HOLD_MAX_RAD)
+        if not self.continuous_hold:
+            # Preserve the bias captured at publication start. Never chase
+            # stationary friction by integrating feedback into the motor goal.
+            self.hold_state = "보정 고정"
+            return
+        if self.precise:
+            from precise_jog import bias_step
+            hand = self.r.get("hmeas")
+            if hand is None:
+                self.hold_state = "손 측정 끊김"
+                return
+            # Keep the nominal tip goal fixed; solve its joint reference with the REAL hand.
+            target = self.kin.tip(jg.cmd, jg.hand)
+            reference, reason = ik(self.kin, jg.cmd, target, jg.lo, jg.hi, hand)
+            if reference is None:
+                self.hold_state = f"손 FK 보정 거부: {reason}"
+                return
+            c = bias_step(jg.c, reference - meas, dt)
+        else:
+            dc = np.clip(HOLD_K * (jg.cmd + jg.e0 - meas) * dt, -HOLD_RATE * dt, HOLD_RATE * dt)
+            c = np.clip(jg.c + dc, -HOLD_MAX_RAD, HOLD_MAX_RAD)
         c = np.where((jg.cmd + c < jg.lo) | (jg.cmd + c > jg.hi), jg.c, c)   # 관절 한계로 가는 관절은 그 자리
         if not np.all(np.isfinite(c)):
             return
-        z0, z1 = float(self.kin.tip(jg.cmd + jg.c, jg.hand)[2, 3]), float(self.kin.tip(jg.cmd + c, jg.hand)[2, 3])
-        if z1 < jg.z_floor and z1 < z0:   # c 가 발행 손끝을 z 하한 아래로 더 내리면 얼림
-            self.hold_state = "z 하한"
-            return
+        hands = [jg.hand]
+        if self.precise and self.r.get("hmeas") is not None:
+            hands.append(self.r["hmeas"])
+        for hand in hands:
+            z0, z1 = float(self.kin.tip(jg.cmd + jg.c, hand)[2, 3]), float(self.kin.tip(jg.cmd + c, hand)[2, 3])
+            if z1 < jg.z_floor and z1 < z0:
+                self.hold_state = "z 하한"
+                return
         jg.c = c
 
     def _send(self) -> None:
@@ -1111,14 +1232,17 @@ class Ctl:
             return
         self.io.send(self.k, cmd, hand)
         self.k += 1
-        self.sp_est = cmd.copy() if self.sp_est is None else self.sp_est + np.clip(cmd - self.sp_est, -PD_VEL_RAD_S * DT, PD_VEL_RAD_S * DT)
+        # Prefer the actual PD setpoint over a guessed reduced-stage ramp at high speed.
+        measured_set, _ = arm_hold_target(self.r.get("pd") or {}, self.kin.side, self.last) if self.precise else (None, None)
+        self.sp_est = measured_set if measured_set is not None else (cmd.copy() if self.sp_est is None else self.sp_est + np.clip(
+            cmd - self.sp_est, -PD_VEL_RAD_S * self.dt, PD_VEL_RAD_S * self.dt))
 
     def _release(self, why: str) -> None:
         """명령 = 실측 − e0, 발행 = 그 + c(얼린 c — 빼면 팔이 c 만큼 처져 누른다) → release_and_stop(해제 송신 → episode stop →
         pd internal 확인). 발행 끝."""
-        self.jog.hold(self.last)
+        self.jog.hold(self.last, emergency=True)
         self.jog.mode, self.auto, self.auto_free = "idle", None, False
-        ns = SimpleNamespace(cmd=self.jog.pub(), sp_est=self.sp_est, dt=DT)
+        ns = SimpleNamespace(cmd=self.jog.pub(), sp_est=self.sp_est, dt=self.dt)
 
         def send() -> None:
             self.io.send(self.k, self.jog.pub(), self.jog.hand)
@@ -1281,7 +1405,7 @@ class Ctl:
             if self.jog.mode in ("dwell", "descend"):   # [천천히 하강] · Enter
                 a["phase"] = "descend"
         elif ph == "descend":
-            if self.jog.mode in ("dwell", "descend"):
+            if self.jog.mode in ("dwell", "descend", "brake"):
                 return
             if contact:
                 a["phase"], a["t"] = "settle", now
@@ -1331,7 +1455,10 @@ class Ctl:
             return True, "dry — 판정 없음"
         if meas is None:
             return False, "측정 없음"
-        e6 = pose_err(self.kin.tip(self.jog.cmd + self.jog.e0, self.jog.hand), self.kin.tip(meas, self.jog.hand))
+        hand = self.r.get("hmeas")
+        if hand is None:
+            return False, "손 측정 없음"
+        e6 = pose_err(self.kin.tip(self.jog.cmd + self.jog.e0, self.jog.hand), self.kin.tip(meas, hand))
         mm, deg = float(np.linalg.norm(e6[:3]) * 1000), float(np.degrees(np.linalg.norm(e6[3:])))
         return mm <= AUTO_CONV_MM and deg <= AUTO_CONV_DEG, f"{mm:.1f} mm {deg:.2f}°"
 
@@ -1476,21 +1603,28 @@ class Ctl:
     def _req_jog(self, now, contact, stale, axis: str, sign: int, step: float, frame: str):
         if self.auto is not None and self.auto["phase"] != "wait":
             return f"거부: 자동 이동 중 — 조그는 위 {AUTO_HOVER_M * 1000:.0f} mm 확인 대기에서만(정지 = space)"
-        Tg = jog_goal(self.kin.tip(self.jog.cmd, self.jog.hand), axis, sign, step, frame)
-        why = self.jog.plan(Tg, contact, stale)
+        base = self.jog.cmd
+        retarget = self.precise and self.jog.mode == "move" and self.auto is None
+        if retarget:
+            base = self.jog.goal
+            remaining = pose_err(self.kin.tip(base, self.jog.hand), self.kin.tip(self.jog.cmd, self.jog.hand))
+            if np.linalg.norm(remaining[:3]) > 0.002 or np.linalg.norm(remaining[3:]) > np.radians(.5):
+                return "조그 진행 중 — 남은 경로를 먼저 따라감"
+        Tg = jog_goal(self.kin.tip(base, self.jog.hand), axis, sign, step, frame)
+        why = self.jog.plan(Tg, contact, stale, retarget=retarget)
         unit = f"{step * 1000:g} mm" if AXES.index(axis) < 3 else f"{np.degrees(step):g}°"
         return f"거부: {why}" if why else f"조그 {axis}{'+' if sign > 0 else '−'} {unit} ({frame})"
 
     def _req_stop(self, now, contact, stale):
         was = self.auto is not None
         self.auto = None   # 사용자 정지 — '확인 없이' 는 그대로
-        self.jog.hold(self.last, now)
+        self.jog.hold(self.last, now, contact=contact)
         return "정지 — 명령 = 실측" + (" · 자동 해제" if was else "")
 
     def _req_lift(self, now, contact, stale):
         self._auto_off("위로 빼기", user=True)
         if self.jog.mode != "idle":
-            self.jog.hold(self.last, now)
+            self.jog.hold(self.last, now, contact=contact)
         Tg = self.kin.tip(self.jog.cmd, self.jog.hand)
         Tg[2, 3] += LIFT_M
         why = self.jog.plan(Tg, contact, stale)
@@ -1556,10 +1690,10 @@ class Ctl:
         self.io.open_pub()
         self.io.event("hand_mode", hand_command="position", reasons=["board_jog 손 위치 명령"])
         if self.hold_on:   # 처짐 e0 를 c 첫값으로 흡수: 명령 = 지금 실측(q_int), 발행 = 명령 + c = q_set(첫 발행 = pd 세트포인트, 튐 없음)
-            self.jog = Jogger(self.kin, self.lo, self.hi, q_set + e0, r["hmeas"], self.z_floor)
+            self.jog = Jogger(self.kin, self.lo, self.hi, q_set + e0, r["hmeas"], self.z_floor, precise=self.precise)
             self.jog.c = -e0   # |e0| ≤ E0_START_MAX < HOLD_MAX_RAD. 재발행이면 해제 때 얼린 c 와 거의 같다(pd 가 그 발행값을 붙들고 있었다)
         else:
-            self.jog = Jogger(self.kin, self.lo, self.hi, q_set, r["hmeas"], self.z_floor)
+            self.jog = Jogger(self.kin, self.lo, self.hi, q_set, r["hmeas"], self.z_floor, precise=self.precise)
             self.jog.e0 = e0
         self.sp_est, self.pub = q_set.copy(), True
         if not self.published:   # 시작 자세 = 첫 발행 자세만(재발행 때 덮지 않는다, 명령 공간)
@@ -1567,6 +1701,8 @@ class Ctl:
         return f"★ 실기 발행 켬 — 에피소드 {self.io.ep_id}, e0 {np.round(e0, 3).tolist()}"
 
     def _req_record(self, now, contact, stale, bid: str, ti: int, T_board: np.ndarray, pose: dict, aligned_by: str | None = None):
+        if self.jog.mode == "brake":
+            return "기록 거부 — 접촉 정지 경로가 끝날 때까지 대기"
         Wa = self._window(now, REC_WIN)
         W = [r for r in Wa if np.all(np.isfinite(r[3]))]
         flags = [r[9] for r in Wa]
@@ -1661,7 +1797,8 @@ class Ctl:
         snap = {"meas": None if meas is None else meas.copy(), "hmeas": r.get("hmeas"), "cmd": self.jog.cmd.copy(),
                 "hand": self.jog.hand.copy(), "jf": r.get("jf"), "tip": r.get("tip"), "jf0": self.det.jf0, "tip0": self.det.tip0,
                 "contact": contact, "stale": stale, "sig": self.sig, "pub": self.pub, "mode": self.jog.mode, "msg": self.msg,
-                "start_fail": list(self.start_fail), "e0": self.jog.e0.copy(), "hold_c": self.jog.c.copy(), "hold_state": self.hold_state,
+                "start_fail": list(self.start_fail), "e0": self.jog.e0.copy(), "hold_c": self.jog.c.copy(), "hold_state": self.hold_state, "control": "precise" if self.precise else "legacy", "control_hz": 1 / self.dt, "loop_dt": getattr(self, "actual_dt", self.dt),
+                "goal": self.jog.cmd.copy() if self.jog.goal is None else self.jog.goal.copy(),
                 "pd": {k: (r.get("pd") or {}).get(k) for k in ("phase", "target", "estop", "reasons")},
                 "track": None if meas is None else float(np.abs(meas - self.jog.cmd - self.jog.e0).max()),
                 "home_err": None if meas is None else float(np.abs(meas - self.home).max()),
@@ -1672,6 +1809,8 @@ class Ctl:
         Wa = self._window(now, REC_WIN)
         W = [x for x in Wa if np.all(np.isfinite(x[3]))]
         snap["can_record"], snap["rec_why"] = can_record(contact, [x[0] for x in W], [x[3] for x in W], [x[9] for x in Wa])
+        if self.jog.mode == "brake":
+            snap["can_record"], snap["rec_why"] = False, "접촉 정지 경로 중"
         with self.lock:
             self.snap = snap
 
@@ -1690,16 +1829,20 @@ class Ctl:
 
 # ------------------------------------------------------------------ sim 창으로 상태 보내기(UDP, 창 · 제어와 떨어진 스레드)
 def sim_packet(t: float, side: str, snap: dict, kin: Kin, view: dict) -> dict:
-    """sim 직원과 같은 계약(한 줄 JSON). q_show = 발행 중이면 실측, 아니면 가상 명령. q_cmd = 발행 중일 때만(dry 는 q_show 와 같아 null). 순수."""
+    """sim 직원과 같은 계약(한 줄 JSON). q_show = 발행 여부와 무관하게 신선한 실측 우선, 없으면 virtual 명시. q_cmd = 조그 목표(유지 보정 제외), 발행 중일 때만. tip 변환은 축 표시용. 순수."""
     pub = bool(snap["pub"])
-    arm = snap["meas"] if pub and snap["meas"] is not None else snap["cmd"]
-    hand = snap["hmeas"] if pub and snap["hmeas"] is not None else snap["hand"]
+    measured = snap["meas"] is not None and snap["hmeas"] is not None
+    arm = snap["meas"] if measured else snap["cmd"]
+    hand = snap["hmeas"] if measured else snap["hand"]
     tgt = view.get("target")
-    return {"t": float(t), "names": list(P.arm_names(side) + P.hand_names(side)),
+    goal = snap.get("goal", snap["cmd"]) if snap.get("control") == "precise" else snap["cmd"]
+    return {"t": float(t), "state_source": "measured" if measured else "virtual", "names": list(P.arm_names(side) + P.hand_names(side)),
             "q_show": np.r_[arm, hand].astype(float).tolist(),
-            "q_cmd": np.r_[snap["cmd"] + snap["hold_c"], snap["hand"]].astype(float).tolist() if pub else None,   # 발행값(+ 유지 보정)
+            "q_cmd": np.r_[snap["cmd"], snap["hand"]].astype(float).tolist() if pub else None,   # 조그 목표(유지 보정은 모터 발행에만)
             "boards": {b: {"T_base_board": np.asarray(T, float).tolist()} for b, T in view.get("boards", {}).items()},
             "target_xyz_base": None if tgt is None else np.asarray(tgt, float).tolist(),
+            "T_tip_goal": kin.tip(goal, snap["hand"]).tolist(),
+            "T_tip_meas": kin.tip(arm, hand).tolist(),
             "tip_xyz_base": kin.tip(arm, hand)[:3, 3].tolist(), "contact": bool(snap["contact"]), "mode": "pub" if pub else "dry"}
 
 
@@ -1996,13 +2139,17 @@ def selftest() -> int:
     assert names == [f"r_aj_{i}" for i in range(1, 8)] + [f"r_hj_{a}" for a in P.HAND_AXES], names
     assert set(names) <= set(kin.tree.joints), sorted(set(names) - set(kin.tree.joints))
     pk = sim_packet(1.0, side, s, kin, view)
-    assert set(pk) == {"t", "names", "q_show", "q_cmd", "boards", "target_xyz_base", "tip_xyz_base", "contact", "mode"}, set(pk)
+    assert set(pk) == {"t", "names", "q_show", "q_cmd", "boards", "target_xyz_base", "tip_xyz_base", "contact", "mode", "T_tip_goal", "T_tip_meas", "state_source"}, set(pk)
     assert pk["names"] == names and len(pk["q_show"]) == 13 and pk["q_cmd"] is None and pk["mode"] == "dry"
-    assert np.allclose(pk["q_show"], np.r_[s["cmd"], s["hand"]]) and not np.allclose(pk["q_show"][:7], s["meas"])   # dry = 가상 명령
-    assert np.allclose(pk["tip_xyz_base"], kin.tip(s["cmd"], s["hand"])[:3, 3]) and len(pk["target_xyz_base"]) == 3
+    assert np.allclose(pk["q_show"], np.r_[s["meas"], s["hmeas"]]) and pk["state_source"] == "measured"   # dry = 가상 명령
+    assert np.allclose(pk["tip_xyz_base"], kin.tip(s["meas"], s["hmeas"])[:3, 3]) and len(pk["target_xyz_base"]) == 3
     assert np.asarray(pk["boards"]["grid50"]["T_base_board"]).shape == (4, 4) and isinstance(pk["contact"], bool)
     pp = sim_packet(1.0, side, dict(s, pub=True), kin, view)
     assert pp["mode"] == "pub" and np.allclose(pp["q_show"][:7], s["meas"]) and len(pp["q_cmd"]) == 13   # 발행 중 = 실측
+    corrected = sim_packet(1.0, side, dict(s, pub=True, hold_c=np.full(7, 0.04)), kin, view)
+    assert np.allclose(corrected["q_cmd"][:7], s["cmd"]), "ghost must show jog goal, not compensated motor target"
+    assert np.allclose(corrected["T_tip_goal"], kin.tip(s["cmd"], s["hand"]))
+    assert np.allclose(corrected["T_tip_meas"], kin.tip(s["meas"], s["hmeas"]))
     assert json.loads(json.dumps(pk, allow_nan=False)) == pk and json.loads(json.dumps(pp, allow_nan=False)) == pp
     rx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     rx.bind(("127.0.0.1", 0))
@@ -2592,7 +2739,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--extrinsics", type=Path, default=S2R / "config/global_camera_extrinsics_arm4090_r20u5.yaml")
     ap.add_argument("--execute", action="store_true", help="실기 발행 체크를 켤 수 있게(켜기 전까지 발행 0)")
     ap.add_argument("--demo", action="store_true", help="ROS 없이 가짜 팔 · 힘(발행 없음)")
+    ap.add_argument("--control", choices=("legacy", "precise"), default="legacy", help="precise: 120Hz · 가속도 제한 · 이동 중 실측 손 FK 추종 보정(실기 미검증)")
     ap.add_argument("--no_hold", action="store_true", help="유지 보정(c) 끔 — 옛 방식: 실측 ≈ 명령 + e0(고정 처짐)")
+    ap.add_argument("--continuous_hold", action="store_true", help="실험용 연속 유지 적분 — 기본은 발행 시작 보정값 고정(정지 중 목표 변동 방지)")
     ap.add_argument("--sim_port", type=int, default=SIM_PORT, help=f"sim 창으로 {SIM_HOST}:<port> {SIM_HZ:g} Hz UDP JSON(0 = 끔)")
     ap.add_argument("--seed", type=Path, nargs="+", help="이전 기록 JSON(들) — 산 점을 새 --out 에 seeded_from 으로 복사하고 처음 맞춤에 쓴다 "
                                                         "(원본은 읽기만, side · urdf_md5 가 다르면 거부). 주면 N = 남은 점 전체 자동(연속)")
@@ -2604,6 +2753,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--smoke", help="demo 를 몇 초 돌려 화면을 이 png 로 저장하고 끝낸다(QT_QPA_PLATFORM=offscreen 시험)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
+    if a.no_hold and a.continuous_hold:
+        ap.error("--no_hold 와 --continuous_hold 는 함께 사용할 수 없다")
     if a.selftest:
         return selftest()
     if a.side is None:
@@ -2625,6 +2776,10 @@ def main(argv: list[str] | None = None) -> int:
         if a.out is not None:
             check_out(a.out)
         grip = P.parse_pose(a.grip, POINT, "--grip")
+        requested_grip = grip.copy()
+        if a.control == "precise":
+            grip = reachable_grip(grip, a.side)
+            print(f"손 명령 도달범위 반영: 요청 {requested_grip.tolist()} → {grip.tolist()}", flush=True)
         kin = Kin(a.urdf, a.side, grip)
         lo, hi = arm_limits(a.side)
         home = np.array(json.loads(CONTRACT.read_text())["sides"][a.side]["home_arm"], float)
@@ -2658,6 +2813,10 @@ def main(argv: list[str] | None = None) -> int:
         z_floor = max(float(to_base(BOARDS[b]["targets"], boards[b])[:, 2].mean()) for b in bids) - FLOOR_BELOW_M
         print(f"손끝 z 하한 {z_floor * 1000:.1f} mm (표시 보드면 − {FLOOR_BELOW_M * 1000:.0f} mm)", flush=True)
         doc = new_doc(kin, a.urdf, grip, fk_dz, srcs, z_floor) if a.out is not None or seeds else None   # seed 는 demo 에서도 메모리 문서
+        if doc is not None:
+            doc["control"] = {"mode": a.control, "hz": 120 if a.control == "precise" else 60,
+                              "requested_grip": requested_grip.tolist(), "reachable_grip": grip.tolist(),
+                              "board_z_note": "표시 추정값; FK 보정이나 실측 높이가 아님"}
         if seeds:
             doc["points"], doc["seeded_from"] = seeds, seed_info
             print(f"seed {len(seeds)} 점 ← " + " · ".join(f"{i['path']} {i['n']} 점" for i in seed_info), flush=True)
@@ -2669,7 +2828,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     photos = a.out.with_name(f"{a.out.stem}_photos") if a.out is not None and a.photo_topic else None
     ctl = Ctl(io, kin, lo, hi, home, grip, a.execute, a.demo, a.out, doc, z_floor=z_floor, hold=not a.no_hold,
-              auto_all=bool(seeds), confirm_first=a.auto_confirm_first, photo_dir=photos, extrinsics=a.extrinsics)
+              auto_all=bool(seeds), confirm_first=a.auto_confirm_first, photo_dir=photos, extrinsics=a.extrinsics, precise=a.control == "precise",
+              continuous_hold=a.continuous_hold)
     if seeds:
         f = ctl.fits.get(ctl.sel_bid)
         print(f"seed 맞춤 {ctl.sel_bid}: " + ("없음(바깥 4 모서리가 다 없다)" if f is None else f"{f['kind']} " + (

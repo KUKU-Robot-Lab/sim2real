@@ -54,6 +54,9 @@ parser.add_argument("--ghost_opacity", type=float, default=0.35, help="고스트
 parser.add_argument("--ghost_color", default="0.2,0.45,1.0", help="고스트 색 r,g,b(0~1)")
 parser.add_argument("--max_hz", type=float, default=60.0)
 parser.add_argument("--shot", default=None, help="PNG — 첫 패킷 3 s 뒤(없으면 20 s 뒤) 뷰포트를 한 장 저장")
+parser.add_argument("--audit_jsonl", type=Path, help="simulator readback JSONL; new file only, no physics stepping")
+parser.add_argument("--audit_origin", choices=("live", "recorded-replay"), default="live")
+parser.add_argument("--max_packets", type=int, default=0, help="stop after this many applied packets (>0)")
 parser.add_argument("--max_seconds", type=float, default=0.0, help=">0 이면 이 시간 뒤 종료")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
@@ -170,7 +173,7 @@ def _marker_sets():
 
 
 class Mirror:
-    """canonical 이름 → 관절 위치(속도 0) 쓰기. 종속 관절은 리더 × 배율로 펼치고, 한계 밖은 표시용 clamp."""
+    """canonical 이름 → 관절 위치(속도 0) 쓰기. 종속 관절은 리더 × 배율로 펼친다. 실측 한계 밖 값도 자르지 않는다."""
 
     def __init__(self, art, mimic: dict) -> None:
         self.art, self.mimic = art, mimic
@@ -192,11 +195,36 @@ class Mirror:
             return
         dev = self.art.device
         ids = torch.tensor([self.index[n] for n in names], device=dev, dtype=torch.long)
-        v = torch.clamp(torch.tensor([q[n] for n in names], device=dev), self.lo[ids], self.hi[ids]).unsqueeze(0)
+        v = torch.tensor([q[n] for n in names], device=dev).unsqueeze(0)
         self.art.write_joint_state_to_sim(v, torch.zeros_like(v), joint_ids=ids)
 
 
+def _audit_readback(robot, pkt, origin, received_at):
+    """Read exact loaded articulation and USD stage after forward, without FK."""
+    import omni.usd
+    positions = robot.art.root_physx_view.get_dof_positions()[0].detach().cpu().tolist()
+    side = "r" if any(n.startswith("r_aj_") for n in pkt.names) else "l"
+    tip_name = f"{side}_hl_index_tip"
+    physical = None
+    if tip_name in robot.art.body_names:
+        index = robot.art.body_names.index(tip_name)
+        physical = robot.art.root_physx_view.get_link_transforms()[0, index, :3].detach().cpu().tolist()
+    stage = omni.usd.get_context().get_stage()
+    tip_prim = stage.GetPrimAtPath(f"/World/envs/env_0/Robot/{tip_name}")
+    usd = None
+    if tip_prim.IsValid():
+        usd = list(UsdGeom.XformCache().GetLocalToWorldTransform(tip_prim).ExtractTranslation())
+    row = board_packet.state_audit(pkt, robot.art.joint_names, positions, physical, usd,
+                                   origin.tolist(), received_at, time.time(), args.audit_origin)
+    row["physical_tip_body_found"] = tip_name in robot.art.body_names
+    row["tip_link"] = tip_name
+    return row
+
+
 def _home() -> dict:
+    if not CONTRACT.is_file():
+        _log("배포 계약 없음 — 시작 자세 생략, 패킷 수신까지 로봇 숨김")
+        return {}
     sides = json.loads(CONTRACT.read_text())["sides"]
     out = {}
     for side, p in (("right", "r"), ("left", "l")):
@@ -218,6 +246,41 @@ def _draw_points(points, pkt, origin, dev) -> None:
     if pkt.target is None:
         scale[0] = 0.0
     points.visualize(pos, scales=scale, marker_indices=[0, 2 if pkt.contact else 1])
+
+
+def _tip_axes():
+    """USD line arrows: RGB = local tip X/Y/Z. Goal thick/long, measured thin/short."""
+    import omni.usd
+    stage = omni.usd.get_context().get_stage()
+    axes = {}
+    for name, width, length in (("goal", 0.003, 0.075), ("measured", 0.0015, 0.050)):
+        for i, color in enumerate(((1., 0.1, 0.1), (0.1, 1., 0.1), (0.15, 0.4, 1.))):
+            c = UsdGeom.BasisCurves.Define(stage, f"/Visuals/tip_axes/{name}_{i}")
+            c.CreateTypeAttr("linear")
+            c.CreateCurveVertexCountsAttr([2, 3])
+            c.CreateWidthsAttr([width])
+            c.SetWidthsInterpolation("constant")
+            c.CreateDisplayColorAttr([color])
+            c.CreatePointsAttr([Gf.Vec3f(0., 0., 0.)] * 5)
+            c.GetVisibilityAttr().Set("invisible")
+            axes[name, i] = (c, length)
+    return axes
+
+
+def _draw_tip_axes(axes, pkt, origin):
+    for (name, i), (curve, length) in axes.items():
+        T = pkt.tip_goal if name == "goal" else pkt.tip_meas
+        visible = T is not None and (name != "goal" or pkt.q_cmd is not None)
+        curve.GetVisibilityAttr().Set("inherited" if visible else "invisible")
+        if not visible:
+            continue
+        p = [T[j][3] + float(origin[j]) for j in range(3)]
+        d = [T[j][i] for j in range(3)]
+        v = [T[j][(i + 1) % 3] for j in range(3)]
+        end = [p[j] + length * d[j] for j in range(3)]
+        left = [end[j] - .012 * d[j] + .006 * v[j] for j in range(3)]
+        right = [end[j] - .012 * d[j] - .006 * v[j] for j in range(3)]
+        curve.GetPointsAttr().Set([Gf.Vec3f(*x) for x in (p, end, left, end, right)])
 
 
 def _set_visible(prim_path: str, visible: bool) -> None:
@@ -258,7 +321,7 @@ def _ghost_look(prim_path: str, rgb: tuple, opacity: float) -> None:
     _log(f"고스트 재질: OmniPBR rgb {rgb} opacity {opacity} → 프림 {len(gprims)} 개")
 
 
-def _legend() -> None:
+def _legend():
     """GUI 뷰포트 왼쪽 위 범례. Kit 기본 글꼴에 한글이 없어 영문으로 쓴다. 헤드리스 캡처에는 안 찍힌다."""
     import omni.ui as ui
     from omni.kit.viewport.utility import get_active_viewport_window
@@ -268,8 +331,13 @@ def _legend() -> None:
         return
     with win.get_frame("board_viewer_legend"):
         with ui.VStack(height=0):
-            ui.Label("  BLUE translucent = command (q_cmd)   |   solid = measured (q_show)",
+            ui.Label("  BLUE robot = planned reference (no hold correction) | solid = measured",
                      height=24, style={"color": 0xFFFFFFFF, "font_size": 18, "background_color": 0xAA000000})
+            state_label = ui.Label("  Waiting for joint state (home is reference only)", height=24)
+            ui.Label("  Board = estimated FK plane (initial z217mm) | CAD tabletop z205mm", height=24)
+            ui.Label("  Tip axes: RED X / Roll | GREEN Y / Pitch | BLUE Z / Yaw", height=24)
+            ui.Label("  Long thick arrows = goal | short thin arrows = measured | + right-hand rule", height=24)
+    return state_label
 
 
 def _capture(path: str, sim) -> None:
@@ -292,15 +360,15 @@ def _capture(path: str, sim) -> None:
 
 
 def main() -> None:
-    for p in (ROBOT_USD, ROBOT_URDF, TABLE_USD, HOLDER_USD, HOLDER_POSES, CONTRACT):
+    for p in (ROBOT_USD, ROBOT_URDF, TABLE_USD, HOLDER_USD, HOLDER_POSES):
         if not p.is_file():
             raise FileNotFoundError(f"없음: {p}")
     sim = sim_utils.SimulationContext(sim_utils.SimulationCfg(dt=1.0 / 60.0, device=args.device))
     scene = InteractiveScene(_scene_cfg())
     board, points = _marker_sets()
+    tip_axes = _tip_axes()
     _ghost_look("/World/envs/env_0/Ghost", _xyz(args.ghost_color), args.ghost_opacity)
-    if not args.headless:
-        _legend()
+    state_label = _legend() if not args.headless else None
     sim.reset()                                         # 물리 뷰 만들기만. 이후 sim.step 없음
     dev = sim.device
     origin = scene.env_origins[0]
@@ -309,6 +377,7 @@ def main() -> None:
     home = _home()
     robot.apply(home)
     ghost.apply(home)
+    _set_visible("/World/envs/env_0/Robot", bool(home))
     _set_visible("/World/envs/env_0/Ghost", False)
     _set_visible(BOARD_PATH, False)
     board_on = False
@@ -323,6 +392,14 @@ def main() -> None:
     sock.setblocking(False)
     _log(f"준비 — 관절 {len(robot.index)} 개 · 종속 {len(robot.mimic)} · env 원점 {o} · udp://127.0.0.1:{args.port} 대기 · 물리 진행 없음")
 
+    audit = None
+    if args.audit_jsonl:
+        args.audit_jsonl.parent.mkdir(parents=True, exist_ok=True)
+        audit = args.audit_jsonl.open("x", buffering=1)
+        audit.write(json.dumps({"type": "metadata", "audit_origin": args.audit_origin,
+                                "physics_steps": 0, "robot_usd": str(ROBOT_USD), "robot_urdf": str(ROBOT_URDF),
+                                "note": "physical articulation and USD stage readbacks are separate; no FK substitution"}) + "\n")
+    applied_count = 0
     period = 1.0 / max(args.max_hz, 1.0)
     t0 = last_status = time.monotonic()
     got = bad = 0
@@ -339,6 +416,7 @@ def main() -> None:
                 break
             try:
                 pkt = board_packet.decode(data)
+                received_at = time.time()
                 got += 1
             except ValueError as exc:
                 bad += 1
@@ -350,6 +428,10 @@ def main() -> None:
                 _log(f"첫 패킷: mode {pkt.mode} · {len(pkt.names)} 관절 · 고스트 {'있음' if pkt.q_cmd else '없음'} · "
                      f"보드 {'있음' if pkt.T_base_board else '없음'}")
                 points.set_visibility(True)
+                _set_visible("/World/envs/env_0/Robot", True)
+            if state_label is not None:
+                side = "right" if any(n.startswith("r_aj_") for n in pkt.names) else "left"
+                state_label.text = f"  {side} state: {pkt.state_source.upper()} | other arm: reference only | mode: {pkt.mode}"
             last = pkt
             robot.apply(dict(zip(pkt.names, pkt.q_show)))
             if (pkt.q_cmd is not None) != ghost_on:
@@ -363,7 +445,11 @@ def main() -> None:
             if board_on:
                 _draw_board(board, pkt.T_base_board, origin.tolist())
             _draw_points(points, pkt, origin, dev)
+            _draw_tip_axes(tip_axes, pkt, origin)
             sim.forward()                               # 운동학 갱신만(물리 스텝 아님)
+            if audit is not None:
+                audit.write(json.dumps(_audit_readback(robot, pkt, origin, received_at), allow_nan=False) + "\n")
+            applied_count += 1
         sim.render()
 
         if args.shot and not shot_done and ((first_at and tick - first_at > 3.0) or tick - t0 > 20.0):
@@ -372,16 +458,26 @@ def main() -> None:
                 sim.render()
             shot_done = True
             _log(f"SHOT {args.shot} packets={got}")
+            if audit is not None:
+                audit.write(json.dumps({"type": "screenshot", "path": str(args.shot),
+                                        "packet_t": None if last is None else last.t,
+                                        "captured_at": time.time()}) + "\n")
         if tick - last_status >= 5.0:
             last_status = tick
             age = f"{time.time() - last.t:.2f}s" if last else "-"
             _log(f"packets={got} rejected={bad} mode={last.mode if last else '-'} contact={last.contact if last else '-'} last_age={age}")
+        if args.max_packets > 0 and applied_count >= args.max_packets:
+            _log(f"max_packets reached — applied={applied_count}")
+            break
         if args.max_seconds > 0 and tick - t0 > args.max_seconds:
             _log("max_seconds 도달 — 종료")
             break
         rest = period - (time.monotonic() - tick)
         if rest > 0:
             time.sleep(rest)
+
+    if audit is not None:
+        audit.close()
 
 
 if __name__ == "__main__":
