@@ -70,7 +70,10 @@ _REASON_RULES = (
     # ★11.08 들기 가드(reset 거부 'lift_guard:' · 틱 'lift_guard tick:' · 판정 'lift_guard hold failed') — 맨 앞: 손을 편 채
     #   되돌아가는 GRASP_FAILED 가 아니라 언제나 safe stop(분홍 옆에서 컵을 든 채 멈춘 상태일 수 있다)
     (("lift_guard",), "lift_guard"),
-    (("tool timeout",), "controller"),        # ★11.08 도구 대기 상한 초과(episode_ros._run) — 안전 정지
+    (("tool timeout",), "controller"),
+    # ★11.09 놓기 정책 시간 초과(rh_place_node 'place 시간 초과') — 정책을 돌린 뒤의 시간 초과 = POLICY_TIMEOUT(continue_on_fail 로 home).
+    #   261109 161346 은 UNKNOWN 으로 떨어져 home 으로 못 갔다. '준비 자세 이송 시간 초과'(컵을 쥔 채)는 여기 들지 않는다.
+    (("place 시간 초과",), "policy_timeout"),        # ★11.08 도구 대기 상한 초과(episode_ros._run) — 안전 정지
     (("holder pose missing",), "holder"),
     (("컵 자세가 없다", "cup pose missing", "goal comes from the cup", "cup outside region"), "target"),   # ★10.28 region 밖
     (("not grasped",), "grasp"),
@@ -84,6 +87,8 @@ def _from_reason(reason: str, b: Binding | None, side: str | None = None) -> Fai
     r = reason.lower()
     for keys, kind in _REASON_RULES:
         if any(k.lower() in r for k in keys):
+            if kind == "policy_timeout":
+                return F.POLICY_TIMEOUT
             if kind == "lift_guard":
                 return F.LIFT_GUARD_FAILED
             if kind == "holder":

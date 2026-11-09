@@ -36,6 +36,7 @@ if __package__ in (None, ""):
 import time  # noqa: E402
 
 READY_CARRY_SLACK_S = 2.0
+OPENED_END_TICKS = 3      # ★11.09 사용자 "손을 폈으면 홈으로 빼면 됨" — 정책 손 목표가 open_min_rad 넘게 열린 틱이 이만큼 연속이면 끝
 
 from policy_control import codec  # noqa: E402
 from policy_control import place_handover as PH  # noqa: E402
@@ -365,6 +366,18 @@ class PlaceNode(PourFjNode):
         if c.latch_s2r and self.chain.latch and self.chain.latch_t == 0 and not self.chain.settling and not getattr(self, "_latch_logged", False):
             self._latch_logged = True
             self.get_logger().info(f"place 래치 · {self.chain.as_dict()}")
+        # ★11.09 사용자 "정책이 놓는 걸 정한다 · 손을 폈으면 홈으로 빼면 됨 · 성공 확인은 사람이" — 래치(컵 추정 기하)가 안 켜져도
+        #   (261109 161346: 추정 컵이 홀더보다 ~12 cm 높아 래치 0 틱 → 손은 0.74 rad 폈는데 5 s 시간 초과 · UNKNOWN 으로 멈춤)
+        #   정책이 손을 OPENED_END_TICKS 틱 연속 open_min_rad 넘게 펴면 놓음으로 끝낸다. 빼기는 다음 rehome 노드(손 펴기 → 계획)가.
+        if c.latch_s2r and not self.chain.settling and not self.chain.done:
+            self._opened_n = getattr(self, "_opened_n", 0) + 1 if self.chain.opened >= self.chain.open_min_rad else 0
+            if self._opened_n >= OPENED_END_TICKS:
+                self.chain.outcome = "opened"
+                self.chain.released_cup = self.chain.latch_cup
+                self.get_logger().info(f"place 정책이 손 폄 → 끝(래치 {self.chain.latch}) · {self.chain.as_dict()}")
+                self._end("stop", f"placed — 정책이 손을 폄(opened {self.chain.opened:.2f} rad ≥ {self.chain.open_min_rad:.2f}, "
+                                  f"{OPENED_END_TICKS} 틱) · 래치 {self.chain.latch} → 다음 노드(home)가 뺀다")
+                return True
         if self.chain.done:
             if c.withdraw:
                 self._end("stop", f"placed — 래치 {c.release_timed_steps} 틱 뒤 놓음 → 빼기 {self.chain.settle_t} 틱 "
@@ -380,6 +393,7 @@ class PlaceNode(PourFjNode):
 
     def _srv_start(self, req, res):
         self._latch_logged = False
+        self._opened_n = 0
         out = super()._srv_start(req, res)
         rc = getattr(self.chain, "rcarry", None)
         self._carry_t0 = time.monotonic() if rc is not None and rc.on else None

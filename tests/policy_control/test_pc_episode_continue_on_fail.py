@@ -98,3 +98,41 @@ def test_refused_before_the_policy_ran_is_not_continued(reason, code):
     ep = _ep(continue_on_fail=["place"])
     m, st, _ = _run(ep, _Ex(ep, res=("refused", reason, {})))
     assert st == FAILURE and m.last["code"] == code.value and m.place_failed_continued == []
+
+
+def test_hand_opened_but_camera_says_outside_continues():
+    """★11.09 정책이 손 폄(outcome opened)으로 끝났는데 카메라가 홀더 밖으로 봐도 home 으로(성공 확인은 사람이)."""
+    ep = _ep(continue_on_fail=["place"])
+    ex = _Ex(ep, res=("completed", "placed — 정책이 손을 폄", {"cup_in_holder": False, "hand_empty": True, "outcome": "opened"}))
+    m, st, _ = _run(ep, ex)
+    assert st == SUCCESS and m.place_failed_continued == ["place_cup"]
+    assert ("trajectory", "go_home_end", "go_home") in ex.calls
+
+
+def test_place_timeout_reason_is_policy_timeout_and_opened_hand_continues():
+    """★11.09 'place 시간 초과' 는 UNKNOWN 이 아니라 POLICY_TIMEOUT (261109 161346 은 UNKNOWN 으로 멈췄다)."""
+    ep = _ep(continue_on_fail=["place"])
+    ex = _Ex(ep, res=("aborted", "place 시간 초과 5.0 s(학습 episode_length_s) — 놓기 전 (래치 False · 0 틱)",
+                      {"hand_empty": True}))
+    m, st, _ = _run(ep, ex)
+    assert st == SUCCESS and m.runs["place_cup"]["code"] == F.POLICY_TIMEOUT.value
+
+
+def test_cocktail_place_blue_continue_reaches_grasp_pink():
+    """칵테일: place_blue 가 실패로 넘어가도 home_r_after_blue → grasp_pink → … → done."""
+    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+
+    class _C(FakeExecutor):
+        def run_policies(self, node, plans, world):
+            out = super().run_policies(node, plans, world)
+            if node.id == "place_blue":
+                out[0] = NodeResult("completed", "placed — 정책이 손을 폄", 1.0, out[0].role,
+                                    {"cup_in_holder": False, "hand_empty": True, "outcome": "opened"})
+            return out
+
+    ex = _C(ep)
+    m, st, _ = _run(ep, ex)
+    ids = [c[1] for c in ex.calls]
+    assert st == SUCCESS and m.place_failed_continued == ["place_blue"]
+    for nid in ("home_r_after_blue", "grasp_pink", "tilt_pink", "place_pink", "place_shaker", "go_home_end"):
+        assert nid in ids, (nid, ids)

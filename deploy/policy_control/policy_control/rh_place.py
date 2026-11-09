@@ -563,7 +563,7 @@ class PlaceChain:
         self.latch_cup: tuple[np.ndarray, np.ndarray] | None = None    # 이번 틱 래치 입력 컵(월드)
         self.released_cup: tuple[np.ndarray, np.ndarray] | None = None  # 놓은 틱의 래치 컵(빼기 거리 기준, 고정)
         self.clearance: float | None = None
-        self.outcome: str | None = None                # "clear" | "withdraw_timeout" — 빼기 끝(stop)
+        self.outcome: str | None = None                # "clear" | "withdraw_timeout" — 빼기 끝(stop) · "opened"(★11.09 노드: 정책이 손 폄 → 바로 끝)
         self.attach_info: dict = {}
         self.cup_src: dict = {"live": 0, "fk": 0, "rejected": 0}     # ★11.02 cup_obs live — 틱별 컵 출처 셈(진단)
         self.live_cup: tuple[np.ndarray, np.ndarray] | None = None   # 노드가 틱마다 넣는 FP++ 신선 컵(base), 없으면 None
