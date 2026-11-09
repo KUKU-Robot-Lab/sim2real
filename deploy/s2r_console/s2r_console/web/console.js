@@ -781,7 +781,7 @@ function spawnMap(m) {
 //   영상은 [영상] 을 눌러야 열린다(닫으면 스트림을 끊는다) · 학습 영역 지도와 줄별 상태는 '인지 설정' 의 '물체 좌표·영역' 을 펼쳐야 보인다.
 let showVideo = false;
 function fppOf(s, name) {
-  const f = s.fpp || {}, o = (f.objects || []).find((x) => x.name === name);
+  const f = s.fpp || {}, o = (f.objects || []).find((x) => (x.id || x.name) === name);
   const m = ((f.map && f.map.objects) || []).find((x) => x.name === name);
   const worst = o && o.rows.find((r) => r.tone !== "ok");
   return { tone: (worst && o.tone) || (m && m.tone) || (o && o.tone) || "mute", xy: m ? `(${fmt(m.x, 3)}, ${fmt(m.y, 3)})` : "",
@@ -795,7 +795,7 @@ function renderFpp(s) {
   if (showVideo) updateVideo(s);
   $("pstrip").className = `pstrip tone-${f.tone}`;
   // 물체마다 같은 이유(예: 인지 런처가 안 떴다)면 한 번만 쓴다 — 같은 문장 다섯 줄은 읽히지 않는다
-  const cs = f.objects.map((o) => ({ o, c: fppOf(s, o.name) }));
+  const cs = f.objects.map((o) => ({ o, c: fppOf(s, o.id || o.name) }));
   const same = cs.length > 1 && cs.every((x) => x.c.say === cs[0].c.say) ? cs[0].c.say : "";
   const objs = cs.map(({ o, c }) => `<li class="ps-obj"><span class="lamp ${esc(c.tone)}"></span><b>${esc(o.name)}</b>${c.xy ? `<span class="mono">${esc(c.xy)}</span>` : ""}${same ? "" : `<span class="ps-say">${esc(c.say)}</span>`}</li>`).join("");
   put("pstrip", `<span class="ps-tag">FP++</span><b class="ps-verdict">${esc(f.say)}${f.stale ? " · 브리지 보고가 늦다" : ""}</b>
