@@ -125,6 +125,7 @@ function renderAll() {
   renderWorkspace();
   renderPolicyTable(s);
   renderEval(s);
+  renderTuning(s);
   renderRobot(s);
   put("quick", stopButtons(s));
 }
@@ -1670,9 +1671,87 @@ document.addEventListener("submit", (e) => {
 });
 setInterval(() => { if (activeTab === "eval" && S && S.session && !evLoading) evLoad(evDate); }, 10000);
 
+// ── ★11.09 tuning 탭(정지 마찰 실험) ──────────────────────────────────────────
+// 서버 session.tuning(tuning_view.py) = 실험 폴더 진행 · 시험 표 · 명령 줄. 여기서는 고른 팔 · 시험과 PD 상태로
+// "지금 단계 · 다음에 할 것" 만 정한다. 실행은 하지 않는다 — 명령 줄은 터미널에 복사해 쓴다(RUNBOOK 승인 한 번).
+const TU_KEY = "s2r.tuning.pick";
+let tuPick = (() => { try { return JSON.parse(localStorage.getItem(TU_KEY)) || {}; } catch { return {}; } })();
+const tuSave = () => { try { localStorage.setItem(TU_KEY, JSON.stringify(tuPick)); } catch { /* 이 화면에서만 */ } };
+// PD 상태 — 그 팔 pd 노드의 status.phase, 2 s 넘게 안 오면 없음
+function tuPhase(s, side) {
+  const n = (s.nodes || []).find((x) => x.name === `pd_${side}`) || (s.nodes || []).find((x) => x.name === "pd");
+  return n && n.status && !n.stale ? String(n.status.phase || "") : "";
+}
+// 단계 목록 — [{n, title, state: done|now|todo|stop, say, cmd, buttons}] (순수: 렌더 · 시험에서 같이 쓴다)
+function tuSteps(side, row, exp, phase) {
+  const other = SIDE_KO[side === "right" ? "left" : "right"];
+  const cmd = (exp && row.commands[exp.name]) || row.commands.new;
+  const prepared = !!exp && exp.prepared, ran = !!exp && exp.done > 0;
+  const steps = [
+    { n: 1, title: `팔 — ${SIDE_KO[side]}`, done: true,
+      say: `${SIDE_KO[side]}만 움직인다. ${other}은 계획 장면 자세(차렷)로 두고 고정한다.` },
+    { n: 2, title: "준비 — 폴더 · 계획(로봇 명령 0)", done: prepared, cmd: prepared ? "" : cmd.prepare,
+      say: prepared ? `${exp.path} · trial ${exp.n}개` : `새 폴더 ${row.new_name} · trial ${row.trials}개 예정. README 목적 · 판정 기준을 채운다.` },
+    { n: 3, title: `PD 기동 — 설정 ${row.cfg}`, done: !!phase, cmd: phase ? "" : cmd.pd,
+      say: phase ? `pd_${side} 상태 ${PD_PHASE[phase] || phase}(${phase}). 설정이 ${row.cfg} 인지 확인 — 다르면 run 이 거부한다.`
+        : `pd_${side} 상태가 오지 않는다. 기존 PD 를 미션 절차로 정지한 뒤 띄운다. cfg 를 바꾸면 PD 를 다시 띄워야 한다.` },
+    { n: 4, title: "engage(제자리 10 s, 승인)", done: ["RAMPING", "TRACKING", "HOLD"].includes(phase), cmd: cmd.engage,
+      say: "IDLE → TRACKING. 승인은 시험 하나에 한 번(PD 기동 · engage · trial 전부)." },
+    { n: 5, title: "목표 붙들기 → TRACKING", done: phase === "TRACKING", cmd: cmd.hold,
+      say: phase === "RAMPING" ? "RAMPING 에 머문다(목표 없음) — [팔 그 자리 붙들기] 로 TRACKING 을 만든다." : "engage 뒤 RAMPING 에 머물 때만 필요하다.",
+      buttons: phase === "RAMPING" ? [`pd_hold:${side}`] : [] },
+    { n: 6, title: exp ? `trial ${exp.done}/${exp.n}` : "trial", done: !!exp && exp.complete, stop: !!exp && !!exp.stopped,
+      cmd: prepared && !exp.complete && !exp.stopped ? cmd.trials : "",
+      say: !exp ? "준비 뒤" : exp.stopped ? `${exp.stopped.id} 에서 멈췄다 — ${exp.stopped.why || "이유 없음"}. 원인 확인 → 자세 확인 → 새 승인, 이어서 하면 남은 trial 만(같은 runs/<trial> 은 다시 쓰지 않는다).`
+        : exp.complete ? `통과 ${exp.passed}/${exp.n}` : `다음 ${exp.next}${ran ? ` · 통과 ${exp.passed}/${exp.done}` : ""}. 하나가 멈추면 거기서 끝난다. 먼저 --execute 없이 "Dry run: 0 commands" 확인.` },
+    { n: 7, title: "결과", done: !!exp && exp.complete && exp.result.length > 0,
+      say: exp ? `${exp.path}/result/ — ${exp.result.length ? exp.result.join(", ") : "아직 없음(trial별 요약 csv · 그림, README 결과 한 줄)"}` : "" },
+  ];
+  const now = steps.find((x) => x.stop || !x.done);
+  return steps.map((x) => ({ ...x, state: x.stop ? "stop" : x.done ? "done" : x === now ? "now" : "todo" }));
+}
+function renderTuning(s) {
+  const T = s.tuning;
+  if (!T) return put("tu-pick", `<p class="hint">RH56F1 프로파일에서만 보인다.</p>`);
+  if (T.error) return put("tu-pick", `<p class="reasons bad">${esc(T.error)}</p>`);
+  const side = tuPick.side === "left" ? "left" : "right";
+  const rows = (T.sides && T.sides[side]) || [];
+  const row = rows.find((r) => r.key === tuPick.test) || rows[0];
+  if (!row) return put("tu-pick", `<p class="hint">시험 표가 없다.</p>`);
+  const exp = T.experiments[tuPick.folder && row.folders.includes(tuPick.folder) ? tuPick.folder : row.folders[row.folders.length - 1]] || null;
+  const tag = (e) => !e.prepared ? "준비 안 됨" : e.stopped ? `멈춤 ${e.done}/${e.n}` : e.complete ? `끝 ${e.passed}/${e.n}` : `${e.done}/${e.n}`;
+  put("tu-pick", `<div class="tu-row" role="radiogroup" aria-label="팔">${["right", "left"].map((a) =>
+      `<button type="button" class="btn${a === side ? " on" : ""}" role="radio" aria-checked="${a === side}" data-act="tu-side" data-arg="${a}">${SIDE_KO[a]}</button>`).join("")}</div>
+    <div class="ev-cards" role="radiogroup" aria-label="시험">${rows.map((r) => {
+      const last = T.experiments[r.folders[r.folders.length - 1]];
+      return `<button type="button" class="ev-card${r === row ? " on" : ""}" role="radio" aria-checked="${r === row}" data-act="tu-test" data-arg="${esc(r.key)}">
+        <b>${esc(r.label)}</b> <small>${esc(r.cfg)} · ${esc(r.stage)} · ${esc(r.offset_deg)}° × ${esc(r.repeats)} · trial ${r.trials}</small>
+        <span class="badge ${last ? (last.stopped ? "bad" : last.complete ? "ok" : "live") : "mute"}">${last ? esc(tag(last)) : "폴더 없음"}</span></button>`;
+    }).join("")}</div>
+    ${row.folders.length > 1 ? `<div class="tu-row">${row.folders.map((f) => `<button type="button" class="btn btn-sm${exp && f === exp.name ? " on" : ""}" data-act="tu-folder" data-arg="${esc(f)}">${esc(f)}</button>`).join("")}</div>` : ""}
+    <p class="hint">정본 ${esc(T.runbook)} · 콘솔은 명령을 보내지 않는다 — 명령 줄을 터미널에 붙여 넣는다(sim2real 폴더에서).</p>`);
+  const phase = tuPhase(s, side);
+  put("tu-steps", `<ol class="tu-steps">${tuSteps(side, row, exp, phase).map((x) => `<li class="tu-step ${x.state}">
+      <div class="tu-head"><span class="badge ${{ done: "ok", now: "live", stop: "bad", todo: "mute" }[x.state]}">${{ done: "✓ 됨", now: "▶ 지금", stop: "✗ 멈춤", todo: "대기" }[x.state]}</span>
+        <b>${x.n}. ${esc(x.title)}</b></div>
+      ${x.say ? `<p>${esc(x.say)}</p>` : ""}
+      ${x.cmd ? `<pre class="tu-cmd" tabindex="0">${esc(x.cmd)}</pre>` : ""}
+      ${(x.buttons || []).map((b) => `<button class="btn btn-sm" data-act="quick" data-arg="${esc(b)}">팔 그 자리 붙들기</button>`).join("")}</li>`).join("")}</ol>
+    ${exp && exp.trials.length ? det(`tu:${exp.name}`, `trial ${exp.done}/${exp.n} · 통과 ${exp.passed}`, `<table><tbody>${exp.trials.map((t) =>
+      `<tr><td class="mono">${esc(t.id)}</td><td>${{ pass: "✓ 통과", excluded: "✗ 제외", partial: "… 끊김", todo: "—" }[t.state]}</td><td>${esc(t.why)}</td></tr>`).join("")}</tbody></table>`) : ""}
+    <div class="tu-row">${["pd_hold", "pd_release"].map((q) => `<button class="btn-stop" data-act="quick" data-arg="${q}:${side}">■ ${q === "pd_hold" ? "팔 그 자리 붙들기" : "PD 해제"} ${SIDE_KO[side]}</button>`).join("")}
+      <button class="btn-stop" data-act="quick" data-arg="episode_stop">■ 에피소드 정지</button></div>
+    <p class="hint">trial 중단은 그 터미널에서 Ctrl-C, 팔은 [팔 그 자리 붙들기] 로 세운다.</p>`);
+}
+Object.assign(acts, {
+  "tu-side"(v) { tuPick = { side: v }; tuSave(); if (S && S.session) renderTuning(S.session); },
+  "tu-test"(v) { tuPick = { ...tuPick, test: v, folder: "" }; tuSave(); if (S && S.session) renderTuning(S.session); },
+  "tu-folder"(v) { tuPick = { ...tuPick, folder: v }; tuSave(); if (S && S.session) renderTuning(S.session); },
+});
+
 // Workspace selections are server state. Polling never starts a policy or replaces the video element.
 // 10.17 주소 #policy · #control · #setting 이면 그 탭으로 연다(정책 탭 바로가기 · 화면 확인 도구) · ★11.02 #eval(실기 평가)
-const TABS = ["setting", "control", "policy", "eval"];
+const TABS = ["setting", "control", "policy", "eval", "tuning"];          // ★11.09 #tuning(마찰 실험)
 let activeTab = TABS.find((t) => globalThis.location?.hash === `#${t}`) || "setting",
   pendingConfirmation = null, executingConfirmation = false;
 function selectTab(tab) {

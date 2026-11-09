@@ -25,6 +25,7 @@
       <button id="tab-button-control" class="btn" role="tab" data-act="tab" data-arg="control">control</button>
       <button id="tab-button-policy" class="btn" role="tab" data-act="tab" data-arg="policy">policy</button>
       <button id="tab-button-eval" class="btn" role="tab" data-act="tab" data-arg="eval">eval · 실기 평가</button>
+      <button id="tab-button-tuning" class="btn" role="tab" data-act="tab" data-arg="tuning">tuning · 마찰 실험</button>
     </nav>
     <section id="tab-setting" role="tabpanel"><div id="setting-actions" class="action-grid"></div>
       <!-- ★11.05 사용자: 인지 설정은 여기 한 곳 — 고른 물체는 workspace 파일에 저장되고 "인지 적용" 이 그 물체로 FP++ 를 맞춘다 -->
@@ -76,6 +77,20 @@
     </section>
     <!-- ★11.02 실기 평가: 칵테일 에피소드 고르기 → 시작 · 정지(기존 길: 미션 단계 → 연속 실행 승인) → 회차 기록(CSV).
          폼은 여기 고정이다 — 상황판이 0.5 s 마다 다시 그려도 입력 중인 값이 지워지지 않게 JS 는 값과 목록만 바꾼다. -->
+    <!-- ★11.09 tuning: 정지 마찰 실험(analysis/friction) — 팔 · 시험을 고르면 단계 · 다음에 할 것 · 실제 명령 줄을 보인다.
+         콘솔은 실행하지 않는다(PD 붙들기 · 해제 · 정지 버튼만 기존 /api/quick). 정본 RUNBOOK.md. -->
+    <section id="tab-tuning" role="tabpanel" hidden aria-label="마찰 실험">
+      <div class="ev">
+        <section class="ev-block" aria-labelledby="tu-h-pick">
+          <h2 id="tu-h-pick" class="ev-h">팔 · 시험</h2>
+          <div id="tu-pick"></div>
+        </section>
+        <section class="ev-block" aria-labelledby="tu-h-steps">
+          <h2 id="tu-h-steps" class="ev-h">단계</h2>
+          <div id="tu-steps"></div>
+        </section>
+      </div>
+    </section>
     <section id="tab-eval" role="tabpanel" hidden aria-label="실기 평가">
       <div class="ev">
         <section class="ev-block" aria-labelledby="ev-h-ep">
