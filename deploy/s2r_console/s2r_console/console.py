@@ -1128,7 +1128,10 @@ class Console:
         topics = object_topics(bridge_argv(s.profile, s.diagram))
         if not topics:
             return None
-        out = OH.view(obs.objects, obs.objects_age_s, obs.perception, topics)
+        cups = [o for o in s.workspace.objects if o.get("model") != "holder"]   # ★11.10 사용자: 3종 × 3색 9개만
+        out = OH.view(obs.objects, obs.objects_age_s, obs.perception, topics,
+                      labels={o["id"]: o.get("label", o["id"]) for o in cups} or None,
+                      active=[o["id"] for o in cups if o.get("enabled")])
         return {**out, "map": SM.view(getattr(s, "spawn_boxes", []), obs.objects, out["stale"])}
 
     @staticmethod

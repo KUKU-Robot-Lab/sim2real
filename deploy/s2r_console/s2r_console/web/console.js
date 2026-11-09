@@ -1045,7 +1045,7 @@ function xpObjects(s, side, key) {
   if (!objs) return "";
   const cupBtn = (c) => {
     const first = objs.find((o) => o.cup === c && o.color === side.color) || objs.find((o) => o.cup === c);
-    return first ? `<button class="seg-b${c === side.cup ? " on" : ""}" data-act="xp-fobj" data-arg="${esc(first.object)}" aria-pressed="${c === side.cup}">${esc(c)}</button>` : "";
+    return first ? `<button class="seg-b${c === side.cup ? " on" : ""}" data-act="xp-fobj" data-arg="${esc(first.object)}" aria-pressed="${c === side.cup}">${esc(c.replace("source", "src"))}</button>` : "";
   };
   const colors = objs.filter((o) => o.cup === side.cup).map((o) =>
     `<button class="seg-b${o.object === side.object ? " on" : ""}" data-act="xp-fobj" data-arg="${esc(o.object)}" aria-pressed="${o.object === side.object}"><span class="lamp ${xpTone(xpState(s, o))}"></span>${esc(o.color)}</button>`).join("");
@@ -1953,12 +1953,12 @@ function renderWorkspace() {
   const h = w.head || {};
   const hs = $("head-settings");
   if (!(hs.contains && hs.contains(document.activeElement))) put("head-settings", headModule(h, actions.find(a => a.id === "head_control")));
-  put("perception-controls", `<fieldset class="pctl"><legend>인지 · ${esc(h.calib_profile || "보정 미선택")} · pan ${esc(h.pan ?? "—")} / tilt ${esc(h.tilt ?? "—")}</legend>${["fpp", "locate"].map(source => `<label class="chk"><input type="checkbox" data-perception="${source}" ${w.perception?.[source] ? "checked" : ""} ${holding() ? "" : "disabled"}>${source === "fpp" ? "FPP" : "locate"}</label>`).join("")}${(w.objects || []).map(o => `<label class="chk"><input type="checkbox" data-object="${esc(o.id)}" ${o.enabled ? "checked" : ""} ${holding() ? "" : "disabled"}>${o.model === "holder" ? `홀더 · ${esc(o.id)}` : `${esc(o.group || o.model)} 묶음 · ${esc(o.model || o.id)} 모델 · ${esc(o.color || (o.marker_id ?? "마커"))}`}${o.measured === false ? " (프리셋 · 미측정)" : ""}</label>`).join("")}</fieldset>`);
+  put("perception-controls", `<fieldset class="pctl"><legend>인지 · ${esc(h.calib_profile || "보정 미선택")} · pan ${esc(h.pan ?? "—")} / tilt ${esc(h.tilt ?? "—")}</legend>${["fpp", "locate"].map(source => `<label class="chk"><input type="checkbox" data-perception="${source}" ${w.perception?.[source] ? "checked" : ""} ${holding() ? "" : "disabled"}>${source === "fpp" ? "FPP" : "locate"}</label>`).join("")}${(w.objects || []).map(o => `<label class="chk"><input type="checkbox" data-object="${esc(o.id)}" ${o.enabled ? "checked" : ""} ${holding() ? "" : "disabled"}>${o.model === "holder" ? `홀더 · ${esc(o.id)}` : esc(o.label || o.id)}${o.measured === false ? " (프리셋 · 미측정)" : ""}</label>`).join("")}</fieldset>`);
   // 묶음 하나 = FP++ 컨테이너 하나(런처 fpp_<묶음>) — 홀더는 FP++ 가 아니다
   const fppOn = (w.objects || []).filter(o => o.enabled && o.model !== "holder");
   put("per-meta", `인지 물체 ${fppOn.length}개 · 컨테이너 ${new Set(fppOn.map(o => o.group || o.id)).size}개`);
   put("perception-nodes", (S.session?.diagram?.cols || []).flat().filter(perceptionNode).map(boxCompact).join(""));
-  put("object-cards", (w.objects || []).filter(o => o.enabled).map(o => `<div class="obj-row"><b>${o.model === "holder" ? `홀더 · ${esc(o.id)}` : `${esc(o.model || o.id)} · ${esc(o.color || (o.marker_id ?? ""))}`}</b>${o.model === "holder" ? '<span class="hint">색 기반 locate 미지원</span>' : ""}<label>정책 입력 <select data-input-source="${esc(o.id)}" ${holding() ? "" : "disabled"}><option value="fpp" ${o.input_source === "fpp" ? "selected" : ""}>FPP</option><option value="locate" ${o.input_source === "locate" ? "selected" : ""} ${o.model === "holder" ? "disabled" : ""}>locate</option></select></label>${coordShort(o.results?.fpp, "FPP")}${coordShort(o.results?.locate, "locate")}${actions.filter(a => a.object_id === o.id).map(actionButton).join("")}</div>`).join("") || '<p class="hint obj-none">고른 물체가 없다 — 위에서 고른다</p>');
+  put("object-cards", (w.objects || []).filter(o => o.enabled).map(o => `<div class="obj-row"><b>${o.model === "holder" ? `홀더 · ${esc(o.id)}` : esc(o.label || o.id)}</b>${o.model === "holder" ? '<span class="hint">색 기반 locate 미지원</span>' : ""}<label>정책 입력 <select data-input-source="${esc(o.id)}" ${holding() ? "" : "disabled"}><option value="fpp" ${o.input_source === "fpp" ? "selected" : ""}>FPP</option><option value="locate" ${o.input_source === "locate" ? "selected" : ""} ${o.model === "holder" ? "disabled" : ""}>locate</option></select></label>${coordShort(o.results?.fpp, "FPP")}${coordShort(o.results?.locate, "locate")}${actions.filter(a => a.object_id === o.id).map(actionButton).join("")}</div>`).join("") || '<p class="hint obj-none">고른 물체가 없다 — 위에서 고른다</p>');
   selectTab(activeTab);
 }
 // 10.17 사용자 결정 3: 화면 · 에피소드 · 보고서만 tilt — 작업 공간 키(pouring)와 코드 모듈(pour_*.py)은 그대로

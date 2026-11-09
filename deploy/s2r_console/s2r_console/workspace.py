@@ -76,7 +76,8 @@ class Workspace:
             if color not in ('blue', 'orange', 'pink'):
                 continue
             model, policy_object = MODELS[group]
-            self.objects.append(dict(id=name, model=model, group=group, color='skyblue' if color == 'blue' else color,
+            self.objects.append(dict(id=name, model=model, group=group, color=color,
+                                     label=f"{model.replace('source', 'src')}-{color}",  # ★11.10 사용자: 화면 이름 src240-blue
                                      policy_object=policy_object, enabled=False, input_source='fpp',
                                      measured='hue_measured' in spec.fpp, hue_range=copy.deepcopy(spec.fpp['color']),
                                      locate_supported=True, results={s: _empty(s) for s in ('fpp', 'locate')}))

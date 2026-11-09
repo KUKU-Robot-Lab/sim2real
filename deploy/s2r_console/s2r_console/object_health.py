@@ -126,18 +126,29 @@ def worst(tones) -> str:
 
 
 def view(objects: Mapping[str, Mapping | None], report_age_s: float | None, perception: Mapping | None,
-         topics: Sequence[str] = ()) -> dict:
-    """objects = {토픽: PoseWindow.summary | None}. topics 는 요약이 아직 없어도 칸을 낼 토픽."""
+         topics: Sequence[str] = (), labels: Mapping[str, str] | None = None,
+         active: Sequence[str] = ()) -> dict:
+    """objects = {토픽: PoseWindow.summary | None}. topics 는 요약이 아직 없어도 칸을 낼 토픽.
+
+    ★11.10 사용자 "src240·src200·shaker 3종 × 3색 9개 tracking 만": 물체 하나에 칸 하나(pose·live_pose 로 두 번 내지 않는다),
+    값은 추적(live_pose)을 먼저 쓴다. labels 를 주면 그 물체만(홀더 제외) 그 이름(src240-blue)으로 낸다.
+    active(켠 물체)가 있으면 전체 판정은 그 물체로만 한다 — 탁자에 없는 색이 판정을 막지 않게.
+    """
     stale = report_age_s is None or report_age_s > REPORT_STALE_S
-    names = list(dict.fromkeys([*objects, *topics])) or [
+    topics_all = list(dict.fromkeys([*objects, *topics])) or [
         f"/objects/{n}/pose" for n in ((perception or {}).get("objects") or {})]
+    names = list(dict.fromkeys(object_name(t) for t in topics_all))
+    if labels is not None:
+        names = list(labels)
     out = []
-    for topic in names:
-        name = object_name(topic)
-        rows = _launcher_rows(name, perception) + _stream_rows(None if stale else objects.get(topic))
+    for name in names:
+        live, pose = f"/objects/{name}/live_pose", f"/objects/{name}/pose"
+        summary = objects.get(live) or objects.get(pose)
+        rows = _launcher_rows(name, perception) + _stream_rows(None if stale else summary)
         tone = worst(r["tone"] for r in rows)
-        out.append({"name": name, "topic": topic, "rows": rows, "tone": tone})
-    tone = worst(o["tone"] for o in out) if out else "mute"
+        out.append({"name": (labels or {}).get(name, name), "id": name, "topic": live, "rows": rows, "tone": tone})
+    judged = [o for o in out if o["id"] in set(active)] or out
+    tone = worst(o["tone"] for o in judged) if judged else "mute"
     say = {"ok": "정책 입력으로 써도 된다", "warn": "주의 — 값은 오지만 기준 밖이 있다",
            "bad": "정책을 돌리지 말 것", "mute": "FP++ 자세 토픽이 없다"}[tone]
     return {"tone": tone, "say": say, "stale": stale, "objects": out}
