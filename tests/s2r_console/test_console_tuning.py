@@ -18,6 +18,16 @@ def _exp(root: Path, name: str, trials, runs):
     return e
 
 
+def test_measured_trials_that_miss_the_target_complete_the_experiment(tmp_path):
+    """pass=False(목표를 못 따라감)는 마찰 측정 결과다 — 멈춤이 아니다(11.09 F3_right 32/32 가 '멈춤' 으로 보였다)."""
+    from s2r_console import tuning_view as TU
+    ids = [f"t{i}" for i in range(32)]
+    _exp(tmp_path, "261109_F3_right", ids, {t: {"pass": False, "eligible": True, "excluded_reasons": []} for t in ids})
+    e = TU.experiment(tmp_path / "analysis/friction/261109_F3_right")
+    assert (e["complete"], e["stopped"], e["done"], e["passed"], e["excluded"]) == (True, None, 32, 0, 0)
+    assert {t["state"] for t in e["trials"]} == {"measured"}
+
+
 def test_tuning_view_reads_folders_runs_and_builds_runbook_commands(tmp_path):
     from s2r_console import tuning_view as TU
     _exp(tmp_path, "261109_F1off_right", ["a", "b", "c"],

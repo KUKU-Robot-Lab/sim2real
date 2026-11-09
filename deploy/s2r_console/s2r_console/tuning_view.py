@@ -3,6 +3,7 @@
 정본은 analysis/friction/common/RUNBOOK.md · common/scripts/new_experiment.sh 다. 이 파일은 그 표와 명령 줄을
 화면에 옮겨 적을 뿐 실행하지 않는다(로봇 명령 0). 실험 폴더 = <YYMMDD>_<시험>_<side>/ (setup/ · runs/ · result/).
 trial 결과는 stationary_tracking.py run 이 쓰는 runs/<trial>/summary.json(pass · eligible · excluded_reasons).
+상태: measured(측정됨, pass 는 따로 센다) · excluded(eligible False 또는 제외 사유 = 실행이 끊김) · partial · todo.
 파일은 mtime 이 같으면 다시 읽지 않는다(상황판 스냅샷이 초마다 부른다).
 """
 from __future__ import annotations
@@ -42,12 +43,6 @@ def _pd_launch(side: str, cfg: str) -> str:
     return (f"ros2 launch deploy/policy_control/launch/pd_controller.launch.py "
             f"contract:={CONTRACT} robot:=deploy/policy_control/config/robots/rh56f1_{side}_real.yaml "
             f"pd_config:={shlex.quote(pd_cfg)} sides:={side} execute:=true stage:=full")
-
-
-def _guard(side: str) -> str:
-    """손 접촉 감시(로봇 명령 0). 없으면 pd 진단 contact 가 비어 trial 이 시작 검사에서 멈춘다(11.09 실측).
-    trial run 과 같은 프로세스 그룹이라 run 이 끝나거나 멈추면 같이 내려간다. 팔이 TRACKING 으로 서 있을 때 3 s 기준선을 잡는다."""
-    return f"python3 deploy/policy_control/tools/stationary_contact_guard.py --side {side} --operator-confirmed-free"
 
 
 def _engage(side: str) -> str:
@@ -114,19 +109,16 @@ def plan(repo: Path, side: str, name) -> dict:
         # 팔은 engage 한 자리(처짐 포함)에 있다 — trial 마다 그 자리를 찍고 시작점을 거기로 다시 맞춘 계획으로 돈다(로봇 명령 0)
         # 승인 화면과 실행이 같은 명령을 봐야 한다(승인 근거 해시) — 시각 대신 시도 번호
         R = f"{E}/setup/rebase/{t}_a{_attempt(repo / ROOT / name / 'setup/rebase', t):02d}"
-        trials.append({"id": t, "plan": f"{R}/plan/plan.json",
-                       "capture": _sh(f".venv/bin/python deploy/policy_control/tools/stationary_tracking.py capture "
-                                      f"--side {side} --settle-s 3 --seconds 2 --out {q(f'{R}/capture')}"),
-                       "rebase": _sh(f".venv/bin/python analysis/friction/common/scripts/rebase_trial.py "
-                                     f"--plan {q(f'{E}/setup/plan/plan.json')} --snapshot {q(f'{R}/capture/snapshot.json')} "
-                                     f"--trial {q(t)} --out {q(f'{R}/plan')}"),
-                       # 접촉 감시는 trial 마다 새로 띄운다 — pd 와 같이 띄우면 engage 램프 중 손 힘 값이 한 번 20 g 넘게 흔들려
-                       # 끝까지 잠긴다(11.09 실측 joint_force_change_20g, commands_sent=0). 기준선 3 s + 여유 2 s 뒤 run
-                       "run": _sh(_guard(side) + " & G=$!; trap 'kill $G 2>/dev/null' EXIT; sleep 5; "
-                                  f".venv/bin/python deploy/policy_control/tools/stationary_tracking.py run "
-                                  f"--plan {q(f'{R}/plan/plan.json')} --trial {q(t)} --out {q(f'{E}/runs/{t}')} --execute")})
+        trials.append({"id": t, "rebase": R, "run": f"{E}/runs/{t}"})
+    # 남은 trial 을 한 프로세스로(capture → rebase → 접촉 감시 기준선 → run, 처음 실패에서 멈춤). trial 마다 새로 띄우면
+    # 노드 발견 · 감시 기준선 대기로 trial 당 약 21 s 가 더 들었다(11.09 F1 46.6 s/trial). 감시는 trial 직전 정지 구간에서
+    # 기준선을 잡는다 — pd 와 같이 띄우면 engage 램프 중 손 힘이 20 g 넘게 흔들려 잠기던 문제(11.09)는 이미 지난 뒤다.
+    batch = _sh(f".venv/bin/python deploy/policy_control/tools/stationary_batch.py --side {side} "
+                f"--plan {q(f'{E}/setup/plan/plan.json')} "
+                + "".join(f"--trial {q(t['id'])} {q(t['rebase'])} {q(t['run'])} " for t in trials) + "--execute")
     return {"reasons": reasons, "n": e["n"], "done": e["done"],
-            "pd": _sh(_pd_launch(side, e["cfg"])), "engage": _sh(_engage(side)), "trials": trials}
+            "pd": _sh(_pd_launch(side, e["cfg"])), "engage": _sh(_engage(side)), "trials": trials,
+            "batch": batch}
 
 
 def _attempt(d: Path, trial: str) -> int:
@@ -136,7 +128,7 @@ def _attempt(d: Path, trial: str) -> int:
 
 #: trial 한 번 = 접근 · 프레임 · 붙들기 · 돌아오기 시간 + 기동 여유. plan 을 못 읽으면 CONTROL_TIMEOUT_S 와 같은 600 s.
 TRIAL_MARGIN_S, TRIAL_FALLBACK_S = 120.0, 600.0
-#: capture(2 s) · rebase(오프라인 충돌 검사) 한도
+#: 배치 첫 노드 준비 · capture · rebase(오프라인 충돌 검사) 한도
 PREP_TIMEOUT_S = 180.0
 
 
@@ -163,8 +155,10 @@ def _trial(run: Path) -> dict:
     except (OSError, ValueError) as exc:
         return {"id": run.name, "state": "partial", "why": f"summary.json 읽기 실패: {exc}"}
     reasons = [str(r) for r in s.get("excluded_reasons") or []]
-    ok = bool(s.get("pass")) and s.get("eligible", True) is not False
-    return {"id": run.name, "state": "pass" if ok else "excluded", "why": " · ".join(reasons)}
+    # pass=False(목표를 못 따라감)는 마찰 측정 결과다 — 멈춤은 eligible False · excluded_reasons(실행이 끊김)만
+    measured = s.get("eligible", True) is not False and not reasons
+    return {"id": run.name, "state": "measured" if measured else "excluded", "pass": bool(s.get("pass")),
+            "why": " · ".join(reasons)}
 
 
 def experiment(folder: Path) -> dict:
@@ -176,13 +170,14 @@ def experiment(folder: Path) -> dict:
     planned = [t.strip() for t in tf.read_text(encoding="utf-8").splitlines() if t.strip()] if tf.is_file() else []
     runs = {r.name: _trial(r) for r in sorted((folder / "runs").glob("*")) if r.is_dir()}
     done = [t for t in planned if t in runs]
-    stopped = next((runs[t] for t in done if runs[t]["state"] != "pass"), None)
+    stopped = next((runs[t] for t in done if runs[t]["state"] != "measured"), None)
     nxt = next((t for t in planned if t not in runs), None)
     result = sorted(p.name for p in (folder / "result").glob("*")) if (folder / "result").is_dir() else []
     return {"name": folder.name, "date": m.group(1) if m else "", "test": m.group(2) if m else "",
             "side": m.group(3) if m else "", "cfg": cfgs[0] if cfgs else "",
             "path": f"{ROOT}/{folder.name}", "prepared": bool(planned), "n": len(planned), "done": len(done),
-            "passed": sum(runs[t]["state"] == "pass" for t in done), "next": nxt,
+            "passed": sum(bool(runs[t].get("pass")) for t in done),
+            "excluded": sum(runs[t]["state"] != "measured" for t in done), "next": nxt,
             "stopped": stopped, "complete": bool(planned) and nxt is None,
             "trials": [runs.get(t) or {"id": t, "state": "todo", "why": ""} for t in planned],
             "extra_runs": sorted(set(runs) - set(planned)), "result": result}

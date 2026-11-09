@@ -1700,10 +1700,11 @@ function tuSteps(side, row, exp, phase) {
     { n: 5, title: "목표 붙들기 → TRACKING", done: phase === "TRACKING", cmd: cmd.hold,
       say: phase === "RAMPING" ? "RAMPING 에 머문다(목표 없음) — [팔 그 자리 붙들기] 로 TRACKING 을 만든다." : "engage 뒤 RAMPING 에 머물 때만 필요하다.",
       buttons: phase === "RAMPING" ? [`pd_hold:${side}`] : [] },
-    { n: 6, title: exp ? `trial ${exp.done}/${exp.n}` : "trial", done: !!exp && exp.complete, stop: !!exp && !!exp.stopped,
+    { n: 6, title: exp ? `trial ${exp.done}/${exp.n}` : "trial", done: !!exp && exp.complete, stop: !!exp && !exp.complete && !!exp.stopped,
       cmd: prepared && !exp.complete && !exp.stopped ? cmd.trials : "",
-      say: !exp ? "준비 뒤" : exp.stopped ? `${exp.stopped.id} 에서 멈췄다 — ${exp.stopped.why || "이유 없음"}. 원인 확인 → 자세 확인 → 새 승인, 이어서 하면 남은 trial 만(같은 runs/<trial> 은 다시 쓰지 않는다).`
-        : exp.complete ? `통과 ${exp.passed}/${exp.n}` : `다음 ${exp.next}${ran ? ` · 통과 ${exp.passed}/${exp.done}` : ""}. 하나가 멈추면 거기서 끝난다. 먼저 --execute 없이 "Dry run: 0 commands" 확인.` },
+      say: !exp ? "준비 뒤" : exp.complete ? `끝 — 측정 ${exp.done - exp.excluded}/${exp.n}${exp.excluded ? ` · 제외 ${exp.excluded}` : ""} · 목표 통과 ${exp.passed}. 다음: pd 끄기 또는 다음 실험.`
+        : exp.stopped ? `${exp.stopped.id} 에서 멈췄다 — ${exp.stopped.why || "이유 없음"}. 원인 확인 → 자세 확인 → 새 승인, 이어서 하면 남은 trial 만(같은 runs/<trial> 은 다시 쓰지 않는다).`
+        : `다음 ${exp.next}${ran ? ` · 통과 ${exp.passed}/${exp.done}` : ""}. 하나가 멈추면 거기서 끝난다. 먼저 --execute 없이 "Dry run: 0 commands" 확인.` },
     { n: 7, title: "결과", done: !!exp && exp.complete && exp.result.length > 0,
       say: exp ? `${exp.path}/result/ — ${exp.result.length ? exp.result.join(", ") : "아직 없음(trial별 요약 csv · 그림, README 결과 한 줄)"}` : "" },
   ];
@@ -1719,30 +1720,38 @@ function renderTuning(s) {
   const row = rows.find((r) => r.key === tuPick.test) || rows[0];
   if (!row) return put("tu-pick", `<p class="hint">시험 표가 없다.</p>`);
   const exp = T.experiments[tuPick.folder && row.folders.includes(tuPick.folder) ? tuPick.folder : row.folders[row.folders.length - 1]] || null;
-  const tag = (e) => !e.prepared ? "준비 안 됨" : e.stopped ? `멈춤 ${e.done}/${e.n}` : e.complete ? `끝 ${e.passed}/${e.n}` : `${e.done}/${e.n}`;
+  const tag = (e) => !e.prepared ? "준비 안 됨" : e.complete ? `끝 ${e.done}/${e.n}${e.excluded ? ` · 제외 ${e.excluded}` : ""}`
+    : e.stopped ? `멈춤 ${e.done}/${e.n}` : `${e.done}/${e.n}`;
   put("tu-pick", `<div class="tu-row" role="radiogroup" aria-label="팔">${["right", "left"].map((a) =>
       `<button type="button" class="btn${a === side ? " on" : ""}" role="radio" aria-checked="${a === side}" data-act="tu-side" data-arg="${a}">${SIDE_KO[a]}</button>`).join("")}</div>
     <div class="ev-cards" role="radiogroup" aria-label="시험">${rows.map((r) => {
       const last = T.experiments[r.folders[r.folders.length - 1]];
       return `<button type="button" class="ev-card${r === row ? " on" : ""}" role="radio" aria-checked="${r === row}" data-act="tu-test" data-arg="${esc(r.key)}">
         <b>${esc(r.label)}</b> <small>${esc(r.cfg)} · ${esc(r.stage)} · ${esc(r.offset_deg)}° × ${esc(r.repeats)} · trial ${r.trials}</small>
-        <span class="badge ${last ? (last.stopped ? "bad" : last.complete ? "ok" : "live") : "mute"}">${last ? esc(tag(last)) : "폴더 없음"}</span></button>`;
+        <span class="badge ${last ? (last.complete ? "ok" : last.stopped ? "bad" : "live") : "mute"}">${last ? esc(tag(last)) : "폴더 없음"}</span></button>`;
     }).join("")}</div>
     ${row.folders.length > 1 ? `<div class="tu-row">${row.folders.map((f) => `<button type="button" class="btn btn-sm${exp && f === exp.name ? " on" : ""}" data-act="tu-folder" data-arg="${esc(f)}">${esc(f)}</button>`).join("")}</div>` : ""}
     <p class="hint">정본 ${esc(T.runbook)} · [실험 시작] 한 번(승인 한 번)이 아래 1~6 을 차례로 돈다. 명령 줄은 확인용이다.</p>`);
   const phase = tuPhase(s, side);
   // ★11.09 버튼 실행(actions.py tune_*) — 단계 · trial n/N · 마지막 오류 줄
   const job = ((s.management && s.management.jobs) || []).find((j) => j.id === `tune_${side}`);
-  const tj = job && job.tuning, busy = !!(job && job.active), can = holding();
+  const tj = job && job.tuning, can = holding();
+  const busy = !!(job && job.active && !(tj && tj.step === "done"));   // 마지막 trial 뒤 정리 중에도 정지할 것이 없다
   const pdUp = (s.procs || []).some((p) => p.key === `tune_pd_${side}#0` && p.alive);
-  const stepKo = { pd: "pd 기동", engage: "engage", hold: "붙들기", capture: "자세 기록", rebase: "계획 다시 맞춤", trial: "trial", done: "끝", "": "시작 전" };
+  const stepKo = { pd: "pd 기동", engage: "engage", hold: "붙들기", capture: "자세 기록", rebase: "계획 다시 맞춤", trial: "trial", done: "끝", "": "시작 전",
+    release: "pd 놓기(release)", jtc: "JTC 확인", pd_off: "pd 종료" };
   put("tu-run", `<div class="tu-row">
       <button class="btn btn-real" data-act="tu-run" data-arg="${esc(exp ? exp.name : "")}" ${can && !busy && exp && exp.prepared && !exp.complete ? "" : "disabled"}>▶ 실험 시작 ${exp ? esc(exp.name) : ""}</button>
       <button class="btn-stop" data-act="tu-stop" data-arg="${side}" ${busy ? "" : "disabled"}>■ 실험 정지(pd 는 켜 둠)</button>
       <button class="btn" data-act="tu-pd-off" data-arg="${side}" ${can && !busy && pdUp ? "" : "disabled"}>pd 끄기 ${SIDE_KO[side]}</button>
       <button class="btn" data-act="tu-new" data-arg="${esc(row.key)}" ${can ? "" : "disabled"}>새 실험 준비 → ${esc(row.new_name)}</button></div>
-    ${tj ? `<p role="status" aria-live="polite"><span class="badge ${busy ? "live" : job.outcome === "DONE" ? "ok" : "bad"}">${busy ? "▶ 도는 중" : esc(job.outcome || "")}</span>
-      ${esc(tj.folder || "")} · 단계 ${esc(stepKo[tj.step] || tj.step)} · trial ${tj.trial_i}/${tj.trial_n}${tj.trial ? ` (${esc(tj.trial)})` : ""}</p>
+    ${tj ? `<p role="status" aria-live="polite">${busy && tj.off ? `<span class="badge live">▶ pd 끄는 중</span> ${esc(stepKo[tj.step] || tj.step)}`
+      : busy ? `<span class="badge live">▶ 실행 중 ${tj.trial_i}/${tj.trial_n}</span>
+      ${esc(tj.folder || "")} · ${tj.trial ? `지금 trial ${esc(tj.trial)} · ` : ""}단계 ${esc(stepKo[tj.step] || tj.step)}`
+      : tj.off ? (tj.step === "done" ? `<span class="badge ok">✓ pd 꺼짐</span> JTC active · forward inactive 확인`
+        : `<span class="badge bad">${esc(job.outcome || "멈춤")}</span> pd 끄기 — ${esc(stepKo[tj.step] || tj.step)} 에서 멈춤`)
+      : tj.step === "done" || job.outcome === "DONE" ? `<span class="badge ok">✓ 실험 끝</span> ${esc(tj.folder || "")} — 다음: pd 끄기 또는 다음 실험`
+      : `<span class="badge bad">${esc(job.outcome || "멈춤")}</span> ${esc(tj.folder || "")} · 단계 ${esc(stepKo[tj.step] || tj.step)} · trial ${tj.trial_i}/${tj.trial_n}${tj.trial ? ` (${esc(tj.trial)})` : ""}`}</p>
       ${tj.error ? `<p class="reasons bad">마지막 오류: ${esc(tj.error)}</p>` : ""}` : ""}
     ${can ? "" : `<p class="hint">조작 권한(lease)을 잡아야 실행할 수 있다. 정지는 누구나.</p>`}`);
   put("tu-steps", `<ol class="tu-steps">${tuSteps(side, row, exp, phase).map((x) => `<li class="tu-step ${x.state}">
@@ -1751,8 +1760,8 @@ function renderTuning(s) {
       ${x.say ? `<p>${esc(x.say)}</p>` : ""}
       ${x.cmd ? `<pre class="tu-cmd" tabindex="0">${esc(x.cmd)}</pre>` : ""}
       ${(x.buttons || []).map((b) => `<button class="btn btn-sm" data-act="quick" data-arg="${esc(b)}">팔 그 자리 붙들기</button>`).join("")}</li>`).join("")}</ol>
-    ${exp && exp.trials.length ? det(`tu:${exp.name}`, `trial ${exp.done}/${exp.n} · 통과 ${exp.passed}`, `<table><tbody>${exp.trials.map((t) =>
-      `<tr><td class="mono">${esc(t.id)}</td><td>${{ pass: "✓ 통과", excluded: "✗ 제외", partial: "… 끊김", todo: "—" }[t.state]}</td><td>${esc(t.why)}</td></tr>`).join("")}</tbody></table>`) : ""}
+    ${exp && exp.trials.length ? det(`tu:${exp.name}`, `trial ${exp.done}/${exp.n} · 목표 통과 ${exp.passed}${exp.excluded ? ` · 제외 ${exp.excluded}` : ""}`, `<table><tbody>${exp.trials.map((t) =>
+      `<tr><td class="mono">${esc(t.id)}</td><td>${t.state === "measured" ? (t.pass ? "✓ 측정 · 통과" : "✓ 측정") : { excluded: "✗ 제외", partial: "… 끊김", todo: "—" }[t.state]}</td><td>${esc(t.why)}</td></tr>`).join("")}</tbody></table>`) : ""}
     <div class="tu-row">${["pd_hold", "pd_release"].map((q) => `<button class="btn-stop" data-act="quick" data-arg="${q}:${side}">■ ${q === "pd_hold" ? "팔 그 자리 붙들기" : "PD 해제"} ${SIDE_KO[side]}</button>`).join("")}
       <button class="btn-stop" data-act="quick" data-arg="episode_stop">■ 에피소드 정지</button></div>
     <p class="hint">trial 중단은 [실험 정지](터미널에서 돌렸다면 그 터미널에서 Ctrl-C), 팔은 [팔 그 자리 붙들기] 로 세운다.</p>`);

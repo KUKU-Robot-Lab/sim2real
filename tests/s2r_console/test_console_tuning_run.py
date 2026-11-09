@@ -17,18 +17,24 @@ from s2r_console.actions import ActionManager
 from s2r_console.console import ConsoleError
 
 NAME = "261109_F1off_right"
+_REAL_SH = TU._sh
 
 
 def _fake_sh(body):
     if "ros2 launch" in body:                        # pd launch 대신 오래 사는 프로세스
         return ("sleep", "30")
-    if "rebase_trial.py" in body and "--trial rb" in body:
-        return ("sh", "-c", "echo 'AssertionError: fixed hand changed; rerun prepare/IK'; exit 1")
-    if "stationary_tracking.py run" in body:         # trial 별 흉내는 run 에만 — capture · rebase 는 통과
-        if "--trial t2" in body:
-            return ("sh", "-c", "echo boom; exit 3")
-        if "--trial slow" in body:
-            return ("sleep", "30")
+    if "stationary_batch.py" in body:                # 배치 흉내 — 진행 줄을 찍고 trial 별로 멈춘다
+        out = []
+        for t in re.findall(r"--trial (\S+)", body):
+            out += [f"echo '@@ {t} capture'", f"echo '@@ {t} rebase'"]
+            if t == "rb":
+                out.append("echo 'rebase rb: AssertionError: fixed hand changed; rerun prepare/IK'; exit 1")
+            out.append(f"echo '@@ {t} trial'")
+            if t == "t2":
+                out.append("echo boom; exit 3")
+            if t == "slow":
+                out.append("sleep 30")
+        return ("sh", "-c", "; ".join(out + ["echo '@@ done'"]))
     return ("sh", "-c", ": " + shlex.quote(body))
 
 
@@ -47,6 +53,7 @@ def tuning(console, tiny_repo, monkeypatch):
     monkeypatch.setattr(m, "_tune_hold_argv",
                         lambda side: calls.append(("pd/hold", side, ("TRACKING",))) or ("true",))
     monkeypatch.setattr(m, "_wait_pd", lambda *a, **kw: None)
+    monkeypatch.setattr(m, "_tune_release_argv", lambda side: ("sh", "-c", ": release"))
     monkeypatch.setattr(A, "scan_processes", lambda: [])     # 이 호스트에 실기 pd 가 떠 있어도 시험은 그것을 보지 않는다
     return m, calls
 
@@ -73,55 +80,51 @@ def wait(m, active=False):
 
 
 def trial_argvs(console):
-    return [" ".join(p["argv"]) for p in console.session.supervisor.table() if p["stage"] == "tune_trial_right"]
+    return [" ".join(p["argv"]) for p in console.session.supervisor.table() if p["stage"] == "tune_batch_right"]
 
 
-def test_one_approval_runs_pd_engage_hold_then_only_remaining_trials(tuning, console, tiny_repo):
+def test_one_approval_runs_pd_engage_hold_then_one_batch_of_remaining_trials(tuning, console, tiny_repo):
     m, calls = tuning
     make_exp(tiny_repo, ["t1", "t3", "t4"], done=["t1"])
     d = m.describe("tune_right", {"folder": NAME})
     assert d["enabled"], d["reasons"]
-    assert [c["step"] for c in d["commands"]] == ["pd", "engage", "hold", *["capture", "rebase", "trial"] * 2]
+    assert [c["step"] for c in d["commands"]] == ["pd", "engage", "hold", "batch"]
+    real = TU.plan.__globals__  # 실제 명령 줄은 진짜 _sh 로 본다(실행은 fake)
+    real["_sh"], fake = _REAL_SH, real["_sh"]
+    try:
+        argv = " ".join(TU.plan(tiny_repo, "right", NAME)["batch"])
+    finally:
+        real["_sh"] = fake
+    E = f"{TU.ROOT}/{NAME}"
+    assert f"--trial t3 {E}/setup/rebase/t3_a01 {E}/runs/t3" in argv and "--trial t4" in argv
+    assert "--trial t1" not in argv and argv.endswith("--execute") and "--side right" in argv
     m.execute("tune_right", {"folder": NAME}, operator="test")
     v = wait(m)
     assert v["outcome"] == "DONE", v["note"]
     assert calls[0] == ("pd/hold", "right", ("TRACKING",))
-    assert len(trial_argvs(console)) == 1          # 같은 키로 차례로 — 마지막 것만 표에 남는다
-    assert "--trial t4" in trial_argvs(console)[0]
-    assert console.session.supervisor.is_alive(A.tune_pd_key("right"))   # pd 는 끄지 않는다
-    assert v["tuning"]["trial_i"] == v["tuning"]["trial_n"] == 2
+    assert len(trial_argvs(console)) == 1                         # 남은 trial 둘이 프로세스 하나
+    tu = m.view()["tuning"]
+    assert (tu["step"], tu["trial"], tu["trial_i"], tu["trial_n"]) == ("done", "t4", 2, 2)
 
 
 def test_failed_trial_stops_there_with_last_error_line(tuning, console, tiny_repo):
     m, _ = tuning
-    make_exp(tiny_repo, ["t1", "t2", "t3"], done=["t1"])
+    make_exp(tiny_repo, ["t1", "t2", "t3"])
     m.execute("tune_right", {"folder": NAME}, operator="test")
     v = wait(m)
     assert v["outcome"] == "FAILED"
-    assert v["tuning"]["trial"] == "t2" and v["tuning"]["error"] == "boom"
-    assert not any("--trial t3" in a for a in trial_argvs(console))
-
-
-def test_each_trial_captures_then_rebases_then_runs_the_rebased_plan(tuning, console, tiny_repo):
-    m, _ = tuning
-    make_exp(tiny_repo, ["t1"])
-    d = m.describe("tune_right", {"folder": NAME})
-    cap, reb, run = (" ".join(c["argv"]) for c in d["commands"][3:])
-    rdir = re.search(r"--out (\S+)/capture", cap).group(1)
-    assert f"/{NAME}/setup/rebase/t1_" in rdir and "--side right --settle-s 3 --seconds 2" in cap
-    assert f"--snapshot {rdir}/capture/snapshot.json" in reb and f"--out {rdir}/plan" in reb
-    assert f"--plan {rdir}/plan/plan.json" in run and f"--out {TU.ROOT}/{NAME}/runs/t1" in run
+    tu = v["tuning"]
+    assert (tu["step"], tu["trial"], tu["trial_i"], tu["error"]) == ("trial", "t2", 2, "boom")
 
 
 def test_rebase_failure_stops_before_run_and_shows_why(tuning, console, tiny_repo):
     m, _ = tuning
-    make_exp(tiny_repo, ["rb", "t3"])
+    make_exp(tiny_repo, ["rb", "t1"])
     m.execute("tune_right", {"folder": NAME}, operator="test")
     v = wait(m)
     assert v["outcome"] == "FAILED"
-    assert v["tuning"]["step"] == "rebase" and v["tuning"]["trial"] == "rb"
+    assert (v["tuning"]["step"], v["tuning"]["trial"]) == ("rebase", "rb")
     assert "fixed hand changed" in v["tuning"]["error"]
-    assert trial_argvs(console) == []                # run 은 하나도 안 떴다(t3 도)
 
 
 def test_partial_run_folder_is_never_rewritten(tuning, tiny_repo):
@@ -132,14 +135,14 @@ def test_partial_run_folder_is_never_rewritten(tuning, tiny_repo):
     assert not m.describe("tune_left", {"folder": NAME})["enabled"]      # 다른 팔 폴더
 
 
-def test_stop_halts_trial_keeps_pd_then_pd_off_stops_only_its_launch(tuning, console, tiny_repo):
+def test_stop_halts_trial_keeps_pd_then_pd_off_stops_only_its_launch(tuning, console, tiny_repo, monkeypatch):
     m, calls = tuning
     make_exp(tiny_repo, ["slow"])
     s = console.session
     s.supervisor.spawn("other#0", stage="other", note="남의 것", argv=["sleep", "30"], background=True, manual=False)
     m.execute("tune_right", {"folder": NAME}, operator="test")
     end = time.monotonic() + 5
-    while not any(p["stage"] == "tune_trial_right" and p["alive"] for p in s.supervisor.table()) and time.monotonic() < end:
+    while not any(p["stage"] == "tune_batch_right" and p["alive"] for p in s.supervisor.table()) and time.monotonic() < end:
         time.sleep(.02)
     m.stop_tuning("right")
     v = wait(m)
@@ -147,6 +150,7 @@ def test_stop_halts_trial_keeps_pd_then_pd_off_stops_only_its_launch(tuning, con
     assert s.supervisor.is_alive(A.tune_pd_key("right"))
     with pytest.raises(ConsoleError):
         m.stop_tuning("right")                       # 도는 실험이 없다
+    monkeypatch.setattr(m, "_tune_phase", lambda s, side: "HOLD")      # 정지 = pd/hold 뒤
     m.execute("tune_pd_off_right", operator="test")
     assert wait(m)["outcome"] == "DONE"
     assert not s.supervisor.is_alive(A.tune_pd_key("right"))
@@ -171,19 +175,20 @@ def test_stop_between_steps_never_starts_the_next_trial(tuning, console, tiny_re
     class Racing(real):
         def __init__(self, sid, commands, *a, **kw):
             super().__init__(sid, commands, *a, **kw)
-            if any("--trial t3" in " ".join(c.argv) for c in commands):
+            if any("@@ t3" in " ".join(c.argv) for c in commands):
                 m.stop_tuning("right")              # 같은 스레드 · RLock — 플래그가 runner 시작 전에 선다
     monkeypatch.setattr(A, "StageRunner", Racing)
     m.execute("tune_right", {"folder": NAME}, operator="test")
     v = wait(m)
     assert v["outcome"] == "ABORTED", v["note"]
-    assert not any("--trial t3" in a for a in trial_argvs(console))
+    assert not any("@@ t3" in a for a in trial_argvs(console))
 
 
 def test_trial_over_its_time_limit_fails(tuning, console, tiny_repo, monkeypatch):
     m, _ = tuning
     make_exp(tiny_repo, ["slow"])
     monkeypatch.setattr(TU, "TRIAL_FALLBACK_S", 0.3)
+    monkeypatch.setattr(TU, "PREP_TIMEOUT_S", 0.0)
     m.execute("tune_right", {"folder": NAME}, operator="test")
     v = wait(m)
     assert v["outcome"] == "FAILED" and "시간 한도" in v["note"]
@@ -214,3 +219,58 @@ def test_pd_launch_sides_and_bash_wrapped_launch_target():
     assert A.pd_launch_sides("ros2 launch x/other.launch.py sides:=right") == set()
     argv = TU.plan.__globals__["_sh"]("ros2 launch deploy/policy_control/launch/pd_controller.launch.py sides:=right")
     assert launch_target(argv) == "pd_controller.launch.py"
+
+
+def _pd_up(m, console, tiny_repo):
+    make_exp(tiny_repo, ["slow"])
+    m.execute("tune_right", {"folder": NAME}, operator="test")
+    sup, end = console.session.supervisor, time.monotonic() + 5
+    while not any(p["stage"] == "tune_batch_right" and p["alive"] for p in sup.table()) and time.monotonic() < end:
+        time.sleep(.02)
+    m.stop_tuning("right")
+    assert wait(m)["outcome"] == "ABORTED"
+    assert console.session.supervisor.is_alive(A.tune_pd_key("right"))
+
+
+def test_pd_off_releases_then_checks_jtc_around_the_stop(tuning, console, tiny_repo, monkeypatch):
+    m, _ = tuning
+    _pd_up(m, console, tiny_repo)
+    d = m.describe("tune_pd_off_right")
+    assert d["enabled"], d["reasons"]
+    assert [c["step"] for c in d["commands"]] == ["release", "jtc", "pd_off", "jtc"]
+    assert "pd_release.py --side right --execute --ensure" in " ".join(A.ActionManager._tune_jtc_argv("right"))
+    seen = []
+    monkeypatch.setattr(m, "_tune_phase", lambda s, side: "TRACKING")
+    real_step = m._tune_step
+    monkeypatch.setattr(m, "_tune_step", lambda s, side, c: seen.append(c["step"]) or real_step(s, side, c))
+    m.execute("tune_pd_off_right", operator="test")
+    v = wait(m)
+    assert v["outcome"] == "DONE", v["note"]
+    assert seen == ["release", "jtc", "jtc"] and v["tuning"]["step"] == "done"
+    assert not console.session.supervisor.is_alive(A.tune_pd_key("right"))
+
+
+def test_pd_off_skips_release_when_idle_and_stops_where_the_jtc_check_fails(tuning, console, tiny_repo, monkeypatch):
+    m, _ = tuning
+    _pd_up(m, console, tiny_repo)
+    monkeypatch.setattr(m, "_tune_phase", lambda s, side: "IDLE")
+    monkeypatch.setattr(A.ActionManager, "_tune_jtc_argv",
+                        staticmethod(lambda side: ("sh", "-c", "echo '어긋남: right_forward_effort_controller=active'; exit 4")))
+    m.execute("tune_pd_off_right", operator="test")
+    v = wait(m)
+    assert v["outcome"] == "FAILED"
+    assert v["tuning"]["step"] == "jtc" and "forward_effort" in v["tuning"]["error"]
+    assert console.session.supervisor.is_alive(A.tune_pd_key("right"))      # pd 를 내리기 전에 멈췄다
+
+
+def test_pd_off_stops_when_the_pd_phase_is_unknown(tuning, console, tiny_repo, monkeypatch):
+    m, _ = tuning
+    _pd_up(m, console, tiny_repo)
+    monkeypatch.setattr(m, "_tune_phase", lambda s, side: "")              # stale — pd 는 떠 있다
+    seen = []
+    monkeypatch.setattr(m, "_tune_step", lambda s, side, c: seen.append(c["step"]))
+    m.execute("tune_pd_off_right", operator="test")
+    v = wait(m)
+    assert v["outcome"] == "FAILED" and seen == []
+    assert v["tuning"]["step"] == "release" and "pd 상태를 읽지 못함" in v["tuning"]["error"]
+    assert console.session.supervisor.is_alive(A.tune_pd_key("right"))

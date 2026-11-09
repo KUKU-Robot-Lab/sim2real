@@ -882,10 +882,17 @@ class ActionManager:
         procs = s.supervisor.table()
         mine = next((p for p in procs if p['key'] == key and p['alive']), None)
         if action_id.startswith('tune_pd_off_'):
+            # pd 만 SIGTERM 하면 forward 3종이 active 로 남아 다음 engage 가 거절된다(11.09 17:4x rehome_right)
             if mine is None:
                 reasons.append(f'{side} 마찰 실험 pd 가 이 실행으로 떠 있지 않다')
+            add('release', f'{side} pd/release — RAMPING · TRACKING · HOLD 일 때만(IDLE 이면 건너뜀)',
+                self._tune_release_argv(side))
+            add('jtc', f'{side} JTC active · forward inactive 확인(아니면 0 송출 · switch)', self._tune_jtc_argv(side))
             add('pd_off', f'마찰 실험 pd launch 정지({key})', (), stop=(key,))
-            warnings.append('이 실행이 띄운 pd launch 만 SIGTERM 한다. 팔이 pd 에 붙들려 있으면 받친 뒤 끌 것.')
+            add('jtc', f'{side} pd 종료 뒤 다시 확인 — forward inactive · JTC active(아니면 pd_release 와 같은 switch)',
+                self._tune_jtc_argv(side))
+            warnings.append(f'★실기 — {side} 팔을 pd 에서 JTC 로 넘긴다. JTC 가 현재 자세를 이어 잡는다. '
+                            '어느 단계든 실패하면 거기서 멈춘다.')
             return
         plan = TU.plan(repo, side, parameters.get('folder'))
         reasons.extend(plan['reasons'])
@@ -913,14 +920,29 @@ class ActionManager:
             add('pd', f'{side} pd 발행 모드 기동 — gains ok · IDLE 까지 기다린다', plan['pd'], background=True)
             add('engage', f'{side} pd_engage — RAMPING 까지 기다린다', plan['engage'])
         add('hold', f'{side} 팔 그 자리 붙들기 — TRACKING 확인', self._tune_hold_argv(side))
-        for t in plan['trials']:
-            add('capture', f"trial {t['id']} 앞 — 지금 팔 자세 기록(로봇 명령 0)", t['capture'], trial=t['id'])
-            add('rebase', f"trial {t['id']} 앞 — 시작점을 지금 자세로 다시 맞추고 충돌 재검사(로봇 명령 0)", t['rebase'], trial=t['id'])
-            add('trial', f"trial {t['id']}", t['run'], trial=t['id'])
-            commands[-1]['plan'] = t['plan']        # 시간 한도는 rebase 가 쓴 이 plan 으로 실행 때 잰다
+        if plan['trials']:
+            ids = [t['id'] for t in plan['trials']]
+            add('batch', f"남은 trial {len(ids)}개를 한 프로세스로 — trial 마다 팔 정지 뒤 자세 기록 · 시작점 다시 맞춤 · "
+                         "충돌 재검사(로봇 명령 0) → 접촉 감시 기준선 → trial", plan['batch'], trial=' '.join(ids))
+            commands[-1].update(trials=ids, plan=f"{TU.ROOT}/{parameters.get('folder')}/setup/plan/plan.json")
         warnings.append(f"★실기 동작 — {side} 팔 마찰 실험 {parameters.get('folder')}: 남은 trial {len(plan['trials'])}개 "
                         f"(전체 {plan['n']} · 끝 {plan['done']}). 하나라도 실패하거나 시간 한도를 넘으면 그 자리에서 멈춘다. "
                         "정지 · 실패 = 도는 단계만 멈추고 pd 는 끄지 않는다. 그때 pd 가 RAMPING · TRACKING 이면 붙들기(hold)를 보낸다.")
+
+    def _tune_release_argv(self, side):
+        return ('env', *TU.DDS.split(), *self._trigger_argv('pd/release', side, ('IDLE',)))
+
+    @staticmethod
+    def _tune_jtc_argv(side):
+        """controller_manager 에 묻고 어긋나면 pd_release 의 0 송출 · switch(같은 DDS)."""
+        return TU._sh(f'python3 deploy/policy_control/tools/pd_release.py --side {side} --execute --ensure')
+
+    def _tune_phase(self, s, side):
+        with s.feed_lock:
+            obs = s.feed.observed()
+        if obs.age_s.get(PD.name(side), 1e9) > STALE_S:
+            return ''
+        return (obs.status.get(PD.name(side)) or {}).get('phase', '')
 
     def _tune_hold_argv(self, side):
         """hold 트리거 — pd 와 같은 DDS(도메인 · 랜 FASTRTPS 프로필)로 보낸다."""
@@ -929,12 +951,15 @@ class ActionManager:
     def _run_tuning(self, s, description):
         """승인한 명령 목록을 순서대로 — 실패 · 정지는 그 자리에서 멈춘다(예외 → _run 이 TRACKING 이면 pd/hold)."""
         action, cmds = description['id'], description['commands']
-        if action == 'tune_new' or action.startswith('tune_pd_off_'):
+        if action.startswith('tune_pd_off_'):
+            self._tune_pd_off(s, action.rsplit('_', 1)[-1], cmds)
+            return
+        if action == 'tune_new':
             c = cmds[0]
             self._run_commands(s, action, [Command(tuple(c['argv']), note=c['note'], stop=tuple(c['stop']))])
             return
         side = action.rsplit('_', 1)[-1]
-        n = sum(c['step'] == 'trial' for c in cmds)
+        n = sum(len(c.get('trials', ())) for c in cmds)
         tu = self._status['tuning'] = {'side': side, 'folder': description['parameters'].get('folder'),
                                        'step': '', 'trial': '', 'trial_i': 0, 'trial_n': n, 'error': ''}
         try:
@@ -946,10 +971,11 @@ class ActionManager:
                     self._run_commands(s, f'action_pd_hold_{side}', [Command(tuple(c['argv']), note='pd/hold')],
                                        cancellable=True)
                     continue
-                if c['step'] == 'capture':
-                    tu.update(trial=c['trial'], trial_i=tu['trial_i'] + 1)
-                if c['step'] == 'trial':
-                    c = {**c, 'timeout_s': TU._trial_timeouts(s.repo / c['plan'], [c['trial']])[c['trial']]}
+                if c['step'] == 'batch':
+                    # 한도 = trial 마다(원본 plan 프레임 + 여유) 합 + 첫 노드 준비
+                    limits = TU._trial_timeouts(s.repo / c['plan'], c['trials'])
+                    self._tune_batch(s, side, {**c, 'timeout_s': TU.PREP_TIMEOUT_S + sum(limits.values())}, tu)
+                    continue
                 self._tune_step(s, side, c)
                 if c['step'] == 'pd':
                     self._wait_pd(s, side, lambda st: st.get('phase') == 'IDLE' and _gains_ok(st), 'gains ok · IDLE', TUNE_PD_UP_S)
@@ -960,11 +986,57 @@ class ActionManager:
             tu['error'] = tu['error'] or str(exc)
             raise
 
+    def _tune_pd_off(self, s, side, cmds):
+        """release(붙들고 있을 때만) → JTC 확인 → pd 종료 → JTC 다시 확인. 진행 · 멈춘 단계는 tuning 상태로 보인다."""
+        tu = self._status['tuning'] = {'side': side, 'folder': '', 'step': '', 'trial': '', 'trial_i': 0,
+                                       'trial_n': 0, 'error': '', 'off': True}
+        try:
+            for c in cmds:
+                tu['step'] = c['step']
+                if c['step'] == 'release':
+                    phase = self._tune_phase(s, side)
+                    if phase in ('IDLE', 'RELEASING') or (not phase and not s.supervisor.is_alive(tune_pd_key(side))):
+                        continue        # 붙들고 있지 않다(pd 가 꺼져 있으면 낼 토크도 없다)
+                    if phase not in ('RAMPING', 'TRACKING', 'HOLD'):
+                        raise ConsoleError(f'pd 상태를 읽지 못함({phase or "stale"}) — release 를 건너뛰지 않고 멈춘다')
+                if c['step'] == 'pd_off':
+                    self._run_commands(s, f'tune_pd_off_{side}', [Command((), note=c['note'], stop=tuple(c['stop']))])
+                    continue
+                self._tune_step(s, side, c)
+            tu['step'] = 'done'
+        except Exception as exc:
+            tu['error'] = tu['error'] or str(exc)
+            raise
+
+    def _tune_batch(self, s, side, c, tu):
+        """배치 한 프로세스 — 진행 줄 '@@ <trial> <capture|rebase|trial>' 을 따라 진행 표시(step · trial · trial_i)를 바꾼다."""
+        key, done = f"tune_batch_{side}#0", threading.Event()
+
+        def follow():
+            while True:
+                last = done.wait(.3)
+                try:
+                    text = s.supervisor.tail(key, 65536)
+                except (SupervisorError, OSError):
+                    text = ''
+                marks = [ln.split()[1:] for ln in text.splitlines() if ln.startswith('@@ ') and len(ln.split()) == 3]
+                if marks and marks[-1][0] in c['trials']:
+                    tid, step = marks[-1]
+                    tu.update(step=step, trial=tid, trial_i=c['trials'].index(tid) + 1)
+                if last:
+                    return
+        watcher = threading.Thread(target=follow, daemon=True)
+        watcher.start()
+        try:
+            self._tune_step(s, side, c)
+        finally:
+            done.set()
+            watcher.join()
+
     def _tune_step(self, s, side, c):
         sid = f"tune_{c['step']}_{side}"                # pd → tune_pd_<side>#0 = tune_pd_key
         try:
-            limit = c.get('timeout_s') or {'engage': TUNE_ENGAGE_S, 'capture': TU.PREP_TIMEOUT_S,
-                                           'rebase': TU.PREP_TIMEOUT_S}.get(c['step'])
+            limit = c.get('timeout_s') or {'engage': TUNE_ENGAGE_S}.get(c['step'])
             self._run_commands(s, sid, [Command(tuple(c['argv']), note=c['note'], background=c['background'])],
                                timeout_s=limit, cancellable=True)
         except ConsoleError:
