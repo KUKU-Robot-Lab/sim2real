@@ -99,7 +99,7 @@ def plan(repo: Path, side: str, name) -> dict:
     todo = [t["id"] for t in e["trials"] if t["state"] == "todo"]
     if not todo:
         reasons.append("남은 trial 이 없다")
-    if any(not re.fullmatch(r"\w[\w.-]*", t) for t in todo):     # trials.txt 는 파일 입력 — runs/ 밖으로 못 나가게
+    if any(not re.fullmatch(r"\w[\w.+-]*", t) for t in todo):     # trials.txt 는 파일 입력 — runs/ 밖으로 못 나가게
         reasons.append("trials.txt 에 쓸 수 없는 trial 이름이 있다")
     E, q, stamp = f"{ROOT}/{name}", shlex.quote, datetime.now().strftime("%y%m%d-%H%M%S")
     trials = []
