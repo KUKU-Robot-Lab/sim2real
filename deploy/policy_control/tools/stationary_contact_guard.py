@@ -96,7 +96,8 @@ def main():
         rclpy.spin(node)
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():  # SIGTERM 이 이미 context 를 닫았을 수 있다
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":
