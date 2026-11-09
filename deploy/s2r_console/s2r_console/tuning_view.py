@@ -32,15 +32,15 @@ ROS_ENV = ("source /opt/ros/humble/setup.bash && source ~/rl_ws/robot_control/ro
 DDS = ("ROS_DOMAIN_ID=50 ROS_LOCALHOST_ONLY=0 "
        "FASTRTPS_DEFAULT_PROFILES_FILE=/run/user/1000/s2r_fastdds_lan_192.168.0.50.xml")
 #: 다시 하면 이름 끝에 _b · _c(new_experiment.sh "use a new name, e.g. <name>_b")
-_NAME = re.compile(r"^(\d{6})_(.+)_(right|left)(?:_[b-z])?$")
-_CFG = re.compile(r"^pd_rh56f1_stationary_(right|left)_(.+)\.yaml$")
+_NAME = re.compile(r"^(\d{6})_([\w.-]+)_(right|left)(?:_[b-z])?$")
+_CFG = re.compile(r"^pd_rh56f1_stationary_(right|left)_([\w.-]+)\.yaml$")
 
 
 def _pd_launch(side: str, cfg: str) -> str:
     pd_cfg = f"deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_{side}_{cfg}.yaml"
     return (f"ros2 launch deploy/policy_control/launch/pd_controller.launch.py "
             f"contract:={CONTRACT} robot:=deploy/policy_control/config/robots/rh56f1_{side}_real.yaml "
-            f"pd_config:={pd_cfg} sides:={side} execute:=true stage:=full")
+            f"pd_config:={shlex.quote(pd_cfg)} sides:={side} execute:=true stage:=full")
 
 
 def _engage(side: str) -> str:
@@ -96,13 +96,27 @@ def plan(repo: Path, side: str, name) -> dict:
         reasons.append("남은 trial 이 없다")
     if any(not re.fullmatch(r"\w[\w.-]*", t) for t in todo):     # trials.txt 는 파일 입력 — runs/ 밖으로 못 나가게
         reasons.append("trials.txt 에 쓸 수 없는 trial 이름이 있다")
-    E = f"{ROOT}/{name}"
-    q = shlex.quote
+    E, q = f"{ROOT}/{name}", shlex.quote
     return {"reasons": reasons, "n": e["n"], "done": e["done"],
             "pd": _sh(_pd_launch(side, e["cfg"])), "engage": _sh(_engage(side)),
             "trials": [(t, _sh(f".venv/bin/python deploy/policy_control/tools/stationary_tracking.py run "
-                               f"--plan {E}/setup/plan/plan.json --trial {q(t)} --out {q(f'{E}/runs/{t}')} --execute"))
-                       for t in todo]}
+                               f"--plan {q(f'{E}/setup/plan/plan.json')} --trial {q(t)} --out {q(f'{E}/runs/{t}')} --execute"))
+                       for t in todo],
+            "timeout_s": _trial_timeouts(repo / E / "setup/plan/plan.json", todo)}
+
+
+#: trial 한 번 = 프레임 · 붙들기 시간 + 기동 · 시작 자세 이동 여유. plan 을 못 읽으면 CONTROL_TIMEOUT_S 와 같은 600 s.
+TRIAL_MARGIN_S, TRIAL_FALLBACK_S = 120.0, 600.0
+
+
+def _trial_timeouts(plan_json: Path, todo: list) -> dict:
+    try:
+        p = json.loads(plan_json.read_text(encoding="utf-8"))
+        dt = float(p.get("dt") or 0)
+        by_id = {t["id"]: float(t.get("hold_s") or 0) + len(t.get("frames") or ()) * dt for t in p["trials"]}
+    except (OSError, ValueError, KeyError, TypeError):
+        by_id = {}
+    return {t: (by_id[t] + TRIAL_MARGIN_S if t in by_id else TRIAL_FALLBACK_S) for t in todo}
 
 
 def _trial(run: Path) -> dict:

@@ -24,6 +24,7 @@ from . import pd_names as PD
 from . import simtraj as ST
 from . import experiments as XP
 from . import tuning_view as TU
+from policy_control.ros_domain import REAL_DOMAIN  # noqa: E402  실기 DDS 도메인(config/ros_domain.env)
 from mission_stages import Command, commands_for
 import mission_core as MC
 
@@ -65,11 +66,29 @@ CONTROL_TIMEOUT_S = 600.0
 CARD_RUNS = ('rg3_', 'simrun_', CONTROL_PREFIX)
 #: ★11.09 tuning 탭 [실험 시작] — pd 기동 뒤 gains ok · IDLE, engage 뒤 RAMPING 을 기다리는 한도 [s]
 TUNE_PD_UP_S, TUNE_RAMP_S = 30.0, 15.0
+#: engage(episode_ctl) 한 번의 한도 [s] — 넘으면 실패로 멈춘다
+TUNE_ENGAGE_S = 60.0
+#: 마찰 실험 pd 가 떠 있어도 막지 않는 작업 — 끄기 · 멈추기 쪽
+TUNE_PD_OK = ('shutdown', 'policy_stop')
 
 
 def tune_pd_key(side):
     """마찰 실험이 띄운 pd launch 의 감독자 키 — [PD 끄기] 는 이 키(= 이 실행이 띄운 PID)만 내린다."""
     return f'tune_pd_{side}#0'
+
+
+def tune_pd_sides(supervisor):
+    """콘솔이 마찰 실험 pd 를 들고 있는 팔 — 그 팔에 다른 pd · 정책을 또 올리지 않는다."""
+    return {side for side in ARMS if supervisor.is_alive(tune_pd_key(side))}
+
+
+def pd_launch_sides(cmd: str) -> set:
+    """pd_controller launch 명령 줄이 잡는 팔. sides:= 가 없거나 both/all 이면 두 팔 다(안전한 쪽)."""
+    if not re.search(r'pd_controller\.launch\.py\b', cmd):
+        return set()
+    m = re.search(r'\bsides:=(\S+)', cmd)
+    names = set(re.split(r"[,\[\]'\"\s]+", m.group(1))) - {''} if m else set()
+    return set(ARMS) if not names or names & {'both', 'all'} else (names & set(ARMS)) or set(ARMS)
 
 
 def control_side(action_id: str) -> str:
@@ -199,13 +218,15 @@ class ActionManager:
 
     def abort(self):
         jobs = self.active_jobs()
-        for job in jobs:
-            job.cancel_policy.set()
-            job.cancel_scan.set()
-            if job.id == 'perception_refresh':
-                self._kill_scan()
-            elif job.runner is not None and job.runner.active and not job.id.startswith(CARD_RUNS):
-                job.runner.abort()
+        with self._lock:                 # _run_commands 가 같은 잠금 안에서 새 runner 를 만들고 플래그를 본다
+            for job in jobs:
+                job.cancel_policy.set()
+                job.cancel_scan.set()
+                if job.id != 'perception_refresh' and job.runner is not None and job.runner.active \
+                        and not job.id.startswith(CARD_RUNS):
+                    job.runner.abort()
+        if any(job.id == 'perception_refresh' for job in jobs):
+            self._kill_scan()
         for job in jobs:
             if job.thread is not None:
                 job.thread.join(timeout=110 if job.id == 'perception_refresh' else 35)
@@ -351,6 +372,9 @@ class ActionManager:
             else:
                 shared = ', '.join(sorted(self._shared(job, resources, group)))
                 reasons.append(f'{job.id} 실행 중 — 같은 대상({shared})을 쓴다')
+        held = sorted(tune_pd_sides(s.supervisor) & resources)
+        if held and not action_id.startswith('tune_') and action_id not in TUNE_PD_OK:
+            reasons.append(f"{', '.join(held)} 팔에 마찰 실험 pd 가 떠 있다 — tuning 탭에서 pd 끄기 먼저")
         scanning = any(job.id == 'perception_refresh' for job in self.active_jobs())
         if action_id in ('head_control', 'perception_refresh') and not scanning and not self._scan_restore_ok:
             reasons.append('이전 목 스캔의 운용 자세 복귀 정착을 확인하지 못했다 — head_home 복구 필요')
@@ -771,7 +795,7 @@ class ActionManager:
             cmd = replace(cmd, argv=tuple(to_card(a) for a in cmd.argv))
         return cmd
 
-    def _run_commands(self, s, sid, commands, *, process_keys=None):
+    def _run_commands(self, s, sid, commands, *, process_keys=None, timeout_s=None, cancellable=False):
         with self._lock:
             self._status['stage'] = sid
             self._runner = StageRunner(sid, commands, s.supervisor, on_done=lambda *args: None,
@@ -780,10 +804,19 @@ class ActionManager:
             if process_keys is not None:
                 for step, key in zip(runner.steps, process_keys):
                     step.key = key
+            # cancellable: 정지가 runner 를 바꾸는 틈에 왔다 — 첫 단계 전에 멈춘다(정지 뒤 정리 명령은 False 로 그대로 돈다)
+            if cancellable and self._cancel_policy.is_set():
+                runner.abort()
         runner.start()
-        runner.join()
+        runner.join(timeout_s)
+        timed_out = runner.active
+        if timed_out:
+            runner.abort()
+            runner.join()
         with self._lock:
             self._status['steps'] = runner.view()['steps']
+        if timed_out:
+            raise ConsoleError(f'{sid}: 시간 한도 {timeout_s:.0f} s 를 넘었다 — 멈췄다')
         if runner.outcome != DONE:
             raise ConsoleError(f'{sid}: {runner.note}')
 
@@ -858,16 +891,18 @@ class ActionManager:
         reasons.extend(plan['reasons'])
         if 'pd' not in plan:
             return
-        pd_launch = re.compile(rf'pd_controller\.launch\.py\b.*\bsides:=\S*{side}')
-        others = [p['key'] for p in procs if p['alive'] and p['key'] != key and pd_launch.search(' '.join(p['argv']))]
+        others = [p['key'] for p in procs if p['alive'] and p['key'] != key and side in pd_launch_sides(' '.join(p['argv']))]
         own = s.supervisor.own_pgids()
-        foreign = [pid for pid, pgid, cmd in scan_processes() if pgid not in own and pd_launch.search(cmd)]
+        foreign = [pid for pid, pgid, cmd in scan_processes() if pgid not in own and side in pd_launch_sides(cmd)]
         if others or foreign:
             reasons.append(f"{side} pd 가 이미 떠 있다({', '.join([*others, *map(str, foreign)])}) — 내린 뒤 실행")
+        if s.profile.domain != REAL_DOMAIN:
+            reasons.append(f'콘솔 도메인 {s.profile.domain} — 마찰 실험 pd 는 실기 도메인 {REAL_DOMAIN} 이라 status · hold 가 닿지 않는다')
         if mine is not None:
             with s.feed_lock:
                 obs = s.feed.observed()
-            phase = (obs.status.get(PD.name(side)) or {}).get('phase', '상태 없음')
+            fresh = obs.age_s.get(PD.name(side), 1e9) <= STALE_S
+            phase = (obs.status.get(PD.name(side)) or {}).get('phase', '상태 없음') if fresh else 'status 끊김'
             if tuple(mine['argv']) != plan['pd']:
                 reasons.append('다른 설정의 마찰 실험 pd 가 떠 있다 — pd 끄기 먼저')
             elif phase != 'TRACKING':
@@ -877,12 +912,17 @@ class ActionManager:
         else:
             add('pd', f'{side} pd 발행 모드 기동 — gains ok · IDLE 까지 기다린다', plan['pd'], background=True)
             add('engage', f'{side} pd_engage — RAMPING 까지 기다린다', plan['engage'])
-        add('hold', f'{side} 팔 그 자리 붙들기 — TRACKING 확인', self._trigger_argv('pd/hold', side, ('TRACKING',)))
+        add('hold', f'{side} 팔 그 자리 붙들기 — TRACKING 확인', self._tune_hold_argv(side))
         for trial, argv in plan['trials']:
             add('trial', f'trial {trial}', argv, trial=trial)
+            commands[-1]['timeout_s'] = plan['timeout_s'][trial]
         warnings.append(f"★실기 동작 — {side} 팔 마찰 실험 {parameters.get('folder')}: 남은 trial {len(plan['trials'])}개 "
-                        f"(전체 {plan['n']} · 끝 {plan['done']}). 하나라도 실패하면 그 자리에서 멈춘다. "
-                        "정지 = 도는 단계만 멈추고 pd 는 끄지 않고 팔을 붙든다.")
+                        f"(전체 {plan['n']} · 끝 {plan['done']}). 하나라도 실패하거나 시간 한도를 넘으면 그 자리에서 멈춘다. "
+                        "정지 · 실패 = 도는 단계만 멈추고 pd 는 끄지 않는다. 그때 pd 가 RAMPING · TRACKING 이면 붙들기(hold)를 보낸다.")
+
+    def _tune_hold_argv(self, side):
+        """hold 트리거 — pd 와 같은 DDS(도메인 · 랜 FASTRTPS 프로필)로 보낸다."""
+        return ('env', *TU.DDS.split(), *self._trigger_argv('pd/hold', side, ('TRACKING',)))
 
     def _run_tuning(self, s, description):
         """승인한 명령 목록을 순서대로 — 실패 · 정지는 그 자리에서 멈춘다(예외 → _run 이 TRACKING 이면 pd/hold)."""
@@ -901,7 +941,8 @@ class ActionManager:
                     raise ConsoleError('운영자가 중단했다')
                 tu['step'] = c['step']
                 if c['step'] == 'hold':
-                    self._trigger(s, 'pd/hold', side, expect=('TRACKING',))
+                    self._run_commands(s, f'action_pd_hold_{side}', [Command(tuple(c['argv']), note='pd/hold')],
+                                       cancellable=True)
                     continue
                 if c['step'] == 'trial':
                     tu.update(trial=c['trial'], trial_i=tu['trial_i'] + 1)
@@ -918,7 +959,9 @@ class ActionManager:
     def _tune_step(self, s, side, c):
         sid = f"tune_{c['step']}_{side}"                # pd → tune_pd_<side>#0 = tune_pd_key
         try:
-            self._run_commands(s, sid, [Command(tuple(c['argv']), note=c['note'], background=c['background'])])
+            limit = c.get('timeout_s') or (TUNE_ENGAGE_S if c['step'] == 'engage' else None)
+            self._run_commands(s, sid, [Command(tuple(c['argv']), note=c['note'], background=c['background'])],
+                               timeout_s=limit, cancellable=True)
         except ConsoleError:
             try:
                 lines = [ln.strip() for ln in s.supervisor.tail(f'{sid}#0').splitlines() if ln.strip()]
@@ -946,13 +989,14 @@ class ActionManager:
         raise ConsoleError(f"{side} pd {label} 을 {timeout_s:.0f} s 안에 못 봤다 — 마지막 phase {st.get('phase', '상태 없음')}")
 
     def stop_tuning(self, side):
-        """[실험 정지] — lease 없이(멈추기). 도는 단계만 멈춘다. pd 는 끄지 않는다(_run 이 TRACKING 이면 붙든다)."""
-        job = self._jobs.get(f'tune_{side}')
-        if side not in ARMS or job is None or not job.active:
-            raise ConsoleError(f'{side} 팔에 도는 마찰 실험이 없다', code=409)
-        job.cancel_policy.set()
-        if job.runner is not None:
-            job.runner.abort()
+        """[실험 정지] — lease 없이(멈추기). 도는 단계만 멈춘다. pd 는 끄지 않는다(_run 이 RAMPING · TRACKING 이면 붙든다)."""
+        with self._lock:                 # _run_commands 와 같은 잠금 — 새 runner 가 플래그를 놓치지 않는다
+            job = self._jobs.get(f'tune_{side}')
+            if side not in ARMS or job is None or not job.active:
+                raise ConsoleError(f'{side} 팔에 도는 마찰 실험이 없다', code=409)
+            job.cancel_policy.set()
+            if job.runner is not None:
+                job.runner.abort()
 
     def _preempt(self, s, sides=None):
         targets = self._policy_targets(s, sides)
@@ -1062,6 +1106,9 @@ class ActionManager:
             if action == 'shutdown':
                 for side in self.console._pd_sides(s):
                     self._trigger(s, 'pd/release', side, expect=('IDLE',))
+                tune = [tune_pd_key(side) for side in sorted(tune_pd_sides(s.supervisor))]
+                if tune:
+                    s.supervisor.stop(tune)
             if action in ('head_home', 'head_control'):
                 s.workspace.invalidate_results('head motion or calibration changed')
             if action == 'perception_refresh':
@@ -1107,9 +1154,15 @@ class ActionManager:
                 for candidate in self.console._pd_sides(s):
                     if candidate not in own:       # never disturb an arm another job may be driving
                         continue
-                    if observed.status.get(PD.name(candidate), {}).get('phase') == 'TRACKING':
+                    phase = observed.status.get(PD.name(candidate), {}).get('phase')
+                    tuning = description['group'] == 'tuning'
+                    if phase == 'TRACKING' or (tuning and phase == 'RAMPING'):   # engage 중 정지 → 램프 중인 팔도 붙든다
                         try:
-                            self._trigger(s, 'pd/hold', candidate, expect=('TRACKING',))
+                            if tuning:
+                                self._run_commands(s, f'action_pd_hold_{candidate}',
+                                                   [Command(self._tune_hold_argv(candidate), note='pd/hold')])
+                            else:
+                                self._trigger(s, 'pd/hold', candidate, expect=('TRACKING',))
                         except Exception as hold_error:
                             note += f' · 자세 유지 요청 실패: {hold_error}'
                 self._status['stage'], self._runner = failure_stage, failure_runner

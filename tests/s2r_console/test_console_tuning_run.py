@@ -38,7 +38,10 @@ def tuning(console, tiny_repo, monkeypatch):
     console.open("rh56f1_fake", operator="test")
     m = ActionManager(console, settle_s=0)
     calls = []
+    monkeypatch.setattr(A, "REAL_DOMAIN", console.session.profile.domain)      # fake 도메인을 실기 도메인처럼
     monkeypatch.setattr(m, "_trigger", lambda s, service, side, **kw: calls.append((service, side, kw.get("expect"))))
+    monkeypatch.setattr(m, "_tune_hold_argv",
+                        lambda side: calls.append(("pd/hold", side, ("TRACKING",))) or ("true",))
     monkeypatch.setattr(m, "_wait_pd", lambda *a, **kw: None)
     return m, calls
 
@@ -130,3 +133,57 @@ def test_new_experiment_preview_is_the_script_with_a_fresh_name(tuning, tiny_rep
     argv = d["commands"][0]["argv"]
     assert argv[1].endswith("common/scripts/new_experiment.sh") and argv[3:] == ["right", "off", "F1", "2.0", "3"]
     assert d["enabled"] and not m.describe("tune_new", {"side": "up", "test": "F1off"})["enabled"]
+
+
+def test_stop_between_steps_never_starts_the_next_trial(tuning, console, tiny_repo, monkeypatch):
+    """정지가 루프 확인과 새 runner 사이에 와도(_lock 안에서) 다음 trial 은 뜨지 않는다."""
+    m, _ = tuning
+    make_exp(tiny_repo, ["t1", "t3"])
+    real = A.StageRunner
+
+    class Racing(real):
+        def __init__(self, sid, commands, *a, **kw):
+            super().__init__(sid, commands, *a, **kw)
+            if any("--trial t3" in " ".join(c.argv) for c in commands):
+                m.stop_tuning("right")              # 같은 스레드 · RLock — 플래그가 runner 시작 전에 선다
+    monkeypatch.setattr(A, "StageRunner", Racing)
+    m.execute("tune_right", {"folder": NAME}, operator="test")
+    v = wait(m)
+    assert v["outcome"] == "ABORTED", v["note"]
+    assert not any("--trial t3" in a for a in trial_argvs(console))
+
+
+def test_trial_over_its_time_limit_fails(tuning, console, tiny_repo, monkeypatch):
+    m, _ = tuning
+    make_exp(tiny_repo, ["slow"])
+    monkeypatch.setattr(TU, "TRIAL_FALLBACK_S", 0.3)
+    m.execute("tune_right", {"folder": NAME}, operator="test")
+    v = wait(m)
+    assert v["outcome"] == "FAILED" and "시간 한도" in v["note"]
+
+
+def test_live_tune_pd_blocks_other_work_on_that_arm_and_domain_gate(tuning, console, tiny_repo, monkeypatch):
+    m, _ = tuning
+    s = console.session
+    specs = m._specs
+    monkeypatch.setattr(m, "_specs", lambda ss: {**specs(ss), "pd_load_right": ("pd", "setting", ()),
+                                                 "pd_load_left": ("pd", "setting", ())})
+    s.supervisor.spawn(A.tune_pd_key("right"), stage="tune_pd_right", note="pd", argv=["sleep", "30"],
+                       background=True, manual=False)
+    d = m.describe("pd_load_right")
+    assert not d["enabled"] and any("마찰 실험 pd" in r for r in d["reasons"])
+    assert not any("마찰 실험 pd" in r for r in m.describe("pd_load_left")["reasons"])
+    assert m.describe("tune_pd_off_right")["enabled"]
+    make_exp(tiny_repo, ["t1"])
+    monkeypatch.setattr(A, "REAL_DOMAIN", 50)
+    assert any("도메인" in r for r in m.describe("tune_right", {"folder": NAME})["reasons"])
+
+
+def test_pd_launch_sides_and_bash_wrapped_launch_target():
+    from s2r_console.supervisor import launch_target
+    assert A.pd_launch_sides("ros2 launch x/pd_controller.launch.py sides:=right") == {"right"}
+    assert A.pd_launch_sides("ros2 launch x/pd_controller.launch.py execute:=true") == {"right", "left"}
+    assert A.pd_launch_sides("ros2 launch x/pd_controller.launch.py sides:=both") == {"right", "left"}
+    assert A.pd_launch_sides("ros2 launch x/other.launch.py sides:=right") == set()
+    argv = TU.plan.__globals__["_sh"]("ros2 launch deploy/policy_control/launch/pd_controller.launch.py sides:=right")
+    assert launch_target(argv) == "pd_controller.launch.py"

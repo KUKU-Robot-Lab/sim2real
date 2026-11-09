@@ -612,6 +612,13 @@ class Console:
                 commands = commands_for(s.runbook, s.mission, stage_id, repo=self.repo, execute=True)
             except (KeyError, ValueError, OSError) as exc:
                 raise ConsoleError(f'{stage_id}: 명령 구성 불가: {exc}') from exc
+            from .actions import pd_launch_sides, tune_pd_sides   # actions 가 이 모듈을 import 한다(순환)
+            held = tune_pd_sides(s.supervisor)
+            hit = held & {x for c in commands for x in pd_launch_sides(" ".join(map(str, c.argv)))}
+            hit |= {x for x in held if stage.touches_real and stage_id.endswith(f"_{x}")}
+            if hit:
+                raise ConsoleError(f"{stage_id} 를 지금 실행할 수 없다",
+                                   reasons=(f"{', '.join(sorted(hit))} 팔에 마찰 실험 pd 가 떠 있다 — tuning 탭에서 pd 끄기 먼저",))
             # 창 모드는 커서가 없다 — 기록 파일의 `stage` 는 **마지막으로 시작한 단계**를 가리킨다.
             # (그대로 두면 selftest 가 도는데 state.json 이 home_right RUNNING 으로 보인다.)
             s.state = (MC.MissionState(stage=stage_id, status=MC.STATUS_RUNNING, completed=s.state.completed,

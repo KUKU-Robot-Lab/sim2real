@@ -1738,7 +1738,7 @@ function renderTuning(s) {
   const stepKo = { pd: "pd 기동", engage: "engage", hold: "붙들기", trial: "trial", done: "끝", "": "시작 전" };
   put("tu-run", `<div class="tu-row">
       <button class="btn btn-real" data-act="tu-run" data-arg="${esc(exp ? exp.name : "")}" ${can && !busy && exp && exp.prepared && !exp.complete ? "" : "disabled"}>▶ 실험 시작 ${exp ? esc(exp.name) : ""}</button>
-      <button class="btn-stop" data-act="tu-stop" data-arg="${side}" ${busy ? "" : "disabled"}>■ 실험 정지(pd 는 붙든 채)</button>
+      <button class="btn-stop" data-act="tu-stop" data-arg="${side}" ${busy ? "" : "disabled"}>■ 실험 정지(pd 는 켜 둠)</button>
       <button class="btn" data-act="tu-pd-off" data-arg="${side}" ${can && !busy && pdUp ? "" : "disabled"}>pd 끄기 ${SIDE_KO[side]}</button>
       <button class="btn" data-act="tu-new" data-arg="${esc(row.key)}" ${can ? "" : "disabled"}>새 실험 준비 → ${esc(row.new_name)}</button></div>
     ${tj ? `<p role="status" aria-live="polite"><span class="badge ${busy ? "live" : job.outcome === "DONE" ? "ok" : "bad"}">${busy ? "▶ 도는 중" : esc(job.outcome || "")}</span>
@@ -1762,7 +1762,7 @@ Object.assign(acts, {
   "tu-test"(v) { tuPick = { ...tuPick, test: v, folder: "" }; tuSave(); if (S && S.session) renderTuning(S.session); },
   "tu-folder"(v) { tuPick = { ...tuPick, folder: v }; tuSave(); if (S && S.session) renderTuning(S.session); },
   "tu-run"(v) { return prepareAction(`tune_${tuPick.side === "left" ? "left" : "right"}`, { folder: v }); },
-  async "tu-stop"(v) { await call("POST", "/api/tuning/stop", { side: v }); toast("정지를 보냈다 — pd 는 끄지 않는다", [], true); refresh(); },
+  async "tu-stop"(v) { await call("POST", "/api/tuning/stop", { side: v }); toast("정지를 보냈다 — pd 는 끄지 않는다. RAMPING · TRACKING 이면 붙들기를 보낸다", [], true); refresh(); },
   "tu-pd-off"(v) { return prepareAction(`tune_pd_off_${v}`); },
   async "tu-new"(v) {                       // 로봇 명령 없음(폴더 · 오프라인 계획) — 승인 창 없이 바로
     const side = tuPick.side === "left" ? "left" : "right";

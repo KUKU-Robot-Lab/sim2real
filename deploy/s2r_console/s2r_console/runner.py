@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Sequence
 
-from .supervisor import Supervisor, SupervisorError
+from .supervisor import Supervisor, SupervisorError, launch_target
 
 DONE, FAILED, ABORTED = "DONE", "FAILED", "ABORTED"   # mission_core.STATUS_* 와 같은 글자 (테스트가 잠근다)
 
@@ -175,7 +175,7 @@ class StageRunner:
             self._set(step, status="failed", detail=str(exc))
             return FAILED, f"{step.note}: {exc}"
         self._set(step, status="running")
-        settle = max(self._settle, LAUNCH_SETTLE_S) if tuple(step.argv[:2]) == ("ros2", "launch") and self._settle > 0.5 \
+        settle = max(self._settle, LAUNCH_SETTLE_S) if launch_target(step.argv) and self._settle > 0.5 \
             else self._settle
         deadline = time.monotonic() + settle
         while time.monotonic() < deadline:

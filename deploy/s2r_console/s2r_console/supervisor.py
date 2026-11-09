@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import signal
 import subprocess
 import threading
@@ -53,8 +54,16 @@ def benign_spawner_death(line: str, log_lines: Sequence[str]) -> bool:
 
 
 def launch_target(argv) -> str | None:
-    """`ros2 launch <pkg> <file>` / `ros2 launch <path>` 의 launch 파일 이름. launch 가 아니면 None."""
+    """`ros2 launch <pkg> <file>` / `ros2 launch <path>` 의 launch 파일 이름. launch 가 아니면 None.
+    `bash -c "<source ...> && exec ros2 launch ..."`(tuning 탭 pd)도 안의 ros2 launch 를 본다."""
     argv = [str(a) for a in argv]
+    if argv[:2] in (["bash", "-c"], ["sh", "-c"]) and len(argv) > 2:
+        try:
+            words = shlex.split(argv[2])
+        except ValueError:
+            return None
+        at = next((i for i in range(len(words) - 1) if words[i:i + 2] == ["ros2", "launch"]), None)
+        return None if at is None else launch_target(words[at:])
     if argv[:2] != ["ros2", "launch"]:
         return None
     files = [a for a in argv[2:] if a.endswith((".launch.py", ".launch.xml", ".launch.yaml"))]
