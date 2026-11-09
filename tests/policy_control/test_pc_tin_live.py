@@ -93,14 +93,37 @@ def _logger(lines: list):
     return SimpleNamespace(get_logger=lambda: SimpleNamespace(info=say, warning=say, error=say))
 
 
-def _executor(tmp_path, live, arm, fallback="fixed/tin.json"):
+class _Cancel:
+    """정지 Event 대역 — wait 는 기다리지 않고 on_wait(초) 를 부른다(가짜 시계를 움직이는 시험용)."""
+    def __init__(self, on_wait=None):
+        self.flag, self.on_wait, self.waits = False, on_wait, []
+
+    def is_set(self):
+        return self.flag
+
+    def set(self):
+        self.flag = True
+
+    def wait(self, timeout=None):
+        self.waits.append(timeout)
+        if self.on_wait:
+            self.on_wait(timeout)
+        return self.flag
+
+
+def _executor(tmp_path, live, arm, fallback="fixed/tin.json", rescan=True, still=None):
     import threading
     from types import SimpleNamespace
+    from policy_control import episode_ros as R
     lines: list = []
-    ep = SimpleNamespace(tin_fallback=fallback, name="cocktail_1c_e4000",
+    ep = SimpleNamespace(tin_fallback=fallback, name="cocktail_1c_e4000", objects={"SRC_BLUE": {"topic": "/objects/cyl60_blue/pose"}},
                          policies={"rh_place_r": SimpleNamespace(attach_source="tin_json", side="right")})
     ex = SimpleNamespace(ep=ep, _lock=threading.Lock(), _tin_rec={"live": live, "arm": arm}, _tin_json={}, _tin_note=[],
-                         _tin_why={}, node=_logger(lines), run_dir=tmp_path)
+                         _tin_why={}, node=_logger(lines), run_dir=tmp_path, fpp_rescan=rescan, cancel=_Cancel(), runs=[])
+    ex._run = lambda argv: (ex.runs.append(argv), (0, ""))[1]
+    ex._wait_arm_still = still or (lambda sides: {"arm_still": True})
+    ex._write_tin = lambda *a: R.RosExecutor._write_tin(ex, *a)
+    ex._drop_tin = lambda *a: R.RosExecutor._drop_tin(ex, *a)
     return ex, lines
 
 
@@ -124,7 +147,9 @@ def test_executor_window_matches_analysis_and_writes_run_json(tmp_path, monkeypa
     assert out["measured"]["n_fresh"] >= T.MIN_FRESH and out["measured"]["window_s"] >= 2.0   # 창 시작 + FP++ 지연부터
 
 
-def test_executor_falls_back_when_the_arm_moves_or_measure_raises(tmp_path, monkeypatch):
+def test_executor_rescans_then_stops_instead_of_fixed_fallback(tmp_path, monkeypatch):
+    """★11.10 실기: 실측이 안 되면(팔이 움직임 · 측정 예외) 컵을 FP++ 로 다시 잡고 TIN_RETRY_N 회 다시 잰다 — 그래도 안 되면
+    고정값 없이 tilt 를 멈추고 회차마다 어긴 판정을 json 에 남긴다. fake(재잡기 없음)는 옛 fallback."""
     from types import SimpleNamespace
     from policy_control import episode_ros as R
     monkeypatch.setattr(R.time, "sleep", lambda s: None)
@@ -132,20 +157,49 @@ def test_executor_falls_back_when_the_arm_moves_or_measure_raises(tmp_path, monk
     live = {"SRC_BLUE": [(float(a), float(b), tuple(x)) for a, b, x in zip(D["r_t"], D["r_hs"], D["r_X"])]}
     arm = [(float(a), {f"r_aj_{i + 1}": float(q[i]) for i in range(7)}) for a, q in zip(D["r_arm_t"], D["r_arm_q"])]
     monkeypatch.setattr(R.time, "monotonic", lambda: float(D["r_win"][1]))
-    ex, lines = _executor(tmp_path, live, arm, fallback="deploy/policy_control/config/tilt/traj_v12_240/ref/tin_fixed_1107.json")
+    fb = "deploy/policy_control/config/tilt/traj_v12_240/ref/tin_fixed_1107.json"
+    ex, lines = _executor(tmp_path, live, arm, fallback=fb, still=lambda sides: {"arm_still": False, "arm_span_rad": 0.02})
     why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt_blue"), {"right": "SRC_BLUE"}, float(D["r_win"][0]),
                                      {"arm_still": False, "arm_span_rad": 0.02})
-    out = json.loads((tmp_path / "tin_tilt_blue_right.json").read_text())
-    assert why == "" and out["source"] == "fallback" and "팔이 멈추지 않아" in out["fallback_reason"]
-    assert "실측 아님" in ex._tin_note[0] and "실측 아님" in lines[0]
+    assert "고정값으로 진행하지 않는다" in why and "tilt 를 시작하지 않는다" in why and "right" not in ex._tin_json
+    assert len(ex.runs) == R.TIN_RETRY_N and ex.runs[0][-4:] == ["cyl60_blue", "--wait", str(R.RESCAN_WAIT_S), "--require-all"]
+    assert not (tmp_path / "tin_tilt_blue_right.json").exists()
+    bad = json.loads((tmp_path / "tin_tilt_blue_right_failed.json").read_text())
+    assert bad["source"] == "failed" and len(bad["attempts"]) == R.TIN_RETRY_N + 1
+    assert all("팔이 멈추지 않아" in a["reason"] for a in bad["attempts"]) and ex._tin_why["right"] in why
 
     def boom(*a, **k):
         raise IndexError("x")
     monkeypatch.setattr(T, "measure", boom)
-    ex, lines = _executor(tmp_path, live, arm, fallback="deploy/policy_control/config/tilt/traj_v12_240/ref/tin_fixed_1107.json")
+    ex, lines = _executor(tmp_path, live, arm, fallback=fb, rescan=False)        # fake: 재잡기 · 재시도 없이 옛 fallback
     why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt_blue"), {"right": "SRC_BLUE"}, float(D["r_win"][0]), {"arm_still": True})
     out = json.loads((tmp_path / "tin_tilt_blue_right.json").read_text())
-    assert why == "" and out["source"] == "fallback" and out["fallback_reason"] == "측정 실패(IndexError('x'))"
+    assert why == "" and ex.runs == [] and out["source"] == "fallback" and out["fallback_reason"] == "측정 실패(IndexError('x'))"
+    assert "실측 아님" in ex._tin_note[0] and "실측 아님" in lines[-1]
+
+
+def test_executor_rescans_and_measures_again_at_the_still_pose(tmp_path, monkeypatch):
+    """★11.10 첫 창에 FP++ 새 프레임이 없으면(추적 잃음) 재잡기 뒤 정지 자세에서 다시 연 창으로 measured — 실패 회차는 json 에."""
+    from types import SimpleNamespace
+    from policy_control import episode_ros as R
+    D = dict(np.load(FIX))
+    now = [float(D["r_win"][1])]
+    monkeypatch.setattr(R.time, "monotonic", lambda: now[0])
+    live = {"SRC_BLUE": [(float(a), float(b), tuple(x)) for a, b, x in zip(D["r_t"], D["r_hs"], D["r_X"])]}
+    arm = [(float(a), {f"r_aj_{i + 1}": float(q[i]) for i in range(7)}) for a, q in zip(D["r_arm_t"], D["r_arm_q"])]
+
+    def still(sides):                              # 재잡기 뒤 다시 연 기록에 FP++ 가 다시 잡은 프레임이 들어온다
+        ex._tin_rec["live"].update(live)
+        ex._tin_rec["arm"].extend(arm)
+        now[0] = float(D["r_win"][0])
+        return {"arm_still": True}
+    ex, lines = _executor(tmp_path, {}, arm, fallback="deploy/policy_control/config/tilt/traj_v12_240/ref/tin_fixed_1107.json", still=still)
+    ex.cancel = _Cancel(lambda t: now.__setitem__(0, float(D["r_win"][1])))   # 창 기다림 = 가짜 시계를 창 끝으로
+    why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt_blue"), {"right": "SRC_BLUE"}, float(D["r_win"][0]), {"arm_still": True})
+    out = json.loads((tmp_path / "tin_tilt_blue_right.json").read_text())
+    assert why == "" and len(ex.runs) == 1 and out["source"] == "measured"
+    assert len(out["failed_attempts"]) == 1 and ex._tin_note == ["T_in right measured(2회차)"]
+    assert np.linalg.norm(np.asarray(out["pos_m"]) - D["r_T_in"][:3, 3]) < 1e-3
 
 
 def test_executor_falls_back_and_refuses_only_without_any_value(tmp_path, monkeypatch):
@@ -153,7 +207,7 @@ def test_executor_falls_back_and_refuses_only_without_any_value(tmp_path, monkey
     from policy_control import episode_ros as R
     monkeypatch.setattr(R._paths, "SIM2REAL", tmp_path)
     monkeypatch.setattr(R.time, "sleep", lambda s: None)
-    ex, lines = _executor(tmp_path, {}, [])
+    ex, lines = _executor(tmp_path, {}, [], rescan=False)   # fake 경로(실기는 위 시험)
     why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt_blue"), {"right": "SRC_BLUE"}, R.time.monotonic(), {"arm_still": True})
     assert "tilt 를 시작하지 않는다" in why and "right" not in ex._tin_json       # 측정도 고정값도 없다 → 멈춤
     assert "fixed/tin.json" in ex._tin_why["right"]                              # place 거부 문구에 쓸 실제 원인
@@ -161,12 +215,146 @@ def test_executor_falls_back_and_refuses_only_without_any_value(tmp_path, monkey
     M = np.eye(4); M[:3, 3] = [0.01, 0.02, 0.07]
     (tmp_path / "fixed").mkdir()
     (tmp_path / "fixed/tin.json").write_text(json.dumps({"T_in_r": {"T_meas_fullrot": M.tolist()}}))
-    ex, lines = _executor(tmp_path, {}, [])
+    ex, lines = _executor(tmp_path, {}, [], rescan=False)
     why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt_blue"), {"right": "SRC_BLUE"}, R.time.monotonic(), {"arm_still": True})
     out = json.loads((tmp_path / "tin_tilt_blue_right.json").read_text())
     assert why == "" and out["source"] == "fallback" and out["fallback_file"] == "fixed/tin.json"
-    assert ex._tin_note[0].startswith("T_in right fallback(실측 아님") and "실측 아님" in lines[0]
+    assert ex._tin_note[0].startswith("T_in right fallback(실측 아님") and "실측 아님" in lines[-1]
 
+
+def _right_fix():
+    D = dict(np.load(FIX))
+    live = {"SRC_BLUE": [(float(a), float(b), tuple(x)) for a, b, x in zip(D["r_t"], D["r_hs"], D["r_X"])]}
+    arm = [(float(a), {f"r_aj_{i + 1}": float(q[i]) for i in range(7)}) for a, q in zip(D["r_arm_t"], D["r_arm_q"])]
+    return D, live, arm
+
+
+FB = "deploy/policy_control/config/tilt/traj_v12_240/ref/tin_fixed_1107.json"
+
+
+def test_executor_cancel_during_rescan_is_a_stop_not_a_failure(tmp_path, monkeypatch):
+    """H1: 재잡기 도중 정지 — failed.json · 거부 사유를 쓰지 않고 바로 돌아간다(호출부가 aborted)."""
+    from types import SimpleNamespace
+    from policy_control import episode_ros as R
+    D, live, arm = _right_fix()
+    monkeypatch.setattr(R.time, "monotonic", lambda: float(D["r_win"][1]))
+    ex, lines = _executor(tmp_path, live, arm, fallback=FB)
+    ex._run = lambda argv: (ex.runs.append(argv), ex.cancel.set(), (0, ""))[2]
+    why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt_blue"), {"right": "SRC_BLUE"}, float(D["r_win"][0]),
+                                     {"arm_still": False})
+    assert why == "episode runner stop" and len(ex.runs) == 1
+    assert not list(tmp_path.glob("*failed.json")) and "right" not in ex._tin_why
+
+
+def test_run_planned_returns_aborted_when_stopped_during_tin(tmp_path):
+    """H1 호출부: T_in 측정 중 정지 → NodeResult aborted · 'episode runner stop'(같은 함수 다른 정지 경로와 같은 문구)."""
+    import threading
+    from types import SimpleNamespace
+    from policy_control import episode_ros as R
+    from policy_control import episode_spec as S
+    ep = S.load(Path(__file__).resolve().parents[2] / "config" / "episodes" / "cocktail_1c_e4000.yaml")
+
+    def measure(node, objs, t0, still, required=None):
+        me.cancel.set()
+        return "episode runner stop"
+    me = SimpleNamespace(_tin_rec=None, _tin_json={}, _tin_why={}, ep=ep, _lock=threading.Lock(), _wait_pd_tracking=lambda side: True,
+                         _wait_arm_still=lambda sides: {"arm_still": True}, _pd_view=lambda side: {}, run_dir=tmp_path,
+                         _run=lambda argv: pytest.fail("정지 뒤 도구를 띄웠다"), cancel=threading.Event(), _measure_tin=measure,
+                         node=_logger([]))
+    me._drop_tin = lambda *a: R.RosExecutor._drop_tin(me, *a)
+    me._tin_json = {"right": {"T_in": "stale"}}
+    r = R.RosExecutor._run_planned(me, SimpleNamespace(id="tilt"), ep.trajectories["tilt"],
+                                   SimpleNamespace(hand=lambda side: {"right": "SRC_BLUE", "left": "RCV"}[side]))
+    assert (r.status, r.reason) == ("aborted", "episode runner stop")
+    assert "right" not in me._tin_json  # 정지로 tilt 가 안 돈 팔의 T_in 은 place 에 남기지 않는다
+
+
+def test_executor_stops_retrying_after_the_time_limit(tmp_path, monkeypatch):
+    """시간 상한: 첫 회차 뒤 시계가 TIN_RETRY_S 를 넘으면 재잡기 없이 끝낸다."""
+    from types import SimpleNamespace
+    from policy_control import episode_ros as R
+    D, live, arm = _right_fix()
+    clock = iter([0.0] + [R.TIN_RETRY_S + 1.0] * 50)
+    monkeypatch.setattr(R.time, "monotonic", lambda: next(clock))
+    ex, lines = _executor(tmp_path, live, arm, fallback=FB)
+    why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt_blue"), {"right": "SRC_BLUE"}, 0.0, {"arm_still": False})
+    assert "tilt 를 시작하지 않는다" in why and ex.runs == []
+    assert len(json.loads((tmp_path / "tin_tilt_blue_right_failed.json").read_text())["attempts"]) == 1
+
+
+def test_executor_two_arms_reports_all_failures_and_forgets_the_good_arm(tmp_path, monkeypatch):
+    """H2: 두 팔 다 실패면 두 팔 failed.json · 사유를 다 쓰고 한 번에 거부. M3: 한 팔만 실패해도 거부하고, 성공한 팔 T_in 은
+    place 가 쓰지 않게 잊는다(json 파일은 남김)."""
+    from types import SimpleNamespace
+    from policy_control import episode_ros as R
+    D, live, arm = _right_fix()
+    monkeypatch.setattr(R.time, "monotonic", lambda: float(D["r_win"][1]))
+    objs = {"right": "SRC_BLUE", "left": "RCV"}
+    ex, lines = _executor(tmp_path, live, arm, fallback=FB, still=lambda sides: {"arm_still": False})
+    ex.ep.objects["RCV"] = {"topic": "/objects/shaker/pose"}
+    why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt"), objs, float(D["r_win"][0]), {"arm_still": False})
+    assert "T_in right" in why and "T_in left" in why and why.count("tilt 를 시작하지 않는다") == 1
+    assert (tmp_path / "tin_tilt_right_failed.json").exists() and (tmp_path / "tin_tilt_left_failed.json").exists()
+    assert set(ex._tin_why) == {"right", "left"} and ex._tin_json == {}
+
+    ex, lines = _executor(tmp_path, live, arm, fallback=FB)          # 오른손은 measured, 왼손은 프레임 없음
+    ex.ep.objects["RCV"] = {"topic": "/objects/shaker/pose"}
+    why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt"), objs, float(D["r_win"][0]), {"arm_still": True})
+    assert "T_in left" in why and "T_in right" not in why
+    assert (tmp_path / "tin_tilt_right.json").exists() and "right" not in ex._tin_json   # 기록은 남고 place 는 못 쓴다
+    assert "다른 팔" in ex._tin_why["right"] and not any(n.startswith("T_in right") for n in ex._tin_note)
+    assert all(argv[-4] == "shaker" for argv in ex.runs)                             # 재잡기는 실패한 팔 컵만
+
+    ex, lines = _executor(tmp_path, live, arm, fallback=FB)          # 왼손이 계획 · place 어디에도 안 쓰이면 진행
+    ex.ep.objects["RCV"] = {"topic": "/objects/shaker/pose"}
+    why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt"), objs, float(D["r_win"][0]), {"arm_still": True},
+                                     required={"right"})
+    assert why == "" and "right" in ex._tin_json and "T_in left 없음" in ex._tin_note and "left" in ex._tin_why
+
+
+def test_executor_records_rescan_rc_and_argv_error(tmp_path, monkeypatch):
+    """M2: 재잡기 rc · 끝줄 · rescan_argv ValueError 가 회차 기록 · failed.json · 사유에 남는다."""
+    from types import SimpleNamespace
+    from policy_control import episode_ros as R
+    D, live, arm = _right_fix()
+    monkeypatch.setattr(R.time, "monotonic", lambda: float(D["r_win"][1]))
+    ex, lines = _executor(tmp_path, live, arm, fallback=FB, still=lambda sides: {"arm_still": False})
+    ex._run = lambda argv: (ex.runs.append(argv), (3, "cyl60_blue not found"))[1]
+    why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt_blue"), {"right": "SRC_BLUE"}, float(D["r_win"][0]), {"arm_still": False})
+    bad = json.loads((tmp_path / "tin_tilt_blue_right_failed.json").read_text())
+    assert "rescan" not in bad["attempts"][0] and bad["attempts"][1]["rescan"] == "FP++ 재잡기 rc 3: cyl60_blue not found"
+    assert "FP++ 재잡기 rc 3" in why
+
+    ex, lines = _executor(tmp_path, live, arm, fallback=FB, still=lambda sides: {"arm_still": False})
+    ex.ep.objects["SRC_BLUE"] = {"topic": "/cup"}                     # 실물 이름을 못 읽는 토픽
+    why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt_blue"), {"right": "SRC_BLUE"}, float(D["r_win"][0]), {"arm_still": False})
+    assert ex.runs == [] and "FP++ 재잡기 못 함" in why
+
+
+def test_executor_fixed_gap_rescans_but_unreadable_fixed_file_does_not(tmp_path, monkeypatch):
+    """L1: 오른손 고정값 대조 불합격(fixed_gap)은 FP++ 오인일 수 있어 재잡기한다 · 대조 파일을 못 읽으면(TinError) 바로 끝낸다."""
+    from types import SimpleNamespace
+    from policy_control import episode_ros as R
+    D, live, arm = _right_fix()
+    monkeypatch.setattr(R.time, "monotonic", lambda: float(D["r_win"][1]))
+    monkeypatch.setattr(R._paths, "SIM2REAL", tmp_path)
+    M = np.eye(4); M[:3, 3] = [0.3, 0.3, 0.3]                           # 실측과 한참 먼 고정 평균
+    (tmp_path / "fixed").mkdir()
+    (tmp_path / "fixed/tin.json").write_text(json.dumps({"T_in_r": {"T_meas_fullrot": M.tolist()}}))
+
+    def still(sides):
+        ex._tin_rec["live"].update(live)
+        ex._tin_rec["arm"].extend(arm)
+        return {"arm_still": True}
+    ex, lines = _executor(tmp_path, live, arm, still=still)
+    why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt_blue"), {"right": "SRC_BLUE"}, float(D["r_win"][0]), {"arm_still": True})
+    assert "tilt 를 시작하지 않는다" in why and len(ex.runs) == R.TIN_RETRY_N
+    assert not (tmp_path / "tin_tilt_blue_right.json").exists()
+
+    ex, lines = _executor(tmp_path, live, arm, fallback="fixed/none.json", still=still)
+    why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt_blue"), {"right": "SRC_BLUE"}, float(D["r_win"][0]), {"arm_still": True})
+    assert "못 읽음" in why and ex.runs == []
+    assert len(json.loads((tmp_path / "tin_tilt_blue_right_failed.json").read_text())["attempts"]) == 1
 
 def test_cocktail_place_jobs_get_the_tin_json_of_their_arm():
     from types import SimpleNamespace
@@ -288,7 +476,8 @@ def test_tilt_traj_measures_before_planning_and_plans_with_the_run_tin(tmp_path,
     order: list = []
     d = json.loads((V12 / "ref" / "tin_fixed_1107.json").read_text())
 
-    def measure(node, objs, t0, still):
+    def measure(node, objs, t0, still, required=None):
+        order.append(("required", tuple(sorted(required))))
         order.append(("measure", tuple(sorted(objs))))
         for s in objs:
             path = tmp_path / f"tin_{node.id}_{s}.json"
@@ -309,8 +498,8 @@ def test_tilt_traj_measures_before_planning_and_plans_with_the_run_tin(tmp_path,
                                    SimpleNamespace(hand=lambda side: {"right": "SRC_BLUE", "left": "RCV"}[side]))
     assert r.status == "completed"
     names = [o for o in order if isinstance(o, (str, tuple))]
-    assert names == [("measure", ("left", "right")), "plan_tilt_traj.py", "replay_to_pd.py"]
-    plan = order[2]
+    assert names == [("required", ("left", "right")), ("measure", ("left", "right")), "plan_tilt_traj.py", "replay_to_pd.py"]
+    plan = order[3]
     tj = json.loads(Path(plan[plan.index("--tin-json") + 1]).read_text())
     assert tj["sides"]["right"]["source"].startswith("run") and tj["sides"]["left"]["source"].startswith("run")
-    assert "--tin-json" not in order[4]
+    assert "--tin-json" not in order[5]

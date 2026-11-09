@@ -128,6 +128,10 @@ ARM_STATE = "/joint_states"                 # 팔 실측(openarm_<side>_joint<i>
 ARM_STILL_WINDOW_S = 0.3
 ARM_STILL_RAD = 0.003              # 창 안 관절마다 (max − min) — 0.01 rad/s 수준
 ARM_STILL_WAIT_S = 2.0             # 이 안에 안 멈추면 그대로 계획한다(시작 검사가 여전히 막는다)
+# ★11.10 tilt 직전 T_in 실측 실패 → FP++ 재잡기 + 정지 창 다시. 회차 = 재잡기(fpp_rescan 대기 RESCAN_WAIT_S, 도구 상한 +30 s)
+# + 팔 정지 대기 ARM_STILL_WAIT_S + 창 tin_live.WINDOW_S ≈ 최대 95 s. 2 회면 컵을 든 채 3 분 남짓이라 그 위로는 늘리지 않는다.
+TIN_RETRY_N = 2
+TIN_RETRY_S = 200.0                # 재시도를 새로 시작하는 시간 상한(첫 측정부터)
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
 #: ★11.08 리뷰 — 도구 대기 상한(s). 넘으면 끊고 controller_error(안전 정지). 재생은 rate-scale 0.25 로 2분 궤적 + 여유
 TOOL_TIMEOUT_S = {"plan_carry.py": 180.0, "plan_tilt_traj.py": 180.0, "plan_rehome.py": 120.0, "plan_reach.py": 180.0,
@@ -1022,19 +1026,27 @@ class RosExecutor:
              "--execute"],
         ]
         tin_plan = traj.kind == "tilt" and cfg.get("kind") == "tilt_traj"
+        # T_in 이 없으면 멈출 팔: tilt_traj 계획은 잰 팔마다 이 런 T_in 을 쓴다(_planner_tin) · 그 밖은 place tin_json 팔만
+        need = (set(tin_objs) if tin_plan else {b.side for b in self.ep.policies.values() if b.attach_source == "tin_json"}) if tin_objs else set()
         for k, argv in enumerate(steps):
             if k == (0 if tin_plan else 1) and tin_objs:   # ★11.09 tilt_traj 는 계획 전에 잰다(계획이 이 런의 쥔 자리를 쓴다) · 그 밖은 재생 직전
-                why = self._measure_tin(node, tin_objs, tin_t0, still)
+                why = self._measure_tin(node, tin_objs, tin_t0, still, required=need)
+                if self.cancel.is_set():
+                    self._drop_tin(node, set(tin_objs), "정지로 tilt 가 돌지 않았다")
+                    return NodeResult("aborted", "episode runner stop", time.monotonic() - t0)
                 if why:
                     return NodeResult("refused", why, time.monotonic() - t0)
                 if tin_plan:
                     why = self._planner_tin(node, tin_objs, asset / "ref" / f"setup_{traj.cup}.npz", argv)
                     if why:
+                        self._drop_tin(node, set(tin_objs), "tilt 계획 실패로 tilt 가 돌지 않았다")
                         return NodeResult("refused", why, time.monotonic() - t0)
             rc, tail = self._run(argv)
             if self.cancel.is_set():
                 return NodeResult("aborted", "episode runner stop", time.monotonic() - t0)
             if rc != 0:                                # 계획 · 검사 실패 = 움직이지 않았다
+                if tin_plan and tin_objs and k == 0:   # 이번에 잰 T_in 은 tilt 가 안 돌았으니 place 가 쓰지 않게
+                    self._drop_tin(node, set(tin_objs), f"{Path(argv[1]).name} rc {rc} 로 tilt 가 돌지 않았다")
                 status = "refused" if k == 0 else "error"
                 return NodeResult(status, f"{Path(argv[1]).name} rc {rc}: {tail}", time.monotonic() - t0)
         if traj.kind == "lift" and traj.object:       # ★10.19 1-B: 컵이 손과 같이 올라갔는가(유지 끝 FP++ — 없으면 판정 보류)
@@ -1148,57 +1160,148 @@ class RosExecutor:
         self.node.get_logger().info(f"[{node.id}] tilt 계획 T_in = {out['sides']} → {path.name}")
         return ""
 
-    def _measure_tin(self, node: Node, objs: Mapping, t0: float, still: Mapping) -> str:
+    def _measure_tin(self, node: Node, objs: Mapping, t0: float, still: Mapping, required=None) -> str:
         """★11.07 tilt 재생 직전 — 정지 창 [t0 + FP++ 지연, 지금](t0 + TL.WINDOW_S 까지 멈춘 채 기다린다)의 FP++ live 새 프레임 ×
-        손바닥 FK → 팔마다 T_in json(런 폴더, measured | fallback). 팔이 안 멈췄거나(still) 측정이 예외를 내도 fallback.
-        반환 = place tin_json 이 쓸 팔에서 값을 못 낸 사유(없으면 "")."""
+        손바닥 FK → 팔마다 T_in json(런 폴더, measured). ★11.10 실측이 안 되면 그 컵을 FP++ 로 다시 잡고(fpp_rescan) 정지 자세에서
+        창을 다시 연다(TIN_RETRY_N 회 · TIN_RETRY_S 안). 그래도 안 되면 실기(fpp_rescan 켬)는 고정값으로 가지 않는다
+        (사유 = 회차마다 어긴 판정 · 재잡기 결과, 런 폴더 tin_<노드>_<팔>_failed.json). fake(재잡기 없음)만 옛 fallback 을 쓴다.
+        required = T_in 이 없으면 tilt 를 멈출 팔(None = objs 전부). 그 밖의 팔은 사유만 남기고 진행한다.
+        반환 = tilt 를 시작하지 않을 사유(없으면 ""). 정지(cancel)면 json 을 쓰지 않고 바로 돌아간다(호출부가 aborted)."""
         from policy_control import tin_live as TL
-        wait = t0 + TL.WINDOW_S - time.monotonic()
-        if wait > 0:
-            time.sleep(wait)
-        t1 = time.monotonic()
-        with self._lock:
-            rec = self._tin_rec or {"live": {}, "arm": []}
-            self._tin_rec = None
-        need = {b.side for b in self.ep.policies.values() if b.attach_source == "tin_json"}
-        for side, obj in objs.items():
-            names = [f"{side[0]}_aj_{i}" for i in range(1, 8)]
-            arm = [(t, q) for t, q in rec["arm"] if all(n in q for n in names)]
-            fr = rec["live"].get(obj, [])
-            if still.get("arm_still") is not True:
-                meas = {"ok": False, "reason": f"팔이 멈추지 않아 측정 안 함 {dict(still)}"}
-            else:
+        required = set(objs) if required is None else set(required)
+        left, tries, last, final, wrote = dict(objs), {s: [] for s in objs}, {}, set(), []
+        deadline = time.monotonic() + TIN_RETRY_S
+        for attempt in range(TIN_RETRY_N + 1 if self.fpp_rescan else 1):   # fake 는 다시 잡을 FP++ 가 없다
+            rescan = None
+            if attempt:
+                redo = [s for s in left if s not in final]   # 고정값 대조 파일을 못 읽은 팔은 다시 잡아도 같다
+                if self.cancel.is_set() or not redo or time.monotonic() > deadline:
+                    break
                 try:
-                    meas = TL.measure(np.array([f[0] for f in fr]), np.array([f[1] for f in fr]),
-                                      np.array([f[2] for f in fr]).reshape(-1, 7), np.array([a[0] for a in arm]),
-                                      np.array([[a[1][n] for n in names] for a in arm]).reshape(-1, 7),
-                                      TL.palm_fk(side), t0 + TL.FPP_LATENCY_S, t1, z_off=TL.Z_OFF[side])
-                except Exception as exc:          # noqa: BLE001 — 측정 코드가 무엇을 던지든 fallback 으로(이유는 json 에)
-                    meas = {"ok": False, "reason": f"측정 실패({exc!r})"}
-            try:
-                out = TL.record(meas, side, _paths.SIM2REAL / self.ep.tin_fallback, fallback_file=self.ep.tin_fallback,
-                                node=node.id, object=obj, episode=self.ep.name)
-            except (TL.TinError, OSError, ValueError) as exc:
-                msg = f"[{node.id}] T_in {side} 측정 실패({meas.get('reason', '')}) · fallback {self.ep.tin_fallback} 못 읽음: {exc}"
-                self.node.get_logger().error(msg)
+                    rc, tail = self._run(rescan_argv(self.ep, [left[s] for s in redo]))
+                    rescan = f"FP++ 재잡기 rc {rc}" + (f": {tail}" if rc else "")
+                except ValueError as exc:
+                    rescan = f"FP++ 재잡기 못 함: {exc}"
+                self.node.get_logger().warning(f"[{node.id}] T_in {sorted(redo)} {attempt}차 재시도 — {rescan}")
+                if self.cancel.is_set():
+                    break
+                with self._lock:
+                    self._tin_rec = {"live": {}, "arm": []}
+                still = self._wait_arm_still(redo)
+                if self.cancel.is_set():
+                    break
+                t0 = time.monotonic()
+            wait = t0 + TL.WINDOW_S - time.monotonic()
+            if (wait > 0 and self.cancel.wait(wait)) or self.cancel.is_set():
+                break
+            t1 = time.monotonic()
+            with self._lock:
+                rec = self._tin_rec or {"live": {}, "arm": []}
+                self._tin_rec = None
+            for side, obj in list(left.items()):
+                if side in final:
+                    continue
+                names = [f"{side[0]}_aj_{i}" for i in range(1, 8)]
+                arm = [(t, q) for t, q in rec["arm"] if all(n in q for n in names)]
+                fr = rec["live"].get(obj, [])
+                if still.get("arm_still") is not True:
+                    meas = {"ok": False, "reason": f"팔이 멈추지 않아 측정 안 함 {dict(still)}"}
+                else:
+                    try:
+                        meas = TL.measure(np.array([f[0] for f in fr]), np.array([f[1] for f in fr]),
+                                          np.array([f[2] for f in fr]).reshape(-1, 7), np.array([a[0] for a in arm]),
+                                          np.array([[a[1][n] for n in names] for a in arm]).reshape(-1, 7),
+                                          TL.palm_fk(side), t0 + TL.FPP_LATENCY_S, t1, z_off=TL.Z_OFF[side])
+                    except Exception as exc:          # noqa: BLE001 — 측정 코드가 무엇을 던지든 실패 사유로(json 에)
+                        meas = {"ok": False, "reason": f"측정 실패({exc!r})"}
+                out = None
+                if meas.get("ok"):                    # 오른손은 record 가 FIX_POS_M · FIX_ANG_DEG 로 고정값과 대조한다
+                    try:
+                        out = TL.record(meas, side, _paths.SIM2REAL / self.ep.tin_fallback, fallback_file=self.ep.tin_fallback,
+                                        node=node.id, object=obj, episode=self.ep.name)
+                    except (TL.TinError, OSError, ValueError) as exc:
+                        meas = {**meas, "ok": False, "reason": f"고정값 대조 파일 {self.ep.tin_fallback} 못 읽음: {exc}"}
+                        if isinstance(exc, (TL.TinError, OSError)):
+                            final.add(side)           # 파일 문제 — 재잡기로 안 풀린다
+                    else:
+                        if out["source"] != "measured":   # 오른손 fixed_gap 불합격 — FP++ 가 잘못 잡았을 수 있어 재잡기는 한다
+                            meas = {**meas, "ok": False, "reason": out.get("fallback_reason", "")}
+                if not meas.get("ok"):
+                    last[side] = meas
+                    tries[side].append({"attempt": attempt, "reason": meas.get("reason", ""),
+                                        **({"rescan": rescan} if rescan else {}),
+                                        **{k: meas.get(k) for k in ("n_fresh", "n_msgs") if k in meas}})
+                    self.node.get_logger().warning(f"[{node.id}] T_in {side}({obj}) {attempt + 1}회차 실측 실패 — {meas.get('reason', '')}")
+                    continue
+                left.pop(side)
+                self._write_tin(node, side, out, meas, tries[side])
+                wrote.append(side)
+            if not left:
+                return ""
+        if self.cancel.is_set():                       # 정지 — 실측 실패가 아니다(failed.json · 거부 사유 없음)
+            self._drop_tin(node, wrote, "정지로 tilt 가 돌지 않았다")
+            return "episode runner stop"
+        stop = []
+        for side, obj in left.items():
+            if self.fpp_rescan:
+                msg = (f"[{node.id}] T_in {side}({obj}) 실측 {len(tries[side])}회 실패 — 고정값으로 진행하지 않는다: "
+                       + " / ".join(f"{t['attempt'] + 1}회 {t['reason']}" + (f"({t['rescan']})" if t.get("rescan") else "")
+                                    for t in tries[side]))
+                path = self.run_dir / f"tin_{node.id}_{side}_failed.json"
+                try:
+                    path.write_text(json.dumps({"source": "failed", "side": side, "object": obj, "node": node.id, "episode": self.ep.name,
+                                                "attempts": tries[side], "retry_n": TIN_RETRY_N, "retry_s": TIN_RETRY_S,
+                                                "t": time.strftime("%Y-%m-%dT%H:%M:%S")}, indent=1, ensure_ascii=False), encoding="utf-8")
+                    self.node.get_logger().error(f"{msg} → {path.name}")
+                except OSError as exc:
+                    self.node.get_logger().error(f"{msg} ({path.name} 못 씀: {exc})")
                 self._tin_why[side] = msg
-                if side in need:
-                    return msg + " — place tin_json 이 쓸 붙인 자세가 없어 tilt 를 시작하지 않는다"
-                self._tin_note.append(f"T_in {side} 없음({exc})")
-                continue
-            path = self.run_dir / f"tin_{node.id}_{side}.json"
-            path.write_text(json.dumps(out, indent=1, ensure_ascii=False), encoding="utf-8")
-            self._tin_json[side] = str(path)
-            self._tin_why.pop(side, None)
-            self._tin_note.append(f"T_in {side} measured" if out["source"] == "measured"
-                                  else f"T_in {side} fallback(실측 아님: {out.get('fallback_reason', '')})")
-            line = (f"[{node.id}] T_in {side}({obj}) = {out['source']} pos {np.round(np.asarray(out['pos_m']) * 1000, 1).tolist()} mm · "
-                    f"갱신 {meas.get('n_fresh')}/{meas.get('n_msgs')} · 흔들림 {meas.get('pos_dev_mm_max')} mm/{meas.get('ang_dev_deg_max')}° → {path.name}")
-            if out["source"] == "fallback":
-                self.node.get_logger().warning(f"{line} — 실측 아님, 고정값 사용: {out.get('fallback_reason', '')}")
             else:
-                self.node.get_logger().info(line)
+                try:                                   # fake(fpp_rescan 끔)만: 옛 고정 fallback
+                    out = TL.record(last.get(side, {"ok": False, "reason": "측정 없음"}), side, _paths.SIM2REAL / self.ep.tin_fallback,
+                                    fallback_file=self.ep.tin_fallback, node=node.id, object=obj, episode=self.ep.name)
+                except (TL.TinError, OSError, ValueError) as exc:
+                    msg = f"[{node.id}] T_in {side} 측정 실패({last.get(side, {}).get('reason', '')}) · fallback {self.ep.tin_fallback} 못 읽음: {exc}"
+                    self.node.get_logger().error(msg)
+                    self._tin_why[side] = msg
+                else:
+                    self._write_tin(node, side, out, last.get(side, {}), tries[side])
+                    wrote.append(side)
+                    continue
+            if side in required:
+                stop.append(msg)
+            else:                                      # tilt 계획도 place 도 이 팔 T_in 을 안 쓴다 — 사유만 남기고 진행
+                self._tin_note.append(f"T_in {side} 없음")
+        if stop:
+            self._drop_tin(node, wrote, "다른 팔 T_in 실패로 tilt 가 돌지 않았다")
+            return " · ".join(stop) + " — tilt 를 시작하지 않는다"
         return ""
+
+    def _drop_tin(self, node: Node, sides, why: str) -> None:
+        """tilt 가 안 돈 이번 노드의 T_in 은 place 가 쓰지 않게 잊는다(json 파일은 기록으로 남긴다)."""
+        for side in sides:
+            self._tin_json.pop(side, None)
+            self._tin_why[side] = f"[{node.id}] {why}"
+        self._tin_note = [n for n in self._tin_note if not any(n.startswith(f"T_in {s} ") for s in sides)]
+
+    def _write_tin(self, node: Node, side: str, out: dict, meas: Mapping, tries: list) -> None:
+        """런 폴더 tin_<노드>_<팔>.json(place tin_json · tilt 계획이 읽는다) + 로그 · 노드 결과 한 줄."""
+        out = {**out, "failed_attempts": tries} if tries else out
+        path = self.run_dir / f"tin_{node.id}_{out['side']}.json"
+        try:                                           # 못 써도 경로는 넘긴다 — 계획 · place 가 파일 없음으로 멈춘다(기본값으로 몰래 가지 않게)
+            path.write_text(json.dumps(out, indent=1, ensure_ascii=False), encoding="utf-8")
+        except OSError as exc:
+            self.node.get_logger().error(f"[{node.id}] T_in {side} json {path.name} 못 씀: {exc}")
+        self._tin_json[side] = str(path)
+        self._tin_why.pop(side, None)
+        self._tin_note.append(f"T_in {side} measured" + (f"({len(tries) + 1}회차)" if tries else "") if out["source"] == "measured"
+                              else f"T_in {side} fallback(실측 아님: {out.get('fallback_reason', '')})")
+        line = (f"[{node.id}] T_in {side}({out.get('object')}) = {out['source']} pos {np.round(np.asarray(out['pos_m']) * 1000, 1).tolist()} mm · "
+                f"갱신 {meas.get('n_fresh')}/{meas.get('n_msgs')} · 흔들림 {meas.get('pos_dev_mm_max')} mm/{meas.get('ang_dev_deg_max')}° → {path.name}")
+        if out["source"] == "fallback":
+            self.node.get_logger().warning(f"{line} — 실측 아님, 고정값 사용: {out.get('fallback_reason', '')}")
+        else:
+            self.node.get_logger().info(line)
 
     def _run(self, argv: list) -> tuple[int, str]:
         """도구 하나 — ★11.08 리뷰: 출력은 도구마다 tools/<번호>_<이름>.log(두 팔 줄이 동시에 띄워도 끝줄이 섞이지 않게),
