@@ -20,9 +20,9 @@ from policy_control.pd_law import load_pd_config
 from policy_control.pd_gains import load_and_check
 from policy_control.contract import load_contract, load_driver_gains
 from policy_control.fk_numpy import UrdfTree
+import run_paths  # noqa: E402 — _paths 가 scripts/ 를 경로에 넣은 뒤
 
 ROOT = Path(__file__).resolve().parents[3]
-OUTPUT = ROOT / "logs/analysis/stationary_tracking_1107"
 URDF = _paths.RL_WS / "hdgp/assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf"
 
 
@@ -799,13 +799,7 @@ def main(argv=None):
             p.add_argument("--execute", action="store_true")
     args = parser.parse_args(argv)
     if args.out is None:
-        args.out = OUTPUT / (
-            time.strftime("%Y%m%d_%H%M%S")
-            + "_"
-            + str(time.time_ns() % 1000000)
-            + "_"
-            + args.mode
-        )
+        args.out = run_paths.run_dir("stationary", args.mode, mkdir=False)   # "New directory only" — 만드는 건 아래 쓰는 쪽
     if args.mode == "prepare" and not 0 < args.speed <= 0.05:
         parser.error("speed must be in (0, 0.05] rad/s")
     return globals()[args.mode](args)

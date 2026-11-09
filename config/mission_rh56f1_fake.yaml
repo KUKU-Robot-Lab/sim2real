@@ -1392,7 +1392,7 @@ run:
     - --approve
     - pd_hand_home
   - note: '[right] 손끝 촉각 · 관절 힘 영점(/hand_right/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 관절 힘은 sd > 5 g · |평균| > 400 g 면 거부, 30 g 넘게 옮겨 가면
-      받고 경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/rh56f1_tip_zero'
+      받고 경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/runs/<날짜>/rh56f1_tip_zero'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
@@ -1699,7 +1699,7 @@ run:
     - --approve
     - pd_hand_home
   - note: '[left] 손끝 촉각 · 관절 힘 영점(/hand_left/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 관절 힘은 sd > 5 g · |평균| > 400 g 면 거부, 30 g 넘게 옮겨 가면 받고
-      경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/rh56f1_tip_zero'
+      경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/runs/<날짜>/rh56f1_tip_zero'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
@@ -2072,7 +2072,7 @@ run:
     - --approve
     - pd_hand_home
   - note: '[right] 손끝 촉각 · 관절 힘 영점(/hand_right/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 관절 힘은 sd > 5 g · |평균| > 400 g 면 거부, 30 g 넘게 옮겨 가면
-      받고 경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/rh56f1_tip_zero'
+      받고 경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/runs/<날짜>/rh56f1_tip_zero'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
@@ -2442,7 +2442,7 @@ run:
     - --approve
     - pd_hand_home
   - note: '[left] 손끝 촉각 · 관절 힘 영점(/hand_left/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 관절 힘은 sd > 5 g · |평균| > 400 g 면 거부, 30 g 넘게 옮겨 가면 받고
-      경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/rh56f1_tip_zero'
+      경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/runs/<날짜>/rh56f1_tip_zero'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
@@ -2573,7 +2573,7 @@ run:
     - --execute
     - --approve
     - pd_engage
-  - note: tilt 시작 자세로 — 팔마다 계획 · 검사(plan_carry, 걸리면 그 팔부터 움직이지 않음) → 재생(replay_to_pd) · 기록 logs/tilt/<시각>_setting
+  - note: tilt 시작 자세로 — 팔마다 계획 · 검사(plan_carry, 걸리면 그 팔부터 움직이지 않음) → 재생(replay_to_pd) · 기록 logs/runs/<날짜>/tilt/<시각>_setting
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/tilt_now.py'
@@ -2586,7 +2586,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: tilt 붓기 — 지금 자세에서 계획 · 검사(plan_tilt, 걸리면 움직이지 않음) → 두 팔 재생(replay_to_pd) · 기록 logs/tilt/<시각>_pour
+  - note: tilt 붓기 — 지금 자세에서 계획 · 검사(plan_tilt, 걸리면 움직이지 않음) → 두 팔 재생(replay_to_pd) · 기록 logs/runs/<날짜>/tilt/<시각>_pour
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/tilt_pour.py'

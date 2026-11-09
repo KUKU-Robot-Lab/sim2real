@@ -31,6 +31,7 @@ import numpy as np
 import yaml
 
 from policy_control import _paths
+import run_paths  # noqa: E402 — _paths 가 scripts/ 를 경로에 넣은 뒤
 from policy_control.episode_failure import NodeResult
 from policy_control.episode_spec import EMPTY, PLANNED_TRAJ, TRAJ_ASSETS, Episode, Node, episode_sides, hand_contract_file
 from policy_control.rh_place import HOLDER_FLOOR_Z, HOLDER_TOL_M
@@ -361,7 +362,7 @@ class RosExecutor:
         # ★10.19 이 에피소드가 움직이는 팔 — safe_stop 은 이 팔의 정책만 멈춘다(다른 팔 실행기가 따로 도는 정책을 건드리지 않는다).
         #   못 찾으면 두 팔(옛 동작).
         self.sides = tuple(episode_sides(ep)) or SIDES
-        self.run_dir = run_dir or (_paths.SIM2REAL / "logs" / "episode" / time.strftime("%Y%m%d_%H%M%S"))
+        self.run_dir = run_dir or run_paths.run_dir("episode", ep.name)
         self.run_dir.mkdir(parents=True, exist_ok=True)
         write_run_meta(self.run_dir, ep, robot)
         self.contract = str(_paths.SIM2REAL / contract)
@@ -941,7 +942,7 @@ class RosExecutor:
                     status = "refused" if k < 2 else "error"
                     return NodeResult(status, f"{'no safe path — ' if k < 2 else ''}{Path(argv[1]).name} rc {rc}: {tail}",
                                       time.monotonic() - t0)
-        # ★11.04 사용자: 빈손 · 홈에서 손끝 촉각 bias 를 잡아 기록(tools.log + logs/rh56f1_tip_zero). 거부돼도 노드는 계속.
+        # ★11.04 사용자: 빈손 · 홈에서 손끝 촉각 bias 를 잡아 기록(tools.log + logs/runs/<YYMMDD>/rh56f1_tip_zero). 거부돼도 노드는 계속.
         #   두 팔을 한 번에(각자 프로세스) — 차례로 부르면 파이썬 기동만 팔마다 1~2 s
         self._run_many([[sys.executable, str(TOOLS / "trigger.py"), "hand/tip_zero", "--side", side, "--service-timeout", "5",
                          "--execute"] for side in traj.sides])

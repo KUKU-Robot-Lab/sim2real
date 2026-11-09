@@ -109,6 +109,8 @@ from touch_probe import (BASE_S, E0_SETTLE_MAX_S, E0_WIN_S, FORCE_G, INDEX_JF, I
                          release_and_stop, settled_e0, start_e0)
 
 S2R = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(S2R / "scripts"))
+import run_paths  # noqa: E402
 URDF_DEFAULT = Path.home() / "rl_ws/hdgp/assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf"
 CONTRACT = S2R / "logs/policy/asset_openarm_rh56f1_bi_rl/deploy_contract.json"   # home_arm(plan_touch 와 같은 홈)
 BOARD_DIR = S2R / "logs/analysis/fk_touch_probe_1105"                           # plan_board.board_pose(--board_npz 때만 import)
@@ -2836,7 +2838,7 @@ def main(argv: list[str] | None = None) -> int:
               f"받아들임 · 잔차 최대 {f['res_mm'].max():.1f} mm" if f["ok"] else f"★거부 — {f['why']}")), flush=True)
     ctl.view = {"boards": dict(boards), "target": None}
     if isinstance(io, RosIO) and a.photo_topic:   # 사진용 카메라: 상태 · 켜기 · 끄기는 창, 시작 분기는 --camera
-        ctl.cam = PH.Camera(lambda: io.n_img[0], io.cam_hz, S2R / "logs/perception/realsense_board_jog.log")
+        ctl.cam = PH.Camera(lambda: io.n_img[0], io.cam_hz, run_paths.day_dir("perception") / "realsense_board_jog.log")
         if a.camera == "auto":
             threading.Thread(target=lambda: say(f"카메라: {ctl.cam.auto()}"), daemon=True).start()
     ctl.start()

@@ -1,7 +1,7 @@
 #!/bin/bash
 # cup_holders_up.sh 가 띄운 노드만 끈다 — PID 파일의 프로세스가 정말 그 노드인지 cmdline 으로 확인한 뒤 SIGTERM.
 source "$(dirname "$0")/common.sh"
-PIDFILE="$LOGDIR/cup_holders.pid"
+PIDFILE=$(latest_pidfile cup_holders.pid)
 [ -f "$PIDFILE" ] || { echo "cup holders not running (no pid file)"; exit 0; }
 PID=$(cat "$PIDFILE")
 if kill -0 "$PID" 2>/dev/null && tr '\0' ' ' <"/proc/$PID/cmdline" | grep -q "cup_holder_pose_node.py"; then

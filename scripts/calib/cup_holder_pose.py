@@ -32,6 +32,7 @@ _HERE = Path(__file__).resolve().parent
 SIM2REAL = _HERE.parents[1]
 sys.path.insert(0, str(_HERE))
 sys.path.insert(0, str(_HERE.parent))
+import run_paths  # noqa: E402
 
 from table_cad_extrinsics import TABLE_TOP_Z, T_from, grab_live, project  # noqa: E402
 
@@ -503,7 +504,7 @@ def main(argv=None) -> int:
     ap.add_argument("--cfg", type=Path, default=DEFAULT_CFG)
     ap.add_argument("--extrinsics", type=Path, default=None, help="기본: cfg 의 camera_extrinsics")
     ap.add_argument("--shared", default=None, help="공유 축 덮어쓰기(쉼표, 예: x 또는 x,yaw · 빈 문자열이면 없음)")
-    ap.add_argument("--png", type=Path, default=_HERE.parents[1] / "logs" / "calib" / "cup_holder_overlay.png")
+    ap.add_argument("--png", type=Path, default=run_paths.day_dir("calib") / "cup_holder_overlay.png")
     ap.add_argument("--write", action="store_true", help=f"결과를 {DEFAULT_OUT.relative_to(SIM2REAL)} 에 쓴다")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--domain", type=int, default=_real_domain(), help="카메라 노드 도메인(실기 config/ros_domain.env · localhost 전용)")

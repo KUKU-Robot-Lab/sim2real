@@ -12,7 +12,7 @@ export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-96}"
 [ "$ROS_DOMAIN_ID" = "0" ] && { echo "✗ ROS_DOMAIN_ID 0 은 실기 도메인이다"; exit 3; }
 SIDE="${SIDE:-left}"; ROBOT="${ROBOT:-dg5f_m_${SIDE}_fake}"; PD_CONFIG="${PD_CONFIG:-dg5f_m_fake}"
 CONTRACT="${CONTRACT:-logs/policy/asset_openarm_dg5f-m_bi_rl/deploy_contract.json}"
-LOG="${1:-logs/policy_control/fake_direct_${SIDE}_$(date +%m%d_%H%M%S)}"; mkdir -p "$LOG"
+LOG="${1:-logs/runs/$(date +%y%m%d)/fake/$(date +%H%M%S)_fake_direct_${SIDE}}"; mkdir -p "$LOG"
 DZ="${DZ:-0.05}"; CLOSE="${CLOSE:-0.3}"; SEC=110
 PIDS=()
 cleanup() { for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill -- -"$p" 2>/dev/null; done; sleep 1; for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill -9 -- -"$p" 2>/dev/null; done; }

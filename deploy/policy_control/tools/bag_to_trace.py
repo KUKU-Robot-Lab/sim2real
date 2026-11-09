@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """policy_bag.py 가 남긴 run 폴더(policy/ · sensors/ bag)를 분석용 trace.npz 로 바꾼다. 파일만 읽는다.
 
-    python3 deploy/policy_control/tools/bag_to_trace.py logs/policy_control/real_runs/<run 폴더>
+    python3 deploy/policy_control/tools/bag_to_trace.py logs/runs/<YYMMDD>/real_runs/<run 폴더>
 
 시각은 bag 이 받은 시각(recv)이다 — 정책 노드 · pd 와 같은 PC 시계라 묶음끼리 바로 맞는다.
 trace.npz 의 모양은 joint_trace.summarize 가 읽는 그대로다(policy_control/trace_acc.py).

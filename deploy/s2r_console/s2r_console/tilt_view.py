@@ -5,7 +5,7 @@ docs/PLAN_GRASP_TILT_EVAL_2026-10-17.md 의 것을 한 화면에 모은다:
            언제 쓰는지(결정 5: A → C → B), 실행할 미션 단계 이름.
   run      지금 실행기 에피소드가 tilt_base_* 이면 그 실행 폴더의 계획 검사(이송 carry_* · tilt_* check.json)와
            손 쥐기 결과(hand_* · 경로 B) — 실기 전에 볼 수(탁자 여유 · 두 팔 사이 · 속도 · IK 오차 · sim 출발 범위).
-  records  회차 기록(tools/eval_record.py → logs/eval_real/<날짜>/) 요약과 최근 줄 — 성공 정의(결정 4)와 파지 확인(결정 1).
+  records  회차 기록(tools/eval_record.py → logs/runs/<YYMMDD>/eval_real/) 요약과 최근 줄 — 성공 정의(결정 4)와 파지 확인(결정 1).
 파일은 mtime 이 같으면 다시 읽지 않는다(상황판 스냅샷이 초마다 부른다).
 """
 from __future__ import annotations
@@ -13,7 +13,6 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
-import time
 from typing import Mapping
 
 from . import _paths
@@ -178,14 +177,14 @@ def _eval_record():
 def records_view(root: Path | None = None) -> dict:
     ev = _eval_record()
     root = Path(root or ev.ROOT)
-    day = root / time.strftime("%Y%m%d")
+    day = ev._day_dir(root)
     files = [day / "tilt.jsonl", day / "grasp.jsonl"]
 
     def rows(p: Path) -> list:
         return [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines() if x.strip()] if p.is_file() else []
 
     def make() -> dict:
-        return {"day": day.name, "summary": ev.summary(root), "tilt": rows(files[0])[-12:], "grasp": rows(files[1])[-12:]}
+        return {"day": day.parent.name, "summary": ev.summary(root), "tilt": rows(files[0])[-12:], "grasp": rows(files[1])[-12:]}
     return {**_cached(f"rec:{day}", files, make), "criterion": CRITERION, "grasp_rule": GRASP_RULE, "command": RECORD_CMD}
 
 

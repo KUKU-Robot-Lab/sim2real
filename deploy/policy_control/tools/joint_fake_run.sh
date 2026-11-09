@@ -18,7 +18,7 @@ source "$(dirname "$0")/../../../config/ros_domain.env"   # 실기 도메인 한
 [ "$ROS_DOMAIN_ID" = "$S2R_REAL_DOMAIN" ] && { echo "[joint_fake] 실기 도메인 $S2R_REAL_DOMAIN 에서는 돌리지 않는다"; exit 3; }
 
 RUN_DIR="${RUN_DIR:-deploy/policies/dg5f_m/cup_pick/right_m15}"
-SEC="${1:-20}"; LOG="${2:-logs/policy_control/joint_fake_$(date +%m%d_%H%M%S)}"; mkdir -p "$LOG"
+SEC="${1:-20}"; LOG="${2:-logs/runs/$(date +%y%m%d)/fake/$(date +%H%M%S)_joint_fake}"; mkdir -p "$LOG"
 CONTRACT="$RUN_DIR/joint_contract.json"
 PD_CONTRACT="${PD_CONTRACT:-logs/policy/asset_right_m15/deploy_contract.json}"
 ROBOT="${ROBOT:-dg5f_m_right_fake}"

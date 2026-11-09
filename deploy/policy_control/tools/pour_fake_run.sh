@@ -23,7 +23,7 @@ source "$(dirname "$0")/../../../config/ros_domain.env"   # 실기 도메인 한
 [ "$ROS_DOMAIN_ID" = "$S2R_REAL_DOMAIN" ] && { echo "[pour_fake] 실기 도메인 $S2R_REAL_DOMAIN 에서는 돌리지 않는다"; exit 3; }
 
 RUN="${RUN:-pour_i18}"
-SEC="${1:-20}"; LOG="${2:-logs/policy_control/pour_fake_$(date +%m%d_%H%M%S)}"; mkdir -p "$LOG"
+SEC="${1:-20}"; LOG="${2:-logs/runs/$(date +%y%m%d)/fake/$(date +%H%M%S)_pour_fake}"; mkdir -p "$LOG"
 RUN_DIR="${RUN_DIR:-logs/policy/$RUN}"
 CONTRACT="$RUN_DIR/pour_contract.json"
 PD_CONTRACT="${PD_CONTRACT:-logs/policy/asset_$RUN/deploy_contract.json}"

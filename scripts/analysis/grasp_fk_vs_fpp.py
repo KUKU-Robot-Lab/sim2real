@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """잡은 뒤 FP++ 컵(live · snapshot)과 FK 컵(손바닥 FK ⊗ 넘김 묶음 rel)을 손별 · 단계별로 비교한다(11.04 사용자).
 
-    python3 scripts/analysis/grasp_fk_vs_fpp.py --episode <logs/episode/<id>_<이름> | latest> \
-        [--analysis logs/analysis/grasp_fk_vs_fpp_<MMDD>_<HHMMSS>]   # bag 은 에피소드 id 시각으로 logs/bags 에서 찾는다
+    python3 scripts/analysis/grasp_fk_vs_fpp.py --episode <logs/runs/<YYMMDD>/episode/<시각>_<이름> | latest> \
+        [--analysis logs/analysis/grasp_fk_vs_fpp_<MMDD>_<HHMMSS>]   # bag 은 에피소드 시각으로 logs/runs/*/bags 에서 찾는다
 출력(항상): <에피소드>/grasp_record/<성공한 grasp_* 단계>/record.json · <시점>.jpg(머리 카메라 원본) · <시점>_overlay.png
       — 시점 = 잡기 끝 · 끝 + 1 s · 다음 단계 0.2 s 전. 각 시점의 FP++ live · /pose, FK 컵, 차이(mm · deg), 손 상태, 묶음.
       다시 돌려도 같은 파일(시각 · 값만 쓴다). 미션 후처리: nice -n 10 로 돌려도 된다(rh56f1_interfaces 를 source 해야 손 각도 · 힘).
@@ -11,7 +11,7 @@
 
 - 단계: 에피소드 폴더 *.jsonl 의 enter → exit/failure/safe_stop. 잡기 = 계획서(config/episodes/<이름>.yaml)의 kind aglt 정책 단계.
 - FK 컵: place 노드와 같은 UrdfChainFK(계약 asset URDF · palm_body, pour_fj_node) 로 /joint_states(프로필 이름 · 부호) 를 풀고
-  넘김 묶음(logs/inhand/<날짜>/*_rh_aglt_node_<팔>_*.npz) 의 rel_p · rel_q 를 붙인다(rh_place.cup_from_palm 과 같은 식).
+  넘김 묶음(logs/runs/<YYMMDD>/inhand/*_rh_aglt_node_<팔>_*.npz) 의 rel_p · rel_q 를 붙인다(rh_place.cup_from_palm 과 같은 식).
 - live 끊김: place 노드 CUP_STALE_S(0.5 s, 받은 시각) 를 넘게 새 live_pose 가 없던 30 Hz 칸의 비율.
 - 거리: live 한 장마다 그 영상 stamp 의 FK 와 잰다(지연 빼고 기하만). 자세는 전체 회전과 컵 축(z) 기울기 차 둘 다 —
   원통 컵은 축 둘레 yaw 가 FP++ 에서 정해지지 않고 object_pose_node 가 twist 를 0 으로 바꿔 내므로(remove_twist) 축 차만 의미가 있다.
@@ -32,6 +32,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(_ROOT / "scripts" / "analysis"), str(_ROOT / "scripts"), str(_ROOT / "deploy" / "policy_control")]
 
 import episode_video_overlay as V  # noqa: E402
+import run_paths  # noqa: E402
 
 STALE_S = 0.5            # pour_fj_node.CUP_STALE_S
 TOL_M = 0.05             # rh_place.LIVE_FK_TOL_M
@@ -149,7 +150,7 @@ def find_bundle(side: str, t_enter: float, t_exit: float) -> Path:
     """그 잡기 단계 안(끝 + 10 s)에 저장된 넘김 묶음 — 파일 이름 HHMMSS 와 날짜 폴더로 찾는다."""
     day = dt.datetime.fromtimestamp(t_enter)
     hits = []
-    for f in sorted((_ROOT / "logs" / "inhand" / day.strftime("%Y%m%d")).glob(f"*_rh_aglt_node_{side}_*.npz")):
+    for f in sorted(run_paths.day_dir("inhand", day).glob(f"*_rh_aglt_node_{side}_*.npz")):
         t = dt.datetime.combine(day.date(), dt.datetime.strptime(f.name[:6], "%H%M%S").time()).timestamp()
         if t_enter - 1 <= t <= t_exit + 10:
             hits.append(f)
@@ -605,8 +606,6 @@ def record_grasp(g: Grasp, steps, arm: V.Bag, hand: V.Bag, cam: V.Bag | None, t_
 
 
 # ============================================================================ 에피소드 · bag 찾기
-EP_DIR = _ROOT / "logs" / "episode"
-BAG_DIR = _ROOT / "logs" / "bags"
 
 
 def resolve_episode(arg: str) -> Path:
@@ -616,32 +615,35 @@ def resolve_episode(arg: str) -> Path:
         if not p.is_dir():
             raise SystemExit(f"에피소드 폴더가 없다: {arg}")
         return p.resolve()
-    cands = sorted(d for d in EP_DIR.iterdir() if d.is_dir() and d.name[:15].replace("_", "").isdigit() and any(d.glob("*.jsonl")))
+    cands = [d for d in run_paths.find_runs("episode") if d.is_dir() and run_paths.run_time(d) and any(d.glob("*.jsonl"))]
     if not cands:
-        raise SystemExit(f"{EP_DIR} 에 에피소드가 없다")
+        raise SystemExit(f"{run_paths.RUNS}/*/episode 에 에피소드가 없다")
     return cands[-1]
 
 
 def find_bag(ep_dir: Path, name: str) -> Path:
-    """에피소드 id 시각 앞 10 분 안에 시작한 logs/bags/<시각>_episode_<이름> 중 가장 늦은 것."""
-    t_ep = dt.datetime.strptime(ep_dir.name[:15], "%Y%m%d_%H%M%S").timestamp()
+    """에피소드 시작 시각 앞 10 분 안에 시작한 logs/runs/*/bags/<시각>_episode_<이름> 중 가장 늦은 것."""
+    t_ep = run_paths.run_time(ep_dir)
+    if t_ep is None:
+        raise SystemExit(f"{ep_dir}: logs/runs/<YYMMDD>/episode/<HHMMSS>_… 형식이 아니다 — --bag 으로 준다")
+    t_ep = t_ep.timestamp()
     best = None
-    for d in BAG_DIR.glob(f"*_episode_{name}"):
-        try:
-            t = dt.datetime.strptime(d.name[:15], "%Y%m%d_%H%M%S").timestamp()
-        except ValueError:
+    for d in run_paths.find_runs("bags", f"*_episode_{name}"):
+        t = run_paths.run_time(d)
+        if t is None:
             continue
+        t = t.timestamp()
         if t_ep - 600 <= t <= t_ep + 5 and (best is None or t > best[0]):
             best = (t, d)
     if best is None:
-        raise SystemExit(f"{ep_dir.name}: {BAG_DIR} 에 맞는 bag(*_episode_{name}, 에피소드 10 분 전 ~ 5 s 뒤 시작)이 없다")
+        raise SystemExit(f"{ep_dir.name}: {run_paths.RUNS}/*/bags 에 맞는 bag(*_episode_{name}, 에피소드 10 분 전 ~ 5 s 뒤 시작)이 없다")
     return best[1]
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
-    ap.add_argument("--episode", required=True, help="logs/episode/<id>_<이름> 또는 latest")
-    ap.add_argument("--bag", type=Path, default=None, help="기본 = 에피소드 id 시각으로 logs/bags/ 에서 찾는다")
+    ap.add_argument("--episode", required=True, help="logs/runs/<YYMMDD>/episode/<시각>_<이름> 또는 latest")
+    ap.add_argument("--bag", type=Path, default=None, help="기본 = 에피소드 시각으로 logs/runs/*/bags/ 에서 찾는다")
     ap.add_argument("--analysis", type=Path, default=None,
                     help="전체 시계열 분석(report.md · 단계 그림 · 놓침 프레임)도 이 폴더에 쓴다(기본 = 잡기 기록만)")
     ap.add_argument("--no-frames", action="store_true", help="--analysis 의 놓침 카메라 프레임을 뽑지 않는다")

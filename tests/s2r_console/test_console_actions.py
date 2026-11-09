@@ -579,7 +579,7 @@ def test_path_c_card_runs_the_grasp_c_episode_with_its_approach_policy_and_objec
     item = m.describe('rg3_chosen')
     assert item['stages'] == ['episode_grasp_c_right'] and '스크립트 잡기' in item['title']
     assert item['live']['script']['phase'] == 'close' and '접근 정책' in item['live']['script']['steps']
-    log = tiny_repo / 'logs/grasp_c/grips.jsonl'
+    log = tiny_repo / 'logs/runs/261109/grasp_c/grips.jsonl'
     log.parent.mkdir(parents=True)
     log.write_text('{"node": "rh_aglt_node_right", "cup_topic": "/objects/source200_blue/live_pose", "q_meas_rad": [0.1], '
                    '"hand_joints": ["r_hj_index_1"], "outcome": "done", "rise_m": 0.1}\n')

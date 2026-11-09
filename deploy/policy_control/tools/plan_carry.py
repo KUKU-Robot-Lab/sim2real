@@ -12,7 +12,7 @@
 ★10.17 계획 경로 A "ready_carry(한 팔씩)": --sides right 면 오른팔만 계획한다(npz 열 = 그 팔 7 관절, 다른 팔은 pd 가 붙든 채).
 빈손 이송(경로 B)도 같은 경로다 — 컵이 없어도 손 안 컵 자리를 가상 컵으로 두고 검사한다(탁자 여유는 그만큼 보수적).
 
-    python3 deploy/policy_control/tools/plan_carry.py --out logs/tilt/<run>/carry [--sides right]
+    python3 deploy/policy_control/tools/plan_carry.py --out logs/runs/<YYMMDD>/tilt/<run>/carry [--sides right]
 """
 from __future__ import annotations
 

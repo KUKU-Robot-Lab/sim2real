@@ -22,8 +22,8 @@
 #   ./record_right_shadow_bag.sh myrun      # bag 이름 지정
 set -eo pipefail   # ★-u 금지: ROS setup.bash 가 unbound 변수를 참조한다
 
-STAMP="${1:-$(date +%H%M%S)}"
-OUT="$(cd "$(dirname "$0")/../.." && pwd)/logs/rosbags/right_preset_${STAMP}"
+OUT="$(cd "$(dirname "$0")/../.." && pwd)/logs/runs/$(date +%y%m%d)/bags/$(date +%H%M%S)_right_preset_${1:-shadow}"
+mkdir -p "$(dirname "$OUT")"
 
 source /opt/ros/humble/setup.bash
 

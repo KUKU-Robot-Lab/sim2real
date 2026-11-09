@@ -1319,12 +1319,12 @@ run:
     - EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/right/episode
       /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action /objects/source240b_blue/pose /objects/source240b_blue/live_pose'
       HAND_SIDES='right' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start aglt_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/aglt_right.csv'
+    - '{runs}/cpu/aglt_right.csv'
     background: true
   - note: '[right] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)'
     argv:
@@ -1539,7 +1539,7 @@ run:
     - --approve
     - pd_hand_home
   - note: '[right] 손끝 촉각 · 관절 힘 영점(/hand_right/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 관절 힘은 sd > 5 g · |평균| > 400 g 면 거부, 30 g 넘게 옮겨 가면
-      받고 경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/rh56f1_tip_zero'
+      받고 경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/runs/<날짜>/rh56f1_tip_zero'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
@@ -1631,12 +1631,12 @@ run:
     - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/left/episode
       /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose'
       HAND_SIDES='left' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start aglt_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/aglt_left.csv'
+    - '{runs}/cpu/aglt_left.csv'
     background: true
   - note: '[left] rh_aglt 정책 노드(LSTM · CPU) — start 전에는 아무것도 보내지 않는다. 처음 10 스텝은 팔을 시작 자세 · 손을 편 채(학습 hold)'
     argv:
@@ -1851,7 +1851,7 @@ run:
     - --approve
     - pd_hand_home
   - note: '[left] 손끝 촉각 · 관절 힘 영점(/hand_left/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 관절 힘은 sd > 5 g · |평균| > 400 g 면 거부, 30 g 넘게 옮겨 가면 받고
-      경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/rh56f1_tip_zero'
+      경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/runs/<날짜>/rh56f1_tip_zero'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
@@ -2209,7 +2209,7 @@ run:
     - --approve
     - pd_hand_home
   - note: '[right] 손끝 촉각 · 관절 힘 영점(/hand_right/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 관절 힘은 sd > 5 g · |평균| > 400 g 면 거부, 30 g 넘게 옮겨 가면
-      받고 경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/rh56f1_tip_zero'
+      받고 경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/runs/<날짜>/rh56f1_tip_zero'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
@@ -2584,7 +2584,7 @@ run:
     - --approve
     - pd_hand_home
   - note: '[left] 손끝 촉각 · 관절 힘 영점(/hand_left/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 관절 힘은 sd > 5 g · |평균| > 400 g 면 거부, 30 g 넘게 옮겨 가면 받고
-      경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/rh56f1_tip_zero'
+      경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · logs/runs/<날짜>/rh56f1_tip_zero'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/trigger.py'
@@ -2715,7 +2715,7 @@ run:
     - --execute
     - --approve
     - pd_engage
-  - note: tilt 시작 자세로 — 팔마다 계획 · 검사(plan_carry, 걸리면 그 팔부터 움직이지 않음) → 재생(replay_to_pd) · 기록 logs/tilt/<시각>_setting
+  - note: tilt 시작 자세로 — 팔마다 계획 · 검사(plan_carry, 걸리면 그 팔부터 움직이지 않음) → 재생(replay_to_pd) · 기록 logs/runs/<날짜>/tilt/<시각>_setting
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/tilt_now.py'
@@ -2729,7 +2729,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: tilt 붓기 — 지금 자세에서 계획 · 검사(plan_tilt, 걸리면 움직이지 않음) → 두 팔 재생(replay_to_pd) · 기록 logs/tilt/<시각>_pour · bag tilt_pour
+  - note: tilt 붓기 — 지금 자세에서 계획 · 검사(plan_tilt, 걸리면 움직이지 않음) → 두 팔 재생(replay_to_pd) · 기록 logs/runs/<날짜>/tilt/<시각>_pour · bag tilt_pour
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/tilt_pour.py'
@@ -2864,12 +2864,12 @@ run:
       /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /objects/cup_holder_1/pose
       /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_pick_place_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_pick_place_right.csv'
+    - '{runs}/cpu/episode_pick_place_right.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_right — pick_place_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_right)
     argv:
@@ -2883,8 +2883,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -3049,12 +3049,12 @@ run:
       /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /objects/cup_holder_1/pose
       /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_pick_place_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_pick_place_left.csv'
+    - '{runs}/cpu/episode_pick_place_left.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_left — pick_place_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_left)
     argv:
@@ -3068,8 +3068,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -3212,12 +3212,12 @@ run:
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
       /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
       /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_c_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_c_right.csv'
+    - '{runs}/cpu/episode_grasp_c_right.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_c_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_c_right)
     argv:
@@ -3231,8 +3231,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -3374,12 +3374,12 @@ run:
       /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
       /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied
       /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_c_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_c_left.csv'
+    - '{runs}/cpu/episode_grasp_c_left.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_c_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_c_left)
     argv:
@@ -3393,8 +3393,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -3461,12 +3461,12 @@ run:
       /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
       /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_tilt_base_b
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_tilt_base_b.csv'
+    - '{runs}/cpu/episode_tilt_base_b.csv'
     background: true
   - note: 에피소드 실행기 episode_runner — tilt_base_b · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:tilt_base_b)
     argv:
@@ -3478,8 +3478,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -3683,12 +3683,12 @@ run:
       /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
       /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_tilt_base_c
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_tilt_base_c.csv'
+    - '{runs}/cpu/episode_tilt_base_c.csv'
     background: true
   - note: 에피소드 실행기 episode_runner — tilt_base_c · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:tilt_base_c)
     argv:
@@ -3700,8 +3700,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -3923,12 +3923,12 @@ run:
       /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
       /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_tilt_base_d
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_tilt_base_d.csv'
+    - '{runs}/cpu/episode_tilt_base_d.csv'
     background: true
   - note: 에피소드 실행기 episode_runner — tilt_base_d · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:tilt_base_d)
     argv:
@@ -3940,8 +3940,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -4025,12 +4025,12 @@ run:
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
       /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
       /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_b_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_b_right.csv'
+    - '{runs}/cpu/episode_grasp_b_right.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_b_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_b_right)
     argv:
@@ -4044,8 +4044,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -4127,12 +4127,12 @@ run:
       /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
       /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied
       /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_b_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_b_left.csv'
+    - '{runs}/cpu/episode_grasp_b_left.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_b_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_b_left)
     argv:
@@ -4146,8 +4146,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -4296,12 +4296,12 @@ run:
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
       /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
       /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_d_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_d_right.csv'
+    - '{runs}/cpu/episode_grasp_d_right.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_d_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_d_right)
     argv:
@@ -4315,8 +4315,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -4466,12 +4466,12 @@ run:
       /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
       /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied
       /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_d_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_d_left.csv'
+    - '{runs}/cpu/episode_grasp_d_left.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_d_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_d_left)
     argv:
@@ -4485,8 +4485,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -4641,12 +4641,12 @@ run:
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
       /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
       /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_e_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_e_right.csv'
+    - '{runs}/cpu/episode_grasp_e_right.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_e_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_e_right)
     argv:
@@ -4660,8 +4660,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -4816,12 +4816,12 @@ run:
       /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
       /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied
       /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_e_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_e_left.csv'
+    - '{runs}/cpu/episode_grasp_e_left.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_e_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_e_left)
     argv:
@@ -4835,8 +4835,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -4993,12 +4993,12 @@ run:
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
       /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
       /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_f_right.csv'
+    - '{runs}/cpu/episode_grasp_f_right.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_f_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_right)
     argv:
@@ -5012,8 +5012,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -5170,12 +5170,12 @@ run:
       /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
       /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied
       /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_f_left.csv'
+    - '{runs}/cpu/episode_grasp_f_left.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_f_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_left)
     argv:
@@ -5189,8 +5189,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -5347,12 +5347,12 @@ run:
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
       /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_orange/pose /objects/source240_orange/live_pose /policy_control/pd_right/applied
       /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240_orange_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_f_source240_orange_right.csv'
+    - '{runs}/cpu/episode_grasp_f_source240_orange_right.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_f_source240_orange_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240_orange_right)
     argv:
@@ -5366,8 +5366,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -5524,12 +5524,12 @@ run:
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
       /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_pink/pose /objects/source240_pink/live_pose /policy_control/pd_right/applied
       /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240_pink_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_f_source240_pink_right.csv'
+    - '{runs}/cpu/episode_grasp_f_source240_pink_right.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_f_source240_pink_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240_pink_right)
     argv:
@@ -5543,8 +5543,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -5701,12 +5701,12 @@ run:
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
       /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source200_orange/pose /objects/source200_orange/live_pose /policy_control/pd_right/applied
       /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source200_orange_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_f_source200_orange_right.csv'
+    - '{runs}/cpu/episode_grasp_f_source200_orange_right.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_f_source200_orange_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source200_orange_right)
     argv:
@@ -5720,8 +5720,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -5878,12 +5878,12 @@ run:
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
       /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source200_pink/pose /objects/source200_pink/live_pose /policy_control/pd_right/applied
       /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source200_pink_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_f_source200_pink_right.csv'
+    - '{runs}/cpu/episode_grasp_f_source200_pink_right.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_f_source200_pink_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source200_pink_right)
     argv:
@@ -5897,8 +5897,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -6055,12 +6055,12 @@ run:
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
       /policy_control/right/episode /episode/right/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_right/applied
       /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_shaker_c_orange_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_f_shaker_c_orange_right.csv'
+    - '{runs}/cpu/episode_grasp_f_shaker_c_orange_right.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_f_shaker_c_orange_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_shaker_c_orange_right)
     argv:
@@ -6074,8 +6074,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -6232,12 +6232,12 @@ run:
       /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
       /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_left/applied
       /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240b_blue_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_f_source240b_blue_left.csv'
+    - '{runs}/cpu/episode_grasp_f_source240b_blue_left.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_f_source240b_blue_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240b_blue_left)
     argv:
@@ -6251,8 +6251,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -6409,12 +6409,12 @@ run:
       /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
       /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source240_orange/pose /objects/source240_orange/live_pose /policy_control/pd_left/applied
       /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240_orange_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_f_source240_orange_left.csv'
+    - '{runs}/cpu/episode_grasp_f_source240_orange_left.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_f_source240_orange_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240_orange_left)
     argv:
@@ -6428,8 +6428,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -6586,12 +6586,12 @@ run:
       /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
       /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source240_pink/pose /objects/source240_pink/live_pose /policy_control/pd_left/applied
       /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240_pink_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_f_source240_pink_left.csv'
+    - '{runs}/cpu/episode_grasp_f_source240_pink_left.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_f_source240_pink_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240_pink_left)
     argv:
@@ -6605,8 +6605,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -6763,12 +6763,12 @@ run:
       /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
       /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source200_orange/pose /objects/source200_orange/live_pose /policy_control/pd_left/applied
       /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source200_orange_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_f_source200_orange_left.csv'
+    - '{runs}/cpu/episode_grasp_f_source200_orange_left.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_f_source200_orange_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source200_orange_left)
     argv:
@@ -6782,8 +6782,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -6940,12 +6940,12 @@ run:
       /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
       /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source200_pink/pose /objects/source200_pink/live_pose /policy_control/pd_left/applied
       /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source200_pink_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_f_source200_pink_left.csv'
+    - '{runs}/cpu/episode_grasp_f_source200_pink_left.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_f_source200_pink_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source200_pink_left)
     argv:
@@ -6959,8 +6959,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -7138,12 +7138,12 @@ run:
       /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /objects/cup_holder_1/pose
       /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_pick_place_f_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_pick_place_f_right.csv'
+    - '{runs}/cpu/episode_pick_place_f_right.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_right — pick_place_f_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_f_right)
     argv:
@@ -7157,8 +7157,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -7337,12 +7337,12 @@ run:
       /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /objects/cup_holder_0/pose
       /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_pick_place_f_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_pick_place_f_left.csv'
+    - '{runs}/cpu/episode_pick_place_f_left.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_left — pick_place_f_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_f_left)
     argv:
@@ -7356,8 +7356,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -7589,12 +7589,12 @@ run:
       /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
       /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_grasp2tilt_f_240
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp2tilt_f_240.csv'
+    - '{runs}/cpu/episode_grasp2tilt_f_240.csv'
     background: true
   - note: 에피소드 실행기 episode_runner — grasp2tilt_f_240 · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp2tilt_f_240)
     argv:
@@ -7606,8 +7606,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -7888,12 +7888,12 @@ run:
       /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
       /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_cocktail_1
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_cocktail_1.csv'
+    - '{runs}/cpu/episode_cocktail_1.csv'
     background: true
   - note: 에피소드 실행기 episode_runner — cocktail_1 · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1)
     argv:
@@ -7905,8 +7905,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -8188,12 +8188,12 @@ run:
       /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
       /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_cocktail_1b
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_cocktail_1b.csv'
+    - '{runs}/cpu/episode_cocktail_1b.csv'
     background: true
   - note: 에피소드 실행기 episode_runner — cocktail_1b · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1b)
     argv:
@@ -8205,8 +8205,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -8493,12 +8493,12 @@ run:
       /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
       /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_cocktail_1c_e1000
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_cocktail_1c_e1000.csv'
+    - '{runs}/cpu/episode_cocktail_1c_e1000.csv'
     background: true
   - note: 에피소드 실행기 episode_runner — cocktail_1c_e1000 · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1c_e1000)
     argv:
@@ -8510,8 +8510,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -8798,12 +8798,12 @@ run:
       /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
       /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_cocktail_1c_e4000
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_cocktail_1c_e4000.csv'
+    - '{runs}/cpu/episode_cocktail_1c_e4000.csv'
     background: true
   - note: 에피소드 실행기 episode_runner — cocktail_1c_e4000 · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1c_e4000)
     argv:
@@ -8815,8 +8815,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -8980,12 +8980,12 @@ run:
       /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
       /objects/source240b_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_grasp_s_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_s_right.csv'
+    - '{runs}/cpu/episode_grasp_s_right.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_s_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_s_right)
     argv:
@@ -8999,8 +8999,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -9162,12 +9162,12 @@ run:
       /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
       /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_grasp_s_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_s_left.csv'
+    - '{runs}/cpu/episode_grasp_s_left.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_s_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_s_left)
     argv:
@@ -9181,8 +9181,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -9361,12 +9361,12 @@ run:
       /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose
       /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action'
       bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_m_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_m_right.csv'
+    - '{runs}/cpu/episode_grasp_m_right.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_m_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_m_right)
     argv:
@@ -9380,8 +9380,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -9561,12 +9561,12 @@ run:
       /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose
       /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action'
       bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_m_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_m_left.csv'
+    - '{runs}/cpu/episode_grasp_m_left.csv'
     background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_m_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_m_left)
     argv:
@@ -9580,8 +9580,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'
@@ -9885,12 +9885,12 @@ run:
       /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /objects/cup_holder_1/pose /policy_control/pd_left/applied
       /policy_control/pd_right/applied /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action
       /head/target_stream /head/stream_log' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_place_m_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_place_m_right.csv'
+    - '{runs}/cpu/episode_place_m_right.csv'
     background: true
   - note: 에피소드 실행기 episode_runner — place_m_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:place_m_right)
     argv:
@@ -9902,8 +9902,8 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
-      사본, 커밋 · dirty, PD 게인)'
+  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
+      PD 게인)'
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/baseline_run.py'

@@ -7,7 +7,7 @@
   replay_to_pd.py --npz <out>/tilt_cmd.npz --joints r_aj_1,..,r_aj_7,l_aj_1,..,l_aj_7 --rate-scale 1.0 --max-start-gap 0.05 --execute
 종료 코드: 0 = 재생해도 됨 · 2 = 검사 실패(재생 금지) · 3 = 핀 · 기준 파일 불일치 · 그 밖 = 계획 못 함.
 
-    python3 deploy/policy_control/tools/plan_tilt.py --out logs/tilt/<run>
+    python3 deploy/policy_control/tools/plan_tilt.py --out logs/runs/<YYMMDD>/tilt/<run>
     python3 deploy/policy_control/tools/plan_tilt.py --q-json q.json --out /tmp/t      # 로봇 없이(오프라인 검사)
 """
 from __future__ import annotations

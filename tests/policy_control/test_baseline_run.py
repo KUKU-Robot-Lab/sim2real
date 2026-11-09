@@ -1,4 +1,4 @@
-"""baseline_run: 실행 때 폴더 번호 고르기와 snapshot(ROS 없이)."""
+"""baseline_run: snapshot(ROS 없이)."""
 import importlib.util
 import json
 from pathlib import Path
@@ -9,13 +9,6 @@ ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("baseline_run", ROOT / "deploy/policy_control/tools/baseline_run.py")
 br = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(br)
-
-
-def test_next_run_dir_takes_next_free_number(tmp_path):
-    assert br.next_run_dir(tmp_path, "20261108").name == "baseline_20261108_01"
-    for n in ("baseline_20261108_01", "baseline_20261108_03", "baseline_20261107_09"):
-        (tmp_path / "runs" / n).mkdir(parents=True)
-    assert br.next_run_dir(tmp_path, "20261108").name == "baseline_20261108_04"
 
 
 def test_snapshot_records_policies_pd_and_commit(tmp_path):

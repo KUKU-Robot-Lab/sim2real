@@ -2,17 +2,17 @@
 """에피소드 한 회의 보고서용 영상(mp4) · 장면 사진을 만든다 — 카메라 PC 의 vision_recorder 프레임 + 에피소드 기록(노드 시각).
 
 10.19 사용자 "작성할 보고서 사진/영상도 필요함". 1-B(grasp_b_*) 에피소드 단계는 카메라 영상을 15 Hz 로 남긴다
-(make_rh56f1_missions REPORT_VIDEO_HZ · scripts/nodes/vision_recorder.py — 카메라 PC 의 sim2real/logs/vision_runs/<시각>_episode_<이름>).
+(make_rh56f1_missions REPORT_VIDEO_HZ · scripts/nodes/vision_recorder.py — 카메라 PC 의 sim2real/logs/runs/<YYMMDD>/vision_runs/<시각>_episode_<이름>).
 
-  1) 에피소드 기록(logs/episode/<id>_<이름>/episode_<id>.jsonl)에서 처음 enter ~ 마지막 사건 시각과 노드마다 enter · exit 시각
+  1) 에피소드 기록(logs/runs/<YYMMDD>/episode/<시각>_<이름>/episode_<id>.jsonl)에서 처음 enter ~ 마지막 사건 시각과 노드마다 enter · exit 시각
   2) 카메라 PC 의 그 에피소드 영상 폴더에서 그 구간(앞뒤 2 s) 프레임만 가져온다(scp — 프레임 이름 = 시각 ns)
   3) 영상: 프레임마다 위에 [에피소드 · 지금 노드 · 경과 s] 를 얹어 실측 프레임 간격의 fps 로 mp4
   4) 사진: 시작(홈 뒤) · 다가간 뒤(reach exit) · 쥔 뒤(grasp exit) · 들어 올린 뒤(lift exit = 3 s 유지 끝) — 가까운 프레임,
-     + 네 장 모음(2×2). 결과 = logs/report_media/<id>_<이름>/{video.mp4, 01_start.jpg …, sheet.jpg, summary.json}
+     + 네 장 모음(2×2). 결과 = 그 날의 logs/runs/<YYMMDD>/report_media/<시각>_<이름>/{video.mp4, 01_start.jpg …, sheet.jpg, summary.json}
 두 PC 시계 차는 10.19 에 ±50 ms(ssh date) — 장면 사진은 그만큼 어긋날 수 있다.
 
     python3 deploy/policy_control/tools/episode_media.py --latest grasp_b_right
-    python3 deploy/policy_control/tools/episode_media.py --episode-dir logs/episode/20261019_230000_grasp_b_right
+    python3 deploy/policy_control/tools/episode_media.py --episode-dir logs/runs/261019/episode/230000_grasp_b_right
 """
 from __future__ import annotations
 
@@ -27,9 +27,10 @@ import sys
 import numpy as np
 
 SIM2REAL = Path(__file__).resolve().parents[3]
-EPISODE_LOGS = SIM2REAL / "logs" / "episode"
-OUT_ROOT = SIM2REAL / "logs" / "report_media"
-REMOTE_ROOT = "rl_ws/sim2real/logs/vision_runs"     # 카메라 PC 홈 기준
+sys.path.insert(0, str(SIM2REAL / "scripts"))
+import run_paths  # noqa: E402
+
+REMOTE_ROOT = "rl_ws/sim2real/logs/runs"     # 카메라 PC 홈 기준 — 영상은 <YYMMDD>/vision_runs/
 PAD_S = 2.0
 #: 장면 사진 — (파일 이름, 노드, 사건, 설명)
 KEYS = (("01_start", "scene", "exit", "시작 — 홈 · 컵 배치 기록"),
@@ -105,10 +106,15 @@ def keyframes(tl: dict, times: np.ndarray) -> list[dict]:
 
 # ============================================================================ 가져오기 · 만들기
 def find_episode_dir(name: str) -> Path:
-    hits = sorted(EPISODE_LOGS.glob(f"*_{name}"))
-    if not hits:
-        raise MediaError(f"{EPISODE_LOGS}/*_{name} 가 없다")
-    return hits[-1]
+    hit = run_paths.latest("episode", f"*_{name}")
+    if hit is None:
+        raise MediaError(f"{run_paths.RUNS}/*/episode/*_{name} 가 없다")
+    return hit
+
+
+def media_dir(episode_dir: Path) -> Path:
+    """에피소드 폴더와 같은 날 · 같은 이름의 report_media 폴더."""
+    return episode_dir.parent.parent / "report_media" / episode_dir.name
 
 
 def load_events(d: Path) -> list[dict]:
@@ -120,7 +126,7 @@ def load_events(d: Path) -> list[dict]:
 
 def remote_frames(host: str, episode: str, t0: float, t1: float) -> tuple[str, list[str]]:
     """카메라 PC 에서 그 에피소드 영상 폴더(이름 끝 _episode_<이름>, 구간이 겹치는 마지막) · 구간 프레임 이름."""
-    script = (f"cd {REMOTE_ROOT} 2>/dev/null || exit 3; for d in $(ls -d *_episode_{shlex.quote(episode)} 2>/dev/null | sort -r); "
+    script = (f"cd {REMOTE_ROOT} 2>/dev/null || exit 3; for d in $(ls -d */vision_runs/*_episode_{shlex.quote(episode)} 2>/dev/null | sort -r); "
               'do echo "DIR $d $(ls $d/frames 2>/dev/null | head -1) $(ls $d/frames 2>/dev/null | tail -1)"; done')
     got = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host, script], capture_output=True, text=True,
                          timeout=60)
@@ -129,7 +135,7 @@ def remote_frames(host: str, episode: str, t0: float, t1: float) -> tuple[str, l
     pick = pick_run(got.stdout.splitlines(), t0, t1)
     if pick is None:
         raise MediaError(f"{host}: 에피소드 {episode} 구간({datetime.fromtimestamp(t0):%H:%M:%S}~{datetime.fromtimestamp(t1):%H:%M:%S})"
-                         f"과 겹치는 영상 폴더가 없다(~/{REMOTE_ROOT}/*_episode_{episode})")
+                         f"과 겹치는 영상 폴더가 없다(~/{REMOTE_ROOT}/*/vision_runs/*_episode_{episode})")
     ls = subprocess.run(["ssh", "-o", "BatchMode=yes", host, f"ls {REMOTE_ROOT}/{pick}/frames"], capture_output=True, text=True,
                         timeout=60).stdout.split()
     names = [n for n in ls if n.endswith(".jpg") and t0 - PAD_S <= int(n[:-4]) * 1e-9 <= t1 + PAD_S]
@@ -137,15 +143,15 @@ def remote_frames(host: str, episode: str, t0: float, t1: float) -> tuple[str, l
 
 
 def local_frames(tl: dict, dst: Path) -> Path:
-    root = SIM2REAL / "logs" / "vision_runs"
+    root = run_paths.RUNS
     lines = []
-    for d in sorted(root.glob(f"*_episode_{tl['episode']}"), reverse=True):
+    for d in reversed(run_paths.find_runs("vision_runs", f"*_episode_{tl['episode']}")):
         fs = sorted((d / "frames").glob("*.jpg"))
         if fs:
-            lines.append(f"DIR {d.name} {fs[0].name} {fs[-1].name}")
+            lines.append(f"DIR {d.relative_to(root)} {fs[0].name} {fs[-1].name}")
     pick = pick_run(lines, tl["start"], tl["end"])
     if pick is None:
-        raise MediaError(f"{root}/*_episode_{tl['episode']} 에 이 회 구간 영상이 없다")
+        raise MediaError(f"{root}/*/vision_runs/*_episode_{tl['episode']} 에 이 회 구간 영상이 없다")
     dst.mkdir(parents=True, exist_ok=True)
     for f in (root / pick / "frames").glob("*.jpg"):
         if tl["start"] - PAD_S <= int(f.stem) * 1e-9 <= tl["end"] + PAD_S and not (dst / f.name).exists():
@@ -222,12 +228,12 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--latest", help="에피소드 이름(가장 최근 회) — 예 grasp_b_right")
     g.add_argument("--episode-dir", type=Path)
     g.add_argument("--pending", help="에피소드 이름 — 아직 만들지 않은 회(report_media/<회>/summary.json 없음)를 모두")
-    ap.add_argument("--host", default="vision-3090", help="카메라 PC(ssh 이름) · local = 이 PC 의 logs/vision_runs")
+    ap.add_argument("--host", default="vision-3090", help="카메라 PC(ssh 이름) · local = 이 PC 의 logs/runs/*/vision_runs")
     ap.add_argument("--frames", type=Path, default=None, help="프레임이 이미 이 PC 에 있으면 그 폴더(가져오지 않는다)")
     ap.add_argument("--out", type=Path, default=None)
     a = ap.parse_args(argv)
     if a.pending:
-        todo = [d for d in sorted(EPISODE_LOGS.glob(f"*_{a.pending}")) if not (OUT_ROOT / d.name / "summary.json").is_file()]
+        todo = [d for d in run_paths.find_runs("episode", f"*_{a.pending}") if not (media_dir(d) / "summary.json").is_file()]
         if not todo:
             print(f"[media] {a.pending}: 새 회 없음")
             return 0
@@ -236,9 +242,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         d = a.episode_dir if a.episode_dir else find_episode_dir(a.latest)
         tl = timeline(load_events(d))
-        out = a.out or OUT_ROOT / d.name
+        out = a.out or media_dir(d)
         frames = a.frames
-        if frames is None and a.host == "local":          # 카메라가 이 PC — logs/vision_runs 에서 구간 프레임을 이어 붙인다(복사 없음)
+        if frames is None and a.host == "local":          # 카메라가 이 PC — logs/runs/*/vision_runs 에서 구간 프레임을 이어 붙인다(복사 없음)
             frames = local_frames(tl, out / "frames")
         elif frames is None:
             rdir, names = remote_frames(a.host, tl["episode"], tl["start"], tl["end"])

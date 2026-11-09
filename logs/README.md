@@ -18,7 +18,7 @@
 |---|---|---|---|
 | **R 참조** | 코드나 설정이 경로로 읽는 것: 배포 계약, 캘리브 결과, teach 자세, 계획 npz, 학습된 마스크/모델 | 지금 경로 그대로 둔다(`policy/`, `place_teach/`, `policy_control/*.npz`, `calib/` 의 결과 파일) | 영구. 지우지 않는다. 덮어쓰지 않고 새 이름으로 만든 뒤 코드에서 가리키는 경로를 바꾼다 |
 | **E 실험** | 승인받은 실험 하나에 속한 런 | `logs/exp/<YYMMDD>_<이름>/`. 원시 데이터는 러너 기본 경로에 두고 실험 README 에 등록한다 | 결과를 쓸 때까지 로컬에 둔다. 그 뒤 원시 데이터는 DATA 로 옮긴다 |
-| **S 임시** | 디버그, 시운전, 가짜(fake) 실행, 콘솔·노드 로그, pid, 미션 상태 | 러너 기본 경로 | **실험 README 에 등록되지 않은 런은 모두 S 다.** 7일이 지나면 지워도 된다 |
+| **S 임시** | 디버그, 시운전, 가짜(fake) 실행, 콘솔·노드 로그, pid, 미션 상태 | `logs/runs/<YYMMDD>/<종류>/` (러너 기본 경로) | **실험 README 에 등록되지 않은 런은 모두 S 다.** 7일이 지나면 지워도 된다 |
 
 핵심 규칙: **지키고 싶은 런은 실험 README 의 런 표에 적는다.** 표에 없는 런은 임시로 보고 정리할 때 지운다.
 런이 끝난 뒤가 아니라 런을 시작하기 전이나 직후에 적는다.
@@ -38,48 +38,73 @@ logs/exp/<YYMMDD>_<이름>/          예: 261109_friction_right
 
   | 런 | 원시 경로 | 판정 | 메모 |
   |---|---|---|---|
-  | r01 | `logs/episode/20261109_101500_grasp_f_right` | ok | |
-  | r02 | `logs/bags/20261109_102030_grasp_f_right` | 버림 | 손가락 영점 틀어짐 |
+  | r01 | `logs/runs/261109/episode/101500_grasp_f_right` | ok | |
+  | r02 | `logs/runs/261109/bags/102030_episode_grasp_f_right` | 버림 | 손가락 영점 틀어짐 |
 
   "버림"도 표에 적는다. 왜 버렸는지가 남아야 같은 실수를 반복하지 않는다. 다만 원시 데이터는 정리할 때 지워도 된다.
 - 이미 실험 폴더를 갖고 있는 분석(`analysis/friction/` 처럼 repo 안에 있는 것)은 그 구조를 그대로 쓴다. 이 README 와 같은 형식이다.
 
 ## 새 코드를 쓸 때
 
-- 출력 기본 경로는 `logs/<도구 종류>/<YYYYMMDD_HHMMSS>_<label>/` 로 한다. 같은 초에 충돌하면 `_k` 를 붙인다(`tilt_pour.py` 의 `fresh_dir`).
-- 최상위 폴더 이름에 날짜 접미사(`_1107`)를 붙이지 않는다. 날짜는 하위 폴더 이름에 넣는다.
-- 고정 파일명에 덮어쓰지 않는다. R 종류라면 새 이름으로 만든다.
+- 런 기록 경로는 `scripts/run_paths.py` 하나로 정한다. 손으로 `logs/...` 를 만들지 않는다.
+  - 런마다 폴더: `run_paths.run_dir("<종류>", label)` → `logs/runs/<YYMMDD>/<종류>/<HHMMSS>_<label>/`. 같은 초에 겹치면 `_2`, `_3` 을 붙인다.
+  - 하루에 파일 하나: `run_paths.day_dir("<종류>") / "<이름>"` → `logs/runs/<YYMMDD>/<종류>/<이름>`.
+  - 셸은 `$SIM2REAL/logs/runs/$(date +%y%m%d)/<종류>`, 미션 yaml 은 `{runs}/<종류>/…`(러너가 오늘 날짜 폴더로 푼다).
+  - 날짜는 런을 시작한 날이다. 자정을 넘겨도 그 런의 파일은 시작한 날 폴더에 둔다.
+- 앞선 런을 읽는 코드(가장 최근 기록, 남은 PID, 넘김 묶음)는 `run_paths.find_runs` · `latest` 로 모든 날을 본다. 오늘 폴더만 보지 않는다.
+- `logs/` 바로 아래에 새 폴더를 만들지 않는다. R 파일만 예외다. 고정 파일명에 덮어쓰지 않는다. R 종류라면 새 이름으로 만든다.
 - 경로는 repo 루트 기준 절대 경로로 정한다. cwd 에 따라 상대경로 `logs/...` 가 다른 곳을 가리키면 안 된다.
 - 런 폴더에 `meta.json` 을 남긴다: `{"git": HEAD, "dirty": bool, "argv": [...], "host": ..., "start": ...}`.
 - 자산(궤적) 버전이 결과를 가르면 이름에 자산을 넣는다. 지금 적용된 곳(11.09):
-  - `logs/tilt/<시각>_setting_<자산>/`, `logs/tilt/<시각>_pour_<자산>/` (예: `_setting_base_arc6`, `_pour_traj_v12_240`) + `meta.json`
-  - `logs/episode/<시각>_<에피소드>/meta.json` 의 `assets` 에 궤적별 자산 버전(`tilt: tilt/traj_v12_240`)이 남는다. 같은 에피소드 이름이라도 v11·v12 가 여기서 갈린다.
+  - `tilt/<시각>_setting_<자산>/`, `tilt/<시각>_pour_<자산>/` (예: `_setting_base_arc6`, `_pour_traj_v12_240`) + `meta.json`
+  - `episode/<시각>_<에피소드>/meta.json` 의 `assets` 에 궤적별 자산 버전(`tilt: tilt/traj_v12_240`)이 남는다. 같은 에피소드 이름이라도 v11·v12 가 여기서 갈린다.
 - 노드 로그가 같은 오류를 반복하면 파일이 GB 단위로 커진다. 오래 띄우는 노드는 로그 크기나 줄 수에 상한을 둔다.
 
 ## 정리 (주 1회 또는 실험을 마칠 때)
 
 1. 실험이 끝나면 README 결론과 `result/` 를 쓰고, 상태를 `완료` 로 바꾼다.
-2. 완료된 실험의 원시 데이터(런 표에 있는 경로)는 `/media/user/DATA/<YYMMDD>/sim2real/logs/<같은 상대경로>` 로 옮긴다. 이 형식은 이미 `DATA/261109/` 에서 쓰고 있다.
-   README 런 표의 경로 옆에 `→ DATA/<YYMMDD>` 를 적는다.
-3. 어느 실험에도 등록되지 않았고 7일이 지난 S 런은 지운다. 지우기 전에 목록을 사용자에게 보여 준다.
+2. 끝난 날은 날짜 폴더째 옮긴다: `logs/runs/<YYMMDD>/` → `/media/user/DATA/<YYMMDD>/sim2real/logs/runs/<YYMMDD>/`.
+   실험 README 런 표의 경로 옆에 `→ DATA/<YYMMDD>` 를 적는다.
+3. 어느 실험에도 등록되지 않았고 7일이 지난 날짜 폴더는 지운다. 지우기 전에 목록을 사용자에게 보여 준다.
 4. R 은 건드리지 않는다.
 
-## 지금 있는 폴더 (11.09 정리 후)
+## 지금 있는 폴더 (11.09 날짜별로 바꾼 뒤)
 
 | 폴더 | 종류 | 무엇 |
 |---|---|---|
 | `policy/` | R | 배포 계약 · 학생 마스크. 코드가 읽는다 |
-| `place_teach/` | R | 놓기 teach npz(`.log` 는 S) |
-| `policy_control/` | R | `rehome_left/right.npz` |
+| `place_teach/` | R | 놓기 teach npz |
+| `policy_control/` | R | `rehome_left/right.npz`, 계획 npz(`home_path_*` · `approach_*` · `reset_*`) |
+| `calib/` | R | 보정 결과(지금 없음). 겹친 그림 · 측정은 `runs/<날짜>/calib/` |
 | `exp/` | E | 실험 폴더(`_template/` 틀) |
-| `episode/` | S | 에피소드 러너 런(`<시각>_<에피소드>/`) |
-| `mission/` | S | 미션 상태 · 로그 |
-| `tilt/` | S | `tilt_now.py`·`tilt_pour.py` 런(`<시각>_setting_<자산>` · `_pour_<자산>`) |
-| `inhand/` | S | 손 안 자세 추정 npz |
-| `rh56f1_record/`, `rh56f1_tip_zero/` | S | RH56F1 손 기록 · 손끝 영점 |
-| `cpu/`, `perception/` | S | CPU 기록 · 인식 노드 로그 |
+| `runs/<YYMMDD>/<종류>/` | S | 런 기록. 종류는 아래 |
+| `runs/episode_approvals.jsonl` | S | 에피소드 실행기 승인 통로. 날짜와 무관하다(노드는 뜬 뒤 쓰인 줄만 읽는다) |
 
-`calib/`, `console/`, `rh56f1_hand/` 처럼 지금 없는 폴더는 도구를 돌리면 다시 생긴다.
+`runs/<YYMMDD>/` 아래 종류:
+
+| 종류 | 무엇 |
+|---|---|
+| `episode/` | 에피소드 실행기 런 `<시각>_<에피소드>/` |
+| `mission/` | 미션 러너 · 콘솔 세션 상태와 로그 `<시각>[__<프로필>]/` |
+| `tilt/` | `tilt_now.py` · `tilt_pour.py` 런 `<시각>_setting_<자산>` · `_pour_<자산>` |
+| `inhand/` | 손 안 넘김 묶음 npz. place 가 오늘 · 어제 것을 읽는다 |
+| `bags/` | `rh56f1_record.sh` 등 bag `<시각>_<이름>/{arm,hand,camera}` |
+| `rh56f1_record/` | bag 기록기 PID · 로그(이름별). stop 은 모든 날을 본다 |
+| `rh56f1_tip_zero/` | 손끝 영점 시도 `tip_zero.jsonl` |
+| `rh56f1_hand/` | 손 드라이버 PID · 로그(`rh56f1_hand_up.sh`) |
+| `cpu/` | 프로세스별 CPU 기록 csv |
+| `perception/` | 인지 노드 로그 · PID(`scripts/vision/*.sh`) |
+| `console/` | 콘솔 앱 출력 `s2r_console_app.log` |
+| `vision_runs/`, `report_media/` | 카메라 JPEG · FP++ 좌표, 보고서 영상 · 사진 |
+| `stationary/` | stationary 기준선(`baseline_run.py`) · 추적(`stationary_tracking.py`) 런 |
+| `eval_real/` | 실기 회차 기록 `tilt.jsonl` · `grasp.jsonl`(`eval_record.py`) |
+| `sim_traj/` | sim 궤적 계획 `card_<카드>/<시각_팔_물체>/` |
+| `grasp_c/` | 경로 C 쥔 관절 기록 `grips.jsonl` |
+| `real_runs/` | DG-5F `policy_bag.py` · `joint_recorder.py` 기록 |
+| `fake/` | fake 실행 스크립트 로그(`*_fake_run.sh` 등) |
+| `calib/` | 보정 겹친 그림 · tiltsweep · 손 힘 측정 csv |
+| `finger_meas/`, `joint_monitor/`, `head_stream_probe/` | 측정 도구 런 |
+| `place_teach/` | teach 재생 로그(`.log`) |
 
 ### 옮긴 것 → `/media/user/DATA/261109/sim2real/logs/`
 

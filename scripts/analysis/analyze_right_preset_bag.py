@@ -16,7 +16,7 @@
 지연 보정: C 를 B 에 대해 교차상관으로 정렬한 뒤 오차를 잰다. 안 하면 지연이
 추종오차로 둔갑한다(좌팔 실측 +180 ms).
 
-    python3 analyze_right_preset_bag.py logs/rosbags/right_preset_HHMMSS
+    python3 analyze_right_preset_bag.py logs/runs/<YYMMDD>/bags/<HHMMSS>_right_preset_<이름>
 """
 
 from __future__ import annotations

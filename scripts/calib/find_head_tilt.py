@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 # ★`scripts/` 를 임포트 경로에 넣는다 — 이 파일은 거기서 한 단계 내려와 있다.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import run_paths  # noqa: E402
 
 
 from head_position_hold_node import (
@@ -274,7 +275,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--capture-timeout", type=float, default=30.0, help="캡처 서브프로세스 워치독(s)")
     parser.add_argument("--width", type=int, default=None)
     parser.add_argument("--height", type=int, default=None)
-    parser.add_argument("--out-dir", default=str(_HERE.parents[1] / "logs" / "calib" / "tiltsweep"))
+    parser.add_argument("--out-dir", default=str(run_paths.run_dir("calib", "tiltsweep", mkdir=False)))
     parser.add_argument("--settle-timeout", type=float, default=3.0)
     parser.add_argument("--tolerance-deg", type=float, default=1.0)
     parser.add_argument("--profile-acceleration", type=int, default=20)

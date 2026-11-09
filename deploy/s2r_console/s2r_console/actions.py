@@ -611,11 +611,14 @@ class ActionManager:
         ag = st.get('approach_grasp') if fresh else None
         out = {'steps': '접근 정책 → 닫기(닿은 손가락 고정) → 10 cm 들기 → 3 s 유지',
                'phase': (ag or {}).get('phase'), 'why': (ag or {}).get('why'), 'last_grip': None}
-        log = self.console.repo / 'logs' / 'grasp_c' / 'grips.jsonl'
-        try:
-            lines = log.read_text(encoding='utf-8').splitlines()[-200:] if log.is_file() else []
-        except OSError:
-            lines = []
+        logs = sorted((self.console.repo / 'logs' / 'runs').glob('*/grasp_c/grips.jsonl'))[-2:]   # 오늘 · 그 전 기록한 날
+        lines = []
+        for log in logs:
+            try:
+                lines += log.read_text(encoding='utf-8').splitlines()
+            except OSError:
+                pass
+        lines = lines[-200:]
         for line in reversed(lines):
             try:
                 row = json.loads(line)

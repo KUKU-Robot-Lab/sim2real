@@ -10,7 +10,7 @@
 다른 점(남은 차이): 홀더는 --holders(실측 yaml), 탁자 높이는 실기 head_extrinsics table_top_z, 손 안 컵 자리(T_in)는
 기본값(e2e 짝 중앙값)이거나 --tin-json(실측) — 실기는 쥔 자리를 모른다.
 
-  python3 deploy/policy_control/tools/plan_tilt_traj.py --cup 240 --out logs/tilt/<run>          # 실측 관절
+  python3 deploy/policy_control/tools/plan_tilt_traj.py --cup 240 --out logs/runs/<YYMMDD>/tilt/<run>          # 실측 관절
   python3 deploy/policy_control/tools/plan_tilt_traj.py --cup 240 --q-json q.json --out /tmp/t   # 로봇 없이
 재생(실기, 사용자 승인 뒤):
   replay_to_pd.py --npz <out>/tilt_cmd.npz --joints r_aj_1,..,r_aj_7,l_aj_1,..,l_aj_7 --rate-scale 1.0 --max-start-gap 0.05 --execute

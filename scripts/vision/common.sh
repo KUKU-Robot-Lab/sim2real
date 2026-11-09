@@ -21,8 +21,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/../../config/dds/lan_profile.sh"
 SIM2REAL="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PPP="${PPP:-$(dirname "$SIM2REAL")/perception_plus_plus}"
 export SIM2REAL
-LOGDIR="$SIM2REAL/logs/perception"
+RUNS="$SIM2REAL/logs/runs"
+LOGDIR="$RUNS/$(date +%y%m%d)/perception"      # 노드 로그 · PID — 띄운 날 폴더(scripts/run_paths.py 와 같은 틀)
 mkdir -p "$LOGDIR"
+# 가장 최근 날의 PID 파일(자정 넘겨 떠 있는 노드도 찾는다). 없으면 오늘 자리
+latest_pidfile() { local f; f=$(ls "$RUNS"/*/perception/"$1" 2>/dev/null | tail -1); echo "${f:-$LOGDIR/$1}"; }
 source /opt/ros/humble/setup.bash
 # ★11.04 ros2 daemon 이 깨지면(xmlrpc Fault '!rclpy.ok()') topic list · echo 가 0.2 s 만에 실패한다 — camera_up 이 떠 있는
 #  카메라를 'IMU 없음'으로 보고 다시 켠 뒤 camera_info 를 못 받아 rc=1 이 났다(11.04 10:15, 카메라는 내내 발행 중).

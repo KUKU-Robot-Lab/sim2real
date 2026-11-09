@@ -527,7 +527,7 @@ run:
              "max_episode_s:={policy:joint_right.max_episode_s}"]
       background: true
     - note: "[right] 기록 — ros2 bag 두 묶음: policy(obs · 행동 · 목표 · pd · 팔 · 손 · 컵 · status) · sensors(손끝 촉각 · F/T).
-        logs/policy_control/real_runs/<시각>__<task>__right/ (구독만, 정지 신호에 bag 을 닫는다). 09.28 사용자: bag 으로 · 따로 관리"
+        logs/runs/<YYMMDD>/real_runs/<시각>_<task>__right/ (구독만, 정지 신호에 bag 을 닫는다). 09.28 사용자: bag 으로 · 따로 관리"
       argv: [python3, "{repo}/deploy/policy_control/tools/policy_bag.py", --contract, "{artifact:joint_right}",
              --robot, "{artifact:robot_right}"]
       background: true
@@ -726,7 +726,7 @@ run:
              "max_episode_s:={policy:joint_left.max_episode_s}"]
       background: true
     - note: "[left] 기록 — ros2 bag 두 묶음: policy(obs · 행동 · 목표 · pd · 팔 · 손 · 컵 · status) · sensors(손끝 촉각 · F/T).
-        logs/policy_control/real_runs/<시각>__<task>__left/ (구독만, 정지 신호에 bag 을 닫는다). 09.28 사용자: bag 으로 · 따로 관리"
+        logs/runs/<YYMMDD>/real_runs/<시각>_<task>__left/ (구독만, 정지 신호에 bag 을 닫는다). 09.28 사용자: bag 으로 · 따로 관리"
       argv: [python3, "{repo}/deploy/policy_control/tools/policy_bag.py", --contract, "{artifact:joint_left}",
              --robot, "{artifact:robot_left}"]
       background: true

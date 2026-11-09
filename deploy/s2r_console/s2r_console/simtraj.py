@@ -3,7 +3,7 @@
 잡기 카드(경로 A aglt 정책)에 버튼이 둘 더 붙는다 — 정책 live 실행(rg3_<카드>)은 그대로다.
   simplan_<카드>  카드 물체의 FP++ live 컵 자리로 server sim 을 돌려 계획을 만든다(tools/sim_traj.py plan) — 로봇은 안 움직인다.
   simrun_<카드>   그 카드의 마지막 계획을 pd 로 재생한다(tools/sim_traj.py run --execute) — 정책 노드 없이 실기 동작.
-계획은 logs/sim_traj/card_<카드>/<시각_팔_물체>/plan.npz. 카드의 정책 · 팔 · 물체와 meta 가 같고 문제가 없는 가장 새 계획만 쓴다.
+계획은 logs/runs/<YYMMDD>/sim_traj/card_<카드>/<시각_팔_물체>/plan.npz(모든 날을 본다). 카드의 정책 · 팔 · 물체와 meta 가 같고 문제가 없는 가장 새 계획만 쓴다.
 순수 함수만(콘솔 상태 · ROS 없음).
 """
 from __future__ import annotations
@@ -11,13 +11,15 @@ from __future__ import annotations
 import json
 import math
 import shlex
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
+from run_paths import DAY_FMT
 
 TOOL = 'deploy/policy_control/tools/sim_traj.py'
 RECORD = 'deploy/policy_control/tools/rh56f1_record.sh'
-ROOT = 'logs/sim_traj'
+ROOT = 'logs/runs'          # <YYMMDD>/sim_traj/card_<카드>/ — run_paths 와 같은 틀
 CUP_TOL_M = 0.01            # = sim_traj.CUP_TOL_M(재생 검사와 같은 값 — 시험이 맞춘다)
 PLAN_TIMEOUT_S = 1500       # = sim_traj plan --timeout 기본
 
@@ -31,7 +33,8 @@ def supported(card: dict) -> bool:
 
 
 def card_root(repo: Path, card: dict) -> Path:
-    return Path(repo) / ROOT / f"card_{card['id']}"
+    """오늘 날짜의 카드 폴더(새 계획을 쓰는 곳)."""
+    return Path(repo) / ROOT / datetime.now().strftime(DAY_FMT) / 'sim_traj' / f"card_{card['id']}"
 
 
 def read_meta(path: Path) -> dict | None:
@@ -57,8 +60,8 @@ def latest_plan(repo: Path, card: dict, obj: dict | None) -> dict | None:
     """이 카드로 쓸 수 있는 가장 새 계획 {'path', 'meta'} — 정책 · 팔 · 물체가 카드와 같고 계획 문제가 없는 것."""
     if obj is None:
         return None
-    root = card_root(repo, card)
-    plans = sorted(root.glob('*/plan.npz'), key=lambda p: p.stat().st_mtime, reverse=True) if root.is_dir() else []
+    plans = sorted((Path(repo) / ROOT).glob(f"*/sim_traj/card_{card['id']}/*/plan.npz"), key=lambda p: p.stat().st_mtime,
+                   reverse=True)
     for path in plans:
         meta = read_meta(path)
         if (meta and meta.get('policy') == card['policy_id'] and meta.get('side') == card['side']

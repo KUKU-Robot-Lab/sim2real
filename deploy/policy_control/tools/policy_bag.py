@@ -4,7 +4,7 @@
     ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/policy_bag.py \
         --contract deploy/policies/dg5f_m/cup_grasp/left_i01/joint_contract.json \
         --robot deploy/policy_control/config/robots/dg5f_m_left_real.yaml
-    → logs/policy_control/real_runs/<시각>__<task>__<side>/{policy/, sensors/, meta.json}
+    → logs/runs/<YYMMDD>/real_runs/<시각>_<task>__<side>/{policy/, sensors/, meta.json}
 
 09.28 사용자: "기록 파일들은 모두 bag 파일 아니야? … 따로 따로 관리하면 될 것 같은데?" — Python 기록기 하나가 모든 토픽을
 받다 촉각을 버렸다(손가락당 9 Hz). 기록은 rosbag2(C++)가 하고, 정책 · 제어와 손끝 센서를 다른 bag 으로 나눈다.
@@ -27,16 +27,17 @@ from policy_control import _paths  # noqa: E402,F401
 from policy_control.joint_contract import load_contract  # noqa: E402
 from policy_control.sources import load_robot_cfg, select_side  # noqa: E402
 from policy_control.trace_acc import BAG_GROUPS, topics  # noqa: E402
+import run_paths  # noqa: E402
 
 SIM2REAL = Path(__file__).resolve().parents[3]
-OUT_DIR = SIM2REAL / "logs" / "policy_control" / "real_runs"
+OUT_DIR = run_paths.day_dir("real_runs")
 STOP_WAIT_S = 4.0            # 콘솔 KILL_GRACE_S(5) 안에 끝낸다
 CACHE_BYTES = 1 << 20        # 작게 — 강제 종료돼도 잃는 양이 적게
 
 
 def run_dir(out_dir: Path, task: str, side: str, now: float | None = None) -> Path:
-    stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime(now if now is not None else time.time()))
-    return out_dir / f"{stamp}__{task.replace('/', '_')}__{side}"
+    stamp = time.strftime(run_paths.TIME_FMT, time.localtime(now if now is not None else time.time()))
+    return out_dir / f"{stamp}_{task.replace('/', '_')}__{side}"
 
 
 def record_argv(out: Path, group: str, tops: list[str]) -> list[str]:

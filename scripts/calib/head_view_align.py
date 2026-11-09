@@ -30,6 +30,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from depth_table_plane import backproject, ransac_plane  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "scripts"))
+import run_paths  # noqa: E402
 DEFAULT_REF = REPO / "config" / "head_view_ref_5090.npz"
 DEFAULT_HOME = REPO / "config" / "head_home.yaml"
 TICKS_PER_REV = 4096
@@ -135,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--baud", type=int, default=1_000_000)
     ap.add_argument("--ref", type=Path, default=DEFAULT_REF)
     ap.add_argument("--home", type=Path, default=DEFAULT_HOME)
-    ap.add_argument("--overlay", type=Path, default=REPO / "logs" / "calib" / "head_align.png")
+    ap.add_argument("--overlay", type=Path, default=run_paths.day_dir("calib") / "head_align.png")
     ap.add_argument("--period", type=float, default=1.0)
     ap.add_argument("--count", type=int, default=0, help="0 = Ctrl-C 까지")
     args = ap.parse_args(argv)

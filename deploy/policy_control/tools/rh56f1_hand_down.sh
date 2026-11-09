@@ -2,8 +2,11 @@
 # rh56f1_hand_up.sh 가 띄운 한 손만 내린다 — PID 파일의 프로세스가 정말 그 노드인지 cmdline 으로 확인한 뒤 SIGINT
 # (노드가 마스터를 hold 50 주기 → INIT 으로 끝낸다). 패턴 kill 을 쓰지 않는다.
 SIDE=${1:?right|left}
-PIDF="$(cd "$(dirname "$0")/../../.." && pwd)/logs/rh56f1_hand/$SIDE.pid"
-[ -f "$PIDF" ] || { echo "$SIDE: PID 파일 없음 — 떠 있지 않다"; exit 0; }
+RUNS="$(cd "$(dirname "$0")/../../.." && pwd)/logs/runs"
+# PID 파일은 띄운 날 폴더(logs/runs/<YYMMDD>/rh56f1_hand/<side>.pid) — 자정을 넘겨도 찾게 모든 날을 본다
+PIDFS=$(ls "$RUNS"/*/rh56f1_hand/"$SIDE".pid 2>/dev/null || true)
+[ -n "$PIDFS" ] || { echo "$SIDE: PID 파일 없음 — 떠 있지 않다"; exit 0; }
+for PIDF in $PIDFS; do
 PID=$(cat "$PIDF")
 CMD=$(tr '\0' ' ' <"/proc/$PID/cmdline" 2>/dev/null || true)
 # EtherCAT = rh56f1_ecat_node.py --side <s> · RS485 = ros2 launch rh56f1_driver rh56f1_<s>_driver.launch.py
@@ -16,3 +19,4 @@ else
   echo "$SIDE: pid $PID 는 이 손의 드라이버가 아니거나 이미 끝났다 — PID 파일만 지운다"
 fi
 rm -f "$PIDF"
+done

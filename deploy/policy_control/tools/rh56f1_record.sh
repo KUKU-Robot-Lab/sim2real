@@ -2,7 +2,7 @@
 # RH56F1 실기 기록 — 팔 · 손을 **따로** bag 에 쓴다(10.03 실측: sqlite3 한 프로세스에 3750 msg/s 를 몰면 /joint_states 750 → 706 Hz
 # 로 6 % 빠졌다. 둘로 나누면 /joint_states 750.1 Hz · 손 14 토픽 250.1 Hz 손실 0). mcap 저장기가 없어서 sqlite3 기준.
 #
-#   bash rh56f1_record.sh start <이름>     # ~/rl_ws/sim2real/logs/bags/<날짜_시각>_<이름>/{arm,hand}
+#   bash rh56f1_record.sh start <이름>     # ~/rl_ws/sim2real/logs/runs/<YYMMDD>/bags/<시각>_<이름>/{arm,hand}
 #   bash rh56f1_record.sh stop  <이름>     # 그 이름의 두 기록기에 SIGINT(정상 마무리) — PID 파일의 프로세스만
 #   bash rh56f1_record.sh stop             # 이름 없이 = 남은 기록 전부(shutdown)
 #   EXTRA="/policy_control/joint_target /status/pd_right" bash rh56f1_record.sh start x   # 팔 쪽 bag 에 더할 토픽
@@ -25,7 +25,14 @@
 set -eo pipefail
 CMD=${1:?start|stop}; NAME=${2:-}
 SIM2REAL="$(cd "$(dirname "$0")/../../.." && pwd)"
-ROOT=${RH56F1_RECORD_DIR:-$SIM2REAL/logs/rh56f1_record}; mkdir -p "$ROOT"
+RUNS="$SIM2REAL/logs/runs"; DAY=$(date +%y%m%d)          # 날짜 = 기록을 시작한 날(scripts/run_paths.py 와 같은 틀)
+ROOT=${RH56F1_RECORD_DIR:-$RUNS/$DAY/rh56f1_record}
+
+name_dirs() {   # $1 = 이름(없으면 전부) — PID 폴더. 자정을 넘긴 기록도 찾게 모든 날을 본다
+  local pat=${1:-*}
+  if [ -n "${RH56F1_RECORD_DIR:-}" ]; then ls -d "$ROOT"/$pat/ 2>/dev/null || true
+  else ls -d "$RUNS"/*/rh56f1_record/$pat/ 2>/dev/null || true; fi
+}
 
 stop_one() {   # $1 = 이름 디렉터리
   local d=$1 k PID
@@ -53,15 +60,17 @@ stop_one() {   # $1 = 이름 디렉터리
 case "$CMD" in
 start)
   [ -n "$NAME" ] || { echo "start 에는 이름이 필요하다(팔마다 따로 기록)" >&2; exit 2; }
-  D="$ROOT/$NAME"; mkdir -p "$D"
   # ★10.08 리뷰: 앞 단계가 도중에 실패하면 기록기가 남는다 — 같은 이름을 다시 돌릴 때 막히지 않게 그 기록만 먼저 마무리한다
-  for k in arm hand camera; do
-    if [ -f "$D/$k.pid" ] && kill -0 "$(cat "$D/$k.pid")" 2>/dev/null; then
-      echo "$NAME $k 기록이 남아 있다 — 마무리하고 새로 시작"; stop_one "$D"; break
-    fi
+  for P in $(name_dirs "$NAME"); do
+    for k in arm hand camera; do
+      if [ -f "$P/$k.pid" ] && kill -0 "$(cat "$P/$k.pid")" 2>/dev/null; then
+        echo "$NAME $k 기록이 남아 있다 — 마무리하고 새로 시작"; stop_one "${P%/}"; break
+      fi
+    done
   done
-  OUT_ROOT=${RH56F1_RECORD_OUT:-$SIM2REAL/logs/bags}
-  OUT="$OUT_ROOT/$(date +%Y%m%d_%H%M%S)_$NAME"; mkdir -p "$OUT_ROOT"
+  D="$ROOT/$NAME"; mkdir -p "$D"
+  OUT_ROOT=${RH56F1_RECORD_OUT:-$RUNS/$DAY/bags}
+  OUT="$OUT_ROOT/$(date +%H%M%S)_$NAME"; mkdir -p "$OUT_ROOT"
   HAND=""
   # 10.08 명령(위치 angle_set · 어드민턴스 angle_target)과 어드민턴스가 연 칸 수 · 손가락 모드도 — 어드민턴스 정책 쥠 분석
   # 11.04 손끝 영점(tip_bias · tip_zero_status 는 transient_local — 기록 시작 전에 잡은 마지막 bias 도 bag 첫머리에 들어온다)
@@ -86,13 +95,9 @@ start)
   echo "$OUT" > "$D/last_out"
   ;;
 stop)
-  if [ -n "$NAME" ]; then
-    if [ -d "$ROOT/$NAME" ]; then stop_one "$ROOT/$NAME"; else echo "$NAME: 기록 중 아님"; fi
-  else
-    for d in "$ROOT"/*/; do [ -d "$d" ] && stop_one "${d%/}"; done
-    # 10.09 전(이름 없는 PID 파일)이 남아 있으면 그것도
-    [ -f "$ROOT/arm.pid" ] || [ -f "$ROOT/hand.pid" ] && stop_one "$ROOT"
-  fi
+  DIRS=$(name_dirs "$NAME")
+  if [ -n "$NAME" ] && [ -z "$DIRS" ]; then echo "$NAME: 기록 중 아님"; fi
+  for d in $DIRS; do stop_one "${d%/}"; done
   exit 0
   ;;
 *) echo "start|stop" >&2; exit 2;;

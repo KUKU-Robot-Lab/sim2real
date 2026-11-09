@@ -4,7 +4,7 @@
 #   deploy/s2r_console/tools/install_desktop_entry.sh            # 등록
 #   deploy/s2r_console/tools/install_desktop_entry.sh --remove   # 해제
 #
-# 터미널 없이 뜨므로 콘솔 출력은 logs/s2r_console_app.log 에 쌓인다(console_app.sh). 실기 드라이버를 남기고 닫히면
+# 터미널 없이 뜨므로 콘솔 출력은 logs/runs/<YYMMDD>/console/s2r_console_app.log 에 쌓인다(console_app.sh). 실기 드라이버를 남기고 닫히면
 # 창이 닫힌 뒤 대화상자로도 알린다(window.notice).
 set -euo pipefail
 SIM2REAL="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"

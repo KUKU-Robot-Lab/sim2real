@@ -264,7 +264,7 @@ def _bundle(path: Path, *, side="r", obj="source240_real", valid=True, hand=(1.3
 
 def test_bundle_pick_takes_the_newest_fresh_matching_one(tmp_path):
     import datetime as dt
-    day = tmp_path / dt.date.today().strftime("%Y%m%d")
+    day = tmp_path / dt.date.today().strftime("%y%m%d") / "inhand"
     hand = np.array([1.3, 0.2, 1.0, 1.0, 0.5, 0.5])
     old = _bundle(day / "100000_rh_aglt_node_right_1.npz")
     os.utime(old, (time.time() - 50, time.time() - 50))
@@ -292,6 +292,6 @@ def test_bundle_check_refuses_stale_invalid_and_other_side(tmp_path):
 def test_real_fake_bundle_reads_if_present():
     files = PH.candidates("right")
     if not files:
-        pytest.skip("logs/inhand 묶음 없음")
+        pytest.skip("logs/runs/*/inhand 묶음 없음")
     b = PH.load(files[0])
     assert b.side == "r" and b.rel_p.shape == (3,) and b.hand_q.shape == (6,)

@@ -24,7 +24,7 @@ def grasp_card(console):
 
 
 def make_plan(repo, name='0101_000000_right_source200_real', **meta):
-    d = repo / ST.ROOT / 'card_chosen' / name
+    d = ST.card_root(repo, {'id': 'chosen'}) / name
     d.mkdir(parents=True)
     m = {'policy': POLICY, 'side': 'right', 'object': 'source200_real', 'cup_xy': [0.30, -0.10], 'n_ok': 8, 'n': 8,
          'env': 3, 'made': '2026-10-19 21:19:00', 'problems': []}

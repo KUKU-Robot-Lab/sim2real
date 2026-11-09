@@ -19,7 +19,7 @@ ROBOT_BI=deploy/policy_control/config/robots/rh56f1_bi_fake.yaml
 ROBOT=deploy/policy_control/config/robots/rh56f1_${SIDE}_fake.yaml
 PD=deploy/policy_control/config/pd_rh56f1_fake.yaml
 MAP=deploy/policy_control/config/rh56f1_hand_map.yaml
-LOG="${1:-logs/policy_control/fake_replay_rh_${SIDE}_$(date +%m%d_%H%M%S)}"; mkdir -p "$LOG"
+LOG="${1:-logs/runs/$(date +%y%m%d)/fake/$(date +%H%M%S)_fake_replay_rh_${SIDE}}"; mkdir -p "$LOG"
 PIDS=()
 cleanup() { for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill -- -"$p" 2>/dev/null; done; sleep 1; for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill -9 -- -"$p" 2>/dev/null; done; }
 trap cleanup EXIT

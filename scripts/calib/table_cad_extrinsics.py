@@ -43,6 +43,7 @@ _HERE = Path(__file__).resolve().parent
 SIM2REAL = _HERE.parents[1]
 RL_WS = SIM2REAL.parent
 sys.path.insert(0, str(_HERE.parent))
+import run_paths  # noqa: E402
 
 ENV_USDA = RL_WS / "hdgp/assets/simulation_setting/env_v1/usd/env_v1.usda"
 DEFAULT_INIT = SIM2REAL / "config/global_camera_extrinsics.yaml"
@@ -424,7 +425,7 @@ def main(argv=None) -> int:
     ap.add_argument("--init", type=Path, default=DEFAULT_INIT, help="초기 외부 파라미터 yaml(투영 · 대응용)")
     ap.add_argument("--out", type=Path, default=None, help="--write 대상 yaml (기본: --init)")
     ap.add_argument("--write", action="store_true", help="camera 블록을 실제로 바꾼다(없으면 보고만)")
-    ap.add_argument("--png", type=Path, default=_HERE.parents[1] / "logs" / "calib" / "table_cad_overlay.png", help="겹친 영상")
+    ap.add_argument("--png", type=Path, default=run_paths.day_dir("calib") / "table_cad_overlay.png", help="겹친 영상")
     ap.add_argument("--usda", type=Path, default=ENV_USDA)
     ap.add_argument("--no-depth-tilt", action="store_true", help="깊이 상판 법선 제약을 빼고 PnP 만")
     ap.add_argument("--domain", type=int, default=_real_domain(), help="카메라 노드 도메인(실기 config/ros_domain.env · localhost 전용) — 셸의 ROS_DOMAIN_ID 를 믿지 않는다")

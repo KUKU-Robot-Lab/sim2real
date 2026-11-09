@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """실기 런 동안 카메라 JPEG(기본 5 Hz) · FP++ 실시간 좌표(/perception_plus_plus/<물체>/live_pose)를 남긴다(10.09 사용자).
 
-    ROS_LOCALHOST_ONLY=1 python3 scripts/nodes/vision_recorder.py --out logs/vision_runs/<이름> --objects source200_pink
+    ROS_LOCALHOST_ONLY=1 python3 scripts/nodes/vision_recorder.py --name <이름> --objects source200_pink   # → logs/runs/<YYMMDD>/vision_runs/<시각>_<이름>
     (미션 정책 단계가 bag 기록과 같이 띄운다 — SIGINT · SIGTERM 에 마무리)
 
 카메라 · FP++ 는 localhost 전용 DDS(ROS_LOCALHOST_ONLY=1)라 팔 bag 기록기(로봇 쪽 DDS)가 못 본다 — 이 노드가 그쪽에서 돈다.
@@ -23,6 +23,7 @@ import numpy as np
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
+import run_paths  # noqa: E402
 
 FIELDS = ["t", "name", "cx", "cy", "cz", "qx", "qy", "qz", "qw", "bx", "by", "bz", "tilt_deg"]
 
@@ -59,8 +60,7 @@ def pose_row(t: float, name: str, p_cam, q_xyzw, T_base_cam) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
-    ap.add_argument("--out", type=Path, default=None, help="기록 폴더(없으면 --out-root/<날짜_시각>_<이름>)")
-    ap.add_argument("--out-root", type=Path, default=_ROOT / "logs" / "vision_runs")
+    ap.add_argument("--out", type=Path, default=None, help="기록 폴더(없으면 logs/runs/<YYMMDD>/vision_runs/<시각>_<이름>)")
     ap.add_argument("--name", default="run")
     ap.add_argument("--objects", nargs="*", default=[])
     ap.add_argument("--hz", type=float, default=5.0)
@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     from sensor_msgs.msg import Image
     from object_registry import _base_from_camera
 
-    out = args.out or args.out_root / f"{time.strftime('%Y%m%d_%H%M%S')}_{args.name}"
+    out = args.out or run_paths.run_dir("vision_runs", args.name)
     (out / "frames").mkdir(parents=True, exist_ok=True)
     T = np.asarray(_base_from_camera(args.camera_extrinsics))
     (out / "meta.json").write_text(json.dumps({"objects": args.objects, "hz": args.hz, "T_base_cam": T.tolist(),

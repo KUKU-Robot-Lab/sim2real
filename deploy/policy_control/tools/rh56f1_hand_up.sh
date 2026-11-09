@@ -4,16 +4,19 @@
 #   bash rh56f1_hand_up.sh right                    # OP(첫 명령 전에는 제자리)
 #   bash rh56f1_hand_up.sh right --op-enable        # OP 실험 손잡이 · --sync-type N 도 같다
 #   bash rh56f1_hand_up.sh right --transport rs485  # 비상용 옛 배선(USB-RS485 를 다시 꽂은 뒤)
-# 내릴 때: bash rh56f1_hand_down.sh right   (로그 logs/rh56f1_hand/<side>.log)
+# 내릴 때: bash rh56f1_hand_down.sh right   (로그 logs/runs/<YYMMDD>/rh56f1_hand/<side>.log)
 set -eo pipefail
 SIDE=${1:?right|left}; shift
 case "$SIDE" in right|left) ;; *) echo "side 는 right|left" >&2; exit 2;; esac
 HERE="$(cd "$(dirname "$0")" && pwd)"
 source "$HERE/../../../config/ros_domain.env"   # 실기 도메인 한 곳(10.30 motion_acq 와 분리)
-DIR="$(cd "$HERE/../../.." && pwd)/logs/rh56f1_hand"; mkdir -p "$DIR"
+RUNS="$(cd "$HERE/../../.." && pwd)/logs/runs"
+# PID 파일이 재부팅을 넘어 남으므로 cmdline 까지 본다(다른 프로세스가 그 번호를 쓰면 떠 있다고 착각한다). 앞 날에 띄운 것도 본다
+for OLD in $(ls "$RUNS"/*/rh56f1_hand/"$SIDE".pid 2>/dev/null || true); do
+  if kill -0 "$(cat "$OLD")" 2>/dev/null && tr '\0' ' ' <"/proc/$(cat "$OLD")/cmdline" | grep -Eq "rh56f1_(driver|ecat_node)\.py --side $SIDE|rh56f1_${SIDE}_driver\.launch\.py"; then echo "$SIDE 이미 떠 있다 (pid $(cat "$OLD")) — 먼저 rh56f1_hand_down.sh $SIDE"; exit 1; fi
+done
+DIR="$RUNS/$(date +%y%m%d)/rh56f1_hand"; mkdir -p "$DIR"
 PIDF="$DIR/$SIDE.pid"; LOG="$DIR/$SIDE.log"
-# PID 파일이 재부팅을 넘어 남으므로 cmdline 까지 본다(다른 프로세스가 그 번호를 쓰면 떠 있다고 착각한다)
-if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null && tr '\0' ' ' <"/proc/$(cat "$PIDF")/cmdline" | grep -Eq "rh56f1_(driver|ecat_node)\.py --side $SIDE|rh56f1_${SIDE}_driver\.launch\.py"; then echo "$SIDE 이미 떠 있다 (pid $(cat "$PIDF")) — 먼저 rh56f1_hand_down.sh $SIDE"; exit 1; fi
 # ★bash 가 자기 PID 를 쓰고 exec 로 드라이버 → 노드가 같은 PID 를 이어받는다(setsid 의 fork PID 를 쓰면 엉뚱한 것을 죽인다, 10.02)
 setsid bash -c "echo \$\$ > '$PIDF'; source /opt/ros/humble/setup.bash; source \$HOME/rl_ws/robot_control/ros_ws/install/setup.bash; \
   export ROS_DOMAIN_ID=\${ROS_DOMAIN_ID:-$S2R_REAL_DOMAIN}; exec python3 '$HERE/rh56f1_driver.py' --side $SIDE $*" </dev/null >"$LOG" 2>&1 &

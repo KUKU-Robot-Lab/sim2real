@@ -35,6 +35,9 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from palm_cmd import check_domain  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+import run_paths  # noqa: E402
+
 #: 레지스터 슬롯(드라이버 순) — rh56f1_hand_map.yaml slot_order. 손끝 촉각 5 개도 같은 순(새끼부터 · 엄지 = 4).
 SLOTS = ("pinky", "ring", "middle", "index", "thumb_2")
 #: 닫힘 쪽 끝(레지스터 ↓ = 굽힘) — 매뉴얼 표 36 · hand_map: 네 손가락 900, 엄지 굽힘 1100
@@ -244,7 +247,7 @@ def main(argv=None) -> int:
     ap.add_argument("--abort-g", type=float, default=ABORT_G)
     ap.add_argument("--abort-ma", type=float, default=ABORT_MA)
     ap.add_argument("--abort-s", type=float, default=ABORT_S)
-    ap.add_argument("--out", default=None, help="CSV(기본 logs/calib/<날짜>_<side>_<finger>.csv)")
+    ap.add_argument("--out", default=None, help="CSV(기본 logs/runs/<YYMMDD>/calib/<시각>_<side>_<finger>.csv)")
     ap.add_argument("--execute", action="store_true", help="실기 손에 보낸다(없으면 계획만)")
     ap.add_argument("--allow-domain-0", action="store_true")
     a = ap.parse_args(argv)
@@ -261,7 +264,7 @@ def main(argv=None) -> int:
     if why:
         print(f"✗ {why}")
         return 2
-    out = Path(a.out or f"logs/calib/{time.strftime('%Y%m%d_%H%M%S')}_{a.side}_{a.finger}.csv")
+    out = Path(a.out) if a.out else run_paths.run_dir("calib", f"{a.side}_{a.finger}", mkdir=False).with_suffix(".csv")
     return run(c, a.side, a.topic, out)
 
 

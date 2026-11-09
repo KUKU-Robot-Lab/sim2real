@@ -8,7 +8,7 @@
   2. replay_to_pd.py — 두 팔 관절(r_aj_1..7, l_aj_1..7)을 한 시각표로 재생(D4 기본 궤적 + 시작 자세 복귀). 손 목표는 그대로
      (pd 가 붙든 쥔 손). 재생 직전 실측이 계획 자세에서 start_gap_rad 넘게 벗어나면 replay 가 거부한다.
 
-기록: logs/tilt/<날짜_시각>_pour_<자산>/(meta.json · q.json · check.json · tilt_cmd.npz · plan_tilt.log) + 실기면 bag(rh56f1_record.sh tilt_pour).
+기록: logs/runs/<YYMMDD>/tilt/<시각>_pour_<자산>/(meta.json · q.json · check.json · tilt_cmd.npz · plan_tilt.log) + 실기면 bag(rh56f1_record.sh tilt_pour).
 
     python3 deploy/policy_control/tools/tilt_pour.py                  # 계획 · 검사만(움직이지 않음)
     python3 deploy/policy_control/tools/tilt_pour.py --execute        # 검사 통과면 재생
@@ -28,6 +28,9 @@ import yaml
 
 TOOLS = Path(__file__).resolve().parent
 SIM2REAL = TOOLS.parents[2]
+sys.path.insert(0, str(SIM2REAL / "scripts"))
+import run_paths  # noqa: E402
+
 ASSET = TOOLS.parent / "config" / "tilt" / "base_arc6"
 JOINTS = [f"{p}_aj_{i}" for p in ("r", "l") for i in range(1, 8)]
 RECORD = TOOLS / "rh56f1_record.sh"
@@ -47,14 +50,11 @@ def run(argv: list[str]) -> int:
     return subprocess.run(argv).returncode
 
 
-def fresh_dir(root: Path, tag: str) -> Path:
-    """같은 초에 두 번(계획만 → 실행) 눌러도 앞 기록을 덮지 않는다."""
-    stamp = time.strftime('%Y%m%d_%H%M%S')
-    out = root / f"{stamp}_{tag}"
-    k = 1
-    while out.exists() and k < 100:
-        out, k = root / f"{stamp}_{tag}_{k}", k + 1
-    return out
+def fresh_dir(root: Path | None, tag: str) -> Path:
+    """같은 초에 두 번(계획만 → 실행) 눌러도 앞 기록을 덮지 않는다(_2, _3). root 없으면 logs/runs/<YYMMDD>/tilt."""
+    if root is None:
+        return run_paths.run_dir("tilt", tag)
+    return run_paths.unique_dir(Path(root) / f"{time.strftime(run_paths.TIME_FMT)}_{tag}")
 
 
 def asset_tag(asset: Path) -> str:
@@ -88,7 +88,7 @@ def fail_summary(out: Path) -> str:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("--asset", type=Path, default=ASSET)
-    ap.add_argument("--out-root", type=Path, default=SIM2REAL / "logs" / "tilt")
+    ap.add_argument("--out-root", type=Path, default=None, help="없으면 logs/runs/<YYMMDD>/tilt")
     ap.add_argument("--rate-scale", type=float, default=None, help="없으면 자산 policy.yaml rate_scale")
     ap.add_argument("--no-record", action="store_true", help="bag 기록 안 함(fake)")
     ap.add_argument("--execute", action="store_true")

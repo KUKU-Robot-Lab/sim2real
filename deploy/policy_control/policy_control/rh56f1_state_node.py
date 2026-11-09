@@ -20,7 +20,7 @@ pd · 정책 · 콘솔은 rad JointState 를 읽는다 — 이 노드가 변환�
                                           관절 힘 bias 를 처음 받아들이기 전에는 내지 않는다 → 정책 노드는 None = 결손)
   서비스 /hand_<side>/tip_zero (std_srvs/Trigger) — 직전 0.5 s 창의 촉각 · 관절 힘 평균을 bias 로. 손이 안 펴졌거나 · 움직이거나 ·
         값이 크거나 튀면 거부하고 이전 bias 를 둔다(관절 힘: 칸별 sd > 5 g · |평균| > 400 g). 관절 힘이 직전 bias 에서 30 g 넘게
-        옮겨 가면 받되 경고(joint_jump_g). 손끝 · 관절 힘은 따로 받아들인다. 시도마다 logs/rh56f1_tip_zero/<날짜>.jsonl 에 한 줄.
+        옮겨 가면 받되 경고(joint_jump_g). 손끝 · 관절 힘은 따로 받아들인다. 시도마다 logs/runs/<YYMMDD>/rh56f1_tip_zero/tip_zero.jsonl 에 한 줄.
         /hand_<side>/tip_zero_force (Trigger) — 같은 일인데 관절 힘 |평균| 상한만 건너뛴다(사용자가 강제로 잡을 때). 편 손 · 정지 · sd 는 그대로.
 
     python3 deploy/policy_control/policy_control/rh56f1_state_node.py --side right
@@ -42,7 +42,9 @@ import numpy as np
 
 if __package__ in (None, ""):              # 파일 경로로 띄울 때(미션 명령) — colcon 진입점을 새로 만들지 않는다
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from policy_control import _paths  # noqa: E402,F401 — scripts/ 를 경로에 넣는다(run_paths)
 from policy_control import rh56f1_map  # noqa: E402
+import run_paths  # noqa: E402
 
 #: 속도 = 위치 차분의 지수 평균. ★10.03 시정수로 정한다 — 발행 주기(RS485 50 Hz · EtherCAT 200 Hz)가 바뀌어도 같은 필터.
 #  옛 값 α 0.3 @ 50 Hz 와 같은 시정수(−dt/ln(1−α) ≈ 0.056 s).
@@ -245,7 +247,6 @@ def main(argv: list[str] | None = None) -> int:
     jf_zeroed_pub = node.create_publisher(Float64MultiArray, f"{ns}/joint_forces_zeroed", 10)
     bias_pub = node.create_publisher(Float64MultiArray, f"{ns}/tip_bias", latched)
     zstat_pub = node.create_publisher(String, f"{ns}/tip_zero_status", latched)
-    zero_log = Path(__file__).resolve().parents[3] / "logs" / "rh56f1_tip_zero"
 
     def on_angle(msg) -> None:
         # ★10.03 원본 도장을 이어받는다(EtherCAT 노드 = 하드웨어 샘플 시각) — 없으면(0) 받은 시각. bag 정렬 · 속도 계산 모두 이 시각
@@ -272,8 +273,9 @@ def main(argv: list[str] | None = None) -> int:
         if ok:
             bias_pub.publish(Float64MultiArray(data=info["bias_n"]))
         try:                                                # 기록 실패가 영점을 막지 않는다 — 상태 토픽 · bag 에는 남는다
+            zero_log = run_paths.day_dir("rh56f1_tip_zero")
             zero_log.mkdir(parents=True, exist_ok=True)
-            with open(zero_log / f"{time.strftime('%Y%m%d')}.jsonl", "a", encoding="utf-8") as fh:
+            with open(zero_log / "tip_zero.jsonl", "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
         except OSError as e:
             node.get_logger().error(f"tip_zero 기록 실패 {zero_log}: {e}")

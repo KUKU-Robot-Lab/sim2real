@@ -48,6 +48,7 @@ from policy_control.episode_master import EpisodeBook  # noqa: E402
 from policy_control.joint_obs import quat_to_matrix  # noqa: E402
 from policy_control.sources import SourceSet, load_robot_cfg, select_side  # noqa: E402
 from policy_control.lean_node import LeanNodeMixin, lean_node_kwargs  # noqa: E402
+import run_paths  # noqa: E402
 
 NS = "/policy_control"
 NODE = "pour_fj_node"
@@ -1087,7 +1088,9 @@ class PourFjNode(LeanNodeMixin, Node):
         self._end("stop", why)          # pd 가 끝난 순간의 q_setpoint · 마지막 손 목표로 붙든다(pd_arm.on_episode)
         return True
 
-    GRIP_LOG = _paths.SIM2REAL / "logs" / "grasp_c" / "grips.jsonl"
+    @property
+    def GRIP_LOG(self) -> Path:          # noqa: N802 — 그날 폴더(logs/runs/<YYMMDD>/grasp_c), 콘솔은 모든 날을 본다
+        return run_paths.day_dir("grasp_c") / "grips.jsonl"
 
     def _log_grip(self, ag) -> None:
         """★10.19 사용자: 경로 C 스크립트 잡기는 물체마다 쥔 관절 상태가 나온다 — 한 줄씩 남겨 학습 세션에 넘긴다."""

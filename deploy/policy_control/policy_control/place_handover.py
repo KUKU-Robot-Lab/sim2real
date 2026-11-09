@@ -3,7 +3,7 @@
 learn:place 10.21 인계 · 10.22 확정: newton_05 는 "FP++ 는 처음부터 없음, 파지 자세와 인계받은 컵 자세에서 시작" — 리셋(인계)
 순간의 FP++ 스냅숏 대신 묶음의 손바닥 좌표 rel_p · rel_q(wxyz) 를 붙인 자세(sim _pl_att_pos · _pl_att_quat)로 쓴다.
 끊긴 순간 고정 자세(64~81 mm 어긋남)는 쓰지 않는다. 묶음은 잡기 노드(rh_aglt_node_<팔>, inhand_est.save_bundle)가 들기 성공으로
-끝날 때 logs/inhand/<날짜>/<시각>_<노드>_<에피소드>.npz 로 남긴다.
+끝날 때 logs/runs/<YYMMDD>/inhand/<시각>_<노드>_<에피소드>.npz 로 남긴다.
 
 auto 고르기(노드 파라미터 bundle:=auto): 그 팔 잡기 노드의 가장 새 묶음 중
   · 만든 지 max_age_s 안 · 이 place 노드가 아직 쓰지 않은 것 · valid(끝 창이 다 참) · 같은 팔 · 같은 물체
@@ -21,12 +21,13 @@ from typing import Iterable, Sequence
 
 import numpy as np
 
-from . import _paths
+from . import _paths  # noqa: F401 — scripts/ 를 경로에 넣는다(run_paths)
+import run_paths  # noqa: E402,I001
 
 FORMAT = "grasp_handover/1"
 QUAT_ORDER = "wxyz"
 TENSORS = ("rel_p", "rel_q", "obj_axis_palm", "grasp_height", "hand_q", "n_steps", "valid")
-BUNDLE_DIR = _paths.SIM2REAL / "logs" / "inhand"
+BUNDLE_DIR = run_paths.RUNS          # 묶음 = BUNDLE_DIR/<YYMMDD>/inhand/(inhand_est 와 같은 곳)
 SIDES = {"right": "r", "left": "l"}
 
 
@@ -106,7 +107,7 @@ def candidates(side: str, node: str | None = None, root: Path = BUNDLE_DIR, days
     """그 팔 잡기 노드의 묶음 파일 — 새 것부터(오늘 · 어제 폴더)."""
     tag = node or f"rh_aglt_node_{side}"
     today = _dt.date.today()
-    dirs = [Path(root) / (today - _dt.timedelta(days=d)).strftime("%Y%m%d") for d in range(days)]
+    dirs = [Path(root) / (today - _dt.timedelta(days=d)).strftime(run_paths.DAY_FMT) / "inhand" for d in range(days)]
     files = [f for d in dirs if d.is_dir() for f in d.glob(f"*_{tag}_*.npz")]
     return sorted(files, key=lambda f: f.stat().st_mtime, reverse=True)
 

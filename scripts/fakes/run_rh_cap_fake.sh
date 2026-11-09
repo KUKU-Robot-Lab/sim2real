@@ -6,7 +6,7 @@ source /opt/ros/humble/setup.bash
 export ROS_DOMAIN_ID=97
 cd "$(dirname "$0")/../.."
 C=${CONTRACT:-tests/policy_control/fixtures/rh_cap_${PH}_contract.json}
-LOG=logs/capdeploy/fake_${PH}
+LOG=logs/runs/$(date +%y%m%d)/fake/$(date +%H%M%S)_rh_cap_${PH}
 mkdir -p $LOG
 python3 scripts/fakes/fake_rh_cap_plant.py --contract $C --arm-q=-0.6,0.2026,0.6538,1.7608,0.3791,0.2,0.6646 --grip-close ${GRIP:-0.5} > $LOG/plant.log 2>&1 &
 PP=$!

@@ -11,7 +11,7 @@
   gru          runtime.InHandPoseEstimator(과제 관측판, prior_input) — 정책 틱마다 한 번. 입력 = 직전 틱 관측(이번에 받은 행동을 낸
                obs, 컵 칸은 ckpt 가 뺀다) + 사전값. 손바닥 · 컵은 이번 측정(= sim 의 스텝 뒤). 출력 = 손바닥 좌표 컵 자세.
   grasp_state  GraspStateEstimator(정적 MLP) — 끊긴 뒤 매 틱 쌓고(끊긴 틱에 새로), 들기 성공으로 끝날 때 끝 30 틱 평균을 넘김 묶음
-               (grasp_handover/1 npz, logs/inhand/)으로 남긴다. 다음 정책(place · tilt)이 object_world(손바닥 FK, 묶음)로 쓴다.
+               (grasp_handover/1 npz, logs/runs/<YYMMDD>/inhand/)으로 남긴다. 다음 정책(place · tilt)이 object_world(손바닥 FK, 묶음)로 쓴다.
                입력 손 명령 = 디코더의 rad 손 목표 q*(squeeze 전, sim env.hand_target 과 같은 뜻 — learn:grasp/lift 10.21).
 끊김(FppDropLatch — sim 훅 · 과제 env · 배포 공용 클래스)
   지각 컵(노드가 고른 FP++ · 마지막 값 · 부착)과 손바닥 거리가 처음 drop_m 미만인 틱에 끊는다. 그 틱의 손바닥 기준 지각 자세가
@@ -34,14 +34,16 @@ from typing import Mapping
 import numpy as np
 import yaml
 
+from . import _paths  # noqa: F401 — scripts/ 를 경로에 넣는다(run_paths)
 from . import hdgp_pin
 from . import rh_aglt as A
+import run_paths  # noqa: E402,I001
 
 INHAND_DIR = "inhand"
 INHAND_YAML = "inhand.yaml"
 PKG = "inhand_pose_hdgp"            # openarm 패키지 초기화(학습 과제 설정 import)를 거치지 않게 따로 이름을 붙인다
 SIDES = {"right": "r", "left": "l"}
-BUNDLE_DIR = Path(__file__).resolve().parents[3] / "logs" / "inhand"
+BUNDLE_DIR = run_paths.RUNS          # 묶음 = BUNDLE_DIR/<YYMMDD>/inhand/<시각>_<노드>_<에피소드>.npz
 
 
 class InhandError(A.RhAgltError):
@@ -286,7 +288,7 @@ class InhandRun:
         if b is None:
             return None
         now = _dt.datetime.now()
-        d = Path(out_dir or BUNDLE_DIR) / now.strftime("%Y%m%d")
+        d = Path(out_dir or BUNDLE_DIR) / now.strftime(run_paths.DAY_FMT) / "inhand"
         tag = "_".join(str(meta.get(k, "")) for k in ("node", "episode") if meta.get(k) not in (None, ""))
         path = d / f"{now.strftime('%H%M%S')}_{tag or 'inhand'}.npz"
         full = {"spec": str(self.spec.path), "prior_twist": self.spec.twist_ref, "gru_md5": self.spec.gru_md5, "grasp_state_md5": self.spec.grasp_state_md5,

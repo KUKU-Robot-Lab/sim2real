@@ -2,7 +2,7 @@
 """실기 팔 bag → 명령 → 움직임 지연 표. 파일만 읽는다.
 
 10.07 Grasping 요청(hdgp rh_aglt 팔 지연 DR 근거)으로 10.03 home_return bag 에서 잰 방법을 도구로 옮겼다(10.08, 실기 전 세팅).
-    python3 tools/arm_latency_report.py logs/bags/<런>/arm [--side right] [--json out.json]
+    python3 tools/arm_latency_report.py logs/runs/<YYMMDD>/bags/<런>/arm [--side right] [--json out.json]
 
 필요한 토픽(rh56f1_record.sh EXTRA 가 싣는다): /joint_states · /policy_control/pd_<팔>/applied · /policy_control/joint_target ·
 /policy_control/status/pd_<팔>. 정의:

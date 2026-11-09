@@ -36,11 +36,12 @@ sys.path.insert(0, str(HERE.parents[1]))
 sys.path.insert(0, str(HERE.parent))
 from policy_control import _paths  # noqa: E402
 from policy_control import rh_aglt as A  # noqa: E402
+import run_paths  # noqa: E402
 
 SERVER = "server"
 HDGP = "~/rl_ws/our_source/s2r_simtraj/hdgp_51094780"      # neo03 학습 커밋 고정본(README 참고)
 JOBS = "rl_ws/sim2real/logs/s2r_simtraj"     # server 홈 기준(ssh · scp 는 홈에서 시작한다)
-OUT = _paths.SIM2REAL / "logs" / "sim_traj"
+OUT = run_paths.day_dir("sim_traj")      # 콘솔은 --out-root 로 카드 폴더를 준다
 SIDE_KEY = {"left": "l", "right": "r"}
 CLOSE_RISE_RAD = 0.08        # 손가락(검지~새끼) 목표가 접근 중 값보다 이만큼 굽기 시작하면 닫기 시작
 CUP_TOL_M = 0.01             # sim 열린 루프 재생: 1 cm 13/16 · 2 cm 8/32(shaker)
@@ -614,7 +615,7 @@ def main(argv=None) -> int:
     p.add_argument("--no-video", dest="video", action="store_false")
     p.add_argument("--rate-scale", type=float, default=0.5, help="계획 속도 검사용 재생 배속")
     p.add_argument("--out", default="")
-    p.add_argument("--out-root", default="", help="계획을 <이 폴더>/<시각_팔_물체> 에 쓴다(--out 이 없을 때, 기본 logs/sim_traj)")
+    p.add_argument("--out-root", default="", help="계획을 <이 폴더>/<시각_팔_물체> 에 쓴다(--out 이 없을 때, 기본 logs/runs/<YYMMDD>/sim_traj)")
     r = sub.add_parser("run", help="plan.npz 를 pd 로 재생(★--execute 는 사용자 승인 뒤)")
     r.add_argument("plan")
     r.add_argument("--rate-scale", type=float, default=0.5)

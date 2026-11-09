@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """머리 카메라 토픽을 낮은 빈도로 rosbag2(sqlite3)에 쓴다 — 에피소드 bag 의 세 번째 묶음 camera(11.04 사용자).
 
-    python3 scripts/nodes/camera_bag_recorder.py -o logs/bags/<시각>_episode_<이름>/camera --hz 10 <토픽...>
+    python3 scripts/nodes/camera_bag_recorder.py -o logs/runs/<YYMMDD>/bags/<시각>_episode_<이름>/camera --hz 10 <토픽...>
     (deploy/policy_control/tools/rh56f1_record.sh 가 CAMERA='<토픽...>' 일 때 팔 · 손 bag 옆에 띄운다. SIGINT 에 마무리)
 
 ros2 bag record(humble)는 빈도를 못 낮추고 topic_tools 도 깔려 있지 않다. 그래서 받은 직렬화 바이트를 RateGate 로 걸러

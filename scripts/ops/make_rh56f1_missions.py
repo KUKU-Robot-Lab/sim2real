@@ -139,6 +139,8 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
 #   만들기(episode_media.py)를 기본으로 끈다. 10.20 실기: 보고서 영상 정리가 옛 회까지 다시 가져오며 6 분 넘게 팔 작업을 붙잡아
 #   rehome · tilt_now 승인이 막혔다. 켜려면 True 로 바꾸고 이 생성기를 다시 돌린다(미션 YAML 이 바뀐다).
 VISION_RECORD = False
+#: 인지 PC 의 노드 로그 — 저 PC 셸에서 그날 날짜로 푼다(logs/runs/<YYMMDD>/perception, scripts/run_paths.py 와 같은 틀)
+PERC_LOG = "logs/runs/$(date +%y%m%d)/perception"
 #: ★10.19 사용자 "작성할 보고서 사진/영상도 필요함" — VISION_RECORD 일 때 이 에피소드들은 카메라 영상을 보고서용 빈도로 남긴다(기본 5 Hz)
 REPORT_VIDEO_HZ = {"grasp_b_right": 15.0, "grasp_b_left": 15.0}
 #: ★11.04 사용자: 실기 에피소드 bag 에 머리 D435i 영상을 같이(세 번째 묶음 camera, rh56f1_record.sh CAMERA) — FP++ 자세 · 손바닥 ·
@@ -662,8 +664,8 @@ def _run(kind: str) -> dict:
         _cmd(f"컵홀더 자세 노드({PERCEPTION_HOST} 에서, 영상을 그 PC 안에서 읽는다) — ArUco → 직전 자세 추적 → 놓친 id 만 무늬 전체 "
              f"탐색(첫 장 ~6 s). x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 저 PC 의 {HOLDER_POSES} 을 갱신. "
              f"파이썬은 저 PC 의 {REMOTE_PY}(없으면 scripts/vision/venv_setup.sh)",
-             _on_perception_pc(f"{REMOTE_PY} scripts/nodes/cup_holder_pose_node.py --write --out {HOLDER_POSES} "
-                               f"--extrinsics {CAMERA_EXTRINSICS} > logs/perception/cup_holders.log 2>&1 & P=$!; "
+             _on_perception_pc(f"mkdir -p {PERC_LOG}; {REMOTE_PY} scripts/nodes/cup_holder_pose_node.py --write --out {HOLDER_POSES} "
+                               f"--extrinsics {CAMERA_EXTRINSICS} > {PERC_LOG}/cup_holders.log 2>&1 & P=$!; "
                                "trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P"), background=True),
         _cmd("★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y ≈ l +0.16 / r −0.06 / r 바깥 −0.28(간격 0.22 · 10.27 A1 배치) · stable ✓ 인가 "
              f"(어긋나면 {RECALIB_HINT})",
@@ -890,14 +892,14 @@ def _run(kind: str) -> dict:
                ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_engage", "--skip-engaged", "--hold-s", "2"],
                execute_args=["--execute", "--approve", "pd_engage"]) for s in ("right", "left")),
         _cmd("tilt 시작 자세로 — 팔마다 계획 · 검사(plan_carry, 걸리면 그 팔부터 움직이지 않음) → 재생(replay_to_pd) · "
-             "기록 logs/tilt/<시각>_setting",
+             "기록 logs/runs/<날짜>/tilt/<시각>_setting",
              ["python3", f"{PC}/tools/tilt_now.py"], execute_args=["--execute"]),
     ]
     run["tilt_pour"] = [
         _cmd("★두 팔이 세팅 자세(붓기 시작 자세)에서 컵을 쥐고 있는가 — 오른손 병(입구 위) · 왼손 shaker · 두 팔 주변과 붓는 길"
              "(테이블 위 · 몸통 앞)이 비었는가. 지금 자세에서 계획 · 검사하고 통과하면 재생한 뒤 시작 자세로 돌아온다" if real
              else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
-        _cmd("tilt 붓기 — 지금 자세에서 계획 · 검사(plan_tilt, 걸리면 움직이지 않음) → 두 팔 재생(replay_to_pd) · 기록 logs/tilt/<시각>_pour"
+        _cmd("tilt 붓기 — 지금 자세에서 계획 · 검사(plan_tilt, 걸리면 움직이지 않음) → 두 팔 재생(replay_to_pd) · 기록 logs/runs/<날짜>/tilt/<시각>_pour"
              + (" · bag tilt_pour" if real else ""),
              ["python3", f"{PC}/tools/tilt_pour.py", *([] if real else ["--no-record"])], execute_args=["--execute"]),
     ]
@@ -1253,7 +1255,7 @@ def _episode_run(name: str, real: bool) -> list:
         cmds.append(_cmd("stationary 기준선 기록 끝(README 에 bag 경로)",
                          ["python3", f"{PC}/tools/baseline_run.py", "stop", f"episode_{name}"]))
         if VISION_RECORD and name in REPORT_VIDEO_HZ:   # ★10.19 보고서 사진 · 영상 — 이 단계에서 돈 회마다(아직 안 만든 것)
-            cmds.append(_cmd(f"보고서 영상 · 장면 사진 — 카메라 영상({PERCEPTION_HOST}) + 노드 시각 → logs/report_media/<회>"
+            cmds.append(_cmd(f"보고서 영상 · 장면 사진 — 카메라 영상({PERCEPTION_HOST}) + 노드 시각 → logs/runs/<날짜>/report_media/<회>"
                              "(video.mp4 · 시작 · 다가간 뒤 · 쥔 뒤 · 들어 올린 뒤 · sheet.jpg)",
                              ["python3", f"{PC}/tools/episode_media.py", "--pending", name,
                               "--host", PERCEPTION_HOST if REMOTE_PERCEPTION else "local"]))
@@ -1271,8 +1273,8 @@ def real_object(topic: str) -> str:
 
 
 def _baseline_start(name: str, sides: list) -> dict:
-    """★11.08 사용자 승인: bag 옆에 stationary_recorder(구독만) — 폴더 baseline_<YYYYMMDD>_<NN> 은 실행 때 정한다."""
-    return _cmd("stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/"
+    """★11.08 사용자 승인: bag 옆에 stationary_recorder(구독만) — 폴더는 실행 때 정한다."""
+    return _cmd("stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/"
                 "(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty, PD 게인)",
                 ["python3", f"{PC}/tools/baseline_run.py", "start", f"episode_{name}",
                  "--mission", "{repo}/" + str(OUT["real"].relative_to(REPO)),
@@ -1281,8 +1283,8 @@ def _baseline_start(name: str, sides: list) -> dict:
 
 def _cpu_record(name: str) -> dict:
     """프로세스별 CPU 1 Hz CSV(tools/proc_cpu_record.py) — 10.03 은 정책이 15 s 에 멈춰 추론 부하를 못 쟀다(10.08 실기 전 세팅)."""
-    return _cmd("CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)",
-                ["python3", f"{PC}/tools/proc_cpu_record.py", "--out", f"{{repo}}/logs/cpu/{name}.csv"], background=True)
+    return _cmd("CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)",
+                ["python3", f"{PC}/tools/proc_cpu_record.py", "--out", f"{{runs}}/cpu/{name}.csv"], background=True)
 
 
 def _record_start(name: str, sides: list, topics: list, objs: list | None = None) -> list[dict]:
@@ -1306,14 +1308,14 @@ def _vision_record(name: str, objs: list, hz: float = 5.0) -> dict:
     여기서 1 로 못 박으면 0 인 카메라 · FP++ 를 못 본다(0 과 1 은 같은 PC 안에서도 서로 안 보인다, 10.30 실측)."""
     rate = [] if hz == 5.0 else ["--hz", f"{hz:g}"]
     if not REMOTE_PERCEPTION:
-        return _cmd(f"영상 · FP++ 실시간 좌표 기록({hz:g} Hz JPEG · live_pose CSV) → logs/vision_runs",
+        return _cmd(f"영상 · FP++ 실시간 좌표 기록({hz:g} Hz JPEG · live_pose CSV) → logs/runs/<날짜>/vision_runs",
                     ["python3", "{repo}/scripts/nodes/vision_recorder.py", "--name", name,
                      "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS, *rate, "--objects", *objs], background=True)
     # 원격: ssh -tt 를 콘솔이 끝내면 저쪽 셸이 HUP 를 받는다 → 기록기에 TERM(마무리 · CSV 닫기) 뒤 기다린다.
-    # 기록은 저 PC 의 sim2real/logs/vision_runs 에 남는다(로그는 logs/perception/vrec_<이름>.log).
-    rec = (f"{REMOTE_PY} scripts/nodes/vision_recorder.py --name {name} --camera-extrinsics {CAMERA_EXTRINSICS} {' '.join(rate)} "
-           f"--objects {' '.join(objs)} > logs/perception/vrec_{name}.log 2>&1 & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P")
-    return _cmd(f"영상 · FP++ 실시간 좌표 기록({PERCEPTION_HOST}, {hz:g} Hz JPEG · live_pose CSV) → 저 PC 의 logs/vision_runs",
+    # 기록은 저 PC 의 sim2real/logs/runs/<날짜>/vision_runs 에 남는다(로그는 {PERC_LOG}/vrec_<이름>.log).
+    rec = (f"mkdir -p {PERC_LOG}; {REMOTE_PY} scripts/nodes/vision_recorder.py --name {name} --camera-extrinsics {CAMERA_EXTRINSICS} {' '.join(rate)} "
+           f"--objects {' '.join(objs)} > {PERC_LOG}/vrec_{name}.log 2>&1 & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P")
+    return _cmd(f"영상 · FP++ 실시간 좌표 기록({PERCEPTION_HOST}, {hz:g} Hz JPEG · live_pose CSV) → 저 PC 의 logs/runs/<날짜>/vision_runs",
                 _on_perception_pc(rec), background=True)
 
 
@@ -1328,7 +1330,7 @@ def _tip_zero(s: str) -> dict:
     """★11.04 사용자: home · rehome 끝(편 손 · 빈손)에서 손끝 촉각 bias 를 잡아 기록 — 손은 움직이지 않는다. 거부돼도 단계는 계속(trigger.py SOFT)."""
     return _cmd(f"[{s}] 손끝 촉각 · 관절 힘 영점(/hand_{s}/tip_zero — 직전 0.5 s 평균, 편 손 · 정지 · 값이 작을 때만. 관절 힘은 sd > 5 g · "
                 "|평균| > 400 g 면 거부, 30 g 넘게 옮겨 가면 받고 경고. 거부면 이전 bias 유지) → tip_bias · tip_forces_zeroed · joint_forces_zeroed · "
-                "logs/rh56f1_tip_zero",
+                "logs/runs/<날짜>/rh56f1_tip_zero",
                 ["python3", f"{PC}/tools/trigger.py", "hand/tip_zero", "--side", s, "--service-timeout", "5"], execute_args=["--execute"])
 
 

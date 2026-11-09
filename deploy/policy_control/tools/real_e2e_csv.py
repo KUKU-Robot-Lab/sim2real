@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """★10.25 실기 에피소드 기록 → e2e CSV(hdgp scripts/tools/e2e_chain/e2e_contract.yaml per_episode 35 열, sim episodes.csv 와 같은 순서).
 
-입력 = 에피소드 실행기 폴더 logs/episode/<episode_id>_<episode>/ (episode_<id>.jsonl · scene.json). 한 폴더 = 한 행.
+입력 = 에피소드 실행기 폴더 logs/runs/<YYMMDD>/episode/<시각>_<episode>/ (episode_<id>.jsonl · scene.json). 한 폴더 = 한 행.
 실기에서 얻지 못하는 값은 빈 칸(열은 빼지 않는다). 채우는 규칙(learn:e2e-aglt 10.25):
   cond = gru · latch = est · layout = real(인자로 바꿈) · seed = 회차 번호(입력 순, --seed0 부터) · env = episode_id
   cup = 에피소드 YAML 의 place(없으면 aglt) 노드 policy_object · x, y = scene.json 컵 첫 자세(FP++, base_link)
@@ -15,7 +15,7 @@
   place 노드가 failure 로 끝나면 신호가 없어도 place 실패. 노드가 안 떠 있거나 거부(정책이 안 돎)면 빈 칸
 signals 는 10.25 실행기부터 jsonl 에 남는다 — 그 전 기록은 place_ok · carry_* 가 빈 칸이다.
 
-  python3 deploy/policy_control/tools/real_e2e_csv.py logs/episode/20261026_*_pick_place_f_right --out <csv>
+  python3 deploy/policy_control/tools/real_e2e_csv.py logs/runs/261026/episode/*_pick_place_f_right --out <csv>
   (--out 없으면 ~/rl_ws/our_source/rh_aglt_runs/real/<첫 날짜>_e2e/episodes.csv)
 """
 from __future__ import annotations
@@ -145,7 +145,7 @@ def row_of(run: Path, seed: int, cond: str, latch: str, layout: str) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
-    ap.add_argument("runs", nargs="+", type=Path, help="에피소드 실행기 폴더(logs/episode/<id>_<episode>)")
+    ap.add_argument("runs", nargs="+", type=Path, help="에피소드 실행기 폴더(logs/runs/<YYMMDD>/episode/<시각>_<episode>)")
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--seed0", type=int, default=1, help="첫 회차 번호")
     ap.add_argument("--cond", default="gru")

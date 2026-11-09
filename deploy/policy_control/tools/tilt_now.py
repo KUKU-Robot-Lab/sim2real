@@ -13,7 +13,7 @@ carry)과 같은 두 걸음을 팔마다:
      start_gap_rad 넘게 벗어나면 replay 가 거부한다.
 
 손은 건드리지 않는다(빈손이든 쥔 손이든 그대로 — 손 안 컵 자리를 가상 컵으로 두고 탁자 · 두 팔 사이를 검사한다).
-기록: logs/tilt/<날짜_시각>_setting_<자산>/(meta.json) carry_<팔>/(check.json · carry_cmd.npz).
+기록: logs/runs/<YYMMDD>/tilt/<시각>_setting_<자산>/(meta.json) carry_<팔>/(check.json · carry_cmd.npz).
 
     python3 deploy/policy_control/tools/tilt_now.py                 # 계획 · 검사만(왼팔은 오른팔이 끝 자세에 갔다고 보고 계획)
     python3 deploy/policy_control/tools/tilt_now.py --execute       # 오른팔 계획 → 재생 → 왼팔 계획 → 재생
@@ -70,7 +70,7 @@ def fail_summary(out: Path) -> str:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("--asset", type=Path, default=ASSET)
-    ap.add_argument("--out-root", type=Path, default=SIM2REAL / "logs" / "tilt")
+    ap.add_argument("--out-root", type=Path, default=None, help="없으면 logs/runs/<YYMMDD>/tilt")
     ap.add_argument("--sides", default="right,left", help="한 팔씩 이 순서로(right · left · right,left)")
     ap.add_argument("--rate-scale", type=float, default=1.0)
     ap.add_argument("--execute", action="store_true")

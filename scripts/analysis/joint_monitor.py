@@ -9,7 +9,7 @@ sim2real 라이브 실행(bringup·브리지·정책) 중 **모든 관절의 pos
     python3 joint_monitor.py \
         [--arm-topic /joint_states] \
         [--hand-topic /dg5f_right/joint_states] \
-        [--rate 5] [--effort-warn 5.0] [--log-dir ~/rl_ws/sim2real/logs]
+        [--rate 5] [--effort-warn 5.0] [--log-dir logs/runs/<YYMMDD>/joint_monitor]
 
 구독: JointState 2개(팔 broadcaster + 손 broadcaster) — 이름으로 그룹 분류.
 출력: 터미널 대시보드 + <log-dir>/joint_monitor_<타임스탬프>.csv
@@ -29,6 +29,7 @@ from sensor_msgs.msg import JointState
 import sys
 # ★`scripts/` 를 임포트 경로에 넣는다 — 이 파일은 거기서 한 단계 내려와 있다.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import run_paths  # noqa: E402
 
 from joint_monitor_core import (
     JointSample,
@@ -108,7 +109,7 @@ def main() -> None:
     parser.add_argument("--rate", type=float, default=5.0)
     parser.add_argument("--effort-warn", type=float, default=5.0,
                         help="|effort| 이 값 초과 시 대시보드에 '*' 경보 [Nm]")
-    parser.add_argument("--log-dir", default=str(Path.home() / "rl_ws/sim2real/logs"))
+    parser.add_argument("--log-dir", default=str(run_paths.day_dir("joint_monitor")))
     args = parser.parse_args()
 
     stamp = time.strftime("%Y%m%d_%H%M%S")

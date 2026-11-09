@@ -18,12 +18,14 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Mapping
 
 import yaml
 
 from mission_core import Mission
+from run_paths import DAY_FMT
 
 #: `{종류:열쇠}` 또는 `{repo}`. 종류를 `[a-z_]` 로 좁히면 **오타가 조용히 통과한다**
 #: — 못 알아본 자리표시자가 그대로 인자에 실려 나간다. 넓게 잡고 모르는 종류는 죽인다.
@@ -102,12 +104,17 @@ def _policy_field(key: str, mission: Mission, repo: Path) -> str:
 
 
 def resolve(text: str, mission: Mission, *, repo: Path) -> str:
-    """`{repo}` · `{artifact:키}` · `{checkpoint:키}` · `{params:키}` · `{policy:산출물키.필드}` 를 치환한다."""
+    """`{repo}` · `{runs}` · `{artifact:키}` · `{checkpoint:키}` · `{params:키}` · `{policy:산출물키.필드}` 를 치환한다.
+
+    `{runs}` = <repo>/logs/runs/<오늘 YYMMDD>(런 기록 날짜 폴더, run_paths).
+    """
 
     def sub(m: re.Match) -> str:
         kind, key = m.group(1), m.group(2)
         if kind == "repo" and key is None:
             return str(repo)
+        if kind == "runs" and key is None:
+            return str(repo / "logs" / "runs" / datetime.now().strftime(DAY_FMT))
         if key is None:
             raise ValueError(f"모르는 자리표시자 종류: {kind}")
         return _lookup(kind, key, mission, repo)

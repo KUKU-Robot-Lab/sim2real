@@ -3,7 +3,7 @@
 
 student_bag_replay.py --mask-bits 의 입력. YOLO 는 .venv-yolo 에만 있어 두 단계로 나눈다.
   source /opt/ros/humble/setup.bash
-  .venv-yolo/bin/python scripts/analysis/mask_bag_bits.py --bag logs/bags/<bag> --policy-dir deploy/policies/rh56f1/aglt/right_student1105mA \
+  .venv-yolo/bin/python scripts/analysis/mask_bag_bits.py --bag logs/runs/<YYMMDD>/bags/<bag> --policy-dir deploy/policies/rh56f1/aglt/right_student1105mA \
       --out logs/analysis/<이름>/mask_bits.npz
 처리 시간(디코드 제외, 검출 + 비트) p50 · p90 을 함께 적는다.
 """

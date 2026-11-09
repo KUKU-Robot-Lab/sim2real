@@ -6,7 +6,7 @@
 
   python3 scripts/analysis/head_stream_probe.py --dry-run            # 계획 표만
   python3 scripts/analysis/head_stream_probe.py                      # 실측(camset 자세에서 2° 안일 때만 시작)
-  python3 scripts/analysis/head_stream_probe.py --analyze logs/analysis/head_stream_probe_<MMDD_HHMMSS>
+  python3 scripts/analysis/head_stream_probe.py --analyze logs/runs/<YYMMDD>/head_stream_probe/<HHMMSS>
 
 시각: 보낸 시각은 이 프로세스의 time.time(), joint_states stamp 는 드라이버의 벽시계(읽기 가운데)다 — 같은 호스트에서 돌린다.
 """
@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import head_motion as hm  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
+import run_paths  # noqa: E402
 DEFAULT_CAMSET = REPO / "config" / "head_camset_rh56f1.yaml"
 RATE_HZ = 20.0
 JOINT_NAMES = ("head_j_pan", "head_j_tilt")  # head_joint_publisher.JOINT_NAMES
@@ -362,7 +363,7 @@ def run(args, pan0: float, tilt0: float, plan) -> int:
         pub.publish(String(data=json.dumps({"seq": seq, "pan_deg": pan, "tilt_deg": tilt})))
         sent.append((time.time(), seq, seg, pan, tilt))
 
-    out = REPO / "logs" / "analysis" / f"head_stream_probe_{time.strftime('%m%d_%H%M%S')}"
+    out = run_paths.run_dir("head_stream_probe", "", mkdir=False)
     started = False
     try:
         for _ in range(30):  # DDS 발견 대기 최대 3 s, 첫 메시지부터 1 s 모은다

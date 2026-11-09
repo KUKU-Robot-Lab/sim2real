@@ -15,7 +15,7 @@
     python3 deploy/policy_control/tools/eval_record.py grasp --side right --ok --lift-cm 7.5 --hold-s 3
     python3 deploy/policy_control/tools/eval_record.py grasp --side left --fail released_in_hold
     python3 deploy/policy_control/tools/eval_record.py summary
-기록: logs/eval_real/<YYYYMMDD>/{tilt,grasp}.jsonl · 같은 이름 .csv(표로 볼 때). 회차 번호는 그날 파일의 줄 수 + 1.
+기록: logs/runs/<YYMMDD>/eval_real/{tilt,grasp}.jsonl · 같은 이름 .csv(표로 볼 때). 회차 번호는 그날 파일의 줄 수 + 1.
 """
 from __future__ import annotations
 
@@ -28,7 +28,11 @@ import time
 from typing import Mapping
 
 SIM2REAL = Path(__file__).resolve().parents[3]
-ROOT = SIM2REAL / "logs" / "eval_real"
+sys.path.insert(0, str(SIM2REAL / "scripts"))
+import run_paths  # noqa: E402
+
+ROOT = run_paths.RUNS                          # 기록 = ROOT/<YYMMDD>/eval_real/
+KIND = "eval_real"
 #: D4 rh_ref_s2h4 ep5000 params/env.yaml(hdgp pour_fabric_mimic 성공 판정) — 결정 4 의 숫자
 D4_SUCCESS = {"success_fill_ratio": 1.0, "success_spill_max": 0.25, "success_xy_thresh": 0.20, "success_hold_steps": 20}
 N_BEADS = 10                                   # 결정 11
@@ -61,14 +65,18 @@ def judge_grasp(result: str, hold_s: float | None) -> dict:
     return {"result": result, "hold_s": hold_s, "success": bool(ok)}
 
 
-def _day_dir(root: Path) -> Path:
-    d = root / time.strftime("%Y%m%d")
+def _day_dir(root: Path, day: str = "") -> Path:
+    return root / (day or time.strftime(run_paths.DAY_FMT)) / KIND
+
+
+def _make_day_dir(root: Path) -> Path:
+    d = _day_dir(root)
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def append(root: Path, kind: str, row: Mapping) -> dict:
-    d = _day_dir(root)
+    d = _make_day_dir(root)
     jl = d / f"{kind}.jsonl"
     n = sum(1 for line in jl.read_text(encoding="utf-8").splitlines() if line.strip()) if jl.is_file() else 0
     row = {"trial": n + 1, "at": time.strftime("%F %T"), **row}
@@ -84,13 +92,13 @@ def append(root: Path, kind: str, row: Mapping) -> dict:
 
 
 def latest_episode(prefix: str) -> str:
-    runs = sorted((SIM2REAL / "logs" / "episode").glob(f"*_{prefix}*"), key=lambda p: p.stat().st_mtime)
-    return str(runs[-1].relative_to(SIM2REAL)) if runs else ""
+    run = run_paths.latest("episode", f"*_{prefix}*")
+    return str(run.relative_to(SIM2REAL)) if run else ""
 
 
 def summary(root: Path, day: str = "") -> dict:
-    d = root / (day or time.strftime("%Y%m%d"))
-    out: dict = {"day": d.name}
+    d = _day_dir(root, day)
+    out: dict = {"day": d.parent.name}
     for kind in ("tilt", "grasp"):
         p = d / f"{kind}.jsonl"
         rows = [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines() if x.strip()] if p.is_file() else []
@@ -125,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--grasp-left", choices=GRASP_RESULTS, default="ok")
     t.add_argument("--duration-s", type=float, default=None)
     t.add_argument("--video", default="")
-    t.add_argument("--episode-dir", default="", help="없으면 logs/episode 의 가장 최근 tilt_base_* 실행 폴더")
+    t.add_argument("--episode-dir", default="", help="없으면 logs/runs/*/episode 의 가장 최근 tilt_base_* 실행 폴더")
     t.add_argument("--note", default="")
     g = sub.add_parser("grasp", help="파지 s2r 확인 한 회(결정 1)")
     g.add_argument("--side", choices=("right", "left"), required=True)
@@ -138,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--episode-dir", default="")
     g.add_argument("--note", default="")
     s = sub.add_parser("summary", help="그날 기록 요약")
-    s.add_argument("--day", default="")
+    s.add_argument("--day", default="", help="YYMMDD(없으면 오늘)")
     a = ap.parse_args(argv)
     try:
         if a.kind == "summary":

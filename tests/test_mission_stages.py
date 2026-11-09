@@ -55,6 +55,12 @@ def test_resolve_expands_the_repo_root():
     assert resolve("{repo}/scripts/a.py", _mission(), repo=REPO) == "/repo/scripts/a.py"
 
 
+def test_resolve_expands_runs_to_todays_run_folder():
+    from datetime import datetime
+    day = datetime.now().strftime("%y%m%d")
+    assert resolve("{runs}/cpu/a.csv", _mission(), repo=REPO) == f"/repo/logs/runs/{day}/cpu/a.csv"
+
+
 def test_resolve_expands_an_artifact_to_an_absolute_path():
     out = resolve("{artifact:reset_right_npz}", _mission(), repo=REPO)
 

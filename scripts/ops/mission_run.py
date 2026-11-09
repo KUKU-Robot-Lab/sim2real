@@ -53,9 +53,11 @@ from mission_core import (
     stage_by_id,
 )
 from mission_stages import Command, Runbook, commands_for, load_runbook
+from run_paths import day_dir, find_runs
 
 REPO = Path(__file__).resolve().parents[2]
-MISSION_LOG_DIR = REPO / "logs" / "mission"
+#: 시험이 tmp 로 바꾼다. None 이면 logs/runs/<YYMMDD>/mission/<run_id>(run_paths).
+MISSION_LOG_DIR: Path | None = None
 
 #: 자식이 SIGTERM 을 무시할 때 SIGKILL 까지 기다리는 시간 [s].
 KILL_GRACE_S = 5.0
@@ -89,8 +91,15 @@ def gather_evidence(mission: Mission, *, repo: Path, approvals: frozenset[str]) 
 
 
 # ── 상태 보관 ──────────────────────────────────────────────────────────────
-def _run_dir(run_id: str) -> Path:
-    return MISSION_LOG_DIR / run_id
+def run_dir_for(run_id: str) -> Path:
+    """미션 기록 폴더. 이미 있으면 그 날 것(이어가기는 날을 넘겨도 찾는다), 없으면 오늘 폴더."""
+    if MISSION_LOG_DIR is not None:
+        return MISSION_LOG_DIR / run_id
+    hit = find_runs("mission", run_id)
+    return hit[-1] if hit else day_dir("mission") / run_id
+
+
+_run_dir = run_dir_for
 
 
 def save_state(run_id: str, state: MissionState) -> None:
@@ -289,7 +298,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     mission, runbook = _load(args.mission)
     state = load_state(args.resume) if args.resume else initial_state(mission)
-    run_id = args.resume or args.run or datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_id = args.resume or args.run or datetime.now().strftime("%H%M%S")      # 날짜는 폴더(logs/runs/<YYMMDD>)
     evidence = gather_evidence(mission, repo=REPO, approvals=frozenset(args.approve))
 
     if args.plan or not args.stage:
@@ -319,7 +328,7 @@ def main(argv: list[str] | None = None) -> int:
     outcome = run_stage(mission, runbook, stage.id, run_id=run_id, assume_yes=args.yes)
     state = advance(mission, state, outcome)
     save_state(run_id, state)
-    print(f"\n  결과: {outcome} → 다음 {state.stage}  (기록 logs/mission/{run_id})")
+    print(f"\n  결과: {outcome} → 다음 {state.stage}  (기록 {_run_dir(run_id)})")
     return 0 if outcome == STATUS_DONE else 1
 
 

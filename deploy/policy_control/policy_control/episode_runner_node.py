@@ -7,7 +7,7 @@
          stop  돌던 것을 멈춘다(정책 노드 episode/stop → pd 가 붙든다 · 재생 프로세스 SIGTERM) — 승인 없음
          reset 새 에피소드(WorldState 처음부터) — 도는 중이면 거부
   out  /policy_control/status/<이름> (2 Hz JSON — EpisodeManager.view() + busy · auto_approve)
-  log  logs/episode/<episode_id>/episode.jsonl · scene.json · tools.log(명령 목록) · tools/<번호>_<도구>.log(도구 출력)
+  log  logs/runs/<YYMMDD>/episode/<HHMMSS>_<에피소드>/episode_<id>.jsonl · scene.json · tools.log(명령 목록) · tools/<번호>_<도구>.log(도구 출력)
 
 승인: auto_approve(fake 도메인만 — 실기 도메인(config/ros_domain.env)이면 노드가 거부) 또는 approvals 파일(JSONL, tools/episode_cmd.py 와 상황판이
 쓴다)에 이 노드가 뜬 뒤 쓰인 {"what": <이름>, "t": epoch, "runner": <노드 이름>} 가 있고 아직 안 쓴 것. 한 줄은 한 번만 쓴다.
@@ -33,11 +33,12 @@ from policy_control import _paths  # noqa: E402
 from policy_control import episode_spec as S  # noqa: E402
 from policy_control import ros_domain  # noqa: E402
 from policy_control.episode_runner import EpisodeManager, jsonl_logger  # noqa: E402
+import run_paths  # noqa: E402
 
 NS = "/policy_control"
 NAME = "episode_runner"
 REAL_DOMAIN = ros_domain.REAL_DOMAIN_STR     # config/ros_domain.env 한 곳(10.30 motion_acq 와 분리)
-APPROVALS = _paths.SIM2REAL / "logs" / "episode" / "approvals.jsonl"
+APPROVALS = run_paths.RUNS / "episode_approvals.jsonl"     # 날짜와 무관한 승인 통로(노드가 뜬 뒤 줄만 읽는다)
 
 
 class Approvals:
@@ -113,8 +114,7 @@ def _main_node():
 
         def _new_episode(self) -> None:
             if self.executor_ros is None:
-                eid = time.strftime("%Y%m%d_%H%M%S")
-                run_dir = _paths.SIM2REAL / "logs" / "episode" / f"{eid}_{self.ep.name}"
+                run_dir = run_paths.run_dir("episode", self.ep.name)
                 # ★10.28 사람이 놓은 물체 다시 찍기(FP++) — auto_approve 와 같은 선: fake 도메인 밖(실기 · 미설정)이면 한다
                 rescan = os.environ.get("ROS_DOMAIN_ID", "") in ("", "0", REAL_DOMAIN)
                 self.executor_ros = RosExecutor(self, self.ep, robot=self.robot, run_dir=run_dir, runner=self.runner,

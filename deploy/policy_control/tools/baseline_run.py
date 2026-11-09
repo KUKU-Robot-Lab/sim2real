@@ -2,11 +2,11 @@
 """실기 에피소드 기록과 같이 도는 stationary 기준선 기록(11.08 사용자 승인). 구독만, 명령 발행 없음.
 
   start <이름> --mission <미션 yaml> [--episode <에피소드 yaml>] --sides right[,left]
-      logs/analysis/stationary_tracking_1108/runs/baseline_<YYYYMMDD>_<NN>/ 를 실행 시각에 고르고(NN = 다음 빈 번호)
+      logs/runs/<YYMMDD>/stationary/<HHMMSS>_baseline_<이름>/ 를 만들고
       snapshot.json + copies/(미션 · 에피소드 · PD 설정 · 게인 · 정책 계약) + README.md(bag 경로)를 쓴 뒤
       팔마다 stationary_recorder.py 를 <폴더>/<팔>/ 로 띄운다(setsid, 이 명령은 바로 끝난다).
   stop <이름>   기록기에 SIGINT, README 에 끝 시각 · 실제 bag 폴더를 적는다.
-상태 파일은 logs/analysis/stationary_tracking_1108/active/<이름>.json. ROS 환경은 rh56f1_record.sh 와 같다.
+상태 파일은 그 런 폴더의 active.json(stop 이 날을 넘겨도 찾는다). ROS 환경은 rh56f1_record.sh 와 같다.
 """
 from __future__ import annotations
 
@@ -26,7 +26,10 @@ import time
 import yaml
 
 REPO = Path(__file__).resolve().parents[3]
-BASE = REPO / "logs/analysis/stationary_tracking_1108"
+sys.path.insert(0, str(REPO / "scripts"))
+import run_paths  # noqa: E402
+
+KIND = "stationary"
 RECORDER = REPO / "deploy/policy_control/tools/stationary_recorder.py"
 SECONDS = 3600                                   # stationary_recorder 상한. 보통 stop 이 먼저 끊는다
 POLICY_ID = re.compile(r"^rh56f1/[A-Za-z0-9_]+/[A-Za-z0-9_]+$")
@@ -35,10 +38,10 @@ ROS_ENV = os.environ.get("RH56F1_RECORD_ENV") or (
     f"source '{REPO}/config/ros_domain.env'; export ROS_DOMAIN_ID=${{ROS_DOMAIN_ID:-$S2R_REAL_DOMAIN}}")
 
 
-def next_run_dir(base: Path, day: str) -> Path:
-    runs = base / "runs"
-    taken = [int(m.group(1)) for p in runs.glob(f"baseline_{day}_*") if (m := re.fullmatch(rf"baseline_{day}_(\d+)", p.name))]
-    return runs / f"baseline_{day}_{max(taken, default=0) + 1:02d}"
+def active_state(name: str) -> Path | None:
+    """아직 stop 하지 않은 그 이름의 기준선 기록 상태 파일(가장 최근 것). 없으면 None."""
+    hits = [p / "active.json" for p in run_paths.find_runs(KIND, f"*_baseline_{name}*") if (p / "active.json").is_file()]
+    return hits[-1] if hits else None
 
 
 def _md5(path: Path) -> str | None:
@@ -129,22 +132,20 @@ def _readme(out: Path, name: str, bag_note: str, sides: list[str]) -> None:
 
 
 def start(args) -> int:
-    state = BASE / "active" / f"{args.name}.json"
-    if state.exists():
+    if active_state(args.name):
         print(f"{args.name} 기준선 기록이 남아 있다 — 먼저 stop", file=sys.stderr)
         stop(argparse.Namespace(name=args.name))
-    out = next_run_dir(BASE, dt.date.today().strftime("%Y%m%d"))
-    out.mkdir(parents=True)
+    out = run_paths.run_dir(KIND, f"baseline_{args.name}")
+    state = out / "active.json"
     sides = [s for s in args.sides.split(",") if s]
     write_snapshot(out, args.name, Path(args.mission).resolve(), Path(args.episode).resolve() if args.episode else None)
-    _readme(out, args.name, f"`logs/bags/<YYYYMMDD_HHMMSS>_{args.name}/`(rh56f1_record.sh, stop 때 실제 경로를 적는다)", sides)
+    _readme(out, args.name, f"`logs/runs/<YYMMDD>/bags/<HHMMSS>_{args.name}/`(rh56f1_record.sh, stop 때 실제 경로를 적는다)", sides)
     pids = {}
     for side in sides:
         cmd = (f"{ROS_ENV}; exec nice -n 10 python3 '{RECORDER}' --side {side} --seconds {SECONDS} --out '{out / side}'")
         proc = subprocess.Popen(["bash", "-c", cmd], stdin=subprocess.DEVNULL, stdout=(out / f"{side}.log").open("w"),
                                 stderr=subprocess.STDOUT, start_new_session=True)
         pids[side] = proc.pid
-    state.parent.mkdir(parents=True, exist_ok=True)
     state.write_text(json.dumps({"out": str(out), "pids": pids, "started": time.time(), "sides": sides}) + "\n")
     time.sleep(1.0)
     dead = [s for s, p in pids.items() if not Path(f"/proc/{p}").exists()]
@@ -155,8 +156,8 @@ def start(args) -> int:
 
 
 def stop(args) -> int:
-    state = BASE / "active" / f"{args.name}.json"
-    if not state.exists():
+    state = active_state(args.name)
+    if state is None:
         print(f"{args.name} 기준선 기록 없음(이미 끝남)")
         return 0
     info = json.loads(state.read_text())
@@ -170,10 +171,9 @@ def stop(args) -> int:
         while time.monotonic() < deadline and Path(f"/proc/{pid}").exists():
             time.sleep(0.2)
     alive = [p for p in info["pids"].values() if Path(f"/proc/{p}").exists()]
-    bags = sorted((p for p in (REPO / "logs/bags").glob(f"*_{args.name}") if p.stat().st_mtime >= info["started"] - 60),
-                  key=lambda p: p.name)
+    bags = [p for p in run_paths.find_runs("bags", f"*_{args.name}") if p.stat().st_mtime >= info["started"] - 60]
     out = Path(info["out"])
-    bag = f"`{bags[-1].relative_to(REPO)}/`" if bags else f"찾지 못함(`logs/bags/*_{args.name}`)"
+    bag = f"`{bags[-1].relative_to(REPO)}/`" if bags else f"찾지 못함(`logs/runs/*/bags/*_{args.name}`)"
     _readme(out, args.name, bag, info["sides"])
     with (out / "README.md").open("a", encoding="utf-8") as f:
         f.write(f"- 끝: {dt.datetime.now().astimezone().isoformat(timespec='seconds')}"

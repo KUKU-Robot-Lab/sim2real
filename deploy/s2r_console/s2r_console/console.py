@@ -336,8 +336,8 @@ class Session:
         self.robot, self.picked = robot, dict(picked or {})
         self.mission = replace(mission, artifacts={**mission.artifacts, **dict(artifacts or {})})
         self.runbook = load_runbook(raw.get("run", {}), self.mission)
-        self.run_id = f"{datetime.now():%Y%m%d_%H%M%S}__{profile.id}"
-        self.run_dir = mission_run.MISSION_LOG_DIR / self.run_id
+        self.run_id = f"{datetime.now():%H%M%S}__{profile.id}"          # 날짜는 폴더(logs/runs/<YYMMDD>/mission)
+        self.run_dir = mission_run.run_dir_for(self.run_id)
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.state = MC.initial_state(self.mission)
         self.skipped: frozenset[str] = frozenset()          # 실행하지 않고 넘긴 단계 — 목록에 "건너뜀" 으로 보인다

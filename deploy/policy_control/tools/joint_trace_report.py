@@ -2,7 +2,7 @@
 """joint 정책 실기 기록(joint_recorder.py 의 npz)을 읽어 제어기가 정책을 따라갔는지 표로 낸다. 파일만 읽는다.
 
     python3 deploy/policy_control/tools/joint_trace_report.py --latest --side left
-    python3 deploy/policy_control/tools/joint_trace_report.py --npz logs/policy_control/real_runs/<파일>.npz
+    python3 deploy/policy_control/tools/joint_trace_report.py --npz logs/runs/<YYMMDD>/real_runs/<파일>.npz
 
 무엇을 재는지는 policy_control/joint_trace.py 머리말에 있다.
 """
@@ -18,11 +18,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from policy_control.joint_trace import render, summarize  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from joint_recorder import OUT_DIR  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+import run_paths  # noqa: E402
 
 
-def newest(out_dir: Path, side: str) -> Path | None:
-    """가장 최근 기록 — bag run 폴더(policy_bag.py) 또는 옛 npz(joint_recorder.py). 이름 앞이 시각이라 이름 순이 시간 순."""
+def newest(out_dir: Path | None, side: str) -> Path | None:
+    """가장 최근 기록 — bag run 폴더(policy_bag.py) 또는 옛 npz(joint_recorder.py). 이름 앞이 시각이라 이름 순이 시간 순.
+    out_dir 없으면 모든 날의 logs/runs/*/real_runs."""
+    if out_dir is None:
+        cands = [p for p in run_paths.find_runs("real_runs", f"*__{side}*") if p.is_dir() or p.suffix == ".npz"]
+        return cands[-1] if cands else None
     cands = [p for p in out_dir.glob(f"*__{side}") if p.is_dir()] + list(out_dir.glob(f"*__{side}.npz"))
     return max(cands, key=lambda p: p.name) if cands else None
 
@@ -41,9 +46,9 @@ def trace_of(path: Path) -> Path:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--npz", type=Path, default=None, help="trace npz 또는 bag run 폴더")
-    ap.add_argument("--latest", action="store_true", help="--out-dir 에서 --side 의 가장 최근 기록")
+    ap.add_argument("--latest", action="store_true", help="--out-dir(없으면 logs/runs/*/real_runs)에서 --side 의 가장 최근 기록")
     ap.add_argument("--side", choices=("left", "right"), default=None)
-    ap.add_argument("--out-dir", type=Path, default=OUT_DIR)
+    ap.add_argument("--out-dir", type=Path, default=None)
     args = ap.parse_args()
     path = args.npz
     if path is None:

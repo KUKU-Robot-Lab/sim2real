@@ -11,7 +11,7 @@ cd "$(dirname "$0")/../../.."   # deploy/policy_control/tools → 저장소 루�
 source /opt/ros/humble/setup.bash && . .venv/bin/activate
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-99}"
 MODE="${MODE:-pd}"
-STEPS="${1:-250}"; LOG="${2:-logs/policy_control/fake_$(date +%m%d_%H%M%S)}"; mkdir -p "$LOG"
+STEPS="${1:-250}"; LOG="${2:-logs/runs/$(date +%y%m%d)/fake/$(date +%H%M%S)_fake_plant}"; mkdir -p "$LOG"
 PIDS=()
 cleanup() { for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill -- -"$p" 2>/dev/null; done; sleep 1; for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill -9 -- -"$p" 2>/dev/null; done; }
 trap cleanup EXIT

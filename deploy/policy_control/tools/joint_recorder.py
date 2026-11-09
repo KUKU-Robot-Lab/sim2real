@@ -40,15 +40,16 @@ from policy_control import _paths  # noqa: E402,F401
 from policy_control import codec  # noqa: E402
 from policy_control.joint_contract import load_contract  # noqa: E402
 from policy_control.sources import SourceSet, load_robot_cfg, select_side  # noqa: E402
+import run_paths  # noqa: E402
 
 SIM2REAL = Path(__file__).resolve().parents[3]
-OUT_DIR = SIM2REAL / "logs" / "policy_control" / "real_runs"
+OUT_DIR = run_paths.day_dir("real_runs")
 NS = "/policy_control"
 
 
 def out_path(out_dir: Path, task: str, side: str, now: float | None = None) -> Path:
-    stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime(now if now is not None else time.time()))
-    return out_dir / f"{stamp}__{task}__{side}.npz"
+    stamp = time.strftime(run_paths.TIME_FMT, time.localtime(now if now is not None else time.time()))
+    return out_dir / f"{stamp}_{task}__{side}.npz"
 
 
 def newest(out_dir: Path, side: str) -> Path | None:

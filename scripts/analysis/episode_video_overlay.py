@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """실기 에피소드 bag 의 머리 카메라 영상에 FP++ 물체 자세 · 손바닥 · 손끝 · 넘김 시각을 겹친다(11.04 사용자).
 
-    python3 scripts/analysis/episode_video_overlay.py logs/bags/<시각>_episode_<이름> --node grasp_shaker
-    python3 scripts/analysis/episode_video_overlay.py logs/bags/<시각>_episode_<이름> --t0 40 --t1 55   # camera 첫 프레임부터 초
+    python3 scripts/analysis/episode_video_overlay.py logs/runs/<YYMMDD>/bags/<시각>_episode_<이름> --node grasp_shaker
+    python3 scripts/analysis/episode_video_overlay.py logs/runs/<YYMMDD>/bags/<시각>_episode_<이름> --t0 40 --t1 55   # camera 첫 프레임부터 초
 출력: <bag>/overlay_<구간>/frames/00000.png … · overlay.mp4 (--out 으로 바꾼다)
 
 입력 bag = rh56f1_record.sh 의 arm(정책 · 실행기 상태 · /objects/*) 과 camera(camera_bag_recorder.py) 묶음.
@@ -370,7 +370,7 @@ def render(bag_dir: Path, args) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
-    ap.add_argument("bag", type=Path, help="logs/bags/<시각>_episode_<이름>(arm · camera 하위 폴더)")
+    ap.add_argument("bag", type=Path, help="logs/runs/<YYMMDD>/bags/<시각>_episode_<이름>(arm · camera 하위 폴더)")
     ap.add_argument("--node", help="실행기 노드 id(예: grasp_shaker) — 그 노드가 현재였던 구간")
     ap.add_argument("--t0", type=float, help="camera bag 첫 메시지부터 초")
     ap.add_argument("--t1", type=float)

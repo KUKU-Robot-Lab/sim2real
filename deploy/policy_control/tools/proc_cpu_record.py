@@ -4,8 +4,8 @@
 10.08 사용자: 실기 테스트 전에 미리 세팅. 10.03 밤 측정은 정책 노드가 15 s 만에 멈춰 추론 부하를 못 쟀다 —
 미션 aglt · 에피소드 단계가 bag 과 같이 이걸 띄워 정책이 실제로 도는 동안의 부하를 남긴다.
 
-    python3 tools/proc_cpu_record.py --out logs/cpu/<이름>.csv            # SIGINT · SIGTERM 에 요약을 찍고 끝
-    python3 tools/proc_cpu_record.py --summary logs/cpu/<이름>.csv        # 기록 요약만(평균 · p95 코어)
+    python3 tools/proc_cpu_record.py --out logs/runs/<YYMMDD>/cpu/<이름>.csv          # SIGINT · SIGTERM 에 요약을 찍고 끝
+    python3 tools/proc_cpu_record.py --summary logs/runs/<YYMMDD>/cpu/<이름>.csv      # 기록 요약만(평균 · p95 코어)
 
 대상 = 명령줄에 KEYS 중 하나가 든 프로세스(정책 · pd · 손 · 팔 브링업 · FP++ · 카메라 · 기록기). 이름은 짧은 꼬리표로 묶는다.
 """

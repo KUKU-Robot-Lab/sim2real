@@ -287,7 +287,7 @@ def test_eval_record_judges_with_the_d4_rule_and_numbers_the_trials(tmp_path):
     assert ev.main(["--root", str(tmp_path), "tilt", "--path", "A", "--in-rcv", "7", "--in-src", "1", "--spilled", "1"]) == 2
     s = ev.summary(tmp_path)
     assert s["tilt"]["A"] == {"n": 2, "success": 1, "fill_mean": 0.85, "spilled_total": 2}
-    rows = [json.loads(x) for x in next(tmp_path.glob("*/tilt.jsonl")).read_text().splitlines()]
+    rows = [json.loads(x) for x in next(tmp_path.glob("*/eval_real/tilt.jsonl")).read_text().splitlines()]
     assert [r["trial"] for r in rows] == [1, 2]
 
 

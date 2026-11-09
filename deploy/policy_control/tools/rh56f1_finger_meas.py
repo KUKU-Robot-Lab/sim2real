@@ -20,7 +20,7 @@ force 등(src200 은 길이만 다르고 잡는 자리 형상은 같다) · 3번
           끝나면 그 팔 episode stop → pd 가 마지막 팔 · 손 목표를 붙든다(쥔 손은 쥔 채). pd 의 손 한계 여유 · 속도 · 앞섬 상한이 그대로 걸린다.
   direct  pd 가 없을 때(손 드라이버만) /hand_<side>/angle_set 에 바로 — 바꿀 축만, 나머지 -1. angle_set 에 다른 발행자가
           있으면 거부한다(둘이 번갈아 보내면 손가락이 떤다).
-기록: logs/finger_meas/<날짜_시각>_<side>_<mode>[_<object>]/ — summary.json · samples.npz · levels.csv(sweep)
+기록: logs/runs/<YYMMDD>/finger_meas/<시각>_<side>_<mode>[_<object>]/ — summary.json · samples.npz · levels.csv(sweep)
 
     ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/rh56f1_finger_meas.py sweep --side right            # 계획만
     ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/rh56f1_finger_meas.py sweep --side right --execute  # ★실기
@@ -44,10 +44,12 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
+from policy_control import _paths  # noqa: E402,F401 — scripts/ 를 경로에 넣는다(run_paths)
 from policy_control import rh56f1_map  # noqa: E402
+import run_paths  # noqa: E402
 
 SIM2REAL = HERE.parents[2]
-OUT_ROOT = SIM2REAL / "logs" / "finger_meas"
+OUT_ROOT = run_paths.day_dir("finger_meas")
 FINGERS = ("index_1", "middle_1", "ring_1", "pinky_1")
 CLOSING = (*FINGERS, "thumb_2")
 #: 제작기(10.19): 정책이 쥐는 동안 _1 은 0.05~0.85 rad — 0 · 25 · 50 · 75 · 100 % 사이에 0.3~0.9 rad 점을 더 넣는다
@@ -170,12 +172,7 @@ def choose_route(via: str, pd_alive: bool, other_pubs: int) -> tuple[str | None,
 
 
 def out_dir(root: Path, side: str, mode: str, obj: str | None) -> Path:
-    stamp = time.strftime("%Y%m%d_%H%M%S")
-    base = root / f"{stamp}_{side}_{mode}{'_' + obj if obj else ''}"
-    out, k = base, 1
-    while out.exists() and k < 100:
-        out, k = Path(f"{base}_{k}"), k + 1
-    return out
+    return run_paths.unique_dir(root / f"{time.strftime(run_paths.TIME_FMT)}_{side}_{mode}{'_' + obj if obj else ''}", mkdir=False)
 
 
 # ── ROS ───────────────────────────────────────────────────────────────
