@@ -46,7 +46,7 @@ def _pd_launch(side: str, cfg: str) -> str:
 
 def _guard(side: str) -> str:
     """손 접촉 감시(로봇 명령 0). 없으면 pd 진단 contact 가 비어 trial 이 시작 검사에서 멈춘다(11.09 실측).
-    pd 와 같은 프로세스 그룹이라 pd 끄기(killpg)에 같이 내려간다. 빈손 정지 상태에서 3 s 기준선을 잡는다."""
+    trial run 과 같은 프로세스 그룹이라 run 이 끝나거나 멈추면 같이 내려간다. 팔이 TRACKING 으로 서 있을 때 3 s 기준선을 잡는다."""
     return f"python3 deploy/policy_control/tools/stationary_contact_guard.py --side {side} --operator-confirmed-free"
 
 
@@ -120,10 +120,13 @@ def plan(repo: Path, side: str, name) -> dict:
                        "rebase": _sh(f".venv/bin/python analysis/friction/common/scripts/rebase_trial.py "
                                      f"--plan {q(f'{E}/setup/plan/plan.json')} --snapshot {q(f'{R}/capture/snapshot.json')} "
                                      f"--trial {q(t)} --out {q(f'{R}/plan')}"),
-                       "run": _sh(f".venv/bin/python deploy/policy_control/tools/stationary_tracking.py run "
+                       # 접촉 감시는 trial 마다 새로 띄운다 — pd 와 같이 띄우면 engage 램프 중 손 힘 값이 한 번 20 g 넘게 흔들려
+                       # 끝까지 잠긴다(11.09 실측 joint_force_change_20g, commands_sent=0). 기준선 3 s + 여유 2 s 뒤 run
+                       "run": _sh(_guard(side) + " & G=$!; trap 'kill $G 2>/dev/null' EXIT; sleep 5; "
+                                  f".venv/bin/python deploy/policy_control/tools/stationary_tracking.py run "
                                   f"--plan {q(f'{R}/plan/plan.json')} --trial {q(t)} --out {q(f'{E}/runs/{t}')} --execute")})
     return {"reasons": reasons, "n": e["n"], "done": e["done"],
-            "pd": _sh(_guard(side) + " & exec " + _pd_launch(side, e["cfg"])), "engage": _sh(_engage(side)), "trials": trials}
+            "pd": _sh(_pd_launch(side, e["cfg"])), "engage": _sh(_engage(side)), "trials": trials}
 
 
 def _attempt(d: Path, trial: str) -> int:
