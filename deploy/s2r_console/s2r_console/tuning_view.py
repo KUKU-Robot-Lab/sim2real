@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import glob
 import shlex
 from datetime import datetime
 from pathlib import Path
@@ -101,11 +102,12 @@ def plan(repo: Path, side: str, name) -> dict:
         reasons.append("남은 trial 이 없다")
     if any(not re.fullmatch(r"\w[\w.+-]*", t) for t in todo):     # trials.txt 는 파일 입력 — runs/ 밖으로 못 나가게
         reasons.append("trials.txt 에 쓸 수 없는 trial 이름이 있다")
-    E, q, stamp = f"{ROOT}/{name}", shlex.quote, datetime.now().strftime("%y%m%d-%H%M%S")
+    E, q = f"{ROOT}/{name}", shlex.quote
     trials = []
     for t in todo:
         # 팔은 engage 한 자리(처짐 포함)에 있다 — trial 마다 그 자리를 찍고 시작점을 거기로 다시 맞춘 계획으로 돈다(로봇 명령 0)
-        R = f"{E}/setup/rebase/{t}_{stamp}"
+        # 승인 화면과 실행이 같은 명령을 봐야 한다(승인 근거 해시) — 시각 대신 시도 번호
+        R = f"{E}/setup/rebase/{t}_a{_attempt(repo / ROOT / name / 'setup/rebase', t):02d}"
         trials.append({"id": t, "plan": f"{R}/plan/plan.json",
                        "capture": _sh(f".venv/bin/python deploy/policy_control/tools/stationary_tracking.py capture "
                                       f"--side {side} --seconds 2 --out {q(f'{R}/capture')}"),
@@ -116,6 +118,11 @@ def plan(repo: Path, side: str, name) -> dict:
                                   f"--plan {q(f'{R}/plan/plan.json')} --trial {q(t)} --out {q(f'{E}/runs/{t}')} --execute")})
     return {"reasons": reasons, "n": e["n"], "done": e["done"],
             "pd": _sh(_pd_launch(side, e["cfg"])), "engage": _sh(_engage(side)), "trials": trials}
+
+
+def _attempt(d: Path, trial: str) -> int:
+    """다음 rebase 시도 번호 — 실행 전까지 바뀌지 않는다."""
+    return 1 + sum(1 for x in d.glob(f"{glob.escape(trial)}_a*") if x.is_dir()) if d.is_dir() else 1
 
 
 #: trial 한 번 = 접근 · 프레임 · 붙들기 · 돌아오기 시간 + 기동 여유. plan 을 못 읽으면 CONTROL_TIMEOUT_S 와 같은 600 s.
