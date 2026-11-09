@@ -57,9 +57,14 @@ def commands(side: str, test: tuple, folder: str, remaining: list | None = None)
         "pd": f"{ROS_ENV}{DDS} {_pd_launch(side, cfg)}",
         "engage": f"{DDS} {_engage(side)}",
         "hold": f"{ROS_ENV}{DDS} ros2 service call /policy_control/pd_{side}/hold std_srvs/srv/Trigger",
-        "trials": (f"E=analysis/friction/{folder}; for t in {' '.join(remaining) if remaining else '$(cat $E/setup/trials.txt)'}; do {DDS} "
-                   ".venv/bin/python deploy/policy_control/tools/stationary_tracking.py run "
-                   "--plan $E/setup/plan/plan.json --trial $t --out $E/runs/$t --execute || break; done"),
+        "trials": (f"E=analysis/friction/{folder}; for t in {' '.join(remaining) if remaining else '$(cat $E/setup/trials.txt)'}; do "
+                   "R=$E/setup/rebase/${t}_$(date +%y%m%d-%H%M%S); "
+                   f"{DDS} .venv/bin/python deploy/policy_control/tools/stationary_tracking.py capture "
+                   f"--side {side} --seconds 2 --out $R/capture && "
+                   ".venv/bin/python analysis/friction/common/scripts/rebase_trial.py --plan $E/setup/plan/plan.json "
+                   "--snapshot $R/capture/snapshot.json --trial $t --out $R/plan && "
+                   f"{DDS} .venv/bin/python deploy/policy_control/tools/stationary_tracking.py run "
+                   "--plan $R/plan/plan.json --trial $t --out $E/runs/$t --execute || break; done"),
     }
 
 
@@ -96,24 +101,37 @@ def plan(repo: Path, side: str, name) -> dict:
         reasons.append("남은 trial 이 없다")
     if any(not re.fullmatch(r"\w[\w.-]*", t) for t in todo):     # trials.txt 는 파일 입력 — runs/ 밖으로 못 나가게
         reasons.append("trials.txt 에 쓸 수 없는 trial 이름이 있다")
-    E, q = f"{ROOT}/{name}", shlex.quote
+    E, q, stamp = f"{ROOT}/{name}", shlex.quote, datetime.now().strftime("%y%m%d-%H%M%S")
+    trials = []
+    for t in todo:
+        # 팔은 engage 한 자리(처짐 포함)에 있다 — trial 마다 그 자리를 찍고 시작점을 거기로 다시 맞춘 계획으로 돈다(로봇 명령 0)
+        R = f"{E}/setup/rebase/{t}_{stamp}"
+        trials.append({"id": t, "plan": f"{R}/plan/plan.json",
+                       "capture": _sh(f".venv/bin/python deploy/policy_control/tools/stationary_tracking.py capture "
+                                      f"--side {side} --seconds 2 --out {q(f'{R}/capture')}"),
+                       "rebase": _sh(f".venv/bin/python analysis/friction/common/scripts/rebase_trial.py "
+                                     f"--plan {q(f'{E}/setup/plan/plan.json')} --snapshot {q(f'{R}/capture/snapshot.json')} "
+                                     f"--trial {q(t)} --out {q(f'{R}/plan')}"),
+                       "run": _sh(f".venv/bin/python deploy/policy_control/tools/stationary_tracking.py run "
+                                  f"--plan {q(f'{R}/plan/plan.json')} --trial {q(t)} --out {q(f'{E}/runs/{t}')} --execute")})
     return {"reasons": reasons, "n": e["n"], "done": e["done"],
-            "pd": _sh(_pd_launch(side, e["cfg"])), "engage": _sh(_engage(side)),
-            "trials": [(t, _sh(f".venv/bin/python deploy/policy_control/tools/stationary_tracking.py run "
-                               f"--plan {q(f'{E}/setup/plan/plan.json')} --trial {q(t)} --out {q(f'{E}/runs/{t}')} --execute"))
-                       for t in todo],
-            "timeout_s": _trial_timeouts(repo / E / "setup/plan/plan.json", todo)}
+            "pd": _sh(_pd_launch(side, e["cfg"])), "engage": _sh(_engage(side)), "trials": trials}
 
 
-#: trial 한 번 = 프레임 · 붙들기 시간 + 기동 · 시작 자세 이동 여유. plan 을 못 읽으면 CONTROL_TIMEOUT_S 와 같은 600 s.
+#: trial 한 번 = 접근 · 프레임 · 붙들기 · 돌아오기 시간 + 기동 여유. plan 을 못 읽으면 CONTROL_TIMEOUT_S 와 같은 600 s.
 TRIAL_MARGIN_S, TRIAL_FALLBACK_S = 120.0, 600.0
+#: capture(2 s) · rebase(오프라인 충돌 검사) 한도
+PREP_TIMEOUT_S = 180.0
 
 
 def _trial_timeouts(plan_json: Path, todo: list) -> dict:
+    """rebase 된 plan 기준 — 접근 램프가 live 자세에서 시작하니 approach · return 프레임까지 센다."""
     try:
         p = json.loads(plan_json.read_text(encoding="utf-8"))
         dt = float(p.get("dt") or 0)
-        by_id = {t["id"]: float(t.get("hold_s") or 0) + len(t.get("frames") or ()) * dt for t in p["trials"]}
+        by_id = {t["id"]: float(t.get("hold_s") or 0) + dt * sum(len(t.get(k) or ()) for k in
+                                                                ("approach_frames", "frames", "return_frames"))
+                 for t in p["trials"]}
     except (OSError, ValueError, KeyError, TypeError):
         by_id = {}
     return {t: (by_id[t] + TRIAL_MARGIN_S if t in by_id else TRIAL_FALLBACK_S) for t in todo}

@@ -17,6 +17,9 @@ old=np.asarray(trial['approach_frames']);q=np.asarray(snap['q']);limits=W.load_p
 ramp=P.time_parametrize(np.stack([q,old[0]]),vmax=.05,dt=.01,ramp=1.)
 approach=np.vstack([ramp[:-1],old]);full=np.vstack([approach[:-1],np.asarray(trial['frames'])]);report=checker.check_path(full)
 assert report['ok'],str(report['fails'][:3])
-trial['approach_start_q']=q.tolist();trial['approach_frames']=approach.tolist();trial['return_frames']=np.vstack([np.asarray(trial['frames'])[::-1],approach[-2::-1]]).tolist();trial['approach_collision']={'min_clear_m':float(report['min_clear']),'samples':report['samples'],'rechecked_after_abort':True};plan['trials']=[trial];plan['scene']=scene
+# Return ends at the planned start old[0], not live q: the next trial then captures near old[0] and only a short ramp is needed.
+ret=np.vstack([np.asarray(trial['frames'])[::-1],old[-2::-1]]);rep_ret=checker.check_path(ret)
+assert rep_ret['ok'],'return '+str(rep_ret['fails'][:3])
+trial['approach_start_q']=q.tolist();trial['approach_frames']=approach.tolist();trial['return_frames']=ret.tolist();trial['approach_collision']={'min_clear_m':float(report['min_clear']),'samples':report['samples'],'rechecked_after_abort':True};trial['return_collision']={'min_clear_m':float(rep_ret['min_clear']),'samples':rep_ret['samples'],'rechecked_after_abort':True};plan['trials']=[trial];plan['scene']=scene
 inputs={k:Path(v['path']) for k,v in plan['inputs'].items()};inputs['scene']=a.snapshot
 m=S.new_run(a.out,inputs,{'mode':'prepare','source_plan':str(a.plan),'reason':'rebase from measured pose','commands_sent':0},repo=cli.ROOT);plan['inputs']=m['inputs'];cli.dump(a.out/'plan.json',plan);(a.out/'events.jsonl').touch();S.write_report(a.out,{'eligible':False,'pass':False,'commands_sent':0,'excluded_reasons':['preparation_only'],'recheck':trial['approach_collision']},[],[]);print('rebase checked',trial['approach_collision'])

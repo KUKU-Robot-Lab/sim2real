@@ -1735,7 +1735,7 @@ function renderTuning(s) {
   const job = ((s.management && s.management.jobs) || []).find((j) => j.id === `tune_${side}`);
   const tj = job && job.tuning, busy = !!(job && job.active), can = holding();
   const pdUp = (s.procs || []).some((p) => p.key === `tune_pd_${side}#0` && p.alive);
-  const stepKo = { pd: "pd 기동", engage: "engage", hold: "붙들기", trial: "trial", done: "끝", "": "시작 전" };
+  const stepKo = { pd: "pd 기동", engage: "engage", hold: "붙들기", capture: "자세 기록", rebase: "계획 다시 맞춤", trial: "trial", done: "끝", "": "시작 전" };
   put("tu-run", `<div class="tu-row">
       <button class="btn btn-real" data-act="tu-run" data-arg="${esc(exp ? exp.name : "")}" ${can && !busy && exp && exp.prepared && !exp.complete ? "" : "disabled"}>▶ 실험 시작 ${exp ? esc(exp.name) : ""}</button>
       <button class="btn-stop" data-act="tu-stop" data-arg="${side}" ${busy ? "" : "disabled"}>■ 실험 정지(pd 는 켜 둠)</button>

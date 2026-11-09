@@ -3,6 +3,7 @@
 fake 만: 명령은 tuning_view._sh 를 바꿔 끼워 sleep/exit 로 흉내 낸다(ros2 launch · --execute 를 실제로 띄우지 않는다).
 """
 import json
+import re
 import shlex
 import shutil
 import time
@@ -21,10 +22,13 @@ NAME = "261109_F1off_right"
 def _fake_sh(body):
     if "ros2 launch" in body:                        # pd launch 대신 오래 사는 프로세스
         return ("sleep", "30")
-    if "--trial t2" in body:
-        return ("sh", "-c", "echo boom; exit 3")
-    if "--trial slow" in body:
-        return ("sleep", "30")
+    if "rebase_trial.py" in body and "--trial rb" in body:
+        return ("sh", "-c", "echo 'AssertionError: fixed hand changed; rerun prepare/IK'; exit 1")
+    if "stationary_tracking.py run" in body:         # trial 별 흉내는 run 에만 — capture · rebase 는 통과
+        if "--trial t2" in body:
+            return ("sh", "-c", "echo boom; exit 3")
+        if "--trial slow" in body:
+            return ("sleep", "30")
     return ("sh", "-c", ": " + shlex.quote(body))
 
 
@@ -43,6 +47,7 @@ def tuning(console, tiny_repo, monkeypatch):
     monkeypatch.setattr(m, "_tune_hold_argv",
                         lambda side: calls.append(("pd/hold", side, ("TRACKING",))) or ("true",))
     monkeypatch.setattr(m, "_wait_pd", lambda *a, **kw: None)
+    monkeypatch.setattr(A, "scan_processes", lambda: [])     # 이 호스트에 실기 pd 가 떠 있어도 시험은 그것을 보지 않는다
     return m, calls
 
 
@@ -76,7 +81,7 @@ def test_one_approval_runs_pd_engage_hold_then_only_remaining_trials(tuning, con
     make_exp(tiny_repo, ["t1", "t3", "t4"], done=["t1"])
     d = m.describe("tune_right", {"folder": NAME})
     assert d["enabled"], d["reasons"]
-    assert [c["step"] for c in d["commands"]] == ["pd", "engage", "hold", "trial", "trial"]
+    assert [c["step"] for c in d["commands"]] == ["pd", "engage", "hold", *["capture", "rebase", "trial"] * 2]
     m.execute("tune_right", {"folder": NAME}, operator="test")
     v = wait(m)
     assert v["outcome"] == "DONE", v["note"]
@@ -95,6 +100,28 @@ def test_failed_trial_stops_there_with_last_error_line(tuning, console, tiny_rep
     assert v["outcome"] == "FAILED"
     assert v["tuning"]["trial"] == "t2" and v["tuning"]["error"] == "boom"
     assert not any("--trial t3" in a for a in trial_argvs(console))
+
+
+def test_each_trial_captures_then_rebases_then_runs_the_rebased_plan(tuning, console, tiny_repo):
+    m, _ = tuning
+    make_exp(tiny_repo, ["t1"])
+    d = m.describe("tune_right", {"folder": NAME})
+    cap, reb, run = (" ".join(c["argv"]) for c in d["commands"][3:])
+    rdir = re.search(r"--out (\S+)/capture", cap).group(1)
+    assert f"/{NAME}/setup/rebase/t1_" in rdir and "--side right --seconds 2" in cap
+    assert f"--snapshot {rdir}/capture/snapshot.json" in reb and f"--out {rdir}/plan" in reb
+    assert f"--plan {rdir}/plan/plan.json" in run and f"--out {TU.ROOT}/{NAME}/runs/t1" in run
+
+
+def test_rebase_failure_stops_before_run_and_shows_why(tuning, console, tiny_repo):
+    m, _ = tuning
+    make_exp(tiny_repo, ["rb", "t3"])
+    m.execute("tune_right", {"folder": NAME}, operator="test")
+    v = wait(m)
+    assert v["outcome"] == "FAILED"
+    assert v["tuning"]["step"] == "rebase" and v["tuning"]["trial"] == "rb"
+    assert "fixed hand changed" in v["tuning"]["error"]
+    assert trial_argvs(console) == []                # run 은 하나도 안 떴다(t3 도)
 
 
 def test_partial_run_folder_is_never_rewritten(tuning, tiny_repo):
