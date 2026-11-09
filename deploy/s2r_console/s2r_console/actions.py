@@ -920,11 +920,11 @@ class ActionManager:
             add('pd', f'{side} pd 발행 모드 기동 — gains ok · IDLE 까지 기다린다', plan['pd'], background=True)
             add('engage', f'{side} pd_engage — RAMPING 까지 기다린다', plan['engage'])
         add('hold', f'{side} 팔 그 자리 붙들기 — TRACKING 확인', self._tune_hold_argv(side))
-        if plan['trials']:
-            ids = [t['id'] for t in plan['trials']]
-            add('batch', f"남은 trial {len(ids)}개를 한 프로세스로 — trial 마다 팔 정지 뒤 자세 기록 · 시작점 다시 맞춤 · "
-                         "충돌 재검사(로봇 명령 0) → 접촉 감시 기준선 → trial", plan['batch'], trial=' '.join(ids))
-            commands[-1].update(trials=ids, plan=f"{TU.ROOT}/{parameters.get('folder')}/setup/plan/plan.json")
+        for t in plan['trials']:     # 11.09 사용자: trial 마다 따로(batch 는 리허설 통과 뒤)
+            add('capture', f"trial {t['id']} 앞 — 지금 팔 자세 기록(로봇 명령 0)", t['capture'], trial=t['id'])
+            add('rebase', f"trial {t['id']} 앞 — 시작점을 지금 자세로 다시 맞추고 충돌 재검사(로봇 명령 0)", t['rebase'], trial=t['id'])
+            add('trial', f"trial {t['id']}", t['run'], trial=t['id'])
+            commands[-1]['plan'] = t['plan']        # 시간 한도는 rebase 가 쓴 이 plan 으로 실행 때 잰다
         warnings.append(f"★실기 동작 — {side} 팔 마찰 실험 {parameters.get('folder')}: 남은 trial {len(plan['trials'])}개 "
                         f"(전체 {plan['n']} · 끝 {plan['done']}). 하나라도 실패하거나 시간 한도를 넘으면 그 자리에서 멈춘다. "
                         "정지 · 실패 = 도는 단계만 멈추고 pd 는 끄지 않는다. 그때 pd 가 RAMPING · TRACKING 이면 붙들기(hold)를 보낸다.")
@@ -959,7 +959,7 @@ class ActionManager:
             self._run_commands(s, action, [Command(tuple(c['argv']), note=c['note'], stop=tuple(c['stop']))])
             return
         side = action.rsplit('_', 1)[-1]
-        n = sum(len(c.get('trials', ())) for c in cmds)
+        n = sum(len(c.get('trials', ())) for c in cmds) + sum(c['step'] == 'trial' for c in cmds)
         tu = self._status['tuning'] = {'side': side, 'folder': description['parameters'].get('folder'),
                                        'step': '', 'trial': '', 'trial_i': 0, 'trial_n': n, 'error': ''}
         try:
@@ -976,6 +976,10 @@ class ActionManager:
                     limits = TU._trial_timeouts(s.repo / c['plan'], c['trials'])
                     self._tune_batch(s, side, {**c, 'timeout_s': TU.PREP_TIMEOUT_S + sum(limits.values())}, tu)
                     continue
+                if c['step'] == 'capture':
+                    tu.update(trial=c['trial'], trial_i=tu['trial_i'] + 1)
+                if c['step'] == 'trial':
+                    c = {**c, 'timeout_s': TU._trial_timeouts(s.repo / c['plan'], [c['trial']])[c['trial']]}
                 self._tune_step(s, side, c)
                 if c['step'] == 'pd':
                     self._wait_pd(s, side, lambda st: st.get('phase') == 'IDLE' and _gains_ok(st), 'gains ok · IDLE', TUNE_PD_UP_S)
@@ -1036,7 +1040,8 @@ class ActionManager:
     def _tune_step(self, s, side, c):
         sid = f"tune_{c['step']}_{side}"                # pd → tune_pd_<side>#0 = tune_pd_key
         try:
-            limit = c.get('timeout_s') or {'engage': TUNE_ENGAGE_S}.get(c['step'])
+            limit = c.get('timeout_s') or {'engage': TUNE_ENGAGE_S, 'capture': TU.PREP_TIMEOUT_S,
+                                           'rebase': TU.PREP_TIMEOUT_S}.get(c['step'])
             self._run_commands(s, sid, [Command(tuple(c['argv']), note=c['note'], background=c['background'])],
                                timeout_s=limit, cancellable=True)
         except ConsoleError:

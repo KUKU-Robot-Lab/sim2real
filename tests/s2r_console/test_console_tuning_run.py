@@ -23,18 +23,13 @@ _REAL_SH = TU._sh
 def _fake_sh(body):
     if "ros2 launch" in body:                        # pd launch 대신 오래 사는 프로세스
         return ("sleep", "30")
-    if "stationary_batch.py" in body:                # 배치 흉내 — 진행 줄을 찍고 trial 별로 멈춘다
-        out = []
-        for t in re.findall(r"--trial (\S+)", body):
-            out += [f"echo '@@ {t} capture'", f"echo '@@ {t} rebase'"]
-            if t == "rb":
-                out.append("echo 'rebase rb: AssertionError: fixed hand changed; rerun prepare/IK'; exit 1")
-            out.append(f"echo '@@ {t} trial'")
-            if t == "t2":
-                out.append("echo boom; exit 3")
-            if t == "slow":
-                out.append("sleep 30")
-        return ("sh", "-c", "; ".join(out + ["echo '@@ done'"]))
+    if "rebase_trial.py" in body and "--trial rb" in body:
+        return ("sh", "-c", "echo 'AssertionError: fixed hand changed; rerun prepare/IK'; exit 1")
+    if "stationary_tracking.py run" in body:         # trial 별 흉내는 run 에만 — capture · rebase 는 통과
+        if "--trial t2" in body:
+            return ("sh", "-c", "echo boom; exit 3")
+        if "--trial slow" in body:
+            return ("sleep", "30")
     return ("sh", "-c", ": " + shlex.quote(body))
 
 
@@ -80,51 +75,55 @@ def wait(m, active=False):
 
 
 def trial_argvs(console):
-    return [" ".join(p["argv"]) for p in console.session.supervisor.table() if p["stage"] == "tune_batch_right"]
+    return [" ".join(p["argv"]) for p in console.session.supervisor.table() if p["stage"] == "tune_trial_right"]
 
 
-def test_one_approval_runs_pd_engage_hold_then_one_batch_of_remaining_trials(tuning, console, tiny_repo):
+def test_one_approval_runs_pd_engage_hold_then_only_remaining_trials(tuning, console, tiny_repo):
     m, calls = tuning
     make_exp(tiny_repo, ["t1", "t3", "t4"], done=["t1"])
     d = m.describe("tune_right", {"folder": NAME})
     assert d["enabled"], d["reasons"]
-    assert [c["step"] for c in d["commands"]] == ["pd", "engage", "hold", "batch"]
-    real = TU.plan.__globals__  # 실제 명령 줄은 진짜 _sh 로 본다(실행은 fake)
-    real["_sh"], fake = _REAL_SH, real["_sh"]
-    try:
-        argv = " ".join(TU.plan(tiny_repo, "right", NAME)["batch"])
-    finally:
-        real["_sh"] = fake
-    E = f"{TU.ROOT}/{NAME}"
-    assert f"--trial t3 {E}/setup/rebase/t3_a01 {E}/runs/t3" in argv and "--trial t4" in argv
-    assert "--trial t1" not in argv and argv.endswith("--execute") and "--side right" in argv
+    assert [c["step"] for c in d["commands"]] == ["pd", "engage", "hold", *["capture", "rebase", "trial"] * 2]
     m.execute("tune_right", {"folder": NAME}, operator="test")
     v = wait(m)
     assert v["outcome"] == "DONE", v["note"]
     assert calls[0] == ("pd/hold", "right", ("TRACKING",))
-    assert len(trial_argvs(console)) == 1                         # 남은 trial 둘이 프로세스 하나
-    tu = m.view()["tuning"]
-    assert (tu["step"], tu["trial"], tu["trial_i"], tu["trial_n"]) == ("done", "t4", 2, 2)
+    assert len(trial_argvs(console)) == 1          # 같은 키로 차례로 — 마지막 것만 표에 남는다
+    assert "--trial t4" in trial_argvs(console)[0]
+    assert console.session.supervisor.is_alive(A.tune_pd_key("right"))   # pd 는 끄지 않는다
+    assert v["tuning"]["trial_i"] == v["tuning"]["trial_n"] == 2
 
 
 def test_failed_trial_stops_there_with_last_error_line(tuning, console, tiny_repo):
     m, _ = tuning
-    make_exp(tiny_repo, ["t1", "t2", "t3"])
+    make_exp(tiny_repo, ["t1", "t2", "t3"], done=["t1"])
     m.execute("tune_right", {"folder": NAME}, operator="test")
     v = wait(m)
     assert v["outcome"] == "FAILED"
-    tu = v["tuning"]
-    assert (tu["step"], tu["trial"], tu["trial_i"], tu["error"]) == ("trial", "t2", 2, "boom")
+    assert v["tuning"]["trial"] == "t2" and v["tuning"]["error"] == "boom"
+    assert not any("--trial t3" in a for a in trial_argvs(console))
+
+
+def test_each_trial_captures_then_rebases_then_runs_the_rebased_plan(tuning, console, tiny_repo):
+    m, _ = tuning
+    make_exp(tiny_repo, ["t1"])
+    d = m.describe("tune_right", {"folder": NAME})
+    cap, reb, run = (" ".join(c["argv"]) for c in d["commands"][3:])
+    rdir = re.search(r"--out (\S+)/capture", cap).group(1)
+    assert f"/{NAME}/setup/rebase/t1_" in rdir and "--side right --settle-s 3 --seconds 2" in cap
+    assert f"--snapshot {rdir}/capture/snapshot.json" in reb and f"--out {rdir}/plan" in reb
+    assert f"--plan {rdir}/plan/plan.json" in run and f"--out {TU.ROOT}/{NAME}/runs/t1" in run
 
 
 def test_rebase_failure_stops_before_run_and_shows_why(tuning, console, tiny_repo):
     m, _ = tuning
-    make_exp(tiny_repo, ["rb", "t1"])
+    make_exp(tiny_repo, ["rb", "t3"])
     m.execute("tune_right", {"folder": NAME}, operator="test")
     v = wait(m)
     assert v["outcome"] == "FAILED"
-    assert (v["tuning"]["step"], v["tuning"]["trial"]) == ("rebase", "rb")
+    assert v["tuning"]["step"] == "rebase" and v["tuning"]["trial"] == "rb"
     assert "fixed hand changed" in v["tuning"]["error"]
+    assert trial_argvs(console) == []                # run 은 하나도 안 떴다(t3 도)
 
 
 def test_partial_run_folder_is_never_rewritten(tuning, tiny_repo):
@@ -142,7 +141,7 @@ def test_stop_halts_trial_keeps_pd_then_pd_off_stops_only_its_launch(tuning, con
     s.supervisor.spawn("other#0", stage="other", note="남의 것", argv=["sleep", "30"], background=True, manual=False)
     m.execute("tune_right", {"folder": NAME}, operator="test")
     end = time.monotonic() + 5
-    while not any(p["stage"] == "tune_batch_right" and p["alive"] for p in s.supervisor.table()) and time.monotonic() < end:
+    while not any(p["stage"] == "tune_trial_right" and p["alive"] for p in s.supervisor.table()) and time.monotonic() < end:
         time.sleep(.02)
     m.stop_tuning("right")
     v = wait(m)
@@ -175,20 +174,19 @@ def test_stop_between_steps_never_starts_the_next_trial(tuning, console, tiny_re
     class Racing(real):
         def __init__(self, sid, commands, *a, **kw):
             super().__init__(sid, commands, *a, **kw)
-            if any("@@ t3" in " ".join(c.argv) for c in commands):
+            if any("--trial t3" in " ".join(c.argv) for c in commands):
                 m.stop_tuning("right")              # 같은 스레드 · RLock — 플래그가 runner 시작 전에 선다
     monkeypatch.setattr(A, "StageRunner", Racing)
     m.execute("tune_right", {"folder": NAME}, operator="test")
     v = wait(m)
     assert v["outcome"] == "ABORTED", v["note"]
-    assert not any("@@ t3" in a for a in trial_argvs(console))
+    assert not any("--trial t3" in a for a in trial_argvs(console))
 
 
 def test_trial_over_its_time_limit_fails(tuning, console, tiny_repo, monkeypatch):
     m, _ = tuning
     make_exp(tiny_repo, ["slow"])
     monkeypatch.setattr(TU, "TRIAL_FALLBACK_S", 0.3)
-    monkeypatch.setattr(TU, "PREP_TIMEOUT_S", 0.0)
     m.execute("tune_right", {"folder": NAME}, operator="test")
     v = wait(m)
     assert v["outcome"] == "FAILED" and "시간 한도" in v["note"]
@@ -220,12 +218,11 @@ def test_pd_launch_sides_and_bash_wrapped_launch_target():
     argv = TU.plan.__globals__["_sh"]("ros2 launch deploy/policy_control/launch/pd_controller.launch.py sides:=right")
     assert launch_target(argv) == "pd_controller.launch.py"
 
-
 def _pd_up(m, console, tiny_repo):
     make_exp(tiny_repo, ["slow"])
     m.execute("tune_right", {"folder": NAME}, operator="test")
     sup, end = console.session.supervisor, time.monotonic() + 5
-    while not any(p["stage"] == "tune_batch_right" and p["alive"] for p in sup.table()) and time.monotonic() < end:
+    while not any(p["stage"] == "tune_trial_right" and p["alive"] for p in sup.table()) and time.monotonic() < end:
         time.sleep(.02)
     m.stop_tuning("right")
     assert wait(m)["outcome"] == "ABORTED"

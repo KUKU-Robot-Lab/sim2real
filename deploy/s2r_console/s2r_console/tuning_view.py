@@ -109,16 +109,26 @@ def plan(repo: Path, side: str, name) -> dict:
         # 팔은 engage 한 자리(처짐 포함)에 있다 — trial 마다 그 자리를 찍고 시작점을 거기로 다시 맞춘 계획으로 돈다(로봇 명령 0)
         # 승인 화면과 실행이 같은 명령을 봐야 한다(승인 근거 해시) — 시각 대신 시도 번호
         R = f"{E}/setup/rebase/{t}_a{_attempt(repo / ROOT / name / 'setup/rebase', t):02d}"
-        trials.append({"id": t, "rebase": R, "run": f"{E}/runs/{t}"})
-    # 남은 trial 을 한 프로세스로(capture → rebase → 접촉 감시 기준선 → run, 처음 실패에서 멈춤). trial 마다 새로 띄우면
-    # 노드 발견 · 감시 기준선 대기로 trial 당 약 21 s 가 더 들었다(11.09 F1 46.6 s/trial). 감시는 trial 직전 정지 구간에서
-    # 기준선을 잡는다 — pd 와 같이 띄우면 engage 램프 중 손 힘이 20 g 넘게 흔들려 잠기던 문제(11.09)는 이미 지난 뒤다.
-    batch = _sh(f".venv/bin/python deploy/policy_control/tools/stationary_batch.py --side {side} "
-                f"--plan {q(f'{E}/setup/plan/plan.json')} "
-                + "".join(f"--trial {q(t['id'])} {q(t['rebase'])} {q(t['run'])} " for t in trials) + "--execute")
+        trials.append({"id": t, "plan": f"{R}/plan/plan.json",
+                       "capture": _sh(f".venv/bin/python deploy/policy_control/tools/stationary_tracking.py capture "
+                                      f"--side {side} --settle-s 3 --seconds 2 --out {q(f'{R}/capture')}"),
+                       "rebase": _sh(f".venv/bin/python analysis/friction/common/scripts/rebase_trial.py "
+                                     f"--plan {q(f'{E}/setup/plan/plan.json')} --snapshot {q(f'{R}/capture/snapshot.json')} "
+                                     f"--trial {q(t)} --out {q(f'{R}/plan')}"),
+                       # 접촉 감시는 trial 마다 새로 띄운다 — pd 와 같이 띄우면 engage 램프 중 손 힘 값이 한 번 20 g 넘게 흔들려
+                       # 끝까지 잠긴다(11.09 실측 joint_force_change_20g, commands_sent=0). 기준선 3 s + 여유 2 s 뒤 run
+                       "run": _sh(_guard(side) + " & G=$!; trap 'kill $G 2>/dev/null' EXIT; sleep 5; "
+                                  f".venv/bin/python deploy/policy_control/tools/stationary_tracking.py run "
+                                  f"--plan {q(f'{R}/plan/plan.json')} --trial {q(t)} --out {q(f'{E}/runs/{t}')} --execute")})
     return {"reasons": reasons, "n": e["n"], "done": e["done"],
             "pd": _sh(_pd_launch(side, e["cfg"])), "engage": _sh(_engage(side)), "trials": trials,
-            "batch": batch}
+            "batch": None}  # 11.09 사용자: batch 는 실기 리허설 뒤에. 지금은 trial 마다 따로
+
+
+def _guard(side: str) -> str:
+    """손 접촉 감시(로봇 명령 0). 없으면 pd 진단 contact 가 비어 trial 이 시작 검사에서 멈춘다(11.09 실측).
+    trial run 과 같은 프로세스 그룹이라 run 이 끝나거나 멈추면 같이 내려간다. 팔이 TRACKING 으로 서 있을 때 3 s 기준선을 잡는다."""
+    return f"python3 deploy/policy_control/tools/stationary_contact_guard.py --side {side} --operator-confirmed-free"
 
 
 def _attempt(d: Path, trial: str) -> int:
