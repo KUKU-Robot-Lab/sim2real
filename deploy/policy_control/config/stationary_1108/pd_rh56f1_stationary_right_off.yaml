@@ -16,9 +16,9 @@ ramp_speed: 0.05                # RAMPING(첫 목표까지) / goto_home 램프 [
 watchdog_sec: 0.25             # joint_target 두절 → HOLD (CommandGate 와 동일)
 lead_sec: 0.1                  # max_lead = lead_vel·lead_sec (세트포인트가 실측을 앞서는 상한)
 lead_vel: 2.0                  # 프로필 관절 velocity 한계(openarm_tesollo.yaml)
-max_vel:                       # TRACKING 세트포인트 전진 상한 [rad/s], 단계 승인
-  reduced: 0.05
-  full: 0.05
+max_vel:                       # TRACKING 세트포인트 전진 상한 [rad/s], 단계 승인 (11.10 사용자 0.1→0.3→0.5, 고속 sweep)
+  reduced: 0.5
+  full: 0.5
 vel_ff_cap: 0.0                # q̇* 전향 상한 [rad/s], 단계 승인 0 → 0.5 → 2.0
 effort_cap: 20.0               # τ 합 상한 [N·m]; 초과 시 0 송출 + HOLD
 abort_tracking: 0.5            # max|세트포인트 − 실측| [rad] → HOLD (sim 도 fabric 목표에 0.42 rad 뒤처진다)

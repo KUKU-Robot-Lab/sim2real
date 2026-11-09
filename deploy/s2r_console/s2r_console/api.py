@@ -165,6 +165,10 @@ def _write(console: Console, method: str, path: str, data: dict, token: str | No
         console.episode(str(data.get("action", "")), operator=who, typed=str(data.get("typed", "")),
                         runner=str(data.get("runner", "") or ""))
         return 202, ok
+    if path == "/api/policy/device":
+        # ★11.10 정책 계산 장치 — "" (미션 기본) · "cpu"(전용 코어 고정) · "cuda"
+        console.set_policy_device(str(data.get("device", "")), operator=who)
+        return 202, ok
     if path == "/api/unit":
         # 오는 것은 키와 켬/끔뿐이다. argv 는 미션 yaml 에서만 온다 — 본문의 다른 필드는 읽지 않는다.
         if not isinstance(data.get("on"), bool):

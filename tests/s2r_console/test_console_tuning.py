@@ -38,7 +38,7 @@ def test_tuning_view_reads_folders_runs_and_builds_runbook_commands(tmp_path):
     e = v["experiments"]["261109_F1off_right"]
     assert (e["side"], e["test"], e["cfg"], e["n"], e["done"], e["passed"]) == ("right", "F1off", "off", 3, 2, 1)
     assert e["stopped"]["id"] == "b" and "tracking_error" in e["stopped"]["why"] and e["next"] == "c"
-    f1 = v["sides"]["right"][0]
+    f1 = next(r for r in v["sides"]["right"] if r["key"] == "F1off")
     assert f1["key"] == "F1off" and f1["folders"] == ["261109_F1off_right"]
     assert f1["new_name"] == "261109_F1off_right_b"              # 같은 폴더를 다시 쓰지 않는다
     new = f1["commands"]["new"]
@@ -51,7 +51,10 @@ def test_tuning_view_reads_folders_runs_and_builds_runbook_commands(tmp_path):
     assert "for t in c;" in f1["commands"]["261109_F1off_right"]["trials"]
     f3l = next(r for r in v["sides"]["left"] if r["key"] == "F3")
     assert f3l["folders"] == ["261109_F3_left"] and f3l["new_name"] == "261109_F3_left_b"
-    assert [r["key"] for r in v["sides"]["left"]] == ["F1off", "F3", "F4", "F1on", "F2x05", "F2x1", "F2x2"]
+    assert [r["key"] for r in v["sides"]["left"]] == ["F1offSw", "F1onSw", "F2x05Sw", "F2x1Sw", "F2x2Sw",
+                                                      "F1off", "F3", "F4", "F1on", "F2x05", "F2x1", "F2x2"]
+    sw = v["sides"]["left"][0]["commands"]["new"]["prepare"]
+    assert sw.startswith("MOTION=sweep ") and "off F1 2.0 1" in sw
     assert "fs_i200 F2 2.0 3" in v["sides"]["left"][-1]["commands"]["new"]["prepare"]
     assert TU.view(tmp_path / "nowhere")["experiments"] == {}
 
@@ -82,3 +85,37 @@ assert.match(el('tu-pick').innerHTML, /F1 끔/); assert.match(el('tu-pick').inne
 const h = el('tu-steps').innerHTML;
 assert.match(h, /data-arg="pd_hold:right">팔 그 자리 붙들기/); assert.match(h, /▶ 지금/); assert.match(h, /data-arg="pd_release:right"/);
 """)
+
+
+def test_sweep_chain_runs_unfinished_tests_in_order_with_pd_restart_between(monkeypatch):
+    """★11.10 고속 연속 — 끝난 시험은 건너뛰고, 시험 사이에 release → JTC → pd 끄기 → JTC, 각 시험은 pd → engage → hold → trial 들."""
+    from types import SimpleNamespace
+    from s2r_console import actions as A
+    rows = [dict(key=k, label=k, folder=f"f_{k}", prepared=True, complete=(k == "F1offSw")) for k in A.TU.SWEEP_CHAIN]
+    monkeypatch.setattr(A.TU, "chain", lambda repo, side: rows)
+    trial = lambda i: dict(id=f"t{i}", capture=("c",), rebase=("r",), run=("x",), plan="p")
+    monkeypatch.setattr(A.TU, "plan", lambda repo, side, folder: dict(reasons=[], pd=("pd", folder), engage=("e",),
+                                                                       trials=[trial(1), trial(2)]))
+    monkeypatch.setattr(A, "scan_processes", lambda: [])
+    m = A.ActionManager.__new__(A.ActionManager)
+    m.console = SimpleNamespace(repo="/r")
+    s = SimpleNamespace(supervisor=SimpleNamespace(own_pgids=lambda: set()), profile=SimpleNamespace(domain=A.REAL_DOMAIN))
+    commands, reasons, warnings = [], [], []
+
+    def add(step, note, argv, background=False, stop=(), trial=None):
+        commands.append(dict(step=step, note=note, argv=list(argv), stop=list(stop), trial=trial))
+
+    m._tune_chain_description(s, "right", "tune_pd_right#0", None, [], add, commands, reasons, warnings)
+    assert reasons == []
+    steps = [c["step"] for c in commands]
+    one = ["pd", "engage", "hold"] + ["capture", "rebase", "trial"] * 2
+    between = ["release", "jtc", "pd_off", "jtc"]
+    assert steps == one + (between + one) * 3
+    assert {c["note"][1:c["note"].index("]")] for c in commands} == {"f_F1onSw", "f_F2x05Sw", "f_F2x1Sw", "f_F2x2Sw"}
+    assert [c["argv"] for c in commands if c["step"] == "pd"][0] == ["pd", "f_F1onSw"]
+    assert all(c.get("plan") == "p" for c in commands if c["step"] == "trial")
+    assert "건너뜀" in warnings[0]
+    rows[2]["prepared"] = False
+    commands.clear(); reasons.clear(); warnings.clear()
+    m._tune_chain_description(s, "right", "tune_pd_right#0", None, [], add, commands, reasons, warnings)
+    assert any("준비 안 됨" in r for r in reasons)

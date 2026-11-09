@@ -133,8 +133,9 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             "grasp_s_right", "grasp_s_left",
             # ★11.07 경로 M — 목표 마스크 학생 A 1105mA(깊이 + YOLO 목표/이웃 마스크), 경로 S 와 같은 홈 출발 잡기 · 들기
             "grasp_m_right", "grasp_m_left",
-            # ★11.08 놓기 학생(규칙 머리) — cocktail_1c_e4000 파랑 붓기까지 그대로, 오른손 놓기만 학생. 이 에피소드만 목 --max-tilt 82
-            "place_m_right")
+            # ★11.08 놓기 학생(규칙 머리) — ★11.09 v2: 경로 F 잡고 들기 성공 → 넘김 묶음 그대로 놓기 학생(오른손 · 왼손).
+            #   이 에피소드들만 목 --max-tilt 82
+            "place_m_right", "place_m_left")
 #: ★10.20 사용자 "영상은 필요 없음. 일단 기본 off" — 카메라 영상 · FP++ 실시간 좌표 기록(vision-3090)과 끝난 뒤 보고서 영상
 #   만들기(episode_media.py)를 기본으로 끈다. 10.20 실기: 보고서 영상 정리가 옛 회까지 다시 가져오며 6 분 넘게 팔 작업을 붙잡아
 #   rehome · tilt_now 승인이 막혔다. 켜려면 True 로 바꾸고 이 생성기를 다시 돌린다(미션 YAML 이 바뀐다).
@@ -159,7 +160,8 @@ CAMERA_BAG_TOPICS = ("/camera/camera/color/image_raw/compressed",
 STUDENT_CAMERA_BAG_HZ = 60.0
 STUDENT_CAMERA_BAG_TOPICS = ("/head_depth/image", "/head_depth/rgb", "/head_depth/config",
                              "/camera/camera/color/camera_info", "/head/joint_states")
-STUDENT_EPISODES = ("grasp_s_right", "grasp_s_left", "grasp_m_right", "grasp_m_left", "place_m_right")
+STUDENT_EPISODES = ("grasp_s_right", "grasp_s_left", "grasp_m_right", "grasp_m_left", "place_m_right",
+                    "place_m_left")
 #: ★11.07 마스크 학생(student.yaml mask:) 에피소드는 head_mask_node 출력도 싣는다(160x90 mono8 비트 + latched 설정)
 MASK_CAMERA_BAG_TOPICS = ("/head_mask/image", "/head_mask/config")
 #: 에피소드 snapshot 이 다시 내는 정지 물체 자세(episode_ros.OBJECT_RELAY) — aglt 는 이것을 컵으로 본다
@@ -277,10 +279,15 @@ STATIONS = {
 }
 #: ★11.03 사용자: 머리 D435i · 목 U2D2 를 5090 에 꽂은 채 두고 FP++ · 정책도 5090 — 사이트 arm_v2(팔 · 손 그대로) 위에서 한 PC 스테이션.
 #   4090 으로 다시 나누면 "5090_arm4090" 으로 바꾸고 사이트에 hosts.vision 을 되살린다.
-ROBOT_PC = "5090"
+#: ★11.11 사용자 "이번엔 4090에서 사용" — 카메라 · 목 USB 를 4090 으로 옮겼다(10.30 구성으로 복귀). 5090 = 팔 · 손 · 정책만.
+ROBOT_PC = "5090_arm4090"
 STATION = STATIONS[ROBOT_PC]
 PERCEPTION_HOST = STATION["perception_host"]
 REMOTE_PERCEPTION = PERCEPTION_HOST != "local"
+#: ★11.11 shortcut: 학생(경로 S · M) 깊이 노드는 카메라와 같은 PC 에서만 돈다(_student_cmds) — 카메라가 다른 PC 면 그 에피소드를
+#   미션에서 뺀다. 4090 용 깊이 노드 실행을 만들면 되살린다.
+if REMOTE_PERCEPTION:
+    EPISODES = tuple(n for n in EPISODES if n not in STUDENT_EPISODES)
 CAMERA_EXTRINSICS = STATION["extrinsics"]
 HOLDER_POSES = STATION["holder_poses"]
 #: ★10.30 arm_v2: 목(U2D2)이 다른 PC 에 있으면 목 드라이버 · 토크 해제를 그 PC 에서 돌린다(토픽은 랜 DDS). local = 이 PC
@@ -443,6 +450,10 @@ def _stages(kind: str) -> list[dict]:
                    if real else "fake — IMU 없음(실기 순서를 맞추려고 둔 자리)")},
         {"id": "head_control", "group": "motion", "lane": "rig", "skippable": True, "touches_real": real,
          "title": "목 pan · tilt 변경 — 승인한 보정 프로필과 자세로 이동 후 실측 정착 확인"},
+        # ★11.10 사용자 "자동으로 — c 는 한 번만": 손은 카메라 앞에 둔 채(pd 가 붙듦) 목만 보정 각도를 돌며 bag 에 남긴다 —
+        #   카메라(외부 파라미터 · 머리 기구학) 오차와 팔 FK 오차를 가른다(logs/runs/261109/analysis_hand_offset)
+        {"id": "head_sweep", "group": "motion", "lane": "rig", "skippable": True, "touches_real": real,
+         "title": "목 스윕 기록 — 손은 그대로, 목만 보정 각도를 돌며 bag(arm · hand · pd · camera) → 처음 자세로 복귀"},
         {"id": "cups", "group": "connect", "lane": "both", "needs": ["head_view_check"], "skippable": True,
          "touches_real": real,
          "needs_why": "FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다",
@@ -911,11 +922,40 @@ def _run(kind: str) -> dict:
     if cpu:
         stop = next(c for c in run["shutdown"] if c.get("stop") and "policy_pourfj#1" in c["stop"])
         stop["stop"] = [*stop["stop"], *cpu]
+    run["head_control"] = [
+        _cmd("목 pan · tilt 변경 후 실측 정착 확인", ["python3", "{repo}/scripts/head_move.py"],
+             execute_args=["--execute"])
+    ] if real else [_cmd("fake — 목 없음(승인한 자세 설정만 보관)", ["bash", "-lc", "true"])]
+    # ★11.10 사용자 "swap 세팅 고쳐": OpenArm 보정 각도(tilt −20 ~ −30)를 보내 천장을 봤다. 이제 지금 자세(camset +67.47) 둘레
+    #   ±10° pan · ±8° tilt 격자. tilt 75.5 는 기본 드라이버 상한(−10)을 넘으므로 놓기 에피소드처럼 82 드라이버로 바꿔 돌고 되돌린다
+    run["head_sweep"] = [
+        _cmd("목 드라이버 정지(head_home) — 스윕이 tilt 82 까지 쓰므로 상한만 바꿔 다시 띄운다", stop=["head_home#0"]),
+        _cmd(f"목 드라이버 — 스윕 동안만 --max-tilt {PLACE_MAX_TILT}", [*HEAD_DRIVER_ARGV, "--max-tilt", PLACE_MAX_TILT],
+             background=True),
+        _cmd("목 스윕 — 지금 자세 둘레 pan ±10° · tilt ±8° 9자세, 정착 후 3 s 머묾 · bag 기록 · 끝나면 처음 자세로",
+             ["python3", "{repo}/scripts/head_sweep.py", "--max-tilt", PLACE_MAX_TILT], execute_args=["--execute"]),
+        _cmd("스윕 드라이버(82) 정지", stop=["head_sweep#1"]),
+        _cmd("목 드라이버 — 기본 인자로 다시(head_home 것과 같다)", list(HEAD_DRIVER_ARGV), background=True),
+        _cmd("머리를 카메라 캘리브 자세(camset)로 — 머리가 움직인다", list(HEAD_HOME_ARGV), execute_args=["--execute"]),
+    ] if real else [_cmd("fake — 목 없음", ["bash", "-lc", "true"])]
     # 부분 연결 / 중간 실패도 정리한다. 명령 번호를 중복 관리하지 않고 생성된 배경 작업에서 모은다.
     policy_stop = next(c for c in run["shutdown"] if c.get("stop") and "policy_pourfj#1" in c["stop"])
     policy_stop["stop"] = list(dict.fromkeys([*policy_stop["stop"],
         *(f"{stage}#{i}" for stage, cmds in run.items() for i, c in enumerate(cmds)
           if c.get("background") and (stage.startswith("policy_") or stage.startswith("episode_")))]))
+    # 놓기 학생 에피소드의 목 드라이버(82 · 꼬리 기본)는 shutdown 에서만 내려간다 — 이어 돌리면 앞 회의 드라이버가
+    # 포트를 쥐고 있어 새 82 드라이버가 못 연다. head_home#0 를 내리는 단계가 이것들도 같이 내린다(11.09 리뷰, 없으면 건너뜀)
+    drivers = [f"{stage}#{i}" for stage, cmds in run.items() if stage.startswith("episode_") or stage == "head_sweep"
+               for i, c in enumerate(cmds)
+               if c.get("background") and list(c.get("argv") or [])[:len(HEAD_DRIVER_ARGV)] == list(HEAD_DRIVER_ARGV)]
+    order = [st["id"] for st in _stages(kind)]   # 미션 단계 순서(run 은 head_sweep 을 뒤에 넣어 dict 순서가 다르다)
+    for stage, cmds in run.items():
+        if stage.startswith("episode_") or stage in ("head_sweep", "shutdown"):
+            for j, c in enumerate(cmds):
+                if "head_home#0" in (c.get("stop") or []):   # 앞 단계(또는 같은 단계 앞 번호)가 띄운 것만 적을 수 있다(_validate_stops)
+                    ok = [d for d in drivers if order.index(d.split("#")[0]) < order.index(stage)
+                          or (d.split("#")[0] == stage and int(d.rsplit("#", 1)[1]) < j)]
+                    c["stop"] = list(dict.fromkeys([*c["stop"], *ok]))
     perception_ids = [f"{stage}#{i}" for stage in ("cups", "cup_holders")
                       for i, c in enumerate(run.get(stage, [])) if c.get("background")]
     if real:
@@ -924,10 +964,6 @@ def _run(kind: str) -> dict:
     elif perception_ids:
         pd_index = next(i for i, c in enumerate(run["shutdown"]) if "pd_load_right#0" in c.get("stop", []))
         run["shutdown"].insert(pd_index, _cmd("fake 인지 물체 발행 정지", stop=perception_ids))
-    run["head_control"] = [
-        _cmd("목 pan · tilt 변경 후 실측 정착 확인", ["python3", "{repo}/scripts/head_move.py"],
-             execute_args=["--execute"])
-    ] if real else [_cmd("fake — 목 없음(승인한 자세 설정만 보관)", ["bash", "-lc", "true"])]
     return run
 
 
@@ -1241,8 +1277,6 @@ def _episode_run(name: str, real: bool) -> list:
                      ["{repo}/.venv/bin/python", f"{PC}/policy_control/episode_runner_node.py", "--ros-args",
                       *(["-r", f"__node:={runner}"] if runner != "episode_runner" else []),
                       "-p", f"episode:=config/episodes/{name}.yaml", "-p", "robot:=rh56f1"], background=True))
-    if real:   # 배경 노드를 다 띄운 뒤(번호가 밀리지 않게), 진행 전에
-        cmds.append(_baseline_start(name, sides))
     cmds.append(_cmd("★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 "
                      "(이상하면 '에피소드 실행기 정지' · 정지 바)", ["bash", "-lc", "true"], manual=True))
     bg = [i for i, c in enumerate(cmds) if c.get("background")]
@@ -1252,8 +1286,6 @@ def _episode_run(name: str, real: bool) -> list:
     if real:
         cmds.append(_cmd("기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손" + ("" if REMOTE_PERCEPTION else " · 카메라") + ")",
                          ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop", f"episode_{name}"]))
-        cmds.append(_cmd("stationary 기준선 기록 끝(README 에 bag 경로)",
-                         ["python3", f"{PC}/tools/baseline_run.py", "stop", f"episode_{name}"]))
         if VISION_RECORD and name in REPORT_VIDEO_HZ:   # ★10.19 보고서 사진 · 영상 — 이 단계에서 돈 회마다(아직 안 만든 것)
             cmds.append(_cmd(f"보고서 영상 · 장면 사진 — 카메라 영상({PERCEPTION_HOST}) + 노드 시각 → logs/runs/<날짜>/report_media/<회>"
                              "(video.mp4 · 시작 · 다가간 뒤 · 쥔 뒤 · 들어 올린 뒤 · sheet.jpg)",
@@ -1270,15 +1302,6 @@ def real_object(topic: str) -> str:
     """/objects/<실물>/pose → 실물 이름."""
     from policy_control.episode_ros import real_object_name
     return real_object_name(topic)
-
-
-def _baseline_start(name: str, sides: list) -> dict:
-    """★11.08 사용자 승인: bag 옆에 stationary_recorder(구독만) — 폴더는 실행 때 정한다."""
-    return _cmd("stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/"
-                "(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty, PD 게인)",
-                ["python3", f"{PC}/tools/baseline_run.py", "start", f"episode_{name}",
-                 "--mission", "{repo}/" + str(OUT["real"].relative_to(REPO)),
-                 "--episode", f"{{repo}}/config/episodes/{name}.yaml", "--sides", ",".join(sides)])
 
 
 def _cpu_record(name: str) -> dict:

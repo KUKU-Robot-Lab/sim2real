@@ -71,8 +71,9 @@ def test_arm_v2_hands_on_hub_vlans():
     v1 = SITE.load_site("arm_v1")
     assert site["tag"] == "5090/4090 + hub"
     assert site["can"] == v1["can"]                                   # 팔 CAN 은 5090 그대로
-    assert site["head_port"] == v1["head_port"]                       # ★11.03 목 U2D2 는 다시 5090(check_host 가 직접 본다)
-    assert "vision" not in site["hosts"]
+    assert site["head_port"] == v1["head_port"]                       # 같은 U2D2(by-id)
+    assert site["hosts"]["vision"]["ip"] == site["hosts"]["arm4090"]["ip"]    # ★11.11 목 · 카메라 · FP++ 는 다시 4090
+    assert site["hosts"]["vision"]["ssh"] == site["hosts"]["arm4090"]["ssh"] == "arm4090-lan"
     assert (site["hosts"]["control"]["ip"], site["hosts"]["arm4090"]["ip"]) == ("192.168.0.50", "192.168.0.40")
 
 

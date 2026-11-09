@@ -39,6 +39,15 @@ class JointPolicy:
         missing = list(getattr(self._policy, "load_report", ((), ()))[0])
         if missing:                                     # 빠진 가중치 = 초기값으로 도는 정책 — 절대 통과시키지 않는다
             raise JointContractError(f"checkpoint did not fill {len(missing)} model weights: {missing[:5]}")
+        self.warmup()
+
+    def warmup(self, n: int = 3) -> None:
+        """★11.10 첫 계산 예열 — cuda 는 첫 forward 에 cuDNN/커널 준비로 ~300 ms 가 붙는다(11.10 경로 D 넘김 틱
+        299.9 ms → pd watchdog 0.25 s HOLD). 읽을 때 0 관측으로 미리 돌리고 은닉 상태는 0 으로 되돌린다."""
+        zero = np.zeros(self._dim, dtype=np.float32)
+        for _ in range(n):
+            self.forward(zero)
+        self.reset()
 
     def forward(self, obs: np.ndarray) -> np.ndarray:
         arr = np.asarray(obs, dtype=np.float32).reshape(-1)

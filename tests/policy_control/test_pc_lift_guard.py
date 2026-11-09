@@ -17,6 +17,7 @@ from policy_control import episode_spec as E
 from policy_control import lift_guard as LG
 from policy_control import pour_fj_node as N
 from policy_control.contract_assets import ASSETS
+from policy_control.tick_budget import TickBudget
 from policy_control import episode_failure as EF
 from policy_control.episode_runner import EpisodeManager, PolicyPlan, _lift_guard
 from policy_control.fk_numpy import UrdfChainFK
@@ -225,7 +226,7 @@ def _on_tick(lg_tick):
     out = {"target": 0, "end": [], "status": []}
     me = NS(_drain=lambda: None, book=NS(phase="running", episode=1), chain=NS(step=lambda meas: (np.zeros(2), np.zeros(1), {}),
             step_i=1), _measure=lambda advance=False: {"arm": None}, cup_fresh={}, contract=NS(hold_steps=0),
-            fam=NS(targets=lambda c, t: (["a"], np.zeros(1), np.zeros(1)), errors=(ValueError,)), _gap=0, _seq=0, max_gap=3,
+            fam=NS(targets=lambda c, t: (["a"], np.zeros(1), np.zeros(1)), errors=(ValueError,)), _gap=0, _seq=0, max_gap=3, _budget=TickBudget(16.7),
             _lg_stop=None, _publish=True, _pub_obs=NS(publish=lambda m: None), _pub_action=NS(publish=lambda m: None),
             _pub_target=NS(publish=lambda m: out.__setitem__("target", out["target"] + 1)),
             _status=lambda ok, reasons, extra=None: out["status"].append((ok, reasons)),

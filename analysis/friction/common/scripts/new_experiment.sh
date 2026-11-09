@@ -2,6 +2,7 @@
 # New friction experiment folder + offline plan (prepare only, sends 0 commands).
 # usage: new_experiment.sh <name> <side> <cfg> <stage> <offset_deg> <repeats>
 #   e.g. new_experiment.sh 261109_F1off_right right off F1 2.0 3
+#   fast: MOTION=sweep|step new_experiment.sh ... (offset = step size; repeats usually 1)
 # cfg = off | fs | fs_i050 | fs_i100 | fs_i200  (pd_rh56f1_stationary_<side>_<cfg>.yaml)
 set -euo pipefail
 [ $# -eq 6 ] || { sed -n 2,5p "$0"; exit 2; }
@@ -25,8 +26,8 @@ git diff > "$E/setup/git_diff.patch"
   --poses $I/right_pose_set_v1/poses.json --scene $scene --pd-config "$C" --contract "$CT" \
   --profile ../robot_control/src/robot_control/profiles/openarm_rh56f1.yaml \
   --env-yaml deploy/policy_control/config/home_path/rh56f1_world_env.yaml \
-  --side $side $extra --stage $stage --moved-joints 4 --offset-deg $off --repeats $rep \
-  --only-pose $pose --out "$E/setup/plan" > "$E/setup/prepare.log" 2>&1
+  --side $side $extra --stage $stage --moved-joints ${MOVED_JOINTS:-4} --offset-deg $off --repeats $rep \
+  --only-pose $pose --motion "${MOTION:-stationary}" --out "$E/setup/plan" > "$E/setup/prepare.log" 2>&1
 .venv/bin/python -c "import json,sys;[print(t['id']) for t in json.load(open(sys.argv[1]))['trials']]" \
   "$E/setup/plan/plan.json" > "$E/setup/trials.txt"
 echo "$E ready: $(wc -l < "$E/setup/trials.txt") trials"

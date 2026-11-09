@@ -36,7 +36,7 @@ name_dirs() {   # $1 = 이름(없으면 전부) — PID 폴더. 자정을 넘긴
 
 stop_one() {   # $1 = 이름 디렉터리
   local d=$1 k PID
-  for k in arm hand camera; do
+  for k in arm hand pd camera; do
     [ -f "$d/$k.pid" ] || continue
     PID=$(cat "$d/$k.pid")
     if kill -0 "$PID" 2>/dev/null && tr '\0' ' ' <"/proc/$PID/cmdline" | grep -qE "bag record|camera_bag_recorder"; then
@@ -52,7 +52,7 @@ stop_one() {   # $1 = 이름 디렉터리
   # 요약은 보기용 — bag 이 비었거나 없어도 정지는 성공(shutdown 이 이 줄에서 멈추지 않게, 10.08 리뷰)
   if [ -z "${RH56F1_RECORD_NO_INFO:-}" ] && [ -f "$d/last_out" ]; then
     source /opt/ros/humble/setup.bash
-    for k in arm hand camera; do ros2 bag info "$(cat "$d/last_out")/$k" 2>/dev/null | grep -E "Duration|Messages" || true; done
+    for k in arm hand pd camera; do ros2 bag info "$(cat "$d/last_out")/$k" 2>/dev/null | grep -E "Duration|Messages" || true; done
   fi
   rm -f "$d/last_out"   # 폴더가 재부팅 뒤에도 남는다 — 이름 없는 stop 이 끝난 기록을 다시 요약하지 않게
 }
@@ -62,7 +62,7 @@ start)
   [ -n "$NAME" ] || { echo "start 에는 이름이 필요하다(팔마다 따로 기록)" >&2; exit 2; }
   # ★10.08 리뷰: 앞 단계가 도중에 실패하면 기록기가 남는다 — 같은 이름을 다시 돌릴 때 막히지 않게 그 기록만 먼저 마무리한다
   for P in $(name_dirs "$NAME"); do
-    for k in arm hand camera; do
+    for k in arm hand pd camera; do
       if [ -f "$P/$k.pid" ] && kill -0 "$(cat "$P/$k.pid")" 2>/dev/null; then
         echo "$NAME $k 기록이 남아 있다 — 마무리하고 새로 시작"; stop_one "${P%/}"; break
       fi
@@ -77,10 +77,17 @@ start)
   for s in ${HAND_SIDES:-right left}; do for t in angle_actual force_actual current_actual touch_data joint_states tip_forces \
       tip_forces_zeroed tip_bias tip_zero_status joint_forces joint_forces_zeroed ecat_status angle_set angle_target admittance_offset finger_mode; do
     HAND="$HAND /hand_$s/$t"; done; done
+  # ★11.10 사용자: stationary_recorder(Python JSONL, 코어 1.3개 · 4.5 GB) 대신 — 그것만 갖던 PD 쪽 토픽을 따로 bag 에 싣는다.
+  # arm bag 에 섞지 않는다(10.03: 한 sqlite3 에 몰면 /joint_states 가 빠진다). 팔 명령 = PD 가 실제로 보낸 토크 · 위치 · 속도.
+  PD="/pd_state_broadcaster/joint_states /pd_temp_broadcaster/dynamic_joint_states /policy_control/episode /policy_control/estop"
+  for s in ${HAND_SIDES:-right left}; do
+    for c in effort position velocity; do PD="$PD /${s}_forward_${c}_controller/commands"; done
+    for t in diagnostics contact contact_guard; do PD="$PD /policy_control/pd_$s/$t"; done; done
   source "$(dirname "$0")/../../../config/ros_domain.env"   # 실기 도메인 한 곳(10.30 motion_acq 와 분리)
   ENV=${RH56F1_RECORD_ENV:-"source /opt/ros/humble/setup.bash; source \$HOME/rl_ws/robot_control/ros_ws/install/setup.bash; export ROS_DOMAIN_ID=\${ROS_DOMAIN_ID:-$S2R_REAL_DOMAIN}"}
   setsid bash -c "echo \$\$ > '$D/arm.pid'; $ENV; exec ros2 bag record -o '$OUT/arm' /joint_states $EXTRA" </dev/null >"$D/arm.log" 2>&1 &
   setsid bash -c "echo \$\$ > '$D/hand.pid'; $ENV; exec ros2 bag record -o '$OUT/hand' $HAND" </dev/null >"$D/hand.log" 2>&1 &
+  setsid bash -c "echo \$\$ > '$D/pd.pid'; $ENV; exec ros2 bag record -o '$OUT/pd' $PD" </dev/null >"$D/pd.log" 2>&1 &
   if [ -n "${CAMERA:-}" ]; then
     # nice 10 — 정책 · FP++ 보다 뒤에 선다(늦으면 프레임만 버린다, best effort 구독)
     CAM_CMD=${RH56F1_CAMERA_CMD:-"python3 $SIM2REAL/scripts/nodes/camera_bag_recorder.py"}
@@ -88,10 +95,10 @@ start)
     setsid bash -c "echo \$\$ > '$D/camera.pid'; $ENV; exec nice -n 10 $CAM_CMD -o '$OUT/camera' --hz ${CAMERA_HZ:-10} $CAM_ENC $CAMERA" \
       </dev/null >"$D/camera.log" 2>&1 &
   fi
-  for _ in $(seq 1 20); do [ -f "$D/arm.pid" ] && [ -f "$D/hand.pid" ] && { [ -z "${CAMERA:-}" ] || [ -f "$D/camera.pid" ]; } && break
+  for _ in $(seq 1 20); do [ -f "$D/arm.pid" ] && [ -f "$D/hand.pid" ] && [ -f "$D/pd.pid" ] && { [ -z "${CAMERA:-}" ] || [ -f "$D/camera.pid" ]; } && break
     sleep 0.1; done
   sleep 1
-  echo "기록 시작 → $OUT  (arm pid $(cat "$D/arm.pid") · hand pid $(cat "$D/hand.pid")${CAMERA:+ · camera pid $(cat "$D/camera.pid" 2>/dev/null)})"
+  echo "기록 시작 → $OUT  (arm pid $(cat "$D/arm.pid") · hand pid $(cat "$D/hand.pid") · pd pid $(cat "$D/pd.pid")${CAMERA:+ · camera pid $(cat "$D/camera.pid" 2>/dev/null)})"
   echo "$OUT" > "$D/last_out"
   ;;
 stop)

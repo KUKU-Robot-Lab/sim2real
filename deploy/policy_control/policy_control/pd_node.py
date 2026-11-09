@@ -312,18 +312,29 @@ class PdNode(LeanNodeMixin, Node):
             self._on_dynamic_joint_state(deserialize_message(got[0], self._temp_type), t_recv=got[1])
 
     def _on_dynamic_joint_state(self, msg, t_recv: float | None = None) -> None:
-        """관절당 서미스터 중 **더 뜨거운 쪽**을 취해 각 팔에 넘긴다."""
+        """관절당 서미스터 중 **더 뜨거운 쪽**을 취해 각 팔에 넘긴다.
+
+        ★261109 드라이버의 `comm_age`(마지막 CAN 응답 뒤 지난 초)도 같이 넘긴다 — 무응답 모터는
+        position 이 마지막 값으로 남아 /joint_states 만으로는 멀쩡해 보인다(J1 무응답 → settle 시간 초과).
+        """
         by_source: dict[str, float] = {}
+        ages: dict[str, float] = {}
         for name, iface in zip(msg.joint_names, msg.interface_values):
             hot = [float(v) for k, v in zip(iface.interface_names, iface.values) if k in self._TEMP_FIELDS]
             if hot:
                 by_source[name] = max(hot)
-        if not by_source:
+            age = [float(v) for k, v in zip(iface.interface_names, iface.values) if k == "comm_age"]
+            if age:
+                ages[name] = age[0]
+        if not by_source and not ages:
             return
         now = time.monotonic() if t_recv is None else t_recv
         with self._lock:
             for unit in self.units.values():
-                unit.on_temperatures(by_source, now)
+                if by_source:
+                    unit.on_temperatures(by_source, now)
+                if ages:
+                    unit.on_comm_age(ages, now)
 
     # ---------------------------------------------------------------- subscriptions
     def _on_target(self, msg, t_recv: float | None = None) -> None:

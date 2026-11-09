@@ -18,7 +18,7 @@ ramp=P.time_parametrize(np.stack([q,old[0]]),vmax=.05,dt=.01,ramp=1.)
 approach=np.vstack([ramp[:-1],old]);full=np.vstack([approach[:-1],np.asarray(trial['frames'])]);report=checker.check_path(full)
 assert report['ok'],'시작 자세에서 홈까지 길이 막힌다 — capture 전에 대상 팔을 홈 자세로(차렷 금지): '+str(report['fails'][:3])
 # Return ends at the planned start old[0], not live q: the next trial then captures near old[0] and only a short ramp is needed.
-ret=np.vstack([np.asarray(trial['frames'])[::-1],old[-2::-1]]);rep_ret=checker.check_path(ret)
+ret=np.vstack([np.asarray(trial['frames'])[::-1],old[-2::-1]]) if trial.get('motion','stationary')=='stationary' else np.vstack([np.asarray(trial['frames'])[-1:],old[::-1]]);rep_ret=checker.check_path(ret)  # sweep/step end at the pose: retrace approach only
 assert rep_ret['ok'],'return '+str(rep_ret['fails'][:3])
 trial['approach_start_q']=q.tolist();trial['approach_frames']=approach.tolist();trial['return_frames']=ret.tolist();trial['approach_collision']={'min_clear_m':float(report['min_clear']),'samples':report['samples'],'rechecked_after_abort':True};trial['return_collision']={'min_clear_m':float(rep_ret['min_clear']),'samples':rep_ret['samples'],'rechecked_after_abort':True};plan['trials']=[trial];plan['scene']=scene
 inputs={k:Path(v['path']) for k,v in plan['inputs'].items()};inputs['scene']=a.snapshot

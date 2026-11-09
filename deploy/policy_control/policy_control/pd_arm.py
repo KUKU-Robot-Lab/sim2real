@@ -41,6 +41,8 @@ JTC_REF_MAX_AGE_SEC = 0.5
 #  10.03 실기: 왼팔 차렷 j4 −0.8°(−0.014 rad)가 하한 0 밖이라 시작점이 '한계 밖 목표'로 잡혀 engage 즉시 HOLD.
 #  0.05 rad = 경로 시작점 검사 허용(check_path_start)과 같다. 자르면 그 관절이 한계 안쪽으로 램프 속도로 조금 들어간다.
 SEED_CLIP_TOL_RAD = 0.05
+#: ★261109 이보다 오래 CAN 응답이 없는 팔 관절은 무응답 - 드라이버 1 kHz 기준 100 틱
+COMM_SILENT_SEC = 0.1
 
 
 def clip_seed(seed: np.ndarray, lower: np.ndarray, upper: np.ndarray, names: Sequence[str],
@@ -297,6 +299,8 @@ class ArmUnit:
         self.thermal_retreat = False   # 발열 HOLD 에서 저부하 자세로 내려가는 중
         self.efforts: dict[str, float] = {}
         self.temps: dict[str, float] = {}   # 관절 → 모터 온도 [°C] (없으면 키가 없다)
+        self.comm_ages: dict[str, float] = {}   # 관절 → 마지막 CAN 응답 뒤 [s] (★261109)
+        self.t_comm_recv: float | None = None
         self.t_temp_recv: float | None = None
         self.t_arm_recv: float | None = None
         self.arm_source_stamp: float | None = None
@@ -410,6 +414,18 @@ class ArmUnit:
                       if self.profile[c]["source"] in by_source}
         self.t_temp_recv = now
 
+    def on_comm_age(self, by_source: Mapping[str, float], now: float) -> None:
+        """드라이버가 올린 관절별 무응답 시간 [s] 을 canonical 이름으로 옮긴다(★261109)."""
+        self.comm_ages = {c: float(by_source[self.profile[c]["source"]]) for c in self.arm_joints
+                          if self.profile[c]["source"] in by_source}
+        self.t_comm_recv = now
+
+    def silent_joints(self, now: float) -> list[str]:
+        """CAN 응답이 끊긴 팔 관절. 드라이버가 `comm_age` 를 안 내보내면(구버전) 빈 목록 — 판정 불가를 막힘으로 바꾸지 않는다."""
+        if self.t_comm_recv is None or (now - self.t_comm_recv) > self.robot_cfg.sources["arm"].stale_sec:
+            return []
+        return [c for c, a in self.comm_ages.items() if a > COMM_SILENT_SEC]
+
     def _fresh_temps(self, now: float) -> dict[str, float]:
         """온도가 끊기면 **빈 dict** 를 돌려준다 — 마지막 값을 계속 믿으면 보호가 조용히 꺼진다."""
         stale = self.robot_cfg.sources["arm"].stale_sec
@@ -472,7 +488,7 @@ class ArmUnit:
     # ---------------------------------------------------------------- tick (under lock)
     def tick(self, now: float, estop: bool) -> TickResult:
         state = self.sources.snapshot(now)
-        q_m, qd_m, why = self._measured(state)
+        q_m, qd_m, why = self._measured(state, now)
         self._advance_blend(now)
         if q_m is None:
             return TickResult(cmd=None, hand_written=None, status=self.idle_status(), error=why)
@@ -520,9 +536,9 @@ class ArmUnit:
         return TickResult(cmd=cmd, hand_written=hand_written, status=out.status, diagnostics=diagnostics)
 
     def measured_q(self, now: float) -> np.ndarray | None:
-        return self._measured(self.sources.snapshot(now))[0]
+        return self._measured(self.sources.snapshot(now), now)[0]
 
-    def _measured(self, state):
+    def _measured(self, state, now: float):
         """pd 는 arm/ee 만 쓴다(object 등 다른 필수 소스의 결손은 obs 노드 몫).
 
         ★손 단독(팔 백엔드 없음)이면 **arm 을 요구하지 않는다**. 팔은 우리 지령을 안 받으므로
@@ -537,6 +553,10 @@ class ArmUnit:
             return None, None, f"{self.side}: joint state missing {missing}"
         if stale:
             return None, None, f"{self.side}: joint state stale {stale}"
+        silent = self.silent_joints(now) if self.backends.arm is not None else []
+        if silent:
+            # 무응답 관절의 q 는 마지막 값이라 추종오차·settle 판정이 거짓이 된다 - 그 팔 지령을 멈춘다
+            return None, None, f"{self.side}: motor no response {silent}"
         if self.backends.arm is None:
             n = len(self.arm_joints)
             q = self.target.q if self.target is not None else np.zeros(n)

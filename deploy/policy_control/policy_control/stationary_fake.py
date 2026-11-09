@@ -9,6 +9,15 @@ from .pd_law import PdCommand
 from .pd_stationary import StationaryRuntime
 from . import stationary_tracking as S
 
+# DM MIT velocity resolution seen on the real arm [rad/s] (j1/j2, j3/j4, j5~j7).
+VEL_STEP = np.array([0.022, 0.022, 0.0049, 0.0049, 0.0147, 0.0147, 0.0147])
+
+
+def quantize_velocity(v):
+    step = VEL_STEP[: len(v)]
+    return np.round(np.asarray(v) / step) * step
+
+
 CASES = (
     "constant_load",
     "payload_bias",
@@ -45,7 +54,7 @@ def simulate(case, enabled):
         cmd, row = controller.apply(
             command,
             q_meas=measured,
-            qd_meas=velocity,
+            qd_meas=quantize_velocity(velocity),
             target=np.zeros(7),
             target_velocity=np.zeros(7),
             phase="TRACKING",
@@ -112,7 +121,7 @@ def simulate_static_friction(fs, *, coulomb=0.6, ki=0.0, seconds=8.0):
     for _ in range(int(seconds / dt)):
         measured = np.round(q / 0.00038) * 0.00038
         cmd, _row = controller.apply(
-            command, q_meas=measured, qd_meas=velocity, target=np.zeros(4),
+            command, q_meas=measured, qd_meas=quantize_velocity(velocity), target=np.zeros(4),
             target_velocity=np.zeros(4), phase="TRACKING", contact=False,
             stale=False, episode=1, dt=dt, gravity=np.zeros(4), request=np.zeros(4),
         )
@@ -148,7 +157,7 @@ def simulate_move(config, move_deg, *, f_small=0.3, f_large=0.8, split_deg=2.0,
     for _ in range(int(seconds / dt)):
         measured = np.round(q / 0.00038) * 0.00038
         cmd, _row = controller.apply(
-            command, q_meas=measured, qd_meas=velocity, target=np.zeros(4),
+            command, q_meas=measured, qd_meas=quantize_velocity(velocity), target=np.zeros(4),
             target_velocity=np.zeros(4), phase="TRACKING", contact=False,
             stale=False, episode=1, dt=dt, gravity=np.zeros(4), request=np.zeros(4),
         )

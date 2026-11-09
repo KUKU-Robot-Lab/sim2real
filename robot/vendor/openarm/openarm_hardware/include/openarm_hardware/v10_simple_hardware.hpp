@@ -15,6 +15,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <openarm/can/socket/openarm.hpp>
 #include <openarm/damiao_motor/dm_motor_constants.hpp>
@@ -130,6 +131,18 @@ class OpenArm_v10HW : public hardware_interface::SystemInterface {
   std::vector<double> pos_states_;
   std::vector<double> vel_states_;
   std::vector<double> tau_states_;
+
+  // ★261109 모터 무응답 감지: 관절마다 마지막 CAN 상태 응답 뒤 지난 시간 [s].
+  // state interface `comm_age` 로 내보내 /dynamic_joint_states 에 실린다(pd 가 읽어 그 팔 지령을 막는다).
+  // 무응답 모터의 position 은 마지막 값이 그대로 남아 /joint_states 만으로는 구분되지 않는다.
+  static constexpr double COMM_STALE_SEC = 0.1;
+  std::vector<double> comm_age_states_;
+  std::vector<uint64_t> last_rx_count_;
+  std::vector<std::chrono::steady_clock::time_point> last_rx_time_;
+  std::vector<bool> comm_stale_;
+  void reset_comm_watch();
+  void update_comm_age(size_t i, uint64_t rx_count,
+                       std::chrono::steady_clock::time_point now);
 
   // Helper methods
   void return_to_zero();

@@ -36,6 +36,9 @@ public:
     double get_torque() const { return state_tau_; }
     int get_state_tmos() const { return state_tmos_; }
     int get_state_trotor() const { return state_trotor_; }
+    // 유효한 상태 응답을 받은 횟수 - 값이 안 바뀌면 그 모터가 응답하지 않는 것이다
+    // (state_q_ 는 마지막 값이 그대로 남아 무응답이 겉으로 안 보인다, 261109 오른팔 J1)
+    uint64_t get_rx_count() const { return rx_count_; }
 
     // Motor property getters
     uint32_t get_send_can_id() const { return send_can_id_; }
@@ -70,6 +73,7 @@ protected:
     // Current state
     double state_q_, state_dq_, state_tau_;
     int state_tmos_, state_trotor_;
+    uint64_t rx_count_ = 0;
 
     // Parameter storage
     std::map<int, double> temp_param_dict_;

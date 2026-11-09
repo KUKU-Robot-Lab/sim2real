@@ -20,7 +20,13 @@ from .tilt_view import _cached
 ROOT = Path("analysis/friction")
 ARMS = ("right", "left")
 #: RUNBOOK "시험 목록" 표 그대로 — (키, 이름, 폴더 이름 조각, cfg, stage, offset_deg, repeats, trial 수). 팔마다 위에서 아래 순서.
-TESTS = (("F1off", "F1 끔", "F1off", "off", "F1", "2.0", "3", 24),
+#: 고속(sweep) 줄은 9번째 칸 motion="sweep" — new_experiment.sh 앞에 MOTION=sweep 를 붙인다(11.09 고속 측정).
+TESTS = (("F1offSw", "F1 끔 고속", "F1offSw", "off", "F1", "2.0", "1", 4, "sweep"),
+         ("F1onSw", "F1 켬 고속", "F1onSw", "fs", "F1", "2.0", "1", 4, "sweep"),
+         ("F2x05Sw", "F2 ×0.5 고속", "F2x05Sw", "fs_i050", "F2", "2.0", "1", 4, "sweep"),
+         ("F2x1Sw", "F2 ×1 고속", "F2x1Sw", "fs_i100", "F2", "2.0", "1", 4, "sweep"),
+         ("F2x2Sw", "F2 ×2 고속", "F2x2Sw", "fs_i200", "F2", "2.0", "1", 4, "sweep"),
+         ("F1off", "F1 끔", "F1off", "off", "F1", "2.0", "3", 24),
          ("F3", "F3", "F3", "off", "F3", "3.0", "4", 32),
          ("F4", "F4", "F4", "off", "F4", "0.4", "3", 24),
          ("F1on", "F1 켬", "F1on", "fs", "F1", "2.0", "3", 24),
@@ -53,9 +59,10 @@ def _engage(side: str) -> str:
 def commands(side: str, test: tuple, folder: str, remaining: list | None = None) -> dict:
     """한 실험의 명령 줄(복사해 쓰는 글) — RUNBOOK 1 · 3 절과 같은 인자.
     remaining 을 주면 trial 줄은 남은 것만 돈다(RUNBOOK 4 절: 이어서 하면 남은 trial 만)."""
-    _key, _label, _frag, cfg, stage, off, rep, _n = test
+    _key, _label, _frag, cfg, stage, off, rep, _n, *motion = test
+    env = f"MOTION={motion[0]} " if motion else ""
     return {
-        "prepare": f"analysis/friction/common/scripts/new_experiment.sh {folder} {side} {cfg} {stage} {off} {rep}",
+        "prepare": f"{env}analysis/friction/common/scripts/new_experiment.sh {folder} {side} {cfg} {stage} {off} {rep}",
         "pd": f"{ROS_ENV}{DDS} {_pd_launch(side, cfg)}",
         "engage": f"{DDS} {_engage(side)}",
         "hold": f"{ROS_ENV}{DDS} ros2 service call /policy_control/pd_{side}/hold std_srvs/srv/Trigger",
@@ -70,6 +77,36 @@ def commands(side: str, test: tuple, folder: str, remaining: list | None = None)
     }
 
 
+# ★11.10 사용자: "F1~F2x2 고속까지 하나의 버튼으로" — 이 순서로 이어 돈다(시험 사이 pd 끄고 다음 설정으로 다시 기동)
+SWEEP_CHAIN = ("F1offSw", "F1onSw", "F2x05Sw", "F2x1Sw", "F2x2Sw")
+
+
+SWEEP_JOINTS = 7
+
+
+def _n_joints(folder: Path) -> int:
+    """계획의 trial 이 덮는 관절 수(…_jN_rM) — 계획이 없으면 0."""
+    try:
+        trials = json.loads((folder / "setup/plan/plan.json").read_text(encoding="utf-8"))["trials"]
+    except (OSError, ValueError, KeyError):
+        return 0
+    return len({t["id"].rsplit("_", 2)[1] for t in trials})
+
+
+def chain(repo: Path, side: str) -> list[dict]:
+    """고속 연속 — 시험마다 이 팔의 마지막 폴더(없거나 끝났으면 folder None · 끝났으면 complete)."""
+    out = []
+    for key in SWEEP_CHAIN:
+        test = next(t for t in TESTS if t[0] == key)
+        mine = sorted(p for p in (repo / ROOT).glob(f"*_{test[2]}_{side}*") if p.is_dir() and
+                      (m := _NAME.match(p.name)) and m.group(2) == test[2] and m.group(3) == side)
+        e = experiment(mine[-1]) if mine else None
+        full = bool(e) and _n_joints(mine[-1]) >= SWEEP_JOINTS      # j1~j4 만인 옛 폴더는 새로 준비
+        out.append({"key": key, "label": test[1], "folder": e["name"] if e else None,
+                    "prepared": bool(full and e["prepared"]), "complete": bool(full and e["complete"])})
+    return out
+
+
 def _sh(body: str) -> tuple:
     """콘솔 감독자가 띄울 argv — ROS 셋 · DDS 를 다 싣는다(빠지면 rh56f1_interfaces ModuleNotFoundError, 11.09)."""
     return ("bash", "-c", f"{ROS_ENV}{DDS} exec {body}")
@@ -80,8 +117,10 @@ def new_argv(repo: Path, side: str, key: str) -> tuple[str, tuple]:
     test = next(t for t in TESTS if t[0] == key)
     names = {p.name for p in (repo / ROOT).glob("*") if p.is_dir()}
     name = _free_name(names, f"{datetime.now().strftime('%y%m%d')}_{test[2]}_{side}")
-    _k, _l, _f, cfg, stage, off, rep, _n = test
-    return name, ("bash", str(repo / ROOT / "common/scripts/new_experiment.sh"), name, side, cfg, stage, off, rep)
+    _k, _l, _f, cfg, stage, off, rep, _n, *motion = test
+    # ★11.10 사용자: "j1~7 모두 측정해야" — 고속(sweep)은 7관절 전부(오프라인 계획 · 충돌 검사 양팔 7/7 통과)
+    env = ("env", f"MOTION={motion[0]}", f"MOVED_JOINTS={SWEEP_JOINTS}") if motion else ()
+    return name, (*env, "bash", str(repo / ROOT / "common/scripts/new_experiment.sh"), name, side, cfg, stage, off, rep)
 
 
 def plan(repo: Path, side: str, name) -> dict:
@@ -128,7 +167,7 @@ def plan(repo: Path, side: str, name) -> dict:
 def _guard(side: str) -> str:
     """손 접촉 감시(로봇 명령 0). 없으면 pd 진단 contact 가 비어 trial 이 시작 검사에서 멈춘다(11.09 실측).
     trial run 과 같은 프로세스 그룹이라 run 이 끝나거나 멈추면 같이 내려간다. 팔이 TRACKING 으로 서 있을 때 3 s 기준선을 잡는다."""
-    return f"python3 deploy/policy_control/tools/stationary_contact_guard.py --side {side} --operator-confirmed-free"
+    return f"python3 deploy/policy_control/tools/stationary_contact_guard.py --side {side} --operator-confirmed-free --no-touch --monitor-only"
 
 
 def _attempt(d: Path, trial: str) -> int:
@@ -219,6 +258,7 @@ def _build(repo: Path, today: str) -> dict:
                                                            if e["done"] else None) for e in mine}}})
         sides[side] = rows
     return {"root": str(ROOT), "experiments": {e["name"]: e for e in exps}, "sides": sides,
+            "chain": {side: chain(repo, side) for side in ARMS},
             "runbook": f"{ROOT}/common/RUNBOOK.md"}
 
 

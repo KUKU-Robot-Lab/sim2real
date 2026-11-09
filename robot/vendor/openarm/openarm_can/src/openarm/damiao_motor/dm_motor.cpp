@@ -51,6 +51,7 @@ void Motor::update_state(double q, double dq, double tau, int tmos, int trotor) 
     state_tau_ = tau;
     state_tmos_ = tmos;
     state_trotor_ = trotor;
+    ++rx_count_;
 }
 
 void Motor::set_state_tmos(int tmos) { state_tmos_ = tmos; }

@@ -17,7 +17,7 @@ holders: {HOLDER_0: 0, HOLDER_1: 1, HOLDER_2: 2}
 holder_poses: config/cup_holder_poses_5090_v1.yaml
 tin_fallback: deploy/policy_control/config/tilt/traj_v12_240/ref/tin_fixed_1107.json   # tilt 직전 T_in 측정 실패 때 고정값(SIM2REAL 상대, git 추적 · 원본 logs/analysis/tilt_tin_1107/out 같은 md5)
 policies:
-  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/right_rcg04, cup_obs_offset_base_m: [-0.0116, 0.0338, -0.0143]}   # 11.04 정지 자세 Rm(R1 접근 높이와 R2 쥐는 높이 사이), e1000 과 같은 값
+  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/right_rcg04, cup_obs_offset_base_m: [-0.0116, 0.0338, 0.0]}   # ★11.10 사용자: 오른손 z 보정만 0 (x·y 유지) — 높이 영향 분리 시험 (이전 [-0.0116, 0.0338, -0.0143])   # 11.04 정지 자세 Rm(R1 접근 높이와 R2 쥐는 높이 사이), e1000 과 같은 값
   rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg04, cup_obs_offset_base_m: [0.0028, 0.0283, 0.0046]}   # 11.04 정지 자세 L2(잡기 직전), logs/analysis/frame_offset_1104/measure2
   # ★11.07 붙인 자세 = tilt 직전 정지 창 실측 T_in(묶음은 tilt 직전과 28~37 mm · 컵 기울기 10° 넘게 어긋났다, logs/analysis/tilt_tin_1107)
   rh_place_r: {policy: rh56f1/place/right_n10_e4000, kind: place, side: right, attach_source: tin_json}
@@ -55,7 +55,7 @@ sequence:
   - {id: tilt_blue, type: trajectory, name: tilt, expect: {pose: SETTING, blue_poured: true}}
   - {id: place_blue, type: policy, name: rh_place_r, source_object: SRC_BLUE, target_holder: HOLDER_1, policy_object: source240_real,
      expect: {right_hand: EMPTY, left_hand: SHAKER, blue_placed: true}}
-  - {id: home_r_after_blue, type: trajectory, name: go_home_r, expect: {right_hand: EMPTY, left_hand: SHAKER}}
+  - {id: home_r_after_blue, type: trajectory, name: go_home_r, auto: true, expect: {right_hand: EMPTY, left_hand: SHAKER}}
   # 2) 분홍 붓기(왼손은 tilt 시작 자세에서 shaker 를 든 채 기다린다)
   - {id: grasp_pink, type: policy, name: rh_aglt_r, target_object: SRC_PINK, policy_object: source240_real,
      expect: {right_hand: SRC_PINK, left_hand: SHAKER}}
@@ -66,5 +66,5 @@ sequence:
      holder_tol_m: 0.07, expect: {right_hand: EMPTY, left_hand: SHAKER, pink_placed: true}}
   - {id: place_shaker, type: policy, name: rh_place_l, source_object: SHAKER, target_holder: HOLDER_0, policy_object: shaker_c_real,
      expect: {right_hand: EMPTY, left_hand: EMPTY, shaker_placed: true}}
-  - {id: go_home_end, type: trajectory, name: go_home, expect: {pose: HOME}}
+  - {id: go_home_end, type: trajectory, name: go_home, auto: true, expect: {pose: HOME}}
   - {id: done, type: terminal, result: SUCCESS}

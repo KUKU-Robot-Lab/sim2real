@@ -126,12 +126,13 @@ def test_fake_stiction_error_drops_below_0_2_deg_without_chatter():
 
 
 # Frozen from 2fe2b4f (before fs existed): fs = 0 must not change any output.
+# Regenerated 2026-11-09: standstill moved from |qd| to a j1~j4 position-span window.
 GOLDEN = {
-    ("constant_load", True): (1374.4129524549403, 0.1641707683918513),
+    ("constant_load", True): (1361.7718032887676, 0.1641707683918513),
     ("payload_bias", False): (1576.0435671993457, 0.14999938776051638),
-    ("payload_bias", True): (2950.4602366232093, 0.31417062099351495),
-    ("friction_quantization", True): (1353.4948756000103, 0.1585892000000017),
-    ("delay", True): (1371.8114155809476, 0.16416178037745147),
+    ("payload_bias", True): (2937.8189926004866, 0.31417061803544016),
+    ("friction_quantization", True): (1341.2481292000102, 0.1585892000000017),
+    ("delay", True): (1359.054972163118, 0.16416178035698478),
     ("saturation", True): (0.0, 0.0),
 }
 

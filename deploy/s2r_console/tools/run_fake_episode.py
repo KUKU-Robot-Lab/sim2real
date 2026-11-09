@@ -4,6 +4,9 @@
     ROS_DOMAIN_ID=97 python3 deploy/s2r_console/tools/run_fake_episode.py --episode pick_place_right --mode step
     ROS_DOMAIN_ID=97 python3 deploy/s2r_console/tools/run_fake_episode.py --episode pick_place_right --mode run
 
+셸은 console.sh 처럼 /opt/ros setup 다음에 config/dds/lan_profile.sh 를 source 한다. 빠지면 놓기 학생의 head_mask_node 가
+64 MB SHM 프로파일이 없다며 시작을 거부해 에피소드 단계가 rc=1 로 끝난다(11.09 place_m_right fake).
+
 운영자가 누르는 것(단계 실행 · 수동 확인 · 에피소드 확인 입력)을 같은 Console API 로 부른다. 실기 프로파일이면 거부.
 fake 손은 촉각이 0 이라 집기 정책은 쥠을 못 만든다 — 에피소드는 정책 성공이 아니라 배관(승인 · 노드 · 궤적 · 실패 → 복구 →
 정지)을 본다. 결과: 단계 결과 · 에피소드 상태 · 실행기 기록(마지막 20 줄).

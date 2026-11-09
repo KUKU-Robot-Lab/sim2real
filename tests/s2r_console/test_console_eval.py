@@ -1,4 +1,4 @@
-"""★11.02 eval 탭(실기 평가) — 평가 에피소드 목록(11.05 cocktail_1c_e4000 · grasp_s_right · grasp_s_left) · 회차 기록 CSV · /api/eval/rounds.
+"""★11.02 eval 탭(실기 평가) — 평가 에피소드 목록(11.05 cocktail_1c_e4000 · grasp_s_right · grasp_s_left, 11.09 + place_m_right · place_m_left) · 회차 기록 CSV · /api/eval/rounds.
 
 기록은 로봇에 아무것도 보내지 않는다. 서버가 round · time · policy id 를 채우고(policy id 는 에피소드 yaml 에서),
 날짜마다 파일 하나(logs/s2r_console/eval/<YYYY-MM-DD>.csv)에 붙인다.
@@ -90,6 +90,27 @@ def test_grasp_episode_reports_the_student_policy_of_its_hand(repo):
     assert (eps["grasp_s_right"]["policy_r"], eps["grasp_s_right"]["policy_l"]) == ("rh56f1/aglt/right_student1104e", "")
     assert (eps["grasp_s_left"]["policy_r"], eps["grasp_s_left"]["policy_l"]) == ("", "rh56f1/aglt/left_student1104e")
     assert eps["grasp_s_right"]["stages"] == ["go_home_start", "grasp_lift"]
+
+
+def test_place_student_episodes_are_listed_with_the_student_policy(tmp_path):
+    d = tmp_path / "config" / "episodes"; d.mkdir(parents=True)
+    for side, s in (("right", "r"), ("left", "l")):
+        (d / f"place_m_{side}.yaml").write_text(textwrap.dedent(f"""\
+            episode: {{name: place_m_{side}, version: 1}}
+            holders: {{PLACE_HOLDER: 1}}
+            policies:
+              rh_aglt_{s}: {{policy: rh56f1/aglt/{side}_approach_ap05, kind: aglt, side: {side}}}
+              rh_place_{s}: {{policy: rh56f1/place/{side}_teacher, kind: place, side: {side}, student: rh56f1/place/{side}_student_place}}
+            sequence:
+              - {{id: grasp_lift, type: policy, name: rh_aglt_{s}}}
+              - {{id: place_cup, type: policy, name: rh_place_{s}, source_object: CUP, target_holder: PLACE_HOLDER}}
+              - {{id: done, type: terminal, result: SUCCESS}}
+            """), encoding="utf-8")
+    eps = {e["name"]: e for e in EV.episodes(tmp_path)}
+    assert list(eps) == ["place_m_right", "place_m_left"]
+    assert eps["place_m_right"]["policy_r"] == "rh56f1/place/right_student_place" and eps["place_m_right"]["policy_l"] == ""
+    assert eps["place_m_left"]["policy_l"] == "rh56f1/place/left_student_place"
+    assert eps["place_m_right"]["holders"] == [{"node": "place_cup", "object": "CUP", "holder": 1}]
 
 
 def test_view_marks_which_episodes_have_a_mission_stage(repo):

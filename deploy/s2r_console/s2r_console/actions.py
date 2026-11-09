@@ -256,6 +256,8 @@ class ActionManager:
             return frozenset(ARMS)
         if action_id in ('head_home', 'head_control'):
             return frozenset({'head'})
+        if action_id == 'head_sweep':      # ★11.10 목을 돌리는 동안 인지 · 오른팔 정책이 끼면 안 된다(손이 가만히 있어야 한다)
+            return frozenset({'head', 'perception', 'right'})
         if action_id in ('cups', 'head_view_check', 'cup_holders'):   # 목 자세 확인(맞춤) · 카메라를 같이 쓴다
             return frozenset({'head', 'perception'})
         if action_id == 'perception_refresh':      # locate moves the neck; FPP needs it still
@@ -310,6 +312,8 @@ class ActionManager:
                 specs[f'engage_{side}'] = (f'{side} PD engage', 'control', (f'home_{side}',))
         if 'head_control' in known:
             specs['head_control'] = (known['head_control'].title, 'control', ('head_control',))
+        if 'head_sweep' in known:                     # ★11.10 사용자: C(카메라 vs 팔 FK) 조사 — 목 스윕 자동 기록
+            specs['head_sweep'] = (known['head_sweep'].title, 'control', ('head_sweep',))
         if 'tilt_now' in known:                       # ★10.19 사용자: tilt 초기 자세(세팅 자세)로 — rehome 처럼(두 팔, 한 팔씩)
             specs['tilt_now'] = ('tilt 시작 자세(세팅 자세)로 — 두 팔', 'control', ('tilt_now',))
         if 'tilt_pour' in known:                      # ★10.19 사용자: 세팅 자세에서 바로 tilt(컵을 쥔 채, 두 팔)
@@ -354,7 +358,7 @@ class ActionManager:
 
     def describe(self, action_id, parameters=None):
         parameters = dict(parameters or {})
-        if set(parameters) - {'object_ids', 'pan', 'tilt', 'calib_profile', 'folder', 'side', 'test'}:
+        if set(parameters) - {'object_ids', 'pan', 'tilt', 'calib_profile', 'folder', 'side', 'test', 'chain'}:
             raise ConsoleError('지원하지 않는 작업 설정', code=400)
         if 'object_ids' in parameters and (not isinstance(parameters['object_ids'], list) or
                                           any(not isinstance(value, str) for value in parameters['object_ids'])):
@@ -376,7 +380,7 @@ class ActionManager:
         if held and not action_id.startswith('tune_') and action_id not in TUNE_PD_OK:
             reasons.append(f"{', '.join(held)} 팔에 마찰 실험 pd 가 떠 있다 — tuning 탭에서 pd 끄기 먼저")
         scanning = any(job.id == 'perception_refresh' for job in self.active_jobs())
-        if action_id in ('head_control', 'perception_refresh') and not scanning and not self._scan_restore_ok:
+        if action_id in ('head_control', 'head_sweep', 'perception_refresh') and not scanning and not self._scan_restore_ok:
             reasons.append('이전 목 스캔의 운용 자세 복귀 정착을 확인하지 못했다 — head_home 복구 필요')
         active = [r.stage_id for r in s.runners.values() if r.active]
         nonpolicy = [sid for sid in active if not sid.startswith(('policy_', 'episode_'))]
@@ -390,6 +394,8 @@ class ActionManager:
                 sides = [control_side(action_id) if action_id.startswith(CONTROL_PREFIX) else self._card(s, action_id)['side']]
             elif action_id in ('tilt_now', 'tilt_pour'):
                 sides = list(ARMS)
+            elif action_id == 'head_sweep':          # 오른손을 카메라 앞에 두고 pd 가 붙들고 있어야 한다
+                sides = ['right']
             else:
                 sides = [action_id.rsplit('_', 1)[-1]]
             with s.feed_lock:
@@ -439,6 +445,7 @@ class ActionManager:
                 if not any(abs(a['pan'] - head['pan']) <= tol and abs(a['tilt'] - head['tilt']) <= tol for a in known['angles']):
                     reasons.append(f"pan {head['pan']} · tilt {head['tilt']} 는 {profile} 가 보정한 각도(±{tol}°)가 아니다 "
                                    "— 이 자세에서는 locate · FP++ 좌표를 쓸 수 없다")
+        if action_id in ('head_control', 'head_sweep'):
             drivers = [unit for unit in s.units.values() if any('head_joint_publisher.py' in a for a in unit.argv)]
             if drivers and not any(s.supervisor.is_alive(unit.key) for unit in drivers):
                 reasons.append('목 드라이버가 연결되지 않았다 — setting head_home 필요')
@@ -755,6 +762,8 @@ class ActionManager:
                 action_id == 'head_control' or s.workspace.head_set or {'pan', 'tilt'} & set(parameters)):
             head = {**s.workspace.head, **parameters}
             cmd = replace(cmd, argv=(*cmd.argv, '--pan', str(head['pan']), '--tilt', str(head['tilt'])))
+        # ★11.10 head_sweep 은 argv 를 바꾸지 않는다 — 작업 공간 자세 · 보정 프로필은 OpenArm 각도(tilt −25)라 RH56F1 머리가 천장을 봤다.
+        #   스윕은 시작 순간 실측 자세(/head/joint_states)를 중심으로 돌고 그 자세로 돌아온다(scripts/head_sweep.py)
         if any('object_pose_node.py' in a for a in cmd.argv):
             argv = list(cmd.argv)
             if '--head-joint-topic' not in argv:
@@ -869,6 +878,20 @@ class ActionManager:
         def add(step, note, argv, *, background=False, stop=(), trial=''):
             commands.append({'stage': action_id, 'index': len(commands), 'step': step, 'trial': trial, 'note': note,
                              'argv': list(argv), 'stop': list(stop), 'background': background})
+        if action_id == 'tune_new' and parameters.get('test') == 'SWEEP_CHAIN':
+            # ★11.10 고속 5개 한 번에 준비 — 폴더가 없거나 준비가 안 된 시험만(끝났거나 준비된 폴더는 그대로 쓴다)
+            side = parameters.get('side')
+            if side not in ARMS:
+                reasons.append('팔을 고를 것')
+                return
+            for row in TU.chain(repo, side):
+                if row['complete'] or row['prepared']:
+                    continue
+                name, argv = TU.new_argv(repo, side, row['key'])
+                add('prepare', f'새 실험 폴더 {name} · 오프라인 계획', argv)
+            if not commands:
+                reasons.append('고속 5개 모두 준비돼 있다')
+            return
         if action_id == 'tune_new':
             side, key = parameters.get('side'), parameters.get('test')
             if side not in ARMS or key not in {t[0] for t in TU.TESTS}:
@@ -893,6 +916,9 @@ class ActionManager:
                 self._tune_jtc_argv(side))
             warnings.append(f'★실기 — {side} 팔을 pd 에서 JTC 로 넘긴다. JTC 가 현재 자세를 이어 잡는다. '
                             '어느 단계든 실패하면 거기서 멈춘다.')
+            return
+        if parameters.get('chain'):
+            self._tune_chain_description(s, side, key, mine, procs, add, commands, reasons, warnings)
             return
         plan = TU.plan(repo, side, parameters.get('folder'))
         reasons.extend(plan['reasons'])
@@ -929,6 +955,55 @@ class ActionManager:
                         f"(전체 {plan['n']} · 끝 {plan['done']}). 하나라도 실패하거나 시간 한도를 넘으면 그 자리에서 멈춘다. "
                         "정지 · 실패 = 도는 단계만 멈추고 pd 는 끄지 않는다. 그때 pd 가 RAMPING · TRACKING 이면 붙들기(hold)를 보낸다.")
 
+    def _tune_chain_description(self, s, side, key, mine, procs, add, commands, reasons, warnings):
+        """★11.10 고속 연속 — 시험마다 pd 기동 → engage → 붙들기 → trial 들, 사이에 release → JTC → pd 종료 → JTC.
+        끝난 시험은 건너뛴다. 하나라도 실패 · 정지면 그 자리에서 멈춘다(단일 실험과 같다)."""
+        repo = self.console.repo
+        if mine is not None:
+            reasons.append(f'{side} 마찰 실험 pd 가 떠 있다 — pd 끄기 먼저(연속은 꺼진 상태에서 시작)')
+        others = [p['key'] for p in procs if p['alive'] and side in pd_launch_sides(' '.join(p['argv']))]
+        own = s.supervisor.own_pgids()
+        foreign = [pid for pid, pgid, cmd in scan_processes() if pgid not in own and side in pd_launch_sides(cmd)]
+        if others or foreign:
+            reasons.append(f"{side} pd 가 이미 떠 있다({', '.join([*others, *map(str, foreign)])}) — 내린 뒤 실행")
+        if s.profile.domain != REAL_DOMAIN:
+            reasons.append(f'콘솔 도메인 {s.profile.domain} — 마찰 실험 pd 는 실기 도메인 {REAL_DOMAIN}')
+        todo, skipped = [], []
+        for row in TU.chain(repo, side):
+            if row['complete']:
+                skipped.append(f"{row['label']}(끝 {row['folder']})")
+                continue
+            if not row['prepared']:
+                reasons.append(f"{row['label']} 준비 안 됨 — [고속 5개 준비] 먼저")
+                continue
+            plan = TU.plan(repo, side, row['folder'])
+            reasons.extend(f"{row['folder']}: {r}" for r in plan['reasons'])
+            if 'pd' in plan:
+                todo.append((row, plan))
+        if not todo and not reasons:
+            reasons.append('남은 고속 시험이 없다')
+        total = 0
+        for i, (row, plan) in enumerate(todo):
+            f = row['folder']
+            if i:      # 앞 시험 pd 를 JTC 로 넘기고 끈다 — 다음 설정(cfg)으로 다시 기동
+                add('release', f'[{f}] 앞 시험 pd/release', self._tune_release_argv(side))
+                add('jtc', f'[{f}] JTC active · forward inactive 확인', self._tune_jtc_argv(side))
+                add('pd_off', f'[{f}] 앞 시험 pd 정지({key})', (), stop=(key,))
+                add('jtc', f'[{f}] pd 종료 뒤 JTC 다시 확인', self._tune_jtc_argv(side))
+            add('pd', f'[{f}] pd 기동({row["label"]}) — gains ok · IDLE 까지', plan['pd'], background=True)
+            add('engage', f'[{f}] pd_engage — RAMPING 까지', plan['engage'])
+            add('hold', f'[{f}] 팔 그 자리 붙들기 — TRACKING 확인', self._tune_hold_argv(side))
+            for t in plan['trials']:
+                add('capture', f"[{f}] trial {t['id']} 앞 자세 기록", t['capture'], trial=t['id'])
+                add('rebase', f"[{f}] trial {t['id']} 시작점 다시 맞춤 · 충돌 재검사", t['rebase'], trial=t['id'])
+                add('trial', f"[{f}] trial {t['id']}", t['run'], trial=t['id'])
+                commands[-1]['plan'] = t['plan']
+            total += len(plan['trials'])
+        warnings.append(f"★실기 동작 — {side} 팔 고속 연속: {' → '.join(r['label'] for r, _ in todo)} · trial {total}개. "
+                        "시험 사이에 pd 를 JTC 로 넘기고 다음 설정으로 다시 기동한다. 하나라도 실패하면 그 자리에서 멈춘다(pd 는 끄지 않음). "
+                        "마지막 시험 뒤 팔은 pd 가 붙든 채로 남는다 — [pd 끄기] 로 내린다."
+                        + (f" 건너뜀: {', '.join(skipped)}" if skipped else ''))
+
     def _tune_release_argv(self, side):
         return ('env', *TU.DDS.split(), *self._trigger_argv('pd/release', side, ('IDLE',)))
 
@@ -954,9 +1029,8 @@ class ActionManager:
         if action.startswith('tune_pd_off_'):
             self._tune_pd_off(s, action.rsplit('_', 1)[-1], cmds)
             return
-        if action == 'tune_new':
-            c = cmds[0]
-            self._run_commands(s, action, [Command(tuple(c['argv']), note=c['note'], stop=tuple(c['stop']))])
+        if action == 'tune_new':        # 고속 5개 준비면 여러 줄 — 차례로
+            self._run_commands(s, action, [Command(tuple(c['argv']), note=c['note'], stop=tuple(c['stop'])) for c in cmds])
             return
         side = action.rsplit('_', 1)[-1]
         n = sum(len(c.get('trials', ())) for c in cmds) + sum(c['step'] == 'trial' for c in cmds)
@@ -967,6 +1041,27 @@ class ActionManager:
                 if self._cancel_policy.is_set():
                     raise ConsoleError('운영자가 중단했다')
                 tu['step'] = c['step']
+                if c['note'].startswith('['):           # ★11.10 고속 연속 — 지금 도는 시험 폴더
+                    tu['folder'] = c['note'][1:c['note'].index(']')]
+                if c['step'] == 'release':              # 연속의 시험 사이 — 붙들고 있을 때만
+                    phase = self._tune_phase(s, side)
+                    if phase in ('IDLE', 'RELEASING'):
+                        continue
+                    if phase not in ('RAMPING', 'TRACKING', 'HOLD'):
+                        raise ConsoleError(f'pd 상태를 읽지 못함({phase or "stale"}) — release 를 건너뛰지 않고 멈춘다')
+                if c['step'] == 'pd_off':
+                    self._run_commands(s, f'tune_pd_off_{side}', [Command((), note=c['note'], stop=tuple(c['stop']))])
+                    # 꺼진 pd 의 마지막 status(IDLE · gains ok)가 다음 pd 기동 확인을 속이지 않게 끊길 때까지 기다린다
+                    end = time.monotonic() + STALE_S + 10.0
+                    while True:
+                        with s.feed_lock:
+                            age = s.feed.observed().age_s.get(PD.name(side), 1e9)
+                        if age > STALE_S:
+                            break
+                        if time.monotonic() > end:
+                            raise ConsoleError(f'{side} pd 를 껐는데 status 가 계속 들어온다 — 다른 pd 가 떠 있다?')
+                        time.sleep(.2)
+                    continue
                 if c['step'] == 'hold':
                     self._run_commands(s, f'action_pd_hold_{side}', [Command(tuple(c['argv']), note='pd/hold')],
                                        cancellable=True)
@@ -1191,7 +1286,7 @@ class ActionManager:
                 tune = [tune_pd_key(side) for side in sorted(tune_pd_sides(s.supervisor))]
                 if tune:
                     s.supervisor.stop(tune)
-            if action in ('head_home', 'head_control'):
+            if action in ('head_home', 'head_control', 'head_sweep'):
                 s.workspace.invalidate_results('head motion or calibration changed')
             if action == 'perception_refresh':
                 self._sync_converter(s, description['parameters'])

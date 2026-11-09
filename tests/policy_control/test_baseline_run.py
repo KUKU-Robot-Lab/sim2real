@@ -29,12 +29,14 @@ def test_snapshot_records_policies_pd_and_commit(tmp_path):
     assert "episode__grasp_f_right.yaml" in copies
 
 
-def test_mission_episode_starts_and_stops_baseline():
+def test_mission_episode_has_no_stationary_recorder_and_pd_topics_go_to_bag():
+    """★11.10 사용자: 에피소드 옆 stationary_recorder 는 뺀다(코어 1.3개 · 4.5 GB) — 그것만 갖던 PD 토픽은 bag 의 pd 묶음으로."""
     mission = yaml.safe_load((ROOT / "config/mission_rh56f1_control.yaml").read_text())
-    cmds = mission["run"]["episode_grasp_f_right"]
-    argvs = [c.get("argv", []) for c in cmds]
-    start = [i for i, a in enumerate(argvs) if "baseline_run.py" in " ".join(a) and "start" in a]
-    stop = [i for i, a in enumerate(argvs) if "baseline_run.py" in " ".join(a) and "stop" in a]
-    assert len(start) == 1 and len(stop) == 1 and start[0] < stop[0]
-    assert not cmds[start[0]].get("background")                     # 바로 끝난다 → 배경 번호가 밀리지 않는다
-    assert argvs[start[0]][argvs[start[0]].index("--sides") + 1] == "right"
+    argvs = [" ".join(c.get("argv", [])) for c in mission["run"]["episode_grasp_f_right"]]
+    assert not any("baseline_run.py" in a or "stationary_recorder" in a for a in argvs)
+    assert any("rh56f1_record.sh" in a and "start" in a for a in argvs)
+    sh = (ROOT / "deploy/policy_control/tools/rh56f1_record.sh").read_text()
+    assert "$OUT/pd' $PD" in sh and "for k in arm hand pd camera" in sh
+    for t in ("/pd_state_broadcaster/joint_states", "/pd_temp_broadcaster/dynamic_joint_states", "/policy_control/estop",
+              "_forward_${c}_controller/commands", "/policy_control/pd_$s/$t"):
+        assert t in sh

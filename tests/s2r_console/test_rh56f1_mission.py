@@ -29,6 +29,8 @@ REAL_RAW, REAL, REAL_BOOK = _load("mission_rh56f1_control.yaml")
 _ACTIVE = yaml.safe_load((REPO / "config" / "fpp_active.yaml").read_text(encoding="utf-8"))
 ACTIVE_SIDES = _ACTIVE["sides"]
 FAKE_RAW, FAKE, FAKE_BOOK = _load("mission_rh56f1_fake.yaml")
+STUDENT_SKIP = pytest.mark.skipif("episode_place_m_right" not in REAL_RAW["run"],
+                                  reason="★11.11 카메라가 다른 PC(5090_arm4090) — 학생 에피소드(깊이 노드)가 미션에 없다")
 
 
 def _generator():
@@ -64,6 +66,7 @@ def test_the_committed_missions_come_from_the_generator():
 
 
 @pytest.mark.parametrize("side", ["right", "left"])
+@STUDENT_SKIP
 def test_student_approach_does_not_abort_on_fpp_dropout(side):
     cmds = _cmds(REAL, REAL_BOOK, f"episode_grasp_s_{side}")
     node = next(c.argv for c in cmds if any("rh_aglt_student_node.py" in a for a in c.argv))
@@ -78,6 +81,7 @@ def test_student_approach_does_not_abort_on_fpp_dropout(side):
 
 @pytest.mark.parametrize("book", ["real", "fake"])
 @pytest.mark.parametrize("side", ["right", "left"])
+@STUDENT_SKIP
 def test_mask_student_episode_starts_the_mask_node_before_the_policy_node(side, book):
     raw, b = (REAL, REAL_BOOK) if book == "real" else (FAKE, FAKE_BOOK)
     cmds = _cmds(raw, b, f"episode_grasp_m_{side}")
@@ -681,6 +685,7 @@ def test_head_has_single_serial_owner_and_dynamic_camera_transform():
     assert stop < release
 
 
+@pytest.mark.skipif(_generator().ROBOT_PC != "5090", reason="★11.11 지금 스테이션은 5090_arm4090(아래 arm_v2 테스트가 본다)")
 def test_the_5090_station_uses_the_camset_pose_where_all_three_objects_are_in_view():
     """10.28 사용자 "미션 연결 진행" — shaker · 파랑 · 분홍이 한 화면에 드는 목 자세(camset)와 그 자세에서 잰 외부 파라미터.
     ★10.30 arm_v2(5090 + 4090): 머리 · 카메라 조립체는 그대로(USB 만 4090 으로)라 같은 자세 · 같은 파일을 쓴다.
@@ -790,27 +795,31 @@ def test_preflight_builds_contract_before_contract_dependent_tests():
 def _drivers(raw):
     """미션 run 의 목 드라이버 argv — {단계#번호: argv}."""
     return {f"{sid}#{i}": c["argv"] for sid, cmds in raw["run"].items() for i, c in enumerate(cmds)
-            if any(str(a).endswith("head_joint_publisher.py") for a in c.get("argv") or [])}
+            if any("head_joint_publisher.py" in str(a) for a in c.get("argv") or [])}   # ★11.11 원격 목은 ssh 한 줄 안에 있다
 
 
+@STUDENT_SKIP
 def test_only_the_place_student_episode_restarts_the_head_driver_with_tilt_82():
     """★11.08 사용자: 목 tilt 상한 82 는 놓기 미션에서만. 드라이버는 포트를 혼자 쥐므로 에피소드가 head_home 것을 내리고
     같은 인자 + --max-tilt 82 로 다시 띄운다. 시작 검사가 먼저 · 마스크 · 학생 노드는 그 뒤."""
     run = REAL_RAW["run"]["episode_place_m_right"]
     drv = _drivers(REAL_RAW)
-    assert drv["episode_place_m_right#9"] == [*drv["head_home#0"], "--max-tilt", "82"]
+    # 이름으로 찾는다 — 단계 번호는 에피소드 앞부분(경로 F 접근 등)이 바뀌면 움직인다
+    tilt_idx = next(i for i, c in enumerate(run) if "--max-tilt" in (c.get("argv") or []))
+    assert drv[f"episode_place_m_right#{tilt_idx}"] == [*drv["head_home#0"], "--max-tilt", "82"]
     at = {k: next(i for i, c in enumerate(run) if any(str(a).endswith(k) for a in c.get("argv") or []))
           for k in ("check_place_student.py", "head_joint_publisher.py", "head_mask_node.py", "rh_place_student_node.py")}
-    stop = next(i for i, c in enumerate(run) if c.get("stop") == ["head_home#0"])
+    stop = next(i for i, c in enumerate(run) if (c.get("stop") or [None])[0] == "head_home#0")   # 앞 단계(head_sweep) 드라이버도 같이 내린다
     assert at["check_place_student.py"] < stop < at["head_joint_publisher.py"] < at["head_mask_node.py"] < at["rh_place_student_node.py"]
     check = run[at["check_place_student.py"]]["argv"]
     assert check[check.index("--episode") + 1] == "place_m_right" and check[check.index("--side") + 1] == "right"
     node = run[at["rh_place_student_node.py"]]["argv"]
     assert "__node:=rh_place_node_right" in node and "ns:=right_place" in node and "device:=cuda" in node
     assert "student_dir:={repo}/deploy/policies/rh56f1/place/right_student_place" in node
-    assert not _drivers(FAKE_RAW).get("episode_place_m_right#9")              # fake 는 목 드라이버가 없다
+    assert not [k for k in _drivers(FAKE_RAW) if k.startswith("episode_place_m_")]    # fake 는 목 드라이버가 없다
 
 
+@STUDENT_SKIP
 def test_the_place_student_episode_ends_with_the_default_driver_and_head_home():
     """★11.08 리뷰: 82 드라이버가 노드 정지로 내려가면 목 드라이버가 없는데 head_home 완료가 남는다 — 에피소드 끝 꼬리가
     기본 드라이버를 다시 띄우고 head_home(콘솔 확인 --execute)으로 camset 에 되돌린다. 셧다운은 토크 해제 전에 그 드라이버를 내린다."""
@@ -841,14 +850,35 @@ def test_every_other_head_driver_keeps_the_default_tilt_limit():
     for raw in (REAL_RAW, FAKE_RAW):
         drv = _drivers(raw)
         tilt82 = [k for k, v in drv.items() if "--max-tilt" in v]
-        assert tilt82 == (["episode_place_m_right#9"] if raw is REAL_RAW else []), tilt82
+        # ★11.09 82 는 놓기 학생 에피소드 둘(오른손 · 왼손)에만, 에피소드마다 하나씩 + ★11.10 목 스윕(camset 둘레 tilt +75.5 까지) 동안만
+        got = sorted(k.rsplit("#", 1)[0] for k in tilt82)
+        student = ["episode_place_m_left", "episode_place_m_right"] if "episode_place_m_right" in raw["run"] else []
+        assert got == ([*student, "head_sweep"] if raw is REAL_RAW else []), tilt82
         others = {k: v for k, v in drv.items() if k not in tilt82}     # 놓기 에피소드 끝 꼬리 드라이버 포함
         assert all(v == GEN.HEAD_DRIVER_ARGV for v in others.values()), others
     assert "head_home#0" in _drivers(REAL_RAW)
 
 
+@STUDENT_SKIP
 def test_place_student_episode_records_the_mask_and_the_head_stream():
     rec = next(c["argv"][-1] for c in REAL_RAW["run"]["episode_place_m_right"] if "rh56f1_record.sh start" in " ".join(c.get("argv") or []))
     for t in ("/head_mask/image", "/head_mask/config", "/head/target_stream", "/head/stream_log"):
         assert t in rec, t
     assert "compressed" not in rec                                            # 학생 입력 지연(압축 구독) 없음
+
+
+def test_head_sweep_swaps_to_the_82_driver_and_restores_the_default_driver_and_camset():
+    """★11.10 사용자 "swap 천장을 바라보네": 스윕은 camset 둘레(tilt 최대 +75.5)라 82 드라이버로 바꿔 돌고, 끝나면 기본 드라이버 + camset.
+    뒤 단계(놓기 에피소드 · shutdown)의 head_home 정지는 스윕이 띄운 드라이버도 같이 내린다(포트 단독 소유)."""
+    run = REAL_RAW["run"]["head_sweep"]
+    drv = _drivers(REAL_RAW)
+    assert run[0]["stop"] == ["head_home#0"]
+    assert drv["head_sweep#1"] == [*drv["head_home#0"], "--max-tilt", "82"]
+    sweep = run[2]["argv"]
+    assert sweep[-3:] == ["{repo}/scripts/head_sweep.py", "--max-tilt", "82"] and run[2]["execute_args"] == ["--execute"]
+    assert "--calib-profile" not in sweep and "--return-pan" not in sweep
+    assert run[3]["stop"] == ["head_sweep#1"] and drv["head_sweep#4"] == GEN.HEAD_DRIVER_ARGV
+    assert run[5]["argv"] == GEN.HEAD_HOME_ARGV
+    for stage in [st for st in ("episode_place_m_right", "shutdown") if st in REAL_RAW["run"]]:   # ★11.11 학생 에피소드는 카메라가 같은 PC 일 때만
+        stop = next(c["stop"] for c in REAL_RAW["run"][stage] if "head_home#0" in (c.get("stop") or []))
+        assert {"head_sweep#1", "head_sweep#4"} <= set(stop), stage

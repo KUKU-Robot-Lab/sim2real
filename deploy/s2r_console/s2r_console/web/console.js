@@ -124,6 +124,7 @@ function renderAll() {
   renderTilt(s);
   renderWorkspace();
   renderPolicyTable(s);
+  renderPolicyDevice(s);
   renderEval(s);
   renderTuning(s);
   renderRobot(s);
@@ -1121,6 +1122,11 @@ function xpGo(s, it, key, side, st) {
 
 // 정책 목록(접은 칸) — 등록부 전부. 실험에 쓰는 것은 그 실험으로 바로 간다.
 const shortPolicy = (id) => String(id || "").split("/").pop().replace(/^(right|left|both)_/, "").replace(/^approach_/, "");
+function renderPolicyDevice(s) {
+  const cur = s.policy_device || "";
+  document.querySelectorAll('[data-act="policy-device"]').forEach(b => b.setAttribute("aria-checked", String(b.dataset.arg === cur)));
+}
+
 function renderPolicyTable(s) {
   const X = s.experiments, cat = (S.workspace && S.workspace.catalog) || [];
   const uses = {};
@@ -1745,6 +1751,7 @@ function renderTuning(s) {
       <button class="btn-stop" data-act="tu-stop" data-arg="${side}" ${busy ? "" : "disabled"}>■ 실험 정지(pd 는 켜 둠)</button>
       <button class="btn" data-act="tu-pd-off" data-arg="${side}" ${can && !busy && pdUp ? "" : "disabled"}>pd 끄기 ${SIDE_KO[side]}</button>
       <button class="btn" data-act="tu-new" data-arg="${esc(row.key)}" ${can ? "" : "disabled"}>새 실험 준비 → ${esc(row.new_name)}</button></div>
+    ${chainRow(T, side, can, busy)}
     ${tj ? `<p role="status" aria-live="polite">${busy && tj.off ? `<span class="badge live">▶ pd 끄는 중</span> ${esc(stepKo[tj.step] || tj.step)}`
       : busy ? `<span class="badge live">▶ 실행 중 ${tj.trial_i}/${tj.trial_n}</span>
       ${esc(tj.folder || "")} · ${tj.trial ? `지금 trial ${esc(tj.trial)} · ` : ""}단계 ${esc(stepKo[tj.step] || tj.step)}`
@@ -1766,7 +1773,25 @@ function renderTuning(s) {
       <button class="btn-stop" data-act="quick" data-arg="episode_stop">■ 에피소드 정지</button></div>
     <p class="hint">trial 중단은 [실험 정지](터미널에서 돌렸다면 그 터미널에서 Ctrl-C), 팔은 [팔 그 자리 붙들기] 로 세운다.</p>`);
 }
+// ★11.10 사용자: "F1~F2x2 고속까지 하나의 버튼으로" — 준비(로봇 명령 없음) · 연속 실행(승인 한 번)
+function chainRow(T, side, can, busy) {
+  const rows = (T.chain && T.chain[side]) || [];
+  if (!rows.length) return "";
+  const st = (r) => r.complete ? `<span class="badge ok">끝</span>` : r.prepared ? `<span class="badge live">준비됨</span>` : `<span class="badge mute">준비 전</span>`;
+  const ready = rows.every((r) => r.complete || r.prepared) && rows.some((r) => !r.complete);
+  return `<div class="tu-row"><b>고속 연속</b> ${rows.map((r) => `${esc(r.label)} ${st(r)}`).join(" → ")}</div>
+    <div class="tu-row">
+      <button class="btn" data-act="tu-chain-new" data-arg="${side}" ${can && !busy && !rows.every((r) => r.complete || r.prepared) ? "" : "disabled"}>고속 5개 준비(로봇 명령 없음)</button>
+      <button class="btn btn-real" data-act="tu-chain" data-arg="${side}" ${can && !busy && ready ? "" : "disabled"}>▶ 고속 연속 실행 ${SIDE_KO[side]}</button></div>
+    <p class="hint">끝난 시험은 건너뛴다. 시험 사이에 pd 를 JTC 로 넘기고 다음 설정으로 다시 띄운다. 실패하면 그 자리에서 멈춘다.</p>`;
+}
 Object.assign(acts, {
+  "tu-chain"(v) { return prepareAction(`tune_${v === "left" ? "left" : "right"}`, { chain: true }); },
+  async "tu-chain-new"(v) {
+    const prepared = await call("POST", "/api/actions/prepare", { action: "tune_new", side: v === "left" ? "left" : "right", test: "SWEEP_CHAIN" });
+    await call("POST", "/api/actions/execute", { confirmation_id: prepared.confirmation_id });
+    toast("고속 시험 준비를 시작했다 — 끝나면 '준비됨' 으로 바뀐다", [], true); refresh();
+  },
   "tu-side"(v) { tuPick = { side: v }; tuSave(); if (S && S.session) renderTuning(S.session); },
   "tu-test"(v) { tuPick = { ...tuPick, test: v, folder: "" }; tuSave(); if (S && S.session) renderTuning(S.session); },
   "tu-folder"(v) { tuPick = { ...tuPick, folder: v }; tuSave(); if (S && S.session) renderTuning(S.session); },
@@ -1958,6 +1983,9 @@ function updateVideo(s) {
   if (v) $("video-retry").hidden = !(v.stale || v.connected === false);
   if (v) $("video-status").textContent = v.stale ? "오래된 영상 · 현재 화면 아님" : v.connected === false ? "영상 연결 끊김" : `영상 수신 중${v.age_s != null ? ` · ${fmt(v.age_s, 1)} s 전` : ""}`;
 }
+Object.assign(acts, {
+  async "policy-device"(arg) { await call("POST", "/api/policy/device", { device: arg || "" }); refresh(); },
+});
 Object.assign(acts, {
   tab: selectTab,
   "video-retry"() { $("fpp-video").removeAttribute("src"); $("fpp-video").src = "/api/video"; $("video-status").textContent = "영상 다시 연결 중"; $("video-retry").hidden = true; },

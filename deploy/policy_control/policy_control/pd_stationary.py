@@ -1,10 +1,12 @@
 """Adapter between the existing PD command and opt-in stationary torque compensation."""
 
+from collections import deque
 from dataclasses import replace
 
 import numpy as np
 
 from .stationary_compensation import (
+    FS_JOINTS,
     CompensationConfig,
     StationaryCompensator,
     payload_regressor,
@@ -23,12 +25,34 @@ class StationaryRuntime:
             raise ValueError("gravity correction requires the configured gravity chain")
         self.target = None
         self.episode = None
+        self.settle_joints = min(len(kp), FS_JOINTS)
+        self._window = deque()  # (elapsed [s], q[:settle_joints]) since last motion
+        self._elapsed = 0.0
 
     def reset(self):
         """Called only before a new engagement, after the previous release blend."""
         self.compensator = StationaryCompensator(self.cfg)
         self.target = None
         self.episode = None
+        self._window.clear()
+        self._elapsed = 0.0
+
+    def _standstill(self, q_meas, dt, hold):
+        """Position-span standstill on j1~j4 over settle_window_sec (see config)."""
+        if not hold:
+            self._window.clear()
+            return False
+        self._elapsed += dt
+        self._window.append((self._elapsed, np.asarray(q_meas[: self.settle_joints])))
+        window = self.cfg.settle_window_sec
+        # Keep one sample at/behind the window edge so tick jitter cannot open a gap.
+        while len(self._window) > 1 and self._elapsed - self._window[1][0] >= window:
+            self._window.popleft()
+        if self._elapsed - self._window[0][0] < window:
+            return False  # not enough history yet
+        q = np.stack([s[1] for s in self._window])
+        span = np.max(q.max(axis=0) - q.min(axis=0))
+        return bool(span <= np.deg2rad(self.cfg.settle_band_deg))
 
     def apply(
         self,
@@ -52,18 +76,25 @@ class StationaryRuntime:
         )
         new_episode = self.episode is not None and episode != self.episode
         self.target, self.episode = np.asarray(target).copy(), episode
-        moving = (
-            changed
-            or np.any(np.abs(target_velocity) > 1e-8)
-            or np.any(np.abs(cmd.q - target) > 1e-6)
-            or bool(cmd.limited)
-        )
-        settled = (
-            not moving
-            and phase == "TRACKING"
-            and np.max(np.abs(qd_meas)) < 0.005
-            and output_scale == 1.0
-        )
+        block = []
+        if changed or new_episode:
+            block.append("target_changed")
+        if np.any(np.abs(target_velocity) > 1e-8) or np.any(np.abs(cmd.q - target) > 1e-6):
+            block.append("target_moving")
+        if bool(cmd.limited):
+            block.append("limited")
+        if phase != "TRACKING":
+            block.append("phase")
+        if output_scale != 1.0:
+            block.append("output_scale")
+        standstill = self._standstill(q_meas, dt, not block)
+        if not block and not standstill:
+            block.append("not_standstill")
+        settled = not block
+        if contact is not False:
+            block.append("contact")
+        if stale:
+            block.append("stale")
         pd = self.kp * (cmd.q - q_meas) + self.kd * (cmd.qd - qd_meas)
         delta_g = (
             payload_regressor(self.chain, q_meas) @ self.cfg.payload_parameters
@@ -105,6 +136,9 @@ class StationaryRuntime:
             "torque_estimated_total": (pd + out.tau).tolist(),
             "compensation_saturated": result.saturated.tolist(),
             "integral_updating": result.updating.tolist(),
+            "settled": settled,
+            "fs_armed": bool(self.compensator.fs_armed),
+            "settle_block": block,
             "target_changed": bool(changed),
             "contact": contact,
             "stale": bool(stale),

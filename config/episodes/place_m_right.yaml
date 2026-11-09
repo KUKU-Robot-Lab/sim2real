@@ -1,39 +1,30 @@
-# 놓기 학생 오른손(11.08) — cocktail_1c_e4000 의 파랑 한 번(잡기 · shaker 잡기 · tilt 시작 자세 · 붓기)까지 그대로 두고,
-#   놓기만 학생(깊이 + 홀더 CAD · 컵 YOLO 마스크 + 규칙 머리 look_at)으로 바꾼다. 놓기 학생은 tilt 뒤 홀더 위로 옮기는 시작 상태로 배웠다.
-#   tilt 는 두 팔 궤적이라 왼손 shaker 잡기가 남는다. 에피소드는 오른손 놓기 · 오른팔 홈으로 끝나고 왼손은 shaker 를 쥔 채다
-#   (학생 머리가 목을 옮긴 뒤라 FP++ 를 쓰는 왼손 놓기는 넣지 않았다 — head_home 으로 목을 되돌린 뒤 policy_place_left 단계로).
-#   학생 묶음 rh56f1/place/right_student_place 는 자리표시다(place_lab 재학습 중). 묶음이 없으면 미션의 시작 검사
-#   (scripts/ops/check_place_student.py)가 불일치로 막는다.
-#   목 드라이버: 이 에피소드만 --max-tilt 82(★11.08 사용자) — 미션이 head_home 드라이버를 내리고 82 로 다시 띄운다. 끝나면 드라이버가 없다.
-episode: {name: place_m_right, version: 1}
+# 놓기 학생 오른손(v2 11.09 사용자 지시 place_lab 경유) — 경로 F(ap05 접근 → rcg04 쥐고 들기, F04 잡기 평가 경로)가 성공한 뒤
+#   그 상태(쥔 손 · 컵 · 관절 자세)를 그대로 넘겨받아 놓기 학생(깊이 + 홀더 CAD · 컵 YOLO 마스크 + 규칙 머리 look_at)이 이어 한다.
+#   v1(11.08)은 cocktail_1c_e4000 의 파랑 붓기 뒤 tin_json 으로 붙였다 — 실기 교사 놓기에서 tin_json 손바닥 FK 컵 추정이 z 34 cm
+#   틀려 래치가 안 켜졌다(11.09 depoly). v2 는 계약 그대로(attach_source bundle · ready_carry 600): 잡기 노드의 grasp_state
+#   넘김 묶음(손바닥 ⊗ 컵, 잡을 때 camset 머리 FP++)으로 붙이고, 놓기 노드가 Mover 로 홀더 위까지 옮긴 뒤 학생 정책.
+# 넘김 조건: grasp_lift 성공(expect right_hand: CUP = 잡기 노드 lift_hold 끝 · 쥠 판정) + 넘김 묶음(logs/runs/<YYMMDD>/inhand/,
+#   bundle:=auto, 900 s 안 · 손 관절 차 0.05 rad 안) — 없으면 놓기 reset 이 거부한다. 놓기 시작 자세 = 들기 끝 자세 그대로.
+# 머리 순서: 에피소드 앞(미션) 목 드라이버를 --max-tilt 82 로 다시 띄운다(머리는 camset 에 그대로) → 잡기는 camset 고정 머리 FP++ →
+#   놓기 reset 뒤 running(준비 이송 + 정책) 동안만 학생 규칙 머리가 /head/target_stream 으로 목을 움직인다(컵 추정은 FK ⊗ 묶음이라
+#   머리가 움직여도 영향 없음, place_live_cup false) → 오른팔 홈 → 꼬리: 기본 드라이버 + head_home(camset).
+# 홀더 1 = 교사 right_n10_e4000 뱅크 홀더 범위 안(cocktail 파랑과 같은 칸). 바깥 이웃 칸은 비워 둔다.
+episode: {name: place_m_right, version: 2}
 objects:
-  SRC_BLUE: {topic: /objects/source240b_blue/pose}
-  SHAKER: {topic: /objects/shaker_c_orange/pose}
-holders: {HOLDER_1: 1}
+  CUP: {topic: /objects/source240b_blue/pose}
+holders: {PLACE_HOLDER: 1}
 holder_poses: config/cup_holder_poses_5090_v1.yaml
-tin_fallback: deploy/policy_control/config/tilt/traj_v12_240/ref/tin_fixed_1107.json   # = cocktail_1c_e4000
 policies:
-  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/right_rcg04, cup_obs_offset_base_m: [-0.0116, 0.0338, -0.0143]}
-  rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg04, cup_obs_offset_base_m: [0.0028, 0.0283, 0.0046]}
-  rh_place_r: {policy: rh56f1/place/right_n10_e4000, kind: place, side: right, attach_source: tin_json, student: rh56f1/place/right_student_place}
+  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/right_rcg04, cup_obs_offset_base_m: [-0.0116, 0.0338, 0.0]}   # ★11.10 사용자: 오른손 z 보정만 0 (x·y 유지) — 높이 영향 분리 시험 (이전 [-0.0116, 0.0338, -0.0143])
+  rh_place_r: {policy: rh56f1/place/right_n10_e4000, kind: place, side: right, student: rh56f1/place/right_student_place}
 trajectories:
-  go_home: {kind: rehome, sides: [right, left]}
-  go_home_r: {kind: rehome, sides: [right]}                         # 왼손은 shaker 를 든 채
-  to_tilt_start_r: {kind: carry, sides: [right], asset: tilt/base_arc6}
-  to_tilt_start_l: {kind: carry, sides: [left], asset: tilt/base_arc6}
-  tilt: {kind: tilt, sides: [right, left], asset: tilt/traj_v12_240, rate_scale: 1.0, cup: "240"}
-failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 판단한다(컵을 쥔 채 rehome 은 거부된다).
-continue_on_fail: [place]     # = cocktail_1c_e4000(11.07 사용자): 놓기 실패면 멈추지 않고 오른팔 홈으로
+  go_home: {kind: rehome, sides: [right]}
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 rehome 으로 복구한다(컵을 쥔 채 rehome 은 거부된다).
 sequence:
   - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
   - {id: scene, type: snapshot}
-  - {id: grasp_blue, type: policy, name: rh_aglt_r, target_object: SRC_BLUE, policy_object: source240_real, expect: {right_hand: SRC_BLUE}}
-  - {id: grasp_shaker, type: policy, name: rh_aglt_l, target_object: SHAKER, policy_object: shaker_c_real,
-     expect: {right_hand: SRC_BLUE, left_hand: SHAKER}}
-  - {id: to_tilt_start_r1, type: trajectory, name: to_tilt_start_r}
-  - {id: to_tilt_start_l, type: trajectory, name: to_tilt_start_l, expect: {pose: SETTING}}
-  - {id: tilt_blue, type: trajectory, name: tilt, expect: {pose: SETTING, blue_poured: true}}
-  - {id: place_blue, type: policy, name: rh_place_r, source_object: SRC_BLUE, target_holder: HOLDER_1, policy_object: source240_real,
-     expect: {right_hand: EMPTY, left_hand: SHAKER, blue_placed: true}}
-  - {id: home_r_after_blue, type: trajectory, name: go_home_r, expect: {right_hand: EMPTY, left_hand: SHAKER}}
+  - {id: grasp_lift, type: policy, name: rh_aglt_r, target_object: CUP, policy_object: source240_real, expect: {right_hand: CUP}}
+  - {id: place_cup, type: policy, name: rh_place_r, source_object: CUP, target_holder: PLACE_HOLDER, policy_object: source240_real,
+     expect: {right_hand: EMPTY, cup_placed: true}}
+  - {id: go_home_end, type: trajectory, name: go_home, expect: {pose: HOME}}
   - {id: done, type: terminal, result: SUCCESS}

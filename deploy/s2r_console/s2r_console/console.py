@@ -42,7 +42,7 @@ from .errors import ProfileError
 from .rosgraph import REPEAT_S as GRAPH_REPEAT_S
 from . import pd_names as PD
 from .runner import SETTLE_S, StageRunner, step_kind
-from .supervisor import Supervisor, SupervisorError, child_env
+from .supervisor import POLICY_DEVICE_ENV, Supervisor, SupervisorError, child_env
 from .wiring import generate as generate_diagram
 from .wiring import PERCEPTION_STATUS as PERCEPT_STATUS
 
@@ -826,6 +826,18 @@ class Console:
                                cycle=s.state.cycle, note=note)
 
     # ── 그림의 스위치 ───────────────────────────────────────────────────
+    POLICY_DEVICES = ("", "cpu", "cuda")  # "" = 미션 yaml 의 device:= 그대로
+
+    def set_policy_device(self, device: str, *, operator: str) -> None:
+        """★11.10 정책 계산 장치(정책 탭). 떠 있는 노드는 그대로 — 다음에 띄우는 정책 노드부터 적용된다."""
+        if device not in self.POLICY_DEVICES:
+            raise ConsoleError(f"정책 장치는 {'/'.join(d or '미션' for d in self.POLICY_DEVICES)} 중 하나 — {device!r}")
+        with self._lock:
+            s = self._need()
+            s.supervisor.set_env(POLICY_DEVICE_ENV, device or None)
+            s.event("policy", f"정책 장치 → {device or '미션 기본(device:=)'} — 다음에 띄우는 정책 노드부터 ({operator})")
+            self._intent(s, "policy/device", {"device": device, "operator": operator})
+
     def toggle_unit(self, key: str, on: bool, *, operator: str) -> None:
         """미션의 배경 명령 하나를 켜거나 끈다. 규칙은 `units.on_reasons` / `off_reasons` 가 정한다."""
         with self._lock:
@@ -1095,7 +1107,7 @@ class Console:
                 "mission": self._mission_view(s), "pd_sides": self._pd_sides(s, obs),
                 "runners": {lane: r.view() for lane, r in s.runners.items()},
                 "procs": s.supervisor.table(), "metrics": metrics, "events": events,
-                "policy": self._policy_view(s), "end_reasons": self.end_reasons(),
+                "policy": self._policy_view(s), "policy_device": s.supervisor.env_value(POLICY_DEVICE_ENV) or "", "end_reasons": self.end_reasons(),
                 "robot_module": None if s.robot is None else {**s.robot.as_dict(), "picked": s.picked,
                                                               "slots_now": self._slots_now(s)},
                 "fpp": self._fpp_view(s, obs),

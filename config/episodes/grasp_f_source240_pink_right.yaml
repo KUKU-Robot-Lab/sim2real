@@ -4,7 +4,7 @@ episode: {name: grasp_f_source240_pink_right, version: 1}
 objects:
   CUP: {topic: /objects/source240_pink/pose}
 policies:
-  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/right_rcg04, cup_obs_offset_base_m: [-0.0116, 0.0338, -0.0143]}   # 11.07 cocktail_1c_e4000 rh_aglt_r 과 같은 값(11.04 Rm 측정)
+  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/right_rcg04, cup_obs_offset_base_m: [-0.0116, 0.0338, 0.0]}   # ★11.10 사용자: 오른손 z 보정만 0 (x·y 유지) — 높이 영향 분리 시험 (이전 [-0.0116, 0.0338, -0.0143])   # 11.07 cocktail_1c_e4000 rh_aglt_r 과 같은 값(11.04 Rm 측정)
 trajectories:
   go_home: {kind: rehome, sides: [right]}
 failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 rehome으로 복구한다.

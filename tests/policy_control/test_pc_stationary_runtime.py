@@ -203,3 +203,61 @@ def test_real_arm_tick_wires_same_tick_diagnostics_and_live_gains(monkeypatch):
     unit.on_robot_description("<robot/>")
     result = unit.tick(10.01, False)
     assert result.status.phase == "HOLD"
+
+
+def _runtime(config):
+    import numpy as np
+    from policy_control.pd_stationary import StationaryRuntime
+
+    kp = np.ones(7) * 70.0
+    return StationaryRuntime(
+        config, kp=kp, kd=np.ones(7) * 8.0, torque_limit=np.ones(7) * 7.0, blend_sec=1.0
+    )
+
+
+def _hold(rt, q, qd, n=60, dt=1.0 / 120.0, **kw):
+    import numpy as np
+    from policy_control.pd_law import PdCommand
+
+    zero = np.zeros(7)
+    cmd = PdCommand(zero.copy(), zero.copy(), zero.copy(), (), False)
+    args = dict(target=zero, target_velocity=zero, phase="TRACKING", contact=False,
+                stale=False, episode=1, dt=dt, gravity=zero, request=zero)
+    args.update(kw)
+    return [rt.apply(cmd, q_meas=q(i), qd_meas=qd(i), **args)[1] for i in range(n)]
+
+
+def test_settles_despite_quantized_velocity_noise():
+    """Real DM velocity flickers ±1 step (0.022 rad/s on j1/j2) at standstill; the
+    old |qd| < 0.005 test never settled on hardware (261109 right, 96 runs)."""
+    import numpy as np
+
+    rt = _runtime({"fs": [0.3, 0.3, 0.3, 0.3, 0, 0, 0], "integral_enabled": True,
+                   "ki": [14.0] * 4 + [0.0] * 3})
+    q0 = np.r_[np.deg2rad([0.5, -0.5, 0.5, -0.5]), np.zeros(3)]
+    rows = _hold(rt, lambda i: q0, lambda i: np.r_[0.022 * (-1) ** i, 0.022, 0.0049, 0, 0, 0, 0])
+    assert not rows[0]["settled"] and rows[0]["settle_block"] == ["not_standstill"]
+    assert rows[-1]["settled"] and rows[-1]["fs_armed"] and rows[-1]["settle_block"] == []
+    assert any(abs(t) > 0 for t in rows[-1]["torque_static_friction"][:4])
+    assert any(rows[-1]["integral_updating"][:4])
+
+
+def test_motion_over_band_blocks_settle_and_j5_j7_ignored():
+    import numpy as np
+
+    rt = _runtime({"fs": [0.3, 0.3, 0.3, 0.3, 0, 0, 0]})
+    step = np.deg2rad(0.03)  # > 0.05 deg span within the 0.1 s window
+    rows = _hold(rt, lambda i: np.r_[i * step, 0, 0, 0, 0, 0, 0], lambda i: np.zeros(7))
+    assert not any(r["settled"] for r in rows)
+    rt = _runtime({"fs": [0.3, 0.3, 0.3, 0.3, 0, 0, 0]})
+    rows = _hold(rt, lambda i: np.r_[0, 0, 0, 0, i * step, 0, 0], lambda i: np.zeros(7))
+    assert rows[-1]["settled"]
+
+
+def test_block_reasons_recorded():
+    import numpy as np
+
+    rt = _runtime({"fs": [0.3, 0.3, 0.3, 0.3, 0, 0, 0]})
+    rows = _hold(rt, lambda i: np.zeros(7), lambda i: np.zeros(7), contact=True, phase="HOLD")
+    assert not rows[-1]["settled"] and not rows[-1]["fs_armed"]
+    assert {"phase", "contact"} <= set(rows[-1]["settle_block"])

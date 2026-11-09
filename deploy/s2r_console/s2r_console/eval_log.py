@@ -21,7 +21,8 @@ import yaml
 from . import tilt_view as TV
 
 #: ★11.05 사용자: 탭에는 이 셋만 — 다른 cocktail_* yaml 은 지우지 않고 목록에서만 뺀다
-EVAL_EPISODES = ("cocktail_1c_e4000", "grasp_s_right", "grasp_s_left")
+#: ★11.09 사용자: 놓기 학생 에피소드(F 잡기 → 놓기 학생) 두 장을 더한다
+EVAL_EPISODES = ("cocktail_1c_e4000", "grasp_s_right", "grasp_s_left", "place_m_right", "place_m_left")
 COLUMNS = ("round", "time", "episode", "policy_r", "policy_l", "result", "fail_stage", "fail_type", "note")
 RESULTS = ("성공", "실패", "중단")
 #: 화면 · 실행기 말을 저장 값으로 — 실행기 phase(SUCCESS · FAILURE · STOPPED)와 영어 별칭도 받는다
@@ -79,7 +80,8 @@ def read_episode(path: Path) -> dict:
     def pid(role: str, side: str) -> str:
         b = pol.get(role)
         if isinstance(b, Mapping):
-            return str(b.get("policy", ""))
+            # 놓기 학생 에피소드(11.09)는 student 가 실제로 도는 정책 — policy 는 교사(계약 출처)다
+            return str(b.get("student") or b.get("policy", ""))
         # 실행되는 것은 student 쪽(깊이 학생) — 같은 손 항목이 여럿이면 yaml 순서 첫 항목
         b = next((v for v in pol.values() if isinstance(v, Mapping) and v.get("side") == side), {})
         return str(b.get("student") or b.get("policy") or "")

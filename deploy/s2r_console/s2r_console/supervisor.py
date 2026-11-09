@@ -17,6 +17,8 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+POLICY_DEVICE_ENV = "S2R_POLICY_DEVICE"  # policy_control/cpu_plan.py 와 같은 이름 — 콘솔 패키지는 그쪽을 import 하지 않는다
 from typing import Mapping, Sequence
 
 #: SIGTERM 뒤 SIGKILL 까지 기다리는 시간 [s]. mission_run.KILL_GRACE_S 와 같다.
@@ -154,6 +156,7 @@ class Proc:
     started: float
     log_pos: int = 0       # 이 기동이 쓰기 시작한 로그 위치 — 앞의 줄은 지난 기동의 것이다(09.23)
     stopped: bool = False  # 감독자가 내렸다(단계의 정지 · 끄기 · run 끝) — 스스로 죽은 것과 구별한다
+    policy_device: str = ""  # ★11.10 띄울 때의 S2R_POLICY_DEVICE(비면 미션 device:= 그대로)
 
     @property
     def rc(self) -> int | None:
@@ -164,7 +167,7 @@ class Proc:
         return {"key": self.key, "stage": self.stage, "note": self.note, "argv": list(self.argv),
                 "background": self.background, "pid": self.popen.pid, "rc": rc,
                 "alive": rc is None, "log": self.log.name, "age_s": round(time.time() - self.started, 1),
-                "stopped": self.stopped}
+                "stopped": self.stopped, "policy_device": self.policy_device}
 
 
 class Supervisor:
@@ -173,6 +176,17 @@ class Supervisor:
         self._procs: dict[str, Proc] = {}
         self._lock = threading.Lock()
         (run_dir / "proc").mkdir(parents=True, exist_ok=True)
+
+    def set_env(self, key: str, value: str | None) -> None:
+        """자식 env 한 칸을 바꾼다(None = 뺀다). 이미 떠 있는 프로세스는 그대로 — 다음 spawn 부터다(★11.10 정책 장치)."""
+        with self._lock:
+            if value is None:
+                self._env.pop(key, None)
+            else:
+                self._env[key] = value
+
+    def env_value(self, key: str) -> str | None:
+        return self._env.get(key)
 
     # ── 띄우기 ──────────────────────────────────────────────────────────
     def spawn(self, key: str, *, stage: str, note: str, argv: Sequence[str], background: bool, manual: bool) -> Proc:
@@ -187,6 +201,9 @@ class Supervisor:
             log = self._run_dir / "proc" / f"{key.replace('#', '_')}.log"
             fh = log.open("ab")
             fh.write(f"\n$ {' '.join(argv)}\n".encode())
+            device = self._env.get(POLICY_DEVICE_ENV, "")
+            if device:
+                fh.write(f"[console] {POLICY_DEVICE_ENV}={device}\n".encode())
             fh.flush()
             log_pos = log.stat().st_size            # 같은 단계를 다시 띄우면 로그가 이어 쓰인다 — 여기서부터 본다
             try:
@@ -198,7 +215,8 @@ class Supervisor:
                 raise SupervisorError(f"{argv[0]}: {exc}") from exc
             fh.close()
             proc = Proc(key=key, stage=stage, note=note, argv=tuple(argv), background=background,
-                        popen=popen, log=log, started=time.time(), log_pos=log_pos)
+                        popen=popen, log=log, started=time.time(), log_pos=log_pos,
+                        policy_device=self._env.get(POLICY_DEVICE_ENV, ""))
             self._procs[key] = proc
             self._write_pids()
             return proc

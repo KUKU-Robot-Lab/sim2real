@@ -120,7 +120,7 @@ def test_hand_only_does_not_require_arm_joint_state(ros):
                        contract=contract, profile=load_profile(robot.joint_profiles),
                        stage_name="reduced", execute=False)
         state = unit.sources.snapshot(0.0)
-        q, qd, why = unit._measured(state)
+        q, qd, why = unit._measured(state, 0.0)
         assert why is None or "arm" not in why, f"팔 백엔드가 없으면 arm 결손을 이유로 멈추면 안 된다: {why}"
     finally:
         unit_close = getattr(locals().get("unit", None), "close", None)

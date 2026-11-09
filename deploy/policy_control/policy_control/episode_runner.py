@@ -128,6 +128,7 @@ class EpisodeManager:
     #: ★10.28 사람이 놓은 물체 다시 찍기(confirm 바로 뒤 snapshot objects) 실패 횟수 — 노드 id → 횟수
     placed_tries: dict = field(default_factory=dict)
     _auto: bool = False
+    _chained: bool = False                              # ★11.09 auto 노드 이어 가기(승인만 생략)
 
     def __post_init__(self) -> None:
         if not self.flow:
@@ -155,8 +156,21 @@ class EpisodeManager:
             if not self.approve(f"recover:{node.id}:{rec.action}", rec.reason):
                 return self._declined(node, f"recover:{node.id}:{rec.action}")
             self.pending = None
-            return self._do_recovery(node, rec)
-        return self._advance()
+            self._do_recovery(node, rec)
+        else:
+            self._advance()
+        return self._chain_auto()
+
+    def _chain_auto(self) -> str:
+        """★11.09 사용자 — 다음 노드가 auto 면 승인 없이 이어 간다(앞 노드가 READY 로 끝났을 때만 · 복구 대기 · 확인 · 정지면 멈춤)."""
+        while (self.status == READY and self.pending is None and self.waiting is None
+               and self.node is not None and self.node.type != "terminal" and self.node.auto):
+            self._chained = True                        # 승인만 건너뛴다 — 실패 복구는 그대로 다음 명령(승인) 대기
+            try:
+                self._advance()
+            finally:
+                self._chained = False
+        return self.status
 
     def run(self) -> str:
         """끝까지(연속 실행) — 승인은 여기서 한 번. 복구 동작도 이 승인 안이다(재시도 상한 · 안전 규칙은 그대로)."""
@@ -223,7 +237,7 @@ class EpisodeManager:
             return self.status
         if node.type == "confirm":
             return self._confirm(node)
-        if not self._auto and not self.approve(node.id, self._describe(node)):
+        if not (self._auto or self._chained) and not self.approve(node.id, self._describe(node)):
             return self._declined(node, node.id)
         self.status = RUNNING
         t0, start = time.monotonic(), _now()

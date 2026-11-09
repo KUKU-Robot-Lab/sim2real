@@ -610,3 +610,33 @@ def test_cups_keeps_the_calibrated_head_pose_until_the_user_sets_an_angle(consol
     assert m._transform(s, 'cups', {}, move).argv == move.argv
     s.workspace.update({'head': {'pan': 5, 'tilt': -25}}, persist=False)
     assert m._transform(s, 'cups', {}, move).argv[-4:] == ('--pan', '5.0', '--tilt', '-25.0')
+
+
+def test_head_sweep_is_a_control_button_that_locks_the_right_arm_and_returns_to_the_workspace_pose(console, tiny_repo):
+    """★11.10 사용자: C(카메라 vs 팔 FK) 조사 목 스윕 — control 탭 버튼, 오른팔 pd 가 붙들고 있어야, 끝나면 작업 공간 자세로."""
+    from mission_stages import Command
+    m = setup_actions(console, tiny_repo, {'head_sweep': [{'argv': ['python3', 'scripts/head_sweep.py']}]})
+    s = console.session
+    d = m.describe('head_sweep')
+    assert d['group'] == 'control'
+    assert m._resources(s, 'head_sweep', 'control', {}) >= {'head', 'perception', 'right'}
+    assert any('right PD' in r for r in d['reasons'])      # 팔이 붙들려 있지 않으면 막힌다
+    cmd = Command(argv=('python3', 'scripts/head_sweep.py', '--execute'))
+    s.workspace.update({'head': {'pan': 0.1, 'tilt': -25.0, 'calib_profile': 'v9_1014_anchored'}})
+    # ★11.10 작업 공간 자세(OpenArm 각도)를 넘기면 RH56F1 머리가 천장을 본다 — argv 그대로(스윕이 실측 자세를 중심으로)
+    assert m._transform(s, 'head_sweep', {}, cmd).argv == cmd.argv
+
+
+def test_head_sweep_plan_is_a_small_snake_around_the_current_pose_and_respects_the_tilt_limit():
+    """★11.10 사용자 "천장을 바라보네": RH56F1 camset(pan +19.56 · tilt +67.47) 둘레만 돈다 — OpenArm 보정 각도(−20 ~ −30) 금지."""
+    import sys
+    from pathlib import Path
+    import pytest
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
+    import head_sweep as HS
+    angles = HS.plan_angles((19.56, 67.47), [-10, 0, 10], [-8, 0, 8], 82.0)
+    assert angles[0] == (19.56, 67.47) and len(angles) == 9 and len(set(angles)) == 9
+    assert all(abs(p - 19.56) <= 10.01 and abs(t - 67.47) <= 8.01 for p, t in angles)
+    with pytest.raises(ValueError):
+        HS.plan_angles((19.56, 67.47), [0], [20], 82.0)                    # 87.5 > 82
+

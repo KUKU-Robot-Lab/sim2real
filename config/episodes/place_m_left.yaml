@@ -1,0 +1,25 @@
+# 놓기 학생 왼손(v1 11.09 사용자 지시 place_lab 경유) — place_m_right v2 와 같은 방식: 경로 F(ap05 접근 → rcg04 쥐고 들기)로
+#   shaker 를 잡고 들면 그 상태(쥔 손 · 컵 · 관절 자세)를 그대로 넘겨받아 놓기 학생(교사 left_n09_e3800 계약)이 홀더 0 에 놓는다.
+# 넘김 조건: grasp_lift 성공(expect left_hand: CUP) + 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto, 900 s · 0.05 rad 안).
+#   계약 attach_source bundle · ready_carry 600 — 놓기 노드가 Mover 로 홀더 위까지 옮긴 뒤 학생 정책.
+# 머리 순서: place_m_right 와 같다(82 드라이버 → camset 잡기 → running 동안만 학생 머리 → 왼팔 홈 → 기본 드라이버 + head_home).
+# 홀더 0 = 교사 왼손 뱅크 홀더 범위(cocktail shaker 와 같은 칸). 알려진 위험: 왼손 래치 dz 0.04 — shaker 쥔 손끝 높이 실기 재확인.
+episode: {name: place_m_left, version: 1}
+objects:
+  CUP: {topic: /objects/shaker_c_orange/pose}
+holders: {PLACE_HOLDER: 0}
+holder_poses: config/cup_holder_poses_5090_v1.yaml
+policies:
+  rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg04, cup_obs_offset_base_m: [0.0028, 0.0283, 0.0046]}
+  rh_place_l: {policy: rh56f1/place/left_n09_e3800, kind: place, side: left, student: rh56f1/place/left_student_place}
+trajectories:
+  go_home: {kind: rehome, sides: [left]}
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 rehome 으로 복구한다(컵을 쥔 채 rehome 은 거부된다).
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  - {id: grasp_lift, type: policy, name: rh_aglt_l, target_object: CUP, policy_object: shaker_c_real, expect: {left_hand: CUP}}
+  - {id: place_cup, type: policy, name: rh_place_l, source_object: CUP, target_holder: PLACE_HOLDER, policy_object: shaker_c_real,
+     expect: {left_hand: EMPTY, cup_placed: true}}
+  - {id: go_home_end, type: trajectory, name: go_home, expect: {pose: HOME}}
+  - {id: done, type: terminal, result: SUCCESS}

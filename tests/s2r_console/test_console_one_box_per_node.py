@@ -58,6 +58,8 @@ def _station():
 
 
 GEN = _station()
+#: ★11.11 카메라가 다른 PC(5090_arm4090)면 학생 에피소드(깊이 노드)가 미션에서 빠진다 — 기대값도 그에 맞춘다
+PM = ("episode_place_m_right#10",) if "place_m_right" in GEN.EPISODES else ()
 
 
 def _real():
@@ -123,15 +125,14 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
     assert set(place.units) == {"policy_place_right#1", "episode_pick_place_right#6",
                                 "episode_pick_place_f_right#6",                 # ★10.22 경로 F + 놓기(newton_05)
                                 "episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_1c_e4000#7",   # ★10.28 칵테일 — 같은 노드가 홀더 1 → 2
-                                "episode_place_m_right#11"}   # ★11.08 놓기 학생 — 같은 노드 이름(검사 #7 · 목 드라이버 #9 · 마스크 #10 뒤)
+                                *PM}   # ★11.09 놓기 학생 v2 — 같은 노드 이름(경로 F 접근 #5 · 검사 #6 · 목 드라이버 #8 · 마스크 #9 뒤)
     # ★10.19 사용자 "좌우 동시 실행": 한 팔 에피소드는 팔마다 실행기(episode_runner_<팔>), 두 팔 tilt 는 기본 실행기
     runner = d.box("episode_runner")
     assert set(runner.units) == {"episode_tilt_base_d#9",   # 실기: 앞에 CPU 기록 한 줄(10.08) · ★10.20 경로 A 폐지 → D, 정책 노드 둘
                                  "episode_tilt_base_c#9",   # 10.17 경로 C — 정책 노드 둘(D 와 같은 자리)
                                  "episode_tilt_base_b#5",   # 10.17 경로 B — 정책 노드 없음(사람이 컵을 댄다)
                                  "episode_grasp2tilt_f_240#9",   # ★10.27 실기 2단계 grasp2tilt — 두 팔 에피소드라 기본 실행기
-                                 "episode_cocktail_1#11", "episode_cocktail_1b#11", "episode_cocktail_1c_e1000#11", "episode_cocktail_1c_e4000#11",   # ★10.28 칵테일 — 정책 노드 넷
-                                 "episode_place_m_right#14"}   # ★11.08 놓기 학생(두 팔 tilt 를 거쳐 기본 실행기)
+                                 "episode_cocktail_1#11", "episode_cocktail_1b#11", "episode_cocktail_1c_e1000#11", "episode_cocktail_1c_e4000#11"}   # ★10.28 칵테일 — 정책 노드 넷(★11.09 놓기 학생 v2 는 한 팔 에피소드라 팔별 실행기로 옮겼다)
     for side in ("right", "left"):
         assert set(d.box(f"episode_runner_{side}").units) == {f"episode_pick_place_{side}#9",
                                                               f"episode_grasp_c_{side}#8",
@@ -140,10 +141,11 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                                               f"episode_grasp_d_{side}#8",   # ★10.20 경로 D(aglt 노드 하나)
                                                               f"episode_grasp_e_{side}#8",   # ★10.20 밤 경로 E(aglt 노드 하나, 넘김)
                                                               f"episode_grasp_f_{side}#8",   # ★10.21 경로 F(경로 E + rcg04)
-                                                              f"episode_grasp_s_{side}#9",   # ★11.05 경로 S(머리 깊이 + 학생 노드)
-                                                              f"episode_grasp_m_{side}#11",  # ★11.07 경로 M(경로 S + 마스크 검사 · 마스크 노드)
                                                               f"episode_pick_place_f_{side}#9",   # ★10.22 경로 F + 놓기
-                                                              *_F_VARIANTS(side, 8)}   # ★11.08 경로 F 주황 · 분홍(오른팔만)
+                                                              *_F_VARIANTS(side, 8),   # ★11.08 경로 F 주황 · 분홍(오른팔만)
+                                                              # ★11.05 경로 S · ★11.07 경로 M · ★11.09 놓기 학생 v2 — 카메라가 같은 PC 일 때만(★11.11)
+                                                              *((f"episode_grasp_s_{side}#9", f"episode_grasp_m_{side}#11", f"episode_place_m_{side}#13")
+                                                                if PM else ())}
 
 
 def test_one_arms_pd_without_and_with_publishing_is_one_box_and_only_the_quiet_one_mutes_the_drive(real):
@@ -174,9 +176,9 @@ def test_in_the_episode_the_runner_gives_the_holder_and_goal_and_alone_the_holde
     # ★10.13 원격 인지면 마커 노드가 없다 — 단독 놓기의 홀더는 미션 밖(바깥 상자)에서 온다
     alone = "obj_cup_holder_1" if GEN.REMOTE_PERCEPTION else "cup_holders"
     assert holder == {alone: ("policy_place_right#1",),
-                      "episode_runner_right": ("episode_pick_place_right#6", "episode_pick_place_f_right#6"),   # ★10.22 경로 F + 놓기
-                      "episode_runner": ("episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_1c_e4000#7",
-                                         "episode_place_m_right#11")}   # ★10.28 칵테일(두 팔 = 기본 실행기) · ★11.08 놓기 학생
+                      "episode_runner_right": ("episode_pick_place_right#6", "episode_pick_place_f_right#6",
+                                               *PM),   # ★10.22 경로 F + 놓기 · ★11.09 놓기 학생 v2(한 팔 = 팔별 실행기)
+                      "episode_runner": ("episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_1c_e4000#7")}   # ★10.28 칵테일(두 팔 = 기본 실행기)
     goal = {w.src: w for w in d.wires if w.dst == "rh_aglt_node_right" and w.topic == "/policy_control/right/goal"}
     # ★10.19 한 팔 에피소드는 오른팔 실행기, 두 팔 tilt 는 기본 실행기가 목표를 낸다
     # ★10.20 옛 정책 정리 뒤: 계약이 없는 정책 노드는 단위에서 빠진다 → 목표를 내는 실행기는 오른손 aglt 노드를 실제로 띄우는 단계의 것만
@@ -266,9 +268,9 @@ def test_the_fake_profile_gets_the_same_picture_with_fake_hands():
     assert d.box("hand_right_drive").ros == ("/fake_rh56f1_right",)
     assert d.box("hand_right_state").ros == ("/rh56f1_state_right",)        # hands:=none — fake 플랜트의 손 상자가 없다
     # fake 홀더 여섯(★10.22 경로 F + 놓기 둘 추가) · ★10.28 칵테일 둘 × 홀더 셋 → 열둘 = 실기 홀더 노드 상자 하나
-    #   ★11.08 놓기 학생 에피소드 홀더 하나 → 19
+    #   ★11.08 놓기 학생 에피소드 홀더 하나 → 19 · ★11.09 왼손 놓기 학생(홀더 0) 하나 더 → 20
     holders = d.box("cup_holders")
-    assert len(holders.units) == 19 and holders.title == W.HOLDER_TITLE and not holders.ros
+    assert len(holders.units) == 20 - 2 * (not PM) and holders.title == W.HOLDER_TITLE and not holders.ros
 
 
 # ── 노드 소스의 이름 ────────────────────────────────────────────────────
@@ -632,5 +634,6 @@ def test_the_cocktail_place_node_hears_both_of_its_holders(real):
     _, _, d = real
     for h in (1, 2):
         srcs = {w.src: w.units for w in d.wires if w.dst == "rh_place_node_right" and w.topic == f"/objects/cup_holder_{h}/pose"}
-        assert set(srcs.get("episode_runner", ())) == ({"episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_1c_e4000#7"}
-                                                       | ({"episode_place_m_right#11"} if h == 1 else set())), (h, srcs)   # ★11.08 놓기 학생 = 홀더 1
+        assert set(srcs.get("episode_runner", ())) == {"episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_1c_e4000#7"}, (h, srcs)
+        # ★11.09 놓기 학생 v2 = 홀더 1, 한 팔 에피소드라 팔별 실행기에서 온다(칵테일 실행기가 아님)
+        assert ("episode_place_m_right#10" in srcs.get("episode_runner_right", ())) == (bool(PM) and h == 1), (h, srcs)

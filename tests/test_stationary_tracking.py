@@ -256,3 +256,89 @@ def test_1108_condition_profiles_fit_their_friction_stage(side):
         c = CompensationConfig.from_mapping(pd.stationary_compensation)
         if name.startswith("fs_i"):
             assert list(c.integral_rate[:4]) == pytest.approx([int(name[-3:]) / 500] * 4)
+
+
+def test_motion_trials_return_to_pose_and_respect_limits():
+    import sys
+    sys.path.insert(0, "deploy/policy_control/tools")
+    import plan_home_path as P
+    from policy_control import stationary_tracking as S
+
+    def smooth(path, vmax=None):
+        v = 0.05 if vmax is None else min(vmax, 0.05)
+        return P.time_parametrize(path, vmax=v, dt=0.01, ramp=max(1.0, v * np.pi / 0.2))
+
+    poses = [{"id": "p0", "split": "fit", "q": [0.0] * 7}, {"id": "h", "split": "holdout", "q": [0.0] * 7}]
+    lo, hi = -np.ones(7), np.ones(7)
+    for motion in ("sweep", "step"):
+        plan = S.prepare_motion_trials(poses, lo, hi, smooth, lambda f: {"ok": True, "min_clear_m": 0.1, "samples": len(f)},
+                                       stage="F1", motion=motion, dt=0.01, moved_joints=4)
+        assert [t["joint"] for t in plan["trials"]] == [0, 1, 2, 3]
+        for t in plan["trials"]:
+            f = np.asarray(t["frames"])
+            assert np.allclose(f[0], 0) and np.allclose(f[-1], 0)
+            assert np.abs(np.diff(f, axis=0) / 0.01).max() <= 0.05 + 1e-8
+            assert np.abs(np.diff(f, n=2, axis=0) / 1e-4).max() <= 0.1 + 1e-6
+            assert t["hold_s"] == S.MOTION_HOLD_S
+    with pytest.raises(ValueError):
+        S.prepare_motion_trials(poses, lo, hi, smooth, None, stage="A", motion="sweep", dt=0.01)
+
+
+def test_sweep_picks_largest_collision_free_amplitude_per_joint():
+    import numpy as np
+
+    pose = [{"id": "p", "split": "fit", "q": [0.0] * 7}]
+    lin = lambda wps, v: np.asarray(wps, float)
+    # j1 은 10° 넘게 가면 충돌, j2 는 무엇이든 충돌
+    def check(frames):
+        f = np.asarray(frames)
+        bad = np.degrees(np.abs(f[:, 0]).max()) > 10.5 or np.abs(f[:, 1]).max() > 0
+        return {"ok": not bad}
+    plan = s.prepare_motion_trials(
+        pose, [-1.0] * 7, [1.0] * 7, lin, check, stage="F1", motion="sweep", dt=0.01,
+        moved_joints=3, amplitude_deg=(15, 10, 3),
+    )
+    got = {t["joint"]: t["offset_deg"] for t in plan["trials"]}
+    assert got == {0: 10.0, 2: 15.0}
+    assert [e["joint"] for e in plan["excluded"]] == [1]
+
+
+def test_motion_trials_judged_on_short_hold_not_ten_seconds():
+    import numpy as np
+
+    t = np.arange(0, 2.0, 0.01)
+    q = np.zeros((len(t), 7))
+    args = dict(path_end=1.0)
+    assert "insufficient_observation" in s.evaluate(t, np.zeros(len(t)), q, q, **args)["excluded_reasons"]
+    r = s.evaluate(t, np.zeros(len(t)), q, q, observe_s=0.95, **args)
+    assert r["eligible"] and r["tracking_pass"]
+
+
+def test_sweep_chain_joins_joints_into_one_trial():
+    """11.10 사용자 '한 번에': 관절별 sweep 을 한 trial 로 잇고 segments 로 관절 구간을 남긴다."""
+    import numpy as np
+    from policy_control import stationary_tracking as S
+
+    def lin(wps, v):
+        wps = np.asarray(wps, float)
+        out = [wps[0]]
+        for a, b in zip(wps[:-1], wps[1:]):
+            n = max(1, int(np.ceil(np.abs(b - a).max() / (v * 0.01))))
+            out += [a + (b - a) * (i / n) for i in range(1, n + 1)]
+        return np.asarray(out)
+
+    pose = {"id": "p", "split": "fit", "q": [0.0] * 7}
+    lo, hi = -np.ones(7) * 3, np.ones(7) * 3
+    ok = lambda f: {"ok": True, "min_clear_m": 0.1, "samples": len(f)}
+    plan = S.prepare_motion_trials([pose], lo, hi, lin, ok, stage="F1", motion="sweep", dt=0.01,
+                                   moved_joints=3, amplitude_deg=(15.0,), speeds=(0.1, 0.5), chain=True)
+    assert [t["id"] for t in plan["trials"]] == ["F1sw_p_all_r1"]
+    t = plan["trials"][0]
+    f = np.asarray(t["frames"])
+    assert t["joints"] == [0, 1, 2] and [s["joint"] for s in t["segments"]] == [0, 1, 2]
+    for s in t["segments"]:
+        seg = f[s["start"]:s["end"]]
+        moved = np.flatnonzero(np.ptp(seg, axis=0) > 1e-9)
+        assert moved.tolist() == [s["joint"]]
+    assert np.allclose(f[0], 0) and np.allclose(f[-1], 0)
+    assert np.max(np.abs(np.diff(f, axis=0))) / 0.01 <= 0.5 + 1e-9

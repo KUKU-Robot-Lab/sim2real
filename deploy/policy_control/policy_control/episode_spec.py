@@ -150,6 +150,7 @@ class Node:
     objects: tuple = ()           # ★10.28 snapshot — 이 물체만 FP++ 로 다시 찍어 기록(사람이 놓은 물체). 비면 탁자 위 물체 전부
     lane: str = ""                # ★11.08 lanes 항목 — 그 줄의 팔(right · left). 비면 순서 노드
     group: str = ""               # ★11.08 lanes 항목 — 묶은 lanes 노드 id
+    auto: bool = False            # ★11.09 사용자 — 앞 노드가 READY 로 끝나면 승인 없이 바로 이어 간다(구분 실행에서도)
 
 
 @dataclass(frozen=True)
@@ -229,6 +230,12 @@ def _holder_tol(raw: Mapping, where: str) -> float | None:
         raise EpisodeSpecError(f"{where}: {exc}") from exc
 
 
+def _auto_flag(v, where: str) -> bool:
+    if not isinstance(v, bool):
+        raise EpisodeSpecError(f"{where}: auto 는 true/false")
+    return v
+
+
 def _node(raw: Mapping, i: int) -> Node:
     where = f"sequence[{i}] {raw.get('id', '?')}"
     t = raw.get("type")
@@ -257,7 +264,7 @@ def _node(raw: Mapping, i: int) -> Node:
                 checkpoint=raw.get("checkpoint"), result=raw.get("result"), text=str(raw.get("text") or ""),
                 action=str(raw.get("action") or ""), sides=tuple(raw.get("sides") or ()),
                 hand_contract=str(raw.get("hand_contract") or ""), cfg=dict(raw.get("cfg") or {}),
-                objects=tuple(objs or ()))
+                objects=tuple(objs or ()), auto=_auto_flag(raw.get("auto", False), where))
 
 
 def _nodes(raw: Mapping, i: int) -> list[Node]:

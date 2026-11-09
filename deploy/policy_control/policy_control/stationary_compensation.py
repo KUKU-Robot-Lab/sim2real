@@ -54,6 +54,11 @@ class CompensationConfig:
     deadband_stop_deg: float = 0.03
     deadband_resume_deg: float = 0.06
     blend_sec: float = 1.0
+    # Standstill = j1~j4 measured position span over the last settle_window_sec stays
+    # within settle_band_deg. Measured velocity is not used: DM MIT velocity is
+    # quantized (j1/j2 step ≈ 0.022 rad/s), so |qd| < small never holds on hardware.
+    settle_window_sec: float = 0.1
+    settle_band_deg: float = 0.05
 
     def __post_init__(self):
         for key in ("gravity_enabled", "friction_enabled", "integral_enabled"):
@@ -93,6 +98,8 @@ class CompensationConfig:
             "fs_deadband_deg",
             "fs_width_deg",
             "move_split_deg",
+            "settle_window_sec",
+            "settle_band_deg",
         ):
             if not np.isfinite(getattr(self, key)):
                 raise ValueError(f"{key} must be finite")
@@ -103,6 +110,8 @@ class CompensationConfig:
             raise ValueError("deadband requires 0 <= stop < resume; blend_sec > 0")
         if min(self.fs_deadband_deg, self.fs_width_deg, self.move_split_deg) <= 0:
             raise ValueError("fs_deadband_deg, fs_width_deg, move_split_deg must be > 0")
+        if min(self.settle_window_sec, self.settle_band_deg) <= 0:
+            raise ValueError("settle_window_sec and settle_band_deg must be > 0")
 
     @property
     def n(self):
@@ -183,6 +192,7 @@ class StationaryCompensator:
         self._fade_rate = np.zeros(cfg.n)
         self._fs_armed = False
         self._fs_gain = 0.0
+        self.fs_armed = False  # diagnostics: static term armed after the last step
         self._fs_shape = np.zeros(cfg.n)
         self._moved = np.zeros(cfg.n)  # |motion| [rad] since target/episode change
 
@@ -266,6 +276,7 @@ class StationaryCompensator:
             self._fs_armed = False
         elif settled:
             self._fs_armed = True
+        self.fs_armed = self._fs_armed
         step = dt / cfg.blend_sec
         self._fs_gain = (
             min(self._fs_gain + step, 1.0)

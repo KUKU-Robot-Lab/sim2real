@@ -1,0 +1,57 @@
+{
+  "schema": "stationary_run_v1",
+  "created_wall_ns": 1794251122143822340,
+  "code_commit": "2d7796ff1754aafa1efaa5457f940c427cdeb7aa",
+  "code_status": "M CLAUDE.md\n M analysis/friction/common/scripts/new_experiment.sh\n M analysis/friction/common/scripts/rebase_trial.py\n M config/episodes/cocktail_1c_e1000.yaml\n M config/episodes/cocktail_1c_e4000.yaml\n M config/episodes/grasp_f_right.yaml\n M config/episodes/grasp_f_shaker_c_orange_right.yaml\n M config/episodes/grasp_f_source200_orange_right.yaml\n M config/episodes/grasp_f_source200_pink_right.yaml\n M config/episodes/grasp_f_source240_orange_right.yaml\n M config/episodes/grasp_f_source240_pink_right.yaml\n M config/episodes/place_m_right.yaml\n M config/mission_rh56f1_control.yaml\n M config/mission_rh56f1_fake.yaml\n M deploy/policy_control/config/sites/arm_v2.yaml\n M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_left_fs.yaml\n M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_left_fs_i050.yaml\n M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_left_fs_i100.yaml\n M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_left_fs_i200.yaml\n M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_left_off.yaml\n M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_right_fs.yaml\n M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_right_fs_i050.yaml\n M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_right_fs_i100.yaml\n M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_right_fs_i200.yaml\n M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_right_off.yaml\n M deploy/policy_control/policy_control/episode_runner.py\n M deploy/policy_control/policy_control/episode_spec.py\n M deploy/policy_control/policy_control/joint_policy.py\n M deploy/policy_control/policy_control/pd_arm.py\n M deploy/policy_control/policy_control/pd_node.py\n M deploy/policy_control/policy_control/pd_stationary.py\n M deploy/policy_control/policy_control/place_head_pose.py\n M deploy/policy_control/policy_control/place_student.py\n M deploy/policy_control/policy_control/stationary_compensation.py\n M deploy/policy_control/policy_control/stationary_fake.py\n M deploy/policy_control/policy_control/stationary_tracking.py\n M deploy/policy_control/tools/rh56f1_record.sh\n M deploy/policy_control/tools/stationary_contact_guard.py\n M deploy/policy_control/tools/stationary_tracking.py\n M deploy/s2r_console/s2r_console/actions.py\n M deploy/s2r_console/s2r_console/api.py\n M deploy/s2r_console/s2r_console/console.py\n M deploy/s2r_console/s2r_console/eval_log.py\n M deploy/s2r_console/s2r_console/supervisor.py\n M deploy/s2r_console/s2r_console/tuning_view.py\n M deploy/s2r_console/s2r_console/web/console.css\n M deploy/s2r_console/s2r_console/web/console.js\n M deploy/s2r_console/s2r_console/web/index.html\n M deploy/s2r_console/tools/run_fake_episode.py\n M robot/vendor/openarm/openarm_can/include/openarm/damiao_motor/dm_motor.hpp\n M robot/vendor/openarm/openarm_can/src/openarm/damiao_motor/dm_motor.cpp\n M robot/vendor/openarm/openarm_hardware/include/openarm_hardware/v10_simple_hardware.hpp\n M robot/vendor/openarm/openarm_hardware/src/v10_simple_hardware.cpp\n M scripts/ops/make_rh56f1_missions.py\n M tests/policy_control/test_baseline_run.py\n M tests/policy_control/test_pc_episode_continue_on_fail.py\n M tests/policy_control/test_pc_hand_only.py\n M tests/policy_control/test_pc_lift_guard.py\n M tests/policy_control/test_pc_site_ports.py\n M tests/policy_control/test_pc_stationary_runtime.py\n M tests/policy_control/test_stationary_static_friction.py\n M tests/s2r_console/test_console_actions.py\n M tests/s2r_console/test_console_eval.py\n M tests/s2r_console/test_console_one_box_per_node.py\n M tests/s2r_console/test_console_tuning.py\n M tests/s2r_console/test_rh56f1_mission.py\n M tests/test_stationary_contact_guard.py\n M tests/test_stationary_tracking.py\n?? .claude/\n?? _trash/\n?? analysis/friction/261110_F1offSw_right/\n?? analysis/friction/261110_F1onSw_right/\n?? analysis/friction/261110_F2x05Sw_right/\n?? analysis/friction/261110_F2x1Sw_right/\n?? analysis/friction/common/scripts/analyze_runs.py\n?? analysis/friction/common/scripts/replay_settle.py\n?? config/episodes/place_m_left.yaml\n?? deploy/policies/rh56f1/place/left_student_place/\n?? deploy/policies/rh56f1/place/right_student_place/\n?? deploy/policy_control/policy_control/tick_budget.py\n?? scripts/head_sweep.py\n?? tests/policy_control/test_pc_pd_comm_silent.py\n?? tests/policy_control/test_tick_budget.py\n?? tests/test_grasp_fk_vs_fpp.py",
+  "inputs": {
+    "poses": {
+      "path": "/home/user/rl_ws/sim2real/analysis/friction/common/inputs/right_pose_set_v1/poses.json",
+      "sha256": "6aee7d4724a494613230354941591684fccbcc6f167debe16a41c90bcdfcf9a3"
+    },
+    "scene": {
+      "path": "/home/user/rl_ws/sim2real/analysis/friction/common/inputs/scene_right_fit01_head_from_attention.json",
+      "sha256": "51e3edacddebf658f580ef7038a5bf43788f2e106af47a717437ffed2044f998"
+    },
+    "pd_config": {
+      "path": "/home/user/rl_ws/sim2real/deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_right_fs_i100.yaml",
+      "sha256": "2fee0e0f2fe520ea38d87016c316bcdcc43e7c6c8845186b84832d65e57857d6"
+    },
+    "contract": {
+      "path": "/home/user/rl_ws/sim2real/logs/policy/asset_openarm_rh56f1_bi_rl/deploy_contract.json",
+      "sha256": "168987de9bacde3d88f60a8d1ede0cc2ab94eb0b95123c6b2b1a7a2991c092bc"
+    },
+    "profile": {
+      "path": "/home/user/rl_ws/robot_control/src/robot_control/profiles/openarm_rh56f1.yaml",
+      "sha256": "166548a03416ea9712cdb6756f85c6304b50e2fe58db7da52014f42982dc780a"
+    },
+    "urdf": {
+      "path": "/home/user/rl_ws/hdgp/assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf",
+      "sha256": "c3809752c5dd6013ca9a6266bd904583ff223a728c8e6f9c1f093af8ee141d32"
+    },
+    "env_yaml": {
+      "path": "/home/user/rl_ws/sim2real/deploy/policy_control/config/home_path/rh56f1_world_env.yaml",
+      "sha256": "d40f2091c5436c3318d2f94fae910d40d045731722a2d9815130363666b71be0"
+    },
+    "gains": {
+      "path": "/home/user/rl_ws/urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml",
+      "sha256": "4faa4ea10acced3db9c46a58c8041809d52668cd65772436f34e09b06f90dfb4"
+    }
+  },
+  "joint_order": [
+    "r_aj_1",
+    "r_aj_2",
+    "r_aj_3",
+    "r_aj_4",
+    "r_aj_5",
+    "r_aj_6",
+    "r_aj_7"
+  ],
+  "ROS_DOMAIN_ID": null,
+  "commands_sent": 0,
+  "metadata": {
+    "mode": "prepare",
+    "stage": "F2",
+    "side": "right",
+    "mirror_right": false
+  }
+}

@@ -156,6 +156,10 @@ hardware_interface::CallbackReturn OpenArm_v10HW::on_init(
   pos_states_.resize(total_joints, 0.0);
   vel_states_.resize(total_joints, 0.0);
   tau_states_.resize(total_joints, 0.0);
+  comm_age_states_.resize(total_joints, 0.0);
+  last_rx_count_.resize(total_joints, 0);
+  last_rx_time_.resize(total_joints, std::chrono::steady_clock::now());
+  comm_stale_.resize(total_joints, false);
 
   RCLCPP_INFO(rclcpp::get_logger("OpenArm_v10HW"),
               "OpenArm V10 Simple HW initialized successfully");
@@ -183,6 +187,9 @@ OpenArm_v10HW::export_state_interfaces() {
         joint_names_[i], hardware_interface::HW_IF_VELOCITY, &vel_states_[i]));
     state_interfaces.emplace_back(hardware_interface::StateInterface(
         joint_names_[i], hardware_interface::HW_IF_EFFORT, &tau_states_[i]));
+    // 비표준 이름이라 /joint_states 에는 안 실리고 /dynamic_joint_states 로만 간다
+    state_interfaces.emplace_back(hardware_interface::StateInterface(
+        joint_names_[i], "comm_age", &comm_age_states_[i]));
   }
 
   return state_interfaces;
@@ -213,6 +220,7 @@ hardware_interface::CallbackReturn OpenArm_v10HW::on_activate(
   openarm_->enable_all();
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   openarm_->recv_all();
+  reset_comm_watch();
 
   // Return to zero position
   return_to_zero();
@@ -242,8 +250,10 @@ hardware_interface::return_type OpenArm_v10HW::read(
   openarm_->recv_all();
 
   // Read arm joint states
+  const auto now = std::chrono::steady_clock::now();
   const auto& arm_motors = openarm_->get_arm().get_motors();
   for (size_t i = 0; i < ARM_DOF && i < arm_motors.size(); ++i) {
+    update_comm_age(i, arm_motors[i].get_rx_count(), now);
     pos_states_[i] = arm_motors[i].get_position();
     vel_states_[i] = arm_motors[i].get_velocity();
     tau_states_[i] = arm_motors[i].get_torque();
@@ -255,6 +265,7 @@ hardware_interface::return_type OpenArm_v10HW::read(
     if (!gripper_motors.empty()) {
       // TODO the mappings are approximates
       // Convert motor position (radians) to joint value (0-0.044m)
+      update_comm_age(ARM_DOF, gripper_motors[0].get_rx_count(), now);
       double motor_pos = gripper_motors[0].get_position();
       pos_states_[ARM_DOF] = motor_radians_to_joint(motor_pos);
 
@@ -265,6 +276,36 @@ hardware_interface::return_type OpenArm_v10HW::read(
   }
 
   return hardware_interface::return_type::OK;
+}
+
+void OpenArm_v10HW::reset_comm_watch() {
+  // 활성화 시점부터 센다 - 비활성 동안 read 가 없던 시간을 무응답으로 세지 않는다
+  const auto now = std::chrono::steady_clock::now();
+  std::fill(last_rx_time_.begin(), last_rx_time_.end(), now);
+  std::fill(comm_age_states_.begin(), comm_age_states_.end(), 0.0);
+  std::fill(comm_stale_.begin(), comm_stale_.end(), false);
+}
+
+void OpenArm_v10HW::update_comm_age(size_t i, uint64_t rx_count,
+                                     std::chrono::steady_clock::time_point now) {
+  if (rx_count != last_rx_count_[i]) {
+    last_rx_count_[i] = rx_count;
+    last_rx_time_[i] = now;
+  }
+  comm_age_states_[i] =
+      std::chrono::duration<double>(now - last_rx_time_[i]).count();
+  const bool stale = comm_age_states_[i] > COMM_STALE_SEC;
+  if (stale != comm_stale_[i]) {
+    comm_stale_[i] = stale;
+    if (stale) {
+      RCLCPP_ERROR(rclcpp::get_logger("OpenArm_v10HW"),
+                   "모터 무응답: %s - %.0f ms 동안 CAN 상태 응답 없음 (position 은 마지막 값)",
+                   joint_names_[i].c_str(), comm_age_states_[i] * 1e3);
+    } else {
+      RCLCPP_WARN(rclcpp::get_logger("OpenArm_v10HW"), "모터 응답 복구: %s",
+                  joint_names_[i].c_str());
+    }
+  }
 }
 
 hardware_interface::return_type OpenArm_v10HW::write(

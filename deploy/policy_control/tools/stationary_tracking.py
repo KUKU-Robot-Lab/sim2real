@@ -24,6 +24,7 @@ import run_paths  # noqa: E402 — _paths 가 scripts/ 를 경로에 넣은 뒤
 
 ROOT = Path(__file__).resolve().parents[3]
 URDF = _paths.RL_WS / "hdgp/assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf"
+START_TOL_RAD = 0.01
 
 
 def dump(path, data):
@@ -148,7 +149,7 @@ def analyze(args):
 
 def capture(args):
     # engage 직후·이전 trial 복귀 직후의 팔은 아직 처지는 중이다 — 찍은 뒤 시작 전까지 0.11 deg 넘게 움직이면
-    # run 의 시작 자세 검사(0.002 rad)에 막힌다(11.09 r3). 멈출 시간을 두고 찍는다.
+    # run 의 시작 자세 검사(START_TOL_RAD)에 막힌다(11.09 r3). 멈출 시간을 두고 찍는다.
     if args.settle_s > 0:
         time.sleep(args.settle_s)
     S.new_run(
@@ -287,16 +288,29 @@ def prepare(args):
     dt = 0.01
 
     # Existing cosine ramp: peak acceleration = vmax*pi/(2*ramp) <= 0.1 rad/s².
-    def smooth(path):
-        return P.time_parametrize(
-            path, vmax=args.speed, dt=dt, ramp=max(1.0, args.speed * np.pi / 0.2)
-        )
+    def smooth(path, vmax=None):
+        # 접근·복귀 = --speed(가속 0.1), 고속 sweep 단계 = SWEEP_VMAX·SWEEP_AMAX 까지(11.10 사용자 0.3 rad/s)
+        if vmax is None:
+            return P.time_parametrize(path, vmax=args.speed, dt=dt, ramp=max(1.0, args.speed * np.pi / 0.2))
+        v = min(float(vmax), S.SWEEP_VMAX)
+        # 여유 5 % — 이산화한 cosine 램프의 2차 차분이 상한을 살짝 넘지 않게
+        return P.time_parametrize(path, vmax=v, dt=dt, ramp=v * np.pi / (2 * 0.95 * S.SWEEP_AMAX))
 
-    plan = S.prepare_trials(
-        poses, lo, hi, smooth, check, stage=args.stage, joints=joints,
-        offset_deg=args.offset_deg, moved_joints=args.moved_joints,
-        repeats=args.repeats, pose_ids=args.only_pose,
-    )
+    if args.motion == "stationary":
+        plan = S.prepare_trials(
+            poses, lo, hi, smooth, check, stage=args.stage, joints=joints,
+            offset_deg=args.offset_deg, moved_joints=args.moved_joints,
+            repeats=args.repeats, pose_ids=args.only_pose,
+        )
+    else:
+        # 11.09 고속 측정: 한 관절 한 trial — sweep(저속 왕복) / step(계단 + 짧은 붙들기)
+        plan = S.prepare_motion_trials(
+            poses, lo, hi, smooth, check, stage=args.stage, motion=args.motion, dt=dt,
+            joints=joints, moved_joints=args.moved_joints, pose_ids=args.only_pose,
+            amplitude_deg=args.amplitude_deg, speeds=tuple(args.sweep_speeds),
+            cycles=args.cycles, step_deg=args.offset_deg, step_hold_s=args.step_hold,
+            repeats=args.repeats, chain=(args.motion == "sweep" and not args.per_joint),
+        )
     initial_q = np.asarray([scene[j] for j in joints], dtype=float)
     world.excluded_pairs = set()
     route_checker = P.Checker(world, [scene], 0.02, initial_q, (lo, hi))
@@ -344,7 +358,11 @@ def prepare(args):
         # Reverse the already checked target path and home approach. With a static
         # collision scene, reversal preserves the same collision-free geometry.
         target_frames = np.asarray(trial["frames"], dtype=float)
-        return_route = np.vstack([target_frames[::-1], route[-2::-1]])
+        if trial.get("motion", "stationary") == "stationary":
+            return_route = np.vstack([target_frames[::-1], route[-2::-1]])
+        else:
+            # sweep/step 은 pose 에서 끝난다 — 접근 경로만 되짚는다. 첫 줄은 동작 끝(실행기는 return[1:] 을 붙이고 2 줄 이상을 요구)
+            return_route = np.vstack([target_frames[-1:], route[::-1]])
         trial["approach_start_q"] = home_q.tolist()
         trial["approach_frames"] = route.tolist()
         trial["approach_collision"] = {
@@ -369,7 +387,7 @@ def prepare(args):
         mirror_right=args.mirror_right,
         dt=dt,
         speed=args.speed,
-        acceleration_limit=0.1,
+        acceleration_limit=0.1 if args.motion == "stationary" else S.SWEEP_AMAX,
         scene=scene,
         fixed_hand=hand,
         fixed_hand_tolerance_rad=hand_tol_rad,
@@ -476,13 +494,102 @@ def run(args):
     return execute_trial(args, plan, trial, manifest)
 
 
+RECORD_SH = Path(__file__).with_name("rh56f1_record.sh")
+BAG_START_TIMEOUT_S = 15.0
+
+
+def bag_topics(side):
+    """분석(S.aligned_samples · 마찰 스크립트)이 읽는 토픽."""
+    return (
+        "/joint_states", "/head/joint_states", f"/hand_{side}/joint_states",
+        "/policy_control/joint_target", f"/policy_control/status/pd_{side}",
+        f"/policy_control/pd_{side}/diagnostics",
+    )
+
+
+class _Latest:
+    """토픽별 마지막 메시지 — 사전 변환은 읽을 때 한 번만(750 Hz 콜백에서 변환하지 않는다)."""
+
+    def __init__(self):
+        self._raw, self._dict = {}, {}
+
+    def put(self, topic, msg):
+        self._raw[topic] = msg
+        self._dict.pop(topic, None)
+
+    def __contains__(self, topic):
+        return topic in self._raw
+
+    def __getitem__(self, topic):
+        if topic not in self._dict:
+            from rosidl_runtime_py.convert import message_to_ordereddict
+
+            self._dict[topic] = message_to_ordereddict(self._raw[topic])
+        return self._dict[topic]
+
+    def get(self, topic, default=None):
+        return self[topic] if topic in self._raw else default
+
+
+class TrialBag:
+    """rh56f1_record.sh 로 runs/<trial>/bag/<시각>_<이름>/{arm,hand,pd} 를 남긴다(11.10 사용자: 실기 기록은 bag 만).
+
+    arm bag 에 /joint_states 외에 머리 · 목표 · pd 상태를 더하고(EXTRA), 손 bag 은 그 손만 싣는다.
+    """
+
+    def __init__(self, out, side):
+        self.out, self.side = Path(out), side
+        self.name = f"st_{side}_{self.out.name}"
+        self.env = dict(
+            os.environ,
+            RH56F1_RECORD_DIR=str(self.out / "bag" / "pid"),
+            RH56F1_RECORD_OUT=str(self.out / "bag"),
+            RH56F1_RECORD_NO_INFO="1",
+            HAND_SIDES=side,
+            EXTRA=" ".join(("/head/joint_states", "/policy_control/joint_target",
+                           f"/policy_control/status/pd_{side}", f"/policy_control/{side}/episode")),
+        )
+        self.started = False
+
+    def _logs(self):
+        d = self.out / "bag" / "pid" / self.name
+        return {k: d / f"{k}.log" for k in ("arm", "hand", "pd")}
+
+    def start(self, idle=lambda: time.sleep(0.1)):
+        subprocess.run(["bash", str(RECORD_SH), "start", self.name], env=self.env, check=True,
+                       stdout=subprocess.DEVNULL)
+        self.started = True
+        need = {
+            "arm": ("/joint_states", "/head/joint_states", "/policy_control/joint_target",
+                    f"/policy_control/status/pd_{self.side}", f"/policy_control/{self.side}/episode"),
+            "hand": (f"/hand_{self.side}/joint_states",),
+            "pd": (f"/policy_control/pd_{self.side}/diagnostics",),
+        }
+        deadline = time.monotonic() + BAG_START_TIMEOUT_S
+        while True:
+            missing = []
+            for k, path in self._logs().items():
+                text = path.read_text(errors="replace") if path.exists() else ""
+                missing += [t for t in need[k] if f"Subscribed to topic '{t}'" not in text]
+            if not missing:
+                return
+            if time.monotonic() > deadline:
+                raise ValueError("bag recorder not subscribed: " + ", ".join(missing))
+            idle()
+
+    def stop(self):
+        if self.started:
+            subprocess.run(["bash", str(RECORD_SH), "stop", self.name], env=self.env, check=False,
+                           stdout=subprocess.DEVNULL)
+            self.started = False
+
+
 def execute_trial(args, plan, trial, manifest):
     """Publish only existing PD target/episode messages. No engage/release/CAN loop."""
     joint_names = tuple(plan.get("joint_names", S.arm_joint_names(args.side)))
     import rclpy
     from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
     from rosidl_runtime_py.utilities import get_message
-    from rosidl_runtime_py.convert import message_to_ordereddict
     from std_msgs.msg import String
     from sensor_msgs.msg import JointState
     from policy_control import codec
@@ -492,25 +599,17 @@ def execute_trial(args, plan, trial, manifest):
     rclpy.init()
     node = rclpy.create_node(f"stationary_tracking_{args.side}")
     other_side = "left" if args.side == "right" else "right"
-    latest, received = {}, {}
-    rows = []
+    latest, received = _Latest(), {}
     count, failure, path_end = 0, None, None
     gc_was_enabled, gc_paused = gc.isenabled(), False
     episode_commands = 0
     episode = replay_episode_id()
     manifest["metadata"]["episode"] = episode
-    stream = (args.out / "events.jsonl").open("x")
+    bag = None
 
     def callback(topic, msg):
-        event = recorder.event(
-            topic,
-            message_to_ordereddict(msg),
-            wall_ns=time.time_ns(),
-            mono_ns=time.monotonic_ns(),
-        )
-        rows.append(event)
-        stream.write(json.dumps(event) + "\n")
-        latest[topic] = event["message"]
+        # ★11.10: 기록은 bag(rh56f1_record.sh)이 한다 — 여기선 게이트용 최신값만(변환은 읽을 때).
+        latest.put(topic, msg)
         received[topic] = time.monotonic()
 
     qos = QoSProfile(depth=1000, reliability=ReliabilityPolicy.BEST_EFFORT)
@@ -617,9 +716,13 @@ def execute_trial(args, plan, trial, manifest):
             raise ValueError(
                 "another target publisher/jog is active; concurrent correction is forbidden"
             )
-        if np.max(np.abs(np.asarray(d["measured"]) - trial["approach_start_q"])) > 0.002:
+        # 0.01 rad: 정지 중 손목(j7)이 capture 후 수 초 사이 0.003 rad 흘렀다(11.09 F1offSw a02).
+        # 첫 목표가 최대 0.01 rad 튀어도 Kp 70 기준 <1 N·m.
+        start_gap = np.abs(np.asarray(d["measured"]) - trial["approach_start_q"])
+        if np.max(start_gap) > START_TOL_RAD:
             raise ValueError(
-                "live arm does not match the captured-home approach start"
+                "live arm does not match the captured-home approach start: "
+                f"max gap {np.max(start_gap):.4f} rad at j{int(np.argmax(start_gap)) + 1}"
             )
         # Another arm moving invalidates the prechecked scene; check live source names.
         state = latest.get("/joint_states", {})
@@ -648,7 +751,9 @@ def execute_trial(args, plan, trial, manifest):
             or len(return_frames) < 2
             or not np.isfinite(return_frames).all()
             or dt != 0.01
-            or trial["hold_s"] != 15.0
+            or trial["hold_s"] != (
+                15.0 if trial.get("motion", "stationary") == "stationary" else S.MOTION_HOLD_S
+            )
         ):
             raise ValueError("invalid prepared trial dimensions/timing")
         end_index = len(motion_frames) - 1
@@ -656,13 +761,18 @@ def execute_trial(args, plan, trial, manifest):
             motion_frames[-1][None, :], int(trial["hold_s"] / dt), axis=0
         )
         frames = np.vstack([motion_frames, hold_frames, return_frames[1:]])
-        if np.max(np.abs(np.diff(frames, axis=0) / dt)) > 0.05 + 1e-8:
+        if np.max(np.abs(np.diff(frames, axis=0) / dt)) > S.SWEEP_VMAX + 1e-8:
             raise ValueError("prepared trial exceeds velocity limit")
         if (
             len(frames) > 2
-            and np.max(np.abs(np.diff(frames, n=2, axis=0) / dt**2)) > 0.1 + 1e-6
+            and np.max(np.abs(np.diff(frames, n=2, axis=0) / dt**2))
+            > (0.1 if trial.get("motion", "stationary") == "stationary" else S.SWEEP_AMAX) + 1e-6
         ):
             raise ValueError("prepared trial exceeds acceleration limit")
+        # ★11.10: 기록은 bag 하나 — 첫 명령 전에 기록기가 필요한 토픽을 모두 구독했는지 확인한다.
+        bag = TrialBag(args.out, args.side)
+        # ★11.10: 기록기 구독을 기다리는 수 초 동안에도 spin 해야 PD 게이트 값(0.1 s)이 낡지 않는다.
+        bag.start(idle=lambda: rclpy.spin_once(node, timeout_sec=0.1))
         # Retained recording rows make a generation-2 collection exceed the
         # 20 ms command deadline. Collect before motion and defer cyclic GC
         # until after the stop/abort confirmation; reference counting stays on.
@@ -670,6 +780,17 @@ def execute_trial(args, plan, trial, manifest):
             gc.collect()
             gc.disable()
             gc_paused = True
+        # 첫 명령 직전 최신값으로 다시 확인(시작 자세 · 장면 · PD 상태).
+        refresh = time.monotonic() + 0.3
+        while time.monotonic() < refresh:
+            rclpy.spin_once(node, timeout_sec=0.02)
+        d = current()
+        start_gap = np.abs(np.asarray(d["measured"]) - trial["approach_start_q"])
+        if np.max(start_gap) > START_TOL_RAD:
+            raise ValueError(
+                "live arm does not match the captured-home approach start: "
+                f"max gap {np.max(start_gap):.4f} rad at j{int(np.argmax(start_gap)) + 1}"
+            )
         ep_pub.publish(String(data=json.dumps({"event": "reset", "episode": episode})))
         episode_commands += 1
         velocity = np.gradient(frames, dt, axis=0)
@@ -708,7 +829,8 @@ def execute_trial(args, plan, trial, manifest):
             until = time.monotonic() + 0.5
             while time.monotonic() < until:
                 rclpy.spin_once(node, timeout_sec=0.01)
-        stream.close()
+        if bag is not None:
+            bag.stop()
         node.destroy_node()
         rclpy.shutdown()
         if gc_paused and gc_was_enabled:
@@ -722,6 +844,7 @@ def execute_trial(args, plan, trial, manifest):
         )
         manifest["metadata"].update(planned_path_end=path_end, failure=failure)
         (args.out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    rows = S.load_run_events(args.out, topics=bag_topics(args.side)) if bag is not None else []
     samples, alignment = S.aligned_samples(rows, side=args.side)
     # Discard stop/abort confirmation ticks from the timed trial window.
     if path_end is not None:
@@ -736,6 +859,7 @@ def execute_trial(args, plan, trial, manifest):
         path_end=path_end,
         alignment=alignment,
         expected_target=trial["target"],
+        observe_s=10.0 if trial.get("motion", "stationary") == "stationary" else max(0.5, trial["hold_s"] - 0.05),
     )
     if failure:
         summary.update(eligible=False, **{"pass": False})
@@ -798,6 +922,16 @@ def main(argv=None):
             p.add_argument("--repeats", type=int, default=3)
             p.add_argument("--only-pose", action="append", default=None, help="keep only these pose ids (after mirroring)")
             p.add_argument("--speed", type=float, default=0.05)
+            p.add_argument("--motion", choices=S.MOTIONS, default="stationary",
+                           help="stationary=2° 접근+장시간 붙들기, sweep=저속 왕복, step=계단+짧은 붙들기")
+            p.add_argument("--amplitude-deg", type=float, nargs="+", default=[15.0, 10.0, 6.0, 3.0],
+                           help="sweep 진폭 후보 [deg] — 관절마다 충돌·한계를 통과하는 가장 큰 값(11.10)")
+            p.add_argument("--sweep-speeds", type=float, nargs="+", default=[0.1, 0.2, 0.3, 0.5],
+                           help="sweep 속도 단계 [rad/s]")
+            p.add_argument("--cycles", type=int, default=1, help="sweep 속도당 왕복 수")
+            p.add_argument("--per-joint", action="store_true",
+                           help="sweep 을 관절마다 따로 trial 로(기본: pose 하나의 관절을 한 trial 로 이어서)")
+            p.add_argument("--step-hold", type=float, default=5.0, help="step 붙들기 [s]")
         if mode == "run":
             p.add_argument("--plan", type=Path, required=True)
             p.add_argument("--trial", required=True)

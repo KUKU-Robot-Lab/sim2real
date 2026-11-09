@@ -136,3 +136,33 @@ def test_cocktail_place_blue_continue_reaches_grasp_pink():
     assert st == SUCCESS and m.place_failed_continued == ["place_blue"]
     for nid in ("home_r_after_blue", "grasp_pink", "tilt_pink", "place_pink", "place_shaker", "go_home_end"):
         assert nid in ids, (nid, ids)
+
+
+def test_auto_node_runs_after_step_without_approval():
+    """★11.09 사용자 — 구분 실행(step)에서 place_blue 다음 home_r_after_blue(auto) 는 승인 없이 바로 이어 간다."""
+    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+    asked = []
+    m = EpisodeManager(ep, FakeExecutor(ep), approve=lambda w, y: asked.append(w) or True, log=lambda r: None)
+    while m.node is not None and m.node.id != "place_blue":
+        m.step()
+    asked.clear()
+    m.step()                                            # place_blue 한 번 승인 → home_r_after_blue 까지
+    assert asked == ["place_blue"] and m.node.id == "grasp_pink", (asked, m.node.id)
+
+
+def test_auto_node_failure_still_waits_for_recovery_approval():
+    """auto 는 승인만 생략 — 실패 복구는 다음 명령(승인)을 기다린다."""
+    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+    ex = FakeExecutor(ep, inject={"home_r_after_blue": [F.CONTROLLER_ERROR] * 3})
+    m = EpisodeManager(ep, ex, approve=lambda w, y: True, log=lambda r: None)
+    while m.node is not None and m.node.id != "place_blue":
+        m.step()
+    m.step()
+    assert m.node.id == "home_r_after_blue" and m.status != SUCCESS
+
+
+def test_auto_must_be_bool():
+    raw = yaml.safe_load((EPISODES / "cocktail_1c_e4000.yaml").read_text())
+    raw["sequence"][0]["auto"] = "yes"
+    with pytest.raises(S.EpisodeSpecError):
+        S.parse(raw)

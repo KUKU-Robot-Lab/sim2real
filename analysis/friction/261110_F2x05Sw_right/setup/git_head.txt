@@ -1,0 +1,84 @@
+2d7796ff1754aafa1efaa5457f940c427cdeb7aa
+ M CLAUDE.md
+ M analysis/friction/common/scripts/new_experiment.sh
+ M analysis/friction/common/scripts/rebase_trial.py
+ M config/episodes/cocktail_1c_e1000.yaml
+ M config/episodes/cocktail_1c_e4000.yaml
+ M config/episodes/grasp_f_right.yaml
+ M config/episodes/grasp_f_shaker_c_orange_right.yaml
+ M config/episodes/grasp_f_source200_orange_right.yaml
+ M config/episodes/grasp_f_source200_pink_right.yaml
+ M config/episodes/grasp_f_source240_orange_right.yaml
+ M config/episodes/grasp_f_source240_pink_right.yaml
+ M config/episodes/place_m_right.yaml
+ M config/mission_rh56f1_control.yaml
+ M config/mission_rh56f1_fake.yaml
+ M deploy/policy_control/config/sites/arm_v2.yaml
+ M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_left_fs.yaml
+ M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_left_fs_i050.yaml
+ M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_left_fs_i100.yaml
+ M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_left_fs_i200.yaml
+ M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_left_off.yaml
+ M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_right_fs.yaml
+ M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_right_fs_i050.yaml
+ M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_right_fs_i100.yaml
+ M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_right_fs_i200.yaml
+ M deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_right_off.yaml
+ M deploy/policy_control/policy_control/episode_runner.py
+ M deploy/policy_control/policy_control/episode_spec.py
+ M deploy/policy_control/policy_control/joint_policy.py
+ M deploy/policy_control/policy_control/pd_arm.py
+ M deploy/policy_control/policy_control/pd_node.py
+ M deploy/policy_control/policy_control/pd_stationary.py
+ M deploy/policy_control/policy_control/place_head_pose.py
+ M deploy/policy_control/policy_control/place_student.py
+ M deploy/policy_control/policy_control/stationary_compensation.py
+ M deploy/policy_control/policy_control/stationary_fake.py
+ M deploy/policy_control/policy_control/stationary_tracking.py
+ M deploy/policy_control/tools/rh56f1_record.sh
+ M deploy/policy_control/tools/stationary_contact_guard.py
+ M deploy/policy_control/tools/stationary_tracking.py
+ M deploy/s2r_console/s2r_console/actions.py
+ M deploy/s2r_console/s2r_console/api.py
+ M deploy/s2r_console/s2r_console/console.py
+ M deploy/s2r_console/s2r_console/eval_log.py
+ M deploy/s2r_console/s2r_console/supervisor.py
+ M deploy/s2r_console/s2r_console/tuning_view.py
+ M deploy/s2r_console/s2r_console/web/console.css
+ M deploy/s2r_console/s2r_console/web/console.js
+ M deploy/s2r_console/s2r_console/web/index.html
+ M deploy/s2r_console/tools/run_fake_episode.py
+ M robot/vendor/openarm/openarm_can/include/openarm/damiao_motor/dm_motor.hpp
+ M robot/vendor/openarm/openarm_can/src/openarm/damiao_motor/dm_motor.cpp
+ M robot/vendor/openarm/openarm_hardware/include/openarm_hardware/v10_simple_hardware.hpp
+ M robot/vendor/openarm/openarm_hardware/src/v10_simple_hardware.cpp
+ M scripts/ops/make_rh56f1_missions.py
+ M tests/policy_control/test_baseline_run.py
+ M tests/policy_control/test_pc_episode_continue_on_fail.py
+ M tests/policy_control/test_pc_hand_only.py
+ M tests/policy_control/test_pc_lift_guard.py
+ M tests/policy_control/test_pc_site_ports.py
+ M tests/policy_control/test_pc_stationary_runtime.py
+ M tests/policy_control/test_stationary_static_friction.py
+ M tests/s2r_console/test_console_actions.py
+ M tests/s2r_console/test_console_eval.py
+ M tests/s2r_console/test_console_one_box_per_node.py
+ M tests/s2r_console/test_console_tuning.py
+ M tests/s2r_console/test_rh56f1_mission.py
+ M tests/test_stationary_contact_guard.py
+ M tests/test_stationary_tracking.py
+?? .claude/
+?? _trash/
+?? analysis/friction/261110_F1offSw_right/
+?? analysis/friction/261110_F1onSw_right/
+?? analysis/friction/261110_F2x05Sw_right/
+?? analysis/friction/common/scripts/analyze_runs.py
+?? analysis/friction/common/scripts/replay_settle.py
+?? config/episodes/place_m_left.yaml
+?? deploy/policies/rh56f1/place/left_student_place/
+?? deploy/policies/rh56f1/place/right_student_place/
+?? deploy/policy_control/policy_control/tick_budget.py
+?? scripts/head_sweep.py
+?? tests/policy_control/test_pc_pd_comm_silent.py
+?? tests/policy_control/test_tick_budget.py
+?? tests/test_grasp_fk_vs_fpp.py

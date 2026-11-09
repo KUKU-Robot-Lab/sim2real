@@ -1,4 +1,4 @@
-# RH56F1 로봇(5090, 인지 같은 PC) 실기 미션 — scripts/ops/make_rh56f1_missions.py 가 만든다. 손으로 고치지 말 것(--check 가 잡는다).
+# RH56F1 로봇(5090_arm4090, 인지 arm4090-lan) 실기 미션 — scripts/ops/make_rh56f1_missions.py 가 만든다. 손으로 고치지 말 것(--check 가 잡는다).
 name: RH56F1 양팔 실기 손 연결 · pd 점검
 artifacts:
   contract: logs/policy/asset_openarm_rh56f1_bi_rl/deploy_contract.json
@@ -75,8 +75,8 @@ stages:
   needs:
   - head_home
   skippable: true
-  title: 시야 검사(읽기 전용, 이 PC) — D435i IMU 숙임 − 외부 파라미터 숙임이 허용치 (config/head_view_feedback_arm4090.yaml view_check_tol_deg) 안인가. 머리는 움직이지 않는다. yaw
-    는 못 잰다
+  title: 시야 검사(읽기 전용, arm4090-lan) — D435i IMU 숙임 − 외부 파라미터 숙임이 허용치 (config/head_view_feedback_arm4090.yaml view_check_tol_deg) 안인가. 머리는 움직이지
+    않는다. yaw 는 못 잰다
   arm_free: true
 - id: head_control
   group: motion
@@ -85,6 +85,12 @@ stages:
   touches_real: true
   title: 목 pan · tilt 변경 — 승인한 보정 프로필과 자세로 이동 후 실측 정착 확인
   arm_free: true
+- id: head_sweep
+  group: motion
+  lane: rig
+  skippable: true
+  touches_real: true
+  title: 목 스윕 기록 — 손은 그대로, 목만 보정 각도를 돌며 bag(arm · hand · pd · camera) → 처음 자세로 복귀
 - id: cups
   group: connect
   lane: both
@@ -93,7 +99,7 @@ stages:
   skippable: true
   touches_real: true
   needs_why: FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다
-  title: FP++ 드라이버(5090) — 인지 런처 · 자세 수신기 · base 변환 노드 · 머리 자세 맞춤. 물체는 띄우지 않는다(setting 탭 '인지 적용' 또는 에피소드가 자기 물체를 띄운다)
+  title: FP++ 드라이버(arm4090-lan) — 인지 런처 · 자세 수신기 · base 변환 노드 · 머리 자세 맞춤. 물체는 띄우지 않는다(setting 탭 '인지 적용' 또는 에피소드가 자기 물체를 띄운다)
   arm_free: true
 - id: cup_holders
   group: connect
@@ -774,63 +780,6 @@ stages:
   title: '[에피소드] cocktail_1c_e4000 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_to_tilt_start → grasp_blue
     → to_tilt_start_r1 → grasp_shaker → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink
     → place_pink → place_shaker → go_home_end'
-- id: episode_grasp_s_right
-  group: policy
-  lane: arm_right
-  skippable: true
-  touches_real: true
-  needs:
-  - home_right
-  - cups
-  - head_home
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
-  title: '[에피소드] grasp_s_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
-- id: episode_grasp_s_left
-  group: policy
-  lane: arm_left
-  skippable: true
-  touches_real: true
-  needs:
-  - home_left
-  - cups
-  - head_home
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
-  title: '[에피소드] grasp_s_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
-- id: episode_grasp_m_right
-  group: policy
-  lane: arm_right
-  skippable: true
-  touches_real: true
-  needs:
-  - home_right
-  - cups
-  - head_home
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
-  title: '[에피소드] grasp_m_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
-- id: episode_grasp_m_left
-  group: policy
-  lane: arm_left
-  skippable: true
-  touches_real: true
-  needs:
-  - home_left
-  - cups
-  - head_home
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
-  title: '[에피소드] grasp_m_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
-- id: episode_place_m_right
-  group: policy
-  lane: arm_left
-  skippable: true
-  touches_real: true
-  needs:
-  - home_left
-  - home_right
-  - cups
-  - head_home
-  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
-  title: '[에피소드] place_m_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
-    → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue'
 - id: shutdown
   group: finish
   lane: rig
@@ -838,6 +787,23 @@ stages:
   title: 안전 종료 — 팔 받침 확인 → 정책 → 인지 → 목 → pd → 손 → 팔 (★목 · 팔 토크가 풀린다)
 run:
   preflight:
+  - note: arm4090-lan 랜 ssh 가 되고 저 PC 의 sim2real 이 이 PC 와 같은 커밋인가(별칭 → 192.168.0.40 · 키 ~/.ssh/s2r_lan). 거부되면 4090 ~/.ssh/authorized_keys 에 5090
+      의 ~/.ssh/s2r_lan.pub 을 넣는다(사용자) · 커밋이 다르면 저 PC 에서 git pull --ff-only
+    argv:
+    - bash
+    - -lc
+    - R=$(ssh -o BatchMode=yes -o ConnectTimeout=5 arm4090-lan 'cd rl_ws/sim2real && git rev-parse HEAD') && L=$(git -C {repo} rev-parse HEAD)
+      && echo "remote $R" && echo "local  $L" && [ "$R" = "$L" ]
+  - note: arm4090-lan 에 손 마스터가 없는가 — 한 손에 마스터는 한 PC(이 PC). 저 PC 의 rh56f1 드라이버 · motion_acq 손 노드가 떠 있으면 멈춘다
+    argv:
+    - ssh
+    - -o
+    - BatchMode=yes
+    - -o
+    - ConnectTimeout=5
+    - arm4090-lan
+    - if pgrep -af 'rh56f1_[e]cat_node|rh56f1_[d]river|fake_rh56f1_[n]ode|motion_acq_hand.*[h]and_node'; then echo '손 마스터 후보가 돌고 있다 — 끄고 다시';
+      exit 1; fi; echo '손 마스터 없음'
   - note: CPU — 실시간 한도(EtherCAT 마스터 FIFO 80 · controller_manager 50) · 코어 배치(이 PC 의 코어를 읽어 노드가 스스로 정한다). 한도가 안 열렸으면 MISS — 운영자가 sudo bash scripts/setup/rt_setup.sh
       한 번 → 재부팅(10.03)
     argv:
@@ -877,8 +843,8 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: CAN 자동 설정(우 can0 · 좌 can1, FD 1M/5M) — 꺼져 있거나 설정이 다르거나 BUS-OFF 면 다시 올린다. 5090 의 CAN 이름이 다르면 scripts/setup/can_up.py 와 sudoers 를 같이 고칠
-      것
+  - note: CAN 자동 설정(우 can0 · 좌 can1, FD 1M/5M) — 꺼져 있거나 설정이 다르거나 BUS-OFF 면 다시 올린다. 5090_arm4090 의 CAN 이름이 다르면 scripts/setup/can_up.py 와 sudoers
+      를 같이 고칠 것
     argv:
     - python3
     - '{repo}/scripts/setup/can_up.py'
@@ -948,11 +914,6 @@ run:
     - episode_cocktail_1b#10
     - episode_cocktail_1c_e1000#10
     - episode_cocktail_1c_e4000#10
-    - episode_grasp_s_right#8
-    - episode_grasp_s_left#8
-    - episode_grasp_m_right#10
-    - episode_grasp_m_left#10
-    - episode_place_m_right#13
     - policy_place_right#1
     - policy_place_left#1
     - episode_pick_place_right#5
@@ -1035,27 +996,6 @@ run:
     - episode_cocktail_1c_e4000#7
     - episode_cocktail_1c_e4000#8
     - episode_cocktail_1c_e4000#11
-    - episode_grasp_s_right#5
-    - episode_grasp_s_right#6
-    - episode_grasp_s_right#9
-    - episode_grasp_s_left#5
-    - episode_grasp_s_left#6
-    - episode_grasp_s_left#9
-    - episode_grasp_m_right#6
-    - episode_grasp_m_right#7
-    - episode_grasp_m_right#8
-    - episode_grasp_m_right#11
-    - episode_grasp_m_left#6
-    - episode_grasp_m_left#7
-    - episode_grasp_m_left#8
-    - episode_grasp_m_left#11
-    - episode_place_m_right#5
-    - episode_place_m_right#6
-    - episode_place_m_right#9
-    - episode_place_m_right#10
-    - episode_place_m_right#11
-    - episode_place_m_right#14
-    - episode_place_m_right#18
   - note: 남은 bag 기록 마무리(rh56f1_record.sh stop)
     argv:
     - bash
@@ -1068,7 +1008,7 @@ run:
     - stop
     - --camera
     - --host
-    - local
+    - arm4090-lan
     - --wait
     - '60'
   - note: 인지 런처 · 자세 수신기 · 물체 자세 노드 · 컵홀더 노드 정지
@@ -1080,12 +1020,16 @@ run:
   - note: 목 드라이버 정지 — 단독 소유한 시리얼 포트를 닫는다
     stop:
     - head_home#0
-  - note: 목 토크 해제 — 받침 확인, pan · tilt 가 중력으로 처질 수 있다
+    - head_sweep#1
+    - head_sweep#4
+  - note: 목 토크 해제 — 받침 확인, pan · tilt 가 중력으로 처질 수 있다(arm4090-lan 에서 — 받침 없이 풀고 전원을 끄면 다음 전원에서 한 바퀴 낮게 잡힌다, 10.30)
     argv:
-    - python3
-    - '{repo}/scripts/head_home.py'
-    - --config
-    - '{repo}/config/head_camset_rh56f1.yaml'
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && python3 scripts/head_home.py --config config/head_camset_rh56f1.yaml
     - --release
     execute_args:
     - --execute
@@ -1111,49 +1055,67 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)
+  - note: 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)
     argv: &id001
     - python3
     - '{repo}/scripts/head_move.py'
     execute_args:
     - --execute
-  - note: 카메라(RealSense) 켜기 — 이미 떠 있으면 그대로(cups 단계와 같이 써도 된다)
+  - note: 카메라(RealSense, arm4090-lan) 켜기 — 이미 떠 있으면 그대로(cups 단계와 같이 써도 된다)
     argv:
-    - bash
-    - '{repo}/scripts/vision/camera_up.sh'
-  - note: 컵홀더 자세 노드 — ArUco → 직전 자세 추적(0.2 s) → 놓친 id 만 무늬 전체 탐색(첫 장 ~6 s). x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 config/cup_holder_poses_5090_v1.yaml
-      을 갱신
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && bash scripts/vision/camera_up.sh
+  - note: 컵홀더 자세 노드(arm4090-lan 에서, 영상을 그 PC 안에서 읽는다) — ArUco → 직전 자세 추적 → 놓친 id 만 무늬 전체 탐색(첫 장 ~6 s). x 공유 · 상판 z 고정 · 5장 중앙값, 세 홀더가 안정되면 저 PC
+      의 config/cup_holder_poses_5090_v1.yaml 을 갱신. 파이썬은 저 PC 의 .venv/bin/python(없으면 scripts/vision/venv_setup.sh)
     argv:
-    - python3
-    - '{repo}/scripts/nodes/cup_holder_pose_node.py'
-    - --write
-    - --out
-    - '{repo}/config/cup_holder_poses_5090_v1.yaml'
-    - --extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090_r20u5.yaml'
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && mkdir -p logs/runs/$(date +%y%m%d)/perception; .venv/bin/python scripts/nodes/cup_holder_pose_node.py
+      --write --out config/cup_holder_poses_5090_v1.yaml --extrinsics config/global_camera_extrinsics_arm4090_r20u5.yaml > logs/runs/$(date +%y%m%d)/perception/cup_holders.log
+      2>&1 & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P
     background: true
   - note: '★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y ≈ l +0.16 / r −0.06 / r 바깥 −0.28(간격 0.22 · 10.27 A1 배치) · stable ✓ 인가 (어긋나면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml · 겹친 영상은 scripts/calib/cup_holder_pose.py
-      --png)'
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml)'
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String
+    manual: true
+  - note: 홀더 자세 파일을 이 PC 로 — arm4090-lan:config/cup_holder_poses_5090_v1.yaml → config/cup_holder_poses_5090_v1.yaml(놓기 에피소드가 읽는다). 파일이 아직 없으면
+      세 홀더가 안정되지 않은 것이다 — 확인 스텝부터 다시
+    argv:
+    - scp
+    - -o
+    - BatchMode=yes
+    - arm4090-lan:rl_ws/sim2real/config/cup_holder_poses_5090_v1.yaml
+    - '{repo}/config/cup_holder_poses_5090_v1.yaml'
+  head_home:
+  - note: 목 드라이버 — 포트 단독 소유 · 실측 관절 발행 · 이동 요청 처리(arm4090-lan 에서 ssh -tt, 토픽은 랜 DDS 로 이 PC 에)
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config
+      config/head_camset_rh56f1.yaml --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2
+    background: true
+  - note: 목 관절 토픽이 이 PC 에 오는가 — arm4090-lan 드라이버 → 랜 DDS(도메인 50 · 양쪽 ROS_LOCALHOST_ONLY 0). 안 오면 이 PC 의 ROS_DOMAIN_ID · ROS_LOCALHOST_ONLY 와 저
+      PC 드라이버 출력(바로 위 스텝)을 본다
     argv:
     - bash
     - -lc
-    - timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String
-    manual: true
-  head_home:
-  - note: 목 드라이버 — 포트 단독 소유 · 실측 관절 발행 · 이동 요청 처리
-    argv:
-    - python3
-    - '{repo}/scripts/nodes/head_joint_publisher.py'
-    - --config
-    - '{repo}/config/head_camset_rh56f1.yaml'
-    - --port
-    - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
-    - --baud
-    - '1000000'
-    - --ids
-    - 1,2
-    background: true
+    - timeout 20 ros2 topic echo --once /head/joint_states sensor_msgs/msg/JointState
   - note: 머리를 카메라 캘리브 자세로 — 토크 · 모드 · I 게인(RAM, 전원을 끄면 사라진다)이 다르면 먼저 적용하고, 외부 파라미터 head_pose 로 목표를 고쳐 가며 맞춘 뒤 ±4 틱으로 검증(머리가 조금 움직인다)
     argv: *id001
     execute_args:
@@ -1161,38 +1123,48 @@ run:
   head_view_check:
   - note: 카메라(RealSense, IMU 켬) 켜기 — 이미 떠 있으면 그대로. IMU 없이 떠 있던 카메라면 다음 스텝이 'IMU 가 안 들어온다'로 실패한다 — 카메라를 내렸다 다시 켠다
     argv:
-    - bash
-    - '{repo}/scripts/vision/camera_up.sh'
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && bash scripts/vision/camera_up.sh
   - note: 시야 검사 — IMU 중력으로 잰 카메라 숙임과 config/global_camera_extrinsics_arm4090_r20u5.yaml 숙임의 차가 허용치를 넘으면 실패(머리는 움직이지 않는다). 실패하면 카메라 · 머리를 건드렸는지
       보고 캘리브 자세를 다시 잡는다(scripts/head_view_feedback.py --help 끝)
     argv:
-    - python3
-    - '{repo}/scripts/head_view_feedback.py'
-    - --check
-    - --extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090_r20u5.yaml'
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && python3 scripts/head_view_feedback.py --check --extrinsics config/global_camera_extrinsics_arm4090_r20u5.yaml
   cups:
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 머리 자세는 이 단계가 캘리브 자세로 맞춘다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 머리 자세는 이 단계가 캘리브 자세로 맞춘다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: 인지 런처(이 PC) — 카메라 · FP++ 컨테이너를 같은 PC 의 스크립트로 켜고 끈다. 스스로는 아무것도 켜지 않는다
+  - note: 인지 런처(이 PC) — arm4090-lan 의 카메라 · FP++ 컨테이너를 ssh 로 켜고 끈다. 스스로는 아무것도 켜지 않는다
     argv:
     - python3
     - '{repo}/scripts/nodes/perception_launcher_node.py'
     - --host
-    - local
+    - arm4090-lan
+    - --pose-dest
+    - 192.168.0.50
     - --camera-extrinsics
     - '{repo}/config/global_camera_extrinsics_arm4090_r20u5.yaml'
     background: true
-  - note: FP++ 자세 수신기 — 영상 · FP++ 는 localhost 전용 DDS에서 돌고 자세만 UDP(127.0.0.1)로 넘어온다
+  - note: FP++ 자세 수신기 — 영상 · FP++ 는 arm4090-lan 안에서 돌고 자세만 UDP(저 PC → 이 PC 192.168.0.50)로 넘어온다
     argv:
     - python3
     - '{repo}/scripts/nodes/fpp_pose_rx.py'
     background: true
-  - note: 물체 자세 → base — 5090 카메라 외부 파라미터(config/global_camera_extrinsics_arm4090_r20u5.yaml, + depth z 보정). /objects/<물체>/pose(레지스트리의 모든 물체)
+  - note: 물체 자세 → base — 5090_arm4090 카메라 외부 파라미터(config/global_camera_extrinsics_arm4090_r20u5.yaml, + depth z 보정). /objects/<물체>/pose(레지스트리의
+      모든 물체)
     argv:
     - python3
     - '{repo}/scripts/nodes/object_pose_node.py'
@@ -1229,6 +1201,8 @@ run:
     - source240b_blue
     - --wait
     - '120'
+    - --status-host
+    - arm4090-lan
   cups_left:
   - note: ★[left] shaker_c_orange 가 테이블에 똑바로 서 있고 손이 가리지 않는가
     argv:
@@ -1253,6 +1227,8 @@ run:
     - shaker_c_orange
     - --wait
     - '120'
+    - --status-host
+    - arm4090-lan
   policy_pourfj:
   - note: ★두 컵이 학습 배치(로봇 앞 x ≈ 0.38, y ≈ ∓0.16)에 서 있고 콘솔에 두 컵 자세가 들어오는가. 양팔 · 양손 주변이 비어 있는가. 정책은 팔을 스스로 움직이고 손가락을 쥔다 — 빈 컵만
     argv:
@@ -2749,10 +2725,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -2854,16 +2832,14 @@ run:
     - -p
     - holder:=1
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /objects/cup_holder_1/pose
-      /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_pick_place_right
+    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
+      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
+      /objects/source240b_blue/live_pose /objects/cup_holder_1/pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action'
+      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_pick_place_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -2883,19 +2859,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_pick_place_right
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/pick_place_right.yaml'
-    - --sides
-    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -2908,16 +2871,10 @@ run:
     - episode_pick_place_right#8
     - episode_pick_place_right#6
     - episode_pick_place_right#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_pick_place_right
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_pick_place_right
   episode_pick_place_left:
@@ -2934,10 +2891,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -3039,15 +2998,13 @@ run:
     - -p
     - holder:=1
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
-      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /objects/cup_holder_1/pose
-      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
+      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
+      /objects/cup_holder_1/pose /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_pick_place_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
@@ -3068,19 +3025,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_pick_place_left
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/pick_place_left.yaml'
-    - --sides
-    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -3093,16 +3037,10 @@ run:
     - episode_pick_place_left#8
     - episode_pick_place_left#6
     - episode_pick_place_left#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_pick_place_left
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_pick_place_left
   episode_grasp_c_right:
@@ -3119,10 +3057,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -3203,15 +3143,14 @@ run:
     - -p
     - max_episode_s:=29.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
-      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_c_right
+    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
+      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
+      /objects/source240b_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_c_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -3231,19 +3170,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_c_right
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_c_right.yaml'
-    - --sides
-    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -3255,16 +3181,10 @@ run:
     - episode_grasp_c_right#8
     - episode_grasp_c_right#7
     - episode_grasp_c_right#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_c_right
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_c_right
   episode_grasp_c_left:
@@ -3281,10 +3201,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -3365,15 +3287,14 @@ run:
     - -p
     - max_episode_s:=29.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
-      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied
-      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_c_left
+    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
+      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
+      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_c_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -3393,19 +3314,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_c_left
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_c_left.yaml'
-    - --sides
-    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -3417,16 +3325,10 @@ run:
     - episode_grasp_c_left#8
     - episode_grasp_c_left#7
     - episode_grasp_c_left#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_c_left
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_c_left
   episode_tilt_base_b:
@@ -3449,17 +3351,15 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
-      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
-      /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose /objects/shaker_c_orange/pose
-      /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
-      /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
+      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
+      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose
+      /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied
+      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_tilt_base_b
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
@@ -3478,19 +3378,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_tilt_base_b
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/tilt_base_b.yaml'
-    - --sides
-    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -3501,16 +3388,10 @@ run:
     stop:
     - episode_tilt_base_b#5
     - episode_tilt_base_b#4
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_tilt_base_b
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_tilt_base_b
   episode_tilt_base_c:
@@ -3527,10 +3408,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240b_blue · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 210 s
@@ -3671,17 +3554,15 @@ run:
     - -p
     - max_episode_s:=29.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
-      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
-      /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose /objects/shaker_c_orange/pose
-      /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
-      /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
+      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
+      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose
+      /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied
+      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_tilt_base_c
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
@@ -3700,19 +3581,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_tilt_base_c
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/tilt_base_c.yaml'
-    - --sides
-    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -3725,16 +3593,10 @@ run:
     - episode_tilt_base_c#8
     - episode_tilt_base_c#6
     - episode_tilt_base_c#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_tilt_base_c
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_tilt_base_c
   episode_tilt_base_d:
@@ -3751,10 +3613,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240b_blue · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 210 s
@@ -3911,17 +3775,15 @@ run:
     - -p
     - max_episode_s:=15.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
-      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
-      /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose /objects/shaker_c_orange/pose
-      /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
-      /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
+      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
+      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose
+      /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied
+      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_tilt_base_d
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
@@ -3940,19 +3802,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_tilt_base_d
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/tilt_base_d.yaml'
-    - --sides
-    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -3965,16 +3814,10 @@ run:
     - episode_tilt_base_d#8
     - episode_tilt_base_d#6
     - episode_tilt_base_d#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_tilt_base_d
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_tilt_base_d
   episode_grasp_b_right:
@@ -3991,10 +3834,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/(episode_runner_right)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -4016,15 +3861,14 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
-      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_b_right
+    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
+      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
+      /objects/source240b_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_b_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -4044,19 +3888,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_b_right
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_b_right.yaml'
-    - --sides
-    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -4067,16 +3898,10 @@ run:
     stop:
     - episode_grasp_b_right#7
     - episode_grasp_b_right#6
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_b_right
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_b_right
   episode_grasp_b_left:
@@ -4093,10 +3918,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/(episode_runner_left)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -4118,15 +3945,14 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
-      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied
-      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_b_left
+    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
+      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
+      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_b_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -4146,19 +3972,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_b_left
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_b_left.yaml'
-    - --sides
-    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -4169,16 +3982,10 @@ run:
     stop:
     - episode_grasp_b_left#7
     - episode_grasp_b_left#6
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_b_left
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_b_left
   episode_grasp_d_right:
@@ -4195,10 +4002,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -4287,15 +4096,14 @@ run:
     - -p
     - max_episode_s:=15.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
-      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_d_right
+    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
+      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
+      /objects/source240b_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_d_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -4315,19 +4123,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_d_right
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_d_right.yaml'
-    - --sides
-    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -4339,16 +4134,10 @@ run:
     - episode_grasp_d_right#8
     - episode_grasp_d_right#7
     - episode_grasp_d_right#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_d_right
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_d_right
   episode_grasp_d_left:
@@ -4365,10 +4154,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -4457,15 +4248,14 @@ run:
     - -p
     - max_episode_s:=15.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
-      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied
-      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_d_left
+    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
+      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
+      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_d_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -4485,19 +4275,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_d_left
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_d_left.yaml'
-    - --sides
-    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -4509,16 +4286,10 @@ run:
     - episode_grasp_d_left#8
     - episode_grasp_d_left#7
     - episode_grasp_d_left#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_d_left
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_d_left
   episode_grasp_e_right:
@@ -4535,10 +4306,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -4632,15 +4405,14 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
-      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_e_right
+    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
+      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
+      /objects/source240b_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_e_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -4660,19 +4432,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_e_right
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_e_right.yaml'
-    - --sides
-    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -4684,16 +4443,10 @@ run:
     - episode_grasp_e_right#8
     - episode_grasp_e_right#7
     - episode_grasp_e_right#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_e_right
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_e_right
   episode_grasp_e_left:
@@ -4710,10 +4463,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -4807,15 +4562,14 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
-      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied
-      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_e_left
+    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
+      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
+      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_e_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -4835,19 +4589,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_e_left
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_e_left.yaml'
-    - --sides
-    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -4859,16 +4600,10 @@ run:
     - episode_grasp_e_left#8
     - episode_grasp_e_left#7
     - episode_grasp_e_left#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_e_left
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_e_left
   episode_grasp_f_right:
@@ -4885,10 +4620,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -4980,19 +4717,18 @@ run:
     - -p
     - hand_squeeze:=true
     - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,-0.0143]
+    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
-      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_right
+    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
+      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
+      /objects/source240b_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_f_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -5012,19 +4748,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_f_right
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_f_right.yaml'
-    - --sides
-    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -5036,16 +4759,10 @@ run:
     - episode_grasp_f_right#8
     - episode_grasp_f_right#7
     - episode_grasp_f_right#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_f_right
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_right
   episode_grasp_f_left:
@@ -5062,10 +4779,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -5161,15 +4880,14 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
-      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied
-      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_left
+    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
+      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
+      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_f_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -5189,19 +4907,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_f_left
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_f_left.yaml'
-    - --sides
-    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -5213,16 +4918,10 @@ run:
     - episode_grasp_f_left#8
     - episode_grasp_f_left#7
     - episode_grasp_f_left#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_f_left
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_left
   episode_grasp_f_source240_orange_right:
@@ -5239,10 +4938,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -5334,19 +5035,18 @@ run:
     - -p
     - hand_squeeze:=true
     - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,-0.0143]
+    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_orange/pose /objects/source240_orange/live_pose /policy_control/pd_right/applied
-      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240_orange_right
+    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
+      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_orange/pose
+      /objects/source240_orange/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_f_source240_orange_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -5366,19 +5066,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_f_source240_orange_right
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_f_source240_orange_right.yaml'
-    - --sides
-    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -5390,16 +5077,10 @@ run:
     - episode_grasp_f_source240_orange_right#8
     - episode_grasp_f_source240_orange_right#7
     - episode_grasp_f_source240_orange_right#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_f_source240_orange_right
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source240_orange_right
   episode_grasp_f_source240_pink_right:
@@ -5416,10 +5097,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240_pink 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -5511,19 +5194,18 @@ run:
     - -p
     - hand_squeeze:=true
     - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,-0.0143]
+    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_pink/pose /objects/source240_pink/live_pose /policy_control/pd_right/applied
-      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240_pink_right
+    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
+      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_pink/pose /objects/source240_pink/live_pose
+      /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_f_source240_pink_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -5543,19 +5225,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_f_source240_pink_right
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_f_source240_pink_right.yaml'
-    - --sides
-    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -5567,16 +5236,10 @@ run:
     - episode_grasp_f_source240_pink_right#8
     - episode_grasp_f_source240_pink_right#7
     - episode_grasp_f_source240_pink_right#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_f_source240_pink_right
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source240_pink_right
   episode_grasp_f_source200_orange_right:
@@ -5593,10 +5256,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source200_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -5688,19 +5353,18 @@ run:
     - -p
     - hand_squeeze:=true
     - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,-0.0143]
+    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source200_orange/pose /objects/source200_orange/live_pose /policy_control/pd_right/applied
-      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source200_orange_right
+    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
+      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source200_orange/pose
+      /objects/source200_orange/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_f_source200_orange_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -5720,19 +5384,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_f_source200_orange_right
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_f_source200_orange_right.yaml'
-    - --sides
-    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -5744,16 +5395,10 @@ run:
     - episode_grasp_f_source200_orange_right#8
     - episode_grasp_f_source200_orange_right#7
     - episode_grasp_f_source200_orange_right#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_f_source200_orange_right
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source200_orange_right
   episode_grasp_f_source200_pink_right:
@@ -5770,10 +5415,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source200_pink 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -5865,19 +5512,18 @@ run:
     - -p
     - hand_squeeze:=true
     - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,-0.0143]
+    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source200_pink/pose /objects/source200_pink/live_pose /policy_control/pd_right/applied
-      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source200_pink_right
+    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
+      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source200_pink/pose /objects/source200_pink/live_pose
+      /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_f_source200_pink_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -5897,19 +5543,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_f_source200_pink_right
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_f_source200_pink_right.yaml'
-    - --sides
-    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -5921,16 +5554,10 @@ run:
     - episode_grasp_f_source200_pink_right#8
     - episode_grasp_f_source200_pink_right#7
     - episode_grasp_f_source200_pink_right#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_f_source200_pink_right
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source200_pink_right
   episode_grasp_f_shaker_c_orange_right:
@@ -5947,10 +5574,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -6042,19 +5671,18 @@ run:
     - -p
     - hand_squeeze:=true
     - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,-0.0143]
+    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_right/applied
-      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_shaker_c_orange_right
+    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
+      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/shaker_c_orange/pose
+      /objects/shaker_c_orange/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_f_shaker_c_orange_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -6074,19 +5702,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_f_shaker_c_orange_right
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_f_shaker_c_orange_right.yaml'
-    - --sides
-    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -6098,16 +5713,10 @@ run:
     - episode_grasp_f_shaker_c_orange_right#8
     - episode_grasp_f_shaker_c_orange_right#7
     - episode_grasp_f_shaker_c_orange_right#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_f_shaker_c_orange_right
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_shaker_c_orange_right
   episode_grasp_f_source240b_blue_left:
@@ -6124,10 +5733,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -6223,15 +5834,14 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
-      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_left/applied
-      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240b_blue_left
+    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
+      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose
+      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_f_source240b_blue_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -6251,19 +5861,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_f_source240b_blue_left
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_f_source240b_blue_left.yaml'
-    - --sides
-    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -6275,16 +5872,10 @@ run:
     - episode_grasp_f_source240b_blue_left#8
     - episode_grasp_f_source240b_blue_left#7
     - episode_grasp_f_source240b_blue_left#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_f_source240b_blue_left
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source240b_blue_left
   episode_grasp_f_source240_orange_left:
@@ -6301,10 +5892,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -6400,15 +5993,14 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
-      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source240_orange/pose /objects/source240_orange/live_pose /policy_control/pd_left/applied
-      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240_orange_left
+    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
+      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source240_orange/pose /objects/source240_orange/live_pose
+      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_f_source240_orange_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -6428,19 +6020,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_f_source240_orange_left
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_f_source240_orange_left.yaml'
-    - --sides
-    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -6452,16 +6031,10 @@ run:
     - episode_grasp_f_source240_orange_left#8
     - episode_grasp_f_source240_orange_left#7
     - episode_grasp_f_source240_orange_left#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_f_source240_orange_left
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source240_orange_left
   episode_grasp_f_source240_pink_left:
@@ -6478,10 +6051,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240_pink 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -6577,15 +6152,14 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
-      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source240_pink/pose /objects/source240_pink/live_pose /policy_control/pd_left/applied
-      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240_pink_left
+    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
+      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source240_pink/pose /objects/source240_pink/live_pose
+      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_f_source240_pink_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -6605,19 +6179,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_f_source240_pink_left
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_f_source240_pink_left.yaml'
-    - --sides
-    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -6629,16 +6190,10 @@ run:
     - episode_grasp_f_source240_pink_left#8
     - episode_grasp_f_source240_pink_left#7
     - episode_grasp_f_source240_pink_left#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_f_source240_pink_left
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source240_pink_left
   episode_grasp_f_source200_orange_left:
@@ -6655,10 +6210,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source200_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -6754,15 +6311,14 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
-      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source200_orange/pose /objects/source200_orange/live_pose /policy_control/pd_left/applied
-      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source200_orange_left
+    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
+      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source200_orange/pose /objects/source200_orange/live_pose
+      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_f_source200_orange_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -6782,19 +6338,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_f_source200_orange_left
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_f_source200_orange_left.yaml'
-    - --sides
-    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -6806,16 +6349,10 @@ run:
     - episode_grasp_f_source200_orange_left#8
     - episode_grasp_f_source200_orange_left#7
     - episode_grasp_f_source200_orange_left#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_f_source200_orange_left
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source200_orange_left
   episode_grasp_f_source200_pink_left:
@@ -6832,10 +6369,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source200_pink 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -6931,15 +6470,14 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
-      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source200_pink/pose /objects/source200_pink/live_pose /policy_control/pd_left/applied
-      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source200_pink_left
+    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
+      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source200_pink/pose /objects/source200_pink/live_pose
+      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_grasp_f_source200_pink_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -6959,19 +6497,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_f_source200_pink_left
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_f_source200_pink_left.yaml'
-    - --sides
-    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -6983,16 +6508,10 @@ run:
     - episode_grasp_f_source200_pink_left#8
     - episode_grasp_f_source200_pink_left#7
     - episode_grasp_f_source200_pink_left#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_f_source200_pink_left
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source200_pink_left
   episode_pick_place_f_right:
@@ -7009,10 +6528,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -7128,16 +6649,14 @@ run:
     - -p
     - holder:=1
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /objects/cup_holder_1/pose
-      /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_pick_place_f_right
+    - HAND_SIDES='right' EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
+      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
+      /objects/source240b_blue/live_pose /objects/cup_holder_1/pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action'
+      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_pick_place_f_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -7157,19 +6676,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_pick_place_f_right
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/pick_place_f_right.yaml'
-    - --sides
-    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -7182,16 +6688,10 @@ run:
     - episode_pick_place_f_right#8
     - episode_pick_place_f_right#6
     - episode_pick_place_f_right#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_pick_place_f_right
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_pick_place_f_right
   episode_pick_place_f_left:
@@ -7208,10 +6708,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
@@ -7327,15 +6829,13 @@ run:
     - -p
     - holder:=0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
-      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /objects/cup_holder_0/pose
-      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+    - HAND_SIDES='left' EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
+      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
+      /objects/cup_holder_0/pose /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_pick_place_f_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
@@ -7356,19 +6856,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_pick_place_f_left
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/pick_place_f_left.yaml'
-    - --sides
-    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -7381,16 +6868,10 @@ run:
     - episode_pick_place_f_left#8
     - episode_pick_place_f_left#6
     - episode_pick_place_f_left#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_pick_place_f_left
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_pick_place_f_left
   episode_grasp2tilt_f_240:
@@ -7407,10 +6888,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240b_blue · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 210 s
@@ -7577,17 +7060,15 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
-      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
-      /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose /objects/shaker_c_orange/pose
-      /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
-      /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
+      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
+      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose
+      /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied
+      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_grasp2tilt_f_240
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
@@ -7606,19 +7087,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp2tilt_f_240
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp2tilt_f_240.yaml'
-    - --sides
-    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -7631,16 +7099,10 @@ run:
     - episode_grasp2tilt_f_240#8
     - episode_grasp2tilt_f_240#6
     - episode_grasp2tilt_f_240#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp2tilt_f_240
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp2tilt_f_240
   episode_cocktail_1:
@@ -7657,10 +7119,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240b_blue · source240p_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
@@ -7875,19 +7339,17 @@ run:
     - -p
     - holder:=0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
-      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
-      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240b_blue/pose
-      /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose /objects/shaker_c_orange/live_pose
-      /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
-      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_cocktail_1
+    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
+      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
+      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose
+      /objects/source240b_blue/pose /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose
+      /objects/shaker_c_orange/live_pose /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied
+      /policy_control/pd_right/applied /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action'
+      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_cocktail_1
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -7905,19 +7367,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_cocktail_1
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/cocktail_1.yaml'
-    - --sides
-    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -7932,16 +7381,10 @@ run:
     - episode_cocktail_1#7
     - episode_cocktail_1#6
     - episode_cocktail_1#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_cocktail_1
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_cocktail_1
   episode_cocktail_1b:
@@ -7958,10 +7401,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240b_blue · source240p_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
@@ -8175,19 +7620,17 @@ run:
     - -p
     - holder:=0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
-      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
-      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240b_blue/pose
-      /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose /objects/shaker_c_orange/live_pose
-      /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
-      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_cocktail_1b
+    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
+      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
+      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose
+      /objects/source240b_blue/pose /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose
+      /objects/shaker_c_orange/live_pose /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied
+      /policy_control/pd_right/applied /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action'
+      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_cocktail_1b
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -8205,19 +7648,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_cocktail_1b
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/cocktail_1b.yaml'
-    - --sides
-    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -8232,16 +7662,10 @@ run:
     - episode_cocktail_1b#7
     - episode_cocktail_1b#6
     - episode_cocktail_1b#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_cocktail_1b
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_cocktail_1b
   episode_cocktail_1c_e1000:
@@ -8258,10 +7682,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240b_blue · source240p_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
@@ -8356,7 +7782,7 @@ run:
     - -p
     - hand_squeeze:=true
     - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,-0.0143]
+    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -8480,19 +7906,17 @@ run:
     - -p
     - holder:=0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
-      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
-      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240b_blue/pose
-      /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose /objects/shaker_c_orange/live_pose
-      /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
-      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_cocktail_1c_e1000
+    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
+      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
+      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose
+      /objects/source240b_blue/pose /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose
+      /objects/shaker_c_orange/live_pose /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied
+      /policy_control/pd_right/applied /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action'
+      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_cocktail_1c_e1000
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -8510,19 +7934,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_cocktail_1c_e1000
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/cocktail_1c_e1000.yaml'
-    - --sides
-    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -8537,16 +7948,10 @@ run:
     - episode_cocktail_1c_e1000#7
     - episode_cocktail_1c_e1000#6
     - episode_cocktail_1c_e1000#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_cocktail_1c_e1000
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_cocktail_1c_e1000
   episode_cocktail_1c_e4000:
@@ -8563,10 +7968,12 @@ run:
     - bash
     - -lc
     - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+  - note: ★arm4090-lan GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
     argv:
-    - bash
-    - -lc
+    - ssh
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
   - note: FP++ 물체 확보 — source240b_blue · source240p_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
@@ -8661,7 +8068,7 @@ run:
     - -p
     - hand_squeeze:=true
     - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,-0.0143]
+    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -8785,19 +8192,17 @@ run:
     - -p
     - holder:=0
     background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더
     argv:
     - bash
     - -lc
-    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
-      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
-      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
-      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240b_blue/pose
-      /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose /objects/shaker_c_orange/live_pose
-      /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
-      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_cocktail_1c_e4000
+    - EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
+      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
+      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose
+      /objects/source240b_blue/pose /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose
+      /objects/shaker_c_orange/live_pose /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied
+      /policy_control/pd_right/applied /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action'
+      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_cocktail_1c_e4000
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -8815,19 +8220,6 @@ run:
     - -p
     - robot:=rh56f1
     background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_cocktail_1c_e4000
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/cocktail_1c_e4000.yaml'
-    - --sides
-    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -8842,1127 +8234,57 @@ run:
     - episode_cocktail_1c_e4000#7
     - episode_cocktail_1c_e4000#6
     - episode_cocktail_1c_e4000#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
     - episode_cocktail_1c_e4000
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - stop
-    - episode_cocktail_1c_e4000
-  episode_grasp_s_right:
-  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/episode_run.py'
-    - --episode
-    - config/episodes/grasp_s_right.yaml
-    - --plan
-    - --require-holders
-  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
-    argv:
-    - bash
-    - -lc
-    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
-    argv:
-    - bash
-    - -lc
-    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
-    manual: true
-  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
-    argv:
-    - python3
-    - '{repo}/scripts/ops/perception_ctl.py'
-    - start
-    - --add
-    - source240b_blue
-    - --wait
-    - '120'
-    - --require-all
-  - note: '★[에피소드 grasp_s_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
-  - note: 머리 깊이 노드(학생 입력 160x90 깊이 + RGB) — 묶음의 얼린 외부 파라미터 md5 를 검사하고, /head/joint_states 가 그 head_pose(± 4 틱) 밖이거나 낡으면 깊이를 내지 않는다(정책은 깊이 없음으로
-      멈춘다). 이미 떠 있으면 그대로
-    argv:
-    - '{repo}/.venv-student/bin/python'
-    - '{repo}/scripts/nodes/head_depth_node.py'
-    - --policy-dir
-    - '{repo}/deploy/policies/rh56f1/aglt/right_student1104e'
-    background: true
-  - note: '[right] rh_aglt_r 노드(학생 rh56f1/aglt/right_student1104e · 계약 rh56f1/aglt/right_approach_ap05) — 경로 S: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지 자리에
-      멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live(래치 ·
-      lift_hold 판정에만)'
-    argv:
-    - '{repo}/.venv-student/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/rh_aglt_student_node.py'
-    - --ros-args
-    - -r
-    - __node:=rh_aglt_node_right
-    - -p
-    - ns:=right
-    - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
-    - -p
-    - robot:={artifact:robot_right}
-    - -p
-    - device:=cuda
-    - -p
-    - student_dir:={repo}/deploy/policies/rh56f1/aglt/right_student1104e
-    - -p
-    - goal_max:=1
-    - -p
-    - freeze_rule:=lift_hold
-    - -p
-    - freeze_lift_m:=0.07
-    - -p
-    - freeze_hold_steps:=120
-    - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
-    - -p
-    - cup_static:=false
-    - -p
-    - cup_latch:=false
-    - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=0.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
-    - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
-    - -p
-    - max_episode_s:=30.0
-    background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(60 Hz, 학생 입력만 · 압축 없음)
-    argv:
-    - bash
-    - -lc
-    - HAND_SIDES='right' CAMERA='/head_depth/image /head_depth/rgb /head_depth/config /camera/camera/color/camera_info /head/joint_states' CAMERA_HZ=60
-      EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
-      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
-      /objects/source240b_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_grasp_s_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
-    - --out
-    - '{runs}/cpu/episode_grasp_s_right.csv'
-    background: true
-  - note: 에피소드 실행기 episode_runner_right — grasp_s_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_s_right)
-    argv:
-    - '{repo}/.venv/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
-    - --ros-args
-    - -r
-    - __node:=episode_runner_right
-    - -p
-    - episode:=config/episodes/grasp_s_right.yaml
-    - -p
-    - robot:=rh56f1
-    background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_s_right
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_s_right.yaml'
-    - --sides
-    - right
-  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
-  - note: 에피소드 노드들 정지
-    stop:
-    - episode_grasp_s_right#9
-    - episode_grasp_s_right#8
-    - episode_grasp_s_right#6
-    - episode_grasp_s_right#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
-    argv:
-    - bash
-    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_s_right
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - stop
-    - episode_grasp_s_right
-  episode_grasp_s_left:
-  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/episode_run.py'
-    - --episode
-    - config/episodes/grasp_s_left.yaml
-    - --plan
-    - --require-holders
-  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
-    argv:
-    - bash
-    - -lc
-    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
-    argv:
-    - bash
-    - -lc
-    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
-    manual: true
-  - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
-    argv:
-    - python3
-    - '{repo}/scripts/ops/perception_ctl.py'
-    - start
-    - --add
-    - shaker_c_orange
-    - --wait
-    - '120'
-    - --require-all
-  - note: '★[에피소드 grasp_s_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
-  - note: 머리 깊이 노드(학생 입력 160x90 깊이 + RGB) — 묶음의 얼린 외부 파라미터 md5 를 검사하고, /head/joint_states 가 그 head_pose(± 4 틱) 밖이거나 낡으면 깊이를 내지 않는다(정책은 깊이 없음으로
-      멈춘다). 이미 떠 있으면 그대로
-    argv:
-    - '{repo}/.venv-student/bin/python'
-    - '{repo}/scripts/nodes/head_depth_node.py'
-    - --policy-dir
-    - '{repo}/deploy/policies/rh56f1/aglt/left_student1104e'
-    background: true
-  - note: '[left] rh_aglt_l 노드(학생 rh56f1/aglt/left_student1104e · 계약 rh56f1/aglt/left_approach_ap05) — 경로 S: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지 자리에
-      멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live(래치 ·
-      lift_hold 판정에만)'
-    argv:
-    - '{repo}/.venv-student/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/rh_aglt_student_node.py'
-    - --ros-args
-    - -r
-    - __node:=rh_aglt_node_left
-    - -p
-    - ns:=left
-    - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
-    - -p
-    - robot:={artifact:robot_left}
-    - -p
-    - device:=cuda
-    - -p
-    - student_dir:={repo}/deploy/policies/rh56f1/aglt/left_student1104e
-    - -p
-    - goal_max:=1
-    - -p
-    - freeze_rule:=lift_hold
-    - -p
-    - freeze_lift_m:=0.07
-    - -p
-    - freeze_hold_steps:=120
-    - -p
-    - cup_topic:=/objects/shaker_c_orange/live_pose
-    - -p
-    - cup_static:=false
-    - -p
-    - cup_latch:=false
-    - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=0.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
-    - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
-    - -p
-    - max_episode_s:=30.0
-    background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(60 Hz, 학생 입력만 · 압축 없음)
-    argv:
-    - bash
-    - -lc
-    - HAND_SIDES='left' CAMERA='/head_depth/image /head_depth/rgb /head_depth/config /camera/camera/color/camera_info /head/joint_states' CAMERA_HZ=60
-      EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
-      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
-      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_grasp_s_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
-    - --out
-    - '{runs}/cpu/episode_grasp_s_left.csv'
-    background: true
-  - note: 에피소드 실행기 episode_runner_left — grasp_s_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_s_left)
-    argv:
-    - '{repo}/.venv/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
-    - --ros-args
-    - -r
-    - __node:=episode_runner_left
-    - -p
-    - episode:=config/episodes/grasp_s_left.yaml
-    - -p
-    - robot:=rh56f1
-    background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_s_left
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_s_left.yaml'
-    - --sides
-    - left
-  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
-  - note: 에피소드 노드들 정지
-    stop:
-    - episode_grasp_s_left#9
-    - episode_grasp_s_left#8
-    - episode_grasp_s_left#6
-    - episode_grasp_s_left#5
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
-    argv:
-    - bash
-    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_s_left
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - stop
-    - episode_grasp_s_left
-  episode_grasp_m_right:
-  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/episode_run.py'
-    - --episode
-    - config/episodes/grasp_m_right.yaml
-    - --plan
-    - --require-holders
-  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
-    argv:
-    - bash
-    - -lc
-    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
-    argv:
-    - bash
-    - -lc
-    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
-    manual: true
-  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
-    argv:
-    - python3
-    - '{repo}/scripts/ops/perception_ctl.py'
-    - start
-    - --add
-    - source240b_blue
-    - --wait
-    - '120'
-    - --require-all
-  - note: '★[에피소드 grasp_m_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
-  - note: 시작 검사 — 마스크 학생 A 묶음(right) ckpt · YOLO · 외부 파라미터 md5 · head_pose · /head_mask · /head_depth 설정 · 64 MB SHM 프로파일 (읽기만, 불일치면 실패)
-    argv:
-    - '{repo}/.venv-student/bin/python'
-    - '{repo}/scripts/ops/check_student_mask_A.py'
-    - --sides
-    - right
-  - note: 머리 깊이 노드(학생 입력 160x90 깊이 + RGB) — 묶음의 얼린 외부 파라미터 md5 를 검사하고, /head/joint_states 가 그 head_pose(± 4 틱) 밖이거나 낡으면 깊이를 내지 않는다(정책은 깊이 없음으로
-      멈춘다). 이미 떠 있으면 그대로
-    argv:
-    - '{repo}/.venv-student/bin/python'
-    - '{repo}/scripts/nodes/head_depth_node.py'
-    - --policy-dir
-    - '{repo}/deploy/policies/rh56f1/aglt/right_student1105mA'
-    background: true
-  - note: 머리 마스크 노드(YOLO11s-seg → 160x90 클래스 비트, /head_mask/image · /head_mask/config) — 묶음 mask.yolo md5 · conf · 인스턴스 규칙. 64 MB SHM 프로파일이 없으면
-      시작 거부. 양손 미션에도 하나만
-    argv:
-    - nice
-    - -n
-    - '5'
-    - '{repo}/.venv-yolo/bin/python'
-    - '{repo}/scripts/nodes/head_mask_node.py'
-    - --policy-dir
-    - '{repo}/deploy/policies/rh56f1/aglt/right_student1105mA'
-    background: true
-  - note: '[right] rh_aglt_r 노드(학생 rh56f1/aglt/right_student1105mA · 계약 rh56f1/aglt/right_approach_ap05) — 경로 M: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지
-      자리에 멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live(래치
-      · lift_hold 판정에만)'
-    argv:
-    - '{repo}/.venv-student/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/rh_aglt_student_node.py'
-    - --ros-args
-    - -r
-    - __node:=rh_aglt_node_right
-    - -p
-    - ns:=right
-    - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
-    - -p
-    - robot:={artifact:robot_right}
-    - -p
-    - device:=cuda
-    - -p
-    - student_dir:={repo}/deploy/policies/rh56f1/aglt/right_student1105mA
-    - -p
-    - goal_max:=1
-    - -p
-    - freeze_rule:=lift_hold
-    - -p
-    - freeze_lift_m:=0.07
-    - -p
-    - freeze_hold_steps:=120
-    - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
-    - -p
-    - cup_static:=false
-    - -p
-    - cup_latch:=false
-    - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=0.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
-    - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
-    - -p
-    - max_episode_s:=30.0
-    background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(60 Hz, 학생 입력만 · 압축 없음)
-    argv:
-    - bash
-    - -lc
-    - HAND_SIDES='right' CAMERA='/head_depth/image /head_depth/rgb /head_depth/config /camera/camera/color/camera_info /head/joint_states /head_mask/image
-      /head_mask/config' CAMERA_HZ=60 EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right
-      /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose
-      /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action'
-      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_m_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
-    - --out
-    - '{runs}/cpu/episode_grasp_m_right.csv'
-    background: true
-  - note: 에피소드 실행기 episode_runner_right — grasp_m_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_m_right)
-    argv:
-    - '{repo}/.venv/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
-    - --ros-args
-    - -r
-    - __node:=episode_runner_right
-    - -p
-    - episode:=config/episodes/grasp_m_right.yaml
-    - -p
-    - robot:=rh56f1
-    background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_m_right
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_m_right.yaml'
-    - --sides
-    - right
-  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
-  - note: 에피소드 노드들 정지
-    stop:
-    - episode_grasp_m_right#11
-    - episode_grasp_m_right#10
-    - episode_grasp_m_right#8
-    - episode_grasp_m_right#7
-    - episode_grasp_m_right#6
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
-    argv:
-    - bash
-    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_m_right
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - stop
-    - episode_grasp_m_right
-  episode_grasp_m_left:
-  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/episode_run.py'
-    - --episode
-    - config/episodes/grasp_m_left.yaml
-    - --plan
-    - --require-holders
-  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
-    argv:
-    - bash
-    - -lc
-    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
-    argv:
-    - bash
-    - -lc
-    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
-    manual: true
-  - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
-    argv:
-    - python3
-    - '{repo}/scripts/ops/perception_ctl.py'
-    - start
-    - --add
-    - shaker_c_orange
-    - --wait
-    - '120'
-    - --require-all
-  - note: '★[에피소드 grasp_m_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
-  - note: 시작 검사 — 마스크 학생 A 묶음(left) ckpt · YOLO · 외부 파라미터 md5 · head_pose · /head_mask · /head_depth 설정 · 64 MB SHM 프로파일 (읽기만, 불일치면 실패)
-    argv:
-    - '{repo}/.venv-student/bin/python'
-    - '{repo}/scripts/ops/check_student_mask_A.py'
-    - --sides
-    - left
-  - note: 머리 깊이 노드(학생 입력 160x90 깊이 + RGB) — 묶음의 얼린 외부 파라미터 md5 를 검사하고, /head/joint_states 가 그 head_pose(± 4 틱) 밖이거나 낡으면 깊이를 내지 않는다(정책은 깊이 없음으로
-      멈춘다). 이미 떠 있으면 그대로
-    argv:
-    - '{repo}/.venv-student/bin/python'
-    - '{repo}/scripts/nodes/head_depth_node.py'
-    - --policy-dir
-    - '{repo}/deploy/policies/rh56f1/aglt/left_student1105mA'
-    background: true
-  - note: 머리 마스크 노드(YOLO11s-seg → 160x90 클래스 비트, /head_mask/image · /head_mask/config) — 묶음 mask.yolo md5 · conf · 인스턴스 규칙. 64 MB SHM 프로파일이 없으면
-      시작 거부. 양손 미션에도 하나만
-    argv:
-    - nice
-    - -n
-    - '5'
-    - '{repo}/.venv-yolo/bin/python'
-    - '{repo}/scripts/nodes/head_mask_node.py'
-    - --policy-dir
-    - '{repo}/deploy/policies/rh56f1/aglt/left_student1105mA'
-    background: true
-  - note: '[left] rh_aglt_l 노드(학생 rh56f1/aglt/left_student1105mA · 계약 rh56f1/aglt/left_approach_ap05) — 경로 M: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지 자리에
-      멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live(래치 ·
-      lift_hold 판정에만)'
-    argv:
-    - '{repo}/.venv-student/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/rh_aglt_student_node.py'
-    - --ros-args
-    - -r
-    - __node:=rh_aglt_node_left
-    - -p
-    - ns:=left
-    - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
-    - -p
-    - robot:={artifact:robot_left}
-    - -p
-    - device:=cuda
-    - -p
-    - student_dir:={repo}/deploy/policies/rh56f1/aglt/left_student1105mA
-    - -p
-    - goal_max:=1
-    - -p
-    - freeze_rule:=lift_hold
-    - -p
-    - freeze_lift_m:=0.07
-    - -p
-    - freeze_hold_steps:=120
-    - -p
-    - cup_topic:=/objects/shaker_c_orange/live_pose
-    - -p
-    - cup_static:=false
-    - -p
-    - cup_latch:=false
-    - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=0.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
-    - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
-    - -p
-    - max_episode_s:=30.0
-    background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(60 Hz, 학생 입력만 · 압축 없음)
-    argv:
-    - bash
-    - -lc
-    - HAND_SIDES='left' CAMERA='/head_depth/image /head_depth/rgb /head_depth/config /camera/camera/color/camera_info /head/joint_states /head_mask/image
-      /head_mask/config' CAMERA_HZ=60 EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left
-      /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose
-      /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action'
-      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_m_left
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
-    - --out
-    - '{runs}/cpu/episode_grasp_m_left.csv'
-    background: true
-  - note: 에피소드 실행기 episode_runner_left — grasp_m_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_m_left)
-    argv:
-    - '{repo}/.venv/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
-    - --ros-args
-    - -r
-    - __node:=episode_runner_left
-    - -p
-    - episode:=config/episodes/grasp_m_left.yaml
-    - -p
-    - robot:=rh56f1
-    background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_grasp_m_left
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/grasp_m_left.yaml'
-    - --sides
-    - left
-  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
-  - note: 에피소드 노드들 정지
-    stop:
-    - episode_grasp_m_left#11
-    - episode_grasp_m_left#10
-    - episode_grasp_m_left#8
-    - episode_grasp_m_left#7
-    - episode_grasp_m_left#6
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
-    argv:
-    - bash
-    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_grasp_m_left
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - stop
-    - episode_grasp_m_left
-  episode_place_m_right:
-  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세(config/cup_holder_poses_5090_v1.yaml)에 쓰는 홀더가 다 있는가 (읽기만)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/episode_run.py'
-    - --episode
-    - config/episodes/place_m_right.yaml
-    - --plan
-    - --require-holders
-  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
-    argv:
-    - bash
-    - -lc
-    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
-  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
-    argv:
-    - bash
-    - -lc
-    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
-    manual: true
-  - note: FP++ 물체 확보 — source240b_blue · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 210 s
-    argv:
-    - python3
-    - '{repo}/scripts/ops/perception_ctl.py'
-    - start
-    - --add
-    - source240b_blue
-    - shaker_c_orange
-    - --wait
-    - '210'
-    - --require-all
-  - note: '★[에피소드 place_m_right] 물체(SRC_BLUE, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_1=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
-      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
-      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
-    argv:
-    - '{repo}/.venv/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
-    - --ros-args
-    - -r
-    - __node:=rh_aglt_node_right
-    - -p
-    - ns:=right
-    - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
-    - -p
-    - robot:={artifact:robot_right}
-    - -p
-    - device:=cpu
-    - -p
-    - approach_grasp:=handoff=1
-    - -p
-    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/right_rcg04/rh_aglt_contract.json
-    - -p
-    - goal_max:=1
-    - -p
-    - freeze_rule:=lift_hold
-    - -p
-    - freeze_lift_m:=0.07
-    - -p
-    - freeze_hold_steps:=120
-    - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
-    - -p
-    - cup_static:=false
-    - -p
-    - cup_latch:=false
-    - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
-    - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
-    - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,-0.0143]
-    - -p
-    - max_episode_s:=33.0
-    background: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
-    argv:
-    - '{repo}/.venv/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
-    - --ros-args
-    - -r
-    - __node:=rh_aglt_node_left
-    - -p
-    - ns:=left
-    - -p
-    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
-    - -p
-    - robot:={artifact:robot_left}
-    - -p
-    - device:=cpu
-    - -p
-    - approach_grasp:=handoff=1
-    - -p
-    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/left_rcg04/rh_aglt_contract.json
-    - -p
-    - goal_max:=1
-    - -p
-    - freeze_rule:=lift_hold
-    - -p
-    - freeze_lift_m:=0.07
-    - -p
-    - freeze_hold_steps:=120
-    - -p
-    - cup_topic:=/objects/shaker_c_orange/live_pose
-    - -p
-    - cup_static:=false
-    - -p
-    - cup_latch:=false
-    - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
-    - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
-    - -p
-    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
-    - -p
-    - max_episode_s:=33.0
-    background: true
-  - note: 시작 검사 — 놓기 학생 묶음(right) ckpt · 외부 파라미터 · check_meta · 목 동역학 · 이 에피소드 목 드라이버 --max-tilt ≥ 82 · 홀더 CAD · YOLO · 64 MB SHM (읽기만, 불일치 ·
-      묶음 없음이면 실패)
-    argv:
-    - '{repo}/.venv-student/bin/python'
-    - '{repo}/scripts/ops/check_place_student.py'
-    - --student-dir
-    - '{repo}/deploy/policies/rh56f1/place/right_student_place'
-    - --side
-    - right
-    - --contract
-    - '{repo}/deploy/policies/rh56f1/place/right_n10_e4000/rh_place_contract.json'
-    - --episode
-    - place_m_right
-  - note: 목 드라이버 정지(head_home) — 놓기 학생 머리가 tilt 82 까지 쓰므로 상한만 바꿔 다시 띄운다
-    stop:
-    - head_home#0
-  - note: 목 드라이버 — 놓기 에피소드만 --max-tilt 82(속도 · 가속 · 처짐 여유는 기본). 이 상한은 이 에피소드 동안 이산 head_move 요청에도 같이 풀린다(드라이버가 한 상한으로 둘 다 검사). 에피소드 끝 꼬리가 기본 드라이버
-      + head_home 으로 되돌린다
-    argv:
-    - python3
-    - '{repo}/scripts/nodes/head_joint_publisher.py'
-    - --config
-    - '{repo}/config/head_camset_rh56f1.yaml'
-    - --port
-    - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
-    - --baud
-    - '1000000'
-    - --ids
-    - 1,2
-    - --max-tilt
-    - '82'
-    background: true
-  - note: 머리 마스크 노드(YOLO11s-seg → 160x90 클래스 비트, /head_mask/image · /head_mask/config) — 놓기 학생 묶음 mask.yolo md5 · conf · 인스턴스 규칙. 64 MB SHM 프로파일이
-      없으면 시작 거부
-    argv:
-    - nice
-    - -n
-    - '5'
-    - '{repo}/.venv-yolo/bin/python'
-    - '{repo}/scripts/nodes/head_mask_node.py'
-    - --policy-dir
-    - '{repo}/deploy/policies/rh56f1/place/right_student_place'
-    background: true
-  - note: '[right] rh_place_r 노드(rh56f1/place/right_n10_e4000) — 홀더 1 · 학생 rh56f1/place/right_student_place(머리 look_at → /head/target_stream)
-      · 놓은 뒤 스스로 끝남 · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)'
-    argv:
-    - '{repo}/.venv-student/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/rh_place_student_node.py'
-    - --ros-args
-    - -r
-    - __node:=rh_place_node_right
-    - -p
-    - ns:=right_place
-    - -p
-    - episode_topic:=/policy_control/right/episode
-    - -p
-    - contract:={repo}/deploy/policies/rh56f1/place/right_n10_e4000/rh_place_contract.json
-    - -p
-    - robot:={artifact:robot_right}
-    - -p
-    - device:=cuda
-    - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
-    - -p
-    - holder:=1
-    - -p
-    - student_dir:={repo}/deploy/policies/rh56f1/place/right_student_place
-    background: true
-  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(60 Hz, 학생 입력만 · 압축 없음)
-    argv:
-    - bash
-    - -lc
-    - CAMERA='/head_depth/image /head_depth/rgb /head_depth/config /camera/camera/color/camera_info /head/joint_states /head_mask/image /head_mask/config'
-      CAMERA_HZ=60 EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left
-      /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner
-      /policy_control/left/episode /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SHAKER/pose /objects/source240b_blue/pose
-      /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /objects/cup_holder_1/pose /policy_control/pd_left/applied
-      /policy_control/pd_right/applied /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action
-      /head/target_stream /head/stream_log' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_place_m_right
-  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
-    - --out
-    - '{runs}/cpu/episode_place_m_right.csv'
-    background: true
-  - note: 에피소드 실행기 episode_runner — place_m_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:place_m_right)
-    argv:
-    - '{repo}/.venv/bin/python'
-    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
-    - --ros-args
-    - -p
-    - episode:=config/episodes/place_m_right.yaml
-    - -p
-    - robot:=rh56f1
-    background: true
-  - note: 'stationary 기준선 기록 시작 — logs/runs/<날짜>/stationary/<시각>_baseline_<이름>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty,
-      PD 게인)'
-    argv:
-    - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - start
-    - episode_place_m_right
-    - --mission
-    - '{repo}/config/mission_rh56f1_control.yaml'
-    - --episode
-    - '{repo}/config/episodes/place_m_right.yaml'
-    - --sides
-    - left,right
-  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
-    argv:
-    - bash
-    - -lc
-    - 'true'
-    manual: true
-  - note: 에피소드 노드들 정지
-    stop:
-    - episode_place_m_right#14
-    - episode_place_m_right#13
-    - episode_place_m_right#11
-    - episode_place_m_right#10
-    - episode_place_m_right#9
-    - episode_place_m_right#6
-    - episode_place_m_right#5
-  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다)
-    argv:
-    - python3
-    - '{repo}/scripts/nodes/head_joint_publisher.py'
-    - --config
-    - '{repo}/config/head_camset_rh56f1.yaml'
-    - --port
-    - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
-    - --baud
-    - '1000000'
-    - --ids
-    - 1,2
-    background: true
-  - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
+  head_control:
+  - note: 목 pan · tilt 변경 후 실측 정착 확인
     argv:
     - python3
     - '{repo}/scripts/head_move.py'
     execute_args:
     - --execute
-  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+  head_sweep:
+  - note: 목 드라이버 정지(head_home) — 스윕이 tilt 82 까지 쓰므로 상한만 바꿔 다시 띄운다
+    stop:
+    - head_home#0
+  - note: 목 드라이버 — 스윕 동안만 --max-tilt 82
     argv:
-    - bash
-    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
-    - stop
-    - episode_place_m_right
-  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config
+      config/head_camset_rh56f1.yaml --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2
+    - --max-tilt
+    - '82'
+    background: true
+  - note: 목 스윕 — 지금 자세 둘레 pan ±10° · tilt ±8° 9자세, 정착 후 3 s 머묾 · bag 기록 · 끝나면 처음 자세로
     argv:
     - python3
-    - '{repo}/deploy/policy_control/tools/baseline_run.py'
-    - stop
-    - episode_place_m_right
-  head_control:
-  - note: 목 pan · tilt 변경 후 실측 정착 확인
+    - '{repo}/scripts/head_sweep.py'
+    - --max-tilt
+    - '82'
+    execute_args:
+    - --execute
+  - note: 스윕 드라이버(82) 정지
+    stop:
+    - head_sweep#1
+  - note: 목 드라이버 — 기본 인자로 다시(head_home 것과 같다)
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config
+      config/head_camset_rh56f1.yaml --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2
+    background: true
+  - note: 머리를 카메라 캘리브 자세(camset)로 — 머리가 움직인다
     argv:
     - python3
     - '{repo}/scripts/head_move.py'

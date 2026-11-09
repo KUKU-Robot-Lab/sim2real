@@ -114,6 +114,12 @@ def block_k(k, b: int) -> np.ndarray:
     return k
 
 
+def cup_shape_of(key: str) -> str | None:
+    """ckpt head.cup_c_m 키(source240 · source240_real · shaker_c_real …) → C_DEFAULT 형상 이름. 모르면 None."""
+    hits = [s for s in CG.C_DEFAULT if key == s or key.startswith(s + "_")]
+    return hits[0] if len(hits) == 1 else None
+
+
 def check_meta(d: dict, c, extr_md5: str, z_cut_want: float) -> None:
     """ckpt 머리글 ↔ 이 배포가 옮긴 규칙. 하나라도 다르면 ValueError."""
     side = c.side().side
@@ -135,7 +141,9 @@ def check_meta(d: dict, c, extr_md5: str, z_cut_want: float) -> None:
         if h.get(k) != v:
             bad[f"head.{k}"] = h.get(k)
     hc = h.get("cup_c_m") or {}
-    if set(hc) != set(cup_c) or not all(np.allclose(hc[k], cup_c[k], atol=1e-6) for k in cup_c):
+    # ★11.09 손마다 학습한 컵만 적힌다(오른손 {"source240_real": ..}) — 키는 컵 형상 이름이 앞에 붙은 policy_object 이름도 받는다
+    shape = {k: cup_shape_of(k) for k in hc}
+    if not hc or None in shape.values() or not all(np.allclose(hc[k], cup_c[shape[k] or ""], atol=1e-6) for k in hc):
         bad["head.cup_c_m"] = hc
     dp = d.get("depth_pre") or {}
     if "dynamic_pose" not in dp or dp.get("extrinsics_md5") != extr_md5 or dp.get("block") != HPJ.BLOCK:
@@ -342,10 +350,19 @@ class PlaceStudentPolicy:
         self.meta = {k: v for k, v in d.items() if k != "model"}
         self.img_hw = tuple(int(x) for x in d["img_hw"])
         self.target = target or str((cfg.get("mask") or {}).get("target_class") or "")
+        shapes = {cup_shape_of(k) for k in (d.get("head") or {}).get("cup_c_m") or {}}
+        if CG.CLASS_CUP.get(self.target) not in shapes:
+            raise ValueError(f"목표 {self.target!r}(컵 {CG.CLASS_CUP.get(self.target)}) 는 이 ckpt 가 배운 컵 {sorted(map(str, shapes))} 가 아니다")
         self.hc = HP.HeadCamPose(self.extr, sag=True)
-        self.q0 = np.asarray(d["head"]["start_enc_deg"], np.float64)
-        if not np.allclose(self.q0, self.hc.q0_enc_deg, atol=1e-6):
-            raise ValueError(f"ckpt 머리 시작 자세 {self.q0} ≠ 외부 파라미터 head_pose {self.hc.q0_enc_deg}")
+        # ★11.09 시작 자세는 틱으로 대조한다. ckpt start_enc_deg 는 hdgp 규약(·360/4096), 실기 /head/joint_states 와 hc.q0_enc_deg 는
+        #   드라이버 규약(·360/4095)이라 같은 틱도 0.04° 남짓 다르다. 틱이 같으면 q0 는 실기 q 와 같은 드라이버 규약 값을 쓴다.
+        tick = d["head"].get("start_tick")
+        if tick is not None:
+            if tuple(int(t) for t in tick) != self.hc.q0_tick:
+                raise ValueError(f"ckpt 머리 시작 틱 {list(tick)} ≠ 외부 파라미터 head_pose 틱 {list(self.hc.q0_tick)}")
+        elif not np.allclose(d["head"]["start_enc_deg"], self.hc.q0_enc_deg, atol=1e-6):
+            raise ValueError(f"ckpt 머리 시작 자세 {d['head']['start_enc_deg']} ≠ 외부 파라미터 head_pose {self.hc.q0_enc_deg}")
+        self.q0 = np.asarray(self.hc.q0_enc_deg, np.float64)
         self.image = PlaceImage(self.rd, d["depth_pre"], float(d["d_min"]), float(d["d_max"]), self.target)
         self.masks = SM.MaskStream(self.img_hw)
         self.head = HeadState()

@@ -103,6 +103,7 @@ class HeadCamPose:
         self.T_base_cam0 = np.eye(4)
         self.T_base_cam0[:3, :3] = quat_wxyz_to_mat(cam["orientation_wxyz"])
         self.T_base_cam0[:3, 3] = cam["position"]
+        self.q0_tick = (int(hp["pan_tick"]), int(hp["tilt_tick"]))
         self.q0_enc_deg = (tick_to_enc_deg(hp["pan_tick"]), tick_to_enc_deg(hp["tilt_tick"]))
         self.T_neck_cam = np.linalg.inv(fk.t_base_neck_from_encoder(*self.q0_enc_deg)) @ self.T_base_cam0
         self.sag = SagTable(sag_table) if sag else None
