@@ -138,6 +138,40 @@ def fixed_gap(T: np.ndarray, F: np.ndarray) -> str:
     return ""
 
 
+def axis_aligned(T_meas: np.ndarray, T_base: np.ndarray) -> tuple[np.ndarray, float]:
+    """★11.09 tilt 계획기용 T_in — 위치 · 컵 축(z 열)은 실측, 컵 축 둘레 방위는 기본값(대칭 병, FP++ 가 정하지 않는다).
+    기본 회전을 기본 축 → 실측 축 최소 회전으로 돌린다(tin_fixed_1107 의 T = 이 식(traj_v10 기본값, 오차 0)). → (4×4, 축 차 deg)."""
+    T_meas, T_base = np.asarray(T_meas, float), np.asarray(T_base, float)
+    zb = T_base[:3, 2] / np.linalg.norm(T_base[:3, 2])
+    zm = T_meas[:3, 2] / np.linalg.norm(T_meas[:3, 2])
+    c = float(np.clip(zb @ zm, -1.0, 1.0))
+    if c < -0.9:
+        raise TinError(f"실측 컵 축이 기본값과 거의 반대({np.degrees(np.arccos(c)):.0f}°) — 계획에 쓰지 않는다")
+    v = np.cross(zb, zm)
+    K = np.array([[0.0, -v[2], v[1]], [v[2], 0.0, -v[0]], [-v[1], v[0], 0.0]])
+    out = np.eye(4)
+    out[:3, :3] = (np.eye(3) + K + K @ K / (1.0 + c)) @ T_base[:3, :3]
+    out[:3, 3] = T_meas[:3, 3]
+    return out, float(np.degrees(np.arccos(c)))
+
+
+def planner_tin(T_by_side: dict, setup: Path, sources: dict | None = None, **meta) -> dict:
+    """팔 → 실측(또는 fallback) T_in 4×4 → plan_tilt_traj --tin-json 내용({"T_in_r", "T_in_l"}). 없는 팔 = setup 기본값."""
+    with np.load(setup, allow_pickle=False) as S:
+        base = {side: np.asarray(S[key], float) for side, key in FALLBACK_KEY.items()}
+    out: dict = {"setup": str(setup), "sides": {}, **meta}
+    for side, key in FALLBACK_KEY.items():
+        if side in T_by_side:
+            T, deg = axis_aligned(T_by_side[side], base[side])
+            out["sides"][side] = {"source": f"run:{(sources or {}).get(side, '?')}", "axis_vs_default_deg": round(deg, 2),
+                                  "pos_vs_default_mm": round(float(np.linalg.norm(T[:3, 3] - base[side][:3, 3])) * 1000, 1)}
+        else:
+            T = base[side]
+            out["sides"][side] = {"source": "setup 기본값"}
+        out[key] = np.round(T, 6).tolist()
+    return out
+
+
 def record(meas: dict, side: str, fallback: Path, **meta) -> dict:
     """측정 결과 + (실패면) fallback → 런 폴더 json 한 개의 내용. fallback 도 못 읽으면 TinError.
     오른손 실측은 고정 평균과 FIX_POS_M · FIX_ANG_DEG 안일 때만 인정한다(넘으면 fallback, 이유에 차이)."""

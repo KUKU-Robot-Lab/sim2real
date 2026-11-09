@@ -46,6 +46,7 @@ from policy_control import lift_guard as LG  # noqa: E402
 from policy_control import rh_place as P  # noqa: E402
 from policy_control.episode_master import EpisodeBook  # noqa: E402
 from policy_control.joint_obs import quat_to_matrix  # noqa: E402
+from policy_control.tick_budget import TickBudget  # noqa: E402
 from policy_control.sources import SourceSet, load_robot_cfg, select_side  # noqa: E402
 from policy_control.lean_node import LeanNodeMixin, lean_node_kwargs  # noqa: E402
 import run_paths  # noqa: E402
@@ -531,7 +532,10 @@ class PourFjNode(LeanNodeMixin, Node):
         urdf = self._urdf = ASSETS[self.contract.asset].urdf
         self.fk = {r: UrdfChainFK(urdf, s.arm_joints, s.hand_joints, s.palm_body, s.tip_bodies)
                    for r, s in self.contract.sides.items()}
-        self.device, self._policy = str(p("device")), policy
+        from policy_control.cpu_plan import policy_device
+        self.device, device_log = policy_device(str(p("device")))   # ★11.10 콘솔 정책 탭 선택이 미션 device:= 보다 앞선다
+        self.get_logger().info(device_log)
+        self._policy = policy
         self.reset_tol, self.max_gap, self._publish = float(p("reset_tol_rad")), int(p("max_gap_ticks")), bool(p("publish_target"))
         m = float(p("max_episode_s"))
         self.max_s = self.contract.episode_s if m < 0 else m
@@ -581,6 +585,7 @@ class PourFjNode(LeanNodeMixin, Node):
             raise ValueError("cup_dropout_stop_s > 0 은 cup_hold_last:=true · cup_attach:=true(live 컵 · 손바닥 기록)와 같이 쓴다")
         self.dropouts = {r: CupDropout(self.dropout_cfg) for r in self.attach} if self.dropout_cfg.enabled else {}
         self._seq, self._gap, self._errors, self._t_start = 0, 0, {}, 0.0
+        self._budget = TickBudget(1e3 / float(self.contract.policy_hz))   # ★11.09 예산 넘긴 틱 수 — status "tick"
 
         chain_qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -821,6 +826,7 @@ class PourFjNode(LeanNodeMixin, Node):
                 self.book.phase = "idle"
             return self._reply(res, False, [f"reset: {exc}"])
         self._seq, self._gap = 0, 0
+        self._budget.reset()
         event, _ = self.book.reset()
         self._emit(event)
         return self._reply(res, True, [])
@@ -848,6 +854,9 @@ class PourFjNode(LeanNodeMixin, Node):
     def _end(self, kind: str, reason: str) -> None:
         event, _ = self.book.end(kind, reason)
         self._emit(event)
+        budget = getattr(self, "_budget", None)
+        if budget is not None:                                # ★11.10 리뷰: 틱 예산 요약을 에피소드 끝에 한 번 남긴다(idle status 엔 없다)
+            self.get_logger().info(f"tick budget {kind}: {json.dumps(budget.as_dict(), ensure_ascii=False)}")
 
     def _srv_stop(self, _req, res):
         self._end("stop", "user stop")
@@ -1160,7 +1169,8 @@ class PourFjNode(LeanNodeMixin, Node):
             return
         except self.fam.errors as exc:
             self._gap += 1
-            self._status(False, [str(exc)], {"gap": self._gap})
+            self._budget.record(t0, (time.perf_counter() - t0) * 1e3)
+            self._status(False, [str(exc)], {"gap": self._gap, "tick": self._budget.as_dict()})
             if self._gap > self.max_gap:
                 self._end("abort", f"{self._gap} ticks without a valid step: {exc}")
             return
@@ -1177,7 +1187,9 @@ class PourFjNode(LeanNodeMixin, Node):
         self._pub_action.publish(codec.encode_action(action, self._seq))
         if self._publish and self._lg_stop is None:   # ★11.08 가드가 멈춘 틱은 새 목표를 내지 않는다 — 직전 목표를 붙든다
             self._pub_target.publish(codec.encode_joint_target(names, q, qd, str(self.book.episode), self._seq))
-        self._status(True, [], {"proc_ms": (time.perf_counter() - t0) * 1e3, "step": self.chain.step_i,
+        proc_ms = (time.perf_counter() - t0) * 1e3
+        self._budget.record(t0, proc_ms)
+        self._status(True, [], {"proc_ms": proc_ms, "tick": self._budget.as_dict(), "step": self.chain.step_i,
                                 "hold": self.chain.step_i <= self.contract.hold_steps, **lg})
         if self._after_step():
             return
@@ -1198,8 +1210,8 @@ def main(argv=None, family: str = "pour_fj", node_cls=None) -> int:
     node = None
     try:
         node = (node_cls or PourFjNode)(family=family)
-        from policy_control.cpu_plan import keep_off_rt
-        node.get_logger().info(keep_off_rt())   # ★10.03 실시간 코어를 비켜 간다
+        from policy_control.cpu_plan import keep_policy
+        node.get_logger().info(keep_policy(node.node_name))   # ★11.09 빈 P 코어 하나를 혼자 쓴다(없으면 일반 코어 — 10.03)
         executor = SingleThreadedExecutor()
         executor.add_node(node)
         try:

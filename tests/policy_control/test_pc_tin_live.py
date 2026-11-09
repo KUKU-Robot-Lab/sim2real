@@ -248,3 +248,69 @@ def test_place_node_attaches_tin_and_logs_fpp_only_when_plausible(tmp_path):
     fresh["cup"] = (fk[0] + [0.01, 0, 0], [1.0, 0, 0, 0], 0.0)
     assert PlaceNode._tin_cup(me, "arm", np.zeros(3), np.eye(3)) is fk                 # 제어 값은 그대로 FK
     assert len(lines) == 1 and "[10.0, 0.0, 0.0] mm" in lines[0]
+
+
+V12 = Path(__file__).resolve().parents[2] / "deploy" / "policy_control" / "config" / "tilt" / "traj_v12_240"
+V10 = V12.parent / "traj_v10"
+
+
+def test_axis_aligned_rebuilds_the_fixed_planner_tin_and_planner_tin_keeps_v12_for_the_fixed_value(tmp_path):
+    """★11.09 문제 1: tin_fixed_1107 의 T(계획기용) = 실측 전체 회전의 컵 축 + traj_v10 기본 방위 — 같은 식이 그대로 다시 만든다.
+    고정값을 v12 setup 기준으로 넣으면 v12 계획 T_in 이 그대로 나온다(실측이 고정값과 같으면 계획도 그대로)."""
+    d = json.loads((V12 / "ref" / "tin_fixed_1107.json").read_text())
+    with np.load(V10 / "ref" / "setup_240.npz") as S10:
+        for side, key in T.FALLBACK_KEY.items():
+            out, deg = T.axis_aligned(np.asarray(d[key]["T_meas_fullrot"]), S10[key])
+            assert np.abs(out - np.asarray(d[key]["T"])).max() < 1e-5 and 15 < deg < 25
+    meas = {s: np.asarray(d[k]["T_meas_fullrot"]) for s, k in T.FALLBACK_KEY.items()}
+    p = T.planner_tin(meas, V12 / "ref" / "setup_240.npz", node="tilt")
+    with np.load(V12 / "ref" / "setup_240.npz") as S12:
+        for key in T.FALLBACK_KEY.values():
+            assert np.abs(np.asarray(p[key]) - S12[key]).max() < 1e-5
+    assert p["sides"]["right"]["source"].startswith("run") and p["sides"]["right"]["pos_vs_default_mm"] < 0.1
+
+    low = meas["right"].copy()
+    low[:3, 3] += low[:3, 2] * 0.010                     # 컵 축 방향으로 10 mm(손이 컵을 더 아래에서 쥔 것)
+    p = T.planner_tin({"right": low}, V12 / "ref" / "setup_240.npz")
+    assert abs(p["sides"]["right"]["pos_vs_default_mm"] - 10.0) < 0.1 and p["sides"]["left"] == {"source": "setup 기본값"}
+    with pytest.raises(T.TinError):
+        flip = meas["right"].copy(); flip[:3, 1:3] *= -1
+        T.planner_tin({"right": flip}, V12 / "ref" / "setup_240.npz")
+
+
+def test_tilt_traj_measures_before_planning_and_plans_with_the_run_tin(tmp_path, monkeypatch):
+    """tilt_traj(v12): 정지 → T_in 측정 → 계획(--tin-json = 이 런 값) → 재생. 측정이 계획보다 먼저."""
+    import threading
+    from types import SimpleNamespace
+    from policy_control import episode_ros as R
+    from policy_control import episode_spec as S
+    ep = S.load(Path(__file__).resolve().parents[2] / "config" / "episodes" / "cocktail_1c_e4000.yaml")
+    order: list = []
+    d = json.loads((V12 / "ref" / "tin_fixed_1107.json").read_text())
+
+    def measure(node, objs, t0, still):
+        order.append(("measure", tuple(sorted(objs))))
+        for s in objs:
+            path = tmp_path / f"tin_{node.id}_{s}.json"
+            path.write_text(json.dumps({"T_in": d[T.FALLBACK_KEY[s]]["T_meas_fullrot"]}))
+            me._tin_json[s] = str(path)
+        return ""
+
+    def run(argv):
+        order.append(Path(argv[1]).name)
+        order.append(list(argv))
+        return 0, "tail"
+    lines: list = []
+    me = SimpleNamespace(_tin_rec=None, _tin_json={}, _tin_why={}, ep=ep, _lock=threading.Lock(), _wait_pd_tracking=lambda side: True,
+                         _wait_arm_still=lambda sides: {"arm_still": True}, _pd_view=lambda side: {}, run_dir=tmp_path, _run=run,
+                         cancel=threading.Event(), _measure_tin=measure, node=_logger(lines))
+    me._planner_tin = lambda *a: R.RosExecutor._planner_tin(me, *a)
+    r = R.RosExecutor._run_planned(me, SimpleNamespace(id="tilt"), ep.trajectories["tilt"],
+                                   SimpleNamespace(hand=lambda side: {"right": "SRC_BLUE", "left": "RCV"}[side]))
+    assert r.status == "completed"
+    names = [o for o in order if isinstance(o, (str, tuple))]
+    assert names == [("measure", ("left", "right")), "plan_tilt_traj.py", "replay_to_pd.py"]
+    plan = order[2]
+    tj = json.loads(Path(plan[plan.index("--tin-json") + 1]).read_text())
+    assert tj["sides"]["right"]["source"].startswith("run") and tj["sides"]["left"]["source"].startswith("run")
+    assert "--tin-json" not in order[4]

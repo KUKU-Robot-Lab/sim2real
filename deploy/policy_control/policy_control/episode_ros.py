@@ -1021,11 +1021,16 @@ class RosExecutor:
              "--rate-scale", repr(float(traj.rate_scale)), "--max-start-gap", repr(float(cfg.get("start_gap_rad", 0.05))),
              "--execute"],
         ]
+        tin_plan = traj.kind == "tilt" and cfg.get("kind") == "tilt_traj"
         for k, argv in enumerate(steps):
-            if k == 1 and tin_objs:                    # 계획 · 검사 끝(팔은 그대로) — 재생 직전에 정지 창을 닫고 잰다
+            if k == (0 if tin_plan else 1) and tin_objs:   # ★11.09 tilt_traj 는 계획 전에 잰다(계획이 이 런의 쥔 자리를 쓴다) · 그 밖은 재생 직전
                 why = self._measure_tin(node, tin_objs, tin_t0, still)
                 if why:
                     return NodeResult("refused", why, time.monotonic() - t0)
+                if tin_plan:
+                    why = self._planner_tin(node, tin_objs, asset / "ref" / f"setup_{traj.cup}.npz", argv)
+                    if why:
+                        return NodeResult("refused", why, time.monotonic() - t0)
             rc, tail = self._run(argv)
             if self.cancel.is_set():
                 return NodeResult("aborted", "episode runner stop", time.monotonic() - t0)
@@ -1124,6 +1129,24 @@ class RosExecutor:
                 fh.write(f"\n$ {' '.join(argv)}\n{out}")
                 rcs.append(p.returncode)
         return rcs
+
+    def _planner_tin(self, node: Node, objs: Mapping, setup: Path, argv: list) -> str:
+        """★11.09 문제 1 — 방금 잰 팔마다 T_in(런 json, measured | fallback)을 tilt 계획기 규약으로(tin_live.planner_tin) 런 폴더에
+        쓰고 argv 에 --tin-json 을 붙인다. 반환 = 못 만든 사유(없으면 "") — 기본값으로 몰래 계획하지 않는다."""
+        from policy_control import tin_live as TL
+        try:
+            runs = {s: json.loads(Path(p).read_text(encoding="utf-8")) for s, p in self._tin_json.items() if s in objs}
+            T_by = {s: np.asarray(d["T_in"], float) for s, d in runs.items()}
+            out = TL.planner_tin(T_by, setup, sources={s: str(d.get("source", "?")) for s, d in runs.items()}, node=node.id, episode=self.ep.name, tin_json=dict(self._tin_json))
+        except (TL.TinError, OSError, KeyError, ValueError) as exc:
+            msg = f"[{node.id}] tilt 계획용 T_in 을 못 만들었다({exc!r}) — 기본 T_in 으로 계획하지 않는다"
+            self.node.get_logger().error(msg)
+            return msg
+        path = self.run_dir / f"tilt_tin_{node.id}.json"
+        path.write_text(json.dumps(out, indent=1, ensure_ascii=False), encoding="utf-8")
+        argv += ["--tin-json", str(path)]
+        self.node.get_logger().info(f"[{node.id}] tilt 계획 T_in = {out['sides']} → {path.name}")
+        return ""
 
     def _measure_tin(self, node: Node, objs: Mapping, t0: float, still: Mapping) -> str:
         """★11.07 tilt 재생 직전 — 정지 창 [t0 + FP++ 지연, 지금](t0 + TL.WINDOW_S 까지 멈춘 채 기다린다)의 FP++ live 새 프레임 ×

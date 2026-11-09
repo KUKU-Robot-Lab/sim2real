@@ -34,7 +34,13 @@ TORCH_THREADS = 1                # ★10.04 실측(rh_aglt LSTM 1024, CPU 추론
                                  #   1 개 31.6 % · 4.2 ms — 2 개는 OpenMP 스레드가 연산 사이에 바쁘게 기다려 코어를 더 쓴다
 PIN_ENV = "S2R_CPU_PIN"
 THREADS_ENV = "POLICY_CPU_THREADS"
+POLICY_SLOTS = 4                         # ★11.10 리뷰: 동시에 뜨는 정책 노드(좌우 접근·잡기 + 좌우 놓기) 수만큼만 P 코어를 뗀다
+FAST_CLOCK_RATIO = 1.10                  # ★11.10 리뷰: 최고 클럭이 최저보다 10 % 넘게 빨라야 하이브리드로 본다(부스트 클럭 차이 무시)
 MIN_GENERAL_CORES = 4                    # 실시간 코어를 떼고도 우리 노드(pd 3 스레드 · 정책 · 상태 · 노드)에 남길 물리 코어
+POLICY_ENV = "S2R_POLICY_CORE"           # ★11.09 "0" = 정책 노드에 전용 P 코어를 주지 않는다(일반 코어에서 돈다)
+DEVICE_ENV = "S2R_POLICY_DEVICE"         # ★11.10 콘솔 정책 탭의 계산 장치 선택("cpu" · "cuda") — 미션의 device:= 보다 앞선다
+DEVICES = ("cpu", "cuda")
+POLICY_LOCK_DIR = Path("/tmp/s2r_cpu")    # 정책 코어 자리표 — flock 이라 프로세스가 죽으면 자리가 저절로 빈다
 RT_PRIO_NEEDED = 80                      # rh56f1_ecat_master 가 요청하는 SCHED_FIFO 순위 (controller_manager 50)
 _SCHED = {os.SCHED_OTHER: "OTHER", os.SCHED_FIFO: "FIFO", os.SCHED_RR: "RR",
           getattr(os, "SCHED_BATCH", -1): "BATCH", getattr(os, "SCHED_IDLE", -2): "IDLE"}
@@ -77,6 +83,7 @@ def _read(path: Path) -> str:
 class Topology:
     cores: tuple[tuple[int, ...], ...]          # 물리 코어마다 켜져 있는 논리 CPU (첫 CPU 순)
     isolated: frozenset[int] = frozenset()
+    core_khz: tuple[int, ...] = ()              # 물리 코어마다 최대 클럭(cpuinfo_max_freq) — 비면 모름(VM · 가짜 sysfs)
 
     @property
     def cpus(self) -> tuple[int, ...]:
@@ -91,7 +98,13 @@ def read_topology(sysfs: Path = SYSFS) -> Topology:
         sib = parse_cpulist(_read(sysfs / f"cpu{cpu}" / "topology" / "thread_siblings_list")) or (cpu,)
         groups.setdefault(sib, []).append(cpu)
     cores = tuple(sorted(tuple(sorted(v)) for v in groups.values()))
-    return Topology(cores, frozenset(parse_cpulist(_read(sysfs / "isolated"))))
+    khz = tuple(max((_khz(sysfs, c) for c in core), default=0) for core in cores)
+    return Topology(cores, frozenset(parse_cpulist(_read(sysfs / "isolated"))), khz if all(khz) else ())
+
+
+def _khz(sysfs: Path, cpu: int) -> int:
+    raw = _read(sysfs / f"cpu{cpu}" / "cpufreq" / "cpuinfo_max_freq").strip()
+    return int(raw) if raw.isdigit() else 0
 
 
 @dataclass(frozen=True)
@@ -99,13 +112,15 @@ class CpuPlan:
     rt: Mapping[str, int] = field(default_factory=dict)     # 역할 → 논리 CPU 하나 (비면 고정 안 함)
     reserved: tuple[int, ...] = ()                          # 실시간 코어(형제 포함) — 우리 노드는 비켜 간다
     general: tuple[int, ...] = ()                           # 우리 노드 자리
+    policy: tuple[tuple[int, ...], ...] = ()                # ★11.09 정책 노드 전용 빠른 코어(물리 코어마다 논리 CPU) — 비면 일반 자리
     torch_threads: int = TORCH_THREADS
     note: str = ""
 
     def describe(self) -> str:
         where = (" · ".join(f"{r}→cpu{c}" for r, c in self.rt.items()) + " (형제 스레드까지 비켜 둠)"
                  if self.rt else "고정 안 함")
-        return f"{self.note} — {where} · 노드 {len(self.general)} 스레드 자리 · torch {self.torch_threads}"
+        pol = f" · 정책 전용 cpu{format_cpulist(c for core in self.policy for c in core)}" if self.policy else ""
+        return f"{self.note} — {where} · 노드 {len(self.general)} 스레드 자리{pol} · torch {self.torch_threads}"
 
 
 def _torch_threads(general_cores: int, env: Mapping[str, str]) -> int:
@@ -135,10 +150,32 @@ def make_plan(topo: Topology, roles: Iterable[str] = RT_ROLES, env: Mapping[str,
         return unpinned(f"물리 코어가 적어(< {len(roles) + MIN_GENERAL_CORES}) 고정 안 함")
     picked = cand[:len(roles)]
     general_cores = [c for c in usable if c not in picked]
+    fast = _policy_cores(topo, picked, general_cores) if env.get(POLICY_ENV, "1") != "0" else []
+    general_cores = [c for c in general_cores if c not in fast]
     return CpuPlan(rt={r: core[0] for r, core in zip(roles, picked)},
                    reserved=tuple(sorted(c for core in picked for c in core)),
                    general=tuple(sorted(c for core in general_cores for c in core)),
+                   policy=tuple(fast),
                    torch_threads=_torch_threads(len(general_cores), env), note=head)
+
+
+def _policy_cores(topo: Topology, picked, general_cores) -> list[tuple[int, ...]]:
+    """★11.09 하이브리드 CPU(P/E 코어)면 실시간 자리를 뺀 P 코어(가장 느린 등급이 아닌 코어)를 정책 노드 몫으로 뗀다.
+
+    실기 11.09 느린 bag: 정책 한 틱 25 ms(60 Hz 예산 16.7). 오프라인 측정(chain.step, CPU 22 개 모두 바쁨) E 코어
+    10.0/12.3 ms(p50/p95) → P 코어 6.2/9.4. 클럭이 다 같으면(데스크톱 · VM · 클럭 모름) 떼지 않는다. cpu0 은 IRQ 자리라 뺀다.
+    일반 자리가 MIN_GENERAL_CORES 보다 작아지면 떼지 않는다.
+    """
+    if not topo.core_khz or max(topo.core_khz) < min(topo.core_khz) * FAST_CLOCK_RATIO:
+        return []
+    khz = dict(zip(topo.cores, topo.core_khz))
+    cut = min(topo.core_khz) * FAST_CLOCK_RATIO
+    fast = [c for c in general_cores if khz[c] >= cut and 0 not in c and c not in picked]
+    fast = sorted(fast, key=lambda c: (-khz[c], -c[0]))[:POLICY_SLOTS]   # 남는 P 코어는 pd · 상태 노드 몫으로 돌려준다
+    fast = sorted(fast)
+    if len(general_cores) - len(fast) < MIN_GENERAL_CORES:
+        return []
+    return fast
 
 
 def current_plan(sysfs: Path = SYSFS) -> CpuPlan:
@@ -196,6 +233,18 @@ def pinned_argv(argv: list[str], role: str, plan: CpuPlan | None = None) -> tupl
     return [taskset, "-c", str(cpu), *argv], f"CPU: {role} → cpu{cpu}"
 
 
+def policy_device(param: str, env: Mapping[str, str] | None = None) -> tuple[str, str]:
+    """★11.10 정책 계산 장치 — 콘솔 선택(`S2R_POLICY_DEVICE`)이 있으면 그것, 없으면 미션의 device:= 값.
+    (장치, 로그 한 줄)을 돌려준다. 모르는 값은 조용히 넘기지 않고 ValueError 를 낸다 — 엉뚱한 장치에서 돌지 않게."""
+    env = os.environ if env is None else env
+    raw = env.get(DEVICE_ENV, "").strip()
+    if not raw:
+        return param, f"정책 장치: {param} (미션 device:=)"
+    if raw.split(":", 1)[0] not in DEVICES:
+        raise ValueError(f"{DEVICE_ENV}={raw!r} — {'/'.join(DEVICES)} 중 하나여야 한다")
+    return raw, f"정책 장치: {raw} (콘솔 선택 {DEVICE_ENV} — 미션 device:={param} 대신)"
+
+
 def keep_off_rt(plan: CpuPlan | None = None) -> str:
     """이 프로세스를 일반 코어로 — 노드 main 첫머리에서 부른다. 로그에 쓸 한 줄을 돌려준다(예외는 안 낸다)."""
     plan = plan or current_plan()
@@ -203,6 +252,52 @@ def keep_off_rt(plan: CpuPlan | None = None) -> str:
         return f"CPU: {plan.note}"
     why = pin(os.getpid(), plan.general)
     return f"CPU: 일반 코어 {len(plan.general)} 스레드에서 돈다" + (f" — 고정 실패({why})" if why else "")
+
+
+_HELD: dict[str, int] = {}     # 역할 → 쥔 자리표 fd(프로세스가 살아 있는 동안 연다 — 닫히면 자리가 빈다)
+
+
+def _claim(cores, lock_dir: Path) -> tuple[int, ...] | None:
+    """빈 정책 코어 하나를 flock 으로 잡는다. 다 차 있으면 None."""
+    import fcntl
+    try:
+        lock_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    for core in cores:
+        try:
+            fd = os.open(lock_dir / f"cpu{core[0]}.lock", os.O_RDWR | os.O_CREAT, 0o666)
+        except OSError:
+            continue
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(fd)
+            continue
+        try:
+            os.ftruncate(fd, 0)
+            os.write(fd, f"{os.getpid()}\n".encode())
+        except OSError:
+            pass                                              # pid 기록은 참고용 — 잠금은 이미 잡았다
+        _HELD[f"cpu{core[0]}"] = fd
+        return core
+    return None
+
+
+def keep_policy(name: str, plan: CpuPlan | None = None, lock_dir: Path = POLICY_LOCK_DIR) -> str:
+    """★11.09 정책 노드 main 첫머리에서 부른다 — 빈 P 코어 하나를 혼자 쓴다. 자리가 없으면 정책 코어 전체, 계획에
+    정책 코어가 없으면 keep_off_rt 와 같다. 로그에 쓸 한 줄을 돌려준다(예외는 안 낸다)."""
+    plan = plan or current_plan()
+    if not plan.policy:
+        return keep_off_rt(plan)
+    core = _claim(plan.policy, lock_dir)
+    cpus = core if core is not None else tuple(c for k in plan.policy for c in k)
+    why = pin(os.getpid(), cpus)
+    if why:
+        return f"CPU: {name} 정책 코어 고정 실패({why}) — " + keep_off_rt(plan)
+    if core is None:
+        return f"CPU: {name} 정책 전용 코어가 다 찼다 — 정책 코어 cpu{format_cpulist(cpus)} 를 나눠 쓴다"
+    return f"CPU: {name} → 정책 전용 cpu{format_cpulist(cpus)}"
 
 
 def sched_name(pid: int) -> str:
