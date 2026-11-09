@@ -369,7 +369,8 @@ class PlaceNode(PourFjNode):
         # ★11.09 사용자 "정책이 놓는 걸 정한다 · 손을 폈으면 홈으로 빼면 됨 · 성공 확인은 사람이" — 래치(컵 추정 기하)가 안 켜져도
         #   (261109 161346: 추정 컵이 홀더보다 ~12 cm 높아 래치 0 틱 → 손은 0.74 rad 폈는데 5 s 시간 초과 · UNKNOWN 으로 멈춤)
         #   정책이 손을 OPENED_END_TICKS 틱 연속 open_min_rad 넘게 펴면 놓음으로 끝낸다. 빼기는 다음 rehome 노드(손 펴기 → 계획)가.
-        if c.latch_s2r and not self.chain.settling and not self.chain.done:
+        #   래치가 켜졌으면 손은 래치가 강제로 편다 → 기존 놓기(release_timed_steps) · 빼기(clearance) 경로를 그대로 탄다.
+        if c.latch_s2r and not self.chain.latch and not self.chain.settling and not self.chain.done:
             self._opened_n = getattr(self, "_opened_n", 0) + 1 if self.chain.opened >= self.chain.open_min_rad else 0
             if self._opened_n >= OPENED_END_TICKS:
                 self.chain.outcome = "opened"
