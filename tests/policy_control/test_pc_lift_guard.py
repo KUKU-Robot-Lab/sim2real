@@ -227,7 +227,7 @@ def _on_tick(lg_tick):
     me = NS(_drain=lambda: None, book=NS(phase="running", episode=1), chain=NS(step=lambda meas: (np.zeros(2), np.zeros(1), {}),
             step_i=1), _measure=lambda advance=False: {"arm": None}, cup_fresh={}, contract=NS(hold_steps=0),
             fam=NS(targets=lambda c, t: (["a"], np.zeros(1), np.zeros(1)), errors=(ValueError,)), _gap=0, _seq=0, max_gap=3, _budget=TickBudget(16.7),
-            _lg_stop=None, _publish=True, _pub_obs=NS(publish=lambda m: None), _pub_action=NS(publish=lambda m: None),
+            _lg_stop=None, _publish=True, _pub_obs=NS(publish=lambda m: None), _pub_action=NS(publish=lambda m: None), _publish_debug=lambda: None,
             _pub_target=NS(publish=lambda m: out.__setitem__("target", out["target"] + 1)),
             _status=lambda ok, reasons, extra=None: out["status"].append((ok, reasons)),
             _end=lambda *a: out["end"].append(a), _after_step=lambda: True, max_s=0, _t_start=0.0)
@@ -322,3 +322,20 @@ def test_a_guard_failure_is_its_own_code_and_always_a_safe_stop():
     raw = yaml.safe_load((EPS / "cocktail_1c_e4000.yaml").read_text())
     with pytest.raises(E.EpisodeSpecError, match="재시도 상한 0"):
         E.parse({**raw, "failure_policy": {"default": 1}})
+
+
+def test_debug_topics_carry_the_pre_squeeze_hand_target_and_the_raw_place_output():
+    """★11.10 사용자(bag 디버깅) — 손 목표(디코더 state["arm"], squeeze 전) · 덧씌우기 전 놓기 출력(policy_a). 없으면 내지 않는다."""
+    from policy_control import codec
+    got = {"h": [], "p": []}
+    me = NS(_seq=7, _pub_hand_target=NS(publish=got["h"].append), _pub_policy_action=NS(publish=got["p"].append),
+            chain=NS(dec=NS(state={"arm": NS(hand_target=np.arange(6.0))}), policy_a=np.full(13, 0.5)))
+    N.PourFjNode._publish_debug(me)
+    s = codec.decode_float_array(got["h"][0])
+    assert s.data.tolist() == list(np.arange(6.0)) and s.seq == 7
+    assert codec.decode_action(got["p"][0], 13)[0].tolist() == [0.5] * 13
+    for chain in (NS(dec=NS(state={"src": NS(hand_target=np.zeros(6))})), NS(dec=NS(state={"arm": NS(hand_target=np.zeros(6))}), policy_a=None)):
+        got = {"h": [], "p": []}
+        me = NS(_seq=1, _pub_hand_target=NS(publish=got["h"].append), _pub_policy_action=NS(publish=got["p"].append), chain=chain)
+        N.PourFjNode._publish_debug(me)
+        assert not got["p"] and len(got["h"]) == (0 if "src" in chain.dec.state else 1)

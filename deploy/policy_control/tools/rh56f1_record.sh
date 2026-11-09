@@ -83,6 +83,13 @@ start)
   for s in ${HAND_SIDES:-right left}; do
     for c in effort position velocity; do PD="$PD /${s}_forward_${c}_controller/commands"; done
     for t in diagnostics contact contact_guard; do PD="$PD /policy_control/pd_$s/$t"; done; done
+  # ★11.10 사용자: 칵테일 에피소드 정책 입력 · 출력(잡기 ns <팔> · 놓기 ns <팔>_place, pour_fj_node.py) + 보낸 명령 · 정책 상태(opened · squeeze)
+  #   — 미션이 EXTRA(arm bag)로 이미 주는 토픽은 빼서 두 번 싣지 않는다
+  POL="/policy_control/joint_target"
+  for s in ${HAND_SIDES:-right left}; do
+    for n in "$s" "${s}_place"; do for t in obs action hand_target policy_action; do POL="$POL /policy_control/$n/$t"; done; done
+    POL="$POL /policy_control/status/rh_aglt_node_$s /policy_control/status/rh_place_node_$s"; done
+  for t in $POL; do case " ${EXTRA:-} " in *" $t "*) ;; *) PD="$PD $t";; esac; done
   source "$(dirname "$0")/../../../config/ros_domain.env"   # 실기 도메인 한 곳(10.30 motion_acq 와 분리)
   ENV=${RH56F1_RECORD_ENV:-"source /opt/ros/humble/setup.bash; source \$HOME/rl_ws/robot_control/ros_ws/install/setup.bash; export ROS_DOMAIN_ID=\${ROS_DOMAIN_ID:-$S2R_REAL_DOMAIN}"}
   setsid bash -c "echo \$\$ > '$D/arm.pid'; $ENV; exec ros2 bag record -o '$OUT/arm' /joint_states $EXTRA" </dev/null >"$D/arm.log" 2>&1 &

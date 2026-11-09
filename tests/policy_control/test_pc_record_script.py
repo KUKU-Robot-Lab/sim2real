@@ -101,3 +101,18 @@ def test_hand_bag_keeps_the_raw_tips_and_the_tip_zero_topics(env):
     for s in ("right", "left"):
         for t in ("tip_forces", "tip_forces_zeroed", "tip_bias", "tip_zero_status", "joint_forces", "joint_forces_zeroed"):
             assert f"/hand_{s}/{t}".encode() in argv, (s, t)
+
+
+def test_pd_bag_keeps_policy_obs_action_of_grasp_and_place_without_doubling_extra(env):
+    # 11.10 사용자: 칵테일 놓기 입력이 bag 에 없었다 — 잡기(ns <팔>) · 놓기(ns <팔>_place) 정책 입출력을 기본으로. EXTRA(arm bag)와 겹치면 뺀다
+    e = dict(env, EXTRA="/policy_control/joint_target /policy_control/right/obs")
+    subprocess.run(["bash", str(SCRIPT), "start", "episode_p"], env=e, capture_output=True, timeout=30)
+    pd = int((Path(env["RH56F1_RECORD_DIR"]) / "episode_p" / "pd.pid").read_text())
+    argv = Path(f"/proc/{pd}/cmdline").read_bytes().split(b"\0")
+    for s in ("right", "left"):
+        for n in (s, f"{s}_place"):
+            for t in ("obs", "action", "hand_target", "policy_action"):
+                if (n, t) != ("right", "obs"):
+                    assert f"/policy_control/{n}/{t}".encode() in argv, (n, t)
+        assert f"/policy_control/status/rh_place_node_{s}".encode() in argv
+    assert b"/policy_control/right/obs" not in argv and b"/policy_control/joint_target" not in argv

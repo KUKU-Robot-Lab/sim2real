@@ -594,6 +594,9 @@ class PourFjNode(LeanNodeMixin, Node):
         self._pub_target = self.create_publisher(JointState, f"{NS}/joint_target", chain_qos)
         self._pub_obs = self.create_publisher(Float64MultiArray, f"{self.base}/obs", chain_qos)
         self._pub_action = self.create_publisher(Float64MultiArray, f"{self.base}/action", chain_qos)
+        # ★11.10 사용자(bag 디버깅): 정책 자기 손 목표(squeeze 전 · 보낸 손 명령은 joint_target) · 덧씌우기 전 정책 출력(place)
+        self._pub_hand_target = self.create_publisher(Float64MultiArray, f"{self.base}/hand_target", chain_qos)
+        self._pub_policy_action = self.create_publisher(Float64MultiArray, f"{self.base}/policy_action", chain_qos)
         # 10.04 에피소드 실행기: 한 팔에 정책 노드 둘(aglt · place)이 같이 뜬다 — 서비스는 ns 로 가르고(right · right_place),
         #   이벤트는 그 팔의 토픽(/policy_control/<팔>/episode)에 같이 낸다(pd 가 reset · stop 을 그 팔에 적용). 본문에 node 를 싣는다.
         self._pub_episode = self.create_publisher(String, str(p("episode_topic")) or f"{self.base}/episode", latched)
@@ -1117,6 +1120,16 @@ class PourFjNode(LeanNodeMixin, Node):
         except OSError as exc:                          # 기록 실패로 에피소드 끝내기를 막지 않는다
             self.get_logger().warning(f"쥔 관절 기록 실패 {self.GRIP_LOG}: {exc}")
 
+    def _publish_debug(self) -> None:
+        """기록 전용 — 계열에 그 값이 있을 때만 낸다(pour_fj 디코더는 손 목표 상태가 없다 · aglt 출력은 /action 그대로)."""
+        st = (getattr(getattr(self.chain, "dec", None), "state", None) or {}).get("arm")
+        if getattr(st, "hand_target", None) is not None:
+            h = np.asarray(st.hand_target, float)
+            self._pub_hand_target.publish(codec.encode_float_array(h, ["hand_target"], [h.size], self._seq))
+        pa = getattr(self.chain, "policy_a", None)
+        if pa is not None:
+            self._pub_policy_action.publish(codec.encode_action(pa, self._seq))
+
     def _status_extra(self) -> dict:
         ag = getattr(self.chain, "ag", None)
         dec = getattr(self.chain, "dec", None)
@@ -1185,6 +1198,7 @@ class PourFjNode(LeanNodeMixin, Node):
         self._lg_last = lg.get("lift_guard", {})
         self._pub_obs.publish(codec.encode_float_array(obs, ["obs"], [obs.size], self._seq))
         self._pub_action.publish(codec.encode_action(action, self._seq))
+        self._publish_debug()
         if self._publish and self._lg_stop is None:   # ★11.08 가드가 멈춘 틱은 새 목표를 내지 않는다 — 직전 목표를 붙든다
             self._pub_target.publish(codec.encode_joint_target(names, q, qd, str(self.book.episode), self._seq))
         proc_ms = (time.perf_counter() - t0) * 1e3

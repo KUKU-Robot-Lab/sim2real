@@ -549,6 +549,7 @@ class PlaceChain:
         self._fingers = [i for i, j in enumerate(s.hand_joints) if "thumb" not in j]
         self.hand0: np.ndarray | None = None
         self.opened, self.tact_max, self.jf_max = 0.0, 0.0, None
+        self.policy_a: np.ndarray | None = None          # 이번 틱 정책 출력(덧씌우기 전, 기록용) — 정책을 안 돌린 틱은 None
         self.latch = False                              # 관측 래치(latch_obs) — 리셋까지 유지
         self.fk = None                                  # ★10.13 이송: 노드가 넣는 UrdfChainFK(손바닥 자코비안용)
         self.carry: PC.Carry | None = None
@@ -803,7 +804,7 @@ class PlaceChain:
             self.latch = True
             obs = A.build_obs(c, m, self.dec, self.goal, self.prev, extra=self._extra())
         n_arm = len(c.side().arm_joints)
-        a = np.clip(np.asarray(self.policy.forward(obs), float), -c.action_clip, c.action_clip)
+        a = self.policy_a = np.clip(np.asarray(self.policy.forward(obs), float), -c.action_clip, c.action_clip)
         if (self.latch and not self.settling and c.latch_arm_free) or (self.settling and c.withdraw["hand_open"]):
             a = a.copy()
             a[n_arm:] = self._a_open
@@ -818,6 +819,7 @@ class PlaceChain:
         return obs, a, targets
 
     def step(self, meas: Mapping) -> tuple[np.ndarray, np.ndarray, dict]:
+        self.policy_a = None
         if self.c.latch_s2r:
             return self._step_s2r(meas)
         m = meas["arm"]
@@ -833,7 +835,7 @@ class PlaceChain:
             st = self.dec.state["arm"]
             a = np.concatenate([np.clip((self.start_q - st.arm_target) / self.c.k_arm, -1.0, 1.0), self._a_open])
         else:
-            a = np.clip(np.asarray(self.policy.forward(obs), float), -self.c.action_clip, self.c.action_clip)
+            a = self.policy_a = np.clip(np.asarray(self.policy.forward(obs), float), -self.c.action_clip, self.c.action_clip)
             if carrying:                                # sim: 정책은 돌고(LSTM 진행) 출력은 이송 행동으로 바뀐다
                 a = self.carry.step(m.palm_pos, pos, quat, self._palm_jacobian(m.arm_q, hand_q), A.quat_apply)
         targets = self.dec.step(a, active=True, tactile_n=m.tactile_n, hand_q=hand_q)
