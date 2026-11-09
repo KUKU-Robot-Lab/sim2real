@@ -44,6 +44,12 @@ def _pd_launch(side: str, cfg: str) -> str:
             f"pd_config:={shlex.quote(pd_cfg)} sides:={side} execute:=true stage:=full")
 
 
+def _guard(side: str) -> str:
+    """손 접촉 감시(로봇 명령 0). 없으면 pd 진단 contact 가 비어 trial 이 시작 검사에서 멈춘다(11.09 실측).
+    pd 와 같은 프로세스 그룹이라 pd 끄기(killpg)에 같이 내려간다. 빈손 정지 상태에서 3 s 기준선을 잡는다."""
+    return f"python3 deploy/policy_control/tools/stationary_contact_guard.py --side {side} --operator-confirmed-free"
+
+
 def _engage(side: str) -> str:
     return (f"python3 deploy/policy_control/tools/episode_ctl.py --side {side} --only pd_engage "
             "--hold-s 10 --execute --approve pd_engage")
@@ -117,7 +123,7 @@ def plan(repo: Path, side: str, name) -> dict:
                        "run": _sh(f".venv/bin/python deploy/policy_control/tools/stationary_tracking.py run "
                                   f"--plan {q(f'{R}/plan/plan.json')} --trial {q(t)} --out {q(f'{E}/runs/{t}')} --execute")})
     return {"reasons": reasons, "n": e["n"], "done": e["done"],
-            "pd": _sh(_pd_launch(side, e["cfg"])), "engage": _sh(_engage(side)), "trials": trials}
+            "pd": _sh(_guard(side) + " & exec " + _pd_launch(side, e["cfg"])), "engage": _sh(_engage(side)), "trials": trials}
 
 
 def _attempt(d: Path, trial: str) -> int:
