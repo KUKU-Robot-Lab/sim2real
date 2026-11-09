@@ -219,7 +219,8 @@ def test_experiments_view_reads_the_chain_from_the_episode_files():
     v = XV.view(ROOT, ids)
     assert not v.get('error')
     items = {i['id']: i for i in v['items']}
-    assert [i['key'] for i in v['items'] if i['group'] == 'grasp'] == ['1-B', 'C', 'D', 'E', 'F', 'F주황', 'F분홍', 'FP']
+    assert [i['key'] for i in v['items'] if i['group'] == 'grasp'] == ['1-B', 'E', 'F', 'FP']   # ★11.09 C·D 뺌, F 물체는 F 안 버튼
+    assert [o['object'] for o in items['grasp_f']['sides']['right']['objects']] == [o for o, _, _ in XV.F_OBJECTS]
     assert [i['key'] for i in v['items'] if i['group'] == 'tilt'] == ['D', 'C', 'B']
     f = items['grasp_f']['sides']['right']
     assert [(s['kind'], s['text']) for s in f['steps']] == [('policy', 'ap05'), ('handoff', '넘김'), ('policy', 'rcg04')]
@@ -230,7 +231,7 @@ def test_experiments_view_reads_the_chain_from_the_episode_files():
     assert fp['steps'][-1]['sub'] == '놓기 · 손 빼기' and fp['action'] == 'ctl_pick_place_f_left'
     assert items['pick_place_f']['sides']['right']['steps'][-1]['text'] == 'n07'
     assert items['pick_place_f']['summary'] == 'ap05 → rcg04 → n07'           # 요약은 오른손 사슬
-    assert items['grasp_c']['summary'] == 'ap05 → 스크립트 쥐기'
+    assert 'grasp_c' not in items and 'grasp_d' not in items      # ★11.09 사용자 "c,d제거 필요"
     assert items['grasp_b']['sides']['left']['confirms'] == 1
     d = items['tilt_base_d']['sides']['both']
     assert d['action'] is None and d['stage'] == 'episode_tilt_base_d' and d['runner'] == 'episode_runner'

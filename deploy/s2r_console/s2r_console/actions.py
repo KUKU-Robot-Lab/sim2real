@@ -21,6 +21,7 @@ from .console_state import STALE_S
 from .runner import StageRunner, DONE
 from . import pd_names as PD
 from . import simtraj as ST
+from . import experiments as XP
 from mission_stages import Command, commands_for
 import mission_core as MC
 
@@ -46,14 +47,16 @@ CONTROL_EPISODES = {'grasp_b': '1-B 제어 모듈(정책 없음) — FP++ 컵 �
                     'grasp_e': '경로 E — ap05 접근 → 사전 파지 자리에서 같은 노드가 rcg03 으로 넘겨 쥐고 10 cm 들기(확인 노드 없음)',
                     # ★10.21 사용자 "ap05 + rcg_04 또한 준비 필요" — 경로 E 와 같은 넘김, 넘겨받는 정책만 rcg04
                     'grasp_f': '경로 F — ap05 접근 → 사전 파지 자리에서 같은 노드가 rcg04 로 넘겨 쥐고 10 cm 들기(확인 노드 없음)',
-                    # ★11.08 사용자 "핑크랑 주황도 바로" — 경로 F 와 같은 정책 · 값, 물체만 바꿈(오른팔만)
-                    'grasp_fo': '경로 F 주황 shaker — ap05 접근 → rcg04 넘겨 쥐고 10 cm 들기(물체 shaker_c_orange)',
-                    'grasp_fk': '경로 F 분홍 src200 — ap05 접근 → rcg04 넘겨 쥐고 10 cm 들기(물체 source200_pink)',
+                    # ★11.09 경로 F 물체 바꾼 변형은 아래 F_OBJECTS 에서 붙인다(grasp_fo · grasp_fk 는 grasp_f_<물체> 로)
                     # ★10.22 사용자 "Place 세팅 진행" — 경로 F 뒤 newton_05 놓기(붙인 자세 = 잡기의 grasp_state 넘김 묶음)
                     'pick_place_f': '경로 F + 놓기 — 경로 F 로 쥐고 들기 → newton_05 가 홀더에 놓고 팔을 뺌 → 홈(확인 노드 없음)'}
+for _obj, _cup, _color in XP.F_OBJECTS:                # ★11.09 경로 F 물체 버튼 — 팔 기본 물체가 아닌 것만 따로 머리가 있다
+    CONTROL_EPISODES[f'grasp_f_{_obj}'] = f'경로 F {_cup} {_color} — ap05 접근 → rcg04 넘겨 쥐고 10 cm 들기(물체 {_obj})'
 #: 실행 기록 · 오류 글의 이름
 CONTROL_LABELS = {'grasp_b': '1-B', 'grasp_c': '경로 C', 'grasp_d': '경로 D', 'grasp_e': '경로 E', 'grasp_f': '경로 F',
-                  'grasp_fo': '경로 F 주황', 'grasp_fk': '경로 F 분홍', 'pick_place_f': '경로 F + 놓기'}
+                  'pick_place_f': '경로 F + 놓기'}
+for _obj, _cup, _color in XP.F_OBJECTS:
+    CONTROL_LABELS[f'grasp_f_{_obj}'] = f'경로 F {_cup} {_color}'
 #: 확인 노드(닫기 전)에서 사람을 기다리는 시간까지 — rg3(300 s)보다 길다
 CONTROL_TIMEOUT_S = 600.0
 #: 팔을 움직이는 카드 작업 — 같은 팔 제어 명령 · 정책 정지가 끊고, 도는 동안 작업 공간 설정을 못 바꾼다

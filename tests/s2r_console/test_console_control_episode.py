@@ -142,7 +142,12 @@ def test_policy_tab_runs_control_episodes_from_the_experiment_list():
     assert 'id="xp-list"' in tab and 'id="xp-main"' in tab
     assert 'control-ep-panel' not in html and 'control-ep-actions' not in js
     assert 'data-act="action-prepare" data-arg="${esc(side.action)}"' in js
-    assert [head for _, head, _ in GRASP] == list(CONTROL_EPISODES) == list(CONTROL_LABELS)   # 목록 = 실행 작업
+    from s2r_console.experiments import F_OBJECTS, f_head
+    # ★11.09 실험 목록 = 실행 작업 — 단 경로 F 물체들은 F 한 칸 안의 버튼, C·D 는 목록에서 뺐다(실행 작업은 남는다)
+    listed = [head for _, head, _ in GRASP if head != 'grasp_f']
+    f_heads = {f_head(o, side) for o, _, _ in F_OBJECTS for side in ('right', 'left')}
+    assert list(CONTROL_EPISODES) == list(CONTROL_LABELS)
+    assert set(listed) | f_heads | {'grasp_c', 'grasp_d'} == set(CONTROL_EPISODES)
     assert 'grasp_c' in CONTROL_EPISODES and CONTROL_LABELS['grasp_c'] == '경로 C'
 
 

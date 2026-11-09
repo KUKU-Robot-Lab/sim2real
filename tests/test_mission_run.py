@@ -113,8 +113,10 @@ def test_resuming_a_run_that_was_never_recorded_fails_loudly(tmp_path, monkeypat
 
 
 # ── CLI 규약 ───────────────────────────────────────────────────────────────
-MISSIONS = sorted((mission_run.REPO / "config").glob("mission_*.yaml"))
-DG5F = str(mission_run.REPO / "config" / "mission_dg5f_m_control.yaml")
+# 11.08 사용자: DG-5F-M 미션은 이 시험에서 뺀다(실기 기본 손은 RH56F1)
+MISSIONS = sorted(p for p in (mission_run.REPO / "config").glob("mission_*.yaml")
+                  if "dg5f" not in p.stem)
+RH56F1 = str(mission_run.REPO / "config" / "mission_rh56f1_control.yaml")
 
 
 @pytest.mark.parametrize("path", MISSIONS, ids=lambda p: p.stem)
@@ -134,7 +136,7 @@ def test_the_runner_needs_a_mission(capsys):
 
 
 def test_plan_run_publishes_nothing_and_exits_clean(capsys):
-    code = mission_run.main(["--mission", DG5F, "--plan"])
+    code = mission_run.main(["--mission", RH56F1, "--plan"])
 
     assert code == 0
     assert "preflight" in capsys.readouterr().out
@@ -142,14 +144,14 @@ def test_plan_run_publishes_nothing_and_exits_clean(capsys):
 
 def test_a_real_stage_is_refused_without_approval(capsys):
     """'모든 실기 진행은 사용자 허락과 함께' 를 코드로 옮긴 것이다."""
-    code = mission_run.main(["--mission", DG5F, "--stage", "drivers", "--execute"])
+    code = mission_run.main(["--mission", RH56F1, "--stage", "drivers", "--execute"])
 
     assert code == 1
     assert "승인이 없다" in capsys.readouterr().out
 
 
 def test_a_dry_run_of_a_ready_stage_says_it_published_nothing(capsys):
-    code = mission_run.main(["--mission", DG5F, "--stage", "preflight"])
+    code = mission_run.main(["--mission", RH56F1, "--stage", "preflight"])
 
     out = capsys.readouterr().out
     assert code == 0

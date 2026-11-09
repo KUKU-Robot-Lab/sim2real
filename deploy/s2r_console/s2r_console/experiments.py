@@ -16,10 +16,19 @@ from . import tilt_view as TV
 
 ARMS = ("right", "left")
 #: (화면 키, 에피소드 머리, 이름) — 한 팔 파지 · 들기. 머리는 actions.CONTROL_EPISODES 의 키와 같다(시험이 맞춘다).
-GRASP = (("1-B", "grasp_b", "1-B"), ("C", "grasp_c", "경로 C"), ("D", "grasp_d", "경로 D"),
-         ("E", "grasp_e", "경로 E"), ("F", "grasp_f", "경로 F"),
-         ("F주황", "grasp_fo", "경로 F 주황 shaker"), ("F분홍", "grasp_fk", "경로 F 분홍 src200"),   # ★11.08 오른팔만
+#: ★11.09 사용자 "c,d 제거" — 화면에서 경로 C · D 를 뺐다(에피소드 · 관리 작업은 남는다). "F주황 · F분홍" 칸도 F 안 물체 버튼으로
+GRASP = (("1-B", "grasp_b", "1-B"), ("E", "grasp_e", "경로 E"), ("F", "grasp_f", "경로 F"),
          ("FP", "pick_place_f", "경로 F + 놓기"))     # ★10.22 잡고 들기 → newton_05 놓기
+#: ★11.09 사용자 "경로 F 안에서 버튼으로 컵종류와 색깔을 선택 … 왼손,오른손 모두" — (FP++ 물체, 컵, 색). 순서 = 버튼 순서.
+#:   생성기 make_rh56f1_missions.F_OBJECTS 와 같다(시험이 맞춘다). 팔 기본 물체는 grasp_f_<팔>, 나머지는 grasp_f_<물체>_<팔>
+F_OBJECTS = (("source240b_blue", "src240", "파랑"), ("source240_orange", "src240", "주황"), ("source240_pink", "src240", "분홍"),
+             ("source200_orange", "src200", "주황"), ("source200_pink", "src200", "분홍"), ("shaker_c_orange", "shaker", "주황"))
+F_DEFAULT = {"right": "source240b_blue", "left": "shaker_c_orange"}
+
+
+def f_head(obj: str, side: str) -> str:
+    """경로 F 물체 → 에피소드 머리(ctl_<머리>_<팔>)."""
+    return "grasp_f" if F_DEFAULT[side] == obj else f"grasp_f_{obj}"
 CONTROL_PREFIX = "ctl_"
 SIDE_KO = {"right": "오른팔", "left": "왼팔"}
 #: 사슬에서 빼는 노드 — 홈 출발 · 배치 사진 · 끝 · 손 펴기는 모든 실험에 같다
@@ -140,6 +149,17 @@ def _build(repo: Path, stage_ids: frozenset) -> dict:
                 continue
             sides[side] = {**_episode(repo, name, entries), "stage": f"episode_{name}",
                            "action": f"{CONTROL_PREFIX}{head}_{side}", "runner": f"episode_runner_{side}"}
+        if head == "grasp_f":                         # ★11.09 팔마다 물체 버튼 — 고른 물체의 에피소드 · 관리 작업
+            for side in ARMS:
+                objs = []
+                for obj, cup, color in F_OBJECTS:
+                    name = f"{f_head(obj, side)}_{side}"
+                    if f"episode_{name}" in stage_ids:
+                        objs.append({**_episode(repo, name, entries), "stage": f"episode_{name}",
+                                     "action": f"{CONTROL_PREFIX}{name}", "runner": f"episode_runner_{side}",
+                                     "object": obj, "cup": cup, "color": color, "default": obj == F_DEFAULT[side]})
+                if side in sides and objs:
+                    sides[side]["objects"] = objs
         if sides:
             first = next(iter(sides.values()))
             items.append({"id": head, "group": "grasp", "key": key, "label": label, "summary": first.get("summary", ""),
@@ -150,7 +170,8 @@ def _build(repo: Path, stage_ids: frozenset) -> dict:
         one = {**_episode(repo, name, entries), "stage": f"episode_{name}", "action": None, "runner": "episode_runner"}
         items.append({"id": name, "group": "tilt", "key": key, "label": f"tilt {key}", "summary": one.get("summary", ""),
                       "when": when, "sides": {"both": one}})
-    used = {s["id"] for it in items for side in it["sides"].values() for s in side["steps"] if s["kind"] == "policy" and s.get("id")}
+    used = {s["id"] for it in items for side in it["sides"].values() for one in (side, *side.get("objects", ()))
+            for s in one["steps"] if s["kind"] == "policy" and s.get("id")}
     policies = {pid: _policy_meta(repo, entries[pid]) for pid in sorted(used) if pid in entries}
     return {"items": items, "policies": policies}
 

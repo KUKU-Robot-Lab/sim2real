@@ -30,6 +30,13 @@ SIM2REAL = Path(__file__).resolve().parents[2]
 _ACTIVE = yaml.safe_load((SIM2REAL / "config" / "fpp_active.yaml").read_text(encoding="utf-8"))   # 10.09 실기 물체 = 이 파일
 
 
+from s2r_console.experiments import F_DEFAULT, F_OBJECTS, f_head   # noqa: E402
+
+
+def _F_VARIANTS(side, n):
+    """★11.09 경로 F 물체 버튼 — 팔 기본 물체 말고 나머지 물체 에피소드의 단위 이름."""
+    return tuple(f"episode_{f_head(o, side)}_{side}#{n}" for o, _, _ in F_OBJECTS if o != F_DEFAULT[side])
+
 def _active_groups() -> list[str]:
     """팔별 물체의 묶음들(팔마다 다를 수 있다 — 10.09 오른손 병 · 왼손 쉐이커)."""
     import sys as _s
@@ -75,7 +82,8 @@ def test_the_rh56f1_real_mission_draws_every_node_once_and_knows_every_command(r
     assert len({b.title for b in d.boxes}) == len(d.boxes)
     # ★10.19 팔마다 실행기 상자 둘(좌우 동시 실행) → 22 · ★10.28 칵테일 분홍 FP++ 묶음(source240p) 컨테이너 상자 하나 → 23
     # ★11.05 경로 S 머리 깊이(head_depth) 상자 하나 → 24 · ★11.07 경로 M 머리 마스크(head_mask) 상자 하나 → 25 · ★11.08 경로 F 분홍 src200(grasp_fk_right)이 FP++ source200 묶음 상자 하나 → 26
-    assert len(d.boxes) <= 26, [b.id for b in d.boxes]
+    # ★11.09 경로 F 물체 버튼 — src240 주황 · 분홍(source240 묶음) 상자 하나 → 27
+    assert len(d.boxes) <= 27, [b.id for b in d.boxes]
 
 
 def test_no_wire_is_drawn_twice(real):
@@ -102,7 +110,7 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                "episode_grasp_d_right#5",                       # ★10.20 경로 D(1-B 접근 → rcg03)
                                "episode_grasp_e_right#5",                       # ★10.20 밤 경로 E(ap05 → rcg03 넘김)
                                "episode_grasp_f_right#5",                       # ★10.21 경로 F(ap05 → rcg04 넘김)
-                               "episode_grasp_fo_right#5", "episode_grasp_fk_right#5",   # ★11.08 경로 F 주황 shaker · 분홍 병
+                               *_F_VARIANTS("right", 5),                       # ★11.09 경로 F 물체 버튼(기본 물체 말고)
                                "episode_grasp_s_right#6",                       # ★11.05 경로 S(깊이 학생, 머리 깊이 노드가 #3)
                                "episode_grasp_m_right#8",                       # ★11.07 경로 M(마스크 검사 #3 · 머리 깊이 #4 · 마스크 #5 뒤)
                                "episode_pick_place_f_right#5",                  # ★10.22 경로 F + 놓기(newton_05)
@@ -135,7 +143,7 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                                               f"episode_grasp_s_{side}#9",   # ★11.05 경로 S(머리 깊이 + 학생 노드)
                                                               f"episode_grasp_m_{side}#11",  # ★11.07 경로 M(경로 S + 마스크 검사 · 마스크 노드)
                                                               f"episode_pick_place_f_{side}#9",   # ★10.22 경로 F + 놓기
-                                                              *(("episode_grasp_fo_right#8", "episode_grasp_fk_right#8") if side == "right" else ())}   # ★11.08 경로 F 주황 · 분홍(오른팔만)
+                                                              *_F_VARIANTS(side, 8)}   # ★11.08 경로 F 주황 · 분홍(오른팔만)
 
 
 def test_one_arms_pd_without_and_with_publishing_is_one_box_and_only_the_quiet_one_mutes_the_drive(real):
@@ -151,7 +159,7 @@ def test_an_input_only_one_stage_uses_names_that_stage(real):
     into = {(w.src, w.topic): w for w in d.wires if w.dst == "rh_aglt_node_right"}
     # 10.12 사용자(A안): 단독 · 에피소드 모두 쥘 때까지 FP++ live 컵을 직접 받는다 — snapshot 재발행(/episode/objects) 은 안 받는다
     # ★11.08 경로 F 주황 · 분홍(grasp_fo · grasp_fk)만 다른 컵의 live 를 받는다 — 나머지 단계는 모두 활성 컵 live
-    other = {"episode_grasp_fo_right#5": "shaker_c_orange", "episode_grasp_fk_right#5": "source200_pink"}
+    other = {f"episode_{f_head(o, 'right')}_right#5": o for o, _, _ in F_OBJECTS if o != F_DEFAULT["right"]}
     active = into[("object_pose", f"/objects/{_ACTIVE['sides']['right']}/live_pose")].units
     assert active and not set(active) & set(other)
     for unit, obj in other.items():
@@ -543,7 +551,7 @@ def test_the_fake_rh56f1_picture_has_the_real_pictures_boxes():
     titles = {b.title for b in real.boxes}
     # fake 에 없는 것: 인지(카메라 · FP++ · 런처 — 정지 컵을 fake 가 바로 낸다), 목 드라이버(fake 에는 목이 없다). fake 에만 있는 것: 막히지 않은 붓기 노드
     missing = {b.title for b in real.boxes} - {b.title for b in fake.boxes}
-    assert missing <= {f"인지 런처 · {GEN.PERCEPTION_HOST}", "카메라 (RealSense)", "목 상태 (head)", "/objects/cup_holder_1/pose (바깥)", *(f"FPP 추적 · {g}" for g in (*_active_groups(), "source240b", "source240p", "source200"))}, missing   # rg3 파지 에피소드의 오른 컵 = source240b · ★11.08 grasp_fk = source200
+    assert missing <= {f"인지 런처 · {GEN.PERCEPTION_HOST}", "카메라 (RealSense)", "목 상태 (head)", "/objects/cup_holder_1/pose (바깥)", *(f"FPP 추적 · {g}" for g in (*_active_groups(), "source240b", "source240p", "source200", "source240"))}, missing   # rg3 파지 에피소드의 오른 컵 = source240b · ★11.08 grasp_fk = source200
     extra = {b.title for b in fake.boxes} - titles
     # 10.13 원격 인지 실기에는 마커 노드가 없다 — fake 는 그대로 홀더 노드 상자를 그린다
     assert extra <= {"pour_fj_node · tilt 정책 (오른팔 · 왼팔)", *([W.HOLDER_TITLE] if GEN.REMOTE_PERCEPTION else [])}, extra

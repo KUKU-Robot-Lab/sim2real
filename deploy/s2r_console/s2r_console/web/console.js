@@ -981,7 +981,14 @@ function xpPick(s, X) {
     || items.find((i) => Object.values(i.sides).some((sd) => xpState(s, sd).live)) || items[0];
   if (!it) return [null, "", null];
   const keys = Object.keys(it.sides), key = keys.includes(xpSel.side) ? xpSel.side : keys[0];
-  return [it, key, it.sides[key]];
+  return [it, key, xpObject(it.sides[key], key)];
+}
+// ★11.09 경로 F 물체 버튼 — 팔마다 고른 물체(xpSel.fobj[팔])의 에피소드. 고른 적이 없으면 팔 기본 물체
+function xpObject(sd, key) {
+  const objs = sd && sd.objects;
+  if (!objs || !objs.length) return sd;
+  const want = (xpSel.fobj || {})[key];
+  return { ...(objs.find((o) => o.object === want) || objs.find((o) => o.default) || objs[0]), objects: objs };
 }
 // 고르면 '지금 에피소드' 칸도 그 실험의 실행기를 보인다
 function xpSyncRunner() {
@@ -1000,8 +1007,8 @@ function renderExperiments(s) {
   put("xp-list", (X.error ? `<p class="reasons bad">${esc(X.error)}</p>` : "") + groups.map(([g, title, sub]) => {
     const rows = (X.items || []).filter((i) => i.group === g).map((i) => {
       const on = !!it && i.id === it.id;
-      const dots = Object.entries(i.sides).map(([k, sd]) => {
-        const st = xpState(s, sd);
+      const dots = Object.entries(i.sides).map(([k, sd0]) => {
+        const sd = xpObject(sd0, k), st = xpState(s, sd);
         return `<span class="xp-dot ${xpTone(st)}" title="${esc(`${sideName(k)} · ${xpWord(st)}${st.reasons.length && !st.ok ? ` — ${st.reasons[0]}` : ""}`)}">${esc(SIDE_SHORT[k] || "R+L")}</span>`;
       }).join("");
       return `<button class="xp-item${on ? " on" : ""}" data-act="xp-pick" data-arg="${esc(i.id)}" aria-pressed="${on}">
@@ -1016,7 +1023,7 @@ function xpMain(s, X, it, key, side) {
   const st = xpState(s, side), tone = xpTone(st);
   const sides = Object.entries(it.sides);
   const seg = sides.length > 1 ? `<div class="seg" role="group" aria-label="팔">${sides.map(([k, sd]) =>
-      `<button class="seg-b${k === key ? " on" : ""}" data-act="xp-side" data-arg="${esc(k)}" aria-pressed="${k === key}"><span class="lamp ${xpTone(xpState(s, sd))}"></span>${esc(sideName(k))}</button>`).join("")}</div>` : "";
+      `<button class="seg-b${k === key ? " on" : ""}" data-act="xp-side" data-arg="${esc(k)}" aria-pressed="${k === key}"><span class="lamp ${xpTone(xpState(s, xpObject(sd, k)))}"></span>${esc(sideName(k))}</button>`).join("")}</div>` : "";
   const head = `<header class="xp-head"><span class="xp-key xp-key-lg">${esc(it.key)}</span>
     <div class="xp-title"><h3>${esc(it.label)} <span>· ${esc(sideName(key))}</span></h3><p>${esc(it.summary)}</p></div>
     ${seg}<span class="badge ${tone}">${esc(xpWord(st))}</span></header>`;
@@ -1024,8 +1031,33 @@ function xpMain(s, X, it, key, side) {
   const ready = st.live ? `<div class="xp-ready live">⟳ 실행 중 — 진행 · 확인 · 정지는 아래 <b>지금 에피소드</b></div>`
     : st.ok ? `<div class="xp-ready ok">✓ 실행할 수 있다</div>`
     : `<div class="xp-ready bad"><b>✕ 지금 실행할 수 없다</b><ul>${st.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div>`;
-  return head + (side.error ? `<p class="reasons bad">${esc(side.error)}</p>` : "") + xpRail(X, side, st.runner) + open
+  return head + xpObjects(s, side, key) + (side.error ? `<p class="reasons bad">${esc(side.error)}</p>` : "") + xpRail(X, side, st.runner) + open
     + xpFacts(s, it, side) + ready + xpGo(s, it, key, side, st);
+}
+
+// ★11.09 사용자 "경로 F 안에서 버튼으로 컵종류와 색깔을 선택하고, Perception Refresh를 바로 … 반복 실험" — 컵 줄 · 색 줄 · 인지 다시 찍기.
+// 인지는 setting 탭과 같은 perception_refresh(고른 물체만). 물체가 작업 공간에서 꺼져 있으면 먼저 켠다(FP++ 묶음이 다시 뜬다).
+const XP_CUPS = ["src240", "src200", "shaker"];
+function xpObjects(s, side, key) {
+  const objs = side.objects;
+  if (!objs) return "";
+  const cupBtn = (c) => {
+    const first = objs.find((o) => o.cup === c && o.color === side.color) || objs.find((o) => o.cup === c);
+    return first ? `<button class="seg-b${c === side.cup ? " on" : ""}" data-act="xp-fobj" data-arg="${esc(first.object)}" aria-pressed="${c === side.cup}">${esc(c)}</button>` : "";
+  };
+  const colors = objs.filter((o) => o.cup === side.cup).map((o) =>
+    `<button class="seg-b${o.object === side.object ? " on" : ""}" data-act="xp-fobj" data-arg="${esc(o.object)}" aria-pressed="${o.object === side.object}"><span class="lamp ${xpTone(xpState(s, o))}"></span>${esc(o.color)}</button>`).join("");
+  const w = (S.workspace && S.workspace.objects) || [], wo = w.find((o) => o.id === side.object);
+  const ra = (S.actions || []).find((a) => a.id === "perception_refresh");
+  const r = (wo && (wo.results || {}).fpp) || null;
+  const can = holding() && !!ra;
+  const note = !wo ? "작업 공간에 없는 물체" : !wo.enabled ? "꺼져 있음 — 누르면 켜고 FP++ 를 다시 띄운다" : r && r.valid ? "FP++ 좌표 있음" : "FP++ 좌표 없음";
+  return `<div class="xp-fobj">
+    <div class="xp-fobj-row"><span class="xp-fobj-k">컵</span><div class="seg" role="group" aria-label="컵 종류">${XP_CUPS.map(cupBtn).join("")}</div></div>
+    <div class="xp-fobj-row"><span class="xp-fobj-k">색</span><div class="seg" role="group" aria-label="색">${colors}</div></div>
+    <div class="xp-fobj-row"><span class="xp-fobj-k">인지</span><button class="btn btn-sm" data-act="xp-refresh" data-arg="${esc(side.object)}" ${can ? "" : "disabled"}>⟳ Perception Refresh — ${esc(side.object)}</button>
+      <span class="hint">${esc(note)}${ra && ra.job && ra.job.active ? " · 인지 중…" : ""}</span>${ra ? actionState(ra) : ""}</div>
+  </div>`;
 }
 
 // 사슬 — 칸 = 궤적 · 사람 확인 · 손 · 정책(누르면 체크포인트 · 계약 · sim 근거) · 넘김(조건). 실행기가 이 실험을 돌리면 지난 칸 ✓ · 지금 칸 강조.
@@ -1841,6 +1873,16 @@ Object.assign(acts, {
     return prepareAction("head_control", extra);
   },
   "xp-pick"(id) { xpSel = { ...xpSel, id }; xpPol = ""; xpSave(); xpSyncRunner(); render(); },
+  "xp-fobj"(obj) {
+    const [, key] = xpPick(S.session, S.session.experiments);
+    xpSel = { ...xpSel, fobj: { ...(xpSel.fobj || {}), [key]: obj } }; xpPol = ""; xpSave(); render();
+  },
+  async "xp-refresh"(obj) {
+    const w = S.workspace || {}, objs = w.objects || [];
+    if (objs.some((o) => o.id === obj && !o.enabled))
+      await call("POST", "/api/workspace", { objects: objs.map((o) => ({ id: o.id, enabled: o.id === obj ? true : o.enabled, input_source: o.input_source })) });
+    return prepareAction("perception_refresh", { object_ids: [obj] });
+  },
   "xp-side"(side) { xpSel = { ...xpSel, side }; xpSave(); xpSyncRunner(); render(); },
   "xp-pol"(id) { xpPol = xpPol === id ? "" : id; render(); },
   "xp-video"() {

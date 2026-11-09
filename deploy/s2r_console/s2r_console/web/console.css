@@ -740,3 +740,10 @@ table.ptable tr.off td { color: var(--faint); }
 .ev-tbl .num { text-align: right; }
 .ev-td-note { max-width: 320px; overflow-wrap: anywhere; color: var(--dim); }
 @media (max-width: 1000px) { .ev-form { grid-template-columns: 1fr 1fr; } .ev-result, .ev-note, .ev-save { grid-column: 1 / -1; } }
+
+/* ★11.09 경로 F 물체 고르기 — 컵 · 색 · 인지 다시 찍기 */
+.xp-fobj { display: grid; gap: 8px; margin: 10px 0 12px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--panel-2); }
+.xp-fobj-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.xp-fobj-k { min-width: 32px; color: var(--dim); font-size: 12.5px; }
+.xp-fobj .seg-b { min-height: 34px; font-size: 14px; }
+.xp-fobj .lamp { margin-right: 6px; }

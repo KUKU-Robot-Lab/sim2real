@@ -70,6 +70,35 @@ REAL_CUP = REAL_CUPS["right"]
 PLACE_HOLDER = {"right": 1, "left": 1}
 #: fake 홀더 y — hdgp rh_place env holder_ys(0.153, −0.002, −0.161)
 FAKE_HOLDER_Y = {0: 0.153, 1: -0.002, 2: -0.161}
+#: ★11.09 경로 F 물체 고르기 — 색을 잰(hue_measured) FP++ 물체 → 정책 물체 one-hot(ap05 · rcg04 학습 3종). 순서 = 화면 순서
+F_OBJECTS = {"source240b_blue": "source240_real", "source240_orange": "source240_real", "source240_pink": "source240_real",
+             "source200_orange": "source200_real", "source200_pink": "source200_real", "shaker_c_orange": "shaker_c_real"}
+#: 팔마다 grasp_f_<팔>.yaml(손으로 쓴 원본)이 찍는 물체 — 이 물체는 원본 그대로 쓰고 변형 파일을 만들지 않는다
+F_DEFAULT = {"right": "source240b_blue", "left": "shaker_c_orange"}
+F_VARIANT_HEAD = "# 이 파일은 scripts/ops/make_rh56f1_missions.py 가 grasp_f_{side}.yaml 에서 물체만 바꿔 만든다 — 손으로 고치지 말 것(--check).\n"
+
+
+def f_variant_text(side: str, obj: str) -> str:
+    """★11.09 grasp_f_<팔>.yaml 에서 물체(CUP 토픽 · policy_object)와 이름만 바꾼 경로 F."""
+    src = (REPO / "config" / "episodes" / f"grasp_f_{side}.yaml").read_text(encoding="utf-8")
+    base = F_DEFAULT[side]
+    pairs = [(f"episode: {{name: grasp_f_{side},", f"episode: {{name: grasp_f_{obj}_{side},"),
+             (f"CUP: {{topic: /objects/{base}/pose}}", f"CUP: {{topic: /objects/{obj}/pose}}"),
+             (f"policy_object: {F_OBJECTS[base]},", f"policy_object: {F_OBJECTS[obj]},")]
+    for old, new in pairs:
+        if src.count(old) != 1:
+            raise ValueError(f"grasp_f_{side}.yaml: {old!r} 가 한 번이 아니다 — 변형을 만들 수 없다")
+        src = src.replace(old, new)
+    body = src.split("\nepisode:", 1)[1]
+    return (F_VARIANT_HEAD.format(side=side) + f"# 경로 F — {side} 손 {obj}(정책 물체 {F_OBJECTS[obj]}). 정책 · 값 · 흐름은 grasp_f_{side} 와 같다.\n"
+            "episode:" + body)
+
+
+def f_variant_files() -> dict:
+    return {REPO / "config" / "episodes" / f"grasp_f_{o}_{s}.yaml": f_variant_text(s, o)
+            for s in ("right", "left") for o in F_OBJECTS if F_DEFAULT[s] != o}
+
+
 #: 상황판에서 굴리는 에피소드(10.04 사용자: 구분 실행 → 연속 실행) — config/episodes/<이름>.yaml, 실기에 쓸 수 있는 것만
 # ★10.20 사용자 "경로 a는 폐지, -> 경로d가 대체함": grasp_rg3_<팔> · tilt_base_a 를 빼고 grasp_d_<팔> · tilt_base_d
 EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_left",
@@ -85,8 +114,9 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             "grasp_e_right", "grasp_e_left",
             # ★10.21 경로 F — 경로 E 와 같은 넘김, 넘겨받는 정책만 rcg04(사용자 "ap05 + rcg_04 또한 준비 필요")
             "grasp_f_right", "grasp_f_left",
-            # ★11.08 사용자 "핑크랑 주황도 바로" — 경로 F 오른팔, 물체만 shaker 주황(fo) · source240 분홍(fk)
-            "grasp_fo_right", "grasp_fk_right",
+            # ★11.09 사용자 "경로 F 안에서 버튼으로 컵종류와 색깔을 선택 … 왼손,오른손 모두" — 물체만 바꾼 경로 F(F_OBJECTS × 팔).
+            #   11.08 grasp_fo_right(shaker 주황) · grasp_fk_right(src200 분홍)를 대신한다. 파일은 이 생성기가 grasp_f_<팔> 에서 만든다
+            *(f"grasp_f_{o}_{s}" for s in ("right", "left") for o in F_OBJECTS if F_DEFAULT[s] != o),
             # ★10.22 사용자 "Place 세팅 진행" — 경로 F 잡고 들기 → 놓기(붙인 자세 = 잡기의 grasp_state 넘김 묶음)
             #   ★10.27 결정 1: 놓기 newton_05 → 오른손 n07 · 왼손 n06(ready_carry 이송 뒤 놓기, sim A1 확인)
             "pick_place_f_right", "pick_place_f_left",
@@ -1397,6 +1427,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--check", action="store_true", help="쓰지 않고 커밋된 파일과 비교만")
     args = ap.parse_args(argv)
     bad = []
+    for path, text in f_variant_files().items():          # ★11.09 경로 F 물체 변형 — 미션보다 먼저(미션이 이 파일을 읽는다)
+        if args.check:
+            if not path.exists() or path.read_text(encoding="utf-8") != text:
+                bad.append(path.name)
+            continue
+        if not path.exists() or path.read_text(encoding="utf-8") != text:
+            path.write_text(text, encoding="utf-8")
+            print(f"썼다: {path.relative_to(REPO)}")
     for kind, path in OUT.items():
         text = render(kind)
         if args.check:

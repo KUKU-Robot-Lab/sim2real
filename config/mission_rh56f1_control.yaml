@@ -317,7 +317,7 @@ stages:
   skippable: true
   touches_real: true
   blocked: 'tilt 정책은 보류(10.07 사용자: 성공 전 정책은 직접 확인 뒤 · 10.17 기본 궤적은 에피소드 tilt_base_*) — 실기 인지는 10.08 부터 색으로 두 컵(source240b_blue=오른팔 · shaker_c_orange=왼팔
-    · source200_pink · source240p_pink)을 낸다'
+    · source240_orange · source240_pink · source200_orange · source200_pink · source240p_pink)을 낸다'
   needs:
   - home_right
   - home_left
@@ -592,7 +592,7 @@ stages:
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
   title: '[에피소드] grasp_f_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
-- id: episode_grasp_fo_right
+- id: episode_grasp_f_source240_orange_right
   group: policy
   lane: arm_right
   skippable: true
@@ -601,8 +601,8 @@ stages:
   - home_right
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
-  title: '[에피소드] grasp_fo_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
-- id: episode_grasp_fk_right
+  title: '[에피소드] grasp_f_source240_orange_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+- id: episode_grasp_f_source240_pink_right
   group: policy
   lane: arm_right
   skippable: true
@@ -611,7 +611,87 @@ stages:
   - home_right
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
-  title: '[에피소드] grasp_fk_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+  title: '[에피소드] grasp_f_source240_pink_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+- id: episode_grasp_f_source200_orange_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  touches_real: true
+  needs:
+  - home_right
+  - cups
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
+  title: '[에피소드] grasp_f_source200_orange_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+- id: episode_grasp_f_source200_pink_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  touches_real: true
+  needs:
+  - home_right
+  - cups
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
+  title: '[에피소드] grasp_f_source200_pink_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+- id: episode_grasp_f_shaker_c_orange_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  touches_real: true
+  needs:
+  - home_right
+  - cups
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
+  title: '[에피소드] grasp_f_shaker_c_orange_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+- id: episode_grasp_f_source240b_blue_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  touches_real: true
+  needs:
+  - home_left
+  - cups
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
+  title: '[에피소드] grasp_f_source240b_blue_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+- id: episode_grasp_f_source240_orange_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  touches_real: true
+  needs:
+  - home_left
+  - cups
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
+  title: '[에피소드] grasp_f_source240_orange_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+- id: episode_grasp_f_source240_pink_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  touches_real: true
+  needs:
+  - home_left
+  - cups
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
+  title: '[에피소드] grasp_f_source240_pink_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+- id: episode_grasp_f_source200_orange_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  touches_real: true
+  needs:
+  - home_left
+  - cups
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
+  title: '[에피소드] grasp_f_source200_orange_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+- id: episode_grasp_f_source200_pink_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  touches_real: true
+  needs:
+  - home_left
+  - cups
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
+  title: '[에피소드] grasp_f_source200_pink_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
 - id: episode_pick_place_f_right
   group: policy
   lane: arm_right
@@ -851,8 +931,16 @@ run:
     - episode_grasp_e_left#7
     - episode_grasp_f_right#7
     - episode_grasp_f_left#7
-    - episode_grasp_fo_right#7
-    - episode_grasp_fk_right#7
+    - episode_grasp_f_source240_orange_right#7
+    - episode_grasp_f_source240_pink_right#7
+    - episode_grasp_f_source200_orange_right#7
+    - episode_grasp_f_source200_pink_right#7
+    - episode_grasp_f_shaker_c_orange_right#7
+    - episode_grasp_f_source240b_blue_left#7
+    - episode_grasp_f_source240_orange_left#7
+    - episode_grasp_f_source240_pink_left#7
+    - episode_grasp_f_source200_orange_left#7
+    - episode_grasp_f_source200_pink_left#7
     - episode_pick_place_f_right#8
     - episode_pick_place_f_left#8
     - episode_grasp2tilt_f_240#8
@@ -898,10 +986,26 @@ run:
     - episode_grasp_f_right#8
     - episode_grasp_f_left#5
     - episode_grasp_f_left#8
-    - episode_grasp_fo_right#5
-    - episode_grasp_fo_right#8
-    - episode_grasp_fk_right#5
-    - episode_grasp_fk_right#8
+    - episode_grasp_f_source240_orange_right#5
+    - episode_grasp_f_source240_orange_right#8
+    - episode_grasp_f_source240_pink_right#5
+    - episode_grasp_f_source240_pink_right#8
+    - episode_grasp_f_source200_orange_right#5
+    - episode_grasp_f_source200_orange_right#8
+    - episode_grasp_f_source200_pink_right#5
+    - episode_grasp_f_source200_pink_right#8
+    - episode_grasp_f_shaker_c_orange_right#5
+    - episode_grasp_f_shaker_c_orange_right#8
+    - episode_grasp_f_source240b_blue_left#5
+    - episode_grasp_f_source240b_blue_left#8
+    - episode_grasp_f_source240_orange_left#5
+    - episode_grasp_f_source240_orange_left#8
+    - episode_grasp_f_source240_pink_left#5
+    - episode_grasp_f_source240_pink_left#8
+    - episode_grasp_f_source200_orange_left#5
+    - episode_grasp_f_source200_orange_left#8
+    - episode_grasp_f_source200_pink_left#5
+    - episode_grasp_f_source200_pink_left#8
     - episode_pick_place_f_right#5
     - episode_pick_place_f_right#6
     - episode_pick_place_f_right#9
@@ -4836,13 +4940,13 @@ run:
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
     - episode_grasp_f_left
-  episode_grasp_fo_right:
+  episode_grasp_f_source240_orange_right:
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/episode_run.py'
     - --episode
-    - config/episodes/grasp_fo_right.yaml
+    - config/episodes/grasp_f_source240_orange_right.yaml
     - --plan
     - --require-holders
   - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
@@ -4856,18 +4960,18 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+  - note: FP++ 물체 확보 — source240_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - shaker_c_orange
+    - source240_orange
     - --wait
     - '120'
     - --require-all
-  - note: '★[에피소드 grasp_fo_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+  - note: '★[에피소드 grasp_f_source240_orange_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -4905,7 +5009,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/shaker_c_orange/live_pose
+    - cup_topic:=/objects/source240_orange/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -4956,16 +5060,16 @@ run:
     - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_right/applied
-      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_fo_right
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_orange/pose /objects/source240_orange/live_pose /policy_control/pd_right/applied
+      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240_orange_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_fo_right.csv'
+    - '{repo}/logs/cpu/episode_grasp_f_source240_orange_right.csv'
     background: true
-  - note: 에피소드 실행기 episode_runner_right — grasp_fo_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_fo_right)
+  - note: 에피소드 실행기 episode_runner_right — grasp_f_source240_orange_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240_orange_right)
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
@@ -4973,7 +5077,7 @@ run:
     - -r
     - __node:=episode_runner_right
     - -p
-    - episode:=config/episodes/grasp_fo_right.yaml
+    - episode:=config/episodes/grasp_f_source240_orange_right.yaml
     - -p
     - robot:=rh56f1
     background: true
@@ -4985,22 +5089,338 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_fo_right#8
-    - episode_grasp_fo_right#7
-    - episode_grasp_fo_right#5
+    - episode_grasp_f_source240_orange_right#8
+    - episode_grasp_f_source240_orange_right#7
+    - episode_grasp_f_source240_orange_right#5
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
-    - episode_grasp_fo_right
-  episode_grasp_fk_right:
+    - episode_grasp_f_source240_orange_right
+  episode_grasp_f_source240_pink_right:
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/episode_run.py'
     - --episode
-    - config/episodes/grasp_fk_right.yaml
+    - config/episodes/grasp_f_source240_pink_right.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240_pink 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240_pink
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_f_source240_pink_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_right
+    - -p
+    - ns:=right
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/right_rcg04/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/source240_pink/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - hand_squeeze:=true
+    - -p
+    - cup_obs_offset_base_m:=[-0.0116,0.0338,-0.0143]
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+    argv:
+    - bash
+    - -lc
+    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_pink/pose /objects/source240_pink/live_pose /policy_control/pd_right/applied
+      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240_pink_right
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{repo}/logs/cpu/episode_grasp_f_source240_pink_right.csv'
+    background: true
+  - note: 에피소드 실행기 episode_runner_right — grasp_f_source240_pink_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240_pink_right)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_right
+    - -p
+    - episode:=config/episodes/grasp_f_source240_pink_right.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_f_source240_pink_right#8
+    - episode_grasp_f_source240_pink_right#7
+    - episode_grasp_f_source240_pink_right#5
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_source240_pink_right
+  episode_grasp_f_source200_orange_right:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_f_source200_orange_right.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source200_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source200_orange
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_f_source200_orange_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_right
+    - -p
+    - ns:=right
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/right_rcg04/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/source200_orange/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - hand_squeeze:=true
+    - -p
+    - cup_obs_offset_base_m:=[-0.0116,0.0338,-0.0143]
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+    argv:
+    - bash
+    - -lc
+    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source200_orange/pose /objects/source200_orange/live_pose /policy_control/pd_right/applied
+      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source200_orange_right
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{repo}/logs/cpu/episode_grasp_f_source200_orange_right.csv'
+    background: true
+  - note: 에피소드 실행기 episode_runner_right — grasp_f_source200_orange_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source200_orange_right)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_right
+    - -p
+    - episode:=config/episodes/grasp_f_source200_orange_right.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_f_source200_orange_right#8
+    - episode_grasp_f_source200_orange_right#7
+    - episode_grasp_f_source200_orange_right#5
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_source200_orange_right
+  episode_grasp_f_source200_pink_right:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_f_source200_pink_right.yaml
     - --plan
     - --require-holders
   - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
@@ -5024,8 +5444,8 @@ run:
     - --wait
     - '120'
     - --require-all
-  - note: '★[에피소드 grasp_fk_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+  - note: '★[에피소드 grasp_f_source200_pink_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -5115,15 +5535,15 @@ run:
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
       /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source200_pink/pose /objects/source200_pink/live_pose /policy_control/pd_right/applied
-      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_fk_right
+      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source200_pink_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{repo}/logs/cpu/episode_grasp_fk_right.csv'
+    - '{repo}/logs/cpu/episode_grasp_f_source200_pink_right.csv'
     background: true
-  - note: 에피소드 실행기 episode_runner_right — grasp_fk_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_fk_right)
+  - note: 에피소드 실행기 episode_runner_right — grasp_f_source200_pink_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source200_pink_right)
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
@@ -5131,7 +5551,7 @@ run:
     - -r
     - __node:=episode_runner_right
     - -p
-    - episode:=config/episodes/grasp_fk_right.yaml
+    - episode:=config/episodes/grasp_f_source200_pink_right.yaml
     - -p
     - robot:=rh56f1
     background: true
@@ -5143,15 +5563,963 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_fk_right#8
-    - episode_grasp_fk_right#7
-    - episode_grasp_fk_right#5
+    - episode_grasp_f_source200_pink_right#8
+    - episode_grasp_f_source200_pink_right#7
+    - episode_grasp_f_source200_pink_right#5
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
-    - episode_grasp_fk_right
+    - episode_grasp_f_source200_pink_right
+  episode_grasp_f_shaker_c_orange_right:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_f_shaker_c_orange_right.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - shaker_c_orange
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_f_shaker_c_orange_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_right
+    - -p
+    - ns:=right
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/right_rcg04/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/shaker_c_orange/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - hand_squeeze:=true
+    - -p
+    - cup_obs_offset_base_m:=[-0.0116,0.0338,-0.0143]
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+    argv:
+    - bash
+    - -lc
+    - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_right/applied
+      /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_shaker_c_orange_right
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{repo}/logs/cpu/episode_grasp_f_shaker_c_orange_right.csv'
+    background: true
+  - note: 에피소드 실행기 episode_runner_right — grasp_f_shaker_c_orange_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_shaker_c_orange_right)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_right
+    - -p
+    - episode:=config/episodes/grasp_f_shaker_c_orange_right.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_f_shaker_c_orange_right#8
+    - episode_grasp_f_shaker_c_orange_right#7
+    - episode_grasp_f_shaker_c_orange_right#5
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_shaker_c_orange_right
+  episode_grasp_f_source240b_blue_left:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_f_source240b_blue_left.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240b_blue
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_f_source240b_blue_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_left
+    - -p
+    - ns:=left
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/left_rcg04/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/source240b_blue/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - hand_squeeze:=true
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+    argv:
+    - bash
+    - -lc
+    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
+      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_left/applied
+      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240b_blue_left
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{repo}/logs/cpu/episode_grasp_f_source240b_blue_left.csv'
+    background: true
+  - note: 에피소드 실행기 episode_runner_left — grasp_f_source240b_blue_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240b_blue_left)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_left
+    - -p
+    - episode:=config/episodes/grasp_f_source240b_blue_left.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_f_source240b_blue_left#8
+    - episode_grasp_f_source240b_blue_left#7
+    - episode_grasp_f_source240b_blue_left#5
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_source240b_blue_left
+  episode_grasp_f_source240_orange_left:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_f_source240_orange_left.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240_orange
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_f_source240_orange_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_left
+    - -p
+    - ns:=left
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/left_rcg04/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/source240_orange/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - hand_squeeze:=true
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+    argv:
+    - bash
+    - -lc
+    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
+      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source240_orange/pose /objects/source240_orange/live_pose /policy_control/pd_left/applied
+      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240_orange_left
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{repo}/logs/cpu/episode_grasp_f_source240_orange_left.csv'
+    background: true
+  - note: 에피소드 실행기 episode_runner_left — grasp_f_source240_orange_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240_orange_left)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_left
+    - -p
+    - episode:=config/episodes/grasp_f_source240_orange_left.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_f_source240_orange_left#8
+    - episode_grasp_f_source240_orange_left#7
+    - episode_grasp_f_source240_orange_left#5
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_source240_orange_left
+  episode_grasp_f_source240_pink_left:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_f_source240_pink_left.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240_pink 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240_pink
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_f_source240_pink_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_left
+    - -p
+    - ns:=left
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/left_rcg04/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/source240_pink/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - hand_squeeze:=true
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+    argv:
+    - bash
+    - -lc
+    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
+      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source240_pink/pose /objects/source240_pink/live_pose /policy_control/pd_left/applied
+      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240_pink_left
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{repo}/logs/cpu/episode_grasp_f_source240_pink_left.csv'
+    background: true
+  - note: 에피소드 실행기 episode_runner_left — grasp_f_source240_pink_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240_pink_left)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_left
+    - -p
+    - episode:=config/episodes/grasp_f_source240_pink_left.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_f_source240_pink_left#8
+    - episode_grasp_f_source240_pink_left#7
+    - episode_grasp_f_source240_pink_left#5
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_source240_pink_left
+  episode_grasp_f_source200_orange_left:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_f_source200_orange_left.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source200_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source200_orange
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_f_source200_orange_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_left
+    - -p
+    - ns:=left
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/left_rcg04/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/source200_orange/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - hand_squeeze:=true
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+    argv:
+    - bash
+    - -lc
+    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
+      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source200_orange/pose /objects/source200_orange/live_pose /policy_control/pd_left/applied
+      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source200_orange_left
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{repo}/logs/cpu/episode_grasp_f_source200_orange_left.csv'
+    background: true
+  - note: 에피소드 실행기 episode_runner_left — grasp_f_source200_orange_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source200_orange_left)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_left
+    - -p
+    - episode:=config/episodes/grasp_f_source200_orange_left.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_f_source200_orange_left#8
+    - episode_grasp_f_source200_orange_left#7
+    - episode_grasp_f_source200_orange_left#5
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_source200_orange_left
+  episode_grasp_f_source200_pink_left:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_f_source200_pink_left.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|episode_runner_left)$'''
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source200_pink 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source200_pink
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_f_source200_pink_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
+      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_left
+    - -p
+    - ns:=left
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/left_rcg04/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/source200_pink/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - hand_squeeze:=true
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+    argv:
+    - bash
+    - -lc
+    - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
+      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source200_pink/pose /objects/source200_pink/live_pose /policy_control/pd_left/applied
+      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source200_pink_left
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{repo}/logs/cpu/episode_grasp_f_source200_pink_left.csv'
+    background: true
+  - note: 에피소드 실행기 episode_runner_left — grasp_f_source200_pink_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source200_pink_left)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_left
+    - -p
+    - episode:=config/episodes/grasp_f_source200_pink_left.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_f_source200_pink_left#8
+    - episode_grasp_f_source200_pink_left#7
+    - episode_grasp_f_source200_pink_left#5
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_source200_pink_left
   episode_pick_place_f_right:
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세(config/cup_holder_poses_5090_v1.yaml)에 쓰는 홀더가 다 있는가 (읽기만)
     argv:
