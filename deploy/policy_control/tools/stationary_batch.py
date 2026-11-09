@@ -485,6 +485,13 @@ class Batch:
                 self.node.get_logger().warning(
                     "pd diagnostics contact not clear after 2 s (guard reason: "
                     f"{self.guard and (self.guard['latched'] or 'none')}, diag: {latest.get(diag_topic, {}).get('data', 'missing')[:200]})")
+            # 11.09 F4: writing the pre-roll rows stalls spinning ~170 ms; if contact_clear is already True
+            # spin_until returns without spinning and current() saw a 0.1 s-stale pd stream. Drain first.
+            try:
+                self.spin_until(lambda: all(time.monotonic() - received.get(t, 0) < 0.05
+                                            for t in (diag_topic, status_topic)), 1.0, "pd stream")
+            except ValueError:
+                pass                        # current() below reports which topic is stale
             d = current()
             publishers = node.get_publishers_info_by_topic("/policy_control/joint_target")
             if len(publishers) != 1 or publishers[0].node_name != node.get_name():
