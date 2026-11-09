@@ -1239,6 +1239,8 @@ def _episode_run(name: str, real: bool) -> list:
                      ["{repo}/.venv/bin/python", f"{PC}/policy_control/episode_runner_node.py", "--ros-args",
                       *(["-r", f"__node:={runner}"] if runner != "episode_runner" else []),
                       "-p", f"episode:=config/episodes/{name}.yaml", "-p", "robot:=rh56f1"], background=True))
+    if real:   # 배경 노드를 다 띄운 뒤(번호가 밀리지 않게), 진행 전에
+        cmds.append(_baseline_start(name, sides))
     cmds.append(_cmd("★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 "
                      "(이상하면 '에피소드 실행기 정지' · 정지 바)", ["bash", "-lc", "true"], manual=True))
     bg = [i for i, c in enumerate(cmds) if c.get("background")]
@@ -1248,6 +1250,8 @@ def _episode_run(name: str, real: bool) -> list:
     if real:
         cmds.append(_cmd("기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손" + ("" if REMOTE_PERCEPTION else " · 카메라") + ")",
                          ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop", f"episode_{name}"]))
+        cmds.append(_cmd("stationary 기준선 기록 끝(README 에 bag 경로)",
+                         ["python3", f"{PC}/tools/baseline_run.py", "stop", f"episode_{name}"]))
         if VISION_RECORD and name in REPORT_VIDEO_HZ:   # ★10.19 보고서 사진 · 영상 — 이 단계에서 돈 회마다(아직 안 만든 것)
             cmds.append(_cmd(f"보고서 영상 · 장면 사진 — 카메라 영상({PERCEPTION_HOST}) + 노드 시각 → logs/report_media/<회>"
                              "(video.mp4 · 시작 · 다가간 뒤 · 쥔 뒤 · 들어 올린 뒤 · sheet.jpg)",
@@ -1264,6 +1268,15 @@ def real_object(topic: str) -> str:
     """/objects/<실물>/pose → 실물 이름."""
     from policy_control.episode_ros import real_object_name
     return real_object_name(topic)
+
+
+def _baseline_start(name: str, sides: list) -> dict:
+    """★11.08 사용자 승인: bag 옆에 stationary_recorder(구독만) — 폴더 baseline_<YYYYMMDD>_<NN> 은 실행 때 정한다."""
+    return _cmd("stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/"
+                "(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정 사본, 커밋 · dirty, PD 게인)",
+                ["python3", f"{PC}/tools/baseline_run.py", "start", f"episode_{name}",
+                 "--mission", "{repo}/" + str(OUT["real"].relative_to(REPO)),
+                 "--episode", f"{{repo}}/config/episodes/{name}.yaml", "--sides", ",".join(sides)])
 
 
 def _cpu_record(name: str) -> dict:

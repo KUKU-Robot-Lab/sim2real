@@ -349,7 +349,8 @@ def _build_config(raw: Mapping) -> PdConfig:
     if compensation is not None:
         from .stationary_compensation import CompensationConfig, validate_no_duplicate_integrators
         cc = CompensationConfig.from_mapping(compensation)
-        if raw["gains"].get("experiment_profile") != "stationary_tracking":
+        # An all-off block only turns on pd_<side>/diagnostics; torque unchanged (test_pc_pd_diag_off.py).
+        if cc.enabled and raw["gains"].get("experiment_profile") != "stationary_tracking":
             raise PdConfigError("stationary_compensation requires stationary_tracking experiment_profile")
         validate_no_duplicate_integrators(cc, home_integral=raw["settle"].get("gain", 0) != 0,
                                          droop_integral=raw["gravity"]["mode"] == "integral_droop")

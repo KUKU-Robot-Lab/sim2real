@@ -86,7 +86,9 @@ def test_compensation_config_is_optional_and_experiment_only(tmp_path):
         Path(__file__).resolve().parents[2]
         / "deploy/policy_control/config/pd_rh56f1.yaml"
     )
-    assert load_pd_config(path).stationary_compensation is None
+    # 11.08: 운영 설정은 모두 끈 블록(diagnostics 용)만 가진다. 하나라도 켜면 실험 프로필이 필요하다.
+    block = load_pd_config(path).stationary_compensation
+    assert block is not None and not any(block.values())
     data = yaml.safe_load(path.read_text())
     data["stationary_compensation"] = {"integral_enabled": True}
     out = tmp_path / "pd.yaml"

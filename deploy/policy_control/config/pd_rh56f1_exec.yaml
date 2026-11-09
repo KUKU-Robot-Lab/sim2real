@@ -71,3 +71,10 @@ hand:
   # 손 자체 설정(벤더 레지스터, pd 발행 모드에서 첫 각도 명령 전 · 5 s 마다) — 09.30. 0 = 보내지 않는다.
   hw_speed: 2000               # 0..4000, 2000 = 무부하 전 행정 1000 ms = sim hand_full_range_s 1.0 (실측 튜닝 전 시작값)
   hw_force: 600                # 힘 멈춤 임계 [g, 센서 위치 — 손끝의 약 10배] = 벤더 기본(defaultForceSet). 09.30 왼손만 500 으로 바뀌어 있었다 — 양손을 같게
+
+# 11.08 사용자 승인: 모두 끈 블록 = pd_<side>/diagnostics(항별 토크) 발행만. 지령 토크는 블록 없을 때와 비트 단위로 같다
+# (tests/policy_control/test_pc_pd_diag_off.py). 켜는 것은 stationary_tracking 실험 설정에서만.
+stationary_compensation:
+  gravity_enabled: false
+  friction_enabled: false
+  integral_enabled: false

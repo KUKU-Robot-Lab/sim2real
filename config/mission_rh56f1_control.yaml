@@ -1055,7 +1055,7 @@ run:
     - episode_place_m_right#10
     - episode_place_m_right#11
     - episode_place_m_right#14
-    - episode_place_m_right#17
+    - episode_place_m_right#18
   - note: 남은 bag 기록 마무리(rh56f1_record.sh stop)
     argv:
     - bash
@@ -2883,6 +2883,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_pick_place_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/pick_place_right.yaml'
+    - --sides
+    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -2899,6 +2912,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_pick_place_right
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_pick_place_right
   episode_pick_place_left:
@@ -3049,6 +3068,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_pick_place_left
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/pick_place_left.yaml'
+    - --sides
+    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -3065,6 +3097,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_pick_place_left
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_pick_place_left
   episode_grasp_c_right:
@@ -3193,6 +3231,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_c_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_c_right.yaml'
+    - --sides
+    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -3208,6 +3259,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_c_right
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_c_right
   episode_grasp_c_left:
@@ -3336,6 +3393,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_c_left
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_c_left.yaml'
+    - --sides
+    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -3351,6 +3421,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_c_left
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_c_left
   episode_tilt_base_b:
@@ -3402,6 +3478,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_tilt_base_b
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/tilt_base_b.yaml'
+    - --sides
+    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -3416,6 +3505,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_tilt_base_b
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_tilt_base_b
   episode_tilt_base_c:
@@ -3605,6 +3700,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_tilt_base_c
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/tilt_base_c.yaml'
+    - --sides
+    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -3621,6 +3729,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_tilt_base_c
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_tilt_base_c
   episode_tilt_base_d:
@@ -3826,6 +3940,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_tilt_base_d
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/tilt_base_d.yaml'
+    - --sides
+    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -3842,6 +3969,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_tilt_base_d
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_tilt_base_d
   episode_grasp_b_right:
@@ -3911,6 +4044,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_b_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_b_right.yaml'
+    - --sides
+    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -3925,6 +4071,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_b_right
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_b_right
   episode_grasp_b_left:
@@ -3994,6 +4146,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_b_left
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_b_left.yaml'
+    - --sides
+    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -4008,6 +4173,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_b_left
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_b_left
   episode_grasp_d_right:
@@ -4144,6 +4315,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_d_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_d_right.yaml'
+    - --sides
+    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -4159,6 +4343,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_d_right
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_d_right
   episode_grasp_d_left:
@@ -4295,6 +4485,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_d_left
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_d_left.yaml'
+    - --sides
+    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -4310,6 +4513,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_d_left
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_d_left
   episode_grasp_e_right:
@@ -4451,6 +4660,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_e_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_e_right.yaml'
+    - --sides
+    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -4466,6 +4688,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_e_right
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_e_right
   episode_grasp_e_left:
@@ -4607,6 +4835,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_e_left
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_e_left.yaml'
+    - --sides
+    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -4622,6 +4863,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_e_left
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_e_left
   episode_grasp_f_right:
@@ -4765,6 +5012,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_f_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_f_right.yaml'
+    - --sides
+    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -4780,6 +5040,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_right
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_right
   episode_grasp_f_left:
@@ -4923,6 +5189,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_f_left
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_f_left.yaml'
+    - --sides
+    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -4938,6 +5217,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_left
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_left
   episode_grasp_f_source240_orange_right:
@@ -5081,6 +5366,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_f_source240_orange_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_f_source240_orange_right.yaml'
+    - --sides
+    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -5096,6 +5394,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_source240_orange_right
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source240_orange_right
   episode_grasp_f_source240_pink_right:
@@ -5239,6 +5543,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_f_source240_pink_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_f_source240_pink_right.yaml'
+    - --sides
+    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -5254,6 +5571,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_source240_pink_right
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source240_pink_right
   episode_grasp_f_source200_orange_right:
@@ -5397,6 +5720,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_f_source200_orange_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_f_source200_orange_right.yaml'
+    - --sides
+    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -5412,6 +5748,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_source200_orange_right
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source200_orange_right
   episode_grasp_f_source200_pink_right:
@@ -5555,6 +5897,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_f_source200_pink_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_f_source200_pink_right.yaml'
+    - --sides
+    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -5570,6 +5925,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_source200_pink_right
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source200_pink_right
   episode_grasp_f_shaker_c_orange_right:
@@ -5713,6 +6074,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_f_shaker_c_orange_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_f_shaker_c_orange_right.yaml'
+    - --sides
+    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -5728,6 +6102,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_shaker_c_orange_right
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_shaker_c_orange_right
   episode_grasp_f_source240b_blue_left:
@@ -5871,6 +6251,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_f_source240b_blue_left
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_f_source240b_blue_left.yaml'
+    - --sides
+    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -5886,6 +6279,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_source240b_blue_left
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source240b_blue_left
   episode_grasp_f_source240_orange_left:
@@ -6029,6 +6428,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_f_source240_orange_left
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_f_source240_orange_left.yaml'
+    - --sides
+    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -6044,6 +6456,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_source240_orange_left
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source240_orange_left
   episode_grasp_f_source240_pink_left:
@@ -6187,6 +6605,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_f_source240_pink_left
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_f_source240_pink_left.yaml'
+    - --sides
+    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -6202,6 +6633,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_source240_pink_left
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source240_pink_left
   episode_grasp_f_source200_orange_left:
@@ -6345,6 +6782,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_f_source200_orange_left
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_f_source200_orange_left.yaml'
+    - --sides
+    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -6360,6 +6810,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_source200_orange_left
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source200_orange_left
   episode_grasp_f_source200_pink_left:
@@ -6503,6 +6959,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_f_source200_pink_left
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_f_source200_pink_left.yaml'
+    - --sides
+    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -6518,6 +6987,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_f_source200_pink_left
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_f_source200_pink_left
   episode_pick_place_f_right:
@@ -6682,6 +7157,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_pick_place_f_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/pick_place_f_right.yaml'
+    - --sides
+    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -6698,6 +7186,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_pick_place_f_right
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_pick_place_f_right
   episode_pick_place_f_left:
@@ -6862,6 +7356,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_pick_place_f_left
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/pick_place_f_left.yaml'
+    - --sides
+    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -6878,6 +7385,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_pick_place_f_left
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_pick_place_f_left
   episode_grasp2tilt_f_240:
@@ -7093,6 +7606,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp2tilt_f_240
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp2tilt_f_240.yaml'
+    - --sides
+    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -7109,6 +7635,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp2tilt_f_240
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp2tilt_f_240
   episode_cocktail_1:
@@ -7373,6 +7905,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_cocktail_1
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/cocktail_1.yaml'
+    - --sides
+    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -7391,6 +7936,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_cocktail_1
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_cocktail_1
   episode_cocktail_1b:
@@ -7654,6 +8205,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_cocktail_1b
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/cocktail_1b.yaml'
+    - --sides
+    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -7672,6 +8236,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_cocktail_1b
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_cocktail_1b
   episode_cocktail_1c_e1000:
@@ -7940,6 +8510,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_cocktail_1c_e1000
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/cocktail_1c_e1000.yaml'
+    - --sides
+    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -7958,6 +8541,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_cocktail_1c_e1000
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_cocktail_1c_e1000
   episode_cocktail_1c_e4000:
@@ -8226,6 +8815,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_cocktail_1c_e4000
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/cocktail_1c_e4000.yaml'
+    - --sides
+    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -8244,6 +8846,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_cocktail_1c_e4000
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_cocktail_1c_e4000
   episode_grasp_s_right:
@@ -8391,6 +8999,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_s_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_s_right.yaml'
+    - --sides
+    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -8407,6 +9028,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_s_right
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_s_right
   episode_grasp_s_left:
@@ -8554,6 +9181,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_s_left
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_s_left.yaml'
+    - --sides
+    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -8570,6 +9210,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_s_left
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_s_left
   episode_grasp_m_right:
@@ -8734,6 +9380,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_m_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_m_right.yaml'
+    - --sides
+    - right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -8751,6 +9410,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_m_right
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_m_right
   episode_grasp_m_left:
@@ -8915,6 +9580,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_grasp_m_left
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/grasp_m_left.yaml'
+    - --sides
+    - left
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -8932,6 +9610,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_m_left
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_grasp_m_left
   episode_place_m_right:
@@ -9218,6 +9902,19 @@ run:
     - -p
     - robot:=rh56f1
     background: true
+  - note: 'stationary 기준선 기록 시작 — logs/analysis/stationary_tracking_1108/runs/baseline_<날짜>_<NN>/(snapshot.json: 정책 ckpt · md5 · ep, 미션 · PD 설정
+      사본, 커밋 · dirty, PD 게인)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
+    - start
+    - episode_place_m_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control.yaml'
+    - --episode
+    - '{repo}/config/episodes/place_m_right.yaml'
+    - --sides
+    - left,right
   - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
     argv:
     - bash
@@ -9256,6 +9953,12 @@ run:
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_place_m_right
+  - note: stationary 기준선 기록 끝(README 에 bag 경로)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/baseline_run.py'
     - stop
     - episode_place_m_right
   head_control:

@@ -51,7 +51,19 @@ def topic_spec(side: str) -> dict[str, str]:
         f"{arm}_position_controller/commands": "std_msgs/msg/Float64MultiArray",
         f"{arm}_velocity_controller/commands": "std_msgs/msg/Float64MultiArray",
         f"{arm}_effort_controller/commands": "std_msgs/msg/Float64MultiArray",
+        # 에피소드 경계·비상 정지(pd_node.py:221-226 구독과 같은 이름, 래치 QoS)
+        "/policy_control/episode": "std_msgs/msg/String",
+        f"/policy_control/{side}/episode": "std_msgs/msg/String",
+        "/policy_control/estop": "std_msgs/msg/Bool",
     }
+
+
+# 발행 쪽이 TRANSIENT_LOCAL 로 래치하는 토픽. 늦게 붙어도 마지막 값을 받는다.
+LATCHED_TOPICS = ("/robot_description", "/policy_control/episode", "/policy_control/estop")
+
+
+def is_latched(topic: str) -> bool:
+    return topic in LATCHED_TOPICS or topic.endswith("/episode")
 
 
 def event(topic: str, message: dict, *, wall_ns: int, mono_ns: int) -> dict:
@@ -154,7 +166,8 @@ def main() -> int:
                 stream.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
 
             for topic, message_type in message_types.items():
-                selected_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL) if topic == "/robot_description" else qos
+                selected_qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE,
+                                          durability=DurabilityPolicy.TRANSIENT_LOCAL) if is_latched(topic) else qos
                 node.create_subscription(message_type, topic, lambda msg, t=topic: callback(t, msg), selected_qos)
             print(f"read-only recording -> {out}", flush=True)
             deadline, last_flush = time.monotonic() + args.seconds, time.monotonic()
