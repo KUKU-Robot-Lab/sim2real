@@ -174,6 +174,7 @@ EPISODE_RELAY = "/episode/objects/{}/pose"        # ★10.19 한 팔 실행기�
 # ★10.17 사용자: 양손 2 s(120 틱) — 오른손 5 s 는 hp3 처럼 들고 나서 정책이 손을 열 시간을 주고, 0.5 s 는 약지 · 새끼가
 #   감기기 전에 끝난다(10.14). sim hp3 의 7 cm → 목표 성공 최소 2.0 s 에 맞춘다. 첫 목표 성공도 멈춤(goal_max:=1).
 LIFT_HOLD_TICKS = {"right": 120, "left": 120}
+HAND_SQUEEZE = False   # ★11.10 사용자: 실기 rh_aglt 쥠 보조(GripAssist squeeze) 끔 — grasp 부터 모든 에피소드
 # ★10.12 사용자(A안): 실기를 sim 에 맞춘다 — aglt 정책은 쥘 때까지 FP++ live 추적(/objects/<물체>/live_pose, 약 10 Hz)을 받고
 #   손이 가려 끊기면 마지막 값(sim FP++ ZOH), 쥔 뒤는 sim PalmAttach 처럼 파지 + 100 ms 뒤 찍힌 프레임과 그 시각 손바닥 FK 로
 #   붙인다. 가려서 프레임이 안 오면 0.7 s(sim 이 붙는 시간 범위 위)에 파지 시작 FK 로. 10.04 의 정지 컵(cup_latch · cup_static) 대신.
@@ -1210,7 +1211,9 @@ def _episode_run(name: str, real: bool) -> list:
                 max_s = f"{episode_s(b.approach_grasp):.1f}"   # 접근 최악 + 넘겨받은 정책 15 s + 3 s(실행기 _node_max_s 와 같은 식)
             # ★10.19 사용자: "sim 은 세게 쥐면 물리가 터져 적당히 쥐게 학습했다 — 실기는 제어로 더 세게"(rh_aglt.GripAssist D).
             #   정책이 쥐는 에피소드(제자리 들기 · 경로 D)만. 경로 C 는 닫기가 스크립트라 끈다.
-            squeeze = lift_only and (b.approach_grasp is None or bool(b.handoff))
+            # ★11.10 사용자: 컵 낮게 잡기 · 놓기 실패 원인 확인용으로 grasp 부터 쥠 보조를 모두 뺀다(실기 먼저, sim 은 이미 없음).
+            #   되돌리려면 HAND_SQUEEZE = True.
+            squeeze = HAND_SQUEEZE and lift_only and (b.approach_grasp is None or bool(b.handoff))
             if b.student:                               # ★11.05 경로 S — 깊이 학생(1104e)이 홈에서 접근 · 잡기, 컵은 관측에 없음
                 # 머리 깊이 · 마스크 노드는 PC 에 하나 — 양손 학생 미션이면 두 번째 팔 것은 뺀다
                 #   (좌우 묶음이 다르면 첫 팔 묶음의 노드만 남는다 — 학생 reset 의 check_*_config 가 어긋남을 거부한다)

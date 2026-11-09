@@ -3690,8 +3690,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_rcg03) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_rcg03) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -3753,12 +3752,9 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
-    - hand_squeeze:=true
-    - -p
     - max_episode_s:=15.0
     background: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_rcg03) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) ·
-      컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_rcg03) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -3819,8 +3815,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - max_episode_s:=15.0
     background: true
@@ -4076,8 +4070,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_rcg03) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_rcg03) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4138,8 +4131,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - max_episode_s:=15.0
     background: true
@@ -4227,8 +4218,7 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_rcg03) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) ·
-      컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_rcg03) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4289,8 +4279,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - max_episode_s:=15.0
     background: true
@@ -4379,8 +4367,7 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 E: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg03
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4445,8 +4432,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - max_episode_s:=33.0
     background: true
@@ -4535,8 +4520,7 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 E: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg03
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4601,8 +4585,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - max_episode_s:=33.0
     background: true
@@ -4691,8 +4673,7 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4757,8 +4738,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
@@ -4849,8 +4828,7 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4915,8 +4893,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -5007,8 +4983,7 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5073,8 +5048,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
@@ -5165,8 +5138,7 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5231,8 +5203,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
@@ -5323,8 +5293,7 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5389,8 +5358,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
@@ -5481,8 +5448,7 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5547,8 +5513,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
@@ -5639,8 +5603,7 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5705,8 +5668,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
@@ -5797,8 +5758,7 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5863,8 +5823,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -5955,8 +5913,7 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6021,8 +5978,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -6113,8 +6068,7 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6179,8 +6133,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -6271,8 +6223,7 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6337,8 +6288,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -6429,8 +6378,7 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6495,8 +6443,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -6587,8 +6533,7 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6653,8 +6598,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - max_episode_s:=33.0
     background: true
@@ -6767,8 +6710,7 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6833,8 +6775,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - max_episode_s:=33.0
     background: true
@@ -6948,8 +6888,7 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -7015,13 +6954,10 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
-    - hand_squeeze:=true
-    - -p
     - max_episode_s:=33.0
     background: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -7086,8 +7022,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - max_episode_s:=33.0
     background: true
@@ -7181,8 +7115,7 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -7248,13 +7181,10 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
-    - hand_squeeze:=true
-    - -p
     - max_episode_s:=33.0
     background: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -7319,8 +7249,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - max_episode_s:=33.0
     background: true
@@ -7462,8 +7390,7 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -7529,13 +7456,10 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
-    - hand_squeeze:=true
-    - -p
     - max_episode_s:=33.0
     background: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -7600,8 +7524,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - max_episode_s:=33.0
     background: true
@@ -7744,8 +7666,7 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -7811,15 +7732,12 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
-    - hand_squeeze:=true
-    - -p
     - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -7884,8 +7802,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -8030,8 +7946,7 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -8097,15 +8012,12 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
-    - hand_squeeze:=true
-    - -p
     - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -8170,8 +8082,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -8321,8 +8231,7 @@ run:
     - '{repo}/deploy/policies/rh56f1/aglt/right_student1104e'
     background: true
   - note: '[right] rh_aglt_r 노드(학생 rh56f1/aglt/right_student1104e · 계약 rh56f1/aglt/right_approach_ap05) — 경로 S: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지 자리에
-      멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live(래치 ·
-      lift_hold 판정에만)'
+      멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 컵 = FP++ live(래치 · lift_hold 판정에만)'
     argv:
     - '{repo}/.venv-student/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_student_node.py'
@@ -8385,8 +8294,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - max_episode_s:=30.0
     background: true
@@ -8484,8 +8391,7 @@ run:
     - '{repo}/deploy/policies/rh56f1/aglt/left_student1104e'
     background: true
   - note: '[left] rh_aglt_l 노드(학생 rh56f1/aglt/left_student1104e · 계약 rh56f1/aglt/left_approach_ap05) — 경로 S: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지 자리에
-      멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live(래치 ·
-      lift_hold 판정에만)'
+      멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 컵 = FP++ live(래치 · lift_hold 판정에만)'
     argv:
     - '{repo}/.venv-student/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_student_node.py'
@@ -8548,8 +8454,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - max_episode_s:=30.0
     background: true
@@ -8664,8 +8568,7 @@ run:
     - '{repo}/deploy/policies/rh56f1/aglt/right_student1105mA'
     background: true
   - note: '[right] rh_aglt_r 노드(학생 rh56f1/aglt/right_student1105mA · 계약 rh56f1/aglt/right_approach_ap05) — 경로 M: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지
-      자리에 멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live(래치
-      · lift_hold 판정에만)'
+      자리에 멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 컵 = FP++ live(래치 · lift_hold 판정에만)'
     argv:
     - '{repo}/.venv-student/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_student_node.py'
@@ -8728,8 +8631,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - max_episode_s:=30.0
     background: true
@@ -8845,8 +8746,7 @@ run:
     - '{repo}/deploy/policies/rh56f1/aglt/left_student1105mA'
     background: true
   - note: '[left] rh_aglt_l 노드(학생 rh56f1/aglt/left_student1105mA · 계약 rh56f1/aglt/left_approach_ap05) — 경로 M: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지 자리에
-      멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂) · 컵 = FP++ live(래치 ·
-      lift_hold 판정에만)'
+      멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 컵 = FP++ live(래치 · lift_hold 판정에만)'
     argv:
     - '{repo}/.venv-student/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_student_node.py'
@@ -8909,8 +8809,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - max_episode_s:=30.0
     background: true
@@ -9001,8 +8899,7 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -9067,8 +8964,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
     - -p
@@ -9253,8 +9148,7 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)
-      · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -9319,8 +9213,6 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
-    - -p
-    - hand_squeeze:=true
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p

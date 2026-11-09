@@ -174,12 +174,16 @@ def test_the_node_wires_hand_squeeze(c):
     assert chain.dec.squeeze_view()["squeeze"]["on"] is False
 
 
-def test_rg3_grasp_episodes_turn_it_on_and_path_c_does_not():
+def test_rg3_grasp_episodes_follow_hand_squeeze_and_path_c_does_not():
     import yaml
+    import importlib.util
 
+    spec = importlib.util.spec_from_file_location("mk", REPO / "scripts/ops/make_rh56f1_missions.py")
+    mk = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mk)
     m = yaml.safe_load((REPO / "config/mission_rh56f1_control.yaml").read_text())
     for side in ("right", "left"):
         node = next(c["argv"] for c in m["run"][f"episode_grasp_d_{side}"] if "rh_aglt_node.py" in " ".join(c.get("argv", [])))
-        assert "hand_squeeze:=true" in node
+        assert ("hand_squeeze:=true" in node) == mk.HAND_SQUEEZE   # ★11.10 사용자: 실기 쥠 보조 끔
         node = next(c["argv"] for c in m["run"][f"episode_grasp_c_{side}"] if "rh_aglt_node.py" in " ".join(c.get("argv", [])))
         assert "hand_squeeze:=true" not in node
