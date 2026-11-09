@@ -3,7 +3,7 @@
 에피소드: EVAL_EPISODES 에 적은 `config/episodes/<이름>.yaml` 만 그 순서로 읽는다(11.05 사용자, 파일 없는 이름은 건너뛴다).
 실행은 이 모듈이 하지 않는다 — 화면이 기존 길(미션 단계 episode_<이름> → 에피소드 실행기 [연속 실행] 승인)로 보낸다.
 
-회차 기록: `runs/s2r_console/eval/<YYYY-MM-DD>.csv`(utf-8, 머리 한 줄, 날짜마다 파일). 서버가 round · time · episode ·
+회차 기록: `logs/s2r_console/eval/<YYYY-MM-DD>.csv`(utf-8, 머리 한 줄, 날짜마다 파일). 서버가 round · time · episode ·
 policy_r · policy_l 을 채운다(policy id 는 클라이언트가 아니라 에피소드 yaml 에서 읽는다). 기록일 뿐이라 lease 가 필요 없다.
 """
 from __future__ import annotations
@@ -39,7 +39,7 @@ class EvalError(ValueError):
 
 
 def eval_dir(repo: Path) -> Path:
-    return repo / "runs" / "s2r_console" / "eval"
+    return repo / "logs" / "s2r_console" / "eval"
 
 
 def episode_files(repo: Path) -> list[Path]:

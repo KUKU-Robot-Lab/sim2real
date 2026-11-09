@@ -1,7 +1,7 @@
 """★11.02 eval 탭(실기 평가) — 평가 에피소드 목록(11.05 cocktail_1c_e4000 · grasp_s_right · grasp_s_left) · 회차 기록 CSV · /api/eval/rounds.
 
 기록은 로봇에 아무것도 보내지 않는다. 서버가 round · time · policy id 를 채우고(policy id 는 에피소드 yaml 에서),
-날짜마다 파일 하나(runs/s2r_console/eval/<YYYY-MM-DD>.csv)에 붙인다.
+날짜마다 파일 하나(logs/s2r_console/eval/<YYYY-MM-DD>.csv)에 붙인다.
 """
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def repo(tmp_path):
 
 
 def _csv(repo: Path, date: str) -> list[list[str]]:
-    with (repo / "runs" / "s2r_console" / "eval" / f"{date}.csv").open(encoding="utf-8", newline="") as fh:
+    with (repo / "logs" / "s2r_console" / "eval" / f"{date}.csv").open(encoding="utf-8", newline="") as fh:
         return list(csv.reader(fh))
 
 
@@ -156,7 +156,7 @@ def test_server_fills_policy_ids_from_the_episode_file_not_the_client(repo):
 def test_a_wrong_result_is_rejected_and_nothing_is_written(repo, bad):
     with pytest.raises(EV.EvalError):
         EV.append_round(repo, {"episode": "cocktail_1c_e4000", "result": bad}, now=DAY1)
-    assert not (repo / "runs" / "s2r_console" / "eval" / "2026-11-02.csv").exists()
+    assert not (repo / "logs" / "s2r_console" / "eval" / "2026-11-02.csv").exists()
 
 
 def test_runner_phases_are_accepted_as_results(repo):
@@ -200,7 +200,7 @@ def test_summary_counts_success_rate_and_failures_by_stage(repo):
     s = v["summary"]
     assert (s["n"], s["success"], s["fail"], s["abort"]) == (5, 1, 3, 1) and s["rate"] == pytest.approx(0.2)
     assert s["by_stage"] == {"place_blue": 2, "grasp_blue": 1, "단계 없음": 1}
-    assert v["date"] == v["today"] == "2026-11-02" and v["file"] == "runs/s2r_console/eval/2026-11-02.csv"
+    assert v["date"] == v["today"] == "2026-11-02" and v["file"] == "logs/s2r_console/eval/2026-11-02.csv"
     assert v["fail_types"][0] == "t_" and set(v["fail_types"]) == {"t_", "t_grasp_blue", "t_place_blue"}
 
 

@@ -91,7 +91,7 @@ class Workspace:
         self.catalog = self._catalog(slots or {})
         self._catalog_at = time.monotonic()
         key = hashlib.sha256(self.robot_id.encode()).hexdigest()[:20]
-        self.layout_path = self.repo / 'runs/s2r_console/workspaces' / (key + '.json')
+        self.layout_path = self.repo / 'logs/s2r_console/workspaces' / (key + '.json')
         if self.layout_path.is_file():
             doc = {}
             try:

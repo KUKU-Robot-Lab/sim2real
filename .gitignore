@@ -88,3 +88,6 @@ logs/vision_runs/
 # analysis: raw runs and large plans stay local (11.09 user)
 analysis/**/runs/
 analysis/**/setup/plan/plan.json
+
+# 옛 콘솔 경로(runs/s2r_console → logs/s2r_console 링크)
+/runs/

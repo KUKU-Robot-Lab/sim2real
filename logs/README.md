@@ -77,6 +77,7 @@ logs/exp/<YYMMDD>_<이름>/          예: 261109_friction_right
 | `policy_control/` | R | `rehome_left/right.npz`, 계획 npz(`home_path_*` · `approach_*` · `reset_*`) |
 | `calib/` | R | 보정 결과(지금 없음). 겹친 그림 · 측정은 `runs/<날짜>/calib/` |
 | `exp/` | E | 실험 폴더(`_template/` 틀) |
+| `s2r_console/` | S | 콘솔 실기 평가 회차 `eval/<YYYY-MM-DD>.csv` · 정책 카드 배치 `workspaces/<로봇 해시>.json`. 콘솔이 직접 쓴다(옛 `runs/s2r_console`, 지금은 이리로 가는 링크) |
 | `runs/<YYMMDD>/<종류>/` | S | 런 기록. 종류는 아래 |
 | `runs/episode_approvals.jsonl` | S | 에피소드 실행기 승인 통로. 날짜와 무관하다(노드는 뜬 뒤 쓰인 줄만 읽는다) |
 
