@@ -52,8 +52,10 @@ def capture_pose(events, side="right"):
     prefix = "r" if requested_side == "right" else "l"
     joints = tuple(f"{prefix}_aj_{i}" for i in range(1, 8))
 
+    # 11.09 F4: publishers stamp headers on different clocks (arm -0.8 s, hand -2 s
+    # behind receive time), so a still-pose snapshot pairs messages by receive time.
     def stamp(e):
-        return (e.get("header_stamp_ns") or e["recv_wall_ns"]) / 1e9
+        return e["recv_wall_ns"] / 1e9
 
     arms = [
         e

@@ -103,7 +103,9 @@ def test_capture_from_rolling_buffer_matches_the_recorder_capture(tmp_path, monk
     b.side, b.buffer, b.force = "right", collections.deque(rows), collections.deque()
     b.latched = {r["topic"]: r for r in rows if B.recorder.is_latched(r["topic"])}
     snap = b.capture(tmp_path / "capture")
-    got, want = json.loads(snap.read_text()), json.loads((src / "snapshot.json").read_text())
+    # 11.09: capture pairs by receive time now, so the reference is today's capture_pose on the same record
+    events = [json.loads(line) for line in (src / "events.jsonl").read_text().splitlines()]
+    got, want = json.loads(snap.read_text()), B.S.capture_pose(events, side="right")
     assert got["q"] == want["q"] and got["hand"] == want["hand"] and got["scene"] == want["scene"]
     for name in ("manifest.json", "summary.json", "report.md", "tracking.png", "events.jsonl",
                  "raw/events.jsonl", "raw/events.npz", "raw/metadata.json"):
