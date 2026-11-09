@@ -18,10 +18,12 @@ import yaml
 
 from .console import ConsoleError
 from .console_state import STALE_S
-from .runner import StageRunner, DONE
+from .runner import StageRunner, DONE, ABORTED
+from .supervisor import scan_processes, SupervisorError
 from . import pd_names as PD
 from . import simtraj as ST
 from . import experiments as XP
+from . import tuning_view as TU
 from mission_stages import Command, commands_for
 import mission_core as MC
 
@@ -61,6 +63,13 @@ for _obj, _cup, _color in XP.F_OBJECTS:
 CONTROL_TIMEOUT_S = 600.0
 #: 팔을 움직이는 카드 작업 — 같은 팔 제어 명령 · 정책 정지가 끊고, 도는 동안 작업 공간 설정을 못 바꾼다
 CARD_RUNS = ('rg3_', 'simrun_', CONTROL_PREFIX)
+#: ★11.09 tuning 탭 [실험 시작] — pd 기동 뒤 gains ok · IDLE, engage 뒤 RAMPING 을 기다리는 한도 [s]
+TUNE_PD_UP_S, TUNE_RAMP_S = 30.0, 15.0
+
+
+def tune_pd_key(side):
+    """마찰 실험이 띄운 pd launch 의 감독자 키 — [PD 끄기] 는 이 키(= 이 실행이 띄운 PID)만 내린다."""
+    return f'tune_pd_{side}#0'
 
 
 def control_side(action_id: str) -> str:
@@ -71,6 +80,12 @@ def control_side(action_id: str) -> str:
 def runner_of(side):
     """한 팔 에피소드 실행기 이름(미션 생성기 make_rh56f1_missions._episode_run 과 같다)."""
     return f'{EPISODE_RUNNER}_{side}'
+
+
+def _gains_ok(status):
+    """pd status 의 gains 대조 — 일치, 또는 pd 설정이 sim 불일치를 받아들인 것(pd 자신의 gains_ok 와 같은 기준)."""
+    gains = status.get('gains') or {}
+    return bool(gains.get('ok') or gains.get('accepted_mismatch'))
 
 
 def _preempts(action_id, group):
@@ -300,6 +315,11 @@ class ActionManager:
                     specs['simrun_' + card['id']] = (
                         f"sim 궤적 재생 {card['side']} {card['object_id']} — 계획한 관절 궤적을 pd 로(정책 노드 없이)",
                         'policy', ())
+        if session.profile.id.startswith('rh56f1'):   # ★11.09 tuning 탭(정지 마찰 실험) — 터미널 대신 버튼, 실험 하나에 승인 한 번
+            specs['tune_new'] = ('마찰 실험 새로 준비 — 폴더 · 오프라인 계획(로봇 명령 없음)', 'tuning', ())
+            for side in ARMS:
+                specs[f'tune_{side}'] = (f'{side} 마찰 실험 — pd 기동 → engage → 붙들기 → 남은 trial', 'tuning', ())
+                specs[f'tune_pd_off_{side}'] = (f'{side} 마찰 실험 pd 끄기', 'tuning', ())
         return specs
 
     @staticmethod
@@ -309,11 +329,11 @@ class ActionManager:
 
     def catalog(self):
         s = self.console._need()
-        return [self.describe(name) for name in self._specs(s)]
+        return [self.describe(name) for name, spec in self._specs(s).items() if spec[1] != 'tuning']
 
     def describe(self, action_id, parameters=None):
         parameters = dict(parameters or {})
-        if set(parameters) - {'object_ids', 'pan', 'tilt', 'calib_profile'}:
+        if set(parameters) - {'object_ids', 'pan', 'tilt', 'calib_profile', 'folder', 'side', 'test'}:
             raise ConsoleError('지원하지 않는 작업 설정', code=400)
         if 'object_ids' in parameters and (not isinstance(parameters['object_ids'], list) or
                                           any(not isinstance(value, str) for value in parameters['object_ids'])):
@@ -445,6 +465,8 @@ class ActionManager:
                 warnings.append(f'{job.id} 에피소드를 멈추고 정리한 뒤 실행한다')
         if action_id.startswith(('simplan_', 'simrun_')) and card is not None and obj is not None:
             self._describe_sim(action_id, card, obj, reasons, commands, warnings)
+        if group == 'tuning':
+            self._describe_tuning(s, action_id, parameters, reasons, commands, warnings)
         for stage_index, sid in enumerate(stages):
             stage = MC.stage_by_id(s.mission, sid)
             independent = replace(stage, needs=() if group != 'setting' else stage.needs, touches_real=False)
@@ -793,13 +815,144 @@ class ActionManager:
                 raise ConsoleError('카메라 좌표 변환 노드 정지 실패')
             self._run_commands(s, 'cups', [desired], process_keys=[key])
 
-    def _trigger(self, s, service, side, *, expect=()):
+    @staticmethod
+    def _trigger_argv(service, side, expect=()):
         from .console import _TRIGGER
         flag = '--episode-ns' if service.startswith('episode/') else '--side'
         argv = ['python3', str(_TRIGGER), service, flag, side, '--execute', '--service-timeout', '5']
         if expect:
             argv += ['--expect-pd', *expect, '--phase-timeout', '10']
-        self._run_commands(s, f'action_{service.replace("/", "_")}_{side}', [Command(tuple(argv), note=service)])
+        return tuple(argv)
+
+    def _trigger(self, s, service, side, *, expect=()):
+        argv = self._trigger_argv(service, side, expect)
+        self._run_commands(s, f'action_{service.replace("/", "_")}_{side}', [Command(argv, note=service)])
+
+    # ── ★11.09 tuning 탭(정지 마찰 실험) ─────────────────────────────────
+    def _describe_tuning(self, s, action_id, parameters, reasons, commands, warnings):
+        """미리보기의 명령 = 도는 명령(_run_tuning 이 이 목록을 그대로 돈다). 터미널 줄(tuning_view.commands)과 같은 인자."""
+        repo = self.console.repo
+
+        def add(step, note, argv, *, background=False, stop=(), trial=''):
+            commands.append({'stage': action_id, 'index': len(commands), 'step': step, 'trial': trial, 'note': note,
+                             'argv': list(argv), 'stop': list(stop), 'background': background})
+        if action_id == 'tune_new':
+            side, key = parameters.get('side'), parameters.get('test')
+            if side not in ARMS or key not in {t[0] for t in TU.TESTS}:
+                reasons.append('팔과 시험을 고를 것')
+                return
+            name, argv = TU.new_argv(repo, side, key)
+            add('prepare', f'새 실험 폴더 {name} · 오프라인 계획', argv)
+            return
+        side = action_id.rsplit('_', 1)[-1]
+        key = tune_pd_key(side)
+        procs = s.supervisor.table()
+        mine = next((p for p in procs if p['key'] == key and p['alive']), None)
+        if action_id.startswith('tune_pd_off_'):
+            if mine is None:
+                reasons.append(f'{side} 마찰 실험 pd 가 이 실행으로 떠 있지 않다')
+            add('pd_off', f'마찰 실험 pd launch 정지({key})', (), stop=(key,))
+            warnings.append('이 실행이 띄운 pd launch 만 SIGTERM 한다. 팔이 pd 에 붙들려 있으면 받친 뒤 끌 것.')
+            return
+        plan = TU.plan(repo, side, parameters.get('folder'))
+        reasons.extend(plan['reasons'])
+        if 'pd' not in plan:
+            return
+        pd_launch = re.compile(rf'pd_controller\.launch\.py\b.*\bsides:=\S*{side}')
+        others = [p['key'] for p in procs if p['alive'] and p['key'] != key and pd_launch.search(' '.join(p['argv']))]
+        own = s.supervisor.own_pgids()
+        foreign = [pid for pid, pgid, cmd in scan_processes() if pgid not in own and pd_launch.search(cmd)]
+        if others or foreign:
+            reasons.append(f"{side} pd 가 이미 떠 있다({', '.join([*others, *map(str, foreign)])}) — 내린 뒤 실행")
+        if mine is not None:
+            with s.feed_lock:
+                obs = s.feed.observed()
+            phase = (obs.status.get(PD.name(side)) or {}).get('phase', '상태 없음')
+            if tuple(mine['argv']) != plan['pd']:
+                reasons.append('다른 설정의 마찰 실험 pd 가 떠 있다 — pd 끄기 먼저')
+            elif phase != 'TRACKING':
+                reasons.append(f'떠 있는 마찰 실험 pd 가 {phase} — 이어 하려면 팔이 붙들린(TRACKING) 상태여야 한다(아니면 pd 끄기)')
+            else:
+                warnings.append('마찰 실험 pd 가 이미 떠서 팔을 붙들고 있다 — 기동 · engage 를 건너뛰고 붙들기 확인 뒤 남은 trial')
+        else:
+            add('pd', f'{side} pd 발행 모드 기동 — gains ok · IDLE 까지 기다린다', plan['pd'], background=True)
+            add('engage', f'{side} pd_engage — RAMPING 까지 기다린다', plan['engage'])
+        add('hold', f'{side} 팔 그 자리 붙들기 — TRACKING 확인', self._trigger_argv('pd/hold', side, ('TRACKING',)))
+        for trial, argv in plan['trials']:
+            add('trial', f'trial {trial}', argv, trial=trial)
+        warnings.append(f"★실기 동작 — {side} 팔 마찰 실험 {parameters.get('folder')}: 남은 trial {len(plan['trials'])}개 "
+                        f"(전체 {plan['n']} · 끝 {plan['done']}). 하나라도 실패하면 그 자리에서 멈춘다. "
+                        "정지 = 도는 단계만 멈추고 pd 는 끄지 않고 팔을 붙든다.")
+
+    def _run_tuning(self, s, description):
+        """승인한 명령 목록을 순서대로 — 실패 · 정지는 그 자리에서 멈춘다(예외 → _run 이 TRACKING 이면 pd/hold)."""
+        action, cmds = description['id'], description['commands']
+        if action == 'tune_new' or action.startswith('tune_pd_off_'):
+            c = cmds[0]
+            self._run_commands(s, action, [Command(tuple(c['argv']), note=c['note'], stop=tuple(c['stop']))])
+            return
+        side = action.rsplit('_', 1)[-1]
+        n = sum(c['step'] == 'trial' for c in cmds)
+        tu = self._status['tuning'] = {'side': side, 'folder': description['parameters'].get('folder'),
+                                       'step': '', 'trial': '', 'trial_i': 0, 'trial_n': n, 'error': ''}
+        try:
+            for c in cmds:
+                if self._cancel_policy.is_set():
+                    raise ConsoleError('운영자가 중단했다')
+                tu['step'] = c['step']
+                if c['step'] == 'hold':
+                    self._trigger(s, 'pd/hold', side, expect=('TRACKING',))
+                    continue
+                if c['step'] == 'trial':
+                    tu.update(trial=c['trial'], trial_i=tu['trial_i'] + 1)
+                self._tune_step(s, side, c)
+                if c['step'] == 'pd':
+                    self._wait_pd(s, side, lambda st: st.get('phase') == 'IDLE' and _gains_ok(st), 'gains ok · IDLE', TUNE_PD_UP_S)
+                elif c['step'] == 'engage':
+                    self._wait_pd(s, side, lambda st: st.get('phase') in ('RAMPING', 'TRACKING'), 'RAMPING', TUNE_RAMP_S)
+            tu['step'] = 'done'
+        except Exception as exc:
+            tu['error'] = tu['error'] or str(exc)
+            raise
+
+    def _tune_step(self, s, side, c):
+        sid = f"tune_{c['step']}_{side}"                # pd → tune_pd_<side>#0 = tune_pd_key
+        try:
+            self._run_commands(s, sid, [Command(tuple(c['argv']), note=c['note'], background=c['background'])])
+        except ConsoleError:
+            try:
+                lines = [ln.strip() for ln in s.supervisor.tail(f'{sid}#0').splitlines() if ln.strip()]
+            except (SupervisorError, OSError):
+                lines = []
+            if lines:
+                self._status['tuning']['error'] = lines[-1][-300:]
+            raise
+
+    def _wait_pd(self, s, side, want, label, timeout_s):
+        name, key, st = PD.name(side), tune_pd_key(side), {}
+        end = time.monotonic() + timeout_s
+        while time.monotonic() < end:
+            if self._cancel_policy.is_set():
+                raise ConsoleError('운영자가 중단했다')
+            if not s.supervisor.is_alive(key):
+                raise ConsoleError(f'{side} 마찰 실험 pd launch 가 죽었다 — 로그 {key}')
+            with s.feed_lock:
+                obs = s.feed.observed()
+            if obs.age_s.get(name, 1e9) <= STALE_S:
+                st = obs.status.get(name) or {}
+                if want(st):
+                    return
+            time.sleep(.1)
+        raise ConsoleError(f"{side} pd {label} 을 {timeout_s:.0f} s 안에 못 봤다 — 마지막 phase {st.get('phase', '상태 없음')}")
+
+    def stop_tuning(self, side):
+        """[실험 정지] — lease 없이(멈추기). 도는 단계만 멈춘다. pd 는 끄지 않는다(_run 이 TRACKING 이면 붙든다)."""
+        job = self._jobs.get(f'tune_{side}')
+        if side not in ARMS or job is None or not job.active:
+            raise ConsoleError(f'{side} 팔에 도는 마찰 실험이 없다', code=409)
+        job.cancel_policy.set()
+        if job.runner is not None:
+            job.runner.abort()
 
     def _preempt(self, s, sides=None):
         targets = self._policy_targets(s, sides)
@@ -918,6 +1071,8 @@ class ActionManager:
                 self._run_simplan(s, description)
             elif action.startswith('simrun_'):
                 self._run_simrun(s, description)
+            elif description['group'] == 'tuning':
+                self._run_tuning(s, description)
             for sid in description['stages']:
                 if description['group'] == 'policy':
                     run = self._run_control if action.startswith(CONTROL_PREFIX) else self._run_policy
@@ -941,6 +1096,8 @@ class ActionManager:
                         s.supervisor.stop(keys)
         except Exception as exc:  # retain failure and exact bundle position in the UI
             outcome, note = 'FAILED', str(exc)
+            if description['group'] == 'tuning' and self._cancel_policy.is_set():
+                outcome = ABORTED                    # [실험 정지] — 실패가 아니라 운영자가 멈춘 것
             s.event('action', f"✗ {description['id']}: {note}")
             if description['id'] != 'shutdown' and description['group'] != 'policy':
                 failure_stage, failure_runner = self._status.get('stage'), getattr(self, '_runner', None)

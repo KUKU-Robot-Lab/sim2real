@@ -1729,8 +1729,22 @@ function renderTuning(s) {
         <span class="badge ${last ? (last.stopped ? "bad" : last.complete ? "ok" : "live") : "mute"}">${last ? esc(tag(last)) : "폴더 없음"}</span></button>`;
     }).join("")}</div>
     ${row.folders.length > 1 ? `<div class="tu-row">${row.folders.map((f) => `<button type="button" class="btn btn-sm${exp && f === exp.name ? " on" : ""}" data-act="tu-folder" data-arg="${esc(f)}">${esc(f)}</button>`).join("")}</div>` : ""}
-    <p class="hint">정본 ${esc(T.runbook)} · 콘솔은 명령을 보내지 않는다 — 명령 줄을 터미널에 붙여 넣는다(sim2real 폴더에서).</p>`);
+    <p class="hint">정본 ${esc(T.runbook)} · [실험 시작] 한 번(승인 한 번)이 아래 1~6 을 차례로 돈다. 명령 줄은 확인용이다.</p>`);
   const phase = tuPhase(s, side);
+  // ★11.09 버튼 실행(actions.py tune_*) — 단계 · trial n/N · 마지막 오류 줄
+  const job = ((s.management && s.management.jobs) || []).find((j) => j.id === `tune_${side}`);
+  const tj = job && job.tuning, busy = !!(job && job.active), can = holding();
+  const pdUp = (s.procs || []).some((p) => p.key === `tune_pd_${side}#0` && p.alive);
+  const stepKo = { pd: "pd 기동", engage: "engage", hold: "붙들기", trial: "trial", done: "끝", "": "시작 전" };
+  put("tu-run", `<div class="tu-row">
+      <button class="btn btn-real" data-act="tu-run" data-arg="${esc(exp ? exp.name : "")}" ${can && !busy && exp && exp.prepared && !exp.complete ? "" : "disabled"}>▶ 실험 시작 ${exp ? esc(exp.name) : ""}</button>
+      <button class="btn-stop" data-act="tu-stop" data-arg="${side}" ${busy ? "" : "disabled"}>■ 실험 정지(pd 는 붙든 채)</button>
+      <button class="btn" data-act="tu-pd-off" data-arg="${side}" ${can && !busy && pdUp ? "" : "disabled"}>pd 끄기 ${SIDE_KO[side]}</button>
+      <button class="btn" data-act="tu-new" data-arg="${esc(row.key)}" ${can ? "" : "disabled"}>새 실험 준비 → ${esc(row.new_name)}</button></div>
+    ${tj ? `<p role="status" aria-live="polite"><span class="badge ${busy ? "live" : job.outcome === "DONE" ? "ok" : "bad"}">${busy ? "▶ 도는 중" : esc(job.outcome || "")}</span>
+      ${esc(tj.folder || "")} · 단계 ${esc(stepKo[tj.step] || tj.step)} · trial ${tj.trial_i}/${tj.trial_n}${tj.trial ? ` (${esc(tj.trial)})` : ""}</p>
+      ${tj.error ? `<p class="reasons bad">마지막 오류: ${esc(tj.error)}</p>` : ""}` : ""}
+    ${can ? "" : `<p class="hint">조작 권한(lease)을 잡아야 실행할 수 있다. 정지는 누구나.</p>`}`);
   put("tu-steps", `<ol class="tu-steps">${tuSteps(side, row, exp, phase).map((x) => `<li class="tu-step ${x.state}">
       <div class="tu-head"><span class="badge ${{ done: "ok", now: "live", stop: "bad", todo: "mute" }[x.state]}">${{ done: "✓ 됨", now: "▶ 지금", stop: "✗ 멈춤", todo: "대기" }[x.state]}</span>
         <b>${x.n}. ${esc(x.title)}</b></div>
@@ -1741,12 +1755,21 @@ function renderTuning(s) {
       `<tr><td class="mono">${esc(t.id)}</td><td>${{ pass: "✓ 통과", excluded: "✗ 제외", partial: "… 끊김", todo: "—" }[t.state]}</td><td>${esc(t.why)}</td></tr>`).join("")}</tbody></table>`) : ""}
     <div class="tu-row">${["pd_hold", "pd_release"].map((q) => `<button class="btn-stop" data-act="quick" data-arg="${q}:${side}">■ ${q === "pd_hold" ? "팔 그 자리 붙들기" : "PD 해제"} ${SIDE_KO[side]}</button>`).join("")}
       <button class="btn-stop" data-act="quick" data-arg="episode_stop">■ 에피소드 정지</button></div>
-    <p class="hint">trial 중단은 그 터미널에서 Ctrl-C, 팔은 [팔 그 자리 붙들기] 로 세운다.</p>`);
+    <p class="hint">trial 중단은 [실험 정지](터미널에서 돌렸다면 그 터미널에서 Ctrl-C), 팔은 [팔 그 자리 붙들기] 로 세운다.</p>`);
 }
 Object.assign(acts, {
   "tu-side"(v) { tuPick = { side: v }; tuSave(); if (S && S.session) renderTuning(S.session); },
   "tu-test"(v) { tuPick = { ...tuPick, test: v, folder: "" }; tuSave(); if (S && S.session) renderTuning(S.session); },
   "tu-folder"(v) { tuPick = { ...tuPick, folder: v }; tuSave(); if (S && S.session) renderTuning(S.session); },
+  "tu-run"(v) { return prepareAction(`tune_${tuPick.side === "left" ? "left" : "right"}`, { folder: v }); },
+  async "tu-stop"(v) { await call("POST", "/api/tuning/stop", { side: v }); toast("정지를 보냈다 — pd 는 끄지 않는다", [], true); refresh(); },
+  "tu-pd-off"(v) { return prepareAction(`tune_pd_off_${v}`); },
+  async "tu-new"(v) {                       // 로봇 명령 없음(폴더 · 오프라인 계획) — 승인 창 없이 바로
+    const side = tuPick.side === "left" ? "left" : "right";
+    const prepared = await call("POST", "/api/actions/prepare", { action: "tune_new", side, test: v });
+    await call("POST", "/api/actions/execute", { confirmation_id: prepared.confirmation_id });
+    toast("새 실험 준비를 시작했다 — 끝나면 폴더가 보인다", [], true); refresh();
+  },
 });
 
 // Workspace selections are server state. Polling never starts a policy or replaces the video element.

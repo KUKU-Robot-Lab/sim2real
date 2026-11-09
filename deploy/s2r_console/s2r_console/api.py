@@ -94,6 +94,10 @@ def _write(console: Console, method: str, path: str, data: dict, token: str | No
         console.episode("stop", operator=client, runner=str(data.get("runner", "") or ""))
         return 202, ok
 
+    if path == "/api/tuning/stop":                       # ★11.09 마찰 실험 정지도 lease 없이 — 도는 단계만 멈추고 pd 는 붙든 채 남긴다
+        console.actions.stop_tuning(str(data.get("side", "")))
+        return 202, ok
+
     if path == "/api/eval/rounds":                     # ★11.02 회차 기록 저장도 lease 없이 — 로봇에 아무것도 보내지 않는다(기록일 뿐)
         if method != "POST":
             return _fail(405, "POST 만 지원한다")

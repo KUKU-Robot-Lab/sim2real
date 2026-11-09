@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 from datetime import datetime
 from pathlib import Path
 
@@ -35,23 +36,73 @@ _NAME = re.compile(r"^(\d{6})_(.+)_(right|left)(?:_[b-z])?$")
 _CFG = re.compile(r"^pd_rh56f1_stationary_(right|left)_(.+)\.yaml$")
 
 
+def _pd_launch(side: str, cfg: str) -> str:
+    pd_cfg = f"deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_{side}_{cfg}.yaml"
+    return (f"ros2 launch deploy/policy_control/launch/pd_controller.launch.py "
+            f"contract:={CONTRACT} robot:=deploy/policy_control/config/robots/rh56f1_{side}_real.yaml "
+            f"pd_config:={pd_cfg} sides:={side} execute:=true stage:=full")
+
+
+def _engage(side: str) -> str:
+    return (f"python3 deploy/policy_control/tools/episode_ctl.py --side {side} --only pd_engage "
+            "--hold-s 10 --execute --approve pd_engage")
+
+
 def commands(side: str, test: tuple, folder: str, remaining: list | None = None) -> dict:
     """한 실험의 명령 줄(복사해 쓰는 글) — RUNBOOK 1 · 3 절과 같은 인자.
     remaining 을 주면 trial 줄은 남은 것만 돈다(RUNBOOK 4 절: 이어서 하면 남은 trial 만)."""
     _key, _label, _frag, cfg, stage, off, rep, _n = test
-    pd_cfg = f"deploy/policy_control/config/stationary_1108/pd_rh56f1_stationary_{side}_{cfg}.yaml"
     return {
         "prepare": f"analysis/friction/common/scripts/new_experiment.sh {folder} {side} {cfg} {stage} {off} {rep}",
-        "pd": (f"{ROS_ENV}{DDS} ros2 launch deploy/policy_control/launch/pd_controller.launch.py "
-               f"contract:={CONTRACT} robot:=deploy/policy_control/config/robots/rh56f1_{side}_real.yaml "
-               f"pd_config:={pd_cfg} sides:={side} execute:=true stage:=full"),
-        "engage": (f"{DDS} python3 deploy/policy_control/tools/episode_ctl.py --side {side} --only pd_engage "
-                   "--hold-s 10 --execute --approve pd_engage"),
+        "pd": f"{ROS_ENV}{DDS} {_pd_launch(side, cfg)}",
+        "engage": f"{DDS} {_engage(side)}",
         "hold": f"{ROS_ENV}{DDS} ros2 service call /policy_control/pd_{side}/hold std_srvs/srv/Trigger",
         "trials": (f"E=analysis/friction/{folder}; for t in {' '.join(remaining) if remaining else '$(cat $E/setup/trials.txt)'}; do {DDS} "
                    ".venv/bin/python deploy/policy_control/tools/stationary_tracking.py run "
                    "--plan $E/setup/plan/plan.json --trial $t --out $E/runs/$t --execute || break; done"),
     }
+
+
+def _sh(body: str) -> tuple:
+    """콘솔 감독자가 띄울 argv — ROS 셋 · DDS 를 다 싣는다(빠지면 rh56f1_interfaces ModuleNotFoundError, 11.09)."""
+    return ("bash", "-c", f"{ROS_ENV}{DDS} exec {body}")
+
+
+def new_argv(repo: Path, side: str, key: str) -> tuple[str, tuple]:
+    """새 실험 준비(new_experiment.sh, 로봇 명령 0) — (새 폴더 이름, argv). 이름은 오늘 날짜 · 있으면 _b …"""
+    test = next(t for t in TESTS if t[0] == key)
+    names = {p.name for p in (repo / ROOT).glob("*") if p.is_dir()}
+    name = _free_name(names, f"{datetime.now().strftime('%y%m%d')}_{test[2]}_{side}")
+    _k, _l, _f, cfg, stage, off, rep, _n = test
+    return name, ("bash", str(repo / ROOT / "common/scripts/new_experiment.sh"), name, side, cfg, stage, off, rep)
+
+
+def plan(repo: Path, side: str, name) -> dict:
+    """[실험 시작] 한 번에 도는 명령 — pd 기동 · engage · 남은 trial. 막는 이유가 있으면 reasons."""
+    m = _NAME.match(name) if isinstance(name, str) else None
+    if m is None or m.group(3) != side or not (repo / ROOT / name).is_dir():
+        return {"reasons": [f"{side} 팔의 실험 폴더를 고를 것"], "trials": []}
+    e = experiment(repo / ROOT / name)
+    reasons = []
+    if not e["prepared"] or not (repo / ROOT / name / "setup/plan/plan.json").is_file():
+        reasons.append("준비 안 된 폴더다 — 새 실험 준비 먼저")
+    if not e["cfg"]:
+        reasons.append("setup/ 에 PD 설정(pd_rh56f1_stationary_*.yaml)이 없다")
+    partial = [t["id"] for t in e["trials"] if t["state"] == "partial"]
+    if partial:      # 끊긴 runs/<trial>/ 을 덮어쓰지 않는다 — 사람이 보고 정리한다
+        reasons.append(f"끊긴 trial {', '.join(partial)} — runs/ 폴더를 다시 쓰지 않는다(정리하거나 새 폴더로)")
+    todo = [t["id"] for t in e["trials"] if t["state"] == "todo"]
+    if not todo:
+        reasons.append("남은 trial 이 없다")
+    if any(not re.fullmatch(r"\w[\w.-]*", t) for t in todo):     # trials.txt 는 파일 입력 — runs/ 밖으로 못 나가게
+        reasons.append("trials.txt 에 쓸 수 없는 trial 이름이 있다")
+    E = f"{ROOT}/{name}"
+    q = shlex.quote
+    return {"reasons": reasons, "n": e["n"], "done": e["done"],
+            "pd": _sh(_pd_launch(side, e["cfg"])), "engage": _sh(_engage(side)),
+            "trials": [(t, _sh(f".venv/bin/python deploy/policy_control/tools/stationary_tracking.py run "
+                               f"--plan {E}/setup/plan/plan.json --trial {q(t)} --out {q(f'{E}/runs/{t}')} --execute"))
+                       for t in todo]}
 
 
 def _trial(run: Path) -> dict:
