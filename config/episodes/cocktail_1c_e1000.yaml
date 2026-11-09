@@ -9,9 +9,9 @@
 #   실행기 대기(tilt 끝 4.0 s · 이송 끝 3.0 s)는 sim oneshot 실행기 값이고 실기는 e02668d 의 팔 정지 대기(/joint_states)가 대신한다.
 episode: {name: cocktail_1c_e1000, version: 1}   # v1(11.02): 1b v5 + 놓기 정책 right_n10_e1000 · left_n09_e3800
 objects:
-  SRC_BLUE: {topic: /objects/source240b_blue/pose}
-  # ★10.28 순서 B — 처음부터 탁자에 있다. ★10.29 구멍 옆 v1 상자만 받는다 · FP++ 는 분홍만 든 묶음 source240p(cocktail_1 머리말)
-  SRC_PINK: {topic: /objects/source240p_pink/pose, region: {x: [0.26, 0.305], y: [-0.365, -0.330]}}   # ★11.04 사용자 "허용 범위를 높여 둠" — +x 5 mm · +y 1 cm(손으로 놓으면 +x·+y 모서리 0~4 mm 밖에서 scene 거부). −x(손목) · −y(불가 자세)는 그대로
+  SRC_BLUE: {topic: /objects/source240_blue/pose}
+  # ★10.28 순서 B — 처음부터 탁자에 있다. ★10.29 구멍 옆 v1 상자만 받는다 · FP++ 는 분홍만 든 묶음 source240_pink(cocktail_1 머리말)
+  SRC_PINK: {topic: /objects/source240_pink/pose, region: {x: [0.26, 0.305], y: [-0.365, -0.330]}}   # ★11.04 사용자 "허용 범위를 높여 둠" — +x 5 mm · +y 1 cm(손으로 놓으면 +x·+y 모서리 0~4 mm 밖에서 scene 거부). −x(손목) · −y(불가 자세)는 그대로
   SHAKER: {topic: /objects/shaker_c_orange/pose}
 holders: {HOLDER_0: 0, HOLDER_1: 1, HOLDER_2: 2}
 holder_poses: config/cup_holder_poses_5090_v1.yaml

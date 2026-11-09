@@ -54,11 +54,11 @@ def test_a_contract_without_a_goal_box_or_a_missing_file_draws_nothing(tmp_path)
 
 def test_the_121432_cup_is_out_of_every_range_and_a_centred_cup_is_in():
     boxes = SM.boxes_from(ARTS, SLOTS, REPO)
-    m = SM.view(boxes, {"/objects/source240b_blue/pose": summ(0.342, -0.394),
+    m = SM.view(boxes, {"/objects/source240_blue/pose": summ(0.342, -0.394),
                         "/objects/shaker/pose": summ(0.25, -0.20),
                         "/objects/cup_l/pose": summ(0.25, 0.315)}, False)
     o = {x["name"]: x for x in m["objects"]}
-    assert o["source240b_blue"]["tone"] == "bad" and "9.4 cm" in o["source240b_blue"]["say"]
+    assert o["source240_blue"]["tone"] == "bad" and "9.4 cm" in o["source240_blue"]["say"]
     assert o["shaker"]["tone"] == "ok" and "오른팔" in o["shaker"]["say"]
     assert o["cup_l"]["tone"] == "warn" and "왼팔" in o["cup_l"]["say"]
 

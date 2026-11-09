@@ -6,7 +6,7 @@
 # + 복귀 → 끝. 붓기 궤적은 아직 손 안 컵 자리를 기준값(single734)으로 계획한다(쥔 자리 측정 반영은 미구현).
 episode: {name: tilt_base_d, version: 2}
 objects:
-  SRC: {topic: /objects/source240b_blue/pose}
+  SRC: {topic: /objects/source240_blue/pose}
   RCV: {topic: /objects/shaker_c_orange/pose}
 policies:
   rh_aglt_r: {policy: rh56f1/aglt/right_rcg03, kind: aglt, side: right}

@@ -6,7 +6,7 @@
 # 실기 회차마다 사용자 승인. 구슬 10 개. 홀더 = A1 재스캔 파일(tilt 여유 검사에만 쓴다).
 episode: {name: grasp2tilt_f_240, version: 1}
 objects:
-  SRC: {topic: /objects/source240b_blue/pose}
+  SRC: {topic: /objects/source240_blue/pose}
   RCV: {topic: /objects/shaker_c_orange/pose}
 holder_poses: config/cup_holder_poses_5090_v1.yaml
 policies:

@@ -81,9 +81,9 @@ def test_the_rh56f1_real_mission_draws_every_node_once_and_knows_every_command(r
     ros = Counter(n for b in d.boxes for n in b.ros)
     assert not {n: c for n, c in ros.items() if c > 1}                        # 같은 ROS 노드를 두 상자가 주장하지 않는다
     assert len({b.title for b in d.boxes}) == len(d.boxes)
-    # ★10.19 팔마다 실행기 상자 둘(좌우 동시 실행) → 22 · ★10.28 칵테일 분홍 FP++ 묶음(source240p) 컨테이너 상자 하나 → 23
+    # ★10.19 팔마다 실행기 상자 둘(좌우 동시 실행) → 22 · ★10.28 칵테일 분홍 FP++ 묶음(source240_pink) 컨테이너 상자 하나 → 23
     # ★11.05 경로 S 머리 깊이(head_depth) 상자 하나 → 24 · ★11.07 경로 M 머리 마스크(head_mask) 상자 하나 → 25 · ★11.08 경로 F 분홍 src200(grasp_fk_right)이 FP++ source200 묶음 상자 하나 → 26
-    # ★11.09 경로 F 물체 버튼 — src240 주황 · 분홍(source240 묶음) 상자 하나 → 27
+    # ★11.09 경로 F 물체 버튼 — source240 주황 · 분홍 상자 하나 → 27
     assert len(d.boxes) <= 27, [b.id for b in d.boxes]
 
 
@@ -243,7 +243,8 @@ def test_the_perception_chain_runs_on_the_perception_pc_and_the_udp_receiver_swi
     boxes = [d.box(f"fpp_{g}") for g in groups]  # 10.08 색 다른 같은 모양 = 묶음 컨테이너 하나 = 상자 하나(묶음마다)
     assert all(b.units == ("cups#2",) and b.host == host for b in boxes)
     assert sum(b.ros == ("/fpp_pose_rx",) for b in boxes) == 1              # 수신 노드 하나 = 상자 하나
-    assert not [b.id for b in d.boxes if b.id in {f"fpp_{n}" for n in sides.values()}]
+    # 물체마다 상자가 아니다 — ★11.10 단독 묶음(물체 = 묶음 이름)은 그 묶음 상자 하나
+    assert not [b.id for b in d.boxes if b.id in {f"fpp_{n}" for n in sides.values() if n not in groups}]
     # 그림은 받는 쪽이 있는 물체만 잇는다 — 정책이 읽는 팔별 물체
     assert {w.topic for w in d.wires if w.src in {f"fpp_{g}" for g in groups} and w.dst == "object_pose"} == {
         f"/perception_plus_plus/{n}/pose" for n in sides.values()}
@@ -552,7 +553,7 @@ def test_the_fake_rh56f1_picture_has_the_real_pictures_boxes():
     titles = {b.title for b in real.boxes}
     # fake 에 없는 것: 인지(카메라 · FP++ · 런처 — 정지 컵을 fake 가 바로 낸다), 목 드라이버(fake 에는 목이 없다). fake 에만 있는 것: 막히지 않은 붓기 노드
     missing = {b.title for b in real.boxes} - {b.title for b in fake.boxes}
-    assert missing <= {f"인지 런처 · {GEN.PERCEPTION_HOST}", "카메라 (RealSense)", "목 상태 (head)", "/objects/cup_holder_1/pose (바깥)", *(f"FPP 추적 · {g}" for g in (*_active_groups(), "source240b", "source240p", "source200", "source240"))}, missing   # rg3 파지 에피소드의 오른 컵 = source240b · ★11.08 grasp_fk = source200
+    assert missing <= {f"인지 런처 · {GEN.PERCEPTION_HOST}", "카메라 (RealSense)", "목 상태 (head)", "/objects/cup_holder_1/pose (바깥)", *(f"FPP 추적 · {g}" for g in (*_active_groups(), "source240_blue", "source240_pink", "source200", "source240_orange"))}, missing   # rg3 파지 에피소드의 오른 컵 = source240_blue · ★11.08 grasp_fk = source200
     extra = {b.title for b in fake.boxes} - titles
     # 10.13 원격 인지 실기에는 마커 노드가 없다 — fake 는 그대로 홀더 노드 상자를 그린다
     assert extra <= {"pour_fj_node · tilt 정책 (오른팔 · 왼팔)", *([W.HOLDER_TITLE] if GEN.REMOTE_PERCEPTION else [])}, extra

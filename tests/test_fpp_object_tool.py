@@ -66,8 +66,16 @@ def test_add_writes_one_object_per_colour_in_its_own_group_and_the_registry_load
         assert spec.origin_above_bottom_m == pytest.approx(0.085)
         assert spec.aabb[0][2] == pytest.approx(-0.085, abs=1e-4) and spec.aabb[1][2] == pytest.approx(0.155, abs=1e-4)
         assert spec.symmetry_axis == (0.0, 0.0, 1.0) and not spec.symmetry_flip
-    again = F.add_object(repo, stl, name="bottle", colors=["blue"], origin_above_bottom=0.085)   # 다시 하면 갈아 끼운다
-    assert again == ["bottle_blue"] and "bottle_orange" not in load_registry(repo / "config" / "objects.yaml").names()
+    again = F.add_object(repo, stl, name="bottle", colors=["orange", "blue"], origin_above_bottom=0.085)   # 다시 하면 갈아 끼운다
+    assert again == ["bottle_orange", "bottle_blue"] and "bottle_pink" not in load_registry(repo / "config" / "objects.yaml").names()
+
+
+def test_one_colour_is_its_own_group_file_and_mesh(repo, tmp_path):
+    """★11.10 사용자: 한 물체 = 한 이름 — 색 하나면 물체 · 묶음 · 파일 · 메쉬가 모두 <모양>_<색>."""
+    assert F.add_object(repo, _bottle_stl(tmp_path / "b.stl"), name="bottle", colors=["blue"], origin_above_bottom=0.085) == ["bottle_blue"]
+    spec = load_registry(repo / "config" / "objects.yaml").get("bottle_blue")
+    assert spec.fpp["group"] == "bottle_blue" and spec.fpp["mesh_path"] == "assets/s2r_meshes/bottle_blue.obj"
+    assert (repo / "config" / "objects.d" / "bottle_blue.yaml").is_file()
 
 
 def test_a_name_already_in_objects_yaml_is_refused(repo, tmp_path):
@@ -165,6 +173,6 @@ def test_calibration_counts_only_blobs_of_the_registered_colour_names():
 def test_a_wide_measured_hue_spread_is_capped_so_neighbouring_colours_stay_out(repo, tmp_path):
     """10.09 주황 쉐이커: 안쪽이 어두운 붉은색이라 hue 12.1 ± 6.3 → 3σ 면 ±19(노랑 23~28 · 빨강까지). 폭은 ±12 로 자른다."""
     F.add_object(repo, _bottle_stl(tmp_path / "s.stl"), name="s", colors=["orange"], origin_above_bottom=0.065)
-    F.set_hues(repo, "s", {"s_orange": (12.1, 6.3)})
+    F.set_hues(repo, "s_orange", {"s_orange": (12.1, 6.3)})
     reg = load_registry(repo / "config" / "objects.yaml")
     assert reg.get("s_orange").fpp["color"] == [0.1, 24.1]

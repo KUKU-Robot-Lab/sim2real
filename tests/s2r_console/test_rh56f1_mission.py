@@ -236,9 +236,9 @@ def test_real_cups_run_fpp_on_the_perception_pc_after_the_head_home_and_shutdown
     cups = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "cups")]
     sys.path.insert(0, str(REPO / "scripts"))
     side = [ACTIVE_SIDES[s] for s in ("right", "left") if s in ACTIVE_SIDES]
-    # ★10.28 칵테일 분홍 — 에피소드가 찍는 실물도 띄운다(팔 물체 묶음 밖은 분홍만 든 묶음 source240p 하나)
+    # ★10.28 칵테일 분홍 — 에피소드가 찍는 실물도 띄운다(팔 물체 묶음 밖은 분홍만 든 묶음 source240_pink 하나)
     # ★11.03 사용자 "shaker는 현재 orange" — 묶음의 나머지 색은 넣지 않는다(GPU 24 GB)
-    objs = " ".join(dict.fromkeys([*side, "source240p_pink"]))
+    objs = " ".join(dict.fromkeys([*side, "source240_pink"]))
     assert not {"shaker_c_blue", "shaker_c_pink"} & set(objs.split())
     from perception_launcher_core import FIRST_ROUND_S
     assert GEN._start_wait() >= len(GEN._groups()) * FIRST_ROUND_S          # 11.03 묶음을 하나씩 — 묶음마다 첫 회차 상한
@@ -617,7 +617,7 @@ def test_the_remote_vision_recorder_runs_on_the_perception_pc_venv():
     """10.13 vision-3090 시스템 python3 는 scipy 가 깨져(~/.local numpy 2.2) 기록기가 _base_from_camera 에서 죽는다."""
     if not GEN.REMOTE_PERCEPTION:
         return
-    rec = GEN._vision_record("episode_x", ["source240b_blue"], 15.0)
+    rec = GEN._vision_record("episode_x", ["source240_blue"], 15.0)
     assert f"{GEN.REMOTE_PY} scripts/nodes/vision_recorder.py" in " ".join(map(str, rec["argv"]))
 
 

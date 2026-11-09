@@ -137,7 +137,7 @@ class _Job:
 
 
 # rg3 에피소드 파일(config/episodes/grasp_rg3_<팔>.yaml)의 기본 컵 — 카드 물체로 바꿀 대상(목록에 없어도)
-RG3_DEFAULT_OBJECTS = ('source240b_blue', 'shaker_c_orange')
+RG3_DEFAULT_OBJECTS = ('source240_blue', 'shaker_c_orange')
 
 
 def card_stage(card) -> str:
@@ -793,7 +793,7 @@ class ActionManager:
             if any('episode_runner_node.py' in a for a in argv):
                 argv += ('-p', f"policy_object:={obj['policy_object']}", '-p', f"cup_object:={obj['id']}")
             cmd = replace(cmd, argv=argv)
-            # ★10.19 실기 bag 133007: 왼팔 기본 물체는 shaker_c_orange 라 source240b_blue 만 바꾸면 카드 물체(source240) 토픽이
+            # ★10.19 실기 bag 133007: 왼팔 기본 물체는 shaker_c_orange 라 source240_blue 만 바꾸면 카드 물체(source240) 토픽이
             #   기록에서 빠졌다 — rg3 에피소드는 컵이 하나이니 목록의 다른 물체 토픽을 모두 카드 물체로 바꾼다.
             others = sorted(({o['id'] for o in s.workspace.objects} | set(RG3_DEFAULT_OBJECTS)) - {obj['id']})
 

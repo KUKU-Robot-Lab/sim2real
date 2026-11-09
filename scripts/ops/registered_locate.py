@@ -35,7 +35,7 @@ def load_spec(repo, object_id):
     from perception_plus_plus_core.head_scan.locate import ObjectSpec
     repo = Path(repo).resolve()
     registered = load_registry(repo / 'config/objects.yaml').get(object_id)
-    if registered.fpp.get('group') not in ('source200', 'source240', 'source240b', 'shaker_c'):
+    if registered.fpp.get('group') not in ('source200', 'source240_blue', 'source240_orange', 'source240_pink', 'shaker_c'):
         raise ValueError('color locate unsupported for this object')
     mesh_path = Path(registered.fpp['mesh_path'])
     if mesh_path.parts[:2] == ('assets', 's2r_meshes'):

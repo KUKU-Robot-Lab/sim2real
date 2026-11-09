@@ -16,7 +16,7 @@ REPO = Path(__file__).resolve().parents[2]
 EPISODES = REPO / "config" / "episodes"
 POLICY = {"right": "rh56f1/aglt/right_neo03m", "left": "rh56f1/aglt/left_neo03"}   # 10.13 rg3s(actor 94 · hand_block · grasp_hold)
 DEFAULT_OBJECT = {"right": "source240_real", "left": "shaker_c_real"}
-CUP_TOPIC = {"right": "/objects/source240b_blue/pose", "left": "/objects/shaker_c_orange/pose"}
+CUP_TOPIC = {"right": "/objects/source240_blue/pose", "left": "/objects/shaker_c_orange/pose"}
 
 
 def _ep(side: str):

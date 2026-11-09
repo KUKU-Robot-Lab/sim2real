@@ -11,7 +11,7 @@
 # 홀더 1 = 교사 right_n10_e4000 뱅크 홀더 범위 안(cocktail 파랑과 같은 칸). 바깥 이웃 칸은 비워 둔다.
 episode: {name: place_m_right, version: 2}
 objects:
-  CUP: {topic: /objects/source240b_blue/pose}
+  CUP: {topic: /objects/source240_blue/pose}
 holders: {PLACE_HOLDER: 1}
 holder_poses: config/cup_holder_poses_5090_v1.yaml
 policies:

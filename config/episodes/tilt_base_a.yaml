@@ -6,7 +6,7 @@
 # 비드 10 개를 병에 넣고 시작한다(결정 11). 끝난 뒤 옮긴 · 흘린 비드를 센다 — 손을 펴거나 홈으로 가는 것은 운영자가 한다.
 episode: {name: tilt_base_a, version: 2}
 objects:
-  SRC: {topic: /objects/source240b_blue/pose}
+  SRC: {topic: /objects/source240_blue/pose}
   RCV: {topic: /objects/shaker_c_orange/pose}
 policies:
   rh_aglt_r: {policy: rh56f1/aglt/right_rg3wo, kind: aglt, side: right}

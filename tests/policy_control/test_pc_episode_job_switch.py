@@ -22,8 +22,8 @@ from policy_control.episode_runner import EpisodeManager
 from policy_control.pour_fj_node import PourFjNode, PourFjNodeError
 
 EPISODES = Path(__file__).resolve().parents[2] / "config" / "episodes"
-BLUE_LIVE = "/objects/source240b_blue/live_pose"
-PINK_LIVE = "/objects/source240p_pink/live_pose"
+BLUE_LIVE = "/objects/source240_blue/live_pose"
+PINK_LIVE = "/objects/source240_pink/live_pose"
 NO_TIN = {"attach_source": "", "tin_json": ""}    # ★11.07 place job 마다 늘 넣는다(빈 값 = 계약 그대로)
 
 

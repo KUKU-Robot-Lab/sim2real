@@ -11,7 +11,7 @@
 # 컵 자리는 실측이 아니다 — tilt 는 기준 출발(single734_t120)의 손 안 컵 자리로 계획한다. 그 자리(손바닥 안쪽, 병 입구가 위)에 댄다.
 episode: {name: tilt_base_b, version: 1}
 objects:
-  SRC: {topic: /objects/source240b_blue/pose}
+  SRC: {topic: /objects/source240_blue/pose}
   RCV: {topic: /objects/shaker_c_orange/pose}
 trajectories:
   go_home: {kind: rehome, sides: [right, left]}

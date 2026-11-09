@@ -590,7 +590,7 @@ stages:
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
   title: '[에피소드] grasp_f_shaker_c_orange_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
-- id: episode_grasp_f_source240b_blue_left
+- id: episode_grasp_f_source240_blue_left
   group: policy
   lane: arm_left
   skippable: true
@@ -598,7 +598,7 @@ stages:
   - home_left
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
-  title: '[에피소드] grasp_f_source240b_blue_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+  title: '[에피소드] grasp_f_source240_blue_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
 - id: episode_grasp_f_source240_orange_left
   group: policy
   lane: arm_left
@@ -913,10 +913,10 @@ run:
     - episode_grasp_f_shaker_c_orange_right#1
     - episode_grasp_f_shaker_c_orange_right#5
     - episode_grasp_f_shaker_c_orange_right#6
-    - episode_grasp_f_source240b_blue_left#0
-    - episode_grasp_f_source240b_blue_left#1
-    - episode_grasp_f_source240b_blue_left#5
-    - episode_grasp_f_source240b_blue_left#6
+    - episode_grasp_f_source240_blue_left#0
+    - episode_grasp_f_source240_blue_left#1
+    - episode_grasp_f_source240_blue_left#5
+    - episode_grasp_f_source240_blue_left#6
     - episode_grasp_f_source240_orange_left#0
     - episode_grasp_f_source240_orange_left#1
     - episode_grasp_f_source240_orange_left#5
@@ -2611,7 +2611,7 @@ run:
     execute_args:
     - --execute
   episode_pick_place_right:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -2622,9 +2622,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -2635,7 +2635,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     background: true
   - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
@@ -2693,7 +2693,7 @@ run:
     - -p
     - stop_on_target:=true
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -2751,7 +2751,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source240b_blue/pose
+    - cup_topic:=/objects/source240_blue/pose
     - -p
     - holder:=1
     - -p
@@ -2957,7 +2957,7 @@ run:
     - episode_pick_place_left#1
     - episode_pick_place_left#0
   episode_grasp_c_right:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -2968,9 +2968,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -2981,7 +2981,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -3020,7 +3020,7 @@ run:
     - -p
     - approach_grasp:=stop_ready=1
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -3251,7 +3251,7 @@ run:
     stop:
     - episode_tilt_base_b#3
   episode_tilt_base_c:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -3262,9 +3262,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -3275,7 +3275,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     background: true
   - note: fake 물체 — /objects/shaker_c_orange/pose(aglt 학습 배치 x 0.25)
     argv:
@@ -3340,7 +3340,7 @@ run:
     - -p
     - approach_grasp:=stop_ready=1
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -3465,7 +3465,7 @@ run:
     - episode_tilt_base_c#1
     - episode_tilt_base_c#0
   episode_tilt_base_d:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -3476,11 +3476,11 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     - --follow-side
     - right
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -3491,7 +3491,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     - --follow-side
     - right
     background: true
@@ -3567,7 +3567,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -3697,7 +3697,7 @@ run:
     - episode_tilt_base_d#1
     - episode_tilt_base_d#0
   episode_grasp_b_right:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -3708,11 +3708,11 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     - --follow-side
     - right
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -3723,7 +3723,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     - --follow-side
     - right
     background: true
@@ -3841,7 +3841,7 @@ run:
     - episode_grasp_b_left#1
     - episode_grasp_b_left#0
   episode_grasp_d_right:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -3852,11 +3852,11 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     - --follow-side
     - right
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -3867,7 +3867,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     - --follow-side
     - right
     background: true
@@ -3913,7 +3913,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -4115,7 +4115,7 @@ run:
     - episode_grasp_d_left#1
     - episode_grasp_d_left#0
   episode_grasp_e_right:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -4126,9 +4126,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -4139,7 +4139,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -4188,7 +4188,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -4391,7 +4391,7 @@ run:
     - episode_grasp_e_left#1
     - episode_grasp_e_left#0
   episode_grasp_f_right:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -4402,9 +4402,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -4415,7 +4415,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -4464,7 +4464,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -5370,8 +5370,8 @@ run:
     - episode_grasp_f_shaker_c_orange_right#5
     - episode_grasp_f_shaker_c_orange_right#1
     - episode_grasp_f_shaker_c_orange_right#0
-  episode_grasp_f_source240b_blue_left:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  episode_grasp_f_source240_blue_left:
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -5382,9 +5382,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -5395,14 +5395,14 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/episode_run.py'
     - --episode
-    - config/episodes/grasp_f_source240b_blue_left.yaml
+    - config/episodes/grasp_f_source240_blue_left.yaml
     - --plan
   - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
     argv:
@@ -5444,7 +5444,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -5486,7 +5486,7 @@ run:
     - -p
     - max_episode_s:=33.0
     background: true
-  - note: 에피소드 실행기 episode_runner_left — grasp_f_source240b_blue_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240b_blue_left)
+  - note: 에피소드 실행기 episode_runner_left — grasp_f_source240_blue_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240_blue_left)
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
@@ -5494,7 +5494,7 @@ run:
     - -r
     - __node:=episode_runner_left
     - -p
-    - episode:=config/episodes/grasp_f_source240b_blue_left.yaml
+    - episode:=config/episodes/grasp_f_source240_blue_left.yaml
     - -p
     - robot:=rh56f1
     background: true
@@ -5506,10 +5506,10 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_f_source240b_blue_left#6
-    - episode_grasp_f_source240b_blue_left#5
-    - episode_grasp_f_source240b_blue_left#1
-    - episode_grasp_f_source240b_blue_left#0
+    - episode_grasp_f_source240_blue_left#6
+    - episode_grasp_f_source240_blue_left#5
+    - episode_grasp_f_source240_blue_left#1
+    - episode_grasp_f_source240_blue_left#0
   episode_grasp_f_source240_orange_left:
   - note: fake 물체 — /objects/source240_orange/pose(aglt 학습 배치 x 0.25)
     argv:
@@ -6071,7 +6071,7 @@ run:
     - episode_grasp_f_source200_pink_left#1
     - episode_grasp_f_source200_pink_left#0
   episode_pick_place_f_right:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -6082,9 +6082,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -6095,7 +6095,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     background: true
   - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
@@ -6164,7 +6164,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -6222,7 +6222,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source240b_blue/pose
+    - cup_topic:=/objects/source240_blue/pose
     - -p
     - holder:=1
     - -p
@@ -6439,7 +6439,7 @@ run:
     - episode_pick_place_f_left#1
     - episode_pick_place_f_left#0
   episode_grasp2tilt_f_240:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -6450,9 +6450,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -6463,7 +6463,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     background: true
   - note: fake 물체 — /objects/shaker_c_orange/pose(aglt 학습 배치 x 0.25)
     argv:
@@ -6538,7 +6538,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -6673,7 +6673,7 @@ run:
     - episode_grasp2tilt_f_240#1
     - episode_grasp2tilt_f_240#0
   episode_cocktail_1:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -6684,9 +6684,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -6697,9 +6697,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     background: true
-  - note: fake 물체 — /objects/source240p_pink/pose(자리 상자 가운데)
+  - note: fake 물체 — /objects/source240_pink/pose(자리 상자 가운데)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -6710,9 +6710,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240p_pink/pose
+    - /objects/source240_pink/pose
     background: true
-  - note: fake 물체 — /objects/source240p_pink/live_pose(자리 상자 가운데)
+  - note: fake 물체 — /objects/source240_pink/live_pose(자리 상자 가운데)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -6723,7 +6723,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240p_pink/live_pose
+    - /objects/source240_pink/live_pose
     background: true
   - note: fake 물체 — /objects/shaker_c_orange/pose(aglt 학습 배치 x 0.25)
     argv:
@@ -6858,7 +6858,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -6985,7 +6985,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source240b_blue/pose
+    - cup_topic:=/objects/source240_blue/pose
     - -p
     - holder:=1
     - -p
@@ -7050,7 +7050,7 @@ run:
     - episode_cocktail_1#1
     - episode_cocktail_1#0
   episode_cocktail_1b:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -7061,9 +7061,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -7074,9 +7074,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     background: true
-  - note: fake 물체 — /objects/source240p_pink/pose(자리 상자 가운데)
+  - note: fake 물체 — /objects/source240_pink/pose(자리 상자 가운데)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -7087,9 +7087,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240p_pink/pose
+    - /objects/source240_pink/pose
     background: true
-  - note: fake 물체 — /objects/source240p_pink/live_pose(자리 상자 가운데)
+  - note: fake 물체 — /objects/source240_pink/live_pose(자리 상자 가운데)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -7100,7 +7100,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240p_pink/live_pose
+    - /objects/source240_pink/live_pose
     background: true
   - note: fake 물체 — /objects/shaker_c_orange/pose(aglt 학습 배치 x 0.25)
     argv:
@@ -7235,7 +7235,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -7362,7 +7362,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source240b_blue/pose
+    - cup_topic:=/objects/source240_blue/pose
     - -p
     - holder:=1
     - -p
@@ -7427,7 +7427,7 @@ run:
     - episode_cocktail_1b#1
     - episode_cocktail_1b#0
   episode_cocktail_1c_e1000:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -7438,9 +7438,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -7451,9 +7451,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     background: true
-  - note: fake 물체 — /objects/source240p_pink/pose(자리 상자 가운데)
+  - note: fake 물체 — /objects/source240_pink/pose(자리 상자 가운데)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -7464,9 +7464,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240p_pink/pose
+    - /objects/source240_pink/pose
     background: true
-  - note: fake 물체 — /objects/source240p_pink/live_pose(자리 상자 가운데)
+  - note: fake 물체 — /objects/source240_pink/live_pose(자리 상자 가운데)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -7477,7 +7477,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240p_pink/live_pose
+    - /objects/source240_pink/live_pose
     background: true
   - note: fake 물체 — /objects/shaker_c_orange/pose(aglt 학습 배치 x 0.25)
     argv:
@@ -7612,7 +7612,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -7743,7 +7743,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - holder:=1
     - -p
@@ -7808,7 +7808,7 @@ run:
     - episode_cocktail_1c_e1000#1
     - episode_cocktail_1c_e1000#0
   episode_cocktail_1c_e4000:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -7819,9 +7819,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -7832,9 +7832,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     background: true
-  - note: fake 물체 — /objects/source240p_pink/pose(자리 상자 가운데)
+  - note: fake 물체 — /objects/source240_pink/pose(자리 상자 가운데)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -7845,9 +7845,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240p_pink/pose
+    - /objects/source240_pink/pose
     background: true
-  - note: fake 물체 — /objects/source240p_pink/live_pose(자리 상자 가운데)
+  - note: fake 물체 — /objects/source240_pink/live_pose(자리 상자 가운데)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -7858,7 +7858,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240p_pink/live_pose
+    - /objects/source240_pink/live_pose
     background: true
   - note: fake 물체 — /objects/shaker_c_orange/pose(aglt 학습 배치 x 0.25)
     argv:
@@ -7993,7 +7993,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -8124,7 +8124,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - holder:=1
     - -p
@@ -8189,7 +8189,7 @@ run:
     - episode_cocktail_1c_e4000#1
     - episode_cocktail_1c_e4000#0
   episode_grasp_s_right:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -8200,9 +8200,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -8213,7 +8213,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -8270,7 +8270,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -8483,7 +8483,7 @@ run:
     - episode_grasp_s_left#1
     - episode_grasp_s_left#0
   episode_grasp_m_right:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -8494,9 +8494,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -8507,7 +8507,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     background: true
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
     argv:
@@ -8581,7 +8581,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -8813,7 +8813,7 @@ run:
     - episode_grasp_m_left#1
     - episode_grasp_m_left#0
   episode_place_m_right:
-  - note: fake 물체 — /objects/source240b_blue/pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -8824,9 +8824,9 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/pose
+    - /objects/source240_blue/pose
     background: true
-  - note: fake 물체 — /objects/source240b_blue/live_pose(aglt 학습 배치 x 0.25)
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
     - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
@@ -8837,7 +8837,7 @@ run:
     - --z
     - '0.29'
     - --topic
-    - /objects/source240b_blue/live_pose
+    - /objects/source240_blue/live_pose
     background: true
   - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
     argv:
@@ -8906,7 +8906,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -8993,7 +8993,7 @@ run:
     - -p
     - device:=cuda
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - holder:=1
     - -p

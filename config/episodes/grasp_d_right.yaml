@@ -1,4 +1,4 @@
-# 경로 D — right 손 source240(파란 병, FP++ source240b_blue).
+# 경로 D — right 손 source240(파란 병, FP++ source240_blue).
 # ★10.20 사용자 "grasp_b 는 그대로 두고, grasp_d 를 1-b 접근에 rcg03 으로 교체": 접근 = 1-B reach(ready_carry · aglt_new ReadyApproach
 # 사전 파지, 테이블 · 자기 충돌 · 반대팔 · 관절 검사, tools/plan_reach.py --stop pregrasp) — 들어가기는 하지 않고 사전 파지 자리
 # (컵 축 2.5 R · 높이 0, 0 에서 안 되면 +1 · 2 · 3 cm)에서 멈춘다 = rcg03 학습 시작 자세(aglt_start=ready, sim 사전 파지 IK · Mover 와
@@ -10,7 +10,7 @@
 # 물체 바꾸기: 실행기 파라미터 -p policy_object:=<source240_real|source200_real|shaker_c_real> -p cup_object:=<FP++ 물체 이름>.
 episode: {name: grasp_d_right, version: 2}
 objects:
-  CUP: {topic: /objects/source240b_blue/pose}
+  CUP: {topic: /objects/source240_blue/pose}
 policies:
   rh_aglt_r: {policy: rh56f1/aglt/right_rcg03, kind: aglt, side: right}
 trajectories:

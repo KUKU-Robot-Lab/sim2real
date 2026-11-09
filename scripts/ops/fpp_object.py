@@ -2,12 +2,13 @@
 """CAD 하나로 FP++ 물체를 등록하고, 색을 카메라로 맞추고, 정책이 볼 물체를 고른다(10.09 사용자: "cad 만 올리면 자동으로").
 
     # 1) 등록 — 메쉬(m · 원점) + config/objects.d/<이름>.yaml(색마다 물체 하나, 묶음 = 이름). 어느 PC 에서나
-    python3 scripts/ops/fpp_object.py add <cad.stl|obj|ply> --name source240 --colors orange,pink \\
+    #    live 가 필요한 물체는 색 하나씩 등록한다 — 물체 = 묶음 = 파일 = <모양>_<색>(묶음 컨테이너는 물체 하나만 live)
+    python3 scripts/ops/fpp_object.py add <cad.stl|obj|ply> --name source240 --colors pink \\
         [--origin-above-bottom 0.085] [--units auto|mm|m] [--class 39] [--no-symmetric] [--flip]
     # 2) 색 맞춤 — 로봇 PC(카메라 켠 상태). 물체를 테이블에 왼쪽부터 --colors 순서로 놓고. hue 를 재서 파일에 적는다
-    python3 scripts/ops/fpp_object.py calib source240
+    python3 scripts/ops/fpp_object.py calib source240_pink
     # 3) 정책이 볼 물체 — config/fpp_active.yaml + 미션 다시 생성(컵 단계 · 정책 cup_topic 이 이것을 따른다)
-    python3 scripts/ops/fpp_object.py activate source240 --right source240_pink --left source240_orange
+    python3 scripts/ops/fpp_object.py activate --right source240_blue --left shaker_c_orange
 
 그 뒤 커밋 → push → 로봇 PC pull(손 복사 금지). 상황판 컵 단계가 묶음 컨테이너(fpp_<이름>) 하나로 한 번 찍는다.
 
@@ -105,12 +106,16 @@ def _objects_yaml_names(repo: Path) -> set[str]:
 def add_object(repo: Path, cad: Path, *, name: str, colors: list[str], origin_above_bottom: float | None,
                units: str = "auto", yolo_class: int = DEFAULT_CLASS, symmetric: bool = True, flip: bool = False,
                dry_run: bool = False) -> list[str]:
-    """메쉬 + objects.d/<name>.yaml(색마다 <name>_<색>, 묶음 <name>). 같은 이름을 다시 하면 파일을 갈아 끼운다."""
+    """메쉬 + objects.d/<name>.yaml(색마다 <name>_<색>, 묶음 <name>). 같은 이름을 다시 하면 파일을 갈아 끼운다.
+    색이 하나면 묶음 · 파일 · 메쉬 이름도 <name>_<색>(11.10 사용자: 한 물체 = 한 이름 — 묶음 컨테이너는 물체 하나만 live 추적)."""
     repo = Path(repo)
     for c in colors:
         C.hue_ranges(c)                                           # 모르는 색 이름이면 여기서 ValueError
-    names = [f"{name}_{c}" for c in colors]
-    clash = sorted(({name, *names}) & _objects_yaml_names(repo))
+    base = name
+    if len(colors) == 1:
+        name = f"{name}_{colors[0]}"
+    names = [name] if len(colors) == 1 else [f"{name}_{c}" for c in colors]
+    clash = sorted(({base, name, *names}) & _objects_yaml_names(repo))
     if clash:
         raise ValueError(f"{', '.join(clash)} 는 config/objects.yaml 에 손으로 적힌 물체다 — 다른 --name")
     if dry_run:
@@ -290,7 +295,8 @@ def main(argv: list[str] | None = None) -> int:
         names = add_object(_ROOT, args.cad, name=args.name, colors=[x.strip() for x in args.colors.split(",") if x.strip()],
                            origin_above_bottom=args.origin_above_bottom, units=args.units, yolo_class=args.yolo_class,
                            symmetric=not args.no_symmetric, flip=args.flip)
-        print(f"[fpp_object] 등록: {', '.join(names)} · 묶음 {args.name} · {MESH_DIR}/{args.name}.obj · {DROPIN}/{args.name}.yaml")
+        g = names[0] if len(names) == 1 else args.name
+        print(f"[fpp_object] 등록: {', '.join(names)} · 묶음 {g} · {MESH_DIR}/{g}.obj · {DROPIN}/{g}.yaml")
         print("  다음: (로봇 PC, 물체를 왼쪽부터 놓고) calib → activate → 커밋 · push · pull")
     elif args.cmd == "calib":
         got = calib(_ROOT, args.name, args.camera_extrinsics)

@@ -1039,7 +1039,7 @@ function xpMain(s, X, it, key, side) {
 
 // ★11.09 사용자 "경로 F 안에서 버튼으로 컵종류와 색깔을 선택하고, Perception Refresh를 바로 … 반복 실험" — 컵 줄 · 색 줄 · 인지 다시 찍기.
 // 인지는 setting 탭과 같은 perception_refresh(고른 물체만). 물체가 작업 공간에서 꺼져 있으면 먼저 켠다(FP++ 묶음이 다시 뜬다).
-const XP_CUPS = ["src240", "src200", "shaker"];
+const XP_CUPS = ["source240", "source200", "shaker"];
 function xpObjects(s, side, key) {
   const objs = side.objects;
   if (!objs) return "";

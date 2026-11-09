@@ -13,7 +13,7 @@
 # 흐름: 홈 → 장면 기록 → 잡고 들기(경로 F) → 놓기(래치 = 자리 위 · 정렬 3 틱 → 손 펴기 15 틱 → 놓음 → 정책이 팔을 뺌) → 홈.
 episode: {name: pick_place_f_right, version: 2}
 objects:
-  CUP: {topic: /objects/source240b_blue/pose}
+  CUP: {topic: /objects/source240_blue/pose}
 holders: {PLACE_HOLDER: 1}
 holder_poses: config/cup_holder_poses_5090_v1.yaml
 policies:

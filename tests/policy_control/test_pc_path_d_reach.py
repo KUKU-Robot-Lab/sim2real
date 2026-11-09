@@ -26,8 +26,8 @@ REPO = Path(__file__).resolve().parents[2]
 TOOLS = REPO / "deploy" / "policy_control" / "tools"
 ASSET = REPO / "deploy" / "policy_control" / "config" / "tilt" / "base_arc6"
 HOME = yaml.safe_load((REPO / "deploy/policy_control/config/homes/rh56f1_aglt.yaml").read_text())
-# 10.20 실기 경로 D bag 두 회의 컵 자리(FP++ 원점, base) — 오른손 source240b · 왼손 shaker
-CUPS = {"right": ("source240b_blue", "source240_real", [0.2711, -0.1339, 0.2878]),
+# 10.20 실기 경로 D bag 두 회의 컵 자리(FP++ 원점, base) — 오른손 source240_blue · 왼손 shaker
+CUPS = {"right": ("source240_blue", "source240_real", [0.2711, -0.1339, 0.2878]),
         "left": ("shaker_c_orange", "shaker_c_real", [0.2641, 0.0753, 0.2635])}
 
 

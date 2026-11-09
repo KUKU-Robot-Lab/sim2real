@@ -11,11 +11,11 @@ from typing import Sequence
 
 import numpy as np
 
-CLASSES = ("blue", "pink", "orange")   # student_mask.CLASSES(seg_s640_A: 0 파랑 source240b · 1 분홍 · 2 shaker_c)
+CLASSES = ("blue", "pink", "orange")   # student_mask.CLASSES(seg_s640_A: 0 파랑 source240_blue · 1 분홍 · 2 shaker_c)
 CONF_MIN = 0.25
 GATE_PX = 80.0
 # 손바닥([lr]_hl_palm_sensor) 좌표 고정점 c(m) = 두 bag 자기 적합 평균(offset3d_new_selffit.json) = hdgp 20795489 place_head.CUP_C.
-# 키 = 컵 형상 이름(ckpt meta head.cup_c_m 키와 대조용). 분홍 source240p 는 실측이 없어 같은 형상 파랑 값을 쓴다.
+# 키 = 컵 형상 이름(ckpt meta head.cup_c_m 키와 대조용). 분홍 source240_pink 는 실측이 없어 같은 형상 파랑 값을 쓴다.
 C_DEFAULT = {"source240": (0.0551, 0.0619, 0.0633), "shaker": (-0.0209, 0.0526, -0.0017)}
 CLASS_CUP = {"blue": "source240", "pink": "source240", "orange": "shaker"}
 

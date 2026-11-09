@@ -149,9 +149,9 @@ def test_one_object_container_failure_does_not_stop_the_others():
             raise RuntimeError("rc=1")
         done.append(action)
 
-    acts = [("camera_up",), ("fpp_group_up", "shaker_c"), ("fpp_group_up", "source240b"), ("pose_tx_up",)]
+    acts = [("camera_up",), ("fpp_group_up", "shaker_c"), ("fpp_group_up", "source240_blue"), ("pose_tx_up",)]
     assert run_actions(acts, do) == ["shaker_c: rc=1"]
-    assert done == [("camera_up",), ("fpp_group_up", "source240b"), ("pose_tx_up",)]
+    assert done == [("camera_up",), ("fpp_group_up", "source240_blue"), ("pose_tx_up",)]
 
 
 def test_all_object_containers_failing_or_a_shared_action_failing_still_raises():
@@ -162,7 +162,7 @@ def test_all_object_containers_failing_or_a_shared_action_failing_still_raises()
             raise RuntimeError("rc=1")
 
     with pytest.raises(RuntimeError, match="하나도"):
-        run_actions([("fpp_group_up", "shaker_c"), ("fpp_group_up", "source240b")], fail_objects)
+        run_actions([("fpp_group_up", "shaker_c"), ("fpp_group_up", "source240_blue")], fail_objects)
 
     def fail_camera(action):
         if action[0] == "camera_up":
@@ -194,7 +194,7 @@ def test_next_group_starts_only_after_previous_first_round():
     """★11.03 실기: 묶음 셋이 동시에 첫 회차를 하며 4090 24 GB 가 차 셋 다 warp alloc 실패 — 하나씩 띄운다."""
     from perception_launcher_core import FIRST_ROUND_MARK, run_actions, wait_first_round
     clock, events = _Clock(), []
-    logs = {"source240b": ["true\nloading", "true\nloading", f"true\n{FIRST_ROUND_MARK} · generation 1 · 오류 없음"],
+    logs = {"source240_blue": ["true\nloading", "true\nloading", f"true\n{FIRST_ROUND_MARK} · generation 1 · 오류 없음"],
             "shaker_c": ["true\n", f"true\n{FIRST_ROUND_MARK} · generation 0 · 오류 PerceptionError: x"]}
     notes = []
 
@@ -206,8 +206,8 @@ def test_next_group_starts_only_after_previous_first_round():
         events.append(("up", action[1]))
         notes.append(wait_first_round(lambda: probe(action[1]), clock=clock, sleep=clock.sleep))
 
-    assert run_actions([("fpp_group_up", "source240b"), ("fpp_group_up", "shaker_c")], do) == []
-    assert events == [("up", "source240b"), *[("probe", "source240b")] * 3, ("up", "shaker_c"), *[("probe", "shaker_c")] * 2]
+    assert run_actions([("fpp_group_up", "source240_blue"), ("fpp_group_up", "shaker_c")], do) == []
+    assert events == [("up", "source240_blue"), *[("probe", "source240_blue")] * 3, ("up", "shaker_c"), *[("probe", "shaker_c")] * 2]
     assert notes[0] is None and "PerceptionError: x" in notes[1]          # 첫 회차 오류는 참고로만(다음은 계속)
 
 

@@ -10,7 +10,7 @@
 #   실패(허공에서 닫지 않음). 그 뒤 스크립트 닫기 · 들기 · 유지는 아래 그대로. 손가락이 컵에 못 닿으면 '들어가기' 단계를 더한다(미구현).
 episode: {name: tilt_base_c, version: 2}
 objects:
-  SRC: {topic: /objects/source240b_blue/pose}
+  SRC: {topic: /objects/source240_blue/pose}
   RCV: {topic: /objects/shaker_c_orange/pose}
 policies:
   rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {stop_ready: 1}}

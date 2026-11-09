@@ -141,7 +141,7 @@ def test_policy_tab_experiment_list_shows_the_policy_chain_the_reasons_and_runs_
     _node(r"""
 const step = (kind, text, sub, extra={}) => ({kind, text, sub, node:'grasp_lift', index:2, sides:['right'], ...extra});
 const F = side => ({episode:`grasp_f_${side}`, stage:`episode_grasp_f_${side}`, action:`ctl_grasp_f_${side}`, runner:`episode_runner_${side}`,
-  cups:{CUP:'source240b_blue'}, confirms:0, problems:[], summary:'ap05 → rcg04',
+  cups:{CUP:'source240_blue'}, confirms:0, problems:[], summary:'ap05 → rcg04',
   steps:[step('policy','ap05','접근',{id:`rh56f1/aglt/${side}_approach_ap05`}), step('handoff','넘김','사전 파지 자리 2 cm 안'),
          step('policy','rcg04','파지 · 들기',{id:`rh56f1/aglt/${side}_rcg04`})]});
 const X = {items:[
@@ -149,14 +149,14 @@ const X = {items:[
     action:'ctl_grasp_b_right', confirms:1, steps:[step('move','1-B 접근','손 안 컵 자리까지'), step('confirm','확인','병이 손 앞인가')]}}},
   {id:'grasp_f', group:'grasp', key:'F', label:'경로 F', summary:'ap05 → rcg04', sides:{right:F('right'), left:F('left')}},
   {id:'tilt_base_d', group:'tilt', key:'D', label:'tilt D', summary:'1-B 접근 → rcg03 → 이송 → tilt', when:'먼저 — 4/5 이상이면',
-   sides:{both:{episode:'tilt_base_d', stage:'episode_tilt_base_d', action:null, runner:'episode_runner', cups:{SRC:'source240b_blue', RCV:'shaker_c_orange'},
+   sides:{both:{episode:'tilt_base_d', stage:'episode_tilt_base_d', action:null, runner:'episode_runner', cups:{SRC:'source240_blue', RCV:'shaker_c_orange'},
      confirms:0, problems:['rh_aglt_l: 등록부에 rh56f1/aglt/left_rcg03 가 없다'], steps:[step('policy','rcg03','파지 · 들기',{id:'rh56f1/aglt/right_rcg03'})]}}}],
  policies:{'rh56f1/aglt/right_rcg04':{id:'rh56f1/aglt/right_rcg04', short:'rcg04', status:'candidate', ep:2800, summary:'파지 · 들기 rcg_04_nr',
    eval:'ap05 출발 98.9 %', checkpoint:'last_ep_2800.pth', contract:'rh_aglt_contract.json', issues:[], path:'deploy/policies/rh56f1/aglt/right_rcg04'},
    'rh56f1/aglt/right_approach_ap05':{id:'rh56f1/aglt/right_approach_ap05', short:'ap05', status:'candidate', ep:2300, summary:'', eval:'', checkpoint:'x', contract:'c', issues:[], path:'p'}}};
 const session = {profile:{domain_class:'fake'}, experiments:X, fpp:{tone:'ok', say:'정책 입력으로 써도 된다', stale:false,
-  objects:[{name:'source240b_blue', topic:'/objects/source240b_blue/pose', tone:'ok', rows:[{label:'자세 수신', value:'30 Hz', tone:'ok'}]}],
-  map:{boxes:[], objects:[{name:'source240b_blue', x:0.25, y:-0.2, tone:'ok', say:'오른팔 범위 안'}]}},
+  objects:[{name:'source240_blue', topic:'/objects/source240_blue/pose', tone:'ok', rows:[{label:'자세 수신', value:'30 Hz', tone:'ok'}]}],
+  map:{boxes:[], objects:[{name:'source240_blue', x:0.25, y:-0.2, tone:'ok', say:'오른팔 범위 안'}]}},
   episode_runners:[{runner:'episode_runner_left', episode:'grasp_f_left', phase:'RUNNING', busy:true, index:2}],
   mission:{rows:[{id:'episode_tilt_base_d', can_run:true, reasons:[], status:'PENDING', touches_real:false}]}};
 vm.runInContext(`S={lease:{holder:'operator'}, session:${JSON.stringify(session)}, workspace:{catalog:[
@@ -172,7 +172,7 @@ assert.match(list, /data-act="xp-pick" data-arg="grasp_f" aria-pressed="true"/);
 assert.match(list, /파지 · 들기/); assert.match(list, /tilt<small>두 팔/);
 assert.match(list, /xp-dot live[^>]*>L</);                          // 경로 F 왼팔 = 실행 중
 assert.match(main, /경로 F/); assert.match(main, /rcg04/); assert.match(main, /ep 2800 · 후보/); assert.match(main, /사전 파지 자리 2 cm 안/);
-assert.match(main, /source240b_blue/); assert.match(main, /\(0\.250, -0\.200\)/); assert.match(main, /확인 노드 없음/);
+assert.match(main, /source240_blue/); assert.match(main, /\(0\.250, -0\.200\)/); assert.match(main, /확인 노드 없음/);
 assert.match(main, /right PD 실시간 상태가 없다/); assert.match(main, /data-act="action-prepare" data-arg="ctl_grasp_f_right" disabled/);
 // 정책 칸을 누르면 체크포인트 · 계약 · sim 근거가 열린다
 vm.runInContext(`acts['xp-pol']('rh56f1/aglt/right_rcg04')`, ctx);
@@ -200,7 +200,7 @@ assert.match(pol, /rcg04/); assert.match(pol, /i09/); assert.match(pol, /data-ac
 assert.match(el('pol-meta').innerHTML, /2 개 · 실험에 쓰는 것 1/);
 // FP++ 한 줄 — 판정 · 물체 자리 · 한마디, 영상은 누를 때만
 const strip = el('pstrip').innerHTML;
-assert.match(strip, /정책 입력으로 써도 된다/); assert.match(strip, /source240b_blue/); assert.match(strip, /오른팔 범위 안/);
+assert.match(strip, /정책 입력으로 써도 된다/); assert.match(strip, /source240_blue/); assert.match(strip, /오른팔 범위 안/);
 assert.equal(el('fpp-panel').hidden, true);
 vm.runInContext(`acts['xp-video']()`, ctx);
 assert.equal(el('fpp-panel').hidden, false);
@@ -224,7 +224,7 @@ def test_experiments_view_reads_the_chain_from_the_episode_files():
     assert [i['key'] for i in v['items'] if i['group'] == 'tilt'] == ['D', 'C', 'B']
     f = items['grasp_f']['sides']['right']
     assert [(s['kind'], s['text']) for s in f['steps']] == [('policy', 'ap05'), ('handoff', '넘김'), ('policy', 'rcg04')]
-    assert f['action'] == 'ctl_grasp_f_right' and f['runner'] == 'episode_runner_right' and f['cups'] == {'CUP': 'source240b_blue'}
+    assert f['action'] == 'ctl_grasp_f_right' and f['runner'] == 'episode_runner_right' and f['cups'] == {'CUP': 'source240_blue'}
     assert '2.5 cm' in f['steps'][1]['sub'] and '0.03 m/s' in f['steps'][1]['sub']
     fp = items['pick_place_f']['sides']['left']           # ★10.27 결정 1: 놓기 n05 → 오른손 n07 · 왼손 n06(ready_carry 이송 뒤)
     assert [(s['kind'], s['text']) for s in fp['steps']] == [('policy', 'ap05'), ('handoff', '넘김'), ('policy', 'rcg04'), ('policy', 'n06')]

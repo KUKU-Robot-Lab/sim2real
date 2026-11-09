@@ -1,19 +1,19 @@
-# 생성됨 — scripts/ops/fpp_object.py (묶음 'source240b'). add 로 다시 만들고 calib 로 색을 잰다. 손으로 고치지 않는다.
+# 생성됨 — scripts/ops/fpp_object.py (묶음 'source240_blue'). add 로 다시 만들고 calib 로 색을 잰다. 손으로 고치지 않는다.
 meta:
   source_cad: source_240.stl
   origin_above_bottom_m: 0.085
   colors:
   - blue
 objects:
-  source240b_blue:
-    real: blue source240b — source_240.stl 에서 등록(fpp_object.py add)
+  source240_blue:
+    real: blue source240 — source_240.stl 에서 등록(fpp_object.py add)
     fpp:
-      mesh_path: assets/s2r_meshes/source240b.obj
+      mesh_path: assets/s2r_meshes/source240_blue.obj
       mesh_scale_to_meters: 1.0
       cup_class_id: 39
       detection_pick: confidence
       yolo_confidence: 0.05
-      group: source240b
+      group: source240_blue
       color:
       - 93.0
       - 107.0

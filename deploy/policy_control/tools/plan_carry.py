@@ -30,7 +30,7 @@ from plan_tilt import ARMS, ASSET, SIM2REAL, H, current_q, table_z  # noqa: E402
 
 RATE_HZ = 60.0
 CUP_CENTER_M = 0.085                               # 컵 원점 = 바닥 위 85 mm(D4 README, 두 컵 같음)
-CUP_TOP_M = {"right": 0.155, "left": 0.045}        # 원점 → 입구(병 src240 · shaker)
+CUP_TOP_M = {"right": 0.155, "left": 0.045}        # 원점 → 입구(병 source240 · shaker)
 CUP_R_M = 0.03
 TABLE_MARGIN_M = 0.01
 VMAX_RAD_S = 2.0

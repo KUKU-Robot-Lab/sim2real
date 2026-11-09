@@ -1,4 +1,4 @@
-# 경로 C(10.17 사용자 승인, docs/PLAN_GRASP_TILT_EVAL_2026-10-17.md) — right 손 source240(파란 병, FP++ source240b_blue).
+# 경로 C(10.17 사용자 승인, docs/PLAN_GRASP_TILT_EVAL_2026-10-17.md) — right 손 source240(파란 병, FP++ source240_blue).
 # 접근 정책(approach_r = rg3wc ep800 원본 — 10.19 사용자 결정, 손을 편 채 다가감. 10.18 의 rg3wg ep300 은 right_approach_rg3wg 로 남음) → 손바닥–컵 ≤ 6 cm · 팔 정지 0.5 s(또는 15 s)에 정책을 끈다 → 엄지 회전 고정,
 # 엄지 굽힘(0.3 s 늦게) · 네 손가락을 0.6 rad/s 로 닫는다. ★10.18 강제 파지(judge=0, 사용자): 막힌(접촉) 축은 그 순간 실측에 고정, 안 닿은 축은
 # 지령이 실측을 0.08 rad 넘게 앞서지 않는다(과전류 방지) → 모든 축이 막히거나 쥔 자세면 0.5 s 뒤(늦어도 4 s) 쥠 판정 없이 손바닥 방향 고정 10 cm 들기 → 3 s 유지 = 성공.
@@ -10,7 +10,7 @@
 #   실패(허공에서 닫지 않음). 그 뒤 스크립트 닫기 · 들기 · 유지는 아래 그대로. 손가락이 컵에 못 닿으면 '들어가기' 단계를 더한다(미구현).
 episode: {name: grasp_c_right, version: 2}
 objects:
-  CUP: {topic: /objects/source240b_blue/pose}
+  CUP: {topic: /objects/source240_blue/pose}
 policies:
   rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {stop_ready: 1}}
 trajectories:

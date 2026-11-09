@@ -90,8 +90,8 @@ def test_statuses_from_several_group_containers_are_tracked_per_group():
 
 def _two_groups(blue_found: bool, orange_gen: int = 2, orange_found: bool = False) -> dict:
     st = {}
-    R.merge_status(st, {"group": "source240b", "generation": 3,
-                        "objects": {"source240b_blue": {"found": blue_found, "why": "그 색 후보가 없다"}}})
+    R.merge_status(st, {"group": "source240_blue", "generation": 3,
+                        "objects": {"source240_blue": {"found": blue_found, "why": "그 색 후보가 없다"}}})
     R.merge_status(st, {"group": "shaker_c", "generation": orange_gen,
                         "objects": {"shaker_c_orange": {"found": orange_found, "why": "그 색 후보가 없다"}}})
     return st
@@ -99,11 +99,11 @@ def _two_groups(blue_found: bool, orange_gen: int = 2, orange_found: bool = Fals
 
 def test_one_found_cup_is_enough_by_default_and_the_other_is_named_with_why():
     """★10.13 사용자 실기: 오렌지 · 블루 중 하나가 테이블에 없어 단계가 실패했다 — "둘중 하나라도 인지되게"."""
-    names = ["source240b_blue", "shaker_c_orange"]
-    after = {"source240b": 2, "shaker_c": 1}
+    names = ["source240_blue", "shaker_c_orange"]
+    after = {"source240_blue": 2, "shaker_c": 1}
     st = _two_groups(blue_found=True)
     assert not R.all_done(st, after, names)
-    assert R.found_names(st, after, names) == ["source240b_blue"]
+    assert R.found_names(st, after, names) == ["source240_blue"]
     assert R.enough_done(st, after, names)
     assert not R.enough_done(st, after, names, require_all=True)          # --require-all 은 예전처럼 둘 다
     assert R.lost_reasons(st, names) == ["shaker_c_orange: 그 색 후보가 없다"]
@@ -111,35 +111,35 @@ def test_one_found_cup_is_enough_by_default_and_the_other_is_named_with_why():
 
 def test_one_found_cup_waits_until_every_asked_group_has_a_new_round():
     """다른 묶음이 아직 새 회차를 안 끝냈으면(찍는 중) 그 물체가 곧 찾아질 수 있다 — 기다린다."""
-    names = ["source240b_blue", "shaker_c_orange"]
+    names = ["source240_blue", "shaker_c_orange"]
     st = _two_groups(blue_found=True, orange_gen=1)
-    assert not R.enough_done(st, {"source240b": 2, "shaker_c": 1}, names)
+    assert not R.enough_done(st, {"source240_blue": 2, "shaker_c": 1}, names)
 
 
 def test_nothing_found_is_not_enough():
-    names = ["source240b_blue", "shaker_c_orange"]
+    names = ["source240_blue", "shaker_c_orange"]
     st = _two_groups(blue_found=False)
-    assert R.found_names(st, {"source240b": 2, "shaker_c": 1}, names) == []
-    assert not R.enough_done(st, {"source240b": 2, "shaker_c": 1}, names)
+    assert R.found_names(st, {"source240_blue": 2, "shaker_c": 1}, names) == []
+    assert not R.enough_done(st, {"source240_blue": 2, "shaker_c": 1}, names)
 
 
 def test_a_cup_whose_container_never_came_up_is_reported_as_absent():
     """묶음 컨테이너가 안 떠 상태 자체가 없는 물체도 이유와 함께 찍는다."""
     st = {}
-    R.merge_status(st, {"group": "source240b", "generation": 3, "objects": {"source240b_blue": {"found": True}}})
-    names = ["source240b_blue", "shaker_c_orange"]
+    R.merge_status(st, {"group": "source240_blue", "generation": 3, "objects": {"source240_blue": {"found": True}}})
+    names = ["source240_blue", "shaker_c_orange"]
     lost = R.lost_reasons(st, names)
     assert len(lost) == 1 and lost[0].startswith("shaker_c_orange: 상태 없음")
-    assert not R.enough_done(st, {"source240b": 2}, names)               # 상태 없는 물체가 있으면 grace 로 따로 본다
+    assert not R.enough_done(st, {"source240_blue": 2}, names)               # 상태 없는 물체가 있으면 grace 로 따로 본다
 
 
 def test_the_status_phase_runs_on_the_perception_pc_when_fpp_lives_there():
     """10.13 실기(5090 + vision-3090): FP++ 상태 토픽은 인지 PC 의 localhost DDS 에만 있다 — 5090 에서 기다리면 120 s 뒤 실패했다."""
-    remote = R.status_argv(["source240b_blue", "shaker_c_orange"], 120.0, False, "vision-3090")
+    remote = R.status_argv(["source240_blue", "shaker_c_orange"], 120.0, False, "vision-3090")
     assert remote[0] == "ssh" and "BatchMode=yes" in remote and remote[-2] == "vision-3090"
     cmd = remote[-1]
     assert cmd.startswith(f"cd {R.REMOTE_SIM2REAL} && source scripts/vision/common.sh && ")
-    assert "fpp_rescan.py source240b_blue shaker_c_orange --wait 120 --phase status" in cmd
+    assert "fpp_rescan.py source240_blue shaker_c_orange --wait 120 --phase status" in cmd
     assert "--status-host" not in cmd and "--require-all" not in cmd
     assert "--require-all" in R.status_argv(["a"], 5, True, "h")[-1]
     local = R.status_argv(["cyl60"], 120.0, True)

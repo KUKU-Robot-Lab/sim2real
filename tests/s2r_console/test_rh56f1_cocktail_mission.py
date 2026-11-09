@@ -1,7 +1,7 @@
 """★10.28 칵테일 SEP(cocktail_1) · B(cocktail_1b) 실기 미션 연결 — 사용자 "SEP, B 과정 모두 세팅 완료 해둬야 함"(sim_e2e 경유).
 
 같은 오른손 노드가 파랑 → 분홍을 잡고 홀더 1 → 2 에 놓는다. 노드는 첫 job 값으로 뜨고(실행기가 job 마다 바꾼다), 놓기 노드는
-두 홀더를 다 구독해 둔다. 분홍 FP++ 는 분홍만 든 묶음 source240p 라 cups 단계가 그 컨테이너도 띄운다.
+두 홀더를 다 구독해 둔다. 분홍 FP++ 는 분홍만 든 묶음 source240_pink 라 cups 단계가 그 컨테이너도 띄운다.
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def test_both_cocktail_orders_are_console_episodes():
 
 
 def test_the_cups_stage_starts_the_pink_only_group():
-    assert "source240p_pink" in GEN._cups() and "source240p" in GEN._groups()
+    assert "source240_pink" in GEN._cups() and "source240_pink" in GEN._groups()
     assert GEN._cups()[:2] == [GEN.REAL_CUPS["right"], GEN.REAL_CUPS["left"]]      # 팔 물체가 먼저(그대로)
 
 
@@ -67,10 +67,10 @@ def test_the_grasp_node_starts_on_blue_with_the_topic_the_runner_uses(name):
 def test_a_live_cup_place_node_starts_on_the_live_topic(name):
     """★11.03 cup_obs live 놓기 계약은 …/live_pose — …/pose 는 잡기 전 테이블 자세를 새 stamp 로 다시 낸다."""
     cmds = GEN._episode_run(name, True)
-    assert "cup_topic:=/objects/source240b_blue/live_pose" in _node_argv(cmds, "rh_place_node.py", "right")
+    assert "cup_topic:=/objects/source240_blue/live_pose" in _node_argv(cmds, "rh_place_node.py", "right")
     assert "cup_topic:=/objects/shaker_c_orange/live_pose" in _node_argv(cmds, "rh_place_node.py", "left")
     old = GEN._episode_run("cocktail_1b", True)                          # attached 계약(n07 · n06)은 그대로
-    assert "cup_topic:=/objects/source240b_blue/pose" in _node_argv(old, "rh_place_node.py", "right")
+    assert "cup_topic:=/objects/source240_blue/pose" in _node_argv(old, "rh_place_node.py", "right")
 
 
 @pytest.mark.parametrize("name", COCKTAILS)

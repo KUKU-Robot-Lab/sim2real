@@ -72,10 +72,10 @@ PLACE_HOLDER = {"right": 1, "left": 1}
 #: fake 홀더 y — hdgp rh_place env holder_ys(0.153, −0.002, −0.161)
 FAKE_HOLDER_Y = {0: 0.153, 1: -0.002, 2: -0.161}
 #: ★11.09 경로 F 물체 고르기 — 색을 잰(hue_measured) FP++ 물체 → 정책 물체 one-hot(ap05 · rcg04 학습 3종). 순서 = 화면 순서
-F_OBJECTS = {"source240b_blue": "source240_real", "source240_orange": "source240_real", "source240_pink": "source240_real",
+F_OBJECTS = {"source240_blue": "source240_real", "source240_orange": "source240_real", "source240_pink": "source240_real",
              "source200_orange": "source200_real", "source200_pink": "source200_real", "shaker_c_orange": "shaker_c_real"}
 #: 팔마다 grasp_f_<팔>.yaml(손으로 쓴 원본)이 찍는 물체 — 이 물체는 원본 그대로 쓰고 변형 파일을 만들지 않는다
-F_DEFAULT = {"right": "source240b_blue", "left": "shaker_c_orange"}
+F_DEFAULT = {"right": "source240_blue", "left": "shaker_c_orange"}
 F_VARIANT_HEAD = "# 이 파일은 scripts/ops/make_rh56f1_missions.py 가 grasp_f_{side}.yaml 에서 물체만 바꿔 만든다 — 손으로 고치지 말 것(--check).\n"
 
 
@@ -126,7 +126,7 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             "grasp2tilt_f_240",
             # ★10.28 사용자 "SEP, B 과정 모두 세팅 완료 해둬야 함"(sim_e2e 경유) — 칵테일 1: 분리 놓기(SEP · 파랑 놓은 뒤 사람이 분홍을
             #   놓는다) · 순서 B(분홍이 처음부터 B 둘레 영역). 같은 오른손 노드가 job 마다 컵(파랑 → 분홍) · 홀더(1 → 2)를 바꾼다
-            #   (실행기 episode_ros.job_params → 노드 reset). 분홍 FP++ = 분홍만 든 묶음 source240p
+            #   (실행기 episode_ros.job_params → 노드 reset). 분홍 FP++ = 분홍만 든 묶음 source240_pink
             "cocktail_1", "cocktail_1b",
             # ★11.02 사용자 지시(sim_e2e 경유) oneshot 세팅 실기 — 1b v5 + 놓기 정책 right_n10_e1000|e4000 · left_n09_e3800(cup_obs live)
             "cocktail_1c_e1000", "cocktail_1c_e4000",
@@ -315,7 +315,7 @@ def _ep_objects(ep) -> list[str]:
 
 
 def _episode_cups() -> list[str]:
-    """★10.28 에피소드들이 FP++ 로 찍는 실물 — 팔 물체 묶음 밖의 것(칵테일 분홍 source240p_pink)도 든다."""
+    """★10.28 에피소드들이 FP++ 로 찍는 실물 — 팔 물체 묶음 밖의 것(칵테일 분홍 source240_pink)도 든다."""
     return [r for name in EPISODES if _perceives(ep := _episode(name)) for r in _ep_objects(ep)]
 
 

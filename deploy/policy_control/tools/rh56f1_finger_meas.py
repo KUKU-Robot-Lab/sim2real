@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RH56F1 손가락 실측 — 빈손 스윕(mimic 비율용) · 쥔 손 기록(src240 · shaker).
+"""RH56F1 손가락 실측 — 빈손 스윕(mimic 비율용) · 쥔 손 기록(source240 · shaker).
 
 10.19 사용자: "1번 빈손 측정(urdf mimic 비율 맞추기) · 2번 src240 을 실제로 적절히 잡았을 때의 관절값과 측정되는 jointstate,
 force 등(src200 은 길이만 다르고 잡는 자리 형상은 같다) · 3번 shaker 도 같은 것". 두 번째 마디는 링크로 첫 마디에 묶여
@@ -24,7 +24,7 @@ force 등(src200 은 길이만 다르고 잡는 자리 형상은 같다) · 3번
 
     ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/rh56f1_finger_meas.py sweep --side right            # 계획만
     ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/rh56f1_finger_meas.py sweep --side right --execute  # ★실기
-    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/rh56f1_finger_meas.py grip --side right --object src240 --execute
+    ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/rh56f1_finger_meas.py grip --side right --object source240 --execute
     ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/rh56f1_finger_meas.py record --side right --object shaker
 종료 코드: 0 = 끝 · 1 = 입력 · 연결 문제(보내지 않음) · 2 = 막힘 · 3 = pd 이상(HOLD · estop · TRACKING 아님) 또는 다른 발행자.
 """
@@ -584,7 +584,7 @@ def _args(argv: list[str] | None) -> argparse.Namespace:
     ap.add_argument("mode", choices=("sweep", "grip", "open", "record"))
     ap.add_argument("--side", choices=("right", "left"), required=True)
     ap.add_argument("--via", choices=("auto", "pd", "direct"), default="auto")
-    ap.add_argument("--object", default=None, help="grip · record 기록 이름(src240 · shaker …)")
+    ap.add_argument("--object", default=None, help="grip · record 기록 이름(source240 · shaker …)")
     ap.add_argument("--axes", default=",".join(DEFAULT_AXES), help="sweep 축 순서")
     ap.add_argument("--levels", default=None, help=f"네 손가락 단계 rad (기본 {FINGER_LEVELS})")
     ap.add_argument("--thumb-levels", default=None, help=f"엄지 굽힘 단계 rad (기본 {THUMB2_LEVELS})")

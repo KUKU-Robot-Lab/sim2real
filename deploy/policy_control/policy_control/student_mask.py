@@ -14,7 +14,7 @@ from collections import deque
 import numpy as np
 import torch
 
-CLASSES = ("blue", "pink", "orange")      # 1105_det data.yaml names {0: blue(source240b), 1: pink(source240p), 2: orange(shaker_c)}
+CLASSES = ("blue", "pink", "orange")      # 1105_det data.yaml names {0: blue(source240_blue), 1: pink(source240_pink), 2: orange(shaker_c)}
 MASK_TOPIC, MASK_CONFIG_TOPIC = "/head_mask/image", "/head_mask/config"
 VIS_MIN_PX = 3                            # hdgp mask_scene.VIS_MIN_PX(ckpt mask.vis_min_px 와 대조)
 IMG2 = ["tgt_mask_depth", "nbr_mask_depth", "visible_plane"]

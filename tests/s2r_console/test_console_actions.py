@@ -126,14 +126,14 @@ def test_rg3_exact_registered_policy_and_source_mapping(console, tiny_repo):
     obj = rg3_workspace(console)
     # ★10.20 경로 D: 노드 계약(ap05 접근)은 그대로, 넘겨받는 계약(handoff_contract)만 카드 정책으로 바꾼다
     cmd = Command(('python3', 'rh_aglt_node.py', '-p', 'contract:=default', '-p', 'handoff_contract:=default',
-                   '-p', 'cup_topic:=/objects/source240b_blue/live_pose'))
+                   '-p', 'cup_topic:=/objects/source240_blue/live_pose'))
     out = m._transform(console.session, 'rg3_chosen', {}, cmd)
     assert 'handoff_contract:=/registered/contract.json' in out.argv and 'contract:=default' in out.argv
     assert f"cup_topic:=/objects/{obj['id']}/live_pose" in out.argv
     runner = m._transform(console.session, 'rg3_chosen', {}, Command(('episode_runner_node.py', '-p', 'episode:=default')))
     assert f"policy_object:={obj['policy_object']}" in runner.argv
     assert f"cup_object:={obj['id']}" in runner.argv
-    fake = m._transform(console.session, 'rg3_chosen', {}, Command(('fake_cup_pose_pub.py', '--topic', '/objects/source240b_blue/pose')))
+    fake = m._transform(console.session, 'rg3_chosen', {}, Command(('fake_cup_pose_pub.py', '--topic', '/objects/source240_blue/pose')))
     assert fake.argv[-1] == f"/objects/{obj['id']}/pose"
 
 
@@ -266,7 +266,7 @@ def lifecycle(console, tiny_repo, monkeypatch):
     rg3_workspace(console)
     (tiny_repo / 'config/episodes').mkdir()
     (tiny_repo / 'config/episodes/grasp_d_right.yaml').write_text(yaml.safe_dump({
-        'objects': {'CUP': {'topic': '/objects/source240b_blue/pose'}},
+        'objects': {'CUP': {'topic': '/objects/source240_blue/pose'}},
         'policies': {'rg3': {'policy': 'default'}},
         'sequence': [{'type': 'policy', 'policy_object': 'source240_real'}]}))
     status = {'episode': 'grasp_d_right', 'phase': 'READY'}
@@ -566,7 +566,7 @@ def test_path_c_card_runs_the_grasp_c_episode_with_its_approach_policy_and_objec
                 'object_id': 'source200_blue', 'execution_supported': True}]
     (tiny_repo / 'config/episodes').mkdir()
     (tiny_repo / 'config/episodes/grasp_c_right.yaml').write_text(yaml.safe_dump({
-        'episode': {'name': 'grasp_c_right'}, 'objects': {'CUP': {'topic': '/objects/source240b_blue/pose'}},
+        'episode': {'name': 'grasp_c_right'}, 'objects': {'CUP': {'topic': '/objects/source240_blue/pose'}},
         'policies': {'rh_aglt_r': {'policy': 'default', 'approach_grasp': {}}},
         'sequence': [{'type': 'policy', 'policy_object': 'source240_real'}]}))
     status = {'episode': 'grasp_c_right', 'phase': 'READY'}

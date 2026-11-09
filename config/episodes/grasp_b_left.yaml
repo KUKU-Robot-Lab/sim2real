@@ -5,7 +5,7 @@
 #   → [확인] 닫아도 되는가 → 닫기 · 쥔 판정 · 3 s(경로 B 와 같은 tools/hand_grasp.py, 엄지 회전 1.57 그대로)
 #   → lift(손바닥 방향 고정 수직 10 cm · 3 s 유지, tools/plan_lift.py — 끝에 FP++ 로 컵이 7 cm 넘게 들렸는지) → 끝.
 # 계획 · 검사가 걸리면 그 단계에서 움직이지 않고 멈춘다(refused). 자동 복구 없음 — 못 쥐면 손은 그 자리, 복구는 운영자(rehome).
-# 물체는 tilt 와 같은 짝(오른손 = 붓는 병 source240b · 왼손 = 받는 shaker) — 손 안 컵 자리가 그 짝으로 정의돼 있다.
+# 물체는 tilt 와 같은 짝(오른손 = 붓는 병 source240_blue · 왼손 = 받는 shaker) — 손 안 컵 자리가 그 짝으로 정의돼 있다.
 episode: {name: grasp_b_left, version: 1}
 objects:
   CUP: {topic: /objects/shaker_c_orange/pose}

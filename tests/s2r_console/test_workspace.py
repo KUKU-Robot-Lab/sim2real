@@ -15,7 +15,7 @@ def workspace(tmp_path):
 def test_registry_matrix_preserves_measurement():
     ws = Workspace(ROOT, 'openarm_rh56f1')
     objects = ws.snapshot()['objects']
-    for model in ('src200', 'src240', 'shaker'):
+    for model in ('source200', 'source240', 'shaker'):
         assert {o['color'] for o in objects if o['model'] == model} == {'skyblue', 'orange', 'pink'}
     measured = next(o for o in objects if o['id'] == 'source200_orange')
     assert measured['measured'] and measured['hue_range'] == [1.8, 23.0]
@@ -78,10 +78,10 @@ def test_object_selection_survives_a_reload_and_binds_the_approval(tmp_path):
     """★11.05 인지 물체 선택은 workspace 파일에 같이 남는다 — 새로고침 · 콘솔 재시작 뒤에도 같은 물체로 "인지 적용" 한다."""
     ws = workspace(tmp_path)
     before = ws.fingerprint()
-    ws.update({'objects': [{'id': 'source240b_blue', 'enabled': True}, {'id': 'shaker_c_orange', 'enabled': True}]})
+    ws.update({'objects': [{'id': 'source240_blue', 'enabled': True}, {'id': 'shaker_c_orange', 'enabled': True}]})
     assert ws.fingerprint() != before                                    # 승인 해시가 선택을 묶는다
     again = Workspace(tmp_path, 'openarm_rh56f1')
-    assert sorted(o['id'] for o in again.objects if o['enabled']) == ['shaker_c_orange', 'source240b_blue']
+    assert sorted(o['id'] for o in again.objects if o['enabled']) == ['shaker_c_orange', 'source240_blue']
     assert again.fingerprint() == ws.fingerprint()
 
 
@@ -89,7 +89,7 @@ def test_object_selection_survives_a_reload_and_binds_the_approval(tmp_path):
 def test_saved_selection_restores_item_by_item_and_logs_drops(tmp_path, caplog):
     import json
     ws = workspace(tmp_path)
-    ws.update({'objects': [{'id': 'source240b_blue', 'enabled': True}]})
+    ws.update({'objects': [{'id': 'source240_blue', 'enabled': True}]})
     doc = json.loads(ws.layout_path.read_text())
     doc['objects'] += [{'id': 'gone_from_registry', 'enabled': True},          # 레지스트리에서 빠진 id
                        {'id': 'shaker_c_orange', 'enabled': 'yes'},            # 잘못된 항목
@@ -97,14 +97,14 @@ def test_saved_selection_restores_item_by_item_and_logs_drops(tmp_path, caplog):
     ws.layout_path.write_text(json.dumps(doc))
     with caplog.at_level('WARNING', logger='s2r_console.workspace'):
         again = Workspace(tmp_path, 'openarm_rh56f1')
-    assert sorted(o['id'] for o in again.objects if o['enabled']) == ['source200_orange', 'source240b_blue']
+    assert sorted(o['id'] for o in again.objects if o['enabled']) == ['source200_orange', 'source240_blue']
     assert 'gone_from_registry' in caplog.text and 'shaker_c_orange' in caplog.text
 
 
 def test_old_layout_file_without_objects_restores_cards_only(tmp_path):
     import json
     ws = workspace(tmp_path)
-    ws.update({'objects': [{'id': 'source240b_blue', 'enabled': True}]})
+    ws.update({'objects': [{'id': 'source240_blue', 'enabled': True}]})
     doc = json.loads(ws.layout_path.read_text())
     del doc['objects']
     ws.layout_path.write_text(json.dumps(doc))
@@ -203,7 +203,7 @@ def test_locate_cli_reports_explicit_validity(monkeypatch, capsys, found, home_o
     import registered_locate
     monkeypatch.setattr(registered_locate, 'run_scan', lambda *a, **kw: SimpleNamespace(
         found=found, home_ok=home_ok, x=.2622, y=-.1526, z=.29, reason='not found'))
-    rc = registered_locate.main(['source240b_blue', '--repo', str(ROOT), '--fake', '.26,-.15'])
+    rc = registered_locate.main(['source240_blue', '--repo', str(ROOT), '--fake', '.26,-.15'])
     result = json.loads(capsys.readouterr().out.splitlines()[-1])
     assert result['valid'] is (found and home_ok)
     assert rc == (0 if found and home_ok else 1)
@@ -213,15 +213,15 @@ def test_locate_cli_reports_explicit_validity(monkeypatch, capsys, found, home_o
 def test_unselected_fpp_does_not_repopulate_results(tmp_path):
     ws = workspace(tmp_path)
     ws.update({'perception': {'fpp': False, 'locate': True}})
-    ws.ingest_fpp({'/objects/source240b_blue/live_pose': {'pos': [.2, -.1, .29], 'age_s': 0}})
-    obj = next(o for o in ws.objects if o['id'] == 'source240b_blue')
+    ws.ingest_fpp({'/objects/source240_blue/live_pose': {'pos': [.2, -.1, .29], 'age_s': 0}})
+    obj = next(o for o in ws.objects if o['id'] == 'source240_blue')
     assert not obj['results']['fpp']['valid']
     assert obj['results']['fpp']['reason'] == 'FPP not selected'
 
 
 def test_console_locate_uses_current_pose_without_return_motion(tmp_path):
     ws = workspace(tmp_path)
-    argv = ws.locate_argv('source240b_blue')
+    argv = ws.locate_argv('source240_blue')
     assert '--current-pose' in argv
     assert '--return-pan' not in argv and '--return-tilt' not in argv
 
@@ -250,7 +250,7 @@ def test_current_pose_locate_never_moves_and_rejects_pose_changes(monkeypatch):
 def test_fixed_pose_fake_cli_extracts_coordinates_without_scanning(capsys):
     import json
     import registered_locate
-    rc = registered_locate.main(['source240b_blue', '--repo', str(ROOT), '--current-pose', '--fake', '.26,-.15'])
+    rc = registered_locate.main(['source240_blue', '--repo', str(ROOT), '--current-pose', '--fake', '.26,-.15'])
     result = json.loads(capsys.readouterr().out.splitlines()[-1])
     assert rc == 0 and result['valid']
     assert result['position'][:2] == pytest.approx([.26, -.15], abs=.003)
@@ -269,4 +269,4 @@ def test_current_pose_missing_measurement_never_falls_back_to_a_head_move(monkey
         raise RuntimeError('현재 목 실측이 없다')
     monkeypatch.setattr(registered_locate, 'read_current_head', missing)
     with pytest.raises(RuntimeError, match='현재 목 실측'):
-        registered_locate.main(['source240b_blue', '--repo', str(ROOT), '--current-pose', '--execute'])
+        registered_locate.main(['source240_blue', '--repo', str(ROOT), '--current-pose', '--execute'])

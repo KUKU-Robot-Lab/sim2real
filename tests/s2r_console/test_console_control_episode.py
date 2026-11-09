@@ -24,7 +24,7 @@ COMMANDS = [{'argv': ['true'], 'manual': True},
 
 def _episodes(repo, sides=('right', 'left')):
     (repo / 'config/episodes').mkdir(parents=True, exist_ok=True)
-    cups = {'right': 'source240b_blue', 'left': 'shaker_c_orange'}
+    cups = {'right': 'source240_blue', 'left': 'shaker_c_orange'}
     for side in sides:
         (repo / f'config/episodes/grasp_b_{side}.yaml').write_text(yaml.safe_dump({
             'objects': {'CUP': {'topic': f'/objects/{cups[side]}/pose'}}, 'policies': {}, 'sequence': []}))
@@ -58,7 +58,7 @@ def test_grasp_b_is_a_policy_tab_action_for_each_arm_without_a_card(console, tin
     m = setup_actions(console, tiny_repo, {'episode_grasp_b_right': COMMANDS, 'episode_grasp_b_left': COMMANDS})
     _episodes(tiny_repo)
     items = {a['id']: a for a in m.catalog()}
-    for side, cup in (('right', 'source240b_blue'), ('left', 'shaker_c_orange')):
+    for side, cup in (('right', 'source240_blue'), ('left', 'shaker_c_orange')):
         a = items[f'{CONTROL_PREFIX}grasp_b_{side}']
         assert a['group'] == 'policy' and a['control'] is True and a['card_id'] is None
         assert a['stages'] == [f'episode_grasp_b_{side}']
@@ -74,7 +74,7 @@ def test_path_c_is_a_fixed_action_that_shows_the_script_grip(console, tiny_repo)
     m = setup_actions(console, tiny_repo, {'episode_grasp_c_right': COMMANDS})
     (tiny_repo / 'config/episodes').mkdir(parents=True, exist_ok=True)
     (tiny_repo / 'config/episodes/grasp_c_right.yaml').write_text(yaml.safe_dump({
-        'objects': {'CUP': {'topic': '/objects/source240b_blue/pose'}}, 'policies': {}, 'sequence': []}))
+        'objects': {'CUP': {'topic': '/objects/source240_blue/pose'}}, 'policies': {}, 'sequence': []}))
     a = {x['id']: x for x in m.catalog()}['ctl_grasp_c_right']
     assert a['control'] is True and a['stages'] == ['episode_grasp_c_right'] and '경로 C' in a['title']
     assert a['live']['script']['steps'].startswith('접근 정책') and a['live']['script']['phase'] is None

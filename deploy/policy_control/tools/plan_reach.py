@@ -26,7 +26,7 @@
   ★10.20 --stop pregrasp(경로 D, 사용자 "grasp_d 를 1-b 접근에 rcg03 으로 교체"): 2) 들어가기를 하지 않고 사전 파지 자리에서
     끝난다(rcg03 학습 시작 자세 = aglt_new ReadyApproach). 그 뒤 rcg03 정책 노드가 넘겨받는다. 이송 · 검사는 같다.
 
-    python3 deploy/policy_control/tools/plan_reach.py --side right --object source240b_blue --cup 0.244,-0.116,0.288 \\
+    python3 deploy/policy_control/tools/plan_reach.py --side right --object source240_blue --cup 0.244,-0.116,0.288 \\
         --out logs/x/reach
 """
 from __future__ import annotations
@@ -88,8 +88,8 @@ ARM_TABLE_M = 0.03
 APPROACH_CUP_CLEAR_M = 0.01   # 이송 중 손 점 ↔ 컵 겉면(FP++ 오차 1 cm). 사전 파지 끝은 손가락이 컵 옆이라 2 cm 는 못 둔다
 IN_CUP_CLEAR_M = 0.003
 #: ★10.20 실기 1-B: 쥔 자리 깊이 — 손바닥(센서점) ↔ 컵 겉면 수평 거리 상한. tilt 기준 쥔 자리는 손바닥을 컵 축에서
-#: 늘 52 mm 에 둬서 반지름이 작은 src240(30 mm)은 겉면까지 22 mm 가 남아 손끝으로만 닿았고 닫을 때 컵이 밀렸다.
-#: shaker(35.4 mm)는 15.7 mm 에서 깊숙이 쥐고 들었다(오른손 src240 · 왼손 shaker, 10.20 03:25). 그 깊이를 모든 컵에 쓴다 —
+#: 늘 52 mm 에 둬서 반지름이 작은 source240(30 mm)은 겉면까지 22 mm 가 남아 손끝으로만 닿았고 닫을 때 컵이 밀렸다.
+#: shaker(35.4 mm)는 15.7 mm 에서 깊숙이 쥐고 들었다(오른손 source240 · 왼손 shaker, 10.20 03:25). 그 깊이를 모든 컵에 쓴다 —
 #: 더 멀면 손바닥 → 컵 축 수평 방향으로 그만큼 더 들어간다(가까우면 그대로).
 GRASP_PALM_GAP_M = 0.016
 LINE_ITERS = 12

@@ -23,8 +23,8 @@ REPO = Path(__file__).resolve().parents[2]
 TOOLS = REPO / "deploy" / "policy_control" / "tools"
 ASSET = REPO / "deploy" / "policy_control" / "config" / "tilt" / "base_arc6"
 HOME = yaml.safe_load((REPO / "deploy/policy_control/config/homes/rh56f1_aglt.yaml").read_text())
-# 10.19 실기 컵 자리(FP++ 원점, base) — 오른손 src240b 접근 카드 bag · 왼손 shaker sim_traj 계획
-CUPS = {"right": ("source240b_blue", [0.244, -0.116, 0.288]), "left": ("shaker_c_orange", [0.259, 0.078, 0.262])}
+# 10.19 실기 컵 자리(FP++ 원점, base) — 오른손 source240_blue 접근 카드 bag · 왼손 shaker sim_traj 계획
+CUPS = {"right": ("source240_blue", [0.244, -0.116, 0.288]), "left": ("shaker_c_orange", [0.259, 0.078, 0.262])}
 
 
 def _tool(name):
@@ -134,7 +134,7 @@ def test_reach_plans_from_the_still_cup_and_replays_seven_joints(tmp_path):
     r = go()
     assert r.status == "completed" and len(calls) == 2
     pl, rp = calls
-    assert Path(pl[1]).name == "plan_reach.py" and pl[pl.index("--object") + 1] == "source240b_blue"
+    assert Path(pl[1]).name == "plan_reach.py" and pl[pl.index("--object") + 1] == "source240_blue"
     assert pl[pl.index("--side") + 1] == "right" and [float(v) for v in pl[pl.index("--cup") + 1].split(",")] == [0.244, -0.116, 0.288]
     assert pl[pl.index("--quat") + 1].startswith("1.0")
     assert Path(rp[1]).name == "replay_to_pd.py" and rp[rp.index("--npz") + 1].endswith("reach_cmd.npz")
@@ -180,7 +180,7 @@ def test_lift_without_fpp_completes_but_says_the_rise_is_unjudged(tmp_path):
 
 def test_real_object_name_comes_from_the_pose_topic():
     from policy_control.episode_ros import real_object_name
-    assert real_object_name("/objects/source240b_blue/pose") == "source240b_blue"
+    assert real_object_name("/objects/source240_blue/pose") == "source240_blue"
     assert real_object_name("/episode/objects/CUP/pose") == "" and real_object_name("") == ""
 
 
@@ -241,7 +241,7 @@ def test_reach_from_home_to_todays_cup_passes_every_check(tmp_path, side):
     assert d["margin_min_deg"] >= 5.0 and d["in_cup_clear_mm"] >= 3.0 and d["vmax_rad_s"] <= 0.72
     assert z["n_carry"] == a["steps"] + 1 and len(q) == a["steps"] + d["n"]
     assert np.abs(np.diff(q, axis=0)).max() * 60 <= 0.72 + 1e-3, "이송 끝 · 들어가기 시작 이음매도 매끄럽다(float32)"
-    # ★10.20 실기: 손바닥 ↔ 컵 겉면 수평 거리는 shaker 깊이(GRASP_PALM_GAP_M) 이하 — src240 은 그만큼 더 들어간다
+    # ★10.20 실기: 손바닥 ↔ 컵 겉면 수평 거리는 shaker 깊이(GRASP_PALM_GAP_M) 이하 — source240 은 그만큼 더 들어간다
     assert d["palm_gap_mm"] <= R.GRASP_PALM_GAP_M * 1000 + 0.5 and d["deeper_mm"] >= 0.0
     # 손 안 가상 컵(tilt 기준 자리)이 끝에서 실물 컵 원점(바닥 맞춤)에 온다 — 더 들어간 만큼만 수평으로 어긋난다
     P = R.H.load_ready_carry(R.H.hdgp_dir())
@@ -258,7 +258,7 @@ def test_reach_from_home_to_todays_cup_passes_every_check(tmp_path, side):
 def test_deepen_moves_the_palm_toward_the_cup_axis_only_when_too_far():
     R = _tool("plan_reach")
     cup = np.array([0.3, -0.1, 0.25])
-    p, extra = R.deepen(np.array([0.3, -0.1 + 0.052, 0.27]), cup, 0.030)          # src240: 22 mm → 16 mm
+    p, extra = R.deepen(np.array([0.3, -0.1 + 0.052, 0.27]), cup, 0.030)          # source240: 22 mm → 16 mm
     assert extra == pytest.approx(0.006) and p == pytest.approx([0.3, -0.1 + 0.046, 0.27])
     p, extra = R.deepen(np.array([0.3 + 0.050, -0.1, 0.27]), cup, 0.0354)         # shaker 14.6 mm: 그대로
     assert extra == 0.0 and p == pytest.approx([0.35, -0.1, 0.27])
@@ -268,10 +268,10 @@ def test_deepen_moves_the_palm_toward_the_cup_axis_only_when_too_far():
 def test_reach_refuses_a_tipped_cup_and_a_cup_out_of_reach(tmp_path):
     R = _tool("plan_reach")
     q = {s: HOME[s] for s in ("right", "left")}
-    ok, meta = R.plan("right", np.array([0.244, -0.116, 0.288]), np.array([np.cos(0.15), np.sin(0.15), 0, 0]), "source240b_blue",
+    ok, meta = R.plan("right", np.array([0.244, -0.116, 0.288]), np.array([np.cos(0.15), np.sin(0.15), 0, 0]), "source240_blue",
                       tmp_path / "a", q, H.hdgp_dir())
     assert not ok and "기울었다" in meta["problems"][0] and not (tmp_path / "a" / "reach_cmd.npz").exists()
-    ok, meta = R.plan("right", np.array([0.75, -0.116, 0.288]), None, "source240b_blue", tmp_path / "b", q, H.hdgp_dir())
+    ok, meta = R.plan("right", np.array([0.75, -0.116, 0.288]), None, "source240_blue", tmp_path / "b", q, H.hdgp_dir())
     assert not ok and (tmp_path / "b" / "check.json").is_file() and not (tmp_path / "b" / "reach_cmd.npz").exists()
 
 
@@ -332,7 +332,7 @@ def test_center_line_cups_pass_every_condition(tmp_path, side, y):
 @needs_hdgp
 def test_a_cup_by_the_shoulder_is_refused_with_reasons_per_candidate(tmp_path):
     R = _tool("plan_reach")
-    ok, meta = R.plan("right", np.array([0.12, -0.10, 0.288]), None, "source240b_blue", tmp_path,
+    ok, meta = R.plan("right", np.array([0.12, -0.10, 0.288]), None, "source240_blue", tmp_path,
                       {s: HOME[s] for s in ("right", "left")}, H.hdgp_dir())
     assert not ok and not (tmp_path / "reach_cmd.npz").exists()
     assert "조건을 지키는 접근이 없다" in meta["problems"][0]

@@ -6,7 +6,7 @@
 # 1차와 같은 주의(놓기 시작 자세 · 이웃 칸 컵 · 홀더 재스캔)는 cocktail_1.yaml 머리말.
 episode: {name: cocktail_2, version: 1}
 objects:
-  SRC_BLUE: {topic: /objects/source240b_blue/pose}
+  SRC_BLUE: {topic: /objects/source240_blue/pose}
   SRC_PINK: {topic: /objects/source240_pink/pose}
   SHAKER: {topic: /objects/shaker_c_orange/pose}
   LID: {topic: /objects/shaker_lid/pose}                            # FP++ 항목 없음(뚜껑 등록 전)

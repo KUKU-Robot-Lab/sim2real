@@ -1,8 +1,8 @@
 # 이 파일은 scripts/ops/make_rh56f1_missions.py 가 grasp_f_left.yaml 에서 물체만 바꿔 만든다 — 손으로 고치지 말 것(--check).
-# 경로 F — left 손 source240b_blue(정책 물체 source240_real). 정책 · 값 · 흐름은 grasp_f_left 와 같다.
-episode: {name: grasp_f_source240b_blue_left, version: 1}
+# 경로 F — left 손 source240_blue(정책 물체 source240_real). 정책 · 값 · 흐름은 grasp_f_left 와 같다.
+episode: {name: grasp_f_source240_blue_left, version: 1}
 objects:
-  CUP: {topic: /objects/source240b_blue/pose}
+  CUP: {topic: /objects/source240_blue/pose}
 policies:
   rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/left_rcg04, cup_obs_offset_base_m: [0.0028, 0.0283, 0.0046]}   # 11.07 cocktail_1c_e4000 rh_aglt_l 과 같은 값(11.04 L2 측정)
 trajectories:

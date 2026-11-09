@@ -25,9 +25,9 @@
 #   궤적 · 실패 정책 · 홀더 배정은 cocktail_1 과 같아야 한다(tests/policy_control/test_pc_episode.py 가 비교한다).
 episode: {name: cocktail_1b, version: 5}   # v5(10.29): 분홍 거부 범위 = 놓는 상자 ±1 cm · v4(10.29): 분홍 region v1 상자로 · v3(10.29): place_pink holder_tol_m 0.07(cocktail_1 v5 와 같이)
 objects:
-  SRC_BLUE: {topic: /objects/source240b_blue/pose}
-  # ★10.28 순서 B — 처음부터 탁자에 있다. ★10.29 구멍 옆 v1 상자만 받는다 · FP++ 는 분홍만 든 묶음 source240p(cocktail_1 머리말)
-  SRC_PINK: {topic: /objects/source240p_pink/pose, region: {x: [0.26, 0.305], y: [-0.365, -0.330]}}   # ★11.04 사용자 "허용 범위를 높여 둠" — +x 5 mm · +y 1 cm(손으로 놓으면 +x·+y 모서리 0~4 mm 밖에서 scene 거부). −x(손목) · −y(불가 자세)는 그대로
+  SRC_BLUE: {topic: /objects/source240_blue/pose}
+  # ★10.28 순서 B — 처음부터 탁자에 있다. ★10.29 구멍 옆 v1 상자만 받는다 · FP++ 는 분홍만 든 묶음 source240_pink(cocktail_1 머리말)
+  SRC_PINK: {topic: /objects/source240_pink/pose, region: {x: [0.26, 0.305], y: [-0.365, -0.330]}}   # ★11.04 사용자 "허용 범위를 높여 둠" — +x 5 mm · +y 1 cm(손으로 놓으면 +x·+y 모서리 0~4 mm 밖에서 scene 거부). −x(손목) · −y(불가 자세)는 그대로
   SHAKER: {topic: /objects/shaker_c_orange/pose}
 holders: {HOLDER_0: 0, HOLDER_1: 1, HOLDER_2: 2}
 holder_poses: config/cup_holder_poses_5090_v1.yaml

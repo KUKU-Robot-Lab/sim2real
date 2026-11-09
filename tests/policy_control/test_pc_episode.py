@@ -263,7 +263,7 @@ def test_the_pink_rescan_asks_fpp_for_the_real_object_and_needs_it_found():
     ep = _ep("cocktail_1")
     argv = rescan_argv(ep, ["SRC_PINK"])
     assert argv[1] == str(RESCAN_TOOL) and RESCAN_TOOL.is_file()
-    assert argv[2] == "source240p_pink" and "--require-all" in argv              # ★10.28 분홍만 든 FP++ 묶음 source240p
+    assert argv[2] == "source240_pink" and "--require-all" in argv              # ★10.28 분홍만 든 FP++ 묶음 source240_pink
     odd = replace(ep, objects={**ep.objects, "SRC_PINK": {"topic": "/camera/pink"}})
     with pytest.raises(ValueError, match="실물 이름"):
         rescan_argv(odd, ["SRC_PINK"])

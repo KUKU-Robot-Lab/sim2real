@@ -63,8 +63,8 @@ def test_topic_and_container_names_follow_convention():
 def test_live_tracking_topics_sit_next_to_the_pose_topics():
     """10.12 사용자(A안): 쥘 때까지 FP++ live 추적을 정책이 받는다 — snapshot 노드가 /…/<물체>/live_pose(카메라)로 내고
     object_pose_node 가 /objects/<물체>/live_pose(base)로 바꾼다."""
-    assert live_input_topic("source240b_blue") == "/perception_plus_plus/source240b_blue/live_pose"
-    assert live_output_topic("source240b_blue") == "/objects/source240b_blue/live_pose"
+    assert live_input_topic("source240_blue") == "/perception_plus_plus/source240_blue/live_pose"
+    assert live_output_topic("source240_blue") == "/objects/source240_blue/live_pose"
     assert live_input_topic("x") == input_topic("x").replace("/pose", "/live_pose")
 
 
@@ -170,20 +170,20 @@ def test_a_group_member_needs_a_known_colour(tmp_path):
 
 
 def test_source240_bottles_are_their_own_group_with_the_sim_origin():
-    """10.09 사용자: 왼쪽 주황 · 오른쪽 핑크 source240 병 — fpp_object.py add 로 objects.d/source240.yaml(묶음 source240).
+    """10.09 사용자: 왼쪽 주황 · 오른쪽 핑크 source240 병. ★11.10 사용자: 색마다 단독 묶음(물체 = 묶음 = 파일 = 메쉬 이름).
     원점은 sim body 와 같은 바닥 위 85 mm — FP++ 메쉬 꼭짓점 z 가 −0.085 ~ +0.155 다."""
     from object_registry import container_for, group_members
     reg = load_registry(DEFAULT_REGISTRY)
-    assert group_members(reg, "source240") == ["source240_orange", "source240_pink"]
-    for n, color in (("source240_orange", "orange"), ("source240_pink", "pink")):
+    for n, color in (("source240_orange", "orange"), ("source240_pink", "pink"), ("source240_blue", "blue")):
+        assert group_members(reg, n) == [n]
         spec = reg.get(n)
-        assert container_for(spec) == "fpp_source240"
+        assert container_for(spec) == f"fpp_{n}" and spec.fpp["mesh_path"] == f"assets/s2r_meshes/{n}.obj"
         # 색은 이름이거나 calib 가 잰 hue 구간 — 어느 쪽이든 그 색 이름의 대표 hue 를 품는다
         import fpp_color_pick as C
-        mid = {"orange": 12.0, "pink": 160.0}[color]
+        mid = {"orange": 12.0, "pink": 160.0, "blue": 100.0}[color]
         assert any(lo <= mid <= hi for lo, hi in C.hue_ranges(spec.fpp["color"]))
         assert spec.fpp["cup_class_id"] == 39 and not spec.symmetry_flip and spec.origin_above_bottom_m == 0.085
-    mesh = DEFAULT_REGISTRY.parent.parent / "assets" / "meshes" / "source240.obj"
+    mesh = DEFAULT_REGISTRY.parent.parent / "assets" / "meshes" / "source240_orange.obj"
     z = [float(line.split()[3]) for line in mesh.read_text().splitlines() if line.startswith("v ")]
     assert min(z) == pytest.approx(-0.085, abs=1e-4) and max(z) == pytest.approx(0.155, abs=1e-4)
 
@@ -194,10 +194,24 @@ def test_the_group_config_carries_the_camera_pose_for_the_table_filter():
     from cup_pose_relay import load_extrinsics
     reg = load_registry(DEFAULT_REGISTRY)
     cam = DEFAULT_REGISTRY.parent / "global_camera_extrinsics_arm4090.yaml"
-    doc = yaml.safe_load(render_group_yaml(reg, "source240", camera_yaml=cam))
+    doc = yaml.safe_load(render_group_yaml(reg, "source240_orange", camera_yaml=cam))
     T = np.asarray(doc["camera_to_base"])
     ext = load_extrinsics(cam)
     np.testing.assert_allclose(T[:3, 3], ext.cam_pos)
     np.testing.assert_allclose(T[:3, :3] @ T[:3, :3].T, np.eye(3), atol=1e-9)
     assert set(doc["classes"]) >= {39, 41, 75} and doc["workspace"]["z"][0] < 0.205 + 0.085
-    assert "camera_to_base" not in yaml.safe_load(render_group_yaml(reg, "source240"))
+    assert "camera_to_base" not in yaml.safe_load(render_group_yaml(reg, "source240_orange"))
+
+
+def test_one_real_object_is_registered_once():
+    """★11.10 사용자: 같은 실물(메쉬 + 색)이 두 이름 · 두 묶음으로 올라가면 FP++ 컨테이너가 겹쳐 뜬다."""
+    import hashlib
+    reg = load_registry(DEFAULT_REGISTRY)
+    meshes = DEFAULT_REGISTRY.parent.parent / "assets" / "meshes"
+    seen = {}
+    for n, spec in reg.objects.items():
+        mesh = meshes / Path(spec.fpp.get("mesh_path", n)).name
+        body = hashlib.md5(mesh.read_bytes()).hexdigest() if mesh.is_file() else mesh.name
+        key = (body, n.rsplit("_", 1)[-1])                      # 같은 메쉬 내용 + 같은 색 이름
+        assert key not in seen, f"{n} 와 {seen.get(key)} 가 같은 실물"
+        seen[key] = n

@@ -34,10 +34,9 @@ def task_of(policy_id: str) -> str:
         if family.startswith(prefix):
             return task
     return 'grasping'
-MODELS = {'source200': ('src200', 'source200_real'), 'source240': ('src240', 'source240_real'),
-          'source240b': ('src240', 'source240_real'), 'shaker_c': ('shaker', 'shaker_c_real'),
-          # ★10.28 칵테일 분홍 — 분홍만 든 묶음(파랑 source240b 와 같은 방식, 정책 물체는 같은 source240)
-          'source240p': ('src240', 'source240_real')}
+#: FP++ 묶음 → (컵 모양, 정책 물체). ★11.10 사용자: source240 은 색마다 단독 묶음(물체 = 묶음 = <모양>_<색>)
+MODELS = {'source200': ('source200', 'source200_real'), 'shaker_c': ('shaker', 'shaker_c_real'),
+          **{f'source240_{c}': ('source240', 'source240_real') for c in ('blue', 'orange', 'pink')}}
 
 
 def _empty(source, reason='not acquired') -> dict[str, Any]:
@@ -73,7 +72,6 @@ class Workspace:
             group = spec.fpp.get('group')
             if group not in MODELS:
                 continue
-            # source240b is the measured sky-blue variant of source240.
             color = name.rsplit('_', 1)[-1]
             if color not in ('blue', 'orange', 'pink'):
                 continue
@@ -145,7 +143,7 @@ class Workspace:
                             checkpoint_path=str((entry.path / 'nn' / entry.checkpoint).relative_to(self.repo)) if entry.checkpoint else '',
                             contract_path=str((entry.path / entry.contract).relative_to(self.repo)) if entry.contract else '',
                             side=entry.card.get('side'), task=task, status=entry.status, issues=list(entry.issues),
-                            supported_objects=['src200', 'src240', 'shaker'] if rg3 or path_c or path_d else [],
+                            supported_objects=['source200', 'source240', 'shaker'] if rg3 or path_c or path_d else [],
                             default_rg3=False, execution_supported=rg3 or path_c or path_d,
                             execution_reason='' if rg3 or path_c or path_d else reason))
         return out

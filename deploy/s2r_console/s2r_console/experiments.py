@@ -21,9 +21,9 @@ GRASP = (("1-B", "grasp_b", "1-B"), ("E", "grasp_e", "경로 E"), ("F", "grasp_f
          ("FP", "pick_place_f", "경로 F + 놓기"))     # ★10.22 잡고 들기 → newton_05 놓기
 #: ★11.09 사용자 "경로 F 안에서 버튼으로 컵종류와 색깔을 선택 … 왼손,오른손 모두" — (FP++ 물체, 컵, 색). 순서 = 버튼 순서.
 #:   생성기 make_rh56f1_missions.F_OBJECTS 와 같다(시험이 맞춘다). 팔 기본 물체는 grasp_f_<팔>, 나머지는 grasp_f_<물체>_<팔>
-F_OBJECTS = (("source240b_blue", "src240", "파랑"), ("source240_orange", "src240", "주황"), ("source240_pink", "src240", "분홍"),
-             ("source200_orange", "src200", "주황"), ("source200_pink", "src200", "분홍"), ("shaker_c_orange", "shaker", "주황"))
-F_DEFAULT = {"right": "source240b_blue", "left": "shaker_c_orange"}
+F_OBJECTS = (("source240_blue", "source240", "파랑"), ("source240_orange", "source240", "주황"), ("source240_pink", "source240", "분홍"),
+             ("source200_orange", "source200", "주황"), ("source200_pink", "source200", "분홍"), ("shaker_c_orange", "shaker", "주황"))
+F_DEFAULT = {"right": "source240_blue", "left": "shaker_c_orange"}
 
 
 def f_head(obj: str, side: str) -> str:

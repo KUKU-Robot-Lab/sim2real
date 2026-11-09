@@ -118,7 +118,7 @@ stages:
   - cups
   skippable: true
   touches_real: true
-  title: '[right] 컵 하나만 다시 인지 — source240b_blue (FP++ 컨테이너가 내려가 있으면 그것만 다시 띄우고, 이 컵의 묶음만 지금 카메라로 다시 찍는다)'
+  title: '[right] 컵 하나만 다시 인지 — source240_blue (FP++ 컨테이너가 내려가 있으면 그것만 다시 띄우고, 이 컵의 묶음만 지금 카메라로 다시 찍는다)'
   arm_free: true
 - id: cups_left
   group: recognize
@@ -322,8 +322,8 @@ stages:
   lane: both
   skippable: true
   touches_real: true
-  blocked: 'tilt 정책은 보류(10.07 사용자: 성공 전 정책은 직접 확인 뒤 · 10.17 기본 궤적은 에피소드 tilt_base_*) — 실기 인지는 10.08 부터 색으로 두 컵(source240b_blue=오른팔 · shaker_c_orange=왼팔
-    · source240_orange · source240_pink · source200_orange · source200_pink · source240p_pink)을 낸다'
+  blocked: 'tilt 정책은 보류(10.07 사용자: 성공 전 정책은 직접 확인 뒤 · 10.17 기본 궤적은 에피소드 tilt_base_*) — 실기 인지는 10.08 부터 색으로 두 컵(source240_blue=오른팔 · shaker_c_orange=왼팔
+    · source240_orange · source240_pink · source200_orange · source200_pink)을 낸다'
   needs:
   - home_right
   - home_left
@@ -648,7 +648,7 @@ stages:
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
   title: '[에피소드] grasp_f_shaker_c_orange_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
-- id: episode_grasp_f_source240b_blue_left
+- id: episode_grasp_f_source240_blue_left
   group: policy
   lane: arm_left
   skippable: true
@@ -657,7 +657,7 @@ stages:
   - home_left
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
-  title: '[에피소드] grasp_f_source240b_blue_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+  title: '[에피소드] grasp_f_source240_blue_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
 - id: episode_grasp_f_source240_orange_left
   group: policy
   lane: arm_left
@@ -951,7 +951,7 @@ run:
     - episode_grasp_f_source200_orange_right#7
     - episode_grasp_f_source200_pink_right#7
     - episode_grasp_f_shaker_c_orange_right#7
-    - episode_grasp_f_source240b_blue_left#7
+    - episode_grasp_f_source240_blue_left#7
     - episode_grasp_f_source240_orange_left#7
     - episode_grasp_f_source240_pink_left#7
     - episode_grasp_f_source200_orange_left#7
@@ -1012,8 +1012,8 @@ run:
     - episode_grasp_f_source200_pink_right#8
     - episode_grasp_f_shaker_c_orange_right#5
     - episode_grasp_f_shaker_c_orange_right#8
-    - episode_grasp_f_source240b_blue_left#5
-    - episode_grasp_f_source240b_blue_left#8
+    - episode_grasp_f_source240_blue_left#5
+    - episode_grasp_f_source240_blue_left#8
     - episode_grasp_f_source240_orange_left#5
     - episode_grasp_f_source240_orange_left#8
     - episode_grasp_f_source240_pink_left#5
@@ -1233,27 +1233,27 @@ run:
     execute_args:
     - --execute
   cups_right:
-  - note: ★[right] source240b_blue 가 테이블에 똑바로 서 있고 손이 가리지 않는가
+  - note: ★[right] source240_blue 가 테이블에 똑바로 서 있고 손이 가리지 않는가
     argv:
     - bash
     - -lc
     - 'true'
     manual: true
-  - note: '[right] FP++ 컨테이너 확인 — source240b_blue 묶음이 없으면 띄운다(다른 컨테이너는 그대로). 최대 120 s'
+  - note: '[right] FP++ 컨테이너 확인 — source240_blue 묶음이 없으면 띄운다(다른 컨테이너는 그대로). 최대 120 s'
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
+    - source240_blue
     - --wait
     - '120'
     - --require-all
-  - note: '[right] source240b_blue 만 다시 찍기 — base 좌표 · 판정을 찍고, 못 찾으면 이유와 함께 실패'
+  - note: '[right] source240_blue 만 다시 찍기 — base 좌표 · 판정을 찍고, 못 찾으면 이유와 함께 실패'
     argv:
     - python3
     - '{repo}/scripts/ops/fpp_rescan.py'
-    - source240b_blue
+    - source240_blue
     - --wait
     - '120'
   cups_left:
@@ -1332,7 +1332,7 @@ run:
     stop:
     - policy_pourfj#1
   policy_aglt_right:
-  - note: ★[right] 컵이 학습 배치(로봇 앞 x ≈ 0.25, y ≈ −0.20 ± 0.1)에 서 있고 콘솔에 컵 자세(/objects/source240b_blue/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가.
+  - note: ★[right] 컵이 학습 배치(로봇 앞 x ≈ 0.25, y ≈ −0.20 ± 0.1)에 서 있고 콘솔에 컵 자세(/objects/source240_blue/pose)가 들어오는가. 이 팔 · 손 주변과 컵 위 20 cm 가 비어 있는가.
       정책은 팔을 스스로 움직이고 컵을 쥐어 든다 — 빈 컵만
     argv:
     - bash
@@ -1344,7 +1344,7 @@ run:
     - bash
     - -lc
     - EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/right/episode
-      /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action /objects/source240b_blue/pose /objects/source240b_blue/live_pose'
+      /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action /objects/source240_blue/pose /objects/source240_blue/live_pose'
       HAND_SIDES='right' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start aglt_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
@@ -1369,7 +1369,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - object:=source240_real
     - -p
@@ -1603,7 +1603,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source240b_blue/pose
+    - cup_topic:=/objects/source240_blue/pose
     - -p
     - holder:=1
     background: true
@@ -2782,19 +2782,19 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+  - note: FP++ 물체 확보 — source240_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
+    - source240_blue
     - --wait
     - '120'
     - --require-all
   - note: '★[에피소드 pick_place_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
       --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
@@ -2819,7 +2819,7 @@ run:
     - -p
     - stop_on_target:=true
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -2877,7 +2877,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source240b_blue/pose
+    - cup_topic:=/objects/source240_blue/pose
     - -p
     - holder:=1
     background: true
@@ -2888,7 +2888,7 @@ run:
     - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /objects/cup_holder_1/pose
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_blue/pose /objects/source240_blue/live_pose /objects/cup_holder_1/pose
       /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_pick_place_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
@@ -2960,7 +2960,7 @@ run:
     - --require-all
   - note: '★[에피소드 pick_place_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
       --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
@@ -3114,18 +3114,18 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+  - note: FP++ 물체 확보 — source240_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
+    - source240_blue
     - --wait
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_c_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -3152,7 +3152,7 @@ run:
     - -p
     - approach_grasp:=stop_ready=1
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -3199,7 +3199,7 @@ run:
     - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_blue/pose /objects/source240_blue/live_pose /policy_control/pd_right/applied
       /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_c_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
@@ -3268,7 +3268,7 @@ run:
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_c_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -3408,8 +3408,8 @@ run:
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
       /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
-      /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose /objects/shaker_c_orange/pose
-      /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
+      /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240_blue/pose /objects/shaker_c_orange/pose
+      /objects/source240_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
       /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_tilt_base_b
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
@@ -3465,19 +3465,19 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 210 s
+  - note: FP++ 물체 확보 — source240_blue · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 210 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
+    - source240_blue
     - shaker_c_orange
     - --wait
     - '210'
     - --require-all
   - note: '★[에피소드 tilt_base_c] 물체(SRC, RCV)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) ·
-      기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -3504,7 +3504,7 @@ run:
     - -p
     - approach_grasp:=stop_ready=1
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -3611,8 +3611,8 @@ run:
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
       /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
-      /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose /objects/shaker_c_orange/pose
-      /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
+      /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240_blue/pose /objects/shaker_c_orange/pose
+      /objects/source240_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
       /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_tilt_base_c
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
@@ -3670,19 +3670,19 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 210 s
+  - note: FP++ 물체 확보 — source240_blue · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 210 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
+    - source240_blue
     - shaker_c_orange
     - --wait
     - '210'
     - --require-all
   - note: '★[에피소드 tilt_base_d] 물체(SRC, RCV)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) ·
-      기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -3714,7 +3714,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -3826,8 +3826,8 @@ run:
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
       /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
-      /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose /objects/shaker_c_orange/pose
-      /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
+      /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240_blue/pose /objects/shaker_c_orange/pose
+      /objects/source240_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
       /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_tilt_base_d
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
@@ -3885,18 +3885,18 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+  - note: FP++ 물체 확보 — source240_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
+    - source240_blue
     - --wait
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_b_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -3911,7 +3911,7 @@ run:
     - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_blue/pose /objects/source240_blue/live_pose /policy_control/pd_right/applied
       /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_b_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
@@ -3979,7 +3979,7 @@ run:
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_b_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -4051,18 +4051,18 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+  - note: FP++ 물체 확보 — source240_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
+    - source240_blue
     - --wait
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_d_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -4094,7 +4094,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -4141,7 +4141,7 @@ run:
     - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_blue/pose /objects/source240_blue/live_pose /policy_control/pd_right/applied
       /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_d_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
@@ -4210,7 +4210,7 @@ run:
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_d_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -4347,18 +4347,18 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+  - note: FP++ 물체 확보 — source240_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
+    - source240_blue
     - --wait
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_e_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -4395,7 +4395,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -4442,7 +4442,7 @@ run:
     - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_blue/pose /objects/source240_blue/live_pose /policy_control/pd_right/applied
       /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_e_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
@@ -4511,7 +4511,7 @@ run:
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_e_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -4653,18 +4653,18 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+  - note: FP++ 물체 확보 — source240_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
+    - source240_blue
     - --wait
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_f_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -4701,7 +4701,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -4750,7 +4750,7 @@ run:
     - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_blue/pose /objects/source240_blue/live_pose /policy_control/pd_right/applied
       /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
@@ -4819,7 +4819,7 @@ run:
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_f_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -4974,7 +4974,7 @@ run:
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_f_source240_orange_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
-      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -5129,7 +5129,7 @@ run:
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_f_source240_pink_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
-      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -5284,7 +5284,7 @@ run:
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_f_source200_orange_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
-      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -5439,7 +5439,7 @@ run:
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_f_source200_pink_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
-      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -5594,7 +5594,7 @@ run:
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_f_shaker_c_orange_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
-      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -5718,13 +5718,13 @@ run:
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
     - episode_grasp_f_shaker_c_orange_right
-  episode_grasp_f_source240b_blue_left:
+  episode_grasp_f_source240_blue_left:
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/episode_run.py'
     - --episode
-    - config/episodes/grasp_f_source240b_blue_left.yaml
+    - config/episodes/grasp_f_source240_blue_left.yaml
     - --plan
     - --require-holders
   - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
@@ -5738,18 +5738,18 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+  - note: FP++ 물체 확보 — source240_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
+    - source240_blue
     - --wait
     - '120'
     - --require-all
-  - note: '★[에피소드 grasp_f_source240b_blue_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
-      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+  - note: '★[에피소드 grasp_f_source240_blue_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -5786,7 +5786,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -5835,16 +5835,16 @@ run:
     - HAND_SIDES='left' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left
-      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_left/applied
-      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240b_blue_left
+      /policy_control/left/episode /episode/left/objects/CUP/pose /objects/source240_blue/pose /objects/source240_blue/live_pose /policy_control/pd_left/applied
+      /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_f_source240_blue_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{runs}/cpu/episode_grasp_f_source240b_blue_left.csv'
+    - '{runs}/cpu/episode_grasp_f_source240_blue_left.csv'
     background: true
-  - note: 에피소드 실행기 episode_runner_left — grasp_f_source240b_blue_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240b_blue_left)
+  - note: 에피소드 실행기 episode_runner_left — grasp_f_source240_blue_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240_blue_left)
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
@@ -5852,7 +5852,7 @@ run:
     - -r
     - __node:=episode_runner_left
     - -p
-    - episode:=config/episodes/grasp_f_source240b_blue_left.yaml
+    - episode:=config/episodes/grasp_f_source240_blue_left.yaml
     - -p
     - robot:=rh56f1
     background: true
@@ -5864,15 +5864,15 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_f_source240b_blue_left#8
-    - episode_grasp_f_source240b_blue_left#7
-    - episode_grasp_f_source240b_blue_left#5
+    - episode_grasp_f_source240_blue_left#8
+    - episode_grasp_f_source240_blue_left#7
+    - episode_grasp_f_source240_blue_left#5
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
-    - episode_grasp_f_source240b_blue_left
+    - episode_grasp_f_source240_blue_left
   episode_grasp_f_source240_orange_left:
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
     argv:
@@ -5904,7 +5904,7 @@ run:
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_f_source240_orange_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
-      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -6059,7 +6059,7 @@ run:
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_f_source240_pink_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
-      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -6214,7 +6214,7 @@ run:
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_f_source200_orange_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
-      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -6369,7 +6369,7 @@ run:
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_f_source200_pink_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
-      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -6513,19 +6513,19 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+  - note: FP++ 물체 확보 — source240_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
+    - source240_blue
     - --wait
     - '120'
     - --require-all
   - note: '★[에피소드 pick_place_f_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
       --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
@@ -6561,7 +6561,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -6619,7 +6619,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source240b_blue/pose
+    - cup_topic:=/objects/source240_blue/pose
     - -p
     - holder:=1
     background: true
@@ -6630,7 +6630,7 @@ run:
     - HAND_SIDES='right' CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right
-      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose /objects/source240b_blue/live_pose /objects/cup_holder_1/pose
+      /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_blue/pose /objects/source240_blue/live_pose /objects/cup_holder_1/pose
       /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_pick_place_f_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
@@ -6702,7 +6702,7 @@ run:
     - --require-all
   - note: '★[에피소드 pick_place_f_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=0 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
       --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
@@ -6867,19 +6867,19 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 210 s
+  - note: FP++ 물체 확보 — source240_blue · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 210 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
+    - source240_blue
     - shaker_c_orange
     - --wait
     - '210'
     - --require-all
   - note: '★[에피소드 grasp2tilt_f_240] 물체(SRC, RCV)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm)
-      · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -6916,7 +6916,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -7033,8 +7033,8 @@ run:
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
       /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
-      /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240b_blue/pose /objects/shaker_c_orange/pose
-      /objects/source240b_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
+      /policy_control/right/episode /episode/objects/SRC/pose /episode/objects/RCV/pose /objects/source240_blue/pose /objects/shaker_c_orange/pose
+      /objects/source240_blue/live_pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/pd_right/applied /policy_control/left/obs
       /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_grasp2tilt_f_240
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
@@ -7092,21 +7092,21 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue · source240p_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
+  - note: FP++ 물체 확보 — source240_blue · source240_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
-    - source240p_pink
+    - source240_blue
+    - source240_pink
     - shaker_c_orange
     - --wait
     - '300'
     - --require-all
   - note: '★[에피소드 cocktail_1] 물체(SRC_BLUE, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · SRC_PINK 는 아직 탁자에 두지 않는다(에피소드 확인 단계에서 놓는다) · 홀더 HOLDER_0=0, HOLDER_1=1,
       HOLDER_2=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판
-      0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -7143,7 +7143,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -7270,7 +7270,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source240b_blue/pose
+    - cup_topic:=/objects/source240_blue/pose
     - -p
     - holder:=1
     - -p
@@ -7306,8 +7306,8 @@ run:
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
       /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
-      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240b_blue/pose
-      /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose /objects/shaker_c_orange/live_pose
+      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240_blue/pose
+      /objects/source240_pink/pose /objects/shaker_c_orange/pose /objects/source240_blue/live_pose /objects/source240_pink/live_pose /objects/shaker_c_orange/live_pose
       /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
       /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_cocktail_1
@@ -7368,21 +7368,21 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue · source240p_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
+  - note: FP++ 물체 확보 — source240_blue · source240_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
-    - source240p_pink
+    - source240_blue
+    - source240_pink
     - shaker_c_orange
     - --wait
     - '300'
     - --require-all
   - note: '★[에피소드 cocktail_1b] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
       --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
@@ -7418,7 +7418,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -7545,7 +7545,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source240b_blue/pose
+    - cup_topic:=/objects/source240_blue/pose
     - -p
     - holder:=1
     - -p
@@ -7581,8 +7581,8 @@ run:
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
       /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
-      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240b_blue/pose
-      /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose /objects/shaker_c_orange/live_pose
+      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240_blue/pose
+      /objects/source240_pink/pose /objects/shaker_c_orange/pose /objects/source240_blue/live_pose /objects/source240_pink/live_pose /objects/shaker_c_orange/live_pose
       /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
       /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_cocktail_1b
@@ -7643,21 +7643,21 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue · source240p_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
+  - note: FP++ 물체 확보 — source240_blue · source240_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
-    - source240p_pink
+    - source240_blue
+    - source240_pink
     - shaker_c_orange
     - --wait
     - '300'
     - --require-all
   - note: '★[에피소드 cocktail_1c_e1000] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고
       저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점
-      0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -7694,7 +7694,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -7825,7 +7825,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - holder:=1
     - -p
@@ -7861,8 +7861,8 @@ run:
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
       /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
-      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240b_blue/pose
-      /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose /objects/shaker_c_orange/live_pose
+      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240_blue/pose
+      /objects/source240_pink/pose /objects/shaker_c_orange/pose /objects/source240_blue/live_pose /objects/source240_pink/live_pose /objects/shaker_c_orange/live_pose
       /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
       /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_cocktail_1c_e1000
@@ -7923,21 +7923,21 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue · source240p_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
+  - note: FP++ 물체 확보 — source240_blue · source240_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
-    - source240p_pink
+    - source240_blue
+    - source240_pink
     - shaker_c_orange
     - --wait
     - '300'
     - --require-all
   - note: '★[에피소드 cocktail_1c_e4000] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고
       저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점
-      0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -7974,7 +7974,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -8105,7 +8105,7 @@ run:
     - -p
     - device:=cpu
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - holder:=1
     - -p
@@ -8141,8 +8141,8 @@ run:
       /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
       /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
       /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
-      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240b_blue/pose
-      /objects/source240p_pink/pose /objects/shaker_c_orange/pose /objects/source240b_blue/live_pose /objects/source240p_pink/live_pose /objects/shaker_c_orange/live_pose
+      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240_blue/pose
+      /objects/source240_pink/pose /objects/shaker_c_orange/pose /objects/source240_blue/live_pose /objects/source240_pink/live_pose /objects/shaker_c_orange/live_pose
       /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
       /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_cocktail_1c_e4000
@@ -8203,18 +8203,18 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+  - note: FP++ 물체 확보 — source240_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
+    - source240_blue
     - --wait
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_s_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -8257,7 +8257,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -8303,8 +8303,8 @@ run:
     - -lc
     - HAND_SIDES='right' CAMERA='/head_depth/image /head_depth/rgb /head_depth/config /camera/camera/color/camera_info /head/joint_states' CAMERA_HZ=60
       EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
-      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240b_blue/pose
-      /objects/source240b_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_blue/pose /objects/source240_blue/live_pose
+      /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
       start episode_grasp_s_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
@@ -8374,7 +8374,7 @@ run:
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_s_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -8523,18 +8523,18 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+  - note: FP++ 물체 확보 — source240_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
+    - source240_blue
     - --wait
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_m_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -8594,7 +8594,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -8641,7 +8641,7 @@ run:
     - HAND_SIDES='right' CAMERA='/head_depth/image /head_depth/rgb /head_depth/config /camera/camera/color/camera_info /head/joint_states /head_mask/image
       /head_mask/config' CAMERA_HZ=60 EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right
       /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose
-      /objects/source240b_blue/pose /objects/source240b_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action'
+      /objects/source240_blue/pose /objects/source240_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action'
       bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_m_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
@@ -8712,7 +8712,7 @@ run:
     - '120'
     - --require-all
   - note: '★[에피소드 grasp_m_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
-      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
       --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
       진행한다'
     argv:
@@ -8879,19 +8879,19 @@ run:
     - -lc
     - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     manual: true
-  - note: FP++ 물체 확보 — source240b_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+  - note: FP++ 물체 확보 — source240_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
     argv:
     - python3
     - '{repo}/scripts/ops/perception_ctl.py'
     - start
     - --add
-    - source240b_blue
+    - source240_blue
     - --wait
     - '120'
     - --require-all
   - note: '★[에피소드 place_m_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로
       있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
       --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
@@ -8927,7 +8927,7 @@ run:
     - -p
     - freeze_hold_steps:=120
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - cup_static:=false
     - -p
@@ -9035,7 +9035,7 @@ run:
     - -p
     - device:=cuda
     - -p
-    - cup_topic:=/objects/source240b_blue/live_pose
+    - cup_topic:=/objects/source240_blue/live_pose
     - -p
     - holder:=1
     - -p
@@ -9048,7 +9048,7 @@ run:
     - HAND_SIDES='right' CAMERA='/head_depth/image /head_depth/rgb /head_depth/config /camera/camera/color/camera_info /head/joint_states /head_mask/image
       /head_mask/config' CAMERA_HZ=60 EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right
       /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose
-      /objects/source240b_blue/pose /objects/source240b_blue/live_pose /objects/cup_holder_1/pose /policy_control/pd_right/applied /policy_control/right/obs
+      /objects/source240_blue/pose /objects/source240_blue/live_pose /objects/cup_holder_1/pose /policy_control/pd_right/applied /policy_control/right/obs
       /policy_control/right/action /head/target_stream /head/stream_log' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_place_m_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
@@ -9140,7 +9140,7 @@ run:
     - --require-all
   - note: '★[에피소드 place_m_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=0 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로
       있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240b_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
       --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
