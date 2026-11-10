@@ -1,0 +1,204 @@
+{
+ "episode": "cocktail_1c_e4000",
+ "steps": [
+  {
+   "step_id": "go_home_start",
+   "card_id": "go_home",
+   "args": {
+    "name": "go_home",
+    "expect": {
+     "pose": "HOME"
+    },
+    "checkpoint": "HOME_START"
+   }
+  },
+  {
+   "step_id": "scene",
+   "card_id": "scene_snapshot",
+   "args": {}
+  },
+  {
+   "step_id": "grasp_to_tilt_start",
+   "구성": "lanes",
+   "expect": {
+    "pose": "SETTING"
+   },
+   "lanes": [
+    {
+     "side": "right",
+     "steps": [
+      {
+       "step_id": "grasp_blue",
+       "card_id": "grasp",
+       "args": {
+        "name": "rh_aglt_r",
+        "target_object": "SRC_BLUE",
+        "policy_object": "source240_real",
+        "lift_guard": {
+         "object": "SRC_PINK",
+         "guard_mm": 40,
+         "hstop_m": 0.08
+        },
+        "expect": {
+         "right_hand": "SRC_BLUE"
+        }
+       }
+      },
+      {
+       "step_id": "to_tilt_start_r1",
+       "card_id": "to_tilt_start",
+       "args": {
+        "name": "to_tilt_start_r"
+       }
+      }
+     ]
+    },
+    {
+     "side": "left",
+     "steps": [
+      {
+       "step_id": "grasp_shaker",
+       "card_id": "grasp",
+       "args": {
+        "name": "rh_aglt_l",
+        "target_object": "SHAKER",
+        "policy_object": "shaker_c_real",
+        "expect": {
+         "left_hand": "SHAKER"
+        }
+       }
+      },
+      {
+       "step_id": "to_tilt_start_l",
+       "card_id": "to_tilt_start",
+       "args": {
+        "name": "to_tilt_start_l"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "step_id": "tilt_blue",
+   "card_id": "tilt",
+   "args": {
+    "name": "tilt",
+    "expect": {
+     "pose": "SETTING",
+     "blue_poured": true
+    }
+   }
+  },
+  {
+   "step_id": "place_blue",
+   "card_id": "place",
+   "args": {
+    "name": "rh_place_r",
+    "source_object": "SRC_BLUE",
+    "target_holder": "HOLDER_1",
+    "policy_object": "source240_real",
+    "expect": {
+     "right_hand": "EMPTY",
+     "left_hand": "SHAKER",
+     "blue_placed": true
+    }
+   }
+  },
+  {
+   "step_id": "home_r_after_blue",
+   "card_id": "go_home",
+   "args": {
+    "name": "go_home_r",
+    "auto": true,
+    "expect": {
+     "right_hand": "EMPTY",
+     "left_hand": "SHAKER"
+    }
+   }
+  },
+  {
+   "step_id": "grasp_pink",
+   "card_id": "grasp",
+   "args": {
+    "name": "rh_aglt_r",
+    "target_object": "SRC_PINK",
+    "policy_object": "source240_real",
+    "expect": {
+     "right_hand": "SRC_PINK",
+     "left_hand": "SHAKER"
+    }
+   }
+  },
+  {
+   "step_id": "to_tilt_start_r2",
+   "card_id": "to_tilt_start",
+   "args": {
+    "name": "to_tilt_start_r",
+    "expect": {
+     "pose": "SETTING"
+    }
+   }
+  },
+  {
+   "step_id": "tilt_pink",
+   "card_id": "tilt",
+   "args": {
+    "name": "tilt",
+    "expect": {
+     "pose": "SETTING",
+     "pink_poured": true
+    }
+   }
+  },
+  {
+   "step_id": "place_pink",
+   "card_id": "place",
+   "args": {
+    "name": "rh_place_r",
+    "source_object": "SRC_PINK",
+    "target_holder": "HOLDER_2",
+    "policy_object": "source240_real",
+    "holder_tol_m": 0.07,
+    "expect": {
+     "right_hand": "EMPTY",
+     "left_hand": "SHAKER",
+     "pink_placed": true
+    }
+   }
+  },
+  {
+   "step_id": "place_shaker",
+   "card_id": "place",
+   "args": {
+    "name": "rh_place_l",
+    "source_object": "SHAKER",
+    "target_holder": "HOLDER_0",
+    "policy_object": "shaker_c_real",
+    "expect": {
+     "right_hand": "EMPTY",
+     "left_hand": "EMPTY",
+     "shaker_placed": true
+    }
+   }
+  },
+  {
+   "step_id": "go_home_end",
+   "card_id": "go_home",
+   "args": {
+    "name": "go_home",
+    "auto": true,
+    "expect": {
+     "pose": "HOME"
+    }
+   }
+  },
+  {
+   "step_id": "done",
+   "card_id": "terminal",
+   "args": {
+    "result": "SUCCESS"
+   }
+  }
+ ]
+}

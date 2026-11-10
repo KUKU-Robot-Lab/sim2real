@@ -1,0 +1,661 @@
+문서: VLM 에피소드 드라이버 스킬 카드
+기준일: '2026-11-10'
+근거_루트: /home/yoon/rl_ws/sim2real
+근거_읽기: 상대 파일:줄은 근거_루트 기준. 절대 메모 경로는 당시 관찰이며 현행 코드보다 우선하지 않음. 원문_YAML은 원본을 파싱한 동일 의미 YAML(주석/공백 제외).
+대상: Cosmos-Reason2-2B; 사진+텍스트→JSON. 사진 질문은 관찰 보조이며 수치 상태/이벤트를 함께 입력해야 함.
+사용자_요청: 블루컵과 핑크컵에 있는 비드를 오렌지 쉐이커 컵에 옮겨줘.
+객체_사전:
+- 사용자_말:
+  - 블루컵
+  - 파란컵
+  - 파랑컵
+  시스템_이름: SRC_BLUE
+  색: 파랑
+  실물: source240_blue
+  policy_object: source240_real
+  손: right
+  홀더: HOLDER_1
+  홀더_번호: 1
+  근거:
+  - config/episodes/cocktail_1c_e4000.yaml:12
+  - config/episodes/cocktail_1c_e4000.yaml:56
+- 사용자_말:
+  - 핑크컵
+  - 분홍컵
+  시스템_이름: SRC_PINK
+  색: 분홍
+  실물: source240_pink
+  policy_object: source240_real
+  손: right
+  홀더: HOLDER_2
+  홀더_번호: 2
+  근거:
+  - config/episodes/cocktail_1c_e4000.yaml:14
+  - config/episodes/cocktail_1c_e4000.yaml:65
+- 사용자_말:
+  - 오렌지 쉐이커
+  - 오렌지 쉐이커 컵
+  - 주황 쉐이커
+  시스템_이름: SHAKER
+  색: 주황
+  실물: shaker_c_orange
+  policy_object: shaker_c_real
+  손: left
+  홀더: HOLDER_0
+  홀더_번호: 0
+  근거:
+  - config/episodes/cocktail_1c_e4000.yaml:15
+  - config/episodes/cocktail_1c_e4000.yaml:67
+홀더_사전:
+  HOLDER_0: '0: 왼쪽'
+  HOLDER_1: '1: 가운데'
+  HOLDER_2: '2: 오른쪽 바깥'
+  자세_파일: config/cup_holder_poses_5090_v1.yaml
+  근거: config/episodes/cocktail_1.yaml:29
+공통_실행_계약:
+- 규칙: '지원 type: snapshot, trajectory, policy, parallel_policy, confirm, hand, terminal, lanes. human/stop/grasp 등 카드
+    id와 YAML type을 혼동하지 않는다.'
+  근거: deploy/policy_control/policy_control/episode_spec.py:57
+- 규칙: expect는 실제 센서 검사식이 아니라 성공 후 World에 적용하는 선언. VLM 관찰과 NodeResult.status/reason/signals를 분리한다.
+  근거: deploy/policy_control/policy_control/episode_runner.py:454
+- 규칙: failure_policy.default=0. 현재 baseline은 자동 retry/rollback 없음. 단 place continue_on_fail 예외 및 reset stale/T_in 내부
+    재시도는 별도.
+  근거: config/episodes/cocktail_1c_e4000.yaml:31
+- 규칙: 'hold의 의미 구별: 초기 정책 hold_steps, 성공 freeze_hold_steps, 가드 정지 후 GUARD_HOLD_S, 팔 정지 창, place release/withdraw 틱. VLM
+    1~2 Hz 사진으로 이 틱을 세지 않는다.'
+  근거: deploy/policy_control/policy_control/rh_aglt_goals.py:38
+실행기_인터페이스:
+  정책_서비스: /policy_control/<side>/episode/{reset,start,stop}; place 서비스 ns는 <side>_place. 이벤트는 /policy_control/<side>/episode에서
+    node 이름과 episode로 구분.
+  실행_순서: job_params 설정→reset→aglt goal 설정→start→해당 episode stop/abort 이벤트→신호 판정.
+  근거:
+  - deploy/policy_control/policy_control/episode_ros.py:3
+  - deploy/policy_control/policy_control/episode_ros.py:173
+  - deploy/policy_control/policy_control/episode_ros.py:657
+스킬:
+- id: go_home
+  하는_일: 지정한 빈손 팔을 충돌 검사한 경로로 홈에 돌려놓는다.
+  실행_방법:
+    노드_예시:
+    - id: go_home_start
+      type: trajectory
+      name: go_home
+      expect:
+        pose: HOME
+      checkpoint: HOME_START
+    - id: home_r_after_blue
+      type: trajectory
+      name: go_home_r
+      auto: true
+      expect:
+        right_hand: EMPTY
+        left_hand: SHAKER
+    - id: go_home_end
+      type: trajectory
+      name: go_home
+      auto: true
+      expect:
+        pose: HOME
+    원문_YAML: "id: go_home_start\ntype: trajectory\nname: go_home\nexpect:\n  pose: HOME\ncheckpoint: HOME_START\nid:\
+      \ home_r_after_blue\ntype: trajectory\nname: go_home_r\nauto: true\nexpect:\n  right_hand: EMPTY\n  left_hand:\
+      \ SHAKER\nid: go_home_end\ntype: trajectory\nname: go_home\nauto: true\nexpect:\n  pose: HOME"
+    근거: config/episodes/cocktail_1c_e4000.yaml
+    정의:
+      go_home:
+        kind: rehome
+        sides:
+        - right
+        - left
+      go_home_r:
+        kind: rehome
+        sides:
+        - right
+  인자:
+    hand:
+    - both
+    - right
+    name:
+    - go_home
+    - go_home_r
+  시작_조건:
+  - 움직일 팔의 손은 EMPTY. 왼손이 SHAKER이면 go_home_r만 사용한다.
+  - pd phase TRACKING, estop 해제.
+  성공_모습:
+    사진: 지정 팔이 홈에 있고 컵을 건드리지 않는다.
+    숫자:
+    - 규칙: 이미 홈이면 HOME_SKIP_RAD=0.03 rad 안이고 정지한 경우 계획·재생 생략. 그렇지 않으면 plan_rehome → check_path_start → replay_to_pd →
+        pd_goto_home 모두 성공.
+      근거: deploy/policy_control/policy_control/episode_ros.py:910
+    - 규칙: 실행 완료 뒤 expect.pose=HOME 기록(오른팔만 복귀는 두 손 expect 유지).
+      근거: config/episodes/cocktail_1c_e4000.yaml:34
+  끊어야_할_신호:
+  - 규칙: pd TRACKING 아님, 손에 물체 있음, 계획/시작점 검사 rc!=0이면 실행 거부. 재생/홈 서비스 실패는 error.
+    근거: deploy/policy_control/policy_control/episode_ros.py:917
+  - 규칙: 도구 상한 plan_rehome.py 120.0 s, check_path_start.py 60.0 s, replay_to_pd.py 600.0 s; 초과는 tool timeout → controller_error.
+    근거: deploy/policy_control/policy_control/episode_ros.py:137
+  다음으로_연결:
+  - 시작 홈→scene_snapshot; 파랑 놓기 뒤 오른팔 홈→분홍 grasp; 끝 홈→terminal.
+  흔한_실패:
+  - 규칙: 컵을 쥔 채 rehome은 거부된다. 먼저 stop/human으로 현재 상태를 확인하고 빈손을 확정한 뒤 복귀한다.
+    근거: deploy/policy_control/policy_control/episode_ros.py:922
+  VLM_질문:
+  - Is the selected hand empty?
+  - Is the arm clear of all cups?
+- id: scene_snapshot
+  하는_일: 세 컵의 현재 정지 자세를 읽고 분홍 컵의 허용 영역을 검사한다.
+  실행_방법:
+    노드_예시:
+    - id: scene
+      type: snapshot
+    원문_YAML: 'id: scene
+
+      type: snapshot'
+    근거: config/episodes/cocktail_1c_e4000.yaml
+  인자:
+    object:
+    - SRC_BLUE
+    - SRC_PINK
+    - SHAKER
+    objects: 생략하면 시작 물체 전체. 부분 재촬영은 snapshot objects 목록(이 정답 계획에는 없음).
+  시작_조건:
+  - 컵이 탁자에 서 있고 사람 손이 시야에서 빠져 있다.
+  - 세 홀더가 고정 자세 파일과 일치하고 비어 있는지 사진으로 확인(권장 전제).
+  성공_모습:
+    사진: 파랑·분홍·주황 컵을 구별할 수 있고 움직임이 없다.
+    숫자:
+    - 규칙: SNAPSHOT_WINDOW_S=1.5, SNAPSHOT_MIN_FRAMES=5, 위치 중앙값에서 최대 거리 <= SNAPSHOT_STILL_M=0.005 m.
+      근거: deploy/policy_control/policy_control/episode_ros.py:59
+    - 규칙: live 정지 자세 우선; rescan 직후에는 pose 우선. live가 충분하지만 움직이면 옛 static 자세로 대체하지 않는다.
+      근거: deploy/policy_control/policy_control/episode_ros.py:273
+    - 규칙: SRC_PINK region x=[0.26,0.305], y=[-0.365,-0.330] m(base).
+      근거: config/episodes/cocktail_1c_e4000.yaml:14
+  끊어야_할_신호:
+  - 규칙: 필요 물체 없음/움직임은 cup pose missing, 영역 밖은 cup outside region → target_not_found. 기본 재시도 0이므로 정지.
+    근거: deploy/policy_control/policy_control/episode_runner.py:427
+  - 규칙: snapshot 대기 상한=1.5+3.0 s. 부분 objects 재촬영의 fpp_rescan --wait=60은 별도.
+    근거: deploy/policy_control/policy_control/episode_ros.py:598
+  다음으로_연결:
+  - 성공한 snapshot으로 두 grasp lane에 물체 이름과 가드용 SRC_PINK 좌표를 전달한다.
+  흔한_실패:
+  - 규칙: 분홍이 영역 밖이면 손으로 바로 놓게 한 뒤 human 확인·새 snapshot을 권장한다. 현재 baseline은 자동 재배치하지 않는다.
+    근거: config/episodes/cocktail_1c_e4000.yaml:31
+  - 규칙: '색 컵 혼동·가림: 부분 재촬영 또는 사람 확인. cocktail_1의 confirm_pink_placed/scene_pink를 쓸 때는 해당 순서 전체로 전환해야 한다.'
+    근거: config/episodes/cocktail_1.yaml:65
+  VLM_질문:
+  - Are all three cups visible and upright?
+  - Is the blue cup distinct from the pink cup?
+  - Are all holders empty?
+- id: grasp
+  하는_일: 빈손으로 컵에 접근(ap05)한 뒤 같은 노드의 rcg04로 넘겨 잡아 든다.
+  실행_방법:
+    노드_예시:
+    - id: grasp_blue
+      type: policy
+      name: rh_aglt_r
+      target_object: SRC_BLUE
+      policy_object: source240_real
+      lift_guard:
+        object: SRC_PINK
+        guard_mm: 40
+        hstop_m: 0.08
+      expect:
+        right_hand: SRC_BLUE
+    - id: grasp_shaker
+      type: policy
+      name: rh_aglt_l
+      target_object: SHAKER
+      policy_object: shaker_c_real
+      expect:
+        left_hand: SHAKER
+    - id: grasp_pink
+      type: policy
+      name: rh_aglt_r
+      target_object: SRC_PINK
+      policy_object: source240_real
+      expect:
+        right_hand: SRC_PINK
+        left_hand: SHAKER
+    원문_YAML: "id: grasp_blue\ntype: policy\nname: rh_aglt_r\ntarget_object: SRC_BLUE\npolicy_object: source240_real\n\
+      lift_guard:\n  object: SRC_PINK\n  guard_mm: 40\n  hstop_m: 0.08\nexpect:\n  right_hand: SRC_BLUE\nid: grasp_shaker\n\
+      type: policy\nname: rh_aglt_l\ntarget_object: SHAKER\npolicy_object: shaker_c_real\nexpect:\n  left_hand: SHAKER\n\
+      id: grasp_pink\ntype: policy\nname: rh_aglt_r\ntarget_object: SRC_PINK\npolicy_object: source240_real\nexpect:\n\
+      \  right_hand: SRC_PINK\n  left_hand: SHAKER"
+    근거: config/episodes/cocktail_1c_e4000.yaml
+    정의:
+      rh_aglt_r:
+        policy: rh56f1/aglt/right_approach_ap05
+        kind: aglt
+        side: right
+        approach_grasp:
+          handoff: 1
+        handoff: rh56f1/aglt/right_rcg04
+        cup_obs_offset_base_m:
+        - -0.0116
+        - 0.0338
+        - 0.0
+      rh_aglt_l:
+        policy: rh56f1/aglt/left_approach_ap05
+        kind: aglt
+        side: left
+        approach_grasp:
+          handoff: 1
+        handoff: rh56f1/aglt/left_rcg04
+        cup_obs_offset_base_m:
+        - 0.0028
+        - 0.0283
+        - 0.0046
+  인자:
+    hand:
+    - right
+    - left
+    object:
+      right:
+      - SRC_BLUE
+      - SRC_PINK
+      left:
+      - SHAKER
+    policy_object:
+      SRC_BLUE: source240_real
+      SRC_PINK: source240_real
+      SHAKER: shaker_c_real
+    lift_guard: 'SRC_BLUE/right만 {object: SRC_PINK, guard_mm: 40, hstop_m: 0.08}; 분홍·왼손은 사용하지 않음'
+  시작_조건:
+  - 선택한 손 EMPTY, 대상 컵은 snapshot으로 확인된 탁자 물체.
+  - 반대 손 상태를 유지한다(분홍 잡을 때 left_hand=SHAKER).
+  성공_모습:
+    사진: 손가락이 대상 컵을 감싸고 컵이 탁자에서 들려 함께 움직인다.
+    숫자:
+    - 규칙: '미션 실제 설정: goal_max=1 또는 freeze_rule=lift_hold, freeze_lift_m=0.07, freeze_hold_steps=120. 기본 클래스의 30틱과 구별한다.'
+      근거: config/mission_rh56f1_control_cam5090.yaml:7969
+    - 규칙: goal_max 성공이 먼저면 종료. lift_hold는 lift_dz>0.07 m AND held가 120틱 연속(60 Hz에서 2 s). fresh=False이면 카운터 갱신을 보류한다.
+      근거: deploy/policy_control/policy_control/rh_aglt_goals.py:144
+    - 규칙: dropped=False; attached=False는 lift_hold/guard_hold_ok가 없으면 grasp_failed. attached인 경우 live_off_m>0.04면 grasp_failed.
+        setting_err_m>0.04는 lifted 예외가 없을 때 pose_mismatch.
+      근거: deploy/policy_control/policy_control/episode_failure.py:133
+  끊어야_할_신호:
+  - 규칙: ap05 손바닥-컵 거리 > far_abort_m=0.35 m이면 접근 abort; approach_max_s=15.0 안에 준비 자세 정지를 못해도 abort.
+    근거: deploy/policy_control/policy_control/approach_grasp.py:123
+  - 규칙: lift_hold/goal 완료 즉시 정책 종료 후 목표 유지. stop event/abort event를 실제 episode 번호와 함께 읽는다.
+    근거: deploy/policy_control/policy_control/episode_ros.py:713
+  - 규칙: '파랑 가드: 측정/명령 관절에서 계산한 최소 clearance<40 mm 또는 비유한 값이면 guard: 정지; 신선한 컵 상승>0.08 m AND held가 LG_HSTOP_TICKS=5 연속이면
+      hstop: 정지. 해당 틱 새 목표는 발행하지 않는다.'
+    근거: deploy/policy_control/policy_control/pour_fj_node.py:942
+  - 규칙: 'guard:/hstop: 정지 후 live 상승 >=0.05 m를 1.0 s 유지, 갱신 간격<=0.5 s, 최대 6.0 s 대기, 상승<=0.20 m, live 컵–palm<=0.12 m(palm
+      age<=0.5 s). guard_hold_ok=True일 때만 carry 허용.'
+    근거: deploy/policy_control/policy_control/episode_ros.py:64
+  - 규칙: 가드 켜짐 확인 실패/고정 판정 실패는 lift_guard_failed로 safe_stop. dropped가 있으면 가드 판정으로 덮지 않는다.
+    근거: deploy/policy_control/policy_control/episode_ros.py:686
+  - 규칙: max_episode_s=33.0; 실행기 stop event 대기=33+POLICY_MARGIN_S(10.0). 이벤트 미수신이면 stop→timeout.
+    근거: config/mission_rh56f1_control_cam5090.yaml:8017
+  다음으로_연결:
+  - 규칙: 'ap05→rcg04: hypot(off_r_m,off_h_m)<=ready_tol_m=0.025 m 상태가 still_s=0.5 s 이어지고 창 평균 손바닥 속도<=still_mps=0.03 m/s.
+      chain.handover로 같은 노드에서 교체하며 phase=policy가 된다.'
+    근거: deploy/policy_control/policy_control/approach_grasp.py:284
+  - 규칙: hold_steps=10은 각 계약의 정책 초기 hold이고 성공 유지 시간과 다르다. ap05→rcg04 종료로 grasp 완료를 선언하지 않는다. rcg04의 goal/lift/가드 판정 뒤
+      carry.
+    근거: deploy/policies/rh56f1/aglt/right_rcg04/rh_aglt_contract.json:18
+  - 규칙: 먼저 끝난 팔은 자기 carry를 시작한다. 양 lane 완료 후에만 tilt. 한 lane 실패면 다른 lane도 safe_stop.
+    근거: deploy/policy_control/policy_control/episode_runner.py:288
+  - 규칙: handover는 접근 정책의 마지막 arm_target을 복사해 새 decoder 시작값으로 보존한다. 새 계약/정책, ready_hold_action(직전 행동), step_i=0, 넘김 순간
+      컵 기준 GoalBook을 설정하고 policy.reset()으로 LSTM을 초기화한다. rcg04 hold_steps=10 동안 예열한다.
+    근거: deploy/policy_control/policy_control/pour_fj_node.py:307
+  흔한_실패:
+  - 규칙: 'attached 끊김/컵 미끄러짐: object_dropped_left/right이면 정지, 자동 손 펴기 금지. grasp_failed_left/right라도 baseline 재시도 0이므로
+      사람 확인.'
+    근거: deploy/policy_control/policy_control/episode_failure.py:133
+  - 규칙: 'FP++ live 끊김: reset의 특정 stale 거부만 6.0 s 안에서 0.2 s 간격 재호출. 실행 중 stale/오류를 VLM 사진 성공으로 덮지 않는다.'
+    근거: deploy/policy_control/policy_control/episode_ros.py:87
+  VLM_질문:
+  - Is the intended cup enclosed by the fingers?
+  - Has the cup lifted clear of the table?
+  - Is the cup still held without slipping?
+  - Is the hand clear of the pink cup?
+- id: to_tilt_start
+  하는_일: 쥔 컵과 손 목표를 유지하며 지정 팔을 붓기 시작 자세로 이송한다.
+  실행_방법:
+    노드_예시:
+    - id: to_tilt_start_r1
+      type: trajectory
+      name: to_tilt_start_r
+    - id: to_tilt_start_l
+      type: trajectory
+      name: to_tilt_start_l
+    - id: to_tilt_start_r2
+      type: trajectory
+      name: to_tilt_start_r
+      expect:
+        pose: SETTING
+    원문_YAML: "id: to_tilt_start_r1\ntype: trajectory\nname: to_tilt_start_r\nid: to_tilt_start_l\ntype: trajectory\n\
+      name: to_tilt_start_l\nid: to_tilt_start_r2\ntype: trajectory\nname: to_tilt_start_r\nexpect:\n  pose: SETTING"
+    근거: config/episodes/cocktail_1c_e4000.yaml
+    정의:
+      to_tilt_start_r:
+        kind: carry
+        sides:
+        - right
+        asset: tilt/base_arc6
+      to_tilt_start_l:
+        kind: carry
+        sides:
+        - left
+        asset: tilt/base_arc6
+  인자:
+    hand:
+    - right
+    - left
+    object:
+      right:
+      - SRC_BLUE
+      - SRC_PINK
+      left:
+      - SHAKER
+    asset:
+    - tilt/base_arc6
+  시작_조건:
+  - 해당 손이 해당 컵을 쥐고 grasp가 종료됨.
+  - pd TRACKING; 붓기 중단 뒤라면 시작 자세를 사진만으로 단정하지 않는다.
+  성공_모습:
+    사진: 컵이 세워진 채 붓기 준비 위치로 이동하고 손 안에서 안정적이다.
+    숫자:
+    - 규칙: 실측 관절에서 계획→검사→팔 관절 재생 완료. 손 목표는 유지. cups=True인데 손이 EMPTY면 refused.
+      근거: deploy/policy_control/policy_control/episode_ros.py:968
+    - 규칙: 계획 전 ARM_STILL_WINDOW_S=0.3 s 내 각 관절 범위<ARM_STILL_RAD=0.003 rad; 최대 2.0 s 대기 뒤에도 정지 못하면 계획 자체는 진행(재생 시작 검사는
+        유지).
+      근거: deploy/policy_control/policy_control/episode_ros.py:125
+  끊어야_할_신호:
+  - 규칙: start_gap_rad=0.05 rad 초과 또는 계획/검사 실패면 재생하지 않는다. 계획 도구 plan_carry.py 180.0 s, 재생 600.0 s 초과는 tool timeout.
+    근거: deploy/policy_control/config/tilt/base_arc6/policy.yaml:15
+  - 규칙: 해당 팔 pd TRACKING 아님/컵 없음/cancel/재생 rc!=0이면 연결 중단.
+    근거: deploy/policy_control/policy_control/episode_ros.py:974
+  다음으로_연결:
+  - 오른팔은 source240, 왼팔은 shaker의 손 상태를 보존. 처음에는 양 lane의 carry가 모두 끝나야 tilt_blue. 분홍 carry 뒤 tilt_pink.
+  흔한_실패:
+  - 규칙: 정책 종료 뒤 팔이 더 움직여 재생 시작점이 벌어질 수 있다. 정지 창·실측 재계획으로 처리하고 임의 시간 sleep으로 성공 간주하지 않는다.
+    근거: deploy/policy_control/policy_control/episode_ros.py:125
+  VLM_질문:
+  - Is the cup upright during transport?
+  - Is the cup still secure in the selected hand?
+  - Are both cups ready for pouring?
+- id: tilt
+  하는_일: 오른손 컵을 왼손 쉐이커에 기울여 붓고 시작 자세로 복귀한다.
+  실행_방법:
+    노드_예시:
+    - id: tilt_blue
+      type: trajectory
+      name: tilt
+      expect:
+        pose: SETTING
+        blue_poured: true
+    - id: tilt_pink
+      type: trajectory
+      name: tilt
+      expect:
+        pose: SETTING
+        pink_poured: true
+    원문_YAML: "id: tilt_blue\ntype: trajectory\nname: tilt\nexpect:\n  pose: SETTING\n  blue_poured: true\nid: tilt_pink\n\
+      type: trajectory\nname: tilt\nexpect:\n  pose: SETTING\n  pink_poured: true"
+    근거: config/episodes/cocktail_1c_e4000.yaml
+    정의:
+      tilt:
+        kind: tilt
+        sides:
+        - right
+        - left
+        asset: tilt/traj_v12_240
+        rate_scale: 1.0
+        cup: '240'
+      tin_fallback: deploy/policy_control/config/tilt/traj_v12_240/ref/tin_fixed_1107.json
+  인자:
+    hand:
+    - both
+    object:
+    - SRC_BLUE
+    - SRC_PINK
+    receiver:
+    - SHAKER
+    cup:
+    - '240'
+    asset:
+    - tilt/traj_v12_240
+    rate_scale:
+    - 1.0
+  시작_조건:
+  - right_hand는 붓는 컵, left_hand는 SHAKER, 두 팔 carry 완료.
+  - 실기에서는 양팔 T_in 실측을 통과해야 계획한다.
+  성공_모습:
+    사진: 소스 컵 입구가 쉐이커 위에 있고 비드가 안으로 이동한 뒤 두 컵이 준비 자세로 돌아온다. 이는 VLM 관찰 목표이며 기존 자동 판정과 구별한다.
+    숫자:
+    - 규칙: 기존 trajectory는 completed면 실패 검출 NONE. blue_poured/pink_poured=True는 expect 적용 결과이며 비드 계수 측정이 아니다.
+      근거: deploy/policy_control/policy_control/episode_failure.py:130
+    - 규칙: 계획/재생 완료 뒤 expect.pose=SETTING. pre_s=0.5, rate_scale=1.0, start_gap_rad=0.05.
+      근거: deploy/policy_control/config/tilt/traj_v12_240/policy.yaml:12
+  끊어야_할_신호:
+  - 규칙: 'T_in: 지연 0.6 s 제외 후 실제 2.0 s 창, MIN_FRESH=8 및 FRESH_RATIO=0.3, JIT_POS_M=0.005, JIT_ANG_DEG=3.0, NEAR_M=0.15.
+      오른손 고정값 차이 FIX_POS_M=0.020, FIX_ANG_DEG=15.0.'
+    근거: deploy/policy_control/policy_control/tin_live.py:20
+  - 규칙: 실측 실패 시 FP++ 재촬영 최대 TIN_RETRY_N=2회, 재시도 시작 상한 TIN_RETRY_S=200.0 s. 실기는 실패 후 고정 T_in으로 진행하지 않음(fake만 fallback).
+    근거: deploy/policy_control/policy_control/episode_ros.py:1163
+  - 규칙: tilt_traj는 측정 T_in을 계획 전에 넣음; required 양팔 중 하나라도 불합격이면 tilt refused. pd_fault/cancel/계획 또는 재생 실패면 중단.
+    근거: deploy/policy_control/policy_control/episode_ros.py:1028
+  다음으로_연결:
+  - 궤적은 붓기와 복귀를 포함하므로 기울어진 사진만 보고 조기 성공 종료하지 않는다. 파랑 뒤 place(SRC_BLUE,HOLDER_1), 분홍 뒤 place(SRC_PINK,HOLDER_2).
+  - 비드 잔류/쏟음이 보이면 VLM은 미완료를 별도 보고하고 stop/human으로 간다(권장 복구; 자동 재붓기 정책은 미구현).
+  흔한_실패:
+  - 규칙: 메모의 이전 sim에서는 한 알 손실·부분 붓기 실패가 있었다. 현재 v12 실기 성공률로 해석하지 않는다. 잔류 여부 불명확하면 human으로 보류.
+    근거: /home/yoon/.claude/projects/-home-yoon-rl-ws/memory/cocktail1-mc-fail-modes-1027.md:19
+  - 규칙: pour_failed/pour_partial/pour_ok/partial은 kind=pour 정책용 검출 분기이며 현재 kind=tilt trajectory가 내는 비드 성공 신호가 아니다.
+    근거: deploy/policy_control/policy_control/episode_failure.py:156
+  VLM_질문:
+  - Is the source rim above the shaker opening?
+  - Are the beads entering the shaker?
+  - Are any beads still visible in the source cup?
+  - Have both cups returned upright?
+- id: place
+  하는_일: 쥔 컵을 지정 홀더 위로 옮겨 앉히고 손을 펴서 뺀다.
+  실행_방법:
+    노드_예시:
+    - id: place_blue
+      type: policy
+      name: rh_place_r
+      source_object: SRC_BLUE
+      target_holder: HOLDER_1
+      policy_object: source240_real
+      expect:
+        right_hand: EMPTY
+        left_hand: SHAKER
+        blue_placed: true
+    - id: place_pink
+      type: policy
+      name: rh_place_r
+      source_object: SRC_PINK
+      target_holder: HOLDER_2
+      policy_object: source240_real
+      holder_tol_m: 0.07
+      expect:
+        right_hand: EMPTY
+        left_hand: SHAKER
+        pink_placed: true
+    - id: place_shaker
+      type: policy
+      name: rh_place_l
+      source_object: SHAKER
+      target_holder: HOLDER_0
+      policy_object: shaker_c_real
+      expect:
+        right_hand: EMPTY
+        left_hand: EMPTY
+        shaker_placed: true
+    원문_YAML: "id: place_blue\ntype: policy\nname: rh_place_r\nsource_object: SRC_BLUE\ntarget_holder: HOLDER_1\npolicy_object:\
+      \ source240_real\nexpect:\n  right_hand: EMPTY\n  left_hand: SHAKER\n  blue_placed: true\nid: place_pink\ntype:\
+      \ policy\nname: rh_place_r\nsource_object: SRC_PINK\ntarget_holder: HOLDER_2\npolicy_object: source240_real\nholder_tol_m:\
+      \ 0.07\nexpect:\n  right_hand: EMPTY\n  left_hand: SHAKER\n  pink_placed: true\nid: place_shaker\ntype: policy\n\
+      name: rh_place_l\nsource_object: SHAKER\ntarget_holder: HOLDER_0\npolicy_object: shaker_c_real\nexpect:\n  right_hand:\
+      \ EMPTY\n  left_hand: EMPTY\n  shaker_placed: true"
+    근거: config/episodes/cocktail_1c_e4000.yaml
+    정의:
+      rh_place_r:
+        policy: rh56f1/place/right_n10_e4000
+        kind: place
+        side: right
+        attach_source: tin_json
+      rh_place_l:
+        policy: rh56f1/place/left_n09_e3800
+        kind: place
+        side: left
+        attach_source: tin_json
+  인자:
+    hand:
+    - right
+    - left
+    object_holder:
+      SRC_BLUE: right/HOLDER_1
+      SRC_PINK: right/HOLDER_2
+      SHAKER: left/HOLDER_0
+    policy_object:
+      SRC_BLUE: source240_real
+      SRC_PINK: source240_real
+      SHAKER: shaker_c_real
+    holder_tol_m: 기본 0.02; SRC_PINK job만 0.07(학습 범위 밖 허용이지 안착 성공 오차가 아님)
+    holder_tol_m_근거:
+    - deploy/policy_control/policy_control/rh_place.py:411
+    - config/episodes/cocktail_1c_e4000.yaml:66
+  시작_조건:
+  - 손에 source_object가 있고 해당 홀더가 비어 있음.
+  - tilt 직전 측정한 해당 팔 T_in JSON이 유효함. attach_source=tin_json을 reset 전에 전달.
+  - place 시작 목표는 pd 마지막 joint_target; 내부 ready_carry 뒤 정책 시작.
+  성공_모습:
+    사진: 컵이 홀더 안에 서 있고 손가락이 컵에서 빠져 있다.
+    숫자:
+    - 규칙: hand_empty=(place.phase==done). cup_in_holder는 stop+1.0 s 이후 live 또는 latch_cup FK 중 하나라도 통과하면 True, 둘 다 없으면
+        미판정. xy<0.035 m AND |z-(holder_z+SEAT_DZ_CYL60)|<0.03 m.
+      근거: deploy/policy_control/policy_control/episode_ros.py:865
+    - 규칙: SEAT_DZ_CYL60=HOLDER_FLOOR_Z+0.085. 숫자상 안착 판정과 사진의 실제 컵 바닥/기울기 관찰을 함께 기록한다.
+      근거: deploy/policy_control/policy_control/episode_ros.py:118
+  끊어야_할_신호:
+  - 규칙: '현재 양손 계약: policy_hz=60, hold_steps=0, latch_obs dz<=0.04 m, bottom_xy dxy<=0.012 m, tilt<=8 deg, latch_debounce=3.
+      래치 뒤 release_timed_steps=15틱; withdrawal clearance>=0.05 m이면 outcome=clear, 120틱이면 withdraw_timeout.'
+    근거: deploy/policies/rh56f1/place/right_n10_e4000/rh_place_contract.json:219
+  - 규칙: latch_s2r의 실제 경로는 위 timed release/withdraw. release_steps=5, settle_steps=45, release_force_n=1.0도 계약에 있지만 이
+      경로의 고정 종료 시간으로 쓰지 않는다.
+    근거: deploy/policy_control/policy_control/rh_place.py:770
+  - 규칙: 래치 없이 정책 opened>=open_min_rad(기본 0.15 rad)가 OPENED_END_TICKS=3 연속이면 outcome=opened로 stop. opened는 인계 손 목표 대비
+      펴진 양이며 절대 실측 빈손 판정은 아니다.
+    근거: deploy/policy_control/policy_control/rh_place_node.py:369
+  - 규칙: 래치 전 정책 시간 상한=학습 episode_length_s 5.0 s; place 시간 초과 abort. ready_carry는 별도 시간이며 (max_steps + mv.settle_steps)/policy_hz
+      + READY_CARRY_SLACK_S(2.0 s) 초과 abort.
+    근거: deploy/policy_control/policy_control/rh_place_node.py:349
+  - 규칙: hand_empty=False 또는 outcome=withdraw_timeout이면 다음 복귀 금지. cup_in_holder=False면 place_failed. continue_on_fail=[place]
+      예외는 아래 연결 규칙을 따른다.
+    근거: deploy/policy_control/policy_control/episode_failure.py:151
+  - 규칙: 현재 양손 계약의 episode_length_s=5.0은 각각 학습 env에서 확인. 왼손의 latch/withdraw 값도 동일하며 0.07 옛 래치 높이를 쓰지 않는다.
+    근거:
+    - deploy/policies/rh56f1/place/right_n10_e4000/params/env.yaml:77
+    - deploy/policies/rh56f1/place/left_n09_e3800/params/env.yaml:77
+    - deploy/policies/rh56f1/place/left_n09_e3800/rh_place_contract.json:219
+  다음으로_연결:
+  - 규칙: 성공하면 EMPTY와 *_placed 기록. 실패 중 policy_timeout/place_failed만 계속 진행 가능하며 hand_empty=False/withdraw_timeout이면 제외.
+      계속 진행 시 source 위치 unknown, *_placed를 세우지 않음.
+    근거: deploy/policy_control/policy_control/episode_runner.py:547
+  - 파랑 place 다음 go_home_r; 분홍 place 다음 왼손 shaker place; shaker place 다음 양팔 go_home. 실패했다고 무조건 다음이 home인 것은 아니다.
+  흔한_실패:
+  - 규칙: 손이 컵에 걸림/안 놓음/withdraw_timeout이면 stop/human; 컵이 홀더 밖이라도 손이 빠진 실패는 baseline에서 다음 노드로 간다. VLM 보고는 실패를 보존한다.
+    근거: deploy/policy_control/policy_control/episode_runner.py:548
+  - 규칙: 옛 메모의 not_released·홀더 위 정지는 관찰 실패 유형 참고. 예전 n07 수치와 홀더 배정을 현재 n10/n09 기준으로 사용하지 않는다.
+    근거: /home/yoon/.claude/projects/-home-yoon-rl-ws/memory/cocktail1-mc-fail-modes-1027.md:20
+  VLM_질문:
+  - Is the cup seated upright inside the intended holder?
+  - Are the fingers open and clear of the cup?
+  - Is the cup stable without hand support?
+- id: human
+  하는_일: 판정 불가 또는 실패 원인을 사람에게 보여 주고 확인을 기다린다.
+  실행_방법:
+    노드_타입: confirm
+    원문_YAML: "id: confirm_pink_placed\ntype: confirm\ntext: 분홍(source240)을 탁자 로봇 쪽 끝 선에서 13~23 cm · 오른쪽 끝 선에서 25~35 cm(x\
+      \ 0.20~0.30 · y −0.20~−0.10)에\n  똑바로 세우고 손을 뺐는가(왼팔은 shaker 를 든 채 멈춰 있다) — 확인하면 분홍만 FP++ 로 다시 찍는다\n"
+    근거: config/episodes/cocktail_1.yaml:65
+    의미: human은 카드 id; 기존 YAML 노드 type은 confirm.
+  인자:
+    reason: 대상/잔류/놓침/끼임/인지 불확실성 설명
+    object:
+    - SRC_BLUE
+    - SRC_PINK
+    - SHAKER
+  시작_조건:
+  - 위험하거나 불확실하면 먼저 stop한다. confirm 자체는 움직이는 정책을 끊는 API가 아니다.
+  성공_모습:
+    사진: 사람의 손이 작업 영역에서 빠졌고 요청한 재배치가 끝남.
+    숫자:
+    - 규칙: confirm은 해당 노드에서 새 확인을 기다린 뒤 진행한다. 사진만으로 사람의 확인을 생성하지 않는다.
+      근거: deploy/policy_control/policy_control/episode_runner.py:529
+  끊어야_할_신호:
+  - 규칙: 운영자 stop/확인 거절 또는 안전 실패이면 자동 복구하지 않는다.
+    근거: deploy/policy_control/policy_control/episode_failure.py:52
+  다음으로_연결:
+  - 재배치 후 scene_snapshot으로 물체 상태를 다시 읽고 손 상태가 일치하는 계획만 선택한다. baseline 1c_e4000에는 human 노드가 없다.
+  흔한_실패:
+  - 안 보이는 컵 내부·떨어진 컵·끼인 손은 사람 확인. 쥔 컵이 있는 팔의 rehome이나 강제 손 펴기를 복구로 선택하지 않는다.
+  VLM_질문:
+  - Are human hands outside the workspace?
+  - Is the scene ready to be observed again?
+- id: stop
+  하는_일: 현재 목표를 유지하며 정책과 궤적 재생을 끊고 다음 스킬을 막는다.
+  실행_방법:
+    노드_타입: 기존 YAML에 stop type 없음; EpisodeManager.stop → RosExecutor.safe_stop
+    호출: tools/episode_cmd.py stop --execute
+    근거:
+    - deploy/policy_control/policy_control/episode_runner.py:203
+    - deploy/policy_control/policy_control/episode_ros.py:1386
+    YAML_예시: 해당 없음(미확인 스키마를 만들지 않음). terminal SUCCESS와 구별.
+  인자:
+    reason: 실패 코드와 관찰/수치 근거
+    hand: 현재 에피소드가 제어하는 팔 전체
+  시작_조건:
+  - 실행 도중 또는 실패·판정 불가 시 호출 가능.
+  성공_모습:
+    사진: 팔·손이 동작을 멈추고 쥔 물체를 유지한다.
+    숫자:
+    - 규칙: cancel 설정→모든 실행기 subprocess kill→대상 팔 정책 episode/stop. 손을 자동으로 펴거나 rehome하지 않는다.
+      근거: deploy/policy_control/policy_control/episode_ros.py:1386
+  끊어야_할_신호:
+  - 규칙: pd_fault, estop, thermal, controller, watchdog, stale/missing 관측, UNKNOWN, lift_guard_failed는 safe_stop 대상. VLM이
+      안전 규칙을 대체하지 않는다.
+    근거: deploy/policy_control/policy_control/episode_failure.py:69
+  다음으로_연결:
+  - 정지 후 human; 새 에피소드/확인 전 자동 다음 스킬 연결 금지.
+  흔한_실패:
+  - 정책만 user stop 하면 실행기도 aborted로 받아 복구하지 않는다. 전체 에피소드 stop을 사용해 다른 lane/재생도 함께 끊는다.
+  VLM_질문:
+  - Has all arm motion stopped?
+  - Are the held objects still secure?
+- id: terminal
+  하는_일: 에피소드 실행 결과를 종료하되 실제 비드 이동 성공은 별도로 보고한다.
+  실행_방법:
+    노드_예시:
+    - id: done
+      type: terminal
+      result: SUCCESS
+    원문_YAML: 'id: done
+
+      type: terminal
+
+      result: SUCCESS'
+    근거: config/episodes/cocktail_1c_e4000.yaml
+  인자:
+    result:
+    - SUCCESS
+  시작_조건:
+  - 계획의 마지막 go_home이 끝남.
+  성공_모습:
+    사진: 두 손이 비고 세 컵이 지정 홀더에 있으며 비드가 쉐이커에 모여 있음(내부가 안 보이면 미확인).
+    숫자:
+    - terminal result=SUCCESS는 baseline 실행 상태. place_failed_continued 및 실제 비드 이동 판정을 별도 확인한다.
+  끊어야_할_신호:
+  - 진행 중 스킬을 끊는 stop 용도가 아니다.
+  다음으로_연결:
+  - 종료; 미확인 항목은 human에 보고.
+  흔한_실패:
+  - 규칙: 실패를 계속 진행한 이력은 terminal 로그에도 남지만 SUCCESS와 공존할 수 있다.
+    근거: deploy/policy_control/policy_control/episode_runner.py:235
+  VLM_질문:
+  - Are all three cups in their intended holders?
+  - Are both robot hands empty?
