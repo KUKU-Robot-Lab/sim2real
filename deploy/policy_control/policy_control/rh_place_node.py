@@ -258,7 +258,7 @@ class PlaceNode(PourFjNode):
                          hand_q=np.zeros(0), valid=True, n_steps=int((d.get("measured") or {}).get("n_fresh") or 0),
                          created=Path(path).stat().st_mtime,
                          meta={"node": d.get("node"), "episode": d.get("episode"), "source": d.get("source"),
-                               "fallback_reason": d.get("fallback_reason", "")})
+                               "fallback_reason": d.get("fallback_reason", ""), "z_off_applied": d.get("z_off_applied")})
 
     def _attach_info(self) -> dict:
         """사슬 attach_info — 묶음 as_dict, tin_json 이면 출처(measured | fallback) · fallback 사유까지."""
@@ -268,7 +268,7 @@ class PlaceNode(PourFjNode):
         if not self._tin:
             return b.as_dict()
         return {**b.as_dict(), "attach_source": "tin_json", "source": b.meta.get("source"),
-                "fallback_reason": b.meta.get("fallback_reason", "")}
+                "fallback_reason": b.meta.get("fallback_reason", ""), "z_off_applied": b.meta.get("z_off_applied")}
 
     def _hand_now(self) -> np.ndarray:
         s = self.contract.side()
@@ -323,7 +323,7 @@ class PlaceNode(PourFjNode):
         if ok and self._bundle is not None:
             self._bundles_used.append(str(self._bundle.path))
             self.get_logger().info(f"place 붙인 자세 = {'tilt 직전 T_in' if self._tin else '넘김 묶음'} {self._bundle.as_dict()}"
-                                   + (f" · 출처 {self._bundle.meta.get('source')}" if self._tin else ""))
+                                   + (f" · 출처 {self._bundle.meta.get('source')} · 원점 틀로 되돌린 z_off {self._bundle.meta.get('z_off_applied')}" if self._tin else ""))
             if self._tin and self._bundle.meta.get("source") != "measured":
                 self.get_logger().warning(f"place 붙인 자세 = 고정 T_in(실측 아님): {self._bundle.meta.get('fallback_reason', '')}")
         return out
