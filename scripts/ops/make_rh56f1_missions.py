@@ -297,6 +297,7 @@ REMOTE_PERCEPTION = PERCEPTION_HOST != "local"
 #: ★11.11 학생(경로 S · M · 놓기 학생)은 카메라가 다른 PC 여도 돈다 — 깊이 · 마스크 노드는 카메라 PC 에서(ssh, 랜 DDS 로
 #   160x90 출력만 넘어온다), 학생 정책 노드는 이 PC(팔 · 손 · 컵 live 와 같은 곳)에서.
 CAMERA_EXTRINSICS = STATION["extrinsics"]
+PLACE_MASK_AGE_S = 0.35                 # ★11.11 임시 — 놓기 학생 마스크 나이 상한(기본 0.2)
 HOLDER_POSES = STATION["holder_poses"]
 #: ★10.30 arm_v2: 목(U2D2)이 다른 PC 에 있으면 목 드라이버 · 토크 해제를 그 PC 에서 돌린다(토픽은 랜 DDS). local = 이 PC
 HEAD_HOST = STATION.get("head_host", "local")
@@ -1262,7 +1263,10 @@ def _episode_run(name: str, real: bool) -> list:
                               "-p", f"episode_topic:=/policy_control/{b.side}/episode", "-p", f"contract:={contract}",
                               "-p", f"robot:={robot}", "-p", f"device:={'cuda' if b.student else 'cpu'}", "-p", f"cup_topic:={cup_t}",
                               "-p", f"holder:={hid}", *holders_arg, *([] if real else ["-p", "require_grasp:=false"]),
-                              *(["-p", f"student_dir:={sdir}"] if b.student else [])],
+                              *(["-p", f"student_dir:={sdir}"] if b.student else []),
+                              # ★11.11 임시(C안): 카메라 PC 4090 의 마스크 stamp→발행 p50 215 ms 로 0.2 s 상한에 걸려 place_m_left 정지 —
+                              #   원인(FP++ 컨테이너 부하 의심)을 잴 때까지 놓기 학생만 0.35 s. 원인을 없애면 지운다
+                              *(["-p", f"max_mask_age_s:={PLACE_MASK_AGE_S}"] if b.student and real else [])],
                              background=True))
     if real:                                         # 첫 실기는 놓음 문턱(손끝 · 관절 힘 · 손 목표)을 bag 으로 정한다(PLACE 10.04)
         extra = [f"/policy_control/{x}" for x in ("joint_target", *(f"status/pd_{s}" for s in sides),

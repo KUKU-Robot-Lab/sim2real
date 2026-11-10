@@ -9162,6 +9162,8 @@ run:
     - holder:=1
     - -p
     - student_dir:={repo}/deploy/policies/rh56f1/place/right_student_place
+    - -p
+    - max_mask_age_s:=0.35
     background: true
   - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(60 Hz, 학생 입력만 · 압축 없음)
     argv:
@@ -9409,6 +9411,8 @@ run:
     - holder:=0
     - -p
     - student_dir:={repo}/deploy/policies/rh56f1/place/left_student_place
+    - -p
+    - max_mask_age_s:=0.35
     background: true
   - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(60 Hz, 학생 입력만 · 압축 없음)
     argv:
