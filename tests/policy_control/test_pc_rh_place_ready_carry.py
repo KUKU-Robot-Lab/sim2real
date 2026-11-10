@@ -184,8 +184,8 @@ def test_carry_follows_the_command_not_the_measured_arm_then_waits_until_still()
     Mover 가 끝나면 팔 행동 0 으로 실측이 STILL_TICKS 연속 멈출 때까지 기다린 뒤 정책으로 넘긴다."""
     clean, d0 = _run_carry("right_n10_e4000", lambda k: np.zeros(7))
     shaky, d1 = _run_carry("right_n10_e4000", lambda k: 0.014 * np.sin(2 * np.pi * 1.75 * k / 60.0) * np.ones(7))
-    assert len(clean) == len(shaky) and np.allclose(clean, shaky, atol=1e-6)
-    t = d0["t"]
+    t = d0["t"]                                                      # 이동 구간은 개루프 — 같다. 멈춤 확인 구간은 처짐 보정이 실측을 본다
+    assert d1["t"] == t and np.allclose(clean[:t], shaky[:t], atol=1e-6)
     assert d0["arrived"] and d0["start_ok"] and d0["still"] == "ok"
     assert np.all(clean[t:] == 0.0) and d0["still_ticks"] == len(clean) - t
     assert d0["still_ticks"] >= RCY.STILL_TICKS + 2                  # 흔들리는 2 틱 동안은 세지 않는다
@@ -263,3 +263,56 @@ def test_nan_measurement_is_not_silent(field):
         assert np.all(np.isfinite(tg["arm"][0])) and np.all(np.isfinite(ch.dec.state["arm"].arm_target))
     else:
         assert d["still"] == "timeout" and d["still_ticks"] == RCY.STILL_MAX_TICKS
+
+
+def _run_sag_plant(sag_j7, hold_qd_ticks=0):
+    """★11.11 처짐 플랜트: 실측 q 가 (명령 − 처짐)을 1차 지연(τ 0.14 s, 60 Hz)으로 따라간다. q̇ = 실측 차분.
+    멈춤 확인 첫 hold_qd_ticks 틱은 q̇ 를 0.2 rad/s 로 보고(아직 움직임) → (멈춤 확인 구간 팔 행동, 보고 q̇, 끝 as_dict, 끝 q_ref − q)."""
+    from dataclasses import replace
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup("right_n10_e4000")
+    ch.rc_chain = (RC, mch)
+    sag = np.zeros(7)
+    sag[6] = sag_j7
+    alpha = (1 / 60.0) / 0.14
+    ch.reset(meas(q - sag), holder=holder, held=(q, hand), attach=att)
+    ch.rcarry.track_abort_rad = 0.2                    # sim 런타임 값 — 지연 + 처짐을 이동 중 이탈로 끊지 않는다
+    qm, qd, acts, qds, n = q - sag, np.zeros(7), [], [], 0
+    while ch.carrying and n < 3000:
+        moving = ch.rcarry.moving
+        if not moving and hold_qd_ticks > 0:
+            qd_rep, hold_qd_ticks = np.full(7, 0.2), hold_qd_ticks - 1
+        else:
+            qd_rep = qd
+        mm = meas(qm)
+        mm["arm"] = replace(mm["arm"], arm_qd=qd_rep)
+        _, a, _ = ch.step(mm)
+        if not moving:
+            acts.append(a[:7].copy())
+            qds.append(float(np.max(np.abs(qd_rep))))
+        q_new = qm + alpha * (ch.dec.state["arm"].arm_target - sag - qm)
+        qd, qm, n = (q_new - qm) * 60.0, q_new, n + 1
+    d = ch.rcarry.as_dict()
+    return np.asarray(acts), np.asarray(qds), d, ch.rcarry.q_ref - qm
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_sag_correction_closes_steady_droop_without_integrating_while_moving():
+    """★11.11 안 A — 처짐 j7 0.06 rad: 보정 뒤 max|q_ref − q| < SAG_DONE_RAD 로 "ok", 누적은 SAG_MAX_RAD 안,
+    실측이 움직이는(q̇ ≥ STILL_QD_RAD_S) 틱에는 팔 행동 0(적분 없음)."""
+    acts, qds, d, err = _run_sag_plant(0.06, hold_qd_ticks=10)
+    assert d["still"] == "ok" and d["start_ok"] and d["carry_ok"]
+    assert np.max(np.abs(err)) < RCY.SAG_DONE_RAD
+    assert max(d["sag_max"]) <= RCY.SAG_MAX_RAD + 1e-9 and d["sag_max"][6] > 0.05
+    moving = qds >= RCY.STILL_QD_RAD_S
+    assert moving[:10].all() and np.all(acts[moving] == 0.0)
+    assert d["sag_ticks"] == int((~moving).sum())
+    assert d["still_ticks"] <= RCY.STILL_MAX_TICKS
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_sag_correction_never_exceeds_the_cap():
+    """★11.11 처짐 0.12 rad(상한 0.08 넘음) — 누적이 SAG_MAX_RAD 에 멈추고 "timeout" 으로 끝난다."""
+    _, _, d, err = _run_sag_plant(0.12)
+    assert d["still"] == "timeout"
+    assert max(d["sag_max"]) == pytest.approx(RCY.SAG_MAX_RAD, abs=1e-9)
+    assert np.max(np.abs(err)) == pytest.approx(0.12 - RCY.SAG_MAX_RAD, abs=2e-3)
