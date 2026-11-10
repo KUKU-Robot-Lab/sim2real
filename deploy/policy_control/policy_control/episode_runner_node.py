@@ -19,7 +19,6 @@ runner 가 없는 옛 줄은 기본 이름(episode_runner)의 것 — 팔마다 
 from __future__ import annotations
 
 import json
-import math
 import os
 import sys
 import threading
@@ -42,37 +41,15 @@ REAL_DOMAIN = ros_domain.REAL_DOMAIN_STR     # config/ros_domain.env 한 곳(10.
 APPROVALS = run_paths.RUNS / "episode_approvals.jsonl"     # 날짜와 무관한 승인 통로(노드가 뜬 뒤 줄만 읽는다)
 
 
-def supervisor_commands(lines, *, since: float, runner: str, seen: set) -> list[dict]:
-    """JSONL 행 → 이 실행기의 새 sup_v0 명령. 입력/seen 을 변경하지 않는 순수 함수."""
-    out, found = [], set(seen)
-    for line in lines:
-        try:
-            row = json.loads(line)
-            if not isinstance(row, dict):
-                continue
-            what, cid = row.get("what"), row.get("cmd_id")
-            stamp = float(row.get("t", 0))
-            if (not isinstance(what, str) or not what.startswith("cmd:") or row.get("iface") != "sup_v0"
-                    or row.get("runner") != runner or not isinstance(cid, str) or not cid or cid in found
-                    or not math.isfinite(stamp) or stamp < since):
-                continue
-        except (ValueError, TypeError):
-            continue
-        found.add(cid)
-        out.append(row)
-    return out
-
-
 class Approvals:
     """approvals 파일에서 이 이름의 새 승인 한 줄을 꺼낸다(뜬 뒤 쓰인 것 · 한 번만)."""
 
     def __init__(self, path: Path, since: float, runner: str = NAME) -> None:
         self.path, self.since, self.used, self.runner = path, since, set(), runner
-        self.cmd_seen: set = set()
 
     def take(self, what: str, since: float | None = None) -> bool:
         """since = 이 시각 뒤에 쓰인 승인만(없으면 노드가 뜬 뒤 전부)."""
-        if what.startswith("cmd:") or not self.path.is_file():
+        if not self.path.is_file():
             return False
         floor = self.since if since is None else max(self.since, float(since))
         for i, line in enumerate(self.path.read_text(encoding="utf-8").splitlines()):
@@ -80,27 +57,13 @@ class Approvals:
                 row = json.loads(line)
             except ValueError:
                 continue
-            if not isinstance(row, dict) or str(row.get("what", "")).startswith("cmd:"):
-                continue
             key = (i, row.get("what"), row.get("t"))
             if row.get("runner", NAME) != self.runner:          # ★10.19 다른 실행기(다른 팔)의 승인
                 continue
-            try:
-                fresh = float(row.get("t", 0)) >= floor
-            except (ValueError, TypeError):
-                continue
-            if row.get("what") == what and fresh and key not in self.used:
+            if row.get("what") == what and float(row.get("t", 0)) >= floor and key not in self.used:
                 self.used.add(key)
                 return True
         return False
-
-    def commands(self) -> list[dict]:
-        if not self.path.is_file():
-            return []
-        rows = supervisor_commands(self.path.read_text(encoding="utf-8").splitlines(),
-                                   since=self.since, runner=self.runner, seen=self.cmd_seen)
-        self.cmd_seen.update(r["cmd_id"] for r in rows)
-        return rows
 
 
 def write_approval(what: str, operator: str, path: Path = APPROVALS, runner: str = NAME) -> dict:
@@ -157,7 +120,6 @@ def _main_node():
                 self.executor_ros = RosExecutor(self, self.ep, robot=self.robot, run_dir=run_dir, runner=self.runner,
                                                 fpp_rescan=rescan)
             ex = self.executor_ros
-            ex.ep = self.ep
             ex.clear_cancel()
             eid = time.strftime("%Y%m%d_%H%M%S")
             log = jsonl_logger(ex.run_dir / f"episode_{eid}.jsonl")
@@ -208,23 +170,9 @@ def _main_node():
             return self._reply(res, True, [f"new episode {self.manager.episode_id}"])
 
         def _publish(self) -> None:
-            for row in self.approvals.commands():
-                busy = bool(self._worker is not None and self._worker.is_alive())
-                if busy or self.manager.status == "RUNNING":
-                    self.manager.command(row, busy=True)
-                else:
-                    def command(row=row):
-                        ack = self.manager.command(row)
-                        if ack and ack["ok"] and ack["verb"] in ("retry", "insert"):
-                            self.manager.step()
-                        return ack
-                    # 같은 worker 통로: ROS 타이머는 snapshot/재생을 기다리지 않는다.
-                    self._start(command, row["what"], Trigger.Response())
-            busy = bool(self._worker is not None and self._worker.is_alive())
             body = {"node": self.runner, "runner": self.runner, "phase": self.manager.status, "ok": self.manager.status != "FAILURE",
-                    "busy": busy, "auto_approve": self.auto,
+                    "busy": bool(self._worker is not None and self._worker.is_alive()), "auto_approve": self.auto,
                     "run_dir": str(self.executor_ros.run_dir), **self.manager.view(),
-                    "boundary": self.manager.boundary and not busy,
                     "t_pub_ns": self.get_clock().now().nanoseconds}
             self._pub.publish(self._String(data=json.dumps(body, ensure_ascii=False, default=str)))
 

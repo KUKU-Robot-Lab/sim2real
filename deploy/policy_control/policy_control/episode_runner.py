@@ -21,14 +21,12 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import math
 import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Mapping, Protocol
 
-from policy_control import episode_spec as S
 from policy_control.episode_failure import (F, FailureCode, FailureDetector, NodeResult, Recovery, RecoveryManager,
                                             ROLLBACK, SAFE_STOP, SAFETY)
 from policy_control.episode_flow import flow_of
@@ -80,9 +78,7 @@ def _node_max_s(b) -> float:
 
 
 class Executor(Protocol):
-    ep: Episode
-    def snapshot(self, node: Node, world: World, *, timeout_s: float | None = None) -> tuple[NodeResult, dict]: ...
-    def refresh_holders(self, *, force: bool = False) -> NodeResult: ...
+    def snapshot(self, node: Node, world: World) -> tuple[NodeResult, dict]: ...
     def run_policies(self, node: Node, plans: list, world: World) -> list: ...
     def run_trajectory(self, node: Node, traj, world: World) -> NodeResult: ...
     def run_hand(self, node: Node, world: World) -> NodeResult: ...
@@ -131,12 +127,6 @@ class EpisodeManager:
     node_since: float = field(default_factory=time.time)
     #: ★10.28 사람이 놓은 물체 다시 찍기(confirm 바로 뒤 snapshot objects) 실패 횟수 — 노드 id → 횟수
     placed_tries: dict = field(default_factory=dict)
-    cmd_ack: list = field(default_factory=list)
-    _cmd_seen: set = field(default_factory=set)
-    _sup_retries: set = field(default_factory=set)
-    _sup_serial: int = 0
-    _retry_return: int | None = None
-    _failed_node: str | None = None
     _auto: bool = False
     _chained: bool = False                              # ★11.09 auto 노드 이어 가기(승인만 생략)
 
@@ -218,114 +208,8 @@ class EpisodeManager:
         self._log("stop", self.node, termination_reason=reason)
         return self.status
 
-    @property
-    def boundary(self) -> bool:
-        return self.status == READY
-
-    def command(self, row: dict, *, busy: bool = False) -> dict | None:
-        """sup_v0 한 번 처리. 이동 노드는 예약만 하고 기존 step/승인 경로로 실행한다."""
-        cid = row.get("cmd_id")
-        if not isinstance(cid, str) or not cid or cid in self._cmd_seen:
-            return None
-        self._cmd_seen.add(cid)
-        verb = str(row.get("what", "")).removeprefix("cmd:")
-        ok, reason = False, ""
-        try:
-            if busy or self.status == RUNNING:
-                raise ValueError("busy")
-            if not self.boundary:
-                raise ValueError("not ready")
-            if row.get("iface") != "sup_v0" or not str(row.get("what", "")).startswith("cmd:"):
-                raise ValueError("invalid iface/what")
-            args = row.get("args", {})
-            if not isinstance(args, dict):
-                raise TypeError("args must be an object")
-            if verb == "stop":
-                self.stop(str(args.get("reason") or "supervisor stop"))
-            elif verb == "skip":
-                if self.node is None or self.node.id != args.get("node_id"):
-                    raise ValueError("not current node")
-                if self.node.type == "terminal":
-                    raise ValueError("cannot skip terminal")
-                if self._retry_return is not None:
-                    raise ValueError("retry pending")
-                node = self.node
-                self.pending, self.waiting = None, None
-                self._mark(node.id, "skipped")
-                self._log("skipped", node, termination_reason=str(args.get("reason") or ""))
-                self._next_node()
-            elif verb == "insert":
-                if self.node is None or args.get("after", self.node.id) != self.node.id:
-                    raise ValueError("not current node")
-                if self.pending is not None or self._retry_return is not None:
-                    raise ValueError("recovery/retry pending")
-                spec = args.get("spec")
-                if not isinstance(spec, dict) or spec.get("type") not in ("snapshot", "trajectory", "policy"):
-                    raise ValueError("insert type must be snapshot/trajectory/policy")
-                self._sup_serial += 1
-                ident = f"sup_{self._sup_serial}_{spec.get('id') or spec['type']}"
-                while any(n.id == ident for n in self.ep.nodes):
-                    self._sup_serial += 1
-                    ident = f"sup_{self._sup_serial}_{spec.get('id') or spec['type']}"
-                node = S._node({**spec, "id": ident}, self.index)
-                ep = dataclasses.replace(self.ep, nodes=self.ep.nodes[:self.index] + (node,) + self.ep.nodes[self.index:])
-                S.validate(ep)
-                self.ep, self.flow = ep, flow_of(ep)
-                self.executor.ep = ep
-                self.waiting = None
-                self.node_since = time.time()
-                self._mark(node.id, "pending")
-            elif verb == "retry":
-                target = args.get("node_id")
-                if target in self._sup_retries:
-                    raise ValueError("retry limit (1)")
-                if self._retry_return is not None:
-                    raise ValueError("retry pending")
-                node = next((n for n in self.ep.nodes if n.id == target), None)
-                if (node is None or node.lane or node.type not in ("policy", "lanes", "trajectory")
-                        or target != self._failed_node):
-                    raise ValueError("not the last failed policy/lanes/trajectory")
-                self._sup_retries.add(target)
-                self._retry_return = self.index
-                self.index = self.ep.node_index(target)
-                self.pending, self.waiting = None, None
-                self.node_since = time.time()
-            elif verb == "refresh_objects":
-                names = args.get("objects", [])
-                if not isinstance(names, list) or any(not isinstance(n, str) or n not in self.ep.objects for n in names):
-                    raise ValueError("unknown objects")
-                timeout = None if "timeout_s" not in args else float(args["timeout_s"])
-                if timeout is not None and (not math.isfinite(timeout) or timeout <= 0):
-                    raise ValueError("timeout_s must be finite and positive")
-                node = Node(id="sup_refresh_objects", type="snapshot", objects=tuple(names))
-                res, located = self._snapshot(node, self.world, timeout_s=timeout)
-                if res.status != "completed":
-                    raise ValueError(res.reason)
-                self.world = self._after_success(node, self.world, located)
-            elif verb == "refresh_holders":
-                force = args.get("force", False)
-                if not isinstance(force, bool):
-                    raise ValueError("force must be boolean")
-                res = self.executor.refresh_holders(force=force)
-                if res.status != "completed":
-                    raise ValueError(res.reason)
-            else:
-                raise ValueError("unknown verb")
-            ok = True
-        except (ValueError, TypeError, KeyError) as exc:
-            reason = str(exc)
-        except Exception as exc:  # noqa: BLE001 — 실행기 예외도 ack 를 남기고 기존 안전 정지
-            reason = f"{type(exc).__name__}: {exc}"
-            self.stop("supervisor command exception: " + reason)
-        ack = {"cmd_id": cid, "verb": verb, "ok": ok, "reason": reason, "t": time.time()}
-        self.cmd_ack.append(ack)
-        del self.cmd_ack[:-20]
-        self._log("cmd", self.node, **ack)
-        return ack
-
     def view(self) -> dict:
-        return {"boundary": self.boundary, "cmd_ack": [dict(a) for a in self.cmd_ack],
-                "episode": self.ep.name, "episode_id": self.episode_id, "status": self.status, "index": self.index,
+        return {"episode": self.ep.name, "episode_id": self.episode_id, "status": self.status, "index": self.index,
                 "node": None if self.node is None else self.node.id, "world": self.world.as_dict(),
                 "nodes": [{"id": n.id, "type": n.type, "name": n.name or ",".join(j.role for j in n.jobs),
                            "state": ("done" if i < self.index else "current" if i == self.index else "pending")}
@@ -393,12 +277,9 @@ class EpisodeManager:
             self.status = READY if self.node is not None else SUCCESS
             return self._close_terminal()
         self.world = before
-        self._failed_node = node.id
         self._mark(node.id, "failed", s=round(dur, 2), code=code.value)
         self._log("failure", node, start_time=start, end_time=_now(), duration=round(dur, 3), result=code.value,
                   termination_reason=reason, failed_role=who, signals=self._signal_rows(results))
-        if self._retry_return is not None:
-            return self._fail(node, code, "supervisor retry failed: " + reason)
         if self._placed_retry(node, code):
             return self._back_to_confirm(node, code, reason)
         return self._recover(node, code)
@@ -543,10 +424,9 @@ class EpisodeManager:
         except Exception as exc:                                       # 실행기 예외 = 관측 · 컨트롤러 이상 → safe stop
             return [NodeResult("error", f"{type(exc).__name__}: {exc}")], {}
 
-    def _snapshot(self, node: Node, world: World, *, timeout_s: float | None = None) -> tuple[NodeResult, dict]:
+    def _snapshot(self, node: Node, world: World) -> tuple[NodeResult, dict]:
         """실행기 snapshot + ★10.28 물체 region(검증 상자) — 밖이면 거부한다(로봇은 움직이지 않았다 · 기록하지 않는다)."""
-        res, located = (self.executor.snapshot(node, world) if timeout_s is None
-                        else self.executor.snapshot(node, world, timeout_s=timeout_s))
+        res, located = self.executor.snapshot(node, world)
         if res.status != "completed":
             return res, located
         miss = [f"{name} {why}" for name, pose in located.items()
@@ -641,12 +521,6 @@ class EpisodeManager:
         return self.status
 
     def _next_node(self) -> None:
-        if self._retry_return is not None:
-            back, self._retry_return = self._retry_return, None
-            if back != self.index:
-                self.index = back
-                self.node_since = time.time()
-                return
         self.index += 1
         while self.node is not None and self.node.lane:   # ★11.08 줄 항목은 lanes 노드가 돌았다
             self.index += 1

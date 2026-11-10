@@ -99,28 +99,10 @@ def _world():
     return mod
 
 
-def replay_start(data, side: str | None = None) -> tuple[list[str], list[float]]:
-    """teach NPZ 는 계획 계약 메타데이터가 없다. 실제 재생할 arm_target 첫 프레임만 검사한다."""
-    if str(data["meta_schema"]) != "s2r_replay_v1":
-        raise ValueError("replay schema must be s2r_replay_v1")
-    names = [str(n) for n in data["joint_names"]]
-    sides = (side,) if side else ("right", "left")
-    if not any(names == [f"{s[0]}_aj_{i}" for i in range(1, 8)] for s in sides):
-        raise ValueError("replay joint_names must match one canonical arm in order")
-    q = np.asarray(data["arm_target"], dtype=float)
-    dt = float(data["meta_step_dt"])
-    if q.ndim != 2 or q.shape[0] < 2 or q.shape[1] != 7 or not np.isfinite(q).all():
-        raise ValueError("replay arm_target must be finite (N>=2, 7)")
-    if not np.isfinite(dt) or not 0 < dt < 1:
-        raise ValueError("replay meta_step_dt must be in (0, 1)")
-    return names, q[0].tolist()
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--npz", type=Path, required=True)
     ap.add_argument("--contract", type=Path, default=CONTRACT)
-    ap.add_argument("--side", choices=("right", "left"), help="teach replay 팔 일치 검사")
     ap.add_argument("--tol", type=float, default=0.05, help="시작점 허용 [rad] (관절별 최대)")
     ap.add_argument("--allow-exact-zero", action="store_true", help="fake 플랜트 전용 — 팔이 정확히 0 에서 시작한다")
     ap.add_argument("--hand-tol", type=float, default=0.2, help="손 자세 허용 [rad] (경로를 실측 손으로 검사했을 때)")
@@ -130,19 +112,6 @@ def main() -> int:
     if os.environ.get("ROS_DOMAIN_ID", "") in ("", "0"):
         raise SystemExit("✗ ROS_DOMAIN_ID 가 비었거나 0 — 거부")
     d = np.load(args.npz)
-    if "meta_schema" in d and str(d["meta_schema"]) == "s2r_replay_v1":
-        if args.at != "start":
-            raise SystemExit("teach replay 는 시작점 검사만 지원")
-        try:
-            joints, start = replay_start(d, args.side)
-        except (ValueError, KeyError, TypeError) as exc:
-            raise SystemExit(f"✗ replay: {exc}") from exc
-        reasons = verdict(measure(joints), joints, np.asarray(start), args.tol, args.allow_exact_zero)
-        for reason in reasons:
-            print(f"  ✗ {reason}")
-        if not reasons:
-            print(f"  ✓ teach replay 시작 간격 ≤ {args.tol} rad (계획 계약 메타데이터 없음)")
-        return 1 if reasons else 0
     joints = [str(j) for j in d["meta_joints"]]
     reasons = []
     want = str(d["meta_contract_sha1"])

@@ -60,7 +60,7 @@ HAND_ACTIONS = ("open", "grasp")
 KINDS = ("aglt", "place", "pour", "lock", "shake")
 CONTINUE_KINDS = ("place",)   # ★11.07 continue_on_fail: 실패해도 다음 노드(home 등)로 넘어갈 수 있는 정책 종류
 SIDES = ("right", "left", "both")
-TRAJ_KINDS = ("rehome", "noop", "carry", "tilt", "reach", "lift", "replay")
+TRAJ_KINDS = ("rehome", "noop", "carry", "tilt", "reach", "lift")
 #: 10.17 실측에서 계획 · 검사한 뒤 재생하는 궤적(tools/plan_<kind>.py → replay_to_pd).
 #: carry = 잡기 뒤 ready_carry 로 붓기 시작 자세(SETTING)까지 — 한 팔씩(sides: [right]) 또는 두 팔(계획 경로 A "한 팔씩").
 #:   cups: false = 빈손으로(경로 B, 사람이 컵을 손에 댄다 — 컵 없이 같은 경로).
@@ -164,7 +164,6 @@ class Trajectory:
     object: str = ""             # reach · lift: episode objects 의 이름(컵 자세 FP++ 토픽)
     stop: str = "grasp"          # reach: grasp = 손 안 컵 자리까지(1-B) · pregrasp = 사전 파지 자리에서 멈춤(경로 D, 10.20)
     cup: str = ""                # tilt + tilt_traj 자산(traj_v10): 붓는 컵 "240" · "200"(plan_tilt_traj --cup, 10.27)
-    npz: str = ""                # replay: SIM2REAL 상대 경로
 
 
 @dataclass(frozen=True)
@@ -444,16 +443,7 @@ def _trajectory(name: str, t: Mapping) -> Trajectory:
     tr = Trajectory(name=name, kind=str(t["kind"]), sides=tuple(t.get("sides") or ("right", "left")),
                     asset=str(t.get("asset") or ""), rate_scale=float(t.get("rate_scale", 1.0)), cups=cups,
                     object=str(t.get("object") or ""), stop=str(t.get("stop") or "grasp"),
-                    cup=str(t.get("cup") or ""), npz=str(t.get("npz") or ""))
-    if tr.kind == "replay":
-        from policy_control import _paths
-        path = Path(tr.npz)
-        if (not tr.npz or path.is_absolute() or ".." in path.parts
-                or not (_paths.SIM2REAL / path).resolve().is_relative_to(_paths.SIM2REAL.resolve())
-                or not (_paths.SIM2REAL / path).is_file()):
-            raise EpisodeSpecError(f"trajectories.{name}: replay npz 는 존재하는 SIM2REAL 상대 경로")
-        if tr.sides not in (("right",), ("left",)):
-            raise EpisodeSpecError(f"trajectories.{name}: replay 는 한 팔 — sides: [right] · [left]")
+                    cup=str(t.get("cup") or ""))
     if "cup" in t and tr.kind != "tilt":
         raise EpisodeSpecError(f"trajectories.{name}: cup 은 tilt 에만")
     if "stop" in t and tr.kind != "reach":

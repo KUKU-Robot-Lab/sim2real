@@ -59,7 +59,7 @@ class FakeExecutor:
         q = self.inject.get(key) or []
         return q.pop(0) if q else None
 
-    def snapshot(self, node: Node, world, *, timeout_s: float | None = None) -> tuple[NodeResult, dict]:
+    def snapshot(self, node: Node, world) -> tuple[NodeResult, dict]:
         self.calls.append(("snapshot", node.id))
         code = self._take(node.id)
         if code is not None:
@@ -105,10 +105,6 @@ class FakeExecutor:
             status, reason, signals = _FAIL[code]
             return NodeResult(status, reason, signals=signals)
         return NodeResult("completed", "", 3.5)
-
-    def refresh_holders(self, *, force: bool = False) -> NodeResult:
-        self.calls.append(("refresh_holders", force))
-        return NodeResult("completed", "")
 
     def prepare(self, step: str, plans: list, world) -> NodeResult:
         self.calls.append(("prepare", step, tuple(p.role for p in plans)))
