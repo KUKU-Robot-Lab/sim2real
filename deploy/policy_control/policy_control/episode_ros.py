@@ -116,6 +116,9 @@ def reset_until_cup_fresh(call, *, retry_s: float = RESET_CUP_RETRY_S, step_s: f
             return ok, why
         sleep(step_s)
 SEAT_DZ_CYL60 = HOLDER_FLOOR_Z + 0.085
+#: ★11.11 래치 전 손 폄 종료(opened_before_latch)는 손이 0.15 rad 만 열려도 끝난다 — 쥔 채 홀더에 깊이 든 컵(sim: 앉은 높이 +55 mm,
+#   접촉력 28~35 N)을 성공으로 보면 다음 rehome 이 컵을 끌고 나간다. 이 outcome 만 앉음 z 허용을 30 → 15 mm 로 좁힌다.
+PLACE_OPEN_Z_TOL_M = 0.015
 HAND_OPEN_WAIT_S = 3.0            # 손 펴기 — RH56F1 전 행정 약 1 s(벤더 speedSet 기본) + 여유. 그 안에 실측이 펴져야 한다
 HAND_OPEN_TOL_RAD = 0.15          # 펴짐 = 엄지 굽힘 · 네 손가락이 0(편 끝)에서 이 안(엄지 회전은 보지 않는다). pd 홈 손 경로 검사와 같은 값
                                   # (pd 는 손 목표를 한계 안쪽 0.05 로 물린다 — fake 실측 0.07~0.09 에서 섰다)
@@ -928,6 +931,18 @@ class RosExecutor:
             sig = {"hand_empty": empty, "opened": pl.get("opened"), "tact_max": pl.get("tact_max"), "jf_max": pl.get("jf_max"),
                    "phase": pl.get("phase"), "ready_carry": pl.get("ready_carry"),      # ★10.25 이송 결과(없으면 None)
                    "outcome": pl.get("outcome")}       # ★11.02 빼기 결과 clear | withdraw_timeout(episode_failure 가 본다)
+            early = pl.get("outcome") == "opened_before_latch"
+            z_tol = PLACE_OPEN_Z_TOL_M if early else 0.03
+            if early:
+                # 손끝 촉각이 놓음 힘(노드 계약 release_force_n = env contact_force_threshold) 이상이면 아직 쥔 것 — 손이 안 비었다.
+                #   tact_max 0.0·None(sim, 촉각 없음)이나 문턱을 안 내는 옛 노드면 건너뛰고 z 만으로.
+                tact, thr = pl.get("tact_max"), st.get("release_force_n")
+                if tact and thr is not None:
+                    sig["tact_held"] = float(tact) >= float(thr)
+                    if sig["tact_held"]:
+                        sig["hand_empty"] = False
+                else:
+                    sig["tact_check"] = "skipped: " + ("no tactile" if not tact else "no release_force_n")
             hold = self.holders.get(p.holder_id) if p.holder_id is not None else None
             # ★11.04 놓은 자리 = FP++ live(stop + 1.0 s 뒤 프레임) 와 손을 연 순간의 묶은 컵(손바닥 FK ⊗ 묶음, latch_cup).
             #   …/pose(cups 때 찍은 테이블 자리)는 쓰지 않는다. live 는 쥔 컵을 놓치면 엉뚱한 값을 내므로(131817) 둘 중 하나라도
@@ -937,10 +952,10 @@ class RosExecutor:
             if hold is not None:
                 votes = {}
                 if pos is not None:
-                    votes["live"] = cup_in_holder(pos, hold[0], SEAT_DZ_CYL60)
+                    votes["live"] = cup_in_holder(pos, hold[0], SEAT_DZ_CYL60, z_tol=z_tol)
                     sig["cup_pos"] = [round(v, 4) for v in pos]
                 if fk is not None and len(fk) == 3:
-                    votes["fk"] = cup_in_holder(fk, hold[0], SEAT_DZ_CYL60)
+                    votes["fk"] = cup_in_holder(fk, hold[0], SEAT_DZ_CYL60, z_tol=z_tol)
                     sig["cup_pos_fk"] = [round(float(v), 4) for v in fk]
                 if votes:
                     sig["cup_in_holder"] = any(votes.values())

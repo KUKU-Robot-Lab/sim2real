@@ -422,6 +422,7 @@ class PlaceNode(PourFjNode):
 
     def _status_extra(self) -> dict:
         return {"holder": self.holder_id, "holder_pose": None if self._holder is None else [round(float(v), 4) for v in self._holder],
+                "release_force_n": self.contract.release_force_n,     # 실행기 opened_before_latch 촉각 판정 문턱
                 **({"holder_excess_m": self._holder_excess} if self.contract.holder_range else {}),
                 **({"place": self.chain.as_dict()} if getattr(self.chain, "as_dict", None) else {})}
 

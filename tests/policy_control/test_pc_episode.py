@@ -885,6 +885,40 @@ def test_place_ended_by_open_fingers_before_latch_is_judged_by_the_holder_only()
     assert code((0.30, -0.06, 0.24)) is F.PLACE_FAILED            # 홀더 밖
 
 
+def test_opened_before_latch_tightens_seat_z_and_checks_tactile():
+    """★11.11 래치 전 손 폄 종료는 손이 조금만 열려도 끝난다 — 쥔 채 홀더에 든 컵을 성공으로 보지 않게 앉음 z 15 mm,
+    실기 촉각이 놓음 힘 이상이면 손이 안 빈 것(hand_empty False → 걸림). 촉각 없으면(sim 0.0) z 만. 다른 outcome 은 그대로 30 mm."""
+    import threading
+    from types import SimpleNamespace
+    from policy_control.episode_ros import SEAT_DZ_CYL60, RosExecutor
+    hold = (0.38, -0.06, 0.235)
+    seat = (0.38, -0.06, 0.235 + SEAT_DZ_CYL60)
+    up20 = (0.38, -0.06, 0.235 + SEAT_DZ_CYL60 + 0.020)
+    ep, d = _ep(), FailureDetector()
+
+    def run(live, tact, outcome="opened_before_latch", thr=1.0):
+        me = SimpleNamespace(holders={1: (hold, 0.0)}, _live={}, _lock=threading.Lock(),
+                             _fresh_object=lambda name, after=None, store=None, wait_s=2.0: live)
+        p = SimpleNamespace(kind="place", source_object="SRC", holder_id=1)
+        st = {"release_force_n": thr, "place": {"phase": "policy", "outcome": outcome, "tact_max": tact}}
+        sig = RosExecutor._signals_of(me, p, st)
+        return sig, d.evaluate(ep, ep.nodes[3], [NodeResult("completed", "", role="rh_place_r", signals=sig)])[0]
+
+    sig, c = run(up20, 0.0)                                       # (a) 쥔 채 20 mm 위 — 촉각 없어도 z 로 실패
+    assert c is F.PLACE_FAILED and sig["cup_in_holder"] is False and sig["tact_check"].startswith("skipped")
+    sig, c = run(seat, 5.0)                                       # (b) 앉았어도 촉각 ≥ 문턱 = 쥔 채
+    assert c is F.PLACE_FAILED and sig["tact_held"] is True and sig["hand_empty"] is False
+    sig, c = run(seat, 0.3)                                       # (c) 앉았고 촉각 낮음 — 성공
+    assert c is F.NONE and sig["tact_held"] is False and sig["hand_empty"] is None
+    for tact in (None, 0.0):                                      # (d) 촉각 없음 — z 만
+        sig, c = run(seat, tact)
+        assert c is F.NONE and "tact_held" not in sig and sig["tact_check"] == "skipped: no tactile"
+    sig, c = run(seat, 5.0, thr=None)                             # 문턱 안 내는 옛 노드 — 건너뜀
+    assert c is F.NONE and sig["tact_check"] == "skipped: no release_force_n"
+    sig, c = run(up20, 5.0, outcome="clear")                      # 다른 outcome 은 그대로(30 mm · 촉각 안 봄)
+    assert sig["cup_in_holder"] is True and "tact_held" not in sig
+
+
 def test_holder_check_age_fits_fixed_holders_and_names_the_holder_that_blocks():
     """★11.11 사용자 "홀더는 고정해 두고 필요할 때 cup_holders 로 갱신": 하루 · 며칠 지난 확정은 통과, 7 일 넘으면 막는다.
     막을 때는 어느 홀더가 왜인지(가림 · 옮겨짐 · rc) 보인다."""
