@@ -5,11 +5,13 @@ LSTM 이면 은닉 상태를 스텝 사이에 들고, `reset()`(에피소드 시
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
 
 from . import _paths  # noqa: F401  (puts scripts/ on sys.path for policy_loader)
+from .cpu_plan import INT8_ENV
 from .joint_contract import JointContract, JointContractError, file_md5, file_sha1
 
 
@@ -25,7 +27,8 @@ class JointPolicy:
             raise JointContractError(f"agent.yaml changed since the contract was built: {agent}")
         import torch
         from policy_loader import RLGamesActorPolicy, RLGamesLstmActorPolicy
-        if str(device).startswith("cpu"):
+        if True:   # ★11.11 (가설·실기 미검증) cuda 에서도 줄인다 — 정책이 GPU 여도 obs 쪽 torch(손 안 컵 GRU 등)는 CPU 에서 돌 수 있다.
+            #   cuda 일 때 이 줄을 건너뛰어 기본 스레드(코어 전부)로 돌았고, 151818 place_m 로그에서 obs 단계가 수십~200 ms 대로 튀었다.
             # 기본 스레드 수(코어 전부)는 같은 PC 의 학습 · 다른 노드와 겨뤄 한 스텝이 47 ms 까지 늘었다(09.28 fake,
             # 혼자 재면 4 ms). 60 Hz 예산 16.7 ms 안에 두려고 줄인다. 실기는 cuda 로 돈다(2.4 ms).
             from .cpu_plan import current_plan   # POLICY_CPU_THREADS 가 있으면 그 값, 없으면 1(10.04: 2 개의 절반 CPU, 스텝 +0.5 ms)
@@ -39,6 +42,12 @@ class JointPolicy:
         missing = list(getattr(self._policy, "load_report", ((), ()))[0])
         if missing:                                     # 빠진 가중치 = 초기값으로 도는 정책 — 절대 통과시키지 않는다
             raise JointContractError(f"checkpoint did not fill {len(missing)} model weights: {missing[:5]}")
+        self._int8_net = None
+        if str(device).startswith("cpu") and os.environ.get(INT8_ENV, "") == "1":
+            # ★11.10 기본 끔. fp32 actor(약 26 MB)는 틱마다 가중치를 메모리에서 다시 읽어 카메라 · FP++ 부하에서 10~30 ms 로 늘었다.
+            #   int8 은 0.4 ms 로 부하에 거의 안 흔들리지만 행동이 조금 바뀐다(분포 표본 · neglogp 도 건너뛴다 — mu 만 쓴다).
+            self._int8_net = torch.ao.quantization.quantize_dynamic(
+                self._policy.model.a2c_network, {torch.nn.Linear, torch.nn.LSTM}, dtype=torch.qint8)
         self.warmup()
 
     def warmup(self, n: int = 3) -> None:
@@ -54,8 +63,20 @@ class JointPolicy:
         if arr.size != self._dim or not np.all(np.isfinite(arr)):
             raise JointContractError(f"obs must be {self._dim} finite values, got {arr.size}")
         t = self._torch.as_tensor(arr, device=self._device).unsqueeze(0)
+        if self._int8_net is not None:
+            return self._forward_int8(t)
         with self._torch.no_grad():
             return self._policy.get_action(t)[0].detach().cpu().numpy().astype(np.float64)
+
+    def _forward_int8(self, t):
+        """rl_games model.forward 의 mu 경로만(norm_obs → a2c_network), 은닉 상태는 policy_loader 와 같은 칸에 둔다."""
+        model = self._policy.model
+        with self._torch.inference_mode():
+            mu, _, _, states = self._int8_net({"obs": model.norm_obs(t), "rnn_states": getattr(self._policy, "_rnn_states", None),
+                                               "seq_length": 1, "rnn_masks": None, "is_train": False})
+            if hasattr(self._policy, "_rnn_states"):
+                self._policy._rnn_states = states
+            return mu[0].numpy().astype(np.float64)
 
     def reset(self) -> None:
         if hasattr(self._policy, "reset_states"):

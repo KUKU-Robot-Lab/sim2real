@@ -40,6 +40,8 @@ MIN_GENERAL_CORES = 4                    # 실시간 코어를 떼고도 우리 
 POLICY_ENV = "S2R_POLICY_CORE"           # ★11.09 "0" = 정책 노드에 전용 P 코어를 주지 않는다(일반 코어에서 돈다)
 DEVICE_ENV = "S2R_POLICY_DEVICE"         # ★11.10 콘솔 정책 탭의 계산 장치 선택("cpu" · "cuda") — 미션의 device:= 보다 앞선다
 DEVICES = ("cpu", "cuda")
+INT8_ENV = "S2R_POLICY_INT8"              # ★11.10 "1" = cpu 정책을 int8 동적 양자화(Linear · LSTM)로 — 기본 끔. 출력이 바뀐다
+#   (실기 bag 관측에서 |Δa| 는 policy_rate/opt/README). 메모리 대역폭 부하에서도 0.4 ms(fp32 는 10~30 ms).
 POLICY_LOCK_DIR = Path("/tmp/s2r_cpu")    # 정책 코어 자리표 — flock 이라 프로세스가 죽으면 자리가 저절로 빈다
 RT_PRIO_NEEDED = 80                      # rh56f1_ecat_master 가 요청하는 SCHED_FIFO 순위 (controller_manager 50)
 _SCHED = {os.SCHED_OTHER: "OTHER", os.SCHED_FIFO: "FIFO", os.SCHED_RR: "RR",
@@ -238,11 +240,12 @@ def policy_device(param: str, env: Mapping[str, str] | None = None) -> tuple[str
     (장치, 로그 한 줄)을 돌려준다. 모르는 값은 조용히 넘기지 않고 ValueError 를 낸다 — 엉뚱한 장치에서 돌지 않게."""
     env = os.environ if env is None else env
     raw = env.get(DEVICE_ENV, "").strip()
+    int8 = " · int8 동적 양자화" if env.get(INT8_ENV, "") == "1" else ""   # cpu 일 때만 JointPolicy 가 쓴다
     if not raw:
-        return param, f"정책 장치: {param} (미션 device:=)"
+        return param, f"정책 장치: {param} (미션 device:=){int8 if param.startswith('cpu') else ''}"
     if raw.split(":", 1)[0] not in DEVICES:
         raise ValueError(f"{DEVICE_ENV}={raw!r} — {'/'.join(DEVICES)} 중 하나여야 한다")
-    return raw, f"정책 장치: {raw} (콘솔 선택 {DEVICE_ENV} — 미션 device:={param} 대신)"
+    return raw, f"정책 장치: {raw} (콘솔 선택 {DEVICE_ENV} — 미션 device:={param} 대신){int8 if raw.startswith('cpu') else ''}"
 
 
 def keep_off_rt(plan: CpuPlan | None = None) -> str:
