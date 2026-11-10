@@ -51,8 +51,20 @@ def _law_cmd(target, cfg):
 
 # ---------------------------------------------------------------- 기본 꺼짐
 def test_deploy_pd_yamls_leave_the_diff_off():
-    for name in ("pd_rh56f1.yaml", "pd_left.yaml", "pd_right.yaml"):
+    for name in ("pd_left.yaml", "pd_right.yaml"):
         assert L.load_pd_config(CONFIG / name).qd_target_diff is None
+
+
+def test_rh56f1_mission_pd_turns_on_stage_1_and_t2_adds_friction():
+    """★11.10 사용자 "속도 상한은 풀어야": 미션 PD(pd_rh56f1·_exec)는 1단계(q̇* 차분 + vel_ff_cap 0.5),
+    tracking_1110/*_T2 는 거기에 fric_ff 만 더한다. 두 미션 yaml 은 execute 한 줄만 달라야 한다."""
+    for name in ("pd_rh56f1.yaml", "pd_rh56f1_exec.yaml"):
+        c = L.load_pd_config(CONFIG / name)
+        assert c.qd_target_diff == L.QdTargetDiff(max_dt=0.1, hold_sec=0.07) and c.vel_ff_cap == 0.5
+        assert c.fric_ff is None
+        t2 = L.load_pd_config(CONFIG / "tracking_1110" / name.replace(".yaml", "_T2.yaml"))
+        assert t2.fric_ff is not None and t2.qd_target_diff == c.qd_target_diff and t2.vel_ff_cap == 0.5
+        assert t2.execute == c.execute
 
 
 @pytest.mark.parametrize("msg_qd", [np.zeros(N), np.linspace(-0.3, 0.4, N)])
@@ -146,7 +158,7 @@ def _fric_law_cmd(qd, fric, tracking=True, effort_cap=20.0, tau_req=None):
 
 
 def test_deploy_pd_yamls_leave_the_friction_off():
-    for name in ("pd_rh56f1.yaml", "pd_left.yaml", "pd_right.yaml"):
+    for name in ("pd_rh56f1.yaml", "pd_rh56f1_exec.yaml", "pd_left.yaml", "pd_right.yaml"):
         assert L.load_pd_config(CONFIG / name).fric_ff is None
 
 

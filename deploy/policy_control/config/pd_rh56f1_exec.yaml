@@ -15,7 +15,8 @@ lead_vel: 2.0                  # 프로필 관절 velocity 한계(openarm_tesoll
 max_vel:                       # TRACKING 세트포인트 전진 상한 [rad/s], 단계 승인
   reduced: 0.25
   full: 2.0
-vel_ff_cap: 0.0                # q̇* 전향 상한 [rad/s], 단계 승인 0 → 0.5 → 2.0
+vel_ff_cap: 0.5                # q̇* 전향 상한 [rad/s] ★11.10 사용자 "속도 상한은 풀어야" 0 → 0.5 (단계 0.5 → 2.0)
+qd_target_diff: {max_dt: 0.1, hold_sec: 0.07}   # ★11.10 q̇* = Δq*/Δt(수신 시각). 간격 > max_dt·첫 목표·에피소드 바뀜이면 0 (root_cause/tracking_fix)
 effort_cap: 20.0               # τ 합 상한 [N·m]; 초과 시 0 송출 + HOLD
 abort_tracking: 0.5            # max|세트포인트 − 실측| [rad] → HOLD (sim 도 fabric 목표에 0.42 rad 뒤처진다)
 release_zero_ticks: 5          # RELEASING 에서 q̇*=0·τ=0 송출 횟수
