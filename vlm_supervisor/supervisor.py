@@ -9,6 +9,9 @@ from .interface import node_id
 
 END = {'SUCCESS', 'STOPPED'}
 RECOVERY = {'retry', 'rescan', 'home', 'insert', 'human'}
+# Mirror of policy_control.episode_failure.SAFETY + policy_timeout: runner forbids automatic recovery.
+SAFE_STOP_CODES = {'controller_error', 'observation_error', 'unknown', 'operator_declined',
+                   'lift_guard_failed', 'policy_timeout'}
 
 
 class Supervisor:
@@ -60,6 +63,9 @@ class Supervisor:
         action = 'stop' if decision.get('choice') == 'E' else decision['action']
         failed_node = node_id(last.get('node')) or target
         capped = action in RECOVERY and self.recoveries.get(failed_node, 0) >= self.max_recover
+        if status.get('status') == 'FAILURE' and action != 'stop' and (
+                last.get('code') in SAFE_STOP_CODES or action == 'next'):
+            capped = True  # runner safety rule, or VLM calls a FAILURE success: operator decides
         if capped:
             action = 'human'
         if action == 'next':

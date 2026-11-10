@@ -15,7 +15,7 @@ class FakeInterface:
     @staticmethod
     def failure():
         return {'status': 'FAILURE', 'node': None,
-                'last': {'node': 'grasp_to_tilt_start', 'code': 'lift_guard_failed', 'ok': False}}
+                'last': {'node': 'grasp_to_tilt_start', 'code': 'pour_failed', 'ok': False}}
 
     def status(self):
         if self.missing:
@@ -118,3 +118,12 @@ def test_failure_choice_e_stops_even_with_retry_action():
     interface = FakeInterface()
     assert Supervisor(interface, StopJudge(), mode='active', settle=0).run() == 1
     assert [call[0] for call in interface.calls] == ['stop']
+
+
+@pytest.mark.parametrize('code,action', [('lift_guard_failed', 'retry'), ('controller_error', 'retry'),
+                                         ('pour_failed', 'next')])
+def test_safety_code_or_vlm_success_on_failure_goes_to_human(code, action):
+    interface = FakeInterface()
+    interface.state['last']['code'] = code
+    assert Supervisor(interface, Judge(action), mode='active', settle=0).run() == 1
+    assert [call[0] for call in interface.calls] == ['human']
