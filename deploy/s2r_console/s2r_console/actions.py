@@ -868,7 +868,17 @@ class ActionManager:
 
     def _trigger(self, s, service, side, *, expect=()):
         argv = self._trigger_argv(service, side, expect)
-        self._run_commands(s, f'action_{service.replace("/", "_")}_{side}', [Command(argv, note=service)])
+        sid = f'action_{service.replace("/", "_")}_{side}'
+        # ★11.10 사용자: pd/hold 서비스가 가끔 5 s 안에 답하지 않는다(15:34 left 7회 중 2회 timeout, 다시 부르면 ok).
+        # pd/hold 는 되풀이해도 같은 결과(그 자리 붙들기)라 한 번 더 부른다. 다른 서비스는 그대로 한 번.
+        tries = 2 if service == 'pd/hold' else 1
+        for attempt in range(tries):
+            try:
+                self._run_commands(s, sid, [Command(argv, note=service if attempt == 0 else f'{service} (재시도)')])
+                return
+            except ConsoleError:
+                if attempt + 1 >= tries:
+                    raise
 
     # ── ★11.09 tuning 탭(정지 마찰 실험) ─────────────────────────────────
     def _describe_tuning(self, s, action_id, parameters, reasons, commands, warnings):
@@ -1190,7 +1200,11 @@ class ActionManager:
         with s.feed_lock:
             status = s.feed.observed().status
         runners = [EPISODE_RUNNER, *(runner_of(side) for side in sorted(needed))]
-        for runner in [r for r in runners if status.get(r)]:
+        with s.feed_lock:
+            age = dict(s.feed.observed().age_s)
+        # ★11.10 사용자: 실행기가 이미 죽었으면(상태가 STALE_S 넘게 안 옴) 정지 명령을 보내지 않는다 — 보내면
+        # '상태가 안 온다' rc=1 로 선점 전체가 실패해 rehome 이 막혔다(15:29~15:33 rehome_left 4회).
+        for runner in [r for r in runners if status.get(r) and age.get(r, 1e9) <= STALE_S]:
             sid = 'action_episode_stop' if runner == EPISODE_RUNNER else f"action_episode_stop_{runner[len(EPISODE_RUNNER) + 1:]}"
             self._run_commands(s, sid, [Command(
                 ('python3', str(_EPISODE_CMD), 'stop', '--execute', '--operator', self._status['operator'],
