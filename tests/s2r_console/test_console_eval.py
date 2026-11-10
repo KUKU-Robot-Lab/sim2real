@@ -1,4 +1,4 @@
-"""★11.02 eval 탭(실기 평가) — 평가 에피소드 목록(11.05 cocktail_1c_e4000 · grasp_s_right · grasp_s_left, 11.09 + place_m_right · place_m_left) · 회차 기록 CSV · /api/eval/rounds.
+"""★11.02 eval 탭(실기 평가) — 평가 에피소드 목록(★11.11 탭은 cocktail_1c_e4000 하나, 기록은 학생 에피소드도 받는다) · 회차 기록 CSV · /api/eval/rounds.
 
 기록은 로봇에 아무것도 보내지 않는다. 서버가 round · time · policy id 를 채우고(policy id 는 에피소드 yaml 에서),
 날짜마다 파일 하나(logs/s2r_console/eval/<YYYY-MM-DD>.csv)에 붙인다.
@@ -73,8 +73,26 @@ def _csv(repo: Path, date: str) -> list[list[str]]:
 
 
 # ── 에피소드 목록 ───────────────────────────────────────────────────────
-def test_only_the_three_eval_episodes_are_listed_in_order(repo):
-    assert [e["name"] for e in EV.episodes(repo)] == ["cocktail_1c_e4000", "grasp_s_right", "grasp_s_left"]
+def test_the_tab_lists_only_cocktail_1c_e4000(repo):
+    """★11.11 사용자 "EVAL 부분에서 STUDENT 정책들도 POLICY 탭으로" — 학생 잡기 · 놓기는 파일이 있어도 탭에서 뺀다."""
+    assert EV.EVAL_TAB == ("cocktail_1c_e4000",)
+    assert [e["name"] for e in EV.episodes(repo)] == ["cocktail_1c_e4000"]
+
+
+def test_records_still_accept_the_student_episodes_and_the_grasp_s_color_variants(repo):
+    """★11.11 사용자 "평가 기록은 그대로 이 이름들을 받게 둔다" — 생성기 GRASP_S_VARIANTS · PLACE_M_VARIANTS 도."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("make_rh56f1_missions", ROOT / "scripts" / "ops" / "make_rh56f1_missions.py")
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)
+    assert {"grasp_s_right", "grasp_s_left", "place_m_right", "place_m_left",
+            *gen.GRASP_S_VARIANTS, *gen.PLACE_M_VARIANTS} <= set(EV.EVAL_EPISODES)
+    d = repo / "config" / "episodes"
+    (d / "grasp_s_pink_right.yaml").write_text((d / "grasp_s_right.yaml").read_text(encoding="utf-8")
+                                               .replace("name: grasp_s_right", "name: grasp_s_pink_right"), encoding="utf-8")
+    row = EV.append_round(repo, {"episode": "grasp_s_pink_right", "result": "성공"}, now=DAY1)
+    assert row["policy_r"] == "rh56f1/aglt/right_student1104e"
+    assert EV.append_round(repo, {"episode": "grasp_s_left", "result": "실패", "fail_stage": "grasp_lift"}, now=DAY1)["round"] == "2"
 
 
 def test_cocktail_episode_keeps_place_policies_and_holders(repo):
@@ -86,7 +104,8 @@ def test_cocktail_episode_keeps_place_policies_and_holders(repo):
 
 
 def test_grasp_episode_reports_the_student_policy_of_its_hand(repo):
-    eps = {e["name"]: e for e in EV.episodes(repo)}
+    d = repo / "config" / "episodes"                   # ★11.11 탭 밖이어도 기록은 같은 read_episode 를 쓴다
+    eps = {n: EV.read_episode(d / f"{n}.yaml") for n in ("grasp_s_right", "grasp_s_left")}
     assert (eps["grasp_s_right"]["policy_r"], eps["grasp_s_right"]["policy_l"]) == ("rh56f1/aglt/right_student1104e", "")
     assert (eps["grasp_s_left"]["policy_r"], eps["grasp_s_left"]["policy_l"]) == ("", "rh56f1/aglt/left_student1104e")
     assert eps["grasp_s_right"]["stages"] == ["go_home_start", "grasp_lift"]
@@ -106,18 +125,19 @@ def test_place_student_episodes_are_listed_with_the_student_policy(tmp_path):
               - {{id: place_cup, type: policy, name: rh_place_{s}, source_object: CUP, target_holder: PLACE_HOLDER}}
               - {{id: done, type: terminal, result: SUCCESS}}
             """), encoding="utf-8")
-    eps = {e["name"]: e for e in EV.episodes(tmp_path)}
-    assert list(eps) == ["place_m_right", "place_m_left"]
+    eps = {n: EV.read_episode(d / f"{n}.yaml") for n in ("place_m_right", "place_m_left")}
+    assert [e["name"] for e in eps.values()] == ["place_m_right", "place_m_left"]
     assert eps["place_m_right"]["policy_r"] == "rh56f1/place/right_student_place" and eps["place_m_right"]["policy_l"] == ""
     assert eps["place_m_left"]["policy_l"] == "rh56f1/place/left_student_place"
     assert eps["place_m_right"]["holders"] == [{"node": "place_cup", "object": "CUP", "holder": 1}]
 
 
 def test_view_marks_which_episodes_have_a_mission_stage(repo):
-    v = EV.view(repo, ["episode_grasp_s_right", "head_home"])
+    v = EV.view(repo, ["episode_cocktail_1c_e4000", "head_home"])
     has = {e["name"]: e["has_stage"] for e in v["episodes"]}
-    assert has == {"cocktail_1c_e4000": False, "grasp_s_right": True, "grasp_s_left": False}
-    assert v["episodes"][1]["stage"] == "episode_grasp_s_right"
+    assert has == {"cocktail_1c_e4000": True}
+    assert v["episodes"][0]["stage"] == "episode_cocktail_1c_e4000"
+    assert {e["name"]: e["has_stage"] for e in EV.view(repo, ["head_home"])["episodes"]} == {"cocktail_1c_e4000": False}
 
 
 def test_no_episode_files_is_an_empty_list_not_an_error(tmp_path):
@@ -126,18 +146,18 @@ def test_no_episode_files_is_an_empty_list_not_an_error(tmp_path):
 
 
 def test_a_broken_episode_file_shows_its_error_and_keeps_the_list(repo):
-    (repo / "config" / "episodes" / "grasp_s_left.yaml").write_text("episode: [", encoding="utf-8")
+    (repo / "config" / "episodes" / "cocktail_1c_e4000.yaml").write_text("episode: [", encoding="utf-8")
     eps = {e["name"]: e for e in EV.view(repo, [])["episodes"]}
-    assert eps["grasp_s_left"]["error"] and not eps["cocktail_1c_e4000"]["error"]
+    assert list(eps) == ["cocktail_1c_e4000"] and eps["cocktail_1c_e4000"]["error"]
 
 
 def test_a_missing_listed_file_is_skipped_and_reappears_without_restart(repo):
-    path = repo / "config" / "episodes" / "grasp_s_left.yaml"
+    path = repo / "config" / "episodes" / "cocktail_1c_e4000.yaml"
     text = path.read_text(encoding="utf-8")
     path.unlink()
-    assert [e["name"] for e in EV.episodes(repo)] == ["cocktail_1c_e4000", "grasp_s_right"]
+    assert EV.episodes(repo) == []
     path.write_text(text, encoding="utf-8")
-    assert "grasp_s_left" in {e["name"] for e in EV.episodes(repo)}
+    assert [e["name"] for e in EV.episodes(repo)] == ["cocktail_1c_e4000"]
 
 
 # ── 회차 기록 ───────────────────────────────────────────────────────────

@@ -142,11 +142,47 @@ def place_m_variant_text(color: str, holder: int) -> str:
             + warn + "episode:" + src.split("\nepisode:", 1)[1])
 
 
+#: ★11.11 사용자 "STUDENT 정책들도 POLICY 탭으로 옮기면서 FP 나 PM 처럼" — 잡기 학생(경로 S) 색 버튼. 색 → FP++ 물체.
+#:   팔마다 고를 수 있는 색은 학생 ckpt one_obj 의 허용 목표 색(policy_control.student_mask.OBJ_TARGETS) — 오른손
+#:   right_student1105mA one_obj source240_cvx → 파랑 · 분홍, 왼손 left_student1105mA shaker_c_cvx → 주황 하나(변형 없음).
+#:   다른 조합은 학생 노드가 시작을 거부하고 policy_object(물체 기하)도 달라야 해 만들지 않는다(시험이 맞춘다).
+#:   콘솔 experiments.GRASP_S_COLORS 와 같다. 기본 색 = 원본 grasp_s_<팔>.yaml, 나머지는 grasp_s_<색>_<팔>
+GRASP_S_COLORS = {"blue": "source240_blue", "pink": "source240_pink", "orange": "shaker_c_orange"}
+GRASP_S_SIDE_COLORS = {"right": ("blue", "pink"), "left": ("orange",)}
+GRASP_S_DEFAULT = {"right": "blue", "left": "orange"}
+
+
+def grasp_s_name(color: str, side: str) -> str:
+    return f"grasp_s_{side}" if GRASP_S_DEFAULT[side] == color else f"grasp_s_{color}_{side}"
+
+
+GRASP_S_VARIANTS = tuple(grasp_s_name(c, s) for s in ("right", "left") for c in GRASP_S_SIDE_COLORS[s]
+                         if c != GRASP_S_DEFAULT[s])
+
+
+def grasp_s_variant_text(color: str, side: str) -> str:
+    """★11.11 grasp_s_<팔>.yaml 의 컵 토픽 · 이름만 바꾼 판(policy_object 는 같은 형상이라 그대로)."""
+    base = grasp_s_name(GRASP_S_DEFAULT[side], side)
+    src = (REPO / "config" / "episodes" / f"{base}.yaml").read_text(encoding="utf-8")
+    name, cup = grasp_s_name(color, side), GRASP_S_COLORS[color]
+    pairs = [(f"episode: {{name: {base}, version: 1}}", f"episode: {{name: {name}, version: 1}}"),
+             (f"CUP: {{topic: /objects/{GRASP_S_COLORS[GRASP_S_DEFAULT[side]]}/pose}}", f"CUP: {{topic: /objects/{cup}/pose}}")]
+    for old, new in pairs:
+        if src.count(old) != 1:
+            raise ValueError(f"{base}.yaml: {old!r} 가 한 번이 아니다 — {name} 을 만들 수 없다")
+        src = src.replace(old, new)
+    return (f"# 이 파일은 scripts/ops/make_rh56f1_missions.py 가 {base}.yaml 에서 컵만 바꿔 만든다 — 손으로 고치지 말 것(--check).\n"
+            f"# 잡기 학생 {side} {color} 판(★11.11 콘솔 색 버튼) — 컵 {cup}, 마스크 목표 색은 이 컵 토픽에서 나온다. 흐름은 {base} 와 같다.\n"
+            "episode:" + src.split("\nepisode:", 1)[1])
+
+
 def f_variant_files() -> dict:
     return {**{REPO / "config" / "episodes" / f"grasp_f_{o}_{s}.yaml": f_variant_text(s, o)
                for s in ("right", "left") for o in F_OBJECTS if F_DEFAULT[s] != o},
             **{REPO / "config" / "episodes" / f"{place_m_name(c, h)}.yaml": place_m_variant_text(c, h)
-               for c in PLACE_M_COLORS for h in PLACE_M_HOLDERS if (c, h) != PLACE_M_DEFAULT}}
+               for c in PLACE_M_COLORS for h in PLACE_M_HOLDERS if (c, h) != PLACE_M_DEFAULT},
+            **{REPO / "config" / "episodes" / f"{grasp_s_name(c, s)}.yaml": grasp_s_variant_text(c, s)
+               for s in ("right", "left") for c in GRASP_S_SIDE_COLORS[s] if c != GRASP_S_DEFAULT[s]}}
 
 
 #: 상황판에서 굴리는 에피소드(10.04 사용자: 구분 실행 → 연속 실행) — config/episodes/<이름>.yaml, 실기에 쓸 수 있는 것만
@@ -181,6 +217,8 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             "cocktail_1c_e1000", "cocktail_1c_e4000",
             # ★11.05 경로 S — 깊이 학생 1104e(깊이 + RGB)가 홈에서 탁자 위 컵 하나를 잡고 들기(lift_hold), 팔마다 따로
             "grasp_s_right", "grasp_s_left",
+            # ★11.11 잡기 학생 색 판(콘솔 S 색 버튼)
+            *GRASP_S_VARIANTS,
             # ★11.07 경로 M — 목표 마스크 학생 A 1105mA(깊이 + YOLO 목표/이웃 마스크), 경로 S 와 같은 홈 출발 잡기 · 들기
             "grasp_m_right", "grasp_m_left",
             # ★11.08 놓기 학생(규칙 머리) — ★11.09 v2: 경로 F 잡고 들기 성공 → 넘김 묶음 그대로 놓기 학생(오른손 · 왼손).
@@ -212,7 +250,7 @@ CAMERA_BAG_TOPICS = ("/camera/camera/color/image_raw/compressed",
 STUDENT_CAMERA_BAG_HZ = 60.0
 STUDENT_CAMERA_BAG_TOPICS = ("/head_depth/image", "/head_depth/rgb", "/head_depth/config",
                              "/camera/camera/color/camera_info", "/head/joint_states")
-STUDENT_EPISODES = ("grasp_s_right", "grasp_s_left", "grasp_m_right", "grasp_m_left", "place_m_right",
+STUDENT_EPISODES = ("grasp_s_right", "grasp_s_left", *GRASP_S_VARIANTS, "grasp_m_right", "grasp_m_left", "place_m_right",
                     "place_m_left", *PLACE_M_VARIANTS)
 #: ★11.07 마스크 학생(student.yaml mask:) 에피소드는 head_mask_node 출력도 싣는다(160x90 mono8 비트 + latched 설정)
 MASK_CAMERA_BAG_TOPICS = ("/head_mask/image", "/head_mask/config")

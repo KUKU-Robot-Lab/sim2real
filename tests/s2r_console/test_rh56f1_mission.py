@@ -1023,3 +1023,47 @@ def test_shutdown_still_stops_the_place_tail_driver_in_every_mission():
             tail = next(i for i, c in enumerate(m["run"][f"episode_{name}"])
                         if c.get("background") and GEN._HEAD_DRIVER_GUARD in " ".join(c.get("argv") or []))
             assert f"episode_{name}#{tail}" in stops, (f, name)
+
+
+def test_grasp_s_color_variants_follow_the_student_one_obj_and_only_change_the_cup():
+    """★11.11 잡기 학생 색 버튼 — 팔마다 학생 ckpt one_obj 가 허용하는 색만(OBJ_TARGETS, 첫 값 = 기본 = 원본 파일).
+    변형은 원본에서 컵 토픽 · 이름만 바꾸고(policy_object 그대로), 미션 단계 · 학생 bag · 마스크 목표 색 · shutdown 이 원본과 같다."""
+    from policy_control.student_mask import OBJ_TARGETS
+    assert GEN.GRASP_S_VARIANTS == ("grasp_s_pink_right",)
+    eps = REPO / "config" / "episodes"
+    for side, colors in GEN.GRASP_S_SIDE_COLORS.items():
+        raw = yaml.safe_load((eps / f"grasp_s_{side}.yaml").read_text(encoding="utf-8"))
+        pol = next(iter(raw["policies"].values()))
+        one_obj = yaml.safe_load((REPO / "deploy" / "policies" / pol["student"] / "student.yaml").read_text())["one_obj"]
+        assert OBJ_TARGETS[one_obj] == colors and colors[0] == GEN.GRASP_S_DEFAULT[side], (side, one_obj)
+        assert raw["objects"]["CUP"]["topic"] == f"/objects/{GEN.GRASP_S_COLORS[GEN.GRASP_S_DEFAULT[side]]}/pose"
+        for c in colors[1:]:
+            name = GEN.grasp_s_name(c, side)
+            var = yaml.safe_load((eps / f"{name}.yaml").read_text(encoding="utf-8"))
+            assert var["episode"]["name"] == name and var["objects"]["CUP"]["topic"] == f"/objects/{GEN.GRASP_S_COLORS[c]}/pose"
+            assert {**var, "episode": raw["episode"], "objects": raw["objects"]} == raw     # 나머지(policy_object 포함)는 원본 그대로
+            assert name in GEN.STUDENT_EPISODES and f"episode_{name}" in {st["id"] for st in REAL_RAW["stages"]}
+            # 마스크 노드는 클래스 비트 전부를 내고(목표 인자 없음) 목표 색은 학생 노드 target_class 가 고른다
+            argv = {node: " ".join(map(str, next(c2["argv"] for c2 in REAL_RAW["run"][f"episode_{name}"]
+                                                 if any(node in str(a) for a in c2.get("argv") or []))))
+                    for node in ("head_mask_node.py", "rh_aglt_student_node.py")}
+            assert f"target_class:={c}" in argv["rh_aglt_student_node.py"] and "target" not in argv["head_mask_node.py"], argv
+            stops = lambda n: sorted(s.split("#")[1] for c2 in REAL_RAW["run"]["shutdown"] for s in c2.get("stop") or []  # noqa: E731
+                                     if s.startswith(f"episode_{n}#"))
+            assert stops(name) == stops(f"grasp_s_{side}") != []
+
+
+def test_console_grasp_s_colors_match_the_generator():
+    """★11.11 콘솔 policy 탭 S 색 버튼 = 생성기 GRASP_S_* (place_m 처럼 시험이 맞춘다)."""
+    sys.path.insert(0, str(REPO / "deploy" / "s2r_console"))
+    from s2r_console import experiments as XV
+    assert {k: fpp for k, fpp, _ in XV.GRASP_S_COLORS} == GEN.GRASP_S_COLORS
+    assert XV.GRASP_S_SIDE_COLORS == GEN.GRASP_S_SIDE_COLORS and XV.GRASP_S_DEFAULT == GEN.GRASP_S_DEFAULT
+    assert {f"{XV.grasp_s_head(c, s)}_{s}" for s, cs in XV.GRASP_S_SIDE_COLORS.items() for c in cs
+            if c != XV.GRASP_S_DEFAULT[s]} == set(GEN.GRASP_S_VARIANTS)
+    v = XV.view(REPO, [st["id"] for st in REAL_RAW["stages"]])
+    gs = {i["id"]: i for i in v["items"]}["grasp_s"]["sides"]
+    right = gs["right"]["objects"]
+    assert [(o["object"], o["action"], o["default"]) for o in right] == [
+        ("blue", "ctl_grasp_s_right", True), ("pink", "ctl_grasp_s_pink_right", False)]
+    assert "holder" not in right[0] and "objects" not in gs["left"]          # 홀더 버튼 없음 · 왼손은 주황 하나

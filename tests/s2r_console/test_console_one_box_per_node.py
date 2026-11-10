@@ -62,6 +62,8 @@ PM = ("episode_place_m_right#10",)
 #: ★11.11 놓기 학생 오른손 색 · 홀더 버튼 — 기본(파랑 · 홀더 1) 말고 나머지 조합 에피소드(생성기 PLACE_M_VARIANTS)
 PMV = GEN.PLACE_M_VARIANTS
 PMV_H = {n: int(n.rsplit("_h", 1)[1].split("_")[0]) for n in PMV}      # 이름 → 홀더
+#: ★11.11 잡기 학생 색 판(생성기 GRASP_S_VARIANTS) — grasp_s_<팔> 과 같은 자리
+GSV = GEN.GRASP_S_VARIANTS
 
 
 def _real():
@@ -115,6 +117,7 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                "episode_grasp_e_right#5",                       # ★10.20 밤 경로 E(ap05 → rcg03 넘김)
                                "episode_grasp_f_right#5",                       # ★10.21 경로 F(ap05 → rcg04 넘김)
                                *_F_VARIANTS("right", 5),                       # ★11.09 경로 F 물체 버튼(기본 물체 말고)
+                               *(f"episode_{n}#8" for n in GSV if n.endswith("_right")),   # ★11.11 잡기 학생 색 판
                                "episode_grasp_s_right#8",                       # ★11.05 경로 S · ★11.10 1105MA 로 바꿔 경로 M 과 같은 자리(마스크 검사 · 마스크 노드 추가)
                                "episode_grasp_m_right#8",                       # ★11.07 경로 M(마스크 검사 #3 · 머리 깊이 #4 · 마스크 #5 뒤)
                                "episode_pick_place_f_right#5",                  # ★10.22 경로 F + 놓기(newton_05)
@@ -147,7 +150,8 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                                               f"episode_pick_place_f_{side}#9",   # ★10.22 경로 F + 놓기
                                                               *_F_VARIANTS(side, 8),   # ★11.08 경로 F 주황 · 분홍(오른팔만)
                                                               # ★11.05 경로 S · ★11.07 경로 M · ★11.09 놓기 학생 v2 — 카메라가 같은 PC 일 때만(★11.11)
-                                                              *((f"episode_grasp_s_{side}#11", f"episode_grasp_m_{side}#11", f"episode_place_m_{side}#13")
+                                                              *((f"episode_grasp_s_{side}#11", f"episode_grasp_m_{side}#11", f"episode_place_m_{side}#13",
+                                                                 *(f"episode_{n}#11" for n in GSV if n.endswith(f"_{side}")))   # ★11.11 잡기 학생 색 판
                                                                 if PM else ()),
                                                               *(f"episode_{n}#13" for n in PMV if side == "right")}   # ★11.11 색 · 홀더 판
 

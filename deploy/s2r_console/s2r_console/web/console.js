@@ -1045,7 +1045,7 @@ const XP_CUPS = ["source240", "source200", "shaker"];
 function xpObjects(s, side, key) {
   const objs = side.objects;
   if (!objs) return "";
-  if (objs[0].holder != null) return xpPlaceObjects(s, side);
+  if (objs[0].fpp != null) return xpPlaceObjects(s, side);   // 놓기 학생(색 · 홀더) · ★11.11 잡기 학생(색만)
   const cupBtn = (c) => {
     const first = objs.find((o) => o.cup === c && o.color === side.color) || objs.find((o) => o.cup === c);
     return first ? `<button class="seg-b${c === side.cup ? " on" : ""}" data-act="xp-fobj" data-arg="${esc(first.object)}" aria-pressed="${c === side.cup}">${esc(c.replace("source", "src"))}</button>` : "";
@@ -1083,7 +1083,7 @@ function xpPlaceObjects(s, side) {
     + (side.rescan ? `<p class="reasons bad">⚠ ${esc(side.fpp || side.object)} 는 cups 단계가 다시 찍지 않는다 — 시작 전에 Perception Refresh 필요</p>` : "");
   return `<div class="xp-fobj">
     <div class="xp-fobj-row"><span class="xp-fobj-k">색</span><div class="seg" role="group" aria-label="컵 색">${colorRow}</div></div>
-    <div class="xp-fobj-row"><span class="xp-fobj-k">홀더</span><div class="seg" role="group" aria-label="홀더">${holderRow}</div></div>
+    ${side.holder != null ? `<div class="xp-fobj-row"><span class="xp-fobj-k">홀더</span><div class="seg" role="group" aria-label="홀더">${holderRow}</div></div>` : ""}
     ${warn}${xpRefreshRow(side.fpp || side.object)}
   </div>`;
 }
@@ -1453,7 +1453,7 @@ const acts = {
 };
 
 // ── ★11.02 eval 탭(실기 평가) ─────────────────────────────────────────────────
-// 평가 에피소드(서버 eval_log.EVAL_EPISODES — 11.05 cocktail_1c_e4000 · grasp_s_right · grasp_s_left)를 고르고 → [시작] 은 새 길을 만들지 않고 기존 길을 탄다:
+// 평가 에피소드(서버 eval_log.EVAL_TAB — ★11.11 cocktail_1c_e4000 하나, 학생 잡기 · 놓기는 policy 탭 S · PM)를 고르고 → [시작] 은 새 길을 만들지 않고 기존 길을 탄다:
 //   실행기가 이 에피소드로 떠 있지 않으면 미션 단계 episode_<이름>(승인 창) → 떠 있으면 [연속 실행](승인 창, episode:<이름>).
 // [정지] = /api/episode/stop(lease 없이). 회차 기록은 서버가 round · time · policy id 를 채워 CSV 에 붙인다(lease 없이).
 // 폼은 index.html 에 고정이고 여기서는 값만 맞춘다 — 0.5 s 마다 다시 그려도 입력 중인 글자가 지워지지 않게.

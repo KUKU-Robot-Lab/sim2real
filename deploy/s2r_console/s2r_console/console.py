@@ -1117,7 +1117,7 @@ class Console:
                 "tilt": TV.view(self.repo, runners.get(EPISODE_NODE) or runner) if s.profile.id.startswith("rh56f1") else None,
                 # ★10.21 사용자 "정책을 찾기 어렵고 실험 진행이 어려움": policy 탭 실험 목록(경로 → 정책 사슬 · 실행 길)
                 "experiments": XV.view(self.repo, [st.id for st in s.mission.stages]) if s.profile.id.startswith("rh56f1") else None,
-                # ★11.02 eval 탭(실기 평가) — EV.EVAL_EPISODES(11.05 셋) 에피소드 칸 · 미션 단계 유무. 회차 기록은 /api/eval/rounds 로 따로 읽는다
+                # ★11.02 eval 탭(실기 평가) — EV.EVAL_TAB(★11.11 cocktail_1c_e4000 하나) 에피소드 칸 · 미션 단계 유무. 회차 기록은 /api/eval/rounds 로 따로 읽는다
                 "eval": EV.view(self.repo, [st.id for st in s.mission.stages]),
                 # ★11.09 tuning 탭 — 정지 마찰 실험 폴더(analysis/friction) 진행 · 명령 줄(읽기만, RH56F1 만)
                 "tuning": TU.view(self.repo) if s.profile.id.startswith("rh56f1") else None}

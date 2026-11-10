@@ -19,6 +19,7 @@ ARMS = ("right", "left")
 #: ★11.09 사용자 "c,d 제거" — 화면에서 경로 C · D 를 뺐다(에피소드 · 관리 작업은 남는다). "F주황 · F분홍" 칸도 F 안 물체 버튼으로
 GRASP = (("1-B", "grasp_b", "1-B"), ("E", "grasp_e", "경로 E"), ("F", "grasp_f", "경로 F"),
          ("FP", "pick_place_f", "경로 F + 놓기"),     # ★10.22 잡고 들기 → newton_05 놓기
+         ("S", "grasp_s", "잡기 학생"),               # ★11.11 eval 탭에서 옮김 — 마스크 학생 A 홈 출발 잡고 들기, 오른손 색 버튼
          ("PM", "place_m", "놓기 학생"))              # ★11.11 경로 F 잡고 들기 → 놓기 학생(place_m) — 오른손은 색 · 홀더 버튼
 #: ★11.09 사용자 "경로 F 안에서 버튼으로 컵종류와 색깔을 선택 … 왼손,오른손 모두" — (FP++ 물체, 컵, 색). 순서 = 버튼 순서.
 #:   생성기 make_rh56f1_missions.F_OBJECTS 와 같다(시험이 맞춘다). 팔 기본 물체는 grasp_f_<팔>, 나머지는 grasp_f_<물체>_<팔>
@@ -57,6 +58,19 @@ def _cups_right_cup(repo: Path) -> str:
 def place_m_head(color: str, holder: int) -> str:
     """놓기 학생 (색, 홀더) → 에피소드 머리(ctl_<머리>_right)."""
     return "place_m" if (color, holder) == PLACE_M_DEFAULT else f"place_m_{color}_h{holder}"
+
+
+#: ★11.11 사용자 "STUDENT 정책들도 POLICY 탭으로 옮기면서 FP 나 PM 처럼" — 잡기 학생(경로 S) (색 키, FP++ 물체, 색).
+#:   팔마다 학생 ckpt one_obj 가 허용하는 색만(오른손 파랑 · 분홍, 왼손 주황). 생성기 make_rh56f1_missions.GRASP_S_COLORS ·
+#:   GRASP_S_SIDE_COLORS · GRASP_S_DEFAULT 와 같다(시험이 맞춘다). 기본 색은 grasp_s_<팔>, 나머지는 grasp_s_<색>_<팔>
+GRASP_S_COLORS = (("blue", "source240_blue", "파랑"), ("pink", "source240_pink", "분홍"), ("orange", "shaker_c_orange", "주황"))
+GRASP_S_SIDE_COLORS = {"right": ("blue", "pink"), "left": ("orange",)}
+GRASP_S_DEFAULT = {"right": "blue", "left": "orange"}
+
+
+def grasp_s_head(color: str, side: str) -> str:
+    """잡기 학생 색 → 에피소드 머리(ctl_<머리>_<팔>)."""
+    return "grasp_s" if GRASP_S_DEFAULT[side] == color else f"grasp_s_{color}"
 
 
 CONTROL_PREFIX = "ctl_"
@@ -189,6 +203,20 @@ def _build(repo: Path, stage_ids: frozenset) -> dict:
                                      "action": f"{CONTROL_PREFIX}{name}", "runner": f"episode_runner_{side}",
                                      "object": obj, "cup": cup, "color": color, "default": obj == F_DEFAULT[side]})
                 if side in sides and objs:
+                    sides[side]["objects"] = objs
+        if head == "grasp_s":                         # ★11.11 팔마다 색 버튼 — 고른 색의 에피소드 · 관리 작업(홀더 없음)
+            cups_cup = _cups_right_cup(repo)
+            for side in [a for a in ARMS if a in sides]:
+                objs = []
+                for color, fpp, color_ko in GRASP_S_COLORS:
+                    name = f"{grasp_s_head(color, side)}_{side}"
+                    if color in GRASP_S_SIDE_COLORS[side] and f"episode_{name}" in stage_ids:
+                        objs.append({**_episode(repo, name, entries), "stage": f"episode_{name}",
+                                     "action": f"{CONTROL_PREFIX}{name}", "runner": f"episode_runner_{side}",
+                                     "object": color, "fpp": fpp, "cup": fpp, "color": color_ko,
+                                     "rescan": side == "right" and fpp != cups_cup,   # place_m 과 같은 cups 경고
+                                     "default": color == GRASP_S_DEFAULT[side]})
+                if len(objs) > 1:
                     sides[side]["objects"] = objs
         if head == "place_m" and "right" in sides:    # ★11.11 오른손 색 · 홀더 버튼 — 고른 조합의 에피소드 · 관리 작업
             objs, cups_cup = [], _cups_right_cup(repo)
