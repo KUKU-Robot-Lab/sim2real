@@ -63,6 +63,8 @@ class Supervisor:
         # A slow VLM must not approve a different node after the human has advanced.
         latest = self.interface.status()
         if self.key(latest) != key:
+            if not latest:
+                self.seen = None  # status outage, not a real change: reconsider this state when it returns
             return self.log({'event': 'stale_decision', 'decision': decision})
         try:
             recovery_args = {'node_id': last.get('node') or target} if action == 'retry' else {}
@@ -83,6 +85,20 @@ class Supervisor:
             self.seen = None
         return event
 
+    def final_judged(self, status):
+        """Runner closes terminal right after the last action, so READY is never seen for it: judge that action here."""
+        last = status.get('last') or {}
+        if not last.get('node') or self.key(status) == self.seen:
+            return True
+        self.seen = self.key(status)
+        try:
+            image = self.interface.frame(after=time.monotonic() + self.settle, wait=self.settle + 3)
+            decision = self.judge.judge(status, image)
+        except Exception as exc:
+            decision = {'choice': 'E', 'success': False, 'action': 'stop', 'reason': f'VLM/frame failure: {exc}'}
+        self.log({'event': 'final_judge', 'node': last.get('node'), 'decision': decision})
+        return decision.get('action') == 'next'
+
     def run(self, status_wait=10.0):
         deadline = time.monotonic() + status_wait
         while True:
@@ -95,6 +111,8 @@ class Supervisor:
             else:
                 deadline = time.monotonic() + status_wait
                 if status.get('status') in END:
+                    if status['status'] == 'SUCCESS' and not self.final_judged(status):
+                        return 1
                     self.log({'event': 'end', 'status': status['status']})
                     return 0 if status['status'] == 'SUCCESS' else 1
                 self.step(status)

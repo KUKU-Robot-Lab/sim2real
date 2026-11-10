@@ -246,8 +246,27 @@ def test_run_status_timeout_requests_stop(tmp_path):
 def test_run_terminal_exit_code(tmp_path, phase, code):
     interface = FakeInterface(tmp_path / 'approvals.jsonl')
     interface.current = status() | {'status': phase}
-    assert Supervisor(interface, Judge(Backend('{}'))).run() == code
+    ok = Backend('{"success":true,"choice":"A","reason":"ok"}')
+    assert Supervisor(interface, Judge(ok)).run() == code
     assert not interface.calls
+
+
+def test_success_end_still_judges_final_action(tmp_path):
+    # runner closes terminal right after the last action, so READY is never seen for it
+    interface = FakeInterface(tmp_path / 'approvals.jsonl')
+    interface.current = status() | {'status': 'SUCCESS'}
+    bad = Backend('{"success":false,"choice":"E","reason":"cup fell"}')
+    assert Supervisor(interface, Judge(bad)).run() == 1
+    assert bad.prompts
+
+
+def test_stale_by_status_outage_is_reconsidered(tmp_path):
+    interface = FakeInterface(tmp_path / 'approvals.jsonl')
+    sup = Supervisor(interface, Judge(Backend('{"success":true,"choice":"A","reason":"ok"}')), mode='active')
+    interface.current = {}
+    assert sup.step(status())['event'] == 'stale_decision'
+    interface.current = status()
+    assert sup.step(status())['action'] == 'next'
 
 
 def test_initial_ready_approves_without_judge_call(tmp_path):
