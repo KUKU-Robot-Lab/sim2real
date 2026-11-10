@@ -10,7 +10,9 @@
   결과는 한 줄 로그 + <out>.last_check.json(시각 · 결과 · 홀더별 dxy · dyaw). 종료 코드는 늘 0 — cups 를 막지 않는다.
   ★11.11: 결과가 written 이 아니면(또는 기록이 낡으면) 홀더를 쓰는 에피소드 시작 검사(episode_run --require-holders)가 막는다.
   계속 재기(--timeout-s 0, cup_holders 단계)도 쓸 때마다 written 을 남긴다.
-  점프 검사는 이 모드에서만 — 계속 쓰는 --write(cup_holders 단계)는 홀더를 옮긴 뒤 다시 재는 용도라 점프를 막지 않는다.
+  ★11.11 deploy 리뷰 HIGH: 계속 재기도 같은 점프 검사를 한다 — 넘으면 쓰지 않고 jump_rejected(막힌 홀더가 바뀔 때만 기록),
+  다시 맞으면 쓰고 written. 홀더를 실제로 옮겼으면 --max-jump-m inf --max-yaw-deg 180 한 번 재기로 받아들인다.
+  파일 · last_check 는 임시 파일 + rename 으로 쓴다(두 노드가 같이 써도 반쯤 쓴 파일이 없다).
 
 하는 일(순수부는 scripts/calib/cup_holder_tracker.py):
   · period 마다 최신 컬러 한 장으로 추정한다 — ArUco → 직전 자세 추적(0.2 s) → 놓친 id 만 전체 무늬 탐색(~6 s).
@@ -37,7 +39,7 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "calib"))
 sys.path.insert(0, str(_HERE.parent))
 
-from cup_holder_pose import DEFAULT_CFG, DEFAULT_OUT, load_cfg, write_poses, yaw_quat_wxyz  # noqa: E402
+from cup_holder_pose import DEFAULT_CFG, DEFAULT_OUT, atomic_write_text, load_cfg, write_poses, yaw_quat_wxyz  # noqa: E402
 from cup_holder_tracker import HolderTracker  # noqa: E402
 from cup_pose_relay import load_extrinsics  # noqa: E402
 from object_registry import output_topic  # noqa: E402
@@ -89,6 +91,21 @@ def jump_check(prev: dict[str, np.ndarray] | None, now: dict[str, np.ndarray], m
     return ok, diffs
 
 
+def continuous_step(prev: dict[str, np.ndarray] | None, written: dict[str, np.ndarray] | None, now: dict[str, np.ndarray],
+                    rejected: tuple | None, max_jump_m: float, max_yaw_deg: float) -> tuple[str, tuple | None, dict]:
+    """★11.11 deploy 리뷰 HIGH: 계속 재기(cup_holders 단계) 한 장의 결정 — (action, 새 rejected, diffs).
+    action: "write"(점프 안 · 값이 바뀌었거나 막힘이 풀림) · "reject"(점프 — 막힌 홀더 묶음이 바뀔 때만, 기록은 jump_rejected)
+    · "none"(그대로). rejected = 지금 막힌 홀더 이름 묶음(None = 막힘 없음). prev = 파일 값, written = 이 노드가 마지막으로 쓴 값."""
+    ok, diffs = jump_check(prev, now, max_jump_m, max_yaw_deg)
+    if not ok:
+        key = tuple(sorted(n for n, d in diffs.items() if d["dxy_m"] is not None and (
+            d["dxy_m"] > max_jump_m or abs(d["dyaw_deg"]) > max_yaw_deg)))
+        return ("reject" if key != rejected else "none"), key, diffs
+    if rejected is not None or should_rewrite(written, now):
+        return "write", None, diffs
+    return "none", None, diffs
+
+
 def load_written(path: Path) -> dict[str, np.ndarray] | None:
     """write_poses 가 쓴 파일 → {홀더: [x, y, z, yaw]}(없으면 None)."""
     import yaml
@@ -110,13 +127,14 @@ def main(argv=None) -> None:
     ap.add_argument("--write", action="store_true", help=f"세 홀더가 안정되면 {DEFAULT_OUT.name} 를 갱신")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--timeout-s", type=float, default=0.0, help="★11.10 한 번 재기(0 = 계속): 안정되면 1회 쓰고 끝, 시간 안에 못 하면 안 쓰고 끝")
-    ap.add_argument("--max-jump-m", type=float, default=0.03, help="한 번 재기에서 직전 파일과 홀더별 xy 차 상한(넘으면 쓰지 않음)")
-    ap.add_argument("--max-yaw-deg", type=float, default=10.0, help="★11.11 한 번 재기에서 직전 파일과 홀더별 yaw 차 상한°(넘으면 쓰지 않음)")
+    ap.add_argument("--max-jump-m", type=float, default=0.03, help="직전 파일과 홀더별 xy 차 상한(한 번 · 계속 재기 모두, 넘으면 쓰지 않음)")
+    ap.add_argument("--max-yaw-deg", type=float, default=10.0, help="★11.11 직전 파일과 홀더별 yaw 차 상한°(한 번 · 계속 재기 모두, 넘으면 쓰지 않음)")
     args = ap.parse_args(argv)
     once = args.timeout_s > 0
     check_path = Path(str(args.out) + ".last_check.json")
     done, fin = threading.Event(), threading.Lock()     # fin — 작업 스레드 기록과 시간 초과 기록이 겹치지 않게
     seen = [False]      # 한 번 재기 — 한 홀더라도 본 적 있나(시간 초과 때 unstable / no_markers 가르기)
+    rejected = [None]   # ★11.11 계속 재기 — 지금 점프로 막힌 홀더들(None = 막힘 없음)
     latest = [None]     # ★11.11 마지막 (status, poses) — 시간 초과 때 홀더별 안정 · dxy 를 남긴다
 
     def timeout_diffs() -> dict:
@@ -136,7 +154,7 @@ def main(argv=None) -> None:
                "max_jump_m": args.max_jump_m, "max_yaw_deg": args.max_yaw_deg,
                # ★11.11 홀더별 stable — 키가 없으면(다 안정일 때 쓰는 경로) 안정으로 적는다
                "holders": {n: {"stable": True, **d} for n, d in diffs.items()}}
-        check_path.write_text(json.dumps(rec, ensure_ascii=False, indent=1) + "\n")
+        atomic_write_text(check_path, json.dumps(rec, ensure_ascii=False, indent=1) + "\n")
         print(f"[cup_holder_check] {result} · " + (" · ".join(
             f"{n} dxy {d['dxy_m'] if d['dxy_m'] is not None else '—'} m dyaw {d['dyaw_deg'] if d['dyaw_deg'] is not None else '—'}°"
             + (" 불안정" if d.get("stable") is False else "") for n, d in diffs.items()) or "홀더 없음") + f" → {check_path.name}", flush=True)
@@ -144,7 +162,9 @@ def main(argv=None) -> None:
             last = (time.strftime("%m-%d %H:%M", time.localtime(args.out.stat().st_mtime)) if args.out.exists() else "없음")
             big = " · ".join(f"{n} dxy {d['dxy_m']} m" for n, d in diffs.items() if d["dxy_m"] is not None)
             print(f"⚠ 홀더 다시 재기 {result} — {args.out.name} 안 바꿈(마지막으로 쓴 시각 {last})" + (f" · {big}" if big else "")
-                  + (" · 홀더가 옮겨졌으면 cup_holders 단계로 다시 잴 것" if result == "jump_rejected" else "")
+                  + (" · 가림 · 잘못 추적이면 가린 것을 치우고 다시 잴 것. 홀더를 실제로 옮겼으면 상한 없이 한 번 재 받아들인다"
+                     f"(카메라 PC: cup_holder_pose_node.py --write --timeout-s 30 --max-jump-m inf --max-yaw-deg 180 --out {args.out})"
+                     if result == "jump_rejected" else "")
                   + " · 홀더를 쓰는 에피소드 시작 검사가 막는다", flush=True)
 
     cfg = load_cfg(args.cfg)
@@ -237,11 +257,18 @@ def main(argv=None) -> None:
                         self._write(poses)
                     record("written" if ok and args.write else "measured" if ok else "jump_rejected", diffs)
                     done.set()
-            elif not once and args.write and st["ok"] and should_rewrite(self._written, poses):
-                with fin:     # ★11.11 cup_holders 단계(계속 재기)도 결과를 남긴다 — 사람이 보고 다시 잰 값이라 시작 검사를 푼다
-                    diffs = jump_check(load_written(args.out), poses, float("inf"), float("inf"))[1]
-                    self._write(poses)
-                    record("written", diffs)
+            elif not once and args.write and st["ok"]:
+                # ★11.11 deploy 리뷰 HIGH: 계속 재기도 직전 파일과 xy · yaw 점프 검사를 한다(전에는 상한 inf 라 반쯤 가려 잘못 추적한
+                #   값도 덮어써 확정 스텝이 늘 dxy≈0 이었다). 넘으면 쓰지 않고 jump_rejected — 상태가 바뀔 때만 기록한다(프레임마다 쓰지 않게).
+                #   다시 맞으면(가림이 풀림) 바로 쓰고 written 으로 되돌린다. 홀더를 실제로 옮겼으면 확정 스텝 대신 받아들이기 명령(⚠ 줄)
+                with fin:
+                    action, rejected[0], diffs = continuous_step(load_written(args.out), self._written, poses, rejected[0],
+                                                                 args.max_jump_m, args.max_yaw_deg)
+                    if action == "write":
+                        self._write(poses)
+                        record("written", diffs)
+                    elif action == "reject":
+                        record("jump_rejected", diffs)
             if tracker.frames % 10 == 1:
                 self.get_logger().info(" · ".join(
                     f"{n} {h['src'] or '—'}{' ✓' if h['stable'] else ''}" for n, h in st["holders"].items())

@@ -800,7 +800,11 @@ def _holder_issue(check: Mapping, hid: int) -> str | None:
     jump, yaw = check.get("max_jump_m", 0.03), check.get("max_yaw_deg", 10.0)
     if (isinstance(dxy, (int, float)) and isinstance(jump, (int, float)) and dxy > jump) or \
             (isinstance(dyaw, (int, float)) and isinstance(yaw, (int, float)) and abs(dyaw) > yaw):
-        return f"홀더 {hid} 가 저장 값에서 {dxy * 100:.1f} cm · {dyaw:+.1f}° 옮겨짐 — 옮긴 게 맞으면 cup_holders 로 다시 확정"
+        # ★11.11 deploy 리뷰 LOW: 한쪽만 숫자여도 형식 오류가 나지 않게 · HIGH 뒤로 cup_holders 계속 재기도 점프를 막는다
+        cm = f"{dxy * 100:.1f} cm" if isinstance(dxy, (int, float)) else "xy ?"
+        deg = f"{dyaw:+.1f}°" if isinstance(dyaw, (int, float)) else "yaw ?"
+        return (f"홀더 {hid} 가 저장 값에서 {cm} · {deg} 옮겨짐 — 가림 · 잘못 추적이면 치우고 cup_holders 를 다시, "
+                "실제로 옮겼으면 cup_holder_pose_node.py --write --timeout-s 30 --max-jump-m inf --max-yaw-deg 180 으로 받아들인다")
     return None
 
 

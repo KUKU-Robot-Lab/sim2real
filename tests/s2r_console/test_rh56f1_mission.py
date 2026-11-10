@@ -985,19 +985,32 @@ def test_the_place_tail_driver_reuses_a_default_driver_and_terms_a_tilt_82_one(t
         reaper.start()
         try:
             time.sleep(0.3)
-            out = subprocess.run(["bash", "-c", script.replace("exec tail --pid=$p -f /dev/null", "exit 0")],
-                                 capture_output=True, text=True, timeout=20)
+            if not extra:       # ★11.11 deploy LOW: 지켜보던 기본 드라이버가 끝나면 rc 1 — 0.8 s 뒤 드라이버를 죽인다
+                threading.Timer(0.8, lambda: os.kill(drv.pid, signal.SIGKILL)).start()
+            out = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=20)
             assert want in out.stdout and f"PID {drv.pid}" in out.stdout, out.stdout + out.stderr
             if extra:
                 reaper.join(timeout=5)
-                assert drv.returncode == 0                          # SIGTERM 으로 끝났다
+                assert drv.returncode == 0 and out.returncode == 0 and out.stdout.strip().endswith("LAUNCH")  # SIGTERM 으로 끝났다
             else:
-                assert drv.poll() is None                           # 기본 드라이버는 건드리지 않는다
+                assert out.returncode == 1 and "❌ 지켜보던 목 드라이버" in out.stdout and "LAUNCH" not in out.stdout
         finally:
             if drv.poll() is None:
                 os.kill(drv.pid, signal.SIGKILL)
     out = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=20)
     assert out.stdout.strip() == "LAUNCH"                           # 드라이버가 없으면 그냥 띄운다
+    # ★11.11 deploy MEDIUM: pgrep 직후 PID 가 끝나 cmdline 을 못 읽으면 지켜보지 않고 새로 띄운다 · pgrep 은 내 uid 만
+    assert 'pgrep -u "$(id -u)"' in GEN._HEAD_DRIVER_GUARD
+    drv = subprocess.Popen([str(py), str(fake)])
+    try:
+        time.sleep(0.3)
+        gone = script.replace("</proc/$p/cmdline", "</proc/$p/no_such_cmdline")
+        out = subprocess.run(["bash", "-c", gone], capture_output=True, text=True, timeout=20)
+        assert out.returncode == 0 and "새로 띄운다" in out.stdout and out.stdout.strip().endswith("LAUNCH"), out.stdout + out.stderr
+        assert out.stderr == ""
+    finally:
+        os.kill(drv.pid, signal.SIGKILL)
+        drv.wait()
 
 
 def test_shutdown_still_stops_the_place_tail_driver_in_every_mission():

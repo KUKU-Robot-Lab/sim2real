@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -388,6 +390,19 @@ def overlay(rgb: np.ndarray, K, T_base_cam, cfg: HolderCfg, det, poses: dict[int
     cv2.imwrite(str(path), img)
 
 
+def atomic_write_text(path: Path, text: str) -> None:
+    """★11.11 deploy 리뷰 HIGH: 같은 폴더의 임시 파일에 쓰고 rename — 두 노드(cup_holders 연속 · 확정)가 같은 파일을 써도,
+    scp · 시작 검사가 쓰는 도중을 읽어도 반쯤 쓴 파일을 보지 않는다."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def write_poses(path: Path, cfg: HolderCfg, poses: dict[int, np.ndarray], meta: str) -> None:
     lines = ["# 컵홀더 STL 원점의 base_link 자세 — scripts/calib/cup_holder_pose.py 가 쓴다(손으로 고치지 않는다).",
              "# 원점 = 컵 축 · 받침 윗면(z=0 of cup_holder.stl). yaw = base z 둘레(rad), roll·pitch 0(upright).",
@@ -398,7 +413,7 @@ def write_poses(path: Path, cfg: HolderCfg, poses: dict[int, np.ndarray], meta: 
         x, y, z, yaw = poses[i]
         lines.append(f"  {name}: {{marker_id: {i}, position: [{x:.4f}, {y:.4f}, {z:.4f}], yaw_rad: {yaw:.4f}, "
                      f"yaw_deg: {math.degrees(yaw):.2f}}}")
-    path.write_text("\n".join(lines) + "\n")
+    atomic_write_text(path, "\n".join(lines) + "\n")
 
 
 def _template_geometry(cfg: HolderCfg, table_z: float) -> tuple[np.ndarray, float]:

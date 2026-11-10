@@ -882,3 +882,13 @@ def test_holder_check_age_fits_fixed_holders_and_names_the_holder_that_blocks():
     assert "홀더 0 검출 안 됨" in msg
     (msg,) = S.holder_check_problems(ep, {"result": "failed", "epoch": 1000.0, "rc": 255, "what": "ssh"}, 1000.0)
     assert "ssh 실패(rc 255)" in msg
+
+
+def test_holder_issue_formats_a_jump_with_only_one_number():
+    """★11.11 deploy 리뷰 LOW: dxy 만 숫자이거나 dyaw 만 숫자여도 형식 오류 없이 문구를 만든다 · 받아들이기 명령을 보인다."""
+    from policy_control import episode_spec as ES
+    for d in ({"dxy_m": 0.05, "dyaw_deg": None}, {"dxy_m": None, "dyaw_deg": 15.0}):
+        check = {"result": "jump_rejected", "max_jump_m": 0.03, "max_yaw_deg": 10.0,
+                 "holders": {"cup_holder_1": {"stable": True, "src": "aruco", **d}}}
+        msg = ES._holder_issue(check, 1)
+        assert msg and "홀더 1" in msg and "--max-jump-m inf" in msg and ("5.0 cm" in msg or "+15.0°" in msg)

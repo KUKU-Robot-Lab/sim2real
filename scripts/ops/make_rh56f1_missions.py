@@ -517,13 +517,17 @@ HEAD_DRIVER_ARGV = (["python3", "{repo}/scripts/nodes/head_joint_publisher.py", 
 #  --max-tilt 가 있으면(82 · 스윕 것이 남음) 그 PID 를 확정한 뒤 SIGTERM · 5 s 안에 끝났는지 보고 기본 인자로 띄운다.
 #  pgrep 은 python3 프로세스만 본다 — 이 bash 한 줄 자체도 head_joint_publisher 문자열을 담고 있어서다.
 _HEAD_DRIVER_GUARD = (
-    "p=$(pgrep -a -x 'python3(\\.[0-9]+)?' | awk '/head_joint_publisher[.]py/ {print $1; exit}'); "
-    "if [ -n \"$p\" ]; then a=$(tr '\\0' ' ' </proc/$p/cmdline); "
+    # ★11.11 deploy 리뷰 MEDIUM: pgrep 은 내 uid 만(-u) · pgrep 직후 PID 가 죽어 cmdline 을 못 읽으면 새로 띄운다(전에는 빈 인자로
+    #   tail --pid 가 바로 끝나 드라이버 없이 성공했다) · LOW: 지켜보던 드라이버가 끝나면 rc 1 로 알린다(전에는 rc 0)
+    "p=$(pgrep -u \"$(id -u)\" -a -x 'python3(\\.[0-9]+)?' | awk '/head_joint_publisher[.]py/ {print $1; exit}'); a=; "
+    "if [ -n \"$p\" ]; then a=$(tr '\\0' ' ' 2>/dev/null </proc/$p/cmdline); "
+    "[ -n \"$a\" ] || echo \"목 드라이버 PID $p 가 방금 끝났다(cmdline 없음) — 새로 띄운다\"; fi; "
+    "if [ -n \"$a\" ]; then "
     "case \"$a\" in *--max-tilt*) echo \"목 드라이버 PID $p 가 기본과 다른 인자로 떠 있다 — SIGTERM 후 기본으로 다시: $a\"; "
     "kill -TERM $p; for i in $(seq 50); do kill -0 $p 2>/dev/null || break; sleep 0.1; done; "
     "if kill -0 $p 2>/dev/null; then echo \"❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할 것\"; exit 1; fi;; "
     "*) echo \"기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다: $a\"; "
-    "exec tail --pid=$p -f /dev/null;; esac; fi; ")
+    "tail --pid=$p -f /dev/null; echo \"❌ 지켜보던 목 드라이버 PID $p 가 끝났다\"; exit 1;; esac; fi; ")
 HEAD_DRIVER_RESTORE_ARGV = (["bash", "-lc", _HEAD_DRIVER_GUARD + "exec " + " ".join(HEAD_DRIVER_ARGV)]
                             if not REMOTE_HEAD else
                             _on_head_pc(_HEAD_DRIVER_GUARD + "exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py "
