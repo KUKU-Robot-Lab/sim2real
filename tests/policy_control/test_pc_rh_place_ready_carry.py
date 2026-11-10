@@ -285,7 +285,7 @@ def test_q_nan_while_waiting_is_not_still():
     assert d["still"] == "track" and d["sag_ticks"] == 0
 
 
-def _run_sag_plant(sag_j7, hold_qd_ticks=0, sag_max_rad=None, out=None):
+def _run_sag_plant(sag_j7, hold_qd_ticks=0, sag_max_rad=None, out=None, alpha=(1 / 60.0) / 0.14):
     """★11.11 처짐 플랜트: 실측 q 가 (명령 − 처짐)을 1차 지연(τ 0.14 s, 60 Hz)으로 따라간다. q̇ = 실측 차분.
     멈춤 확인 첫 hold_qd_ticks 틱은 q̇ 를 0.2 rad/s 로 거짓 보고(판정은 q 차분이라 무시돼야 한다) → (멈춤 확인 구간 팔 행동, 보고 q̇, 끝 as_dict, 끝 q_ref − q)."""
     from dataclasses import replace
@@ -293,7 +293,6 @@ def _run_sag_plant(sag_j7, hold_qd_ticks=0, sag_max_rad=None, out=None):
     ch.rc_chain = (RC, mch)
     sag = np.zeros(7)
     sag[6] = sag_j7
-    alpha = (1 / 60.0) / 0.14
     ch.reset(meas(q - sag), holder=holder, held=(q, hand), attach=att)
     ch.rcarry.track_abort_rad = 0.2                    # sim 런타임 값 — 지연 + 처짐을 이동 중 이탈로 끊지 않는다
     if sag_max_rad is not None:
@@ -369,3 +368,17 @@ def test_policy_start_prev_action_is_zero():
     acts, _, d, _ = _run_sag_plant(0.06, out=out)
     assert d["still"] == "ok" and d["start_ok"] and np.any(acts != 0.0)
     assert np.all(out["ch"].prev == 0.0)
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_sag_not_interrupted_when_arm_follows_correction_steps(monkeypatch):
+    """★11.11 sim e2e: 팔이 보정 명령을 바로 따라가 0.005 rad/틱(0.3 rad/s)으로 움직여도 추종 잔차는 그대로라 보정이 끊기지 않고 "ok".
+    (실측 q 차분만 보던 판정은 이 움직임을 '안 멈춤'으로 봐 보정을 쉬었다 — sag_ticks 0~17.)"""
+    monkeypatch.setattr(RCY, "K_SAG", 0.1)                          # 처짐 0.06 에서 스텝이 상한 SAG_STEP_MAX 에 닿게
+    out = {}
+    acts, _, d, err = _run_sag_plant(0.06, alpha=1.0, out=out)
+    assert d["still"] == "ok" and d["start_ok"] and np.max(np.abs(err)) < RCY.SAG_DONE_RAD
+    steps = np.abs(acts[:, 6]) * out["ch"].rcarry.scale
+    assert np.max(steps) == pytest.approx(RCY.SAG_STEP_MAX, abs=1e-9)
+    run = np.flatnonzero(steps > 0.0)
+    assert len(run) == d["sag_ticks"] >= 5 and np.all(np.diff(run) == 1)   # 보정 틱이 끊기지 않고 이어진다

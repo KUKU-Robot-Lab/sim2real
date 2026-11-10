@@ -210,8 +210,11 @@ class ReadyCarry:
         torch = self.torch
         q = torch.tensor([list(arm_q)], dtype=torch.float32)
         a_arm = np.zeros(len(arm_q))
-        self.q_hist.append(np.asarray(arm_q, float))
-        self.qd_est = (float(np.max(np.abs(self.q_hist[-1] - self.q_hist[0]))) / (STILL_WIN * self.dt)
+        qa = np.asarray(arm_q, float)
+        # ★11.11 행 0 = 실측 q, 행 1 = 추종 잔차 q_cmd − q(명령 없으면 q). 둘 중 작은 변화율 = "멈췄거나 명령대로 따라간다"
+        #   — 보정 스텝(0.005 rad/틱 = 0.3 rad/s)을 팔이 따라가는 움직임으로 보정이 멈추지 않게(sim e2e sag_ticks 0~17, qd 0.05~0.065).
+        self.q_hist.append(np.stack([qa, qa if q_cmd is None else np.asarray(q_cmd, float) - qa]))
+        self.qd_est = (float(np.min(np.max(np.abs(self.q_hist[-1] - self.q_hist[0]), axis=1))) / (STILL_WIN * self.dt)
                        if len(self.q_hist) > STILL_WIN else float("inf"))   # 창이 차기 전 = 움직임 · NaN 이면 NaN(멈춤 아님)
         if q_cmd is not None:                          # ★11.11 명령 − 실측 이탈 가드(이동 · 멈춤 확인 둘 다). NaN 은 위반으로 센다
             qc = np.asarray(q_cmd, float)
