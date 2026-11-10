@@ -109,6 +109,11 @@ def main(argv=None) -> int:
         return 1
     status = read_status(runner=args.runner)
     if not status:
+        # ★11.10 stop: 실행기가 이미 내려갔으면 멈출 것이 없다. 콘솔이 옛 상태를 보고 stop 을 불러
+        # rehome·return 이 통째로 막혔다(151818). 팔 정지는 콘솔이 episode/stop·pd/hold 로 따로 확인한다.
+        if args.action == "stop":
+            print(f"[episode] {args.runner} 상태가 안 온다 — 이미 내려갔다고 보고 stop 을 건너뛴다")
+            return 0
         print(f"[episode] {args.runner} 상태가 안 온다 — 노드가 떠 있는가")
         return 1
     print(f"[episode] {status.get('episode')} · {status.get('phase')} · 노드 {status.get('node')} · "

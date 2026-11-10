@@ -39,7 +39,7 @@ def _lifecycle(console, tiny_repo, monkeypatch, phase_after_run):
                           rosgraph=None, rosgraph_age_s=None)
     monkeypatch.setattr(console.session.feed, 'observed', lambda: obs)
     calls = []
-    monkeypatch.setattr(m, '_preempt', lambda s, *a: calls.append(('stop -> hold', a)))
+    monkeypatch.setattr(m, '_preempt', lambda s, *a, **k: calls.append(('stop -> hold', a)))
 
     def run(s, sid, cmds):
         calls.append((sid, cmds))

@@ -107,6 +107,13 @@ def _gains_ok(status):
     return bool(gains.get('ok') or gains.get('accepted_mismatch'))
 
 
+#: ★11.10 사용자 "rehome 등은 정책 등이 실행되거나 잔류 노드가 있어도 무시 또는 제거하고 움직이게" — 강제 선점하는 명령.
+FORCE_PREEMPT = ('rehome_', 'home_', 'return_')
+#: 강제 선점 때 콘솔 밖 잔류도 죽이는 정책·실행기 노드(PD·드라이버·카메라는 제외).
+STRAY_POLICY_NODES = ('rh_aglt_node', 'rh_place_node', 'rh_place_student_node', 'pour_fj_node', 'episode_runner',
+                      'head_mask_node', 'head_depth_node')
+
+
 def _preempts(action_id, group):
     """제어 명령과 인지 적용은 도는 정책을 먼저 세운다 — 인지 적용은 setting 탭으로 옮겼어도(11.05) FP++ 컨테이너를 바꾼다."""
     return group == 'control' or action_id == 'perception_refresh'
@@ -1185,7 +1192,11 @@ class ActionManager:
             if job.runner is not None:
                 job.runner.abort()
 
-    def _preempt(self, s, sides=None):
+    def _preempt(self, s, sides=None, *, force=False):
+        """force(★11.10 사용자 — rehome·home·return): 정지·자세 유지 단계가 실패해도 멈추지 않고, 남은 정책 프로세스와
+        콘솔 밖 잔류 정책 노드를 죽인 뒤 그대로 진행한다. 이어지는 명령이 PD 를 새로 잡으니 붙들기 실패는 경고로 남긴다."""
+        if force:
+            return self._preempt_force(s, sides)
         targets = self._policy_targets(s, sides)
         if not targets:
             return
@@ -1224,6 +1235,77 @@ class ActionManager:
         s.supervisor.stop(targets)
         if any(s.supervisor.is_alive(key) for key in targets):
             raise ConsoleError('정책 프로세스 정지 실패 — 요청을 실행하지 않는다')
+
+    def _preempt_force(self, s, sides=None):
+        warn = []
+        targets = self._policy_targets(s, sides)
+        try:
+            needed = self._policy_sides(s, targets) if targets else set()
+        except ConsoleError:
+            needed = set()
+        arms = set(sides) if sides is not None else (needed or set(ARMS))
+        from .console import _EPISODE_CMD
+        with s.feed_lock:
+            obs = s.feed.observed()
+        runners = [EPISODE_RUNNER, *(runner_of(side) for side in sorted(arms))]
+        for runner in [r for r in runners if obs.status.get(r) and obs.age_s.get(r, 1e9) <= STALE_S]:
+            sid = 'action_episode_stop' if runner == EPISODE_RUNNER else f"action_episode_stop_{runner[len(EPISODE_RUNNER) + 1:]}"
+            try:
+                self._run_commands(s, sid, [Command(
+                    ('python3', str(_EPISODE_CMD), 'stop', '--execute', '--operator', self._status['operator'],
+                     '--runner', runner), note=f'에피소드 실행기 정지 · {runner}')])
+            except ConsoleError as exc:
+                warn.append(f'{runner} 정지 실패(무시): {exc}')
+        fresh = set(self.console._pd_sides(s))
+        for side in sorted(arms & fresh):
+            try:
+                self._trigger(s, 'episode/stop', side)
+            except ConsoleError as exc:
+                warn.append(f'{side} episode/stop 실패(무시): {exc}')
+            try:
+                began_ns = time.time_ns()
+                self._trigger(s, 'pd/hold', side, expect=('TRACKING',))
+                self._confirm_hold(s, side, began_ns)
+            except ConsoleError as exc:
+                warn.append(f'{side} 자세 유지 실패(무시): {exc}')
+        for runner in s.runners.values():
+            if runner.active and runner.stage_id.startswith(('policy_', 'episode_')):
+                found = set(re.findall(r'(?:^|_)(right|left)(?:_|$)', runner.stage_id))
+                if sides is not None and found and not found & set(sides):
+                    continue
+                runner.abort()
+                runner.join(timeout=8)
+        if targets:
+            s.supervisor.stop(targets)        # SIGTERM → 유예 → 그룹 SIGKILL
+        killed = self._kill_stray_policies(s, arms)
+        if killed:
+            warn.append(f'잔류 정책 노드 {len(killed)}개 강제 종료: ' + ', '.join(str(p) for p in killed))
+        for w in warn:
+            try:
+                s.event('action', f'[강제 선점] {w}')
+            except Exception:              # noqa: BLE001 — 기록 실패가 복귀를 막으면 안 된다
+                pass
+        return warn
+
+    def _kill_stray_policies(self, s, arms):
+        """콘솔 그룹 밖(지난 run · 수동 실행)에 남은 이 팔 정책·실행기 노드를 SIGKILL. PD·드라이버·카메라는 건드리지 않는다."""
+        own = set(s.supervisor.own_pgids())
+        me = os.getpgid(0)
+        out = []
+        for pid, pgid, cmd in scan_processes():
+            if pgid in own or pgid == me or not any(n in cmd for n in STRAY_POLICY_NODES):
+                continue
+            if 'pytest' in cmd:
+                continue
+            words = set(re.findall(r'(?:^|[_\s/:=-])(right|left)(?=[_\s/.:]|$)', cmd))
+            if words and not words & arms:
+                continue                       # 다른 팔 노드
+            try:
+                os.kill(pid, signal.SIGKILL)
+                out.append(pid)
+            except OSError:
+                pass
+        return out
 
     @staticmethod
     def _episode_busy(s, active_stages) -> bool:
@@ -1293,7 +1375,10 @@ class ActionManager:
             action = description['id']
             if _preempts(action, description['group']) or action == 'shutdown':
                 sides = self._preempt_sides(s, action, description['group'], description['parameters'])
-                self._preempt(s) if sides is None else self._preempt(s, sides)
+                if action.startswith(FORCE_PREEMPT):           # ★11.10 사용자: 복귀 명령은 잔류물이 있어도 움직인다
+                    self._preempt(s, sides, force=True)
+                else:
+                    self._preempt(s) if sides is None else self._preempt(s, sides)
             if action == 'shutdown':
                 for side in self.console._pd_sides(s):
                     self._trigger(s, 'pd/release', side, expect=('IDLE',))

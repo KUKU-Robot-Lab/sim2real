@@ -275,7 +275,7 @@ def lifecycle(console, tiny_repo, monkeypatch):
                                   age_s={'episode_runner_right': 0, 'pd_right': 0}, joints_age_s=0, joint_ages={}, rosgraph=None, rosgraph_age_s=None)
     monkeypatch.setattr(console.session.feed, 'observed', lambda: observation)
     calls = []
-    monkeypatch.setattr(m, '_preempt', lambda s, *a: calls.append('stop -> hold'))
+    monkeypatch.setattr(m, '_preempt', lambda s, *a, **k: calls.append('stop -> hold'))
     monkeypatch.setattr(m, '_run_commands', lambda s, sid, cmds: calls.append((sid, cmds)))
     return m, status, calls
 
@@ -585,7 +585,7 @@ def test_path_c_card_runs_the_grasp_c_episode_with_its_approach_policy_and_objec
                    '"hand_joints": ["r_hj_index_1"], "outcome": "done", "rise_m": 0.1}\n')
     assert m.describe('rg3_chosen')['live']['script']['last_grip']['q_meas_rad'] == [0.1]
     calls = []
-    monkeypatch.setattr(m, '_preempt', lambda s, *a: calls.append('stop -> hold'))
+    monkeypatch.setattr(m, '_preempt', lambda s, *a, **k: calls.append('stop -> hold'))
 
     def run(s, sid, cmds):
         calls.append((sid, cmds))
@@ -640,3 +640,46 @@ def test_head_sweep_plan_is_a_small_snake_around_the_current_pose_and_respects_t
     with pytest.raises(ValueError):
         HS.plan_angles((19.56, 67.47), [0], [20], 82.0)                    # 87.5 > 82
 
+
+
+def test_force_preemption_ignores_stop_and_hold_failures_and_kills(console, tiny_repo, monkeypatch):
+    """★11.10 사용자: rehome·home·return 은 정지·자세 유지가 실패해도 정책을 죽이고 진행한다."""
+    m = setup_actions(console, tiny_repo, {'preflight': [{'argv': ['true']}]})
+    s = console.session
+    s.supervisor.spawn('policy_test_right#0', stage='policy_test_right', note='policy', argv=['sleep', '30'], background=True, manual=False)
+    monkeypatch.setattr(console, '_pd_sides', lambda _: ['right'])
+    calls = []
+    def trigger(session, service, side, **kw):
+        calls.append(service)
+        raise ConsoleError(f'{service} failed')
+    monkeypatch.setattr(m, '_trigger', trigger)
+    monkeypatch.setattr(m, '_kill_stray_policies', lambda *a: [])
+    warn = m._preempt(s, {'right'}, force=True)
+    assert calls == ['episode/stop', 'pd/hold']
+    assert not s.supervisor.is_alive('policy_test_right#0')
+    assert any('무시' in w for w in warn)
+
+
+def test_force_preemption_without_pd_status_still_kills(console, tiny_repo, monkeypatch):
+    m = setup_actions(console, tiny_repo, {'preflight': [{'argv': ['true']}]})
+    s = console.session
+    s.supervisor.spawn('policy_test_right#0', stage='policy_test_right', note='policy', argv=['sleep', '30'], background=True, manual=False)
+    monkeypatch.setattr(console, '_pd_sides', lambda _: [])
+    monkeypatch.setattr(m, '_trigger', lambda *a, **k: pytest.fail('PD 가 없으면 서비스를 부르지 않는다'))
+    monkeypatch.setattr(m, '_kill_stray_policies', lambda *a: [])
+    m._preempt(s, {'right'}, force=True)
+    assert not s.supervisor.is_alive('policy_test_right#0')
+
+
+def test_stray_policy_kill_only_matches_this_arm(console, tiny_repo, monkeypatch):
+    import s2r_console.actions as A
+    m = setup_actions(console, tiny_repo, {'preflight': [{'argv': ['true']}]})
+    procs = [(101, 101, 'python3 rh_place_student_node.py --ros-args -r __node:=rh_place_node_left'),
+             (102, 102, 'python3 rh_aglt_node.py --ros-args -r __node:=rh_aglt_node_right'),
+             (103, 103, 'python3 pd_node.py --side left'),
+             (104, 104, 'python3 episode_runner.py --runner episode_runner_left')]
+    monkeypatch.setattr(A, 'scan_processes', lambda: iter(procs))
+    killed = []
+    monkeypatch.setattr(A.os, 'kill', lambda pid, sig: killed.append(pid))
+    assert m._kill_stray_policies(console.session, {'left'}) == [101, 104]
+    assert killed == [101, 104]
