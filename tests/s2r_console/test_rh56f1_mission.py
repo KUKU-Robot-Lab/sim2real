@@ -823,7 +823,7 @@ def test_the_place_student_episode_ends_with_the_default_driver_and_head_home():
     run = REAL_RAW["run"]["episode_place_m_right"]
     halt = next(i for i, c in enumerate(run) if c.get("note") == "에피소드 노드들 정지")
     tail = halt + 1
-    assert run[tail]["argv"] == GEN.HEAD_DRIVER_ARGV and run[tail]["background"]
+    assert run[tail]["argv"] == GEN.HEAD_DRIVER_RESTORE_ARGV and run[tail]["background"]   # ★11.11 이미 떠 있으면 다시 안 띄운다
     assert f"episode_place_m_right#{tail}" not in run[halt]["stop"]
     assert run[tail + 1]["argv"] == GEN.HEAD_HOME_ARGV and run[tail + 1]["execute_args"] == ["--execute"]
     shut = next(c for c in REAL_RAW["run"]["shutdown"] if "policy_pourfj#1" in (c.get("stop") or []))
@@ -853,7 +853,8 @@ def test_every_other_head_driver_keeps_the_default_tilt_limit():
         student += [f"episode_{n}" for n in GEN.PLACE_M_VARIANTS] if student else []   # ★11.11 놓기 학생 색 · 홀더 판(오른손)
         assert got == (sorted([*student, "head_sweep"]) if raw is REAL_RAW else []), tilt82
         others = {k: v for k, v in drv.items() if k not in tilt82}     # 놓기 에피소드 끝 꼬리 드라이버 포함
-        assert all(v == GEN.HEAD_DRIVER_ARGV for v in others.values()), others
+        assert all(v in (GEN.HEAD_DRIVER_ARGV, GEN.HEAD_DRIVER_RESTORE_ARGV) for v in others.values()), others
+        assert all("--max-tilt" not in " ".join(v).split("exec ")[-1] for v in others.values()), others
     assert "head_home#0" in _drivers(REAL_RAW)
 
 
@@ -966,3 +967,46 @@ def test_the_holder_failure_record_is_json_and_cups_goes_on(tmp_path):
     assert rec["result"] == "failed" and rec["rc"] == 7 and rec["time"]
     import time
     assert abs(rec["epoch"] - time.time()) < 60     # ★11.11 M1: 시작 검사가 읽는 epoch
+
+
+def test_the_place_tail_driver_reuses_a_default_driver_and_terms_a_tilt_82_one(tmp_path):
+    """★11.11 deploy 3 (실기 224018 pink_h2 cleanup rc≠0 "PID 966259 가 단독으로 열고 있다"): 꼬리 드라이버는 포트를 쥔 드라이버가
+    있으면 인자를 본다 — 기본이면 다시 띄우지 않고 그 PID 를 지켜보고, --max-tilt 가 남았으면 그 PID 를 SIGTERM 한 뒤 띄운다."""
+    import os, signal, subprocess, sys, time
+    script = GEN._HEAD_DRIVER_GUARD + "echo LAUNCH"
+    fake = tmp_path / "head_joint_publisher.py"
+    fake.write_text("import signal, sys, time\nsignal.signal(signal.SIGTERM, lambda *a: sys.exit(0))\ntime.sleep(60)\n")
+    py = tmp_path / "python3"
+    py.symlink_to(sys.executable)
+    for extra, want in (([], "기본 목 드라이버 PID"), (["--max-tilt", "82"], "LAUNCH")):
+        drv = subprocess.Popen([str(py), str(fake), *extra])
+        import threading
+        reaper = threading.Thread(target=drv.wait, daemon=True)     # 실기는 sshd 가 거둔다 — 좀비가 kill -0 에 살아 보이지 않게
+        reaper.start()
+        try:
+            time.sleep(0.3)
+            out = subprocess.run(["bash", "-c", script.replace("exec tail --pid=$p -f /dev/null", "exit 0")],
+                                 capture_output=True, text=True, timeout=20)
+            assert want in out.stdout and f"PID {drv.pid}" in out.stdout, out.stdout + out.stderr
+            if extra:
+                reaper.join(timeout=5)
+                assert drv.returncode == 0                          # SIGTERM 으로 끝났다
+            else:
+                assert drv.poll() is None                           # 기본 드라이버는 건드리지 않는다
+        finally:
+            if drv.poll() is None:
+                os.kill(drv.pid, signal.SIGKILL)
+    out = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=20)
+    assert out.stdout.strip() == "LAUNCH"                           # 드라이버가 없으면 그냥 띄운다
+
+
+def test_shutdown_still_stops_the_place_tail_driver_in_every_mission():
+    """★11.11 꼬리 드라이버 argv 가 bash 가드로 바뀌어도 shutdown 이 그것을 내린다(로컬 목 cam5090 포함)."""
+    import yaml as _y
+    for f in ("mission_rh56f1_control.yaml", "mission_rh56f1_control_cam5090.yaml"):
+        m = _y.safe_load((REPO / "config" / f).read_text(encoding="utf-8"))
+        stops = {s for c in m["run"]["shutdown"] for s in (c.get("stop") or [])}
+        for name in GEN.PLACE_M_VARIANTS:
+            tail = next(i for i, c in enumerate(m["run"][f"episode_{name}"])
+                        if c.get("background") and GEN._HEAD_DRIVER_GUARD in " ".join(c.get("argv") or []))
+            assert f"episode_{name}#{tail}" in stops, (f, name)

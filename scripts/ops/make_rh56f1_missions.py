@@ -511,6 +511,23 @@ HEAD_DRIVER_ARGV = (["python3", "{repo}/scripts/nodes/head_joint_publisher.py", 
                     #   으로 이 PC 에 온다. exec 라 콘솔이 ssh 를 끝내면(HUP) 드라이버가 바로 죽고 포트가 닫힌다(토크는 그대로).
                     _on_head_pc("exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config " + HEAD_CONFIG
                                 + " " + " ".join(_HEAD_DRIVER_ARGS)))
+#: ★11.11 deploy 3: 놓기 학생 끝 꼬리의 기본 드라이버 — 포트를 쥔 드라이버가 이미 있으면(학생 노드 앞 검사가 막혀 head_home 것이
+#  안 내려간 채 정리가 돈 경우 · 실기 224018 pink_h2 cleanup: "PID 966259 가 단독으로 열고 있다" rc≠0) 다시 띄우지 않는다.
+#  그 드라이버의 인자를 읽어 --max-tilt 가 없으면(기본) 통과 — 그 PID 가 살아 있는 동안 지켜본다(배경 단계가 '떠 있음'으로 남는다).
+#  --max-tilt 가 있으면(82 · 스윕 것이 남음) 그 PID 를 확정한 뒤 SIGTERM · 5 s 안에 끝났는지 보고 기본 인자로 띄운다.
+#  pgrep 은 python3 프로세스만 본다 — 이 bash 한 줄 자체도 head_joint_publisher 문자열을 담고 있어서다.
+_HEAD_DRIVER_GUARD = (
+    "p=$(pgrep -a -x 'python3(\\.[0-9]+)?' | awk '/head_joint_publisher[.]py/ {print $1; exit}'); "
+    "if [ -n \"$p\" ]; then a=$(tr '\\0' ' ' </proc/$p/cmdline); "
+    "case \"$a\" in *--max-tilt*) echo \"목 드라이버 PID $p 가 기본과 다른 인자로 떠 있다 — SIGTERM 후 기본으로 다시: $a\"; "
+    "kill -TERM $p; for i in $(seq 50); do kill -0 $p 2>/dev/null || break; sleep 0.1; done; "
+    "if kill -0 $p 2>/dev/null; then echo \"❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할 것\"; exit 1; fi;; "
+    "*) echo \"기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다: $a\"; "
+    "exec tail --pid=$p -f /dev/null;; esac; fi; ")
+HEAD_DRIVER_RESTORE_ARGV = (["bash", "-lc", _HEAD_DRIVER_GUARD + "exec " + " ".join(HEAD_DRIVER_ARGV)]
+                            if not REMOTE_HEAD else
+                            _on_head_pc(_HEAD_DRIVER_GUARD + "exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py "
+                                        "--config " + HEAD_CONFIG + " " + " ".join(_HEAD_DRIVER_ARGS)))
 #: 목 토크 해제(shutdown) — 포트가 있는 PC 에서. --release 뒤에 콘솔이 --execute 를 붙인다
 HEAD_RELEASE_ARGV = (["python3", "{repo}/scripts/head_home.py", "--config", "{repo}/" + HEAD_CONFIG, "--release"]
                      if not REMOTE_HEAD else _on_head_pc(f"python3 scripts/head_home.py --config {HEAD_CONFIG}", "--release"))
@@ -1063,7 +1080,8 @@ def _run(kind: str) -> dict:
     # 포트를 쥐고 있어 새 82 드라이버가 못 연다. head_home#0 를 내리는 단계가 이것들도 같이 내린다(11.09 리뷰, 없으면 건너뜀)
     drivers = [f"{stage}#{i}" for stage, cmds in run.items() if stage.startswith("episode_") or stage == "head_sweep"
                for i, c in enumerate(cmds)
-               if c.get("background") and list(c.get("argv") or [])[:len(HEAD_DRIVER_ARGV)] == list(HEAD_DRIVER_ARGV)]
+               if c.get("background") and (list(c.get("argv") or [])[:len(HEAD_DRIVER_ARGV)] == list(HEAD_DRIVER_ARGV)
+                                           or list(c.get("argv") or []) == list(HEAD_DRIVER_RESTORE_ARGV))]   # ★11.11 꼬리
     order = [st["id"] for st in _stages(kind)]   # 미션 단계 순서(run 은 head_sweep 을 뒤에 넣어 dict 순서가 다르다)
     for stage, cmds in run.items():
         if stage.startswith("episode_") or stage in ("head_sweep", "shutdown"):
@@ -1208,7 +1226,8 @@ def _place_student_tail() -> list:
     """놓기 학생 에피소드 끝(실기) — 82 드라이버가 노드 정지로 내려간 뒤 기본 드라이버를 다시 띄우고 목을 camset 으로 되돌린다.
     없으면 목 드라이버가 하나도 없는데 head_home 완료가 남아 다음 게이트를 통과시킨다(11.08 리뷰)."""
     return [
-        _cmd("목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다)", list(HEAD_DRIVER_ARGV), background=True),
+        _cmd("목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다). 이미 떠 있으면 인자만 보고 — 기본이면 그대로 둔다, "
+             "--max-tilt 가 남았으면 그 PID 를 SIGTERM 한 뒤 띄운다(★11.11)", list(HEAD_DRIVER_RESTORE_ARGV), background=True),
         _cmd("머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시",
              list(HEAD_HOME_ARGV), execute_args=["--execute"]),     # 복사 — yaml 별칭(*id) 없이 쓴다
     ]

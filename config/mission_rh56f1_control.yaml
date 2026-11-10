@@ -9294,15 +9294,19 @@ run:
     - episode_place_m_right#9
     - episode_place_m_right#8
     - episode_place_m_right#5
-  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다)
+  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다). 이미 떠 있으면 인자만 보고 — 기본이면 그대로 둔다, --max-tilt 가 남았으면 그 PID 를 SIGTERM 한 뒤 띄운다(★11.11)
     argv:
     - ssh
     - -tt
     - -o
     - BatchMode=yes
     - arm4090-lan
-    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config
-      config/head_camset_rh56f1.yaml --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2
+    - 'cd rl_ws/sim2real && source scripts/vision/common.sh && p=$(pgrep -a -x ''python3(\.[0-9]+)?'' | awk ''/head_joint_publisher[.]py/ {print
+      $1; exit}''); if [ -n "$p" ]; then a=$(tr ''\0'' '' '' </proc/$p/cmdline); case "$a" in *--max-tilt*) echo "목 드라이버 PID $p 가 기본과 다른 인자로 떠
+      있다 — SIGTERM 후 기본으로 다시: $a"; kill -TERM $p; for i in $(seq 50); do kill -0 $p 2>/dev/null || break; sleep 0.1; done; if kill -0 $p 2>/dev/null;
+      then echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할 것"; exit 1; fi;; *) echo "기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다:
+      $a"; exec tail --pid=$p -f /dev/null;; esac; fi; exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config config/head_camset_rh56f1.yaml
+      --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
     background: true
   - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
     argv:
@@ -9545,15 +9549,19 @@ run:
     - episode_place_m_left#9
     - episode_place_m_left#8
     - episode_place_m_left#5
-  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다)
+  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다). 이미 떠 있으면 인자만 보고 — 기본이면 그대로 둔다, --max-tilt 가 남았으면 그 PID 를 SIGTERM 한 뒤 띄운다(★11.11)
     argv:
     - ssh
     - -tt
     - -o
     - BatchMode=yes
     - arm4090-lan
-    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config
-      config/head_camset_rh56f1.yaml --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2
+    - 'cd rl_ws/sim2real && source scripts/vision/common.sh && p=$(pgrep -a -x ''python3(\.[0-9]+)?'' | awk ''/head_joint_publisher[.]py/ {print
+      $1; exit}''); if [ -n "$p" ]; then a=$(tr ''\0'' '' '' </proc/$p/cmdline); case "$a" in *--max-tilt*) echo "목 드라이버 PID $p 가 기본과 다른 인자로 떠
+      있다 — SIGTERM 후 기본으로 다시: $a"; kill -TERM $p; for i in $(seq 50); do kill -0 $p 2>/dev/null || break; sleep 0.1; done; if kill -0 $p 2>/dev/null;
+      then echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할 것"; exit 1; fi;; *) echo "기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다:
+      $a"; exec tail --pid=$p -f /dev/null;; esac; fi; exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config config/head_camset_rh56f1.yaml
+      --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
     background: true
   - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
     argv:
@@ -9798,15 +9806,19 @@ run:
     - episode_place_m_blue_h2_right#9
     - episode_place_m_blue_h2_right#8
     - episode_place_m_blue_h2_right#5
-  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다)
+  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다). 이미 떠 있으면 인자만 보고 — 기본이면 그대로 둔다, --max-tilt 가 남았으면 그 PID 를 SIGTERM 한 뒤 띄운다(★11.11)
     argv:
     - ssh
     - -tt
     - -o
     - BatchMode=yes
     - arm4090-lan
-    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config
-      config/head_camset_rh56f1.yaml --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2
+    - 'cd rl_ws/sim2real && source scripts/vision/common.sh && p=$(pgrep -a -x ''python3(\.[0-9]+)?'' | awk ''/head_joint_publisher[.]py/ {print
+      $1; exit}''); if [ -n "$p" ]; then a=$(tr ''\0'' '' '' </proc/$p/cmdline); case "$a" in *--max-tilt*) echo "목 드라이버 PID $p 가 기본과 다른 인자로 떠
+      있다 — SIGTERM 후 기본으로 다시: $a"; kill -TERM $p; for i in $(seq 50); do kill -0 $p 2>/dev/null || break; sleep 0.1; done; if kill -0 $p 2>/dev/null;
+      then echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할 것"; exit 1; fi;; *) echo "기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다:
+      $a"; exec tail --pid=$p -f /dev/null;; esac; fi; exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config config/head_camset_rh56f1.yaml
+      --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
     background: true
   - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
     argv:
@@ -10053,15 +10065,19 @@ run:
     - episode_place_m_pink_h1_right#9
     - episode_place_m_pink_h1_right#8
     - episode_place_m_pink_h1_right#5
-  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다)
+  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다). 이미 떠 있으면 인자만 보고 — 기본이면 그대로 둔다, --max-tilt 가 남았으면 그 PID 를 SIGTERM 한 뒤 띄운다(★11.11)
     argv:
     - ssh
     - -tt
     - -o
     - BatchMode=yes
     - arm4090-lan
-    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config
-      config/head_camset_rh56f1.yaml --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2
+    - 'cd rl_ws/sim2real && source scripts/vision/common.sh && p=$(pgrep -a -x ''python3(\.[0-9]+)?'' | awk ''/head_joint_publisher[.]py/ {print
+      $1; exit}''); if [ -n "$p" ]; then a=$(tr ''\0'' '' '' </proc/$p/cmdline); case "$a" in *--max-tilt*) echo "목 드라이버 PID $p 가 기본과 다른 인자로 떠
+      있다 — SIGTERM 후 기본으로 다시: $a"; kill -TERM $p; for i in $(seq 50); do kill -0 $p 2>/dev/null || break; sleep 0.1; done; if kill -0 $p 2>/dev/null;
+      then echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할 것"; exit 1; fi;; *) echo "기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다:
+      $a"; exec tail --pid=$p -f /dev/null;; esac; fi; exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config config/head_camset_rh56f1.yaml
+      --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
     background: true
   - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
     argv:
@@ -10310,15 +10326,19 @@ run:
     - episode_place_m_pink_h2_right#9
     - episode_place_m_pink_h2_right#8
     - episode_place_m_pink_h2_right#5
-  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다)
+  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다). 이미 떠 있으면 인자만 보고 — 기본이면 그대로 둔다, --max-tilt 가 남았으면 그 PID 를 SIGTERM 한 뒤 띄운다(★11.11)
     argv:
     - ssh
     - -tt
     - -o
     - BatchMode=yes
     - arm4090-lan
-    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config
-      config/head_camset_rh56f1.yaml --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2
+    - 'cd rl_ws/sim2real && source scripts/vision/common.sh && p=$(pgrep -a -x ''python3(\.[0-9]+)?'' | awk ''/head_joint_publisher[.]py/ {print
+      $1; exit}''); if [ -n "$p" ]; then a=$(tr ''\0'' '' '' </proc/$p/cmdline); case "$a" in *--max-tilt*) echo "목 드라이버 PID $p 가 기본과 다른 인자로 떠
+      있다 — SIGTERM 후 기본으로 다시: $a"; kill -TERM $p; for i in $(seq 50); do kill -0 $p 2>/dev/null || break; sleep 0.1; done; if kill -0 $p 2>/dev/null;
+      then echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할 것"; exit 1; fi;; *) echo "기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다:
+      $a"; exec tail --pid=$p -f /dev/null;; esac; fi; exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py --config config/head_camset_rh56f1.yaml
+      --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
     background: true
   - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
     argv:
