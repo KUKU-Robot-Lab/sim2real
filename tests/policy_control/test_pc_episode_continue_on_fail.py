@@ -100,13 +100,21 @@ def test_refused_before_the_policy_ran_is_not_continued(reason, code):
     assert st == FAILURE and m.last["code"] == code.value and m.place_failed_continued == []
 
 
-def test_hand_opened_but_camera_says_outside_continues():
-    """★11.09 정책이 손 폄(outcome opened)으로 끝났는데 카메라가 홀더 밖으로 봐도 home 으로(성공 확인은 사람이)."""
+def test_episode_end_but_camera_says_outside_continues():
+    """★11.10 학습 시간 끝(outcome episode_end)으로 멈췄는데 카메라가 홀더 밖으로 보면 PLACE_FAILED → home 으로 이어 간다."""
     ep = _ep(continue_on_fail=["place"])
-    ex = _Ex(ep, res=("completed", "placed — 정책이 손을 폄", {"cup_in_holder": False, "hand_empty": True, "outcome": "opened"}))
+    ex = _Ex(ep, res=("completed", "placed — 학습 시간 5.0 s 끝", {"cup_in_holder": False, "hand_empty": None, "outcome": "episode_end"}))
     m, st, _ = _run(ep, ex)
     assert st == SUCCESS and m.place_failed_continued == ["place_cup"]
     assert ("trajectory", "go_home_end", "go_home") in ex.calls
+
+
+def test_episode_end_in_holder_is_success_without_continue():
+    """★11.10 학습 시간 끝 · 손 빔 모름(None) · 컵 홀더 안 → 성공(실패 이어 가기 없음)."""
+    ep = _ep(continue_on_fail=["place"])
+    ex = _Ex(ep, res=("completed", "placed — 학습 시간 5.0 s 끝", {"cup_in_holder": True, "hand_empty": None, "outcome": "episode_end"}))
+    m, st, _ = _run(ep, ex)
+    assert st == SUCCESS and m.place_failed_continued == []
 
 
 def test_place_timeout_reason_is_policy_timeout_and_opened_hand_continues():
@@ -126,8 +134,8 @@ def test_cocktail_place_blue_continue_reaches_grasp_pink():
         def run_policies(self, node, plans, world):
             out = super().run_policies(node, plans, world)
             if node.id == "place_blue":
-                out[0] = NodeResult("completed", "placed — 정책이 손을 폄", 1.0, out[0].role,
-                                    {"cup_in_holder": False, "hand_empty": True, "outcome": "opened"})
+                out[0] = NodeResult("completed", "placed — 학습 시간 5.0 s 끝", 1.0, out[0].role,
+                                    {"cup_in_holder": False, "hand_empty": None, "outcome": "episode_end"})
             return out
 
     ex = _C(ep)

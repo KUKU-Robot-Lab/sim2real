@@ -4,8 +4,9 @@
   · FP++ live_pose 표본 중 header stamp 가 앞 표본보다 새것이고 값이 바뀐 것만 '갱신'으로 센다(멈춘 값 반복 · stale 제외).
   · 팔 관절은 표본 수신 시각에 선형 보간(같은 시계끼리) → 손바닥 FK. T_in_i = FK_i⁻¹ · 컵_i, 위치 평균 + 회전 행렬 평균의 SO(3) 투영.
   · 규약: 위치 m, 쿼터니언 wxyz. 왼손 shaker 는 FP++ 원점 + 0.02·z(plan_tilt_traj rcv_z_off — 분석과 같은 틀, 기록만).
-판정: 갱신 MIN_FRESH 개 이상 · 갱신 비율 ≥ 수신의 FRESH_RATIO · 창 안 흔들림(위치 JIT_POS_M · 각도 JIT_ANG_DEG) · 손바닥–컵 NEAR_M 안
-· (오른손) 고정 평균과 FIX_POS_M · FIX_ANG_DEG 안. 실행기는 창 시작을 FPP_LATENCY_S 만큼 늦춰 자른다(멈추기 전 영상 제외).
+판정: 갱신 MIN_FRESH 개 이상 · 갱신 비율 ≥ 수신의 FRESH_RATIO · 창 안 흔들림(위치 JIT_POS_M · 각도 JIT_ANG_DEG) · 손바닥–컵 NEAR_M 안.
+★11.10 사용자 "실측 T_in 을 실제로 쓰게" — 고정 평균과의 대조 거부는 없앴다(차이는 기록만, record 의 vs_fixed).
+실행기는 창 시작을 FPP_LATENCY_S 만큼 늦춰 자른다(멈추기 전 영상 제외).
 하나라도 어기면 fallback(고정 평균 파일, tin_all · build_v12 산출물)으로 대신하고 그 이유를 json 에 남긴다.
 """
 from __future__ import annotations
@@ -22,12 +23,11 @@ WINDOW_S = FPP_LATENCY_S + 2.0   # 실행기 측정 대기(팔 정지 창 시작
 MIN_FRESH = 8            # 2 s 창 · FP++ 갱신 약 6 Hz(11.06 bag 51/8.7 s) — bag 151437 정지 창에서 2.0 s 창 최소 10개
 FRESH_RATIO = 0.3        # 갱신 / 수신 하한 — bag 151437 은 약 0.5(같은 프레임 재발행이 절반)
 ARM_HOLD_S = 0.2         # 마지막 팔 표본 뒤 이 안의 FP++ 프레임은 끝값 유지, 더 늦은 것만 버린다
-FIX_POS_M = 0.020        # 오른손 실측이 고정 평균과 이보다 멀면(위치 · 각도) 실측으로 인정하지 않는다
-FIX_ANG_DEG = 15.0
-FIX_CHECK_SIDES = ("right",)
 JIT_POS_M = 0.005
 JIT_ANG_DEG = 3.0
-NEAR_M = 0.15            # hold_windows NEAR — 이보다 멀면 쥔 컵이 아닌 것을 본다
+NEAR_M = 0.12            # ★11.10 손바닥–컵 거리 상한 = 컵이 손 안에 있는가(엉뚱한 물체 추적을 막는 유일한 기하 검사).
+NEAR_M_SIDE = {"right": 0.12, "left": 0.09}  # ★11.10 팔별 상한 — 손바닥까지 T_in_r 74 mm · T_in_l 47 mm 라 왼손만 여유를 ~4 cm 로 좁힌다(사용자 결정).
+                         # 근거: tin_fixed_1107 거리 T_in_r 74 mm · T_in_l 47 mm + 여유 약 45 mm(낮게 잡아 20~30 mm 미끄러져도 통과)
 Z_OFF = {"right": 0.0, "left": 0.02}   # 분석 tin_measure.pose_T(왼손 shaker = 원점 + rcv_z_off·z)
 FALLBACK_KEY = {"right": "T_in_r", "left": "T_in_l"}
 ROBOT_ASSET = "openarm_rh56f1_bi_rl"    # 분석 FK 와 같은 URDF(손바닥 = <s>_hl_palm_sensor)
@@ -73,7 +73,7 @@ def fresh_index(hs: np.ndarray, X: np.ndarray, sel: np.ndarray) -> np.ndarray:
 
 def measure(t: np.ndarray, hs: np.ndarray, X: np.ndarray, arm_t: np.ndarray, arm_q: np.ndarray,
             fk: Callable[[np.ndarray], np.ndarray], t0: float, t1: float, *, z_off: float = 0.0,
-            min_fresh: int = MIN_FRESH) -> dict:
+            min_fresh: int = MIN_FRESH, near_m: float = NEAR_M) -> dict:
     """t · hs · X(N×7 pos+quat wxyz) = FP++ 수신 시각 · header stamp · 자세, arm_t · arm_q(M×7) = 팔 수신 시각 · 관절,
     fk(q7) → 4×4 손바닥(base). 창 [t0, t1]. 결과 dict — ok 면 T_in(4×4)."""
     t, hs, X = np.asarray(t, float), np.asarray(hs, float), np.asarray(X, float)
@@ -112,8 +112,8 @@ def measure(t: np.ndarray, hs: np.ndarray, X: np.ndarray, arm_t: np.ndarray, arm
         bad.append(f"위치 흔들림 {dpos.max() * 1000:.1f} mm > {JIT_POS_M * 1000:.0f}")
     if dang.max() > JIT_ANG_DEG:
         bad.append(f"각도 흔들림 {dang.max():.1f}° > {JIT_ANG_DEG:.0f}")
-    if near > NEAR_M:
-        bad.append(f"손바닥–컵 {near * 1000:.0f} mm > {NEAR_M * 1000:.0f}")
+    if near > near_m:
+        bad.append(f"손바닥–컵 {near * 1000:.0f} mm > {near_m * 1000:.0f}")
     return {**res, "ok": not bad, **({"reason": " · ".join(bad)} if bad else {})}
 
 
@@ -130,12 +130,11 @@ def load_fallback(path: Path, side: str) -> np.ndarray:
     return T
 
 
-def fixed_gap(T: np.ndarray, F: np.ndarray) -> str:
-    """실측 T 와 고정 평균 F 의 차이가 FIX_POS_M · FIX_ANG_DEG 를 넘으면 그 사유, 아니면 ""."""
-    dp, da = float(np.linalg.norm(T[:3, 3] - F[:3, 3])), ang_deg(T[:3, :3], F[:3, :3])
-    if dp > FIX_POS_M or da > FIX_ANG_DEG:
-        return f"고정 평균과 차이 {dp * 1000:.1f} mm / {da:.1f}° (> {FIX_POS_M * 1000:.0f} mm 또는 {FIX_ANG_DEG:.0f}°)"
-    return ""
+def fixed_diff(T: np.ndarray, F: np.ndarray) -> dict:
+    """★11.10 실측 T 와 고정 평균 F 의 차이(기록만, 거부하지 않는다) — 위치 mm · 각도 ° · 손바닥 틀 축별 dx/dy/dz mm(실측 − 고정)."""
+    d = (T[:3, 3] - F[:3, 3]) * 1000
+    return {"pos_mm": round(float(np.linalg.norm(d)), 1), "ang_deg": round(ang_deg(T[:3, :3], F[:3, :3]), 1),
+            **{k: round(float(v), 1) for k, v in zip(("dx_mm", "dy_mm", "dz_mm"), d)}}
 
 
 def axis_aligned(T_meas: np.ndarray, T_base: np.ndarray) -> tuple[np.ndarray, float]:
@@ -173,21 +172,22 @@ def planner_tin(T_by_side: dict, setup: Path, sources: dict | None = None, **met
 
 
 def record(meas: dict, side: str, fallback: Path, **meta) -> dict:
-    """측정 결과 + (실패면) fallback → 런 폴더 json 한 개의 내용. fallback 도 못 읽으면 TinError.
-    오른손 실측은 고정 평균과 FIX_POS_M · FIX_ANG_DEG 안일 때만 인정한다(넘으면 fallback, 이유에 차이)."""
-    if meas.get("ok") and side in FIX_CHECK_SIDES:
-        why = fixed_gap(np.asarray(meas["T_in"], float), load_fallback(fallback, side))
-        if why:
-            meas = {**meas, "ok": False, "reason": why}
+    """측정 결과 + (실패면) fallback → 런 폴더 json 한 개의 내용. 실패인데 fallback 도 못 읽으면 TinError.
+    ★11.10 사용자 — 실측(measure ok)은 그대로 쓴다. 고정 평균과의 차이는 vs_fixed 에 기록만(파일을 못 읽으면 그 사유)."""
+    vs = None
     if meas.get("ok"):
         T, src = np.asarray(meas["T_in"], float), "measured"
+        try:
+            vs = fixed_diff(T, load_fallback(fallback, side))
+        except (TinError, OSError, ValueError) as exc:     # 차이 기록용일 뿐 — 실측을 버리지 않는다
+            vs = {"error": f"고정값 {fallback} 못 읽음: {exc}"}
     else:
         T, src = load_fallback(fallback, side), "fallback"
     out = {"source": src, "side": side, "pos_m": [round(float(v), 6) for v in T[:3, 3]],
            "quat_wxyz": [round(float(v), 6) for v in R_to_quat(T[:3, :3])], "T_in": np.round(T, 6).tolist(),
            "convention": "T_in = 손바닥(FK palm_body) → 컵 FP++ 원점" + (" + 0.02·z" if Z_OFF[side] else "") + ", 위치 m, 쿼터니언 wxyz",
            "fallback_file": str(fallback), "measured": {k: v for k, v in meas.items() if k != "T_in"},
-           "t": time.strftime("%Y-%m-%dT%H:%M:%S"), **meta}
+           "t": time.strftime("%Y-%m-%dT%H:%M:%S"), **({"vs_fixed": vs} if vs else {}), **meta}
     if src == "fallback":
         out["fallback_reason"] = meas.get("reason", "")
     return out
@@ -201,7 +201,7 @@ def load_tin(path: str | Path, side: str) -> tuple[np.ndarray, np.ndarray, dict]
     if Z_OFF.get(side):          # shortcut: 왼손 T_in 은 shaker 원점 + 0.02·z 틀(분석과 같게, 기록용) — place 에 쓰려면 원점 틀로 되돌린다
         raise TinError(f"{path}: {side} T_in 은 FP++ 원점 + {Z_OFF[side]}·z 틀이라 붙인 자세로 쓰지 않는다")
     p, q = np.asarray(d.get("pos_m"), float).reshape(3), np.asarray(d.get("quat_wxyz"), float).reshape(4)
-    if not (np.all(np.isfinite(p)) and np.all(np.isfinite(q))) or abs(np.linalg.norm(q) - 1) > 1e-3 or np.linalg.norm(p) > NEAR_M:
+    if not (np.all(np.isfinite(p)) and np.all(np.isfinite(q))) or abs(np.linalg.norm(q) - 1) > 1e-3 or np.linalg.norm(p) > NEAR_M_SIDE.get(side, NEAR_M):
         raise TinError(f"{path}: T_in 값이 이상하다 pos {p.tolist()} quat {q.tolist()}")
     return p, q / np.linalg.norm(q), d
 

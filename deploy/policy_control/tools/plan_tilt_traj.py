@@ -44,7 +44,12 @@ PKG = "s2r_hdgp_modules"          # openarm 패키지 초기화(학습 과제 im
 RATE_HZ = 60.0
 # 검사 한계 — sim 과 같은 값(tilt_newton_batch.pre_fail: IK 20 mm · 홀더 여유 20 mm · 탁자 10 mm) + 실기 쪽
 LIMITS = {"ik_pos_mm": 20.0, "clr_min_m": 0.02, "table_clear_m": 0.01, "cmd_vel_rad_s": 2.0, "joint_margin_rad": 0.0,
-          "start_gap_rad": 0.35}
+          "start_gap_rad": 0.35,
+          # ★11.10 붓는 구간 입구 수평 거리(계획 T_in 기준 — 계획기 자체 오류만 잡는다, 실제 컵 ≠ T_in 은 못 잡음). geo 에 shaker 입구 반지름 키가 없다. 기하 상한은 shaker 충돌체
+          # 반지름 35 mm(hdgp scripts/tools/tilt_newton/holder_clear.py:21) − 붓는 입술 거리 12 mm(tilt_traj/plan.py:23 src_lip_r)
+          # − 흐름 반폭(미측정). 8 mm = 오프라인 스윕(logs/runs/261110/tilt_tin_sweep) 정상 2.4~4.1 · T_in 어긋남 6~30 사이 — 정상 최대의 약 2배로
+          # 둔다(기하 상한 13~23 mm 아래). 흐름 반폭을 재면 다시 정한다.
+          "mouth_xy_mm": 8.0}
 
 
 def load_modules(root: Path):
@@ -82,6 +87,13 @@ def current_q(q_json: str) -> dict[str, list[float]]:
     from check_path_start import measure
     q = measure(JOINTS)
     return {"right": [float(q[j]) for j in ARMS["r"]], "left": [float(q[j]) for j in ARMS["l"]]}
+
+
+def mouth_xy_mm(Cr: np.ndarray, Cl: np.ndarray, src_mouth_z: float, rcv_mouth_z: float) -> np.ndarray:
+    """붓는 컵 입구 중심(Cr·p + src_mouth_z·Cr·z) ↔ shaker 입구 중심(Cl·p + rcv_mouth_z·Cl·z) 수평 거리 [mm]. Cr/Cl (N,4,4)."""
+    ms = Cr[:, :3, 3] + src_mouth_z * Cr[:, :3, 2]
+    mr = Cl[:, :3, 3] + rcv_mouth_z * Cl[:, :3, 2]
+    return np.linalg.norm((ms - mr)[:, :2], axis=1) * 1000
 
 
 def minjerk(s: np.ndarray) -> np.ndarray:
@@ -140,6 +152,10 @@ def plan(cfg: dict, asset: Path, cup: str, q: dict, holders: Path, tin_json: str
     margin = float(np.minimum(cmd - lo, hi - cmd).min())
     gap = float(np.abs(q_meas - knots[0]).max())
     e = tb.knots.edges[0].numpy()
+    fk = lambda c, qq, T: c.fk(torch.as_tensor(qq, dtype=torch.float32)).double().numpy() @ np.asarray(T, dtype=np.float64)  # noqa: E731
+    t = np.arange(len(cmd)) / RATE_HZ - float(cfg["pre_s"])                # knot 시각
+    pour = (t >= e[2]) & (t <= e[4])                                       # 기울이기 + 최대 기울기 유지(plan.knot_counts edges)
+    mxy = float(mouth_xy_mm(fk(ch["r"], cmd[:, :7], T_r), fk(ch["l"], cmd[:, 7:], T_l), geo.src_mouth_z, geo.rcv_mouth_z)[pour].max())
     checks = {
         "ik_pos_mm": {"value": round(info["ik_pos_mm"], 2), "ok": info["ik_pos_mm"] <= LIMITS["ik_pos_mm"]},
         "clr_min_m": {"value": round(info["clr_min"], 4), "ok": info["clr_min"] >= LIMITS["clr_min_m"]},
@@ -147,6 +163,7 @@ def plan(cfg: dict, asset: Path, cup: str, q: dict, holders: Path, tin_json: str
         "cmd_vel_rad_s": {"value": round(vel, 3), "ok": vel <= LIMITS["cmd_vel_rad_s"]},
         "joint_margin_rad": {"value": round(margin, 4), "ok": margin >= LIMITS["joint_margin_rad"]},
         "start_gap_rad": {"value": round(gap, 4), "ok": gap <= LIMITS["start_gap_rad"]},
+        "mouth_xy_mm": {"value": round(mxy, 2), "ok": mxy <= LIMITS["mouth_xy_mm"]},
     }
     return {"cmd": cmd, "knots": knots, "info": info, "checks": checks, "ok": all(c["ok"] for c in checks.values()),
             "params": params, "tin": tin_src, "T_in_r": np.asarray(T_r).tolist(), "T_in_l": np.asarray(T_l).tolist(),

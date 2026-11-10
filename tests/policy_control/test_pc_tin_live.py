@@ -31,9 +31,9 @@ def test_matches_analysis_within_1mm(s, side):
 
 
 def _synthetic(n=20, rate=6.0):
-    """손바닥 = 원점(FK 항등), 컵 0.1 m 안에서 표본마다 10 µm 씩 바뀜(갱신), 6 Hz."""
+    """손바닥 = 원점(FK 항등), 컵 약 76 mm(고정 T_in_r 74 mm 근처)에서 표본마다 10 µm 씩 바뀜(갱신), 6 Hz."""
     t = np.arange(n + 1) / rate
-    X = np.tile([0.1, 0.05, 0.05, 1.0, 0.0, 0.0, 0.0], (n + 1, 1))
+    X = np.tile([0.01, 0.03, 0.07, 1.0, 0.0, 0.0, 0.0], (n + 1, 1))
     X[:, 0] += np.arange(n + 1) * 1e-5
     return t, t + 100.0, X, np.array([-1.0, 10.0]), np.zeros((2, 7)), (lambda q: np.eye(4))
 
@@ -63,8 +63,8 @@ def test_rejects_jitter_and_few_frames_then_fallback(tmp_path):
         T.load_tin(p, "left")
 
 
-def test_late_arm_holds_end_value_ratio_and_fixed_gap(tmp_path):
-    """팔 표본이 끝보다 ARM_HOLD_S 안 앞서면 끝값 유지 · 더 늦은 프레임만 버림 · 갱신 비율 0.3 · 오른손 고정 평균과 20 mm 넘으면 fallback."""
+def test_late_arm_holds_end_value_ratio(tmp_path):
+    """팔 표본이 끝보다 ARM_HOLD_S 안 앞서면 끝값 유지 · 더 늦은 프레임만 버림 · 갱신 비율 0.3."""
     t, hs, X, at, aq, fk = _synthetic()
     end = float(t[-1])
     held = T.measure(t, hs, X, np.array([-1.0, end - 0.15]), aq, fk, 0.0, 10.0)
@@ -75,15 +75,44 @@ def test_late_arm_holds_end_value_ratio_and_fixed_gap(tmp_path):
     tt = np.arange(len(rep)) / 18.0
     assert T.measure(tt, hs[rep], X[rep], np.array([-1.0, 10.0]), aq, fk, 0.0, 10.0)["ok"]
 
+
+@pytest.mark.parametrize("slip_m", [0.020, 0.030])
+def test_slipped_low_tin_is_used_and_gap_to_fixed_is_recorded(tmp_path, slip_m):
+    """★11.10 사용자: 낮게 잡아 컵이 20~30 mm 미끄러진 정상 실측도 그대로 쓴다 — 고정값과 차이는 vs_fixed 에 기록만."""
+    t, hs, X, at, aq, fk = _synthetic()
     fixed = tmp_path / "f.json"
-    M = np.eye(4); M[:3, 3] = [0.1, 0.05, 0.05]
-    fixed.write_text(json.dumps({"T_in_r": {"T_meas_fullrot": M.tolist()}, "T_in_l": {"T_meas_fullrot": M.tolist()}}))
-    ok = T.measure(t, hs, X, at, aq, fk, 0.0, 10.0)
-    assert T.record(ok, "right", fixed)["source"] == "measured"
-    far = {**ok, "T_in": (np.asarray(ok["T_in"]) + np.pad(np.array([[0, 0, 0, 0.03]]), ((0, 3), (0, 0)))).tolist()}
-    r = T.record(far, "right", fixed)
-    assert r["source"] == "fallback" and "고정 평균과 차이" in r["fallback_reason"] and r["measured"]["pos_mm"]
-    assert T.record(far, "left", fixed)["source"] == "measured"          # 왼손은 비교 안 함
+    M = np.eye(4); M[:3, 3] = X[0, :3]
+    fixed.write_text(json.dumps({"T_in_r": {"T_meas_fullrot": M.tolist()}}))
+    Xs = X.copy()
+    Xs[:, 2] -= slip_m
+    ok = T.measure(t, hs, Xs, at, aq, fk, 0.0, 10.0)
+    assert ok["ok"], ok
+    r = T.record(ok, "right", fixed)
+    assert r["source"] == "measured" and np.allclose(r["T_in"], ok["T_in"], atol=1e-6)
+    vs = r["vs_fixed"]
+    assert vs["dz_mm"] == pytest.approx(-slip_m * 1000, abs=0.5) and vs["pos_mm"] == pytest.approx(slip_m * 1000, abs=0.5)
+    assert abs(vs["dx_mm"]) < 0.5 and abs(vs["dy_mm"]) < 0.5 and vs["ang_deg"] == 0.0
+    assert "error" in T.record(ok, "right", tmp_path / "없음.json")["vs_fixed"]   # 고정값을 못 읽어도 실측은 쓴다
+
+
+def test_object_far_from_palm_is_rejected():
+    """손에서 15 cm 떨어진 물체(엉뚱한 물체 추적) — NEAR_M 기하 검사로 거부."""
+    t, hs, X, at, aq, fk = _synthetic()
+    Xf = X.copy()
+    Xf[:, :3] += np.array([0.0, 0.0, 0.15]) - X[0, :3]      # 컵 약 (0, 0, 0.15) m — 갱신(µm 변화)은 그대로
+    far = T.measure(t, hs, Xf, at, aq, fk, 0.0, 10.0)
+    assert not far["ok"] and "손바닥–컵" in far["reason"]
+
+
+def test_left_palm_limit_is_tighter():
+    """★11.10 왼손 상한 90 mm — 100 mm 물체는 오른손 상한(120)은 통과, 왼손 상한에서는 거부."""
+    t, hs, X, at, aq, fk = _synthetic()
+    Xf = X.copy()
+    Xf[:, :3] += np.array([0.0, 0.0, 0.10]) - X[0, :3]
+    assert T.NEAR_M_SIDE == {"right": 0.12, "left": 0.09}
+    assert T.measure(t, hs, Xf, at, aq, fk, 0.0, 10.0, near_m=T.NEAR_M_SIDE["right"])["ok"]
+    left = T.measure(t, hs, Xf, at, aq, fk, 0.0, 10.0, near_m=T.NEAR_M_SIDE["left"])
+    assert not left["ok"] and "> 90" in left["reason"]
 
 
 # ---------------------------------------------------------------- 실행기 · place 노드 연결
@@ -143,7 +172,7 @@ def test_executor_window_matches_analysis_and_writes_run_json(tmp_path, monkeypa
     out = json.loads((tmp_path / "tin_tilt_blue_right.json").read_text())
     assert out["source"] == "measured" and ex._tin_json["right"] == str(tmp_path / "tin_tilt_blue_right.json")
     assert np.linalg.norm(np.asarray(out["pos_m"]) - D["r_T_in"][:3, 3]) < 1e-3
-    assert ex._tin_note == ["T_in right measured"] and "measured" in lines[0]
+    assert len(ex._tin_note) == 1 and ex._tin_note[0].startswith("T_in right measured · 고정값과 ") and "measured" in lines[0]
     assert out["measured"]["n_fresh"] >= T.MIN_FRESH and out["measured"]["window_s"] >= 2.0   # 창 시작 + FP++ 지연부터
 
 
@@ -198,7 +227,7 @@ def test_executor_rescans_and_measures_again_at_the_still_pose(tmp_path, monkeyp
     why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt_blue"), {"right": "SRC_BLUE"}, float(D["r_win"][0]), {"arm_still": True})
     out = json.loads((tmp_path / "tin_tilt_blue_right.json").read_text())
     assert why == "" and len(ex.runs) == 1 and out["source"] == "measured"
-    assert len(out["failed_attempts"]) == 1 and ex._tin_note == ["T_in right measured(2회차)"]
+    assert len(out["failed_attempts"]) == 1 and len(ex._tin_note) == 1 and ex._tin_note[0].startswith("T_in right measured(2회차) · 고정값과 ")
     assert np.linalg.norm(np.asarray(out["pos_m"]) - D["r_T_in"][:3, 3]) < 1e-3
 
 
@@ -331,8 +360,9 @@ def test_executor_records_rescan_rc_and_argv_error(tmp_path, monkeypatch):
     assert ex.runs == [] and "FP++ 재잡기 못 함" in why
 
 
-def test_executor_fixed_gap_rescans_but_unreadable_fixed_file_does_not(tmp_path, monkeypatch):
-    """L1: 오른손 고정값 대조 불합격(fixed_gap)은 FP++ 오인일 수 있어 재잡기한다 · 대조 파일을 못 읽으면(TinError) 바로 끝낸다."""
+def test_executor_uses_measured_tin_far_from_fixed_and_records_gap(tmp_path, monkeypatch):
+    """★11.10 고정값과 멀어도 기하 검사를 통과한 실측은 재잡기 없이 쓴다 · 차이는 json(vs_fixed) · 노드 결과 reason 에 남는다.
+    고정값 파일을 못 읽어도 실측은 쓴다(차이 자리에 사유)."""
     from types import SimpleNamespace
     from policy_control import episode_ros as R
     D, live, arm = _right_fix()
@@ -348,13 +378,17 @@ def test_executor_fixed_gap_rescans_but_unreadable_fixed_file_does_not(tmp_path,
         return {"arm_still": True}
     ex, lines = _executor(tmp_path, live, arm, still=still)
     why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt_blue"), {"right": "SRC_BLUE"}, float(D["r_win"][0]), {"arm_still": True})
-    assert "tilt 를 시작하지 않는다" in why and len(ex.runs) == R.TIN_RETRY_N
-    assert not (tmp_path / "tin_tilt_blue_right.json").exists()
+    assert why == "" and ex.runs == []
+    out = json.loads((tmp_path / "tin_tilt_blue_right.json").read_text())
+    assert out["source"] == "measured" and out["vs_fixed"]["pos_mm"] > 300 and {"dx_mm", "dy_mm", "dz_mm", "ang_deg"} <= set(out["vs_fixed"])
+    assert any("고정값과" in n and "dz" in n for n in ex._tin_note) and any("고정값과" in ln for ln in lines)
+    assert not (tmp_path / "tin_tilt_blue_right_failed.json").exists()
 
     ex, lines = _executor(tmp_path, live, arm, fallback="fixed/none.json", still=still)
     why = R.RosExecutor._measure_tin(ex, SimpleNamespace(id="tilt_blue"), {"right": "SRC_BLUE"}, float(D["r_win"][0]), {"arm_still": True})
-    assert "못 읽음" in why and ex.runs == []
-    assert len(json.loads((tmp_path / "tin_tilt_blue_right_failed.json").read_text())["attempts"]) == 1
+    assert why == "" and ex.runs == []
+    out = json.loads((tmp_path / "tin_tilt_blue_right.json").read_text())
+    assert out["source"] == "measured" and "못 읽음" in out["vs_fixed"]["error"]
 
 def test_cocktail_place_jobs_get_the_tin_json_of_their_arm():
     from types import SimpleNamespace

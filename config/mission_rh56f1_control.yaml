@@ -980,8 +980,8 @@ run:
     - episode_cocktail_1b#10
     - episode_cocktail_1c_e1000#10
     - episode_cocktail_1c_e4000#10
-    - episode_grasp_s_right#8
-    - episode_grasp_s_left#8
+    - episode_grasp_s_right#10
+    - episode_grasp_s_left#10
     - episode_grasp_m_right#10
     - episode_grasp_m_left#10
     - episode_place_m_right#12
@@ -1068,12 +1068,14 @@ run:
     - episode_cocktail_1c_e4000#7
     - episode_cocktail_1c_e4000#8
     - episode_cocktail_1c_e4000#11
-    - episode_grasp_s_right#5
     - episode_grasp_s_right#6
-    - episode_grasp_s_right#9
-    - episode_grasp_s_left#5
+    - episode_grasp_s_right#7
+    - episode_grasp_s_right#8
+    - episode_grasp_s_right#11
     - episode_grasp_s_left#6
-    - episode_grasp_s_left#9
+    - episode_grasp_s_left#7
+    - episode_grasp_s_left#8
+    - episode_grasp_s_left#11
     - episode_grasp_m_right#6
     - episode_grasp_m_right#7
     - episode_grasp_m_right#8
@@ -8293,6 +8295,12 @@ run:
     - -lc
     - 'true'
     manual: true
+  - note: 시작 검사 — 마스크 학생 A 묶음(right) ckpt · YOLO · 외부 파라미터 md5 · head_pose · /head_mask · /head_depth 설정 · 64 MB SHM 프로파일 (읽기만, 불일치면 실패)
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/scripts/ops/check_student_mask_A.py'
+    - --sides
+    - right
   - note: 머리 깊이 노드(학생 입력 160x90 깊이 + RGB) — 묶음의 얼린 외부 파라미터 md5 를 검사하고, /head/joint_states 가 그 head_pose(± 4 틱) 밖이거나 낡으면 깊이를 내지 않는다(정책은 깊이 없음으로
       멈춘다). 이미 떠 있으면 그대로
     argv:
@@ -8301,10 +8309,21 @@ run:
     - -o
     - BatchMode=yes
     - arm4090-lan
-    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec .venv-student/bin/python scripts/nodes/head_depth_node.py --policy-dir deploy/policies/rh56f1/aglt/right_student1104e
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec .venv-student/bin/python scripts/nodes/head_depth_node.py --policy-dir deploy/policies/rh56f1/aglt/right_student1105mA
     background: true
-  - note: '[right] rh_aglt_r 노드(학생 rh56f1/aglt/right_student1104e · 계약 rh56f1/aglt/right_approach_ap05) — 경로 S: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지 자리에
-      멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 컵 = FP++ live(래치 · lift_hold 판정에만)'
+  - note: 머리 마스크 노드(YOLO11s-seg → 160x90 클래스 비트, /head_mask/image · /head_mask/config) — 묶음 mask.yolo md5 · conf · 인스턴스 규칙. 64 MB SHM 프로파일이 없으면
+      시작 거부. 양손 미션에도 하나만
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec nice -n 5 .venv-yolo/bin/python scripts/nodes/head_mask_node.py --policy-dir
+      deploy/policies/rh56f1/aglt/right_student1105mA
+    background: true
+  - note: '[right] rh_aglt_r 노드(학생 rh56f1/aglt/right_student1105mA · 계약 rh56f1/aglt/right_approach_ap05) — 경로 M: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지
+      자리에 멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 컵 = FP++ live(래치 · lift_hold 판정에만)'
     argv:
     - '{repo}/.venv-student/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_student_node.py'
@@ -8320,7 +8339,7 @@ run:
     - -p
     - device:=cuda
     - -p
-    - student_dir:={repo}/deploy/policies/rh56f1/aglt/right_student1104e
+    - student_dir:={repo}/deploy/policies/rh56f1/aglt/right_student1105mA
     - -p
     - goal_max:=1
     - -p
@@ -8374,11 +8393,11 @@ run:
     argv:
     - bash
     - -lc
-    - HAND_SIDES='right' CAMERA='/head_depth/image /head_depth/rgb /head_depth/config /camera/camera/color/camera_info /head/joint_states' CAMERA_HZ=60
-      EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right /policy_control/status/rh_place_node_right
-      /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose /objects/source240_blue/pose /objects/source240_blue/live_pose
-      /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_grasp_s_right
+    - HAND_SIDES='right' CAMERA='/head_depth/image /head_depth/rgb /head_depth/config /camera/camera/color/camera_info /head/joint_states /head_mask/image
+      /head_mask/config' CAMERA_HZ=60 EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right
+      /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose
+      /objects/source240_blue/pose /objects/source240_blue/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action'
+      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_s_right
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -8406,10 +8425,11 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_s_right#9
+    - episode_grasp_s_right#11
+    - episode_grasp_s_right#10
     - episode_grasp_s_right#8
+    - episode_grasp_s_right#7
     - episode_grasp_s_right#6
-    - episode_grasp_s_right#5
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash
@@ -8457,6 +8477,12 @@ run:
     - -lc
     - 'true'
     manual: true
+  - note: 시작 검사 — 마스크 학생 A 묶음(left) ckpt · YOLO · 외부 파라미터 md5 · head_pose · /head_mask · /head_depth 설정 · 64 MB SHM 프로파일 (읽기만, 불일치면 실패)
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/scripts/ops/check_student_mask_A.py'
+    - --sides
+    - left
   - note: 머리 깊이 노드(학생 입력 160x90 깊이 + RGB) — 묶음의 얼린 외부 파라미터 md5 를 검사하고, /head/joint_states 가 그 head_pose(± 4 틱) 밖이거나 낡으면 깊이를 내지 않는다(정책은 깊이 없음으로
       멈춘다). 이미 떠 있으면 그대로
     argv:
@@ -8465,9 +8491,20 @@ run:
     - -o
     - BatchMode=yes
     - arm4090-lan
-    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec .venv-student/bin/python scripts/nodes/head_depth_node.py --policy-dir deploy/policies/rh56f1/aglt/left_student1104e
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec .venv-student/bin/python scripts/nodes/head_depth_node.py --policy-dir deploy/policies/rh56f1/aglt/left_student1105mA
     background: true
-  - note: '[left] rh_aglt_l 노드(학생 rh56f1/aglt/left_student1104e · 계약 rh56f1/aglt/left_approach_ap05) — 경로 S: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지 자리에
+  - note: 머리 마스크 노드(YOLO11s-seg → 160x90 클래스 비트, /head_mask/image · /head_mask/config) — 묶음 mask.yolo md5 · conf · 인스턴스 규칙. 64 MB SHM 프로파일이 없으면
+      시작 거부. 양손 미션에도 하나만
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec nice -n 5 .venv-yolo/bin/python scripts/nodes/head_mask_node.py --policy-dir
+      deploy/policies/rh56f1/aglt/left_student1105mA
+    background: true
+  - note: '[left] rh_aglt_l 노드(학생 rh56f1/aglt/left_student1105mA · 계약 rh56f1/aglt/left_approach_ap05) — 경로 M: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지 자리에
       멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 컵 = FP++ live(래치 · lift_hold 판정에만)'
     argv:
     - '{repo}/.venv-student/bin/python'
@@ -8484,7 +8521,7 @@ run:
     - -p
     - device:=cuda
     - -p
-    - student_dir:={repo}/deploy/policies/rh56f1/aglt/left_student1104e
+    - student_dir:={repo}/deploy/policies/rh56f1/aglt/left_student1105mA
     - -p
     - goal_max:=1
     - -p
@@ -8538,11 +8575,11 @@ run:
     argv:
     - bash
     - -lc
-    - HAND_SIDES='left' CAMERA='/head_depth/image /head_depth/rgb /head_depth/config /camera/camera/color/camera_info /head/joint_states' CAMERA_HZ=60
-      EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left /policy_control/status/rh_place_node_left
-      /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose
-      /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
-      start episode_grasp_s_left
+    - HAND_SIDES='left' CAMERA='/head_depth/image /head_depth/rgb /head_depth/config /camera/camera/color/camera_info /head/joint_states /head_mask/image
+      /head_mask/config' CAMERA_HZ=60 EXTRA='/policy_control/joint_target /policy_control/status/pd_left /policy_control/status/rh_aglt_node_left
+      /policy_control/status/rh_place_node_left /policy_control/status/episode_runner_left /policy_control/left/episode /episode/left/objects/CUP/pose
+      /objects/shaker_c_orange/pose /objects/shaker_c_orange/live_pose /policy_control/pd_left/applied /policy_control/left/obs /policy_control/left/action'
+      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_s_left
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
@@ -8570,10 +8607,11 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_grasp_s_left#9
+    - episode_grasp_s_left#11
+    - episode_grasp_s_left#10
     - episode_grasp_s_left#8
+    - episode_grasp_s_left#7
     - episode_grasp_s_left#6
-    - episode_grasp_s_left#5
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
     argv:
     - bash

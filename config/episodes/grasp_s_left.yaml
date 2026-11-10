@@ -1,12 +1,13 @@
-# 경로 S — left 손 shaker(주황, FP++ shaker_c_orange). 깊이 학생 1104e(깊이 + RGB, arch v3)가 홈에서 접근 · 잡기를 한 정책으로 한다(11.05).
-#   컵 위치는 관측에 넣지 않는다(학생은 머리 깊이 · RGB 로 본다). FP++ 컵은 팔 들림 래치와 lift_hold 판정에만 쓴다.
-#   노드 = rh_aglt_student_node(.venv-student) + head_depth_node(묶음의 얼린 외부 파라미터, 목이 그 head_pose 일 때만 깊이를 낸다).
-#   policy = 홈 출발 계약(디코더 · 물체 · 시작 검사, ap05 계약). 끝 = 첫 목표 성공 또는 7 cm 위 쥠 유지(lift_hold).
+# 경로 S — left 손 shaker(주황, FP++ shaker_c_orange). ★11.10 사용자 "학생 잡기 정책을 1105mA로 교체": 목표 마스크 학생 A 1105m(깊이 + 목표/이웃 마스크, arch v3, it800)가
+#   홈에서 접근 · 잡기를 한 정책으로 한다(이전 1104e 깊이 + RGB). 묶음 student.yaml: mask.target_class orange · rgb false.
+#   ★목표 컵 하나만 탁자에 둔다(학습은 one_obj 장면 — 다른 컵이 보이면 이웃 마스크로 들어가 학습 밖 입력).
+#   노드 = head_depth_node(깊이) + head_mask_node(.venv-yolo) + rh_aglt_student_node(.venv-student). FP++ 컵은 래치 · lift_hold 판정에만.
+#   시작 전: python3 scripts/ops/check_student_mask_A.py
 episode: {name: grasp_s_left, version: 1}
 objects:
   CUP: {topic: /objects/shaker_c_orange/pose}
 policies:
-  rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, student: rh56f1/aglt/left_student1104e}
+  rh_aglt_l: {policy: rh56f1/aglt/left_approach_ap05, kind: aglt, side: left, student: rh56f1/aglt/left_student1105mA}
 trajectories:
   go_home: {kind: rehome, sides: [left]}
 failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 rehome으로 복구한다.

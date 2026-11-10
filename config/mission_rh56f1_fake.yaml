@@ -1010,14 +1010,16 @@ run:
     - episode_cocktail_1c_e4000#16
     - episode_grasp_s_right#0
     - episode_grasp_s_right#1
-    - episode_grasp_s_right#5
     - episode_grasp_s_right#6
     - episode_grasp_s_right#7
+    - episode_grasp_s_right#8
+    - episode_grasp_s_right#9
     - episode_grasp_s_left#0
     - episode_grasp_s_left#1
-    - episode_grasp_s_left#5
     - episode_grasp_s_left#6
     - episode_grasp_s_left#7
+    - episode_grasp_s_left#8
+    - episode_grasp_s_left#9
     - episode_grasp_m_right#0
     - episode_grasp_m_right#1
     - episode_grasp_m_right#6
@@ -8233,6 +8235,12 @@ run:
     - -lc
     - 'true'
     manual: true
+  - note: 시작 검사 — 마스크 학생 A 묶음(right) ckpt · YOLO · 외부 파라미터 md5 · head_pose · /head_mask · /head_depth 설정 · 64 MB SHM 프로파일 (읽기만, 불일치면 실패)
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/scripts/ops/check_student_mask_A.py'
+    - --sides
+    - right
   - note: 머리 깊이 노드(학생 입력 160x90 깊이 + RGB) — 묶음의 얼린 외부 파라미터 md5 를 검사하고, /head/joint_states 가 그 head_pose(± 4 틱) 밖이거나 낡으면 깊이를 내지 않는다(정책은 깊이 없음으로
       멈춘다). 이미 떠 있으면 그대로
     argv:
@@ -8241,10 +8249,21 @@ run:
     - -o
     - BatchMode=yes
     - arm4090-lan
-    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec .venv-student/bin/python scripts/nodes/head_depth_node.py --policy-dir deploy/policies/rh56f1/aglt/right_student1104e
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec .venv-student/bin/python scripts/nodes/head_depth_node.py --policy-dir deploy/policies/rh56f1/aglt/right_student1105mA
     background: true
-  - note: '[right] rh_aglt_r 노드(학생 rh56f1/aglt/right_student1104e · 계약 rh56f1/aglt/right_approach_ap05) — 경로 S: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지 자리에
-      멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 컵 = FP++ live(래치 · lift_hold 판정에만)'
+  - note: 머리 마스크 노드(YOLO11s-seg → 160x90 클래스 비트, /head_mask/image · /head_mask/config) — 묶음 mask.yolo md5 · conf · 인스턴스 규칙. 64 MB SHM 프로파일이 없으면
+      시작 거부. 양손 미션에도 하나만
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec nice -n 5 .venv-yolo/bin/python scripts/nodes/head_mask_node.py --policy-dir
+      deploy/policies/rh56f1/aglt/right_student1105mA
+    background: true
+  - note: '[right] rh_aglt_r 노드(학생 rh56f1/aglt/right_student1105mA · 계약 rh56f1/aglt/right_approach_ap05) — 경로 M: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지
+      자리에 멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 컵 = FP++ live(래치 · lift_hold 판정에만)'
     argv:
     - '{repo}/.venv-student/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_student_node.py'
@@ -8260,7 +8279,7 @@ run:
     - -p
     - device:=cuda
     - -p
-    - student_dir:={repo}/deploy/policies/rh56f1/aglt/right_student1104e
+    - student_dir:={repo}/deploy/policies/rh56f1/aglt/right_student1105mA
     - -p
     - goal_max:=1
     - -p
@@ -8330,9 +8349,10 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_grasp_s_right#9
+    - episode_grasp_s_right#8
     - episode_grasp_s_right#7
     - episode_grasp_s_right#6
-    - episode_grasp_s_right#5
     - episode_grasp_s_right#1
     - episode_grasp_s_right#0
   episode_grasp_s_left:
@@ -8380,6 +8400,12 @@ run:
     - -lc
     - 'true'
     manual: true
+  - note: 시작 검사 — 마스크 학생 A 묶음(left) ckpt · YOLO · 외부 파라미터 md5 · head_pose · /head_mask · /head_depth 설정 · 64 MB SHM 프로파일 (읽기만, 불일치면 실패)
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/scripts/ops/check_student_mask_A.py'
+    - --sides
+    - left
   - note: 머리 깊이 노드(학생 입력 160x90 깊이 + RGB) — 묶음의 얼린 외부 파라미터 md5 를 검사하고, /head/joint_states 가 그 head_pose(± 4 틱) 밖이거나 낡으면 깊이를 내지 않는다(정책은 깊이 없음으로
       멈춘다). 이미 떠 있으면 그대로
     argv:
@@ -8388,9 +8414,20 @@ run:
     - -o
     - BatchMode=yes
     - arm4090-lan
-    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec .venv-student/bin/python scripts/nodes/head_depth_node.py --policy-dir deploy/policies/rh56f1/aglt/left_student1104e
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec .venv-student/bin/python scripts/nodes/head_depth_node.py --policy-dir deploy/policies/rh56f1/aglt/left_student1105mA
     background: true
-  - note: '[left] rh_aglt_l 노드(학생 rh56f1/aglt/left_student1104e · 계약 rh56f1/aglt/left_approach_ap05) — 경로 S: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지 자리에
+  - note: 머리 마스크 노드(YOLO11s-seg → 160x90 클래스 비트, /head_mask/image · /head_mask/config) — 묶음 mask.yolo md5 · conf · 인스턴스 규칙. 64 MB SHM 프로파일이 없으면
+      시작 거부. 양손 미션에도 하나만
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && exec nice -n 5 .venv-yolo/bin/python scripts/nodes/head_mask_node.py --policy-dir
+      deploy/policies/rh56f1/aglt/left_student1105mA
+    background: true
+  - note: '[left] rh_aglt_l 노드(학생 rh56f1/aglt/left_student1105mA · 계약 rh56f1/aglt/left_approach_ap05) — 경로 M: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지 자리에
       멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 컵 = FP++ live(래치 · lift_hold 판정에만)'
     argv:
     - '{repo}/.venv-student/bin/python'
@@ -8407,7 +8444,7 @@ run:
     - -p
     - device:=cuda
     - -p
-    - student_dir:={repo}/deploy/policies/rh56f1/aglt/left_student1104e
+    - student_dir:={repo}/deploy/policies/rh56f1/aglt/left_student1105mA
     - -p
     - goal_max:=1
     - -p
@@ -8477,9 +8514,10 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_grasp_s_left#9
+    - episode_grasp_s_left#8
     - episode_grasp_s_left#7
     - episode_grasp_s_left#6
-    - episode_grasp_s_left#5
     - episode_grasp_s_left#1
     - episode_grasp_s_left#0
   episode_grasp_m_right:

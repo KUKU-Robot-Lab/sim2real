@@ -89,7 +89,10 @@ def test_mask_student_episode_starts_the_mask_node_before_the_policy_node(side, 
     assert at["head_depth_node.py"] < at["rh_aglt_student_node.py"]
     assert has(cmds[at["head_mask_node.py"]], f"deploy/policies/rh56f1/aglt/{side}_student1105mA")
     assert sum(has(c, "head_mask_node.py") for c in cmds) == 1
-    assert not any(has(c, "head_mask_node.py") for c in _cmds(raw, b, f"episode_grasp_s_{side}"))
+    # ★11.10 grasp_s 도 1105MA(마스크 학생)로 바꿨다(사용자 결정) — 마스크 노드를 한 번, 같은 묶음으로 띄운다
+    s_cmds = _cmds(raw, b, f"episode_grasp_s_{side}")
+    s_mask = [c for c in s_cmds if has(c, "head_mask_node.py")]
+    assert len(s_mask) == 1 and has(s_mask[0], f"deploy/policies/rh56f1/aglt/{side}_student1105mA")
 
 
 @pytest.mark.parametrize('partial', [False, True])

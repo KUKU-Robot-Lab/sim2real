@@ -112,7 +112,7 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                "episode_grasp_e_right#5",                       # ★10.20 밤 경로 E(ap05 → rcg03 넘김)
                                "episode_grasp_f_right#5",                       # ★10.21 경로 F(ap05 → rcg04 넘김)
                                *_F_VARIANTS("right", 5),                       # ★11.09 경로 F 물체 버튼(기본 물체 말고)
-                               "episode_grasp_s_right#6",                       # ★11.05 경로 S(깊이 학생, 머리 깊이 노드가 #3)
+                               "episode_grasp_s_right#8",                       # ★11.05 경로 S · ★11.10 1105MA 로 바꿔 경로 M 과 같은 자리(마스크 검사 · 마스크 노드 추가)
                                "episode_grasp_m_right#8",                       # ★11.07 경로 M(마스크 검사 #3 · 머리 깊이 #4 · 마스크 #5 뒤)
                                "episode_pick_place_f_right#5",                  # ★10.22 경로 F + 놓기(newton_05)
                                "episode_grasp2tilt_f_240#5",                    # ★10.27 실기 2단계 grasp2tilt(컵 240)
@@ -143,7 +143,7 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                                               f"episode_pick_place_f_{side}#9",   # ★10.22 경로 F + 놓기
                                                               *_F_VARIANTS(side, 8),   # ★11.08 경로 F 주황 · 분홍(오른팔만)
                                                               # ★11.05 경로 S · ★11.07 경로 M · ★11.09 놓기 학생 v2 — 카메라가 같은 PC 일 때만(★11.11)
-                                                              *((f"episode_grasp_s_{side}#9", f"episode_grasp_m_{side}#11", f"episode_place_m_{side}#13")
+                                                              *((f"episode_grasp_s_{side}#11", f"episode_grasp_m_{side}#11", f"episode_place_m_{side}#13")
                                                                 if PM else ())}
 
 

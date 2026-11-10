@@ -62,3 +62,13 @@ def test_hdgp_mismatch_refuses(tmp_path, monkeypatch, capsys):
     rc = T.main(["--cup", "240", "--q-json", str(tmp_path / "none.json"), "--out", str(tmp_path / "o")])
     assert rc == 3
     assert "hdgp" in capsys.readouterr().out
+
+
+def test_mouth_xy_mm():
+    T = _tool()
+    Cr = np.tile(np.eye(4), (3, 1, 1))
+    Cl = np.tile(np.eye(4), (3, 1, 1))
+    Cl[:, 2, 3] = 0.155 - 0.045                              # 두 입구 중심이 한 점
+    Cl[1, :2, 3] = [0.003, 0.004]                            # 수평 5 mm
+    Cl[2, 2, 3] += 0.05                                      # 수직만 50 mm → 0
+    assert np.allclose(T.mouth_xy_mm(Cr, Cl, 0.155, 0.045), [0.0, 5.0, 0.0])

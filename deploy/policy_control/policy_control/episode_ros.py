@@ -864,7 +864,9 @@ class RosExecutor:
                     "live_off_m": cup.get("check_max_m")}         # ★10.13 붙은 컵 ↔ FP++ 실측 최대 거리(episode_failure)
         if p.kind == "place":
             pl = st.get("place") or {}
-            empty = pl.get("phase") == "done"
+            # ★11.10 학습 시간 끝(outcome episode_end)으로 멈춘 놓기는 손이 비었는지 노드가 모른다(래치 없이 정책이 연 것) — None,
+            #   판정은 아래 cup_in_holder 만으로.
+            empty = True if pl.get("phase") == "done" else (None if pl.get("outcome") == "episode_end" else False)
             sig = {"hand_empty": empty, "opened": pl.get("opened"), "tact_max": pl.get("tact_max"), "jf_max": pl.get("jf_max"),
                    "phase": pl.get("phase"), "ready_carry": pl.get("ready_carry"),      # ★10.25 이송 결과(없으면 None)
                    "outcome": pl.get("outcome")}       # ★11.02 빼기 결과 clear | withdraw_timeout(episode_failure 가 본다)
@@ -1174,7 +1176,7 @@ class RosExecutor:
         for attempt in range(TIN_RETRY_N + 1 if self.fpp_rescan else 1):   # fake 는 다시 잡을 FP++ 가 없다
             rescan = None
             if attempt:
-                redo = [s for s in left if s not in final]   # 고정값 대조 파일을 못 읽은 팔은 다시 잡아도 같다
+                redo = [s for s in left if s not in final]   # 기록을 못 만든 팔(final)은 다시 잡아도 같다
                 if self.cancel.is_set() or not redo or time.monotonic() > deadline:
                     break
                 try:
@@ -1211,21 +1213,18 @@ class RosExecutor:
                         meas = TL.measure(np.array([f[0] for f in fr]), np.array([f[1] for f in fr]),
                                           np.array([f[2] for f in fr]).reshape(-1, 7), np.array([a[0] for a in arm]),
                                           np.array([[a[1][n] for n in names] for a in arm]).reshape(-1, 7),
-                                          TL.palm_fk(side), t0 + TL.FPP_LATENCY_S, t1, z_off=TL.Z_OFF[side])
+                                          TL.palm_fk(side), t0 + TL.FPP_LATENCY_S, t1, z_off=TL.Z_OFF[side],
+                                          near_m=TL.NEAR_M_SIDE[side])
                     except Exception as exc:          # noqa: BLE001 — 측정 코드가 무엇을 던지든 실패 사유로(json 에)
                         meas = {"ok": False, "reason": f"측정 실패({exc!r})"}
                 out = None
-                if meas.get("ok"):                    # 오른손은 record 가 FIX_POS_M · FIX_ANG_DEG 로 고정값과 대조한다
+                if meas.get("ok"):                    # ★11.10 고정값 대조 거부 없음 — record 는 차이(vs_fixed)만 남긴다
                     try:
                         out = TL.record(meas, side, _paths.SIM2REAL / self.ep.tin_fallback, fallback_file=self.ep.tin_fallback,
                                         node=node.id, object=obj, episode=self.ep.name)
                     except (TL.TinError, OSError, ValueError) as exc:
-                        meas = {**meas, "ok": False, "reason": f"고정값 대조 파일 {self.ep.tin_fallback} 못 읽음: {exc}"}
-                        if isinstance(exc, (TL.TinError, OSError)):
-                            final.add(side)           # 파일 문제 — 재잡기로 안 풀린다
-                    else:
-                        if out["source"] != "measured":   # 오른손 fixed_gap 불합격 — FP++ 가 잘못 잡았을 수 있어 재잡기는 한다
-                            meas = {**meas, "ok": False, "reason": out.get("fallback_reason", "")}
+                        meas = {**meas, "ok": False, "reason": f"T_in 기록 못 만듦: {exc}"}
+                        final.add(side)               # 같은 값으로 다시 해도 같다 — 재잡기로 안 풀린다
                 if not meas.get("ok"):
                     last[side] = meas
                     tries[side].append({"attempt": attempt, "reason": meas.get("reason", ""),
@@ -1294,10 +1293,14 @@ class RosExecutor:
             self.node.get_logger().error(f"[{node.id}] T_in {side} json {path.name} 못 씀: {exc}")
         self._tin_json[side] = str(path)
         self._tin_why.pop(side, None)
-        self._tin_note.append(f"T_in {side} measured" + (f"({len(tries) + 1}회차)" if tries else "") if out["source"] == "measured"
-                              else f"T_in {side} fallback(실측 아님: {out.get('fallback_reason', '')})")
+        vs = out.get("vs_fixed") or {}               # ★11.10 고정값과 차이(기록만) — 노드 결과 reason(콘솔) · 로그에 같이 보인다
+        vs_txt = (vs["error"] if "error" in vs else f"고정값과 {vs['pos_mm']} mm/{vs['ang_deg']}° (dx {vs['dx_mm']} · dy {vs['dy_mm']} · dz {vs['dz_mm']} mm)"
+                  ) if vs else ""
+        self._tin_note.append(f"T_in {side} measured" + (f"({len(tries) + 1}회차)" if tries else "") + (f" · {vs_txt}" if vs_txt else "")
+                              if out["source"] == "measured" else f"T_in {side} fallback(실측 아님: {out.get('fallback_reason', '')})")
         line = (f"[{node.id}] T_in {side}({out.get('object')}) = {out['source']} pos {np.round(np.asarray(out['pos_m']) * 1000, 1).tolist()} mm · "
-                f"갱신 {meas.get('n_fresh')}/{meas.get('n_msgs')} · 흔들림 {meas.get('pos_dev_mm_max')} mm/{meas.get('ang_dev_deg_max')}° → {path.name}")
+                f"갱신 {meas.get('n_fresh')}/{meas.get('n_msgs')} · 흔들림 {meas.get('pos_dev_mm_max')} mm/{meas.get('ang_dev_deg_max')}°"
+                + (f" · {vs_txt}" if vs_txt else "") + f" → {path.name}")
         if out["source"] == "fallback":
             self.node.get_logger().warning(f"{line} — 실측 아님, 고정값 사용: {out.get('fallback_reason', '')}")
         else:
