@@ -10,6 +10,7 @@ from .backends import ROOT, Router
 from .interface import RosInterface
 from .judge import Judge
 from .planner import Planner, simulate
+from .sim_interface import SimInterface
 from .supervisor import Supervisor
 
 
@@ -24,6 +25,8 @@ def build_parser():
     parser.add_argument('--plan-fallback', default=str(
         Path(__file__).parent / 'config' / 'plan_cocktail_1c_e4000.json'))
     parser.add_argument('--settle', type=float, default=0.5)
+    parser.add_argument('--interface', choices=['ros', 'sim'], default='ros')
+    parser.add_argument('--sim_url', default='http://127.0.0.1:8790', help='hdgp sim 브리지 주소(--interface sim)')
     return parser
 
 
@@ -36,7 +39,10 @@ def main(argv=None):
     run_dir = Path(args.log_dir) / (time.strftime('%Y%m%d_%H%M%S') + f'_{time.time_ns() % 1000000:06d}')
     run_dir.mkdir(parents=True, exist_ok=True)
     try:
-        interface = RosInterface(args.runner, args.approvals)
+        if args.interface == 'sim':
+            interface = SimInterface(args.sim_url, args.approvals)
+        else:
+            interface = RosInterface(args.runner, args.approvals)
         router = Router(args.chain.split(',') if args.chain else None)
         judge = Judge(router, args.sentence)
         supervisor = Supervisor(interface, judge, args.mode, run_dir / 'decisions.jsonl', args.settle)

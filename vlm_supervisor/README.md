@@ -14,6 +14,15 @@ python -m vlm_supervisor --runner episode_runner --mode shadow \
 
 `--mode active`로 실행 권한을 켠다. `--approvals`는 **runner가 실제 읽는 같은 파일**을 지정해야 한다. 기본값은 현재 디렉터리 기준 `logs/runs/episode_approvals.jsonl`이다. 다른 호스트에서 실행한다면 같은 승인 파일이 보이도록 마운트해야 한다. 서비스는 같은 ROS 도메인의 runner로 연결된다.
 
+sim 에서 돌릴 때는 ROS runner 대신 hdgp sim 브리지(HTTP)에 붙는다. rclpy 가 필요 없다.
+
+```bash
+python -m vlm_supervisor --interface sim --sim_url http://127.0.0.1:8790 --mode active \
+  --sentence '블루컵과 핑크컵의 비드를 오렌지 쉐이커 컵에 옮겨줘'
+```
+
+브리지는 `GET /status`, `GET /frame`(JPEG, `X-Frame-Time`), `POST /cmd {"verb","args"}` 를 낸다. `next`·`stop` 과 셸 동작 `retry`·`rescan`·`home` 만 브리지로 보낸다. `run`·`reset` 은 실패로 돌려주고, `insert`·`human` 은 NotSupported 로 멈춘다. 브리지가 응답하지 않으면 상태는 `{}`(상태 끊김)이고 명령은 `ok: false` 다.
+
 계획은 기록·검사용이다. 문장 계획은 **runner의 기존 순서를 자동 교체하지 않는다**. 개별 복구 노드 삽입은 별도 shell 명령으로 수행한다. 초기 사진 → 카드 기반 VLM 계획 → simulate 통과 뒤 READY 루프를 시작한다. 문장과 실제 runner 에피소드의 일치는 운영자가 확인해야 한다. 계획 검사 실패 시 active는 stop을 요청하고 종료한다.
 
 ## 인터페이스 계약
