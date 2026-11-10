@@ -206,11 +206,60 @@ def test_carry_aborts_when_the_arm_stays_off_the_command(off, fails):
     while ch.carrying and n < 2000:
         mm = meas(ch.dec.state["arm"].arm_target + dq)
         mm["arm"] = replace(mm["arm"], arm_qd=np.zeros(7))
-        ch.step(mm)
+        cmd_before = ch.dec.state["arm"].arm_target.copy()
+        _, _, tg = ch.step(mm)
         n += 1
     d = ch.rcarry.as_dict()
     assert not d["on"]
+    assert d["track_dev_max"] == pytest.approx(off, abs=1e-6)          # L1 — 이송 중 이탈 최대가 로그에 남는다
     if fails:
-        assert d["still"] == "track" and not d["start_ok"] and d["t"] == RCY.TRACK_ABORT_TICKS
+        assert d["still"] == "track" and not d["start_ok"] and not d["carry_ok"] and d["t"] == RCY.TRACK_ABORT_TICKS - 1   # 발동 틱은 Mover 를 굴리지 않는다
+        meas_q = np.asarray(mm["arm"].arm_q, float)                     # H1 — 발동 틱 목표 = 실측(현 위치, pd 튐 0)
+        assert np.allclose(tg["arm"][0], meas_q) and np.allclose(ch.dec.state["arm"].arm_target, meas_q)
+        assert np.max(np.abs(cmd_before - meas_q)) == pytest.approx(off)   # 덮기 전 명령은 실측보다 off 앞서 있었다
     else:
-        assert d["still"] != "track" and d["t"] > RCY.TRACK_ABORT_TICKS
+        assert d["still"] != "track" and d["t"] > RCY.TRACK_ABORT_TICKS and d["carry_ok"]
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_track_guard_also_runs_while_waiting_for_still():
+    """★11.11 M2 — Mover 가 끝난 뒤 멈춤 확인 구간에서 팔이 명령에서 벗어나도 TRACK_ABORT_TICKS 에 "track"."""
+    from dataclasses import replace
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup("right_n10_e4000")
+    ch.rc_chain = (RC, mch)
+    ch.reset(meas(q), holder=holder, held=(q, hand), attach=att)
+    off = np.zeros(7)
+    k = 0
+    while ch.carrying and k < 2000:
+        if not ch.rcarry.moving:
+            off[3] = 0.2                                                # 이송 끝 뒤 팔이 밀려 났다
+            k += 1
+        mm = meas(ch.dec.state["arm"].arm_target + off)
+        mm["arm"] = replace(mm["arm"], arm_qd=np.zeros(7))
+        ch.step(mm)
+    d = ch.rcarry.as_dict()
+    assert d["still"] == "track" and not d["start_ok"] and not d["carry_ok"]
+    assert k == RCY.TRACK_ABORT_TICKS and d["still_ticks"] == RCY.TRACK_ABORT_TICKS - 1
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+@pytest.mark.parametrize("field", ["arm_q", "arm_qd"])
+def test_nan_measurement_is_not_silent(field):
+    """★11.11 M1 — 실측 q 가 NaN 이면 이탈로 세어 "track", 팔 목표는 유한(NaN 관절은 직전 명령). q̇ NaN 은 멈춤 아님 → "timeout"."""
+    from dataclasses import replace
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup("right_n10_e4000")
+    ch.rc_chain = (RC, mch)
+    ch.reset(meas(q), holder=holder, held=(q, hand), attach=att)
+    while ch.carrying:
+        cmd = ch.dec.state["arm"].arm_target.copy()
+        mm = meas(cmd)
+        bad = cmd.copy() if field == "arm_q" else np.zeros(7)
+        bad[2] = np.nan
+        mm["arm"] = replace(mm["arm"], **{field: bad}) if field == "arm_qd" else replace(mm["arm"], arm_q=bad, arm_qd=np.zeros(7))
+        _, _, tg = ch.step(mm)
+    d = ch.rcarry.as_dict()
+    if field == "arm_q":
+        assert d["still"] == "track" and d["t"] == RCY.TRACK_ABORT_TICKS - 1 and d["track_dev_max"] is None
+        assert np.all(np.isfinite(tg["arm"][0])) and np.all(np.isfinite(ch.dec.state["arm"].arm_target))
+    else:
+        assert d["still"] == "timeout" and d["still_ticks"] == RCY.STILL_MAX_TICKS

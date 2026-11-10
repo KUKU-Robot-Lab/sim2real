@@ -18,7 +18,7 @@
     범위(holder_range)에서 holder_tol_m 넘게 밖이면 reset 거부. ★10.29 holder_tol_m 은 reset 마다 다시 읽는다(실행기가 job 마다
     넣는다 · 카드가 그 job 에 넓힌 허용, 없으면 0.02).
   · 학습 episode_length_s 끝: 놓기 전이어도 stop(★11.10 — 판정은 실행기 cup_in_holder), 놓은 뒤(빼기 중)면 stop.
-  · ★11.11 정책 손 목표 · 실측 손가락이 둘 다 열리면(OPENED_END_TICKS 연속) 그 틱에 stop(outcome "opened").
+  · ★11.11 정책 손 목표 · 실측 손가락이 둘 다 열리면(OPENED_END_TICKS 연속) 그 틱에 stop(outcome "opened_before_latch", 이 규칙은 래치 전에만).
 ★10.25 준비 자세 이송(계약 ready_carry — newton_07_r · 06_l): reset 때 끝 자세를 풀고(Mover, 움직이지 않음) start 뒤 첫 틱부터
   Mover 행동으로 슬롯 위까지 옮긴 다음 정책. 에피소드 시간은 이송이 끝난 틱부터 센다. 이송 자체 상한 =
   (max_steps + settle_steps + 멈춤 확인 STILL_MAX_TICKS) 틱 + READY_CARRY_SLACK_S — 넘으면 abort(Mover 가 그 전에 끝나야 한다).
@@ -393,11 +393,12 @@ class PlaceNode(PourFjNode):
         if c.latch_s2r and not self.chain.latch and not self.chain.settling and not self.chain.done:
             self._opened_n = self._opened_n + 1 if opened_both(self.chain) else 0
             if self._opened_n >= OPENED_END_TICKS:
-                self.chain.outcome = "opened"
+                self.chain.outcome = "opened_before_latch"   # ★11.11 래치 전 — 놓였는지는 실행기가 cup_in_holder 로 판정
                 self.chain.released_cup = self.chain.latch_cup
-                self.get_logger().info(f"place 정책이 손 폄 → 끝(래치 {self.chain.latch}) · {self.chain.as_dict()}")
-                self._end("stop", f"placed — 정책이 손을 폄(opened {self.chain.opened:.2f} · 실측 {self.chain.opened_meas:.2f} rad, "
-                                  f"기준 {self.chain.open_min_rad:.2f}, {OPENED_END_TICKS} 틱) · 래치 {self.chain.latch} → 다음 노드(home)가 뺀다")
+                self.get_logger().info(f"place 정책이 래치 전에 손 폄 → 끝 · {self.chain.as_dict()}")
+                self._end("stop", f"opened before latch — 정책이 래치 전에 손을 폄(opened {self.chain.opened:.2f} · "
+                                  f"실측 {self.chain.opened_meas:.2f} rad, 기준 {self.chain.open_min_rad:.2f}, {OPENED_END_TICKS} 틱) · "
+                                  f"놓임 판정은 cup_in_holder → 다음 노드(home)가 뺀다")
                 return True
         if c.latch_s2r and self.max_s > 0 and time.monotonic() - self._t_start >= self.max_s and not self.chain.settling:
             # ★11.10 사용자 "place 노드의 '열리면 끝' 규칙 제거" — 정책을 학습 episode_length_s 끝까지 돌린다. 끝은 abort 가 아니라

@@ -682,6 +682,11 @@ class PlaceChain:
                              arm_qd=np.asarray(m.arm_qd, float))
         hand_q = np.array([m.hand_q[j] for j in c.side().hand_joints], float)
         targets = self.dec.step(a, active=True, tactile_n=m.tactile_n, hand_q=hand_q)
+        if self.rcarry.still == "track":                 # ★11.11 이탈 가드 — 앞선 q* 를 남기지 않고 현 위치(실측)를 붙든다.
+            meas_q = np.asarray(m.arm_q, float)          #   풀린 뒤 pd 가 한 번에 당기지 않게 내보내는 목표 · 디코더 목표 둘 다.
+            hold = np.where(np.isfinite(meas_q), meas_q, targets["arm"][0])   # 실측 NaN 관절은 직전 목표(명령 유지)
+            self.dec.state["arm"].arm_target = hold.copy()
+            targets = {**targets, "arm": (hold, targets["arm"][1])}
         self.tact_max = float(np.max(np.asarray(m.tactile_n, float)))
         self.jf_max = None if m.joint_force is None else float(np.max(np.asarray(m.joint_force, float)))
         self.prev = np.clip(a, -1.0, 1.0)

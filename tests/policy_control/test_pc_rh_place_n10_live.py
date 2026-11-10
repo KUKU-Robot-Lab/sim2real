@@ -219,16 +219,17 @@ def test_place_node_ends_when_policy_and_measured_fingers_are_open_for_three_tic
     """★11.11 사용자 "손가락 다 피면 에피소드 끝": 정책 손 목표 ≥ open_min_rad 이고 실측 손가락 ≥ 그 절반이 OPENED_END_TICKS 연속이면 stop."""
     import time
     from policy_control import rh_place_node as N
-    ends, log = [], SimpleNamespace(info=lambda *_: None, warning=lambda *_: None)
+    ends, whys, log = [], [], SimpleNamespace(info=lambda *_: None, warning=lambda *_: None)
     ch = SimpleNamespace(settle_t=5, latch=False, latch_t=0, settling=False, done=False, open_min_rad=0.15, opened=0.0,
                          opened_meas=0.0, latch_cup="blue", outcome=None, released_cup=None, as_dict=lambda: {})
     me = SimpleNamespace(contract=SimpleNamespace(latch_s2r=True), _carry_t0=None, chain=ch, max_s=99.0,
                          _t_start=time.monotonic(), _opened_n=0, get_logger=lambda: log,
-                         _end=lambda kind, why: ends.append(kind))
+                         _end=lambda kind, why: (ends.append(kind), whys.append(why)))
     seq = [(0.2, 0.05), (0.2, 0.08), (0.2, 0.08), (0.1, 0.5), (0.2, 0.08), (0.2, 0.1), (0.2, 0.3)]   # (정책, 실측) rad
     out = []
     for o, om in seq:
         ch.opened, ch.opened_meas = o, om
         out.append(N.PlaceNode._after_step(me))
     assert out == [False, False, False, False, False, False, True]   # 실측 미달 · 정책 미달 틱에서 셈이 0 으로
-    assert ends == ["stop"] and ch.outcome == "opened" and ch.released_cup == "blue"
+    assert ends == ["stop"] and ch.outcome == "opened_before_latch" and ch.released_cup == "blue"
+    assert not whys[0].startswith("placed") and "래치 전" in whys[0]   # M4 — 래치 전 손 폄을 놓음으로 단정하지 않는다

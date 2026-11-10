@@ -137,6 +137,7 @@ class ReadyCarry:
         self.still_n = self.still_t = 0
         self.still = ""                     # "" · "ok" · "timeout" · "track"(명령 − 실측 이탈로 실패)
         self.track_n = 0
+        self.track_dev_max = float("nan")   # 이송 중 max|q_cmd − q| 최대(NaN 이 한 번이라도 오면 NaN) — 실기 로그로 문턱 재검토
         self.plan: dict = {}
         self.target: np.ndarray | None = None
         self.err = float("nan")             # 실측 q 의 컵 오차(start_ok 판정)
@@ -159,6 +160,7 @@ class ReadyCarry:
         self.T_to, self.target = T_to, np.asarray(target, float).copy()
         self.on, self.moving, self.arrived, self.t = True, True, False, 0
         self.still_n = self.still_t = self.track_n = 0
+        self.track_dev_max = 0.0
         self.still = ""
         self.plan = {"ok": bool(plan.ok[0]), "margin_deg": round(float(np.degrees(float(plan.margin[0]))), 2),
                      "anchor_err_mm": round(float(plan.err_pos[0]) * 1000, 2), "anchor_err_deg": round(float(plan.err_axis[0]), 2),
@@ -177,19 +179,21 @@ class ReadyCarry:
         torch = self.torch
         q = torch.tensor([list(arm_q)], dtype=torch.float32)
         a_arm = np.zeros(len(arm_q))
+        if q_cmd is not None:                          # ★11.11 명령 − 실측 이탈 가드(이동 · 멈춤 확인 둘 다). NaN 은 위반으로 센다
+            dev = float(np.max(np.abs(np.asarray(q_cmd, float) - np.asarray(arm_q, float))))
+            self.track_dev_max = (float("nan") if np.isnan(dev) or np.isnan(self.track_dev_max)
+                                  else max(self.track_dev_max, dev))
+            self.track_n = self.track_n + 1 if not (dev <= TRACK_ABORT_RAD) else 0
+            if self.track_n >= TRACK_ABORT_TICKS:      # 팔이 명령을 못 따라간다 — 이송 실패(호출자가 팔 목표를 실측으로 덮는다)
+                self.on = self.moving = False
+                self.still = "track"
+                self.err, self.axis_deg = self._meas_err(q)
+                return np.concatenate([a_arm, self.hand_action])
         if self.moving:
             qm = q if q_cmd is None else torch.tensor([list(q_cmd)], dtype=torch.float32)
             dq, _, done, arrive = self.mv.step(qm)
             self.t += 1
             self.err_cmd = float(self.mv.last_err[0])
-            if q_cmd is not None:
-                dev = float(np.max(np.abs(np.asarray(q_cmd, float) - np.asarray(arm_q, float))))
-                self.track_n = self.track_n + 1 if dev > TRACK_ABORT_RAD else 0
-            if self.track_n >= TRACK_ABORT_TICKS:      # 팔이 명령을 못 따라간다 — 이송 실패
-                self.on = self.moving = False
-                self.still = "track"
-                self.err, self.axis_deg = self._meas_err(q)
-                return np.concatenate([a_arm, self.hand_action])
             if bool(done[0]):
                 self.moving, self.arrived = False, bool(arrive[0])
                 if q_cmd is None or arm_qd is None:     # 멈춤 확인 재료가 없으면 옛 동작(이 틱에 끝)
@@ -197,8 +201,9 @@ class ReadyCarry:
             a_arm = np.clip(dq[0].double().numpy() / self.scale, -1.0, 1.0)
         else:
             self.still_t += 1
-            still = (float(np.max(np.abs(np.asarray(arm_qd, float)))) < STILL_QD_RAD_S
-                     and float(np.max(np.abs(np.asarray(q_cmd, float) - np.asarray(arm_q, float)))) < STILL_DQ_RAD)
+            qd_max = float(np.max(np.abs(np.asarray(arm_qd, float))))
+            dev = float(np.max(np.abs(np.asarray(q_cmd, float) - np.asarray(arm_q, float))))
+            still = qd_max < STILL_QD_RAD_S and dev < STILL_DQ_RAD   # NaN 이면 False(멈춤 아님)
             self.still_n = self.still_n + 1 if still else 0
             if self.still_n >= STILL_TICKS:
                 self.on, self.still = False, "ok"
@@ -222,11 +227,12 @@ class ReadyCarry:
 
     def as_dict(self) -> dict:
         return {"on": self.on, "t": self.t, "arrived": self.arrived, "start_ok": self.start_ok, "qd_max": self.qd_max,
-                "carry_ok": (not self.on) and self.t < self.cfg.max_steps,
+                "carry_ok": (not self.on) and self.t < self.cfg.max_steps and self.still != "track",
                 "err_mm": None if np.isnan(self.err) else round(self.err * 1000, 2),
                 "axis_deg": None if np.isnan(self.axis_deg) else round(self.axis_deg, 2),
                 "err_cmd_mm": None if np.isnan(self.err_cmd) else round(self.err_cmd * 1000, 2),
-                "still": self.still, "still_ticks": self.still_t, "plan": self.plan}
+                "still": self.still, "still_ticks": self.still_t, "plan": self.plan,
+                "track_dev_max": None if np.isnan(self.track_dev_max) else round(self.track_dev_max, 4)}
 
 
 def roll(rc: ReadyCarry, arm_q: Sequence[float], *, k_arm: float, arm_ema: float) -> tuple[np.ndarray, dict]:
