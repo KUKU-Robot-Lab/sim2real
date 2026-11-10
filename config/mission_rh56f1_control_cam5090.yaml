@@ -91,16 +91,6 @@ stages:
   skippable: true
   touches_real: true
   title: 목 스윕 기록 — 손은 그대로, 목만 보정 각도를 돌며 bag(arm · hand · pd · camera) → 처음 자세로 복귀
-- id: cups
-  group: connect
-  lane: both
-  needs:
-  - head_view_check
-  skippable: true
-  touches_real: true
-  needs_why: FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다
-  title: FP++ 드라이버(5090) — 인지 런처 · 자세 수신기 · base 변환 노드 · 머리 자세 맞춤. 물체는 띄우지 않는다(setting 탭 '인지 적용' 또는 에피소드가 자기 물체를 띄운다)
-  arm_free: true
 - id: cup_holders
   group: connect
   lane: both
@@ -108,8 +98,20 @@ stages:
   - head_home
   skippable: true
   touches_real: true
-  title: 홀더 자리 다시 재기(홀더를 옮겼을 때만) — 마커 ID 0·1·2 → config/cup_holder_poses_5090_v1.yaml 갱신 · /objects/cup_holder_{0,1,2}/pose (base). 홀더는 고정이라 에피소드는
-    이 단계를 기다리지 않고 저장된 파일을 쓴다. 로봇은 움직이지 않는다. CPU 만
+  title: 홀더 자리 재기 · 확정(컵을 놓기 전, 홀더를 옮겼거나 갱신할 때만 — 아니면 건너뛴다) — 마커 ID 0·1·2 → config/cup_holder_poses_5090_v1.yaml 갱신 · /objects/cup_holder_{0,1,2}/pose
+    (base). 홀더는 고정이라 에피소드는 이 단계를 기다리지 않고 저장된 파일을 쓴다. 로봇은 움직이지 않는다. CPU 만
+  arm_free: true
+- id: cups
+  group: connect
+  lane: both
+  needs:
+  - head_view_check
+  - cup_holders
+  skippable: true
+  touches_real: true
+  needs_why: 'FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다. ★11.11 사용자: 컵홀더 측정 완료(고정) → 컵 배치 — 컵이 홀더 마커를 가리기
+    전에 cup_holders 를 끝내거나(홀더를 그대로 두면) 건너뛴다'
+  title: FP++ 드라이버(5090) — 인지 런처 · 자세 수신기 · base 변환 노드 · 머리 자세 맞춤. 물체는 띄우지 않는다(setting 탭 '인지 적용' 또는 에피소드가 자기 물체를 띄운다)
   arm_free: true
 - id: cups_right
   group: recognize
@@ -1155,7 +1157,7 @@ run:
     - cups#1
     - cups#2
     - cups#3
-    - cup_holders#3
+    - cup_holders#4
   - note: 목 드라이버 정지 — 단독 소유한 시리얼 포트를 닫는다
     stop:
     - head_home#0
@@ -1196,6 +1198,12 @@ run:
     stop:
     - drivers#2
   cup_holders:
+  - note: '★컵홀더 측정은 컵을 놓기 전에 — 상판에 컵 · 셰이커가 없는가(가리면 그 홀더가 검출되지 않아 그 홀더를 쓰는 에피소드가 막힌다). 순서: 이 단계(홀더 확정) → cups(컵 배치 · FP++)'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
   - note: ★홀더 세 개가 상판 위에 서 있고 -x 면 마커가 손 · 컵에 가리지 않는가(머리 자세는 다음 스텝이 캘리브 자세로 맞춘다)
     argv:
     - bash
@@ -1231,6 +1239,16 @@ run:
     - -lc
     - timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String
     manual: true
+  - note: ★홀더 자리 확정(최대 30 s) — 세 홀더가 안정되면 config/cup_holder_poses_5090_v1.yaml 와 비교해 xy 3 cm · yaw 10° 안이면 확정, 넘거나 못 재면(가림 · 카메라 · ssh · scp 실패
+      포함) 파일은 그대로 두고 '⚠ ' 경고 — 그 홀더를 쓰는 에피소드는 시작 검사에서 막힌다(어느 홀더인지 보인다)
+    argv:
+    - bash
+    - -lc
+    - 'cd {repo} && { bash scripts/vision/camera_up.sh && python3 scripts/nodes/cup_holder_pose_node.py --write --timeout-s 30 --max-jump-m 0.03
+      --max-yaw-deg 10 --out config/cup_holder_poses_5090_v1.yaml --extrinsics config/global_camera_extrinsics_arm4090_r20u5.yaml; }; rc=$?; if
+      [ $rc -ne 0 ]; then echo "⚠ 홀더 다시 재기 실패 — 카메라 · 홀더 노드 rc=$rc · cup_holder_poses_5090_v1.yaml 안 바꿈 · 홀더를 쓰는 에피소드 시작 검사가 막는다"; printf ''\173"time":
+      "%s", "epoch": %s, "result": "failed", "rc": %d, "what": "카메라 · 홀더 노드"\175\n'' "$(date +%Y-%m-%dT%H:%M:%S)" "$(date +%s)" $rc > config/cup_holder_poses_5090_v1.yaml.last_check.json;
+      fi; true'
   head_home:
   - note: 목 드라이버 — 포트 단독 소유 · 실측 관절 발행 · 이동 요청 처리
     argv:
@@ -1296,16 +1314,6 @@ run:
     argv: *id001
     execute_args:
     - --execute
-  - note: 홀더 자리 한 번 다시 재기(최대 30 s) — 세 홀더가 안정되면 config/cup_holder_poses_5090_v1.yaml 와 비교해 xy 3 cm · yaw 10° 안이면 갱신, 넘거나 못 재면(카메라 · ssh · scp
-      실패 포함) 그대로 두고 경고. cups 는 계속 — 홀더를 쓰는 에피소드(놓기)는 written 이 아니면 시작 검사에서 막힌다
-    argv:
-    - bash
-    - -lc
-    - 'cd {repo} && { bash scripts/vision/camera_up.sh && python3 scripts/nodes/cup_holder_pose_node.py --write --timeout-s 30 --max-jump-m 0.03
-      --max-yaw-deg 10 --out config/cup_holder_poses_5090_v1.yaml --extrinsics config/global_camera_extrinsics_arm4090_r20u5.yaml; }; rc=$?; if
-      [ $rc -ne 0 ]; then echo "⚠ 홀더 다시 재기 실패 — 카메라 · 홀더 노드 rc=$rc · cup_holder_poses_5090_v1.yaml 안 바꿈 · 홀더를 쓰는 에피소드 시작 검사가 막는다"; printf ''\173"time":
-      "%s", "epoch": %s, "result": "failed", "rc": %d, "what": "카메라 · 홀더 노드"\175\n'' "$(date +%Y-%m-%dT%H:%M:%S)" "$(date +%s)" $rc > config/cup_holder_poses_5090_v1.yaml.last_check.json;
-      fi; true'
   cups_right:
   - note: ★[right] source240_blue 가 테이블에 똑바로 서 있고 손이 가리지 않는가
     argv:

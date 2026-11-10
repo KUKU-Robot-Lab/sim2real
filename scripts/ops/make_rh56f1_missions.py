@@ -350,7 +350,7 @@ REMOTE_PERCEPTION = PERCEPTION_HOST != "local"
 CAMERA_EXTRINSICS = STATION["extrinsics"]
 PLACE_MASK_AGE_S = 0.35                 # ★11.11 임시 — 놓기 학생 마스크 나이 상한(기본 0.2)
 HOLDER_POSES = STATION["holder_poses"]
-#: ★11.10 cups 끝 홀더 한 번 재기 — 안정 대기 상한 s · 직전 파일과 홀더별 xy 차 상한 m(deploy 확정 3 cm)
+#: ★11.10 홀더 한 번 재기(★11.11 cups 끝에서 cup_holders 끝 확정으로 옮김) — 안정 대기 상한 s · 직전 파일과 홀더별 xy 차 상한 m(deploy 확정 3 cm)
 HOLDER_ONCE_S = 30.0
 #: ★11.11 deploy 리뷰 M3: 원격 한 번 재기 ssh 의 여유(카메라 기동 최대 60 s + 접속) — 넘으면 timeout 이 끊고 실패로 기록
 HOLDER_SSH_SLACK_S = 90.0
@@ -455,7 +455,7 @@ def _holder_fail_sh(check: str, what: str) -> str:
 
 
 def _holder_once_sh() -> str:
-    """★11.10 cups 끝 홀더 한 번 재기 bash 한 줄(늘 rc 0). ★11.11 H2: 실패는 ⚠ + 이 PC 의 last_check.json = failed."""
+    """★11.10 홀더 한 번 재기 bash 한 줄(늘 rc 0, ★11.11 cup_holders 끝 확정 스텝). ★11.11 H2: 실패는 ⚠ + 이 PC 의 last_check.json = failed."""
     once = (f"--write --timeout-s {HOLDER_ONCE_S:g} --max-jump-m {HOLDER_MAX_JUMP_M:g} --max-yaw-deg {HOLDER_MAX_YAW_DEG:g} "
             f"--out {HOLDER_POSES} --extrinsics {CAMERA_EXTRINSICS}")
     check = f"{HOLDER_POSES}.last_check.json"
@@ -474,6 +474,19 @@ def _holder_once_sh() -> str:
             f"if [ $rc -eq 0 ]; then scp -o BatchMode=yes {src} {src}.last_check.json {Path(HOLDER_POSES).parent}/; rc=$?; "
             f"{_holder_fail_sh(check, 'scp(' + PERCEPTION_HOST + ' → 이 PC)')}; else {_holder_fail_sh(check, f'ssh · 카메라 · 홀더 노드({PERCEPTION_HOST})')}; fi; true")
 
+
+
+#: ★11.11 사용자 결정 "컵홀더 측정 완료(고정) → 컵 배치 → FP++": 홀더는 cup_holders 단계에서만 잰다. 그 끝의 확정 재기 —
+#   직전 파일과 홀더별 xy 3 cm · yaw 10° 안이면 갱신(written), 넘거나(jump_rejected) 못 재면(unstable · no_markers · failed)
+#   파일은 그대로 두고 last_check 에 홀더별 상태를 남긴다 → 그 홀더를 쓰는 에피소드 시작 검사가 막는다(어느 홀더인지 보인다).
+#   cups 는 이제 홀더 파일 · last_check 를 건드리지 않는다(cups_5: 셰이커가 홀더 0 을 가려 cups 재기가 written 을 failed 로 덮었다)
+def _holder_confirm_cmd() -> dict:
+    return _cmd(
+        f"★홀더 자리 확정(최대 {HOLDER_ONCE_S:g} s) — 세 홀더가 안정되면 {HOLDER_POSES} 와 비교해 xy {HOLDER_MAX_JUMP_M * 100:g} cm · "
+        f"yaw {HOLDER_MAX_YAW_DEG:g}° 안이면 확정, 넘거나 못 재면(가림 · 카메라 · ssh · scp 실패 포함) 파일은 그대로 두고 '⚠ ' 경고 — "
+        "그 홀더를 쓰는 에피소드는 시작 검사에서 막힌다(어느 홀더인지 보인다)"
+        + (f" · 파일과 결과는 {PERCEPTION_HOST} 에서 이 PC 로 가져온다" if REMOTE_PERCEPTION else ""),
+        ["bash", "-lc", _holder_once_sh()])
 
 def _on_perception_pc(script: str) -> list:
     """인지 PC 에서 bash 한 줄을 돈다. 원격이면 ssh -tt(콘솔이 이 ssh 를 끝내면 저쪽 셸이 HUP 를 받는다)."""
@@ -552,19 +565,21 @@ def _stages(kind: str) -> list[dict]:
         #   카메라(외부 파라미터 · 머리 기구학) 오차와 팔 FK 오차를 가른다(logs/runs/261109/analysis_hand_offset)
         {"id": "head_sweep", "group": "motion", "lane": "rig", "skippable": True, "touches_real": real,
          "title": "목 스윕 기록 — 손은 그대로, 목만 보정 각도를 돌며 bag(arm · hand · pd · camera) → 처음 자세로 복귀"},
-        {"id": "cups", "group": "connect", "lane": "both", "needs": ["head_view_check"], "skippable": True,
+        {"id": "cup_holders", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
          "touches_real": real,
-         "needs_why": "FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다",
+         # ★11.03 사용자 "홀더는 고정이다": 에피소드는 저장된 {HOLDER_POSES} 를 그대로 쓴다 — 이 단계는 홀더를 옮겼거나 갱신할 때만
+         # ★11.11 사용자: 순서 cup_holders(컵 없이) → cups. 건너뛰면 저장된 파일 · 마지막 확정 기록을 그대로 쓴다
+         "title": (f"홀더 자리 재기 · 확정(컵을 놓기 전, 홀더를 옮겼거나 갱신할 때만 — 아니면 건너뛴다) — 마커 ID 0·1·2 → {HOLDER_POSES} 갱신 · /objects/cup_holder_{{0,1,2}}/pose "
+                   "(base). 홀더는 고정이라 에피소드는 이 단계를 기다리지 않고 저장된 파일을 쓴다. 로봇은 움직이지 않는다. CPU 만"
+                   if real else "fake — 카메라 없음(실기 순서를 맞추려고 둔 자리)")},
+        {"id": "cups", "group": "connect", "lane": "both", "needs": ["head_view_check", "cup_holders"], "skippable": True,
+         "touches_real": real,
+         "needs_why": "FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다. "
+                      "★11.11 사용자: 컵홀더 측정 완료(고정) → 컵 배치 — 컵이 홀더 마커를 가리기 전에 cup_holders 를 끝내거나(홀더를 그대로 두면) 건너뛴다",
          # ★11.05 사용자: cups = FP++ 드라이버만. 물체 컨테이너는 setting 탭 '인지 적용'(고른 물체) · 에피소드 첫 명령(그 에피소드 물체)이 띄운다
          "title": (f"FP++ 드라이버({PERCEPTION_HOST if REMOTE_PERCEPTION else ROBOT_PC}) — 인지 런처 · 자세 수신기 · base 변환 노드 · 머리 자세 맞춤. "
                    "물체는 띄우지 않는다(setting 탭 '인지 적용' 또는 에피소드가 자기 물체를 띄운다)" if real else
                    "fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채")},
-        {"id": "cup_holders", "group": "connect", "lane": "both", "needs": ["head_home"], "skippable": True,
-         "touches_real": real,
-         # ★11.03 사용자 "홀더는 고정이다": 에피소드는 저장된 {HOLDER_POSES} 를 그대로 쓴다 — 이 단계는 홀더를 옮겼을 때만
-         "title": (f"홀더 자리 다시 재기(홀더를 옮겼을 때만) — 마커 ID 0·1·2 → {HOLDER_POSES} 갱신 · /objects/cup_holder_{{0,1,2}}/pose "
-                   "(base). 홀더는 고정이라 에피소드는 이 단계를 기다리지 않고 저장된 파일을 쓴다. 로봇은 움직이지 않는다. CPU 만"
-                   if real else "fake — 카메라 없음(실기 순서를 맞추려고 둔 자리)")},
         # ★10.13 사용자 실기: "다음부턴 개별로 하고, 둘중 하나라도 인지되게 해야함. 개별로 다시 할수 있게 해야해" —
         #   팔마다 그 팔의 컵 하나만 다시 인지하는 단계(선택 묶음, 차례에 끼지 않는다). cups 가 띄운 노드 위에서 돈다
         *({"id": f"cups_{s}", "group": "recognize", "lane": f"arm_{s}", "needs": ["cups"], "skippable": True,
@@ -735,7 +750,7 @@ def _run(kind: str) -> dict:
             *([_cmd("카메라 · FP++ 내리기 — 런처가 없으면 이 PC 에서 직접 내린다",
                     ["python3", "{repo}/scripts/ops/perception_ctl.py", "stop", "--camera", "--host", PERCEPTION_HOST, "--wait", "60"]),
                _cmd("인지 런처 · 자세 수신기 · 물체 자세 노드 · 컵홀더 노드 정지",
-                    stop=["cups#1", "cups#2", "cups#3", "cup_holders#3"])] if real else []),
+                    stop=["cups#1", "cups#2", "cups#3", "cup_holders#4"])] if real else []),
             *([_cmd("목 드라이버 정지 — 단독 소유한 시리얼 포트를 닫는다", stop=["head_home#0"]),
                _cmd("목 토크 해제 — 받침 확인, pan · tilt 가 중력으로 처질 수 있다"
                     + (f"({HEAD_HOST} 에서 — 받침 없이 풀고 전원을 끄면 다음 전원에서 한 바퀴 낮게 잡힌다, 10.30)" if REMOTE_HEAD else ""),
@@ -749,6 +764,8 @@ def _run(kind: str) -> dict:
         ],
     }
     run["cup_holders"] = [
+        _cmd("★컵홀더 측정은 컵을 놓기 전에 — 상판에 컵 · 셰이커가 없는가(가리면 그 홀더가 검출되지 않아 그 홀더를 쓰는 에피소드가 "
+             "막힌다). 순서: 이 단계(홀더 확정) → cups(컵 배치 · FP++)", ["bash", "-lc", "true"], manual=True),
         _cmd("★홀더 세 개가 상판 위에 서 있고 -x 면 마커가 손 · 컵에 가리지 않는가(머리 자세는 다음 스텝이 캘리브 자세로 맞춘다)",
              ["bash", "-lc", "true"], manual=True),
         _cmd("머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)", HEAD_CHECK_ARGV, execute_args=["--execute"]),
@@ -761,9 +778,12 @@ def _run(kind: str) -> dict:
         _cmd("★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y ≈ l +0.16 / r −0.06 / r 바깥 −0.28(간격 0.22 · 10.27 A1 배치) · stable ✓ 인가 "
              f"(어긋나면 {RECALIB_HINT} · 겹친 영상은 scripts/calib/cup_holder_pose.py --png)",
              ["bash", "-lc", "timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String"], manual=True),
+        _holder_confirm_cmd(),
     ] if real and not REMOTE_PERCEPTION else [
         # ★10.13 원격 인지: 홀더 노드는 카메라 영상(localhost DDS)을 직접 읽어야 해 카메라 PC 에서 돌고, 고정 자세 파일만 이 PC 로 가져온다.
         #   놓기 에피소드는 그 파일(base 좌표)을 읽는다 — 홀더 토픽은 이 PC 로 넘어오지 않는다
+        _cmd("★컵홀더 측정은 컵을 놓기 전에 — 상판에 컵 · 셰이커가 없는가(가리면 그 홀더가 검출되지 않아 그 홀더를 쓰는 에피소드가 "
+             "막힌다). 순서: 이 단계(홀더 확정) → cups(컵 배치 · FP++)", ["bash", "-lc", "true"], manual=True),
         _cmd("★홀더 세 개가 상판 위에 서 있고 -x 면 마커가 손 · 컵에 가리지 않는가(머리 자세는 다음 스텝이 캘리브 자세로 맞춘다)",
              ["bash", "-lc", "true"], manual=True),
         _cmd("머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)",
@@ -779,10 +799,7 @@ def _run(kind: str) -> dict:
         _cmd("★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y ≈ l +0.16 / r −0.06 / r 바깥 −0.28(간격 0.22 · 10.27 A1 배치) · stable ✓ 인가 "
              f"(어긋나면 {RECALIB_HINT})",
              _on_perception_pc("timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String"), manual=True),
-        _cmd(f"홀더 자세 파일 · 재기 기록을 이 PC 로 — {PERCEPTION_HOST}:{HOLDER_POSES}(.last_check.json) → 같은 경로(놓기 에피소드가 읽는다). "
-             "파일이 아직 없으면 세 홀더가 안정되지 않은 것이다 — 확인 스텝부터 다시",
-             ["scp", "-o", "BatchMode=yes", f"{PERCEPTION_HOST}:{REMOTE_SIM2REAL}/{HOLDER_POSES}",       # ★11.11 재기 기록도(시작 검사 H1)
-              f"{PERCEPTION_HOST}:{REMOTE_SIM2REAL}/{HOLDER_POSES}.last_check.json", "{repo}/" + str(Path(HOLDER_POSES).parent) + "/"]),
+        _holder_confirm_cmd(),
     ] if real else [_cmd("fake — 카메라 없음", ["bash", "-lc", "true"])]
     run["head_home"] = [
         _cmd("목 드라이버 — 포트 단독 소유 · 실측 관절 발행 · 이동 요청 처리"
@@ -830,17 +847,6 @@ def _run(kind: str) -> dict:
              background=True)
         for role, y in (("src", "-0.16"), ("rcv", "0.16"))
         for t in (f"/objects/cup_{role}/pose", _live(f"/objects/cup_{role}/pose"))]   # live = aglt 정책 입력(10.12 A안)
-    # ★11.10 deploy 확정: cups 끝에 홀더 자리를 매번 한 번 잰다(에피소드 needs 에는 걸지 않는다 — 11.03 결정 유지).
-    #   직전 파일과 홀더별 xy 차가 3 cm(또는 yaw 10°) 넘으면 쓰지 않는다(jump_rejected). 결과가 written 이 아니면 '⚠ ' 줄을
-    #   콘솔이 단계 경고로 띄운다. cups 는 막지 않는다(rc 0). 놓기 노드는 에피소드마다 시작 때 이 파일을 읽는다(load_holder_poses).
-    #   ★11.11 deploy 리뷰 H2: 카메라 · 노드 · ssh · scp 실패를 삼키지 않는다 — 종료 코드를 받아 '⚠ ' 줄을 찍고 이 PC 의
-    #   <파일>.last_check.json 에 failed 를 남긴다 → 홀더를 쓰는 에피소드 시작 검사(H1)가 막는다.
-    run["cups"].append(_cmd(
-        f"홀더 자리 한 번 다시 재기(최대 {HOLDER_ONCE_S:g} s) — 세 홀더가 안정되면 {HOLDER_POSES} 와 비교해 xy {HOLDER_MAX_JUMP_M * 100:g} cm · "
-        f"yaw {HOLDER_MAX_YAW_DEG:g}° 안이면 갱신, 넘거나 못 재면(카메라 · ssh · scp 실패 포함) 그대로 두고 경고"
-        + (f" · 파일과 결과는 {PERCEPTION_HOST} 에서 이 PC 로 가져온다" if REMOTE_PERCEPTION else "")
-        + ". cups 는 계속 — 홀더를 쓰는 에피소드(놓기)는 written 이 아니면 시작 검사에서 막힌다",
-        ["bash", "-lc", _holder_once_sh()]) if real else _cmd("fake — 홀더 한 번 재기 없음", ["bash", "-lc", "true"]))
     for s in SIDES:
         if s not in REAL_CUPS:
             continue

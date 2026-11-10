@@ -233,7 +233,7 @@ def test_real_cups_run_fpp_on_the_perception_pc_after_the_head_home_and_shutdown
     런처 --host <인지 PC> · UDP 수신 · base 변환 · start, 머리 기준자세가 먼저."""
     host, ext = GEN.PERCEPTION_HOST, GEN.CAMERA_EXTRINSICS
     by = {s.id: s for s in REAL.stages}
-    assert by["cups"].needs == ("head_view_check",) and by["head_home"].touches_real and by["cups"].touches_real
+    assert by["cups"].needs == ("head_view_check", "cup_holders") and by["head_home"].touches_real and by["cups"].touches_real
     head = _cmds(REAL, REAL_BOOK, "head_home")
     assert any(Path(GEN.HEAD_CONFIG).name in " ".join(c.argv) for c in head)
     cups = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "cups")]
@@ -373,7 +373,7 @@ def test_view_check_reads_the_imu_between_head_home_and_cups_without_moving_the_
     for m in (REAL, FAKE):
         by = {s.id: s for s in m.stages}
         ids = [s.id for s in m.stages]
-        assert by["head_view_check"].needs == ("head_home",) and by["cups"].needs == ("head_view_check",)
+        assert by["head_view_check"].needs == ("head_home",) and by["cups"].needs == ("head_view_check", "cup_holders")
         assert ids.index("head_home") < ids.index("head_view_check") < ids.index("cups")
         assert by["head_view_check"].skippable and not by["head_view_check"].touches_real
     cmds = _cmds(REAL, REAL_BOOK, "head_view_check")
@@ -408,21 +408,18 @@ def test_real_cup_holders_run_the_marker_node_after_the_head_home_and_shutdown_s
     rel = node.replace("{repo}/", "").replace(f"{REPO}/", "")      # 로컬 인지(10.27 5090)는 {repo} 가 풀린 절대 경로
     assert f"--out {GEN.HOLDER_POSES}" in rel
     assert f"--extrinsics {GEN.CAMERA_EXTRINSICS}" in rel
-    assert cmds.index(bg[0]) == 3                                   # shutdown 의 cup_holders#3(앞에 머리 확인 · 맞춤)
-    assert "cup_holders#3" in stops
+    assert cmds.index(bg[0]) == 4                                   # shutdown 의 cup_holders#4(앞에 안내 · 확인 · 머리 맞춤 · 카메라)
+    assert "cup_holders#4" in stops
+    assert "컵을 놓기 전" in cmds[0].note and cmds[0].manual and cmds[1].manual   # ★11.11 컵 없이 잰다는 안내가 맨 앞
     status = next(c for c in cmds if "/cup_holders/status" in " ".join(c.argv))
     assert cmds[0].manual and status.manual
     if GEN.REMOTE_PERCEPTION:
         host = GEN.PERCEPTION_HOST
-        for c in (cmds[2], bg[0], status):                          # 카메라 · 노드 · 확인은 카메라 PC 에서
+        for c in (cmds[3], bg[0], status):                          # 카메라 · 노드 · 확인은 카메라 PC 에서
             assert list(c.argv[:4]) == ["ssh", "-tt", "-o", "BatchMode=yes"] and c.argv[4] == host
         assert f"{GEN.REMOTE_PY} scripts/nodes/cup_holder_pose_node.py" in node
-        fetch = cmds[-1]                                            # 마지막 = 파일을 이 PC 로
-        remote = f"{host}:{GEN.REMOTE_SIM2REAL}/{GEN.HOLDER_POSES}"          # ★11.11 재기 기록(.last_check.json)도 같이
-        assert fetch.argv[0] == "scp" and fetch.argv[-3:-1] == (remote, remote + ".last_check.json")
-        assert fetch.argv[-1].endswith("/config/") and not fetch.manual
-    else:
-        assert cmds[-1] is status
+    # ★11.11 사용자: 마지막 = 홀더 확정(한 번 재기 — 원격이면 파일 · 기록을 이 PC 로 가져온다)
+    assert "cup_holder_pose_node.py --write --timeout-s" in " ".join(cmds[-1].argv) and cmds[-2] is status
     fake = {s.id for s in FAKE.stages}
     assert "cup_holders" in fake and not any(c.background for c in _cmds(FAKE, FAKE_BOOK, "cup_holders"))
 
@@ -918,20 +915,25 @@ def test_mask_student_target_class_follows_the_episode_cup_color():
             GEN._mask_target(bad)
 
 
-def test_cups_ends_with_one_holder_check_that_never_fails_cups():
-    """★11.10 cups 끝 홀더 한 번 재기 — 실기는 --timeout-s · --max-jump-m 로 돌고 '; true' 로 cups 를 막지 않는다, fake 는 true.
+def test_cup_holders_end_with_one_holder_confirm_and_cups_never_touches_the_holders():
+    """★11.10 홀더 한 번 재기 — 실기는 --timeout-s · --max-jump-m 로 돌고 '; true' 로 단계를 막지 않는다(결과는 last_check → 시작 검사).
 
     ★11.11 deploy 리뷰 H2: 실패(카메라 · ssh · scp)는 삼키지 않고 rc 를 받아 ⚠ + last_check.json = failed, yaw 상한도 건다.
+    ★11.11 사용자 "컵홀더 측정 완료(고정) → 컵 배치": 확정은 cup_holders 끝에서만 — cups 는 홀더 파일 · 기록을 건드리지 않는다
+    (cups_5: 셰이커가 홀더 0 을 가려 cups 끝 재기가 cup_holders 의 written 을 failed 로 덮었다). cups 는 cup_holders 뒤.
     """
-    real = " ".join(REAL_RAW["run"]["cups"][-1]["argv"])
+    real = " ".join(REAL_RAW["run"]["cup_holders"][-1]["argv"])
     assert "cup_holder_pose_node.py --write --timeout-s" in real and "--max-jump-m 0.03" in real and real.endswith("true"), real
     assert f"--max-yaw-deg {GEN.HOLDER_MAX_YAW_DEG:g}" in real and "rc=$?" in real and "⚠ 홀더 다시 재기 실패" in real
     assert "camera_up.sh; " not in real and "; true; " not in real   # 중간 실패를 삼키는 '; true' 가 없다
     if GEN.REMOTE_PERCEPTION:
         assert real.count("rc=$?") == 2 and ".last_check.json config/" in real    # ssh 와 scp 각각
         assert f"timeout {GEN.HOLDER_ONCE_S + GEN.HOLDER_SSH_SLACK_S:g} ssh -o BatchMode=yes" in real   # ★11.11 M3
-    assert FAKE_RAW["run"]["cups"][-1]["argv"] == ["bash", "-lc", "true"]
-
+    for raw in (REAL_RAW, FAKE_RAW):
+        cups = " ".join(" ".join(c.get("argv") or []) for c in raw["run"]["cups"])
+        assert "cup_holder_pose_node" not in cups and "last_check" not in cups
+    st = {x["id"]: x for x in REAL_RAW["stages"]}
+    assert "cup_holders" in st["cups"]["needs"] and st["cup_holders"]["skippable"]   # 홀더를 그대로 두면 건너뛴다
 
 def test_every_command_resolves_without_a_stray_placeholder():
     """★11.11 cups 홀더 재기 실패 기록(printf JSON)의 `{"time": …}` 가 자리표시자로 읽혀 단계가 죽었다 —

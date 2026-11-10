@@ -654,6 +654,45 @@ def test_holder_check_ages_by_epoch_and_refuses_future_or_old_records(check, ok)
         assert "git pull" in probs[0]
 
 
+def _cups5(**h):
+    """★11.11 cups_5(11.10 22:42) 꼴 — 시간 초과 unstable, 홀더별 stable · dxy · dyaw."""
+    hs = {f"cup_holder_{i}": {"stable": False, "dxy_m": None, "dyaw_deg": None} for i in range(3)}
+    for k, v in h.items():
+        hs[k] = v
+    return {"time": "t", "epoch": 1000.0, "result": "unstable", "max_jump_m": 0.03, "max_yaw_deg": 10.0, "holders": hs}
+
+
+@pytest.mark.parametrize("hid, holders, result, ok", [
+    (2, {"cup_holder_2": {"stable": True, "dxy_m": 0.004, "dyaw_deg": 1.0}}, "unstable", True),    # 홀더 0 만 못 봄 — h2 는 된다
+    (0, {"cup_holder_2": {"stable": True, "dxy_m": 0.004, "dyaw_deg": 1.0}}, "unstable", False),   # 쓰는 홀더가 안 잡힘
+    (2, {"cup_holder_2": {"stable": True, "dxy_m": 0.031, "dyaw_deg": 1.0}}, "unstable", False),   # 3 cm 넘음
+    (2, {"cup_holder_2": {"stable": True, "dxy_m": 0.03, "dyaw_deg": -10.0}}, "unstable", True),   # 경계는 안
+    (2, {"cup_holder_2": {"stable": True, "dxy_m": 0.01, "dyaw_deg": 10.5}}, "unstable", False),   # yaw 상한
+    (2, {"cup_holder_2": {"stable": True, "dxy_m": None, "dyaw_deg": None}}, "unstable", False),   # 옛 값 없음
+    (2, {"cup_holder_2": {"dxy_m": 0.004, "dyaw_deg": 1.0}}, "unstable", False),                   # stable 없는 옛 기록
+    (2, {"cup_holder_2": {"stable": True, "dxy_m": 0.004, "dyaw_deg": 1.0}}, "jump_rejected", True),  # 다른 홀더가 튐
+    (2, {"cup_holder_2": {"stable": True, "dxy_m": 0.004, "dyaw_deg": 1.0}}, "no_markers", False),
+])
+def test_holder_check_looks_only_at_the_holders_the_episode_uses(hid, holders, result, ok):
+    """★11.11 deploy: 시작 검사는 그 에피소드가 쓰는 홀더만 본다 — 파일을 못 썼어도 그 홀더가 이번에 안정적으로 옛 값
+    3 cm · 10° 안으로 다시 확인됐으면 통과."""
+    import dataclasses
+    ep = dataclasses.replace(_ep(), holders={"PLACE_HOLDER": hid})
+    check = _cups5(**holders)
+    check["result"] = result
+    probs = S.holder_check_problems(ep, check, 1000.0)
+    assert (probs == []) is ok, probs
+
+
+def test_holder_check_reconfirm_still_refuses_old_or_failed_records():
+    import dataclasses
+    ep = dataclasses.replace(_ep(), holders={"PLACE_HOLDER": 2})
+    good = {"cup_holder_2": {"stable": True, "dxy_m": 0.004, "dyaw_deg": 1.0}}
+    assert S.holder_check_problems(ep, _cups5(**good), 1000.0 + S.HOLDER_CHECK_MAX_AGE_S + 60)   # 나이 상한은 그대로
+    failed = dict(_cups5(**good), result="failed", rc=255)
+    assert S.holder_check_problems(ep, failed, 1000.0)                               # ssh · scp 실패는 그대로 막음
+
+
 def test_the_plan_tool_blocks_on_a_non_object_holder_record(tmp_path):
     """★11.11 LOW: last_check.json 이 객체가 아닌 JSON 이어도 AttributeError 없이 막는다."""
     import importlib.util
@@ -822,3 +861,24 @@ def test_place_judge_uses_live_or_the_bound_cup_never_the_table_snapshot():
     s = judge(None, [0.30, -0.06, 0.40])                           # live 없음 · 묶은 컵이 홀더 밖
     assert s["cup_in_holder"] is False and s["cup_in_holder_by"] == {"fk": False}
     assert "cup_in_holder" not in judge(None, None)               # 판정 보류
+
+
+def test_holder_check_age_fits_fixed_holders_and_names_the_holder_that_blocks():
+    """★11.11 사용자 "홀더는 고정해 두고 필요할 때 cup_holders 로 갱신": 하루 · 며칠 지난 확정은 통과, 7 일 넘으면 막는다.
+    막을 때는 어느 홀더가 왜인지(가림 · 옮겨짐 · rc) 보인다."""
+    import dataclasses
+    ep = dataclasses.replace(_ep(), holders={"PLACE_HOLDER": 0})
+    ok = {"result": "written", "epoch": 1000.0, "max_jump_m": 0.03, "max_yaw_deg": 10.0,
+          "holders": {f"cup_holder_{i}": {"stable": True, "dxy_m": 0.002, "dyaw_deg": 0.5, "src": "track"} for i in range(3)}}
+    assert S.holder_check_problems(ep, ok, 1000.0 + 3 * 24 * 3600) == []
+    assert S.holder_check_problems(ep, ok, 1000.0 + 8 * 24 * 3600)
+    hid = dict(ok, result="unstable", holders=dict(ok["holders"], cup_holder_0={"stable": False, "src": None}))
+    (msg,) = S.holder_check_problems(ep, hid, 1000.0)
+    assert "홀더 0 검출 안 됨" in msg and "가림" in msg, msg
+    moved = dict(ok, result="jump_rejected", holders=dict(ok["holders"], cup_holder_0={"stable": True, "dxy_m": 0.05, "dyaw_deg": 2.0, "src": "track"}))
+    (msg,) = S.holder_check_problems(ep, moved, 1000.0)
+    assert "홀더 0 가 저장 값에서 5.0 cm" in msg, msg
+    (msg,) = S.holder_check_problems(ep, {"result": "no_markers", "epoch": 1000.0}, 1000.0)
+    assert "홀더 0 검출 안 됨" in msg
+    (msg,) = S.holder_check_problems(ep, {"result": "failed", "epoch": 1000.0, "rc": 255, "what": "ssh"}, 1000.0)
+    assert "ssh 실패(rc 255)" in msg

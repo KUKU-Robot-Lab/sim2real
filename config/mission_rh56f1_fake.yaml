@@ -86,15 +86,6 @@ stages:
   lane: rig
   skippable: true
   title: 목 스윕 기록 — 손은 그대로, 목만 보정 각도를 돌며 bag(arm · hand · pd · camera) → 처음 자세로 복귀
-- id: cups
-  group: connect
-  lane: both
-  needs:
-  - head_view_check
-  skippable: true
-  needs_why: FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다
-  title: fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채
-  arm_free: true
 - id: cup_holders
   group: connect
   lane: both
@@ -102,6 +93,17 @@ stages:
   - head_home
   skippable: true
   title: fake — 카메라 없음(실기 순서를 맞추려고 둔 자리)
+  arm_free: true
+- id: cups
+  group: connect
+  lane: both
+  needs:
+  - head_view_check
+  - cup_holders
+  skippable: true
+  needs_why: 'FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다. ★11.11 사용자: 컵홀더 측정 완료(고정) → 컵 배치 — 컵이 홀더 마커를 가리기
+    전에 cup_holders 를 끝내거나(홀더를 그대로 두면) 건너뛴다'
+  title: fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채
   arm_free: true
 - id: cups_right
   group: recognize
@@ -1191,11 +1193,6 @@ run:
     - --topic
     - /objects/cup_rcv/live_pose
     background: true
-  - note: fake — 홀더 한 번 재기 없음
-    argv:
-    - bash
-    - -lc
-    - 'true'
   cups_right:
   - note: '[right] fake — FP++ 없음'
     argv:

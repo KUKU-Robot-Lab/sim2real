@@ -3,7 +3,7 @@
 
   python3 scripts/nodes/cup_holder_pose_node.py                          # config/cup_holders.yaml
   python3 scripts/nodes/cup_holder_pose_node.py --write                  # 안정되면 config/cup_holder_poses_arm4090.yaml 갱신
-  python3 scripts/nodes/cup_holder_pose_node.py --write --timeout-s 30   # ★11.10 한 번 재기: 안정되면 1회 쓰고 끝(cups 단계)
+  python3 scripts/nodes/cup_holder_pose_node.py --write --timeout-s 30   # ★11.10 한 번 재기: 안정되면 1회 쓰고 끝(★11.11 cup_holders 단계 끝 확정)
 
 ★11.10 한 번 재기(--timeout-s N): 세 홀더가 안정되면 --out 의 직전 값과 홀더별 xy 차를 보고 --max-jump-m(기본 0.03) 안이면
   쓰고(written), 넘으면 쓰지 않는다(jump_rejected). N 초 안에 안정 못 하면 쓰지 않고 끝(unstable · 한 번도 못 보면 no_markers).
@@ -117,15 +117,29 @@ def main(argv=None) -> None:
     check_path = Path(str(args.out) + ".last_check.json")
     done, fin = threading.Event(), threading.Lock()     # fin — 작업 스레드 기록과 시간 초과 기록이 겹치지 않게
     seen = [False]      # 한 번 재기 — 한 홀더라도 본 적 있나(시간 초과 때 unstable / no_markers 가르기)
+    latest = [None]     # ★11.11 마지막 (status, poses) — 시간 초과 때 홀더별 안정 · dxy 를 남긴다
+
+    def timeout_diffs() -> dict:
+        """★11.11 deploy: 시간 초과(unstable) 때도 홀더별로 남긴다 — 안정된 홀더는 직전 파일 값과의 dxy · dyaw, 아닌 홀더는
+        stable false. 에피소드 시작 검사가 그 에피소드가 쓰는 홀더만 본다(cups_5: 홀더 0 미검출로 홀더 2 만 쓰는 놓기까지 막혔다)."""
+        if latest[0] is None:
+            return {}
+        st, poses = latest[0]
+        ok_poses = {n: poses[n] for n, h in st["holders"].items() if h.get("stable") and n in poses}
+        d = jump_check(load_written(args.out), ok_poses, float("inf"), float("inf"))[1]
+        return {n: {**d.get(n, {"dxy_m": None, "dyaw_deg": None}), "stable": n in ok_poses, "src": h.get("src")}
+                for n, h in st["holders"].items()}
 
     def record(result: str, diffs: dict) -> None:
         # ★11.11 deploy 리뷰 M1 · M2: 시작 검사는 epoch(시간대 없음)로 나이를 잰다 — epoch 가 없는 기록은 옛 노드가 쓴 것으로 막는다
         rec = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "epoch": round(time.time(), 3), "result": result, "out": str(args.out),
-               "max_jump_m": args.max_jump_m, "max_yaw_deg": args.max_yaw_deg, "holders": diffs}
+               "max_jump_m": args.max_jump_m, "max_yaw_deg": args.max_yaw_deg,
+               # ★11.11 홀더별 stable — 키가 없으면(다 안정일 때 쓰는 경로) 안정으로 적는다
+               "holders": {n: {"stable": True, **d} for n, d in diffs.items()}}
         check_path.write_text(json.dumps(rec, ensure_ascii=False, indent=1) + "\n")
         print(f"[cup_holder_check] {result} · " + (" · ".join(
             f"{n} dxy {d['dxy_m'] if d['dxy_m'] is not None else '—'} m dyaw {d['dyaw_deg'] if d['dyaw_deg'] is not None else '—'}°"
-            for n, d in diffs.items()) or "홀더 없음") + f" → {check_path.name}", flush=True)
+            + (" 불안정" if d.get("stable") is False else "") for n, d in diffs.items()) or "홀더 없음") + f" → {check_path.name}", flush=True)
         if result != "written":     # 콘솔 runner 가 '⚠ ' 줄을 성공 단계에도 경고로 띄운다
             last = (time.strftime("%m-%d %H:%M", time.localtime(args.out.stat().st_mtime)) if args.out.exists() else "없음")
             big = " · ".join(f"{n} dxy {d['dxy_m']} m" for n, d in diffs.items() if d["dxy_m"] is not None)
@@ -211,6 +225,7 @@ def main(argv=None) -> None:
                  out.pose.orientation.y, out.pose.orientation.z) = yaw_quat_wxyz(float(p[3]))
                 self._pubs[name].publish(out)
             st = tracker.status()
+            latest[0] = (st, poses)
             self._status.publish(String(data=json.dumps(st, ensure_ascii=False)))
             seen[0] = seen[0] or any(h["src"] for h in st["holders"].values())
             if once and st["ok"]:
@@ -244,7 +259,7 @@ def main(argv=None) -> None:
             with fin:
                 if not done.is_set():
                     done.set()       # 늦게 끝난 작업 스레드가 시간 초과 뒤에 쓰지 않게
-                    record("unstable" if seen[0] else "no_markers", {})
+                    record("unstable" if seen[0] else "no_markers", timeout_diffs() if seen[0] else {})
     except KeyboardInterrupt:
         pass
     finally:
