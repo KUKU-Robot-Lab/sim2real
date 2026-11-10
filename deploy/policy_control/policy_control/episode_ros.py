@@ -922,8 +922,9 @@ class RosExecutor:
         if p.kind == "place":
             pl = st.get("place") or {}
             # ★11.10 학습 시간 끝(outcome episode_end)으로 멈춘 놓기는 손이 비었는지 노드가 모른다(래치 없이 정책이 연 것) — None,
-            #   판정은 아래 cup_in_holder 만으로.
-            empty = True if pl.get("phase") == "done" else (None if pl.get("outcome") == "episode_end" else False)
+            #   판정은 아래 cup_in_holder 만으로. ★11.11 래치 전 손 폄 종료(opened_before_latch)도 같다.
+            empty = True if pl.get("phase") == "done" else (
+                None if pl.get("outcome") in ("episode_end", "opened_before_latch") else False)
             sig = {"hand_empty": empty, "opened": pl.get("opened"), "tact_max": pl.get("tact_max"), "jf_max": pl.get("jf_max"),
                    "phase": pl.get("phase"), "ready_carry": pl.get("ready_carry"),      # ★10.25 이송 결과(없으면 None)
                    "outcome": pl.get("outcome")}       # ★11.02 빼기 결과 clear | withdraw_timeout(episode_failure 가 본다)

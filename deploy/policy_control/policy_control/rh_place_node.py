@@ -18,7 +18,7 @@
     범위(holder_range)에서 holder_tol_m 넘게 밖이면 reset 거부. ★10.29 holder_tol_m 은 reset 마다 다시 읽는다(실행기가 job 마다
     넣는다 · 카드가 그 job 에 넓힌 허용, 없으면 0.02).
   · 학습 episode_length_s 끝: 놓기 전이어도 stop(★11.10 — 판정은 실행기 cup_in_holder), 놓은 뒤(빼기 중)면 stop.
-  · ★11.11 정책 손 목표 · 실측 손가락이 둘 다 열리면(OPENED_END_TICKS 연속) 그 틱에 stop(outcome "opened_before_latch", 이 규칙은 래치 전에만).
+  · ★11.11 정책 손 목표 · 실측 손가락이 둘 다 open_min_rad 넘게 열리면(OPENED_END_TICKS 연속) 그 틱에 stop(outcome "opened_before_latch", 이 규칙은 래치 전에만).
 ★10.25 준비 자세 이송(계약 ready_carry — newton_07_r · 06_l): reset 때 끝 자세를 풀고(Mover, 움직이지 않음) start 뒤 첫 틱부터
   Mover 행동으로 슬롯 위까지 옮긴 다음 정책. 에피소드 시간은 이송이 끝난 틱부터 센다. 이송 자체 상한 =
   (max_steps + settle_steps + 멈춤 확인 STILL_MAX_TICKS) 틱 + READY_CARRY_SLACK_S — 넘으면 abort(Mover 가 그 전에 끝나야 한다).
@@ -38,7 +38,8 @@ import time  # noqa: E402
 
 READY_CARRY_SLACK_S = 2.0
 OPENED_END_TICKS = 3      # ★11.11 정책 손 목표 · 실측 손가락이 둘 다 열린 틱이 이만큼 연속(60 Hz 50 ms)이면 끝
-OPENED_MEAS_FRAC = 0.5    # 실측 손가락 평균 열림 ≥ open_min_rad 의 이 비율(손은 명령보다 늦고 덜 편다)
+OPENED_MEAS_FRAC = 1.0    # ★11.11 "다 핀" 쪽 — 실측 평균 ≥ open_min_rad. 0.5(0.075 rad)는 sim 1111b place_blue 에서 컵을 쥔 채
+                          #   0.12 rad(안착 높이 +40.5 mm)에 끝냈다. 실기 bag 184024 는 707.1 s 0.067 → 707.2 s 0.548 로 뛰어 종료 시각 거의 같음
 
 from policy_control import codec  # noqa: E402
 from policy_control import place_handover as PH  # noqa: E402

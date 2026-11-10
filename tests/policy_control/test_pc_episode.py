@@ -863,6 +863,28 @@ def test_place_judge_uses_live_or_the_bound_cup_never_the_table_snapshot():
     assert "cup_in_holder" not in judge(None, None)               # 판정 보류
 
 
+def test_place_ended_by_open_fingers_before_latch_is_judged_by_the_holder_only():
+    """★11.11 래치 전 손 폄 종료(opened_before_latch)는 손이 비었는지 노드가 모른다 — hand_empty None, 판정은 cup_in_holder
+    (sim 1111b f8a2ec8: 컵이 홀더에 들어갔는데 hand_empty False 로 PLACE_FAILED)."""
+    import threading
+    from types import SimpleNamespace
+    from policy_control.episode_ros import SEAT_DZ_CYL60, RosExecutor
+    hold = (0.38, -0.06, 0.235)
+    seat, above = (0.38, -0.06, 0.235 + SEAT_DZ_CYL60), [0.38, -0.06, 0.235 + SEAT_DZ_CYL60 + 0.0405]
+    ep, d = _ep(), FailureDetector()
+
+    def code(live):
+        me = SimpleNamespace(holders={1: (hold, 0.0)}, _live={}, _lock=threading.Lock(),
+                             _fresh_object=lambda name, after=None, store=None, wait_s=2.0: live)
+        p = SimpleNamespace(kind="place", source_object="SRC", holder_id=1)
+        sig = RosExecutor._signals_of(me, p, {"place": {"phase": "policy", "outcome": "opened_before_latch", "latch_cup": above}})
+        assert sig["hand_empty"] is None
+        return d.evaluate(ep, ep.nodes[3], [NodeResult("completed", "opened — 래치 전", role="rh_place_r", signals=sig)])[0]
+
+    assert code(seat) is F.NONE                                   # 손 빠지며 떨어져 들어감(live) — 실패 아님
+    assert code((0.30, -0.06, 0.24)) is F.PLACE_FAILED            # 홀더 밖
+
+
 def test_holder_check_age_fits_fixed_holders_and_names_the_holder_that_blocks():
     """★11.11 사용자 "홀더는 고정해 두고 필요할 때 cup_holders 로 갱신": 하루 · 며칠 지난 확정은 통과, 7 일 넘으면 막는다.
     막을 때는 어느 홀더가 왜인지(가림 · 옮겨짐 · rc) 보인다."""
