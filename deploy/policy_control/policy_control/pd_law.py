@@ -54,6 +54,7 @@ class PdLawCfg:
     gravity_mode: str
     droop_gain: float | None = None
     droop_limit: np.ndarray | None = None
+    fric_ff: "FricFf | None" = None     # ★11.10 None = 꺼짐(τ_fric 0)
 
     def __post_init__(self) -> None:
         for name in ("max_vel", "lead_sec", "lead_vel", "effort_cap"):
@@ -144,6 +145,8 @@ def step(state: PdState, inp: PdInputs, cfg: PdLawCfg,
     feed_forward = inp.tracking and inp.target_fresh
     qd_cmd = np.clip(cfg.vel_ff_scale * qd_target, -cfg.vel_ff_cap, cfg.vel_ff_cap) if feed_forward \
         else np.zeros(n)
+    if feed_forward and cfg.fric_ff is not None:
+        tau_req = tau_req + friction_feedforward(qd_target, cfg.fric_ff)
     tau, fault = _effort(tau_req, q_meas, cfg, gravity_fn)
     return (PdState(q_setpoint=q_sp, droop=droop),
             PdCommand(q=q_cmd, qd=qd_cmd, tau=tau, limited=tuple(limited), effort_fault=fault))
@@ -237,6 +240,66 @@ class Settle:
     clamp_nm: float = 0.0      # >0 이면 관절별 상한을 토크 예산으로 더 좁힌다 [N·m]
 
 
+@dataclass(frozen=True)
+class QdTargetDiff:
+    """★11.10 q̇* 를 받은 joint_target 차분으로 만든다(pd yaml `qd_target_diff`, 없으면 꺼짐 = 메시지 velocity 그대로).
+
+    배포 정책 노드는 joint_target.velocity 를 0 으로 보낸다(pour_fj_node aglt_target_arrays · joint_node_core) — 그러면
+    vel_ff_cap 을 올려도 모터 qd 명령이 0 이고 kd 가 이동 중 브레이크가 된다(logs/runs/261110/root_cause/tracking_lag)."""
+    max_dt: float = 0.1        # 두 목표 간격이 이보다 길면(첫 목표 · 끊김 · 정책 멈춤) q̇* = 0 [s]
+    hold_sec: float = 0.07     # 마지막 목표 뒤 이만큼 지나면 q̇* = 0 — 정책이 멈춘 뒤 kd·q̇* 가 목표 너머로 밀지 않게 [s]
+
+    def __post_init__(self) -> None:
+        if not (0.0 < self.hold_sec and 0.0 < self.max_dt):
+            raise ValueError(f"qd_target_diff max_dt/hold_sec must be > 0, got {self.max_dt}/{self.hold_sec}")
+
+
+@dataclass(frozen=True)
+class FricFf:
+    """★11.10 감속기 마찰 전향 τ_fric = clip(bv·q̇* + fc·tanh(q̇*/v_eps), ±cap) (pd yaml `fric_ff`, 없으면 꺼짐).
+
+    q̇* = 목표 속도(pd_law.step 의 qd_target, TRACKING + fresh 에서만). 실측 q̇ 를 쓰면 양의 되먹임
+    (점성 bv 를 지우는 음의 감쇠)이라 쓰지 않는다. kd·q̇* 속도 전향(vel_ff)과 bv·q̇* 는 같은 꼴의 토크라
+    합이 (kd+bv)·q̇* 를 넘지 않게 둘을 함께 정한다(logs/runs/261110/root_cause/tracking_fix/README.md).
+    값 출처: 감속기 점성·쿨롱 적합(tracking_lag/model.json, gravity_recal 반대 방향 쌍)."""
+    bv: tuple                       # [N·m·s/rad] 관절별
+    fc: tuple                       # [N·m] 관절별
+    cap: tuple                      # [N·m] 관절별 |τ_fric| 상한
+    v_eps: float = 0.02             # [rad/s] 쿨롱 tanh 폭
+
+    def __post_init__(self) -> None:
+        arrs = [np.asarray(getattr(self, k), dtype=np.float64).reshape(-1) for k in ("bv", "fc", "cap")]
+        if len({a.shape for a in arrs}) != 1 or any(np.any(~np.isfinite(a)) or np.any(a < 0.0) for a in arrs):
+            raise ValueError("fric_ff bv/fc/cap must be finite, >= 0 and of the same length")
+        if not (np.isfinite(self.v_eps) and self.v_eps > 0.0):
+            raise ValueError(f"fric_ff v_eps must be > 0, got {self.v_eps}")
+        for k, a in zip(("bv", "fc", "cap"), arrs):
+            object.__setattr__(self, k, tuple(float(x) for x in a))
+
+
+def friction_feedforward(qd_target: np.ndarray, fric: FricFf) -> np.ndarray:
+    """τ_fric(q̇*) — 순수. 관절 수가 다르면 ValueError."""
+    v = np.asarray(qd_target, dtype=np.float64).reshape(-1)
+    bv, fc, cap = (np.asarray(getattr(fric, k)) for k in ("bv", "fc", "cap"))
+    if v.shape != bv.shape:
+        raise ValueError(f"fric_ff has {bv.size} joints, qd_target {v.size}")
+    return np.clip(bv * v + fc * np.tanh(v / fric.v_eps), -cap, cap)
+
+
+def target_difference_velocity(q: np.ndarray, t: float, prev: tuple | None, max_dt: float) -> np.ndarray:
+    """q̇* = (q − q_prev)/(t − t_prev). prev=(q_prev, t_prev) 가 없거나 간격이 (0, max_dt] 밖이면 0. 순수.
+
+    속도 상한은 여기서 두지 않는다 — pd_law.step 의 vel_ff_cap 이 모터로 가는 값을 자른다."""
+    q = np.asarray(q, dtype=np.float64).reshape(-1)
+    if prev is None:
+        return np.zeros_like(q)
+    q_prev, t_prev = prev
+    dt = float(t) - float(t_prev)
+    if not 0.0 < dt <= max_dt or np.shape(q_prev) != q.shape:
+        return np.zeros_like(q)
+    return (q - np.asarray(q_prev, dtype=np.float64)) / dt
+
+
 def settle_limit(kp, clamp: float, clamp_nm: float) -> np.ndarray:
     """정착 bias 의 관절별 상한 = min(clamp, clamp_nm/kp). 순수.
 
@@ -314,6 +377,8 @@ class PdConfig:
     #: 경로 계획(`plan_home_path --hand-start pd`)과 실기(`pd/hand_path`)가 이 한 값을 같이 읽는다.
     hand_path_pose: Mapping[str, Mapping[str, float]] | None = None
     stationary_compensation: Mapping | None = None
+    qd_target_diff: QdTargetDiff | None = None     # None = 꺼짐(joint_target.velocity 그대로)
+    fric_ff: FricFf | None = None                  # None = 꺼짐(τ_fric 0)
 
 
 HOME_HAND_MODES = ("contract", "keep")
@@ -323,7 +388,7 @@ _SCALARS = {"pd_hz": float, "ramp_speed": float, "watchdog_sec": float, "lead_se
             "release_zero_ticks": int, "blend_sec": float}
 _KEYS = {"side", "execute", "max_vel", "settle", "gravity", "gains", "thermal", "gripper", "hand",
          *_SCALARS}
-_OPTIONAL = {"home_hand", "hand_path_pose", "stationary_compensation"}
+_OPTIONAL = {"home_hand", "hand_path_pose", "stationary_compensation", "qd_target_diff", "fric_ff"}
 
 
 def load_pd_config(path: Path) -> PdConfig:
@@ -380,6 +445,9 @@ def _build_config(raw: Mapping) -> PdConfig:
         gripper=None if raw["gripper"] is None else _block(GripperBlock, raw["gripper"], "gripper"),
         hand=None if raw["hand"] is None else _block(HandBlock, raw["hand"], "hand"),
         home_hand=home_hand,
+        qd_target_diff=(None if raw.get("qd_target_diff") is None
+                        else _block(QdTargetDiff, raw["qd_target_diff"], "qd_target_diff")),
+        fric_ff=None if raw.get("fric_ff") is None else _fric_block(raw["fric_ff"]),
     )
 
 
@@ -411,6 +479,17 @@ def _block(cls, raw: Mapping, name: str):
         raise PdConfigError(f"{name}: expected keys {sorted(required)} (optional {sorted(set(fields) - required)}), "
                             f"got {raw!r}")
     return cls(**{k: _num(raw[k], f"{name}.{k}", float) for k in raw})
+
+
+def _fric_block(raw: Mapping) -> FricFf:
+    keys = {"bv", "fc", "cap", "v_eps"}
+    if not isinstance(raw, Mapping) or not {"bv", "fc", "cap"} <= set(raw) <= keys:
+        raise PdConfigError(f"fric_ff: expected keys bv, fc, cap (optional v_eps), got {raw!r}")
+    try:
+        return FricFf(bv=_floats(raw["bv"]), fc=_floats(raw["fc"]), cap=_floats(raw["cap"]),
+                      v_eps=float(raw.get("v_eps", 0.02)))
+    except (TypeError, ValueError) as exc:
+        raise PdConfigError(f"fric_ff: {exc}") from exc
 
 
 def _per_side(value, conv):
@@ -485,4 +564,5 @@ def law_cfg_from_config(config: PdConfig, contract: DeployContract, stage: str,
     return PdLawCfg(max_vel=max_vel, lead_sec=config.lead_sec, lead_vel=config.lead_vel,
                     vel_ff_scale=side_vel_ff_scale(contract, side), vel_ff_cap=config.vel_ff_cap,
                     effort_cap=config.effort_cap, lower=lower, upper=upper,
-                    gravity_mode=config.gravity.mode, droop_gain=gain, droop_limit=limit)
+                    gravity_mode=config.gravity.mode, droop_gain=gain, droop_limit=limit,
+                    fric_ff=config.fric_ff)

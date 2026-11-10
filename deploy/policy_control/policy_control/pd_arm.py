@@ -27,7 +27,7 @@ from .pd_gains import GainsError, expected_hand_gains, load_and_check, verify_ru
 from .pd_stationary import StationaryRuntime
 from .pd_gravity import make_gravity
 from .pd_law import (PdCommand, PdConfig, blend_engage, blend_fraction, blend_release, law_cfg_from_config,
-                     limits_from_profile, settle_bias)
+                     limits_from_profile, settle_bias, target_difference_velocity)
 from .pd_state import (EngageCheck, Phase, engage_refusals, hold_is_self_clearing, hold_is_watchdog_only, recv_ages_ms,
                        thermal_act_joints, thermal_init, thermal_levels, thermal_stale_joints, thermal_step,
                        thermal_unknown_joints)
@@ -268,6 +268,11 @@ def _hold_with_hand(unit, hand) -> None:
     unit.target = None
 
 
+def _qd_diff_cfg(unit):
+    """pd yaml qd_target_diff(None = 꺼짐). cfg 없는 시험용 팔 조각도 꺼짐으로 본다."""
+    return getattr(getattr(unit, "cfg", None), "qd_target_diff", None)
+
+
 class ArmUnit:
     """한 팔: 실측(SourceSet, 한 팔 view) → PdStage.tick → 백엔드. 상태 변경은 노드 락 아래에서만."""
 
@@ -455,6 +460,8 @@ class ArmUnit:
         if qd is None:
             raise CodecError(f"joint_target({self.side}): velocity 가 없다")
         n = len(self.arm_joints)
+        if _qd_diff_cfg(self) is not None:                  # 꺼짐(기본) = 메시지 velocity 그대로
+            qd = self._diff_qd(q, now, episode)
         self.target = PdTarget(q=q.copy(), qd=qd.copy(), tau_ff=np.zeros(n), seq=int(seq), t_recv=now)
         if self.hand_joints and all(j in sample.names for j in self.hand_joints):
             self.hand_target = select_joints(sample, self.hand_joints)[0].copy()
@@ -464,6 +471,14 @@ class ArmUnit:
             self.hand_target = self.hold.hand.copy()
         self.hold = None                                    # 외부 목표가 내부 유지를 대체한다
         return True
+
+    def _diff_qd(self, q: np.ndarray, now: float, episode: str | None) -> np.ndarray:
+        """qd_target_diff: q̇* = 같은 에피소드 직전 목표와의 차분(수신 시각 기준 — 정책 노드는 header stamp 를 비운다)."""
+        cfg = self.cfg.qd_target_diff
+        prev = getattr(self, "_qd_prev", None)
+        prev = prev[:2] if prev is not None and prev[2] == episode else None
+        self._qd_prev = (q.copy(), float(now), episode)
+        return target_difference_velocity(q, now, prev, cfg.max_dt)
 
     def on_episode(self, event: str, episode: int, info: Mapping | None = None) -> None:
         # 손 명령 입력: 키를 실은 사건(정책 노드는 모든 사건에 싣는다)이면 그 값 — pd 를 에피소드 도중 다시 띄워도 latched start · stop 에서
@@ -565,6 +580,9 @@ class ArmUnit:
 
     def _select_target(self, now: float, q_m: np.ndarray) -> PdTarget | None:
         if self.hold is None:
+            cfg = _qd_diff_cfg(self)
+            if cfg is not None and self.target is not None and now - self.target.t_recv > cfg.hold_sec:
+                return replace(self.target, qd=np.zeros_like(self.target.qd))   # 정책이 멈추면 q̇* 전향도 멈춘다
             return self.target
         self.hold = self._settle(self.hold, q_m)
         return PdTarget(q=self.hold.q + self.hold.bias, qd=np.zeros(len(q_m)), tau_ff=np.zeros(len(q_m)),
