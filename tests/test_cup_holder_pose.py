@@ -349,3 +349,18 @@ def test_a_board_marker_with_the_same_id_lying_on_the_table_is_ignored():
     assert est.flat == (1,) and est.src.get(1) == "aruco"
     assert np.allclose(est.poses[1][:2], truth[:2], atol=0.004), est.poses[1]
     assert abs(math.degrees(H.wrap(est.poses[1][3] - truth[3]))) < 2.0
+
+
+def test_one_shot_jump_check_rejects_a_holder_that_moved_more_than_max_jump(tmp_path):
+    """★11.10 한 번 재기 — 직전 파일 없으면 통과, 홀더별 xy 차가 상한 넘으면 거부, 직전에 없는 홀더는 비교 안 함."""
+    prev = {"cup_holder_0": np.array([0.37, 0.17, 0.235, 0.0]), "cup_holder_1": np.array([0.37, -0.05, 0.235, 0.0])}
+    near = {"cup_holder_0": np.array([0.38, 0.17, 0.235, 0.1]), "cup_holder_1": np.array([0.37, -0.06, 0.235, 0.0])}
+    far = {**near, "cup_holder_1": np.array([0.37, -0.09, 0.235, 0.0]), "cup_holder_2": np.array([0.37, -0.28, 0.235, 0.0])}
+    assert NODE.jump_check(None, near, 0.03)[0]
+    ok, d = NODE.jump_check(prev, near, 0.03)
+    assert ok and d["cup_holder_0"]["dxy_m"] == pytest.approx(0.01) and d["cup_holder_0"]["dyaw_deg"] == pytest.approx(5.73, abs=0.01)
+    ok, d = NODE.jump_check(prev, far, 0.03)
+    assert not ok and d["cup_holder_1"]["dxy_m"] == pytest.approx(0.04) and d["cup_holder_2"]["dxy_m"] is None
+    out = tmp_path / "poses.yaml"
+    out.write_text("holders:\n  cup_holder_0: {marker_id: 1, position: [0.37, 0.17, 0.235], yaw_rad: 0.0, yaw_deg: 0.0}\n")
+    assert set(NODE.load_written(out)) == {"cup_holder_0"} and NODE.load_written(tmp_path / "none.yaml") is None

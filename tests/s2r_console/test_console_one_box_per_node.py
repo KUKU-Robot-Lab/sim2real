@@ -59,6 +59,9 @@ def _station():
 
 GEN = _station()
 PM = ("episode_place_m_right#10",)
+#: ★11.11 놓기 학생 오른손 색 · 홀더 버튼 — 기본(파랑 · 홀더 1) 말고 나머지 조합 에피소드(생성기 PLACE_M_VARIANTS)
+PMV = GEN.PLACE_M_VARIANTS
+PMV_H = {n: int(n.rsplit("_h", 1)[1].split("_")[0]) for n in PMV}      # 이름 → 홀더
 
 
 def _real():
@@ -119,12 +122,13 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                "episode_tilt_base_d#5",                         # ★10.20 경로 A 폐지 → tilt 경로 D(ap05 → rcg03)
                                "episode_tilt_base_c#5",                         # 10.17 tilt 기본 궤적 경로 C
                                "episode_cocktail_1#5", "episode_cocktail_1b#5", "episode_cocktail_1c_e1000#5", "episode_cocktail_1c_e4000#5",   # ★10.28 칵테일 SEP · B
-                               "episode_place_m_right#5"} & set(units)          # ★11.08 놓기 학생(잡기는 칵테일 그대로)
+                               "episode_place_m_right#5",                       # ★11.08 놓기 학생(잡기는 칵테일 그대로)
+                               *(f"episode_{n}#5" for n in PMV)} & set(units)   # ★11.11 놓기 학생 색 · 홀더 판
     place = d.box("rh_place_node_right")
     assert set(place.units) == {"policy_place_right#1", "episode_pick_place_right#6",
                                 "episode_pick_place_f_right#6",                 # ★10.22 경로 F + 놓기(newton_05)
                                 "episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_1c_e4000#7",   # ★10.28 칵테일 — 같은 노드가 홀더 1 → 2
-                                *PM}   # ★11.09 놓기 학생 v2 — 같은 노드 이름(경로 F 접근 #5 · 검사 #6 · 목 드라이버 #8 · 마스크 #9 뒤)
+                                *PM, *(f"episode_{n}#10" for n in PMV)}   # ★11.11 색 · 홀더 판 ·  ★11.09 놓기 학생 v2 — 같은 노드 이름(경로 F 접근 #5 · 검사 #6 · 목 드라이버 #8 · 마스크 #9 뒤)
     # ★10.19 사용자 "좌우 동시 실행": 한 팔 에피소드는 팔마다 실행기(episode_runner_<팔>), 두 팔 tilt 는 기본 실행기
     runner = d.box("episode_runner")
     assert set(runner.units) == {"episode_tilt_base_d#9",   # 실기: 앞에 CPU 기록 한 줄(10.08) · ★10.20 경로 A 폐지 → D, 정책 노드 둘
@@ -144,7 +148,8 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                                               *_F_VARIANTS(side, 8),   # ★11.08 경로 F 주황 · 분홍(오른팔만)
                                                               # ★11.05 경로 S · ★11.07 경로 M · ★11.09 놓기 학생 v2 — 카메라가 같은 PC 일 때만(★11.11)
                                                               *((f"episode_grasp_s_{side}#11", f"episode_grasp_m_{side}#11", f"episode_place_m_{side}#13")
-                                                                if PM else ())}
+                                                                if PM else ()),
+                                                              *(f"episode_{n}#13" for n in PMV if side == "right")}   # ★11.11 색 · 홀더 판
 
 
 def test_one_arms_pd_without_and_with_publishing_is_one_box_and_only_the_quiet_one_mutes_the_drive(real):
@@ -176,7 +181,7 @@ def test_in_the_episode_the_runner_gives_the_holder_and_goal_and_alone_the_holde
     alone = "obj_cup_holder_1" if GEN.REMOTE_PERCEPTION else "cup_holders"
     assert holder == {alone: ("policy_place_right#1",),
                       "episode_runner_right": ("episode_pick_place_right#6", "episode_pick_place_f_right#6",
-                                               *PM),   # ★10.22 경로 F + 놓기 · ★11.09 놓기 학생 v2(한 팔 = 팔별 실행기)
+                                               *PM, *(f"episode_{n}#10" for n in PMV if PMV_H[n] == 1)),   # ★11.11 · ★10.22 경로 F + 놓기 · ★11.09 놓기 학생 v2(한 팔 = 팔별 실행기)
                       "episode_runner": ("episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_1c_e4000#7")}   # ★10.28 칵테일(두 팔 = 기본 실행기)
     goal = {w.src: w for w in d.wires if w.dst == "rh_aglt_node_right" and w.topic == "/policy_control/right/goal"}
     # ★10.19 한 팔 에피소드는 오른팔 실행기, 두 팔 tilt 는 기본 실행기가 목표를 낸다
@@ -270,7 +275,8 @@ def test_the_fake_profile_gets_the_same_picture_with_fake_hands():
     # fake 홀더 여섯(★10.22 경로 F + 놓기 둘 추가) · ★10.28 칵테일 둘 × 홀더 셋 → 열둘 = 실기 홀더 노드 상자 하나
     #   ★11.08 놓기 학생 에피소드 홀더 하나 → 19 · ★11.09 왼손 놓기 학생(홀더 0) 하나 더 → 20
     holders = d.box("cup_holders")
-    assert len(holders.units) == 20 - 2 * (not PM) and holders.title == W.HOLDER_TITLE and not holders.ros
+    #   ★11.11 놓기 학생 색 · 홀더 판 — 조합 에피소드마다 홀더 하나
+    assert len(holders.units) == 20 - 2 * (not PM) + len(PMV) and holders.title == W.HOLDER_TITLE and not holders.ros
 
 
 # ── 노드 소스의 이름 ────────────────────────────────────────────────────
@@ -637,3 +643,6 @@ def test_the_cocktail_place_node_hears_both_of_its_holders(real):
         assert set(srcs.get("episode_runner", ())) == {"episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_1c_e4000#7"}, (h, srcs)
         # ★11.09 놓기 학생 v2 = 홀더 1, 한 팔 에피소드라 팔별 실행기에서 온다(칵테일 실행기가 아님)
         assert ("episode_place_m_right#10" in srcs.get("episode_runner_right", ())) == (bool(PM) and h == 1), (h, srcs)
+        # ★11.11 색 · 홀더 판 — 고른 홀더만
+        for n in PMV:
+            assert (f"episode_{n}#10" in srcs.get("episode_runner_right", ())) == (PMV_H[n] == h), (n, h, srcs)

@@ -95,9 +95,57 @@ def f_variant_text(side: str, obj: str) -> str:
             "episode:" + body)
 
 
+#: ★11.11 사용자 "놓기 학생(place_m) 시험에서 컵 색과 홀더를 콘솔 카드에서 고르게" — 경로 F 물체 버튼과 같은 방식.
+#:   오른손 놓기 학생 = sim 계약 right_n10_e4000(target_holders [1, 2], 컵 source240 파랑 · 분홍 → 정책 물체 source240_real).
+#:   왼손 left_n09_e3800 은 홀더 0 · shaker 주황 하나뿐이라 변형이 없다. 기본(파랑 · 홀더 1) = place_m_right.yaml 원본.
+#:   콘솔 experiments.PLACE_M_COLORS · PLACE_M_HOLDERS 와 같다(시험이 맞춘다). 학생 마스크 --target-class 는 컵 토픽에서 나온다.
+PLACE_M_COLORS = {"blue": "source240_blue", "pink": "source240_pink"}
+PLACE_M_HOLDERS = (1, 2)
+PLACE_M_DEFAULT = ("blue", 1)
+#: 홀더 2 의 홀더 허용[m] — cocktail_1c_e4000 place_pink 와 같은 형식(★11.10 핑크 판)
+PLACE_M_H2_TOL = 0.07
+#: ★11.10 위험 문구 — 에피소드 카드 제목 앞에 붙인다(콘솔에 보이게)
+PLACE_M_H2_WARN = "★홀더 2 = 학습 범위 확인 전(놓기 학생 right_student_place 가 홀더 2 를 배웠는지 모름) — "
+
+
+def place_m_name(color: str, holder: int) -> str:
+    """놓기 학생 오른손 (색, 홀더) → 에피소드 이름. 기본은 원본 place_m_right, 나머지는 place_m_<색>_h<홀더>_right
+    (팔이 끝 — 콘솔 ctl_<머리>_<팔> 과 grasp_f_<물체>_<팔> 같은 꼴)."""
+    return "place_m_right" if (color, holder) == PLACE_M_DEFAULT else f"place_m_{color}_h{holder}_right"
+
+
+PLACE_M_VARIANTS = tuple(place_m_name(c, h) for c in PLACE_M_COLORS for h in PLACE_M_HOLDERS
+                         if (c, h) != PLACE_M_DEFAULT)
+EPISODE_WARN = {place_m_name(c, 2): PLACE_M_H2_WARN for c in PLACE_M_COLORS}
+
+
+def place_m_variant_text(color: str, holder: int) -> str:
+    """★11.11 place_m_right 의 컵 · 홀더만 바꾼 판. 홀더 2 는 holder_tol_m 0.07 을 넣는다(★11.10 핑크 판 형식)."""
+    src = (REPO / "config" / "episodes" / "place_m_right.yaml").read_text(encoding="utf-8")
+    name, cup = place_m_name(color, holder), PLACE_M_COLORS[color]
+    pairs = [("episode: {name: place_m_right, version: 2}", f"episode: {{name: {name}, version: 1}}"),
+             ("CUP: {topic: /objects/source240_blue/pose}", f"CUP: {{topic: /objects/{cup}/pose}}"),
+             ("holders: {PLACE_HOLDER: 1}", f"holders: {{PLACE_HOLDER: {holder}}}")]
+    if holder == 2:
+        pairs.append(("policy_object: source240_real,\n     expect: {right_hand: EMPTY",
+                      f"policy_object: source240_real,\n     holder_tol_m: {PLACE_M_H2_TOL:g}, expect: {{right_hand: EMPTY"))
+    for old, new in pairs:
+        if src.count(old) != 1:
+            raise ValueError(f"place_m_right.yaml: {old!r} 가 한 번이 아니다 — {name} 을 만들 수 없다")
+        src = src.replace(old, new)
+    tol = f" · 홀더 허용 {PLACE_M_H2_TOL:g} m" if holder == 2 else ""
+    warn = ("# ★위험: 홀더 2 = 학습 범위 확인 전 — 놓기 학생 right_student_place 가 홀더 2 범위를 학습했는지 확인되지 않았다.\n"
+            if holder == 2 else "")
+    return ("# 이 파일은 scripts/ops/make_rh56f1_missions.py 가 place_m_right.yaml 에서 컵 · 홀더만 바꿔 만든다 — 손으로 고치지 말 것(--check).\n"
+            f"# 놓기 학생 오른손 {color} · 홀더 {holder} 판(★11.11 콘솔 색 · 홀더 버튼) — 컵 {cup}{tol}. 흐름은 place_m_right 와 같다.\n"
+            + warn + "episode:" + src.split("\nepisode:", 1)[1])
+
+
 def f_variant_files() -> dict:
-    return {REPO / "config" / "episodes" / f"grasp_f_{o}_{s}.yaml": f_variant_text(s, o)
-            for s in ("right", "left") for o in F_OBJECTS if F_DEFAULT[s] != o}
+    return {**{REPO / "config" / "episodes" / f"grasp_f_{o}_{s}.yaml": f_variant_text(s, o)
+               for s in ("right", "left") for o in F_OBJECTS if F_DEFAULT[s] != o},
+            **{REPO / "config" / "episodes" / f"{place_m_name(c, h)}.yaml": place_m_variant_text(c, h)
+               for c in PLACE_M_COLORS for h in PLACE_M_HOLDERS if (c, h) != PLACE_M_DEFAULT}}
 
 
 #: 상황판에서 굴리는 에피소드(10.04 사용자: 구분 실행 → 연속 실행) — config/episodes/<이름>.yaml, 실기에 쓸 수 있는 것만
@@ -136,7 +184,9 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             "grasp_m_right", "grasp_m_left",
             # ★11.08 놓기 학생(규칙 머리) — ★11.09 v2: 경로 F 잡고 들기 성공 → 넘김 묶음 그대로 놓기 학생(오른손 · 왼손).
             #   이 에피소드들만 목 --max-tilt 82
-            "place_m_right", "place_m_left")
+            "place_m_right", "place_m_left",
+            # ★11.11 놓기 학생 오른손 색 · 홀더 판(콘솔 버튼, 홀더 2 = 학습 범위 확인 전) — ★11.10 place_m_right_pink 는 place_m_pink_h2_right 로
+            *PLACE_M_VARIANTS)
 #: ★10.20 사용자 "영상은 필요 없음. 일단 기본 off" — 카메라 영상 · FP++ 실시간 좌표 기록(vision-3090)과 끝난 뒤 보고서 영상
 #   만들기(episode_media.py)를 기본으로 끈다. 10.20 실기: 보고서 영상 정리가 옛 회까지 다시 가져오며 6 분 넘게 팔 작업을 붙잡아
 #   rehome · tilt_now 승인이 막혔다. 켜려면 True 로 바꾸고 이 생성기를 다시 돌린다(미션 YAML 이 바뀐다).
@@ -162,7 +212,7 @@ STUDENT_CAMERA_BAG_HZ = 60.0
 STUDENT_CAMERA_BAG_TOPICS = ("/head_depth/image", "/head_depth/rgb", "/head_depth/config",
                              "/camera/camera/color/camera_info", "/head/joint_states")
 STUDENT_EPISODES = ("grasp_s_right", "grasp_s_left", "grasp_m_right", "grasp_m_left", "place_m_right",
-                    "place_m_left")
+                    "place_m_left", *PLACE_M_VARIANTS)
 #: ★11.07 마스크 학생(student.yaml mask:) 에피소드는 head_mask_node 출력도 싣는다(160x90 mono8 비트 + latched 설정)
 MASK_CAMERA_BAG_TOPICS = ("/head_mask/image", "/head_mask/config")
 #: 에피소드 snapshot 이 다시 내는 정지 물체 자세(episode_ros.OBJECT_RELAY) — aglt 는 이것을 컵으로 본다
@@ -299,6 +349,9 @@ REMOTE_PERCEPTION = PERCEPTION_HOST != "local"
 CAMERA_EXTRINSICS = STATION["extrinsics"]
 PLACE_MASK_AGE_S = 0.35                 # ★11.11 임시 — 놓기 학생 마스크 나이 상한(기본 0.2)
 HOLDER_POSES = STATION["holder_poses"]
+#: ★11.10 cups 끝 홀더 한 번 재기 — 안정 대기 상한 s · 직전 파일과 홀더별 xy 차 상한 m(deploy 확정 3 cm)
+HOLDER_ONCE_S = 30.0
+HOLDER_MAX_JUMP_M = 0.03
 #: ★10.30 arm_v2: 목(U2D2)이 다른 PC 에 있으면 목 드라이버 · 토크 해제를 그 PC 에서 돌린다(토픽은 랜 DDS). local = 이 PC
 HEAD_HOST = STATION.get("head_host", "local")
 REMOTE_HEAD = HEAD_HOST != "local"
@@ -575,7 +628,7 @@ def _stages(kind: str) -> list[dict]:
                              *(["head_home"] if any(b.student for b in ep.policies.values()) else [])],
                    "needs_why": "에피소드는 홈(rh_aglt 시작 자세)" + (" · FP++ 컵" if perceives else "") + " 위에서 노드를 잇는다"
                                 + (f" · 홀더는 저장된 {ep.holder_poses}(없으면 시작 검사가 막는다)" if ep.holders else ""),
-                   "title": f"[에피소드] {name} — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 "
+                   "title": f"{EPISODE_WARN.get(name, '')}[에피소드] {name} — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 "
                             f"진행: {' → '.join(n.id for n in ep.nodes if n.type != 'terminal')}"})
     st.append({"id": "shutdown", "group": "finish", "lane": "rig", "touches_real": real,
                "title": "안전 종료 — 팔 받침 확인 → 정책 → 인지 → 목 → pd → 손 → 팔 (★목 · 팔 토크가 풀린다)"})
@@ -740,6 +793,24 @@ def _run(kind: str) -> dict:
              background=True)
         for role, y in (("src", "-0.16"), ("rcv", "0.16"))
         for t in (f"/objects/cup_{role}/pose", _live(f"/objects/cup_{role}/pose"))]   # live = aglt 정책 입력(10.12 A안)
+    # ★11.10 deploy 확정: cups 끝에 홀더 자리를 매번 한 번 잰다(에피소드 needs 에는 걸지 않는다 — 11.03 결정 유지).
+    #   직전 파일과 홀더별 xy 차가 3 cm 넘으면 쓰지 않는다(jump_rejected). 결과가 written 이 아니면 '⚠ ' 줄을 콘솔이 단계 경고로 띄운다.
+    #   cups 를 막지 않게 늘 rc 0(; true). 놓기 노드는 에피소드마다 시작 때 이 파일을 읽는다(load_holder_poses).
+    once = f"--write --timeout-s {HOLDER_ONCE_S:g} --max-jump-m {HOLDER_MAX_JUMP_M:g}"
+    run["cups"].append(_cmd(
+        f"홀더 자리 한 번 다시 재기(최대 {HOLDER_ONCE_S:g} s) — 세 홀더가 안정되면 {HOLDER_POSES} 와 비교해 xy {HOLDER_MAX_JUMP_M * 100:g} cm "
+        "안이면 갱신, 넘거나 못 재면 그대로 두고 경고(결과 <파일>.last_check.json). 실패해도 cups 는 계속",
+        ["bash", "-lc", f"bash {{repo}}/scripts/vision/camera_up.sh; python3 {{repo}}/scripts/nodes/cup_holder_pose_node.py {once} "
+                        f"--out {{repo}}/{HOLDER_POSES} --extrinsics {{repo}}/{CAMERA_EXTRINSICS}; true"]
+        if not REMOTE_PERCEPTION else
+        _on_perception_pc(f"bash scripts/vision/camera_up.sh; {REMOTE_PY} scripts/nodes/cup_holder_pose_node.py {once} "
+                          f"--out {HOLDER_POSES} --extrinsics {CAMERA_EXTRINSICS}; true"))
+        if real else _cmd("fake — 홀더 한 번 재기 없음", ["bash", "-lc", "true"]))
+    if real and REMOTE_PERCEPTION:
+        run["cups"].append(_cmd(
+            f"홀더 자세 파일 · 결과를 이 PC 로 — {PERCEPTION_HOST}:{HOLDER_POSES}(.last_check.json) → 같은 경로(cup_holders 단계와 같다). 실패해도 계속",
+            ["bash", "-lc", f"scp -o BatchMode=yes {PERCEPTION_HOST}:{REMOTE_SIM2REAL}/{HOLDER_POSES} "
+                            f"{PERCEPTION_HOST}:{REMOTE_SIM2REAL}/{HOLDER_POSES}.last_check.json {{repo}}/{Path(HOLDER_POSES).parent}/; true"]))
     for s in SIDES:
         if s not in REAL_CUPS:
             continue
@@ -1008,6 +1079,20 @@ def _student_mask(student_id: str) -> bool:
     return bool(card.get("mask"))
 
 
+#: ★11.10 마스크 클래스 = policy_control.student_mask.CLASSES(그 모듈은 torch 를 불러 생성기는 따로 적는다 — 시험이 대조)
+MASK_COLORS = ("blue", "pink", "orange")
+
+
+def _mask_target(topic: str) -> str:
+    """★11.10 마스크 학생 목표 색 — 에피소드 컵 토픽 /objects/<이름>/pose 의 이름 끝 색(source240b_blue → blue).
+    못 뽑으면 생성 실패 — 기본값(묶음 target_class)으로 조용히 넘기면 다른 색 컵을 잡으러 간다."""
+    parts = topic.strip("/").split("/")
+    color = parts[1].rsplit("_", 1)[-1] if len(parts) == 3 and parts[0] == "objects" else ""
+    if color not in MASK_COLORS:
+        raise ValueError(f"{topic!r}: 이름 끝 색이 {MASK_COLORS} 중 하나가 아니다 — 마스크 학생 target_class 를 정할 수 없다")
+    return color
+
+
 def _camera_pc_node(venv: str, script: str, *args: str, nice: bool = False) -> list:
     """학생 머리 노드(깊이 · 마스크) argv — 카메라가 붙은 PC 에서. ★11.11 카메라가 다른 PC(4090)면 ssh -tt 로 그 PC 의 같은 venv
     (scripts/setup/setup_student_env.sh · setup_venv_yolo.sh 로 만든다)에서 exec — 콘솔이 ssh 를 끝내면(HUP) 노드가 같이 죽는다.
@@ -1019,7 +1104,7 @@ def _camera_pc_node(venv: str, script: str, *args: str, nice: bool = False) -> l
     return _on_perception_pc(f"exec {' '.join(pre)} {venv}/bin/python {script} {rel}".replace("exec  ", "exec "))
 
 
-def _student_cmds(b, contract: str, robot: str, cup_topic: str, squeeze: bool) -> list:
+def _student_cmds(b, contract: str, robot: str, cup_topic: str, squeeze: bool, target: str | None = None) -> list:
     """경로 S 노드 둘 — head_depth_node(묶음의 얼린 외부 파라미터 · 목이 그 head_pose 일 때만 깊이) + rh_aglt_student_node."""
     from policy_control.student_chain import bundle_limits
     sdir = f"{{repo}}/deploy/policies/{b.student}"
@@ -1054,6 +1139,7 @@ def _student_cmds(b, contract: str, robot: str, cup_topic: str, squeeze: bool) -
               "-p", f"robot:={robot}", "-p", "device:=cuda", "-p", f"student_dir:={sdir}",
               "-p", "goal_max:=1", "-p", "freeze_rule:=lift_hold", "-p", "freeze_lift_m:=0.07", "-p", f"freeze_hold_steps:={hold}",
               "-p", f"cup_topic:={cup_topic}", *live_args, *(["-p", "hand_squeeze:=true"] if squeeze else []),
+              *(["-p", f"target_class:={target}"] if target else []),
               "-p", f"max_episode_s:={max_s:.1f}"], background=True),
     ]
 
@@ -1219,7 +1305,8 @@ def _episode_run(name: str, real: bool) -> list:
                 # 머리 깊이 · 마스크 노드는 PC 에 하나 — 양손 학생 미션이면 두 번째 팔 것은 뺀다
                 #   (좌우 묶음이 다르면 첫 팔 묶음의 노드만 남는다 — 학생 reset 의 check_*_config 가 어긋남을 거부한다)
                 seen = {_head_node(x) for x in cmds} - {None}
-                cmds.extend([c for c in _student_cmds(b, contract, robot, _live(ep.objects[obj]["topic"]), squeeze)
+                tgt = _mask_target(ep.objects[obj]["topic"]) if _student_mask(b.student) else None   # ★11.10 에피소드 컵 색
+                cmds.extend([c for c in _student_cmds(b, contract, robot, _live(ep.objects[obj]["topic"]), squeeze, tgt)
                              if not (c.get("background") and _head_node(c) in seen)])
                 continue
             if squeeze:
@@ -1264,6 +1351,9 @@ def _episode_run(name: str, real: bool) -> list:
                               "-p", f"robot:={robot}", "-p", f"device:={'cuda' if b.student else 'cpu'}", "-p", f"cup_topic:={cup_t}",
                               "-p", f"holder:={hid}", *holders_arg, *([] if real else ["-p", "require_grasp:=false"]),
                               *(["-p", f"student_dir:={sdir}"] if b.student else []),
+                              # ★11.10 마스크 학생 목표 색 = 에피소드 source_object 컵 이름 끝 색
+                              *(["-p", f"target_class:={_mask_target(ep.objects[obj]['topic'])}"]
+                                if b.student and _student_mask(b.student) else []),
                               # ★11.11 임시(C안): 카메라 PC 4090 의 마스크 stamp→발행 p50 215 ms 로 0.2 s 상한에 걸려 place_m_left 정지 —
                               #   원인(FP++ 컨테이너 부하 의심)을 잴 때까지 놓기 학생만 0.35 s. 원인을 없애면 지운다
                               *(["-p", f"max_mask_age_s:={PLACE_MASK_AGE_S}"] if b.student and real else [])],

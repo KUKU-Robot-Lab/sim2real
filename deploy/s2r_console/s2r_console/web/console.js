@@ -983,9 +983,11 @@ function xpPick(s, X) {
     || items.find((i) => Object.values(i.sides).some((sd) => xpState(s, sd).live)) || items[0];
   if (!it) return [null, "", null];
   const keys = Object.keys(it.sides), key = keys.includes(xpSel.side) ? xpSel.side : keys[0];
-  return [it, key, xpObject(it.sides[key], key)];
+  return [it, key, xpObject(it.sides[key], xpFKey(it.id, key))];
 }
 // ★11.09 경로 F 물체 버튼 — 팔마다 고른 물체(xpSel.fobj[팔])의 에피소드. 고른 적이 없으면 팔 기본 물체
+// ★11.11 놓기 학생 색 · 홀더 버튼도 같은 틀 — 실험마다 따로 기억한다(경로 F 는 예전 키 그대로 팔)
+const xpFKey = (id, side) => (id === "grasp_f" ? side : `${id}:${side}`);
 function xpObject(sd, key) {
   const objs = sd && sd.objects;
   if (!objs || !objs.length) return sd;
@@ -1010,7 +1012,7 @@ function renderExperiments(s) {
     const rows = (X.items || []).filter((i) => i.group === g).map((i) => {
       const on = !!it && i.id === it.id;
       const dots = Object.entries(i.sides).map(([k, sd0]) => {
-        const sd = xpObject(sd0, k), st = xpState(s, sd);
+        const sd = xpObject(sd0, xpFKey(i.id, k)), st = xpState(s, sd);
         return `<span class="xp-dot ${xpTone(st)}" title="${esc(`${sideName(k)} · ${xpWord(st)}${st.reasons.length && !st.ok ? ` — ${st.reasons[0]}` : ""}`)}">${esc(SIDE_SHORT[k] || "R+L")}</span>`;
       }).join("");
       return `<button class="xp-item${on ? " on" : ""}" data-act="xp-pick" data-arg="${esc(i.id)}" aria-pressed="${on}">
@@ -1025,7 +1027,7 @@ function xpMain(s, X, it, key, side) {
   const st = xpState(s, side), tone = xpTone(st);
   const sides = Object.entries(it.sides);
   const seg = sides.length > 1 ? `<div class="seg" role="group" aria-label="팔">${sides.map(([k, sd]) =>
-      `<button class="seg-b${k === key ? " on" : ""}" data-act="xp-side" data-arg="${esc(k)}" aria-pressed="${k === key}"><span class="lamp ${xpTone(xpState(s, xpObject(sd, k)))}"></span>${esc(sideName(k))}</button>`).join("")}</div>` : "";
+      `<button class="seg-b${k === key ? " on" : ""}" data-act="xp-side" data-arg="${esc(k)}" aria-pressed="${k === key}"><span class="lamp ${xpTone(xpState(s, xpObject(sd, xpFKey(it.id, k))))}"></span>${esc(sideName(k))}</button>`).join("")}</div>` : "";
   const head = `<header class="xp-head"><span class="xp-key xp-key-lg">${esc(it.key)}</span>
     <div class="xp-title"><h3>${esc(it.label)} <span>· ${esc(sideName(key))}</span></h3><p>${esc(it.summary)}</p></div>
     ${seg}<span class="badge ${tone}">${esc(xpWord(st))}</span></header>`;
@@ -1043,22 +1045,44 @@ const XP_CUPS = ["source240", "source200", "shaker"];
 function xpObjects(s, side, key) {
   const objs = side.objects;
   if (!objs) return "";
+  if (objs[0].holder != null) return xpPlaceObjects(s, side);
   const cupBtn = (c) => {
     const first = objs.find((o) => o.cup === c && o.color === side.color) || objs.find((o) => o.cup === c);
     return first ? `<button class="seg-b${c === side.cup ? " on" : ""}" data-act="xp-fobj" data-arg="${esc(first.object)}" aria-pressed="${c === side.cup}">${esc(c.replace("source", "src"))}</button>` : "";
   };
   const colors = objs.filter((o) => o.cup === side.cup).map((o) =>
     `<button class="seg-b${o.object === side.object ? " on" : ""}" data-act="xp-fobj" data-arg="${esc(o.object)}" aria-pressed="${o.object === side.object}"><span class="lamp ${xpTone(xpState(s, o))}"></span>${esc(o.color)}</button>`).join("");
-  const w = (S.workspace && S.workspace.objects) || [], wo = w.find((o) => o.id === side.object);
+  return `<div class="xp-fobj">
+    <div class="xp-fobj-row"><span class="xp-fobj-k">컵</span><div class="seg" role="group" aria-label="컵 종류">${XP_CUPS.map(cupBtn).join("")}</div></div>
+    <div class="xp-fobj-row"><span class="xp-fobj-k">색</span><div class="seg" role="group" aria-label="색">${colors}</div></div>
+    ${xpRefreshRow(side.object)}
+  </div>`;
+}
+// 인지 줄 — FP++ 물체 하나만 perception_refresh(꺼져 있으면 켜고)
+function xpRefreshRow(obj) {
+  const w = (S.workspace && S.workspace.objects) || [], wo = w.find((o) => o.id === obj);
   const ra = (S.actions || []).find((a) => a.id === "perception_refresh");
   const r = (wo && (wo.results || {}).fpp) || null;
   const can = holding() && !!ra;
   const note = !wo ? "작업 공간에 없는 물체" : !wo.enabled ? "꺼져 있음 — 누르면 켜고 FP++ 를 다시 띄운다" : r && r.valid ? "FP++ 좌표 있음" : "FP++ 좌표 없음";
+  return `<div class="xp-fobj-row"><span class="xp-fobj-k">인지</span><button class="btn btn-sm" data-act="xp-refresh" data-arg="${esc(obj)}" ${can ? "" : "disabled"}>⟳ Perception Refresh — ${esc(obj)}</button>
+      <span class="hint">${esc(note)}${ra && ra.job && ra.job.active ? " · 인지 중…" : ""}</span>${ra ? actionState(ra) : ""}</div>`;
+}
+// ★11.11 사용자 "놓기 학생(place_m) 시험에서 컵 색과 홀더를 콘솔 카드에서 고르게" — 색 줄 · 홀더 줄 · 인지(고른 색의 FP++ 컵).
+// 고른 조합 = 그 에피소드(place_m_<색>_h<홀더>_right, 기본 파랑 · 홀더 1 = place_m_right). 학생 마스크 목표 색은 에피소드 컵에서 나온다.
+function xpPlaceObjects(s, side) {
+  const objs = side.objects;
+  const colors = [...new Set(objs.map((o) => o.color))], holders = [...new Set(objs.map((o) => o.holder))];
+  const pick = (color, holder) => objs.find((o) => o.color === color && o.holder === holder);
+  const btn = (o, on, label) => o
+    ? `<button class="seg-b${on ? " on" : ""}" data-act="xp-fobj" data-arg="${esc(o.object)}" aria-pressed="${on}"${o.warn ? ` title="${esc(o.warn)}"` : ""}><span class="lamp ${xpTone(xpState(s, o))}"></span>${esc(label)}${o.warn ? " ⚠" : ""}</button>` : "";
+  const colorRow = colors.map((c) => btn(pick(c, side.holder) || objs.find((o) => o.color === c), c === side.color, c)).join("");
+  const holderRow = holders.map((h) => btn(pick(side.color, h), h === side.holder, `홀더 ${h}`)).join("");
+  const warn = side.warn ? `<p class="reasons bad">⚠ ${esc(side.warn)} — 놓기 학생이 이 홀더 범위를 배웠는지 확인되지 않았다</p>` : "";
   return `<div class="xp-fobj">
-    <div class="xp-fobj-row"><span class="xp-fobj-k">컵</span><div class="seg" role="group" aria-label="컵 종류">${XP_CUPS.map(cupBtn).join("")}</div></div>
-    <div class="xp-fobj-row"><span class="xp-fobj-k">색</span><div class="seg" role="group" aria-label="색">${colors}</div></div>
-    <div class="xp-fobj-row"><span class="xp-fobj-k">인지</span><button class="btn btn-sm" data-act="xp-refresh" data-arg="${esc(side.object)}" ${can ? "" : "disabled"}>⟳ Perception Refresh — ${esc(side.object)}</button>
-      <span class="hint">${esc(note)}${ra && ra.job && ra.job.active ? " · 인지 중…" : ""}</span>${ra ? actionState(ra) : ""}</div>
+    <div class="xp-fobj-row"><span class="xp-fobj-k">색</span><div class="seg" role="group" aria-label="컵 색">${colorRow}</div></div>
+    <div class="xp-fobj-row"><span class="xp-fobj-k">홀더</span><div class="seg" role="group" aria-label="홀더">${holderRow}</div></div>
+    ${warn}${xpRefreshRow(side.fpp || side.object)}
   </div>`;
 }
 
@@ -2013,8 +2037,8 @@ Object.assign(acts, {
   },
   "xp-pick"(id) { xpSel = { ...xpSel, id }; xpPol = ""; xpSave(); xpSyncRunner(); render(); },
   "xp-fobj"(obj) {
-    const [, key] = xpPick(S.session, S.session.experiments);
-    xpSel = { ...xpSel, fobj: { ...(xpSel.fobj || {}), [key]: obj } }; xpPol = ""; xpSave(); render();
+    const [it, key] = xpPick(S.session, S.session.experiments);
+    xpSel = { ...xpSel, fobj: { ...(xpSel.fobj || {}), [xpFKey(it.id, key)]: obj } }; xpPol = ""; xpSave(); render();
   },
   async "xp-refresh"(obj) {
     const w = S.workspace || {}, objs = w.objects || [];

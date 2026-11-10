@@ -226,5 +226,7 @@ class StageRunner:
         if rc != 0:
             self._set(step, status="failed", rc=rc, detail=f"rc={rc}")
             return FAILED, f"{step.note}: rc={rc}"
-        self._set(step, status="done", rc=0)
+        # ★11.10 경고 전용 줄('⚠ ' 로 시작) — 성공한 단계에도 그 줄을 detail(경고 색)로 띄운다(cups 의 홀더 한 번 재기)
+        warn = [ln for ln in self._sup.tail(step.key).splitlines() if ln.startswith("⚠ ")]
+        self._set(step, status="done", rc=0, detail=" · ".join(warn[-3:]))
         return None

@@ -91,3 +91,4 @@ analysis/**/setup/plan/plan.json
 
 # 옛 콘솔 경로(runs/s2r_console → logs/s2r_console 링크)
 /runs/
+config/cup_holder_poses_*.yaml.last_check.json

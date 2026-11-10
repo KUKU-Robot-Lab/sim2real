@@ -852,7 +852,8 @@ def test_every_other_head_driver_keeps_the_default_tilt_limit():
         # ★11.09 82 는 놓기 학생 에피소드 둘(오른손 · 왼손)에만, 에피소드마다 하나씩 + ★11.10 목 스윕(camset 둘레 tilt +75.5 까지) 동안만
         got = sorted(k.rsplit("#", 1)[0] for k in tilt82)
         student = ["episode_place_m_left", "episode_place_m_right"] if "episode_place_m_right" in raw["run"] else []
-        assert got == ([*student, "head_sweep"] if raw is REAL_RAW else []), tilt82
+        student += [f"episode_{n}" for n in GEN.PLACE_M_VARIANTS] if student else []   # ★11.11 놓기 학생 색 · 홀더 판(오른손)
+        assert got == (sorted([*student, "head_sweep"]) if raw is REAL_RAW else []), tilt82
         others = {k: v for k, v in drv.items() if k not in tilt82}     # 놓기 에피소드 끝 꼬리 드라이버 포함
         assert all(v == GEN.HEAD_DRIVER_ARGV for v in others.values()), others
     assert "head_home#0" in _drivers(REAL_RAW)
@@ -898,3 +899,26 @@ def test_both_stations_have_a_mission_and_the_student_head_nodes_follow_the_came
         assert node[0] == "{repo}/.venv-student/bin/python", (st, node)
         rec = next(c["argv"][-1] for c in cmds if "rh56f1_record.sh start" in " ".join(c.get("argv") or []))
         assert "/head_depth/image" in rec and "/camera/camera/color/image_raw/compressed" not in rec, (st, rec)
+
+
+def test_mask_student_target_class_follows_the_episode_cup_color():
+    """★11.10 마스크 학생 target_class = 에피소드 컵(aglt target_object · place source_object) 토픽 이름 끝 색, 못 뽑으면 생성 실패."""
+    from policy_control.student_mask import CLASSES
+    assert GEN.MASK_COLORS == CLASSES
+    for name, node, want in (("grasp_m_right", "rh_aglt_student_node.py", "blue"),
+                             ("grasp_m_left", "rh_aglt_student_node.py", "orange"),
+                             ("place_m_right", "rh_place_student_node.py", "blue"),
+                             ("place_m_pink_h2_right", "rh_place_student_node.py", "pink")):
+        argv = next(c["argv"] for c in REAL_RAW["run"][f"episode_{name}"] if any(node in str(a) for a in c.get("argv") or []))
+        assert f"target_class:={want}" in argv, (name, argv)
+    assert GEN._mask_target("/objects/source240b_blue/pose") == "blue"
+    for bad in ("/objects/cup_src/pose", "/objects/source240_red/pose", "/episode/objects/x_blue/pose"):
+        with pytest.raises(ValueError):
+            GEN._mask_target(bad)
+
+
+def test_cups_ends_with_one_holder_check_that_never_fails_cups():
+    """★11.10 cups 끝 홀더 한 번 재기 — 실기는 --timeout-s · --max-jump-m 로 돌고 '; true' 로 cups 를 막지 않는다, fake 는 true."""
+    real = " ".join(REAL_RAW["run"]["cups"][-1 if not GEN.REMOTE_PERCEPTION else -2]["argv"])
+    assert "cup_holder_pose_node.py --write --timeout-s" in real and "--max-jump-m 0.03" in real and real.endswith("true"), real
+    assert FAKE_RAW["run"]["cups"][-1]["argv"] == ["bash", "-lc", "true"]

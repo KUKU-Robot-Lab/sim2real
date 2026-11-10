@@ -18,7 +18,8 @@ ARMS = ("right", "left")
 #: (화면 키, 에피소드 머리, 이름) — 한 팔 파지 · 들기. 머리는 actions.CONTROL_EPISODES 의 키와 같다(시험이 맞춘다).
 #: ★11.09 사용자 "c,d 제거" — 화면에서 경로 C · D 를 뺐다(에피소드 · 관리 작업은 남는다). "F주황 · F분홍" 칸도 F 안 물체 버튼으로
 GRASP = (("1-B", "grasp_b", "1-B"), ("E", "grasp_e", "경로 E"), ("F", "grasp_f", "경로 F"),
-         ("FP", "pick_place_f", "경로 F + 놓기"))     # ★10.22 잡고 들기 → newton_05 놓기
+         ("FP", "pick_place_f", "경로 F + 놓기"),     # ★10.22 잡고 들기 → newton_05 놓기
+         ("PM", "place_m", "놓기 학생"))              # ★11.11 경로 F 잡고 들기 → 놓기 학생(place_m) — 오른손은 색 · 홀더 버튼
 #: ★11.09 사용자 "경로 F 안에서 버튼으로 컵종류와 색깔을 선택 … 왼손,오른손 모두" — (FP++ 물체, 컵, 색). 순서 = 버튼 순서.
 #:   생성기 make_rh56f1_missions.F_OBJECTS 와 같다(시험이 맞춘다). 팔 기본 물체는 grasp_f_<팔>, 나머지는 grasp_f_<물체>_<팔>
 F_OBJECTS = (("source240_blue", "source240", "파랑"), ("source240_orange", "source240", "주황"), ("source240_pink", "source240", "분홍"),
@@ -29,6 +30,21 @@ F_DEFAULT = {"right": "source240_blue", "left": "shaker_c_orange"}
 def f_head(obj: str, side: str) -> str:
     """경로 F 물체 → 에피소드 머리(ctl_<머리>_<팔>)."""
     return "grasp_f" if F_DEFAULT[side] == obj else f"grasp_f_{obj}"
+#: ★11.11 사용자 "놓기 학생(place_m) 시험에서 컵 색과 홀더를 콘솔 카드에서 고르게" — (색 키, FP++ 물체, 색). 오른손만(왼손
+#:   left_n09_e3800 은 홀더 0 · shaker 하나). 생성기 make_rh56f1_missions.PLACE_M_COLORS · PLACE_M_HOLDERS 와 같다(시험이 맞춘다).
+#:   기본(파랑 · 홀더 1)은 place_m_right, 나머지는 place_m_<색>_h<홀더>_right
+PLACE_M_COLORS = (("blue", "source240_blue", "파랑"), ("pink", "source240_pink", "분홍"))
+PLACE_M_HOLDERS = (1, 2)
+PLACE_M_DEFAULT = ("blue", 1)
+#: 홀더 2 = sim 계약(right_n10_e4000 target_holders [1, 2]) 안이지만 학생이 배웠는지 확인 전 — 버튼 · 카드에 띄운다
+PLACE_M_WARN = {2: "홀더 2 = 학습 범위 확인 전"}
+
+
+def place_m_head(color: str, holder: int) -> str:
+    """놓기 학생 (색, 홀더) → 에피소드 머리(ctl_<머리>_right)."""
+    return "place_m" if (color, holder) == PLACE_M_DEFAULT else f"place_m_{color}_h{holder}"
+
+
 CONTROL_PREFIX = "ctl_"
 SIDE_KO = {"right": "오른팔", "left": "왼팔"}
 #: 사슬에서 빼는 노드 — 홈 출발 · 배치 사진 · 끝 · 손 펴기는 모든 실험에 같다
@@ -160,6 +176,19 @@ def _build(repo: Path, stage_ids: frozenset) -> dict:
                                      "object": obj, "cup": cup, "color": color, "default": obj == F_DEFAULT[side]})
                 if side in sides and objs:
                     sides[side]["objects"] = objs
+        if head == "place_m" and "right" in sides:    # ★11.11 오른손 색 · 홀더 버튼 — 고른 조합의 에피소드 · 관리 작업
+            objs = []
+            for color, fpp, color_ko in PLACE_M_COLORS:
+                for holder in PLACE_M_HOLDERS:
+                    name = f"{place_m_head(color, holder)}_right"
+                    if f"episode_{name}" in stage_ids:
+                        objs.append({**_episode(repo, name, entries), "stage": f"episode_{name}",
+                                     "action": f"{CONTROL_PREFIX}{name}", "runner": "episode_runner_right",
+                                     "object": f"{color}_h{holder}", "fpp": fpp, "cup": fpp, "color": color_ko,
+                                     "holder": holder, "warn": PLACE_M_WARN.get(holder, ""),
+                                     "default": (color, holder) == PLACE_M_DEFAULT})
+            if len(objs) > 1:
+                sides["right"]["objects"] = objs
         if sides:
             first = next(iter(sides.values()))
             items.append({"id": head, "group": "grasp", "key": key, "label": label, "summary": first.get("summary", ""),

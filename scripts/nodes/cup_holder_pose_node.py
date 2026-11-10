@@ -3,6 +3,12 @@
 
   python3 scripts/nodes/cup_holder_pose_node.py                          # config/cup_holders.yaml
   python3 scripts/nodes/cup_holder_pose_node.py --write                  # 안정되면 config/cup_holder_poses_arm4090.yaml 갱신
+  python3 scripts/nodes/cup_holder_pose_node.py --write --timeout-s 30   # ★11.10 한 번 재기: 안정되면 1회 쓰고 끝(cups 단계)
+
+★11.10 한 번 재기(--timeout-s N): 세 홀더가 안정되면 --out 의 직전 값과 홀더별 xy 차를 보고 --max-jump-m(기본 0.03) 안이면
+  쓰고(written), 넘으면 쓰지 않는다(jump_rejected). N 초 안에 안정 못 하면 쓰지 않고 끝(unstable · 한 번도 못 보면 no_markers).
+  결과는 한 줄 로그 + <out>.last_check.json(시각 · 결과 · 홀더별 dxy · dyaw). 종료 코드는 늘 0 — cups 를 막지 않는다.
+  점프 검사는 이 모드에서만 — 계속 쓰는 --write(cup_holders 단계)는 홀더를 옮긴 뒤 다시 재는 용도라 점프를 막지 않는다.
 
 하는 일(순수부는 scripts/calib/cup_holder_tracker.py):
   · period 마다 최신 컬러 한 장으로 추정한다 — ArUco → 직전 자세 추적(0.2 s) → 놓친 id 만 전체 무늬 탐색(~6 s).
@@ -20,6 +26,7 @@ import argparse
 import json
 import sys
 import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -64,6 +71,30 @@ def should_rewrite(last: dict[str, np.ndarray] | None, now: dict[str, np.ndarray
     return False
 
 
+def jump_check(prev: dict[str, np.ndarray] | None, now: dict[str, np.ndarray], max_jump_m: float) -> tuple[bool, dict]:
+    """★11.10 직전 파일 값(prev, 없으면 비교 없이 통과)과 홀더별 xy 차 — (모두 max_jump_m 안인가, {홀더: {dxy_m, dyaw_deg}}).
+    직전 파일에 없는 홀더는 비교하지 않는다(dxy None)."""
+    diffs = {}
+    for n, p in now.items():
+        q = (prev or {}).get(n)
+        if q is None:
+            diffs[n] = {"dxy_m": None, "dyaw_deg": None}
+            continue
+        dyaw = (p[3] - q[3] + np.pi) % (2 * np.pi) - np.pi
+        diffs[n] = {"dxy_m": round(float(np.linalg.norm(p[:2] - q[:2])), 4), "dyaw_deg": round(float(np.degrees(dyaw)), 2)}
+    ok = all(d["dxy_m"] is None or d["dxy_m"] <= max_jump_m for d in diffs.values())
+    return ok, diffs
+
+
+def load_written(path: Path) -> dict[str, np.ndarray] | None:
+    """write_poses 가 쓴 파일 → {홀더: [x, y, z, yaw]}(없으면 None)."""
+    import yaml
+    if not path.exists():
+        return None
+    hs = (yaml.safe_load(path.read_text()) or {}).get("holders") or {}
+    return {n: np.array([*h["position"], h["yaw_rad"]], float) for n, h in hs.items()}
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cfg", type=Path, default=DEFAULT_CFG)
@@ -75,7 +106,26 @@ def main(argv=None) -> None:
     ap.add_argument("--no-template", action="store_true", help="ArUco 만 쓴다(마커를 흰 여백으로 다시 붙인 뒤)")
     ap.add_argument("--write", action="store_true", help=f"세 홀더가 안정되면 {DEFAULT_OUT.name} 를 갱신")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    ap.add_argument("--timeout-s", type=float, default=0.0, help="★11.10 한 번 재기(0 = 계속): 안정되면 1회 쓰고 끝, 시간 안에 못 하면 안 쓰고 끝")
+    ap.add_argument("--max-jump-m", type=float, default=0.03, help="한 번 재기에서 직전 파일과 홀더별 xy 차 상한(넘으면 쓰지 않음)")
     args = ap.parse_args(argv)
+    once = args.timeout_s > 0
+    check_path = Path(str(args.out) + ".last_check.json")
+    done, fin = threading.Event(), threading.Lock()     # fin — 작업 스레드 기록과 시간 초과 기록이 겹치지 않게
+    seen = [False]      # 한 번 재기 — 한 홀더라도 본 적 있나(시간 초과 때 unstable / no_markers 가르기)
+
+    def record(result: str, diffs: dict) -> None:
+        rec = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "result": result, "out": str(args.out),
+               "max_jump_m": args.max_jump_m, "holders": diffs}
+        check_path.write_text(json.dumps(rec, ensure_ascii=False, indent=1) + "\n")
+        print(f"[cup_holder_check] {result} · " + (" · ".join(
+            f"{n} dxy {d['dxy_m'] if d['dxy_m'] is not None else '—'} m dyaw {d['dyaw_deg'] if d['dyaw_deg'] is not None else '—'}°"
+            for n, d in diffs.items()) or "홀더 없음") + f" → {check_path.name}", flush=True)
+        if result != "written":     # 콘솔 runner 가 '⚠ ' 줄을 성공 단계에도 경고로 띄운다
+            last = (time.strftime("%m-%d %H:%M", time.localtime(args.out.stat().st_mtime)) if args.out.exists() else "없음")
+            big = " · ".join(f"{n} dxy {d['dxy_m']} m" for n, d in diffs.items() if d["dxy_m"] is not None)
+            print(f"⚠ 홀더 다시 재기 {result} — {args.out.name} 안 바꿈(마지막으로 쓴 시각 {last})" + (f" · {big}" if big else "")
+                  + (" · 홀더가 옮겨졌으면 cup_holders 단계로 다시 잴 것" if result == "jump_rejected" else ""), flush=True)
 
     cfg = load_cfg(args.cfg)
     ext_path = args.extrinsics or cfg.extrinsics
@@ -136,6 +186,14 @@ def main(argv=None) -> None:
                 with self._lock:
                     self._busy = False
 
+        def _write(self, poses) -> None:
+            by_id = {i: poses[n] for n, i in zip(cfg.names, cfg.ids)}
+            write_poses(args.out, cfg, by_id, f"cup_holder_pose_node · extrinsics={ext_path.name} · "
+                                               f"shared={','.join(cfg.shared)} · window={args.window} · "
+                                               f"쓴 시각 {time.strftime('%Y-%m-%dT%H:%M:%S')}")
+            self._written = {n: p.copy() for n, p in poses.items()}
+            self.get_logger().info(f"기록 {args.out}")
+
         def _publish(self, stamp) -> None:
             poses = tracker.poses()
             for name, p in poses.items():
@@ -148,12 +206,18 @@ def main(argv=None) -> None:
                 self._pubs[name].publish(out)
             st = tracker.status()
             self._status.publish(String(data=json.dumps(st, ensure_ascii=False)))
-            if args.write and st["ok"] and should_rewrite(self._written, poses):
-                by_id = {i: poses[n] for n, i in zip(cfg.names, cfg.ids)}
-                write_poses(args.out, cfg, by_id, f"cup_holder_pose_node · extrinsics={ext_path.name} · "
-                                                   f"shared={','.join(cfg.shared)} · window={args.window}")
-                self._written = {n: p.copy() for n, p in poses.items()}
-                self.get_logger().info(f"기록 {args.out}")
+            seen[0] = seen[0] or any(h["src"] for h in st["holders"].values())
+            if once and st["ok"]:
+                with fin:
+                    if done.is_set():
+                        return
+                    ok, diffs = jump_check(load_written(args.out), poses, args.max_jump_m)
+                    if ok and args.write:
+                        self._write(poses)
+                    record("written" if ok and args.write else "measured" if ok else "jump_rejected", diffs)
+                    done.set()
+            elif not once and args.write and st["ok"] and should_rewrite(self._written, poses):
+                self._write(poses)
             if tracker.frames % 10 == 1:
                 self.get_logger().info(" · ".join(
                     f"{n} {h['src'] or '—'}{' ✓' if h['stable'] else ''}" for n, h in st["holders"].items())
@@ -162,7 +226,16 @@ def main(argv=None) -> None:
     rclpy.init()
     node = CupHolderPoseNode()
     try:
-        rclpy.spin(node)
+        if not once:
+            rclpy.spin(node)
+        else:
+            end = time.monotonic() + args.timeout_s
+            while not done.is_set() and time.monotonic() < end:
+                rclpy.spin_once(node, timeout_sec=0.1)
+            with fin:
+                if not done.is_set():
+                    done.set()       # 늦게 끝난 작업 스레드가 시간 초과 뒤에 쓰지 않게
+                    record("unstable" if seen[0] else "no_markers", {})
     except KeyboardInterrupt:
         pass
     finally:
