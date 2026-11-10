@@ -128,6 +128,18 @@ active 인터페이스는 shell을 찾는 데 3초, ack에 최대 180초 기다�
 
 각 실행 폴더(`--log-dir`)에는 `start.jpg`, 검사한 `plan.json`, `decisions.jsonl`을 저장한다. 실물 runner/카메라와 외부 VLM 연결은 별도 통합 시험이 필요하다.
 
+## 접근 전 경로 판정 (`--approach-judge`, 기본 끔)
+
+ap05 접근 정책은 장애물을 피하지 못한다. 이 옵션을 켜면 접근 노드를 실행하기 직전에 `approach.py` 의 `ApproachJudge` 를 판정 백엔드와 같은 체인으로 부른다. 판정 시점은 둘이다. READY 에서 `next` 를 보내기 전에는 다음 노드(`node`)를 본다. `node` 가 없을 때만 `next_action` 을 쓰고, 그 값이 `nodes` 목록의 id 여야 한다(sim 브리지의 `next_action` 은 서비스 이름 `next` 라 노드가 아니다). `retry` 를 보내기 전에는 다시 돌 노드(`last.node`)를 본다. 재실행도 접근이기 때문이다.
+
+접근 노드는 `skill_cards.yaml` grasp 카드의 노드 예시(`grasp_blue`·`grasp_shaker`·`grasp_pink`)뿐이다. 손은 정책 이름 끝 `_r`/`_l`, 물체는 `target_object` 로 정한다. lanes 노드(`grasp_to_tilt_start` 등)는 손·물체를 몰라 접근 판정에서 뺀다. `recover:` 노드도 보지 않는다.
+
+같은 에피소드·노드·시도 횟수에서는 한 번만 부른다. status 에 `episode_id` 나 `attempts` 가 없으면 같은 시도인지 알 수 없어 상태가 바뀔 때마다 다시 부른다. active 에서 clear 판정으로 `next`·`retry` 를 보내면 그 시도는 소비된 것으로 보고 지운다. 그래서 재시도·재기동 뒤에는 다시 판정한다. 판정이 쓰이지 않은 채 상태가 바뀌면(stale) 역시 다시 부른다.
+
+`next`·`retry` 를 그대로 보내는 경우는 하나다. clear+proceed 이고 장애물 목록이 비어 있으며 기하·계획 단계와 어긋나지 않아야 한다. reorder(실행기가 순서 바꾸기를 지원하지 않음), other_hand(실행 경로 없음), blocked+human, clear 인데 장애물이 있는 응답, VLM 과 기하 불일치, 좌표가 숫자·유한값이 아닌 기하(판정 불가), 응답 오류, 카메라·백엔드 실패는 모두 active 에서 `human` 을 보내고 감독기를 멈춘다. 이때 `decision` 행에 `approach` 사유가 남는다. shadow 에서는 `decisions.jsonl` 에 `approach` 이벤트만 남기고 흐름은 바꾸지 않는다.
+
+기하 판정은 status 의 `world` 에서 판정하는 손과 목표 물체 좌표를 읽는다. 둘 중 하나라도 없으면 기하 없음이고, 이때는 VLM 단독으로 판정한다(`approach` 이벤트의 `geom` 이 `none`). 장애물에서 빼는 것은 목표와 판정하는 손이 쥔 물체(`in_hand` 가 그 손)뿐이다. 반대 손이 든 물체는 장애물로 남긴다.
+
 ## ROS 없는 검증
 
 ```bash

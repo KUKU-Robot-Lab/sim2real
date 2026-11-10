@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import time
 
+from .approach import ApproachJudge
 from .backends import ROOT, Router
 from .interface import RosInterface
 from .judge import Judge
@@ -26,6 +27,8 @@ def build_parser():
         Path(__file__).parent / 'config' / 'plan_cocktail_1c_e4000.json'))
     parser.add_argument('--settle', type=float, default=0.5)
     parser.add_argument('--interface', choices=['ros', 'sim'], default='ros')
+    parser.add_argument('--approach-judge', action='store_true',
+                        help='잡기(접근) 노드 직전에 VLM 으로 경로 방해물 판정(같은 백엔드)')
     parser.add_argument('--sim_url', default='http://127.0.0.1:8790', help='hdgp sim 브리지 주소(--interface sim)')
     return parser
 
@@ -45,7 +48,8 @@ def main(argv=None):
             interface = RosInterface(args.runner, args.approvals)
         router = Router(args.chain.split(',') if args.chain else None)
         judge = Judge(router, args.sentence)
-        supervisor = Supervisor(interface, judge, args.mode, run_dir / 'decisions.jsonl', args.settle)
+        supervisor = Supervisor(interface, judge, args.mode, run_dir / 'decisions.jsonl', args.settle,
+                                approach_judge=ApproachJudge(router) if args.approach_judge else None)
         print(f'mode={args.mode} runner={args.runner} logs={run_dir}', flush=True)
         image = interface.frame(after=time.monotonic(), wait=5)
         if image is None:

@@ -6,6 +6,7 @@ from pathlib import Path
 import time
 
 from .interface import node_id
+from .planner import load_cards
 
 END = {'SUCCESS', 'STOPPED'}
 RECOVERY = {'retry', 'rescan', 'home', 'insert', 'human'}
@@ -15,7 +16,8 @@ SAFE_STOP_CODES = {'controller_error', 'observation_error', 'unknown', 'operator
 
 
 class Supervisor:
-    def __init__(self, interface, judge, mode='shadow', log_path=None, settle=0.5, max_recover=3):
+    def __init__(self, interface, judge, mode='shadow', log_path=None, settle=0.5, max_recover=3,
+                 approach_judge=None):
         if mode not in {'shadow', 'active'}:
             raise ValueError('mode must be shadow or active')
         self.interface, self.judge, self.mode = interface, judge, mode
@@ -25,6 +27,13 @@ class Supervisor:
         self.recoveries = {}
         self.seen = None
         self.halted = False
+        self.approach_judge = approach_judge
+        self.approach_seen = None
+        # grasp 카드의 노드 예시: id → (손, 물체). 손은 정책 이름 끝 _r/_l.
+        self.grasp_nodes = {} if approach_judge is None else {
+            n['id']: ({'_r': 'right', '_l': 'left'}.get(str(n.get('name', ''))[-2:]), n.get('target_object'))
+            for card in load_cards()['스킬'] if card['id'] == 'grasp'
+            for n in card['실행_방법']['노드_예시']}
 
     def log(self, event):
         row = {'t': time.time(), **event}
@@ -73,11 +82,23 @@ class Supervisor:
                 action = 'recover'
             elif target is None:
                 action = 'wait'
+        # 접근 판정 대상: next 로 갈 노드, 또는 retry 로 다시 돌 노드(재실행도 접근이다).
+        approach_node = None
+        if action == 'next' and status.get('status') == 'READY':
+            nxt = node_id(status.get('next_action'))
+            approach_node = target or (nxt if nxt in {node_id(n) for n in status.get('nodes') or []} else None)
+        elif action == 'retry':
+            approach_node = failed_node
+        approach_reason = self.check_approach(status, approach_node) if approach_node else None
+        approach_stop = approach_reason is not None and self.mode == 'active'  # shadow: only logs
+        if approach_stop:
+            action, failed_node = 'human', approach_node
         # A slow VLM must not approve a different node after the human has advanced.
         latest = self.interface.status()
         if self.key(latest) != key:
             if not latest:
                 self.seen = None  # status outage, not a real change: reconsider this state when it returns
+            self.approach_seen = None  # the approach verdict was not acted on: judge again
             return self.log({'event': 'stale_decision', 'decision': decision})
         try:
             recovery_args = {'node_id': failed_node} if action in RECOVERY else {}
@@ -88,8 +109,11 @@ class Supervisor:
         except Exception as exc:
             result = {'ok': False, 'reasons': [str(exc)]}
         event = self.log({'event': 'decision', 'mode': self.mode, 'node': last.get('node'),
-                          'target': target, 'action': action, 'decision': decision, 'result': result})
-        if self.mode == 'active' and (action == 'stop' or result.get('error') == 'NotSupported'):
+                          'target': target, 'action': action, 'decision': decision, 'result': result,
+                          **({'approach': approach_reason} if approach_stop else {})})
+        if approach_node and not approach_stop and self.mode == 'active' and result.get('ok'):
+            self.approach_seen = None  # 판정을 쓴 시도는 소비: 재시도·재기동 때 다시 판정한다
+        if self.mode == 'active' and (action == 'stop' or approach_stop or result.get('error') == 'NotSupported'):
             self.halted = True
         elif self.mode == 'active' and result.get('ok') is False:
             self.log({'event': 'service_failure', 'result': self.interface.perform('stop', active=True)})
@@ -101,6 +125,47 @@ class Supervisor:
             elif status.get('status') == 'READY':
                 self.seen = None
         return event
+
+    def check_approach(self, status, node):
+        """grasp 카드 노드 직전 경로 판정. 사람에게 넘길 사유를 돌려준다. 통과·대상 아님·이미 본 시도면 None.
+
+        lanes 노드(grasp_to_tilt_start 등)는 손·물체를 몰라 판정하지 않는다."""
+        if self.approach_judge is None or node not in self.grasp_nodes:
+            return None
+        hand, obj = self.grasp_nodes[node]
+        # 에피소드·시도 횟수를 모르면 같은 시도인지 알 수 없어 중복 제거를 하지 않는다.
+        if status.get('episode_id') is not None and status.get('attempts') is not None:
+            seen = (status.get('episode_id'), node, json.dumps(status['attempts'].get(node)
+                                                               if isinstance(status['attempts'], dict) else None))
+            if seen == self.approach_seen:
+                return None
+            self.approach_seen = seen
+        try:
+            image = self.interface.frame(after=time.monotonic() + self.settle, wait=self.settle + 3)
+            result = self.approach_judge.check(image, ['grasp', hand, obj, '-'], status.get('world'))
+        except Exception as exc:  # noqa: BLE001 - judge failure must not let the approach run
+            result = {'valid': False, 'verdict': 'unknown', 'action': 'human', 'error': f'{type(exc).__name__}: {exc}'}
+        clear = (result.get('valid') and result.get('verdict') == 'clear' and result.get('action') == 'proceed'
+                 and not result.get('disagree') and not result.get('step_mismatch'))
+        if clear:
+            reason = None
+        elif not result.get('valid'):
+            reason = 'invalid/error: ' + str(result.get('error'))
+        elif result.get('disagree') or result.get('step_mismatch'):
+            reason = 'VLM and geometry/step disagree'
+        elif result.get('action') == 'reorder':
+            reason = 'reorder NotSupported: runner cannot change node order'
+        elif result.get('action') == 'other_hand':
+            reason = 'other_hand NotSupported: no execution path'
+        else:
+            reason = 'blocked: human'
+        geom = result.get('geom')
+        # geom none = 좌표가 없어 VLM 단독 판정.
+        self.log({'event': 'approach', 'mode': self.mode, 'node': node, 'step': ['grasp', hand, obj, '-'],
+                  'outcome': 'proceed' if clear else 'human', 'reason': reason,
+                  'geom': geom.get('verdict') if isinstance(geom, dict) else 'none',
+                  'result': {k: v for k, v in result.items() if k != 'meta'}})
+        return reason
 
     def final_judged(self, status):
         """Runner closes terminal right after the last action, so READY is never seen for it: judge that action here."""
