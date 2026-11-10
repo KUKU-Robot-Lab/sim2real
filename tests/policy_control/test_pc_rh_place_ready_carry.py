@@ -161,16 +161,17 @@ def test_carry_that_does_not_reach_the_start_does_not_start_the_policy():
 
 
 def _run_carry(policy, wobble):
-    """★11.11 이송 끝까지 굴린다. 실측 q = 명령 + wobble(틱) → (팔 행동 열, 끝 as_dict)."""
+    """★11.11 이송 끝까지 굴린다. 실측 q = 명령 + wobble(틱) → (팔 행동 열, 끝 as_dict).
+    Mover 가 끝난 뒤 2 틱 동안 실측 q 가 실제로 흔들리다 멈춘다(arm_qd 는 늘 0.2 — 판정에 안 쓴다)."""
     from dataclasses import replace
     c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup(policy)
     ch.rc_chain = (RC, mch)
     ch.reset(meas(q), holder=holder, held=(q, hand), attach=att)
     acts, k = [], 0
     while ch.carrying:
-        qd = np.zeros(7) if k > ch.rcarry.t + 2 else np.full(7, 0.2)  # Mover 끝 뒤 2 틱 더 흔들리다 멈춘다
-        mm = meas(q + wobble(k))
-        mm["arm"] = replace(mm["arm"], arm_qd=qd)
+        jig = 0.01 * (k % 2) if not ch.rcarry.moving and k <= ch.rcarry.t + 2 else 0.0   # Mover 끝 뒤 2 틱 흔들림
+        mm = meas(q + wobble(k) + jig)
+        mm["arm"] = replace(mm["arm"], arm_qd=np.full(7, 0.2))
         _, a, _ = ch.step(mm)
         acts.append(a[:7].copy())
         q = ch.dec.state["arm"].arm_target.copy()
@@ -245,7 +246,8 @@ def test_track_guard_also_runs_while_waiting_for_still():
 @pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
 @pytest.mark.parametrize("field", ["arm_q", "arm_qd"])
 def test_nan_measurement_is_not_silent(field):
-    """★11.11 M1 — 실측 q 가 NaN 이면 이탈로 세어 "track", 팔 목표는 유한(NaN 관절은 직전 명령). q̇ NaN 은 멈춤 아님 → "timeout"."""
+    """★11.11 M1 — 실측 q 가 NaN 이면 이탈로 세어 "track", 팔 목표는 유한(NaN 관절은 직전 명령).
+    arm_qd 는 멈춤 판정에 안 쓴다 — NaN 이어도 실측 q 가 멈췄으면 "ok"(q 차분 NaN 은 아래 test_q_nan_while_waiting_is_not_still)."""
     from dataclasses import replace
     c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup("right_n10_e4000")
     ch.rc_chain = (RC, mch)
@@ -262,12 +264,30 @@ def test_nan_measurement_is_not_silent(field):
         assert d["still"] == "track" and d["t"] == RCY.TRACK_ABORT_TICKS - 1 and d["track_dev_max"] is None
         assert np.all(np.isfinite(tg["arm"][0])) and np.all(np.isfinite(ch.dec.state["arm"].arm_target))
     else:
-        assert d["still"] == "timeout" and d["still_ticks"] == RCY.STILL_MAX_TICKS
+        assert d["still"] == "ok" and d["start_ok"]
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_q_nan_while_waiting_is_not_still():
+    """★11.11 Mover 끝 뒤 실측 q 한 관절이 NaN 이면 멈춤으로 세지 않는다(arm_qd 0 이어도) — 이탈 가드가 "track" 으로 끊는다."""
+    from dataclasses import replace
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup("right_n10_e4000")
+    ch.rc_chain = (RC, mch)
+    ch.reset(meas(q), holder=holder, held=(q, hand), attach=att)
+    while ch.carrying:
+        cmd = ch.dec.state["arm"].arm_target.copy()
+        if not ch.rcarry.moving:
+            cmd[2] = np.nan
+        mm = meas(cmd)
+        mm["arm"] = replace(mm["arm"], arm_q=cmd, arm_qd=np.zeros(7))
+        ch.step(mm)
+    d = ch.rcarry.as_dict()
+    assert d["still"] == "track" and d["sag_ticks"] == 0
 
 
 def _run_sag_plant(sag_j7, hold_qd_ticks=0, sag_max_rad=None, out=None):
     """★11.11 처짐 플랜트: 실측 q 가 (명령 − 처짐)을 1차 지연(τ 0.14 s, 60 Hz)으로 따라간다. q̇ = 실측 차분.
-    멈춤 확인 첫 hold_qd_ticks 틱은 q̇ 를 0.2 rad/s 로 보고(아직 움직임) → (멈춤 확인 구간 팔 행동, 보고 q̇, 끝 as_dict, 끝 q_ref − q)."""
+    멈춤 확인 첫 hold_qd_ticks 틱은 q̇ 를 0.2 rad/s 로 거짓 보고(판정은 q 차분이라 무시돼야 한다) → (멈춤 확인 구간 팔 행동, 보고 q̇, 끝 as_dict, 끝 q_ref − q)."""
     from dataclasses import replace
     c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup("right_n10_e4000")
     ch.rc_chain = (RC, mch)
@@ -291,7 +311,7 @@ def _run_sag_plant(sag_j7, hold_qd_ticks=0, sag_max_rad=None, out=None):
         q_seen = qm
         if not moving:
             acts.append(a[:7].copy())
-            qds.append(float(np.max(np.abs(qd_rep))))
+            qds.append(ch.rcarry.qd_est)                     # 판정에 쓴 q 차분 속도(보고 q̇ 는 안 쓴다)
         q_new = qm + alpha * (ch.dec.state["arm"].arm_target - sag - qm)
         qd, qm, n = (q_new - qm) * 60.0, q_new, n + 1
     d = ch.rcarry.as_dict()
@@ -309,9 +329,16 @@ def test_sag_correction_closes_steady_droop_without_integrating_while_moving():
     assert np.max(np.abs(err)) < RCY.SAG_DONE_RAD
     assert max(d["sag_max"]) <= RCY.SAG_MAX_RAD + 1e-9 and d["sag_max"][6] > 0.05
     moving = qds >= RCY.STILL_QD_RAD_S
-    assert moving[:10].all() and np.all(acts[moving] == 0.0)
+    assert moving.any() and np.all(acts[moving] == 0.0)            # 보정이 만든 실측 움직임 틱은 적분하지 않는다
     assert d["sag_ticks"] == int((~moving).sum())
     assert d["still_ticks"] <= RCY.STILL_MAX_TICKS
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_sag_correction_ignores_nonzero_reported_qd():
+    """★11.11 sim Newton joint_vel 처럼 정지 중에도 q̇ 0.2 rad/s 를 계속 보고해도 실측 q 가 멈추면 보정이 돌고 "ok"."""
+    acts, qds, d, err = _run_sag_plant(0.06, hold_qd_ticks=10 ** 6)
+    assert d["still"] == "ok" and d["sag_ticks"] > 0 and np.max(np.abs(err)) < RCY.SAG_DONE_RAD
 
 
 @pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")

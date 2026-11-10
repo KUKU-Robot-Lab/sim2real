@@ -635,7 +635,7 @@ class PlaceChain:
             if self.rc_chain is None:
                 raise RhPlaceError("준비 자세 이송 계약인데 Mover 사슬이 없다 — 노드가 chain.rc_chain 을 넣어야 한다")
             cfg = RCY.ReadyCarryCfg.from_dict(self.c.ready_carry)
-            self.rcarry = RCY.ReadyCarry(cfg, *self.rc_chain, k_arm=self.c.k_arm, arm_ema=self.c.arm_ema,
+            self.rcarry = RCY.ReadyCarry(cfg, *self.rc_chain, k_arm=self.c.k_arm, arm_ema=self.c.arm_ema, dt=1.0 / self.c.policy_hz,
                                          hand_action=hand_action_of(self.c, hand0))
             pos, quat = self.cup_from_palm(m.palm_pos, m.palm_R)
             self.rcarry.start(np.asarray(m.arm_q, float), pos, quat, PC.carry_target(holder, origin_z_of(self.c), cfg.dz))

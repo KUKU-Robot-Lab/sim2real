@@ -15,6 +15,7 @@ Mover 코드는 배포가 고정한 hdgp 커밋(config/hdgp_snapshot.yaml) 사�
 """
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 
@@ -39,7 +40,11 @@ START_AXIS_MAX_DEG = 4.7
 #     6 틱 연속이 1 s 안에 나올 확률 1.00(중앙 대기 6 틱). 0.02 rad/s 는 속도 양자화 · 잡음 때문에 0.03~0.24 라 쓸 수 없다.
 #   · (같은 bag 의 이송 끝 50 ms 실측 |q̇| 최대 0.12~0.16 rad/s — 떨리는 채로 정책을 넘겼다)
 #   · 옛 명령 − 실측 문턱 STILL_DQ_RAD 0.03 은 sim 처짐 0.061 에서 늘 timeout 이라 SAG_DONE_RAD(|q_ref − q|)로 바꿨다(11.11).
+#   ★11.11 멈춤 판정 속도 = 실측 q 의 STILL_WIN 틱 차분 max|q_t − q_{t−3}|/(3·dt)(/joint_states velocity 안 씀: sim Newton
+#   joint_vel 은 1e-4 rad 안에 정지해도 0.07~0.22 rad/s 라 보정이 한 틱도 안 돌았다). 0.05 rad/s = 60 Hz 3 틱에 0.0025 rad.
+#   실기 엔코더 q 양자화 · 잡음이 3 틱에 0.0025 rad 보다 작은지는 미확인(위 184024 근거는 속도 토픽 값, q 차분은 아직 안 잼).
 STILL_QD_RAD_S = 0.05
+STILL_WIN = 3                   # 틱 — 차분 창(1 틱 차분보다 양자화 · 잡음에 강하다)
 STILL_TICKS = 6                 # 0.1 s
 # ★11.11 처짐 보정 1.5 s(아래 SAG_*: 처짐 0.061 → 0.01 rad 이 K_SAG 0.05/틱 · 지연 0.14 s 에서 약 0.6 s + 지연 + 멈춤 6 틱,
 #   움직이는 틱은 쉬므로 여유 2 배)를 더해 1.0 → 2.5 s. 넘으면 그대로 정책으로 넘기고 노드가 경고(as_dict still "timeout").
@@ -130,9 +135,14 @@ class ReadyCarry:
     """한 에피소드 이송 상태(B = 1, CPU). start → step… → on False. 사슬은 노드가 한 번 만들어 넘긴다(URDF 읽기)."""
 
     def __init__(self, cfg: ReadyCarryCfg, RC, chain, *, k_arm: float, arm_ema: float, hand_action: Sequence[float],
-                 track_abort_rad: float = TRACK_ABORT_RAD, sag_max_rad: float = SAG_MAX_RAD) -> None:
+                 dt: float, track_abort_rad: float = TRACK_ABORT_RAD, sag_max_rad: float = SAG_MAX_RAD) -> None:
         import torch
+        if not dt > 0.0:
+            raise ReadyCarryError(f"ready_carry dt 는 양수여야 한다(1/policy_hz): {dt}")
         self.torch, self.cfg, self.RC, self.ch = torch, cfg, RC, chain
+        self.dt = float(dt)                     # 정책 주기 — 멈춤 판정 q 차분용
+        self.q_hist: deque = deque(maxlen=STILL_WIN + 1)
+        self.qd_est = float("inf")              # 마지막 틱의 차분 속도 추정(창이 차기 전 inf = 움직임)
         self.scale = float(k_arm) * float(arm_ema)
         self.hand_action = np.asarray(hand_action, float).copy()
         self.track_abort_rad = float(track_abort_rad)   # sim 런타임은 0.2 를 줄 수 있다(실기 기본 0.1)
@@ -179,6 +189,8 @@ class ReadyCarry:
         self.track_dev_max = 0.0
         self.still = ""
         self.q_ref, self.sag_ticks, self.sag_max = None, 0, np.zeros(len(arm_q))
+        self.q_hist.clear()
+        self.qd_est = float("inf")
         self.plan = {"ok": bool(plan.ok[0]), "margin_deg": round(float(np.degrees(float(plan.margin[0]))), 2),
                      "anchor_err_mm": round(float(plan.err_pos[0]) * 1000, 2), "anchor_err_deg": round(float(plan.err_axis[0]), 2),
                      "T_steps": int(self.mv.T[0]), "q_goal": [round(float(v), 4) for v in plan.q[0]],
@@ -191,11 +203,16 @@ class ReadyCarry:
 
         ★11.11 q_cmd(디코더 팔 목표 q*)를 주면 Mover 를 명령으로 굴린다(개루프, 사용자 "mover 말고 ready-approach 처럼 명령 목표로").
         실측 q 로 굴리면 PD 추종 오차가 되먹여 1.5~2 Hz 로 떨렸다(q4_place_vibration). 디코더 목표 = 목표 + k_arm·arm_ema·a 라
-        q* 는 Mover dq 를 그대로 적분한다 — plan_reach.roll_mover(배포 ReadyApproach)와 같은 식. Mover 가 끝나면 arm_qd 까지 주어진
-        경우 처짐 보정(SAG_*, 멈춘 틱에만 명령을 q_ref 쪽으로 조금씩)과 멈춤 확인 뒤 끝낸다. start_ok 오차는 늘 실측 q 의 컵으로 본다."""
+        q* 는 Mover dq 를 그대로 적분한다 — plan_reach.roll_mover(배포 ReadyApproach)와 같은 식. Mover 가 끝나면 q_cmd 가 주어진
+        경우 처짐 보정(SAG_*, 멈춘 틱에만 명령을 q_ref 쪽으로 조금씩)과 멈춤 확인 뒤 끝낸다. start_ok 오차는 늘 실측 q 의 컵으로 본다.
+        멈춤 = 실측 q 의 STILL_WIN 틱 차분 속도(qd_est). arm_qd 는 호환용으로 받기만 하고 판정에 쓰지 않는다 — sim Newton
+        joint_vel 은 팔이 1e-4 rad 안에 정지해 있어도 0.07~0.22 rad/s 라 멈춤 판정이 늘 실패했다(11.11 sim 실측, sag_ticks 0)."""
         torch = self.torch
         q = torch.tensor([list(arm_q)], dtype=torch.float32)
         a_arm = np.zeros(len(arm_q))
+        self.q_hist.append(np.asarray(arm_q, float))
+        self.qd_est = (float(np.max(np.abs(self.q_hist[-1] - self.q_hist[0]))) / (STILL_WIN * self.dt)
+                       if len(self.q_hist) > STILL_WIN else float("inf"))   # 창이 차기 전 = 움직임 · NaN 이면 NaN(멈춤 아님)
         if q_cmd is not None:                          # ★11.11 명령 − 실측 이탈 가드(이동 · 멈춤 확인 둘 다). NaN 은 위반으로 센다
             qc = np.asarray(q_cmd, float)
             if not self.moving and self.q_ref is None:
@@ -217,21 +234,21 @@ class ReadyCarry:
             self.err_cmd = float(self.mv.last_err[0])
             if bool(done[0]):
                 self.moving, self.arrived = False, bool(arrive[0])
-                if q_cmd is None or arm_qd is None:     # 멈춤 확인 재료가 없으면 옛 동작(이 틱에 끝)
+                if q_cmd is None:                       # 멈춤 확인 재료(q_ref)가 없으면 옛 동작(이 틱에 끝)
                     self.on = False
             a_arm = np.clip(dq[0].double().numpy() / self.scale, -1.0, 1.0)
         else:
             self.still_t += 1
-            qd_max = float(np.max(np.abs(np.asarray(arm_qd, float))))
+            qd = self.qd_est
             e = self.q_ref - np.asarray(arm_q, float)
             dev = float(np.max(np.abs(e)))
-            if qd_max < STILL_QD_RAD_S and np.isfinite(dev):   # 움직이는 틱 · NaN 은 적분하지 않는다(명령 유지)
+            if qd < STILL_QD_RAD_S and np.isfinite(dev):   # 움직이는 틱 · NaN 은 적분하지 않는다(명령 유지)
                 off = np.asarray(q_cmd, float) - self.q_ref
                 dq_s = np.clip(off + np.clip(K_SAG * e, -SAG_STEP_MAX, SAG_STEP_MAX), -self.sag_max_rad, self.sag_max_rad) - off
                 a_arm = np.clip(dq_s / self.scale, -1.0, 1.0)   # 디코더: q* += k_arm·arm_ema·a
                 self.sag_ticks += 1
                 self.sag_max = np.maximum(self.sag_max, np.abs(off + dq_s))
-            still = qd_max < STILL_QD_RAD_S and dev < SAG_DONE_RAD   # NaN 이면 False(멈춤 아님)
+            still = qd < STILL_QD_RAD_S and dev < SAG_DONE_RAD   # NaN 이면 False(멈춤 아님)
             self.still_n = self.still_n + 1 if still else 0
             if self.still_n >= STILL_TICKS:
                 self.on, self.still = False, "ok"
