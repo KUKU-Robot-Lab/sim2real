@@ -22,7 +22,9 @@ from . import tilt_view as TV
 
 #: ★11.05 사용자: 탭에는 이 셋만 — 다른 cocktail_* yaml 은 지우지 않고 목록에서만 뺀다
 #: ★11.09 사용자: 놓기 학생 에피소드(F 잡기 → 놓기 학생) 두 장을 더한다
-EVAL_EPISODES = ("cocktail_1c_e4000", "grasp_s_right", "grasp_s_left", "place_m_right", "place_m_left")
+#: ★11.11 deploy 리뷰 MEDIUM: 놓기 학생 색 · 홀더 조합(make_rh56f1_missions.PLACE_M_VARIANTS)도 평가 회차로 적는다
+EVAL_EPISODES = ("cocktail_1c_e4000", "grasp_s_right", "grasp_s_left", "place_m_right", "place_m_left",
+                 "place_m_blue_h2_right", "place_m_pink_h1_right", "place_m_pink_h2_right")
 COLUMNS = ("round", "time", "episode", "policy_r", "policy_l", "result", "fail_stage", "fail_type", "note")
 RESULTS = ("성공", "실패", "중단")
 #: 화면 · 실행기 말을 저장 값으로 — 실행기 phase(SUCCESS · FAILURE · STOPPED)와 영어 별칭도 받는다

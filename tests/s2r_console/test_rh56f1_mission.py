@@ -418,8 +418,9 @@ def test_real_cup_holders_run_the_marker_node_after_the_head_home_and_shutdown_s
             assert list(c.argv[:4]) == ["ssh", "-tt", "-o", "BatchMode=yes"] and c.argv[4] == host
         assert f"{GEN.REMOTE_PY} scripts/nodes/cup_holder_pose_node.py" in node
         fetch = cmds[-1]                                            # 마지막 = 파일을 이 PC 로
-        assert fetch.argv[0] == "scp" and fetch.argv[-2] == f"{host}:{GEN.REMOTE_SIM2REAL}/{GEN.HOLDER_POSES}"
-        assert fetch.argv[-1].endswith("/" + GEN.HOLDER_POSES) and not fetch.manual
+        remote = f"{host}:{GEN.REMOTE_SIM2REAL}/{GEN.HOLDER_POSES}"          # ★11.11 재기 기록(.last_check.json)도 같이
+        assert fetch.argv[0] == "scp" and fetch.argv[-3:-1] == (remote, remote + ".last_check.json")
+        assert fetch.argv[-1].endswith("/config/") and not fetch.manual
     else:
         assert cmds[-1] is status
     fake = {s.id for s in FAKE.stages}
@@ -918,7 +919,45 @@ def test_mask_student_target_class_follows_the_episode_cup_color():
 
 
 def test_cups_ends_with_one_holder_check_that_never_fails_cups():
-    """★11.10 cups 끝 홀더 한 번 재기 — 실기는 --timeout-s · --max-jump-m 로 돌고 '; true' 로 cups 를 막지 않는다, fake 는 true."""
-    real = " ".join(REAL_RAW["run"]["cups"][-1 if not GEN.REMOTE_PERCEPTION else -2]["argv"])
+    """★11.10 cups 끝 홀더 한 번 재기 — 실기는 --timeout-s · --max-jump-m 로 돌고 '; true' 로 cups 를 막지 않는다, fake 는 true.
+
+    ★11.11 deploy 리뷰 H2: 실패(카메라 · ssh · scp)는 삼키지 않고 rc 를 받아 ⚠ + last_check.json = failed, yaw 상한도 건다.
+    """
+    real = " ".join(REAL_RAW["run"]["cups"][-1]["argv"])
     assert "cup_holder_pose_node.py --write --timeout-s" in real and "--max-jump-m 0.03" in real and real.endswith("true"), real
+    assert f"--max-yaw-deg {GEN.HOLDER_MAX_YAW_DEG:g}" in real and "rc=$?" in real and "⚠ 홀더 다시 재기 실패" in real
+    assert "camera_up.sh; " not in real and "; true; " not in real   # 중간 실패를 삼키는 '; true' 가 없다
+    if GEN.REMOTE_PERCEPTION:
+        assert real.count("rc=$?") == 2 and ".last_check.json config/" in real    # ssh 와 scp 각각
     assert FAKE_RAW["run"]["cups"][-1]["argv"] == ["bash", "-lc", "true"]
+
+
+def test_every_command_resolves_without_a_stray_placeholder():
+    """★11.11 cups 홀더 재기 실패 기록(printf JSON)의 `{"time": …}` 가 자리표시자로 읽혀 단계가 죽었다 —
+    모든 단계 · 실기와 가짜 모두, 명령 치환이 ValueError 없이 끝나야 한다(사라진 정책 파일만 건너뛴다)."""
+    from mission_stages import resolve
+
+    for raw, m in ((REAL_RAW, REAL), (FAKE_RAW, FAKE)):
+        for sid, cmds in raw["run"].items():
+            for c in cmds or []:
+                for a in [*c.get("argv", ()), *(c.get("execute_args") or ())]:
+                    try:
+                        resolve(str(a), m, repo=REPO)
+                    except KeyError:
+                        continue  # 정책 · 산출물 파일이 이 체크아웃에 없음 — 자리표시자 자체는 알아본 것
+                    except ValueError as exc:
+                        raise AssertionError(f"{sid}: {exc} — {str(a)[:120]}") from exc
+
+
+def test_the_holder_failure_record_is_json_and_cups_goes_on(tmp_path):
+    """★11.11 H2: 카메라 · 노드가 실패하면 ⚠ 줄 + last_check.json = failed(시작 검사가 읽는다), 단계 rc 는 0."""
+    import json
+    from mission_stages import resolve
+
+    sh = GEN._holder_fail_sh("config/x.last_check.json", "카메라")
+    (tmp_path / "config").mkdir()
+    out = subprocess.run(["bash", "-c", "rc=7; " + resolve(sh, REAL, repo=REPO) + "; true"],
+                         cwd=tmp_path, capture_output=True, text=True)
+    assert out.returncode == 0 and "⚠" in out.stdout
+    rec = json.loads((tmp_path / "config" / "x.last_check.json").read_text(encoding="utf-8"))
+    assert rec["result"] == "failed" and rec["rc"] == 7 and rec["time"]

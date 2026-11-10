@@ -161,3 +161,21 @@ def test_real_mission_exposes_grasp_b_on_both_arms():
         assert st['group'] == 'policy' and st['lane'] == lane
         cmds = m['run'][f'episode_grasp_b_{side}']
         assert sum(bool(c.get('manual')) for c in cmds) >= 2                      # 진행 경계(정리 앞 수동 단계)가 있다
+
+
+def test_place_m_card_warns_to_refresh_a_cup_the_cups_stage_does_not_rescan(tmp_path):
+    """★11.11 deploy 리뷰 MEDIUM: cups 는 fpp_active 오른손 컵만 다시 찍는다 — 다른 색을 고르면 카드가 Refresh 를 요구."""
+    from s2r_console import eval_log
+    from s2r_console.experiments import PLACE_M_COLORS, _cups_right_cup
+
+    (tmp_path / 'config').mkdir()
+    (tmp_path / 'config/fpp_active.yaml').write_text('sides: {right: source240_blue, left: shaker_c_orange}\n')
+    assert _cups_right_cup(tmp_path) == 'source240_blue'
+    assert _cups_right_cup(tmp_path / 'none') == ''                  # 못 읽으면 늘 경고
+    assert {fpp != _cups_right_cup(tmp_path) for _, fpp, _ in PLACE_M_COLORS} == {False, True}
+    js = (REPO / 'deploy/s2r_console/s2r_console/web/console.js').read_text()
+    assert 'side.rescan ?' in js and 'Perception Refresh 필요' in js
+    src = (REPO / 'deploy/s2r_console/s2r_console/experiments.py').read_text()
+    assert '"rescan": fpp != cups_cup' in src
+    # 색 · 홀더 조합 에피소드도 평가 회차로
+    assert {'place_m_blue_h2_right', 'place_m_pink_h1_right', 'place_m_pink_h2_right'} <= set(eval_log.EVAL_EPISODES)

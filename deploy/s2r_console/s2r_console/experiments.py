@@ -40,6 +40,20 @@ PLACE_M_DEFAULT = ("blue", 1)
 PLACE_M_WARN = {2: "홀더 2 = 학습 범위 확인 전"}
 
 
+def _cups_right_cup(repo: Path) -> str:
+    """★11.11 deploy 리뷰 MEDIUM: cups 단계가 다시 찍는 오른손 컵 — 미션 생성기와 같은 config/fpp_active.yaml(sides.right).
+
+    고른 색이 이것과 다르면 cups 가 그 컵을 찍지 않으니 카드가 Perception Refresh 를 먼저 하라고 띄운다. 못 읽으면 "" (늘 경고).
+    """
+    import yaml
+
+    try:
+        raw = yaml.safe_load((repo / "config" / "fpp_active.yaml").read_text(encoding="utf-8")) or {}
+        return str((raw.get("sides") or {}).get("right") or "")
+    except (OSError, yaml.YAMLError, AttributeError):
+        return ""
+
+
 def place_m_head(color: str, holder: int) -> str:
     """놓기 학생 (색, 홀더) → 에피소드 머리(ctl_<머리>_right)."""
     return "place_m" if (color, holder) == PLACE_M_DEFAULT else f"place_m_{color}_h{holder}"
@@ -177,7 +191,7 @@ def _build(repo: Path, stage_ids: frozenset) -> dict:
                 if side in sides and objs:
                     sides[side]["objects"] = objs
         if head == "place_m" and "right" in sides:    # ★11.11 오른손 색 · 홀더 버튼 — 고른 조합의 에피소드 · 관리 작업
-            objs = []
+            objs, cups_cup = [], _cups_right_cup(repo)
             for color, fpp, color_ko in PLACE_M_COLORS:
                 for holder in PLACE_M_HOLDERS:
                     name = f"{place_m_head(color, holder)}_right"
@@ -185,7 +199,7 @@ def _build(repo: Path, stage_ids: frozenset) -> dict:
                         objs.append({**_episode(repo, name, entries), "stage": f"episode_{name}",
                                      "action": f"{CONTROL_PREFIX}{name}", "runner": "episode_runner_right",
                                      "object": f"{color}_h{holder}", "fpp": fpp, "cup": fpp, "color": color_ko,
-                                     "holder": holder, "warn": PLACE_M_WARN.get(holder, ""),
+                                     "holder": holder, "warn": PLACE_M_WARN.get(holder, ""), "rescan": fpp != cups_cup,
                                      "default": (color, holder) == PLACE_M_DEFAULT})
             if len(objs) > 1:
                 sides["right"]["objects"] = objs

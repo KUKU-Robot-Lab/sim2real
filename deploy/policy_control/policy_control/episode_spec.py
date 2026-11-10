@@ -748,6 +748,37 @@ def holder_problems(ep: Episode, poses: Mapping[int, object]) -> list[str]:
     return [f"{name}(마커 {hid})이 {ep.holder_poses} 에 없다" for name, hid in ep.holders.items() if hid not in poses]
 
 
+#: ★11.11 deploy 리뷰 H1 — 홀더 재기 기록(<holder_poses>.last_check.json)이 이만큼 넘게 낡았으면 "이번 cups 측정" 이 아니다
+HOLDER_CHECK_MAX_AGE_S = 6 * 3600.0
+
+
+def holder_check_problems(ep: Episode, check: Mapping | None, now: float,
+                          max_age_s: float = HOLDER_CHECK_MAX_AGE_S) -> list[str]:
+    """★11.11 deploy 리뷰 H1: 홀더를 쓰는 에피소드는 마지막 홀더 재기(cups 단계 한 번 재기 · cup_holders 단계 계속 재기)가
+    written 이고 max_age_s 안이어야 시작한다 — 재기가 jump_rejected · unstable · no_markers · failed 면 파일은 옛 자리 그대로라
+    옛 홀더 자리로 놓으러 갈 수 있다. check = last_check.json 내용(없으면 None), now = epoch s. 빈 목록 = 된다.
+    (11.03 "홀더는 고정" 결정은 needs 를 걸지 않는 것 — 이건 측정 결과 확인이다.)"""
+    if not ep.holders:
+        return []
+    redo = "cups 단계를 다시 돌리거나(홀더 한 번 재기) cup_holders 단계로 다시 잰다"
+    if not check:
+        return [f"홀더 재기 기록({ep.holder_poses}.last_check.json)이 없다 — {redo}"]
+    result, when = str(check.get("result", "?")), str(check.get("time", "?"))
+    big = " · ".join(f"{n} dxy {d.get('dxy_m')} m dyaw {d.get('dyaw_deg')}°"
+                     for n, d in (check.get("holders") or {}).items() if isinstance(d, Mapping) and d.get("dxy_m") is not None)
+    if result != "written":
+        return [f"마지막 홀더 재기가 {result}({when}{', rc ' + str(check['rc']) if 'rc' in check else ''})"
+                + (f" · {big}" if big else "") + f" — {ep.holder_poses} 는 옛 값 그대로다. {redo}"]
+    try:
+        import time as _time
+        t = _time.mktime(_time.strptime(when, "%Y-%m-%dT%H:%M:%S"))
+    except (ValueError, OverflowError):
+        return [f"홀더 재기 기록 시각을 못 읽는다({when!r}) — {redo}"]
+    if now - t > max_age_s:
+        return [f"마지막 홀더 재기가 {(now - t) / 3600:.1f} h 전({when}) — 이번 cups 측정이 아니다(상한 {max_age_s / 3600:g} h). {redo}"]
+    return []
+
+
 def place_holder_checks(ep: Episode, poses: Mapping[int, object], contracts: Mapping[str, object],
                         tol_m: float) -> tuple[list[str], list[str]]:
     """★10.28 놓기 job 의 홀더가 그 역할 놓기 계약의 학습 범위(holder_range)에서 허용 넘게 밖인가 — 놓기 노드 reset 과 같은

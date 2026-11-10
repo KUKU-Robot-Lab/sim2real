@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -352,6 +353,7 @@ HOLDER_POSES = STATION["holder_poses"]
 #: ★11.10 cups 끝 홀더 한 번 재기 — 안정 대기 상한 s · 직전 파일과 홀더별 xy 차 상한 m(deploy 확정 3 cm)
 HOLDER_ONCE_S = 30.0
 HOLDER_MAX_JUMP_M = 0.03
+HOLDER_MAX_YAW_DEG = 10.0             # ★11.11 deploy 리뷰 H2 — 홀더별 yaw 차 상한°
 #: ★10.30 arm_v2: 목(U2D2)이 다른 PC 에 있으면 목 드라이버 · 토크 해제를 그 PC 에서 돌린다(토픽은 랜 DDS). local = 이 PC
 HEAD_HOST = STATION.get("head_host", "local")
 REMOTE_HEAD = HEAD_HOST != "local"
@@ -437,6 +439,34 @@ REMOTE_SIM2REAL = "rl_ws/sim2real"
 REMOTE_PY = ".venv/bin/python"
 #: ★10.13 컵 좌표 다시 찍기 — FP++ 상태 토픽이 인지 PC 의 localhost DDS 에만 있어 상태 단계를 그 PC 에서(실기 첫 회 cups 막힘)
 RESCAN_HOST = ["--status-host", PERCEPTION_HOST] if REMOTE_PERCEPTION else []
+
+
+def _holder_fail_sh(check: str, what: str) -> str:
+    """★11.11 deploy 리뷰 H2: rc 가 0 이 아니면 '⚠ ' 줄 + check(.last_check.json)에 failed 를 쓰는 bash 조각($rc 를 쓴다).
+
+    JSON 중괄호는 printf 8진(\\173 \\175)으로 — 글자 그대로 쓰면 mission_stages.resolve 가 `{"time": …}` 를
+    자리표시자로 읽어 단계가 ValueError 로 죽는다.
+    """
+    return (f'if [ $rc -ne 0 ]; then echo "⚠ 홀더 다시 재기 실패 — {what} rc=$rc · {Path(HOLDER_POSES).name} 안 바꿈 · '
+            f'홀더를 쓰는 에피소드 시작 검사가 막는다"; printf \'\\173"time": "%s", "result": "failed", "rc": %d, "what": "{what}"\\175\\n\' '
+            f'"$(date +%Y-%m-%dT%H:%M:%S)" $rc > {check}; fi')
+
+
+def _holder_once_sh() -> str:
+    """★11.10 cups 끝 홀더 한 번 재기 bash 한 줄(늘 rc 0). ★11.11 H2: 실패는 ⚠ + 이 PC 의 last_check.json = failed."""
+    once = (f"--write --timeout-s {HOLDER_ONCE_S:g} --max-jump-m {HOLDER_MAX_JUMP_M:g} --max-yaw-deg {HOLDER_MAX_YAW_DEG:g} "
+            f"--out {HOLDER_POSES} --extrinsics {CAMERA_EXTRINSICS}")
+    check = f"{HOLDER_POSES}.last_check.json"
+    if not REMOTE_PERCEPTION:
+        return (f"cd {{repo}} && {{ bash scripts/vision/camera_up.sh && python3 scripts/nodes/cup_holder_pose_node.py {once}; }}; "
+                f"rc=$?; {_holder_fail_sh(check, '카메라 · 홀더 노드')}; true")
+    remote = (f"cd {REMOTE_SIM2REAL} && source scripts/vision/common.sh && bash scripts/vision/camera_up.sh && "
+              f"{REMOTE_PY} scripts/nodes/cup_holder_pose_node.py {once}")
+    src = f"{PERCEPTION_HOST}:{REMOTE_SIM2REAL}/{HOLDER_POSES}"
+    # 원격 재기가 실패하면 저쪽 기록은 옛 것일 수 있다 — 가져오지 않고 이 PC 기록에 failed 를 쓴다
+    return (f"cd {{repo}} && ssh -o BatchMode=yes {PERCEPTION_HOST} {shlex.quote(remote)}; rc=$?; "
+            f"if [ $rc -eq 0 ]; then scp -o BatchMode=yes {src} {src}.last_check.json {Path(HOLDER_POSES).parent}/; rc=$?; "
+            f"{_holder_fail_sh(check, 'scp(' + PERCEPTION_HOST + ' → 이 PC)')}; else {_holder_fail_sh(check, f'ssh · 카메라 · 홀더 노드({PERCEPTION_HOST})')}; fi; true")
 
 
 def _on_perception_pc(script: str) -> list:
@@ -743,9 +773,10 @@ def _run(kind: str) -> dict:
         _cmd("★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y ≈ l +0.16 / r −0.06 / r 바깥 −0.28(간격 0.22 · 10.27 A1 배치) · stable ✓ 인가 "
              f"(어긋나면 {RECALIB_HINT})",
              _on_perception_pc("timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String"), manual=True),
-        _cmd(f"홀더 자세 파일을 이 PC 로 — {PERCEPTION_HOST}:{HOLDER_POSES} → {HOLDER_POSES}(놓기 에피소드가 읽는다). "
+        _cmd(f"홀더 자세 파일 · 재기 기록을 이 PC 로 — {PERCEPTION_HOST}:{HOLDER_POSES}(.last_check.json) → 같은 경로(놓기 에피소드가 읽는다). "
              "파일이 아직 없으면 세 홀더가 안정되지 않은 것이다 — 확인 스텝부터 다시",
-             ["scp", "-o", "BatchMode=yes", f"{PERCEPTION_HOST}:{REMOTE_SIM2REAL}/{HOLDER_POSES}", "{repo}/" + HOLDER_POSES]),
+             ["scp", "-o", "BatchMode=yes", f"{PERCEPTION_HOST}:{REMOTE_SIM2REAL}/{HOLDER_POSES}",       # ★11.11 재기 기록도(시작 검사 H1)
+              f"{PERCEPTION_HOST}:{REMOTE_SIM2REAL}/{HOLDER_POSES}.last_check.json", "{repo}/" + str(Path(HOLDER_POSES).parent) + "/"]),
     ] if real else [_cmd("fake — 카메라 없음", ["bash", "-lc", "true"])]
     run["head_home"] = [
         _cmd("목 드라이버 — 포트 단독 소유 · 실측 관절 발행 · 이동 요청 처리"
@@ -794,23 +825,16 @@ def _run(kind: str) -> dict:
         for role, y in (("src", "-0.16"), ("rcv", "0.16"))
         for t in (f"/objects/cup_{role}/pose", _live(f"/objects/cup_{role}/pose"))]   # live = aglt 정책 입력(10.12 A안)
     # ★11.10 deploy 확정: cups 끝에 홀더 자리를 매번 한 번 잰다(에피소드 needs 에는 걸지 않는다 — 11.03 결정 유지).
-    #   직전 파일과 홀더별 xy 차가 3 cm 넘으면 쓰지 않는다(jump_rejected). 결과가 written 이 아니면 '⚠ ' 줄을 콘솔이 단계 경고로 띄운다.
-    #   cups 를 막지 않게 늘 rc 0(; true). 놓기 노드는 에피소드마다 시작 때 이 파일을 읽는다(load_holder_poses).
-    once = f"--write --timeout-s {HOLDER_ONCE_S:g} --max-jump-m {HOLDER_MAX_JUMP_M:g}"
+    #   직전 파일과 홀더별 xy 차가 3 cm(또는 yaw 10°) 넘으면 쓰지 않는다(jump_rejected). 결과가 written 이 아니면 '⚠ ' 줄을
+    #   콘솔이 단계 경고로 띄운다. cups 는 막지 않는다(rc 0). 놓기 노드는 에피소드마다 시작 때 이 파일을 읽는다(load_holder_poses).
+    #   ★11.11 deploy 리뷰 H2: 카메라 · 노드 · ssh · scp 실패를 삼키지 않는다 — 종료 코드를 받아 '⚠ ' 줄을 찍고 이 PC 의
+    #   <파일>.last_check.json 에 failed 를 남긴다 → 홀더를 쓰는 에피소드 시작 검사(H1)가 막는다.
     run["cups"].append(_cmd(
-        f"홀더 자리 한 번 다시 재기(최대 {HOLDER_ONCE_S:g} s) — 세 홀더가 안정되면 {HOLDER_POSES} 와 비교해 xy {HOLDER_MAX_JUMP_M * 100:g} cm "
-        "안이면 갱신, 넘거나 못 재면 그대로 두고 경고(결과 <파일>.last_check.json). 실패해도 cups 는 계속",
-        ["bash", "-lc", f"bash {{repo}}/scripts/vision/camera_up.sh; python3 {{repo}}/scripts/nodes/cup_holder_pose_node.py {once} "
-                        f"--out {{repo}}/{HOLDER_POSES} --extrinsics {{repo}}/{CAMERA_EXTRINSICS}; true"]
-        if not REMOTE_PERCEPTION else
-        _on_perception_pc(f"bash scripts/vision/camera_up.sh; {REMOTE_PY} scripts/nodes/cup_holder_pose_node.py {once} "
-                          f"--out {HOLDER_POSES} --extrinsics {CAMERA_EXTRINSICS}; true"))
-        if real else _cmd("fake — 홀더 한 번 재기 없음", ["bash", "-lc", "true"]))
-    if real and REMOTE_PERCEPTION:
-        run["cups"].append(_cmd(
-            f"홀더 자세 파일 · 결과를 이 PC 로 — {PERCEPTION_HOST}:{HOLDER_POSES}(.last_check.json) → 같은 경로(cup_holders 단계와 같다). 실패해도 계속",
-            ["bash", "-lc", f"scp -o BatchMode=yes {PERCEPTION_HOST}:{REMOTE_SIM2REAL}/{HOLDER_POSES} "
-                            f"{PERCEPTION_HOST}:{REMOTE_SIM2REAL}/{HOLDER_POSES}.last_check.json {{repo}}/{Path(HOLDER_POSES).parent}/; true"]))
+        f"홀더 자리 한 번 다시 재기(최대 {HOLDER_ONCE_S:g} s) — 세 홀더가 안정되면 {HOLDER_POSES} 와 비교해 xy {HOLDER_MAX_JUMP_M * 100:g} cm · "
+        f"yaw {HOLDER_MAX_YAW_DEG:g}° 안이면 갱신, 넘거나 못 재면(카메라 · ssh · scp 실패 포함) 그대로 두고 경고"
+        + (f" · 파일과 결과는 {PERCEPTION_HOST} 에서 이 PC 로 가져온다" if REMOTE_PERCEPTION else "")
+        + ". cups 는 계속 — 홀더를 쓰는 에피소드(놓기)는 written 이 아니면 시작 검사에서 막힌다",
+        ["bash", "-lc", _holder_once_sh()]) if real else _cmd("fake — 홀더 한 번 재기 없음", ["bash", "-lc", "true"]))
     for s in SIDES:
         if s not in REAL_CUPS:
             continue

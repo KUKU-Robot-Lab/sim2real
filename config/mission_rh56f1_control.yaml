@@ -1257,14 +1257,15 @@ run:
     - arm4090-lan
     - cd rl_ws/sim2real && source scripts/vision/common.sh && timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String
     manual: true
-  - note: 홀더 자세 파일을 이 PC 로 — arm4090-lan:config/cup_holder_poses_5090_v1.yaml → config/cup_holder_poses_5090_v1.yaml(놓기 에피소드가 읽는다). 파일이 아직 없으면
-      세 홀더가 안정되지 않은 것이다 — 확인 스텝부터 다시
+  - note: 홀더 자세 파일 · 재기 기록을 이 PC 로 — arm4090-lan:config/cup_holder_poses_5090_v1.yaml(.last_check.json) → 같은 경로(놓기 에피소드가 읽는다). 파일이 아직 없으면 세 홀더가
+      안정되지 않은 것이다 — 확인 스텝부터 다시
     argv:
     - scp
     - -o
     - BatchMode=yes
     - arm4090-lan:rl_ws/sim2real/config/cup_holder_poses_5090_v1.yaml
-    - '{repo}/config/cup_holder_poses_5090_v1.yaml'
+    - arm4090-lan:rl_ws/sim2real/config/cup_holder_poses_5090_v1.yaml.last_check.json
+    - '{repo}/config/'
   head_home:
   - note: 목 드라이버 — 포트 단독 소유 · 실측 관절 발행 · 이동 요청 처리(arm4090-lan 에서 ssh -tt, 토픽은 랜 DDS 로 이 PC 에)
     argv:
@@ -1343,23 +1344,20 @@ run:
     argv: *id001
     execute_args:
     - --execute
-  - note: 홀더 자리 한 번 다시 재기(최대 30 s) — 세 홀더가 안정되면 config/cup_holder_poses_5090_v1.yaml 와 비교해 xy 3 cm 안이면 갱신, 넘거나 못 재면 그대로 두고 경고(결과 <파일>.last_check.json).
-      실패해도 cups 는 계속
-    argv:
-    - ssh
-    - -tt
-    - -o
-    - BatchMode=yes
-    - arm4090-lan
-    - cd rl_ws/sim2real && source scripts/vision/common.sh && bash scripts/vision/camera_up.sh; .venv/bin/python scripts/nodes/cup_holder_pose_node.py
-      --write --timeout-s 30 --max-jump-m 0.03 --out config/cup_holder_poses_5090_v1.yaml --extrinsics config/global_camera_extrinsics_arm4090_r20u5.yaml;
-      true
-  - note: 홀더 자세 파일 · 결과를 이 PC 로 — arm4090-lan:config/cup_holder_poses_5090_v1.yaml(.last_check.json) → 같은 경로(cup_holders 단계와 같다). 실패해도 계속
+  - note: 홀더 자리 한 번 다시 재기(최대 30 s) — 세 홀더가 안정되면 config/cup_holder_poses_5090_v1.yaml 와 비교해 xy 3 cm · yaw 10° 안이면 갱신, 넘거나 못 재면(카메라 · ssh · scp
+      실패 포함) 그대로 두고 경고 · 파일과 결과는 arm4090-lan 에서 이 PC 로 가져온다. cups 는 계속 — 홀더를 쓰는 에피소드(놓기)는 written 이 아니면 시작 검사에서 막힌다
     argv:
     - bash
     - -lc
-    - scp -o BatchMode=yes arm4090-lan:rl_ws/sim2real/config/cup_holder_poses_5090_v1.yaml arm4090-lan:rl_ws/sim2real/config/cup_holder_poses_5090_v1.yaml.last_check.json
-      {repo}/config/; true
+    - 'cd {repo} && ssh -o BatchMode=yes arm4090-lan ''cd rl_ws/sim2real && source scripts/vision/common.sh && bash scripts/vision/camera_up.sh
+      && .venv/bin/python scripts/nodes/cup_holder_pose_node.py --write --timeout-s 30 --max-jump-m 0.03 --max-yaw-deg 10 --out config/cup_holder_poses_5090_v1.yaml
+      --extrinsics config/global_camera_extrinsics_arm4090_r20u5.yaml''; rc=$?; if [ $rc -eq 0 ]; then scp -o BatchMode=yes arm4090-lan:rl_ws/sim2real/config/cup_holder_poses_5090_v1.yaml
+      arm4090-lan:rl_ws/sim2real/config/cup_holder_poses_5090_v1.yaml.last_check.json config/; rc=$?; if [ $rc -ne 0 ]; then echo "⚠ 홀더 다시 재기
+      실패 — scp(arm4090-lan → 이 PC) rc=$rc · cup_holder_poses_5090_v1.yaml 안 바꿈 · 홀더를 쓰는 에피소드 시작 검사가 막는다"; printf ''\173"time": "%s", "result":
+      "failed", "rc": %d, "what": "scp(arm4090-lan → 이 PC)"\175\n'' "$(date +%Y-%m-%dT%H:%M:%S)" $rc > config/cup_holder_poses_5090_v1.yaml.last_check.json;
+      fi; else if [ $rc -ne 0 ]; then echo "⚠ 홀더 다시 재기 실패 — ssh · 카메라 · 홀더 노드(arm4090-lan) rc=$rc · cup_holder_poses_5090_v1.yaml 안 바꿈 · 홀더를 쓰는
+      에피소드 시작 검사가 막는다"; printf ''\173"time": "%s", "result": "failed", "rc": %d, "what": "ssh · 카메라 · 홀더 노드(arm4090-lan)"\175\n'' "$(date +%Y-%m-%dT%H:%M:%S)"
+      $rc > config/cup_holder_poses_5090_v1.yaml.last_check.json; fi; fi; true'
   cups_right:
   - note: ★[right] source240_blue 가 테이블에 똑바로 서 있고 손이 가리지 않는가
     argv:

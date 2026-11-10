@@ -1078,7 +1078,9 @@ function xpPlaceObjects(s, side) {
     ? `<button class="seg-b${on ? " on" : ""}" data-act="xp-fobj" data-arg="${esc(o.object)}" aria-pressed="${on}"${o.warn ? ` title="${esc(o.warn)}"` : ""}><span class="lamp ${xpTone(xpState(s, o))}"></span>${esc(label)}${o.warn ? " ⚠" : ""}</button>` : "";
   const colorRow = colors.map((c) => btn(pick(c, side.holder) || objs.find((o) => o.color === c), c === side.color, c)).join("");
   const holderRow = holders.map((h) => btn(pick(side.color, h), h === side.holder, `홀더 ${h}`)).join("");
-  const warn = side.warn ? `<p class="reasons bad">⚠ ${esc(side.warn)} — 놓기 학생이 이 홀더 범위를 배웠는지 확인되지 않았다</p>` : "";
+  const warn = (side.warn ? `<p class="reasons bad">⚠ ${esc(side.warn)} — 놓기 학생이 이 홀더 범위를 배웠는지 확인되지 않았다</p>` : "")
+    // ★11.11 deploy 리뷰 MEDIUM: cups 단계는 fpp_active 컵만 다시 찍는다 — 다른 색은 시작 전에 아래 Perception Refresh
+    + (side.rescan ? `<p class="reasons bad">⚠ ${esc(side.fpp || side.object)} 는 cups 단계가 다시 찍지 않는다 — 시작 전에 Perception Refresh 필요</p>` : "");
   return `<div class="xp-fobj">
     <div class="xp-fobj-row"><span class="xp-fobj-k">색</span><div class="seg" role="group" aria-label="컵 색">${colorRow}</div></div>
     <div class="xp-fobj-row"><span class="xp-fobj-k">홀더</span><div class="seg" role="group" aria-label="홀더">${holderRow}</div></div>

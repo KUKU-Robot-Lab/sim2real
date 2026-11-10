@@ -1296,13 +1296,16 @@ run:
     argv: *id001
     execute_args:
     - --execute
-  - note: 홀더 자리 한 번 다시 재기(최대 30 s) — 세 홀더가 안정되면 config/cup_holder_poses_5090_v1.yaml 와 비교해 xy 3 cm 안이면 갱신, 넘거나 못 재면 그대로 두고 경고(결과 <파일>.last_check.json).
-      실패해도 cups 는 계속
+  - note: 홀더 자리 한 번 다시 재기(최대 30 s) — 세 홀더가 안정되면 config/cup_holder_poses_5090_v1.yaml 와 비교해 xy 3 cm · yaw 10° 안이면 갱신, 넘거나 못 재면(카메라 · ssh · scp
+      실패 포함) 그대로 두고 경고. cups 는 계속 — 홀더를 쓰는 에피소드(놓기)는 written 이 아니면 시작 검사에서 막힌다
     argv:
     - bash
     - -lc
-    - bash {repo}/scripts/vision/camera_up.sh; python3 {repo}/scripts/nodes/cup_holder_pose_node.py --write --timeout-s 30 --max-jump-m 0.03 --out
-      {repo}/config/cup_holder_poses_5090_v1.yaml --extrinsics {repo}/config/global_camera_extrinsics_arm4090_r20u5.yaml; true
+    - 'cd {repo} && { bash scripts/vision/camera_up.sh && python3 scripts/nodes/cup_holder_pose_node.py --write --timeout-s 30 --max-jump-m 0.03
+      --max-yaw-deg 10 --out config/cup_holder_poses_5090_v1.yaml --extrinsics config/global_camera_extrinsics_arm4090_r20u5.yaml; }; rc=$?; if
+      [ $rc -ne 0 ]; then echo "⚠ 홀더 다시 재기 실패 — 카메라 · 홀더 노드 rc=$rc · cup_holder_poses_5090_v1.yaml 안 바꿈 · 홀더를 쓰는 에피소드 시작 검사가 막는다"; printf ''\173"time":
+      "%s", "result": "failed", "rc": %d, "what": "카메라 · 홀더 노드"\175\n'' "$(date +%Y-%m-%dT%H:%M:%S)" $rc > config/cup_holder_poses_5090_v1.yaml.last_check.json;
+      fi; true'
   cups_right:
   - note: ★[right] source240_blue 가 테이블에 똑바로 서 있고 손이 가리지 않는가
     argv:

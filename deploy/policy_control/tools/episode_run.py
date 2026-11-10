@@ -43,7 +43,8 @@ def main(argv=None) -> int:
     ap.add_argument("--delay", action="append", default=[], help="노드=초 — 모의 정책 · 궤적이 걸리는 시간(lanes 순서 보기)")
     ap.add_argument("--jsonl", type=Path, help="모의 실행 기록을 실기 실행기와 같은 jsonl 로도 쓴다")
     ap.add_argument("--require-holders", action="store_true",
-                    help="--plan: 고정 홀더 자세 파일에 쓰는 홀더가 다 있어야 rc 0(실기 에피소드 단계 시작 검사)")
+                    help="--plan: 고정 홀더 자세 파일에 쓰는 홀더가 다 있고 마지막 홀더 재기(<파일>.last_check.json)가 "
+                         "written · 6 h 안이어야 rc 0(실기 에피소드 단계 시작 검사)")
     args = ap.parse_args(argv)
     path = args.episode if args.episode.is_absolute() else _paths.SIM2REAL / args.episode
     ep = S.load(path)
@@ -68,6 +69,14 @@ def main(argv=None) -> int:
             hp = Path(ep.holder_poses)
             poses = load_holder_poses(hp if hp.is_absolute() else _paths.SIM2REAL / hp)
             holders = S.holder_problems(ep, poses)
+            if not holders and ep.holders:         # ★11.11 deploy 리뷰 H1 — 마지막 홀더 재기가 written 이고 낡지 않았나
+                import time
+                cp = Path(str(hp if hp.is_absolute() else _paths.SIM2REAL / hp) + ".last_check.json")
+                try:
+                    check = json.loads(cp.read_text(encoding="utf-8")) if cp.exists() else None
+                except (OSError, ValueError) as e:
+                    check = {"result": f"읽기 실패({type(e).__name__})"}
+                holders = S.holder_check_problems(ep, check, time.time())
             if not holders:                        # ★10.28 놓기 홀더가 계약 학습 범위 안인가 — 놓기 노드 reset 과 같은 검사를 미리
                 from policy_control import rh_place as P
                 root = _paths.SIM2REAL / "deploy" / "policies"
