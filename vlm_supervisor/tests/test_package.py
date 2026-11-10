@@ -50,7 +50,7 @@ class Backend:
         self.answer = answer
         self.prompts = []
 
-    def ask(self, images, text, level='low'):
+    def ask(self, images, text, level='low', **kwargs):
         self.prompts.append(text)
         return self.answer, {'model': 'fake'}
 

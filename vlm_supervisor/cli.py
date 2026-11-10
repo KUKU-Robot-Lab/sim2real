@@ -9,7 +9,7 @@ import time
 from .backends import ROOT, Router
 from .interface import RosInterface
 from .judge import Judge
-from .planner import Planner
+from .planner import Planner, simulate
 from .supervisor import Supervisor
 
 
@@ -21,6 +21,8 @@ def build_parser():
     parser.add_argument('--approvals', default='logs/runs/episode_approvals.jsonl')
     parser.add_argument('--log-dir', default=str(Path(ROOT) / 'runs'))
     parser.add_argument('--chain', help='쉼표로 구분한 백엔드 순서; 기본 VLM_CHAIN')
+    parser.add_argument('--plan-fallback', default=str(
+        Path(__file__).parent / 'config' / 'plan_cocktail_1c_e4000.json'))
     parser.add_argument('--settle', type=float, default=0.5)
     return parser
 
@@ -43,7 +45,21 @@ def main(argv=None):
         if image is None:
             raise RuntimeError('카메라 프레임 없음')
         image.save(run_dir / 'start.jpg')
-        plan = Planner(router).plan(args.sentence, image)
+        planner = Planner(router)
+        try:
+            plan = planner.plan(args.sentence, image)
+            plan['source'] = 'vlm'
+        except ValueError as exc:
+            event = {'event': 'plan_fallback', 'reason': str(exc),
+                     'vlm_answer_head': planner.last_answer[:400]}
+            supervisor.log(event)
+            print(json.dumps(event, ensure_ascii=False), flush=True)
+            steps = json.loads(Path(args.plan_fallback).read_text(encoding='utf-8'))
+            result = simulate(steps, planner.cards)
+            if not result['ok']:
+                raise ValueError('invalid fallback plan: ' + '; '.join(result['errors']))
+            plan = {'sentence': args.sentence, 'steps': steps, 'simulation': result,
+                    'source': 'fallback'}
         (run_dir / 'plan.json').write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding='utf-8')
         judge.plan = plan['steps']
         return supervisor.run()

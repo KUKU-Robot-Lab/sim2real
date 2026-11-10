@@ -49,7 +49,8 @@ def test_ledger_resets_on_new_day(tmp_path, monkeypatch):
     assert ledger.usable('test')
 
 
-def test_local_http_contract_and_ledger(tmp_path, monkeypatch):
+@pytest.mark.parametrize("tokens", [None, 1024])
+def test_local_http_contract_and_ledger(tmp_path, monkeypatch, tokens):
     import base64
     import io
     import vlm_supervisor.backends as backends
@@ -70,11 +71,13 @@ def test_local_http_contract_and_ledger(tmp_path, monkeypatch):
     monkeypatch.setattr(backends.requests, 'post', post)
     monkeypatch.setenv('VLM_LOCAL_URL', 'http://example.invalid:8765/')
     local = Local(Ledger(tmp_path))
-    answer, _ = local.ask([Image.new('RGB', (2, 2))], 'judge')
+    answer, _ = local.ask([Image.new('RGB', (2, 2))], 'judge',
+                          **({} if tokens is None else {'max_new_tokens': tokens}))
     url, timeout, body = sent[0]
     assert url == 'http://example.invalid:8765/infer'
     assert timeout > 0
     assert 'judge' in body['prompt']
+    assert body['max_new_tokens'] == (400 if tokens is None else tokens)
     image = Image.open(io.BytesIO(base64.b64decode(body['image_png_b64'])))
     assert image.size == (2, 2)
     assert answer == '{"choice":"A"}'
@@ -96,3 +99,27 @@ def test_gemini_daily_quota_blocks_and_routes_to_local(tmp_path, monkeypatch):
     assert answer == 'local result'
     assert router.ledger.blocked('gemini-test')
     assert meta['fallbacks']
+
+
+def test_router_plan_tokens_only_forwarded_to_local(tmp_path, monkeypatch):
+    router = Router(['gemini-test', 'local'], state_dir=tmp_path)
+
+    class Cloud:
+        def ask(self, images, text, level):
+            raise RuntimeError('cloud unavailable')
+
+    router.backends['gemini-test'] = Cloud()
+    def ask(self, images, text, level, max_new_tokens=400):
+        return str(max_new_tokens), {'model': 'local'}
+
+    monkeypatch.setattr(Local, 'ask', ask)
+    answer, meta = router.ask([], 'plan', max_new_tokens=1024)
+    assert answer == '1024'
+    assert 'cloud unavailable' in meta['fallbacks'][0]
+
+    class CloudSuccess:
+        def ask(self, images, text, level):
+            return 'cloud plan', {'model': 'gemini-test'}
+
+    router.backends['gemini-test'] = CloudSuccess()
+    assert router.ask([], 'plan', max_new_tokens=1024)[0] == 'cloud plan'

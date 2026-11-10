@@ -186,7 +186,7 @@ class Local:
         self.url = os.environ.get(env, self.URLS.get(name, "")).rstrip("/")
         self.ledger, self.model = ledger, name
 
-    def ask(self, images, text, level="low", timeout: float = 60):
+    def ask(self, images, text, level="low", timeout: float = 60, max_new_tokens: int = 400):
         if not images:
             raise ValueError('local vlm_server requires an image')
         b = io.BytesIO()
@@ -194,7 +194,7 @@ class Local:
         t0 = time.perf_counter()
         r = requests.post(self.url + "/infer", timeout=timeout,
                           json={"image_png_b64": base64.b64encode(b.getvalue()).decode(),
-                                "prompt": "(Only the CURRENT image is attached.)\n" + text, "max_new_tokens": 400})
+                                "prompt": "(Only the CURRENT image is attached.)\n" + text, "max_new_tokens": max_new_tokens})
         r.raise_for_status()
         meta = {"model": self.model, "sec": round(time.perf_counter() - t0, 2)}
         self.ledger.count(self.model, meta)
@@ -213,7 +213,7 @@ class Router:
         self.ledger = Ledger(state_dir)
         self.backends = {}  # Lazy: a missing Gemini key must not prevent local fallback.
 
-    def ask(self, images, text, level="low") -> tuple[str, dict]:
+    def ask(self, images, text, level="low", **kwargs) -> tuple[str, dict]:
         errs = []
         for c in self.chain:
             if not self.ledger.usable(c):
@@ -222,7 +222,7 @@ class Router:
             try:
                 if c not in self.backends:
                     self.backends[c] = Local(self.ledger, c) if c.startswith('local') else Gemini(c, self.ledger)
-                txt, meta = self.backends[c].ask(images, text, level)
+                txt, meta = self.backends[c].ask(images, text, level, **(kwargs if c.startswith("local") else {}))
                 meta["fallbacks"] = errs
                 self._log(meta, text, txt)
                 return txt, meta

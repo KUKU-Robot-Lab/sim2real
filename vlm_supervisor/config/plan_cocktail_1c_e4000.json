@@ -1,0 +1,18 @@
+[
+  ["go_home", "both", "-", "-"],
+  ["scene_snapshot", "-", "-", "-"],
+  ["grasp", "right", "SRC_BLUE", "-"],
+  ["grasp", "left", "SHAKER", "-"],
+  ["to_tilt_start", "right", "SRC_BLUE", "-"],
+  ["to_tilt_start", "left", "SHAKER", "-"],
+  ["tilt", "both", "SRC_BLUE", "SHAKER"],
+  ["place", "right", "SRC_BLUE", "HOLDER_1"],
+  ["go_home", "right", "-", "-"],
+  ["grasp", "right", "SRC_PINK", "-"],
+  ["to_tilt_start", "right", "SRC_PINK", "-"],
+  ["tilt", "both", "SRC_PINK", "SHAKER"],
+  ["place", "right", "SRC_PINK", "HOLDER_2"],
+  ["place", "left", "SHAKER", "HOLDER_0"],
+  ["go_home", "both", "-", "-"],
+  ["terminal", "-", "-", "SUCCESS"]
+]

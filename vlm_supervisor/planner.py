@@ -108,6 +108,7 @@ class Planner:
     def __init__(self, backend, cards_path=CARDS_PATH):
         self.backend = backend
         self.cards = load_cards(cards_path)
+        self.last_answer = ""
 
     def plan(self, sentence, image=None):
         prompt = ('Plan the Korean user instruction using only these skill cards. '
@@ -118,8 +119,11 @@ class Planner:
                   'Use only named objects and assigned holders. No executable code.\n'
                   + json.dumps(self.cards, ensure_ascii=False)
                   + '\nUser instruction: ' + sentence)
-        raw, meta = self.backend.ask([] if image is None else [image], prompt)
+        raw, meta = self.backend.ask([] if image is None else [image], prompt, max_new_tokens=1024)
+        self.last_answer = raw
         steps = parse_json(raw, list)
+        steps = [[step.get(key, "-") for key in ("skill", "hand", "object", "target")]
+                 if isinstance(step, dict) else step for step in steps]
         result = simulate(steps, self.cards)
         if not result['ok']:
             raise ValueError('invalid VLM plan: ' + '; '.join(result['errors']))
