@@ -119,7 +119,8 @@ def main(argv=None) -> None:
     seen = [False]      # 한 번 재기 — 한 홀더라도 본 적 있나(시간 초과 때 unstable / no_markers 가르기)
 
     def record(result: str, diffs: dict) -> None:
-        rec = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "result": result, "out": str(args.out),
+        # ★11.11 deploy 리뷰 M1 · M2: 시작 검사는 epoch(시간대 없음)로 나이를 잰다 — epoch 가 없는 기록은 옛 노드가 쓴 것으로 막는다
+        rec = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "epoch": round(time.time(), 3), "result": result, "out": str(args.out),
                "max_jump_m": args.max_jump_m, "max_yaw_deg": args.max_yaw_deg, "holders": diffs}
         check_path.write_text(json.dumps(rec, ensure_ascii=False, indent=1) + "\n")
         print(f"[cup_holder_check] {result} · " + (" · ".join(

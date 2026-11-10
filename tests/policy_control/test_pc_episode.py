@@ -631,6 +631,44 @@ def test_holder_problems_names_missing_files_and_ids():
     assert "cup_holders" in S.holder_problems(ep, {})[0]                         # 파일이 없다 — cup_holders --write 를 돌릴 것
 
 
+@pytest.mark.parametrize("check, ok", [
+    ({"result": "written", "epoch": 1000.0}, True),                        # 방금 잼
+    ({"result": "written", "epoch": 1000.0 - S.HOLDER_CHECK_MAX_AGE_S}, True),        # 나이 상한 딱
+    ({"result": "written", "epoch": 1000.0 - S.HOLDER_CHECK_MAX_AGE_S - 1}, False),   # 상한 1 s 넘음
+    ({"result": "written", "epoch": 1000.0 + S.HOLDER_CHECK_FUTURE_S}, True),         # 시계 차 허용 딱
+    ({"result": "written", "epoch": 1000.0 + S.HOLDER_CHECK_FUTURE_S + 1}, False),    # 미래 — 시계 어긋남
+    ({"result": "written", "time": "2026-11-11T10:00:00"}, False),         # epoch 없음 — 옛 노드(arm4090 미 pull)
+    ({"result": "written", "epoch": "1000"}, False),                       # 문자열 epoch
+    ({"result": "written", "epoch": float("nan")}, False),
+    ({"result": "jump_rejected", "epoch": 1000.0}, False),
+    ({"result": "failed", "epoch": 1000.0, "rc": 255}, False),
+    (None, False),
+    (["written"], False),                                                  # JSON 이 객체가 아님(LOW)
+])
+def test_holder_check_ages_by_epoch_and_refuses_future_or_old_records(check, ok):
+    """★11.11 deploy 리뷰 M1 · M2 · LOW: 나이는 epoch 로 재고(로컬 time 문자열은 시간대 · 시계 차로 틀린다), 미래 · epoch 없음 ·
+    객체 아닌 JSON 도 막는다."""
+    probs = S.holder_check_problems(_ep(), check, 1000.0)
+    assert (probs == []) is ok, probs
+    if check and isinstance(check, dict) and "epoch" not in check:
+        assert "git pull" in probs[0]
+
+
+def test_the_plan_tool_blocks_on_a_non_object_holder_record(tmp_path):
+    """★11.11 LOW: last_check.json 이 객체가 아닌 JSON 이어도 AttributeError 없이 막는다."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("episode_run", REPO / "deploy/policy_control/tools/episode_run.py")
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    raw = yaml.safe_load((EPISODES / "pick_place_right.yaml").read_text())
+    raw["holder_poses"] = str(tmp_path / "h.yaml")
+    (tmp_path / "h.yaml").write_text("holders:\n  cup_holder_1: {marker_id: 1, position: [0.38, -0.002, 0.235], yaw_rad: 0.0}\n")
+    (tmp_path / "h.yaml.last_check.json").write_text("[1, 2]\n")
+    path = tmp_path / "ep.yaml"
+    path.write_text(yaml.safe_dump(raw, allow_unicode=True))
+    assert tool.main(["--episode", str(path), "--plan", "--require-holders"]) == 1
+
+
 def test_the_plan_tool_refuses_a_real_run_without_the_holder_file(tmp_path, monkeypatch):
     import importlib.util
     spec = importlib.util.spec_from_file_location("episode_run", REPO / "deploy/policy_control/tools/episode_run.py")

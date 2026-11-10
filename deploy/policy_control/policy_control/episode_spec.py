@@ -750,30 +750,39 @@ def holder_problems(ep: Episode, poses: Mapping[int, object]) -> list[str]:
 
 #: ★11.11 deploy 리뷰 H1 — 홀더 재기 기록(<holder_poses>.last_check.json)이 이만큼 넘게 낡았으면 "이번 cups 측정" 이 아니다
 HOLDER_CHECK_MAX_AGE_S = 6 * 3600.0
+#: ★11.11 deploy 리뷰 M1: 기록 시각(epoch)이 이 PC 시계보다 이만큼 넘게 미래면 막는다 — 두 PC 시계가 어긋났다는 뜻
+HOLDER_CHECK_FUTURE_S = 120.0
 
 
 def holder_check_problems(ep: Episode, check: Mapping | None, now: float,
-                          max_age_s: float = HOLDER_CHECK_MAX_AGE_S) -> list[str]:
+                          max_age_s: float = HOLDER_CHECK_MAX_AGE_S,
+                          future_s: float = HOLDER_CHECK_FUTURE_S) -> list[str]:
     """★11.11 deploy 리뷰 H1: 홀더를 쓰는 에피소드는 마지막 홀더 재기(cups 단계 한 번 재기 · cup_holders 단계 계속 재기)가
     written 이고 max_age_s 안이어야 시작한다 — 재기가 jump_rejected · unstable · no_markers · failed 면 파일은 옛 자리 그대로라
     옛 홀더 자리로 놓으러 갈 수 있다. check = last_check.json 내용(없으면 None), now = epoch s. 빈 목록 = 된다.
-    (11.03 "홀더는 고정" 결정은 needs 를 걸지 않는 것 — 이건 측정 결과 확인이다.)"""
+    (11.03 "홀더는 고정" 결정은 needs 를 걸지 않는 것 — 이건 측정 결과 확인이다.)
+
+    ★11.11 deploy 리뷰 M1 · M2: 나이는 기록의 epoch(초, 시간대 없음)로 잰다 — time 은 쓴 PC 의 로컬 문자열이라 보여 주기만 한다.
+    epoch 가 없으면 이 표식을 쓰기 전 노드(arm4090 미 pull)가 쓴 기록이라 막는다. 미래 시각(future_s 넘게)도 막는다."""
     if not ep.holders:
         return []
     redo = "cups 단계를 다시 돌리거나(홀더 한 번 재기) cup_holders 단계로 다시 잰다"
     if not check:
         return [f"홀더 재기 기록({ep.holder_poses}.last_check.json)이 없다 — {redo}"]
+    if not isinstance(check, Mapping):
+        return [f"홀더 재기 기록이 JSON 객체가 아니다({type(check).__name__}) — {redo}"]
     result, when = str(check.get("result", "?")), str(check.get("time", "?"))
     big = " · ".join(f"{n} dxy {d.get('dxy_m')} m dyaw {d.get('dyaw_deg')}°"
                      for n, d in (check.get("holders") or {}).items() if isinstance(d, Mapping) and d.get("dxy_m") is not None)
     if result != "written":
         return [f"마지막 홀더 재기가 {result}({when}{', rc ' + str(check['rc']) if 'rc' in check else ''})"
                 + (f" · {big}" if big else "") + f" — {ep.holder_poses} 는 옛 값 그대로다. {redo}"]
-    try:
-        import time as _time
-        t = _time.mktime(_time.strptime(when, "%Y-%m-%dT%H:%M:%S"))
-    except (ValueError, OverflowError):
-        return [f"홀더 재기 기록 시각을 못 읽는다({when!r}) — {redo}"]
+    t = check.get("epoch")
+    if isinstance(t, bool) or not isinstance(t, (int, float)) or t != t:
+        return [f"홀더 재기 기록에 epoch 가 없다({when}) — 인지 PC(arm4090)가 옛 cup_holder_pose_node 다. "
+                f"그 PC 를 git pull 한 뒤 {redo}"]
+    if t - now > future_s:
+        return [f"홀더 재기 기록 시각이 이 PC 보다 {(t - now) / 60:.0f} 분 미래다({when}) — 두 PC 시계를 맞춘 뒤 {redo}"]
     if now - t > max_age_s:
         return [f"마지막 홀더 재기가 {(now - t) / 3600:.1f} h 전({when}) — 이번 cups 측정이 아니다(상한 {max_age_s / 3600:g} h). {redo}"]
     return []

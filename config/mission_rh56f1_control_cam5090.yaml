@@ -1304,7 +1304,7 @@ run:
     - 'cd {repo} && { bash scripts/vision/camera_up.sh && python3 scripts/nodes/cup_holder_pose_node.py --write --timeout-s 30 --max-jump-m 0.03
       --max-yaw-deg 10 --out config/cup_holder_poses_5090_v1.yaml --extrinsics config/global_camera_extrinsics_arm4090_r20u5.yaml; }; rc=$?; if
       [ $rc -ne 0 ]; then echo "⚠ 홀더 다시 재기 실패 — 카메라 · 홀더 노드 rc=$rc · cup_holder_poses_5090_v1.yaml 안 바꿈 · 홀더를 쓰는 에피소드 시작 검사가 막는다"; printf ''\173"time":
-      "%s", "result": "failed", "rc": %d, "what": "카메라 · 홀더 노드"\175\n'' "$(date +%Y-%m-%dT%H:%M:%S)" $rc > config/cup_holder_poses_5090_v1.yaml.last_check.json;
+      "%s", "epoch": %s, "result": "failed", "rc": %d, "what": "카메라 · 홀더 노드"\175\n'' "$(date +%Y-%m-%dT%H:%M:%S)" "$(date +%s)" $rc > config/cup_holder_poses_5090_v1.yaml.last_check.json;
       fi; true'
   cups_right:
   - note: ★[right] source240_blue 가 테이블에 똑바로 서 있고 손이 가리지 않는가

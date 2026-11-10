@@ -352,6 +352,8 @@ PLACE_MASK_AGE_S = 0.35                 # ★11.11 임시 — 놓기 학생 마�
 HOLDER_POSES = STATION["holder_poses"]
 #: ★11.10 cups 끝 홀더 한 번 재기 — 안정 대기 상한 s · 직전 파일과 홀더별 xy 차 상한 m(deploy 확정 3 cm)
 HOLDER_ONCE_S = 30.0
+#: ★11.11 deploy 리뷰 M3: 원격 한 번 재기 ssh 의 여유(카메라 기동 최대 60 s + 접속) — 넘으면 timeout 이 끊고 실패로 기록
+HOLDER_SSH_SLACK_S = 90.0
 HOLDER_MAX_JUMP_M = 0.03
 HOLDER_MAX_YAW_DEG = 10.0             # ★11.11 deploy 리뷰 H2 — 홀더별 yaw 차 상한°
 #: ★10.30 arm_v2: 목(U2D2)이 다른 PC 에 있으면 목 드라이버 · 토크 해제를 그 PC 에서 돌린다(토픽은 랜 DDS). local = 이 PC
@@ -448,8 +450,8 @@ def _holder_fail_sh(check: str, what: str) -> str:
     자리표시자로 읽어 단계가 ValueError 로 죽는다.
     """
     return (f'if [ $rc -ne 0 ]; then echo "⚠ 홀더 다시 재기 실패 — {what} rc=$rc · {Path(HOLDER_POSES).name} 안 바꿈 · '
-            f'홀더를 쓰는 에피소드 시작 검사가 막는다"; printf \'\\173"time": "%s", "result": "failed", "rc": %d, "what": "{what}"\\175\\n\' '
-            f'"$(date +%Y-%m-%dT%H:%M:%S)" $rc > {check}; fi')
+            f'홀더를 쓰는 에피소드 시작 검사가 막는다"; printf \'\\173"time": "%s", "epoch": %s, "result": "failed", "rc": %d, "what": "{what}"\\175\\n\' '
+            f'"$(date +%Y-%m-%dT%H:%M:%S)" "$(date +%s)" $rc > {check}; fi')
 
 
 def _holder_once_sh() -> str:
@@ -464,7 +466,11 @@ def _holder_once_sh() -> str:
               f"{REMOTE_PY} scripts/nodes/cup_holder_pose_node.py {once}")
     src = f"{PERCEPTION_HOST}:{REMOTE_SIM2REAL}/{HOLDER_POSES}"
     # 원격 재기가 실패하면 저쪽 기록은 옛 것일 수 있다 — 가져오지 않고 이 PC 기록에 failed 를 쓴다
-    return (f"cd {{repo}} && ssh -o BatchMode=yes {PERCEPTION_HOST} {shlex.quote(remote)}; rc=$?; "
+    # ★11.11 deploy 리뷰 M3: 여기는 ssh -tt 가 아니라 ssh — 원격 rc 를 그대로 받고(-tt 는 \r 섞임), camera_up.sh 는 카메라를
+    #   setsid … </dev/null >log & 로 띄워 ssh 출력 통로를 잡지 않는다. 그래도 매달리면 cups 가 멈추니 timeout 으로 끊는다(rc 124).
+    #   순서: 이 재기는 arm4090 의 노드가 epoch 를 쓰는 커밋이어야 시작 검사를 통과한다 — 실기 전에 arm4090 을 먼저 git pull.
+    return (f"cd {{repo}} && timeout {HOLDER_ONCE_S + HOLDER_SSH_SLACK_S:g} ssh -o BatchMode=yes -o ConnectTimeout=10 "
+            f"{PERCEPTION_HOST} {shlex.quote(remote)}; rc=$?; "
             f"if [ $rc -eq 0 ]; then scp -o BatchMode=yes {src} {src}.last_check.json {Path(HOLDER_POSES).parent}/; rc=$?; "
             f"{_holder_fail_sh(check, 'scp(' + PERCEPTION_HOST + ' → 이 PC)')}; else {_holder_fail_sh(check, f'ssh · 카메라 · 홀더 노드({PERCEPTION_HOST})')}; fi; true")
 

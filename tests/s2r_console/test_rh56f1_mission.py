@@ -929,6 +929,7 @@ def test_cups_ends_with_one_holder_check_that_never_fails_cups():
     assert "camera_up.sh; " not in real and "; true; " not in real   # 중간 실패를 삼키는 '; true' 가 없다
     if GEN.REMOTE_PERCEPTION:
         assert real.count("rc=$?") == 2 and ".last_check.json config/" in real    # ssh 와 scp 각각
+        assert f"timeout {GEN.HOLDER_ONCE_S + GEN.HOLDER_SSH_SLACK_S:g} ssh -o BatchMode=yes" in real   # ★11.11 M3
     assert FAKE_RAW["run"]["cups"][-1]["argv"] == ["bash", "-lc", "true"]
 
 
@@ -961,3 +962,5 @@ def test_the_holder_failure_record_is_json_and_cups_goes_on(tmp_path):
     assert out.returncode == 0 and "⚠" in out.stdout
     rec = json.loads((tmp_path / "config" / "x.last_check.json").read_text(encoding="utf-8"))
     assert rec["result"] == "failed" and rec["rc"] == 7 and rec["time"]
+    import time
+    assert abs(rec["epoch"] - time.time()) < 60     # ★11.11 M1: 시작 검사가 읽는 epoch
