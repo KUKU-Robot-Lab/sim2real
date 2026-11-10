@@ -548,7 +548,7 @@ class PlaceChain:
         self._close_dir = np.sign(np.asarray(s.hand_grip, float) - np.asarray(s.hand_open, float))
         self._fingers = [i for i, j in enumerate(s.hand_joints) if "thumb" not in j]
         self.hand0: np.ndarray | None = None
-        self.opened, self.tact_max, self.jf_max = 0.0, 0.0, None
+        self.opened, self.opened_meas, self.tact_max, self.jf_max = 0.0, 0.0, 0.0, None
         self.policy_a: np.ndarray | None = None          # 이번 틱 정책 출력(덧씌우기 전, 기록용) — 정책을 안 돌린 틱은 None
         self.latch = False                              # 관측 래치(latch_obs) — 리셋까지 유지
         self.fk = None                                  # ★10.13 이송: 노드가 넣는 UrdfChainFK(손바닥 자코비안용)
@@ -600,7 +600,7 @@ class PlaceChain:
         # (_policy_hand_from_meas). 학습 뱅크 hand_target ≈ q(err ≈ 0) — oneshot 16_s0_obsdump 에서 err 0.2~0.35 로 분포 밖이었다.
         self.dec.reset(arm_start=arm0, hand_start=hand0)
         self.hand0 = np.asarray(hand0, float).copy()
-        self.opened, self.tact_max, self.jf_max = 0.0, 0.0, None
+        self.opened, self.opened_meas, self.tact_max, self.jf_max = 0.0, 0.0, 0.0, None
         self.goal = seat_goal(self.c, holder)
         if attach is None and self.c.attach_source != "fpp":
             what = "잡기의 넘김 묶음" if self.c.attach_source == "bundle" else "붙인 자세"
@@ -670,13 +670,16 @@ class PlaceChain:
         return self.rcarry is not None and self.rcarry.on
 
     def _carry_tick(self, meas: Mapping) -> tuple[np.ndarray, np.ndarray, dict]:
-        """★10.25 준비 자세 이송 한 틱 — 행동 = Mover(실측 팔 q) · 손 = 리셋 손 목표. 관측은 기록용으로만 만든다."""
+        """★10.25 준비 자세 이송 한 틱 — 행동 = Mover · 손 = 리셋 손 목표. 관측은 기록용으로만 만든다.
+        ★11.11 Mover 는 직전 명령 목표(디코더 arm_target)로 굴린다(개루프) — 실측 q 되먹임이 1.5~2 Hz 떨림을 만들었다(q4).
+        끝에서 실측 q̇ · q*−q 로 멈춤을 확인한다(place_ready_carry STILL_*)."""
         c = self.c
         m = meas["arm"]
         pos, quat = self.cup_from_palm(m.palm_pos, m.palm_R)
         m = replace(m, cup_pos=pos, cup_quat=quat)
         obs = A.build_obs(c, m, self.dec, self.goal, self.prev, extra=self._extra())
-        a = self.rcarry.step(np.asarray(m.arm_q, float))
+        a = self.rcarry.step(np.asarray(m.arm_q, float), q_cmd=self.dec.state["arm"].arm_target.copy(),
+                             arm_qd=np.asarray(m.arm_qd, float))
         hand_q = np.array([m.hand_q[j] for j in c.side().hand_joints], float)
         targets = self.dec.step(a, active=True, tactile_n=m.tactile_n, hand_q=hand_q)
         self.tact_max = float(np.max(np.asarray(m.tactile_n, float)))
@@ -814,6 +817,7 @@ class PlaceChain:
         targets = self.dec.step(a, active=True, tactile_n=m.tactile_n, hand_q=hand_q)
         f = self._fingers
         self.opened = float(np.mean(self._close_dir[f] * (self.hand0[f] - targets["arm"][1][f])))
+        self.opened_meas = float(np.mean(self._close_dir[f] * (self.hand0[f] - hand_q[f])))   # ★11.11 실측 손가락 같은 기준
         self.tact_max = float(np.max(np.asarray(m.tactile_n, float)))
         self.jf_max = None if m.joint_force is None else float(np.max(np.asarray(m.joint_force, float)))
         self.prev = np.clip(a, -1.0, 1.0)
@@ -843,6 +847,7 @@ class PlaceChain:
         targets = self.dec.step(a, active=True, tactile_n=m.tactile_n, hand_q=hand_q)
         f = self._fingers
         self.opened = float(np.mean(self._close_dir[f] * (self.hand0[f] - targets["arm"][1][f])))
+        self.opened_meas = float(np.mean(self._close_dir[f] * (self.hand0[f] - hand_q[f])))   # ★11.11 실측 손가락 같은 기준
         self.tact_max = float(np.max(np.asarray(m.tactile_n, float)))
         self.jf_max = None if m.joint_force is None else float(np.max(np.asarray(m.joint_force, float)))
         if self.settling:
@@ -877,7 +882,7 @@ class PlaceChain:
                 "carry": None if self.carry is None else self.carry.as_dict(), "free_streak": self.free_streak,
                 "settle_t": self.settle_t, "seat": None if self.goal is None else [round(float(v), 4) for v in self.goal.pos],
                 # 첫 실기 문턱 정하기용(PLACE 검토) — 손 목표가 인계보다 연 양 · 손끝 최대 · 관절 힘 최대
-                "opened": round(self.opened, 4), "tact_max": round(self.tact_max, 3), "latch": self.latch,
+                "opened": round(self.opened, 4), "opened_meas": round(self.opened_meas, 4), "tact_max": round(self.tact_max, 3), "latch": self.latch,
                 "rule": self.c.release_rule,
                 "jf_max": None if self.jf_max is None else round(self.jf_max, 1),
                 **({"latch_t": self.latch_t, "latch_geo_n": self.latch_geo_n, "outcome": self.outcome,

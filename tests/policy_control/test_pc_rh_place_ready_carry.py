@@ -157,3 +157,60 @@ def test_carry_that_does_not_reach_the_start_does_not_start_the_policy():
     with pytest.raises(P.RhPlaceError, match="시작 분포 밖"):
         ch.step(meas(q))
     assert pol.n == 0
+    assert d["still"] == "track"                                     # ★11.11 팔이 명령을 못 따라간다 → 이탈 가드가 먼저 끊는다
+
+
+def _run_carry(policy, wobble):
+    """★11.11 이송 끝까지 굴린다. 실측 q = 명령 + wobble(틱) → (팔 행동 열, 끝 as_dict)."""
+    from dataclasses import replace
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup(policy)
+    ch.rc_chain = (RC, mch)
+    ch.reset(meas(q), holder=holder, held=(q, hand), attach=att)
+    acts, k = [], 0
+    while ch.carrying:
+        qd = np.zeros(7) if k > ch.rcarry.t + 2 else np.full(7, 0.2)  # Mover 끝 뒤 2 틱 더 흔들리다 멈춘다
+        mm = meas(q + wobble(k))
+        mm["arm"] = replace(mm["arm"], arm_qd=qd)
+        _, a, _ = ch.step(mm)
+        acts.append(a[:7].copy())
+        q = ch.dec.state["arm"].arm_target.copy()
+        k += 1
+    return np.asarray(acts), ch.rcarry.as_dict()
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_carry_follows_the_command_not_the_measured_arm_then_waits_until_still():
+    """★11.11 사용자 "mover 말고 ready-approach 처럼 명령 목표로": 실측 q 가 떨려도 이송 행동은 같다(개루프).
+    Mover 가 끝나면 팔 행동 0 으로 실측이 STILL_TICKS 연속 멈출 때까지 기다린 뒤 정책으로 넘긴다."""
+    clean, d0 = _run_carry("right_n10_e4000", lambda k: np.zeros(7))
+    shaky, d1 = _run_carry("right_n10_e4000", lambda k: 0.014 * np.sin(2 * np.pi * 1.75 * k / 60.0) * np.ones(7))
+    assert len(clean) == len(shaky) and np.allclose(clean, shaky, atol=1e-6)
+    t = d0["t"]
+    assert d0["arrived"] and d0["start_ok"] and d0["still"] == "ok"
+    assert np.all(clean[t:] == 0.0) and d0["still_ticks"] == len(clean) - t
+    assert d0["still_ticks"] >= RCY.STILL_TICKS + 2                  # 흔들리는 2 틱 동안은 세지 않는다
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+@pytest.mark.parametrize("off,fails", [(0.03, False), (0.15, True)])
+def test_carry_aborts_when_the_arm_stays_off_the_command(off, fails):
+    """★11.11 이탈 가드: held(디코더 시작 명령)와 실측이 off 만큼 어긋난 채 이송 — TRACK_ABORT_RAD 넘으면
+    TRACK_ABORT_TICKS 틱에 이송을 끝내고 start_ok False("track"). 184024 시작 차이 0.026 rad 은 걸리지 않는다."""
+    from dataclasses import replace
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup("right_n10_e4000")
+    ch.rc_chain = (RC, mch)
+    dq = np.zeros(7)
+    dq[0] = off
+    ch.reset(meas(q + dq), holder=holder, held=(q, hand), attach=att)
+    n = 0
+    while ch.carrying and n < 2000:
+        mm = meas(ch.dec.state["arm"].arm_target + dq)
+        mm["arm"] = replace(mm["arm"], arm_qd=np.zeros(7))
+        ch.step(mm)
+        n += 1
+    d = ch.rcarry.as_dict()
+    assert not d["on"]
+    if fails:
+        assert d["still"] == "track" and not d["start_ok"] and d["t"] == RCY.TRACK_ABORT_TICKS
+    else:
+        assert d["still"] != "track" and d["t"] > RCY.TRACK_ABORT_TICKS

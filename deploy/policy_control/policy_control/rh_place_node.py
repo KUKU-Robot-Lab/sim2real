@@ -18,9 +18,10 @@
     범위(holder_range)에서 holder_tol_m 넘게 밖이면 reset 거부. ★10.29 holder_tol_m 은 reset 마다 다시 읽는다(실행기가 job 마다
     넣는다 · 카드가 그 job 에 넓힌 허용, 없으면 0.02).
   · 학습 episode_length_s 끝: 놓기 전이어도 stop(★11.10 — 판정은 실행기 cup_in_holder), 놓은 뒤(빼기 중)면 stop.
+  · ★11.11 정책 손 목표 · 실측 손가락이 둘 다 열리면(OPENED_END_TICKS 연속) 그 틱에 stop(outcome "opened").
 ★10.25 준비 자세 이송(계약 ready_carry — newton_07_r · 06_l): reset 때 끝 자세를 풀고(Mover, 움직이지 않음) start 뒤 첫 틱부터
   Mover 행동으로 슬롯 위까지 옮긴 다음 정책. 에피소드 시간은 이송이 끝난 틱부터 센다. 이송 자체 상한 =
-  (max_steps + settle_steps) 틱 + READY_CARRY_SLACK_S — 넘으면 abort(Mover 가 그 전에 끝나야 한다).
+  (max_steps + settle_steps + 멈춤 확인 STILL_MAX_TICKS) 틱 + READY_CARRY_SLACK_S — 넘으면 abort(Mover 가 그 전에 끝나야 한다).
 """
 from __future__ import annotations
 
@@ -36,6 +37,8 @@ if __package__ in (None, ""):
 import time  # noqa: E402
 
 READY_CARRY_SLACK_S = 2.0
+OPENED_END_TICKS = 3      # ★11.11 정책 손 목표 · 실측 손가락이 둘 다 열린 틱이 이만큼 연속(60 Hz 50 ms)이면 끝
+OPENED_MEAS_FRAC = 0.5    # 실측 손가락 평균 열림 ≥ open_min_rad 의 이 비율(손은 명령보다 늦고 덜 편다)
 
 from policy_control import codec  # noqa: E402
 from policy_control import place_handover as PH  # noqa: E402
@@ -43,6 +46,7 @@ from policy_control.pour_fj_node import NS, Family, PourFjNode, PourFjNodeError,
 from policy_control.rh_place import (ATTACH_SOURCES, HOLDER_FLOOR_Z, HOLDER_TOL_M, JOINT_FREE_G,  # noqa: E402
                                      OPEN_MIN_RAD, RhPlaceError, holder_refusals, holder_tol_of)
 from policy_control import tin_live as TL  # noqa: E402
+from policy_control.place_ready_carry import STILL_MAX_TICKS as RCY_STILL_MAX_TICKS  # noqa: E402
 
 TIN_FPP_TILT_DEG = 15.0     # ★11.07 tin_json — FP++ 를 FK 와 비교해 남기는 조건(컵이 거의 서 있고 탁자 위)
 
@@ -54,6 +58,11 @@ def holder_candidates(text: str, first: int) -> list[int]:
     except ValueError as exc:
         raise PourFjNodeError(f"holders:={text!r} 는 쉼표로 가른 홀더 번호여야 한다") from exc
     return sorted(got | {int(first)})
+
+
+def opened_both(chain) -> bool:
+    """★11.11 이 틱에 정책 손 목표와 실측 손가락이 둘 다 열렸다(네 손가락 평균, 인계 · 정책 시작 손 기준)."""
+    return chain.opened >= chain.open_min_rad and chain.opened_meas >= OPENED_MEAS_FRAC * chain.open_min_rad
 
 
 class PlaceNode(PourFjNode):
@@ -99,6 +108,7 @@ class PlaceNode(PourFjNode):
             self._rc_chain = RCY.load_chain(s.palm_body, list(s.arm_joints))
             self.get_logger().info(f"준비 자세 이송 켬 · {self.contract.ready_carry}")
         self._carry_t0: float | None = None
+        self._opened_n = 0
         self.holder_topic = str(p("holder_topic")) or f"/objects/cup_holder_{self.holder_id}/pose"
         # ★10.28 칵테일(같은 팔이 홀더 1 · 2 에 놓는다) — 그 팔 놓기 job 의 홀더를 모두 구독해 두고 reset 에서 고른다
         #   (holders:=1,2, 미션 생성기가 넣는다 · 없으면 holder 하나). holder_topic 은 시작 holder 에만 쓴다.
@@ -352,7 +362,7 @@ class PlaceNode(PourFjNode):
             rc = self.chain.rcarry
             if rc is not None and rc.on:
                 self._t_start = now
-                lim = (rc.cfg.max_steps + rc.mv.cfg.settle_steps) / float(c.policy_hz) + READY_CARRY_SLACK_S
+                lim = (rc.cfg.max_steps + rc.mv.cfg.settle_steps + RCY_STILL_MAX_TICKS) / float(c.policy_hz) + READY_CARRY_SLACK_S
                 if now - self._carry_t0 > lim:
                     self._end("abort", f"준비 자세 이송 시간 초과 {lim:.1f} s · {rc.as_dict()}")
                     return True
@@ -363,6 +373,8 @@ class PlaceNode(PourFjNode):
                 self._end("abort", f"준비 자세 이송 끝 문턱 미달 → 놓기 정책 시작 안 함 · {rc.as_dict()}")
                 return True
             self.get_logger().info(f"준비 자세 이송 끝 → 정책 · {None if rc is None else rc.as_dict()}")
+            if rc is not None and rc.still == "timeout":    # ★11.11 멈춤 확인 상한을 넘겼다 — 그대로 진행
+                self.get_logger().warning(f"준비 자세 이송 끝 팔이 {RCY_STILL_MAX_TICKS} 틱 안에 멈추지 않음 → 그대로 정책 · {rc.as_dict()}")
         if self.chain.settle_t == 0:                       # 놓음이 난 스텝 — 첫 실기 문턱 정하기용 값
             self.get_logger().info(f"place 놓음 판정 · {self.chain.as_dict()}")
         if c.latch_s2r and self.chain.latch and self.chain.latch_t == 0 and not self.chain.settling and not getattr(self, "_latch_logged", False):
@@ -375,6 +387,18 @@ class PlaceNode(PourFjNode):
             else:
                 self._end("stop", f"placed — 놓음 {c.release_steps} 스텝 + 스크립트 {c.settle_steps} 스텝 끝")
             return True
+        # ★11.11 사용자 "정책 기준으론 손가락을 다 피게 되어있으니까 손가락 다 피면 에피소드 끝" — 6701ae9 가 지운 규칙을 되살리되
+        #   정책 손 목표(opened ≥ open_min_rad)와 실측 손가락(opened_meas ≥ OPENED_MEAS_FRAC · open_min_rad)이 같이 OPENED_END_TICKS 연속.
+        #   래치가 켜졌으면 손은 래치가 편다 → 기존 놓기 · 빼기 경로. 학습 시간 끝 stop(episode_end)은 그대로.
+        if c.latch_s2r and not self.chain.latch and not self.chain.settling and not self.chain.done:
+            self._opened_n = self._opened_n + 1 if opened_both(self.chain) else 0
+            if self._opened_n >= OPENED_END_TICKS:
+                self.chain.outcome = "opened"
+                self.chain.released_cup = self.chain.latch_cup
+                self.get_logger().info(f"place 정책이 손 폄 → 끝(래치 {self.chain.latch}) · {self.chain.as_dict()}")
+                self._end("stop", f"placed — 정책이 손을 폄(opened {self.chain.opened:.2f} · 실측 {self.chain.opened_meas:.2f} rad, "
+                                  f"기준 {self.chain.open_min_rad:.2f}, {OPENED_END_TICKS} 틱) · 래치 {self.chain.latch} → 다음 노드(home)가 뺀다")
+                return True
         if c.latch_s2r and self.max_s > 0 and time.monotonic() - self._t_start >= self.max_s and not self.chain.settling:
             # ★11.10 사용자 "place 노드의 '열리면 끝' 규칙 제거" — 정책을 학습 episode_length_s 끝까지 돌린다. 끝은 abort 가 아니라
             #   정상 종료(stop), 들어갔는지는 에피소드 실행기가 cup_in_holder(FP++ live · 묶은 컵 FK)로 판정한다. 빼기는 다음 rehome 노드가.
@@ -388,6 +412,7 @@ class PlaceNode(PourFjNode):
 
     def _srv_start(self, req, res):
         self._latch_logged = False
+        self._opened_n = 0
         out = super()._srv_start(req, res)
         rc = getattr(self.chain, "rcarry", None)
         self._carry_t0 = time.monotonic() if rc is not None and rc.on else None
