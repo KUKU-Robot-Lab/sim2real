@@ -783,8 +783,16 @@ class GripAssist:
     squeeze_release_s: float = 1.0
     squeeze_miss_rad: float = 0.04
     squeeze_miss_s: float = 0.25
+    # ★11.10 E 팔 목표 틈 상한(배포 전용, 빈 값 = 끔 = 이전과 같다). 디코더는 q* 를 직전 q* 에서 적분한다(sim step_arm_increment 와
+    #   같고 sim 도 틈 상한이 없다). 실기에서 팔이 막히거나 늦으면 정책이 계속 내려 q* 가 쌓인다(261110 root_cause/accum:
+    #   분홍 접근 명령 손끝 탁자 아래 32 mm, 틈 최대 sim p99 의 1.78 배). 켜면 증분(+ 들림 래치) 뒤 관절별 |q* − 실측 q| ≤ δ 로
+    #   정책 자기 목표(st.arm_target)를 자른다 — 다음 증분도 자른 값에서 시작하고 관측 arm_q_target 도 그 값이다. 값 7 개 [rad].
+    arm_gap_clip_rad: tuple = ()
 
     def __post_init__(self) -> None:
+        g = np.asarray(self.arm_gap_clip_rad, float).reshape(-1)
+        if g.size not in (0, 7) or not np.all(np.isfinite(g)) or np.any(g <= 0.0) or np.any(g > 0.5):
+            raise RhAgltError(f"arm_gap_clip_rad = 빈 값(끔) 또는 0 < δ ≤ 0.5 rad 7 개: {self.arm_gap_clip_rad}")
         if not (np.isfinite(self.thumb_support_g) and self.thumb_support_g >= 0.0):
             raise RhAgltError(f"thumb_support_g ≥ 0(0 = 끔): {self.thumb_support_g}")
         if not (np.isfinite(self.thumb_open_floor_rad) and 0.0 <= self.thumb_open_floor_rad <= THUMB_OPEN_FLOOR_MAX):
@@ -1008,7 +1016,8 @@ class RaDecoder:
              hand_q: Sequence[float] | None = None,
              joint_force: Sequence[float] | None = None,
              obj_palm_m: float | None = None,
-             cup_z: float | None = None) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+             cup_z: float | None = None,
+             arm_q: Sequence[float] | None = None) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         """hand_q = 실측 손 각도(계약 hand_joints 순, rad) — hand_block 계약이면 반드시(막힘 신호 쥠 멈춤).
         joint_force = RaMeas.joint_force(엄지 굽힘 먼저, g) — GripAssist B 만 쓴다.
         obj_palm_m = 지금 |물체 원점 − 손바닥| [m](RaMeas cup_pos · palm_pos) — 계약 grasp_near_m > 0 이면 반드시.
@@ -1022,6 +1031,8 @@ class RaDecoder:
             q_inc = np.clip(self.c.arm_ema * q_raw + (1.0 - self.c.arm_ema) * st.arm_target, self._lo, self._hi)
             if self.c.arm_hold_rise_m > 0.0:          # ★10.19 팔 들림 래치(hdgp _pre_physics_step 957-966 순서)
                 q_inc = self._arm_hold(st.arm_target, a[:7], q_inc, cup_z)
+            if len(self.assist.arm_gap_clip_rad):     # ★11.10 E 틈 상한(배포 전용) — arm_q = 실측 팔(계약 arm_joints 순, rad)
+                q_inc = self._gap_clip(q_inc, arm_q)
             st.arm_target = q_inc
         else:
             st.arm_target = self._idle.copy()
@@ -1045,6 +1056,15 @@ class RaDecoder:
         if active:                                    #   정책 자기 목표(st.hand_target)는 law · 관측 hand_err · 막힘 래치가 그대로 쓴다
             hand_cmd = self._squeeze(st.hand_target, hand_q, obj_palm_m)
         return {"arm": (st.arm_target.copy(), hand_cmd.copy())}
+
+    def _gap_clip(self, q_inc: np.ndarray, arm_q: Sequence[float] | None) -> np.ndarray:
+        if arm_q is None:
+            raise RhAgltError("arm_gap_clip_rad 켬: 디코더에 실측 팔 각도(arm_q)가 필요하다")
+        q = np.asarray(arm_q, float).reshape(-1)
+        if q.size != 7 or not np.all(np.isfinite(q)):
+            raise RhAgltError(f"실측 팔 각도는 유한한 7 개: {q}")
+        d = np.asarray(self.assist.arm_gap_clip_rad, float)
+        return np.clip(q + np.clip(q_inc - q, -d, d), self._lo, self._hi)
 
     def grasped(self) -> bool | None:
         """막힘 신호 쥔 판정(직전 step 기준) — hand_block 계약이 아니면 None(호출자가 촉각 · 관절 힘 규칙을 쓴다)."""

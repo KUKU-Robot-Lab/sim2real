@@ -260,7 +260,8 @@ def _fake_node(c, **params):
             "thumb_open_floor_rad": 0.0, "approach_grasp": "",                   # 10.17 경로 C — 노드 기본 꺼짐
             "hand_squeeze": False, "squeeze_trigger_frac": A.GripAssist.squeeze_trigger_frac,   # ★10.19 D — 기본 꺼짐
             "squeeze_near_m": A.GripAssist.squeeze_near_m, "squeeze_rate_rad_s": A.GripAssist.squeeze_rate_rad_s,
-            "squeeze_boost_rad": A.GripAssist.squeeze_boost_rad, **params}
+            "squeeze_boost_rad": A.GripAssist.squeeze_boost_rad,
+            "arm_gap_clip_deg": "", **params}                                   # ★11.10 E 틈 상한 — 기본 꺼짐
     chain = N.AgltChain(c, policy=None)
     chain.reset = lambda meas: None                   # 체인 리셋 자체는 다른 테스트가 본다 — 여기선 파라미터 배선만
     # ★10.21 손 안 컵 추정기(_inhand_run)는 test_pc_inhand_est 가 본다 — 여기선 끔

@@ -164,7 +164,7 @@ def test_the_node_wires_hand_squeeze(c):
     vals = {"object": "", "freeze_rule": "lift_hold", "freeze_lift_m": 0.07, "freeze_hold_steps": 30,
             "hand_unfreeze_on_grasp": True, "thumb_support_g": 80.0, "lift_grasp_palm_m": 0.08, "thumb_open_floor_rad": 0.06,
             "approach_grasp": "", "hand_squeeze": True, "squeeze_trigger_frac": 0.6, "squeeze_near_m": 0.08, "squeeze_rate_rad_s": 1.0,
-            "squeeze_boost_rad": 0.3}
+            "squeeze_boost_rad": 0.3, "arm_gap_clip_deg": ""}                     # ★11.10 E 틈 상한 — 기본 꺼짐
     chain = N.AgltChain(c, policy=None)
     chain.reset = lambda meas: None
     N.PourFjNode._reset_chain(SimpleNamespace(chain=chain, get_parameter=lambda n: SimpleNamespace(value=vals[n]),

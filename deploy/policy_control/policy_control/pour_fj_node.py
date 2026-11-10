@@ -233,6 +233,22 @@ def aglt_target_arrays(c: A.RaContract, targets: dict) -> tuple[tuple, np.ndarra
     return tuple(s.arm_joints) + tuple(s.hand_joints), arr, np.zeros(arr.size)
 
 
+def gap_clip_rad(text) -> tuple:
+    """★11.10 arm_gap_clip_deg 파라미터 → GripAssist.arm_gap_clip_rad. "" = 끔, 숫자 하나 = 7 관절 같은 값, 7 개 = 관절별 [deg]."""
+    t = str(text).strip()
+    if not t:
+        return ()
+    try:
+        v = [float(x) for x in t.split(",")]
+    except ValueError as e:
+        raise A.RhAgltError(f"arm_gap_clip_deg = 빈 값 · 숫자 하나 · 쉼표 7 개 [deg]: {t!r}") from e
+    if len(v) == 1:
+        v = v * 7
+    if len(v) != 7:
+        raise A.RhAgltError(f"arm_gap_clip_deg 는 1 개 또는 7 개: {t!r}")
+    return tuple(float(np.radians(x)) for x in v)
+
+
 class AgltChain:
     """rh_aglt 한 스텝 — 관측(목표 포함) → 정책 → 디코더. 첫 목표는 reset 때 컵 자세로, 그 뒤는 사용자 입력(rh_aglt_goals)."""
 
@@ -345,7 +361,8 @@ class AgltChain:
         active = self.step_i >= self.c.hold_steps
         near = float(np.linalg.norm(np.asarray(m.cup_pos, float) - np.asarray(m.palm_pos, float)))   # 10.14 grasp_near_m
         targets = self.dec.step(a, active=active, tactile_n=m.tactile_n, hand_q=hand_q, joint_force=m.joint_force,
-                                obj_palm_m=near, cup_z=float(np.asarray(m.cup_pos, float)[2]))   # ★10.19 팔 들림 래치
+                                obj_palm_m=near, cup_z=float(np.asarray(m.cup_pos, float)[2]),   # ★10.19 팔 들림 래치
+                                arm_q=m.arm_q)                                                   # ★11.10 E 틈 상한(켰을 때만 씀)
         if active:                                  # 학습 GoalState.step 도 대기 중에는 세지 않는다
             g = self.dec.grasped()                  # ★10.12 hand_block 계약: 막힘 신호 쥔 판정(sim _grasp_flag 와 같은 식)
             if g is None and self.grasp_cfg is not None:   # 이전 계약: 부착과 같은 쥠 신호(손끝 또는 관절 힘), 손끝 문턱은 계약 값
@@ -481,6 +498,8 @@ class PourFjNode(LeanNodeMixin, Node):
                               ("cup_obs_offset_base_m", [0.0, 0.0, 0.0]),
                               # ★11.08 들기 가드(sim G40H8) — 0 = 끔. 에피소드 실행기가 job 마다 넣는다(분홍 x · y = scene snapshot)
                               ("lift_guard_mm", 0.0), ("lift_hstop_m", 0.0), ("lift_guard_x", float("nan")), ("lift_guard_y", float("nan")),
+                              # ★11.10 E 팔 목표 틈 상한(rh_aglt.GripAssist.arm_gap_clip_rad) — "" = 끔, "d" = 7 관절 같은 값, "d1,…,d7" [deg]
+                              ("arm_gap_clip_deg", ""),
                               ("hand_squeeze", False), ("squeeze_trigger_frac", A.GripAssist.squeeze_trigger_frac),
                               ("squeeze_near_m", A.GripAssist.squeeze_near_m), ("squeeze_rate_rad_s", A.GripAssist.squeeze_rate_rad_s),
                               ("squeeze_boost_rad", A.GripAssist.squeeze_boost_rad),
@@ -1008,7 +1027,8 @@ class PourFjNode(LeanNodeMixin, Node):
                                                  squeeze_trigger_frac=float(self.get_parameter("squeeze_trigger_frac").value),
                                                  squeeze_near_m=float(self.get_parameter("squeeze_near_m").value),
                                                  squeeze_rate_rad_s=float(self.get_parameter("squeeze_rate_rad_s").value),
-                                                 squeeze_boost_rad=float(self.get_parameter("squeeze_boost_rad").value))
+                                                 squeeze_boost_rad=float(self.get_parameter("squeeze_boost_rad").value),
+                                                 arm_gap_clip_rad=gap_clip_rad(self.get_parameter("arm_gap_clip_deg").value))
             self.chain.lift_grasp_palm_m = float(self.get_parameter("lift_grasp_palm_m").value)
             if not (np.isfinite(self.chain.lift_grasp_palm_m) and self.chain.lift_grasp_palm_m >= 0.0):
                 raise A.RhAgltError(f"lift_grasp_palm_m ≥ 0(0 = 끔): {self.chain.lift_grasp_palm_m}")
