@@ -68,9 +68,11 @@ class _Est:
         return {}
 
 
-@pytest.mark.skipif(not (HDGP / "source/openarm/openarm/agnostic/modules/ready_carry").is_dir(), reason="hdgp 없음")
-def test_chain_carries_first_then_starts_the_policy_from_zero():
-    c = P.load_contract(POL / "right_n07/rh_place_contract.json")
+NO_HDGP = not (HDGP / "source/openarm/openarm/agnostic/modules/ready_carry").is_dir()
+
+
+def _setup(policy="right_n07"):
+    c = P.load_contract(POL / f"{policy}/rh_place_contract.json")
     s = c.side()
     RC, mch = RCY.load_chain(s.palm_body, list(s.arm_joints))
     pol, est = _Pol(), _Est()
@@ -89,6 +91,12 @@ def test_chain_carries_first_then_starts_the_policy_from_zero():
                                 palm_pos=palm, palm_R=T[:3, :3], tips=np.tile(palm, (5, 1)), cup_pos=np.zeros(3),
                                 cup_quat=np.array([1.0, 0, 0, 0]), tactile_n=np.zeros(5), joint_force=None)}
 
+    return c, RC, mch, pol, est, ch, hand, q, att, holder, meas
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_chain_carries_first_then_starts_the_policy_from_zero():
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup()
     with pytest.raises(P.RhPlaceError, match="Mover 사슬"):
         ch.reset(meas(q), holder=holder, held=(q, hand), attach=att)
     ch.rc_chain = (RC, mch)
@@ -107,3 +115,45 @@ def test_chain_carries_first_then_starts_the_policy_from_zero():
     ch.step(meas(q))
     assert pol.n == 1 and est.n == 1                                   # 다음 틱부터 정책
     assert ch.as_dict()["phase"] == "place" and ch.as_dict()["ready_carry"]["arrived"]
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+@pytest.mark.parametrize("policy", ["right_n07", "right_n10_e4000"])
+def test_carry_dq_never_exceeds_the_action_limit(policy):
+    """★11.10 Mover 관절 상한 = k_arm·arm_ema — 행동이 ±1 에 잘리지 않아 계획대로 도착한다(실기 161342: 잘린 틱 95 %, 끝 err 48 mm)."""
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup(policy)
+    ch.rc_chain = (RC, mch)
+    ch.reset(meas(q), holder=holder, held=(q, hand), attach=att)
+    rc = ch.rcarry
+    assert rc.qd_max == pytest.approx(c.k_arm * c.arm_ema) and rc.qd_max < c.ready_carry["qd_max"]
+    raw, orig = [], rc.mv.step
+
+    def step(qq, _o=orig):
+        out = _o(qq)
+        raw.append(float(out[0].abs().max()) / rc.scale)
+        return out
+    rc.mv.step = step
+    while ch.carrying:
+        ch.step(meas(q))
+        q = ch.dec.state["arm"].arm_target.copy()
+    assert max(raw) <= 1.0 + 1e-5
+    assert rc.start_ok and rc.as_dict()["err_mm"] < 10.0
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_carry_that_does_not_reach_the_start_does_not_start_the_policy():
+    """★11.10 팔이 따라가지 못해 컵이 sim 시작 분포 밖에서 이송이 끝나면 정책 상태를 열지 않고 다음 틱을 거부한다(노드는 abort)."""
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup()
+    ch.rc_chain = (RC, mch)
+    ch.reset(meas(q), holder=holder, held=(q, hand), attach=att)
+    r0 = pol.resets
+    for _ in range(c.ready_carry["max_steps"] + 200):              # 실측 q 고정 = 팔이 안 움직임 → 계획 시간 + settle 뒤 끝
+        ch.step(meas(q))
+        if not ch.carrying:
+            break
+    d = ch.rcarry.as_dict()
+    assert not ch.carrying and not d["start_ok"] and d["err_mm"] > RCY.START_ERR_MAX_M * 1000
+    assert pol.resets == r0 and pol.n == 0
+    with pytest.raises(P.RhPlaceError, match="시작 분포 밖"):
+        ch.step(meas(q))
+    assert pol.n == 0

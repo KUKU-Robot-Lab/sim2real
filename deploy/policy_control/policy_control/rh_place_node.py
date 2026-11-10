@@ -359,6 +359,9 @@ class PlaceNode(PourFjNode):
                 return False
             self._carry_t0 = None
             self._t_start = now
+            if rc is not None and not rc.start_ok:         # ★11.10 컵이 sim 시작 분포 밖(place_ready_carry START_*) — 정책 전에 멈춘다
+                self._end("abort", f"준비 자세 이송 끝 문턱 미달 → 놓기 정책 시작 안 함 · {rc.as_dict()}")
+                return True
             self.get_logger().info(f"준비 자세 이송 끝 → 정책 · {None if rc is None else rc.as_dict()}")
         if self.chain.settle_t == 0:                       # 놓음이 난 스텝 — 첫 실기 문턱 정하기용 값
             self.get_logger().info(f"place 놓음 판정 · {self.chain.as_dict()}")

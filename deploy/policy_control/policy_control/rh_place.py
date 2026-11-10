@@ -682,7 +682,7 @@ class PlaceChain:
         self.tact_max = float(np.max(np.asarray(m.tactile_n, float)))
         self.jf_max = None if m.joint_force is None else float(np.max(np.asarray(m.joint_force, float)))
         self.prev = np.clip(a, -1.0, 1.0)
-        if not self.rcarry.on:
+        if not self.rcarry.on and self.rcarry.start_ok:     # ★11.10 문턱 미달이면 정책 상태를 열지 않는다(다음 틱 _step_s2r 가 거부)
             self._place_begin(hand_q)
         return obs, a, targets
 
@@ -775,6 +775,8 @@ class PlaceChain:
         ③ 정책 → 래치 뒤 놓기 전 · 빼기 중 손 = 편 손 행동(팔은 정책) → 디코더. prev_action = 실행한 행동."""
         if self.carrying:                                   # ★10.25 준비 자세 이송 — 정책 · 래치는 이송 뒤
             return self._carry_tick(meas)
+        if self.rcarry is not None and not self.rcarry.start_ok:   # ★11.10 이송 끝 문턱 미달 — 정책을 시작하지 않는다(노드는 abort)
+            raise RhPlaceError(f"준비 자세 이송 끝이 sim 시작 분포 밖이라 놓기 정책을 시작하지 않는다 · {self.rcarry.as_dict()}")
         c = self.c
         m = meas["arm"]
         if self.step_i > 0:                                 # ① 리셋 뒤 첫 틱에는 직전 행동이 없다

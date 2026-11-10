@@ -27,6 +27,12 @@ ENV_KEYS = {"dz": "carry_dz", "plan_down": "carry_plan_down", "plan_xy": "carry_
             "tol": "carry_tol", "q_tol": "carry_q_tol"}
 KEYS = tuple(ENV_KEYS) + ("max_steps",)
 N_DOWN = 4                      # sim line_region(…, carry_plan_down, 4, …)
+# ★11.10 이송 끝 → 정책 시작 문턱 = sim 학습 뱅크(정책이 본 시작 상태) 이송 끝 오차 p95
+#   (deploy/policies/rh56f1/place/right_n10_e4000/bank/bank_right_train.npz, 350 행: carry_err_mm p95 29.04 · carry_axis_deg p95 4.69,
+#   컵 z p5~p95 0.352~0.394 m). 넘으면 정책을 시작하지 않는다(실기 161342 끝 err 48 mm · 컵 z 0.421 m 에서 손이 펴졌다).
+#   Mover arrived(q_tol 0.05 rad 포함)는 쓰지 않는다 — 계획 ok False 면 컵이 목표 0.8 mm 에 닿아도 q 가 q_goal 과 달라 False 다(오프라인 dry-run).
+START_ERR_MAX_M = 0.029
+START_AXIS_MAX_DEG = 4.7
 
 
 class ReadyCarryError(ValueError):
@@ -102,7 +108,12 @@ class ReadyCarry:
         self.torch, self.cfg, self.RC, self.ch = torch, cfg, RC, chain
         self.scale = float(k_arm) * float(arm_ema)
         self.hand_action = np.asarray(hand_action, float).copy()
-        self.mv = RC.mover.Mover(chain, RC.mover.MoverCfg(v_max=cfg.v_max, qd_max=cfg.qd_max, min_steps=cfg.min_steps,
+        # ★11.10 Mover 관절 상한 = 행동 ±1 이 낼 수 있는 틱당 증분(k_arm·arm_ema = 0.05·0.1 = 0.005 rad/틱, 계약 rh_place_contract.json
+        #   k_arm · arm_ema). 계약 qd_max 0.012(hdgp MoverCfg 기본)는 step 의 ±1 자름에 잘려 계획 T 가 짧고 관절 4 가 못 따라갔다
+        #   (실험기 logs/runs/261110/root_cause/place_offline/carry_clip_out.txt: 잘린 틱 0.87~0.95 · 관절 4 누적 −0.74~−0.89 rad ·
+        #   끝 err 37~48 mm). 상한을 행동 한계로 낮추면 Mover 가 비율 축소로 방향을 지키고 T 를 그만큼 늘린다. 실제 관절 속도는 전과 같거나 느리다.
+        self.qd_max = min(float(cfg.qd_max), self.scale)
+        self.mv = RC.mover.Mover(chain, RC.mover.MoverCfg(v_max=cfg.v_max, qd_max=self.qd_max, min_steps=cfg.min_steps,
                                                           max_steps=cfg.max_steps, tol=cfg.tol, q_tol=cfg.q_tol, seeds=cfg.seeds),
                                  1, "cpu")
         self.on, self.arrived, self.t = False, False, 0
@@ -145,8 +156,14 @@ class ReadyCarry:
         a_arm = np.clip(dq[0].double().numpy() / self.scale, -1.0, 1.0)
         return np.concatenate([a_arm, self.hand_action])
 
+    @property
+    def start_ok(self) -> bool:
+        """★11.10 이송이 끝났고 컵이 sim 뱅크 시작 분포 안(오차 · 축)이다 — False 면 정책을 시작하지 않는다(NaN 은 False)."""
+        return (not self.on and self.t > 0 and self.err <= START_ERR_MAX_M and self.axis_deg <= START_AXIS_MAX_DEG)
+
     def as_dict(self) -> dict:
-        return {"on": self.on, "t": self.t, "arrived": self.arrived, "carry_ok": (not self.on) and self.t < self.cfg.max_steps,
+        return {"on": self.on, "t": self.t, "arrived": self.arrived, "start_ok": self.start_ok, "qd_max": self.qd_max,
+                "carry_ok": (not self.on) and self.t < self.cfg.max_steps,
                 "err_mm": None if np.isnan(self.err) else round(self.err * 1000, 2),
                 "axis_deg": None if np.isnan(self.axis_deg) else round(self.axis_deg, 2), "plan": self.plan}
 
