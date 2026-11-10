@@ -55,16 +55,17 @@ def test_deploy_pd_yamls_leave_the_diff_off():
         assert L.load_pd_config(CONFIG / name).qd_target_diff is None
 
 
-def test_rh56f1_mission_pd_turns_on_stage_1_and_t2_adds_friction():
-    """★11.10 사용자 "속도 상한은 풀어야": 미션 PD(pd_rh56f1·_exec)는 1단계(q̇* 차분 + vel_ff_cap 0.5),
-    tracking_1110/*_T2 는 거기에 fric_ff 만 더한다. 두 미션 yaml 은 execute 한 줄만 달라야 한다."""
+def test_rh56f1_mission_pd_is_t2_and_t1_copy_keeps_friction_off():
+    """★11.10 사용자 "T2로": 미션 PD(pd_rh56f1·_exec) = T2(q̇* 차분 + vel_ff_cap 0.5 + fric_ff).
+    tracking_1110/*_T1 은 되돌리기용 1단계 사본(fric_ff 없음), *_T2 는 미션 기본과 같다."""
     for name in ("pd_rh56f1.yaml", "pd_rh56f1_exec.yaml"):
         c = L.load_pd_config(CONFIG / name)
         assert c.qd_target_diff == L.QdTargetDiff(max_dt=0.1, hold_sec=0.07) and c.vel_ff_cap == 0.5
-        assert c.fric_ff is None
+        assert c.fric_ff is not None
+        t1 = L.load_pd_config(CONFIG / "tracking_1110" / name.replace(".yaml", "_T1.yaml"))
         t2 = L.load_pd_config(CONFIG / "tracking_1110" / name.replace(".yaml", "_T2.yaml"))
-        assert t2.fric_ff is not None and t2.qd_target_diff == c.qd_target_diff and t2.vel_ff_cap == 0.5
-        assert t2.execute == c.execute
+        assert t1.fric_ff is None and t1.qd_target_diff == c.qd_target_diff and t1.vel_ff_cap == 0.5
+        assert t2.fric_ff == c.fric_ff and t1.execute == c.execute == t2.execute
 
 
 @pytest.mark.parametrize("msg_qd", [np.zeros(N), np.linspace(-0.3, 0.4, N)])
@@ -158,7 +159,7 @@ def _fric_law_cmd(qd, fric, tracking=True, effort_cap=20.0, tau_req=None):
 
 
 def test_deploy_pd_yamls_leave_the_friction_off():
-    for name in ("pd_rh56f1.yaml", "pd_rh56f1_exec.yaml", "pd_left.yaml", "pd_right.yaml"):
+    for name in ("pd_left.yaml", "pd_right.yaml"):   # ★11.10 rh56f1 미션 PD 는 T2(마찰 전향 켬) — 위 시험
         assert L.load_pd_config(CONFIG / name).fric_ff is None
 
 
