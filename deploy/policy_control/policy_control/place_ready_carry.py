@@ -130,12 +130,13 @@ class ReadyCarry:
     """한 에피소드 이송 상태(B = 1, CPU). start → step… → on False. 사슬은 노드가 한 번 만들어 넘긴다(URDF 읽기)."""
 
     def __init__(self, cfg: ReadyCarryCfg, RC, chain, *, k_arm: float, arm_ema: float, hand_action: Sequence[float],
-                 track_abort_rad: float = TRACK_ABORT_RAD) -> None:
+                 track_abort_rad: float = TRACK_ABORT_RAD, sag_max_rad: float = SAG_MAX_RAD) -> None:
         import torch
         self.torch, self.cfg, self.RC, self.ch = torch, cfg, RC, chain
         self.scale = float(k_arm) * float(arm_ema)
         self.hand_action = np.asarray(hand_action, float).copy()
         self.track_abort_rad = float(track_abort_rad)   # sim 런타임은 0.2 를 줄 수 있다(실기 기본 0.1)
+        self.sag_max_rad = float(sag_max_rad)           # 기본 0.08(sim 처짐 0.061) · 실기 첫 시험은 0.04 를 줄 수 있다
         # ★11.10 Mover 관절 상한 = 행동 ±1 이 낼 수 있는 틱당 증분(k_arm·arm_ema = 0.05·0.1 = 0.005 rad/틱, 계약 rh_place_contract.json
         #   k_arm · arm_ema). 계약 qd_max 0.012(hdgp MoverCfg 기본)는 step 의 ±1 자름에 잘려 계획 T 가 짧고 관절 4 가 못 따라갔다
         #   (실험기 logs/runs/261110/root_cause/place_offline/carry_clip_out.txt: 잘린 틱 0.87~0.95 · 관절 4 누적 −0.74~−0.89 rad ·
@@ -226,7 +227,7 @@ class ReadyCarry:
             dev = float(np.max(np.abs(e)))
             if qd_max < STILL_QD_RAD_S and np.isfinite(dev):   # 움직이는 틱 · NaN 은 적분하지 않는다(명령 유지)
                 off = np.asarray(q_cmd, float) - self.q_ref
-                dq_s = np.clip(off + np.clip(K_SAG * e, -SAG_STEP_MAX, SAG_STEP_MAX), -SAG_MAX_RAD, SAG_MAX_RAD) - off
+                dq_s = np.clip(off + np.clip(K_SAG * e, -SAG_STEP_MAX, SAG_STEP_MAX), -self.sag_max_rad, self.sag_max_rad) - off
                 a_arm = np.clip(dq_s / self.scale, -1.0, 1.0)   # 디코더: q* += k_arm·arm_ema·a
                 self.sag_ticks += 1
                 self.sag_max = np.maximum(self.sag_max, np.abs(off + dq_s))

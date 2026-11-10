@@ -265,7 +265,7 @@ def test_nan_measurement_is_not_silent(field):
         assert d["still"] == "timeout" and d["still_ticks"] == RCY.STILL_MAX_TICKS
 
 
-def _run_sag_plant(sag_j7, hold_qd_ticks=0):
+def _run_sag_plant(sag_j7, hold_qd_ticks=0, sag_max_rad=None, out=None):
     """★11.11 처짐 플랜트: 실측 q 가 (명령 − 처짐)을 1차 지연(τ 0.14 s, 60 Hz)으로 따라간다. q̇ = 실측 차분.
     멈춤 확인 첫 hold_qd_ticks 틱은 q̇ 를 0.2 rad/s 로 보고(아직 움직임) → (멈춤 확인 구간 팔 행동, 보고 q̇, 끝 as_dict, 끝 q_ref − q)."""
     from dataclasses import replace
@@ -276,6 +276,8 @@ def _run_sag_plant(sag_j7, hold_qd_ticks=0):
     alpha = (1 / 60.0) / 0.14
     ch.reset(meas(q - sag), holder=holder, held=(q, hand), attach=att)
     ch.rcarry.track_abort_rad = 0.2                    # sim 런타임 값 — 지연 + 처짐을 이동 중 이탈로 끊지 않는다
+    if sag_max_rad is not None:
+        ch.rcarry.sag_max_rad = sag_max_rad
     qm, qd, acts, qds, n = q - sag, np.zeros(7), [], [], 0
     while ch.carrying and n < 3000:
         moving = ch.rcarry.moving
@@ -285,14 +287,17 @@ def _run_sag_plant(sag_j7, hold_qd_ticks=0):
             qd_rep = qd
         mm = meas(qm)
         mm["arm"] = replace(mm["arm"], arm_qd=qd_rep)
-        _, a, _ = ch.step(mm)
+        _, a, tg = ch.step(mm)
+        q_seen = qm
         if not moving:
             acts.append(a[:7].copy())
             qds.append(float(np.max(np.abs(qd_rep))))
         q_new = qm + alpha * (ch.dec.state["arm"].arm_target - sag - qm)
         qd, qm, n = (q_new - qm) * 60.0, q_new, n + 1
     d = ch.rcarry.as_dict()
-    return np.asarray(acts), np.asarray(qds), d, ch.rcarry.q_ref - qm
+    if out is not None:
+        out.update(ch=ch, tg=tg)
+    return np.asarray(acts), np.asarray(qds), d, ch.rcarry.q_ref - q_seen     # 끝 틱에 본 실측 기준
 
 
 @pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
@@ -316,3 +321,24 @@ def test_sag_correction_never_exceeds_the_cap():
     assert d["still"] == "timeout"
     assert max(d["sag_max"]) == pytest.approx(RCY.SAG_MAX_RAD, abs=1e-9)
     assert np.max(np.abs(err)) == pytest.approx(0.12 - RCY.SAG_MAX_RAD, abs=2e-3)
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_sag_timeout_returns_command_to_q_ref():
+    """★11.11 timeout 이면 보정 누적을 정책에 넘기지 않는다 — 디코더 목표 · 내보낸 팔 목표 = q_ref. sag_max_rad 0.04(실기 첫 시험값)도 생성 뒤 바꿀 수 있다."""
+    out = {}
+    _, _, d, _ = _run_sag_plant(0.06, sag_max_rad=0.04, out=out)
+    ch, tg = out["ch"], out["tg"]
+    assert d["still"] == "timeout"
+    assert max(d["sag_max"]) == pytest.approx(0.04, abs=1e-9)
+    np.testing.assert_allclose(ch.dec.state["arm"].arm_target, ch.rcarry.q_ref, atol=1e-12)
+    np.testing.assert_allclose(tg["arm"][0], ch.rcarry.q_ref, atol=1e-12)
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_policy_start_prev_action_is_zero():
+    """★11.11 이송 끝 틱 마지막 보정 행동이 정책 첫 관측의 직전 행동으로 새지 않는다 — _place_begin 이 prev 0(학습 시작과 같다)."""
+    out = {}
+    acts, _, d, _ = _run_sag_plant(0.06, out=out)
+    assert d["still"] == "ok" and d["start_ok"] and np.any(acts != 0.0)
+    assert np.all(out["ch"].prev == 0.0)

@@ -687,6 +687,10 @@ class PlaceChain:
             hold = np.where(np.isfinite(meas_q), meas_q, targets["arm"][0])   # 실측 NaN 관절은 직전 목표(명령 유지)
             self.dec.state["arm"].arm_target = hold.copy()
             targets = {**targets, "arm": (hold, targets["arm"][1])}
+        elif self.rcarry.still == "timeout" and self.rcarry.q_ref is not None:   # ★11.11 처짐 보정 누적(≤ sag_max_rad)을
+            hold = self.rcarry.q_ref.copy()              #   정책에 넘기지 않는다 — 행동은 틱당 0.005 rad 라 한 틱에 못 되돌리므로 목표를 직접 q_ref 로
+            self.dec.state["arm"].arm_target = hold.copy()
+            targets = {**targets, "arm": (hold, targets["arm"][1])}
         self.tact_max = float(np.max(np.asarray(m.tactile_n, float)))
         self.jf_max = None if m.joint_force is None else float(np.max(np.asarray(m.joint_force, float)))
         self.prev = np.clip(a, -1.0, 1.0)

@@ -548,8 +548,13 @@ class EpisodeManager:
         """★11.07 continue_on_fail 에 든 kind 의 policy 노드 · 정책을 돌린 뒤의 POLICY_TIMEOUT · PLACE_FAILED 만(refused · 안전 코드 제외).
         손이 컵을 못 놓았거나(hand_empty False) 못 빠진(withdraw_timeout) 놓기는 손이 컵에 걸려 있어 그대로 복귀하면 위험하다 —
         기존대로 실패(episode_failure _one 의 place 절). last 는 바로 앞(step)에서 이 노드 결과로 채웠다."""
-        stuck = any(r["signals"].get("hand_empty") is False or r["signals"].get("outcome") == "withdraw_timeout"
-                    for r in self.last.get("results", []))
+        sigs = [r["signals"] for r in self.last.get("results", [])]
+        # ★11.11 래치 전 손 폄 종료는 hand_empty None(모름) — 컵이 홀더 밖이면 손에 걸렸을 수 있으니 걸림으로 본다
+        unknown = any(s.get("outcome") == "opened_before_latch" and s.get("cup_in_holder") is False for s in sigs)
+        stuck = unknown or any(s.get("hand_empty") is False or s.get("outcome") == "withdraw_timeout" for s in sigs)
+        if unknown:
+            self._log("place_hand_unknown", node, result=code.value,
+                      termination_reason="손 상태 미확인(opened_before_latch) — 컵이 홀더 밖이라 걸림으로 보고 이어 가지 않는다")
         return (code in (F.POLICY_TIMEOUT, F.PLACE_FAILED) and not stuck and node.type == "policy" and bool(node.jobs)
                 and all(self.ep.policies[j.role].kind in self.ep.continue_on_fail for j in node.jobs))
 
