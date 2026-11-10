@@ -501,8 +501,9 @@ def build_world(spec: WorldSpec) -> World:
     for o in spec.objects:
         if not str(o["name"]).startswith("cup"):
             raise ValueError(f"세계 물체 이름은 cup 으로 시작해야 한다(세계 쪽 판정): {o['name']!r}")
-        world_geoms.append(f'<body name="{o["name"]}" pos="{_fmt(np.asarray(o["center"], float))}">'
-                           f'<geom type="cylinder" size="{float(o["radius"]):.7g} {float(o["half_height"]):.7g}"/></body>')
+        geom = (f'type="box" size="{_fmt(np.asarray(o["half"], float))}"' if "half" in o      # 11.11 홀더 몸체(축정렬)
+                else f'type="cylinder" size="{float(o["radius"]):.7g} {float(o["half_height"]):.7g}"')
+        world_geoms.append(f'<body name="{o["name"]}" pos="{_fmt(np.asarray(o["center"], float))}"><geom {geom}/></body>')
 
     # 충돌 비트: 움직이는 쪽(group>0) contype 1 / conaffinity 3, 나머지 contype 2 / conaffinity 1
     #  -> 고정-고정 쌍은 아예 계산하지 않는다.

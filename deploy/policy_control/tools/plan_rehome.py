@@ -35,12 +35,18 @@ ROBOTS = {
 }
 
 
+#: ★11.11 홀더 원기둥(plan_home_path --holders): 복귀 경로가 홀더에 꽂힌 컵을 스쳤다(cocktail_1111 q2 — 손목이 홀더 1 파랑 윗테
+#: 약 10 mm). 저장된 홀더 자리(에피소드가 읽는 파일)를 장애물로 넣는다. None = 끔(--no-holders 와 같음).
+HOLDERS = SIM2REAL / "config" / "cup_holder_poses_5090_v1.yaml"
+
+
 #: 실측에서 기다릴 관절(robot 별) — 손 상태가 늦게 붙으면 '손 관절 상태가 없다'로 계획이 멈춘다(10.04 에피소드 연속 실행)
 HAND_NEED = {"rh56f1": ("thumb_1", "thumb_2", "index_1", "middle_1", "ring_1", "pinky_1"), "dg5f": ()}
 
 
 def measure(side: str = "right", robot: str = "dg5f") -> dict[str, float]:
     p = side[0]
+    # 반대팔은 기다리지 않는다(같은 /joint_states 에 오면 함께 들어온다, 없으면 home·zero 장면만)
     need = [f"{p}_aj_{i}" for i in range(1, 8)] + [f"{p}_hj_{j}" for j in HAND_NEED.get(robot, ())]
     out = subprocess.run([sys.executable, str(SAMPLE), "--seconds", "0.6", "--need", ",".join(need)],
                          capture_output=True, text=True, timeout=30)
@@ -49,12 +55,23 @@ def measure(side: str = "right", robot: str = "dg5f") -> dict[str, float]:
     return json.loads(out.stdout.strip().splitlines()[-1])["q"]
 
 
+def other_arm_q(side: str, q: dict[str, float]) -> dict[str, float] | None:
+    """★11.12 반대팔 실측 7관절(같은 샘플에 들어 있다) — 없거나 전부 0.0(엔코더 못 읽음)이면 None, 계획기는 home·zero 장면만 쓴다.
+    184028 s3: home·zero 장면만으로는 실측 왼팔에 대한 몸통 · 왼팔 거리를 못 봤다."""
+    o = "l" if side == "right" else "r"
+    arm = [f"{o}_aj_{i}" for i in range(1, 8)]
+    if any(j not in q for j in arm) or all(q[j] == 0.0 for j in arm):
+        return None
+    return {j: float(q[j]) for j in arm}
+
+
 #: ★10.13 실기: 정책이 멈춘 자리의 손목 j7 이 한계보다 0.025 rad 바깥이라 계획기가 거부했다(되돌림 실패 → safe_stop).
 #  이 안쪽으로만 넘었으면 한계로 잘라 계획한다 — 경로 시작점 검사(0.05 rad)가 실측과 잘린 시작점의 차이를 다시 본다.
 START_SLACK = 0.04
 
 
-def planner_argv(side: str, q: dict[str, float], out: Path, robot: str = "dg5f") -> list[str]:
+def planner_argv(side: str, q: dict[str, float], out: Path, robot: str = "dg5f",
+                 holders: Path | None = HOLDERS, table_cups: str = "") -> list[str]:
     """실측 → plan_home_path 인자. 팔 7 관절이 없으면 SystemExit, 손은 있는 것만 넘긴다(측정 손 자세로 검사)."""
     p = side[0]
     arm = [f"{p}_aj_{i}" for i in range(1, 8)]
@@ -66,11 +83,16 @@ def planner_argv(side: str, q: dict[str, float], out: Path, robot: str = "dg5f")
     hand = {k: v for k, v in q.items() if k.startswith(f"{p}_hj_")}
     if not hand:
         raise SystemExit(f"✗ 손 관절 상태가 없다({side}) — 손 드라이버가 떠 있는가(손 자세로 충돌을 검사한다)")
+    other = other_arm_q(side, q)
+    if other is None:
+        print("[rehome] 반대팔 실측 없음 — home·zero 장면만으로 계획", file=sys.stderr, flush=True)
     return [sys.executable, str(HERE / "plan_home_path.py"), "--side", side,
             # `--opt=값` 으로 붙인다 — 값이 '-0.1…' 처럼 음수로 시작하면 argparse 가 옵션으로 읽는다(09.28 실기 rc=2)
             "--start=" + ",".join(f"{q[j]:.5f}" for j in arm), "--start-slack", str(START_SLACK), "--goal", "contract",
             "--hand-start", "measured", "--hand-q=" + ",".join(f"{k}={v:.5f}" for k, v in sorted(hand.items())),
-            "--out", str(out), *ROBOTS[robot]]
+            "--out", str(out), *ROBOTS[robot], *(["--holders", str(holders)] if holders else []),
+            *(["--table-cups", table_cups] if table_cups else []),
+            *(["--other-q=" + ",".join(f"{k}={v:.5f}" for k, v in sorted(other.items()))] if other else [])]
 
 
 def main() -> int:
@@ -78,13 +100,20 @@ def main() -> int:
     ap.add_argument("--side", choices=("left", "right"), required=True)
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--robot", choices=sorted(ROBOTS), default="dg5f", help="계획 세계(자산 · 계약 · 프로필 · pd)")
+    ap.add_argument("--no-holders", action="store_true", help="홀더 원기둥 없이 계획(옛 세계, 비교용)")
+    ap.add_argument("--holders", type=Path, default=HOLDERS,
+                    help="홀더 자세 파일(episode_ros 는 그 에피소드의 holder_poses 를 넘긴다). 기본값은 손으로 부를 때만")
+    ap.add_argument("--table-cups", default="", help="탁자 위 컵 JSON(plan_home_path --table-cups, episode_ros 가 넘긴다)")
     args = ap.parse_args()
+    holders = None if args.no_holders else args.holders
+    if holders and not holders.exists():
+        raise SystemExit(f"✗ 홀더 자세 파일 없음 {holders} — 홀더를 다시 재거나 --no-holders")
     if os.environ.get("ROS_DOMAIN_ID", "") in ("", "0"):
         raise SystemExit("✗ ROS_DOMAIN_ID 가 비었거나 0 — 거부")
     out = args.out or (SIM2REAL / "logs" / "policy_control" / f"rehome_{args.side}.npz")
     if out.exists():
         out.unlink()                         # 옛 계획이 남아 있으면 계획이 실패해도 재생 단계가 그것을 튼다
-    argv = planner_argv(args.side, measure(args.side, args.robot), out, args.robot)
+    argv = planner_argv(args.side, measure(args.side, args.robot), out, args.robot, holders, args.table_cups)
     print(f"[rehome] {args.side} 실측 → 정책 시작 자세 계획 (직선 → 실패하면 RRT, 실측 손 · 여유 2 cm)", flush=True)
     rc = subprocess.run(argv).returncode
     if rc != 0 or not out.exists():

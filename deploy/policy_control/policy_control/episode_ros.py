@@ -240,6 +240,63 @@ def real_object_name(topic: str) -> str:
     return parts[1] if len(parts) == 3 and parts[0] == "objects" else ""
 
 
+#: ★11.12 rehome 계획에 쓸 live 자세의 최대 나이[s](monotonic) — 더 낡으면 "자세 없음"(리뷰 H2: 옮겨진 컵의 옛 자리로 계획하지 않게)
+REHOME_LIVE_MAX_AGE_S = 5.0
+
+
+class RehomeCupUnknown(Exception):
+    """놓기 실패 컵(unknown)의 자리를 snapshot · 신선한 live 어디서도 못 얻었다 — 컵 위치를 모르는 채 팔을 움직이지 않는다."""
+
+
+def rehome_table_cups(ep: Episode, world, relay: Mapping, live: Mapping,
+                      now: float | None = None) -> tuple[list[dict], list[str]]:
+    """★11.11 rehome 계획 세계에 넣을 탁자 위 컵(plan_home_path --table-cups) + 로그 문구.
+    손에 쥔 컵 · 홀더에 꽂힌 컵(홀더 원기둥이 덮는다) · 아직 안 놓은 컵(away)은 뺀다. 자리 = snapshot 고정값
+    (/episode/objects/<이름>) → 없으면 live 마지막 값(나이 ≤ REHOME_LIVE_MAX_AGE_S) → table 컵만 에피소드 region 가운데
+    (넓히지 않음). unknown 컵이 자리를 못 얻으면 RehomeCupUnknown(★11.12 리뷰 H1 — 조용히 빼지 않는다)."""
+    from policy_control.episode_spec import region_box
+    now = time.monotonic() if now is None else now
+    cups, notes, lost = [], [], []
+    for name, o in ep.objects.items():
+        at = str((world.objects.get(name) or {}).get("at", "table"))
+        if at not in ("table", "unknown"):
+            continue
+        real = real_object_name(str(o.get("topic", "")))
+        if not real:                                   # 리뷰 M3: 실물 토픽이 아니면 메쉬를 모른다 — 남긴다
+            notes.append(f"{name}({at}) 실물 토픽 아님({o.get('topic')!r}) — 계획 세계에서 뺌")
+            if at == "unknown":
+                lost.append(f"{name}(실물 토픽 아님)")
+            continue
+        loc = world.objects.get(name) or {}
+        pos, src = (loc.get("pos"), "snapshot") if at == "table" else (None, "")
+        if pos is None and at == "table" and name in relay:
+            pos, src = relay[name][0], "snapshot"
+        if pos is None and live.get(name):
+            f = live[name][-1]
+            age = now - float(f[2])
+            if age <= REHOME_LIVE_MAX_AGE_S:
+                pos, src = f[0], f"live({age:.1f} s)"
+            else:
+                notes.append(f"{name} live 낡음 {age:.1f} s > {REHOME_LIVE_MAX_AGE_S} s — 자세 없음으로 봄")
+        item = {"name": name, "object": real}
+        if pos is not None:
+            cups.append(item | {"pos": [round(float(v), 4) for v in pos]})
+        elif at == "table" and o.get("region") is not None and set(region_box(o["region"])) == {"x", "y"}:
+            (x0, x1), (y0, y1) = (region_box(o["region"])[k] for k in ("x", "y"))
+            # spread 0: 반대각선(28 mm)만큼 넓히면 홈 목표 손가락이 16 mm 로 들어와 계획이 거부된다(184028 6/6, 11.11)
+            cups.append(item | {"pos": [round((x0 + x1) / 2, 4), round((y0 + y1) / 2, 4)]})
+            src = "region 기본값"
+        else:
+            notes.append(f"{name}({at}) 자리 모름")
+            if at == "unknown":
+                lost.append(name)
+            continue
+        notes.append(f"{name} {src} {cups[-1]['pos']}")
+    if lost:
+        raise RehomeCupUnknown(f"놓기 실패 컵 자리 모름 {lost} — 컵 위치를 모르는 채 팔을 움직이지 않는다 ({'; '.join(notes)})")
+    return cups, notes
+
+
 #: 홀더 번호 = 이름 끝 숫자(테이블 왼쪽부터, config/cup_holders.yaml) — 에피소드 holders · /objects/cup_holder_N/pose 와 같은 번호.
 HOLDER_NAME = re.compile(r"cup_holder_(\d+)")
 ARM_JOINT_NAME = re.compile(r"openarm_(right|left)_joint([1-7])")   # /joint_states 이름 → canonical r_aj_i · l_aj_i
@@ -932,8 +989,19 @@ class RosExecutor:
                 continue
             out = self.run_dir / f"rehome_{side}_{node.id}.npz"
             joints = ",".join(f"{side[0]}_aj_{i}" for i in range(1, 8))
+            with self._lock:                               # ★11.11 탁자 위 컵도 계획 세계에
+                relay, live = dict(self._relay), {k: list(v) for k, v in self._live.items()}
+            try:
+                cups, notes = rehome_table_cups(self.ep, world, relay, live)
+            except RehomeCupUnknown as e:                  # ★11.12 리뷰 H1 — 움직이지 않았다
+                self._log_line(f"[rehome] {side} 거부: {e}")
+                return NodeResult("refused", f"{side} rehome: {e}", time.monotonic() - t0)
+            self._log_line(f"[rehome] {side} 탁자 위 컵: " + ("; ".join(notes) or "없음"))
+            # 리뷰 M2: 홀더 원기둥 = 이 에피소드가 발행한 홀더 파일(없으면 홀더 없이 — 기본 파일로 대신하지 않는다)
+            hold = (["--holders", str(_paths.SIM2REAL / self.ep.holder_poses)] if self.ep.holder_poses else ["--no-holders"])
             steps = [
-                [sys.executable, str(TOOLS / "plan_rehome.py"), "--side", side, "--robot", self.robot, "--out", str(out)],
+                [sys.executable, str(TOOLS / "plan_rehome.py"), "--side", side, "--robot", self.robot, "--out", str(out),
+                 *hold, *(["--table-cups", json.dumps(cups)] if cups else [])],
                 [sys.executable, str(TOOLS / "check_path_start.py"), "--npz", str(out), "--contract", self.contract],
                 [sys.executable, str(TOOLS / "replay_to_pd.py"), "--npz", str(out), "--joints", joints, "--rate-scale", "1.0",
                  "--execute"],

@@ -43,6 +43,14 @@ ESCAPE_RADIUS = 1.0         # [rad] 시작 자세 탈출 영역(L-inf). 차렷 �
 ESCAPE_EXIT_EXTRA = 0.003   # [m] 탈출 지점은 모든 탈출 쌍이 요구 여유 + 이 값을 넘은 곳(경계에서 다시 스치지 않게)
 ALWAYS_SAMPLES = 300        # '항상 접촉' 판정용 무작위 자세 수
 ALWAYS_FRAC = 0.9           # 이 비율 이상에서 관통하면 구조적 겹침으로 본다
+#: ★11.11 사용자 "home으로 복귀할때 홀더의 중심을 원기둥으로 치고 거길 안지나가게": 홀더(꽂힌 컵 포함) = 고정 수직 원기둥.
+#:   FP++ 컵 자세 대신 저장된 홀더 자리를 써서 튐에 안 흔들린다. 홀더 원점 = 컵 축 · 받침 윗면(cup_holder.obj z=0).
+HOLDER_CYL_R = 0.050        # [m] 꽂힐 수 있는 컵 최대 바깥 r(shaker_c.obj 35.4 mm, source240 30 mm) + 15 mm
+HOLDER_CYL_BOT = -0.050     # [m] 홀더 원점 기준 아래 끝 = cup_holder.obj zmin(탁자 위 바닥)
+HOLDER_CYL_TOP = 0.228      # [m] 꽂힌 source240 윗테 0.213(컵 원점 0.2930 − 홀더 0.2350 + 원점 위 0.155) + 15 mm
+#: 홀더 몸체(cup_holder.obj 꼭짓점 범위, 홀더 좌표) — 받침 사각 ±40 mm(모서리 56.6 mm > 원기둥 r 50)와 +x 바닥판 100 mm 를 덮는 낮은 상자
+HOLDER_FOOT = ((-0.041, -0.040, -0.0501), (0.100, 0.040, 0.030))
+CUP_CLEAR = 0.015           # [m] ★11.11 탁자 위 컵 원기둥 = 메쉬 바깥 r + 이 값, 탁자 ~ 윗테 + 이 값(홀더와 같은 여유)
 
 
 # ---------------------------------------------------------------- 설정 읽기
@@ -145,6 +153,7 @@ class Checker:
         m, d = self.w.model, self.w.data
         g_box = int(np.nonzero(m.geom_bodyid == m.body(box).id)[0][0])
         R, c, h = d.geom_xmat[g_box].reshape(3, 3), d.geom_xpos[g_box], m.geom_size[g_box]
+        cyl = m.geom_type[g_box] == mujoco.mjtGeom.mjGEOM_CYLINDER       # 홀더 원기둥(size = r, 반높이)
         depth = 0.0
         for g in np.nonzero(m.geom_bodyid == m.body(body).id)[0]:
             if m.geom_type[g] != mujoco.mjtGeom.mjGEOM_MESH:
@@ -152,7 +161,11 @@ class Checker:
             mid = m.geom_dataid[g]
             a, n = m.mesh_vertadr[mid], m.mesh_vertnum[mid]
             v = m.mesh_vert[a:a + n] @ d.geom_xmat[g].reshape(3, 3).T + d.geom_xpos[g]
-            inside = np.min(h - np.abs((v - c) @ R), axis=1)     # >0 이면 상자 안, 값 = 가장 가까운 면까지
+            loc = (v - c) @ R
+            if cyl:
+                inside = np.minimum(h[0] - np.hypot(loc[:, 0], loc[:, 1]), h[1] - np.abs(loc[:, 2]))
+            else:
+                inside = np.min(h - np.abs(loc), axis=1)          # >0 이면 상자 안, 값 = 가장 가까운 면까지
             depth = max(depth, float(inside.max()))
         return depth
 
@@ -447,6 +460,12 @@ def body_vertices(world: W.World, body: str) -> list[np.ndarray]:
             h = m.geom_size[g]
             corners = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)]) * h
             out.append(corners @ R.T + c)
+        elif m.geom_type[g] == mujoco.mjtGeom.mjGEOM_CYLINDER:
+            # 외접 32각기둥 — 원기둥을 품으므로 이 껍질까지 거리는 참 거리의 하한이다
+            r, hh = m.geom_size[g][0] / np.cos(np.pi / 32), m.geom_size[g][1]
+            a = np.linspace(0, 2 * np.pi, 32, endpoint=False)
+            ring = np.c_[r * np.cos(a), r * np.sin(a)]
+            out.append(np.r_[np.c_[ring, -hh * np.ones(32)], np.c_[ring, hh * np.ones(32)]] @ R.T + c)
     return out
 
 
@@ -484,6 +503,54 @@ def certify_pairs(chk: Checker, frames: np.ndarray, top: int = 12) -> list[dict]
 
 # ---------------------------------------------------------------- 메인
 
+def _base_frame_only(env: dict, flag: str) -> None:
+    st = env["robot_cfg"]["init_state"]
+    # shortcut: 계획 세계 = base_link 일 때만(로봇 init_state 원점·항등). 로봇을 옮긴 env 를 쓰면 변환을 넣는다
+    if not (np.allclose(st["pos"], 0) and np.allclose(st["rot"], [1, 0, 0, 0])):
+        raise SystemExit(f"✗ {flag}: env 로봇 init_state {st['pos']} {st['rot']} 가 원점 · 항등이 아니다(자세는 base_link 좌표)")
+
+
+def holder_objects(path: Path, env: dict) -> tuple:
+    """홀더 자세 yaml(base_link) → WorldSpec.objects: 원기둥(꽂힌 컵 포함) + 낮은 몸체 상자(이름 cup_holder_* = 세계 쪽)."""
+    import yaml
+    _base_frame_only(env, "--holders")
+    hs = yaml.safe_load(Path(path).read_text())["holders"]
+    zc, hh = (HOLDER_CYL_TOP + HOLDER_CYL_BOT) / 2, (HOLDER_CYL_TOP - HOLDER_CYL_BOT) / 2
+    lo, hi = np.array(HOLDER_FOOT[0]), np.array(HOLDER_FOOT[1])
+    corners = np.array([[x, y] for x in (lo[0], hi[0]) for y in (lo[1], hi[1])])
+    out = []
+    for k, v in sorted(hs.items()):
+        name, p = k if k.startswith("cup") else f"cup_{k}", np.asarray(v["position"], float)
+        out.append({"name": name, "center": (p[0], p[1], p[2] + zc), "radius": HOLDER_CYL_R, "half_height": hh})
+        c, s = np.cos(float(v.get("yaw_rad", 0.0))), np.sin(float(v.get("yaw_rad", 0.0)))
+        xy = corners @ np.array([[c, s], [-s, c]])                  # yaw 로 돌린 바닥 네 모서리 → 축정렬 상자(덮는 쪽)
+        blo, bhi = np.r_[xy.min(0), lo[2]] + p, np.r_[xy.max(0), hi[2]] + p
+        out.append({"name": f"{name}_base", "center": tuple((blo + bhi) / 2), "half": tuple((bhi - blo) / 2)})
+    return tuple(out)
+
+
+def table_cup_objects(items: list, env: dict) -> tuple:
+    """★11.11 탁자 위 컵 [{name, object(등록 이름), pos [x,y(,z)], spread?}] → 수직 원기둥.
+    r = 메쉬 바깥 r + CUP_CLEAR + spread(자세를 몰라 자리 범위로 넣을 때 그 반대각선), 높이 = 바닥 ~ 윗테 + CUP_CLEAR.
+    z 가 없으면 탁자 위에 선 것으로 둔다(상판 + 원점 아래 길이)."""
+    _base_frame_only(env, "--table-cups")
+    sys.path.insert(0, str(W.SIM2REAL / "scripts"))
+    from object_registry import load_registry
+    reg, out = load_registry(), []
+    for it in items:
+        try:
+            lo, hi = reg.get(str(it["object"])).aabb
+        except ValueError as e:              # 메쉬를 모르면 원기둥 크기를 못 정한다 — 빼지 않고 멈춘다
+            raise SystemExit(f"✗ --table-cups {it.get('name')!r}: 등록 안 된 물체 {it.get('object')!r} ({e})") from e
+        r = max(abs(v) for v in (*lo[:2], *hi[:2])) + CUP_CLEAR + float(it.get("spread", 0.0))
+        p = [float(v) for v in it["pos"]]
+        z = p[2] if len(p) > 2 else float(env["table_surface_z"]) - lo[2]
+        bot, top = z + lo[2], z + hi[2] + CUP_CLEAR
+        out.append({"name": f"cup_tbl_{it['name']}", "center": (p[0], p[1], (bot + top) / 2), "radius": r,
+                    "half_height": (top - bot) / 2})
+    return tuple(out)
+
+
 def parse_hand_q(text: str | None) -> dict[str, float]:
     """`r_hj_index_2=1.62,r_hj_thumb_3=1.16,...` → dict. 실측 손 자세(09.22 실기 차렷에서 손은 주먹을 쥐고 있었다)."""
     out: dict[str, float] = {}
@@ -494,8 +561,10 @@ def parse_hand_q(text: str | None) -> dict[str, float]:
     return out
 
 
-def build_scenes(contract: dict, side: str, other_mode: str, hand_mode: str, hand_q: dict | None = None) -> list[dict]:
-    """고정 관절 조합 목록. 경로는 모든 조합에서 통과해야 한다(반대팔 home/zero × 손 contract/zeros [+ 실측 손])."""
+def build_scenes(contract: dict, side: str, other_mode: str, hand_mode: str, hand_q: dict | None = None,
+                 other_q: dict | None = None) -> list[dict]:
+    """고정 관절 조합 목록. 경로는 모든 조합에서 통과해야 한다(반대팔 home/zero [+ 실측] × 손 contract/zeros [+ 실측 손]).
+    ★11.12 other_q = 반대팔 실측 7관절(184028 s3: home/zero 장면만으로는 실측 왼팔 몸통 · 왼팔 8.8 mm 를 못 봤다)."""
     if hand_mode not in ("contract", "zeros", "both", "measured"):
         # 빈 장면 목록은 **아무것도 검사하지 않고 통과**한다 — 조용히 넘어가면 안 되는 종류의 실수다.
         raise ValueError(f"모르는 손 모드: {hand_mode!r} (손 봉투 구로 계획했으면 'contract' 를 줄 것)")
@@ -513,6 +582,11 @@ def build_scenes(contract: dict, side: str, other_mode: str, hand_mode: str, han
         arms.append(dict(zip(od["arm_joints"], od["home_arm"])))
     if other_mode in ("zero", "both"):
         arms.append({j: 0.0 for j in od["arm_joints"]})
+    if other_q:
+        missing = [j for j in od["arm_joints"] if j not in other_q]
+        if missing:
+            raise ValueError(f"반대팔 실측에 관절이 빠졌다: {missing}")
+        arms.append({j: float(other_q[j]) for j in od["arm_joints"]})
     base = {**od["home_hand"], "head_j_pan": 0.0, "head_j_tilt": 0.0}
     return [{**base, **h, **a} for h in hands for a in arms]
 
@@ -599,6 +673,8 @@ def main(argv=None) -> int:
     ap.add_argument("--goal", default="contract", help="'contract'(계약 home_arm) | 'env_reset'(env.yaml 리셋 자세) | CSV")
     ap.add_argument("--other-arm", choices=("home", "zero", "both"), default="both",
                     help="반대팔 고정 자세 — both 면 두 자세 모두에서 통과해야 한다")
+    ap.add_argument("--other-q", default=None,
+                    help="반대팔 실측 7관절 `l_aj_1=..,...`(plan_rehome 이 넘긴다) — home/zero 장면에 이 장면을 더한다")
     ap.add_argument("--hand-start", choices=("contract", "zeros", "both", "measured", "pd"), default="contract",
                     help="이동 중 손 자세 — contract = 계약 home_hand · zeros = 전부 0 · both = 둘 다 통과 · "
                          "measured = --hand-q · pd = pd yaml hand_path_pose(실기가 팔보다 먼저 손을 보내는 그 자세)")
@@ -607,6 +683,10 @@ def main(argv=None) -> int:
                     help=f"손 링크를 지우고 손바닥에 반지름 R [m] 구 하나를 달아 계획한다(기본 {W.HAND_SPHERE_DEFAULT}). "
                          "손가락 자세를 모르는 채 팔을 먼저 옮기고 손은 도착 후 펴는 운용용 — --hand-start 는 무시된다")
     ap.add_argument("--with-cup", action="store_true", help="스폰 중심에 cup_big_s100 상자를 둔다")
+    ap.add_argument("--holders", type=Path, default=None,
+                    help="홀더 자세 yaml(config/cup_holder_poses_*.yaml) — 홀더마다 꽂힌 컵까지 덮는 수직 원기둥을 세계에 둔다(11.11)")
+    ap.add_argument("--table-cups", default="",
+                    help='탁자 위 컵 JSON [{"name","object","pos":[x,y(,z)],"spread"?}] (base_link) — 컵마다 수직 원기둥(11.11)')
     ap.add_argument("--no-walls", action="store_true",
                     help=f"뒤 고정 박스({W.BACK_BOX}) · 옆 벽(y=±{W.WALL_Y_ABS})을 빼고 계획한다 — 기본은 넣는다(09.23 사용자)")
     ap.add_argument("--hand-q", default=None,
@@ -666,7 +746,9 @@ def main(argv=None) -> int:
                                       detect_margin=max(0.08, args.margin * 3),
                                       back_box={} if args.no_walls else None,
                                       wall_y_abs=None if args.no_walls else W.WALL_Y_ABS,
-                                      hand_sphere=args.hand_sphere))
+                                      hand_sphere=args.hand_sphere,
+                                      objects=(holder_objects(args.holders, env) if args.holders else ())
+                                      + (table_cup_objects(json.loads(args.table_cups), env) if args.table_cups else ())))
     limits = W.load_profile_limits(args.profile)
     lo = np.array([limits[j][0] for j in world.moving_joints])
     hi = np.array([limits[j][1] for j in world.moving_joints])
@@ -688,7 +770,7 @@ def main(argv=None) -> int:
         raise SystemExit("--hand-start measured 에는 --hand-q(실측 손 자세)가 필요하다")
     scenes = build_scenes(contract, args.side, args.other_arm,
                           "contract" if args.hand_start == "sphere" else args.hand_start,
-                          parse_hand_q(args.hand_q))
+                          parse_hand_q(args.hand_q), parse_hand_q(args.other_q))
     if not 0.0 <= args.start_slack < 0.05:
         raise SystemExit(f"--start-slack {args.start_slack} 가 [0, 0.05) 밖 — 거부(경로 시작점 검사 허용 0.05 rad 보다 작아야 한다)")
     start, slack_notes = clip_start_into_limits(start, world.moving_joints, limits, args.start_slack)
@@ -782,9 +864,11 @@ def main(argv=None) -> int:
              meta_escape_pairs=np.array([fmt_pair(k) for k in chk.escape0]),
              meta_always_contact=np.array([fmt_pair(k) for k in chk.always_contact]),
              meta_other_arm=np.array(args.other_arm), meta_hand_start=np.array(args.hand_start),
-             meta_hand_q=np.array(args.hand_q or ""),
+             meta_hand_q=np.array(args.hand_q or ""), meta_other_q=np.array(args.other_q or ""),
              meta_hand_sphere=np.float64(args.hand_sphere if args.hand_sphere is not None else np.nan),
              meta_walls=np.array("" if args.no_walls else f"back_box={W.BACK_BOX},y_abs={W.WALL_Y_ABS}"),
+             meta_holders=np.array(f"{args.holders} r={HOLDER_CYL_R} z=[{HOLDER_CYL_BOT},{HOLDER_CYL_TOP}]" if args.holders else ""),
+             meta_table_cups=np.array(args.table_cups),
              meta_with_cup=np.bool_(args.with_cup), meta_goal_source=np.array(goal_src),
              meta_exact_min_lb=np.float64(worst["exact_lb"] if worst else np.nan))
     print(f"[plan] 방법 {method} · 프레임 {len(frames)} × dt {args.dt} = {(len(frames) - 1) * args.dt:.1f} s "
