@@ -113,7 +113,7 @@ active 인터페이스는 shell을 찾는 데 3초, ack에 최대 180초 기다�
 
 `simulate`는 물리 시뮬레이션이 아닌 기호 상태 검사다. 문장 의미 충족, 충돌, 수치 자세, 실제 비드 이동까지 증명하지 않는다.
 
-`VLM_CHAIN` 기본값은 원형과 같은 `gemini-robotics-er-2-preview,local`이다. `--chain local`로 로컬만 사용할 수 있다. `VLM_LOCAL_URL`은 로컬 서버 주소(기본 원형의 `http://192.168.0.60:8765`), Gemini 키는 `GEMINI_API_KEY` 또는 `GEMINI_KEY_FILE`(기본 `~/.config/gemini_key`)로 지정한다. 키가 없어도 로컬 fallback은 동작한다. 로컬 HTTP는 마지막 사진 한 장을 `image_png_b64`로 전송하며 사진 없는 호출은 거부한다. Gemini를 체인에 넣으면 사진과 상태가 외부 API로 전송된다.
+`VLM_CHAIN` 기본값은 `local8b`(Cosmos-Reason2-8B, 11.10 결정)다. 8B 서버는 같은 호스트의 `http://127.0.0.1:8766`(`VLM_LOCAL8B_URL`)에 띄운다. sim 은 server GPU0, 실기는 실기 호스트 쪽이다. `--chain gemini-robotics-er-2-preview,local8b,local`처럼 다른 순서를 줄 수 있다. `VLM_LOCAL_URL`은 로컬 서버 주소(기본 원형의 `http://192.168.0.60:8765`), Gemini 키는 `GEMINI_API_KEY` 또는 `GEMINI_KEY_FILE`(기본 `~/.config/gemini_key`)로 지정한다. 키가 없어도 로컬 fallback은 동작한다. 로컬 HTTP는 마지막 사진 한 장을 `image_png_b64`로 전송하며 사진 없는 호출은 거부한다. Gemini를 체인에 넣으면 사진과 상태가 외부 API로 전송된다.
 
 장부·기록 루트는 `VLM_SUP_HOME`(기본 `logs/vlm_supervisor`). `state/usage.json`에 날짜별 모델 성공 호출 수·토큰·차단 만료, `state/calls.jsonl`에 호출 기록을 저장한다. `VLM_CAP_<모델명의 비영숫자를 _로 치환>`으로 상한을 바꾼다. 기본 Gemini 상한 20은 원형의 관측값이며 서비스 보장값이 아니다. 429에서 받은 차단 정보와 다음 백엔드 fallback을 사용한다. 장부는 **단일 감독기 프로세스용**이며 여러 프로세스 간 전역 쿼터를 보장하지 않는다.
 

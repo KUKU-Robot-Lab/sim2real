@@ -3,7 +3,8 @@
 장부: logs/vlm_supervisor/state/usage.json (태평양 시간 날짜별 · 모델별 호출 수 · 토큰 · 막힘 시각)
       logs/vlm_supervisor/state/calls.jsonl (호출 한 건 한 줄)
 환경변수:
-  VLM_CHAIN      기본 "gemini-robotics-er-2-preview,local" (쉼표 순서대로 시도)
+  VLM_CHAIN      기본 "local8b" = Cosmos-Reason2-8B (11.10 사용자 결정, 쉼표 순서대로 시도)
+  VLM_LOCAL8B_URL 기본 http://127.0.0.1:8766 (8B 서버를 같은 호스트에 띄운다: sim = server GPU0)
   VLM_CAP_<모델> 일일 상한 덮어쓰기 (예 VLM_CAP_gemini_robotics_er_2_preview=200, 유료 전환 뒤)
   VLM_LOCAL_URL  기본 http://192.168.0.60:8765 (5080 Cosmos-Reason2-2B)
   GEMINI_KEY_FILE 기본 ~/.config/gemini_key
@@ -207,9 +208,12 @@ class Local:
             return False
 
 
+DEFAULT_CHAIN = "local8b"  # 11.10 사용자: 기본 VLM = Cosmos-Reason2-8B
+
+
 class Router:
     def __init__(self, chain: list[str] | None = None, state_dir=None):
-        self.chain = chain or [c.strip() for c in os.environ.get("VLM_CHAIN", "gemini-robotics-er-2-preview,local").split(",") if c.strip()]
+        self.chain = chain or [c.strip() for c in os.environ.get("VLM_CHAIN", DEFAULT_CHAIN).split(",") if c.strip()]
         self.ledger = Ledger(state_dir)
         self.backends = {}  # Lazy: a missing Gemini key must not prevent local fallback.
 
