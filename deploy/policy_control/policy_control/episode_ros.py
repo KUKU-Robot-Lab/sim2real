@@ -365,7 +365,6 @@ class RosExecutor:
         self.fpp_rescan = fpp_rescan
         # ★10.19 이 에피소드가 움직이는 팔 — safe_stop 은 이 팔의 정책만 멈춘다(다른 팔 실행기가 따로 도는 정책을 건드리지 않는다).
         #   못 찾으면 두 팔(옛 동작).
-        self.sides = tuple(episode_sides(ep)) or SIDES
         self.run_dir = run_dir or run_paths.run_dir("episode", ep.name)
         self.run_dir.mkdir(parents=True, exist_ok=True)
         write_run_meta(self.run_dir, ep, robot)
@@ -399,7 +398,7 @@ class RosExecutor:
             for kind in ("rh_aglt_node", "rh_place_node"):
                 name = f"{kind}_{side}"
                 node.create_subscription(String, f"{NS}/status/{name}", self._on_json(self._status, name), QoSProfile(depth=10))
-        snap_objs = set(ep.objects) if any(n.type == "snapshot" for n in ep.nodes) else set()   # 경로 B 는 FP++ 를 안 받는다
+        snap_objs = set(ep.objects)                     # sup_v0 refresh/insert snapshot 도 받을 수 있게 구독
         for name in snap_objs:
             node.create_subscription(PoseStamped, ep.objects[name]["topic"], self._on_frame(name), qos_profile_sensor_data)
         #: ★10.20 실기 1-B: 들림 판정은 live 추적으로 본다. …/pose 는 locate 때 한 번 찍은 자리를 계속 다시 내서
@@ -595,7 +594,7 @@ class RosExecutor:
         return None
 
     # ---------------------------------------------------------------- 실행기 계약
-    def snapshot(self, node: Node, world) -> tuple[NodeResult, dict]:
+    def snapshot(self, node: Node, world, *, timeout_s: float | None = None) -> tuple[NodeResult, dict]:
         since = 0.0                                       # 이 시각(monotonic) 뒤에 온 프레임만
         if node.objects:                                  # ★10.28 사람이 방금 놓은 물체만 — FP++ 로 다시 찍은 뒤의 자리
             names = list(node.objects)
@@ -612,7 +611,7 @@ class RosExecutor:
             names = [n for n in self.ep.objects if (world.objects.get(n) or {}).get("at", "table") == "table"]
         rescanned = since > 0.0
         t0 = time.monotonic()
-        deadline = t0 + SNAPSHOT_WINDOW_S + 3.0
+        deadline = t0 + (SNAPSHOT_WINDOW_S + 3.0 if timeout_s is None else timeout_s)
         got, why, src, gap = {}, {}, {}, {}
         while time.monotonic() < deadline and len(got) < len(names) and not self.cancel.is_set():
             time.sleep(0.1)
@@ -912,6 +911,27 @@ class RosExecutor:
     def run_trajectory(self, node: Node, traj, world) -> NodeResult:
         if traj.kind == "noop":
             return NodeResult("completed", "noop")
+        if traj.kind == "replay":
+            t0 = time.monotonic()
+            side = traj.sides[0]
+            if not self._wait_pd_tracking(side):
+                return NodeResult("error", f"pd_{side} 가 TRACKING 이 아니다", signals={"pd_fault": "not tracking"})
+            path = str(_paths.SIM2REAL / traj.npz)
+            joints = ",".join(f"{side[0]}_aj_{i}" for i in range(1, 8))
+            steps = [
+                [sys.executable, str(TOOLS / "check_path_start.py"), "--npz", path, "--contract", self.contract,
+                 "--side", side],
+                [sys.executable, str(TOOLS / "replay_to_pd.py"), "--npz", path, "--npz-key", "arm_target",
+                 "--joints", joints, "--rate-scale", "1.0", "--execute"],
+            ]
+            for i, argv in enumerate(steps):
+                rc, tail = self._run(argv)
+                if self.cancel.is_set():
+                    return NodeResult("aborted", "episode runner stop; hand not replayed", time.monotonic() - t0)
+                if rc != 0:
+                    return NodeResult("refused" if i == 0 else "error",
+                                      f"{Path(argv[1]).name} rc {rc}: {tail}; hand not replayed", time.monotonic() - t0)
+            return NodeResult("completed", "hand not replayed", time.monotonic() - t0)
         if traj.kind in PLANNED_TRAJ:
             return self._run_planned(node, traj, world)
         t0 = time.monotonic()
@@ -1376,15 +1396,25 @@ class RosExecutor:
                 time.sleep(0.1)
             return NodeResult("refused", f"cup pose missing — {names} 프레임이 5 s 동안 없다")
         if step == "refresh_holders":
-            missing = self.publish_holders()
-            if missing:
-                self.holders = load_holder_poses(_paths.SIM2REAL / self.ep.holder_poses)
-                missing = self.publish_holders()
-            if missing:
-                return NodeResult("refused", f"holder pose missing: {missing} ({self.ep.holder_poses})")
-            time.sleep(1.0)
-            return NodeResult("completed", "")
+            return self.refresh_holders()
         return NodeResult("refused", f"모르는 준비 {step}")
+
+    @property
+    def sides(self) -> tuple:
+        # 삽입한 노드의 팔도 safe_stop 대상이며 reset 뒤에는 원래 에피소드 팔만 남는다.
+        return tuple(episode_sides(self.ep)) or SIDES
+
+    def refresh_holders(self, *, force: bool = False) -> NodeResult:
+        if force:
+            self.holders = load_holder_poses(_paths.SIM2REAL / self.ep.holder_poses)
+        missing = self.publish_holders()
+        if missing:
+            self.holders = load_holder_poses(_paths.SIM2REAL / self.ep.holder_poses)
+            missing = self.publish_holders()
+        if missing:
+            return NodeResult("refused", f"holder pose missing: {missing} ({self.ep.holder_poses})")
+        time.sleep(1.0)
+        return NodeResult("completed", "")
 
     def safe_stop(self, reason: str) -> None:
         self.cancel.set()
