@@ -7,16 +7,19 @@ import time
 
 from .interface import node_id
 
-END = {'SUCCESS', 'FAILURE', 'STOPPED'}
+END = {'SUCCESS', 'STOPPED'}
+RECOVERY = {'retry', 'rescan', 'home', 'insert', 'human'}
 
 
 class Supervisor:
-    def __init__(self, interface, judge, mode='shadow', log_path=None, settle=0.5):
+    def __init__(self, interface, judge, mode='shadow', log_path=None, settle=0.5, max_recover=3):
         if mode not in {'shadow', 'active'}:
             raise ValueError('mode must be shadow or active')
         self.interface, self.judge, self.mode = interface, judge, mode
         self.log_path = Path(log_path) if log_path else None
         self.settle = settle
+        self.max_recover = max_recover
+        self.recoveries = {}
         self.seen = None
         self.halted = False
 
@@ -34,7 +37,7 @@ class Supervisor:
                            ('episode_id', 'status', 'node', 'last', 'pending', 'history', 'attempts')}, sort_keys=True)
 
     def step(self, status):
-        if self.halted or status.get('status') != 'READY' or status.get('busy'):
+        if self.halted or status.get('status') not in {'READY', 'FAILURE'} or status.get('busy'):
             return None
         if status.get('confirm'):
             return None  # Human confirmations require an external operator approval.
@@ -54,7 +57,11 @@ class Supervisor:
         else:
             decision = {'choice': 'A', 'action': 'next', 'reason': 'initial READY; no completed node'}
         target = node_id(status.get('node'))
-        action = decision['action']
+        action = 'stop' if decision.get('choice') == 'E' else decision['action']
+        failed_node = node_id(last.get('node')) or target
+        capped = action in RECOVERY and self.recoveries.get(failed_node, 0) >= self.max_recover
+        if capped:
+            action = 'human'
         if action == 'next':
             if status.get('pending') or (target and target.startswith('recover:')):
                 action = 'recover'
@@ -67,8 +74,8 @@ class Supervisor:
                 self.seen = None  # status outage, not a real change: reconsider this state when it returns
             return self.log({'event': 'stale_decision', 'decision': decision})
         try:
-            recovery_args = {'node_id': last.get('node') or target} if action == 'retry' else {}
-            if action in {'retry', 'rescan', 'home', 'insert', 'human'}:
+            recovery_args = {'node_id': failed_node} if action in RECOVERY else {}
+            if action in RECOVERY:
                 result = self.interface.perform(action, target, active=self.mode == 'active', args=recovery_args)
             else:
                 result = self.interface.perform(action, target, active=self.mode == 'active')
@@ -81,8 +88,12 @@ class Supervisor:
         elif self.mode == 'active' and result.get('ok') is False:
             self.log({'event': 'service_failure', 'result': self.interface.perform('stop', active=True)})
             self.halted = True
-        if action in {'retry', 'rescan', 'home', 'insert', 'human'} and result.get('ok'):
-            self.seen = None
+        if self.mode == 'active' and action in RECOVERY and result.get('ok'):
+            self.recoveries[failed_node] = self.recoveries.get(failed_node, 0) + 1
+            if capped:
+                self.halted = True
+            elif status.get('status') == 'READY':
+                self.seen = None
         return event
 
     def final_judged(self, status):
@@ -99,7 +110,8 @@ class Supervisor:
         self.log({'event': 'final_judge', 'node': last.get('node'), 'decision': decision})
         return decision.get('action') == 'next'
 
-    def run(self, status_wait=10.0):
+    def run(self, status_wait=10.0, ready_timeout=60.0):
+        recovery_key = None
         deadline = time.monotonic() + status_wait
         while True:
             status = self.interface.status()
@@ -109,13 +121,35 @@ class Supervisor:
                         'stop', active=self.mode == 'active')})
                     return 2
             else:
+                if recovery_key is not None:
+                    if self.key(status) == recovery_key:
+                        if time.monotonic() >= deadline:
+                            self.log({'event': 'status_timeout', 'result': self.interface.perform(
+                                'stop', active=self.mode == 'active')})
+                            self.log({'event': 'end', 'status': 'FAILURE'})
+                            return 1
+                        time.sleep(0.1)
+                        continue
+                    recovery_key = None
+                    self.seen = None
                 deadline = time.monotonic() + status_wait
                 if status.get('status') in END:
                     if status['status'] == 'SUCCESS' and not self.final_judged(status):
                         return 1
                     self.log({'event': 'end', 'status': status['status']})
                     return 0 if status['status'] == 'SUCCESS' else 1
-                self.step(status)
+                event = self.step(status)
+                recovered = (event is not None and event['event'] == 'decision'
+                             and event['action'] in RECOVERY and event['result'].get('ok')
+                             and self.mode == 'active' and not self.halted)
+                if recovered:
+                    recovery_key = self.key(status)
+                    deadline = time.monotonic() + max(status_wait, ready_timeout)
+                elif status.get('status') == 'FAILURE' and not status.get('busy'):
+                    if event is not None and event['event'] == 'stale_decision':
+                        continue
+                    self.log({'event': 'end', 'status': 'FAILURE'})
+                    return 1
                 if self.halted:
                     return 1
             time.sleep(0.1)

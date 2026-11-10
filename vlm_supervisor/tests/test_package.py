@@ -140,7 +140,7 @@ def test_unsupported_records_and_stops(tmp_path, action):
 def test_busy_and_terminal_not_approved(tmp_path):
     interface = FakeInterface(tmp_path / 'approvals.jsonl')
     sup = Supervisor(interface, Judge(Backend('{}')), mode='active')
-    for phase in ['RUNNING', 'SUCCESS', 'FAILURE', 'STOPPED']:
+    for phase in ['RUNNING', 'SUCCESS', 'STOPPED']:
         st = status() | {'status': phase}
         assert sup.step(st) is None
     assert interface.calls == []
