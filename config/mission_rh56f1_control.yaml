@@ -4893,7 +4893,7 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -5205,7 +5205,7 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -5361,7 +5361,7 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -5517,7 +5517,7 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -5673,7 +5673,7 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -5829,7 +5829,7 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
