@@ -83,6 +83,7 @@ LG_XY_TOL_M = 0.001
 #: 가드 판정 실패 문구 — episode_failure 가 lift_guard_failed(언제나 safe stop)로 나눈다
 GUARD_FAIL_TEXT = "lift_guard hold failed"
 GUARD_STOPS = ("guard:", "hstop:")
+END_STATUS_WAIT_S = 0.5          # ★11.11 stop 뒤 끝 status(phase != running) 기다림 상한 — 노드는 _end 바로 뒤 낸다
 POLICY_MARGIN_S = 10.0            # 정책 에피소드 시간 + 이만큼 안에 이벤트가 안 오면 stop → timeout
 #: ★10.14 실기 183230: FP++ live 추적이 품질 검사(MASK_TOO_SMALL) 3번 실패마다 다시 등록하며 2.8~3.5 s 끊긴다(5~6 s 마다).
 #  정책 reset 은 0.5 s 안에 받은 live 컵만 받아서, 그 사이에 부르면 거부되고 에피소드가 안전 정지했다.
@@ -646,6 +647,21 @@ class RosExecutor:
         finally:
             self.node.destroy_client(cli)
 
+    def _status_after_end(self, key, episode: int, wait_s: float = END_STATUS_WAIT_S) -> dict | None:
+        """★11.11 stop/abort 이벤트 뒤 노드가 낸 status(phase != running, 같은 에피소드)를 기다린다. 없으면 None(옛 status 로 판정).
+
+        stop 을 본 순간의 status 는 앞 running 틱 것이라 끝 틱에서 정한 outcome(opened_before_latch 등)이 빠져 있었다."""
+        deadline = time.monotonic() + wait_s
+        while True:
+            with self._lock:
+                st = dict(self._status.get(key) or {})
+            if st.get("phase") not in (None, "running") and int(st.get("episode", -1)) >= episode:
+                return st
+            if time.monotonic() >= deadline:
+                self.node.get_logger().warning(f"{key}: stop 뒤 status 가 {wait_s:.1f} s 안에 안 옴 — 끝 틱 전 status 로 판정")
+                return None
+            time.sleep(0.02)
+
     def _pd_fault(self, sides) -> str | None:
         with self._lock:
             for s in sides:
@@ -787,6 +803,8 @@ class RosExecutor:
             if time.monotonic() - t0 > limit:
                 self._call(f"{NS}/{ns}/episode/stop")
                 return NodeResult("timeout", f"no stop event in {limit:.0f} s", time.monotonic() - t0, p.role)
+        if p.kind == "place":                          # ★11.11 끝 틱의 outcome 은 stop 뒤 status 에 실린다(rh_place_node._end)
+            st = self._status_after_end(status_key, int(ev.get("episode", 0))) or st
         reasons = "; ".join(ev.get("reasons", []))
         dur = time.monotonic() - t0
         if ev.get("event") == "abort":                # ★11.02 abort(경로 D 시간 초과)도 신호를 남긴다 — 못 쥔 건지 들다 만 건지 구분

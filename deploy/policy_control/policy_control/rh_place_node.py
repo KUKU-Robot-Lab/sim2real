@@ -441,6 +441,18 @@ class PlaceNode(PourFjNode):
         self._carry_t0 = time.monotonic() if rc is not None and rc.on else None
         return out
 
+    def _end(self, kind: str, reason: str) -> None:
+        """★11.11 끝낸 틱의 chain(outcome · phase)을 끝 이벤트 바로 뒤 status 로 한 번 더 낸다.
+
+        전에는 같은 틱에서 outcome 을 정하고 _end 만 불러, 실행기가 stop 을 본 순간 가진 status 는 앞 running 틱 것(outcome None)
+        이었다 → opened_before_latch 가 hand_empty False 로 실패 판정(e2e 709 · 725 oneshot). 실행기는 phase != running 인
+        status 를 기다려 판정한다(episode_ros._status_after_end)."""
+        super()._end(kind, reason)
+        try:
+            self._status(True, list(self._errors.values()))
+        except Exception as exc:                  # 끝 status 는 보조 — 실패해도 다음 idle 틱 status 가 같은 내용을 낸다
+            self.get_logger().warning(f"끝 status 발행 실패: {exc}")
+
     def _status_extra(self) -> dict:
         return {"holder": self.holder_id, "holder_pose": None if self._holder is None else [round(float(v), 4) for v in self._holder],
                 "release_force_n": self.contract.release_force_n,     # 실행기 opened_before_latch 촉각 판정 문턱
