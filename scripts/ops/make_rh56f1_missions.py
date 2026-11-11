@@ -264,6 +264,10 @@ EPISODE_RELAY = "/episode/objects/{}/pose"        # ★10.19 한 팔 실행기�
 #   감기기 전에 끝난다(10.14). sim hp3 의 7 cm → 목표 성공 최소 2.0 s 에 맞춘다. 첫 목표 성공도 멈춤(goal_max:=1).
 LIFT_HOLD_TICKS = {"right": 120, "left": 120}
 HAND_SQUEEZE = False   # ★11.10 사용자: 실기 rh_aglt 쥠 보조(GripAssist squeeze) 끔 — grasp 부터 모든 에피소드
+# ★11.10 rh_aglt(접근 · 잡기) 정책 장치 — 미션 한 곳. "cuda" 로 바꾸면 개별 policy_aglt_* 와 칵테일 · 에피소드 잡기 노드가 모두
+#   device:=cuda 로 만들어진다(재생성 뒤 --check). cpu + 카메라 + 양손 동시에서 31~41 Hz(policy_rate/README), cuda 025600 은 59.6 Hz.
+#   콘솔 정책 탭(S2R_POLICY_DEVICE)이 이 값보다 앞선다. 기본 cpu = 지금 동작.
+AGLT_DEVICE = "cpu"
 # ★10.12 사용자(A안): 실기를 sim 에 맞춘다 — aglt 정책은 쥘 때까지 FP++ live 추적(/objects/<물체>/live_pose, 약 10 Hz)을 받고
 #   손이 가려 끊기면 마지막 값(sim FP++ ZOH), 쥔 뒤는 sim PalmAttach 처럼 파지 + 100 ms 뒤 찍힌 프레임과 그 시각 손바닥 FK 로
 #   붙인다. 가려서 프레임이 안 오면 0.7 s(sim 이 붙는 시간 범위 위)에 파지 시작 FK 로. 10.04 의 정지 컵(cup_latch · cup_static) 대신.
@@ -947,7 +951,7 @@ def _run(kind: str) -> dict:
                  ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_aglt_node.py", "--ros-args",
                   # 팔마다 이름 · 에피소드를 가른다 — 양팔 정책을 한 세션에서 동시에 띄워도 서로의 reset · stop 이 섞이지 않는다(09.30)
                   "-r", f"__node:=rh_aglt_node_{s}", "-p", f"ns:={s}",
-                  "-p", f"contract:={{artifact:aglt_{s}}}", "-p", f"robot:={{artifact:robot_{s}}}", "-p", "device:=cpu",
+                  "-p", f"contract:={{artifact:aglt_{s}}}", "-p", f"robot:={{artifact:robot_{s}}}", "-p", f"device:={AGLT_DEVICE}",
                   "-p", f"cup_topic:={_live(cup_t)}",
                   "-p", f"object:={_policy_object(s)}",   # 다물체 정책 — 물체를 모르면 reset 이 거부한다
                   *AGLT_LIVE_ARGS,                       # 10.12 A안 — 쥘 때까지 live(끊기면 마지막 값), 쥔 뒤 프레임 시각 FK
@@ -1412,7 +1416,7 @@ def _episode_run(name: str, real: bool) -> list:
                              " · 쥐면 손바닥 FK 로 손에 붙임",
                              ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_aglt_node.py", "--ros-args",
                               "-r", f"__node:=rh_aglt_node_{b.side}", "-p", f"ns:={b.side}", "-p", f"contract:={contract}",
-                              "-p", f"robot:={robot}", "-p", "device:=cpu", "-p", *end_args,
+                              "-p", f"robot:={robot}", "-p", f"device:={AGLT_DEVICE}", "-p", *end_args,
                               "-p", f"cup_topic:={_live(ep.objects[obj]['topic'])}", *AGLT_LIVE_ARGS,
                               *(["-p", "hand_squeeze:=true"] if squeeze else []),
                               # ★11.04 접근 · 잡기 관측 컵 = 측정 컵 − t(카메라가 본 손 − FK 손). 0 이면 넣지 않는다(옛 미션 그대로)

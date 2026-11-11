@@ -66,6 +66,20 @@ def opened_both(chain) -> bool:
     return chain.opened >= chain.open_min_rad and chain.opened_meas >= OPENED_MEAS_FRAC * chain.open_min_rad
 
 
+def hand_released(chain, release_force_n: float) -> bool | None:
+    """★11.11 손이 컵을 놓았다 — 손끝 촉각 < release_force_n 이고 관절 힘 < joint_free_g(rh_place.is_free · episode_ros 8d9b873 문턱).
+    sim 1111 place_blue: 0.16~0.18 rad 로 열린 채 손 힘 22~44 N 으로 컵을 쥐고 있었다. 촉각 0·NaN(토픽 없음 → pour_fj_node 가 0 을 넣음)과
+    관절 힘 None·NaN 은 신호 없음. 둘 다 없으면 None — 부르는 쪽이 각도만으로 판단한다."""
+    tact, jf = chain.tact_max, chain.jf_max
+    if jf is not None and not np.isfinite(jf):           # 채널 하나라도 NaN(np.max 전파) = 모름 = 쥔 것(is_free 와 같은 fail-closed)
+        return False
+    has_t = tact is not None and bool(np.isfinite(tact)) and tact > 0.0
+    has_j = jf is not None and bool(np.isfinite(jf))
+    if not (has_t or has_j):
+        return None
+    return not ((has_t and tact >= release_force_n) or (has_j and jf >= chain.joint_free_g))
+
+
 class PlaceNode(PourFjNode):
     def __init__(self, **kw) -> None:
         super().__init__(**kw)
@@ -392,13 +406,19 @@ class PlaceNode(PourFjNode):
         #   정책 손 목표(opened ≥ open_min_rad)와 실측 손가락(opened_meas ≥ OPENED_MEAS_FRAC · open_min_rad)이 같이 OPENED_END_TICKS 연속.
         #   래치가 켜졌으면 손은 래치가 편다 → 기존 놓기 · 빼기 경로. 학습 시간 끝 stop(episode_end)은 그대로.
         if c.latch_s2r and not self.chain.latch and not self.chain.settling and not self.chain.done:
-            self._opened_n = self._opened_n + 1 if opened_both(self.chain) else 0
+            rel = hand_released(self.chain, self.contract.release_force_n) if opened_both(self.chain) else False
+            if rel is None and not getattr(self, "_rel_unknown_logged", False):
+                self._rel_unknown_logged = True
+                self.get_logger().warning(f"래치 전 손 폄 — 촉각 · 관절 힘 신호 없음(tact {self.chain.tact_max} · jf {self.chain.jf_max}) "
+                                          f"→ 각도만으로 판단")
+            self._opened_n = self._opened_n + 1 if rel is not False else 0   # 손 힘이 남았으면(쥔 채 벌어짐) 세지 않는다
             if self._opened_n >= OPENED_END_TICKS:
                 self.chain.outcome = "opened_before_latch"   # ★11.11 래치 전 — 놓였는지는 실행기가 cup_in_holder 로 판정
                 self.chain.released_cup = self.chain.latch_cup
                 self.get_logger().info(f"place 정책이 래치 전에 손 폄 → 끝 · {self.chain.as_dict()}")
                 self._end("stop", f"opened before latch — 정책이 래치 전에 손을 폄(opened {self.chain.opened:.2f} · "
-                                  f"실측 {self.chain.opened_meas:.2f} rad, 기준 {self.chain.open_min_rad:.2f}, {OPENED_END_TICKS} 틱) · "
+                                  f"실측 {self.chain.opened_meas:.2f} rad, 기준 {self.chain.open_min_rad:.2f}, {OPENED_END_TICKS} 틱 · "
+                                  f"촉각 {self.chain.tact_max} N · 관절 힘 {self.chain.jf_max} g) · "
                                   f"놓임 판정은 cup_in_holder → 다음 노드(home)가 뺀다")
                 return True
         if c.latch_s2r and self.max_s > 0 and time.monotonic() - self._t_start >= self.max_s and not self.chain.settling:
@@ -415,6 +435,7 @@ class PlaceNode(PourFjNode):
     def _srv_start(self, req, res):
         self._latch_logged = False
         self._opened_n = 0
+        self._rel_unknown_logged = False
         out = super()._srv_start(req, res)
         rc = getattr(self.chain, "rcarry", None)
         self._carry_t0 = time.monotonic() if rc is not None and rc.on else None
