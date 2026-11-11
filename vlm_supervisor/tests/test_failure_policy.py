@@ -224,3 +224,13 @@ def test_active_fallback_logs_error_event(monkeypatch, tmp_path, caplog):
     event = json.loads(log.read_text())
     assert event['event'] == 'error' and event['policy_source'] == 'fallback'
     assert 'active supervisor uses fallback failure policy' in caplog.text
+
+
+def test_initial_ready_with_empty_last_frame_allows_next():
+    # sim 브리지는 첫 상태에서 last 를 node·code None 인 틀로 보낸다.
+    from vlm_supervisor.failure_policy import allowed_actions, runner_detail
+    status = {'status': 'READY', 'pending': None, 'next_action': 'go_home_start',
+              'last': {'node': None, 'code': None, 'reason': None}}
+    detail = runner_detail(status)
+    assert not detail['unknown_code']
+    assert 'next' in allowed_actions(status, detail)

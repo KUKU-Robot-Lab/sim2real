@@ -45,10 +45,18 @@ NORMAL_CODES = {'none', 'done', 'confirmed', 'waiting_confirm'}
 CONTINUED_CODE = 'place_failed_continued'
 
 
+def _no_completed_node(status):
+    """첫 READY: last 가 없거나, sim 브리지처럼 node·code 가 모두 None 인 빈 틀."""
+    last = status.get('last')
+    return not isinstance(last, dict) or (last.get('node') is None and last.get('code') is None)
+
+
 def runner_detail(status):
     last = status.get('last')
     last = last if isinstance(last, dict) else {}
     code = last.get('code')
+    if _no_completed_node(status):
+        code = 'none'
     known = isinstance(code, str) and code in KNOWN_CODES | NORMAL_CODES | {CONTINUED_CODE}
     action, pre = TABLE.get(code, ('safe_stop', ())) if isinstance(code, str) else ('safe_stop', ())
     results = last.get('results')
@@ -108,7 +116,7 @@ def allowed_actions(status, detail):
                 and status.get('next_action') == expected):
             return {'recover', 'stop', 'human'}
         return {'stop', 'human'}
-    if not status.get('last') and status.get('status') == 'READY':
+    if _no_completed_node(status) and status.get('status') == 'READY':
         return {'next', 'wait', 'stop', 'human'}
     if detail['unknown_code']:
         return {'stop', 'human'}
