@@ -48,7 +48,7 @@ CONTINUED_CODE = 'place_failed_continued'
 def _no_completed_node(status):
     """첫 READY: last 가 없거나, sim 브리지처럼 node·code 가 모두 None 인 빈 틀."""
     last = status.get('last')
-    return not isinstance(last, dict) or (last.get('node') is None and last.get('code') is None)
+    return not isinstance(last, dict) or not any(last.values())
 
 
 def runner_detail(status):

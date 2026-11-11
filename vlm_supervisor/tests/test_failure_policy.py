@@ -234,3 +234,12 @@ def test_initial_ready_with_empty_last_frame_allows_next():
     detail = runner_detail(status)
     assert not detail['unknown_code']
     assert 'next' in allowed_actions(status, detail)
+
+
+@pytest.mark.parametrize('status', [
+    {'status': 'FAILURE', 'pending': None, 'last': {'node': None, 'code': None, 'reason': None}},
+    {'status': 'READY', 'pending': None, 'last': {'node': None, 'code': None, 'reason': 'rehome refused'}},
+])
+def test_empty_node_code_with_failure_or_reason_does_not_allow_next(status):
+    from vlm_supervisor.failure_policy import allowed_actions, runner_detail
+    assert 'next' not in allowed_actions(status, runner_detail(status))

@@ -119,10 +119,23 @@ class ApproachJudge:
                 'Use ONLY these names: ' + json.dumps(self.objects, ensure_ascii=False)
                 + f' and holders {sorted(n for n in self.names if n.startswith("HOLDER_"))}. '
                 f'Planned step: hand={hand}, object={obj}. '
+                'Holders are fixed place targets on the table, not obstacles, unless a holder physically lies '
+                'on the straight path. If you list no obstacle, the verdict must be clear. '
                 'If blocked, choose action reorder (move "first" object away first), other_hand, or human. '
                 'Return only JSON {"hand":"left"|"right","object":NAME,"verdict":"clear"|"blocked",'
                 '"obstacles":[NAME...],"action":"proceed"|"reorder"|"other_hand"|"human",'
-                '"first":NAME|null,"reason":"one line"}. action is proceed exactly when verdict is clear.')
+                '"first":NAME|null,"reason":"<your short reason>"}. action is proceed exactly when verdict is clear.')
+
+    def _ask(self, image, hand, obj, note=''):
+        try:
+            raw, meta = self.backend.ask([image], note + self.prompt(hand, obj), max_new_tokens=self.max_new_tokens)
+        except Exception as e:  # noqa: BLE001 — 백엔드가 죽어도 접근을 그냥 진행시키지 않는다
+            raw, meta = '', {'error': f'{type(e).__name__}: {str(e)[:200]}'}
+        try:
+            out = parse_approach(raw, self.names, hand, obj)
+        except Exception as e:  # noqa: BLE001 — 예상 못 한 응답 모양도 fallback
+            out = parse_approach('', self.names, hand, obj) | {'error': f'parse {type(e).__name__}'}
+        return out | {'raw': raw, 'meta': meta}
 
     def check(self, image, skill_step, world=None) -> dict:
         """skill_step = [skill, hand, object, target] (planner 4원소). world = geom_check 의 world 형태."""
@@ -130,14 +143,12 @@ class ApproachJudge:
         if image is None:
             out = parse_approach('', self.names, hand, obj) | {'error': 'no camera frame', 'raw': None, 'meta': None}
         else:
-            try:
-                raw, meta = self.backend.ask([image], self.prompt(hand, obj), max_new_tokens=self.max_new_tokens)
-            except Exception as e:  # noqa: BLE001 — 백엔드가 죽어도 접근을 그냥 진행시키지 않는다
-                raw, meta = '', {'error': f'{type(e).__name__}: {str(e)[:200]}'}
-            try:
-                out = parse_approach(raw, self.names, hand, obj)
-            except Exception as e:  # noqa: BLE001 — 예상 못 한 응답 모양도 fallback
-                out = parse_approach('', self.names, hand, obj) | {'error': f'parse {type(e).__name__}'}
-            out |= {'raw': raw, 'meta': meta}
+            out = self._ask(image, hand, obj)
+            # 형식 오류 답만 한 번 다시 묻는다(백엔드 오류·시간 초과는 다시 묻지 않음). 두 번째도 틀리면 그대로 human
+            meta = out.get('meta')
+            if not out['valid'] and not (isinstance(meta, dict) and meta.get('error')):
+                first = out
+                out = self._ask(image, hand, obj, note=f'Your previous answer was invalid: {first.get("error")}. ') \
+                    | {'retried_from': {k: first.get(k) for k in ('error', 'raw', 'meta')}}
         geom = geom_check(world, hand, obj, self.names) if world else None
         return out | {'geom': geom, 'disagree': geom is not None and geom['verdict'] != out['verdict']}

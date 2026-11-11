@@ -96,3 +96,34 @@ def test_geom_bad_coordinate_is_unknown_and_disagrees(bad):
     assert geom_check(world, 'right', 'SRC_BLUE', j.names)['verdict'] == 'unknown'
     r = j.check(IMG, STEP, world)
     assert r['geom']['verdict'] == 'unknown' and r['disagree']
+
+
+class SeqBackend(Backend):
+    def __init__(self, answers):
+        super().__init__(None)
+        self.answers = list(answers)
+
+    def ask(self, images, text, **kwargs):
+        self.prompts.append(text)
+        return self.answers.pop(0), {'model': 'fake'}
+
+
+def test_invalid_answer_is_reasked_once():
+    bad = ans(verdict='blocked', obstacles=[], action='reorder', first='HOLDER_2')
+    b = SeqBackend([bad, ans()])
+    r = ApproachJudge(b).check(IMG, STEP)
+    assert len(b.prompts) == 2 and r['valid'] and r['verdict'] == 'clear'
+    assert r['retried_from']['error'] == 'blocked without obstacles'
+
+
+def test_invalid_twice_stays_human():
+    bad = ans(verdict='blocked', obstacles=[], action='reorder')
+    b = SeqBackend([bad, bad])
+    r = ApproachJudge(b).check(IMG, STEP)
+    assert len(b.prompts) == 2 and not r['valid'] and r['action'] == 'human'
+
+
+def test_backend_error_is_not_reasked():
+    b = Backend(RuntimeError('timeout'))
+    r = ApproachJudge(b).check(IMG, STEP)
+    assert len(b.prompts) == 1 and r['action'] == 'human'
