@@ -15,8 +15,11 @@ Mover 코드는 배포가 고정한 hdgp 커밋(config/hdgp_snapshot.yaml) 사�
 """
 from __future__ import annotations
 
+import logging
+import time
 from collections import deque
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Mapping, Sequence
 
 import numpy as np
@@ -27,6 +30,13 @@ ENV_KEYS = {"dz": "carry_dz", "plan_down": "carry_plan_down", "plan_xy": "carry_
             "seeds": "carry_plan_seeds", "v_max": "carry_speed", "qd_max": "carry_qd_max", "min_steps": "carry_min_steps",
             "tol": "carry_tol", "q_tol": "carry_q_tol"}
 KEYS = tuple(ENV_KEYS) + ("max_steps",)
+# ★11.11 끝 자세를 놓기 학습 시작 뱅크 근처로(e2e oneshot 221f4fc: 끝 q 가 뱅크 최근접에서 max|Δq| 0.44 rad, j1 상한 · j4 하한 밖).
+#   앵커 컵 위치가 가까운 뱅크 행을 시드로 따로 풀어, 앵커 수렴 · 시간 안 도착 해(Mover 해 포함) 가운데 뱅크 최근접 max|Δq| 최소.
+BANK_SEED_ROWS = 8              # 시드로 쓸 뱅크 행 수
+BANK_OOD_RAD = 0.25             # 끝 자세 ↔ 뱅크 최근접 max|Δq| 가 이보다 크면 경고(분포 밖)
+BANK_MARGIN_MIN_DEG = 3.0       # 뱅크 시드 해는 관절 여유를 Mover 문턱(1°)보다 넉넉히(영점 불확실 · base_link)
+BANK_T_FRAC = 0.8               # 뱅크 시드 해의 계획 시간 ≤ 이 비율 · max_steps(멈춤 확인 틱 여유)
+_log = logging.getLogger(__name__)
 N_DOWN = 4                      # sim line_region(…, carry_plan_down, 4, …)
 # ★11.10 이송 끝 → 정책 시작 문턱 = sim 학습 뱅크(정책이 본 시작 상태) 이송 끝 오차 p95
 #   (deploy/policies/rh56f1/place/right_n10_e4000/bank/bank_right_train.npz, 350 행: carry_err_mm p95 29.04 · carry_axis_deg p95 4.69,
@@ -123,6 +133,20 @@ def quat_matrix(q: Sequence[float]) -> np.ndarray:
                      [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)]])
 
 
+def load_bank_arm_q(run_dir, side: str, arm_joints: Sequence[str]) -> np.ndarray | None:
+    """★11.11 정책 폴더 bank/bank_<side>_*.npz(놓기 학습 시작 뱅크, git 밖) 의 팔 실측 q (N,7) — Mover 사슬 관절 순서. 없으면 None."""
+    files = sorted((Path(run_dir) / "bank").glob(f"bank_{side}_*.npz"))
+    if len(files) != 1:
+        _log.warning("%s/bank 에 bank_%s_*.npz 가 %d 개 — 끝 자세 뱅크 맞춤 끔", run_dir, side, len(files))
+        return None
+    z = np.load(files[0])
+    names = [str(n) for n in z["joint_names"]]
+    missing = [j for j in arm_joints if j not in names]
+    if missing:
+        raise ReadyCarryError(f"{files[0].name}: 팔 관절 {missing} 이 joint_names 에 없다")
+    return np.asarray(z["joint_pos"], float)[:, [names.index(j) for j in arm_joints]]
+
+
 def load_chain(palm_body: str, arm_joints: Sequence[str], hdgp=None):
     """(ready_carry 패키지, Mover 사슬) — 배포 고정 hdgp 사본의 URDF · 코드(sim cfg_profile_palm 과 같은 손바닥 몸체)."""
     from policy_control import hdgp_pin as H
@@ -135,7 +159,8 @@ class ReadyCarry:
     """한 에피소드 이송 상태(B = 1, CPU). start → step… → on False. 사슬은 노드가 한 번 만들어 넘긴다(URDF 읽기)."""
 
     def __init__(self, cfg: ReadyCarryCfg, RC, chain, *, k_arm: float, arm_ema: float, hand_action: Sequence[float],
-                 dt: float, track_abort_rad: float = TRACK_ABORT_RAD, sag_max_rad: float = SAG_MAX_RAD) -> None:
+                 dt: float, track_abort_rad: float = TRACK_ABORT_RAD, sag_max_rad: float = SAG_MAX_RAD,
+                 bank_q: np.ndarray | None = None) -> None:
         import torch
         if not dt > 0.0:
             raise ReadyCarryError(f"ready_carry dt 는 양수여야 한다(1/policy_hz): {dt}")
@@ -169,6 +194,8 @@ class ReadyCarry:
         self.q_ref: np.ndarray | None = None  # 처짐 보정 기준 = Mover 끝 명령(멈춤 확인 첫 틱의 q_cmd)
         self.sag_ticks = 0
         self.sag_max: np.ndarray | None = None
+        self.bank_q = None if bank_q is None else torch.as_tensor(np.asarray(bank_q, float), dtype=torch.float32)   # (N,7) 뱅크 팔 q
+        self.bank_dq = float("nan")         # 끝 자세(plan q) ↔ 뱅크 최근접 max|Δq| [rad]
 
     def start(self, arm_q: Sequence[float], cup_pos: Sequence[float], cup_quat: Sequence[float], target: Sequence[float]) -> dict:
         """끝 자세를 푼다(움직이지 않는다) → 계획 요약. 실측 팔 q · 지각 컵(세계 = 로봇 루트) · 앵커."""
@@ -183,6 +210,10 @@ class ReadyCarry:
         za = torch.tensor([[0.0, 0.0, 1.0]])
         reg = P.line_region(tg, za, c.plan_down, N_DOWN, c.plan_xy, c.plan_tilt_deg)
         plan = self.mv.start(torch.arange(1), q, T_to, None, tg, za, reg)
+        t0 = time.perf_counter()
+        if self.bank_q is not None:
+            plan = self._bank_pick(plan, q, T_to, tg, za, reg)
+        self.bank_pick_s = time.perf_counter() - t0
         self.T_to, self.target = T_to, np.asarray(target, float).copy()
         self.on, self.moving, self.arrived, self.t = True, True, False, 0
         self.still_n = self.still_t = self.track_n = 0
@@ -194,8 +225,35 @@ class ReadyCarry:
         self.plan = {"ok": bool(plan.ok[0]), "margin_deg": round(float(np.degrees(float(plan.margin[0]))), 2),
                      "anchor_err_mm": round(float(plan.err_pos[0]) * 1000, 2), "anchor_err_deg": round(float(plan.err_axis[0]), 2),
                      "T_steps": int(self.mv.T[0]), "q_goal": [round(float(v), 4) for v in plan.q[0]],
-                     "target": [round(float(v), 4) for v in self.target]}
+                     "target": [round(float(v), 4) for v in self.target],
+                     "bank_dq": None if np.isnan(self.bank_dq) else round(self.bank_dq, 4), "bank_pick_s": round(self.bank_pick_s, 3)}
         return self.plan
+
+    def _bank_pick(self, plan, q, T_to, tg, za, reg):
+        """★11.11 뱅크 행(앵커 컵 위치가 가까운 것)을 시드로 따로 풀고, 앵커 수렴 · 시간 안 도착 해 가운데(Mover 해 포함)
+        뱅크 최근접 max|Δq| 가 가장 작은 것을 q_goal 로 다시 start. 배포 고정 hdgp Mover 는 시드별 해를 내주지 않아 여기서 푼다."""
+        torch, P, mc, bq = self.torch, self.RC.posture, self.mv.cfg, self.bank_q
+        rows = bq[((self.ch.fk(bq) @ T_to)[:, :3, 3] - tg).norm(dim=-1).argsort()[:BANK_SEED_ROWS]]
+        R = rows.shape[0]
+        cand = P.plan_posture(self.ch, rows[:, None], T_to.expand(R, 4, 4),
+                              P.line_region(tg.expand(R, 3), za.expand(R, 3), self.cfg.plan_down, N_DOWN, self.cfg.plan_xy,
+                                            self.cfg.plan_tilt_deg),
+                              mc.ik, sample_iters=mc.sample_iters, margin_cap_deg=mc.margin_cap_deg, margin_min_deg=mc.margin_min_deg)
+        qs = torch.cat([plan.q, cand.q])                                          # 0 = Mover 해
+        n = qs.shape[0]
+        # 받는 조건 = 앵커 수렴(점 · 축 3 배 허용) + 관절 여유 ≥ margin_min(Mover q_goal 판정과 같은 식) + 시간 안 도착.
+        #   표본 전체 수렴(plan.ok)은 묻지 않는다 — 학습 뱅크도 plan_ok 30 % 였다(350 행 중 107).
+        fx = self.mv._fixed_plan(qs, T_to.expand(n, 4, 4), None, tg.expand(n, 3), za.expand(n, 3))
+        ok = fx.ok & (self.RC.mover._MINJERK_PEAK * (qs - q).abs().amax(-1) / mc.qd_max <= BANK_T_FRAC * mc.max_steps)
+        ok[1:] &= torch.rad2deg(fx.margin[1:]) >= BANK_MARGIN_MIN_DEG
+        dqb = (qs[:, None] - bq[None]).abs().amax(-1).amin(-1)
+        j = int(torch.where(ok, dqb, torch.full_like(dqb, float("inf"))).argmin()) if bool(ok.any()) else 0
+        if j:
+            plan = self.mv.start(torch.arange(1), q, T_to, None, tg, za, reg, q_goal=qs[j:j + 1])
+        self.bank_dq = float(dqb[j])
+        if self.bank_dq > BANK_OOD_RAD:
+            _log.warning("ready_carry 끝 자세가 놓기 시작 뱅크 밖: 최근접 max|Δq| %.3f rad > %.2f", self.bank_dq, BANK_OOD_RAD)
+        return plan
 
     def step(self, arm_q: Sequence[float], q_cmd: Sequence[float] | None = None,
              arm_qd: Sequence[float] | None = None) -> np.ndarray:
@@ -282,6 +340,7 @@ class ReadyCarry:
                 "still": self.still, "still_ticks": self.still_t, "plan": self.plan,
                 "track_dev_max": None if np.isnan(self.track_dev_max) else round(self.track_dev_max, 4),
                 "sag_ticks": self.sag_ticks,
+                "bank_dq": None if np.isnan(self.bank_dq) else round(self.bank_dq, 4),
                 "sag_max": None if self.sag_max is None else [round(float(v), 4) for v in self.sag_max]}
 
 
