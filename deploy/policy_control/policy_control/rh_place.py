@@ -28,6 +28,10 @@ SCHEMA = "policy_control/rh_place_contract/v1"
 TASK_PREFIX = "open-rh_{}_place"
 #: hdgp tasks/rh_place_r/place_geom.py:12 — 홀더 원점 기준 컵이 앉는 바닥 높이
 HOLDER_FLOOR_Z = -0.025
+# ★11.11 준비 이송 앵커만 z 로 올린다(사용자 A안). 오프라인 SLSQP: 원래 앵커의 손바닥 축 오차 하한 7.03°(관절 한계와 무관) > 문턱 4.7°,
+#   +15 mm 면 3.23°. sim d75dfec seed0·1 place_blue 축 5.35~5.8° 로 시작 못 함. 올린 앵커 z 0.390 m(홀더 0.235 기준)는 학습 뱅크
+#   blue 컵 z p95 0.3975 안. start_ok 오차는 Mover 앵커(= 올린 앵커) 기준이라 15 mm 를 손해 보지 않고, 정책 기준(holder)은 그대로.
+CARRY_LIFT_M = 0.015
 JOINT_FREE_G = AttachCfg.joint_force_g
 #: 놓음 안전 게이트(10.04 PLACE 검토) — 네 손가락 손 목표가 인계 때보다 open 쪽으로 평균 이만큼 열린 뒤에만 '빈 손'을 센다.
 #  sim 놓음은 정책이 손을 연 뒤에만 났다. 실기는 손바닥 · 첫마디 접촉을 못 봐서 손끝이 비어도 마디로 쥐고 있을 수 있다.
@@ -548,12 +552,14 @@ class PlaceChain:
         self._close_dir = np.sign(np.asarray(s.hand_grip, float) - np.asarray(s.hand_open, float))
         self._fingers = [i for i, j in enumerate(s.hand_joints) if "thumb" not in j]
         self.hand0: np.ndarray | None = None
-        self.opened, self.tact_max, self.jf_max = 0.0, 0.0, None
+        self.opened, self.opened_meas, self.tact_max, self.jf_max = 0.0, 0.0, 0.0, None
         self.policy_a: np.ndarray | None = None          # 이번 틱 정책 출력(덧씌우기 전, 기록용) — 정책을 안 돌린 틱은 None
         self.latch = False                              # 관측 래치(latch_obs) — 리셋까지 유지
         self.fk = None                                  # ★10.13 이송: 노드가 넣는 UrdfChainFK(손바닥 자코비안용)
         self.carry: PC.Carry | None = None
         self.rc_chain = None                            # ★10.25 준비 자세 이송: 노드가 넣는 (ready_carry 패키지, Mover 사슬)
+        self.rc_bank_q = (RCY.load_bank_arm_q(c.run_dir, c.side().side, list(c.side().arm_joints))   # ★11.11 끝 자세 뱅크 맞춤
+                          if c.ready_carry else None)
         self.rcarry: RCY.ReadyCarry | None = None
         self.q_g: np.ndarray | None = None              # block_follow_open: 마지막으로 쥐었던 틱의 실측(칸 단위)
         names = list(s.hand_joints)
@@ -600,7 +606,7 @@ class PlaceChain:
         # (_policy_hand_from_meas). 학습 뱅크 hand_target ≈ q(err ≈ 0) — oneshot 16_s0_obsdump 에서 err 0.2~0.35 로 분포 밖이었다.
         self.dec.reset(arm_start=arm0, hand_start=hand0)
         self.hand0 = np.asarray(hand0, float).copy()
-        self.opened, self.tact_max, self.jf_max = 0.0, 0.0, None
+        self.opened, self.opened_meas, self.tact_max, self.jf_max = 0.0, 0.0, 0.0, None
         self.goal = seat_goal(self.c, holder)
         if attach is None and self.c.attach_source != "fpp":
             what = "잡기의 넘김 묶음" if self.c.attach_source == "bundle" else "붙인 자세"
@@ -635,10 +641,11 @@ class PlaceChain:
             if self.rc_chain is None:
                 raise RhPlaceError("준비 자세 이송 계약인데 Mover 사슬이 없다 — 노드가 chain.rc_chain 을 넣어야 한다")
             cfg = RCY.ReadyCarryCfg.from_dict(self.c.ready_carry)
-            self.rcarry = RCY.ReadyCarry(cfg, *self.rc_chain, k_arm=self.c.k_arm, arm_ema=self.c.arm_ema,
-                                         hand_action=hand_action_of(self.c, hand0))
+            self.rcarry = RCY.ReadyCarry(cfg, *self.rc_chain, k_arm=self.c.k_arm, arm_ema=self.c.arm_ema, dt=1.0 / self.c.policy_hz,
+                                         hand_action=hand_action_of(self.c, hand0), bank_q=self.rc_bank_q)
             pos, quat = self.cup_from_palm(m.palm_pos, m.palm_R)
-            self.rcarry.start(np.asarray(m.arm_q, float), pos, quat, PC.carry_target(holder, origin_z_of(self.c), cfg.dz))
+            self.rcarry.start(np.asarray(m.arm_q, float), pos, quat,
+                              PC.carry_target(holder, origin_z_of(self.c), cfg.dz) + (0.0, 0.0, CARRY_LIFT_M))
         else:                                            # 이송 없음 — 정책이 지금부터라 손 목표를 지금 실측으로
             self._policy_hand_from_meas(hand_meas)
         self._policy_reset()
@@ -670,15 +677,27 @@ class PlaceChain:
         return self.rcarry is not None and self.rcarry.on
 
     def _carry_tick(self, meas: Mapping) -> tuple[np.ndarray, np.ndarray, dict]:
-        """★10.25 준비 자세 이송 한 틱 — 행동 = Mover(실측 팔 q) · 손 = 리셋 손 목표. 관측은 기록용으로만 만든다."""
+        """★10.25 준비 자세 이송 한 틱 — 행동 = Mover · 손 = 리셋 손 목표. 관측은 기록용으로만 만든다.
+        ★11.11 Mover 는 직전 명령 목표(디코더 arm_target)로 굴린다(개루프) — 실측 q 되먹임이 1.5~2 Hz 떨림을 만들었다(q4).
+        끝에서 실측 q̇ · q*−q 로 멈춤을 확인한다(place_ready_carry STILL_*)."""
         c = self.c
         m = meas["arm"]
         pos, quat = self.cup_from_palm(m.palm_pos, m.palm_R)
         m = replace(m, cup_pos=pos, cup_quat=quat)
         obs = A.build_obs(c, m, self.dec, self.goal, self.prev, extra=self._extra())
-        a = self.rcarry.step(np.asarray(m.arm_q, float))
+        a = self.rcarry.step(np.asarray(m.arm_q, float), q_cmd=self.dec.state["arm"].arm_target.copy(),
+                             arm_qd=np.asarray(m.arm_qd, float))
         hand_q = np.array([m.hand_q[j] for j in c.side().hand_joints], float)
         targets = self.dec.step(a, active=True, tactile_n=m.tactile_n, hand_q=hand_q)
+        if self.rcarry.still == "track":                 # ★11.11 이탈 가드 — 앞선 q* 를 남기지 않고 현 위치(실측)를 붙든다.
+            meas_q = np.asarray(m.arm_q, float)          #   풀린 뒤 pd 가 한 번에 당기지 않게 내보내는 목표 · 디코더 목표 둘 다.
+            hold = np.where(np.isfinite(meas_q), meas_q, targets["arm"][0])   # 실측 NaN 관절은 직전 목표(명령 유지)
+            self.dec.state["arm"].arm_target = hold.copy()
+            targets = {**targets, "arm": (hold, targets["arm"][1])}
+        elif self.rcarry.still == "timeout" and self.rcarry.q_ref is not None:   # ★11.11 처짐 보정 누적(≤ sag_max_rad)을
+            hold = self.rcarry.q_ref.copy()              #   정책에 넘기지 않는다 — 행동은 틱당 0.005 rad 라 한 틱에 못 되돌리므로 목표를 직접 q_ref 로
+            self.dec.state["arm"].arm_target = hold.copy()
+            targets = {**targets, "arm": (hold, targets["arm"][1])}
         self.tact_max = float(np.max(np.asarray(m.tactile_n, float)))
         self.jf_max = None if m.joint_force is None else float(np.max(np.asarray(m.joint_force, float)))
         self.prev = np.clip(a, -1.0, 1.0)
@@ -814,6 +833,7 @@ class PlaceChain:
         targets = self.dec.step(a, active=True, tactile_n=m.tactile_n, hand_q=hand_q)
         f = self._fingers
         self.opened = float(np.mean(self._close_dir[f] * (self.hand0[f] - targets["arm"][1][f])))
+        self.opened_meas = float(np.mean(self._close_dir[f] * (self.hand0[f] - hand_q[f])))   # ★11.11 실측 손가락 같은 기준
         self.tact_max = float(np.max(np.asarray(m.tactile_n, float)))
         self.jf_max = None if m.joint_force is None else float(np.max(np.asarray(m.joint_force, float)))
         self.prev = np.clip(a, -1.0, 1.0)
@@ -843,6 +863,7 @@ class PlaceChain:
         targets = self.dec.step(a, active=True, tactile_n=m.tactile_n, hand_q=hand_q)
         f = self._fingers
         self.opened = float(np.mean(self._close_dir[f] * (self.hand0[f] - targets["arm"][1][f])))
+        self.opened_meas = float(np.mean(self._close_dir[f] * (self.hand0[f] - hand_q[f])))   # ★11.11 실측 손가락 같은 기준
         self.tact_max = float(np.max(np.asarray(m.tactile_n, float)))
         self.jf_max = None if m.joint_force is None else float(np.max(np.asarray(m.joint_force, float)))
         if self.settling:
@@ -877,7 +898,7 @@ class PlaceChain:
                 "carry": None if self.carry is None else self.carry.as_dict(), "free_streak": self.free_streak,
                 "settle_t": self.settle_t, "seat": None if self.goal is None else [round(float(v), 4) for v in self.goal.pos],
                 # 첫 실기 문턱 정하기용(PLACE 검토) — 손 목표가 인계보다 연 양 · 손끝 최대 · 관절 힘 최대
-                "opened": round(self.opened, 4), "tact_max": round(self.tact_max, 3), "latch": self.latch,
+                "opened": round(self.opened, 4), "opened_meas": round(self.opened_meas, 4), "tact_max": round(self.tact_max, 3), "latch": self.latch,
                 "rule": self.c.release_rule,
                 "jf_max": None if self.jf_max is None else round(self.jf_max, 1),
                 **({"latch_t": self.latch_t, "latch_geo_n": self.latch_geo_n, "outcome": self.outcome,

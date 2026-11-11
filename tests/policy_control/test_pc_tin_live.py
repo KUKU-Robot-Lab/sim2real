@@ -63,6 +63,26 @@ def test_rejects_jitter_and_few_frames_then_fallback(tmp_path):
         T.load_tin(p, "left")
 
 
+def test_left_roundtrip_returns_origin_frame(tmp_path):
+    """왼손: measure(원점 + z_off·컵 z 틀) → record → load_tin 이 원점 틀(inv(손바닥) · 컵 원점)로 1e-9 안에 되돌린다."""
+    t, hs, X, at, aq, fk = _synthetic()
+    X[:, 2] = 0.04                                                                  # 왼손 상한(NEAR_M_SIDE 0.09) 안
+    X[:, 3:] = [np.cos(0.3), np.sin(0.3) * 0.6, 0.0, np.sin(0.3) * 0.8]          # 컵 z 가 기울어 있어야 축 방향이 검사된다
+    meas = T.measure(t, hs, X, at, aq, fk, 0.0, 10.0, z_off=T.Z_OFF["left"])
+    assert meas["ok"], meas
+    p = tmp_path / "tin_l.json"
+    p.write_text(json.dumps(T.record(meas, "left", tmp_path / "없음.json")))
+    rel_p, rel_q, d = T.load_tin(p, "left")
+    q_rec = np.asarray(d["quat_wxyz"])
+    T_rec = np.eye(4); T_rec[:3, :3] = T.quat_to_R(q_rec / np.linalg.norm(q_rec)); T_rec[:3, 3] = d["pos_m"]   # 기록된 틀
+    assert d["z_off_applied"] == T.Z_OFF["left"] == 0.02
+    back = T_rec @ np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, -0.02], [0, 0, 0, 1.0]])   # T_in · Trans(0, 0, -off)
+    assert np.allclose(rel_p, back[:3, 3], rtol=0, atol=1e-9)
+    assert np.allclose(T.quat_to_R(rel_q), T_rec[:3, :3], rtol=0, atol=1e-9)        # 회전 그대로
+    origin = np.asarray(T.measure(t, hs, X, at, aq, fk, 0.0, 10.0)["T_in"])           # 같은 표본을 원점 틀로 직접 잰 값
+    assert np.allclose(rel_p, origin[:3, 3], rtol=0, atol=1e-6)                      # 기록 pos_m 6자리 반올림만큼
+
+
 def test_late_arm_holds_end_value_ratio(tmp_path):
     """팔 표본이 끝보다 ARM_HOLD_S 안 앞서면 끝값 유지 · 더 늦은 프레임만 버림 · 갱신 비율 0.3."""
     t, hs, X, at, aq, fk = _synthetic()

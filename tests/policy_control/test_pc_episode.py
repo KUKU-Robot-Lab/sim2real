@@ -631,6 +631,83 @@ def test_holder_problems_names_missing_files_and_ids():
     assert "cup_holders" in S.holder_problems(ep, {})[0]                         # 파일이 없다 — cup_holders --write 를 돌릴 것
 
 
+@pytest.mark.parametrize("check, ok", [
+    ({"result": "written", "epoch": 1000.0}, True),                        # 방금 잼
+    ({"result": "written", "epoch": 1000.0 - S.HOLDER_CHECK_MAX_AGE_S}, True),        # 나이 상한 딱
+    ({"result": "written", "epoch": 1000.0 - S.HOLDER_CHECK_MAX_AGE_S - 1}, False),   # 상한 1 s 넘음
+    ({"result": "written", "epoch": 1000.0 + S.HOLDER_CHECK_FUTURE_S}, True),         # 시계 차 허용 딱
+    ({"result": "written", "epoch": 1000.0 + S.HOLDER_CHECK_FUTURE_S + 1}, False),    # 미래 — 시계 어긋남
+    ({"result": "written", "time": "2026-11-11T10:00:00"}, False),         # epoch 없음 — 옛 노드(arm4090 미 pull)
+    ({"result": "written", "epoch": "1000"}, False),                       # 문자열 epoch
+    ({"result": "written", "epoch": float("nan")}, False),
+    ({"result": "jump_rejected", "epoch": 1000.0}, False),
+    ({"result": "failed", "epoch": 1000.0, "rc": 255}, False),
+    (None, False),
+    (["written"], False),                                                  # JSON 이 객체가 아님(LOW)
+])
+def test_holder_check_ages_by_epoch_and_refuses_future_or_old_records(check, ok):
+    """★11.11 deploy 리뷰 M1 · M2 · LOW: 나이는 epoch 로 재고(로컬 time 문자열은 시간대 · 시계 차로 틀린다), 미래 · epoch 없음 ·
+    객체 아닌 JSON 도 막는다."""
+    probs = S.holder_check_problems(_ep(), check, 1000.0)
+    assert (probs == []) is ok, probs
+    if check and isinstance(check, dict) and "epoch" not in check:
+        assert "git pull" in probs[0]
+
+
+def _cups5(**h):
+    """★11.11 cups_5(11.10 22:42) 꼴 — 시간 초과 unstable, 홀더별 stable · dxy · dyaw."""
+    hs = {f"cup_holder_{i}": {"stable": False, "dxy_m": None, "dyaw_deg": None} for i in range(3)}
+    for k, v in h.items():
+        hs[k] = v
+    return {"time": "t", "epoch": 1000.0, "result": "unstable", "max_jump_m": 0.03, "max_yaw_deg": 10.0, "holders": hs}
+
+
+@pytest.mark.parametrize("hid, holders, result, ok", [
+    (2, {"cup_holder_2": {"stable": True, "dxy_m": 0.004, "dyaw_deg": 1.0}}, "unstable", True),    # 홀더 0 만 못 봄 — h2 는 된다
+    (0, {"cup_holder_2": {"stable": True, "dxy_m": 0.004, "dyaw_deg": 1.0}}, "unstable", False),   # 쓰는 홀더가 안 잡힘
+    (2, {"cup_holder_2": {"stable": True, "dxy_m": 0.031, "dyaw_deg": 1.0}}, "unstable", False),   # 3 cm 넘음
+    (2, {"cup_holder_2": {"stable": True, "dxy_m": 0.03, "dyaw_deg": -10.0}}, "unstable", True),   # 경계는 안
+    (2, {"cup_holder_2": {"stable": True, "dxy_m": 0.01, "dyaw_deg": 10.5}}, "unstable", False),   # yaw 상한
+    (2, {"cup_holder_2": {"stable": True, "dxy_m": None, "dyaw_deg": None}}, "unstable", False),   # 옛 값 없음
+    (2, {"cup_holder_2": {"dxy_m": 0.004, "dyaw_deg": 1.0}}, "unstable", False),                   # stable 없는 옛 기록
+    (2, {"cup_holder_2": {"stable": True, "dxy_m": 0.004, "dyaw_deg": 1.0}}, "jump_rejected", True),  # 다른 홀더가 튐
+    (2, {"cup_holder_2": {"stable": True, "dxy_m": 0.004, "dyaw_deg": 1.0}}, "no_markers", False),
+])
+def test_holder_check_looks_only_at_the_holders_the_episode_uses(hid, holders, result, ok):
+    """★11.11 deploy: 시작 검사는 그 에피소드가 쓰는 홀더만 본다 — 파일을 못 썼어도 그 홀더가 이번에 안정적으로 옛 값
+    3 cm · 10° 안으로 다시 확인됐으면 통과."""
+    import dataclasses
+    ep = dataclasses.replace(_ep(), holders={"PLACE_HOLDER": hid})
+    check = _cups5(**holders)
+    check["result"] = result
+    probs = S.holder_check_problems(ep, check, 1000.0)
+    assert (probs == []) is ok, probs
+
+
+def test_holder_check_reconfirm_still_refuses_old_or_failed_records():
+    import dataclasses
+    ep = dataclasses.replace(_ep(), holders={"PLACE_HOLDER": 2})
+    good = {"cup_holder_2": {"stable": True, "dxy_m": 0.004, "dyaw_deg": 1.0}}
+    assert S.holder_check_problems(ep, _cups5(**good), 1000.0 + S.HOLDER_CHECK_MAX_AGE_S + 60)   # 나이 상한은 그대로
+    failed = dict(_cups5(**good), result="failed", rc=255)
+    assert S.holder_check_problems(ep, failed, 1000.0)                               # ssh · scp 실패는 그대로 막음
+
+
+def test_the_plan_tool_blocks_on_a_non_object_holder_record(tmp_path):
+    """★11.11 LOW: last_check.json 이 객체가 아닌 JSON 이어도 AttributeError 없이 막는다."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("episode_run", REPO / "deploy/policy_control/tools/episode_run.py")
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    raw = yaml.safe_load((EPISODES / "pick_place_right.yaml").read_text())
+    raw["holder_poses"] = str(tmp_path / "h.yaml")
+    (tmp_path / "h.yaml").write_text("holders:\n  cup_holder_1: {marker_id: 1, position: [0.38, -0.002, 0.235], yaw_rad: 0.0}\n")
+    (tmp_path / "h.yaml.last_check.json").write_text("[1, 2]\n")
+    path = tmp_path / "ep.yaml"
+    path.write_text(yaml.safe_dump(raw, allow_unicode=True))
+    assert tool.main(["--episode", str(path), "--plan", "--require-holders"]) == 1
+
+
 def test_the_plan_tool_refuses_a_real_run_without_the_holder_file(tmp_path, monkeypatch):
     import importlib.util
     spec = importlib.util.spec_from_file_location("episode_run", REPO / "deploy/policy_control/tools/episode_run.py")
@@ -784,3 +861,90 @@ def test_place_judge_uses_live_or_the_bound_cup_never_the_table_snapshot():
     s = judge(None, [0.30, -0.06, 0.40])                           # live 없음 · 묶은 컵이 홀더 밖
     assert s["cup_in_holder"] is False and s["cup_in_holder_by"] == {"fk": False}
     assert "cup_in_holder" not in judge(None, None)               # 판정 보류
+
+
+def test_place_ended_by_open_fingers_before_latch_is_judged_by_the_holder_only():
+    """★11.11 래치 전 손 폄 종료(opened_before_latch)는 손이 비었는지 노드가 모른다 — hand_empty None, 판정은 cup_in_holder
+    (sim 1111b f8a2ec8: 컵이 홀더에 들어갔는데 hand_empty False 로 PLACE_FAILED)."""
+    import threading
+    from types import SimpleNamespace
+    from policy_control.episode_ros import SEAT_DZ_CYL60, RosExecutor
+    hold = (0.38, -0.06, 0.235)
+    seat, above = (0.38, -0.06, 0.235 + SEAT_DZ_CYL60), [0.38, -0.06, 0.235 + SEAT_DZ_CYL60 + 0.0405]
+    ep, d = _ep(), FailureDetector()
+
+    def code(live):
+        me = SimpleNamespace(holders={1: (hold, 0.0)}, _live={}, _lock=threading.Lock(),
+                             _fresh_object=lambda name, after=None, store=None, wait_s=2.0: live)
+        p = SimpleNamespace(kind="place", source_object="SRC", holder_id=1)
+        sig = RosExecutor._signals_of(me, p, {"place": {"phase": "policy", "outcome": "opened_before_latch", "latch_cup": above}})
+        assert sig["hand_empty"] is None
+        return d.evaluate(ep, ep.nodes[3], [NodeResult("completed", "opened — 래치 전", role="rh_place_r", signals=sig)])[0]
+
+    assert code(seat) is F.NONE                                   # 손 빠지며 떨어져 들어감(live) — 실패 아님
+    assert code((0.30, -0.06, 0.24)) is F.PLACE_FAILED            # 홀더 밖
+
+
+def test_opened_before_latch_tightens_seat_z_and_checks_tactile():
+    """★11.11 래치 전 손 폄 종료는 손이 조금만 열려도 끝난다 — 쥔 채 홀더에 든 컵을 성공으로 보지 않게 앉음 z 15 mm,
+    실기 촉각이 놓음 힘 이상이면 손이 안 빈 것(hand_empty False → 걸림). 촉각 없으면(sim 0.0) z 만. 다른 outcome 은 그대로 30 mm."""
+    import threading
+    from types import SimpleNamespace
+    from policy_control.episode_ros import SEAT_DZ_CYL60, RosExecutor
+    hold = (0.38, -0.06, 0.235)
+    seat = (0.38, -0.06, 0.235 + SEAT_DZ_CYL60)
+    up20 = (0.38, -0.06, 0.235 + SEAT_DZ_CYL60 + 0.020)
+    ep, d = _ep(), FailureDetector()
+
+    def run(live, tact, outcome="opened_before_latch", thr=1.0):
+        me = SimpleNamespace(holders={1: (hold, 0.0)}, _live={}, _lock=threading.Lock(),
+                             _fresh_object=lambda name, after=None, store=None, wait_s=2.0: live)
+        p = SimpleNamespace(kind="place", source_object="SRC", holder_id=1)
+        st = {"release_force_n": thr, "place": {"phase": "policy", "outcome": outcome, "tact_max": tact}}
+        sig = RosExecutor._signals_of(me, p, st)
+        return sig, d.evaluate(ep, ep.nodes[3], [NodeResult("completed", "", role="rh_place_r", signals=sig)])[0]
+
+    sig, c = run(up20, 0.0)                                       # (a) 쥔 채 20 mm 위 — 촉각 없어도 z 로 실패
+    assert c is F.PLACE_FAILED and sig["cup_in_holder"] is False and sig["tact_check"].startswith("skipped")
+    sig, c = run(seat, 5.0)                                       # (b) 앉았어도 촉각 ≥ 문턱 = 쥔 채
+    assert c is F.PLACE_FAILED and sig["tact_held"] is True and sig["hand_empty"] is False
+    sig, c = run(seat, 0.3)                                       # (c) 앉았고 촉각 낮음 — 성공
+    assert c is F.NONE and sig["tact_held"] is False and sig["hand_empty"] is None
+    for tact in (None, 0.0):                                      # (d) 촉각 없음 — z 만
+        sig, c = run(seat, tact)
+        assert c is F.NONE and "tact_held" not in sig and sig["tact_check"] == "skipped: no tactile"
+    sig, c = run(seat, 5.0, thr=None)                             # 문턱 안 내는 옛 노드 — 건너뜀
+    assert c is F.NONE and sig["tact_check"] == "skipped: no release_force_n"
+    sig, c = run(up20, 5.0, outcome="clear")                      # 다른 outcome 은 그대로(30 mm · 촉각 안 봄)
+    assert sig["cup_in_holder"] is True and "tact_held" not in sig
+
+
+def test_holder_check_age_fits_fixed_holders_and_names_the_holder_that_blocks():
+    """★11.11 사용자 "홀더는 고정해 두고 필요할 때 cup_holders 로 갱신": 하루 · 며칠 지난 확정은 통과, 7 일 넘으면 막는다.
+    막을 때는 어느 홀더가 왜인지(가림 · 옮겨짐 · rc) 보인다."""
+    import dataclasses
+    ep = dataclasses.replace(_ep(), holders={"PLACE_HOLDER": 0})
+    ok = {"result": "written", "epoch": 1000.0, "max_jump_m": 0.03, "max_yaw_deg": 10.0,
+          "holders": {f"cup_holder_{i}": {"stable": True, "dxy_m": 0.002, "dyaw_deg": 0.5, "src": "track"} for i in range(3)}}
+    assert S.holder_check_problems(ep, ok, 1000.0 + 3 * 24 * 3600) == []
+    assert S.holder_check_problems(ep, ok, 1000.0 + 8 * 24 * 3600)
+    hid = dict(ok, result="unstable", holders=dict(ok["holders"], cup_holder_0={"stable": False, "src": None}))
+    (msg,) = S.holder_check_problems(ep, hid, 1000.0)
+    assert "홀더 0 검출 안 됨" in msg and "가림" in msg, msg
+    moved = dict(ok, result="jump_rejected", holders=dict(ok["holders"], cup_holder_0={"stable": True, "dxy_m": 0.05, "dyaw_deg": 2.0, "src": "track"}))
+    (msg,) = S.holder_check_problems(ep, moved, 1000.0)
+    assert "홀더 0 가 저장 값에서 5.0 cm" in msg, msg
+    (msg,) = S.holder_check_problems(ep, {"result": "no_markers", "epoch": 1000.0}, 1000.0)
+    assert "홀더 0 검출 안 됨" in msg
+    (msg,) = S.holder_check_problems(ep, {"result": "failed", "epoch": 1000.0, "rc": 255, "what": "ssh"}, 1000.0)
+    assert "ssh 실패(rc 255)" in msg
+
+
+def test_holder_issue_formats_a_jump_with_only_one_number():
+    """★11.11 deploy 리뷰 LOW: dxy 만 숫자이거나 dyaw 만 숫자여도 형식 오류 없이 문구를 만든다 · 받아들이기 명령을 보인다."""
+    from policy_control import episode_spec as ES
+    for d in ({"dxy_m": 0.05, "dyaw_deg": None}, {"dxy_m": None, "dyaw_deg": 15.0}):
+        check = {"result": "jump_rejected", "max_jump_m": 0.03, "max_yaw_deg": 10.0,
+                 "holders": {"cup_holder_1": {"stable": True, "src": "aruco", **d}}}
+        msg = ES._holder_issue(check, 1)
+        assert msg and "홀더 1" in msg and "--max-jump-m inf" in msg and ("5.0 cm" in msg or "+15.0°" in msg)

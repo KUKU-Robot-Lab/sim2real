@@ -91,16 +91,6 @@ stages:
   skippable: true
   touches_real: true
   title: 목 스윕 기록 — 손은 그대로, 목만 보정 각도를 돌며 bag(arm · hand · pd · camera) → 처음 자세로 복귀
-- id: cups
-  group: connect
-  lane: both
-  needs:
-  - head_view_check
-  skippable: true
-  touches_real: true
-  needs_why: FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다
-  title: FP++ 드라이버(5090) — 인지 런처 · 자세 수신기 · base 변환 노드 · 머리 자세 맞춤. 물체는 띄우지 않는다(setting 탭 '인지 적용' 또는 에피소드가 자기 물체를 띄운다)
-  arm_free: true
 - id: cup_holders
   group: connect
   lane: both
@@ -108,8 +98,20 @@ stages:
   - head_home
   skippable: true
   touches_real: true
-  title: 홀더 자리 다시 재기(홀더를 옮겼을 때만) — 마커 ID 0·1·2 → config/cup_holder_poses_5090_v1.yaml 갱신 · /objects/cup_holder_{0,1,2}/pose (base). 홀더는 고정이라 에피소드는
-    이 단계를 기다리지 않고 저장된 파일을 쓴다. 로봇은 움직이지 않는다. CPU 만
+  title: 홀더 자리 재기 · 확정(컵을 놓기 전, 홀더를 옮겼거나 갱신할 때만 — 아니면 건너뛴다) — 마커 ID 0·1·2 → config/cup_holder_poses_5090_v1.yaml 갱신 · /objects/cup_holder_{0,1,2}/pose
+    (base). 홀더는 고정이라 에피소드는 이 단계를 기다리지 않고 저장된 파일을 쓴다. 로봇은 움직이지 않는다. CPU 만
+  arm_free: true
+- id: cups
+  group: connect
+  lane: both
+  needs:
+  - head_view_check
+  - cup_holders
+  skippable: true
+  touches_real: true
+  needs_why: 'FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다. ★11.11 사용자: 컵홀더 측정 완료(고정) → 컵 배치 — 컵이 홀더 마커를 가리기
+    전에 cup_holders 를 끝내거나(홀더를 그대로 두면) 건너뛴다'
+  title: FP++ 드라이버(5090) — 인지 런처 · 자세 수신기 · base 변환 노드 · 머리 자세 맞춤. 물체는 띄우지 않는다(setting 탭 '인지 적용' 또는 에피소드가 자기 물체를 띄운다)
   arm_free: true
 - id: cups_right
   group: recognize
@@ -802,6 +804,17 @@ stages:
   - head_home
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
   title: '[에피소드] grasp_s_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
+- id: episode_grasp_s_pink_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  touches_real: true
+  needs:
+  - home_right
+  - cups
+  - head_home
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다
+  title: '[에피소드] grasp_s_pink_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift'
 - id: episode_grasp_m_right
   group: policy
   lane: arm_right
@@ -846,6 +859,41 @@ stages:
   - head_home
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] place_m_left — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift → place_cup → go_home_end'
+- id: episode_place_m_blue_h2_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  touches_real: true
+  needs:
+  - home_right
+  - cups
+  - head_home
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
+  title: '★홀더 2 = 학습 범위 확인 전(놓기 학생 right_student_place 가 홀더 2 를 배웠는지 모름) — [에피소드] place_m_blue_h2_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) ·
+    [연속 실행]으로 진행: go_home_start → scene → grasp_lift → place_cup → go_home_end'
+- id: episode_place_m_pink_h1_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  touches_real: true
+  needs:
+  - home_right
+  - cups
+  - head_home
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
+  title: '[에피소드] place_m_pink_h1_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_lift → place_cup → go_home_end'
+- id: episode_place_m_pink_h2_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  touches_real: true
+  needs:
+  - home_right
+  - cups
+  - head_home
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
+  title: '★홀더 2 = 학습 범위 확인 전(놓기 학생 right_student_place 가 홀더 2 를 배웠는지 모름) — [에피소드] place_m_pink_h2_right — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) ·
+    [연속 실행]으로 진행: go_home_start → scene → grasp_lift → place_cup → go_home_end'
 - id: shutdown
   group: finish
   lane: rig
@@ -965,10 +1013,14 @@ run:
     - episode_cocktail_1c_e4000#10
     - episode_grasp_s_right#10
     - episode_grasp_s_left#10
+    - episode_grasp_s_pink_right#10
     - episode_grasp_m_right#10
     - episode_grasp_m_left#10
     - episode_place_m_right#12
     - episode_place_m_left#12
+    - episode_place_m_blue_h2_right#12
+    - episode_place_m_pink_h1_right#12
+    - episode_place_m_pink_h2_right#12
     - policy_place_right#1
     - policy_place_left#1
     - episode_pick_place_right#5
@@ -1059,6 +1111,10 @@ run:
     - episode_grasp_s_left#7
     - episode_grasp_s_left#8
     - episode_grasp_s_left#11
+    - episode_grasp_s_pink_right#6
+    - episode_grasp_s_pink_right#7
+    - episode_grasp_s_pink_right#8
+    - episode_grasp_s_pink_right#11
     - episode_grasp_m_right#6
     - episode_grasp_m_right#7
     - episode_grasp_m_right#8
@@ -1079,6 +1135,24 @@ run:
     - episode_place_m_left#10
     - episode_place_m_left#13
     - episode_place_m_left#16
+    - episode_place_m_blue_h2_right#5
+    - episode_place_m_blue_h2_right#8
+    - episode_place_m_blue_h2_right#9
+    - episode_place_m_blue_h2_right#10
+    - episode_place_m_blue_h2_right#13
+    - episode_place_m_blue_h2_right#16
+    - episode_place_m_pink_h1_right#5
+    - episode_place_m_pink_h1_right#8
+    - episode_place_m_pink_h1_right#9
+    - episode_place_m_pink_h1_right#10
+    - episode_place_m_pink_h1_right#13
+    - episode_place_m_pink_h1_right#16
+    - episode_place_m_pink_h2_right#5
+    - episode_place_m_pink_h2_right#8
+    - episode_place_m_pink_h2_right#9
+    - episode_place_m_pink_h2_right#10
+    - episode_place_m_pink_h2_right#13
+    - episode_place_m_pink_h2_right#16
   - note: 남은 bag 기록 마무리(rh56f1_record.sh stop)
     argv:
     - bash
@@ -1099,7 +1173,7 @@ run:
     - cups#1
     - cups#2
     - cups#3
-    - cup_holders#3
+    - cup_holders#4
   - note: 목 드라이버 정지 — 단독 소유한 시리얼 포트를 닫는다
     stop:
     - head_home#0
@@ -1107,6 +1181,12 @@ run:
     - episode_place_m_right#16
     - episode_place_m_left#8
     - episode_place_m_left#16
+    - episode_place_m_blue_h2_right#8
+    - episode_place_m_blue_h2_right#16
+    - episode_place_m_pink_h1_right#8
+    - episode_place_m_pink_h1_right#16
+    - episode_place_m_pink_h2_right#8
+    - episode_place_m_pink_h2_right#16
     - head_sweep#1
     - head_sweep#4
   - note: 목 토크 해제 — 받침 확인, pan · tilt 가 중력으로 처질 수 있다
@@ -1134,6 +1214,12 @@ run:
     stop:
     - drivers#2
   cup_holders:
+  - note: '★컵홀더 측정은 컵을 놓기 전에 — 상판에 컵 · 셰이커가 없는가(가리면 그 홀더가 검출되지 않아 그 홀더를 쓰는 에피소드가 막힌다). 순서: 이 단계(홀더 확정) → cups(컵 배치 · FP++)'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
   - note: ★홀더 세 개가 상판 위에 서 있고 -x 면 마커가 손 · 컵에 가리지 않는가(머리 자세는 다음 스텝이 캘리브 자세로 맞춘다)
     argv:
     - bash
@@ -1169,6 +1255,16 @@ run:
     - -lc
     - timeout 15 ros2 topic echo --once /cup_holders/status std_msgs/msg/String
     manual: true
+  - note: ★홀더 자리 확정(최대 30 s) — 세 홀더가 안정되면 config/cup_holder_poses_5090_v1.yaml 와 비교해 xy 3 cm · yaw 10° 안이면 확정, 넘거나 못 재면(가림 · 카메라 · ssh · scp 실패
+      포함) 파일은 그대로 두고 '⚠ ' 경고 — 그 홀더를 쓰는 에피소드는 시작 검사에서 막힌다(어느 홀더인지 보인다)
+    argv:
+    - bash
+    - -lc
+    - 'cd {repo} && { bash scripts/vision/camera_up.sh && python3 scripts/nodes/cup_holder_pose_node.py --write --timeout-s 30 --max-jump-m 0.03
+      --max-yaw-deg 10 --out config/cup_holder_poses_5090_v1.yaml --extrinsics config/global_camera_extrinsics_arm4090_r20u5.yaml; }; rc=$?; if
+      [ $rc -ne 0 ]; then echo "⚠ 홀더 다시 재기 실패 — 카메라 · 홀더 노드 rc=$rc · cup_holder_poses_5090_v1.yaml 안 바꿈 · 홀더를 쓰는 에피소드 시작 검사가 막는다"; printf ''\173"time":
+      "%s", "epoch": %s, "result": "failed", "rc": %d, "what": "카메라 · 홀더 노드"\175\n'' "$(date +%Y-%m-%dT%H:%M:%S)" "$(date +%s)" $rc > config/cup_holder_poses_5090_v1.yaml.last_check.json;
+      fi; true'
   head_home:
   - note: 목 드라이버 — 포트 단독 소유 · 실측 관절 발행 · 이동 요청 처리
     argv:
@@ -8014,7 +8110,7 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -8314,6 +8410,8 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
+    - target_class:=blue
+    - -p
     - max_episode_s:=30.0
     background: true
   - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(60 Hz, 학생 입력만 · 압축 없음)
@@ -8492,6 +8590,8 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
+    - target_class:=orange
+    - -p
     - max_episode_s:=30.0
     background: true
   - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(60 Hz, 학생 입력만 · 압축 없음)
@@ -8541,6 +8641,186 @@ run:
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
     - episode_grasp_s_left
+  episode_grasp_s_pink_right:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/grasp_s_pink_right.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240_pink 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240_pink
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 grasp_s_pink_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm)
+      · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
+      진행한다'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 시작 검사 — 마스크 학생 A 묶음(right) ckpt · YOLO · 외부 파라미터 md5 · head_pose · /head_mask · /head_depth 설정 · 64 MB SHM 프로파일 (읽기만, 불일치면 실패)
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/scripts/ops/check_student_mask_A.py'
+    - --sides
+    - right
+  - note: 머리 깊이 노드(학생 입력 160x90 깊이 + RGB) — 묶음의 얼린 외부 파라미터 md5 를 검사하고, /head/joint_states 가 그 head_pose(± 4 틱) 밖이거나 낡으면 깊이를 내지 않는다(정책은 깊이 없음으로
+      멈춘다). 이미 떠 있으면 그대로
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/scripts/nodes/head_depth_node.py'
+    - --policy-dir
+    - '{repo}/deploy/policies/rh56f1/aglt/right_student1105mA'
+    background: true
+  - note: 머리 마스크 노드(YOLO11s-seg → 160x90 클래스 비트, /head_mask/image · /head_mask/config) — 묶음 mask.yolo md5 · conf · 인스턴스 규칙. 64 MB SHM 프로파일이 없으면
+      시작 거부. 양손 미션에도 하나만
+    argv:
+    - nice
+    - -n
+    - '5'
+    - '{repo}/.venv-yolo/bin/python'
+    - '{repo}/scripts/nodes/head_mask_node.py'
+    - --policy-dir
+    - '{repo}/deploy/policies/rh56f1/aglt/right_student1105mA'
+    background: true
+  - note: '[right] rh_aglt_r 노드(학생 rh56f1/aglt/right_student1105mA · 계약 rh56f1/aglt/right_approach_ap05) — 경로 M: 홈에서 접근 · 잡기(접근 15 s 안에 사전 파지
+      자리에 멈추지 못하면 멈춤) → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 깊이가 0.2 s 넘게 낡으면 멈춤 · 컵 = FP++ live(래치 · lift_hold 판정에만)'
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_student_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_right
+    - -p
+    - ns:=right
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cuda
+    - -p
+    - student_dir:={repo}/deploy/policies/rh56f1/aglt/right_student1105mA
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/source240_pink/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=0.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - target_class:=pink
+    - -p
+    - max_episode_s:=30.0
+    background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(60 Hz, 학생 입력만 · 압축 없음)
+    argv:
+    - bash
+    - -lc
+    - HAND_SIDES='right' CAMERA='/head_depth/image /head_depth/rgb /head_depth/config /camera/camera/color/camera_info /head/joint_states /head_mask/image
+      /head_mask/config' CAMERA_HZ=60 EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right
+      /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose
+      /objects/source240_pink/pose /objects/source240_pink/live_pose /policy_control/pd_right/applied /policy_control/right/obs /policy_control/right/action'
+      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_grasp_s_pink_right
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{runs}/cpu/episode_grasp_s_pink_right.csv'
+    background: true
+  - note: 에피소드 실행기 episode_runner_right — grasp_s_pink_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_s_pink_right)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_right
+    - -p
+    - episode:=config/episodes/grasp_s_pink_right.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_grasp_s_pink_right#11
+    - episode_grasp_s_pink_right#10
+    - episode_grasp_s_pink_right#8
+    - episode_grasp_s_pink_right#7
+    - episode_grasp_s_pink_right#6
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_grasp_s_pink_right
   episode_grasp_m_right:
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
     argv:
@@ -8669,6 +8949,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
+    - -p
+    - target_class:=blue
     - -p
     - max_episode_s:=30.0
     background: true
@@ -8847,6 +9129,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
+    - -p
+    - target_class:=orange
     - -p
     - max_episode_s:=30.0
     background: true
@@ -9079,6 +9363,8 @@ run:
     - -p
     - student_dir:={repo}/deploy/policies/rh56f1/place/right_student_place
     - -p
+    - target_class:=blue
+    - -p
     - max_mask_age_s:=0.35
     background: true
   - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(60 Hz, 학생 입력만 · 압축 없음)
@@ -9123,18 +9409,17 @@ run:
     - episode_place_m_right#9
     - episode_place_m_right#8
     - episode_place_m_right#5
-  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다)
+  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다). 이미 떠 있으면 인자만 보고 — 기본이면 그대로 둔다, --max-tilt 가 남았으면 그 PID 를 SIGTERM 한 뒤 띄운다(★11.11)
     argv:
-    - python3
-    - '{repo}/scripts/nodes/head_joint_publisher.py'
-    - --config
-    - '{repo}/config/head_camset_rh56f1.yaml'
-    - --port
-    - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
-    - --baud
-    - '1000000'
-    - --ids
-    - 1,2
+    - bash
+    - -lc
+    - 'p=$(pgrep -u "$(id -u)" -a -x ''python3(\.[0-9]+)?'' | awk ''/head_joint_publisher[.]py/ {print $1; exit}''); a=; if [ -n "$p" ]; then
+      a=$(tr ''\0'' '' '' 2>/dev/null </proc/$p/cmdline); [ -n "$a" ] || echo "목 드라이버 PID $p 가 방금 끝났다(cmdline 없음) — 새로 띄운다"; fi; if [ -n "$a"
+      ]; then case "$a" in *--max-tilt*) echo "목 드라이버 PID $p 가 기본과 다른 인자로 떠 있다 — SIGTERM 후 기본으로 다시: $a"; kill -TERM $p; for i in $(seq 50); do
+      kill -0 $p 2>/dev/null || break; sleep 0.1; done; if kill -0 $p 2>/dev/null; then echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할
+      것"; exit 1; fi;; *) echo "기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다: $a"; tail --pid=$p -f /dev/null; echo "❌ 지켜보던 목 드라이버 PID
+      $p 가 끝났다"; exit 1;; esac; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1.yaml --port
+      /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
     background: true
   - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
     argv:
@@ -9332,6 +9617,8 @@ run:
     - -p
     - student_dir:={repo}/deploy/policies/rh56f1/place/left_student_place
     - -p
+    - target_class:=orange
+    - -p
     - max_mask_age_s:=0.35
     background: true
   - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(60 Hz, 학생 입력만 · 압축 없음)
@@ -9376,18 +9663,17 @@ run:
     - episode_place_m_left#9
     - episode_place_m_left#8
     - episode_place_m_left#5
-  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다)
+  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다). 이미 떠 있으면 인자만 보고 — 기본이면 그대로 둔다, --max-tilt 가 남았으면 그 PID 를 SIGTERM 한 뒤 띄운다(★11.11)
     argv:
-    - python3
-    - '{repo}/scripts/nodes/head_joint_publisher.py'
-    - --config
-    - '{repo}/config/head_camset_rh56f1.yaml'
-    - --port
-    - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
-    - --baud
-    - '1000000'
-    - --ids
-    - 1,2
+    - bash
+    - -lc
+    - 'p=$(pgrep -u "$(id -u)" -a -x ''python3(\.[0-9]+)?'' | awk ''/head_joint_publisher[.]py/ {print $1; exit}''); a=; if [ -n "$p" ]; then
+      a=$(tr ''\0'' '' '' 2>/dev/null </proc/$p/cmdline); [ -n "$a" ] || echo "목 드라이버 PID $p 가 방금 끝났다(cmdline 없음) — 새로 띄운다"; fi; if [ -n "$a"
+      ]; then case "$a" in *--max-tilt*) echo "목 드라이버 PID $p 가 기본과 다른 인자로 떠 있다 — SIGTERM 후 기본으로 다시: $a"; kill -TERM $p; for i in $(seq 50); do
+      kill -0 $p 2>/dev/null || break; sleep 0.1; done; if kill -0 $p 2>/dev/null; then echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할
+      것"; exit 1; fi;; *) echo "기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다: $a"; tail --pid=$p -f /dev/null; echo "❌ 지켜보던 목 드라이버 PID
+      $p 가 끝났다"; exit 1;; esac; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1.yaml --port
+      /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
     background: true
   - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
     argv:
@@ -9401,6 +9687,780 @@ run:
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
     - episode_place_m_left
+  episode_place_m_blue_h2_right:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세(config/cup_holder_poses_5090_v1.yaml)에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/place_m_blue_h2_right.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240_blue 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240_blue
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 place_m_blue_h2_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
+      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
+      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_right
+    - -p
+    - ns:=right
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/right_rcg04/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/source240_blue/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: 시작 검사 — 놓기 학생 묶음(right) ckpt · 외부 파라미터 · check_meta · 목 동역학 · 이 에피소드 목 드라이버 --max-tilt ≥ 82 · 홀더 CAD · YOLO · 64 MB SHM (읽기만, 불일치 ·
+      묶음 없음이면 실패)
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/scripts/ops/check_place_student.py'
+    - --student-dir
+    - '{repo}/deploy/policies/rh56f1/place/right_student_place'
+    - --side
+    - right
+    - --contract
+    - '{repo}/deploy/policies/rh56f1/place/right_n10_e4000/rh_place_contract.json'
+    - --episode
+    - place_m_blue_h2_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control_cam5090.yaml'
+  - note: 목 드라이버 정지(head_home) — 놓기 학생 머리가 tilt 82 까지 쓰므로 상한만 바꿔 다시 띄운다
+    stop:
+    - head_home#0
+    - episode_place_m_right#8
+    - episode_place_m_right#16
+    - episode_place_m_left#8
+    - episode_place_m_left#16
+    - head_sweep#1
+    - head_sweep#4
+  - note: 목 드라이버 — 놓기 에피소드만 --max-tilt 82(속도 · 가속 · 처짐 여유는 기본). 이 상한은 이 에피소드 동안 이산 head_move 요청에도 같이 풀린다(드라이버가 한 상한으로 둘 다 검사). 에피소드 끝 꼬리가 기본 드라이버
+      + head_home 으로 되돌린다
+    argv:
+    - python3
+    - '{repo}/scripts/nodes/head_joint_publisher.py'
+    - --config
+    - '{repo}/config/head_camset_rh56f1.yaml'
+    - --port
+    - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
+    - --baud
+    - '1000000'
+    - --ids
+    - 1,2
+    - --max-tilt
+    - '82'
+    background: true
+  - note: 머리 마스크 노드(YOLO11s-seg → 160x90 클래스 비트, /head_mask/image · /head_mask/config) — 놓기 학생 묶음 mask.yolo md5 · conf · 인스턴스 규칙. 64 MB SHM 프로파일이
+      없으면 시작 거부
+    argv:
+    - nice
+    - -n
+    - '5'
+    - '{repo}/.venv-yolo/bin/python'
+    - '{repo}/scripts/nodes/head_mask_node.py'
+    - --policy-dir
+    - '{repo}/deploy/policies/rh56f1/place/right_student_place'
+    background: true
+  - note: '[right] rh_place_r 노드(rh56f1/place/right_n10_e4000) — 홀더 2 · 학생 rh56f1/place/right_student_place(머리 look_at → /head/target_stream)
+      · 놓은 뒤 스스로 끝남 · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)'
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_place_student_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_place_node_right
+    - -p
+    - ns:=right_place
+    - -p
+    - episode_topic:=/policy_control/right/episode
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/place/right_n10_e4000/rh_place_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cuda
+    - -p
+    - cup_topic:=/objects/source240_blue/live_pose
+    - -p
+    - holder:=2
+    - -p
+    - student_dir:={repo}/deploy/policies/rh56f1/place/right_student_place
+    - -p
+    - target_class:=blue
+    - -p
+    - max_mask_age_s:=0.35
+    background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(60 Hz, 학생 입력만 · 압축 없음)
+    argv:
+    - bash
+    - -lc
+    - HAND_SIDES='right' CAMERA='/head_depth/image /head_depth/rgb /head_depth/config /camera/camera/color/camera_info /head/joint_states /head_mask/image
+      /head_mask/config' CAMERA_HZ=60 EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right
+      /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose
+      /objects/source240_blue/pose /objects/source240_blue/live_pose /objects/cup_holder_2/pose /policy_control/pd_right/applied /policy_control/right/obs
+      /policy_control/right/action /head/target_stream /head/stream_log' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_place_m_blue_h2_right
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{runs}/cpu/episode_place_m_blue_h2_right.csv'
+    background: true
+  - note: 에피소드 실행기 episode_runner_right — place_m_blue_h2_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:place_m_blue_h2_right)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_right
+    - -p
+    - episode:=config/episodes/place_m_blue_h2_right.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_place_m_blue_h2_right#13
+    - episode_place_m_blue_h2_right#12
+    - episode_place_m_blue_h2_right#10
+    - episode_place_m_blue_h2_right#9
+    - episode_place_m_blue_h2_right#8
+    - episode_place_m_blue_h2_right#5
+  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다). 이미 떠 있으면 인자만 보고 — 기본이면 그대로 둔다, --max-tilt 가 남았으면 그 PID 를 SIGTERM 한 뒤 띄운다(★11.11)
+    argv:
+    - bash
+    - -lc
+    - 'p=$(pgrep -u "$(id -u)" -a -x ''python3(\.[0-9]+)?'' | awk ''/head_joint_publisher[.]py/ {print $1; exit}''); a=; if [ -n "$p" ]; then
+      a=$(tr ''\0'' '' '' 2>/dev/null </proc/$p/cmdline); [ -n "$a" ] || echo "목 드라이버 PID $p 가 방금 끝났다(cmdline 없음) — 새로 띄운다"; fi; if [ -n "$a"
+      ]; then case "$a" in *--max-tilt*) echo "목 드라이버 PID $p 가 기본과 다른 인자로 떠 있다 — SIGTERM 후 기본으로 다시: $a"; kill -TERM $p; for i in $(seq 50); do
+      kill -0 $p 2>/dev/null || break; sleep 0.1; done; if kill -0 $p 2>/dev/null; then echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할
+      것"; exit 1; fi;; *) echo "기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다: $a"; tail --pid=$p -f /dev/null; echo "❌ 지켜보던 목 드라이버 PID
+      $p 가 끝났다"; exit 1;; esac; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1.yaml --port
+      /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
+    background: true
+  - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
+    argv:
+    - python3
+    - '{repo}/scripts/head_move.py'
+    execute_args:
+    - --execute
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_place_m_blue_h2_right
+  episode_place_m_pink_h1_right:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세(config/cup_holder_poses_5090_v1.yaml)에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/place_m_pink_h1_right.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240_pink 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240_pink
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 place_m_pink_h1_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
+      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
+      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_right
+    - -p
+    - ns:=right
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/right_rcg04/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/source240_pink/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: 시작 검사 — 놓기 학생 묶음(right) ckpt · 외부 파라미터 · check_meta · 목 동역학 · 이 에피소드 목 드라이버 --max-tilt ≥ 82 · 홀더 CAD · YOLO · 64 MB SHM (읽기만, 불일치 ·
+      묶음 없음이면 실패)
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/scripts/ops/check_place_student.py'
+    - --student-dir
+    - '{repo}/deploy/policies/rh56f1/place/right_student_place'
+    - --side
+    - right
+    - --contract
+    - '{repo}/deploy/policies/rh56f1/place/right_n10_e4000/rh_place_contract.json'
+    - --episode
+    - place_m_pink_h1_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control_cam5090.yaml'
+  - note: 목 드라이버 정지(head_home) — 놓기 학생 머리가 tilt 82 까지 쓰므로 상한만 바꿔 다시 띄운다
+    stop:
+    - head_home#0
+    - episode_place_m_right#8
+    - episode_place_m_right#16
+    - episode_place_m_left#8
+    - episode_place_m_left#16
+    - episode_place_m_blue_h2_right#8
+    - episode_place_m_blue_h2_right#16
+    - head_sweep#1
+    - head_sweep#4
+  - note: 목 드라이버 — 놓기 에피소드만 --max-tilt 82(속도 · 가속 · 처짐 여유는 기본). 이 상한은 이 에피소드 동안 이산 head_move 요청에도 같이 풀린다(드라이버가 한 상한으로 둘 다 검사). 에피소드 끝 꼬리가 기본 드라이버
+      + head_home 으로 되돌린다
+    argv:
+    - python3
+    - '{repo}/scripts/nodes/head_joint_publisher.py'
+    - --config
+    - '{repo}/config/head_camset_rh56f1.yaml'
+    - --port
+    - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
+    - --baud
+    - '1000000'
+    - --ids
+    - 1,2
+    - --max-tilt
+    - '82'
+    background: true
+  - note: 머리 마스크 노드(YOLO11s-seg → 160x90 클래스 비트, /head_mask/image · /head_mask/config) — 놓기 학생 묶음 mask.yolo md5 · conf · 인스턴스 규칙. 64 MB SHM 프로파일이
+      없으면 시작 거부
+    argv:
+    - nice
+    - -n
+    - '5'
+    - '{repo}/.venv-yolo/bin/python'
+    - '{repo}/scripts/nodes/head_mask_node.py'
+    - --policy-dir
+    - '{repo}/deploy/policies/rh56f1/place/right_student_place'
+    background: true
+  - note: '[right] rh_place_r 노드(rh56f1/place/right_n10_e4000) — 홀더 1 · 학생 rh56f1/place/right_student_place(머리 look_at → /head/target_stream)
+      · 놓은 뒤 스스로 끝남 · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)'
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_place_student_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_place_node_right
+    - -p
+    - ns:=right_place
+    - -p
+    - episode_topic:=/policy_control/right/episode
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/place/right_n10_e4000/rh_place_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cuda
+    - -p
+    - cup_topic:=/objects/source240_pink/live_pose
+    - -p
+    - holder:=1
+    - -p
+    - student_dir:={repo}/deploy/policies/rh56f1/place/right_student_place
+    - -p
+    - target_class:=pink
+    - -p
+    - max_mask_age_s:=0.35
+    background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(60 Hz, 학생 입력만 · 압축 없음)
+    argv:
+    - bash
+    - -lc
+    - HAND_SIDES='right' CAMERA='/head_depth/image /head_depth/rgb /head_depth/config /camera/camera/color/camera_info /head/joint_states /head_mask/image
+      /head_mask/config' CAMERA_HZ=60 EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right
+      /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose
+      /objects/source240_pink/pose /objects/source240_pink/live_pose /objects/cup_holder_1/pose /policy_control/pd_right/applied /policy_control/right/obs
+      /policy_control/right/action /head/target_stream /head/stream_log' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_place_m_pink_h1_right
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{runs}/cpu/episode_place_m_pink_h1_right.csv'
+    background: true
+  - note: 에피소드 실행기 episode_runner_right — place_m_pink_h1_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:place_m_pink_h1_right)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_right
+    - -p
+    - episode:=config/episodes/place_m_pink_h1_right.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_place_m_pink_h1_right#13
+    - episode_place_m_pink_h1_right#12
+    - episode_place_m_pink_h1_right#10
+    - episode_place_m_pink_h1_right#9
+    - episode_place_m_pink_h1_right#8
+    - episode_place_m_pink_h1_right#5
+  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다). 이미 떠 있으면 인자만 보고 — 기본이면 그대로 둔다, --max-tilt 가 남았으면 그 PID 를 SIGTERM 한 뒤 띄운다(★11.11)
+    argv:
+    - bash
+    - -lc
+    - 'p=$(pgrep -u "$(id -u)" -a -x ''python3(\.[0-9]+)?'' | awk ''/head_joint_publisher[.]py/ {print $1; exit}''); a=; if [ -n "$p" ]; then
+      a=$(tr ''\0'' '' '' 2>/dev/null </proc/$p/cmdline); [ -n "$a" ] || echo "목 드라이버 PID $p 가 방금 끝났다(cmdline 없음) — 새로 띄운다"; fi; if [ -n "$a"
+      ]; then case "$a" in *--max-tilt*) echo "목 드라이버 PID $p 가 기본과 다른 인자로 떠 있다 — SIGTERM 후 기본으로 다시: $a"; kill -TERM $p; for i in $(seq 50); do
+      kill -0 $p 2>/dev/null || break; sleep 0.1; done; if kill -0 $p 2>/dev/null; then echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할
+      것"; exit 1; fi;; *) echo "기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다: $a"; tail --pid=$p -f /dev/null; echo "❌ 지켜보던 목 드라이버 PID
+      $p 가 끝났다"; exit 1;; esac; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1.yaml --port
+      /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
+    background: true
+  - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
+    argv:
+    - python3
+    - '{repo}/scripts/head_move.py'
+    execute_args:
+    - --execute
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_place_m_pink_h1_right
+  episode_place_m_pink_h2_right:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세(config/cup_holder_poses_5090_v1.yaml)에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/place_m_pink_h2_right.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_right|episode_runner_right)$'''
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240_pink 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 120 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240_pink
+    - --wait
+    - '120'
+    - --require-all
+  - note: '★[에피소드 place_m_pink_h2_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
+      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
+      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_right
+    - -p
+    - ns:=right
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/right_rcg04/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/source240_pink/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: 시작 검사 — 놓기 학생 묶음(right) ckpt · 외부 파라미터 · check_meta · 목 동역학 · 이 에피소드 목 드라이버 --max-tilt ≥ 82 · 홀더 CAD · YOLO · 64 MB SHM (읽기만, 불일치 ·
+      묶음 없음이면 실패)
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/scripts/ops/check_place_student.py'
+    - --student-dir
+    - '{repo}/deploy/policies/rh56f1/place/right_student_place'
+    - --side
+    - right
+    - --contract
+    - '{repo}/deploy/policies/rh56f1/place/right_n10_e4000/rh_place_contract.json'
+    - --episode
+    - place_m_pink_h2_right
+    - --mission
+    - '{repo}/config/mission_rh56f1_control_cam5090.yaml'
+  - note: 목 드라이버 정지(head_home) — 놓기 학생 머리가 tilt 82 까지 쓰므로 상한만 바꿔 다시 띄운다
+    stop:
+    - head_home#0
+    - episode_place_m_right#8
+    - episode_place_m_right#16
+    - episode_place_m_left#8
+    - episode_place_m_left#16
+    - episode_place_m_blue_h2_right#8
+    - episode_place_m_blue_h2_right#16
+    - episode_place_m_pink_h1_right#8
+    - episode_place_m_pink_h1_right#16
+    - head_sweep#1
+    - head_sweep#4
+  - note: 목 드라이버 — 놓기 에피소드만 --max-tilt 82(속도 · 가속 · 처짐 여유는 기본). 이 상한은 이 에피소드 동안 이산 head_move 요청에도 같이 풀린다(드라이버가 한 상한으로 둘 다 검사). 에피소드 끝 꼬리가 기본 드라이버
+      + head_home 으로 되돌린다
+    argv:
+    - python3
+    - '{repo}/scripts/nodes/head_joint_publisher.py'
+    - --config
+    - '{repo}/config/head_camset_rh56f1.yaml'
+    - --port
+    - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
+    - --baud
+    - '1000000'
+    - --ids
+    - 1,2
+    - --max-tilt
+    - '82'
+    background: true
+  - note: 머리 마스크 노드(YOLO11s-seg → 160x90 클래스 비트, /head_mask/image · /head_mask/config) — 놓기 학생 묶음 mask.yolo md5 · conf · 인스턴스 규칙. 64 MB SHM 프로파일이
+      없으면 시작 거부
+    argv:
+    - nice
+    - -n
+    - '5'
+    - '{repo}/.venv-yolo/bin/python'
+    - '{repo}/scripts/nodes/head_mask_node.py'
+    - --policy-dir
+    - '{repo}/deploy/policies/rh56f1/place/right_student_place'
+    background: true
+  - note: '[right] rh_place_r 노드(rh56f1/place/right_n10_e4000) — 홀더 2 · 학생 rh56f1/place/right_student_place(머리 look_at → /head/target_stream)
+      · 놓은 뒤 스스로 끝남 · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)'
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_place_student_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_place_node_right
+    - -p
+    - ns:=right_place
+    - -p
+    - episode_topic:=/policy_control/right/episode
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/place/right_n10_e4000/rh_place_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cuda
+    - -p
+    - cup_topic:=/objects/source240_pink/live_pose
+    - -p
+    - holder:=2
+    - -p
+    - student_dir:={repo}/deploy/policies/rh56f1/place/right_student_place
+    - -p
+    - target_class:=pink
+    - -p
+    - max_mask_age_s:=0.35
+    background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(60 Hz, 학생 입력만 · 압축 없음)
+    argv:
+    - bash
+    - -lc
+    - HAND_SIDES='right' CAMERA='/head_depth/image /head_depth/rgb /head_depth/config /camera/camera/color/camera_info /head/joint_states /head_mask/image
+      /head_mask/config' CAMERA_HZ=60 EXTRA='/policy_control/joint_target /policy_control/status/pd_right /policy_control/status/rh_aglt_node_right
+      /policy_control/status/rh_place_node_right /policy_control/status/episode_runner_right /policy_control/right/episode /episode/right/objects/CUP/pose
+      /objects/source240_pink/pose /objects/source240_pink/live_pose /objects/cup_holder_2/pose /policy_control/pd_right/applied /policy_control/right/obs
+      /policy_control/right/action /head/target_stream /head/stream_log' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_place_m_pink_h2_right
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{runs}/cpu/episode_place_m_pink_h2_right.csv'
+    background: true
+  - note: 에피소드 실행기 episode_runner_right — place_m_pink_h2_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:place_m_pink_h2_right)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -r
+    - __node:=episode_runner_right
+    - -p
+    - episode:=config/episodes/place_m_pink_h2_right.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_place_m_pink_h2_right#13
+    - episode_place_m_pink_h2_right#12
+    - episode_place_m_pink_h2_right#10
+    - episode_place_m_pink_h2_right#9
+    - episode_place_m_pink_h2_right#8
+    - episode_place_m_pink_h2_right#5
+  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다). 이미 떠 있으면 인자만 보고 — 기본이면 그대로 둔다, --max-tilt 가 남았으면 그 PID 를 SIGTERM 한 뒤 띄운다(★11.11)
+    argv:
+    - bash
+    - -lc
+    - 'p=$(pgrep -u "$(id -u)" -a -x ''python3(\.[0-9]+)?'' | awk ''/head_joint_publisher[.]py/ {print $1; exit}''); a=; if [ -n "$p" ]; then
+      a=$(tr ''\0'' '' '' 2>/dev/null </proc/$p/cmdline); [ -n "$a" ] || echo "목 드라이버 PID $p 가 방금 끝났다(cmdline 없음) — 새로 띄운다"; fi; if [ -n "$a"
+      ]; then case "$a" in *--max-tilt*) echo "목 드라이버 PID $p 가 기본과 다른 인자로 떠 있다 — SIGTERM 후 기본으로 다시: $a"; kill -TERM $p; for i in $(seq 50); do
+      kill -0 $p 2>/dev/null || break; sleep 0.1; done; if kill -0 $p 2>/dev/null; then echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할
+      것"; exit 1; fi;; *) echo "기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다: $a"; tail --pid=$p -f /dev/null; echo "❌ 지켜보던 목 드라이버 PID
+      $p 가 끝났다"; exit 1;; esac; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1.yaml --port
+      /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
+    background: true
+  - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
+    argv:
+    - python3
+    - '{repo}/scripts/head_move.py'
+    execute_args:
+    - --execute
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_place_m_pink_h2_right
   head_control:
   - note: 목 pan · tilt 변경 후 실측 정착 확인
     argv:

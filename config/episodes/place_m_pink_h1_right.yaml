@@ -1,0 +1,21 @@
+# 이 파일은 scripts/ops/make_rh56f1_missions.py 가 place_m_right.yaml 에서 컵 · 홀더만 바꿔 만든다 — 손으로 고치지 말 것(--check).
+# 놓기 학생 오른손 pink · 홀더 1 판(★11.11 콘솔 색 · 홀더 버튼) — 컵 source240_pink. 흐름은 place_m_right 와 같다.
+episode: {name: place_m_pink_h1_right, version: 1}
+objects:
+  CUP: {topic: /objects/source240_pink/pose}
+holders: {PLACE_HOLDER: 1}
+holder_poses: config/cup_holder_poses_5090_v1.yaml
+policies:
+  rh_aglt_r: {policy: rh56f1/aglt/right_approach_ap05, kind: aglt, side: right, approach_grasp: {handoff: 1}, handoff: rh56f1/aglt/right_rcg04, cup_obs_offset_base_m: [-0.0116, 0.0338, 0.0]}   # ★11.10 사용자: 오른손 z 보정만 0 (x·y 유지) — 높이 영향 분리 시험 (이전 [-0.0116, 0.0338, -0.0143])
+  rh_place_r: {policy: rh56f1/place/right_n10_e4000, kind: place, side: right, student: rh56f1/place/right_student_place}
+trajectories:
+  go_home: {kind: rehome, sides: [right]}
+failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 rehome 으로 복구한다(컵을 쥔 채 rehome 은 거부된다).
+sequence:
+  - {id: go_home_start, type: trajectory, name: go_home, expect: {pose: HOME}, checkpoint: HOME_START}
+  - {id: scene, type: snapshot}
+  - {id: grasp_lift, type: policy, name: rh_aglt_r, target_object: CUP, policy_object: source240_real, expect: {right_hand: CUP}}
+  - {id: place_cup, type: policy, name: rh_place_r, source_object: CUP, target_holder: PLACE_HOLDER, policy_object: source240_real,
+     expect: {right_hand: EMPTY, cup_placed: true}}
+  - {id: go_home_end, type: trajectory, name: go_home, expect: {pose: HOME}}
+  - {id: done, type: terminal, result: SUCCESS}

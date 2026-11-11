@@ -118,6 +118,18 @@ def test_chain_carries_first_then_starts_the_policy_from_zero():
 
 
 @pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_carry_anchor_is_lifted_and_start_err_is_measured_from_the_lifted_anchor():
+    """★11.11 A안: Mover 앵커만 +CARRY_LIFT_M z. start_ok 오차는 Mover 앵커 기준이라 올린 15 mm 가 err 에 들어가지 않는다."""
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup()
+    ch.rc_chain = (RC, mch)
+    ch.reset(meas(q), holder=holder, held=(q, hand), attach=att)
+    base = P.PC.carry_target(holder, P.origin_z_of(c), c.ready_carry["dz"])
+    assert P.CARRY_LIFT_M == pytest.approx(0.015)
+    assert np.allclose(ch.rcarry.target, base + [0.0, 0.0, P.CARRY_LIFT_M])
+    assert np.allclose(ch.rcarry.mv.pa[0].double().numpy(), ch.rcarry.target, atol=1e-6)   # _meas_err 의 기준점
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
 @pytest.mark.parametrize("policy", ["right_n07", "right_n10_e4000"])
 def test_carry_dq_never_exceeds_the_action_limit(policy):
     """★11.10 Mover 관절 상한 = k_arm·arm_ema — 행동이 ±1 에 잘리지 않아 계획대로 도착한다(실기 161342: 잘린 틱 95 %, 끝 err 48 mm)."""
@@ -157,3 +169,264 @@ def test_carry_that_does_not_reach_the_start_does_not_start_the_policy():
     with pytest.raises(P.RhPlaceError, match="시작 분포 밖"):
         ch.step(meas(q))
     assert pol.n == 0
+    assert d["still"] == "track"                                     # ★11.11 팔이 명령을 못 따라간다 → 이탈 가드가 먼저 끊는다
+
+
+def _run_carry(policy, wobble):
+    """★11.11 이송 끝까지 굴린다. 실측 q = 명령 + wobble(틱) → (팔 행동 열, 끝 as_dict).
+    Mover 가 끝난 뒤 2 틱 동안 실측 q 가 실제로 흔들리다 멈춘다(arm_qd 는 늘 0.2 — 판정에 안 쓴다)."""
+    from dataclasses import replace
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup(policy)
+    ch.rc_chain = (RC, mch)
+    ch.reset(meas(q), holder=holder, held=(q, hand), attach=att)
+    acts, k = [], 0
+    while ch.carrying:
+        jig = 0.01 * (k % 2) if not ch.rcarry.moving and k <= ch.rcarry.t + 2 else 0.0   # Mover 끝 뒤 2 틱 흔들림
+        mm = meas(q + wobble(k) + jig)
+        mm["arm"] = replace(mm["arm"], arm_qd=np.full(7, 0.2))
+        _, a, _ = ch.step(mm)
+        acts.append(a[:7].copy())
+        q = ch.dec.state["arm"].arm_target.copy()
+        k += 1
+    return np.asarray(acts), ch.rcarry.as_dict()
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_carry_follows_the_command_not_the_measured_arm_then_waits_until_still():
+    """★11.11 사용자 "mover 말고 ready-approach 처럼 명령 목표로": 실측 q 가 떨려도 이송 행동은 같다(개루프).
+    Mover 가 끝나면 팔 행동 0 으로 실측이 STILL_TICKS 연속 멈출 때까지 기다린 뒤 정책으로 넘긴다."""
+    clean, d0 = _run_carry("right_n10_e4000", lambda k: np.zeros(7))
+    shaky, d1 = _run_carry("right_n10_e4000", lambda k: 0.014 * np.sin(2 * np.pi * 1.75 * k / 60.0) * np.ones(7))
+    t = d0["t"]                                                      # 이동 구간은 개루프 — 같다. 멈춤 확인 구간은 처짐 보정이 실측을 본다
+    assert d1["t"] == t and np.allclose(clean[:t], shaky[:t], atol=1e-6)
+    assert d0["arrived"] and d0["start_ok"] and d0["still"] == "ok"
+    assert np.allclose(clean[t:], 0.0, atol=1e-9) and d0["still_ticks"] == len(clean) - t   # 반올림 1e-15 허용(11.11 앵커 +15 mm)
+    assert d0["still_ticks"] >= RCY.STILL_TICKS + 2                  # 흔들리는 2 틱 동안은 세지 않는다
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+@pytest.mark.parametrize("off,fails", [(0.03, False), (0.15, True)])
+def test_carry_aborts_when_the_arm_stays_off_the_command(off, fails):
+    """★11.11 이탈 가드: held(디코더 시작 명령)와 실측이 off 만큼 어긋난 채 이송 — TRACK_ABORT_RAD 넘으면
+    TRACK_ABORT_TICKS 틱에 이송을 끝내고 start_ok False("track"). 184024 시작 차이 0.026 rad 은 걸리지 않는다."""
+    from dataclasses import replace
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup("right_n10_e4000")
+    ch.rc_chain = (RC, mch)
+    dq = np.zeros(7)
+    dq[0] = off
+    ch.reset(meas(q + dq), holder=holder, held=(q, hand), attach=att)
+    n = 0
+    while ch.carrying and n < 2000:
+        mm = meas(ch.dec.state["arm"].arm_target + dq)
+        mm["arm"] = replace(mm["arm"], arm_qd=np.zeros(7))
+        cmd_before = ch.dec.state["arm"].arm_target.copy()
+        _, _, tg = ch.step(mm)
+        n += 1
+    d = ch.rcarry.as_dict()
+    assert not d["on"]
+    assert d["track_dev_max"] == pytest.approx(off, abs=1e-6)          # L1 — 이송 중 이탈 최대가 로그에 남는다
+    if fails:
+        assert d["still"] == "track" and not d["start_ok"] and not d["carry_ok"] and d["t"] == RCY.TRACK_ABORT_TICKS - 1   # 발동 틱은 Mover 를 굴리지 않는다
+        meas_q = np.asarray(mm["arm"].arm_q, float)                     # H1 — 발동 틱 목표 = 실측(현 위치, pd 튐 0)
+        assert np.allclose(tg["arm"][0], meas_q) and np.allclose(ch.dec.state["arm"].arm_target, meas_q)
+        assert np.max(np.abs(cmd_before - meas_q)) == pytest.approx(off)   # 덮기 전 명령은 실측보다 off 앞서 있었다
+    else:
+        assert d["still"] != "track" and d["t"] > RCY.TRACK_ABORT_TICKS and d["carry_ok"]
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_track_guard_also_runs_while_waiting_for_still():
+    """★11.11 M2 — Mover 가 끝난 뒤 멈춤 확인 구간에서 팔이 명령에서 벗어나도 TRACK_ABORT_TICKS 에 "track"."""
+    from dataclasses import replace
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup("right_n10_e4000")
+    ch.rc_chain = (RC, mch)
+    ch.reset(meas(q), holder=holder, held=(q, hand), attach=att)
+    off = np.zeros(7)
+    k = 0
+    while ch.carrying and k < 2000:
+        if not ch.rcarry.moving:
+            off[3] = 0.2                                                # 이송 끝 뒤 팔이 밀려 났다
+            k += 1
+        mm = meas(ch.dec.state["arm"].arm_target + off)
+        mm["arm"] = replace(mm["arm"], arm_qd=np.zeros(7))
+        ch.step(mm)
+    d = ch.rcarry.as_dict()
+    assert d["still"] == "track" and not d["start_ok"] and not d["carry_ok"]
+    assert k == RCY.TRACK_ABORT_TICKS and d["still_ticks"] == RCY.TRACK_ABORT_TICKS - 1
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+@pytest.mark.parametrize("field", ["arm_q", "arm_qd"])
+def test_nan_measurement_is_not_silent(field):
+    """★11.11 M1 — 실측 q 가 NaN 이면 이탈로 세어 "track", 팔 목표는 유한(NaN 관절은 직전 명령).
+    arm_qd 는 멈춤 판정에 안 쓴다 — NaN 이어도 실측 q 가 멈췄으면 "ok"(q 차분 NaN 은 아래 test_q_nan_while_waiting_is_not_still)."""
+    from dataclasses import replace
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup("right_n10_e4000")
+    ch.rc_chain = (RC, mch)
+    ch.reset(meas(q), holder=holder, held=(q, hand), attach=att)
+    while ch.carrying:
+        cmd = ch.dec.state["arm"].arm_target.copy()
+        mm = meas(cmd)
+        bad = cmd.copy() if field == "arm_q" else np.zeros(7)
+        bad[2] = np.nan
+        mm["arm"] = replace(mm["arm"], **{field: bad}) if field == "arm_qd" else replace(mm["arm"], arm_q=bad, arm_qd=np.zeros(7))
+        _, _, tg = ch.step(mm)
+    d = ch.rcarry.as_dict()
+    if field == "arm_q":
+        assert d["still"] == "track" and d["t"] == RCY.TRACK_ABORT_TICKS - 1 and d["track_dev_max"] is None
+        assert np.all(np.isfinite(tg["arm"][0])) and np.all(np.isfinite(ch.dec.state["arm"].arm_target))
+    else:
+        assert d["still"] == "ok" and d["start_ok"]
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_q_nan_while_waiting_is_not_still():
+    """★11.11 Mover 끝 뒤 실측 q 한 관절이 NaN 이면 멈춤으로 세지 않는다(arm_qd 0 이어도) — 이탈 가드가 "track" 으로 끊는다."""
+    from dataclasses import replace
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup("right_n10_e4000")
+    ch.rc_chain = (RC, mch)
+    ch.reset(meas(q), holder=holder, held=(q, hand), attach=att)
+    while ch.carrying:
+        cmd = ch.dec.state["arm"].arm_target.copy()
+        if not ch.rcarry.moving:
+            cmd[2] = np.nan
+        mm = meas(cmd)
+        mm["arm"] = replace(mm["arm"], arm_q=cmd, arm_qd=np.zeros(7))
+        ch.step(mm)
+    d = ch.rcarry.as_dict()
+    assert d["still"] == "track" and d["sag_ticks"] == 0
+
+
+def _run_sag_plant(sag_j7, hold_qd_ticks=0, sag_max_rad=None, out=None, alpha=(1 / 60.0) / 0.14):
+    """★11.11 처짐 플랜트: 실측 q 가 (명령 − 처짐)을 1차 지연(τ 0.14 s, 60 Hz)으로 따라간다. q̇ = 실측 차분.
+    멈춤 확인 첫 hold_qd_ticks 틱은 q̇ 를 0.2 rad/s 로 거짓 보고(판정은 q 차분이라 무시돼야 한다) → (멈춤 확인 구간 팔 행동, 보고 q̇, 끝 as_dict, 끝 q_ref − q)."""
+    from dataclasses import replace
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup("right_n10_e4000")
+    ch.rc_chain = (RC, mch)
+    sag = np.zeros(7)
+    sag[6] = sag_j7
+    ch.reset(meas(q - sag), holder=holder, held=(q, hand), attach=att)
+    ch.rcarry.track_abort_rad = 0.2                    # sim 런타임 값 — 지연 + 처짐을 이동 중 이탈로 끊지 않는다
+    if sag_max_rad is not None:
+        ch.rcarry.sag_max_rad = sag_max_rad
+    qm, qd, acts, qds, n = q - sag, np.zeros(7), [], [], 0
+    while ch.carrying and n < 3000:
+        moving = ch.rcarry.moving
+        if not moving and hold_qd_ticks > 0:
+            qd_rep, hold_qd_ticks = np.full(7, 0.2), hold_qd_ticks - 1
+        else:
+            qd_rep = qd
+        mm = meas(qm)
+        mm["arm"] = replace(mm["arm"], arm_qd=qd_rep)
+        _, a, tg = ch.step(mm)
+        q_seen = qm
+        if not moving:
+            acts.append(a[:7].copy())
+            qds.append(ch.rcarry.qd_est)                     # 판정에 쓴 q 차분 속도(보고 q̇ 는 안 쓴다)
+        q_new = qm + alpha * (ch.dec.state["arm"].arm_target - sag - qm)
+        qd, qm, n = (q_new - qm) * 60.0, q_new, n + 1
+    d = ch.rcarry.as_dict()
+    if out is not None:
+        out.update(ch=ch, tg=tg)
+    return np.asarray(acts), np.asarray(qds), d, ch.rcarry.q_ref - q_seen     # 끝 틱에 본 실측 기준
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_sag_correction_closes_steady_droop_without_integrating_while_moving():
+    """★11.11 안 A — 처짐 j7 0.06 rad: 보정 뒤 max|q_ref − q| < SAG_DONE_RAD 로 "ok", 누적은 SAG_MAX_RAD 안,
+    실측이 움직이는(q̇ ≥ STILL_QD_RAD_S) 틱에는 팔 행동 0(적분 없음)."""
+    acts, qds, d, err = _run_sag_plant(0.06, hold_qd_ticks=10)
+    assert d["still"] == "ok" and d["start_ok"] and d["carry_ok"]
+    assert np.max(np.abs(err)) < RCY.SAG_DONE_RAD
+    assert max(d["sag_max"]) <= RCY.SAG_MAX_RAD + 1e-9 and d["sag_max"][6] > 0.05
+    moving = qds >= RCY.STILL_QD_RAD_S
+    assert moving.any() and np.all(acts[moving] == 0.0)            # 보정이 만든 실측 움직임 틱은 적분하지 않는다
+    assert d["sag_ticks"] == int((~moving).sum())
+    assert d["still_ticks"] <= RCY.STILL_MAX_TICKS
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_sag_correction_ignores_nonzero_reported_qd():
+    """★11.11 sim Newton joint_vel 처럼 정지 중에도 q̇ 0.2 rad/s 를 계속 보고해도 실측 q 가 멈추면 보정이 돌고 "ok"."""
+    acts, qds, d, err = _run_sag_plant(0.06, hold_qd_ticks=10 ** 6)
+    assert d["still"] == "ok" and d["sag_ticks"] > 0 and np.max(np.abs(err)) < RCY.SAG_DONE_RAD
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_sag_correction_never_exceeds_the_cap():
+    """★11.11 처짐 0.12 rad(상한 0.08 넘음) — 누적이 SAG_MAX_RAD 에 멈추고 "timeout" 으로 끝난다."""
+    _, _, d, err = _run_sag_plant(0.12)
+    assert d["still"] == "timeout"
+    assert max(d["sag_max"]) == pytest.approx(RCY.SAG_MAX_RAD, abs=1e-9)
+    assert np.max(np.abs(err)) == pytest.approx(0.12 - RCY.SAG_MAX_RAD, abs=2e-3)
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_sag_timeout_returns_command_to_q_ref():
+    """★11.11 timeout 이면 보정 누적을 정책에 넘기지 않는다 — 디코더 목표 · 내보낸 팔 목표 = q_ref. sag_max_rad 0.04(실기 첫 시험값)도 생성 뒤 바꿀 수 있다."""
+    out = {}
+    _, _, d, _ = _run_sag_plant(0.06, sag_max_rad=0.04, out=out)
+    ch, tg = out["ch"], out["tg"]
+    assert d["still"] == "timeout"
+    assert max(d["sag_max"]) == pytest.approx(0.04, abs=1e-9)
+    np.testing.assert_allclose(ch.dec.state["arm"].arm_target, ch.rcarry.q_ref, atol=1e-12)
+    np.testing.assert_allclose(tg["arm"][0], ch.rcarry.q_ref, atol=1e-12)
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_policy_start_prev_action_is_zero():
+    """★11.11 이송 끝 틱 마지막 보정 행동이 정책 첫 관측의 직전 행동으로 새지 않는다 — _place_begin 이 prev 0(학습 시작과 같다)."""
+    out = {}
+    acts, _, d, _ = _run_sag_plant(0.06, out=out)
+    assert d["still"] == "ok" and d["start_ok"] and np.any(acts != 0.0)
+    assert np.all(out["ch"].prev == 0.0)
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_sag_not_interrupted_when_arm_follows_correction_steps(monkeypatch):
+    """★11.11 sim e2e: 팔이 보정 명령을 바로 따라가 0.005 rad/틱(0.3 rad/s)으로 움직여도 추종 잔차는 그대로라 보정이 끊기지 않고 "ok".
+    (실측 q 차분만 보던 판정은 이 움직임을 '안 멈춤'으로 봐 보정을 쉬었다 — sag_ticks 0~17.)"""
+    monkeypatch.setattr(RCY, "K_SAG", 0.1)                          # 처짐 0.06 에서 스텝이 상한 SAG_STEP_MAX 에 닿게
+    out = {}
+    acts, _, d, err = _run_sag_plant(0.06, alpha=1.0, out=out)
+    assert d["still"] == "ok" and d["start_ok"] and np.max(np.abs(err)) < RCY.SAG_DONE_RAD
+    steps = np.abs(acts[:, 6]) * out["ch"].rcarry.scale
+    assert np.max(steps) == pytest.approx(RCY.SAG_STEP_MAX, abs=1e-9)
+    run = np.flatnonzero(steps > 0.0)
+    assert len(run) == d["sag_ticks"] >= 5 and np.all(np.diff(run) == 1)   # 보정 틱이 끊기지 않고 이어진다
+
+
+N10 = POL / "right_n10_e4000"
+
+
+@pytest.mark.skipif(NO_HDGP or not (N10 / "bank/bank_right_train.npz").is_file(), reason="hdgp · n10 뱅크(git 밖) 없음")
+def test_bank_pick_lands_the_end_pose_near_the_place_start_bank():
+    """★11.11 e2e oneshot 221f4fc s0e0 끝 q 에서 뱅크 행 222 의 컵 자리로: 옛 Mover 해는 뱅크 최근접 0.085 rad, 뱅크 시드 고르기 뒤 < 0.03."""
+    import torch
+    c = P.load_contract(N10 / "rh_place_contract.json")
+    s = c.side()
+    RC, mch = RCY.load_chain(s.palm_body, list(s.arm_joints))
+    bq = RCY.load_bank_arm_q(N10, s.side, list(s.arm_joints))
+    assert bq.shape == (350, 7) and RCY.load_bank_arm_q(POL / "right_n07", s.side, list(s.arm_joints)) is None
+    z = np.load(N10 / "bank/bank_right_train.npz")
+    i = 222
+    bx = np.delete(bq, i, 0)                                    # 자기 행은 빼고 잰다
+    T = np.eye(4)
+    T[:3, :3], T[:3, 3] = RCY.quat_matrix(z["true_q"][i]), z["true_p"][i]   # 손바닥 좌표 컵
+    fk = lambda q: mch.fk(torch.tensor([list(q)], dtype=torch.float32))[0].double().numpy()
+    tgt = (fk(bq[i]) @ T)[:3, 3]
+    q0 = np.array([0.46, -0.10, -0.80, 0.07, 0.79, -0.15, 1.38])
+    Tc = fk(q0) @ T
+    w = np.sqrt(max(1e-12, 1 + np.trace(Tc[:3, :3]))) / 2
+    R = Tc[:3, :3]
+    quat = [w, (R[2, 1] - R[1, 2]) / (4 * w), (R[0, 2] - R[2, 0]) / (4 * w), (R[1, 0] - R[0, 1]) / (4 * w)]
+    cfg = RCY.ReadyCarryCfg.from_dict(c.ready_carry)
+    out = {}
+    for name, bank in (("old", None), ("new", bx)):
+        rc = RCY.ReadyCarry(cfg, RC, mch, k_arm=c.k_arm, arm_ema=c.arm_ema, hand_action=np.zeros(6), dt=1 / c.policy_hz, bank_q=bank)
+        pl = rc.start(q0, Tc[:3, 3], quat, tgt)
+        out[name] = (float(np.abs(np.array(pl["q_goal"]) - bx).max(1).min()), pl, rc.as_dict())
+    assert out["old"][0] > 0.07 and out["old"][1]["bank_dq"] is None
+    dq, pl, d = out["new"]
+    assert dq < 0.03 and pl["bank_dq"] == pytest.approx(dq, abs=1e-3) and d["bank_dq"] == pl["bank_dq"]
+    assert pl["anchor_err_mm"] < 3.0 and pl["anchor_err_deg"] < 3.0 and pl["T_steps"] <= cfg.max_steps

@@ -748,6 +748,104 @@ def holder_problems(ep: Episode, poses: Mapping[int, object]) -> list[str]:
     return [f"{name}(마커 {hid})이 {ep.holder_poses} 에 없다" for name, hid in ep.holders.items() if hid not in poses]
 
 
+#: ★11.11 deploy 리뷰 H1 — 홀더 재기 기록(<holder_poses>.last_check.json)이 이만큼 넘게 낡았으면 막는다.
+#:   ★11.11 사용자 결정 "컵홀더 측정 완료(고정) → 컵 배치": 홀더는 고정해 두고 필요할 때 cup_holders 로 갱신한다 — 6 h 면 실기
+#:   날마다 막힌다. 7 일 = 주 단위 실기 묶음 동안은 다시 재지 않고, 한 주가 지나면(청소 · 상판 정리로 밀렸을 수 있다) 컵 없이
+#:   30 s 확정 한 번을 요구한다. 그 사이 홀더를 옮겼으면 사람이 cup_holders 를 돌린다(시간으로는 못 잡는다)
+HOLDER_CHECK_MAX_AGE_S = 7 * 24 * 3600.0
+#: ★11.11 deploy 리뷰 M1: 기록 시각(epoch)이 이 PC 시계보다 이만큼 넘게 미래면 막는다 — 두 PC 시계가 어긋났다는 뜻
+HOLDER_CHECK_FUTURE_S = 120.0
+
+
+def _used_holders_reconfirmed(ep: Episode, check: Mapping) -> bool:
+    """★11.11 deploy: 파일을 쓰지 못한 재기(unstable · jump_rejected · measured)라도, 이 에피소드가 쓰는 홀더(ep.holders 값)가
+    모두 이번에 안정적으로 잡혔고 옛 파일 값과 기록의 max_jump_m(기본 3 cm) · max_yaw_deg(기본 10°) 안이면 그 홀더 값은
+    지금도 맞다고 본다. 홀더별 stable 이 없는 옛 기록 · failed(rc) · no_markers · 옛 값 없음(dxy None)은 통과시키지 않는다."""
+    if "rc" in check or check.get("result") == "no_markers":
+        return False
+    hs = check.get("holders")
+    if not isinstance(hs, Mapping):
+        return False
+    jump = check.get("max_jump_m", 0.03)
+    yaw = check.get("max_yaw_deg", 10.0)
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (jump, yaw)):
+        return False
+    used = set(ep.holders.values())
+    if not used:
+        return False
+    for hid in used:
+        d = hs.get(f"cup_holder_{hid}")
+        if not isinstance(d, Mapping) or d.get("stable") is not True:
+            return False
+        dxy, dyaw = d.get("dxy_m"), d.get("dyaw_deg")
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (dxy, dyaw)):
+            return False
+        if dxy > jump or abs(dyaw) > yaw:
+            return False
+    return True
+
+
+def _holder_issue(check: Mapping, hid: int) -> str | None:
+    """★11.11 deploy: 이 홀더(마커 id)가 마지막 재기에서 왜 확인되지 않았나(한 줄, 확인됐으면 None) — 막을 때 어느 홀더인지 보인다."""
+    if check.get("result") == "no_markers":
+        return f"홀더 {hid} 검출 안 됨(마커가 하나도 안 보였다 — 카메라 · 가림 확인)"
+    hs = check.get("holders")
+    d = hs.get(f"cup_holder_{hid}") if isinstance(hs, Mapping) else None
+    if not isinstance(d, Mapping):
+        return f"홀더 {hid} 기록 없음 — 가림 확인" if isinstance(hs, Mapping) and hs else None
+    if d.get("stable") is not True:
+        return (f"홀더 {hid} 검출 안 됨 — 가림 확인(컵 · 셰이커 · 손)" if not d.get("src")
+                else f"홀더 {hid} 보였지만 안정되지 않음 — 부분 가림 · 흔들림 확인")
+    dxy, dyaw = d.get("dxy_m"), d.get("dyaw_deg")
+    jump, yaw = check.get("max_jump_m", 0.03), check.get("max_yaw_deg", 10.0)
+    if (isinstance(dxy, (int, float)) and isinstance(jump, (int, float)) and dxy > jump) or \
+            (isinstance(dyaw, (int, float)) and isinstance(yaw, (int, float)) and abs(dyaw) > yaw):
+        # ★11.11 deploy 리뷰 LOW: 한쪽만 숫자여도 형식 오류가 나지 않게 · HIGH 뒤로 cup_holders 계속 재기도 점프를 막는다
+        cm = f"{dxy * 100:.1f} cm" if isinstance(dxy, (int, float)) else "xy ?"
+        deg = f"{dyaw:+.1f}°" if isinstance(dyaw, (int, float)) else "yaw ?"
+        return (f"홀더 {hid} 가 저장 값에서 {cm} · {deg} 옮겨짐 — 가림 · 잘못 추적이면 치우고 cup_holders 를 다시, "
+                "실제로 옮겼으면 cup_holder_pose_node.py --write --timeout-s 30 --max-jump-m inf --max-yaw-deg 180 으로 받아들인다")
+    return None
+
+
+def holder_check_problems(ep: Episode, check: Mapping | None, now: float,
+                          max_age_s: float = HOLDER_CHECK_MAX_AGE_S,
+                          future_s: float = HOLDER_CHECK_FUTURE_S) -> list[str]:
+    """★11.11 deploy 리뷰 H1: 홀더를 쓰는 에피소드는 마지막 홀더 재기(★11.11 cup_holders 단계 끝 확정 · 계속 재기)가
+    written(★11.11 또는 이 에피소드가 쓰는 홀더만 안정 · 옛 값 근처로 재확인 — _used_holders_reconfirmed)이고 max_age_s 안이어야 시작한다 — 재기가 jump_rejected · unstable · no_markers · failed 면 파일은 옛 자리 그대로라
+    옛 홀더 자리로 놓으러 갈 수 있다. check = last_check.json 내용(없으면 None), now = epoch s. 빈 목록 = 된다.
+    (11.03 "홀더는 고정" 결정은 needs 를 걸지 않는 것 — 이건 측정 결과 확인이다.)
+
+    ★11.11 deploy 리뷰 M1 · M2: 나이는 기록의 epoch(초, 시간대 없음)로 잰다 — time 은 쓴 PC 의 로컬 문자열이라 보여 주기만 한다.
+    epoch 가 없으면 이 표식을 쓰기 전 노드(arm4090 미 pull)가 쓴 기록이라 막는다. 미래 시각(future_s 넘게)도 막는다."""
+    if not ep.holders:
+        return []
+    redo = "상판에서 컵 · 셰이커를 치우고 cup_holders 단계(홀더 확정)를 다시 돈다"
+    if not check:
+        return [f"홀더 재기 기록({ep.holder_poses}.last_check.json)이 없다 — {redo}"]
+    if not isinstance(check, Mapping):
+        return [f"홀더 재기 기록이 JSON 객체가 아니다({type(check).__name__}) — {redo}"]
+    result, when = str(check.get("result", "?")), str(check.get("time", "?"))
+    big = " · ".join(f"{n} dxy {d.get('dxy_m')} m dyaw {d.get('dyaw_deg')}°"
+                     for n, d in (check.get("holders") or {}).items() if isinstance(d, Mapping) and d.get("dxy_m") is not None)
+    if result != "written" and not _used_holders_reconfirmed(ep, check):
+        used = sorted(set(ep.holders.values()))
+        issues = [i for i in (_holder_issue(check, h) for h in used) if i]
+        why = (f"{check.get('what')} 실패(rc {check['rc']})" if "rc" in check
+               else " · ".join(issues) or f"이 에피소드가 쓰는 홀더 {used} 가 안정적으로 다시 확인되지 않았다")
+        return [f"{why} — 마지막 홀더 재기 {result}({when})" + (f" · {big}" if big else "")
+                + f", {ep.holder_poses} 는 옛 값 그대로다. {redo}"]
+    t = check.get("epoch")
+    if isinstance(t, bool) or not isinstance(t, (int, float)) or t != t:
+        return [f"홀더 재기 기록에 epoch 가 없다({when}) — 인지 PC(arm4090)가 옛 cup_holder_pose_node 다. "
+                f"그 PC 를 git pull 한 뒤 {redo}"]
+    if t - now > future_s:
+        return [f"홀더 재기 기록 시각이 이 PC 보다 {(t - now) / 60:.0f} 분 미래다({when}) — 두 PC 시계를 맞춘 뒤 {redo}"]
+    if now - t > max_age_s:
+        return [f"마지막 홀더 재기가 {(now - t) / 3600:.1f} h 전({when}) — 홀더를 고정해 둔 운영 상한 {max_age_s / 3600:g} h 를 넘었다. {redo}"]
+    return []
+
+
 def place_holder_checks(ep: Episode, poses: Mapping[int, object], contracts: Mapping[str, object],
                         tol_m: float) -> tuple[list[str], list[str]]:
     """★10.28 놓기 job 의 홀더가 그 역할 놓기 계약의 학습 범위(holder_range)에서 허용 넘게 밖인가 — 놓기 노드 reset 과 같은

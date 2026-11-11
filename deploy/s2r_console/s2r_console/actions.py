@@ -52,14 +52,36 @@ CONTROL_EPISODES = {'grasp_b': '1-B 제어 모듈(정책 없음) — FP++ 컵 �
                     'grasp_f': '경로 F — ap05 접근 → 사전 파지 자리에서 같은 노드가 rcg04 로 넘겨 쥐고 10 cm 들기(확인 노드 없음)',
                     # ★11.09 경로 F 물체 바꾼 변형은 아래 F_OBJECTS 에서 붙인다(grasp_fo · grasp_fk 는 grasp_f_<물체> 로)
                     # ★10.22 사용자 "Place 세팅 진행" — 경로 F 뒤 newton_05 놓기(붙인 자세 = 잡기의 grasp_state 넘김 묶음)
-                    'pick_place_f': '경로 F + 놓기 — 경로 F 로 쥐고 들기 → newton_05 가 홀더에 놓고 팔을 뺌 → 홈(확인 노드 없음)'}
+                    'pick_place_f': '경로 F + 놓기 — 경로 F 로 쥐고 들기 → newton_05 가 홀더에 놓고 팔을 뺌 → 홈(확인 노드 없음)',
+                    # ★11.11 사용자 "STUDENT 정책들도 POLICY 탭으로" — eval 탭에서 옮긴 잡기 학생(경로 S), 기본 색 = 팔 원본
+                    'grasp_s': '잡기 학생 — 마스크 학생 A(깊이 + 목표/이웃 마스크)가 홈에서 접근 · 쥐고 들기(확인 노드 없음)',
+                    # ★11.11 사용자 "놓기 학생(place_m) 시험에서 컵 색과 홀더를 콘솔 카드에서 고르게" — 기본 = 파랑 · 홀더 1
+                    'place_m': '놓기 학생 — 경로 F 로 쥐고 들기 → 놓기 학생(깊이 + 홀더 CAD · 컵 마스크)이 홀더에 놓음 → 홈'}
 for _obj, _cup, _color in XP.F_OBJECTS:                # ★11.09 경로 F 물체 버튼 — 팔 기본 물체가 아닌 것만 따로 머리가 있다
     CONTROL_EPISODES[f'grasp_f_{_obj}'] = f'경로 F {_cup} {_color} — ap05 접근 → rcg04 넘겨 쥐고 10 cm 들기(물체 {_obj})'
+for _c, _cup, _color in XP.PLACE_M_COLORS:            # ★11.11 놓기 학생 색 · 홀더 버튼 — 기본 조합이 아닌 것만 따로 머리
+    for _h in XP.PLACE_M_HOLDERS:
+        if (_c, _h) != XP.PLACE_M_DEFAULT:
+            _w = XP.PLACE_M_WARN.get(_h, '')
+            CONTROL_EPISODES[XP.place_m_head(_c, _h)] = (f'놓기 학생 {_color} · 홀더 {_h}' + (f' ★{_w}' if _w else '')
+                                                         + f' — 경로 F 로 {_cup} 쥐고 들기 → 놓기 학생이 홀더 {_h} 에 놓음 → 홈')
+for _c, _fpp, _color in XP.GRASP_S_COLORS:            # ★11.11 잡기 학생 색 버튼 — 팔 기본 색이 아닌 것만 따로 머리
+    if any(_c in cs and _c != XP.GRASP_S_DEFAULT[s] for s, cs in XP.GRASP_S_SIDE_COLORS.items()):
+        CONTROL_EPISODES[f'grasp_s_{_c}'] = f'잡기 학생 {_color} — 마스크 학생 A 가 {_fpp} 를 홈에서 접근 · 쥐고 들기'
 #: 실행 기록 · 오류 글의 이름
 CONTROL_LABELS = {'grasp_b': '1-B', 'grasp_c': '경로 C', 'grasp_d': '경로 D', 'grasp_e': '경로 E', 'grasp_f': '경로 F',
                   'pick_place_f': '경로 F + 놓기'}
 for _obj, _cup, _color in XP.F_OBJECTS:
     CONTROL_LABELS[f'grasp_f_{_obj}'] = f'경로 F {_cup} {_color}'
+CONTROL_LABELS['grasp_s'] = '잡기 학생'
+for _c, _fpp, _color in XP.GRASP_S_COLORS:
+    if f'grasp_s_{_c}' in CONTROL_EPISODES:
+        CONTROL_LABELS[f'grasp_s_{_c}'] = f'잡기 학생 {_color}'
+CONTROL_LABELS['place_m'] = '놓기 학생'
+for _c, _cup, _color in XP.PLACE_M_COLORS:
+    for _h in XP.PLACE_M_HOLDERS:
+        if (_c, _h) != XP.PLACE_M_DEFAULT:
+            CONTROL_LABELS[XP.place_m_head(_c, _h)] = f'놓기 학생 {_color} 홀더 {_h}'
 #: 확인 노드(닫기 전)에서 사람을 기다리는 시간까지 — rg3(300 s)보다 길다
 CONTROL_TIMEOUT_S = 600.0
 #: 팔을 움직이는 카드 작업 — 같은 팔 제어 명령 · 정책 정지가 끊고, 도는 동안 작업 공간 설정을 못 바꾼다

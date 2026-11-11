@@ -38,7 +38,7 @@ def _me(tmp_path, frames):
     me = SimpleNamespace(_wait_pd_tracking=lambda side: True, _pd_view=lambda side: {}, run_dir=tmp_path, robot="rh56f1",
                          _run=lambda argv: (calls.append(argv), (0, "tail"))[1], _run_many=lambda argvs: many.extend(argvs) or [0] * len(argvs),
                          _log_line=lambda text: None, cancel=threading.Event(), _lock=threading.Lock(), _arm=frames,
-                         contract="c.json")
+                         contract="c.json", ep=SimpleNamespace(objects={}, holder_poses="config/h.yaml"), _relay={}, _live={})
     return me, calls, many
 
 
@@ -61,3 +61,17 @@ def test_rehome_away_from_home_still_plans_and_moves(tmp_path):
     r = RosExecutor.run_trajectory(me, SimpleNamespace(id="go_home_start"), traj, SimpleNamespace(hand=lambda side: "EMPTY"))
     assert r.status == "completed" and [a[1].rsplit("/", 1)[-1] for a in calls] == \
         ["plan_rehome.py", "check_path_start.py", "replay_to_pd.py", "episode_ctl.py"] and len(many) == 1
+    plan = calls[0]                                       # 리뷰 M2: 에피소드 홀더 파일을 넘긴다
+    assert plan[plan.index("--holders") + 1].endswith("config/h.yaml")
+
+
+def test_rehome_refuses_when_a_failed_place_cup_has_no_pose(tmp_path):
+    """★11.12 리뷰 H1: 놓기 실패 컵(unknown) 자리를 모르면 팔을 움직이지 않고 refused, 사유에 컵 이름."""
+    from policy_control.episode_world import World
+    far = list(HOME)
+    far[1] += 0.3
+    me, calls, many = _me(tmp_path, _frames(far))
+    me.ep = SimpleNamespace(objects={"BLUE": {"topic": "/objects/source240_blue/pose"}}, holder_poses="")
+    world = World(objects={"BLUE": {"at": "unknown"}}, hands={"right": "EMPTY", "left": "EMPTY"})
+    r = RosExecutor.run_trajectory(me, SimpleNamespace(id="go_home_r"), SimpleNamespace(kind="go_home", sides=("right",)), world)
+    assert r.status == "refused" and "BLUE" in r.reason and calls == []

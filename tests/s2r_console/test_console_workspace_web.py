@@ -219,7 +219,7 @@ def test_experiments_view_reads_the_chain_from_the_episode_files():
     v = XV.view(ROOT, ids)
     assert not v.get('error')
     items = {i['id']: i for i in v['items']}
-    assert [i['key'] for i in v['items'] if i['group'] == 'grasp'] == ['1-B', 'E', 'F', 'FP']   # ★11.09 C·D 뺌, F 물체는 F 안 버튼
+    assert [i['key'] for i in v['items'] if i['group'] == 'grasp'] == ['1-B', 'E', 'F', 'FP', 'S', 'PM']   # ★11.11 S = 잡기 학생(색 버튼) · ★11.09 C·D 뺌, F 물체는 F 안 버튼 · ★11.11 PM = 놓기 학생(색 · 홀더 버튼)
     assert [o['object'] for o in items['grasp_f']['sides']['right']['objects']] == [o for o, _, _ in XV.F_OBJECTS]
     assert [i['key'] for i in v['items'] if i['group'] == 'tilt'] == ['D', 'C', 'B']
     f = items['grasp_f']['sides']['right']

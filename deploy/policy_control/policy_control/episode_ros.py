@@ -116,6 +116,9 @@ def reset_until_cup_fresh(call, *, retry_s: float = RESET_CUP_RETRY_S, step_s: f
             return ok, why
         sleep(step_s)
 SEAT_DZ_CYL60 = HOLDER_FLOOR_Z + 0.085
+#: ★11.11 래치 전 손 폄 종료(opened_before_latch)는 손이 0.15 rad 만 열려도 끝난다 — 쥔 채 홀더에 깊이 든 컵(sim: 앉은 높이 +55 mm,
+#   접촉력 28~35 N)을 성공으로 보면 다음 rehome 이 컵을 끌고 나간다. 이 outcome 만 앉음 z 허용을 30 → 15 mm 로 좁힌다.
+PLACE_OPEN_Z_TOL_M = 0.015
 HAND_OPEN_WAIT_S = 3.0            # 손 펴기 — RH56F1 전 행정 약 1 s(벤더 speedSet 기본) + 여유. 그 안에 실측이 펴져야 한다
 HAND_OPEN_TOL_RAD = 0.15          # 펴짐 = 엄지 굽힘 · 네 손가락이 0(편 끝)에서 이 안(엄지 회전은 보지 않는다). pd 홈 손 경로 검사와 같은 값
                                   # (pd 는 손 목표를 한계 안쪽 0.05 로 물린다 — fake 실측 0.07~0.09 에서 섰다)
@@ -238,6 +241,63 @@ def real_object_name(topic: str) -> str:
     """/objects/<실물>/pose → 실물 이름(config/objects 등록 이름). 아니면 ""."""
     parts = [x for x in str(topic).split("/") if x]
     return parts[1] if len(parts) == 3 and parts[0] == "objects" else ""
+
+
+#: ★11.12 rehome 계획에 쓸 live 자세의 최대 나이[s](monotonic) — 더 낡으면 "자세 없음"(리뷰 H2: 옮겨진 컵의 옛 자리로 계획하지 않게)
+REHOME_LIVE_MAX_AGE_S = 5.0
+
+
+class RehomeCupUnknown(Exception):
+    """놓기 실패 컵(unknown)의 자리를 snapshot · 신선한 live 어디서도 못 얻었다 — 컵 위치를 모르는 채 팔을 움직이지 않는다."""
+
+
+def rehome_table_cups(ep: Episode, world, relay: Mapping, live: Mapping,
+                      now: float | None = None) -> tuple[list[dict], list[str]]:
+    """★11.11 rehome 계획 세계에 넣을 탁자 위 컵(plan_home_path --table-cups) + 로그 문구.
+    손에 쥔 컵 · 홀더에 꽂힌 컵(홀더 원기둥이 덮는다) · 아직 안 놓은 컵(away)은 뺀다. 자리 = snapshot 고정값
+    (/episode/objects/<이름>) → 없으면 live 마지막 값(나이 ≤ REHOME_LIVE_MAX_AGE_S) → table 컵만 에피소드 region 가운데
+    (넓히지 않음). unknown 컵이 자리를 못 얻으면 RehomeCupUnknown(★11.12 리뷰 H1 — 조용히 빼지 않는다)."""
+    from policy_control.episode_spec import region_box
+    now = time.monotonic() if now is None else now
+    cups, notes, lost = [], [], []
+    for name, o in ep.objects.items():
+        at = str((world.objects.get(name) or {}).get("at", "table"))
+        if at not in ("table", "unknown"):
+            continue
+        real = real_object_name(str(o.get("topic", "")))
+        if not real:                                   # 리뷰 M3: 실물 토픽이 아니면 메쉬를 모른다 — 남긴다
+            notes.append(f"{name}({at}) 실물 토픽 아님({o.get('topic')!r}) — 계획 세계에서 뺌")
+            if at == "unknown":
+                lost.append(f"{name}(실물 토픽 아님)")
+            continue
+        loc = world.objects.get(name) or {}
+        pos, src = (loc.get("pos"), "snapshot") if at == "table" else (None, "")
+        if pos is None and at == "table" and name in relay:
+            pos, src = relay[name][0], "snapshot"
+        if pos is None and live.get(name):
+            f = live[name][-1]
+            age = now - float(f[2])
+            if age <= REHOME_LIVE_MAX_AGE_S:
+                pos, src = f[0], f"live({age:.1f} s)"
+            else:
+                notes.append(f"{name} live 낡음 {age:.1f} s > {REHOME_LIVE_MAX_AGE_S} s — 자세 없음으로 봄")
+        item = {"name": name, "object": real}
+        if pos is not None:
+            cups.append(item | {"pos": [round(float(v), 4) for v in pos]})
+        elif at == "table" and o.get("region") is not None and set(region_box(o["region"])) == {"x", "y"}:
+            (x0, x1), (y0, y1) = (region_box(o["region"])[k] for k in ("x", "y"))
+            # spread 0: 반대각선(28 mm)만큼 넓히면 홈 목표 손가락이 16 mm 로 들어와 계획이 거부된다(184028 6/6, 11.11)
+            cups.append(item | {"pos": [round((x0 + x1) / 2, 4), round((y0 + y1) / 2, 4)]})
+            src = "region 기본값"
+        else:
+            notes.append(f"{name}({at}) 자리 모름")
+            if at == "unknown":
+                lost.append(name)
+            continue
+        notes.append(f"{name} {src} {cups[-1]['pos']}")
+    if lost:
+        raise RehomeCupUnknown(f"놓기 실패 컵 자리 모름 {lost} — 컵 위치를 모르는 채 팔을 움직이지 않는다 ({'; '.join(notes)})")
+    return cups, notes
 
 
 #: 홀더 번호 = 이름 끝 숫자(테이블 왼쪽부터, config/cup_holders.yaml) — 에피소드 holders · /objects/cup_holder_N/pose 와 같은 번호.
@@ -865,11 +925,24 @@ class RosExecutor:
         if p.kind == "place":
             pl = st.get("place") or {}
             # ★11.10 학습 시간 끝(outcome episode_end)으로 멈춘 놓기는 손이 비었는지 노드가 모른다(래치 없이 정책이 연 것) — None,
-            #   판정은 아래 cup_in_holder 만으로.
-            empty = True if pl.get("phase") == "done" else (None if pl.get("outcome") == "episode_end" else False)
+            #   판정은 아래 cup_in_holder 만으로. ★11.11 래치 전 손 폄 종료(opened_before_latch)도 같다.
+            empty = True if pl.get("phase") == "done" else (
+                None if pl.get("outcome") in ("episode_end", "opened_before_latch") else False)
             sig = {"hand_empty": empty, "opened": pl.get("opened"), "tact_max": pl.get("tact_max"), "jf_max": pl.get("jf_max"),
                    "phase": pl.get("phase"), "ready_carry": pl.get("ready_carry"),      # ★10.25 이송 결과(없으면 None)
                    "outcome": pl.get("outcome")}       # ★11.02 빼기 결과 clear | withdraw_timeout(episode_failure 가 본다)
+            early = pl.get("outcome") == "opened_before_latch"
+            z_tol = PLACE_OPEN_Z_TOL_M if early else 0.03
+            if early:
+                # 손끝 촉각이 놓음 힘(노드 계약 release_force_n = env contact_force_threshold) 이상이면 아직 쥔 것 — 손이 안 비었다.
+                #   tact_max 0.0·None(sim, 촉각 없음)이나 문턱을 안 내는 옛 노드면 건너뛰고 z 만으로.
+                tact, thr = pl.get("tact_max"), st.get("release_force_n")
+                if tact and thr is not None:
+                    sig["tact_held"] = float(tact) >= float(thr)
+                    if sig["tact_held"]:
+                        sig["hand_empty"] = False
+                else:
+                    sig["tact_check"] = "skipped: " + ("no tactile" if not tact else "no release_force_n")
             hold = self.holders.get(p.holder_id) if p.holder_id is not None else None
             # ★11.04 놓은 자리 = FP++ live(stop + 1.0 s 뒤 프레임) 와 손을 연 순간의 묶은 컵(손바닥 FK ⊗ 묶음, latch_cup).
             #   …/pose(cups 때 찍은 테이블 자리)는 쓰지 않는다. live 는 쥔 컵을 놓치면 엉뚱한 값을 내므로(131817) 둘 중 하나라도
@@ -879,10 +952,10 @@ class RosExecutor:
             if hold is not None:
                 votes = {}
                 if pos is not None:
-                    votes["live"] = cup_in_holder(pos, hold[0], SEAT_DZ_CYL60)
+                    votes["live"] = cup_in_holder(pos, hold[0], SEAT_DZ_CYL60, z_tol=z_tol)
                     sig["cup_pos"] = [round(v, 4) for v in pos]
                 if fk is not None and len(fk) == 3:
-                    votes["fk"] = cup_in_holder(fk, hold[0], SEAT_DZ_CYL60)
+                    votes["fk"] = cup_in_holder(fk, hold[0], SEAT_DZ_CYL60, z_tol=z_tol)
                     sig["cup_pos_fk"] = [round(float(v), 4) for v in fk]
                 if votes:
                     sig["cup_in_holder"] = any(votes.values())
@@ -932,8 +1005,19 @@ class RosExecutor:
                 continue
             out = self.run_dir / f"rehome_{side}_{node.id}.npz"
             joints = ",".join(f"{side[0]}_aj_{i}" for i in range(1, 8))
+            with self._lock:                               # ★11.11 탁자 위 컵도 계획 세계에
+                relay, live = dict(self._relay), {k: list(v) for k, v in self._live.items()}
+            try:
+                cups, notes = rehome_table_cups(self.ep, world, relay, live)
+            except RehomeCupUnknown as e:                  # ★11.12 리뷰 H1 — 움직이지 않았다
+                self._log_line(f"[rehome] {side} 거부: {e}")
+                return NodeResult("refused", f"{side} rehome: {e}", time.monotonic() - t0)
+            self._log_line(f"[rehome] {side} 탁자 위 컵: " + ("; ".join(notes) or "없음"))
+            # 리뷰 M2: 홀더 원기둥 = 이 에피소드가 발행한 홀더 파일(없으면 홀더 없이 — 기본 파일로 대신하지 않는다)
+            hold = (["--holders", str(_paths.SIM2REAL / self.ep.holder_poses)] if self.ep.holder_poses else ["--no-holders"])
             steps = [
-                [sys.executable, str(TOOLS / "plan_rehome.py"), "--side", side, "--robot", self.robot, "--out", str(out)],
+                [sys.executable, str(TOOLS / "plan_rehome.py"), "--side", side, "--robot", self.robot, "--out", str(out),
+                 *hold, *(["--table-cups", json.dumps(cups)] if cups else [])],
                 [sys.executable, str(TOOLS / "check_path_start.py"), "--npz", str(out), "--contract", self.contract],
                 [sys.executable, str(TOOLS / "replay_to_pd.py"), "--npz", str(out), "--joints", joints, "--rate-scale", "1.0",
                  "--execute"],

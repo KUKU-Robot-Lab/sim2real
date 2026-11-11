@@ -76,7 +76,9 @@ def test_continue_kinds_are_checked():
 
 
 @pytest.mark.parametrize("sig", [{"cup_in_holder": False, "hand_empty": False},
-                                 {"cup_in_holder": True, "hand_empty": True, "outcome": "withdraw_timeout"}])
+                                 {"cup_in_holder": True, "hand_empty": True, "outcome": "withdraw_timeout"},
+                                 # ★11.11 래치 전 손 폄 · 손 빔 모름 · 컵 홀더 밖 → 걸림(이어 가지 않는다)
+                                 {"cup_in_holder": False, "hand_empty": None, "outcome": "opened_before_latch"}])
 def test_hand_still_on_cup_is_not_continued(sig):
     ep = _ep(continue_on_fail=["place"])
     ex = _Ex(ep, res=("completed", "", sig))
@@ -174,3 +176,11 @@ def test_auto_must_be_bool():
     raw["sequence"][0]["auto"] = "yes"
     with pytest.raises(S.EpisodeSpecError):
         S.parse(raw)
+
+
+def test_opened_before_latch_in_holder_is_success():
+    """★11.11 래치 전 손 폄 · 손 빔 모름 · 컵 홀더 안 → 지금처럼 성공."""
+    ep = _ep(continue_on_fail=["place"])
+    ex = _Ex(ep, res=("completed", "", {"cup_in_holder": True, "hand_empty": None, "outcome": "opened_before_latch"}))
+    m, st, _ = _run(ep, ex)
+    assert st == SUCCESS and m.place_failed_continued == []

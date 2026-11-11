@@ -213,3 +213,70 @@ def test_place_node_feeds_only_the_bound_cup_unless_live_is_asked_for():
     me, ch = _node_self(True, fresh)
     pos, _ = PlaceNode._cup_for(me, "src", True)(palm, R, None, None)
     assert np.allclose(pos, [0.31, -0.12, 0.49]) and ch.cup_src == {"live": 1, "fk": 0, "rejected": 0}
+
+
+def test_place_node_ends_when_policy_and_measured_fingers_are_open_for_three_ticks():
+    """★11.11 사용자 "손가락 다 피면 에피소드 끝": 정책 손 목표 · 실측 손가락이 둘 다 ≥ open_min_rad 로 OPENED_END_TICKS 연속이면 stop.
+    sim 1111b: 실측 0.12 rad(컵을 쥔 채)에서 끝내면 안 된다."""
+    import time
+    from policy_control import rh_place_node as N
+    ends, whys, log = [], [], SimpleNamespace(info=lambda *_: None, warning=lambda *_: None)
+    ch = SimpleNamespace(settle_t=5, latch=False, latch_t=0, settling=False, done=False, open_min_rad=0.15, opened=0.0,
+                         opened_meas=0.0, latch_cup="blue", outcome=None, released_cup=None, as_dict=lambda: {},
+                         tact_max=0.0, jf_max=None, joint_free_g=300.0)   # 촉각 · 관절 힘 없음 → 각도만(기존 동작)
+    me = SimpleNamespace(contract=SimpleNamespace(latch_s2r=True, release_force_n=0.5), _carry_t0=None, chain=ch, max_s=99.0,
+                         _t_start=time.monotonic(), _opened_n=0, get_logger=lambda: log,
+                         _end=lambda kind, why: (ends.append(kind), whys.append(why)))
+    seq = [(0.2, 0.12), (0.2, 0.12), (0.2, 0.12), (0.2, 0.12),   # 실측 0.12 rad 가 이어져도 끝내지 않는다(sim 1111b)
+           (0.2, 0.15), (0.1, 0.5), (0.2, 0.15), (0.2, 0.15), (0.2, 0.15)]   # (정책, 실측) rad
+    out = []
+    for o, om in seq:
+        ch.opened, ch.opened_meas = o, om
+        out.append(N.PlaceNode._after_step(me))
+    assert out == [False] * 8 + [True]   # 실측 미달 · 정책 미달 틱에서 셈이 0 으로, 0.15 rad 3 틱이면 stop
+    assert ends == ["stop"] and ch.outcome == "opened_before_latch" and ch.released_cup == "blue"
+    assert not whys[0].startswith("placed") and "래치 전" in whys[0]   # M4 — 래치 전 손 폄을 놓음으로 단정하지 않는다
+
+
+def _opened_node(tact, jf):
+    import time
+    from policy_control import rh_place_node as N
+    ends, warns = [], []
+    log = SimpleNamespace(info=lambda *_: None, warning=lambda m, *_: warns.append(m))
+    ch = SimpleNamespace(settle_t=5, latch=False, latch_t=0, settling=False, done=False, open_min_rad=0.15, opened=0.2,
+                         opened_meas=0.17, latch_cup="blue", outcome=None, released_cup=None, as_dict=lambda: {},
+                         tact_max=tact, jf_max=jf, joint_free_g=300.0)
+    me = SimpleNamespace(contract=SimpleNamespace(latch_s2r=True, release_force_n=0.5), _carry_t0=None, chain=ch, max_s=99.0,
+                         _t_start=time.monotonic(), _opened_n=0, get_logger=lambda: log,
+                         _end=lambda kind, why: ends.append(kind))
+    return N, me, ch, ends, warns
+
+
+def test_place_node_opened_before_latch_waits_until_hand_force_drops():
+    """★11.11 sim place_blue: 0.17 rad 로 열린 채 손 힘 22~44 N(관절 힘 g 로 넘어옴)으로 컵을 쥐고 있으면 끝내지 않는다.
+    힘이 문턱 아래로 떨어진 뒤 OPENED_END_TICKS 틱이면 끝."""
+    N, me, ch, ends, warns = _opened_node(0.0, 9000.0)            # sim: 촉각 토픽 없음(0) · 관절 힘 30 N × 300 g/N
+    out = [N.PlaceNode._after_step(me) for _ in range(6)]
+    assert out == [False] * 6 and not ends and not warns
+    ch.jf_max = 50.0                                               # 손이 놓음
+    out = [N.PlaceNode._after_step(me) for _ in range(3)]
+    assert out == [False, False, True] and ends == ["stop"] and ch.outcome == "opened_before_latch"
+
+
+def test_place_node_opened_before_latch_blocked_by_tactile():
+    N, me, ch, ends, _ = _opened_node(2.0, 50.0)                  # 실기: 손끝 촉각 2 N ≥ 0.5 N → 아직 쥠
+    assert [N.PlaceNode._after_step(me) for _ in range(5)] == [False] * 5
+    ch.tact_max = 0.1
+    assert [N.PlaceNode._after_step(me) for _ in range(3)] == [False, False, True]
+
+
+def test_place_node_opened_before_latch_no_force_signal_keeps_angle_rule():
+    N, me, ch, ends, warns = _opened_node(float("nan"), None)     # 신호 없음 → 각도만(기존 동작), 한 번 기록
+    assert [N.PlaceNode._after_step(me) for _ in range(3)] == [False, False, True]
+    assert ends == ["stop"] and len(warns) == 1 and "신호 없음" in warns[0]
+
+
+def test_place_node_opened_before_latch_nan_joint_force_counts_as_held():
+    """리뷰 HIGH: 관절 힘 채널 하나가 NaN 이면 np.max 가 NaN — 모름 = 쥔 것(is_free 와 같은 fail-closed), 각도만으로 끝내지 않는다."""
+    N, me, ch, ends, warns = _opened_node(0.0, float("nan"))
+    assert [N.PlaceNode._after_step(me) for _ in range(5)] == [False] * 5 and not ends

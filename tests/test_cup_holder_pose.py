@@ -349,3 +349,48 @@ def test_a_board_marker_with_the_same_id_lying_on_the_table_is_ignored():
     assert est.flat == (1,) and est.src.get(1) == "aruco"
     assert np.allclose(est.poses[1][:2], truth[:2], atol=0.004), est.poses[1]
     assert abs(math.degrees(H.wrap(est.poses[1][3] - truth[3]))) < 2.0
+
+
+def test_one_shot_jump_check_rejects_a_holder_that_moved_more_than_max_jump(tmp_path):
+    """★11.10 한 번 재기 — 직전 파일 없으면 통과, 홀더별 xy 차가 상한 넘으면 거부, 직전에 없는 홀더는 비교 안 함."""
+    prev = {"cup_holder_0": np.array([0.37, 0.17, 0.235, 0.0]), "cup_holder_1": np.array([0.37, -0.05, 0.235, 0.0])}
+    near = {"cup_holder_0": np.array([0.38, 0.17, 0.235, 0.1]), "cup_holder_1": np.array([0.37, -0.06, 0.235, 0.0])}
+    far = {**near, "cup_holder_1": np.array([0.37, -0.09, 0.235, 0.0]), "cup_holder_2": np.array([0.37, -0.28, 0.235, 0.0])}
+    assert NODE.jump_check(None, near, 0.03)[0]
+    ok, d = NODE.jump_check(prev, near, 0.03)
+    assert ok and d["cup_holder_0"]["dxy_m"] == pytest.approx(0.01) and d["cup_holder_0"]["dyaw_deg"] == pytest.approx(5.73, abs=0.01)
+    ok, d = NODE.jump_check(prev, far, 0.03)
+    assert not ok and d["cup_holder_1"]["dxy_m"] == pytest.approx(0.04) and d["cup_holder_2"]["dxy_m"] is None
+    out = tmp_path / "poses.yaml"
+    out.write_text("holders:\n  cup_holder_0: {marker_id: 1, position: [0.37, 0.17, 0.235], yaw_rad: 0.0, yaw_deg: 0.0}\n")
+    assert set(NODE.load_written(out)) == {"cup_holder_0"} and NODE.load_written(tmp_path / "none.yaml") is None
+
+
+def test_continuous_step_rejects_a_jump_once_and_writes_again_when_tracking_agrees():
+    """★11.11 deploy 리뷰 HIGH: 계속 재기도 점프를 막는다 — 처음 한 번만 jump_rejected, 같은 막힘은 다시 기록하지 않고,
+    다시 맞으면(가림이 풀림) 값이 같아도 바로 써서 written 으로 되돌린다. 파일이 없으면 비교 없이 쓴다."""
+    f = {"cup_holder_0": np.array([0.37, 0.17, 0.235, 0.0]), "cup_holder_1": np.array([0.37, -0.05, 0.235, 0.0])}
+    moved = {**f, "cup_holder_1": np.array([0.37, -0.10, 0.235, 0.0])}
+    turned = {**f, "cup_holder_0": np.array([0.37, 0.17, 0.235, math.radians(15)])}
+    assert NODE.continuous_step(None, None, f, None, 0.03, 10.0)[:2] == ("write", None)
+    act, rej, d = NODE.continuous_step(f, f, moved, None, 0.03, 10.0)
+    assert (act, rej) == ("reject", ("cup_holder_1",)) and d["cup_holder_1"]["dxy_m"] == pytest.approx(0.05)
+    assert NODE.continuous_step(f, f, moved, rej, 0.03, 10.0)[:2] == ("none", ("cup_holder_1",))
+    assert NODE.continuous_step(f, f, turned, rej, 0.03, 10.0)[:2] == ("reject", ("cup_holder_0",))
+    assert NODE.continuous_step(f, f, f, rej, 0.03, 10.0)[:2] == ("write", None)
+    assert NODE.continuous_step(f, f, f, None, 0.03, 10.0)[0] == "none"
+
+
+def test_poses_and_last_check_are_written_atomically(tmp_path, monkeypatch):
+    """★11.11 deploy 리뷰 HIGH: 임시 파일 + rename — 쓰는 도중 실패해도 옛 파일이 남고 임시 파일도 남지 않는다."""
+    out = tmp_path / "poses.yaml"
+    H.atomic_write_text(out, "old\n")
+    def boom(*a, **k):
+        raise OSError("disk")
+    monkeypatch.setattr(H.os, "replace", boom)
+    with pytest.raises(OSError):
+        H.atomic_write_text(out, "new\n")
+    assert out.read_text() == "old\n" and sorted(p.name for p in tmp_path.iterdir()) == ["poses.yaml"]
+    src = (Path(NODE.__file__)).read_text()
+    assert "check_path.write_text" not in src and "atomic_write_text(check_path" in src
+    assert "path.write_text" not in (Path(H.__file__)).read_text().split("def write_poses")[1].split("\ndef ")[0]

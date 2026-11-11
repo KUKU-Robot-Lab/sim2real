@@ -1,6 +1,6 @@
 """실기 평가 탭(11.02) — 평가 에피소드 목록과 회차 기록(CSV). 로봇에는 아무것도 보내지 않는다.
 
-에피소드: EVAL_EPISODES 에 적은 `config/episodes/<이름>.yaml` 만 그 순서로 읽는다(11.05 사용자, 파일 없는 이름은 건너뛴다).
+에피소드: EVAL_TAB 에 적은 `config/episodes/<이름>.yaml` 만 그 순서로 읽는다(11.05 사용자, 파일 없는 이름은 건너뛴다).
 실행은 이 모듈이 하지 않는다 — 화면이 기존 길(미션 단계 episode_<이름> → 에피소드 실행기 [연속 실행] 승인)로 보낸다.
 
 회차 기록: `logs/s2r_console/eval/<YYYY-MM-DD>.csv`(utf-8, 머리 한 줄, 날짜마다 파일). 서버가 round · time · episode ·
@@ -22,7 +22,12 @@ from . import tilt_view as TV
 
 #: ★11.05 사용자: 탭에는 이 셋만 — 다른 cocktail_* yaml 은 지우지 않고 목록에서만 뺀다
 #: ★11.09 사용자: 놓기 학생 에피소드(F 잡기 → 놓기 학생) 두 장을 더한다
-EVAL_EPISODES = ("cocktail_1c_e4000", "grasp_s_right", "grasp_s_left", "place_m_right", "place_m_left")
+#: ★11.11 deploy 리뷰 MEDIUM: 놓기 학생 색 · 홀더 조합(make_rh56f1_missions.PLACE_M_VARIANTS)도 평가 회차로 적는다
+#: ★11.11 사용자 "EVAL 부분에서 STUDENT 정책들도 POLICY 탭으로 옮기면서" — 탭 목록은 EVAL_TAB 만. 기록 이름 검사는 그대로
+#:   EVAL_EPISODES(학생 잡기 색 판 grasp_s_pink_right 도 받는다 — 회차 기록은 policy 탭 실행 뒤에도 적는다)
+EVAL_TAB = ("cocktail_1c_e4000",)
+EVAL_EPISODES = ("cocktail_1c_e4000", "grasp_s_right", "grasp_s_left", "place_m_right", "place_m_left",
+                 "place_m_blue_h2_right", "place_m_pink_h1_right", "place_m_pink_h2_right", "grasp_s_pink_right")
 COLUMNS = ("round", "time", "episode", "policy_r", "policy_l", "result", "fail_stage", "fail_type", "note")
 RESULTS = ("성공", "실패", "중단")
 #: 화면 · 실행기 말을 저장 값으로 — 실행기 phase(SUCCESS · FAILURE · STOPPED)와 영어 별칭도 받는다
@@ -45,7 +50,7 @@ def eval_dir(repo: Path) -> Path:
 
 def episode_files(repo: Path) -> list[Path]:
     d = repo / "config" / "episodes"
-    return [d / f"{n}.yaml" for n in EVAL_EPISODES if (d / f"{n}.yaml").is_file()]
+    return [d / f"{n}.yaml" for n in EVAL_TAB if (d / f"{n}.yaml").is_file()]
 
 
 def _holders(raw: Mapping) -> list[dict]:
@@ -93,10 +98,10 @@ def read_episode(path: Path) -> dict:
 
 
 def episodes(repo: Path) -> list[dict]:
-    """EVAL_EPISODES 중 파일이 있는 것. 파일 mtime · 개수가 같으면 다시 읽지 않는다."""
+    """EVAL_TAB 중 파일이 있는 것. 파일 mtime · 개수가 같으면 다시 읽지 않는다."""
     d = repo / "config" / "episodes"
     # 목록의 세 경로를 늘 넣는다(없으면 mtime 0) — 파일이 생기거나 지워지면 캐시가 풀린다
-    return TV._cached(f"eval:{repo}", [d, *(d / f"{n}.yaml" for n in EVAL_EPISODES)],
+    return TV._cached(f"eval:{repo}", [d, *(d / f"{n}.yaml" for n in EVAL_TAB)],
                       lambda: [read_episode(p) for p in episode_files(repo)])
 
 

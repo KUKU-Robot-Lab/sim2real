@@ -233,7 +233,7 @@ def test_real_cups_run_fpp_on_the_perception_pc_after_the_head_home_and_shutdown
     런처 --host <인지 PC> · UDP 수신 · base 변환 · start, 머리 기준자세가 먼저."""
     host, ext = GEN.PERCEPTION_HOST, GEN.CAMERA_EXTRINSICS
     by = {s.id: s for s in REAL.stages}
-    assert by["cups"].needs == ("head_view_check",) and by["head_home"].touches_real and by["cups"].touches_real
+    assert by["cups"].needs == ("head_view_check", "cup_holders") and by["head_home"].touches_real and by["cups"].touches_real
     head = _cmds(REAL, REAL_BOOK, "head_home")
     assert any(Path(GEN.HEAD_CONFIG).name in " ".join(c.argv) for c in head)
     cups = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "cups")]
@@ -373,7 +373,7 @@ def test_view_check_reads_the_imu_between_head_home_and_cups_without_moving_the_
     for m in (REAL, FAKE):
         by = {s.id: s for s in m.stages}
         ids = [s.id for s in m.stages]
-        assert by["head_view_check"].needs == ("head_home",) and by["cups"].needs == ("head_view_check",)
+        assert by["head_view_check"].needs == ("head_home",) and by["cups"].needs == ("head_view_check", "cup_holders")
         assert ids.index("head_home") < ids.index("head_view_check") < ids.index("cups")
         assert by["head_view_check"].skippable and not by["head_view_check"].touches_real
     cmds = _cmds(REAL, REAL_BOOK, "head_view_check")
@@ -408,20 +408,18 @@ def test_real_cup_holders_run_the_marker_node_after_the_head_home_and_shutdown_s
     rel = node.replace("{repo}/", "").replace(f"{REPO}/", "")      # 로컬 인지(10.27 5090)는 {repo} 가 풀린 절대 경로
     assert f"--out {GEN.HOLDER_POSES}" in rel
     assert f"--extrinsics {GEN.CAMERA_EXTRINSICS}" in rel
-    assert cmds.index(bg[0]) == 3                                   # shutdown 의 cup_holders#3(앞에 머리 확인 · 맞춤)
-    assert "cup_holders#3" in stops
+    assert cmds.index(bg[0]) == 4                                   # shutdown 의 cup_holders#4(앞에 안내 · 확인 · 머리 맞춤 · 카메라)
+    assert "cup_holders#4" in stops
+    assert "컵을 놓기 전" in cmds[0].note and cmds[0].manual and cmds[1].manual   # ★11.11 컵 없이 잰다는 안내가 맨 앞
     status = next(c for c in cmds if "/cup_holders/status" in " ".join(c.argv))
     assert cmds[0].manual and status.manual
     if GEN.REMOTE_PERCEPTION:
         host = GEN.PERCEPTION_HOST
-        for c in (cmds[2], bg[0], status):                          # 카메라 · 노드 · 확인은 카메라 PC 에서
+        for c in (cmds[3], bg[0], status):                          # 카메라 · 노드 · 확인은 카메라 PC 에서
             assert list(c.argv[:4]) == ["ssh", "-tt", "-o", "BatchMode=yes"] and c.argv[4] == host
         assert f"{GEN.REMOTE_PY} scripts/nodes/cup_holder_pose_node.py" in node
-        fetch = cmds[-1]                                            # 마지막 = 파일을 이 PC 로
-        assert fetch.argv[0] == "scp" and fetch.argv[-2] == f"{host}:{GEN.REMOTE_SIM2REAL}/{GEN.HOLDER_POSES}"
-        assert fetch.argv[-1].endswith("/" + GEN.HOLDER_POSES) and not fetch.manual
-    else:
-        assert cmds[-1] is status
+    # ★11.11 사용자: 마지막 = 홀더 확정(한 번 재기 — 원격이면 파일 · 기록을 이 PC 로 가져온다)
+    assert "cup_holder_pose_node.py --write --timeout-s" in " ".join(cmds[-1].argv) and cmds[-2] is status
     fake = {s.id for s in FAKE.stages}
     assert "cup_holders" in fake and not any(c.background for c in _cmds(FAKE, FAKE_BOOK, "cup_holders"))
 
@@ -825,7 +823,7 @@ def test_the_place_student_episode_ends_with_the_default_driver_and_head_home():
     run = REAL_RAW["run"]["episode_place_m_right"]
     halt = next(i for i, c in enumerate(run) if c.get("note") == "에피소드 노드들 정지")
     tail = halt + 1
-    assert run[tail]["argv"] == GEN.HEAD_DRIVER_ARGV and run[tail]["background"]
+    assert run[tail]["argv"] == GEN.HEAD_DRIVER_RESTORE_ARGV and run[tail]["background"]   # ★11.11 이미 떠 있으면 다시 안 띄운다
     assert f"episode_place_m_right#{tail}" not in run[halt]["stop"]
     assert run[tail + 1]["argv"] == GEN.HEAD_HOME_ARGV and run[tail + 1]["execute_args"] == ["--execute"]
     shut = next(c for c in REAL_RAW["run"]["shutdown"] if "policy_pourfj#1" in (c.get("stop") or []))
@@ -852,9 +850,11 @@ def test_every_other_head_driver_keeps_the_default_tilt_limit():
         # ★11.09 82 는 놓기 학생 에피소드 둘(오른손 · 왼손)에만, 에피소드마다 하나씩 + ★11.10 목 스윕(camset 둘레 tilt +75.5 까지) 동안만
         got = sorted(k.rsplit("#", 1)[0] for k in tilt82)
         student = ["episode_place_m_left", "episode_place_m_right"] if "episode_place_m_right" in raw["run"] else []
-        assert got == ([*student, "head_sweep"] if raw is REAL_RAW else []), tilt82
+        student += [f"episode_{n}" for n in GEN.PLACE_M_VARIANTS] if student else []   # ★11.11 놓기 학생 색 · 홀더 판(오른손)
+        assert got == (sorted([*student, "head_sweep"]) if raw is REAL_RAW else []), tilt82
         others = {k: v for k, v in drv.items() if k not in tilt82}     # 놓기 에피소드 끝 꼬리 드라이버 포함
-        assert all(v == GEN.HEAD_DRIVER_ARGV for v in others.values()), others
+        assert all(v in (GEN.HEAD_DRIVER_ARGV, GEN.HEAD_DRIVER_RESTORE_ARGV) for v in others.values()), others
+        assert all("--max-tilt" not in " ".join(v).split("exec ")[-1] for v in others.values()), others
     assert "head_home#0" in _drivers(REAL_RAW)
 
 
@@ -898,3 +898,172 @@ def test_both_stations_have_a_mission_and_the_student_head_nodes_follow_the_came
         assert node[0] == "{repo}/.venv-student/bin/python", (st, node)
         rec = next(c["argv"][-1] for c in cmds if "rh56f1_record.sh start" in " ".join(c.get("argv") or []))
         assert "/head_depth/image" in rec and "/camera/camera/color/image_raw/compressed" not in rec, (st, rec)
+
+
+def test_mask_student_target_class_follows_the_episode_cup_color():
+    """★11.10 마스크 학생 target_class = 에피소드 컵(aglt target_object · place source_object) 토픽 이름 끝 색, 못 뽑으면 생성 실패."""
+    from policy_control.student_mask import CLASSES
+    assert GEN.MASK_COLORS == CLASSES
+    for name, node, want in (("grasp_m_right", "rh_aglt_student_node.py", "blue"),
+                             ("grasp_m_left", "rh_aglt_student_node.py", "orange"),
+                             ("place_m_right", "rh_place_student_node.py", "blue"),
+                             ("place_m_pink_h2_right", "rh_place_student_node.py", "pink")):
+        argv = next(c["argv"] for c in REAL_RAW["run"][f"episode_{name}"] if any(node in str(a) for a in c.get("argv") or []))
+        assert f"target_class:={want}" in argv, (name, argv)
+    assert GEN._mask_target("/objects/source240b_blue/pose") == "blue"
+    for bad in ("/objects/cup_src/pose", "/objects/source240_red/pose", "/episode/objects/x_blue/pose"):
+        with pytest.raises(ValueError):
+            GEN._mask_target(bad)
+
+
+def test_cup_holders_end_with_one_holder_confirm_and_cups_never_touches_the_holders():
+    """★11.10 홀더 한 번 재기 — 실기는 --timeout-s · --max-jump-m 로 돌고 '; true' 로 단계를 막지 않는다(결과는 last_check → 시작 검사).
+
+    ★11.11 deploy 리뷰 H2: 실패(카메라 · ssh · scp)는 삼키지 않고 rc 를 받아 ⚠ + last_check.json = failed, yaw 상한도 건다.
+    ★11.11 사용자 "컵홀더 측정 완료(고정) → 컵 배치": 확정은 cup_holders 끝에서만 — cups 는 홀더 파일 · 기록을 건드리지 않는다
+    (cups_5: 셰이커가 홀더 0 을 가려 cups 끝 재기가 cup_holders 의 written 을 failed 로 덮었다). cups 는 cup_holders 뒤.
+    """
+    real = " ".join(REAL_RAW["run"]["cup_holders"][-1]["argv"])
+    assert "cup_holder_pose_node.py --write --timeout-s" in real and "--max-jump-m 0.03" in real and real.endswith("true"), real
+    assert f"--max-yaw-deg {GEN.HOLDER_MAX_YAW_DEG:g}" in real and "rc=$?" in real and "⚠ 홀더 다시 재기 실패" in real
+    assert "camera_up.sh; " not in real and "; true; " not in real   # 중간 실패를 삼키는 '; true' 가 없다
+    if GEN.REMOTE_PERCEPTION:
+        assert real.count("rc=$?") == 2 and ".last_check.json config/" in real    # ssh 와 scp 각각
+        assert f"timeout {GEN.HOLDER_ONCE_S + GEN.HOLDER_SSH_SLACK_S:g} ssh -o BatchMode=yes" in real   # ★11.11 M3
+    for raw in (REAL_RAW, FAKE_RAW):
+        cups = " ".join(" ".join(c.get("argv") or []) for c in raw["run"]["cups"])
+        assert "cup_holder_pose_node" not in cups and "last_check" not in cups
+    st = {x["id"]: x for x in REAL_RAW["stages"]}
+    assert "cup_holders" in st["cups"]["needs"] and st["cup_holders"]["skippable"]   # 홀더를 그대로 두면 건너뛴다
+
+def test_every_command_resolves_without_a_stray_placeholder():
+    """★11.11 cups 홀더 재기 실패 기록(printf JSON)의 `{"time": …}` 가 자리표시자로 읽혀 단계가 죽었다 —
+    모든 단계 · 실기와 가짜 모두, 명령 치환이 ValueError 없이 끝나야 한다(사라진 정책 파일만 건너뛴다)."""
+    from mission_stages import resolve
+
+    for raw, m in ((REAL_RAW, REAL), (FAKE_RAW, FAKE)):
+        for sid, cmds in raw["run"].items():
+            for c in cmds or []:
+                for a in [*c.get("argv", ()), *(c.get("execute_args") or ())]:
+                    try:
+                        resolve(str(a), m, repo=REPO)
+                    except KeyError:
+                        continue  # 정책 · 산출물 파일이 이 체크아웃에 없음 — 자리표시자 자체는 알아본 것
+                    except ValueError as exc:
+                        raise AssertionError(f"{sid}: {exc} — {str(a)[:120]}") from exc
+
+
+def test_the_holder_failure_record_is_json_and_cups_goes_on(tmp_path):
+    """★11.11 H2: 카메라 · 노드가 실패하면 ⚠ 줄 + last_check.json = failed(시작 검사가 읽는다), 단계 rc 는 0."""
+    import json
+    from mission_stages import resolve
+
+    sh = GEN._holder_fail_sh("config/x.last_check.json", "카메라")
+    (tmp_path / "config").mkdir()
+    out = subprocess.run(["bash", "-c", "rc=7; " + resolve(sh, REAL, repo=REPO) + "; true"],
+                         cwd=tmp_path, capture_output=True, text=True)
+    assert out.returncode == 0 and "⚠" in out.stdout
+    rec = json.loads((tmp_path / "config" / "x.last_check.json").read_text(encoding="utf-8"))
+    assert rec["result"] == "failed" and rec["rc"] == 7 and rec["time"]
+    import time
+    assert abs(rec["epoch"] - time.time()) < 60     # ★11.11 M1: 시작 검사가 읽는 epoch
+
+
+def test_the_place_tail_driver_reuses_a_default_driver_and_terms_a_tilt_82_one(tmp_path):
+    """★11.11 deploy 3 (실기 224018 pink_h2 cleanup rc≠0 "PID 966259 가 단독으로 열고 있다"): 꼬리 드라이버는 포트를 쥔 드라이버가
+    있으면 인자를 본다 — 기본이면 다시 띄우지 않고 그 PID 를 지켜보고, --max-tilt 가 남았으면 그 PID 를 SIGTERM 한 뒤 띄운다."""
+    import os, signal, subprocess, sys, time
+    script = GEN._HEAD_DRIVER_GUARD + "echo LAUNCH"
+    fake = tmp_path / "head_joint_publisher.py"
+    fake.write_text("import signal, sys, time\nsignal.signal(signal.SIGTERM, lambda *a: sys.exit(0))\ntime.sleep(60)\n")
+    py = tmp_path / "python3"
+    py.symlink_to(sys.executable)
+    for extra, want in (([], "기본 목 드라이버 PID"), (["--max-tilt", "82"], "LAUNCH")):
+        drv = subprocess.Popen([str(py), str(fake), *extra])
+        import threading
+        reaper = threading.Thread(target=drv.wait, daemon=True)     # 실기는 sshd 가 거둔다 — 좀비가 kill -0 에 살아 보이지 않게
+        reaper.start()
+        try:
+            time.sleep(0.3)
+            if not extra:       # ★11.11 deploy LOW: 지켜보던 기본 드라이버가 끝나면 rc 1 — 0.8 s 뒤 드라이버를 죽인다
+                threading.Timer(0.8, lambda: os.kill(drv.pid, signal.SIGKILL)).start()
+            out = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=20)
+            assert want in out.stdout and f"PID {drv.pid}" in out.stdout, out.stdout + out.stderr
+            if extra:
+                reaper.join(timeout=5)
+                assert drv.returncode == 0 and out.returncode == 0 and out.stdout.strip().endswith("LAUNCH")  # SIGTERM 으로 끝났다
+            else:
+                assert out.returncode == 1 and "❌ 지켜보던 목 드라이버" in out.stdout and "LAUNCH" not in out.stdout
+        finally:
+            if drv.poll() is None:
+                os.kill(drv.pid, signal.SIGKILL)
+    out = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=20)
+    assert out.stdout.strip() == "LAUNCH"                           # 드라이버가 없으면 그냥 띄운다
+    # ★11.11 deploy MEDIUM: pgrep 직후 PID 가 끝나 cmdline 을 못 읽으면 지켜보지 않고 새로 띄운다 · pgrep 은 내 uid 만
+    assert 'pgrep -u "$(id -u)"' in GEN._HEAD_DRIVER_GUARD
+    drv = subprocess.Popen([str(py), str(fake)])
+    try:
+        time.sleep(0.3)
+        gone = script.replace("</proc/$p/cmdline", "</proc/$p/no_such_cmdline")
+        out = subprocess.run(["bash", "-c", gone], capture_output=True, text=True, timeout=20)
+        assert out.returncode == 0 and "새로 띄운다" in out.stdout and out.stdout.strip().endswith("LAUNCH"), out.stdout + out.stderr
+        assert out.stderr == ""
+    finally:
+        os.kill(drv.pid, signal.SIGKILL)
+        drv.wait()
+
+
+def test_shutdown_still_stops_the_place_tail_driver_in_every_mission():
+    """★11.11 꼬리 드라이버 argv 가 bash 가드로 바뀌어도 shutdown 이 그것을 내린다(로컬 목 cam5090 포함)."""
+    import yaml as _y
+    for f in ("mission_rh56f1_control.yaml", "mission_rh56f1_control_cam5090.yaml"):
+        m = _y.safe_load((REPO / "config" / f).read_text(encoding="utf-8"))
+        stops = {s for c in m["run"]["shutdown"] for s in (c.get("stop") or [])}
+        for name in GEN.PLACE_M_VARIANTS:
+            tail = next(i for i, c in enumerate(m["run"][f"episode_{name}"])
+                        if c.get("background") and GEN._HEAD_DRIVER_GUARD in " ".join(c.get("argv") or []))
+            assert f"episode_{name}#{tail}" in stops, (f, name)
+
+
+def test_grasp_s_color_variants_follow_the_student_one_obj_and_only_change_the_cup():
+    """★11.11 잡기 학생 색 버튼 — 팔마다 학생 ckpt one_obj 가 허용하는 색만(OBJ_TARGETS, 첫 값 = 기본 = 원본 파일).
+    변형은 원본에서 컵 토픽 · 이름만 바꾸고(policy_object 그대로), 미션 단계 · 학생 bag · 마스크 목표 색 · shutdown 이 원본과 같다."""
+    from policy_control.student_mask import OBJ_TARGETS
+    assert GEN.GRASP_S_VARIANTS == ("grasp_s_pink_right",)
+    eps = REPO / "config" / "episodes"
+    for side, colors in GEN.GRASP_S_SIDE_COLORS.items():
+        raw = yaml.safe_load((eps / f"grasp_s_{side}.yaml").read_text(encoding="utf-8"))
+        pol = next(iter(raw["policies"].values()))
+        one_obj = yaml.safe_load((REPO / "deploy" / "policies" / pol["student"] / "student.yaml").read_text())["one_obj"]
+        assert OBJ_TARGETS[one_obj] == colors and colors[0] == GEN.GRASP_S_DEFAULT[side], (side, one_obj)
+        assert raw["objects"]["CUP"]["topic"] == f"/objects/{GEN.GRASP_S_COLORS[GEN.GRASP_S_DEFAULT[side]]}/pose"
+        for c in colors[1:]:
+            name = GEN.grasp_s_name(c, side)
+            var = yaml.safe_load((eps / f"{name}.yaml").read_text(encoding="utf-8"))
+            assert var["episode"]["name"] == name and var["objects"]["CUP"]["topic"] == f"/objects/{GEN.GRASP_S_COLORS[c]}/pose"
+            assert {**var, "episode": raw["episode"], "objects": raw["objects"]} == raw     # 나머지(policy_object 포함)는 원본 그대로
+            assert name in GEN.STUDENT_EPISODES and f"episode_{name}" in {st["id"] for st in REAL_RAW["stages"]}
+            # 마스크 노드는 클래스 비트 전부를 내고(목표 인자 없음) 목표 색은 학생 노드 target_class 가 고른다
+            argv = {node: " ".join(map(str, next(c2["argv"] for c2 in REAL_RAW["run"][f"episode_{name}"]
+                                                 if any(node in str(a) for a in c2.get("argv") or []))))
+                    for node in ("head_mask_node.py", "rh_aglt_student_node.py")}
+            assert f"target_class:={c}" in argv["rh_aglt_student_node.py"] and "target" not in argv["head_mask_node.py"], argv
+            stops = lambda n: sorted(s.split("#")[1] for c2 in REAL_RAW["run"]["shutdown"] for s in c2.get("stop") or []  # noqa: E731
+                                     if s.startswith(f"episode_{n}#"))
+            assert stops(name) == stops(f"grasp_s_{side}") != []
+
+
+def test_console_grasp_s_colors_match_the_generator():
+    """★11.11 콘솔 policy 탭 S 색 버튼 = 생성기 GRASP_S_* (place_m 처럼 시험이 맞춘다)."""
+    sys.path.insert(0, str(REPO / "deploy" / "s2r_console"))
+    from s2r_console import experiments as XV
+    assert {k: fpp for k, fpp, _ in XV.GRASP_S_COLORS} == GEN.GRASP_S_COLORS
+    assert XV.GRASP_S_SIDE_COLORS == GEN.GRASP_S_SIDE_COLORS and XV.GRASP_S_DEFAULT == GEN.GRASP_S_DEFAULT
+    assert {f"{XV.grasp_s_head(c, s)}_{s}" for s, cs in XV.GRASP_S_SIDE_COLORS.items() for c in cs
+            if c != XV.GRASP_S_DEFAULT[s]} == set(GEN.GRASP_S_VARIANTS)
+    v = XV.view(REPO, [st["id"] for st in REAL_RAW["stages"]])
+    gs = {i["id"]: i for i in v["items"]}["grasp_s"]["sides"]
+    right = gs["right"]["objects"]
+    assert [(o["object"], o["action"], o["default"]) for o in right] == [
+        ("blue", "ctl_grasp_s_right", True), ("pink", "ctl_grasp_s_pink_right", False)]
+    assert "holder" not in right[0] and "objects" not in gs["left"]          # 홀더 버튼 없음 · 왼손은 주황 하나

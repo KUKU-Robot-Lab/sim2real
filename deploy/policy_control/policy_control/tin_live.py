@@ -185,7 +185,8 @@ def record(meas: dict, side: str, fallback: Path, **meta) -> dict:
         T, src = load_fallback(fallback, side), "fallback"
     out = {"source": src, "side": side, "pos_m": [round(float(v), 6) for v in T[:3, 3]],
            "quat_wxyz": [round(float(v), 6) for v in R_to_quat(T[:3, :3])], "T_in": np.round(T, 6).tolist(),
-           "convention": "T_in = 손바닥(FK palm_body) → 컵 FP++ 원점" + (" + 0.02·z" if Z_OFF[side] else "") + ", 위치 m, 쿼터니언 wxyz",
+           "convention": "T_in = 손바닥(FK palm_body) → 컵 FP++ 원점" + (f" + {Z_OFF[side]}·z" if Z_OFF[side] else "") + ", 위치 m, 쿼터니언 wxyz",
+           "z_off": Z_OFF[side],
            "fallback_file": str(fallback), "measured": {k: v for k, v in meas.items() if k != "T_in"},
            "t": time.strftime("%Y-%m-%dT%H:%M:%S"), **({"vs_fixed": vs} if vs else {}), **meta}
     if src == "fallback":
@@ -198,12 +199,13 @@ def load_tin(path: str | Path, side: str) -> tuple[np.ndarray, np.ndarray, dict]
     d = json.loads(Path(path).read_text(encoding="utf-8"))
     if d.get("side") != side:
         raise TinError(f"{path}: side {d.get('side')!r} ≠ {side!r}")
-    if Z_OFF.get(side):          # shortcut: 왼손 T_in 은 shaker 원점 + 0.02·z 틀(분석과 같게, 기록용) — place 에 쓰려면 원점 틀로 되돌린다
-        raise TinError(f"{path}: {side} T_in 은 FP++ 원점 + {Z_OFF[side]}·z 틀이라 붙인 자세로 쓰지 않는다")
     p, q = np.asarray(d.get("pos_m"), float).reshape(3), np.asarray(d.get("quat_wxyz"), float).reshape(4)
     if not (np.all(np.isfinite(p)) and np.all(np.isfinite(q))) or abs(np.linalg.norm(q) - 1) > 1e-3 or np.linalg.norm(p) > NEAR_M_SIDE.get(side, NEAR_M):
         raise TinError(f"{path}: T_in 값이 이상하다 pos {p.tolist()} quat {q.tolist()}")
-    return p, q / np.linalg.norm(q), d
+    q = q / np.linalg.norm(q)
+    # 기록 틀 = 원점 + off·컵 z(measure 의 C[:3, 3] += z_off·C[:3, 2]) → place 는 원점 틀: T_in · Trans(0, 0, -off). z_off 필드가 없는 옛 파일은 Z_OFF.
+    off = float(d.get("z_off", Z_OFF.get(side, 0.0)))
+    return p - off * quat_to_R(q)[:, 2], q, {**d, "z_off_applied": off}
 
 
 def palm_fk(side: str, asset: str = ROBOT_ASSET) -> Callable[[np.ndarray], np.ndarray]:

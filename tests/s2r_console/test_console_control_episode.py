@@ -142,12 +142,18 @@ def test_policy_tab_runs_control_episodes_from_the_experiment_list():
     assert 'id="xp-list"' in tab and 'id="xp-main"' in tab
     assert 'control-ep-panel' not in html and 'control-ep-actions' not in js
     assert 'data-act="action-prepare" data-arg="${esc(side.action)}"' in js
-    from s2r_console.experiments import F_OBJECTS, f_head
+    from s2r_console.experiments import (F_OBJECTS, GRASP_S_SIDE_COLORS, PLACE_M_COLORS, PLACE_M_HOLDERS, f_head,
+                                         grasp_s_head, place_m_head)
     # ★11.09 실험 목록 = 실행 작업 — 단 경로 F 물체들은 F 한 칸 안의 버튼, C·D 는 목록에서 뺐다(실행 작업은 남는다)
-    listed = [head for _, head, _ in GRASP if head != 'grasp_f']
+    # ★11.11 놓기 학생 색 · 홀더 조합도 놓기 학생 한 칸 안의 버튼
+    # ★11.11 잡기 학생 색도 잡기 학생 한 칸 안의 버튼(eval 탭에서 옮김)
+    listed = [head for _, head, _ in GRASP if head not in ('grasp_f', 'place_m', 'grasp_s')]
+    gs_heads = {grasp_s_head(c, side) for side, cs in GRASP_S_SIDE_COLORS.items() for c in cs}
+    assert gs_heads == {'grasp_s', 'grasp_s_pink'}
     f_heads = {f_head(o, side) for o, _, _ in F_OBJECTS for side in ('right', 'left')}
-    assert list(CONTROL_EPISODES) == list(CONTROL_LABELS)
-    assert set(listed) | f_heads | {'grasp_c', 'grasp_d'} == set(CONTROL_EPISODES)
+    pm_heads = {place_m_head(c, h) for c, _, _ in PLACE_M_COLORS for h in PLACE_M_HOLDERS}
+    assert sorted(CONTROL_EPISODES) == sorted(CONTROL_LABELS)
+    assert set(listed) | f_heads | pm_heads | gs_heads | {'grasp_c', 'grasp_d'} == set(CONTROL_EPISODES)
     assert 'grasp_c' in CONTROL_EPISODES and CONTROL_LABELS['grasp_c'] == '경로 C'
 
 
@@ -159,3 +165,21 @@ def test_real_mission_exposes_grasp_b_on_both_arms():
         assert st['group'] == 'policy' and st['lane'] == lane
         cmds = m['run'][f'episode_grasp_b_{side}']
         assert sum(bool(c.get('manual')) for c in cmds) >= 2                      # 진행 경계(정리 앞 수동 단계)가 있다
+
+
+def test_place_m_card_warns_to_refresh_a_cup_the_cups_stage_does_not_rescan(tmp_path):
+    """★11.11 deploy 리뷰 MEDIUM: cups 는 fpp_active 오른손 컵만 다시 찍는다 — 다른 색을 고르면 카드가 Refresh 를 요구."""
+    from s2r_console import eval_log
+    from s2r_console.experiments import PLACE_M_COLORS, _cups_right_cup
+
+    (tmp_path / 'config').mkdir()
+    (tmp_path / 'config/fpp_active.yaml').write_text('sides: {right: source240_blue, left: shaker_c_orange}\n')
+    assert _cups_right_cup(tmp_path) == 'source240_blue'
+    assert _cups_right_cup(tmp_path / 'none') == ''                  # 못 읽으면 늘 경고
+    assert {fpp != _cups_right_cup(tmp_path) for _, fpp, _ in PLACE_M_COLORS} == {False, True}
+    js = (REPO / 'deploy/s2r_console/s2r_console/web/console.js').read_text()
+    assert 'side.rescan ?' in js and 'Perception Refresh 필요' in js
+    src = (REPO / 'deploy/s2r_console/s2r_console/experiments.py').read_text()
+    assert '"rescan": fpp != cups_cup' in src
+    # 색 · 홀더 조합 에피소드도 평가 회차로
+    assert {'place_m_blue_h2_right', 'place_m_pink_h1_right', 'place_m_pink_h2_right'} <= set(eval_log.EVAL_EPISODES)
