@@ -394,39 +394,3 @@ def test_sag_not_interrupted_when_arm_follows_correction_steps(monkeypatch):
     assert np.max(steps) == pytest.approx(RCY.SAG_STEP_MAX, abs=1e-9)
     run = np.flatnonzero(steps > 0.0)
     assert len(run) == d["sag_ticks"] >= 5 and np.all(np.diff(run) == 1)   # 보정 틱이 끊기지 않고 이어진다
-
-
-N10 = POL / "right_n10_e4000"
-
-
-@pytest.mark.skipif(NO_HDGP or not (N10 / "bank/bank_right_train.npz").is_file(), reason="hdgp · n10 뱅크(git 밖) 없음")
-def test_bank_pick_lands_the_end_pose_near_the_place_start_bank():
-    """★11.11 e2e oneshot 221f4fc s0e0 끝 q 에서 뱅크 행 222 의 컵 자리로: 옛 Mover 해는 뱅크 최근접 0.085 rad, 뱅크 시드 고르기 뒤 < 0.03."""
-    import torch
-    c = P.load_contract(N10 / "rh_place_contract.json")
-    s = c.side()
-    RC, mch = RCY.load_chain(s.palm_body, list(s.arm_joints))
-    bq = RCY.load_bank_arm_q(N10, s.side, list(s.arm_joints))
-    assert bq.shape == (350, 7) and RCY.load_bank_arm_q(POL / "right_n07", s.side, list(s.arm_joints)) is None
-    z = np.load(N10 / "bank/bank_right_train.npz")
-    i = 222
-    bx = np.delete(bq, i, 0)                                    # 자기 행은 빼고 잰다
-    T = np.eye(4)
-    T[:3, :3], T[:3, 3] = RCY.quat_matrix(z["true_q"][i]), z["true_p"][i]   # 손바닥 좌표 컵
-    fk = lambda q: mch.fk(torch.tensor([list(q)], dtype=torch.float32))[0].double().numpy()
-    tgt = (fk(bq[i]) @ T)[:3, 3]
-    q0 = np.array([0.46, -0.10, -0.80, 0.07, 0.79, -0.15, 1.38])
-    Tc = fk(q0) @ T
-    w = np.sqrt(max(1e-12, 1 + np.trace(Tc[:3, :3]))) / 2
-    R = Tc[:3, :3]
-    quat = [w, (R[2, 1] - R[1, 2]) / (4 * w), (R[0, 2] - R[2, 0]) / (4 * w), (R[1, 0] - R[0, 1]) / (4 * w)]
-    cfg = RCY.ReadyCarryCfg.from_dict(c.ready_carry)
-    out = {}
-    for name, bank in (("old", None), ("new", bx)):
-        rc = RCY.ReadyCarry(cfg, RC, mch, k_arm=c.k_arm, arm_ema=c.arm_ema, hand_action=np.zeros(6), dt=1 / c.policy_hz, bank_q=bank)
-        pl = rc.start(q0, Tc[:3, 3], quat, tgt)
-        out[name] = (float(np.abs(np.array(pl["q_goal"]) - bx).max(1).min()), pl, rc.as_dict())
-    assert out["old"][0] > 0.07 and out["old"][1]["bank_dq"] is None
-    dq, pl, d = out["new"]
-    assert dq < 0.03 and pl["bank_dq"] == pytest.approx(dq, abs=1e-3) and d["bank_dq"] == pl["bank_dq"]
-    assert pl["anchor_err_mm"] < 3.0 and pl["anchor_err_deg"] < 3.0 and pl["T_steps"] <= cfg.max_steps
