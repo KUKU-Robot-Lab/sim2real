@@ -118,6 +118,18 @@ def test_chain_carries_first_then_starts_the_policy_from_zero():
 
 
 @pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_carry_anchor_is_lifted_and_start_err_is_measured_from_the_lifted_anchor():
+    """★11.11 A안: Mover 앵커만 +CARRY_LIFT_M z. start_ok 오차는 Mover 앵커 기준이라 올린 15 mm 가 err 에 들어가지 않는다."""
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup()
+    ch.rc_chain = (RC, mch)
+    ch.reset(meas(q), holder=holder, held=(q, hand), attach=att)
+    base = P.PC.carry_target(holder, P.origin_z_of(c), c.ready_carry["dz"])
+    assert P.CARRY_LIFT_M == pytest.approx(0.015)
+    assert np.allclose(ch.rcarry.target, base + [0.0, 0.0, P.CARRY_LIFT_M])
+    assert np.allclose(ch.rcarry.mv.pa[0].double().numpy(), ch.rcarry.target, atol=1e-6)   # _meas_err 의 기준점
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
 @pytest.mark.parametrize("policy", ["right_n07", "right_n10_e4000"])
 def test_carry_dq_never_exceeds_the_action_limit(policy):
     """★11.10 Mover 관절 상한 = k_arm·arm_ema — 행동이 ±1 에 잘리지 않아 계획대로 도착한다(실기 161342: 잘린 틱 95 %, 끝 err 48 mm)."""
@@ -188,7 +200,7 @@ def test_carry_follows_the_command_not_the_measured_arm_then_waits_until_still()
     t = d0["t"]                                                      # 이동 구간은 개루프 — 같다. 멈춤 확인 구간은 처짐 보정이 실측을 본다
     assert d1["t"] == t and np.allclose(clean[:t], shaky[:t], atol=1e-6)
     assert d0["arrived"] and d0["start_ok"] and d0["still"] == "ok"
-    assert np.all(clean[t:] == 0.0) and d0["still_ticks"] == len(clean) - t
+    assert np.allclose(clean[t:], 0.0, atol=1e-9) and d0["still_ticks"] == len(clean) - t   # 반올림 1e-15 허용(11.11 앵커 +15 mm)
     assert d0["still_ticks"] >= RCY.STILL_TICKS + 2                  # 흔들리는 2 틱 동안은 세지 않는다
 
 

@@ -28,6 +28,10 @@ SCHEMA = "policy_control/rh_place_contract/v1"
 TASK_PREFIX = "open-rh_{}_place"
 #: hdgp tasks/rh_place_r/place_geom.py:12 — 홀더 원점 기준 컵이 앉는 바닥 높이
 HOLDER_FLOOR_Z = -0.025
+# ★11.11 준비 이송 앵커만 z 로 올린다(사용자 A안). 오프라인 SLSQP: 원래 앵커의 손바닥 축 오차 하한 7.03°(관절 한계와 무관) > 문턱 4.7°,
+#   +15 mm 면 3.23°. sim d75dfec seed0·1 place_blue 축 5.35~5.8° 로 시작 못 함. 올린 앵커 z 0.390 m(홀더 0.235 기준)는 학습 뱅크
+#   blue 컵 z p95 0.3975 안. start_ok 오차는 Mover 앵커(= 올린 앵커) 기준이라 15 mm 를 손해 보지 않고, 정책 기준(holder)은 그대로.
+CARRY_LIFT_M = 0.015
 JOINT_FREE_G = AttachCfg.joint_force_g
 #: 놓음 안전 게이트(10.04 PLACE 검토) — 네 손가락 손 목표가 인계 때보다 open 쪽으로 평균 이만큼 열린 뒤에만 '빈 손'을 센다.
 #  sim 놓음은 정책이 손을 연 뒤에만 났다. 실기는 손바닥 · 첫마디 접촉을 못 봐서 손끝이 비어도 마디로 쥐고 있을 수 있다.
@@ -638,7 +642,8 @@ class PlaceChain:
             self.rcarry = RCY.ReadyCarry(cfg, *self.rc_chain, k_arm=self.c.k_arm, arm_ema=self.c.arm_ema, dt=1.0 / self.c.policy_hz,
                                          hand_action=hand_action_of(self.c, hand0))
             pos, quat = self.cup_from_palm(m.palm_pos, m.palm_R)
-            self.rcarry.start(np.asarray(m.arm_q, float), pos, quat, PC.carry_target(holder, origin_z_of(self.c), cfg.dz))
+            self.rcarry.start(np.asarray(m.arm_q, float), pos, quat,
+                              PC.carry_target(holder, origin_z_of(self.c), cfg.dz) + (0.0, 0.0, CARRY_LIFT_M))
         else:                                            # 이송 없음 — 정책이 지금부터라 손 목표를 지금 실측으로
             self._policy_hand_from_meas(hand_meas)
         self._policy_reset()
