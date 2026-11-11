@@ -276,3 +276,25 @@ def test_approach_skips_non_grasp_lanes_and_recover_nodes():
         interface = ApproachInterface(node)
         Supervisor(interface, Judge(), mode='shadow', settle=0, approach_judge=approach).step(interface.status())
     assert approach.steps == []
+
+
+class PendingRecoverInterface(FakeInterface):
+    """deploy 가 복구를 걸어 둔 READY + pending: 승인은 recover, 매번 다시 실패한다."""
+    @staticmethod
+    def failure():
+        return {'status': 'READY', 'node': 'grasp_to_tilt_start', 'next_action': 'recover:grasp_to_tilt_start:retry',
+                'pending': {'node': 'grasp_to_tilt_start', 'action': 'retry', 'reason': 'slip'},
+                'last': {'node': 'grasp_to_tilt_start', 'code': 'pour_failed', 'ok': False}}
+
+    def perform(self, action, target=None, *, active=False, args=None):
+        self.calls.append((action, target, active))
+        if active and action == 'next':  # 복구 승인 = next(next_action) — 다시 실패해 새 시도로 걸린다
+            self.state = {**self.failure(), 'attempts': {'grasp_to_tilt_start': len(self.calls)}}
+        return {'ok': True}
+
+
+def test_pending_recover_counts_toward_max_recover():
+    interface = PendingRecoverInterface()
+    supervisor = Supervisor(interface, Judge('next'), mode='active', settle=0, max_recover=2)
+    assert supervisor.run() == 1
+    assert [c[0] for c in interface.calls][:2] == ['next', 'next'] and interface.calls[2][0] in {'human', 'stop'}

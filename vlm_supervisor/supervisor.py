@@ -12,6 +12,7 @@ from .failure_policy import SOURCE, allowed_actions, runner_detail
 
 END = {'SUCCESS', 'STOPPED'}
 RECOVERY = {'retry', 'rescan', 'home', 'insert', 'human'}
+COUNTED = RECOVERY | {'recover'}  # deploy 복구 승인도 max_recover 에 센다
 
 
 class Supervisor:
@@ -91,6 +92,8 @@ class Supervisor:
                 action = 'recover'
             elif target is None:
                 action = 'wait'
+        if action == 'recover' and self.recoveries.get(failed_node, 0) >= self.max_recover:
+            capped, action = True, 'human'
         if action not in allowed:
             action = 'human' if 'human' in allowed else 'stop'
         # 접근 판정 대상: next 로 갈 노드, 또는 retry 로 다시 돌 노드(재실행도 접근이다).
@@ -133,7 +136,7 @@ class Supervisor:
         elif self.mode == 'active' and result.get('ok') is False:
             self.log({'event': 'service_failure', 'result': self.interface.perform('stop', active=True)})
             self.halted = True
-        if self.mode == 'active' and action in RECOVERY and result.get('ok'):
+        if self.mode == 'active' and action in COUNTED and result.get('ok'):
             self.recoveries[failed_node] = self.recoveries.get(failed_node, 0) + 1
             if capped:
                 self.halted = True
@@ -228,7 +231,7 @@ class Supervisor:
                     return 0 if status['status'] == 'SUCCESS' else 1
                 event = self.step(status)
                 recovered = (event is not None and event['event'] == 'decision'
-                             and event['action'] in RECOVERY and event['result'].get('ok')
+                             and event['action'] in COUNTED and event['result'].get('ok')
                              and self.mode == 'active' and not self.halted)
                 if recovered:
                     recovery_key = self.key(status)
