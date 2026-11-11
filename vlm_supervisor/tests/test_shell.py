@@ -162,6 +162,7 @@ def test_interface_shell_and_supervisor_recovery(tmp_path):
         def __init__(self):
             super().__init__('runner', tmp_path / 'approvals')
             self.current = status()
+            self.current['last']['code'] = 'none'
             self.sent = []
         def status(self):
             return self.current

@@ -13,6 +13,15 @@ from vlm_supervisor.sim_interface import SimInterface
 from vlm_supervisor.supervisor import Supervisor
 
 
+@pytest.fixture(autouse=True)
+def require_local_socket():
+    try:
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+    except PermissionError:
+        pytest.skip('sandbox denies local TCP sockets; HTTP integration unverified')
+
+
 def jpeg(color):
     buf = io.BytesIO()
     Image.new('RGB', (4, 4), color).save(buf, 'JPEG')

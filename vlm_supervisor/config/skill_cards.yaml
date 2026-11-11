@@ -526,8 +526,8 @@
   성공_모습:
     사진: 컵이 홀더 안에 서 있고 손가락이 컵에서 빠져 있다.
     숫자:
-    - 규칙: hand_empty=(place.phase==done). cup_in_holder는 stop+1.0 s 이후 live 또는 latch_cup FK 중 하나라도 통과하면 True, 둘 다 없으면
-        미판정. xy<0.035 m AND |z-(holder_z+SEAT_DZ_CYL60)|<0.03 m.
+    - 규칙: hand_empty는 phase=done이면 True, episode_end/opened_before_latch이면 None(미확인), 그 외 False. None은 빈손 증거가 아니다. cup_in_holder는 stop+1.0 s 이후 live 또는 latch_cup FK 중 하나라도 통과하면 True, 둘 다 없으면
+        미판정. xy<0.035 m AND |z-(holder_z+SEAT_DZ_CYL60)|<0.03 m. opened_before_latch만 z 허용 0.015 m; 촉각이 release_force_n 이상이면 hand_empty=False. 신호 없으면 tactile 검사 생략을 기록한다.
       근거: deploy/policy_control/policy_control/episode_ros.py:865
     - 규칙: SEAT_DZ_CYL60=HOLDER_FLOOR_Z+0.085. 숫자상 안착 판정과 사진의 실제 컵 바닥/기울기 관찰을 함께 기록한다.
       근거: deploy/policy_control/policy_control/episode_ros.py:118
@@ -538,10 +538,9 @@
   - 규칙: latch_s2r의 실제 경로는 위 timed release/withdraw. release_steps=5, settle_steps=45, release_force_n=1.0도 계약에 있지만 이
       경로의 고정 종료 시간으로 쓰지 않는다.
     근거: deploy/policy_control/policy_control/rh_place.py:770
-  - 규칙: 래치 없이 정책 opened>=open_min_rad(기본 0.15 rad)가 OPENED_END_TICKS=3 연속이면 outcome=opened로 stop. opened는 인계 손 목표 대비
-      펴진 양이며 절대 실측 빈손 판정은 아니다.
+  - 규칙: 래치 전 정책·실측 opened>=open_min_rad(0.15 rad), 촉각<release_force_n 및 관절 힘<joint_free_g가 3틱이면 outcome=opened_before_latch로 stop. 관절 힘 NaN은 쥔 것으로 간주; 힘 신호가 없으면 경고 후 각도만 사용. 이는 물리 실패나 빈손 확정이 아닌 규칙 종료다.
     근거: deploy/policy_control/policy_control/rh_place_node.py:369
-  - 규칙: 래치 전 정책 시간 상한=학습 episode_length_s 5.0 s; place 시간 초과 abort. ready_carry는 별도 시간이며 (max_steps + mv.settle_steps)/policy_hz
+  - 규칙: 래치 전 학습 episode_length_s 끝은 outcome=episode_end 정상 stop. ready_carry는 별도 시간이며 (max_steps + mv.settle_steps + STILL_MAX_TICKS)/policy_hz
       + READY_CARRY_SLACK_S(2.0 s) 초과 abort.
     근거: deploy/policy_control/policy_control/rh_place_node.py:349
   - 규칙: hand_empty=False 또는 outcome=withdraw_timeout이면 다음 복귀 금지. cup_in_holder=False면 place_failed. continue_on_fail=[place]
@@ -553,9 +552,11 @@
     - deploy/policies/rh56f1/place/left_n09_e3800/params/env.yaml:77
     - deploy/policies/rh56f1/place/left_n09_e3800/rh_place_contract.json:219
   다음으로_연결:
-  - 규칙: 성공하면 EMPTY와 *_placed 기록. 실패 중 policy_timeout/place_failed만 계속 진행 가능하며 hand_empty=False/withdraw_timeout이면 제외.
+  - 규칙: 성공하면 EMPTY와 *_placed 기록. 실패 중 policy_timeout/place_failed만 계속 진행 가능하며 hand_empty=False/withdraw_timeout 또는 opened_before_latch이고 cup_in_holder=False(place_hand_unknown)이면 제외. supervisor는 이 예외를 직접 실행하지 않고 runner가 기록한 place_failed_continued만 따른다.
       계속 진행 시 source 위치 unknown, *_placed를 세우지 않음.
     근거: deploy/policy_control/policy_control/episode_runner.py:547
+  - 규칙: ready_carry 추종 이탈(track_abort, NaN 포함) 및 start_ok=False는 정책 시작 전 규칙 거부다. 시작 축 문턱은 4.7 deg. 홀더 재기 실패/jump_rejected는 에피소드 시작 차단이며 개별 사용 홀더 안정 재확인 예외는 deploy가 판단한다. 위치 모르는 실패 컵의 rehome refused는 사람 확인 정지다. 이를 일반 놓기 실패로 재시도하지 않는다.
+    근거: deploy/policy_control/policy_control/place_ready_carry.py
   - 파랑 place 다음 go_home_r; 분홍 place 다음 왼손 shaker place; shaker place 다음 양팔 go_home. 실패했다고 무조건 다음이 home인 것은 아니다.
   흔한_실패:
   - 규칙: 손이 컵에 걸림/안 놓음/withdraw_timeout이면 stop/human; 컵이 홀더 밖이라도 손이 빠진 실패는 baseline에서 다음 노드로 간다. VLM 보고는 실패를 보존한다.

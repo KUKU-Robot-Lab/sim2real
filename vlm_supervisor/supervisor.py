@@ -2,17 +2,16 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 import time
 
 from .interface import node_id
 from .planner import load_cards
+from .failure_policy import SOURCE, allowed_actions, runner_detail
 
 END = {'SUCCESS', 'STOPPED'}
 RECOVERY = {'retry', 'rescan', 'home', 'insert', 'human'}
-# Mirror of policy_control.episode_failure.SAFETY + policy_timeout: runner forbids automatic recovery.
-SAFE_STOP_CODES = {'controller_error', 'observation_error', 'unknown', 'operator_declined',
-                   'lift_guard_failed', 'policy_timeout'}
 
 
 class Supervisor:
@@ -29,6 +28,10 @@ class Supervisor:
         self.halted = False
         self.approach_judge = approach_judge
         self.approach_seen = None
+        if mode == 'active' and SOURCE == 'fallback':
+            logging.getLogger(__name__).error('active supervisor uses fallback failure policy')
+            self.log({'event': 'error', 'mode': mode, 'policy_source': SOURCE,
+                      'reason': 'active supervisor uses fallback failure policy'})
         # grasp 카드의 노드 예시: id → (손, 물체). 손은 정책 이름 끝 _r/_l.
         self.grasp_nodes = {} if approach_judge is None else {
             n['id']: ({'_r': 'right', '_l': 'left'}.get(str(n.get('name', ''))[-2:]), n.get('target_object'))
@@ -46,7 +49,7 @@ class Supervisor:
     @staticmethod
     def key(status):
         return json.dumps({name: status.get(name) for name in
-                           ('episode_id', 'status', 'node', 'last', 'pending', 'history', 'attempts')}, sort_keys=True)
+                           ('episode_id', 'status', 'node', 'last', 'pending', 'history', 'attempts', 'next_action')}, sort_keys=True)
 
     def step(self, status):
         if self.halted or status.get('status') not in {'READY', 'FAILURE'} or status.get('busy'):
@@ -58,6 +61,11 @@ class Supervisor:
             return None
         self.seen = key
         last = status.get('last') or {}
+        last = last if isinstance(last, dict) else {}
+        detail = runner_detail(status)
+        allowed = allowed_actions(status, detail)
+        if detail['unknown_code'] and (last or status.get('status') == 'FAILURE'):
+            logging.getLogger(__name__).warning('unknown runner failure code: %r', detail['code'])
         if last:
             try:
                 image = self.interface.frame(after=time.monotonic() + self.settle,
@@ -72,9 +80,10 @@ class Supervisor:
         action = 'stop' if decision.get('choice') == 'E' else decision['action']
         failed_node = node_id(last.get('node')) or target
         capped = action in RECOVERY and self.recoveries.get(failed_node, 0) >= self.max_recover
-        if status.get('status') == 'FAILURE' and action != 'stop' and (
-                last.get('code') in SAFE_STOP_CODES or action == 'next'):
-            capped = True  # runner safety rule, or VLM calls a FAILURE success: operator decides
+        if 'recover' in allowed and action in {'next', 'retry', 'rescan', 'home'}:
+            action = 'recover'  # deploy owns pre-actions, rollback checkpoint and retry budget
+        if action not in allowed:
+            capped = True
         if capped:
             action = 'human'
         if action == 'next':
@@ -82,6 +91,8 @@ class Supervisor:
                 action = 'recover'
             elif target is None:
                 action = 'wait'
+        if action not in allowed:
+            action = 'human' if 'human' in allowed else 'stop'
         # 접근 판정 대상: next 로 갈 노드, 또는 retry 로 다시 돌 노드(재실행도 접근이다).
         approach_node = None
         if action == 'next' and status.get('status') == 'READY':
@@ -102,18 +113,22 @@ class Supervisor:
             return self.log({'event': 'stale_decision', 'decision': decision})
         try:
             recovery_args = {'node_id': failed_node} if action in RECOVERY else {}
-            if action in RECOVERY:
+            if action == 'human':
+                result = self.interface.perform('stop', target, active=self.mode == 'active')
+            elif action == 'recover':
+                result = self.interface.perform('next', status['next_action'], active=self.mode == 'active')
+            elif action in RECOVERY:
                 result = self.interface.perform(action, target, active=self.mode == 'active', args=recovery_args)
             else:
                 result = self.interface.perform(action, target, active=self.mode == 'active')
         except Exception as exc:
             result = {'ok': False, 'reasons': [str(exc)]}
         event = self.log({'event': 'decision', 'mode': self.mode, 'node': last.get('node'),
-                          'target': target, 'action': action, 'decision': decision, 'result': result,
+                          'target': target, 'action': action, 'decision': decision, 'result': result, 'runner_detail': detail,
                           **({'approach': approach_reason} if approach_stop else {})})
         if approach_node and not approach_stop and self.mode == 'active' and result.get('ok'):
             self.approach_seen = None  # 판정을 쓴 시도는 소비: 재시도·재기동 때 다시 판정한다
-        if self.mode == 'active' and (action == 'stop' or approach_stop or result.get('error') == 'NotSupported'):
+        if self.mode == 'active' and (action in {'stop', 'human'} or approach_stop or result.get('error') == 'NotSupported'):
             self.halted = True
         elif self.mode == 'active' and result.get('ok') is False:
             self.log({'event': 'service_failure', 'result': self.interface.perform('stop', active=True)})
@@ -178,8 +193,10 @@ class Supervisor:
             decision = self.judge.judge(status, image)
         except Exception as exc:
             decision = {'choice': 'E', 'success': False, 'action': 'stop', 'reason': f'VLM/frame failure: {exc}'}
-        self.log({'event': 'final_judge', 'node': last.get('node'), 'decision': decision})
-        return decision.get('action') == 'next'
+        self.log({'event': 'final_judge', 'node': last.get('node'), 'decision': decision,
+                  'runner_detail': runner_detail(status)})
+        return (decision.get('action') == 'next'
+                and 'next' in allowed_actions(status, runner_detail(status)))
 
     def run(self, status_wait=10.0, ready_timeout=60.0):
         recovery_key = None

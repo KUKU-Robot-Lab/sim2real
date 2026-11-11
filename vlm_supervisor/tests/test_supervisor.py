@@ -38,6 +38,14 @@ class FakeInterface:
         return self.result
 
 
+class NormalRetryInterface(FakeInterface):
+    """Shell recovery remains available for a normal completed node only."""
+    @staticmethod
+    def failure():
+        return {'status': 'READY', 'node': 'grasp_to_tilt_start',
+                'last': {'node': 'grasp_to_tilt_start', 'code': 'none', 'ok': True}}
+
+
 class Judge:
     def __init__(self, action='retry'):
         self.action = action
@@ -55,22 +63,22 @@ def clock(monkeypatch):
     monkeypatch.setattr('vlm_supervisor.supervisor.time.sleep', lambda dt: now.__setitem__(0, now[0] + dt))
 
 
-def test_failure_retry_restarts_and_survives_status_outage():
-    interface, judge = FakeInterface(outage=20), Judge()
+def test_normal_retry_restarts_and_survives_status_outage():
+    interface, judge = NormalRetryInterface(outage=20), Judge()
     supervisor = Supervisor(interface, judge, mode='active', settle=0)
     assert supervisor.run(status_wait=0.5) == 0
     assert interface.calls == [('retry', {'node_id': 'grasp_to_tilt_start'}, True),
                                ('next', None, True)]
-    assert judge.statuses == ['FAILURE']
+    assert judge.statuses == ['READY']
 
 
 @pytest.mark.parametrize('limit', [0, 1, 3])
 def test_recovery_cap_escalates_to_human_once(limit):
-    interface = FakeInterface(failures=10)
+    interface = NormalRetryInterface(failures=10)
     supervisor = Supervisor(interface, Judge(), mode='active', settle=0, max_recover=limit)
     assert supervisor.run() == 1
     actions = [call[0] for call in interface.calls]
-    assert actions == ['retry', 'next'] * limit + ['human']
+    assert actions == ['retry', 'next'] * limit + ['stop']
 
 
 @pytest.mark.parametrize('mode,action,result', [
@@ -95,7 +103,7 @@ def test_stopped_is_terminal():
     assert judge.statuses == []
 
 def test_accepted_recovery_does_not_repeat_unchanged_failure():
-    interface, judge = FakeInterface(), Judge()
+    interface, judge = NormalRetryInterface(), Judge()
     original = interface.perform
 
     def perform(*args, **kwargs):
@@ -107,7 +115,7 @@ def test_accepted_recovery_does_not_repeat_unchanged_failure():
     supervisor = Supervisor(interface, judge, mode='active', settle=0)
     assert supervisor.run(ready_timeout=0.5) == 1
     assert [call[0] for call in interface.calls] == ['retry', 'stop']
-    assert judge.statuses == ['FAILURE']
+    assert judge.statuses == ['READY']
 
 
 def test_failure_choice_e_stops_even_with_retry_action():
@@ -126,7 +134,7 @@ def test_safety_code_or_vlm_success_on_failure_goes_to_human(code, action):
     interface = FakeInterface()
     interface.state['last']['code'] = code
     assert Supervisor(interface, Judge(action), mode='active', settle=0).run() == 1
-    assert [call[0] for call in interface.calls] == ['human']
+    assert [call[0] for call in interface.calls] == ['stop']
 
 
 class ApproachInterface:
@@ -183,7 +191,7 @@ def test_approach_not_clear_sends_human_and_stops(result, tmp_path):
     interface, log = ApproachInterface(), tmp_path / 'events.jsonl'
     sup = Supervisor(interface, Judge(), mode='active', settle=0, log_path=log, approach_judge=Approach(result))
     assert sup.run() == 1
-    assert interface.calls == [('human', 'grasp_blue', {'node_id': 'grasp_blue'}, True)]
+    assert interface.calls == [('stop', 'grasp_blue', None, True)]
     text = log.read_text()
     assert '"outcome": "human"' in text and '"geom": "none"' in text and '"approach": ' in text
 
@@ -238,14 +246,14 @@ def test_approach_uses_target_not_bridge_next_action():
     assert approach.worlds == [{'objects': {}}]  # world 를 판정기로 넘긴다
 
 
-def test_approach_checked_before_retry_of_grasp_node():
+def test_unknown_grasp_code_stops_before_approach():
     interface, approach = ApproachInterface(), Approach(BLOCKED)
     interface.state = {'status': 'FAILURE', 'node': None, 'episode_id': 'ep1', 'attempts': {'grasp_blue': 1},
                        'last': {'node': 'grasp_blue', 'code': 'grasp_failed', 'ok': False}, 'world': {}}
     sup = Supervisor(interface, Judge('retry'), mode='active', settle=0, approach_judge=approach)
     sup.step(interface.status())
-    assert approach.steps == [['grasp', 'right', 'SRC_BLUE', '-']]
-    assert interface.calls == [('human', None, {'node_id': 'grasp_blue'}, True)] and sup.halted
+    assert approach.steps == []
+    assert interface.calls == [('stop', None, None, True)] and sup.halted
 
 
 def test_approach_frame_none_goes_to_human():
@@ -259,7 +267,7 @@ def test_approach_frame_none_goes_to_human():
     interface.frame = lambda **k: None
     sup = Supervisor(interface, Judge(), mode='active', settle=0, approach_judge=ApproachJudge(Backend()))
     sup.step(interface.status())
-    assert [c[0] for c in interface.calls] == ['human'] and sup.halted
+    assert [c[0] for c in interface.calls] == ['stop'] and sup.halted
 
 
 def test_approach_skips_non_grasp_lanes_and_recover_nodes():

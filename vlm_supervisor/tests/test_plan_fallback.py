@@ -69,7 +69,8 @@ def test_cli_plan_handling(tmp_path, monkeypatch, capsys, answer, source, code):
         assert 'run' in calls and 'stop' not in calls
         if source == 'fallback':
             assert plan['simulation']['world']['poured'] == ['SRC_BLUE', 'SRC_PINK']
-            event = json.loads((run_dir / 'decisions.jsonl').read_text())
+            event, = [row for line in (run_dir / 'decisions.jsonl').read_text().splitlines()
+                      if (row := json.loads(line))['event'] == 'plan_fallback']
             assert event['event'] == 'plan_fallback'
             assert event['vlm_answer_head'] == answer[:400]
             assert event['reason']

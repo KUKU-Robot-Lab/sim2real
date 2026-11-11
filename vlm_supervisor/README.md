@@ -1,6 +1,6 @@
 # 독립 VLM 감독기
 
-`vlm_supervisor`는 문장으로 계획을 만들고, runner의 노드 종료 뒤 사진과 상태로 다음 행동을 결정한다. 기본 모드는 **shadow**이며 승인 파일과 Trigger 서비스를 건드리지 않는다. `active`를 명시하면 승인 append 및 서비스 호출을 수행한다. `deploy` 코드를 import하거나 수정하지 않는다. `proto/`는 비교용 원형이며 실행 패키지는 이를 import하지 않는다.
+`vlm_supervisor`는 문장으로 계획을 만들고, runner의 노드 종료 뒤 사진과 상태로 다음 행동을 결정한다. 기본 모드는 **shadow**이며 승인 파일과 Trigger 서비스를 건드리지 않는다. `active`를 명시하면 승인 append 및 서비스 호출을 수행한다. `deploy`의 순수 실패 분류·복구 표를 선택적으로 import하며, import 실패 시 경고 후 보수적인 고정 표로 동작한다. deploy 파일은 수정하지 않는다. `proto/`는 비교용 원형이며 실행 패키지는 이를 import하지 않는다.
 
 ## 실행
 
@@ -148,3 +148,5 @@ git diff --stat -- deploy/
 ```
 
 테스트는 fake status JSON, 합성 사진과 가짜 백엔드를 사용한다. planner 상태 검사, 판정 파싱, 승인 줄 형식, active/shadow 흐름, 미지원 정지, 서비스 실패, stale 판정 취소, backend HTTP 형식과 ledger/fallback을 검증한다. 마지막 diff 출력은 비어 있어야 한다.
+
+실패 코드·reason·outcome 전수 대조와 복구 허용 범위는 [FAILURE_AUDIT.md](FAILURE_AUDIT.md)에 정리했다. 금지/미지 코드는 사람 정지이며, pending 복구는 runner의 `recover:<node>:<action>` 승인 이름을 기록한 뒤 `next`로 실행한다.

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 from .planner import load_cards, parse_json
+from .failure_policy import allowed_actions, runner_detail
 
 ACTIONS = {'A': 'next', 'B': 'retry', 'C': 'rescan', 'D': 'home', 'E': 'stop'}
 
@@ -30,15 +31,32 @@ class Judge:
     def judge(self, status: dict, image) -> dict:
         if image is None:
             return {'success': False, 'choice': 'E', 'action': 'stop', 'reason': '카메라 프레임 없음'}
+        detail = runner_detail(status)
+        allowed = allowed_actions(status, detail)
+        choices = ['E=unsafe or unclear/stop and human']
+        if 'next' in allowed or 'recover' in allowed:
+            choices.insert(0, 'A=success/next (pending recovery requires runner approval)')
+        if 'retry' in allowed:
+            choices.append('B=failure/retry')
+        if 'rescan' in allowed:
+            choices.append('C=failure/rescan')
+        if 'home' in allowed:
+            choices.append('D=failure/home (only confirmed empty hands)')
         prompt = ('Judge the completed node in last, using the CURRENT photograph and status JSON. '
                   'world/expect are controller declarations, not visual proof. Report contradictions. '
                   'Do not infer hidden bead counts from a photograph. '
-                  'Choose exactly A=success/next, B=failure/retry, C=failure/rescan, '
-                  'D=failure/home (only empty hands), E=unsafe or unclear/stop and human. '
-                  'B/C/D are requests only: the runner has no recovery hooks. '
+                  'Rule terminations are distinct from physical failures; None/missing means unknown. '
+                  'opened_before_latch does not prove empty hands: use holder seated z 15 mm and tactile release threshold. '
+                  'Never override deploy no-retry rules or blocked continue_on_fail. '
+                  + 'Choose exactly one allowed choice: ' + ', '.join(choices) + '. '
                   'Return only {"success":bool,"choice":"A".."E","reason":"short explanation"}. '
                   'success must be true exactly for A.\n'
                   + json.dumps({'sentence': self.sentence, 'plan': self.plan,
-                                'status': status, 'skill_cards': self.cards}, ensure_ascii=False))
+                                'status': status, 'runner_detail': detail, 'allowed_actions': sorted(allowed),
+                                'skill_cards': self.cards}, ensure_ascii=False))
         raw, meta = self.backend.ask([image], prompt)
-        return {**parse_judgement(raw), 'raw': raw, 'meta': meta}
+        decision = parse_judgement(raw)
+        if decision['action'] not in allowed and not (decision['action'] == 'next' and 'recover' in allowed):
+            decision = {'success': False, 'choice': 'E', 'action': 'stop',
+                        'reason': 'deploy recovery rule forbids model action', 'model_decision': decision}
+        return {**decision, 'raw': raw, 'meta': meta}
