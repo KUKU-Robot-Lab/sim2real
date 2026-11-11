@@ -16,6 +16,7 @@ Mover 코드는 배포가 고정한 hdgp 커밋(config/hdgp_snapshot.yaml) 사�
 from __future__ import annotations
 
 import logging
+import math
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -196,6 +197,8 @@ class ReadyCarry:
         self.sag_max: np.ndarray | None = None
         self.bank_q = None if bank_q is None else torch.as_tensor(np.asarray(bank_q, float), dtype=torch.float32)   # (N,7) 뱅크 팔 q
         self.bank_dq = float("nan")         # 끝 자세(plan q) ↔ 뱅크 최근접 max|Δq| [rad]
+        self.bank_pick_s = float("nan")     # 뱅크 시드 풀이 시간 [s]
+        self.bank_cand: list = []           # 후보별 [err_mm, axis°, margin°, T 틱, bank_dq, ok] (0 = Mover 해) — 탈락 이유 진단
 
     def start(self, arm_q: Sequence[float], cup_pos: Sequence[float], cup_quat: Sequence[float], target: Sequence[float]) -> dict:
         """끝 자세를 푼다(움직이지 않는다) → 계획 요약. 실측 팔 q · 지각 컵(세계 = 로봇 루트) · 앵커."""
@@ -246,11 +249,15 @@ class ReadyCarry:
         fx = self.mv._fixed_plan(qs, T_to.expand(n, 4, 4), None, tg.expand(n, 3), za.expand(n, 3))
         ok = fx.ok & (self.RC.mover._MINJERK_PEAK * (qs - q).abs().amax(-1) / mc.qd_max <= BANK_T_FRAC * mc.max_steps)
         ok[1:] &= torch.rad2deg(fx.margin[1:]) >= BANK_MARGIN_MIN_DEG
+        steps = self.RC.mover._MINJERK_PEAK * (qs - q).abs().amax(-1) / mc.qd_max
         dqb = (qs[:, None] - bq[None]).abs().amax(-1).amin(-1)
         j = int(torch.where(ok, dqb, torch.full_like(dqb, float("inf"))).argmin()) if bool(ok.any()) else 0
         if j:
             plan = self.mv.start(torch.arange(1), q, T_to, None, tg, za, reg, q_goal=qs[j:j + 1])
         self.bank_dq = float(dqb[j])
+        self.bank_cand = [[round(float(a) * 1000, 1), round(float(b), 1), round(math.degrees(float(m)), 2), round(float(t), 1),
+                           round(float(d), 3), bool(o)]
+                          for a, b, m, t, d, o in zip(fx.err_pos, fx.err_axis, fx.margin, steps, dqb, ok)]
         if self.bank_dq > BANK_OOD_RAD:
             _log.warning("ready_carry 끝 자세가 놓기 시작 뱅크 밖: 최근접 max|Δq| %.3f rad > %.2f", self.bank_dq, BANK_OOD_RAD)
         return plan
@@ -341,6 +348,8 @@ class ReadyCarry:
                 "track_dev_max": None if np.isnan(self.track_dev_max) else round(self.track_dev_max, 4),
                 "sag_ticks": self.sag_ticks,
                 "bank_dq": None if np.isnan(self.bank_dq) else round(self.bank_dq, 4),
+                "bank_pick_s": None if np.isnan(self.bank_pick_s) else round(self.bank_pick_s, 3),
+                "bank_cand": self.bank_cand,
                 "sag_max": None if self.sag_max is None else [round(float(v), 4) for v in self.sag_max]}
 
 
