@@ -1643,8 +1643,9 @@ class ActionManager:
                     supported = [o['id'] for o in selected if o['model'] != 'holder']
                     if supported:
                         workspace.invalidate_results('FPP acquisition restarted', sources=('fpp',))
-                        start = next(c for key, c in self._perception_commands(s, parameters) if key == 'action_fpp_start')
-                        self._run_commands(s, 'action_fpp_start', [start])
+                        planned = dict(self._perception_commands(s, parameters))
+                        self._run_commands(s, 'action_fpp_stop', [planned['action_fpp_stop']])   # ★11.11 GPU 비우고
+                        self._run_commands(s, 'action_fpp_start', [planned['action_fpp_start']])
                         self._run_commands(s, 'action_fpp', [Command(tuple(workspace.fpp_argv(supported)), note='FPP 재추출')])
                 else:
                     for obj in selected:
@@ -1685,6 +1686,12 @@ class ActionManager:
                 all_enabled = [o['id'] for o in workspace.objects if o['enabled'] and o['model'] != 'holder']
                 # ★11.03 런처가 묶음을 하나씩 띄운다. shortcut: 묶음 수 대신 물체 수(상한) — 기다림이 길어질 뿐, 실패 판정은 같다
                 from perception_launcher_core import start_wait_s
+                # ★11.11 사용자 "refresh 하면 4090 GPU 꺼지고 새로 세팅된 물체가 인식돼야": 떠 있는 컨테이너에 다시 찍기를 시키면
+                #   묶음마다 라이브 추적(4~10 GiB) 위에 2.6 GiB 를 동시에 잡아 24 GB 에서 OOM 이 났다(163941 action_fpp_0.log).
+                #   먼저 FP++ 를 다 내리고(카메라는 둔다) 새로 띄운다 — rescan 은 새로 뜬 컨테이너의 첫 회차를 그대로 받는다('take').
+                commands.append(('action_fpp_stop', Command(('python3', str(s.repo / 'scripts/ops/perception_ctl.py'),
+                                                             'stop', '--wait', '60'),
+                                                            note='FP++ 내리기(GPU 비우기)')))
                 commands.append(('action_fpp_start', Command(('python3', str(s.repo / 'scripts/ops/perception_ctl.py'),
                                                               'start', *all_enabled, '--viewer', '--wait', str(start_wait_s(len(all_enabled))),
                                                               '--require-all'),
