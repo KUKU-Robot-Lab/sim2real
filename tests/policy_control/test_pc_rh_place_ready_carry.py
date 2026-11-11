@@ -429,4 +429,5 @@ def test_bank_pick_lands_the_end_pose_near_the_place_start_bank():
     assert out["old"][0] > 0.07 and out["old"][1]["bank_dq"] is None
     dq, pl, d = out["new"]
     assert dq < 0.03 and pl["bank_dq"] == pytest.approx(dq, abs=1e-3) and d["bank_dq"] == pl["bank_dq"]
+    assert d["bank_pick_s"] is not None and d["bank_cand"] and d["bank_cand"][0][5] in (True, False) and any(c[5] for c in d["bank_cand"][1:])
     assert pl["anchor_err_mm"] < 3.0 and pl["anchor_err_deg"] < 3.0 and pl["T_steps"] <= cfg.max_steps
