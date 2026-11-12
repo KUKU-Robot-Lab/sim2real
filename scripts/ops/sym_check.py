@@ -555,7 +555,9 @@ class Arms:
         for s in SIDES:
             e = np.abs(q[s] - qt[s]); v = np.abs(dq[s])
             if (e > ERR_MAX).any() or v.max() > VEL_MAX:
-                raise Abort(f"{s} 오차 {np.round(e, 3).tolist()} 속도 {np.round(v, 2).tolist()}")
+                j = int(np.argmax(e / ERR_MAX))   # 원인 구분용: 목표·실측·부호 있는 오차(rad, 4자리)를 그대로 남긴다
+                raise Abort(f"{s} 오차 {np.round(e, 3).tolist()} 속도 {np.round(v, 2).tolist()} · 최악 j{j + 1}: "
+                            f"목표 {qt[s][j]:.4f} 실측 {q[s][j]:.4f} 오차 {q[s][j] - qt[s][j]:+.4f} 속도 {dq[s][j]:+.3f}")
 
     def step(self, qt):
         self.hold_target = qt
