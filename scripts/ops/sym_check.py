@@ -75,7 +75,9 @@ KP = np.array([70, 70, 70, 60, 20, 20, 20.0])
 KD = np.array([2.75, 2.5, 2.0, 2.0, 0.7, 0.6, 0.5])
 FEEDBACK_MAX_AGE = 0.050  # s, per-motor valid state reception deadline
 DT = 0.01
-ERR_MAX, VEL_MAX = np.array([0.05, 0.05, 0.05, 0.05, 0.08, 0.08, 0.08]), 2.0
+# 11.12 실측(135724): 왼팔 j4 가 속도 0 으로 목표 0.1115 에 0.0514 못 미쳐 서 있었다(정지 마찰·중력 보상 부족, 오차가 늘지 않고 일정).
+#   j4 만 0.08 로 넓힌다(kp 60 × 0.08 = 4.8 N·m 까지 밀어 마찰을 넘김). 속도 상한 2 rad/s·피드백 갱신 검사는 그대로.
+ERR_MAX, VEL_MAX = np.array([0.05, 0.05, 0.05, 0.08, 0.08, 0.08, 0.08]), 2.0
 CAN = {"right": "can0", "left": "can1"}
 SIDES = ("left", "right")
 SPEED_MAX = 0.5        # rad/s, --speed 상한
