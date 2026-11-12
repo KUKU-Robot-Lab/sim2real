@@ -149,7 +149,7 @@ def lerp(a, b, n):
     return [a + (b - a) * t for t in np.linspace(0, 1, n)]
 
 
-def check_path(Qs, relax=None):
+def check_path(Qs, relax=None, tol=0.0):
     """Qs: [(qL, qR)]. 실패면 (False, 이유). relax = 출발 자세 clearance — 이미 가까운 출발(차렷)은 그보다 더 가까워질 때만 실패."""
     thr = {"body": BODY_MARGIN, "hands": HAND_GAP, "table": TABLE_MARGIN}
     if relax:
@@ -157,7 +157,7 @@ def check_path(Qs, relax=None):
     worst = {k: np.inf for k in thr}
     for i, (qL, qR) in enumerate(Qs):
         for s, q in (("left", qL), ("right", qR)):
-            if not in_limits(s, q):
+            if not in_limits(s, q, tol):   # 출발 → 홈 경로는 START_TOL(차렷 자세 읽기 오차) 허용
                 return False, f"점 {i}: {s} 관절 한계 밖 {np.round(np.rad2deg(q), 1).tolist()}", worst
         c = clearance(qL, qR)
         worst = {k: min(worst[k], c[k]) for k in worst}
@@ -697,7 +697,10 @@ def live(a, p, out, meta):
             if not in_limits(s, q0[s], START_TOL):
                 raise SystemExit(f"{s} 시작 자세가 관절 한계 밖 — 중단")
         relax = clearance(q0["left"], q0["right"])
-        ok, why, worst = check_path(densify([(q0["left"], q0["right"]), p["home"]]), relax=relax)
+        # 11.12 실측: 차렷에서 홈으로 곧장 가면 손이 탁자 앞 모서리에 3 cm 까지 붙는다 → j1(어깨 앞뒤)만 먼저 홈 값으로 올린 뒤 나머지
+        q_j1 = {s: np.r_[p["home"][i][0], q0[s][1:]] for i, s in enumerate(SIDES)}
+        ok, why, worst = check_path(densify([(q0["left"], q0["right"]), (q_j1["left"], q_j1["right"]), p["home"]]),
+                                    relax=relax, tol=START_TOL)
         meta["start_to_home"] = {"ok": ok, "why": why, "worst_m": worst, "start_clearance_m": relax}
         print(f"   출발 → 홈 경로 검사 {'통과' if ok else '실패: ' + why} · 최소 여유 {({k: round(v, 3) for k, v in worst.items()})}")
         if not ok:
@@ -707,6 +710,7 @@ def live(a, p, out, meta):
         arms.enable()
         q, _ = arms.read()
         cur = arms.move(q, q, a.speed, hold=0.3)        # 읽은 자리 붙들기 먼저(enable 직후 처짐 방지)
+        cur = arms.move(cur, q_j1, a.speed, hold=0.2)
         cur = arms.move(cur, q_home, a.speed)
         snap("home", arms, head, cam, cur, out, meta)
 
