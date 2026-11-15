@@ -1,0 +1,19 @@
+# head(목) home 자세 — RH56F1 로봇, ★2026-11-15 목 영점 2048 · Homing Offset 0 판(옛 판 head_home_rh56f1.yaml).
+#
+# 옛 home 물리 자세(옛 틱 2033 · 2864)를 새 영점 틱으로 옮겼다: pan 2033(차 0) · tilt 2882(+18).
+#   deg 는 드라이버 규약(tick/4095·360 − 180). goal_bias 는 새 영점에서 아직 안 쟀다(0).
+# droop_limit_tick 없음 — 새 영점에서 처짐 자리는 위치 모드 범위 안이다.
+port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
+baud: 1000000
+
+motors:
+  pan:
+    id: 1
+    deg: -1.27           # 틱 2033
+  tilt:
+    id: 2
+    deg: 73.36           # 틱 2882
+position_i_gain: 400
+operating_mode: 3
+profile_acceleration: 20
+profile_velocity: 50
