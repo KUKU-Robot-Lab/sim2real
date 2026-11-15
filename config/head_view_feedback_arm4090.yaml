@@ -4,12 +4,18 @@
 #   가속도계 0점이라 카메라에 붙은 값이다 — 기준 파일이 home(global_camera_extrinsics_arm4090.yaml)에서 camset(…_r20u5.yaml)으로
 #   바뀌어도 그대로 쓴다. 10.30 tilt 2859(인코더 +71.20°, 깊이 · ChArUco 로 10.27 home 시야와 회전 0.09° 안 확인한 자세)에서
 #   IMU 72.13° · 옆 −3.05° − home 외부 파라미터 72.668°.
+# ★11.15 목 영점 2048 · 외부 h2048(ChArUco, md5 db9a5b84) 기준으로 다시 잼(s2r:vision): camset 에서 IMU 숙임 68.89~68.90°(3회) −
+#   외부 68.52° = +0.37°, 그때 인코더 tilt 68.79°(틱 약 2831)라 외부를 잰 틱 2833(68.99°) 기준으로 +0.18° 옮겨 +0.55°.
+#   검사 로그(틱 2833) IMU 69.09° 와도 맞다(69.09 − 68.52 = +0.57°). 옆 −0.73~−0.71 − 외부 +0.27 = −0.72°(3회 중앙).
+#   옛 −0.54 · −0.42 는 10.30 옛 외부(home, CAD 구멍) 기준이라 h2048 과 1.1° 어긋나 head_view_check 가 +1.11° 로 실패했다.
+#   같은 날 오후 ChArUco 사진과 비교해 카메라 마운트는 움직이지 않았다(남은 회전 약 0.04°).
 # 다시 잴 때: 기준 시야와 맞춘 자세(외부 파라미터를 막 잰 자세)에서 python3 scripts/head_view_feedback.py --calib-bias
 #   (--calib-bias 는 yaml.safe_dump 로 다시 써서 이 주석이 사라진다 — 쓴 뒤 주석을 되살린다)
-imu_pitch_bias: -0.54
-imu_roll_bias: -0.42
+imu_pitch_bias: 0.55
+imu_roll_bias: -0.72
 ratio_guess: 0.98   # Δ숙임/Δ인코더, 10.30 71.20 → 61.32° 에서 0.978
-bias_measured_at: {pan_deg: -1.27, tilt_deg: 71.20, time: "2026-10-30", extrinsics: global_camera_extrinsics_arm4090.yaml}
+bias_measured_at: {pan_deg: -19.47, tilt_deg: 68.79, tilt_ref_tick: 2833, time: "2026-11-15 19:53", extrinsics: global_camera_extrinsics_arm4090_h2048.yaml}
+# 옛 값: imu_pitch_bias -0.54 · imu_roll_bias -0.42 · {pan -1.27, tilt 71.20, 2026-10-30, global_camera_extrinsics_arm4090.yaml}
 
 # 미션 head_view_check 허용치(deg) = |IMU 숙임 − r20u5 숙임|. 근거(10.30 처짐 지도 config/head_view/sag_table_arm4090_2026-10-30.json,
 #   arm4090 에만): 같은 인코더 자리를 올라가며/내려가며 잰 숙임 차(오르내림)가 평균 0.5° · 최대 1.13°(112 쌍), 같은 칸을 다른
