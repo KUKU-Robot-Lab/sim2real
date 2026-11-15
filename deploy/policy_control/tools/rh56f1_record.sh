@@ -79,7 +79,8 @@ start)
     HAND="$HAND /hand_$s/$t"; done; done
   # ★11.10 사용자: stationary_recorder(Python JSONL, 코어 1.3개 · 4.5 GB) 대신 — 그것만 갖던 PD 쪽 토픽을 따로 bag 에 싣는다.
   # arm bag 에 섞지 않는다(10.03: 한 sqlite3 에 몰면 /joint_states 가 빠진다). 팔 명령 = PD 가 실제로 보낸 토크 · 위치 · 속도.
-  PD="/pd_state_broadcaster/joint_states /pd_temp_broadcaster/dynamic_joint_states /policy_control/episode /policy_control/estop"
+  # ★11.15 s2r:vision: 에피소드 중 목 자세(외부 파라미터 · 처짐표 대조용)
+  PD="/head/joint_states /pd_state_broadcaster/joint_states /pd_temp_broadcaster/dynamic_joint_states /policy_control/episode /policy_control/estop"
   for s in ${HAND_SIDES:-right left}; do
     for c in effort position velocity; do PD="$PD /${s}_forward_${c}_controller/commands"; done
     for t in diagnostics contact contact_guard; do PD="$PD /policy_control/pd_$s/$t"; done; done

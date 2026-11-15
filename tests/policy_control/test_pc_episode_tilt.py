@@ -159,6 +159,21 @@ def test_plan_carry_reaches_the_setting_pose_exactly_from_a_lift_pose(tmp_path):
 
 
 @needs_hdgp
+def test_plan_carry_empty_hand_gets_no_virtual_cup(tmp_path):
+    # ★11.15 실기 칵테일: 왼손 shaker 이송 계획 때 오른손은 빈손으로 파랑에 접근 중 — 가상 컵 때문에 2.97 cm 로 거부됐다
+    q = {"right": [-0.15736, 0.29088, -0.44308, 1.17247, 0.02728, 0.21839, 0.92756],
+         "left": [0.416, -0.05818, -0.06504, 1.21633, 0.00858, -0.20161, -0.88941]}
+    (tmp_path / "q.json").write_text(json.dumps(q))
+    base = ["--q-json", str(tmp_path / "q.json"), "--sides", "left"]
+    assert _tool("plan_carry").main(base + ["--out", str(tmp_path / "a")]) == 2
+    assert json.loads((tmp_path / "a" / "check.json").read_text())["arms_clear"]["min_cup_gap_m"] < 0.03
+    assert _tool("plan_carry").main(base + ["--out", str(tmp_path / "b"), "--empty", "right"]) == 0
+    arms = json.loads((tmp_path / "b" / "check.json").read_text())["arms_clear"]
+    assert arms["ok"] and arms["min_cup_gap_m"] is None and arms["min_arm_point_m"] >= 0.10
+    assert arms["min_cup_arm_m"] >= 0.05          # 든 컵 ↔ 빈손 팔은 여전히 본다(실제 12.9 cm)
+
+
+@needs_hdgp
 def test_plan_carry_one_arm_writes_only_that_arm_and_home_start_reaches_the_setting(tmp_path):
     # 경로 B: 빈손으로 홈(rh_aglt 시작 자세)에서 붓기 시작 자세까지 — 한 팔씩
     home = yaml.safe_load((REPO / "deploy/policy_control/config/homes/rh56f1_aglt.yaml").read_text())

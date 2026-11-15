@@ -74,10 +74,10 @@ def head_deadline(seconds=20):
 
 
 class LocalHead:
-    def __init__(self):
+    def __init__(self, cfg_rel="config/head_home_rh56f1_h2048.yaml"):
         from head_compliant_hold import CompliantController
         from head_home import load_head_home
-        self.cfg = load_head_home(S2R / "config/head_home_rh56f1.yaml")
+        self.cfg = load_head_home(S2R / cfg_rel)
         self.c = CompliantController(self.cfg.port, self.cfg.baud)
         self.start = None
         self.moved = False
@@ -163,7 +163,7 @@ def main():
     try:
         requests = watch_stdin()
         with contextlib.redirect_stdout(sys.stderr):
-            head = LocalHead()
+            head = LocalHead(*sys.argv[1:2])   # 인자: S2R 기준 목 설정 경로(없으면 head_home_rh56f1_h2048)
         print(json.dumps({"start": head.start, "targets": {head.cfg.names[i]: d for i, d in head.cfg.targets_deg.items()}}), file=protocol, flush=True)
         while True:
             request = requests.get()

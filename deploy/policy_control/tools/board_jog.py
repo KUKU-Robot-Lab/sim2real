@@ -713,9 +713,9 @@ class Jogger:
                 if self.f_ref is None:
                     self.f_ref = force
                 elif force[0] - self.f_ref[0] > FORCE_G or force[1] - self.f_ref[1] > TIP_N:
+                    dg, dn = force[0] - self.f_ref[0], force[1] - self.f_ref[1]   # hold() 가 f_ref 를 None 으로 지우므로 먼저 계산
                     self.hold(meas, t, contact=contact)
-                    return (f"접촉 중 힘 상승(검지 {force[0] - self.f_ref[0]:+.0f} g · 촉각 {force[1] - self.f_ref[1]:+.2f} N) — "
-                            "멈추고 명령 = 실측")
+                    return f"접촉 중 힘 상승(검지 {dg:+.0f} g · 촉각 {dn:+.2f} N) — 멈추고 명령 = 실측"
             if self.precise:
                 self.path_elapsed += dt
                 self.cmd = self.path.sample(self.path_elapsed)[0]
@@ -1036,7 +1036,14 @@ class Ctl:
                 time.sleep(max(0.0, t_next - self.clock()))
         except BaseException as error:   # noqa: BLE001 — 어떤 오류든 누름을 풀고 stop 으로
             self.fatal = f"{type(error).__name__}: {error}"
-            say(f"★ 제어 스레드 오류: {self.fatal}\n{traceback.format_exc()}", err=True)
+            tb = traceback.format_exc()
+            say(f"★ 제어 스레드 오류: {self.fatal}\n{tb}", err=True)
+            if self.out is not None:   # ★11.15 화면엔 첫 줄만 보여 원인 줄을 잃었다 — 기록 옆에 남긴다
+                try:
+                    with open(self.out.with_name(f"{self.out.stem}_fatal.log"), "a", encoding="utf-8") as fh:
+                        fh.write(f"{time.strftime('%F %T')} tick {self.k} mode {self.jog.mode} auto {self.auto and self.auto.get('phase')}\n{tb}\n")
+                except Exception:   # noqa: BLE001, S110 — 남기기 실패가 해제 · stop 을 막지 않게
+                    pass
         finally:
             self._finish(self.fatal or "창 닫기 · 정지 신호")
             self.alive = False

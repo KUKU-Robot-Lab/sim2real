@@ -102,7 +102,9 @@ def _carry_card(node: str, d: Path) -> dict:
         rows += [{"name": "두 팔 사이(팔 점)", "value": _round(arms.get("min_arm_point_m"), 100.0), "unit": "cm", "limit": 10.0,
                   "ok": (arms.get("min_arm_point_m") or 0) >= 0.10},
                  {"name": "두 컵 겉면 사이", "value": _round(arms.get("min_cup_gap_m"), 100.0), "unit": "cm", "limit": 3.0,
-                  "ok": (arms.get("min_cup_gap_m") or 0) >= 0.03}]
+                  "ok": (arms.get("min_cup_gap_m") or 0) >= 0.03} if arms.get("min_cup_gap_m") is not None else
+                 {"name": f"든 컵 ↔ 빈손 팔({','.join(arms.get('empty') or [])})", "value": _round(arms.get("min_cup_arm_m"), 100.0),
+                  "unit": "cm", "limit": 5.0, "ok": (arms.get("min_cup_arm_m") or 0) >= 0.05}]
     return {"node": node, "kind": "carry", "ok": bool(chk.get("ok")), "T_end_s": chk.get("T_end_s"),
             "sides": chk.get("sides") or list((chk.get("checks") or {})), "rows": rows}
 

@@ -36,6 +36,7 @@ TABLE_MARGIN_M = 0.01
 VMAX_RAD_S = 2.0
 ARM_POINT_GAP_M = 0.10        # 두 팔 관절 4~7 원점 · 손바닥 점 사이 최소 거리(링크 반지름 약 4~5 cm 두 개)
 CUP_GAP_M = 0.03              # 두 손 안 컵(반지름 CUP_R_M 원기둥) 겉면 사이 최소
+CUP_ARM_GAP_M = 0.05          # 든 컵 겉면 ↔ 빈손 팔 점(관절 원점 · 손바닥, 링크 반지름 약 4~5 cm) 최소
 ROOT_KEY = {"right": "src_root", "left": "rcv_root"}
 
 
@@ -87,14 +88,22 @@ def cup_points(P, ch, path: torch.Tensor, T_to: torch.Tensor, side: str, k: int 
     return p[:, None, :] + s[None, :, None] * z[:, None, :]
 
 
-def arms_clear(P, chains: dict, paths: dict, T_tos: dict) -> dict:
-    """두 팔 경로(같은 길이) 사이 최소 거리 — 팔 점끼리 · 컵 겉면끼리."""
+def arms_clear(P, chains: dict, paths: dict, T_tos: dict, empty: tuple = ()) -> dict:
+    """두 팔 경로(같은 길이) 사이 최소 거리 — 팔 점끼리 · 컵 겉면끼리. empty = 빈손 팔 — 컵 겉면 검사를 하지 않는다
+    (★11.15 실기: 빈손으로 접근 중인 오른손에 가상 컵을 매달아 2.97 cm 로 거부됐다. 실물은 그보다 훨씬 멀었다)."""
     a = {s: arm_points(chains[s], paths[s]) for s in ARMS}
-    c = {s: cup_points(P, chains[s], paths[s], T_tos[s], s) for s in ARMS}
     d_arm = torch.cdist(a["right"], a["left"]).amin(dim=(1, 2))
-    d_cup = torch.cdist(c["right"], c["left"]).amin(dim=(1, 2)) - 2 * CUP_R_M
-    out = {"min_arm_point_m": round(float(d_arm.min()), 4), "min_cup_gap_m": round(float(d_cup.min()), 4)}
-    out["ok"] = bool(out["min_arm_point_m"] >= ARM_POINT_GAP_M and out["min_cup_gap_m"] >= CUP_GAP_M)
+    out = {"min_arm_point_m": round(float(d_arm.min()), 4), "min_cup_gap_m": None, "min_cup_arm_m": None, "empty": list(empty)}
+    held = [s for s in ARMS if s not in empty]
+    c = {s: cup_points(P, chains[s], paths[s], T_tos[s], s) for s in held}
+    if len(held) == 2:
+        out["min_cup_gap_m"] = round(float((torch.cdist(c["right"], c["left"]).amin(dim=(1, 2)) - 2 * CUP_R_M).min()), 4)
+    elif len(held) == 1:              # 든 컵 겉면 ↔ 빈손 팔 관절 4~7 · 손바닥 점(리뷰: 빈손이어도 컵이 그 팔에 닿는지는 본다)
+        h, e = held[0], empty[0]
+        out["min_cup_arm_m"] = round(float((torch.cdist(c[h], a[e]).amin(dim=(1, 2)) - CUP_R_M).min()), 4)
+    out["ok"] = bool(out["min_arm_point_m"] >= ARM_POINT_GAP_M
+                     and (out["min_cup_gap_m"] is None or out["min_cup_gap_m"] >= CUP_GAP_M)
+                     and (out["min_cup_arm_m"] is None or out["min_cup_arm_m"] >= CUP_ARM_GAP_M))
     return out
 
 
@@ -120,7 +129,7 @@ def roll(RC, ch, q0: torch.Tensor, qg: torch.Tensor, T_to: torch.Tensor) -> tupl
     return torch.stack(rows), info
 
 
-def plan(asset: Path, out: Path, q: dict, hdgp: Path, sides: tuple = tuple(ARMS)) -> tuple[bool, dict]:
+def plan(asset: Path, out: Path, q: dict, hdgp: Path, sides: tuple = tuple(ARMS), empty: tuple = ()) -> tuple[bool, dict]:
     cfg = H.load_policy(asset)
     H.verify(hdgp, cfg["hdgp"]["md5"])
     H.verify_refs(asset, cfg.get("ref") or {})
@@ -145,7 +154,7 @@ def plan(asset: Path, out: Path, q: dict, hdgp: Path, sides: tuple = tuple(ARMS)
     n = max(len(p) for p in paths.values())
     full = {s: np.vstack([paths[s], np.repeat(paths[s][-1:], n - len(paths[s]), 0)]) if s in paths
             else np.repeat(np.asarray([q[s]], float), n, 0) for s in ARMS}      # 움직이지 않는 팔 = 실측 그대로
-    arms = arms_clear(RC.posture, chains, {s: torch.tensor(full[s], dtype=torch.float32) for s in ARMS}, T_tos)
+    arms = arms_clear(RC.posture, chains, {s: torch.tensor(full[s], dtype=torch.float32) for s in ARMS}, T_tos, empty)
     arm = np.concatenate([full[s] for s in sides], 1)
     out.mkdir(parents=True, exist_ok=True)
     names = [j for s in sides for j in ARMS[s]]
@@ -164,14 +173,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--q-json", default="", help='{"right": [7], "left": [7]} — 없으면 실측')
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--sides", default="right,left", help="right · left · right,left(한 팔씩이면 하나)")
+    ap.add_argument("--empty", default="", help="빈손 팔(right · left) — 그 손에는 가상 컵을 붙이지 않고 컵 간격 검사를 건너뛴다")
     a = ap.parse_args(argv)
+    empty = tuple(x.strip() for x in a.empty.split(",") if x.strip())
+    if any(x not in ARMS for x in empty):
+        print(f"✗ --empty {a.empty!r} — right · left 중")
+        return 1
     sides = tuple(x.strip() for x in a.sides.split(",") if x.strip())
     if not sides or any(x not in ARMS for x in sides) or len(set(sides)) != len(sides):
         print(f"✗ --sides {a.sides!r} — right · left 중")
         return 1
     sides = tuple(x for x in ARMS if x in sides)                 # 열 순서는 언제나 우 → 좌
     try:
-        ok, meta = plan(a.asset, a.out, current_q(a.q_json), H.hdgp_dir(), sides)
+        ok, meta = plan(a.asset, a.out, current_q(a.q_json), H.hdgp_dir(), sides, empty)
     except H.PinError as exc:
         print(f"✗ {exc}")
         return 3

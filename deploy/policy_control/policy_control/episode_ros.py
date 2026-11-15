@@ -1086,6 +1086,9 @@ class RosExecutor:
         out = self.run_dir / f"{traj.kind}_{node.id}"
         joints = ",".join(f"{s[0]}_aj_{i}" for s in sides for i in range(1, 8))
         side_arg = ["--sides", ",".join(sides)] if traj.kind == "carry" else []
+        empty = [s for s in SIDES if world.hand(s) == EMPTY]
+        if traj.kind == "carry" and empty:               # ★11.15 빈손 팔에 가상 컵을 붙이지 않는다(plan_carry --empty)
+            side_arg += ["--empty", ",".join(empty)]
         before = None
         if traj.kind == "reach":                      # ★10.19 1-B: 지금 FP++ 컵 자세(창 안 중앙값, 멈춰 있어야)로 계획
             snap = self._still_object(traj.object)

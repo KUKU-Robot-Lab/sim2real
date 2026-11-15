@@ -46,7 +46,8 @@ import fk  # noqa: E402
 
 CAM_PY = S2R / ".venv/bin/python"                 # --cam-host local 인터프리터
 CAM_SERIAL = "348122071637"                       # 머리 D435i rs_serial(deploy/policy_control/config/sites/arm_v2.yaml camera_rs_serial)
-HEAD_CFG = S2R / "config/head_home_rh56f1.yaml"   # pan 2033 · tilt 2864 틱 = 5090 홈 화면에 맞춘 캘리브 자세(아래 HEAD_FRONT)
+HEAD_CFG_REL = "config/head_sym_2048.yaml"   # 11.15 목 재조립(2048 = 정면) 뒤: pan 2048 · tilt 2731 틱(60° 숙임)
+HEAD_CFG = S2R / HEAD_CFG_REL                    # 옛 head_home_rh56f1(2033/2864)은 재조립 전 offset 틱이라 쓰지 않는다
 
 # ---- 자세 ----
 # deploy/policies/rh56f1/aglt/left_rcg04/rh_aglt_contract.json sides.arm.arm_home (right_rcg04 = 거울)
@@ -59,7 +60,7 @@ VIA_L = np.array([-0.8827, -0.8169, -0.0019, 1.5762, 0.0121, -0.0335, -0.1151]) 
 
 # ---- 환경(근사) ----
 TABLE_Z = 0.205        # 탁자 상판 z(base 프레임). config/cup_holders.yaml "바닥이 상판(z 0.205) 위" · cup_holder_poses_5090_v1 z 0.235 = 0.205 + 0.030
-TABLE_X_NEAR = 0.15    # 이 x 보다 앞의 점만 상판 검사. 실기 상판 앞(몸 쪽) 끝은 기록 없음 — 확인 필요
+TABLE_X_NEAR = 0.070   # 상판 몸 쪽 끝. env_v1.usda PaintedMetal x 0.070~0.470 · y ±0.450 · z 0.205 — 실기 동일(사용자 11.15)
 TABLE_MARGIN = 0.03
 # 몸통 = body_link 충돌 메쉬(body_link0_symp_cut_nohousing_top730.stl) AABB 를 둘로: 기둥(6 x 6 cm) · 바닥판
 BODY_BOXES = [(np.array([-0.03, -0.03, 0.05]), np.array([0.03, 0.03, 0.73])),
@@ -443,7 +444,7 @@ class Camera(Helper):
 
 class Head(Helper):
     def __init__(self, host, out):
-        super().__init__(host, "sym_head.py", out)
+        super().__init__(host, "sym_head.py", out, HEAD_CFG_REL)
         self.start = self.info["start"]
         self.targets = self.info["targets"]
 
@@ -701,8 +702,10 @@ def live(a, p, out, meta):
             if not in_limits(s, q0[s], START_TOL):
                 raise SystemExit(f"{s} 시작 자세가 관절 한계 밖 — 중단")
         relax = clearance(q0["left"], q0["right"])
-        # 11.12 실측: 차렷에서 홈으로 곧장 가면 손이 탁자 앞 모서리에 3 cm 까지 붙는다 → j1(어깨 앞뒤)만 먼저 홈 값으로 올린 뒤 나머지
-        q_j1 = {s: np.r_[p["home"][i][0], q0[s][1:]] for i, s in enumerate(SIDES)}
+        # 11.12 실측: 차렷에서 홈으로 곧장 가면 손이 탁자 앞 모서리에 3 cm 까지 붙는다 → j1(어깨 앞뒤)을 먼저 홈 값으로 올린 뒤 나머지
+        # 11.15: RH56F1 을 달면 차렷 손끝이 몸통 바닥판 옆(z≈0.05)까지 내려와 j1 만 돌리면 여유 2.2 → 1.6 cm 로 줄어든다
+        #        → j2(어깨 벌림)도 같은 구간에서 홈 값(바깥)으로 — 손이 몸에서 멀어지며 올라간다(근사 여유 2.2 cm 아래로 안 감)
+        q_j1 = {s: np.r_[p["home"][i][:2], q0[s][2:]] for i, s in enumerate(SIDES)}
         ok, why, worst = check_path(densify([(q0["left"], q0["right"]), (q_j1["left"], q_j1["right"]), p["home"]]),
                                     relax=relax, tol=START_TOL)
         meta["start_to_home"] = {"ok": ok, "why": why, "worst_m": worst, "start_clearance_m": relax}
@@ -719,7 +722,7 @@ def live(a, p, out, meta):
         snap("home", arms, head, cam, cur, out, meta)
 
         if head:
-            print("2) 목 정면 · 아래 보기(head_home_rh56f1 캘리브 자세 pan 2033 · tilt 2864 틱, '정면' 은 확인 필요)")
+            print(f"2) 목 정면 · 아래 보기({HEAD_CFG_REL}: {head.targets})")
             wait_key(arms, cur, "   Enter (q = 중단)")
             head.goto_deg(head.targets)
             snap("home_head0", arms, head, cam, cur, out, meta)
@@ -804,9 +807,15 @@ def main():
     ap.add_argument("--skip-head", action="store_true", help="목을 열지도 움직이지도 않는다(2단계 건너뜀)")
     ap.add_argument("--head-host", default="arm4090-lan", help="목 SSH 호스트 또는 local")
     ap.add_argument("--cam-host", default="arm4090-lan", help="카메라 SSH 호스트 또는 local")
+    ap.add_argument("--no-hand", action="store_true", help="RH56F1·ADAPTOR 를 뗀 bare L7 상태 — 중력 보상에서 손 링크 질량 0")
     ap.add_argument("--no-cam", action="store_true", help="카메라 없이 관절만 기록")
     ap.add_argument("--speed", type=float, default=0.25, help=f"관절 최대 속도 rad/s(기본 0.25 = j3_release_v2, 상한 {SPEED_MAX})")
     a = ap.parse_args()
+    if a.no_hand:   # 중력 보상 모델에서 손 subtree 질량을 뺀다(L7 은 남김). 손 없이 손 포함 FF 를 주면 팔이 위로 뜬다.
+        for name, (mass, com) in list(M.links.items()):
+            if "_hl_" in name:
+                M.links[name] = (0.0, com)
+        print("   --no-hand: 중력 보상에서 손 링크 질량 제외(bare L7)")
     if not 0 < a.speed <= SPEED_MAX:
         raise SystemExit(f"--speed 는 0~{SPEED_MAX} rad/s")
     p = plan()
