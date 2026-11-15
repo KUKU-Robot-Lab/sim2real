@@ -5,7 +5,7 @@
         [--contract <rh_place_contract.json>] [--mission config/mission_rh56f1_control.yaml] [--target-class blue]
         [--episode place_m_right]   # 목 드라이버를 그 에피소드 단계(run.episode_<이름>)에서만 찾는다(미션 생성기가 넘긴다)
 
-ckpt md5 · hdgp 스냅숏 커밋 · 외부 파라미터(r20u5) md5 · place_student.check_meta · 목 동역학(meta head ↔ 미션 목 드라이버)
+ckpt md5 · hdgp 스냅숏 커밋 · 외부 파라미터(h2048) md5 · place_student.check_meta · 목 동역학(meta head ↔ 미션 목 드라이버)
 · 미션 --max-tilt ≥ 82 · 홀더 CAD · 홀더 자세 · YOLO md5 와 /head_mask/config · target_class ↔ ckpt one_obj · head_sag md5 · 64 MB SHM.
 불일치가 하나라도 있으면 종료 코드 1. 확인불가 · 경고는 실패로 치지 않는다.
 """
@@ -131,12 +131,12 @@ def check_bundle(d: Path, c, mission: Path, target_class: str, rows: list, episo
     row("hdgp 스냅숏 커밋", snap, commit, OK if commit == snap else BAD)
     got = md5(d / ex["path"])
     row("외부 파라미터 md5 = student.yaml", ex["md5"], got, OK if got == ex["md5"] else BAD)
-    row("외부 파라미터 md5 = r20u5 학습 값", G.HD.EXTRINSICS_MD5, got, OK if got == G.HD.EXTRINSICS_MD5 else BAD)
+    row("외부 파라미터 md5 = h2048 판(11.15)", G.HD.EXTRINSICS_MD5, got, OK if got == G.HD.EXTRINSICS_MD5 else BAD)
     # 2. check_meta(노드가 시작할 때 부르는 그대로)
     meta = torch.load(d / ck["path"], map_location="cpu", weights_only=True)
     z_cut = PS.TABLE_Z - float(G.HD.real_depth.FLOOR_MARGIN_M)
     try:
-        PS.check_meta(meta, c, ex["md5"], z_cut)
+        PS.check_meta(meta, c, ex.get("ckpt_md5", ex["md5"]), z_cut)
         err = ""
     except ValueError as exc:
         err = str(exc)

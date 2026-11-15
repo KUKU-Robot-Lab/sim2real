@@ -1194,7 +1194,7 @@ run:
     - python3
     - '{repo}/scripts/head_home.py'
     - --config
-    - '{repo}/config/head_camset_rh56f1.yaml'
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
     - --release
     execute_args:
     - --execute
@@ -1245,11 +1245,13 @@ run:
     - --out
     - '{repo}/config/cup_holder_poses_5090_v1.yaml'
     - --extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090_r20u5.yaml'
+    - '{repo}/config/global_camera_extrinsics_arm4090_h2048.yaml'
     background: true
   - note: '★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y ≈ l +0.16 / r −0.06 / r 바깥 −0.28(간격 0.22 · 10.27 A1 배치) · stable ✓ 인가 (어긋나면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml · 겹친 영상은 scripts/calib/cup_holder_pose.py
-      --png)'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py · 겹친 영상은 scripts/calib/cup_holder_pose.py --png)'
     argv:
     - bash
     - -lc
@@ -1261,7 +1263,7 @@ run:
     - bash
     - -lc
     - 'cd {repo} && { bash scripts/vision/camera_up.sh && python3 scripts/nodes/cup_holder_pose_node.py --write --timeout-s 30 --max-jump-m 0.03
-      --max-yaw-deg 10 --out config/cup_holder_poses_5090_v1.yaml --extrinsics config/global_camera_extrinsics_arm4090_r20u5.yaml; }; rc=$?; if
+      --max-yaw-deg 10 --out config/cup_holder_poses_5090_v1.yaml --extrinsics config/global_camera_extrinsics_arm4090_h2048.yaml; }; rc=$?; if
       [ $rc -ne 0 ]; then echo "⚠ 홀더 다시 재기 실패 — 카메라 · 홀더 노드 rc=$rc · cup_holder_poses_5090_v1.yaml 안 바꿈 · 홀더를 쓰는 에피소드 시작 검사가 막는다"; printf ''\173"time":
       "%s", "epoch": %s, "result": "failed", "rc": %d, "what": "카메라 · 홀더 노드"\175\n'' "$(date +%Y-%m-%dT%H:%M:%S)" "$(date +%s)" $rc > config/cup_holder_poses_5090_v1.yaml.last_check.json;
       fi; true'
@@ -1271,7 +1273,7 @@ run:
     - python3
     - '{repo}/scripts/nodes/head_joint_publisher.py'
     - --config
-    - '{repo}/config/head_camset_rh56f1.yaml'
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
     - --port
     - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
     - --baud
@@ -1288,14 +1290,14 @@ run:
     argv:
     - bash
     - '{repo}/scripts/vision/camera_up.sh'
-  - note: 시야 검사 — IMU 중력으로 잰 카메라 숙임과 config/global_camera_extrinsics_arm4090_r20u5.yaml 숙임의 차가 허용치를 넘으면 실패(머리는 움직이지 않는다). 실패하면 카메라 · 머리를 건드렸는지
+  - note: 시야 검사 — IMU 중력으로 잰 카메라 숙임과 config/global_camera_extrinsics_arm4090_h2048.yaml 숙임의 차가 허용치를 넘으면 실패(머리는 움직이지 않는다). 실패하면 카메라 · 머리를 건드렸는지
       보고 캘리브 자세를 다시 잡는다(scripts/head_view_feedback.py --help 끝)
     argv:
     - python3
     - '{repo}/scripts/head_view_feedback.py'
     - --check
     - --extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090_r20u5.yaml'
+    - '{repo}/config/global_camera_extrinsics_arm4090_h2048.yaml'
   cups:
   - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 머리 자세는 이 단계가 캘리브 자세로 맞춘다
     argv:
@@ -1310,19 +1312,19 @@ run:
     - --host
     - local
     - --camera-extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090_r20u5.yaml'
+    - '{repo}/config/global_camera_extrinsics_arm4090_h2048.yaml'
     background: true
   - note: FP++ 자세 수신기 — 영상 · FP++ 는 localhost 전용 DDS에서 돌고 자세만 UDP(127.0.0.1)로 넘어온다
     argv:
     - python3
     - '{repo}/scripts/nodes/fpp_pose_rx.py'
     background: true
-  - note: 물체 자세 → base — 5090 카메라 외부 파라미터(config/global_camera_extrinsics_arm4090_r20u5.yaml, + depth z 보정). /objects/<물체>/pose(레지스트리의 모든 물체)
+  - note: 물체 자세 → base — 5090 카메라 외부 파라미터(config/global_camera_extrinsics_arm4090_h2048.yaml, + depth z 보정). /objects/<물체>/pose(레지스트리의 모든 물체)
     argv:
     - python3
     - '{repo}/scripts/nodes/object_pose_node.py'
     - --camera-extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090_r20u5.yaml'
+    - '{repo}/config/global_camera_extrinsics_arm4090_h2048.yaml'
     - --head-joint-topic
     - /head/joint_states
     background: true
@@ -2892,8 +2894,10 @@ run:
     - --require-all
   - note: '★[에피소드 pick_place_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
-      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -3058,8 +3062,10 @@ run:
     - --require-all
   - note: '★[에피소드 pick_place_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
-      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -3224,8 +3230,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_c_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -3367,8 +3375,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_c_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -3576,8 +3586,10 @@ run:
     - --require-all
   - note: '★[에피소드 tilt_base_c] 물체(SRC, RCV)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) ·
       기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -3781,8 +3793,10 @@ run:
     - --require-all
   - note: '★[에피소드 tilt_base_d] 물체(SRC, RCV)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) ·
       기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -3995,8 +4009,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_b_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -4078,8 +4094,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_b_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -4161,8 +4179,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_d_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -4309,8 +4329,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_d_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -4457,8 +4479,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_e_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -4610,8 +4634,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_e_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -4763,8 +4789,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -4918,8 +4946,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -5073,8 +5103,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source240_orange_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -5228,8 +5260,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source240_pink_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -5383,8 +5417,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source200_orange_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -5538,8 +5574,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source200_pink_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -5693,8 +5731,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_shaker_c_orange_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -5848,8 +5888,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source240_blue_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -6003,8 +6045,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source240_orange_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -6158,8 +6202,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source240_pink_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -6313,8 +6359,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source200_orange_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -6468,8 +6516,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source200_pink_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -6623,8 +6673,10 @@ run:
     - --require-all
   - note: '★[에피소드 pick_place_f_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
-      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -6800,8 +6852,10 @@ run:
     - --require-all
   - note: '★[에피소드 pick_place_f_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=0 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
-      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -6978,8 +7032,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp2tilt_f_240] 물체(SRC, RCV)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm)
       · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -7205,8 +7261,10 @@ run:
   - note: '★[에피소드 cocktail_1] 물체(SRC_BLUE, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · SRC_PINK 는 아직 탁자에 두지 않는다(에피소드 확인 단계에서 놓는다) · 홀더 HOLDER_0=0, HOLDER_1=1,
       HOLDER_2=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판
       0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -7480,8 +7538,10 @@ run:
     - --require-all
   - note: '★[에피소드 cocktail_1b] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
-      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -7756,8 +7816,10 @@ run:
   - note: '★[에피소드 cocktail_1c_e1000] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고
       저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점
       0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -8036,8 +8098,10 @@ run:
   - note: '★[에피소드 cocktail_1c_e4000] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고
       저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점
       0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -8313,8 +8377,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_s_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -8493,8 +8559,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_s_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -8673,8 +8741,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_s_pink_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm)
       · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -8853,8 +8923,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_m_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -9033,8 +9105,10 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_m_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서
-      진행한다'
+      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
+      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -9213,8 +9287,10 @@ run:
     - --require-all
   - note: '★[에피소드 place_m_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로
       있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
-      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -9317,7 +9393,7 @@ run:
     - python3
     - '{repo}/scripts/nodes/head_joint_publisher.py'
     - --config
-    - '{repo}/config/head_camset_rh56f1.yaml'
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
     - --port
     - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
     - --baud
@@ -9418,8 +9494,8 @@ run:
       ]; then case "$a" in *--max-tilt*) echo "목 드라이버 PID $p 가 기본과 다른 인자로 떠 있다 — SIGTERM 후 기본으로 다시: $a"; kill -TERM $p; for i in $(seq 50); do
       kill -0 $p 2>/dev/null || break; sleep 0.1; done; if kill -0 $p 2>/dev/null; then echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할
       것"; exit 1; fi;; *) echo "기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다: $a"; tail --pid=$p -f /dev/null; echo "❌ 지켜보던 목 드라이버 PID
-      $p 가 끝났다"; exit 1;; esac; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1.yaml --port
-      /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
+      $p 가 끝났다"; exit 1;; esac; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1_h2048.yaml
+      --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
     background: true
   - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
     argv:
@@ -9465,8 +9541,10 @@ run:
     - --require-all
   - note: '★[에피소드 place_m_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=0 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로
       있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
-      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -9571,7 +9649,7 @@ run:
     - python3
     - '{repo}/scripts/nodes/head_joint_publisher.py'
     - --config
-    - '{repo}/config/head_camset_rh56f1.yaml'
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
     - --port
     - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
     - --baud
@@ -9672,8 +9750,8 @@ run:
       ]; then case "$a" in *--max-tilt*) echo "목 드라이버 PID $p 가 기본과 다른 인자로 떠 있다 — SIGTERM 후 기본으로 다시: $a"; kill -TERM $p; for i in $(seq 50); do
       kill -0 $p 2>/dev/null || break; sleep 0.1; done; if kill -0 $p 2>/dev/null; then echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할
       것"; exit 1; fi;; *) echo "기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다: $a"; tail --pid=$p -f /dev/null; echo "❌ 지켜보던 목 드라이버 PID
-      $p 가 끝났다"; exit 1;; esac; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1.yaml --port
-      /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
+      $p 가 끝났다"; exit 1;; esac; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1_h2048.yaml
+      --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
     background: true
   - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
     argv:
@@ -9719,8 +9797,10 @@ run:
     - --require-all
   - note: '★[에피소드 place_m_blue_h2_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
-      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -9827,7 +9907,7 @@ run:
     - python3
     - '{repo}/scripts/nodes/head_joint_publisher.py'
     - --config
-    - '{repo}/config/head_camset_rh56f1.yaml'
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
     - --port
     - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
     - --baud
@@ -9928,8 +10008,8 @@ run:
       ]; then case "$a" in *--max-tilt*) echo "목 드라이버 PID $p 가 기본과 다른 인자로 떠 있다 — SIGTERM 후 기본으로 다시: $a"; kill -TERM $p; for i in $(seq 50); do
       kill -0 $p 2>/dev/null || break; sleep 0.1; done; if kill -0 $p 2>/dev/null; then echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할
       것"; exit 1; fi;; *) echo "기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다: $a"; tail --pid=$p -f /dev/null; echo "❌ 지켜보던 목 드라이버 PID
-      $p 가 끝났다"; exit 1;; esac; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1.yaml --port
-      /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
+      $p 가 끝났다"; exit 1;; esac; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1_h2048.yaml
+      --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
     background: true
   - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
     argv:
@@ -9975,8 +10055,10 @@ run:
     - --require-all
   - note: '★[에피소드 place_m_pink_h1_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
-      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -10085,7 +10167,7 @@ run:
     - python3
     - '{repo}/scripts/nodes/head_joint_publisher.py'
     - --config
-    - '{repo}/config/head_camset_rh56f1.yaml'
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
     - --port
     - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
     - --baud
@@ -10186,8 +10268,8 @@ run:
       ]; then case "$a" in *--max-tilt*) echo "목 드라이버 PID $p 가 기본과 다른 인자로 떠 있다 — SIGTERM 후 기본으로 다시: $a"; kill -TERM $p; for i in $(seq 50); do
       kill -0 $p 2>/dev/null || break; sleep 0.1; done; if kill -0 $p 2>/dev/null; then echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할
       것"; exit 1; fi;; *) echo "기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다: $a"; tail --pid=$p -f /dev/null; echo "❌ 지켜보던 목 드라이버 PID
-      $p 가 끝났다"; exit 1;; esac; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1.yaml --port
-      /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
+      $p 가 끝났다"; exit 1;; esac; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1_h2048.yaml
+      --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
     background: true
   - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
     argv:
@@ -10233,8 +10315,10 @@ run:
     - --require-all
   - note: '★[에피소드 place_m_pink_h2_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml
-      --write --head-config config/head_camset_rh56f1.yaml). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -10345,7 +10429,7 @@ run:
     - python3
     - '{repo}/scripts/nodes/head_joint_publisher.py'
     - --config
-    - '{repo}/config/head_camset_rh56f1.yaml'
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
     - --port
     - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
     - --baud
@@ -10446,8 +10530,8 @@ run:
       ]; then case "$a" in *--max-tilt*) echo "목 드라이버 PID $p 가 기본과 다른 인자로 떠 있다 — SIGTERM 후 기본으로 다시: $a"; kill -TERM $p; for i in $(seq 50); do
       kill -0 $p 2>/dev/null || break; sleep 0.1; done; if kill -0 $p 2>/dev/null; then echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할
       것"; exit 1; fi;; *) echo "기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다: $a"; tail --pid=$p -f /dev/null; echo "❌ 지켜보던 목 드라이버 PID
-      $p 가 끝났다"; exit 1;; esac; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1.yaml --port
-      /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
+      $p 가 끝났다"; exit 1;; esac; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1_h2048.yaml
+      --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
     background: true
   - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
     argv:
@@ -10477,7 +10561,7 @@ run:
     - python3
     - '{repo}/scripts/nodes/head_joint_publisher.py'
     - --config
-    - '{repo}/config/head_camset_rh56f1.yaml'
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
     - --port
     - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
     - --baud
@@ -10503,7 +10587,7 @@ run:
     - python3
     - '{repo}/scripts/nodes/head_joint_publisher.py'
     - --config
-    - '{repo}/config/head_camset_rh56f1.yaml'
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
     - --port
     - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
     - --baud

@@ -324,8 +324,9 @@ STATIONS = {
     #   head_pose 가 있는 외부 파라미터는 정적 스냅샷이라 object_pose_node 가 목 FK 로 바꾸지 않고 그 자세(± 4 틱)에서만 낸다.
     "5090": {
         "perception_host": "local",
-        "extrinsics": "config/global_camera_extrinsics_arm4090_r20u5.yaml",
-        "head_config": "config/head_camset_rh56f1.yaml",
+        # ★11.15 같은 목 모터의 영점을 2048 로 다시 잡았다 — 옛 틱 판(r20u5 · head_camset_rh56f1)은 이 머리에 더는 안 맞는다
+        "extrinsics": "config/global_camera_extrinsics_arm4090_h2048.yaml",
+        "head_config": "config/head_camset_rh56f1_h2048.yaml",
         "head_tool": "head_home",
         "pose_dest": "",                             # 같은 PC — 런처가 127.0.0.1 로 받는다
         "holder_poses": "config/cup_holder_poses_5090_v1.yaml",
@@ -371,16 +372,27 @@ STATIONS = {
         "pose_dest": _V2_CONTROL_IP,                 # 5090 eno1 태그 없는 랜(arm_v2.yaml hosts.control.ip, 테스트가 같은지 본다)
         "holder_poses": "config/cup_holder_poses_5090_v1.yaml",
     },
+    # ★11.15 사용자: 목 다이나믹셀을 Homing Offset 0 · 가운데 틱 2048 로 다시 잡았다(앞으로 모두 이 방식). 5090_arm4090 과 같고
+    #   목 설정 · 외부 파라미터만 새 영점 판(camset 1825 · 2833 틱). 옛 판(r20u5)은 "5090_arm4090" 에 그대로 둔다.
+    "5090_arm4090_h2048": {
+        "perception_host": _V2_VISION_SSH,
+        "head_host": _V2_VISION_SSH,
+        "extrinsics": "config/global_camera_extrinsics_arm4090_h2048.yaml",
+        "head_config": "config/head_camset_rh56f1_h2048.yaml",
+        "head_tool": "head_home",
+        "pose_dest": _V2_CONTROL_IP,
+        "holder_poses": "config/cup_holder_poses_5090_v1.yaml",
+    },
 }
 #: ★11.03 사용자: 머리 D435i · 목 U2D2 를 5090 에 꽂은 채 두고 FP++ · 정책도 5090 — 사이트 arm_v2(팔 · 손 그대로) 위에서 한 PC 스테이션.
 #   4090 으로 다시 나누면 "5090_arm4090" 으로 바꾸고 사이트에 hosts.vision 을 되살린다.
 #: ★11.11 사용자 "이번엔 4090에서 사용" — 카메라 · 목 USB 를 4090 으로 옮겼다(10.30 구성으로 복귀). 5090 = 팔 · 손 · 정책만.
 #: ★11.11 사용자 "5090이든 4090이 둘다 사용 가능하도록" — 실기 미션을 두 벌 만든다(같은 정의, 스테이션만 다르다).
 #   콘솔은 프로필로 고른다: rh56f1_real(카메라 · 목 4090) · rh56f1_real_cam5090(카메라 · 목 5090). 카메라 USB 를 옮긴 쪽을 고른다.
-#   이 모듈 상수는 S2R_RH56F1_STATION 으로 정해지고(기본 5090_arm4090), main 이 다른 스테이션 파일을 하위 프로세스로 만든다.
-REAL_MISSIONS = {"5090_arm4090": "config/mission_rh56f1_control.yaml",
+#   이 모듈 상수는 S2R_RH56F1_STATION 으로 정해지고(기본 5090_arm4090_h2048, 11.15), main 이 다른 스테이션 파일을 하위 프로세스로 만든다.
+REAL_MISSIONS = {"5090_arm4090_h2048": "config/mission_rh56f1_control.yaml",
                  "5090": "config/mission_rh56f1_control_cam5090.yaml"}
-ROBOT_PC = os.environ.get("S2R_RH56F1_STATION", "5090_arm4090")
+ROBOT_PC = os.environ.get("S2R_RH56F1_STATION", "5090_arm4090_h2048")
 if ROBOT_PC not in REAL_MISSIONS:
     raise SystemExit(f"S2R_RH56F1_STATION={ROBOT_PC!r} — {sorted(REAL_MISSIONS)} 중 하나")
 MISSION_REL = REAL_MISSIONS[ROBOT_PC]
@@ -475,7 +487,12 @@ HEAD_HOME_ARGV = HEAD_CHECK_ARGV
 _head_config = yaml.safe_load((REPO / HEAD_CONFIG).read_text())
 _HEAD_DRIVER_ARGS = ["--port", str(_head_config['port']), "--baud", str(_head_config['baud']),
                      "--ids", ','.join(str(_head_config['motors'][axis]['id']) for axis in ('pan', 'tilt'))]
-RECALIB_HINT = ("scripts/calib/table_cad_extrinsics.py --init " + CAMERA_EXTRINSICS + " --write --head-config " + HEAD_CONFIG)
+# ★11.15 외부 파라미터는 ChArUco 로 맞춘 값이고 학생 묶음 · head_depth_node 가 md5 로 고정한다 — 테이블 CAD 값으로 덮게 안내하지 않는다
+_TABLECHECK = CAMERA_EXTRINSICS.replace(".yaml", "_tablecheck.yaml")
+RECALIB_HINT = (f"scripts/calib/table_cad_extrinsics.py --init {CAMERA_EXTRINSICS} 로 비교만 — {CAMERA_EXTRINSICS} 를 --write 로 덮지 "
+                f"않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 {_TABLECHECK} 로 복사해 --out {_TABLECHECK} --write "
+                f"--head-config {HEAD_CONFIG}. 바꾸려면 s2r:vision 의 ChArUco 재보정"
+                " logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py")
 #: 원격 인지 PC 에서 도는 명령 — 홈에서 시작하는 ssh(사용자 이름이 PC 마다 달라 상대 경로, perception_launcher 와 같은 규약)
 REMOTE_SIM2REAL = "rl_ws/sim2real"
 #: 인지 PC 의 sim2real 전용 파이썬 — ★10.13 vision-3090 시스템 python3 는 ~/.local numpy 2.2 가 scipy 1.8 을 깨서

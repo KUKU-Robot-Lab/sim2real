@@ -9,7 +9,7 @@
 #   원점 = 컵 축 위, 받침 윗면 높이(z=0). FP++ 메쉬는 같은 형상의 m 단위 assets/meshes/cup_holder.obj.
 stl: assets/meshes/cup_holder.stl
 stl_units_m: 0.001
-camera_extrinsics: config/global_camera_extrinsics_arm4090.yaml
+camera_extrinsics: config/global_camera_extrinsics_arm4090_h2048.yaml   # ★11.15 목 영점 2048 camset(미션은 --extrinsics 로 넘긴다)
 
 marker:
   dictionary: DICT_6X6_250

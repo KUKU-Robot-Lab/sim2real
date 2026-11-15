@@ -340,7 +340,7 @@ class PlaceStudentPolicy:
         torch.set_num_threads(int(num_threads))
         d = torch.load(cfg["ckpt"]["path"], map_location=device, weights_only=True)
         self.extr = cfg["extrinsics"]["path"]
-        check_meta(d, c, cfg["extrinsics"]["md5"], TABLE_Z - float(self.rd.FLOOR_MARGIN_M))
+        check_meta(d, c, cfg["extrinsics"]["ckpt_md5"], TABLE_Z - float(self.rd.FLOOR_MARGIN_M))
         self.c, self.torch, self.device, self.md5 = c, torch, device, got
         self.mod = load_model_module()
         self.model = self.mod.make_depth_student(int(d["n_obs"]), int(d["n_act"]), hid=int(d["hid"]), n_aux=int(d["n_aux"]),
@@ -356,10 +356,15 @@ class PlaceStudentPolicy:
         self.hc = HP.HeadCamPose(self.extr, sag=True)
         # ★11.09 시작 자세는 틱으로 대조한다. ckpt start_enc_deg 는 hdgp 규약(·360/4096), 실기 /head/joint_states 와 hc.q0_enc_deg 는
         #   드라이버 규약(·360/4095)이라 같은 틱도 0.04° 남짓 다르다. 틱이 같으면 q0 는 실기 q 와 같은 드라이버 규약 값을 쓴다.
-        tick = d["head"].get("start_tick")
+        # ★11.15 목 영점 2048: 묶음 head.ckpt_start_tick(옛 영점 틱) = ckpt, head.start_tick(같은 물리 자세의 새 틱) = head_pose
+        tick, card = d["head"].get("start_tick"), cfg.get("head") or {}
         if tick is not None:
-            if tuple(int(t) for t in tick) != self.hc.q0_tick:
-                raise ValueError(f"ckpt 머리 시작 틱 {list(tick)} ≠ 외부 파라미터 head_pose 틱 {list(self.hc.q0_tick)}")
+            tick = tuple(int(t) for t in tick)
+            if card and tick != tuple(int(t) for t in card["ckpt_start_tick"]):
+                raise ValueError(f"ckpt 머리 시작 틱 {list(tick)} ≠ student.yaml head.ckpt_start_tick {card['ckpt_start_tick']}")
+            want = tuple(int(t) for t in card["start_tick"]) if card else tick
+            if want != self.hc.q0_tick:
+                raise ValueError(f"머리 시작 틱 {list(want)} ≠ 외부 파라미터 head_pose 틱 {list(self.hc.q0_tick)}")
         elif not np.allclose(d["head"]["start_enc_deg"], self.hc.q0_enc_deg, atol=1e-6):
             raise ValueError(f"ckpt 머리 시작 자세 {d['head']['start_enc_deg']} ≠ 외부 파라미터 head_pose {self.hc.q0_enc_deg}")
         self.q0 = np.asarray(self.hc.q0_enc_deg, np.float64)

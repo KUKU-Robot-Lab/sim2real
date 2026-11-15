@@ -25,7 +25,7 @@ REF_COMMIT = "43074945a017d2b25a3e23f9311a1009c3950bbc"
 PLACE_COMMIT = "2079548988b6277de9e40dc511350a946166abaf"   # place_head.py · real_pipe set_pose(head.py · holder_proj.py 는 43074945 와 같음)
 SEG = REPO / "logs" / "cup_seg_1107"
 K_FULL = np.array([[908.3532104492188, 0.0, 639.1658935546875], [0.0, 907.8790283203125, 363.88037109375], [0.0, 0.0, 1.0]])
-CAMSET_RAD = (0.3413940734670227, 1.1776177590379322)   # 11.06 bag /head/joint_states(pan 1825 · tilt 2815 틱)
+CAMSET_RAD = (0.3413940734670227, 1.2052361559925677)   # camset 틱 pan 1825 · tilt 2833(11.15 영점 2048) 의 /head/joint_states
 
 
 def _git_show(rel: str, commit: str = REF_COMMIT) -> str:

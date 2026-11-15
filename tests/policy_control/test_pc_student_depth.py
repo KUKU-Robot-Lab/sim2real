@@ -217,6 +217,10 @@ def test_check_depth_config_needs_the_node_rgb_flag_for_v3():
         SP.check_depth_config(DEPTH_PRE, {**node, "rgb": True})
 
 
+def cfg_ext(d):
+    return __import__("yaml").safe_load((d / STUDENT_CARD).read_text())["extrinsics"]["path"]
+
+
 def _bundle(tmp_path, **over):
     """오른손 student.yaml 을 tmp 로 옮긴 묶음(ckpt 는 빈 파일) → 폴더."""
     import yaml
@@ -226,7 +230,8 @@ def _bundle(tmp_path, **over):
     (d / "student").mkdir(parents=True)
     (d / "camera").mkdir()
     (d / "student/student_it02600.pt").write_bytes(b"")
-    (d / "camera/extrinsics_r20u5_40e6496.yaml").write_bytes((src / "camera/extrinsics_r20u5_40e6496.yaml").read_bytes())
+    for f in (src / "camera").glob("*.yaml"):
+        (d / "camera" / f.name).write_bytes(f.read_bytes())
     cfg = yaml.safe_load((src / STUDENT_CARD).read_text())
     for k, v in over.items():
         cfg[k] = {**cfg[k], **v} if isinstance(v, dict) else v
@@ -239,9 +244,9 @@ def test_student_dir_refuses_moved_extrinsics_commit_and_escaping_paths(tmp_path
     from policy_control import student_policy as SP
 
     cfg = SP.load_student_dir(_bundle(tmp_path))
-    assert cfg["rgb"] and cfg["task"] == "rh_aglt" and cfg["extrinsics"]["md5"] == "624677fee7e8ff6502f33a3ed8a96a1f"
+    assert cfg["rgb"] and cfg["task"] == "rh_aglt" and cfg["extrinsics"]["md5"] == "db9a5b848a715625d1f85f5df0f739c3" and cfg["extrinsics"]["ckpt_md5"] == "624677fee7e8ff6502f33a3ed8a96a1f"
     d = _bundle(tmp_path / "x")
-    (d / "camera/extrinsics_r20u5_40e6496.yaml").write_text("camera: {}\n")
+    (d / cfg_ext(d)).write_text("camera: {}\n")
     with pytest.raises(hdgp_pin.PinError, match="외부 파라미터"):
         SP.load_student_dir(d)
     with pytest.raises(hdgp_pin.PinError, match="hdgp.commit"):

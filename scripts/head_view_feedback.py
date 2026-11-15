@@ -4,8 +4,8 @@
 10.30 사용자: 최종 목표는 정책이 원하는 시야(sim 카메라)와 실기 시야를 같게 하는 것이고, 그 피드백 제어를 IMU 와 joint state 로 한다.
 11.03 사용자: "FP++ 를 받는 것도 중요하지만 sim 과 real 의 카메라 시야가 같아야 의미가 있다" — 기준을 camset 으로 옮겼다.
 
-  기준  외부 파라미터 config/global_camera_extrinsics_arm4090_r20u5.yaml(camset, 미션 extrinsics). 10.28 실기 시야를 sim 시야에
-        맞춘 자세(멈춘 자리 1825/2815)에서 잰 값이고 FP++ base 좌표가 이 값으로만 맞다.
+  기준  외부 파라미터 config/global_camera_extrinsics_arm4090_h2048.yaml(camset, 미션 extrinsics, 11.15 목 영점 2048 판). 10.28 실기
+        시야를 sim 시야에 맞춘 자세(옛 r20u5 멈춘 자리 1825/2815 = 새 영점 1825/2833)에서 잰 값이고 FP++ base 좌표가 이 값으로만 맞다.
         sim 카메라 출처 = hdgp scripts/tools/e2e_chain/cocktail/headcam.py --static global_camera_extrinsics_arm4090.yaml(10.27 home)
         --static_rel -20,-5(URDF 목 FK 근사) → videos/cocktail_1028_b/headcam_static/headcam_1028.json 의 static_dpan-20_dtilt-5,
         숙임 67.67°. r20u5 숙임과의 차(10.28 볼트 맞춤 잔차)는 설정 sim_pitch_deg 로 같이 찍는다.
@@ -45,7 +45,7 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
 
 REPO = _HERE.parent
-DEFAULT_EXTRINSICS = REPO / "config" / "global_camera_extrinsics_arm4090_r20u5.yaml"   # camset = 미션 extrinsics
+DEFAULT_EXTRINSICS = REPO / "config" / "global_camera_extrinsics_arm4090_h2048.yaml"   # camset = 미션 extrinsics
 DEFAULT_CONFIG = REPO / "config" / "head_view_feedback_arm4090.yaml"
 IMU_TOPIC = "/camera/camera/imu"
 JOINT_TOPIC = "/head/joint_states"
@@ -90,9 +90,9 @@ def view_error(raw_pitch: float, bias: float, ref_pitch: float, tol: float) -> t
 RECALIB_EPILOG = """머리를 --execute 로 옮겼으면 그 자세에서 외부 파라미터를 다시 재야 FP++ 좌표가 맞는다(옮긴 자리는 head_pose ±4 틱 밖일 수
 있고, 그러면 object_pose_node 가 HeadOffCalibPose 로 발행을 멈춘다). 로봇을 움직이지 않고, 목 · 카메라가 붙은 PC 에서:
   1. 목 드라이버(head_joint_publisher)를 내린다 — --head-config 가 포트를 직접 읽어 틱을 head_pose 에 적는다(포트 단독 소유).
-  2. python3 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml \\
-             --write --head-config config/head_home_rh56f1.yaml
-  3. 새 head_pose 틱에 맞춰 config/head_camset_rh56f1.yaml 의 deg 를 고친다(tests/s2r_console/test_rh56f1_mission.py 가 비교).
+  2. python3 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml \\
+             --write --head-config config/head_home_rh56f1_h2048.yaml
+  3. 새 head_pose 틱에 맞춰 config/head_camset_rh56f1_h2048.yaml 의 deg 를 고친다(tests/s2r_console/test_rh56f1_mission.py 가 비교).
   4. 드라이버를 다시 띄우고 그 자세에서 --calib-bias 로 IMU 0점을 다시 잰 뒤 --check 가 ✓ 인지 본다.
 자세한 절차: docs/HOST_arm4090.md "시야 검사"."""
 

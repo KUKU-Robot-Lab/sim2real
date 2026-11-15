@@ -15,7 +15,7 @@
 - --rgb(student.yaml rgb: true 면 자동): 깊이 stamp 와 가장 가까운 color 프레임(RGB_SLOP_S 안)을 /255 → 8x8 블록 평균으로
   줄여 깊이와 같은 header 로 낸다(hdgp real_pipe._rgb 와 같은 순서, 바닥 컷 없음). 짝 color 가 없으면 그 깊이도 내지 않는다
   (정책이 짝 안 맞는 깊이 · rgb 를 받지 않게).
-- ★11.05 외부 파라미터는 목 한 자세(그 yaml head_pose, r20u5 = pan 1825 · tilt 2815 ± 4 틱)에서만 맞는 정적 스냅샷이고 학생은
+- ★11.05 외부 파라미터는 목 한 자세(그 yaml head_pose, 11.15 h2048 = pan 1825 · tilt 2833 ± 4 틱(옛 r20u5 1825 · 2815 와 같은 물리 자세))에서만 맞는 정적 스냅샷이고 학생은
   그 시야로 배웠다. /head/joint_states 가 그 자세 밖이거나 HEAD_MAX_AGE_S 넘게 낡았으면 깊이를 내지 않는다(정책 노드는
   StaleDepth → abort). object_pose_node 의 check_head_at 을 그대로 쓴다. 미션 head_home 단계가 그 자세로 맞춘다.
 
@@ -56,7 +56,8 @@ OUT_DEPTH = "/head_depth/image"
 OUT_RGB = "/head_depth/rgb"
 OUT_INFO = "/head_depth/camera_info"
 OUT_CONFIG = "/head_depth/config"
-EXTRINSICS_MD5 = "624677fee7e8ff6502f33a3ed8a96a1f"   # 40e6496(11.04 다시 잼) — --extrinsics 로 줄 때 학습 값과 같아야 한다
+EXTRINSICS_MD5 = "db9a5b848a715625d1f85f5df0f739c3"   # 11.15 목 영점 2048 판 · ChArUco camera 블록(global_camera_extrinsics_arm4090_h2048.yaml) — --extrinsics 는 이것만
+CKPT_EXTRINSICS_MD5 = "624677fee7e8ff6502f33a3ed8a96a1f"   # 학생 ckpt 가 배운 r20u5 40e6496 — --extrinsics 일 때 ckpt 대조 값
 TABLE_Z = 0.205                                      # 탁자 상판 base z[m](CAD, rh_aglt env_cfg table_surface_z)
 K_TOL_PX = 0.5
 LOG_S = 5.0          # 오류 · 경고 throttle, 지연 통계 주기 [s]
@@ -178,27 +179,28 @@ def nearest_color(buf, stamp_ns: int, slop_s: float = RGB_SLOP_S):
     return m if abs(t - stamp_ns) <= slop_s * 1e9 else None
 
 
-def resolve_extrinsics(policy_dir: str | None, extrinsics: str | None, rgb: bool) -> tuple[str, str, bool]:
-    """--policy-dir | --extrinsics → (yaml 경로, 기대 md5, rgb). 파일 md5 ≠ 기대면 PinError(시작 거부)."""
+def resolve_extrinsics(policy_dir: str | None, extrinsics: str | None, rgb: bool) -> tuple[str, str, str, bool]:
+    """--policy-dir | --extrinsics → (yaml 경로, 기대 md5, ckpt 대조 md5, rgb). 파일 md5 ≠ 기대면 PinError(시작 거부)."""
     if policy_dir:
         cfg = load_student_dir(policy_dir)          # 얼린 사본 md5 = student.yaml 을 여기서 검사한다
         if rgb and not cfg["rgb"]:
             raise PinError(f"--rgb 인데 {policy_dir} student.yaml rgb: false")
-        return str(cfg["extrinsics"]["path"]), cfg["extrinsics"]["md5"], cfg["rgb"]
+        ex = cfg["extrinsics"]
+        return str(ex["path"]), ex["md5"], ex["ckpt_md5"], cfg["rgb"]
     got = hashlib.md5(Path(extrinsics).read_bytes()).hexdigest()
     if got != EXTRINSICS_MD5:
-        raise PinError(f"외부 파라미터 {extrinsics} md5 {got} ≠ 학습 {EXTRINSICS_MD5}(r20u5 40e6496) — 시작하지 않는다")
-    return str(extrinsics), EXTRINSICS_MD5, bool(rgb)
+        raise PinError(f"외부 파라미터 {extrinsics} md5 {got} ≠ {EXTRINSICS_MD5}(h2048, 11.15 목 영점 2048) — 시작하지 않는다")
+    return str(extrinsics), EXTRINSICS_MD5, CKPT_EXTRINSICS_MD5, bool(rgb)
 
 
 def node_config(block: int, min_valid: float, table_z: float, floor_margin: float, extrinsics: str, extr_md5: str,
-                rgb: bool = False) -> dict:
+                rgb: bool = False, ckpt_md5: str | None = None) -> dict:
     """/head_depth/config 내용 — 키 이름은 hdgp real_pipe.meta(ckpt depth_pre)와 같게(student_policy.check_depth_config)."""
     w, h = real_depth.D435I_WH
     k = real_depth.scale_k(np.array(real_depth.D435I_K_1103, dtype=np.float64), block)
     return {"block": int(block), "min_valid": float(min_valid), "floor_cut_z_m": float(table_z) - float(floor_margin),
             "render_wh": [w, h], "out_wh": [w // block, h // block], "K": k.tolist(),
-            "extrinsics": str(extrinsics), "extrinsics_md5": extr_md5, "rgb": bool(rgb),
+            "extrinsics": str(extrinsics), "extrinsics_md5": extr_md5, "extrinsics_ckpt_md5": ckpt_md5 or extr_md5, "rgb": bool(rgb),
             "real_depth": REAL_DEPTH_SRC["path"], "real_depth_md5": REAL_DEPTH_SRC["md5"], "hdgp_commit": REAL_DEPTH_SRC["commit"]}
 
 
@@ -368,7 +370,7 @@ def main() -> None:
     ap.add_argument("--floor-margin", type=float, default=real_depth.FLOOR_MARGIN_M)
     args = ap.parse_args()
     try:
-        extr, want_md5, rgb = resolve_extrinsics(args.policy_dir, args.extrinsics, args.rgb)
+        extr, want_md5, ckpt_md5, rgb = resolve_extrinsics(args.policy_dir, args.extrinsics, args.rgb)
     except PinError as e:
         raise SystemExit(f"[head_depth] {e}") from None
     t_base_cam, extr_md5 = load_extrinsics(extr)
@@ -378,7 +380,7 @@ def main() -> None:
     if head_pose is None:
         raise SystemExit(f"[head_depth] {extr} 에 head_pose 가 없다 — 목 자세를 확인할 수 없어 시작하지 않는다")
     cut = make_cut(t_base_cam, args.table_z, args.floor_margin)
-    cfg = node_config(args.block, args.min_valid, args.table_z, args.floor_margin, extr, extr_md5, rgb)
+    cfg = node_config(args.block, args.min_valid, args.table_z, args.floor_margin, extr, extr_md5, rgb, ckpt_md5)
 
     import rclpy
 

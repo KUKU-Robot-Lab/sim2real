@@ -241,7 +241,7 @@ def head_config_path(steps: list, repo: Path) -> Path | None:
     """미션 head_home 단계들의 argv 에서 --config 값(없으면 None).
 
     ★10.30 arm_v2 는 목 드라이버를 ssh 로 4090 에서 돌려 --config 가 argv 원소가 아니라 원격 셸 명령 문자열 안에 있다
-    (`cd rl_ws/sim2real && … --config config/head_camset_rh56f1.yaml`). 상대 경로는 같은 저장소의 이 PC 사본으로 읽는다."""
+    (`cd rl_ws/sim2real && … --config config/head_camset_rh56f1_h2048.yaml`). 상대 경로는 같은 저장소의 이 PC 사본으로 읽는다."""
     for step in steps:
         toks: list[str] = []
         for a in step.get("argv") or []:

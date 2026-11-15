@@ -17,7 +17,7 @@ import head_depth_node as hdn  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 STUDENT = Path(__file__).resolve().parents[1] / "deploy/policies/rh56f1/aglt/right_student1104e"
-EXTRINSICS = STUDENT / "camera/extrinsics_r20u5_40e6496.yaml"      # 학습 때 값을 얼린 사본(추적 파일)
+EXTRINSICS = STUDENT / "camera/extrinsics_h2048.yaml"      # 11.15 목 영점 2048 판 사본(ckpt 는 r20u5 로 배움 → ckpt_md5)
 
 
 def test_to_small_matches_real_depth():
@@ -109,12 +109,15 @@ def test_frame_to_small_checks_the_frame():
 def test_node_config_matches_a_training_depth_pre():
     rd = hdn.real_depth
     _, md5 = hdn.load_extrinsics(EXTRINSICS)
-    cfg = hdn.node_config(rd.BLOCK, rd.MIN_VALID, hdn.TABLE_Z, rd.FLOOR_MARGIN_M, str(EXTRINSICS), md5)
+    cfg = hdn.node_config(rd.BLOCK, rd.MIN_VALID, hdn.TABLE_Z, rd.FLOOR_MARGIN_M, str(EXTRINSICS), md5,
+                          ckpt_md5=hdn.CKPT_EXTRINSICS_MD5)
     k = rd.scale_k(np.array(rd.D435I_K_1103), 8)
     pre = {"block": 8, "min_valid": 0.5, "render_wh": [1280, 720], "out_wh": [160, 90], "K": k.tolist(),
-           "extrinsics": "/train/host/r20u5.yaml", "extrinsics_md5": hdn.EXTRINSICS_MD5,
+           "extrinsics": "/train/host/r20u5.yaml", "extrinsics_md5": hdn.CKPT_EXTRINSICS_MD5,
            "floor_cut_z_m": hdn.TABLE_Z - rd.FLOOR_MARGIN_M}
     SP.check_depth_config(pre, cfg)
+    with pytest.raises(SP.RhAgltError, match="extrinsics_md5"):   # 새 판 파일인데 ckpt 대조 값이 없으면 거부
+        SP.check_depth_config(pre, {k: v for k, v in cfg.items() if k != "extrinsics_ckpt_md5"})
     with pytest.raises(SP.RhAgltError, match="floor_cut_z_m"):
         SP.check_depth_config(pre, {**cfg, "floor_cut_z_m": cfg["floor_cut_z_m"] + 0.01})
 
@@ -247,9 +250,10 @@ def test_torch_block_median_equals_numpy_on_bad_values():
 def test_extrinsics_must_be_frozen_and_match(tmp_path):
     if not (STUDENT / "student").is_dir():
         pytest.skip("학생 ckpt 폴더 없음")
-    path, md5, rgb = hdn.resolve_extrinsics(str(STUDENT), None, False)
-    assert Path(path) == EXTRINSICS and md5 == hdn.EXTRINSICS_MD5 and rgb is True
-    assert hdn.resolve_extrinsics(None, str(EXTRINSICS), False) == (str(EXTRINSICS), hdn.EXTRINSICS_MD5, False)
+    path, md5, ckpt_md5, rgb = hdn.resolve_extrinsics(str(STUDENT), None, False)
+    assert Path(path) == EXTRINSICS and md5 == hdn.EXTRINSICS_MD5 and ckpt_md5 == hdn.CKPT_EXTRINSICS_MD5 and rgb is True
+    assert hdn.resolve_extrinsics(None, str(EXTRINSICS), False) == (str(EXTRINSICS), hdn.EXTRINSICS_MD5,
+                                                                   hdn.CKPT_EXTRINSICS_MD5, False)
     moved = tmp_path / "r20u5.yaml"
     moved.write_text(EXTRINSICS.read_text() + "# 다시 잼\n")
     with pytest.raises(hdn.PinError, match="시작하지 않는다"):
@@ -263,13 +267,13 @@ def test_head_block_only_at_the_frozen_head_pose():
     from head_position_hold_node import tick_to_deg
 
     hp = load_head_pose(EXTRINSICS)
-    assert hp is not None and hp.ticks == {"pan": 1825, "tilt": 2815}
+    assert hp is not None and hp.ticks == {"pan": 1825, "tilt": 2833}
 
     def deg(pan_tick, tilt_tick):     # 엔코더 틱 → /head/joint_states 의 URDF 각(도)
         return urdf_from_encoder(tick_to_deg(pan_tick), tick_to_deg(tilt_tick))
 
-    assert hdn.head_block(hp, deg(1825, 2815), 10.0, 10.5) is None
-    assert hdn.head_block(hp, deg(1828, 2812), 10.0, 10.5) is None
-    assert "캘리브 자세" in hdn.head_block(hp, deg(1835, 2815), 10.0, 10.5)
-    assert "낡았다" in hdn.head_block(hp, deg(1825, 2815), 10.0, 12.0)
+    assert hdn.head_block(hp, deg(1825, 2833), 10.0, 10.5) is None
+    assert hdn.head_block(hp, deg(1828, 2830), 10.0, 10.5) is None
+    assert "캘리브 자세" in hdn.head_block(hp, deg(1835, 2833), 10.0, 10.5)
+    assert "낡았다" in hdn.head_block(hp, deg(1825, 2833), 10.0, 12.0)
     assert "못 받았다" in hdn.head_block(hp, None, None, 10.0)

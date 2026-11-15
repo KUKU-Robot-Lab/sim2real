@@ -2541,7 +2541,7 @@ def selftest_autoall(kin: Kin, lo: np.ndarray, hi: np.ndarray, home: np.ndarray)
         io, clk = FakeIO(side, kin, home, zc), [100.0]
         ctl = Ctl(io, kin, lo, hi, home, np.asarray(POINT), execute=False, demo=True, out=out, doc=doc, clock=lambda: clk[0],
                   z_floor=zc - FLOOR_BELOW_M, hold=True, auto_all=True, confirm_first=2, photo_dir=td / "rec" / "all_photos",
-                  extrinsics=S2R / "config/global_camera_extrinsics_arm4090_r20u5.yaml")
+                  extrinsics=S2R / "config/global_camera_extrinsics_arm4090_h2048.yaml")
         f = ctl.fits["charuco"]
         assert f["ok"] and f["kind"] == "4점" and np.allclose(f["T"], Tb, atol=1e-6) and ctl.sel_bid == "charuco"
         assert hashlib.md5(sp.read_bytes()).hexdigest() == h0 and len(json.loads(out.read_text())["points"]) == 4   # 원본 그대로 · 새 출력에 복사
@@ -2738,7 +2738,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--board_pose", type=Path, help="보드 표시 자세 yaml/json: {board_id: {x, y[, z], yaw_deg} 또는 {T_base_board: 4x4}} "
                                                     "또는 한 보드 형식(= --boards 첫 보드). m · °")
     ap.add_argument("--board_npz", type=Path, help="grab_rgbd 캡처 — plan_board.board_pose 로 charuco 대략 자세(sim2real/.venv 의 cv2 4.14)")
-    ap.add_argument("--extrinsics", type=Path, default=S2R / "config/global_camera_extrinsics_arm4090_r20u5.yaml")
+    ap.add_argument("--extrinsics", type=Path, default=S2R / "config/global_camera_extrinsics_arm4090_h2048.yaml")
     ap.add_argument("--execute", action="store_true", help="실기 발행 체크를 켤 수 있게(켜기 전까지 발행 0)")
     ap.add_argument("--demo", action="store_true", help="ROS 없이 가짜 팔 · 힘(발행 없음)")
     ap.add_argument("--control", choices=("legacy", "precise"), default="legacy", help="precise: 120Hz · 가속도 제한 · 이동 중 실측 손 FK 추종 보정(실기 미검증)")

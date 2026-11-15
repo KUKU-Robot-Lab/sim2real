@@ -285,7 +285,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--flip", action="store_true", help="위아래도 같은 원통(FP++ 가 뒤집어 잡는다)")
     c = sub.add_parser("calib", help="카메라로 색(hue) 재기 — 로봇 PC, 물체를 왼쪽부터 --colors 순서로")
     c.add_argument("name")
-    c.add_argument("--camera-extrinsics", type=Path, default=_ROOT / "config" / "global_camera_extrinsics_arm4090.yaml")
+    c.add_argument("--camera-extrinsics", type=Path, default=_ROOT / "config" / "global_camera_extrinsics_arm4090_h2048.yaml")
     t = sub.add_parser("activate", help="정책이 볼 물체 + 미션 다시 생성(팔마다 다른 묶음 가능)")
     t.add_argument("group", nargs="?", default=None, help="(옛 형식 · 무시해도 된다) 묶음 — 팔 물체에서 푼다")
     t.add_argument("--right", required=True)

@@ -695,8 +695,8 @@ def test_the_5090_station_uses_the_camset_pose_where_all_three_objects_are_in_vi
     assert not GEN.REMOTE_HEAD and not GEN.REMOTE_PERCEPTION and GEN.STATION["pose_dest"] == ""
     assert GEN._head_config["port"] == site["head_port"]
     assert site["hosts"]["arm4090"]["ssh"] not in (REPO / "config/mission_rh56f1_control.yaml").read_text(encoding="utf-8")
-    assert GEN.CAMERA_EXTRINSICS == "config/global_camera_extrinsics_arm4090_r20u5.yaml"
-    assert GEN.HEAD_CONFIG == "config/head_camset_rh56f1.yaml"
+    assert GEN.CAMERA_EXTRINSICS == "config/global_camera_extrinsics_arm4090_h2048.yaml"    # ★11.15 목 영점 2048
+    assert GEN.HEAD_CONFIG == "config/head_camset_rh56f1_h2048.yaml"
 
 
 def test_arm_v2_runs_the_head_driver_and_release_on_the_vision_pc_and_poses_come_over_the_hub_lan():
@@ -882,10 +882,17 @@ def test_head_sweep_swaps_to_the_82_driver_and_restores_the_default_driver_and_c
         assert {"head_sweep#1", "head_sweep#4"} <= set(stop), stage
 
 
+def test_recalib_hint_never_overwrites_the_charuco_extrinsics():
+    """★11.15 h2048 외부 파라미터 = ChArUco 값(학생 묶음 · head_depth_node 가 md5 고정) — 안내가 테이블 CAD 값으로 덮게 하지 않는다."""
+    h, ex = GEN.RECALIB_HINT, GEN.CAMERA_EXTRINSICS
+    assert f"--out {ex} " not in h and f"--init {ex} --write" not in h
+    assert f"--out {ex.replace('.yaml', '_tablecheck.yaml')} --write" in h
+
+
 def test_both_stations_have_a_mission_and_the_student_head_nodes_follow_the_camera():
     """★11.11 사용자 "5090이든 4090이 둘다 사용 가능하도록": 실기 미션은 스테이션마다 한 벌(카메라 · 목 4090 = 기본,
     5090 = _cam5090). 학생 깊이 · 마스크 노드는 카메라 PC 에서(4090 이면 ssh), 학생 정책 노드는 늘 이 PC 에서."""
-    assert set(GEN.REAL_MISSIONS) == {"5090_arm4090", "5090"}
+    assert set(GEN.REAL_MISSIONS) == {"5090_arm4090_h2048", "5090"}
     raws = {st: yaml.safe_load((REPO / rel).read_text(encoding="utf-8")) for st, rel in GEN.REAL_MISSIONS.items()}
     for st, raw in raws.items():
         run = raw["run"]
