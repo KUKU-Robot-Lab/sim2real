@@ -65,6 +65,42 @@ questions:
     yes = 세 컵 모두 grade great(끝 상태와 같음). no = 탁자·손 안인 컵이 있음, 제 경계(final 판정)에서는 fail 인 컵도 no.
     partial 인 컵이 있으면 못 정함.
 
+# 문구 변형(11.17): 원 질문(base)의 항목마다 같은 (경계, 손, 컵)으로 하나씩 붙는다. at 은 없다(base 를 따른다).
+#   참값 규칙은 base 것을 쓴다. rule 이 있으면 build_set.truth_of 표의 그 줄을 쓴다.
+#   invert: true = 참값만 반대(못 정함은 그대로). 항목 종류는 뒤집힌 참값으로 붙는다: base 의 pos → neg_fail,
+#   base 의 neg_cross·neg_fail → pos.
+#   pair_of = 같은 base 의 변형 id. run_bench 가 두 답이 서로 반대일 때만 채택하는 짝 일치 표를 낸다.
+#   경계 통계(boundaries.jsonl)·long 참값·skipped.json 에는 들어가지 않는다.
+- id: holders_count0
+  base: holders_empty
+  text: Are all three white cup holders empty, with no cup inside any of them?
+
+- id: holders_any_cup
+  base: holders_empty
+  invert: true
+  pair_of: holders_count0
+  text: Is there a cup standing inside any of the white cup holders?
+
+- id: cups_on_table
+  base: holders_empty
+  rule: cups_on_table
+  text: Are the blue cup, the pink cup and the orange shaker cup all standing on the table outside the white cup holders?
+  truth: yes = 세 컵 모두 world 값 table. no = 손 안·holder·leaning 인 컵이 있음. out·모름인 컵이 있고 no 가 아니면 못 정함.
+
+- id: cup_in_holder_b
+  base: cup_in_holder
+  text: Is the {obj} inside one of the white cup holders, not on the table and not held by a robot hand?
+
+- id: cup_released_in_holder
+  base: cup_in_holder
+  text: Has the {obj} been placed into a white cup holder and released by the robot?
+
+- id: cup_not_in_holder
+  base: cup_in_holder
+  invert: true
+  pair_of: cup_in_holder_b
+  text: Is the {obj} outside the white cup holders (on the table, in a robot hand, or fallen over)?
+
 # 뺀 질문과 이유
 excluded:
 - card: 'go_home "Is the selected hand empty?" · place "Are the fingers open and clear of the cup?" · terminal "Are both robot hands empty?"'

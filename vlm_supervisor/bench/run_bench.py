@@ -1,6 +1,7 @@
 """VLM 판정 시험대 실행: items.jsonl 을 변형별로 VLM 서버에 물어 results.jsonl 과 summary.md 를 쓴다.
 
 실행(저장소 루트): python3 -m vlm_supervisor.bench.run_bench items.jsonl --url http://127.0.0.1:8767 --out <dir> [--variants ...]
+  --questions id1 id2 ... 를 주면 그 질문 id 의 항목만 부르고 채점한다(meta 에 적혀 --rescore 가 그대로 쓴다).
 변형:
   long_same    저장된 판정 프롬프트 전문 + 같은 사진. 저장된 raw 와 같은 답이 나와야 한다(시험대 자체 점검).
   long_swap    같은 프롬프트 + 그 노드의 성공 조건이 깨진 같은 시드의 다른 경계 사진(items 의 image_swap).
@@ -53,6 +54,7 @@ MIN_MASS = 0.5  # short 답을 채점에 넣는 choice_mass 문턱(--min-mass). 
 INVALID = 'invalid judgement JSON'  # parse_judgement 가 파싱 실패 때 주는 reason(choice 는 E)
 BAD_INPUT = (OSError, ValueError, KeyError, TypeError)  # 사진 없음·깨진 decision json: 그 행의 error 로 남긴다
 VARIANTS = ('long_same', 'long_swap', 'long_black', 'short1', 'short2', 'short_black')
+FIXED = {'long_swap': 'no', 'long_black': None}  # 경계 참값과 무관하게 정해진 long 참값
 BASE = {'long_swap': 'long_same', 'long_black': 'long_same', 'short_black': 'short1'}  # 사진 민감도의 기준 변형
 
 
@@ -82,7 +84,7 @@ def load_set(items_path) -> tuple:
     if not bnd:
         own = collections.defaultdict(list)
         for it in items:
-            own[bid(it)] += [it['truth']] if it['kind'] != 'neg_cross' else []
+            own[bid(it)] += [it['truth']] if it['kind'] != 'neg_cross' and not it.get('base') else []  # 문구 변형은 제 질문이 아니다
         bnd = {k: {'id': k, 'undecided': None, 'long_truth': 'no' if 'no' in v else 'yes' if v else None} for k, v in own.items()}
     skipped = side / 'skipped.json'
     return items, bnd, json.loads(skipped.read_text(encoding='utf-8')) if skipped.exists() else None
@@ -100,7 +102,7 @@ def expected(variant: str, items: list, bnd: dict) -> dict:
     for it in items:
         if bid(it) in out or (variant == 'long_swap' and not it.get('image_swap')):
             continue
-        truth = {'long_swap': 'no', 'long_black': None}.get(variant, bnd[bid(it)]['long_truth'])
+        truth = FIXED[variant] if variant in FIXED else bnd[bid(it)]['long_truth']
         out[bid(it)] = (truth, {'yes': 'pos', 'no': 'neg_cross' if variant == 'long_swap' else 'neg_fail'}.get(truth))
     return out
 
@@ -115,7 +117,9 @@ def answer_of(row: dict, min_mass: float) -> str:
     yes, no, mass = row.get('p_yes'), row.get('p_no'), row.get('choice_mass')
     if yes is None or no is None or not (yes > no or no > yes):  # 점수 없음(low_mass)·동점·NaN
         return 'abstain'
-    return 'abstain' if isinstance(mass, (int, float)) and mass < min_mass else 'yes' if yes > no else 'no'
+    if min_mass > 0 and not (isinstance(mass, (int, float)) and mass >= min_mass):  # 질량이 없거나 NaN 이어도 문턱 줄에서는 보류
+        return 'abstain'
+    return 'yes' if yes > no else 'no'
 
 
 def infer(row: dict, url: str, prompt: str, images: list, tokens: int, choices=None):
@@ -241,33 +245,55 @@ def stats(rows: list, items: list, bnd: dict, min_mass: float = MIN_MASS, varian
 
     참값은 행에 적힌 것을 쓰지 않고 items·bnd 로 다시 붙인다. extra = results 에만 있는 id 수, missing = items 에만 있는 id 수.
     """
-    by: dict[str, dict] = collections.defaultdict(dict)
+    by: dict[str, dict] = {}
+    dup: collections.Counter = collections.Counter()  # 같은 (변형, id) 가 다시 나온 행 수. 채점은 마지막 행으로 한다
     for r in rows:
+        dup[r['variant']] += r['id'] in by.setdefault(r['variant'], {})
         by[r['variant']][r['id']] = r
+    qof = {it['id']: it['question_id'] for it in items}
     out = {}
     names: list[str] = [*(variants or []), *by]
     for variant in dict.fromkeys(names):
-        exp, got = expected(variant, items, bnd), by[variant]
-        for mass in [None] if variant.startswith('long') else sorted({0.0, min_mass}):
+        exp, got = expected(variant, items, bnd), by.get(variant, {})
+        short = not variant.startswith('long')
+        of_q = collections.defaultdict(list)  # 질문 id → 항목 id (short 만)
+        twins = collections.defaultdict(list)  # (원 질문 id, 뒤집힌 질문 id) → [(원 항목 id, 뒤집힌 항목 id)]
+        for it in items if short else []:
+            if it['id'] in exp:
+                of_q[it['question_id']].append(it['id'])
+                if it.get('pair') in exp and 'black' not in variant:
+                    twins[qof[it['pair']], it['question_id']].append((it['pair'], it['id']))
+        for mass in sorted({0.0, min_mass}) if short else [None]:
             def ans(v, i):
-                return answer_of(by[v][i], mass or 0.0) if i in by[v] else 'missing'
+                return answer_of(by[v][i], mass or 0.0) if i in by.get(v, ()) else 'missing'
 
             def scored(ids, v=variant):
                 return score([(*exp[i], ans(v, i)) for i in ids])
 
+            def rates(ids):
+                a = [x for x in (ans(variant, i) for i in ids) if x not in ('error', 'missing')]
+                return {'yes_rate': (a.count('yes'), len(a)), 'yes_of_choice': (a.count('yes'), a.count('yes') + a.count('no'))}
+
             s = scored(exp)
-            base = BASE.get(variant, '')  # 기준 변형도 yes/no 로 답했고 이 변형이 응답(오류 아님)한 단위만 견준다
-            pairs = [(ans(variant, i), ans(base, i)) for i in exp if i in got and i in by[base]]
+            base = BASE.get(variant) if BASE.get(variant) in by else None  # 기준 변형이 results 에 없으면 견주지 않는다
+            # 기준 변형도 yes/no 로 답했고 이 변형이 응답(오류 아님)한 단위만 견준다
+            pairs = [(ans(variant, i), ans(base, i)) for i in exp if i in got and i in by[base]] if base else []
             pairs = [(a, b) for a, b in pairs if b in CHOICES and a != 'error']
-            replied = [a for a in (ans(variant, i) for i in exp) if a not in ('error', 'missing')]
             secs = [r['sec'] for r in got.values() if 'sec' in r]
-            s.update(extra=len(set(got) - set(exp)), yes_rate=(replied.count('yes'), len(replied)),
+            no_mass = sum('error' not in r and not (isinstance(r.get('choice_mass'), (int, float)) and r['choice_mass'] >= 0)
+                          for i, r in got.items() if i in exp) if short else None  # NaN >= 0 은 거짓
+            s.update(extra=len(set(got) - set(exp)), dup=dup[variant], no_mass=no_mass, base=base, **rates(exp),
                      flip=(sum(a != b for a, b in pairs), len(pairs)),
                      base_yes_flip=(sum(a != 'yes' for a, b in pairs if b == 'yes'), sum(b == 'yes' for _, b in pairs)),
                      sec_med=round(statistics.median(secs), 2) if secs else None, sec_max=max(secs, default=None))
             if variant == 'short2' and 'short1' in by:  # 같은 항목(short2 가 불린 것)끼리 short1 과 견준다
                 called = [i for i in exp if i in got]
                 s['pair'] = {'short1': scored(called, 'short1'), 'short2': scored(called)}
+            if short:
+                s['by_q'] = {q: {**scored(ids), **rates(ids)} for q, ids in of_q.items()}
+                # 짝 일치: 원 질문과 뒤집힌 질문의 답이 서로 반대일 때만 원 질문의 답을 채택하고 나머지는 보류로 센다
+                s['twin'] = {k: score([(*exp[o], ans(variant, o) if {ans(variant, o), ans(variant, i)} == set(CHOICES) else 'abstain')
+                                       for o, i in v]) for k, v in twins.items()}
             out[variant, mass] = s
     return out
 
@@ -277,15 +303,22 @@ def frac(pair) -> str:
     return f'{k}/{n} ({100 * k / n:.0f} %)' if n else '-'
 
 
-def summary(items: list, bnd: dict, skipped, rows: list, items_path, min_mass: float = MIN_MASS) -> str:
-    """rows = results.jsonl 의 모든 행(meta 행이 있으면 첫 줄). 서버 실행 직후와 --rescore 가 같은 글을 낸다."""
+def summary(items: list, bnd: dict, skipped, rows: list, items_path, min_mass=None) -> str:
+    """rows = results.jsonl 의 모든 행(meta 행이 있으면 첫 줄). 서버 실행 직후와 --rescore 가 같은 글을 낸다.
+
+    min_mass 가 None 이면 meta 의 min_mass(잴 때 쓴 문턱), meta 에도 없으면 MIN_MASS.
+    """
     meta = next((r['meta'] for r in rows if 'meta' in r), {})
     rows = [r for r in rows if 'variant' in r]
+    asked, ran = min_mass, meta.get('min_mass')
+    min_mass = asked if asked is not None else ran if ran is not None else MIN_MASS
     kinds = collections.Counter(i['kind'] for i in items)
-    same = [r for r in rows if 'same_raw' in r]
+    called = expected('long_same', items, bnd)  # 지금 items 의 경계가 아닌 행은 자체 점검에 넣지 않는다
+    same = [r for r in rows if 'same_raw' in r and r['id'] in called]
     here = [bnd[k] for k in dict.fromkeys(bid(i) for i in items)]  # 항목이 있는 경계
     long = collections.Counter(b['long_truth'] for b in here)
     sha = hashlib.sha256(Path(items_path).read_bytes()).hexdigest() if Path(items_path).is_file() else None
+    old = any(b['undecided'] is None for b in here)  # boundaries.jsonl 이 없어 load_set 이 항목으로 만든 경계
     lines = [
         '# VLM 판정 시험대 요약', '',
         f"- 항목 `{items_path}`(sha256 {str(sha)[:12]}) · 서버 `{meta.get('url', '기록 없음')}` · 잰 시각 {meta.get('time', '기록 없음')}"
@@ -295,9 +328,16 @@ def summary(items: list, bnd: dict, skipped, rows: list, items_path, min_mass: f
         '같은 시드·같은 사진에서 나온 항목은 서로 독립이 아니다. 표본 크기는 항목 수가 아니라 시드·경계 수로 읽는다.',
         f"- long 참값(항목이 있는 경계 {len(here)}개): yes {long['yes']} · no {long['no']} · 못 정함 {long[None]}"
         + ('. boundaries.jsonl 이 없어 못 정한 제 질문 수를 모른다(옛 items). yes 는 정한 제 질문만 본 값이다.'
-           if any(b['undecided'] is None for b in here) else
+           if old else
            f"(제 질문 없음 {sum(not b['home'] for b in here)} · 제 질문 가운데 못 정한 것이 있음 "
            f"{sum(b['long_truth'] is None and b['home'] > 0 for b in here)})")]
+    if not old:
+        lines.append(f"- boundaries.jsonl 전체: 경계 {len(bnd)}개 · long 참값 못 정함 {sum(b['long_truth'] is None for b in bnd.values())}개"
+                     '(항목이 없는 경계 포함).')
+    if meta.get('questions'):
+        lines.append(f"- 잴 때 --questions 로 고른 질문: {' '.join(meta['questions'])}. 불러야 할 수는 그 항목만 센다.")
+    if asked is not None and ran not in (None, asked):
+        lines.append(f'- 주의: 잴 때 문턱(meta min_mass)은 {ran:g} 인데 --min-mass {asked:g} 로 다시 채점했다.')
     if meta.get('items_sha256') not in (None, sha):
         lines.append(f"- 주의: results 는 다른 items(sha256 {meta['items_sha256'][:12]})로 잰 것이다. 참값은 지금 items 로 다시 붙였다.")
     if same:
@@ -321,9 +361,9 @@ def summary(items: list, bnd: dict, skipped, rows: list, items_path, min_mass: f
         return '-' if x is None else f'{100 * x:.0f} %'
 
     lines += ['', '## 응답 상태', '',
-              '| 변형 | 문턱 | 불러야 할 수 | 답 받음(coverage) | 오류 | 무효 | 보류 | 행 없음(items 에만) | results 에만 | 참값 못 정함 | 지연 중앙값 s | 지연 최대 s |',
-              '|---|---|---|---|---|---|---|---|---|---|---|---|']
-    lines += [f"{name(k)} {s['n']} | {frac(s['got'])} | {s['error']} | {s['invalid']} | {s['abstain']} | {s['missing']} | {s['extra']} | "
+              '| 변형 | 문턱 | 불러야 할 수 | 답 받음(coverage) | 오류 | 무효 | 보류 | 행 없음(items 에만) | results 에만 | 중복 행 | 질량 없음·NaN | 참값 못 정함 | 지연 중앙값 s | 지연 최대 s |',
+              '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|']
+    lines += [f"{name(k)} {s['n']} | {frac(s['got'])} | {s['error']} | {s['invalid']} | {s['abstain']} | {s['missing']} | {s['extra']} | {s['dup']} | {'-' if s['no_mass'] is None else s['no_mass']} | "
               f"{'-' if 'black' in k[0] else s['unknown']} | {s['sec_med']} | {s['sec_max']} |" for k, s in st.items()]
     lines += ['', '## 채점', '',
               '| 변형 | 문턱 | 정답률(답한 것) | 보수 정답률 | yes 재현율 | no 재현율 neg_cross | no 재현율 neg_fail | 균형 정확도 | 항상 yes | 항상 no |',
@@ -334,9 +374,25 @@ def summary(items: list, bnd: dict, skipped, rows: list, items_path, min_mass: f
         if 'pair' in s:
             lines += ['', f"짝 비교(문턱 {k[1]:g}, short2 가 불린 항목 {s['pair']['short2']['n']}개만): " + ' / '.join(
                 f"{v} 정답률 {frac(p['acc'])} · 보수 {frac(p['acc_all'])} · 균형 {pct(p['balanced'])}" for v, p in s['pair'].items())]
-    lines += ['', '## 사진 민감도', '', '| 변형 | 문턱 | 기준 변형 | yes 답 비율 | 기준과 답이 다름 | 기준에서 yes 였던 것 가운데 바뀜 |', '|---|---|---|---|---|---|']
-    lines += [f"{name(k)} {BASE[k[0]]} | {frac(s['yes_rate'])} | {frac(s['flip'])} | {frac(s['base_yes_flip'])} |"
-              for k, s in st.items() if k[0] in BASE]
+    if any(s.get('by_q') for s in st.values()):
+        lines += ['', '## 질문별(short)', '',
+                  '| 질문 id | 변형 | 문턱 | 항목 수 | yes 재현율 | no 재현율 neg_cross | no 재현율 neg_fail | 균형 정확도 | yes 답 비율 | yes/(yes+no) |',
+                  '|---|---|---|---|---|---|---|---|---|---|']
+        for q in dict.fromkeys(q for s in st.values() for q in s.get('by_q', ())):
+            lines += [f"| {q} {name(k)} {s['by_q'][q]['n']} | {frac(s['by_q'][q]['yes_recall'])} | {frac(s['by_q'][q]['no_cross'])} | "
+                      f"{frac(s['by_q'][q]['no_fail'])} | {pct(s['by_q'][q]['balanced'])} | {frac(s['by_q'][q]['yes_rate'])} | "
+                      f"{frac(s['by_q'][q]['yes_of_choice'])} |" for k, s in st.items() if q in s.get('by_q', ())]
+    if any(s.get('twin') for s in st.values()):
+        lines += ['', '## 짝 일치(원 질문 + 뒤집힌 질문)', '',
+                  '| 원 질문 | 뒤집힌 질문 | 변형 | 문턱 | 짝 수 | 보류율 | yes 재현율 | no 재현율 neg_cross | no 재현율 neg_fail | 균형 정확도 | 보수 정답률 |',
+                  '|---|---|---|---|---|---|---|---|---|---|---|']
+        lines += [f"| {a} | {b} {name(k)} {t['n']} | {frac((t['n'] - t['got'][0], t['n']))} | {frac(t['yes_recall'])} | {frac(t['no_cross'])} | "
+                  f"{frac(t['no_fail'])} | {pct(t['balanced'])} | {frac(t['acc_all'])} |"
+                  for k, s in st.items() for (a, b), t in s.get('twin', {}).items()]
+    lines += ['', '## 사진 민감도', '',
+              '| 변형 | 문턱 | 기준 변형 | yes 답 비율 | yes/(yes+no) | 기준과 답이 다름 | 기준에서 yes 였던 것 가운데 바뀜 |', '|---|---|---|---|---|---|---|']
+    lines += [f"{name(k)} {s['base'] or BASE[k[0]] + '(results 에 없음)'} | {frac(s['yes_rate'])} | {frac(s['yes_of_choice'])} | "
+              f"{frac(s['flip'])} | {frac(s['base_yes_flip'])} |" for k, s in st.items() if k[0] in BASE]
     lines += ['', '## 빠진 항목', '']
     if skipped is None:
         lines.append('- skipped.json 이 없다(옛 items). build_set 이 뺀 건수를 모른다.')
@@ -352,9 +408,18 @@ def summary(items: list, bnd: dict, skipped, rows: list, items_path, min_mass: f
         '변형끼리는 coverage 와 보수 정답률을 같이 보고 견준다.',
         '- yes 재현율은 참값 yes 가운데 yes 라고 답한 비율, no 재현율은 참값 no 가운데 no 라고 답한 비율이다(거짓 통과 = 1 − no 재현율). '
         '균형 정확도는 yes 재현율과 no 재현율(neg_cross·neg_fail 합침)의 평균이다. 항상 yes·항상 no 는 그 답만 낼 때의 보수 정답률이다.',
-        f'- 문턱 0 줄은 choice_mass 와 무관하게 전부 채점하고(동점만 보류), 문턱 {min_mass:g} 줄은 그 미만을 보류로 뺀다. long 은 문턱이 없다.',
-        '- long_same 의 참값은 그 경계에서 끝난 노드의 제 질문으로 정한다. no 가 하나라도 있으면 no, 모두 정했고 모두 yes 면 yes, '
-        '못 정한 제 질문이 하나라도 있거나 제 질문이 없는 경계(첫 READY, go_home_start, tilt)는 못 정함이라 채점에서 빠진다. '
+        f'- 문턱 0 줄은 choice_mass 와 무관하게 전부 채점하고(동점만 보류), 문턱 {min_mass:g} 줄은 그 미만과 choice_mass 가 없거나 NaN 인 답'
+        '(응답 상태 표의 질량 없음·NaN)을 보류로 뺀다. long 은 문턱이 없다. 중복 행은 같은 (변형, id) 가 다시 나온 수이고 마지막 행으로 채점한다.',
+        '- 질문별 표는 short 변형을 질문 id 로 나눈 것이다. 검은 사진 변형은 참값이 없어 yes 답 비율만 본다. yes 답 비율의 분모는 '
+        '응답(보류 포함), yes/(yes+no) 의 분모는 yes·no 로 답한 것이다. 뒤집힌 질문(questions.yaml invert)은 참값이 반대라 '
+        '원 질문의 pos 가 neg_fail 로, 원 질문의 neg_cross·neg_fail 이 pos 로 들어간다.',
+        '- 짝 일치는 같은 (경계, 물체)에서 원 질문과 뒤집힌 질문의 답이 yes·no 로 서로 반대일 때만 원 질문의 답을 채택한다. '
+        '둘이 같거나 한쪽이 보류·오류·행 없음이면 보류다. 재현율은 채택한 것만, 보수 정답률은 보류를 오답으로 센다. 참값은 원 질문 것이다.',
+        ('- long_same 의 참값은 boundaries.jsonl 이 없어 항목으로 남은 제 질문(pos·neg_fail)만으로 정했다. no 가 하나라도 있으면 no, '
+         '남은 것이 모두 yes 면 yes(못 정해 빠진 제 질문이 있어도 yes 다), 제 질문 항목이 없는 경계는 못 정함이다. '
+         if old else
+         '- long_same 의 참값은 그 경계에서 끝난 노드의 제 질문으로 정한다. no 가 하나라도 있으면 no, 모두 정했고 모두 yes 면 yes, '
+         '못 정한 제 질문이 하나라도 있거나 제 질문이 없는 경계(첫 READY, go_home_start, tilt)는 못 정함이라 채점에서 빠진다. ') +
         'blind 프롬프트는 마지막 노드 이름만 받으므로 승인 없이 이어진 place(place_blue·place_shaker)는 이름이 프롬프트에 없다.',
         '- long_swap 은 그 노드의 성공 조건이 깨진 다른 경계 사진을 주므로 참값이 no 다. 그런 사진이 같은 시드에 없는 경계는 부르지 않는다.',
         '- 사진 민감도는 기준 변형이 yes/no 로 답했고 이 변형도 응답한 단위에서 센다(무효·보류로 바뀐 것도 바뀐 것이다). '
@@ -370,22 +435,34 @@ def main(argv=None) -> int:
     ap.add_argument('--url', help='VLM 서버 주소. --rescore 가 아니면 필요하다')
     ap.add_argument('--out', help='results.jsonl·summary.md 를 쓸 폴더. --rescore 에서는 summary.md 만 쓴다(기본: results.jsonl 옆)')
     ap.add_argument('--rescore', metavar='RESULTS_JSONL', help='서버를 부르지 않고 이 results.jsonl 을 다시 채점한다')
-    ap.add_argument('--min-mass', type=float, default=MIN_MASS)
-    ap.add_argument('--variants', nargs='+', choices=VARIANTS, default=list(VARIANTS))
+    ap.add_argument('--min-mass', type=float, help=f'short 채점 문턱. 기본: 잴 때는 {MIN_MASS}, --rescore 는 results meta 의 값(없으면 {MIN_MASS})')
+    ap.add_argument('--variants', nargs='+', choices=VARIANTS, help='기본: 전부')
+    ap.add_argument('--questions', nargs='+', metavar='ID', help='이 질문 id 의 항목만 부르고 채점한다. --rescore 의 기본은 results meta 의 값')
     args = ap.parse_args(argv)
     items, bnd, skipped = load_set(args.items)
     if args.rescore:
+        if args.url or args.variants:
+            ap.error('--rescore 는 서버를 부르지 않는다. --url·--variants 와 같이 주지 않는다')
         if not Path(args.rescore).is_file():
             ap.error(f'{args.rescore} 이 없다')
         results, out = Path(args.rescore), Path(args.out or Path(args.rescore).parent)
         out.mkdir(parents=True, exist_ok=True)
     elif args.url and args.out:
         results, out = Path(args.out) / 'results.jsonl', Path(args.out)
-        run(items, bnd, args.url, out, args.variants, args.min_mass,
-            {'items': str(args.items), 'items_sha256': hashlib.sha256(Path(args.items).read_bytes()).hexdigest()})
     else:
         ap.error('--url 과 --out 을 주거나 --rescore 를 준다')
-    text = summary(items, bnd, skipped, jl(results), args.items, args.min_mass)  # 실행 직후에도 파일을 다시 읽어 같은 길로 채점한다
+    rows = jl(results) if args.rescore else []
+    asked = args.questions or next((r['meta'] for r in rows if 'meta' in r), {}).get('questions')
+    if asked:
+        if set(asked) - {i['question_id'] for i in items}:
+            ap.error(f"items 에 없는 질문 id: {sorted(set(asked) - {i['question_id'] for i in items})}")
+        items = [i for i in items if i['question_id'] in asked]
+    if not args.rescore:
+        run(items, bnd, args.url, out, args.variants or VARIANTS, MIN_MASS if args.min_mass is None else args.min_mass,
+            {'items': str(args.items), 'items_sha256': hashlib.sha256(Path(args.items).read_bytes()).hexdigest(),
+             **({'questions': asked} if asked else {})})
+        rows = jl(results)  # 실행 직후에도 파일을 다시 읽어 같은 길로 채점한다
+    text = summary(items, bnd, skipped, rows, args.items, args.min_mass)
     (out / 'summary.md').write_text(text, encoding='utf-8')
     print(text)
     return 0

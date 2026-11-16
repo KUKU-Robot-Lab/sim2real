@@ -108,7 +108,7 @@ def home_questions(kind, node, card: dict, hands: list, w: dict, Q: dict, skippe
     """이 노드 종류의 제 질문을 (질문 id, 손, 컵) 으로 푼다. 컵은 노드 인자, 없으면(to_tilt_start) 그 손이 쥔 컵."""
     out = []
     for q in Q['questions']:
-        if kind not in q['at']:
+        if kind not in q.get('at', ()):  # 문구 변형(base)은 at 이 없다. 원 질문의 항목을 따라 붙는다
             continue
         for hand in hands if '{hand}' in q['text'] else [None]:
             obj = None
@@ -136,6 +136,7 @@ def truth_of(inst, b: dict, home: bool):
         'cup_in_holder': ([obj], {'holder'}, away),
         'all_in_holders': (cups, {'holder'}, away),
         'holders_empty': (cups, {'table', *SIDES}, {'holder', 'leaning'}),
+        'cups_on_table': (cups, {'table'}, {'holder', 'leaning', *SIDES}),
     }[qid]
     if not home:
         no = no - {'out'}  # 실패 뒤 상태(out)는 그 노드의 제 경계에서만 반례(neg_fail)로 쓴다. 쉬운 반례가 아니다
@@ -198,6 +199,10 @@ def seed_items(seed_dir: str, Q: dict, nodes: dict, skipped) -> tuple:
             gap = False
     asked = list(dict.fromkeys(i for b in bounds for i in b['home']))  # 이 시드에서 제 경계가 있는 질문
     text = {q['id']: q['text'] for q in Q['questions']}
+    variants = collections.defaultdict(list)  # 원 질문 id → 문구 변형. 경계 통계·long 참값·skipped 에는 넣지 않는다
+    for q in Q['questions']:
+        if q.get('base'):
+            variants[q['base']].append(q)
     items, brows = [], []
     for n, b in enumerate(bounds):
         swap = swap_photo(n, bounds)
@@ -210,17 +215,26 @@ def seed_items(seed_dir: str, Q: dict, nodes: dict, skipped) -> tuple:
         for inst in asked:
             qid, hand, obj = inst
             own = inst in b['home']  # 이 경계에서 끝난 노드의 제 질문인가
-            truth, src = truth_of(inst, b, own)
-            if truth is None and own:
-                skipped[f'{qid}: {src}'] += 1
-            if truth is None or (truth == 'yes' and not own):  # 다른 경계의 yes 는 만들지 않는다
-                continue
-            items.append({
-                'id': '/'.join([seed, b['stem'], ':'.join(a for a in inst if a)]), 'seed': seed, 'node': b['node'],
-                'image': b['files']['jpg'], 'image_before': b['before'], 'image_swap': swap,
-                'question_id': qid, 'question': text[qid].format(hand=hand, obj=Q['objects'][obj] if obj else None),
-                'truth': truth, 'kind': 'pos' if truth == 'yes' else 'neg_fail' if own else 'neg_cross',
-                'truth_src': src, 'decision_json': b['files']['json']})
+            for v in ({}, *variants.get(qid, ())):  # {} = 원 질문
+                truth, src = truth_of((v.get('rule', qid), hand, obj), b, own)
+                if truth is None and own and not v:
+                    skipped[f'{qid}: {src}'] += 1
+                if truth is None or (truth == 'yes' and not own):  # 다른 경계의 yes 는 만들지 않는다
+                    continue
+                if v.get('invert'):  # 뒤집힌 질문: 참값만 반대. 종류는 뒤집힌 참값으로 다시 붙는다(다른 경계의 no → pos)
+                    truth, src = {'yes': 'no', 'no': 'yes'}[truth], src + ' · 뒤집힌 질문'
+
+                def iid(q):
+                    return '/'.join([seed, b['stem'], ':'.join(a for a in (q, hand, obj) if a)])
+
+                vid = v.get('id', qid)
+                items.append({
+                    'id': iid(vid), 'seed': seed, 'node': b['node'],
+                    'image': b['files']['jpg'], 'image_before': b['before'], 'image_swap': swap,
+                    'question_id': vid, 'question': text[vid].format(hand=hand, obj=Q['objects'][obj] if obj else None),
+                    'truth': truth, 'kind': 'pos' if truth == 'yes' else 'neg_fail' if own else 'neg_cross',
+                    'truth_src': src, 'decision_json': b['files']['json'],
+                    **({'base': qid} if v else {}), **({'pair': iid(v['pair_of'])} if v.get('pair_of') else {})})
     return items, brows
 
 

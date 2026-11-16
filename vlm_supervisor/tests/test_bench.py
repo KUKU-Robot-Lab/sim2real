@@ -153,10 +153,10 @@ def test_build_truth_comes_from_runner_signals_not_vlm(tmp_path, capsys):
     assert by[final + 'cup_in_holder:SHAKER']['kind'] == 'pos' and by[final + 'all_in_holders']['kind'] == 'neg_fail'
     # 실패 뒤 상태는 다른 경계의 쉬운 반례로 쓰지 않는다. tilt 경계에는 제 질문이 없다. 첫 경계에는 직전 사진이 없다
     assert final + 'cup_in_holder:SRC_BLUE' not in by
-    assert {i['kind'] for i in items if '/0005_tilt_blue_judge/' in i['id']} == {'neg_cross'}
+    assert {i['kind'] for i in items if '/0005_tilt_blue_judge/' in i['id'] and 'base' not in i} == {'neg_cross'}
     assert by['seed0/0001_None_judge/cup_in_holder:SRC_BLUE']['image_before'] is None
     # 못 정한 것은 항목을 만들지 않고 이유만 센다
-    assert not any(i['question_id'] == 'cup_in_holder' and i['kind'] != 'neg_cross' for i in items if i['seed'] == 'seed1')
+    assert not any(i['question_id'] in ('cup_in_holder', 'cup_in_holder_b') and i['kind'] != 'neg_cross' for i in items if i['seed'] == 'seed1')
     assert 'seed1/0006_grasp_pink_judge/cup_in_hand:right:SRC_PINK' not in by  # dropped 신호가 없으면 쥐었다고 보지 않는다
     assert by['seed1/0003_grasp_blue_judge/cup_in_hand:right:SRC_BLUE']['kind'] == 'pos'
     assert 'seed1/0004_to_tilt_start_r1_judge/cup_in_hand:right:SRC_BLUE' not in by  # 이송 exit 에 신호가 없다
@@ -167,7 +167,24 @@ def test_build_truth_comes_from_runner_signals_not_vlm(tmp_path, capsys):
     assert by['seed2/0003_scene_judge/holders_empty']['image_before'].endswith('0002_go_home_start_judge.jpg')
     # 손을 못 뗀 놓기도 구멍 밖(fail)이면 홀더 질문은 no 가 확실하다
     assert by['seed2/0007_place_shaker_judge/cup_in_holder:SHAKER']['kind'] == 'neg_fail'
-    assert {i['question_id'] for i in items} == {'holders_empty', 'cup_in_hand', 'cup_lifted', 'cup_in_holder', 'all_in_holders'}
+    assert {i['question_id'] for i in items if 'base' not in i} == {
+        'holders_empty', 'cup_in_hand', 'cup_lifted', 'cup_in_holder', 'all_in_holders'}
+    # 문구 변형은 원 질문 항목을 따라 붙는다. 뒤집힌 질문은 참값만 반대이고 짝(pair)과 늘 참값이 엇갈린다
+    inv = by['seed0/0007_home_r_after_blue_judge/cup_not_in_holder:SRC_BLUE']
+    assert (inv['truth'], inv['kind'], inv['base']) == ('yes', 'pos', 'cup_in_holder') and '뒤집힌 질문' in inv['truth_src']
+    assert inv['pair'] == 'seed0/0007_home_r_after_blue_judge/cup_in_holder_b:SRC_BLUE' and by[inv['pair']]['kind'] == 'neg_fail'
+    assert inv['question'] == 'Is the blue cup outside the white cup holders (on the table, in a robot hand, or fallen over)?'
+    assert by[final + 'cup_not_in_holder:SHAKER']['kind'] == 'neg_fail' and by[final + 'cup_released_in_holder:SHAKER']['kind'] == 'pos'
+    twins = [i for i in items if i.get('pair')]
+    assert {i['question_id'] for i in twins} == {'holders_any_cup', 'cup_not_in_holder'}
+    assert all(by[i['pair']]['truth'] != i['truth'] and by[i['pair']]['base'] == i['base'] for i in twins)
+    for i in items:  # 뒤집지 않은 변형(rule 없는 것)은 원 질문과 참값·종류가 같다
+        if i.get('base') and not i.get('pair') and i['question_id'] != 'cups_on_table':
+            same = by[i['id'].replace('/' + i['question_id'], '/' + i['base'])]
+            assert (same['truth'], same['kind']) == (i['truth'], i['kind']), i['id']
+    # cups_on_table 은 제 규칙이다: 손에 든 컵이 있으면 no(holders_empty 는 그 경계에서 yes 라 항목이 없다)
+    assert by['seed0/0003_scene_judge/cups_on_table']['kind'] == 'pos' and by[lane + 'cups_on_table']['kind'] == 'neg_cross'
+    assert lane + 'holders_empty' not in by
     skipped = build_set.build(str(logs))[1]
     assert skipped['경계: 판정 사진·기록 없음'] == skipped['경계: 노드의 exit 행 없음'] == 1
     for reason in ('grade=partial', '끝 grade=fail', '쥔 컵을 모름', 'SRC_PINK=out', '이송 exit 에 dropped 신호가 없어'):
@@ -200,7 +217,7 @@ def test_build_guards(tmp_path):
     items, skipped, bounds = build_set.build(str(tmp_path))
     by, bnd = {i['id']: i for i in items}, {b['id']: b for b in bounds}
     assert any('grasp_blue 의 손이 하나로 정해지지 않음' in k for k in skipped)
-    assert not any(i['id'].startswith('seed3/0002_grasp_blue_judge/') and i['kind'] != 'neg_cross' for i in items)
+    assert not any(i['id'].startswith('seed3/0002_grasp_blue_judge/') and i['kind'] != 'neg_cross' and 'base' not in i for i in items)
     assert bnd['seed3/0002_grasp_blue_judge']['long_truth'] is None and bnd['seed3/0002_grasp_blue_judge']['undecided'] >= 1
     assert 'seed3/0004_place_pink_judge/cup_in_holder:SRC_PINK' not in by and any('HOLDER_2 행 없음' in k for k in skipped)
     assert by['seed3/0006_place_shaker_judge/cup_in_holder:SHAKER']['kind'] == 'neg_fail'  # 목표 홀더 행이 있으면 그대로 no
@@ -401,8 +418,85 @@ def test_questions_match_truth_table_and_cards():
     skills = {card['id'] for card in load_cards()['스킬']}
     start = {'w': {**dict.fromkeys(questions['objects'], 'table'), 'left': None, 'right': None},
              'why': collections.defaultdict(str)}
+    ids = {q['id']: q for q in questions['questions']}
     for q in questions['questions']:
-        assert set(q['at']) <= skills and 'bead' not in q['text'] and q['card'] and q['truth'], q['id']
+        assert 'bead' not in q['text'], q['id']
+        if 'base' in q:  # 문구 변형: 원 질문을 가리키고, 짝은 같은 base 의 뒤집지 않은 변형이다
+            assert 'base' not in ids[q['base']] and 'at' not in q, q['id']
+            if 'pair_of' in q:
+                assert q.get('invert') and ids[q['pair_of']]['base'] == q['base'] and not ids[q['pair_of']].get('invert'), q['id']
+        else:
+            assert set(q['at']) <= skills and q['card'] and q['truth'], q['id']
         q['text'].format(hand='right', obj='blue cup')  # 틀은 {hand}·{obj} 만 쓴다
-        assert build_set.truth_of((q['id'], 'right', 'SRC_BLUE'), start, True)[0] in ('yes', 'no'), q['id']
+        rule = q.get('rule', q.get('base', q['id']))
+        assert build_set.truth_of((rule, 'right', 'SRC_BLUE'), start, True)[0] in ('yes', 'no'), q['id']
     assert all(e['card'] and e['why'] for e in questions['excluded'])
+
+
+def test_question_filter_twin_table_and_rescore_threshold(tmp_path, server):
+    url, seen, mode = server
+    logs, out = make_logs(tmp_path / 'logs'), tmp_path / 'set' / 'items.jsonl'
+    build_set.main([str(logs), '--out', str(out)])
+    items, bnd, _ = run_bench.load_set(out)
+    pick = ['holders_count0', 'holders_any_cup']
+    few = [i for i in items if i['question_id'] in pick]
+    mode['short'] = 'lowmass'  # choice_mass 0.2
+    args = [str(out), '--url', url, '--out', str(tmp_path / 'v3'), '--variants', 'short1', 'short_black', '--questions', *pick]
+    assert run_bench.main([*args, '--min-mass', '0.1']) == 0
+    assert len(seen) == 2 * len(few) and {q['prompt'].split('Question: ')[1] for q in seen} == {i['question'] for i in few}
+    first = (tmp_path / 'v3' / 'summary.md').read_text(encoding='utf-8')
+    assert '| short1 | 0.1 |' in first and '| short1 | 0.5 |' not in first and f'| short1 | 0.1 | {len(few)} |' in first
+    assert '| holders_count0 | holders_any_cup | short1 | 0.1 |' in first and '| holders_any_cup | short_black | 0.1 |' in first
+    # 스텁은 empty 를 물으면 yes, 아니면 no: 두 답이 늘 엇갈려 전부 yes 로 채택된다
+    rows = read(tmp_path / 'v3' / 'results.jsonl')
+    assert rows[0]['meta']['questions'] == pick and rows[0]['meta']['min_mass'] == 0.1
+    twin = run_bench.stats(rows[1:], few, bnd, 0.1)['short1', 0.1]['twin']['holders_count0', 'holders_any_cup']
+    n_yes = sum(i['truth'] == 'yes' for i in few if i['question_id'] == 'holders_count0')
+    assert twin['n'] == len(few) // 2 and twin['got'] == (twin['n'], twin['n']) and twin['yes_recall'] == (n_yes, n_yes)
+    assert twin['acc_all'] == (n_yes, twin['n']) and 0 < n_yes < twin['n']
+    # --rescore 는 잴 때의 문턱과 질문 필터(meta)를 그대로 쓴다. 다른 문턱을 주면 한 줄 적는다. 원 질문 답이 보류면 짝도 보류다
+    res = str(tmp_path / 'v3' / 'results.jsonl')
+    assert run_bench.main([str(out), '--rescore', res, '--out', str(tmp_path / 'again')]) == 0
+    assert (tmp_path / 'again' / 'summary.md').read_text(encoding='utf-8') == first
+    assert run_bench.main([str(out), '--rescore', res, '--out', str(tmp_path / 'half'), '--min-mass', '0.5']) == 0
+    half = (tmp_path / 'half' / 'summary.md').read_text(encoding='utf-8')
+    assert '잴 때 문턱(meta min_mass)은 0.1 인데 --min-mass 0.5' in half and '| short1 | 0.5 |' in half and '잴 때 문턱' not in first
+    assert run_bench.stats(rows[1:], few, bnd, 0.5)['short1', 0.5]['twin']['holders_count0', 'holders_any_cup']['got'][0] == 0
+    for bad in (['--variants', 'short1'], ['--url', url], ['--questions', 'no_such_question']):
+        with pytest.raises(SystemExit):
+            run_bench.main([str(out), '--rescore', res, *bad])
+
+
+def test_summary_review_guards(tmp_path):
+    items, _, brows = build_set.build(str(make_logs(tmp_path / 'logs')))
+    bnd = {b['id']: b for b in brows}
+    a, b, c = (i['id'] for i in items[:3])
+
+    def row(variant, i, yes=0.9, **more):
+        return {'variant': variant, 'id': i, 'p_yes': yes, 'p_no': 1 - yes, 'choice_mass': 1.0, **more}
+
+    # long_same 자체 점검은 지금 items 의 경계 행만 센다
+    same = {'variant': 'long_same', 'text': RAW, 'same_raw': True, 'same_choice': True}
+    rows = [{**same, 'id': run_bench.bid(items[0])}, {**same, 'id': 'seed9/0001_x', 'same_raw': False, 'same_choice': False}]
+    text = run_bench.summary(items, bnd, None, rows, 'items.jsonl')
+    assert next(line for line in text.splitlines() if 'long_same 자체 점검' in line).count('1/1 (') == 2
+    assert f'boundaries.jsonl 전체: 경계 {len(bnd)}개' in text and '모두 정했고 모두 yes 면 yes' in text
+    # 같은 (변형, id) 중복 행은 세고 마지막 행으로 채점한다
+    s = run_bench.stats([row('short1', a), row('short1', a, 0.1), row('short1', b)], items, bnd)['short1', 0.5]
+    assert (s['dup'], s['got'][0], s['yes_rate']) == (1, 2, (1, 2))
+    # choice_mass 가 없거나 NaN 이면 문턱 줄에서 보류, 문턱 0 줄에서는 채점한다
+    odd = [row('short1', a, choice_mass=None), row('short1', b, choice_mass=float('nan')), row('short1', c)]
+    s = run_bench.stats(odd, items, bnd)
+    assert (s['short1', 0.0]['got'][0], s['short1', 0.5]['got'][0], s['short1', 0.5]['abstain']) == (3, 1, 2)
+    assert s['short1', 0.5]['no_mass'] == 2 and s['short1', 0.5]['yes_of_choice'] == (1, 1) and s['short1', 0.5]['yes_rate'] == (1, 3)
+    # 기준 변형(short1·long_same)이 results 에 없으면 빈 기준 변형이 생기지 않고 견줌도 없다
+    rows = [row('short_black', a), row('short2', a), row('long_black', run_bench.bid(items[0]), text=DARK)]
+    s = run_bench.stats(rows, items, bnd)
+    assert {k[0] for k in s} == {'short_black', 'short2', 'long_black'} and 'pair' not in s['short2', 0.5]
+    assert (s['short_black', 0.5]['base'], s['short_black', 0.5]['flip'], s['long_black', None]['base']) == (None, (0, 0), None)
+    text = run_bench.summary(items, bnd, None, rows, 'items.jsonl')
+    assert 'short1(results 에 없음)' in text and '| short1 |' not in text and '| long_same |' not in text
+    # boundaries.jsonl 없이 항목으로 만든 경계면 읽는 법이 그 규칙을 적는다
+    old = {k: {'id': k, 'undecided': None, 'long_truth': None} for k in bnd}
+    text = run_bench.summary(items, old, None, rows, 'items.jsonl')
+    assert '남은 것이 모두 yes 면 yes' in text and '모두 정했고 모두 yes 면 yes' not in text and 'boundaries.jsonl 전체' not in text
