@@ -121,6 +121,38 @@ def home_questions(kind, node, card: dict, hands: list, w: dict, Q: dict, skippe
     return out
 
 
+def rules(hand, obj, cups) -> dict:
+    """참값 규칙 표: 규칙 이름 → (볼 world 키, yes 쪽 값, no 쪽 값). 질문 id 나 questions.yaml 의 rule 이 이름이다."""
+    away = {'table', 'out', *SIDES}  # 홀더 안이 아닌 컵 값
+    return {
+        'cup_in_hand': ([obj], {hand}, (away | {'holder', 'leaning'}) - {hand}),
+        'cup_lifted': ([obj], set(SIDES), {'table'}),
+        'cup_in_holder': ([obj], {'holder'}, away),
+        'all_in_holders': (cups, {'holder'}, away),
+        'holders_empty': (cups, {'table', *SIDES}, {'holder', 'leaning'}),
+        'cups_on_table': (cups, {'table'}, {'holder', 'leaning', *SIDES}),
+        # 변형 전용. holders_strict: 기운 컵(leaning)이 낀 경계는 아래에서 못 정함. cup_released: 그 컵을 쥔 손이 있으면 못 정함
+        'holders_strict': (cups, {'table', *SIDES}, {'holder'}),
+        'cup_released': ([obj], {'holder'}, away),
+    }
+
+
+RULES = frozenset(rules(None, None, []))
+
+
+def check_questions(Q: dict) -> None:
+    """questions.yaml 의 base·pair_of 가 실제 질문 id 인지, 참값 규칙이 아는 이름인지 본다. 틀리면 ValueError."""
+    ids = {q['id']: q for q in Q['questions']}
+    for q in Q['questions']:
+        if q.get('base') is not None and (q['base'] not in ids or ids[q['base']].get('base')):
+            raise ValueError(f"questions.yaml {q['id']}: base {q['base']!r} 는 원 질문 id 가 아니다")
+        if q.get('pair_of') is not None and q['pair_of'] not in ids:
+            raise ValueError(f"questions.yaml {q['id']}: pair_of {q['pair_of']!r} 는 질문 id 가 아니다")
+        rule = q.get('rule', q.get('base', q['id']))
+        if rule not in RULES:
+            raise ValueError(f"questions.yaml {q['id']}: 참값 규칙 {rule!r} 을 모른다(아는 이름 {sorted(RULES)})")
+
+
 def truth_of(inst, b: dict, home: bool):
     """world 에서 질문의 참값. (yes | no | None(못 정함), 근거). 본 값이 하나라도 no 쪽이면 no, 모두 yes 쪽이면 yes.
 
@@ -128,16 +160,7 @@ def truth_of(inst, b: dict, home: bool):
     """
     qid, hand, obj = inst
     w = b['w']
-    cups = [k for k in w if k not in SIDES]
-    away = {'table', 'out', *SIDES}  # 홀더 안이 아닌 컵 값
-    keys, yes, no = {
-        'cup_in_hand': ([obj], {hand}, (away | {'holder', 'leaning'}) - {hand}),
-        'cup_lifted': ([obj], set(SIDES), {'table'}),
-        'cup_in_holder': ([obj], {'holder'}, away),
-        'all_in_holders': (cups, {'holder'}, away),
-        'holders_empty': (cups, {'table', *SIDES}, {'holder', 'leaning'}),
-        'cups_on_table': (cups, {'table'}, {'holder', 'leaning', *SIDES}),
-    }[qid]
+    keys, yes, no = rules(hand, obj, [k for k in w if k not in SIDES])[qid]
     if not home:
         no = no - {'out'}  # 실패 뒤 상태(out)는 그 노드의 제 경계에서만 반례(neg_fail)로 쓴다. 쉬운 반례가 아니다
     vals = [w[k] for k in keys]
@@ -145,6 +168,12 @@ def truth_of(inst, b: dict, home: bool):
     src = '; '.join(f"{k}={w[k]} ← {b['why'][k]}" for k in keys)
     if truth == 'yes' and qid in ('cup_in_hand', 'cup_lifted') and obj in b.get('unsure', ()):
         truth, src = None, src + ' · 그 뒤 이송 exit 에 dropped 신호가 없어 사진 시점에 손 안인지 모름'
+    if qid == 'holders_strict' and 'leaning' in vals:  # 기운 채 구멍 안인 컵은 "빈 홀더"·"홀더 안에 선 컵" 어느 쪽인지 문구가 못 가른다
+        truth, src = None, src + ' · 기운 컵(leaning)이 있어 이 문구로는 못 정함'
+    if qid == 'cup_released' and truth == 'yes' and obj in (w[h] for h in SIDES):  # 손 값이 아직 그 컵이면 놓았는지 모른다
+        truth, src = None, src + ' · world 에 그 컵을 쥔 손이 남아 있어 놓았는지 모름'
+    if qid == 'cup_released':
+        src += '; ' + ', '.join(f'{h}={w[h]}' for h in SIDES)
     return truth, src
 
 
@@ -241,6 +270,7 @@ def seed_items(seed_dir: str, Q: dict, nodes: dict, skipped) -> tuple:
 def build(logs_root: str):
     """(항목 목록, 뺀 건수 Counter(이유별), 경계 목록)."""
     Q = yaml.safe_load(QUESTIONS.read_text(encoding='utf-8'))
+    check_questions(Q)
     nodes, skipped, items, bounds = node_table(), collections.Counter(), [], []
     for seed_dir in sorted(glob.glob(os.path.join(os.path.abspath(logs_root), 'seed*'))):
         got = seed_items(seed_dir, Q, nodes, skipped)

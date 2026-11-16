@@ -6,7 +6,7 @@
 #   서 있으면 no 로 적힌다(vlm_full_1116 에는 그런 놓기가 없다). 홀더 번호는 끝 상태(result.jsonl objects)를 찾는 데 쓴다.
 # 참값은 build_set.py 가 러너·sim 기록으로 만든 world 에서 읽는다(truth 칸). VLM 답은 쓰지 않는다.
 #   world 의 컵 값: table · left/right(그 손 안) · holder(great) · leaning(partial) · out(놓기 fail, 떨어뜨림) · 모름
-# 문구를 바꿔 비교할 때는 text 만 고친다. id 를 바꾸거나 더하면 build_set.truth_of 의 표도 같이 고친다.
+# 문구를 바꿔 비교할 때는 text 만 고친다. id 를 바꾸거나 더하면 build_set.rules 의 표도 같이 고친다.
 # 사진으로 답할 수 있는지는 vlm_full_1116 의 경계 사진 12장(seed0·1·3·4·7·8)을 보고 정했다. 그 12장에서는 컵 셋과
 # 홀더 셋이 모두 화면 안에 있었다(손에 들린 컵은 가장자리에 걸칠 때가 있다).
 
@@ -66,20 +66,26 @@ questions:
     partial 인 컵이 있으면 못 정함.
 
 # 문구 변형(11.17): 원 질문(base)의 항목마다 같은 (경계, 손, 컵)으로 하나씩 붙는다. at 은 없다(base 를 따른다).
-#   참값 규칙은 base 것을 쓴다. rule 이 있으면 build_set.truth_of 표의 그 줄을 쓴다.
+#   참값 규칙은 base 것을 쓴다. rule 이 있으면 build_set.rules 표의 그 줄을 쓴다(build 가 base·pair_of·rule 이름을 검사한다).
 #   invert: true = 참값만 반대(못 정함은 그대로). 항목 종류는 뒤집힌 참값으로 붙는다: base 의 pos → neg_fail,
 #   base 의 neg_cross·neg_fail → pos.
 #   pair_of = 같은 base 의 변형 id. run_bench 가 두 답이 서로 반대일 때만 채택하는 짝 일치 표를 낸다.
 #   경계 통계(boundaries.jsonl)·long 참값·skipped.json 에는 들어가지 않는다.
 - id: holders_count0
   base: holders_empty
+  rule: holders_strict
   text: Are all three white cup holders empty, with no cup inside any of them?
+  truth: >-
+    holders_empty 와 같되 기운 컵(leaning = partial)이 있는 경계는 못 정함. 기운 채 구멍 안인 컵을 "no cup inside" 로
+    볼지 문구가 가르지 못한다. 원 질문 holders_empty 는 그대로 no 다.
 
 - id: holders_any_cup
   base: holders_empty
+  rule: holders_strict
   invert: true
   pair_of: holders_count0
   text: Is there a cup standing inside any of the white cup holders?
+  truth: holders_count0 의 반대. 기운 컵이 있는 경계는 못 정함("standing" 인지 모른다).
 
 - id: cups_on_table
   base: holders_empty
@@ -93,7 +99,12 @@ questions:
 
 - id: cup_released_in_holder
   base: cup_in_holder
+  rule: cup_released
   text: Has the {obj} been placed into a white cup holder and released by the robot?
+  truth: >-
+    cup_in_holder 와 같되 yes 는 world 의 두 손 값 어느 쪽도 그 컵이 아닐 때만이다. 손 값이 그 컵이면 못 정함.
+    지금 build_set 은 hand_empty=true 인 놓기만 컵을 holder 로 적으므로(손을 못 뗀 great 는 컵 값이 모름) 이 조건으로 빠지는
+    항목은 없다. world 규칙이 바뀌어도 "released" 의 yes 가 손 뗀 것만 가리키게 둔 조건이다.
 
 - id: cup_not_in_holder
   base: cup_in_holder

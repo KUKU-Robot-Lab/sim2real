@@ -292,7 +292,10 @@ def test_run_bench_calls_server_per_variant_and_scores(tmp_path, server):
     def guess(i):
         return 'yes' if 'empty' in i['question'] else 'no'
 
-    def hits(kind, of=items):
+    plain = [i for i in items if 'base' not in i]  # 머리 채점·사진 민감도는 문구 변형을 뺀 원 질문 항목만 센다
+    assert 0 < len(plain) < len(items)
+
+    def hits(kind, of=plain):
         of_kind = [i for i in of if i['kind'] in kind]
         return sum(guess(i) == i['truth'] for i in of_kind), len(of_kind)
 
@@ -300,21 +303,23 @@ def test_run_bench_calls_server_per_variant_and_scores(tmp_path, server):
     assert one == s['short1', 0.0]  # 스텁의 choice_mass 는 1.0 이라 문턱이 아무것도 빼지 않는다
     assert one['acc'] == one['acc_all'] == hits(('pos', 'neg_cross', 'neg_fail')) and one['got'] == (len(items), len(items))
     assert (one['yes_recall'], one['no_cross'], one['no_fail']) == (hits(('pos',)), hits(('neg_cross',)), hits(('neg_fail',)))
-    assert one['always_yes'] == (sum(i['truth'] == 'yes' for i in items), len(items))
-    two = [i for i in items if i['image_before'] is not None]
+    assert one['always_yes'] == (sum(i['truth'] == 'yes' for i in plain), len(plain)) and one['n_head'] == len(plain)
+    assert sum(q['n'] for q in one['by_q'].values()) == len(items) and 'cup_not_in_holder' in one['by_q']  # 변형은 질문별 표에 남는다
+    two = [i for i in plain if i['image_before'] is not None]
     assert s['short2', 0.5]['n'] == n_two < one['n'] == len(items)
     assert s['short2', 0.5]['pair']['short1']['acc'] == hits(('pos', 'neg_cross', 'neg_fail'), two) != one['acc']
-    n_yes = sum(guess(i) == 'yes' for i in items)
+    n_yes = sum(guess(i) == 'yes' for i in plain)
     dark = s['short_black', 0.5]
     assert n_yes and dark['base_yes_flip'] == (n_yes, n_yes)  # 검은 사진에서는 yes 가 모두 no 로 바뀐다
-    assert dark['flip'] == (n_yes, len(items)) and dark['yes_rate'] == (0, len(items)) and dark['acc'] == (0, 0)
+    assert dark['flip'] == (n_yes, len(plain)) and dark['yes_rate'] == (0, len(plain)) and dark['acc'] == (0, 0)
     text = run_bench.summary(items, bnd, {'경계: 판정 사진·기록 없음': 1}, [meta, *rows], 'items.jsonl')
     assert f'시드 3개 · 경계 {len(own)}개 · 항목 {len(items)}개' in text and repr(run_bench.SHORT2) in text
     assert f'yes {n_ok} · no {n_fail} · 못 정함 {len(own) - n_ok - n_fail}' in text and '- 1건 경계: 판정 사진·기록 없음' in text
     check = next(line for line in text.splitlines() if 'long_same 자체 점검' in line)
     assert check.count(f'{len(own) - 1}/{len(own)} (') == 2  # 글자 일치와 choice 일치
     assert all(f'| {v} |' in text for v in run_bench.VARIANTS) and '| short1 | 0 |' in text and '| short1 | 0.5 |' in text
-    assert f'짝 비교(문턱 0.5, short2 가 불린 항목 {n_two}개만)' in text
+    assert f'짝 비교(문턱 0.5, short2 가 불린 항목 {len(two)}개만)' in text
+    assert text.count(f'문구 변형 항목(questions.yaml 의 base 가 있는 질문, {len(items) - len(plain)}개)은 이 표에 넣지 않는다') == 2
     assert 'short1 1.00/1.00 · short2 1.00/1.00 · short_black 1.00/1.00' in text  # 선택지 질량은 변형별로
 
 
@@ -337,7 +342,8 @@ def test_broken_answers_are_counted_apart(tmp_path, server):
         s = run_bench.stats(rows, few, bnd)
         assert {r['answer'] for r in rows} == {'abstain'} and not any('error' in r for r in rows), kind
         assert (s['short1', 0.0]['got'], s['short1', 0.5]['got']) == ((at0, n), (at5, n)), kind
-        assert s['short1', 0.5]['abstain'] == n and s['short1', 0.5]['acc_all'][1] == n and s['short1', 0.5]['acc'] == (0, 0)
+        n_plain = sum('base' not in i for i in few)  # 채점 칸의 분모는 원 질문 항목만이다
+        assert s['short1', 0.5]['abstain'] == n and s['short1', 0.5]['acc_all'][1] == n_plain and s['short1', 0.5]['acc'] == (0, 0)
     assert rows[0]['resp']['low_mass'] is True and rows[0]['p_yes'] is None
     # 점수 없는 응답·dict 아닌 응답은 오류로 남는다
     for kind in ('noscores', 'list'):
@@ -500,3 +506,121 @@ def test_summary_review_guards(tmp_path):
     old = {k: {'id': k, 'undecided': None, 'long_truth': None} for k in bnd}
     text = run_bench.summary(items, old, None, rows, 'items.jsonl')
     assert '남은 것이 모두 yes 면 yes' in text and '모두 정했고 모두 yes 면 yes' not in text and 'boundaries.jsonl 전체' not in text
+
+
+def test_variant_truth_rules_and_question_check(tmp_path, monkeypatch):
+    items = build_set.build(str(make_logs(tmp_path / 'logs')))[0]
+    by = {i['id']: i for i in items}
+    # 기운 컵(partial)이 낀 경계: 원 질문 holders_empty 는 그대로 no, 변형 holders_count0·holders_any_cup 은 못 정함이라 항목이 없다
+    lean = 'seed1/0007_place_pink_judge/'
+    assert by[lean + 'holders_empty']['kind'] == 'neg_cross'
+    assert lean + 'holders_count0' not in by and lean + 'holders_any_cup' not in by
+    n = collections.Counter(i['question_id'] for i in items)
+    assert n['holders_count0'] == n['holders_any_cup'] == n['holders_empty'] - 1
+    w = {'SRC_BLUE': 'holder', 'SRC_PINK': 'leaning', 'SHAKER': 'table', 'left': None, 'right': None}
+    b = {'w': w, 'why': collections.defaultdict(str)}
+    assert build_set.truth_of(('holders_empty', None, None), b, False)[0] == 'no'
+    assert build_set.truth_of(('holders_strict', None, None), b, False)[0] is None  # 다른 컵이 홀더 안이어도 기운 컵이 있으면 뺀다
+    assert build_set.truth_of(('holders_strict', None, None), {**b, 'w': {**w, 'SRC_PINK': 'right'}}, False)[0] == 'no'
+    # cup_released: 홀더 안이어도 world 의 손 값이 그 컵이면 못 정함. cup_in_holder 는 그대로 yes
+    held = {**b, 'w': {**w, 'right': 'SRC_BLUE'}}
+    assert build_set.truth_of(('cup_released', 'right', 'SRC_BLUE'), b, True)[0] == 'yes'
+    assert build_set.truth_of(('cup_released', 'right', 'SRC_BLUE'), held, True)[0] is None
+    assert build_set.truth_of(('cup_in_holder', 'right', 'SRC_BLUE'), held, True)[0] == 'yes'
+    assert build_set.truth_of(('cup_released', 'right', 'SHAKER'), held, True)[0] == 'no'
+    assert n['cup_released_in_holder'] == n['cup_in_holder_b']  # 지금 world 는 손을 뗀 놓기만 holder 로 적어 빠지는 항목이 없다
+    # questions.yaml 검사: base·pair_of 는 실제 질문 id, rule 은 아는 이름이어야 한다
+    good = yaml.safe_load(build_set.QUESTIONS.read_text(encoding='utf-8'))
+    build_set.check_questions(good)
+    for key, value, match in (('base', 'no_such', 'base'), ('base', 'cup_in_holder_b', 'base'), ('pair_of', 'no_such', 'pair_of'),
+                              ('rule', 'no_such', '참값 규칙')):
+        bad = {**good, 'questions': [{**q, key: value} if q['id'] == 'cup_not_in_holder' else q for q in good['questions']]}
+        with pytest.raises(ValueError, match=match):
+            build_set.check_questions(bad)
+    bad_file = tmp_path / 'questions.yaml'
+    bad_file.write_text(yaml.safe_dump(bad, allow_unicode=True), encoding='utf-8')
+    monkeypatch.setattr(build_set, 'QUESTIONS', bad_file)
+    with pytest.raises(ValueError, match='참값 규칙'):  # build 가 시작할 때 본다
+        build_set.build(str(tmp_path / 'logs'))
+
+
+def test_rescore_joined_results_reads_every_meta(tmp_path, server, capsys):
+    url = server[0]
+    logs, out = make_logs(tmp_path / 'logs'), tmp_path / 'set' / 'items.jsonl'
+    build_set.main([str(logs), '--out', str(out)])
+    items, _, _ = run_bench.load_set(out)
+
+    def run(name, *more):
+        assert run_bench.main([str(out), '--url', url, '--out', str(tmp_path / name), '--variants', 'short1', *more]) == 0
+        return (tmp_path / name / 'results.jsonl').read_text(encoding='utf-8')
+
+    def rescore(name, *runs, more=()):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / 'results.jsonl').write_text(''.join(runs), encoding='utf-8')
+        assert run_bench.main([str(out), '--rescore', str(tmp_path / name / 'results.jsonl'), *more]) == 0
+        return (tmp_path / name / 'summary.md').read_text(encoding='utf-8')
+
+    a = run('a', '--questions', 'holders_empty')
+    second = ['cup_in_holder', 'cup_not_in_holder']
+    b = run('b', '--questions', *second)
+    # 질문이 다른 두 실행을 이어 붙이면 합집합으로 채점한다: 두 번째 실행의 행이 행 없음·results 에만 으로 빠지지 않는다
+    text = rescore('ab', a, b)
+    n = collections.Counter(i['question_id'] for i in items)
+    n_all = n['holders_empty'] + sum(n[q] for q in second)
+    assert f'| short1 | 0.5 | {n_all} | {n_all}/{n_all} (100 %) | 0 | 0 | 0 | 0 | 0 | 0 |' in text
+    assert f"| cup_in_holder | short1 | 0.5 | {n['cup_in_holder']} |" in text and f"| holders_empty | short1 | 0.5 | {n['holders_empty']} |" in text
+    assert 'meta 행 2개' in text and '질문 holders_empty · 변형 short1 / 2)' in text and '경고' not in text
+    assert '- 채점에 쓴 질문: holders_empty cup_in_holder cup_not_in_holder. 불러야 할 수는 그 항목만 센다.\n' in text
+    # 짝 한쪽(cup_not_in_holder)만 골라 짝 표가 빠지면 이유를 적는다
+    assert '짝 일치 표에 cup_in_holder_b + cup_not_in_holder 줄이 없다' in text and '## 짝 일치' not in text
+    assert 'holders_count0 + holders_any_cup 줄이 없다' not in text  # 둘 다 안 고른 짝은 적지 않는다
+    # --questions 로 다시 고르면 채점에 쓴 것과 meta 것을 둘 다 적는다
+    text = rescore('ab_q', a, b, more=['--questions', 'holders_empty'])
+    assert '- 채점에 쓴 질문: holders_empty. 불러야 할 수는 그 항목만 센다. 잴 때(meta) 고른 질문은 holders_empty cup_in_holder cup_not_in_holder 다.' in text
+    assert f"| short1 | 0.5 | {n['holders_empty']} |" in text
+    # --questions 없이 잰 실행이 하나라도 끼면 전체로 채점한다(겹친 행은 중복 행으로 센다)
+    text = rescore('ac', a, run('c'))
+    assert f"| short1 | 0.5 | {len(items)} | {len(items)}/{len(items)} (100 %) | 0 | 0 | 0 | 0 | 0 | {n['holders_empty']} |" in text
+    assert '- 채점에 쓴 질문: 전체.' not in text and '질문 전체 · 변형 short1' in text and '## 짝 일치' in text
+    # min_mass 가 다른 실행을 이어 붙였으면 --min-mass 를 줘야 한다
+    d = run('d', '--questions', 'cup_in_holder', '--min-mass', '0.1')
+    (tmp_path / 'ad').mkdir()
+    (tmp_path / 'ad' / 'results.jsonl').write_text(a + d, encoding='utf-8')
+    capsys.readouterr()
+    with pytest.raises(SystemExit):
+        run_bench.main([str(out), '--rescore', str(tmp_path / 'ad' / 'results.jsonl')])
+    assert '서로 다른 min_mass' in capsys.readouterr().err
+    with pytest.raises(ValueError, match='min_mass 가 서로 다르다'):
+        run_bench.summary(items, {}, None, build_set.jl(tmp_path / 'ad' / 'results.jsonl'), out)
+    text = rescore('ad2', a, d, more=['--min-mass', '0.5'])
+    assert '잴 때 문턱(meta min_mass)은 0.1 인데 --min-mass 0.5' in text and 'min_mass 0.1 · 질문 cup_in_holder' in text
+    # url·items sha256 이 다른 실행이면 맨 위에 경고 줄을 낸다
+    meta, *rest = b.splitlines(keepends=True)
+    other = json.loads(meta)
+    other['meta'].update(url='http://other:1', items_sha256='f' * 64)
+    lines = rescore('ab_warn', a, json.dumps(other) + '\n', *rest).splitlines()
+    assert lines[2].startswith('- 경고:') and '서버 주소' in lines[2] and 'http://other:1' in lines[2]
+    assert lines[3].startswith('- 경고:') and 'items sha256' in lines[3] and 'ffffffffffff' in lines[3]
+    assert any('다른 items(sha256 ffffffffffff)' in line for line in lines)
+    # 도움말: long 변형은 --questions 로 호출 수가 줄지 않는다
+    with pytest.raises(SystemExit):
+        run_bench.main(['--help'])
+    assert 'long 변형은 경계 단위라 호출 수가 줄지 않는다' in ' '.join(capsys.readouterr().out.split())
+
+
+def test_twin_table_splits_same_answers(tmp_path):
+    items, _, brows = build_set.build(str(make_logs(tmp_path / 'logs')))
+    bnd = {b['id']: b for b in brows}
+    twins = [i for i in items if i.get('pair') and i['question_id'] == 'cup_not_in_holder'][:4]
+
+    def row(i, yes):
+        return {'variant': 'short1', 'id': i, 'p_yes': yes, 'p_no': 1 - yes, 'choice_mass': 1.0}
+
+    # (원 질문 답, 뒤집힌 질문 답): 둘 다 yes · 둘 다 no · 엇갈림 · 뒤집힌 쪽 행 없음
+    said = [(0.9, 0.9), (0.1, 0.1), (0.9, 0.1), (0.9, None)]
+    rows = [row(i, y) for t, ys in zip(twins, said) for i, y in zip((t['pair'], t['id']), ys) if y is not None]
+    t = run_bench.stats(rows, items, bnd)['short1', 0.5]['twin']['cup_in_holder_b', 'cup_not_in_holder']
+    assert (t['both_yes'], t['both_no'], t['got'][0], t['abstain']) == (1, 1, 1, t['n'] - 1)
+    text = run_bench.summary(items, bnd, None, rows, 'items.jsonl')
+    assert '| 보류율 | 둘 다 yes | 둘 다 no |' in text
+    assert f"| cup_in_holder_b | cup_not_in_holder | short1 | 0.5 | {t['n']} | {run_bench.frac((t['n'] - 1, t['n']))} | 1 | 1 |" in text
