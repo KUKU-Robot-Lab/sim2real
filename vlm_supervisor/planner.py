@@ -81,6 +81,11 @@ def simulate(steps, cards=None) -> dict:
                 if skill == 'grasp':
                     if not scene or hands[hand] or locations[obj] != 'table':
                         raise ValueError('grasp requires snapshot, empty hand and table object')
+                    # 먼저_치울_물체: 손이나 홀더로 탁자를 떠난 뒤에만 잡는다(이름 없는 물체는 막는 쪽으로).
+                    blockers = [o for o in objects[obj].get('먼저_치울_물체') or [] if locations.get(o, 'table') == 'table']
+                    if blockers:
+                        raise ValueError(f'grasp {obj} requires {blockers} off the table first: '
+                                         + str(objects[obj].get('먼저_치울_이유', '')))
                     hands[hand], locations[obj], ready[hand] = obj, hand, False
                 elif skill == 'to_tilt_start':
                     if hands[hand] != obj:

@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from vlm_supervisor.supervisor import Supervisor
@@ -318,6 +320,15 @@ def test_place_path_logged_and_passed_without_changing_action(tmp_path):
     assert pp.calls == [('right', 'HOLDER_1')]
     assert interface.calls == [('next', 'place_blue', {'place_path': {'node': 'place_blue', 'choice': 3, 'valid': True}}, True)]
     assert '"event": "place_path"' in log.read_text()
+
+
+def test_place_path_vlm_call_is_recorded(tmp_path):
+    interface, log = ApproachInterface('place_blue'), tmp_path / 'd.jsonl'
+    pp = PlacePath({'choice': 2, 'reason': 'r', 'valid': True, 'prompt': 'P', 'raw': '{}'})
+    Supervisor(interface, Judge('next'), mode='active', settle=0, log_path=log, place_path_judge=pp).run()
+    row = next(json.loads(x) for x in log.read_text().splitlines() if '"place_path"' in x)
+    assert 'prompt' not in row['result'] and row['result']['files'][-1].endswith('_place_blue_place_path.json')
+    assert json.loads((tmp_path / row['result']['files'][-1]).read_text())['prompt'] == 'P'
 
 
 def test_place_path_error_falls_back_and_off_by_default():

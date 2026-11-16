@@ -18,7 +18,7 @@ from PIL import Image
 
 CAMERA_TOPIC = '/camera/camera/color/image_raw/compressed'
 SERVICES = frozenset({'next', 'run', 'stop', 'reset'})
-SHELL_ACTIONS = frozenset({'retry', 'rescan', 'home', 'insert', 'human'})
+SHELL_ACTIONS = frozenset({'retry', 'rescan', 'home', 'insert', 'human', 'reorder'})
 STATUS_FIELDS = {'status', 'node', 'world', 'nodes', 'last', 'pending', 'history'}
 
 

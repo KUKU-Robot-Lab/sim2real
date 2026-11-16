@@ -114,6 +114,7 @@ def test_invalid_answer_is_reasked_once():
     r = ApproachJudge(b).check(IMG, STEP)
     assert len(b.prompts) == 2 and r['valid'] and r['verdict'] == 'clear'
     assert r['retried_from']['error'] == 'blocked without obstacles'
+    assert r['retried_from']['prompt'] == b.prompts[0]
 
 
 def test_invalid_twice_stays_human():

@@ -111,3 +111,46 @@ def test_invalid_fallback_keeps_startup_error(tmp_path, monkeypatch, capsys):
                      '--plan-fallback', str(fallback)]) == 2
     assert 'invalid fallback plan' in capsys.readouterr().out
     assert not list(tmp_path.glob('runs/*/plan.json'))
+
+
+@pytest.mark.parametrize('plan_order', ['shadow', 'apply'])
+def test_cli_judge_plan_with_mapping_error_and_unreadable_fallback(tmp_path, monkeypatch, plan_order):
+    seen = []
+
+    class Interface:
+        def __init__(self, *args):
+            pass
+
+        def frame(self, **kwargs):
+            return Image.new('RGB', (2, 2))
+
+        def status(self):
+            raise RuntimeError('no runner')  # mapping error -> executed None
+
+        def perform(self, action, **kwargs):
+            return {'ok': True}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(cli, 'RosInterface', Interface)
+    monkeypatch.setattr(cli, 'Router', lambda *args: Backend('[["terminal","-","-","SUCCESS"]]'))
+    monkeypatch.setattr(cli.Supervisor, 'run', lambda sup: seen.append(sup.judge.plan) or 0)
+    assert cli.main(['--sentence', 'test', '--log-dir', str(tmp_path), '--plan_order', plan_order,
+                     '--plan-fallback', str(tmp_path / 'missing.json')]) == 0
+    assert seen == [[['terminal', '-', '-', 'SUCCESS']]]
+
+
+def test_planner_prompt_shows_blue_first_reason_and_rejects_pink_first():
+    pink_first = [['go_home', 'both', '-', '-'], ['scene_snapshot', '-', '-', '-'],
+                  ['grasp', 'right', 'SRC_PINK', '-']]
+    seen = {}
+
+    class Spy(Backend):
+        def ask(self, images, text, **kwargs):
+            seen['prompt'] = text
+            return super().ask(images, text, **kwargs)
+
+    with pytest.raises(ValueError, match='SRC_BLUE'):
+        Planner(Spy(json.dumps(pink_first))).plan('test')
+    assert '먼저_치울_물체' in seen['prompt'] and '파랑을 먼저 잡아' in seen['prompt']

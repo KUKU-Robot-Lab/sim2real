@@ -5,7 +5,7 @@ from copy import deepcopy
 
 from ..interface import node_id
 
-VERBS = frozenset({'retry', 'rescan', 'home', 'insert', 'human'})
+VERBS = frozenset({'retry', 'rescan', 'home', 'insert', 'human', 'reorder'})
 
 
 def walk(nodes):
@@ -36,6 +36,8 @@ def derive(original: dict, status: dict, command: dict) -> dict:
         raise ValueError('invalid shell verb/args')
     result = deepcopy(original)
     sequence = result.get('sequence', [])
+    if verb == 'reorder':
+        return reorder(result, status, args.get('order'))
     used = {node['id'] for node in walk(sequence)}
 
     def unique(prefix):
@@ -112,4 +114,30 @@ def derive(original: dict, status: dict, command: dict) -> dict:
                 used.add(old)
         prefix.append(spec)
     result['sequence'] = prefix + rest
+    return result
+
+
+def reorder(result: dict, status: dict, order) -> dict:
+    """Permute top-level nodes of the (copied) original; only before the episode starts, so no restore prefix."""
+    sequence = result.get('sequence', [])
+    ids = [node.get('id') for node in sequence]
+    if not isinstance(order, list) or not all(isinstance(x, str) for x in order):
+        raise ValueError('reorder needs order: list of node ids')
+    outside = [x for x in order if x not in {n['id'] for n in walk(sequence)}]
+    if outside:
+        raise ValueError(f'reorder ids not in original episode: {outside}')
+    if sorted(order) != sorted(ids):
+        raise ValueError('reorder must be a permutation of the original top-level node ids')
+    if (status.get('status') != 'READY' or not ids or node_id(status.get('node')) != ids[0]
+            or (status.get('last') or {}).get('node') or status.get('index', 0) != 0):
+        raise ValueError('reorder only before the episode starts (first node current, nothing executed)')
+    by_id = dict(zip(ids, sequence))
+    if by_id[order[0]].get('type') != sequence[0].get('type'):
+        raise ValueError('reorder must keep the first node type of the original')
+    from ..plan_map import map_plan, steps_for  # lazy: plan_map imports this module
+    check = map_plan(steps_for(order, result), result)
+    if not check['ok'] or check['order'] != order:
+        raise ValueError('reorder rejected by plan check: '
+                         + ('; '.join(check['reasons']) or f"order not reproducible, mapping gives {check['order']}"))
+    result['sequence'] = [by_id[x] for x in order]
     return result

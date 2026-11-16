@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -25,6 +26,9 @@ class ShellController:
         self.original = deepcopy(episode)
         self.episode = deepcopy(episode)
         self.path = Path(episode_path).resolve()
+        # reorder is accepted only against the file this shell started from (self.path moves per generation)
+        self.original_path = self.path
+        self.original_sha = hashlib.sha256(self.original_path.read_bytes()).hexdigest()
         self.directory = Path(run_dir).resolve() / 'shell'
         self.adapter = adapter
         self.generation = 0
@@ -58,7 +62,12 @@ class ShellController:
                     failed = (st.get('last') or {}).get('node')
                     args['side'] = node_side(self.original, failed) or node_side(self.episode, failed)
                 source = self.episode
-                if command.get('verb') == 'retry' and isinstance(args, dict):
+                if command.get('verb') == 'reorder':
+                    if not isinstance(args, dict) or args.get('sha256') != self.original_sha:
+                        raise ValueError(f'reorder sha256 mismatch: shell original {self.original_path} '
+                                         f'is {self.original_sha}')
+                    source = self.original
+                elif command.get('verb') == 'retry' and isinstance(args, dict):
                     if any(n.get('id') == args.get('node_id') for n in walk(self.original.get('sequence', []))):
                         source = self.original
                 derived = derive(source, st, command)
@@ -82,6 +91,9 @@ class ShellController:
                 self.lineage.append({'generation': self.serial, 'parent': self.generation,
                                      'cmd_id': cmd_id, 'verb': command['verb'], 'episode_path': str(candidate)})
                 self.generation, self.path, self.episode = self.serial, candidate, derived
+                if command['verb'] == 'reorder':
+                    # later retries derive their tail from the order actually run; original_sha stays the start file's
+                    self.original = deepcopy(derived)
             except Exception as exc:
                 reasons.append(str(exc))
                 if stopped:
@@ -207,7 +219,7 @@ def run_node(args):
     node = rclpy.create_node('vlm_shell_' + args.runner)
     adapter = RosProcessAdapter(node, args.runner, args.runner_cmd, args.ready_timeout)
     episode_path = Path(args.episode).expanduser().resolve()
-    controller = ShellController(yaml.safe_load(episode_path.read_text()), episode_path, args.run_dir, adapter)
+    controller = ShellController(yaml.safe_load(episode_path.read_bytes()), episode_path, args.run_dir, adapter)
     base = f'/vlm_shell/{args.runner}'
     ack_pub = node.create_publisher(String, base + '/ack', 10)
     status_pub = node.create_publisher(String, base + '/status', 10)

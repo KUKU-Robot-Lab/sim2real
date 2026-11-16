@@ -11,6 +11,7 @@ from .backends import ROOT, Router
 from .interface import RosInterface
 from .judge import Judge
 from .place_path import PlacePathJudge
+from .plan_map import apply_plan_order
 from .planner import Planner, simulate
 from .sim_interface import SimInterface
 from .supervisor import Supervisor
@@ -32,6 +33,10 @@ def build_parser():
                         help='잡기(접근) 노드 직전에 VLM 으로 경로 방해물 판정(같은 백엔드)')
     parser.add_argument('--place-path-judge', action='store_true',
                         help='놓기 노드 직전에 VLM 이 후보 경로 번호를 고른다(기록만, 실행 동작은 그대로; 같은 백엔드)')
+    parser.add_argument('--judge_blind', action='store_true',
+                        help='judge 프롬프트에서 runner 판정(code·reason·runner_detail 등)을 빼고 사진만으로 판정')
+    parser.add_argument('--plan_order', choices=['off', 'shadow', 'apply'], default='off',
+                        help='VLM 계획 순서를 실행 순서로: shadow=매핑만 로그, apply=시작 전 shell reorder(fallback 계획은 적용 안 함)')
     parser.add_argument('--sim_url', default='http://127.0.0.1:8790', help='hdgp sim 브리지 주소(--interface sim)')
     return parser
 
@@ -50,7 +55,7 @@ def main(argv=None):
         else:
             interface = RosInterface(args.runner, args.approvals)
         router = Router(args.chain.split(',') if args.chain else None)
-        judge = Judge(router, args.sentence)
+        judge = Judge(router, args.sentence, blind=args.judge_blind)
         supervisor = Supervisor(interface, judge, args.mode, run_dir / 'decisions.jsonl', args.settle,
                                 approach_judge=ApproachJudge(router) if args.approach_judge else None,
                                 place_path_judge=PlacePathJudge(router) if args.place_path_judge else None)
@@ -75,7 +80,19 @@ def main(argv=None):
             plan = {'sentence': args.sentence, 'steps': steps, 'simulation': result,
                     'source': 'fallback'}
         (run_dir / 'plan.json').write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding='utf-8')
+        keep_going, executed = apply_plan_order(args.plan_order, plan, interface, supervisor.log, args.mode)
+        if not keep_going:
+            return 2
+        # shadow/off judge exactly as e5cdb75; apply follows what the runner executes.
         judge.plan = plan['steps']
+        if args.plan_order == 'apply':
+            if executed is not None:
+                judge.plan = executed
+            else:
+                try:
+                    judge.plan = json.loads(Path(args.plan_fallback).read_text(encoding='utf-8'))
+                except (OSError, ValueError) as exc:
+                    supervisor.log({'event': 'judge_plan_fallback_unreadable', 'reason': repr(exc)})
         return supervisor.run()
     except KeyboardInterrupt:
         if interface:

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+import re
 import time
 
 from .interface import node_id
@@ -29,6 +30,7 @@ class Supervisor:
         self.halted = False
         self.approach_judge = approach_judge
         self.approach_seen = None
+        self.record_seq = 0
         if mode == 'active' and SOURCE == 'fallback':
             logging.getLogger(__name__).error('active supervisor uses fallback failure policy')
             self.log({'event': 'error', 'mode': mode, 'policy_source': SOURCE,
@@ -44,6 +46,32 @@ class Supervisor:
             n['id']: ({'_r': 'right', '_l': 'left'}.get(str(n.get('name', ''))[-2:]), n.get('target_holder'))
             for card in load_cards()['스킬'] if card['id'] == 'place'
             for n in card['실행_방법']['노드_예시']}
+
+    def record(self, node, kind, image, result):
+        """VLM 에 보낸 이미지·프롬프트·원 답을 decisions/<순번>_<node>_<kind>.{jpg,json} 로 남긴다. 실패는 경고만."""
+        if 'prompt' not in result:  # VLM 을 부르지 않은 판정(프레임 없음 등)
+            return result
+        row = {k: v for k, v in result.items() if k != 'prompt'}
+        if isinstance(row.get('retried_from'), dict):  # 첫 시도 prompt 는 json 파일에만 남긴다
+            row['retried_from'] = {k: v for k, v in row['retried_from'].items() if k != 'prompt'}
+        if self.log_path is None:
+            return row
+        self.record_seq += 1
+        stem = f"{self.record_seq:04d}_{re.sub(r'[^A-Za-z0-9_.-]', '_', str(node))[:80]}_{kind}"
+        folder, written = self.log_path.parent / 'decisions', set()
+        try:  # 기록 실패가 판정을 막지 않는다. json(prompt·raw·meta) 먼저, jpg 는 따로
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / f'{stem}.json').write_text(json.dumps({'node': node, 'kind': kind, **result},
+                                                            ensure_ascii=False, indent=1, default=str), encoding='utf-8')
+            written.add('json')
+            # shortcut: 백엔드에 넘긴 원본 프레임을 q95 로 저장(Gemini 는 768 px·q85 로 줄여 보냄), 바이트 일치가 필요하면 백엔드에서 저장
+            image.convert('RGB').save(folder / f'{stem}.jpg', quality=95)
+            written.add('jpg')
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning('decision record failed (%s): %s', stem, exc)
+        if written:
+            row['files'] = [f'decisions/{stem}.{ext}' for ext in ('jpg', 'json') if ext in written]
+        return row
 
     def log(self, event):
         row = {'t': time.time(), **event}
@@ -81,6 +109,8 @@ class Supervisor:
             except Exception as exc:
                 decision = {'choice': 'E', 'success': False, 'action': 'stop',
                             'reason': f'VLM/frame failure: {exc}'}
+            else:
+                decision = self.record(last.get('node'), 'judge', image, decision)
         else:
             decision = {'choice': 'A', 'action': 'next', 'reason': 'initial READY; no completed node'}
         target = node_id(status.get('node'))
@@ -173,6 +203,8 @@ class Supervisor:
             result = self.approach_judge.check(image, ['grasp', hand, obj, '-'], status.get('world'))
         except Exception as exc:  # noqa: BLE001 - judge failure must not let the approach run
             result = {'valid': False, 'verdict': 'unknown', 'action': 'human', 'error': f'{type(exc).__name__}: {exc}'}
+        else:
+            result = self.record(node, 'approach', image, result)
         clear = (result.get('valid') and result.get('verdict') == 'clear' and result.get('action') == 'proceed'
                  and not result.get('disagree') and not result.get('step_mismatch'))
         if clear:
@@ -205,6 +237,9 @@ class Supervisor:
             result = self.place_path_judge.choose(image, status.get('world'), hand, holder)
         except Exception as exc:  # noqa: BLE001 - 경로 고르기 실패는 기본(바로 내리기)으로
             result = {'choice': 1, 'reason': '', 'valid': False, 'error': f'{type(exc).__name__}: {exc}'}
+        else:
+            # shortcut: 원본 프레임을 남긴다(VLM 은 경로를 그린 그림을 봄), 그림이 필요하면 choose 가 drawn 을 돌려주게
+            result = self.record(node, 'place_path', image, result)
         self.log({'event': 'place_path', 'mode': self.mode, 'node': node, 'hand': hand, 'holder': holder,
                   'result': {k: v for k, v in result.items() if k not in ('meta', 'prompt')}})
         return {'node': node, 'choice': result.get('choice'), 'valid': bool(result.get('valid'))}
@@ -220,6 +255,8 @@ class Supervisor:
             decision = self.judge.judge(status, image)
         except Exception as exc:
             decision = {'choice': 'E', 'success': False, 'action': 'stop', 'reason': f'VLM/frame failure: {exc}'}
+        else:
+            decision = self.record(last.get('node'), 'final_judge', image, decision)
         self.log({'event': 'final_judge', 'node': last.get('node'), 'decision': decision,
                   'runner_detail': runner_detail(status)})
         return (decision.get('action') == 'next'

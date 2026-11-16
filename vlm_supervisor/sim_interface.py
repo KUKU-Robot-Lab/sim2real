@@ -12,7 +12,7 @@ from .interface import Interface, parse_status
 
 # Supervisor call() names -> bridge /cmd verbs; others are not offered by the bridge.
 CALL_VERBS = {'next': 'next', 'stop': 'stop'}
-SHELL_VERBS = frozenset({'retry', 'rescan', 'home'})
+SHELL_VERBS = frozenset({'retry', 'rescan', 'home', 'reorder'})
 
 
 class SimInterface(Interface):

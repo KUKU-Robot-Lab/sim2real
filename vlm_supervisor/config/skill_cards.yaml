@@ -29,6 +29,9 @@
   손: right
   홀더: HOLDER_2
   홀더_번호: 2
+  먼저_치울_물체:
+  - SRC_BLUE
+  먼저_치울_이유: 분홍은 테이블 바깥쪽, 파랑은 안쪽이라 분홍을 먼저 잡으면 팔이 파랑을 쓰러뜨린다. 파랑을 먼저 잡아 탁자에서 치운다(사용자 11.16).
   근거:
   - config/episodes/cocktail_1c_e4000.yaml:14
   - config/episodes/cocktail_1c_e4000.yaml:65
