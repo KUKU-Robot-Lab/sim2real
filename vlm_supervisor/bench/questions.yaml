@@ -17,6 +17,7 @@ objects:
 
 # at = 이 질문이 제 질문인 노드 종류(skill_cards 의 스킬 id). 그 노드가 끝난 경계에서 pos(yes)·neg_fail(no) 이 된다.
 # 다른 경계 사진에서 world 상 참값이 분명히 no 면 같은 문구가 쉬운 반례(neg_cross)로 붙는다.
+# 경계의 long 참값(boundaries.jsonl long_truth): 제 질문에 no 가 있으면 no, 모두 정했고 모두 yes 면 yes, 그 밖은 못 정함.
 questions:
 - id: holders_empty
   at: [scene_snapshot]
@@ -33,6 +34,9 @@ questions:
   truth: >-
     yes = exit[grasp].result=COMPLETED 이고 signals.<정책>.dropped=false, 아직 place 전.
     no = 컵이 탁자(grasp 전)나 홀더(place 뒤)에 있음. 제 경계에서는 dropped=true 도 no. 그 밖의 잡기 실패는 못 정함.
+    같은 경계에 그 손의 이송(to_tilt_start)이 끝났으면 사진은 이송 뒤다. 이송 exit 의 signals.<정책>.dropped 가 false 여야 yes,
+    true 면 떨어뜨림, 신호가 없으면 yes 를 못 정함(vlm_full_1116 의 이송 exit 는 signals 가 비어 있다). 정책 이름으로 손이
+    하나로 정해지지 않는 잡기·놓기는 항목을 만들지 않는다.
 
 - id: cup_lifted
   at: [grasp]
@@ -40,7 +44,7 @@ questions:
   card: 'grasp "Has the cup lifted clear of the table?"'
   truth: >-
     yes = 컵이 손 안(cup_in_hand 와 같은 근거. sim 의 잡기 완료 규칙이 컵을 reset 높이보다 7~8 cm 든 상태다).
-    no = 컵이 탁자(grasp exit 전). 놓은 뒤(홀더 안)는 못 정함.
+    no = 컵이 탁자(grasp exit 전). 놓은 뒤(홀더 안)는 못 정함. 이송 뒤 사진의 yes 는 cup_in_hand 와 같이 dropped 신호가 있어야 한다.
 
 - id: cup_in_holder
   at: [place]
@@ -50,6 +54,7 @@ questions:
     exit[place].signals.<정책>.scripted_judge.grade: great(구멍 안, 기울기 10° 미만) → yes, fail(구멍 밖) → no,
     partial(구멍 안, 기울기 10° 이상) → 못 정함. result.jsonl objects 의 끝 grade 와 다르면 못 정함.
     손을 못 뗀 놓기(hand_empty 가 true 가 아님)는 fail 만 no, 나머지는 못 정함.
+    fail 인데 result.jsonl objects 에 목표 홀더 번호로 적힌 컵이 없으면(다른 홀더로 적힘) 못 정함. all_in_holders 도 같다.
     place 전(컵이 탁자·손 안)은 no. 러너의 place_failed 코드는 쓰지 않는다(빼기 시간 초과여도 컵은 앉아 있을 수 있다).
 
 - id: all_in_holders
