@@ -413,6 +413,7 @@ class PlaceNode(PourFjNode):
                                           f"→ 각도만으로 판단")
             self._opened_n = self._opened_n + 1 if rel is not False else 0   # 손 힘이 남았으면(쥔 채 벌어짐) 세지 않는다
             if self._opened_n >= OPENED_END_TICKS:
+                self._release_force = rel   # ★11.16 끝난 틱의 힘 근거(True 빈손 · None 신호 없음) — 실행기 continue_on_fail
                 self.chain.outcome = "opened_before_latch"   # ★11.11 래치 전 — 놓였는지는 실행기가 cup_in_holder 로 판정
                 self.chain.released_cup = self.chain.latch_cup
                 self.get_logger().info(f"place 정책이 래치 전에 손 폄 → 끝 · {self.chain.as_dict()}")
@@ -436,6 +437,7 @@ class PlaceNode(PourFjNode):
         self._latch_logged = False
         self._opened_n = 0
         self._rel_unknown_logged = False
+        self._release_force = None
         out = super()._srv_start(req, res)
         rc = getattr(self.chain, "rcarry", None)
         self._carry_t0 = time.monotonic() if rc is not None and rc.on else None
@@ -444,6 +446,7 @@ class PlaceNode(PourFjNode):
     def _status_extra(self) -> dict:
         return {"holder": self.holder_id, "holder_pose": None if self._holder is None else [round(float(v), 4) for v in self._holder],
                 "release_force_n": self.contract.release_force_n,     # 실행기 opened_before_latch 촉각 판정 문턱
+                "released_by_force": getattr(self, "_release_force", None),
                 **({"holder_excess_m": self._holder_excess} if self.contract.holder_range else {}),
                 **({"place": self.chain.as_dict()} if getattr(self.chain, "as_dict", None) else {})}
 

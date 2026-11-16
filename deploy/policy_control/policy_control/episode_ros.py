@@ -783,6 +783,7 @@ class RosExecutor:
                 ev = dict(self._events.get(status_key) or {})
                 st = dict(self._status.get(status_key) or {})
             if int(ev.get("episode", 0)) > last_ep and ev.get("event") in ("stop", "abort"):
+                st = self._final_status(status_key, int(ev.get("episode", 0)), st)
                 break
             if time.monotonic() - t0 > limit:
                 self._call(f"{NS}/{ns}/episode/stop")
@@ -907,6 +908,19 @@ class RosExecutor:
             time.sleep(0.1)
         return False
 
+    def _final_status(self, key: str, episode: int, st: dict, wait_s: float = 0.5) -> dict:
+        """★11.16 stop 이벤트가 상태보다 먼저 온다 — 한 틱 앞 상태(outcome 없음)로 판정하던 것(100033 place_blue).
+        정지 뒤 그 에피소드 상태(phase != running)를 wait_s 까지 기다리고, 없으면 받은 것을 쓴다."""
+        deadline = time.monotonic() + wait_s
+        while True:
+            if st.get("phase") not in (None, "running") and int(st.get("episode", 0)) == episode:
+                return st
+            if time.monotonic() >= deadline:
+                return st
+            time.sleep(0.02)
+            with self._lock:
+                st = dict(self._status.get(key) or {})
+
     def _pd_view(self, side: str) -> dict:
         with self._lock:
             st = dict(self._pd.get(side) or {})
@@ -943,6 +957,10 @@ class RosExecutor:
                         sig["hand_empty"] = False
                 else:
                     sig["tact_check"] = "skipped: " + ("no tactile" if not tact else "no release_force_n")
+                # ★11.16 사용자 "a방향" — 노드가 끝난 틱에 촉각 · 관절 힘이 모두 놓음 문턱 아래(hand_released True)면 빈손
+                sig["released_by_force"] = st.get("released_by_force")
+                if sig["released_by_force"] is True and sig["hand_empty"] is not False:
+                    sig["hand_empty"] = True
             hold = self.holders.get(p.holder_id) if p.holder_id is not None else None
             # ★11.04 놓은 자리 = FP++ live(stop + 1.0 s 뒤 프레임) 와 손을 연 순간의 묶은 컵(손바닥 FK ⊗ 묶음, latch_cup).
             #   …/pose(cups 때 찍은 테이블 자리)는 쓰지 않는다. live 는 쥔 컵을 놓치면 엉뚱한 값을 내므로(131817) 둘 중 하나라도

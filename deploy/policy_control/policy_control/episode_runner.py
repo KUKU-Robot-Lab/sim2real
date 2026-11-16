@@ -550,7 +550,9 @@ class EpisodeManager:
         기존대로 실패(episode_failure _one 의 place 절). last 는 바로 앞(step)에서 이 노드 결과로 채웠다."""
         sigs = [r["signals"] for r in self.last.get("results", [])]
         # ★11.11 래치 전 손 폄 종료는 hand_empty None(모름) — 컵이 홀더 밖이면 손에 걸렸을 수 있으니 걸림으로 본다
-        unknown = any(s.get("outcome") == "opened_before_latch" and s.get("cup_in_holder") is False for s in sigs)
+        # ★11.16 사용자 "a방향" — 힘 근거로 빈손(hand_empty True)이면 홀더 밖이어도 걸림 아님 → 다음 노드(home)
+        unknown = any(s.get("outcome") == "opened_before_latch" and s.get("cup_in_holder") is False
+                      and s.get("hand_empty") is not True for s in sigs)
         stuck = unknown or any(s.get("hand_empty") is False or s.get("outcome") == "withdraw_timeout" for s in sigs)
         if unknown:
             self._log("place_hand_unknown", node, result=code.value,

@@ -184,3 +184,11 @@ def test_opened_before_latch_in_holder_is_success():
     ex = _Ex(ep, res=("completed", "", {"cup_in_holder": True, "hand_empty": None, "outcome": "opened_before_latch"}))
     m, st, _ = _run(ep, ex)
     assert st == SUCCESS and m.place_failed_continued == []
+
+
+def test_opened_before_latch_out_of_holder_with_force_free_hand_is_continued():
+    """★11.16 사용자 "a방향" — 래치 전 손 폄 · 컵 홀더 밖이어도 힘 근거로 빈손(hand_empty True)이면 다음 노드(home)."""
+    ep = _ep(continue_on_fail=["place"])
+    sig = {"cup_in_holder": False, "hand_empty": True, "outcome": "opened_before_latch", "released_by_force": True}
+    m, st, _ = _run(ep, _Ex(ep, res=("completed", "", sig)))
+    assert st == SUCCESS and m.place_failed_continued == ["place_cup"]
