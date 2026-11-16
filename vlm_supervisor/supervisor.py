@@ -17,7 +17,7 @@ COUNTED = RECOVERY | {'recover'}  # deploy 복구 승인도 max_recover 에 센�
 
 class Supervisor:
     def __init__(self, interface, judge, mode='shadow', log_path=None, settle=0.5, max_recover=3,
-                 approach_judge=None):
+                 approach_judge=None, place_path_judge=None):
         if mode not in {'shadow', 'active'}:
             raise ValueError('mode must be shadow or active')
         self.interface, self.judge, self.mode = interface, judge, mode
@@ -37,6 +37,12 @@ class Supervisor:
         self.grasp_nodes = {} if approach_judge is None else {
             n['id']: ({'_r': 'right', '_l': 'left'}.get(str(n.get('name', ''))[-2:]), n.get('target_object'))
             for card in load_cards()['스킬'] if card['id'] == 'grasp'
+            for n in card['실행_방법']['노드_예시']}
+        self.place_path_judge = place_path_judge
+        # place 카드 노드: id → (손, 홀더). 손은 정책 이름 끝 _r/_l.
+        self.place_nodes = {} if place_path_judge is None else {
+            n['id']: ({'_r': 'right', '_l': 'left'}.get(str(n.get('name', ''))[-2:]), n.get('target_holder'))
+            for card in load_cards()['스킬'] if card['id'] == 'place'
             for n in card['실행_방법']['노드_예시']}
 
     def log(self, event):
@@ -107,6 +113,7 @@ class Supervisor:
         approach_stop = approach_reason is not None and self.mode == 'active'  # shadow: only logs
         if approach_stop:
             action, failed_node = 'human', approach_node
+        place_path = self.check_place_path(status, approach_node) if approach_node and not approach_stop else None
         # A slow VLM must not approve a different node after the human has advanced.
         latest = self.interface.status()
         if self.key(latest) != key:
@@ -122,6 +129,9 @@ class Supervisor:
                 result = self.interface.perform('next', status['next_action'], active=self.mode == 'active')
             elif action in RECOVERY:
                 result = self.interface.perform(action, target, active=self.mode == 'active', args=recovery_args)
+            elif place_path is not None:
+                result = self.interface.perform(action, target, active=self.mode == 'active',
+                                                args={'place_path': place_path})
             else:
                 result = self.interface.perform(action, target, active=self.mode == 'active')
         except Exception as exc:
@@ -184,6 +194,20 @@ class Supervisor:
                   'geom': geom.get('verdict') if isinstance(geom, dict) else 'none',
                   'result': {k: v for k, v in result.items() if k != 'meta'}})
         return reason
+
+    def check_place_path(self, status, node):
+        """place 노드 직전 후보 경로 번호를 고른다. 기록과 인터페이스 인자용 {'node','choice','valid'}, 대상 아니면 None."""
+        if self.place_path_judge is None or node not in self.place_nodes:
+            return None
+        hand, holder = self.place_nodes[node]
+        try:
+            image = self.interface.frame(after=time.monotonic() + self.settle, wait=self.settle + 3)
+            result = self.place_path_judge.choose(image, status.get('world'), hand, holder)
+        except Exception as exc:  # noqa: BLE001 - 경로 고르기 실패는 기본(바로 내리기)으로
+            result = {'choice': 1, 'reason': '', 'valid': False, 'error': f'{type(exc).__name__}: {exc}'}
+        self.log({'event': 'place_path', 'mode': self.mode, 'node': node, 'hand': hand, 'holder': holder,
+                  'result': {k: v for k, v in result.items() if k not in ('meta', 'prompt')}})
+        return {'node': node, 'choice': result.get('choice'), 'valid': bool(result.get('valid'))}
 
     def final_judged(self, status):
         """Runner closes terminal right after the last action, so READY is never seen for it: judge that action here."""

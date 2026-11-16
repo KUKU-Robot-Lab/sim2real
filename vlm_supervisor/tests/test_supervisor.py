@@ -298,3 +298,32 @@ def test_pending_recover_counts_toward_max_recover():
     supervisor = Supervisor(interface, Judge('next'), mode='active', settle=0, max_recover=2)
     assert supervisor.run() == 1
     assert [c[0] for c in interface.calls][:2] == ['next', 'next'] and interface.calls[2][0] in {'human', 'stop'}
+
+
+class PlacePath:
+    def __init__(self, result):
+        self.result, self.calls = result, []
+
+    def choose(self, image, world, hand, holder):
+        self.calls.append((hand, holder))
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+
+def test_place_path_logged_and_passed_without_changing_action(tmp_path):
+    interface, log = ApproachInterface('place_blue'), tmp_path / 'd.jsonl'
+    pp = PlacePath({'choice': 3, 'reason': 'r', 'valid': True})
+    assert Supervisor(interface, Judge('next'), mode='active', settle=0, log_path=log, place_path_judge=pp).run() == 0
+    assert pp.calls == [('right', 'HOLDER_1')]
+    assert interface.calls == [('next', 'place_blue', {'place_path': {'node': 'place_blue', 'choice': 3, 'valid': True}}, True)]
+    assert '"event": "place_path"' in log.read_text()
+
+
+def test_place_path_error_falls_back_and_off_by_default():
+    interface, pp = ApproachInterface('place_blue'), PlacePath(RuntimeError('boom'))
+    Supervisor(interface, Judge('next'), mode='active', settle=0, place_path_judge=pp).run()
+    assert interface.calls[0][2] == {'place_path': {'node': 'place_blue', 'choice': 1, 'valid': False}}
+    interface = ApproachInterface('place_blue')
+    Supervisor(interface, Judge('next'), mode='active', settle=0).run()
+    assert interface.calls[0][2] is None

@@ -10,6 +10,7 @@ from .approach import ApproachJudge
 from .backends import ROOT, Router
 from .interface import RosInterface
 from .judge import Judge
+from .place_path import PlacePathJudge
 from .planner import Planner, simulate
 from .sim_interface import SimInterface
 from .supervisor import Supervisor
@@ -29,6 +30,8 @@ def build_parser():
     parser.add_argument('--interface', choices=['ros', 'sim'], default='ros')
     parser.add_argument('--approach-judge', action='store_true',
                         help='잡기(접근) 노드 직전에 VLM 으로 경로 방해물 판정(같은 백엔드)')
+    parser.add_argument('--place-path-judge', action='store_true',
+                        help='놓기 노드 직전에 VLM 이 후보 경로 번호를 고른다(기록만, 실행 동작은 그대로; 같은 백엔드)')
     parser.add_argument('--sim_url', default='http://127.0.0.1:8790', help='hdgp sim 브리지 주소(--interface sim)')
     return parser
 
@@ -49,7 +52,8 @@ def main(argv=None):
         router = Router(args.chain.split(',') if args.chain else None)
         judge = Judge(router, args.sentence)
         supervisor = Supervisor(interface, judge, args.mode, run_dir / 'decisions.jsonl', args.settle,
-                                approach_judge=ApproachJudge(router) if args.approach_judge else None)
+                                approach_judge=ApproachJudge(router) if args.approach_judge else None,
+                                place_path_judge=PlacePathJudge(router) if args.place_path_judge else None)
         print(f'mode={args.mode} runner={args.runner} logs={run_dir}', flush=True)
         image = interface.frame(after=time.monotonic(), wait=5)
         if image is None:

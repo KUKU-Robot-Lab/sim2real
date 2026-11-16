@@ -72,6 +72,7 @@ class Interface:
         self.approvals = Path(approvals).expanduser()
         self.operator = operator
         self.events: list[dict] = []
+        self.place_path = None  # 마지막 place 노드 경로 선택(--place-path-judge), 실행엔 아직 안 쓰임
 
     def status(self) -> dict:
         raise NotImplementedError
@@ -105,6 +106,9 @@ class Interface:
         if action in {'next', 'run'}:
             if not what:
                 raise ValueError('next/run require an explicit approval target')
+            if args and 'place_path' in args:
+                # shortcut: runner place 노드에 경로 번호를 받는 인자가 아직 없어 여기 남기기만 한다. runner 가 받으면 승인/셸 인자로 넘긴다.
+                self.place_path = args['place_path']
             write_approval(what, self.operator, self.approvals, self.runner)
         return self.call(action)
 
