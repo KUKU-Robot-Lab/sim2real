@@ -26,6 +26,11 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+import os
+
+# ★11.16 numpy 를 부르기 전에 — OpenBLAS 가 3x3 곱에도 24 스레드를 띄워 계획이 2~3배 느려지고 pd·정책 노드 CPU 를 뺏는다
+for _k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_k, "1")
 
 import numpy as np
 
@@ -423,8 +428,9 @@ def time_parametrize(path: np.ndarray, vmax: float, dt: float = FRAME_DT, ramp: 
 
 # ---------------------------------------------------------------- 엄밀 거리(검증용)
 
-def hull_distance_lower_bound(A: np.ndarray, B: np.ndarray, iters: int = 20000, gap: float = 1e-5) -> tuple[float, float]:
-    """conv(A)·conv(B) 거리의 (하한, 상한). Minkowski 차에 Frank-Wolfe, 하한은 분리 평면 지지값."""
+def hull_distance_lower_bound(A: np.ndarray, B: np.ndarray, iters: int = 2000, gap: float = 1e-4) -> tuple[float, float]:
+    """conv(A)·conv(B) 거리의 (하한, 상한). Minkowski 차에 Frank-Wolfe, 하한은 분리 평면 지지값.
+    ★11.16 20000·1e-5 → 2000·1e-4: 홀더 원기둥↔손 쌍이 거의 늘 상한까지 돌아 오른팔 rehome 이 144~180 s(하한은 매 반복 성립 · 차이 ≤ 0.2 mm)."""
     z = A.mean(0) - B.mean(0)
     lb = 0.0
     for _ in range(iters):
