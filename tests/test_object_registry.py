@@ -228,6 +228,8 @@ def test_global_camera_group_config_uses_its_own_topics():
     assert yaml.safe_load(render_group_yaml(load_registry(DEFAULT_REGISTRY), "source240_blue",
                                             stand_top_from_rgb=True))["stand_top_from_rgb"] is True
     assert "stand_top_from_rgb=True" in (DEFAULT_REGISTRY.parents[1] / "scripts/vision/fpp_global_up.sh").read_text()
+    # 퍼짐 여유도 글로벌만(머리 쪽 yaml 에는 키가 없어 노드 기본 FOOTPRINT_PAD)
+    assert "footprint_pad" not in ego and "footprint_pad=0.04" in (DEFAULT_REGISTRY.parents[1] / "scripts/vision/fpp_global_up.sh").read_text()
 
 def test_one_real_object_is_registered_once():
     """★11.10 사용자: 같은 실물(메쉬 + 색)이 두 이름 · 두 묶음으로 올라가면 FP++ 컨테이너가 겹쳐 뜬다."""

@@ -171,11 +171,11 @@ TOP_TOL = 0.025          # 서 있는 물체 꼭대기 높이 허용 — 10.09 �
 
 
 def looks_standing(points_base: np.ndarray, aabb, table_z: float = TABLE_TOP_Z, top_tol: float = TOP_TOL,
-                   top_z: float | None = None) -> bool:
+                   top_z: float | None = None, pad: float = FOOTPRINT_PAD) -> bool:
     """서 있는 물체 같은가 — 수평 퍼짐이 바닥 안(fits_footprint)이고, 보이는 점 위쪽(p95)이 상판 + 물체 높이에 닿는다.
     화면 끝에 잘린 누운 같은 색 물체는 폭으로는 못 거르고 꼭대기 높이로 거른다(10.09).
-    top_z 를 주면 p95 대신 그 꼭대기 높이(mask_top_z, 11.18 글로벌 카메라)로 잰다."""
-    if not fits_footprint(points_base, aabb, table_z=table_z):
+    top_z 를 주면 p95 대신 그 꼭대기 높이(mask_top_z, 11.18 글로벌 카메라)로 잰다. pad = 퍼짐 한계 여유(fits_footprint)."""
+    if not fits_footprint(points_base, aabb, pad=pad, table_z=table_z):
         return False
     lo, hi = np.asarray(aabb[0], float), np.asarray(aabb[1], float)
     top = float(np.percentile(np.asarray(points_base, float)[:, 2], 95)) if top_z is None else float(top_z)

@@ -114,6 +114,8 @@ def main(argv=None) -> None:
     workspace = cfg.get("workspace", {"x": [0.05, 0.47], "y": [-0.45, 0.45], "z": [0.15, 0.50]})
     retry_s = float(cfg.get("retry_s", 3.0))
     stand_top_rgb = bool(cfg.get("stand_top_from_rgb", False))   # 11.18 글로벌 1.5 m: 가는 병목 depth 가 빠져 꼭대기를 색으로 잰다
+    # 11.18 글로벌 1.5 m: 시선 방향 depth 잡음이 퍼짐을 키워(서 있는 분홍 병 91~123 mm, 한계 110) 여유를 더 준다
+    footprint_pad = float(cfg.get("footprint_pad", C.FOOTPRINT_PAD))
     tconf = TrackingConfig.from_yaml(cfg.get("tracking_config", "config/cup_tracking.yaml"))
 
     class Snapshot(Node):
@@ -224,7 +226,7 @@ def main(argv=None) -> None:
             try:
                 if not self.live["init"]:
                     cands = [d for d in self._candidates(frame, [o["color"]]) if d["inside"]]
-                    allowed = {name: {i for i, d in enumerate(cands) if d["points"] is None or C.looks_standing(d["points"], o["aabb"], top_z=d["top_z"])}} \
+                    allowed = {name: {i for i, d in enumerate(cands) if d["points"] is None or C.looks_standing(d["points"], o["aabb"], top_z=d["top_z"], pad=footprint_pad)}} \
                         if o.get("aabb") else None
                     pick = C.assign(frame.rgb, [d["mask"] for d in cands], {name: o["color"]}, allowed=allowed)
                     if name not in pick:
@@ -363,7 +365,7 @@ def main(argv=None) -> None:
             dets = [d for d in cands if d["inside"]]
             masks = [d["mask"] for d in dets]
             # 서 있는 모양(수평 퍼짐 ≤ 물체 바닥)인 후보만 — 누운 같은 색 물체를 버린다(10.09 핑크 병). aabb · 카메라 자세가 있을 때
-            allowed = {n: {i for i, d in enumerate(dets) if d["points"] is None or C.looks_standing(d["points"], objects[n]["aabb"], top_z=d["top_z"])}
+            allowed = {n: {i for i, d in enumerate(dets) if d["points"] is None or C.looks_standing(d["points"], objects[n]["aabb"], top_z=d["top_z"], pad=footprint_pad)}
                        for n in todo if objects[n].get("aabb")}
             pick = C.assign(frame.rgb, masks, {n: objects[n]["color"] for n in todo}, allowed=allowed)
             for name in todo:

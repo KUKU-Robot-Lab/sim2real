@@ -19,6 +19,6 @@ from object_registry import load_registry, render_group_yaml
 group, ext, only = sys.argv[1], sys.argv[2], sys.argv[3:]
 print(render_group_yaml(load_registry(), group, camera_yaml=None if ext == "-" else ext, only=only or None,
                         camera_ns="/global_camera/camera",
-                        stand_top_from_rgb=True), end="")
+                        stand_top_from_rgb=True, footprint_pad=0.04), end="")
 EOF
 exec bash "$(dirname "$0")/fpp_group_up.sh" "$GROUP" "$YAML" "fppg_$GROUP"

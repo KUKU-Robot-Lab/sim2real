@@ -314,3 +314,15 @@ def test_mask_spill_onto_the_table_behind_does_not_make_a_standing_cup_look_lyin
     assert C.looks_standing(np.vstack([cup, spill]), aabb)
     lying = np.column_stack([rng.uniform(0, 0.24, 900), rng.uniform(0, 0.06, 900), rng.uniform(0.21, 0.27, 900)])
     assert not C.fits_footprint(lying, aabb)
+
+
+def test_a_wider_pad_lets_a_noisy_far_standing_bottle_pass_but_not_a_lying_one():
+    """11.18 글로벌 1.5 m: 서 있는 분홍 병의 퍼짐이 depth 잡음으로 91~123 mm(기본 한계 110). pad 0.04 면 130 mm 까지 —
+    24 cm 로 누운 병은 그래도 걸러진다."""
+    aabb = ((-0.03, -0.03, -0.085), (0.03, 0.03, 0.155))
+    rng = np.random.default_rng(5)
+    stand = np.column_stack([rng.normal(0, 0.0245, 900), rng.normal(0, 0.0245, 900), rng.uniform(0.23, 0.44, 900)])
+    assert not C.fits_footprint(stand, aabb) and C.fits_footprint(stand, aabb, pad=0.04)
+    assert C.looks_standing(stand, aabb, pad=0.04, top_z=0.445) and not C.looks_standing(stand, aabb, top_z=0.445)
+    lying = np.column_stack([rng.uniform(0, 0.24, 900), rng.uniform(0, 0.07, 900), rng.uniform(0.21, 0.28, 900)])
+    assert not C.fits_footprint(lying, aabb, pad=0.04)
