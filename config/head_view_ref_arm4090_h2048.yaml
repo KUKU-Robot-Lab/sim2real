@@ -27,7 +27,7 @@
 extrinsics:
   file: global_camera_extrinsics_arm4090_m1117.yaml
   md5: 691ade15493f240e6c7b98c4393446a9
-measured: false
+measured: true
 approach: down
 approach_pan: left
 imu_up_cam:
@@ -40,7 +40,89 @@ pan_tick: 1825
 tilt_tick: 2833
 n: null
 acc_sd: null
-time: '2026-11-17'
-source: 11.17 IMU 69.19/−0.10 과 m1117 에서 이주, 실측 아님, 카메라 복귀 뒤 --record-ref (m1117 숙임
-  69.807 · 옆 -1.619 + imu_pitch_bias -0.62 · imu_roll_bias 1.52, 틱 = m1117 head_pose.
-  approach down 은 앞으로 쓸 방향이다(이주 값은 도착 방향을 모른다))
+time: 2026-11-17 16:51
+source: anchors = 11.17 16:51 align 사진 10장(M1117 을 푼 바로 그 사진, 코너 σ 0.095 px) 에서 뽑음.
+  imu_up_cam · pitch/roll 은 아직 M1117 에서 이주한 값(IMU 는 --align 에서 경고만 쓴다). 틱 = M1117
+  head_pose 1825/2833
+anchors:
+  size_m: 0.07962
+  dict: DICT_6X6_250
+  image_wh:
+  - 1280
+  - 720
+  fx: 908.353
+  n_frames: 10
+  corner_sd_px: 0.0946
+  self_noise:
+    pan_shift_px: 0.008
+    markers:
+      '70':
+        px: 0.035
+        mm: 0.049
+        deg: 0.063
+        cam_mm: 0.86
+      '71':
+        px: 0.048
+        mm: 0.148
+        deg: 0.07
+        cam_mm: 0.861
+      '73':
+        px: 0.014
+        mm: 0.077
+        deg: 0.021
+        cam_mm: 0.232
+  markers:
+    70:
+      corners:
+      - - 940.53
+        - 67.905
+      - - 1028.145
+        - 42.68
+      - - 1073.653
+        - 118.496
+      - - 983.161
+        - 145.912
+      rvec:
+      - 2.747255
+      - -0.445407
+      - 0.061396
+      tvec:
+      - 0.298634
+      - -0.22053
+      - 0.739063
+    71:
+      corners:
+      - - 1273.845
+        - 464.048
+      - - 1170.806
+        - 500.06
+      - - 1114.886
+        - 394.635
+      - - 1213.716
+        - 361.673
+      rvec:
+      - 0.484769
+      - 3.009838
+      - -0.530439
+      tvec:
+      - 0.388601
+      - 0.04567
+      - 0.63731
+    73:
+      corners:
+      - - 474.464
+        - 200.435
+      - - 500.4
+        - 288.287
+      - - 396.227
+        - 317.879
+      - - 373.821
+        - 227.456
+      rvec:
+      - 2.284758
+      - 1.667719
+      - -0.2975
+      tvec:
+      - -0.154238
+      - -0.080893
+      - 0.690734
