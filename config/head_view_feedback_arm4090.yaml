@@ -11,19 +11,68 @@
 #   같은 날 오후 ChArUco 사진과 비교해 카메라 마운트는 움직이지 않았다(남은 회전 약 0.04°).
 # 다시 잴 때: 기준 시야와 맞춘 자세(외부 파라미터를 막 잰 자세)에서 python3 scripts/head_view_feedback.py --calib-bias
 #   (--calib-bias 는 yaml.safe_dump 로 다시 써서 이 주석이 사라진다 — 쓴 뒤 주석을 되살린다)
-imu_pitch_bias: 0.55
-imu_roll_bias: -0.72
+# ★11.17 외부 m1117(테이블 마커 70~73, md5 691ade15, 숙임 69.807° · 옆 −1.619°)로 바꿈(사용자): 11.17 camset(1825/2834 틱)
+#   실측 IMU 숙임 69.19° · 옆 −0.10° − m1117 = −0.62 · +1.52. 실기가 sim(67.674°)보다 약 2° 더 숙인 것은 그대로다(사용자 결정 대기).
+imu_pitch_bias: -0.62
+imu_roll_bias: 1.52
 ratio_guess: 0.98   # Δ숙임/Δ인코더, 10.30 71.20 → 61.32° 에서 0.978
-bias_measured_at: {pan_deg: -19.47, tilt_deg: 68.79, tilt_ref_tick: 2833, time: "2026-11-15 19:53", extrinsics: global_camera_extrinsics_arm4090_h2048.yaml}
+bias_measured_at: {pan_tick: 1825, tilt_ref_tick: 2834, time: "2026-11-17", extrinsics: global_camera_extrinsics_arm4090_m1117.yaml}
+# ref tilt_tick 2833 은 외부 파라미터 head_pose, IMU 는 2834 에서 읽음(±4 안)
+# 옛 값: imu_pitch_bias 0.55 · imu_roll_bias -0.72 · {pan -19.47, tilt 68.79, tick 2833, 2026-11-15 19:53, global_camera_extrinsics_arm4090_h2048.yaml}
 # 옛 값: imu_pitch_bias -0.54 · imu_roll_bias -0.42 · {pan -1.27, tilt 71.20, 2026-10-30, global_camera_extrinsics_arm4090.yaml}
 
+# ★11.17 --check 는 이 값을 안 쓴다(아래 ref_tol_* 로 바뀜). 옛 허용치와 근거로 남긴다.
 # 미션 head_view_check 허용치(deg) = |IMU 숙임 − r20u5 숙임|. 근거(10.30 처짐 지도 config/head_view/sag_table_arm4090_2026-10-30.json,
 #   arm4090 에만): 같은 인코더 자리를 올라가며/내려가며 잰 숙임 차(오르내림)가 평균 0.5° · 최대 1.13°(112 쌍), 같은 칸을 다른
 #   회차에 잰 차 약 0.4°, IMU 흔들림 σ 0.012 m/s². 1° 숙임은 테이블(광선 약 0.66 m, 68° 숙임)에서 약 1.2 cm 로 cups 단계
 #   컵 원점 z 확인(±8 mm)을 넘는다 — 그보다 큰 차는 시야가 외부 파라미터를 잰 때와 다르다는 뜻이다.
 view_check_tol_deg: 1.0
+# ★11.17 --check 허용치: 기준 파일 config/head_view_ref_arm4090_h2048.yaml(외부 파라미터를 잰 그때의 보정 전 IMU · 목 틱)과
+#   지금 값을 직접 비교한다(bias 안 씀). IMU 1샘플 σ 0.012 m/s² 라 400샘플(Sensors.read n = N_SAMPLES) 평균이면 잡음이 0.01° 미만이다.
+#   0.3° 는 테이블까지 약 0.66 m 에서 약 3.5 mm. 틱 4 = 외부 파라미터 head_pose tol_tick(±0.35°).
+#   숙임 0.3° · 틱 4 는 기준 파일의 approach(기본 down = 숙이며 도착)와 같은 방향으로 도착했을 때가 전제다. 위 처짐 지도의
+#   오르내림 차(평균 0.5° · 최대 1.13°)가 이 허용치보다 커서, 반대 방향으로 도착하면 같은 자리여도 넘을 수 있다.
+ref_tol_pitch_deg: 0.3
+ref_tol_roll_deg: 0.3
+ref_tol_tick: 4
+# ★11.17 사용자: 테이블 고정 ArUco(DICT_6X6_250, 70 = 왼쪽 끝 · 71 = 오른쪽 끝 · 73 = 70 과 같은 x, y 는 모름). 72 는 들떠서 안 쓴다.
+#   IMU 가 못 보는 좌우(yaw) · 위치를 본다. 기준 파일에 anchors 가 있을 때만 --check 판정에 들어간다.
+#   검은 부분 한 변: 설계 80 mm, 인쇄가 0.5 % 줄어 실측 79.62 mm(같이 인쇄한 ChArUco 보드 7칸 209 mm = 칸 29.857 mm 로 잼).
+anchor_ids: [70, 71, 73]
+anchor_size_m: 0.07962
+# --align 외부 파라미터 정답(base 좌표 m, 마커 중심). 출처: arm4090 logs/runs/261117/anchor/anchor6.py · anchor8.py
+#   (verify/vcommon.py 가 그대로 씀) — sim 테이블 = 실물 상판 x 0.07~0.47 · y −0.45~0.45(scripts/calib/table_cad_extrinsics.py),
+#   마커는 상판 가장자리에서 52 mm(검은 80 mm + 여백 12 mm). y 가 null 인 마커(73)는 x · z 만 정답이고 y 는 같이 푼다.
+#   table_z_m = 상판 z. 11.17 verify: 마커 면이 상판보다 약 3.4 mm 높을 수 있다(보드 RGB · tare 뒤 depth 상판 201.6~201.7 mm) —
+#   0.2084 로 두면 camera position z 만 +3.4 mm 바뀐다. 실측 확정 전까지 verify 와 같은 0.205.
+anchor_truth:
+  table_z_m: 0.205
+  markers:
+    70: [0.418, -0.398]
+    71: [0.122, -0.398]
+    73: [0.418, null]
+# --align 허용치. align_tol_px = 마커마다 네 코너 이동 평균(기준 픽셀 대비). 1280x720 fx≈908 에서 tilt 한 틱(0.088°) ≈ 1.4 px,
+#   pan 한 틱 ≈ 0.5 px(68° 숙임) — tilt 는 가장 가까운 틱이 0.7 px 안이라 1.0 이 거의 하한이다.
+#   extr_tol_* = 마커로 푼 외부 파라미터와 저장 값(--extrinsics)의 위치 · 회전 차. imu_warn_deg 는 경고만(실패 아님).
+align_tol_px: 1.0
+extr_tol_mm: 3.0
+extr_tol_deg: 0.3
+imu_warn_deg: 1.0
+# 마커 허용치(★11.17 리뷰: tilt 허용치와 맞춤):
+#   px = 네 코너 이동 평균. 1280x720 fx≈908 에서 0.3° ≈ 4.7 px 라, --execute 의 tilt 맞춤 허용치(0.2°)와 ref_tol_pitch_deg(0.3°)
+#     안에 든 자세가 마커 px 로 떨어지지 않게 5.0. 68° 숙임 카메라의 pan 은 화면 가운데에서도 그 0.37 배라 5 px ≈ pan 0.8°다.
+#   mm = 마커 중심 이동(마커별, 카메라 프레임에서 본 PnP tvec 차). 카메라 위치 추정(ΔT 평행이동)은 마커 방향 잡음이 거리(약 1 m)
+#     만큼 커져 정보로만 찍고 판정에 쓰지 않는다.
+#   deg = 카메라 회전(ΔT 회전).
+#   실측 잡음은 --record-ref 가 기준 anchors.corner_sd_px(σ, 상한 0.5 px)와 self_noise(연속 두 묶음끼리 비교한 px · mm · °)로
+#   남긴다. mm 3.0 · deg 0.3 은 첫 기록의 self_noise 를 보고 다시 정한다(정지 실측 마커 중심 흔들림 0.2~0.6 mm, 10장 평균 4회).
+ref_tol_anchor_px: 5.0
+ref_tol_anchor_mm: 3.0
+ref_tol_anchor_deg: 0.3
 # sim 카메라 숙임(참고로만 찍는다, 판정은 r20u5 기준): hdgp scripts/tools/e2e_chain/cocktail/headcam.py
 #   --static config/global_camera_extrinsics_arm4090.yaml(10.27 home) --static_rel -20,-5(URDF 목 FK 근사, 보정 없음)
 #   → ~/rl_ws/videos/cocktail_1028_b/headcam_static/headcam_1028.json static_dpan-20_dtilt-5(sim_e2e camset 후보) 숙임.
 #   r20u5 숙임(HEAD 68.03° · 11.03 작업 트리 68.25°)과의 차는 10.28 볼트 맞춤 잔차다.
-sim_pitch_deg: 67.674
+# ★11.17 사용자 "sim-> m1117로 교체": sim 머리 카메라도 m1117 외부 파라미터를 쓰므로 sim 숙임 = m1117 숙임(69.807).
+#   옛 값 67.674(위 10.27 home + FK 근사)는 m1117 과 2.13° 차라 view_check_tol_deg 1.0 을 넘었다.
+sim_pitch_deg: 69.807

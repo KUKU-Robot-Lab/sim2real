@@ -7,7 +7,7 @@ base_link 로 바꿔 발행한다. camera 블록은 레지스트리가 가리키
 cad_to_body 는 물체 항목. 소비자: ROS 정책 노드(다음 스펙).
 
   python3 object_pose_node.py [--objects shaker_closed cup_big_s100] [--head-joint-topic /head/joint_states]
-  python3 object_pose_node.py --objects cup_big_s100 --camera-extrinsics config/global_camera_extrinsics_arm4090_h2048.yaml
+  python3 object_pose_node.py --objects cup_big_s100 --camera-extrinsics config/global_camera_extrinsics_arm4090_m1117.yaml
 
 10.01: 카메라 extrinsics 는 로봇마다 다르다(arm4090 은 테이블 CAD 캘리브 전용 파일). `--camera-extrinsics` 가
 레지스트리의 공유 파일을 대신하고, 그 파일의 `base_z_bias_m`(없으면 0 — depth 치우침 보정)을 출력 z 에 더한다.

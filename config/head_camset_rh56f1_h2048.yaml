@@ -1,6 +1,6 @@
 # head(목) camset 자세 — RH56F1 로봇, ★2026-11-15 목 영점 2048 · Homing Offset 0 판(옛 판 head_camset_rh56f1.yaml).
 #
-# 짝 외부 파라미터 = config/global_camera_extrinsics_arm4090_h2048.yaml(head_pose 1825 · 2833). deg 는 드라이버 규약
+# 짝 외부 파라미터 = config/global_camera_extrinsics_arm4090_m1117.yaml(head_pose 1825 · 2833). deg 는 드라이버 규약
 #   (head_position_hold_node: tick/4095·360 − 180)으로 그 틱이다(tests/s2r_console/test_rh56f1_mission.py 가 비교).
 # 11.15 실측: 목표 pan −19.6° · tilt +68.82°(틱 1825 · 2830)를 쓰면 1825 · 2833 에 선다 → tilt goal_bias_tick −3 으로
 #   같은 목표(2830)를 쓴다. pan 은 목표 자리에 선다(옛 판 −19 틱 보정은 없어짐).
