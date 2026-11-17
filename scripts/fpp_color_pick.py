@@ -166,14 +166,54 @@ TABLE_TOP_Z = 0.205      # arm4090 상판(scripts/calib/table_cad_extrinsics.py 
 TOP_TOL = 0.025          # 서 있는 물체 꼭대기 높이 허용 — 10.09 실측: 대상 +0.002 · +0.006 · +0.005, 누움 −0.055 · −0.070, 다른 주황 물건 −0.032
 
 
-def looks_standing(points_base: np.ndarray, aabb, table_z: float = TABLE_TOP_Z, top_tol: float = TOP_TOL) -> bool:
+def looks_standing(points_base: np.ndarray, aabb, table_z: float = TABLE_TOP_Z, top_tol: float = TOP_TOL,
+                   top_z: float | None = None) -> bool:
     """서 있는 물체 같은가 — 수평 퍼짐이 바닥 안(fits_footprint)이고, 보이는 점 위쪽(p95)이 상판 + 물체 높이에 닿는다.
-    화면 끝에 잘린 누운 같은 색 물체는 폭으로는 못 거르고 꼭대기 높이로 거른다(10.09)."""
+    화면 끝에 잘린 누운 같은 색 물체는 폭으로는 못 거르고 꼭대기 높이로 거른다(10.09).
+    top_z 를 주면 p95 대신 그 꼭대기 높이(mask_top_z, 11.18 글로벌 카메라)로 잰다."""
     if not fits_footprint(points_base, aabb):
         return False
     lo, hi = np.asarray(aabb[0], float), np.asarray(aabb[1], float)
-    top = float(np.percentile(np.asarray(points_base, float)[:, 2], 95))
+    top = float(np.percentile(np.asarray(points_base, float)[:, 2], 95)) if top_z is None else float(top_z)
     return abs(top - (table_z + float(hi[2] - lo[2]))) <= top_tol
+
+
+STAND_TOP_ROW_FRAC = 0.03    # 마스크 위쪽 행 중 잡음으로 건너뛸 비율
+
+
+def own_pixels(mask: np.ndarray, part: np.ndarray, parts: list[np.ndarray]) -> np.ndarray:
+    """색 마스크 중 이 3D 조각(split_by_depth)에 2D 로 이어진 화소 — 다른 조각 화소는 빼고, 깊이가 없어 조각에서
+    빠진 화소(1.5 m 에서 가는 병목, 11.18)는 되살린다."""
+    from scipy import ndimage
+    free = np.asarray(mask, bool).copy()
+    for q in parts:
+        if q is not part:
+            free &= ~q
+    lab, _ = ndimage.label(free)
+    keep = np.unique(lab[np.asarray(part, bool) & free])
+    return np.isin(lab, keep[keep > 0])
+
+
+def mask_top_z(mask: np.ndarray, K: np.ndarray, T_base_cam: np.ndarray, points_base: np.ndarray,
+               row_frac: float = STAND_TOP_ROW_FRAC) -> float | None:
+    """색 마스크 꼭대기의 base 높이 — 마스크 행 중 위 row_frac 를 건너뛴 가장 위 행(그 행 화소 u 중앙값)의 광선이
+    몸통 점 중앙 xy 를 지나는 수직선에 가장 가까워지는 점의 z. depth 가 빠진 부분도 색으로 잰다(11.18 글로벌 카메라).
+    마스크나 점이 비었거나 광선이 수직이면 None."""
+    ys, xs = np.nonzero(np.asarray(mask, bool))
+    P = np.asarray(points_base, float) if points_base is not None else np.empty((0, 3))
+    if len(ys) == 0 or len(P) == 0:
+        return None
+    rows = np.unique(ys)
+    v = rows[int(row_frac * len(rows))]
+    u = float(np.median(xs[ys == v]))
+    T = np.asarray(T_base_cam, float)
+    d = T[:3, :3] @ np.linalg.solve(np.asarray(K, float), [u, float(v), 1.0])
+    o = T[:3, 3]
+    n2 = float(d[:2] @ d[:2])
+    if n2 < 1e-12:
+        return None
+    t = float(d[:2] @ (np.median(P[:, :2], axis=0) - o[:2])) / n2
+    return float(o[2] + t * d[2])
 
 
 def in_workspace(T_base_cam: np.ndarray, p_cam: np.ndarray | None, ws: dict) -> bool:

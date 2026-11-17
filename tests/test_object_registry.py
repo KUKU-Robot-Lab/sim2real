@@ -223,6 +223,11 @@ def test_global_camera_group_config_uses_its_own_topics():
     ego = yaml.safe_load(render_group_yaml(load_registry(DEFAULT_REGISTRY), "source240_blue"))
     assert ego["objects"][0]["pose_topic"] == input_topic("source240_blue") == "/perception_plus_plus/source240_blue/pose"
     assert (ego["rgb_topic"], ego["status_topic"]) == ("/camera/camera/color/image_raw", "/perception_plus_plus/snapshot/status")
+    # 꼭대기를 색으로 재는 키는 글로벌(fpp_global_up.sh)만 켠다 — 머리 쪽 yaml 에는 키 자체가 없다
+    assert "stand_top_from_rgb" not in ego and "stand_top_from_rgb" not in doc
+    assert yaml.safe_load(render_group_yaml(load_registry(DEFAULT_REGISTRY), "source240_blue",
+                                            stand_top_from_rgb=True))["stand_top_from_rgb"] is True
+    assert "stand_top_from_rgb=True" in (DEFAULT_REGISTRY.parents[1] / "scripts/vision/fpp_global_up.sh").read_text()
 
 def test_one_real_object_is_registered_once():
     """★11.10 사용자: 같은 실물(메쉬 + 색)이 두 이름 · 두 묶음으로 올라가면 FP++ 컨테이너가 겹쳐 뜬다."""

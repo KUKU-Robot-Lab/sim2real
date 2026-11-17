@@ -113,6 +113,7 @@ def main(argv=None) -> None:
     T_base_cam = np.asarray(cfg["camera_to_base"], float) if cfg.get("camera_to_base") is not None else None
     workspace = cfg.get("workspace", {"x": [0.05, 0.47], "y": [-0.45, 0.45], "z": [0.15, 0.50]})
     retry_s = float(cfg.get("retry_s", 3.0))
+    stand_top_rgb = bool(cfg.get("stand_top_from_rgb", False))   # 11.18 글로벌 1.5 m: 가는 병목 depth 가 빠져 꼭대기를 색으로 잰다
     tconf = TrackingConfig.from_yaml(cfg.get("tracking_config", "config/cup_tracking.yaml"))
 
     class Snapshot(Node):
@@ -223,7 +224,7 @@ def main(argv=None) -> None:
             try:
                 if not self.live["init"]:
                     cands = [d for d in self._candidates(frame, [o["color"]]) if d["inside"]]
-                    allowed = {name: {i for i, d in enumerate(cands) if d["points"] is None or C.looks_standing(d["points"], o["aabb"])}} \
+                    allowed = {name: {i for i, d in enumerate(cands) if d["points"] is None or C.looks_standing(d["points"], o["aabb"], top_z=d["top_z"])}} \
                         if o.get("aabb") else None
                     pick = C.assign(frame.rgb, [d["mask"] for d in cands], {name: o["color"]}, allowed=allowed)
                     if name not in pick:
@@ -342,13 +343,17 @@ def main(argv=None) -> None:
                 split = []
                 for d in out:
                     parts = C.split_by_depth(d["mask"], frame.depth, K, T_base_cam, min_px=blob_min_area // 2)
-                    split += [{**d, "mask": q, "src": d["src"] + (f" /3D{k}" if len(parts) > 1 else "")}
+                    split += [{**d, "mask": q, "src": d["src"] + (f" /3D{k}" if len(parts) > 1 else ""),
+                               **({"rgb_mask": C.own_pixels(d["mask"], q, parts)} if stand_top_rgb else {})}
                               for k, q in enumerate(parts)] or [d]
                 out = split
             for d in out:
                 d["inside"] = T_base_cam is None or C.in_workspace(T_base_cam, C.mask_point(d["mask"], frame.depth, K), workspace)
                 d["points"] = (C.mask_points_base(d["mask"], frame.depth, K, T_base_cam)
                                if T_base_cam is not None and d["inside"] else None)
+                # 11.18 글로벌: 꼭대기를 depth p95 대신 색 마스크 위 끝으로(조각 마스크는 depth 없는 병목이 빠져 있어 rgb_mask)
+                d["top_z"] = (C.mask_top_z(d.get("rgb_mask", d["mask"]), K, T_base_cam, d["points"])
+                              if stand_top_rgb and d["points"] is not None else None)
             return out
 
         def _snapshot(self, frame, seq: int, todo: list[str]) -> None:
@@ -358,7 +363,7 @@ def main(argv=None) -> None:
             dets = [d for d in cands if d["inside"]]
             masks = [d["mask"] for d in dets]
             # 서 있는 모양(수평 퍼짐 ≤ 물체 바닥)인 후보만 — 누운 같은 색 물체를 버린다(10.09 핑크 병). aabb · 카메라 자세가 있을 때
-            allowed = {n: {i for i, d in enumerate(dets) if d["points"] is None or C.looks_standing(d["points"], objects[n]["aabb"])}
+            allowed = {n: {i for i, d in enumerate(dets) if d["points"] is None or C.looks_standing(d["points"], objects[n]["aabb"], top_z=d["top_z"])}
                        for n in todo if objects[n].get("aabb")}
             pick = C.assign(frame.rgb, masks, {n: objects[n]["color"] for n in todo}, allowed=allowed)
             for name in todo:

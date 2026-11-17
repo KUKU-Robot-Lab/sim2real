@@ -226,10 +226,12 @@ def _base_from_camera(camera_yaml: str | Path) -> list[list[float]]:
 
 
 def render_group_yaml(registry: Registry, group: str, camera_yaml: str | Path | None = None,
-                      only: list[str] | None = None, camera_ns: str = "/camera/camera") -> str:
+                      only: list[str] | None = None, camera_ns: str = "/camera/camera",
+                      stand_top_from_rgb: bool = False) -> str:
     """묶음 컨테이너(fpp_snapshot_node --config) 설정 — 묶음의 물체 전부(못 찾으면 비워 둔다). only 를 주면(비어 있지 않으면)
     그중 묶음 물체만(11.03 런처가 start 로 요청한 물체만 넘긴다). camera_yaml(실기 외부 파라미터)을 주면 base←카메라를 실어
     작업 영역 밖 후보를 버리게 한다. camera_ns = 구독할 RealSense 토픽 앞부분(11.18 글로벌 /global_camera/camera).
+    stand_top_from_rgb = 서 있는지 볼 꼭대기 높이를 depth 대신 색 마스크로 잰다(11.18 글로벌 1.5 m, 켤 때만 키를 쓴다).
     출력 · 상태 · 명령 토픽은 INPUT_NS(S2R_FPP_NS) 아래."""
     names = [n for n in group_members(registry, group) if not only or n in only]
     if not names:
@@ -250,6 +252,8 @@ def render_group_yaml(registry: Registry, group: str, camera_yaml: str | Path | 
             "status_topic": f"{INPUT_NS}/snapshot/status", "cmd_topic": f"{INPUT_NS}/snapshot/cmd"}
     if camera_yaml is not None:
         body["camera_to_base"] = _base_from_camera(camera_yaml)
+    if stand_top_from_rgb:
+        body["stand_top_from_rgb"] = True
     header = (f"# 생성됨 — sim2real/config/objects.yaml 의 fpp.group '{group}'. 손으로 고치지 말 것.\n"
               f"# 물체: {', '.join(names)}\n")
     return header + yaml.safe_dump(body, sort_keys=False, allow_unicode=True)

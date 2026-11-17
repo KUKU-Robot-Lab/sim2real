@@ -268,3 +268,36 @@ def test_a_shorter_standing_object_of_the_same_colour_is_not_the_bottle():
         return np.column_stack([rng.uniform(0, w, 800), rng.uniform(0, 0.02, 800), rng.uniform(z5, z95, 800)])
     assert C.looks_standing(pts(0.055, 0.222, 0.410), aabb)
     assert not C.looks_standing(pts(0.08, 0.223, 0.373), aabb)
+
+
+def test_a_bottle_whose_thin_neck_has_no_depth_stands_by_its_colour_top():
+    """11.18 글로벌 D435i(약 1.5 m): 분홍 병 몸통 depth 는 0.391 까지만, 가는 병목(지름 2.5 cm)은 depth 0 → p95 로는
+    누운 것으로 버려졌다. 색 마스크 꼭대기(mask_top_z)로 재면 서 있다. 키를 끈 기존 경로(top_z 없음)는 그대로 False."""
+    from scipy.ndimage import binary_dilation
+    K = np.array([[600.0, 0, 320], [0, 600.0, 240], [0, 0, 1]])
+    o, tgt = np.array([-1.1, 0.0, 0.85]), np.array([0.3, 0.0, 0.3])
+    f = (tgt - o) / np.linalg.norm(tgt - o)
+    x = np.cross(f, [0, 0, 1.0]); x /= np.linalg.norm(x)
+    T = np.eye(4); T[:3, :3] = np.column_stack([x, np.cross(f, x), f]); T[:3, 3] = o
+    # 병(축 0.3, 0): 몸통 r 0.035 · z 0.205~0.391, 병목 r 0.0125 · ~0.445 = 상판 0.205 + 높이 0.24
+    a, z = np.meshgrid(np.linspace(0, 2 * np.pi, 720), np.arange(0.205, 0.445, 0.0005))
+    r = np.where(z <= 0.391, 0.035, 0.0125)
+    P = np.column_stack([0.3 + (r * np.cos(a)).ravel(), (r * np.sin(a)).ravel(), z.ravel()])
+    pc = (P - o) @ T[:3, :3]
+    u = np.round(K[0, 0] * pc[:, 0] / pc[:, 2] + K[0, 2]).astype(int)
+    v = np.round(K[1, 1] * pc[:, 1] / pc[:, 2] + K[1, 2]).astype(int)
+    depth = np.full((480, 640), np.inf)
+    np.minimum.at(depth, (v, u), pc[:, 2])
+    mask = binary_dilation(np.isfinite(depth))              # YOLO 마스크처럼 테두리 한 화소 더
+    neck = np.zeros_like(mask)
+    neck[v[P[:, 2] > 0.391], u[P[:, 2] > 0.391]] = True
+    depth[~np.isfinite(depth) | neck] = 0.0                 # 병목은 depth 0
+    aabb = ((-0.035, -0.035, -0.085), (0.035, 0.035, 0.155))
+
+    parts = C.split_by_depth(mask, depth, K, T, min_px=300)  # 노드처럼 3D 조각으로 — 조각에서 병목은 빠진다
+    assert len(parts) == 1 and not (parts[0] & neck).any()
+    pts = C.mask_points_base(parts[0], depth, K, T)
+    assert np.percentile(pts[:, 2], 95) < 0.40 and not C.looks_standing(pts, aabb)      # 키 끔 = 기존 False
+    top = C.mask_top_z(C.own_pixels(mask, parts[0], parts), K, T, pts)
+    assert abs(top - 0.445) < 0.01 and C.looks_standing(pts, aabb, top_z=top)        # 키 켬 = True
+    assert not C.looks_standing(pts, aabb, top_z=C.mask_top_z(parts[0], K, T, pts))  # 조각 마스크만으로는 못 고친다
