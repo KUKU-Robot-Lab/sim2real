@@ -15,7 +15,8 @@ tilt 끝 자세에서만 누른다. 하강까지 · 들기까지 모두 놓는 �
     python3 deploy/policy_control/tools/place_fixed.py --cup blue --until all --execute      # ★실기 — 사용자 승인 뒤
 종료 코드: 0 = 끝 · 2 = 검사 실패 · 3 = 핀 · 입력 불일치 · 4 = pd 손 명령 없음 · 그 밖 = 재생 실패.
 ★11.18 콘솔 고정 놓기 튜닝 탭(s2r_console/place_tune.py) — --until 대신 하나:
-  --jog dx,dy,dz,dyaw                  하강 끝에서 손 쥔 채 조금(plan_place_fixed --jog) → 재생 rate 1.0(관절 ≤ 0.1 rad/s)
+  --jog dx,dy,dz,dyaw                  하강 끝에서 손 쥔 채 조금(plan_place_fixed --jog) → place_jog_exec(board_jog precise 방식:
+                                       120 Hz 5차 ≤ 0.30 rad/s · 유지 보정 c = pd 세트포인트 − 정지 실측)
   --save-offset                        지금 손 ↔ 하강 끝 계획 차이를 설정 offset 에 더한다(움직이지 않음 · 손 명령 안 읽음)
   --resume                             지금 자세에서 release → lift → hold(plan_place_fixed --resume)
   --out <폴더>                         기록 폴더를 정해 준다(콘솔이 결과 · plan/ 을 읽는다). 이미 있으면 rc 3.
@@ -125,14 +126,17 @@ def main(argv: list[str] | None = None) -> int:
     if rc != 0:
         print(f"[place_fixed] 계획 · 검사 rc {rc} — 움직이지 않았다 · 걸린 항목: {failed_checks(plan_out)} · {plan_out}", flush=True)
         return result(out, rc, mode, a)
+    if mode == "jog":                        # 계획 끝 관절로 precise 실행(120 Hz 5차 · 유지 보정) — replay 는 1 mm 를 pd 오차 안에서 잃었다
+        rc = run([sys.executable, str(TOOLS / "place_jog_exec.py"), "--npz", str(plan_out / "place_cmd.npz"),
+                  "--max-start-gap", repr(START_GAP_RAD)] + (["--execute"] if a.execute else []))
+        print(f"[place_fixed] jog {'실행' if a.execute else '드라이런(--execute 로 실행)'} rc {rc} · {out}", flush=True)
+        return result(out, rc, mode, a)
     try:
         meta = json.loads((plan_out / "meta.json").read_text(encoding="utf-8"))
         rate = math.floor(float(meta["replay_max_rate_scale_reduced"]) * 100 - 1e-9) / 100
     except (OSError, ValueError, KeyError, TypeError) as exc:   # 계획이 rc 0 인데 meta 를 못 읽으면 움직이지 않는다
         print(f"[place_fixed] ✗ {plan_out / 'meta.json'} 읽기 실패 {type(exc).__name__}: {exc} — 움직이지 않았다", flush=True)
         return result(out, 3, mode, a)   # 부동소수 오차로 한계를 넘지 않게 내림
-    if mode == "jog":
-        rate = min(rate, 1.0)                # jog 궤적은 관절 0.1 rad/s 로 만들었다 — 빠르게 돌리지 않는다
     if rate <= 0:
         print(f"[place_fixed] ✗ 재생 허용 rate_scale {meta['replay_max_rate_scale_reduced']} — 움직이지 않았다", flush=True)
         return result(out, 2, mode, a)

@@ -20,7 +20,7 @@
 ★11.18 콘솔 고정 놓기 튜닝(하강 끝에서, 실측 --q-json 필수):
   --jog dx,dy,dz,dyaw   지금 컵을 홀더 좌표 mm · 컵 축 둘레 deg 만큼(손 쥔 채, 한 번 ≤ 10 mm · 3°, 관절 ≤ 0.1 rad/s 최소 저크 —
                         재생 rate 1.0). jog 끝 컵이 하강 끝 계획(지금 offset)에서 ≤ 40 mm · 15° 여야 한다(누적 대신 절대 기준).
-                        검사는 위 IK · 관절 여유 · 충돌 · 다른 홀더 + 놓는 높이 · 구멍 xy · 링 안 컵 ↔ 구멍 · 탁자.
+                        검사는 위 IK · 관절 여유 · 충돌 · 다른 홀더 + 놓는 높이 · 링 안 컵 ↔ 구멍 · 탁자(구멍 xy 는 경고만 — jog · resume).
   --save-offset         지금 손(FK) ↔ 하강 끝 계획 차이를 offset 에 더한다(base 기준 — cup_place 가 그대로 더하는 값). 백업 _bak/.
   --resume              지금 자세에서 release → lift → hold. 시작 3° 검사 대신 지금 컵 ↔ 하강 끝(+offset) ≤ 5 mm · 5°.
 """
@@ -233,6 +233,12 @@ def offset_line(text: str, off: dict, note: str) -> str:
         raise ValueError("설정에 offset: 줄이 정확히 한 줄이어야 한다")
     line = f"offset: {{x: {off['x']}, y: {off['y']}, z: {off['z']}, yaw_deg: {off['yaw_deg']}}}   # {note}"
     return pat.sub(lambda _m: line, text)
+
+
+def warn_only(checks: dict, key: str) -> None:
+    """판정에서 빼고 남긴다: 원래 판정은 warn(True = 한계 넘음), ok = True · info. 제자리에서 고친다."""
+    c = checks[key]
+    c.update(warn=not c["ok"], ok=True, info=True)
 
 
 def all_ok(checks: dict) -> bool:
@@ -460,6 +466,8 @@ def plan(cfg: dict, q: dict, holders_path: Path, hand_grip, out: Path, hdgp, mod
         checks["cup_table_m"] = {"value": round(cup_table_ap, 4), "limit": TABLE_MARGIN_M}
     # 정보만(판정 안 함): 반대 팔 편차. 충돌은 위 collision 이 반대 팔 실측 q 로 본다
     checks["q_other_dev_deg"] = {"value": round(q_start_dev_deg(q, nominal, other), 2), "ok": True, "info": True}
+    if mode != "full":                           # jog · resume: 구멍 xy(홀더 yaml 기준)는 경고만 — jog 가 바로 그 오차를 맞춘다(11.18)
+        warn_only(checks, "release_xy_m")
     cup_err = float(np.linalg.norm(cup_rel - cup_pl))
     ok = all_ok(checks)
 

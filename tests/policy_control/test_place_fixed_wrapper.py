@@ -90,9 +90,12 @@ def test_tune_modes_drive_planner_and_replay(monkeypatch, tmp_path, args, mode, 
     assert PFW.main(["--cup", "blue", *args, "--out", str(out), "--execute"]) == 0
     plan, replay = calls
     assert plan[plan.index("--q-json") + 2:plan.index("--hand-grip")] == [] and plan[-len(extra):] == extra
-    assert "--until" not in replay and "--execute" in replay and replay[replay.index("--hand-start") + 1] == "applied"
-    rate = float(replay[replay.index("--rate-scale") + 1])
-    assert rate == 0.34 and (mode != "jog" or rate <= 1.0)
+    assert "--until" not in replay and "--execute" in replay
+    if mode == "jog":                                            # jog = precise 실행기(계획 끝 관절 · 유지 보정)
+        assert replay[1].endswith("place_jog_exec.py") and replay[replay.index("--npz") + 1].endswith("place_cmd.npz")
+    else:
+        assert replay[1].endswith("replay_traj_rh.py") and replay[replay.index("--hand-start") + 1] == "applied"
+        assert float(replay[replay.index("--rate-scale") + 1]) == 0.34
     assert _res(out)["mode"] == mode and _res(out)["rc"] == 0 and _res(out)["execute"] is True
 
 
