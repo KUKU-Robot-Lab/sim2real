@@ -1,0 +1,53 @@
+# 센서 단계 판정 임계값 — vlm_supervisor/signals.py. 근거 = 11.11~11.16 실기 bag(손 · 팔) 재생, 재생 python3 -m vlm_supervisor.bench.replay_bags --labels vlm_supervisor/bench/labels_real_1117.csv.
+# 단위: 힘 g(force_actual, 벤더 슬롯), 촉각 N(tip_forces_zeroed 합), 각도 0.1°(gap = 네 손가락 실제 − 명령 평균), 거리 m.
+# 값은 "확실" 쪽에만 쓴다. 사이는 애매(unsure) — VLM 사진 판정이 그대로 간다. 건수가 적어 관측 경계에서 여유를 두었다.
+window_s: 0.5          # 단계 끝 평균 창
+smooth_s: 0.2          # 힘 급락 계산 이동 평균
+drop_within_s: 0.5     # 이 시간 안에 떨어진 낙폭
+
+grasp:
+  # 쥠 확실 — 성공 잡기 끝(물체 들림 확인) 네 손가락 합 F4 453~2606 g, 엄지 굽힘 907~1857 g, 촉각 2.1~30 N
+  #           빈손 끝 F4 235~310 g · 엄지 218~396 g · 촉각 0~1.0 N. F4 단독 문턱은 빈손 최대의 2 배 이상
+  held_f4_min: 900
+  held_ft_min: 700
+  held_tip_min: 2.0
+  # 빈손 확실 — 명령까지 다 닫혔고(gap 0~2) 힘 · 촉각이 작다. 쥔 손 gap 은 5~70(왼손이 작다 5~18)이라 gap 상한을 3 으로
+  empty_gap_max: 3
+  empty_f4_max: 450
+  empty_ft_max: 500
+  empty_tip_max: 1.5
+  # 쥠 상실 — 단계 안 쥠 힘(네 손가락 + 엄지) 최대가 drop_gmax_min 이상이었다가 끝 평균이 그 비율 · 값 아래
+  drop_gmax_min: 1500
+  drop_end_ratio: 0.2
+  drop_end_max: 700
+  # 물체(FP++ live, 손바닥 FK 거리). episode_ros GUARD_HOLD_PALM_M 0.12 · 들린 뒤 실측 0.064~0.084
+  obj_rise_min_m: 0.04
+  obj_still_m: 0.01
+  obj_palm_near_m: 0.10
+  obj_palm_far_m: 0.12
+
+hold:                  # 이미 쥔 채 이송 · 기울이기 — 빈손 판정은 실패가 아니라 애매(놓친 뒤에도 gap 이 남는다)
+  held_f4_min: 900
+  held_ft_min: 700
+  held_tip_min: 2.0
+  empty_gap_max: 3
+  empty_f4_max: 450
+  empty_ft_max: 500
+  empty_tip_max: 1.5
+  drop_gmax_min: 1500
+  drop_end_ratio: 0.2
+  drop_end_max: 700
+  obj_rise_min_m: 0.04
+  obj_still_m: 0.01
+  obj_palm_near_m: 0.10
+  obj_palm_far_m: 0.12
+
+release:
+  open_clos_max: 0.10      # 놓은 뒤 닫힘 비율(0 = 편 손). 놓기 성공 끝 0.00, 래치 못 건 놓기 실패 0.15
+  empty_force_max: 300     # 네 손가락 + 엄지 굽힘 합
+
+# 노드 id · 이름 → 단계 종류(앞에서부터 첫 일치, 소문자 부분 문자열). 맞는 게 없으면 센서 판정 안 함.
+kinds:
+  - {match: ["place", "release", "open"], kind: release}
+  - {match: ["grasp", "pick"], kind: grasp}
+  - {match: ["tilt", "carry", "to_tilt", "home_r_after", "lift"], kind: hold}

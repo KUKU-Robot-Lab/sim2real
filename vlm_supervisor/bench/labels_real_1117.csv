@@ -1,0 +1,52 @@
+day,ep,state,side,kind,label,runner,evidence
+261111,154820_grasp_f_left,grasp_lift,left,grasp,ok,COMPLETED,"물체 shaker_c_orange +8.0 cm, 손바닥 5 cm · 직후 정지"
+261111,154917_grasp_f_right,grasp_lift,right,grasp,fail,unknown,"물체 source240_blue +0.0 cm, 손바닥 43 cm · 러너 unknown · 직후 정지"
+261111,160412_grasp_f_source240_pink_right,grasp_lift,right,grasp,fail,COMPLETED,"물체 source240_pink -0.3 cm, 손바닥 18 cm · 러너는 성공(정책 관측 상승) — 물체 · 손 힘이 반대 · 직후 정지"
+261111,160928_grasp_f_source240_pink_right,grasp_lift,right,grasp,fail,COMPLETED,"물체 source240_pink +0.1 cm, 손바닥 13 cm · 러너는 성공(정책 관측 상승) — 물체 · 손 힘이 반대 · 직후 정지"
+261111,164623_grasp_f_source240_pink_right,grasp_lift,right,grasp,ok,COMPLETED,"물체 source240_pink +13.8 cm, 손바닥 6 cm · 직후 정지"
+261111,222834_grasp_f_source240_pink_right,grasp_lift,right,grasp,ok,COMPLETED,"물체 source240_pink +13.2 cm, 손바닥 5 cm · 직후 정지"
+261111,222916_grasp_f_shaker_c_orange_right,grasp_lift,right,grasp,fail,unknown,"물체 shaker_c_orange +0.0 cm, 손바닥 47 cm · 러너 unknown · 직후 정지"
+261111,223036_grasp_f_left,grasp_lift,left,grasp,ok,COMPLETED,"물체 shaker_c_orange +8.6 cm, 손바닥 4 cm · 직후 정지"
+261111,223238_pick_place_f_left,grasp_lift,left,grasp,ok,COMPLETED,"물체 shaker_c_orange +9.1 cm, 손바닥 6 cm"
+261111,223238_pick_place_f_left,place_cup,left,release,ok,COMPLETED,러너 cup_in_holder live=True · 물체 손바닥 22 cm z 0.2841
+261111,223512_place_m_pink_h1_right,grasp_lift,right,grasp,fail,unknown,"물체 source240_pink -0.1 cm, 손바닥 51 cm · 러너 unknown · 직후 정지"
+261111,224644_pick_place_f_right,grasp_lift,right,grasp,ok,COMPLETED,"물체 source240_blue +12.3 cm, 손바닥 5 cm"
+261111,224644_pick_place_f_right,place_cup,right,release,unsure,place_failed,러너 cup_in_holder live=True · 러너 opened before latch — 정책이 래치 전에 손을 폄(ope · 물체 손바닥 6 cm z 0.2914 · 러너 place_failed · 직후 정지
+261111,230057_cocktail_1c_e4000,grasp_shaker,left,grasp,ok,COMPLETED,"물체 shaker_c_orange +8.5 cm, 손바닥 4 cm"
+261111,230057_cocktail_1c_e4000,grasp_blue,right,grasp,ok,COMPLETED,"물체 source240_blue +9.2 cm, 손바닥 7 cm"
+261111,230057_cocktail_1c_e4000,to_tilt_start_l,left,hold,ok,COMPLETED,쥔 물체 SHAKER 최근접 shaker_c_orange 손바닥 3 cm
+261111,230057_cocktail_1c_e4000,to_tilt_start_r1,right,hold,ok,COMPLETED,쥔 물체 SRC_BLUE 최근접 source240_blue 손바닥 7 cm
+261111,230057_cocktail_1c_e4000,tilt_blue,right,hold,unsure,unknown,쥔 물체 SRC_BLUE 최근접 source240_blue 손바닥 13 cm · 러너 unknown · 직후 정지
+261111,230057_cocktail_1c_e4000,tilt_blue,left,hold,ok,unknown,쥔 물체 SHAKER 최근접 shaker_c_orange 손바닥 3 cm · 러너 unknown · 직후 정지
+261115,202828_grasp_f_right,grasp_lift,right,grasp,ok,COMPLETED,"물체 source240_blue +14.3 cm, 손바닥 5 cm · 직후 정지"
+261115,203222_grasp_f_left,grasp_lift,left,grasp,ok,COMPLETED,"물체 shaker_c_orange +9.9 cm, 손바닥 6 cm · 직후 정지"
+261115,223252_grasp_f_left,grasp_lift,left,grasp,ok,COMPLETED,"물체 shaker_c_orange +8.6 cm, 손바닥 4 cm · 직후 정지"
+261115,223410_grasp_f_source240_pink_right,grasp_lift,right,grasp,ok,COMPLETED,"물체 source240_pink +13.3 cm, 손바닥 4 cm · 직후 정지"
+261115,223550_grasp_f_left,grasp_lift,left,grasp,ok,COMPLETED,"물체 shaker_c_orange +8.0 cm, 손바닥 4 cm · 직후 정지"
+261115,223635_grasp_f_right,grasp_lift,right,grasp,ok,COMPLETED,"물체 source240_blue +13.4 cm, 손바닥 5 cm · 직후 정지"
+261115,223815_grasp_f_left,grasp_lift,left,grasp,ok,COMPLETED,"물체 shaker_c_orange +8.2 cm, 손바닥 4 cm · 직후 정지"
+261115,223952_cocktail_1c_e4000,grasp_shaker,left,grasp,ok,COMPLETED,"물체 shaker_c_orange +8.5 cm, 손바닥 4 cm"
+261115,223952_cocktail_1c_e4000,grasp_blue,right,grasp,ok,COMPLETED,"물체 source240_blue +13.1 cm, 손바닥 5 cm"
+261115,223952_cocktail_1c_e4000,to_tilt_start_l,left,hold,ok,unknown,쥔 물체 SHAKER 최근접 shaker_c_orange 손바닥 4 cm · 러너 unknown
+261115,223952_cocktail_1c_e4000,to_tilt_start_r1,right,hold,ok,,쥔 물체 SRC_BLUE 최근접 source240_blue 손바닥 5 cm · 러너 None · 직후 정지
+261116,100033_cocktail_1c_e4000,grasp_shaker,left,grasp,ok,COMPLETED,"물체 shaker_c_orange +8.4 cm, 손바닥 4 cm"
+261116,100033_cocktail_1c_e4000,grasp_blue,right,grasp,ok,COMPLETED,"물체 source240_blue +12.7 cm, 손바닥 5 cm"
+261116,100033_cocktail_1c_e4000,to_tilt_start_l,left,hold,ok,COMPLETED,쥔 물체 SHAKER 최근접 shaker_c_orange 손바닥 4 cm
+261116,100033_cocktail_1c_e4000,to_tilt_start_r1,right,hold,ok,COMPLETED,쥔 물체 SRC_BLUE 최근접 source240_blue 손바닥 5 cm
+261116,100033_cocktail_1c_e4000,tilt_blue,right,hold,unsure,COMPLETED,쥔 물체 SRC_BLUE live 없음(최근접 shaker_c_orange 29 cm)
+261116,100033_cocktail_1c_e4000,tilt_blue,left,hold,ok,COMPLETED,쥔 물체 SHAKER 최근접 shaker_c_orange 손바닥 4 cm
+261116,100033_cocktail_1c_e4000,place_blue,right,release,fail,place_failed,러너 cup_in_holder live=False · 러너 opened before latch — 정책이 래치 전에 손을 폄(ope · 물체 손바닥 4 cm z 0.3503 · 러너 place_failed · 직후 정지
+261116,100436_grasp_s_left,grasp_lift,left,grasp,fail,unknown,"물체 shaker_c_orange +0.0 cm, 손바닥 32 cm · 러너 unknown · 직후 정지"
+261116,100859_grasp_s_left,grasp_lift,left,grasp,ok,COMPLETED,"카메라: 컵이 들려 카메라 앞으로 옴 · 물체 shaker_c_orange +12.4 cm, 손바닥 3 cm · 직후 정지"
+261116,100940_grasp_s_right,grasp_lift,right,grasp,ok,COMPLETED,"물체 source240_blue +13.5 cm, 손바닥 8 cm · 직후 정지"
+261116,101519_grasp_s_pink_right,grasp_lift,right,grasp,fail,unknown,"카메라: 컵 제자리, 손 안 닿음 · 물체 source240_pink -0.1 cm, 손바닥 65 cm · 러너 unknown · 직후 정지"
+261116,150115_cocktail_1c_n07b,grasp_shaker,left,grasp,ok,COMPLETED,"물체 shaker_c_orange +8.7 cm, 손바닥 4 cm"
+261116,150115_cocktail_1c_n07b,grasp_blue,right,grasp,ok,COMPLETED,"물체 source240_blue +11.5 cm, 손바닥 5 cm"
+261116,150115_cocktail_1c_n07b,to_tilt_start_l,left,hold,ok,COMPLETED,쥔 물체 SHAKER 최근접 shaker_c_orange 손바닥 4 cm
+261116,150115_cocktail_1c_n07b,to_tilt_start_r1,right,hold,ok,COMPLETED,쥔 물체 SRC_BLUE 최근접 source240_blue 손바닥 5 cm
+261116,150115_cocktail_1c_n07b,tilt_blue,right,hold,unsure,COMPLETED,쥔 물체 SRC_BLUE live 없음(최근접 shaker_c_orange 29 cm)
+261116,150115_cocktail_1c_n07b,tilt_blue,left,hold,ok,COMPLETED,쥔 물체 SHAKER 최근접 shaker_c_orange 손바닥 4 cm
+261116,150115_cocktail_1c_n07b,place_blue,right,release,fail,place_failed,러너 cup_in_holder live=False · 러너 placed — 학습 시간 5.0 s(episode_length_s) 끝 · 물체 손바닥 27 cm z 0.2971 · 러너 place_failed
+261116,150115_cocktail_1c_n07b,place_shaker,left,release,fail,place_failed,러너 cup_in_holder live=False · 러너 opened before latch — 정책이 래치 전에 손을 폄(ope · 물체 손바닥 2 cm z 0.3363 · 러너 place_failed
+261116,151320_pick_place_f_right,grasp_lift,right,grasp,ok,COMPLETED,"물체 source240_blue +12.9 cm, 손바닥 5 cm"
+261116,151320_pick_place_f_right,place_cup,right,release,ok,COMPLETED,러너 cup_in_holder live=True · 물체 손바닥 21 cm z 0.323

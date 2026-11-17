@@ -21,6 +21,7 @@ from typing import Callable, Mapping, Sequence
 from policy_control.episode_runner import FAILURE, READY, RUNNING, STOPPED, SUCCESS, EpisodeManager
 from policy_control.episode_spec import Episode, Node
 
+from ..signals import combine
 from .grants import Grants
 from .protocols import (ACTIONS, ADVANCE, AUTO, HANDOFF, LOOK_AGAIN, MODES, RECORD, STOP, ArmStill, Decision,
                         FrameSource, Judge, Question)
@@ -62,7 +63,8 @@ class BoundaryRunner:
                  grants_path=None, approve: Callable[[str, str], bool] | None = None,
                  boundary_budget_s: float = 20.0, hold_limit_s: float = 30.0, poll_s: float = 0.05,
                  clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep,
-                 wall: Callable[[], float] = time.time, manager=EpisodeManager, **em_kw) -> None:
+                 wall: Callable[[], float] = time.time, manager=EpisodeManager,
+                 sensors: Callable[[Node, float, float], Sequence] | None = None, **em_kw) -> None:
         if mode not in MODES:
             raise ValueError(f"mode {mode!r} — {MODES} 중 하나")
         if not 0 < boundary_budget_s < hold_limit_s:
@@ -73,6 +75,8 @@ class BoundaryRunner:
             raise ValueError("record 는 바깥 approve 를, propose · auto 는 grants_path 를 준다(섞지 않는다)")
         self.mode, self.judge, self.frames, self.arm, self.questions, self.sink = mode, judge, frames, arm, questions, sink
         self.budget, self.hold, self.poll = boundary_budget_s, hold_limit_s, poll_s
+        # ★11.17 센서 판정(signals.SensorHub) — (노드, 시작, 끝 clock 시각) → Verdict 들. 확실한 실패만 러너 신호를 실패로 내린다
+        self.sensors = sensors
         self.clock, self.sleep, self.wall = clock, sleep, wall
         if approve is not None: # record(위 검사) — 기존 흐름 그대로 — auto 를 끄지 않고 승인도 바깥 것
             self.em = manager(ep, executor, approve=approve, **em_kw)
@@ -139,6 +143,7 @@ class BoundaryRunner:
             self._go = node.id
         errs: list = []
         before = self._frame(self.clock() - BEFORE_MAX_AGE_S, errs)
+        t_run = self.clock()
         try:
             status = em.step()
         finally:
@@ -149,6 +154,12 @@ class BoundaryRunner:
         signal = {"node": node.id, "ok": ran and em.runs.get(node.id, {}).get("state") == "done",
                   "code": em.last.get("code"), "reason": em.last.get("reason") or "",
                   "results": copy.deepcopy(em.last.get("results", []))}
+        if self.sensors is not None and ran:
+            try:
+                signal = combine(signal, self.sensors(node, t_run, self.clock()))
+            except Exception as exc:    # noqa: BLE001 — 센서 판정 오류는 신호를 바꾸지 않고 기록만
+                _log.exception("sensors(%s)", node.id)
+                _err(errs, "센서 판정 오류", exc)
         rec = self._rec(node.id, signal)
         rec["errors"] += errs
         if status in (FAILURE, STOPPED):             # 안전 정지 · 실패 — VLM 을 거치지 않는다

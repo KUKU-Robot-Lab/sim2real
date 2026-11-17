@@ -413,3 +413,30 @@ def test_poll_must_be_positive(tmp_path):
 def test_runner_package_cannot_touch_the_grant_file():
     src = "".join(p.read_text() for p in Path(R.__file__).parent.glob("*.py"))
     assert not any(w in src for w in ("open(", "write", '"a"', '"w"', "interface", "approval"))
+
+
+def test_sensor_fail_lowers_runner_ok_and_hands_off(tmp_path):
+    """★11.17 센서 확실한 실패 = 러너 신호 실패 — 사진이 '됐다' 해도 어긋남으로 handoff. 애매 · 성공은 그대로."""
+    from vlm_supervisor.signals import FAIL, UNSURE, Verdict
+    seen = []
+
+    def sensors(node, t0, t1):
+        seen.append((node.id, t1 >= t0))
+        return [Verdict(FAIL if node.id == "place_blue" else UNSURE, ("센서 테스트",), {"side": "right"})]
+    at = ORDER.index("place_blue")
+    r, ex, judge, recs, path, _ = make(tmp_path, plan=[{}] * at + [{"pick": "yes"}], sensors=sensors)
+    grant(path)
+    assert r.run() == HANDED
+    last = bounds(recs)[-1]
+    assert last["node"] == "place_blue" and last["decision"] == "handoff" and "어긋남" in last["reason"]
+    assert last["signal"]["ok"] is False and last["signal"]["reason"].startswith("센서:")
+    assert all(x["signal"]["ok"] for x in bounds(recs)[:-1]) and all(ok for _, ok in seen)
+
+
+def test_sensor_error_is_logged_not_fatal(tmp_path):
+    def sensors(node, t0, t1):
+        raise RuntimeError("buffer down")
+    r, ex, judge, recs, path, _ = make(tmp_path, sensors=sensors)
+    grant(path)
+    assert r.run() == SUCCESS
+    assert any("센서 판정 오류" in e for x in bounds(recs) for e in x["errors"])
