@@ -1185,6 +1185,39 @@ def view_problem(m: dict, need: list[int], ref_m: dict, wh: list[int], margin: f
     return cut, hidden
 
 
+def view_nudge(m: dict, need: list[int], ref_m: dict, wh: list[int], margin: float, K: ArrayLike, pitch_deg: float,
+               extra_px: float, max_deg: float) -> tuple[float, float] | None:
+    """★11.18 사용자: camset 에서 잘린 마커를 화면 안으로 들일 목 보정 (d_pan°, d_tilt°), 못 하면 None.
+    잘린 마커마다 가장자리 margin + extra_px 안쪽으로 들어올 px 를 구해 축마다 가장 큰 쪽을 pan_px_per_deg · tilt_px_per_deg 로
+    각도로 바꾼다. 한 축이 max_deg 를 넘거나, 보정 뒤 예상 코너가 다른 need 마커를 margin 밖으로 내보내면(양쪽에서 잘림) None.
+    외부 파라미터는 매번 마커로 다시 푸므로 목이 camset 에서 조금 비켜나도 컵 자세 정확도는 그대로다. 숙임 69° 에서 pan 1° 는
+    화면 가로 약 6 px 라(pan_px_per_deg) 기본 상한은 3°(화면 약 17 px)."""
+    lo, hi = margin + extra_px, np.array([wh[0], wh[1]], float) - margin - extra_px
+    seen = [i for i in ref_m if i in m]
+    shift = (np.mean([np.mean(np.asarray(m[i]["corners"], float) - np.asarray(ref_m[i]["corners"], float), 0) for i in seen], 0)
+             if seen else np.zeros(2))
+    cs = {i: (np.asarray(m[i]["corners"], float) if i in m else np.asarray(ref_m[i]["corners"], float) + shift).reshape(-1, 2)
+          for i in need}
+    want = np.zeros(2)   # 필요한 화면 이동 px(u, v)
+    for c in cs.values():
+        for a in (0, 1):
+            if c[:, a].max() > hi[a]:
+                want[a] = min(want[a], hi[a] - c[:, a].max())
+            if c[:, a].min() < lo:
+                want[a] = max(want[a], lo - c[:, a].min())
+    allc = np.vstack(list(cs.values()))
+    ppd = (pan_px_per_deg(allc, K, pitch_deg), tilt_px_per_deg(allc, K))
+    d = [float(want[a] / ppd[a]) if want[a] else 0.0 for a in (0, 1)]
+    if max(abs(v) for v in d) > max_deg:
+        return None
+    lo2, hi2 = margin, np.array([wh[0], wh[1]], float) - margin
+    for c in cs.values():
+        moved = c + np.array([d[0] * pan_px_per_deg(c, K, pitch_deg), d[1] * tilt_px_per_deg(c, K)])
+        if not np.all((moved >= lo2) & (moved <= hi2)):
+            return None
+    return d[0], d[1]
+
+
 def _live_kept(prev: dict, base: Path, cfg: dict, s: dict, ticks: tuple[int, int]) -> str | None:
     """live 를 다시 쓰지 않아도 되나 → None, 아니면 이유. 재기준이 live md5 · 설정 마커와 맞고(실측 · 마커 기준), live 가 같은 base 로
     만들어졌고, 지금 푼 값이 live 와 extr_tol 안, 틱이 재기준과 ref_tol_tick 안이어야 한다."""
@@ -1239,16 +1272,38 @@ def _auto_extrinsics(sens, cam: AnchorCam, head_move: object | None, cfg: dict, 
         if code:
             return 1, rec
         time.sleep(float(cfg.get("auto_settle_s", 1.0)))
-    end, told = time.monotonic() + wait, False
-    while True:
-        m, sd, K, wh = _read_anchors(cam, cfg, 2 * ANCHOR_FRAMES)
-        cut, hidden = view_problem(m, need, ref_m, wh, margin)
-        if cut or not hidden or time.monotonic() > end:
+    nudges, aim = [], list(goal)
+    for attempt in range(int(cfg.get("auto_nudge_tries", 2)) + 1):
+        end, told = time.monotonic() + wait, False
+        while True:
+            m, sd, K, wh = _read_anchors(cam, cfg, 2 * ANCHOR_FRAMES)
+            cut, hidden = view_problem(m, need, ref_m, wh, margin)
+            if cut or not hidden or time.monotonic() > end:
+                break
+            if not told:
+                print(f"  마커 {hidden} 가 {2 * ANCHOR_FRAMES} 장 모두에 보이지는 않는다(가림?) — {wait:g} s 까지 다시 잡는다", flush=True)
+                told = True
+        if not cut or head_move is None or attempt == int(cfg.get("auto_nudge_tries", 2)):
             break
-        if not told:
-            print(f"  마커 {hidden} 가 {2 * ANCHOR_FRAMES} 장 모두에 보이지는 않는다(가림?) — {wait:g} s 까지 다시 잡는다", flush=True)
-            told = True
-    rec.update(cut=cut, hidden=hidden, corner_sd_px=round(sd, 3))
+        # ★11.18 사용자: 마커가 camset 끝에 걸려 잘리면 실패하지 말고 목을 조금 옮겨 화면 안으로 들인다
+        dv = view_nudge(m, need, ref_m, wh, margin, K, float(sens.read()[0]), float(cfg.get("auto_nudge_extra_px", 8.0)),
+                        float(cfg.get("auto_nudge_max_deg", 3.0)))
+        if dv is None:
+            print(f"  마커 {cut} 잘림 — 목 보정으로 들일 수 없다(다른 마커가 반대쪽에서 잘리거나 "
+                  f"{cfg.get('auto_nudge_max_deg', 3.0)}° 를 넘는다)", flush=True)
+            break
+        aim = [aim[0] + dv[0], aim[1] + dv[1]]
+        if abs(aim[0] - goal[0]) > float(cfg.get("auto_nudge_max_deg", 3.0)) or \
+                abs(aim[1] - goal[1]) > float(cfg.get("auto_nudge_max_deg", 3.0)):
+            print(f"  목 보정 누적이 camset 에서 {cfg.get('auto_nudge_max_deg', 3.0)}° 를 넘는다 — 멈춘다", flush=True)
+            break
+        print(f"  마커 {cut} 가 화면 끝에 잘렸다 — 목 보정 pan {dv[0]:+.2f}° tilt {dv[1]:+.2f}° 뒤 다시 잰다", flush=True)
+        code, cmd = _goto(sens, head_move, lim, (aim[0], aim[1]), signs)
+        if code:
+            return 1, rec
+        nudges.append([round(dv[0], 3), round(dv[1], 3)])
+        time.sleep(float(cfg.get("auto_settle_s", 1.0)))
+    rec.update(cut=cut, hidden=hidden, corner_sd_px=round(sd, 3), nudge_deg=nudges)
     if cut:
         print(f"❌ camset 자세에서 마커 {cut} 가 화면 밖(가장자리 {margin:g} px 여유 밖) — 목을 움직이지 않는다. "
               "카메라 마운트 · camset 을 볼 것")

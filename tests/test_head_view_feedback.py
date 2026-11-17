@@ -838,3 +838,32 @@ def test_live_problem_refuses_old_or_foreign_live(align_cam, tmp_path):
     stale = tmp_path / "x_live.yaml"
     stale.write_text(yaml.safe_dump(d), encoding="utf-8")
     assert hv.live_problem(stale, live_ref=tmp_path / "none.yaml", max_age_h=12)   # 확인 시각 없음
+
+
+def _ref_markers():
+    # 11.17 기준 사진 코너(config/head_view_ref_arm4090_h2048.yaml), 1280x720
+    return {70: {"corners": [[940.5, 67.9], [1028.1, 42.7], [1073.7, 118.5], [983.2, 145.9]]},
+            71: {"corners": [[1273.8, 464.0], [1170.8, 500.1], [1114.9, 394.6], [1213.7, 361.7]]},
+            73: {"corners": [[474.5, 200.4], [500.4, 288.3], [396.2, 317.9], [373.8, 227.5]]}}
+
+
+def test_view_nudge_pulls_cut_marker_in_and_keeps_others():
+    """★11.18: 71 이 오른쪽 끝에 잘리면 pan 을 조금 돌려 화면 안으로 들이고 다른 마커는 안에 남는다."""
+    K = np.array([[910.0, 0, 640.0], [0, 910.0, 360.0], [0, 0, 1]])
+    ref = _ref_markers()
+    m = {i: {"corners": (np.asarray(v["corners"]) + [7.0, 0.0]).tolist()} for i, v in ref.items()}   # 0.5° 덜 숙임 ≈ 7 px
+    cut, _ = hv.view_problem(m, [70, 71, 73], ref, [1280, 720], 5.0)
+    assert cut == [71]
+    d = hv.view_nudge(m, [70, 71, 73], ref, [1280, 720], 5.0, K, 69.0, 8.0, 3.0)
+    assert d is not None and abs(d[1]) < 1e-9
+    moved = {i: np.asarray(v["corners"]) + [d[0] * hv.pan_px_per_deg(v["corners"], K, 69.0), 0.0] for i, v in m.items()}
+    assert hv.view_problem({i: {"corners": c.tolist()} for i, c in moved.items()}, [70, 71, 73], ref, [1280, 720], 5.0)[0] == []
+
+
+def test_view_nudge_refuses_when_both_sides_cut():
+    K = np.array([[910.0, 0, 640.0], [0, 910.0, 360.0], [0, 0, 1]])
+    ref = _ref_markers()
+    m = {70: {"corners": [[2.0, 100.0], [40.0, 100.0], [40.0, 140.0], [2.0, 140.0]]},
+         71: {"corners": [[1240.0, 400.0], [1278.0, 400.0], [1278.0, 440.0], [1240.0, 440.0]]},
+         73: ref[73]}
+    assert hv.view_nudge(m, [70, 71, 73], ref, [1280, 720], 5.0, K, 69.0, 8.0, 3.0) is None
