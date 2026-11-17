@@ -1,0 +1,25 @@
+# 고정 place 궤적 설정 — tools/plan_place_fixed.py --cup shaker 가 읽는다(11.17 사용자: 계산 궤적 + 실기 교시 오프셋).
+cup: shaker
+object: shaker_c_orange                 # 실물 컵 이름
+side: left                   # 쥐고 있는 팔
+holder: 0                 # config/cup_holder_poses_5090_v1.yaml cup_holder_0
+# 물체 원점 높이(바닥 → 원점) · 반지름 · 바닥/입구 = place 정책 계약 object_geometry[object](rh_place.origin_z_of 와 같은 값)
+geometry: {contract: deploy/policies/rh56f1/place/left_n09_e3800/rh_place_contract.json, object: shaker_c_real}
+# 시작 자세(config/homes/rh56f1_pour_start.yaml)에서 손에 든 컵 원점(docs/EPISODE_FRAMEWORK.md:76 aglt 고정 목표)
+cup_start: [0.25, 0.12, 0.41]
+# 놓기 지점 = place_carry.carry_target(홀더, origin_z, place_dz). 0.005 = hdgp 놓기 자리(홀더 원점 + HOLDER_FLOOR_Z −0.025 + origin_z)
+place_dz: 0.005
+approach_dz: 0.08          # 접근점 = 놓기 지점 위 [m] — 여기서 수직으로 내린다
+lift_m: 0.10               # 손 편 뒤 수직 상승 [m]
+time_s: {approach: 3.0, descend: 2.0, release: 1.5, lift: 2.0, hold: 1.0}
+# 놓는 순간 컵 바닥 − 홀더 링 윗면 허용 [m](0 미만 = 컵이 이미 링 안) — 손을 펴면 컵이 홀더로 들어가 앉는 높이
+release_drop_m: [-0.005, 0.03]
+# 구멍(HOLDER_BORE_R 0.035)에 들어가는 아랫부분 반지름 — release_xy 허용 = 0.035 − 이 값(없으면 계약 반지름 0.0354 → 항상 실패)
+#   hdgp assets/shaker/shaker_c_rl.usd(계약 shaker_c_real 의 메쉬) /shaker_c/baseLink/collisions 바깥 반지름, 바닥 위 0~55 mm
+#   (홀더 바닥 −0.025 ~ 링 윗면 +0.030) 최대 = 55 mm 선형 보간 30.95 mm(링 34.2 mm 28.56 · 63.3 mm 31.90). hdgp place_cup_radius 0.031 과 같음
+fit_radius_m: 0.031
+# hand_grip: [6 값 rad]  # 컵별 쥔 손 명령 — 없으면 place_teach.GRIP_RAD(meta hand_grip_source)
+# 실기 교시 보정 — 실기에서 jog/손으로 맞춘 놓기 자리 − 이 계산의 놓기 자리(meta.json place_xyz). base_link 기준 [m].
+#   yaw_deg = 컵 축(z) 둘레로 손바닥을 돌리는 각(컵 자리는 그대로). 궤적 점을 손으로 고치지 말고 여기만 고쳐 다시 계산한다.
+offset: {x: 0.0, y: 0.0, z: 0.073, yaw_deg: 23.0}   # 첫 값 = 11.09 손 교시 holder0_c2 와의 차이(11.17), 실기 jog 로 다시 맞춤
+#   11.18 z 0.015 → 0.073: 링 안 −4 cm 놓기 실패, blue·pink 처럼 링 윗면 위 약 +1.8 cm 에서 놓는다(사용자 결정, drop 은 z 와 1:1)

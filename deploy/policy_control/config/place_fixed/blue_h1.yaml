@@ -1,0 +1,20 @@
+# 고정 place 궤적 설정 — tools/plan_place_fixed.py --cup blue 가 읽는다(11.17 사용자: 계산 궤적 + 실기 교시 오프셋).
+cup: blue
+object: source240_blue                 # 실물 컵 이름
+side: right                   # 쥐고 있는 팔
+holder: 1                 # config/cup_holder_poses_5090_v1.yaml cup_holder_1
+# 물체 원점 높이(바닥 → 원점) · 반지름 · 바닥/입구 = place 정책 계약 object_geometry[object](rh_place.origin_z_of 와 같은 값)
+geometry: {contract: deploy/policies/rh56f1/place/right_n10_e4000/rh_place_contract.json, object: source240_real}
+# 시작 자세(config/homes/rh56f1_pour_start.yaml)에서 손에 든 컵 원점(docs/EPISODE_FRAMEWORK.md:76 aglt 고정 목표)
+cup_start: [0.25, -0.12, 0.41]
+# 놓기 지점 = place_carry.carry_target(홀더, origin_z, place_dz). 0.005 = hdgp 놓기 자리(홀더 원점 + HOLDER_FLOOR_Z −0.025 + origin_z)
+place_dz: 0.005
+approach_dz: 0.08          # 접근점 = 놓기 지점 위 [m] — 여기서 수직으로 내린다
+lift_m: 0.10               # 손 편 뒤 수직 상승 [m]
+time_s: {approach: 3.0, descend: 2.0, release: 1.5, lift: 2.0, hold: 1.0}
+# 놓는 순간 컵 바닥 − 홀더 링 윗면 허용 [m](0 미만 = 컵이 이미 링 안) — 손을 펴면 컵이 홀더로 들어가 앉는 높이
+release_drop_m: [-0.005, 0.03]
+# hand_grip: [6 값 rad]  # 컵별 쥔 손 명령 — 없으면 place_teach.GRIP_RAD(meta hand_grip_source)
+# 실기 교시 보정 — 실기에서 jog/손으로 맞춘 놓기 자리 − 이 계산의 놓기 자리(meta.json place_xyz). base_link 기준 [m].
+#   yaw_deg = 컵 축(z) 둘레로 손바닥을 돌리는 각(컵 자리는 그대로). 궤적 점을 손으로 고치지 말고 여기만 고쳐 다시 계산한다.
+offset: {x: 0.0, y: 0.0, z: 0.074, yaw_deg: -10.0}   # 첫 값 = 11.08 손 교시 holder1_c2 와의 차이(11.17), 실기 jog 로 다시 맞춤
