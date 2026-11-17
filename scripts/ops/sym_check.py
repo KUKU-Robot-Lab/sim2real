@@ -45,7 +45,7 @@ sys.path.insert(0, str(S2R / "scripts"))                            # head_home(
 import fk  # noqa: E402
 
 CAM_PY = S2R / ".venv/bin/python"                 # --cam-host local 인터프리터
-CAM_SERIAL = "348122071637"                       # 머리 D435i rs_serial(deploy/policy_control/config/sites/arm_v2.yaml camera_rs_serial)
+CAM_SERIAL = "348122071637"                       # 머리 D435i rs_serial(deploy/policy_control/config/sites/arm_v2.yaml rs_cameras.head.serial)
 HEAD_CFG_REL = "config/head_sym_2048.yaml"   # 11.15 목 재조립(2048 = 정면) 뒤: pan 2048 · tilt 2731 틱(60° 숙임)
 HEAD_CFG = S2R / HEAD_CFG_REL                    # 옛 head_home_rh56f1(2033/2864)은 재조립 전 offset 틱이라 쓰지 않는다
 

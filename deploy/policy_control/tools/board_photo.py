@@ -27,8 +27,10 @@ COLOR_TOPIC = "/camera/camera/color/image_raw"            # realsense2_camera 4.
 INFO_TOPIC = "/camera/camera/color/camera_info"
 CAM_NODE = "realsense2_camera_node"
 # camera_up.sh 의 launch 와 같은 인자(align_depth 는 FP++ · IMU 는 head_view_check 가 쓴다 — 다른 사용처와 같은 카메라 설정을 낸다)
-LAUNCH = ("source /opt/ros/humble/setup.bash; exec ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true "
-          "enable_gyro:=true enable_accel:=true unite_imu_method:=2")
+# ★11.18 D435i 두 대(arm4090) — 머리 시리얼(사이트 rs_cameras.head)을 못 읽으면 띄우지 않는다(serial_no 가 비면 아무 카메라나 잡는다)
+LAUNCH = (f"source /opt/ros/humble/setup.bash; S=$(python3 {S2R}/deploy/policy_control/policy_control/site_ports.py camera head) "
+          "|| exit 1; exec ros2 launch realsense2_camera rs_launch.py camera_namespace:=camera serial_no:=_$S "
+          "align_depth.enable:=true enable_gyro:=true enable_accel:=true unite_imu_method:=2")
 AUTO_WAIT_S, STOP_WAIT_S = 1.5, 5.0
 JPG_Q = 92
 
@@ -185,8 +187,9 @@ class Camera:
         out = []
         for d in self.proc_root.glob("[0-9]*"):
             try:
-                argv0 = (d / "cmdline").read_bytes().split(b"\0")[0].decode(errors="replace")
-                if Path(argv0).name != CAM_NODE:
+                argv = (d / "cmdline").read_bytes().split(b"\0")
+                # ★11.18 머리 카메라(ns /camera)만 — 글로벌 카메라(/global_camera) 노드는 남의 것이 아니라 다른 카메라다
+                if Path(argv[0].decode(errors="replace")).name != CAM_NODE or b"__ns:=/camera" not in argv:
                     continue
                 pgrp = int((d / "stat").read_text().rsplit(")", 1)[1].split()[2])
             except (OSError, IndexError, ValueError):
@@ -341,13 +344,14 @@ def selftest() -> None:
         assert "이미" in cam.auto(0.2) and not calls and cam.owner() == "foreign"
         assert "거부" in cam.stop() and not kills   # 남의 카메라는 끄지 않는다
         n["f"] = 0   # (b) 영상 없음 + 남의 노드 프로세스(argv[0]) → 경고만
-        proc(200, ["/opt/ros/humble/lib/realsense2_camera/realsense2_camera_node", "--ros-args"], 200)
+        proc(199, ["/opt/ros/humble/lib/realsense2_camera/realsense2_camera_node", "--ros-args", "-r", "__ns:=/global_camera"], 199)   # 글로벌 카메라 = 머리와 무관
+        proc(200, ["/opt/ros/humble/lib/realsense2_camera/realsense2_camera_node", "--ros-args", "-r", "__ns:=/camera"], 200)
         assert "프로세스는 있는데" in cam.auto(0.1) and not calls and cam.node_pids() == [200]
         assert "거부" in cam.start() and not calls
         (pr / "200" / "cmdline").unlink()   # (c) 둘 다 없음 → 우리가 띄운다(setsid)
         assert "켬" in cam.auto(0.1) and len(calls) == 1 and cam.owner() == "ours"
         assert calls[0][0] == ["bash", "-c", LAUNCH] and calls[0][1]["start_new_session"] and "rs_launch.py" in LAUNCH
-        proc(201, ["/opt/ros/humble/lib/realsense2_camera/realsense2_camera_node"], 5001)   # 우리 그룹의 노드는 남의 것이 아니다
+        proc(201, ["/opt/ros/humble/lib/realsense2_camera/realsense2_camera_node", "-r", "__ns:=/camera"], 5001)   # 우리 그룹의 노드는 남의 것이 아니다
         assert cam.node_pids() == [] and "이미" in cam.start() and len(calls) == 1
         cam.stop(block=True)   # 종료 정리 = 우리 그룹에만 SIGTERM
         assert kills == [(5001, signal.SIGTERM)] and not cam.mine() and "끔" in cam.note, (kills, cam.note)

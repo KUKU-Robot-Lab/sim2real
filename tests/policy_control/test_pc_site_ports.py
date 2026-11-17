@@ -109,3 +109,13 @@ def test_unknown_site():
 def test_no_site_keeps_base():
     base = yaml.safe_load(PORTS.read_text())
     assert SITE.load_ports(PORTS, None) == base
+
+
+def test_camera_serial():
+    # ★11.18 arm4090 D435i 두 대: rs_launch serial_no 는 rs-enumerate-devices 'Serial Number'(asic 아님), 없으면 띄우지 않는다
+    assert SITE.camera_serial("head", env={}) == "348122071637"
+    assert SITE.camera_serial("global", env={"S2R_CAMERA_SITE": "ARM_V2 "}) == "261222075918"
+    with pytest.raises(SITE.SiteError, match="rs_cameras.side"):
+        SITE.camera_serial("side", env={})
+    with pytest.raises(SITE.SiteError, match="rs_cameras.head"):
+        SITE.camera_serial("head", env={"S2R_CAMERA_SITE": "kitech"})

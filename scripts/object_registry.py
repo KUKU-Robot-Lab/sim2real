@@ -10,6 +10,7 @@ ROS 불필요. test_object_registry.py 대상.
 """
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -23,8 +24,9 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 from cup_pose_relay import Extrinsics, _validated_pos, _validated_quat, load_extrinsics  # noqa: E402
 
 DEFAULT_REGISTRY = _SCRIPT_DIR.parent / "config" / "objects.yaml"
-INPUT_NS = "/perception_plus_plus"
-OUTPUT_NS = "/objects"
+# ★11.18 두 번째 FP++(글로벌 카메라)는 프로세스 전체를 다른 ns 로 돌린다(scripts/vision/fpp_global_up.sh) — 머리 쪽 토픽과 안 겹치게
+INPUT_NS = os.environ.get("S2R_FPP_NS", "/perception_plus_plus")
+OUTPUT_NS = os.environ.get("S2R_OBJECTS_NS", "/objects")
 CONTAINER_PREFIX = "fpp_"
 DROPIN_DIR = "objects.d"     # objects.yaml 옆 — scripts/ops/fpp_object.py 가 쓰는 물체 파일들
 _FPP_KEYS = ("mesh_path", "mesh_scale_to_meters", "cup_class_id",
@@ -224,10 +226,11 @@ def _base_from_camera(camera_yaml: str | Path) -> list[list[float]]:
 
 
 def render_group_yaml(registry: Registry, group: str, camera_yaml: str | Path | None = None,
-                      only: list[str] | None = None) -> str:
+                      only: list[str] | None = None, camera_ns: str = "/camera/camera") -> str:
     """묶음 컨테이너(fpp_snapshot_node --config) 설정 — 묶음의 물체 전부(못 찾으면 비워 둔다). only 를 주면(비어 있지 않으면)
     그중 묶음 물체만(11.03 런처가 start 로 요청한 물체만 넘긴다). camera_yaml(실기 외부 파라미터)을 주면 base←카메라를 실어
-    작업 영역 밖 후보를 버리게 한다."""
+    작업 영역 밖 후보를 버리게 한다. camera_ns = 구독할 RealSense 토픽 앞부분(11.18 글로벌 /global_camera/camera).
+    출력 · 상태 · 명령 토픽은 INPUT_NS(S2R_FPP_NS) 아래."""
     names = [n for n in group_members(registry, group) if not only or n in only]
     if not names:
         raise ValueError(f"묶음 {group!r} 에 물체가 없다")
@@ -241,7 +244,10 @@ def render_group_yaml(registry: Registry, group: str, camera_yaml: str | Path | 
             "yolo_weights": "models/yolo/yolov8m-seg.pt", "tracking_config": "config/cup_tracking.yaml",
             "register_frames": 3, "republish_hz": 5.0, "retry_s": 3.0,
             "classes": sorted({*GROUP_CLASSES, *(int(registry.get(n).fpp["cup_class_id"]) for n in names)}),
-            "yolo_conf": 0.05, "blob_min_area": 1500, "workspace": GROUP_WORKSPACE}
+            "yolo_conf": 0.05, "blob_min_area": 1500, "workspace": GROUP_WORKSPACE,
+            "rgb_topic": f"{camera_ns}/color/image_raw", "depth_topic": f"{camera_ns}/aligned_depth_to_color/image_raw",
+            "camera_info_topic": f"{camera_ns}/color/camera_info",
+            "status_topic": f"{INPUT_NS}/snapshot/status", "cmd_topic": f"{INPUT_NS}/snapshot/cmd"}
     if camera_yaml is not None:
         body["camera_to_base"] = _base_from_camera(camera_yaml)
     header = (f"# 생성됨 — sim2real/config/objects.yaml 의 fpp.group '{group}'. 손으로 고치지 말 것.\n"

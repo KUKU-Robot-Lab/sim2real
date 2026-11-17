@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -54,6 +55,27 @@ def check_head_at(head_pose, head_joint_deg: tuple[float, float]) -> None:
     off = {k: now[k] - t for k, t in head_pose.ticks.items() if k in now and abs(now[k] - t) > head_pose.tol_tick}
     if off:
         raise HeadOffCalibPose(f"목이 카메라 캘리브 자세가 아니다 — 틱 차이 {off}(허용 ±{head_pose.tol_tick}). 머리 단계를 먼저")
+
+
+HEAD_FK_MAX_AGE_S = 0.2   # --head-fk: 목이 움직이는 중이라 이보다 오래된 목 각으로는 변환하지 않는다
+
+
+def extrinsics_from_head_fk(ext, head_cam, head_joint_deg: tuple[float, float]):
+    """--head-fk: 목 각(URDF 규약, 도) → HeadCamPose(place_head_pose) 의 T_base_cam 으로 새 Extrinsics. cad_to_body 는 그대로. 순수."""
+    from head_camera_pose import quat_wxyz_from_matrix
+
+    T = head_cam.cam_pose_from_joint_state(*np.radians(head_joint_deg))
+    return replace(ext, cam_pos=T[:3, 3].copy(), cam_quat=quat_wxyz_from_matrix(T[:3, :3]))
+
+
+def load_head_cam(camera_yaml: str | Path):
+    """camera 파일(camera · head_pose 블록) → HeadCamPose(처짐 켬). 블록이 없으면 HeadCamPose 가 ValueError."""
+    pc = str(Path(__file__).resolve().parents[2] / "deploy" / "policy_control")
+    if pc not in sys.path:
+        sys.path.insert(0, pc)
+    from policy_control.place_head_pose import HeadCamPose
+
+    return HeadCamPose(camera_yaml)
 
 
 def provenance_line(camera_yaml: str | Path) -> str | None:
@@ -109,7 +131,8 @@ class PoseConverter:
     """순수부: 물체별 Extrinsics 를 미리 조립해 두고 변환만 한다."""
 
     def __init__(self, registry, names: list[str], camera_yaml: str | Path | None = None,
-                 z_bias: float | None = None, calib_profile: str | Path | None = None) -> None:
+                 z_bias: float | None = None, calib_profile: str | Path | None = None,
+                 head_fk: bool = False) -> None:
         camera_yaml = Path(camera_yaml) if camera_yaml is not None else registry.camera_extrinsics
         self.z_bias = float(z_bias) if z_bias is not None else base_z_bias(camera_yaml)
         self.depth_bias = depth_bias(camera_yaml)
@@ -128,6 +151,8 @@ class PoseConverter:
         self.head_pose = load_head_pose(camera_yaml)
         if self.head_pose is not None and self.profile is not None:
             raise ValueError(f"{camera_yaml}: 정적 스냅샷(head_pose) 파일에는 보정 프로필(목 FK)을 같이 쓰지 않는다")
+        # 목 FK 실시간(11.18): head_pose 자세에서 잰 camera 블록을 T_neck_cam 으로 바꿔 목 각마다 T_base_cam 을 다시 만든다
+        self.head_cam = load_head_cam(camera_yaml) if head_fk else None
         self._ext = {n: extrinsics_for(registry.get(n), camera_yaml) for n in self.names}
         self._origin = {n: registry.get(n).origin_above_bottom_m for n in self.names}
         # 대칭축을 body 프레임으로 옮겨 둔다: a_body = R(q_cad_body)ᵀ · a_cad
@@ -145,7 +170,14 @@ class PoseConverter:
         ext = self._ext[name]
         bias = None
         if self.head_pose is not None:
-            if head is not None:
+            if self.head_cam is not None:
+                if head is None:
+                    raise ValueError("--head-fk 는 목 각도가 필요하다 — --head-joint-topic 을 같이 준다")
+                try:
+                    ext = extrinsics_from_head_fk(ext, self.head_cam, head)
+                except ValueError as err:   # NaN 목 각 등 — 노드를 죽이지 않고 발행만 보류한다
+                    raise HeadOffCalibPose(f"목 FK 실패: {err}") from err
+            elif head is not None:
                 check_head_at(self.head_pose, head)
         elif self.profile is not None:
             if head is None:
@@ -187,13 +219,20 @@ def main() -> None:
     ap.add_argument("--stale-move-deg", type=float, default=0.5,
                     help="목이 이만큼 넘게 돌았는데 FP++ 원시 pose 가 그대로면 낡은 값으로 보고 발행하지 않는다(0 이면 끔). --head-joint-topic 과 같이 쓸 때만")
     ap.add_argument("--z-bias", type=float, default=None, help="출력 z 보정 [m](기본: 그 yaml 의 base_z_bias_m)")
+    ap.add_argument("--head-fk", action="store_true",
+                    help="head_pose 가 있는 camera 파일에서도 목 FK(place_head_pose.HeadCamPose, 처짐 켬)로 매 메시지 T_base_cam 을 구한다. "
+                         f"head_pose ± tol 검사 대신 목 각이 {HEAD_FK_MAX_AGE_S} s 안이어야 발행. --head-joint-topic 필요")
     args = ap.parse_args()
+    if args.head_fk and not args.head_joint_topic:
+        ap.error("--head-fk 는 --head-joint-topic 과 같이 쓴다(목 각마다 카메라 자세를 구한다)")
     if args.calib_profile and not args.head_joint_topic:
         ap.error("--calib-profile 은 --head-joint-topic 과 같이 쓴다(각도별 보정이라 목 각도가 필요)")
     registry = load_registry()
     from head_view_feedback import require_fresh_live   # ★11.17 리뷰: 오래된 · 다른 base 의 live 로 뜨지 않는다
     require_fresh_live(args.camera_extrinsics or registry.camera_extrinsics)
-    conv = PoseConverter(registry, args.objects or registry.names(), args.camera_extrinsics, args.z_bias, args.calib_profile)
+    conv = PoseConverter(registry, args.objects or registry.names(), args.camera_extrinsics, args.z_bias, args.calib_profile,
+                         args.head_fk)
+    head_max_age = HEAD_FK_MAX_AGE_S if args.head_fk else args.head_max_age
     state = {"conv": conv}      # --objects 없으면 레지스트리를 다시 읽어 새 물체를 더한다(10.09 fpp_object.py add 뒤 재기동 없이)
 
     import rclpy
@@ -220,6 +259,7 @@ def main() -> None:
             self.get_logger().info(f"objects {conv.names} → {[output_topic(n) for n in conv.names]} · "
                                    f"camera {args.camera_extrinsics or registry.camera_extrinsics} · z 보정 {conv.z_bias:+.4f} m"
                                    f" · 깊이 광선 보정 {conv.depth_bias}"
+                                   + (f" · 목 FK 실시간(목 각 {HEAD_FK_MAX_AGE_S} s 안)" if conv.head_cam is not None else "")
                                    + (f" · 보정 프로필 {conv.profile.name}(각도 {len(conv.profile.entries)}개, strict={conv.profile.strict})" if conv.profile else ""))
             if line := provenance_line(args.camera_extrinsics or registry.camera_extrinsics):
                 self.get_logger().info(line)
@@ -230,7 +270,8 @@ def main() -> None:
                 new = [n for n in reg.names() if n not in state["conv"].names]
                 if not new:
                     return
-                state["conv"] = PoseConverter(reg, reg.names(), args.camera_extrinsics, args.z_bias, args.calib_profile)
+                state["conv"] = PoseConverter(reg, reg.names(), args.camera_extrinsics, args.z_bias, args.calib_profile,
+                                              args.head_fk)
             except (OSError, ValueError) as err:            # 고치는 중인 파일 — 옛 것으로 계속
                 self.get_logger().error(f"레지스트리 다시 읽기 실패(옛 것 유지): {err}", throttle_duration_sec=30.0)
                 return
@@ -260,7 +301,7 @@ def main() -> None:
             head = None
             if args.head_joint_topic:
                 now = self.get_clock().now().nanoseconds * 1e-9
-                if not head_state_is_usable(self._head_stamp, now, args.head_max_age):
+                if not head_state_is_usable(self._head_stamp, now, head_max_age):
                     self.get_logger().warning("목 각도가 없거나 오래됐다 — 발행 보류", throttle_duration_sec=5.0)
                     return
                 head = self._head

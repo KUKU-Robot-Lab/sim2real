@@ -26,7 +26,13 @@ rh56f1:
   left:  {ifname: eno1.20}   # VLAN 20
 can: {right: can0, left: can1}          # PCAN-USB Pro FD(5090, arm_v1 과 같음), 미션이 FD 1M/5M 로 올린다
 head_port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0   # 목 U2D2 — 11.11 arm4090(11.03~11.10 5090), by-id 는 같다
-camera_rs_serial: "348122071637"        # 머리 D435i(fw 5.16.0.1). 11.03 5090 USB 3.2 에서 같은 시리얼 확인(logs/head_d435i_camera_info_1103)
+# ★11.18 D435i 두 대(arm4090 USB 3). scripts/vision/camera_up.sh <head|global> 가 serial 을 rs_launch serial_no 로 넘긴다
+#   (policy_control/site_ports.py camera_serial). serial = rs-enumerate-devices 'Serial Number'. lsusb · /sys 의 serial 은
+#   'Asic Serial Number'(asic)라 serial_no 로 주면 장치를 못 찾는다. 짝은 11.18 arm4090 rs-enumerate-devices 로 확인.
+#   head 는 11.03 5090 에서 잰 옛 camera_rs_serial 과 같은 장치(logs/head_d435i_camera_info_1103).
+rs_cameras:
+  head:   {serial: "348122071637", asic: "254343066627", fw: 5.16.0.1, usb: "4-1.1(허브 경유)", ns: /camera}
+  global: {serial: "261222075918", asic: "261143062487", fw: 5.15.1.55, usb: "4-2(직결)", ns: /global_camera}
 hosts:
   control: {name: "5090", ifname: eno1, ip: 192.168.0.50, tailscale: 100.103.21.126,
             role: "로봇 제어(팔 CAN · 손 EtherCAT) · 정책 실행(11.11 부터 카메라 · 목 · FP++ 는 arm4090)"}

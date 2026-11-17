@@ -137,8 +137,9 @@ def main(argv=None) -> None:
                               for n, o in objects.items()}
             self.live = {"name": None, "init": False, "prev": None, "invalid": 0, "ok": False, "why": "", "n": 0,
                          "resets": 0, "steps": 0, "step_s": 0.0}
-            self.status_pub = self.create_publisher(String, STATUS_TOPIC, 10)
-            self.create_subscription(String, CMD_TOPIC, self._on_cmd, 10)
+            # 11.18 글로벌 카메라 컨테이너는 자기 ns 의 상태 · 명령을 쓴다(머리 쪽 'all' 다시 찍기에 같이 끌려가지 않게)
+            self.status_pub = self.create_publisher(String, cfg.get("status_topic", STATUS_TOPIC), 10)
+            self.create_subscription(String, cfg.get("cmd_topic", CMD_TOPIC), self._on_cmd, 10)
             reliable, depth = image_qos_spec(os.environ.get("FPP_IMAGE_QOS"))
             self.image_qos = f"reliable:{depth}" if reliable else "sensor"
             img_qos = QoSProfile(depth=depth, history=HistoryPolicy.KEEP_LAST,

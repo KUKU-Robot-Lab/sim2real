@@ -276,3 +276,48 @@ def test_live_extrinsics_provenance_line_and_stale_refusal(tmp_path):
     live.write_text(hv.live_text(base, None, (1825, 2833), old), encoding="utf-8")
     with pytest.raises(SystemExit, match="head_view_check"):
         hv.require_fresh_live(live)
+
+
+# ---- 목 FK 실시간(--head-fk, 11.18): 움직이는 머리에서도 head_pose 파일 + HeadCamPose 로 T_base_cam -------------------------
+M1117_CAMERA = Path(__file__).resolve().parents[1] / "config" / "global_camera_extrinsics_arm4090_m1117.yaml"
+
+
+def _T(ext) -> np.ndarray:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "deploy" / "policy_control"))
+    from policy_control.place_head_pose import quat_wxyz_to_mat
+    T = np.eye(4)
+    T[:3, :3], T[:3, 3] = quat_wxyz_to_mat(ext.cam_quat), ext.cam_pos
+    return T
+
+
+def test_head_fk_matches_static_block_at_calib_pose_and_headcampose_elsewhere():
+    """q0(head_pose 자세)에서는 처짐 차 0 이라 정적 camera 블록과 같고, 다른 q 에서는 HeadCamPose 와 같다."""
+    from cup_pose_relay import load_extrinsics
+    from head_fk_chain import urdf_from_encoder
+    from object_pose_node import extrinsics_from_head_fk, load_head_cam
+    ext, hc = load_extrinsics(M1117_CAMERA), load_head_cam(M1117_CAMERA)
+    assert hc.sag is not None
+    q0 = urdf_from_encoder(*hc.q0_enc_deg)
+    assert np.allclose(_T(extrinsics_from_head_fk(ext, hc, q0)), _T(ext), atol=1e-9)
+    q = (q0[0] + 12.0, q0[1] - 6.0)
+    got = _T(extrinsics_from_head_fk(ext, hc, q))
+    assert np.allclose(got, hc.cam_pose_from_joint_state(*np.radians(q)), atol=1e-9)
+    assert not np.allclose(got, _T(ext), atol=1e-3)
+
+
+def test_head_fk_converter_skips_calib_pose_check_and_default_still_blocks():
+    from head_fk_chain import urdf_from_encoder
+    from object_pose_node import HeadOffCalibPose, load_head_cam
+    off = PoseConverter(REG, ["cyl60"], M1117_CAMERA)
+    fk = PoseConverter(REG, ["cyl60"], M1117_CAMERA, head_fk=True)
+    hc = load_head_cam(M1117_CAMERA)
+    q0 = urdf_from_encoder(*hc.q0_enc_deg)
+    pos_cam, quat_cam = np.array([0.03, -0.1, 0.6]), np.array([1.0, 0.0, 0.0, 0.0])
+    a, b = off.convert("cyl60", pos_cam, quat_cam, q0), fk.convert("cyl60", pos_cam, quat_cam, q0)
+    assert np.allclose(a[0], b[0], atol=1e-9)
+    moved = (q0[0] + 10.0, q0[1])
+    with pytest.raises(HeadOffCalibPose):
+        off.convert("cyl60", pos_cam, quat_cam, moved)
+    assert not np.allclose(fk.convert("cyl60", pos_cam, quat_cam, moved)[0], a[0], atol=1e-3)
+    with pytest.raises(ValueError, match="head-fk"):
+        fk.convert("cyl60", pos_cam, quat_cam, None)

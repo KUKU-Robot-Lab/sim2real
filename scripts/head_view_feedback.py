@@ -697,17 +697,19 @@ class Sensors:
 class AnchorCam:
     """컬러 영상 · 내부 파라미터(scripts/vision/cup_view.py 와 같은 토픽 · rgb8/bgr8). grab 이 부를 때만 영상을 모은다
     (Sensors.read 가 같은 노드를 돌리는 동안 1280x720 영상이 쌓이지 않게)."""
+    color_topic, info_topic = COLOR_TOPIC, INFO_TOPIC   # __init__ 이 바꾼다(시험은 __init__ 없이 만든다)
 
-    def __init__(self, node, rclpy) -> None:
+    def __init__(self, node, rclpy, color_topic: str = COLOR_TOPIC, info_topic: str = INFO_TOPIC) -> None:
         from rclpy.qos import qos_profile_sensor_data
         from sensor_msgs.msg import CameraInfo, Image
         self._node, self._rclpy = node, rclpy
+        self.color_topic, self.info_topic = color_topic, info_topic   # ★11.18 글로벌 카메라(scripts/calib/global_cam_extrinsics.py)
         self.K: np.ndarray | None = None
         self.dist: np.ndarray | None = None
         self._grays: list[np.ndarray] = []
         self._want, self._bad = 0, None
-        node.create_subscription(Image, COLOR_TOPIC, self._on_img, qos_profile_sensor_data)
-        node.create_subscription(CameraInfo, INFO_TOPIC, self._on_info, qos_profile_sensor_data)
+        node.create_subscription(Image, color_topic, self._on_img, qos_profile_sensor_data)
+        node.create_subscription(CameraInfo, info_topic, self._on_info, qos_profile_sensor_data)
 
     def _on_info(self, m) -> None:
         self.K, self.dist = np.array(m.k, float).reshape(3, 3), np.array(m.d, float)
@@ -729,9 +731,9 @@ class AnchorCam:
             self._rclpy.spin_once(self._node, timeout_sec=0.05)
         self._want = 0
         if self._bad:
-            raise RuntimeError(f"{COLOR_TOPIC} 인코딩 {self._bad} — rgb8/bgr8 만 읽는다")
+            raise RuntimeError(f"{self.color_topic} 인코딩 {self._bad} — rgb8/bgr8 만 읽는다")
         if self.K is None or len(self._grays) < n:
-            raise RuntimeError(f"{COLOR_TOPIC} · {INFO_TOPIC} 가 안 들어온다({len(self._grays)}/{n} 장, K "
+            raise RuntimeError(f"{self.color_topic} · {self.info_topic} 가 안 들어온다({len(self._grays)}/{n} 장, K "
                                f"{'있음' if self.K is not None else '없음'}) — camera_up.sh 로 카메라를 띄웠는지, 이 셸에서 "
                                "`source scripts/vision/common.sh`(FASTRTPS LAN 프로필 · ROS_DOMAIN_ID)를 했는지 볼 것"
                                "(안 하면 영상이 안 온다)")
