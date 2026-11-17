@@ -58,6 +58,21 @@ align_tol_px: 1.0
 extr_tol_mm: 3.0
 extr_tol_deg: 0.3
 imu_warn_deg: 1.0
+# ★11.17 --auto-extrinsics(사용자: 마커는 테이블 고정 정답, 움직이는 건 카메라 — camset 명령 한 번 뒤 마커로 다시 잰다, 피드백 맞춤 없음).
+#   auto_settle_s       camset 이동 뒤 기다림(머리 · 카메라가 멈추게).
+#   auto_edge_margin_px 마커 네 코너가 영상 가장자리에서 이만큼 안쪽이어야 쓴다(밖이면 잘림 → 목을 움직이지 않고 실패). 20 이면
+#                       11.17 기준 사진에서부터 71 오른쪽 코너 1273.8 px(화면 1280, 여유 6.2 px)이 걸려 5. 코너 정밀화 창(±5 px)이 들어간다.
+#   auto_occlusion_wait_s 안 보이는데 기준 px 로 보면 화면 안(가림 — 팔 · 손)이면 이 시간까지 다시 잡는다. 2 x ANCHOR_FRAMES 장 모두 보여야 쓴다.
+#   auto_max_mm · auto_max_deg 푼 값이 base(m1117)와 이보다 다르면 live 를 쓰지 않는다(카메라가 크게 움직였거나 마커가 옮겨짐 — 사람이 볼 일).
+#   base 와 extr_tol_* 안이면 live camera 는 base 값 그대로, 재기준과 extr_tol_* · ref_tol_tick 안이면 live 를 다시 쓰지 않는다(md5 안정).
+auto_settle_s: 1.0
+auto_edge_margin_px: 5.0
+auto_occlusion_wait_s: 10.0
+auto_max_mm: 20.0
+auto_max_deg: 2.0
+# live_max_age_h  FP++ 런처 · 물체 자세 노드는 live 의 마지막 확인(provenance.time · 재기준 verified_at)이 이보다 오래면 뜨지 않는다
+#                  (★11.17 리뷰: 건너뛴 시야 검사로 지난 live 를 쓰지 않게 — 그날 head_view_check 를 다시 돌린다).
+live_max_age_h: 12.0
 # 마커 허용치(★11.17 리뷰: tilt 허용치와 맞춤):
 #   px = 네 코너 이동 평균. 1280x720 fx≈908 에서 0.3° ≈ 4.7 px 라, --execute 의 tilt 맞춤 허용치(0.2°)와 ref_tol_pitch_deg(0.3°)
 #     안에 든 자세가 마커 px 로 떨어지지 않게 5.0. 68° 숙임 카메라의 pan 은 화면 가운데에서도 그 0.37 배라 5 px ≈ pan 0.8°다.

@@ -65,6 +65,7 @@ import json
 import math
 import os
 import shutil
+import signal
 import statistics
 import sys
 import time
@@ -82,6 +83,9 @@ REPO = _HERE.parent
 DEFAULT_EXTRINSICS = REPO / "config" / "global_camera_extrinsics_arm4090_m1117.yaml"   # camset = 미션 extrinsics
 DEFAULT_CONFIG = REPO / "config" / "head_view_feedback_arm4090.yaml"
 DEFAULT_REF = REPO / "config" / "head_view_ref_arm4090_h2048.yaml"   # ★11.17 --check 기준(외부 파라미터를 잰 그때의 IMU · 틱)
+#: ★11.17 --auto-extrinsics 산출물(호스트마다 다른 런타임 파일 · .gitignore). m1117 은 학생 · head_depth_node 가 md5 로 고정해 쓰지 않는다
+DEFAULT_LIVE = REPO / "config" / "global_camera_extrinsics_arm4090_live.yaml"
+DEFAULT_LIVE_REF = REPO / "config" / "head_view_ref_arm4090_live.yaml"   # live 를 쓴 자세의 기준(재기준) — 같으면 live 를 다시 안 쓴다
 #: 정지 IMU 1샘플 σ 0.012 m/s²(10.30). 그 4배를 넘으면 머리가 움직이는 중이라 재지 않는다.
 REF_MAX_SD = 0.05
 #: Sensors.read 가 평균 내는 IMU 샘플 수. 검사 · 기준 기록은 이 절반도 못 받으면 쓰지 않는다.
@@ -1060,6 +1064,249 @@ def _align(sens, cam: AnchorCam, head_move, cfg: dict, ref: dict, lim: Limits, g
     return code, rec
 
 
+# ---------- ★11.17 --auto-extrinsics: camset 에서 마커로 카메라 자세를 다시 잰다(목 피드백 맞춤 없음) ----------
+
+LIVE_HEADER = ("# 생성됨 — scripts/head_view_feedback.py --execute --auto-extrinsics. 손으로 고치지 않는다(시작마다 다시 확인 · 풂).\n"
+               "# camera = camset 자세에서 테이블 고정 마커로 푼 값(provenance.base 와 extr_tol 안이면 base 값 그대로),\n"
+               "# head_pose = 그때 /head/joint_states 틱. 나머지 키는 base 와 같다. provenance = 출처 · 풀이 · 명령 틱 · IMU.\n")
+
+
+def _atomic_write(path: Path, data: str | bytes) -> None:
+    """임시 파일 → os.replace(쓰다 끊겨도 반쯤 남지 않게). 런타임 파일이라 .bak 는 남기지 않는다."""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_bytes(data if isinstance(data, bytes) else data.encode("utf-8"))
+    os.replace(tmp, path)
+
+
+def _take_live(live: Path, live_ref: Path) -> dict:
+    """★11.17 리뷰: 시작하자마자 live · 재기준을 지운다(신호 · SIGKILL 로 죽어도 옛 값이 남지 않게). kept 판정용 이전 바이트를 돌려준다."""
+    prev = {}
+    for k, f in (("live", live), ("ref", live_ref)):
+        if f.exists():
+            prev[k] = f.read_bytes()
+            f.unlink()
+    return prev
+
+
+def _stamp(t: object) -> float | None:
+    try:
+        return time.mktime(time.strptime(t, "%Y-%m-%d %H:%M:%S")) if isinstance(t, str) else None
+    except ValueError:
+        return None
+
+
+def live_problem(live: str | Path, base_md5: str | None = None, live_ref: str | Path | None = None,
+                 max_age_h: float | None = None, now: float | None = None) -> str | None:
+    """live 외부 파라미터를 FP++ 가 써도 되나 → None, 아니면 이유. 비지 않은 yaml · camera · provenance 가 있고,
+    provenance.base_md5 가 base(기본 = 같은 폴더의 provenance.base 파일) md5 와 같고, 마지막 확인(provenance.time 과 재기준
+    verified_at 중 늦은 쪽, 재기준은 extrinsics.md5 가 이 live 와 맞을 때만)이 max_age_h(기본 설정 live_max_age_h, 12) 안."""
+    live = Path(live)
+    if not live.exists() or live.stat().st_size == 0:
+        return f"{live.name} 가 없거나 비었다"
+    try:
+        d = yaml.safe_load(live.read_text(encoding="utf-8"))
+    except (yaml.YAMLError, UnicodeDecodeError) as e:
+        return f"{live.name} 를 못 읽는다: {e}"
+    prov = d.get("provenance") if isinstance(d, dict) else None
+    if not isinstance(prov, dict) or not isinstance(d.get("camera"), dict):
+        return f"{live.name} 에 camera · provenance 가 없다(--auto-extrinsics 가 쓴 파일이 아니다)"
+    if base_md5 is None:
+        base = live.with_name(str(prov.get("base")))
+        if not base.is_file():
+            return f"base {base.name} 가 없다"
+        base_md5 = file_md5(base)
+    if prov.get("base_md5") != base_md5:
+        return f"{live.name} 가 다른 base 로 만들어졌다(provenance {prov.get('base')} {prov.get('base_md5')} ≠ {base_md5})"
+    if max_age_h is None:
+        cfg = yaml.safe_load(DEFAULT_CONFIG.read_text(encoding="utf-8")) if DEFAULT_CONFIG.exists() else {}
+        max_age_h = float((cfg or {}).get("live_max_age_h", 12.0))
+    stamps = [_stamp(prov.get("time"))]
+    ref = Path(live_ref) if live_ref is not None else live.with_name(DEFAULT_LIVE_REF.name)
+    if ref.is_file():
+        try:
+            lr = yaml.safe_load(ref.read_text(encoding="utf-8")) or {}
+        except (yaml.YAMLError, UnicodeDecodeError):
+            lr = {}
+        if isinstance(lr, dict) and (lr.get("extrinsics") or {}).get("md5") == file_md5(live):
+            stamps.append(_stamp(lr.get("verified_at")))
+    stamps = [t for t in stamps if t is not None]
+    if not stamps:
+        return f"{live.name} 의 확인 시각이 없다"
+    age_h = ((time.time() if now is None else now) - max(stamps)) / 3600
+    if age_h > max_age_h:
+        return f"{live.name} 의 마지막 확인이 {age_h:.1f} h 전이다(허용 live_max_age_h {max_age_h:g} h)"
+    return None
+
+
+def require_fresh_live(path: str | Path | None) -> None:
+    """FP++ 런처 · 물체 자세 노드 시작 검사: *_live.yaml 이면 live_problem 이 있을 때 시작을 거부한다(base 를 직접 주면 검사 없음)."""
+    if path is None or not str(path).endswith("_live.yaml"):
+        return
+    why = live_problem(path)
+    if why:
+        raise SystemExit(f"❌ {why} — 미션의 head_view_check(시야 검사 · 외부 파라미터 자동 갱신)를 다시 돌려라")
+
+
+def live_cli(argv: list[str]) -> int:
+    """원격 인지 미션이 가져온 live 를 mv 하기 전 검사: [live.tmp, live_ref.tmp, 이 PC 의 base] → 0 / 1(이유 출력)."""
+    live, ref, base = argv
+    why = live_problem(live, file_md5(Path(base)), ref)
+    if why:
+        print(f"❌ 가져온 live 를 쓰지 않는다 — {why}")
+    return 1 if why else 0
+
+
+def live_text(base: Path, camera: dict | None, ticks: tuple[int, int], prov: dict) -> str:
+    """base 외부 파라미터 → live 내용: camera(None = base 값 그대로) · head_pose 틱만 바꾸고 provenance 를 붙인다(같은 형식)."""
+    d = yaml.safe_load(Path(base).read_text(encoding="utf-8"))
+    if camera is not None:
+        d["camera"] = {**d["camera"], **camera}
+    d["head_pose"] = {**(d.get("head_pose") or {}), "pan_tick": int(ticks[0]), "tilt_tick": int(ticks[1])}
+    d["provenance"] = prov
+    return LIVE_HEADER + yaml.safe_dump(d, allow_unicode=True, sort_keys=False)
+
+
+def view_problem(m: dict, need: list[int], ref_m: dict, wh: list[int], margin: float) -> tuple[list[int], list[int]]:
+    """need 마커 중 (잘림, 가림). 잘림 = 보이는데 코너가 가장자리 margin px 안쪽이 아니거나, 안 보이는데 기준 px 를 보인 마커의
+    평균 이동만큼 옮긴 자리가 그 밖. 가림 = 안 보이는데 그 자리가 화면 안쪽(팔 · 손 · 물건). ref_m = 기준 anchors.markers(int 키)."""
+    lo, hi = np.array([margin, margin]), np.array([wh[0] - margin, wh[1] - margin])
+    seen = [i for i in ref_m if i in m]
+    shift = (np.mean([np.mean(np.asarray(m[i]["corners"], float) - np.asarray(ref_m[i]["corners"], float), 0) for i in seen], 0)
+             if seen else np.zeros(2))
+    cut, hidden = [], []
+    for i in need:
+        c = np.asarray(m[i]["corners"], float) if i in m else np.asarray(ref_m[i]["corners"], float) + shift
+        if not np.all((c >= lo) & (c <= hi)):
+            cut.append(i)
+        elif i not in m:
+            hidden.append(i)
+    return cut, hidden
+
+
+def _live_kept(prev: dict, base: Path, cfg: dict, s: dict, ticks: tuple[int, int]) -> str | None:
+    """live 를 다시 쓰지 않아도 되나 → None, 아니면 이유. 재기준이 live md5 · 설정 마커와 맞고(실측 · 마커 기준), live 가 같은 base 로
+    만들어졌고, 지금 푼 값이 live 와 extr_tol 안, 틱이 재기준과 ref_tol_tick 안이어야 한다."""
+    if "live" not in prev or "ref" not in prev:
+        return "live · 재기준이 없다"
+    lr = yaml.safe_load(prev["ref"].decode("utf-8"))
+    why = ref_problem(lr, hashlib.md5(prev["live"]).hexdigest(), cfg) or (None if lr.get("measured") is True and lr.get("anchors") else
+                                                   "재기준이 실측 · 마커 기준이 아니다")
+    if why:
+        return why
+    d = yaml.safe_load(prev["live"].decode("utf-8"))
+    prov = d.get("provenance") or {}
+    if prov.get("base_md5") != file_md5(base):
+        return f"live 가 다른 base 로 만들어졌다({prov.get('base')} {prov.get('base_md5')})"
+    dmm, ddeg = extrinsics_diff(s["R"], s["t"], quat_to_matrix(d["camera"]["orientation_wxyz"]),
+                                np.asarray(d["camera"]["position"], float))
+    tol_mm, tol_deg = float(cfg.get("extr_tol_mm", 3.0)), float(cfg.get("extr_tol_deg", 0.3))
+    if dmm > tol_mm or ddeg > tol_deg:
+        return f"지금 푼 값이 live 와 {dmm:.1f} mm · {ddeg:.3f}° 다르다(허용 {tol_mm} mm · {tol_deg}°)"
+    dt = max(abs(ticks[0] - int(lr["pan_tick"])), abs(ticks[1] - int(lr["tilt_tick"])))
+    return f"틱이 재기준과 {dt} 다르다(허용 {cfg.get('ref_tol_tick', 4)})" if dt > int(cfg.get("ref_tol_tick", 4)) else None
+
+
+def _auto_extrinsics(sens, cam: AnchorCam, head_move: object | None, cfg: dict, ref: dict, lim: Limits, goal: tuple[float, float],
+                     base: Path, live: Path, live_ref: Path, prev: dict | None = None) -> tuple[int, dict]:
+    """--auto-extrinsics(★11.17 사용자: 마커는 테이블에 고정된 정답이고 움직이는 건 카메라다 — 목을 기준 화면으로 되돌리지 않고
+    지금 화면에서 카메라 자세를 다시 잰다): camset 명령을 보내고(접근 방향 규칙 _goto, head_move None = --execute 없음 → 목을
+    움직이지 않고 지금 자세에서 잰다 · head_pose 는 어느 쪽이든 실제 틱) auto_settle_s 기다린 뒤,
+    설정 anchor_ids 가 2 x ANCHOR_FRAMES 장 모두 가장자리 auto_edge_margin_px 안쪽에 보이면 그 코너로 외부 파라미터를 푼다.
+    잘림이면 바로 1(목을 움직이지 않는다), 가림이면 auto_occlusion_wait_s 동안 다시 잡는다. 코너 σ ≤ ANCHOR_MAX_SD_PX ·
+    rms ≤ ALIGN_MAX_RMS_PX · base 대비 auto_max_mm · auto_max_deg 안일 때만 live 를 쓰고(base 와 extr_tol 안이면 base camera 그대로),
+    같은 코너 · IMU · 틱으로 live_ref(재기준)를 쓴다. 재기준과 같으면(_live_kept) live 를 다시 쓰지 않는다(md5 안정).
+    base(m1117) · ref 는 읽기만 한다. live · live_ref 는 시작하자마자 지우고(prev = main 이 이미 지우며 읽은 바이트) 성공일 때만
+    새로 쓴다 — kept 면 같은 바이트(md5 불변)에 재기준 verified_at 만 갱신. 실패하면 1."""
+    if prev is None:
+        prev = _take_live(live, live_ref)
+    size, z = float(cfg["anchor_size_m"]), float(cfg["anchor_truth"]["table_z_m"])
+    margin, wait = float(cfg.get("auto_edge_margin_px", 5.0)), float(cfg.get("auto_occlusion_wait_s", 10.0))
+    amm, adeg = float(cfg.get("auto_max_mm", 20.0)), float(cfg.get("auto_max_deg", 2.0))
+    tol_mm, tol_deg = float(cfg.get("extr_tol_mm", 3.0)), float(cfg.get("extr_tol_deg", 0.3))
+    need = sorted(int(i) for i in cfg["anchor_ids"])
+    truth = {int(i): (float(v[0]), None if v[1] is None else float(v[1])) for i, v in cfg["anchor_truth"]["markers"].items()}
+    ref_m = {int(i): v for i, v in ref["anchors"]["markers"].items()}
+    signs = (PAN_APPROACH_SIGN[ref.get("approach_pan", "left")], APPROACH_SIGN[ref.get("approach", "down")])
+    rec: dict = {"mode": "auto_extrinsics", "time": time.strftime("%Y-%m-%d %H:%M:%S"), "camset_deg": list(goal),
+                 "ok": False, "rc": 1}
+    if head_move is None:
+        print("  --execute 없음 — 목을 움직이지 않고 지금 자세에서 잰다", flush=True)
+        cmd = None
+    else:
+        code, cmd = _goto(sens, head_move, lim, goal, signs)
+        if code:
+            return 1, rec
+        time.sleep(float(cfg.get("auto_settle_s", 1.0)))
+    end, told = time.monotonic() + wait, False
+    while True:
+        m, sd, K, wh = _read_anchors(cam, cfg, 2 * ANCHOR_FRAMES)
+        cut, hidden = view_problem(m, need, ref_m, wh, margin)
+        if cut or not hidden or time.monotonic() > end:
+            break
+        if not told:
+            print(f"  마커 {hidden} 가 {2 * ANCHOR_FRAMES} 장 모두에 보이지는 않는다(가림?) — {wait:g} s 까지 다시 잡는다", flush=True)
+            told = True
+    rec.update(cut=cut, hidden=hidden, corner_sd_px=round(sd, 3))
+    if cut:
+        print(f"❌ camset 자세에서 마커 {cut} 가 화면 밖(가장자리 {margin:g} px 여유 밖) — 목을 움직이지 않는다. "
+              "카메라 마운트 · camset 을 볼 것")
+        return 1, rec
+    if hidden:
+        print(f"❌ 마커 {hidden} 가 {wait:g} s 동안 가려졌다(화면 안인데 검출 안 됨 — 팔 · 손 · 물건?)")
+        return 1, rec
+    if not sd <= ANCHOR_MAX_SD_PX:
+        print(f"❌ 코너 σ {sd:.3f} px > {ANCHOR_MAX_SD_PX} px — 카메라 · 머리가 흔들린다")
+        return 1, rec
+    R0, t0 = load_extrinsics(base)
+    try:
+        s = solve_extrinsics({i: v["corners"] for i, v in m.items()}, K, cam.dist, size, truth, z, R0, t0)
+    except ValueError as err:   # 코너 모서리를 못 정함 · 정답 마커 부족
+        print(f"❌ 외부 파라미터 풀이: {err}")
+        return 1, rec
+    dmm, ddeg = extrinsics_diff(s["R"], s["t"], R0, t0)
+    pos, quat = _camera_values(s["R"], s["t"])
+    raw, roll, acc_sd, pan, tilt = sens.read()
+    ticks = (deg_to_tick(pan), deg_to_tick(tilt))
+    e = {"ids": s["ids"], "rms_px": round(s["rms_px"], 3), "max_px": round(s["max_px"], 3), "corner_sd_px": round(sd, 3),
+         "d_pos_mm": round(dmm, 2), "d_xyz_mm": [round(float(v) * 1000, 2) for v in s["t"] - t0], "d_rot_deg": round(ddeg, 3),
+         "free_y_mm": {str(i): round(v * 1000, 1) for i, v in s["free_y_m"].items()}}
+    rec.update(extrinsics=e, cmd_deg=None if cmd is None else [round(v, 3) for v in cmd],
+               cmd_ticks=None if cmd is None else [deg_to_tick(v) for v in cmd], ticks=list(ticks))
+    print(f"  외부 파라미터(마커 {s['ids']}, rms {s['rms_px']:.2f} px, σ {sd:.3f} px): {base.name} 대비 {dmm:.1f} mm "
+          f"{e['d_xyz_mm']} · {ddeg:.3f}° | 틱 {ticks[0]}/{ticks[1]}(명령 {rec['cmd_ticks']})")
+    if s["rms_px"] > ALIGN_MAX_RMS_PX:
+        print(f"❌ 재투영 rms {s['rms_px']:.2f} px > {ALIGN_MAX_RMS_PX} — 마커 정답(anchor_truth) · 크기 · 코너가 맞지 않는다")
+        return 1, rec
+    if dmm > amm or ddeg > adeg:
+        print(f"❌ {base.name} 와 {dmm:.1f} mm · {ddeg:.3f}° — 자동 상한 auto_max {amm:g} mm · {adeg:g}° 를 넘는다"
+              "(카메라가 크게 움직였거나 마커가 옮겨졌다). live 를 쓰지 않는다")
+        return 1, rec
+    why = _live_kept(prev, base, cfg, s, ticks)
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    if why is None:
+        lr = yaml.safe_load(prev["ref"].decode("utf-8"))
+        lr["verified_at"] = now
+        _atomic_write(live, prev["live"])
+        _atomic_write(live_ref, ref_text(lr))
+        rec.update(live="kept", live_md5=file_md5(live), ok=True, rc=0)
+        print(f"✓ 재기준과 같다 — {live.name} 그대로(md5 {rec['live_md5'][:8]}) · 확인 시각 {now}")
+        return 0, rec
+    as_base = dmm <= tol_mm and ddeg <= tol_deg
+    prov = {"base": base.name, "base_md5": file_md5(base), "time": now, "camera": "base" if as_base else "solved",
+            "marker_ids": s["ids"], "rms_px": e["rms_px"], "corner_sd_px": e["corner_sd_px"], "d_pos_mm": e["d_pos_mm"],
+            "d_xyz_mm": e["d_xyz_mm"], "d_rot_deg": e["d_rot_deg"], "cmd_deg": rec["cmd_deg"], "cmd_ticks": rec["cmd_ticks"],
+            "ticks": list(ticks), "imu_pitch_raw_deg": round(raw, 3), "imu_roll_raw_deg": round(roll, 3)}
+    _atomic_write(live, live_text(base, None if as_base else {"position": pos, "orientation_wxyz": quat}, ticks, prov))
+    anchors = anchors_block(m, 2 * ANCHOR_FRAMES, sd, size, wh, K[0][0], None)
+    new_ref = build_ref(angles_to_up(raw, roll), ticks, len(sens._acc), acc_sd, live.name, file_md5(live),
+                        ref.get("approach", "down"), now, "--auto-extrinsics(live 를 쓴 자세의 마커 · IMU · 틱)",
+                        ref.get("approach_pan", "left"), anchors)
+    _atomic_write(live_ref, ref_text({**new_ref, "verified_at": now}))
+    rec.update(live="written", live_md5=file_md5(live), camera=prov["camera"], ok=True, rc=0)
+    print(f"✓ {live.name} 를 썼다(camera {prov['camera']}, 이유: {why}) · 재기준 {live_ref.name}")
+    return 0, rec
+
+
 def sweep_targets(start: float, step: float, lim: Limits) -> list[float]:
     """start 에서 step 씩 한계까지(한계 자체 포함)."""
     if step == 0:
@@ -1134,9 +1381,39 @@ def _sweep(args, lim: Limits, sens, head_move, pan: float, tilt: float, pitch: f
     return code
 
 
+def _die(signum: int, _frame: object) -> None:
+    raise SystemExit(1)   # SIGTERM · SIGHUP(콘솔 중지 · ssh 끊김)도 finally 를 타서 live 를 지우게
+
+
 def main(argv: list[str] | None = None) -> int:
+    """★11.17 --auto-extrinsics: 시작하자마자 live · 재기준을 지우고(이전 바이트는 메모리로 — kept 판정용) 성공일 때만 새로 쓴다.
+    어디서든(인자 · 기준 · 영상 · 풀이 · 신호) 실패하면 다시 지운다 — FP++ 가 이번에 확인하지 못한 값을 쓰지 않게(실패 닫힘)."""
+    auto = "--auto-extrinsics" in (sys.argv[1:] if argv is None else argv)
+    if not auto:
+        return _main(argv)
+    prev = _take_live(DEFAULT_LIVE, DEFAULT_LIVE_REF)
+    old = {sig: signal.signal(sig, _die) for sig in (signal.SIGTERM, signal.SIGHUP)}
+    rc = 1
+    try:
+        rc = _main(argv, prev)
+    except SystemExit as e:
+        rc = e.code if isinstance(e.code, int) else 1
+        raise
+    finally:
+        for sig, h in old.items():
+            signal.signal(sig, h)
+        if rc != 0:
+            for f in (DEFAULT_LIVE, DEFAULT_LIVE_REF):
+                if f.exists():
+                    f.unlink()
+            print(f"  {DEFAULT_LIVE.name} · {DEFAULT_LIVE_REF.name} 없음(이번 확인 실패 — 이 파일을 읽는 FP++ · 물체 자세 노드는 "
+                  "다음 성공까지 못 뜬다)")
+    return rc
+
+
+def _main(argv: list[str] | None = None, prev: dict | None = None) -> int:
     p = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0], epilog=RECALIB_EPILOG,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
+                                formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     p.add_argument("--target", default="extrinsics", help="'extrinsics'(sim 시야) 또는 숙임 deg")
     p.add_argument("--extrinsics", default=str(DEFAULT_EXTRINSICS))
     p.add_argument("--config", default=str(DEFAULT_CONFIG), help="imu_pitch_bias 를 읽고(--calib-bias 면 쓰는) 파일")
@@ -1163,6 +1440,12 @@ def main(argv: list[str] | None = None) -> int:
                         "설정 align_tol_px 안에 올 때까지 tilt · pan 을 고친다 → 마커로 외부 파라미터를 풀어 --extrinsics 와 "
                         "extr_tol_mm · extr_tol_deg 로 비교 → IMU 가 기준과 imu_warn_deg 넘게 다르면 경고만. 하나라도 실패면 종료 코드 1")
     p.add_argument("--camset", default=str(DEFAULT_CAMSET), help="--align 이 처음 보내는 목 자세(motors.pan · tilt deg)")
+    p.add_argument("--auto-extrinsics", action="store_true",
+                   help="★11.17 시작 루틴(--execute 와 같이, 목이 --camset 명령값으로 한 번 간다 — 마커 px 피드백 맞춤 없음): 설정 "
+                        "auto_settle_s 기다린 뒤 고정 마커(anchor_ids)로 외부 파라미터를 풀어 rms · σ · base(--extrinsics) 대비 "
+                        "auto_max_mm · auto_max_deg 안이면 live 파일(config/global_camera_extrinsics_arm4090_live.yaml)과 재기준"
+                        "(config/head_view_ref_arm4090_live.yaml)을 쓴다. 재기준과 같으면 다시 안 쓴다. 마커가 화면 밖이면 목을 "
+                        "움직이지 않고 1, 가림은 auto_occlusion_wait_s 기다린다. 실패하면 live · 재기준을 지운다. --extrinsics 는 안 쓴다")
     p.add_argument("--write-extrinsics", action="store_true",
                    help="--align: 푼 외부 파라미터가 허용치 밖이면 --extrinsics 의 camera 위치 · 회전을 새 값으로 쓴다(옛 파일 .bak-<시각>)")
     p.add_argument("--allow-bias-target", action="store_true",
@@ -1188,6 +1471,12 @@ def main(argv: list[str] | None = None) -> int:
         p.error(f"--pan-window {args.pan_window} 는 0 < w ≤ 5 여야 한다")
     if args.align and (not args.execute or args.check or args.record_ref or args.calib_bias or args.grid or args.sweep):
         p.error("--align 은 목을 움직인다 — --execute 와 같이, --check · --record-ref · --calib-bias · --grid · --sweep 없이")
+    if args.auto_extrinsics and (args.align or args.check or args.record_ref or args.calib_bias or args.grid or args.sweep
+                                 or args.write_extrinsics):
+        p.error("--auto-extrinsics 는 혼자 쓴다(--execute 만 같이) — --align · --check · --record-ref · --calib-bias · --grid · "
+                "--sweep · --write-extrinsics 없이")
+    if args.auto_extrinsics and Path(args.extrinsics).resolve() in (DEFAULT_LIVE.resolve(), DEFAULT_LIVE_REF.resolve()):
+        p.error("--auto-extrinsics 의 --extrinsics 는 base(m1117)다 — live 파일을 base 로 주지 않는다")
     if args.write_extrinsics and not args.align:
         p.error("--write-extrinsics 는 --align 에서만 쓴다")
 
@@ -1197,9 +1486,10 @@ def main(argv: list[str] | None = None) -> int:
     bias = float(cfg.get("imu_pitch_bias", 0.0))
     ref_path = Path(args.ref)
     ext_md5 = file_md5(Path(args.extrinsics))
-    feedback = args.execute and not (args.check or args.record_ref or args.calib_bias or args.grid or args.sweep or args.align)
+    align = args.align or args.auto_extrinsics   # 기준 · 마커 · camset 준비가 같다
+    feedback = args.execute and not (args.check or args.record_ref or args.calib_bias or args.grid or args.sweep or align)
     ref = None   # 기준 파일은 --check · --execute · --align 에서만 읽는다(깨진 파일이어도 --record-ref 는 돈다)
-    if args.check or feedback or args.align:
+    if args.check or feedback or align:
         ref = yaml.safe_load(ref_path.read_text(encoding="utf-8")) if ref_path.exists() else None
     if args.check:
         missing = [k for k in ("ref_tol_pitch_deg", "ref_tol_roll_deg", "ref_tol_tick") if k not in cfg]
@@ -1209,7 +1499,7 @@ def main(argv: list[str] | None = None) -> int:
         if why:   # ROS 를 띄우기 전에 끝낸다(run_check 도 같은 판정)
             print(f"❌ {ref_path}: {why} — 외부 파라미터를 잰 자세에서 --record-ref 필요")
             return 1
-    if args.align:   # ROS 를 띄우기 전에 끝낸다
+    if align:   # ROS 를 띄우기 전에 끝낸다
         why = (ref_problem(ref, ext_md5, cfg) or (None if ref.get("measured") is True else "기준이 실측이 아니다(measured false)")
                or (None if ref.get("anchors") is not None else "기준에 고정 마커 px 가 없다(--no-anchors 로 잡은 기준)"))
         if why:
@@ -1222,7 +1512,7 @@ def main(argv: list[str] | None = None) -> int:
         goal = (float(camset["pan"]["deg"]), float(camset["tilt"]["deg"]))
     use_ref = False
     ref_anchors = isinstance(ref, dict) and ref.get("anchors") is not None
-    need_cam = ((args.check or feedback or args.align) and ref_anchors) or (args.record_ref and not args.no_anchors)
+    need_cam = ((args.check or feedback or align) and ref_anchors) or (args.record_ref and not args.no_anchors)
     if need_cam:
         keys = ["anchor_ids", "anchor_size_m"] + (["ref_tol_anchor_px", "ref_tol_anchor_mm", "ref_tol_anchor_deg"] if ref_anchors else [])
         missing = [k for k in keys if k not in cfg]
@@ -1259,10 +1549,17 @@ def main(argv: list[str] | None = None) -> int:
               f"옆 {roll:+.2f}° σ {sd:.3f} n {n} | 외부 파라미터 숙임 {ext_pitch:+.2f}° 옆 {ext_roll:+.2f}° | "
               f"목표 {target:+.2f}°({'기준 파일, 보정 전' if use_ref else '0점 보정 뒤'})")
         if cam is not None:   # ★영상 확인은 어떤 이동 · 기록보다 먼저(안 오면 머리를 움직이지 않는다)
-            why = _cam_problem(cam, cfg, ref["anchors"] if ref_anchors else None, need_markers=not args.align)
+            why = _cam_problem(cam, cfg, ref["anchors"] if ref_anchors else None, need_markers=not align)
             if why:
                 print(why)
                 return 1
+        if args.auto_extrinsics:
+            rc, rec = _auto_extrinsics(sens, cam, head_move if args.execute else None, cfg, ref, lim, goal, Path(args.extrinsics),
+                                       DEFAULT_LIVE, DEFAULT_LIVE_REF, prev)
+            if args.out:
+                with open(args.out, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            return rc
         if args.align:
             rc, rec = _align(sens, cam, head_move, cfg, ref, lim, goal, args.pan_window, Path(args.extrinsics), args.write_extrinsics)
             if args.out:

@@ -252,3 +252,27 @@ def test_known_z_applies_to_static_pose_but_not_to_live_pose(tmp_path):
     assert conv.convert(*args)[0][2] == pytest.approx(table + origin, abs=1e-9)          # 정지 pose: 아는 값
     assert conv.convert(*args, live=True)[0][2] == pytest.approx(z0, abs=1e-9)            # live 추적: FP++ 값 그대로(쥔 뒤 높이가 변한다)
     assert np.allclose(conv.convert(*args)[0][:2], base.convert(*args)[0][:2])           # xy 는 그대로
+
+
+def test_live_extrinsics_provenance_line_and_stale_refusal(tmp_path):
+    """★11.17 리뷰: 시작 로그 한 줄(provenance) · 오래된 live 는 FP++ 런처 · 물체 자세 노드가 시작을 거부한다."""
+    import time
+
+    import head_view_feedback as hv
+    from object_pose_node import provenance_line
+    base = tmp_path / hv.DEFAULT_EXTRINSICS.name
+    base.write_bytes(hv.DEFAULT_EXTRINSICS.read_bytes())
+    assert provenance_line(base) is None                                   # base(m1117)에는 provenance 가 없다
+    hv.require_fresh_live(base)                                            # *_live.yaml 이 아니면 검사하지 않는다
+    prov = {"base": base.name, "base_md5": hv.file_md5(base), "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "marker_ids": [70, 71, 73], "rms_px": 0.4, "camera": "solved", "d_pos_mm": 4.2, "d_xyz_mm": [4.0, 1.0, 0.5],
+            "d_rot_deg": 0.6, "ticks": [1825, 2833]}
+    live = tmp_path / "global_camera_extrinsics_arm4090_live.yaml"
+    live.write_text(hv.live_text(base, None, (1825, 2833), prov), encoding="utf-8")
+    line = provenance_line(live)
+    assert "[70, 71, 73]" in line and "rms 0.4" in line and "4.2 mm" in line and "[1825, 2833]" in line
+    hv.require_fresh_live(live)
+    old = {**prov, "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - 13 * 3600))}
+    live.write_text(hv.live_text(base, None, (1825, 2833), old), encoding="utf-8")
+    with pytest.raises(SystemExit, match="head_view_check"):
+        hv.require_fresh_live(live)

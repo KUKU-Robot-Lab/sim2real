@@ -647,3 +647,194 @@ def test_align_main_writes_one_json_line(align_cam, tmp_path, monkeypatch):
     assert hv.main(argv) == 0 and hv.main(argv) == 0
     lines = out.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 2 and json.loads(lines[-1])["ok"] and json.loads(lines[-1])["final_ticks"]
+
+
+# ---------- ★11.17 --auto-extrinsics: camset 명령 한 번 → 고정 마커로 외부 파라미터를 다시 풀어 live 파일 ----------
+
+def _auto(rig, tmp_path, ext=None, ref=None, **cfg_kw):
+    rig._acc = [0] * 400
+    cfg = {**ALIGN_CFG, "auto_occlusion_wait_s": 0.0, "auto_settle_s": 0.0, **cfg_kw}
+    base = ext or _ext_copy(tmp_path)
+    live, live_ref = tmp_path / "live.yaml", tmp_path / "live_ref.yaml"
+    rc, rec = hv._auto_extrinsics(rig, rig, rig, cfg, ref or _align_ref(rig), hv.Limits(), CAMSET, base, live, live_ref)
+    return rc, rec, base, live, live_ref
+
+
+def _mounted(deg):
+    """카메라 마운트가 광학 y 축으로 deg 돌았다(11.17 USB 재연결 뒤처럼 화면이 옆으로 밀림). 기준 px 는 돌기 전."""
+    rig = _AlignRig(enc0=CAMSET)
+    ref = _align_ref(rig)
+    rig.R0 = rig.R0 @ _rot(1, deg)
+    return rig, ref
+
+
+def test_auto_extrinsics_writes_live_from_the_markers_and_keeps_it_when_unchanged(align_cam, tmp_path):
+    import yaml
+    rig, ref = _mounted(0.5)
+    rc, rec, base, live, live_ref = _auto(rig, tmp_path, ref=ref)
+    base_md5 = hv.file_md5(base)
+    assert rc == 0 and rec["live"] == "written" and rec["camera"] == "solved"
+    assert rig.moves and rig.moves[-1] == pytest.approx(CAMSET)   # camset 명령으로 끝났다(맞춤 이동 없음)
+    d = yaml.safe_load(live.read_text(encoding="utf-8"))
+    R, t = hv.load_extrinsics(live)
+    dmm, ddeg = hv.extrinsics_diff(R, t, rig.R(), rig.t0)
+    assert dmm < 1.0 and ddeg < 0.05                                # 마커로 실제 카메라 자세를 되찾았다
+    assert d["head_pose"] == {"pan_tick": hv.deg_to_tick(CAMSET[0]), "tilt_tick": hv.deg_to_tick(CAMSET[1]),
+                              "tol_tick": yaml.safe_load(base.read_text(encoding="utf-8"))["head_pose"]["tol_tick"]}
+    p = d["provenance"]
+    assert p["base_md5"] == base_md5 and p["marker_ids"] == [70, 71, 73] and 0.4 < p["d_rot_deg"] < 0.6
+    assert hv.file_md5(base) == base_md5 and not list(tmp_path.glob("*.tmp"))   # base 는 읽기만, 임시 파일 안 남김
+    md5 = hv.file_md5(live)
+    rc, rec, *_ = _auto(rig, tmp_path, ext=base, ref=ref)
+    assert rc == 0 and rec["live"] == "kept" and hv.file_md5(live) == md5         # 같으면 다시 안 쓴다(md5 안정)
+
+
+def test_auto_extrinsics_inside_extr_tol_keeps_the_base_camera(align_cam, tmp_path):
+    import yaml
+    rc, rec, base, live, _ = _auto(_AlignRig(enc0=CAMSET), tmp_path)
+    assert rc == 0 and rec["camera"] == "base"
+    assert yaml.safe_load(live.read_text(encoding="utf-8"))["camera"] == yaml.safe_load(base.read_text(encoding="utf-8"))["camera"]
+
+
+def test_auto_extrinsics_refuses_without_writing(align_cam, tmp_path, capsys):
+    """잘림(목을 더 움직이지 않음) · 가림 · base 와 auto_max 넘게 다름 → 1, live 를 안 쓴다."""
+    rig, ref = _mounted(-1.0)                                 # 71 이 오른쪽 가장자리 밖
+    rc, rec, _, live, _ = _auto(rig, tmp_path, ref=ref)
+    assert rc == 1 and rec["cut"] == [71] and not live.exists() and "화면 밖" in capsys.readouterr().out
+    assert len(rig.moves) <= 4                                # camset 접근만(물렸다 들어오기), 찾는 이동 없음
+    rc, rec, _, live, _ = _auto(_AlignRig(enc0=CAMSET, hide={71}), tmp_path)
+    assert rc == 1 and rec["hidden"] == [71] and not live.exists()
+    rc, rec, _, live, _ = _auto(_AlignRig(enc0=CAMSET), tmp_path, ext=_ext_copy(tmp_path, (0.03, 0.0, 0.0)))
+    assert rc == 1 and rec["extrinsics"]["d_pos_mm"] > 20 and not live.exists()
+
+
+def test_auto_extrinsics_main_deletes_live_on_failure(align_cam, tmp_path, monkeypatch):
+    import sys
+    import types
+    live, live_ref = tmp_path / "live.yaml", tmp_path / "live_ref.yaml"
+    monkeypatch.setattr(hv, "DEFAULT_LIVE", live)
+    monkeypatch.setattr(hv, "DEFAULT_LIVE_REF", live_ref)
+    for argv in (["--auto-extrinsics", "--align", "--execute"], ["--auto-extrinsics", "--check"],
+                 ["--auto-extrinsics", "--extrinsics", str(live)]):
+        live.write_text("old", encoding="utf-8")
+        live_ref.write_text("old", encoding="utf-8")
+        with pytest.raises(SystemExit):
+            hv.main(argv)
+        assert not live.exists() and not live_ref.exists()
+    with pytest.raises(SystemExit):
+        hv.main(["--auto-extr", "--execute"])                 # 줄임은 거부(allow_abbrev=False) — 자동 갱신으로 돌지 않는다
+    rig = _AlignRig(enc0=CAMSET)
+    rig._acc = [0] * 400
+    for k, v in {"rclpy": types.SimpleNamespace(init=lambda: None, ok=lambda: False),
+                 "rclpy.node": types.SimpleNamespace(Node=lambda name: types.SimpleNamespace(destroy_node=lambda: None)),
+                 "head_move": rig}.items():
+        monkeypatch.setitem(sys.modules, k, v)
+    monkeypatch.setattr(hv, "Sensors", lambda node, rclpy: rig)
+    monkeypatch.setattr(hv, "AnchorCam", lambda node, rclpy: rig)
+    assert hv.main(["--auto-extrinsics", "--execute"]) == 0 and live.exists() and live_ref.exists()
+    rig.hide = {70}
+    monkeypatch.setitem(ALIGN_CFG, "auto_occlusion_wait_s", 0.0)
+    assert hv.main(["--auto-extrinsics"]) == 1 and not live.exists() and not live_ref.exists()
+
+
+def _main_stubs(monkeypatch, rig):
+    import sys
+    import types
+    for k, v in {"rclpy": types.SimpleNamespace(init=lambda: None, ok=lambda: False),
+                 "rclpy.node": types.SimpleNamespace(Node=lambda name: types.SimpleNamespace(destroy_node=lambda: None)),
+                 "head_move": rig}.items():
+        monkeypatch.setitem(sys.modules, k, v)
+    monkeypatch.setattr(hv, "Sensors", lambda node, rclpy: rig)
+    monkeypatch.setattr(hv, "AnchorCam", lambda node, rclpy: rig)
+
+
+def test_auto_extrinsics_kept_rewrites_the_same_bytes_and_refreshes_verified_at(align_cam, tmp_path, monkeypatch):
+    """★11.17 리뷰: 시작하자마자 지우고(죽어도 옛 값이 안 남음) kept 면 같은 바이트(md5 불변) + 재기준 verified_at 만 갱신."""
+    import yaml
+    live, live_ref = tmp_path / "live.yaml", tmp_path / "live_ref.yaml"
+    monkeypatch.setattr(hv, "DEFAULT_LIVE", live)
+    monkeypatch.setattr(hv, "DEFAULT_LIVE_REF", live_ref)
+    rig = _AlignRig(enc0=CAMSET)
+    rig._acc = [0] * 400
+    _main_stubs(monkeypatch, rig)
+    assert hv.main(["--auto-extrinsics", "--execute"]) == 0
+    md5 = hv.file_md5(live)
+    lr = yaml.safe_load(live_ref.read_text(encoding="utf-8"))
+    lr["verified_at"] = "2026-01-01 00:00:00"
+    live_ref.write_text(hv.ref_text(lr), encoding="utf-8")
+    seen = {}
+    real_auto = hv._auto_extrinsics
+
+    def spy(*a, **kw):
+        seen["gone"] = not live.exists() and not live_ref.exists()     # _auto_extrinsics 에 들어올 때 이미 지워져 있다
+        return real_auto(*a, **kw)
+    monkeypatch.setattr(hv, "_auto_extrinsics", spy)
+    assert hv.main(["--auto-extrinsics", "--execute"]) == 0 and seen["gone"]
+    assert hv.file_md5(live) == md5
+    assert yaml.safe_load(live_ref.read_text(encoding="utf-8"))["verified_at"] != "2026-01-01 00:00:00"
+    assert hv.live_problem(live, hv.file_md5(hv.DEFAULT_EXTRINSICS), live_ref) is None
+
+
+def test_auto_extrinsics_main_deletes_live_when_the_second_write_fails(align_cam, tmp_path, monkeypatch):
+    live, live_ref = tmp_path / "live.yaml", tmp_path / "live_ref.yaml"
+    monkeypatch.setattr(hv, "DEFAULT_LIVE", live)
+    monkeypatch.setattr(hv, "DEFAULT_LIVE_REF", live_ref)
+    rig = _AlignRig(enc0=CAMSET)
+    rig._acc = [0] * 400
+    _main_stubs(monkeypatch, rig)
+    real, calls = hv._atomic_write, []
+
+    def flaky(path, data):
+        calls.append(path)
+        if len(calls) == 2:
+            raise OSError("디스크 가득")
+        real(path, data)
+    monkeypatch.setattr(hv, "_atomic_write", flaky)
+    with pytest.raises(OSError):
+        hv.main(["--auto-extrinsics", "--execute"])
+    assert calls == [live, live_ref] and not live.exists() and not live_ref.exists()
+
+
+@pytest.mark.parametrize("case", ["base_md5", "moved", "turned", "ticks", "ref_md5", "not_measured"])
+def test_live_kept_says_why_it_must_rewrite(align_cam, tmp_path, case):
+    import yaml
+    rig, ref = _mounted(0.5)
+    rc, rec, base, live, live_ref = _auto(rig, tmp_path, ref=ref)
+    assert rc == 0
+    prev = {"live": live.read_bytes(), "ref": live_ref.read_bytes()}
+    R, t = hv.load_extrinsics(live)
+    s = {"R": R, "t": t}
+    ticks = tuple(rec["ticks"])
+    cfg = {**ALIGN_CFG}
+    assert hv._live_kept(prev, base, cfg, s, ticks) is None
+    if case == "base_md5":
+        base = _ext_copy(tmp_path, (0.001, 0.0, 0.0))
+    elif case == "moved":
+        s = {"R": R, "t": t + [0.004, 0.0, 0.0]}               # 3 mm 넘게
+    elif case == "turned":
+        s = {"R": R @ _rot(0, 0.4), "t": t}                   # 0.3° 넘게
+    elif case == "ticks":
+        ticks = (ticks[0] + int(cfg.get("ref_tol_tick", 4)) + 1, ticks[1])
+    elif case == "ref_md5":
+        prev["live"] = prev["live"] + b"# edited\n"
+    else:
+        lr = yaml.safe_load(prev["ref"].decode("utf-8"))
+        prev["ref"] = hv.ref_text({**lr, "measured": False}).encode("utf-8")
+    assert hv._live_kept(prev, base, cfg, s, ticks)
+
+
+def test_live_problem_refuses_old_or_foreign_live(align_cam, tmp_path):
+    """★11.17 리뷰: FP++ 쪽 시작 검사 — 오래됐거나(provenance · verified_at 둘 다 live_max_age_h 밖) 다른 base 면 거부."""
+    import time
+    rc, rec, base, live, live_ref = _auto(_AlignRig(enc0=CAMSET), tmp_path)
+    assert rc == 0 and hv.live_problem(live, live_ref=live_ref, max_age_h=12) is None
+    later = time.time() + 13 * 3600
+    assert "h 전" in hv.live_problem(live, live_ref=live_ref, max_age_h=12, now=later)
+    assert "다른 base" in hv.live_problem(live, base_md5="0" * 32, live_ref=live_ref, max_age_h=12)
+    assert "없거나 비었다" in hv.live_problem(tmp_path / "none_live.yaml")
+    import yaml
+    d = yaml.safe_load(live.read_text(encoding="utf-8"))
+    del d["provenance"]["time"]
+    stale = tmp_path / "x_live.yaml"
+    stale.write_text(yaml.safe_dump(d), encoding="utf-8")
+    assert hv.live_problem(stale, live_ref=tmp_path / "none.yaml", max_age_h=12)   # 확인 시각 없음

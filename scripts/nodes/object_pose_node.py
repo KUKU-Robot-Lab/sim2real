@@ -56,6 +56,15 @@ def check_head_at(head_pose, head_joint_deg: tuple[float, float]) -> None:
         raise HeadOffCalibPose(f"목이 카메라 캘리브 자세가 아니다 — 틱 차이 {off}(허용 ±{head_pose.tol_tick}). 머리 단계를 먼저")
 
 
+def provenance_line(camera_yaml: str | Path) -> str | None:
+    """★11.17 live 외부 파라미터(head_view_feedback.py --auto-extrinsics)의 provenance → 시작 로그 한 줄(없으면 None)."""
+    p = (yaml.safe_load(Path(camera_yaml).read_text(encoding="utf-8")) or {}).get("provenance")
+    if not isinstance(p, dict):
+        return None
+    return (f"외부 파라미터 출처: {p.get('time')} 마커 {p.get('marker_ids')} 풀이(rms {p.get('rms_px')} px) · camera {p.get('camera')} · "
+            f"{p.get('base')} 대비 {p.get('d_pos_mm')} mm {p.get('d_xyz_mm')} · {p.get('d_rot_deg')}° · 틱 {p.get('ticks')}")
+
+
 def base_z_bias(camera_yaml: str | Path) -> float:
     """camera extrinsics yaml 의 선택 키 `base_z_bias_m`(없으면 0)."""
     with open(camera_yaml) as fh:
@@ -182,6 +191,8 @@ def main() -> None:
     if args.calib_profile and not args.head_joint_topic:
         ap.error("--calib-profile 은 --head-joint-topic 과 같이 쓴다(각도별 보정이라 목 각도가 필요)")
     registry = load_registry()
+    from head_view_feedback import require_fresh_live   # ★11.17 리뷰: 오래된 · 다른 base 의 live 로 뜨지 않는다
+    require_fresh_live(args.camera_extrinsics or registry.camera_extrinsics)
     conv = PoseConverter(registry, args.objects or registry.names(), args.camera_extrinsics, args.z_bias, args.calib_profile)
     state = {"conv": conv}      # --objects 없으면 레지스트리를 다시 읽어 새 물체를 더한다(10.09 fpp_object.py add 뒤 재기동 없이)
 
@@ -210,6 +221,8 @@ def main() -> None:
                                    f"camera {args.camera_extrinsics or registry.camera_extrinsics} · z 보정 {conv.z_bias:+.4f} m"
                                    f" · 깊이 광선 보정 {conv.depth_bias}"
                                    + (f" · 보정 프로필 {conv.profile.name}(각도 {len(conv.profile.entries)}개, strict={conv.profile.strict})" if conv.profile else ""))
+            if line := provenance_line(args.camera_extrinsics or registry.camera_extrinsics):
+                self.get_logger().info(line)
 
         def _reload(self) -> None:
             try:

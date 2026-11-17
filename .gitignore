@@ -92,3 +92,7 @@ analysis/**/setup/plan/plan.json
 # 옛 콘솔 경로(runs/s2r_console → logs/s2r_console 링크)
 /runs/
 config/cup_holder_poses_*.yaml.last_check.json
+# ★11.17 head_view_feedback.py --auto-extrinsics 가 시작마다 카메라 PC 에서 쓰는 live 외부 파라미터 · 재기준(호스트 런타임 산출물)
+config/global_camera_extrinsics_arm4090_live.yaml
+config/head_view_ref_arm4090_live.yaml
+config/*_live.yaml.tmp
