@@ -318,10 +318,12 @@ _HAND_ASSIST = ("hand_unfreeze_on_grasp:=true", "thumb_support_g:=80.0", "thumb_
 AGLT_LIVE_ARGS_F = tuple(x for p in zip(AGLT_LIVE_ARGS[::2], AGLT_LIVE_ARGS[1::2]) if p[1] not in _HAND_ASSIST for x in p)
 assert len(AGLT_LIVE_ARGS) - len(AGLT_LIVE_ARGS_F) == 2 * len(_HAND_ASSIST)
 # ★11.18 사용자: 경로 F 는 FP++ 보조 없이 들어온 FP++ 그대로(값 보조만 끔). 튐 거르기(gate · anchor) · 끊김 마지막 값 유지 ·
-#   쥔 뒤 FK 부착 fallback · guard · 손 안 컵 GRU(inhand_est) · 컵 오프셋(CUP_OBS_OFFSET)을 넣지 않는다. 끊김 정지(cup_dropout_*)는
-#   컵 값을 바꾸지 않고 팔만 세우는 안전장치라 남긴다. lift_grasp_palm_m 은 정지 판정만 써서 남긴다.
+#   쥔 뒤 FK 부착 fallback · guard · 손 안 컵 GRU(inhand_est) · 컵 오프셋(CUP_OBS_OFFSET)을 넣지 않는다. 끊김 허용(cup_dropout_*)도
+#   마지막 값 유지(cup_hold_last)가 있어야 쓰는 장치라 뺀다(노드가 거부, 11.18 rc=1). 순수 F 의 끊김 처리 = 노드 기본
+#   CUP_STALE_S(0.5 s) 넘게 끊기면 멈춤. lift_grasp_palm_m 은 정지 판정만 써서 남긴다.
 _FPP_ASSIST_KEYS = ("cup_hold_last", "attach_fallback_s", "attach_guard_m", "attach_guard_frames",
-                    "fpp_gate_jump_m", "fpp_gate_dz_m", "fpp_gate_radius_m", "fpp_gate_max_hold_s", "fpp_gate_anchor_m")
+                    "fpp_gate_jump_m", "fpp_gate_dz_m", "fpp_gate_radius_m", "fpp_gate_max_hold_s", "fpp_gate_anchor_m",
+                    "cup_dropout_stop_s", "cup_dropout_near_m", "cup_dropout_near_max_s", "cup_dropout_follow_s")
 AGLT_PURE_F = (*(x for p in zip(AGLT_LIVE_ARGS_F[::2], AGLT_LIVE_ARGS_F[1::2])
                  if p[1].split(":=")[0] not in _FPP_ASSIST_KEYS for x in p),
                "-p", "inhand_est:='off'")   # 따옴표 필수: ROS -p 는 YAML 이라 맨 off 는 bool False 가 되어 STRING 선언과 충돌(11.18 rc=1)

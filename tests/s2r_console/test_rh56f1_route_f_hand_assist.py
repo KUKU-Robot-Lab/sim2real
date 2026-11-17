@@ -10,9 +10,9 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[2]
 ASSIST = ("hand_unfreeze_on_grasp:=true", "thumb_support_g:=80.0", "thumb_open_floor_rad:=0.06")
-KEEP = ("lift_grasp_palm_m:=0.08", "cup_dropout_stop_s:=1.0")
+KEEP = ("lift_grasp_palm_m:=0.08",)
 FPP_ASSIST = ("cup_hold_last", "attach_fallback_s", "attach_guard_m", "fpp_gate_jump_m", "fpp_gate_anchor_m",
-              "cup_obs_offset_base_m")
+              "cup_obs_offset_base_m", "cup_dropout_stop_s")
 
 
 def _rcg04_nodes(name: str) -> dict[str, list[list[str]]]:
@@ -50,6 +50,7 @@ def test_route_f_grasp_drops_the_hand_assists_and_cocktail_keeps_them(mission):
             if sid in cocktail:
                 assert all(a in av for a in ASSIST), sid
                 assert "cup_hold_last:=true" in av and "fpp_gate_anchor_m:=0.03" in av, sid
+                assert "cup_dropout_stop_s:=1.0" in av, sid
             else:
                 assert not any(a.split(":=")[0] in x for a in ASSIST for x in av), sid
                 assert not any(x.startswith(k + ":=") for k in FPP_ASSIST for x in av), (sid, av)
