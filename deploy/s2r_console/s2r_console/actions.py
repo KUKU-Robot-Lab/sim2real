@@ -24,6 +24,7 @@ from . import pd_names as PD
 from . import simtraj as ST
 from . import experiments as XP
 from . import tuning_view as TU
+from . import place_tune as PTUNE   # ★11.18 고정 놓기 튜닝 탭 — place_fixed 단계에 tune 설정
 from policy_control.ros_domain import REAL_DOMAIN  # noqa: E402  실기 DDS 도메인(config/ros_domain.env)
 from mission_stages import Command, commands_for
 import mission_core as MC
@@ -390,8 +391,10 @@ class ActionManager:
 
     def describe(self, action_id, parameters=None):
         parameters = dict(parameters or {})
+        tune = PTUNE.take(action_id, parameters, self.console)
         if set(parameters) - {'object_ids', 'pan', 'tilt', 'calib_profile', 'folder', 'side', 'test', 'chain'}:
             raise ConsoleError('지원하지 않는 작업 설정', code=400)
+        parameters.update(tune)
         if 'object_ids' in parameters and (not isinstance(parameters['object_ids'], list) or
                                           any(not isinstance(value, str) for value in parameters['object_ids'])):
             raise ConsoleError('물체 ID 목록이 필요하다', code=400)
@@ -768,6 +771,7 @@ class ActionManager:
             job = _Job(action_id, description['group'], operator,
                        self._resources(s, action_id, description['group'], description['parameters']))
             self._jobs[action_id] = job
+            PTUNE.executed(action_id, description['parameters'])   # ★11.18 하강 · tilt_now · 저장 · 마저 놓기 실행 → jog 끔
             self._order = [key for key in self._order if key != action_id] + [action_id]
             job.thread = threading.Thread(target=self._run_job, args=(job, s, description), daemon=True,
                                           name=f'action-{action_id}')
@@ -792,6 +796,7 @@ class ActionManager:
         return [self._transform(s, description['id'], description['parameters'], c) for c in commands]
 
     def _transform(self, s, action_id, parameters, cmd):
+        cmd = PTUNE.transform(action_id, parameters, cmd, self.console.repo)
         if action_id in ('head_control', 'cups') and any('head_move.py' in a for a in cmd.argv) and (
                 action_id == 'head_control' or s.workspace.head_set or {'pan', 'tilt'} & set(parameters)):
             head = {**s.workspace.head, **parameters}

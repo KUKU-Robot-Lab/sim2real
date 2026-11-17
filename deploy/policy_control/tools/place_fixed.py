@@ -14,6 +14,11 @@ tilt 끝 자세에서만 누른다. 하강까지 · 들기까지 모두 놓는 �
     python3 deploy/policy_control/tools/place_fixed.py --cup blue --until descend            # 계획 · 검사 · 드라이런
     python3 deploy/policy_control/tools/place_fixed.py --cup blue --until all --execute      # ★실기 — 사용자 승인 뒤
 종료 코드: 0 = 끝 · 2 = 검사 실패 · 3 = 핀 · 입력 불일치 · 4 = pd 손 명령 없음 · 그 밖 = 재생 실패.
+★11.18 콘솔 고정 놓기 튜닝 탭(s2r_console/place_tune.py) — --until 대신 하나:
+  --jog dx,dy,dz,dyaw                  하강 끝에서 손 쥔 채 조금(plan_place_fixed --jog) → 재생 rate 1.0(관절 ≤ 0.1 rad/s)
+  --save-offset                        지금 손 ↔ 하강 끝 계획 차이를 설정 offset 에 더한다(움직이지 않음 · 손 명령 안 읽음)
+  --resume                             지금 자세에서 release → lift → hold(plan_place_fixed --resume)
+  --out <폴더>                         기록 폴더를 정해 준다(콘솔이 결과 · plan/ 을 읽는다). 이미 있으면 rc 3.
 """
 from __future__ import annotations
 
@@ -73,43 +78,77 @@ def failed_checks(plan_out: Path) -> str:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("--cup", choices=tuple(CUPS), required=True)
-    ap.add_argument("--until", choices=("descend", "all"), required=True, help="descend = 하강 끝(손 쥔 채)까지 · all = 들기까지")
+    m = ap.add_mutually_exclusive_group(required=True)
+    m.add_argument("--until", choices=("descend", "all"), help="descend = 하강 끝(손 쥔 채)까지 · all = 들기까지")
+    m.add_argument("--jog", default=None, help="dx,dy,dz,dyaw — 홀더 좌표 mm · 컵 축 둘레 deg(손 쥔 채)")
+    m.add_argument("--save-offset", action="store_true")
+    m.add_argument("--resume", action="store_true")
+    ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--execute", action="store_true")
     a = ap.parse_args(argv)
+    mode = a.until or ("jog" if a.jog is not None else "save" if a.save_offset else "resume")
     from plan_tilt import current_q
     from policy_control import place_teach as PT
 
     side = yaml.safe_load((CFG_DIR / f"{CUPS[a.cup]}.yaml").read_text(encoding="utf-8"))["side"]
-    out = run_paths.unique_dir(run_paths.day_dir("place_fixed") / f"{a.cup}_{time.strftime(run_paths.TIME_FMT)}")
-    write_meta(out, tool="place_fixed", cup=a.cup, side=side, until=a.until, execute=a.execute)
+    if a.out is not None:
+        try:
+            a.out.mkdir(parents=True)
+        except FileExistsError:
+            print(f"[place_fixed] ✗ --out {a.out} 가 이미 있다 — 움직이지 않았다", flush=True)
+            return 3
+        out = a.out
+    else:
+        out = run_paths.unique_dir(run_paths.day_dir("place_fixed") / f"{a.cup}_{time.strftime(run_paths.TIME_FMT)}")
+    write_meta(out, tool="place_fixed", cup=a.cup, side=side, until=a.until, execute=a.execute, mode=mode)
     q = current_q("")
+    if mode == "save":                       # 움직이지 않는다 — 손 명령 · 재생 없이 계산 · 저장만
+        (out / "q.json").write_text(json.dumps(q))
+        rc = run([sys.executable, str(TOOLS / "plan_place_fixed.py"), "--cup", a.cup, "--q-json", str(out / "q.json"),
+                  "--save-offset", "--out", str(out / "plan")])
+        print(f"[place_fixed] 오프셋 저장 rc {rc} · {out / 'plan' / 'offset.json'}", flush=True)
+        return result(out, rc, mode, a)
     hand = pd_hand(side, PT.hand_names(side))
     if hand is None:
         print(f"[place_fixed] ✗ {APPLIED.format(side=side)} 에 손 명령이 {HAND_WAIT_S:.0f} s 안에 없다 — pd {side} 가 TRACKING 이 아니거나 "
               f"손 그룹이 없다. 손 실측으로 대신하지 않는다(컵을 놓칠 수 있다) · 움직이지 않았다 · {out}", flush=True)
-        return 4
+        return result(out, 4, mode, a)
     (out / "q.json").write_text(json.dumps(q))
     (out / "hand.json").write_text(json.dumps({"side": side, "names": list(PT.hand_names(side)), "q": hand,
                                                "source": APPLIED.format(side=side)}))
     print(f"[place_fixed] {a.cup} · {side} · 손 명령 {[round(v, 3) for v in hand]} · {out}", flush=True)
 
     plan_out = out / "plan"
+    extra = (["--resume"] if mode == "resume" else ["--jog", a.jog] if mode == "jog" else [])
     rc = run([sys.executable, str(TOOLS / "plan_place_fixed.py"), "--cup", a.cup, "--q-json", str(out / "q.json"),
-              "--hand-grip", ",".join(repr(v) for v in hand), "--out", str(plan_out)])
+              "--hand-grip", ",".join(repr(v) for v in hand), "--out", str(plan_out), *extra])
     if rc != 0:
         print(f"[place_fixed] 계획 · 검사 rc {rc} — 움직이지 않았다 · 걸린 항목: {failed_checks(plan_out)} · {plan_out}", flush=True)
-        return rc
-    meta = json.loads((plan_out / "meta.json").read_text(encoding="utf-8"))
-    rate = math.floor(float(meta["replay_max_rate_scale_reduced"]) * 100 - 1e-9) / 100   # 부동소수 오차로 한계를 넘지 않게 내림
+        return result(out, rc, mode, a)
+    try:
+        meta = json.loads((plan_out / "meta.json").read_text(encoding="utf-8"))
+        rate = math.floor(float(meta["replay_max_rate_scale_reduced"]) * 100 - 1e-9) / 100
+    except (OSError, ValueError, KeyError, TypeError) as exc:   # 계획이 rc 0 인데 meta 를 못 읽으면 움직이지 않는다
+        print(f"[place_fixed] ✗ {plan_out / 'meta.json'} 읽기 실패 {type(exc).__name__}: {exc} — 움직이지 않았다", flush=True)
+        return result(out, 3, mode, a)   # 부동소수 오차로 한계를 넘지 않게 내림
+    if mode == "jog":
+        rate = min(rate, 1.0)                # jog 궤적은 관절 0.1 rad/s 로 만들었다 — 빠르게 돌리지 않는다
     if rate <= 0:
         print(f"[place_fixed] ✗ 재생 허용 rate_scale {meta['replay_max_rate_scale_reduced']} — 움직이지 않았다", flush=True)
-        return 2
+        return result(out, 2, mode, a)
     argv_replay = [sys.executable, str(TOOLS / "replay_traj_rh.py"), "--npz", str(plan_out / "place_cmd.npz"),
                    "--rate-scale", repr(rate), "--max-start-gap", repr(START_GAP_RAD), "--hand-start", "applied"]
-    if a.until != "all":
+    if a.until == "descend":
         argv_replay += ["--until", a.until]
     rc = run(argv_replay + (["--execute"] if a.execute else []))
     print(f"[place_fixed] {'재생' if a.execute else '드라이런(--execute 로 재생)'} rc {rc} · {out}", flush=True)
+    return result(out, rc, mode, a)
+
+
+def result(out: Path, rc: int, mode: str, a) -> int:
+    """끝난 런의 rc 를 남긴다 — 콘솔 튜닝 탭이 마지막 결과를 여기서 읽는다."""
+    (out / "result.json").write_text(json.dumps({"rc": rc, "mode": mode, "cup": a.cup, "execute": a.execute, "jog": a.jog,
+                                                 "time": time.time()}), encoding="utf-8")
     return rc
 
 

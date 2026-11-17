@@ -6,6 +6,7 @@
 <title>S2R 배포 콘솔</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/static/console.css">
+<link rel="stylesheet" href="/static/place_tune.css">
 </head>
 <body>
 <header id="top">
@@ -26,6 +27,7 @@
       <button id="tab-button-policy" class="btn" role="tab" data-act="tab" data-arg="policy">policy</button>
       <button id="tab-button-eval" class="btn" role="tab" data-act="tab" data-arg="eval">eval · 실기 평가</button>
       <button id="tab-button-tuning" class="btn" role="tab" data-act="tab" data-arg="tuning">tuning · 마찰 실험</button>
+      <button id="tab-button-place" class="btn" role="tab" data-act="tab" data-arg="place">place · 고정 놓기 튜닝</button>
     </nav>
     <section id="tab-setting" role="tabpanel"><div id="setting-actions" class="action-grid"></div>
       <!-- ★11.05 사용자: 인지 설정은 여기 한 곳 — 고른 물체는 workspace 파일에 저장되고 "인지 적용" 이 그 물체로 FP++ 를 맞춘다 -->
@@ -102,6 +104,7 @@
         </section>
       </div>
     </section>
+    <section id="tab-place" role="tabpanel" hidden aria-label="고정 놓기 튜닝"><div id="pt-root" class="ev"></div></section>
     <section id="tab-eval" role="tabpanel" hidden aria-label="실기 평가">
       <div class="ev">
         <section class="ev-block" aria-labelledby="ev-h-ep">
@@ -187,5 +190,6 @@
 <div id="stale" class="disconnected" hidden><div><b id="stale-title">콘솔 서버와 끊겼다</b><span id="stale-why">화면의 값은 마지막으로 받은 것이다 — 지금의 로봇 상태가 아니다.</span></div></div>
 
 <script src="/static/console.js"></script>
+<script src="/static/place_tune.js"></script>
 </body>
 </html>
