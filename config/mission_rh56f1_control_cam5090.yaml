@@ -75,8 +75,10 @@ stages:
   needs:
   - head_home
   skippable: true
-  title: 시야 검사(읽기 전용, 이 PC) — D435i IMU 숙임 − 외부 파라미터 숙임이 허용치 (config/head_view_feedback_arm4090.yaml view_check_tol_deg) 안인가. 머리는 움직이지 않는다. yaw
-    는 못 잰다
+  touches_real: true
+  title: 외부 파라미터 자동 갱신(이 PC, 목이 camset 으로 간다) — 테이블 고정 마커 70 · 71 · 73 으로 카메라 자세를 풀어 config/global_camera_extrinsics_arm4090_m1117.yaml 대비 20
+    mm · 2° 안이면 config/global_camera_extrinsics_arm4090_live.yaml 에 쓴다(같으면 그대로). 마커가 화면 밖 · 가림 · 차이가 크면 실패하고 live 를 지운다 → FP++ 가 안 뜬다. 건너뛰면 지난
+    live 를 쓰되 마지막 확인이 live_max_age_h(12 h) 넘으면 FP++ 가 안 뜬다
   arm_free: true
 - id: head_control
   group: motion
@@ -106,11 +108,10 @@ stages:
   lane: both
   needs:
   - head_view_check
-  - cup_holders
   skippable: true
   touches_real: true
-  needs_why: 'FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다. ★11.11 사용자: 컵홀더 측정 완료(고정) → 컵 배치 — 컵이 홀더 마커를 가리기
-    전에 cup_holders 를 끝내거나(홀더를 그대로 두면) 건너뛴다'
+  needs_why: FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다. 홀더는 기다리지 않는다(저장 파일 · 에피소드 시작 검사) — 홀더를 옮겼다면 컵을 놓기
+    전에 cup_holders 를 먼저
   title: FP++ 드라이버(5090) — 인지 런처 · 자세 수신기 · base 변환 노드 · 머리 자세 맞춤. 물체는 띄우지 않는다(setting 탭 '인지 적용' 또는 에피소드가 자기 물체를 띄운다)
   arm_free: true
 - id: cups_right
@@ -378,7 +379,6 @@ stages:
   touches_real: true
   needs:
   - policy_aglt_right
-  - cup_holders
   needs_why: 놓기 정책은 aglt 가 컵을 쥐고 인계 자리(0.25, ∓0.12, 0.41)에 멈춘 상태에서만 출발해 봤다 — 팔 · 손 목표는 pd 가 붙잡은 aglt 마지막 joint_target, 목표는 홀더 자세
   artifacts:
   - place_right
@@ -392,7 +392,6 @@ stages:
   touches_real: true
   needs:
   - policy_aglt_left
-  - cup_holders
   needs_why: 놓기 정책은 aglt 가 컵을 쥐고 인계 자리(0.25, ∓0.12, 0.41)에 멈춘 상태에서만 출발해 봤다 — 팔 · 손 목표는 pd 가 붙잡은 aglt 마지막 joint_target, 목표는 홀더 자세
   artifacts:
   - place_left
@@ -836,6 +835,18 @@ stages:
   title: '[에피소드] cocktail_1c_e4000 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_to_tilt_start → grasp_blue
     → to_tilt_start_r1 → grasp_shaker → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink
     → place_pink → place_shaker → go_home_end'
+- id: episode_cocktail_1c_n07b
+  group: policy
+  lane: arm_left
+  skippable: true
+  touches_real: true
+  needs:
+  - home_left
+  - home_right
+  - cups
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
+  title: '[에피소드] cocktail_1c_n07b — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_to_tilt_start → grasp_blue
+    → to_tilt_start_r1 → grasp_shaker → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → place_shaker → go_home_end'
 - id: episode_grasp_s_right
   group: policy
   lane: arm_right
@@ -1065,6 +1076,7 @@ run:
     - episode_cocktail_1b#10
     - episode_cocktail_1c_e1000#10
     - episode_cocktail_1c_e4000#10
+    - episode_cocktail_1c_n07b#10
     - episode_grasp_s_right#10
     - episode_grasp_s_left#10
     - episode_grasp_s_pink_right#10
@@ -1157,6 +1169,11 @@ run:
     - episode_cocktail_1c_e4000#7
     - episode_cocktail_1c_e4000#8
     - episode_cocktail_1c_e4000#11
+    - episode_cocktail_1c_n07b#5
+    - episode_cocktail_1c_n07b#6
+    - episode_cocktail_1c_n07b#7
+    - episode_cocktail_1c_n07b#8
+    - episode_cocktail_1c_n07b#11
     - episode_grasp_s_right#6
     - episode_grasp_s_right#7
     - episode_grasp_s_right#8
@@ -1284,6 +1301,10 @@ run:
     argv: &id001
     - python3
     - '{repo}/scripts/head_move.py'
+    - --config
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
+    - --extrinsics
+    - '{repo}/config/global_camera_extrinsics_arm4090_live.yaml'
     execute_args:
     - --execute
   - note: 카메라(RealSense) 켜기 — 이미 떠 있으면 그대로(cups 단계와 같이 써도 된다)
@@ -1299,11 +1320,11 @@ run:
     - --out
     - '{repo}/config/cup_holder_poses_5090_v1.yaml'
     - --extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090_h2048.yaml'
+    - '{repo}/config/global_camera_extrinsics_arm4090_m1117.yaml'
     background: true
   - note: '★컵홀더 확인 — ok: true · 세 홀더 x ≈ 같은 값(0.38 부근) · y ≈ l +0.16 / r −0.06 / r 바깥 −0.28(간격 0.22 · 10.27 A1 배치) · stable ✓ 인가 (어긋나면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py · 겹친 영상은 scripts/calib/cup_holder_pose.py --png)'
     argv:
@@ -1317,7 +1338,7 @@ run:
     - bash
     - -lc
     - 'cd {repo} && { bash scripts/vision/camera_up.sh && python3 scripts/nodes/cup_holder_pose_node.py --write --timeout-s 30 --max-jump-m 0.03
-      --max-yaw-deg 10 --out config/cup_holder_poses_5090_v1.yaml --extrinsics config/global_camera_extrinsics_arm4090_h2048.yaml; }; rc=$?; if
+      --max-yaw-deg 10 --out config/cup_holder_poses_5090_v1.yaml --extrinsics config/global_camera_extrinsics_arm4090_m1117.yaml; }; rc=$?; if
       [ $rc -ne 0 ]; then echo "⚠ 홀더 다시 재기 실패 — 카메라 · 홀더 노드 rc=$rc · cup_holder_poses_5090_v1.yaml 안 바꿈 · 홀더를 쓰는 에피소드 시작 검사가 막는다"; printf ''\173"time":
       "%s", "epoch": %s, "result": "failed", "rc": %d, "what": "카메라 · 홀더 노드"\175\n'' "$(date +%Y-%m-%dT%H:%M:%S)" "$(date +%s)" $rc > config/cup_holder_poses_5090_v1.yaml.last_check.json;
       fi; true'
@@ -1344,14 +1365,16 @@ run:
     argv:
     - bash
     - '{repo}/scripts/vision/camera_up.sh'
-  - note: 시야 검사 — IMU 중력으로 잰 카메라 숙임과 config/global_camera_extrinsics_arm4090_h2048.yaml 숙임의 차가 허용치를 넘으면 실패(머리는 움직이지 않는다). 실패하면 카메라 · 머리를 건드렸는지
-      보고 캘리브 자세를 다시 잡는다(scripts/head_view_feedback.py --help 끝)
+  - note: 외부 파라미터 자동 갱신 — camset 에서 테이블 고정 마커(70 · 71 · 73)로 카메라 자세를 다시 풀어 config/global_camera_extrinsics_arm4090_live.yaml 에 쓴다(base config/global_camera_extrinsics_arm4090_m1117.yaml
+      는 읽기만, 대비 20 mm · 2° 넘게 다르거나 마커가 화면 밖 · 가림이면 실패하고 live 를 지운다). 실패하면 카메라 마운트를 보고 scripts/head_view_feedback.py --help 끝
     argv:
     - python3
     - '{repo}/scripts/head_view_feedback.py'
-    - --check
+    - --auto-extrinsics
     - --extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090_h2048.yaml'
+    - '{repo}/config/global_camera_extrinsics_arm4090_m1117.yaml'
+    execute_args:
+    - --execute
   cups:
   - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 머리 자세는 이 단계가 캘리브 자세로 맞춘다
     argv:
@@ -1366,19 +1389,19 @@ run:
     - --host
     - local
     - --camera-extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090_h2048.yaml'
+    - '{repo}/config/global_camera_extrinsics_arm4090_live.yaml'
     background: true
   - note: FP++ 자세 수신기 — 영상 · FP++ 는 localhost 전용 DDS에서 돌고 자세만 UDP(127.0.0.1)로 넘어온다
     argv:
     - python3
     - '{repo}/scripts/nodes/fpp_pose_rx.py'
     background: true
-  - note: 물체 자세 → base — 5090 카메라 외부 파라미터(config/global_camera_extrinsics_arm4090_h2048.yaml, + depth z 보정). /objects/<물체>/pose(레지스트리의 모든 물체)
+  - note: 물체 자세 → base — 5090 카메라 외부 파라미터(config/global_camera_extrinsics_arm4090_live.yaml). /objects/<물체>/pose(레지스트리의 모든 물체)
     argv:
     - python3
     - '{repo}/scripts/nodes/object_pose_node.py'
     - --camera-extrinsics
-    - '{repo}/config/global_camera_extrinsics_arm4090_h2048.yaml'
+    - '{repo}/config/global_camera_extrinsics_arm4090_live.yaml'
     - --head-joint-topic
     - /head/joint_states
     background: true
@@ -1562,6 +1585,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:={policy:aglt_right.max_episode_s}
     background: true
@@ -1874,6 +1899,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:={policy:aglt_left.max_episode_s}
     background: true
@@ -3050,9 +3077,9 @@ run:
     - --require-all
   - note: '★[에피소드 pick_place_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
-      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
-      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_m1117.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17 마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
       s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
@@ -3114,6 +3141,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=15.0
     background: true
@@ -3218,9 +3247,9 @@ run:
     - --require-all
   - note: '★[에피소드 pick_place_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 CENTER_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
-      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
-      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_m1117.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17 마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
       s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
@@ -3282,6 +3311,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=15.0
     background: true
@@ -3386,8 +3417,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_c_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -3451,6 +3482,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=29.0
     background: true
@@ -3531,8 +3564,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_c_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -3596,6 +3629,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=29.0
     background: true
@@ -3742,8 +3777,8 @@ run:
     - --require-all
   - note: '★[에피소드 tilt_base_c] 물체(SRC, RCV)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) ·
       기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -3808,6 +3843,8 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
+    - -p
     - max_episode_s:=29.0
     background: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 C: 접근 정책 → 정책 끄고 손 닫기(닿은 손가락은 실측에 고정 · 안 닿은 손가락 앞섬 0.08 rad) → 판정 없이 10 cm
@@ -3866,6 +3903,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=29.0
     background: true
@@ -3949,8 +3988,8 @@ run:
     - --require-all
   - note: '★[에피소드 tilt_base_d] 물체(SRC, RCV)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) ·
       기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -4020,6 +4059,8 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
+    - -p
     - max_episode_s:=15.0
     background: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_rcg03) — 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 스스로 끝남 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
@@ -4083,6 +4124,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=15.0
     background: true
@@ -4165,8 +4208,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_b_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -4250,8 +4293,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_b_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -4335,8 +4378,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_d_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -4405,6 +4448,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=15.0
     background: true
@@ -4485,8 +4530,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_d_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -4555,6 +4600,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=15.0
     background: true
@@ -4635,8 +4682,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_e_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -4710,6 +4757,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -4790,8 +4839,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_e_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -4865,6 +4914,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -4945,8 +4996,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -4955,7 +5006,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4989,39 +5041,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -5102,8 +5130,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -5112,7 +5140,8 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5146,39 +5175,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -5259,8 +5264,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source240_orange_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -5269,7 +5274,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5303,39 +5309,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -5416,8 +5398,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source240_pink_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -5426,7 +5408,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5460,39 +5443,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -5573,8 +5532,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source200_orange_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -5583,7 +5542,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5617,39 +5577,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -5730,8 +5666,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source200_pink_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -5740,7 +5676,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5774,39 +5711,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -5887,8 +5800,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_shaker_c_orange_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -5897,7 +5810,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5931,39 +5845,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -6044,8 +5934,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source240_blue_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -6054,7 +5944,8 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6088,39 +5979,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -6201,8 +6068,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source240_orange_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -6211,7 +6078,8 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6245,39 +6113,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -6358,8 +6202,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source240_pink_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -6368,7 +6212,8 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6402,39 +6247,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -6515,8 +6336,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source200_orange_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -6525,7 +6346,8 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6559,39 +6381,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -6672,8 +6470,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_f_source200_pink_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
       ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -6682,7 +6480,8 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6716,39 +6515,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -6829,9 +6604,9 @@ run:
     - --require-all
   - note: '★[에피소드 pick_place_f_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
-      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
-      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_m1117.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17 마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
       s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
@@ -6839,7 +6614,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6873,37 +6649,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -7008,9 +6762,9 @@ run:
     - --require-all
   - note: '★[에피소드 pick_place_f_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=0 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
-      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
-      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_m1117.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17 마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
       s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
@@ -7018,7 +6772,8 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -7052,37 +6807,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -7188,8 +6921,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp2tilt_f_240] 물체(SRC, RCV)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm)
       · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -7198,7 +6931,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -7232,42 +6966,21 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -7301,37 +7014,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -7417,8 +7108,8 @@ run:
   - note: '★[에피소드 cocktail_1] 물체(SRC_BLUE, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · SRC_PINK 는 아직 탁자에 두지 않는다(에피소드 확인 단계에서 놓는다) · 홀더 HOLDER_0=0, HOLDER_1=1,
       HOLDER_2=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판
       0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -7493,6 +7184,8 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
+    - -p
     - max_episode_s:=33.0
     background: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
@@ -7561,6 +7254,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -7694,9 +7389,9 @@ run:
     - --require-all
   - note: '★[에피소드 cocktail_1b] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
-      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
-      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_m1117.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17 마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
       s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
@@ -7770,6 +7465,8 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
+    - -p
     - max_episode_s:=33.0
     background: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
@@ -7838,6 +7535,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -7972,8 +7671,8 @@ run:
   - note: '★[에피소드 cocktail_1c_e1000] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고
       저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점
       0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -8048,7 +7747,7 @@ run:
     - -p
     - thumb_open_floor_rad:=0.06
     - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -8254,8 +7953,8 @@ run:
   - note: '★[에피소드 cocktail_1c_e4000] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고
       저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점
       0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -8501,6 +8200,286 @@ run:
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
     - episode_cocktail_1c_e4000
+  episode_cocktail_1c_n07b:
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세(config/cup_holder_poses_5090_v1.yaml)에 쓰는 홀더가 다 있는가 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/cocktail_1c_n07b.yaml
+    - --plan
+    - --require-holders
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
+  - note: ★5090 GPU 여유가 있는가(nvidia-smi — 학습이 돌면 VRAM 이 모자랄 수 있다, 물체 컨테이너마다 약 2 GB). 없는 물체 컨테이너만 띄운다
+    argv:
+    - bash
+    - -lc
+    - nvidia-smi --query-compute-apps=pid,used_memory --format=csv; nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    manual: true
+  - note: FP++ 물체 확보 — source240_blue · source240_pink · shaker_c_orange 묶음 중 없는 것만 띄운다(다른 컨테이너는 그대로). 하나라도 못 뜨면 실패. 최대 300 s
+    argv:
+    - python3
+    - '{repo}/scripts/ops/perception_ctl.py'
+    - start
+    - --add
+    - source240_blue
+    - source240_pink
+    - shaker_c_orange
+    - --wait
+    - '300'
+    - --require-all
+  - note: '★[에피소드 cocktail_1c_n07b] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고 저장된
+      자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085,
+      ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
+      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
+      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_right
+    - -p
+    - ns:=right
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/right_rcg04/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/source240_blue/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_left
+    - -p
+    - ns:=left
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/left_rcg04/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/shaker_c_orange/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - hand_unfreeze_on_grasp:=true
+    - -p
+    - thumb_support_g:=80.0
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - thumb_open_floor_rad:=0.06
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: '[right] rh_place_r 노드(rh56f1/place/right_n07) — 홀더 1 · 놓은 뒤 스스로 끝남 · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_place_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_place_node_right
+    - -p
+    - ns:=right_place
+    - -p
+    - episode_topic:=/policy_control/right/episode
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/place/right_n07/rh_place_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - cup_topic:=/objects/source240_blue/pose
+    - -p
+    - holder:=1
+    background: true
+  - note: '[left] rh_place_l 노드(rh56f1/place/left_n09_e3800) — 홀더 0 · 놓은 뒤 스스로 끝남 · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_place_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_place_node_left
+    - -p
+    - ns:=left_place
+    - -p
+    - episode_topic:=/policy_control/left/episode
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/place/left_n09_e3800/rh_place_contract.json
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - cup_topic:=/objects/shaker_c_orange/live_pose
+    - -p
+    - holder:=0
+    background: true
+  - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
+    argv:
+    - bash
+    - -lc
+    - CAMERA='/camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
+      /camera/camera/aligned_depth_to_color/camera_info /head_depth/image /head/joint_states' CAMERA_HZ=10 EXTRA='/policy_control/joint_target
+      /policy_control/status/pd_left /policy_control/status/pd_right /policy_control/status/rh_aglt_node_left /policy_control/status/rh_aglt_node_right
+      /policy_control/status/rh_place_node_left /policy_control/status/rh_place_node_right /policy_control/status/episode_runner /policy_control/left/episode
+      /policy_control/right/episode /episode/objects/SRC_BLUE/pose /episode/objects/SRC_PINK/pose /episode/objects/SHAKER/pose /objects/source240_blue/pose
+      /objects/source240_pink/pose /objects/shaker_c_orange/pose /objects/source240_blue/live_pose /objects/source240_pink/live_pose /objects/shaker_c_orange/live_pose
+      /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied /policy_control/pd_right/applied
+      /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action' bash {repo}/deploy/policy_control/tools/rh56f1_record.sh
+      start episode_cocktail_1c_n07b
+  - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
+    - --out
+    - '{runs}/cpu/episode_cocktail_1c_n07b.csv'
+    background: true
+  - note: 에피소드 실행기 episode_runner — cocktail_1c_n07b · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1c_n07b)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -p
+    - episode:=config/episodes/cocktail_1c_n07b.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_cocktail_1c_n07b#11
+    - episode_cocktail_1c_n07b#10
+    - episode_cocktail_1c_n07b#8
+    - episode_cocktail_1c_n07b#7
+    - episode_cocktail_1c_n07b#6
+    - episode_cocktail_1c_n07b#5
+  - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
+    argv:
+    - bash
+    - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
+    - stop
+    - episode_cocktail_1c_n07b
   episode_grasp_s_right:
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세()에 쓰는 홀더가 다 있는가 (읽기만)
     argv:
@@ -8533,8 +8512,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_s_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -8715,8 +8694,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_s_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -8897,8 +8876,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_s_pink_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm)
       · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -9079,8 +9058,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_m_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -9261,8 +9240,8 @@ run:
     - --require-all
   - note: '★[에피소드 grasp_m_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기
       < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_h2048.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco
-      값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
+      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
+      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
       --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
       · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
@@ -9443,9 +9422,9 @@ run:
     - --require-all
   - note: '★[에피소드 place_m_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로
       있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
-      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
-      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_m1117.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17 마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
       s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
@@ -9453,7 +9432,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -9487,39 +9467,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -9657,6 +9613,10 @@ run:
     argv:
     - python3
     - '{repo}/scripts/head_move.py'
+    - --config
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
+    - --extrinsics
+    - '{repo}/config/global_camera_extrinsics_arm4090_live.yaml'
     execute_args:
     - --execute
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
@@ -9697,9 +9657,9 @@ run:
     - --require-all
   - note: '★[에피소드 place_m_left] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=0 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로
       있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
-      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
-      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_m1117.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17 마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
       s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
@@ -9707,7 +9667,8 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -9741,39 +9702,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -9913,6 +9850,10 @@ run:
     argv:
     - python3
     - '{repo}/scripts/head_move.py'
+    - --config
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
+    - --extrinsics
+    - '{repo}/config/global_camera_extrinsics_arm4090_live.yaml'
     execute_args:
     - --execute
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
@@ -9953,9 +9894,9 @@ run:
     - --require-all
   - note: '★[에피소드 place_m_blue_h2_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
-      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
-      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_m1117.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17 마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
       s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
@@ -9963,7 +9904,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -9997,39 +9939,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -10171,6 +10089,10 @@ run:
     argv:
     - python3
     - '{repo}/scripts/head_move.py'
+    - --config
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
+    - --extrinsics
+    - '{repo}/config/global_camera_extrinsics_arm4090_live.yaml'
     execute_args:
     - --execute
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
@@ -10211,9 +10133,9 @@ run:
     - --require-all
   - note: '★[에피소드 place_m_pink_h1_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=1 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
-      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
-      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_m1117.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17 마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
       s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
@@ -10221,7 +10143,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -10255,39 +10178,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -10431,6 +10330,10 @@ run:
     argv:
     - python3
     - '{repo}/scripts/head_move.py'
+    - --config
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
+    - --extrinsics
+    - '{repo}/config/global_camera_extrinsics_arm4090_live.yaml'
     execute_args:
     - --execute
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
@@ -10471,9 +10374,9 @@ run:
     - --require-all
   - note: '★[에피소드 place_m_pink_h2_right] 물체(CUP)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 PLACE_HOLDER=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
       그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
-      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_h2048.yaml
-      로 비교만 — config/global_camera_extrinsics_arm4090_h2048.yaml 를 --write 로 덮지 않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml
-      로 복사해 --out config/global_camera_extrinsics_arm4090_h2048_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_m1117.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17 마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
       s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
@@ -10481,7 +10384,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -10515,39 +10419,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
     - cup_dropout_stop_s:=1.0
     - -p
     - cup_dropout_near_m:=0.2
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -10693,6 +10573,10 @@ run:
     argv:
     - python3
     - '{repo}/scripts/head_move.py'
+    - --config
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
+    - --extrinsics
+    - '{repo}/config/global_camera_extrinsics_arm4090_live.yaml'
     execute_args:
     - --execute
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손 · 카메라)
@@ -10706,6 +10590,8 @@ run:
     argv:
     - python3
     - '{repo}/scripts/head_move.py'
+    - --config
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
     execute_args:
     - --execute
   head_sweep:
@@ -10755,5 +10641,9 @@ run:
     argv:
     - python3
     - '{repo}/scripts/head_move.py'
+    - --config
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
+    - --extrinsics
+    - '{repo}/config/global_camera_extrinsics_arm4090_live.yaml'
     execute_args:
     - --execute

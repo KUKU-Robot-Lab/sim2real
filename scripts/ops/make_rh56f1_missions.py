@@ -34,6 +34,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "scripts"))   # object_registry — 묶음 물체 목록
 sys.path.insert(0, str(REPO / "deploy" / "policy_control"))   # policy_control.ros_domain — 실기 도메인 한 곳
 from policy_control.ros_domain import REAL_DOMAIN  # noqa: E402  config/ros_domain.env(10.30 motion_acq 와 분리)
+from policy_control.episode_spec import CUP_OBS_OFFSET_BASE_M  # noqa: E402  ★11.11 팔별 컵 관측 보정 한 곳
 OUT = {"real": REPO / "config" / "mission_rh56f1_control.yaml", "fake": REPO / "config" / "mission_rh56f1_fake.yaml"}
 SIDES = ("right", "left")
 PC = "{repo}/deploy/policy_control"
@@ -215,6 +216,9 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             "cocktail_1", "cocktail_1b",
             # ★11.02 사용자 지시(sim_e2e 경유) oneshot 세팅 실기 — 1b v5 + 놓기 정책 right_n10_e1000|e4000 · left_n09_e3800(cup_obs live)
             "cocktail_1c_e1000", "cocktail_1c_e4000",
+            # ★11.16 사용자 "안 B 로 세팅" — 파랑만 · 오른손 놓기 right_n07(tin_json), e4000 과 따로 단계
+            "cocktail_1c_n07b",
+            # ★11.16 _t 카드(cocktail_1c_n07b_t · e4000_t)는 뺐다 — n07b 카드의 실험 토글 tin_subtract_offset 이 같은 일을 한다(yaml 은 남김)
             # ★11.05 경로 S — 깊이 학생 1104e(깊이 + RGB)가 홈에서 탁자 위 컵 하나를 잡고 들기(lift_hold), 팔마다 따로
             "grasp_s_right", "grasp_s_left",
             # ★11.11 잡기 학생 색 판(콘솔 S 색 버튼)
@@ -237,6 +241,18 @@ PLACE_FIXED_UNTIL = {"descend": "하강까지(손 쥔 채 멈춤)", "all": "끝�
 PERC_LOG = "logs/runs/$(date +%y%m%d)/perception"
 #: ★10.19 사용자 "작성할 보고서 사진/영상도 필요함" — VISION_RECORD 일 때 이 에피소드들은 카메라 영상을 보고서용 빈도로 남긴다(기본 5 Hz)
 REPORT_VIDEO_HZ = {"grasp_b_right": 15.0, "grasp_b_left": 15.0}
+#: ★11.16 사용자 "체인 영상 bag -> 4090에서 저장. 최적화 필요 fp++ 부담 안되게" — 카메라가 다른 PC 면 원본 영상이 이 PC bag 에
+#   못 실리므로(랜) 이 에피소드들은 카메라 PC 에서 컬러 영상만 따로 bag 으로 남긴다(_chain_camera_bag, 끝난 뒤 정리 없음 · 묶음은 수동).
+#   5 Hz: q95 1280x720 약 276 KB(11.04) → 약 1.4 MB/s · 분당 약 80 MB, 압축 한 장 약 2.4 ms(11.16 합성 이미지, 코어 한 개의 1.2 %)
+CHAIN_VIDEO_EPISODES = ("cocktail_1c_e4000", "cocktail_1c_e1000", "cocktail_1c_n07b", "pick_place_f_right", "pick_place_f_left")
+CHAIN_VIDEO_HZ = 5.0
+#: ★11.17 s2r:vision(사용자 요청) "실기 회차 camera bag 에 깊이도" — FP++ 6D 자세의 시선(깊이) 축을 영상에 겹쳐 확인한다.
+#   컬러 + 정렬 깊이(기록기가 PNG level 3 로 압축) + 두 camera_info. 같은 5 Hz · 같은 기록기 · 같은 nice 19.
+#   깊이 PNG 1280x720 약 146 KB(11.04) × 5 Hz ≈ 0.7 MB/s 추가(컬러 포함 약 2.1 MB/s · 분당 약 130 MB). 압축 한 장 ≤ 27 ms
+#   (11.17 이 PC, 압축 안 되는 잡음 깊이 = 최악) → 코어 하나의 ≤ 14 %.
+CHAIN_CAMERA_BAG_TOPICS = ("/camera/camera/color/image_raw/compressed",
+                           "/camera/camera/aligned_depth_to_color/image_raw/compressedDepth",
+                           "/camera/camera/color/camera_info", "/camera/camera/aligned_depth_to_color/camera_info")
 #: ★11.04 사용자: 실기 에피소드 bag 에 머리 D435i 영상을 같이(세 번째 묶음 camera, rh56f1_record.sh CAMERA) — FP++ 자세 · 손바닥 ·
 #   rh_aglt 상태와 시간을 맞춰 겹쳐 본다(scripts/analysis/episode_video_overlay.py, shaker 를 손가락 3개로 바닥만 잡는 현상).
 #   10 Hz: 11.04 측정 JPEG q95 1280x720 약 276 KB · 정렬 깊이 PNG(level 3) 약 146 KB → 약 4.2 MB/s = 분당 약 250 MB(30 Hz 면 760 MB).
@@ -296,6 +312,20 @@ AGLT_LIVE_ARGS = ("-p", "cup_static:=false", "-p", "cup_latch:=false", "-p", "cu
                   # ★10.13 C(bag 223839 오른손): 컵에 밀린 엄지 굽힘(0.038 < 편 끝 0.049)으로 쥔 판정 유지가 손을 다 펴도 안 풀려
                   #   다시 쥔 컵이 안 붙음 → 실행기 쥠 실패 → 든 컵을 놓음. 쥔 자세 엄지 굽힘을 0.06 rad 보다 펴진 쪽으로 기록 안 함
                   "-p", "thumb_open_floor_rad:=0.06")
+# ★11.18 사용자("가"): 경로 F 잡기 노드(ap05 → rcg04, 칵테일 카드 제외)는 손 배포 보조 A · B · C 를 뺀다 — 노드 기본값
+#   (GripAssist 끔) = 학습 그대로 손 동작. lift_grasp_palm_m 은 손 명령을 바꾸지 않고 정지 판정만 써서 남긴다.
+_HAND_ASSIST = ("hand_unfreeze_on_grasp:=true", "thumb_support_g:=80.0", "thumb_open_floor_rad:=0.06")
+AGLT_LIVE_ARGS_F = tuple(x for p in zip(AGLT_LIVE_ARGS[::2], AGLT_LIVE_ARGS[1::2]) if p[1] not in _HAND_ASSIST for x in p)
+assert len(AGLT_LIVE_ARGS) - len(AGLT_LIVE_ARGS_F) == 2 * len(_HAND_ASSIST)
+# ★11.18 사용자: 경로 F 는 FP++ 보조 없이 들어온 FP++ 그대로(값 보조만 끔). 튐 거르기(gate · anchor) · 끊김 마지막 값 유지 ·
+#   쥔 뒤 FK 부착 fallback · guard · 손 안 컵 GRU(inhand_est) · 컵 오프셋(CUP_OBS_OFFSET)을 넣지 않는다. 끊김 정지(cup_dropout_*)는
+#   컵 값을 바꾸지 않고 팔만 세우는 안전장치라 남긴다. lift_grasp_palm_m 은 정지 판정만 써서 남긴다.
+_FPP_ASSIST_KEYS = ("cup_hold_last", "attach_fallback_s", "attach_guard_m", "attach_guard_frames",
+                    "fpp_gate_jump_m", "fpp_gate_dz_m", "fpp_gate_radius_m", "fpp_gate_max_hold_s", "fpp_gate_anchor_m")
+AGLT_PURE_F = (*(x for p in zip(AGLT_LIVE_ARGS_F[::2], AGLT_LIVE_ARGS_F[1::2])
+                 if p[1].split(":=")[0] not in _FPP_ASSIST_KEYS for x in p),
+               "-p", "inhand_est:='off'")   # 따옴표 필수: ROS -p 는 YAML 이라 맨 off 는 bool False 가 되어 STRING 선언과 충돌(11.18 rc=1)
+assert not any(a.split(":=")[0] in _FPP_ASSIST_KEYS for a in AGLT_PURE_F)
 
 
 def _live(topic: str) -> str:
@@ -303,6 +333,11 @@ def _live(topic: str) -> str:
     if not topic.endswith("/pose"):
         raise ValueError(f"{topic!r} 는 …/pose 가 아니다")
     return topic[: -len("/pose")] + "/live_pose"
+def _cup_offset_args(t) -> list[str]:
+    """rh_aglt_node 인자 cup_obs_offset_base_m(0 이나 None 이면 넣지 않는다 — 학생 · 옛 미션 그대로)."""
+    return ["-p", "cup_obs_offset_base_m:=[" + ",".join(f"{v:.4f}" for v in t) + "]"] if t and any(t) else []
+
+
 REAL_CUP_ORIGIN_Z = 0.085                 # 원점 높이(바닥 위) — 컵 자세 확인 문구
 #: 실기 로봇 PC 구성 — 로봇(팔 CAN · 손 EtherCAT · 머리)이 붙은 PC 와 카메라 · FP++ 를 돌리는 PC.
 #  ★10.13 사용자: "5090 로봇 pc" · "인지 pc vision3090 이미 카메라 연결" — 실기 미션은 ROBOT_PC 하나로 만든다.
@@ -328,7 +363,8 @@ STATIONS = {
     "5090": {
         "perception_host": "local",
         # ★11.15 같은 목 모터의 영점을 2048 로 다시 잡았다 — 옛 틱 판(r20u5 · head_camset_rh56f1)은 이 머리에 더는 안 맞는다
-        "extrinsics": "config/global_camera_extrinsics_arm4090_h2048.yaml",
+        "extrinsics": "config/global_camera_extrinsics_arm4090_m1117.yaml",
+        "live_extrinsics": "config/global_camera_extrinsics_arm4090_live.yaml",   # ★11.17 head_view_check 가 시작마다 마커로 다시 푼 값
         "head_config": "config/head_camset_rh56f1_h2048.yaml",
         "head_tool": "head_home",
         "pose_dest": "",                             # 같은 PC — 런처가 127.0.0.1 로 받는다
@@ -380,7 +416,8 @@ STATIONS = {
     "5090_arm4090_h2048": {
         "perception_host": _V2_VISION_SSH,
         "head_host": _V2_VISION_SSH,
-        "extrinsics": "config/global_camera_extrinsics_arm4090_h2048.yaml",
+        "extrinsics": "config/global_camera_extrinsics_arm4090_m1117.yaml",
+        "live_extrinsics": "config/global_camera_extrinsics_arm4090_live.yaml",   # ★11.17 head_view_check 가 시작마다 마커로 다시 푼 값
         "head_config": "config/head_camset_rh56f1_h2048.yaml",
         "head_tool": "head_home",
         "pose_dest": _V2_CONTROL_IP,
@@ -405,6 +442,10 @@ REMOTE_PERCEPTION = PERCEPTION_HOST != "local"
 #: ★11.11 학생(경로 S · M · 놓기 학생)은 카메라가 다른 PC 여도 돈다 — 깊이 · 마스크 노드는 카메라 PC 에서(ssh, 랜 DDS 로
 #   160x90 출력만 넘어온다), 학생 정책 노드는 이 PC(팔 · 손 · 컵 live 와 같은 곳)에서.
 CAMERA_EXTRINSICS = STATION["extrinsics"]
+#: ★11.17 사용자 "안되면 2번으로 자동화해서 FP++ 가 문제없게" — head_view_check 가 camset 에서 고정 마커로 외부 파라미터를 다시 풀어
+#   live 파일에 쓰고(base = CAMERA_EXTRINSICS, 읽기만), FP++ · 물체 자세 · 기록은 live 를 쓴다. head_depth_node(학생)는 m1117 md5 고정 그대로.
+FPP_EXTRINSICS = STATION["live_extrinsics"]
+FPP_LIVE_REF = "config/head_view_ref_arm4090_live.yaml"   # head_view_feedback.DEFAULT_LIVE_REF — live 의 확인 시각(verified_at)
 PLACE_MASK_AGE_S = 0.35                 # ★11.11 임시 — 놓기 학생 마스크 나이 상한(기본 0.2)
 HOLDER_POSES = STATION["holder_poses"]
 #: ★11.10 홀더 한 번 재기(★11.11 cups 끝에서 cup_holders 끝 확정으로 옮김) — 안정 대기 상한 s · 직전 파일과 홀더별 xy 차 상한 m(deploy 확정 3 cm)
@@ -485,15 +526,17 @@ HEAD_CONFIG = STATION["head_config"]
 #  (CAMERA_EXTRINSICS 의 head_pose)와 지금 자세를 비교하고, 실기 실행이면 그 자세로 맞춘다(pan 은 목표보다 18 틱 앞에서 멈춘다)
 # 포트는 head_joint_publisher 하나가 소유한다. 인자 없는 head_move 는
 # 드라이버가 읽은 station config 의 기준 자세로 이동하고 실측 정착을 확인한다.
-HEAD_CHECK_ARGV = ["python3", "{repo}/scripts/head_move.py"]
+#: ★11.18 head_view_check 가 목을 camset 에서 조금 돌려 잴 수 있어 기준 자세가 아니라 live 를 잰 명령 각으로 간다(live 가 없으면 기준 자세)
+HEAD_CHECK_ARGV = ["python3", "{repo}/scripts/head_move.py", "--config", "{repo}/" + HEAD_CONFIG,
+                   "--extrinsics", "{repo}/" + FPP_EXTRINSICS]
 HEAD_HOME_ARGV = HEAD_CHECK_ARGV
 _head_config = yaml.safe_load((REPO / HEAD_CONFIG).read_text())
 _HEAD_DRIVER_ARGS = ["--port", str(_head_config['port']), "--baud", str(_head_config['baud']),
                      "--ids", ','.join(str(_head_config['motors'][axis]['id']) for axis in ('pan', 'tilt'))]
-# ★11.15 외부 파라미터는 ChArUco 로 맞춘 값이고 학생 묶음 · head_depth_node 가 md5 로 고정한다 — 테이블 CAD 값으로 덮게 안내하지 않는다
+# ★11.17 외부 파라미터는 테이블 고정 마커 70~73 으로 푼 값(m1117)이고 학생 묶음 · head_depth_node 가 md5 로 고정한다 — 테이블 CAD 값으로 덮게 안내하지 않는다
 _TABLECHECK = CAMERA_EXTRINSICS.replace(".yaml", "_tablecheck.yaml")
 RECALIB_HINT = (f"scripts/calib/table_cad_extrinsics.py --init {CAMERA_EXTRINSICS} 로 비교만 — {CAMERA_EXTRINSICS} 를 --write 로 덮지 "
-                f"않는다(ChArUco 값 · 학생 묶음 md5 고정). 파일로 남기려면 {_TABLECHECK} 로 복사해 --out {_TABLECHECK} --write "
+                f"않는다(11.17 마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 {_TABLECHECK} 로 복사해 --out {_TABLECHECK} --write "
                 f"--head-config {HEAD_CONFIG}. 바꾸려면 s2r:vision 의 ChArUco 재보정"
                 " logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py")
 #: 원격 인지 PC 에서 도는 명령 — 홈에서 시작하는 ssh(사용자 이름이 PC 마다 달라 상대 경로, perception_launcher 와 같은 규약)
@@ -605,6 +648,31 @@ HEADER = {
 }
 
 
+def _view_check_cmd() -> dict:
+    """★11.17 시야 검사 = 외부 파라미터 자동 갱신(head_view_feedback.py --auto-extrinsics, 실행이면 목이 camset 으로 간다).
+    원격 인지면 이 PC 의 live 를 먼저 지우고 → 카메라 PC 에서 풀고 → 그 live 를 이 PC 로 가져온다(런처 · 물체 자세 노드가 이 PC 에서 읽는다).
+    어디서 실패하든 이 PC 에 live 가 없어 FP++ 쪽이 뜨지 않는다(옛 값을 쓰지 않는다). 콘솔의 --execute 는 bash 의 $* 로 넘긴다."""
+    note = (f"외부 파라미터 자동 갱신 — camset 에서 테이블 고정 마커(70 · 71 · 73)로 카메라 자세를 다시 풀어 {FPP_EXTRINSICS} 에 쓴다"
+            f"(base {CAMERA_EXTRINSICS} 는 읽기만, 대비 20 mm · 2° 넘게 다르거나 마커가 화면 밖 · 가림이면 실패하고 live 를 지운다). "
+            "실패하면 카메라 마운트를 보고 scripts/head_view_feedback.py --help 끝")
+    run = f"python3 scripts/head_view_feedback.py --auto-extrinsics --extrinsics {CAMERA_EXTRINSICS}"
+    if not REMOTE_PERCEPTION:
+        return _cmd(note, ["python3", "{repo}/scripts/head_view_feedback.py", "--auto-extrinsics", "--extrinsics",
+                           "{repo}/" + CAMERA_EXTRINSICS], execute_args=["--execute"])
+    q = shlex.quote
+    # ★11.17 리뷰: mv 전에 가져온 파일을 검사한다 — 비지 않음 · yaml · provenance · base_md5 = 이 PC 의 base md5(live_cli).
+    #   재기준(verified_at)도 같이 가져와야 이 PC 의 FP++ 쪽 나이 검사(require_fresh_live)가 kept 때도 통과한다.
+    check = ('python3 -c "import sys; sys.path.insert(0, sys.argv[1]); import head_view_feedback as h; '
+             'sys.exit(h.live_cli(sys.argv[2:]))"')
+    script = (f'L={q("{repo}/" + FPP_EXTRINSICS)}; R={q("{repo}/" + FPP_LIVE_REF)}; rm -f "$L" "$L.tmp" "$R" "$R.tmp" && '
+              f'ssh -tt -o BatchMode=yes {PERCEPTION_HOST} "cd {REMOTE_SIM2REAL} && source scripts/vision/common.sh && {run} $*" && '
+              f'ssh -o BatchMode=yes {PERCEPTION_HOST} "cat {REMOTE_SIM2REAL}/{FPP_EXTRINSICS}" > "$L.tmp" && '
+              f'ssh -o BatchMode=yes {PERCEPTION_HOST} "cat {REMOTE_SIM2REAL}/{FPP_LIVE_REF}" > "$R.tmp" && [ -s "$L.tmp" ] && '
+              f'{check} {q("{repo}/scripts")} "$L.tmp" "$R.tmp" {q("{repo}/" + CAMERA_EXTRINSICS)} && '
+              f'mv "$R.tmp" "$R" && mv "$L.tmp" "$L" || {{ rm -f "$L.tmp" "$R.tmp"; false; }}')
+    return _cmd(note, ["bash", "-lc", script, "head_view_check"], execute_args=["--execute"])
+
+
 def _cmd(note: str, argv=None, **kw) -> dict:
     out = {"note": note}
     if argv is not None:
@@ -637,10 +705,12 @@ def _stages(kind: str) -> list[dict]:
         {"id": "head_home", "group": "motion", "lane": "rig", "needs": ["preflight"], "skippable": True, "touches_real": real,
          "title": ("머리를 카메라 캘리브 자세(외부 파라미터 head_pose)로 + I 게인 — 카메라 좌표가 이 자세에서만 맞다(머리가 조금 움직인다)"
                    if real else "fake — 머리 없음(실기 순서를 맞추려고 둔 자리)")},
-        # ★11.03 사용자 "sim 과 real 의 카메라 시야가 같아야 의미가 있다" — 머리를 움직이지 않고 IMU 숙임을 외부 파라미터 숙임과 비교만
-        {"id": "head_view_check", "group": "check", "lane": "rig", "needs": ["head_home"], "skippable": True,
-         "title": (f"시야 검사(읽기 전용, {PERCEPTION_HOST if REMOTE_PERCEPTION else '이 PC'}) — D435i IMU 숙임 − 외부 파라미터 숙임이 허용치 "
-                   "(config/head_view_feedback_arm4090.yaml view_check_tol_deg) 안인가. 머리는 움직이지 않는다. yaw 는 못 잰다"
+        # ★11.03 사용자 "sim 과 real 의 카메라 시야가 같아야 의미가 있다" · ★11.17 "안되면 2번으로 자동화해서 FP++ 가 문제없게"
+        #   — 목 피드백 맞춤 대신 camset 에서 고정 마커로 외부 파라미터를 다시 풀어 FP++ 가 그 live 값을 쓴다
+        {"id": "head_view_check", "group": "check", "lane": "rig", "needs": ["head_home"], "skippable": True, "touches_real": real,
+         "title": (f"외부 파라미터 자동 갱신({PERCEPTION_HOST if REMOTE_PERCEPTION else '이 PC'}, 목이 camset 으로 간다) — 테이블 고정 "
+                   f"마커 70 · 71 · 73 으로 카메라 자세를 풀어 {CAMERA_EXTRINSICS} 대비 20 mm · 2° 안이면 {FPP_EXTRINSICS} 에 쓴다"
+                   "(같으면 그대로). 마커가 화면 밖 · 가림 · 차이가 크면 실패하고 live 를 지운다 → FP++ 가 안 뜬다. 건너뛰면 지난 live 를 쓰되 마지막 확인이 live_max_age_h(12 h) 넘으면 FP++ 가 안 뜬다"
                    if real else "fake — IMU 없음(실기 순서를 맞추려고 둔 자리)")},
         {"id": "head_control", "group": "motion", "lane": "rig", "skippable": True, "touches_real": real,
          "title": "목 pan · tilt 변경 — 승인한 보정 프로필과 자세로 이동 후 실측 정착 확인"},
@@ -655,10 +725,13 @@ def _stages(kind: str) -> list[dict]:
          "title": (f"홀더 자리 재기 · 확정(컵을 놓기 전, 홀더를 옮겼거나 갱신할 때만 — 아니면 건너뛴다) — 마커 ID 0·1·2 → {HOLDER_POSES} 갱신 · /objects/cup_holder_{{0,1,2}}/pose "
                    "(base). 홀더는 고정이라 에피소드는 이 단계를 기다리지 않고 저장된 파일을 쓴다. 로봇은 움직이지 않는다. CPU 만"
                    if real else "fake — 카메라 없음(실기 순서를 맞추려고 둔 자리)")},
-        {"id": "cups", "group": "connect", "lane": "both", "needs": ["head_view_check", "cup_holders"], "skippable": True,
+        # ★11.17 사용자 "홀더는 고정 — 매번 확인은 비효율, cups 전에 홀더를 꼭 하게 한 순서가 의미 없다": cups · policy_place 의
+        #   needs 에서 cup_holders 를 뺐다. 홀더 좌표는 저장 파일을 쓰고, 그 파일이 맞는지는 에피소드 시작 검사
+        #   (episode_run --plan --require-holders: 마지막 재기 written · 7 일 안)가 본다. 홀더를 옮겼을 때만 컵 없이 cup_holders 를 돈다
+        {"id": "cups", "group": "connect", "lane": "both", "needs": ["head_view_check"], "skippable": True,
          "touches_real": real,
          "needs_why": "FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다. "
-                      "★11.11 사용자: 컵홀더 측정 완료(고정) → 컵 배치 — 컵이 홀더 마커를 가리기 전에 cup_holders 를 끝내거나(홀더를 그대로 두면) 건너뛴다",
+                      "홀더는 기다리지 않는다(저장 파일 · 에피소드 시작 검사) — 홀더를 옮겼다면 컵을 놓기 전에 cup_holders 를 먼저",
          # ★11.05 사용자: cups = FP++ 드라이버만. 물체 컨테이너는 setting 탭 '인지 적용'(고른 물체) · 에피소드 첫 명령(그 에피소드 물체)이 띄운다
          "title": (f"FP++ 드라이버({PERCEPTION_HOST if REMOTE_PERCEPTION else ROBOT_PC}) — 인지 런처 · 자세 수신기 · base 변환 노드 · 머리 자세 맞춤. "
                    "물체는 띄우지 않는다(setting 탭 '인지 적용' 또는 에피소드가 자기 물체를 띄운다)" if real else
@@ -722,7 +795,7 @@ def _stages(kind: str) -> list[dict]:
                             "/policy_control/<팔>/goal 로 바꿀 수 있다)로 이송. 정책 노드 → reset → start → 관찰 → stop"})
     for s in SIDES:
         st.append({"id": f"policy_place_{s}", "group": "policy", "lane": f"arm_{s}", "skippable": True, "touches_real": real,
-                   "needs": [f"policy_aglt_{s}", "cup_holders"],
+                   "needs": [f"policy_aglt_{s}"],          # ★11.17 cup_holders 뺌 — 홀더는 저장 파일(위 cups 주석)
                    "needs_why": "놓기 정책은 aglt 가 컵을 쥐고 인계 자리(0.25, ∓0.12, 0.41)에 멈춘 상태에서만 출발해 봤다 — "
                                 "팔 · 손 목표는 pd 가 붙잡은 aglt 마지막 joint_target, 목표는 홀더 자세",
                    "artifacts": [f"place_{s}", f"robot_{s}", "contract"],
@@ -791,10 +864,12 @@ def _run(kind: str) -> dict:
         "preflight": [
             # ★10.30 사용자 "5090과 4090은 ssh가 아니라 lan포트 연결로 통신해야함": 저 PC 로는 허브 랜 별칭(arm4090-lan)으로만 간다.
             #   먼저 랜 ssh 가 열리는지 · 저 PC 의 sim2real 이 같은 커밋인지 · 저 PC 에 손 마스터가 없는지(사용자 4 번) 본다.
-            *([_cmd(f"{PERCEPTION_HOST} 랜 ssh 가 되고 저 PC 의 sim2real 이 이 PC 와 같은 커밋인가(별칭 → 192.168.0.40 · 키 ~/.ssh/s2r_lan). "
-                    "거부되면 4090 ~/.ssh/authorized_keys 에 5090 의 ~/.ssh/s2r_lan.pub 을 넣는다(사용자) · 커밋이 다르면 저 PC 에서 git pull --ff-only",
+            # ★11.16 사용자 "4090은 fp++전용이니까 이거 제한 없애줘": 커밋 일치는 막지 않고 표시만 한다(랜 ssh 만 판정).
+            *([_cmd(f"{PERCEPTION_HOST} 랜 ssh 가 되는가(별칭 → 192.168.0.40 · 키 ~/.ssh/s2r_lan). 커밋 차이는 참고로만 보인다. "
+                    "거부되면 4090 ~/.ssh/authorized_keys 에 5090 의 ~/.ssh/s2r_lan.pub 을 넣는다(사용자)",
                     ["bash", "-lc", f"R=$(ssh -o BatchMode=yes -o ConnectTimeout=5 {PERCEPTION_HOST} 'cd {REMOTE_SIM2REAL} && git rev-parse HEAD') "
-                                    "&& L=$(git -C {repo} rev-parse HEAD) && echo \"remote $R\" && echo \"local  $L\" && [ \"$R\" = \"$L\" ]"]),
+                                    "&& L=$(git -C {repo} rev-parse HEAD) && echo \"remote $R\" && echo \"local  $L\" "
+                                    "&& { [ \"$R\" = \"$L\" ] && echo '커밋 같음' || echo '커밋 다름(참고 — 4090 은 FP++ 전용이라 막지 않음)'; }"]),
                _cmd(f"{PERCEPTION_HOST} 에 손 마스터가 없는가 — 한 손에 마스터는 한 PC(이 PC). 저 PC 의 rh56f1 드라이버 · motion_acq 손 노드가 떠 있으면 멈춘다",
                     ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", PERCEPTION_HOST,
                      "if pgrep -af 'rh56f1_[e]cat_node|rh56f1_[d]river|fake_rh56f1_[n]ode|motion_acq_hand.*[h]and_node'; "
@@ -912,10 +987,7 @@ def _run(kind: str) -> dict:
         _cmd("카메라(RealSense, IMU 켬) 켜기 — 이미 떠 있으면 그대로. IMU 없이 떠 있던 카메라면 다음 스텝이 'IMU 가 안 들어온다'로 "
              "실패한다 — 카메라를 내렸다 다시 켠다",
              _on_perception_pc("bash scripts/vision/camera_up.sh") if REMOTE_PERCEPTION else ["bash", "{repo}/scripts/vision/camera_up.sh"]),
-        _cmd(f"시야 검사 — IMU 중력으로 잰 카메라 숙임과 {CAMERA_EXTRINSICS} 숙임의 차가 허용치를 넘으면 실패(머리는 움직이지 않는다). "
-             "실패하면 카메라 · 머리를 건드렸는지 보고 캘리브 자세를 다시 잡는다(scripts/head_view_feedback.py --help 끝)",
-             _on_perception_pc(f"python3 scripts/head_view_feedback.py --check --extrinsics {CAMERA_EXTRINSICS}") if REMOTE_PERCEPTION
-             else ["python3", "{repo}/scripts/head_view_feedback.py", "--check", "--extrinsics", "{repo}/" + CAMERA_EXTRINSICS]),
+        _view_check_cmd(),
     ] if real else [_cmd("fake — IMU 없음", ["bash", "-lc", "true"])]
     run["cups"] = [
         _gpu_check("머리 자세는 이 단계가 캘리브 자세로 맞춘다"),
@@ -924,13 +996,13 @@ def _run(kind: str) -> dict:
               "인지 런처(이 PC) — 카메라 · FP++ 컨테이너를 같은 PC 의 스크립트로 켜고 끈다. 스스로는 아무것도 켜지 않는다"),
              ["python3", "{repo}/scripts/nodes/perception_launcher_node.py", "--host", PERCEPTION_HOST,
               *(["--pose-dest", STATION["pose_dest"]] if STATION["pose_dest"] else []),
-              "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS], background=True),
+              "--camera-extrinsics", "{repo}/" + FPP_EXTRINSICS], background=True),
         _cmd(("FP++ 자세 수신기 — 영상 · FP++ 는 " + (f"{PERCEPTION_HOST} 안" if REMOTE_PERCEPTION else "localhost 전용 DDS")
               + f"에서 돌고 자세만 UDP({'저 PC → 이 PC ' + (STATION['pose_dest'] or '(ssh 주소)') if REMOTE_PERCEPTION else '127.0.0.1'})로 넘어온다"),
              ["python3", "{repo}/scripts/nodes/fpp_pose_rx.py"], background=True),
-        _cmd(f"물체 자세 → base — {ROBOT_PC} 카메라 외부 파라미터({CAMERA_EXTRINSICS}, + depth z 보정). /objects/<물체>/pose(레지스트리의 모든 물체)",
+        _cmd(f"물체 자세 → base — {ROBOT_PC} 카메라 외부 파라미터({FPP_EXTRINSICS}). /objects/<물체>/pose(레지스트리의 모든 물체)",
              ["python3", "{repo}/scripts/nodes/object_pose_node.py",       # 레지스트리 전체 — 묶음을 바꿔도(activate) 다시 띄우지 않는다
-              "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS,
+              "--camera-extrinsics", "{repo}/" + FPP_EXTRINSICS,
               "--head-joint-topic", "/head/joint_states"], background=True),
         _cmd("FP++ 전 머리 자세 확인 · 맞춤 — 카메라 외부 파라미터를 잰 자세(head_pose)와 다르면 그 자세로 맞춘다(머리가 조금 움직인다)", HEAD_CHECK_ARGV, execute_args=["--execute"]),
     ] if real else [
@@ -984,6 +1056,7 @@ def _run(kind: str) -> dict:
                   "-p", f"cup_topic:={_live(cup_t)}",
                   "-p", f"object:={_policy_object(s)}",   # 다물체 정책 — 물체를 모르면 reset 이 거부한다
                   *AGLT_LIVE_ARGS,                       # 10.12 A안 — 쥘 때까지 live(끊기면 마지막 값), 쥔 뒤 프레임 시각 FK
+                  *_cup_offset_args(CUP_OBS_OFFSET_BASE_M[s]),   # ★11.11 사용자 "보정값은 모든 정책에 적용"
                   "-p", f"max_episode_s:={{policy:aglt_{s}.max_episode_s}}"],
                  background=True),
             _cmd(f"[{s}] episode reset — 컵 · 팔 측정이 있어야 받는다. 목표 = 지금 컵 + 계약 goal_offset",
@@ -1140,7 +1213,7 @@ def _run(kind: str) -> dict:
         stop = next(c for c in run["shutdown"] if c.get("stop") and "policy_pourfj#1" in c["stop"])
         stop["stop"] = [*stop["stop"], *cpu]
     run["head_control"] = [
-        _cmd("목 pan · tilt 변경 후 실측 정착 확인", ["python3", "{repo}/scripts/head_move.py"],
+        _cmd("목 pan · tilt 변경 후 실측 정착 확인", ["python3", "{repo}/scripts/head_move.py", "--config", "{repo}/" + HEAD_CONFIG],
              execute_args=["--execute"])
     ] if real else [_cmd("fake — 목 없음(승인한 자세 설정만 보관)", ["bash", "-lc", "true"])]
     # ★11.10 사용자 "swap 세팅 고쳐": OpenArm 보정 각도(tilt −20 ~ −30)를 보내 천장을 봤다. 이제 지금 자세(camset +67.47) 둘레
@@ -1323,10 +1396,11 @@ def _head_node(c: dict) -> str | None:
                  if f"/{n}" in a or a.endswith(n)), None)       # ★11.11 원격이면 ssh 명령 문자열 안에 있다
 
 
-def _episode_run(name: str, real: bool) -> list:
-    """에피소드 단계: (fake 컵 · 홀더) → 정책 노드들 → episode_runner_node → 상황판에서 진행(수동 확인) → 내린다."""
+def _episode_run(name: str, real: bool, ep=None) -> list:
+    """에피소드 단계: (fake 컵 · 홀더) → 정책 노드들 → episode_runner_node → 상황판에서 진행(수동 확인) → 내린다.
+    ep: ★11.16 콘솔 정책 고르기 토글이 입힌 에피소드(없으면 yaml)."""
     from policy_control import policy_registry as R
-    ep = _episode(name)
+    ep = ep or _episode(name)
     entries = {e.id: e for e in R.scan(REPO / "deploy" / "policies", deep=False)}
     cmds, bg = [], []
     perceives = _perceives(ep)
@@ -1450,16 +1524,20 @@ def _episode_run(name: str, real: bool) -> list:
                 continue
             if squeeze:
                 end_note += " · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)"
+            route_f = (b.handoff or "").endswith("_rcg04") and not name.startswith("cocktail")
+            if route_f:
+                end_note += " · FP++ 보조 · 손 배포 보조 끔(끊김 정지만)"
             cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — {end_note} · 컵 = FP++ live"
                              " · 쥐면 손바닥 FK 로 손에 붙임",
                              ["{repo}/.venv/bin/python", f"{PC}/policy_control/rh_aglt_node.py", "--ros-args",
                               "-r", f"__node:=rh_aglt_node_{b.side}", "-p", f"ns:={b.side}", "-p", f"contract:={contract}",
                               "-p", f"robot:={robot}", "-p", f"device:={AGLT_DEVICE}", "-p", *end_args,
-                              "-p", f"cup_topic:={_live(ep.objects[obj]['topic'])}", *AGLT_LIVE_ARGS,
+                              "-p", f"cup_topic:={_live(ep.objects[obj]['topic'])}",
+                              *(AGLT_PURE_F if route_f else AGLT_LIVE_ARGS),
                               *(["-p", "hand_squeeze:=true"] if squeeze else []),
                               # ★11.04 접근 · 잡기 관측 컵 = 측정 컵 − t(카메라가 본 손 − FK 손). 0 이면 넣지 않는다(옛 미션 그대로)
-                              *(["-p", "cup_obs_offset_base_m:=[" + ",".join(f"{v:.4f}" for v in b.cup_obs_offset_base_m) + "]"]
-                                if b.cup_obs_offset_base_m and any(b.cup_obs_offset_base_m) else []),
+                              #   ★11.18 경로 F 는 넣지 않는다(위 AGLT_PURE_F)
+                              *([] if route_f else _cup_offset_args(b.cup_obs_offset_base_m)),
                               "-p", f"max_episode_s:={max_s}"], background=True))
         elif b.kind == "place":
             src = next((j for n in ep.nodes for j in n.jobs if j.role == role), None)
@@ -1529,6 +1607,8 @@ def _episode_run(name: str, real: bool) -> list:
         if VISION_RECORD and name in REPORT_VIDEO_HZ:   # ★10.19 보고서 사진 · 영상 — 카메라 PC 에서 따로(tools/episode_media.py 가 묶는다)
             cmds.append(_vision_record(f"episode_{name}", [real_object(o["topic"]) for o in ep.objects.values()],
                                        REPORT_VIDEO_HZ[name]))
+        elif REMOTE_PERCEPTION and name in CHAIN_VIDEO_EPISODES:   # 정지는 아래 '에피소드 노드들 정지'(background)
+            cmds.append(_chain_camera_bag(f"episode_{name}"))
     cmds.append(_cmd(f"에피소드 실행기 {runner} — {name} · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:{name})",
                      ["{repo}/.venv/bin/python", f"{PC}/policy_control/episode_runner_node.py", "--ros-args",
                       *(["-r", f"__node:={runner}"] if runner != "episode_runner" else []),
@@ -1582,6 +1662,22 @@ def _record_start(name: str, sides: list, topics: list, objs: list | None = None
             *([_vision_record(name, objs or [])] if VISION_RECORD else [])]
 
 
+def _chain_camera_bag(name: str) -> dict:
+    """★11.16 카메라 PC 에서 머리 컬러 영상 bag(★11.17 + 정렬 깊이 · camera_info, camera_bag_recorder --encode-raw). 원본을 구독해 솎은 프레임만 이 기록기가 압축한다 —
+    드라이버 압축(…/compressed 구독)은 30 Hz 전부를 인코딩해 FP++ 가 받는 원본 발행을 40 → 54 ms 로 밀었다(11.05).
+    nice 19 · ionice best-effort 최하(idle 은 디스크가 바쁘면 쓰기를 굶겨 프레임을 버린다). 코어는 묶지 않는다 — FP++ cpuset 밖은
+    실시간 예약(cpu_plan reserved, 우리 노드가 비켜 가는 코어)과 정책 코어뿐이라 둘 다 기록기 자리가 아니다(11.16 리뷰).
+    setsid: ssh 가 끊길 때 tty HUP 이 기록기에 바로 가지 않게 떼고, trap 이 TERM 을 보내 마무리(metadata.yaml)하게 한다.
+    bag 은 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera(이 PC 의 팔 · 손 bag 과 같은 이름 틀), 로그 {PERC_LOG}/camera_bag_<이름>.log."""
+    assert REMOTE_PERCEPTION, "카메라가 이 PC 면 rh56f1_record.sh 의 CAMERA 묶음이 이미 싣는다"
+    rec = (f"O=logs/runs/$(date +%y%m%d)/bags/$(date +%H%M%S)_{name}; mkdir -p {PERC_LOG} $O; "
+           f"setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py --encode-raw "
+           f"--hz {CHAIN_VIDEO_HZ:g} -o $O/camera {' '.join(CHAIN_CAMERA_BAG_TOPICS)} > {PERC_LOG}/camera_bag_{name}.log 2>&1 & P=$!; "
+           "trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P")
+    return _cmd(f"머리 카메라 컬러 · 정렬 깊이 bag({PERCEPTION_HOST}, {CHAIN_VIDEO_HZ:g} Hz · 기록기가 압축 · nice 19) "
+                "→ 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera", _on_perception_pc(rec), background=True)
+
+
 def _vision_record(name: str, objs: list, hz: float = 5.0) -> dict:
     """영상 · FP++ 실시간 좌표 기록 — 카메라가 있는 PC 의 DDS 에서 돈다(10.09 사용자).
     10.30: 인지 묶음(camera_up · fpp_up)이 common.sh 의 ROS_LOCALHOST_ONLY(기본 0)를 쓰므로 기록기도 그 값을 그대로 받는다 —
@@ -1590,10 +1686,10 @@ def _vision_record(name: str, objs: list, hz: float = 5.0) -> dict:
     if not REMOTE_PERCEPTION:
         return _cmd(f"영상 · FP++ 실시간 좌표 기록({hz:g} Hz JPEG · live_pose CSV) → logs/runs/<날짜>/vision_runs",
                     ["python3", "{repo}/scripts/nodes/vision_recorder.py", "--name", name,
-                     "--camera-extrinsics", "{repo}/" + CAMERA_EXTRINSICS, *rate, "--objects", *objs], background=True)
+                     "--camera-extrinsics", "{repo}/" + FPP_EXTRINSICS, *rate, "--objects", *objs], background=True)
     # 원격: ssh -tt 를 콘솔이 끝내면 저쪽 셸이 HUP 를 받는다 → 기록기에 TERM(마무리 · CSV 닫기) 뒤 기다린다.
     # 기록은 저 PC 의 sim2real/logs/runs/<날짜>/vision_runs 에 남는다(로그는 {PERC_LOG}/vrec_<이름>.log).
-    rec = (f"mkdir -p {PERC_LOG}; {REMOTE_PY} scripts/nodes/vision_recorder.py --name {name} --camera-extrinsics {CAMERA_EXTRINSICS} {' '.join(rate)} "
+    rec = (f"mkdir -p {PERC_LOG}; {REMOTE_PY} scripts/nodes/vision_recorder.py --name {name} --camera-extrinsics {FPP_EXTRINSICS} {' '.join(rate)} "
            f"--objects {' '.join(objs)} > {PERC_LOG}/vrec_{name}.log 2>&1 & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P")
     return _cmd(f"영상 · FP++ 실시간 좌표 기록({PERCEPTION_HOST}, {hz:g} Hz JPEG · live_pose CSV) → 저 PC 의 logs/runs/<날짜>/vision_runs",
                 _on_perception_pc(rec), background=True)
