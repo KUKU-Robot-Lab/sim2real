@@ -245,6 +245,7 @@ def real_object_name(topic: str) -> str:
 
 #: ★11.12 rehome 계획에 쓸 live 자세의 최대 나이[s](monotonic) — 더 낡으면 "자세 없음"(리뷰 H2: 옮겨진 컵의 옛 자리로 계획하지 않게)
 REHOME_LIVE_MAX_AGE_S = 5.0
+REHOME_WAIT_LIVE_S = 20.0             # ★11.18 놓기 실패 컵 live 를 rehome 거부 전에 기다리는 시간
 
 
 class RehomeCupUnknown(Exception):
@@ -1024,13 +1025,20 @@ class RosExecutor:
                 continue
             out = self.run_dir / f"rehome_{side}_{node.id}.npz"
             joints = ",".join(f"{side[0]}_aj_{i}" for i in range(1, 8))
-            with self._lock:                               # ★11.11 탁자 위 컵도 계획 세계에
-                relay, live = dict(self._relay), {k: list(v) for k, v in self._live.items()}
-            try:
-                cups, notes = rehome_table_cups(self.ep, world, relay, live)
-            except RehomeCupUnknown as e:                  # ★11.12 리뷰 H1 — 움직이지 않았다
-                self._log_line(f"[rehome] {side} 거부: {e}")
-                return NodeResult("refused", f"{side} rehome: {e}", time.monotonic() - t0)
+            # ★11.18 home_r_after_blue 거부(SRC_BLUE live 110 s 낡음) — 놓기 실패 직후엔 손이 컵을 가려 FP++ 가 아직 못 잡았을 수
+            #   있다. 거부 전에 live 가 새로 들어오기를 REHOME_WAIT_LIVE_S 까지 기다린다(컵 위치를 모르면 움직이지 않는 것은 그대로).
+            deadline = time.monotonic() + REHOME_WAIT_LIVE_S
+            while True:
+                with self._lock:                           # ★11.11 탁자 위 컵도 계획 세계에
+                    relay, live = dict(self._relay), {k: list(v) for k, v in self._live.items()}
+                try:
+                    cups, notes = rehome_table_cups(self.ep, world, relay, live)
+                    break
+                except RehomeCupUnknown as e:              # ★11.12 리뷰 H1 — 움직이지 않았다
+                    if time.monotonic() >= deadline or self.cancel.is_set():
+                        self._log_line(f"[rehome] {side} 거부({REHOME_WAIT_LIVE_S:.0f} s 기다림): {e}")
+                        return NodeResult("refused", f"{side} rehome: {e}", time.monotonic() - t0)
+                    time.sleep(0.5)
             self._log_line(f"[rehome] {side} 탁자 위 컵: " + ("; ".join(notes) or "없음"))
             # 리뷰 M2: 홀더 원기둥 = 이 에피소드가 발행한 홀더 파일(없으면 홀더 없이 — 기본 파일로 대신하지 않는다)
             hold = (["--holders", str(_paths.SIM2REAL / self.ep.holder_poses)] if self.ep.holder_poses else ["--no-holders"])

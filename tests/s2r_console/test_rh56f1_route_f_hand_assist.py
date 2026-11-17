@@ -12,7 +12,8 @@ REPO = Path(__file__).resolve().parents[2]
 ASSIST = ("hand_unfreeze_on_grasp:=true", "thumb_support_g:=80.0", "thumb_open_floor_rad:=0.06")
 KEEP = ("lift_grasp_palm_m:=0.08",)
 FPP_ASSIST = ("cup_hold_last", "attach_fallback_s", "attach_guard_m", "fpp_gate_jump_m", "fpp_gate_anchor_m",
-              "cup_obs_offset_base_m", "cup_dropout_stop_s")
+              "cup_dropout_stop_s")
+LEFT_OFFSET = "cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]"   # ★11.18 경로 F 왼손만 넣는다
 
 
 def _rcg04_nodes(name: str) -> dict[str, list[list[str]]]:
@@ -39,7 +40,7 @@ def _rcg04_nodes(name: str) -> dict[str, list[list[str]]]:
 
 @pytest.mark.parametrize("mission", ["mission_rh56f1_control.yaml", "mission_rh56f1_control_cam5090.yaml",
                                      "mission_rh56f1_fake.yaml"])
-def test_route_f_grasp_drops_the_hand_assists_and_cocktail_keeps_them(mission):
+def test_no_hand_assists_anywhere_and_route_f_keeps_only_the_left_offset(mission):
     nodes = _rcg04_nodes(mission)
     cocktail = {s for s in nodes if s.startswith("episode_cocktail")}
     route_f = set(nodes) - cocktail
@@ -47,11 +48,13 @@ def test_route_f_grasp_drops_the_hand_assists_and_cocktail_keeps_them(mission):
     for sid, argvs in nodes.items():
         for av in argvs:
             assert all(k in av for k in KEEP), (sid, av)
+            assert not any(a.split(":=")[0] in x for a in ASSIST for x in av), sid   # ★11.18 A · B · C 모두 제거
             if sid in cocktail:
-                assert all(a in av for a in ASSIST), sid
                 assert "cup_hold_last:=true" in av and "fpp_gate_anchor_m:=0.03" in av, sid
                 assert "cup_dropout_stop_s:=1.0" in av, sid
             else:
-                assert not any(a.split(":=")[0] in x for a in ASSIST for x in av), sid
+                left = "ns:=left" in av
+                assert (LEFT_OFFSET in av) == left, (sid, av)
+                assert not any(x.startswith("cup_obs_offset_base_m:=") for x in av) or left, sid
                 assert not any(x.startswith(k + ":=") for k in FPP_ASSIST for x in av), (sid, av)
                 assert "inhand_est:='off'" in av, sid

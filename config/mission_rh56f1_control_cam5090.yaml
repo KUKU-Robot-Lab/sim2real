@@ -1578,13 +1578,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
@@ -1892,13 +1886,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -3134,13 +3122,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
@@ -3304,13 +3286,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -3475,13 +3451,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
@@ -3622,13 +3592,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -3835,13 +3799,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
@@ -3896,13 +3854,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -4051,13 +4003,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
@@ -4117,13 +4063,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -4441,13 +4381,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
@@ -4593,13 +4527,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -4750,13 +4678,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
@@ -4907,13 +4829,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -5172,6 +5088,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - inhand_est:='off'
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -5941,6 +5859,8 @@ run:
     - -p
     - inhand_est:='off'
     - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - -p
     - max_episode_s:=33.0
     background: true
   - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
@@ -6068,6 +5988,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - inhand_est:='off'
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -6197,6 +6119,8 @@ run:
     - -p
     - inhand_est:='off'
     - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - -p
     - max_episode_s:=33.0
     background: true
   - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
@@ -6325,6 +6249,8 @@ run:
     - -p
     - inhand_est:='off'
     - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - -p
     - max_episode_s:=33.0
     background: true
   - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
@@ -6452,6 +6378,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - inhand_est:='off'
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -6733,6 +6661,8 @@ run:
     - -p
     - inhand_est:='off'
     - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - -p
     - max_episode_s:=33.0
     background: true
   - note: '[left] rh_place_l 노드(rh56f1/place/left_n06) — 홀더 0 · 놓은 뒤 스스로 끝남 · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)'
@@ -6928,6 +6858,8 @@ run:
     - -p
     - inhand_est:='off'
     - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - -p
     - max_episode_s:=33.0
     background: true
   - note: 기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더 + 머리 카메라 bag camera(10 Hz)
@@ -7080,13 +7012,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
@@ -7151,13 +7077,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -7361,13 +7281,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
@@ -7432,13 +7346,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -7643,13 +7551,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
@@ -7714,13 +7616,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -7925,13 +7821,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
@@ -7996,13 +7886,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -8207,13 +8091,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
@@ -8278,13 +8156,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -8507,13 +8379,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - target_class:=blue
     - -p
@@ -8689,13 +8555,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - target_class:=orange
     - -p
@@ -8871,13 +8731,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - target_class:=pink
     - -p
@@ -9053,13 +8907,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - target_class:=blue
     - -p
@@ -9235,13 +9083,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - target_class:=orange
     - -p
@@ -9603,6 +9445,8 @@ run:
     - lift_grasp_palm_m:=0.08
     - -p
     - inhand_est:='off'
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=33.0
     background: true

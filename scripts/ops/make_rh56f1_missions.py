@@ -315,8 +315,10 @@ AGLT_LIVE_ARGS = ("-p", "cup_static:=false", "-p", "cup_latch:=false", "-p", "cu
 # ★11.18 사용자("가"): 경로 F 잡기 노드(ap05 → rcg04, 칵테일 카드 제외)는 손 배포 보조 A · B · C 를 뺀다 — 노드 기본값
 #   (GripAssist 끔) = 학습 그대로 손 동작. lift_grasp_palm_m 은 손 명령을 바꾸지 않고 정지 판정만 써서 남긴다.
 _HAND_ASSIST = ("hand_unfreeze_on_grasp:=true", "thumb_support_g:=80.0", "thumb_open_floor_rad:=0.06")
-AGLT_LIVE_ARGS_F = tuple(x for p in zip(AGLT_LIVE_ARGS[::2], AGLT_LIVE_ARGS[1::2]) if p[1] not in _HAND_ASSIST for x in p)
-assert len(AGLT_LIVE_ARGS) - len(AGLT_LIVE_ARGS_F) == 2 * len(_HAND_ASSIST)
+# ★11.18 사용자 "abc모두 제거": 손 배포 보조 A · B · C 는 칵테일 카드까지 모든 aglt 노드에서 뺀다(노드 기본 = GripAssist 끔).
+AGLT_LIVE_ARGS = tuple(x for p in zip(AGLT_LIVE_ARGS[::2], AGLT_LIVE_ARGS[1::2]) if p[1] not in _HAND_ASSIST for x in p)
+AGLT_LIVE_ARGS_F = AGLT_LIVE_ARGS
+assert not any(a in _HAND_ASSIST for a in AGLT_LIVE_ARGS)
 # ★11.18 사용자: 경로 F 는 FP++ 보조 없이 들어온 FP++ 그대로(값 보조만 끔). 튐 거르기(gate · anchor) · 끊김 마지막 값 유지 ·
 #   쥔 뒤 FK 부착 fallback · guard · 손 안 컵 GRU(inhand_est) · 컵 오프셋(CUP_OBS_OFFSET)을 넣지 않는다. 끊김 허용(cup_dropout_*)도
 #   마지막 값 유지(cup_hold_last)가 있어야 쓰는 장치라 뺀다(노드가 거부, 11.18 rc=1). 순수 F 의 끊김 처리 = 노드 기본
@@ -1538,8 +1540,8 @@ def _episode_run(name: str, real: bool, ep=None) -> list:
                               *(AGLT_PURE_F if route_f else AGLT_LIVE_ARGS),
                               *(["-p", "hand_squeeze:=true"] if squeeze else []),
                               # ★11.04 접근 · 잡기 관측 컵 = 측정 컵 − t(카메라가 본 손 − FK 손). 0 이면 넣지 않는다(옛 미션 그대로)
-                              #   ★11.18 경로 F 는 넣지 않는다(위 AGLT_PURE_F)
-                              *([] if route_f else _cup_offset_args(b.cup_obs_offset_base_m)),
+                              #   ★11.18 경로 F 는 왼손만 넣는다(사용자 "f경로엔 일단 왼손 오프셋을 넣기" — 오른손은 없이 성공)
+                              *([] if route_f and b.side != "left" else _cup_offset_args(b.cup_obs_offset_base_m)),
                               "-p", f"max_episode_s:={max_s}"], background=True))
         elif b.kind == "place":
             src = next((j for n in ep.nodes for j in n.jobs if j.role == role), None)
