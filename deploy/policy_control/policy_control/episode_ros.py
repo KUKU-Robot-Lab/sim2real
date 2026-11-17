@@ -630,9 +630,10 @@ class RosExecutor:
             if not cli.wait_for_service(timeout_sec=wait):
                 return False, [f"{path}: 서비스가 없다(노드가 떠 있는가)"]
             req = SetParameters.Request()
-            for name, v in params.items():               # 노드가 선언한 타입 그대로(holder 는 정수, holder_tol_m 은 실수, 나머지는 문자열)
-                req.parameters.append(Parameter(name=name, value=(
-                    ParameterValue(type=ParameterType.PARAMETER_INTEGER, integer_value=v) if isinstance(v, int)
+            for name, v in params.items():               # 노드가 선언한 타입 그대로(holder 는 정수, holder_tol_m 은 실수, tin_subtract_offset 은 bool, 나머지는 문자열)
+                req.parameters.append(Parameter(name=name, value=(   # bool 은 int 의 하위형이라 먼저 본다(11.18 place 거부: BOOL 자리에 INTEGER)
+                    ParameterValue(type=ParameterType.PARAMETER_BOOL, bool_value=v) if isinstance(v, bool)
+                    else ParameterValue(type=ParameterType.PARAMETER_INTEGER, integer_value=v) if isinstance(v, int)
                     else ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=v) if isinstance(v, float)
                     else ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=str(v)))))
             fut = cli.call_async(req)

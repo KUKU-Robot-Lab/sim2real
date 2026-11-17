@@ -106,12 +106,15 @@ def test_the_param_set_sends_the_holder_tolerance_as_a_double():
             return SimpleNamespace(done=lambda: True, result=lambda: done)
 
     me = SimpleNamespace(node=SimpleNamespace(create_client=lambda *a, **k: _Cli(), destroy_client=lambda cli: None), _cbg=None)
-    ok, why = RosExecutor._set_params(me, "/rh_place_node_right", {"object": "source240_real", "holder": 2, "holder_tol_m": 0.07})
+    ok, why = RosExecutor._set_params(me, "/rh_place_node_right", {"object": "source240_real", "holder": 2, "holder_tol_m": 0.07,
+                                                                     "tin_subtract_offset": False})
     assert ok and why == []
     got = {p.name: p.value for p in sent[0].parameters}
     assert got["object"].type == ParameterType.PARAMETER_STRING and got["object"].string_value == "source240_real"
     assert got["holder"].type == ParameterType.PARAMETER_INTEGER and got["holder"].integer_value == 2
     assert got["holder_tol_m"].type == ParameterType.PARAMETER_DOUBLE and got["holder_tol_m"].double_value == 0.07
+    # ★11.18 bool 은 int 의 하위형 — INTEGER 로 보내면 place 노드가 BOOL 이 아니라고 거부해 놓기가 시작도 못 한다
+    assert got["tin_subtract_offset"].type == ParameterType.PARAMETER_BOOL and got["tin_subtract_offset"].bool_value is False
 
 
 # ---------------------------------------------------------------- 잡기 노드 — 컵 토픽
