@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import sys
 import time
@@ -31,6 +32,7 @@ from policy_control import rh_replay as R  # noqa: E402
 TOPIC = "/policy_control/joint_target"
 EPISODE_TOPIC_SIDE = "/policy_control/{side}/episode"
 PD_STATUS = "/policy_control/status/pd_{side}"
+PD_APPLIED = "/policy_control/pd_{side}/applied"     # pd 가 지금 쓰는 팔 + 손 명령(손 = 붙든 목표, rad)
 ARM_STATE = "/joint_states"
 HAND_STATE = "/hand_{side}/joint_states"
 MOVING = ("RAMPING", "TRACKING")
@@ -54,6 +56,17 @@ def contract_limits(path: Path, names: tuple[str, ...]) -> tuple[np.ndarray, np.
     return np.array([lim[n][0] for n in names]), np.array([lim[n][1] for n in names])
 
 
+def until(traj: R.ReplayTraj, label: str) -> R.ReplayTraj:
+    """구간 label 의 end(포함)까지 q · cup · segments 를 자른다. 라벨이 없으면 거부."""
+    labels = [s["label"] for s in traj.segments]
+    if label not in labels:
+        raise SystemExit(f"[replay_rh] --until {label!r} — 궤적 구간 {labels} 에 없다")
+    i = labels.index(label)
+    end = int(traj.segments[i]["end"]) + 1
+    return dataclasses.replace(traj, q=traj.q[:end], cup=None if traj.cup is None else traj.cup[:end],
+                               segments=tuple(traj.segments[: i + 1]))
+
+
 def summarize(traj: R.ReplayTraj, plan: R.Plan, args) -> list[str]:
     """사람이 읽을 요약과 거부 사유 목록."""
     arm_vmax = STAGE_ARM_VMAX[args.stage] * SPEED_MARGIN
@@ -73,7 +86,7 @@ def summarize(traj: R.ReplayTraj, plan: R.Plan, args) -> list[str]:
     return errs
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--npz", required=True, type=Path)
     ap.add_argument("--contract", type=Path, default=None, help="한계 검사용 rh_aglt 계약(그 팔)")
@@ -87,10 +100,15 @@ def main() -> int:
     ap.add_argument("--max-start-gap", type=float, default=0.15, help="팔 실측 ↔ 첫 프레임 허용 [rad]")
     ap.add_argument("--object-topic", default=None, help="물체 pose(base) — sim 출발 자리와 비교")
     ap.add_argument("--object-tol", type=float, default=0.01, help="물체 xy 허용 [m]")
+    ap.add_argument("--until", default=None, help="이 구간 라벨의 끝까지만 재생(예: descend)")
+    ap.add_argument("--hand-start", default="measured", choices=("measured", "applied"),
+                    help="진입 램프의 손 출발: 실측 · pd 가 지금 쓰는 손 명령(쥔 컵을 램프에서 풀지 않게)")
     ap.add_argument("--execute", action="store_true")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     traj = R.load_replay(args.npz, arm_src=args.arm_src, hand_src=args.hand_src)
+    if args.until:
+        traj = until(traj, args.until)
     dry = R.build_plan(traj, traj.q[0], rate_scale=args.rate_scale, pub_hz=args.pub_hz)
     errs = summarize(traj, dry, args)
     if errs:
@@ -100,6 +118,17 @@ def main() -> int:
         print("[replay_rh] 무발행 — 실기는 --execute(사용자 승인 뒤)")
         return 0
     return run(traj, args)
+
+
+def start_hand(arm_m: dict, hand_m: dict, applied: dict, arm_names, hand_names, hand_start: str, phase) -> dict:
+    """시작 자세의 손 출처(applied = pd 손 명령 · measured = 손 실측). 빠진 것이 있으면 SystemExit — applied 가 없을 때 실측으로 대신하지 않는다."""
+    hand_src = applied if hand_start == "applied" else hand_m
+    miss_arm = [n for n in arm_names if n not in arm_m]
+    miss_hand = [n for n in hand_names if n not in hand_src]
+    if miss_arm or miss_hand or not phase:
+        raise SystemExit(f"[replay_rh] 수신 없음: 팔 실측 {miss_arm[:4]} · 손 {'applied' if hand_start == 'applied' else '실측'} "
+                         f"{miss_hand[:4]} · pd status {phase!r}")
+    return hand_src
 
 
 def run(traj: R.ReplayTraj, args) -> int:
@@ -130,6 +159,10 @@ def run(traj: R.ReplayTraj, args) -> int:
         pd.update(phase=d.get("phase"), target=d.get("target"))
 
     node.create_subscription(String, PD_STATUS.format(side=side), on_pd, 10)
+    applied: dict = {}
+    if args.hand_start == "applied":
+        node.create_subscription(JointState, PD_APPLIED.format(side=side),
+                                 lambda m: applied.update(zip(m.name, m.position)), 10)
     if args.object_topic:
         node.create_subscription(PoseStamped, args.object_topic,
                                  lambda m: obj.update(p=(m.pose.position.x, m.pose.position.y, m.pose.position.z)), 10)
@@ -140,15 +173,14 @@ def run(traj: R.ReplayTraj, args) -> int:
     arm_names = [f"openarm_{side}_joint{i}" for i in range(1, 8)]
     hand_names = list(traj.names[7:])
     t0 = time.time()
-    while time.time() - t0 < 5.0 and not (all(n in arm_m for n in arm_names) and all(n in hand_m for n in hand_names)
+    hand_src = applied if args.hand_start == "applied" else hand_m
+    while time.time() - t0 < 5.0 and not (all(n in arm_m for n in arm_names) and all(n in hand_src for n in hand_names)
                                           and pd["phase"] and (obj["p"] or not args.object_topic)):
         rclpy.spin_once(node, timeout_sec=0.1)
-    missing = [n for n in arm_names if n not in arm_m] + [n for n in hand_names if n not in hand_m]
-    if missing or not pd["phase"]:
-        raise SystemExit(f"[replay_rh] 수신 없음: 실측 {missing[:4]} · pd status {pd['phase']!r}")
+    hand_src = start_hand(arm_m, hand_m, applied, arm_names, hand_names, args.hand_start, pd["phase"])
     if pd["phase"] not in MOVING:
         raise SystemExit(f"[replay_rh] pd {side} phase {pd['phase']} — TRACKING/RAMPING 에서만 시작한다(먼저 engage)")
-    start = np.array([arm_m[n] for n in arm_names] + [hand_m[n] for n in hand_names])
+    start = np.array([arm_m[n] for n in arm_names] + [hand_src[n] for n in hand_names])
     gap = float(np.abs(start[:7] - traj.q[0, :7]).max())
     if gap > args.max_start_gap:
         raise SystemExit(f"[replay_rh] 팔 실측이 첫 프레임에서 {gap:.3f} rad(> {args.max_start_gap}) — 진입 램프는 "

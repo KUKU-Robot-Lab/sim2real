@@ -347,6 +347,9 @@ class ActionManager:
             specs['tilt_now'] = ('tilt 시작 자세(세팅 자세)로 — 두 팔', 'control', ('tilt_now',))
         if 'tilt_pour' in known:                      # ★10.19 사용자: 세팅 자세에서 바로 tilt(컵을 쥔 채, 두 팔)
             specs['tilt_pour'] = ('tilt 붓기 — 지금 자세에서 바로(두 팔)', 'control', ('tilt_pour',))
+        for name in known:                            # ★11.18 사용자: 고정 놓기 궤적(place_fixed_<컵>_<끝>_<팔>) — 팔 하나
+            if name.startswith('place_fixed_'):
+                specs[name] = (known[name].title, 'control', (name,))
         for name, title in CONTROL_EPISODES.items():  # ★10.20 1-B — 정책 카드 없이 policy 탭에서 바로
             for side in ARMS:
                 sid = f'episode_{name}_{side}'
@@ -437,6 +440,8 @@ class ActionManager:
                     reasons.append(f'{side} PD 가 무발행 모드다')
                 elif st.get('phase') in ('HOLD', 'UNKNOWN', 'RELEASING', 'RAMPING'):
                     reasons.append(f"{side} PD 상태 {st.get('phase')} — 안전 복구/정착 필요")
+                elif action_id.startswith('place_fixed_') and st.get('phase') != 'TRACKING':
+                    reasons.append(f"{side} PD 상태 {st.get('phase')} — 고정 놓기는 그 팔 pd 가 쥔 자세를 붙들고(TRACKING) 있어야 한다")
                 elif action_id == 'tilt_pour' and st.get('phase') != 'TRACKING':
                     # 컵을 쥔 채라 여기서 engage 하지 않는다 — 세팅 자세를 만든 뒤 pd 가 그 자세를 붙들고 있어야 한다
                     reasons.append(f"{side} PD 상태 {st.get('phase')} — tilt 붓기는 두 팔 pd 가 지금 자세를 붙들고(TRACKING) 있어야 한다")

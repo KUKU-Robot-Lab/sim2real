@@ -230,6 +230,9 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
 #   만들기(episode_media.py)를 기본으로 끈다. 10.20 실기: 보고서 영상 정리가 옛 회까지 다시 가져오며 6 분 넘게 팔 작업을 붙잡아
 #   rehome · tilt_now 승인이 막혔다. 켜려면 True 로 바꾸고 이 생성기를 다시 돌린다(미션 YAML 이 바뀐다).
 VISION_RECORD = False
+#: ★11.18 사용자: 고정 놓기 궤적(tools/place_fixed.py) 콘솔 버튼 — 컵 → 팔 · 끝 구간(하강까지 = 쥔 채 놓기 직전 · 끝까지)
+PLACE_FIXED = (("blue", "right"), ("pink", "right"), ("shaker", "left"))
+PLACE_FIXED_UNTIL = {"descend": "하강까지(손 쥔 채 멈춤)", "all": "끝까지(놓기 → 들기)"}
 #: 인지 PC 의 노드 로그 — 저 PC 셸에서 그날 날짜로 푼다(logs/runs/<YYMMDD>/perception, scripts/run_paths.py 와 같은 틀)
 PERC_LOG = "logs/runs/$(date +%y%m%d)/perception"
 #: ★10.19 사용자 "작성할 보고서 사진/영상도 필요함" — VISION_RECORD 일 때 이 에피소드들은 카메라 영상을 보고서용 빈도로 남긴다(기본 5 Hz)
@@ -745,6 +748,15 @@ def _stages(kind: str) -> list[dict]:
                "needs_why": "두 팔 pd 가 지금 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다",
                "title": "tilt 붓기 — 지금 두 팔 자세(세팅 자세, 컵을 쥔 채)에서 바로: 실측 → D4 기본 궤적 계획 · 검사(걸리면 움직이지 "
                         "않음) → 두 팔 재생 → 시작 자세 복귀"})
+    # ★11.18 사용자: 경로 F 잡기(grasp_f_*) → control tilt_now 다음에 고정 놓기 궤적 — 컵을 쥔 채라 engage 하지 않는다(TRACKING 이어야).
+    #   id 끝 = 팔(actions.py 가 그 팔 pd 를 검사 · 자원으로 잡는다)
+    for cup, s in PLACE_FIXED:
+        for until, what in PLACE_FIXED_UNTIL.items():
+            st.append({"id": f"place_fixed_{cup}_{until}_{s}", "group": "policy", "lane": f"arm_{s}", "skippable": True,
+                       "touches_real": real, "needs": [f"pd_arm_{s}"],
+                       "needs_why": "pd 가 쥔 컵 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다",
+                       "title": f"[{s}] 고정 놓기 {cup} — {what}: tilt 끝 자세에서만 누른다(벗어나면 거부) · 지금 팔 · "
+                                "pd 손 명령에서 계획 · 검사(plan_place_fixed, 걸리면 움직이지 않음) → 재생(replay_traj_rh)"})
     for name in EPISODES:
         ep = _episode(name)
         sides = sorted(_episode_sides(ep))
@@ -1110,6 +1122,15 @@ def _run(kind: str) -> dict:
              + (" · bag tilt_pour" if real else ""),
              ["python3", f"{PC}/tools/tilt_pour.py", *([] if real else ["--no-record"])], execute_args=["--execute"]),
     ]
+    for cup, s in PLACE_FIXED:
+        for until, what in PLACE_FIXED_UNTIL.items():
+            run[f"place_fixed_{cup}_{until}_{s}"] = [
+                _cmd(f"★[{s}] 손이 {cup} 컵을 쥐고 tilt 시작 자세(경로 F 잡기 → tilt_now 뒤)에 있는가 · 홀더 {cup} 자리와 가는 길이 비었는가. "
+                     f"{what}" if real else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
+                _cmd(f"[{s}] 고정 놓기 {cup} {what} — 팔 실측 · pd 손 명령 → plan_place_fixed → replay_traj_rh · "
+                     "기록 logs/runs/<날짜>/place_fixed/<컵>_<시각>",
+                     ["python3", f"{PC}/tools/place_fixed.py", "--cup", cup, "--until", until], execute_args=["--execute"]),
+            ]
     for name in EPISODES:
         run[f"episode_{name}"] = _episode_run(name, real)
     # 에피소드 단계가 도중에 실패하면 CPU 기록기가 남는다 — shutdown 의 정지 목록에 더한다(10.08 리뷰)

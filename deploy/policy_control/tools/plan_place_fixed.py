@@ -47,7 +47,7 @@ HOLDER_BORE_R = 0.035          # hdgp tasks/rh_place_r/place_geom.py HOLDER_BORE
 HAND_MAP_YAML = TOOLS.parent / "config" / "rh56f1_hand_map.yaml"   # 손 관절 rad 범위(0 = 편 손 ~ 굽힘 한계)
 OPEN_SETTLE_S = 0.3            # 손이 다 편 뒤 lift 시작까지 최소 정지
 RELEASE_MIN_S = 1.5
-Q_START_TOL_DEG = 3.0          # --q-json 실측 ↔ 명목 시작 자세(cup_start 가 정의된 자세)
+Q_START_TOL_DEG = 3.0          # --q-json 실측 ↔ 명목 시작 자세(cup_start 가 정의된 자세), 놓는 팔만
 TIME_KEYS = ("approach", "descend", "release", "lift", "hold")
 HOLDER_CLEAR_M = 0.02          # 다른 홀더(+ 꽂힌 컵) 여유 — plan_tilt_traj LIMITS clr_min_m
 OWN_RIM_CLEAR_M = 0.01         # 접근 중 컵 ↔ 내 홀더 링
@@ -123,10 +123,10 @@ def hand_schedule(grip, open_, n: int, r0: int, step: float) -> tuple[np.ndarray
     return hand, (r0 + int(np.argmax(hit)) if hit.any() else n)
 
 
-def q_start_dev_deg(q: dict, nominal: dict) -> float:
-    """두 팔 실측 ↔ 명목 시작 자세(cup_start 가 정의된 자세) 관절 최대 편차 [deg]."""
-    return float(max(np.degrees(np.abs(np.asarray(q[s], float) - np.asarray(nominal[s], float))).max()
-                     for s in ("right", "left")))
+def q_start_dev_deg(q: dict, nominal: dict, side: str) -> float:
+    """한 팔 실측 ↔ 명목 시작 자세(cup_start 가 정의된 자세) 관절 최대 편차 [deg].
+    3° 검사는 놓는 팔만 한다. 반대 팔은 앞 놓기 뒤 자세(예 lift 끝)일 수 있고, 실측 q 가 충돌 세계(ReachWorld)에 그대로 들어간다."""
+    return float(np.degrees(np.abs(np.asarray(q[side], float) - np.asarray(nominal[side], float))).max())
 
 
 def release_checks(drop_m: float, drop_lim, xy_err: float, xy_tol: float, settle_s: float, open_after_s: float,
@@ -273,8 +273,8 @@ def plan(cfg: dict, q: dict, holders_path: Path, hand_grip, out: Path, hdgp) -> 
     # 홀더 여유: 다른 홀더(+ 꽂힌 컵, 탁자 ~ 0.45 m 원기둥) ↔ 컵 · 팔 · 손 / 내 홀더 링 ↔ 컵(접근 중) · 팔 · 손(전 구간)
     others = np.delete(holders, k_h, 0)
     segs = [(geo["bottom_z"], geo["mouth_z"], geo["radius"])]
-    I = np.repeat(np.eye(3)[None], n, 0)
-    cup_pts = HC.cup_axis_points(cup, I, segs)
+    eye = np.repeat(np.eye(3)[None], n, 0)
+    cup_pts = HC.cup_axis_points(cup, eye, segs)
     cup_other = np.min([HC.column_dist(p, others).min(-1) - r for p, r in cup_pts], 0)
     ap = seg["approach"]
     # 접근 중 컵(원기둥) ↔ 내 홀더 링: 축 사이 거리가 반지름 합보다 작으면 컵 바닥 − 링 윗면, 아니면 옆 거리
@@ -293,7 +293,7 @@ def plan(cfg: dict, q: dict, holders_path: Path, hand_grip, out: Path, hdgp) -> 
     drop_m = float(cup_rel[2] + geo["bottom_z"] - own_top)
     xy_err = float(np.hypot(*(cup_rel[:2] - hpos[:2])))
     xy_tol = HOLDER_BORE_R - geo["fit_radius"]
-    q_dev = q_start_dev_deg(q, nominal)
+    q_dev = q_start_dev_deg(q, nominal, side)
     vmax = float(np.abs(np.diff(arm, axis=0)).max()) * RATE_HZ
     checks = {
         "ik_pos_mm": {"value": round(e_p * 1000, 2), "limit": POS_TOL_M * 1000, "ok": e_p <= POS_TOL_M},
@@ -311,6 +311,8 @@ def plan(cfg: dict, q: dict, holders_path: Path, hand_grip, out: Path, hdgp) -> 
         "cup_table_approach_m": {"value": round(cup_table_ap, 4), "limit": TABLE_MARGIN_M},
         **release_checks(drop_m, cfg["release_drop_m"], xy_err, xy_tol, (bounds["lift"][0] - hand_open_at) / RATE_HZ,
                          (hand_open_at - r0) / RATE_HZ, q_dev),
+        # 정보만(판정 안 함): 반대 팔 편차. 충돌은 위 collision 이 반대 팔 실측 q 로 본다
+        "q_other_dev_deg": {"value": round(q_start_dev_deg(q, nominal, other), 2), "ok": True, "info": True},
     }
     cup_err = float(np.linalg.norm(cup_rel - cup_pl))
     ok = all_ok(checks)
@@ -342,7 +344,7 @@ def plan(cfg: dict, q: dict, holders_path: Path, hand_grip, out: Path, hdgp) -> 
                  joint_names=np.array(PT.arm_names(side)))
         traj = RR.load_replay(tmp)                       # replay_traj_rh 와 같은 읽기로 형식 확인
         rs = RR.max_rate_scale(traj, arm_vmax=STAGE_REDUCED_ARM * SPEED_MARGIN, hand_vmax=HAND_VMAX * SPEED_MARGIN)
-        meta["replay_max_rate_scale_reduced"] = round(rs, 3)
+        meta["replay_max_rate_scale_reduced"] = float(np.floor(rs * 1000) / 1000)   # 내림: 반올림이 허용 최대를 넘지 않게
         meta["wall_s"] = round(meta["T_end_s"] / rs, 2)
         meta["npz_md5"] = H.md5(tmp)
     (out / "check.json").write_text(json.dumps(checks, ensure_ascii=False, indent=1))

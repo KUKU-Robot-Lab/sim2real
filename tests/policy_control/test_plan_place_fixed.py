@@ -97,10 +97,15 @@ def test_release_checks_bounds():
     assert not PF.release_checks(-0.0051, [-0.005, 0.03], 0.0, 0.002, 1.0, 0.5, 0.0)["release_drop_m"]["ok"]
 
 
-def test_q_start_dev_both_arms():
+def test_q_start_dev_place_arm_only():
     nom = {"right": [0.0] * 7, "left": [0.0] * 7}
-    q = {"right": [0.0] * 7, "left": [0.0] * 6 + [np.radians(4.0)]}
-    assert np.isclose(PF.q_start_dev_deg(q, nom), 4.0)                 # 놓지 않는 팔도 본다
+    # 분홍 놓기 뒤 오른팔은 lift 자세(크게 벗어남), shaker 는 왼팔이 놓는다
+    q = {"right": [np.radians(40.0)] * 7, "left": [0.0] * 6 + [np.radians(2.9)]}
+    dev = PF.q_start_dev_deg(q, nom, "left")
+    assert np.isclose(dev, 2.9)
+    assert PF.release_checks(0.0, [-0.005, 0.03], 0.0, 0.002, 1.0, 0.5, dev)["q_start_dev_deg"]["ok"]
+    dev_r = PF.q_start_dev_deg(q, nom, "right")                        # 놓는 팔이 벗어나면 실패
+    assert not PF.release_checks(0.0, [-0.005, 0.03], 0.0, 0.002, 1.0, 0.5, dev_r)["q_start_dev_deg"]["ok"]
 
 
 def test_main_failed_plan_exit2_and_no_npz(tmp_path, monkeypatch):

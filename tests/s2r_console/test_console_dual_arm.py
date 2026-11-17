@@ -155,6 +155,20 @@ def test_tilt_pour_is_a_two_arm_control_that_needs_both_pds_holding(console, tin
     assert _wait(m)["outcome"] == "DONE"
 
 
+def test_place_fixed_is_a_one_arm_control_that_needs_that_pd_holding(console, tiny_repo, monkeypatch):
+    """★11.18 고정 놓기 — id 끝 팔(left)의 pd 만 보고 자원으로 잡는다 · 컵을 쥔 채라 TRACKING 이어야."""
+    sid = "place_fixed_shaker_all_left"
+    m = setup_actions(console, tiny_repo, {sid: [{"argv": ["true"], "manual": True}, {"argv": ["true"]}]})
+    _obs(monkeypatch, console, right="IDLE", left="IDLE")
+    item = next(a for a in m.catalog() if a["id"] == sid)
+    assert item["group"] == "control" and not item["enabled"]
+    assert any("left PD 상태 IDLE" in r and "TRACKING" in r for r in item["reasons"]), item["reasons"]
+    assert not any(r.startswith("right") for r in item["reasons"]), item["reasons"]
+    assert m._resources(console.session, sid, "control", {}) == frozenset({"left"})
+    _obs(monkeypatch, console, right="IDLE")
+    assert m.describe(sid)["enabled"]
+
+
 def test_tilt_now_goes_to_the_setting_pose_like_rehome(console, tiny_repo, monkeypatch):
     """세팅 자세로 가는 것 — rehome 처럼 pd 가 IDLE 이어도 된다(그 자리에서 engage), 두 팔을 다 쓴다."""
     m = setup_actions(console, tiny_repo, {"tilt_now": [{"argv": ["true"], "manual": True}, {"argv": ["true"]}]})

@@ -405,6 +405,54 @@ stages:
   - pd_arm_left
   needs_why: 두 팔 pd 가 지금 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
   title: 'tilt 붓기 — 지금 두 팔 자세(세팅 자세, 컵을 쥔 채)에서 바로: 실측 → D4 기본 궤적 계획 · 검사(걸리면 움직이지 않음) → 두 팔 재생 → 시작 자세 복귀'
+- id: place_fixed_blue_descend_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  needs:
+  - pd_arm_right
+  needs_why: pd 가 쥔 컵 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
+  title: '[right] 고정 놓기 blue — 하강까지(손 쥔 채 멈춤): tilt 끝 자세에서만 누른다(벗어나면 거부) · 지금 팔 · pd 손 명령에서 계획 · 검사(plan_place_fixed, 걸리면 움직이지 않음) → 재생(replay_traj_rh)'
+- id: place_fixed_blue_all_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  needs:
+  - pd_arm_right
+  needs_why: pd 가 쥔 컵 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
+  title: '[right] 고정 놓기 blue — 끝까지(놓기 → 들기): tilt 끝 자세에서만 누른다(벗어나면 거부) · 지금 팔 · pd 손 명령에서 계획 · 검사(plan_place_fixed, 걸리면 움직이지 않음) → 재생(replay_traj_rh)'
+- id: place_fixed_pink_descend_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  needs:
+  - pd_arm_right
+  needs_why: pd 가 쥔 컵 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
+  title: '[right] 고정 놓기 pink — 하강까지(손 쥔 채 멈춤): tilt 끝 자세에서만 누른다(벗어나면 거부) · 지금 팔 · pd 손 명령에서 계획 · 검사(plan_place_fixed, 걸리면 움직이지 않음) → 재생(replay_traj_rh)'
+- id: place_fixed_pink_all_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  needs:
+  - pd_arm_right
+  needs_why: pd 가 쥔 컵 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
+  title: '[right] 고정 놓기 pink — 끝까지(놓기 → 들기): tilt 끝 자세에서만 누른다(벗어나면 거부) · 지금 팔 · pd 손 명령에서 계획 · 검사(plan_place_fixed, 걸리면 움직이지 않음) → 재생(replay_traj_rh)'
+- id: place_fixed_shaker_descend_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  needs:
+  - pd_arm_left
+  needs_why: pd 가 쥔 컵 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
+  title: '[left] 고정 놓기 shaker — 하강까지(손 쥔 채 멈춤): tilt 끝 자세에서만 누른다(벗어나면 거부) · 지금 팔 · pd 손 명령에서 계획 · 검사(plan_place_fixed, 걸리면 움직이지 않음) → 재생(replay_traj_rh)'
+- id: place_fixed_shaker_all_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  needs:
+  - pd_arm_left
+  needs_why: pd 가 쥔 컵 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
+  title: '[left] 고정 놓기 shaker — 끝까지(놓기 → 들기): tilt 끝 자세에서만 누른다(벗어나면 거부) · 지금 팔 · pd 손 명령에서 계획 · 검사(plan_place_fixed, 걸리면 움직이지 않음) → 재생(replay_traj_rh)'
 - id: episode_pick_place_right
   group: policy
   lane: arm_right
@@ -2681,6 +2729,108 @@ run:
     - python3
     - '{repo}/deploy/policy_control/tools/tilt_pour.py'
     - --no-record
+    execute_args:
+    - --execute
+  place_fixed_blue_descend_right:
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] 고정 놓기 blue 하강까지(손 쥔 채 멈춤) — 팔 실측 · pd 손 명령 → plan_place_fixed → replay_traj_rh · 기록 logs/runs/<날짜>/place_fixed/<컵>_<시각>'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/place_fixed.py'
+    - --cup
+    - blue
+    - --until
+    - descend
+    execute_args:
+    - --execute
+  place_fixed_blue_all_right:
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] 고정 놓기 blue 끝까지(놓기 → 들기) — 팔 실측 · pd 손 명령 → plan_place_fixed → replay_traj_rh · 기록 logs/runs/<날짜>/place_fixed/<컵>_<시각>'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/place_fixed.py'
+    - --cup
+    - blue
+    - --until
+    - all
+    execute_args:
+    - --execute
+  place_fixed_pink_descend_right:
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] 고정 놓기 pink 하강까지(손 쥔 채 멈춤) — 팔 실측 · pd 손 명령 → plan_place_fixed → replay_traj_rh · 기록 logs/runs/<날짜>/place_fixed/<컵>_<시각>'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/place_fixed.py'
+    - --cup
+    - pink
+    - --until
+    - descend
+    execute_args:
+    - --execute
+  place_fixed_pink_all_right:
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] 고정 놓기 pink 끝까지(놓기 → 들기) — 팔 실측 · pd 손 명령 → plan_place_fixed → replay_traj_rh · 기록 logs/runs/<날짜>/place_fixed/<컵>_<시각>'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/place_fixed.py'
+    - --cup
+    - pink
+    - --until
+    - all
+    execute_args:
+    - --execute
+  place_fixed_shaker_descend_left:
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[left] 고정 놓기 shaker 하강까지(손 쥔 채 멈춤) — 팔 실측 · pd 손 명령 → plan_place_fixed → replay_traj_rh · 기록 logs/runs/<날짜>/place_fixed/<컵>_<시각>'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/place_fixed.py'
+    - --cup
+    - shaker
+    - --until
+    - descend
+    execute_args:
+    - --execute
+  place_fixed_shaker_all_left:
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[left] 고정 놓기 shaker 끝까지(놓기 → 들기) — 팔 실측 · pd 손 명령 → plan_place_fixed → replay_traj_rh · 기록 logs/runs/<날짜>/place_fixed/<컵>_<시각>'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/place_fixed.py'
+    - --cup
+    - shaker
+    - --until
+    - all
     execute_args:
     - --execute
   episode_pick_place_right:
