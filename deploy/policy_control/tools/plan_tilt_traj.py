@@ -96,6 +96,19 @@ def mouth_xy_mm(Cr: np.ndarray, Cl: np.ndarray, src_mouth_z: float, rcv_mouth_z:
     return np.linalg.norm((ms - mr)[:, :2], axis=1) * 1000
 
 
+def aim_params(params: dict, off_base_m, u0_deg: float) -> dict:
+    """★11.18 붓는 입술이 shaker 입구 대비 떨어지는 자리(조준점)를 base 수평 d 만큼 옮긴 params(새 dict).
+    plan_knots: M = mouth_ref + (rdx,rdy,rdz) 는 두 컵을 같이 옮겨 조준이 안 바뀐다. 입술 L = M + ox·u + oy·a + h·ez,
+    u = Rz(yaw)·(cos U0, sin U0, 0), a = ez × u 는 수평 정규직교라 ox += d·u, oy += d·a 가 정확하다."""
+    d = np.asarray(off_base_m, dtype=np.float64)
+    if d.shape != (3,) or not np.all(np.isfinite(d)) or d[2] != 0.0:
+        raise ValueError(f"aim_offset_base_m = [dx, dy, 0] (m) 여야 한다: {off_base_m!r}")
+    ang = math.radians(u0_deg + float(params["yaw"]))
+    u = np.array([math.cos(ang), math.sin(ang)])
+    a = np.array([-u[1], u[0]])
+    return {**params, "ox": float(params["ox"]) + float(d[:2] @ u), "oy": float(params.get("oy", 0.0)) + float(d[:2] @ a)}
+
+
 def minjerk(s: np.ndarray) -> np.ndarray:
     s = np.clip(s, 0.0, 1.0)
     return 10 * s ** 3 - 15 * s ** 4 + 6 * s ** 5
@@ -123,6 +136,12 @@ def plan(cfg: dict, asset: Path, cup: str, q: dict, holders: Path, tin_json: str
     from dataclasses import fields
     S = np.load(asset / "ref" / f"setup_{cup}.npz", allow_pickle=False)
     params = json.loads((asset / "ref" / f"params_{cup}.json").read_text(encoding="utf-8"))["params"]
+    aim = None
+    if cfg.get("aim_offset_base_m") is not None:                       # ref params json 은 md5 핀이라 여기서만 옮긴다
+        new = aim_params(params, cfg["aim_offset_base_m"], importlib.import_module(f"{PKG}.tilt_traj.plan").U0_DEG)
+        aim = {"offset_base_m": list(cfg["aim_offset_base_m"]), "ox": [params["ox"], new["ox"]],
+               "oy": [params.get("oy", 0.0), new["oy"]]}
+        params = new
     geo_d, clr_d = json.loads(str(S["geo_json"])), json.loads(str(S["clear_json"]))
     clr_d = {k: (tuple(tuple(x) for x in v) if k.endswith("_segs") else v) for k, v in clr_d.items()}
     clr_d["table_z"] = table_z(cfg)                                    # sim 0.205 → 실기 탁자
@@ -166,7 +185,7 @@ def plan(cfg: dict, asset: Path, cup: str, q: dict, holders: Path, tin_json: str
         "mouth_xy_mm": {"value": round(mxy, 2), "ok": mxy <= LIMITS["mouth_xy_mm"]},
     }
     return {"cmd": cmd, "knots": knots, "info": info, "checks": checks, "ok": all(c["ok"] for c in checks.values()),
-            "params": params, "tin": tin_src, "T_in_r": np.asarray(T_r).tolist(), "T_in_l": np.asarray(T_l).tolist(),
+            "params": params, "aim": aim, "tin": tin_src, "T_in_r": np.asarray(T_r).tolist(), "T_in_l": np.asarray(T_l).tolist(),
             "secs": {"pre": float(cfg["pre_s"]), "app_end": round(float(e[2]), 3), "tilt_end": round(float(e[3]), 3),
                      "settle_end": round(float(e[6]), 3), "T_end_s": round(len(cmd) / RATE_HZ, 3)}}
 

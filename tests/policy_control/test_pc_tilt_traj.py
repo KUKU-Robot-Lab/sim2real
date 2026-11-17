@@ -72,3 +72,18 @@ def test_mouth_xy_mm():
     Cl[1, :2, 3] = [0.003, 0.004]                            # 수평 5 mm
     Cl[2, 2, 3] += 0.05                                      # 수직만 50 mm → 0
     assert np.allclose(T.mouth_xy_mm(Cr, Cl, 0.155, 0.045), [0.0, 5.0, 0.0])
+
+
+def test_aim_params_moves_lip_by_base_offset():
+    """★11.18 조준 오프셋: 입술 변위 Δox·u + Δoy·a(plan_knots 식, u = Rz(yaw)·U0, a = ez × u)가 base d 와 같고 원본은 그대로."""
+    T = _tool()
+    p = {"ox": 0.0006, "yaw": 14.13, "h": 0.005}
+    d = np.array([0.002, -0.001, 0.0])
+    q = T.aim_params(p, d.tolist(), 120.0)
+    c, s = np.cos(np.radians(p["yaw"])), np.sin(np.radians(p["yaw"]))
+    u = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]]) @ np.array([np.cos(np.radians(120)), np.sin(np.radians(120)), 0.0])
+    a = np.cross([0.0, 0.0, 1.0], u)
+    assert np.allclose((q["ox"] - p["ox"]) * u + q["oy"] * a, d, atol=1e-12)
+    assert "oy" not in p and q["h"] == p["h"]
+    with pytest.raises(ValueError):
+        T.aim_params(p, [0.002, -0.001, 0.001], 120.0)              # z 는 0 만
