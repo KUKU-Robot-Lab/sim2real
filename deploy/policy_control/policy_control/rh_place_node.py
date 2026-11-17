@@ -38,6 +38,10 @@ import time  # noqa: E402
 
 READY_CARRY_SLACK_S = 2.0
 OPENED_END_TICKS = 3      # ★11.11 정책 손 목표 · 실측 손가락이 둘 다 열린 틱이 이만큼 연속(60 Hz 50 ms)이면 끝
+#: ★11.18 래치 전 손 폄 종료의 문턱 하한(rad) — 놓음 게이트 open_min_rad(0.15)와 따로. 학습 정책은 래치 전 손가락을 인계 대비
+#  0.23~0.25 rad 편 채 내린다(체크포인트 running_mean_std). 06:28 cocktail_1c_e4000 은 인계 손이 뱅크보다 0.17 rad 더 닫혀
+#  0.15 를 14 틱에 넘어 래치(~52 틱) 전에 끊겼다. 0.35 = 학습 연 양 위 · 완전 개방 아래.
+OPENED_END_MIN_RAD = 0.35
 OPENED_MEAS_FRAC = 1.0    # ★11.11 "다 핀" 쪽 — 실측 평균 ≥ open_min_rad. 0.5(0.075 rad)는 sim 1111b place_blue 에서 컵을 쥔 채
                           #   0.12 rad(안착 높이 +40.5 mm)에 끝냈다. 실기 bag 184024 는 707.1 s 0.067 → 707.2 s 0.548 로 뛰어 종료 시각 거의 같음
 
@@ -63,7 +67,8 @@ def holder_candidates(text: str, first: int) -> list[int]:
 
 def opened_both(chain) -> bool:
     """★11.11 이 틱에 정책 손 목표와 실측 손가락이 둘 다 열렸다(네 손가락 평균, 인계 · 정책 시작 손 기준)."""
-    return chain.opened >= chain.open_min_rad and chain.opened_meas >= OPENED_MEAS_FRAC * chain.open_min_rad
+    lim = max(float(chain.open_min_rad), OPENED_END_MIN_RAD)   # ★11.18 래치 전 종료만 높인 문턱
+    return chain.opened >= lim and chain.opened_meas >= OPENED_MEAS_FRAC * lim
 
 
 def hand_released(chain, release_force_n: float) -> bool | None:
