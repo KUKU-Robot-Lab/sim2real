@@ -1,0 +1,19 @@
+# 11.18 글로벌 D435i(serial 261122075918, arm4090) 외부 파라미터 + depth 광선 보정.
+# 자세: 마커 71·75·76 단독 PnP(rms 1.27 px, logs/runs/261118/global_view/solo_solve.py), 머리 m1117 없이 풂.
+# depth_bias: 테이블 상판 평면(z 0.205, x 0.09~0.45, y ±0.43) 기대 depth 대비 측정 depth 중앙 비율 1.019
+#   (화소 27066, 거리 1.0~1.8 m 구간 1.016~1.029, logs/runs/261118/global_view/plane_ratio.py).
+#   EEPROM tare 는 못 함: 영상 가운데 광선이 테이블 밖(로봇 뒤)에 닿는다.
+#   검증: 같은 분홍 컵 ego(m1117) 대비 글로벌 차이 28 mm → 보정 뒤 3~4 mm(ego_vs_global/pink_cmp·pink_multi).
+camera:
+  frame: camera_color_optical_frame
+  position: [1.178809, 1.078357, 0.870726]
+  orientation_wxyz: [0.213389, -0.287254, -0.740823, 0.568447]
+base_z_bias_m: 0.0
+depth_bias:
+  offset_m: 0.0
+  per_m: 0.0186
+  valid_z_m: [1.0, 1.9]
+cad_to_body:
+  position: [0.0, 0.0, 0.0]
+  orientation_wxyz: [0.707107, 0.707107, 0.0, 0.0]
+base_frame: base_link
