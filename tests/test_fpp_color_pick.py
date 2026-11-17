@@ -301,3 +301,16 @@ def test_a_bottle_whose_thin_neck_has_no_depth_stands_by_its_colour_top():
     top = C.mask_top_z(C.own_pixels(mask, parts[0], parts), K, T, pts)
     assert abs(top - 0.445) < 0.01 and C.looks_standing(pts, aabb, top_z=top)        # 키 켬 = True
     assert not C.looks_standing(pts, aabb, top_z=C.mask_top_z(parts[0], K, T, pts))  # 조각 마스크만으로는 못 고친다
+
+
+def test_mask_spill_onto_the_table_behind_does_not_make_a_standing_cup_look_lying():
+    """11.17 bc18: YOLO 마스크가 윤곽 밖 몇 화소 번져 비스듬한 시선 뒤 상판(z≈상판) 점이 섞였다 — 퍼짐 155 mm 로 버려졌다.
+    상판 높이 점은 퍼짐에서 뺀다. 누운 병(몸통이 상판 위로 떠 있음)은 그대로 걸러진다."""
+    aabb = ((-0.03, -0.03, -0.085), (0.03, 0.03, 0.155))
+    rng = np.random.default_rng(3)
+    cup = np.column_stack([rng.uniform(0, 0.05, 900), rng.uniform(0, 0.05, 900), rng.uniform(0.23, 0.445, 900)])
+    spill = np.column_stack([rng.uniform(0.0, 0.16, 100), rng.uniform(0.05, 0.16, 100), rng.uniform(0.205, 0.22, 100)])
+    assert not C.fits_footprint(np.vstack([cup, spill]), aabb, min_above=-1.0)   # 빼지 않으면 버려진다
+    assert C.looks_standing(np.vstack([cup, spill]), aabb)
+    lying = np.column_stack([rng.uniform(0, 0.24, 900), rng.uniform(0, 0.06, 900), rng.uniform(0.21, 0.27, 900)])
+    assert not C.fits_footprint(lying, aabb)

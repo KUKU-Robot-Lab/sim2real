@@ -146,12 +146,16 @@ def split_by_depth(mask: np.ndarray, depth: np.ndarray, K: np.ndarray, T_base_ca
 
 
 FOOTPRINT_SCALE, FOOTPRINT_PAD = 1.5, 0.02
+FOOTPRINT_MIN_ABOVE = 0.02   # 퍼짐은 상판보다 이만큼 높은 점만 — 11.17 bc18: 마스크가 윤곽 밖으로 번져 비스듬한 시선 뒤 상판 깊이가 섞임(155 → 52 mm)
 
 
-def fits_footprint(points_base: np.ndarray, aabb, scale: float = FOOTPRINT_SCALE, pad: float = FOOTPRINT_PAD) -> bool:
+def fits_footprint(points_base: np.ndarray, aabb, scale: float = FOOTPRINT_SCALE, pad: float = FOOTPRINT_PAD,
+                   table_z: float | None = None, min_above: float = FOOTPRINT_MIN_ABOVE) -> bool:
     """보이는 면의 수평 퍼짐(p5~p95)이 서 있는 물체의 바닥 크기 안인가 — 누운 · 쓰러진 같은 색 물체를 버린다(10.09 핑크 병).
-    한계 = 물체 aabb 의 수평 최대 폭 × scale + pad. 점이 20 개 미만이면 False."""
+    한계 = 물체 aabb 의 수평 최대 폭 × scale + pad. 상판 + min_above 아래 점은 빼고, 남은 점이 20 개 미만이면 False."""
     P = np.asarray(points_base, float)
+    if P.ndim == 2 and len(P):
+        P = P[P[:, 2] > (TABLE_TOP_Z if table_z is None else table_z) + min_above]
     if len(P) < 20:
         return False
     lo, hi = np.asarray(aabb[0], float), np.asarray(aabb[1], float)
@@ -171,7 +175,7 @@ def looks_standing(points_base: np.ndarray, aabb, table_z: float = TABLE_TOP_Z, 
     """서 있는 물체 같은가 — 수평 퍼짐이 바닥 안(fits_footprint)이고, 보이는 점 위쪽(p95)이 상판 + 물체 높이에 닿는다.
     화면 끝에 잘린 누운 같은 색 물체는 폭으로는 못 거르고 꼭대기 높이로 거른다(10.09).
     top_z 를 주면 p95 대신 그 꼭대기 높이(mask_top_z, 11.18 글로벌 카메라)로 잰다."""
-    if not fits_footprint(points_base, aabb):
+    if not fits_footprint(points_base, aabb, table_z=table_z):
         return False
     lo, hi = np.asarray(aabb[0], float), np.asarray(aabb[1], float)
     top = float(np.percentile(np.asarray(points_base, float)[:, 2], 95)) if top_z is None else float(top_z)
