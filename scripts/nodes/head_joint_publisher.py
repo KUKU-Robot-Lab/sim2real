@@ -43,7 +43,7 @@ from head_compliant_hold import (
 )
 from head_driver_core import HeadDriver, stream_limits_for
 from head_fk_chain import urdf_from_encoder
-from head_home import DEFAULT_CONFIG, load_head_home
+from head_home import DEFAULT_CONFIG, load_head_home, max_tilt_for
 import head_motion
 
 JOINT_NAMES = ["head_j_pan", "head_j_tilt"]
@@ -67,7 +67,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--topic", default=DEFAULT_TOPIC)
     p.add_argument("--rate-hz", type=float, default=DEFAULT_RATE_HZ)
     p.add_argument("--config", default=str(DEFAULT_CONFIG), help="기준 자세·게인(head_home.yaml). 이동 요청이 이 게인 순서로 적용된다")
-    p.add_argument("--max-tilt", type=float, default=head_motion.MAX_TILT_DEG, help="이동 요청에서 허용하는 tilt 상한(인코더 deg)")
+    p.add_argument("--max-tilt", type=float, default=None,
+                   help=f"이동 요청에서 허용하는 tilt 상한(인코더 deg). 없으면 --config 의 max_tilt_deg, 그것도 없으면 {head_motion.MAX_TILT_DEG:g}")
     p.add_argument("--stream-stale-s", type=float, default=head_motion.STREAM_STALE_S,
                    help=f"연속 목표({head_motion.STREAM_TOPIC})가 이만큼 안 오면 마지막 goal 을 두고 한 번 이동 모드로")
     p.add_argument("--stream-max-vel", type=float, default=head_motion.STREAM_MAX_VEL_DPS, help="연속 모드 속도 상한 °/s")
@@ -93,7 +94,6 @@ def main() -> int:
 
     print(f"포트 {port} @ {args.baud} · ids {ids} → {args.topic} @ {args.rate_hz} Hz")
     print(f"관절 이름 {JOINT_NAMES} · 단위 라디안 · **URDF 규약**(pan 부호 반전 적용)")
-    print(f"포트 단독 소유 · 이동 요청 {head_motion.REQUEST_TOPIC} → 상태 {head_motion.STATUS_TOPIC} · tilt 상한 {args.max_tilt}°")
     print(f"연속 목표 {head_motion.STREAM_TOPIC} → 기록 {head_motion.STREAM_LOG_TOPIC} · stale {args.stream_stale_s} s · "
           f"{args.stream_max_vel} °/s · {args.stream_max_acc} °/s²")
     if args.dry_run:
@@ -114,6 +114,8 @@ def main() -> int:
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"❌ 설정을 읽을 수 없다: {exc}", file=sys.stderr)
         return 2
+    args.max_tilt = max_tilt_for(config, args.max_tilt, head_motion.MAX_TILT_DEG)
+    print(f"포트 단독 소유 · 이동 요청 {head_motion.REQUEST_TOPIC} → 상태 {head_motion.STATUS_TOPIC} · tilt 상한 {args.max_tilt}°")
     try:
         controller = CompliantController(port, args.baud)
     except Exception as exc:  # noqa: BLE001 - PortBusy 포함: 다른 프로세스가 포트를 쥐고 있다

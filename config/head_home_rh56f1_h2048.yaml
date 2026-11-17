@@ -13,6 +13,9 @@ motors:
   tilt:
     id: 2
     deg: 73.36           # 틱 2882
+# ★11.18 이동 요청 tilt 상한 — 드라이버 기본 -10 은 KITECH 머리 값이라 home tilt +73.36° 를 거부했다. 82 = 놓기 학생 상한(STREAM_TILT_RANGE_DEG),
+#  위치 모드 경계 +90° · 처짐 자리 +109.85° 안. 명령 인자 --max-tilt 가 있으면 그쪽이 이긴다.
+max_tilt_deg: 82
 position_i_gain: 400
 operating_mode: 3
 profile_acceleration: 20

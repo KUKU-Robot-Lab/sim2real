@@ -17,6 +17,9 @@ motors:
     id: 2
     deg: 69.055          # 틱 2833(멈춘 자리) = 목표 68.82°(2830) + 3
     goal_bias_tick: -3   # 목표 2830 을 쓰면 2833 에 선다(11.15 실측)
+# ★11.18 이동 요청 tilt 상한 — 드라이버 기본 -10 은 KITECH 머리 값이라 camset tilt +69.06° 를 거부했다. 82 = 놓기 학생 상한(STREAM_TILT_RANGE_DEG),
+#  위치 모드 경계 +90° · 처짐 자리 +109.85° 안. 명령 인자 --max-tilt 가 있으면 그쪽이 이긴다.
+max_tilt_deg: 82
 position_i_gain: 400
 operating_mode: 3
 profile_acceleration: 20

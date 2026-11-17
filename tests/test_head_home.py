@@ -1,5 +1,7 @@
 """head_home 의 설정 검증 로직 테스트."""
 
+from pathlib import Path
+
 import pytest
 
 from head_home import HeadHome, load_head_home
@@ -367,3 +369,19 @@ def test_driver_publishes_the_real_tilt_while_left_in_mode_4_and_the_next_reques
     assert json.loads(statuses[-1])["state"] == "accepted"
     assert [v for _l, a, v in rec.writes if a == head_home.ADDR_OPERATING_MODE][-2:] == [3, 3]
     assert rec.table[2][132] == 2812
+
+
+def test_max_tilt_comes_from_config_unless_the_driver_flag_overrides(tmp_path):
+    """★11.18: RH56F1 camset(+69°) 이 드라이버 기본 -10 에 막혔다 — 설정 max_tilt_deg 가 기본을 대신하고, --max-tilt 가 이긴다."""
+    from head_home import max_tilt_for
+    base = Path("config/head_camset_rh56f1_h2048.yaml").read_text(encoding="utf-8")
+    cfg = load_head_home(Path("config/head_camset_rh56f1_h2048.yaml"))
+    assert cfg.max_tilt_deg == 82.0 and cfg.targets_deg[2] < 82.0
+    assert max_tilt_for(cfg, None, -10.0) == 82.0 and max_tilt_for(cfg, 70.0, -10.0) == 70.0
+    p = tmp_path / "h.yaml"
+    p.write_text(base.replace("max_tilt_deg: 82", ""), encoding="utf-8")
+    assert max_tilt_for(load_head_home(p), None, -10.0) == -10.0
+    for bad in ("max_tilt_deg: 95", "max_tilt_deg: 60"):   # 위치 모드 경계 밖 · tilt 목표(69°)보다 낮음
+        p.write_text(base.replace("max_tilt_deg: 82", bad), encoding="utf-8")
+        with pytest.raises(ValueError):
+            load_head_home(p)
