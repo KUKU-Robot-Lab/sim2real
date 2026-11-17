@@ -182,6 +182,37 @@ def looks_standing(points_base: np.ndarray, aabb, table_z: float = TABLE_TOP_Z, 
     return abs(top - (table_z + float(hi[2] - lo[2]))) <= top_tol
 
 
+HELD_LIFT_MIN = 0.06     # 손에 들렸다고 볼 최소 바닥 높이(상판 위) — 11.18 실측 들린 컵 바닥 0.343 · 0.485(상판 +14 · +28 cm).
+                         # 상판에 선 물체는 아래가 가려 p5 가 떠도 이만큼은 못 넘는다 — 그 판정은 looks_standing 한 곳에만 둔다
+HELD_HEIGHT_FRAC = 0.5   # 보이는 세로 길이 / 물체 높이 — 누운 물체(지름)와 가른다. 손이 가운데를 가려도 p5~p95 는 남는다
+
+
+def looks_held(points_base: np.ndarray, aabb, table_z: float = TABLE_TOP_Z, pad: float = FOOTPRINT_PAD,
+               lift_min: float = HELD_LIFT_MIN, height_frac: float = HELD_HEIGHT_FRAC) -> bool:
+    """손에 들려 공중에 있는 물체 같은가 — 바닥(p5)이 상판보다 lift_min 이상 뜨고, 보이는 세로 길이(p5~p95)가
+    수평 퍼짐(p95 반경 × 2)이 물체 대각선 + pad 안이고, 가장 긴 보이는 길이(세로 · 수평 퍼짐 중 큰 것)가
+    물체 긴 변의 height_frac 이상이다.
+    들린 물체는 꼭대기가 상판 + 물체 높이보다 높아 looks_standing 이 늘 버린다(11.18 tilt 중 재탐색 111 s 막힘).
+    tilt · 붓기 중 컵은 크게 기울어 세로가 줄고 옆으로 퍼진다 — 그래서 서 있는 바닥 폭(fits_footprint)이 아니라
+    기울기와 무관한 대각선 · 긴 변으로 잰다(11.18 리뷰). 서 있는 물체 판정은 looks_standing 한 곳에만 둔다."""
+    P = np.asarray(points_base, float)
+    if P.ndim != 2 or P.shape[1] < 3:
+        return False
+    P = P[np.isfinite(P[:, :3]).all(axis=1)]
+    if len(P) < 20:
+        return False
+    z5, z95 = (float(v) for v in np.percentile(P[:, 2], [5, 95]))
+    if z5 < table_z + lift_min:
+        return False
+    size = np.abs(np.asarray(aabb[1], float) - np.asarray(aabb[0], float))
+    c = np.median(P[:, :2], axis=0)
+    spread = 2.0 * float(np.percentile(np.linalg.norm(P[:, :2] - c, axis=1), 95))
+    if spread > float(np.linalg.norm(size)) + pad:
+        return False
+    # 가장 긴 보이는 길이(세로 또는 수평 퍼짐)가 물체 긴 변의 height_frac 이상 — 기울기와 무관, 짧은 다른 물건은 버린다
+    return max(z95 - z5, spread) >= height_frac * float(np.max(size))
+
+
 STAND_TOP_ROW_FRAC = 0.03    # 마스크 위쪽 행 중 잡음으로 건너뛸 비율
 
 

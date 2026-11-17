@@ -326,3 +326,26 @@ def test_a_wider_pad_lets_a_noisy_far_standing_bottle_pass_but_not_a_lying_one()
     assert C.looks_standing(stand, aabb, pad=0.04, top_z=0.445) and not C.looks_standing(stand, aabb, top_z=0.445)
     lying = np.column_stack([rng.uniform(0, 0.24, 900), rng.uniform(0, 0.07, 900), rng.uniform(0.21, 0.28, 900)])
     assert not C.fits_footprint(lying, aabb, pad=0.04)
+
+
+def test_a_cup_held_in_the_air_is_recognised_but_table_objects_and_a_lying_one_are_not():
+    """11.18 실기(bag 053826): tilt 중 source240_blue 추적이 깨진 뒤 다시 찾기가 111 s(05:39:56~05:41:47) 막혔다.
+    들린 컵은 꼭대기가 상판+높이보다 훨씬 위라 looks_standing 이 늘 False 다(바닥 0.343 → 꼭대기 0.583, 기대 0.445).
+    들린 컵은 '상판에서 떴고 · 수평 퍼짐은 바닥 안 · 세로로 길다' 로 받는다. 서 있는 컵은 looks_standing 이 맡는다."""
+    aabb = ((-0.03, -0.03, -0.085), (0.03, 0.03, 0.155))
+    rng = np.random.default_rng(7)
+
+    def pts(w, z5, z95, n=900):
+        return np.column_stack([rng.uniform(0, w, n), rng.uniform(0, 0.05, n), rng.uniform(z5, z95, n)])
+    assert C.looks_held(pts(0.05, 0.343, 0.583), aabb)                  # 들고 있음(실측 바닥 0.343)
+    assert C.looks_held(pts(0.05, 0.485, 0.725), aabb)                  # tilt 꼭대기(05:39:50 z 0.556)
+    assert not C.looks_held(pts(0.05, 0.228, 0.445), aabb)              # 상판에 서 있음 — looks_standing 몫
+    assert C.looks_standing(pts(0.05, 0.228, 0.445), aabb)
+    assert C.looks_held(pts(0.22, 0.40, 0.46), aabb)                    # 붓기 중 거의 눕힌 컵(퍼짐 22 cm) — 기울기와 무관(11.18 리뷰)
+    assert not C.looks_held(pts(0.40, 0.40, 0.46), aabb)                # 공중이지만 물체 대각선보다 넓음
+    assert not C.looks_held(pts(0.05, 0.30, 0.36), aabb)                # 공중이지만 짧음(6 cm — 다른 파란 물건)
+    assert not C.looks_held(pts(0.05, 0.25, 0.49), aabb)                # 바닥 0.25 = 상판 +4.5 cm — 아직 안 들림
+    nan = pts(0.05, 0.343, 0.583); nan[:450, 2] = np.nan
+    assert C.looks_held(nan, aabb) and not C.looks_held(np.full((900, 3), np.nan), aabb)   # NaN 점은 뺀다
+    assert not C.looks_held(np.zeros((900, 2)), aabb)                   # 모양이 (n, 2) 면 False
+    assert not C.looks_held(np.zeros((3, 3)), aabb)
