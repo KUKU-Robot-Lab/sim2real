@@ -3,7 +3,7 @@
 #   IK 뒤 시간축 가우시안(σ 3 프레임)으로 j6 관절 한계 장벽이 켜지는 프레임의 j2 속도 계단을 편다. Newton sim(swirl 19 · 22 · 25°, 0.4 Hz, 3바퀴)
 #   컵 밖 비드 0(부드럽게 하기 전 판).
 # 검사 · 복사 = deploy/policy_control/tools/plan_mix.py(움직이지 않는다), 재생 = replay_to_pd.py(왼팔 7 열만 — 쥔 손은 그대로).
-# ★2단계(아직): arm5080 에서 npz 를 만들어 ref/ 에 두고 ref_npz · ref md5 · made_by 를 채운다. 그 전에는 plan_mix 가 종료 코드 3 으로 거부한다.
+# ★2단계(11.18): arm5080 에서 swirl 19° npz 를 만들어 ref/ 에 두고 md5 · made_by 를 채웠다.
 name: mix/shaker_swirl
 kind: mix
 objects: {left: shaker_c_real}
@@ -11,7 +11,7 @@ side: left
 start_pose: deploy/policy_control/config/homes/rh56f1_pour_start.yaml   # npz 첫 · 끝 프레임 = 이 파일 left
 rate_scale: 0.6              # 실기 첫 판(손목 약 1 rad/s). 시간만 늘린다(0 < r ≤ 1, plan_mix 가 검사 · 가속도는 r² 배로 잰다)
 start_gap_rad: 0.05          # 왼팔 실측 ↔ npz 첫 프레임 · npz 끝 ↔ start_pose left 최대 간극(plan_mix 검사 · replay_to_pd --max-start-gap). 실기 tilt 끝 ↔ q0 대리 지표 0.022~0.024
-ref_npz: mix_swirl_22deg_0.4hz_x2.npz     # ref/ 안 파일 이름(motion.py 이름 규칙 mix_<kind>_<amp>_<freq>hz_x<cycles>.npz)
+ref_npz: mix_swirl_19deg_0.4hz_x2.npz     # ref/ 안 파일 이름(motion.py 이름 규칙 mix_<kind>_<amp>_<freq>hz_x<cycles>.npz)
 tin:                         # 손바닥 → shaker(arms_clear 의 컵 점). motion.py 와 같은 파일 · 같은 z_off
   from: deploy/policy_control/config/tilt/traj_v12_240/ref/tin_fixed_1107.json
   md5: 093851c01ba8cd569a3c3fa9a031594b
@@ -25,11 +25,11 @@ hdgp:                        # plan_mix 가 쓰는 hdgp = ready_carry(FK · 컵 
     source/openarm/openarm/agnostic/modules/ready_carry/mover.py: 5c8f015fda6cdb3e7ae590abf5ba6e25
     assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf: f338d043ce3481f72e37ec4c79e20d43
 ref:
-  mix_swirl_22deg_0.4hz_x2.npz: null       # 2단계에서 md5
+  mix_swirl_19deg_0.4hz_x2.npz: ce4c76c2e5aeb8083a00c02ae0cd7e1b   # ★11.18 사용자: 19° 로 진행(22° 보다 비드 이동 적음)
 made_by:                     # 2단계에서 채운다
-  command: null              # PYTHONPATH=source/openarm python3 scripts/tools/shaker_mix/motion.py --motion swirl --amp 22 --freq 0.4 --cycles 2 --out <폴더>
+  command: CUDA_VISIBLE_DEVICES= PYTHONPATH=source/openarm ~/rl_ws/IsaacLab3/.venv/bin/python scripts/tools/shaker_mix/motion.py --motion swirl --amp 19 --freq 0.4 --cycles 2 --out logs/shaker_mix/1118_ref_swirl19
   host: arm5080
-  hdgp_commit: null
-  motion: {kind: swirl, amp_deg: 22.0, freq_hz: 0.4, cycles: 2, ramp_s: 0.5, smooth_sigma_frames: 3.0}
-  check: null                # motion.py check(ok · ik 오차 · vmax · amax · 여유) 그대로
+  hdgp_commit: ac9aa93d
+  motion: {kind: swirl, amp_deg: 19.0, freq_hz: 0.4, cycles: 2, ramp_s: 0.5, smooth_sigma_frames: 3.0}
+  check: {ik_pos_err_mm: 0.4, ik_rot_err_deg: 0.73, vmax_rad_s: 1.395, amax_rad_s2: 3.84, amax_raw_rad_s2: 11.73, limit_margin_rad: 0.268, end_gap_rad: 0.0, ok: true}
 tilt_comp: false             # 11.18 판단 보류 — plan_mix 보고 참고, 2단계에서 정한다

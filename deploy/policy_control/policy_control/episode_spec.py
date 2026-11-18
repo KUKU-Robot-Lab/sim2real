@@ -60,7 +60,7 @@ HAND_ACTIONS = ("open", "grasp")
 KINDS = ("aglt", "place", "pour", "lock", "shake")
 CONTINUE_KINDS = ("place",)   # ★11.07 continue_on_fail: 실패해도 다음 노드(home 등)로 넘어갈 수 있는 정책 종류
 SIDES = ("right", "left", "both")
-TRAJ_KINDS = ("rehome", "noop", "carry", "tilt", "reach", "lift")
+TRAJ_KINDS = ("rehome", "noop", "carry", "tilt", "reach", "lift", "mix")
 #: ★11.11 사용자 "보정값들은 사실 모든 정책들에게 적용" — 팔별 cup_obs_offset_base_m(카메라가 본 손 − FK 손, base m) 정본.
 #:   policies 에 값이 없는 aglt(학생 아님) 정책은 이 값을 받는다. 에피소드에 적은 값은 이 값과 같아야 한다(시험이 본다).
 #:   오른손 = j3 영점(+5.2°) 뒤 칵테일 55c733c · grasp_f 62fb34e, 왼손 = 11.04 L2 측정(logs/analysis/frame_offset_1104).
@@ -76,7 +76,9 @@ CUP_OBS_OFFSET_BASE_M = {"right": (-0.0136, 0.0085, 0.0), "left": (0.0028, 0.028
 #:   rcg03 학습 시작 자세)에서 멈추고 들어가기를 하지 않는다 — 그 뒤 rcg03 정책 노드가 넘겨받는다. grasp(기본) = 1-B 그대로.
 REACH_STOPS = ("grasp", "pregrasp")
 TILT_TRAJ_CUPS = ("240", "200")
-PLANNED_TRAJ = ("carry", "tilt", "reach", "lift")
+#: ★11.18 mix = 왼팔 shaker 섞기(tools/plan_mix.py 검사 → mix_cmd.npz 왼팔 7 관절 재생) · 왼팔 한 팔 · shaker 를 쥔 채.
+#:   배속은 자산 policy.yaml rate_scale(plan_mix 가 그 값으로 가속도를 잰다) — 에피소드 rate_scale 은 그보다 느리게만.
+PLANNED_TRAJ = ("carry", "tilt", "reach", "lift", "mix")
 ONE_ARM_TRAJ = ("reach", "lift")
 TRAJ_ASSETS = Path(__file__).resolve().parents[1] / "config"
 POSES = ("HOME", "SETTING")
@@ -482,6 +484,16 @@ def _trajectory(name: str, t: Mapping) -> Trajectory:
             raise EpisodeSpecError(f"trajectories.{name}: tilt_traj 자산은 cup {TILT_TRAJ_CUPS} 이 필요하다 — {tr.cup!r}")
         if akind != "tilt_traj" and tr.cup:
             raise EpisodeSpecError(f"trajectories.{name}: cup 은 tilt_traj 자산에만({tr.asset} = {akind})")
+    if tr.kind == "mix":
+        if tuple(tr.sides) != ("left",) or not tr.cups:
+            raise EpisodeSpecError(f"trajectories.{name}: mix 는 왼팔 한 팔, shaker 를 쥔 채 — sides: [left] · cups: true")
+        cfg = yaml.safe_load((TRAJ_ASSETS / tr.asset / "policy.yaml").read_text(encoding="utf-8")) or {}
+        if cfg.get("kind") != "mix" or "rate_scale" not in cfg:
+            raise EpisodeSpecError(f"trajectories.{name}: {tr.asset} 는 kind: mix · rate_scale 이 있는 자산이어야 한다")
+        if "rate_scale" not in t:
+            tr = replace(tr, rate_scale=float(cfg["rate_scale"]))
+        elif tr.rate_scale > float(cfg["rate_scale"]):        # plan_mix 가 검사한 배속보다 빠르게 재생하지 않게
+            raise EpisodeSpecError(f"trajectories.{name}: mix rate_scale {tr.rate_scale} > 자산 {cfg['rate_scale']}(plan_mix 검사값)")
     if not 0.0 < tr.rate_scale <= 1.0:
         raise EpisodeSpecError(f"trajectories.{name}: rate_scale 은 (0, 1] — {tr.rate_scale}")
     return tr

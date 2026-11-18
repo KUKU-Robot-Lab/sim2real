@@ -29,6 +29,7 @@ trajectories:
   to_tilt_start_r: {kind: carry, sides: [right], asset: tilt/base_arc6, rate_scale: 0.5}   # ★11.16 사용자 "천천히가 아니라 급작스럽게" — sim 빠르기(1.3~1.8 s, 관절 최대 41°/s)의 절반
   to_tilt_start_l: {kind: carry, sides: [left], asset: tilt/base_arc6, rate_scale: 0.5}
   tilt: {kind: tilt, sides: [right, left], asset: tilt/traj_v12_240, rate_scale: 1.0, cup: "240"}   # ★11.08 사용자 "240만이라도 잘되면 됨": v12 = v11 입구 목표 + 실기 실측 T_in(tilt 직전) · 붓는 컵 source240
+  mix_swirl: {kind: mix, sides: [left], asset: mix/shaker_swirl}   # ★11.18 사용자 "19deg 로 진행" — swirl 19° · 배속 = 자산 policy.yaml rate_scale 0.6
 failure_policy: {default: 0}  # 실패 시 자동 복구 없음. 운영자가 판단한다(컵을 쥔 채 rehome 은 거부된다).
 continue_on_fail: [place]     # ★11.07 사용자 "어차피 place 이후엔 실패하든 성공하든 그냥 home 자세로 가는게 맞는데" — 놓기 실패(시간 초과 포함, 손이 컵에 걸린 경우 제외)면 멈추지 않고 다음 노드로
 sequence:
@@ -69,6 +70,7 @@ sequence:
   - {id: place_pink, type: policy, name: rh_place_r, source_object: SRC_PINK, target_holder: HOLDER_2, policy_object: source240_real,
      holder_tol_m: 0.07, expect: {right_hand: EMPTY, left_hand: SHAKER, pink_placed: true}}
   - {id: home_r_after_pink, type: trajectory, name: go_home_r, auto: true, expect: {right_hand: EMPTY, left_hand: SHAKER}}
+  - {id: mix_shaker, type: trajectory, name: mix_swirl, expect: {right_hand: EMPTY, left_hand: SHAKER}}   # ★11.18 오른팔 홈 뒤 왼팔 shaker 섞기(plan_mix 검사 → 왼팔 재생), auto 아님
   - {id: place_shaker, type: policy, name: rh_place_l, source_object: SHAKER, target_holder: HOLDER_0, policy_object: shaker_c_real,
      expect: {right_hand: EMPTY, left_hand: EMPTY, shaker_placed: true}}
   - {id: home_l_after_shaker, type: trajectory, name: go_home_l, auto: true, expect: {right_hand: EMPTY, left_hand: EMPTY}}   # ★11.18 사용자: place 뒤 홈
