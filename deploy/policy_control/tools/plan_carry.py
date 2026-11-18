@@ -8,6 +8,8 @@
 검사: 계획 ok(이정표의 컵 점 · 축이 앵커와 3 mm · 3°, 관절 여유 ≥ 1°) · 도착(컵 점 1 cm · 축 2° · 관절 0.05 rad · 정지) ·
 탁자 여유(컵 최저점 − 탁자 ≥ 1 cm) · 60 Hz 관절 속도 · ★두 팔 사이(리뷰: 한 팔씩이면 다른 팔은 실측에 서 있다 —
 팔 관절 4~7 원점 · 손바닥 점끼리 ≥ ARM_POINT_GAP_M, 두 손 안 컵 겉면끼리 ≥ CUP_GAP_M). 하나라도 걸리면 종료 코드 2(재생 금지).
+★11.18 두 팔을 한 번에(--sides right,left, 사용자 "계획은 함께, 재생은 동시"): 같은 시각 프레임끼리에 더해 재생 시작이
+어긋날 때를 대비해 ±SYNC_WINDOW_S 안 프레임 쌍도 같은 기준으로 본다(arms_clear window).
 재생(실기, 사용자 승인 뒤): replay_to_pd.py --npz <out>/carry_cmd.npz --joints <그 팔 관절> --rate-scale 1.0 --max-start-gap 0.05 --execute
 ★10.17 계획 경로 A "ready_carry(한 팔씩)": --sides right 면 오른팔만 계획한다(npz 열 = 그 팔 7 관절, 다른 팔은 pd 가 붙든 채).
 빈손 이송(경로 B)도 같은 경로다 — 컵이 없어도 손 안 컵 자리를 가상 컵으로 두고 검사한다(탁자 여유는 그만큼 보수적).
@@ -37,6 +39,7 @@ VMAX_RAD_S = 2.0
 ARM_POINT_GAP_M = 0.10        # 두 팔 관절 4~7 원점 · 손바닥 점 사이 최소 거리(링크 반지름 약 4~5 cm 두 개)
 CUP_GAP_M = 0.03              # 두 손 안 컵(반지름 CUP_R_M 원기둥) 겉면 사이 최소
 CUP_ARM_GAP_M = 0.05          # 든 컵 겉면 ↔ 빈손 팔 점(관절 원점 · 손바닥, 링크 반지름 약 4~5 cm) 최소
+SYNC_WINDOW_S = 0.5           # ★11.18 두 팔 함께 계획 — 이 궤적 시간(60 Hz npz 기준, 배속 r 재생이면 실제 0.5/r s) 안에서 어긋난 프레임 쌍도 검사
 ROOT_KEY = {"right": "src_root", "left": "rcv_root"}
 
 
@@ -88,22 +91,43 @@ def cup_points(P, ch, path: torch.Tensor, T_to: torch.Tensor, side: str, k: int 
     return p[:, None, :] + s[None, :, None] * z[:, None, :]
 
 
-def arms_clear(P, chains: dict, paths: dict, T_tos: dict, empty: tuple = ()) -> dict:
+def _pair_min(x: torch.Tensor, y: torch.Tensor, lag: int) -> float:
+    """(N,k,3) · (N,m,3) 두 팔 점 — 프레임 차 |i − j| ≤ lag 인 쌍 사이 최소 거리(lag 0 = 같은 시각끼리)."""
+    if lag == 0:                                   # 한 팔 carry(운영 경로) — 전 프레임 쌍 행렬을 만들지 않고 프레임별로만 잰다(값 같음)
+        return float(torch.cdist(x, y, compute_mode="donot_use_mm_for_euclid_dist").min())
+    n = len(x)
+    # 점이 25 개를 넘으면 cdist 기본값이 행렬곱 근사로 바뀐다(μm 오차) — 프레임별로 재던 옛 값과 같게 직접 계산
+    d = torch.cdist(x.reshape(-1, 3), y.reshape(-1, 3), compute_mode="donot_use_mm_for_euclid_dist")
+    d = d.view(n, x.shape[1], n, y.shape[1]).amin(dim=(1, 3))
+    i = torch.arange(n)
+    return float(d[(i[:, None] - i[None, :]).abs() <= lag].min())
+
+
+def arms_clear(P, chains: dict, paths: dict, T_tos: dict, empty: tuple = (), lag: int = 0) -> dict:
     """두 팔 경로(같은 길이) 사이 최소 거리 — 팔 점끼리 · 컵 겉면끼리. empty = 빈손 팔 — 컵 겉면 검사를 하지 않는다
-    (★11.15 실기: 빈손으로 접근 중인 오른손에 가상 컵을 매달아 2.97 cm 로 거부됐다. 실물은 그보다 훨씬 멀었다)."""
+    (★11.15 실기: 빈손으로 접근 중인 오른손에 가상 컵을 매달아 2.97 cm 로 거부됐다. 실물은 그보다 훨씬 멀었다).
+    ★11.18 lag > 0 = 두 팔이 함께 움직일 때 ±lag 프레임 안 쌍도 같은 문턱으로 본다(window, 둘 다 통과해야 ok · any_time 은 기록만)."""
     a = {s: arm_points(chains[s], paths[s]) for s in ARMS}
-    d_arm = torch.cdist(a["right"], a["left"]).amin(dim=(1, 2))
-    out = {"min_arm_point_m": round(float(d_arm.min()), 4), "min_cup_gap_m": None, "min_cup_arm_m": None, "empty": list(empty)}
     held = [s for s in ARMS if s not in empty]
     c = {s: cup_points(P, chains[s], paths[s], T_tos[s], s) for s in held}
-    if len(held) == 2:
-        out["min_cup_gap_m"] = round(float((torch.cdist(c["right"], c["left"]).amin(dim=(1, 2)) - 2 * CUP_R_M).min()), 4)
-    elif len(held) == 1:              # 든 컵 겉면 ↔ 빈손 팔 관절 4~7 · 손바닥 점(리뷰: 빈손이어도 컵이 그 팔에 닿는지는 본다)
-        h, e = held[0], empty[0]
-        out["min_cup_arm_m"] = round(float((torch.cdist(c[h], a[e]).amin(dim=(1, 2)) - CUP_R_M).min()), 4)
-    out["ok"] = bool(out["min_arm_point_m"] >= ARM_POINT_GAP_M
-                     and (out["min_cup_gap_m"] is None or out["min_cup_gap_m"] >= CUP_GAP_M)
-                     and (out["min_cup_arm_m"] is None or out["min_cup_arm_m"] >= CUP_ARM_GAP_M))
+
+    def gaps(k: int) -> dict:
+        g = {"min_arm_point_m": round(_pair_min(a["right"], a["left"], k), 4), "min_cup_gap_m": None, "min_cup_arm_m": None}
+        if len(held) == 2:
+            g["min_cup_gap_m"] = round(_pair_min(c["right"], c["left"], k) - 2 * CUP_R_M, 4)
+        elif len(held) == 1:          # 든 컵 겉면 ↔ 빈손 팔 관절 4~7 · 손바닥 점(리뷰: 빈손이어도 컵이 그 팔에 닿는지는 본다)
+            g["min_cup_arm_m"] = round(_pair_min(c[held[0]], a[empty[0]], k) - CUP_R_M, 4)
+        g["ok"] = bool(g["min_arm_point_m"] >= ARM_POINT_GAP_M
+                       and (g["min_cup_gap_m"] is None or g["min_cup_gap_m"] >= CUP_GAP_M)
+                       and (g["min_cup_arm_m"] is None or g["min_cup_arm_m"] >= CUP_ARM_GAP_M))
+        return g
+
+    same = gaps(0)
+    out = {**same, "empty": list(empty)}
+    if lag:
+        out["window"] = {"lag_s": round(lag / RATE_HZ, 3), **gaps(lag)}
+        out["any_time"] = gaps(len(a["right"]))   # 기록만(판정 밖): 모든 프레임 쌍 — 한 팔이 도중에 멈추고 다른 팔만 끝까지 가도 닿지 않는가
+        out["ok"] = same["ok"] and out["window"]["ok"]
     return out
 
 
@@ -154,7 +178,8 @@ def plan(asset: Path, out: Path, q: dict, hdgp: Path, sides: tuple = tuple(ARMS)
     n = max(len(p) for p in paths.values())
     full = {s: np.vstack([paths[s], np.repeat(paths[s][-1:], n - len(paths[s]), 0)]) if s in paths
             else np.repeat(np.asarray([q[s]], float), n, 0) for s in ARMS}      # 움직이지 않는 팔 = 실측 그대로
-    arms = arms_clear(RC.posture, chains, {s: torch.tensor(full[s], dtype=torch.float32) for s in ARMS}, T_tos, empty)
+    lag = round(SYNC_WINDOW_S * RATE_HZ) if len(sides) == 2 else 0      # 한 팔이면 다른 팔은 서 있다 — 어긋남 없음
+    arms = arms_clear(RC.posture, chains, {s: torch.tensor(full[s], dtype=torch.float32) for s in ARMS}, T_tos, empty, lag)
     arm = np.concatenate([full[s] for s in sides], 1)
     out.mkdir(parents=True, exist_ok=True)
     names = [j for s in sides for j in ARMS[s]]

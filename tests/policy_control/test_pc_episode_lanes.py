@@ -29,6 +29,15 @@ def _raw_with(edit):
     return raw
 
 
+def _unsynced():
+    """★11.18 sync 를 뺀 e4000 — 묶지 않은 줄 궤적(traj_lock 으로 한 팔씩)의 옛 동작을 본다."""
+    def strip(node):
+        for ln in node["lanes"]:
+            for it in ln["nodes"]:
+                it.pop("sync", None)
+    return S.parse(_raw_with(strip))
+
+
 def _lane(raw_node, side):
     return next(ln for ln in raw_node["lanes"] if ln["side"] == side)["nodes"]
 
@@ -62,7 +71,7 @@ def test_cocktail_e4000_loads_as_one_lanes_node_with_the_guard_kept():
 
 
 def test_the_first_lane_to_finish_does_not_wait_for_the_other():
-    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+    ep = _unsynced()
     ex = FakeExecutor(ep, delay={"grasp_blue": 0.05, "to_tilt_start_r1": 0.05, "grasp_shaker": 0.6, "to_tilt_start_l": 0.05})
     m, status, rows, _ = _run(ep, ex)
     assert status == SUCCESS
@@ -222,7 +231,7 @@ class _TrackingFake(FakeExecutor):
 
 
 def test_lane_trajectories_run_one_arm_at_a_time_and_the_wait_is_logged():
-    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+    ep = _unsynced()
     ex = _TrackingFake(ep, delay={"to_tilt_start_r1": 0.4, "to_tilt_start_l": 0.4})
     m, status, rows, _ = _run(ep, ex)
     assert status == SUCCESS and ex.peak == 1
@@ -231,7 +240,7 @@ def test_lane_trajectories_run_one_arm_at_a_time_and_the_wait_is_logged():
 
 
 def test_planning_while_the_other_arm_runs_a_policy_is_noted():
-    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+    ep = _unsynced()
     ex = FakeExecutor(ep, delay={"grasp_blue": 0.1, "grasp_shaker": 0.6})
     m, status, rows, _ = _run(ep, ex)
     assert status == SUCCESS
@@ -362,3 +371,278 @@ def test_replay_limit_scales_with_npz_length_and_rate(tmp_path):
     assert er._replay_limit(short) == er.TOOL_TIMEOUT_S["replay_to_pd.py"]
     missing = ["py", "replay_to_pd.py", "--npz", str(tmp_path / "none.npz")]
     assert er._replay_limit(missing) == er.TOOL_TIMEOUT_S["replay_to_pd.py"]
+
+
+# ---- ★11.18 sync — 두 팔이 멈춘 뒤 함께 계획, 한 시각표로 재생(사용자 "계획은 함께, 재생은 동시") ------------------------
+
+GRASP = {"right": "grasp_blue", "left": "grasp_shaker"}
+CARRY = {"right": "to_tilt_start_r1", "left": "to_tilt_start_l"}
+JOINT = "+".join(CARRY.values())
+
+
+def _sync_raw(edit=lambda node: None):
+    """sync 시험용 raw — 운영 yaml 이 sync 를 켜 두었든 꺼 두었든 두 carry 항목에 sync: to_tilt 를 직접 넣는다."""
+    def on(node):
+        for side in CARRY:
+            _lane(node, side)[1]["sync"] = "to_tilt"
+        edit(node)
+    return _raw_with(on)
+
+
+def _synced():
+    return S.parse(_sync_raw())
+
+
+class _TrajFake(FakeExecutor):
+    """result = 양팔 carry 가 돌려줄 결과(예외면 던진다). by = 궤적을 부른 스레드(늦게 온 줄이 양팔 carry 를 실행한다)."""
+
+    def __init__(self, *a, result=None, **kw):
+        super().__init__(*a, **kw)
+        self.trajs, self.by, self.result = [], {}, result
+
+    def run_trajectory(self, node, traj, world):
+        self.trajs.append((node.id, traj.sides, traj.rate_scale, world.hand("right"), world.hand("left")))
+        self.by[node.id] = threading.current_thread().name
+        if isinstance(self.result, Exception) and node.id == JOINT:
+            raise self.result
+        if self.result is not None and node.id == JOINT:
+            return self.result
+        return dataclasses.replace(super().run_trajectory(node, traj, world),
+                                   signals={"arms_clear": {"ok": True, "min_arm_point_m": 0.21, "window": {"ok": True}}})
+
+
+def _carries(ex):
+    """줄 carry 로 돈 궤적 — 양팔(JOINT)이든 팔마다든(뒤 순서의 to_tilt_start_r2 는 뺀다)."""
+    return [t for t in ex.trajs if t[0] in (JOINT, *CARRY.values())]
+
+
+@pytest.mark.parametrize("late", ["left", "right"])            # 늦게 온 줄이 양팔 carry 를 실행한다 — 어느 팔이 늦어도 같다
+def test_synced_carries_wait_for_both_grasps_then_run_once_for_both_arms(late):
+    early = "left" if late == "right" else "right"
+    ep = _synced()
+    ex = _TrajFake(ep, delay={GRASP[early]: 0.05, GRASP[late]: 0.5})
+    m, status, rows, _ = _run(ep, ex)
+    assert status == SUCCESS
+    # 양팔 carry 한 번 — 두 팔 다, 두 손 다 컵을 쥔 World, yaml 배속 그대로
+    rate = ep.trajectories["to_tilt_start_r"].rate_scale
+    assert _carries(ex) == [(JOINT, ("right", "left"), rate, "SRC_BLUE", "SHAKER")]
+    assert ex.by[JOINT] == f"lane_{late}"
+    plans = {r["state_id"]: r for r in rows if r["event"] == "plan"}
+    assert set(plans) == set(CARRY.values())
+    assert _ev(rows, "exit", GRASP[late]) < min(_ev(rows, "plan", k) for k in plans)      # 늦은 잡기가 끝난 뒤에 계획
+    assert plans[CARRY[early]]["traj_wait_s"] >= 0.3 and plans[CARRY[late]]["traj_wait_s"] < 0.3
+    # 먼저 온 줄만 기다렸다 — 그 까닭이 상황판 note 와 jsonl 한 줄(sync_wait)에 남는다
+    assert [(r["state_id"], r["lane"]) for r in rows if r["event"] == "sync_wait"] == [(CARRY[early], early)]
+    assert m.runs[CARRY[early]]["note"].startswith("sync 대기") and GRASP[late] in m.runs[CARRY[early]]["note"]
+    assert "note" not in m.runs[CARRY[late]]
+    for k in plans:
+        ex_row = rows[_ev(rows, "exit", k)]
+        assert ex_row["sync"] == "to_tilt" and ex_row["joint_plan"] == JOINT and ex_row["arms_clear"]["min_arm_point_m"] == 0.21
+        assert m.runs[k]["state"] == "done"
+
+
+def _both_failed_once(m, ex, rows, text):
+    """두 carry 항목이 같은 사유로 failed · 줄이 부른 safe_stop 은 한 번(그 뒤 노드 _fail 이 한 번 더) · 다음 노드는 안 돈다."""
+    assert m.status == FAILURE and text in m.last["reason"]
+    assert [m.runs[k]["state"] for k in CARRY.values()] == ["failed", "failed"]
+    assert all(text in rows[_ev(rows, "failure", k)]["termination_reason"] for k in CARRY.values())
+    assert ["다른 줄도 멈춘다" in r for r in ex.stopped] == [True, False]
+    assert sum(text in r["reason"] for r in m.last["results"]) == 1     # 두 줄이 같이 받은 결과 — 노드 결과에는 한 번만
+    assert not any(c[1] == "tilt_blue" for c in ex.calls)
+
+
+@pytest.mark.parametrize("result, text", [
+    (NodeResult("refused", "plan_carry.py rc 2: arms_clear window 0.08 m"), "plan_carry.py rc 2"),   # 계획 거부 — 아무 팔도 안 움직였다
+    (NodeResult("error", "replay_to_pd.py rc 1: start gap"), "replay_to_pd.py rc 1"),                # 양팔 재생 실패(rc ≠ 0)
+    (RuntimeError("실행기 예외"), "RuntimeError: 실행기 예외"),                                         # 실행기가 예외를 냈다
+])
+def test_a_joint_carry_that_fails_fails_both_items_and_stops_the_lanes_once(result, text):
+    ep = _synced()
+    ex = _TrajFake(ep, result=result)
+    m, _, rows, _ = _run(ep, ex)
+    assert [t[0] for t in _carries(ex)] == [JOINT]              # 양팔 carry 한 번 — 팔마다 다시 돌리지 않는다
+    _both_failed_once(m, ex, rows, text)
+
+
+def test_an_error_before_the_joint_carry_runs_stays_in_both_failure_rows():
+    """함께 계획 앞부분(plan 기록 · 궤적 조회) 예외 — 그 문구가 실행하던 줄 항목의 failure 행에도 남고 running 으로 남지 않는다."""
+    ep = _synced()
+    ex, rows = _TrajFake(ep), []
+
+    def log(row):
+        if row["event"] == "plan":
+            raise OSError("jsonl 못 씀")
+        rows.append(row)
+    m = EpisodeManager(ep, ex, approve=lambda w, y: True, log=log)
+    m.run()
+    assert not _carries(ex)                                     # 계획 전 — 아무 팔도 안 움직였다
+    _both_failed_once(m, ex, rows, "OSError: jsonl 못 씀")
+
+
+def _stop_after(ep, ex, wait_s):
+    rows = []
+    m = EpisodeManager(ep, ex, approve=lambda w, y: True, log=rows.append)
+    th = threading.Thread(target=m.run)
+    th.start()
+    time.sleep(wait_s)
+    m.stop("operator stop")
+    th.join(timeout=5)
+    assert not th.is_alive() and m.status == STOPPED and len(ex.stopped) == 1    # 줄이 safe_stop 을 다시 부르지 않았다
+    assert not any(r["event"] == "failure" for r in rows)
+    return m, rows
+
+
+def test_operator_stop_while_one_arm_waits_at_the_sync_stops_without_planning():
+    ep = _synced()
+    ex = _TrajFake(ep, delay={"grasp_blue": 0.05, "grasp_shaker": 3.0})
+    m, rows = _stop_after(ep, ex, 0.3)
+    assert not _carries(ex) and not any(r["event"] == "plan" for r in rows)
+    assert {k: m.runs[k].get("state") for k in ("grasp_blue", "to_tilt_start_r1", "grasp_shaker", "to_tilt_start_l")} == {
+        "grasp_blue": "done", "to_tilt_start_r1": "stopped", "grasp_shaker": "stopped", "to_tilt_start_l": None}
+    assert m.runs["to_tilt_start_r1"]["note"].startswith("sync 대기")
+
+
+def test_operator_stop_during_the_joint_replay_stops_both_items():
+    ep = _synced()
+    ex = _TrajFake(ep, delay={JOINT: 3.0})
+    m, rows = _stop_after(ep, ex, 0.3)
+    assert [t[0] for t in _carries(ex)] == [JOINT]
+    assert [m.runs[k]["state"] for k in CARRY.values()] == ["stopped", "stopped"]
+    assert (m.world.hand("right"), m.world.hand("left")) == ("SRC_BLUE", "SHAKER")   # 쥔 컵은 정지에도 World 에 그대로
+
+
+def test_a_failed_grasp_stops_the_arm_waiting_at_the_sync_without_planning():
+    ep = _synced()
+    ex = _TrajFake(ep, inject={"grasp_shaker": [F.GRASP_FAILED_LEFT.value]}, delay={"grasp_shaker": 0.3})
+    m, status, rows, dt = _run(ep, ex)
+    assert status == FAILURE and dt < 2.0
+    assert not _carries(ex)
+    assert m.runs["to_tilt_start_r1"]["state"] == "stopped"
+
+
+def test_unsynced_lane_trajectories_still_run_one_at_a_time_per_arm():
+    ep = _unsynced()
+    ex = _TrajFake(ep)
+    m, status, _, _ = _run(ep, ex)
+    assert status == SUCCESS
+    assert sorted(t[:2] for t in ex.trajs if t[0] in ("to_tilt_start_r1", "to_tilt_start_l")) == [("to_tilt_start_l", ("left",)), ("to_tilt_start_r1", ("right",))]
+
+
+def test_the_approval_text_names_the_synced_pair():
+    ep = _synced()
+    m = EpisodeManager(ep, FakeExecutor(ep), approve=lambda w, y: False)
+    assert f"sync to_tilt: {JOINT} 은 두 팔이 멈춘 뒤 함께 계획" in m._describe(ep.nodes[ep.node_index("grasp_to_tilt_start")])
+
+
+@pytest.mark.parametrize("edit, match", [
+    (lambda n: _lane(n, "left")[1].pop("sync"), "right 줄 · left 줄 항목 하나씩"),
+    (lambda n: _lane(n, "left")[0].update(sync="to_tilt"), "carry 궤적 항목만"),
+    (lambda n: _lane(n, "left")[1].update(sync="other"), "right 줄 · left 줄 항목 하나씩"),
+])
+def test_spec_rejects_bad_sync(edit, match):
+    with pytest.raises(S.EpisodeSpecError, match=match):
+        S.parse(_sync_raw(edit))
+
+
+@pytest.mark.parametrize("bad", [False, True, 0, "", " ", None])
+def test_spec_rejects_a_sync_that_is_not_a_non_empty_string(bad):
+    """두 줄 다 sync: false · 0 · 빈 값이면 조용히 sync 없는 직렬 경로로 빠졌다(true 는 "True" 라는 키가 됐다)."""
+    def both(node):
+        for side in CARRY:
+            _lane(node, side)[1]["sync"] = bad
+    with pytest.raises(S.EpisodeSpecError, match="sync 는 비어 있지 않은 문자열"):
+        S.parse(_raw_with(both))
+
+
+def test_spec_rejects_sync_outside_lanes_and_mismatched_rate():
+    raw = copy.deepcopy(RAW)
+    raw["sequence"][-2]["sync"] = "x"
+    with pytest.raises(S.EpisodeSpecError, match="sync 는 lanes 줄의 carry 궤적 항목에만"):
+        S.parse(raw)
+    raw = _sync_raw()
+    raw["trajectories"]["to_tilt_start_l"]["rate_scale"] = 1.0
+    with pytest.raises(S.EpisodeSpecError, match="asset · rate_scale · cups 가 같아야"):
+        S.parse(raw)
+
+
+def _ros_carry(tmp_path, rcs, left="SHAKER", check='{"arms_clear": {"ok": false, "min_arm_point_m": 0.08}}', warn=lambda msg: None):
+    from policy_control.episode_ros import RosExecutor
+    calls = []
+
+    def run(argv):
+        calls.append(argv)
+        if argv[1].endswith("plan_carry.py"):
+            out = Path(argv[argv.index("--out") + 1])
+            out.mkdir(parents=True, exist_ok=True)
+            (out / "check.json").write_text(check)
+        return rcs[len(calls) - 1], "tail"
+    me = SimpleNamespace(_tin_rec=None, ep=SimpleNamespace(tin_fallback=""), _wait_pd_tracking=lambda side: True,
+                         _wait_arm_still=lambda sides: {"arm_still": True}, _pd_view=lambda side: {}, run_dir=tmp_path,
+                         _run=run, cancel=threading.Event(), _log_line=warn,
+                         node=SimpleNamespace(get_logger=lambda: SimpleNamespace(warning=warn)))
+    base = S.load(EPISODES / "cocktail_1c_e4000.yaml").trajectories["to_tilt_start_r"]
+    traj = dataclasses.replace(base, sides=("right", "left"))
+    world = SimpleNamespace(hand=lambda side: {"right": "SRC_BLUE", "left": left}[side])
+    return (lambda: RosExecutor._run_planned(me, SimpleNamespace(id=JOINT), traj, world)), calls
+
+
+def test_ros_joint_carry_plans_both_arms_and_a_refused_plan_replays_nothing(tmp_path):
+    go, calls = _ros_carry(tmp_path, [2])
+    r = go()
+    assert r.status == "refused" and len(calls) == 1 and r.signals["arms_clear"]["min_arm_point_m"] == 0.08
+    plan = calls[0]
+    assert plan[plan.index("--sides") + 1] == "right,left" and "--empty" not in plan
+
+
+def test_ros_joint_carry_replays_fourteen_joints_in_one_process(tmp_path):
+    go, calls = _ros_carry(tmp_path, [0, 0])
+    assert go().status == "completed" and len(calls) == 2
+    rp = calls[1]
+    assert rp[rp.index("--joints") + 1] == ",".join([*(f"r_aj_{i}" for i in range(1, 8)), *(f"l_aj_{i}" for i in range(1, 8))])
+    assert rp[rp.index("--rate-scale") + 1] == "0.5" and "--execute" in rp
+
+
+def test_ros_carry_refused_before_planning_does_not_log_an_earlier_attempts_check(tmp_path):
+    (tmp_path / f"carry_{JOINT}").mkdir()
+    (tmp_path / f"carry_{JOINT}" / "check.json").write_text('{"arms_clear": {"ok": true}}')   # 같은 런의 앞 시도가 남긴 파일
+    go, calls = _ros_carry(tmp_path, [0, 0], left="EMPTY")
+    r = go()
+    assert r.status == "refused" and not calls and "arms_clear" not in r.signals
+
+
+@pytest.mark.parametrize("check", ["", "[1, 2]", '{"ok": true}'])         # 쓰다 만 파일 · 최상위 list · arms_clear 없음
+def test_ros_carry_with_an_unreadable_check_stays_completed_and_warns(tmp_path, check):
+    warned = []
+    go, calls = _ros_carry(tmp_path, [0, 0], check=check, warn=warned.append)
+    r = go()
+    assert r.status == "completed" and len(calls) == 2 and "arms_clear" not in r.signals   # 이미 재생한 carry 는 그대로
+    assert len(warned) == 2 and all("arms_clear 를 못 읽었다" in w for w in warned)        # ROS logger · tools.log 둘 다
+
+
+def test_ros_carry_stays_completed_when_the_warning_itself_cannot_be_written(tmp_path):
+    def boom(msg):
+        raise OSError("tools.log 못 씀")
+    go, calls = _ros_carry(tmp_path, [0, 0], check="", warn=boom)
+    r = go()
+    assert r.status == "completed" and len(calls) == 2 and "arms_clear" not in r.signals   # 경고 기록이 예외를 내도 그대로
+
+
+def test_plan_carry_window_catches_a_pass_that_only_clears_at_the_same_time(monkeypatch):
+    """★11.18 함께 계획 ±창 — 같은 시각에는 멀어도, 한 팔이 조금 늦게 출발하면 겹치는 쌍을 잡는다."""
+    import importlib.util
+    tools = Path(__file__).resolve().parents[2] / "deploy" / "policy_control" / "tools"
+    monkeypatch.syspath_prepend(str(tools))
+    spec = importlib.util.spec_from_file_location("plan_carry", tools / "plan_carry.py")
+    pc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pc)
+    import torch
+    t = torch.linspace(0.0, 1.0, 61)
+    right = torch.stack([t, torch.zeros_like(t), torch.zeros_like(t)], 1)[:, None, :]          # x 0 → 1 m
+    left = torch.stack([torch.full_like(t, 0.5), 0.5 - 0.5 * t, torch.zeros_like(t)], 1)[:, None, :]   # (0.5, 0.5 → 0)
+    same, win = pc._pair_min(right, left, 0), pc._pair_min(right, left, 30)
+    assert same > 0.2 and win < 0.01                       # 같은 시각 최소 0.22 m · 0.5 s 어긋나면 (0.5, 0) 에서 만난다
+    assert pc._pair_min(right, left, 30) <= pc._pair_min(right, left, 10) <= same
+    # lag 0 지름길(프레임별 cdist) = 마스크 방식(전 프레임 쌍 행렬의 대각) 값 그대로 — 프레임당 점 2 · 3 개
+    x, y = torch.cat([right, right + 0.3], 1), torch.cat([left, left - 0.2, left + 0.1], 1)
+    d = torch.cdist(x.reshape(-1, 3), y.reshape(-1, 3), compute_mode="donot_use_mm_for_euclid_dist").view(61, 2, 61, 3)
+    assert pc._pair_min(x, y, 0) == float(d.amin(dim=(1, 3)).diagonal().min())

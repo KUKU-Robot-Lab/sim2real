@@ -183,10 +183,47 @@ def test_plan_carry_one_arm_writes_only_that_arm_and_home_start_reaches_the_sett
     chk = json.loads((tmp_path / "o" / "check.json").read_text())
     assert rc == 0 and chk["ok"] and chk["sides"] == ["left"] and list(chk["checks"]) == ["left"]
     assert chk["arms_clear"]["ok"] and chk["arms_clear"]["min_cup_gap_m"] >= 0.03     # 오른팔은 홈에 선 채
+    assert "window" not in chk["arms_clear"]      # ★11.18 한 팔씩이면 다른 팔은 서 있다 — ±창 검사 없음(옛 결과 그대로)
     z = np.load(tmp_path / "o" / "carry_cmd.npz")
     assert z["arm_target"].shape[1] == 7 and [str(n) for n in z["joint_names"]] == [f"l_aj_{i}" for i in range(1, 8)]
     assert np.abs(z["arm_target"][-1] - np.asarray(Q_START["left"])).max() < 0.05
     assert _tool("plan_carry").main(["--q-json", str(tmp_path / "q.json"), "--out", str(tmp_path / "p"), "--sides", "up"]) == 1
+
+
+@needs_hdgp
+def test_plan_carry_both_arms_from_the_141213_grasp_ends_passes_the_same_time_and_window_checks(tmp_path):
+    # ★11.18 실기 141213(cocktail_1c_e4000) 두 팔 잡기 끝 실측 — 함께 계획(--sides right,left)이 같은 시각 · ±0.5 s 창을 다 통과한다
+    q = {"right": [-0.036049, 0.645266, -0.411421, 0.881399, -0.116159, 0.569352, 1.261349],
+         "left": [0.517853, -0.061227, -0.047875, 1.176661, 0.053216, -0.205425, -1.070230]}
+    (tmp_path / "q.json").write_text(json.dumps(q))
+    rc = _tool("plan_carry").main(["--q-json", str(tmp_path / "q.json"), "--out", str(tmp_path / "o"), "--sides", "right,left"])
+    chk = json.loads((tmp_path / "o" / "check.json").read_text())
+    arms = chk["arms_clear"]
+    assert rc == 0 and chk["ok"] and arms["ok"] and arms["empty"] == []
+    assert arms["window"]["lag_s"] == 0.5 and arms["window"]["ok"]
+    for k, least in (("min_arm_point_m", 0.10), ("min_cup_gap_m", 0.03)):   # 창을 넓힐수록 최소 거리는 줄기만 한다
+        assert arms[k] >= arms["window"][k] >= least        # 판정: 같은 시각 · ±창 둘 다 문턱 위
+        assert arms["any_time"][k] <= arms["window"][k]     # any_time 은 기록만 — 문턱과 견주지 않는다
+    assert np.load(tmp_path / "o" / "carry_cmd.npz")["arm_target"].shape[1] == 14
+
+
+def test_arms_clear_refuses_a_pass_that_only_clears_at_the_same_time(monkeypatch):
+    """★11.18 함께 계획 판정(hdgp 없이 합성 점) — 같은 시각 검사는 통과해도 ±창 안에서 걸리면 ok 가 False 다."""
+    import torch
+    pc = _tool("plan_carry")
+    t = torch.linspace(0.0, 1.0, 61)[:, None, None]             # 60 Hz 1 s, 팔마다 점 하나 (N,1,3)
+    x = torch.tensor([1.0, 0.0, 0.0])
+    arm = {"right": t * x, "left": (t - 0.2) * x}                # 왼팔이 오른팔이 지난 자리를 0.2 s 뒤에 지난다
+    cup = {"right": t * x + 5.0, "left": t * x - 5.0}            # 컵은 늘 멀다 — 걸리는 것은 팔 점뿐
+    monkeypatch.setattr(pc, "arm_points", lambda ch, path: path)
+    monkeypatch.setattr(pc, "cup_points", lambda P, ch, path, T_to, side: cup[side])
+    none = dict.fromkeys(pc.ARMS)
+    same = pc.arms_clear(None, none, arm, none)
+    out = pc.arms_clear(None, none, arm, none, lag=round(pc.SYNC_WINDOW_S * pc.RATE_HZ))
+    assert same["ok"] and "window" not in same                   # 같은 시각만 보면 통과(0.2 m)
+    assert out["min_arm_point_m"] == same["min_arm_point_m"] >= pc.ARM_POINT_GAP_M
+    assert out["window"]["min_arm_point_m"] < pc.ARM_POINT_GAP_M and out["window"]["min_cup_gap_m"] >= pc.CUP_GAP_M
+    assert out["window"]["ok"] is False and out["ok"] is False   # ±창에서 팔 점만 걸렸다 — 함께 계획 거부
 
 
 def test_arm_still_needs_a_full_quiet_window():

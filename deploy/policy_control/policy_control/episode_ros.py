@@ -1145,10 +1145,23 @@ class RosExecutor:
 
     def _run_planned(self, node: Node, traj, world) -> NodeResult:
         self._tin_note = []
+        chk = self.run_dir / f"carry_{node.id}" / "check.json" if traj.kind == "carry" else None
+        old = chk.stat().st_mtime_ns if chk is not None and chk.exists() else None
         try:
             res = RosExecutor._run_planned_inner(self, node, traj, world)
             if self._tin_note:                       # ★11.07 T_in 출처(measured | fallback)를 에피소드 로그(exit reason)에
                 res = dataclasses.replace(res, reason="; ".join([*([res.reason] if res.reason else []), *self._tin_note]))
+            # ★11.18 팔 사이 최소 거리(같은 시각 · 함께 계획이면 ±창)를 에피소드 로그에 — 이번 계획이 쓴 파일만(다시 실행 때 옛 것 제외)
+            try:
+                if chk is not None and chk.exists() and chk.stat().st_mtime_ns != old:
+                    res = dataclasses.replace(res, signals={**res.signals, "arms_clear": json.loads(chk.read_text(encoding="utf-8"))["arms_clear"]})
+            except Exception as exc:                 # noqa: BLE001 — 쓰다 만 · 사라진 · 모양이 다른 파일. 로그 덧붙임이 이미 끝난 carry 의 판정을 바꾸지 않게
+                try:
+                    msg = f"[{node.id}] carry check.json 의 arms_clear 를 못 읽었다: {type(exc).__name__}: {exc}"
+                    self.node.get_logger().warning(msg)
+                    self._log_line(msg)              # tools.log 에도 — 에피소드 로그에 거리가 빠진 까닭
+                except Exception:                    # noqa: BLE001 — 이 한 곳은 일부러 삼킨다: 경고 기록 실패가 끝난 carry 를 error 로 바꾸지 않게
+                    pass
             return res
         finally:
             if self._tin_rec is not None:

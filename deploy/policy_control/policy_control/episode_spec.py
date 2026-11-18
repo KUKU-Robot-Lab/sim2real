@@ -155,6 +155,7 @@ class Node:
     lane: str = ""                # ★11.08 lanes 항목 — 그 줄의 팔(right · left). 비면 순서 노드
     group: str = ""               # ★11.08 lanes 항목 — 묶은 lanes 노드 id
     auto: bool = False            # ★11.09 사용자 — 앞 노드가 READY 로 끝나면 승인 없이 바로 이어 간다(구분 실행에서도)
+    sync: str = ""                # ★11.18 lanes carry 항목 — 같은 키 두 줄 항목은 두 팔이 멈춘 뒤 함께 계획 · 한 시각표로 재생
 
 
 @dataclass(frozen=True)
@@ -264,11 +265,13 @@ def _node(raw: Mapping, i: int) -> Node:
     if objs is not None and (t != "snapshot" or not isinstance(objs, list) or not objs
                              or not all(isinstance(o, str) and o for o in objs) or len(set(objs)) != len(objs)):
         raise EpisodeSpecError(f"{where}: objects 는 snapshot 에만 — 다시 찍을 물체 이름 목록(겹치지 않게)")
+    if "sync" in raw and not (isinstance(raw["sync"], str) and raw["sync"].strip()):   # false · 0 · 빈 값이 조용히 직렬로 가지 않게
+        raise EpisodeSpecError(f"{where}: sync 는 비어 있지 않은 문자열 — {raw['sync']!r}")
     return Node(id=str(raw["id"]), type=t, name=str(raw.get("name") or ""), jobs=jobs, expect=dict(raw.get("expect") or {}),
                 checkpoint=raw.get("checkpoint"), result=raw.get("result"), text=str(raw.get("text") or ""),
                 action=str(raw.get("action") or ""), sides=tuple(raw.get("sides") or ()),
                 hand_contract=str(raw.get("hand_contract") or ""), cfg=dict(raw.get("cfg") or {}),
-                objects=tuple(objs or ()), auto=_auto_flag(raw.get("auto", False), where))
+                objects=tuple(objs or ()), auto=_auto_flag(raw.get("auto", False), where), sync=str(raw.get("sync") or ""))
 
 
 def _nodes(raw: Mapping, i: int) -> list[Node]:
@@ -602,10 +605,13 @@ def validate(ep: Episode) -> None:
         sides = [ep.policies[j.role].side for j in n.jobs if j.role in ep.policies]
         if n.lane:
             errs += _lane_item_errors(ep, n, sides)
+        elif n.sync:
+            errs.append(f"{n.id}: sync 는 lanes 줄의 carry 궤적 항목에만")
         if n.type == "lanes" and any(k in HAND_KEYS for k in n.expect):   # ★11.08 리뷰 — 손 칸은 줄 항목이 바꾼다
             errs.append(f"{n.id}: lanes 노드 expect 는 자세 · 플래그만 — 손 칸 {[k for k in n.expect if k in HAND_KEYS]} 은 줄 항목 expect 로")
         if n.type == "parallel_policy" and len(set(sides)) != len(sides):
             errs.append(f"{n.id}: 같은 팔 정책을 동시에 돌릴 수 없다 {sides}")
+    errs += _sync_errors(ep)
     errs += _placed_later_errors(ep)
     if errs:
         raise EpisodeSpecError(f"{ep.path}: " + " · ".join(errs))
@@ -622,6 +628,27 @@ def _lane_item_errors(ep: Episode, n: Node, sides: list) -> list[str]:
         errs.append(f"{n.id}: 줄 항목 expect {bad} — 그 팔 손 칸 · 플래그만(자세는 lanes 노드 expect)")
     if n.checkpoint is not None:
         errs.append(f"{n.id}: 줄 항목은 checkpoint 를 받지 않는다(줄 실패는 되돌아가지 않고 정지)")
+    return errs
+
+
+def _sync_errors(ep: Episode) -> list[str]:
+    """★11.18 sync — 한 lanes 노드 안에서 키 하나, 줄마다 carry 궤적 항목 하나, 두 궤적은 자산 · 배속 · 컵 조건이 같다
+    (실행기가 두 궤적을 양팔 carry 하나로 합친다 · 키가 둘이면 두 줄이 서로 기다리며 멈출 수 있다)."""
+    errs, groups = [], {}
+    for n in ep.nodes:
+        if n.sync and n.lane:
+            groups.setdefault(n.sync, []).append(n)
+    for key, items in groups.items():
+        ids = [n.id for n in items]
+        trajs = [ep.trajectories.get(n.name) for n in items]
+        if sorted(n.lane for n in items) != ["left", "right"]:
+            errs.append(f"sync {key}: right 줄 · left 줄 항목 하나씩 — {ids}")
+        if len({n.group for n in items}) != 1 or sum(1 for k, v in groups.items() if v[0].group == items[0].group) != 1:
+            errs.append(f"sync {key}: 한 lanes 노드 안에서 sync 키는 하나 — {ids}")
+        if any(n.type != "trajectory" or t is None or t.kind != "carry" for n, t in zip(items, trajs)):
+            errs.append(f"sync {key}: carry 궤적 항목만 — {ids}")
+        elif len({(t.asset, t.rate_scale, t.cups) for t in trajs}) != 1:
+            errs.append(f"sync {key}: 두 carry 의 asset · rate_scale · cups 가 같아야 한 시각표로 재생한다 — {ids}")
     return errs
 
 
