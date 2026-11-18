@@ -16,7 +16,7 @@ ROS·실기·GPU 무관(순수 파이썬, sim2real/.venv: mujoco·trimesh·numpy
     탈출 영역(시작에서 L-inf --escape-radius 안)에서만 그 쌍의 여유(상자와 관통이면 -꼭짓점 관통 깊이)가
     시작값보다 ESCAPE_TOL 이상 나빠지지 않으면 되고, 영역을 나가기 전에 모두 요구 여유를 넘어야 한다.
     한 번 넘은 쌍과 영역 밖은 일반 규칙. 이 구간은 '모델 속 시작 자세가 이미 관통'이라 검증이 약하다(보고서에 표시).
-시간 매개화: L-inf 호 길이로 매개하고 구간마다 코사인 가감속(정지-출발)이라 모든 관절이 ramp_speed 이하.
+시간 매개화: L-inf 호 길이로 매개하고 구간마다 코사인 가감속(정지-출발)이라 모든 관절이 vmax(--max-speed, 없으면 pd ramp_speed) 이하.
 """
 from __future__ import annotations
 
@@ -341,6 +341,34 @@ def shortcut(chk: Checker, path: np.ndarray, rng, iters=200, edge_step=0.02) -> 
     return np.array(path)
 
 
+def prune_vertices(chk: Checker, path: np.ndarray, step: float = CHECK_STEP, keep: int = 1,
+                   deadline: float | None = None) -> np.ndarray:
+    """★11.18 구간마다 정지-출발이라 꼭짓점 하나가 램프 한 번 더다. 전체 경로를 앞에서부터 가장 먼 꼭짓점으로 바로
+    잇는다. 위 shortcut 은 2단계(탈출 뒤) 조각만 줄여 탈출 앞 꼭짓점·이음매가 남는다. 채택 기준 = 순서 기반 check_path
+    전체 통과(edge_ok 는 상태 없는 더 느슨한 판정이라 거르기에만 쓴다). 앞 keep 개는 그대로 둔다(lift 곧게 들기).
+    후보마다 check_path 전체라 최악 O(n²) — deadline(time.time 기준)을 넘으면 줄인 앞부분 + 원래 나머지를 돌려준다."""
+    path = [np.asarray(p, float) for p in path]
+    out, i = path[:keep], keep - 1
+    while i < len(path) - 1:
+        for j in range(len(path) - 1, i, -1):
+            if deadline is not None and time.time() > deadline:
+                return np.array(out + path[i + 1:])
+            if j == i + 1 or (edge_ok(chk, path[i], path[j], step)
+                              and chk.check_path(np.array(out + path[j:]), step)["ok"]):
+                break
+        out.append(path[j])
+        i = j
+    return np.array(out)
+
+
+def prune_for_method(chk: Checker, path: np.ndarray, method: str, keep: int = 1, step: float = CHECK_STEP,
+                     deadline: float | None = None) -> np.ndarray:
+    """j1j4 는 경계에서 먼 격자 자세를 골라 j1·j4 를 먼저 빼는 구조라 줄이지 않는다. lift 는 들기 꼭짓점 keep 개를 고정."""
+    if method == "j1j4" or len(path) <= keep + 1:
+        return path
+    return prune_vertices(chk, path, step, keep, deadline)
+
+
 def escape_prefix(chk: Checker, path: np.ndarray, step: float = CHECK_STEP) -> list | None:
     """경로를 순서대로 따라가 탈출 쌍이 모두 풀리는 첫 자세까지의 꼭짓점 목록(끝 = 탈출 지점).
     그 전에 위반이 있거나 끝까지 안 풀리면 None."""
@@ -400,6 +428,7 @@ LIFT_MAX_M = 0.25       # [m] ★11.18 곧게 들어 올리기 상한
 LIFT_STEP_M = 0.005     # [m] IK 한 걸음
 LIFT_EXTRA_M = 0.02     # [m] 탈출 쌍이 모두 풀린 뒤 더 올리는 높이
 LIFT_KEEP_EVERY = 4     # 꼭짓점 솎기(2 cm) — 구간마다 정지-출발이라 꼭짓점이 많으면 느리다
+PRUNE_BUDGET_S = 15.0   # [s] 경로 하나의 꼭짓점 줄이기 상한 — 첫 경로 prune 이 --time-budget 을 다 써 RRT 재시도가 0 회가 되지 않게
 
 
 def lift_prefix(chk: Checker, side: str, lo: np.ndarray, hi: np.ndarray, step: float = CHECK_STEP,
@@ -482,8 +511,9 @@ def _lift_walk(chk, side, lo, hi, step, up, q, p0, R0, pose, bid, dofs, jp, jr):
     return None
 
 
-def plan_lift_then(chk: Checker, side: str, goal, lo, hi, rng, args) -> np.ndarray | None:
-    """곧게 들기 → 그 자리에서 완화 없이 직선(안 되면 RRT·지름길). 합친 경로를 조밀·순서 검사."""
+def plan_lift_then(chk: Checker, side: str, goal, lo, hi, rng, args) -> tuple[np.ndarray, int] | None:
+    """곧게 들기 → 그 자리에서 완화 없이 직선(안 되면 RRT·지름길). 합친 경로를 조밀·순서 검사.
+    (경로, 들기 꼭짓점 수) — 들기 끝까지가 앞 k 개다."""
     for up in (0.0, 1.0, None):
         lift = lift_prefix(chk, side, lo, hi, args.step, up)
         if lift is not None:
@@ -509,7 +539,7 @@ def plan_lift_then(chk: Checker, side: str, goal, lo, hi, rng, args) -> np.ndarr
     for pre in (thin, lift):                       # 솎은 꼭짓점이 검사를 못 넘으면 전부 쓴다
         path = np.vstack([pre, np.asarray(rest)[1:]])
         if chk.check_path(path, args.step)["ok"]:
-            return path
+            return path, len(pre)
     print("[lift] 합친 경로 조밀·순서 검사 실패")
     return None
 
@@ -921,7 +951,7 @@ def main(argv=None) -> int:
     chk = Checker(world, scenes, args.margin, start, (lo, hi), args.escape_radius, args.seed)
     print(f"[plan] 세계: 로봇 {args.urdf.name} (메쉬 볼록 껍질, 몸통 {world.mesh_notes.get('body_link:body_link0_symp_cut_nohousing_top730.stl')}) "
           f"· 테이블 상자 {len(world.table_boxes)} · 컵 {'있음' if world.cup_box else '없음'} · 반대팔 {args.other_arm} "
-          f"· 손 {args.hand_start} · margin {args.margin} m · ramp_speed {vmax} rad/s")
+          f"· 손 {args.hand_start} · margin {args.margin} m · vmax {vmax} rad/s")
     for b in world.table_boxes + ([world.cup_box] if world.cup_box else []):
         print(f"    {b['name']:<8} lo {np.round(b['lo'], 4).tolist()} hi {np.round(b['hi'], 4).tolist()}")
     print("[plan] 시작 자세 관통 자기충돌 쌍(무작위 자세 관통 비율): "
@@ -949,19 +979,31 @@ def main(argv=None) -> int:
     straight = chk.check_path(np.stack([start, goal]), args.step)
     _print_check("직선 start->goal", straight)
     rng = np.random.default_rng(args.seed)
+    keep = 1
     if straight["ok"] and not args.force_rrt:
         method, path = "straight", np.stack([start, goal])
     elif args.via == "j1j4":
         method, path = "j1j4", plan_j1j4(chk, start, goal, lo, hi, args.step, vmax, args.dt, args.ramp_time)
         if path is None:
             raise SystemExit("[plan] j1·j4 구조 경로를 찾지 못했다(격자 전부 실패) — --via rrt 를 쓰거나 세계를 다시 볼 것")
-    elif (path := plan_lift_then(chk, args.side, goal, lo, hi, rng, args)) is not None:
-        method = "lift"
+    elif (lifted := plan_lift_then(chk, args.side, goal, lo, hi, rng, args)) is not None:
+        method, (path, keep) = "lift", lifted
     else:
         method, path = "rrt", None
 
-    def finish(path: np.ndarray, method: str):
-        """최종 경로 재검사 + 시간 매개화 프레임 검사. 통과하면 (frames, frames_rep, vel, in_lim), 아니면 None."""
+    def finish(path: np.ndarray, method: str, keep: int = 1):
+        """꼭짓점 줄인 경로부터 검사하고, 떨어지면 원래 경로(같은 검사). 통과하면 (path, frames, frames_rep, vel, in_lim)."""
+        short = prune_for_method(chk, path, method, keep, args.step,
+                                 min(t0 + args.time_budget, time.time() + PRUNE_BUDGET_S))
+        if len(short) < len(path):
+            print(f"[plan] 꼭짓점 줄이기 {len(path)} → {len(short)}")
+            done = check_frames(short, method)
+            if done is not None:
+                return done
+            print("[plan] 줄인 경로가 검사에서 떨어짐 — 원래 경로로")
+        return check_frames(path, method)
+
+    def check_frames(path: np.ndarray, method: str):
         final = chk.check_path(path, args.step)
         _print_check(f"최종 경로({method}, 꼭짓점 {len(path)})", final)
         if not final["ok"]:
@@ -978,12 +1020,12 @@ def main(argv=None) -> int:
         if not (frames_rep["ok"] and in_lim and vel <= vmax + 1e-9):
             print(f"[plan] 프레임 검사 실패 ok={frames_rep['ok']} 한계={in_lim} 최고속도={vel:.4f}")
             return None
-        return frames, frames_rep, vel, in_lim
+        return path, frames, frames_rep, vel, in_lim
 
     # ★11.18 실기 home_r_after_blue: RRT 경로가 꼭짓점 검사는 통과하고 프레임 검사(조밀 샘플에서 탈출 쌍이 풀렸다 다시
     # 가까워짐)에서 떨어지자 계획 전체를 포기했다. 같은 실측 자세로 다른 시드 7개는 모두 통과 → 실패한 경로만 버리고 RRT 를 다시 뽑는다.
     # 프레임 검사 기준은 그대로다(통과한 경로만 내보낸다).
-    done = finish(path, method) if path is not None else None
+    done = finish(path, method, keep) if path is not None else None
     if done is None and args.via == "j1j4":
         raise SystemExit("[plan] j1·j4 구조 경로가 검사에서 떨어졌다 — --via rrt 를 쓰거나 세계를 다시 볼 것")
     attempt = 0
@@ -999,7 +1041,7 @@ def main(argv=None) -> int:
             print(f"[rrt] 시도 {attempt} 경로 검사 실패 ({time.time() - t0:.0f} s)")
     if done is None:
         raise SystemExit(f"[plan] 검사를 통과한 경로 없음(RRT {attempt} 회 · {time.time() - t0:.0f} s)")
-    frames, frames_rep, vel, in_lim = done
+    path, frames, frames_rep, vel, in_lim = done
     cert = certify_pairs(chk, frames)
     worst = min(cert, key=lambda r: r["exact_lb"]) if cert else None
     out = args.out or (OUT_DEFAULT if args.goal == "contract" else

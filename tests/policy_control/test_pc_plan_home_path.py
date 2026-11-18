@@ -393,3 +393,102 @@ def test_table_cups_and_holder_base_enter_the_planning_world():
                                           objects=hs + (c,)))
     names = {world.model.body(i).name for i in range(world.model.nbody)}
     assert {"cup_tbl_PINK", bases[0]["name"]} <= names and world.is_world(bases[0]["name"])
+
+
+def test_prune_vertices_skips_corners_only_when_whole_path_passes():
+    """벽(x0 ∈ (0.4,0.6), x1 < 0.5) 을 돌아가는 경로: 벽에 막힌 지름길은 남기고, 뚫린 꼭짓점만 지운다."""
+    blocked = lambda q: 0.4 < q[0] < 0.6 and q[1] < 0.5
+
+    class FakeChk:
+        def check(self, q):
+            return SimpleNamespace(ok=not blocked(q))
+
+        def check_path(self, path, step):
+            ok = all(not blocked(a + (b - a) * t) for a, b in zip(path[:-1], path[1:])
+                     for t in np.linspace(0, 1, 50))
+            return {"ok": ok}
+
+    path = np.array([[0, 0], [0.2, 0.3], [0.3, 0.6], [0.5, 0.7], [0.7, 0.6], [0.8, 0.3], [1, 0]], float)
+    out = P.prune_vertices(FakeChk(), path, 0.01)
+    assert len(out) < len(path) and (out[0] == path[0]).all() and (out[-1] == path[-1]).all()
+    assert FakeChk().check_path(out, 0.01)["ok"]
+
+
+class _OrderChk:
+    """상태 없는 check 는 전부 통과, 순서 기반 check_path 는 '먼저 y ≥ 0.5 로 든 뒤에만 x > 0.5' 를 요구(탈출 흉내)."""
+    lenient = True
+
+    def check(self, q):
+        return SimpleNamespace(ok=True)
+
+    def check_path(self, path, step):
+        lifted = False
+        for a, b in zip(path[:-1], path[1:]):
+            for t in np.linspace(0, 1, 50):
+                q = a + (b - a) * t
+                lifted |= q[1] >= 0.5
+                if q[0] > 0.5 and not lifted:
+                    return {"ok": False}
+        return {"ok": True}
+
+
+def test_prune_refuses_a_shortcut_that_only_the_ordered_check_rejects():
+    path = np.array([[0, 0], [0, 0.6], [0.3, 0.6], [1, 0.6], [1, 0]], float)
+    out = P.prune_vertices(_OrderChk(), path, 0.01)
+    assert P.edge_ok(_OrderChk(), path[0], path[-1], 0.01)          # 상태 기반만 보면 0 → 끝 지름길이 통과한다
+    np.testing.assert_array_equal(out, path[[0, 2, 4]])                # 들어 올린 꼭짓점을 지나야 한다
+
+
+def test_lift_prefix_vertices_survive_pruning(monkeypatch):
+    lift = np.array([[0, 0.075 * i] for i in range(9)], float)       # 곧게 들기 9 점(y 0 → 0.6) → 솎으면 3 점(0 · 4 · 8)
+    monkeypatch.setattr(P, "lift_prefix", lambda *a, **k: lift)
+    args = SimpleNamespace(step=0.01, inset=0.0, rrt_iters=1, rrt_edge_step=0.05)
+    goal = np.array([1.0, 0.6])
+    path, keep = P.plan_lift_then(_OrderChk(), "right", goal, None, None, None, args)
+    assert keep == 3 and (path[:keep] == np.vstack([lift[:-1][::P.LIFT_KEEP_EVERY], lift[-1:]])).all()
+    out = P.prune_for_method(_OrderChk(), path, "lift", keep, 0.01)
+    np.testing.assert_array_equal(out, path)                         # 들기 3 점 + 목표뿐 — 줄일 것이 없다
+    longer = np.vstack([path[:-1], [[0.5, 0.6], [0.8, 0.5]], path[-1:]])
+    out = P.prune_for_method(_OrderChk(), longer, "lift", keep, 0.01)
+    np.testing.assert_array_equal(out[:keep], path[:keep])
+    assert len(out) == keep + 1 and (out[-1] == goal).all()
+    bare = P.prune_vertices(_OrderChk(), longer, 0.01)
+    assert not any((v == path[1]).all() for v in bare)               # keep 없이 줄이면 들기 꼭짓점이 사라진다
+
+
+def test_main_passes_lift_keep_to_finish():
+    # shortcut: main 소스 문자열 검사라 배선만 본다, finish 를 모듈 함수로 빼면 동작 시험으로 바꾼다
+    import inspect
+    src = inspect.getsource(P.main)
+    assert 'method, (path, keep) = "lift", lifted' in src and "finish(path, method, keep)" in src
+
+
+def test_j1j4_path_is_not_pruned():
+    path = np.array([[0, 0], [0, 0.6], [0.3, 0.6], [1, 0.6], [1, 0]], float)
+    assert P.prune_for_method(_OrderChk(), path, "j1j4") is path
+    assert len(P.prune_for_method(_OrderChk(), path, "rrt")) < len(path)
+
+
+def test_prune_past_deadline_returns_pruned_head_plus_original_tail(monkeypatch):
+    now = [0.0]
+
+    class SlowChk:
+        def check(self, q):
+            return SimpleNamespace(ok=True)
+
+        def check_path(self, path, step):
+            now[0] += 1.0                                            # 검사 한 번 = 1 s
+            return {"ok": bool((np.abs(np.diff(path[:, 0])) <= 2.0).all())}
+
+    monkeypatch.setattr(P, "time", SimpleNamespace(time=lambda: now[0]))
+    path = np.array([[x, 0.0] for x in range(6)], float)
+    out = P.prune_vertices(SlowChk(), path, 0.01, deadline=3.5)
+    np.testing.assert_array_equal(out[:, 0], [0, 2, 3, 4, 5])        # 0 → 2 를 줄인 뒤 시간이 넘어 나머지는 원래대로
+    np.testing.assert_array_equal(P.prune_vertices(SlowChk(), path, 0.01)[:, 0], [0, 2, 4, 5])
+
+
+def test_rehome_passes_return_speed_and_ramp():
+    RH = _load("plan_rehome")
+    q = {f"r_aj_{i}": 0.1 for i in range(1, 8)} | {"r_hj_1": 0.2}
+    argv = RH.planner_argv("right", q, Path("/tmp/x.npz"), "rh56f1")
+    assert argv[argv.index("--max-speed") + 1] == "0.3" and argv[argv.index("--ramp-time") + 1] == "0.5"
