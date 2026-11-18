@@ -1,8 +1,10 @@
 about: 짧은 예/아니오 판정 설정 — vlm_supervisor.bench.calibrate 가 만든다. 손으로 고치지 말고 다시 만든다.
 source:
-  results: logs/vlm_sup/bench_fanout_1117b/short/results.jsonl
-  items_sha256: 2cf112ba1f8dc04eeccc95db1a0d40c934848c9ff6dd0b1ee309aec49a86ba68
+  results: _work/vlm_plan_1118/res/all/all_8b_720/results.jsonl
+  items: _work/vlm_plan_1118/res/all/set_all_720/items.jsonl
+  items_sha256: 75548fa8a5b330cbb7568dcb8a0d0e5bec789df404eb8e91d91ac793909d19b4
   variant: short2
+  split: loeo
 prompt: 'These two photographs show a two-arm robot at a table with a blue cup and a pink cup (both bottle-shaped), an orange shaker cup and three white cup holders. The first was taken before the last
   robot action and the second after it. Answer the question about the second photograph with yes or no.
 
@@ -12,12 +14,11 @@ choices:
 - 'no'
 min_mass: 0.5
 thresholds:
-  all_in_holders: 0.57
-  cup_in_hand: 0.93
-  cup_in_holder_b: 0.53
-  cup_lifted: 0.55
-  cup_released_in_holder: 0.78
-  holders_any_cup: 0.27
+  all_in_holders: 0.71
+  cup_in_hand: 0.98
+  cup_in_holder_b: 0.4
+  cup_lifted: 0.5
+  holders_any_cup: 0.16
 questions:
   all_in_holders: Are all three cups standing upright inside holders?
   cup_in_hand:left:SHAKER: Is the robot's left hand holding the orange shaker cup?
@@ -29,8 +30,6 @@ questions:
   cup_lifted:SHAKER: Is the orange shaker cup lifted clear of the table?
   cup_lifted:SRC_BLUE: Is the blue cup lifted clear of the table?
   cup_lifted:SRC_PINK: Is the pink cup lifted clear of the table?
-  cup_released_in_holder:SHAKER: Has the orange shaker cup been placed into a white cup holder and released by the robot?
-  cup_released_in_holder:SRC_BLUE: Has the blue cup been placed into a white cup holder and released by the robot?
   holders_any_cup: Is there a cup standing inside any of the white cup holders?
 node_checks:
   scene:
@@ -60,8 +59,6 @@ node_checks:
   place_blue:
   - slot: cup_in_holder_b:SRC_BLUE
     ok: 'yes'
-  - slot: cup_released_in_holder:SRC_BLUE
-    ok: 'yes'
   home_r_after_blue:
   - slot: cup_in_holder_b:SRC_BLUE
     ok: 'yes'
@@ -88,8 +85,6 @@ node_checks:
     ok: 'yes'
   place_shaker:
   - slot: cup_in_holder_b:SHAKER
-    ok: 'yes'
-  - slot: cup_released_in_holder:SHAKER
     ok: 'yes'
   home_l_after_shaker:
   - slot: cup_in_holder_b:SHAKER
