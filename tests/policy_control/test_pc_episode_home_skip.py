@@ -38,7 +38,8 @@ def _me(tmp_path, frames):
     me = SimpleNamespace(_wait_pd_tracking=lambda side: True, _pd_view=lambda side: {}, run_dir=tmp_path, robot="rh56f1",
                          _run=lambda argv: (calls.append(argv), (0, "tail"))[1], _run_many=lambda argvs: many.extend(argvs) or [0] * len(argvs),
                          _log_line=lambda text: None, cancel=threading.Event(), _lock=threading.Lock(), _arm=frames,
-                         contract="c.json", ep=SimpleNamespace(objects={}, holder_poses="config/h.yaml"), _relay={}, _live={})
+                         contract="c.json", ep=SimpleNamespace(objects={}, holder_poses="config/h.yaml"), _relay={}, _live={},
+                         holders={}, _place_seen={})
     return me, calls, many
 
 
@@ -65,13 +66,46 @@ def test_rehome_away_from_home_still_plans_and_moves(tmp_path):
     assert plan[plan.index("--holders") + 1].endswith("config/h.yaml")
 
 
-def test_rehome_refuses_when_a_failed_place_cup_has_no_pose(tmp_path):
-    """★11.12 리뷰 H1: 놓기 실패 컵(unknown) 자리를 모르면 팔을 움직이지 않고 refused, 사유에 컵 이름."""
+def test_rehome_without_a_lost_cup_moves_home_or_refuses_when_switched_off(tmp_path, monkeypatch):
+    """★11.18 사용자 "컵이 밖으로 떨어지는 거랑 별개로 홈 자세 복귀": 다 기다려도 자리를 모르는 놓기 실패 컵은 계획 세계에서
+    빼고 복귀한다(사유 · signals 에 컵 이름). REHOME_WITHOUT_LOST_CUP=False 면 ★11.12 리뷰 H1 대로 움직이지 않고 refused."""
+    import policy_control.episode_ros as er
     from policy_control.episode_world import World
+    monkeypatch.setattr(er, "REHOME_WAIT_LIVE_S", 0.0)
+    far = list(HOME)
+    far[1] += 0.3
+    world = World(objects={"BLUE": {"at": "unknown"}}, hands={"right": "EMPTY", "left": "EMPTY"})
+    node, traj = SimpleNamespace(id="go_home_r"), SimpleNamespace(kind="go_home", sides=("right",))
+    me, calls, many = _me(tmp_path, _frames(far))
+    me.ep = SimpleNamespace(objects={"BLUE": {"topic": "/objects/source240_blue/pose"}}, holder_poses="")
+    r = RosExecutor.run_trajectory(me, node, traj, world)
+    assert r.status == "completed" and "BLUE" in r.reason and "BLUE" in r.signals["lost_cup_skipped"][0]
+    plan = next(a for a in calls if "plan_rehome.py" in a[1])
+    assert "--table-cups" not in plan
+    monkeypatch.setattr(er, "REHOME_WITHOUT_LOST_CUP", False)
+    me, calls, many = _me(tmp_path, _frames(far))
+    me.ep = SimpleNamespace(objects={"BLUE": {"topic": "/objects/source240_blue/pose"}}, holder_poses="")
+    r = RosExecutor.run_trajectory(me, node, traj, world)
+    assert r.status == "refused" and "BLUE" in r.reason and calls == []
+
+
+def test_rehome_moves_with_a_lost_cup_that_sat_still_in_its_target_holder(tmp_path, monkeypatch):
+    """★11.18 놓기 실패 컵 live 가 낡았어도 마지막 live 가 목표 홀더 받침에 멈춰 있었으면 받침 자리로 보고 움직인다 —
+    계획 세계(--table-cups)에 그 자리가 들어가고 runner 사유 · signals 에 대체가 남는다."""
+    import time
+    import policy_control.episode_ros as er
+    from policy_control.episode_world import World
+    monkeypatch.setattr(er, "REHOME_WAIT_LIVE_S", 0.0)
     far = list(HOME)
     far[1] += 0.3
     me, calls, many = _me(tmp_path, _frames(far))
-    me.ep = SimpleNamespace(objects={"BLUE": {"topic": "/objects/source240_blue/pose"}}, holder_poses="")
-    world = World(objects={"BLUE": {"at": "unknown"}}, hands={"right": "EMPTY", "left": "EMPTY"})
-    r = RosExecutor.run_trajectory(me, SimpleNamespace(id="go_home_r"), SimpleNamespace(kind="go_home", sides=("right",)), world)
-    assert r.status == "refused" and "BLUE" in r.reason and calls == []
+    me.ep = SimpleNamespace(objects={"SRC_PINK": {"topic": "/objects/source240_pink/pose"}}, holder_poses="")
+    me.holders = {2: ((0.3762, -0.2762, 0.2350), 0.03)}
+    me._place_seen = {"SRC_PINK": 2}
+    t = time.monotonic() - 30.0
+    me._live = {"SRC_PINK": [((0.3766, -0.2766, 0.292), None, t + 0.1 * k) for k in range(5)]}
+    world = World(objects={"SRC_PINK": {"at": "unknown"}}, hands={"right": "EMPTY", "left": "EMPTY"})
+    r = RosExecutor.run_trajectory(me, SimpleNamespace(id="home_r_after_pink"), SimpleNamespace(kind="go_home", sides=("right",)), world)
+    assert r.status == "completed" and "SRC_PINK live 낡음 → 홀더 2 받침 자리로 봄" in r.reason and r.signals["lost_cup_seat"]
+    plan = next(a for a in calls if "plan_rehome.py" in a[1])
+    assert '"pos": [0.3762, -0.2762' in plan[plan.index("--table-cups") + 1]

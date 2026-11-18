@@ -311,6 +311,46 @@ def test_rehome_table_cups_ignores_stale_live_and_refuses_an_unknown_cup_without
     assert cups[0]["pos"] == [0.1, -0.1, 0.29]                                    # 신선하면 unknown 도 live 로
 
 
+
+def test_rehome_lost_cup_takes_the_target_holder_seat_only_when_last_live_sat_still_in_it():
+    """★11.18 go_home_end 거부(SRC_PINK live 38 s 낡음): 마지막 live 5 개가 홀더 2 받침에 앉은 채 멈춰 있었으면 받침 자리로 대체.
+    08:45 실제 궤적(홀더 위에 떠 있다가 48.28 s 에 바깥으로 튀며 떨어짐) · live 없음 · placed 없음은 지금처럼 거부."""
+    from types import SimpleNamespace
+    from policy_control.episode_ros import SEAT_DZ_CYL60, SEAT_NOTE, RehomeCupUnknown, rehome_table_cups
+    from policy_control.episode_world import World
+    ep = SimpleNamespace(objects={"SRC_PINK": {"topic": "/objects/source240_pink/pose"}})
+    w = World(objects={"SRC_PINK": {"at": "unknown"}})
+    holders = {2: ((0.3762, -0.2762, 0.2350), 0.03)}
+    seat_z = round(0.235 + SEAT_DZ_CYL60, 4)
+    sat = {"SRC_PINK": [((0.3765 + 0.0005 * k, -0.2770, seat_z - 0.004), None, 40.0 + 0.1 * k) for k in range(5)]}
+    cups, notes = rehome_table_cups(ep, w, {}, sat, now=80.0, placed={"SRC_PINK": 2}, holders=holders)
+    assert cups == [{"name": "SRC_PINK", "object": "source240_pink", "pos": [0.3762, -0.2762, seat_z]}]
+    assert any(f"홀더 2 {SEAT_NOTE}" in n for n in notes)
+    with pytest.raises(RehomeCupUnknown, match="SRC_PINK"):                                         # 대체 끔(기다리는 중)
+        rehome_table_cups(ep, w, {}, sat, now=80.0)
+    # 08:45 분홍(카메라 bag): 46.5~47.8 s 홀더 2 바로 위 → 48.28 s 바깥 아래로 튀고 끊김 → 홀더 너머로 떨어짐
+    fell = {"SRC_PINK": [((0.380, -0.280, 0.279), None, 46.5), ((0.384, -0.283, 0.277), None, 46.9),
+                         ((0.388, -0.286, 0.275), None, 47.4), ((0.391, -0.288, 0.273), None, 47.8),
+                         ((0.3977, -0.3229, 0.2381), None, 48.28)]}
+    with pytest.raises(RehomeCupUnknown, match="(움직임|걸침).*멀어지며 끊김 — 떨어졌거나 넘어졌을 수 있음"):
+        rehome_table_cups(ep, w, {}, fell, now=86.7, placed={"SRC_PINK": 2}, holders=holders)
+    hover = {"SRC_PINK": fell["SRC_PINK"][:4] + [((0.391, -0.288, 0.273), None, 47.9)]}            # 끊기기 전 떠 있던 자리만
+    with pytest.raises(RehomeCupUnknown, match="움직임|높이|xy|걸침"):
+        rehome_table_cups(ep, w, {}, hover, now=86.7, placed={"SRC_PINK": 2}, holders=holders)
+    with pytest.raises(RehomeCupUnknown, match="live 없음"):                                          # 넘어진 컵도 live 가 끊긴다
+        rehome_table_cups(ep, w, {}, {}, now=86.7, placed={"SRC_PINK": 2}, holders=holders)
+    import math
+    c, sn = math.cos(math.radians(10)), math.sin(math.radians(10))              # 리뷰 H: 기운 컵 · 띄엄띄엄 샘플은 앉음 아님
+    tipped = {"SRC_PINK": [(f[0], (c, sn, 0.0, 0.0), f[2]) for f in sat["SRC_PINK"]]}   # 축 20° 기욺
+    with pytest.raises(RehomeCupUnknown, match="기울기 20°"):
+        rehome_table_cups(ep, w, {}, tipped, now=80.0, placed={"SRC_PINK": 2}, holders=holders)
+    sparse = {"SRC_PINK": [(f[0], None, 40.0 + 1.0 * k) for k, f in enumerate(sat["SRC_PINK"])]}
+    with pytest.raises(RehomeCupUnknown, match="4.0 s 에 걸침"):
+        rehome_table_cups(ep, w, {}, sparse, now=80.0, placed={"SRC_PINK": 2}, holders=holders)
+    cups, notes = rehome_table_cups(ep, w, {}, {}, now=86.7, placed={"SRC_PINK": 2}, holders=holders, allow_lost=True)
+    assert cups == [] and any("SRC_PINK" in n and "홈 복귀" in n for n in notes)              # ★11.18 빼고 복귀
+
+
 def test_rehome_table_cups_notes_a_non_object_topic_and_unknown_object_is_an_error():
     from types import SimpleNamespace
     from policy_control.episode_ros import rehome_table_cups

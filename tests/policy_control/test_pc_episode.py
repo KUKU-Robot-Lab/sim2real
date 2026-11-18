@@ -848,7 +848,7 @@ def test_place_judge_uses_live_or_the_bound_cup_never_the_table_snapshot():
     table = (0.24, -0.10, 0.289)                                  # 잡기 전 자리(/pose 가 계속 내던 값)
 
     def judge(live, latch):
-        me = SimpleNamespace(holders={1: (hold, 0.0)}, _frames={"SRC": [(table, None, 1e18)] * 5}, _live={"SRC": []},
+        me = SimpleNamespace(holders={1: (hold, 0.0)}, _place_seen={}, _frames={"SRC": [(table, None, 1e18)] * 5}, _live={"SRC": []},
                              _lock=threading.Lock(),
                              _fresh_object=lambda name, after=None, store=None, wait_s=2.0: live if store is not None else table)
         p = SimpleNamespace(kind="place", source_object="SRC", holder_id=1)
@@ -874,7 +874,7 @@ def test_place_ended_by_open_fingers_before_latch_is_judged_by_the_holder_only()
     ep, d = _ep(), FailureDetector()
 
     def code(live):
-        me = SimpleNamespace(holders={1: (hold, 0.0)}, _live={}, _lock=threading.Lock(),
+        me = SimpleNamespace(holders={1: (hold, 0.0)}, _place_seen={}, _live={}, _lock=threading.Lock(),
                              _fresh_object=lambda name, after=None, store=None, wait_s=2.0: live)
         p = SimpleNamespace(kind="place", source_object="SRC", holder_id=1)
         sig = RosExecutor._signals_of(me, p, {"place": {"phase": "policy", "outcome": "opened_before_latch", "latch_cup": above}})
@@ -897,7 +897,7 @@ def test_opened_before_latch_tightens_seat_z_and_checks_tactile():
     ep, d = _ep(), FailureDetector()
 
     def run(live, tact, outcome="opened_before_latch", thr=1.0):
-        me = SimpleNamespace(holders={1: (hold, 0.0)}, _live={}, _lock=threading.Lock(),
+        me = SimpleNamespace(holders={1: (hold, 0.0)}, _place_seen={}, _live={}, _lock=threading.Lock(),
                              _fresh_object=lambda name, after=None, store=None, wait_s=2.0: live)
         p = SimpleNamespace(kind="place", source_object="SRC", holder_id=1)
         st = {"release_force_n": thr, "place": {"phase": "policy", "outcome": outcome, "tact_max": tact}}
