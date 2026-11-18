@@ -496,6 +496,46 @@ stages:
   - pd_arm_left
   needs_why: pd 가 쥔 컵 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
   title: '[left] 고정 놓기 shaker — 끝까지(놓기 → 들기): tilt 끝 자세에서만 누른다(벗어나면 거부) · 지금 팔 · pd 손 명령에서 계획 · 검사(plan_place_fixed, 걸리면 움직이지 않음) → 재생(replay_traj_rh)'
+- id: cap_now
+  group: policy
+  lane: both
+  skippable: true
+  touches_real: true
+  needs:
+  - pd_arm_right
+  - pd_arm_left
+  needs_why: pd 가 떠 있어야 경로를 재생한다(IDLE 이면 지금 자리에서 engage)
+  title: cap 시작 자세 - 두 팔(왼손은 쉐이커를 쥔 채)
+- id: cap_student_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  touches_real: true
+  needs:
+  - pd_arm_right
+  - pd_arm_left
+  - head_home
+  - cups
+  needs_why: 두 팔 pd 가 cap 시작 자세를 붙들고(TRACKING) · 머리 깊이 · FP++ 쉐이커(리시버) 자세가 있어야 reset 을 받는다
+  title: '[right] cap 깊이 학생 rh56f1/cap/right_student_h01 — 노드 기동 → reset → (캡 · 쉐이커 확인) → start. 구간 넘김은 cap_next_right, 끝 · 정리는 cap_end_right'
+- id: cap_next_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  touches_real: true
+  needs:
+  - cap_student_right
+  needs_why: cap 학생 노드가 start 뒤 돌고 있어야 받는다
+  title: cap 다음 단계(search → approach → grasp → seat → 끝) — 넘기기 전 캡 · 손 위치 확인
+- id: cap_end_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  touches_real: true
+  needs:
+  - cap_student_right
+  needs_why: cap 학생 단계가 띄운 노드 · 목 드라이버를 내린다
+  title: cap 끝 — episode stop → cap 노드 · 깊이 노드 정지 → 기본 목 드라이버 · head_home 자세
 - id: episode_pick_place_right
   group: policy
   lane: arm_right
@@ -1091,6 +1131,9 @@ run:
     - episode_place_m_pink_h2_right#12
     - policy_place_right#1
     - policy_place_left#1
+    - cap_student_right#2
+    - cap_student_right#4
+    - cap_student_right#5
     - episode_pick_place_right#5
     - episode_pick_place_right#6
     - episode_pick_place_right#9
@@ -1250,6 +1293,8 @@ run:
   - note: 목 드라이버 정지 — 단독 소유한 시리얼 포트를 닫는다
     stop:
     - head_home#0
+    - cap_student_right#2
+    - cap_end_right#2
     - episode_place_m_right#8
     - episode_place_m_right#16
     - episode_place_m_left#8
@@ -3033,6 +3078,201 @@ run:
     - shaker
     - --until
     - all
+    execute_args:
+    - --execute
+  cap_now:
+  - note: ★두 팔 주변과 경로(테이블 앞 · 몸통 앞 · 두 팔 사이)가 비었는가 · 왼손이 쉐이커를 쥐고 있는가. 오른팔 → 왼팔 순서로 cap 시작 자세로 간다 — 손은 그대로
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] pd 가 IDLE 이면 지금 자리에서 engage — 이미 붙들고 있으면(TRACKING) 건너뜀'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - right
+    - --only
+    - pd_engage
+    - --skip-engaged
+    - --hold-s
+    - '2'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_engage
+  - note: '[left] pd 가 IDLE 이면 지금 자리에서 engage — 이미 붙들고 있으면(TRACKING) 건너뜀'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - left
+    - --only
+    - pd_engage
+    - --skip-engaged
+    - --hold-s
+    - '2'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_engage
+  - note: cap 시작 자세로 — 팔마다 계획 · 검사(plan_carry, 걸리면 그 팔부터 움직이지 않음) → 재생(replay_to_pd) · 기록 logs/runs/<날짜>/cap/<시각>_setting_cap_start
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/cap_now.py'
+    execute_args:
+    - --execute
+  cap_student_right:
+  - note: 시작 검사 — cap 학생 묶음 rh56f1/cap/right_student_h01 ckpt md5 = student.yaml · rh_cap_contract.json 있음 (읽기만)
+    argv:
+    - python3
+    - -c
+    - import hashlib, sys, yaml; from pathlib import Path; d = Path(sys.argv[1]); c = yaml.safe_load((d / 'student.yaml').read_text(encoding='utf-8'))['ckpt'];
+      p = d / c['path']; got = hashlib.md5(p.read_bytes()).hexdigest() if p.is_file() else None; bad = ['ckpt %s 없음' % p] * (got is None) + ['ckpt
+      md5 %s != student.yaml %s' % (got, c['md5'])] * (got is not None and got != c['md5']) + ['rh_cap_contract.json 없음'] * (not (d / 'rh_cap_contract.json').is_file());
+      print('; '.join(bad) or 'ok'); sys.exit(1 if bad else 0)
+    - '{repo}/deploy/policies/rh56f1/cap/right_student_h01'
+  - note: 목 드라이버 정지(head_home) — cap 학생 머리가 tilt 82 까지 쓰므로 상한만 바꿔 다시 띄운다
+    stop:
+    - head_home#0
+    - head_sweep#1
+    - head_sweep#4
+  - note: 목 드라이버 — cap 학생만 --max-tilt 82(그 밖 기본). 뒤 단계(cap_end_right · 놓기 에피소드)가 남긴 목 드라이버가 포트를 쥐고 있으면 그 PID 를 SIGTERM 한 뒤 띄운다. 끝나면 cap_end_right
+      가 기본 드라이버 · camset 을 되돌린다
+    argv:
+    - bash
+    - -lc
+    - 'P=; for q in $( { pgrep -u "$(id -u)" -x ''python3(\.[0-9]+)?''; true; } ); do a1=$(tr ''\0'' ''\n'' 2>/dev/null </proc/$q/cmdline | awk
+      ''NR > 1 { if ($0 == "-m" || $0 == "-c") exit; if (substr($0, 1, 1) == "-") next; print; exit }''; true); case "$a1" in */head_joint_publisher.py|head_joint_publisher.py)
+      P="$P $q";; esac; done; P=$(echo $P); if [ "$(echo $P | wc -w)" -gt 1 ]; then echo "❌ 목 드라이버로 보이는 프로세스가 여럿이다(PID $P) — 아무것도 내리지 않는다. 사람이
+      확인할 것"; exit 1; fi; p=$P; if [ -n "$p" ]; then echo "목 드라이버 PID $p 가 포트를 쥐고 있다(뒤 단계 · 앞 회가 남김) — SIGTERM 후 이 단계 인자로 띄운다: $(tr ''\0'' ''
+      '' 2>/dev/null </proc/$p/cmdline)"; kill -TERM $p 2>/dev/null || true; for i in $(seq 50); do { ! kill -0 $p 2>/dev/null || [ "$(sed -n
+      ''s/^.*) \(.\).*$/\1/p'' /proc/$p/stat 2>/dev/null; true)" = Z ]; } && break; sleep 0.1; done; { ! kill -0 $p 2>/dev/null || [ "$(sed -n
+      ''s/^.*) \(.\).*$/\1/p'' /proc/$p/stat 2>/dev/null; true)" = Z ]; } || { echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할 것"; exit
+      1; }; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1_h2048.yaml --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
+      --baud 1000000 --ids 1,2 --max-tilt 82'
+    background: true
+  - note: 목 드라이버 확인 — 목 PC 에서 head_joint_publisher.py 가 정확히 하나이고 --max-tilt 82 로 떴는가(최대 8 s). 아니면 사유를 찍고 실패(기본 한계 드라이버면 학생 머리 명령이 잘린다)
+    argv:
+    - bash
+    - -lc
+    - 'for t in $(seq 80); do P=; for q in $( { pgrep -u "$(id -u)" -x ''python3(\.[0-9]+)?''; true; } ); do a1=$(tr ''\0'' ''\n'' 2>/dev/null
+      </proc/$q/cmdline | awk ''NR > 1 { if ($0 == "-m" || $0 == "-c") exit; if (substr($0, 1, 1) == "-") next; print; exit }''; true); case "$a1"
+      in */head_joint_publisher.py|head_joint_publisher.py) P="$P $q";; esac; done; P=$(echo $P); n=$(echo $P | wc -w); a=; if [ "$n" = 1 ]; then
+      a=$(tr ''\0'' '' '' 2>/dev/null </proc/$P/cmdline; true); case " $a " in *'' --max-tilt 82 ''*) echo "목 드라이버 PID $P · --max-tilt 82: $a";
+      exit 0;; esac; fi; sleep 0.1; done; if [ "$n" = 0 ]; then echo "❌ 목 드라이버가 없다 — 위 드라이버 스텝 출력(PortBusy · 가드 실패)을 볼 것"; elif [ "$n" -gt 1 ];
+      then echo "❌ 목 드라이버로 보이는 프로세스가 여럿이다(PID $P) — 사람이 확인할 것"; else echo "❌ 목 드라이버 PID $P 에 --max-tilt 82 이 없다(학생 머리 명령이 잘린다): $a"; fi; exit
+      1'
+  - note: '머리 깊이 노드(학생 입력 160x90 깊이, --free-head: 외부 파라미터 · 바닥 컷 · 목 자세 게이트 없음). 이미 떠 있으면 그대로'
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/scripts/nodes/head_depth_node.py'
+    - --free-head
+    background: true
+  - note: '[right] cap 학생 노드(rh_cap_node_right · ns right_cap) — search → approach → 하강(자동) → grasp → 이송(자동) → seat, 학생 구간 넘김은 사람이 stage/next
+      · 리시버 = FP++ 쉐이커'
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_cap_student_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_cap_node_right
+    - -p
+    - ns:=right_cap
+    - -p
+    - episode_topic:=/policy_control/right/episode
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/cap/right_student_h01/rh_cap_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cuda
+    - -p
+    - student_dir:={repo}/deploy/policies/rh56f1/cap/right_student_h01
+    - -p
+    - rcv_pose_topic:=/objects/shaker_c_orange/live_pose
+    background: true
+  - note: 머리 깊이(/head_depth/image) 한 프레임이 이 PC 에 오는가 — 안 오면 위 깊이 노드 출력을 본다
+    argv:
+    - bash
+    - -lc
+    - timeout 60 ros2 topic echo --once --no-arr --qos-reliability best_effort /head_depth/image sensor_msgs/msg/Image
+  - note: '[right] cap episode reset — 팔 · 손 · 깊이 · 리시버가 있어야 받는다(LSTM 0)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/reset
+    - --episode-ns
+    - right_cap
+    - --service-timeout
+    - '90'
+    execute_args:
+    - --execute
+  - note: ★캡을 탁자 (0.215, −0.185) 에 입을 아래로 놓았고 왼손이 쉐이커를 쥐고 있다
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: ★[right] cap episode start — search 부터. 이상하면 정지 바의 '에피소드 정지'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/start
+    - --episode-ns
+    - right_cap
+    execute_args:
+    - --execute
+  cap_next_right:
+  - note: cap 다음 구간(stage/next) — 응답(넘어간 구간 · 거부 사유)을 찍고, 거부면 실패
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - stage/next
+    - --episode-ns
+    - right_cap
+    - --service-timeout
+    - '5'
+    execute_args:
+    - --execute
+  cap_end_right:
+  - note: '[right] cap episode stop(노드가 없으면 그대로) — pd 가 그 자세를 붙잡는다'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/stop
+    - --episode-ns
+    - right_cap
+    - --service-timeout
+    - '5'
+    execute_args:
+    - --execute
+  - note: cap 학생 노드 · 깊이 노드 · 목 드라이버(82) 정지
+    stop:
+    - cap_student_right#5
+    - cap_student_right#4
+    - cap_student_right#2
+  - note: 목 드라이버 — 기본 인자로 다시(tilt 상한 기본, head_home 것과 같다). 이미 떠 있으면 인자만 보고 — 기본이면 그대로 둔다, --max-tilt 가 남았으면 그 PID 를 SIGTERM 한 뒤 띄운다(★11.11)
+    argv:
+    - bash
+    - -lc
+    - 'p=$(pgrep -u "$(id -u)" -a -x ''python3(\.[0-9]+)?'' | awk ''/head_joint_publisher[.]py/ {print $1; exit}''); a=; if [ -n "$p" ]; then
+      a=$(tr ''\0'' '' '' 2>/dev/null </proc/$p/cmdline); [ -n "$a" ] || echo "목 드라이버 PID $p 가 방금 끝났다(cmdline 없음) — 새로 띄운다"; fi; if [ -n "$a"
+      ]; then case "$a" in *--max-tilt*) echo "목 드라이버 PID $p 가 기본과 다른 인자로 떠 있다 — SIGTERM 후 기본으로 다시: $a"; kill -TERM $p; for i in $(seq 50); do
+      kill -0 $p 2>/dev/null || break; sleep 0.1; done; if kill -0 $p 2>/dev/null; then echo "❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할
+      것"; exit 1; fi;; *) echo "기본 목 드라이버 PID $p 가 이미 떠 있다 — 다시 띄우지 않고 그 PID 를 지켜본다: $a"; tail --pid=$p -f /dev/null; echo "❌ 지켜보던 목 드라이버 PID
+      $p 가 끝났다"; exit 1;; esac; fi; exec python3 {repo}/scripts/nodes/head_joint_publisher.py --config {repo}/config/head_camset_rh56f1_h2048.yaml
+      --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0 --baud 1000000 --ids 1,2'
+    background: true
+  - note: 머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시
+    argv:
+    - python3
+    - '{repo}/scripts/head_move.py'
+    - --config
+    - '{repo}/config/head_camset_rh56f1_h2048.yaml'
+    - --extrinsics
+    - '{repo}/config/global_camera_extrinsics_arm4090_live.yaml'
     execute_args:
     - --execute
   episode_pick_place_right:
@@ -9239,6 +9479,8 @@ run:
   - note: 목 드라이버 정지(head_home) — 놓기 학생 머리가 tilt 82 까지 쓰므로 상한만 바꿔 다시 띄운다
     stop:
     - head_home#0
+    - cap_student_right#2
+    - cap_end_right#2
     - head_sweep#1
     - head_sweep#4
   - note: 목 드라이버 — 놓기 에피소드만 --max-tilt 82(속도 · 가속 · 처짐 여유는 기본). 이 상한은 이 에피소드 동안 이산 head_move 요청에도 같이 풀린다(드라이버가 한 상한으로 둘 다 검사). 에피소드 끝 꼬리가 기본 드라이버
@@ -9470,6 +9712,8 @@ run:
   - note: 목 드라이버 정지(head_home) — 놓기 학생 머리가 tilt 82 까지 쓰므로 상한만 바꿔 다시 띄운다
     stop:
     - head_home#0
+    - cap_student_right#2
+    - cap_end_right#2
     - episode_place_m_right#8
     - episode_place_m_right#16
     - head_sweep#1
@@ -9701,6 +9945,8 @@ run:
   - note: 목 드라이버 정지(head_home) — 놓기 학생 머리가 tilt 82 까지 쓰므로 상한만 바꿔 다시 띄운다
     stop:
     - head_home#0
+    - cap_student_right#2
+    - cap_end_right#2
     - episode_place_m_right#8
     - episode_place_m_right#16
     - episode_place_m_left#8
@@ -9934,6 +10180,8 @@ run:
   - note: 목 드라이버 정지(head_home) — 놓기 학생 머리가 tilt 82 까지 쓰므로 상한만 바꿔 다시 띄운다
     stop:
     - head_home#0
+    - cap_student_right#2
+    - cap_end_right#2
     - episode_place_m_right#8
     - episode_place_m_right#16
     - episode_place_m_left#8
@@ -10169,6 +10417,8 @@ run:
   - note: 목 드라이버 정지(head_home) — 놓기 학생 머리가 tilt 82 까지 쓰므로 상한만 바꿔 다시 띄운다
     stop:
     - head_home#0
+    - cap_student_right#2
+    - cap_end_right#2
     - episode_place_m_right#8
     - episode_place_m_right#16
     - episode_place_m_left#8

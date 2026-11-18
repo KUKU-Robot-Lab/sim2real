@@ -89,7 +89,8 @@ def test_the_rh56f1_real_mission_draws_every_node_once_and_knows_every_command(r
     # ★10.19 팔마다 실행기 상자 둘(좌우 동시 실행) → 22 · ★10.28 칵테일 분홍 FP++ 묶음(source240_pink) 컨테이너 상자 하나 → 23
     # ★11.05 경로 S 머리 깊이(head_depth) 상자 하나 → 24 · ★11.07 경로 M 머리 마스크(head_mask) 상자 하나 → 25 · ★11.08 경로 F 분홍 src200(grasp_fk_right)이 FP++ source200 묶음 상자 하나 → 26
     # ★11.09 경로 F 물체 버튼 — source240 주황 · 분홍 상자 하나 → 27
-    assert len(d.boxes) <= 27, [b.id for b in d.boxes]
+    # ★11.18 cap 깊이 학생(rh_cap_node_right) 상자 하나 → 28
+    assert len(d.boxes) <= 28, [b.id for b in d.boxes]
 
 
 def test_no_wire_is_drawn_twice(real):
@@ -315,9 +316,13 @@ def test_node_names_and_topics_are_the_ones_the_node_sources_use():
 
 def test_policy_node_cup_defaults_are_the_nodes_families():
     N = pytest.importorskip("policy_control.pour_fj_node")
+    pytest.importorskip("policy_control.rh_cap_node")     # rh_cap 계열은 이 모듈을 불러올 때 생긴다
     for script, (node, _, cups) in W.POLICY_NODES.items():
         fam = N.FAMILIES[node.removesuffix("_node")]
         assert fam.name == node, script
+        if script == "rh_cap_student_node.py":            # ★11.18 학생은 계열 캡 토픽 대신 리시버(쉐이커) 자세만 받는다
+            assert cups == (("rcv_pose_topic", "/objects/shaker_c_orange/live_pose"),)
+            continue
         assert [(param, topic) for _, param, topic in fam.cups] == list(cups), script
 
 
@@ -486,7 +491,7 @@ def test_a_topic_heard_from_two_boxes_names_the_sender_in_the_port(real):
     # 두 정책이 같은 pd 로 joint_target 을 낸다 — 포트 이름이 같으면 화면에서 중복처럼 보인다
     _, _, d = real
     labels = {w.label for w in d.wires if w.dst == "pd" and w.topic == "/policy_control/joint_target"}
-    assert labels == {"집기 ▸ joint_target", "놓기 ▸ joint_target"}                  # 내는 쪽이 앞 — 좁은 상자에서도 안 잘린다
+    assert labels == {"집기 ▸ joint_target", "놓기 ▸ joint_target", "cap ▸ joint_target"}   # 내는 쪽이 앞 — 좁은 상자에서도 안 잘린다
     # ★10.19 목표는 오른팔 실행기 · 두 팔 실행기 둘이 낸다 — 내는 쪽 이름이 앞
     # ★10.20 aglt 노드를 띄우는 단계의 실행기만 — 둘 이상일 때만 이름이 앞에 붙는다(옛 정책을 내린 뒤 지금은 오른팔 실행기 하나)
     goal_tags = set(_goal_runners(real[1]).values())

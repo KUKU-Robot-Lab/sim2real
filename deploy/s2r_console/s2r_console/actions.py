@@ -16,7 +16,7 @@ import threading
 import time
 import yaml
 
-from .console import ConsoleError
+from .console import ConsoleError, head_driver_gone, is_head_driver
 from .console_state import STALE_S
 from .runner import StageRunner, DONE, ABORTED
 from .supervisor import scan_processes, SupervisorError
@@ -131,15 +131,17 @@ def _gains_ok(status):
 
 
 #: ★11.10 사용자 "rehome 등은 정책 등이 실행되거나 잔류 노드가 있어도 무시 또는 제거하고 움직이게" — 강제 선점하는 명령.
-FORCE_PREEMPT = ('rehome_', 'home_', 'return_')
+#: ★11.18 리뷰 H3: cap_end_<팔> 은 정리(정지 · 목 복귀)라 pd 가 HOLD · stale 이어도 시작해야 한다 — 선점 실패를 경고로 남기고 진행.
+FORCE_PREEMPT = ('rehome_', 'home_', 'return_', 'cap_end_')
 #: 강제 선점 때 콘솔 밖 잔류도 죽이는 정책·실행기 노드(PD·드라이버·카메라는 제외).
 STRAY_POLICY_NODES = ('rh_aglt_node', 'rh_place_node', 'rh_place_student_node', 'pour_fj_node', 'episode_runner',
-                      'head_mask_node', 'head_depth_node')
+                      'head_mask_node', 'head_depth_node', 'rh_cap_student_node')
 
 
 def _preempts(action_id, group):
-    """제어 명령과 인지 적용은 도는 정책을 먼저 세운다 — 인지 적용은 setting 탭으로 옮겼어도(11.05) FP++ 컨테이너를 바꾼다."""
-    return group == 'control' or action_id == 'perception_refresh'
+    """제어 명령과 인지 적용은 도는 정책을 먼저 세운다 — 인지 적용은 setting 탭으로 옮겼어도(11.05) FP++ 컨테이너를 바꾼다.
+    ★11.18 cap_next_<팔> 은 도는 cap 학생에 stage/next 만 부른다 — 세우면 안 된다."""
+    return (group == 'control' and not action_id.startswith('cap_next_')) or action_id == 'perception_refresh'
 
 
 class _Job:
@@ -292,8 +294,10 @@ class ActionManager:
             return frozenset({'head', 'perception'})
         if action_id == 'perception_refresh':      # locate moves the neck; FPP needs it still
             return frozenset({'perception', 'head'})
-        if action_id in ('policy_stop', 'tilt_now', 'tilt_pour'):
+        if action_id in ('policy_stop', 'tilt_now', 'tilt_pour', 'cap_now'):
             return frozenset(ARMS)
+        if action_id.startswith(('cap_student_', 'cap_next_', 'cap_end_')):   # ★11.18 cap 학생 — 목 드라이버(tilt 82) · 깊이 노드
+            return frozenset({*ARMS, 'head', 'perception'})   # 왼손이 쉐이커(리시버)를 쥐고 있다 — rehome_left 등과 겹치지 않게
         if group == 'policy':                         # live FPP input + the arm
             side = control_side(action_id) if action_id.startswith(CONTROL_PREFIX) else self._card(s, action_id)['side']
             return frozenset({side, 'head', 'perception'})
@@ -349,7 +353,7 @@ class ActionManager:
         if 'tilt_pour' in known:                      # ★10.19 사용자: 세팅 자세에서 바로 tilt(컵을 쥔 채, 두 팔)
             specs['tilt_pour'] = ('tilt 붓기 — 지금 자세에서 바로(두 팔)', 'control', ('tilt_pour',))
         for name in known:                            # ★11.18 사용자: 고정 놓기 궤적(place_fixed_<컵>_<끝>_<팔>) — 팔 하나
-            if name.startswith('place_fixed_'):
+            if name.startswith(('place_fixed_', 'cap_')):   # ★11.18 cap_now · cap_student_right · cap_next_right
                 specs[name] = (known[name].title, 'control', (name,))
         for name, title in CONTROL_EPISODES.items():  # ★10.20 1-B — 정책 카드 없이 policy 탭에서 바로
             for side in ARMS:
@@ -421,13 +425,19 @@ class ActionManager:
         nonpolicy = [sid for sid in active if not sid.startswith(('policy_', 'episode_'))]
         if nonpolicy:
             reasons.append(f"단계 {', '.join(nonpolicy)} 가 실행 중이다")
+        # ★11.18 리뷰 M4: cap 학생 배경(82 드라이버 · --free-head 깊이 · 학생 노드)이 살아 있는 채 다른 동작을 돌면 82 한계로 돌거나
+        #   게이트 없는 깊이가 다른 학생 입력에 섞인다 — cap · 정지 · 복귀 · sim 만 받는다(정지 바 · pd 붙들기는 이 경로가 아니다)
+        if not (action_id.startswith(('cap_', 'tune_pd_off_', *FORCE_PREEMPT)) or action_id in ('policy_stop', 'shutdown')
+                or group == 'sim') and any(p.stage.startswith('cap_student_') for p in s.supervisor.alive()):
+            reasons.append('cap 학생 노드 · 깊이 노드 · 목 드라이버(82)가 떠 있다 — cap 정리(cap_end_right) 먼저')
         if action_id == 'perception_refresh' and self._episode_busy(s, active):
             # 맞추기 모드라 목록 밖 컨테이너를 내린다 — 에피소드가 확보한 물체 · 수동 확인 대기 · 도는 실행기를 끊지 않는다
             reasons.append('에피소드 진행 중 — 인지 적용은 에피소드를 멈춘 뒤')
-        if (group == 'control' and action_id not in ('perception_refresh', 'head_control', 'policy_stop')) or group == 'policy':
+        # ★11.18 cap_end_right 는 팔을 움직이지 않는 정리(정지 · 목 복귀)다 — pd 가 HOLD 여도 돌아야 한다
+        if (group == 'control' and action_id not in ('perception_refresh', 'head_control', 'policy_stop', 'cap_end_right')) or group == 'policy':
             if group == 'policy':
                 sides = [control_side(action_id) if action_id.startswith(CONTROL_PREFIX) else self._card(s, action_id)['side']]
-            elif action_id in ('tilt_now', 'tilt_pour'):
+            elif action_id in ('tilt_now', 'tilt_pour', 'cap_now') or action_id.startswith('cap_student_'):
                 sides = list(ARMS)
             elif action_id == 'head_sweep':          # 오른손을 카메라 앞에 두고 pd 가 붙들고 있어야 한다
                 sides = ['right']
@@ -445,6 +455,8 @@ class ActionManager:
                     reasons.append(f"{side} PD 상태 {st.get('phase')} — 안전 복구/정착 필요")
                 elif action_id.startswith('place_fixed_') and st.get('phase') != 'TRACKING':
                     reasons.append(f"{side} PD 상태 {st.get('phase')} — 고정 놓기는 그 팔 pd 가 쥔 자세를 붙들고(TRACKING) 있어야 한다")
+                elif action_id.startswith('cap_student_') and st.get('phase') != 'TRACKING':   # 왼손은 쉐이커를 쥔 채
+                    reasons.append(f"{side} PD 상태 {st.get('phase')} — cap 학생은 두 팔 pd 가 cap 시작 자세를 붙들고(TRACKING) 있어야 한다")
                 elif action_id == 'tilt_pour' and st.get('phase') != 'TRACKING':
                     # 컵을 쥔 채라 여기서 engage 하지 않는다 — 세팅 자세를 만든 뒤 pd 가 그 자세를 붙들고 있어야 한다
                     reasons.append(f"{side} PD 상태 {st.get('phase')} — tilt 붓기는 두 팔 pd 가 지금 자세를 붙들고(TRACKING) 있어야 한다")
@@ -558,8 +570,9 @@ class ActionManager:
             try:
                 needed = self._policy_sides(s, targets)
                 missing = needed - set(self.console._pd_sides(s))
-                if missing:
-                    reasons.append(f"정책 대상 {', '.join(sorted(missing))} PD 상태가 없거나 오래됐다")
+                if missing:   # ★11.18 리뷰 H3: cap 정리는 pd 가 stale 이어도 노드 · 드라이버를 내린다(선점 실패는 경고)
+                    (warnings if action_id.startswith('cap_end_') else reasons).append(
+                        f"정책 대상 {', '.join(sorted(missing))} PD 상태가 없거나 오래됐다")
             except ConsoleError as exc:
                 reasons.append(str(exc))
             warnings.append('정지 대상: ' + ', '.join(targets) + ' → PD 현재 자세 유지 확인 → 요청 실행. 정책은 자동 재개하지 않는다.')
@@ -722,6 +735,9 @@ class ActionManager:
     def _policy_targets(self, s, sides=None):
         targets = [p['key'] for p in s.supervisor.table() if p['alive'] and
                    p['stage'].startswith(('policy_', 'episode_'))]
+        # ★11.18 cap 학생 단계(cap_student_<팔>)가 띄운 학생 · 깊이 노드도 정책이다(정책 정지 · 제어 명령이 세운다)
+        targets += [p['key'] for p in s.supervisor.table() if p['alive'] and
+                    p['stage'].startswith('cap_student_') and not is_head_driver(p)]
         if sides is None:
             return targets
         kept = []
@@ -1258,7 +1274,7 @@ class ActionManager:
             self._trigger(s, 'pd/hold', side, expect=('TRACKING',))
             self._confirm_hold(s, side, began_ns)
         for runner in s.runners.values():
-            if runner.active and runner.stage_id.startswith(('policy_', 'episode_')):
+            if runner.active and runner.stage_id.startswith(('policy_', 'episode_', 'cap_student_')):
                 found = set(re.findall(r'(?:^|_)(right|left)(?:_|$)', runner.stage_id))
                 if sides is not None and found and not found & set(sides):
                     continue                           # ★10.19 다른 팔 단계는 그대로
@@ -1301,7 +1317,7 @@ class ActionManager:
             except ConsoleError as exc:
                 warn.append(f'{side} 자세 유지 실패(무시): {exc}')
         for runner in s.runners.values():
-            if runner.active and runner.stage_id.startswith(('policy_', 'episode_')):
+            if runner.active and runner.stage_id.startswith(('policy_', 'episode_', 'cap_student_')):
                 found = set(re.findall(r'(?:^|_)(right|left)(?:_|$)', runner.stage_id))
                 if sides is not None and found and not found & set(sides):
                     continue
@@ -1454,7 +1470,10 @@ class ActionManager:
             if description['group'] == 'tuning' and self._cancel_policy.is_set():
                 outcome = ABORTED                    # [실험 정지] — 실패가 아니라 운영자가 멈춘 것
             s.event('action', f"✗ {description['id']}: {note}")
-            if description['id'] != 'shutdown' and description['group'] != 'policy':
+            if description['id'].startswith('cap_student_'):
+                note += self._cap_student_failed(s, description['id'])
+            # ★11.18 리뷰 M6: cap_next_ 의 거부(이송 미완 등) · 서비스 없음은 팔을 얼리지 않는다 — 학생 노드 워치독이 따로 있다
+            if description['id'] != 'shutdown' and description['group'] != 'policy' and not description['id'].startswith('cap_next_'):
                 failure_stage, failure_runner = self._status.get('stage'), getattr(self, '_runner', None)
                 with s.feed_lock:
                     observed = s.feed.observed()
@@ -1481,6 +1500,18 @@ class ActionManager:
                     job.status['steps'] = job.runner.view()['steps']
                 job.status.update(active=False, outcome=outcome, note=note, finished=time.time())
             s.event('action', f"{description['id']} {outcome}")
+
+    def _cap_student_failed(self, s, sid):
+        """★11.18 리뷰 H1: cap 학생 단계는 단계 탭(_stage_done)이 아니라 여기서 돈다 — 실패하면 같은 정리(episode/stop <팔>_cap →
+        pd 붙들기 → 이 단계 배경 정지 → 목 드라이버 경고)를 부른다. 정리가 실패해도 원래 사유는 note 앞에 남는다."""
+        try:
+            left = [p for p in s.supervisor.alive() if p.stage == sid]
+            drv = any(is_head_driver({'argv': p.argv}) for p in left)
+            self.console._fail_safe(s, sid, 'FAILED', [sid.rsplit('_', 1)[-1]], [p.key for p in left])
+        except Exception as exc:  # noqa: BLE001 — 원래 실패 사유를 가리지 않는다
+            return f' · cap 정리 실패: {exc}'
+        return (' · cap 학생 배경을 내렸다' + (' — 목 드라이버가 내려갔다 — cap_end_right 로 기본 드라이버와 머리 자세를 되돌릴 것'
+                                              if drv else ''))
 
     def _sim_job(self, s, description):
         """승인한 명령과 지금 만든 명령이 같은지 — 그 사이 새 계획이 생기면 다시 준비한다."""

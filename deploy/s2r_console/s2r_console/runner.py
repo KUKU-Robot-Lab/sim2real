@@ -26,6 +26,7 @@ DONE, FAILED, ABORTED = "DONE", "FAILED", "ABORTED"   # mission_core.STATUS_* �
 SETTLE_S = 2.0
 #: `ros2 launch` 는 자식 노드가 import 하다 죽는 데 몇 초 걸린다 — 그만큼 더 지켜본다(09.22 fake 팔 브리지 사례).
 LAUNCH_SETTLE_S = 5.0
+HEAD_DRIVER = "head_joint_publisher.py"  # 목 드라이버 스크립트 이름(console·actions 도 이것으로 판별)
 _POLL_S = 0.1
 
 

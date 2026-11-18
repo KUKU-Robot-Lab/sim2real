@@ -32,7 +32,8 @@ NS = "/policy_control"
 #: pd 는 팔마다 서비스가 따로다 — `pd/engage --side right` → `/policy_control/pd_right/engage` (09.23).
 PD_SERVICES = ("pd/engage", "pd/goto_home", "pd/release", "pd/hand_home", "pd/hand_rest", "pd/hand_path",
                "pd/hand_release", "pd/hold")
-SERVICES = PD_SERVICES + ("episode/reset", "episode/start", "episode/stop", "episode/abort", "hand/tip_zero")
+SERVICES = PD_SERVICES + ("episode/reset", "episode/start", "episode/stop", "episode/abort", "hand/tip_zero",
+                         "stage/next")   # ★11.18 rh_cap_student_node — 사람이 확인한 다음 구간(--episode-ns right_cap)
 #: 실패해도 rc 0 — 손끝 bias 는 기록용(제어 입력 아님). 거부되면 이전 bias 가 남고 이유는 상태 토픽 · 로그에 남는다.
 SOFT = ("hand/tip_zero",)
 #: 로봇을 **덜** 움직이게 하는 쪽 — 승인 없이 언제든 불러도 되는 것들.
@@ -97,7 +98,7 @@ def resolve(service: str, side: str, episode_ns: str = "") -> str:
 
 
 #: 정지 바(콘솔)가 부르는 곳 — 공용 정책 노드와 팔마다 도는 정책 노드(ns right · left) 전부
-EPISODE_NS_ALL = ("", "right", "left", "right_place", "left_place")   # 10.04 에피소드 단계: 한 팔에 aglt · place 가 같이 뜬다
+EPISODE_NS_ALL = ("", "right", "left", "right_place", "left_place", "right_cap")   # 10.04 에피소드 단계: 한 팔에 aglt · place 가 같이 뜬다 · ★11.18 cap 학생
 
 
 def every_policy_paths(service: str, available: Sequence[str]) -> list[str]:

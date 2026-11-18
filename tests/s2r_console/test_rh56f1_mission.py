@@ -794,7 +794,8 @@ def test_preflight_builds_contract_before_contract_dependent_tests():
 def _drivers(raw):
     """미션 run 의 목 드라이버 argv — {단계#번호: argv}."""
     return {f"{sid}#{i}": c["argv"] for sid, cmds in raw["run"].items() for i, c in enumerate(cmds)
-            if any("head_joint_publisher.py" in str(a) for a in c.get("argv") or [])}   # ★11.11 원격 목은 ssh 한 줄 안에 있다
+            if c.get("background") and any("head_joint_publisher.py" in str(a) for a in c.get("argv") or [])}   # ★11.11 원격 목은 ssh 한 줄 안에 있다
+    # ★11.18 background: cap 82 드라이버 확인(foreground)은 드라이버가 아니다
 
 
 def test_only_the_place_student_episode_restarts_the_head_driver_with_tilt_82():
@@ -815,6 +816,162 @@ def test_only_the_place_student_episode_restarts_the_head_driver_with_tilt_82():
     assert "__node:=rh_place_node_right" in node and "ns:=right_place" in node and "device:=cuda" in node
     assert "student_dir:={repo}/deploy/policies/rh56f1/place/right_student_place" in node
     assert not [k for k in _drivers(FAKE_RAW) if k.startswith("episode_place_m_")]    # fake 는 목 드라이버가 없다
+
+
+def test_cap_student_stage_runs_its_nodes_then_reset_check_start_and_next_calls_stage_next(tmp_path):
+    """★11.18 cap 깊이 학생(오른팔) — 에피소드 실행기 없이 단계로. 시작 검사 → (실기) 82 드라이버 → 깊이 → 학생 노드 → reset → 확인 → start.
+    서비스는 trigger.py(rc 1 = 거부) · fake 만 리시버 고정 자리 허락 · 정지는 shutdown 정책 정지가 노드를 내린다."""
+    import subprocess
+    for raw, real in ((REAL_RAW, True), (FAKE_RAW, False)):
+        run = raw["run"]["cap_student_right"]
+        node = next(c["argv"] for c in run if any("rh_cap_student_node.py" in str(a) for a in c.get("argv") or []))
+        assert "__node:=rh_cap_node_right" in node and "ns:=right_cap" in node
+        assert "episode_topic:=/policy_control/right/episode" in node and "student_dir:={repo}/deploy/policies/" + GEN.CAP_STUDENT in node
+        assert "rcv_pose_topic:=/objects/shaker_c_orange/live_pose" in node and ("rcv_allow_fixed:=true" in node) is not real
+        if not real:   # fake 만 CPU · 넓은 하강 허용(run_cap_student_fake.sh 와 같음)
+            assert "device:=cpu" in node and "descend_xy_max_m:=0.30" in node and "descend_len_max_m:=0.50" in node
+        calls = [(c["argv"][2], c["argv"][4]) for c in run if "trigger.py" in " ".join(c.get("argv") or [])]
+        assert calls == [("episode/reset", "right_cap"), ("episode/start", "right_cap")]
+        kinds = ["manual" if c.get("manual") else next((k for k in ("seq 80", "head_joint_publisher", "head_depth_node", "rh_cap_student",
+                                                                     "fake_head_stream_driver", "fake_head_depth_pub",
+                                                                     "/head_depth/image", "episode/reset", "episode/start", "-c")
+                                                            if k in " ".join(c.get("argv") or [])), "stop")
+                 for c in run]
+        # ★11.18 리뷰 H2: 82 드라이버 바로 뒤 확인 · M5: reset 앞에 깊이 한 프레임 · fake 는 도메인 97 의 fake 목(스트림 추종) · 깊이
+        assert kinds == ["-c", *(["stop", "head_joint_publisher", "seq 80", "head_depth_node"] if real else
+                                 ["fake_head_stream_driver", "fake_head_depth_pub"]), "rh_cap_student",
+                         "/head_depth/image", "episode/reset", "manual", "episode/start"]
+        wait = next(c["argv"] for c in run if "/head_depth/image" in " ".join(c.get("argv") or []))
+        assert wait[:2] == ["bash", "-lc"] and "timeout 60 ros2 topic echo --once" in wait[2] and not any(
+            c.get("background") or c.get("execute_args") for c in run if c.get("argv") == wait)
+        if real:
+            chk = next(c for c in run if "seq 80" in " ".join(c.get("argv") or []))
+            assert chk["argv"] == GEN.CAP_DRIVER_CHECK_ARGV and not chk.get("background")
+            assert ("ssh" in chk["argv"]) is GEN.REMOTE_HEAD
+        nxt = raw["run"]["cap_next_right"]
+        assert len(nxt) == 1 and nxt[0]["argv"][2:5] == ["stage/next", "--episode-ns", "right_cap"] and nxt[0]["execute_args"] == ["--execute"]
+        assert "cap_now.py" in " ".join(raw["run"]["cap_now"][-1]["argv"]) and raw["run"]["cap_now"][0].get("manual")
+        shut = next(c for c in raw["run"]["shutdown"] if "policy_pourfj#1" in (c.get("stop") or []))
+        bg = [f"cap_student_right#{i}" for i, c in enumerate(run) if c.get("background")]
+        assert bg and set(bg) <= set(shut["stop"])
+    # 시작 검사 한 줄 — md5 · 계약
+    d = tmp_path / "b"
+    (d / "student").mkdir(parents=True)
+    (d / "student" / "x.pt").write_bytes(b"w")
+    (d / "student.yaml").write_text("ckpt: {path: student/x.pt, md5: " + __import__("hashlib").md5(b"w").hexdigest() + "}\n")
+    check = lambda: subprocess.run(["python3", "-c", GEN.CAP_CHECK_PY, str(d)], capture_output=True, text=True)  # noqa: E731
+    assert check().returncode == 1 and "rh_cap_contract.json" in check().stdout
+    (d / "rh_cap_contract.json").write_text("{}")
+    assert check().returncode == 0
+    (d / "student" / "x.pt").write_bytes(b"v")
+    assert check().returncode == 1 and "ckpt md5" in check().stdout
+    (d / "student" / "x.pt").unlink()                  # 없으면 traceback 대신 한 줄 사유
+    r = check()
+    assert r.returncode == 1 and "없음" in r.stdout and "Traceback" not in r.stderr
+
+
+def test_cap_end_stops_the_episode_then_its_nodes_then_restores_the_default_driver_and_head_home():
+    """★11.18 리뷰: cap 은 대화식이라 꼬리를 cap_end_right 에 둔다 — episode/stop → cap 단계 배경(노드 · 깊이 · 82 드라이버) 정지 →
+    (실기만) 놓기 꼬리와 같은 기본 드라이버 복귀 + head_home. fake 는 목이 없어 드라이버 단계가 없다."""
+    stage = next(st for st in REAL_RAW["stages"] if st["id"] == "cap_end_right")
+    assert stage["group"] == "policy" and stage["needs"] == ["cap_student_right"]
+    for raw, real in ((REAL_RAW, True), (FAKE_RAW, False)):
+        end, cap = raw["run"]["cap_end_right"], raw["run"]["cap_student_right"]
+        assert end[0]["argv"][2:5] == ["episode/stop", "--episode-ns", "right_cap"] and end[0]["execute_args"] == ["--execute"]
+        bg = [f"cap_student_right#{i}" for i, c in enumerate(cap) if c.get("background")]
+        assert sorted(end[1]["stop"]) == sorted(bg)
+        drv = [k for k in bg if "head_joint_publisher" in " ".join(map(str, cap[int(k.split("#")[1])]["argv"]))]
+        assert len(drv) == (1 if real else 0)
+        if real:
+            assert end[2:] == GEN._place_student_tail()           # 복사 아닌 같은 꼬리
+            assert end[2]["argv"] == list(GEN.HEAD_DRIVER_RESTORE_ARGV) and end[2]["background"]
+            assert end[3]["argv"] == list(GEN.HEAD_HOME_ARGV)
+            # 뒤 단계(놓기 에피소드 · 셧다운)의 head_home#0 정지가 cap_end 의 복귀 드라이버도 내린다
+            for sid in ("episode_place_m_right", "shutdown"):
+                stop = next(c["stop"] for c in raw["run"][sid] if "head_home#0" in (c.get("stop") or []))
+                assert "cap_end_right#2" in stop and drv[0] in stop, sid
+            # cap 앞 단계 head_sweep 이 남긴 드라이버는 cap 의 head_home#0 정지가 내린다
+            assert {"head_sweep#1", "head_sweep#4"} <= set(cap[1]["stop"])
+        else:
+            assert len(end) == 2
+
+
+def test_cap_depth_node_runs_free_head_and_the_cap_driver_takes_over_a_left_driver(tmp_path):
+    """★11.18 cap 학생은 머리를 움직인다 — 깊이 노드는 --free-head(묶음 외부 파라미터 · 목 자세 게이트 없음) 실기 두 미션.
+    fake 는 실기 카메라 PC 깊이가 도메인 97 에 안 와서 이 PC 의 fake 발행기(ssh 아님).
+    82 드라이버는 정지 목록이 못 닿는 뒤 단계(cap_end_right · 놓기 꼬리) 드라이버를 PID 확정 뒤 SIGTERM 하고 띄운다."""
+    import time
+
+    import yaml as _y
+    for f in ("mission_rh56f1_control.yaml", "mission_rh56f1_control_cam5090.yaml"):
+        run = _y.safe_load((REPO / "config" / f).read_text(encoding="utf-8"))["run"]["cap_student_right"]
+        depth = " ".join(next(c["argv"] for c in run if "head_depth_node.py" in " ".join(c.get("argv") or [])))
+        assert "--free-head" in depth and "--policy-dir" not in depth and "fake_" not in depth, f
+        node = " ".join(next(c["argv"] for c in run if "rh_cap_student_node.py" in " ".join(c.get("argv") or [])))
+        assert "device:=cuda" in node and "descend_" not in node and "rcv_allow_fixed" not in node, f
+    fake = [c["argv"] for c in FAKE_RAW["run"]["cap_student_right"]
+            if any("head_depth_node.py" in str(a) or "fake_head_depth_pub.py" in str(a) for a in c.get("argv") or [])]
+    assert fake == [["python3", "{repo}/scripts/fakes/fake_head_depth_pub.py", "--depth", "0.6"]]
+    drv = next(c for c in REAL_RAW["run"]["cap_student_right"]
+               if c.get("background") and "head_joint_publisher.py" in " ".join(c.get("argv") or []))
+    assert drv["argv"] == GEN.CAP_HEAD_DRIVER_ARGV and drv["background"]
+    for s in (GEN._HEAD_DRIVER_TAKEOVER, GEN._CAP_DRIVER_CHECK):
+        assert "pkill" not in s and "killall" not in s
+    # ★11.18 리뷰 M2: 원격 판은 common.sh(set -eo pipefail) 뒤에 돈다 — 같은 조건에서 시험한다
+    script = "set -eo pipefail; " + GEN._HEAD_DRIVER_TAKEOVER + "echo LAUNCH"
+    # 실기 PC 에서 돌릴 수 있다 — 진짜 목 드라이버가 떠 있으면 가드가 그것을 잡으니 건너뛴다
+    if subprocess.run(["bash", "-c", GEN._CAP_DRIVER_PIDS + "[ -z \"$P\" ]"]).returncode:
+        pytest.skip("이 PC 에 목 드라이버가 떠 있다")
+    assert subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=20).stdout.strip() == "LAUNCH"   # (d) 0 개
+    (tmp_path / "nodes").mkdir()
+    fake = tmp_path / "nodes" / "head_joint_publisher.py"
+    body = "import signal, sys, time\nsignal.signal(signal.SIGTERM, lambda *a: sys.exit(0))\ntime.sleep(60)\n"
+    fake.write_text(body)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_head_joint_publisher.py").write_text(body)
+    (tmp_path / "pytest.py").write_text(body)            # python3 -m pytest … 꼴(cwd 가 sys.path[0])
+    py = tmp_path / "python3"
+    py.symlink_to(sys.executable)
+    procs = []
+
+    def spawn(*argv):
+        procs.append(subprocess.Popen([str(py), *argv], cwd=tmp_path))
+        return procs[-1]
+    try:
+        # (b) 스크립트 자리가 아닌 것 — pytest 모듈 · -c · 이름만 비슷한 시험 파일은 살아남는다
+        bystanders = [spawn("-m", "pytest", "tests/test_head_joint_publisher.py"),
+                      spawn("-c", body, str(fake)), spawn("tests/test_head_joint_publisher.py")]
+        time.sleep(0.3)
+        for extra in ([], ["--max-tilt", "82"]):      # (a) 기본(cap_end · 놓기 꼬리)이든 82 든 내리고 띄운다
+            p = spawn("-u", str(fake), *extra)        # 옵션 뒤 스크립트 자리 · reaper 없음 → SIGTERM 뒤 좀비(L1)
+            time.sleep(0.3)
+            out = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=20)
+            assert out.returncode == 0 and f"PID {p.pid}" in out.stdout, out.stdout + out.stderr
+            assert out.stdout.strip().endswith("LAUNCH") and p.wait(timeout=5) == 0
+        assert all(b.poll() is None for b in bystanders)
+        # (c) 둘이면 아무것도 내리지 않고 rc 1 · PID 목록
+        two = [spawn(str(fake)), spawn(str(fake), "--max-tilt", "82")]
+        time.sleep(0.3)
+        out = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=20)
+        assert out.returncode == 1 and "LAUNCH" not in out.stdout and all(str(x.pid) in out.stdout for x in two), out.stdout
+        assert all(x.poll() is None for x in [*two, *bystanders])
+        # H2 확인: 둘이면 실패, 82 하나면 통과, 기본 하나면 사유를 찍고 실패
+        chk = ["bash", "-c", "set -eo pipefail; " + GEN._CAP_DRIVER_CHECK]
+        assert subprocess.run(chk, capture_output=True, text=True, timeout=20).returncode == 1
+        two[0].terminate()
+        two[0].wait(timeout=5)
+        out = subprocess.run(chk, capture_output=True, text=True, timeout=20)
+        assert out.returncode == 0 and str(two[1].pid) in out.stdout, out.stdout + out.stderr
+        two[1].terminate()
+        two[1].wait(timeout=5)
+        spawn(str(fake))
+        out = subprocess.run(chk, capture_output=True, text=True, timeout=30)
+        assert out.returncode == 1 and "--max-tilt 82 이 없다" in out.stdout, out.stdout
+    finally:
+        for x in procs:                                # 시험이 띄운 PID 만
+            if x.poll() is None:
+                x.kill()
+                x.wait(timeout=5)
 
 
 def test_the_place_student_episode_ends_with_the_default_driver_and_head_home():
@@ -846,12 +1003,13 @@ def test_every_other_head_driver_keeps_the_default_tilt_limit():
     """★11.08 다른 단계 · 미션의 목 드라이버 인자는 그대로(기본 −10, head_motion.MAX_TILT_DEG · 사용자 10.13)."""
     for raw in (REAL_RAW, FAKE_RAW):
         drv = _drivers(raw)
-        tilt82 = [k for k, v in drv.items() if "--max-tilt" in v]
+        tilt82 = [k for k, v in drv.items() if "--max-tilt" in " ".join(v).split("exec ")[-1]]   # ★11.18 cap 82 는 bash 가드 한 줄
         # ★11.09 82 는 놓기 학생 에피소드 둘(오른손 · 왼손)에만, 에피소드마다 하나씩 + ★11.10 목 스윕(camset 둘레 tilt +75.5 까지) 동안만
         got = sorted(k.rsplit("#", 1)[0] for k in tilt82)
         student = ["episode_place_m_left", "episode_place_m_right"] if "episode_place_m_right" in raw["run"] else []
         student += [f"episode_{n}" for n in GEN.PLACE_M_VARIANTS] if student else []   # ★11.11 놓기 학생 색 · 홀더 판(오른손)
-        assert got == (sorted([*student, "head_sweep"]) if raw is REAL_RAW else []), tilt82
+        # ★11.18 cap 학생 단계(머리 tilt −2~82)도 놓기 학생처럼
+        assert got == (sorted([*student, "head_sweep", "cap_student_right"]) if raw is REAL_RAW else []), tilt82
         others = {k: v for k, v in drv.items() if k not in tilt82}     # 놓기 에피소드 끝 꼬리 드라이버 포함
         assert all(v in (GEN.HEAD_DRIVER_ARGV, GEN.HEAD_DRIVER_RESTORE_ARGV) for v in others.values()), others
         assert all("--max-tilt" not in " ".join(v).split("exec ")[-1] for v in others.values()), others

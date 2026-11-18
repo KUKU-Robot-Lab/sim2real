@@ -39,8 +39,17 @@ FAMILIES.setdefault("rh_cap", Family(
 
 
 class CapNode(PourFjNode):
+    #: 받는 cap_phase — 교사(JointPolicy)는 grasp · seat 만. 학생 노드는 chain 만 받는다
+    PHASES: tuple[str, ...] = C.PHASES
+
+    @classmethod
+    def phase_refusal(cls, c: C.CapContract) -> str | None:
+        return None if c.cap_phase in cls.PHASES else f"cap_phase {c.cap_phase!r} 계약 — {cls.__name__} 는 {cls.PHASES} 만 받는다"
+
     def __init__(self, **kw) -> None:
         super().__init__(**kw)
+        if bad := self.phase_refusal(self.contract):
+            raise PourFjNodeError(bad)
         from geometry_msgs.msg import PoseStamped
         from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
         from sensor_msgs.msg import JointState

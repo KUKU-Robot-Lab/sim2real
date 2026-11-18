@@ -1,0 +1,34 @@
+# RH56F1 cap 학생 시작 자세로 옮기는 이송 자산 — 11.18. tools/cap_now.py(= tilt_now 의 계획 · 검사 · 재생을 이 자산으로) 가 쓴다.
+# tilt/base_arc6 과 다른 것은 start_pose 하나다. 이송 계획(plan_carry · hdgp ready_carry Mover)과 손 안 가상 컵 자리
+#   (ref/single734_t120.npz 행 0 — 왼손 shaker)는 base_arc6 그대로 쓴다: ref/ 는 ../../tilt/base_arc6/ref 심볼릭 링크,
+#   hdgp 핀도 base_arc6 과 같아야 plan_carry 가 같은 Mover 로 계획한다(핀을 고칠 때는 두 파일 같이).
+# 오른손은 빈손(cap 편 손) → cap_now 가 plan_carry --empty right 로 오른손 가상 컵을 뗀다.
+#   왼손 쉐이커 자리는 tilt 기준 쥔 자리라 경로 f 의 실제 쥔 자리와 다르면 그만큼 탁자 · 두 팔 사이 검사가 어긋난다.
+name: cap/cap_start
+kind: cap_setting
+objects: {right: null, left: shaker_c_real}
+start_pose: deploy/policy_control/config/homes/rh56f1_cap_start.yaml
+start_gap_rad: 0.05          # 계획한 자세 ↔ 재생 직전 실측 최대 간극
+table:
+  from: config/head_extrinsics.yaml   # table_top_z(hand-eye CAD 사슬, 줄자 0.205)
+  margin_m: 0.01                      # 컵 최저점 − 탁자 윗면. 받는 컵은 붓는 동안 sim 탁자(0.20) 위 약 2 cm
+hdgp:
+  commit: 68e4620e3          # 핀을 만든 hdgp main
+  md5:                       # hdgp 루트 기준. 하나라도 다르면 plan_* 가 계획하지 않는다(policy_control/hdgp_pin.py)
+    scripts/tools/pour_bank/tilt_real_start.py: fbdded55c7b217c5e206a35774ad3935
+    scripts/tools/pour_bank/traj_retarget_starts.py: db46c84bceb719fab5da9772bf9b1e4c
+    scripts/tools/pour_bank/retarget_real_start.py: bbf57967381d21bb5f3ceb2ef9e80db9
+    scripts/tools/pour_bank/export_s2r_traj.py: 200e7307d6145e2682fc596fabd80d14
+    scripts/tools/pour_bank/demo_retarget.py: 432501a22f3657f9e660b6609257cf9d
+    scripts/tools/pour_teach_ik.py: 1f43ca0e2d3ba6b64a1c4e3bd909d615
+    scripts/tools/replay_chain/chain_pour.py: 38e8bfb45e587bbff7c33e8e5fd7d376
+    scripts/tools/replay_chain/pose_hub.py: 0bf5fcb621588e975ead134b4f90206e
+    source/openarm/openarm/agnostic/modules/ready_carry/__init__.py: 6a921e20ba3ea5fa3c943e175a39bf3d
+    source/openarm/openarm/agnostic/modules/ready_carry/chain.py: e93981f98a8e74bada451eb3b0a59568
+    source/openarm/openarm/agnostic/modules/ready_carry/posture.py: 84539be194cf9f27f245d82e0473f762
+    source/openarm/openarm/agnostic/modules/ready_carry/mover.py: 5c8f015fda6cdb3e7ae590abf5ba6e25
+    assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf: f338d043ce3481f72e37ec4c79e20d43
+ref:
+  collect_q_A_g25.npz: 96a5e063e896bec7bc59e1fbae1678e6
+  single734_t120.npz: ff07baee8978f1bdfec5336a8605b230
+  bank_env17_startdr_x4.npz: b0d720ed14efba1ea99963e53db666aa

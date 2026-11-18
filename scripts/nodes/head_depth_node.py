@@ -3,6 +3,12 @@
 
   .venv-student/bin/python scripts/nodes/head_depth_node.py --policy-dir <학생 폴더> [--block 8] [--min-valid 0.5] [--table-z 0.205] ...
   .venv-student/bin/python scripts/nodes/head_depth_node.py --extrinsics <yaml> [--rgb] ...
+  .venv-student/bin/python scripts/nodes/head_depth_node.py --free-head ...   # 머리를 정책이 움직이는 학생(rh_cap depth_h01)
+
+- --free-head(11.18): 외부 파라미터를 읽지 않고 바닥 컷 · 목 자세 게이트를 하지 않는다(머리가 움직이면 고정 T_base_cam
+  컷이 틀리고, cap 학생은 학습 때 컷을 거치지 않았다). 나머지(mm → m · 블록 중앙값 · 토픽 · QoS · stamp)는 같다.
+  /head_depth/config 에 floor_cut: false · head_gate: false 를 싣고 외부 파라미터 md5 · floor_cut_z_m 은 null 이라
+  check_depth_config(머리 고정 학생)는 이 깊이를 거부한다.
 
 입력  /camera/camera/aligned_depth_to_color/image_raw (16UC1) · /camera/camera/color/camera_info
       (--rgb) /camera/camera/color/image_raw (rgb8 · bgr8, 1280x720 — 정렬 깊이와 같은 화소 격자)
@@ -60,6 +66,7 @@ EXTRINSICS_MD5 = "db9a5b848a715625d1f85f5df0f739c3"   # 11.15 목 영점 2048 �
 CKPT_EXTRINSICS_MD5 = "624677fee7e8ff6502f33a3ed8a96a1f"   # 학생 ckpt 가 배운 r20u5 40e6496 — --extrinsics 일 때 ckpt 대조 값
 TABLE_Z = 0.205                                      # 탁자 상판 base z[m](CAD, rh_aglt env_cfg table_surface_z)
 K_TOL_PX = 0.5
+FREE_HEAD_CLIP_M = (0.01, 10.0)                       # hdgp db1160bc rh_cap_r/rh_cap_env_cfg.py head_depth_clip(밖 = 0, clipping "zero")
 LOG_S = 5.0          # 오류 · 경고 throttle, 지연 통계 주기 [s]
 INFO_WAIT_S = 3.0    # 시작 뒤 이 시간 안에 camera_info 가 없으면 warn
 RGB_SLOP_S = 0.5 / 30.0   # 깊이 · color stamp 짝 허용(30 Hz 반 프레임)
@@ -77,7 +84,7 @@ from policy_control.student_policy import REAL_DEPTH, load_pinned, load_student_
 real_depth, REAL_DEPTH_SRC = load_pinned(REAL_DEPTH, "hdgp_real_depth")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from head_pose_check import load_head_pose  # noqa: E402
+from head_pose_check import HeadPose, load_head_pose  # noqa: E402
 from object_pose_node import HeadOffCalibPose, check_head_at  # noqa: E402
 
 
@@ -111,19 +118,25 @@ def make_cut(t_base_cam, table_z: float = TABLE_Z, margin: float = real_depth.FL
     return float(pos[2]), real_depth.ray_z(real_depth.D435I_K_1103, w, h, quat), float(table_z) - float(margin)
 
 
-def check_info(width: int, height: int, k) -> tuple[bool, str]:
+def check_info(width: int, height: int, k, free_head: bool = False) -> tuple[bool, str]:
     """camera_info 대조 → (깊이를 발행해도 되나, 남길 말. 빈 문자열 = D435I_K_1103 과 같음)."""
     if (int(width), int(height)) != real_depth.D435I_WH:
         return False, f"camera_info {width}x{height} ≠ 1280x720 — 바닥 컷 K 와 맞지 않아 깊이를 발행하지 않는다"
     dk = float(np.abs(np.asarray(k, dtype=np.float64).reshape(3, 3) - np.array(real_depth.D435I_K_1103)).max())
     if dk > K_TOL_PX:
+        if free_head:
+            return True, f"camera_info K 가 D435I_K_1103 과 최대 {dk:.3f} px 다르다 — /head_depth/config K 는 학습 상수 K 그대로"
         return True, f"camera_info K 가 D435I_K_1103 과 최대 {dk:.3f} px 다르다 — 바닥 컷은 학습과 같은 상수 K 를 그대로 쓴다"
     return True, ""
 
 
-def to_small(d_mm: np.ndarray, block: int, min_valid: float, cut: tuple | None = None) -> np.ndarray:
-    """(H, W) uint16 mm 깊이 → (바닥 컷, cut = make_cut(...) 이 있을 때) → (H/block, W/block) float32 m 블록 중앙값(0 = 구멍)."""
+def to_small(d_mm: np.ndarray, block: int, min_valid: float, cut: tuple | None = None,
+             clip: tuple | None = None) -> np.ndarray:
+    """(H, W) uint16 mm 깊이 → (clip=(lo, hi) 밖 화소 0) → (바닥 컷, cut = make_cut(...) 이 있을 때)
+    → (H/block, W/block) float32 m 블록 중앙값(0 = 구멍)."""
     m = d_mm.astype(np.float32) / np.float32(1000.0)   # real_depth.mm_quantize 와 같은 나눗셈(* 1e-3 은 1 ulp 다르다)
+    if clip is not None:                               # 0 = 구멍: block_median 이 중앙값 · 유효 비율에서 뺀다
+        m[(m < clip[0]) | (m > clip[1])] = 0.0
     if cut is not None:
         m = real_depth.floor_cut(m, *cut)
     # 같은 hdgp block_median 의 torch 경로(값 동일, 시험이 대조). numpy 경로는 1280x720 에 16 ms 라 30 Hz 를 못 맞춘다(11.05)
@@ -135,7 +148,7 @@ class FrameError(ValueError):
 
 
 def frame_to_small(height: int, width: int, encoding: str, step: int, data, block: int, min_valid: float,
-                   cut: tuple | None = None) -> np.ndarray:
+                   cut: tuple | None = None, clip: tuple | None = None) -> np.ndarray:
     """Image 필드 → 검사(1280x720 · 16UC1 · 바이트 수) → to_small. 어긋나면 FrameError."""
     if encoding != "16UC1":
         raise FrameError(f"depth encoding {encoding} 미지원(16UC1 만)")
@@ -144,7 +157,7 @@ def frame_to_small(height: int, width: int, encoding: str, step: int, data, bloc
     if int(step) != int(width) * 2 or len(data) != int(step) * int(height):
         raise FrameError(f"depth 바이트 {len(data)} · step {step} ≠ {width}x{height} uint16")
     d = np.frombuffer(data, np.uint16).reshape(int(height), int(width))     # rclpy uint8[] = array.array(버퍼)
-    return to_small(d, block, min_valid, cut)
+    return to_small(d, block, min_valid, cut, clip)
 
 
 def rgb_to_small(height: int, width: int, encoding: str, step: int, data, block: int) -> np.ndarray:
@@ -204,10 +217,21 @@ def node_config(block: int, min_valid: float, table_z: float, floor_margin: floa
             "real_depth": REAL_DEPTH_SRC["path"], "real_depth_md5": REAL_DEPTH_SRC["md5"], "hdgp_commit": REAL_DEPTH_SRC["commit"]}
 
 
+def free_head_config(block: int, min_valid: float, rgb: bool = False) -> dict:
+    """--free-head 의 /head_depth/config. 컷 · 외부 파라미터 키를 null 로 두어 check_depth_config 가 거부하게 한다."""
+    return {**node_config(block, min_valid, 0.0, 0.0, "", None, rgb),
+            "floor_cut_z_m": None, "extrinsics": None, "extrinsics_md5": None, "extrinsics_ckpt_md5": None,
+            "floor_cut": False, "head_gate": False, "clip_m": list(FREE_HEAD_CLIP_M)}
+
+
 class HeadDepth:
     """rclpy 노드 하나를 감싼다(rclpy import 는 생성 때 — 시험은 rclpy 없이 이 모듈을 import 한다)."""
 
-    def __init__(self, node, args, cut: tuple, cfg: dict, head_pose) -> None:
+    def __init__(self, node, args, cut: tuple | None, cfg: dict, head_pose: HeadPose | None) -> None:
+        self.gate = cfg.get("head_gate", True)
+        self.clip = tuple(cfg["clip_m"]) if cfg.get("clip_m") else None
+        if self.gate and head_pose is None:
+            raise ValueError("목 자세 게이트가 켜졌는데 head_pose 가 없다 — 게이트를 끄려면 config head_gate: false")
         from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
         from sensor_msgs.msg import CameraInfo, Image, JointState
         from std_msgs.msg import String
@@ -259,7 +283,7 @@ class HeadDepth:
     def _info(self, msg) -> None:
         self.info = msg
         if self.info_ok is None:
-            self.info_ok, note = check_info(msg.width, msg.height, msg.k)
+            self.info_ok, note = check_info(msg.width, msg.height, msg.k, free_head=not self.gate)
             if not self.info_ok:
                 self.log.error(note)
             elif note:
@@ -309,7 +333,7 @@ class HeadDepth:
             return
         if not self.info_ok:
             return
-        why = head_block(self.head_pose, self.head_deg, self.head_t, time.monotonic())
+        why = head_block(self.head_pose, self.head_deg, self.head_t, time.monotonic()) if self.gate else None
         if why:
             self.log.warning(f"깊이 발행 보류: {why}", throttle_duration_sec=LOG_S)
             return
@@ -328,7 +352,8 @@ class HeadDepth:
                                  throttle_duration_sec=LOG_S)
                 return
             rgb = rgb_to_small(c.height, c.width, c.encoding, c.step, c.data, self.args.block)
-        small = frame_to_small(msg.height, msg.width, msg.encoding, msg.step, msg.data, self.args.block, self.args.min_valid, self.cut)
+        small = frame_to_small(msg.height, msg.width, msg.encoding, msg.step, msg.data, self.args.block, self.args.min_valid, self.cut,
+                               self.clip)
         if not (small > 0).any():
             self.log.warning("축소 깊이에 유효 화소가 없다", throttle_duration_sec=LOG_S)
         out = self.Image()
@@ -358,17 +383,30 @@ class HeadDepth:
         self.lat_ms.append((self.node.get_clock().now().nanoseconds - (st.sec * 10**9 + st.nanosec)) * 1e-6)
 
 
-def main() -> None:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="D435i 정렬 깊이를 160x90 m float32 로 줄인다")
     ap.add_argument("--block", type=int, default=real_depth.BLOCK)
     ap.add_argument("--min-valid", type=float, default=real_depth.MIN_VALID)
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--policy-dir", help="학생 묶음 폴더(student.yaml: 얼린 외부 파라미터 · md5 · rgb)")
     src.add_argument("--extrinsics", help=f"T_base_cam yaml(camera.position · orientation_wxyz), md5 = {EXTRINSICS_MD5} 만")
+    src.add_argument("--free-head", action="store_true",
+                     help="머리를 정책이 움직이는 학생(rh_cap): 외부 파라미터 · 바닥 컷 · 목 자세 게이트 없음")
     ap.add_argument("--rgb", action="store_true", help="/head_depth/rgb 도 낸다(--policy-dir 면 student.yaml rgb 를 따른다)")
     ap.add_argument("--table-z", type=float, default=TABLE_Z)
     ap.add_argument("--floor-margin", type=float, default=real_depth.FLOOR_MARGIN_M)
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
+    if args.free_head:                            # free-head 가 안 쓰는 인자를 조용히 무시하지 않는다(cap 은 rgb 도 안 쓴다)
+        bad = [f"--{k.replace('_', '-')}" for k in ("table_z", "floor_margin", "rgb") if getattr(args, k) != ap.get_default(k)]
+        if bad:
+            ap.error(f"--free-head 는 {' · '.join(bad)} 를 쓰지 않는다")
+    return args
+
+
+def setup(args: argparse.Namespace) -> tuple[tuple | None, dict, HeadPose | None]:
+    """해석한 인자 → (cut | None, /head_depth/config, head_pose | None). 시작 거부는 SystemExit. rclpy 없이 돈다."""
+    if args.free_head:
+        return None, free_head_config(args.block, args.min_valid, args.rgb), None
     try:
         extr, want_md5, ckpt_md5, rgb = resolve_extrinsics(args.policy_dir, args.extrinsics, args.rgb)
     except PinError as e:
@@ -381,6 +419,12 @@ def main() -> None:
         raise SystemExit(f"[head_depth] {extr} 에 head_pose 가 없다 — 목 자세를 확인할 수 없어 시작하지 않는다")
     cut = make_cut(t_base_cam, args.table_z, args.floor_margin)
     cfg = node_config(args.block, args.min_valid, args.table_z, args.floor_margin, extr, extr_md5, rgb, ckpt_md5)
+    return cut, cfg, head_pose
+
+
+def main() -> None:
+    args = parse_args()
+    cut, cfg, head_pose = setup(args)
 
     import rclpy
 

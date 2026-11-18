@@ -169,6 +169,126 @@ def test_place_fixed_is_a_one_arm_control_that_needs_that_pd_holding(console, ti
     assert m.describe(sid)["enabled"]
 
 
+def test_cap_student_buttons_and_policy_stop_reach_its_nodes(console, tiny_repo, monkeypatch):
+    """★11.18 cap 학생 — control 탭 버튼 셋 · 학생 단계 노드는 정책 정지 대상(목 드라이버 제외) · stage/next 는 세우지 않는다."""
+    from s2r_console.actions import _preempts
+    caps = ("cap_now", "cap_student_right", "cap_next_right", "cap_end_right")
+    m = setup_actions(console, tiny_repo, {sid: [{"argv": ["true"]}] for sid in caps})
+    _obs(monkeypatch, console)
+    items = {a["id"]: a for a in m.catalog()}
+    assert all(items[sid]["group"] == "control" for sid in caps)
+    s = console.session
+    assert m._resources(s, "cap_now", "control", {}) == frozenset({"right", "left"})
+    # 왼손이 쉐이커(리시버)를 쥔 채 — rehome_left 같은 왼팔 동작과 겹치지 않게 left 도 잡는다(11.18 리뷰)
+    for sid in ("cap_student_right", "cap_next_right", "cap_end_right"):
+        assert m._resources(s, sid, "control", {}) == frozenset({"right", "left", "head", "perception"}), sid
+    assert m.describe("cap_student_right")["enabled"]
+    _obs(monkeypatch, console, left="IDLE")         # 왼팔 pd 가 쉐이커 자세를 붙들고 있지 않다
+    assert any("left PD 상태 IDLE" in r for r in m.describe("cap_student_right")["reasons"])
+    _obs(monkeypatch, console, right="HOLD")        # 정리(cap_end)는 pd 가 HOLD 여도 돈다
+    assert m.describe("cap_end_right")["enabled"] and not m.describe("cap_student_right")["enabled"]
+    _obs(monkeypatch, console)
+    assert _preempts("cap_student_right", "control") and not _preempts("cap_next_right", "control")
+    # 단계 탭에서 cap 학생 단계가 실패 · 중단하면 정책 단계처럼 정리한다 — episode/stop 은 cap 노드 ns(right_cap)로
+    from s2r_console.console import POLICY_STAGE_PREFIXES, failure_actions
+    assert "cap_student_right".startswith(POLICY_STAGE_PREFIXES)
+    assert failure_actions("cap_student_right", ["right"]) == [("episode/stop", "right_cap"), ("pd/hold", "right")]
+    s.supervisor.spawn("cap_student_right#4", stage="cap_student_right", note="node", argv=["sleep", "30"],
+                       background=True, manual=False)
+    s.supervisor.spawn("cap_student_right#2", stage="cap_student_right", note="drv",
+                       argv=["bash", "-c", "sleep 30", "head_joint_publisher.py"], background=True, manual=False)
+    try:
+        assert s.supervisor.is_alive("cap_student_right#2")
+        assert m._policy_targets(s) == ["cap_student_right#4"]
+    finally:
+        s.supervisor.stop(["cap_student_right#4", "cap_student_right#2"])
+
+
+def _cap(console, tiny_repo, monkeypatch, **commands):
+    """★11.18 리뷰 — cap 단계 + 서비스 호출 기록(_trigger · 실패 정리 trigger.py)."""
+    import subprocess
+
+    from s2r_console import console as console_mod
+    base = {sid: [{"argv": ["true"]}] for sid in ("cap_now", "cap_student_right", "cap_next_right", "cap_end_right",
+                                                  "head_home", "tilt_now", "rehome_right", "shutdown")}
+    m = setup_actions(console, tiny_repo, {**base, **commands})
+    _obs(monkeypatch, console)
+    calls = []
+    monkeypatch.setattr(m, "_trigger", lambda s, svc, side, **kw: calls.append((svc, side)))
+    monkeypatch.setattr(m, "_kill_stray_policies", lambda *a: [])
+    real_run = subprocess.run
+
+    def fake_run(argv, *a, **kw):           # 실패 정리(console._fail_safe)의 trigger.py 만 가로챈다
+        if any(str(x).endswith("trigger.py") for x in argv):
+            calls.append((argv[2], argv[4]))
+            return subprocess.CompletedProcess(argv, 0, "ok\n", "")
+        return real_run(argv, *a, **kw)
+    monkeypatch.setattr(console_mod.subprocess, "run", fake_run)
+    return m, calls
+
+
+def test_a_failed_cap_student_stops_its_episode_and_background_and_points_to_cap_end(console, tiny_repo, monkeypatch):
+    """★11.18 리뷰 H1: cap 학생 단계는 _run 으로 돈다 — 실패하면 episode/stop(right_cap) · 그 단계 배경 정지 · cap_end 안내."""
+    m, calls = _cap(console, tiny_repo, monkeypatch, cap_student_right=[
+        {"argv": ["bash", "-c", "sleep 30", "head_joint_publisher.py"], "background": True},
+        {"argv": ["sleep", "30"], "background": True}, {"argv": ["false"]}])
+    m.execute("cap_student_right", operator="test")
+    v = _wait(m)
+    s = console.session
+    assert v["outcome"] == "FAILED" and v["note"].startswith("cap_student_right:"), v["note"]   # 원래 사유가 앞에
+    assert "cap_end_right 로 기본 드라이버와 머리 자세를 되돌릴 것" in v["note"]
+    assert ("episode/stop", "right_cap") in calls and ("pd/hold", "right") in calls
+    assert not any(p.stage == "cap_student_right" for p in s.supervisor.alive())
+
+
+@pytest.mark.parametrize("phase", ["HOLD", "stale"])
+def test_cap_end_runs_even_when_the_pd_is_held_or_stale(console, tiny_repo, monkeypatch, phase):
+    """★11.18 리뷰 H3: cap_end_right 는 강제 선점 — pd HOLD · stale 로 붙들기가 실패해도 경고로 두고 정지 · 복귀를 돈다."""
+    from s2r_console.console import ConsoleError
+    m, _ = _cap(console, tiny_repo, monkeypatch)
+    s = console.session
+    obs = _obs(monkeypatch, console, right="HOLD")
+    if phase == "stale":
+        obs.age_s["pd_right"] = 1e9
+
+    def refuse(s_, svc, side, **kw):
+        if svc == "pd/hold":
+            raise ConsoleError(f"{side} pd {phase}")
+    monkeypatch.setattr(m, "_trigger", refuse)
+    s.supervisor.spawn("cap_student_right#1", stage="cap_student_right", note="node", argv=["sleep", "30"],
+                       background=True, manual=False)
+    assert m.describe("cap_end_right")["enabled"], m.describe("cap_end_right")["reasons"]
+    m.execute("cap_end_right", operator="test")
+    assert _wait(m)["outcome"] == "DONE", phase
+    assert not s.supervisor.is_alive("cap_student_right#1")
+
+
+def test_live_cap_background_blocks_other_actions_but_not_cap_stop_or_recovery(console, tiny_repo, monkeypatch):
+    """★11.18 리뷰 M4: cap 학생 배경이 살아 있으면 cap · 정지 · shutdown · 복귀 말고는 cap_end_right 먼저."""
+    m, _ = _cap(console, tiny_repo, monkeypatch)
+    s = console.session
+    assert m.describe("head_home")["enabled"] and m.describe("tilt_now")["enabled"]
+    s.supervisor.spawn("cap_student_right#2", stage="cap_student_right", note="drv",
+                       argv=["bash", "-c", "sleep 30", "head_joint_publisher.py"], background=True, manual=False)
+    try:
+        for sid in ("head_home", "tilt_now"):
+            assert any("cap_end_right" in r for r in m.describe(sid)["reasons"]), sid
+        for sid in ("cap_next_right", "cap_end_right", "rehome_right", "shutdown", "policy_stop"):
+            assert not any("cap_end_right" in r for r in m.describe(sid)["reasons"]), sid
+    finally:
+        s.supervisor.stop(["cap_student_right#2"])
+    assert m.describe("head_home")["enabled"]
+
+
+def test_a_refused_cap_next_does_not_hold_the_arms(console, tiny_repo, monkeypatch):
+    """★11.18 리뷰 M6: stage/next 거부(rc 1)는 실패로 보이되 pd/hold 를 보내지 않는다."""
+    m, calls = _cap(console, tiny_repo, monkeypatch,
+                    cap_next_right=[{"argv": ["bash", "-c", "echo 이송이 아직 안 끝났다; exit 1"]}])
+    m.execute("cap_next_right", operator="test")
+    v = _wait(m)
+    assert v["outcome"] == "FAILED" and not [c for c in calls if c[0] == "pd/hold"], calls
+
+
 def test_tilt_now_goes_to_the_setting_pose_like_rehome(console, tiny_repo, monkeypatch):
     """세팅 자세로 가는 것 — rehome 처럼 pd 가 IDLE 이어도 된다(그 자리에서 engage), 두 팔을 다 쓴다."""
     m = setup_actions(console, tiny_repo, {"tilt_now": [{"argv": ["true"], "manual": True}, {"argv": ["true"]}]})

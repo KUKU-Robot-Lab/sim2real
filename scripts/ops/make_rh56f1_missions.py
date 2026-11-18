@@ -637,10 +637,11 @@ HEAD_DRIVER_ARGV = (["python3", "{repo}/scripts/nodes/head_joint_publisher.py", 
 #  그 드라이버의 인자를 읽어 --max-tilt 가 없으면(기본) 통과 — 그 PID 가 살아 있는 동안 지켜본다(배경 단계가 '떠 있음'으로 남는다).
 #  --max-tilt 가 있으면(82 · 스윕 것이 남음) 그 PID 를 확정한 뒤 SIGTERM · 5 s 안에 끝났는지 보고 기본 인자로 띄운다.
 #  pgrep 은 python3 프로세스만 본다 — 이 bash 한 줄 자체도 head_joint_publisher 문자열을 담고 있어서다.
+_HEAD_DRIVER_PID = "p=$(pgrep -u \"$(id -u)\" -a -x 'python3(\\.[0-9]+)?' | awk '/head_joint_publisher[.]py/ {print $1; exit}'); "
 _HEAD_DRIVER_GUARD = (
     # ★11.11 deploy 리뷰 MEDIUM: pgrep 은 내 uid 만(-u) · pgrep 직후 PID 가 죽어 cmdline 을 못 읽으면 새로 띄운다(전에는 빈 인자로
     #   tail --pid 가 바로 끝나 드라이버 없이 성공했다) · LOW: 지켜보던 드라이버가 끝나면 rc 1 로 알린다(전에는 rc 0)
-    "p=$(pgrep -u \"$(id -u)\" -a -x 'python3(\\.[0-9]+)?' | awk '/head_joint_publisher[.]py/ {print $1; exit}'); a=; "
+    _HEAD_DRIVER_PID + "a=; "
     "if [ -n \"$p\" ]; then a=$(tr '\\0' ' ' 2>/dev/null </proc/$p/cmdline); "
     "[ -n \"$a\" ] || echo \"목 드라이버 PID $p 가 방금 끝났다(cmdline 없음) — 새로 띄운다\"; fi; "
     "if [ -n \"$a\" ]; then "
@@ -653,6 +654,25 @@ HEAD_DRIVER_RESTORE_ARGV = (["bash", "-lc", _HEAD_DRIVER_GUARD + "exec " + " ".j
                             if not REMOTE_HEAD else
                             _on_head_pc(_HEAD_DRIVER_GUARD + "exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py "
                                         "--config " + HEAD_CONFIG + " " + " ".join(_HEAD_DRIVER_ARGS)))
+#: ★11.18 cap 학생 82 드라이버 — 정지 목록은 앞 단계 키만 적을 수 있어(_validate_stops) 뒤 단계(cap_end_right · 놓기 에피소드 꼬리)가
+#  남긴 드라이버를 못 내린다. 띄우기 직전 포트를 쥔 목 드라이버가 있으면(그 PID 를 확정해) 인자와 상관없이 SIGTERM · 5 s 확인 뒤 82 로 띄운다
+#  ★11.18 리뷰 M1 · M2 · L1: PID 찾기는 cap 전용(_HEAD_DRIVER_PID 는 RESTORE 가드와 공유라 그대로) — argv 의 스크립트 자리
+#  (-m · -c 앞에서 끊고 옵션은 건너뛴 첫 원소)가 head_joint_publisher.py 인 내 python3 만 · pgrep 실패 흡수(set -eo pipefail 원격) ·
+#  둘 이상이면 내리지 않고 rc 1 · 끝남 = kill -0 실패 또는 /proc 상태 Z. 결과 P = 공백으로 나눈 PID 목록. 중괄호 뒤에는 공백(자리표시자 아님)
+_CAP_DRIVER_PIDS = (
+    "P=; for q in $( { pgrep -u \"$(id -u)\" -x 'python3(\\.[0-9]+)?'; true; } ); do "
+    "a1=$(tr '\\0' '\\n' 2>/dev/null </proc/$q/cmdline | awk 'NR > 1 { if ($0 == \"-m\" || $0 == \"-c\") exit; "
+    "if (substr($0, 1, 1) == \"-\") next; print; exit }'; true); "
+    "case \"$a1\" in */head_joint_publisher.py|head_joint_publisher.py) P=\"$P $q\";; esac; done; P=$(echo $P); ")
+_CAP_DRIVER_GONE = "{ ! kill -0 $p 2>/dev/null || [ \"$(sed -n 's/^.*) \\(.\\).*$/\\1/p' /proc/$p/stat 2>/dev/null; true)\" = Z ]; }"
+_HEAD_DRIVER_TAKEOVER = (
+    _CAP_DRIVER_PIDS
+    + "if [ \"$(echo $P | wc -w)\" -gt 1 ]; then echo \"❌ 목 드라이버로 보이는 프로세스가 여럿이다(PID $P) — 아무것도 내리지 않는다. "
+    "사람이 확인할 것\"; exit 1; fi; p=$P; "
+    "if [ -n \"$p\" ]; then echo \"목 드라이버 PID $p 가 포트를 쥐고 있다(뒤 단계 · 앞 회가 남김) — SIGTERM 후 이 단계 인자로 띄운다: "
+    "$(tr '\\0' ' ' 2>/dev/null </proc/$p/cmdline)\"; "
+    "kill -TERM $p 2>/dev/null || true; for i in $(seq 50); do " + _CAP_DRIVER_GONE + " && break; sleep 0.1; done; "
+    + _CAP_DRIVER_GONE + " || { echo \"❌ 목 드라이버 PID $p 가 SIGTERM 5 s 안에 끝나지 않았다 — 포트를 확인할 것\"; exit 1; }; fi; ")
 #: 목 토크 해제(shutdown) — 포트가 있는 PC 에서. --release 뒤에 콘솔이 --execute 를 붙인다
 HEAD_RELEASE_ARGV = (["python3", "{repo}/scripts/head_home.py", "--config", "{repo}/" + HEAD_CONFIG, "--release"]
                      if not REMOTE_HEAD else _on_head_pc(f"python3 scripts/head_home.py --config {HEAD_CONFIG}", "--release"))
@@ -846,6 +866,22 @@ def _stages(kind: str) -> list[dict]:
                        "needs_why": "pd 가 쥔 컵 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다",
                        "title": f"[{s}] 고정 놓기 {cup} — {what}: tilt 끝 자세에서만 누른다(벗어나면 거부) · 지금 팔 · "
                                 "pd 손 명령에서 계획 · 검사(plan_place_fixed, 걸리면 움직이지 않음) → 재생(replay_traj_rh)"})
+    # ★11.18 cap 깊이 학생(depth_h01, 오른팔) — 에피소드 실행기 없이 단계로: 시작 자세 → 노드 · reset · start → 사람이 stage/next
+    st.append({"id": "cap_now", "group": "policy", "lane": "both", "skippable": True, "touches_real": real,
+               "needs": ["pd_arm_right", "pd_arm_left"],
+               "needs_why": "pd 가 떠 있어야 경로를 재생한다(IDLE 이면 지금 자리에서 engage)",
+               "title": "cap 시작 자세 - 두 팔(왼손은 쉐이커를 쥔 채)"})
+    st.append({"id": "cap_student_right", "group": "policy", "lane": "arm_right", "skippable": True, "touches_real": real,
+               "needs": ["pd_arm_right", "pd_arm_left", "head_home", "cups"],
+               "needs_why": "두 팔 pd 가 cap 시작 자세를 붙들고(TRACKING) · 머리 깊이 · FP++ 쉐이커(리시버) 자세가 있어야 reset 을 받는다",
+               "title": f"[right] cap 깊이 학생 {CAP_STUDENT} — 노드 기동 → reset → (캡 · 쉐이커 확인) → start. "
+                        "구간 넘김은 cap_next_right, 끝 · 정리는 cap_end_right"})
+    st.append({"id": "cap_next_right", "group": "policy", "lane": "arm_right", "skippable": True, "touches_real": real,
+               "needs": ["cap_student_right"], "needs_why": "cap 학생 노드가 start 뒤 돌고 있어야 받는다",
+               "title": "cap 다음 단계(search → approach → grasp → seat → 끝) — 넘기기 전 캡 · 손 위치 확인"})
+    st.append({"id": "cap_end_right", "group": "policy", "lane": "arm_right", "skippable": True, "touches_real": real,
+               "needs": ["cap_student_right"], "needs_why": "cap 학생 단계가 띄운 노드 · 목 드라이버를 내린다",
+               "title": "cap 끝 — episode stop → cap 노드 · 깊이 노드 정지" + (" → 기본 목 드라이버 · head_home 자세" if real else "")})
     for name in EPISODES:
         ep = _episode(name)
         sides = sorted(_episode_sides(ep))
@@ -1220,6 +1256,31 @@ def _run(kind: str) -> dict:
                      "기록 logs/runs/<날짜>/place_fixed/<컵>_<시각>",
                      ["python3", f"{PC}/tools/place_fixed.py", "--cup", cup, "--until", until], execute_args=["--execute"]),
             ]
+    run["cap_now"] = [
+        _cmd("★두 팔 주변과 경로(테이블 앞 · 몸통 앞 · 두 팔 사이)가 비었는가 · 왼손이 쉐이커를 쥐고 있는가. 오른팔 → 왼팔 순서로 "
+             "cap 시작 자세로 간다 — 손은 그대로" if real else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
+        *(_cmd(f"[{s}] pd 가 IDLE 이면 지금 자리에서 engage — 이미 붙들고 있으면(TRACKING) 건너뜀",
+               ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_engage", "--skip-engaged", "--hold-s", "2"],
+               execute_args=["--execute", "--approve", "pd_engage"]) for s in ("right", "left")),
+        _cmd("cap 시작 자세로 — 팔마다 계획 · 검사(plan_carry, 걸리면 그 팔부터 움직이지 않음) → 재생(replay_to_pd) · "
+             "기록 logs/runs/<날짜>/cap/<시각>_setting_cap_start",
+             ["python3", f"{PC}/tools/cap_now.py"], execute_args=["--execute"]),
+    ]
+    run["cap_student_right"] = _cap_student_run(real)
+    run["cap_next_right"] = [
+        _cmd("cap 다음 구간(stage/next) — 응답(넘어간 구간 · 거부 사유)을 찍고, 거부면 실패",
+             ["python3", f"{PC}/tools/trigger.py", "stage/next", "--episode-ns", CAP_NS, "--service-timeout", "5"],
+             execute_args=["--execute"]),
+    ]
+    # ★11.18 리뷰: cap 은 대화식이라 꼬리를 같은 단계에 못 둔다 — 정지 → 노드 · 82 드라이버 내림 → 놓기 꼬리(기본 드라이버 · head_home)
+    run["cap_end_right"] = [
+        _cmd("[right] cap episode stop(노드가 없으면 그대로) — pd 가 그 자세를 붙잡는다",
+             ["python3", f"{PC}/tools/trigger.py", "episode/stop", "--episode-ns", CAP_NS, "--service-timeout", "5"],
+             execute_args=["--execute"]),
+        _cmd("cap 학생 노드 · 깊이 노드" + (" · 목 드라이버(82)" if real else " · fake 목 드라이버") + " 정지",
+             stop=[f"cap_student_right#{i}" for i, c in reversed(list(enumerate(run["cap_student_right"]))) if c.get("background")]),
+        *(_place_student_tail() if real else []),
+    ]
     for name in EPISODES:
         run[f"episode_{name}"] = _episode_run(name, real)
     # 에피소드 단계가 도중에 실패하면 CPU 기록기가 남는다 — shutdown 의 정지 목록에 더한다(10.08 리뷰)
@@ -1248,16 +1309,18 @@ def _run(kind: str) -> dict:
     policy_stop = next(c for c in run["shutdown"] if c.get("stop") and "policy_pourfj#1" in c["stop"])
     policy_stop["stop"] = list(dict.fromkeys([*policy_stop["stop"],
         *(f"{stage}#{i}" for stage, cmds in run.items() for i, c in enumerate(cmds)
-          if c.get("background") and (stage.startswith("policy_") or stage.startswith("episode_")))]))
+          if c.get("background") and stage.startswith(("policy_", "episode_", "cap_student_")))]))
     # 놓기 학생 에피소드의 목 드라이버(82 · 꼬리 기본)는 shutdown 에서만 내려간다 — 이어 돌리면 앞 회의 드라이버가
     # 포트를 쥐고 있어 새 82 드라이버가 못 연다. head_home#0 를 내리는 단계가 이것들도 같이 내린다(11.09 리뷰, 없으면 건너뜀)
-    drivers = [f"{stage}#{i}" for stage, cmds in run.items() if stage.startswith("episode_") or stage == "head_sweep"
+    drivers = [f"{stage}#{i}" for stage, cmds in run.items()
+               if stage.startswith(("episode_", "cap_student_", "cap_end_")) or stage == "head_sweep"
                for i, c in enumerate(cmds)
                if c.get("background") and (list(c.get("argv") or [])[:len(HEAD_DRIVER_ARGV)] == list(HEAD_DRIVER_ARGV)
-                                           or list(c.get("argv") or []) == list(HEAD_DRIVER_RESTORE_ARGV))]   # ★11.11 꼬리
+                                           or list(c.get("argv") or []) in (list(HEAD_DRIVER_RESTORE_ARGV),   # ★11.11 꼬리
+                                                                            list(CAP_HEAD_DRIVER_ARGV)))]
     order = [st["id"] for st in _stages(kind)]   # 미션 단계 순서(run 은 head_sweep 을 뒤에 넣어 dict 순서가 다르다)
     for stage, cmds in run.items():
-        if stage.startswith("episode_") or stage in ("head_sweep", "shutdown"):
+        if stage.startswith(("episode_", "cap_student_")) or stage in ("head_sweep", "shutdown"):
             for j, c in enumerate(cmds):
                 if "head_home#0" in (c.get("stop") or []):   # 앞 단계(또는 같은 단계 앞 번호)가 띄운 것만 적을 수 있다(_validate_stops)
                     ok = [d for d in drivers if order.index(d.split("#")[0]) < order.index(stage)
@@ -1403,6 +1466,82 @@ def _place_student_tail() -> list:
              "--max-tilt 가 남았으면 그 PID 를 SIGTERM 한 뒤 띄운다(★11.11)", list(HEAD_DRIVER_RESTORE_ARGV), background=True),
         _cmd("머리를 카메라 캘리브 자세(camset)로 되돌린다 — 머리가 움직인다. 실패 · 중단이면 드라이버가 내려가니 head_home 단계를 다시",
              list(HEAD_HOME_ARGV), execute_args=["--execute"]),     # 복사 — yaml 별칭(*id) 없이 쓴다
+    ]
+
+
+#: ★11.18 cap 깊이 학생(오른팔) — 묶음 · 노드 이름 rh_<kind>_node_<팔> · ns <팔>_<kind>(서비스 /policy_control/right_cap/…)
+CAP_STUDENT = "rh56f1/cap/right_student_h01"
+CAP_NS = "right_cap"
+CAP_HEAD_DRIVER_ARGV = (["bash", "-lc", _HEAD_DRIVER_TAKEOVER + "exec " + " ".join([*HEAD_DRIVER_ARGV, "--max-tilt", PLACE_MAX_TILT])]
+                        if not REMOTE_HEAD else
+                        _on_head_pc(_HEAD_DRIVER_TAKEOVER + "exec env ROS_LOCALHOST_ONLY=0 python3 scripts/nodes/head_joint_publisher.py "
+                                    "--config " + HEAD_CONFIG + " " + " ".join([*_HEAD_DRIVER_ARGS, "--max-tilt", PLACE_MAX_TILT])))
+#: ★11.18 리뷰 H2: 82 드라이버가 실제로 떴는가 — 러너의 배경 정착(2 s)보다 가드 대기(최대 5 s) · PortBusy(rc 2)가 늦다.
+#  목 PC 에서 최대 8 s, 스크립트 자리 매치가 정확히 하나이고 cmdline 에 --max-tilt 82 가 있어야 rc 0
+_CAP_DRIVER_CHECK = (
+    "for t in $(seq 80); do " + _CAP_DRIVER_PIDS + "n=$(echo $P | wc -w); a=; "
+    "if [ \"$n\" = 1 ]; then a=$(tr '\\0' ' ' 2>/dev/null </proc/$P/cmdline; true); "
+    f"case \" $a \" in *' --max-tilt {PLACE_MAX_TILT} '*) echo \"목 드라이버 PID $P · --max-tilt {PLACE_MAX_TILT}: $a\"; exit 0;; esac; fi; "
+    "sleep 0.1; done; "
+    "if [ \"$n\" = 0 ]; then echo \"❌ 목 드라이버가 없다 — 위 드라이버 스텝 출력(PortBusy · 가드 실패)을 볼 것\"; "
+    "elif [ \"$n\" -gt 1 ]; then echo \"❌ 목 드라이버로 보이는 프로세스가 여럿이다(PID $P) — 사람이 확인할 것\"; "
+    f"else echo \"❌ 목 드라이버 PID $P 에 --max-tilt {PLACE_MAX_TILT} 이 없다(학생 머리 명령이 잘린다): $a\"; fi; exit 1")
+CAP_DRIVER_CHECK_ARGV = ["bash", "-lc", _CAP_DRIVER_CHECK] if not REMOTE_HEAD else _on_head_pc(_CAP_DRIVER_CHECK)
+#: 시작 검사(읽기만) — ckpt md5 = student.yaml ckpt.md5 · rh_cap_contract.json 있음. argv[1] = 묶음 폴더.
+#: 중괄호를 쓰지 않는다 — 미션 자리표시자({repo} 등)로 읽힌다
+CAP_CHECK_PY = ("import hashlib, sys, yaml; from pathlib import Path; d = Path(sys.argv[1]); "
+                "c = yaml.safe_load((d / 'student.yaml').read_text(encoding='utf-8'))['ckpt']; p = d / c['path']; "
+                "got = hashlib.md5(p.read_bytes()).hexdigest() if p.is_file() else None; "
+                "bad = ['ckpt %s 없음' % p] * (got is None) "
+                "+ ['ckpt md5 %s != student.yaml %s' % (got, c['md5'])] * (got is not None and got != c['md5']) "
+                "+ ['rh_cap_contract.json 없음'] * (not (d / 'rh_cap_contract.json').is_file()); "
+                "print('; '.join(bad) or 'ok'); sys.exit(1 if bad else 0)")
+
+
+def _cap_student_run(real: bool) -> list:
+    """cap 학생 단계 — 시작 검사 → (실기) 목 드라이버 tilt 82 → 깊이 노드 → 학생 노드 → reset → 사람 확인 → start.
+    reset · start 는 trigger.py(응답 success · ok 가 아니면 rc 1). fake 는 FP++ 가 없어 리시버 고정 자리를 허락한다."""
+    sdir = f"{{repo}}/deploy/policies/{CAP_STUDENT}"
+    ep = ["python3", f"{PC}/tools/trigger.py"]
+    return [
+        _cmd(f"시작 검사 — cap 학생 묶음 {CAP_STUDENT} ckpt md5 = student.yaml · rh_cap_contract.json 있음 (읽기만)",
+             ["python3", "-c", CAP_CHECK_PY, sdir]),
+        # 드라이버는 포트를 혼자 쥔다 — 놓기 학생과 같이 head_home 것을 내리고 tilt 상한만 바꿔 띄운다(cap 머리 tilt −2~82)
+        *([_cmd("목 드라이버 정지(head_home) — cap 학생 머리가 tilt 82 까지 쓰므로 상한만 바꿔 다시 띄운다", stop=["head_home#0"]),
+           _cmd(f"목 드라이버 — cap 학생만 --max-tilt {PLACE_MAX_TILT}(그 밖 기본). 뒤 단계(cap_end_right · 놓기 에피소드)가 남긴 목 드라이버가 "
+                "포트를 쥐고 있으면 그 PID 를 SIGTERM 한 뒤 띄운다. 끝나면 cap_end_right 가 기본 드라이버 · camset 을 되돌린다",
+                list(CAP_HEAD_DRIVER_ARGV), background=True),
+           _cmd(f"목 드라이버 확인 — 목 PC 에서 head_joint_publisher.py 가 정확히 하나이고 --max-tilt {PLACE_MAX_TILT} 로 떴는가(최대 8 s). "
+                "아니면 사유를 찍고 실패(기본 한계 드라이버면 학생 머리 명령이 잘린다)", list(CAP_DRIVER_CHECK_ARGV))] if real else []),
+        # cap 학생은 머리를 움직인다 — 외부 파라미터 · 바닥 컷 · 목 자세 게이트 없이 깊이만(--free-head)
+        *([_cmd("머리 깊이 노드(학생 입력 160x90 깊이, --free-head: 외부 파라미터 · 바닥 컷 · 목 자세 게이트 없음). 이미 떠 있으면 그대로",
+                _camera_pc_node(".venv-student", "scripts/nodes/head_depth_node.py", "--free-head"), background=True)] if real else
+          # ★11.18 fake: 실기 카메라 PC 노드는 도메인 97 에 안 온다 — run_cap_student_fake.sh 와 같은 fake 목(/head/target_stream 추종) · 깊이
+          [_cmd("fake 목 드라이버 — /head/joint_states 를 내고 cap 학생의 /head/target_stream 을 따라 움직인다(pan 0 · tilt 40 · 상한 82)",
+                ["python3", "{repo}/scripts/fakes/fake_head_stream_driver.py", "--pan", "0", "--tilt", "40"], background=True),
+           _cmd("fake 머리 깊이 — /head_depth/image 균일 0.6 m · /head_depth/config(--free-head 대조 키)",
+                ["python3", "{repo}/scripts/fakes/fake_head_depth_pub.py", "--depth", "0.6"], background=True)]),
+        _cmd(f"[right] cap 학생 노드(rh_cap_node_right · ns {CAP_NS}) — search → approach → 하강(자동) → grasp → 이송(자동) → seat, "
+             "학생 구간 넘김은 사람이 stage/next · 리시버 = FP++ 쉐이커" + ("" if real else "(fake: 고정 자리 허락)"),
+             ["{repo}/.venv-student/bin/python", f"{PC}/policy_control/rh_cap_student_node.py", "--ros-args",
+              "-r", "__node:=rh_cap_node_right", "-p", f"ns:={CAP_NS}", "-p", "episode_topic:=/policy_control/right/episode",
+              "-p", f"contract:={sdir}/rh_cap_contract.json", "-p", "robot:={artifact:robot_right}",
+              "-p", f"device:={'cuda' if real else 'cpu'}", "-p", f"student_dir:={sdir}",
+              "-p", "rcv_pose_topic:=/objects/shaker_c_orange/live_pose",
+              # fake 전용 — 0.6 m 평판 깊이라 approach 끝이 캡에서 멀다. 실기 기본값은 노드 선언값(run_cap_student_fake.sh 와 같음)
+              *([] if real else ["-p", "rcv_allow_fixed:=true", "-p", "descend_xy_max_m:=0.30", "-p", "descend_len_max_m:=0.50"])],
+             background=True),
+        # ★11.18 리뷰 M5: 깊이가 늦게 뜨면 reset 이 1 s 만에 StaleDepth 로 거부된다 — 한 프레임 먼저(카메라 기동 최대 60 s)
+        _cmd("머리 깊이(/head_depth/image) 한 프레임이 이 PC 에 오는가 — 안 오면 위 깊이 노드 출력을 본다",
+             ["bash", "-lc", "timeout 60 ros2 topic echo --once --no-arr --qos-reliability best_effort /head_depth/image "
+              "sensor_msgs/msg/Image"]),
+        # 학생 노드는 torch · ckpt 를 올린 뒤에 서비스를 연다 — 기다림을 넉넉히
+        _cmd("[right] cap episode reset — 팔 · 손 · 깊이 · 리시버가 있어야 받는다(LSTM 0)",
+             [*ep, "episode/reset", "--episode-ns", CAP_NS, "--service-timeout", "90"], execute_args=["--execute"]),
+        _cmd("★캡을 탁자 (0.215, −0.185) 에 입을 아래로 놓았고 왼손이 쉐이커를 쥐고 있다" if real else "fake — 확인만",
+             ["bash", "-lc", "true"], manual=True),
+        _cmd("★[right] cap episode start — search 부터. 이상하면 정지 바의 '에피소드 정지'",
+             [*ep, "episode/start", "--episode-ns", CAP_NS], execute_args=["--execute"]),
     ]
 
 
