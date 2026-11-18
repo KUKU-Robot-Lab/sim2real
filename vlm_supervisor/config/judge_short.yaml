@@ -1,0 +1,102 @@
+about: 짧은 예/아니오 판정 설정 — vlm_supervisor.bench.calibrate 가 만든다. 손으로 고치지 말고 다시 만든다.
+source:
+  results: logs/vlm_sup/bench_fanout_1117b/short/results.jsonl
+  items_sha256: 2cf112ba1f8dc04eeccc95db1a0d40c934848c9ff6dd0b1ee309aec49a86ba68
+  variant: short2
+prompt: 'These two photographs show a two-arm robot at a table with a blue cup and a pink cup (both bottle-shaped), an orange shaker cup and three white cup holders. The first was taken before the last
+  robot action and the second after it. Answer the question about the second photograph with yes or no.
+
+  Question: {question}'
+choices:
+- 'yes'
+- 'no'
+min_mass: 0.5
+thresholds:
+  all_in_holders: 0.57
+  cup_in_hand: 0.93
+  cup_in_holder_b: 0.53
+  cup_lifted: 0.55
+  cup_released_in_holder: 0.78
+  holders_any_cup: 0.27
+questions:
+  all_in_holders: Are all three cups standing upright inside holders?
+  cup_in_hand:left:SHAKER: Is the robot's left hand holding the orange shaker cup?
+  cup_in_hand:right:SRC_BLUE: Is the robot's right hand holding the blue cup?
+  cup_in_hand:right:SRC_PINK: Is the robot's right hand holding the pink cup?
+  cup_in_holder_b:SHAKER: Is the orange shaker cup inside one of the white cup holders, not on the table and not held by a robot hand?
+  cup_in_holder_b:SRC_BLUE: Is the blue cup inside one of the white cup holders, not on the table and not held by a robot hand?
+  cup_in_holder_b:SRC_PINK: Is the pink cup inside one of the white cup holders, not on the table and not held by a robot hand?
+  cup_lifted:SHAKER: Is the orange shaker cup lifted clear of the table?
+  cup_lifted:SRC_BLUE: Is the blue cup lifted clear of the table?
+  cup_lifted:SRC_PINK: Is the pink cup lifted clear of the table?
+  cup_released_in_holder:SHAKER: Has the orange shaker cup been placed into a white cup holder and released by the robot?
+  cup_released_in_holder:SRC_BLUE: Has the blue cup been placed into a white cup holder and released by the robot?
+  holders_any_cup: Is there a cup standing inside any of the white cup holders?
+node_checks:
+  scene:
+  - slot: holders_any_cup
+    ok: 'no'
+  grasp_blue:
+  - slot: cup_in_hand:right:SRC_BLUE
+    ok: 'yes'
+  - slot: cup_lifted:SRC_BLUE
+    ok: 'yes'
+  grasp_shaker:
+  - slot: cup_in_hand:left:SHAKER
+    ok: 'yes'
+  - slot: cup_lifted:SHAKER
+    ok: 'yes'
+  to_tilt_start_r1:
+  - slot: cup_in_hand:right:SRC_BLUE
+    ok: 'yes'
+  to_tilt_start_l:
+  - slot: cup_in_hand:left:SHAKER
+    ok: 'yes'
+  tilt_blue:
+  - slot: cup_in_hand:right:SRC_BLUE
+    ok: 'yes'
+  - slot: cup_in_hand:left:SHAKER
+    ok: 'yes'
+  place_blue:
+  - slot: cup_in_holder_b:SRC_BLUE
+    ok: 'yes'
+  - slot: cup_released_in_holder:SRC_BLUE
+    ok: 'yes'
+  home_r_after_blue:
+  - slot: cup_in_holder_b:SRC_BLUE
+    ok: 'yes'
+  - slot: cup_in_hand:left:SHAKER
+    ok: 'yes'
+  grasp_pink:
+  - slot: cup_in_hand:right:SRC_PINK
+    ok: 'yes'
+  - slot: cup_lifted:SRC_PINK
+    ok: 'yes'
+  to_tilt_start_r2:
+  - slot: cup_in_hand:right:SRC_PINK
+    ok: 'yes'
+  tilt_pink:
+  - slot: cup_in_hand:right:SRC_PINK
+    ok: 'yes'
+  - slot: cup_in_hand:left:SHAKER
+    ok: 'yes'
+  place_pink: []
+  home_r_after_pink:
+  - slot: cup_in_holder_b:SRC_PINK
+    ok: 'yes'
+  - slot: cup_in_hand:left:SHAKER
+    ok: 'yes'
+  place_shaker:
+  - slot: cup_in_holder_b:SHAKER
+    ok: 'yes'
+  - slot: cup_released_in_holder:SHAKER
+    ok: 'yes'
+  home_l_after_shaker:
+  - slot: cup_in_holder_b:SHAKER
+    ok: 'yes'
+  go_home_end:
+  - slot: all_in_holders
+    ok: 'yes'
+  final:
+  - slot: all_in_holders
+    ok: 'yes'
