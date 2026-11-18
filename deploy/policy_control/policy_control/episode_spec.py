@@ -61,6 +61,10 @@ KINDS = ("aglt", "place", "pour", "lock", "shake")
 CONTINUE_KINDS = ("place",)   # ★11.07 continue_on_fail: 실패해도 다음 노드(home 등)로 넘어갈 수 있는 정책 종류
 SIDES = ("right", "left", "both")
 TRAJ_KINDS = ("rehome", "noop", "carry", "tilt", "reach", "lift")
+#: ★11.11 사용자 "보정값들은 사실 모든 정책들에게 적용" — 팔별 cup_obs_offset_base_m(카메라가 본 손 − FK 손, base m) 정본.
+#:   policies 에 값이 없는 aglt(학생 아님) 정책은 이 값을 받는다. 에피소드에 적은 값은 이 값과 같아야 한다(시험이 본다).
+#:   오른손 = j3 영점(+5.2°) 뒤 칵테일 55c733c · grasp_f 62fb34e, 왼손 = 11.04 L2 측정(logs/analysis/frame_offset_1104).
+CUP_OBS_OFFSET_BASE_M = {"right": (-0.0136, 0.0085, 0.0), "left": (0.0028, 0.0283, 0.0046)}
 #: 10.17 실측에서 계획 · 검사한 뒤 재생하는 궤적(tools/plan_<kind>.py → replay_to_pd).
 #: carry = 잡기 뒤 ready_carry 로 붓기 시작 자세(SETTING)까지 — 한 팔씩(sides: [right]) 또는 두 팔(계획 경로 A "한 팔씩").
 #:   cups: false = 빈손으로(경로 B, 사람이 컵을 손에 댄다 — 컵 없이 같은 경로).

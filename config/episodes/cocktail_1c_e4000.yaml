@@ -25,6 +25,7 @@ policies:
 trajectories:
   go_home: {kind: rehome, sides: [right, left]}
   go_home_r: {kind: rehome, sides: [right]}                         # 왼손은 shaker 를 든 채
+  go_home_l: {kind: rehome, sides: [left]}                          # 오른팔은 이미 홈(빈손)
   to_tilt_start_r: {kind: carry, sides: [right], asset: tilt/base_arc6, rate_scale: 0.5}   # ★11.16 사용자 "천천히가 아니라 급작스럽게" — sim 빠르기(1.3~1.8 s, 관절 최대 41°/s)의 절반
   to_tilt_start_l: {kind: carry, sides: [left], asset: tilt/base_arc6, rate_scale: 0.5}
   tilt: {kind: tilt, sides: [right, left], asset: tilt/traj_v12_240, rate_scale: 1.0, cup: "240"}   # ★11.08 사용자 "240만이라도 잘되면 됨": v12 = v11 입구 목표 + 실기 실측 T_in(tilt 직전) · 붓는 컵 source240
@@ -64,7 +65,9 @@ sequence:
   # 3) 정리 — ★10.29 홀더 2 는 n07 학습 범위 y 에서 6.0 cm 밖 · 사용자 2번 결정으로 이 job 만 7 cm 까지 받는다(cocktail_1 머리말)
   - {id: place_pink, type: policy, name: rh_place_r, source_object: SRC_PINK, target_holder: HOLDER_2, policy_object: source240_real,
      holder_tol_m: 0.07, expect: {right_hand: EMPTY, left_hand: SHAKER, pink_placed: true}}
+  - {id: home_r_after_pink, type: trajectory, name: go_home_r, auto: true, expect: {right_hand: EMPTY, left_hand: SHAKER}}
   - {id: place_shaker, type: policy, name: rh_place_l, source_object: SHAKER, target_holder: HOLDER_0, policy_object: shaker_c_real,
      expect: {right_hand: EMPTY, left_hand: EMPTY, shaker_placed: true}}
+  - {id: home_l_after_shaker, type: trajectory, name: go_home_l, auto: true, expect: {right_hand: EMPTY, left_hand: EMPTY}}   # ★11.18 사용자: place 뒤 홈
   - {id: go_home_end, type: trajectory, name: go_home, auto: true, expect: {pose: HOME}}
   - {id: done, type: terminal, result: SUCCESS}
