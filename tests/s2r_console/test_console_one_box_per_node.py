@@ -90,7 +90,8 @@ def test_the_rh56f1_real_mission_draws_every_node_once_and_knows_every_command(r
     # ★11.05 경로 S 머리 깊이(head_depth) 상자 하나 → 24 · ★11.07 경로 M 머리 마스크(head_mask) 상자 하나 → 25 · ★11.08 경로 F 분홍 src200(grasp_fk_right)이 FP++ source200 묶음 상자 하나 → 26
     # ★11.09 경로 F 물체 버튼 — source240 주황 · 분홍 상자 하나 → 27
     # ★11.18 cap 깊이 학생(rh_cap_node_right) 상자 하나 → 28
-    assert len(d.boxes) <= 28, [b.id for b in d.boxes]
+    # ★11.18 경로 F 파워에이드(fpp_powerade_blue) 상자 하나 → 29
+    assert len(d.boxes) <= 29, [b.id for b in d.boxes]
 
 
 def test_no_wire_is_drawn_twice(real):
@@ -568,7 +569,7 @@ def test_the_fake_rh56f1_picture_has_the_real_pictures_boxes():
     titles = {b.title for b in real.boxes}
     # fake 에 없는 것: 인지(카메라 · FP++ · 런처 — 정지 컵을 fake 가 바로 낸다), 목 드라이버(fake 에는 목이 없다). fake 에만 있는 것: 막히지 않은 붓기 노드
     missing = {b.title for b in real.boxes} - {b.title for b in fake.boxes}
-    assert missing <= {f"인지 런처 · {GEN.PERCEPTION_HOST}", "카메라 (RealSense)", "목 상태 (head)", "/objects/cup_holder_1/pose (바깥)", *(f"FPP 추적 · {g}" for g in (*_active_groups(), "source240_blue", "source240_pink", "source200", "source240_orange"))}, missing   # rg3 파지 에피소드의 오른 컵 = source240_blue · ★11.08 grasp_fk = source200
+    assert missing <= {f"인지 런처 · {GEN.PERCEPTION_HOST}", "카메라 (RealSense)", "목 상태 (head)", "/objects/cup_holder_1/pose (바깥)", *(f"FPP 추적 · {g}" for g in (*_active_groups(), "source240_blue", "source240_pink", "source200", "source240_orange", "powerade_blue"))}, missing   # rg3 파지 에피소드의 오른 컵 = source240_blue · ★11.08 grasp_fk = source200
     extra = {b.title for b in fake.boxes} - titles
     # 10.13 원격 인지 실기에는 마커 노드가 없다 — fake 는 그대로 홀더 노드 상자를 그린다
     assert extra <= {"pour_fj_node · tilt 정책 (오른팔 · 왼팔)", *([W.HOLDER_TITLE] if GEN.REMOTE_PERCEPTION else [])}, extra

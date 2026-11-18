@@ -36,6 +36,7 @@ def task_of(policy_id: str) -> str:
     return 'grasping'
 #: FP++ 묶음 → (컵 모양, 정책 물체). ★11.10 사용자: source240 은 색마다 단독 묶음(물체 = 묶음 = <모양>_<색>)
 MODELS = {'source200': ('source200', 'source200_real'), 'shaker_c': ('shaker', 'shaker_c_real'),
+          'powerade_blue': ('powerade', 'source240_real'),      # ★11.18 시판 병 — 정책 물체는 source240_real 을 빌린다
           **{f'source240_{c}': ('source240', 'source240_real') for c in ('blue', 'orange', 'pink')}}
 
 
