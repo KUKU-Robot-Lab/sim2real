@@ -150,3 +150,20 @@ git diff --stat -- deploy/
 테스트는 fake status JSON, 합성 사진과 가짜 백엔드를 사용한다. planner 상태 검사, 판정 파싱, 승인 줄 형식, active/shadow 흐름, 미지원 정지, 서비스 실패, stale 판정 취소, backend HTTP 형식과 ledger/fallback을 검증한다. 마지막 diff 출력은 비어 있어야 한다.
 
 실패 코드·reason·outcome 전수 대조와 복구 허용 범위는 [FAILURE_AUDIT.md](FAILURE_AUDIT.md)에 정리했다. 금지/미지 코드는 사람 정지이며, pending 복구는 runner의 `recover:<node>:<action>` 승인 이름을 기록한 뒤 `next`로 실행한다.
+
+## 에피소드 끝난 뒤 판정 (`bench/episode_review.py`)
+
+실기 에피소드가 끝난 뒤 녹화된 카메라 bag 과 러너 기록만으로 경계 판정을 돌리고, 사람이 확인할 HTML 한 장을 만든다. ROS 노드가 아니라 로봇에는 영향이 없다.
+
+```bash
+# 1. laptop: 러너 기록 + 카메라 bag → 경계 사진과 bounds.jsonl
+python3 -m vlm_supervisor.bench.real_frames <runs> --cam <cam> --spec <미션 yaml> --out <작업 폴더>
+# 2. 작업 폴더를 server 로 복사(rsync). 코드는 server 의 이 저장소 체크아웃을 쓴다
+# 3. server: GPU0 점유 확인 → 8B 서버 기동 → score → 서버 SIGTERM (GPU0 에 큰 프로세스가 있으면 멈춘다)
+vlm_supervisor/tools/review_on_server.sh <작업 폴더>
+# 4. review.jsonl 을 laptop 작업 폴더로 가져와 페이지를 만든다
+PYTHONPATH=.:deploy/policy_control python3 -m vlm_supervisor.bench.episode_review page <작업 폴더>/review.jsonl
+# 5. <작업 폴더>/index.html 을 열어 러너·VLM 불일치 경계를 사진으로 확인하고 "표시 결과 jsonl 복사" 로 넘긴다
+```
+
+경계 판정은 경계 묶음 모든 노드의 `node_checks`(judge_short.yaml)를 슬롯 기준으로 합친다. 확정 답 하나라도 기대와 다르면 막음, 그다음 오류·low_mass 가 있으면 판정불가, 모두 기대대로면 통과다. 검사가 없거나 전 사진이 없는 경계는 묻지 않고 판정불가다. 문턱은 score 를 돌린 시점의 judge_short.yaml 값이다. `score` 는 review.jsonl 에 이미 있는 경계를 건너뛰니 중간에 끊겨도 다시 돌리면 된다(다시 물을 경계는 그 줄을 지운다). 서버 없이 이미 있는 run_bench 결과를 다시 판정하려면 `score <bounds.jsonl> --from-bench <results.jsonl> [--variant short2]` 를 쓴다(프롬프트 문자열이 같은 응답만 쓰고, 없는 질문은 오류로 남는다). 페이지의 "러너 기록" 은 러너가 스스로 남긴 결과일 뿐 정답이 아니다.

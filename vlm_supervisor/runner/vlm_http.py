@@ -56,6 +56,10 @@ class VlmHttpJudge:
                 raise ValueError(f"응답에 선택지 점수가 없다: {str(resp)[:200]}")
         except (requests.RequestException, ValueError) as exc:
             return {"error": f"{type(exc).__name__}: {exc}"}
+        return self.read_resp(resp, q)
+
+    def read_resp(self, resp: Mapping, q: str) -> dict:
+        """서버 응답 하나(/infer 의 dict) → 판정. bench results.jsonl 의 resp 를 다시 판정할 때도 쓴다(episode_review)."""
         scores = resp.get("scores") or {}
         yes, no, mass = scores.get("yes"), scores.get("no"), resp.get("choice_mass")
         thr = self.thr.get(q, DEFAULT_THR)
