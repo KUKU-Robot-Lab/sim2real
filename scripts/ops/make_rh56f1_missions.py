@@ -78,7 +78,9 @@ F_OBJECTS = {"source240_blue": "source240_real", "source240_orange": "source240_
              "source200_orange": "source200_real", "source200_pink": "source200_real", "shaker_c_orange": "shaker_c_real",
              # ★11.18 사용자 "파워에이드 600ml … 인스파이어핸드가 잡게" — 시판 병(지름 6.5 · 허리 5.3 · 높이 22 cm, bottle_mesh.py).
              #   정책 물체는 지름이 가장 가까운 source240_real(6.0 cm) — 병 전용 학습은 없다
-             "powerade_blue": "source240_real"}
+             "powerade_blue": "source240_real",
+             # ★11.19 사용자 "감귤주스도 콘솔에" — 11.12 개인 클론(bumsu/grasp-novel-objects)에서 등록한 5.8 cm 각 · 높이 18 cm 상자
+             "jeju_juice_green": "source240_real"}
 #: 팔마다 grasp_f_<팔>.yaml(손으로 쓴 원본)이 찍는 물체 — 이 물체는 원본 그대로 쓰고 변형 파일을 만들지 않는다
 F_DEFAULT = {"right": "source240_blue", "left": "shaker_c_orange"}
 F_VARIANT_HEAD = "# 이 파일은 scripts/ops/make_rh56f1_missions.py 가 grasp_f_{side}.yaml 에서 물체만 바꿔 만든다 — 손으로 고치지 말 것(--check).\n"

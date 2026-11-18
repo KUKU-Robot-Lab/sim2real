@@ -25,7 +25,8 @@ GRASP = (("1-B", "grasp_b", "1-B"), ("E", "grasp_e", "경로 E"), ("F", "grasp_f
 #:   생성기 make_rh56f1_missions.F_OBJECTS 와 같다(시험이 맞춘다). 팔 기본 물체는 grasp_f_<팔>, 나머지는 grasp_f_<물체>_<팔>
 F_OBJECTS = (("source240_blue", "source240", "파랑"), ("source240_orange", "source240", "주황"), ("source240_pink", "source240", "분홍"),
              ("source200_orange", "source200", "주황"), ("source200_pink", "source200", "분홍"), ("shaker_c_orange", "shaker", "주황"),
-             ("powerade_blue", "powerade", "파랑"))         # ★11.18 파워에이드 600 ml(정책 물체 source240_real)
+             ("powerade_blue", "powerade", "파랑"),          # ★11.18 파워에이드 600 ml(정책 물체 source240_real)
+             ("jeju_juice_green", "jeju_juice", "초록"))    # ★11.19 감귤주스(각진 병 · 정책 물체 source240_real)
 F_DEFAULT = {"right": "source240_blue", "left": "shaker_c_orange"}
 
 
