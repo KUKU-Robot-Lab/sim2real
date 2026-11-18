@@ -1672,14 +1672,19 @@ def _chain_camera_bag(name: str) -> dict:
     nice 19 · ionice best-effort 최하(idle 은 디스크가 바쁘면 쓰기를 굶겨 프레임을 버린다). 코어는 묶지 않는다 — FP++ cpuset 밖은
     실시간 예약(cpu_plan reserved, 우리 노드가 비켜 가는 코어)과 정책 코어뿐이라 둘 다 기록기 자리가 아니다(11.16 리뷰).
     setsid: ssh 가 끊길 때 tty HUP 이 기록기에 바로 가지 않게 떼고, trap 이 TERM 을 보내 마무리(metadata.yaml)하게 한다.
-    bag 은 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera(이 PC 의 팔 · 손 bag 과 같은 이름 틀), 로그 {PERC_LOG}/camera_bag_<이름>.log."""
+    bag 은 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera(이 PC 의 팔 · 손 bag 과 같은 이름 틀), 로그 {PERC_LOG}/camera_bag_<이름>.log.
+    기록기가 끝나면 같은 셸이 camera_bag_to_mp4.py 로 옆에 camera.mp4 를 만든다(nice 19 · ionice idle, 11.18)."""
     assert REMOTE_PERCEPTION, "카메라가 이 PC 면 rh56f1_record.sh 의 CAMERA 묶음이 이미 싣는다"
     rec = (f"O=logs/runs/$(date +%y%m%d)/bags/$(date +%H%M%S)_{name}; mkdir -p {PERC_LOG} $O; "
            f"setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py --encode-raw "
            f"--hz {CHAIN_VIDEO_HZ:g} -o $O/camera {' '.join(CHAIN_CAMERA_BAG_TOPICS)} > {PERC_LOG}/camera_bag_{name}.log 2>&1 & P=$!; "
-           "trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P")
+           "trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; "
+           # ★11.18 사용자 "카메라 영상 남겨줘": 정상 종료 · trap 둘 다 위 wait 뒤로 온다. setsid = 콘솔이 보내는 그룹 신호에서 떼기,
+           # || true = 변환 실패가 미션 단계 실패로 번지지 않게
+           f"setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py $O/camera "
+           f">> {PERC_LOG}/camera_bag_{name}.log 2>&1 || true")
     return _cmd(f"머리 카메라 컬러 · 정렬 깊이 bag({PERCEPTION_HOST}, {CHAIN_VIDEO_HZ:g} Hz · 기록기가 압축 · nice 19) "
-                "→ 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera", _on_perception_pc(rec), background=True)
+                "→ 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4", _on_perception_pc(rec), background=True)
 
 
 def _vision_record(name: str, objs: list, hz: float = 5.0) -> dict:

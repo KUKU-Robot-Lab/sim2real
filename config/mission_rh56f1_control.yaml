@@ -797,7 +797,7 @@ stages:
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
     → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → confirm_pink_placed → scene_pink → grasp_pink → to_tilt_start_r2 → tilt_pink
-    → place_pink → place_shaker → go_home_end'
+    → place_pink → home_r_after_pink → place_shaker → home_l_after_shaker → go_home_end'
 - id: episode_cocktail_1b
   group: policy
   lane: arm_left
@@ -809,7 +809,8 @@ stages:
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1b — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
-    → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → place_shaker → go_home_end'
+    → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → home_r_after_pink
+    → place_shaker → home_l_after_shaker → go_home_end'
 - id: episode_cocktail_1c_e1000
   group: policy
   lane: arm_left
@@ -821,7 +822,8 @@ stages:
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1c_e1000 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
-    → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → place_shaker → go_home_end'
+    → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → home_r_after_pink
+    → place_shaker → home_l_after_shaker → go_home_end'
 - id: episode_cocktail_1c_e4000
   group: policy
   lane: arm_left
@@ -834,7 +836,7 @@ stages:
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1c_e4000 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_to_tilt_start → grasp_blue
     → to_tilt_start_r1 → grasp_shaker → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink
-    → place_pink → place_shaker → go_home_end'
+    → place_pink → home_r_after_pink → place_shaker → home_l_after_shaker → go_home_end'
 - id: episode_cocktail_1c_n07b
   group: policy
   lane: arm_left
@@ -846,7 +848,7 @@ stages:
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1c_n07b — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_to_tilt_start → grasp_blue
-    → to_tilt_start_r1 → grasp_shaker → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → place_shaker → go_home_end'
+    → to_tilt_start_r1 → grasp_shaker → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → place_shaker → home_l_after_shaker → go_home_end'
 - id: episode_grasp_s_right
   group: policy
   lane: arm_right
@@ -6626,7 +6628,7 @@ run:
     - --out
     - '{runs}/cpu/episode_pick_place_f_right.csv'
     background: true
-  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
     argv:
     - ssh
     - -tt
@@ -6637,7 +6639,8 @@ run:
       -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py --encode-raw --hz
       5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
       /camera/camera/aligned_depth_to_color/camera_info > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_right.log 2>&1
-      & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P
+      & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_right.log 2>&1 || true
     background: true
   - note: 에피소드 실행기 episode_runner_right — pick_place_f_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_f_right)
     argv:
@@ -6794,7 +6797,7 @@ run:
     - --out
     - '{runs}/cpu/episode_pick_place_f_left.csv'
     background: true
-  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
     argv:
     - ssh
     - -tt
@@ -6805,7 +6808,8 @@ run:
       -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py --encode-raw --hz
       5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
       /camera/camera/aligned_depth_to_color/camera_info > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_left.log 2>&1 &
-      P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P
+      P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_left.log 2>&1 || true
     background: true
   - note: 에피소드 실행기 episode_runner_left — pick_place_f_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_f_left)
     argv:
@@ -7792,7 +7796,7 @@ run:
     - --out
     - '{runs}/cpu/episode_cocktail_1c_e1000.csv'
     background: true
-  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
     argv:
     - ssh
     - -tt
@@ -7803,7 +7807,8 @@ run:
       -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py --encode-raw --hz
       5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
       /camera/camera/aligned_depth_to_color/camera_info > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e1000.log 2>&1 &
-      P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P
+      P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e1000.log 2>&1 || true
     background: true
   - note: 에피소드 실행기 episode_runner — cocktail_1c_e1000 · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1c_e1000)
     argv:
@@ -8076,7 +8081,7 @@ run:
     - --out
     - '{runs}/cpu/episode_cocktail_1c_e4000.csv'
     background: true
-  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
     argv:
     - ssh
     - -tt
@@ -8087,7 +8092,8 @@ run:
       -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py --encode-raw --hz
       5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
       /camera/camera/aligned_depth_to_color/camera_info > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e4000.log 2>&1 &
-      P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P
+      P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e4000.log 2>&1 || true
     background: true
   - note: 에피소드 실행기 episode_runner — cocktail_1c_e4000 · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1c_e4000)
     argv:
@@ -8358,7 +8364,7 @@ run:
     - --out
     - '{runs}/cpu/episode_cocktail_1c_n07b.csv'
     background: true
-  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
     argv:
     - ssh
     - -tt
@@ -8369,7 +8375,8 @@ run:
       -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py --encode-raw --hz
       5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
       /camera/camera/aligned_depth_to_color/camera_info > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_n07b.log 2>&1 &
-      P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P
+      P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_n07b.log 2>&1 || true
     background: true
   - note: 에피소드 실행기 episode_runner — cocktail_1c_n07b · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1c_n07b)
     argv:

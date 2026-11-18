@@ -797,7 +797,7 @@ stages:
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
     → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → confirm_pink_placed → scene_pink → grasp_pink → to_tilt_start_r2 → tilt_pink
-    → place_pink → place_shaker → go_home_end'
+    → place_pink → home_r_after_pink → place_shaker → home_l_after_shaker → go_home_end'
 - id: episode_cocktail_1b
   group: policy
   lane: arm_left
@@ -809,7 +809,8 @@ stages:
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1b — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
-    → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → place_shaker → go_home_end'
+    → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → home_r_after_pink
+    → place_shaker → home_l_after_shaker → go_home_end'
 - id: episode_cocktail_1c_e1000
   group: policy
   lane: arm_left
@@ -821,7 +822,8 @@ stages:
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1c_e1000 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
-    → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → place_shaker → go_home_end'
+    → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → home_r_after_pink
+    → place_shaker → home_l_after_shaker → go_home_end'
 - id: episode_cocktail_1c_e4000
   group: policy
   lane: arm_left
@@ -834,7 +836,7 @@ stages:
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1c_e4000 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_to_tilt_start → grasp_blue
     → to_tilt_start_r1 → grasp_shaker → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink
-    → place_pink → place_shaker → go_home_end'
+    → place_pink → home_r_after_pink → place_shaker → home_l_after_shaker → go_home_end'
 - id: episode_cocktail_1c_n07b
   group: policy
   lane: arm_left
@@ -846,7 +848,7 @@ stages:
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1c_n07b — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_to_tilt_start → grasp_blue
-    → to_tilt_start_r1 → grasp_shaker → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → place_shaker → go_home_end'
+    → to_tilt_start_r1 → grasp_shaker → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → place_shaker → home_l_after_shaker → go_home_end'
 - id: episode_grasp_s_right
   group: policy
   lane: arm_right
