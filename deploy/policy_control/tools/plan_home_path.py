@@ -45,7 +45,8 @@ NEAR_ADJ_GAP = 2            # 같은 팔 사슬에서 관절 이 개수 이내 =
 ESCAPE_TOL = 0.01           # [m] 탈출 쌍이 시작보다 더 파고들어도 되는 한도(차렷 모델 자세가 이미 관통이라 단조 조건은 풀 수 없다)
 RAMP_TIME = 1.0             # [s] 구간 시작·끝 코사인 가감속 시간
 ESCAPE_RADIUS = 1.0         # [rad] 시작 자세 탈출 영역(L-inf). 차렷 손끝이 z −0.048 이라 받침판 위 +0.02 까지 올리려면 어깨·팔꿈치가 0.5 rad 안팎 돈다
-ESCAPE_EXIT_EXTRA = 0.003   # [m] 탈출 지점은 모든 탈출 쌍이 요구 여유 + 이 값을 넘은 곳(경계에서 다시 스치지 않게)
+ESCAPE_NEAR_MIN = 0.005    # [m] ★11.18 탈출 영역에서 탈출 중인 세계 물체와 다른 손 링크의 최소 여유
+ESCAPE_EXIT_EXTRA = 0.003  # [m] 탈출 지점은 모든 탈출 쌍이 요구 여유 + 이 값을 넘은 곳(경계에서 다시 스치지 않게)
 ALWAYS_SAMPLES = 300        # '항상 접촉' 판정용 무작위 자세 수
 ALWAYS_FRAC = 0.9           # 이 비율 이상에서 관통하면 구조적 겹침으로 본다
 #: ★11.11 사용자 "home으로 복귀할때 홀더의 중심을 원기둥으로 치고 거길 안지나가게": 홀더(꽂힌 컵 포함) = 고정 수직 원기둥.
@@ -184,8 +185,15 @@ class Checker:
         v = Verdict(True, dists=dists)
         zone = self.lenient and self.in_escape_zone(q)
         cleared = cleared or set()
+        # ★11.18 탈출 중인 세계 물체(홀더·컵)에는 손의 다른 링크가 ESCAPE_NEAR_MIN 까지 다가가도 된다 — 손가락이
+        # 홀더 속 컵을 감싼 채 곧게 들면 손목 받침(r_hl_base)이 컵 윗테를 1.6 cm 로 지나간다(cocktail_1c_e4000 12:26 pink)
+        # 리뷰 H: 완화는 손 링크(_hl_)에만, 그 물체의 탈출 쌍이 아직 안 풀렸을 때만(팔 링크 · 탈출 뒤는 일반 margin)
+        near_bodies = {b for k in self.escape0 if k not in cleared for b in k if self.w.is_world(b)} if zone else set()
         for k, dist in dists.items():
             req = self.required(k)
+            if (near_bodies and k not in self.escape0 and set(k) & near_bodies
+                    and any("_hl_" in b for b in k if not self.w.is_world(b))):
+                req = min(req, ESCAPE_NEAR_MIN)
             if dist < req and zone and k in self.escape0 and k not in cleared:
                 meas = self._escape_measure(k, dist)
                 slack = meas - (self.escape0[k] - ESCAPE_TOL)
@@ -386,6 +394,124 @@ def plan_rrt_two_phase(chk: Checker, start, goal, lo, hi, rng, args):
         print(f"[rrt] 조밀·순서 검사 실패 {fmt_pair(f0['pair'])} dist {f0['dist']:+.4f} s {f0['s']:.3f}")
         return None
     return path
+
+
+LIFT_MAX_M = 0.25       # [m] ★11.18 곧게 들어 올리기 상한
+LIFT_STEP_M = 0.005     # [m] IK 한 걸음
+LIFT_EXTRA_M = 0.02     # [m] 탈출 쌍이 모두 풀린 뒤 더 올리는 높이
+LIFT_KEEP_EVERY = 4     # 꼭짓점 솎기(2 cm) — 구간마다 정지-출발이라 꼭짓점이 많으면 느리다
+
+
+def lift_prefix(chk: Checker, side: str, lo: np.ndarray, hi: np.ndarray, step: float = CHECK_STEP,
+                up: float = 1.0) -> np.ndarray | None:
+    """★11.18 놓은 뒤 손이 홀더 안에서 시작하면(cocktail_1c_e4000 12:26 pink: 엄지 −4 cm) 옆으로 빼는 RRT 가
+    새끼손가락을 홀더 벽에 박아 전부 버려졌다. 손바닥을 base +z 로 곧게(회전 유지) 올려 탈출 쌍을 먼저 푼다.
+    ★11.18 홀더 원기둥(r 5 cm)이 꽂힌 컵까지 덮어 손바닥이 그 안이라 곧게만 들면 15 cm 넘게 걸리고 관절이 탈출 영역(1 rad)을
+    벗어난다. 방향 = 홀더 축에서 손목으로 가는 수평 바깥(up=0) · 바깥+위(up=1) · 위(up=None). 회전은 유지.
+    탈출 쌍에 세계 물체가 없거나, IK·한계·검사가 막히면 None."""
+    import mujoco
+    if not any(chk._touches_world(k) for k in chk.escape0):
+        return None
+    w = chk.w
+    m, d = w.model, w.data
+    bid = m.body(f"{side[0]}_al_7").id             # 손목 끝(손 모델마다 손바닥 링크 이름이 달라 팔 끝을 든다)
+    dofs = np.array([m.joint(j).dofadr[0] for j in w.moving_joints])
+    jp, jr = np.zeros((3, m.nv)), np.zeros((3, m.nv))
+
+    def pose(q):
+        d.qpos[w.moving_qadr] = q
+        mujoco.mj_kinematics(m, d)
+        mujoco.mj_comPos(m, d)
+        return d.xpos[bid].copy(), d.xmat[bid].reshape(3, 3).copy()
+
+    q = chk.start.copy()
+    p0, R0 = pose(q)
+    radius0, chk.escape_radius = chk.escape_radius, np.inf   # 곧게 빼는 결정 경로는 관절 1 rad 제한 없이 완화 규칙을 쓴다
+    try:
+        return _lift_walk(chk, side, lo, hi, step, up, q, p0, R0, pose, bid, dofs, jp, jr)
+    finally:
+        chk.escape_radius = radius0
+
+
+def _lift_walk(chk, side, lo, hi, step, up, q, p0, R0, pose, bid, dofs, jp, jr):
+    import mujoco
+    w = chk.w
+    m, d = w.model, w.data
+    worst = min((k for k in chk.escape0 if chk._touches_world(k)), key=lambda k: chk.escape0[k])
+    obj = worst[0] if w.is_world(worst[0]) else worst[1]
+    out_xy = p0[:2] - d.xpos[m.body(obj).id][:2]
+    if up is None or np.linalg.norm(out_xy) < 1e-6:
+        u = np.array([0.0, 0.0, 1.0])
+    else:
+        u = np.r_[out_xy / np.linalg.norm(out_xy), up]
+        u = u / np.linalg.norm(u)
+    pts, cleared, pending, done_at = [q.copy()], set(), set(chk.escape0), None
+    for i in range(1, int(round(LIFT_MAX_M / LIFT_STEP_M)) + 1):
+        target = p0 + u * (i * LIFT_STEP_M)
+        for _ in range(30):
+            p, R = pose(q)
+            e = np.concatenate([target - p, 0.5 * sum(np.cross(R[:, k], R0[:, k]) for k in range(3))])
+            if np.linalg.norm(e[:3]) < 1e-4 and np.linalg.norm(e[3:]) < 2e-3:
+                break
+            mujoco.mj_jacBody(m, d, jp, jr, bid)
+            J = np.vstack([jp[:, dofs], jr[:, dofs]])
+            q = np.clip(q + J.T @ np.linalg.solve(J @ J.T + 1e-4 * np.eye(6), e), lo, hi)
+        else:
+            print(f"[lift] {np.round(u, 2).tolist()} IK 수렴 실패 {i * LIFT_STEP_M * 100:.1f} cm")
+            return None
+        a = pts[-1]
+        for t in np.linspace(0.0, 1.0, max(1, int(np.ceil(np.abs(q - a).max() / step))) + 1)[1:]:
+            v = chk.check(a + (q - a) * t, cleared)
+            if not v.ok:
+                print(f"[lift] {np.round(u, 2).tolist()} {i * LIFT_STEP_M * 100:.1f} cm 에서 위반 {fmt_pair(v.worst_pair)} dist {v.worst_dist:+.4f}")
+                return None
+            cleared |= {k for k in pending if v.dists.get(k, np.inf) >= chk.required(k) + ESCAPE_EXIT_EXTRA}
+        pts.append(q.copy())
+        if done_at is None and cleared >= pending:
+            chk.lenient = False                    # 완화 없이도 모든 쌍이 여유를 넘어야 들기를 끝낸다
+            try:
+                clean = chk.check(q).ok
+            finally:
+                chk.lenient = True
+            if clean:
+                done_at = i
+        if done_at is not None and (i - done_at) * LIFT_STEP_M >= LIFT_EXTRA_M - 1e-9:
+            print(f"[lift] 손목을 {np.round(u, 2).tolist()} 로 {i * LIFT_STEP_M * 100:.1f} cm 빼서 탈출 쌍 모두 풀림")
+            return np.array(pts)
+    print(f"[lift] {np.round(u, 2).tolist()} 로 {LIFT_MAX_M * 100:.0f} cm 빼도 탈출 쌍이 안 풀림")
+    return None
+
+
+def plan_lift_then(chk: Checker, side: str, goal, lo, hi, rng, args) -> np.ndarray | None:
+    """곧게 들기 → 그 자리에서 완화 없이 직선(안 되면 RRT·지름길). 합친 경로를 조밀·순서 검사."""
+    for up in (0.0, 1.0, None):
+        lift = lift_prefix(chk, side, lo, hi, args.step, up)
+        if lift is not None:
+            break
+    else:
+        return None
+    q_e = lift[-1]
+    chk.lenient = False
+    try:
+        if not chk.check(q_e).ok:
+            return None
+        if chk.check_path(np.stack([q_e, goal]), args.step)["ok"]:
+            rest = np.stack([q_e, goal])
+        else:
+            rest = rrt_connect(chk, q_e, goal, lo + args.inset, hi - args.inset, rng, args.rrt_iters,
+                               edge_step=args.rrt_edge_step)
+            if rest is None:
+                return None
+            rest = shortcut(chk, rest, rng, edge_step=args.rrt_edge_step)
+    finally:
+        chk.lenient = True
+    thin = np.vstack([lift[:-1][::LIFT_KEEP_EVERY], lift[-1:]])
+    for pre in (thin, lift):                       # 솎은 꼭짓점이 검사를 못 넘으면 전부 쓴다
+        path = np.vstack([pre, np.asarray(rest)[1:]])
+        if chk.check_path(path, args.step)["ok"]:
+            return path
+    print("[lift] 합친 경로 조밀·순서 검사 실패")
+    return None
 
 
 # ---------------------------------------------------------------- 시간 매개화
@@ -827,6 +953,8 @@ def main(argv=None) -> int:
         method, path = "j1j4", plan_j1j4(chk, start, goal, lo, hi, args.step, vmax, args.dt, args.ramp_time)
         if path is None:
             raise SystemExit("[plan] j1·j4 구조 경로를 찾지 못했다(격자 전부 실패) — --via rrt 를 쓰거나 세계를 다시 볼 것")
+    elif (path := plan_lift_then(chk, args.side, goal, lo, hi, rng, args)) is not None:
+        method = "lift"
     else:
         method = "rrt"
         path = None

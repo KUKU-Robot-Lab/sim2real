@@ -253,6 +253,11 @@ CHAIN_VIDEO_HZ = 5.0
 CHAIN_CAMERA_BAG_TOPICS = ("/camera/camera/color/image_raw/compressed",
                            "/camera/camera/aligned_depth_to_color/image_raw/compressedDepth",
                            "/camera/camera/color/camera_info", "/camera/camera/aligned_depth_to_color/camera_info")
+#: ★11.18 사용자(보고서): FP++ live 추적(카메라 프레임, 레지스트리 물체 전부)도 실어 camera_bag_to_mp4 가 camera_bbox.mp4 에
+#   3D 상자로 그린다. FP++ 가 같은 PC · 같은 DDS 에서 내므로 랜을 안 건너고, 카메라 프레임이라 외부 파라미터 · 목 FK 없이 K 로만
+#   투영한다(base 로 바꾼 /objects/*/live_pose 는 로봇 PC 의 object_pose_node 가 낸다). 안 뜨는 물체 토픽은 기록기가 기다리기만 한다.
+from object_registry import live_input_topic, load_registry  # noqa: E402
+CHAIN_CAMERA_BAG_TOPICS += tuple(live_input_topic(n) for n in load_registry().names())
 #: ★11.04 사용자: 실기 에피소드 bag 에 머리 D435i 영상을 같이(세 번째 묶음 camera, rh56f1_record.sh CAMERA) — FP++ 자세 · 손바닥 ·
 #   rh_aglt 상태와 시간을 맞춰 겹쳐 본다(scripts/analysis/episode_video_overlay.py, shaker 를 손가락 3개로 바닥만 잡는 현상).
 #   10 Hz: 11.04 측정 JPEG q95 1280x720 약 276 KB · 정렬 깊이 PNG(level 3) 약 146 KB → 약 4.2 MB/s = 분당 약 250 MB(30 Hz 면 760 MB).

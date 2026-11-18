@@ -6638,9 +6638,14 @@ run:
     - cd rl_ws/sim2real && source scripts/vision/common.sh && O=logs/runs/$(date +%y%m%d)/bags/$(date +%H%M%S)_episode_pick_place_f_right; mkdir
       -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py --encode-raw --hz
       5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_right.log 2>&1
-      & P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
-      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_right.log 2>&1 || true
+      /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_right.log 2>&1 & P=$!;
+      trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py $O/camera
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_right.log 2>&1 || true
     background: true
   - note: 에피소드 실행기 episode_runner_right — pick_place_f_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_f_right)
     argv:
@@ -6807,9 +6812,14 @@ run:
     - cd rl_ws/sim2real && source scripts/vision/common.sh && O=logs/runs/$(date +%y%m%d)/bags/$(date +%H%M%S)_episode_pick_place_f_left; mkdir
       -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py --encode-raw --hz
       5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_left.log 2>&1 &
-      P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
-      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_left.log 2>&1 || true
+      /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_left.log 2>&1 & P=$!;
+      trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py $O/camera
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_left.log 2>&1 || true
     background: true
   - note: 에피소드 실행기 episode_runner_left — pick_place_f_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_f_left)
     argv:
@@ -7806,9 +7816,14 @@ run:
     - cd rl_ws/sim2real && source scripts/vision/common.sh && O=logs/runs/$(date +%y%m%d)/bags/$(date +%H%M%S)_episode_cocktail_1c_e1000; mkdir
       -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py --encode-raw --hz
       5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e1000.log 2>&1 &
-      P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
-      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e1000.log 2>&1 || true
+      /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e1000.log 2>&1 & P=$!;
+      trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py $O/camera
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e1000.log 2>&1 || true
     background: true
   - note: 에피소드 실행기 episode_runner — cocktail_1c_e1000 · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1c_e1000)
     argv:
@@ -8091,9 +8106,14 @@ run:
     - cd rl_ws/sim2real && source scripts/vision/common.sh && O=logs/runs/$(date +%y%m%d)/bags/$(date +%H%M%S)_episode_cocktail_1c_e4000; mkdir
       -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py --encode-raw --hz
       5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e4000.log 2>&1 &
-      P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
-      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e4000.log 2>&1 || true
+      /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e4000.log 2>&1 & P=$!;
+      trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py $O/camera
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e4000.log 2>&1 || true
     background: true
   - note: 에피소드 실행기 episode_runner — cocktail_1c_e4000 · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1c_e4000)
     argv:
@@ -8374,9 +8394,14 @@ run:
     - cd rl_ws/sim2real && source scripts/vision/common.sh && O=logs/runs/$(date +%y%m%d)/bags/$(date +%H%M%S)_episode_cocktail_1c_n07b; mkdir
       -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py --encode-raw --hz
       5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
-      /camera/camera/aligned_depth_to_color/camera_info > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_n07b.log 2>&1 &
-      P=$!; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
-      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_n07b.log 2>&1 || true
+      /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_n07b.log 2>&1 & P=$!;
+      trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py $O/camera
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_n07b.log 2>&1 || true
     background: true
   - note: 에피소드 실행기 episode_runner — cocktail_1c_n07b · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1c_n07b)
     argv:
