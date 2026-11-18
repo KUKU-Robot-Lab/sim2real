@@ -834,6 +834,8 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--rrt-iters", type=int, default=4000)
     ap.add_argument("--rrt-restarts", type=int, default=5)
+    ap.add_argument("--time-budget", type=float, default=90.0,
+                    help="RRT 재시도를 멈추는 경과 시간 [s](호출자 plan_rehome 상한 120 s, 뒤 검증 몫을 남긴다)")
     ap.add_argument("--rrt-edge-step", type=float, default=0.02,
                     help="RRT·지름길 간선 검사 간격 [rad] (탐색용 — 최종 경로는 --step 으로 다시 조밀 검사)")
     ap.add_argument("--escape-radius", type=float, default=ESCAPE_RADIUS,
@@ -956,30 +958,48 @@ def main(argv=None) -> int:
     elif (path := plan_lift_then(chk, args.side, goal, lo, hi, rng, args)) is not None:
         method = "lift"
     else:
-        method = "rrt"
-        path = None
-        for attempt in range(args.rrt_restarts):
-            path = plan_rrt_two_phase(chk, start, goal, lo + args.inset, hi - args.inset, rng, args)
-            if path is not None:
-                break
-            print(f"[rrt] 시도 {attempt + 1} 실패 — 다시")
-        if path is None:
-            raise SystemExit("[plan] RRT-Connect 실패")
-    final = chk.check_path(path, args.step)
-    _print_check(f"최종 경로({method}, 꼭짓점 {len(path)})", final)
-    if not final["ok"]:
-        raise SystemExit("[plan] 최종 경로 재검사 실패 — 쓰지 않는다")
+        method, path = "rrt", None
 
-    frames = time_parametrize(path, vmax, args.dt, args.ramp_time)
-    if len(frames) < 2:            # 시작 = 목표(이미 홈) — 길이 0 경로. 10.04 에피소드 실행기 go_home 이 홈에서 부른다
-        frames = np.vstack([np.asarray(start, float), np.asarray(goal, float)])
-    vel = np.abs(np.diff(frames, axis=0)).max() / args.dt
-    in_lim = bool(((frames >= lo - 1e-9) & (frames <= hi + 1e-9)).all())
-    frames_rep = chk.check_path(frames, args.step)
-    if not frames_rep["ok"]:
-        _print_check("시간 매개화 프레임", frames_rep)
-    if not (frames_rep["ok"] and in_lim and vel <= vmax + 1e-9):
-        raise SystemExit(f"[plan] 프레임 검사 실패 ok={frames_rep['ok']} 한계={in_lim} 최고속도={vel:.4f}")
+    def finish(path: np.ndarray, method: str):
+        """최종 경로 재검사 + 시간 매개화 프레임 검사. 통과하면 (frames, frames_rep, vel, in_lim), 아니면 None."""
+        final = chk.check_path(path, args.step)
+        _print_check(f"최종 경로({method}, 꼭짓점 {len(path)})", final)
+        if not final["ok"]:
+            print("[plan] 최종 경로 재검사 실패 — 쓰지 않는다")
+            return None
+        frames = time_parametrize(path, vmax, args.dt, args.ramp_time)
+        if len(frames) < 2:        # 시작 = 목표(이미 홈) — 길이 0 경로. 10.04 에피소드 실행기 go_home 이 홈에서 부른다
+            frames = np.vstack([np.asarray(start, float), np.asarray(goal, float)])
+        vel = np.abs(np.diff(frames, axis=0)).max() / args.dt
+        in_lim = bool(((frames >= lo - 1e-9) & (frames <= hi + 1e-9)).all())
+        frames_rep = chk.check_path(frames, args.step)
+        if not frames_rep["ok"]:
+            _print_check("시간 매개화 프레임", frames_rep)
+        if not (frames_rep["ok"] and in_lim and vel <= vmax + 1e-9):
+            print(f"[plan] 프레임 검사 실패 ok={frames_rep['ok']} 한계={in_lim} 최고속도={vel:.4f}")
+            return None
+        return frames, frames_rep, vel, in_lim
+
+    # ★11.18 실기 home_r_after_blue: RRT 경로가 꼭짓점 검사는 통과하고 프레임 검사(조밀 샘플에서 탈출 쌍이 풀렸다 다시
+    # 가까워짐)에서 떨어지자 계획 전체를 포기했다. 같은 실측 자세로 다른 시드 7개는 모두 통과 → 실패한 경로만 버리고 RRT 를 다시 뽑는다.
+    # 프레임 검사 기준은 그대로다(통과한 경로만 내보낸다).
+    done = finish(path, method) if path is not None else None
+    if done is None and args.via == "j1j4":
+        raise SystemExit("[plan] j1·j4 구조 경로가 검사에서 떨어졌다 — --via rrt 를 쓰거나 세계를 다시 볼 것")
+    attempt = 0
+    while done is None and attempt < args.rrt_restarts and time.time() - t0 < args.time_budget:
+        attempt += 1
+        method = "rrt"
+        path = plan_rrt_two_phase(chk, start, goal, lo + args.inset, hi - args.inset, rng, args)
+        if path is None:
+            print(f"[rrt] 시도 {attempt} 실패")
+            continue
+        done = finish(path, method)
+        if done is None:
+            print(f"[rrt] 시도 {attempt} 경로 검사 실패 ({time.time() - t0:.0f} s)")
+    if done is None:
+        raise SystemExit(f"[plan] 검사를 통과한 경로 없음(RRT {attempt} 회 · {time.time() - t0:.0f} s)")
+    frames, frames_rep, vel, in_lim = done
     cert = certify_pairs(chk, frames)
     worst = min(cert, key=lambda r: r["exact_lb"]) if cert else None
     out = args.out or (OUT_DEFAULT if args.goal == "contract" else
