@@ -146,9 +146,9 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                                               f"episode_grasp_b_{side}#7",
                                                               f"episode_grasp_d_{side}#8",   # ★10.20 경로 D(aglt 노드 하나)
                                                               f"episode_grasp_e_{side}#8",   # ★10.20 밤 경로 E(aglt 노드 하나, 넘김)
-                                                              f"episode_grasp_f_{side}#8",   # ★10.21 경로 F(경로 E + rcg04)
+                                                              f"episode_grasp_f_{side}#9",   # ★10.21 경로 F(경로 E + rcg04) · ★11.18 FP++ 상자 영상 bag 한 줄 뒤
                                                               f"episode_pick_place_f_{side}#9",   # ★10.22 경로 F + 놓기
-                                                              *_F_VARIANTS(side, 8),   # ★11.08 경로 F 주황 · 분홍(오른팔만)
+                                                              *_F_VARIANTS(side, 9),   # ★11.08 경로 F 주황 · 분홍(오른팔만)
                                                               # ★11.05 경로 S · ★11.07 경로 M · ★11.09 놓기 학생 v2 — 카메라가 같은 PC 일 때만(★11.11)
                                                               *((f"episode_grasp_s_{side}#11", f"episode_grasp_m_{side}#11", f"episode_place_m_{side}#13",
                                                                  *(f"episode_{n}#11" for n in GSV if n.endswith(f"_{side}")))   # ★11.11 잡기 학생 색 판

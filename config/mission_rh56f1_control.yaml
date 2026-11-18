@@ -1137,28 +1137,40 @@ run:
     - episode_grasp_e_left#8
     - episode_grasp_f_right#5
     - episode_grasp_f_right#8
+    - episode_grasp_f_right#9
     - episode_grasp_f_left#5
     - episode_grasp_f_left#8
+    - episode_grasp_f_left#9
     - episode_grasp_f_source240_orange_right#5
     - episode_grasp_f_source240_orange_right#8
+    - episode_grasp_f_source240_orange_right#9
     - episode_grasp_f_source240_pink_right#5
     - episode_grasp_f_source240_pink_right#8
+    - episode_grasp_f_source240_pink_right#9
     - episode_grasp_f_source200_orange_right#5
     - episode_grasp_f_source200_orange_right#8
+    - episode_grasp_f_source200_orange_right#9
     - episode_grasp_f_source200_pink_right#5
     - episode_grasp_f_source200_pink_right#8
+    - episode_grasp_f_source200_pink_right#9
     - episode_grasp_f_shaker_c_orange_right#5
     - episode_grasp_f_shaker_c_orange_right#8
+    - episode_grasp_f_shaker_c_orange_right#9
     - episode_grasp_f_source240_blue_left#5
     - episode_grasp_f_source240_blue_left#8
+    - episode_grasp_f_source240_blue_left#9
     - episode_grasp_f_source240_orange_left#5
     - episode_grasp_f_source240_orange_left#8
+    - episode_grasp_f_source240_orange_left#9
     - episode_grasp_f_source240_pink_left#5
     - episode_grasp_f_source240_pink_left#8
+    - episode_grasp_f_source240_pink_left#9
     - episode_grasp_f_source200_orange_left#5
     - episode_grasp_f_source200_orange_left#8
+    - episode_grasp_f_source200_orange_left#9
     - episode_grasp_f_source200_pink_left#5
     - episode_grasp_f_source200_pink_left#8
+    - episode_grasp_f_source200_pink_left#9
     - episode_pick_place_f_right#5
     - episode_pick_place_f_right#6
     - episode_pick_place_f_right#9
@@ -5046,6 +5058,27 @@ run:
     - --out
     - '{runs}/cpu/episode_grasp_f_right.csv'
     background: true
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && T=$(date +%y%m%d_%H:%M); S=$(date +%S); O=logs/runs/$(date +%y%m%d)/bags/$(date
+      +%H%M%S)_episode_grasp_f_right; mkdir -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py
+      --encode-raw --hz 5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth
+      /camera/camera/color/camera_info /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_right.log 2>&1 & P=$!;
+      set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_right.log 2>&1 || true; F="$HOME/Desktop/foundation pose camera/src240_blue_$T";
+      [ -e "$F.mp4" ] && F="$F:$S"; mkdir -p "$HOME/Desktop/foundation pose camera" && cp $O/camera_bbox.mp4 "$F.mp4" >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_right.log
+      2>&1 || true
+    background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_f_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_right)
     argv:
     - '{repo}/.venv/bin/python'
@@ -5066,6 +5099,7 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_grasp_f_right#9
     - episode_grasp_f_right#8
     - episode_grasp_f_right#7
     - episode_grasp_f_right#5
@@ -5177,6 +5211,27 @@ run:
     - --out
     - '{runs}/cpu/episode_grasp_f_left.csv'
     background: true
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && T=$(date +%y%m%d_%H:%M); S=$(date +%S); O=logs/runs/$(date +%y%m%d)/bags/$(date
+      +%H%M%S)_episode_grasp_f_left; mkdir -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py
+      --encode-raw --hz 5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth
+      /camera/camera/color/camera_info /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_left.log 2>&1 & P=$!; set
+      +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py $O/camera
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_left.log 2>&1 || true; F="$HOME/Desktop/foundation pose camera/shaker_orange_$T";
+      [ -e "$F.mp4" ] && F="$F:$S"; mkdir -p "$HOME/Desktop/foundation pose camera" && cp $O/camera_bbox.mp4 "$F.mp4" >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_left.log
+      2>&1 || true
+    background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_f_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_left)
     argv:
     - '{repo}/.venv/bin/python'
@@ -5197,6 +5252,7 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_grasp_f_left#9
     - episode_grasp_f_left#8
     - episode_grasp_f_left#7
     - episode_grasp_f_left#5
@@ -5306,6 +5362,27 @@ run:
     - --out
     - '{runs}/cpu/episode_grasp_f_source240_orange_right.csv'
     background: true
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && T=$(date +%y%m%d_%H:%M); S=$(date +%S); O=logs/runs/$(date +%y%m%d)/bags/$(date
+      +%H%M%S)_episode_grasp_f_source240_orange_right; mkdir -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3
+      scripts/nodes/camera_bag_recorder.py --encode-raw --hz 5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth
+      /camera/camera/color/camera_info /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source240_orange_right.log
+      2>&1 & P=$!; set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source240_orange_right.log 2>&1 || true; F="$HOME/Desktop/foundation
+      pose camera/src240_orange_$T"; [ -e "$F.mp4" ] && F="$F:$S"; mkdir -p "$HOME/Desktop/foundation pose camera" && cp $O/camera_bbox.mp4 "$F.mp4"
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source240_orange_right.log 2>&1 || true
+    background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_f_source240_orange_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240_orange_right)
     argv:
     - '{repo}/.venv/bin/python'
@@ -5326,6 +5403,7 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_grasp_f_source240_orange_right#9
     - episode_grasp_f_source240_orange_right#8
     - episode_grasp_f_source240_orange_right#7
     - episode_grasp_f_source240_orange_right#5
@@ -5435,6 +5513,27 @@ run:
     - --out
     - '{runs}/cpu/episode_grasp_f_source240_pink_right.csv'
     background: true
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && T=$(date +%y%m%d_%H:%M); S=$(date +%S); O=logs/runs/$(date +%y%m%d)/bags/$(date
+      +%H%M%S)_episode_grasp_f_source240_pink_right; mkdir -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3
+      scripts/nodes/camera_bag_recorder.py --encode-raw --hz 5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth
+      /camera/camera/color/camera_info /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source240_pink_right.log
+      2>&1 & P=$!; set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source240_pink_right.log 2>&1 || true; F="$HOME/Desktop/foundation
+      pose camera/src240_pink_$T"; [ -e "$F.mp4" ] && F="$F:$S"; mkdir -p "$HOME/Desktop/foundation pose camera" && cp $O/camera_bbox.mp4 "$F.mp4"
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source240_pink_right.log 2>&1 || true
+    background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_f_source240_pink_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240_pink_right)
     argv:
     - '{repo}/.venv/bin/python'
@@ -5455,6 +5554,7 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_grasp_f_source240_pink_right#9
     - episode_grasp_f_source240_pink_right#8
     - episode_grasp_f_source240_pink_right#7
     - episode_grasp_f_source240_pink_right#5
@@ -5564,6 +5664,27 @@ run:
     - --out
     - '{runs}/cpu/episode_grasp_f_source200_orange_right.csv'
     background: true
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && T=$(date +%y%m%d_%H:%M); S=$(date +%S); O=logs/runs/$(date +%y%m%d)/bags/$(date
+      +%H%M%S)_episode_grasp_f_source200_orange_right; mkdir -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3
+      scripts/nodes/camera_bag_recorder.py --encode-raw --hz 5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth
+      /camera/camera/color/camera_info /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source200_orange_right.log
+      2>&1 & P=$!; set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source200_orange_right.log 2>&1 || true; F="$HOME/Desktop/foundation
+      pose camera/src200_orange_$T"; [ -e "$F.mp4" ] && F="$F:$S"; mkdir -p "$HOME/Desktop/foundation pose camera" && cp $O/camera_bbox.mp4 "$F.mp4"
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source200_orange_right.log 2>&1 || true
+    background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_f_source200_orange_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source200_orange_right)
     argv:
     - '{repo}/.venv/bin/python'
@@ -5584,6 +5705,7 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_grasp_f_source200_orange_right#9
     - episode_grasp_f_source200_orange_right#8
     - episode_grasp_f_source200_orange_right#7
     - episode_grasp_f_source200_orange_right#5
@@ -5693,6 +5815,27 @@ run:
     - --out
     - '{runs}/cpu/episode_grasp_f_source200_pink_right.csv'
     background: true
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && T=$(date +%y%m%d_%H:%M); S=$(date +%S); O=logs/runs/$(date +%y%m%d)/bags/$(date
+      +%H%M%S)_episode_grasp_f_source200_pink_right; mkdir -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3
+      scripts/nodes/camera_bag_recorder.py --encode-raw --hz 5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth
+      /camera/camera/color/camera_info /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source200_pink_right.log
+      2>&1 & P=$!; set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source200_pink_right.log 2>&1 || true; F="$HOME/Desktop/foundation
+      pose camera/src200_pink_$T"; [ -e "$F.mp4" ] && F="$F:$S"; mkdir -p "$HOME/Desktop/foundation pose camera" && cp $O/camera_bbox.mp4 "$F.mp4"
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source200_pink_right.log 2>&1 || true
+    background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_f_source200_pink_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source200_pink_right)
     argv:
     - '{repo}/.venv/bin/python'
@@ -5713,6 +5856,7 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_grasp_f_source200_pink_right#9
     - episode_grasp_f_source200_pink_right#8
     - episode_grasp_f_source200_pink_right#7
     - episode_grasp_f_source200_pink_right#5
@@ -5822,6 +5966,27 @@ run:
     - --out
     - '{runs}/cpu/episode_grasp_f_shaker_c_orange_right.csv'
     background: true
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && T=$(date +%y%m%d_%H:%M); S=$(date +%S); O=logs/runs/$(date +%y%m%d)/bags/$(date
+      +%H%M%S)_episode_grasp_f_shaker_c_orange_right; mkdir -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3
+      scripts/nodes/camera_bag_recorder.py --encode-raw --hz 5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth
+      /camera/camera/color/camera_info /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_shaker_c_orange_right.log
+      2>&1 & P=$!; set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_shaker_c_orange_right.log 2>&1 || true; F="$HOME/Desktop/foundation
+      pose camera/shaker_orange_$T"; [ -e "$F.mp4" ] && F="$F:$S"; mkdir -p "$HOME/Desktop/foundation pose camera" && cp $O/camera_bbox.mp4 "$F.mp4"
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_shaker_c_orange_right.log 2>&1 || true
+    background: true
   - note: 에피소드 실행기 episode_runner_right — grasp_f_shaker_c_orange_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_shaker_c_orange_right)
     argv:
     - '{repo}/.venv/bin/python'
@@ -5842,6 +6007,7 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_grasp_f_shaker_c_orange_right#9
     - episode_grasp_f_shaker_c_orange_right#8
     - episode_grasp_f_shaker_c_orange_right#7
     - episode_grasp_f_shaker_c_orange_right#5
@@ -5953,6 +6119,27 @@ run:
     - --out
     - '{runs}/cpu/episode_grasp_f_source240_blue_left.csv'
     background: true
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && T=$(date +%y%m%d_%H:%M); S=$(date +%S); O=logs/runs/$(date +%y%m%d)/bags/$(date
+      +%H%M%S)_episode_grasp_f_source240_blue_left; mkdir -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3
+      scripts/nodes/camera_bag_recorder.py --encode-raw --hz 5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth
+      /camera/camera/color/camera_info /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source240_blue_left.log
+      2>&1 & P=$!; set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source240_blue_left.log 2>&1 || true; F="$HOME/Desktop/foundation
+      pose camera/src240_blue_$T"; [ -e "$F.mp4" ] && F="$F:$S"; mkdir -p "$HOME/Desktop/foundation pose camera" && cp $O/camera_bbox.mp4 "$F.mp4"
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source240_blue_left.log 2>&1 || true
+    background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_f_source240_blue_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240_blue_left)
     argv:
     - '{repo}/.venv/bin/python'
@@ -5973,6 +6160,7 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_grasp_f_source240_blue_left#9
     - episode_grasp_f_source240_blue_left#8
     - episode_grasp_f_source240_blue_left#7
     - episode_grasp_f_source240_blue_left#5
@@ -6084,6 +6272,27 @@ run:
     - --out
     - '{runs}/cpu/episode_grasp_f_source240_orange_left.csv'
     background: true
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && T=$(date +%y%m%d_%H:%M); S=$(date +%S); O=logs/runs/$(date +%y%m%d)/bags/$(date
+      +%H%M%S)_episode_grasp_f_source240_orange_left; mkdir -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3
+      scripts/nodes/camera_bag_recorder.py --encode-raw --hz 5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth
+      /camera/camera/color/camera_info /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source240_orange_left.log
+      2>&1 & P=$!; set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source240_orange_left.log 2>&1 || true; F="$HOME/Desktop/foundation
+      pose camera/src240_orange_$T"; [ -e "$F.mp4" ] && F="$F:$S"; mkdir -p "$HOME/Desktop/foundation pose camera" && cp $O/camera_bbox.mp4 "$F.mp4"
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source240_orange_left.log 2>&1 || true
+    background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_f_source240_orange_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240_orange_left)
     argv:
     - '{repo}/.venv/bin/python'
@@ -6104,6 +6313,7 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_grasp_f_source240_orange_left#9
     - episode_grasp_f_source240_orange_left#8
     - episode_grasp_f_source240_orange_left#7
     - episode_grasp_f_source240_orange_left#5
@@ -6215,6 +6425,27 @@ run:
     - --out
     - '{runs}/cpu/episode_grasp_f_source240_pink_left.csv'
     background: true
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && T=$(date +%y%m%d_%H:%M); S=$(date +%S); O=logs/runs/$(date +%y%m%d)/bags/$(date
+      +%H%M%S)_episode_grasp_f_source240_pink_left; mkdir -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3
+      scripts/nodes/camera_bag_recorder.py --encode-raw --hz 5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth
+      /camera/camera/color/camera_info /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source240_pink_left.log
+      2>&1 & P=$!; set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source240_pink_left.log 2>&1 || true; F="$HOME/Desktop/foundation
+      pose camera/src240_pink_$T"; [ -e "$F.mp4" ] && F="$F:$S"; mkdir -p "$HOME/Desktop/foundation pose camera" && cp $O/camera_bbox.mp4 "$F.mp4"
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source240_pink_left.log 2>&1 || true
+    background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_f_source240_pink_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source240_pink_left)
     argv:
     - '{repo}/.venv/bin/python'
@@ -6235,6 +6466,7 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_grasp_f_source240_pink_left#9
     - episode_grasp_f_source240_pink_left#8
     - episode_grasp_f_source240_pink_left#7
     - episode_grasp_f_source240_pink_left#5
@@ -6346,6 +6578,27 @@ run:
     - --out
     - '{runs}/cpu/episode_grasp_f_source200_orange_left.csv'
     background: true
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && T=$(date +%y%m%d_%H:%M); S=$(date +%S); O=logs/runs/$(date +%y%m%d)/bags/$(date
+      +%H%M%S)_episode_grasp_f_source200_orange_left; mkdir -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3
+      scripts/nodes/camera_bag_recorder.py --encode-raw --hz 5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth
+      /camera/camera/color/camera_info /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source200_orange_left.log
+      2>&1 & P=$!; set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source200_orange_left.log 2>&1 || true; F="$HOME/Desktop/foundation
+      pose camera/src200_orange_$T"; [ -e "$F.mp4" ] && F="$F:$S"; mkdir -p "$HOME/Desktop/foundation pose camera" && cp $O/camera_bbox.mp4 "$F.mp4"
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source200_orange_left.log 2>&1 || true
+    background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_f_source200_orange_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source200_orange_left)
     argv:
     - '{repo}/.venv/bin/python'
@@ -6366,6 +6619,7 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_grasp_f_source200_orange_left#9
     - episode_grasp_f_source200_orange_left#8
     - episode_grasp_f_source200_orange_left#7
     - episode_grasp_f_source200_orange_left#5
@@ -6477,6 +6731,27 @@ run:
     - --out
     - '{runs}/cpu/episode_grasp_f_source200_pink_left.csv'
     background: true
+  - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
+    argv:
+    - ssh
+    - -tt
+    - -o
+    - BatchMode=yes
+    - arm4090-lan
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && T=$(date +%y%m%d_%H:%M); S=$(date +%S); O=logs/runs/$(date +%y%m%d)/bags/$(date
+      +%H%M%S)_episode_grasp_f_source200_pink_left; mkdir -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3
+      scripts/nodes/camera_bag_recorder.py --encode-raw --hz 5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth
+      /camera/camera/color/camera_info /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
+      /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
+      /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
+      /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
+      /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source200_pink_left.log
+      2>&1 & P=$!; set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source200_pink_left.log 2>&1 || true; F="$HOME/Desktop/foundation
+      pose camera/src200_pink_$T"; [ -e "$F.mp4" ] && F="$F:$S"; mkdir -p "$HOME/Desktop/foundation pose camera" && cp $O/camera_bbox.mp4 "$F.mp4"
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_grasp_f_source200_pink_left.log 2>&1 || true
+    background: true
   - note: 에피소드 실행기 episode_runner_left — grasp_f_source200_pink_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:grasp_f_source200_pink_left)
     argv:
     - '{repo}/.venv/bin/python'
@@ -6497,6 +6772,7 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
+    - episode_grasp_f_source200_pink_left#9
     - episode_grasp_f_source200_pink_left#8
     - episode_grasp_f_source200_pink_left#7
     - episode_grasp_f_source200_pink_left#5
@@ -6644,8 +6920,8 @@ run:
       /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
       /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
       /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_right.log 2>&1 & P=$!;
-      trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py $O/camera
-      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_right.log 2>&1 || true
+      set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_right.log 2>&1 || true
     background: true
   - note: 에피소드 실행기 episode_runner_right — pick_place_f_right · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_f_right)
     argv:
@@ -6818,8 +7094,8 @@ run:
       /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
       /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
       /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_left.log 2>&1 & P=$!;
-      trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py $O/camera
-      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_left.log 2>&1 || true
+      set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_pick_place_f_left.log 2>&1 || true
     background: true
   - note: 에피소드 실행기 episode_runner_left — pick_place_f_left · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:pick_place_f_left)
     argv:
@@ -7822,8 +8098,8 @@ run:
       /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
       /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
       /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e1000.log 2>&1 & P=$!;
-      trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py $O/camera
-      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e1000.log 2>&1 || true
+      set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e1000.log 2>&1 || true
     background: true
   - note: 에피소드 실행기 episode_runner — cocktail_1c_e1000 · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1c_e1000)
     argv:
@@ -8112,8 +8388,8 @@ run:
       /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
       /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
       /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e4000.log 2>&1 & P=$!;
-      trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py $O/camera
-      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e4000.log 2>&1 || true
+      set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e4000.log 2>&1 || true
     background: true
   - note: 에피소드 실행기 episode_runner — cocktail_1c_e4000 · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1c_e4000)
     argv:
@@ -8400,8 +8676,8 @@ run:
       /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
       /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
       /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_n07b.log 2>&1 & P=$!;
-      trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py $O/camera
-      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_n07b.log 2>&1 || true
+      set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
+      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_n07b.log 2>&1 || true
     background: true
   - note: 에피소드 실행기 episode_runner — cocktail_1c_n07b · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1c_n07b)
     argv:

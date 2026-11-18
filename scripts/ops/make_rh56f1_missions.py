@@ -246,6 +246,13 @@ REPORT_VIDEO_HZ = {"grasp_b_right": 15.0, "grasp_b_left": 15.0}
 #   5 Hz: q95 1280x720 약 276 KB(11.04) → 약 1.4 MB/s · 분당 약 80 MB, 압축 한 장 약 2.4 ms(11.16 합성 이미지, 코어 한 개의 1.2 %)
 CHAIN_VIDEO_EPISODES = ("cocktail_1c_e4000", "cocktail_1c_e1000", "cocktail_1c_n07b", "pick_place_f_right", "pick_place_f_left")
 CHAIN_VIDEO_HZ = 5.0
+#: ★11.18 사용자 "경로 F 를 실행할 때 foundation 마커가 표시되는 화면을 같이 녹화 … 4090 바탕화면 foundation pose camera 폴더 ·
+#   이름 = 잡는 컵 + 날짜 + 시작 시각(src240_blue_261118_15:36)" — 경로 F 도 같은 기록기로 남기고 camera_bbox.mp4 를 바탕화면에 복사한다.
+#   {에피소드: 파일 이름 머리}. F_OBJECTS 에서 뽑으므로 물체(파워에이드 · 감귤주스 등)를 F_OBJECTS 에 더하면 영상도 따라온다.
+FPP_VIDEO_DIR = "$HOME/Desktop/foundation pose camera"
+FPP_VIDEO_CUP = {f"grasp_f_{s}" if o == F_DEFAULT[s] else f"grasp_f_{o}_{s}": o.replace("source", "src").replace("shaker_c_", "shaker_")
+                 for s in ("right", "left") for o in F_OBJECTS}
+CHAIN_VIDEO_EPISODES += tuple(FPP_VIDEO_CUP)
 #: ★11.17 s2r:vision(사용자 요청) "실기 회차 camera bag 에 깊이도" — FP++ 6D 자세의 시선(깊이) 축을 영상에 겹쳐 확인한다.
 #   컬러 + 정렬 깊이(기록기가 PNG level 3 로 압축) + 두 camera_info. 같은 5 Hz · 같은 기록기 · 같은 nice 19.
 #   깊이 PNG 1280x720 약 146 KB(11.04) × 5 Hz ≈ 0.7 MB/s 추가(컬러 포함 약 2.1 MB/s · 분당 약 130 MB). 압축 한 장 ≤ 27 ms
@@ -1680,14 +1687,23 @@ def _chain_camera_bag(name: str) -> dict:
     bag 은 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera(이 PC 의 팔 · 손 bag 과 같은 이름 틀), 로그 {PERC_LOG}/camera_bag_<이름>.log.
     기록기가 끝나면 같은 셸이 camera_bag_to_mp4.py 로 옆에 camera.mp4 를 만든다(nice 19 · ionice idle, 11.18)."""
     assert REMOTE_PERCEPTION, "카메라가 이 PC 면 rh56f1_record.sh 의 CAMERA 묶음이 이미 싣는다"
-    rec = (f"O=logs/runs/$(date +%y%m%d)/bags/$(date +%H%M%S)_{name}; mkdir -p {PERC_LOG} $O; "
+    cup = FPP_VIDEO_CUP.get(name.removeprefix("episode_"))
+    # ★11.18 경로 F: 상자 영상을 바탕화면에 <컵>_<날짜>_<시작 시:분>.mp4 로(같은 분에 또 돌리면 :초 를 붙여 덮어쓰지 않는다).
+    #   T 는 기록 시작 때 잡는다. FP++ 자세가 bag 에 없으면 camera_bbox.mp4 가 없어 cp 가 실패하고 로그에만 남는다
+    desk = "" if cup is None else (
+        f'; F="{FPP_VIDEO_DIR}/{cup}_$T"; [ -e "$F.mp4" ] && F="$F:$S"; mkdir -p "{FPP_VIDEO_DIR}" && '
+        f'cp $O/camera_bbox.mp4 "$F.mp4" >> {PERC_LOG}/camera_bag_{name}.log 2>&1 || true')
+    rec = (("" if cup is None else "T=$(date +%y%m%d_%H:%M); S=$(date +%S); ") +
+           f"O=logs/runs/$(date +%y%m%d)/bags/$(date +%H%M%S)_{name}; mkdir -p {PERC_LOG} $O; "
            f"setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py --encode-raw "
            f"--hz {CHAIN_VIDEO_HZ:g} -o $O/camera {' '.join(CHAIN_CAMERA_BAG_TOPICS)} > {PERC_LOG}/camera_bag_{name}.log 2>&1 & P=$!; "
-           "trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; "
+           # ★11.18 set +e: common.sh 의 set -e 아래서는 신호로 끊긴 wait(129)가 셸을 끝내 아래 변환이 한 번도 안 돌았다
+           #   (콘솔 정지 = ssh 끊김 → HUP. 11.18 12:26 · 14:12~14:21 회차에 camera.mp4 없음, sleep 대역으로 재현 · 확인)
+           "set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; "
            # ★11.18 사용자 "카메라 영상 남겨줘": 정상 종료 · trap 둘 다 위 wait 뒤로 온다. setsid = 콘솔이 보내는 그룹 신호에서 떼기,
            # || true = 변환 실패가 미션 단계 실패로 번지지 않게
            f"setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py $O/camera "
-           f">> {PERC_LOG}/camera_bag_{name}.log 2>&1 || true")
+           f">> {PERC_LOG}/camera_bag_{name}.log 2>&1 || true" + desk)
     return _cmd(f"머리 카메라 컬러 · 정렬 깊이 bag({PERCEPTION_HOST}, {CHAIN_VIDEO_HZ:g} Hz · 기록기가 압축 · nice 19) "
                 "→ 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4", _on_perception_pc(rec), background=True)
 
