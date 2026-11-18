@@ -1,4 +1,4 @@
-"""10.26 tilt 1차(tilt_traj 궤적, 잔차 0) 계획기 plan_tilt_traj.py — torch 없이 도는 부분: 60 Hz 재표본(rh_tilt env._teach_at 과
+"""10.26 tilt 1차(tilt_traj 궤적, 잔차 0) 계획기 plan_tilt_traj.py — IK(hdgp 모듈 · GPU) 없이 도는 부분: 60 Hz 재표본(rh_tilt env._teach_at 과
 같은 식), 홀더 yaml 순서, 자산 핀(ref md5 · hdgp md5 불일치면 종료 코드 3). 궤적 자체의 sim 동등성은 server 에서 확인했다
 (ref_q_r/ref_q_l 와 차이 0.0 rad, 10.26)."""
 from __future__ import annotations
