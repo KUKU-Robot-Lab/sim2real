@@ -217,7 +217,7 @@ def _cap_e2e(repo: Path, stage_ids: frozenset) -> dict | None:
 ACT_TILT_ITEM = ("act_tilt_dry", "act_tilt")
 ACT_TILT_CKPTS = ("050000", "010000")
 ACT_TILT_MAX_VEL = (0.0, 1.5)
-ACT_TILT_DEFAULT_VEL = 0.5
+ACT_TILT_DEFAULT_VEL = 1.0                     # ★11.19 사용자: act 권장 1.0 (미션 argv 기본과 같게)
 ACT_TILT_RUNS = Path(os.environ.get("ACT_TILT_RUNS", Path.home() / "rl_ws/motion_acq/il/_work/act_tilt_runs"))
 _ACT_KEYS = ("result", "error", "steps", "published", "seconds", "latency_ms", "max_target_minus_measured_rad",
              "max_image_age_s", "max_state_age_s", "max_vel",
