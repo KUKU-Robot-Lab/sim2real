@@ -167,10 +167,15 @@ def test_every_execute_flag_is_one_the_tool_takes():
                 if not spec.execute_args:
                     continue
                 # ★10.30 arm_v2: ssh 로 감싼 명령은 도구 경로가 한 원소 안의 낱말(저 PC 의 저장소 상대 경로)이다 — 같은 저장소라 여기서 읽는다
-                tool = next(t for a in spec.argv for t in a.split() if t.endswith(".py"))
-                path = Path(tool.replace("{repo}", str(REPO)))
-                if not path.is_absolute():
-                    path = REPO / path
+                tool = next(t.strip('"') for a in spec.argv for t in a.split() if t.strip('"').endswith(".py"))
+                if tool.startswith("$HOME/"):   # ★11.19 act_tilt: 다른 저장소(motion_acq) 도구 — 이 PC 에 있을 때만 읽는다
+                    path = Path.home() / tool[len("$HOME/"):]
+                    if not path.is_file():
+                        continue
+                else:
+                    path = Path(tool.replace("{repo}", str(REPO)))
+                    if not path.is_absolute():
+                        path = REPO / path
                 text = path.read_text(encoding="utf-8")
                 assert all(f'"{f}"' in text for f in spec.execute_args if f.startswith("--")), (s.id, tool)
 

@@ -442,6 +442,26 @@ stages:
   - pd_arm_left
   needs_why: 두 팔 pd 가 지금 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
   title: 'tilt 붓기 — 지금 두 팔 자세(세팅 자세, 컵을 쥔 채)에서 바로: 실측 → D4 기본 궤적 계획 · 검사(걸리면 움직이지 않음) → 두 팔 재생 → 시작 자세 복귀'
+- id: act_tilt_dry
+  group: policy
+  lane: both
+  skippable: true
+  touches_real: false
+  needs:
+  - pd_arm_right
+  - pd_arm_left
+  needs_why: 머리 카메라 · 두 팔 관절 실측을 읽어 추론만 한다 — 아무것도 발행하지 않는다
+  title: 'ACT tilt — dry run: 머리 컬러 + 팔 14 → 정책 추론만(발행 없음) · 1 초마다 요약 · summary.json'
+- id: act_tilt
+  group: policy
+  lane: both
+  skippable: true
+  touches_real: true
+  needs:
+  - pd_arm_right
+  - pd_arm_left
+  needs_why: 두 팔 pd 가 tilt 시작 자세를 붙들고 있어야(TRACKING) 정책 목표를 따른다 — 컵을 쥔 채라 여기서 engage 하지 않는다
+  title: 'ACT tilt 붓기 — tilt_now 자세에서: 정책이 두 팔 14 관절 목표를 30 Hz 로 낸다(손은 pd 가 쥔 채) · 시작 차이 · 속도 · 추종 오차 · 입력 지연이 넘으면 abort(두 팔 episode stop)'
 - id: place_fixed_blue_descend_right
   group: policy
   lane: arm_right
@@ -3046,6 +3066,28 @@ run:
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/tilt_pour.py'
+    execute_args:
+    - --execute
+  act_tilt_dry:
+  - note: ACT tilt dry run — 추론만(발행 없음) · 기록 ~/rl_ws/motion_acq/il/_work/act_tilt_runs/<시각>/
+    argv: &id002
+    - bash
+    - -lc
+    - c="$HOME/rl_ws/il_runs/act_train_tilt_35seg_1119_val3_v3090_1119_1512/checkpoints/$1/pretrained_model"; shift; exec python3 "$HOME/rl_ws/motion_acq/il/act_tilt_bridge.py"
+      --ckpt "$c" "$@"
+    - act_tilt
+    - '050000'
+    - --max-vel
+    - '0.5'
+  act_tilt:
+  - note: ★두 팔이 tilt 시작 자세(tilt_now 뒤)에서 컵을 쥐고 있는가 — 오른손 병 · 왼손 shaker · 붓는 길(테이블 위 · 몸통 앞)이 비었는가 · 머리를 움직이지 않았는가(정책 입력이 머리 카메라). 비상 정지 손이 닿는가
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: ACT tilt 붓기 — 두 팔 정책 목표 발행 → 끝에 두 팔 episode stop · 기록 ~/rl_ws/motion_acq/il/_work/act_tilt_runs/<시각>/
+    argv: *id002
     execute_args:
     - --execute
   place_fixed_blue_descend_right:

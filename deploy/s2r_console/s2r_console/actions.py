@@ -35,6 +35,40 @@ ALL_RESOURCES = frozenset({'right', 'left', 'head', 'perception', 'drivers'})
 #: ★10.19 사용자 "좌우 동시 실행": 정책 카드는 목 · 인지를 읽기만 한다(목이 움직이면 FP++ 좌표가 틀린다) — 정책끼리는 같이 쓰고,
 #  목 · 인지를 움직이는 작업(head_control · perception_refresh · cups)과만 겹친다.
 SHARED_BY_POLICIES = frozenset({'head', 'perception'})
+
+# ★11.19 ACT tilt(모방학습 붓기) — 미션 argv 는 [bash, -lc, <스크립트>, act_tilt, <ckpt>, --max-vel, <v>] (make_rh56f1_missions.py).
+#   카드가 고른 체크포인트 · 속도 상한만 바꾼다 — 목록 밖 체크포인트 · 브리지 범위 (0, 1.5] 밖 속도는 거부.
+ACT_TILT = ('act_tilt_dry', 'act_tilt')
+ACT_TILT_CKPTS = ('050000', '010000')
+ACT_TILT_MAX_VEL = (0.0, 1.5)
+
+
+def act_tilt_parameters(parameters):
+    out = {}
+    if 'ckpt' in parameters:
+        if parameters['ckpt'] not in ACT_TILT_CKPTS:
+            raise ConsoleError(f"ckpt 는 {'/'.join(ACT_TILT_CKPTS)} 중 하나", code=400)
+        out['ckpt'] = parameters['ckpt']
+    if 'max_vel' in parameters:
+        value = parameters['max_vel']
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not (
+                ACT_TILT_MAX_VEL[0] < float(value) <= ACT_TILT_MAX_VEL[1]):
+            raise ConsoleError(f'max_vel 은 ({ACT_TILT_MAX_VEL[0]:g}, {ACT_TILT_MAX_VEL[1]:g}] rad/s', code=400)
+        out['max_vel'] = float(value)
+    return out
+
+
+def act_tilt_argv(argv, parameters):
+    """브리지 명령이 아니면(fake 의 true · 확인 단계) 그대로 둔다."""
+    argv = list(argv)
+    if 'act_tilt' not in argv or not any('act_tilt_bridge.py' in a for a in argv):
+        return tuple(argv)
+    chosen = act_tilt_parameters(parameters)
+    if 'ckpt' in chosen:
+        argv[argv.index('act_tilt') + 1] = chosen['ckpt']
+    if 'max_vel' in chosen:
+        argv[argv.index('--max-vel') + 1] = f"{chosen['max_vel']:g}"
+    return tuple(argv)
 EPISODE_RUNNER = 'episode_runner'
 #: 카드 작업 id 머리 — rg3_ 정책 live(경로 A · C) · ★10.19 simplan_ sim 궤적 계획(server, 로봇 안 움직임) · simrun_ sim 궤적 재생
 CARD_PREFIXES = ('rg3_', 'simplan_', 'simrun_')
@@ -296,6 +330,8 @@ class ActionManager:
             return frozenset({'perception', 'head'})
         if action_id in ('policy_stop', 'tilt_now', 'tilt_pour', 'cap_now'):
             return frozenset(ARMS)
+        if action_id in ACT_TILT:                  # ★11.19 정책 입력이 머리 카메라 — 붓는 동안 목이 움직이면 안 된다
+            return frozenset({*ARMS, 'head'})
         if action_id.startswith(('cap_student_', 'cap_next_', 'cap_end_')):   # ★11.18 cap 학생 — 목 드라이버(tilt 82) · 깊이 노드
             return frozenset({*ARMS, 'head', 'perception'})   # 왼손이 쉐이커(리시버)를 쥐고 있다 — rehome_left 등과 겹치지 않게
         if group == 'policy':                         # live FPP input + the arm
@@ -352,6 +388,9 @@ class ActionManager:
             specs['tilt_now'] = ('tilt 시작 자세(세팅 자세)로 — 두 팔', 'control', ('tilt_now',))
         if 'tilt_pour' in known:                      # ★10.19 사용자: 세팅 자세에서 바로 tilt(컵을 쥔 채, 두 팔)
             specs['tilt_pour'] = ('tilt 붓기 — 지금 자세에서 바로(두 팔)', 'control', ('tilt_pour',))
+        for name in ACT_TILT:                         # ★11.19 ACT 정책 붓기(dry run · 실행) — 카드 UI 는 s2r:setting
+            if name in known:
+                specs[name] = (known[name].title, 'control', (name,))
         for name in known:                            # ★11.18 사용자: 고정 놓기 궤적(place_fixed_<컵>_<끝>_<팔>) — 팔 하나
             if name.startswith(('place_fixed_', 'cap_')):   # ★11.18 cap_now · cap_student_right · cap_next_right
                 specs[name] = (known[name].title, 'control', (name,))
@@ -396,8 +435,12 @@ class ActionManager:
     def describe(self, action_id, parameters=None):
         parameters = dict(parameters or {})
         tune = PTUNE.take(action_id, parameters, self.console)
-        if set(parameters) - {'object_ids', 'pan', 'tilt', 'calib_profile', 'folder', 'side', 'test', 'chain'}:
+        if set(parameters) - {'object_ids', 'pan', 'tilt', 'calib_profile', 'folder', 'side', 'test', 'chain', 'ckpt', 'max_vel'}:
             raise ConsoleError('지원하지 않는 작업 설정', code=400)
+        if {'ckpt', 'max_vel'} & set(parameters):
+            if action_id not in ACT_TILT:
+                raise ConsoleError('ckpt · max_vel 은 act_tilt 작업만 받는다', code=400)
+            act_tilt_parameters(parameters)       # 범위 밖이면 ConsoleError(400)
         parameters.update(tune)
         if 'object_ids' in parameters and (not isinstance(parameters['object_ids'], list) or
                                           any(not isinstance(value, str) for value in parameters['object_ids'])):
@@ -437,7 +480,7 @@ class ActionManager:
         if (group == 'control' and action_id not in ('perception_refresh', 'head_control', 'policy_stop', 'cap_end_right')) or group == 'policy':
             if group == 'policy':
                 sides = [control_side(action_id) if action_id.startswith(CONTROL_PREFIX) else self._card(s, action_id)['side']]
-            elif action_id in ('tilt_now', 'tilt_pour', 'cap_now') or action_id.startswith('cap_student_'):
+            elif action_id in ('tilt_now', 'tilt_pour', 'cap_now', *ACT_TILT) or action_id.startswith('cap_student_'):
                 sides = list(ARMS)
             elif action_id == 'head_sweep':          # 오른손을 카메라 앞에 두고 pd 가 붙들고 있어야 한다
                 sides = ['right']
@@ -457,6 +500,8 @@ class ActionManager:
                     reasons.append(f"{side} PD 상태 {st.get('phase')} — 고정 놓기는 그 팔 pd 가 쥔 자세를 붙들고(TRACKING) 있어야 한다")
                 elif action_id.startswith('cap_student_') and st.get('phase') != 'TRACKING':   # 왼손은 쉐이커를 쥔 채
                     reasons.append(f"{side} PD 상태 {st.get('phase')} — cap 학생은 두 팔 pd 가 cap 시작 자세를 붙들고(TRACKING) 있어야 한다")
+                elif action_id == 'act_tilt' and st.get('phase') != 'TRACKING':   # dry run 은 발행하지 않아 TRACKING 을 요구하지 않는다
+                    reasons.append(f"{side} PD 상태 {st.get('phase')} — ACT 붓기는 두 팔 pd 가 tilt 시작 자세를 붙들고(TRACKING) 있어야 한다")
                 elif action_id == 'tilt_pour' and st.get('phase') != 'TRACKING':
                     # 컵을 쥔 채라 여기서 engage 하지 않는다 — 세팅 자세를 만든 뒤 pd 가 그 자세를 붙들고 있어야 한다
                     reasons.append(f"{side} PD 상태 {st.get('phase')} — tilt 붓기는 두 팔 pd 가 지금 자세를 붙들고(TRACKING) 있어야 한다")
@@ -813,6 +858,8 @@ class ActionManager:
 
     def _transform(self, s, action_id, parameters, cmd):
         cmd = PTUNE.transform(action_id, parameters, cmd, self.console.repo)
+        if action_id in ACT_TILT:
+            cmd = replace(cmd, argv=act_tilt_argv(cmd.argv, parameters))
         if action_id in ('head_control', 'cups') and any('head_move.py' in a for a in cmd.argv) and (
                 action_id == 'head_control' or s.workspace.head_set or {'pan', 'tilt'} & set(parameters)):
             head = {**s.workspace.head, **parameters}

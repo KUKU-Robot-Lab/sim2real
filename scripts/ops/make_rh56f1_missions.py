@@ -236,6 +236,12 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
 VISION_RECORD = False
 #: ★11.18 사용자: 고정 놓기 궤적(tools/place_fixed.py) 콘솔 버튼 — 컵 → 팔 · 끝 구간(하강까지 = 쥔 채 놓기 직전 · 끝까지)
 PLACE_FIXED = (("blue", "right"), ("pink", "right"), ("shaker", "left"))
+# ★11.19 사용자(act 세션 경유): 잡기 → tilt_now → ACT 정책 붓기(act_tilt). 브리지는 motion_acq(5090 시스템 python3 + rclpy)가
+#   lerobot venv 서버를 띄우고 30 Hz 로 두 팔 14 관절 절대 목표를 /policy_control/joint_target 에 낸다(손은 pd 가 쥔 채 유지).
+#   argv 의 체크포인트 · --max-vel 은 기본값 — 콘솔 카드가 고르면 actions.py 가 바꾼다(ACT_TILT_CKPTS 밖 · 범위 밖이면 거부).
+ACT_TILT_RUN = "$HOME/rl_ws/il_runs/act_train_tilt_35seg_1119_val3_v3090_1119_1512"
+ACT_TILT_CKPTS = ("050000", "010000")
+ACT_TILT_MAX_VEL = "0.5"                              # rad/s — 브리지 기본 · 허용 (0, 1.5]
 PLACE_FIXED_UNTIL = {"descend": "하강까지(손 쥔 채 멈춤)", "all": "끝까지(놓기 → 들기)"}
 #: 인지 PC 의 노드 로그 — 저 PC 셸에서 그날 날짜로 푼다(logs/runs/<YYMMDD>/perception, scripts/run_paths.py 와 같은 틀)
 PERC_LOG = "logs/runs/$(date +%y%m%d)/perception"
@@ -857,6 +863,17 @@ def _stages(kind: str) -> list[dict]:
                "needs_why": "두 팔 pd 가 지금 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다",
                "title": "tilt 붓기 — 지금 두 팔 자세(세팅 자세, 컵을 쥔 채)에서 바로: 실측 → D4 기본 궤적 계획 · 검사(걸리면 움직이지 "
                         "않음) → 두 팔 재생 → 시작 자세 복귀"})
+    # ★11.19 ACT 붓기 — tilt_pour 와 같은 게이트(두 팔 pd TRACKING, 컵을 쥔 채라 engage 하지 않는다) · 머리 카메라를 읽는다(목 고정).
+    #   dry run 은 추론만 하고 아무것도 내지 않는다(팔이 움직이지 않음) — 실행 전 입력 · 지연 · 시작 차이 확인용
+    st.append({"id": "act_tilt_dry", "group": "policy", "lane": "both", "skippable": True, "touches_real": False,
+               "needs": ["pd_arm_right", "pd_arm_left"],
+               "needs_why": "머리 카메라 · 두 팔 관절 실측을 읽어 추론만 한다 — 아무것도 발행하지 않는다",
+               "title": "ACT tilt — dry run: 머리 컬러 + 팔 14 → 정책 추론만(발행 없음) · 1 초마다 요약 · summary.json"})
+    st.append({"id": "act_tilt", "group": "policy", "lane": "both", "skippable": True, "touches_real": real,
+               "needs": ["pd_arm_right", "pd_arm_left"],
+               "needs_why": "두 팔 pd 가 tilt 시작 자세를 붙들고 있어야(TRACKING) 정책 목표를 따른다 — 컵을 쥔 채라 여기서 engage 하지 않는다",
+               "title": "ACT tilt 붓기 — tilt_now 자세에서: 정책이 두 팔 14 관절 목표를 30 Hz 로 낸다(손은 pd 가 쥔 채) · "
+                        "시작 차이 · 속도 · 추종 오차 · 입력 지연이 넘으면 abort(두 팔 episode stop)"})
     # ★11.18 사용자: 경로 F 잡기(grasp_f_*) → control tilt_now 다음에 고정 놓기 궤적 — 컵을 쥔 채라 engage 하지 않는다(TRACKING 이어야).
     #   id 끝 = 팔(actions.py 가 그 팔 pd 를 검사 · 자원으로 잡는다)
     for cup, s in PLACE_FIXED:
@@ -1246,6 +1263,20 @@ def _run(kind: str) -> dict:
         _cmd("tilt 붓기 — 지금 자세에서 계획 · 검사(plan_tilt, 걸리면 움직이지 않음) → 두 팔 재생(replay_to_pd) · 기록 logs/runs/<날짜>/tilt/<시각>_pour"
              + (" · bag tilt_pour" if real else ""),
              ["python3", f"{PC}/tools/tilt_pour.py", *([] if real else ["--no-record"])], execute_args=["--execute"]),
+    ]
+    # $1 = 체크포인트(ACT_TILT_CKPTS) — actions.py 가 카드 선택으로 바꾼다. 실행 기록: motion_acq il/_work/act_tilt_runs/<시각>/summary.json
+    act = ["bash", "-lc", f'c="{ACT_TILT_RUN}/checkpoints/$1/pretrained_model"; shift; '
+                          'exec python3 "$HOME/rl_ws/motion_acq/il/act_tilt_bridge.py" --ckpt "$c" "$@"',
+           "act_tilt", ACT_TILT_CKPTS[0], "--max-vel", ACT_TILT_MAX_VEL] if real else ["bash", "-lc", "true"]   # fake: 브리지 없음
+    run["act_tilt_dry"] = [
+        _cmd("ACT tilt dry run — 추론만(발행 없음) · 기록 ~/rl_ws/motion_acq/il/_work/act_tilt_runs/<시각>/", act),
+    ]
+    run["act_tilt"] = [
+        _cmd("★두 팔이 tilt 시작 자세(tilt_now 뒤)에서 컵을 쥐고 있는가 — 오른손 병 · 왼손 shaker · 붓는 길(테이블 위 · 몸통 앞)이 "
+             "비었는가 · 머리를 움직이지 않았는가(정책 입력이 머리 카메라). 비상 정지 손이 닿는가" if real
+             else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
+        _cmd("ACT tilt 붓기 — 두 팔 정책 목표 발행 → 끝에 두 팔 episode stop · 기록 ~/rl_ws/motion_acq/il/_work/act_tilt_runs/<시각>/",
+             act, execute_args=["--execute"]),
     ]
     for cup, s in PLACE_FIXED:
         for until, what in PLACE_FIXED_UNTIL.items():
