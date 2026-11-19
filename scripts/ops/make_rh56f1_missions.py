@@ -239,7 +239,10 @@ PLACE_FIXED = (("blue", "right"), ("pink", "right"), ("shaker", "left"))
 # ★11.19 사용자(act 세션 경유): 잡기 → tilt_now → ACT 정책 붓기(act_tilt). 브리지는 motion_acq(5090 시스템 python3 + rclpy)가
 #   lerobot venv 서버를 띄우고 30 Hz 로 두 팔 14 관절 절대 목표를 /policy_control/joint_target 에 낸다(손은 pd 가 쥔 채 유지).
 #   argv 의 체크포인트 · --max-vel 은 기본값 — 콘솔 카드가 고르면 actions.py 가 바꾼다(ACT_TILT_CKPTS 밖 · 범위 밖이면 거부).
-ACT_TILT_RUN = "$HOME/rl_ws/il_runs/act_train_tilt_35seg_1119_val3_v3090_1119_1512"
+# ★11.19 act 세션: 목 포함 16차원 run(팔 14 + head_pan · head_tilt). md5 050000 4c7656ad… · 010000 2c2d4df3…
+#   브리지(motion_acq a98208f~)가 dataset 이름으로 16차원을 알아보고 --execute 때만 /head/target_stream 발행.
+#   --max-head-vel(기본 60 deg/s) · --max-head-start-gap(기본 10 deg) 은 브리지 기본값을 쓴다. 이전 14차원 run: …_v3090_1119_1512
+ACT_TILT_RUN = "$HOME/rl_ws/il_runs/act_train_tilt_35seg_head_1119b_val3_1119_2154"
 ACT_TILT_CKPTS = ("050000", "010000")
 ACT_TILT_MAX_VEL = "0.5"                              # rad/s — 브리지 기본 · 허용 (0, 1.5]
 PLACE_FIXED_UNTIL = {"descend": "하강까지(손 쥔 채 멈춤)", "all": "끝까지(놓기 → 들기)"}

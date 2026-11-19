@@ -3075,7 +3075,7 @@ run:
     argv: &id002
     - bash
     - -lc
-    - c="$HOME/rl_ws/il_runs/act_train_tilt_35seg_1119_val3_v3090_1119_1512/checkpoints/$1/pretrained_model"; shift; python3 "$HOME/rl_ws/motion_acq/il/act_tilt_bridge.py"
+    - c="$HOME/rl_ws/il_runs/act_train_tilt_35seg_head_1119b_val3_1119_2154/checkpoints/$1/pretrained_model"; shift; python3 "$HOME/rl_ws/motion_acq/il/act_tilt_bridge.py"
       --ckpt "$c" "$@"; rc=$?; case " $* " in *" --execute "*) echo "[act_tilt] 브리지 종료 $rc — 목을 head_home 자세로"; "python3" "{repo}/scripts/head_move.py"
       "--config" "{repo}/config/head_camset_rh56f1_h2048.yaml" "--extrinsics" "{repo}/config/global_camera_extrinsics_arm4090_live.yaml" --execute;
       h=$?; [ $rc -eq 0 ] && rc=$h;; esac; exit $rc
