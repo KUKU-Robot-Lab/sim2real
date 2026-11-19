@@ -1007,7 +1007,7 @@ function renderExperiments(s) {
   $("xp").hidden = !X;
   if (!X) return;
   const [it, key, side] = xpPick(s, X);
-  const groups = [["grasp", "파지 · 들기", "한 팔"], ["tilt", "tilt", "두 팔"]];
+  const groups = [["grasp", "파지 · 들기", "한 팔"], ["cap", "cap", "오른팔 · 깊이 학생"]];   // ★11.19 tilt 칸 제거 · cap_e2e 추가
   put("xp-list", (X.error ? `<p class="reasons bad">${esc(X.error)}</p>` : "") + groups.map(([g, title, sub]) => {
     const rows = (X.items || []).filter((i) => i.group === g).map((i) => {
       const on = !!it && i.id === it.id;
@@ -1132,6 +1132,12 @@ function xpFacts(s, it, side) {
 function xpGo(s, it, key, side, st) {
   const real = s.profile.domain_class === "real", can = holding(), clean = !(side.problems || []).length;
   const name = `${it.label} ${sideName(key)}`;
+  if (side.actions) {   // ★11.19 cap_e2e — 단계 넷을 순서대로(각각 승인 창)
+    const acts = side.actions.map((id) => (S.actions || []).find((a) => a.id === id) || { id, enabled: false, reasons: ["이 미션에 실행 작업이 없다"] })
+      .map((a) => (clean ? a : { ...a, enabled: false, reasons: [...(side.problems || []), ...(a.reasons || [])] }));   // 학생 묶음 없으면 실기 버튼 잠금
+    return `<div class="xp-go xp-steps">${acts.map(actionButton).join("")}
+      <span class="hint">${can ? "순서대로: cap_now → cap_student_right → (구간마다) cap_next_right → cap_end_right" : "먼저 조작 권한을 잡을 것"}</span></div>`;
+  }
   if (st.kind === "action") {
     const a = st.a, ok = can && !!a && a.enabled && clean;
     return `<div class="xp-go"><button class="btn ${real ? "btn-real" : "btn-primary"} xp-run" data-act="action-prepare" data-arg="${esc(side.action)}" ${ok ? "" : "disabled"}>▶ ${esc(name)} 실행</button>
@@ -1971,8 +1977,8 @@ function headModule(h, action) {
 function renderWorkspace() {
   const w = S.workspace || {};
   const actions = S.actions || [];
-  put("common-controls", actions.filter(a => a.group === "control").map(actionButton).join(""));
-  for (const group of ["setting", "control"]) put(group + "-actions", actions.filter(a => a.group === group).map(actionButton).join(""));
+  put("common-controls", actions.filter(a => a.group === "control" && !a.id.startsWith("place_fixed_")).map(actionButton).join(""));   // ★11.19 place fixed 는 튜닝 탭에서만
+  for (const group of ["setting", "control"]) put(group + "-actions", actions.filter(a => a.group === group && !a.id.startsWith("place_fixed_")).map(actionButton).join(""));
   // ★10.21 제어 모듈 에피소드(ctl_*)는 policy 탭 실험 목록이 실행한다 — 여기서 따로 버튼을 늘어놓지 않는다
   put("management", managementStatus(S.management, "setting"));
   put("management-control", managementStatus(S.management, "control"));

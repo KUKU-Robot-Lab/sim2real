@@ -148,7 +148,7 @@ const X = {items:[
   {id:'grasp_b', group:'grasp', key:'1-B', label:'1-B', summary:'1-B 접근 → 확인 → 손 쥐기 → 들기', sides:{right:{...F('right'), episode:'grasp_b_right',
     action:'ctl_grasp_b_right', confirms:1, steps:[step('move','1-B 접근','손 안 컵 자리까지'), step('confirm','확인','병이 손 앞인가')]}}},
   {id:'grasp_f', group:'grasp', key:'F', label:'경로 F', summary:'ap05 → rcg04', sides:{right:F('right'), left:F('left')}},
-  {id:'tilt_base_d', group:'tilt', key:'D', label:'tilt D', summary:'1-B 접근 → rcg03 → 이송 → tilt', when:'먼저 — 4/5 이상이면',
+  {id:'tilt_base_d', group:'cap', key:'D', label:'tilt D', summary:'1-B 접근 → rcg03 → 이송 → tilt', when:'먼저 — 4/5 이상이면',
    sides:{both:{episode:'tilt_base_d', stage:'episode_tilt_base_d', action:null, runner:'episode_runner', cups:{SRC:'source240_blue', RCV:'shaker_c_orange'},
      confirms:0, problems:['rh_aglt_l: 등록부에 rh56f1/aglt/left_rcg03 가 없다'], steps:[step('policy','rcg03','파지 · 들기',{id:'rh56f1/aglt/right_rcg03'})]}}}],
  policies:{'rh56f1/aglt/right_rcg04':{id:'rh56f1/aglt/right_rcg04', short:'rcg04', status:'candidate', ep:2800, summary:'파지 · 들기 rcg_04_nr',
@@ -169,7 +169,7 @@ vm.runInContext(`S={lease:{holder:'operator'}, session:${JSON.stringify(session)
 // 고른 것이 없으면 지금 도는 실험(경로 F 왼팔 실행기가 돈다)을 연다
 let list = el('xp-list').innerHTML, main = el('xp-main').innerHTML;
 assert.match(list, /data-act="xp-pick" data-arg="grasp_f" aria-pressed="true"/);
-assert.match(list, /파지 · 들기/); assert.match(list, /tilt<small>두 팔/);
+assert.match(list, /파지 · 들기/); assert.match(list, /cap<small>오른팔 · 깊이 학생/); assert.doesNotMatch(list, /<h2>tilt/);   // ★11.19 tilt 칸 제거 · cap 칸
 assert.match(list, /xp-dot live[^>]*>L</);                          // 경로 F 왼팔 = 실행 중
 assert.match(main, /경로 F/); assert.match(main, /rcg04/); assert.match(main, /ep 2800 · 후보/); assert.match(main, /사전 파지 자리 2 cm 안/);
 assert.match(main, /source240_blue/); assert.match(main, /\(0\.250, -0\.200\)/); assert.match(main, /확인 노드 없음/);
@@ -219,9 +219,9 @@ def test_experiments_view_reads_the_chain_from_the_episode_files():
     v = XV.view(ROOT, ids)
     assert not v.get('error')
     items = {i['id']: i for i in v['items']}
-    assert [i['key'] for i in v['items'] if i['group'] == 'grasp'] == ['1-B', 'E', 'F', 'FP', 'S', 'PM']   # ★11.11 S = 잡기 학생(색 버튼) · ★11.09 C·D 뺌, F 물체는 F 안 버튼 · ★11.11 PM = 놓기 학생(색 · 홀더 버튼)
+    assert [i['key'] for i in v['items'] if i['group'] == 'grasp'] == ['F', 'FP', 'S', 'PM']   # ★11.19 1-B · E 뺌 · ★11.11 S = 잡기 학생(색 버튼) · ★11.09 C·D 뺌, F 물체는 F 안 버튼 · ★11.11 PM = 놓기 학생(색 · 홀더 버튼)
     assert [o['object'] for o in items['grasp_f']['sides']['right']['objects']] == [o for o, _, _ in XV.F_OBJECTS]
-    assert [i['key'] for i in v['items'] if i['group'] == 'tilt'] == ['D', 'C', 'B']
+    assert [i['key'] for i in v['items'] if i['group'] == 'tilt'] == []       # ★11.19 tilt 제거
     f = items['grasp_f']['sides']['right']
     assert [(s['kind'], s['text']) for s in f['steps']] == [('policy', 'ap05'), ('handoff', '넘김'), ('policy', 'rcg04')]
     assert f['action'] == 'ctl_grasp_f_right' and f['runner'] == 'episode_runner_right' and f['cups'] == {'CUP': 'source240_blue'}
@@ -232,10 +232,9 @@ def test_experiments_view_reads_the_chain_from_the_episode_files():
     assert items['pick_place_f']['sides']['right']['steps'][-1]['text'] == 'n07'
     assert items['pick_place_f']['summary'] == 'ap05 → rcg04 → n07'           # 요약은 오른손 사슬
     assert 'grasp_c' not in items and 'grasp_d' not in items      # ★11.09 사용자 "c,d제거 필요"
-    assert items['grasp_b']['sides']['left']['confirms'] == 1
-    d = items['tilt_base_d']['sides']['both']
-    assert d['action'] is None and d['stage'] == 'episode_tilt_base_d' and d['runner'] == 'episode_runner'
-    assert items['tilt_base_d']['summary'].startswith('1-B 접근 → rcg03')
+    assert not {'grasp_b', 'grasp_e', 'tilt_base_d', 'tilt_base_c', 'tilt_base_b'} & set(items)   # ★11.19 사용자 정리
+    cap = items['cap_e2e']
+    assert cap['group'] == 'cap' and list(cap['sides']) == ['right']
     p = v['policies']['rh56f1/aglt/right_rcg04']
     assert p['short'] == 'rcg04' and p['ep'] == 2800 and p['path'] == 'deploy/policies/rh56f1/aglt/right_rcg04'
     assert XV.short_name('rh56f1/aglt/left_approach_ap05') == 'ap05'
