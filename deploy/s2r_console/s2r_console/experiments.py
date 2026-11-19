@@ -9,6 +9,8 @@
 """
 from __future__ import annotations
 
+import json
+import os
 import re
 from pathlib import Path
 
@@ -210,6 +212,48 @@ def _cap_e2e(repo: Path, stage_ids: frozenset) -> dict | None:
             "sides": {"right": side}}
 
 
+# ★11.19 act_tilt(ACT 정책 붓기) 카드 — dry run · 실행 두 작업(actions.ACT_TILT)과 카드 설정(ckpt · max_vel).
+#   값 목록 · 범위는 actions.ACT_TILT_CKPTS · ACT_TILT_MAX_VEL 과 같아야 한다(테스트가 확인). 마지막 실행 로그는 캐시하지 않는다.
+ACT_TILT_ITEM = ("act_tilt_dry", "act_tilt")
+ACT_TILT_CKPTS = ("050000", "010000")
+ACT_TILT_MAX_VEL = (0.0, 1.5)
+ACT_TILT_DEFAULT_VEL = 0.5
+ACT_TILT_RUNS = Path(os.environ.get("ACT_TILT_RUNS", Path.home() / "rl_ws/motion_acq/il/_work/act_tilt_runs"))
+_ACT_KEYS = ("result", "error", "steps", "published", "seconds", "latency_ms", "max_target_minus_measured_rad",
+             "max_image_age_s", "max_state_age_s", "max_vel")
+
+
+def _act_tilt(stage_ids: frozenset) -> dict | None:
+    if not all(i in stage_ids for i in ACT_TILT_ITEM):
+        return None
+    side = {"action": ACT_TILT_ITEM[1], "dry": ACT_TILT_ITEM[0], "runner": None, "steps": [], "problems": [],
+            "summary": "ACT 정책 붓기 — 두 팔 · 머리 카메라"}
+    return {"id": "act_tilt", "group": "act", "key": "ACT", "label": "ACT tilt", "summary": side["summary"],
+            "sides": {"both": side},
+            "act": {"dry": ACT_TILT_ITEM[0], "run": ACT_TILT_ITEM[1], "ckpts": list(ACT_TILT_CKPTS),
+                    "max_vel": list(ACT_TILT_MAX_VEL), "default_vel": ACT_TILT_DEFAULT_VEL}}
+
+
+def act_tilt_last(root: Path = None) -> dict | None:
+    """가장 최근 실행 폴더(<시각>/)의 summary.json 요약. 폴더가 없으면 None, summary.json 이 없으면 브리지가 중간에 죽은 것."""
+    root = Path(root or ACT_TILT_RUNS)
+    try:
+        runs = sorted((d for d in root.iterdir() if d.is_dir()), key=lambda d: d.name)
+    except OSError:
+        return None
+    if not runs:
+        return None
+    last = runs[-1]
+    out = {"run": last.name, "path": str(last), "count": len(runs)}
+    try:
+        data = json.loads((last / "summary.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {**out, "missing": True}
+    except (OSError, ValueError) as exc:
+        return {**out, "missing": True, "error": f"summary.json 을 읽지 못함: {exc}"}
+    return {**out, **{k: data.get(k) for k in _ACT_KEYS}} if isinstance(data, dict) else {**out, "missing": True}
+
+
 def _build(repo: Path, stage_ids: frozenset) -> dict:
     from policy_control import policy_registry as R
     entries = {e.id: e for e in R.scan(repo / "deploy" / "policies", deep=False)}
@@ -268,6 +312,9 @@ def _build(repo: Path, stage_ids: frozenset) -> dict:
     cap = _cap_e2e(repo, stage_ids)
     if cap:
         items.append(cap)
+    act = _act_tilt(stage_ids)
+    if act:
+        items.append(act)
     used = {s["id"] for it in items for side in it["sides"].values() for one in (side, *side.get("objects", ()))
             for s in one["steps"] if s["kind"] == "policy" and s.get("id")}
     policies = {pid: _policy_meta(repo, entries[pid]) for pid in sorted(used) if pid in entries}
@@ -280,6 +327,11 @@ def view(repo: Path, stage_ids) -> dict:
     files = sorted((repo / "config" / "episodes").glob("*.yaml"))
     pol = repo / "deploy" / "policies" / "rh56f1" / "aglt"
     try:
-        return TV._cached(f"xp:{hash(ids)}", files + [pol, *sorted(pol.glob("*/policy.yaml"))], lambda: _build(repo, ids))
+        out = TV._cached(f"xp:{hash(ids)}", files + [pol, *sorted(pol.glob("*/policy.yaml"))], lambda: _build(repo, ids))
+        for it in out["items"]:
+            if it.get("act"):                     # ★11.19 실행 로그는 캐시 밖(실행마다 바뀐다) — 캐시 dict 는 건드리지 않는다
+                return {**out, "items": [{**i, "act": {**i["act"], "last": act_tilt_last()}} if i is it else i
+                                         for i in out["items"]]}
+        return out
     except Exception as exc:                          # noqa: BLE001 — 표시용 집계가 상황판을 멈추지 않게
         return {"items": [], "policies": {}, "error": f"{type(exc).__name__}: {exc}"}

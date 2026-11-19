@@ -1007,7 +1007,7 @@ function renderExperiments(s) {
   $("xp").hidden = !X;
   if (!X) return;
   const [it, key, side] = xpPick(s, X);
-  const groups = [["grasp", "파지 · 들기", "한 팔"], ["cap", "cap", "오른팔 · 깊이 학생"]];   // ★11.19 tilt 칸 제거 · cap_e2e 추가
+  const groups = [["grasp", "파지 · 들기", "한 팔"], ["cap", "cap", "오른팔 · 깊이 학생"], ["act", "ACT", "두 팔 · 모방학습"]];   // ★11.19 tilt 칸 제거 · cap_e2e · act_tilt 추가
   put("xp-list", (X.error ? `<p class="reasons bad">${esc(X.error)}</p>` : "") + groups.map(([g, title, sub]) => {
     const rows = (X.items || []).filter((i) => i.group === g).map((i) => {
       const on = !!it && i.id === it.id;
@@ -1035,8 +1035,56 @@ function xpMain(s, X, it, key, side) {
   const ready = st.live ? `<div class="xp-ready live">⟳ 실행 중 — 진행 · 확인 · 정지는 아래 <b>지금 에피소드</b></div>`
     : st.ok ? `<div class="xp-ready ok">✓ 실행할 수 있다</div>`
     : `<div class="xp-ready bad"><b>✕ 지금 실행할 수 없다</b><ul>${st.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div>`;
+  if (it.act) return head + xpAct(s, it.act, st);    // 준비 상자 대신 버튼마다 이유(dry run 은 실행 게이트와 따로 열린다)
   return head + xpObjects(s, side, key) + (side.error ? `<p class="reasons bad">${esc(side.error)}</p>` : "") + xpRail(X, side, st.runner) + open
     + xpFacts(s, it, side) + ready + xpGo(s, it, key, side, st);
+}
+
+// ★11.19 act_tilt 카드(deploy 세션 요청) — [dry run](로봇 안 움직임) · [실행](실기 승인 뒤 --execute) · 체크포인트 · --max-vel · 마지막 실행 로그.
+// 설정은 승인 창 명령에 그대로 보인다(actions.act_tilt_argv 가 바꾼다 · 범위 밖은 서버가 400). 입력칸은 change 때만 저장(타이핑 중 다시 그리지 않게).
+let actDraft = {};
+const actItem = () => ((S?.session?.experiments?.items) || []).find((i) => i.act);
+function actPick(A) {
+  const ckpt = A.ckpts.includes(actDraft.ckpt) ? actDraft.ckpt : A.ckpts[0];
+  const text = actDraft.vel ?? String(A.default_vel), v = Number(text);
+  const ok = text.trim() !== "" && Number.isFinite(v) && v > A.max_vel[0] && v <= A.max_vel[1];
+  return { ckpt, text, vel: v, ok };
+}
+const ckptName = (c) => c.replace(/^0+/, "").replace(/000$/, "k");
+const actNum = (v, d = 2) => (v === null || v === undefined || v === "" ? "—" : Number.isFinite(Number(v)) ? Number(v).toFixed(d) : String(v));
+function xpAct(s, A, st) {
+  const p = actPick(A), dry = xpState(s, { action: A.dry, problems: [] });
+  const busy = st.live || dry.live, real = s.profile && s.profile.domain_class === "real";
+  const go = (id, x, cls, label, note) => {
+    const why = [...(p.ok ? [] : [`max-vel 은 (${A.max_vel[0]}, ${A.max_vel[1]}] rad/s`]), ...(busy ? ["act_tilt 가 이미 실행 중"] : []), ...x.reasons];
+    const can = x.ok && p.ok && !busy;
+    return `<div class="act-go"><button class="btn ${cls}" data-act="act-tilt" data-arg="${esc(id)}" ${can ? "" : "disabled"} title="${esc(why.join(" · "))}">${label}</button>
+      <small class="hint">${esc(note)}</small>${can || !why.length ? "" : `<small class="reasons bad">${esc(why[0])}</small>`}${actionState(x.a || {})}</div>`;
+  };
+  const seg = `<div class="seg" role="group" aria-label="체크포인트">${A.ckpts.map((c) =>
+    `<button class="seg-b${c === p.ckpt ? " on" : ""}" data-act="act-ckpt" data-arg="${esc(c)}" aria-pressed="${c === p.ckpt}">${esc(ckptName(c))}</button>`).join("")}</div>`;
+  return `<section class="act-card" aria-label="ACT tilt 설정">
+    <div class="act-row"><span class="act-k">체크포인트</span>${seg}</div>
+    <div class="act-row"><label class="act-k" for="act-vel">--max-vel</label><input id="act-vel" type="number" step="0.05" min="${A.max_vel[0]}" max="${A.max_vel[1]}"
+      data-act-vel value="${esc(p.text)}" aria-invalid="${!p.ok}"${p.ok ? "" : ` class="bad"`}><span class="hint">rad/s · (${A.max_vel[0]}, ${A.max_vel[1]}] · 기본 ${A.default_vel}</span></div>
+    <div class="act-row act-btns">${go(A.dry, dry, "btn-primary", "▶ dry run", "발행 없음 · 로봇 안 움직임")}${go(A.run, st, real ? "btn-real" : "btn-primary", "▶ 실행",
+      real ? "실기 — 양팔 pd TRACKING · 승인 뒤 --execute" : "fake — 승인 뒤 --execute")}</div>
+    ${busy ? `<div class="xp-ready live">⟳ act_tilt 실행 중 — 정지는 아래 <b>지금 에피소드</b> · 작업 목록</div>` : ""}
+    ${actLast(A.last)}</section>`;
+}
+function actLast(L) {
+  const title = `<h4 class="act-h">마지막 실행</h4>`;
+  if (!L) return `${title}<p class="hint">실행 기록 없음 (act_tilt_runs 폴더가 비었다)</p>`;
+  const where = `<dt>폴더</dt><dd class="mono">${esc(L.path)}${L.count > 1 ? ` <span class="hint">(총 ${esc(L.count)}회)</span>` : ""}</dd>`;
+  if (L.missing) return `${title}<p class="reasons bad">${esc(L.run)} — summary.json 없음: 브리지가 끝까지 돌지 못했다${L.error ? ` · ${esc(L.error)}` : ""}</p><dl class="kv">${where}</dl>`;
+  const ok = L.result === "ok", lat = L.latency_ms;
+  return `${title}<dl class="kv act-kv">
+    <dt>결과</dt><dd><span class="badge ${ok ? "ok" : "bad"}">${esc(L.result ?? "—")}</span>${L.error ? ` <span class="reasons bad">${esc(L.error)}</span>` : ""}</dd>
+    <dt>스텝</dt><dd>${esc(L.steps ?? "—")} · 발행 ${esc(L.published ?? "—")} · ${actNum(L.seconds, 1)} s</dd>
+    <dt>지연</dt><dd>${lat ? `p50 ${actNum(lat.p50, 1)} · p95 ${actNum(lat.p95, 1)} · max ${actNum(lat.max, 1)} ms` : "—"}</dd>
+    <dt>목표−측정</dt><dd>최대 ${actNum(L.max_target_minus_measured_rad, 3)} rad</dd>
+    <dt>입력 나이</dt><dd>영상 ${actNum(L.max_image_age_s, 3)} · 상태 ${actNum(L.max_state_age_s, 3)} s (최대)</dd>
+    <dt>max-vel</dt><dd>${actNum(L.max_vel)} rad/s</dd>${where}</dl>`;
 }
 
 // ★11.09 사용자 "경로 F 안에서 버튼으로 컵종류와 색깔을 선택하고, Perception Refresh를 바로 … 반복 실험" — 컵 줄 · 색 줄 · 인지 다시 찍기.
@@ -2022,6 +2070,14 @@ Object.assign(acts, {
   tab: selectTab,
   "video-retry"() { $("fpp-video").removeAttribute("src"); $("fpp-video").src = "/api/video"; $("video-status").textContent = "영상 다시 연결 중"; $("video-retry").hidden = true; },
   "action-prepare": prepareAction,
+  "act-ckpt"(c) { actDraft = { ...actDraft, ckpt: c }; render(); },
+  "act-tilt"(id) {                                  // ★11.19 고른 ckpt · max_vel 로 승인 창을 연다(범위 밖이면 버튼이 막혀 있다)
+    const A = actItem() && actItem().act;
+    if (!A) return;
+    const p = actPick(A);
+    if (!p.ok) return toast("max-vel 범위 밖", [`(${A.max_vel[0]}, ${A.max_vel[1]}] rad/s`]);
+    return prepareAction(id, { ckpt: p.ckpt, max_vel: p.vel });
+  },
   async "action-execute"() {
     if (!pendingConfirmation || executingConfirmation) return;
     const confirmation_id = pendingConfirmation;
@@ -2084,6 +2140,7 @@ document.addEventListener("click", (e) => {
   if (fn) Promise.resolve(fn(b.dataset.arg)).catch(() => {});
 });
 document.addEventListener("change", (e) => {
+  if (e.target.matches && e.target.matches("[data-act-vel]")) { actDraft = { ...actDraft, vel: e.target.value }; render(); return; }
   const side = e.target.dataset && e.target.dataset.pick;
   if (side) { pick.policies[side] = e.target.value; render(); }
 });
