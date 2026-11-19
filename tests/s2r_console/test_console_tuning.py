@@ -51,7 +51,7 @@ def test_tuning_view_reads_folders_runs_and_builds_runbook_commands(tmp_path):
     assert "for t in c;" in f1["commands"]["261109_F1off_right"]["trials"]
     f3l = next(r for r in v["sides"]["left"] if r["key"] == "F3")
     assert f3l["folders"] == ["261109_F3_left"] and f3l["new_name"] == "261109_F3_left_b"
-    assert [r["key"] for r in v["sides"]["left"]] == ["F1offSw", "F1onSw", "F2x05Sw", "F2x1Sw", "F2x2Sw",
+    assert [r["key"] for r in v["sides"]["left"]] == ["F1offSw", "F1onSw", "F2x05Sw", "F2x1Sw", "F2x2Sw", "F5Sw",
                                                       "F1off", "F3", "F4", "F1on", "F2x05", "F2x1", "F2x2"]
     sw = v["sides"]["left"][0]["commands"]["new"]["prepare"]
     assert sw.startswith("MOTION=sweep ") and "off F1 2.0 1" in sw

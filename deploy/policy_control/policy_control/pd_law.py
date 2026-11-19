@@ -379,6 +379,7 @@ class PdConfig:
     stationary_compensation: Mapping | None = None
     qd_target_diff: QdTargetDiff | None = None     # None = 꺼짐(joint_target.velocity 그대로)
     fric_ff: FricFf | None = None                  # None = 꺼짐(τ_fric 0)
+    tilt_comp: Mapping | None = None               # ★11.16 {side: TiltCompCfg} — None = 꺼짐(tilt_comp.py)
 
 
 HOME_HAND_MODES = ("contract", "keep")
@@ -388,7 +389,7 @@ _SCALARS = {"pd_hz": float, "ramp_speed": float, "watchdog_sec": float, "lead_se
             "release_zero_ticks": int, "blend_sec": float}
 _KEYS = {"side", "execute", "max_vel", "settle", "gravity", "gains", "thermal", "gripper", "hand",
          *_SCALARS}
-_OPTIONAL = {"home_hand", "hand_path_pose", "stationary_compensation", "qd_target_diff", "fric_ff"}
+_OPTIONAL = {"home_hand", "hand_path_pose", "stationary_compensation", "qd_target_diff", "fric_ff", "tilt_comp"}
 
 
 def load_pd_config(path: Path) -> PdConfig:
@@ -448,6 +449,7 @@ def _build_config(raw: Mapping) -> PdConfig:
         qd_target_diff=(None if raw.get("qd_target_diff") is None
                         else _block(QdTargetDiff, raw["qd_target_diff"], "qd_target_diff")),
         fric_ff=None if raw.get("fric_ff") is None else _fric_block(raw["fric_ff"]),
+        tilt_comp=_tilt_comp_block(raw.get("tilt_comp")),
     )
 
 
@@ -566,3 +568,15 @@ def law_cfg_from_config(config: PdConfig, contract: DeployContract, stage: str,
                     effort_cap=config.effort_cap, lower=lower, upper=upper,
                     gravity_mode=config.gravity.mode, droop_gain=gain, droop_limit=limit,
                     fric_ff=config.fric_ff)
+
+
+def _tilt_comp_block(raw) -> dict | None:
+    if raw is None:
+        return None
+    from .tilt_comp import TiltCompCfg
+    if not isinstance(raw, Mapping) or not raw or set(raw) - {"left", "right"}:
+        raise PdConfigError(f"tilt_comp: expected {{left|right: {{...}}}}, got {raw!r}")
+    try:
+        return {side: TiltCompCfg.from_mapping(block or {}) for side, block in raw.items()}
+    except ValueError as exc:
+        raise PdConfigError(str(exc)) from exc

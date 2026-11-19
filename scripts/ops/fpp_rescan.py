@@ -341,7 +341,8 @@ def _report(node, box: dict, args, spin_until) -> int:
             info = info_of.get(n, {})
             m = box["poses"].get(n)
             if m is None:
-                print(f"  {n:11s} 없음 — {why_lost.get(n) or info.get('why', 'base 자세가 안 온다(object_pose_node)')}")
+                print(f"  {n:11s} 없음 — {why_lost.get(n) or info.get('why', 'base 자세가 안 온다(object_pose_node)')}"
+                      + ("" if node.count_publishers("/head/joint_states") else " · /head/joint_states 발행자 없음(목 드라이버 없음 → head_home 다시)"))
                 continue
             p, q = m.pose.position, m.pose.orientation
             tilt = math.degrees(math.acos(max(-1.0, min(1.0, 1 - 2 * (q.x * q.x + q.y * q.y)))))

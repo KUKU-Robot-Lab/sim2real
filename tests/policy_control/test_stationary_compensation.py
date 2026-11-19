@@ -196,3 +196,24 @@ def test_friction_fit_requires_both_directions_and_improves_heldout():
     assert np.asarray(fit["fc"]) == pytest.approx([0.2] * 7)
     with pytest.raises(ValueError, match="directions"):
         sc.fit_friction(abs(v), torque, v, torque, vs=[0.01] * 7)
+
+
+def test_target_velocity_friction_pushes_along_command_even_when_measured_still():
+    c = sc.StationaryCompensator(cfg(friction_enabled=True, friction_velocity="target",
+                                     fc=[0.5] * 7, fv=[0.2] * 7, vs=[0.01] * 7))
+    tv = np.array([0.3, -0.3, 0, 0, 0, 0, 0.05])
+    r = tick(c, settled=False, target_velocity=tv)
+    exp = 0.5 * np.tanh(tv / 0.01) + 0.2 * tv
+    assert np.allclose(r.friction, exp)
+    assert r.friction[0] > 0.5 and r.friction[1] < -0.5 and r.friction[2] == 0
+
+
+def test_target_velocity_mode_requires_target_velocity():
+    c = sc.StationaryCompensator(cfg(friction_enabled=True, friction_velocity="target", fc=[0.5] * 7))
+    with pytest.raises(ValueError):
+        tick(c)
+
+
+def test_friction_velocity_mode_is_validated():
+    with pytest.raises(ValueError):
+        cfg(friction_velocity="bogus")

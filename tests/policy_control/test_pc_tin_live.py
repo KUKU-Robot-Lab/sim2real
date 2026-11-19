@@ -301,7 +301,7 @@ def test_run_planned_returns_aborted_when_stopped_during_tin(tmp_path):
     from types import SimpleNamespace
     from policy_control import episode_ros as R
     from policy_control import episode_spec as S
-    ep = S.load(Path(__file__).resolve().parents[2] / "config" / "episodes" / "cocktail_1c_e4000.yaml")
+    ep = S.load(Path(__file__).resolve().parents[2] / "config" / "episodes" / "cocktail_e2e.yaml")
 
     def measure(node, objs, t0, still, required=None):
         me.cancel.set()
@@ -415,7 +415,7 @@ def test_cocktail_place_jobs_get_the_tin_json_of_their_arm():
     from policy_control import episode_spec as E
     from policy_control.episode_ros import job_params
     from policy_control.episode_runner import EpisodeManager
-    ep = E.load(Path(__file__).resolve().parents[2] / "config/episodes/cocktail_1c_e4000.yaml")
+    ep = E.load(Path(__file__).resolve().parents[2] / "config/episodes/cocktail_e2e.yaml")
     assert ep.tin_fallback == "deploy/policy_control/config/tilt/traj_v12_240/ref/tin_fixed_1107.json"
     plans = [p for n in ep.nodes for p in EpisodeManager._plans(SimpleNamespace(ep=ep), n, SimpleNamespace(objects={}))
              if p.kind == "place"]
@@ -432,7 +432,7 @@ def test_cocktail_place_jobs_get_the_tin_json_of_their_arm():
         E.validate(dataclasses.replace(ep, tin_fallback="/tmp/tin.json"))
     with pytest.raises(E.EpisodeSpecError, match="tin_fallback .*없는.json"):            # 시작 전에 파일을 읽어 본다
         E.validate(dataclasses.replace(ep, tin_fallback="logs/없는.json"))
-    raw = __import__("yaml").safe_load((Path(__file__).resolve().parents[2] / "config/episodes/cocktail_1c_e4000.yaml").read_text())
+    raw = __import__("yaml").safe_load((Path(__file__).resolve().parents[2] / "config/episodes/cocktail_e2e.yaml").read_text())
     raw["policies"]["rh_place_r"]["attach_sorce"] = "tin_json"
     with pytest.raises(E.EpisodeSpecError, match="모르는 키"):
         E.parse(raw)
@@ -447,7 +447,7 @@ def test_place_refusal_names_the_tin_cause_and_new_episode_forgets_tin(tmp_path)
 
     from policy_control import episode_spec as E
     from policy_control.episode_runner import EpisodeManager
-    ep = E.load(Path(__file__).resolve().parents[2] / "config/episodes/cocktail_1c_e4000.yaml")
+    ep = E.load(Path(__file__).resolve().parents[2] / "config/episodes/cocktail_e2e.yaml")
     p = next(p for n in ep.nodes for p in EpisodeManager._plans(SimpleNamespace(ep=ep), n, SimpleNamespace(objects={}))
              if p.role == "rh_place_r")
     me = SimpleNamespace(ep=ep, _tin_json={}, _tin_why={"right": "[tilt_blue] T_in right 측정 실패(흔들림) · fallback 못 읽음"},
@@ -526,7 +526,7 @@ def test_tilt_traj_measures_before_planning_and_plans_with_the_run_tin(tmp_path,
     from types import SimpleNamespace
     from policy_control import episode_ros as R
     from policy_control import episode_spec as S
-    ep = S.load(Path(__file__).resolve().parents[2] / "config" / "episodes" / "cocktail_1c_e4000.yaml")
+    ep = S.load(Path(__file__).resolve().parents[2] / "config" / "episodes" / "cocktail_e2e.yaml")
     order: list = []
     d = json.loads((V12 / "ref" / "tin_fixed_1107.json").read_text())
 

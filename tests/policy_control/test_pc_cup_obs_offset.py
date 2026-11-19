@@ -167,3 +167,50 @@ def test_the_offset_is_logged_even_when_zero_and_written_with_each_grip(tmp_path
     rows = [json.loads(x) for x in (tmp_path / "grips.jsonl").read_text().splitlines()]
     assert rows[0]["cup_obs_offset_base_m"] == pytest.approx(T.tolist()) and rows[1]["cup_obs_offset_base_m"] == [0.0, 0.0, 0.0]
     assert rows[0]["palm_cup_m"] == 0.05                                    # 기존 필드 그대로
+
+
+def _argvs(x):
+    """미션 yaml 안의 모든 명령 argv(문자열 목록)."""
+    if isinstance(x, list):
+        if x and all(isinstance(a, str) for a in x):
+            yield x
+        for v in x:
+            yield from _argvs(v)
+    elif isinstance(x, dict):
+        for v in x.values():
+            yield from _argvs(v)
+
+
+def test_every_aglt_policy_node_in_every_generated_mission_gets_the_arm_offset():
+    """★11.11 사용자 "보정값은 모든 정책에 적용" — 생성된 미션의 모든 rh_aglt_node 가 팔별 공통 값을 받는다(0 으로 뜨는 길 없음)."""
+    import yaml
+    from pathlib import Path
+    from policy_control.episode_spec import CUP_OBS_OFFSET_BASE_M
+
+    repo = Path(__file__).resolve().parents[2]
+    want = {s: "cup_obs_offset_base_m:=[" + ",".join(f"{v:.4f}" for v in t) + "]" for s, t in CUP_OBS_OFFSET_BASE_M.items()}
+    for path in sorted((repo / "config").glob("mission_rh56f1_*.yaml")):
+        nodes = [a for a in _argvs(yaml.safe_load(path.read_text(encoding="utf-8")))
+                 if any(x.endswith("rh_aglt_node.py") for x in a)]
+        assert nodes, path.name
+        for a in nodes:
+            side = next(x.split(":=")[1] for x in a if x.startswith("ns:="))
+            # ★11.18 사용자 "f경로엔 일단 왼손 오프셋을 넣기" — 경로 F(순수 FP++, inhand_est off) 오른손은 오프셋 없이 뜬다
+            pure_f = "inhand_est:='off'" in a
+            expect = [] if pure_f and side != "left" else [want[side]]
+            assert [x for x in a if x.startswith("cup_obs_offset_base_m:=")] == expect, (path.name, a)
+
+
+def test_episode_values_equal_the_arm_offset_and_missing_ones_get_it():
+    import yaml
+    from pathlib import Path
+    from policy_control import episode_spec as ES
+
+    repo = Path(__file__).resolve().parents[2]
+    for path in sorted((repo / "config" / "episodes").glob("*.yaml")):
+        for role, b in ((yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("policies") or {}).items():
+            if "cup_obs_offset_base_m" in b:
+                assert tuple(b["cup_obs_offset_base_m"]) == ES.CUP_OBS_OFFSET_BASE_M[b["side"]], (path.name, role)
+    ep = ES.load(repo / "config" / "episodes" / "pick_place_f_left.yaml")      # 값을 안 적은 에피소드(11.11 노드 로그 "보정 없음")
+    assert ep.policies["rh_aglt_l"].cup_obs_offset_base_m == ES.CUP_OBS_OFFSET_BASE_M["left"]
+    assert ep.policies["rh_place_l"].cup_obs_offset_base_m is None              # place 는 넘김 묶음(카메라 틀)으로 받는다

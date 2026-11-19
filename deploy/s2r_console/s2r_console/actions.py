@@ -18,7 +18,7 @@ import yaml
 
 from .console import ConsoleError, head_driver_gone, is_head_driver
 from .console_state import STALE_S
-from .runner import StageRunner, DONE, ABORTED
+from .runner import HEAD_DRIVER, StageRunner, DONE, ABORTED
 from .supervisor import scan_processes, SupervisorError
 from . import pd_names as PD
 from . import simtraj as ST
@@ -170,6 +170,21 @@ FORCE_PREEMPT = ('rehome_', 'home_', 'return_', 'cap_end_')
 #: 강제 선점 때 콘솔 밖 잔류도 죽이는 정책·실행기 노드(PD·드라이버·카메라는 제외).
 STRAY_POLICY_NODES = ('rh_aglt_node', 'rh_place_node', 'rh_place_student_node', 'pour_fj_node', 'episode_runner',
                       'head_mask_node', 'head_depth_node', 'rh_cap_student_node')
+
+
+HEAD_TOPIC = '/head/joint_states'
+
+
+def head_missing_reason(procs, obs):
+    """★11.11 FP++ 를 내리기 전에 목 각도가 오는가 — 없으면 object_pose 가 pose 를 보류해 refresh 가 rc=1 로 끝난다. 순수.
+    감독자가 띄운 목 드라이버가 모두 죽었거나, 브리지가 세는 목 토픽이 낡았으면 이유 문자열, 아니면 None."""
+    if head_driver_gone(procs):
+        return '목 드라이버 없음 — head_home 다시'
+    rep = (obs.topics or {}).get(HEAD_TOPIC)
+    counted = rep is not None and rep.get('n') is not None and obs.topics_age_s is not None and obs.topics_age_s <= STALE_S
+    if counted and (rep.get('age_ms') is None or rep['age_ms'] > STALE_S * 1e3):
+        return f'목 관절({HEAD_TOPIC}) 수신 없음 — 목 드라이버 없음 — head_home 다시'
+    return None
 
 
 def _preempts(action_id, group):
@@ -540,7 +555,7 @@ class ActionManager:
                     reasons.append(f"pan {head['pan']} · tilt {head['tilt']} 는 {profile} 가 보정한 각도(±{tol}°)가 아니다 "
                                    "— 이 자세에서는 locate · FP++ 좌표를 쓸 수 없다")
         if action_id in ('head_control', 'head_sweep'):
-            drivers = [unit for unit in s.units.values() if any('head_joint_publisher.py' in a for a in unit.argv)]
+            drivers = [unit for unit in s.units.values() if any(HEAD_DRIVER in a for a in unit.argv)]
             if drivers and not any(s.supervisor.is_alive(unit.key) for unit in drivers):
                 reasons.append('목 드라이버가 연결되지 않았다 — setting head_home 필요')
         card = obj = policy = None
@@ -708,6 +723,15 @@ class ActionManager:
                 out[path.stem] = {'error': str(exc), 'strict': True, 'tolerance': 0.0, 'angles': []}
         return out
 
+    @staticmethod
+    def _log_tail(s, key, n=5):
+        """죽은 배경 작업 로그의 마지막 n 줄 — rc 만으로는 왜 죽었는지 안 보인다."""
+        try:
+            lines = [ln for ln in s.supervisor.tail(key, 4096).splitlines() if ln.strip()][-n:]
+        except (SupervisorError, OSError):
+            return ''
+        return ''.join(f'\n  {ln}' for ln in lines)
+
     def _job_summary(self, action_id):
         job = self._jobs.get(action_id)
         if job is None:
@@ -718,7 +742,7 @@ class ActionManager:
         """What this action left running: its background processes, and for an arm its PD phase."""
         procs = [p for p in s.supervisor.table() if p['stage'] in stages]
         alive = [p.get('note') or p['key'] for p in procs if p['alive']]
-        dead = [f"{p.get('note') or p['key']} rc={p.get('rc')}" for p in procs
+        dead = [f"{p.get('note') or p['key']} rc={p.get('rc')}" + self._log_tail(s, p['key']) for p in procs
                 if not p['alive'] and not p.get('stopped') and p.get('rc') not in (0, None) and p.get('background')]
         result = {'alive': alive, 'dead': dead}
         side = action_id.rsplit('_', 1)[-1]
@@ -778,8 +802,9 @@ class ActionManager:
         return out
 
     def _policy_targets(self, s, sides=None):
+        # ★11.11 cleanup 이 다시 띄운 목 드라이버(stage episode_*)는 정책이 아니다 — 내리면 object_pose 가 pose 를 보류한다
         targets = [p['key'] for p in s.supervisor.table() if p['alive'] and
-                   p['stage'].startswith(('policy_', 'episode_'))]
+                   p['stage'].startswith(('policy_', 'episode_')) and not is_head_driver(p)]
         # ★11.18 cap 학생 단계(cap_student_<팔>)가 띄운 학생 · 깊이 노드도 정책이다(정책 정지 · 제어 명령이 세운다)
         targets += [p['key'] for p in s.supervisor.table() if p['alive'] and
                     p['stage'].startswith('cap_student_') and not is_head_driver(p)]
@@ -1718,6 +1743,11 @@ class ActionManager:
         workspace = s.workspace
         ids = parameters.get('object_ids')
         selected = [o for o in workspace.objects if o['enabled'] and (ids is None or o['id'] in ids)]
+        with s.feed_lock:
+            obs = s.feed.observed()
+        why = head_missing_reason(s.supervisor.table(), obs)
+        if why:                    # fpp_stop 전에 — FP++ 를 내린 뒤 목이 없다는 걸 알면 인지가 통째로 빈다
+            raise ConsoleError(why)
         failures = []
         for source in ('fpp', 'locate'):
             if self._cancel_scan.is_set():

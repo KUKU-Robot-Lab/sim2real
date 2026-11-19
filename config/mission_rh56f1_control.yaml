@@ -886,7 +886,7 @@ stages:
   title: '[에피소드] cocktail_1c_e1000 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
     → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → home_r_after_pink
     → place_shaker → home_l_after_shaker → go_home_end'
-- id: episode_cocktail_1c_e4000
+- id: episode_cocktail_e2e
   group: policy
   lane: arm_left
   skippable: true
@@ -896,9 +896,9 @@ stages:
   - home_right
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
-  title: '[에피소드] cocktail_1c_e4000 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_to_tilt_start → grasp_blue
-    → to_tilt_start_r1 → grasp_shaker → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink
-    → place_pink → home_r_after_pink → place_shaker → home_l_after_shaker → go_home_end'
+  title: '[에피소드] cocktail_e2e — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_to_tilt_start → grasp_blue → to_tilt_start_r1
+    → grasp_shaker → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → home_r_after_pink
+    → mix_shaker → place_shaker → home_l_after_shaker → go_home_end'
 - id: episode_cocktail_1c_n07b
   group: policy
   lane: arm_left
@@ -1156,7 +1156,7 @@ run:
     - episode_cocktail_1#10
     - episode_cocktail_1b#10
     - episode_cocktail_1c_e1000#10
-    - episode_cocktail_1c_e4000#10
+    - episode_cocktail_e2e#10
     - episode_cocktail_1c_n07b#10
     - episode_grasp_s_right#10
     - episode_grasp_s_left#10
@@ -1263,12 +1263,12 @@ run:
     - episode_cocktail_1c_e1000#8
     - episode_cocktail_1c_e1000#11
     - episode_cocktail_1c_e1000#12
-    - episode_cocktail_1c_e4000#5
-    - episode_cocktail_1c_e4000#6
-    - episode_cocktail_1c_e4000#7
-    - episode_cocktail_1c_e4000#8
-    - episode_cocktail_1c_e4000#11
-    - episode_cocktail_1c_e4000#12
+    - episode_cocktail_e2e#5
+    - episode_cocktail_e2e#6
+    - episode_cocktail_e2e#7
+    - episode_cocktail_e2e#8
+    - episode_cocktail_e2e#11
+    - episode_cocktail_e2e#12
     - episode_cocktail_1c_n07b#5
     - episode_cocktail_1c_n07b#6
     - episode_cocktail_1c_n07b#7
@@ -8433,13 +8433,13 @@ run:
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
     - episode_cocktail_1c_e1000
-  episode_cocktail_1c_e4000:
+  episode_cocktail_e2e:
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세(config/cup_holder_poses_5090_v1.yaml)에 쓰는 홀더가 다 있는가 (읽기만)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/episode_run.py'
     - --episode
-    - config/episodes/cocktail_1c_e4000.yaml
+    - config/episodes/cocktail_e2e.yaml
     - --plan
     - --require-holders
   - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
@@ -8467,13 +8467,12 @@ run:
     - --wait
     - '300'
     - --require-all
-  - note: '★[에피소드 cocktail_1c_e4000] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고
-      저장된 자리(config/cup_holder_poses_5090_v1.yaml)에 그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점
-      0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3 · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py
-      --init config/global_camera_extrinsics_arm4090_m1117.yaml 로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17
-      마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml 로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
-      --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면 s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py
-      · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
+  - note: '★[에피소드 cocktail_e2e] 물체(SRC_BLUE, SRC_PINK, SHAKER)가 학습 배치에 서 있고 FP++ 가 잡고 있는가 · 홀더 HOLDER_0=0, HOLDER_1=1, HOLDER_2=2 위가 비었고 저장된 자리(config/cup_holder_poses_5090_v1.yaml)에
+      그대로 있는가(옮겼으면 cup_holders 단계로 다시 잰다) · 컵 자세(설정 탭 물체 좌표): 테이블 위 컵 원점 z ≈ 0.290(상판 0.205 + 원점 0.085, ±8 mm) · 기울기 < 3° · x 0.1~0.4 · |y| 0.1~0.3
+      · 오른팔 source240_blue(y < 0) · 왼팔 shaker_c_orange(y > 0) 인가(카메라를 건드렸으면 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_m1117.yaml
+      로 비교만 — config/global_camera_extrinsics_arm4090_m1117.yaml 를 --write 로 덮지 않는다(11.17 마커 값 · 학생 묶음 md5 고정). 파일로 남기려면 config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml
+      로 복사해 --out config/global_camera_extrinsics_arm4090_m1117_tablecheck.yaml --write --head-config config/head_camset_rh56f1_h2048.yaml. 바꾸려면
+      s2r:vision 의 ChArUco 재보정 logs/runs/261115/head_2048/charuco/charuco_cap.py · fit_charuco.py). 노드를 띄운 뒤에는 상황판 에피소드 패널에서 진행한다'
     argv:
     - bash
     - -lc
@@ -8665,13 +8664,13 @@ run:
       /objects/source240_blue/pose /objects/source240_pink/pose /objects/shaker_c_orange/pose /objects/source240_blue/live_pose /objects/source240_pink/live_pose
       /objects/shaker_c_orange/live_pose /objects/cup_holder_0/pose /objects/cup_holder_1/pose /objects/cup_holder_2/pose /policy_control/pd_left/applied
       /policy_control/pd_right/applied /policy_control/left/obs /policy_control/left/action /policy_control/right/obs /policy_control/right/action'
-      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_cocktail_1c_e4000
+      bash {repo}/deploy/policy_control/tools/rh56f1_record.sh start episode_cocktail_e2e
   - note: CPU 기록 — 프로세스별 코어 1 Hz → logs/runs/<날짜>/cpu(끝날 때 요약)
     argv:
     - python3
     - '{repo}/deploy/policy_control/tools/proc_cpu_record.py'
     - --out
-    - '{runs}/cpu/episode_cocktail_1c_e4000.csv'
+    - '{runs}/cpu/episode_cocktail_e2e.csv'
     background: true
   - note: 머리 카메라 컬러 · 정렬 깊이 bag(arm4090-lan, 5 Hz · 기록기가 압축 · nice 19) → 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4
     argv:
@@ -8680,25 +8679,25 @@ run:
     - -o
     - BatchMode=yes
     - arm4090-lan
-    - cd rl_ws/sim2real && source scripts/vision/common.sh && O=logs/runs/$(date +%y%m%d)/bags/$(date +%H%M%S)_episode_cocktail_1c_e4000; mkdir
-      -p logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py --encode-raw --hz
+    - cd rl_ws/sim2real && source scripts/vision/common.sh && O=logs/runs/$(date +%y%m%d)/bags/$(date +%H%M%S)_episode_cocktail_e2e; mkdir -p
+      logs/runs/$(date +%y%m%d)/perception $O; setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py --encode-raw --hz
       5 -o $O/camera /camera/camera/color/image_raw/compressed /camera/camera/aligned_depth_to_color/image_raw/compressedDepth /camera/camera/color/camera_info
       /camera/camera/aligned_depth_to_color/camera_info /perception_plus_plus/shaker_closed/live_pose /perception_plus_plus/cup_big_s100/live_pose
       /perception_plus_plus/aglt_cup_s065/live_pose /perception_plus_plus/cyl60/live_pose /perception_plus_plus/cyl60_blue/live_pose /perception_plus_plus/cyl60_pink/live_pose
       /perception_plus_plus/cup_holder/live_pose /perception_plus_plus/shaker_c_orange/live_pose /perception_plus_plus/shaker_c_blue/live_pose
       /perception_plus_plus/shaker_c_pink/live_pose /perception_plus_plus/source200_orange/live_pose /perception_plus_plus/source200_pink/live_pose
       /perception_plus_plus/source200_blue/live_pose /perception_plus_plus/source240_blue/live_pose /perception_plus_plus/source240_orange/live_pose
-      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e4000.log 2>&1 & P=$!;
-      set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py
-      $O/camera >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_1c_e4000.log 2>&1 || true
+      /perception_plus_plus/source240_pink/live_pose > logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_e2e.log 2>&1 & P=$!; set
+      +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py $O/camera
+      >> logs/runs/$(date +%y%m%d)/perception/camera_bag_episode_cocktail_e2e.log 2>&1 || true
     background: true
-  - note: 에피소드 실행기 episode_runner — cocktail_1c_e4000 · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1c_e4000)
+  - note: 에피소드 실행기 episode_runner — cocktail_e2e · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_e2e)
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
     - --ros-args
     - -p
-    - episode:=config/episodes/cocktail_1c_e4000.yaml
+    - episode:=config/episodes/cocktail_e2e.yaml
     - -p
     - robot:=rh56f1
     background: true
@@ -8710,19 +8709,19 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_cocktail_1c_e4000#12
-    - episode_cocktail_1c_e4000#11
-    - episode_cocktail_1c_e4000#10
-    - episode_cocktail_1c_e4000#8
-    - episode_cocktail_1c_e4000#7
-    - episode_cocktail_1c_e4000#6
-    - episode_cocktail_1c_e4000#5
+    - episode_cocktail_e2e#12
+    - episode_cocktail_e2e#11
+    - episode_cocktail_e2e#10
+    - episode_cocktail_e2e#8
+    - episode_cocktail_e2e#7
+    - episode_cocktail_e2e#6
+    - episode_cocktail_e2e#5
   - note: 기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손)
     argv:
     - bash
     - '{repo}/deploy/policy_control/tools/rh56f1_record.sh'
     - stop
-    - episode_cocktail_1c_e4000
+    - episode_cocktail_e2e
   episode_cocktail_1c_n07b:
   - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 고정 홀더 자세(config/cup_holder_poses_5090_v1.yaml)에 쓰는 홀더가 다 있는가 (읽기만)
     argv:

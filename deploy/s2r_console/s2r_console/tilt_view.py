@@ -114,6 +114,8 @@ def _tilt_card(node: str, d: Path) -> dict:
     rows = []
     for k, c in (chk.get("checks") or {}).items():
         label, scale, unit = TILT_LABEL.get(k, (k, 1.0, ""))
+        if c.get("skipped"):          # 자산이 제한을 두지 않은 검사(v14 mouth_xy) — 통과로 보이지 않게 이름에 표시
+            label = f"{label} — 검사 안 함(자산 제한 없음)"
         rows.append({"name": label, "value": _round(c.get("value"), scale) if scale else None, "unit": unit,
                      "limit": _round(c.get("limit"), scale) if scale else None, "ok": bool(c.get("ok"))})
     meta = chk.get("teach_meta") or {}

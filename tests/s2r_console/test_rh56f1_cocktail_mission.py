@@ -63,7 +63,7 @@ def test_the_grasp_node_starts_on_blue_with_the_topic_the_runner_uses(name):
     assert f"cup_topic:={job_params(ep, plan)['cup_topic']}" in argv     # 생성기 _live 와 실행기 live_topic 이 같은 규칙
 
 
-@pytest.mark.parametrize("name", ("cocktail_1c_e1000", "cocktail_1c_e4000"))
+@pytest.mark.parametrize("name", ("cocktail_1c_e1000", "cocktail_e2e"))
 def test_a_live_cup_place_node_starts_on_the_live_topic(name):
     """★11.03 cup_obs live 놓기 계약은 …/live_pose — …/pose 는 잡기 전 테이블 자세를 새 stamp 로 다시 낸다."""
     cmds = GEN._episode_run(name, True)

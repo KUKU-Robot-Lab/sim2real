@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """FP++ 전에 머리 자세를 카메라 캘리브 자세와 맞춘다 — 확인(기본, 읽기만) · 맞춤(--execute, 머리가 조금 움직인다).
 
-카메라 외부 파라미터(config/global_camera_extrinsics_arm4090_h2048.yaml)는 머리 자세 하나에서만 맞는 정적 스냅샷이다. 그 자세(틱)를
+카메라 외부 파라미터(config/global_camera_extrinsics_arm4090_m1117.yaml)는 머리 자세 하나에서만 맞는 정적 스냅샷이다. 그 자세(틱)를
 같은 파일의 head_pose 에 적어 두고(scripts/calib/table_cad_extrinsics.py --write --head-config), 컵 · 홀더 자세를 재기 전에
 지금 자세와 비교한다. 10.04 사용자: "fpp 진행 전에 자동으로 각도 확인하고 세팅을 제대로 맞춘 다음에 진행".
 
     python3 scripts/head_pose_check.py --config config/head_home_rh56f1_h2048.yaml \\
-        --extrinsics config/global_camera_extrinsics_arm4090_h2048.yaml    # 읽기만 — 어긋나면 rc 1
+        --extrinsics config/global_camera_extrinsics_arm4090_m1117.yaml    # 읽기만 — 어긋나면 rc 1
     python3 scripts/head_pose_check.py ... --execute                       # 어긋나면 캘리브 자세로 맞춘 뒤 다시 확인
     python3 scripts/head_pose_check.py ... --execute --home                # 미션 head_home: 멀리 있어도 그 자세로(게인 · 토크도)
 

@@ -428,6 +428,21 @@ def holder_tol_of(value) -> float:
     return tol
 
 
+#: ★11.18 정책이 보는 홀더 목표를 옮기는 양의 축별 상한(m) — 오타로 컵을 엉뚱한 데 놓지 않게
+HOLDER_OFFSET_MAX_M = 0.03
+
+
+def holder_offset_of(value) -> np.ndarray:
+    """holder_offset_base_m(base m, 3 실수) 검사 — 정수 0 이 섞여도 실수로. 축마다 |값| ≤ HOLDER_OFFSET_MAX_M, 아니면 RhPlaceError."""
+    try:
+        off = np.asarray([float(v) for v in value], float)
+    except (TypeError, ValueError) as exc:
+        raise RhPlaceError(f"holder_offset_base_m {value!r} 는 m 단위 수 3개여야 한다") from exc
+    if off.shape != (3,) or not np.all(np.isfinite(off)) or np.any(np.abs(off) > HOLDER_OFFSET_MAX_M):
+        raise RhPlaceError(f"holder_offset_base_m {off.tolist()} 는 유한한 수 3개, 축마다 |값| ≤ {HOLDER_OFFSET_MAX_M} m")
+    return off
+
+
 def holder_refusals(c: PlaceContract, holder_pos: Sequence[float], tol_m: float) -> tuple[list, dict]:
     """실물 홀더 원점이 학습 목표 홀더 범위에서 tol_m 넘게 밖이면 거부 이유. (이유, 축별 밖으로 나간 양 m)."""
     if not c.holder_range:

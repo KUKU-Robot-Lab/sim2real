@@ -148,7 +148,8 @@ def _steps(ep) -> list[dict]:
                             {**one, "kind": "script", "text": "스크립트 쥐기", "sub": "닫기 → 10 cm 들기 → 3 s 유지"}]
                 else:
                     sub = "놓기 · 손 빼기" if b.kind == "place" else "파지 · 들기"     # ★10.22 경로 F + 놓기(n05)
-                    out.append({**one, "kind": "policy", "id": b.policy, "text": short_name(b.policy), "sub": sub})
+                    pid = b.student or b.policy             # ★11.11 학생 묶음이 있으면 노드가 도는 것은 학생(policy 는 계약)
+                    out.append({**one, "kind": "policy", "id": pid, "text": short_name(pid), "sub": sub})
     return out
 
 
@@ -182,6 +183,22 @@ def _policy_meta(repo: Path, e) -> dict:
             "ep": int(ep.group(1)) if ep else None, "summary": str(card.get("summary", "")), "eval": str(card.get("eval", "")),
             "checkpoint": e.checkpoint, "contract": e.contract, "issues": list(e.issues),
             "path": str(Path(e.path).relative_to(repo)) if Path(e.path).is_relative_to(repo) else str(e.path)}
+
+
+def _student_meta(repo: Path, pid: str) -> dict | None:
+    """★11.11 학생 묶음(deploy/policies/<id>/student.yaml)은 등록부에 없다 — 상세 칸에 학생 ckpt 를 보인다. 없으면 None."""
+    import yaml
+
+    d = repo / "deploy" / "policies" / pid
+    try:
+        card = yaml.safe_load((d / "student.yaml").read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return None
+    ckpt = card.get("ckpt") or {}
+    return {"id": pid, "short": short_name(pid), "side": str(card.get("side", "")), "status": "학생",
+            "ep": ckpt.get("it"), "summary": str(card.get("kind", "")), "eval": "",
+            "checkpoint": f"{ckpt.get('path', '')} · md5 {ckpt.get('md5', '?')}", "contract": "", "issues": [],
+            "path": str(d.relative_to(repo)), "card": "student.yaml"}
 
 
 #: ★11.19 cap e2e = 미션 단계 넷(관리 작업, 오른팔). 순서 = 화면 버튼 순서. 에피소드 파일이 아니라 cap 학생 노드가 구간을 돈다.
@@ -318,7 +335,8 @@ def _build(repo: Path, stage_ids: frozenset) -> dict:
         items.append(act)
     used = {s["id"] for it in items for side in it["sides"].values() for one in (side, *side.get("objects", ()))
             for s in one["steps"] if s["kind"] == "policy" and s.get("id")}
-    policies = {pid: _policy_meta(repo, entries[pid]) for pid in sorted(used) if pid in entries}
+    policies = {pid: _policy_meta(repo, entries[pid]) if pid in entries else _student_meta(repo, pid) for pid in sorted(used)}
+    policies = {k: v for k, v in policies.items() if v is not None}
     return {"items": items, "policies": policies}
 
 
@@ -328,7 +346,8 @@ def view(repo: Path, stage_ids) -> dict:
     files = sorted((repo / "config" / "episodes").glob("*.yaml"))
     pol = repo / "deploy" / "policies" / "rh56f1" / "aglt"
     try:
-        out = TV._cached(f"xp:{hash(ids)}", files + [pol, *sorted(pol.glob("*/policy.yaml"))], lambda: _build(repo, ids))
+        cap = repo / "deploy" / "policies" / CAP_STUDENT / "student.yaml"
+        out = TV._cached(f"xp:{hash(ids)}", files + [pol, *sorted(pol.glob("*/policy.yaml")), cap], lambda: _build(repo, ids))
         for it in out["items"]:
             if it.get("act"):                     # ★11.19 실행 로그는 캐시 밖(실행마다 바뀐다) — 캐시 dict 는 건드리지 않는다
                 return {**out, "items": [{**i, "act": {**i["act"], "last": act_tilt_last()}} if i is it else i

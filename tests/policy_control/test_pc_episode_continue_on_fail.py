@@ -72,7 +72,7 @@ def test_safety_codes_are_not_continued():
 def test_continue_kinds_are_checked():
     with pytest.raises(S.EpisodeSpecError, match="continue_on_fail"):
         _ep(continue_on_fail=["aglt"])
-    assert S.load(EPISODES / "cocktail_1c_e4000.yaml").continue_on_fail == ("place",)
+    assert S.load(EPISODES / "cocktail_e2e.yaml").continue_on_fail == ("place",)
 
 
 @pytest.mark.parametrize("sig", [{"cup_in_holder": False, "hand_empty": False},
@@ -130,7 +130,7 @@ def test_place_timeout_reason_is_policy_timeout_and_opened_hand_continues():
 
 def test_cocktail_place_blue_continue_reaches_grasp_pink():
     """칵테일: place_blue 가 실패로 넘어가도 home_r_after_blue → grasp_pink → … → done."""
-    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+    ep = S.load(EPISODES / "cocktail_e2e.yaml")
 
     class _C(FakeExecutor):
         def run_policies(self, node, plans, world):
@@ -150,7 +150,7 @@ def test_cocktail_place_blue_continue_reaches_grasp_pink():
 
 def test_auto_node_runs_after_step_without_approval():
     """★11.09 사용자 — 구분 실행(step)에서 place_blue 다음 home_r_after_blue(auto) 는 승인 없이 바로 이어 간다."""
-    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+    ep = S.load(EPISODES / "cocktail_e2e.yaml")
     asked = []
     m = EpisodeManager(ep, FakeExecutor(ep), approve=lambda w, y: asked.append(w) or True, log=lambda r: None)
     while m.node is not None and m.node.id != "place_blue":
@@ -162,7 +162,7 @@ def test_auto_node_runs_after_step_without_approval():
 
 def test_auto_node_failure_still_waits_for_recovery_approval():
     """auto 는 승인만 생략 — 실패 복구는 다음 명령(승인)을 기다린다."""
-    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+    ep = S.load(EPISODES / "cocktail_e2e.yaml")
     ex = FakeExecutor(ep, inject={"home_r_after_blue": [F.CONTROLLER_ERROR] * 3})
     m = EpisodeManager(ep, ex, approve=lambda w, y: True, log=lambda r: None)
     while m.node is not None and m.node.id != "place_blue":
@@ -172,7 +172,7 @@ def test_auto_node_failure_still_waits_for_recovery_approval():
 
 
 def test_auto_must_be_bool():
-    raw = yaml.safe_load((EPISODES / "cocktail_1c_e4000.yaml").read_text())
+    raw = yaml.safe_load((EPISODES / "cocktail_e2e.yaml").read_text())
     raw["sequence"][0]["auto"] = "yes"
     with pytest.raises(S.EpisodeSpecError):
         S.parse(raw)

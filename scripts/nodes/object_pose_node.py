@@ -163,6 +163,7 @@ class PoseConverter:
                                   quat_axis_direction(quat_conj(spec.cad_to_body_quat),
                                                       np.asarray(spec.symmetry_axis, float)))
         self._flip = {n: bool(registry.get(n).symmetry_flip) for n in self.names}
+        self._keep_twist = {n: registry.get(n).grasp_axis is not None for n in self.names}   # ★11.19 박스
         self.base_frame = next(iter(self._ext.values())).base_frame if self._ext else "base_link"
 
     def convert(self, name: str, pos_cam: np.ndarray, quat_cam: np.ndarray,
@@ -193,7 +194,8 @@ class PoseConverter:
                 quat = point_axis_up(quat, self._axis_body[name])
             # ★출력(base) 프레임에서 body 대칭축 둘레 twist 를 뺀다 — 축 방향(기울기)은 보존,
             #   축 둘레 회전(추적기 자유 방향)은 0. 정립이면 base 기준 항등에 가까운 자세가 된다.
-            quat = remove_twist(quat, self._axis_body[name])
+            if not self._keep_twist[name]:   # ★11.19 박스(grasp_axis): yaw 를 남겨 plan_reach 가 면 쪽으로 들어간다
+                quat = remove_twist(quat, self._axis_body[name])
         if self.z_bias:
             pos = pos + np.array([0.0, 0.0, self.z_bias])
         if bias is not None:

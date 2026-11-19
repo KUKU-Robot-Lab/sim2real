@@ -70,7 +70,7 @@ def test_student_approach_does_not_abort_on_fpp_dropout(side):
     assert "device:=cuda" in node
     assert [a for a in node if a.startswith("cup_dropout_stop_s:=")] == ["cup_dropout_stop_s:=0.0"]
     assert "cup_hold_last:=true" in node
-    teacher = _cmds(REAL, REAL_BOOK, "episode_cocktail_1c_e4000")
+    teacher = _cmds(REAL, REAL_BOOK, "episode_cocktail_e2e")
     teacher_nodes = [c.argv for c in teacher if any(a.endswith("rh_aglt_node.py") for a in c.argv)]
     assert teacher_nodes
     assert all("cup_dropout_stop_s:=1.0" in a for a in teacher_nodes)
@@ -236,9 +236,9 @@ def test_only_the_two_cup_pour_is_blocked_on_the_real_robot():
 def test_real_cups_run_fpp_on_the_perception_pc_after_the_head_home_and_shutdown_takes_it_down():
     """10.01 사용자: FP++ 를 arm4090 에(--host local). 10.13 사용자: 로봇 PC 5090 · 인지 PC vision-3090(--host vision-3090).
     런처 --host <인지 PC> · UDP 수신 · base 변환 · start, 머리 기준자세가 먼저."""
-    host, ext = GEN.PERCEPTION_HOST, GEN.CAMERA_EXTRINSICS
+    host, ext = GEN.PERCEPTION_HOST, GEN.FPP_EXTRINSICS     # ★11.17 FP++ 쪽은 head_view_check 가 쓴 live
     by = {s.id: s for s in REAL.stages}
-    assert by["cups"].needs == ("head_view_check", "cup_holders") and by["head_home"].touches_real and by["cups"].touches_real
+    assert by["cups"].needs == ("head_view_check",) and by["head_home"].touches_real and by["cups"].touches_real
     head = _cmds(REAL, REAL_BOOK, "head_home")
     assert any(Path(GEN.HEAD_CONFIG).name in " ".join(c.argv) for c in head)
     cups = [" ".join(c.argv) for c in _cmds(REAL, REAL_BOOK, "cups")]
@@ -255,7 +255,7 @@ def test_real_cups_run_fpp_on_the_perception_pc_after_the_head_home_and_shutdown
         assert any(want in a for a in cups), want
     # ★11.05 사용자: cups = FP++ 드라이버만 — 물체는 에피소드 첫 명령(덧붙이기)과 setting 탭 "인지 적용" 이 띄운다
     assert not any("perception_ctl.py start" in a or "fpp_rescan.py" in a for a in cups)
-    ep = _cmds(REAL, REAL_BOOK, "episode_cocktail_1c_e4000")
+    ep = _cmds(REAL, REAL_BOOK, "episode_cocktail_e2e")
     at = next(i for i, c in enumerate(ep) if "perception_ctl.py start --add " in " ".join(c.argv))
     first = " ".join(ep[at].argv)
     assert first.endswith("--require-all")
@@ -372,25 +372,30 @@ def test_the_rh56f1_robot_offers_rh_aglt_for_each_arm():
     assert RB.slot_contracts("aglt_right") == ("rh_aglt_contract.json",)
 
 
-def test_view_check_reads_the_imu_between_head_home_and_cups_without_moving_the_head():
-    """11.03 사용자 "sim 과 real 의 카메라 시야가 같아야 의미가 있다": head_home 뒤 · cups 앞에 IMU 숙임을 외부 파라미터와
-    비교만 하는 단계. 머리를 움직이는 명령(--execute · head_move)이 없고, 카메라(IMU)를 켠 뒤 카메라 PC 에서 잰다."""
+def test_view_check_re_solves_the_extrinsics_into_live_between_head_home_and_cups():
+    """11.03 사용자 "sim 과 real 의 카메라 시야가 같아야 의미가 있다" · ★11.17 "안되면 2번으로 자동화해서 FP++ 가 문제없게":
+    head_home 뒤 · cups 앞, 카메라를 켠 뒤 카메라 PC 에서 --auto-extrinsics(실행이면 --execute 로 목이 camset 으로)로
+    base(m1117)를 읽기만 하고 live 를 쓴다. 원격이면 이 PC 의 live 를 먼저 지우고 성공한 뒤에만 가져온다."""
     for m in (REAL, FAKE):
         by = {s.id: s for s in m.stages}
         ids = [s.id for s in m.stages]
-        assert by["head_view_check"].needs == ("head_home",) and by["cups"].needs == ("head_view_check", "cup_holders")
+        assert by["head_view_check"].needs == ("head_home",) and by["cups"].needs == ("head_view_check",)
         assert ids.index("head_home") < ids.index("head_view_check") < ids.index("cups")
-        assert by["head_view_check"].skippable and not by["head_view_check"].touches_real
+        assert by["head_view_check"].skippable
+    assert {s.id: s for s in REAL.stages}["head_view_check"].touches_real
     cmds = _cmds(REAL, REAL_BOOK, "head_view_check")
     flat = [" ".join(c.argv) for c in cmds]
-    assert not any(c.background for c in cmds)            # execute=True 로 풀었으니 execute_args 가 있으면 아래 --execute 에 걸린다
-    assert not any("--execute" in a or "head_move" in a for a in flat)
+    assert not any(c.background for c in cmds) and len(cmds) == 2
     assert "camera_up.sh" in flat[0]
     check = flat[1]
     ext = GEN.CAMERA_EXTRINSICS if GEN.REMOTE_PERCEPTION else f"{REPO}/{GEN.CAMERA_EXTRINSICS}"   # 로컬 argv 는 {repo} 가 풀린다
-    assert f"head_view_feedback.py --check --extrinsics {ext}" in check
+    assert f"head_view_feedback.py --auto-extrinsics --extrinsics {ext}" in check and cmds[1].argv[-1] == "--execute"
+    assert GEN.FPP_EXTRINSICS == "config/global_camera_extrinsics_arm4090_live.yaml" != GEN.CAMERA_EXTRINSICS
     if GEN.REMOTE_PERCEPTION:
-        assert list(cmds[1].argv[:5]) == ["ssh", "-tt", "-o", "BatchMode=yes", GEN.PERCEPTION_HOST]
+        script = cmds[1].argv[2]
+        assert list(cmds[1].argv[:2]) == ["bash", "-lc"] and script.startswith(f"L='{REPO}/{GEN.FPP_EXTRINSICS}'; ")
+        assert script.index('rm -f "$L"') < script.index("--auto-extrinsics") < script.index("live_cli") < script.index('mv "$L.tmp" "$L"')
+        assert '$*"' in script                                  # 콘솔의 --execute 가 원격 명령 끝으로 간다
     assert not any("head_view_feedback" in " ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, "head_view_check"))
     sys.path.insert(0, str(REPO / "scripts"))
     import head_view_feedback as hv
@@ -447,7 +452,7 @@ def test_each_arm_places_the_cup_after_its_aglt_hand_off(side):
         assert "holder:=1" in node.argv and f"ns:={side}" in node.argv
         assert ("require_grasp:=false" in node.argv) is (m is FAKE)
         by = {s.id: s for s in m.stages}
-        assert {f"policy_aglt_{side}", "cup_holders"} <= set(by[f"policy_place_{side}"].needs)
+        assert f"policy_aglt_{side}" in by[f"policy_place_{side}"].needs and "cup_holders" not in by[f"policy_place_{side}"].needs  # ★11.17 홀더 고정
         resets = [c for c in cmds if "episode/reset" in c.argv]
         assert resets and all(f"{side}" in c.argv for c in resets)
     holder = next(c for c in _cmds(FAKE, FAKE_BOOK, f"policy_place_{side}") if any("fake_cup_pose_pub" in a for a in c.argv))
@@ -634,6 +639,37 @@ def test_video_recording_and_report_media_are_off_by_default():
     assert not [a for a in argvs if "vision_recorder.py" in a or "episode_media.py" in a]
 
 
+def test_chain_episodes_bag_the_head_camera_on_the_camera_pc_and_stop_it():
+    """★11.16 사용자 "체인 영상 bag -> 4090에서 저장. 최적화 필요 fp++ 부담 안되게" — 체인 · 놓기 에피소드만, 카메라 PC 에서
+    기록기가 압축(드라이버 압축 안 켬) · 낮은 우선순위 · ssh HUP 에서 떼어 냄, 에피소드 정지와 shutdown 이 끈다."""
+    if not GEN.REMOTE_PERCEPTION:
+        pytest.skip("카메라가 로봇 PC 인 사이트 — 체인 영상은 rh56f1_record.sh CAMERA 묶음")
+    shut = {k for c in REAL_RAW["run"]["shutdown"] for k in c.get("stop") or []}
+    for sid, cmds in REAL_RAW["run"].items():
+        recs = [i for i, c in enumerate(cmds) if "camera_bag_recorder.py" in " ".join(c.get("argv") or [])]
+        if sid.removeprefix("episode_") not in GEN.CHAIN_VIDEO_EPISODES:
+            assert not recs, sid
+            continue
+        assert len(recs) == 1, sid
+        argv = cmds[recs[0]]["argv"]
+        assert argv[:2] == ["ssh", "-tt"] and GEN.PERCEPTION_HOST in argv and cmds[recs[0]]["background"]
+        sh = argv[-1]
+        assert "--encode-raw --hz 5 " in sh and " ".join(GEN.CHAIN_CAMERA_BAG_TOPICS) in sh   # 원본 구독 · 기록기 압축
+        # ★11.17 s2r:vision "깊이도" — 컬러 + 정렬 깊이 + 두 camera_info, 다른 토픽(/head_depth 등)은 싣지 않는다
+        assert sh.count("/compressedDepth") == 1 and sh.count("camera_info") == 2 and "/head_depth" not in sh
+        assert "setsid nice -n 19 ionice -c2 -n7 python3" in sh and "{" not in sh and "set +e; trap 'kill -TERM $P; wait $P'" in sh   # set +e: 끊긴 wait 가 변환 전에 셸을 끝내지 않게(11.18)
+        key = f"{sid}#{recs[0]}"
+        assert any(key in (c.get("stop") or []) for c in cmds) and key in shut, key
+        # ★11.18 사용자: 경로 F 만 상자 영상을 카메라 PC 바탕화면에 <컵>_<날짜>_<시작 시:분>.mp4 로 복사
+        cup = GEN.FPP_VIDEO_CUP.get(sid.removeprefix("episode_"))
+        assert ("foundation pose camera" in sh) == (cup is not None), sid
+        if cup:
+            assert f'cp $O/camera_bbox.mp4 "$F.mp4"' in sh and f'/{cup}_$T"' in sh and "T=$(date +%y%m%d_%H:%M)" in sh
+        assert sh.index("set +e") < sh.index("wait $P; ") < sh.index("camera_bag_to_mp4.py")   # 끊긴 wait 뒤에도 변환 · 복사까지
+    assert GEN.FPP_VIDEO_CUP["grasp_f_right"] == "src240_blue" and GEN.FPP_VIDEO_CUP["grasp_f_left"] == "shaker_orange"
+    assert set(GEN.FPP_VIDEO_CUP) == {s.removeprefix("episode_") for s in REAL_RAW["run"] if s.startswith("episode_grasp_f_")}
+
+
 def test_shutdown_handles_partial_connections_and_orders_policy_perception_pd_hands_arms():
     for mission, book in ((REAL, REAL_BOOK), (FAKE, FAKE_BOOK)):
         assert not next(s for s in mission.stages if s.id == 'shutdown').needs
@@ -699,8 +735,8 @@ def test_the_5090_station_uses_the_camset_pose_where_all_three_objects_are_in_vi
     assert GEN.ROBOT_PC == "5090"
     assert not GEN.REMOTE_HEAD and not GEN.REMOTE_PERCEPTION and GEN.STATION["pose_dest"] == ""
     assert GEN._head_config["port"] == site["head_port"]
-    assert site["hosts"]["arm4090"]["ssh"] not in (REPO / "config/mission_rh56f1_control.yaml").read_text(encoding="utf-8")
-    assert GEN.CAMERA_EXTRINSICS == "config/global_camera_extrinsics_arm4090_h2048.yaml"    # ★11.15 목 영점 2048
+    assert site["hosts"]["arm4090"]["ssh"] not in (REPO / GEN.MISSION_REL).read_text(encoding="utf-8")   # ★11.11 5090 = _cam5090 파일
+    assert GEN.CAMERA_EXTRINSICS == "config/global_camera_extrinsics_arm4090_m1117.yaml"    # ★11.17 테이블 마커 판(목 설정은 h2048 그대로)
     assert GEN.HEAD_CONFIG == "config/head_camset_rh56f1_h2048.yaml"
 
 
@@ -738,6 +774,7 @@ def test_arm_v2_reaches_the_vision_pc_over_the_hub_lan_only_and_checks_it_in_pre
     assert list(lan.argv[:2]) == ["bash", "-lc"]
     assert f"ssh -o BatchMode=yes -o ConnectTimeout=5 {GEN.PERCEPTION_HOST} 'cd {GEN.REMOTE_SIM2REAL} && git rev-parse HEAD'" in lan.argv[2]
     assert f"git -C {REPO} rev-parse HEAD" in lan.argv[2]                       # {repo} 가 이 PC 의 저장소로 치환됐다
+    assert "|| echo '커밋 다름" in lan.argv[2]                                 # ★11.16 커밋 차이는 막지 않는다(4090 = FP++ 전용)
     assert list(master.argv[:5]) == ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5"] and master.argv[5] == GEN.PERCEPTION_HOST
     assert "pgrep" in master.argv[6] and "exit 1" in master.argv[6] and ".py" not in master.argv[6]   # 그림이 노드 상자로 읽지 않게
     home = _cmds(REAL, REAL_BOOK, "head_home")
@@ -1046,7 +1083,7 @@ def test_head_sweep_swaps_to_the_82_driver_and_restores_the_default_driver_and_c
 
 
 def test_recalib_hint_never_overwrites_the_charuco_extrinsics():
-    """★11.15 h2048 외부 파라미터 = ChArUco 값(학생 묶음 · head_depth_node 가 md5 고정) — 안내가 테이블 CAD 값으로 덮게 하지 않는다."""
+    """★11.17 m1117 외부 파라미터 = 테이블 마커 값(11.15 h2048 은 ChArUco)(학생 묶음 · head_depth_node 가 md5 고정) — 안내가 테이블 CAD 값으로 덮게 하지 않는다."""
     h, ex = GEN.RECALIB_HINT, GEN.CAMERA_EXTRINSICS
     assert f"--out {ex} " not in h and f"--init {ex} --write" not in h
     assert f"--out {ex.replace('.yaml', '_tablecheck.yaml')} --write" in h
@@ -1091,7 +1128,7 @@ def test_cup_holders_end_with_one_holder_confirm_and_cups_never_touches_the_hold
 
     ★11.11 deploy 리뷰 H2: 실패(카메라 · ssh · scp)는 삼키지 않고 rc 를 받아 ⚠ + last_check.json = failed, yaw 상한도 건다.
     ★11.11 사용자 "컵홀더 측정 완료(고정) → 컵 배치": 확정은 cup_holders 끝에서만 — cups 는 홀더 파일 · 기록을 건드리지 않는다
-    (cups_5: 셰이커가 홀더 0 을 가려 cups 끝 재기가 cup_holders 의 written 을 failed 로 덮었다). cups 는 cup_holders 뒤.
+    (cups_5: 셰이커가 홀더 0 을 가려 cups 끝 재기가 cup_holders 의 written 을 failed 로 덮었다). ★11.17 cups 는 cup_holders 를 기다리지 않는다(홀더 고정 · 저장 파일 · 에피소드 시작 검사).
     """
     real = " ".join(REAL_RAW["run"]["cup_holders"][-1]["argv"])
     assert "cup_holder_pose_node.py --write --timeout-s" in real and "--max-jump-m 0.03" in real and real.endswith("true"), real
@@ -1104,7 +1141,7 @@ def test_cup_holders_end_with_one_holder_confirm_and_cups_never_touches_the_hold
         cups = " ".join(" ".join(c.get("argv") or []) for c in raw["run"]["cups"])
         assert "cup_holder_pose_node" not in cups and "last_check" not in cups
     st = {x["id"]: x for x in REAL_RAW["stages"]}
-    assert "cup_holders" in st["cups"]["needs"] and st["cup_holders"]["skippable"]   # 홀더를 그대로 두면 건너뛴다
+    assert "cup_holders" not in st["cups"]["needs"] and st["cup_holders"]["skippable"]   # ★11.17 홀더 고정 — cups 는 홀더를 기다리지 않는다
 
 def test_every_command_resolves_without_a_stray_placeholder():
     """★11.11 cups 홀더 재기 실패 기록(printf JSON)의 `{"time": …}` 가 자리표시자로 읽혀 단계가 죽었다 —
@@ -1237,3 +1274,56 @@ def test_console_grasp_s_colors_match_the_generator():
     assert [(o["object"], o["action"], o["default"]) for o in right] == [
         ("blue", "ctl_grasp_s_right", True), ("pink", "ctl_grasp_s_pink_right", False)]
     assert "holder" not in right[0] and "objects" not in gs["left"]          # 홀더 버튼 없음 · 왼손은 주황 하나
+
+
+# ---------- ★11.17 리뷰: 원격 시야 검사 명령을 가짜 ssh(PATH 앞 스크립트)로 실제로 돌린다 ----------
+
+FAKE_SSH = """#!/bin/bash
+while [ "${1#-}" != "$1" ]; do [ "$1" = -o ] && shift; shift; done
+shift   # 호스트
+cd "$FAKE_REMOTE_HOME" && eval "$*"
+"""
+
+
+@pytest.mark.skipif(not GEN.REMOTE_PERCEPTION, reason="원격 인지 스테이션에서만 ssh 로 가져온다")
+@pytest.mark.parametrize("case", ["ok", "remote_fail", "empty", "other_base"])
+def test_remote_view_check_moves_the_live_only_after_checking_it(tmp_path, case):
+    import os
+    import time
+    sys.path.insert(0, str(REPO / "scripts"))
+    import head_view_feedback as hv
+    repo, home = tmp_path / "repo", tmp_path / "home"
+    (repo / "config").mkdir(parents=True)
+    (repo / "scripts").symlink_to(REPO / "scripts")
+    base = repo / GEN.CAMERA_EXTRINSICS
+    base.write_bytes((REPO / GEN.CAMERA_EXTRINSICS).read_bytes())
+    remote = home / GEN.REMOTE_SIM2REAL
+    (remote / "scripts" / "vision").mkdir(parents=True)
+    (remote / "config").mkdir()
+    (remote / "scripts" / "vision" / "common.sh").write_text("", encoding="utf-8")
+    (remote / "scripts" / "head_view_feedback.py").write_text(
+        "import sys; sys.exit(0 if sys.argv[-1] == '--execute' and %r != 'remote_fail' else 1)\n" % case, encoding="utf-8")
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    md5 = "0" * 32 if case == "other_base" else hv.file_md5(base)
+    text = "" if case == "empty" else hv.live_text(base, None, (1825, 2833), {"base": base.name, "base_md5": md5, "time": now})
+    (remote / GEN.FPP_EXTRINSICS).write_text(text, encoding="utf-8")
+    import hashlib
+    (remote / GEN.FPP_LIVE_REF).write_text(yaml.safe_dump({"extrinsics": {"md5": hashlib.md5(text.encode()).hexdigest()},
+                                                           "verified_at": now}), encoding="utf-8")
+    live, live_ref = repo / GEN.FPP_EXTRINSICS, repo / GEN.FPP_LIVE_REF
+    live.write_text("old", encoding="utf-8")                  # 지난 live — 실패면 남지 않아야 한다
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    (bin_ / "ssh").write_text(FAKE_SSH, encoding="utf-8")
+    (bin_ / "ssh").chmod(0o755)
+    (bin_ / "python3").symlink_to(sys.executable)
+    argv = commands_for(REAL_BOOK, REAL, "head_view_check", repo=repo, execute=True)[1].argv
+    env = {**os.environ, "PATH": f"{bin_}:{os.environ['PATH']}", "HOME": str(tmp_path), "FAKE_REMOTE_HOME": str(home)}
+    r = subprocess.run(list(argv), env=env, capture_output=True, text=True, timeout=60)
+    assert not list((repo / "config").glob("*.tmp"))
+    if case == "ok":
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert live.read_text(encoding="utf-8") == text and live_ref.exists()
+        hv.require_fresh_live(live)                           # 이 PC 의 FP++ 쪽 시작 검사도 통과
+    else:
+        assert r.returncode != 0 and not live.exists() and not live_ref.exists(), r.stdout + r.stderr

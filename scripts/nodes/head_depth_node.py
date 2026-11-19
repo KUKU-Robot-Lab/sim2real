@@ -21,7 +21,7 @@
 - --rgb(student.yaml rgb: true 면 자동): 깊이 stamp 와 가장 가까운 color 프레임(RGB_SLOP_S 안)을 /255 → 8x8 블록 평균으로
   줄여 깊이와 같은 header 로 낸다(hdgp real_pipe._rgb 와 같은 순서, 바닥 컷 없음). 짝 color 가 없으면 그 깊이도 내지 않는다
   (정책이 짝 안 맞는 깊이 · rgb 를 받지 않게).
-- ★11.05 외부 파라미터는 목 한 자세(그 yaml head_pose, 11.15 h2048 = pan 1825 · tilt 2833 ± 4 틱(옛 r20u5 1825 · 2815 와 같은 물리 자세))에서만 맞는 정적 스냅샷이고 학생은
+- ★11.05 외부 파라미터는 목 한 자세(그 yaml head_pose, 11.17 m1117 = pan 1825 · tilt 2833 ± 4 틱(옛 r20u5 1825 · 2815 와 같은 물리 자세))에서만 맞는 정적 스냅샷이고 학생은
   그 시야로 배웠다. /head/joint_states 가 그 자세 밖이거나 HEAD_MAX_AGE_S 넘게 낡았으면 깊이를 내지 않는다(정책 노드는
   StaleDepth → abort). object_pose_node 의 check_head_at 을 그대로 쓴다. 미션 head_home 단계가 그 자세로 맞춘다.
 
@@ -62,7 +62,7 @@ OUT_DEPTH = "/head_depth/image"
 OUT_RGB = "/head_depth/rgb"
 OUT_INFO = "/head_depth/camera_info"
 OUT_CONFIG = "/head_depth/config"
-EXTRINSICS_MD5 = "db9a5b848a715625d1f85f5df0f739c3"   # 11.15 목 영점 2048 판 · ChArUco camera 블록(global_camera_extrinsics_arm4090_h2048.yaml) — --extrinsics 는 이것만
+EXTRINSICS_MD5 = "691ade15493f240e6c7b98c4393446a9"   # ★11.17 테이블 마커 70~73 으로 푼 camera 블록(global_camera_extrinsics_arm4090_m1117.yaml, depth_bias 없음) — --extrinsics 는 이것만
 CKPT_EXTRINSICS_MD5 = "624677fee7e8ff6502f33a3ed8a96a1f"   # 학생 ckpt 가 배운 r20u5 40e6496 — --extrinsics 일 때 ckpt 대조 값
 TABLE_Z = 0.205                                      # 탁자 상판 base z[m](CAD, rh_aglt env_cfg table_surface_z)
 K_TOL_PX = 0.5
@@ -202,7 +202,7 @@ def resolve_extrinsics(policy_dir: str | None, extrinsics: str | None, rgb: bool
         return str(ex["path"]), ex["md5"], ex["ckpt_md5"], cfg["rgb"]
     got = hashlib.md5(Path(extrinsics).read_bytes()).hexdigest()
     if got != EXTRINSICS_MD5:
-        raise PinError(f"외부 파라미터 {extrinsics} md5 {got} ≠ {EXTRINSICS_MD5}(h2048, 11.15 목 영점 2048) — 시작하지 않는다")
+        raise PinError(f"외부 파라미터 {extrinsics} md5 {got} ≠ {EXTRINSICS_MD5}(m1117, 11.17 테이블 마커) — 시작하지 않는다")
     return str(extrinsics), EXTRINSICS_MD5, CKPT_EXTRINSICS_MD5, bool(rgb)
 
 

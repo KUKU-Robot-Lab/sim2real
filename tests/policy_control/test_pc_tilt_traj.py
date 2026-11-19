@@ -87,3 +87,20 @@ def test_aim_params_moves_lip_by_base_offset():
     assert "oy" not in p and q["h"] == p["h"]
     with pytest.raises(ValueError):
         T.aim_params(p, [0.002, -0.001, 0.001], 120.0)              # z 는 0 만
+
+
+def test_mouth_xy_limit_is_per_asset():
+    """★11.20 입구 중심 맞춤 상한은 궤적 policy.yaml 이 정한다: 없으면 8 mm(v10~v12), null 이면 검사 안 함(v14), 틀린 값은 거부."""
+    import yaml
+    T = _tool()
+    assert T.mouth_xy_limit({}) == T.LIMITS["mouth_xy_mm"] == 8.0
+    assert T.mouth_xy_limit({"mouth_xy_max_mm": None}) is None
+    assert T.mouth_xy_limit({"mouth_xy_max_mm": 12}) == 12.0
+    for bad in (0, -1.0, True, "8", float("nan")):
+        with pytest.raises(ValueError):
+            T.mouth_xy_limit({"mouth_xy_max_mm": bad})
+    tilt = REPO / "deploy" / "policy_control" / "config" / "tilt"
+    v12 = yaml.safe_load((tilt / "traj_v12_240" / "policy.yaml").read_text(encoding="utf-8"))
+    v14 = yaml.safe_load((tilt / "traj_v14r1l1_240" / "policy.yaml").read_text(encoding="utf-8"))
+    assert T.mouth_xy_limit(v12) == 8.0 and v12["aim_offset_base_m"] == [0.002, -0.004, 0.0]
+    assert T.mouth_xy_limit(v14) is None and "aim_offset_base_m" not in v14     # v12 전용 보정·제한을 v14 에 넣지 않는다

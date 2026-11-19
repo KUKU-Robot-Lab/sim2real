@@ -109,7 +109,9 @@ _TOOLS = ("aglt_goal.py",
           # ★10.08 컵 좌표 다시 찍기 — FP++ 컨테이너에 한 번 명령하고 끝난다(노드 아님)
           "fpp_rescan.py",
           # ★10.09 영상 · FP++ 실시간 좌표 기록(localhost DDS) — 그림에 상자를 두지 않는다
-          "vision_recorder.py")
+          "vision_recorder.py",
+          # ★11.16 체인 에피소드 머리 컬러 bag — 카메라 PC 에서 ssh 로 도는 기록기(노드 아님)
+          "camera_bag_recorder.py")
 
 
 @dataclass(frozen=True)

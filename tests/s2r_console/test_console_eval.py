@@ -1,4 +1,4 @@
-"""★11.02 eval 탭(실기 평가) — 평가 에피소드 목록(★11.11 탭은 cocktail_1c_e4000 하나, 기록은 학생 에피소드도 받는다) · 회차 기록 CSV · /api/eval/rounds.
+"""★11.02 eval 탭(실기 평가) — 평가 에피소드 목록(★11.11 탭은 cocktail_e2e 하나, 기록은 학생 에피소드도 받는다) · 회차 기록 CSV · /api/eval/rounds.
 
 기록은 로봇에 아무것도 보내지 않는다. 서버가 round · time · policy id 를 채우고(policy id 는 에피소드 yaml 에서),
 날짜마다 파일 하나(logs/s2r_console/eval/<YYYY-MM-DD>.csv)에 붙인다.
@@ -59,7 +59,7 @@ def _write_episode(repo: Path, name: str, place_r: str) -> None:
 def repo(tmp_path):
     r = tmp_path / "repo"
     _write_episode(r, "cocktail_1c_e1000", "rh56f1/place/right_n07_e1000")   # 목록 밖 — 파일은 있어도 안 보여야
-    _write_episode(r, "cocktail_1c_e4000", "rh56f1/place/right_n07_e4000")
+    _write_episode(r, "cocktail_e2e", "rh56f1/place/right_n07_e4000")
     _write_episode(r, "grasp_b_right", "rh56f1/place/right_x")               # 목록 밖
     for side, s in (("right", "r"), ("left", "l")):
         (r / "config" / "episodes" / f"grasp_s_{side}.yaml").write_text(
@@ -73,10 +73,33 @@ def _csv(repo: Path, date: str) -> list[list[str]]:
 
 
 # ── 에피소드 목록 ───────────────────────────────────────────────────────
-def test_the_tab_lists_only_cocktail_1c_e4000(repo):
-    """★11.11 사용자 "EVAL 부분에서 STUDENT 정책들도 POLICY 탭으로" — 학생 잡기 · 놓기는 파일이 있어도 탭에서 뺀다."""
-    assert EV.EVAL_TAB == ("cocktail_1c_e4000",)
-    assert [e["name"] for e in EV.episodes(repo)] == ["cocktail_1c_e4000"]
+def test_the_tab_lists_only_cocktail_e2e(repo):
+    """★11.11 사용자 "EVAL 부분에서 STUDENT 정책들도 POLICY 탭으로" — 학생 잡기 · 놓기는 파일이 있어도 탭에서 뺀다.
+    ★11.16 안 B cocktail_1c_n07b 를 더했다(이 가짜 저장소에는 파일이 없어 건너뛴다)."""
+    assert EV.EVAL_TAB == ("cocktail_e2e", "cocktail_1c_n07b", "cocktail_rrl")
+    assert [e["name"] for e in EV.episodes(repo)] == ["cocktail_e2e"]
+
+
+def test_rrl_is_a_pending_card_without_a_start(repo):
+    """★11.20 사용자 "cocktail_rrl 버전으로 tilt 가 잔차 강화학습 버전으로 할 카드를 미리" — yaml · 미션 단계 없이 설명만(탭 카드에만)."""
+    v = EV.view(repo, ["episode_cocktail_e2e"])
+    rrl = next(e for e in v["episodes"] if e["name"] == "cocktail_rrl")
+    assert "잔차" in rrl["pending"] and not rrl["error"] and not rrl["nodes"] and rrl["has_stage"] is False
+    assert "cocktail_rrl" not in {e["name"] for e in v["record"]}
+
+
+def test_real_repo_shows_n07b_as_its_own_card_next_to_e4000():
+    """★11.16 안 B — 실제 config/episodes 에서 카드 둘, 오른손 놓기만 다르고 n07b 는 파랑 · shaker 만 놓는다."""
+    eps = {e["name"]: e for e in EV.view(ROOT, ["episode_cocktail_1c_n07b"])["episodes"]}
+    assert list(eps) == list(EV.EVAL_TAB) and not any(e["error"] for e in eps.values())
+    n, e = eps["cocktail_1c_n07b"], eps["cocktail_e2e"]
+    assert (n["policy_r"], e["policy_r"]) == ("rh56f1/place/right_n07", "rh56f1/place/right_n10_e4000")
+    assert n["policy_l"] == e["policy_l"] == "rh56f1/place/left_n09_e3800"
+    assert [(h["node"], h["holder"]) for h in n["holders"]] == [("place_blue", 1), ("place_shaker", 0)]
+    assert (n["has_stage"], e["has_stage"]) == (True, False)
+    assert "cocktail_1c_n07b" in EV.EVAL_EPISODES
+    # ★11.16 _t 카드는 토글(tin_subtract_offset)로 바꿔 목록에서 뺐다
+    assert not any(n.endswith("_t") for n in EV.EVAL_EPISODES)
 
 
 def test_records_still_accept_the_student_episodes_and_the_grasp_s_color_variants(repo):
@@ -96,7 +119,7 @@ def test_records_still_accept_the_student_episodes_and_the_grasp_s_color_variant
 
 
 def test_cocktail_episode_keeps_place_policies_and_holders(repo):
-    e = {e["name"]: e for e in EV.episodes(repo)}["cocktail_1c_e4000"]
+    e = {e["name"]: e for e in EV.episodes(repo)}["cocktail_e2e"]
     assert e["policy_r"] == "rh56f1/place/right_n07_e4000" and e["policy_l"] == "rh56f1/place/left_n06"
     assert e["holders"] == [{"node": "place_blue", "object": "SRC_BLUE", "holder": 1},
                             {"node": "place_shaker", "object": "SHAKER", "holder": 0}]
@@ -132,38 +155,43 @@ def test_place_student_episodes_are_listed_with_the_student_policy(tmp_path):
     assert eps["place_m_right"]["holders"] == [{"node": "place_cup", "object": "CUP", "holder": 1}]
 
 
+def _files(eps):
+    """★11.20 준비 중 칸(EVAL_PENDING · 파일 없음)을 뺀 파일 칸."""
+    return [e for e in eps if "pending" not in e]
+
+
 def test_view_marks_which_episodes_have_a_mission_stage(repo):
-    v = EV.view(repo, ["episode_cocktail_1c_e4000", "head_home"])
-    has = {e["name"]: e["has_stage"] for e in v["episodes"]}
-    assert has == {"cocktail_1c_e4000": True}
-    assert v["episodes"][0]["stage"] == "episode_cocktail_1c_e4000"
-    assert {e["name"]: e["has_stage"] for e in EV.view(repo, ["head_home"])["episodes"]} == {"cocktail_1c_e4000": False}
+    v = EV.view(repo, ["episode_cocktail_e2e", "head_home"])
+    has = {e["name"]: e["has_stage"] for e in _files(v["episodes"])}
+    assert has == {"cocktail_e2e": True}
+    assert v["episodes"][0]["stage"] == "episode_cocktail_e2e"
+    assert {e["name"]: e["has_stage"] for e in _files(EV.view(repo, ["head_home"])["episodes"])} == {"cocktail_e2e": False}
 
 
 def test_no_episode_files_is_an_empty_list_not_an_error(tmp_path):
     v = EV.view(tmp_path / "nothing", [])
-    assert v["episodes"] == [] and "error" not in v
+    assert _files(v["episodes"]) == [] and "error" not in v
 
 
 def test_a_broken_episode_file_shows_its_error_and_keeps_the_list(repo):
-    (repo / "config" / "episodes" / "cocktail_1c_e4000.yaml").write_text("episode: [", encoding="utf-8")
-    eps = {e["name"]: e for e in EV.view(repo, [])["episodes"]}
-    assert list(eps) == ["cocktail_1c_e4000"] and eps["cocktail_1c_e4000"]["error"]
+    (repo / "config" / "episodes" / "cocktail_e2e.yaml").write_text("episode: [", encoding="utf-8")
+    eps = {e["name"]: e for e in _files(EV.view(repo, [])["episodes"])}
+    assert list(eps) == ["cocktail_e2e"] and eps["cocktail_e2e"]["error"]
 
 
 def test_a_missing_listed_file_is_skipped_and_reappears_without_restart(repo):
-    path = repo / "config" / "episodes" / "cocktail_1c_e4000.yaml"
+    path = repo / "config" / "episodes" / "cocktail_e2e.yaml"
     text = path.read_text(encoding="utf-8")
     path.unlink()
     assert EV.episodes(repo) == []
     path.write_text(text, encoding="utf-8")
-    assert [e["name"] for e in EV.episodes(repo)] == ["cocktail_1c_e4000"]
+    assert [e["name"] for e in EV.episodes(repo)] == ["cocktail_e2e"]
 
 
 # ── 회차 기록 ───────────────────────────────────────────────────────────
 def test_append_writes_header_once_and_reads_back(repo):
-    EV.append_round(repo, {"episode": "cocktail_1c_e4000", "result": "성공", "note": "첫 회"}, now=DAY1)
-    EV.append_round(repo, {"episode": "cocktail_1c_e4000", "result": "실패", "fail_stage": "place_blue",
+    EV.append_round(repo, {"episode": "cocktail_e2e", "result": "성공", "note": "첫 회"}, now=DAY1)
+    EV.append_round(repo, {"episode": "cocktail_e2e", "result": "실패", "fail_stage": "place_blue",
                            "fail_type": "놓지 못함"}, now=DAY1)
     raw = _csv(repo, "2026-11-02")
     assert raw[0] == list(EV.COLUMNS) and sum(r == list(EV.COLUMNS) for r in raw) == 1 and len(raw) == 3
@@ -174,12 +202,12 @@ def test_append_writes_header_once_and_reads_back(repo):
 
 
 def test_round_number_increases_per_day(repo):
-    got = [EV.append_round(repo, {"episode": "cocktail_1c_e4000", "result": "중단"}, now=DAY1)["round"] for _ in range(3)]
+    got = [EV.append_round(repo, {"episode": "cocktail_e2e", "result": "중단"}, now=DAY1)["round"] for _ in range(3)]
     assert got == ["1", "2", "3"]
 
 
 def test_each_date_has_its_own_file_and_its_own_round_count(repo):
-    EV.append_round(repo, {"episode": "cocktail_1c_e4000", "result": "성공"}, now=DAY1)
+    EV.append_round(repo, {"episode": "cocktail_e2e", "result": "성공"}, now=DAY1)
     EV.append_round(repo, {"episode": "grasp_s_right", "result": "성공"}, now=DAY1)
     row = EV.append_round(repo, {"episode": "grasp_s_left", "result": "성공"}, now=DAY2)
     assert row["round"] == "1" and row["date"] == "2026-11-03"
@@ -187,7 +215,7 @@ def test_each_date_has_its_own_file_and_its_own_round_count(repo):
 
 
 def test_server_fills_policy_ids_from_the_episode_file_not_the_client(repo):
-    row = EV.append_round(repo, {"episode": "cocktail_1c_e4000", "result": "성공",
+    row = EV.append_round(repo, {"episode": "cocktail_e2e", "result": "성공",
                                  "policy_r": "가짜", "round": "99", "time": "00:00:00"}, now=DAY1)
     assert row["policy_r"] == "rh56f1/place/right_n07_e4000" and row["policy_l"] == "rh56f1/place/left_n06"
     assert row["round"] == "1" and row["time"] == "13:05:00"
@@ -196,32 +224,32 @@ def test_server_fills_policy_ids_from_the_episode_file_not_the_client(repo):
 @pytest.mark.parametrize("bad", ["", "ok", "SUCCESSFUL", None, 1])
 def test_a_wrong_result_is_rejected_and_nothing_is_written(repo, bad):
     with pytest.raises(EV.EvalError):
-        EV.append_round(repo, {"episode": "cocktail_1c_e4000", "result": bad}, now=DAY1)
+        EV.append_round(repo, {"episode": "cocktail_e2e", "result": bad}, now=DAY1)
     assert not (repo / "logs" / "s2r_console" / "eval" / "2026-11-02.csv").exists()
 
 
 def test_runner_phases_are_accepted_as_results(repo):
-    out = [EV.append_round(repo, {"episode": "cocktail_1c_e4000", "result": r}, now=DAY1)["result"]
+    out = [EV.append_round(repo, {"episode": "cocktail_e2e", "result": r}, now=DAY1)["result"]
            for r in ("SUCCESS", "FAILURE", "STOPPED")]
     assert out == ["성공", "실패", "중단"]
 
 
 def test_fail_stage_must_belong_to_the_episode_and_is_dropped_on_success(repo):
     with pytest.raises(EV.EvalError):
-        EV.append_round(repo, {"episode": "cocktail_1c_e4000", "result": "실패", "fail_stage": "tilt_pink"}, now=DAY1)
-    row = EV.append_round(repo, {"episode": "cocktail_1c_e4000", "result": "성공", "fail_stage": "place_blue"}, now=DAY1)
+        EV.append_round(repo, {"episode": "cocktail_e2e", "result": "실패", "fail_stage": "tilt_pink"}, now=DAY1)
+    row = EV.append_round(repo, {"episode": "cocktail_e2e", "result": "성공", "fail_stage": "place_blue"}, now=DAY1)
     assert row["fail_stage"] == ""
 
 
 @pytest.mark.parametrize("name", ["grasp_b_right", "cocktail_1c_e1000", "cocktail_1", "cocktail_none",
-                                  "../cocktail_1c_e4000", "cocktail_1c_e4000/../x", 3])
+                                  "../cocktail_e2e", "cocktail_e2e/../x", 3])
 def test_unknown_or_unsafe_episode_names_are_rejected(repo, name):
     with pytest.raises(EV.EvalError):
         EV.append_round(repo, {"episode": name, "result": "성공"}, now=DAY1)
 
 
 def test_text_is_one_line_and_csv_quoting_survives_commas(repo):
-    EV.append_round(repo, {"episode": "cocktail_1c_e4000", "result": "실패", "fail_type": "컵, 넘어짐",
+    EV.append_round(repo, {"episode": "cocktail_e2e", "result": "실패", "fail_type": "컵, 넘어짐",
                            "note": "줄\n바꿈 \"따옴표\""}, now=DAY1)
     (row,) = EV.read_rows(repo, "2026-11-02")
     assert row["fail_type"] == "컵, 넘어짐" and row["note"] == "줄 바꿈 \"따옴표\""
@@ -235,7 +263,7 @@ def test_bad_date_is_rejected(repo):
 
 def test_summary_counts_success_rate_and_failures_by_stage(repo):
     for result, stage in (("성공", ""), ("실패", "place_blue"), ("실패", "place_blue"), ("중단", "grasp_blue"), ("실패", "")):
-        EV.append_round(repo, {"episode": "cocktail_1c_e4000", "result": result, "fail_stage": stage,
+        EV.append_round(repo, {"episode": "cocktail_e2e", "result": result, "fail_stage": stage,
                                "fail_type": f"t_{stage}"}, now=DAY1)
     v = EV.rounds_view(repo, None, now=DAY1)
     s = v["summary"]
@@ -260,19 +288,19 @@ def _call(c, method, path, body=None, query=None, headers=None):
 
 def test_api_post_without_lease_appends_and_get_reads_today(repo):
     c = _Console(repo)
-    code, out = _call(c, "POST", "/api/eval/rounds", {"episode": "cocktail_1c_e4000", "result": "성공"})
+    code, out = _call(c, "POST", "/api/eval/rounds", {"episode": "cocktail_e2e", "result": "성공"})
     assert code == 200 and out["row"]["round"] == "1" and out["row"]["policy_r"] == "rh56f1/place/right_n07_e4000"
     code, out = _call(c, "GET", "/api/eval/rounds", query={"date": out["row"]["date"]})
     assert code == 200 and len(out["rows"]) == 1 and out["summary"]["success"] == 1
 
 
 def test_api_rejects_a_wrong_result_with_400(repo):
-    code, out = _call(_Console(repo), "POST", "/api/eval/rounds", {"episode": "cocktail_1c_e4000", "result": "maybe"})
+    code, out = _call(_Console(repo), "POST", "/api/eval/rounds", {"episode": "cocktail_e2e", "result": "maybe"})
     assert code == 400 and out["ok"] is False and "result" in out["error"]
 
 
 def test_api_still_requires_the_console_header_for_writes(repo):
-    code, _ = _call(_Console(repo), "POST", "/api/eval/rounds", {"episode": "cocktail_1c_e4000", "result": "성공"},
+    code, _ = _call(_Console(repo), "POST", "/api/eval/rounds", {"episode": "cocktail_e2e", "result": "성공"},
                     headers={"X-S2R-Console": ""})
     assert code == 403
 

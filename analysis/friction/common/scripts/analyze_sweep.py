@@ -18,7 +18,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "deploy/policy_control"))
 from policy_control import stationary_tracking as S  # noqa: E402
 
-TORQUE_KEYS = ("torque_pd", "torque_gravity", "torque_static_friction", "torque_integral", "torque_feedforward")
+# 모터 토크 = pd + feedforward. feedforward(=cmd.tau + 보상)에 중력·정지마찰·적분이 이미 들어 있다(pd_stationary.py) — 따로 더하면 중복.
+TORQUE_KEYS = ("torque_pd", "torque_feedforward")
 
 
 def load(run, side):

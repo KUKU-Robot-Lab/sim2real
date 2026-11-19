@@ -249,6 +249,13 @@ def gap_clip_rad(text) -> tuple:
     return tuple(float(np.radians(x)) for x in v)
 
 
+def tick_stages(t0: float, t_meas: float, t_step: float, t_tgt: float, t_end: float, infer_ms: float) -> dict:
+    """★11.10 한 틱의 단계별 ms — measure(입력 복사 · FK) · obs(관측 조립 · 디코더 · 추정기, 추론 뺌) · infer(정책 forward)
+    · targets(목표 배열) · publish(들기 가드 · 발행). perf_counter 다섯 번이라 비용은 µs 단위다."""
+    return {"measure": round((t_meas - t0) * 1e3, 3), "obs": round((t_step - t_meas) * 1e3 - infer_ms, 3),
+            "infer": round(infer_ms, 3), "targets": round((t_tgt - t_step) * 1e3, 3), "publish": round((t_end - t_tgt) * 1e3, 3)}
+
+
 class AgltChain:
     """rh_aglt 한 스텝 — 관측(목표 포함) → 정책 → 디코더. 첫 목표는 reset 때 컵 자세로, 그 뒤는 사용자 입력(rh_aglt_goals)."""
 
@@ -343,6 +350,7 @@ class AgltChain:
             policy.reset()
 
     def step(self, meas: dict) -> tuple[np.ndarray, np.ndarray, dict]:
+        self.infer_ms = 0.0                          # ★11.10 스크립트 단계(경로 C)는 추론이 없다
         meas = self._obs_meas(meas)
         if self.ag is not None and self.ag.scripted:   # ★10.17 경로 C — 접근 뒤는 스크립트 닫기 · 판정 · 들기
             return self.ag.step(self, meas)
@@ -357,7 +365,9 @@ class AgltChain:
         obs = A.build_obs(self.c, m, self.dec, self.goal, self.prev)
         if inh is not None:                         # 다음 틱 GRU 입력 = 이번 행동을 낸 관측(sim obs_buf)
             inh.remember(obs)
+        ti = time.perf_counter()
         a = np.clip(np.asarray(self.policy.forward(obs), float), -self.c.action_clip, self.c.action_clip)
+        self.infer_ms = (time.perf_counter() - ti) * 1e3      # ★11.10 틱 단계 계측(status stages_ms.infer)
         active = self.step_i >= self.c.hold_steps
         near = float(np.linalg.norm(np.asarray(m.cup_pos, float) - np.asarray(m.palm_pos, float)))   # 10.14 grasp_near_m
         targets = self.dec.step(a, active=active, tactile_n=m.tactile_n, hand_q=hand_q, joint_force=m.joint_force,
@@ -412,7 +422,9 @@ class PourFjChain:
 
     def step(self, meas: dict) -> tuple[np.ndarray, np.ndarray, dict]:
         obs = F.build_obs(self.c, meas, self.dec, self.prev)
+        ti = time.perf_counter()
         a = np.clip(np.asarray(self.policy.forward(obs), float), -self.c.action_clip, self.c.action_clip)
+        self.infer_ms = (time.perf_counter() - ti) * 1e3      # ★11.10 틱 단계 계측(status stages_ms.infer)
         touch = {r: list(np.asarray(meas[r].tactile_n) > self.c.freeze_threshold_n) for r in F.ROLES}
         targets = self.dec.step(a, active=self.step_i >= self.c.hold_steps, touch=touch)
         self.prev = np.clip(a, -1.0, 1.0)
@@ -1187,15 +1199,18 @@ class PourFjNode(LeanNodeMixin, Node):
         t0 = time.perf_counter()
         try:
             meas = self._measure(advance=True)       # _cup_for 가 이 안에서 cup_fresh 를 채운다
+            t_meas = time.perf_counter()
             if hasattr(self.chain, "cup_fresh"):
                 self.chain.cup_fresh = bool(self.cup_fresh.get("arm", True))
             ag = getattr(self.chain, "ag", None)
             phase = None if ag is None else ag.phase
             obs, action, targets = self.chain.step(meas)
+            t_step = time.perf_counter()
             for role in handoff_rebase(phase, ag, getattr(self, "dropouts", {}), time.monotonic()):
                 self.get_logger().info(f"cup {role}: 경로 D 넘김 — 끊김 시계를 넘김 순간부터 다시 센다 · "
                                        f"{self.dropouts[role].as_dict()}")
             names, q, qd = self.fam.targets(self.contract, targets)
+            t_tgt = time.perf_counter()
         except DropoutStop as exc:                    # ★10.19 컵 끊김 규칙 — 틱을 더 기다리지 않고 멈춘다(pd 가 지금 자세로 붙든다)
             self._status(False, [str(exc)])
             self._end("abort", str(exc))
@@ -1221,9 +1236,15 @@ class PourFjNode(LeanNodeMixin, Node):
         self._publish_debug()
         if self._publish and self._lg_stop is None:   # ★11.08 가드가 멈춘 틱은 새 목표를 내지 않는다 — 직전 목표를 붙든다
             self._pub_target.publish(codec.encode_joint_target(names, q, qd, str(self.book.episode), self._seq))
-        proc_ms = (time.perf_counter() - t0) * 1e3
-        self._budget.record(t0, proc_ms)
-        self._status(True, [], {"proc_ms": proc_ms, "tick": self._budget.as_dict(), "step": self.chain.step_i,
+        t_end = time.perf_counter()
+        proc_ms = (t_end - t0) * 1e3
+        stages = tick_stages(t0, t_meas, t_step, t_tgt, t_end, getattr(self.chain, "infer_ms", 0.0))
+        self._budget.record(t0, proc_ms, stages)
+        if proc_ms > self._budget.budget_ms:        # ★11.10 넘친 틱 — 콘솔 경고(5 s 에 한 번), 횟수는 status tick.proc_over
+            self.get_logger().warning(f"정책 틱 {proc_ms:.1f} ms > 예산 {self._budget.budget_ms:.1f} ms "
+                                      f"(누적 {self._budget.proc_over}/{self._budget.ticks}) 단계 {stages}",
+                                      throttle_duration_sec=5.0)
+        self._status(True, [], {"proc_ms": proc_ms, "stages_ms": stages, "tick": self._budget.as_dict(), "step": self.chain.step_i,
                                 "hold": self.chain.step_i <= self.contract.hold_steps, **lg})
         if self._after_step():
             return

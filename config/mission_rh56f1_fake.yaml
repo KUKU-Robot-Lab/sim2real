@@ -803,7 +803,7 @@ stages:
   title: '[에피소드] cocktail_1c_e1000 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
     → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → home_r_after_pink
     → place_shaker → home_l_after_shaker → go_home_end'
-- id: episode_cocktail_1c_e4000
+- id: episode_cocktail_e2e
   group: policy
   lane: arm_left
   skippable: true
@@ -812,9 +812,9 @@ stages:
   - home_right
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
-  title: '[에피소드] cocktail_1c_e4000 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_to_tilt_start → grasp_blue
-    → to_tilt_start_r1 → grasp_shaker → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink
-    → place_pink → home_r_after_pink → place_shaker → home_l_after_shaker → go_home_end'
+  title: '[에피소드] cocktail_e2e — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_to_tilt_start → grasp_blue → to_tilt_start_r1
+    → grasp_shaker → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → home_r_after_pink
+    → mix_shaker → place_shaker → home_l_after_shaker → go_home_end'
 - id: episode_cocktail_1c_n07b
   group: policy
   lane: arm_left
@@ -1155,20 +1155,20 @@ run:
     - episode_cocktail_1c_e1000#14
     - episode_cocktail_1c_e1000#15
     - episode_cocktail_1c_e1000#16
-    - episode_cocktail_1c_e4000#0
-    - episode_cocktail_1c_e4000#1
-    - episode_cocktail_1c_e4000#2
-    - episode_cocktail_1c_e4000#3
-    - episode_cocktail_1c_e4000#4
-    - episode_cocktail_1c_e4000#5
-    - episode_cocktail_1c_e4000#6
-    - episode_cocktail_1c_e4000#7
-    - episode_cocktail_1c_e4000#8
-    - episode_cocktail_1c_e4000#12
-    - episode_cocktail_1c_e4000#13
-    - episode_cocktail_1c_e4000#14
-    - episode_cocktail_1c_e4000#15
-    - episode_cocktail_1c_e4000#16
+    - episode_cocktail_e2e#0
+    - episode_cocktail_e2e#1
+    - episode_cocktail_e2e#2
+    - episode_cocktail_e2e#3
+    - episode_cocktail_e2e#4
+    - episode_cocktail_e2e#5
+    - episode_cocktail_e2e#6
+    - episode_cocktail_e2e#7
+    - episode_cocktail_e2e#8
+    - episode_cocktail_e2e#12
+    - episode_cocktail_e2e#13
+    - episode_cocktail_e2e#14
+    - episode_cocktail_e2e#15
+    - episode_cocktail_e2e#16
     - episode_cocktail_1c_n07b#0
     - episode_cocktail_1c_n07b#1
     - episode_cocktail_1c_n07b#2
@@ -7764,7 +7764,7 @@ run:
     - episode_cocktail_1c_e1000#2
     - episode_cocktail_1c_e1000#1
     - episode_cocktail_1c_e1000#0
-  episode_cocktail_1c_e4000:
+  episode_cocktail_e2e:
   - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
@@ -7908,7 +7908,7 @@ run:
     - python3
     - '{repo}/deploy/policy_control/tools/episode_run.py'
     - --episode
-    - config/episodes/cocktail_1c_e4000.yaml
+    - config/episodes/cocktail_e2e.yaml
     - --plan
   - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
     argv:
@@ -8101,13 +8101,13 @@ run:
     - -p
     - require_grasp:=false
     background: true
-  - note: 에피소드 실행기 episode_runner — cocktail_1c_e4000 · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1c_e4000)
+  - note: 에피소드 실행기 episode_runner — cocktail_e2e · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_e2e)
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
     - --ros-args
     - -p
-    - episode:=config/episodes/cocktail_1c_e4000.yaml
+    - episode:=config/episodes/cocktail_e2e.yaml
     - -p
     - robot:=rh56f1
     background: true
@@ -8119,20 +8119,20 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_cocktail_1c_e4000#16
-    - episode_cocktail_1c_e4000#15
-    - episode_cocktail_1c_e4000#14
-    - episode_cocktail_1c_e4000#13
-    - episode_cocktail_1c_e4000#12
-    - episode_cocktail_1c_e4000#8
-    - episode_cocktail_1c_e4000#7
-    - episode_cocktail_1c_e4000#6
-    - episode_cocktail_1c_e4000#5
-    - episode_cocktail_1c_e4000#4
-    - episode_cocktail_1c_e4000#3
-    - episode_cocktail_1c_e4000#2
-    - episode_cocktail_1c_e4000#1
-    - episode_cocktail_1c_e4000#0
+    - episode_cocktail_e2e#16
+    - episode_cocktail_e2e#15
+    - episode_cocktail_e2e#14
+    - episode_cocktail_e2e#13
+    - episode_cocktail_e2e#12
+    - episode_cocktail_e2e#8
+    - episode_cocktail_e2e#7
+    - episode_cocktail_e2e#6
+    - episode_cocktail_e2e#5
+    - episode_cocktail_e2e#4
+    - episode_cocktail_e2e#3
+    - episode_cocktail_e2e#2
+    - episode_cocktail_e2e#1
+    - episode_cocktail_e2e#0
   episode_cocktail_1c_n07b:
   - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:

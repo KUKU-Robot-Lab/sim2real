@@ -36,8 +36,10 @@ gravity:
   # COM 프레임 = 체인 마지막 링크 *_al_7. 손 전체 0.708 kg 중 고정 링크(mount · base · palm)는 체인이 이미 싣는다.
   # test_pc_pd_gravity 의 URDF 계산과 같은 방법(09.29 계산).
   payload:
-    left:  [0.1915800, 0.020847, 0.011958, 0.179547]
-    right: [0.1915800, 0.014897, -0.031431, 0.179734]
+  # ★11.17 사용자 "알루미늄이야": OpenArm–RH56F1 어댑터(URDF 에 링크 없음, l/r_hj_mount 59.57 mm 간격만 있음)
+  # 86.9 g(usdz 부피 × 2.70 g/cm³)을 간격 가운데(al_7 z 0.02978)에 더했다. 손가락 0.19158 kg 과 합친 값.
+    left:  [0.2784800, 0.014342, 0.008226, 0.132814]
+    right: [0.2784800, 0.010248, -0.021623, 0.132942]
   cap_nm: 20.0
 gains:
   yaml: urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml
@@ -54,3 +56,27 @@ hand:
   # 손 자체 설정(벤더 레지스터, pd 발행 모드에서 첫 각도 명령 전 · 5 s 마다) — 09.30. 0 = 보내지 않는다.
   hw_speed: 2000               # 0..4000, 2000 = 무부하 전 행정 1000 ms = sim hand_full_range_s 1.0 (실측 튜닝 전 시작값)
   hw_force: 600                # 힘 멈춤 임계 [g, 센서 위치 — 손끝의 약 10배] = 벤더 기본(defaultForceSet). 09.30 왼손만 500 으로 바뀌어 있었다 — 양손을 같게
+# ★11.17 실기 exec 와 같은 모두 끈 블록 = diagnostics 발행만(지령 토크 동일) — fake 에서 tilt_comp_tau · payload 를 분석기가 읽게
+stationary_compensation:
+  gravity_enabled: false
+  friction_enabled: false
+  integral_enabled: false
+# ★11.17 실기 pd_rh56f1_exec.yaml 과 같은 tilt_comp 블록(양팔 j1..j7) — fake 에서 tilt_comp_ab 의 payload 실행 중 변경 · 복원을 시험한다
+# ★11.17 사용자 "j1~j7 전부": 11.17 A/B(logs/runs/261117/tilt_comp_ab/140754)에서 j4 만 적분하자 j4 는 −0.60→+0.12° 로 맞았지만
+#   나머지 관절(왼 j5 −0.7 · j6 −0.5 · j7 −2.1°, 오른 j6 −1.0 · j7 +0.9°)은 그대로이고 손 끝 오차가 2.1→7.0 mm 로 커졌다(오차끼리 상쇄가 깨짐).
+#   → 양팔 j1..j7 모두 적분. ki = kp(시간상수 kp/ki = 1 s, j4 60/60 에서 확인한 값), 한계 어깨 1.5 · 손목 0.5 N·m
+#   (손목 kp 10 이라 0.35 N·m 모자람 = 2°; j4 는 A/B 에서 1.24 N·m 까지 썼다).
+# 셰이커 실물 0.117 kg(insights real-mass-latency-tipover, 10.09 사용자 실측), CoM 은 메시+T_in_l 계산값(al_7 프레임).
+# 오른팔 payload 0 = 적분만(source240 질량 · 무게중심 실측값이 아직 없다). tilt_comp_ab --payload-kg 는 왼팔만 바꾼다.
+# stationary_compensation.integral_enabled 와 같이 켜지 말 것(적분기 중복).
+tilt_comp:
+  left:
+    payload: [0.117, 0.0174, 0.0167, 0.1945]
+    ki: [70, 70, 70, 60, 10, 10, 10]
+    limit: [1.5, 1.5, 1.5, 1.5, 0.5, 0.5, 0.5]
+    deadband_deg: 0.15
+  right:
+    payload: [0.0, 0.0, 0.0, 0.0]
+    ki: [70, 70, 70, 60, 10, 10, 10]
+    limit: [1.5, 1.5, 1.5, 1.5, 0.5, 0.5, 0.5]
+    deadband_deg: 0.15

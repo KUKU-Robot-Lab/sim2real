@@ -224,6 +224,9 @@ def job_params(ep: Episode, p, tin: Mapping | None = None) -> dict:
         on = b is not None and b.attach_source == "tin_json"
         out["attach_source"] = "tin_json" if on else ""
         out["tin_json"] = str((tin or {}).get(p.side, "")) if on else ""
+        out["tin_subtract_offset"] = bool(on and b.tin_subtract_offset)   # job 마다 넣어 앞 job 값이 남지 않게
+        hoff = None if b is None else b.holder_offset_base_m
+        out["holder_offset_base_m"] = [float(v) for v in (hoff or (0.0, 0.0, 0.0))]   # ★11.18 job 마다 · 실수 배열
     # ★11.08 들기 가드 — 오른손 잡기(aglt) job 이면 에피소드와 상관없이 늘 넣는다(끄는 job 은 0 · nan 을 명시).
     #   노드는 reset 에서 읽자마자 끔으로 되돌리므로 값은 그 job 한 번만 쓰인다
     if p.kind == "aglt" and p.side == "right":
@@ -468,7 +471,8 @@ def write_run_meta(run_dir: Path, ep: Episode, robot: str) -> None:
     assets = {name: t.asset for name, t in ep.trajectories.items() if t.asset}
     meta = {"git": git("rev-parse", "HEAD"), "dirty": bool(git("status", "--short", "--untracked-files=no")),
             "argv": sys.argv, "host": os.uname().nodename, "start": time.strftime("%F %T"), "episode": ep.name,
-            "episode_version": ep.version, "episode_path": ep.path, "robot": robot, "assets": assets}
+            "episode_version": ep.version, "episode_path": ep.path, "robot": robot, "assets": assets,
+            **({"toggles": dict(ep.toggles)} if ep.toggles is not None else {})}   # ★11.16 콘솔 실험 토글
     try:
         (run_dir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
     except OSError:
@@ -700,7 +704,9 @@ class RosExecutor:
             req = SetParameters.Request()
             for name, v in params.items():               # 노드가 선언한 타입 그대로(holder 는 정수, holder_tol_m 은 실수, tin_subtract_offset 은 bool, 나머지는 문자열)
                 req.parameters.append(Parameter(name=name, value=(   # bool 은 int 의 하위형이라 먼저 본다(11.18 place 거부: BOOL 자리에 INTEGER)
-                    ParameterValue(type=ParameterType.PARAMETER_BOOL, bool_value=v) if isinstance(v, bool)
+                    ParameterValue(type=ParameterType.PARAMETER_DOUBLE_ARRAY, double_array_value=[float(x) for x in v])
+                    if isinstance(v, (list, tuple))      # ★11.18 holder_offset_base_m — 0 같은 정수가 섞여도 DOUBLE_ARRAY
+                    else ParameterValue(type=ParameterType.PARAMETER_BOOL, bool_value=v) if isinstance(v, bool)
                     else ParameterValue(type=ParameterType.PARAMETER_INTEGER, integer_value=v) if isinstance(v, int)
                     else ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=v) if isinstance(v, float)
                     else ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=str(v)))))
@@ -1168,6 +1174,11 @@ class RosExecutor:
                 with self._lock:
                     self._tin_rec = None              # ★11.07 T_in 기록은 이 tilt 노드 안에서만
 
+    def _tilt_comp(self, cfg) -> bool:
+        """★11.16 콘솔 토글이 있으면 그 값, 없으면 궤적 자산 policy.yaml tilt_comp."""
+        t = getattr(self.ep, "toggles", None)
+        return bool(t["tilt_comp"]) if t is not None else bool(cfg.get("tilt_comp"))
+
     def _run_planned_inner(self, node: Node, traj, world) -> NodeResult:
         """10.17 carry(ready_carry → 붓기 시작 자세, 한 팔씩 또는 두 팔) · tilt(D4 기본 궤적 + 복귀, 두 팔): 실측에서 계획 · 검사
         (움직이지 않음) → 그 팔 관절을 한 시각표로 재생. 계획 · 검사 실패(rc ≠ 0)면 움직이지 않고 refused. 손 목표는 그대로
@@ -1216,7 +1227,7 @@ class RosExecutor:
             if not real:
                 return NodeResult("refused", f"reach: {traj.object} 토픽에서 실물 이름을 못 읽었다", time.monotonic() - t0)
             side_arg = ["--side", sides[0], "--object", real, "--cup", ",".join(f"{v:.5f}" for v in snap[0]),
-                        "--quat", ",".join(f"{v:.6f}" for v in snap[1]), "--stop", traj.stop]   # ★10.20 pregrasp = 경로 D
+                        "--quat", ",".join(f"{v:.6f}" for v in snap[1]), "--stop", traj.stop] + (["--ring-radius-m", f"{traj.ring_radius_m:g}"] if traj.ring_radius_m else [])   # ★10.20 pregrasp = 경로 D
         elif traj.kind == "tilt" and cfg.get("kind") == "tilt_traj":   # ★10.27 traj_v10: 컵별 궤적 · 실측 홀더로 여유 검사
             side_arg = ["--cup", traj.cup]
             if self.ep.holder_poses:
@@ -1229,8 +1240,8 @@ class RosExecutor:
             [sys.executable, str(TOOLS / ("plan_tilt_traj.py" if cfg.get("kind") == "tilt_traj" else f"plan_{traj.kind}.py")), "--asset", str(asset), "--out", str(out), *side_arg],
             [sys.executable, str(TOOLS / "replay_to_pd.py"), "--npz", str(out / f"{traj.kind}_cmd.npz"), "--joints", joints,
              "--rate-scale", repr(float(traj.rate_scale)), "--max-start-gap", repr(float(cfg.get("start_gap_rad", 0.05))),
-             "--execute"],
-        ]
+             "--execute", *(["--tilt-comp"] if traj.kind == "tilt" and RosExecutor._tilt_comp(self, cfg) else [])],
+        ]   # ★11.16 tilt_comp: 궤적 자산 policy.yaml `tilt_comp: true` 일 때만(pd yaml tilt_comp 블록이 있는 팔에 적용)
         tin_plan = traj.kind == "tilt" and cfg.get("kind") == "tilt_traj"
         # T_in 이 없으면 멈출 팔: tilt_traj 계획은 잰 팔마다 이 런 T_in 을 쓴다(_planner_tin) · 그 밖은 place tin_json 팔만
         need = (set(tin_objs) if tin_plan else {b.side for b in self.ep.policies.values() if b.attach_source == "tin_json"}) if tin_objs else set()

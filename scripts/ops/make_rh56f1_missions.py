@@ -78,6 +78,9 @@ F_OBJECTS = {"source240_blue": "source240_real", "source240_orange": "source240_
              "source200_orange": "source200_real", "source200_pink": "source200_real", "shaker_c_orange": "shaker_c_real"}
 #: 팔마다 grasp_f_<팔>.yaml(손으로 쓴 원본)이 찍는 물체 — 이 물체는 원본 그대로 쓰고 변형 파일을 만들지 않는다
 F_DEFAULT = {"right": "source240_blue", "left": "shaker_c_orange"}
+#: ★11.19 사용자 "박스여서 … x축(80.5면의 수직방향)으로 손이 정렬" — ap05 는 방위를 못 정하므로 이 물체는 plan_reach(사전 파지,
+#:   박스 grasp_axis 면 방위) → rcg04(arm_start ready). 값 = 사전 파지 고리 반지름 = rcg04 계약 source240_real 반지름.
+F_REACH: dict = {}
 F_VARIANT_HEAD = "# 이 파일은 scripts/ops/make_rh56f1_missions.py 가 grasp_f_{side}.yaml 에서 물체만 바꿔 만든다 — 손으로 고치지 말 것(--check).\n"
 
 
@@ -92,8 +95,20 @@ def f_variant_text(side: str, obj: str) -> str:
         if src.count(old) != 1:
             raise ValueError(f"grasp_f_{side}.yaml: {old!r} 가 한 번이 아니다 — 변형을 만들 수 없다")
         src = src.replace(old, new)
+    if obj in F_REACH:
+        reach = (f"  reach: {{kind: reach, sides: [{side}], asset: tilt/base_arc6, cups: false, object: CUP, stop: pregrasp, "
+                 f"ring_radius_m: {F_REACH[obj]}}}\n")
+        for old, new in [(f"{{policy: rh56f1/aglt/{side}_approach_ap05, kind: aglt, side: {side}, approach_grasp: {{handoff: 1}}, "
+                          f"handoff: rh56f1/aglt/{side}_rcg04,", f"{{policy: rh56f1/aglt/{side}_rcg04, kind: aglt, side: {side},"),
+                         (f"  go_home: {{kind: rehome, sides: [{side}]}}\n", f"  go_home: {{kind: rehome, sides: [{side}]}}\n" + reach),
+                         ("  - {id: scene, type: snapshot}\n", "  - {id: scene, type: snapshot}\n"
+                          f"  - {{id: open_hand, type: hand, action: open, sides: [{side}]}}\n  - {{id: reach, type: trajectory, name: reach}}\n")]:
+            if src.count(old) != 1:
+                raise ValueError(f"grasp_f_{side}.yaml: {old!r} 가 한 번이 아니다 — {obj} reach 변형을 만들 수 없다")
+            src = src.replace(old, new)
     body = src.split("\nepisode:", 1)[1]
-    return (F_VARIANT_HEAD.format(side=side) + f"# 경로 F — {side} 손 {obj}(정책 물체 {F_OBJECTS[obj]}). 정책 · 값 · 흐름은 grasp_f_{side} 와 같다.\n"
+    return (F_VARIANT_HEAD.format(side=side) + (f"# 경로 F — {side} 손 {obj}(정책 물체 {F_OBJECTS[obj]}). 접근만 ap05 대신 plan_reach 사전 파지(박스 면 방위) → rcg04.\n"
+             if obj in F_REACH else f"# 경로 F — {side} 손 {obj}(정책 물체 {F_OBJECTS[obj]}). 정책 · 값 · 흐름은 grasp_f_{side} 와 같다.\n") +
             "episode:" + body)
 
 
@@ -215,7 +230,7 @@ EPISODES = ("pick_place_right", "pick_place_left", "grasp_c_right", "grasp_c_lef
             #   (실행기 episode_ros.job_params → 노드 reset). 분홍 FP++ = 분홍만 든 묶음 source240_pink
             "cocktail_1", "cocktail_1b",
             # ★11.02 사용자 지시(sim_e2e 경유) oneshot 세팅 실기 — 1b v5 + 놓기 정책 right_n10_e1000|e4000 · left_n09_e3800(cup_obs live)
-            "cocktail_1c_e1000", "cocktail_1c_e4000",
+            "cocktail_1c_e1000", "cocktail_e2e",   # ★11.20 사용자: cocktail_1c_e4000 → cocktail_e2e 이름 변경
             # ★11.16 사용자 "안 B 로 세팅" — 파랑만 · 오른손 놓기 right_n07(tin_json), e4000 과 따로 단계
             "cocktail_1c_n07b",
             # ★11.16 _t 카드(cocktail_1c_n07b_t · e4000_t)는 뺐다 — n07b 카드의 실험 토글 tin_subtract_offset 이 같은 일을 한다(yaml 은 남김)
@@ -253,7 +268,7 @@ REPORT_VIDEO_HZ = {"grasp_b_right": 15.0, "grasp_b_left": 15.0}
 #: ★11.16 사용자 "체인 영상 bag -> 4090에서 저장. 최적화 필요 fp++ 부담 안되게" — 카메라가 다른 PC 면 원본 영상이 이 PC bag 에
 #   못 실리므로(랜) 이 에피소드들은 카메라 PC 에서 컬러 영상만 따로 bag 으로 남긴다(_chain_camera_bag, 끝난 뒤 정리 없음 · 묶음은 수동).
 #   5 Hz: q95 1280x720 약 276 KB(11.04) → 약 1.4 MB/s · 분당 약 80 MB, 압축 한 장 약 2.4 ms(11.16 합성 이미지, 코어 한 개의 1.2 %)
-CHAIN_VIDEO_EPISODES = ("cocktail_1c_e4000", "cocktail_1c_e1000", "cocktail_1c_n07b", "pick_place_f_right", "pick_place_f_left")
+CHAIN_VIDEO_EPISODES = ("cocktail_e2e", "cocktail_1c_e1000", "cocktail_1c_n07b", "pick_place_f_right", "pick_place_f_left")
 CHAIN_VIDEO_HZ = 5.0
 #: ★11.18 사용자 "경로 F 를 실행할 때 foundation 마커가 표시되는 화면을 같이 녹화 … 4090 바탕화면 foundation pose camera 폴더 ·
 #   이름 = 잡는 컵 + 날짜 + 시작 시각(src240_blue_261118_15:36)" — 경로 F 도 같은 기록기로 남기고 camera_bbox.mp4 를 바탕화면에 복사한다.
@@ -1723,7 +1738,8 @@ def _episode_run(name: str, real: bool, ep=None) -> list:
                 continue
             if squeeze:
                 end_note += " · 쥠 보조(정책이 반 넘게 닫으면 네 손가락 끝까지 · 안 풂)"
-            route_f = (b.handoff or "").endswith("_rcg04") and not name.startswith("cocktail")
+            # ★11.19 커피박스(F_REACH)는 넘김 없이 rcg04 를 바로 띄운다 — 같은 경로 F 설정(FP++ 그대로 · 오른손 오프셋 없음)
+            route_f = (b.handoff or b.policy or "").endswith("_rcg04") and not name.startswith("cocktail")
             if route_f:
                 end_note += " · FP++ 보조 · 손 배포 보조 끔(끊김 정지만)"
             cmds.append(_cmd(f"[{b.side}] {role} 노드({b.policy}) — {end_note} · 컵 = FP++ live"

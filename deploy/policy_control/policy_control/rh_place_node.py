@@ -49,7 +49,7 @@ from policy_control import codec  # noqa: E402
 from policy_control import place_handover as PH  # noqa: E402
 from policy_control.pour_fj_node import NS, Family, PourFjNode, PourFjNodeError, main  # noqa: E402
 from policy_control.rh_place import (ATTACH_SOURCES, HOLDER_FLOOR_Z, HOLDER_TOL_M, JOINT_FREE_G,  # noqa: E402
-                                     OPEN_MIN_RAD, RhPlaceError, holder_refusals, holder_tol_of)
+                                     OPEN_MIN_RAD, RhPlaceError, holder_offset_of, holder_refusals, holder_tol_of)
 from policy_control import tin_live as TL  # noqa: E402
 from policy_control.place_ready_carry import STILL_MAX_TICKS as RCY_STILL_MAX_TICKS  # noqa: E402
 
@@ -85,6 +85,15 @@ def hand_released(chain, release_force_n: float) -> bool | None:
     return not ((has_t and tact >= release_force_n) or (has_j and jf >= chain.joint_free_g))
 
 
+def tin_minus_offset(rel_p, rel_q, palm_R, holder, side: str) -> tuple[tuple, np.ndarray | None]:
+    """★11.16 T_in(카메라 컵 ⊗ FK 손바닥) → FK 틀: 컵 rel_p − R_palmᵀ·t, 홀더 − t(t = 팔별 CUP_OBS_OFFSET_BASE_M, base m).
+    홀더도 같이 빼서 컵 − 홀더 관계(둘 다 카메라가 본 값)는 그대로 두고 손 안 자세만 FK 기준으로 옮긴다. R_palm = reset 때 실측."""
+    from policy_control.episode_spec import CUP_OBS_OFFSET_BASE_M
+    t = np.asarray(CUP_OBS_OFFSET_BASE_M[{"r": "right", "l": "left"}.get(side, side)], float)
+    rel = np.asarray(rel_p, float).reshape(3) - np.asarray(palm_R, float).reshape(3, 3).T @ t
+    return (rel, rel_q), None if holder is None else np.asarray(holder, float).reshape(3) - t
+
+
 class PlaceNode(PourFjNode):
     def __init__(self, **kw) -> None:
         super().__init__(**kw)
@@ -102,7 +111,12 @@ class PlaceNode(PourFjNode):
                               #   실기 131817 — tilt 뒤 FP++ 가 쥔 컵을 놓치고 탁자 아래 자세를 내 놓기가 멈췄다. true 면 live(5 cm 문)
                               ("place_live_cup", False),
                               # ★11.07 실행기가 job 마다 넣는다: attach_source:=tin_json(빈 값 = 계약) · tin_json:=런 폴더 T_in json
-                              ("attach_source", ""), ("tin_json", "")):
+                              ("attach_source", ""), ("tin_json", ""),
+                              # ★11.16 true 면 tin_json T_in 에서 카메라−FK 오프셋 t 를 뺀다(tin_minus_offset). 기본 false = 기존 그대로
+                              ("tin_subtract_offset", False),
+                              # ★11.18 사용자 "place는 x를 조금만 덜 이송시키면 될것 같고?" — 이송 · 정책 목표 홀더만 base 로 옮긴다
+                              #   (DOUBLE_ARRAY, 기본 0). 홀더 범위 검사 · 실행기 cup_in_holder 판정은 실물 홀더 그대로
+                              ("holder_offset_base_m", [0.0, 0.0, 0.0])):
             self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
         if not bool(p("require_grasp")):                   # fake 손은 촉각이 0 — 리허설에서만 끈다
@@ -365,9 +379,27 @@ class PlaceNode(PourFjNode):
         self.chain.rc_chain = self._rc_chain
         b = self._bundle
         self.chain.attach_info = self._attach_info()
-        self.chain.reset(meas, holder=self._holder, held=held,
+        attach, holder = None if b is None else (b.rel_p, b.rel_q), self._holder
+        if self._tin and bool(self.get_parameter("tin_subtract_offset").value):
+            attach, holder = tin_minus_offset(b.rel_p, b.rel_q, meas["arm"].palm_R, holder, self.contract.side().side)
+            self.chain.attach_info = {**self.chain.attach_info, "tin_subtract_offset": True,
+                                      "rel_p_used": [round(float(v), 5) for v in attach[0]],
+                                      "holder_used": None if holder is None else [round(float(v), 5) for v in holder]}
+            self.get_logger().info(f"tin_subtract_offset · 컵 rel_p {np.round(b.rel_p, 4).tolist()} → {np.round(attach[0], 4).tolist()} · "
+                                   f"홀더 {None if self._holder is None else np.round(self._holder, 4).tolist()} → "
+                                   f"{None if holder is None else np.round(holder, 4).tolist()}")
+        try:                                               # job 마다 실행기가 넣는다(앞 job 값이 남지 않게)
+            off = holder_offset_of(self.get_parameter("holder_offset_base_m").value)
+        except RhPlaceError as exc:
+            raise PourFjNodeError(str(exc)) from exc
+        if holder is not None and np.any(off):
+            holder = np.asarray(holder, float) + off
+            self.chain.attach_info = {**self.chain.attach_info, "holder_offset_base_m": off.tolist(),
+                                      "holder_used": [round(float(v), 5) for v in holder]}
+            self.get_logger().info(f"holder_offset_base_m {off.tolist()} · 목표 홀더 → {np.round(holder, 4).tolist()}")
+        self.chain.reset(meas, holder=holder, held=held,
                          allow_measured=bool(self.get_parameter("allow_measured_start").value),
-                         attach=None if b is None else (b.rel_p, b.rel_q))
+                         attach=attach)
         if self.chain.rcarry is not None:
             self.get_logger().info(f"준비 자세 이송 계획 · {self.chain.rcarry.plan}")
         rel = self.chain.rel[0]

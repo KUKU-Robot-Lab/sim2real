@@ -26,6 +26,8 @@ TESTS = (("F1offSw", "F1 끔 고속", "F1offSw", "off", "F1", "2.0", "1", 4, "sw
          ("F2x05Sw", "F2 ×0.5 고속", "F2x05Sw", "fs_i050", "F2", "2.0", "1", 4, "sweep"),
          ("F2x1Sw", "F2 ×1 고속", "F2x1Sw", "fs_i100", "F2", "2.0", "1", 4, "sweep"),
          ("F2x2Sw", "F2 ×2 고속", "F2x2Sw", "fs_i200", "F2", "2.0", "1", 4, "sweep"),
+         # ★11.10 F5: 움직일 때 마찰 보상(Fc·tanh+Fv·v, 명령 속도 기준) — 보상 끔 기준은 F1offSw
+         ("F5Sw", "F5 운동마찰 보상 고속", "F5Sw", "fcv", "F5", "2.0", "1", 4, "sweep"),
          ("F1off", "F1 끔", "F1off", "off", "F1", "2.0", "3", 24),
          ("F3", "F3", "F3", "off", "F3", "3.0", "4", 32),
          ("F4", "F4", "F4", "off", "F4", "0.4", "3", 24),
@@ -90,7 +92,11 @@ def _n_joints(folder: Path) -> int:
         trials = json.loads((folder / "setup/plan/plan.json").read_text(encoding="utf-8"))["trials"]
     except (OSError, ValueError, KeyError):
         return 0
-    return len({t["id"].rsplit("_", 2)[1] for t in trials})
+    # ★11.10 관절 이어 붙인 trial(…_all_rM)은 joints 목록으로 센다
+    joints = set()
+    for t in trials:
+        joints.update(t["joints"] if t.get("joints") else [t["id"].rsplit("_", 2)[1]])
+    return len(joints)
 
 
 def chain(repo: Path, side: str) -> list[dict]:

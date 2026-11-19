@@ -267,6 +267,9 @@ PAYLOAD_CASES = [
     pytest.param("pd_rh56f1_exec.yaml", RH_CONTRACT, RH_URDF, id="rh56f1-exec"),
     pytest.param("pd_rh56f1_fake.yaml", RH_CONTRACT, RH_URDF, id="rh56f1-fake"),
 ]
+#: ★11.17 URDF 에 없는 실물 질량 — (질량 kg, al_7 프레임 COM). RH56F1 알루미늄 어댑터는 l/r_hj_mount 간격(59.57 mm)만
+#: URDF 에 있고 링크가 없다. 86.9 g = usdz 부피 × 2.70 g/cm³, COM 은 간격 가운데로 근사.
+OFF_URDF_MASS = {RH_URDF: (0.0869, np.array([0.0, 0.0, 0.0595695 / 2]))}
 
 
 @pytest.mark.parametrize("pd_yaml,contract_path,urdf", PAYLOAD_CASES)
@@ -314,9 +317,13 @@ def test_payload_is_only_what_the_chain_cannot_carry(pd_yaml, contract_path, urd
         com /= mass
         R_tip, t_tip = tf[f"{p}_al_7"]            # ★with_payload 가 읽는 프레임 = 체인 마지막 링크
         local = R_tip.T @ (com - t_tip)
+        if urdf in OFF_URDF_MASS:                 # URDF 밖 실물(어댑터)을 같은 프레임에서 합친다
+            m_x, c_x = OFF_URDF_MASS[urdf]
+            local = (mass * local + m_x * c_x) / (mass + m_x)
+            mass += m_x
         payload = G.block_for_side(cfg.gravity, side).payload
         assert abs(payload[0] - mass) < 5e-4 and np.allclose(payload[1:], local, atol=2e-5), (side, mass, local)
-        assert 0.15 < np.linalg.norm(local) < 0.30, (
+        assert 0.12 < np.linalg.norm(local) < 0.30, (   # ★11.17 어댑터(손목 쪽 86.9 g)를 더하면 RH56F1 13.3 cm
             f"{side}: 손 무게중심이 손목에서 {np.linalg.norm(local)*100:.1f} cm — 손이 달린 팔에서 나올 수 없다")
 
 

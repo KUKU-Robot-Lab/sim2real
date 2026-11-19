@@ -1,0 +1,100 @@
+{
+ "tool": "sim2real build_tilt_traj_asset.py",
+ "hdgp_commit": "e62ae529",
+ "hdgp_md5": {
+  "source/openarm/openarm/agnostic/modules/tilt_traj/__init__.py": "13fe9614b896dd51be03007635e3355e",
+  "source/openarm/openarm/agnostic/modules/tilt_traj/plan.py": "30d90081e1c4aa83147c27f4485328f5",
+  "source/openarm/openarm/agnostic/modules/tilt_traj/traj.py": "35f77477d604021ae96b29208fae0415",
+  "source/openarm/openarm/agnostic/modules/tilt_traj/clearance.py": "451cd8bc132dff0a328d901ad3cb724a",
+  "source/openarm/openarm/agnostic/modules/tilt_traj/fast_ik.py": "873bab5bf280406291c850654d570372",
+  "source/openarm/openarm/agnostic/modules/ready_carry/__init__.py": "6a921e20ba3ea5fa3c943e175a39bf3d",
+  "source/openarm/openarm/agnostic/modules/ready_carry/chain.py": "e93981f98a8e74bada451eb3b0a59568",
+  "source/openarm/openarm/agnostic/modules/ready_carry/posture.py": "b89b1e8f943d59dd0df901111adfb048",
+  "assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf": "f338d043ce3481f72e37ec4c79e20d43",
+  "scripts/tools/tilt_newton/tilt_primitive_ts.py": "10d8b8a317e6845fbd7931aa7f7fb762",
+  "scripts/tools/tilt_newton/tilt_gpu.py": "216178b7f9679d82ade162df43b88301",
+  "scripts/tools/tilt_newton/holder_clear.py": "702b41b552a6f2af1ec5c28efcab5824"
+ },
+ "inputs_md5": {
+  "rh56f1_pour_start.yaml": "99bdbe880bd950c64bbe5f3969cb5827",
+  "cup_holder_poses_5090_v1.yaml": "86d3f8c951720fd3343e37fac239ddf5",
+  "single734_t120.npz": "ff07baee8978f1bdfec5336a8605b230",
+  "collect_q_A_g25.npz": "96a5e063e896bec7bc59e1fbae1678e6"
+ },
+ "cups": {
+  "240": {
+   "params_from": "/home/oem/rl_ws/our_source/tilt_rl/v10/cma240/final_params.json",
+   "params_md5": "35a58ca5b21eeef630a05ef5fd1a3cb3",
+   "mouth_ref_from": "/home/oem/rl_ws/our_source/tilt_rl/v9/cma240/grasps 파지 0",
+   "mouth_ref_mm": [
+    251.7,
+    114.4,
+    501.4
+   ],
+   "T_in_from": "/home/oem/rl_ws/our_source/rh_aglt_runs/eval/1026_grasp2tilt/grasps240 짝 236",
+   "knots": 638,
+   "T_s": 21.27,
+   "edges_s": [
+    0.0,
+    0.5,
+    5.5,
+    11.558,
+    13.558,
+    16.558,
+    17.258
+   ],
+   "ref_info": {
+    "ik_r_mm": 1.2425,
+    "ik_l_mm": 0.3662,
+    "ik_rot_deg": 2.0005,
+    "qd_max": 1.265,
+    "ik_pos_mm": 1.2425,
+    "clr_src": 0.0451,
+    "clr_rcv": 0.0552,
+    "clr_arm_r": 0.0815,
+    "clr_hand_r": 0.0615,
+    "clr_arm_l": 0.0703,
+    "clr_hand_l": 0.0503,
+    "clr_min": 0.0451,
+    "table_clear": 0.1454
+   }
+  },
+  "200": {
+   "params_from": "/home/oem/rl_ws/our_source/tilt_rl/v10b/final_params_200.json",
+   "params_md5": "97792a5271cc485bf46c96895d44b896",
+   "mouth_ref_from": "/home/oem/rl_ws/our_source/tilt_rl/v9/cma200/grasps 파지 0",
+   "mouth_ref_mm": [
+    251.1,
+    114.2,
+    502.9
+   ],
+   "T_in_from": "/home/oem/rl_ws/our_source/rh_aglt_runs/eval/1026_grasp2tilt/grasps200 짝 236",
+   "knots": 598,
+   "T_s": 19.93,
+   "edges_s": [
+    0.0,
+    0.5,
+    5.5,
+    10.214,
+    12.214,
+    15.214,
+    15.914
+   ],
+   "ref_info": {
+    "ik_r_mm": 1.2313,
+    "ik_l_mm": 0.4268,
+    "ik_rot_deg": 1.9369,
+    "qd_max": 1.3422,
+    "ik_pos_mm": 1.2313,
+    "clr_src": 0.0494,
+    "clr_rcv": 0.045,
+    "clr_arm_r": 0.0822,
+    "clr_hand_r": 0.0622,
+    "clr_arm_l": 0.0633,
+    "clr_hand_l": 0.0433,
+    "clr_min": 0.0433,
+    "table_clear": 0.1453
+   }
+  }
+ }
+}

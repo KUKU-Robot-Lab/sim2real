@@ -41,8 +41,10 @@ gravity:
   # COM 프레임 = 체인 마지막 링크 *_al_7. 손 전체 0.708 kg 중 고정 링크(mount · base · palm)는 체인이 이미 싣는다.
   # test_pc_pd_gravity 의 URDF 계산과 같은 방법(09.29 계산).
   payload:
-    left:  [0.1915800, 0.020847, 0.011958, 0.179547]
-    right: [0.1915800, 0.014897, -0.031431, 0.179734]
+  # ★11.17 사용자 "알루미늄이야": OpenArm–RH56F1 어댑터(URDF 에 링크 없음, l/r_hj_mount 59.57 mm 간격만 있음)
+  # 86.9 g(usdz 부피 × 2.70 g/cm³)을 간격 가운데(al_7 z 0.02978)에 더했다. 손가락 0.19158 kg 과 합친 값.
+    left:  [0.2784800, 0.014342, 0.008226, 0.132814]
+    right: [0.2784800, 0.010248, -0.021623, 0.132942]
   cap_nm: 20.0
 gains:
   yaml: urdf/vendor/openarm_description/config/arm/v10/control_gains.yaml

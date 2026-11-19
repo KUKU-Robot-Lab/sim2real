@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parents[2]
-EXTR = REPO / "config/global_camera_extrinsics_arm4090_h2048.yaml"
+EXTR = REPO / "config/global_camera_extrinsics_arm4090_m1117.yaml"
 CKPT_EXTR = REPO / "config/global_camera_extrinsics_arm4090_r20u5.yaml"   # ckpt 는 옛 판으로 배웠다(ckpt_md5)
 YOLO = REPO / "logs/policy/student_mask_A/yolo/seg_s640_A/best.pt"
 #: 실제 hdgp 7ffc4f8f · 잡기 ckpt 에 있고 _meta 에 없는 키(가짜 묶음을 실 ckpt 모양에 가깝게)
@@ -25,7 +25,7 @@ def load_check():
 
 
 def make_bundle(d: Path, c, extra: dict = EXTRA) -> Path:
-    """가짜 놓기 학생 묶음: student.yaml · ckpt(= _meta + extra, 가중치 없음) · h2048 사본(ckpt 메타는 r20u5) · seg_s640_A 링크."""
+    """가짜 놓기 학생 묶음: student.yaml · ckpt(= _meta + extra, 가중치 없음) · m1117 사본(ckpt 메타는 r20u5) · seg_s640_A 링크."""
     import torch
     from test_pc_place_student import _meta
 

@@ -17,7 +17,7 @@ import head_depth_node as hdn  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 STUDENT = Path(__file__).resolve().parents[1] / "deploy/policies/rh56f1/aglt/right_student1104e"
-EXTRINSICS = STUDENT / "camera/extrinsics_h2048.yaml"      # 11.15 목 영점 2048 판 사본(ckpt 는 r20u5 로 배움 → ckpt_md5)
+EXTRINSICS = STUDENT / "camera/extrinsics_m1117.yaml"      # 11.17 테이블 마커 판 사본(ckpt 는 r20u5 로 배움 → ckpt_md5)
 
 
 def test_to_small_matches_real_depth():

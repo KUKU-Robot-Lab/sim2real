@@ -200,7 +200,7 @@ class PdNode(LeanNodeMixin, Node):
 
     def _wire(self) -> None:
         from sensor_msgs.msg import JointState
-        from std_msgs.msg import Bool, String
+        from std_msgs.msg import Bool, Float64, String
         from std_srvs.srv import Trigger
 
         self.cb_main = MutuallyExclusiveCallbackGroup()
@@ -224,6 +224,10 @@ class PdNode(LeanNodeMixin, Node):
             self.create_subscription(String, f"{NS}/{s}/episode", self._side_episode_cb(s), _qos_latched(),
                                      callback_group=main)
         self.create_subscription(Bool, f"{NS}/estop", self._on_estop, _qos_latched(), callback_group=main)
+        # ★11.17 tilt_comp payload kg 실행 중 변경(tools/tilt_comp_ab.py) — 결과는 status arms.<팔>.tilt_comp_payload · 거부는 last_error
+        for side in self.sides:
+            self.create_subscription(Float64, f"{pd_ns(side)}/tilt_comp_payload",
+                                     lambda msg, s=side: self._on_tilt_payload(s, msg.data), 10, callback_group=main)
         topics: dict[str, list] = {}
         for unit in self.units.values():
             for topic, roles in unit.joint_topics().items():
@@ -371,6 +375,15 @@ class PdNode(LeanNodeMixin, Node):
 
     def _side_episode_cb(self, side: str):
         return lambda msg: self._on_episode(msg, only_side=side)
+
+    def _on_tilt_payload(self, side: str, kg: float) -> None:
+        with self._lock:
+            try:
+                self.units[side].set_tilt_payload(kg)
+            except ValueError as exc:
+                self._note_error(f"tilt_comp payload: {exc}")
+                return
+        self.get_logger().info(f"{side}: tilt_comp payload {kg:g} kg")
 
     def _on_estop(self, msg) -> None:
         with self._lock:

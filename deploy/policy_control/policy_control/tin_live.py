@@ -7,7 +7,9 @@
 판정: 갱신 MIN_FRESH 개 이상 · 갱신 비율 ≥ 수신의 FRESH_RATIO · 창 안 흔들림(위치 JIT_POS_M · 각도 JIT_ANG_DEG) · 손바닥–컵 NEAR_M 안.
 ★11.10 사용자 "실측 T_in 을 실제로 쓰게" — 고정 평균과의 대조 거부는 없앴다(차이는 기록만, record 의 vs_fixed).
 실행기는 창 시작을 FPP_LATENCY_S 만큼 늦춰 자른다(멈추기 전 영상 제외).
-하나라도 어기면 fallback(고정 평균 파일, tin_all · build_v12 산출물)으로 대신하고 그 이유를 json 에 남긴다.
+하나라도 어기면 실기는 FP++ 재잡기 후 다시 재고(episode_ros TIN_RETRY_N), 그래도 실패면 tilt 를 시작하지 않는다
+(고정값으로 진행하지 않음 — tin_<노드>_<팔>_failed.json). fallback(고정 평균 파일)은 fake(재잡기 없음)에서만 쓴다.
+측정 뒤 tilt · place 는 이 T_in 을 손바닥 FK 에 붙여(컵 = FK · T_in) 계산한다 — 지연은 창 시작만 늦출 뿐 T_in 값에 들어가지 않는다.
 """
 from __future__ import annotations
 

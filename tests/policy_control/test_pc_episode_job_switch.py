@@ -24,7 +24,8 @@ from policy_control.pour_fj_node import PourFjNode, PourFjNodeError
 EPISODES = Path(__file__).resolve().parents[2] / "config" / "episodes"
 BLUE_LIVE = "/objects/source240_blue/live_pose"
 PINK_LIVE = "/objects/source240_pink/live_pose"
-NO_TIN = {"attach_source": "", "tin_json": ""}    # ★11.07 place job 마다 늘 넣는다(빈 값 = 계약 그대로)
+NO_TIN = {"attach_source": "", "tin_json": "", "tin_subtract_offset": False,
+          "holder_offset_base_m": [0.0, 0.0, 0.0]}    # ★11.18 홀더 옮김도 job 마다 · ★11.07 place job 마다 늘 넣는다(빈 값 = 계약 그대로)
 
 
 def _lg_off(params: dict) -> dict:
@@ -59,7 +60,7 @@ def test_each_job_gets_its_own_cup_and_holder(name):
 def test_a_live_cup_place_follows_the_cup_it_places():
     """★11.03 cup_obs live 놓기 계약(right_n10 · left_n09)은 틱마다 FP++ 컵을 본다 — 놓을 컵의 live 토픽(…/pose 는 잡기 전
     테이블 자세 재발행). 분홍 놓기가 홀더 위 파랑 live 에 머물지 않게 job 마다 넣는다."""
-    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+    ep = S.load(EPISODES / "cocktail_e2e.yaml")
     got = {nid: job_params(ep, _plan(ep, nid)).get("cup_topic") for nid in ("place_blue", "place_pink", "place_shaker")}
     assert got == {"place_blue": BLUE_LIVE, "place_pink": PINK_LIVE, "place_shaker": "/objects/shaker_c_orange/live_pose"}
 

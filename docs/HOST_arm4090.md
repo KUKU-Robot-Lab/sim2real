@@ -66,16 +66,35 @@ OpenArm 양팔 + Inspire RH56F1 양손 + 머리(XC330 ×2) + RealSense 가 모�
 ### 시야 검사 (11.03~)
 
 - 사용자: "FP++ 를 받는 것도 중요하지만 sim 과 real 의 카메라 시야가 같아야 의미가 있다." 미션 `head_view_check` 단계
-  (head_home 뒤 · cups 앞)가 머리를 움직이지 않고 `scripts/head_view_feedback.py --check` 로 D435i IMU(중력)로 잰 카메라
-  숙임을 r20u5 외부 파라미터의 숙임과 비교한다. 허용치는 `config/head_view_feedback_arm4090.yaml` 의 `view_check_tol_deg`
-  (1.0°, 근거는 그 파일 주석)이다. 넘으면 rc 1 과 "시야가 sim 과 다르다" 를 낸다. yaw(pan 방향)는 중력으로 못 잰다.
+  (head_home 뒤 · cups 앞)가 머리를 움직이지 않고 `scripts/head_view_feedback.py --check` 를 돌린다.
+- ★11.17 기준은 한 번 실측한 관찰이다(사용자: "앞으로 변하지 않을 세팅, 일관된 관찰을 찾아서 맞출 수 있도록"). 기준 파일
+  `config/head_view_ref_arm4090_h2048.yaml` 에 외부 파라미터를 잰 그때의 보정 전 IMU 위쪽 벡터(중력) · 목 틱 · 외부 파라미터
+  md5 · 접근 방향(`approach`) · `measured` 가 있다. `--check` 는 지금의 보정 전 IMU 숙임 · 옆 기울기 · 틱을 이 파일과 직접
+  비교한다(IMU 0점 bias 는 쓰지 않는다). 허용치는 `config/head_view_feedback_arm4090.yaml` 의 `ref_tol_pitch_deg`(0.3°) ·
+  `ref_tol_roll_deg`(0.3°) · `ref_tol_tick`(4)이고 근거는 그 파일 주석에 있다. 하나라도 넘거나, md5 가 다르거나, IMU 가 흔들리거나
+  샘플이 모자라면 rc 1 이다. yaw(pan 방향)는 중력으로 못 잰다.
+- `measured: false`(11.15 bias 설정에서 옮긴 값, 지금 파일)이면 판정 줄은 찍지만 "기준이 실측이 아님 — --record-ref 필요" 로
+  rc 1 이다. 실측 기준이 생길 때까지 이 단계는 실패한다.
+- 접근 방향: 같은 인코더 자리도 올라가며 · 내려가며 도착한 데 따라 숙임이 평균 0.5° · 최대 1.13° 다르다(10.30 처짐 지도).
+  그래서 기준은 `approach`(기본 down = tilt 틱이 커지며 숙여 도착) 방향으로 도착했을 때만 유효하고, `--check` 가 그 줄을 찍는다.
+  `/head/joint_states` 로는 도착 방향을 알 수 없으니 사람이 확인한다. `--execute` 는 이 방향으로만 들어온다. 목표를 넘어서면
+  1.5° 물렸다가 다시 들어온다.
 - 카메라는 IMU 를 켜고 띄운다(`scripts/vision/camera_up.sh`). IMU 없이 떠 있던 카메라면 검사가 "IMU 가 안 들어온다" 로
   실패하니 카메라를 내렸다 다시 켠다.
-- 실패하면 먼저 카메라 · 머리를 건드렸는지 본다. 머리를 시야에 맞춰 옮기려면(`head_view_feedback.py --execute`, 목이
-  움직인다, 허락 뒤) 그 자세에서 외부 파라미터를 다시 잰다. 순서: 목 드라이버를 내림 →
-  `python3 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_r20u5.yaml --write --head-config config/head_home_rh56f1.yaml`
-  → 새 head_pose 틱에 맞춰 `config/head_camset_rh56f1.yaml` 을 고침 → 드라이버를 다시 띄움 → `--calib-bias` 로 IMU 0점을 다시 잼
-  → `--check` 가 ✓ 인지 확인. 옮기기만 하고 다시 재지 않으면 head_pose ±4 틱 밖이라 object_pose_node 가 발행을 멈춘다.
+- 기준 잡기(`--record-ref`, 움직이지 않음): 외부 파라미터를 막 잰 자세 그대로, 그 자세에 도착한 방향을 적어
+  `python3 scripts/head_view_feedback.py --record-ref --approach down`. 틱이 외부 파라미터 head_pose ± tol_tick 밖이거나 σ · 샘플 수가
+  모자라면 쓰지 않는다. 새 IMU 각이 (외부 파라미터 각 + 설정 bias) 와 1° 넘게 다르면 `--force` 없이는 쓰지 않는다. 쓴 파일은
+  `measured: true` 이고 옛 파일은 `.bak-<시각>` 으로 남는다.
+- 실패하면 먼저 카메라 · 머리를 건드렸는지 본다. 기준 시야로 되돌리려면 `head_view_feedback.py --execute`(목이 움직인다, 허락 뒤).
+  `--target extrinsics`(기본)는 실측 기준 파일이 있어야 돈다. 기준이 없거나 md5 가 다르거나 measured false 면 이유를 찍고
+  멈추고, 옛 방식(IMU 0점 bias 로 외부 파라미터 숙임)은 `--allow-bias-target` 으로만 쓴다. 옮긴 자리가 head_pose ±4 틱 밖이면
+  object_pose_node 가 발행을 멈추니 그 자세에서 외부 파라미터를 다시 잰다. m1117 은 `--write` 로 덮지 않는다(11.17 마커 값,
+  학생 카드 · head_depth_node 가 md5 고정). 순서: 목 드라이버를 내림 →
+  `python3 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090_m1117.yaml --out config/global_camera_extrinsics_arm4090_<MMDD>.yaml --write --head-config config/head_home_rh56f1_h2048.yaml`
+  (`--out` 에 새 날짜 파일을 먼저 복사해 둔다) → 새 파일로 바꿀 때는 미션 생성기 `CAMERA_EXTRINSICS` · 학생 카드
+  `deploy/policies/rh56f1/*/*/student.yaml` camera path · md5 · `head_depth_node.py` `EXTRINSICS_MD5` 를 같이 바꿈 → 새 head_pose 틱에
+  맞춰 `config/head_camset_rh56f1_h2048.yaml` 을 고침 → 드라이버를 다시 띄움 → `--record-ref` 로 기준을 다시 잡음 → `--check` 가
+  ✓ 인지 확인(절차 정본은 `head_view_feedback.py --help` 끝).
 - 홀더는 고정이다(11.03 사용자). 에피소드는 저장된 `holder_poses` 파일을 쓰고, 파일이 없거나 홀더가 빠졌으면 시작 검사
   (`episode_run.py --plan --require-holders`)가 막는다. `cup_holders` 단계는 홀더를 옮겼을 때 다시 재는 데만 쓴다.
 

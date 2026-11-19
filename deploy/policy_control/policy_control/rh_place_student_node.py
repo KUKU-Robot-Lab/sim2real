@@ -35,6 +35,8 @@ SRC_DEPTH = "/camera/camera/aligned_depth_to_color/image_raw"   # = head_depth_n
 HEAD_TOPIC, STREAM_TOPIC = "/head/joint_states", "/head/target_stream"   # = head_motion.STREAM_TOPIC
 HEAD_CMD_FAIL_MAX = 6    # look_at 풀이 연속 실패 틱 상한(60 Hz 에서 0.1 s) — 넘으면 abort(드라이버 0.5 s 멈춤보다 먼저)
 FRAME_FAIL_WARN = 3      # 깊이 프레임 처리 연속 실패가 이만큼이면 status reasons 에 올린다
+# ★11.10 reset 때 깊이가 MAX_DEPTH_AGE_S 넘게 낡았으면 바로 거부하지 않고 이만큼 새 프레임을 기다린다(상한 0.2 s 는 그대로)
+DEPTH_START_WAIT_S = 1.0
 CARRY_STALE_WARN = 6     # 이송 중 학생 입력 낡음 연속 틱이 이보다 많으면 status reasons 에 올린다(60 Hz 에서 0.1 s)
 
 
@@ -54,13 +56,15 @@ class PlaceStudentNode(PlaceNode):
         from sensor_msgs.msg import Image, JointState
         from std_msgs.msg import String
 
-        for name, default in (("student_dir", ""), ("target_class", ""), ("num_threads", 4), ("head_stream", True)):
+        for name, default in (("student_dir", ""), ("target_class", ""), ("num_threads", 4), ("head_stream", True),
+                              ("max_mask_age_s", SM.MAX_MASK_AGE_S)):
             self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
         if not str(p("student_dir")):
             raise PourFjNodeError("student_dir:= 학생 묶음 폴더가 필요하다")
         self._policy = PS.PlaceStudentPolicy(str(p("student_dir")), self.contract, str(p("target_class")),
-                                             device=self.device, num_threads=int(p("num_threads")))
+                                             device=self.device, num_threads=int(p("num_threads")),
+                                             max_mask_age_s=float(p("max_mask_age_s")))
         self.fam = Family(**{**self.fam.__dict__, "chain": PS.StudentPlaceChain})
         self._holder_yaw: dict[int, float] = {}
         self._head_on = bool(p("head_stream"))
@@ -70,12 +74,13 @@ class PlaceStudentNode(PlaceNode):
         self._head_fail, self._head_err = 0, ""
         self._mask_cfg: dict | None = None
         sp = self._policy
-        self.create_subscription(Image, SRC_DEPTH, self._on_depth, qos_profile_sensor_data)
-        self.create_subscription(Image, SM.MASK_TOPIC, sp.masks.on_msg, qos_profile_sensor_data)
+        subs = [(self.create_subscription(Image, SRC_DEPTH, self._on_depth, qos_profile_sensor_data), self._on_depth),
+                (self.create_subscription(Image, SM.MASK_TOPIC, sp.masks.on_msg, qos_profile_sensor_data), sp.masks.on_msg)]
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(String, SM.MASK_CONFIG_TOPIC, self._on_mask_cfg, latched)
-        self.create_subscription(JointState, HEAD_TOPIC,
-                                 lambda m: sp.head.on_state(_ns(m.header.stamp), m.name, m.position, time.time_ns()), 50)
+        on_head = lambda m: sp.head.on_state(_ns(m.header.stamp), m.name, m.position, time.time_ns())  # noqa: E731
+        subs.append((self.create_subscription(JointState, HEAD_TOPIC, on_head, 50), on_head))
+        self._pumps = tuple(subs)                          # reset 깊이 대기 중 직접 꺼내 먹일 구독(_wait_depth)
         self._pub_head = self.create_publisher(String, STREAM_TOPIC, 10)
         self._String = String
         self._worker = threading.Thread(target=self._work, name="place_depth", daemon=True)
@@ -140,7 +145,7 @@ class PlaceStudentNode(PlaceNode):
     # ---------------------------------------------------------------- episode
     def _reset_chain(self, meas: dict) -> None:
         sp = self._policy
-        sp.now_ns = time.time_ns()
+        sp.now_ns = self._wait_depth()                    # 깊이가 낡았으면 먼저 기다린다 — 아래 검사는 대기 뒤 시각으로 본다
         if self._mask_cfg is None:
             raise PS.PlaceInputStale(f"{SM.MASK_CONFIG_TOPIC} 를 못 받았다 — head_mask_node --policy-dir 가 도는가")
         SM.check_mask_config(self._mask_cfg, sp.cfg["mask"]["yolo"], sp.meta["depth_pre"])
@@ -159,6 +164,33 @@ class PlaceStudentNode(PlaceNode):
         self._head_fail, self._head_err = 0, ""
         sp.chain = self.chain
         super()._reset_chain(meas)
+
+    def _depth_ok(self, now_ns: int) -> bool:
+        sp = self._policy
+        return sp.frame is not None and PS.age_refusal((now_ns - sp.frame.stamp_ns) * 1e-9, sp.max_depth_age_s, "") is None
+
+    def _wait_depth(self) -> int:
+        """reset 때 깊이가 낡았으면 DEPTH_START_WAIT_S 까지 새 프레임을 기다리고 지금 시각(ns)을 돌려준다.
+        reset 은 단일 스레드 실행기의 서비스 콜백이라 그동안 구독 콜백이 돌지 않는다 — 깊이 · 마스크 · 목 구독에서 직접 꺼내
+        같은 콜백에 먹인다(같은 스레드라 평소 콜백과 같다). 아직 running 전이라 정책 · 머리 명령은 나가지 않는다."""
+        t0 = time.monotonic()
+        now = time.time_ns()
+        if self._depth_ok(now):
+            return now
+        while time.monotonic() - t0 < DEPTH_START_WAIT_S:
+            for sub, cb in self._pumps:
+                # shortcut: rclpy 실행기 내부와 같은 take_message 를 쓴다(Humble), 실행기를 다중 스레드로 바꾸면 그냥 기다리면 된다
+                with sub.handle:
+                    m = sub.handle.take_message(sub.msg_type, sub.raw)
+                if m is not None:
+                    cb(m[0])
+            time.sleep(0.01)
+            now = time.time_ns()
+            if self._depth_ok(now):
+                break
+        ok = self._depth_ok(now)
+        self.get_logger().info(f"시작 깊이 대기 {time.monotonic() - t0:.2f} s → {'새 프레임' if ok else '못 받음'}")
+        return now
 
     def _on_tick(self) -> None:
         running = self.book.phase == "running" and self.chain is not None
@@ -223,7 +255,8 @@ class PlaceStudentNode(PlaceNode):
         dt = sp.head.dt_ms
         return {**super()._status_extra(), "student": {
             **sp.last_in, "mask": sp.masks.status(), "frame_err": self._frame_err, "frame_fail": self._frame_fail,
-            "worker_alive": self._worker.is_alive(), "head_bad": sp.head.bad, "head_depth_dt_ms": None if dt is None else round(dt, 1),
+            "worker_alive": self._worker.is_alive(), "head_bad": sp.head.bad, "head_relaxed": sp.head.relaxed,
+            "head_depth_dt_ms": None if dt is None else round(dt, 1),
             "carry_stale": {"n": getattr(ch, "carry_stale_n", 0), "run": getattr(ch, "carry_stale_run", 0),
                             "last": getattr(ch, "carry_input_err", "")},
             "head_cmd": None if sp.look.cmd is None else [round(float(v), 2) for v in sp.look.cmd]}}

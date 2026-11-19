@@ -115,6 +115,9 @@ class StationaryRuntime:
             episode_changed=new_episode,
             gravity_correction=delta_g,
             feedforward=cmd.tau,
+            # ★11.10 F5: 마찰 속도는 원래 목표 속도(selected.qd). cmd.qd 는 vel_ff_cap(0)으로 잘려
+            #   항상 0 → fc·tanh(0)+fv·0 = 0, F5 가 F1off 와 같아졌다.
+            target_velocity=target_velocity,
         )
         scale = float(np.clip(output_scale, 0.0, 1.0))
         addition = result.addition * scale

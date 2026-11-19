@@ -11,7 +11,7 @@ import yaml
 from policy_control import episode_spec as S
 
 REPO = Path(__file__).resolve().parents[2]
-EPISODE = REPO / "config" / "episodes" / "cocktail_1c_e4000.yaml"
+EPISODE = REPO / "config" / "episodes" / "cocktail_e2e.yaml"
 
 
 def _raw(**traj):

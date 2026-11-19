@@ -56,6 +56,19 @@ LIMITS = {"ik_pos_mm": 20.0, "clr_min_m": 0.02, "table_clear_m": 0.01, "cmd_vel_
           "mouth_xy_mm": 8.0}
 
 
+def mouth_xy_limit(cfg: dict) -> float | None:
+    """★11.20 입구 중심 맞춤 상한은 궤적마다 정한다. policy.yaml mouth_xy_max_mm 가 없으면 LIMITS 8 mm(입구 중심을 shaker 위에 맞춘
+    v10~v12 설계 기준), null 이면 검사하지 않고 값만 남긴다 — v14 처럼 sim 에서 일부러 비켜 조준한 궤적에 v12 기준을 씌우지 않는다."""
+    if "mouth_xy_max_mm" not in cfg:
+        return LIMITS["mouth_xy_mm"]
+    v = cfg["mouth_xy_max_mm"]
+    if v is None:
+        return None
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0:
+        raise ValueError(f"mouth_xy_max_mm 는 양수 mm 또는 null 이어야 한다: {v!r}")
+    return float(v)
+
+
 def load_modules(root: Path):
     """hdgp modules 폴더를 PKG 이름으로 올리고 tilt_traj · ready_carry 를 돌려준다(상대 import ..ready_carry 가 그대로 돈다)."""
     if PKG not in sys.modules:
@@ -145,6 +158,7 @@ def pick_device(want: str) -> str:
 
 def plan(cfg: dict, asset: Path, cup: str, q: dict, holders: Path, tin_json: str, root: Path, device: str = "auto") -> dict:
     t_plan = time.perf_counter()
+    mxy_lim = mouth_xy_limit(cfg)                                      # 계획 전에 — 값이 틀리면 IK 를 돌리지 않는다
     import torch
     dev = pick_device(device)
     TT, CH = load_modules(root)
@@ -218,7 +232,8 @@ def plan(cfg: dict, asset: Path, cup: str, q: dict, holders: Path, tin_json: str
         "cmd_vel_rad_s": {"value": round(vel, 3), "ok": vel <= LIMITS["cmd_vel_rad_s"]},
         "joint_margin_rad": {"value": round(margin, 4), "ok": margin >= LIMITS["joint_margin_rad"]},
         "start_gap_rad": {"value": round(gap, 4), "ok": gap <= LIMITS["start_gap_rad"]},
-        "mouth_xy_mm": {"value": round(mxy, 2), "ok": mxy <= LIMITS["mouth_xy_mm"]},
+        "mouth_xy_mm": {"value": round(mxy, 2), "ok": mxy_lim is None or mxy <= mxy_lim, "limit": mxy_lim,
+                        "skipped": mxy_lim is None},   # 자산 policy.yaml mouth_xy_max_mm: null(v14) — 통과가 아니라 검사 안 함
     }
     return {"cmd": cmd, "knots": knots, "info": info, "checks": checks, "ok": all(c["ok"] for c in checks.values()),
             "params": params, "aim": aim, "tin": tin_src, "T_in_r": np.asarray(T_r).tolist(), "T_in_l": np.asarray(T_l).tolist(),

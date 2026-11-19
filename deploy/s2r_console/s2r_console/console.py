@@ -414,6 +414,7 @@ class Console:
         self.lease = Lease()
         self.session: Session | None = None
         self._bridge = bridge
+        self.episode_toggles: dict[str, str] = {}      # ★11.16 에피소드 → 마지막 단계 실행의 실험 토글(회차 기록용)
         self._lock = threading.RLock()
         from .confirmations import Confirmations
         from .actions import ActionManager
@@ -595,7 +596,7 @@ class Console:
             s.event("approve", f"{stage_id} 승인 취소 — {note}")
 
     # ── 단계 실행 ───────────────────────────────────────────────────────
-    def run_stage(self, stage_id: str, *, operator: str, restart: bool = False) -> None:
+    def run_stage(self, stage_id: str, *, operator: str, restart: bool = False, toggles: dict | None = None) -> None:
         """단계를 실행한다. `restart` 면 **이 단계가 띄운 유닛을 먼저 내리고** 새로 띄운다.
 
         09.23 실기: 살아 있는 유닛은 "kept — 이미 떠 있다" 로 건너뛰므로(runner.py), 다시 실행해도
@@ -615,6 +616,10 @@ class Console:
                 raise ConsoleError(f"{stage_id} 를 지금 실행할 수 없다", reasons=tuple(result.reasons))
             try:
                 commands = commands_for(s.runbook, s.mission, stage_id, repo=self.repo, execute=True)
+                text = ""
+                if toggles is not None:                     # ★11.16 실험 토글(eval 카드) — 회차 기록이 이 값을 적는다
+                    commands, text = EV.apply_stage_toggles(self.repo, s.mission, s.runbook, s.profile.is_real, stage_id, commands, toggles)
+                self.episode_toggles[stage_id.removeprefix("episode_")] = text
             except (KeyError, ValueError, OSError) as exc:
                 raise ConsoleError(f'{stage_id}: 명령 구성 불가: {exc}') from exc
             from .actions import pd_launch_sides, tune_pd_sides   # actions 가 이 모듈을 import 한다(순환)

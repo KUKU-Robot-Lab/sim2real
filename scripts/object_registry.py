@@ -48,6 +48,7 @@ class ObjectSpec:
     aabb: tuple[tuple[float, float, float], tuple[float, float, float]]
     symmetry_axis: tuple[float, float, float] | None = None   # CAD 프레임 대칭축, 없으면 회전 그대로
     symmetry_flip: bool = False   # 위아래도 대칭(FP++ 가 뒤집어 잡는다) — 출력 축을 위로(pose_symmetry.point_axis_up)
+    grasp_axis: tuple[float, float, float] | None = None   # ★11.19 박스: 손바닥이 마주 볼 면 법선(CAD) — 있으면 yaw 를 남긴다
 
 
 @dataclass(frozen=True)
@@ -139,6 +140,11 @@ def _parse_object(name: str, raw: dict) -> ObjectSpec:
         raise ValueError(f"objects.{name}.symmetry_flip must be true/false")
     if flip and axis is None:
         raise ValueError(f"objects.{name}.symmetry_flip needs symmetry_axis")
+    gaxis = raw.get("grasp_axis")
+    if gaxis is not None:
+        gaxis = tuple(float(v) for v in gaxis)
+        if len(gaxis) != 3 or np.linalg.norm(gaxis) < 1e-9:
+            raise ValueError(f"objects.{name}.grasp_axis must be a non-zero [x,y,z]")
     return ObjectSpec(
         name=name, real=str(raw["real"]), fpp=fpp,
         cad_to_body_pos=_validated_pos(cad["position"], f"objects.{name}.cad_to_body.position"),
@@ -149,6 +155,7 @@ def _parse_object(name: str, raw: dict) -> ObjectSpec:
         aabb=(tuple(float(v) for v in aabb[0]), tuple(float(v) for v in aabb[1])),
         symmetry_axis=axis,
         symmetry_flip=flip,
+        grasp_axis=gaxis,
     )
 
 

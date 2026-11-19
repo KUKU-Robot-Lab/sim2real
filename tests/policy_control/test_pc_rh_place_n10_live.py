@@ -162,8 +162,8 @@ def test_attached_contract_ignores_any_live_cup():
 
 def test_the_episodes_point_at_the_new_policies():
     import yaml
-    for tag in ("e1000", "e4000"):
-        ep = yaml.safe_load((REPO / "config/episodes" / f"cocktail_1c_{tag}.yaml").read_text(encoding="utf-8"))
+    for tag, fname in (("e1000", "cocktail_1c_e1000"), ("e4000", "cocktail_e2e")):   # ★11.20 e4000 → cocktail_e2e 이름 변경
+        ep = yaml.safe_load((REPO / "config/episodes" / f"{fname}.yaml").read_text(encoding="utf-8"))
         assert ep["policies"]["rh_place_r"]["policy"] == f"rh56f1/place/right_n10_{tag}"
         assert ep["policies"]["rh_place_l"]["policy"] == "rh56f1/place/left_n09_e3800"
         steps = {s["id"]: s for s in ep["sequence"]}

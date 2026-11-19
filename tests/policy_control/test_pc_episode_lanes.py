@@ -19,7 +19,7 @@ from policy_control.episode_flow import flow_of
 from policy_control.episode_runner import FAILURE, STOPPED, SUCCESS, EpisodeManager
 
 EPISODES = Path(__file__).resolve().parents[2] / "config" / "episodes"
-RAW = yaml.safe_load((EPISODES / "cocktail_1c_e4000.yaml").read_text())
+RAW = yaml.safe_load((EPISODES / "cocktail_e2e.yaml").read_text())
 LANES_AT = next(i for i, n in enumerate(RAW["sequence"]) if n.get("type") == "lanes")
 
 
@@ -54,7 +54,7 @@ def _ev(rows, event, sid):
 
 
 def test_cocktail_e4000_loads_as_one_lanes_node_with_the_guard_kept():
-    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+    ep = S.load(EPISODES / "cocktail_e2e.yaml")
     ids = [n.id for n in ep.nodes]
     i = ids.index("grasp_to_tilt_start")
     assert ids[i:i + 6] == ["grasp_to_tilt_start", "grasp_blue", "to_tilt_start_r1", "grasp_shaker", "to_tilt_start_l",
@@ -121,14 +121,14 @@ def test_a_failed_lane_stops_the_other_lane_at_once_without_recovery(failing, ot
 
 
 def test_lanes_node_never_retries_or_continues_even_if_the_policy_allows_it():
-    ep = dataclasses.replace(S.load(EPISODES / "cocktail_1c_e4000.yaml"), failure_policy={"default": 3})
+    ep = dataclasses.replace(S.load(EPISODES / "cocktail_e2e.yaml"), failure_policy={"default": 3})
     ex = FakeExecutor(ep, inject={"grasp_shaker": [F.TARGET_NOT_FOUND.value]})     # 보통이면 RETRY 인 실패
     m, status, _, _ = _run(ep, ex)
     assert status == FAILURE and not m.attempts and m.pending is None
 
 
 def test_operator_stop_during_lanes_stops_both_lanes():
-    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+    ep = S.load(EPISODES / "cocktail_e2e.yaml")
     ex = FakeExecutor(ep, delay={"grasp_blue": 3.0, "grasp_shaker": 3.0})
     rows = []
     m = EpisodeManager(ep, ex, approve=lambda w, y: True, log=rows.append)
@@ -177,7 +177,7 @@ def test_spec_rejects_bad_lane_items(item, match):
 
 
 def test_flow_shows_each_lane_and_no_feedback_for_lane_items():
-    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+    ep = S.load(EPISODES / "cocktail_e2e.yaml")
     f = flow_of(ep)
     box = next(n for n in f["nodes"] if n["id"] == "grasp_to_tilt_start")
     assert box["lines"][:2] == ["오른손 줄: grasp_blue → to_tilt_start_r1", "왼손 줄: grasp_shaker → to_tilt_start_l"]
@@ -253,7 +253,7 @@ def test_planning_while_the_other_arm_runs_a_policy_is_noted():
 
 
 def test_the_approval_text_warns_and_names_arms_and_guard():
-    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+    ep = S.load(EPISODES / "cocktail_e2e.yaml")
     asked = []
     m = EpisodeManager(ep, FakeExecutor(ep), approve=lambda w, y: asked.append(y) or False)
     m.run()
@@ -272,7 +272,7 @@ class _SlowStopFake(FakeExecutor):
 
 
 def test_operator_stop_with_a_slow_safe_stop_is_stopped_not_failure():
-    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+    ep = S.load(EPISODES / "cocktail_e2e.yaml")
     ex = _SlowStopFake(ep, delay={"grasp_blue": 3.0, "grasp_shaker": 3.0})
     rows = []
     m = EpisodeManager(ep, ex, approve=lambda w, y: True, log=rows.append)
@@ -287,7 +287,7 @@ def test_operator_stop_with_a_slow_safe_stop_is_stopped_not_failure():
 
 
 def test_a_safety_code_from_the_other_lane_outranks_the_first_failure():
-    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+    ep = S.load(EPISODES / "cocktail_e2e.yaml")
 
     class Both(FakeExecutor):                                    # 왼손이 먼저 못 쥐고, 오른손은 가드 판정 실패(정지와 무관)
         def run_policies(self, node, plans, world):
@@ -305,7 +305,7 @@ def test_a_safety_code_from_the_other_lane_outranks_the_first_failure():
 
 
 def test_a_lane_cut_by_the_stop_is_stopped_even_if_its_result_looks_like_a_failure():
-    ep = S.load(EPISODES / "cocktail_1c_e4000.yaml")
+    ep = S.load(EPISODES / "cocktail_e2e.yaml")
 
     class Cut(FakeExecutor):
         def run_policies(self, node, plans, world):
@@ -580,7 +580,7 @@ def _ros_carry(tmp_path, rcs, left="SHAKER", check='{"arms_clear": {"ok": false,
                          _wait_arm_still=lambda sides: {"arm_still": True}, _pd_view=lambda side: {}, run_dir=tmp_path,
                          _run=run, cancel=threading.Event(), _log_line=warn,
                          node=SimpleNamespace(get_logger=lambda: SimpleNamespace(warning=warn)))
-    base = S.load(EPISODES / "cocktail_1c_e4000.yaml").trajectories["to_tilt_start_r"]
+    base = S.load(EPISODES / "cocktail_e2e.yaml").trajectories["to_tilt_start_r"]
     traj = dataclasses.replace(base, sides=("right", "left"))
     world = SimpleNamespace(hand=lambda side: {"right": "SRC_BLUE", "left": left}[side])
     return (lambda: RosExecutor._run_planned(me, SimpleNamespace(id=JOINT), traj, world)), calls

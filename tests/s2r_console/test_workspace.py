@@ -16,7 +16,7 @@ def test_registry_matrix_preserves_measurement():
     ws = Workspace(ROOT, 'openarm_rh56f1')
     objects = ws.snapshot()['objects']
     for model in ('source200', 'source240', 'shaker'):
-        assert {o['color'] for o in objects if o['model'] == model} == {'skyblue', 'orange', 'pink'}
+        assert {o['color'] for o in objects if o['model'] == model} == {'blue', 'orange', 'pink'}
     measured = next(o for o in objects if o['id'] == 'source200_orange')
     assert measured['measured'] and measured['hue_range'] == [1.8, 23.0]
     assert len([o for o in objects if o['model'] == 'holder']) == 3

@@ -244,7 +244,7 @@ def test_student_dir_refuses_moved_extrinsics_commit_and_escaping_paths(tmp_path
     from policy_control import student_policy as SP
 
     cfg = SP.load_student_dir(_bundle(tmp_path))
-    assert cfg["rgb"] and cfg["task"] == "rh_aglt" and cfg["extrinsics"]["md5"] == "db9a5b848a715625d1f85f5df0f739c3" and cfg["extrinsics"]["ckpt_md5"] == "624677fee7e8ff6502f33a3ed8a96a1f"
+    assert cfg["rgb"] and cfg["task"] == "rh_aglt" and cfg["extrinsics"]["md5"] == "691ade15493f240e6c7b98c4393446a9" and cfg["extrinsics"]["ckpt_md5"] == "624677fee7e8ff6502f33a3ed8a96a1f"
     d = _bundle(tmp_path / "x")
     (d / cfg_ext(d)).write_text("camera: {}\n")
     with pytest.raises(hdgp_pin.PinError, match="외부 파라미터"):

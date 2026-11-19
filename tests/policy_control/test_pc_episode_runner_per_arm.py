@@ -179,3 +179,13 @@ def test_tilt_now_plan_only_plans_the_left_arm_as_if_the_right_had_arrived(tilt_
     assert qs[0] == ("right", HOME)
     assert qs[1] == ("left", {"right": GOAL["right"], "left": HOME["left"]})
     assert T.main(["--asset", str(asset), "--out-root", str(root), "--sides", "both"]) == 1
+
+
+def test_stop_when_runner_gone_is_noop(monkeypatch):
+    """★11.10 실행기가 내려간 뒤의 stop 은 성공(0) — rehome·return 을 막지 않는다."""
+    sys.path.insert(0, str(TOOLS))
+    import episode_cmd as E
+    monkeypatch.setenv("ROS_DOMAIN_ID", "50")
+    monkeypatch.setattr(E, "read_status", lambda timeout=3.0, runner=E.NAME: {})
+    assert E.main(["stop", "--runner", "episode_runner_left", "--execute", "--operator", "t"]) == 0
+    assert E.main(["status", "--runner", "episode_runner_left"]) == 1

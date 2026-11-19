@@ -104,7 +104,7 @@ def _write(console: Console, method: str, path: str, data: dict, token: str | No
     if path == "/api/eval/rounds":                     # ★11.02 회차 기록 저장도 lease 없이 — 로봇에 아무것도 보내지 않는다(기록일 뿐)
         if method != "POST":
             return _fail(405, "POST 만 지원한다")
-        row = EV.append_round(console.repo, data)
+        row = EV.append_round(console.repo, data, toggles=getattr(console, "episode_toggles", {}).get(str(data.get("episode", "")), ""))   # 테스트 대역 콘솔엔 없다
         if console.session is not None:
             stage = f" · {row['fail_stage']}" if row["fail_stage"] else ""
             console.session.event("eval", f"회차 {row['round']} 기록 · {row['episode']} · {row['result']}{stage} ({client})")

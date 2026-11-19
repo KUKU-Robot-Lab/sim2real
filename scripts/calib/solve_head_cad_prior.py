@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import head_fk_chain as fk  # noqa: E402
 
 SIM2REAL = Path(__file__).resolve().parents[2]
-SX, SY, SQUARE, MARKER = 7, 5, 0.030, 0.022
+SX, SY, SQUARE, MARKER = 7, 5, 0.029857, 0.022  # ★11.17 칸 실측 29.857 mm(인쇄 0.5 % 축소, 7칸 209 mm). 마커 0.022 는 설계값 그대로
 TABLE_Z = 0.205
 # head_v1 color_frame in the head_camera (tilt) link frame (vendor/head_v1/head_data.json)
 CAD_CAM_XYZ = np.array([0.0115, 0.000096, 0.036327])

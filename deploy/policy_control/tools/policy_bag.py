@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""정책 실기 기록 — `ros2 bag record` 두 묶음(policy · sensors)을 띄우고, 정지 신호에 둘을 정상 종료한다. 구독만 한다.
+"""보관: dg5f real_runs 전용(현재 회차 logs/runs/<날짜> 분석은 sim_real_compare.py). 정책 실기 기록 — `ros2 bag record` 두 묶음(policy · sensors)을 띄우고, 정지 신호에 둘을 정상 종료한다. 구독만 한다.
 
     ROS_DOMAIN_ID=50 python3 deploy/policy_control/tools/policy_bag.py \
         --contract deploy/policies/dg5f_m/cup_grasp/left_i01/joint_contract.json \

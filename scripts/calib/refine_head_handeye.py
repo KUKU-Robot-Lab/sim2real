@@ -39,7 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from head_fk_chain import t_base_neck, urdf_from_encoder
 
-SX, SY, SQUARE, MARKER = 7, 5, 0.030, 0.022
+SX, SY, SQUARE, MARKER = 7, 5, 0.029857, 0.022  # ★11.17 칸 실측 29.857 mm(인쇄 0.5 % 축소, 7칸 209 mm). 마커 0.022 는 설계값 그대로
 DICT = cv2.aruco.DICT_6X6_250
 
 

@@ -321,3 +321,29 @@ def test_head_fk_converter_skips_calib_pose_check_and_default_still_blocks():
     assert not np.allclose(fk.convert("cyl60", pos_cam, quat_cam, moved)[0], a[0], atol=1e-3)
     with pytest.raises(ValueError, match="head-fk"):
         fk.convert("cyl60", pos_cam, quat_cam, None)
+
+
+def test_grasp_axis_box_keeps_yaw_but_still_stands_up():
+    """★11.19 커피박스(grasp_axis): 뒤집힘은 고치되 축 둘레 회전(yaw)은 남긴다 — plan_reach 가 면 방향으로 들어간다."""
+    import dataclasses
+    import math
+    from pose_symmetry import quat_axis_direction, quat_mul
+    spec = REG.get("cyl60")
+    class Box:   # 레지스트리 그대로, cyl60 에만 grasp_axis
+        def __getattr__(self, k):
+            return getattr(REG, k)
+
+        def get(self, n):
+            return dataclasses.replace(REG.get(n), grasp_axis=(1.0, 0.0, 0.0))
+    box = Box()
+    a = np.asarray(spec.symmetry_axis, float) / np.linalg.norm(spec.symmetry_axis)
+    twist = np.array([math.cos(math.radians(20)), *(math.sin(math.radians(20)) * a)])   # CAD 축 둘레 40°
+    cam = np.array([0.02, -0.05, 0.62])
+    for reg, same in ((REG, True), (box, False)):
+        conv = PoseConverter(reg, ["cyl60"], ARM4090_CAMERA)
+        _, q1 = conv.convert("cyl60", cam, np.array([1.0, 0.0, 0.0, 0.0]))
+        _, q2 = conv.convert("cyl60", cam, quat_mul(np.array([1.0, 0.0, 0.0, 0.0]), twist))
+        assert (abs(float(np.dot(q1, q2))) > 0.9999) == same
+    _, q_up = PoseConverter(box, ["cyl60"], ARM4090_CAMERA).convert("cyl60", cam, np.array([0.0, 1.0, 0.0, 0.0]))
+    z = np.array([0.0, 0.0, 1.0])   # 뒤집어 잡은 박스도 바로 선 박스와 같은 축(cyl60 뒤집힘 시험과 같은 기준)
+    assert quat_axis_direction(q_up, z)[2] > 0 and np.dot(quat_axis_direction(q_up, z), quat_axis_direction(q1, z)) > 0.999

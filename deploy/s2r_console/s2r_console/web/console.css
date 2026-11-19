@@ -765,6 +765,14 @@ table.ptable tr.off td { color: var(--faint); }
 .pdev-label { font-size: 12px; letter-spacing: .08em; color: var(--dim); font-weight: 600; }
 .pdev .ev-res { min-height: 36px; font-size: 13px; }
 .pdev-note { font-size: 12px; color: var(--faint); }
+/* ★11.16 eval 카드 실험 토글(cocktail_1c_n07b) */
+.ev-toggles { display: flex; flex-direction: column; gap: 6px; margin: 0 0 8px; }
+.ev-grp { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 4px 8px; border-left: 3px solid var(--line, #888); }
+.ev-grp > b { min-width: 9em; font-size: 13px; }
+.ev-presets { border-left-color: currentColor; }
+.ev-tg { display: flex; align-items: center; gap: 4px; }
+.ev-tg small { margin-right: 2px; }
+.ev-tg .btn[aria-checked="true"] { outline: 2px solid currentColor; font-weight: 600; }
 
 /* ★11.19 act_tilt 카드 — 체크포인트 · --max-vel · dry run / 실행 · 마지막 실행 로그 */
 .act-card { display: flex; flex-direction: column; gap: 10px; padding: 12px 0; }

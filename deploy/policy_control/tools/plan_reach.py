@@ -63,6 +63,8 @@ DEEP_SPEED_M_S = 0.02          # 사전 파지 → 쥔 자리 평균 속도(최�
 VIA_SPEED_M_S = 0.04           # 경유점 → 사전 파지(관절 공간 · RRT 이송일 때) 평균 속도
 TRANSPORT_QD_RAD_S = 0.5       # 관절 공간 · RRT 이송 관절 최고 속도(pd ramp_speed 상한 · 홈 경로와 같은 시간 매개)
 TRANSPORT_RAMP_S = 0.5
+#: ★11.19 커피박스(grasp_axis): 면 방위가 회귀식 방위에서 이보다 멀면 거부하고 돌릴 각도를 알린다(후보 폭과 같다 · 학습 지터는 ±10°)
+FACE_TOL_DEG = 30.0
 PHI_OFFSETS_DEG = (0, 10, -10, 20, -20, 30, -30)   # 사전 파지 방위 후보(aglt_new 회귀식 기준, 작은 것부터)
 #: 사전 파지 높이 후보(컵 원점 위, aglt_new 기본 0 = 10.19 사용자 "손 중심 높이 = 병 원점"). 0 에서 되는 방위가 없을 때만 올린다 —
 #: 10.20 왼손 shaker(원점 6.5 cm): 높이 0 이면 편 손 새끼 손끝 충돌 형상이 상판 13.5 mm 위(여유 2 cm 미달).
@@ -231,6 +233,16 @@ def _t(v) -> torch.Tensor:
     return torch.tensor(np.asarray(v, float)[None], dtype=torch.float32)
 
 
+def face_azimuth(quat_wxyz, axis_body, phi0: float) -> tuple[float, float]:
+    """★11.19 박스 면 법선 axis_body 가 base 에서 가리키는 수평 방위 a · a+π 중 phi0 에 가까운 것 → (phi rad, phi − phi0 deg).
+    phi 는 사전 파지 바깥 방향(컵 → 손바닥)이라 손바닥이 그 면을 마주 본다. 양수 = 박스를 위에서 봐 시계 방향으로 돌려야 맞는다."""
+    w, x, y, z = (float(v) for v in quat_wxyz)
+    d = Rotation.from_quat([x, y, z, w]).apply(np.asarray(axis_body, float))
+    a = math.atan2(d[1], d[0])
+    dphi = min((math.remainder(c - phi0, 2 * math.pi) for c in (a, a + math.pi)), key=abs)
+    return phi0 + dphi, math.degrees(dphi)
+
+
 def pregrasp_target(RA, p, cup_fpp: np.ndarray, radius: float, phi: float, h: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """aglt_new 사전 파지 손바닥 자세(ready_approach.pregrasp_pose 그대로, 높이 h) → (위치, 회전, 바깥 방향 e_r)."""
     pos, R = RA.pregrasp_pose(_t(cup_fpp), _t(radius), _t(p.r_mult[0]), _t(h), _t(phi), p.n_cup, p.f_cup)
@@ -390,7 +402,7 @@ def plan(side: str, cup_fpp, cup_quat, obj: str, out: Path, q: dict, hdgp: Path,
 
 
 def _plan(side: str, cup_fpp, cup_quat, obj: str, q: dict, hdgp: Path, *, asset: Path = ASSET,
-          contract: Path | None = None, stop: str = "grasp"):
+          contract: Path | None = None, stop: str = "grasp", ring_radius_m: float = 0.0):
     if stop not in STOPS:
         raise ReachError(f"stop 은 {STOPS} — {stop!r}")
     tm, tk = {}, [time.monotonic()]
@@ -449,14 +461,30 @@ def _plan(side: str, cup_fpp, cup_quat, obj: str, q: dict, hdgp: Path, *, asset:
     #   이송 ready_carry Mover(aglt_new 와 같은 경유점 · 속도) → 걸리면 관절 공간 직선 → RRT(둘 다 경유점까지, 거기서 곧게 사전 파지로).
     p = ready_params(RA, rcfg, side)
     phi0 = math.radians(p.phi_coef[0] + p.phi_coef[1] * cup_fpp[0] + p.phi_coef[2] * cup_fpp[1])
+    offsets, ring_r = PHI_OFFSETS_DEG, (ring_radius_m or radius)   # ring: 파지 정책 물체 반지름(r/R 시작 검사) · 없으면 실물
+    meta["ring_radius_m"] = ring_r
+    if spec.grasp_axis is not None:   # ★11.19 사용자 "x축(80.5면의 수직방향)으로 손이 정렬" — 손바닥이 그 면을 마주 보게
+        if cup_quat is None:
+            raise ReachError(f"{obj}: grasp_axis 물체는 --quat(FP++ 자세)가 있어야 면 방향을 안다")
+        cq = spec.cad_to_body_quat
+        axis_b = Rotation.from_quat([cq[1], cq[2], cq[3], cq[0]]).inv().apply(np.asarray(spec.grasp_axis, float))
+        phi_f, dd = face_azimuth(cup_quat, axis_b, phi0)
+        meta["face"] = {"phi_reg_deg": round(math.degrees(phi0), 1), "phi_face_deg": round(math.degrees(phi_f), 1),
+                        "diff_deg": round(dd, 1), "tol_deg": FACE_TOL_DEG}
+        if abs(dd) > FACE_TOL_DEG:
+            meta["problems"].append(f"박스 면이 손이 들어갈 방향에서 {abs(dd):.0f}° 돌아가 있다(허용 {FACE_TOL_DEG:.0f}°) — "
+                                    f"위에서 봐서 {'시계' if dd > 0 else '반시계'} 방향으로 {abs(dd):.0f}° 돌려 놓을 것")
+            meta["ok"] = False
+            return False, meta, None
+        phi0, offsets = phi_f, (0,)
     gen = torch.Generator().manual_seed(0)
     tries, chosen = [], None
-    for h, off in ((h, off) for h in PRE_H_M for off in PHI_OFFSETS_DEG):
+    for h, off in ((h, off) for h in PRE_H_M for off in offsets):
         if chosen is not None:
             break
         tr = {"h_m": h, "phi_offset_deg": off, "phi_deg": round(math.degrees(phi0) + off, 1)}
         tries.append(tr)
-        pos, R, er = pregrasp_target(RA, p, cup_fpp, radius, phi0 + math.radians(off), h)
+        pos, R, er = pregrasp_target(RA, p, cup_fpp, ring_r, phi0 + math.radians(off), h)
         q_pre, ok_pre, m_pre = solve_pose(RC, ch, q_now, pos, R, p.plan_seeds, gen)
         m_pre = min(m_pre, float(rw.profile_margin_deg(q_pre[None]).min()))
         tr["pregrasp"] = {"ik_ok": ok_pre, "margin_deg": round(m_pre, 1)}
@@ -582,12 +610,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--stop", choices=STOPS, default="grasp",
                     help="grasp = 손 안 컵 자리까지(1-B) · pregrasp = 사전 파지 자리에서 끝(경로 D, rcg03 이 넘겨받는다)")
+    ap.add_argument("--ring-radius-m", type=float, default=0.0,
+                    help="사전 파지 고리 반지름 = 파지 정책 물체 반지름(★11.19 박스 — 실물 aabb 가 아니라 정책이 시작을 받는 고리)")
     a = ap.parse_args(argv)
     try:
         cup = parse_vec(a.cup, 3, "--cup")
         quat = parse_vec(a.quat, 4, "--quat") if a.quat else None
         ok, meta = plan(a.side, cup, quat, a.object, a.out, current_q(a.q_json), H.hdgp_dir(), asset=a.asset,
-                        contract=a.contract, stop=a.stop)
+                        contract=a.contract, stop=a.stop, ring_radius_m=a.ring_radius_m)
     except H.PinError as exc:
         print(f"✗ {exc}")
         return 3

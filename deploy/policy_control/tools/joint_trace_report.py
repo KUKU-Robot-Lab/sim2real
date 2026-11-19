@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""joint 정책 실기 기록(joint_recorder.py 의 npz)을 읽어 제어기가 정책을 따라갔는지 표로 낸다. 파일만 읽는다.
+"""보관: dg5f real_runs 전용(현재 회차 logs/runs/<날짜> 분석은 sim_real_compare.py). joint 정책 실기 기록(joint_recorder.py 의 npz)을 읽어 제어기가 정책을 따라갔는지 표로 낸다. 파일만 읽는다.
 
     python3 deploy/policy_control/tools/joint_trace_report.py --latest --side left
     python3 deploy/policy_control/tools/joint_trace_report.py --npz logs/runs/<YYMMDD>/real_runs/<파일>.npz

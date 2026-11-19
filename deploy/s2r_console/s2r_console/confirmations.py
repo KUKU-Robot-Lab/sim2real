@@ -8,6 +8,8 @@ import time
 from dataclasses import asdict, replace
 from pathlib import Path
 
+from . import eval_log as EV
+
 class Confirmations:
     TTL_S = 120.0
 
@@ -24,7 +26,7 @@ class Confirmations:
         from mission_stages import commands_for
         c, s = self.console, self.console._need()
         if action == 'stage':
-            if set(parameters) - {'stage', 'restart'} or not isinstance(parameters.get('stage'), str):
+            if set(parameters) - {'stage', 'restart', 'toggles'} or not isinstance(parameters.get('stage'), str):
                 raise self._error('단계 설정이 올바르지 않다', 400)
             if 'restart' in parameters and not isinstance(parameters['restart'], bool):
                 raise self._error('restart 는 true/false 여야 한다', 400)
@@ -36,6 +38,9 @@ class Confirmations:
                 raise self._error('지금 실행할 수 없다: ' + '; '.join(gate.reasons))
             try:
                 commands = commands_for(s.runbook, s.mission, stage.id, repo=c.repo, execute=True)
+                if 'toggles' in parameters:                 # ★11.16 실험 토글 — 확인 창에 바뀐 인자 그대로 보인다
+                    commands, _ = EV.apply_stage_toggles(c.repo, s.mission, s.runbook, s.profile.is_real, stage.id, commands,
+                                                         parameters['toggles'])
             except (KeyError, ValueError, OSError) as exc:
                 raise self._error(f'{stage.id}: 명령 구성 불가: {exc}') from exc
             targets = [p['key'] for p in s.supervisor.table() if p['alive'] and p['stage'] == stage.id] if parameters.get('restart') else []
@@ -123,7 +128,8 @@ class Confirmations:
                 if stage.touches_real:
                     c.approve(stage.id, operator=operator, typed=stage.id, note='일회용 명령 승인')
                 try:
-                    c.run_stage(stage.id, operator=operator, restart=params.get('restart', False))
+                    c.run_stage(stage.id, operator=operator, restart=params.get('restart', False),
+                                toggles=params.get('toggles'))
                 finally:
                     if stage.touches_real:
                         c.revoke(stage.id, operator=operator, note='일회용 승인 사용 완료')

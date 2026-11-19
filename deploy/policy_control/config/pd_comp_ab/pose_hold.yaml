@@ -1,0 +1,71 @@
+# 자세 유지 측정(중력 · 마찰 동정) — tilt_comp_ab.py --pose 가 읽는다(tools/pose_hold.py). 각도는 도, 팔별 j1..j7.
+# 자세마다 대상 관절(joints)을 목표 +offset_deg · −offset_deg 에서 출발해 목표로 접근(move_s, 코사인) → 유지(hold_s), reps 회.
+# 접근 방향 d = +1(위에서) · −1(아래에서)이 교대한다. 한 창 = 오프셋으로 2 s · 0.5 s 멈춤 · 접근 move_s · 유지 hold_s.
+# from: home = 홈에서 관절 직선(via 를 거쳐)으로 가서 재고 같은 길로 홈에 돌아온다(transit_rad_s 이하, 도구가 충돌 검사)
+#       tilt_start = tilt 시작 자세(tilt_now 이송 뒤 = --traj 첫 프레임)에서 잰다
+#       max_tilt = --traj 의 frame 까지 재생 → 재고 → 나머지 재생(끝 = tilt 시작 자세, 기존 back 이 이어받는다)
+# home · tilt_start · max_tilt 의 숫자는 기준(계약 home_arm · --traj 프레임)과 0.05° 안이어야 한다 — 다르면 도구가 거부한다.
+# τ_g j7 = pd 중력 모델(chain_from_urdf, tip palm_sensor, payload 0.27848 kg) 값, arm4090 grav_scale/fit.py M0 로 11.17 계산 [N·m].
+# 조건(--conds 를 안 주면 이 파일): 하나 = 떠 있던 pd yaml 그대로. A/B 는 --conds 로 다른 조건 yaml 을 준다(재생 구간 이름 pose).
+order: base
+conditions:
+  base:
+    note: 떠 있던 pd yaml 그대로
+
+offset_deg: 3.0
+move_s: 4.0
+hold_s: 3.0
+reps: 2
+joints: [5, 6, 7]                    # 기본 대상 관절(자세별 joints 가 덮는다. 어깨 자세면 [2, 3])
+transit_rad_s: 0.3                   # from: home 이동 최대 관절 속도
+grip_poses: [home, tilt_start, max_tilt]   # --grip closed · object 에서 재는 자세(open 은 전부)
+
+poses:
+  # τ_g j7: 오른 +1.424 · 왼 −1.425
+  # ★11.18 홈에 서 있는 동안의 손 = 편 손(계약 home_hand). 최저 손끝 pinky_sensor z +403 mm = 테이블 윗면(table_8)
+  # 위 198 mm — 주먹(+418 mm)보다 15 mm 낮을 뿐이다. 10.01 의 "밑판 7.5 mm 파고듦" 은 차렷(관절 0) 기준이고
+  # 홈과 무관하다(같은 FK 로 차렷 편 손 −6.5 mm 재현). 이동은 그대로 주먹.
+  - name: home
+    from: home
+    right: [-69.48, 11.61, 37.46, 100.89, 21.72, 33.15, 38.08]
+    left: [69.48, -11.61, -37.46, 100.89, -21.72, -33.15, -38.08]
+  # τ_g j7: 오른 +1.426 · 왼 −1.410. logs/runs/261116/episode/150115_cocktail_1c_n07b/tilt_tilt_blue/tilt_cmd.npz 프레임 0
+  # 왼손을 펴면 손끝(l_hl_ring_sensor)이 cup_holder_0 을 3.9 cm 파고든다(검사) → open 에서도 왼손은 주먹 그대로, 오른손만 편다.
+  # 여유: 오른 편 손 3.2 cm(cup_holder_1) · 왼 주먹 4.9 cm(cup_holder_0) · 쥔 손 5.3 · 4.3 cm
+  - name: tilt_start
+    from: tilt_start
+    open_sides: [right]
+    right: [-33.01, 17.26, -0.95, 90.80, 5.06, 7.92, 39.16]
+    left: [33.15, -22.87, -3.95, 96.62, -2.63, -14.66, -31.62]
+  # 여유: 왼 2.6 cm(body_link ↔ l_al_6) · 오른 5.1 cm(옆 벽). τ_g j7: 오른 −1.138 · 왼 −1.416. 같은 npz 프레임 768 = 병 축 기울기 최대 141.2°(분석기 tilt_window 와 같은 식, 704~870 이 최대 −3° 안)
+  - name: max_tilt
+    from: max_tilt
+    frame: 768
+    right: [42.29, 68.73, -16.15, 105.33, -35.04, -17.93, 47.30]
+    left: [31.60, -2.85, 27.57, 117.90, 11.26, 3.97, -11.05]
+  # 아래 셋 = arm4090 logs/runs/261117/s2r_track/analysis/grav_scale/pose_candidates.json(sweep.py: 홈에서 j5 · j6 만 15° 격자로 돌린
+  # τ_g j5 · j6 극값, URDF 한계 안, 충돌 검사 없음). 왼 · 오른은 거울 짝. j1~j4 · j7 은 계약 home_arm(후보 파일은 실측 평균 홈, j7 0.4° 차).
+  # 후보 4 개 중 j7 τ_g 부호가 홈과 반대인 것은 팔마다 하나(왼 j5− · 오른 j5+)뿐이라, 둘째는 j5 후보의 j7 을 돌려 만들었다(c3).
+  # 충돌: plan_home_path --check-only(rh56f1 세계 · 홀더 · 반대팔 홈/그 자세 · 주먹 · 편 손 · 쥔 손, 여유 2 cm)를 도구가 실행 전마다
+  # 돌린다(이동 + ±오프셋 창). 11.17 laptop: 6 자세 open 23 · closed 6 검사 통과, 최소 여유는 아래 자세마다.
+  # c3 의 j5 · j6 후보(왼 −75/30 · 오른 75/−30)를 j7 홈 그대로 쓰면 손끝이 옆 벽(wall_y)을 0.82 m 파고든다 → j7 을 돌렸다.
+  # 쓰지 않은 후보: 왼 j6− · 오른 j6+(τ_g j7 −1.168 · +1.169, 홈과 같은 부호).
+  # τ_g j7: 오른 −0.327 · 왼 +0.323(홈과 반대) · j5 오른 +0.825 · 왼 −0.843 · j6 오른 −0.943 · 왼 +0.947. 후보 왼 j5− · 오른 j5+. 여유 4.3 cm
+  - name: c1_j5_j7flip
+    from: home
+    right: [-69.48, 11.61, 37.46, 100.89, -75.0, -30.0, 38.08]
+    left: [69.48, -11.61, -37.46, 100.89, 75.0, 30.0, -38.08]
+  # τ_g j7: 오른 +0.243 · 왼 −0.243(홈과 같은 부호, 작음) · j6 오른 −1.098 · 왼 +1.099(j6 극값). 후보 왼 j6+ · 오른 j6−. 여유 4.3 cm
+  - name: c2_j6
+    from: home
+    right: [-69.48, 11.61, 37.46, 100.89, -30.0, -30.0, 38.08]
+    left: [69.48, -11.61, -37.46, 100.89, 30.0, 30.0, -38.08]
+  # τ_g j7: 오른 −0.657 · 왼 +0.650(홈과 반대). 후보 왼 j5+ · 오른 j5− 에 j7 ∓75°. j7 을 먼저 돌린다(via) — j5 · j6 · j7 을 한꺼번에
+  # 직선으로 돌리면 편 손 손끝이 옆 벽 여유 2 cm 를 못 지킨다(1.5 cm). via 경로는 편 손 2.9 cm(table_8) · 주먹 4.3 cm.
+  - name: c3_j7flip
+    from: home
+    via:
+      - right: [-69.48, 11.61, 37.46, 100.89, 21.72, 33.15, -75.0]
+        left: [69.48, -11.61, -37.46, 100.89, -21.72, -33.15, 75.0]
+    right: [-69.48, 11.61, 37.46, 100.89, 75.0, -30.0, -75.0]
+    left: [69.48, -11.61, -37.46, 100.89, -75.0, 30.0, 75.0]
