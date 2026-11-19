@@ -1977,8 +1977,8 @@ function headModule(h, action) {
 function renderWorkspace() {
   const w = S.workspace || {};
   const actions = S.actions || [];
-  put("common-controls", actions.filter(a => a.group === "control" && !a.id.startsWith("place_fixed_")).map(actionButton).join(""));   // ★11.19 place fixed 는 튜닝 탭에서만
-  for (const group of ["setting", "control"]) put(group + "-actions", actions.filter(a => a.group === group && !a.id.startsWith("place_fixed_")).map(actionButton).join(""));
+  put("common-controls", actions.filter(a => a.group === "control" && !a.id.startsWith("place_fixed_") && !a.id.startsWith("cap_")).map(actionButton).join(""));   // ★11.19 place fixed 는 튜닝 탭에서만 · cap_* 은 policy 탭 cap_e2e 에서만
+  for (const group of ["setting", "control"]) put(group + "-actions", actions.filter(a => a.group === group && !a.id.startsWith("place_fixed_") && !a.id.startsWith("cap_")).map(actionButton).join(""));
   // ★10.21 제어 모듈 에피소드(ctl_*)는 policy 탭 실험 목록이 실행한다 — 여기서 따로 버튼을 늘어놓지 않는다
   put("management", managementStatus(S.management, "setting"));
   put("management-control", managementStatus(S.management, "control"));

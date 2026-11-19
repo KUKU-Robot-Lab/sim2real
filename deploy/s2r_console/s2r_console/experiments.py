@@ -206,7 +206,7 @@ def _cap_e2e(repo: Path, stage_ids: frozenset) -> dict | None:
     side = {"episode": None, "steps": steps, "summary": "cap_now → 학생(search → approach → descend → grasp → carry → seat) → cap_end",
             "cups": {}, "problems": problems, "confirms": 0, "stage": "cap_student_right",
             "action": "cap_student_right", "actions": list(CAP_E2E_ACTIONS), "runner": None}
-    return {"id": "cap_e2e", "group": "cap", "key": "cap_e2e", "label": "cap e2e", "summary": side["summary"],
+    return {"id": "cap_e2e", "group": "cap", "key": "cap", "label": "cap e2e", "summary": side["summary"],
             "sides": {"right": side}}
 
 

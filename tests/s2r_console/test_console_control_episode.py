@@ -197,10 +197,11 @@ def test_policy_list_drops_tilt_and_adds_cap_e2e():
     groups = {it['group'] for it in out['items']}
     assert 'tilt' not in groups
     cap = next(it for it in out['items'] if it['id'] == 'cap_e2e')
+    assert len(cap['key']) <= 3                                      # 목록 키 칸(42px)에 들어가야 글씨가 안 깨진다
     side = cap['sides']['right']
     assert side['actions'] == list(XP.CAP_E2E_ACTIONS) and not side['problems']
     assert [s['sub'] for s in side['steps'] if s['kind'] == 'policy'] == ['search · approach', 'grasp', 'seat']
     assert XP.CAP_STUDENT in out['policies']                         # 등록부 또는 student.yaml 메타
     assert XP._cap_e2e(REPO, frozenset()) is None                     # 단계가 없는 미션엔 칸이 없다
     js = (REPO / 'deploy/s2r_console/s2r_console/web/console.js').read_text()
-    assert '!a.id.startsWith("place_fixed_")' in js and '["cap", "cap",' in js and '["tilt", "tilt", "두 팔"]' not in js
+    assert '!a.id.startsWith("place_fixed_") && !a.id.startsWith("cap_")' in js and '["cap", "cap",' in js and '["tilt", "tilt", "두 팔"]' not in js
