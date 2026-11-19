@@ -433,10 +433,24 @@ def test_sensor_fail_lowers_runner_ok_and_hands_off(tmp_path):
     assert all(x["signal"]["ok"] for x in bounds(recs)[:-1]) and all(ok for _, ok in seen)
 
 
-def test_sensor_error_is_logged_not_fatal(tmp_path):
+@pytest.mark.parametrize("mode", ["record", "propose", "auto"])
+def test_sensor_error_is_recorded_and_blocks_vlm_only_advance(tmp_path, mode):
+    """센서 판정이 죽으면 record 는 그대로 진행, propose · auto 는 VLM 만으로 넘기지 않고 handoff."""
     def sensors(node, t0, t1):
         raise RuntimeError("buffer down")
-    r, ex, judge, recs, path, _ = make(tmp_path, sensors=sensors)
-    grant(path)
-    assert r.run() == SUCCESS
-    assert any("센서 판정 오류" in e for x in bounds(recs) for e in x["errors"])
+    r, ex, judge, recs, path, _ = make(tmp_path, mode=mode, sensors=sensors)
+    if mode == "auto":
+        grant(path)
+    elif mode == "propose":
+        grant(path, scope="node", node=ORDER[0], action="advance")
+    out = r.run()
+    for t in r.workers:
+        t.join(5)
+    first = next(x for x in recs if x.get("node") == ORDER[0] and "event" not in x)
+    assert first["sensor_error"] == {"type": "RuntimeError", "msg": "buffer down"}
+    assert any("센서 판정 오류" in e for e in first["errors"])
+    if mode == "record":
+        assert out == SUCCESS
+    else:
+        assert out == HANDED and ran(ex) == [ORDER[0]] and not judge.asks
+        assert first["decision"] == "handoff" and "센서 판정 오류" in first["reason"]

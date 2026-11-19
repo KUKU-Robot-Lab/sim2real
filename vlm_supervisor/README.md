@@ -163,7 +163,20 @@ python3 -m vlm_supervisor.bench.real_frames <runs> --cam <cam> --spec <미션 ya
 vlm_supervisor/tools/review_on_server.sh <작업 폴더>
 # 4. review.jsonl 을 laptop 작업 폴더로 가져와 페이지를 만든다
 PYTHONPATH=.:deploy/policy_control python3 -m vlm_supervisor.bench.episode_review page <작업 폴더>/review.jsonl
-# 5. <작업 폴더>/index.html 을 열어 러너·VLM 불일치 경계를 사진으로 확인하고 "표시 결과 jsonl 복사" 로 넘긴다
+# 5. <작업 폴더>/index.html 을 열어 종합 결과 실패 · 사람 확인 경계를 사진으로 확인하고 "표시 결과 jsonl 복사" 로 넘긴다
+# 6. 사람 표시와 비교: 역할별 러너만 · 종합 판정이 맞은 수
+PYTHONPATH=.:deploy/policy_control python3 -m vlm_supervisor.bench.episode_review agree <작업 폴더>/review.jsonl <labels.jsonl>
 ```
 
 경계 판정은 경계 묶음 모든 노드의 `node_checks`(judge_short.yaml)를 슬롯 기준으로 합친다. 확정 답 하나라도 기대와 다르면 막음, 그다음 오류·low_mass 가 있으면 판정불가, 모두 기대대로면 통과다. 검사가 없거나 전 사진이 없는 경계는 묻지 않고 판정불가다. 문턱은 score 를 돌린 시점의 judge_short.yaml 값이다. `score` 는 review.jsonl 에 이미 있는 경계를 건너뛰니 중간에 끊겨도 다시 돌리면 된다(다시 물을 경계는 그 줄을 지운다). 서버 없이 이미 있는 run_bench 결과를 다시 판정하려면 `score <bounds.jsonl> --from-bench <results.jsonl> [--variant short2]` 를 쓴다(프롬프트 문자열이 같은 응답만 쓰고, 없는 질문은 오류로 남는다). 페이지의 "러너 기록" 은 러너가 스스로 남긴 결과일 뿐 정답이 아니다.
+
+종합 판정은 노드 id 로 역할을 정해 러너와 VLM 중 믿을 쪽을 고른다. 행에 노드별 `combined: [{node, role, runner, vlm, final, note}]` 와 경계 `final`(성공 · 실패 · 사람 확인)이 붙는다.
+
+| 역할 | 노드 | 종합 결과 |
+|---|---|---|
+| outcome | `grasp_*`, `place_*` | VLM. 검사가 모두 기대대로면 성공(러너가 실패였으면 note "과정 경고"), 하나라도 반대면 실패. 오류 · low_mass · 검사 없음이면 러너 성공은 성공, 러너 실패는 사람 확인(러너 잡기 · 놓기 실패 신호는 결과로 믿지 않는다) |
+| drop | `to_tilt_start_*`, `tilt_*` | 러너. VLM 이 "손에 없음" 으로 확정하면 실패(떨어뜨림 의심) |
+| episode | `go_home_end`, `final` 의 `all_in_holders` | VLM, 판정불가면 사람 확인 |
+| state | 그 밖 전부(`go_home_*`, `scene`, `home_*_after_*` …) | 러너만. 카메라로 볼 수 없는 이동 · 세팅이라 이 노드 검사는 `score` 때 묻지 않는다 |
+
+같은 슬롯이 outcome 노드와 state 노드에 같이 걸리면 outcome 쪽에 쓴다. 놓기 끝 사진은 손이 컵을 가려 `place_*` 에 검사가 없을 수 있어서, 같은 묶음 state 노드(`home_*_after_*` 등)의 `cup_in_holder_b:<물체>` 는 그 물체를 놓는 place 노드로 옮긴다(`place_blue`↔`SRC_BLUE`, `place_pink`↔`SRC_PINK`, `place_shaker`↔`SHAKER`, 접미사로 못 찾으면 묶음 안 place 가 하나일 때만). 옮긴 슬롯은 `score` 때도 묻는다. 경계 `final` 은 노드 중 하나라도 실패면 실패, 실패 없이 사람 확인 노드가 있으면 사람 확인이다. 종합은 저장된 `checks` 를 슬롯 → 노드로 다시 나눠 계산하므로 옛 review.jsonl 도 `page` · `agree` 에 그대로 쓴다. `agree` 의 labels 줄은 `{"id","mark":"runner|vlm|both_wrong","runner_ok","vlm"}` 이고, 정답은 mark=runner 면 runner_ok, mark=vlm 이고 vlm 이 pass · block 이면 그 답이다. 그 밖(VLM 판정불가 · 둘 다 틀림)은 정답 없음으로 세지 않는다.

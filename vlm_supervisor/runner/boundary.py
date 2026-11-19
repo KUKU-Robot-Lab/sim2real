@@ -154,14 +154,18 @@ class BoundaryRunner:
         signal = {"node": node.id, "ok": ran and em.runs.get(node.id, {}).get("state") == "done",
                   "code": em.last.get("code"), "reason": em.last.get("reason") or "",
                   "results": copy.deepcopy(em.last.get("results", []))}
+        s_err = None
         if self.sensors is not None and ran:
             try:
                 signal = combine(signal, self.sensors(node, t_run, self.clock()))
-            except Exception as exc:    # noqa: BLE001 — 센서 판정 오류는 신호를 바꾸지 않고 기록만
+            except Exception as exc:    # noqa: BLE001 — 신호는 그대로, 기록하고 propose · auto 는 아래에서 handoff
                 _log.exception("sensors(%s)", node.id)
                 _err(errs, "센서 판정 오류", exc)
+                s_err = {"type": type(exc).__name__, "msg": str(exc)}
         rec = self._rec(node.id, signal)
         rec["errors"] += errs
+        if s_err is not None:
+            rec["sensor_error"] = s_err
         if status in (FAILURE, STOPPED):             # 안전 정지 · 실패 — VLM 을 거치지 않는다
             return self._act(rec, Decision(STOP, f"{status}: {signal['reason']}", self.seq), stopped=True)
         if self.mode == RECORD:
@@ -169,6 +173,8 @@ class BoundaryRunner:
         if not ran:                                  # index 가 안 움직였다 — 복구 대기 · 확인 대기 · 승인 없음
             why = "복구 대기" if em.pending is not None else "확인 대기" if em.waiting is not None else "실행 안 됨"
             return self._act(rec, Decision(HANDOFF, f"{why}: {signal['reason']}", self.seq))
+        if s_err is not None:                        # 센서 실패가 VLM 성공보다 앞선다 — 그 검사가 죽었으면 VLM 만으로 넘기지 않는다
+            return self._act(rec, Decision(HANDOFF, f"센서 판정 오류 {s_err['type']}: {s_err['msg']}", self.seq))
         return self._act(rec, self._boundary(node, rec, before, signal))
 
     # ---------------------------------------------------------------- 경계

@@ -5,6 +5,7 @@ ROS 가 없는 분석 PC(server)에서 실기 bag 을 재생하려고 둔다. �
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 import struct
 from pathlib import Path
 from typing import Iterator
@@ -92,17 +93,43 @@ def read(bag_dir: Path, names) -> Iterator[tuple[str, float, object]]:
     want = names if callable(names) else (lambda n, s=set(names): n in s)
     rows = []
     for db in sorted(Path(bag_dir).glob("*.db3")):
-        c = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-        for tid, name, typ in c.execute("select id, name, type from topics").fetchall():
-            if not want(name) or typ not in DEC:
-                continue
-            f = DEC[typ]
-            for ts, data in c.execute("select timestamp, data from messages where topic_id = ? order by timestamp", (tid,)):
-                try:
-                    rows.append((ts * 1e-9, name, f(data)))
-                except (struct.error, ValueError):
+        with closing(sqlite3.connect(f"file:{db}?mode=ro", uri=True)) as c:
+            for tid, name, typ in c.execute("select id, name, type from topics").fetchall():
+                if not want(name) or typ not in DEC:
                     continue
-        c.close()
+                f = DEC[typ]
+                for ts, data in c.execute("select timestamp, data from messages where topic_id = ? order by timestamp", (tid,)):
+                    try:
+                        rows.append((ts * 1e-9, name, f(data)))
+                    except (struct.error, ValueError):
+                        continue
     rows.sort(key=lambda r: r[0])
     for t, n, v in rows:
         yield n, t, v
+
+
+def cimage(b: bytes) -> tuple[str, bytes]:   # CompressedImage → (format, 압축된 영상 바이트)
+    fmt, o = _str(b, _al(_header(b), 4))
+    o = _al(o, 4)
+    n = struct.unpack_from("<I", b, o)[0]
+    return fmt, bytes(b[o + 4:o + 4 + n])
+
+
+def stamps(bag_dir: Path, topic: str) -> list[tuple[int, Path]]:
+    """토픽의 (기록 시각 ns, 그 메시지가 든 .db3) 시각 순. 영상처럼 큰 토픽은 read 로 다 올리지 않고 시각만 먼저 본다."""
+    out = []
+    for db in sorted(Path(bag_dir).glob("*.db3")):
+        with closing(sqlite3.connect(f"file:{db}?mode=ro", uri=True)) as c:
+            out += [(ts, db) for (ts,) in c.execute(
+                "select m.timestamp from messages m join topics t on t.id = m.topic_id where t.name = ?", (topic,))]
+    return sorted(out)
+
+
+def at(db: Path, topic: str, ts: int) -> bytes:
+    """stamps 가 준 시각(ns)의 메시지 원문(CDR)."""
+    with closing(sqlite3.connect(f"file:{db}?mode=ro", uri=True)) as c:
+        row = c.execute("select m.data from messages m join topics t on t.id = m.topic_id where t.name = ? and m.timestamp = ?",
+                        (topic, ts)).fetchone()
+    if row is None:
+        raise KeyError(f"{db}: {topic} 에 시각 {ts} 의 메시지가 없다")
+    return row[0]

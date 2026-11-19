@@ -52,6 +52,11 @@ def node_table() -> dict:
             for node in (card.get('실행_방법') or {}).get('노드_예시') or []}
 
 
+def hands_of(policy: str) -> list:
+    """노드가 쓴 손: 정책 이름 끝 _r/_l(supervisor 와 같다). 없으면 두 손."""
+    return [h for h in SIDES if policy.endswith('_' + h[0])] or list(SIDES)
+
+
 def apply_exit(w: dict, why: dict, ex: dict, kind, card: dict, end: dict, skipped, unsure: set) -> list:
     """exit 행 하나를 world 에 반영하고 그 노드가 쓴 손을 돌려준다.
 
@@ -60,7 +65,7 @@ def apply_exit(w: dict, why: dict, ex: dict, kind, card: dict, end: dict, skippe
     컵 값: table · left/right(그 손 안) · holder · leaning · out(놓기 fail, 떨어뜨림) · None(모름). 손 값: 쥔 컵 이름 · None.
     """
     node, role, result = ex.get('state_id'), ex.get('policy_name') or '', ex.get('result')
-    hands = [h for h in SIDES if role.endswith('_' + h[0])] or list(SIDES)  # 손은 정책 이름 끝 _r/_l(supervisor 와 같다)
+    hands = hands_of(role)
     sig = (ex.get('signals') or {}).get(role) or {}
     if kind in ('grasp', 'place') and len(hands) != 1:  # 손을 정책 이름으로 정하지 못하면 어느 손의 컵인지 추측하지 않는다
         obj = card.get('target_object') or card.get('source_object')
@@ -226,6 +231,14 @@ def seed_items(seed_dir: str, Q: dict, nodes: dict, skipped) -> tuple:
                            'home': list(dict.fromkeys(home)), 'unsure': unsure, 'lost': sum(skipped.values()) - n0,
                            'before': None if gap or not bounds else bounds[-1]['files']['jpg']})
             gap = False
+    return bound_items(seed, bounds, Q, skipped)
+
+
+def bound_items(seed: str, bounds: list, Q: dict, skipped, cross_yes: bool = False) -> tuple:
+    """시드 하나의 경계 목록(stem · node · files · w · why · home · unsure · lost · before) → (항목 목록, 경계 행 목록).
+
+    sim(seed_items)과 실기(real_set)가 같이 쓴다. cross_yes: 다른 경계의 yes 도 만든다(world 가 사진을 보고 붙인 라벨일 때만).
+    """
     asked = list(dict.fromkeys(i for b in bounds for i in b['home']))  # 이 시드에서 제 경계가 있는 질문
     text = {q['id']: q['text'] for q in Q['questions']}
     variants = collections.defaultdict(list)  # 원 질문 id → 문구 변형. 경계 통계·long 참값·skipped 에는 넣지 않는다
@@ -248,7 +261,7 @@ def seed_items(seed_dir: str, Q: dict, nodes: dict, skipped) -> tuple:
                 truth, src = truth_of((v.get('rule', qid), hand, obj), b, own)
                 if truth is None and own and not v:
                     skipped[f'{qid}: {src}'] += 1
-                if truth is None or (truth == 'yes' and not own):  # 다른 경계의 yes 는 만들지 않는다
+                if truth is None or (truth == 'yes' and not own and not cross_yes):  # sim: 다른 경계의 yes 는 만들지 않는다
                     continue
                 if v.get('invert'):  # 뒤집힌 질문: 참값만 반대. 종류는 뒤집힌 참값으로 다시 붙는다(다른 경계의 no → pos)
                     truth, src = {'yes': 'no', 'no': 'yes'}[truth], src + ' · 뒤집힌 질문'

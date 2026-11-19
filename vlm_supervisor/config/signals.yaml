@@ -51,3 +51,11 @@ kinds:
   - {match: ["place", "release", "open"], kind: release}
   - {match: ["grasp", "pick"], kind: grasp}
   - {match: ["tilt", "carry", "to_tilt", "home_r_after", "lift"], kind: hold}
+
+# ★11.18 끊김 · 시계 검사(문턱이 아니라 입력 검사)
+# 힘 토픽(force_actual)은 rh56f1_ports.yaml state_hz 250 Hz(기본 100, 옛 RS485 50 Hz). 가장 느린 50 Hz 주기 20 ms 의 10 배.
+# 마지막 힘 표본이 단계 끝보다 이만큼 넘게 오래되면 힘 급락 특징을 보류(None)한다. 끝값 창 0.3 s 보다 작아야 한다.
+force_stale_s: 0.2
+# 손 상태는 끊임없이 250 Hz 로 오므로 판정 시각(러너 clock) ± 이 범위에 표본이 하나도 없으면 시계가 다른 것이다
+# (time.monotonic 과 ROS 시각은 10^9 s 차이). 콜백 스레드가 잠깐 밀리는 것은 넉넉히 넘긴다.
+clock_skew_max_s: 2.0

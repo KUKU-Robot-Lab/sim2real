@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import bisect
 import math
+import threading
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,30 +42,41 @@ def load_cfg(path: Path | str | None = None) -> dict:
 
 # ============================================================================ 버퍼
 class _Series:
-    """(t, 값 튜플) 시계열. 오래된 것은 maxlen 으로 버린다. t 는 초(단조 증가로 넣는다)."""
+    """(t, 값 튜플) 시계열. 오래된 것은 maxlen 으로 버린다. t 는 초(단조 증가로 넣는다).
+    ROS 콜백 스레드가 넣고 러너 스레드가 읽으므로 넣기 · 읽기를 한 락으로 묶는다(t · v 짝이 어긋나지 않게)."""
 
     def __init__(self, maxlen: int) -> None:
         self.t: deque = deque(maxlen=maxlen)
         self.v: deque = deque(maxlen=maxlen)
+        self.lock = threading.Lock()
+        self.dropped = 0                             # 유한하지 않아 버린 표본 수(NaN · inf 하나가 누적 합을 망친다)
 
     def add(self, t: float, vals: Sequence[float]) -> None:
-        if self.t and t < self.t[-1]:
-            return                                   # 늦게 온 메시지는 버린다(창 계산이 정렬을 전제)
-        self.t.append(float(t))
-        self.v.append(tuple(float(x) for x in vals))
+        vals = tuple(float(x) for x in vals)
+        if not (math.isfinite(t) and all(map(math.isfinite, vals))):
+            self.dropped += 1
+            return
+        self._put(t, vals)
+
+    def _put(self, t: float, vals: tuple) -> None:  # 유한 검사 없이 — target 의 nan 은 "아직 모름" 표시
+        with self.lock:
+            if self.t and t < self.t[-1]:
+                return                               # 늦게 온 메시지는 버린다(창 계산이 정렬을 전제)
+            self.t.append(float(t))
+            self.v.append(vals)
 
     def window(self, t0: float, t1: float) -> list[tuple]:
-        ts = list(self.t)
+        with self.lock:
+            ts, vs = list(self.t), list(self.v)
         a, b = bisect.bisect_left(ts, t0), bisect.bisect_right(ts, t1)
-        vs = list(self.v)
         return list(zip(ts[a:b], vs[a:b]))
 
     def last_before(self, t: float, max_age: float) -> tuple | None:
-        ts = list(self.t)
-        i = bisect.bisect_right(ts, t) - 1
-        if i < 0 or t - ts[i] > max_age:
-            return None
-        return self.v[i]
+        with self.lock:
+            i = bisect.bisect_right(self.t, t) - 1
+            if i < 0 or t - self.t[i] > max_age:
+                return None
+            return self.v[i]
 
 
 def _mean(rows: Sequence[tuple]) -> list[float] | None:
@@ -91,8 +103,12 @@ class HandBuffer:
         self.angle.add(t, vals)
 
     def feed_target(self, t: float, vals: Sequence[float]) -> None:     # /hand_<s>/angle_set joint_values (-1 = 유지)
-        prev = self.target.v[-1] if self.target.v else (math.nan,) * len(vals)
-        self.target.add(t, [p if v < 0 else v for v, p in zip(vals, prev)])
+        vals = [float(x) for x in vals]
+        if not (math.isfinite(t) and all(map(math.isfinite, vals))):
+            self.target.dropped += 1
+            return
+        prev = self.target.v[-1] if self.target.v else (math.nan,) * len(vals)   # 넣는 스레드는 하나뿐
+        self.target._put(t, tuple(p if v < 0 else v for v, p in zip(vals, prev)))
 
     def feed_force(self, t: float, vals: Sequence[float]) -> None:      # /hand_<s>/force_actual joint_values (g)
         self.force.add(t, vals)
@@ -115,13 +131,14 @@ class HandSnap:
         return {k: (None if v is None else round(v, 3)) for k, v in self.__dict__.items()}
 
 
-def snap(h: HandBuffer, t: float, win: float = 0.5) -> HandSnap | None:
-    """[t - win, t] 평균. 각도 · 힘이 없으면 None(판정 보류)."""
+def snap(h: HandBuffer, t: float, win: float = 0.5, force_stale_s: float = 0.2) -> HandSnap | None:
+    """[t - win, t] 평균. 각도 · 힘이 없거나 마지막 힘 표본이 force_stale_s 넘게 오래됐으면(토픽 끊김) None(판정 보류)."""
     a, f = h.angle.window(t - win, t), h.force.window(t - win, t)
     am = _mean(a) or (lambda v: list(v) if v else None)(h.angle.last_before(t, 1.0))
-    fm = _mean(f) or (lambda v: list(v) if v else None)(h.force.last_before(t, 1.0))
-    if am is None or fm is None:
+    fl = h.force.last_before(t, force_stale_s)      # grip_drop 의 stale 보호와 같은 한도
+    if am is None or fl is None:
         return None
+    fm = _mean(f) or list(fl)
     s = h.target.last_before(t, 1e9)
     gap = None
     if s is not None:
@@ -132,10 +149,12 @@ def snap(h: HandBuffer, t: float, win: float = 0.5) -> HandSnap | None:
                     f4=sum(fm[FINGERS]), ft=fm[TH_BEND], tip=None if tp is None else sum(tp), n=len(a))
 
 
-def grip_drop(h: HandBuffer, t0: float, t1: float, smooth_s: float = 0.2, within_s: float = 0.5) -> dict | None:
-    """[t0, t1] 안 쥠 힘(네 손가락 + 엄지 굽힘) — 최대값 · 끝값 · within_s 안에 떨어진 최대 낙폭(이동 평균 smooth_s)."""
+def grip_drop(h: HandBuffer, t0: float, t1: float, smooth_s: float = 0.2, within_s: float = 0.5,
+              stale_s: float = 0.2) -> dict | None:
+    """[t0, t1] 안 쥠 힘(네 손가락 + 엄지 굽힘) — 최대값 · 끝값 · within_s 안에 떨어진 최대 낙폭(이동 평균 smooth_s).
+    마지막 힘 표본이 t1 보다 stale_s 넘게 오래됐으면(토픽 끊김) None. stale_s < 0.3 이라 끝값 창도 비지 않는다."""
     rows = h.force.window(t0, t1)
-    if len(rows) < 5:
+    if len(rows) < 5 or t1 - rows[-1][0] > stale_s:
         return None
     ts = [r[0] for r in rows]
     g = [sum(r[1][:5]) for r in rows]
@@ -210,6 +229,8 @@ def _obj_vote(objs: ObjectBuffer | None, palm: tuple | None, t0: float, t1: floa
     """물체 자리 → (held | lost | None, 이유, 특징). palm 이 없으면 손 거리 없이 높이만 본다."""
     if objs is None:
         return None, "", {}
+    if not name and palm is None:
+        return None, "", {}                          # 고를 근거가 없다 — 아무 물체나 보지 않는다(물체 추적 없음과 같게)
     cands = [name] if name else objs.names()
     best = None
     for nm in cands:
@@ -253,7 +274,7 @@ def judge(kind: str, hand: HandBuffer, t0: float, t1: float, cfg: Mapping, *,
     if kind not in KINDS:
         raise ValueError(f"kind {kind!r} — {KINDS} 중 하나")
     c = cfg[kind]
-    s1 = snap(hand, t1, cfg["window_s"])
+    s1 = snap(hand, t1, cfg["window_s"], cfg["force_stale_s"])
     feats: dict = {"end": None if s1 is None else s1.as_dict()}
     if kind == "release":
         if s1 is None:
@@ -267,7 +288,7 @@ def judge(kind: str, hand: HandBuffer, t0: float, t1: float, cfg: Mapping, *,
         return Verdict(UNSURE, (f"손 열림 애매(닫힘 {s1.clos:.2f} · 힘 {s1.f4 + s1.ft:.0f} g)",), feats)
 
     st, why = hold_state(s1, c)
-    dr = grip_drop(hand, t0, t1, cfg["smooth_s"], cfg["drop_within_s"])
+    dr = grip_drop(hand, t0, t1, cfg["smooth_s"], cfg["drop_within_s"], cfg["force_stale_s"])
     feats["grip"] = None if dr is None else {k: (None if v is None else round(v, 2)) for k, v in dr.items()}
     reasons = [why]
     lost_grip = (dr is not None and dr["gmax"] >= c["drop_gmax_min"]
@@ -372,6 +393,29 @@ def plan_checks(ep, node, held: Mapping[str, str | None]) -> list[Check]:
     return out
 
 
+class ClockSkewError(RuntimeError):
+    """버퍼에 표본은 있는데 판정 시각 근처에 하나도 없다 — 러너 시계와 메시지 시각이 다른 시계다."""
+
+
+_CFG_KEYS = ("window_s", "smooth_s", "drop_within_s", "force_stale_s", "clock_skew_max_s",
+             *(f"{k}.{x}" for k in ("grasp", "hold") for x in (
+                 "held_f4_min", "held_ft_min", "held_tip_min", "empty_gap_max", "empty_f4_max", "empty_ft_max",
+                 "empty_tip_max", "drop_gmax_min", "drop_end_ratio", "drop_end_max", "obj_rise_min_m", "obj_still_m",
+                 "obj_palm_near_m", "obj_palm_far_m")),
+             "release.open_clos_max", "release.empty_force_max")
+
+
+def _missing(cfg: Mapping) -> list[str]:
+    out = []
+    for key in _CFG_KEYS:
+        c = cfg
+        for part in key.split("."):
+            c = c.get(part) if isinstance(c, Mapping) else None
+        if c is None:
+            out.append(key)
+    return out
+
+
 class SensorHub:
     """실기 러너가 쓰는 묶음 — 메시지 버퍼 + 노드 경계 판정. BoundaryRunner(sensors=hub) 로 넘긴다.
 
@@ -382,13 +426,17 @@ class SensorHub:
 
     def __init__(self, ep, cfg: Mapping | None = None, palm=None, maxlen: int = 6000) -> None:
         self.ep, self.cfg, self.palm = ep, cfg or load_cfg(), palm
+        if miss := _missing(self.cfg):
+            raise ValueError(f"signals 설정에 키가 없다: {', '.join(miss)}")
         self.hand = {"right": HandBuffer(maxlen), "left": HandBuffer(maxlen)}
         self.objs = ObjectBuffer(maxlen)
         self.held: dict[str, str | None] = {"right": None, "left": None}
 
     def __call__(self, node, t0: float, t1: float) -> list[Verdict]:
-        out = []
-        for c in plan_checks(self.ep, node, self.held):
+        out, checks = [], plan_checks(self.ep, node, self.held)
+        if checks:
+            self._check_clock(t1)
+        for c in checks:
             p = self.palm(c.side, t1) if self.palm is not None else None
             v = judge(c.kind, self.hand[c.side], t0, t1, self.cfg, objs=self.objs, palm=p, obj_name=c.obj)
             v = Verdict(v.label, v.reasons, {**v.feats, "side": c.side, "kind": c.kind, "node": c.node})
@@ -400,3 +448,13 @@ class SensorHub:
             elif c.kind == "hold" and v.label == FAIL:
                 self.held[c.side] = None
         return out
+
+    def _check_clock(self, t1: float) -> None:
+        """표본이 있는데 t1 ± clock_skew_max_s 안에 하나도 없으면 ClockSkewError(모두 unsure 로 조용히 지나가지 않게).
+        실기에선 미래 표본이 없어 "가장 새 표본이 t1 과 어긋남" 과 같다. bag 재생(앞으로 다 넣어 둠)도 오경보 없다."""
+        sk = self.cfg["clock_skew_max_s"]
+        ss = [s for h in self.hand.values() for s in (h.angle, h.target, h.force, h.tip)] + list(self.objs.s.values())
+        ss = [s for s in ss if s.t]
+        if ss and not any(s.window(t1 - sk, t1 + sk) for s in ss):
+            newest = max(s.t[-1] for s in ss)
+            raise ClockSkewError(f"판정 시각 {t1:.3f} 근처 ±{sk} s 에 표본 없음(가장 새 표본 {newest:.3f}) — 시계가 다르다")

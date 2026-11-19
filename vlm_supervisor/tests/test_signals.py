@@ -134,3 +134,92 @@ def test_replay_helpers():
            "end_time": "2026-11-11T15:00:05.000"}]
     (sid, t0, t1, _), = RB.stages(ev)
     assert sid == "a" and t1 - t0 == pytest.approx(5.0)
+
+
+# ---------------------------------------------------------------- 실기에서 조용히 틀리는 경로(11.18 리뷰)
+def test_force_topic_cut_before_stage_end_is_no_grip_feature():
+    h, t = hand([(2.0, *HELD[1:])])                    # 힘 기록 0~2 s 뿐
+    v = G.judge("grasp", h, 0.0, 3.0, CFG)             # 전에는 ZeroDivisionError
+    assert v.feats["grip"] is None
+    assert G.grip_drop(h, 0.0, t + CFG["force_stale_s"] + 0.05, stale_s=CFG["force_stale_s"]) is None
+    assert G.grip_drop(h, 0.0, t, stale_s=CFG["force_stale_s"]) is not None
+
+
+def test_stale_force_in_snap_is_unsure_not_held():
+    """힘 토픽만 끊기고 각도는 계속 올 때 — 끊기기 전 쥔 힘 평균으로 '쥠'이라 하지 않는다(전에는 1 s 까지 옛 값)."""
+    h, t = hand([(2.0, *HELD[1:])])
+    for k in range(int(0.4 * 50)):                     # 각도만 0.4 s 더(> force_stale_s 0.2)
+        h.feed_angle(t + k / 50, HELD[1])
+    t1 = t + 0.4
+    assert G.snap(h, t1, CFG["window_s"], CFG["force_stale_s"]) is None
+    assert G.judge("grasp", h, 0.0, t1, CFG).label == G.UNSURE
+    assert G.snap(h, t, CFG["window_s"], CFG["force_stale_s"]) is not None
+
+
+def test_non_finite_sample_is_dropped_and_counted():
+    h = G.HandBuffer()
+    for k in range(50):
+        h.feed_force(k / 50, [float("nan") if k == 9 else 600.0] * 6)
+        h.feed_angle(k / 50, closed(0.5))
+    h.feed_angle(1.0, [float("inf")] * 6)
+    dr = G.grip_drop(h, 0.0, 49 / 50)
+    assert dr["gend"] == pytest.approx(3000.0) and h.force.dropped == 1 and h.angle.dropped == 1
+
+
+def test_no_name_no_palm_ignores_objects():
+    h, t = hand([WEAK_BLOCKED])
+    o = G.ObjectBuffer()
+    for k in range(int(t * 30)):
+        o.feed("a_other", k / 30, (0.3, 0.0, 0.29))
+        o.feed("b_cup", k / 30, (0.4, -0.1, 0.29 + 0.1 * k / (t * 30)))
+    v = G.judge("grasp", h, 0.0, t, CFG, objs=o)
+    assert v.label == G.UNSURE and "obj" not in v.feats      # 전에는 a_other(제자리)로 실패
+
+
+def test_hub_clock_mismatch_raises_but_empty_buffer_is_unsure():
+    nodes = {n.id: n for n in EP.nodes}
+    hub = G.SensorHub(EP, CFG)
+    assert all(v.label == G.UNSURE for v in hub(nodes["grasp_to_tilt_start"], 0.0, 5.0))
+    hub.hand["right"], t = hand([HELD])
+    for t1 in (t + 1e6, t - 1e6):                             # 러너 monotonic 과 ROS 시각이 섞였을 때
+        with pytest.raises(G.ClockSkewError):
+            hub(nodes["grasp_to_tilt_start"], t1 - 3.0, t1)
+
+
+def test_hub_rejects_cfg_missing_keys():
+    bad = json.loads(json.dumps(CFG))
+    del bad["grasp"]["drop_end_max"], bad["window_s"]
+    with pytest.raises(ValueError, match="drop_end_max") as e:
+        G.SensorHub(EP, bad)
+    assert "window_s" in str(e.value)
+
+
+def test_feed_and_read_from_two_threads():
+    """ROS 콜백 스레드가 넣는 동안 러너 스레드가 읽는다 — 시각과 값의 짝이 어긋나거나 예외가 나면 안 된다."""
+    import sys
+    import threading
+    import time
+    s, stop, bad = G._Series(32), threading.Event(), []
+    old = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+
+    def feed():
+        k = 0
+        while not stop.is_set():
+            k += 1
+            s.add(k, [k])
+    th = threading.Thread(target=feed, daemon=True)
+    th.start()
+    end = time.monotonic() + 0.5
+    try:
+        while time.monotonic() < end and len(bad) < 3:
+            n = s.t[-1] if s.t else 0
+            bad += [r for r in s.window(n - 20, n + 50) if r[0] != r[1][0]]
+            v = s.last_before(n, 1e9)
+            if v is not None and v[0] > n:
+                bad.append((n, v))
+    finally:
+        stop.set()
+        th.join(1)
+        sys.setswitchinterval(old)
+    assert not bad, bad[:3]
