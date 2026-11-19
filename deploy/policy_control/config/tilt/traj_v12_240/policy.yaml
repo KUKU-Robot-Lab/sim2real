@@ -34,4 +34,6 @@ ref:
   setup_240.npz: fbd956978a60f526498b0c28f8020827   # v12: T_in_r · T_in_l 실측 평균(v10·v11 fd9e2af3…)
 # ★11.18 사용자 "tilt 경로도 +x 2mm, -y 1mm 조준점이었으면 완벽했을 텐데" — 붓는 입술이 shaker 입구 대비 떨어지는 자리를 base 좌표로 옮긴다.
 # plan_tilt_traj.aim_params 가 params 의 ox·oy 만 고친다(ref/params_240.json 은 md5 핀이라 그대로). [dx, dy, 0] m, z 는 0 만.
-aim_offset_base_m: [0.002, -0.001, 0.0]
+# ★11.19 사용자: 비드 40개(지름 12 mm) 중 ~10개가 로봇 왼쪽(왼팔 쪽, base +y) shaker 입구 가장자리에 맞고 튕겨 나감.
+#   11.18 실측(9런 18노드): 붓는 입술은 이미 입구(FP++) 중심보다 -y 9~12 mm 인데도 흐름이 +y 로 넘어간다 → 조준을 -y 로 3 mm 더(-1 → -4 mm). x 는 그대로.
+aim_offset_base_m: [0.002, -0.004, 0.0]
