@@ -244,7 +244,7 @@ PLACE_FIXED = (("blue", "right"), ("pink", "right"), ("shaker", "left"))
 #   --max-head-vel(기본 60 deg/s) · --max-head-start-gap(기본 10 deg) 은 브리지 기본값을 쓴다. 이전 14차원 run: …_v3090_1119_1512
 ACT_TILT_RUN = "$HOME/rl_ws/il_runs/act_train_tilt_35seg_head_1119b_val3_1119_2154"
 ACT_TILT_CKPTS = ("050000", "010000")
-ACT_TILT_MAX_VEL = "0.5"                              # rad/s — 브리지 기본 · 허용 (0, 1.5]
+ACT_TILT_MAX_VEL = "1.0"                              # rad/s — 허용 (0, 1.5]. 11.19 사용자: act 세션 권장 1.0(0.5 면 시연 속도 p90 0.57 이라 클립 15프레임 연속 abort 가능)
 PLACE_FIXED_UNTIL = {"descend": "하강까지(손 쥔 채 멈춤)", "all": "끝까지(놓기 → 들기)"}
 #: 인지 PC 의 노드 로그 — 저 PC 셸에서 그날 날짜로 푼다(logs/runs/<YYMMDD>/perception, scripts/run_paths.py 와 같은 틀)
 PERC_LOG = "logs/runs/$(date +%y%m%d)/perception"

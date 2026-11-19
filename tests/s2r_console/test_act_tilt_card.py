@@ -32,7 +32,7 @@ def test_real_act_tilt_publishes_only_with_execute_after_a_manual_check():
     check, go = run["act_tilt"]
     assert check.get("manual") is True
     assert go["execute_args"] == ["--execute"] and go["argv"] == dry["argv"]
-    assert go["argv"][3:] == ["act_tilt", A.ACT_TILT_CKPTS[0], "--max-vel", "0.5"]
+    assert go["argv"][3:] == ["act_tilt", A.ACT_TILT_CKPTS[0], "--max-vel", "1.0"]
     # ★11.19 act: 브리지는 목을 되돌리지 않는다 — 같은 셸에서 abort 여도 head_home 과 같은 명령으로 되돌린다(--execute 일 때만)
     head_home, = [c for c in run["head_home"] if c.get("execute_args")]
     script = go["argv"][2]
