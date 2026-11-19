@@ -85,6 +85,9 @@ def test_last_run_summary_reads_the_newest_folder_and_flags_a_missing_summary(tm
     last = XV.act_tilt_last(tmp_path)
     assert last["run"] == "20261119_1001" and last["result"] == "ok" and last["latency_ms"]["p95"] == 12.0
     assert "extra" not in last and last["count"] == 1 and not last.get("missing")
+    assert last["max_head_target_minus_measured_deg"] is None                # ★11.19 14차원 run 은 목 키가 없다
+    (tmp_path / "20261119_1001" / "summary.json").write_text(json.dumps({"result": "ok", "max_head_target_minus_measured_deg": 2.4}))
+    assert XV.act_tilt_last(tmp_path)["max_head_target_minus_measured_deg"] == 2.4
     (tmp_path / "20261119_1102").mkdir()                    # 브리지가 summary.json 전에 죽은 실행
     last = XV.act_tilt_last(tmp_path)
     assert last["run"] == "20261119_1102" and last["missing"] is True and last["count"] == 2
@@ -115,6 +118,8 @@ assert.match(main, /양팔 pd TRACKING 아님/);
 assert.match(main, /btn btn-real" data-act="act-tilt" data-arg="act_tilt"/);
 assert.match(main, /aria-pressed="true">50k/);
 assert.match(main, /summary\.json|abort/); assert.match(main, /state stale/); assert.match(main, /총 2회/);
+assert.doesNotMatch(main, /목 \d/);                                                  // 목 키가 없으면 목 오차 줄도 없다
+assert.match(main, /목 복귀 확인[^<]*head_home/);                                    // ★11.19 abort 면 목 복귀 확인 안내
 vm.runInContext(`acts['act-ckpt']('010000'); actDraft = {...actDraft, vel:'0.3'}; acts['act-tilt']('act_tilt_dry')`, ctx);
 assert.deepEqual(JSON.parse(JSON.stringify(calls)), [['act_tilt_dry', {ckpt:'010000', max_vel:0.3}]]);
 vm.runInContext(`actDraft = {...actDraft, vel:'2'}; renderExperiments(S.session)`, ctx);
@@ -122,4 +127,8 @@ main = el('xp-main').innerHTML;
 assert.match(main, /data-arg="act_tilt_dry" disabled/);                               // 범위 밖 속도면 두 버튼 다 막힘
 assert.match(main, /aria-invalid="true"/);
 assert.doesNotMatch(main, /지금 실행할 수 없다/);
+vm.runInContext(`S.session.experiments.items[0].act.last = {...S.session.experiments.items[0].act.last, result:'ok', error:null}; renderExperiments(S.session)`, ctx);
+vm.runInContext(`S.session.experiments.items[0].act.last.max_head_target_minus_measured_deg = 2.44; renderExperiments(S.session)`, ctx);
+assert.match(el('xp-main').innerHTML, /목 2\.4°/);                                    // 16차원 run — 목 추종 오차(기록만)
+assert.doesNotMatch(el('xp-main').innerHTML, /목 복귀 확인/);                        // 정상 종료면 안내 없음
 """)

@@ -220,7 +220,8 @@ ACT_TILT_MAX_VEL = (0.0, 1.5)
 ACT_TILT_DEFAULT_VEL = 0.5
 ACT_TILT_RUNS = Path(os.environ.get("ACT_TILT_RUNS", Path.home() / "rl_ws/motion_acq/il/_work/act_tilt_runs"))
 _ACT_KEYS = ("result", "error", "steps", "published", "seconds", "latency_ms", "max_target_minus_measured_rad",
-             "max_image_age_s", "max_state_age_s", "max_vel")
+             "max_image_age_s", "max_state_age_s", "max_vel",
+             "max_head_target_minus_measured_deg")    # ★11.19 목 포함(16차원) run 만 — 기록만 하고 abort 는 안 한다
 
 
 def _act_tilt(stage_ids: frozenset) -> dict | None:

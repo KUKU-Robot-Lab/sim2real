@@ -1076,13 +1076,16 @@ function actLast(L) {
   const title = `<h4 class="act-h">마지막 실행</h4>`;
   if (!L) return `${title}<p class="hint">실행 기록 없음 (act_tilt_runs 폴더가 비었다)</p>`;
   const where = `<dt>폴더</dt><dd class="mono">${esc(L.path)}${L.count > 1 ? ` <span class="hint">(총 ${esc(L.count)}회)</span>` : ""}</dd>`;
-  if (L.missing) return `${title}<p class="reasons bad">${esc(L.run)} — summary.json 없음: 브리지가 끝까지 돌지 못했다${L.error ? ` · ${esc(L.error)}` : ""}</p><dl class="kv">${where}</dl>`;
+  // ★11.19 실행은 정상 · abort 모두 같은 셸에서 목을 head_home 으로 되돌린다 — 정지 버튼으로 셸째 끊겼거나 복귀가 실패했을 때만 남는 경우
+  const neck = `<p class="hint act-neck">목 복귀 확인 — 머리가 head_home 자세가 아니면(정지 버튼으로 끊었거나 복귀 실패) head_home 을 따로 돌린다</p>`;
+  if (L.missing) return `${title}<p class="reasons bad">${esc(L.run)} — summary.json 없음: 브리지가 끝까지 돌지 못했다${L.error ? ` · ${esc(L.error)}` : ""}</p>${neck}<dl class="kv">${where}</dl>`;
   const ok = L.result === "ok", lat = L.latency_ms;
-  return `${title}<dl class="kv act-kv">
+  return `${title}${ok ? "" : neck}<dl class="kv act-kv">
     <dt>결과</dt><dd><span class="badge ${ok ? "ok" : "bad"}">${esc(L.result ?? "—")}</span>${L.error ? ` <span class="reasons bad">${esc(L.error)}</span>` : ""}</dd>
     <dt>스텝</dt><dd>${esc(L.steps ?? "—")} · 발행 ${esc(L.published ?? "—")} · ${actNum(L.seconds, 1)} s</dd>
     <dt>지연</dt><dd>${lat ? `p50 ${actNum(lat.p50, 1)} · p95 ${actNum(lat.p95, 1)} · max ${actNum(lat.max, 1)} ms` : "—"}</dd>
-    <dt>목표−측정</dt><dd>최대 ${actNum(L.max_target_minus_measured_rad, 3)} rad</dd>
+    <dt>목표−측정</dt><dd>최대 ${actNum(L.max_target_minus_measured_rad, 3)} rad${L.max_head_target_minus_measured_deg != null
+      ? ` · 목 ${actNum(L.max_head_target_minus_measured_deg, 1)}° <span class="hint">(기록만)</span>` : ""}</dd>
     <dt>입력 나이</dt><dd>영상 ${actNum(L.max_image_age_s, 3)} · 상태 ${actNum(L.max_state_age_s, 3)} s (최대)</dd>
     <dt>max-vel</dt><dd>${actNum(L.max_vel)} rad/s</dd>${where}</dl>`;
 }
