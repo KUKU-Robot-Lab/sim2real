@@ -29,14 +29,15 @@ def test_real_act_tilt_publishes_only_with_execute_after_a_manual_check():
     run = _run("control")["run"]
     dry, = run["act_tilt_dry"]
     assert not dry.get("execute_args") and "--execute" not in dry["argv"]
-    check, go, head = run["act_tilt"]
+    check, go = run["act_tilt"]
     assert check.get("manual") is True
     assert go["execute_args"] == ["--execute"] and go["argv"] == dry["argv"]
     assert go["argv"][3:] == ["act_tilt", A.ACT_TILT_CKPTS[0], "--max-vel", "0.5"]
-    # ★11.19 act: 브리지는 목을 되돌리지 않는다 — 끝에 head_home 단계와 같은 명령으로 FP++ 기준 자세에 둔다(카드 설정은 안 닿는다)
+    # ★11.19 act: 브리지는 목을 되돌리지 않는다 — 같은 셸에서 abort 여도 head_home 과 같은 명령으로 되돌린다(--execute 일 때만)
     head_home, = [c for c in run["head_home"] if c.get("execute_args")]
-    assert head["argv"] == head_home["argv"] and head["execute_args"] == ["--execute"]
-    assert A.act_tilt_argv(head["argv"], {"ckpt": "010000", "max_vel": 0.3}) == tuple(head["argv"])
+    script = go["argv"][2]
+    assert " ".join(f'"{a}"' for a in head_home["argv"]) + " --execute" in script
+    assert "exec " not in script and script.rstrip().endswith("exit $rc")
     fake, = [c for c in _run("fake")["run"]["act_tilt"] if c.get("execute_args")]
     assert "head_move.py" not in " ".join(fake["argv"])        # fake 는 머리가 없다
 

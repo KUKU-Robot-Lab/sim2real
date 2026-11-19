@@ -1267,8 +1267,15 @@ def _run(kind: str) -> dict:
              ["python3", f"{PC}/tools/tilt_pour.py", *([] if real else ["--no-record"])], execute_args=["--execute"]),
     ]
     # $1 = 체크포인트(ACT_TILT_CKPTS) — actions.py 가 카드 선택으로 바꾼다. 실행 기록: motion_acq il/_work/act_tilt_runs/<시각>/summary.json
+    # ★11.19 act: 정책이 목(pan · tilt)도 움직이고 브리지는 목을 되돌리지 않는다(정본 = head_home). abort(시작 차이 · 속도 ·
+    # 추종 오차 · 지연)면 브리지가 0 이 아닌 값으로 끝나 runner 가 다음 명령을 건너뛰므로, 목 복귀는 같은 셸 안에서
+    # 브리지 종료 코드와 상관없이 --execute 일 때만 하고 브리지 종료 코드를 그대로 돌려준다(dry run 은 목을 안 움직인다).
+    # 중괄호는 쓰지 않는다 — argv 의 {…} 는 미션 자리표시자로 치환된다.
+    head_back = " ".join(f'"{a}"' for a in HEAD_HOME_ARGV)
     act = ["bash", "-lc", f'c="{ACT_TILT_RUN}/checkpoints/$1/pretrained_model"; shift; '
-                          'exec python3 "$HOME/rl_ws/motion_acq/il/act_tilt_bridge.py" --ckpt "$c" "$@"',
+                          'python3 "$HOME/rl_ws/motion_acq/il/act_tilt_bridge.py" --ckpt "$c" "$@"; rc=$?; '
+                          'case " $* " in *" --execute "*) echo "[act_tilt] 브리지 종료 $rc — 목을 head_home 자세로"; '
+                          f'{head_back} --execute; h=$?; [ $rc -eq 0 ] && rc=$h;; esac; exit $rc',
            "act_tilt", ACT_TILT_CKPTS[0], "--max-vel", ACT_TILT_MAX_VEL] if real else ["bash", "-lc", "true"]   # fake: 브리지 없음
     run["act_tilt_dry"] = [
         _cmd("ACT tilt dry run — 추론만(발행 없음) · 기록 ~/rl_ws/motion_acq/il/_work/act_tilt_runs/<시각>/", act),
@@ -1277,10 +1284,9 @@ def _run(kind: str) -> dict:
         _cmd("★두 팔이 tilt 시작 자세(tilt_now 뒤)에서 컵을 쥐고 있는가 — 오른손 병 · 왼손 shaker · 붓는 길(테이블 위 · 몸통 앞)이 "
              "비었는가 · 머리를 움직이지 않았는가(정책 입력이 머리 카메라). 비상 정지 손이 닿는가" if real
              else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
-        _cmd("ACT tilt 붓기 — 두 팔 정책 목표 발행 → 끝에 두 팔 episode stop · 기록 ~/rl_ws/motion_acq/il/_work/act_tilt_runs/<시각>/",
+        _cmd("ACT tilt 붓기 — 두 팔 정책 목표 발행 → 끝에 두 팔 episode stop · 기록 ~/rl_ws/motion_acq/il/_work/act_tilt_runs/<시각>/"
+             + (" → 정상 · abort 모두 목을 head_home 자세로(다음 FP++ · 놓기 좌표는 이 자세 기준)" if real else ""),
              act, execute_args=["--execute"]),
-        *([_cmd("목을 head_home 자세로 되돌린다 — 정책이 목을 움직였을 수 있다(다음 FP++ · 놓기 좌표는 이 자세 기준)",
-                HEAD_HOME_ARGV, execute_args=["--execute"])] if real else []),
     ]
     for cup, s in PLACE_FIXED:
         for until, what in PLACE_FIXED_UNTIL.items():

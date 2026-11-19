@@ -3075,8 +3075,10 @@ run:
     argv: &id002
     - bash
     - -lc
-    - c="$HOME/rl_ws/il_runs/act_train_tilt_35seg_1119_val3_v3090_1119_1512/checkpoints/$1/pretrained_model"; shift; exec python3 "$HOME/rl_ws/motion_acq/il/act_tilt_bridge.py"
-      --ckpt "$c" "$@"
+    - c="$HOME/rl_ws/il_runs/act_train_tilt_35seg_1119_val3_v3090_1119_1512/checkpoints/$1/pretrained_model"; shift; python3 "$HOME/rl_ws/motion_acq/il/act_tilt_bridge.py"
+      --ckpt "$c" "$@"; rc=$?; case " $* " in *" --execute "*) echo "[act_tilt] 브리지 종료 $rc — 목을 head_home 자세로"; "python3" "{repo}/scripts/head_move.py"
+      "--config" "{repo}/config/head_camset_rh56f1_h2048.yaml" "--extrinsics" "{repo}/config/global_camera_extrinsics_arm4090_live.yaml" --execute;
+      h=$?; [ $rc -eq 0 ] && rc=$h;; esac; exit $rc
     - act_tilt
     - '050000'
     - --max-vel
@@ -3088,12 +3090,9 @@ run:
     - -lc
     - 'true'
     manual: true
-  - note: ACT tilt 붓기 — 두 팔 정책 목표 발행 → 끝에 두 팔 episode stop · 기록 ~/rl_ws/motion_acq/il/_work/act_tilt_runs/<시각>/
+  - note: ACT tilt 붓기 — 두 팔 정책 목표 발행 → 끝에 두 팔 episode stop · 기록 ~/rl_ws/motion_acq/il/_work/act_tilt_runs/<시각>/ → 정상 · abort 모두 목을 head_home 자세로(다음
+      FP++ · 놓기 좌표는 이 자세 기준)
     argv: *id002
-    execute_args:
-    - --execute
-  - note: 목을 head_home 자세로 되돌린다 — 정책이 목을 움직였을 수 있다(다음 FP++ · 놓기 좌표는 이 자세 기준)
-    argv: *id001
     execute_args:
     - --execute
   place_fixed_blue_descend_right:
