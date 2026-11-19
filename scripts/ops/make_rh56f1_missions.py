@@ -869,11 +869,13 @@ def _stages(kind: str) -> list[dict]:
                "needs": ["pd_arm_right", "pd_arm_left"],
                "needs_why": "머리 카메라 · 두 팔 관절 실측을 읽어 추론만 한다 — 아무것도 발행하지 않는다",
                "title": "ACT tilt — dry run: 머리 컬러 + 팔 14 → 정책 추론만(발행 없음) · 1 초마다 요약 · summary.json"})
+    # ★11.19 act 세션: 정책이 목(pan · tilt)도 움직인다 — 끝에 head_home 자세로 되돌린다(브리지는 목 복귀를 하지 않는다, FP++ 프리셋 정본은 head_home)
     st.append({"id": "act_tilt", "group": "policy", "lane": "both", "skippable": True, "touches_real": real,
-               "needs": ["pd_arm_right", "pd_arm_left"],
-               "needs_why": "두 팔 pd 가 tilt 시작 자세를 붙들고 있어야(TRACKING) 정책 목표를 따른다 — 컵을 쥔 채라 여기서 engage 하지 않는다",
+               "needs": ["pd_arm_right", "pd_arm_left", "head_home"],
+               "needs_why": "두 팔 pd 가 tilt 시작 자세를 붙들고 있어야(TRACKING) 정책 목표를 따른다 — 컵을 쥔 채라 여기서 engage 하지 않는다. "
+                            "목 드라이버(head_home)가 떠 있어야 붓기 뒤 목을 기준 자세로 되돌린다",
                "title": "ACT tilt 붓기 — tilt_now 자세에서: 정책이 두 팔 14 관절 목표를 30 Hz 로 낸다(손은 pd 가 쥔 채) · "
-                        "시작 차이 · 속도 · 추종 오차 · 입력 지연이 넘으면 abort(두 팔 episode stop)"})
+                        "시작 차이 · 속도 · 추종 오차 · 입력 지연이 넘으면 abort(두 팔 episode stop) → 목을 head_home 자세로"})
     # ★11.18 사용자: 경로 F 잡기(grasp_f_*) → control tilt_now 다음에 고정 놓기 궤적 — 컵을 쥔 채라 engage 하지 않는다(TRACKING 이어야).
     #   id 끝 = 팔(actions.py 가 그 팔 pd 를 검사 · 자원으로 잡는다)
     for cup, s in PLACE_FIXED:
@@ -1277,6 +1279,8 @@ def _run(kind: str) -> dict:
              else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
         _cmd("ACT tilt 붓기 — 두 팔 정책 목표 발행 → 끝에 두 팔 episode stop · 기록 ~/rl_ws/motion_acq/il/_work/act_tilt_runs/<시각>/",
              act, execute_args=["--execute"]),
+        *([_cmd("목을 head_home 자세로 되돌린다 — 정책이 목을 움직였을 수 있다(다음 FP++ · 놓기 좌표는 이 자세 기준)",
+                HEAD_HOME_ARGV, execute_args=["--execute"])] if real else []),
     ]
     for cup, s in PLACE_FIXED:
         for until, what in PLACE_FIXED_UNTIL.items():

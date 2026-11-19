@@ -460,8 +460,10 @@ stages:
   needs:
   - pd_arm_right
   - pd_arm_left
-  needs_why: 두 팔 pd 가 tilt 시작 자세를 붙들고 있어야(TRACKING) 정책 목표를 따른다 — 컵을 쥔 채라 여기서 engage 하지 않는다
-  title: 'ACT tilt 붓기 — tilt_now 자세에서: 정책이 두 팔 14 관절 목표를 30 Hz 로 낸다(손은 pd 가 쥔 채) · 시작 차이 · 속도 · 추종 오차 · 입력 지연이 넘으면 abort(두 팔 episode stop)'
+  - head_home
+  needs_why: 두 팔 pd 가 tilt 시작 자세를 붙들고 있어야(TRACKING) 정책 목표를 따른다 — 컵을 쥔 채라 여기서 engage 하지 않는다. 목 드라이버(head_home)가 떠 있어야 붓기 뒤 목을 기준 자세로 되돌린다
+  title: 'ACT tilt 붓기 — tilt_now 자세에서: 정책이 두 팔 14 관절 목표를 30 Hz 로 낸다(손은 pd 가 쥔 채) · 시작 차이 · 속도 · 추종 오차 · 입력 지연이 넘으면 abort(두 팔 episode stop) → 목을
+    head_home 자세로'
 - id: place_fixed_blue_descend_right
   group: policy
   lane: arm_right
@@ -3088,6 +3090,10 @@ run:
     manual: true
   - note: ACT tilt 붓기 — 두 팔 정책 목표 발행 → 끝에 두 팔 episode stop · 기록 ~/rl_ws/motion_acq/il/_work/act_tilt_runs/<시각>/
     argv: *id002
+    execute_args:
+    - --execute
+  - note: 목을 head_home 자세로 되돌린다 — 정책이 목을 움직였을 수 있다(다음 FP++ · 놓기 좌표는 이 자세 기준)
+    argv: *id001
     execute_args:
     - --execute
   place_fixed_blue_descend_right:
