@@ -12,7 +12,9 @@
   ["to_tilt_start", "right", "SRC_PINK", "-"],
   ["tilt", "both", "SRC_PINK", "SHAKER"],
   ["place", "right", "SRC_PINK", "HOLDER_2"],
+  ["go_home", "right", "-", "-"],
   ["place", "left", "SHAKER", "HOLDER_0"],
+  ["go_home", "left", "-", "-"],
   ["go_home", "both", "-", "-"],
   ["terminal", "-", "-", "SUCCESS"]
 ]

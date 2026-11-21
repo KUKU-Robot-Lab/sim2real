@@ -34,10 +34,13 @@ UNPLACED = "?unplaced"     # bound_checks 키: 어느 place 노드에도 못 붙
 
 
 def merge_checks(nodes: list, node_checks: dict) -> list[dict]:
-    """경계 묶음 노드들의 검사를 슬롯 기준으로 합친다(처음 나온 순서). 같은 슬롯의 기대값이 다르면 설정 오류다."""
+    """경계 묶음 노드들의 검사를 슬롯 기준으로 합친다(처음 나온 순서). 같은 슬롯의 기대값이 다르면 설정 오류다.
+    검사의 view(head · global · any, 없으면 head)는 러너 Question.view 와 같다. 시험대 경계 사진은 head 뿐이라 global 검사는 설정 오류."""
     seen: dict[str, str] = {}
     for n in nodes:
         for c in node_checks.get(n["id"]) or []:
+            if c.get("view", "head") not in ("head", "any"):
+                raise ValueError(f"{n['id']} {c['slot']}: 경계 사진이 head 뿐이라 view {c['view']} 검사를 물을 수 없다")
             if seen.setdefault(c["slot"], c["ok"]) != c["ok"]:
                 raise ValueError(f"슬롯 {c['slot']} 의 기대값이 노드마다 다르다({n['id']})")
     return [{"slot": s, "expect": ok} for s, ok in seen.items()]
@@ -97,7 +100,7 @@ def read_jsonl(path: Path) -> list[dict]:
 
 
 def http_answer(judge: VlmHttpJudge, frames: Path):
-    return lambda b, qs: judge.ask([(frames / b["before"]).read_bytes(), (frames / b["jpg"]).read_bytes()], qs)
+    return lambda b, qs: judge.ask({"head": [(frames / b["before"]).read_bytes(), (frames / b["jpg"]).read_bytes()]}, qs)
 
 
 def bench_answer(judge: VlmHttpJudge, results: Path, variant: str):
@@ -145,12 +148,15 @@ def score(bounds: Path, out: Path, cfg_path: Path, answer_of) -> tuple[int, int]
 
 
 def role(node_id: str) -> str:
-    """outcome: 결과는 VLM. drop: 결과는 러너, VLM 은 떨어뜨림 감시. state: 로봇 상태로 확인하는 이동·세팅이라 러너만."""
+    """outcome: 결과는 VLM. drop: 결과는 러너, VLM 은 떨어뜨림 감시. state: 로봇 상태로 확인하는 이동·세팅이라 러너 · 센서만
+    (★11.18 사용자: go_home · scene · to_tilt_start · mix · home_* 는 사진으로 판정하지 않는다). lanes 노드는 줄 항목 id 로 본다."""
     if node_id.startswith(("grasp_", "place_")):
         return "outcome"
-    if node_id.startswith(("to_tilt_start_", "tilt_")):
+    if node_id.startswith("tilt_"):
         return "drop"
-    return "state"
+    if node_id == "final" or node_id.startswith(("go_home", "home", "scene", "to_tilt_start_", "mix_")):   # final = 시험대 끝 경계
+        return "state"
+    raise ValueError(f"역할을 모르는 노드 {node_id!r} — role() 과 calibrate.NODE_CHECKS 에 먼저 넣는다")
 
 
 def _place_for(slot: str, places: list[str]) -> str | None:
@@ -346,7 +352,7 @@ def page(rows: list[dict], frames: Path, out: Path, node_checks: dict) -> dict:
         f'<style>{CSS}</style></head><body>',
         '<h1>에피소드 경계 판정 확인</h1>',
         '<p class="note">종합 결과는 노드 역할로 정한다. state(이동·세팅)는 러너, outcome(grasp · place)은 VLM, '
-        'drop(to_tilt_start · tilt)은 러너에 VLM 떨어뜨림 감시를 더한다. go_home_end · final 의 all_in_holders 는 에피소드 결과다. '
+        'drop(tilt)은 러너에 VLM 떨어뜨림 감시를 더한다. go_home_end · final 의 all_in_holders 는 에피소드 결과다. '
         '사진을 보고 누가 맞았는지 표시하면 이 브라우저(localStorage)에 남고, 아래 버튼으로 jsonl 텍스트를 복사한다.</p>',
         '<table><tr><th>에피소드</th><th>경계</th><th>종합 성공</th><th>종합 실패</th><th>사람 확인</th>'
         '<th>VLM 통과 · 막음 · 판정불가</th><th>러너 실패 기록</th><th>과정 경고</th></tr>'

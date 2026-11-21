@@ -26,7 +26,7 @@ print(f"[preflight] ROS_DOMAIN_ID={os.environ.get('ROS_DOMAIN_ID')}")
 st = got["status"]
 row(st is not None, "실행기 상태", "" if st is None else f"{st.get('episode')} · {st.get('status')} · 다음 {st.get('next_action')} · index {st.get('index')}")
 if st is not None:
-    row(st.get("episode") == "cocktail_1c_e4000", "에피소드 = cocktail_1c_e4000", str(st.get("episode")))
+    row(st.get("episode") == "cocktail_e2e", "에피소드 = cocktail_e2e", str(st.get("episode")))
     row(st.get("status") == "READY" and not st.get("busy"), "실행기 READY · 대기", f"{st.get('status')} busy={st.get('busy')}")
     row(st.get("index") == 0, "처음부터(go_home_start)", f"index {st.get('index')} — 중간이면 reset 뒤 다시")
 hz = (len(got["img"]) - 1) / (got["img"][-1] - got["img"][0]) if len(got["img"]) > 2 else 0

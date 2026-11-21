@@ -7,8 +7,8 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-EP = ROOT / 'config/episodes/cocktail_1c_e4000.yaml'
-FALLBACK = ROOT / 'vlm_supervisor/config/plan_cocktail_1c_e4000.json'
+EP = ROOT / 'config/episodes/cocktail_e2e.yaml'
+FALLBACK = ROOT / 'vlm_supervisor/config/plan_cocktail_e2e.json'
 
 
 def episode():
@@ -45,7 +45,8 @@ PINK_FIRST = [
     ['go_home', 'right', '-', '-'],
     ['grasp', 'right', 'SRC_BLUE', '-'], ['to_tilt_start', 'right', 'SRC_BLUE', '-'],
     ['tilt', 'both', 'SRC_BLUE', 'SHAKER'], ['place', 'right', 'SRC_BLUE', 'HOLDER_1'],
-    ['place', 'left', 'SHAKER', 'HOLDER_0'], ['go_home', 'both', '-', '-'],
+    ['go_home', 'right', '-', '-'],
+    ['place', 'left', 'SHAKER', 'HOLDER_0'], ['go_home', 'left', '-', '-'], ['go_home', 'both', '-', '-'],
     ['terminal', '-', '-', 'SUCCESS']]
 
 
@@ -83,9 +84,7 @@ def test_pink_first_rejected_by_lanes_grouping():
 def test_flat_yaml_pink_first_rejected_by_expect_and_lift_guard():
     """Without lanes (and without the card rule) the same order still fails on expect and lift_guard."""
     from vlm_supervisor.plan_map import map_plan
-    ep = episode()
-    lanes = ep['sequence'][2]
-    ep['sequence'][2:3] = [c for lane in lanes['lanes'] for c in lane['nodes']]
+    ep = flat_episode()
     assert map_plan(fallback(), ep)['ok']
     result = map_plan(PINK_FIRST, ep, without_clear_first())
     assert not result['ok']
@@ -138,10 +137,31 @@ def started(node='go_home_start', last=None):
 
 
 def flat_episode():
+    """lanes 를 펼치고 mix_shaker 를 뺀 판 — mix 는 계획 카드가 없어 서명이 없고, 서명 없는 노드가 있으면 순서 바꾸기를
+    거부한다(test_real_e2e_reorder_rejected_around_mix). 여기 시험은 순서 바꾸기 자체를 본다."""
     ep = episode()
     lanes = ep['sequence'][2]
     ep['sequence'][2:3] = [c for lane in lanes['lanes'] for c in lane['nodes']]
+    ep['sequence'] = [n for n in ep['sequence'] if n['id'] != 'mix_shaker']
+    for n in ep['sequence']:
+        n.pop('sync', None)                                # sync 는 lanes 안에서만 유효(episode_spec 검사)
     return ep
+
+
+def test_real_e2e_reorder_rejected_around_mix():
+    from vlm_supervisor.plan_map import map_plan, steps_for
+    ep = episode()
+    lanes = ep['sequence'][2]
+    ep['sequence'][2:3] = [c for lane in lanes['lanes'] for c in lane['nodes']]
+    ids = [n['id'] for n in ep['sequence']]
+    same = map_plan(steps_for(ids, ep), ep)               # 같은 순서는 통과, mix 는 다음 노드 앞 제자리
+    assert same['ok'] and not same['changed'] and same['order'] == ids, same['reasons']
+    result = map_plan(steps_for(flat_swap(ep), ep), ep)
+    assert not result['ok'] and "['mix_shaker']" in result['reasons'][-1], result['reasons']
+    other = copy.deepcopy(ep)                             # 허용 목록 밖의 서명 없는 노드는 계획에 없으면 거부
+    next(n for n in other['sequence'] if n['id'] == 'mix_shaker')['id'] = 'mix_other'
+    result = map_plan(steps_for(ids, ep), other)
+    assert not result['ok'] and result['reasons'] == ["yaml nodes missing from plan: ['mix_other']"], result['reasons']
 
 
 def flat_swap(ep):
@@ -333,7 +353,7 @@ class Iface:
         self.status_calls += 1
         if self._status is not None:
             return self._status
-        return {'status': 'READY', 'episode': 'cocktail_1c_e4000', 'episode_id': self.eid, 'index': 0,
+        return {'status': 'READY', 'episode': 'cocktail_e2e', 'episode_id': self.eid, 'index': 0,
                 'node': self.order[0], 'nodes': [{'id': x} for x in self.order], 'last': {}}
 
     def perform(self, action, **kwargs):

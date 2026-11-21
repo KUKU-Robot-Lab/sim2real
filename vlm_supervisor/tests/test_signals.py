@@ -8,7 +8,7 @@ from policy_control import episode_spec as S
 from vlm_supervisor import signals as G
 from vlm_supervisor.bench import replay_bags as RB
 
-EP = S.load(Path(__file__).resolve().parents[2] / "config" / "episodes" / "cocktail_1c_e4000.yaml")
+EP = S.load(Path(__file__).resolve().parents[2] / "config" / "episodes" / "cocktail_e2e.yaml")
 CFG = G.load_cfg()
 OPEN = [1740.0] * 6
 
@@ -108,6 +108,13 @@ def test_plan_checks_cocktail():
     assert {(c.side, c.kind) for c in G.plan_checks(EP, nodes["tilt_blue"], held)} == {("right", "hold"), ("left", "hold")}
     pb = G.plan_checks(EP, nodes["place_blue"], held)
     assert [(c.side, c.kind, c.obj) for c in pb] == [("right", "release", "source240_blue")]
+    # cocktail_e2e 의 상태 노드: 섞기는 왼팔 hold, 오른팔 홈은 빈손이면 검사 없음, scene · terminal 은 신호 없음
+    held = {"right": None, "left": "shaker_c_orange"}
+    assert [(c.side, c.kind, c.obj) for c in G.plan_checks(EP, nodes["mix_shaker"], held)] == [("left", "hold", "shaker_c_orange")]
+    assert G.plan_checks(EP, nodes["home_r_after_pink"], held) == []
+    assert G.plan_checks(EP, nodes["scene"], held) == G.plan_checks(EP, nodes["done"], held) == []
+    ps = G.plan_checks(EP, nodes["place_shaker"], held)
+    assert [(c.side, c.kind, c.obj) for c in ps] == [("left", "release", "shaker_c_orange")]
 
 
 def test_hub_tracks_held_and_combine_only_lowers():

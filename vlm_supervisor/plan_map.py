@@ -19,6 +19,7 @@ from .shell.derive import walk
 
 REPO = Path(__file__).resolve().parents[1]
 MAPPED = {'policy', 'trajectory', 'lanes', 'terminal'}  # must all appear in the plan
+PLAN_FREE = {'mix_shaker'}  # 계획 카드가 없어 서명이 없는 노드 — 계획에 없어도 되고 다음 노드 앞 제자리(순서 바꾸기는 opaque 로 거부)
 UNSURE = '상태 불확실, 운영자 확인'
 
 
@@ -110,7 +111,8 @@ def map_plan(steps, episode, cards=None) -> dict:
             table.append({'step': list(steps[j]), 'node': unit['node']['id']})
         i += k
     left = [units[u]['node']['id'] for u in range(len(units))
-            if u not in used and units[u]['node'].get('type') in MAPPED]
+            if u not in used and units[u]['node'].get('type') in MAPPED
+            and (units[u]['sigs'] or units[u]['node']['id'] not in PLAN_FREE)]
     if left:
         out['reasons'].append(f'yaml nodes missing from plan: {left}')
         return out
@@ -133,7 +135,7 @@ def map_plan(steps, episode, cards=None) -> dict:
             out['reasons'].append(f'confirm nodes not in the plan cannot be reordered around: {confirms}')
         # hand/parallel_policy/... have no signature, so the plan says nothing about where they belong
         opaque = [original[i] for i in range(len(top)) if i not in used and original[i] not in sigs
-                  and top[i].get('type') not in MAPPED | {'snapshot', 'confirm'}]
+                  and top[i].get('type') not in {'snapshot', 'confirm'}]
         if opaque:
             out['reasons'].append(f'unmapped nodes without a signature cannot be reordered around: {opaque}')
     out['ok'] = not out['reasons']

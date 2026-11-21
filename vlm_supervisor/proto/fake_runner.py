@@ -26,7 +26,7 @@ ipub = n.create_publisher(CompressedImage, "/camera/camera/color/image_raw/compr
 S = {"i": 0, "status": "READY", "busy": False, "last": {}, "img": [f for f in files if "enter_go_home_start" in f][0], "attempts": {}}
 def view():
     i = S["i"]
-    return {"episode": "cocktail_1c_e4000", "status": S["status"], "busy": S["busy"], "phase": S["status"], "index": i,
+    return {"episode": "cocktail_e2e", "status": S["status"], "busy": S["busy"], "phase": S["status"], "index": i,
             "node": NODES[i][0] if i < len(NODES) else None,
             "nodes": [{"id": a, "type": b, "state": "done" if k < i else ("current" if k == i else "pending")} for k, (a, b) in enumerate(NODES)],
             "last": S["last"], "pending": None, "attempts": S["attempts"],

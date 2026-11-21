@@ -1,4 +1,4 @@
-"""경계 러너 — 진짜 EpisodeManager + FakeExecutor + 실기 yaml(cocktail_1c_e4000), 가짜 시계 · 판정기 · 사진."""
+"""경계 러너 — 진짜 EpisodeManager + FakeExecutor + 실기 yaml(cocktail_e2e), 가짜 시계 · 판정기 · 사진."""
 import json
 import threading
 from dataclasses import replace
@@ -13,7 +13,7 @@ from policy_control.episode_runner import FAILURE, READY, STOPPED, SUCCESS, Epis
 from vlm_supervisor import runner as R
 from vlm_supervisor.runner import HANDED, BoundaryRunner, Question
 
-EP = S.load(Path(__file__).resolve().parents[2] / "config" / "episodes" / "cocktail_1c_e4000.yaml")
+EP = S.load(Path(__file__).resolve().parents[2] / "config" / "episodes" / "cocktail_e2e.yaml")
 ORDER = [n.id for n in EP.nodes if not n.lane and n.type != "terminal"]     # 경계 = 순서 노드(lanes 는 한 덩어리)
 EID = "ep_test"
 
@@ -35,7 +35,7 @@ class Frames:
 
     def frame(self, after):
         self.calls.append(after)
-        return b"jpg", self.clock()
+        return {"head": b"jpg"}, {"head": self.clock()}
 
 
 class Arm:
@@ -54,7 +54,7 @@ class FakeJudge:
         self._tl = threading.local()
 
     def ask(self, images, questions):
-        self.asks.append((list(images), list(questions)))
+        self.asks.append((dict(images), list(questions)))
         e = self._tl.e = self.plan.pop(0) if self.plan else {}
         if "pre" in e:
             e["pre"]()
@@ -113,10 +113,11 @@ def test_auto_advances_through_every_boundary_and_lanes_is_one(tmp_path):
     assert ex.calls == plain.calls                                          # 순서 · 실행은 기존 러너와 같다
     b = bounds(recs)
     assert [x["node"] for x in b] == ORDER and [x["seq"] for x in b] == list(range(1, len(ORDER) + 1))
-    assert all(x["decision"] == "advance" and x["stamp"]["after"] >= x["stamp"]["before"] for x in b)
-    assert len(judge.asks) == len(ORDER) and judge.asks[0][0] == [b"jpg", b"jpg"]
-    lanes = next(x for x in b if x["node"] == "grasp_to_tilt_start")        # 줄 항목 넷이 한 경계의 신호에 들어 있다
-    assert len(lanes["signal"]["results"]) == 4 and "grasp_blue" not in [x["node"] for x in b]
+    assert all(x["decision"] == "advance" and x["stamp"]["after"]["head"] >= x["stamp"]["before"]["head"] for x in b)
+    assert all(x["asked_cams"] == ["head"] for x in b)
+    assert len(judge.asks) == len(ORDER) and judge.asks[0][0] == {"head": [b"jpg", b"jpg"]}
+    lanes = next(x for x in b if x["node"] == "grasp_to_tilt_start")        # 줄 항목이 한 경계의 신호에 들어 있다
+    assert len(lanes["signal"]["results"]) == 3 and "grasp_blue" not in [x["node"] for x in b]   # 잡기 둘 + sync carry 하나
     assert recs[0]["event"] == "start" and recs[0]["next"] == ORDER[0]
 
 
@@ -382,11 +383,13 @@ class BadFrames(Frames):
     bad = ""
 
     def frame(self, after):
-        jpg, t = super().frame(after)
-        return {"empty": (b"", t), "old": (jpg, after - 1.0), "nan": (jpg, float("nan")), "none": None}[self.bad]
+        jpg, ts = super().frame(after)
+        t = ts["head"]
+        return {"empty": ({"head": b""}, ts), "old": (jpg, {"head": after - 1.0}), "nan": (jpg, {"head": float("nan")}),
+                "none": None, "nohead": ({"global": b"g"}, {"global": t}), "bytes": (b"jpg", t)}[self.bad]
 
 
-@pytest.mark.parametrize("bad", ["empty", "old", "nan", "none"])
+@pytest.mark.parametrize("bad", ["empty", "old", "nan", "none", "nohead", "bytes"])
 def test_bad_photo_hands_off_without_asking(tmp_path, bad):
     r, ex, judge, recs, path, _ = make(tmp_path, frames=type("B", (BadFrames,), {"bad": bad}))
     grant(path)
@@ -454,3 +457,74 @@ def test_sensor_error_is_recorded_and_blocks_vlm_only_advance(tmp_path, mode):
     else:
         assert out == HANDED and ran(ex) == [ORDER[0]] and not judge.asks
         assert first["decision"] == "handoff" and "센서 판정 오류" in first["reason"]
+
+
+class TwoCams(Frames):
+    g_age = 0.0     # 글로벌 사진이 after 보다 이만큼 앞이면 오래된 사진
+
+    def frame(self, after):
+        imgs, ts = super().frame(after)
+        return {**imgs, "global": b"g"}, {**ts, "global": after - self.g_age}
+
+
+def test_global_photo_does_not_change_head_questions(tmp_path):
+    """글로벌 사진이 와도 view 없는(head) 질문은 지금과 같은 ask 한 번 · head 사진 둘."""
+    r, ex, judge, recs, path, _ = make(tmp_path, frames=TwoCams)
+    grant(path)
+    assert r.run() == SUCCESS and len(judge.asks) == len(ORDER)
+    assert all(imgs == {"head": [b"jpg", b"jpg"]} for imgs, _ in judge.asks)
+
+
+def test_questions_go_to_their_camera_and_answers_keep_order(tmp_path):
+    H, G = [b"jpg", b"jpg"], [b"g", b"g"]
+    qs = lambda n: [Question("h?"), Question("g?", ok="no", view="global"), Question("a?", view="any"), Question("h2?")]
+    r, ex, judge, recs, path, _ = make(tmp_path, frames=TwoCams, questions=qs, plan=[{}, {"pick": "no"}, {}] * len(ORDER))
+    grant(path)
+    assert r.run() == SUCCESS                              # 답이 질문 순서로 돌아와야 g? 의 '아니오'가 맞는다
+    assert judge.asks[:3] == [({"head": H}, ["h?", "h2?"]), ({"global": G}, ["g?"]), ({"head": H, "global": G}, ["a?"])]
+    first = bounds(recs)[0]
+    assert len(first["answers"]) == 4 and first["asked_cams"] == ["head", "global"]
+    assert set(first["stamp"]["before"]) == set(first["stamp"]["after"]) == {"head", "global"}
+
+
+def test_global_question_without_global_photo_hands_off(tmp_path):
+    r, ex, judge, recs, path, _ = make(tmp_path, questions=lambda n: [Question("g?", view="global")])
+    grant(path)
+    assert r.run() == HANDED and not judge.asks and ran(ex) == [ORDER[0]]
+    assert "global 카메라 사진 없음" in bounds(recs)[-1]["reason"] and r.grants.episode() is None
+
+
+class StaleGlobal(TwoCams):
+    g_age = 1.0
+
+
+def test_stale_global_is_dropped_only_for_global_questions(tmp_path):
+    """오래된 글로벌 사진은 그 카메라만 뺀다 — head 질문은 그대로 진행, 글로벌 질문만 handoff."""
+    r, ex, judge, recs, path, _ = make(tmp_path, frames=StaleGlobal)
+    grant(path)
+    assert r.run() == SUCCESS and all(imgs == {"head": [b"jpg", b"jpg"]} for imgs, _ in judge.asks)
+    b = bounds(recs)[0]
+    assert set(b["stamp"]["after"]) == {"head"} and b["asked_cams"] == ["head"]
+    assert any("보조 카메라 사진 뺌" in e and "global" in e for e in b["errors"])
+    (tmp_path / "g").mkdir()
+    r, ex, judge, recs, path, _ = make(tmp_path / "g", frames=StaleGlobal,
+                                       questions=lambda n: [Question("h?"), Question("g?", view="global")])
+    grant(path)
+    assert r.run() == HANDED and not judge.asks and "global 카메라 사진 없음" in bounds(recs)[-1]["reason"]
+
+
+def test_error_in_first_camera_group_skips_the_rest(tmp_path):
+    from vlm_supervisor.runner.boundary import ask_by_view
+
+    class J:
+        def __init__(self):
+            self.asks = []
+
+        def ask(self, images, questions):
+            self.asks.append(list(images))
+            return [{"error": "down"} for _ in questions]
+
+    j = J()
+    out = ask_by_view(j, {"head": b"a", "global": b"b"}, {"head": b"c", "global": b"d"},
+                      [Question("h?"), Question("g?", view="global")])
+    assert j.asks == [["head"]] and out == [{"error": "down", "cams": ["head"]}, {"error": "down"}]

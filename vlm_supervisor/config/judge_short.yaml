@@ -32,6 +32,7 @@ questions:
   cup_lifted:SRC_PINK: Is the pink cup lifted clear of the table?
   holders_any_cup: Is there a cup standing inside any of the white cup holders?
 node_checks:
+  go_home_start: []
   scene:
   - slot: holders_any_cup
     ok: 'no'
@@ -83,6 +84,7 @@ node_checks:
     ok: 'yes'
   - slot: cup_in_hand:left:SHAKER
     ok: 'yes'
+  mix_shaker: []
   place_shaker:
   - slot: cup_in_holder_b:SHAKER
     ok: 'yes'

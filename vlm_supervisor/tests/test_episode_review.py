@@ -5,6 +5,7 @@ import json
 import pytest
 import yaml
 
+from vlm_supervisor.bench import calibrate as C
 from vlm_supervisor.bench import episode_review as R
 from vlm_supervisor.bench import run_bench as B
 from vlm_supervisor.tests.test_vlm_http import Server, ok
@@ -82,11 +83,11 @@ def test_score_rows_merge_and_branches(srv, work):
     assert (nb["verdict"], nb["why"], len(nb["checks"])) == ("undecided", "before 없음", 2)
     assert nb["final"] == "성공"                              # 러너 성공 + VLM 못 물음 → 러너
     g = out["e/02_grasp"]
-    # grasp_blue + to_tilt_start 묶음: cup_in_hand 는 한 번만 묻고 두 노드가 같이 쓴다
+    # grasp_blue + to_tilt_start 묶음: to_tilt_start 는 state(★11.18) — 검사는 grasp_blue 것만, 결과는 러너
     assert [c["slot"] for c in g["checks"]] == [HAND, LIFT]
     assert g["checks"][0]["thr"] == 0.9 and g["checks"][0]["ans"] == "yes" and g["checks"][0]["pass"] is True
     assert g["verdict"] == "pass" and g["runner_ok"] is False
-    assert comb(g) == {"grasp_blue": ("성공", "과정 경고: r"), "to_tilt_start_r1": ("성공", "떨어뜨림 없음")}
+    assert comb(g) == {"grasp_blue": ("성공", "과정 경고: r"), "to_tilt_start_r1": ("성공", "")}
     assert g["final"] == "성공"
     end = out["e/04_end"]
     assert comb(end) == {"go_home_end": ("성공", ""), "all_in_holders": ("성공", "")}
@@ -281,3 +282,52 @@ def test_score_reasks_error_rows_and_page_uses_last(tmp_path):
     rows = latest(read_jsonl(out))
     assert [r["id"] for r in rows] == ["s/a", "s/b"]
     assert rows[0]["why"] == "검사 없음"
+
+
+E2E = R.CFG.parents[2] / "config" / "episodes" / "cocktail_e2e.yaml"
+# 노드 → 역할(★11.18 사용자: 이동 · 상태 노드는 사진으로 판정하지 않는다). 기본 에피소드에 노드가 생기면 여기와 calibrate.NODE_CHECKS 를 같이 고친다.
+E2E_ROLES = {
+    "go_home_start": "state", "scene": "state",
+    "grasp_blue": "outcome", "to_tilt_start_r1": "state", "grasp_shaker": "outcome", "to_tilt_start_l": "state",
+    "tilt_blue": "drop", "place_blue": "outcome", "home_r_after_blue": "state",
+    "grasp_pink": "outcome", "to_tilt_start_r2": "state", "tilt_pink": "drop", "place_pink": "outcome",
+    "home_r_after_pink": "state", "mix_shaker": "state", "place_shaker": "outcome", "home_l_after_shaker": "state",
+    "go_home_end": "state"}
+
+
+def test_judge_short_covers_every_cocktail_e2e_node():
+    """yaml 노드 전체(lanes 는 줄 항목, terminal 은 경계가 아니라 뺀다)가 judge_short node_checks 와 역할 표에 있다."""
+    seq = yaml.safe_load(E2E.read_text(encoding="utf-8"))["sequence"]
+    nc = yaml.safe_load(R.CFG.read_text(encoding="utf-8"))["node_checks"]
+    lane_of = {}
+    for n in seq:
+        if n["type"] == "lanes":
+            lane_of.update({m["id"]: lane["side"] for lane in n["lanes"] for m in lane["nodes"]})
+        elif n["type"] != "terminal":
+            lane_of[n["id"]] = None
+    assert set(lane_of) == set(E2E_ROLES), sorted(set(lane_of) ^ set(E2E_ROLES))
+    assert not set(lane_of) - set(nc), f"node_checks 에 없는 노드: {sorted(set(lane_of) - set(nc))}"
+    assert {n: R.role(n) for n in lane_of} == E2E_ROLES
+    assert set(C.NODE_CHECKS) == set(lane_of) | {"final"}      # calibrate 가 만드는 키도 같은 노드 목록
+    with pytest.raises(ValueError, match="역할을 모르는"):
+        R.role("pour_extra")
+    order = list(lane_of)
+    for nid, side in lane_of.items():
+        slots = [c["slot"] for c in nc[nid]]
+        if side:                                   # lanes: 줄마다 그 팔의 손 검사만
+            assert all(s.split(":")[1] == side for s in slots if s.startswith("cup_in_hand:")), (nid, slots)
+        asked = R.bound_checks([{"id": nid}], nc)[nid]
+        if E2E_ROLES[nid] == "state":              # state 는 묻지 않는다 — 에피소드 결과 슬롯만 예외
+            assert [c["slot"] for c in asked] == ([R.EPISODE_SLOT] if nid in R.EPISODE_NODES else []), nid
+        elif E2E_ROLES[nid] == "outcome" and not asked:   # 끝 사진이 가려진 놓기(place_pink)는 다음 노드 검사를 받는다
+            nxt = order[order.index(nid) + 1]
+            assert R.bound_checks([{"id": nid}, {"id": nxt}], nc)[nid], nid
+        else:
+            assert asked, nid
+
+
+def test_merge_checks_view():
+    nodes = [{"id": "grasp_blue"}]
+    assert R.merge_checks(nodes, {"grasp_blue": [{"slot": HAND, "ok": "yes", "view": "any"}]}) == [{"slot": HAND, "expect": "yes"}]
+    with pytest.raises(ValueError, match="view global"):
+        R.merge_checks(nodes, {"grasp_blue": [{"slot": HAND, "ok": "yes", "view": "global"}]})

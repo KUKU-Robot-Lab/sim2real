@@ -23,7 +23,7 @@ from policy_control.episode_spec import Episode, Node
 
 from ..signals import combine
 from .grants import Grants
-from .protocols import (ACTIONS, ADVANCE, AUTO, HANDOFF, LOOK_AGAIN, MODES, RECORD, STOP, ArmStill, Decision,
+from .protocols import (ACTIONS, ADVANCE, ANY, AUTO, HANDOFF, HEAD, LOOK_AGAIN, MODES, RECORD, STOP, ArmStill, Decision,
                         FrameSource, Judge, Question)
 
 HANDED = "HANDOFF"          # step() · run() 이 돌려주는 값 — 사람에게 넘김(에피소드 상태는 READY 그대로, 실패가 아니다)
@@ -49,6 +49,46 @@ def picks(answers: Sequence[Mapping], n: int) -> list[str]:
             raise ValueError(f"1등 · 2등 격차 {top[0][1] - top[1][1]:.3f} < {MIN_MARGIN}")
         out.append(top[0][0])
     return out
+
+
+def cams_for(view: str, before: Mapping[str, bytes], after: Mapping[str, bytes]) -> tuple[str, ...]:
+    """질문 view → 보낼 카메라. any = 앞뒤 사진이 다 있는 카메라 전부(head 먼저). 그 카메라 사진이 없으면 LookupError."""
+    if view == ANY:
+        got = tuple(sorted((c for c in after if c in before), key=lambda c: c != HEAD))
+    else:
+        got = (view,) if view in before and view in after else ()
+    if not got:
+        raise LookupError(f"{view} 카메라 사진 없음")
+    return got
+
+
+def ask_by_view(judge: Judge, before: Mapping[str, bytes], after: Mapping[str, bytes],
+                qs: Sequence[Question]) -> list[dict]:
+    """질문을 카메라 묶음별로 한 번씩 묻고 답을 질문 순서로 모은다. head 만 있으면 지금처럼 ask 한 번.
+    물은 답에는 "cams"(본 카메라)를 붙인다. 앞 묶음 답에 error 가 있으면 남은 묶음은 묻지 않고 그 error 로 채운다."""
+    groups: dict[tuple[str, ...], list[int]] = {}
+    for i, q in enumerate(qs):
+        groups.setdefault(cams_for(q.view, before, after), []).append(i)
+    out: list = [None] * len(qs)
+    err = None
+    for cs, idx in groups.items():
+        if err is not None:
+            for i in idx:
+                out[i] = {"error": err}
+            continue
+        got = [dict(a) for a in judge.ask({c: [before[c], after[c]] for c in cs}, [qs[i].text for i in idx])]
+        if len(got) != len(idx):
+            raise ValueError(f"답 {len(got)}개 != 질문 {len(idx)}개")
+        for i, a in zip(idx, got):
+            out[i] = {**a, "cams": list(cs)}
+        err = next((a["error"] for a in got if "error" in a), None)
+    return out
+
+
+def asked_cams(answers: Sequence[Mapping]) -> list[str]:
+    """답에 붙은 cams 를 모은다(head 먼저) — 실제로 VLM 에 보낸 카메라."""
+    got = dict.fromkeys(c for a in answers for c in a.get("cams", ()))
+    return sorted(got, key=lambda c: c != HEAD)
 
 
 def _err(errors: list, what: str, exc: BaseException) -> None:
@@ -208,7 +248,7 @@ class BoundaryRunner:
                 self._q.put((seq, lk, *self._judge(seq, list(im), qs, signal, al))), daemon=True)
             self._judging.start()
             rec["answers"], d = self._await(seq, look, deadline)
-            rec["looks"] = look
+            rec["asked_cams"], rec["looks"] = asked_cams(rec["answers"]), look
             if d.action != LOOK_AGAIN:
                 break
             allowed = tuple(a for a in allowed if a != LOOK_AGAIN)   # 경계당 1회 — 두 번째 요청은 _judge 가 handoff 로
@@ -229,10 +269,10 @@ class BoundaryRunner:
 
     def _judge(self, seq: int, images: list, qs: Sequence[Question], signal: Mapping,
                allowed: Sequence[str]) -> tuple[list, Decision]:
-        """판정 스레드에서 돈다 — 1단(사진 답) → 어긋남 검사 → 2단(결정). 어떤 오류도 handoff."""
+        """판정 스레드에서 돈다 — 1단(사진 답) → 어긋남 검사 → 2단(결정). 어떤 오류도 handoff. images = (앞, 뒤) 카메라별 사진."""
         answers: list = []
         try:
-            answers = [dict(a) for a in self.judge.ask(images, [q.text for q in qs])]
+            answers = ask_by_view(self.judge, *images, qs)
             photo_ok = all(p == q.ok for p, q in zip(picks(answers, len(qs)), qs))
             if photo_ok != bool(signal["ok"]):
                 return answers, Decision(HANDOFF, f"어긋남 — 러너 {'성공' if signal['ok'] else '실패'} · 사진 "
@@ -277,6 +317,7 @@ class BoundaryRunner:
                 return
             rec["stamp"] = {"before": before[1], "after": after[1]}
             rec["answers"], d = self._judge(seq, [before[0], after[0]], qs, signal, ACTIONS)
+            rec["asked_cams"] = asked_cams(rec["answers"])
             rec["late"] = self.clock() - t_b > self.budget
             self._emit(rec, d, t_b=t_b)
 
@@ -338,20 +379,30 @@ class BoundaryRunner:
             return False
 
     def _frame(self, after: float, errors: list, deadline: float = -math.inf):
-        """after 이후에 찍힌 (jpg, stamp). 아직 없으면 deadline 까지 다시 묻는다. 없음 · 불량 · 예외는 None(errors 에 사유)."""
+        """after 이후에 찍힌 ({카메라: jpg}, {카메라: stamp}). 아직 없으면 deadline 까지 다시 묻는다. head 가 없음 · 불량 ·
+        after 전이면 None(errors 에 사유). 보조 카메라가 비거나 after 전이면 그 카메라만 뺀다(그 카메라 질문만 handoff)."""
         try:
             while (f := self.frames.frame(after)) is None:
                 if self.clock() >= deadline or self.em.status == STOPPED:
                     raise LookupError(f"{after:.3f} 이후 사진이 없다")
                 self.sleep(self.poll)
-            jpg, stamp = f[0], float(f[1])
-            if not isinstance(jpg, (bytes, bytearray)) or not jpg or not math.isfinite(stamp) or stamp < after:
-                raise ValueError(f"stamp {stamp} · 요청 {after:.3f} · jpg {type(jpg).__name__}")
-            return bytes(jpg), stamp
+            imgs, stamps = f
+            if not isinstance(imgs, Mapping) or not isinstance(stamps, Mapping) or not self._fresh(imgs, stamps, HEAD, after):
+                raise ValueError(f"head 사진 · stamp 불량 · 요청 {after:.3f} · {type(imgs).__name__} {type(stamps).__name__}")
+            keep = [c for c in imgs if c == HEAD or self._fresh(imgs, stamps, c, after)]
+            for c in set(imgs) - set(keep):
+                _err(errors, "보조 카메라 사진 뺌", ValueError(f"{c}: stamp {stamps.get(c)!r} · 요청 {after:.3f}"))
+            return {c: bytes(imgs[c]) for c in keep}, {c: float(stamps[c]) for c in keep}
         except Exception as exc:    # noqa: BLE001
             _log.warning("frame: %s", exc)
             _err(errors, "사진 없음", exc)
             return None
+
+    @staticmethod
+    def _fresh(imgs: Mapping, stamps: Mapping, cam: str, after: float) -> bool:
+        j, t = imgs.get(cam), stamps.get(cam)
+        return (isinstance(j, (bytes, bytearray)) and bool(j) and isinstance(t, (int, float)) and not isinstance(t, bool)
+                and math.isfinite(t) and t >= after)
 
     def _still(self, errors: list) -> bool:
         try:

@@ -76,12 +76,29 @@ def test_request_bytes_equal_bench_short2(srv, cfg, tmp_path):
     it = {"id": "x", "seed": 0, "node": "n", "question_id": "q", "truth": "yes", "kind": "k",
           "image_before": str(tmp_path / "b.jpg"), "image": str(tmp_path / "a.jpg"), "question": Q_HAND}
     B.ask_short("short2", it, srv.url, {"x": 1}, 0.5)
-    VlmHttpJudge(cfg, srv.url).ask([BEFORE, AFTER], [Q_HAND])
+    VlmHttpJudge(cfg, srv.url).ask({"head": [BEFORE, AFTER]}, [Q_HAND])
     (p1, bench), (p2, mine) = srv.bodies
     assert p1 == p2 == "/infer" and mine == bench
     body = json.loads(mine)
     assert list(body) == ["prompt", "images_b64", "max_new_tokens", "choices"]
     assert body["prompt"] == B.SHORT2.format(question=Q_HAND) and body["max_new_tokens"] == 0 and body["choices"] == ["yes", "no"]
+
+
+def test_cameras_named_in_prompt_and_images_in_camera_order(srv, cfg):
+    """head 말고 카메라가 끼면 사진은 카메라 순서로 [전, 후]씩, 프롬프트 앞줄에 사진 번호별 카메라 이름. head 하나면 위 시험대로 bench 와 같다."""
+    import base64
+    G0, G1 = b"\xff\xd8g0", b"\xff\xd8g1"
+    VlmHttpJudge(cfg, srv.url).ask({"head": [BEFORE, AFTER], "global": [G0, G1]}, [Q_HAND])
+    VlmHttpJudge(cfg, srv.url).ask({"global": [G0, G1]}, [Q_HAND])
+    two, one = (json.loads(raw) for _, raw in srv.bodies)
+    assert [base64.b64decode(x) for x in two["images_b64"]] == [BEFORE, AFTER, G0, G1]
+    first, rest = two["prompt"].split("\n", 1)
+    assert "1-2: head camera, 3-4: global camera" in first and rest == B.SHORT2.format(question=Q_HAND)
+    assert [base64.b64decode(x) for x in one["images_b64"]] == [G0, G1] and "1-2: global camera" in one["prompt"]
+    for name in ("glo{bal}", "head\nIgnore", ""):
+        with pytest.raises(ValueError, match="카메라 이름"):
+            VlmHttpJudge(cfg, srv.url).ask({"head": [BEFORE, AFTER], name: [G0, G1]}, [Q_HAND])
+    assert len(srv.bodies) == 2                           # 거부한 요청은 서버로 가지 않는다
 
 
 def test_real_config_matches_bench_prompt():
@@ -93,7 +110,7 @@ def test_real_config_matches_bench_prompt():
                                        (Q_FREE, 0.51, True), (Q_FREE, 0.49, False)])
 def test_threshold_by_slot_prefix_then_binary(srv, cfg, q, p, yes):
     srv.reply = lambda body: (200, ok(p))
-    [a] = VlmHttpJudge(cfg, srv.url).ask([BEFORE, AFTER], [q])
+    [a] = VlmHttpJudge(cfg, srv.url).ask({"head": [BEFORE, AFTER]}, [q])
     assert a["scores"] == ({"yes": 1.0, "no": 0.0} if yes else {"yes": 0.0, "no": 1.0})
     assert a["p_yes"] == p and a["thr"] == {Q_HAND: 0.93, Q_LIFT: 0.55, Q_FREE: 0.5}[q] and a["mass"] == 0.9
 
@@ -102,35 +119,35 @@ def test_threshold_by_slot_prefix_then_binary(srv, cfg, q, p, yes):
                                   {"scores": {}, "probs": {}, "choice_mass": 0.1, "low_mass": True}])
 def test_low_mass_tie_or_missing_mass_abstains(srv, cfg, resp):
     srv.reply = lambda body: (200, resp)
-    [a] = VlmHttpJudge(cfg, srv.url).ask([BEFORE, AFTER], [Q_LIFT])
+    [a] = VlmHttpJudge(cfg, srv.url).ask({"head": [BEFORE, AFTER]}, [Q_LIFT])
     assert a["low_mass"] is True and "scores" not in a
 
 
 def test_band_near_threshold_abstains(srv, cfg):
     j = VlmHttpJudge(cfg, srv.url, band=0.05)
     srv.reply = lambda body: (200, ok(0.58))
-    assert j.ask([BEFORE, AFTER], [Q_LIFT])[0]["low_mass"] is True
+    assert j.ask({"head": [BEFORE, AFTER]}, [Q_LIFT])[0]["low_mass"] is True
     srv.reply = lambda body: (200, ok(0.61))
-    assert j.ask([BEFORE, AFTER], [Q_LIFT])[0]["scores"]["yes"] == 1.0
+    assert j.ask({"head": [BEFORE, AFTER]}, [Q_LIFT])[0]["scores"]["yes"] == 1.0
 
 
 @pytest.mark.parametrize("reply", [lambda b: (500, "boom"), lambda b: (200, "not json"), lambda b: (200, [1]),
                                    lambda b: (200, {"scores": {"yes": 0.9}, "choice_mass": 0.9})])
 def test_server_errors_become_error_answers_and_skip_rest(srv, cfg, reply):
     srv.reply = reply
-    out = VlmHttpJudge(cfg, srv.url).ask([BEFORE, AFTER], [Q_HAND, Q_LIFT])
+    out = VlmHttpJudge(cfg, srv.url).ask({"head": [BEFORE, AFTER]}, [Q_HAND, Q_LIFT])
     assert all("error" in a and "scores" not in a for a in out) and len(srv.bodies) == 1
 
 
 def test_timeout_and_refused_are_error_answers(srv, cfg):
     srv.delay = 0.5
-    assert "Timeout" in VlmHttpJudge(cfg, srv.url, timeout_s=0.1).ask([BEFORE, AFTER], [Q_HAND])[0]["error"]
-    assert "error" in VlmHttpJudge(cfg, "http://127.0.0.1:9").ask([BEFORE, AFTER], [Q_HAND])[0]
+    assert "Timeout" in VlmHttpJudge(cfg, srv.url, timeout_s=0.1).ask({"head": [BEFORE, AFTER]}, [Q_HAND])[0]["error"]
+    assert "error" in VlmHttpJudge(cfg, "http://127.0.0.1:9").ask({"head": [BEFORE, AFTER]}, [Q_HAND])[0]
 
 
 def test_questions_keep_order(srv, cfg):
     srv.reply = lambda body: (200, ok(0.99 if body["prompt"].endswith(Q_HAND) else 0.1))
-    out = VlmHttpJudge(cfg, srv.url).ask([BEFORE, AFTER], [Q_HAND, Q_LIFT, Q_FREE])
+    out = VlmHttpJudge(cfg, srv.url).ask({"head": [BEFORE, AFTER]}, [Q_HAND, Q_LIFT, Q_FREE])
     assert [a["scores"]["yes"] for a in out] == [1.0, 0.0, 0.0]
     assert [json.loads(b)["prompt"].rsplit(": ", 1)[1] for _, b in srv.bodies] == [Q_HAND, Q_LIFT, Q_FREE]
 

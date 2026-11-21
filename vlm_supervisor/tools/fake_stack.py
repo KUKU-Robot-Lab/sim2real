@@ -6,7 +6,7 @@ mission_run CLI 는 단계가 끝나면 배경 자식을 정지한다(여러 단
 명령(기본: episode_runner_node.py)만 빼고 배경 자식을 SIGTERM 까지 들고 있는다. deploy 코드는 고치지 않는다.
 
     ROS_DOMAIN_ID=97 python -m vlm_supervisor.tools.fake_stack --repo ~/rl_ws/sim2real \
-        --mission config/mission_rh56f1_fake.yaml --stages cups drivers hand_right ... episode_cocktail_1c_e4000
+        --mission config/mission_rh56f1_fake.yaml --stages cups drivers hand_right ... episode_cocktail_e2e
 """
 from __future__ import annotations
 

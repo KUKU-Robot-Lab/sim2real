@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-EP = ROOT / 'config/episodes/cocktail_1c_e4000.yaml'
+EP = ROOT / 'config/episodes/cocktail_e2e.yaml'
 
 
 def episode():

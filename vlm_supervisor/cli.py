@@ -26,7 +26,7 @@ def build_parser():
     parser.add_argument('--log-dir', default=str(Path(ROOT) / 'runs'))
     parser.add_argument('--chain', help='쉼표로 구분한 백엔드 순서; 기본 VLM_CHAIN')
     parser.add_argument('--plan-fallback', default=str(
-        Path(__file__).parent / 'config' / 'plan_cocktail_1c_e4000.json'))
+        Path(__file__).parent / 'config' / 'plan_cocktail_e2e.json'))
     parser.add_argument('--settle', type=float, default=0.5)
     parser.add_argument('--interface', choices=['ros', 'sim'], default='ros')
     parser.add_argument('--approach-judge', action='store_true',

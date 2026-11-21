@@ -1,6 +1,9 @@
 """Judge 구현 — judge_short.yaml + VLM 서버(tools/vlm_server.py). 요청은 bench run_bench 의 short2(ask_short → infer)와 같다.
 
 ask: 질문마다 POST {url}/infer {"prompt": prompt.format(question=문구), "images_b64": [전, 후], "max_new_tokens": 0, "choices"}.
+사진은 {카메라: [전, 후]} 로 받는다. head 하나면 요청이 위와 같고(문턱을 맞춘 판), 다른 카메라가 끼면 카메라 순서대로 [전, 후]를
+이어 보내고 프롬프트 앞에 사진별 카메라 이름 한 줄을 붙인다(shortcut: 여러 카메라 프롬프트 · 문턱은 head 판 그대로, 글로벌 사진
+시험대 결과가 생기면 calibrate 로 다시 맞춘다).
 p_yes(선택지끼리 정규화한 yes) 와 choice_mass 를 bench answer_of 규칙으로 읽고, 보류(점수 없음 · 동점 · NaN · mass < min_mass ·
 |p_yes - 문턱| < band)는 {"low_mass": True}, 아니면 문턱으로 이진화해 {"scores": {"yes": 1|0, "no": 0|1}}. 오류는 {"error": 사유}.
 boundary.picks 는 low_mass · scores 없는 답을 ValueError 로 받아 handoff 한다. p_yes · thr · mass 는 기록용 키다(picks 는 안 읽는다).
@@ -8,15 +11,27 @@ boundary.picks 는 low_mass · scores 없는 답을 ValueError 로 받아 handof
 from __future__ import annotations
 
 import base64
+import re
 from pathlib import Path
 from typing import Mapping, Sequence
 
 import requests
 import yaml
 
-from .protocols import ADVANCE, HANDOFF
+from .protocols import ADVANCE, HANDOFF, HEAD
 
 DEFAULT_THR = 0.5
+
+
+def cams_line(images: Mapping[str, Sequence[bytes]]) -> str:
+    """사진 순서 → 카메라 이름 한 줄. 예: Photographs 1-2: head camera, 3-4: global camera (each pair: before, after)."""
+    k, parts = 1, []
+    for c in images:
+        n = len(images[c])
+        parts.append(f"{k}-{k + n - 1}: {c} camera")
+        k += n
+    return ("Photographs " + ", ".join(parts) + " (each pair: before, then after the last robot action). "
+            "Answer about the after photographs.")
 
 
 class VlmHttpJudge:
@@ -31,18 +46,22 @@ class VlmHttpJudge:
                 raise ValueError(f"같은 문구에 문턱이 둘: {text!r}")
         self.url, self.timeout_s, self.band = url.rstrip("/"), timeout_s, band
 
-    def ask(self, images: Sequence[bytes], questions: Sequence[str]) -> list[dict]:
-        imgs = [base64.b64encode(bytes(b)).decode() for b in images]   # 재인코딩 없이 jpg 바이트 그대로
+    def ask(self, images: Mapping[str, Sequence[bytes]], questions: Sequence[str]) -> list[dict]:
+        bad = [c for c in images if not (isinstance(c, str) and re.fullmatch(r"[A-Za-z0-9_]+", c))]
+        if bad:     # 이름이 프롬프트에 들어가고 format 을 거친다 — 중괄호 · 줄바꿈 등이 끼지 않게
+            raise ValueError(f"카메라 이름은 [A-Za-z0-9_]+ 만: {bad!r}")
+        imgs = [base64.b64encode(bytes(b)).decode() for c in images for b in images[c]]   # 재인코딩 없이 jpg 바이트 그대로
+        prompt = self.prompt if list(images) == [HEAD] else cams_line(images) + "\n" + self.prompt
         out: list[dict] = []
         for q in questions:
             if out and "error" in out[-1]:          # 서버가 죽었으면 남은 질문마다 timeout 을 또 기다리지 않는다
                 out.append({"error": "앞 질문 오류로 묻지 않음"})
                 continue
-            out.append(self._one(imgs, q))
+            out.append(self._one(imgs, q, prompt))
         return out
 
-    def _one(self, imgs: list, q: str) -> dict:
-        body = {"prompt": self.prompt.format(question=q), "images_b64": imgs, "max_new_tokens": 0, "choices": self.choices}
+    def _one(self, imgs: list, q: str, prompt: str) -> dict:
+        body = {"prompt": prompt.format(question=q), "images_b64": imgs, "max_new_tokens": 0, "choices": self.choices}
         try:
             r = requests.post(self.url + "/infer", json=body, timeout=self.timeout_s)
             if r.status_code != 200:

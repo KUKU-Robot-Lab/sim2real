@@ -26,7 +26,10 @@ import yaml
 # holders_empty · holders_count0 도 뺀다(실기 6 에피소드: yes/no 간격 0.01~0.05).
 # cup_released_in_holder 는 뺀다(11.18 실기 13 에피소드: short2 yes 재현 11/33). 홀더 안착은 cup_in_holder_b 가 본다.
 # place_pink 끝 사진은 손이 컵을 아직 감싸 사람도 못 정한다 — 판정은 다음 노드(home_r_after_pink)로 넘긴다.
+# 키 = cocktail_e2e 의 노드 id(lanes 는 줄 항목) + bench 의 final — 빠진 노드는 test_episode_review 의 덮임 검사가 잡는다.
+# state 노드(go_home · scene · to_tilt_start · mix · home_*)의 검사는 시험대 측정용이고 종합 판정은 묻지 않는다(episode_review.role).
 NODE_CHECKS: dict[str, list[tuple[str, str]]] = {
+    "go_home_start": [],
     "scene": [("holders_any_cup", "no")],
     "grasp_blue": [("cup_in_hand:right:SRC_BLUE", "yes"), ("cup_lifted:SRC_BLUE", "yes")],
     "grasp_shaker": [("cup_in_hand:left:SHAKER", "yes"), ("cup_lifted:SHAKER", "yes")],
@@ -40,6 +43,7 @@ NODE_CHECKS: dict[str, list[tuple[str, str]]] = {
     "tilt_pink": [("cup_in_hand:right:SRC_PINK", "yes"), ("cup_in_hand:left:SHAKER", "yes")],
     "place_pink": [],
     "home_r_after_pink": [("cup_in_holder_b:SRC_PINK", "yes"), ("cup_in_hand:left:SHAKER", "yes")],  # 실기 yaml 전용
+    "mix_shaker": [],
     "place_shaker": [("cup_in_holder_b:SHAKER", "yes")],
     "home_l_after_shaker": [("cup_in_holder_b:SHAKER", "yes")],  # 실기 yaml 전용
     "go_home_end": [("all_in_holders", "yes")],

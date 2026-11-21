@@ -4,7 +4,7 @@
   mode shadow : 판단만 기록. 실행기 승인은 사람이 콘솔에서 평소대로(로봇에 영향 없음)
   mode active : VLM 이 승인(next) · 복구 승인(recover:*) · 멈춤(stop)을 직접 부른다
 
-순서는 실행기 YAML(cocktail_1c_e4000) 그대로(11.10 사용자: "현재 스킬 순서는 그대로"). VLM 은 처음에 한 문장으로 계획을
+순서는 실행기 YAML(cocktail_e2e, 11.20 이전 이름 cocktail_1c_e4000) 그대로(11.10 사용자: "현재 스킬 순서는 그대로"). VLM 은 처음에 한 문장으로 계획을
 한 번 세우고(기록 · 대조용), 매 판정 노드 뒤에 A~E 를 고른다.
   A 성공 → 다음 노드 승인      B/C/D 복구 → 실행기에 복구 대기가 있으면 그 복구 승인, 없으면 멈춤(원한 복구는 기록)
   E 위험 · 불명 → 멈춤          VLM 전부 실패 · 호출 예산 초과 → 멈춤
@@ -40,7 +40,7 @@ Skills (each step = [skill, hand, object, target]):
 - place [place, right|left, OBJ, HOLDER_n]: put the held OBJ into its holder and open the hand.
 - terminal [terminal, -, -, SUCCESS]: end.
 Rules: one cup per hand. A cup must be held to be carried, poured or placed. Keep the shaker in the left hand until all pouring is done."""
-# 실행기 노드 id → VLM 에 보여 줄 단계(cocktail_1c_e4000.yaml). 여기 없는 노드는 판정 없이 넘긴다(rehome · snapshot 은 실행기 검사로 충분).
+# 실행기 노드 id → VLM 에 보여 줄 단계(cocktail_e2e.yaml). 여기 없는 노드는 판정 없이 넘긴다(rehome · snapshot 은 실행기 검사로 충분).
 STEP = {
     "grasp_to_tilt_start": ('[["grasp","right","SRC_BLUE"],["to_tilt_start","right","SRC_BLUE"],["grasp","left","SHAKER"],["to_tilt_start","left","SHAKER"]]',
                             "right hand holds the blue cup and left hand holds the orange shaker, both lifted to the pouring start pose"),
@@ -223,7 +223,7 @@ class Sup:
         print(f"[vlm] mode={a.mode} runner={a.runner} judge={sorted(a.judge)} 남은 호출: {self.router.calls_left()}")
         print(f"[vlm] 기록: {self.run_dir}")
         if not self.wait_status():
-            print("[vlm] ✗ 실행기 상태가 안 온다 — 콘솔에서 episode_cocktail_1c_e4000 노드를 먼저 띄운다")
+            print("[vlm] ✗ 실행기 상태가 안 온다 — 콘솔에서 episode_cocktail_e2e 노드를 먼저 띄운다")
             return 2
         img = self.frame(wait=5.0)
         if img is None:
