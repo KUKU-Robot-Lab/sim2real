@@ -17,7 +17,7 @@ import head_depth_node as hdn  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 STUDENT = Path(__file__).resolve().parents[1] / "deploy/policies/rh56f1/aglt/right_student1104e"
-EXTRINSICS = STUDENT / "camera/extrinsics_r20u5_40e6496.yaml"      # 학습 때 값을 얼린 사본(추적 파일)
+EXTRINSICS = STUDENT / "camera/extrinsics_m1117.yaml"      # 11.17 테이블 마커 판 사본(ckpt 는 r20u5 로 배움 → ckpt_md5)
 
 
 def test_to_small_matches_real_depth():
@@ -109,12 +109,15 @@ def test_frame_to_small_checks_the_frame():
 def test_node_config_matches_a_training_depth_pre():
     rd = hdn.real_depth
     _, md5 = hdn.load_extrinsics(EXTRINSICS)
-    cfg = hdn.node_config(rd.BLOCK, rd.MIN_VALID, hdn.TABLE_Z, rd.FLOOR_MARGIN_M, str(EXTRINSICS), md5)
+    cfg = hdn.node_config(rd.BLOCK, rd.MIN_VALID, hdn.TABLE_Z, rd.FLOOR_MARGIN_M, str(EXTRINSICS), md5,
+                          ckpt_md5=hdn.CKPT_EXTRINSICS_MD5)
     k = rd.scale_k(np.array(rd.D435I_K_1103), 8)
     pre = {"block": 8, "min_valid": 0.5, "render_wh": [1280, 720], "out_wh": [160, 90], "K": k.tolist(),
-           "extrinsics": "/train/host/r20u5.yaml", "extrinsics_md5": hdn.EXTRINSICS_MD5,
+           "extrinsics": "/train/host/r20u5.yaml", "extrinsics_md5": hdn.CKPT_EXTRINSICS_MD5,
            "floor_cut_z_m": hdn.TABLE_Z - rd.FLOOR_MARGIN_M}
     SP.check_depth_config(pre, cfg)
+    with pytest.raises(SP.RhAgltError, match="extrinsics_md5"):   # 새 판 파일인데 ckpt 대조 값이 없으면 거부
+        SP.check_depth_config(pre, {k: v for k, v in cfg.items() if k != "extrinsics_ckpt_md5"})
     with pytest.raises(SP.RhAgltError, match="floor_cut_z_m"):
         SP.check_depth_config(pre, {**cfg, "floor_cut_z_m": cfg["floor_cut_z_m"] + 0.01})
 
@@ -167,7 +170,7 @@ def _node(monkeypatch):
     h.__dict__.update(node=NS(get_clock=lambda: NS(now=lambda: NS(nanoseconds=0))), args=NS(block=8, min_valid=0.5),
                       cut=None, log=NS(warning=lambda m, **k: warns.append(m), error=lambda m, **k: warns.append(m)),
                       Image=lambda: NS(), CameraInfo=lambda: NS(), info=info, info_ok=True, lat_ms=[],
-                      pending=None, pending_t=0.0, last_ns=None, head_pose=None, head_deg=None, head_t=None,
+                      pending=None, pending_t=0.0, last_ns=None, head_pose=None, head_deg=None, head_t=None, gate=True, clip=None,
                       rgb=True, color=deque(maxlen=hdn.COLOR_BUF), pub=pub, pub_rgb=pub, pub_info=NS(publish=lambda m: None))
     monkeypatch.setattr(hdn, "head_block", lambda *a: None)
     return h, out, warns
@@ -247,9 +250,10 @@ def test_torch_block_median_equals_numpy_on_bad_values():
 def test_extrinsics_must_be_frozen_and_match(tmp_path):
     if not (STUDENT / "student").is_dir():
         pytest.skip("학생 ckpt 폴더 없음")
-    path, md5, rgb = hdn.resolve_extrinsics(str(STUDENT), None, False)
-    assert Path(path) == EXTRINSICS and md5 == hdn.EXTRINSICS_MD5 and rgb is True
-    assert hdn.resolve_extrinsics(None, str(EXTRINSICS), False) == (str(EXTRINSICS), hdn.EXTRINSICS_MD5, False)
+    path, md5, ckpt_md5, rgb = hdn.resolve_extrinsics(str(STUDENT), None, False)
+    assert Path(path) == EXTRINSICS and md5 == hdn.EXTRINSICS_MD5 and ckpt_md5 == hdn.CKPT_EXTRINSICS_MD5 and rgb is True
+    assert hdn.resolve_extrinsics(None, str(EXTRINSICS), False) == (str(EXTRINSICS), hdn.EXTRINSICS_MD5,
+                                                                   hdn.CKPT_EXTRINSICS_MD5, False)
     moved = tmp_path / "r20u5.yaml"
     moved.write_text(EXTRINSICS.read_text() + "# 다시 잼\n")
     with pytest.raises(hdn.PinError, match="시작하지 않는다"):
@@ -263,13 +267,160 @@ def test_head_block_only_at_the_frozen_head_pose():
     from head_position_hold_node import tick_to_deg
 
     hp = load_head_pose(EXTRINSICS)
-    assert hp is not None and hp.ticks == {"pan": 1825, "tilt": 2815}
+    assert hp is not None and hp.ticks == {"pan": 1825, "tilt": 2833}
 
     def deg(pan_tick, tilt_tick):     # 엔코더 틱 → /head/joint_states 의 URDF 각(도)
         return urdf_from_encoder(tick_to_deg(pan_tick), tick_to_deg(tilt_tick))
 
-    assert hdn.head_block(hp, deg(1825, 2815), 10.0, 10.5) is None
-    assert hdn.head_block(hp, deg(1828, 2812), 10.0, 10.5) is None
-    assert "캘리브 자세" in hdn.head_block(hp, deg(1835, 2815), 10.0, 10.5)
-    assert "낡았다" in hdn.head_block(hp, deg(1825, 2815), 10.0, 12.0)
+    assert hdn.head_block(hp, deg(1825, 2833), 10.0, 10.5) is None
+    assert hdn.head_block(hp, deg(1828, 2830), 10.0, 10.5) is None
+    assert "캘리브 자세" in hdn.head_block(hp, deg(1835, 2833), 10.0, 10.5)
+    assert "낡았다" in hdn.head_block(hp, deg(1825, 2833), 10.0, 12.0)
     assert "못 받았다" in hdn.head_block(hp, None, None, 10.0)
+
+
+# --- 11.18 --free-head(머리를 정책이 움직이는 rh_cap 깊이 학생) ---
+
+def test_free_head_parses_without_extrinsics_and_sets_no_cut_no_gate(tmp_path, monkeypatch):
+    """(a) 외부 파라미터 파일 없이 시작한다 — 컷 · head_pose 없음, config 에 모드 키."""
+    monkeypatch.chdir(tmp_path)                   # 상대 경로로 기본 yaml 을 찾는 일이 없게
+    cut, cfg, head_pose = hdn.setup(hdn.parse_args(["--free-head"]))
+    assert cut is None and head_pose is None
+    assert cfg["floor_cut"] is False and cfg["head_gate"] is False
+    assert cfg["extrinsics"] is None and cfg["extrinsics_md5"] is None and cfg["extrinsics_ckpt_md5"] is None
+    assert cfg["floor_cut_z_m"] is None and cfg["rgb"] is False
+    assert cfg["block"] == 8 and cfg["out_wh"] == [160, 90] and cfg["render_wh"] == [1280, 720]
+    import json
+    json.dumps(cfg)                               # latched String 으로 낼 수 있어야 한다
+
+
+def test_free_head_with_policy_dir_or_extrinsics_is_an_argparse_error():
+    """(e) --free-head 와 --policy-dir · --extrinsics 동시 지정 거부. 셋 다 없어도 거부(기본 그대로)."""
+    for argv in (["--free-head", "--policy-dir", str(STUDENT)], ["--free-head", "--extrinsics", str(EXTRINSICS)], []):
+        with pytest.raises(SystemExit):
+            hdn.parse_args(argv)
+
+
+def test_default_argv_still_needs_frozen_extrinsics():
+    """(d) 인자 없는 기본 경로: 컷 · head_pose · 기존 config 키(새 키 없음) 그대로."""
+    cut, cfg, head_pose = hdn.setup(hdn.parse_args(["--extrinsics", str(EXTRINSICS)]))
+    assert cut is not None and head_pose is not None
+    assert "floor_cut" not in cfg and "head_gate" not in cfg
+    assert cfg["extrinsics_md5"] == hdn.EXTRINSICS_MD5 and cfg["floor_cut_z_m"] == pytest.approx(hdn.TABLE_Z - hdn.real_depth.FLOOR_MARGIN_M)
+
+
+def test_free_head_output_equals_cut_path_with_all_false_mask():
+    """(b) 같은 깊이 → free-head 출력 = 컷 마스크가 전부 False 인 기존 경로. 탁자 아래 화소가 지워지지 않는다."""
+    rd = hdn.real_depth
+    extr, _ = hdn.load_extrinsics(EXTRINSICS)
+    d = np.full((720, 1280), 600, dtype=np.uint16)
+    d[360:] = 1500                                 # 뒤쪽 절반 = 탁자 아래 바닥(기존 경로는 지운다)
+    cut, _, _ = hdn.setup(hdn.parse_args(["--free-head"]))
+    free = hdn.frame_to_small(**_frame(d), block=8, min_valid=0.5, cut=cut)
+    cam_z, rz, _ = hdn.make_cut(extr)
+    never = (cam_z, rz, -1e9)                      # z_min 을 아주 낮게 → 지워지는 화소 없음
+    assert not (rd.floor_cut(d.astype(np.float32) * 1e-3, *never) == 0).any()
+    np.testing.assert_array_equal(free, hdn.frame_to_small(**_frame(d), block=8, min_valid=0.5, cut=never))
+    fixed = hdn.frame_to_small(**_frame(d), block=8, min_valid=0.5, cut=hdn.make_cut(extr))
+    assert (free > 0).all() and (fixed == 0).any()   # 기존 경로는 바닥을 0 으로, free-head 는 그대로
+
+
+def test_free_head_publishes_when_head_is_off_the_calib_pose(monkeypatch):
+    """(c) 머리 관절이 yaml 자세에서 벗어나도(· 낡아도 · 없어도) 프레임이 나온다. 머리 고정 경로는 보류."""
+    from head_pose_check import load_head_pose
+    h, out, warns = _node(monkeypatch)
+    monkeypatch.undo()                             # 진짜 head_block 을 쓴다
+    h.rgb = False
+    import time
+    h.gate, h.head_pose, h.head_deg, h.head_t = False, None, (40.0, -30.0), time.monotonic()   # free-head: config head_gate false
+    h._depth(_depth_msg(T0))
+    assert [m.encoding for m in out] == ["32FC1"], warns
+    h.gate, h.head_pose = True, load_head_pose(EXTRINSICS)   # 같은 각을 머리 고정 경로로 → 보류
+    h._depth(_depth_msg(T0 + DT))
+    assert len(out) == 1 and any("보류" in w and "캘리브 자세" in w for w in warns), warns
+
+
+def test_fixed_head_consumer_rejects_free_head_config():
+    """머리 고정 학생(check_depth_config)은 free-head 깊이를 받지 않는다."""
+    rd = hdn.real_depth
+    pre = {"block": 8, "min_valid": 0.5, "render_wh": [1280, 720], "out_wh": [160, 90],
+           "K": rd.scale_k(np.array(rd.D435I_K_1103), 8).tolist(), "extrinsics_md5": hdn.CKPT_EXTRINSICS_MD5,
+           "floor_cut_z_m": hdn.TABLE_Z - rd.FLOOR_MARGIN_M}
+    with pytest.raises(SP.RhAgltError, match="extrinsics_md5.*floor_cut_z_m"):
+        SP.check_depth_config(pre, hdn.free_head_config(rd.BLOCK, rd.MIN_VALID))
+
+
+# --- 11.18 리뷰 반영: free-head 깊이 클립 · 명시 게이트 · 안 쓰는 인자 거부 ---
+
+def _frame_with_far_and_near(block: int = 8) -> np.ndarray:
+    """블록 (0,0): 12 m · 0.005 m · 0.5 m 섞임. 블록 (0,1): 전부 12 m. 나머지 1 m."""
+    d = np.full((720, 1280), 1000, dtype=np.uint16)
+    d[:block, :block] = 500
+    d[0, :4] = 12000
+    d[1, :2] = 5
+    d[:block, block:2 * block] = 12000
+    return d
+
+
+def test_free_head_clip_zeroes_out_of_range_before_block_median():
+    """(a) 12 m · 0.005 m 화소는 0(구멍) → 중앙값은 가까운 0.5 m 만으로. 전부 12 m 인 블록은 0."""
+    d = _frame_with_far_and_near()
+    small = hdn.to_small(d, 8, 0.5, None, hdn.FREE_HEAD_CLIP_M)
+    assert small[0, 0] == np.float32(0.5) and small[0, 1] == 0.0 and small[0, 2] == np.float32(1.0)
+    assert small.max() <= hdn.FREE_HEAD_CLIP_M[1]
+    # 유효 비율도 0 을 무효로 센다: 0.5 m 화소 58/64 → min_valid 0.95 면 블록이 0
+    assert hdn.to_small(d, 8, 0.95, None, hdn.FREE_HEAD_CLIP_M)[0, 0] == 0.0
+    via_frame = hdn.frame_to_small(720, 1280, "16UC1", 1280 * 2, d.tobytes(), 8, 0.5, None, hdn.FREE_HEAD_CLIP_M)
+    assert np.array_equal(via_frame, small)
+
+
+def test_default_path_has_no_clip_and_keeps_far_pixels():
+    """(b) clip None(기본 경로)는 같은 프레임에서 12 m 를 그대로 낸다 — 회귀 0."""
+    d = _frame_with_far_and_near()
+    small = hdn.to_small(d, 8, 0.5)
+    assert small[0, 1] == np.float32(12.0)
+    _, cfg, _ = hdn.setup(hdn.parse_args(["--extrinsics", str(EXTRINSICS)]))
+    assert "clip_m" not in cfg
+
+
+def test_free_head_clip_matches_consumer_and_config():
+    """(c) 클립 상한 == cap_student.DEPTH_MAX_M, config 에 clip_m."""
+    from policy_control import cap_student
+    assert hdn.FREE_HEAD_CLIP_M[1] == cap_student.DEPTH_MAX_M
+    _, cfg, _ = hdn.setup(hdn.parse_args(["--free-head"]))
+    assert cfg["clip_m"] == [0.01, 10.0]
+
+
+def _fake_ros(monkeypatch):
+    import sys
+    from unittest.mock import MagicMock
+    for name in ("rclpy", "rclpy.qos", "sensor_msgs", "sensor_msgs.msg", "std_msgs", "std_msgs.msg"):
+        monkeypatch.setitem(sys.modules, name, MagicMock())
+    return MagicMock()
+
+
+def test_gate_on_without_head_pose_is_refused(monkeypatch):
+    node = _fake_ros(monkeypatch)
+    _, cfg, _ = hdn.setup(hdn.parse_args(["--extrinsics", str(EXTRINSICS)]))
+    with pytest.raises(ValueError, match="head_pose"):
+        hdn.HeadDepth(node, hdn.parse_args(["--extrinsics", str(EXTRINSICS)]), None, cfg, None)
+    with pytest.raises(ValueError, match="head_pose"):
+        hdn.HeadDepth(node, None, None, {"rgb": False}, None)     # head_gate 키 없음 = 켬
+
+
+def test_setup_output_wires_gate_and_clip_into_node(monkeypatch):
+    """setup 반환값을 그대로 HeadDepth 에 → free-head 는 게이트 끔 · 클립 켬, 고정 경로는 게이트 켬 · 클립 없음."""
+    node = _fake_ros(monkeypatch)
+    args = hdn.parse_args(["--free-head"])
+    h = hdn.HeadDepth(node, args, *hdn.setup(args))
+    assert h.gate is False and h.clip == hdn.FREE_HEAD_CLIP_M
+    args = hdn.parse_args(["--extrinsics", str(EXTRINSICS)])
+    h = hdn.HeadDepth(node, args, *hdn.setup(args))
+    assert h.gate is True and h.clip is None and h.head_pose is not None
+
+
+def test_free_head_rejects_unused_args():
+    for extra in (["--rgb"], ["--table-z", "0.3"], ["--floor-margin", "0.05"]):
+        with pytest.raises(SystemExit):
+            hdn.parse_args(["--free-head", *extra])
+    hdn.parse_args(["--free-head", "--table-z", str(hdn.TABLE_Z)])   # 기본값과 같으면 통과

@@ -65,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--objects", nargs="*", default=[])
     ap.add_argument("--hz", type=float, default=5.0)
     ap.add_argument("--quality", type=int, default=80)
-    ap.add_argument("--camera-extrinsics", type=Path, default=_ROOT / "config" / "global_camera_extrinsics_arm4090.yaml")
+    ap.add_argument("--camera-extrinsics", type=Path, default=_ROOT / "config" / "global_camera_extrinsics_arm4090_m1117.yaml")
     args = ap.parse_args(argv)
     import cv2
     import rclpy

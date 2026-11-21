@@ -311,6 +311,46 @@ def test_rehome_table_cups_ignores_stale_live_and_refuses_an_unknown_cup_without
     assert cups[0]["pos"] == [0.1, -0.1, 0.29]                                    # 신선하면 unknown 도 live 로
 
 
+
+def test_rehome_lost_cup_takes_the_target_holder_seat_only_when_last_live_sat_still_in_it():
+    """★11.18 go_home_end 거부(SRC_PINK live 38 s 낡음): 마지막 live 5 개가 홀더 2 받침에 앉은 채 멈춰 있었으면 받침 자리로 대체.
+    08:45 실제 궤적(홀더 위에 떠 있다가 48.28 s 에 바깥으로 튀며 떨어짐) · live 없음 · placed 없음은 지금처럼 거부."""
+    from types import SimpleNamespace
+    from policy_control.episode_ros import SEAT_DZ_CYL60, SEAT_NOTE, RehomeCupUnknown, rehome_table_cups
+    from policy_control.episode_world import World
+    ep = SimpleNamespace(objects={"SRC_PINK": {"topic": "/objects/source240_pink/pose"}})
+    w = World(objects={"SRC_PINK": {"at": "unknown"}})
+    holders = {2: ((0.3762, -0.2762, 0.2350), 0.03)}
+    seat_z = round(0.235 + SEAT_DZ_CYL60, 4)
+    sat = {"SRC_PINK": [((0.3765 + 0.0005 * k, -0.2770, seat_z - 0.004), None, 40.0 + 0.1 * k) for k in range(5)]}
+    cups, notes = rehome_table_cups(ep, w, {}, sat, now=80.0, placed={"SRC_PINK": 2}, holders=holders)
+    assert cups == [{"name": "SRC_PINK", "object": "source240_pink", "pos": [0.3762, -0.2762, seat_z]}]
+    assert any(f"홀더 2 {SEAT_NOTE}" in n for n in notes)
+    with pytest.raises(RehomeCupUnknown, match="SRC_PINK"):                                         # 대체 끔(기다리는 중)
+        rehome_table_cups(ep, w, {}, sat, now=80.0)
+    # 08:45 분홍(카메라 bag): 46.5~47.8 s 홀더 2 바로 위 → 48.28 s 바깥 아래로 튀고 끊김 → 홀더 너머로 떨어짐
+    fell = {"SRC_PINK": [((0.380, -0.280, 0.279), None, 46.5), ((0.384, -0.283, 0.277), None, 46.9),
+                         ((0.388, -0.286, 0.275), None, 47.4), ((0.391, -0.288, 0.273), None, 47.8),
+                         ((0.3977, -0.3229, 0.2381), None, 48.28)]}
+    with pytest.raises(RehomeCupUnknown, match="(움직임|걸침).*멀어지며 끊김 — 떨어졌거나 넘어졌을 수 있음"):
+        rehome_table_cups(ep, w, {}, fell, now=86.7, placed={"SRC_PINK": 2}, holders=holders)
+    hover = {"SRC_PINK": fell["SRC_PINK"][:4] + [((0.391, -0.288, 0.273), None, 47.9)]}            # 끊기기 전 떠 있던 자리만
+    with pytest.raises(RehomeCupUnknown, match="움직임|높이|xy|걸침"):
+        rehome_table_cups(ep, w, {}, hover, now=86.7, placed={"SRC_PINK": 2}, holders=holders)
+    with pytest.raises(RehomeCupUnknown, match="live 없음"):                                          # 넘어진 컵도 live 가 끊긴다
+        rehome_table_cups(ep, w, {}, {}, now=86.7, placed={"SRC_PINK": 2}, holders=holders)
+    import math
+    c, sn = math.cos(math.radians(10)), math.sin(math.radians(10))              # 리뷰 H: 기운 컵 · 띄엄띄엄 샘플은 앉음 아님
+    tipped = {"SRC_PINK": [(f[0], (c, sn, 0.0, 0.0), f[2]) for f in sat["SRC_PINK"]]}   # 축 20° 기욺
+    with pytest.raises(RehomeCupUnknown, match="기울기 20°"):
+        rehome_table_cups(ep, w, {}, tipped, now=80.0, placed={"SRC_PINK": 2}, holders=holders)
+    sparse = {"SRC_PINK": [(f[0], None, 40.0 + 1.0 * k) for k, f in enumerate(sat["SRC_PINK"])]}
+    with pytest.raises(RehomeCupUnknown, match="4.0 s 에 걸침"):
+        rehome_table_cups(ep, w, {}, sparse, now=80.0, placed={"SRC_PINK": 2}, holders=holders)
+    cups, notes = rehome_table_cups(ep, w, {}, {}, now=86.7, placed={"SRC_PINK": 2}, holders=holders, allow_lost=True)
+    assert cups == [] and any("SRC_PINK" in n and "홈 복귀" in n for n in notes)              # ★11.18 빼고 복귀
+
+
 def test_rehome_table_cups_notes_a_non_object_topic_and_unknown_object_is_an_error():
     from types import SimpleNamespace
     from policy_control.episode_ros import rehome_table_cups
@@ -353,3 +393,102 @@ def test_table_cups_and_holder_base_enter_the_planning_world():
                                           objects=hs + (c,)))
     names = {world.model.body(i).name for i in range(world.model.nbody)}
     assert {"cup_tbl_PINK", bases[0]["name"]} <= names and world.is_world(bases[0]["name"])
+
+
+def test_prune_vertices_skips_corners_only_when_whole_path_passes():
+    """벽(x0 ∈ (0.4,0.6), x1 < 0.5) 을 돌아가는 경로: 벽에 막힌 지름길은 남기고, 뚫린 꼭짓점만 지운다."""
+    blocked = lambda q: 0.4 < q[0] < 0.6 and q[1] < 0.5
+
+    class FakeChk:
+        def check(self, q):
+            return SimpleNamespace(ok=not blocked(q))
+
+        def check_path(self, path, step):
+            ok = all(not blocked(a + (b - a) * t) for a, b in zip(path[:-1], path[1:])
+                     for t in np.linspace(0, 1, 50))
+            return {"ok": ok}
+
+    path = np.array([[0, 0], [0.2, 0.3], [0.3, 0.6], [0.5, 0.7], [0.7, 0.6], [0.8, 0.3], [1, 0]], float)
+    out = P.prune_vertices(FakeChk(), path, 0.01)
+    assert len(out) < len(path) and (out[0] == path[0]).all() and (out[-1] == path[-1]).all()
+    assert FakeChk().check_path(out, 0.01)["ok"]
+
+
+class _OrderChk:
+    """상태 없는 check 는 전부 통과, 순서 기반 check_path 는 '먼저 y ≥ 0.5 로 든 뒤에만 x > 0.5' 를 요구(탈출 흉내)."""
+    lenient = True
+
+    def check(self, q):
+        return SimpleNamespace(ok=True)
+
+    def check_path(self, path, step):
+        lifted = False
+        for a, b in zip(path[:-1], path[1:]):
+            for t in np.linspace(0, 1, 50):
+                q = a + (b - a) * t
+                lifted |= q[1] >= 0.5
+                if q[0] > 0.5 and not lifted:
+                    return {"ok": False}
+        return {"ok": True}
+
+
+def test_prune_refuses_a_shortcut_that_only_the_ordered_check_rejects():
+    path = np.array([[0, 0], [0, 0.6], [0.3, 0.6], [1, 0.6], [1, 0]], float)
+    out = P.prune_vertices(_OrderChk(), path, 0.01)
+    assert P.edge_ok(_OrderChk(), path[0], path[-1], 0.01)          # 상태 기반만 보면 0 → 끝 지름길이 통과한다
+    np.testing.assert_array_equal(out, path[[0, 2, 4]])                # 들어 올린 꼭짓점을 지나야 한다
+
+
+def test_lift_prefix_vertices_survive_pruning(monkeypatch):
+    lift = np.array([[0, 0.075 * i] for i in range(9)], float)       # 곧게 들기 9 점(y 0 → 0.6) → 솎으면 3 점(0 · 4 · 8)
+    monkeypatch.setattr(P, "lift_prefix", lambda *a, **k: lift)
+    args = SimpleNamespace(step=0.01, inset=0.0, rrt_iters=1, rrt_edge_step=0.05)
+    goal = np.array([1.0, 0.6])
+    path, keep = P.plan_lift_then(_OrderChk(), "right", goal, None, None, None, args)
+    assert keep == 3 and (path[:keep] == np.vstack([lift[:-1][::P.LIFT_KEEP_EVERY], lift[-1:]])).all()
+    out = P.prune_for_method(_OrderChk(), path, "lift", keep, 0.01)
+    np.testing.assert_array_equal(out, path)                         # 들기 3 점 + 목표뿐 — 줄일 것이 없다
+    longer = np.vstack([path[:-1], [[0.5, 0.6], [0.8, 0.5]], path[-1:]])
+    out = P.prune_for_method(_OrderChk(), longer, "lift", keep, 0.01)
+    np.testing.assert_array_equal(out[:keep], path[:keep])
+    assert len(out) == keep + 1 and (out[-1] == goal).all()
+    bare = P.prune_vertices(_OrderChk(), longer, 0.01)
+    assert not any((v == path[1]).all() for v in bare)               # keep 없이 줄이면 들기 꼭짓점이 사라진다
+
+
+def test_main_passes_lift_keep_to_finish():
+    # shortcut: main 소스 문자열 검사라 배선만 본다, finish 를 모듈 함수로 빼면 동작 시험으로 바꾼다
+    import inspect
+    src = inspect.getsource(P.main)
+    assert 'method, (path, keep) = "lift", lifted' in src and "finish(path, method, keep)" in src
+
+
+def test_j1j4_path_is_not_pruned():
+    path = np.array([[0, 0], [0, 0.6], [0.3, 0.6], [1, 0.6], [1, 0]], float)
+    assert P.prune_for_method(_OrderChk(), path, "j1j4") is path
+    assert len(P.prune_for_method(_OrderChk(), path, "rrt")) < len(path)
+
+
+def test_prune_past_deadline_returns_pruned_head_plus_original_tail(monkeypatch):
+    now = [0.0]
+
+    class SlowChk:
+        def check(self, q):
+            return SimpleNamespace(ok=True)
+
+        def check_path(self, path, step):
+            now[0] += 1.0                                            # 검사 한 번 = 1 s
+            return {"ok": bool((np.abs(np.diff(path[:, 0])) <= 2.0).all())}
+
+    monkeypatch.setattr(P, "time", SimpleNamespace(time=lambda: now[0]))
+    path = np.array([[x, 0.0] for x in range(6)], float)
+    out = P.prune_vertices(SlowChk(), path, 0.01, deadline=3.5)
+    np.testing.assert_array_equal(out[:, 0], [0, 2, 3, 4, 5])        # 0 → 2 를 줄인 뒤 시간이 넘어 나머지는 원래대로
+    np.testing.assert_array_equal(P.prune_vertices(SlowChk(), path, 0.01)[:, 0], [0, 2, 4, 5])
+
+
+def test_rehome_passes_return_speed_and_ramp():
+    RH = _load("plan_rehome")
+    q = {f"r_aj_{i}": 0.1 for i in range(1, 8)} | {"r_hj_1": 0.2}
+    argv = RH.planner_argv("right", q, Path("/tmp/x.npz"), "rh56f1")
+    assert argv[argv.index("--max-speed") + 1] == "0.3" and argv[argv.index("--ramp-time") + 1] == "0.5"

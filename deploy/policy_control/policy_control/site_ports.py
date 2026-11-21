@@ -89,3 +89,28 @@ def check_side(ports: dict, side: str) -> None:
     msg = (ports.get(side) or {}).get("unconnected")
     if msg:
         raise SiteError(msg)
+
+
+#: ★11.18 RealSense 시리얼(rs_cameras)을 읽는 사이트. 손 사이트(resolve_name)를 쓰지 않는다 — 카메라가 붙은 arm4090 의
+#   ~/.config/s2r/site 는 motion_acq 손 마스터용 arm4090_macq(git 밖)라 rs_cameras 가 없다. 다른 설치 장소면 S2R_CAMERA_SITE.
+CAMERA_SITE_ENV, CAMERA_SITE_DEFAULT = "S2R_CAMERA_SITE", "arm_v2"
+
+
+def camera_serial(role: str, env: Mapping[str, str] | None = None) -> str:
+    """rs_cameras.<role>.serial(rs_launch serial_no 값, 밑줄 없이). 없으면 SiteError — 시리얼 없이 띄우면 두 대 중 아무거나 잡는다."""
+    env = os.environ if env is None else env
+    name = env.get(CAMERA_SITE_ENV, "").strip().lower() or CAMERA_SITE_DEFAULT
+    serial = str(((load_site(name).get("rs_cameras") or {}).get(role) or {}).get("serial") or "").strip()
+    if not serial.isdigit():
+        raise SiteError(f"사이트 {name}: rs_cameras.{role}.serial 이 없다(config/sites/{name}.yaml)")
+    return serial
+
+
+if __name__ == "__main__":   # scripts/vision/camera_up.sh: python3 site_ports.py camera <head|global>
+    import sys
+    if sys.argv[1:2] != ["camera"] or len(sys.argv) != 3:
+        sys.exit("usage: site_ports.py camera <head|global>")
+    try:
+        print(camera_serial(sys.argv[2]))
+    except SiteError as err:
+        sys.exit(f"site_ports: {err}")

@@ -102,7 +102,9 @@ def _carry_card(node: str, d: Path) -> dict:
         rows += [{"name": "두 팔 사이(팔 점)", "value": _round(arms.get("min_arm_point_m"), 100.0), "unit": "cm", "limit": 10.0,
                   "ok": (arms.get("min_arm_point_m") or 0) >= 0.10},
                  {"name": "두 컵 겉면 사이", "value": _round(arms.get("min_cup_gap_m"), 100.0), "unit": "cm", "limit": 3.0,
-                  "ok": (arms.get("min_cup_gap_m") or 0) >= 0.03}]
+                  "ok": (arms.get("min_cup_gap_m") or 0) >= 0.03} if arms.get("min_cup_gap_m") is not None else
+                 {"name": f"든 컵 ↔ 빈손 팔({','.join(arms.get('empty') or [])})", "value": _round(arms.get("min_cup_arm_m"), 100.0),
+                  "unit": "cm", "limit": 5.0, "ok": (arms.get("min_cup_arm_m") or 0) >= 0.05}]
     return {"node": node, "kind": "carry", "ok": bool(chk.get("ok")), "T_end_s": chk.get("T_end_s"),
             "sides": chk.get("sides") or list((chk.get("checks") or {})), "rows": rows}
 
@@ -112,6 +114,8 @@ def _tilt_card(node: str, d: Path) -> dict:
     rows = []
     for k, c in (chk.get("checks") or {}).items():
         label, scale, unit = TILT_LABEL.get(k, (k, 1.0, ""))
+        if c.get("skipped"):          # 자산이 제한을 두지 않은 검사(v14 mouth_xy) — 통과로 보이지 않게 이름에 표시
+            label = f"{label} — 검사 안 함(자산 제한 없음)"
         rows.append({"name": label, "value": _round(c.get("value"), scale) if scale else None, "unit": unit,
                      "limit": _round(c.get("limit"), scale) if scale else None, "ok": bool(c.get("ok"))})
     meta = chk.get("teach_meta") or {}

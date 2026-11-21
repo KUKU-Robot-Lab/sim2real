@@ -162,8 +162,8 @@ def test_attached_contract_ignores_any_live_cup():
 
 def test_the_episodes_point_at_the_new_policies():
     import yaml
-    for tag in ("e1000", "e4000"):
-        ep = yaml.safe_load((REPO / "config/episodes" / f"cocktail_1c_{tag}.yaml").read_text(encoding="utf-8"))
+    for tag, fname in (("e1000", "cocktail_1c_e1000"), ("e4000", "cocktail_e2e")):   # ★11.20 e4000 → cocktail_e2e 이름 변경
+        ep = yaml.safe_load((REPO / "config/episodes" / f"{fname}.yaml").read_text(encoding="utf-8"))
         assert ep["policies"]["rh_place_r"]["policy"] == f"rh56f1/place/right_n10_{tag}"
         assert ep["policies"]["rh_place_l"]["policy"] == "rh56f1/place/left_n09_e3800"
         steps = {s["id"]: s for s in ep["sequence"]}
@@ -227,13 +227,13 @@ def test_place_node_ends_when_policy_and_measured_fingers_are_open_for_three_tic
     me = SimpleNamespace(contract=SimpleNamespace(latch_s2r=True, release_force_n=0.5), _carry_t0=None, chain=ch, max_s=99.0,
                          _t_start=time.monotonic(), _opened_n=0, get_logger=lambda: log,
                          _end=lambda kind, why: (ends.append(kind), whys.append(why)))
-    seq = [(0.2, 0.12), (0.2, 0.12), (0.2, 0.12), (0.2, 0.12),   # 실측 0.12 rad 가 이어져도 끝내지 않는다(sim 1111b)
-           (0.2, 0.15), (0.1, 0.5), (0.2, 0.15), (0.2, 0.15), (0.2, 0.15)]   # (정책, 실측) rad
+    seq = [(0.4, 0.30), (0.4, 0.30), (0.4, 0.30), (0.4, 0.30),   # 실측 0.30 rad 가 이어져도 끝내지 않는다(★11.18 문턱 0.35)
+           (0.4, 0.35), (0.3, 0.5), (0.4, 0.35), (0.4, 0.35), (0.4, 0.35)]   # (정책, 실측) rad
     out = []
     for o, om in seq:
         ch.opened, ch.opened_meas = o, om
         out.append(N.PlaceNode._after_step(me))
-    assert out == [False] * 8 + [True]   # 실측 미달 · 정책 미달 틱에서 셈이 0 으로, 0.15 rad 3 틱이면 stop
+    assert out == [False] * 8 + [True]   # 실측 미달 · 정책 미달 틱에서 셈이 0 으로, 0.35 rad 3 틱이면 stop
     assert ends == ["stop"] and ch.outcome == "opened_before_latch" and ch.released_cup == "blue"
     assert not whys[0].startswith("placed") and "래치 전" in whys[0]   # M4 — 래치 전 손 폄을 놓음으로 단정하지 않는다
 
@@ -243,8 +243,8 @@ def _opened_node(tact, jf):
     from policy_control import rh_place_node as N
     ends, warns = [], []
     log = SimpleNamespace(info=lambda *_: None, warning=lambda m, *_: warns.append(m))
-    ch = SimpleNamespace(settle_t=5, latch=False, latch_t=0, settling=False, done=False, open_min_rad=0.15, opened=0.2,
-                         opened_meas=0.17, latch_cup="blue", outcome=None, released_cup=None, as_dict=lambda: {},
+    ch = SimpleNamespace(settle_t=5, latch=False, latch_t=0, settling=False, done=False, open_min_rad=0.15, opened=0.4,
+                         opened_meas=0.37, latch_cup="blue", outcome=None, released_cup=None, as_dict=lambda: {},
                          tact_max=tact, jf_max=jf, joint_free_g=300.0)
     me = SimpleNamespace(contract=SimpleNamespace(latch_s2r=True, release_force_n=0.5), _carry_t0=None, chain=ch, max_s=99.0,
                          _t_start=time.monotonic(), _opened_n=0, get_logger=lambda: log,
@@ -280,3 +280,10 @@ def test_place_node_opened_before_latch_nan_joint_force_counts_as_held():
     """리뷰 HIGH: 관절 힘 채널 하나가 NaN 이면 np.max 가 NaN — 모름 = 쥔 것(is_free 와 같은 fail-closed), 각도만으로 끝내지 않는다."""
     N, me, ch, ends, warns = _opened_node(0.0, float("nan"))
     assert [N.PlaceNode._after_step(me) for _ in range(5)] == [False] * 5 and not ends
+
+
+def test_place_node_does_not_end_when_fingers_open_like_training_before_latch():
+    """★11.18 06:28 cocktail_1c_e4000: 정책이 학습대로 래치 전 0.25 rad 편 채 내리는데(인계 손이 더 닫혀 실측도 0.3) 끊으면 안 된다."""
+    N, me, ch, ends, _ = _opened_node(0.6, 33.0)                   # 그때 촉각 0.6 N · 관절 힘 33 g = '빈 손' 판정
+    ch.opened, ch.opened_meas = 0.25, 0.31
+    assert [N.PlaceNode._after_step(me) for _ in range(30)] == [False] * 30 and not ends

@@ -38,6 +38,11 @@ class CompensationConfig:
     fv: tuple = (0.0,) * 7
     fo: tuple = (0.0,) * 7
     vs: tuple = (0.01,) * 7
+    # ★11.10 velocity fed to fc·tanh(v/vs)+fv·v: "measured" (old) or "target" — the
+    # commanded joint velocity. DM MIT measured velocity is quantized (≈0.022 rad/s
+    # step), so a measured-velocity friction term chatters at low speed; "target" is a
+    # pure feed-forward and is applied only while TRACKING without contact/stale.
+    friction_velocity: str = "measured"
     ki: tuple = (0.0,) * 7
     # Static friction pre-push f·s(e); 0 = off. j5~j7 must stay 0.
     # fs = floor after a small move; fs_large (if any > 0) is used instead when the
@@ -64,6 +69,8 @@ class CompensationConfig:
         for key in ("gravity_enabled", "friction_enabled", "integral_enabled"):
             if type(getattr(self, key)) is not bool:
                 raise ValueError(f"{key} must be bool")
+        if self.friction_velocity not in ("measured", "target"):
+            raise ValueError("friction_velocity must be 'measured' or 'target'")
         n = len(self.ki)
         if n <= 0:
             raise ValueError("empty joint list")
@@ -212,6 +219,7 @@ class StationaryCompensator:
         episode_changed=False,
         gravity_correction=None,
         feedforward=None,
+        target_velocity=None,
     ):
         cfg = self.cfg
         n = cfg.n
@@ -233,6 +241,13 @@ class StationaryCompensator:
                 np.zeros(n, bool),
                 zero.copy(),
             )
+        safe = not (contact or stale or stopped)
+        if cfg.friction_enabled and cfg.friction_velocity == "target":
+            if target_velocity is None:
+                raise ValueError("friction_velocity='target' requires target_velocity")
+            v_f = _vector(target_velocity, n, "target_velocity") if safe else zero
+        else:
+            v_f = v
         gravity = zero.copy()
         if cfg.gravity_enabled:
             if gravity_correction is None:
@@ -240,11 +255,11 @@ class StationaryCompensator:
             gravity = _vector(gravity_correction, n, "gravity_correction").copy()
         friction = (
             (
-                np.asarray(cfg.fc) * np.tanh(v / np.asarray(cfg.vs))
-                + np.asarray(cfg.fv) * v
+                np.asarray(cfg.fc) * np.tanh(v_f / np.asarray(cfg.vs))
+                + np.asarray(cfg.fv) * v_f
                 + np.asarray(cfg.fo)
             )
-            if cfg.friction_enabled
+            if cfg.friction_enabled and (safe or cfg.friction_velocity == "measured")
             else zero.copy()
         )
         # If the old controller is already saturated, additions may only oppose
@@ -259,7 +274,6 @@ class StationaryCompensator:
         gravity = np.clip(gravity, low, high)
         friction = np.clip(friction, low - gravity, high - gravity)
         model = gravity + friction
-        safe = not (contact or stale or stopped)
         updating = np.zeros(n, bool)
         if (target_changed or episode_changed) and not self._fading:
             self._fading = bool(np.any(self.integral))

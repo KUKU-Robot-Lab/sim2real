@@ -87,13 +87,16 @@ def _main_node():
             super().__init__(NAME)
             self.runner = self.get_name()               # ★10.19 -r __node:=episode_runner_<팔> — 서비스 · 상태 · 승인이 이 이름
             for name, default in (("episode", ""), ("robot", "rh56f1"), ("auto_approve", False),
-                                  ("approvals", str(APPROVALS)), ("policy_object", ""), ("cup_object", "")):
+                                  ("approvals", str(APPROVALS)), ("policy_object", ""), ("cup_object", ""),
+                                  ("toggles", "")):
                 self.declare_parameter(name, default)
             p = lambda n: self.get_parameter(n).value  # noqa: E731
             path = Path(str(p("episode")))
             path = path if path.is_absolute() else _paths.SIM2REAL / path
             # ★10.12 rg3 파지 에피소드의 물체 바꾸기 — 빈 값 = YAML 기본(rg3 이면 시작 검사가 계약 물체인지 본다)
             self.ep = S.override_grasp_object(S.load(path), policy_object=str(p("policy_object")), cup_object=str(p("cup_object")))
+            if str(p("toggles")):                       # ★11.16 콘솔 실험 토글 — 빈 값 = yaml · 자산 그대로
+                self.ep = S.apply_toggles(self.ep, S.parse_toggles(str(p("toggles"))))
             self.auto = bool(p("auto_approve"))
             if self.auto and os.environ.get("ROS_DOMAIN_ID", "") in ("", "0", REAL_DOMAIN):
                 raise SystemExit(f"auto_approve 는 fake 도메인에서만 — ROS_DOMAIN_ID={os.environ.get('ROS_DOMAIN_ID')!r}")

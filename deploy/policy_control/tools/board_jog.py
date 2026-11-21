@@ -172,14 +172,14 @@ PHOTO_WIN_S = REC_WIN - 0.1   # 사진 = 기록 창 안에 받은 영상(앞 0.1
 SIM_HOST, SIM_PORT, SIM_HZ ="127.0.0.1", 47813, 30.0   # sim 창(Isaac) 으로 보내는 상태 — 계약은 sim_packet
 FINGERS = ("thumb", "index", "middle", "ring", "pinky")
 
-# 보드(scripts/charuco_calib.py:19-26): 7x5 칸, 30 mm, 마커 22 mm, DICT_6X6_250. 안쪽 교차점 6x4 = 24 개.
-SX, SY, SQUARE, MARKER = 7, 5, 0.030, 0.022
+# 보드(scripts/charuco_calib.py:19-26): 7x5 칸, 29.857 mm(★11.17 실측, 설계 30), 마커 22 mm, DICT_6X6_250. 안쪽 교차점 6x4 = 24 개.
+SX, SY, SQUARE, MARKER = 7, 5, 0.029857, 0.022
 # board_cam_fit.CORNERS(= cv2 CharucoBoard.getChessboardCorners(), id 순)와 같은 값 — cv2 없이 쓰려고 식으로 옮겼다(selftest 가 cv2 와 대조).
 CORNERS = np.array([[(i % (SX - 1) + 1) * SQUARE, (i // (SX - 1) + 1) * SQUARE, 0.0] for i in range((SX - 1) * (SY - 1))])
 MARKERS = [((c + 0.5) * SQUARE, (r + 0.5) * SQUARE) for r in range(SY) for c in range(SX) if (r + c) % 2]   # 마커 id 순 중심
-BOARD_CONVENTION = ("OpenCV CharucoBoard((7,5),0.030,0.022,DICT_6X6_250) 보드 좌표 m(board_cam_fit.CORNERS 와 같음). "
+BOARD_CONVENTION = ("OpenCV CharucoBoard((7,5),0.029857,0.022,DICT_6X6_250) 보드 좌표 m(board_cam_fit.CORNERS 와 같음). "
                     "원점 = 마커 0 왼쪽 검은 칸(0행 0열)의 바깥 모서리, x = 마커 0→1→2 방향(7 칸), y = 마커 0 줄에서 마커 3 줄 방향(5 칸), "
-                    "z = x × y = 인쇄면에서 보드 속(위에서 보면 탁자 아래). 교차점 id i → (x, y) = ((i % 6 + 1)·0.03, (i // 6 + 1)·0.03).")
+                    "z = x × y = 인쇄면에서 보드 속(위에서 보면 탁자 아래). 교차점 id i → (x, y) = ((i % 6 + 1)·0.029857, (i // 6 + 1)·0.029857).")
 
 # ArUco GridBoard(hand_arm_aruco_A4.pdf 4쪽): 2x2, 마커 25 mm, 간격 5 mm, 보드 55 mm, DICT_6X6_250. 같은 ids 보드가 두 장씩.
 GRID_MARKER, GRID_GAP = 0.025, 0.005
@@ -713,9 +713,9 @@ class Jogger:
                 if self.f_ref is None:
                     self.f_ref = force
                 elif force[0] - self.f_ref[0] > FORCE_G or force[1] - self.f_ref[1] > TIP_N:
+                    dg, dn = force[0] - self.f_ref[0], force[1] - self.f_ref[1]   # hold() 가 f_ref 를 None 으로 지우므로 먼저 계산
                     self.hold(meas, t, contact=contact)
-                    return (f"접촉 중 힘 상승(검지 {force[0] - self.f_ref[0]:+.0f} g · 촉각 {force[1] - self.f_ref[1]:+.2f} N) — "
-                            "멈추고 명령 = 실측")
+                    return f"접촉 중 힘 상승(검지 {dg:+.0f} g · 촉각 {dn:+.2f} N) — 멈추고 명령 = 실측"
             if self.precise:
                 self.path_elapsed += dt
                 self.cmd = self.path.sample(self.path_elapsed)[0]
@@ -1036,7 +1036,14 @@ class Ctl:
                 time.sleep(max(0.0, t_next - self.clock()))
         except BaseException as error:   # noqa: BLE001 — 어떤 오류든 누름을 풀고 stop 으로
             self.fatal = f"{type(error).__name__}: {error}"
-            say(f"★ 제어 스레드 오류: {self.fatal}\n{traceback.format_exc()}", err=True)
+            tb = traceback.format_exc()
+            say(f"★ 제어 스레드 오류: {self.fatal}\n{tb}", err=True)
+            if self.out is not None:   # ★11.15 화면엔 첫 줄만 보여 원인 줄을 잃었다 — 기록 옆에 남긴다
+                try:
+                    with open(self.out.with_name(f"{self.out.stem}_fatal.log"), "a", encoding="utf-8") as fh:
+                        fh.write(f"{time.strftime('%F %T')} tick {self.k} mode {self.jog.mode} auto {self.auto and self.auto.get('phase')}\n{tb}\n")
+                except Exception:   # noqa: BLE001, S110 — 남기기 실패가 해제 · stop 을 막지 않게
+                    pass
         finally:
             self._finish(self.fatal or "창 닫기 · 정지 신호")
             self.alive = False
@@ -2044,7 +2051,7 @@ def selftest() -> int:
         assert "접촉 중" in ctl.msg and ctl.jog.mode == "idle", ctl.msg
         ctl.call("record", "charuco", 0, Tb, poses["charuco"])   # 손끝은 bc08 · bc09 근처, bc00 은 ~87 mm(맞춤 전 모서리 한계 80 도 넘음)
         run_for(0.05)
-        assert "목표 bc00 에서" in ctl.msg and "가장 가까운 점 bc08" in ctl.msg and not ctl.doc["points"], ctl.msg
+        assert "목표 bc00 에서" in ctl.msg and "가장 가까운 점 bc0" in ctl.msg and not ctl.doc["points"], ctl.msg   # bc08 · bc09 가 거의 같은 거리(칸 크기에 따라 바뀜)
         ctl.call("record", "charuco", 9, Tb, poses["charuco"])
         run_for(0.05)
         ctl.call("record", "charuco", 9, Tb, poses["charuco"])   # 겹친 창으로 같은 점 두 번(11.05 right_3 bc15)
@@ -2074,7 +2081,7 @@ def selftest() -> int:
         assert len(d["points"]) == 2 and d["points"][0]["deleted"] is False
         assert not list(out.parent.glob("*.tmp")), "임시 파일이 남았다"
         assert {"schema", "side", "urdf", "urdf_md5", "tip_link", "hand_q", "board", "boards", "fk_dz_mm", "tip_z_floor_m", "points"} <= set(d)
-        assert d["schema"] == "board_jog_v1" and d["board"]["squares"] == [7, 5] and d["board"]["square_m"] == 0.03
+        assert d["schema"] == "board_jog_v1" and d["board"]["squares"] == [7, 5] and d["board"]["square_m"] == SQUARE
         assert {"squares", "square_m", "pose_display", "corner_convention"} <= set(d["board"])
         assert set(d["boards"]) == {"charuco", "grid50"} and d["boards"]["grid50"]["type"] == "aruco_grid"
         assert d["boards"]["grid50"]["geometry"]["ids"] == [50, 51, 52, 53] and "getObjPoints" in d["boards"]["grid50"]["geometry"]["corner_convention"]
@@ -2084,7 +2091,7 @@ def selftest() -> int:
                 "tip_dir_base", "force", "contact_frac", "t_wall_ns", "deleted"} <= set(p)
         assert len(p["q_arm"]) == 7 and len(p["q_hand"]) == 6 and np.asarray(p["T_tip_fk"]).shape == (4, 4) and len(p["tip_dir_base"]) == 3
         assert p["board_id"] == "charuco" and p["target_id"] == "bc09" and p["corner_id"] == 9
-        assert p["corner_xy_board_m"] == p["target_xy_board_m"] == [0.12, 0.06] and p["deleted"] is False and p["contact_frac"] >= 0.9
+        assert p["corner_xy_board_m"] == p["target_xy_board_m"] == np.round(CORNERS[9, :2], 6).tolist() and p["deleted"] is False and p["contact_frac"] >= 0.9
         assert pg["board_id"] == "grid50" and pg["target_id"] == "m51_c1" and pg["target_xy_board_m"] == [0.055, 0.0], pg["target_id"]
         assert "corner_id" not in pg and len(pg["target_xyz_base_display"]) == 3 and pg["contact_frac"] >= 0.9
         ctl.call("delete", 0)
@@ -2541,7 +2548,7 @@ def selftest_autoall(kin: Kin, lo: np.ndarray, hi: np.ndarray, home: np.ndarray)
         io, clk = FakeIO(side, kin, home, zc), [100.0]
         ctl = Ctl(io, kin, lo, hi, home, np.asarray(POINT), execute=False, demo=True, out=out, doc=doc, clock=lambda: clk[0],
                   z_floor=zc - FLOOR_BELOW_M, hold=True, auto_all=True, confirm_first=2, photo_dir=td / "rec" / "all_photos",
-                  extrinsics=S2R / "config/global_camera_extrinsics_arm4090_r20u5.yaml")
+                  extrinsics=S2R / "config/global_camera_extrinsics_arm4090_m1117.yaml")
         f = ctl.fits["charuco"]
         assert f["ok"] and f["kind"] == "4점" and np.allclose(f["T"], Tb, atol=1e-6) and ctl.sel_bid == "charuco"
         assert hashlib.md5(sp.read_bytes()).hexdigest() == h0 and len(json.loads(out.read_text())["points"]) == 4   # 원본 그대로 · 새 출력에 복사
@@ -2738,7 +2745,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--board_pose", type=Path, help="보드 표시 자세 yaml/json: {board_id: {x, y[, z], yaw_deg} 또는 {T_base_board: 4x4}} "
                                                     "또는 한 보드 형식(= --boards 첫 보드). m · °")
     ap.add_argument("--board_npz", type=Path, help="grab_rgbd 캡처 — plan_board.board_pose 로 charuco 대략 자세(sim2real/.venv 의 cv2 4.14)")
-    ap.add_argument("--extrinsics", type=Path, default=S2R / "config/global_camera_extrinsics_arm4090_r20u5.yaml")
+    ap.add_argument("--extrinsics", type=Path, default=S2R / "config/global_camera_extrinsics_arm4090_m1117.yaml")
     ap.add_argument("--execute", action="store_true", help="실기 발행 체크를 켤 수 있게(켜기 전까지 발행 0)")
     ap.add_argument("--demo", action="store_true", help="ROS 없이 가짜 팔 · 힘(발행 없음)")
     ap.add_argument("--control", choices=("legacy", "precise"), default="legacy", help="precise: 120Hz · 가속도 제한 · 이동 중 실측 손 FK 추종 보정(실기 미검증)")

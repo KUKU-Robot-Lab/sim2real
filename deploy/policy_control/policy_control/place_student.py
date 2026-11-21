@@ -41,6 +41,10 @@ HEAD_MAX_AGE_S = 0.2
 # 깊이 stamp 와 짝 지을 목 상태의 최대 거리 · 보간할 두 상태의 최대 간격. 20 Hz 에서 상태 하나가 빠져도(간격 0.1 s) 보간한다.
 # HEAD_MAX_AGE_S · student_policy.MAX_DEPTH_AGE_S(둘 다 0.2) 보다 작아야 한다(시험이 대조)
 HEAD_PAIR_S = 0.15
+# ★11.10 place_m_left: 카메라가 p90 0.19 s 늦어 짝짓기 실패가 이어져 깊이가 0.574 s 까지 낡았다(실기 멈춤).
+# 목이 멈춰 있으면(버퍼 마지막 HEAD_STILL_WIN_S 안의 pan · tilt 변화 ≤ HEAD_STILL_DEG) 시각이 멀어도 마지막 목 상태를 쓴다.
+# 마지막 상태가 HEAD_MAX_AGE_S 넘게 낡았으면 완화하지 않는다
+HEAD_STILL_WIN_S, HEAD_STILL_DEG = 0.5, 0.1
 # 이보다 미래인 stamp(목 상태 · 깊이)는 시계 어긋남 — 불량으로 버린다. arm_v2 는 카메라(realsense2_camera) · 목 드라이버 · 이 노드가
 # 같은 5090 이라 시계가 하나다. 카메라 · 목 드라이버가 다른 호스트면 시계 동기(chrony) 오프셋이 50 ms 를 넘지 않아야 한다
 MIN_AGE_S = -0.05
@@ -171,6 +175,7 @@ class HeadState:
         self._lock = threading.Lock()
         self.bad, self.bad_why = 0, ""
         self.dt_ms: float | None = None          # 마지막 at() 에서 고른 상태와 깊이 stamp 의 시각 차(보간이면 먼 쪽)
+        self.relaxed = 0                         # 목 정지 완화로 마지막 상태를 쓴 횟수(누적, status head_relaxed)
 
     def _bad(self, why: str) -> None:
         self.bad += 1
@@ -203,8 +208,9 @@ class HeadState:
             raise PlaceInputStale(f"/head/joint_states {age:.2f} s 전(> {self.max_age_s} s) — 목 드라이버 단절?")
         return last[1]
 
-    def at(self, stamp_ns: int) -> np.ndarray:
-        """stamp 를 사이에 둔 두 상태(간격 ≤ HEAD_PAIR_S)의 선형 보간, 한쪽뿐이면 HEAD_PAIR_S 안의 가장 가까운 것."""
+    def at(self, stamp_ns: int, now_ns: int | None = None) -> np.ndarray:
+        """stamp 를 사이에 둔 두 상태(간격 ≤ HEAD_PAIR_S)의 선형 보간, 한쪽뿐이면 HEAD_PAIR_S 안의 가장 가까운 것.
+        가장 가까운 것도 HEAD_PAIR_S 밖이면 목이 멈춰 있고 마지막 상태가 신선할 때만 마지막 상태(relaxed 셈)."""
         with self._lock:
             buf = list(self.buf)
         if not buf:
@@ -218,9 +224,29 @@ class HeadState:
                 return q0 + w * (q1 - q0)
         t, q = min(buf, key=lambda x: abs(x[0] - stamp_ns))   # 깊이가 마지막 상태보다 앞서거나 첫 상태보다 이를 때
         if abs(t - stamp_ns) * 1e-9 > HEAD_PAIR_S:
-            raise PlaceInputStale(f"깊이 stamp 와 가장 가까운 목 상태가 {abs(t - stamp_ns) * 1e-9:.3f} s 떨어졌다(> {HEAD_PAIR_S})")
+            why = ("깊이가 첫 목 상태보다 이르다" if stamp_ns < buf[-1][0] else    # 완화는 깊이가 마지막 상태보다 늦을 때만
+                   self._still_refusal(buf, time.time_ns() if now_ns is None else now_ns))
+            if why:
+                raise PlaceInputStale(f"깊이 stamp 와 가장 가까운 목 상태가 {abs(t - stamp_ns) * 1e-9:.3f} s 떨어졌다"
+                                      f"(> {HEAD_PAIR_S}) · {why}")
+            t, q = buf[-1]
+            self.relaxed += 1
         self.dt_ms = abs(t - stamp_ns) * 1e-6
         return q
+
+    def _still_refusal(self, buf: list, now_ns: int) -> str | None:
+        """마지막 상태를 완화로 써도 되면 None — 신선하고(≤ max_age_s) 최근 구간 pan · tilt 변화가 HEAD_STILL_DEG 이하."""
+        t_last = buf[-1][0]
+        age = (now_ns - t_last) * 1e-9
+        if not age <= self.max_age_s:
+            return f"마지막 목 상태 {age:.2f} s 전(> {self.max_age_s} s)"
+        win = np.array([q for t, q in buf if t >= t_last - HEAD_STILL_WIN_S * 1e9])
+        if len(win) < 2:
+            return "목 정지 판정할 상태가 모자람"
+        move = float((win.max(0) - win.min(0)).max())
+        if not move <= HEAD_STILL_DEG:
+            return f"목이 움직이는 중({move:.2f}° > {HEAD_STILL_DEG}°)"
+        return None
 
 
 class HeadLook:
@@ -327,7 +353,7 @@ class PlaceStudentPolicy:
     forward 는 최신 Frame · 그 stamp 의 마스크 비트 · 지금 목 각으로 학생 한 틱을 돈다. 낡으면 PlaceInputStale."""
 
     def __init__(self, policy_dir, c, target: str = "", device: str = "cpu", num_threads: int = 4,
-                 max_depth_age_s: float | None = None) -> None:
+                 max_depth_age_s: float | None = None, max_mask_age_s: float | None = None) -> None:
         import torch
 
         from .student_policy import MAX_DEPTH_AGE_S, REAL_DEPTH, load_model_module, load_pinned, load_student_dir
@@ -340,7 +366,7 @@ class PlaceStudentPolicy:
         torch.set_num_threads(int(num_threads))
         d = torch.load(cfg["ckpt"]["path"], map_location=device, weights_only=True)
         self.extr = cfg["extrinsics"]["path"]
-        check_meta(d, c, cfg["extrinsics"]["md5"], TABLE_Z - float(self.rd.FLOOR_MARGIN_M))
+        check_meta(d, c, cfg["extrinsics"]["ckpt_md5"], TABLE_Z - float(self.rd.FLOOR_MARGIN_M))
         self.c, self.torch, self.device, self.md5 = c, torch, device, got
         self.mod = load_model_module()
         self.model = self.mod.make_depth_student(int(d["n_obs"]), int(d["n_act"]), hid=int(d["hid"]), n_aux=int(d["n_aux"]),
@@ -356,15 +382,21 @@ class PlaceStudentPolicy:
         self.hc = HP.HeadCamPose(self.extr, sag=True)
         # ★11.09 시작 자세는 틱으로 대조한다. ckpt start_enc_deg 는 hdgp 규약(·360/4096), 실기 /head/joint_states 와 hc.q0_enc_deg 는
         #   드라이버 규약(·360/4095)이라 같은 틱도 0.04° 남짓 다르다. 틱이 같으면 q0 는 실기 q 와 같은 드라이버 규약 값을 쓴다.
-        tick = d["head"].get("start_tick")
+        # ★11.15 목 영점 2048: 묶음 head.ckpt_start_tick(옛 영점 틱) = ckpt, head.start_tick(같은 물리 자세의 새 틱) = head_pose
+        tick, card = d["head"].get("start_tick"), cfg.get("head") or {}
         if tick is not None:
-            if tuple(int(t) for t in tick) != self.hc.q0_tick:
-                raise ValueError(f"ckpt 머리 시작 틱 {list(tick)} ≠ 외부 파라미터 head_pose 틱 {list(self.hc.q0_tick)}")
+            tick = tuple(int(t) for t in tick)
+            if card and tick != tuple(int(t) for t in card["ckpt_start_tick"]):
+                raise ValueError(f"ckpt 머리 시작 틱 {list(tick)} ≠ student.yaml head.ckpt_start_tick {card['ckpt_start_tick']}")
+            want = tuple(int(t) for t in card["start_tick"]) if card else tick
+            if want != self.hc.q0_tick:
+                raise ValueError(f"머리 시작 틱 {list(want)} ≠ 외부 파라미터 head_pose 틱 {list(self.hc.q0_tick)}")
         elif not np.allclose(d["head"]["start_enc_deg"], self.hc.q0_enc_deg, atol=1e-6):
             raise ValueError(f"ckpt 머리 시작 자세 {d['head']['start_enc_deg']} ≠ 외부 파라미터 head_pose {self.hc.q0_enc_deg}")
         self.q0 = np.asarray(self.hc.q0_enc_deg, np.float64)
         self.image = PlaceImage(self.rd, d["depth_pre"], float(d["d_min"]), float(d["d_max"]), self.target)
-        self.masks = SM.MaskStream(self.img_hw)
+        # ★11.11 place_m_left: 4090 마스크 stamp→발행 p50 215 ms 로 0.2 s 상한에 걸려 멈춤 — 임시로 상한을 노드 파라미터로 연다(기본 = 0.2 그대로)
+        self.masks = SM.MaskStream(self.img_hw, SM.MAX_MASK_AGE_S if max_mask_age_s is None else float(max_mask_age_s))
         self.head = HeadState()
         self.look = HeadLook(self.hc)
         self.cfg, self.frame, self.chain, self.last_palm = cfg, None, None, None

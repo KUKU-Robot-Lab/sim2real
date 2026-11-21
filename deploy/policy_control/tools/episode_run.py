@@ -42,12 +42,15 @@ def main(argv=None) -> int:
     ap.add_argument("--step", action="store_true", help="모의 실행을 노드 하나씩(구분 실행 모양)")
     ap.add_argument("--delay", action="append", default=[], help="노드=초 — 모의 정책 · 궤적이 걸리는 시간(lanes 순서 보기)")
     ap.add_argument("--jsonl", type=Path, help="모의 실행 기록을 실기 실행기와 같은 jsonl 로도 쓴다")
+    ap.add_argument("--toggles", default="", help="★11.16 콘솔 실험 토글 k=v,...(실행기 toggles 와 같다) — 고른 정책으로 검사")
     ap.add_argument("--require-holders", action="store_true",
                     help="--plan: 고정 홀더 자세 파일에 쓰는 홀더가 다 있고 마지막 홀더 재기(<파일>.last_check.json)가 "
                          "written · 6 h 안이어야 rc 0(실기 에피소드 단계 시작 검사)")
     args = ap.parse_args(argv)
     path = args.episode if args.episode.is_absolute() else _paths.SIM2REAL / args.episode
     ep = S.load(path)
+    if args.toggles:
+        ep = S.apply_toggles(ep, S.parse_toggles(args.toggles))
     if args.plan:
         entries = {e.id: e for e in R.scan(_paths.SIM2REAL / "deploy" / "policies", deep=False)}
         av = S.availability(ep, entries)

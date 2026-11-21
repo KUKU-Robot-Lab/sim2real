@@ -25,6 +25,7 @@ from .pd_backends import (ArmForwardBackend, Dg5fJtcBackend, GripperCmd, Gripper
                           Rh56f1AngleBackend, hand_command, hand_controller_name)
 from .pd_gains import GainsError, expected_hand_gains, load_and_check, verify_runtime_gains
 from .pd_stationary import StationaryRuntime
+from .tilt_comp import EVENT_ON as TILT_COMP_ON, TiltComp
 from .pd_gravity import make_gravity
 from .pd_law import (PdCommand, PdConfig, blend_engage, blend_fraction, blend_release, law_cfg_from_config,
                      limits_from_profile, settle_bias, target_difference_velocity)
@@ -334,6 +335,9 @@ class ArmUnit:
             self.cfg.stationary_compensation, kp=self.kp, kd=self.kd,
             torque_limit=np.array([min(self.cfg.effort_cap, x) if x else self.cfg.effort_cap for x in limits]),
             blend_sec=self.cfg.blend_sec, gravity_chain=getattr(self.gravity_fn, "chain", None))
+        tc = (self.cfg.tilt_comp or {}).get(self.side)   # ★11.16 tilt 구간 payload ff + 적분 — 블록 없으면 None(꺼짐)
+        self.tilt_comp = None if tc is None else TiltComp(tc, getattr(self.gravity_fn, "chain", None))
+        self._tau_limit = np.array([min(self.cfg.effort_cap, x) if x else self.cfg.effort_cap for x in limits])
         ramp = law_cfg_from_config(self.cfg, self.contract, "ramp", lower, upper, side=self.side)
         track = law_cfg_from_config(self.cfg, self.contract, stage_name, lower, upper, side=self.side)
         self.dt = 1.0 / self.cfg.pd_hz
@@ -489,6 +493,9 @@ class ArmUnit:
         else:
             new_mode = "position" if event == "reset" else self.hand_command
         self.hand_command = new_mode
+        if getattr(self, "tilt_comp", None) is not None:   # 시험 대역엔 없다 · ★11.16 tilt_comp_on 으로 켜고, 다른 모든 사건(stop · abort · reset)에서 0 으로 끈다
+            self.tilt_comp.reset()
+            self.tilt_comp.active = event == TILT_COMP_ON
         if event == "reset":
             self.stopped_episode = None
             self.stage.new_episode(episode)
@@ -542,6 +549,19 @@ class ArmUnit:
                                temperature=[self._fresh_temps(now).get(j) for j in self.arm_joints],
                                hand_names=list(state.ee_names), measured_hand=np.asarray(state.ee_q).tolist())
             diagnostics["compensation_config"] = self.cfg.stationary_compensation
+            if getattr(self, "tilt_comp", None) is not None:   # ★11.17 분석기가 회차마다 실제 payload 를 확인한다
+                diagnostics["tilt_comp_payload"] = self.tilt_payload()
+        if getattr(self, "tilt_comp", None) is not None and self.tilt_comp.active and cmd is not None:
+            if out.state.fsm.phase == Phase.TRACKING and not cmd.effort_fault and out.state.target is not None:
+                add = self.tilt_comp.step(q_m, out.state.target.q, self.dt)
+                # 관절 토크 한계(min(effort_cap, 모터 effort)) 안으로만 더한다 — 기존 τ 가 이미 넘으면 더하지 않는다
+                lim = self._tau_limit
+                tau = np.clip(cmd.tau + add, np.minimum(-lim, cmd.tau), np.maximum(lim, cmd.tau))
+                if diagnostics is not None:
+                    diagnostics["tilt_comp_tau"] = (tau - cmd.tau).tolist()
+                cmd = replace(cmd, tau=tau)
+            else:
+                self.tilt_comp.reset()              # TRACKING 을 벗어나면(HOLD · 정지) 구간 끝 — 다시 켜려면 새 tilt_comp_on
         hand_written = self._write(cmd, out.state.fsm.phase, state)
         self.thermal = thermal_step(self.thermal, self.thermal_rules,
                                     {r.joint: self.efforts.get(r.joint, 0.0) for r in self.thermal_rules}, self.dt,
@@ -688,7 +708,21 @@ class ArmUnit:
                 #   대신 이 값을 팔 목표로 보낸다(리뷰: 실측으로 다시 잡으면 처짐만큼 팔이 움직인다)
                 "q_set": (None if self.stage.state.law is None
                           else [round(float(v), 5) for v in self.stage.state.law.q_setpoint]),
-                "hand_command": self.hand_command}
+                "hand_command": self.hand_command,
+                # ★11.17 지금 tilt_comp payload (kg, x, y, z) — tilt_comp_ab 가 실행 중 바꾼 값을 여기서 확인한다
+                "tilt_comp_payload": self.tilt_payload()}
+
+    def tilt_payload(self) -> list | None:
+        tc = getattr(self, "tilt_comp", None)
+        return None if tc is None else [float(v) for v in tc.cfg.payload]
+
+    def set_tilt_payload(self, kg: float) -> None:
+        """★11.17 tilt_comp payload kg 실행 중 변경(pd_node 토픽 pd_<팔>/tilt_comp_payload). TRACKING · 켜진 구간이면 거부."""
+        if getattr(self, "tilt_comp", None) is None:
+            raise ValueError(f"{self.side}: pd yaml 에 tilt_comp 블록이 없다")
+        if self.phase is Phase.TRACKING:
+            raise ValueError(f"{self.side}: TRACKING 중 — payload 를 바꾸지 않는다")
+        self.tilt_comp.set_payload_kg(kg)
 
     # ---------------------------------------------------------------- services
     def list_controllers(self) -> dict:

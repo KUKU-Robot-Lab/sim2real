@@ -29,6 +29,25 @@ PROFILE = RL_WS / "robot_control/src/robot_control/profiles/openarm_rh56f1.yaml"
 WORLD_MARGIN_M = 0.02
 
 
+def _mesh_box_gap(w: np.ndarray, h: np.ndarray) -> float:
+    """볼록 조각 꼭짓점 w(N,3, 상자 틀) 와 반크기 h 상자의 거리 하한 [m]. 음수면 겹침.
+
+    11.20 codex: 꼭짓점이 모두 상자 밖이어도 면·모서리가 상자를 뚫을 수 있다(큰 조각이 작은 홀더를 감쌈).
+    그래서 꼭짓점 최소 거리 대신 분리축 검사로 잰다. 축은 상자 세 축 + 가장 가까운 꼭짓점 → 상자 방향.
+    축 위 투영 간격은 실제 거리를 넘지 않으므로(1-Lipschitz) 거짓 통과가 없다. 어느 축도 못 가르면 음수(충돌)."""
+    axes = [np.eye(3)[i] for i in range(3)]
+    off = w - np.clip(w, -h, h)
+    d = np.linalg.norm(off, axis=1)
+    if d.max() > 0:
+        i = int(np.argmin(np.where(d > 0, d, np.inf)))
+        axes.append(off[i] / d[i])
+    best = -np.inf
+    for a in axes:
+        t, r = w @ a, float(np.abs(a) @ h)
+        best = max(best, float(t.min()) - r, -r - float(t.max()))
+    return best
+
+
 class ReachChecker(PH.Checker):
     """컵 쌍만 여유를 따로(cup_margin). 나머지는 홈 경로 검사기 규칙 그대로.
 
@@ -40,7 +59,7 @@ class ReachChecker(PH.Checker):
     cup_margin = 0.02
 
     def required(self, k) -> float:
-        if any(str(b).startswith("cup") for b in k):
+        if any(str(b) == "cup" for b in k):      # 잡을 컵만. 11.20 옆 물체(cup_tbl_* · cup_holder_*)는 세계 여유
             return self.cup_margin
         return super().required(k)
 
@@ -77,8 +96,12 @@ class ReachChecker(PH.Checker):
         return float(d_out.min())
 
     def _cyl_dist(self, v: np.ndarray, name: str) -> float:
+        import mujoco
         m = self.w.model
         g = int(np.nonzero(m.geom_bodyid == m.body(name).id)[0][0])
+        if m.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX:     # 11.20 cup_* 상자(홀더 몸체 --holders): 상자 틀에서 잰다
+            w = (v - self.w.data.geom_xpos[g]) @ self.w.data.geom_xmat[g].reshape(3, 3)
+            return _mesh_box_gap(w, m.geom_size[g][:3])
         c, (r, hh) = self.w.data.geom_xpos[g], m.geom_size[g][:2]
         rr = np.linalg.norm(v[:, :2] - c[:2], axis=1) - r
         dz = np.abs(v[:, 2] - c[2]) - hh
@@ -89,12 +112,13 @@ class ReachChecker(PH.Checker):
 
 
 class ReachWorld:
-    def __init__(self, side: str, hdgp: Path, q_now, q_other, cup: dict | None = None):
+    def __init__(self, side: str, hdgp: Path, q_now, q_other, cup: dict | None = None, extra: tuple = ()):
         other = "left" if side == "right" else "right"
         objs = ()
         if cup is not None:
             objs = ({"name": "cup", "center": ((cup["x"], cup["y"], (cup["z_lo"] + cup["z_hi"]) / 2)),
                      "radius": cup["radius"], "half_height": (cup["z_hi"] - cup["z_lo"]) / 2},)
+        objs = objs + tuple(extra)   # 11.20 옆 물체 원기둥(이름 cup_*, plan_reach --holders · --table-cups)
         self.world = W.build_world(W.WorldSpec(urdf=Path(hdgp) / URDF_REL, env_yaml=ENV_YAML, side=side,
                                                detect_margin=0.08, objects=objs))
         c = json.loads(CONTRACT.read_text())

@@ -81,6 +81,22 @@ def test_both_arms_in_one_stream_keep_first_seen_order():
         R.arm_sides(["r_aj_1", "x_aj_1"])
 
 
+def test_hand_joints_keep_their_own_name_instead_of_becoming_arm_joints():
+    """★11.18 실기 버그: 손 이름 끝이 번호가 아니라 손가락이라 옛 식이 팔 관절 이름을 내놓았다.
+
+    r_hj_index_1 → openarm_right_joint1(팔 j1) 로 바뀌어, 진입 램프가 손 목표를 팔 각도(−1.21 rad)에서
+    출발시켰다. 손 상태 토픽은 canonical 이름을 그대로 쓰므로 변환하지 않는 것이 맞다.
+    """
+    for j in ("r_hj_index_1", "l_hj_thumb_2", "r_hj_pinky_1", "l_hj_middle_1"):
+        assert R.measured_name(j) == j
+    # 같은 접미 숫자를 가진 팔 관절과 섞이지 않는다
+    assert R.measured_name("r_hj_index_1") != R.measured_name("r_aj_1")
+    assert R.measured_name("r_aj_1") == "openarm_right_joint1"
+    # 손 실측은 팔 토픽에 없다 — 손 열을 재생할 때만 손 상태 토픽을 하나 더 구독한다
+    assert R.HAND_STATE_TOPIC.format(side="right") == "/hand_right/joint_states"
+    assert {R.arm_sides([j])[0] for j in ["r_aj_1", "l_hj_thumb_1"] if R.HAND_TAG in j} == {"left"}
+
+
 def test_start_gap_refuses_a_plan_made_before_the_arm_moved():
     first = np.zeros(14)
     assert R.check_start_gap(first + 0.01, first, 0.05) == pytest.approx(0.01)

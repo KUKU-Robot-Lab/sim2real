@@ -1,0 +1,21 @@
+# sym_check 목 자세 — arm4090 RH56F1, 11.15 목 재조립 뒤(Homing Offset 0, 2048 틱 = 카메라 정면·수평)
+# deg = (틱 − 2048)·360/4096. pan 0° = 2048(정면), tilt +60.0° = 2731(+틱 = 숙임). 실제 회전은 인코더 각의 약 0.97배.
+# 정한 과정(11.15 sym_check): 160931 tilt 18°(2253)는 수평 근처라 팔이 안 보임 → 161322 50° 는 손 아래쪽이 화면 밖 → 60°.
+# 한계: 같은 날 home 은 2882(73.3°)라 60° 는 home 보다 덜 숙인 자리다(11.02 숙임 경계 사고는 home 보다 더 숙일 때). 163543 등 실행.
+# 홈 자세의 손(y ±0.3 m)은 가로 화각 밖이라 홈 사진은 관절 대칭용이다. 이 자세의 외부 파라미터는 아직 없음(sym_cloud 는 좌우 차만).
+# 운용값(position_i_gain·mode·profile)은 vision 세션 logs/runs/261115/head_2048/head_cal_2048.yaml 과 같다.
+port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT763P8T-if00-port0
+baud: 1000000
+motors:
+  pan:
+    id: 1
+    deg: 0.0
+    goal_bias_tick: 0
+  tilt:
+    id: 2
+    deg: 60.0
+    goal_bias_tick: 0
+position_i_gain: 400
+operating_mode: 3
+profile_acceleration: 20
+profile_velocity: 50

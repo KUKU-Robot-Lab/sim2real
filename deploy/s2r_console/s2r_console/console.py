@@ -41,7 +41,7 @@ from . import robots as RB
 from .errors import ProfileError
 from .rosgraph import REPEAT_S as GRAPH_REPEAT_S
 from . import pd_names as PD
-from .runner import SETTLE_S, StageRunner, step_kind
+from .runner import HEAD_DRIVER, SETTLE_S, StageRunner, step_kind
 from .supervisor import POLICY_DEVICE_ENV, Supervisor, SupervisorError, child_env
 from .wiring import generate as generate_diagram
 from .wiring import PERCEPTION_STATUS as PERCEPT_STATUS
@@ -74,14 +74,19 @@ QUICK = {
 }
 _TRIGGER = _paths.POLICY_CONTROL / "tools" / "trigger.py"
 #: 정책이 팔을 모는 단계 — 실패하면 그 팔 에피소드부터 멈춘다(pd 가 그 자리를 붙들고 늦게 온 정책 목표를 버린다)
-POLICY_STAGE_PREFIXES = ("policy_", "episode_")
+POLICY_STAGE_PREFIXES = ("policy_", "episode_", "cap_student_")   # ★11.18 cap 학생(ns <팔>_cap)
+
+
+def is_head_driver(proc: Mapping) -> bool:
+    """감독자 표의 한 줄이 목 드라이버(head_joint_publisher.py)인가. 순수."""
+    return any(HEAD_DRIVER in str(a) for a in proc.get("argv") or ())
 
 
 def head_driver_gone(procs: Sequence[Mapping]) -> bool:
     """감독자가 띄운 목 드라이버가 있었는데 지금 하나도 살아 있지 않은가. 순수.
     ★11.08 놓기 학생 에피소드는 head_home 드라이버를 내리고 제 것을 띄운다 — 실패 정리로 그것까지 내려가면 목 드라이버가 없는데
     head_home 완료는 남는다. 자동으로 목을 움직이지 않고 head_home 을 다시 돌리라고 알린다."""
-    drv = [p for p in procs if any("head_joint_publisher.py" in str(a) for a in p.get("argv") or ())]
+    drv = [p for p in procs if is_head_driver(p)]
     return bool(drv) and not any(p.get("alive") for p in drv)
 
 
@@ -94,7 +99,7 @@ def failure_actions(stage_id: str, sides: Sequence[str]) -> list[tuple[str, str]
     out: list[tuple[str, str]] = []
     for side in sides:
         if stage_id.startswith(POLICY_STAGE_PREFIXES):
-            out.append(("episode/stop", side))
+            out.append(("episode/stop", f"{side}_cap" if stage_id.startswith("cap_student_") else side))
         out.append(("pd/hold", side))
     return out
 #: 10.04 에피소드 실행기 — 상황판 [다음 노드] · [연속 실행] · [정지] 가 부르는 도구(승인 한 줄 + 서비스). argv 는 여기에만.
@@ -190,7 +195,7 @@ def _available_units(mission, runbook, repo):
             available_commands[st.id] = tuple(
                 replace(cmd, background=False, manual=False)
                 if any(Path(arg).name in ('rh_aglt_node.py', 'rh_aglt_student_node.py', 'rh_place_node.py',
-                                          'rh_place_student_node.py') for arg in cmd.argv)
+                                          'rh_place_student_node.py', 'rh_cap_student_node.py') for arg in cmd.argv)
                 and any(arg.startswith('contract:=') and not (repo / arg.split(':=', 1)[1]).is_file() for arg in cmd.argv)
                 else cmd for cmd in commands)  # Preserve command indices; unavailable nodes have no unit switch.
         except (KeyError, ValueError, OSError):
@@ -409,6 +414,7 @@ class Console:
         self.lease = Lease()
         self.session: Session | None = None
         self._bridge = bridge
+        self.episode_toggles: dict[str, str] = {}      # ★11.16 에피소드 → 마지막 단계 실행의 실험 토글(회차 기록용)
         self._lock = threading.RLock()
         from .confirmations import Confirmations
         from .actions import ActionManager
@@ -590,7 +596,7 @@ class Console:
             s.event("approve", f"{stage_id} 승인 취소 — {note}")
 
     # ── 단계 실행 ───────────────────────────────────────────────────────
-    def run_stage(self, stage_id: str, *, operator: str, restart: bool = False) -> None:
+    def run_stage(self, stage_id: str, *, operator: str, restart: bool = False, toggles: dict | None = None) -> None:
         """단계를 실행한다. `restart` 면 **이 단계가 띄운 유닛을 먼저 내리고** 새로 띄운다.
 
         09.23 실기: 살아 있는 유닛은 "kept — 이미 떠 있다" 로 건너뛰므로(runner.py), 다시 실행해도
@@ -610,6 +616,10 @@ class Console:
                 raise ConsoleError(f"{stage_id} 를 지금 실행할 수 없다", reasons=tuple(result.reasons))
             try:
                 commands = commands_for(s.runbook, s.mission, stage_id, repo=self.repo, execute=True)
+                text = ""
+                if toggles is not None:                     # ★11.16 실험 토글(eval 카드) — 회차 기록이 이 값을 적는다
+                    commands, text = EV.apply_stage_toggles(self.repo, s.mission, s.runbook, s.profile.is_real, stage_id, commands, toggles)
+                self.episode_toggles[stage_id.removeprefix("episode_")] = text
             except (KeyError, ValueError, OSError) as exc:
                 raise ConsoleError(f'{stage_id}: 명령 구성 불가: {exc}') from exc
             from .actions import pd_launch_sides, tune_pd_sides   # actions 가 이 모듈을 import 한다(순환)

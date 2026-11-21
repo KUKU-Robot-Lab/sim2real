@@ -1,0 +1,128 @@
+# head_view_feedback.py --check 기준 — 외부 파라미터를 잰 그때의 머리 · 카메라 상태(arm4090 머리 D435i · 목 영점 2048).
+#
+# extrinsics     기준을 잡은 외부 파라미터 파일 이름과 md5. --extrinsics 파일의 md5 가 다르면 --check 는 실패한다.
+# imu_up_cam     보정 전 IMU 가속도 평균의 단위벡터. 광학 프레임(x 오른쪽 · y 아래 · z 앞)이고 정지 때 가속도 = 위쪽 × g.
+# pitch_raw_deg  위 벡터의 숙임 · 옆 기울기(gravity_angles). 읽기용이고 bias 를 빼지 않은 값이다.
+# roll_raw_deg
+# pan_tick       그때 목 틱(/head/joint_states → 인코더 deg → 틱).
+# tilt_tick
+# n · acc_sd     평균 낸 IMU 샘플 수와 가속도 σ(m/s²). time · source 는 언제 · 어떻게 잡았는지.
+# measured       true = --record-ref 로 잰 값. false(이주 · 손으로 만든 값)면 --check 는 판정을 찍고도 실패하고 --execute 는 안 쓴다.
+# approach       그 자세에 도착한 마지막 tilt 이동 방향. down = 틱이 커지며(숙이며) 도착, up = 틱이 작아지며(들며) 도착.
+#                같은 인코더 자리도 오르내림에 따라 숙임이 평균 0.5° · 최대 1.13° 달라서(10.30 처짐 지도) 이 방향으로 도착했을
+#                때만 기준이 유효하다. --execute 는 이 방향으로만 들어온다(넘어서면 물렸다가 다시).
+# approach_pan   --execute 가 pan 을 마커로 맞출 때 들어오는 방향. left = pan 틱이 커지며(기본), right = 작아지며.
+# anchors        ★11.17 테이블 양 끝 영구 고정 ArUco(DICT_6X6_250, 설정 anchor_ids · anchor_size_m)를 그때 본 값.
+#                markers.<id>: corners = 네 코너 px(ANCHOR_FRAMES 장 평균, 서브픽셀), rvec · tvec = T_cam_marker(m, IPPE_SQUARE).
+#                n_frames · corner_sd_px = 평균 장수와 장 사이 코너 σ(ddof 1, 상한 ANCHOR_MAX_SD_PX).
+#                self_noise = 연속 두 묶음(ANCHOR_FRAMES 장씩)을 서로 비교한 px · mm · ° (허용치 ref_tol_anchor_* 의 근거).
+#                size_m · dict · image_wh · fx = 그때 설정 · 영상. --check 는 설정 · 지금 영상과 다르면 실패한다.
+#                있으면 --check 가 IMU · 틱에 더해 마커(좌우 · 위치)도 보고, --execute 가 pan 을 마커 가로 이동으로 맞춘다.
+#                없으면(--record-ref --no-anchors, 마커 붙이기 전) IMU · 틱만 본다.
+# 다시 잴 때: 외부 파라미터를 막 잰 자세 그대로(머리 · 카메라를 건드리기 전) 목 드라이버와 카메라(IMU 켬)를 띄우고
+#   python3 scripts/head_view_feedback.py --record-ref --extrinsics <그 외부 파라미터 파일> --approach <down|up>
+#   (설정 anchor_ids 마커가 하나라도 안 보이면 거부. 마커를 붙이기 전이면 --no-anchors)
+#   틱이 그 파일 head_pose 에서 tol_tick 넘게 벗어나거나 σ · 샘플 수가 모자라면 쓰지 않는다. (외부 파라미터 각 + 설정 bias) 와
+#   1° 넘게 다르면 --force 없이는 쓰지 않는다. 옛 파일은 .bak-<시각> 으로 남고 이 주석은 코드가 다시 붙인다.
+extrinsics:
+  file: global_camera_extrinsics_arm4090_m1117.yaml
+  md5: 691ade15493f240e6c7b98c4393446a9
+measured: true
+approach: down
+approach_pan: left
+imu_up_cam:
+- -0.000615
+- -0.355323
+- -0.934743
+pitch_raw_deg: 69.187
+roll_raw_deg: -0.099
+pan_tick: 1825
+tilt_tick: 2833
+n: null
+acc_sd: null
+time: 2026-11-17 16:51
+source: anchors = 11.17 16:51 align 사진 10장(M1117 을 푼 바로 그 사진, 코너 σ 0.095 px) 에서 뽑음.
+  imu_up_cam · pitch/roll 은 아직 M1117 에서 이주한 값(IMU 는 --align 에서 경고만 쓴다). 틱 = M1117
+  head_pose 1825/2833
+anchors:
+  size_m: 0.07962
+  dict: DICT_6X6_250
+  image_wh:
+  - 1280
+  - 720
+  fx: 908.353
+  n_frames: 10
+  corner_sd_px: 0.0946
+  self_noise:
+    pan_shift_px: 0.008
+    markers:
+      '70':
+        px: 0.035
+        mm: 0.049
+        deg: 0.063
+        cam_mm: 0.86
+      '71':
+        px: 0.048
+        mm: 0.148
+        deg: 0.07
+        cam_mm: 0.861
+      '73':
+        px: 0.014
+        mm: 0.077
+        deg: 0.021
+        cam_mm: 0.232
+  markers:
+    70:
+      corners:
+      - - 940.53
+        - 67.905
+      - - 1028.145
+        - 42.68
+      - - 1073.653
+        - 118.496
+      - - 983.161
+        - 145.912
+      rvec:
+      - 2.747255
+      - -0.445407
+      - 0.061396
+      tvec:
+      - 0.298634
+      - -0.22053
+      - 0.739063
+    71:
+      corners:
+      - - 1273.845
+        - 464.048
+      - - 1170.806
+        - 500.06
+      - - 1114.886
+        - 394.635
+      - - 1213.716
+        - 361.673
+      rvec:
+      - 0.484769
+      - 3.009838
+      - -0.530439
+      tvec:
+      - 0.388601
+      - 0.04567
+      - 0.63731
+    73:
+      corners:
+      - - 474.464
+        - 200.435
+      - - 500.4
+        - 288.287
+      - - 396.227
+        - 317.879
+      - - 373.821
+        - 227.456
+      rvec:
+      - 2.284758
+      - 1.667719
+      - -0.2975
+      tvec:
+      - -0.154238
+      - -0.080893
+      - 0.690734

@@ -5,7 +5,7 @@ NPZ(rgb,depth,K) 1프레임 → CharucoDetector → matchImagePoints → solvePn
 출력 JSON(stdout): T_cam_board(4x4), board_objp, reproj_px, charuco_corners.
 recompute_from_cad.py 가 이 JSON 을 받아 T_base_cam 산출.
 
-보드: 7x5, DICT_6X6, square 0.030 / marker 0.022 (사용자 인쇄물).
+보드: 7x5, DICT_6X6, square 0.029857(★11.17 실측, 설계 0.030) / marker 0.022 (사용자 인쇄물).
 cv2 신 API(CharucoDetector, ≥4.7/5.0) 필요 — vision-3090 .venv(5.0.0) 사용.
 컵 검출(--cup)은 선택: ultralytics 있으면 카메라프레임 centroid 도 함께 출력.
 """
@@ -16,7 +16,7 @@ import sys
 import numpy as np
 import cv2
 
-SX, SY, SQUARE, MARKER = 7, 5, 0.030, 0.022
+SX, SY, SQUARE, MARKER = 7, 5, 0.029857, 0.022  # ★11.17 칸 실측 29.857 mm(인쇄 0.5 % 축소, 7칸 209 mm). 마커 0.022 는 설계값 그대로
 DICT = cv2.aruco.DICT_6X6_250
 CUP_CLASS_ID = 41   # COCO cup
 

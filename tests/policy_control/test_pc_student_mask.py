@@ -197,8 +197,8 @@ def _bundle(tmp_path, ckpt: Path, **over):
     (d / "student/student.pt").write_bytes(ckpt.read_bytes())
     (d / "student/yolo.pt").write_bytes(b"yolo")
     src = BUNDLES["right"][1]
-    (d / "camera/extrinsics_r20u5_40e6496.yaml").write_bytes((src / "camera/extrinsics_r20u5_40e6496.yaml").read_bytes())
     cfg = yaml.safe_load((src / STUDENT_CARD).read_text())
+    (d / cfg["extrinsics"]["path"]).write_bytes((src / cfg["extrinsics"]["path"]).read_bytes())   # 묶음이 지금 가리키는 사본
     cfg["ckpt"] = {**cfg["ckpt"], "path": "student/student.pt", "md5": hashlib.md5(ckpt.read_bytes()).hexdigest()}
     cfg["mask"]["yolo"] = {"path": "student/yolo.pt", "md5": hashlib.md5(b"yolo").hexdigest()}
     for k, v in over.items():

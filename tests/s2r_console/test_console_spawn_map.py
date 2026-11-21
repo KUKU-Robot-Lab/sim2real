@@ -79,3 +79,14 @@ def test_the_fpp_panel_draws_the_server_map():
     assert "spawnMap(f.map)" in body
     fn = re.search(r"function spawnMap[\s\S]*?\n}\n", JS).group(0)
     assert "o.tone" in fn and "m.boxes" in fn and "m.tol_m" in fn         # 판정은 서버가 — 화면은 그리기만
+
+
+def test_live_pose_wins_over_capture_and_names_are_not_repeated():
+    # ★11.15 사용자: 카드가 처음 캡처(/pose)를 보였다 — 추적(live_pose)이 있으면 그것, 없거나 비면 pose
+    box = [{"side": "right", "label": "오른팔", "policy": "p", "lo": [0.2, -0.4], "hi": [0.4, 0.0]}]
+    objs = {"/objects/blue/pose": {"pos": [0.30, -0.20, 0.3]}, "/objects/blue/live_pose": {"pos": [0.25, -0.10, 0.3]},
+            "/objects/pink/pose": {"pos": [0.30, -0.30, 0.3]}, "/objects/pink/live_pose": {"pos": []}}
+    v = SM.view(box, objs, stale=False)
+    got = {o["name"]: (o["x"], o["y"]) for o in v["objects"]}
+    assert len(v["objects"]) == 2 and got == {"blue": (0.25, -0.10), "pink": (0.30, -0.30)}
+    assert SM.view(box, objs, stale=True)["objects"] == []

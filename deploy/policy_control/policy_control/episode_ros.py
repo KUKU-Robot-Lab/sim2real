@@ -224,6 +224,9 @@ def job_params(ep: Episode, p, tin: Mapping | None = None) -> dict:
         on = b is not None and b.attach_source == "tin_json"
         out["attach_source"] = "tin_json" if on else ""
         out["tin_json"] = str((tin or {}).get(p.side, "")) if on else ""
+        out["tin_subtract_offset"] = bool(on and b.tin_subtract_offset)   # job 마다 넣어 앞 job 값이 남지 않게
+        hoff = None if b is None else b.holder_offset_base_m
+        out["holder_offset_base_m"] = [float(v) for v in (hoff or (0.0, 0.0, 0.0))]   # ★11.18 job 마다 · 실수 배열
     # ★11.08 들기 가드 — 오른손 잡기(aglt) job 이면 에피소드와 상관없이 늘 넣는다(끄는 job 은 0 · nan 을 명시).
     #   노드는 reset 에서 읽자마자 끔으로 되돌리므로 값은 그 job 한 번만 쓰인다
     if p.kind == "aglt" and p.side == "right":
@@ -245,18 +248,74 @@ def real_object_name(topic: str) -> str:
 
 #: ★11.12 rehome 계획에 쓸 live 자세의 최대 나이[s](monotonic) — 더 낡으면 "자세 없음"(리뷰 H2: 옮겨진 컵의 옛 자리로 계획하지 않게)
 REHOME_LIVE_MAX_AGE_S = 5.0
+REHOME_WAIT_LIVE_S = 20.0             # ★11.18 놓기 실패 컵 live 를 rehome 거부 전에 기다리는 시간
+#: ★11.18 사용자 "go_home_end 의 이런 오류 없게" — 기다려도 live 가 낡은 놓기 실패 컵을, 마지막 live 가 목표 홀더에 앉은 채
+#   멈춰 있었으면(lost_cup_seat) 그 홀더 받침 자리에 선 컵으로 보고 rehome 을 계속한다. False = 끔(지금처럼 거부).
+REHOME_LOST_CUP_SEAT = True
+REHOME_SEAT_STILL_N = 5               # 마지막 live 샘플 수(FP++ live ≈ 10 Hz → 약 0.5 s)
+REHOME_SEAT_STILL_M = 0.01            # 그 사이 이동 상한 — 08:45 분홍은 끊기기 직전 홀더 밖으로 5 cm 튀었다
+#: 앉은 높이 허용 — cup_in_holder 기본 30 mm 보다 좁힘. 08:45 분홍은 떨어지기 직전 홀더 위에서 앉은 높이 −16~−22 mm 로 떠 있었다
+REHOME_SEAT_Z_TOL_M = 0.02
+REHOME_SEAT_SPAN_S = 1.5              # 리뷰 H: 마지막 샘플들이 한 덩어리(1.5 s 안)일 때만 '멈춤'으로 본다
+REHOME_SEAT_TILT_DEG = 10.0           # 리뷰 H: 마지막 자세 컵 축이 수직에서 이 이상 기울면 앉은 컵으로 보지 않는다
+#: ★11.18 사용자 "컵이 밖으로 떨어지는 거랑 별개로 홈 자세 복귀하게 하는 게 맞음" — 다 기다려도 자리를 모르는 놓기 실패 컵은
+#: 계획 세계에서 빼고 복귀한다(사유 · signals 에 남김). False 면 예전처럼 거부.
+REHOME_WITHOUT_LOST_CUP = True
+SEAT_NOTE = "받침 자리로 봄"
+
+
+LOST_NOTE = "놓기 실패 컵 자리 모름"
 
 
 class RehomeCupUnknown(Exception):
     """놓기 실패 컵(unknown)의 자리를 snapshot · 신선한 live 어디서도 못 얻었다 — 컵 위치를 모르는 채 팔을 움직이지 않는다."""
 
 
-def rehome_table_cups(ep: Episode, world, relay: Mapping, live: Mapping,
-                      now: float | None = None) -> tuple[list[dict], list[str]]:
+def lost_cup_seat(name: str, frames, holder_id, holders: Mapping, now: float) -> tuple[list | None, str]:
+    """★11.18 놓기 실패 컵(unknown)의 대체 자리 = 목표 홀더 받침에 선 컵(홀더 원점 + SEAT_DZ_CYL60, cup_in_holder 와 같은 높이).
+    마지막 live 가 앉은 채 멈춰 있었을 때만: 마지막 REHOME_SEAT_STILL_N 샘플 이동 ≤ REHOME_SEAT_STILL_M · 마지막 샘플 홀더 xy
+    HOLDER_TOL_M 안 · 높이 앉은 자리 ± REHOME_SEAT_Z_TOL_M. live 가 없으면 대체하지 않는다(넘어진 컵은 looks_standing 이 live 를
+    끊으므로 '없음'을 앉음으로 볼 수 없다). 아니면 (None, 이유)."""
+    if holder_id not in holders:
+        return None, f"{name} 목표 홀더 모름 — 받침 자리로 대체 안 함"
+    fr = list(frames or [])[-REHOME_SEAT_STILL_N:]
+    if not fr:
+        return None, f"{name} live 없음(넘어진 컵도 live 가 끊긴다) — 받침 자리로 대체 안 함"
+    seat = np.asarray(holders[holder_id][0], float) + (0.0, 0.0, SEAT_DZ_CYL60)
+    pts = np.array([f[0] for f in fr], float)
+    last = pts[-1]
+    at = f"마지막 live {[round(float(v), 4) for v in last]}({now - float(fr[-1][2]):.1f} s 전)"
+    dxy = lambda q: float(np.hypot(*(q[:2] - seat[:2])))   # noqa: E731
+    move = float(np.max(np.linalg.norm(pts - last, axis=1)))
+    span = float(fr[-1][2]) - float(fr[0][2])
+    q = fr[-1][1]
+    tilt = (float(np.degrees(np.arccos(np.clip(1.0 - 2.0 * (q[1] ** 2 + q[2] ** 2), -1.0, 1.0))))
+            if q is not None and len(q) == 4 else 0.0)      # (w, x, y, z) → 컵 z 축과 수직 사이 각
+    why = (f"샘플 {len(fr)} 개 < {REHOME_SEAT_STILL_N}" if len(fr) < REHOME_SEAT_STILL_N
+           else f"마지막 {len(fr)} 개가 {span:.1f} s 에 걸침(> {REHOME_SEAT_SPAN_S})" if span > REHOME_SEAT_SPAN_S
+           else f"기울기 {tilt:.0f}° > {REHOME_SEAT_TILT_DEG:.0f}°" if tilt > REHOME_SEAT_TILT_DEG
+           else f"마지막 {len(fr)} 개 사이 {move * 1000:.0f} mm 움직임(> {REHOME_SEAT_STILL_M * 1000:.0f})"
+           if move > REHOME_SEAT_STILL_M
+           else f"홀더 {holder_id} xy 에서 {dxy(last) * 1000:.0f} mm(> {HOLDER_TOL_M * 1000:.0f})" if dxy(last) > HOLDER_TOL_M
+           else f"높이 {last[2]:.3f} ≠ 앉은 {seat[2]:.3f} ± {REHOME_SEAT_Z_TOL_M:.3f}"
+           if abs(last[2] - seat[2]) > REHOME_SEAT_Z_TOL_M else "")
+    if why:
+        away = len(fr) > 1 and dxy(last) > dxy(pts[0]) + 1e-3
+        return None, (f"{name} {at} — {why}"
+                      + (" · 홀더에서 멀어지며 끊김 — 떨어졌거나 넘어졌을 수 있음" if away else "") + " — 받침 자리로 대체 안 함")
+    seat = [round(float(v), 4) for v in seat]
+    return seat, f"{name} live 낡음 → 홀더 {holder_id} {SEAT_NOTE}({at} 멈춤 · 앉은 자리 안) {seat}"
+
+
+def rehome_table_cups(ep: Episode, world, relay: Mapping, live: Mapping, now: float | None = None,
+                      placed: Mapping | None = None, holders: Mapping | None = None,
+                      allow_lost: bool = False) -> tuple[list[dict], list[str]]:
     """★11.11 rehome 계획 세계에 넣을 탁자 위 컵(plan_home_path --table-cups) + 로그 문구.
     손에 쥔 컵 · 홀더에 꽂힌 컵(홀더 원기둥이 덮는다) · 아직 안 놓은 컵(away)은 뺀다. 자리 = snapshot 고정값
     (/episode/objects/<이름>) → 없으면 live 마지막 값(나이 ≤ REHOME_LIVE_MAX_AGE_S) → table 컵만 에피소드 region 가운데
-    (넓히지 않음). unknown 컵이 자리를 못 얻으면 RehomeCupUnknown(★11.12 리뷰 H1 — 조용히 빼지 않는다)."""
+    (넓히지 않음). unknown 컵이 자리를 못 얻으면 RehomeCupUnknown(★11.12 리뷰 H1 — 조용히 빼지 않는다).
+    placed({컵: 목표 홀더 번호}) + holders 를 주면 ★11.18 unknown 컵을 lost_cup_seat 조건에서 목표 홀더 받침 자리로 대체한다.
+    allow_lost=True 면 ★11.18 자리를 못 얻은 unknown 컵을 계획 세계에서 빼고 notes 에 "LOST_NOTE" 로 남긴다(거부하지 않음)."""
     from policy_control.episode_spec import region_box
     now = time.monotonic() if now is None else now
     cups, notes, lost = [], [], []
@@ -289,12 +348,23 @@ def rehome_table_cups(ep: Episode, world, relay: Mapping, live: Mapping,
             # spread 0: 반대각선(28 mm)만큼 넓히면 홈 목표 손가락이 16 mm 로 들어와 계획이 거부된다(184028 6/6, 11.11)
             cups.append(item | {"pos": [round((x0 + x1) / 2, 4), round((y0 + y1) / 2, 4)]})
             src = "region 기본값"
+        elif at == "unknown" and placed is not None:
+            seat, why = lost_cup_seat(name, live.get(name), placed.get(name), holders or {}, now)
+            notes.append(why)
+            if seat is None:
+                lost.append(name)
+            else:
+                cups.append(item | {"pos": seat})
+            continue
         else:
             notes.append(f"{name}({at}) 자리 모름")
             if at == "unknown":
                 lost.append(name)
             continue
         notes.append(f"{name} {src} {cups[-1]['pos']}")
+    if lost and allow_lost:
+        notes.append(f"{LOST_NOTE} {lost} — 계획 세계에서 빼고 홈 복귀(★11.18 사용자)")
+        return cups, notes
     if lost:
         raise RehomeCupUnknown(f"놓기 실패 컵 자리 모름 {lost} — 컵 위치를 모르는 채 팔을 움직이지 않는다 ({'; '.join(notes)})")
     return cups, notes
@@ -401,7 +471,8 @@ def write_run_meta(run_dir: Path, ep: Episode, robot: str) -> None:
     assets = {name: t.asset for name, t in ep.trajectories.items() if t.asset}
     meta = {"git": git("rev-parse", "HEAD"), "dirty": bool(git("status", "--short", "--untracked-files=no")),
             "argv": sys.argv, "host": os.uname().nodename, "start": time.strftime("%F %T"), "episode": ep.name,
-            "episode_version": ep.version, "episode_path": ep.path, "robot": robot, "assets": assets}
+            "episode_version": ep.version, "episode_path": ep.path, "robot": robot, "assets": assets,
+            **({"toggles": dict(ep.toggles)} if ep.toggles is not None else {})}   # ★11.16 콘솔 실험 토글
     try:
         (run_dir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
     except OSError:
@@ -437,6 +508,7 @@ class RosExecutor:
         self._pd: dict[str, dict] = {}
         self._frames: dict[str, list] = {name: [] for name in ep.objects}
         self._live: dict[str, list] = {name: [] for name in ep.objects}   # ★10.20 lift 판정용 FP++ live 추적
+        self._place_seen: dict[str, int] = {}         # ★11.18 놓은 컵 → 목표 홀더 번호(rehome 대체 자리 lost_cup_seat)
         self._hand: dict[str, dict] = {s: {} for s in SIDES}   # ★10.17 손 실측(손 펴짐 확인) — 이름 → (rad, 시각)
         self._arm: list = []                          # ★10.30 팔 실측 [(시각, {canonical 이름: rad})] — 계획 전 정지 대기
         self._tin_rec: dict | None = None             # ★11.07 tilt 직전 T_in 기록 중 {"live": {물체: [(시각, stamp, x7)]}, "arm": [(시각, q)]}
@@ -630,9 +702,12 @@ class RosExecutor:
             if not cli.wait_for_service(timeout_sec=wait):
                 return False, [f"{path}: 서비스가 없다(노드가 떠 있는가)"]
             req = SetParameters.Request()
-            for name, v in params.items():               # 노드가 선언한 타입 그대로(holder 는 정수, holder_tol_m 은 실수, 나머지는 문자열)
-                req.parameters.append(Parameter(name=name, value=(
-                    ParameterValue(type=ParameterType.PARAMETER_INTEGER, integer_value=v) if isinstance(v, int)
+            for name, v in params.items():               # 노드가 선언한 타입 그대로(holder 는 정수, holder_tol_m 은 실수, tin_subtract_offset 은 bool, 나머지는 문자열)
+                req.parameters.append(Parameter(name=name, value=(   # bool 은 int 의 하위형이라 먼저 본다(11.18 place 거부: BOOL 자리에 INTEGER)
+                    ParameterValue(type=ParameterType.PARAMETER_DOUBLE_ARRAY, double_array_value=[float(x) for x in v])
+                    if isinstance(v, (list, tuple))      # ★11.18 holder_offset_base_m — 0 같은 정수가 섞여도 DOUBLE_ARRAY
+                    else ParameterValue(type=ParameterType.PARAMETER_BOOL, bool_value=v) if isinstance(v, bool)
+                    else ParameterValue(type=ParameterType.PARAMETER_INTEGER, integer_value=v) if isinstance(v, int)
                     else ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=v) if isinstance(v, float)
                     else ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=str(v)))))
             fut = cli.call_async(req)
@@ -783,6 +858,7 @@ class RosExecutor:
                 ev = dict(self._events.get(status_key) or {})
                 st = dict(self._status.get(status_key) or {})
             if int(ev.get("episode", 0)) > last_ep and ev.get("event") in ("stop", "abort"):
+                st = self._final_status(status_key, int(ev.get("episode", 0)), st)
                 break
             if time.monotonic() - t0 > limit:
                 self._call(f"{NS}/{ns}/episode/stop")
@@ -907,6 +983,19 @@ class RosExecutor:
             time.sleep(0.1)
         return False
 
+    def _final_status(self, key: str, episode: int, st: dict, wait_s: float = 0.5) -> dict:
+        """★11.16 stop 이벤트가 상태보다 먼저 온다 — 한 틱 앞 상태(outcome 없음)로 판정하던 것(100033 place_blue).
+        정지 뒤 그 에피소드 상태(phase != running)를 wait_s 까지 기다리고, 없으면 받은 것을 쓴다."""
+        deadline = time.monotonic() + wait_s
+        while True:
+            if st.get("phase") not in (None, "running") and int(st.get("episode", 0)) == episode:
+                return st
+            if time.monotonic() >= deadline:
+                return st
+            time.sleep(0.02)
+            with self._lock:
+                st = dict(self._status.get(key) or {})
+
     def _pd_view(self, side: str) -> dict:
         with self._lock:
             st = dict(self._pd.get(side) or {})
@@ -943,6 +1032,10 @@ class RosExecutor:
                         sig["hand_empty"] = False
                 else:
                     sig["tact_check"] = "skipped: " + ("no tactile" if not tact else "no release_force_n")
+                # ★11.16 사용자 "a방향" — 노드가 끝난 틱에 촉각 · 관절 힘이 모두 놓음 문턱 아래(hand_released True)면 빈손
+                sig["released_by_force"] = st.get("released_by_force")
+                if sig["released_by_force"] is True and sig["hand_empty"] is not False:
+                    sig["hand_empty"] = True
             hold = self.holders.get(p.holder_id) if p.holder_id is not None else None
             # ★11.04 놓은 자리 = FP++ live(stop + 1.0 s 뒤 프레임) 와 손을 연 순간의 묶은 컵(손바닥 FK ⊗ 묶음, latch_cup).
             #   …/pose(cups 때 찍은 테이블 자리)는 쓰지 않는다. live 는 쥔 컵을 놓치면 엉뚱한 값을 내므로(131817) 둘 중 하나라도
@@ -960,6 +1053,8 @@ class RosExecutor:
                 if votes:
                     sig["cup_in_holder"] = any(votes.values())
                     sig["cup_in_holder_by"] = votes
+            if p.source_object:
+                self._place_seen[p.source_object] = p.holder_id
             return sig
         return {}
 
@@ -988,7 +1083,7 @@ class RosExecutor:
         if traj.kind in PLANNED_TRAJ:
             return self._run_planned(node, traj, world)
         t0 = time.monotonic()
-        skipped = []
+        skipped, seated, gone = [], [], []
         for side in traj.sides:
             if not self._wait_pd_tracking(side):
                 pd = self._pd_view(side)
@@ -1005,14 +1100,27 @@ class RosExecutor:
                 continue
             out = self.run_dir / f"rehome_{side}_{node.id}.npz"
             joints = ",".join(f"{side[0]}_aj_{i}" for i in range(1, 8))
-            with self._lock:                               # ★11.11 탁자 위 컵도 계획 세계에
-                relay, live = dict(self._relay), {k: list(v) for k, v in self._live.items()}
-            try:
-                cups, notes = rehome_table_cups(self.ep, world, relay, live)
-            except RehomeCupUnknown as e:                  # ★11.12 리뷰 H1 — 움직이지 않았다
-                self._log_line(f"[rehome] {side} 거부: {e}")
-                return NodeResult("refused", f"{side} rehome: {e}", time.monotonic() - t0)
+            # ★11.18 home_r_after_blue 거부(SRC_BLUE live 110 s 낡음) — 놓기 실패 직후엔 손이 컵을 가려 FP++ 가 아직 못 잡았을 수
+            #   있다. 거부 전에 live 가 새로 들어오기를 REHOME_WAIT_LIVE_S 까지 기다린다(컵 위치를 모르면 움직이지 않는 것은 그대로).
+            #   ★11.18 다 기다려도 낡으면 마지막 시도만 목표 홀더 받침 자리 대체(lost_cup_seat)를 켠다.
+            deadline = time.monotonic() + REHOME_WAIT_LIVE_S
+            while True:
+                with self._lock:                           # ★11.11 탁자 위 컵도 계획 세계에
+                    relay, live = dict(self._relay), {k: list(v) for k, v in self._live.items()}
+                    last = time.monotonic() >= deadline or self.cancel.is_set()
+                    placed = dict(self._place_seen) if REHOME_LOST_CUP_SEAT and last else None
+                try:
+                    cups, notes = rehome_table_cups(self.ep, world, relay, live, placed=placed, holders=self.holders,
+                                                    allow_lost=REHOME_WITHOUT_LOST_CUP and last and not self.cancel.is_set())
+                    break
+                except RehomeCupUnknown as e:              # ★11.12 리뷰 H1 — 움직이지 않았다
+                    if time.monotonic() >= deadline or self.cancel.is_set():
+                        self._log_line(f"[rehome] {side} 거부({REHOME_WAIT_LIVE_S:.0f} s 기다림): {e}")
+                        return NodeResult("refused", f"{side} rehome: {e}", time.monotonic() - t0)
+                    time.sleep(0.5)
             self._log_line(f"[rehome] {side} 탁자 위 컵: " + ("; ".join(notes) or "없음"))
+            seated += [n for n in notes if SEAT_NOTE in n]
+            gone += [n for n in notes if n.startswith(LOST_NOTE)]
             # 리뷰 M2: 홀더 원기둥 = 이 에피소드가 발행한 홀더 파일(없으면 홀더 없이 — 기본 파일로 대신하지 않는다)
             hold = (["--holders", str(_paths.SIM2REAL / self.ep.holder_poses)] if self.ep.holder_poses else ["--no-holders"])
             steps = [
@@ -1036,20 +1144,40 @@ class RosExecutor:
         #   두 팔을 한 번에(각자 프로세스) — 차례로 부르면 파이썬 기동만 팔마다 1~2 s
         self._run_many([[sys.executable, str(TOOLS / "trigger.py"), "hand/tip_zero", "--side", side, "--service-timeout", "5",
                          "--execute"] for side in traj.sides])
-        return NodeResult("completed", f"이미 홈: {','.join(skipped)}" if skipped else "", time.monotonic() - t0,
-                          signals={"home_skipped": skipped} if skipped else {})
+        why = "; ".join(([f"이미 홈: {','.join(skipped)}"] if skipped else []) + list(dict.fromkeys(seated)) + list(dict.fromkeys(gone)))
+        return NodeResult("completed", why, time.monotonic() - t0,
+                          signals={**({"home_skipped": skipped} if skipped else {}), **({"lost_cup_seat": seated} if seated else {}),
+                                   **({"lost_cup_skipped": gone} if gone else {})})
 
     def _run_planned(self, node: Node, traj, world) -> NodeResult:
         self._tin_note = []
+        chk = self.run_dir / f"carry_{node.id}" / "check.json" if traj.kind == "carry" else None
+        old = chk.stat().st_mtime_ns if chk is not None and chk.exists() else None
         try:
             res = RosExecutor._run_planned_inner(self, node, traj, world)
             if self._tin_note:                       # ★11.07 T_in 출처(measured | fallback)를 에피소드 로그(exit reason)에
                 res = dataclasses.replace(res, reason="; ".join([*([res.reason] if res.reason else []), *self._tin_note]))
+            # ★11.18 팔 사이 최소 거리(같은 시각 · 함께 계획이면 ±창)를 에피소드 로그에 — 이번 계획이 쓴 파일만(다시 실행 때 옛 것 제외)
+            try:
+                if chk is not None and chk.exists() and chk.stat().st_mtime_ns != old:
+                    res = dataclasses.replace(res, signals={**res.signals, "arms_clear": json.loads(chk.read_text(encoding="utf-8"))["arms_clear"]})
+            except Exception as exc:                 # noqa: BLE001 — 쓰다 만 · 사라진 · 모양이 다른 파일. 로그 덧붙임이 이미 끝난 carry 의 판정을 바꾸지 않게
+                try:
+                    msg = f"[{node.id}] carry check.json 의 arms_clear 를 못 읽었다: {type(exc).__name__}: {exc}"
+                    self.node.get_logger().warning(msg)
+                    self._log_line(msg)              # tools.log 에도 — 에피소드 로그에 거리가 빠진 까닭
+                except Exception:                    # noqa: BLE001 — 이 한 곳은 일부러 삼킨다: 경고 기록 실패가 끝난 carry 를 error 로 바꾸지 않게
+                    pass
             return res
         finally:
             if self._tin_rec is not None:
                 with self._lock:
                     self._tin_rec = None              # ★11.07 T_in 기록은 이 tilt 노드 안에서만
+
+    def _tilt_comp(self, cfg) -> bool:
+        """★11.16 콘솔 토글이 있으면 그 값, 없으면 궤적 자산 policy.yaml tilt_comp."""
+        t = getattr(self.ep, "toggles", None)
+        return bool(t["tilt_comp"]) if t is not None else bool(cfg.get("tilt_comp"))
 
     def _run_planned_inner(self, node: Node, traj, world) -> NodeResult:
         """10.17 carry(ready_carry → 붓기 시작 자세, 한 팔씩 또는 두 팔) · tilt(D4 기본 궤적 + 복귀, 두 팔): 실측에서 계획 · 검사
@@ -1086,6 +1214,9 @@ class RosExecutor:
         out = self.run_dir / f"{traj.kind}_{node.id}"
         joints = ",".join(f"{s[0]}_aj_{i}" for s in sides for i in range(1, 8))
         side_arg = ["--sides", ",".join(sides)] if traj.kind == "carry" else []
+        empty = [s for s in SIDES if world.hand(s) == EMPTY]
+        if traj.kind == "carry" and empty:               # ★11.15 빈손 팔에 가상 컵을 붙이지 않는다(plan_carry --empty)
+            side_arg += ["--empty", ",".join(empty)]
         before = None
         if traj.kind == "reach":                      # ★10.19 1-B: 지금 FP++ 컵 자세(창 안 중앙값, 멈춰 있어야)로 계획
             snap = self._still_object(traj.object)
@@ -1096,7 +1227,7 @@ class RosExecutor:
             if not real:
                 return NodeResult("refused", f"reach: {traj.object} 토픽에서 실물 이름을 못 읽었다", time.monotonic() - t0)
             side_arg = ["--side", sides[0], "--object", real, "--cup", ",".join(f"{v:.5f}" for v in snap[0]),
-                        "--quat", ",".join(f"{v:.6f}" for v in snap[1]), "--stop", traj.stop]   # ★10.20 pregrasp = 경로 D
+                        "--quat", ",".join(f"{v:.6f}" for v in snap[1]), "--stop", traj.stop] + (["--ring-radius-m", f"{traj.ring_radius_m:g}"] if traj.ring_radius_m else [])   # ★10.20 pregrasp = 경로 D
         elif traj.kind == "tilt" and cfg.get("kind") == "tilt_traj":   # ★10.27 traj_v10: 컵별 궤적 · 실측 홀더로 여유 검사
             side_arg = ["--cup", traj.cup]
             if self.ep.holder_poses:
@@ -1109,8 +1240,8 @@ class RosExecutor:
             [sys.executable, str(TOOLS / ("plan_tilt_traj.py" if cfg.get("kind") == "tilt_traj" else f"plan_{traj.kind}.py")), "--asset", str(asset), "--out", str(out), *side_arg],
             [sys.executable, str(TOOLS / "replay_to_pd.py"), "--npz", str(out / f"{traj.kind}_cmd.npz"), "--joints", joints,
              "--rate-scale", repr(float(traj.rate_scale)), "--max-start-gap", repr(float(cfg.get("start_gap_rad", 0.05))),
-             "--execute"],
-        ]
+             "--execute", *(["--tilt-comp"] if traj.kind == "tilt" and RosExecutor._tilt_comp(self, cfg) else [])],
+        ]   # ★11.16 tilt_comp: 궤적 자산 policy.yaml `tilt_comp: true` 일 때만(pd yaml tilt_comp 블록이 있는 팔에 적용)
         tin_plan = traj.kind == "tilt" and cfg.get("kind") == "tilt_traj"
         # T_in 이 없으면 멈출 팔: tilt_traj 계획은 잰 팔마다 이 런 T_in 을 쓴다(_planner_tin) · 그 밖은 place tin_json 팔만
         need = (set(tin_objs) if tin_plan else {b.side for b in self.ep.policies.values() if b.attach_source == "tin_json"}) if tin_objs else set()

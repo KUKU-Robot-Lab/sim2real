@@ -54,7 +54,13 @@ stop_one() {   # $1 = 이름 디렉터리
     source /opt/ros/humble/setup.bash
     for k in arm hand pd camera; do ros2 bag info "$(cat "$d/last_out")/$k" 2>/dev/null | grep -E "Duration|Messages" || true; done
   fi
-  rm -f "$d/last_out"   # 폴더가 재부팅 뒤에도 남는다 — 이름 없는 stop 이 끝난 기록을 다시 요약하지 않게
+  # ★11.18 사용자 "카메라 영상 남겨줘": camera 묶음이 있으면 옆에 camera.mp4 — 뒤에서 nice 19 로, stop 을 붙잡지 않는다
+  if [ -f "$d/last_out" ] && [ -d "$(cat "$d/last_out")/camera" ]; then
+    local o; o=$(cat "$d/last_out")
+    setsid bash -c "source /opt/ros/humble/setup.bash; exec nice -n 19 ionice -c3 python3 '$SIM2REAL/scripts/analysis/camera_bag_to_mp4.py' '$o/camera'" \
+      </dev/null >"$o/camera_mp4.log" 2>&1 &
+  fi
+  rm -f "$d/last_out"  # 폴더가 재부팅 뒤에도 남는다 — 이름 없는 stop 이 끝난 기록을 다시 요약하지 않게
 }
 
 case "$CMD" in
@@ -79,7 +85,8 @@ start)
     HAND="$HAND /hand_$s/$t"; done; done
   # ★11.10 사용자: stationary_recorder(Python JSONL, 코어 1.3개 · 4.5 GB) 대신 — 그것만 갖던 PD 쪽 토픽을 따로 bag 에 싣는다.
   # arm bag 에 섞지 않는다(10.03: 한 sqlite3 에 몰면 /joint_states 가 빠진다). 팔 명령 = PD 가 실제로 보낸 토크 · 위치 · 속도.
-  PD="/pd_state_broadcaster/joint_states /pd_temp_broadcaster/dynamic_joint_states /policy_control/episode /policy_control/estop"
+  # ★11.15 s2r:vision: 에피소드 중 목 자세(외부 파라미터 · 처짐표 대조용)
+  PD="/arm_zero_calibration/events /head/joint_states /pd_state_broadcaster/joint_states /pd_temp_broadcaster/dynamic_joint_states /policy_control/episode /policy_control/estop"
   for s in ${HAND_SIDES:-right left}; do
     for c in effort position velocity; do PD="$PD /${s}_forward_${c}_controller/commands"; done
     for t in diagnostics contact contact_guard; do PD="$PD /policy_control/pd_$s/$t"; done; done

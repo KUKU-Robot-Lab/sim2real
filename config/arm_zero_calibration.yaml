@@ -1,0 +1,73 @@
+# RH56F1 + ADAPTOR are removed together; bare L7 remains (user 2026-11-12).
+# null means UNKNOWN, never approval. plan lists blockers without opening CAN.
+version: 1
+model:
+  urdf: ../hdgp/assets/robot/openarm_rh56f1_bi_v2_rl/openarm_rh56f1_bi_v2_rl.urdf
+  remove_at: [r_hj_mount, l_hj_mount]
+  physical_removal: rh56f1_and_adaptor
+  # Confirm CAD mass/geometry matches bare L7; original URDF is never edited.
+  bare_l7_audit: hdgp:openarm_rh56f1_bi_v2_rl:87009f2c70a28890a616fe972df8569a062b7d2d2ba43a2b984bd09381eb868f
+  attached_payload_audit: null
+  finger_positions: null  # mapping of every non-mimic RH56F1 finger joint, radians
+  # URDF does not expose an independent RH56F1 adaptor link. Add measured
+  # missing adaptor payloads at r_al_7/l_al_7, mass kg and COM m in L7 frame.
+  adaptor_payloads: null
+sides:
+  right:
+    can: can0
+    reference_deg: [-80, -10, 90, 0, 90, 45, 90]
+    other_arm_q: null
+  left:
+    can: can1
+    reference_deg: [80, 10, 90, 0, 90, 45, 90]
+    other_arm_q: null
+search:
+  speed: 0.05
+  dt: 0.01
+  freshness: 0.05
+  max_travel: 0.35  # per approach; never automatically enlarged
+  timeout: 30.0
+  min_travel: 0.035
+  backoff: 0.07
+  stop_velocity: 0.0125  # DM8009 45/4095 = 0.01099 rad/s quantization floor
+  stop_duration: 0.3
+  position_tolerance: 0.004
+  hold_error: 0.08
+  disable_duration: 0.3
+  max_offset: 0.175
+  total_travel: 12.0  # sum of real motion over all seven joints, rad
+  total_timeout: 900.0
+  # Manufacturer thresholds; residual torque subtracts model gravity.
+  # Automatic profile uses manufacturer MIT gains and zero feedforward.
+  torque_cap: [40, 40, 27, 27, 7, 7, 7]  # URDF effort limits; hard ceilings, not commanded effort
+  contact_torque: [5, 2, 2, 2, 2, 2, 2]  # manufacturer stop thresholds, applied to directional residual torque
+  torque_review: manufacturer 1.2.9 _hit_thresholds; caps from v2 URDF joint effort limits; gravity-subtracted contact detection; manufacturer gains/zero feedforward; not real-hardware validated
+operation:
+  session: null
+  # Human/operator checks immediately before each authorized command.
+  hand_state: null
+  supported_on_disable: false
+  table_and_cables_clear: false
+  can_ownership_review: null
+  no_external_zero_writes: false
+  # All seven raw readings immediately before this command (rad); startup +/-0.02.
+  start_raw: null
+  # Paths are reviewed in CURRENT nominal model coordinates. No 5.34deg reapply.
+  initial_delta: [0, 0, 0, 0, 0, 0, 0]
+  # Collision-tested preparation waypoints for each stop, key = joint number.
+  # Auto profile generates manufacturer preparation targets from the live snapshot.
+  measure_routes: null
+  route_review: null
+  verify_poses:
+    home_left: [1.2127, -0.2026, -0.6538, 1.7608, -0.3791, -0.5785, -0.6646]
+    via_left: [-0.8827, -0.8169, -0.0019, 1.5762, 0.0121, -0.0335, -0.1151]
+    table_left: [-0.4815, -0.3215, 1.5208, 0.9048, 1.0233, 0.5326, 1.2951]
+  # Routes from current supported pose to verification poses, separately reviewed.
+  verify_route: null
+geometry:
+  # Mesh AABB checks are conservative, not cable/contact certification.
+  review: null
+  margin_m: 0.02
+  obstacles: null  # list of {name, lower: [x,y,z], upper: [x,y,z]} in body_root
+  # Explicit CAD-reviewed overlapping collision pairs, no blanket hand exemption.
+  exclusions: []

@@ -1,0 +1,48 @@
+# rh_cap 깊이 학생 오른손 depth_h01(11.03 cap_lab: 캡 찾기 → 접근 → 잡기 → 이송 → 끼우기, 움직이는 머리) — 배포 묶음(11.18). 경로는 이 폴더 기준.
+# 입력: 머리 깊이 160×90 m(0.2~1.5 m, 밖은 0) + 고유수용 62 칸. 출력: 팔 7 · 손 6 · 머리 2(절대 목표 인코더 각). FP++ · 마스크 · rgb 없음.
+# 가중치(student/*.pt)는 git 밖. 읽는 코드 = policy_control/cap_student.py(CapStudent.from_dir).
+# 아직 없는 것(ROS 노드 작업에서 정한다): 깊이 전처리 · 카메라 외부 파라미터 핀, 단계 전환 계약, 에피소드 yaml.
+#   ckpt head_cfg 의 카메라 자세 · 머리 각은 10.27 arm4090 보정 · 옛 목 영점 기준이다(11.15 영점 2048 재보정 · 11.17 m1117 전).
+kind: student_cap
+side: right
+task: rh_cap
+rgb: false
+ckpt:
+  path: student/student_it06000.pt
+  md5: 60e3ebd572060f5cf64d6ad9dd01514a
+  it: 6000
+  arch: v1          # ckpt 에 arch 키 없음 = v1(ResNet18 + 고유수용 MLP → LSTM 512 → 행동 15 · aux 6)
+  from: server:~/rl_ws/wt_cap/runs/cap_split/depth_h01/s31/student_it06000.pt
+obs:
+  n: 62
+  stages: [grasp, carry, seat, approach, search]
+  head_lim_deg: {pan: [-45.0, 30.0], tilt: [-2.0, 82.0]}
+action:
+  n: 15             # 팔 7 · 손 6 · 머리 2
+train:
+  hdgp_commit: db1160bc68bb73b5f8c9f7641dc808471264db59
+  physics: Newton
+  policy_hz: 60     # sim dt 1/480 × decimation 8
+  k_arm: 0.05
+  arm_ema: 0.1
+  hand_ema: 0.1
+  hand_full_range_s: 1.0
+  joint_err_norm: 1.2
+  phase_arm_box_rad: 0.3
+  chain_seat_hand_residual_scale: 1.0
+  profile_name: rh56f1_v2_right_captop   # 2판 자산(openarm_rh56f1_bi_v2_rl) · 손 자세 open (0.60,0,0,0,0,0) grip (1.57,0.24,1.40,1.40,1.40,1.40)
+  hand_block_enable: true
+sim_eval:
+  # 10 시드 e2e(server depth_h01 평가): 평균 610.0/863 = 70.7 %, 시드 간 범위 592~639
+  e2e_mean: 610.0
+  e2e_n: 863
+  e2e_rate: 0.707
+  e2e_range: [592, 639]
+  seeds: 10
+hdgp:
+  # model.py 를 읽는 스냅숏 커밋(v1 경로는 학습 커밋 db1160bc 판과 식이 같다). 학습 커밋은 train.hdgp_commit.
+  commit: 0bd455a86537ee3f2d1f8c34d7199b5073c610b3
+  snapshot_cfg: deploy/policy_control/config/hdgp_student_snapshot.yaml
+source:
+  host: server
+  run: ~/rl_ws/wt_cap/runs/cap_split/depth_h01/s31

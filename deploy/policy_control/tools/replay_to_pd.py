@@ -27,16 +27,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from policy_control import _paths  # noqa: E402,F401
 
 from shadow_replay_core import PARK_SPEED_RAD_PER_SEC, approach_ramp  # noqa: E402
+from policy_control.rh_replay import resample  # noqa: E402
 
 TOPIC = "/policy_control/joint_target"
 EPISODE_TOPIC = "/policy_control/episode"            # 공용(양팔) — 재생은 쓰지 않는다
 EPISODE_TOPIC_SIDE = "/policy_control/{side}/episode"   # 팔별 — pd_node 가 그 팔에만 적용
 #: pd status 는 팔마다 따로다(09.23) — `--joints` 접두어가 쪽을 알려 준다.
 PD_STATUS = "/policy_control/status/pd_{side}"
+PD_NODE = "pd_node"        # pd_node.node_name: 쪽 하나면 pd_node_<side>, 여러 쪽이면 pd_node
+SUB_STABLE_N, SUB_STABLE_DT = 5, 0.05   # 구독 조건이 연속 5회 × 0.05 s 유지돼야 첫 프레임을 낸다
+MEAS_FRESH_S = 0.5         # 대기 통과 뒤 실측을 새로 받을 시간
 STOP_WAIT_S = 1.0          # episode stop 이 pd 에 닿을 때까지(pd_selftest 와 같은 값)
 # npz 안 관절목표 열 후보 — 앞에서부터 있는 것을 쓴다
 NPZ_JOINT_KEYS = ("fabric_q", "arm_target", "arm_q_cmd")
 STATE_TOPIC = "/joint_states"
+#: 손 실측은 /joint_states 에 없다(11.18 bag 004902: 16 이름 = 팔 14 + *_finger_joint1 2). rh56f1_state_node 가
+#  팔과 따로 canonical 이름(r_hj_thumb_1 …)으로 낸다 — 손 열을 재생할 때만 여기를 같이 구독한다.
+HAND_STATE_TOPIC = "/hand_{side}/joint_states"
+HAND_TAG = "_hj_"          # canonical 손 관절 표시(팔은 _aj_)
 
 
 def arm_sides(joints: list[str]) -> list[str]:
@@ -52,7 +60,15 @@ def arm_sides(joints: list[str]) -> list[str]:
 
 
 def measured_name(joint: str) -> str:
-    """canonical(l_aj_i · r_aj_i) → /joint_states 이름(openarm_<side>_joint<i>)."""
+    """canonical → 실측 이름. 팔(l_aj_i · r_aj_i) → /joint_states 의 openarm_<side>_joint<i>.
+
+    ★11.18: 손(*_hj_*)은 마지막 토큰이 관절 번호가 아니라 이름이라(thumb_1 · index_1 …) 옛 식에 넣으면
+    r_hj_index_1 → openarm_right_joint1 처럼 **팔 관절**이 됐다. 그 값이 진입 램프의 출발점이 되어
+    손 목표가 팔 각도(−1.21 rad)에서 출발했다(네 손가락은 하한 0 에 잘려 편 채, 엄지만 28 s 회전).
+    손 상태 토픽은 canonical 이름을 그대로 쓴다 — 바꿀 것이 없다.
+    """
+    if HAND_TAG in joint:
+        return joint
     return f"openarm_{arm_sides([joint])[0]}_joint{joint.split('_')[-1]}"
 
 
@@ -121,6 +137,89 @@ def check_start_gap(start: np.ndarray, first: np.ndarray, tol: float | None) -> 
     return gap
 
 
+def stretch(frames: np.ndarray, dt: float, rate_scale: float) -> np.ndarray:
+    """경로는 그대로, 시간축만 1/rate_scale 배 — 발행은 기록 dt 격자 그대로(11.17: dt/rate_scale 로 늦추면 30 Hz 계단).
+    1.0 은 원본 그대로(보간 부동소수 오차도 넣지 않는다)."""
+    return frames if rate_scale == 1.0 else resample(frames, dt, rate_scale, dt)[0]
+
+
+def schedule_wait(t_start: float, k: int, pub_dt: float, now: float) -> float:
+    """k 번째 프레임 발행 시각(t_start + k·pub_dt)까지 남은 잠 [s] — 절대 시각이라 지연이 쌓이지 않는다."""
+    return max(0.0, t_start + k * pub_dt - now)
+
+
+def pd_sides_seen(names: set[str], sides) -> dict:
+    """구독자 이름 중 이 재생의 팔을 맡은 pd 노드 이름 {이름: 맡은 팔 집합}.
+    pd_node 는 joint_target 을 폴링 노드 `pd_node_poll_<팔>[_<팔>]`(pd_node.py:240)로 구독한다.
+    옛 이름 `pd_node_<side>`·양팔 `pd_node` 도 받는다."""
+    out = {}
+    for n in (x.lstrip("/") for x in names):
+        if n == PD_NODE:
+            out[n] = set(sides)
+        elif n.startswith(f"{PD_NODE}_poll_"):
+            out[n] = set(n[len(f"{PD_NODE}_poll_"):].split("_")) & set(sides)
+        elif n.startswith(f"{PD_NODE}_") and n[len(PD_NODE) + 1:] in sides:
+            out[n] = {n[len(PD_NODE) + 1:]}
+    return {n: c for n, c in out.items() if c}
+
+
+def missing_pd(names: set[str], sides) -> list[str]:
+    """재생하는 팔 중 구독자 이름에 그 팔의 pd 가 안 보이는 팔."""
+    seen = set().union(*pd_sides_seen(names, sides).values()) if names else set()
+    return [s for s in sides if s not in seen]
+
+
+def need_subs(names: set[str], sides, min_subs: int) -> int:
+    """필요한 구독자 수 = max(min_subs, 보이는 이 재생의 pd 노드 수) — 이름만 보이고 아직 매칭 안 된 pd 를 걸러낸다."""
+    return max(min_subs, len(pd_sides_seen(names, sides)))
+
+
+def wait_stable(ok, spin, n: int, timeout: float, clock=time.monotonic) -> bool:
+    """spin() 사이로 ok() 가 연속 n 번 참이면 True, timeout 안에 못 채우면 False."""
+    t0, streak = clock(), 0
+    while streak < n:
+        if clock() - t0 >= timeout:
+            return False
+        spin()
+        streak = streak + 1 if ok() else 0
+    return True
+
+
+def late_state(lag: float, pub_dt: float, max_late: float) -> str:
+    """예정 시각 대비 지연 판정: 'resync'(max_late 넘음 → 일정 재기준) · 'late'(2·pub_dt 넘음, 센다) · 'ok'."""
+    if lag > max_late:
+        return "resync"
+    return "late" if lag > 2 * pub_dt else "ok"
+
+
+def run_schedule(n: int, pub_dt: float, max_late: float, abort_late: float, max_resync: int, send,
+                 clock=time.monotonic, sleep=time.sleep) -> dict:
+    """프레임 0..n-1 을 절대 시각표로 send(k). max_late 를 넘게 늦으면 그 프레임부터 일정을 지금으로 민다(재기준) —
+    밀린 프레임을 몰아 보내지 않고 같은 목표에서 잠깐 멈췄다 이어 가는 꼴. 한 번 늦음 > abort_late 이거나
+    재기준이 max_resync 를 넘으면 aborted 에 사유를 적고 멈춘다(11.18 tilt_comp_ab 020453: 프레임 19 한 번 314 ms 로 abort)."""
+    t_start = clock()
+    st = {"t_pub": [], "n_late": 0, "worst": 0.0, "n_resync": 0, "shift": 0.0, "aborted": None}
+    for k in range(n):
+        now = clock()
+        lag = now - (t_start + k * pub_dt)
+        st["worst"] = max(st["worst"], lag)
+        state = late_state(lag, pub_dt, max_late)
+        if state == "resync":
+            why = (f"--abort-late {abort_late * 1000:.0f} ms" if lag > abort_late else
+                   f"재기준 {max_resync} 회 넘음(--max-resync)" if st["n_resync"] >= max_resync else None)
+            if why:
+                st["aborted"] = f"프레임 {k}/{n} 이 {lag * 1000:.0f} ms 늦음({why})"
+                break
+            t_start += lag
+            st["n_resync"] += 1
+            st["shift"] += lag
+        st["n_late"] += state == "late"
+        send(k)
+        st["t_pub"].append(now)
+        sleep(schedule_wait(t_start, k + 1, pub_dt, clock()))
+    return st
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     src = ap.add_mutually_exclusive_group(required=True)
@@ -142,21 +241,37 @@ def main() -> int:
     ap.add_argument("--max-start-gap", type=float, default=None,
                     help="정방향도 실측 ↔ 첫 프레임 간극이 이보다 크면 거부 [rad](실측에서 계획한 궤적용, 기본 검사 안 함)")
     ap.add_argument("--execute", action="store_true")
+    ap.add_argument("--min-subs", type=int, default=1,
+                    help=f"첫 프레임 전 {TOPIC} 발행자에 맞물려야 할 구독자 수(pd · bag · 콘솔 모두 센다)")
+    ap.add_argument("--sub-timeout", type=float, default=3.0,
+                    help="구독자 수 · 팔마다 pd 노드(pd_node_<side> 또는 pd_node)를 기다리는 시간 [s] — 넘으면 아무것도 내지 않고 거부")
+    ap.add_argument("--max-late", type=float, default=0.1,
+                    help="프레임이 예정 시각보다 이만큼 [s] 넘게 늦으면 그 프레임부터 일정을 지금으로 민다(재기준, 몰아 보내지 않음)")
+    ap.add_argument("--abort-late", type=float, default=1.0,
+                    help="한 번 늦음이 이만큼 [s] 넘으면 발행을 멈추고 episode abort · 종료 코드 2")
+    ap.add_argument("--max-resync", type=int, default=3,
+                    help="재기준이 이 횟수를 넘으면 발행을 멈추고 episode abort · 종료 코드 2")
+    ap.add_argument("--tilt-comp", action="store_true",
+                    help="★11.16 재생 동안 pd tilt_comp(payload ff + 적분)를 켠다 — pd yaml 에 tilt_comp 블록이 있는 팔만, stop 사건에서 꺼진다")
     ap.add_argument("--no-stop-event", action="store_true", default=False,
                     help="끝에 episode stop 을 내지 않는다(그러면 스트림 두절로 pd 가 watchdog HOLD 로 간다)")
     args = ap.parse_args()
     args.joints = [j.strip() for j in args.joints.split(",")]
     if not 0.0 < args.rate_scale <= 1.0:
         raise SystemExit("--rate-scale 는 (0, 1]")
+    if args.min_subs < 1:
+        raise SystemExit("--min-subs 는 1 이상")
 
     frames, dt = load_frames(args)
     if args.frames:
         frames = frames[: args.frames]
     if not np.isfinite(frames).all():
         raise SystemExit("[replay] 기록에 비유한 값 — 보간하지 않고 거부한다")
-    pub_dt = dt / args.rate_scale
-    print(f"[replay] {frames.shape[0]} 프레임 × {len(args.joints)} 관절 · 기록 dt {dt:.4f} s → "
-          f"발행 {pub_dt * 1000:.1f} ms ({args.rate_scale:g}×) · "
+    n_rec = len(frames)
+    frames = stretch(frames, dt, args.rate_scale)
+    pub_dt = dt
+    print(f"[replay] {n_rec} 프레임 × {len(args.joints)} 관절 · 기록 dt {dt:.4f} s → "
+          f"발행 {pub_dt * 1000:.1f} ms 고정 · 시간 {1 / args.rate_scale:g}배({len(frames)} 프레임) · "
           f"{'되짚기(역재생)' if args.reverse else '정방향'} · {'★발행' if args.execute else '무발행'}")
     if not args.execute:
         return 0
@@ -174,6 +289,10 @@ def main() -> int:
     pd = {side: None for side in sides}                      # 팔마다 pd 목표 출처
     node.create_subscription(JointState, STATE_TOPIC,
                              lambda m: meas.update(zip(m.name, m.position)), qos_profile_sensor_data)
+    # 손 열을 재생할 때만(팔만 쓰는 재생은 집합이 비어 구독이 늘지 않는다) — 손 실측은 팔 토픽에 없다
+    for side in {arm_sides([j])[0] for j in args.joints if HAND_TAG in j}:
+        node.create_subscription(JointState, HAND_STATE_TOPIC.format(side=side),
+                                 lambda m: meas.update(zip(m.name, m.position)), qos_profile_sensor_data)
     for side in sides:
         node.create_subscription(String, PD_STATUS.format(side=side),
                                  lambda m, side=side: pd.update({side: _target_of(m.data)}), 10)
@@ -183,11 +302,44 @@ def main() -> int:
     # ★10.01 실기: 공용 /policy_control/episode 로 stop 을 내면 **다른 팔의 pd** 도 받아 홈에서 정착한 hold 를 새 hold(settle False)로
     #   덮었다(좌 재생 뒤 우 hold err 0.037 굳음). pd 는 팔마다 /policy_control/<side>/episode 를 그 팔에만 적용한다 — 이 팔 토픽으로 낸다.
     ep_pubs = [node.create_publisher(String, EPISODE_TOPIC_SIDE.format(side=side), latched) for side in sides]
-    t0 = time.time()
-    while time.time() - t0 < 5.0 and not meas:
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < 5.0 and not meas:
         rclpy.spin_once(node, timeout_sec=0.1)
     if not meas:
         raise SystemExit(f"[replay] {STATE_TOPIC} 수신 없음")
+    # ★11.17 실측: 새 발행자는 DDS 매칭 전에 낸 프레임을 잃는다(앞 50~450 ms) → pd 가 0.2 rad 계단을 max_vel 로 메워 팔이 튄다.
+    #   맞물릴 때까지 아무것도 내지 않고, 맞물린 뒤 시작 자세를 새로 읽어 검사 · 계획한다.
+    #   bag 기록기 · 콘솔도 이 토픽을 구독하니 수만 세면 pd 보다 먼저 통과할 수 있다 → 재생하는 팔의 pd 노드 이름도 본다.
+    def _names() -> set:
+        return {i.node_name for i in node.get_subscriptions_info_by_topic(TOPIC)}
+
+    def _ready() -> bool:
+        names = _names()
+        return not missing_pd(names, sides) and pub.get_subscription_count() >= need_subs(names, sides, args.min_subs)
+
+    def _spin_for(sec: float) -> None:          # spin_once 는 콜백 하나에 돌아오니(250 Hz 실측) 시각으로 채운다
+        t_end = time.monotonic() + sec
+        while (left := t_end - time.monotonic()) > 0:
+            rclpy.spin_once(node, timeout_sec=left)
+
+    if not wait_stable(_ready, lambda: _spin_for(SUB_STABLE_DT), SUB_STABLE_N, args.sub_timeout):
+        names, n_subs = _names(), pub.get_subscription_count()
+        raise SystemExit(f"[replay] 거부: {TOPIC} 구독자 {n_subs}(필요 {need_subs(names, sides, args.min_subs)}, "
+                         f"--min-subs {args.min_subs}), 안 보이는 pd {missing_pd(names, sides)} "
+                         f"({args.sub_timeout:g} s) — 아무것도 내지 않았다")
+    n_subs = pub.get_subscription_count()
+    # 대기 동안의 실측은 낡았을 수 있다 — 비우고 재생하는 팔의 실측이 새로 들어오는지 본다
+    want_meas = [measured_name(j) for j in args.joints]
+    meas.clear()
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < MEAS_FRESH_S and not all(n in meas for n in want_meas):
+        rclpy.spin_once(node, timeout_sec=0.02)
+    stale = [n for n in want_meas if n not in meas]
+    if stale:
+        raise SystemExit(f"[replay] 거부: 구독 대기 뒤 {MEAS_FRESH_S:g} s 동안 {STATE_TOPIC} 실측 갱신 없음 {stale} "
+                         f"— 아무것도 내지 않았다")
+    print(f"[replay] {TOPIC} 구독자 {n_subs}: "
+          f"{sorted(i.node_name for i in node.get_subscriptions_info_by_topic(TOPIC))}")
     # canonical → source 이름은 pd 가 처리한다; 여기서는 실측을 이름으로 찾는다(l_aj_i ↔ openarm_left_jointi)
     start = np.array([meas[measured_name(j)] for j in args.joints])
     check_start_gap(start, frames[::-1][0] if args.reverse else frames[0], args.max_start_gap)
@@ -204,9 +356,30 @@ def main() -> int:
         pub.publish(msg)
         rclpy.spin_once(node, timeout_sec=0.0)
 
-    for k, (q, qd) in enumerate(zip(plan, vel)):
-        send(k, q, qd)
-        time.sleep(pub_dt)
+    if args.tilt_comp:
+        on = json.dumps({"episode": ep_id, "event": "tilt_comp_on", "t_ns": time.time_ns()})
+        for ep_pub in ep_pubs:
+            ep_pub.publish(String(data=on))
+    st = run_schedule(len(plan), pub_dt, args.max_late, args.abort_late, args.max_resync,
+                      lambda k: send(k, plan[k], vel[k]))
+    t_pub, aborted = st["t_pub"], st["aborted"]
+    p95 = float(np.percentile(np.diff(t_pub), 95)) * 1000 if len(t_pub) > 1 else float("nan")
+    # tilt_comp_ab.REPLAY_LINE 이 앞부분을 읽는다 — 앞 순서를 바꾸지 말고 뒤에만 붙인다
+    print(f"[replay] 발행 {len(t_pub)} 프레임 · 늦음(> {2 * pub_dt * 1000:.0f} ms) {st['n_late']} · "
+          f"최대 지연 {st['worst'] * 1000:.1f} ms · 간격 p95 {p95:.1f} ms · "
+          f"재기준 {st['n_resync']} · 누적 밀림 {st['shift'] * 1000:.0f} ms")
+    if aborted:
+        # 목표는 더 내지 않고 abort 사건만 낸다 — pd 는 지금 세트포인트를 붙들고(pd_arm.on_episode) tilt_comp 도 끈다.
+        # 사건이 안 닿아도 끊긴 스트림은 pd watchdog 이 HOLD 로 받는다.
+        ab = json.dumps({"episode": ep_id, "event": "abort", "reasons": [f"replay_to_pd late: {aborted}"],
+                         "t_ns": time.time_ns()})
+        for ep_pub in ep_pubs:
+            ep_pub.publish(String(data=ab))
+        rclpy.spin_once(node, timeout_sec=0.1)
+        print(f"[replay] 중단: {aborted} — 발행을 멈추고 episode abort(현 세트포인트 유지 · tilt_comp 끔)")
+        node.destroy_node()
+        rclpy.shutdown()
+        return 2
     if not args.no_stop_event:
         # 재생이 끝났다는 뜻으로 episode stop — pd 가 마지막 세트포인트를 내부 목표로 붙든다(스트림 두절 HOLD 가 아니라).
         # 그래야 뒤의 goto_home 정착 · pd/hand_home 이 받아들여진다(09.22 홈 경로 재생).
@@ -214,12 +387,12 @@ def main() -> int:
                            "reasons": ["replay_to_pd done"], "t_ns": time.time_ns()})
         for ep_pub in ep_pubs:
             ep_pub.publish(String(data=stop))
-        t1 = time.time()
-        while time.time() - t1 < STOP_WAIT_S and any(v != "internal" for v in pd.values()):
+        t1 = time.monotonic()
+        while time.monotonic() - t1 < STOP_WAIT_S and any(v != "internal" for v in pd.values()):
             send(len(plan), plan[-1], np.zeros_like(plan[-1]))
             time.sleep(pub_dt)
         print(f"[replay] episode stop → pd target {pd!r}")
-    print(f"[replay] 완료 · 램프 {n_ramp} + 기록 {len(frames)} 프레임"
+    print(f"[replay] 완료 · 램프 {n_ramp} + 기록 {len(frames)} 프레임(원본 {n_rec})"
           f"{' (되짚기)' if args.reverse else ''}")
     node.destroy_node()
     rclpy.shutdown()

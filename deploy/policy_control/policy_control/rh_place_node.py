@@ -38,6 +38,10 @@ import time  # noqa: E402
 
 READY_CARRY_SLACK_S = 2.0
 OPENED_END_TICKS = 3      # ★11.11 정책 손 목표 · 실측 손가락이 둘 다 열린 틱이 이만큼 연속(60 Hz 50 ms)이면 끝
+#: ★11.18 래치 전 손 폄 종료의 문턱 하한(rad) — 놓음 게이트 open_min_rad(0.15)와 따로. 학습 정책은 래치 전 손가락을 인계 대비
+#  0.23~0.25 rad 편 채 내린다(체크포인트 running_mean_std). 06:28 cocktail_1c_e4000 은 인계 손이 뱅크보다 0.17 rad 더 닫혀
+#  0.15 를 14 틱에 넘어 래치(~52 틱) 전에 끊겼다. 0.35 = 학습 연 양 위 · 완전 개방 아래.
+OPENED_END_MIN_RAD = 0.35
 OPENED_MEAS_FRAC = 1.0    # ★11.11 "다 핀" 쪽 — 실측 평균 ≥ open_min_rad. 0.5(0.075 rad)는 sim 1111b place_blue 에서 컵을 쥔 채
                           #   0.12 rad(안착 높이 +40.5 mm)에 끝냈다. 실기 bag 184024 는 707.1 s 0.067 → 707.2 s 0.548 로 뛰어 종료 시각 거의 같음
 
@@ -45,7 +49,7 @@ from policy_control import codec  # noqa: E402
 from policy_control import place_handover as PH  # noqa: E402
 from policy_control.pour_fj_node import NS, Family, PourFjNode, PourFjNodeError, main  # noqa: E402
 from policy_control.rh_place import (ATTACH_SOURCES, HOLDER_FLOOR_Z, HOLDER_TOL_M, JOINT_FREE_G,  # noqa: E402
-                                     OPEN_MIN_RAD, RhPlaceError, holder_refusals, holder_tol_of)
+                                     OPEN_MIN_RAD, RhPlaceError, holder_offset_of, holder_refusals, holder_tol_of)
 from policy_control import tin_live as TL  # noqa: E402
 from policy_control.place_ready_carry import STILL_MAX_TICKS as RCY_STILL_MAX_TICKS  # noqa: E402
 
@@ -63,7 +67,8 @@ def holder_candidates(text: str, first: int) -> list[int]:
 
 def opened_both(chain) -> bool:
     """★11.11 이 틱에 정책 손 목표와 실측 손가락이 둘 다 열렸다(네 손가락 평균, 인계 · 정책 시작 손 기준)."""
-    return chain.opened >= chain.open_min_rad and chain.opened_meas >= OPENED_MEAS_FRAC * chain.open_min_rad
+    lim = max(float(chain.open_min_rad), OPENED_END_MIN_RAD)   # ★11.18 래치 전 종료만 높인 문턱
+    return chain.opened >= lim and chain.opened_meas >= OPENED_MEAS_FRAC * lim
 
 
 def hand_released(chain, release_force_n: float) -> bool | None:
@@ -78,6 +83,15 @@ def hand_released(chain, release_force_n: float) -> bool | None:
     if not (has_t or has_j):
         return None
     return not ((has_t and tact >= release_force_n) or (has_j and jf >= chain.joint_free_g))
+
+
+def tin_minus_offset(rel_p, rel_q, palm_R, holder, side: str) -> tuple[tuple, np.ndarray | None]:
+    """★11.16 T_in(카메라 컵 ⊗ FK 손바닥) → FK 틀: 컵 rel_p − R_palmᵀ·t, 홀더 − t(t = 팔별 CUP_OBS_OFFSET_BASE_M, base m).
+    홀더도 같이 빼서 컵 − 홀더 관계(둘 다 카메라가 본 값)는 그대로 두고 손 안 자세만 FK 기준으로 옮긴다. R_palm = reset 때 실측."""
+    from policy_control.episode_spec import CUP_OBS_OFFSET_BASE_M
+    t = np.asarray(CUP_OBS_OFFSET_BASE_M[{"r": "right", "l": "left"}.get(side, side)], float)
+    rel = np.asarray(rel_p, float).reshape(3) - np.asarray(palm_R, float).reshape(3, 3).T @ t
+    return (rel, rel_q), None if holder is None else np.asarray(holder, float).reshape(3) - t
 
 
 class PlaceNode(PourFjNode):
@@ -97,7 +111,12 @@ class PlaceNode(PourFjNode):
                               #   실기 131817 — tilt 뒤 FP++ 가 쥔 컵을 놓치고 탁자 아래 자세를 내 놓기가 멈췄다. true 면 live(5 cm 문)
                               ("place_live_cup", False),
                               # ★11.07 실행기가 job 마다 넣는다: attach_source:=tin_json(빈 값 = 계약) · tin_json:=런 폴더 T_in json
-                              ("attach_source", ""), ("tin_json", "")):
+                              ("attach_source", ""), ("tin_json", ""),
+                              # ★11.16 true 면 tin_json T_in 에서 카메라−FK 오프셋 t 를 뺀다(tin_minus_offset). 기본 false = 기존 그대로
+                              ("tin_subtract_offset", False),
+                              # ★11.18 사용자 "place는 x를 조금만 덜 이송시키면 될것 같고?" — 이송 · 정책 목표 홀더만 base 로 옮긴다
+                              #   (DOUBLE_ARRAY, 기본 0). 홀더 범위 검사 · 실행기 cup_in_holder 판정은 실물 홀더 그대로
+                              ("holder_offset_base_m", [0.0, 0.0, 0.0])):
             self.declare_parameter(name, default)
         p = lambda n: self.get_parameter(n).value  # noqa: E731
         if not bool(p("require_grasp")):                   # fake 손은 촉각이 0 — 리허설에서만 끈다
@@ -360,9 +379,27 @@ class PlaceNode(PourFjNode):
         self.chain.rc_chain = self._rc_chain
         b = self._bundle
         self.chain.attach_info = self._attach_info()
-        self.chain.reset(meas, holder=self._holder, held=held,
+        attach, holder = None if b is None else (b.rel_p, b.rel_q), self._holder
+        if self._tin and bool(self.get_parameter("tin_subtract_offset").value):
+            attach, holder = tin_minus_offset(b.rel_p, b.rel_q, meas["arm"].palm_R, holder, self.contract.side().side)
+            self.chain.attach_info = {**self.chain.attach_info, "tin_subtract_offset": True,
+                                      "rel_p_used": [round(float(v), 5) for v in attach[0]],
+                                      "holder_used": None if holder is None else [round(float(v), 5) for v in holder]}
+            self.get_logger().info(f"tin_subtract_offset · 컵 rel_p {np.round(b.rel_p, 4).tolist()} → {np.round(attach[0], 4).tolist()} · "
+                                   f"홀더 {None if self._holder is None else np.round(self._holder, 4).tolist()} → "
+                                   f"{None if holder is None else np.round(holder, 4).tolist()}")
+        try:                                               # job 마다 실행기가 넣는다(앞 job 값이 남지 않게)
+            off = holder_offset_of(self.get_parameter("holder_offset_base_m").value)
+        except RhPlaceError as exc:
+            raise PourFjNodeError(str(exc)) from exc
+        if holder is not None and np.any(off):
+            holder = np.asarray(holder, float) + off
+            self.chain.attach_info = {**self.chain.attach_info, "holder_offset_base_m": off.tolist(),
+                                      "holder_used": [round(float(v), 5) for v in holder]}
+            self.get_logger().info(f"holder_offset_base_m {off.tolist()} · 목표 홀더 → {np.round(holder, 4).tolist()}")
+        self.chain.reset(meas, holder=holder, held=held,
                          allow_measured=bool(self.get_parameter("allow_measured_start").value),
-                         attach=None if b is None else (b.rel_p, b.rel_q))
+                         attach=attach)
         if self.chain.rcarry is not None:
             self.get_logger().info(f"준비 자세 이송 계획 · {self.chain.rcarry.plan}")
         rel = self.chain.rel[0]
@@ -413,6 +450,7 @@ class PlaceNode(PourFjNode):
                                           f"→ 각도만으로 판단")
             self._opened_n = self._opened_n + 1 if rel is not False else 0   # 손 힘이 남았으면(쥔 채 벌어짐) 세지 않는다
             if self._opened_n >= OPENED_END_TICKS:
+                self._release_force = rel   # ★11.16 끝난 틱의 힘 근거(True 빈손 · None 신호 없음) — 실행기 continue_on_fail
                 self.chain.outcome = "opened_before_latch"   # ★11.11 래치 전 — 놓였는지는 실행기가 cup_in_holder 로 판정
                 self.chain.released_cup = self.chain.latch_cup
                 self.get_logger().info(f"place 정책이 래치 전에 손 폄 → 끝 · {self.chain.as_dict()}")
@@ -436,6 +474,7 @@ class PlaceNode(PourFjNode):
         self._latch_logged = False
         self._opened_n = 0
         self._rel_unknown_logged = False
+        self._release_force = None
         out = super()._srv_start(req, res)
         rc = getattr(self.chain, "rcarry", None)
         self._carry_t0 = time.monotonic() if rc is not None and rc.on else None
@@ -444,6 +483,7 @@ class PlaceNode(PourFjNode):
     def _status_extra(self) -> dict:
         return {"holder": self.holder_id, "holder_pose": None if self._holder is None else [round(float(v), 4) for v in self._holder],
                 "release_force_n": self.contract.release_force_n,     # 실행기 opened_before_latch 촉각 판정 문턱
+                "released_by_force": getattr(self, "_release_force", None),
                 **({"holder_excess_m": self._holder_excess} if self.contract.holder_range else {}),
                 **({"place": self.chain.as_dict()} if getattr(self.chain, "as_dict", None) else {})}
 

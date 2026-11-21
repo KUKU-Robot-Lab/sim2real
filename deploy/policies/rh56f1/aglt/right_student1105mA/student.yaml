@@ -25,9 +25,14 @@ ckpt:
   arch: v3
   from: logs/policy/student_mask_A/r/student_it04400.pt
 extrinsics:
-  path: camera/extrinsics_r20u5_40e6496.yaml
-  md5: 624677fee7e8ff6502f33a3ed8a96a1f
-  from: sim2real 40e6496:config/global_camera_extrinsics_arm4090_r20u5.yaml
+  # ★11.15 목 영점 2048 판으로 바꿈(같은 camset 물리 자세, r20u5 와 2.1 mm · 0.33°). ckpt 는 r20u5 로 배웠다 —
+  #   ckpt 메타(depth_pre · head.extr_md5)와는 ckpt_md5 로 대조한다. 옛 사본 camera/extrinsics_r20u5_40e6496.yaml 은 그대로 둔다.
+  #   11.15 camera 블록 = ChArUco 25자세 hand-eye(yaw 는 테이블 CAD 값 유지), 앞 h2048 판(ac34f921) 대비 8.8 mm · 0.49°.
+  # ★11.17 camera 블록 = 테이블 고정 마커 70~73 으로 푼 m1117(depth_bias 없음, 사용자). 옛 사본 camera/extrinsics_h2048.yaml 은 그대로 둔다.
+  path: camera/extrinsics_m1117.yaml
+  md5: 691ade15493f240e6c7b98c4393446a9
+  from: sim2real 11.17 작업 트리:config/global_camera_extrinsics_arm4090_m1117.yaml
+  ckpt_md5: 624677fee7e8ff6502f33a3ed8a96a1f
 hdgp:
   # 스냅숏 커밋(model.py · real_depth.py). 마스크 학습 기준 78e75059 와 두 파일 md5 가 같다(8c4c94b1 · 9bdcc2ac).
   commit: 0bd455a86537ee3f2d1f8c34d7199b5073c610b3

@@ -4,6 +4,7 @@
     python head_move.py                          # 계획만 출력(요청하지 않는다)
     python head_move.py --execute                # 기준 자세로(목이 움직인다)
     python head_move.py --execute --pan 20 --tilt -30
+    python head_move.py --execute --extrinsics config/global_camera_extrinsics_arm4090_live.yaml   # 외부 파라미터를 잰 명령 각으로(없으면 기준 자세)
 
 ★`--execute` 는 목을 움직인다 — 사용자 허락 뒤에만(허락은 이 명령 한 번에만). 출력은 `head_home.py` 검증 줄과 같은 형식이라
 `survey.parse_head_home` 이 그대로 읽는다. 종료 코드: 0 정착·목표 도달, 1 이동은 했지만 실패, 2 요청 거절·드라이버 없음.
@@ -81,16 +82,60 @@ def _await(node, seen: list[dict], request_id: str, rclpy) -> tuple[int, dict | 
             return 1, None
 
 
+def extrinsics_cmd_deg(path: Path) -> tuple[float, float] | None:
+    """외부 파라미터 파일이 잰 자세의 명령 각(인코더 deg, pan · tilt). 파일이 없으면 None. 순수.
+
+    ★11.18 head_view_check 가 마커를 화면 안으로 들이려고 목을 camset 에서 조금 돌려 잴 수 있다(cd5aaf1) — 그 뒤 기준
+    자세(head_home.yaml)로 가면 object_pose_node 가 head_pose ±tol_tick 밖이라 발행을 막는다(11.18 FP++ 재추출 rc=1).
+    그래서 잰 때와 같은 명령(provenance.cmd_deg, 없으면 head_pose 틱)으로 간다."""
+    import yaml
+    if not path.is_file():
+        return None
+    d = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    cmd = (d.get("provenance") or {}).get("cmd_deg")
+    if cmd and len(cmd) == 2:
+        return float(cmd[0]), float(cmd[1])
+    hp = d.get("head_pose") or {}
+    if "pan_tick" in hp and "tilt_tick" in hp:
+        return tuple((int(hp[k]) - 2048) * 360 / 4096 for k in ("pan_tick", "tilt_tick"))
+    raise ValueError(f"{path} 에 provenance.cmd_deg 도 head_pose 틱도 없다")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--pan", type=float, default=None)
     parser.add_argument("--tilt", type=float, default=None)
-    parser.add_argument("--max-tilt", type=float, default=hm.MAX_TILT_DEG)
+    parser.add_argument("--max-tilt", type=float, default=None,
+                        help="tilt 상한. 없으면 --config 의 max_tilt_deg, 그것도 없으면 head_motion.MAX_TILT_DEG")
+    parser.add_argument("--config", type=Path, default=None,
+                        help="드라이버와 같은 머리 설정(★11.18 드라이버는 설정 max_tilt_deg 82 를 쓰는데 여기서 -10 으로 미리 거절했다)")
+    parser.add_argument("--extrinsics", type=Path, default=None,
+                        help="--pan/--tilt 가 없을 때 이 외부 파라미터 파일을 잰 명령 각으로 간다(파일이 없으면 기준 자세)")
     parser.add_argument("--execute", action="store_true")
     args = parser.parse_args()
     if (args.pan is None) != (args.tilt is None):
         print("❌ --pan 과 --tilt 는 같이 준다(둘 다 없으면 기준 자세)", file=sys.stderr)
         return 2
+    if args.max_tilt is None:
+        args.max_tilt = hm.MAX_TILT_DEG
+        if args.config is not None:
+            import head_home
+            try:
+                args.max_tilt = head_home.max_tilt_for(head_home.load_head_home(args.config), None, hm.MAX_TILT_DEG)
+            except (ValueError, OSError) as exc:
+                print(f"❌ {args.config}: {exc}", file=sys.stderr)
+                return 2
+    if args.pan is None and args.extrinsics is not None:
+        try:
+            cmd = extrinsics_cmd_deg(args.extrinsics)
+        except (ValueError, OSError) as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
+        if cmd is None:
+            print(f"  {args.extrinsics} 없음 — 기준 자세(head_home.yaml)로")
+        else:
+            args.pan, args.tilt = cmd
+            print(f"  외부 파라미터를 잰 자세로: {args.extrinsics.name}")
     target = "기준 자세(head_home.yaml)" if args.pan is None else f"pan {args.pan:+.2f} / tilt {args.tilt:+.2f}"
     print(f"요청: {target} → {hm.REQUEST_TOPIC}")
     if not args.execute:

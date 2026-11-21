@@ -16,14 +16,15 @@ import threading
 import time
 import yaml
 
-from .console import ConsoleError
+from .console import ConsoleError, head_driver_gone, is_head_driver
 from .console_state import STALE_S
-from .runner import StageRunner, DONE, ABORTED
+from .runner import HEAD_DRIVER, StageRunner, DONE, ABORTED
 from .supervisor import scan_processes, SupervisorError
 from . import pd_names as PD
 from . import simtraj as ST
 from . import experiments as XP
 from . import tuning_view as TU
+from . import place_tune as PTUNE   # ★11.18 고정 놓기 튜닝 탭 — place_fixed 단계에 tune 설정
 from policy_control.ros_domain import REAL_DOMAIN  # noqa: E402  실기 DDS 도메인(config/ros_domain.env)
 from mission_stages import Command, commands_for
 import mission_core as MC
@@ -34,6 +35,40 @@ ALL_RESOURCES = frozenset({'right', 'left', 'head', 'perception', 'drivers'})
 #: ★10.19 사용자 "좌우 동시 실행": 정책 카드는 목 · 인지를 읽기만 한다(목이 움직이면 FP++ 좌표가 틀린다) — 정책끼리는 같이 쓰고,
 #  목 · 인지를 움직이는 작업(head_control · perception_refresh · cups)과만 겹친다.
 SHARED_BY_POLICIES = frozenset({'head', 'perception'})
+
+# ★11.19 ACT tilt(모방학습 붓기) — 미션 argv 는 [bash, -lc, <스크립트>, act_tilt, <ckpt>, --max-vel, <v>] (make_rh56f1_missions.py).
+#   카드가 고른 체크포인트 · 속도 상한만 바꾼다 — 목록 밖 체크포인트 · 브리지 범위 (0, 1.5] 밖 속도는 거부.
+ACT_TILT = ('act_tilt_dry', 'act_tilt')
+ACT_TILT_CKPTS = ('050000', '010000')
+ACT_TILT_MAX_VEL = (0.0, 1.5)
+
+
+def act_tilt_parameters(parameters):
+    out = {}
+    if 'ckpt' in parameters:
+        if parameters['ckpt'] not in ACT_TILT_CKPTS:
+            raise ConsoleError(f"ckpt 는 {'/'.join(ACT_TILT_CKPTS)} 중 하나", code=400)
+        out['ckpt'] = parameters['ckpt']
+    if 'max_vel' in parameters:
+        value = parameters['max_vel']
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not (
+                ACT_TILT_MAX_VEL[0] < float(value) <= ACT_TILT_MAX_VEL[1]):
+            raise ConsoleError(f'max_vel 은 ({ACT_TILT_MAX_VEL[0]:g}, {ACT_TILT_MAX_VEL[1]:g}] rad/s', code=400)
+        out['max_vel'] = float(value)
+    return out
+
+
+def act_tilt_argv(argv, parameters):
+    """브리지 명령이 아니면(fake 의 true · 확인 단계) 그대로 둔다."""
+    argv = list(argv)
+    if 'act_tilt' not in argv or not any('act_tilt_bridge.py' in a for a in argv):
+        return tuple(argv)
+    chosen = act_tilt_parameters(parameters)
+    if 'ckpt' in chosen:
+        argv[argv.index('act_tilt') + 1] = chosen['ckpt']
+    if 'max_vel' in chosen:
+        argv[argv.index('--max-vel') + 1] = f"{chosen['max_vel']:g}"
+    return tuple(argv)
 EPISODE_RUNNER = 'episode_runner'
 #: 카드 작업 id 머리 — rg3_ 정책 live(경로 A · C) · ★10.19 simplan_ sim 궤적 계획(server, 로봇 안 움직임) · simrun_ sim 궤적 재생
 CARD_PREFIXES = ('rg3_', 'simplan_', 'simrun_')
@@ -130,15 +165,32 @@ def _gains_ok(status):
 
 
 #: ★11.10 사용자 "rehome 등은 정책 등이 실행되거나 잔류 노드가 있어도 무시 또는 제거하고 움직이게" — 강제 선점하는 명령.
-FORCE_PREEMPT = ('rehome_', 'home_', 'return_')
+#: ★11.18 리뷰 H3: cap_end_<팔> 은 정리(정지 · 목 복귀)라 pd 가 HOLD · stale 이어도 시작해야 한다 — 선점 실패를 경고로 남기고 진행.
+FORCE_PREEMPT = ('rehome_', 'home_', 'return_', 'cap_end_')
 #: 강제 선점 때 콘솔 밖 잔류도 죽이는 정책·실행기 노드(PD·드라이버·카메라는 제외).
 STRAY_POLICY_NODES = ('rh_aglt_node', 'rh_place_node', 'rh_place_student_node', 'pour_fj_node', 'episode_runner',
-                      'head_mask_node', 'head_depth_node')
+                      'head_mask_node', 'head_depth_node', 'rh_cap_student_node')
+
+
+HEAD_TOPIC = '/head/joint_states'
+
+
+def head_missing_reason(procs, obs):
+    """★11.11 FP++ 를 내리기 전에 목 각도가 오는가 — 없으면 object_pose 가 pose 를 보류해 refresh 가 rc=1 로 끝난다. 순수.
+    감독자가 띄운 목 드라이버가 모두 죽었거나, 브리지가 세는 목 토픽이 낡았으면 이유 문자열, 아니면 None."""
+    if head_driver_gone(procs):
+        return '목 드라이버 없음 — head_home 다시'
+    rep = (obs.topics or {}).get(HEAD_TOPIC)
+    counted = rep is not None and rep.get('n') is not None and obs.topics_age_s is not None and obs.topics_age_s <= STALE_S
+    if counted and (rep.get('age_ms') is None or rep['age_ms'] > STALE_S * 1e3):
+        return f'목 관절({HEAD_TOPIC}) 수신 없음 — 목 드라이버 없음 — head_home 다시'
+    return None
 
 
 def _preempts(action_id, group):
-    """제어 명령과 인지 적용은 도는 정책을 먼저 세운다 — 인지 적용은 setting 탭으로 옮겼어도(11.05) FP++ 컨테이너를 바꾼다."""
-    return group == 'control' or action_id == 'perception_refresh'
+    """제어 명령과 인지 적용은 도는 정책을 먼저 세운다 — 인지 적용은 setting 탭으로 옮겼어도(11.05) FP++ 컨테이너를 바꾼다.
+    ★11.18 cap_next_<팔> 은 도는 cap 학생에 stage/next 만 부른다 — 세우면 안 된다."""
+    return (group == 'control' and not action_id.startswith('cap_next_')) or action_id == 'perception_refresh'
 
 
 class _Job:
@@ -291,8 +343,12 @@ class ActionManager:
             return frozenset({'head', 'perception'})
         if action_id == 'perception_refresh':      # locate moves the neck; FPP needs it still
             return frozenset({'perception', 'head'})
-        if action_id in ('policy_stop', 'tilt_now', 'tilt_pour'):
+        if action_id in ('policy_stop', 'tilt_now', 'tilt_pour', 'cap_now'):
             return frozenset(ARMS)
+        if action_id in ACT_TILT:                  # ★11.19 정책 입력이 머리 카메라 — 붓는 동안 목이 움직이면 안 된다
+            return frozenset({*ARMS, 'head'})
+        if action_id.startswith(('cap_student_', 'cap_next_', 'cap_end_')):   # ★11.18 cap 학생 — 목 드라이버(tilt 82) · 깊이 노드
+            return frozenset({*ARMS, 'head', 'perception'})   # 왼손이 쉐이커(리시버)를 쥐고 있다 — rehome_left 등과 겹치지 않게
         if group == 'policy':                         # live FPP input + the arm
             side = control_side(action_id) if action_id.startswith(CONTROL_PREFIX) else self._card(s, action_id)['side']
             return frozenset({side, 'head', 'perception'})
@@ -347,6 +403,12 @@ class ActionManager:
             specs['tilt_now'] = ('tilt 시작 자세(세팅 자세)로 — 두 팔', 'control', ('tilt_now',))
         if 'tilt_pour' in known:                      # ★10.19 사용자: 세팅 자세에서 바로 tilt(컵을 쥔 채, 두 팔)
             specs['tilt_pour'] = ('tilt 붓기 — 지금 자세에서 바로(두 팔)', 'control', ('tilt_pour',))
+        for name in ACT_TILT:                         # ★11.19 ACT 정책 붓기(dry run · 실행) — 카드 UI 는 s2r:setting
+            if name in known:
+                specs[name] = (known[name].title, 'control', (name,))
+        for name in known:                            # ★11.18 사용자: 고정 놓기 궤적(place_fixed_<컵>_<끝>_<팔>) — 팔 하나
+            if name.startswith(('place_fixed_', 'cap_')):   # ★11.18 cap_now · cap_student_right · cap_next_right
+                specs[name] = (known[name].title, 'control', (name,))
         for name, title in CONTROL_EPISODES.items():  # ★10.20 1-B — 정책 카드 없이 policy 탭에서 바로
             for side in ARMS:
                 sid = f'episode_{name}_{side}'
@@ -387,8 +449,14 @@ class ActionManager:
 
     def describe(self, action_id, parameters=None):
         parameters = dict(parameters or {})
-        if set(parameters) - {'object_ids', 'pan', 'tilt', 'calib_profile', 'folder', 'side', 'test', 'chain'}:
+        tune = PTUNE.take(action_id, parameters, self.console)
+        if set(parameters) - {'object_ids', 'pan', 'tilt', 'calib_profile', 'folder', 'side', 'test', 'chain', 'ckpt', 'max_vel'}:
             raise ConsoleError('지원하지 않는 작업 설정', code=400)
+        if {'ckpt', 'max_vel'} & set(parameters):
+            if action_id not in ACT_TILT:
+                raise ConsoleError('ckpt · max_vel 은 act_tilt 작업만 받는다', code=400)
+            act_tilt_parameters(parameters)       # 범위 밖이면 ConsoleError(400)
+        parameters.update(tune)
         if 'object_ids' in parameters and (not isinstance(parameters['object_ids'], list) or
                                           any(not isinstance(value, str) for value in parameters['object_ids'])):
             raise ConsoleError('물체 ID 목록이 필요하다', code=400)
@@ -415,13 +483,19 @@ class ActionManager:
         nonpolicy = [sid for sid in active if not sid.startswith(('policy_', 'episode_'))]
         if nonpolicy:
             reasons.append(f"단계 {', '.join(nonpolicy)} 가 실행 중이다")
+        # ★11.18 리뷰 M4: cap 학생 배경(82 드라이버 · --free-head 깊이 · 학생 노드)이 살아 있는 채 다른 동작을 돌면 82 한계로 돌거나
+        #   게이트 없는 깊이가 다른 학생 입력에 섞인다 — cap · 정지 · 복귀 · sim 만 받는다(정지 바 · pd 붙들기는 이 경로가 아니다)
+        if not (action_id.startswith(('cap_', 'tune_pd_off_', *FORCE_PREEMPT)) or action_id in ('policy_stop', 'shutdown')
+                or group == 'sim') and any(p.stage.startswith('cap_student_') for p in s.supervisor.alive()):
+            reasons.append('cap 학생 노드 · 깊이 노드 · 목 드라이버(82)가 떠 있다 — cap 정리(cap_end_right) 먼저')
         if action_id == 'perception_refresh' and self._episode_busy(s, active):
             # 맞추기 모드라 목록 밖 컨테이너를 내린다 — 에피소드가 확보한 물체 · 수동 확인 대기 · 도는 실행기를 끊지 않는다
             reasons.append('에피소드 진행 중 — 인지 적용은 에피소드를 멈춘 뒤')
-        if (group == 'control' and action_id not in ('perception_refresh', 'head_control', 'policy_stop')) or group == 'policy':
+        # ★11.18 cap_end_right 는 팔을 움직이지 않는 정리(정지 · 목 복귀)다 — pd 가 HOLD 여도 돌아야 한다
+        if (group == 'control' and action_id not in ('perception_refresh', 'head_control', 'policy_stop', 'cap_end_right')) or group == 'policy':
             if group == 'policy':
                 sides = [control_side(action_id) if action_id.startswith(CONTROL_PREFIX) else self._card(s, action_id)['side']]
-            elif action_id in ('tilt_now', 'tilt_pour'):
+            elif action_id in ('tilt_now', 'tilt_pour', 'cap_now', *ACT_TILT) or action_id.startswith('cap_student_'):
                 sides = list(ARMS)
             elif action_id == 'head_sweep':          # 오른손을 카메라 앞에 두고 pd 가 붙들고 있어야 한다
                 sides = ['right']
@@ -437,6 +511,12 @@ class ActionManager:
                     reasons.append(f'{side} PD 가 무발행 모드다')
                 elif st.get('phase') in ('HOLD', 'UNKNOWN', 'RELEASING', 'RAMPING'):
                     reasons.append(f"{side} PD 상태 {st.get('phase')} — 안전 복구/정착 필요")
+                elif action_id.startswith('place_fixed_') and st.get('phase') != 'TRACKING':
+                    reasons.append(f"{side} PD 상태 {st.get('phase')} — 고정 놓기는 그 팔 pd 가 쥔 자세를 붙들고(TRACKING) 있어야 한다")
+                elif action_id.startswith('cap_student_') and st.get('phase') != 'TRACKING':   # 왼손은 쉐이커를 쥔 채
+                    reasons.append(f"{side} PD 상태 {st.get('phase')} — cap 학생은 두 팔 pd 가 cap 시작 자세를 붙들고(TRACKING) 있어야 한다")
+                elif action_id == 'act_tilt' and st.get('phase') != 'TRACKING':   # dry run 은 발행하지 않아 TRACKING 을 요구하지 않는다
+                    reasons.append(f"{side} PD 상태 {st.get('phase')} — ACT 붓기는 두 팔 pd 가 tilt 시작 자세를 붙들고(TRACKING) 있어야 한다")
                 elif action_id == 'tilt_pour' and st.get('phase') != 'TRACKING':
                     # 컵을 쥔 채라 여기서 engage 하지 않는다 — 세팅 자세를 만든 뒤 pd 가 그 자세를 붙들고 있어야 한다
                     reasons.append(f"{side} PD 상태 {st.get('phase')} — tilt 붓기는 두 팔 pd 가 지금 자세를 붙들고(TRACKING) 있어야 한다")
@@ -475,7 +555,7 @@ class ActionManager:
                     reasons.append(f"pan {head['pan']} · tilt {head['tilt']} 는 {profile} 가 보정한 각도(±{tol}°)가 아니다 "
                                    "— 이 자세에서는 locate · FP++ 좌표를 쓸 수 없다")
         if action_id in ('head_control', 'head_sweep'):
-            drivers = [unit for unit in s.units.values() if any('head_joint_publisher.py' in a for a in unit.argv)]
+            drivers = [unit for unit in s.units.values() if any(HEAD_DRIVER in a for a in unit.argv)]
             if drivers and not any(s.supervisor.is_alive(unit.key) for unit in drivers):
                 reasons.append('목 드라이버가 연결되지 않았다 — setting head_home 필요')
         card = obj = policy = None
@@ -550,8 +630,9 @@ class ActionManager:
             try:
                 needed = self._policy_sides(s, targets)
                 missing = needed - set(self.console._pd_sides(s))
-                if missing:
-                    reasons.append(f"정책 대상 {', '.join(sorted(missing))} PD 상태가 없거나 오래됐다")
+                if missing:   # ★11.18 리뷰 H3: cap 정리는 pd 가 stale 이어도 노드 · 드라이버를 내린다(선점 실패는 경고)
+                    (warnings if action_id.startswith('cap_end_') else reasons).append(
+                        f"정책 대상 {', '.join(sorted(missing))} PD 상태가 없거나 오래됐다")
             except ConsoleError as exc:
                 reasons.append(str(exc))
             warnings.append('정지 대상: ' + ', '.join(targets) + ' → PD 현재 자세 유지 확인 → 요청 실행. 정책은 자동 재개하지 않는다.')
@@ -642,6 +723,15 @@ class ActionManager:
                 out[path.stem] = {'error': str(exc), 'strict': True, 'tolerance': 0.0, 'angles': []}
         return out
 
+    @staticmethod
+    def _log_tail(s, key, n=5):
+        """죽은 배경 작업 로그의 마지막 n 줄 — rc 만으로는 왜 죽었는지 안 보인다."""
+        try:
+            lines = [ln for ln in s.supervisor.tail(key, 4096).splitlines() if ln.strip()][-n:]
+        except (SupervisorError, OSError):
+            return ''
+        return ''.join(f'\n  {ln}' for ln in lines)
+
     def _job_summary(self, action_id):
         job = self._jobs.get(action_id)
         if job is None:
@@ -652,7 +742,7 @@ class ActionManager:
         """What this action left running: its background processes, and for an arm its PD phase."""
         procs = [p for p in s.supervisor.table() if p['stage'] in stages]
         alive = [p.get('note') or p['key'] for p in procs if p['alive']]
-        dead = [f"{p.get('note') or p['key']} rc={p.get('rc')}" for p in procs
+        dead = [f"{p.get('note') or p['key']} rc={p.get('rc')}" + self._log_tail(s, p['key']) for p in procs
                 if not p['alive'] and not p.get('stopped') and p.get('rc') not in (0, None) and p.get('background')]
         result = {'alive': alive, 'dead': dead}
         side = action_id.rsplit('_', 1)[-1]
@@ -712,8 +802,12 @@ class ActionManager:
         return out
 
     def _policy_targets(self, s, sides=None):
+        # ★11.11 cleanup 이 다시 띄운 목 드라이버(stage episode_*)는 정책이 아니다 — 내리면 object_pose 가 pose 를 보류한다
         targets = [p['key'] for p in s.supervisor.table() if p['alive'] and
-                   p['stage'].startswith(('policy_', 'episode_'))]
+                   p['stage'].startswith(('policy_', 'episode_')) and not is_head_driver(p)]
+        # ★11.18 cap 학생 단계(cap_student_<팔>)가 띄운 학생 · 깊이 노드도 정책이다(정책 정지 · 제어 명령이 세운다)
+        targets += [p['key'] for p in s.supervisor.table() if p['alive'] and
+                    p['stage'].startswith('cap_student_') and not is_head_driver(p)]
         if sides is None:
             return targets
         kept = []
@@ -763,6 +857,7 @@ class ActionManager:
             job = _Job(action_id, description['group'], operator,
                        self._resources(s, action_id, description['group'], description['parameters']))
             self._jobs[action_id] = job
+            PTUNE.executed(action_id, description['parameters'])   # ★11.18 하강 · tilt_now · 저장 · 마저 놓기 실행 → jog 끔
             self._order = [key for key in self._order if key != action_id] + [action_id]
             job.thread = threading.Thread(target=self._run_job, args=(job, s, description), daemon=True,
                                           name=f'action-{action_id}')
@@ -787,6 +882,9 @@ class ActionManager:
         return [self._transform(s, description['id'], description['parameters'], c) for c in commands]
 
     def _transform(self, s, action_id, parameters, cmd):
+        cmd = PTUNE.transform(action_id, parameters, cmd, self.console.repo)
+        if action_id in ACT_TILT:
+            cmd = replace(cmd, argv=act_tilt_argv(cmd.argv, parameters))
         if action_id in ('head_control', 'cups') and any('head_move.py' in a for a in cmd.argv) and (
                 action_id == 'head_control' or s.workspace.head_set or {'pan', 'tilt'} & set(parameters)):
             head = {**s.workspace.head, **parameters}
@@ -1248,7 +1346,7 @@ class ActionManager:
             self._trigger(s, 'pd/hold', side, expect=('TRACKING',))
             self._confirm_hold(s, side, began_ns)
         for runner in s.runners.values():
-            if runner.active and runner.stage_id.startswith(('policy_', 'episode_')):
+            if runner.active and runner.stage_id.startswith(('policy_', 'episode_', 'cap_student_')):
                 found = set(re.findall(r'(?:^|_)(right|left)(?:_|$)', runner.stage_id))
                 if sides is not None and found and not found & set(sides):
                     continue                           # ★10.19 다른 팔 단계는 그대로
@@ -1291,7 +1389,7 @@ class ActionManager:
             except ConsoleError as exc:
                 warn.append(f'{side} 자세 유지 실패(무시): {exc}')
         for runner in s.runners.values():
-            if runner.active and runner.stage_id.startswith(('policy_', 'episode_')):
+            if runner.active and runner.stage_id.startswith(('policy_', 'episode_', 'cap_student_')):
                 found = set(re.findall(r'(?:^|_)(right|left)(?:_|$)', runner.stage_id))
                 if sides is not None and found and not found & set(sides):
                     continue
@@ -1444,7 +1542,10 @@ class ActionManager:
             if description['group'] == 'tuning' and self._cancel_policy.is_set():
                 outcome = ABORTED                    # [실험 정지] — 실패가 아니라 운영자가 멈춘 것
             s.event('action', f"✗ {description['id']}: {note}")
-            if description['id'] != 'shutdown' and description['group'] != 'policy':
+            if description['id'].startswith('cap_student_'):
+                note += self._cap_student_failed(s, description['id'])
+            # ★11.18 리뷰 M6: cap_next_ 의 거부(이송 미완 등) · 서비스 없음은 팔을 얼리지 않는다 — 학생 노드 워치독이 따로 있다
+            if description['id'] != 'shutdown' and description['group'] != 'policy' and not description['id'].startswith('cap_next_'):
                 failure_stage, failure_runner = self._status.get('stage'), getattr(self, '_runner', None)
                 with s.feed_lock:
                     observed = s.feed.observed()
@@ -1471,6 +1572,18 @@ class ActionManager:
                     job.status['steps'] = job.runner.view()['steps']
                 job.status.update(active=False, outcome=outcome, note=note, finished=time.time())
             s.event('action', f"{description['id']} {outcome}")
+
+    def _cap_student_failed(self, s, sid):
+        """★11.18 리뷰 H1: cap 학생 단계는 단계 탭(_stage_done)이 아니라 여기서 돈다 — 실패하면 같은 정리(episode/stop <팔>_cap →
+        pd 붙들기 → 이 단계 배경 정지 → 목 드라이버 경고)를 부른다. 정리가 실패해도 원래 사유는 note 앞에 남는다."""
+        try:
+            left = [p for p in s.supervisor.alive() if p.stage == sid]
+            drv = any(is_head_driver({'argv': p.argv}) for p in left)
+            self.console._fail_safe(s, sid, 'FAILED', [sid.rsplit('_', 1)[-1]], [p.key for p in left])
+        except Exception as exc:  # noqa: BLE001 — 원래 실패 사유를 가리지 않는다
+            return f' · cap 정리 실패: {exc}'
+        return (' · cap 학생 배경을 내렸다' + (' — 목 드라이버가 내려갔다 — cap_end_right 로 기본 드라이버와 머리 자세를 되돌릴 것'
+                                              if drv else ''))
 
     def _sim_job(self, s, description):
         """승인한 명령과 지금 만든 명령이 같은지 — 그 사이 새 계획이 생기면 다시 준비한다."""
@@ -1630,6 +1743,11 @@ class ActionManager:
         workspace = s.workspace
         ids = parameters.get('object_ids')
         selected = [o for o in workspace.objects if o['enabled'] and (ids is None or o['id'] in ids)]
+        with s.feed_lock:
+            obs = s.feed.observed()
+        why = head_missing_reason(s.supervisor.table(), obs)
+        if why:                    # fpp_stop 전에 — FP++ 를 내린 뒤 목이 없다는 걸 알면 인지가 통째로 빈다
+            raise ConsoleError(why)
         failures = []
         for source in ('fpp', 'locate'):
             if self._cancel_scan.is_set():
@@ -1643,8 +1761,9 @@ class ActionManager:
                     supported = [o['id'] for o in selected if o['model'] != 'holder']
                     if supported:
                         workspace.invalidate_results('FPP acquisition restarted', sources=('fpp',))
-                        start = next(c for key, c in self._perception_commands(s, parameters) if key == 'action_fpp_start')
-                        self._run_commands(s, 'action_fpp_start', [start])
+                        planned = dict(self._perception_commands(s, parameters))
+                        self._run_commands(s, 'action_fpp_stop', [planned['action_fpp_stop']])   # ★11.11 GPU 비우고
+                        self._run_commands(s, 'action_fpp_start', [planned['action_fpp_start']])
                         self._run_commands(s, 'action_fpp', [Command(tuple(workspace.fpp_argv(supported)), note='FPP 재추출')])
                 else:
                     for obj in selected:
@@ -1685,6 +1804,12 @@ class ActionManager:
                 all_enabled = [o['id'] for o in workspace.objects if o['enabled'] and o['model'] != 'holder']
                 # ★11.03 런처가 묶음을 하나씩 띄운다. shortcut: 묶음 수 대신 물체 수(상한) — 기다림이 길어질 뿐, 실패 판정은 같다
                 from perception_launcher_core import start_wait_s
+                # ★11.11 사용자 "refresh 하면 4090 GPU 꺼지고 새로 세팅된 물체가 인식돼야": 떠 있는 컨테이너에 다시 찍기를 시키면
+                #   묶음마다 라이브 추적(4~10 GiB) 위에 2.6 GiB 를 동시에 잡아 24 GB 에서 OOM 이 났다(163941 action_fpp_0.log).
+                #   먼저 FP++ 를 다 내리고(카메라는 둔다) 새로 띄운다 — rescan 은 새로 뜬 컨테이너의 첫 회차를 그대로 받는다('take').
+                commands.append(('action_fpp_stop', Command(('python3', str(s.repo / 'scripts/ops/perception_ctl.py'),
+                                                             'stop', '--wait', '60'),
+                                                            note='FP++ 내리기(GPU 비우기)')))
                 commands.append(('action_fpp_start', Command(('python3', str(s.repo / 'scripts/ops/perception_ctl.py'),
                                                               'start', *all_enabled, '--viewer', '--wait', str(start_wait_s(len(all_enabled))),
                                                               '--require-all'),

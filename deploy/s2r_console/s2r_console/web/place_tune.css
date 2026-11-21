@@ -1,0 +1,15 @@
+/* ★11.18 고정 놓기 튜닝 탭(#place) — console.css 토큰만 쓴다 */
+#pt-root { display: grid; gap: 12px; }
+.pt-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pt-row .btn.on { border-color: var(--live); color: var(--live); }
+.pt-kv { display: grid; grid-template-columns: max-content 1fr; align-items: baseline; gap: 4px 12px; margin: 10px 0 0; }
+.pt-kv dt { color: var(--mute); font: 600 12px var(--sans); }
+.pt-kv dd { margin: 0; }
+.pt-axis { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
+.pt-ax { width: 32px; font: 600 12px var(--mono); color: var(--mute); }
+.pt-axis .btn { min-width: 56px; min-height: 36px; font-family: var(--mono); }
+.pt-recent { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.pt-recent li { padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
+.pt-path { font-size: 11px; color: var(--faint); word-break: break-all; }
+.mono { font-family: var(--mono); }
+#pt-root .hint.warn { color: var(--warn); }

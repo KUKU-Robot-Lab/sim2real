@@ -14,6 +14,7 @@ import json
 from typing import Mapping
 
 from . import eval_log as EV
+from . import place_tune as PTUNE
 from .console import Console, ConsoleError
 from .lease import LeaseError
 
@@ -65,6 +66,8 @@ def _get(console: Console, path: str, query: Mapping[str, str]) -> tuple[int, di
         return 200, {"ok": True, "key": query.get("key", ""), "text": console.log_tail(query.get("key", ""))}
     if path == "/api/eval/rounds":                     # ★11.02 eval 탭 — 날짜별 회차 기록(?date=YYYY-MM-DD, 없으면 오늘)
         return 200, EV.rounds_view(console.repo, query.get("date") or None)
+    if path == "/api/place_tune":                      # ★11.18 고정 놓기 튜닝 탭 — 컵 하나의 offset · jog 누적 · pd · 최근 결과
+        return 200, PTUNE.view(console, query.get("cup", ""))
     return _fail(404, f"없는 경로: {path}")
 
 
@@ -101,16 +104,21 @@ def _write(console: Console, method: str, path: str, data: dict, token: str | No
     if path == "/api/eval/rounds":                     # ★11.02 회차 기록 저장도 lease 없이 — 로봇에 아무것도 보내지 않는다(기록일 뿐)
         if method != "POST":
             return _fail(405, "POST 만 지원한다")
-        row = EV.append_round(console.repo, data)
+        row = EV.append_round(console.repo, data, toggles=getattr(console, "episode_toggles", {}).get(str(data.get("episode", "")), ""))   # 테스트 대역 콘솔엔 없다
         if console.session is not None:
             stage = f" · {row['fail_stage']}" if row["fail_stage"] else ""
             console.session.event("eval", f"회차 {row['round']} 기록 · {row['episode']} · {row['result']}{stage} ({client})")
         return 200, {"ok": True, "row": row}
 
+    if path == "/api/place_tune/arm" and data.get("on") is False:   # ★11.18 jog 끄기는 lease 없이(탭을 떠날 때 · 누구든)
+        return 200, PTUNE.set_armed(console, data, client)
+
     # ── 나머지는 lease 가 있어야 ────────────────────────────────────────
     held = console.lease.check(token)
     console.lease.renew(held.token)
     who = held.holder
+    if path == "/api/place_tune/arm":                  # ★11.18 jog 켜기 — 화면 확인창 뒤, 그 컵 pd 가 TRACKING 일 때만
+        return 200, PTUNE.set_armed(console, data, who, held.token)
     if path in ('/api/workspace', '/api/actions/prepare', '/api/actions/execute'):
         if method != 'POST':
             return _fail(405, 'POST 만 지원한다')

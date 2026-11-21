@@ -407,7 +407,10 @@ def test_bank_pick_lands_the_end_pose_near_the_place_start_bank():
     s = c.side()
     RC, mch = RCY.load_chain(s.palm_body, list(s.arm_joints))
     bq = RCY.load_bank_arm_q(N10, s.side, list(s.arm_joints))
-    assert bq.shape == (350, 7) and RCY.load_bank_arm_q(POL / "right_n07", s.side, list(s.arm_joints)) is None
+    assert bq.shape == (350, 7)
+    # ★11.16 P3: right_n07 에도 뱅크(bank_right_carry_end_rcg04.npz)를 넣었다 → 이제 None 이 아니다
+    bq07 = RCY.load_bank_arm_q(POL / "right_n07", s.side, list(s.arm_joints))
+    assert bq07 is not None and bq07.ndim == 2 and bq07.shape[1] == 7
     z = np.load(N10 / "bank/bank_right_train.npz")
     i = 222
     bx = np.delete(bq, i, 0)                                    # 자기 행은 빼고 잰다

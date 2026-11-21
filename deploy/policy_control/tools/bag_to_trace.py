@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""policy_bag.py 가 남긴 run 폴더(policy/ · sensors/ bag)를 분석용 trace.npz 로 바꾼다. 파일만 읽는다.
+"""보관: dg5f real_runs 전용(현재 회차 logs/runs/<날짜> 분석은 sim_real_compare.py). policy_bag.py 가 남긴 run 폴더(policy/ · sensors/ bag)를 분석용 trace.npz 로 바꾼다. 파일만 읽는다.
 
     python3 deploy/policy_control/tools/bag_to_trace.py logs/runs/<YYMMDD>/real_runs/<run 폴더>
 

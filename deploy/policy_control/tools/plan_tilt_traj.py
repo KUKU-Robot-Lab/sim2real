@@ -14,7 +14,10 @@
   python3 deploy/policy_control/tools/plan_tilt_traj.py --cup 240 --q-json q.json --out /tmp/t   # 로봇 없이
 재생(실기, 사용자 승인 뒤):
   replay_to_pd.py --npz <out>/tilt_cmd.npz --joints r_aj_1,..,r_aj_7,l_aj_1,..,l_aj_7 --rate-scale 1.0 --max-start-gap 0.05 --execute
-종료 코드: 0 = 재생해도 됨 · 2 = 검사 실패(재생 금지) · 3 = 핀 · 자산 불일치 · 그 밖 = 계획 못 함.
+IK 장치: --device auto(기본, CUDA 있으면 cuda) · cpu · cuda(못 쓰면 오류). 쓴 장치 · graph · 시간은 check.json run 과 출력 줄에.
+종료 코드: 0 = 재생해도 됨 · 2 = 검사 실패(재생 금지) · 3 = 핀 · 자산 불일치 · 1 = 인자 · 환경 오류(--device cuda 인데 CUDA 없음,
+torch 못 올림)와 그 밖에 계획 못 함. auto 로 고른 cuda 에서 IK 가 RuntimeError(OOM · graph 캡처)면 cpu 로 한 번 다시 계획하고
+run.fallback 에 오류 한 줄을 적는다(--device cuda 명시면 다시 하지 않는다).
 """
 from __future__ import annotations
 
@@ -25,6 +28,7 @@ import json
 import math
 from pathlib import Path
 import sys
+import time
 
 import numpy as np
 import yaml
@@ -50,6 +54,19 @@ LIMITS = {"ik_pos_mm": 20.0, "clr_min_m": 0.02, "table_clear_m": 0.01, "cmd_vel_
           # − 흐름 반폭(미측정). 8 mm = 오프라인 스윕(logs/runs/261110/tilt_tin_sweep) 정상 2.4~4.1 · T_in 어긋남 6~30 사이 — 정상 최대의 약 2배로
           # 둔다(기하 상한 13~23 mm 아래). 흐름 반폭을 재면 다시 정한다.
           "mouth_xy_mm": 8.0}
+
+
+def mouth_xy_limit(cfg: dict) -> float | None:
+    """★11.20 입구 중심 맞춤 상한은 궤적마다 정한다. policy.yaml mouth_xy_max_mm 가 없으면 LIMITS 8 mm(입구 중심을 shaker 위에 맞춘
+    v10~v12 설계 기준), null 이면 검사하지 않고 값만 남긴다 — v14 처럼 sim 에서 일부러 비켜 조준한 궤적에 v12 기준을 씌우지 않는다."""
+    if "mouth_xy_max_mm" not in cfg:
+        return LIMITS["mouth_xy_mm"]
+    v = cfg["mouth_xy_max_mm"]
+    if v is None:
+        return None
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0:
+        raise ValueError(f"mouth_xy_max_mm 는 양수 mm 또는 null 이어야 한다: {v!r}")
+    return float(v)
 
 
 def load_modules(root: Path):
@@ -96,6 +113,19 @@ def mouth_xy_mm(Cr: np.ndarray, Cl: np.ndarray, src_mouth_z: float, rcv_mouth_z:
     return np.linalg.norm((ms - mr)[:, :2], axis=1) * 1000
 
 
+def aim_params(params: dict, off_base_m, u0_deg: float) -> dict:
+    """★11.18 붓는 입술이 shaker 입구 대비 떨어지는 자리(조준점)를 base 수평 d 만큼 옮긴 params(새 dict).
+    plan_knots: M = mouth_ref + (rdx,rdy,rdz) 는 두 컵을 같이 옮겨 조준이 안 바뀐다. 입술 L = M + ox·u + oy·a + h·ez,
+    u = Rz(yaw)·(cos U0, sin U0, 0), a = ez × u 는 수평 정규직교라 ox += d·u, oy += d·a 가 정확하다."""
+    d = np.asarray(off_base_m, dtype=np.float64)
+    if d.shape != (3,) or not np.all(np.isfinite(d)) or d[2] != 0.0:
+        raise ValueError(f"aim_offset_base_m = [dx, dy, 0] (m) 여야 한다: {off_base_m!r}")
+    ang = math.radians(u0_deg + float(params["yaw"]))
+    u = np.array([math.cos(ang), math.sin(ang)])
+    a = np.array([-u[1], u[0]])
+    return {**params, "ox": float(params["ox"]) + float(d[:2] @ u), "oy": float(params.get("oy", 0.0)) + float(d[:2] @ a)}
+
+
 def minjerk(s: np.ndarray) -> np.ndarray:
     s = np.clip(s, 0.0, 1.0)
     return 10 * s ** 3 - 15 * s ** 4 + 6 * s ** 5
@@ -117,32 +147,71 @@ def resample(q_start: np.ndarray, knots: np.ndarray, dt_knot: float, pre_s: floa
     return q
 
 
-def plan(cfg: dict, asset: Path, cup: str, q: dict, holders: Path, tin_json: str, root: Path) -> dict:
+def pick_device(want: str) -> str:
+    """auto → CUDA 를 쓸 수 있으면 cuda, 아니면 cpu. cuda 를 콕 집었는데 못 쓰면 ValueError(main 에서 rc 1)."""
     import torch
+    ok = torch.cuda.is_available()
+    if want == "cuda" and not ok:
+        raise ValueError("--device cuda: CUDA 를 쓸 수 없다(torch.cuda.is_available() False)")
+    return "cuda" if want == "cuda" or (want == "auto" and ok) else "cpu"
+
+
+def plan(cfg: dict, asset: Path, cup: str, q: dict, holders: Path, tin_json: str, root: Path, device: str = "auto") -> dict:
+    t_plan = time.perf_counter()
+    mxy_lim = mouth_xy_limit(cfg)                                      # 계획 전에 — 값이 틀리면 IK 를 돌리지 않는다
+    import torch
+    dev = pick_device(device)
     TT, CH = load_modules(root)
     from dataclasses import fields
     S = np.load(asset / "ref" / f"setup_{cup}.npz", allow_pickle=False)
     params = json.loads((asset / "ref" / f"params_{cup}.json").read_text(encoding="utf-8"))["params"]
+    aim = None
+    if cfg.get("aim_offset_base_m") is not None:                       # ref params json 은 md5 핀이라 여기서만 옮긴다
+        new = aim_params(params, cfg["aim_offset_base_m"], importlib.import_module(f"{PKG}.tilt_traj.plan").U0_DEG)
+        aim = {"offset_base_m": list(cfg["aim_offset_base_m"]), "ox": [params["ox"], new["ox"]],
+               "oy": [params.get("oy", 0.0), new["oy"]]}
+        params = new
     geo_d, clr_d = json.loads(str(S["geo_json"])), json.loads(str(S["clear_json"]))
     clr_d = {k: (tuple(tuple(x) for x in v) if k.endswith("_segs") else v) for k, v in clr_d.items()}
     clr_d["table_z"] = table_z(cfg)                                    # sim 0.205 → 실기 탁자
     t64 = lambda x: torch.as_tensor(np.asarray(x, dtype=np.float64))  # noqa: E731
-    ch = {s: CH.Chain.from_urdf(str(root / URDF), TIP[s], ARMS[s], device="cpu", dtype=torch.float32) for s in "rl"}
+    ch = {s: CH.Chain.from_urdf(str(root / URDF), TIP[s], ARMS[s], device="cpu", dtype=torch.float32) for s in "rl"}  # 후처리(lo·hi·fk)
     geo = TT.TiltGeo(**{f.name: geo_d[f.name] for f in fields(TT.TiltGeo)})
     CL = importlib.import_module(f"{PKG}.tilt_traj.clearance")
-    setup = TT.TiltSetup(chain_r=ch["r"], chain_l=ch["l"], q0_r=t64(S["q0_r"]), q0_l=t64(S["q0_l"]),
-                         mouth_ref=t64(S["mouth_ref"]), th_tab=t64(S["th_tab"]), q_tab=t64(S["q_tab"]),
-                         holders=t64(load_holders(holders)), geo=geo,
-                         clear=CL.ClearCfg(**{k: v for k, v in clr_d.items() if k in {f.name for f in fields(CL.ClearCfg)}}),
-                         fast=False, cuda_graph=False)
+    clear = CL.ClearCfg(**{k: v for k, v in clr_d.items() if k in {f.name for f in fields(CL.ClearCfg)}})
+    hold = t64(load_holders(holders))                                  # PinError(RuntimeError) 가 cuda 재시도에 섞이지 않게 IK 밖에서
     if tin_json:
         tj = json.loads(Path(tin_json).read_text(encoding="utf-8"))
         T_r, T_l, tin_src = np.asarray(tj["T_in_r"]), np.asarray(tj["T_in_l"]), tin_json
     else:
         T_r, T_l, tin_src = S["T_in_r"], S["T_in_l"], "asset 기본값(e2e 짝 중앙값)"
-    tb = TT.build_batch(setup, TT.params_tensor([params]), t64(T_r)[None], t64(T_l)[None])
+
+    def ik(d: str):
+        chd = ch if d == "cpu" else {s: CH.Chain.from_urdf(str(root / URDF), TIP[s], ARMS[s], device=d, dtype=torch.float32) for s in "rl"}
+        setup = TT.TiltSetup(chain_r=chd["r"], chain_l=chd["l"], q0_r=t64(S["q0_r"]), q0_l=t64(S["q0_l"]),
+                             mouth_ref=t64(S["mouth_ref"]), th_tab=t64(S["th_tab"]), q_tab=t64(S["q_tab"]),
+                             holders=hold, geo=geo, clear=clear,
+                             # ★11.18 fast_ik, 141213_cocktail_1c_e4000 입력: CPU 길은 실기 npz·check.json 과 비트 동일(laptop 12.9 → 11.4 s).
+                             # cuda 길(graph)은 실기 npz 와 최대 5.2e-6 rad 차이(check.json 표시값 같음, GPU 끼리는 비트 동일), 전체 14.5 → 6.8 s
+                             fast=True, cuda_graph=True)                               # CPU 에서는 fast_ik 가 graph 를 건너뛴다
+        t_ik = time.perf_counter()
+        tb = TT.build_batch(setup, TT.params_tensor([params]), t64(T_r)[None], t64(T_l)[None])
+        if d == "cuda":
+            torch.cuda.synchronize()                                   # 비동기 CUDA 오류도 여기서 터지게
+        return tb, time.perf_counter() - t_ik
+
+    fallback = None
+    try:
+        tb, ik_s = ik(dev)
+    except RuntimeError as exc:                                         # torch.OutOfMemoryError · graph 캡처 실패도 RuntimeError
+        if not (device == "auto" and dev == "cuda"):                    # --device cuda 명시면 그대로 실패
+            raise
+        fallback = (str(exc).strip().splitlines() or [type(exc).__name__])[0]
+        print(f"⚠ cuda IK 실패 → cpu 로 다시 계획: {fallback}", file=sys.stderr)
+        dev = "cpu"
+        tb, ik_s = ik(dev)
     L = int(tb.length[0])
-    knots = np.concatenate([tb.q_r[0, :L].numpy(), tb.q_l[0, :L].numpy()], 1)       # (L,14)
+    knots = np.concatenate([tb.q_r[0, :L].cpu().numpy(), tb.q_l[0, :L].cpu().numpy()], 1)       # (L,14)
     q_meas = np.array(list(q["right"]) + list(q["left"]), dtype=np.float64)
     cmd = resample(q_meas, knots, geo.dt, float(cfg["pre_s"]))
     info = {k: float(v[0]) for k, v in tb.info.items()}
@@ -151,7 +220,7 @@ def plan(cfg: dict, asset: Path, cup: str, q: dict, holders: Path, tin_json: str
     vel = float(np.abs(np.diff(cmd, axis=0)).max() * RATE_HZ)
     margin = float(np.minimum(cmd - lo, hi - cmd).min())
     gap = float(np.abs(q_meas - knots[0]).max())
-    e = tb.knots.edges[0].numpy()
+    e = tb.knots.edges[0].cpu().numpy()
     fk = lambda c, qq, T: c.fk(torch.as_tensor(qq, dtype=torch.float32)).double().numpy() @ np.asarray(T, dtype=np.float64)  # noqa: E731
     t = np.arange(len(cmd)) / RATE_HZ - float(cfg["pre_s"])                # knot 시각
     pour = (t >= e[2]) & (t <= e[4])                                       # 기울이기 + 최대 기울기 유지(plan.knot_counts edges)
@@ -163,12 +232,14 @@ def plan(cfg: dict, asset: Path, cup: str, q: dict, holders: Path, tin_json: str
         "cmd_vel_rad_s": {"value": round(vel, 3), "ok": vel <= LIMITS["cmd_vel_rad_s"]},
         "joint_margin_rad": {"value": round(margin, 4), "ok": margin >= LIMITS["joint_margin_rad"]},
         "start_gap_rad": {"value": round(gap, 4), "ok": gap <= LIMITS["start_gap_rad"]},
-        "mouth_xy_mm": {"value": round(mxy, 2), "ok": mxy <= LIMITS["mouth_xy_mm"]},
+        "mouth_xy_mm": {"value": round(mxy, 2), "ok": mxy_lim is None or mxy <= mxy_lim, "limit": mxy_lim,
+                        "skipped": mxy_lim is None},   # 자산 policy.yaml mouth_xy_max_mm: null(v14) — 통과가 아니라 검사 안 함
     }
     return {"cmd": cmd, "knots": knots, "info": info, "checks": checks, "ok": all(c["ok"] for c in checks.values()),
-            "params": params, "tin": tin_src, "T_in_r": np.asarray(T_r).tolist(), "T_in_l": np.asarray(T_l).tolist(),
+            "params": params, "aim": aim, "tin": tin_src, "T_in_r": np.asarray(T_r).tolist(), "T_in_l": np.asarray(T_l).tolist(),
             "secs": {"pre": float(cfg["pre_s"]), "app_end": round(float(e[2]), 3), "tilt_end": round(float(e[3]), 3),
-                     "settle_end": round(float(e[6]), 3), "T_end_s": round(len(cmd) / RATE_HZ, 3)}}
+                     "settle_end": round(float(e[6]), 3), "T_end_s": round(len(cmd) / RATE_HZ, 3)},
+            "run": {"device": dev, "cuda_graph": dev == "cuda", "fallback": fallback, "ik_s": round(ik_s, 3), "plan_s": round(time.perf_counter() - t_plan, 3)}}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -179,14 +250,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--q-json", default="", help='{"right": [7], "left": [7]} — 없으면 실측')
     ap.add_argument("--tin-json", default="", help='{"T_in_r": 4x4, "T_in_l": 4x4} 손끝 → 컵(왼손은 rcv_z_off 포함) — 없으면 기본값')
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto", help="IK 장치 — auto = CUDA 있으면 cuda")
     a = ap.parse_args(argv)
+    try:
+        pick_device(a.device)                                     # 핀 검사 전에 — 쓸 장치가 없으면 바로 끝낸다
+    except (ImportError, OSError, ValueError) as exc:             # torch 못 올림 · --device cuda 인데 CUDA 없음
+        print(f"✗ {exc}", file=sys.stderr)
+        return 1
     try:
         cfg = H.load_policy(a.asset)
         root = H.hdgp_tree()
         H.verify(root, cfg["hdgp"]["md5"])
         H.verify_refs(a.asset, cfg.get("ref") or {})
         holders = a.holders or (SIM2REAL / cfg["holders"]["default"])
-        r = plan(cfg, a.asset, a.cup, current_q(a.q_json), holders, a.tin_json, root)
+        r = plan(cfg, a.asset, a.cup, current_q(a.q_json), holders, a.tin_json, root, a.device)
     except H.PinError as exc:
         print(f"✗ {exc}")
         return 3
@@ -197,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
     chk.update({"cup": a.cup, "holders": str(holders), "holders_md5": H.md5(holders), "asset": str(a.asset)})
     (a.out / "check.json").write_text(json.dumps(chk, indent=1, ensure_ascii=False), encoding="utf-8")
     bad = {k: v["value"] for k, v in r["checks"].items() if not v["ok"]}
-    print(json.dumps({"ok": r["ok"], "fail": bad, "secs": r["secs"], "tin": r["tin"],
+    print(json.dumps({"ok": r["ok"], "fail": bad, "secs": r["secs"], "tin": r["tin"], "run": r["run"],
                       "npz": str(a.out / "tilt_cmd.npz")}, ensure_ascii=False))
     return 0 if r["ok"] else 2
 

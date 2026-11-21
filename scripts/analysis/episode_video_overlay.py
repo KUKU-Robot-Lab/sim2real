@@ -11,7 +11,7 @@
 - 손바닥 · 손끝 · 정책 컵: /policy_control/<팔>/obs 의 rh_aglt 관측(rh_aglt.ACTOR_LAYOUT 의 palm_pos · cup_rel_palm ·
   tips_rel_cup, base 프레임). 정책 컵(+)은 정책이 본 컵(쥔 뒤는 붙인 자세)이라 FP++ 축과 다르면 그 차이가 보인다.
 - 넘김: rh_aglt 상태의 approach_grasp.phase 가 approach → policy 로 바뀐 시각(접근 정책 → 쥐기 정책). 노드 시작도 표시한다.
-- 카메라: config/global_camera_extrinsics_arm4090_r20u5.yaml(그 head_pose 에서 잰 값) × 목 FK. camera bag 의
+- 카메라: config/global_camera_extrinsics_arm4090_m1117.yaml(그 head_pose 에서 잰 값) × 목 FK. camera bag 의
   /head/joint_states 로 T_base_cam(q) = T_base_neck(q) · T_base_neck(q_cal)⁻¹ · T_base_cam_cal. 목 기록이 없으면 정적 값.
 시각: 영상 · 물체는 header stamp, 정책 · 실행기 상태 · 목은 bag 기록 시각(같은 PC system clock)으로 맞춘다.
 """
@@ -36,7 +36,7 @@ from head_fk_chain import t_base_neck, urdf_from_encoder  # noqa: E402
 from head_position_hold_node import tick_to_deg  # noqa: E402
 from object_registry import _base_from_camera  # noqa: E402
 
-DEFAULT_EXTRINSICS = _ROOT / "config" / "global_camera_extrinsics_arm4090_r20u5.yaml"
+DEFAULT_EXTRINSICS = _ROOT / "config" / "global_camera_extrinsics_arm4090_m1117.yaml"
 COLOR = "/camera/camera/color/image_raw/compressed"
 COLOR_INFO = "/camera/camera/color/camera_info"
 HEAD = "/head/joint_states"

@@ -91,6 +91,8 @@ POLICY_NODES = {
     "rh_aglt_student_node.py": ("rh_aglt_node", "집기 정책(깊이 학생)", (("cup_topic", "/objects/aglt_cup_s065/pose"),)),
     # ★11.08 놓기 학생 — rh_place_node 와 같은 노드 이름 · 서비스, 원시 깊이 · 머리 마스크 · 목 각을 더 받고 /head/target_stream 을 낸다
     "rh_place_student_node.py": ("rh_place_node", "놓기 정책(학생)", (("cup_topic", "/objects/cyl60/pose"),)),
+    # ★11.18 cap 깊이 학생 — rh_cap 계열, 캡 토픽 대신 리시버(쉐이커) 자세만 받는다(캡은 고정 자리 · 손바닥 근사)
+    "rh_cap_student_node.py": ("rh_cap_node", "cap 정책(깊이 학생)", (("rcv_pose_topic", "/objects/shaker_c_orange/live_pose"),)),
     # 10.17 사용자 결정 3: 화면 · 에피소드 · 보고서는 tilt(코드 모듈 pour_fj_node 이름은 그대로)
     "pour_fj_node.py": ("pour_fj_node", "tilt 정책", (("cup_src_topic", "/objects/cup_src/pose"),
                                                     ("cup_rcv_topic", "/objects/cup_rcv/pose"))),
@@ -107,7 +109,9 @@ _TOOLS = ("aglt_goal.py",
           # ★10.08 컵 좌표 다시 찍기 — FP++ 컨테이너에 한 번 명령하고 끝난다(노드 아님)
           "fpp_rescan.py",
           # ★10.09 영상 · FP++ 실시간 좌표 기록(localhost DDS) — 그림에 상자를 두지 않는다
-          "vision_recorder.py")
+          "vision_recorder.py",
+          # ★11.16 체인 에피소드 머리 컬러 bag — 카메라 PC 에서 ssh 로 도는 기록기(노드 아님)
+          "camera_bag_recorder.py")
 
 
 @dataclass(frozen=True)
@@ -714,7 +718,7 @@ _PROVIDERS = {"fake_plant.launch.py": _fake_plant, "fake_cup_pose_pub.py": _fake
               "fpp_pose_rx.py": _fpp_rx, "object_pose_node.py": _object_pose, "cup_holder_pose_node.py": _cup_holders,
               "rh56f1_driver.py": _rh56f1_driver, "fake_rh56f1_hand.py": _rh56f1_driver,
               "rh56f1_state_node.py": _rh56f1_state, "episode_runner_node.py": _episode_runner, "head_depth_node.py": _head_depth,
-              "head_mask_node.py": _head_mask}
+              "head_mask_node.py": _head_mask, "fake_head_depth_pub.py": _head_depth, "fake_head_stream_driver.py": _head_publisher}
 _HANDLERS = {"policy_chain.launch.py": _policy_chain, "pour_chain.launch.py": _pour_chain, "pour_guard_node.py": _pour_guard,
              "pd_controller.launch.py": _pd, **{name: _policy_node for name in POLICY_NODES}}
 

@@ -296,6 +296,9 @@ class EpisodeManager:
                 self.runs[it.id] = {**self.runs[it.id], "lane": it.lane}   # 상황판 view 가 도는 동안 키를 늘리지 않게 미리
         lock, traj_lock, results, fail = threading.Lock(), threading.Lock(), [], []
         busy: dict = {}                                   # 줄 → 지금 정책을 돌리는 항목 id
+        cond = threading.Condition(lock)
+        syncs = {it.sync: {"q0": {}, "items": {}, "lead": None, "out": None, "done": threading.Event()}
+                 for items in lanes.values() for it in items if it.sync}
 
         def other_policy(side: str) -> str:
             return ", ".join(f"{s}:{i}" for s, i in busy.items() if s != side)
@@ -313,6 +316,8 @@ class EpisodeManager:
                         busy.pop(it.lane, None)
                 return res, located, {}
             q0 = time.monotonic()
+            if it.sync:
+                return run_sync(it, q0)
             with traj_lock:
                 extra = {"traj_wait_s": round(time.monotonic() - q0, 3)}
                 with lock:
@@ -330,6 +335,60 @@ class EpisodeManager:
                        for r in res]
             return res, located, extra
 
+        def run_sync(it: Node, q0: float) -> tuple[list, dict, dict]:
+            """★11.18 sync(사용자 "계획은 함께, 재생은 동시") — 두 줄이 다 같은 키 항목에 와야(앞 정책이 둘 다 끝남) 한 줄이
+            두 궤적을 양팔 carry 하나로 실행한다: 두 팔 정지 대기 → plan_carry --sides right,left(같은 시각 + ±창 팔 사이 검사)
+            → replay_to_pd 하나가 14 관절을 한 시각표로. 계획이 한 팔이라도 걸리면 아무 팔도 움직이지 않는다. 다른 줄은 그 결과를 같이 받는다."""
+            g = syncs[it.sync]
+            with cond:
+                if not g["items"] and not (fail or self.status == STOPPED):   # 먼저 온 줄 — 기다리는 까닭을 남긴다(상한 없음)
+                    note = f"sync 대기({it.sync}) — 다른 팔({other_policy(it.lane) or '앞 항목'})이 끝나야 함께 계획한다"
+                    self.runs[it.id] = {**self.runs[it.id], "note": note}
+                    self._log("sync_wait", it, lane=it.lane, group=node.id, sync=it.sync, termination_reason=note)
+                g["q0"][it.lane], g["items"][it.lane] = q0, it   # 기록이 실패하면 등록 전 — 다른 줄이 혼자 계획하지 않는다
+                cond.notify_all()
+                while len(g["items"]) < 2 and not (fail or self.status == STOPPED):
+                    cond.wait(0.05)                   # 실패 · 정지는 notify 없이 바뀐다
+                if len(g["items"]) < 2:
+                    return ([NodeResult("aborted", "episode runner stop — 다른 팔이 함께 계획할 자리에 오기 전에 정지")], {},
+                            {"traj_wait_s": round(time.monotonic() - q0, 3), "sync": it.sync})
+                lead = g["lead"] is None
+                if lead:
+                    g["lead"] = it.lane
+            if lead:
+                try:
+                    run_joint(g, it.sync)
+                finally:
+                    g["done"].set()
+            g["done"].wait()
+            res, extra = g["out"]
+            return res, {}, {**extra, "traj_wait_s": round(g["t_plan"] - q0, 3) if "t_plan" in g else None}
+
+        def run_joint(g: dict, key: str) -> None:
+            items = [g["items"][s] for s in ("right", "left")]
+            jid = "+".join(i.id for i in items)
+            extra: dict = {"sync": key, "joint_plan": jid}
+            g["out"] = ([NodeResult("error", f"sync {key}: 함께 계획 전에 끝났다")], extra)
+            with traj_lock:                           # 묶지 않은 다른 궤적과는 여전히 한 번에 하나
+                try:
+                    with lock:
+                        g["t_plan"] = time.monotonic()
+                        if fail or self.status == STOPPED:
+                            g["out"] = ([NodeResult("aborted", "episode runner stop — 함께 계획 차례를 기다리는 중 정지")], extra)
+                            return
+                        w = self.world                # 두 줄 앞 정책이 다 반영된 World
+                        for i in items:
+                            self._log("plan", i, lane=i.lane, group=node.id, traj_wait_s=round(g["t_plan"] - g["q0"][i.lane], 3), **extra)
+                    base = self.ep.trajectories[items[0].name]
+                    traj = dataclasses.replace(base, name="+".join(i.name for i in items), sides=("right", "left"))
+                    res = self.executor.run_trajectory(dataclasses.replace(items[0], id=jid, name=traj.name), traj, w)
+                except Exception as exc:              # noqa: BLE001 — 기록 · 궤적 조회 · 실행기 예외 = safe stop 대상 오류(문구는 두 항목 failure 행에)
+                    res = NodeResult("error", f"{type(exc).__name__}: {exc}")
+            arms = (res.signals or {}).get("arms_clear")
+            if arms:
+                extra["arms_clear"] = arms
+            g["out"] = ([res], extra)
+
         def lane(items: list) -> None:
             for it in items:
                 with lock:
@@ -346,7 +405,8 @@ class EpisodeManager:
                 row = dict(start_time=start, end_time=_now(), duration=dur, lane=it.lane, group=node.id,
                            signals=self._signal_rows(res), **extra)
                 with lock:
-                    results.extend(res)
+                    # sync 양팔 carry 는 두 줄이 같은 결과 객체를 받는다 — 항목 행은 줄마다, 노드 결과에는 한 번만
+                    results.extend([r for r in res if not any(r is x for x in results)])
                     if code is F.NONE:
                         self.world = self._after_success(it, self.world, located)
                         self._mark(it.id, "done", s=round(dur, 2), code="COMPLETED")
@@ -550,7 +610,9 @@ class EpisodeManager:
         기존대로 실패(episode_failure _one 의 place 절). last 는 바로 앞(step)에서 이 노드 결과로 채웠다."""
         sigs = [r["signals"] for r in self.last.get("results", [])]
         # ★11.11 래치 전 손 폄 종료는 hand_empty None(모름) — 컵이 홀더 밖이면 손에 걸렸을 수 있으니 걸림으로 본다
-        unknown = any(s.get("outcome") == "opened_before_latch" and s.get("cup_in_holder") is False for s in sigs)
+        # ★11.16 사용자 "a방향" — 힘 근거로 빈손(hand_empty True)이면 홀더 밖이어도 걸림 아님 → 다음 노드(home)
+        unknown = any(s.get("outcome") == "opened_before_latch" and s.get("cup_in_holder") is False
+                      and s.get("hand_empty") is not True for s in sigs)
         stuck = unknown or any(s.get("hand_empty") is False or s.get("outcome") == "withdraw_timeout" for s in sigs)
         if unknown:
             self._log("place_hand_unknown", node, result=code.value,
@@ -610,7 +672,9 @@ class EpisodeManager:
         if node.type == "lanes":
             return " | ".join(f"{side} 팔: " + " → ".join(self._lane_item(n) for n in self.ep.nodes
                                                        if n.group == node.id and n.lane == side)
-                              for side in ("right", "left")) + f" | {LANES_WARN}"
+                              for side in ("right", "left")) + f" | {LANES_WARN}" + "".join(
+                f" | sync {k}: {'+'.join(n.id for n in self.ep.nodes if n.group == node.id and n.sync == k)} 은 두 팔이 멈춘 뒤 함께 계획 · 동시 재생"
+                for k in dict.fromkeys(n.sync for n in self.ep.nodes if n.group == node.id and n.sync))
         if node.type == "hand":
             what = {"open": "손 펴기(팔 제자리)", "grasp": "닿을 때까지 닫고 쥔 판정(팔 제자리)"}[node.action]
             return f"{what} · {', '.join(node.sides)}"

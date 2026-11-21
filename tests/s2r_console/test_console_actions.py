@@ -231,9 +231,10 @@ def test_perception_preview_includes_exact_side_effects(console, tiny_repo):
     obj['enabled'] = True
     w.perception.update(fpp=True, locate=True)
     preview = m.describe('perception_refresh')
-    assert len(preview['commands']) == 3
-    assert preview['commands'][1]['argv'] == w.fpp_argv([obj['id']])
-    assert preview['commands'][2]['argv'] == w.locate_argv(obj['id'])
+    assert len(preview['commands']) == 4
+    assert preview['commands'][0]['argv'][2:] == ['stop', '--wait', '60']
+    assert preview['commands'][2]['argv'] == w.fpp_argv([obj['id']])
+    assert preview['commands'][3]['argv'] == w.locate_argv(obj['id'])
 
 
 
@@ -361,6 +362,8 @@ def test_fpp_refresh_starts_all_enabled_groups_before_subset_rescan(console, tin
     second['id'] = 'shaker_c_pink'
     console.session.workspace.objects.append(second)
     rows = m._perception_commands(console.session, {'object_ids': [obj['id']]})
+    assert rows[0][0] == 'action_fpp_stop' and rows[0][1].argv[2:] == ('stop', '--wait', '60')
+    rows = rows[1:]
     assert 'perception_ctl.py' in rows[0][1].argv[1]
     assert obj['id'] in rows[0][1].argv and second['id'] in rows[0][1].argv
     from perception_launcher_core import start_wait_s
@@ -472,8 +475,9 @@ def test_fpp_execution_starts_all_groups_then_rescans(console, tiny_repo, monkey
     monkeypatch.setattr(m, '_run_commands', lambda s, sid, cmds: calls.append((sid, cmds[0].argv)))
     m.execute('perception_refresh', operator='test')
     assert wait(m)['outcome'] == 'DONE'
-    assert [sid for sid, _ in calls] == ['action_fpp_start', 'action_fpp']
-    assert '--require-all' in calls[0][1]
+    assert [sid for sid, _ in calls] == ['action_fpp_stop', 'action_fpp_start', 'action_fpp']
+    assert calls[0][1][2:] == ('stop', '--wait', '60')
+    assert '--require-all' in calls[1][1]
     assert not console.session.workspace.objects[0]['results']['fpp']['valid']
 
 

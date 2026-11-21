@@ -1,0 +1,199 @@
+{
+ "made": "2026-11-07 logs/analysis/tilt_tin_1107/{hold_windows,tin_all,build_v12}.py",
+ "convention": "T_in = 손바닥(FK tip) → 컵. plan_tilt_traj --tin-json 과 같은 규약. 위치 m, 쿼터니언 wxyz(scalar first). 컵 축 둘레 회전은 기본 T_in 것(대칭 병, FP++ 로 정하지 않음), 전체 실측 회전은 T_meas_fullrot.",
+ "phase": "tilt 직전 정지 창(to_tilt_start 끝 → tilt 팔 움직임 전). 잡기 직후 값과 11~20 mm 달라 대신 쓸 수 없다.",
+ "T_in_r": {
+  "frame": "r_hl_palm_sensor → source240_real FP++ 원점",
+  "pos_m": [
+   0.0099,
+   0.027731,
+   0.068231
+  ],
+  "quat_wxyz": [
+   0.363221,
+   0.426213,
+   0.538012,
+   0.630045
+  ],
+  "T": [
+   [
+    -0.372826,
+    0.000923,
+    0.927901,
+    0.0099
+   ],
+   [
+    0.916306,
+    -0.157228,
+    0.368324,
+    0.027731
+   ],
+   [
+    0.146232,
+    0.987562,
+    0.057773,
+    0.068231
+   ],
+   [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "axis_palm": [
+   0.9279,
+   0.3683,
+   0.0578
+  ],
+  "T_meas_fullrot": [
+   [
+    -0.34739,
+    -0.135351,
+    0.927901,
+    0.0099
+   ],
+   [
+    0.910406,
+    0.18841,
+    0.368324,
+    0.027731
+   ],
+   [
+    -0.224679,
+    0.972719,
+    0.057773,
+    0.068231
+   ],
+   [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "max_dev_mm": 5.9,
+  "max_axis_deg": 2.1,
+  "episodes": [
+   "20261104_131817_cocktail_1c_e4000",
+   "20261106_113608_cocktail_1c_e4000",
+   "20261106_151440_cocktail_1c_e4000"
+  ],
+  "excluded": {},
+  "bags": [
+   "20261104_131813_episode_cocktail_1c_e4000",
+   "20261106_113604_episode_cocktail_1c_e4000",
+   "20261106_151437_episode_cocktail_1c_e4000"
+  ],
+  "bag_db3_md5": {
+   "20261104_131813_episode_cocktail_1c_e4000": "37dc0c0d7074b9c8efdc6d7ad3877e06",
+   "20261106_113604_episode_cocktail_1c_e4000": "38ce8dfc33139bf0f703e1c94ae4e9ea",
+   "20261106_151437_episode_cocktail_1c_e4000": "0c40b70f668f373170a9c30c7a37ee7a"
+  },
+  "bag_paths": {
+   "20261104_131813_episode_cocktail_1c_e4000": "server:~/rl_ws/our_source/student_grasp/real_bags/20261104_131813_episode_cocktail_1c_e4000",
+   "20261106_113604_episode_cocktail_1c_e4000": "5090:~/rl_ws/sim2real/logs/bags/20261106_113604_episode_cocktail_1c_e4000",
+   "20261106_151437_episode_cocktail_1c_e4000": "5090:~/rl_ws/sim2real/logs/bags/20261106_151437_episode_cocktail_1c_e4000"
+  }
+ },
+ "T_in_l": {
+  "frame": "l_hl_palm_sensor → shaker_c_real FP++ 원점 + 0.02·z(rcv_z_off)",
+  "pos_m": [
+   -0.02893,
+   0.036262,
+   0.003572
+  ],
+  "quat_wxyz": [
+   0.678515,
+   -0.499207,
+   -0.391471,
+   0.370352
+  ],
+  "T": [
+   [
+    0.41918,
+    -0.11173,
+    -0.901002,
+    -0.02893
+   ],
+   [
+    0.893429,
+    0.227263,
+    0.387474,
+    0.036262
+   ],
+   [
+    0.161473,
+    -0.967403,
+    0.195087,
+    0.003572
+   ],
+   [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "axis_palm": [
+   -0.901,
+   0.3875,
+   0.1951
+  ],
+  "T_meas_fullrot": [
+   [
+    0.295269,
+    -0.317823,
+    -0.901002,
+    -0.02893
+   ],
+   [
+    0.877206,
+    -0.283502,
+    0.387474,
+    0.036262
+   ],
+   [
+    -0.378584,
+    -0.904774,
+    0.195087,
+    0.003572
+   ],
+   [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "max_dev_mm": 1.3,
+  "max_axis_deg": 0.0,
+  "episodes": [
+   "20261106_113608_cocktail_1c_e4000",
+   "20261106_151440_cocktail_1c_e4000"
+  ],
+  "excluded": {
+   "20261104_131817_cocktail_1c_e4000": "팀장 11.07: 손바닥-shaker 43.5 mm, 지금 쥐는 방식(11.06 두 건 30.9 · 30.2 mm)과 달라 뺌"
+  },
+  "bags": [
+   "20261106_113604_episode_cocktail_1c_e4000",
+   "20261106_151437_episode_cocktail_1c_e4000"
+  ],
+  "bag_db3_md5": {
+   "20261106_113604_episode_cocktail_1c_e4000": "38ce8dfc33139bf0f703e1c94ae4e9ea",
+   "20261106_151437_episode_cocktail_1c_e4000": "0c40b70f668f373170a9c30c7a37ee7a"
+  },
+  "bag_paths": {
+   "20261106_113604_episode_cocktail_1c_e4000": "5090:~/rl_ws/sim2real/logs/bags/20261106_113604_episode_cocktail_1c_e4000",
+   "20261106_151437_episode_cocktail_1c_e4000": "5090:~/rl_ws/sim2real/logs/bags/20261106_151437_episode_cocktail_1c_e4000"
+  },
+  "note": "11.07 팀장 결정: 왼손 평균은 11.06 113608 · 151440 두 건. 11.04 131817(손바닥-shaker 43.5 mm)은 지금 쥐는 방식(31 mm 안팎)과 달라 뺐다. 세 건 평균 판은 out/tin_fixed_1107_3l.json."
+ },
+ "setup_240_npz": {
+  "path": "/home/user/rl_ws/sim2real/deploy/policy_control/config/tilt/traj_v12_240/ref/setup_240.npz",
+  "md5": "fbd956978a60f526498b0c28f8020827"
+ },
+ "tin_all_json_md5": "3012a860997d6f1f1acf5c148f227ca0",
+ "note_11_04": "11.04 131813 bag 은 server 원본(metadata.yaml 없음)에서 /joint_states(13:18:50~13:20:50, 7개 중 1개) + live_pose 만 뽑아 reindex 해 읽었다.",
+ "note_110905": "20261106_110905_episode_grasp_s_right bag 은 113604 cocktail 에피소드 시간까지 녹화가 이어져 같은 메시지를 담는다(T_in 차 0.01 mm). 중복이라 cocktail bag 으로 적는다."
+}

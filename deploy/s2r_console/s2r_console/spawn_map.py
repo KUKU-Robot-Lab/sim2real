@@ -58,9 +58,13 @@ def view(boxes: list[dict], objects: Mapping[str, Mapping | None], stale: bool,
     if not boxes:
         return None
     objs = []
-    for topic, s in objects.items():
-        if not s or not s.get("pos") or stale:
+    seen = set()
+    # ★11.15 사용자: 카드가 처음 캡처(/pose, 정지 기록)를 보였다 — 물체마다 추적(live_pose)을 먼저 쓰고 없을 때만 pose
+    order = sorted(objects.items(), key=lambda kv: not kv[0].endswith("/live_pose"))
+    for topic, s in order:
+        if not s or not s.get("pos") or stale or object_name(topic) in seen:
             continue
+        seen.add(object_name(topic))
         xy = [float(s["pos"][0]), float(s["pos"][1])]
         inside = [b["side"] for b in boxes if _inside(xy, b, 0.0)]
         near = [b["side"] for b in boxes if _inside(xy, b, tol)]

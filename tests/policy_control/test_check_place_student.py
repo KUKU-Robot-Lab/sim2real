@@ -9,7 +9,8 @@ import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parents[2]
-EXTR = REPO / "config/global_camera_extrinsics_arm4090_r20u5.yaml"
+EXTR = REPO / "config/global_camera_extrinsics_arm4090_m1117.yaml"
+CKPT_EXTR = REPO / "config/global_camera_extrinsics_arm4090_r20u5.yaml"   # ckpt 는 옛 판으로 배웠다(ckpt_md5)
 YOLO = REPO / "logs/policy/student_mask_A/yolo/seg_s640_A/best.pt"
 #: 실제 hdgp 7ffc4f8f · 잡기 ckpt 에 있고 _meta 에 없는 키(가짜 묶음을 실 ckpt 모양에 가깝게)
 EXTRA = {"one_obj": "source240_cvx", "head": {"rate_dps": [45.0, 75.0], "accel_dps2": [200.0, 400.0]},
@@ -24,7 +25,7 @@ def load_check():
 
 
 def make_bundle(d: Path, c, extra: dict = EXTRA) -> Path:
-    """가짜 놓기 학생 묶음: student.yaml · ckpt(= _meta + extra, 가중치 없음) · r20u5 사본 · seg_s640_A 링크."""
+    """가짜 놓기 학생 묶음: student.yaml · ckpt(= _meta + extra, 가중치 없음) · m1117 사본(ckpt 메타는 r20u5) · seg_s640_A 링크."""
     import torch
     from test_pc_place_student import _meta
 
@@ -35,8 +36,8 @@ def make_bundle(d: Path, c, extra: dict = EXTRA) -> Path:
     (d / "camera").mkdir()
     shutil.copy(EXTR, d / "camera/extr.yaml")
     (d / "student/yolo.pt").symlink_to(YOLO)
-    ex_md5 = hdgp_pin.md5(EXTR)
-    meta = _meta(c, ex_md5, 0.185)
+    ex_md5, ckpt_md5 = hdgp_pin.md5(EXTR), hdgp_pin.md5(CKPT_EXTR)
+    meta = _meta(c, ckpt_md5, 0.185)
     for k, v in extra.items():
         meta[k] = {**meta[k], **v} if isinstance(v, dict) else v
     torch.save(meta, d / "student/ckpt.pt")
@@ -45,7 +46,7 @@ def make_bundle(d: Path, c, extra: dict = EXTRA) -> Path:
                      "yolo": {"path": "student/yolo.pt", "md5": hdgp_pin.md5(YOLO), "conf": 0.25, "imgsz": 640,
                               "retina_masks": True, "top1_per_class": True, "cross_class_iou": 0.5}},
             "ckpt": {"path": "student/ckpt.pt", "md5": hdgp_pin.md5(d / "student/ckpt.pt")},
-            "extrinsics": {"path": "camera/extr.yaml", "md5": ex_md5},
+            "extrinsics": {"path": "camera/extr.yaml", "md5": ex_md5, "ckpt_md5": ckpt_md5},
             "hdgp": {"commit": hdgp_pin.load_snapshot_cfg(SNAPSHOT_CFG)["commit"]}}
     (d / "student.yaml").write_text(yaml.safe_dump(card, allow_unicode=True), encoding="utf-8")
     return d

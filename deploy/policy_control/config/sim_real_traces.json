@@ -1,0 +1,5 @@
+{
+  "_doc": "sim_real_compare.py: 잡기 정책(handoff 뒤) → sim 결정론 trace 폴더(s*/trace.npz). 경로는 홈 기준. 없는 정책 = 'sim 기준 없음'.",
+  "rh56f1/aglt/right_rcg04": "rl_ws/our_source/rh_aglt_runs/eval/1021_rcg04_gru_trace/ready_r",
+  "rh56f1/aglt/left_rcg04": "rl_ws/our_source/rh_aglt_runs/eval/1021_rcg04_gru_trace/ready_l"
+}

@@ -73,7 +73,7 @@ class Workspace:
             if group not in MODELS:
                 continue
             color = name.rsplit('_', 1)[-1]
-            if color not in ('blue', 'orange', 'pink'):
+            if color not in ('blue', 'orange', 'pink', 'green'):       # ★11.19 green = 감귤주스
                 continue
             model, policy_object = MODELS[group]
             self.objects.append(dict(id=name, model=model, group=group, color=color,

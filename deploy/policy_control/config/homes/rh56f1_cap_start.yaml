@@ -1,0 +1,7 @@
+# RH56F1 cap 깊이 학생(depth_h01) 시작 자세 — 11.18. tools/cap_now.py 가 두 팔을 여기로 보낸다(자산 config/cap/cap_start).
+# right = rh_cap_student_node.LIVE_ARM_START_Q(학습 env.yaml live_arm_start_q, 시험이 둘이 같은지 대조).
+# left  = 학습 리시버 뱅크의 고정 받기 자세 l_aj_1..7(server wt_cap/runs/cap_split rcv_bank_rcg04_base_ik.npz, 모든 행 같음).
+#   전제: 왼손은 쉐이커를 이미 쥐고 있다(경로 f 왼손 잡기 뒤).
+source: "right = depth_h01 live_arm_start_q · left = rcv_bank_rcg04_base_ik l_aj"
+right: [-1.2127, 0.2026, 0.6538, 1.7608, 0.3791, 0.5785, 0.6646]
+left: [0.5277, -0.2809, -0.0247, 1.5046, -0.1040, -0.2581, -0.7205]

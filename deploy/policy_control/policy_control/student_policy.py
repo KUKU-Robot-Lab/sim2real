@@ -110,6 +110,8 @@ def check_depth_config(depth_pre: dict, node_cfg: dict, mask: bool = False) -> N
     bad = []
     for k in ("block", "out_wh", "render_wh", "extrinsics_md5"):
         a, b = depth_pre.get(k), node_cfg.get(k)
+        if k == "extrinsics_md5":   # 노드가 새 판 파일을 쓰면 ckpt 대조 값은 extrinsics_ckpt_md5(11.15 h2048)
+            b = node_cfg.get("extrinsics_ckpt_md5", b)
         if a is None or b is None or norm(a) != norm(b):
             bad.append(f"{k} ckpt {a!r} ≠ 노드 {b!r}")
     for k, atol in (("min_valid", 1e-6), ("floor_cut_z_m", 1e-6), ("K", 1e-3)):
@@ -138,7 +140,8 @@ def load_student_dir(policy_dir: str | Path, snapshot_cfg: Path = SNAPSHOT_CFG) 
     try:
         ck, ex, commit = cfg["ckpt"], cfg["extrinsics"], str(cfg["hdgp"]["commit"])
         ck = {**ck, "path": d / ck["path"], "md5": str(ck["md5"])}
-        ex = {**ex, "path": d / ex["path"], "md5": str(ex["md5"])}
+        # ckpt_md5: ckpt 가 배운 외부 파라미터 md5(묶음이 새 판으로 바꿨을 때만 적는다, 없으면 md5 와 같다)
+        ex = {**ex, "path": d / ex["path"], "md5": str(ex["md5"]), "ckpt_md5": str(ex.get("ckpt_md5", ex["md5"]))}
         task, rgb = str(cfg["task"]), bool(cfg["rgb"])
     except (KeyError, TypeError) as e:
         raise hdgp_pin.PinError(f"{p}: ckpt.path · ckpt.md5 · extrinsics.path · extrinsics.md5 · hdgp.commit · task · rgb 가 필요하다 ({e!r})")
@@ -161,8 +164,8 @@ class StudentPolicy:
         마스크 학생은 target_class(빈 값 = student.yaml mask.target_class)로 목표 클래스를 정한다."""
         cfg = load_student_dir(policy_dir)
         pol = cls(cfg["ckpt"]["path"], cfg["ckpt"]["md5"], cfg["task"], **kw)
-        if pol.depth_pre.get("extrinsics_md5") != cfg["extrinsics"]["md5"]:
-            raise RhAgltError(f"ckpt depth_pre extrinsics_md5 {pol.depth_pre.get('extrinsics_md5')} ≠ student.yaml {cfg['extrinsics']['md5']}")
+        if pol.depth_pre.get("extrinsics_md5") != cfg["extrinsics"]["ckpt_md5"]:
+            raise RhAgltError(f"ckpt depth_pre extrinsics_md5 {pol.depth_pre.get('extrinsics_md5')} ≠ student.yaml {cfg['extrinsics']['ckpt_md5']}")
         if pol.rgb_on != cfg["rgb"]:
             raise RhAgltError(f"ckpt arch {pol.meta['arch']}(rgb {pol.rgb_on}) ≠ student.yaml rgb {cfg['rgb']}")
         card = cfg.get("mask") or {}

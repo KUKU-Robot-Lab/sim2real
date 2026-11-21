@@ -1,4 +1,4 @@
-"""10.26 tilt 1차(tilt_traj 궤적, 잔차 0) 계획기 plan_tilt_traj.py — torch 없이 도는 부분: 60 Hz 재표본(rh_tilt env._teach_at 과
+"""10.26 tilt 1차(tilt_traj 궤적, 잔차 0) 계획기 plan_tilt_traj.py — IK(hdgp 모듈 · GPU) 없이 도는 부분: 60 Hz 재표본(rh_tilt env._teach_at 과
 같은 식), 홀더 yaml 순서, 자산 핀(ref md5 · hdgp md5 불일치면 종료 코드 3). 궤적 자체의 sim 동등성은 server 에서 확인했다
 (ref_q_r/ref_q_l 와 차이 0.0 rad, 10.26)."""
 from __future__ import annotations
@@ -72,3 +72,35 @@ def test_mouth_xy_mm():
     Cl[1, :2, 3] = [0.003, 0.004]                            # 수평 5 mm
     Cl[2, 2, 3] += 0.05                                      # 수직만 50 mm → 0
     assert np.allclose(T.mouth_xy_mm(Cr, Cl, 0.155, 0.045), [0.0, 5.0, 0.0])
+
+
+def test_aim_params_moves_lip_by_base_offset():
+    """★11.18 조준 오프셋: 입술 변위 Δox·u + Δoy·a(plan_knots 식, u = Rz(yaw)·U0, a = ez × u)가 base d 와 같고 원본은 그대로."""
+    T = _tool()
+    p = {"ox": 0.0006, "yaw": 14.13, "h": 0.005}
+    d = np.array([0.002, -0.001, 0.0])
+    q = T.aim_params(p, d.tolist(), 120.0)
+    c, s = np.cos(np.radians(p["yaw"])), np.sin(np.radians(p["yaw"]))
+    u = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]]) @ np.array([np.cos(np.radians(120)), np.sin(np.radians(120)), 0.0])
+    a = np.cross([0.0, 0.0, 1.0], u)
+    assert np.allclose((q["ox"] - p["ox"]) * u + q["oy"] * a, d, atol=1e-12)
+    assert "oy" not in p and q["h"] == p["h"]
+    with pytest.raises(ValueError):
+        T.aim_params(p, [0.002, -0.001, 0.001], 120.0)              # z 는 0 만
+
+
+def test_mouth_xy_limit_is_per_asset():
+    """★11.20 입구 중심 맞춤 상한은 궤적 policy.yaml 이 정한다: 없으면 8 mm(v10~v12), null 이면 검사 안 함(v14), 틀린 값은 거부."""
+    import yaml
+    T = _tool()
+    assert T.mouth_xy_limit({}) == T.LIMITS["mouth_xy_mm"] == 8.0
+    assert T.mouth_xy_limit({"mouth_xy_max_mm": None}) is None
+    assert T.mouth_xy_limit({"mouth_xy_max_mm": 12}) == 12.0
+    for bad in (0, -1.0, True, "8", float("nan")):
+        with pytest.raises(ValueError):
+            T.mouth_xy_limit({"mouth_xy_max_mm": bad})
+    tilt = REPO / "deploy" / "policy_control" / "config" / "tilt"
+    v12 = yaml.safe_load((tilt / "traj_v12_240" / "policy.yaml").read_text(encoding="utf-8"))
+    v14 = yaml.safe_load((tilt / "traj_v14r1l1_240" / "policy.yaml").read_text(encoding="utf-8"))
+    assert T.mouth_xy_limit(v12) == 8.0 and v12["aim_offset_base_m"] == [0.002, -0.004, 0.0]
+    assert T.mouth_xy_limit(v14) is None and "aim_offset_base_m" not in v14     # v12 전용 보정·제한을 v14 에 넣지 않는다

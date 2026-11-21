@@ -1,0 +1,42 @@
+# arm4090(RH56F1 로봇) 머리 D435i 카메라 extrinsics — 목 camset 자세 전용, ★2026-11-15 목 영점 2048 판.
+#
+# 11.15 목 XC330(pan ID1 · tilt ID2)을 Homing Offset 0 · 가운데 틱 2048 로 다시 잡았다(사용자: 앞으로 다이나믹셀은 모두 이 방식).
+#   옛 판(offset pan +1024 · tilt −1024) = global_camera_extrinsics_arm4090_r20u5.yaml. 같은 물리 자세에서 pan 틱 0 · tilt 틱 +18 차.
+# 측정: 테이블 재설치 뒤 camset 자세(목표 deg pan −19.6 · tilt +68.82 → 멈춘 자리 1825/2833 틱, 옛 r20u5 1825/2815 와 같은
+#   물리 자세 — 외부 파라미터 차 2.1 mm · 0.33°)에서 scripts/calib/table_cad_extrinsics.py 라이브 3장 평균,
+#   상판 구멍 16개 재투영 평균 2.70 px · depth 상판 z 0.2107(CAD 0.205). 근거: arm4090 logs/runs/261115/head_2048/table_cal/.
+# 형식 · depth_bias · cad_to_body 는 r20u5 판과 같다(같은 카메라). 쿼터니언은 wxyz.
+# ★11.15 camera 블록 = ChArUco hand-eye 25자세 FK 맞춤(모델 H: 처짐 = IMU down 표 직선 기울기 −0.0132 °/°, 짝 처짐표
+#   config/head_sag_arm4090_h2048.json, 코너 재투영 0.55 px · LOO 0.62 px). 위치 · 기울기(roll/pitch)는 ChArUco 값.
+#   yaw 는 위 테이블 CAD 구멍 16개 값을 유지: 보드 yaw 가 자유라 ChArUco 로는 base z 축 yaw 가 정해지지 않는다.
+#   광축 base xy 방위를 옛 값(−18.36°)에 맞춰 base z 축으로 +1.30° 돌리고 위치도 pan 축(head_j_pan 원점 x 0.0225 · y 0) 둘레로 같이 돌림.
+#   옛 값 [0.069508, 0.02749, 0.816578] · [0.106258, -0.579021, 0.794572, -0.148661] 대비 Δ [−6.9, +0.9, +5.4] mm(8.8 mm) · 0.49°(광축 숙임 68.94 → 68.52°).
+#   근거: arm4090 ~/rl_ws/sim2real/logs/runs/261115/head_2048/charuco/(extrinsics_charuco.yaml 507ba1b6 · fit_report.md · fit_result.json).
+# ★11.17 camera 블록 교체 = 테이블 고정 ArUco 마커로 다시 풂(위 11.15 값은 마커 70 에서 약 15 mm 어긋나 버림).
+#   마커 70·71 중심 xyz · 73 은 x 만 정답(y 자유) · 72 제외, 상판 z 0.205, 마커 한 변 0.07962 m(인쇄 0.5 % 축소: 보드 7칸 실측 209 mm).
+#   RGB 만, align 10장(11.17 16:51, camset) 코너 평균, 재투영 rms 0.73 px. 사진 4장 사이 위치 차 1.6 mm 안.
+#   독립 검사: ChArUco(칸 0.029857 m) PnP 상판 z 204.3~204.4 mm. 옛 값 [0.062643, 0.028429, 0.821982] · [0.108686, -0.576818, 0.795341, -0.15133].
+#   근거: arm4090 ~/rl_ws/sim2real/logs/runs/261117/final/(f1_extrinsics.json · T_final.npz · extrinsics_final.yaml 8db134a4).
+
+# ── T_base_cam: robot base ← camera_color_optical_frame ──
+camera:
+  frame: camera_color_optical_frame
+  position: [0.071294, 0.019389, 0.820886]
+  orientation_wxyz: [0.106979, -0.578503, 0.796619, -0.138884]
+
+# 이 값을 잰 머리 자세(영점 2048 · offset 0 틱). 짝 목 설정 = config/head_camset_rh56f1_h2048.yaml
+head_pose:
+  pan_tick: 1825
+  tilt_tick: 2833
+  tol_tick: 4          # ±0.35°
+
+# depth_bias 없음(★11.17): 옛 블록(offset 0.0286 · per −0.0590)은 10.04 tare 전 depth 용. 11.17 장치 tare 뒤 넣으면
+#   상판이 9~12 mm 낮게 나오는 이중 보정이라 뺐다(사용자).
+
+base_z_bias_m: 0.0
+
+cad_to_body:
+  position: [0.0, 0.0, 0.0]
+  orientation_wxyz: [0.707107, 0.707107, 0.0, 0.0]
+
+base_frame: base_link

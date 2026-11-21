@@ -73,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out-root", type=Path, default=None, help="없으면 logs/runs/<YYMMDD>/tilt")
     ap.add_argument("--sides", default="right,left", help="한 팔씩 이 순서로(right · left · right,left)")
     ap.add_argument("--rate-scale", type=float, default=1.0)
+    ap.add_argument("--empty", default="", help="빈손 팔 — plan_carry --empty 로 넘긴다(그 손에 가상 컵을 붙이지 않음)")
     ap.add_argument("--execute", action="store_true")
     a = ap.parse_args(argv)
     sides = [x.strip() for x in a.sides.split(",") if x.strip()]
@@ -91,6 +92,8 @@ def main(argv: list[str] | None = None) -> int:
     for k, side in enumerate(sides):
         o = out / f"carry_{side}"
         argv_plan = [sys.executable, str(TOOLS / "plan_carry.py"), "--asset", str(a.asset), "--out", str(o), "--sides", side]
+        if a.empty:
+            argv_plan += ["--empty", a.empty]
         if q is not None:
             if k > 0:
                 for done in sides[:k]:

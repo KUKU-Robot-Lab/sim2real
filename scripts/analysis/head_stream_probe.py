@@ -29,7 +29,7 @@ import head_motion as hm  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 import run_paths  # noqa: E402
-DEFAULT_CAMSET = REPO / "config" / "head_camset_rh56f1.yaml"
+DEFAULT_CAMSET = REPO / "config" / "head_camset_rh56f1_h2048.yaml"
 RATE_HZ = 20.0
 JOINT_NAMES = ("head_j_pan", "head_j_tilt")  # head_joint_publisher.JOINT_NAMES
 START_TOL_DEG = 2.0

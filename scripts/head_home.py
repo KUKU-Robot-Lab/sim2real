@@ -91,6 +91,20 @@ class HeadHome:
     goal_bias_tick: dict[int, int] = field(default_factory=dict)
     #: 토크를 풀면 고개가 중력으로 내려가 구조물에 막히는 자리(모터별 틱, offset 적용 후 프레임). 있는 모터만 처짐 복구를 한다.
     droop_limit_tick: dict[int, int] = field(default_factory=dict)
+    #: ★11.18 이 머리의 이동 요청 tilt 상한(인코더 deg). 없으면 드라이버 기본(head_motion.MAX_TILT_DEG, KITECH 머리 -10).
+    #  RH56F1 머리는 camset tilt 가 +69° 라 -10 이면 드라이버가 camset 을 거부한다(11.18 head_view_check rc=1).
+    max_tilt_deg: float | None = None
+
+
+#: 위치 모드 경계(틱 3071 = +90°) 를 넘는 상한은 받지 않는다
+MAX_TILT_CEIL_DEG = 90.0
+
+
+def max_tilt_for(config: HeadHome, override: float | None, default: float) -> float:
+    """드라이버가 쓸 tilt 상한 — 명령 인자(--max-tilt) > 설정 max_tilt_deg > 기본."""
+    if override is not None:
+        return float(override)
+    return default if config.max_tilt_deg is None else config.max_tilt_deg
 
 
 def goal_tick(config: HeadHome, dxl_id: int, deg: float | None = None) -> int:
@@ -131,6 +145,15 @@ def load_head_home(path: Path) -> HeadHome:
         if motor.get("droop_limit_tick") is not None:
             droops[dxl_id] = int(motor["droop_limit_tick"])
 
+    max_tilt = raw.get("max_tilt_deg")
+    if max_tilt is not None:
+        max_tilt = float(max_tilt)
+        if not -180.0 <= max_tilt <= MAX_TILT_CEIL_DEG:
+            raise ValueError(f"max_tilt_deg 는 -180~{MAX_TILT_CEIL_DEG:g}: {max_tilt}")
+        over = {names[i]: d for i, d in targets.items() if names[i] == "tilt" and d > max_tilt}
+        if over:
+            raise ValueError(f"tilt 목표 {over} 가 max_tilt_deg {max_tilt:g} 를 넘는다 — 이 설정으로는 기준 자세를 요청할 수 없다")
+
     return HeadHome(
         port=str(raw["port"]), baud=int(raw["baud"]), targets_deg=targets, names=names,
         position_i_gain=gain, operating_mode=int(raw["operating_mode"]),
@@ -138,6 +161,7 @@ def load_head_home(path: Path) -> HeadHome:
         profile_velocity=int(raw["profile_velocity"]),
         goal_bias_tick=biases,
         droop_limit_tick=droops,
+        max_tilt_deg=max_tilt,
     )
 
 

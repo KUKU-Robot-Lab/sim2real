@@ -153,7 +153,9 @@ def test_policy_tab_runs_control_episodes_from_the_experiment_list():
     f_heads = {f_head(o, side) for o, _, _ in F_OBJECTS for side in ('right', 'left')}
     pm_heads = {place_m_head(c, h) for c, _, _ in PLACE_M_COLORS for h in PLACE_M_HOLDERS}
     assert sorted(CONTROL_EPISODES) == sorted(CONTROL_LABELS)
-    assert set(listed) | f_heads | pm_heads | gs_heads | {'grasp_c', 'grasp_d'} == set(CONTROL_EPISODES)
+    # ★11.19 사용자 "1-B · E 제거" — 목록에서 뺐다(관리 작업은 남는다)
+    assert set(listed) | f_heads | pm_heads | gs_heads | {'grasp_c', 'grasp_d', 'grasp_b', 'grasp_e'} == set(CONTROL_EPISODES)
+    assert not {'grasp_b', 'grasp_e'} & set(listed)
     assert 'grasp_c' in CONTROL_EPISODES and CONTROL_LABELS['grasp_c'] == '경로 C'
 
 
@@ -183,3 +185,23 @@ def test_place_m_card_warns_to_refresh_a_cup_the_cups_stage_does_not_rescan(tmp_
     assert '"rescan": fpp != cups_cup' in src
     # 색 · 홀더 조합 에피소드도 평가 회차로
     assert {'place_m_blue_h2_right', 'place_m_pink_h1_right', 'place_m_pink_h2_right'} <= set(eval_log.EVAL_EPISODES)
+
+
+def test_policy_list_drops_tilt_and_adds_cap_e2e():
+    """★11.19 사용자 "policy: tilt * 제거, cap_e2e 추가 / control: place fixed * 제거"."""
+    from s2r_console import experiments as XP
+
+    m = yaml.safe_load((REPO / 'config/mission_rh56f1_control.yaml').read_text())
+    ids = frozenset(st['id'] for st in m['stages'])
+    out = XP._build(REPO, ids)
+    groups = {it['group'] for it in out['items']}
+    assert 'tilt' not in groups
+    cap = next(it for it in out['items'] if it['id'] == 'cap_e2e')
+    assert len(cap['key']) <= 3                                      # 목록 키 칸(42px)에 들어가야 글씨가 안 깨진다
+    side = cap['sides']['right']
+    assert side['actions'] == list(XP.CAP_E2E_ACTIONS) and not side['problems']
+    assert [s['sub'] for s in side['steps'] if s['kind'] == 'policy'] == ['search · approach', 'grasp', 'seat']
+    assert XP.CAP_STUDENT in out['policies']                         # 등록부 또는 student.yaml 메타
+    assert XP._cap_e2e(REPO, frozenset()) is None                     # 단계가 없는 미션엔 칸이 없다
+    js = (REPO / 'deploy/s2r_console/s2r_console/web/console.js').read_text()
+    assert '!a.id.startsWith("place_fixed_") && !a.id.startsWith("cap_")' in js and '["cap", "cap",' in js and '["tilt", "tilt", "두 팔"]' not in js

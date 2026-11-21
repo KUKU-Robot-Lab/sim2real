@@ -4,7 +4,7 @@
     .venv-student/bin/python scripts/ops/check_student_mask_A.py [--sides right left]
 
 손별: ckpt md5 · YOLO best.pt md5 = student.yaml mask.yolo.md5 · target_class ↔ ckpt one_obj · 얼린 외부 파라미터 md5(r20u5)
-· 묶음 head_pose(틱) = 지금 config 의 r20u5 head_pose · StudentPolicy.from_dir 전체 검사 · 노드가 낼 /head_mask/config ·
+· 묶음 head_pose(틱) = 지금 config 의 m1117 head_pose · StudentPolicy.from_dir 전체 검사 · 노드가 낼 /head_mask/config ·
 /head_depth/config 를 오프라인으로 만들어 check_mask_config · check_depth_config 에 넣는다(노드 기본 인자 그대로).
 공통: 64 MB SHM 프로파일(템플릿 · 생성본) · FP++ 컨테이너의 /opt/params/fastdds_lan.xml · 카메라 노드 프로파일의 segment_size.
 불일치가 하나라도 있으면 종료 코드 1. 확인불가(컨테이너 · 카메라가 아직 안 떠 있음)는 실패로 치지 않는다.
@@ -27,7 +27,7 @@ from policy_control.hdgp_pin import md5  # noqa: E402
 from policy_control.student_policy import StudentPolicy, check_depth_config  # noqa: E402
 
 BUNDLE = ROOT / "deploy/policies/rh56f1/aglt/{side}_student1105mA"
-LIVE_EXTR = ROOT / "config/global_camera_extrinsics_arm4090_r20u5.yaml"
+LIVE_EXTR = ROOT / "config/global_camera_extrinsics_arm4090_m1117.yaml"
 FPP_PROFILE = "/opt/params/fastdds_lan.xml"
 OK, BAD, NA = "OK", "불일치", "확인불가"
 
@@ -57,12 +57,12 @@ def mask_node_config(policy_dir: Path) -> dict:
 
 def depth_node_config(policy_dir: Path) -> dict:
     """head_depth_node --policy-dir(--rgb 없음)가 기본 인자로 낼 /head_depth/config."""
-    extr, want, rgb = HD.resolve_extrinsics(str(policy_dir), None, False)
+    extr, want, ckpt_md5, rgb = HD.resolve_extrinsics(str(policy_dir), None, False)
     _, got = HD.load_extrinsics(extr)
     if got != want:
         raise HD.PinError(f"외부 파라미터 {extr} md5 {got} ≠ {want}")
     rd = HD.real_depth
-    return HD.node_config(rd.BLOCK, rd.MIN_VALID, HD.TABLE_Z, rd.FLOOR_MARGIN_M, extr, got, rgb)
+    return HD.node_config(rd.BLOCK, rd.MIN_VALID, HD.TABLE_Z, rd.FLOOR_MARGIN_M, extr, got, rgb, ckpt_md5)
 
 
 def check_side(side: str, rows: list) -> None:
@@ -82,7 +82,7 @@ def check_side(side: str, rows: list) -> None:
     got = md5(d / ex["path"])
     row("외부 파라미터 md5", HD.EXTRINSICS_MD5, got, got == ex["md5"] == HD.EXTRINSICS_MD5)
     hp, live = HD.load_head_pose(d / ex["path"]), HD.load_head_pose(LIVE_EXTR)
-    row("head_pose 틱(묶음 = config r20u5)", live and live.ticks, hp and hp.ticks,
+    row("head_pose 틱(묶음 = config m1117)", live and live.ticks, hp and hp.ticks,
         hp is not None and live is not None and hp == live)
     try:
         pol = StudentPolicy.from_dir(d, device="cpu")

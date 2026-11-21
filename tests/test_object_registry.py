@@ -203,6 +203,34 @@ def test_the_group_config_carries_the_camera_pose_for_the_table_filter():
     assert "camera_to_base" not in yaml.safe_load(render_group_yaml(reg, "source240_orange"))
 
 
+def test_global_camera_group_config_uses_its_own_topics():
+    """★11.18 글로벌 D435i 두 번째 FP++: S2R_FPP_NS 와 camera_ns 로 입력 · 출력 · 상태 · 명령 토픽이 머리 쪽과 겹치지 않는다."""
+    import os
+    import subprocess
+    code = ("import sys; sys.path.insert(0, 'scripts'); from object_registry import *; "
+            "print(render_group_yaml(load_registry(), 'source240_blue', camera_ns='/global_camera/camera'))")
+    env = {**os.environ, "S2R_FPP_NS": "/perception_plus_plus_global"}
+    doc = yaml.safe_load(subprocess.run([sys.executable, "-c", code], cwd=DEFAULT_REGISTRY.parents[1], env=env,
+                                        capture_output=True, text=True, check=True).stdout)
+    assert doc["objects"][0]["pose_topic"] == "/perception_plus_plus_global/source240_blue/pose"
+    assert doc["rgb_topic"] == "/global_camera/camera/color/image_raw"
+    assert doc["depth_topic"] == "/global_camera/camera/aligned_depth_to_color/image_raw"
+    assert doc["camera_info_topic"] == "/global_camera/camera/color/camera_info"
+    assert doc["status_topic"] == "/perception_plus_plus_global/snapshot/status"
+    assert doc["cmd_topic"] == "/perception_plus_plus_global/snapshot/cmd"
+    # 머리 쪽 기본값은 snapshot 노드가 쓰던 토픽 그대로
+    from object_registry import render_group_yaml
+    ego = yaml.safe_load(render_group_yaml(load_registry(DEFAULT_REGISTRY), "source240_blue"))
+    assert ego["objects"][0]["pose_topic"] == input_topic("source240_blue") == "/perception_plus_plus/source240_blue/pose"
+    assert (ego["rgb_topic"], ego["status_topic"]) == ("/camera/camera/color/image_raw", "/perception_plus_plus/snapshot/status")
+    # 꼭대기를 색으로 재는 키는 글로벌(fpp_global_up.sh)만 켠다 — 머리 쪽 yaml 에는 키 자체가 없다
+    assert "stand_top_from_rgb" not in ego and "stand_top_from_rgb" not in doc
+    assert yaml.safe_load(render_group_yaml(load_registry(DEFAULT_REGISTRY), "source240_blue",
+                                            stand_top_from_rgb=True))["stand_top_from_rgb"] is True
+    assert "stand_top_from_rgb=True" in (DEFAULT_REGISTRY.parents[1] / "scripts/vision/fpp_global_up.sh").read_text()
+    # 퍼짐 여유도 글로벌만(머리 쪽 yaml 에는 키가 없어 노드 기본 FOOTPRINT_PAD)
+    assert "footprint_pad" not in ego and "footprint_pad=0.04" in (DEFAULT_REGISTRY.parents[1] / "scripts/vision/fpp_global_up.sh").read_text()
+
 def test_one_real_object_is_registered_once():
     """★11.10 사용자: 같은 실물(메쉬 + 색)이 두 이름 · 두 묶음으로 올라가면 FP++ 컨테이너가 겹쳐 뜬다."""
     import hashlib

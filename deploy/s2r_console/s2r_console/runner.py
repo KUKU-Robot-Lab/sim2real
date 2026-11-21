@@ -26,7 +26,21 @@ DONE, FAILED, ABORTED = "DONE", "FAILED", "ABORTED"   # mission_core.STATUS_* �
 SETTLE_S = 2.0
 #: `ros2 launch` 는 자식 노드가 import 하다 죽는 데 몇 초 걸린다 — 그만큼 더 지켜본다(09.22 fake 팔 브리지 사례).
 LAUNCH_SETTLE_S = 5.0
+HEAD_DRIVER = "head_joint_publisher.py"  # 목 드라이버 스크립트 이름(console·actions 도 이것으로 판별)
 _POLL_S = 0.1
+
+
+def _with_strays(targets, alive_keys) -> list[str]:
+    """정지 목록 + 그 목록이 가리키는 단계에서 아직 떠 있는데 목록에 없는 배경 명령(정책 토글로 단계를 다시 만들어 번호·개수가 바뀐 것).
+    더한 키는 그 단계의 마지막 목록 키 바로 뒤에 둔다 — 단계 사이 순서(머리 드라이버 · pd 마지막)는 그대로."""
+    out = list(targets)
+    for key in alive_keys:
+        stage = key.split("#")[0]
+        if key in out or not any(t.split("#")[0] == stage for t in targets):
+            continue
+        last = max(i for i, t in enumerate(out) if t.split("#")[0] == stage)
+        out.insert(last + 1, key)
+    return out
 
 
 @dataclass
@@ -197,7 +211,10 @@ class StageRunner:
         """앞 단계가 띄운 배경 명령을 **적힌 순서대로** 하나씩 내린다(pd → 손 → 팔). 이미 없는 것은 넘어간다."""
         self._set(step, status="running")
         gone = []
-        for key in step.targets:
+        # shutdown 만: 토글로 다시 만든 단계의 배경 명령은 yaml 의 번호와 다를 수 있다 — 떠 있는 것까지 다 내린다
+        targets = (_with_strays(step.targets, [p.key for p in self._sup.alive()]) + self._orphans(step)
+                   if self.stage_id == "shutdown" else step.targets)
+        for key in targets:
             if self._aborting():
                 return ABORTED, "운영자가 중단했다"
             if self._sup.is_alive(key):
@@ -208,6 +225,22 @@ class StageRunner:
                 gone.append(key)
         self._set(step, status="done", detail=f"정지: {', '.join(gone) or '이미 모두 내려가 있었다'}")
         return None
+
+    def _orphans(self, step: Step) -> list[str]:
+        """정지 목록에 키가 하나도 없던 episode_* · head_sweep 단계의 떠 있는 배경(토글로 새로 생긴 것).
+        머리 드라이버는 head_home# 정지에, 나머지는 policy_/episode_ 키를 가진 정지(pd 앞)에 붙인다."""
+        listed = {t.split("#")[0] for s in self.steps for t in s.targets}
+        has_head = "head_home" in listed   # 머리 없는 미션(fake)은 정책 정지에 같이 붙인다
+        mine = []
+        for p in self._sup.alive():
+            stage = p.key.split("#")[0]
+            if stage in listed or not (stage.startswith("episode_") or stage == "head_sweep"):
+                continue
+            head = any(HEAD_DRIVER in a for a in getattr(p, "argv", ()))
+            want = ("head_home",) if head and has_head else ("policy_", "episode_")
+            if any(t.split("#")[0].startswith(want) for t in step.targets):
+                mine.append(p.key)
+        return mine
 
     def _do_foreground(self, step: Step):
         try:

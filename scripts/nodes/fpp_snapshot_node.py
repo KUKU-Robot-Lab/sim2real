@@ -45,6 +45,7 @@ import torch_checkpoint_globals as TG  # noqa: E402
 
 STATUS_TOPIC = "/perception_plus_plus/snapshot/status"
 LIVE_RETRY_S = 30.0       # 추적 중 못 찾은 물체를 다시 찾는 간격
+LIVE_Z_MAX = 0.90         # 추적을 다시 붙일 때 받아 줄 base z 천장 — 들린 물체는 상판 작업 영역 위로 올라간다(팔이 닿는 높이)
 CMD_TOPIC = "/perception_plus_plus/snapshot/cmd"
 
 
@@ -112,7 +113,12 @@ def main(argv=None) -> None:
     blob_min_area = int(cfg.get("blob_min_area", 1500))
     T_base_cam = np.asarray(cfg["camera_to_base"], float) if cfg.get("camera_to_base") is not None else None
     workspace = cfg.get("workspace", {"x": [0.05, 0.47], "y": [-0.45, 0.45], "z": [0.15, 0.50]})
+    # 11.18 추적을 다시 붙일 때만 천장을 올린다 — 들린 컵은 상판 작업 영역 위다(tilt 중 실측 0.556 > 천장 0.50).
+    live_workspace = {**workspace, "z": [workspace["z"][0], max(float(workspace["z"][1]), LIVE_Z_MAX)]}
     retry_s = float(cfg.get("retry_s", 3.0))
+    stand_top_rgb = bool(cfg.get("stand_top_from_rgb", False))   # 11.18 글로벌 1.5 m: 가는 병목 depth 가 빠져 꼭대기를 색으로 잰다
+    # 11.18 글로벌 1.5 m: 시선 방향 depth 잡음이 퍼짐을 키워(서 있는 분홍 병 91~123 mm, 한계 110) 여유를 더 준다
+    footprint_pad = float(cfg.get("footprint_pad", C.FOOTPRINT_PAD))
     tconf = TrackingConfig.from_yaml(cfg.get("tracking_config", "config/cup_tracking.yaml"))
 
     class Snapshot(Node):
@@ -137,8 +143,9 @@ def main(argv=None) -> None:
                               for n, o in objects.items()}
             self.live = {"name": None, "init": False, "prev": None, "invalid": 0, "ok": False, "why": "", "n": 0,
                          "resets": 0, "steps": 0, "step_s": 0.0}
-            self.status_pub = self.create_publisher(String, STATUS_TOPIC, 10)
-            self.create_subscription(String, CMD_TOPIC, self._on_cmd, 10)
+            # 11.18 글로벌 카메라 컨테이너는 자기 ns 의 상태 · 명령을 쓴다(머리 쪽 'all' 다시 찍기에 같이 끌려가지 않게)
+            self.status_pub = self.create_publisher(String, cfg.get("status_topic", STATUS_TOPIC), 10)
+            self.create_subscription(String, cfg.get("cmd_topic", CMD_TOPIC), self._on_cmd, 10)
             reliable, depth = image_qos_spec(os.environ.get("FPP_IMAGE_QOS"))
             self.image_qos = f"reliable:{depth}" if reliable else "sensor"
             img_qos = QoSProfile(depth=depth, history=HistoryPolicy.KEEP_LAST,
@@ -221,8 +228,12 @@ def main(argv=None) -> None:
             o = objects[name]
             try:
                 if not self.live["init"]:
-                    cands = [d for d in self._candidates(frame, [o["color"]]) if d["inside"]]
-                    allowed = {name: {i for i, d in enumerate(cands) if d["points"] is None or C.looks_standing(d["points"], o["aabb"])}} \
+                    cands = [d for d in self._candidates(frame, [o["color"]], ws=live_workspace) if d["inside"]]
+                    # 11.18 다시 붙일 때는 들린 모양도 받는다 — 손에 든 컵은 꼭대기가 상판 + 높이보다 위라 늘 버려졌다(tilt 중 111 s 막힘)
+                    allowed = {name: {i for i, d in enumerate(cands)
+                                      if d["points"] is None
+                                      or C.looks_standing(d["points"], o["aabb"], top_z=d["top_z"], pad=footprint_pad)
+                                      or C.looks_held(d["points"], o["aabb"], pad=footprint_pad)}} \
                         if o.get("aabb") else None
                     pick = C.assign(frame.rgb, [d["mask"] for d in cands], {name: o["color"]}, allowed=allowed)
                     if name not in pick:
@@ -310,9 +321,11 @@ def main(argv=None) -> None:
                     self.wake.wait(timeout=retry_s)
                     self.wake.clear()
 
-        def _candidates(self, frame, colors: list) -> list[dict]:
+        def _candidates(self, frame, colors: list, ws: dict | None = None) -> list[dict]:
             """YOLO(classes 의 아무 클래스, 낮은 문턱) + YOLO 가 못 잡은 색의 색 덩어리 → 작업 영역 안 후보만.
-            10.09: YOLO 가 핑크 병을 vase 0.08 로만 잡았다(병은 bottle 39 · cyl60 은 cup 41)."""
+            10.09: YOLO 가 핑크 병을 vase 0.08 로만 잡았다(병은 bottle 39 · cyl60 은 cup 41).
+            ws 를 주면 그 작업 영역으로 거른다(11.18 추적 재탐색은 천장이 더 높다)."""
+            ws = ws if ws is not None else workspace
             out = []
             res = self.detector.model(frame.rgb, conf=yolo_conf, verbose=False)
             for r in res:
@@ -341,13 +354,17 @@ def main(argv=None) -> None:
                 split = []
                 for d in out:
                     parts = C.split_by_depth(d["mask"], frame.depth, K, T_base_cam, min_px=blob_min_area // 2)
-                    split += [{**d, "mask": q, "src": d["src"] + (f" /3D{k}" if len(parts) > 1 else "")}
+                    split += [{**d, "mask": q, "src": d["src"] + (f" /3D{k}" if len(parts) > 1 else ""),
+                               **({"rgb_mask": C.own_pixels(d["mask"], q, parts)} if stand_top_rgb else {})}
                               for k, q in enumerate(parts)] or [d]
                 out = split
             for d in out:
-                d["inside"] = T_base_cam is None or C.in_workspace(T_base_cam, C.mask_point(d["mask"], frame.depth, K), workspace)
+                d["inside"] = T_base_cam is None or C.in_workspace(T_base_cam, C.mask_point(d["mask"], frame.depth, K), ws)
                 d["points"] = (C.mask_points_base(d["mask"], frame.depth, K, T_base_cam)
                                if T_base_cam is not None and d["inside"] else None)
+                # 11.18 글로벌: 꼭대기를 depth p95 대신 색 마스크 위 끝으로(조각 마스크는 depth 없는 병목이 빠져 있어 rgb_mask)
+                d["top_z"] = (C.mask_top_z(d.get("rgb_mask", d["mask"]), K, T_base_cam, d["points"])
+                              if stand_top_rgb and d["points"] is not None else None)
             return out
 
         def _snapshot(self, frame, seq: int, todo: list[str]) -> None:
@@ -357,7 +374,7 @@ def main(argv=None) -> None:
             dets = [d for d in cands if d["inside"]]
             masks = [d["mask"] for d in dets]
             # 서 있는 모양(수평 퍼짐 ≤ 물체 바닥)인 후보만 — 누운 같은 색 물체를 버린다(10.09 핑크 병). aabb · 카메라 자세가 있을 때
-            allowed = {n: {i for i, d in enumerate(dets) if d["points"] is None or C.looks_standing(d["points"], objects[n]["aabb"])}
+            allowed = {n: {i for i, d in enumerate(dets) if d["points"] is None or C.looks_standing(d["points"], objects[n]["aabb"], top_z=d["top_z"], pad=footprint_pad)}
                        for n in todo if objects[n].get("aabb")}
             pick = C.assign(frame.rgb, masks, {n: objects[n]["color"] for n in todo}, allowed=allowed)
             for name in todo:

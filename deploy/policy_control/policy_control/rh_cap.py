@@ -31,6 +31,10 @@ SCHEMA = "policy_control/rh_cap_contract/v1"
 TASK_PREFIX = "open-rh_{}_cap_{}"
 PHASES = ("grasp", "seat")
 PROFILE = "rh56f1_right_captop"
+#: 깊이 학생 체인 런(hdgp rh_cap chain, 11.18) — 계약은 디코더 · 기하만 쓰고 단계 전환은 학생 노드가 한다
+CHAIN = "chain"
+#: hdgp rh_cap_env_cfg.CAPTOP_V2_PROFILE — 2판 자산 위 같은 손 자세(관절 원점 · 축 · 한계는 1판 URDF 와 같다)
+STUDENT_PROFILES = (PROFILE, "rh56f1_v2_right_captop")
 #: hdgp rh_cap_env_cfg.CAPTOP_PROFILE — RH56F1_RIGHT 에서 손 자세만 바꾼다
 CAPTOP_OPEN = (0.60, 0.00, 0.00, 0.00, 0.00, 0.00)
 CAPTOP_GRIP = (1.57, 0.24, 1.40, 1.40, 1.40, 1.40)
@@ -74,7 +78,9 @@ class CapContract(A.RaContract):
     rcv_r_rim: float = 0.0              # 리시버 입구 바깥 반지름(축 위 판정)
 
 
-def is_rh_cap_run(env: Mapping) -> bool:
+def is_rh_cap_run(env: Mapping, student: bool = False) -> bool:
+    if student:
+        return str(env.get("cap_phase", "")) == CHAIN and str(env.get("profile_name", "")) in STUDENT_PROFILES
     return str(env.get("cap_phase", "")) in PHASES and str(env.get("profile_name", "")) == PROFILE
 
 
@@ -95,12 +101,13 @@ def captop_profile(right_profile):
 
 
 def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: str, hdgp_root: Path,
-          obs_dim: int | None = None) -> CapContract:
+          obs_dim: int | None = None, student: bool = False) -> CapContract:
     """rh_cap 단계 런 → 계약. obs_dim = 체크포인트가 실제로 받는 폭(덤프 observation_space 는 해석 전 96 일 수 있다)."""
     env_p = Path(run_dir) / "params" / "env.yaml"
     env = A.read_env(env_p)
-    if not is_rh_cap_run(env):
-        raise RhCapError(f"{env_p}: rh_cap 단계 런이 아니다(cap_phase grasp|seat · profile {PROFILE})")
+    if not is_rh_cap_run(env, student):
+        raise RhCapError(f"{env_p}: rh_cap 단계 런이 아니다(cap_phase grasp|seat · profile {PROFILE}"
+                         f"{f' / 학생 cap_phase {CHAIN} · profile {STUDENT_PROFILES}' if student else ''})")
     if int(env.get("hold_steps", -1)) != 0:
         raise RhCapError("rh_cap 단계 런은 hold_steps 0 이다")
     missing = [k for k in PHASE_KEYS if k not in env]
@@ -110,6 +117,8 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
     half_h = 0.5 * (float(cj["z_top"]) - float(cj["z_bottom"]))
     # 부모 빌더는 컵 표(CUP_OBJECTS)에 있는 물체만 안다 — 캡은 여기서 기하를 넣는다(관측 · 디코더 칸은 그대로 받는다)
     env_b = {**env, "object_name": "shaker", "object_names": None, "object_id_obs": False, "per_env_geometry": False}
+    if student:   # 체인 env 의 ready_pre_* 는 rh_aglt 기본값(aglt_start home) — 캡 체인 접근은 학생 노드 몫이라 계약에 싣지 않는다
+        env_b.update(ready_pre_r_mult=(), ready_pre_h_m=())
     base = A.build_from_env(Path(run_dir), checkpoint, captop_profile(right_profile), urdf, asset=asset, env=env_b)
     tac = bool(env.get("actor_tactile_obs", True))
     want = A.obs_dim_of(tactile=tac)
@@ -121,7 +130,7 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
     notes = [n for n in base.notes if not n.startswith(("첫 목표", "목표 입력", "목표 달성", "컵 "))] + [
         f"물체 = 캡({jp.parent.name}/{jp.name}): 반높이 {half_h:.4f} m · 끼움 자리 리시버 축 +{float(cj['seat_offset']):.4f} m",
         "목표 = 리시버 원점 + 리시버 축 × seat_offset, 자세 = 리시버 자세(리시버 자세 토픽 · 왼손이 쥔 cyl60)",
-        f"손 자세 = {PROFILE}(편 {list(CAPTOP_OPEN)} · 쥔 {list(CAPTOP_GRIP)})",
+        f"손 자세 = {env['profile_name']}(편 {list(CAPTOP_OPEN)} · 쥔 {list(CAPTOP_GRIP)})",
     ]
     if phase == "grasp":
         notes.append(f"grasp: 시작 = 사전 파지 자세(S0), 팔 목표 시작 ± {float(env['phase_arm_box_rad'])} rad · 쥔 판정 "
@@ -129,6 +138,9 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
                      f"{float(env['grasp_ik_lift_speed'])} m/s(DLS {float(env['grasp_ik_damping'])}) · 끝 = 들기 "
                      f"{float(env['grasp_success_lift_m'])} m · 기울기 ≤ {float(env['grasp_success_tilt_deg'])}° · "
                      f"{int(env['phase_success_steps'])} 스텝")
+    elif phase == CHAIN:
+        notes.append(f"chain(깊이 학생): 단계 전환 · 스크립트 구간은 학생 노드가 한다. 계약은 디코더 · 캡 기하 · 팔 상자 "
+                     f"± {float(env['phase_arm_box_rad'])} rad 만 쓴다(checkpoint = 학생 pt, rl_games 아님)")
     else:
         notes.append(f"seat: 시작 = 끼우기 직전 자세(S2), 캡은 시작 순간 손바닥에 붙인다 · 팔 목표 시작 ± "
                      f"{float(env['phase_arm_box_rad'])} rad · 끝 = |seat_dz| ≤ {float(env['seat_tol'])} m · 기울기 ≤ "
@@ -154,8 +166,8 @@ def build(run_dir: Path, checkpoint: Path, right_profile, urdf: Path, *, asset: 
 
 def validate(c: CapContract) -> None:
     A.validate(c)
-    if c.cap_phase not in PHASES or c.hold_steps != 0 or c.phase_success_steps < 1 or c.seat_offset <= 0:
-        raise RhCapError("cap_phase grasp|seat · hold 0 · 성공 스텝 ≥ 1 · seat_offset > 0")
+    if c.cap_phase not in (*PHASES, CHAIN) or c.hold_steps != 0 or c.phase_success_steps < 1 or c.seat_offset <= 0:
+        raise RhCapError("cap_phase grasp|seat|chain · hold 0 · 성공 스텝 ≥ 1 · seat_offset > 0")
     if c.cap_phase == "grasp" and (c.grasp_ik_lift_m <= 0 or c.grasp_ik_lift_speed <= 0 or c.grasp_ik_lift_after < 1):
         raise RhCapError("grasp 계약은 IK 들기(grasp_ik_lift_m · speed > 0 · after ≥ 1)가 있어야 한다")
     if list(c.side().hand_open) != list(CAPTOP_OPEN) or list(c.side().hand_grip) != list(CAPTOP_GRIP):

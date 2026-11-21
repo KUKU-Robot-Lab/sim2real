@@ -268,3 +268,84 @@ def test_a_shorter_standing_object_of_the_same_colour_is_not_the_bottle():
         return np.column_stack([rng.uniform(0, w, 800), rng.uniform(0, 0.02, 800), rng.uniform(z5, z95, 800)])
     assert C.looks_standing(pts(0.055, 0.222, 0.410), aabb)
     assert not C.looks_standing(pts(0.08, 0.223, 0.373), aabb)
+
+
+def test_a_bottle_whose_thin_neck_has_no_depth_stands_by_its_colour_top():
+    """11.18 글로벌 D435i(약 1.5 m): 분홍 병 몸통 depth 는 0.391 까지만, 가는 병목(지름 2.5 cm)은 depth 0 → p95 로는
+    누운 것으로 버려졌다. 색 마스크 꼭대기(mask_top_z)로 재면 서 있다. 키를 끈 기존 경로(top_z 없음)는 그대로 False."""
+    from scipy.ndimage import binary_dilation
+    K = np.array([[600.0, 0, 320], [0, 600.0, 240], [0, 0, 1]])
+    o, tgt = np.array([-1.1, 0.0, 0.85]), np.array([0.3, 0.0, 0.3])
+    f = (tgt - o) / np.linalg.norm(tgt - o)
+    x = np.cross(f, [0, 0, 1.0]); x /= np.linalg.norm(x)
+    T = np.eye(4); T[:3, :3] = np.column_stack([x, np.cross(f, x), f]); T[:3, 3] = o
+    # 병(축 0.3, 0): 몸통 r 0.035 · z 0.205~0.391, 병목 r 0.0125 · ~0.445 = 상판 0.205 + 높이 0.24
+    a, z = np.meshgrid(np.linspace(0, 2 * np.pi, 720), np.arange(0.205, 0.445, 0.0005))
+    r = np.where(z <= 0.391, 0.035, 0.0125)
+    P = np.column_stack([0.3 + (r * np.cos(a)).ravel(), (r * np.sin(a)).ravel(), z.ravel()])
+    pc = (P - o) @ T[:3, :3]
+    u = np.round(K[0, 0] * pc[:, 0] / pc[:, 2] + K[0, 2]).astype(int)
+    v = np.round(K[1, 1] * pc[:, 1] / pc[:, 2] + K[1, 2]).astype(int)
+    depth = np.full((480, 640), np.inf)
+    np.minimum.at(depth, (v, u), pc[:, 2])
+    mask = binary_dilation(np.isfinite(depth))              # YOLO 마스크처럼 테두리 한 화소 더
+    neck = np.zeros_like(mask)
+    neck[v[P[:, 2] > 0.391], u[P[:, 2] > 0.391]] = True
+    depth[~np.isfinite(depth) | neck] = 0.0                 # 병목은 depth 0
+    aabb = ((-0.035, -0.035, -0.085), (0.035, 0.035, 0.155))
+
+    parts = C.split_by_depth(mask, depth, K, T, min_px=300)  # 노드처럼 3D 조각으로 — 조각에서 병목은 빠진다
+    assert len(parts) == 1 and not (parts[0] & neck).any()
+    pts = C.mask_points_base(parts[0], depth, K, T)
+    assert np.percentile(pts[:, 2], 95) < 0.40 and not C.looks_standing(pts, aabb)      # 키 끔 = 기존 False
+    top = C.mask_top_z(C.own_pixels(mask, parts[0], parts), K, T, pts)
+    assert abs(top - 0.445) < 0.01 and C.looks_standing(pts, aabb, top_z=top)        # 키 켬 = True
+    assert not C.looks_standing(pts, aabb, top_z=C.mask_top_z(parts[0], K, T, pts))  # 조각 마스크만으로는 못 고친다
+
+
+def test_mask_spill_onto_the_table_behind_does_not_make_a_standing_cup_look_lying():
+    """11.17 bc18: YOLO 마스크가 윤곽 밖 몇 화소 번져 비스듬한 시선 뒤 상판(z≈상판) 점이 섞였다 — 퍼짐 155 mm 로 버려졌다.
+    상판 높이 점은 퍼짐에서 뺀다. 누운 병(몸통이 상판 위로 떠 있음)은 그대로 걸러진다."""
+    aabb = ((-0.03, -0.03, -0.085), (0.03, 0.03, 0.155))
+    rng = np.random.default_rng(3)
+    cup = np.column_stack([rng.uniform(0, 0.05, 900), rng.uniform(0, 0.05, 900), rng.uniform(0.23, 0.445, 900)])
+    spill = np.column_stack([rng.uniform(0.0, 0.16, 100), rng.uniform(0.05, 0.16, 100), rng.uniform(0.205, 0.22, 100)])
+    assert not C.fits_footprint(np.vstack([cup, spill]), aabb, min_above=-1.0)   # 빼지 않으면 버려진다
+    assert C.looks_standing(np.vstack([cup, spill]), aabb)
+    lying = np.column_stack([rng.uniform(0, 0.24, 900), rng.uniform(0, 0.06, 900), rng.uniform(0.21, 0.27, 900)])
+    assert not C.fits_footprint(lying, aabb)
+
+
+def test_a_wider_pad_lets_a_noisy_far_standing_bottle_pass_but_not_a_lying_one():
+    """11.18 글로벌 1.5 m: 서 있는 분홍 병의 퍼짐이 depth 잡음으로 91~123 mm(기본 한계 110). pad 0.04 면 130 mm 까지 —
+    24 cm 로 누운 병은 그래도 걸러진다."""
+    aabb = ((-0.03, -0.03, -0.085), (0.03, 0.03, 0.155))
+    rng = np.random.default_rng(5)
+    stand = np.column_stack([rng.normal(0, 0.0245, 900), rng.normal(0, 0.0245, 900), rng.uniform(0.23, 0.44, 900)])
+    assert not C.fits_footprint(stand, aabb) and C.fits_footprint(stand, aabb, pad=0.04)
+    assert C.looks_standing(stand, aabb, pad=0.04, top_z=0.445) and not C.looks_standing(stand, aabb, top_z=0.445)
+    lying = np.column_stack([rng.uniform(0, 0.24, 900), rng.uniform(0, 0.07, 900), rng.uniform(0.21, 0.28, 900)])
+    assert not C.fits_footprint(lying, aabb, pad=0.04)
+
+
+def test_a_cup_held_in_the_air_is_recognised_but_table_objects_and_a_lying_one_are_not():
+    """11.18 실기(bag 053826): tilt 중 source240_blue 추적이 깨진 뒤 다시 찾기가 111 s(05:39:56~05:41:47) 막혔다.
+    들린 컵은 꼭대기가 상판+높이보다 훨씬 위라 looks_standing 이 늘 False 다(바닥 0.343 → 꼭대기 0.583, 기대 0.445).
+    들린 컵은 '상판에서 떴고 · 수평 퍼짐은 바닥 안 · 세로로 길다' 로 받는다. 서 있는 컵은 looks_standing 이 맡는다."""
+    aabb = ((-0.03, -0.03, -0.085), (0.03, 0.03, 0.155))
+    rng = np.random.default_rng(7)
+
+    def pts(w, z5, z95, n=900):
+        return np.column_stack([rng.uniform(0, w, n), rng.uniform(0, 0.05, n), rng.uniform(z5, z95, n)])
+    assert C.looks_held(pts(0.05, 0.343, 0.583), aabb)                  # 들고 있음(실측 바닥 0.343)
+    assert C.looks_held(pts(0.05, 0.485, 0.725), aabb)                  # tilt 꼭대기(05:39:50 z 0.556)
+    assert not C.looks_held(pts(0.05, 0.228, 0.445), aabb)              # 상판에 서 있음 — looks_standing 몫
+    assert C.looks_standing(pts(0.05, 0.228, 0.445), aabb)
+    assert C.looks_held(pts(0.22, 0.40, 0.46), aabb)                    # 붓기 중 거의 눕힌 컵(퍼짐 22 cm) — 기울기와 무관(11.18 리뷰)
+    assert not C.looks_held(pts(0.40, 0.40, 0.46), aabb)                # 공중이지만 물체 대각선보다 넓음
+    assert not C.looks_held(pts(0.05, 0.30, 0.36), aabb)                # 공중이지만 짧음(6 cm — 다른 파란 물건)
+    assert not C.looks_held(pts(0.05, 0.25, 0.49), aabb)                # 바닥 0.25 = 상판 +4.5 cm — 아직 안 들림
+    nan = pts(0.05, 0.343, 0.583); nan[:450, 2] = np.nan
+    assert C.looks_held(nan, aabb) and not C.looks_held(np.full((900, 3), np.nan), aabb)   # NaN 점은 뺀다
+    assert not C.looks_held(np.zeros((900, 2)), aabb)                   # 모양이 (n, 2) 면 False
+    assert not C.looks_held(np.zeros((3, 3)), aabb)

@@ -45,12 +45,12 @@ def _aglt_params(ep_file: str) -> dict:
 
 def test_every_right_grasp_job_sends_the_guard_and_the_off_jobs_send_zero_and_nan():
     """★11.08 리뷰 1(a) — 오른손 잡기 job 은 에피소드와 상관없이 늘 4개를 보낸다(끄는 job = 0 · nan). 왼손 · 놓기는 안 보낸다."""
-    p = _aglt_params("cocktail_1c_e4000.yaml")
+    p = _aglt_params("cocktail_e2e.yaml")
     assert p["grasp_blue"] == {"lift_guard_mm": 40.0, "lift_hstop_m": 0.08, "lift_guard_x": PINK[0], "lift_guard_y": PINK[1]}
     assert p["grasp_shaker"] == {}                                # 왼손
-    for ep_file in ("cocktail_1c_e4000.yaml", "cocktail_1c_e1000.yaml"):
+    for ep_file in ("cocktail_e2e.yaml", "cocktail_1c_e1000.yaml"):
         for nid, v in _aglt_params(ep_file).items():
-            if nid == "grasp_blue" and ep_file == "cocktail_1c_e4000.yaml" or not v:
+            if nid == "grasp_blue" and ep_file == "cocktail_e2e.yaml" or not v:
                 continue
             assert v["lift_guard_mm"] == 0.0 and v["lift_hstop_m"] == 0.0, (ep_file, nid)
             assert np.isnan(v["lift_guard_x"]) and np.isnan(v["lift_guard_y"]), (ep_file, nid)
@@ -135,7 +135,7 @@ def test_the_runner_refuses_before_start_unless_the_node_status_shows_the_guard_
                    ({"phase": "armed"}, False)):                          # 가드를 모르는 노드
         me, _ = _runner_status({key: {**st, "_t": t + 1.0}})
         assert (R.RosExecutor._lift_guard_on(me, key, want, t) == "") == ok, st
-    ep = E.load(EPS / "cocktail_1c_e4000.yaml")
+    ep = E.load(EPS / "cocktail_e2e.yaml")
     node = next(n for n in ep.nodes if n.id == "grasp_blue")
     world = NS(objects={"SRC_PINK": {"pose": [PINK, [1, 0, 0, 0]], "at": "table"}})
     (plan,) = EpisodeManager._plans(NS(ep=ep), node, world)
@@ -309,7 +309,7 @@ def _hold_same(rises, dt=1 / 12):
 def test_a_guard_failure_is_its_own_code_and_always_a_safe_stop():
     """★11.08 리뷰 9 — 가드 판정 실패 · 거부 · 틱 오류는 GRASP_FAILED(되돌아가 손 펴기)가 아니라 lift_guard_failed → safe stop.
     가드 단계는 재시도 0 이어야 한다(spec validate)."""
-    ep = E.load(EPS / "cocktail_1c_e4000.yaml")
+    ep = E.load(EPS / "cocktail_e2e.yaml")
     node = next(n for n in ep.nodes if n.id == "grasp_blue")
     for reason in (f"{R.GUARD_FAIL_TEXT}: FP++ 새 프레임 3개 (guard: clear 39.0 mm < 40 mm at r_al_7)",
                    "reset: lift_guard: 분홍 컵 자리 x,y 가 없다", "lift_guard tick: RuntimeError: x",
@@ -319,7 +319,7 @@ def test_a_guard_failure_is_its_own_code_and_always_a_safe_stop():
         assert code is EF.F.LIFT_GUARD_FAILED, reason
         retry3 = dataclasses.replace(ep, failure_policy={"default": 3})     # 재시도가 남아도
         assert EF.RecoveryManager().decide(retry3, node, code, 0, None, {}).action == EF.SAFE_STOP
-    raw = yaml.safe_load((EPS / "cocktail_1c_e4000.yaml").read_text())
+    raw = yaml.safe_load((EPS / "cocktail_e2e.yaml").read_text())
     with pytest.raises(E.EpisodeSpecError, match="재시도 상한 0"):
         E.parse({**raw, "failure_policy": {"default": 1}})
 

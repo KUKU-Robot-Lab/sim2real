@@ -261,3 +261,11 @@ def test_block_reasons_recorded():
     rows = _hold(rt, lambda i: np.zeros(7), lambda i: np.zeros(7), contact=True, phase="HOLD")
     assert not rows[-1]["settled"] and not rows[-1]["fs_armed"]
     assert {"phase", "contact"} <= set(rows[-1]["settle_block"])
+
+
+def test_target_friction_uses_requested_velocity_not_capped_command():
+    # cmd.qd is zeroed by vel_ff_cap=0; friction must still see the planned velocity.
+    r = runtime({"friction_enabled": True, "friction_velocity": "target",
+                 "fc": [0.5] * 7, "fv": [0.0] * 7, "vs": [0.01] * 7})
+    _, d = tick(r, target_velocity=np.ones(7) * 0.3)
+    assert min(d["torque_friction"]) > 0.4

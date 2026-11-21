@@ -1,0 +1,47 @@
+# 놓기 학생 왼손(11.08 place_lab, ADR23 학생 67.5 % / 교사 74.5 %) — 배포 묶음(11.09). 경로는 이 폴더 기준.
+# 입력: 깊이(바닥 컷) + 홀더 CAD 투영 마스크 + 컵 YOLO 마스크(seg_s640_A) + 규칙 머리(ckpt meta head = look_at_mid, --max-tilt 82).
+# 가중치(student/*.pt)는 git 밖. ckpt = server ~/rl_ws/our_source/rh_aglt_runs/place_distill/pmask_l_1108_d/s1/student_it06000.pt 원본
+#   (headflag0 사본 아님 — meta head dict 있음). YOLO = aglt/left_student1105mA/student/yolo_seg_s640_A.pt 하드 링크.
+# 실기 노드에 넣지 않는 값(place_lab 11.09): mask.cup_hand_cut_m 0.016 · cup_hand_segs 17 = sim 쪽 손 화소 빼기(실기 YOLO 가 이미 뺀다),
+#   DISTILL_PMASK_CUP_DROP = 학습 증강만. 실기 결측은 YOLO 자연 결측 + 게이트(마지막 마스크 유지 + 보임 0).
+kind: student_place
+side: left
+task: rh_place_l
+rgb: false
+mask:
+  mode: P
+  target_class: orange          # shaker_c_orange
+  yolo:
+    path: student/yolo_seg_s640_A.pt
+    md5: b6ac0cd679bee22c100f9fef105832b8
+    conf: 0.25
+    imgsz: 640
+    retina_masks: true
+    top1_per_class: true
+    cross_class_iou: 0.5
+    from: aglt/left_student1105mA/student/yolo_seg_s640_A.pt(server 1105_det seg_s640_A)
+ckpt:
+  path: student/student_it06000.pt
+  md5: 612827d5e36ad6f1e6903913285ad997
+  it: 6000
+  arch: v3
+  from: server:~/rl_ws/our_source/rh_aglt_runs/place_distill/pmask_l_1108_d/s1/student_it06000.pt
+extrinsics:
+  # ★11.15 목 영점 2048 판으로 바꿈(같은 camset 물리 자세, r20u5 와 2.1 mm · 0.33°). ckpt 는 r20u5 로 배웠다 —
+  #   ckpt 메타(depth_pre · head.extr_md5)와는 ckpt_md5 로 대조한다. 옛 사본 camera/extrinsics_r20u5_40e6496.yaml 은 그대로 둔다.
+  #   11.15 camera 블록 = ChArUco 25자세 hand-eye(yaw 는 테이블 CAD 값 유지), 앞 h2048 판(ac34f921) 대비 8.8 mm · 0.49°.
+  # ★11.17 camera 블록 = 테이블 고정 마커 70~73 으로 푼 m1117(depth_bias 없음, 사용자). 옛 사본 camera/extrinsics_h2048.yaml 은 그대로 둔다.
+  path: camera/extrinsics_m1117.yaml
+  md5: 691ade15493f240e6c7b98c4393446a9
+  from: sim2real 11.17 작업 트리:config/global_camera_extrinsics_arm4090_m1117.yaml
+  ckpt_md5: 624677fee7e8ff6502f33a3ed8a96a1f
+head:
+  # ★11.15 ckpt 머리 시작 틱은 옛 영점(offset ±1024) 틱이다. 같은 물리 자세의 새 영점 틱 = start_tick(외부 파라미터 head_pose).
+  start_tick: [1825, 2833]
+  ckpt_start_tick: [1825, 2815]
+hdgp:
+  commit: 0bd455a86537ee3f2d1f8c34d7199b5073c610b3
+  snapshot_cfg: deploy/policy_control/config/hdgp_student_snapshot.yaml
+source:
+  host: server
+  run: ~/rl_ws/our_source/rh_aglt_runs/place_distill/pmask_l_1108_d/s1

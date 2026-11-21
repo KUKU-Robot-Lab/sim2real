@@ -68,6 +68,9 @@ def other_arm_q(side: str, q: dict[str, float]) -> dict[str, float] | None:
 #: ★10.13 실기: 정책이 멈춘 자리의 손목 j7 이 한계보다 0.025 rad 바깥이라 계획기가 거부했다(되돌림 실패 → safe_stop).
 #  이 안쪽으로만 넘었으면 한계로 잘라 계획한다 — 경로 시작점 검사(0.05 rad)가 실측과 잘린 시작점의 차이를 다시 본다.
 START_SLACK = 0.04
+REHOME_MAX_SPEED = 0.3   # [rad/s] ★11.18 사용자 결정: 복귀 경로 전용 속도 상한(pd ramp_speed 0.2 는 그대로)
+#  pd stage:=full(실기 미션 기본, max_vel 2.0 rad/s)에서만 0.3 을 그대로 따라간다. stage reduced 는 max_vel 0.25 rad/s(pd_node.py:189 기본 reduced, config/pd_rh56f1*.yaml)
+REHOME_RAMP_TIME = 0.5   # [s] 구간 코사인 가감속(기본 1.0) — 최대 가속 0.3·π/(2·0.5) ≈ 0.94 rad/s²
 
 
 def planner_argv(side: str, q: dict[str, float], out: Path, robot: str = "dg5f",
@@ -89,6 +92,7 @@ def planner_argv(side: str, q: dict[str, float], out: Path, robot: str = "dg5f",
     return [sys.executable, str(HERE / "plan_home_path.py"), "--side", side,
             # `--opt=값` 으로 붙인다 — 값이 '-0.1…' 처럼 음수로 시작하면 argparse 가 옵션으로 읽는다(09.28 실기 rc=2)
             "--start=" + ",".join(f"{q[j]:.5f}" for j in arm), "--start-slack", str(START_SLACK), "--goal", "contract",
+            "--max-speed", str(REHOME_MAX_SPEED), "--ramp-time", str(REHOME_RAMP_TIME),
             "--hand-start", "measured", "--hand-q=" + ",".join(f"{k}={v:.5f}" for k, v in sorted(hand.items())),
             "--out", str(out), *ROBOTS[robot], *(["--holders", str(holders)] if holders else []),
             *(["--table-cups", table_cups] if table_cups else []),

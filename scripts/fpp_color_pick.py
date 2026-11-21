@@ -18,6 +18,7 @@ HUE_RANGES: dict[str, tuple[tuple[float, float], ...]] = {
     "blue": ((85.0, 130.0),),
     "pink": ((148.0, 175.0),),         # cyl60 핑크 158 · 병 155~160 — 누운 보라 병 144 는 뺀다
     "red": ((0.0, 4.0), (176.0, 180.0)),
+    "green": ((40.0, 84.0),),          # ★11.12 감귤주스 라벨(개인 클론 시험 값) — calib 로 다시 잰다
 }
 COLORS = tuple(HUE_RANGES)
 S_MIN = 80.0       # 채도(0~255) — 테이블 21
@@ -146,12 +147,16 @@ def split_by_depth(mask: np.ndarray, depth: np.ndarray, K: np.ndarray, T_base_ca
 
 
 FOOTPRINT_SCALE, FOOTPRINT_PAD = 1.5, 0.02
+FOOTPRINT_MIN_ABOVE = 0.02   # 퍼짐은 상판보다 이만큼 높은 점만 — 11.17 bc18: 마스크가 윤곽 밖으로 번져 비스듬한 시선 뒤 상판 깊이가 섞임(155 → 52 mm)
 
 
-def fits_footprint(points_base: np.ndarray, aabb, scale: float = FOOTPRINT_SCALE, pad: float = FOOTPRINT_PAD) -> bool:
+def fits_footprint(points_base: np.ndarray, aabb, scale: float = FOOTPRINT_SCALE, pad: float = FOOTPRINT_PAD,
+                   table_z: float | None = None, min_above: float = FOOTPRINT_MIN_ABOVE) -> bool:
     """보이는 면의 수평 퍼짐(p5~p95)이 서 있는 물체의 바닥 크기 안인가 — 누운 · 쓰러진 같은 색 물체를 버린다(10.09 핑크 병).
-    한계 = 물체 aabb 의 수평 최대 폭 × scale + pad. 점이 20 개 미만이면 False."""
+    한계 = 물체 aabb 의 수평 최대 폭 × scale + pad. 상판 + min_above 아래 점은 빼고, 남은 점이 20 개 미만이면 False."""
     P = np.asarray(points_base, float)
+    if P.ndim == 2 and len(P):
+        P = P[P[:, 2] > (TABLE_TOP_Z if table_z is None else table_z) + min_above]
     if len(P) < 20:
         return False
     lo, hi = np.asarray(aabb[0], float), np.asarray(aabb[1], float)
@@ -166,14 +171,85 @@ TABLE_TOP_Z = 0.205      # arm4090 상판(scripts/calib/table_cad_extrinsics.py 
 TOP_TOL = 0.025          # 서 있는 물체 꼭대기 높이 허용 — 10.09 실측: 대상 +0.002 · +0.006 · +0.005, 누움 −0.055 · −0.070, 다른 주황 물건 −0.032
 
 
-def looks_standing(points_base: np.ndarray, aabb, table_z: float = TABLE_TOP_Z, top_tol: float = TOP_TOL) -> bool:
+def looks_standing(points_base: np.ndarray, aabb, table_z: float = TABLE_TOP_Z, top_tol: float = TOP_TOL,
+                   top_z: float | None = None, pad: float = FOOTPRINT_PAD) -> bool:
     """서 있는 물체 같은가 — 수평 퍼짐이 바닥 안(fits_footprint)이고, 보이는 점 위쪽(p95)이 상판 + 물체 높이에 닿는다.
-    화면 끝에 잘린 누운 같은 색 물체는 폭으로는 못 거르고 꼭대기 높이로 거른다(10.09)."""
-    if not fits_footprint(points_base, aabb):
+    화면 끝에 잘린 누운 같은 색 물체는 폭으로는 못 거르고 꼭대기 높이로 거른다(10.09).
+    top_z 를 주면 p95 대신 그 꼭대기 높이(mask_top_z, 11.18 글로벌 카메라)로 잰다. pad = 퍼짐 한계 여유(fits_footprint)."""
+    if not fits_footprint(points_base, aabb, pad=pad, table_z=table_z):
         return False
     lo, hi = np.asarray(aabb[0], float), np.asarray(aabb[1], float)
-    top = float(np.percentile(np.asarray(points_base, float)[:, 2], 95))
+    top = float(np.percentile(np.asarray(points_base, float)[:, 2], 95)) if top_z is None else float(top_z)
     return abs(top - (table_z + float(hi[2] - lo[2]))) <= top_tol
+
+
+HELD_LIFT_MIN = 0.06     # 손에 들렸다고 볼 최소 바닥 높이(상판 위) — 11.18 실측 들린 컵 바닥 0.343 · 0.485(상판 +14 · +28 cm).
+                         # 상판에 선 물체는 아래가 가려 p5 가 떠도 이만큼은 못 넘는다 — 그 판정은 looks_standing 한 곳에만 둔다
+HELD_HEIGHT_FRAC = 0.5   # 보이는 세로 길이 / 물체 높이 — 누운 물체(지름)와 가른다. 손이 가운데를 가려도 p5~p95 는 남는다
+
+
+def looks_held(points_base: np.ndarray, aabb, table_z: float = TABLE_TOP_Z, pad: float = FOOTPRINT_PAD,
+               lift_min: float = HELD_LIFT_MIN, height_frac: float = HELD_HEIGHT_FRAC) -> bool:
+    """손에 들려 공중에 있는 물체 같은가 — 바닥(p5)이 상판보다 lift_min 이상 뜨고, 보이는 세로 길이(p5~p95)가
+    수평 퍼짐(p95 반경 × 2)이 물체 대각선 + pad 안이고, 가장 긴 보이는 길이(세로 · 수평 퍼짐 중 큰 것)가
+    물체 긴 변의 height_frac 이상이다.
+    들린 물체는 꼭대기가 상판 + 물체 높이보다 높아 looks_standing 이 늘 버린다(11.18 tilt 중 재탐색 111 s 막힘).
+    tilt · 붓기 중 컵은 크게 기울어 세로가 줄고 옆으로 퍼진다 — 그래서 서 있는 바닥 폭(fits_footprint)이 아니라
+    기울기와 무관한 대각선 · 긴 변으로 잰다(11.18 리뷰). 서 있는 물체 판정은 looks_standing 한 곳에만 둔다."""
+    P = np.asarray(points_base, float)
+    if P.ndim != 2 or P.shape[1] < 3:
+        return False
+    P = P[np.isfinite(P[:, :3]).all(axis=1)]
+    if len(P) < 20:
+        return False
+    z5, z95 = (float(v) for v in np.percentile(P[:, 2], [5, 95]))
+    if z5 < table_z + lift_min:
+        return False
+    size = np.abs(np.asarray(aabb[1], float) - np.asarray(aabb[0], float))
+    c = np.median(P[:, :2], axis=0)
+    spread = 2.0 * float(np.percentile(np.linalg.norm(P[:, :2] - c, axis=1), 95))
+    if spread > float(np.linalg.norm(size)) + pad:
+        return False
+    # 가장 긴 보이는 길이(세로 또는 수평 퍼짐)가 물체 긴 변의 height_frac 이상 — 기울기와 무관, 짧은 다른 물건은 버린다
+    return max(z95 - z5, spread) >= height_frac * float(np.max(size))
+
+
+STAND_TOP_ROW_FRAC = 0.03    # 마스크 위쪽 행 중 잡음으로 건너뛸 비율
+
+
+def own_pixels(mask: np.ndarray, part: np.ndarray, parts: list[np.ndarray]) -> np.ndarray:
+    """색 마스크 중 이 3D 조각(split_by_depth)에 2D 로 이어진 화소 — 다른 조각 화소는 빼고, 깊이가 없어 조각에서
+    빠진 화소(1.5 m 에서 가는 병목, 11.18)는 되살린다."""
+    from scipy import ndimage
+    free = np.asarray(mask, bool).copy()
+    for q in parts:
+        if q is not part:
+            free &= ~q
+    lab, _ = ndimage.label(free)
+    keep = np.unique(lab[np.asarray(part, bool) & free])
+    return np.isin(lab, keep[keep > 0])
+
+
+def mask_top_z(mask: np.ndarray, K: np.ndarray, T_base_cam: np.ndarray, points_base: np.ndarray,
+               row_frac: float = STAND_TOP_ROW_FRAC) -> float | None:
+    """색 마스크 꼭대기의 base 높이 — 마스크 행 중 위 row_frac 를 건너뛴 가장 위 행(그 행 화소 u 중앙값)의 광선이
+    몸통 점 중앙 xy 를 지나는 수직선에 가장 가까워지는 점의 z. depth 가 빠진 부분도 색으로 잰다(11.18 글로벌 카메라).
+    마스크나 점이 비었거나 광선이 수직이면 None."""
+    ys, xs = np.nonzero(np.asarray(mask, bool))
+    P = np.asarray(points_base, float) if points_base is not None else np.empty((0, 3))
+    if len(ys) == 0 or len(P) == 0:
+        return None
+    rows = np.unique(ys)
+    v = rows[int(row_frac * len(rows))]
+    u = float(np.median(xs[ys == v]))
+    T = np.asarray(T_base_cam, float)
+    d = T[:3, :3] @ np.linalg.solve(np.asarray(K, float), [u, float(v), 1.0])
+    o = T[:3, 3]
+    n2 = float(d[:2] @ d[:2])
+    if n2 < 1e-12:
+        return None
+    t = float(d[:2] @ (np.median(P[:, :2], axis=0) - o[:2])) / n2
+    return float(o[2] + t * d[2])
 
 
 def in_workspace(T_base_cam: np.ndarray, p_cam: np.ndarray | None, ws: dict) -> bool:

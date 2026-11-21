@@ -99,10 +99,9 @@ stages:
   lane: both
   needs:
   - head_view_check
-  - cup_holders
   skippable: true
-  needs_why: 'FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다. ★11.11 사용자: 컵홀더 측정 완료(고정) → 컵 배치 — 컵이 홀더 마커를 가리기
-    전에 cup_holders 를 끝내거나(홀더를 그대로 두면) 건너뛴다'
+  needs_why: FP++ base 좌표는 외부 파라미터를 잰 시야에서만 맞다 — 머리 틱(head_home)에 더해 카메라 숙임(IMU)이 같은지 먼저 본다. 홀더는 기다리지 않는다(저장 파일 · 에피소드 시작 검사) — 홀더를 옮겼다면 컵을 놓기
+    전에 cup_holders 를 먼저
   title: fake 컵 두 개 — 학습 배치 중심(0.38, ∓0.16), 테이블 위에 선 채
   arm_free: true
 - id: cups_right
@@ -345,7 +344,6 @@ stages:
   skippable: true
   needs:
   - policy_aglt_right
-  - cup_holders
   needs_why: 놓기 정책은 aglt 가 컵을 쥐고 인계 자리(0.25, ∓0.12, 0.41)에 멈춘 상태에서만 출발해 봤다 — 팔 · 손 목표는 pd 가 붙잡은 aglt 마지막 joint_target, 목표는 홀더 자세
   artifacts:
   - place_right
@@ -358,7 +356,6 @@ stages:
   skippable: true
   needs:
   - policy_aglt_left
-  - cup_holders
   needs_why: 놓기 정책은 aglt 가 컵을 쥐고 인계 자리(0.25, ∓0.12, 0.41)에 멈춘 상태에서만 출발해 봤다 — 팔 · 손 목표는 pd 가 붙잡은 aglt 마지막 joint_target, 목표는 홀더 자세
   artifacts:
   - place_left
@@ -405,6 +402,110 @@ stages:
   - pd_arm_left
   needs_why: 두 팔 pd 가 지금 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
   title: 'tilt 붓기 — 지금 두 팔 자세(세팅 자세, 컵을 쥔 채)에서 바로: 실측 → D4 기본 궤적 계획 · 검사(걸리면 움직이지 않음) → 두 팔 재생 → 시작 자세 복귀'
+- id: act_tilt_dry
+  group: policy
+  lane: both
+  skippable: true
+  needs:
+  - pd_arm_right
+  - pd_arm_left
+  needs_why: 머리 카메라 · 두 팔 관절 실측을 읽어 추론만 한다 — 아무것도 발행하지 않는다
+  title: 'ACT tilt — dry run: 머리 컬러 + 팔 14 → 정책 추론만(발행 없음) · 1 초마다 요약 · summary.json'
+- id: act_tilt
+  group: policy
+  lane: both
+  skippable: true
+  needs:
+  - pd_arm_right
+  - pd_arm_left
+  - head_home
+  needs_why: 두 팔 pd 가 tilt 시작 자세를 붙들고 있어야(TRACKING) 정책 목표를 따른다 — 컵을 쥔 채라 여기서 engage 하지 않는다. 목 드라이버(head_home)가 떠 있어야 붓기 뒤 목을 기준 자세로 되돌린다
+  title: 'ACT tilt 붓기 — tilt_now 자세에서: 정책이 두 팔 14 관절 목표를 30 Hz 로 낸다(손은 pd 가 쥔 채) · 시작 차이 · 속도 · 추종 오차 · 입력 지연이 넘으면 abort(두 팔 episode stop) → 목을
+    head_home 자세로'
+- id: place_fixed_blue_descend_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  needs:
+  - pd_arm_right
+  needs_why: pd 가 쥔 컵 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
+  title: '[right] 고정 놓기 blue — 하강까지(손 쥔 채 멈춤): tilt 끝 자세에서만 누른다(벗어나면 거부) · 지금 팔 · pd 손 명령에서 계획 · 검사(plan_place_fixed, 걸리면 움직이지 않음) → 재생(replay_traj_rh)'
+- id: place_fixed_blue_all_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  needs:
+  - pd_arm_right
+  needs_why: pd 가 쥔 컵 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
+  title: '[right] 고정 놓기 blue — 끝까지(놓기 → 들기): tilt 끝 자세에서만 누른다(벗어나면 거부) · 지금 팔 · pd 손 명령에서 계획 · 검사(plan_place_fixed, 걸리면 움직이지 않음) → 재생(replay_traj_rh)'
+- id: place_fixed_pink_descend_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  needs:
+  - pd_arm_right
+  needs_why: pd 가 쥔 컵 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
+  title: '[right] 고정 놓기 pink — 하강까지(손 쥔 채 멈춤): tilt 끝 자세에서만 누른다(벗어나면 거부) · 지금 팔 · pd 손 명령에서 계획 · 검사(plan_place_fixed, 걸리면 움직이지 않음) → 재생(replay_traj_rh)'
+- id: place_fixed_pink_all_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  needs:
+  - pd_arm_right
+  needs_why: pd 가 쥔 컵 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
+  title: '[right] 고정 놓기 pink — 끝까지(놓기 → 들기): tilt 끝 자세에서만 누른다(벗어나면 거부) · 지금 팔 · pd 손 명령에서 계획 · 검사(plan_place_fixed, 걸리면 움직이지 않음) → 재생(replay_traj_rh)'
+- id: place_fixed_shaker_descend_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  needs:
+  - pd_arm_left
+  needs_why: pd 가 쥔 컵 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
+  title: '[left] 고정 놓기 shaker — 하강까지(손 쥔 채 멈춤): tilt 끝 자세에서만 누른다(벗어나면 거부) · 지금 팔 · pd 손 명령에서 계획 · 검사(plan_place_fixed, 걸리면 움직이지 않음) → 재생(replay_traj_rh)'
+- id: place_fixed_shaker_all_left
+  group: policy
+  lane: arm_left
+  skippable: true
+  needs:
+  - pd_arm_left
+  needs_why: pd 가 쥔 컵 자세를 붙들고 있어야(TRACKING) 재생한다 — 컵을 쥔 채라 여기서 engage 하지 않는다
+  title: '[left] 고정 놓기 shaker — 끝까지(놓기 → 들기): tilt 끝 자세에서만 누른다(벗어나면 거부) · 지금 팔 · pd 손 명령에서 계획 · 검사(plan_place_fixed, 걸리면 움직이지 않음) → 재생(replay_traj_rh)'
+- id: cap_now
+  group: policy
+  lane: both
+  skippable: true
+  needs:
+  - pd_arm_right
+  - pd_arm_left
+  needs_why: pd 가 떠 있어야 경로를 재생한다(IDLE 이면 지금 자리에서 engage)
+  title: cap 시작 자세 - 두 팔(왼손은 쉐이커를 쥔 채)
+- id: cap_student_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  needs:
+  - pd_arm_right
+  - pd_arm_left
+  - head_home
+  - cups
+  needs_why: 두 팔 pd 가 cap 시작 자세를 붙들고(TRACKING) · 머리 깊이 · FP++ 쉐이커(리시버) 자세가 있어야 reset 을 받는다
+  title: '[right] cap 깊이 학생 rh56f1/cap/right_student_h01 — 노드 기동 → reset → (캡 · 쉐이커 확인) → start. 구간 넘김은 cap_next_right, 끝 · 정리는 cap_end_right'
+- id: cap_next_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  needs:
+  - cap_student_right
+  needs_why: cap 학생 노드가 start 뒤 돌고 있어야 받는다
+  title: cap 다음 단계(search → approach → grasp → seat → 끝) — 넘기기 전 캡 · 손 위치 확인
+- id: cap_end_right
+  group: policy
+  lane: arm_right
+  skippable: true
+  needs:
+  - cap_student_right
+  needs_why: cap 학생 단계가 띄운 노드 · 목 드라이버를 내린다
+  title: cap 끝 — episode stop → cap 노드 · 깊이 노드 정지
 - id: episode_pick_place_right
   group: policy
   lane: arm_right
@@ -677,7 +778,7 @@ stages:
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
     → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → confirm_pink_placed → scene_pink → grasp_pink → to_tilt_start_r2 → tilt_pink
-    → place_pink → place_shaker → go_home_end'
+    → place_pink → home_r_after_pink → place_shaker → home_l_after_shaker → go_home_end'
 - id: episode_cocktail_1b
   group: policy
   lane: arm_left
@@ -688,7 +789,8 @@ stages:
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1b — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
-    → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → place_shaker → go_home_end'
+    → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → home_r_after_pink
+    → place_shaker → home_l_after_shaker → go_home_end'
 - id: episode_cocktail_1c_e1000
   group: policy
   lane: arm_left
@@ -699,8 +801,9 @@ stages:
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
   title: '[에피소드] cocktail_1c_e1000 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_blue → grasp_shaker → to_tilt_start_r1
-    → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → place_shaker → go_home_end'
-- id: episode_cocktail_1c_e4000
+    → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → home_r_after_pink
+    → place_shaker → home_l_after_shaker → go_home_end'
+- id: episode_cocktail_e2e
   group: policy
   lane: arm_left
   skippable: true
@@ -709,9 +812,20 @@ stages:
   - home_right
   - cups
   needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
-  title: '[에피소드] cocktail_1c_e4000 — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_to_tilt_start → grasp_blue
-    → to_tilt_start_r1 → grasp_shaker → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink
-    → place_pink → place_shaker → go_home_end'
+  title: '[에피소드] cocktail_e2e — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_to_tilt_start → grasp_blue → to_tilt_start_r1
+    → grasp_shaker → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → grasp_pink → to_tilt_start_r2 → tilt_pink → place_pink → home_r_after_pink
+    → mix_shaker → place_shaker → home_l_after_shaker → go_home_end'
+- id: episode_cocktail_1c_n07b
+  group: policy
+  lane: arm_left
+  skippable: true
+  needs:
+  - home_left
+  - home_right
+  - cups
+  needs_why: 에피소드는 홈(rh_aglt 시작 자세) · FP++ 컵 위에서 노드를 잇는다 · 홀더는 저장된 config/cup_holder_poses_5090_v1.yaml(없으면 시작 검사가 막는다)
+  title: '[에피소드] cocktail_1c_n07b — 노드를 띄우고 상황판 에피소드 패널에서 [다음](구분 실행) · [연속 실행]으로 진행: go_home_start → scene → grasp_to_tilt_start → grasp_blue
+    → to_tilt_start_r1 → grasp_shaker → to_tilt_start_l → tilt_blue → place_blue → home_r_after_blue → place_shaker → home_l_after_shaker → go_home_end'
 - id: episode_grasp_s_right
   group: policy
   lane: arm_right
@@ -872,6 +986,9 @@ run:
     - policy_place_right#2
     - policy_place_left#0
     - policy_place_left#2
+    - cap_student_right#1
+    - cap_student_right#2
+    - cap_student_right#3
     - episode_pick_place_right#0
     - episode_pick_place_right#1
     - episode_pick_place_right#2
@@ -1038,20 +1155,34 @@ run:
     - episode_cocktail_1c_e1000#14
     - episode_cocktail_1c_e1000#15
     - episode_cocktail_1c_e1000#16
-    - episode_cocktail_1c_e4000#0
-    - episode_cocktail_1c_e4000#1
-    - episode_cocktail_1c_e4000#2
-    - episode_cocktail_1c_e4000#3
-    - episode_cocktail_1c_e4000#4
-    - episode_cocktail_1c_e4000#5
-    - episode_cocktail_1c_e4000#6
-    - episode_cocktail_1c_e4000#7
-    - episode_cocktail_1c_e4000#8
-    - episode_cocktail_1c_e4000#12
-    - episode_cocktail_1c_e4000#13
-    - episode_cocktail_1c_e4000#14
-    - episode_cocktail_1c_e4000#15
-    - episode_cocktail_1c_e4000#16
+    - episode_cocktail_e2e#0
+    - episode_cocktail_e2e#1
+    - episode_cocktail_e2e#2
+    - episode_cocktail_e2e#3
+    - episode_cocktail_e2e#4
+    - episode_cocktail_e2e#5
+    - episode_cocktail_e2e#6
+    - episode_cocktail_e2e#7
+    - episode_cocktail_e2e#8
+    - episode_cocktail_e2e#12
+    - episode_cocktail_e2e#13
+    - episode_cocktail_e2e#14
+    - episode_cocktail_e2e#15
+    - episode_cocktail_e2e#16
+    - episode_cocktail_1c_n07b#0
+    - episode_cocktail_1c_n07b#1
+    - episode_cocktail_1c_n07b#2
+    - episode_cocktail_1c_n07b#3
+    - episode_cocktail_1c_n07b#4
+    - episode_cocktail_1c_n07b#5
+    - episode_cocktail_1c_n07b#6
+    - episode_cocktail_1c_n07b#7
+    - episode_cocktail_1c_n07b#8
+    - episode_cocktail_1c_n07b#12
+    - episode_cocktail_1c_n07b#13
+    - episode_cocktail_1c_n07b#14
+    - episode_cocktail_1c_n07b#15
+    - episode_cocktail_1c_n07b#16
     - episode_grasp_s_right#0
     - episode_grasp_s_right#1
     - episode_grasp_s_right#6
@@ -1327,13 +1458,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:={policy:aglt_right.max_episode_s}
     background: true
@@ -1634,13 +1761,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:={policy:aglt_left.max_episode_s}
     background: true
@@ -2683,6 +2806,283 @@ run:
     - --no-record
     execute_args:
     - --execute
+  act_tilt_dry:
+  - note: ACT tilt dry run — 추론만(발행 없음) · 기록 ~/rl_ws/motion_acq/il/_work/act_tilt_runs/<시각>/
+    argv: &id001
+    - bash
+    - -lc
+    - 'true'
+  act_tilt:
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: ACT tilt 붓기 — 두 팔 정책 목표 발행 → 끝에 두 팔 episode stop · 기록 ~/rl_ws/motion_acq/il/_work/act_tilt_runs/<시각>/
+    argv: *id001
+    execute_args:
+    - --execute
+  place_fixed_blue_descend_right:
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] 고정 놓기 blue 하강까지(손 쥔 채 멈춤) — 팔 실측 · pd 손 명령 → plan_place_fixed → replay_traj_rh · 기록 logs/runs/<날짜>/place_fixed/<컵>_<시각>'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/place_fixed.py'
+    - --cup
+    - blue
+    - --until
+    - descend
+    execute_args:
+    - --execute
+  place_fixed_blue_all_right:
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] 고정 놓기 blue 끝까지(놓기 → 들기) — 팔 실측 · pd 손 명령 → plan_place_fixed → replay_traj_rh · 기록 logs/runs/<날짜>/place_fixed/<컵>_<시각>'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/place_fixed.py'
+    - --cup
+    - blue
+    - --until
+    - all
+    execute_args:
+    - --execute
+  place_fixed_pink_descend_right:
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] 고정 놓기 pink 하강까지(손 쥔 채 멈춤) — 팔 실측 · pd 손 명령 → plan_place_fixed → replay_traj_rh · 기록 logs/runs/<날짜>/place_fixed/<컵>_<시각>'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/place_fixed.py'
+    - --cup
+    - pink
+    - --until
+    - descend
+    execute_args:
+    - --execute
+  place_fixed_pink_all_right:
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] 고정 놓기 pink 끝까지(놓기 → 들기) — 팔 실측 · pd 손 명령 → plan_place_fixed → replay_traj_rh · 기록 logs/runs/<날짜>/place_fixed/<컵>_<시각>'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/place_fixed.py'
+    - --cup
+    - pink
+    - --until
+    - all
+    execute_args:
+    - --execute
+  place_fixed_shaker_descend_left:
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[left] 고정 놓기 shaker 하강까지(손 쥔 채 멈춤) — 팔 실측 · pd 손 명령 → plan_place_fixed → replay_traj_rh · 기록 logs/runs/<날짜>/place_fixed/<컵>_<시각>'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/place_fixed.py'
+    - --cup
+    - shaker
+    - --until
+    - descend
+    execute_args:
+    - --execute
+  place_fixed_shaker_all_left:
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[left] 고정 놓기 shaker 끝까지(놓기 → 들기) — 팔 실측 · pd 손 명령 → plan_place_fixed → replay_traj_rh · 기록 logs/runs/<날짜>/place_fixed/<컵>_<시각>'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/place_fixed.py'
+    - --cup
+    - shaker
+    - --until
+    - all
+    execute_args:
+    - --execute
+  cap_now:
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] pd 가 IDLE 이면 지금 자리에서 engage — 이미 붙들고 있으면(TRACKING) 건너뜀'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - right
+    - --only
+    - pd_engage
+    - --skip-engaged
+    - --hold-s
+    - '2'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_engage
+  - note: '[left] pd 가 IDLE 이면 지금 자리에서 engage — 이미 붙들고 있으면(TRACKING) 건너뜀'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_ctl.py'
+    - --side
+    - left
+    - --only
+    - pd_engage
+    - --skip-engaged
+    - --hold-s
+    - '2'
+    execute_args:
+    - --execute
+    - --approve
+    - pd_engage
+  - note: cap 시작 자세로 — 팔마다 계획 · 검사(plan_carry, 걸리면 그 팔부터 움직이지 않음) → 재생(replay_to_pd) · 기록 logs/runs/<날짜>/cap/<시각>_setting_cap_start
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/cap_now.py'
+    execute_args:
+    - --execute
+  cap_student_right:
+  - note: 시작 검사 — cap 학생 묶음 rh56f1/cap/right_student_h01 ckpt md5 = student.yaml · rh_cap_contract.json 있음 (읽기만)
+    argv:
+    - python3
+    - -c
+    - import hashlib, sys, yaml; from pathlib import Path; d = Path(sys.argv[1]); c = yaml.safe_load((d / 'student.yaml').read_text(encoding='utf-8'))['ckpt'];
+      p = d / c['path']; got = hashlib.md5(p.read_bytes()).hexdigest() if p.is_file() else None; bad = ['ckpt %s 없음' % p] * (got is None) + ['ckpt
+      md5 %s != student.yaml %s' % (got, c['md5'])] * (got is not None and got != c['md5']) + ['rh_cap_contract.json 없음'] * (not (d / 'rh_cap_contract.json').is_file());
+      print('; '.join(bad) or 'ok'); sys.exit(1 if bad else 0)
+    - '{repo}/deploy/policies/rh56f1/cap/right_student_h01'
+  - note: fake 목 드라이버 — /head/joint_states 를 내고 cap 학생의 /head/target_stream 을 따라 움직인다(pan 0 · tilt 40 · 상한 82)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_head_stream_driver.py'
+    - --pan
+    - '0'
+    - --tilt
+    - '40'
+    background: true
+  - note: fake 머리 깊이 — /head_depth/image 균일 0.6 m · /head_depth/config(--free-head 대조 키)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_head_depth_pub.py'
+    - --depth
+    - '0.6'
+    background: true
+  - note: '[right] cap 학생 노드(rh_cap_node_right · ns right_cap) — search → approach → 하강(자동) → grasp → 이송(자동) → seat, 학생 구간 넘김은 사람이 stage/next
+      · 리시버 = FP++ 쉐이커(fake: 고정 자리 허락)'
+    argv:
+    - '{repo}/.venv-student/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_cap_student_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_cap_node_right
+    - -p
+    - ns:=right_cap
+    - -p
+    - episode_topic:=/policy_control/right/episode
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/cap/right_student_h01/rh_cap_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - student_dir:={repo}/deploy/policies/rh56f1/cap/right_student_h01
+    - -p
+    - rcv_pose_topic:=/objects/shaker_c_orange/live_pose
+    - -p
+    - rcv_allow_fixed:=true
+    - -p
+    - descend_xy_max_m:=0.30
+    - -p
+    - descend_len_max_m:=0.50
+    background: true
+  - note: 머리 깊이(/head_depth/image) 한 프레임이 이 PC 에 오는가 — 안 오면 위 깊이 노드 출력을 본다
+    argv:
+    - bash
+    - -lc
+    - timeout 60 ros2 topic echo --once --no-arr --qos-reliability best_effort /head_depth/image sensor_msgs/msg/Image
+  - note: '[right] cap episode reset — 팔 · 손 · 깊이 · 리시버가 있어야 받는다(LSTM 0)'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/reset
+    - --episode-ns
+    - right_cap
+    - --service-timeout
+    - '90'
+    execute_args:
+    - --execute
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: ★[right] cap episode start — search 부터. 이상하면 정지 바의 '에피소드 정지'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/start
+    - --episode-ns
+    - right_cap
+    execute_args:
+    - --execute
+  cap_next_right:
+  - note: cap 다음 구간(stage/next) — 응답(넘어간 구간 · 거부 사유)을 찍고, 거부면 실패
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - stage/next
+    - --episode-ns
+    - right_cap
+    - --service-timeout
+    - '5'
+    execute_args:
+    - --execute
+  cap_end_right:
+  - note: '[right] cap episode stop(노드가 없으면 그대로) — pd 가 그 자세를 붙잡는다'
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/trigger.py'
+    - episode/stop
+    - --episode-ns
+    - right_cap
+    - --service-timeout
+    - '5'
+    execute_args:
+    - --execute
+  - note: cap 학생 노드 · 깊이 노드 · fake 목 드라이버 정지
+    stop:
+    - cap_student_right#3
+    - cap_student_right#2
+    - cap_student_right#1
   episode_pick_place_right:
   - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
@@ -2796,13 +3196,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=15.0
     background: true
@@ -2969,13 +3365,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=15.0
     background: true
@@ -3123,13 +3515,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=29.0
     background: true
@@ -3251,13 +3639,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=29.0
     background: true
@@ -3443,13 +3827,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=29.0
     background: true
@@ -3502,13 +3882,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=29.0
     background: true
@@ -3670,13 +4046,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=15.0
     background: true
@@ -3734,13 +4106,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=15.0
     background: true
@@ -4016,13 +4384,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=15.0
     background: true
@@ -4153,13 +4517,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=15.0
     background: true
@@ -4291,13 +4651,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -4429,13 +4785,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -4509,7 +4861,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4543,39 +4896,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -4649,7 +4972,8 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4683,37 +5007,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - inhand_est:='off'
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -4789,7 +5085,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4823,39 +5120,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -4929,7 +5196,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -4963,39 +5231,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -5069,7 +5307,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5103,39 +5342,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -5209,7 +5418,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5243,39 +5453,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -5349,7 +5529,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5383,39 +5564,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -5489,7 +5640,8 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5523,37 +5675,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - inhand_est:='off'
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -5629,7 +5753,8 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5663,37 +5788,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - inhand_est:='off'
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -5769,7 +5866,8 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5803,37 +5901,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - inhand_est:='off'
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -5909,7 +5979,8 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -5943,37 +6014,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - inhand_est:='off'
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -6049,7 +6092,8 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6083,37 +6127,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - inhand_est:='off'
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -6209,7 +6225,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6243,37 +6260,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -6393,7 +6382,8 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6427,37 +6417,11 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - inhand_est:='off'
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -6583,7 +6547,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6617,42 +6582,15 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -6686,37 +6624,11 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - inhand_est:='off'
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -6961,13 +6873,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -7030,13 +6938,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -7338,13 +7242,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -7407,13 +7307,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -7715,15 +7611,9 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
     - max_episode_s:=33.0
     background: true
@@ -7786,13 +7676,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -7880,7 +7764,7 @@ run:
     - episode_cocktail_1c_e1000#2
     - episode_cocktail_1c_e1000#1
     - episode_cocktail_1c_e1000#0
-  episode_cocktail_1c_e4000:
+  episode_cocktail_e2e:
   - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
     - python3
@@ -8024,7 +7908,7 @@ run:
     - python3
     - '{repo}/deploy/policy_control/tools/episode_run.py'
     - --episode
-    - config/episodes/cocktail_1c_e4000.yaml
+    - config/episodes/cocktail_e2e.yaml
     - --plan
   - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
     argv:
@@ -8096,13 +7980,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
     - -p
@@ -8167,13 +8045,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -8229,13 +8101,13 @@ run:
     - -p
     - require_grasp:=false
     background: true
-  - note: 에피소드 실행기 episode_runner — cocktail_1c_e4000 · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1c_e4000)
+  - note: 에피소드 실행기 episode_runner — cocktail_e2e · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_e2e)
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
     - --ros-args
     - -p
-    - episode:=config/episodes/cocktail_1c_e4000.yaml
+    - episode:=config/episodes/cocktail_e2e.yaml
     - -p
     - robot:=rh56f1
     background: true
@@ -8247,20 +8119,387 @@ run:
     manual: true
   - note: 에피소드 노드들 정지
     stop:
-    - episode_cocktail_1c_e4000#16
-    - episode_cocktail_1c_e4000#15
-    - episode_cocktail_1c_e4000#14
-    - episode_cocktail_1c_e4000#13
-    - episode_cocktail_1c_e4000#12
-    - episode_cocktail_1c_e4000#8
-    - episode_cocktail_1c_e4000#7
-    - episode_cocktail_1c_e4000#6
-    - episode_cocktail_1c_e4000#5
-    - episode_cocktail_1c_e4000#4
-    - episode_cocktail_1c_e4000#3
-    - episode_cocktail_1c_e4000#2
-    - episode_cocktail_1c_e4000#1
-    - episode_cocktail_1c_e4000#0
+    - episode_cocktail_e2e#16
+    - episode_cocktail_e2e#15
+    - episode_cocktail_e2e#14
+    - episode_cocktail_e2e#13
+    - episode_cocktail_e2e#12
+    - episode_cocktail_e2e#8
+    - episode_cocktail_e2e#7
+    - episode_cocktail_e2e#6
+    - episode_cocktail_e2e#5
+    - episode_cocktail_e2e#4
+    - episode_cocktail_e2e#3
+    - episode_cocktail_e2e#2
+    - episode_cocktail_e2e#1
+    - episode_cocktail_e2e#0
+  episode_cocktail_1c_n07b:
+  - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '-0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/source240_blue/pose
+    background: true
+  - note: fake 물체 — /objects/source240_blue/live_pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '-0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/source240_blue/live_pose
+    background: true
+  - note: fake 물체 — /objects/source240_pink/pose(자리 상자 가운데)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.2825'
+    - --y
+    - '-0.3475'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/source240_pink/pose
+    background: true
+  - note: fake 물체 — /objects/source240_pink/live_pose(자리 상자 가운데)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.2825'
+    - --y
+    - '-0.3475'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/source240_pink/live_pose
+    background: true
+  - note: fake 물체 — /objects/shaker_c_orange/pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/shaker_c_orange/pose
+    background: true
+  - note: fake 물체 — /objects/shaker_c_orange/live_pose(aglt 학습 배치 x 0.25)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --x
+    - '0.25'
+    - --y
+    - '0.20'
+    - --z
+    - '0.29'
+    - --topic
+    - /objects/shaker_c_orange/live_pose
+    background: true
+  - note: fake 홀더 0 — /objects/cup_holder_0/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --latched
+    - --rate
+    - '2'
+    - --x
+    - '0.3800'
+    - --y
+    - '0.1530'
+    - --z
+    - '0.2350'
+    - --topic
+    - /objects/cup_holder_0/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '0'
+    background: true
+  - note: fake 홀더 1 — /objects/cup_holder_1/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --latched
+    - --rate
+    - '2'
+    - --x
+    - '0.3800'
+    - --y
+    - '-0.0020'
+    - --z
+    - '0.2350'
+    - --topic
+    - /objects/cup_holder_1/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '1'
+    background: true
+  - note: fake 홀더 2 — /objects/cup_holder_2/pose (latched, config/cup_holder_poses_5090_v1.yaml 자세 · 없으면 x 0.38)
+    argv:
+    - python3
+    - '{repo}/scripts/fakes/fake_cup_pose_pub.py'
+    - --latched
+    - --rate
+    - '2'
+    - --x
+    - '0.3800'
+    - --y
+    - '-0.1610'
+    - --z
+    - '0.2350'
+    - --topic
+    - /objects/cup_holder_2/pose
+    - --holder-file
+    - config/cup_holder_poses_5090_v1.yaml
+    - --holder-id
+    - '2'
+    background: true
+  - note: 시작 검사 — 정책이 등록부에서 쓸 수 있고 (읽기만)
+    argv:
+    - python3
+    - '{repo}/deploy/policy_control/tools/episode_run.py'
+    - --episode
+    - config/episodes/cocktail_1c_n07b.yaml
+    - --plan
+  - note: 시작 검사 — 같은 이름의 정책 노드 · 실행기가 남아 있지 않은가(다른 정책 단계가 띄운 것) (읽기만)
+    argv:
+    - bash
+    - -lc
+    - '! ros2 node list 2>/dev/null | grep -E ''^/((rh_aglt_node|rh_place_node)_left|(rh_aglt_node|rh_place_node)_right|episode_runner)$'''
+  - note: fake — 확인만
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_right
+    - -p
+    - ns:=right
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/right_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/right_rcg04/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/source240_blue/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - cup_obs_offset_base_m:=[-0.0136,0.0085,0.0000]
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_aglt_node_left
+    - -p
+    - ns:=left
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/aglt/left_approach_ap05/rh_aglt_contract.json
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - approach_grasp:=handoff=1
+    - -p
+    - handoff_contract:={repo}/deploy/policies/rh56f1/aglt/left_rcg04/rh_aglt_contract.json
+    - -p
+    - goal_max:=1
+    - -p
+    - freeze_rule:=lift_hold
+    - -p
+    - freeze_lift_m:=0.07
+    - -p
+    - freeze_hold_steps:=120
+    - -p
+    - cup_topic:=/objects/shaker_c_orange/live_pose
+    - -p
+    - cup_static:=false
+    - -p
+    - cup_latch:=false
+    - -p
+    - cup_hold_last:=true
+    - -p
+    - attach_fallback_s:=0.7
+    - -p
+    - attach_guard_m:=0.04
+    - -p
+    - attach_guard_frames:=3
+    - -p
+    - fpp_gate_jump_m:=0.02
+    - -p
+    - fpp_gate_dz_m:=0.02
+    - -p
+    - fpp_gate_radius_m:=0.2
+    - -p
+    - fpp_gate_max_hold_s:=2.5
+    - -p
+    - fpp_gate_anchor_m:=0.03
+    - -p
+    - cup_dropout_stop_s:=1.0
+    - -p
+    - cup_dropout_near_m:=0.2
+    - -p
+    - cup_dropout_near_max_s:=2.5
+    - -p
+    - lift_grasp_palm_m:=0.08
+    - -p
+    - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
+    - -p
+    - max_episode_s:=33.0
+    background: true
+  - note: '[right] rh_place_r 노드(rh56f1/place/right_n07) — 홀더 1 · 놓은 뒤 스스로 끝남 · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_place_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_place_node_right
+    - -p
+    - ns:=right_place
+    - -p
+    - episode_topic:=/policy_control/right/episode
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/place/right_n07/rh_place_contract.json
+    - -p
+    - robot:={artifact:robot_right}
+    - -p
+    - device:=cpu
+    - -p
+    - cup_topic:=/objects/source240_blue/pose
+    - -p
+    - holder:=1
+    - -p
+    - require_grasp:=false
+    background: true
+  - note: '[left] rh_place_l 노드(rh56f1/place/left_n09_e3800) — 홀더 0 · 놓은 뒤 스스로 끝남 · 붙인 자세 = 잡기 노드의 grasp_state 넘김 묶음(bundle:=auto)'
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/rh_place_node.py'
+    - --ros-args
+    - -r
+    - __node:=rh_place_node_left
+    - -p
+    - ns:=left_place
+    - -p
+    - episode_topic:=/policy_control/left/episode
+    - -p
+    - contract:={repo}/deploy/policies/rh56f1/place/left_n09_e3800/rh_place_contract.json
+    - -p
+    - robot:={artifact:robot_left}
+    - -p
+    - device:=cpu
+    - -p
+    - cup_topic:=/objects/shaker_c_orange/live_pose
+    - -p
+    - holder:=0
+    - -p
+    - require_grasp:=false
+    background: true
+  - note: 에피소드 실행기 episode_runner — cocktail_1c_n07b · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:cocktail_1c_n07b)
+    argv:
+    - '{repo}/.venv/bin/python'
+    - '{repo}/deploy/policy_control/policy_control/episode_runner_node.py'
+    - --ros-args
+    - -p
+    - episode:=config/episodes/cocktail_1c_n07b.yaml
+    - -p
+    - robot:=rh56f1
+    background: true
+  - note: ★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 (이상하면 '에피소드 실행기 정지' · 정지 바)
+    argv:
+    - bash
+    - -lc
+    - 'true'
+    manual: true
+  - note: 에피소드 노드들 정지
+    stop:
+    - episode_cocktail_1c_n07b#16
+    - episode_cocktail_1c_n07b#15
+    - episode_cocktail_1c_n07b#14
+    - episode_cocktail_1c_n07b#13
+    - episode_cocktail_1c_n07b#12
+    - episode_cocktail_1c_n07b#8
+    - episode_cocktail_1c_n07b#7
+    - episode_cocktail_1c_n07b#6
+    - episode_cocktail_1c_n07b#5
+    - episode_cocktail_1c_n07b#4
+    - episode_cocktail_1c_n07b#3
+    - episode_cocktail_1c_n07b#2
+    - episode_cocktail_1c_n07b#1
+    - episode_cocktail_1c_n07b#0
   episode_grasp_s_right:
   - note: fake 물체 — /objects/source240_blue/pose(aglt 학습 배치 x 0.25)
     argv:
@@ -8390,13 +8629,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - target_class:=blue
     - -p
@@ -8557,13 +8790,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - target_class:=orange
     - -p
@@ -8724,13 +8951,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - target_class:=pink
     - -p
@@ -8891,13 +9112,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - target_class:=blue
     - -p
@@ -9058,13 +9273,7 @@ run:
     - -p
     - cup_dropout_near_max_s:=2.5
     - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
-    - -p
-    - thumb_open_floor_rad:=0.06
     - -p
     - target_class:=orange
     - -p
@@ -9162,7 +9371,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -9196,39 +9406,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -9380,7 +9560,8 @@ run:
     - 'true'
     manual: true
   - note: '[left] rh_aglt_l 노드(rh56f1/aglt/left_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/left_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -9414,37 +9595,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
+    - inhand_est:='off'
     - -p
     - cup_obs_offset_base_m:=[0.0028,0.0283,0.0046]
     - -p
@@ -9598,7 +9751,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -9632,39 +9786,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -9816,7 +9940,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -9850,39 +9975,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true
@@ -10034,7 +10129,8 @@ run:
     - 'true'
     manual: true
   - note: '[right] rh_aglt_r 노드(rh56f1/aglt/right_approach_ap05) — 경로 F: 접근 정책 → 사전 파지 자리(2.5 cm)에서 0.5 s 평균 0.03 m/s 이하로 멈추면 같은 노드에서 rh56f1/aglt/right_rcg04
-      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · 컵 = FP++ live · 쥐면 손바닥 FK 로 손에 붙임'
+      로 넘김 → 첫 목표(컵 + 10 cm) 성공 또는 7 cm 위 2 s 쥠 유지에 끝남 · 접근 15 s 안에 못 오면 멈춤 · 접근 중 손바닥-컵 35 cm 넘으면 바로 멈춤 · FP++ 보조 · 손 배포 보조 끔(끊김 정지만) · 컵 = FP++
+      live · 쥐면 손바닥 FK 로 손에 붙임'
     argv:
     - '{repo}/.venv/bin/python'
     - '{repo}/deploy/policy_control/policy_control/rh_aglt_node.py'
@@ -10068,39 +10164,9 @@ run:
     - -p
     - cup_latch:=false
     - -p
-    - cup_hold_last:=true
-    - -p
-    - attach_fallback_s:=0.7
-    - -p
-    - attach_guard_m:=0.04
-    - -p
-    - attach_guard_frames:=3
-    - -p
-    - fpp_gate_jump_m:=0.02
-    - -p
-    - fpp_gate_dz_m:=0.02
-    - -p
-    - fpp_gate_radius_m:=0.2
-    - -p
-    - fpp_gate_max_hold_s:=2.5
-    - -p
-    - fpp_gate_anchor_m:=0.03
-    - -p
-    - cup_dropout_stop_s:=1.0
-    - -p
-    - cup_dropout_near_m:=0.2
-    - -p
-    - cup_dropout_near_max_s:=2.5
-    - -p
-    - hand_unfreeze_on_grasp:=true
-    - -p
-    - thumb_support_g:=80.0
-    - -p
     - lift_grasp_palm_m:=0.08
     - -p
-    - thumb_open_floor_rad:=0.06
-    - -p
-    - cup_obs_offset_base_m:=[-0.0116,0.0338,0.0000]
+    - inhand_est:='off'
     - -p
     - max_episode_s:=33.0
     background: true

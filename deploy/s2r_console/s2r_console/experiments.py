@@ -9,6 +9,8 @@
 """
 from __future__ import annotations
 
+import json
+import os
 import re
 from pathlib import Path
 
@@ -17,7 +19,8 @@ from . import tilt_view as TV
 ARMS = ("right", "left")
 #: (화면 키, 에피소드 머리, 이름) — 한 팔 파지 · 들기. 머리는 actions.CONTROL_EPISODES 의 키와 같다(시험이 맞춘다).
 #: ★11.09 사용자 "c,d 제거" — 화면에서 경로 C · D 를 뺐다(에피소드 · 관리 작업은 남는다). "F주황 · F분홍" 칸도 F 안 물체 버튼으로
-GRASP = (("1-B", "grasp_b", "1-B"), ("E", "grasp_e", "경로 E"), ("F", "grasp_f", "경로 F"),
+#: ★11.19 사용자 "policy 1-B · E · tilt 제거, cap_e2e 추가" — 1-B · E 칸을 뺐다(에피소드 · 관리 작업 ctl_grasp_b/e 는 남는다)
+GRASP = (("F", "grasp_f", "경로 F"),
          ("FP", "pick_place_f", "경로 F + 놓기"),     # ★10.22 잡고 들기 → newton_05 놓기
          ("S", "grasp_s", "잡기 학생"),               # ★11.11 eval 탭에서 옮김 — 마스크 학생 A 홈 출발 잡고 들기, 오른손 색 버튼
          ("PM", "place_m", "놓기 학생"))              # ★11.11 경로 F 잡고 들기 → 놓기 학생(place_m) — 오른손은 색 · 홀더 버튼
@@ -145,7 +148,8 @@ def _steps(ep) -> list[dict]:
                             {**one, "kind": "script", "text": "스크립트 쥐기", "sub": "닫기 → 10 cm 들기 → 3 s 유지"}]
                 else:
                     sub = "놓기 · 손 빼기" if b.kind == "place" else "파지 · 들기"     # ★10.22 경로 F + 놓기(n05)
-                    out.append({**one, "kind": "policy", "id": b.policy, "text": short_name(b.policy), "sub": sub})
+                    pid = b.student or b.policy             # ★11.11 학생 묶음이 있으면 노드가 도는 것은 학생(policy 는 계약)
+                    out.append({**one, "kind": "policy", "id": pid, "text": short_name(pid), "sub": sub})
     return out
 
 
@@ -179,6 +183,93 @@ def _policy_meta(repo: Path, e) -> dict:
             "ep": int(ep.group(1)) if ep else None, "summary": str(card.get("summary", "")), "eval": str(card.get("eval", "")),
             "checkpoint": e.checkpoint, "contract": e.contract, "issues": list(e.issues),
             "path": str(Path(e.path).relative_to(repo)) if Path(e.path).is_relative_to(repo) else str(e.path)}
+
+
+def _student_meta(repo: Path, pid: str) -> dict | None:
+    """★11.11 학생 묶음(deploy/policies/<id>/student.yaml)은 등록부에 없다 — 상세 칸에 학생 ckpt 를 보인다. 없으면 None."""
+    import yaml
+
+    d = repo / "deploy" / "policies" / pid
+    try:
+        card = yaml.safe_load((d / "student.yaml").read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return None
+    ckpt = card.get("ckpt") or {}
+    return {"id": pid, "short": short_name(pid), "side": str(card.get("side", "")), "status": "학생",
+            "ep": ckpt.get("it"), "summary": str(card.get("kind", "")), "eval": "",
+            "checkpoint": f"{ckpt.get('path', '')} · md5 {ckpt.get('md5', '?')}", "contract": "", "issues": [],
+            "path": str(d.relative_to(repo)), "card": "student.yaml"}
+
+
+#: ★11.19 cap e2e = 미션 단계 넷(관리 작업, 오른팔). 순서 = 화면 버튼 순서. 에피소드 파일이 아니라 cap 학생 노드가 구간을 돈다.
+CAP_E2E_ACTIONS = ("cap_now", "cap_student_right", "cap_next_right", "cap_end_right")
+CAP_STUDENT = "rh56f1/cap/right_student_h01"
+
+
+def _cap_e2e(repo: Path, stage_ids: frozenset) -> dict | None:
+    """cap 깊이 학생 e2e 칸 — 사슬은 rh_cap_student_node 의 PHASES(search · approach · descend · grasp · carry · seat)."""
+    if not set(CAP_E2E_ACTIONS) <= stage_ids:
+        return None
+    pid = CAP_STUDENT
+    if not (repo / "deploy" / "policies" / pid / "student.yaml").is_file():
+        problems = [f"학생 묶음 없음: deploy/policies/{pid}/student.yaml"]
+    else:
+        problems = []
+    base = {"node": None, "sides": ["right"]}
+    raw = [("move", "cap_now", "cap 시작 자세 · 목 드라이버"),
+           ("policy", short_name(pid), "search · approach"), ("script", "descend", "IK 하강"),
+           ("policy", short_name(pid), "grasp"), ("script", "carry", "이송 Mover"),
+           ("policy", short_name(pid), "seat"), ("move", "cap_end", "정지 · 목 복귀")]
+    steps = [{**base, "index": i, "kind": k, "text": t, "sub": sub, **({"id": pid} if k == "policy" else {})}
+             for i, (k, t, sub) in enumerate(raw)]
+    side = {"episode": None, "steps": steps, "summary": "cap_now → 학생(search → approach → descend → grasp → carry → seat) → cap_end",
+            "cups": {}, "problems": problems, "confirms": 0, "stage": "cap_student_right",
+            "action": "cap_student_right", "actions": list(CAP_E2E_ACTIONS), "runner": None}
+    return {"id": "cap_e2e", "group": "cap", "key": "cap", "label": "cap e2e", "summary": side["summary"],
+            "sides": {"right": side}}
+
+
+# ★11.19 act_tilt(ACT 정책 붓기) 카드 — dry run · 실행 두 작업(actions.ACT_TILT)과 카드 설정(ckpt · max_vel).
+#   값 목록 · 범위는 actions.ACT_TILT_CKPTS · ACT_TILT_MAX_VEL 과 같아야 한다(테스트가 확인). 마지막 실행 로그는 캐시하지 않는다.
+ACT_TILT_ITEM = ("act_tilt_dry", "act_tilt")
+ACT_TILT_CKPTS = ("050000", "010000")
+ACT_TILT_MAX_VEL = (0.0, 1.5)
+ACT_TILT_DEFAULT_VEL = 1.0                     # ★11.19 사용자: act 권장 1.0 (미션 argv 기본과 같게)
+ACT_TILT_RUNS = Path(os.environ.get("ACT_TILT_RUNS", Path.home() / "rl_ws/motion_acq/il/_work/act_tilt_runs"))
+_ACT_KEYS = ("result", "error", "steps", "published", "seconds", "latency_ms", "max_target_minus_measured_rad",
+             "max_image_age_s", "max_state_age_s", "max_vel",
+             "max_head_target_minus_measured_deg")    # ★11.19 목 포함(16차원) run 만 — 기록만 하고 abort 는 안 한다
+
+
+def _act_tilt(stage_ids: frozenset) -> dict | None:
+    if not all(i in stage_ids for i in ACT_TILT_ITEM):
+        return None
+    side = {"action": ACT_TILT_ITEM[1], "dry": ACT_TILT_ITEM[0], "runner": None, "steps": [], "problems": [],
+            "summary": "ACT 정책 붓기 — 두 팔 · 머리 카메라"}
+    return {"id": "act_tilt", "group": "act", "key": "ACT", "label": "ACT tilt", "summary": side["summary"],
+            "sides": {"both": side},
+            "act": {"dry": ACT_TILT_ITEM[0], "run": ACT_TILT_ITEM[1], "ckpts": list(ACT_TILT_CKPTS),
+                    "max_vel": list(ACT_TILT_MAX_VEL), "default_vel": ACT_TILT_DEFAULT_VEL}}
+
+
+def act_tilt_last(root: Path = None) -> dict | None:
+    """가장 최근 실행 폴더(<시각>/)의 summary.json 요약. 폴더가 없으면 None, summary.json 이 없으면 브리지가 중간에 죽은 것."""
+    root = Path(root or ACT_TILT_RUNS)
+    try:
+        runs = sorted((d for d in root.iterdir() if d.is_dir()), key=lambda d: d.name)
+    except OSError:
+        return None
+    if not runs:
+        return None
+    last = runs[-1]
+    out = {"run": last.name, "path": str(last), "count": len(runs)}
+    try:
+        data = json.loads((last / "summary.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {**out, "missing": True}
+    except (OSError, ValueError) as exc:
+        return {**out, "missing": True, "error": f"summary.json 을 읽지 못함: {exc}"}
+    return {**out, **{k: data.get(k) for k in _ACT_KEYS}} if isinstance(data, dict) else {**out, "missing": True}
 
 
 def _build(repo: Path, stage_ids: frozenset) -> dict:
@@ -235,15 +326,17 @@ def _build(repo: Path, stage_ids: frozenset) -> dict:
             first = next(iter(sides.values()))
             items.append({"id": head, "group": "grasp", "key": key, "label": label, "summary": first.get("summary", ""),
                           "sides": sides})
-    for key, name, _title, when in TV.PATHS:
-        if f"episode_{name}" not in stage_ids:
-            continue
-        one = {**_episode(repo, name, entries), "stage": f"episode_{name}", "action": None, "runner": "episode_runner"}
-        items.append({"id": name, "group": "tilt", "key": key, "label": f"tilt {key}", "summary": one.get("summary", ""),
-                      "when": when, "sides": {"both": one}})
+    # ★11.19 사용자 "tilt * 제거" — tilt 경로 칸을 뺐다(미션 단계 episode_tilt_base_* · tilt 탭은 남는다)
+    cap = _cap_e2e(repo, stage_ids)
+    if cap:
+        items.append(cap)
+    act = _act_tilt(stage_ids)
+    if act:
+        items.append(act)
     used = {s["id"] for it in items for side in it["sides"].values() for one in (side, *side.get("objects", ()))
             for s in one["steps"] if s["kind"] == "policy" and s.get("id")}
-    policies = {pid: _policy_meta(repo, entries[pid]) for pid in sorted(used) if pid in entries}
+    policies = {pid: _policy_meta(repo, entries[pid]) if pid in entries else _student_meta(repo, pid) for pid in sorted(used)}
+    policies = {k: v for k, v in policies.items() if v is not None}
     return {"items": items, "policies": policies}
 
 
@@ -253,6 +346,12 @@ def view(repo: Path, stage_ids) -> dict:
     files = sorted((repo / "config" / "episodes").glob("*.yaml"))
     pol = repo / "deploy" / "policies" / "rh56f1" / "aglt"
     try:
-        return TV._cached(f"xp:{hash(ids)}", files + [pol, *sorted(pol.glob("*/policy.yaml"))], lambda: _build(repo, ids))
+        cap = repo / "deploy" / "policies" / CAP_STUDENT / "student.yaml"
+        out = TV._cached(f"xp:{hash(ids)}", files + [pol, *sorted(pol.glob("*/policy.yaml")), cap], lambda: _build(repo, ids))
+        for it in out["items"]:
+            if it.get("act"):                     # ★11.19 실행 로그는 캐시 밖(실행마다 바뀐다) — 캐시 dict 는 건드리지 않는다
+                return {**out, "items": [{**i, "act": {**i["act"], "last": act_tilt_last()}} if i is it else i
+                                         for i in out["items"]]}
+        return out
     except Exception as exc:                          # noqa: BLE001 — 표시용 집계가 상황판을 멈추지 않게
         return {"items": [], "policies": {}, "error": f"{type(exc).__name__}: {exc}"}

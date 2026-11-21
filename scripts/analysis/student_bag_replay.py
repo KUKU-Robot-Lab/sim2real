@@ -341,7 +341,7 @@ def main() -> None:
     block, min_valid = hdn.real_depth.BLOCK, hdn.real_depth.MIN_VALID
     cut = hdn.make_cut(t_base_cam)
     node_cfg = hdn.node_config(block, min_valid, hdn.TABLE_Z, hdn.real_depth.FLOOR_MARGIN_M, str(pc["extrinsics"]["path"]),
-                               extr_md5, pc["rgb"])
+                               extr_md5, pc["rgb"], pc["extrinsics"].get("ckpt_md5"))
     mask_on = {s.pol.mask_on for s in sides.values()}
     if mask_on != {bool(args.mask_bits)}:
         raise SystemExit(f"묶음 마스크 {mask_on} 와 --mask-bits {args.mask_bits!r} 가 맞지 않는다")

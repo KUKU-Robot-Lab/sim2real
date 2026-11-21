@@ -63,6 +63,8 @@ DEEP_SPEED_M_S = 0.02          # 사전 파지 → 쥔 자리 평균 속도(최�
 VIA_SPEED_M_S = 0.04           # 경유점 → 사전 파지(관절 공간 · RRT 이송일 때) 평균 속도
 TRANSPORT_QD_RAD_S = 0.5       # 관절 공간 · RRT 이송 관절 최고 속도(pd ramp_speed 상한 · 홈 경로와 같은 시간 매개)
 TRANSPORT_RAMP_S = 0.5
+#: ★11.19 커피박스(grasp_axis): 면 방위가 회귀식 방위에서 이보다 멀면 거부하고 돌릴 각도를 알린다(후보 폭과 같다 · 학습 지터는 ±10°)
+FACE_TOL_DEG = 30.0
 PHI_OFFSETS_DEG = (0, 10, -10, 20, -20, 30, -30)   # 사전 파지 방위 후보(aglt_new 회귀식 기준, 작은 것부터)
 #: 사전 파지 높이 후보(컵 원점 위, aglt_new 기본 0 = 10.19 사용자 "손 중심 높이 = 병 원점"). 0 에서 되는 방위가 없을 때만 올린다 —
 #: 10.20 왼손 shaker(원점 6.5 cm): 높이 0 이면 편 손 새끼 손끝 충돌 형상이 상판 13.5 mm 위(여유 2 cm 미달).
@@ -231,6 +233,16 @@ def _t(v) -> torch.Tensor:
     return torch.tensor(np.asarray(v, float)[None], dtype=torch.float32)
 
 
+def face_azimuth(quat_wxyz, axis_body, phi0: float) -> tuple[float, float]:
+    """★11.19 박스 면 법선 axis_body 가 base 에서 가리키는 수평 방위 a · a+π 중 phi0 에 가까운 것 → (phi rad, phi − phi0 deg).
+    phi 는 사전 파지 바깥 방향(컵 → 손바닥)이라 손바닥이 그 면을 마주 본다. 양수 = 박스를 위에서 봐 시계 방향으로 돌려야 맞는다."""
+    w, x, y, z = (float(v) for v in quat_wxyz)
+    d = Rotation.from_quat([x, y, z, w]).apply(np.asarray(axis_body, float))
+    a = math.atan2(d[1], d[0])
+    dphi = min((math.remainder(c - phi0, 2 * math.pi) for c in (a, a + math.pi)), key=abs)
+    return phi0 + dphi, math.degrees(dphi)
+
+
 def pregrasp_target(RA, p, cup_fpp: np.ndarray, radius: float, phi: float, h: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """aglt_new 사전 파지 손바닥 자세(ready_approach.pregrasp_pose 그대로, 높이 h) → (위치, 회전, 바깥 방향 e_r)."""
     pos, R = RA.pregrasp_pose(_t(cup_fpp), _t(radius), _t(p.r_mult[0]), _t(h), _t(phi), p.n_cup, p.f_cup)
@@ -248,14 +260,54 @@ def solve_pose(RC, ch, q_now: np.ndarray, pos: np.ndarray, R: np.ndarray, n_seed
     return pl.q[0].double().numpy(), bool(pl.ok[0]), math.degrees(float(pl.margin[0]))
 
 
+def obstacle_cylinders(objs: tuple) -> np.ndarray:
+    """WorldSpec 물체(원기둥 radius · 상자 half) → (K,5) 수직 원기둥 x · y · z_lo · z_hi · r. 상자는 덮는 원기둥."""
+    out = []
+    for o in objs:
+        c = np.asarray(o["center"], float)
+        r, hh = (float(o["radius"]), float(o["half_height"])) if "radius" in o else \
+            (float(np.hypot(o["half"][0], o["half"][1])), float(o["half"][2]))
+        out.append((c[0], c[1], c[2] - hh, c[2] + hh, r))
+    o = np.asarray(out, float).reshape(-1, 5)
+    if not np.isfinite(o).all() or (o[:, 4] <= 0).any() or (o[:, 2] >= o[:, 3]).any():
+        raise ReachError(f"옆 물체 원기둥 값이 잘못됐다(NaN·inf, r ≤ 0, z_lo ≥ z_hi): {o.round(4).tolist()}")
+    return o
+
+
+def _table_cups_arg(text: str) -> list:
+    """--table-cups JSON → [{name, object, pos [x, y(, z)]}] (모양 · 유한값 검사 — 빈 목록은 장애물 없음과 같아 거부)."""
+    items = _json_arg(text, "--table-cups")
+    ok = isinstance(items, list) and len(items) > 0 and all(
+        isinstance(it, dict) and {"name", "object", "pos"} <= it.keys() and isinstance(it["pos"], list)
+        and len(it["pos"]) in (2, 3) and all(isinstance(v, (int, float)) and np.isfinite(v) for v in it["pos"]) for it in items)
+    if not ok:
+        raise ReachError(f'--table-cups 는 [{{"name", "object", "pos": [x, y(, z)]}}, ...] 비지 않은 목록: {text[:200]}')
+    return items
+
+
+def _json_arg(text: str, name: str):
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ReachError(f"{name} JSON 이 아니다: {exc}") from exc
+
+
 def roll_mover(RC, p, ch, q_now: np.ndarray, q_goal: np.ndarray, pos: np.ndarray, R: np.ndarray,
-               via: np.ndarray) -> tuple[np.ndarray, dict]:
-    """ready_carry Mover(aglt_new ReadyApproach 와 같은 설정 · 경유점)로 q_goal 까지 굴린다(명령 = 실측, 지연 없음)."""
+               via: np.ndarray, obstacles: np.ndarray | None = None) -> tuple[np.ndarray, dict]:
+    """ready_carry Mover(aglt_new ReadyApproach 와 같은 설정 · 경유점)로 q_goal 까지 굴린다(명령 = 실측, 지연 없음).
+    11.20 obstacles (K,5) 를 주면 sim 과 같은 함수(ready_carry.avoid)로 경유점을 고른다."""
     M = RC.mover
     mv = M.Mover(ch, M.MoverCfg(v_max=p.v_max, qd_max=p.qd_max, max_steps=p.max_steps, seeds=p.plan_seeds), 1, "cpu")
     q = _t(q_now)
-    mv.start(torch.tensor([0]), q, torch.eye(4)[None], None, _t(pos), _t(R)[:, :, 2], None,
-             via=_t(via)[:, None], q_goal=_t(q_goal))
+    if obstacles is not None and len(obstacles):
+        if not hasattr(mv, "avoid_ok"):
+            raise ReachError("--holders/--table-cups: 고정 hdgp 사본의 ready_carry 에 옆 물체 피하기(avoid)가 없다 — "
+                             "config/hdgp_snapshot.yaml commit 을 올릴 것")
+        mv.start(torch.tensor([0]), q, torch.eye(4)[None], None, _t(pos), _t(R)[:, :, 2], None,
+                 via=_t(via)[:, None], q_goal=_t(q_goal), obstacles=_t(obstacles))   # _t 가 B=1 축을 붙인다 → (1,K,5)
+    else:
+        mv.start(torch.tensor([0]), q, torch.eye(4)[None], None, _t(pos), _t(R)[:, :, 2], None,
+                 via=_t(via)[:, None], q_goal=_t(q_goal))
     rows, arrived = [q[0].clone()], False
     for _ in range(p.max_steps + 60):
         on = bool(mv.on[0])
@@ -267,7 +319,11 @@ def roll_mover(RC, p, ch, q_now: np.ndarray, q_goal: np.ndarray, pos: np.ndarray
             arrived = bool(arrive[0]) or arrived
             break
     path = torch.stack(rows).double().numpy()
-    return path, {"plan_ok": bool(mv.ok[0]), "arrived": arrived, "end_err_mm": round(float(mv.last_err[0]) * 1000, 1)}
+    info = {"plan_ok": bool(mv.ok[0]), "arrived": arrived, "end_err_mm": round(float(mv.last_err[0]) * 1000, 1)}
+    if obstacles is not None and len(obstacles):
+        info["avoid"] = {"ok": bool(mv.avoid_ok[0]), "pick": int(mv.avoid_pick[0]),
+                         "clear_mm": round(float(mv.avoid_clear[0].clamp(max=1.0)) * 1000, 1)}
+    return path, info
 
 
 def line_path(P, ch, q_a: np.ndarray, p_b: np.ndarray, R_b: np.ndarray, v_m_s: float, w_deg_s: float,
@@ -390,7 +446,7 @@ def plan(side: str, cup_fpp, cup_quat, obj: str, out: Path, q: dict, hdgp: Path,
 
 
 def _plan(side: str, cup_fpp, cup_quat, obj: str, q: dict, hdgp: Path, *, asset: Path = ASSET,
-          contract: Path | None = None, stop: str = "grasp"):
+          contract: Path | None = None, stop: str = "grasp", ring_radius_m: float = 0.0, obstacles: tuple = ()):
     if stop not in STOPS:
         raise ReachError(f"stop 은 {STOPS} — {stop!r}")
     tm, tk = {}, [time.monotonic()]
@@ -437,7 +493,7 @@ def _plan(side: str, cup_fpp, cup_quat, obj: str, q: dict, hdgp: Path, *, asset:
     if abs(z_lo - tz) > 0.03:
         meta["problems"].append(f"컵 바닥 z {z_lo:.3f} 이 탁자 {tz:.3f} 에서 {abs(z_lo - tz) * 100:.1f} cm — FP++ 자세 확인")
     rw = ReachWorld(side, hdgp, q_now, q[other], {"x": float(cup_fpp[0]), "y": float(cup_fpp[1]), "z_lo": float(z_lo),
-                                                  "z_hi": float(z_hi), "radius": radius})
+                                                  "z_hi": float(z_hi), "radius": radius}, extra=obstacles)
     start = rw.chk.check(q_now)
     meta["start_collision"] = {"ok": bool(start.ok), "worst": None if start.ok else
                                {"pair": rw_pair(start.worst_pair), "dist_mm": round(float(start.worst_dist) * 1000, 1)}}
@@ -449,14 +505,30 @@ def _plan(side: str, cup_fpp, cup_quat, obj: str, q: dict, hdgp: Path, *, asset:
     #   이송 ready_carry Mover(aglt_new 와 같은 경유점 · 속도) → 걸리면 관절 공간 직선 → RRT(둘 다 경유점까지, 거기서 곧게 사전 파지로).
     p = ready_params(RA, rcfg, side)
     phi0 = math.radians(p.phi_coef[0] + p.phi_coef[1] * cup_fpp[0] + p.phi_coef[2] * cup_fpp[1])
+    offsets, ring_r = PHI_OFFSETS_DEG, (ring_radius_m or radius)   # ring: 파지 정책 물체 반지름(r/R 시작 검사) · 없으면 실물
+    meta["ring_radius_m"] = ring_r
+    if spec.grasp_axis is not None:   # ★11.19 사용자 "x축(80.5면의 수직방향)으로 손이 정렬" — 손바닥이 그 면을 마주 보게
+        if cup_quat is None:
+            raise ReachError(f"{obj}: grasp_axis 물체는 --quat(FP++ 자세)가 있어야 면 방향을 안다")
+        cq = spec.cad_to_body_quat
+        axis_b = Rotation.from_quat([cq[1], cq[2], cq[3], cq[0]]).inv().apply(np.asarray(spec.grasp_axis, float))
+        phi_f, dd = face_azimuth(cup_quat, axis_b, phi0)
+        meta["face"] = {"phi_reg_deg": round(math.degrees(phi0), 1), "phi_face_deg": round(math.degrees(phi_f), 1),
+                        "diff_deg": round(dd, 1), "tol_deg": FACE_TOL_DEG}
+        if abs(dd) > FACE_TOL_DEG:
+            meta["problems"].append(f"박스 면이 손이 들어갈 방향에서 {abs(dd):.0f}° 돌아가 있다(허용 {FACE_TOL_DEG:.0f}°) — "
+                                    f"위에서 봐서 {'시계' if dd > 0 else '반시계'} 방향으로 {abs(dd):.0f}° 돌려 놓을 것")
+            meta["ok"] = False
+            return False, meta, None
+        phi0, offsets = phi_f, (0,)
     gen = torch.Generator().manual_seed(0)
     tries, chosen = [], None
-    for h, off in ((h, off) for h in PRE_H_M for off in PHI_OFFSETS_DEG):
+    for h, off in ((h, off) for h in PRE_H_M for off in offsets):
         if chosen is not None:
             break
         tr = {"h_m": h, "phi_offset_deg": off, "phi_deg": round(math.degrees(phi0) + off, 1)}
         tries.append(tr)
-        pos, R, er = pregrasp_target(RA, p, cup_fpp, radius, phi0 + math.radians(off), h)
+        pos, R, er = pregrasp_target(RA, p, cup_fpp, ring_r, phi0 + math.radians(off), h)
         q_pre, ok_pre, m_pre = solve_pose(RC, ch, q_now, pos, R, p.plan_seeds, gen)
         m_pre = min(m_pre, float(rw.profile_margin_deg(q_pre[None]).min()))
         tr["pregrasp"] = {"ik_ok": ok_pre, "margin_deg": round(m_pre, 1)}
@@ -466,10 +538,12 @@ def _plan(side: str, cup_fpp, cup_quat, obj: str, q: dict, hdgp: Path, *, asset:
             continue
         via = pos + p.via_out_m * er + np.array([0.0, 0.0, p.via_up_m])
         methods = []
-        appr, ainfo = roll_mover(RC, p, ch, q_now, q_pre, pos, R, via)
+        appr, ainfo = roll_mover(RC, p, ch, q_now, q_pre, pos, R, via, obstacle_cylinders(obstacles) if obstacles else None)
         lap("mover")
         aj = judge(appr, APPROACH_CUP_MARGIN_M, APPROACH_CUP_CLEAR_M)
         a_fails = aj["fails"] + ([] if ainfo["arrived"] else ["Mover 가 사전 파지에 못 닿았다"])
+        if not ainfo.get("avoid", {}).get("ok", True):   # 판정은 judge(reach_world 메시 + 옆 물체)가 한다 — 근사 몸 점 여유는 알림만
+            tr["avoid_warn"] = f"근사 몸 캡슐 여유 {ainfo['avoid']['clear_mm']} mm < 목표 — 메시 검사로 판정"
         methods.append({"method": "ready_carry", "ok": not a_fails, "fails": a_fails, "T_s": round((len(appr) - 1) / RATE_HZ, 2)})
         lap("check")
         if a_fails:
@@ -582,12 +656,30 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--stop", choices=STOPS, default="grasp",
                     help="grasp = 손 안 컵 자리까지(1-B) · pregrasp = 사전 파지 자리에서 끝(경로 D, rcg03 이 넘겨받는다)")
+    ap.add_argument("--ring-radius-m", type=float, default=0.0,
+                    help="사전 파지 고리 반지름 = 파지 정책 물체 반지름(★11.19 박스 — 실물 aabb 가 아니라 정책이 시작을 받는 고리)")
+    ap.add_argument("--holders", type=Path, default=None,
+                    help="11.20 피할 홀더 자세 yaml(plan_home_path --holders 와 같은 형식, base_link)")
+    ap.add_argument("--table-cups", default="",
+                    help='11.20 피할 탁자 위 컵 JSON [{"name","object","pos":[x,y(,z)]}] (plan_home_path --table-cups 와 같음)')
     a = ap.parse_args(argv)
     try:
+        obstacles = ()
+        if a.holders or a.table_cups:
+            import home_path_world as W
+            import yaml
+            from plan_home_path import holder_objects, table_cup_objects
+            from reach_world import ENV_YAML
+            env = W.load_env_yaml(ENV_YAML)
+            try:
+                hold = holder_objects(a.holders, env) if a.holders else ()
+            except (OSError, KeyError, TypeError, ValueError, AttributeError, yaml.YAMLError) as exc:   # 파일 · yaml 모양 오류
+                raise ReachError(f"--holders {a.holders}: {type(exc).__name__} {exc}") from exc
+            obstacles = hold + (table_cup_objects(_table_cups_arg(a.table_cups), env) if a.table_cups else ())
         cup = parse_vec(a.cup, 3, "--cup")
         quat = parse_vec(a.quat, 4, "--quat") if a.quat else None
         ok, meta = plan(a.side, cup, quat, a.object, a.out, current_q(a.q_json), H.hdgp_dir(), asset=a.asset,
-                        contract=a.contract, stop=a.stop)
+                        contract=a.contract, stop=a.stop, ring_radius_m=a.ring_radius_m, obstacles=obstacles)
     except H.PinError as exc:
         print(f"✗ {exc}")
         return 3

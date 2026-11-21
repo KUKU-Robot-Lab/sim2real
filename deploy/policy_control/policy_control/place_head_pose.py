@@ -1,7 +1,7 @@
 """11.08 놓기 학생 실기: 움직이는 머리의 카메라 자세(base ← camera_color_optical_frame)를 /head/joint_states 로 매 프레임 구한다.
 
 학습(hdgp distillation/student/head.py HeadModel.cam_pose)과 같은 식이다:
-  T_neck_cam = T_base_neck(q0)^-1 · T_base_cam0   (q0 = 외부 파라미터를 잰 머리 자세, r20u5 yaml head_pose 틱)
+  T_neck_cam = T_base_neck(q0)^-1 · T_base_cam0   (q0 = 외부 파라미터를 잰 머리 자세, m1117 yaml head_pose 틱)
   T_base_cam(q) = T_base_neck(q) · T_neck_cam
 목 FK 는 scripts/head_fk_chain.py(URDF 체인)를 그대로 쓴다. /head/joint_states 는 URDF 규약 rad 이고 pan 은 인코더와 부호가 반대다
 (head_fk_chain.encoder_from_urdf 로 건넌다).
@@ -23,7 +23,7 @@ from . import _paths
 
 import head_fk_chain as fk  # noqa: E402  (scripts/, _paths 가 sys.path 에 넣는다)
 
-EXTRINSICS = _paths.SIM2REAL / "config" / "global_camera_extrinsics_arm4090_r20u5.yaml"
+EXTRINSICS = _paths.SIM2REAL / "config" / "global_camera_extrinsics_arm4090_m1117.yaml"
 # 틱 → 인코더 deg 는 드라이버(head_position_hold_node.tick_to_deg: tick/4095·360 − 180)를 쓴다. /head/joint_states 가 이 식으로 나온다.
 # hdgp head.py tick_to_enc 는 (tick − 2048)·360/4096 이라 camset 자세에서 pan 0.04° 다르다(외부 파라미터 기준 자세만 바뀌는 차).
 TICK_MAX = 4095

@@ -89,7 +89,8 @@ def test_the_rh56f1_real_mission_draws_every_node_once_and_knows_every_command(r
     # ★10.19 팔마다 실행기 상자 둘(좌우 동시 실행) → 22 · ★10.28 칵테일 분홍 FP++ 묶음(source240_pink) 컨테이너 상자 하나 → 23
     # ★11.05 경로 S 머리 깊이(head_depth) 상자 하나 → 24 · ★11.07 경로 M 머리 마스크(head_mask) 상자 하나 → 25 · ★11.08 경로 F 분홍 src200(grasp_fk_right)이 FP++ source200 묶음 상자 하나 → 26
     # ★11.09 경로 F 물체 버튼 — source240 주황 · 분홍 상자 하나 → 27
-    assert len(d.boxes) <= 27, [b.id for b in d.boxes]
+    # ★11.18 cap 깊이 학생(rh_cap_node_right) 상자 하나 → 28
+    assert len(d.boxes) <= 28, [b.id for b in d.boxes]
 
 
 def test_no_wire_is_drawn_twice(real):
@@ -124,13 +125,15 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                "episode_grasp2tilt_f_240#5",                    # ★10.27 실기 2단계 grasp2tilt(컵 240)
                                "episode_tilt_base_d#5",                         # ★10.20 경로 A 폐지 → tilt 경로 D(ap05 → rcg03)
                                "episode_tilt_base_c#5",                         # 10.17 tilt 기본 궤적 경로 C
-                               "episode_cocktail_1#5", "episode_cocktail_1b#5", "episode_cocktail_1c_e1000#5", "episode_cocktail_1c_e4000#5",   # ★10.28 칵테일 SEP · B
+                               "episode_cocktail_1#5", "episode_cocktail_1b#5", "episode_cocktail_1c_e1000#5", "episode_cocktail_e2e#5",   # ★10.28 칵테일 SEP · B
+                               "episode_cocktail_1c_n07b#5",                    # ★11.16 안 B(파랑만 · 오른손 놓기 n07)
                                "episode_place_m_right#5",                       # ★11.08 놓기 학생(잡기는 칵테일 그대로)
                                *(f"episode_{n}#5" for n in PMV)} & set(units)   # ★11.11 놓기 학생 색 · 홀더 판
     place = d.box("rh_place_node_right")
     assert set(place.units) == {"policy_place_right#1", "episode_pick_place_right#6",
                                 "episode_pick_place_f_right#6",                 # ★10.22 경로 F + 놓기(newton_05)
-                                "episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_1c_e4000#7",   # ★10.28 칵테일 — 같은 노드가 홀더 1 → 2
+                                "episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_e2e#7",   # ★10.28 칵테일 — 같은 노드가 홀더 1 → 2
+                                "episode_cocktail_1c_n07b#7",                   # ★11.16 안 B — 홀더 1 만
                                 *PM, *(f"episode_{n}#10" for n in PMV)}   # ★11.11 색 · 홀더 판 ·  ★11.09 놓기 학생 v2 — 같은 노드 이름(경로 F 접근 #5 · 검사 #6 · 목 드라이버 #8 · 마스크 #9 뒤)
     # ★10.19 사용자 "좌우 동시 실행": 한 팔 에피소드는 팔마다 실행기(episode_runner_<팔>), 두 팔 tilt 는 기본 실행기
     runner = d.box("episode_runner")
@@ -138,7 +141,9 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                  "episode_tilt_base_c#9",   # 10.17 경로 C — 정책 노드 둘(D 와 같은 자리)
                                  "episode_tilt_base_b#5",   # 10.17 경로 B — 정책 노드 없음(사람이 컵을 댄다)
                                  "episode_grasp2tilt_f_240#9",   # ★10.27 실기 2단계 grasp2tilt — 두 팔 에피소드라 기본 실행기
-                                 "episode_cocktail_1#11", "episode_cocktail_1b#11", "episode_cocktail_1c_e1000#11", "episode_cocktail_1c_e4000#11"}   # ★10.28 칵테일 — 정책 노드 넷(★11.09 놓기 학생 v2 는 한 팔 에피소드라 팔별 실행기로 옮겼다)
+                                 "episode_cocktail_1#11", "episode_cocktail_1b#11",
+                                 # ★11.16 체인 영상 bag(CHAIN_VIDEO_EPISODES) 한 줄 뒤라 #12
+                                 "episode_cocktail_1c_e1000#12", "episode_cocktail_e2e#12", "episode_cocktail_1c_n07b#12"}   # ★10.28 칵테일 — 정책 노드 넷(★11.09 놓기 학생 v2 는 한 팔 에피소드라 팔별 실행기로 옮겼다)
     for side in ("right", "left"):
         assert set(d.box(f"episode_runner_{side}").units) == {f"episode_pick_place_{side}#9",
                                                               f"episode_grasp_c_{side}#8",
@@ -146,9 +151,9 @@ def test_a_node_started_by_its_own_stage_and_by_the_episode_is_one_box_with_both
                                                               f"episode_grasp_b_{side}#7",
                                                               f"episode_grasp_d_{side}#8",   # ★10.20 경로 D(aglt 노드 하나)
                                                               f"episode_grasp_e_{side}#8",   # ★10.20 밤 경로 E(aglt 노드 하나, 넘김)
-                                                              f"episode_grasp_f_{side}#8",   # ★10.21 경로 F(경로 E + rcg04)
-                                                              f"episode_pick_place_f_{side}#9",   # ★10.22 경로 F + 놓기
-                                                              *_F_VARIANTS(side, 8),   # ★11.08 경로 F 주황 · 분홍(오른팔만)
+                                                              f"episode_grasp_f_{side}#9",   # ★10.21 경로 F(경로 E + rcg04) · ★11.18 FP++ 상자 영상 bag 한 줄 뒤
+                                                              f"episode_pick_place_f_{side}#10",   # ★10.22 경로 F + 놓기 · ★11.16 체인 영상 bag 한 줄 뒤
+                                                              *_F_VARIANTS(side, 9),   # ★11.08 경로 F 주황 · 분홍(오른팔만)
                                                               # ★11.05 경로 S · ★11.07 경로 M · ★11.09 놓기 학생 v2 — 카메라가 같은 PC 일 때만(★11.11)
                                                               *((f"episode_grasp_s_{side}#11", f"episode_grasp_m_{side}#11", f"episode_place_m_{side}#13",
                                                                  *(f"episode_{n}#11" for n in GSV if n.endswith(f"_{side}")))   # ★11.11 잡기 학생 색 판
@@ -186,7 +191,8 @@ def test_in_the_episode_the_runner_gives_the_holder_and_goal_and_alone_the_holde
     assert holder == {alone: ("policy_place_right#1",),
                       "episode_runner_right": ("episode_pick_place_right#6", "episode_pick_place_f_right#6",
                                                *PM, *(f"episode_{n}#10" for n in PMV if PMV_H[n] == 1)),   # ★11.11 · ★10.22 경로 F + 놓기 · ★11.09 놓기 학생 v2(한 팔 = 팔별 실행기)
-                      "episode_runner": ("episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_1c_e4000#7")}   # ★10.28 칵테일(두 팔 = 기본 실행기)
+                      "episode_runner": ("episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_e2e#7",
+                                         "episode_cocktail_1c_n07b#7")}   # ★10.28 칵테일(두 팔 = 기본 실행기)
     goal = {w.src: w for w in d.wires if w.dst == "rh_aglt_node_right" and w.topic == "/policy_control/right/goal"}
     # ★10.19 한 팔 에피소드는 오른팔 실행기, 두 팔 tilt 는 기본 실행기가 목표를 낸다
     # ★10.20 옛 정책 정리 뒤: 계약이 없는 정책 노드는 단위에서 빠진다 → 목표를 내는 실행기는 오른손 aglt 노드를 실제로 띄우는 단계의 것만
@@ -279,8 +285,8 @@ def test_the_fake_profile_gets_the_same_picture_with_fake_hands():
     # fake 홀더 여섯(★10.22 경로 F + 놓기 둘 추가) · ★10.28 칵테일 둘 × 홀더 셋 → 열둘 = 실기 홀더 노드 상자 하나
     #   ★11.08 놓기 학생 에피소드 홀더 하나 → 19 · ★11.09 왼손 놓기 학생(홀더 0) 하나 더 → 20
     holders = d.box("cup_holders")
-    #   ★11.11 놓기 학생 색 · 홀더 판 — 조합 에피소드마다 홀더 하나
-    assert len(holders.units) == 20 - 2 * (not PM) + len(PMV) and holders.title == W.HOLDER_TITLE and not holders.ros
+    #   ★11.11 놓기 학생 색 · 홀더 판 — 조합 에피소드마다 홀더 하나 · ★11.16 안 B cocktail_1c_n07b 홀더 셋 → 23
+    assert len(holders.units) == 23 - 2 * (not PM) + len(PMV) and holders.title == W.HOLDER_TITLE and not holders.ros
 
 
 # ── 노드 소스의 이름 ────────────────────────────────────────────────────
@@ -315,9 +321,13 @@ def test_node_names_and_topics_are_the_ones_the_node_sources_use():
 
 def test_policy_node_cup_defaults_are_the_nodes_families():
     N = pytest.importorskip("policy_control.pour_fj_node")
+    pytest.importorskip("policy_control.rh_cap_node")     # rh_cap 계열은 이 모듈을 불러올 때 생긴다
     for script, (node, _, cups) in W.POLICY_NODES.items():
         fam = N.FAMILIES[node.removesuffix("_node")]
         assert fam.name == node, script
+        if script == "rh_cap_student_node.py":            # ★11.18 학생은 계열 캡 토픽 대신 리시버(쉐이커) 자세만 받는다
+            assert cups == (("rcv_pose_topic", "/objects/shaker_c_orange/live_pose"),)
+            continue
         assert [(param, topic) for _, param, topic in fam.cups] == list(cups), script
 
 
@@ -486,7 +496,7 @@ def test_a_topic_heard_from_two_boxes_names_the_sender_in_the_port(real):
     # 두 정책이 같은 pd 로 joint_target 을 낸다 — 포트 이름이 같으면 화면에서 중복처럼 보인다
     _, _, d = real
     labels = {w.label for w in d.wires if w.dst == "pd" and w.topic == "/policy_control/joint_target"}
-    assert labels == {"집기 ▸ joint_target", "놓기 ▸ joint_target"}                  # 내는 쪽이 앞 — 좁은 상자에서도 안 잘린다
+    assert labels == {"집기 ▸ joint_target", "놓기 ▸ joint_target", "cap ▸ joint_target"}   # 내는 쪽이 앞 — 좁은 상자에서도 안 잘린다
     # ★10.19 목표는 오른팔 실행기 · 두 팔 실행기 둘이 낸다 — 내는 쪽 이름이 앞
     # ★10.20 aglt 노드를 띄우는 단계의 실행기만 — 둘 이상일 때만 이름이 앞에 붙는다(옛 정책을 내린 뒤 지금은 오른팔 실행기 하나)
     goal_tags = set(_goal_runners(real[1]).values())
@@ -644,7 +654,9 @@ def test_the_cocktail_place_node_hears_both_of_its_holders(real):
     _, _, d = real
     for h in (1, 2):
         srcs = {w.src: w.units for w in d.wires if w.dst == "rh_place_node_right" and w.topic == f"/objects/cup_holder_{h}/pose"}
-        assert set(srcs.get("episode_runner", ())) == {"episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_1c_e4000#7"}, (h, srcs)
+        # ★11.16 안 B cocktail_1c_n07b 는 오른손이 홀더 1 에만 놓는다
+        assert set(srcs.get("episode_runner", ())) == {"episode_cocktail_1#7", "episode_cocktail_1b#7", "episode_cocktail_1c_e1000#7", "episode_cocktail_e2e#7",
+                                                       *(["episode_cocktail_1c_n07b#7"] if h == 1 else [])}, (h, srcs)
         # ★11.09 놓기 학생 v2 = 홀더 1, 한 팔 에피소드라 팔별 실행기에서 온다(칵테일 실행기가 아님)
         assert ("episode_place_m_right#10" in srcs.get("episode_runner_right", ())) == (bool(PM) and h == 1), (h, srcs)
         # ★11.11 색 · 홀더 판 — 고른 홀더만

@@ -60,7 +60,11 @@ HAND_ACTIONS = ("open", "grasp")
 KINDS = ("aglt", "place", "pour", "lock", "shake")
 CONTINUE_KINDS = ("place",)   # ★11.07 continue_on_fail: 실패해도 다음 노드(home 등)로 넘어갈 수 있는 정책 종류
 SIDES = ("right", "left", "both")
-TRAJ_KINDS = ("rehome", "noop", "carry", "tilt", "reach", "lift")
+TRAJ_KINDS = ("rehome", "noop", "carry", "tilt", "reach", "lift", "mix")
+#: ★11.11 사용자 "보정값들은 사실 모든 정책들에게 적용" — 팔별 cup_obs_offset_base_m(카메라가 본 손 − FK 손, base m) 정본.
+#:   policies 에 값이 없는 aglt(학생 아님) 정책은 이 값을 받는다. 에피소드에 적은 값은 이 값과 같아야 한다(시험이 본다).
+#:   오른손 = j3 영점(+5.2°) 뒤 칵테일 55c733c · grasp_f 62fb34e, 왼손 = 11.04 L2 측정(logs/analysis/frame_offset_1104).
+CUP_OBS_OFFSET_BASE_M = {"right": (-0.0136, 0.0085, 0.0), "left": (0.0028, 0.0283, 0.0046)}
 #: 10.17 실측에서 계획 · 검사한 뒤 재생하는 궤적(tools/plan_<kind>.py → replay_to_pd).
 #: carry = 잡기 뒤 ready_carry 로 붓기 시작 자세(SETTING)까지 — 한 팔씩(sides: [right]) 또는 두 팔(계획 경로 A "한 팔씩").
 #:   cups: false = 빈손으로(경로 B, 사람이 컵을 손에 댄다 — 컵 없이 같은 경로).
@@ -72,7 +76,9 @@ TRAJ_KINDS = ("rehome", "noop", "carry", "tilt", "reach", "lift")
 #:   rcg03 학습 시작 자세)에서 멈추고 들어가기를 하지 않는다 — 그 뒤 rcg03 정책 노드가 넘겨받는다. grasp(기본) = 1-B 그대로.
 REACH_STOPS = ("grasp", "pregrasp")
 TILT_TRAJ_CUPS = ("240", "200")
-PLANNED_TRAJ = ("carry", "tilt", "reach", "lift")
+#: ★11.18 mix = 왼팔 shaker 섞기(tools/plan_mix.py 검사 → mix_cmd.npz 왼팔 7 관절 재생) · 왼팔 한 팔 · shaker 를 쥔 채.
+#:   배속은 자산 policy.yaml rate_scale(plan_mix 가 그 값으로 가속도를 잰다) — 에피소드 rate_scale 은 그보다 느리게만.
+PLANNED_TRAJ = ("carry", "tilt", "reach", "lift", "mix")
 ONE_ARM_TRAJ = ("reach", "lift")
 TRAJ_ASSETS = Path(__file__).resolve().parents[1] / "config"
 POSES = ("HOME", "SETTING")
@@ -101,7 +107,7 @@ class Binding:
     #:   등록부 id(aglt · arm_start ready, 예 rh56f1/aglt/right_rcg03). None = 넘김 없음
     handoff: str | None = None
     #: ★11.04 aglt 만 — 팔 FK 손 보정 t = 카메라가 본 손 − FK 손 [x, y, z] (base m, 축마다 |값| ≤ 0.05). 접근 · 잡기 정책이 보는 컵 =
-    #:   측정 컵 − t(노드 파라미터 cup_obs_offset_base_m). None = 0
+    #:   측정 컵 − t(노드 파라미터 cup_obs_offset_base_m). ★11.11 yaml 에 없으면 parse 가 팔별 CUP_OBS_OFFSET_BASE_M 을 넣는다(학생은 None)
     cup_obs_offset_base_m: tuple | None = None
     #: ★11.05 aglt 만 — 깊이 학생 묶음 id(예 rh56f1/aglt/right_student1104e). 있으면 노드 = rh_aglt_student_node(접근부터 학생),
     #:   policy = 홈 출발 계약(디코더 · 물체). approach_grasp · handoff 와 같이 쓰지 않는다
@@ -110,6 +116,10 @@ class Binding:
     #: ★11.07 place 만 — "tin_json" 이면 붙인 자세 = 그 팔의 tilt 직전 실측 T_in(런 폴더 json, 실패면 tin_fallback 고정값).
     #:   None = 정책 계약 그대로(bundle · fpp)
     attach_source: str | None = None
+    #: ★11.16 tin_json 일 때 T_in 에서 카메라-FK 오프셋 t 를 뺀다(노드 tin_subtract_offset, 기본 끔)
+    tin_subtract_offset: bool = False
+    #: ★11.18 place 만 — 이송 · 정책 목표 홀더를 base 로 옮기는 양(m, 3). None = 0(노드 holder_offset_base_m, 학생 노드는 안 씀)
+    holder_offset_base_m: tuple | None = None
 
 
 @dataclass(frozen=True)
@@ -130,7 +140,8 @@ class Job:
 
 JOB_KEYS = ("name", "source_object", "target_object", "target_holder", "policy_object", "holder_tol_m", "lift_guard")
 LIFT_GUARD_KEYS = ("object", "guard_mm", "hstop_m")
-BINDING_KEYS = ("policy", "kind", "side", "approach_grasp", "handoff", "cup_obs_offset_base_m", "student", "attach_source")
+BINDING_KEYS = ("policy", "kind", "side", "approach_grasp", "handoff", "cup_obs_offset_base_m", "student", "attach_source", "tin_subtract_offset",
+                "holder_offset_base_m")
 
 
 @dataclass(frozen=True)
@@ -151,6 +162,7 @@ class Node:
     lane: str = ""                # ★11.08 lanes 항목 — 그 줄의 팔(right · left). 비면 순서 노드
     group: str = ""               # ★11.08 lanes 항목 — 묶은 lanes 노드 id
     auto: bool = False            # ★11.09 사용자 — 앞 노드가 READY 로 끝나면 승인 없이 바로 이어 간다(구분 실행에서도)
+    sync: str = ""                # ★11.18 lanes carry 항목 — 같은 키 두 줄 항목은 두 팔이 멈춘 뒤 함께 계획 · 한 시각표로 재생
 
 
 @dataclass(frozen=True)
@@ -164,6 +176,7 @@ class Trajectory:
     object: str = ""             # reach · lift: episode objects 의 이름(컵 자세 FP++ 토픽)
     stop: str = "grasp"          # reach: grasp = 손 안 컵 자리까지(1-B) · pregrasp = 사전 파지 자리에서 멈춤(경로 D, 10.20)
     cup: str = ""                # tilt + tilt_traj 자산(traj_v10): 붓는 컵 "240" · "200"(plan_tilt_traj --cup, 10.27)
+    ring_radius_m: float = 0.0   # reach: 사전 파지 고리 반지름(파지 정책 물체, ★11.19 박스) · 0 = 실물 반지름
 
 
 @dataclass(frozen=True)
@@ -181,6 +194,7 @@ class Episode:
     path: str = ""
     continue_on_fail: tuple = ()    # ★11.07 정책 kind — 안전 코드 외 실패면 멈추지 않고 다음 노드로(기본 없음)
     tin_fallback: str = ""          # ★11.07 tilt 직전 T_in 측정 실패 때 쓸 고정값 json(SIM2REAL 상대 경로) — 있으면 tilt 마다 잰다
+    toggles: Mapping | None = None  # ★11.16 콘솔 실험 토글(apply_toggles) — None = 안 넘김(자산 · yaml 그대로)
 
     def max_retry(self, node: Node) -> int:
         roles = [j.role for j in node.jobs] or [node.name]
@@ -260,11 +274,13 @@ def _node(raw: Mapping, i: int) -> Node:
     if objs is not None and (t != "snapshot" or not isinstance(objs, list) or not objs
                              or not all(isinstance(o, str) and o for o in objs) or len(set(objs)) != len(objs)):
         raise EpisodeSpecError(f"{where}: objects 는 snapshot 에만 — 다시 찍을 물체 이름 목록(겹치지 않게)")
+    if "sync" in raw and not (isinstance(raw["sync"], str) and raw["sync"].strip()):   # false · 0 · 빈 값이 조용히 직렬로 가지 않게
+        raise EpisodeSpecError(f"{where}: sync 는 비어 있지 않은 문자열 — {raw['sync']!r}")
     return Node(id=str(raw["id"]), type=t, name=str(raw.get("name") or ""), jobs=jobs, expect=dict(raw.get("expect") or {}),
                 checkpoint=raw.get("checkpoint"), result=raw.get("result"), text=str(raw.get("text") or ""),
                 action=str(raw.get("action") or ""), sides=tuple(raw.get("sides") or ()),
                 hand_contract=str(raw.get("hand_contract") or ""), cfg=dict(raw.get("cfg") or {}),
-                objects=tuple(objs or ()), auto=_auto_flag(raw.get("auto", False), where))
+                objects=tuple(objs or ()), auto=_auto_flag(raw.get("auto", False), where), sync=str(raw.get("sync") or ""))
 
 
 def _nodes(raw: Mapping, i: int) -> list[Node]:
@@ -398,6 +414,8 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
         if handoff is not None and not (isinstance(handoff, str) and handoff.strip()):
             raise EpisodeSpecError(f"policies.{role}: handoff 는 등록부 정책 id 문자열")
         off = b.get("cup_obs_offset_base_m")
+        if off is None and b.get("kind") == "aglt" and b.get("student") is None:
+            off = CUP_OBS_OFFSET_BASE_M.get(b.get("side"))     # both 는 팔이 둘이라 기본값이 없다
         if off is not None:
             if b.get("kind") != "aglt":
                 raise EpisodeSpecError(f"policies.{role}: cup_obs_offset_base_m 는 aglt(접근 · 잡기) 정책만")
@@ -413,9 +431,22 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
         attach = b.get("attach_source")
         if attach is not None and (b.get("kind") != "place" or attach != "tin_json"):
             raise EpisodeSpecError(f"policies.{role}: attach_source 는 place 정책의 tin_json 만")
+        tso = b.get("tin_subtract_offset", False)
+        if not isinstance(tso, bool) or (tso and attach != "tin_json"):
+            raise EpisodeSpecError(f"policies.{role}: tin_subtract_offset 는 attach_source tin_json 과 쓰는 bool")
+        hoff = b.get("holder_offset_base_m")
+        if hoff is not None:
+            if b.get("kind") != "place" or student is not None:
+                raise EpisodeSpecError(f"policies.{role}: holder_offset_base_m 는 place 정책(학생 아님)만")
+            from policy_control.rh_place import RhPlaceError, holder_offset_of   # 무거운 의존은 쓸 때만
+            try:
+                hoff = tuple(float(v) for v in holder_offset_of(hoff))
+            except RhPlaceError as exc:
+                raise EpisodeSpecError(f"policies.{role}: {exc}") from exc
         pols[str(role)] = Binding(role=str(role), kind=str(b["kind"]), side=str(b["side"]), policy=b.get("policy"),
                                   approach_grasp=ag, handoff=handoff, cup_obs_offset_base_m=off, student=student,
-                                  attach_source=attach)
+                                  attach_source=attach, tin_subtract_offset=tso,
+                                  holder_offset_base_m=hoff)
     trajs = {}
     for name, t in (raw.get("trajectories") or {}).items():
         if t.get("kind") not in TRAJ_KINDS:
@@ -443,9 +474,11 @@ def _trajectory(name: str, t: Mapping) -> Trajectory:
     tr = Trajectory(name=name, kind=str(t["kind"]), sides=tuple(t.get("sides") or ("right", "left")),
                     asset=str(t.get("asset") or ""), rate_scale=float(t.get("rate_scale", 1.0)), cups=cups,
                     object=str(t.get("object") or ""), stop=str(t.get("stop") or "grasp"),
-                    cup=str(t.get("cup") or ""))
+                    cup=str(t.get("cup") or ""), ring_radius_m=float(t.get("ring_radius_m", 0.0)))
     if "cup" in t and tr.kind != "tilt":
         raise EpisodeSpecError(f"trajectories.{name}: cup 은 tilt 에만")
+    if "ring_radius_m" in t and tr.kind != "reach":
+        raise EpisodeSpecError(f"trajectories.{name}: ring_radius_m 은 reach 에만")
     if "stop" in t and tr.kind != "reach":
         raise EpisodeSpecError(f"trajectories.{name}: stop 은 reach 에만")
     if tr.stop not in REACH_STOPS:
@@ -475,6 +508,16 @@ def _trajectory(name: str, t: Mapping) -> Trajectory:
             raise EpisodeSpecError(f"trajectories.{name}: tilt_traj 자산은 cup {TILT_TRAJ_CUPS} 이 필요하다 — {tr.cup!r}")
         if akind != "tilt_traj" and tr.cup:
             raise EpisodeSpecError(f"trajectories.{name}: cup 은 tilt_traj 자산에만({tr.asset} = {akind})")
+    if tr.kind == "mix":
+        if tuple(tr.sides) != ("left",) or not tr.cups:
+            raise EpisodeSpecError(f"trajectories.{name}: mix 는 왼팔 한 팔, shaker 를 쥔 채 — sides: [left] · cups: true")
+        cfg = yaml.safe_load((TRAJ_ASSETS / tr.asset / "policy.yaml").read_text(encoding="utf-8")) or {}
+        if cfg.get("kind") != "mix" or "rate_scale" not in cfg:
+            raise EpisodeSpecError(f"trajectories.{name}: {tr.asset} 는 kind: mix · rate_scale 이 있는 자산이어야 한다")
+        if "rate_scale" not in t:
+            tr = replace(tr, rate_scale=float(cfg["rate_scale"]))
+        elif tr.rate_scale > float(cfg["rate_scale"]):        # plan_mix 가 검사한 배속보다 빠르게 재생하지 않게
+            raise EpisodeSpecError(f"trajectories.{name}: mix rate_scale {tr.rate_scale} > 자산 {cfg['rate_scale']}(plan_mix 검사값)")
     if not 0.0 < tr.rate_scale <= 1.0:
         raise EpisodeSpecError(f"trajectories.{name}: rate_scale 은 (0, 1] — {tr.rate_scale}")
     return tr
@@ -509,6 +552,103 @@ def override_grasp_object(ep: Episode, *, policy_object: str = "", cup_object: s
     if co and len(objects) != 1:
         raise EpisodeSpecError(f"cup_object 는 물체가 하나인 에피소드에만({list(ep.objects)})")
     return replace(ep, nodes=nodes, objects=objects)
+
+
+#: ★11.16 사용자: 실험 카드를 늘리지 않고 한 카드(cocktail_1c_n07b)에 실험 토글 — 이름 → 기본값. 콘솔이 단계 실행 때
+#:   실행기 파라미터 toggles:="k=v,..." 로 넘기고(apply_toggles), aglt 노드 손 보조 인자는 콘솔이 바꾼다. 값 = 0/1 · rate_scale 수 ·
+#:   정책 고르기는 POLICY_CHOICES 의 이름. 기본값 = 지금 cocktail_1c_n07b yaml 그대로(tilt_comp 만 끔 — 사용자 결정)
+TOGGLES = {"tilt_comp": False, "hand_unfreeze_on_grasp": True, "thumb_support_g": True, "thumb_open_floor": True,
+           "tin_subtract_offset": False, "rate_scale": 1.0,
+           "grasp_r": "rcg04", "grasp_l": "rcg04", "place_r": "right_n07", "place_l": "left_n09_e3800", "tilt": "v12"}
+RATE_SCALES = (1.0, 0.5)
+#: ★11.20 사용자 "cocktail_e2e 에서 tilt 에서 v12 또는 v14 모델 고를 수 있고" — tilt 궤적(kind tilt) 자산 고르기. 첫 값 = 기본 = yaml 그대로
+#:   (토글 카드 yaml 의 tilt 자산이 v12 — 기본이면 자산을 바꾸지 않는다). 계획 · 검사 기준(mouth_xy_max_mm 등)은 각 자산 policy.yaml
+TILT_CHOICES = {"v12": "tilt/traj_v12_240", "v14": "tilt/traj_v14r1l1_240"}
+#: ★11.16 사용자 — 팔마다 정책 고르기. 첫 값 = 기본(yaml 그대로)
+POLICY_CHOICES = {"grasp_r": ("rcg04", "student1105mA"), "grasp_l": ("rcg04", "student1105mA"),
+                  "place_r": ("right_n07", "right_n10_e4000", "right_student_place"),
+                  "place_l": ("left_n09_e3800", "left_student_place")}
+
+
+def parse_toggles(text: str) -> dict:
+    """"k=v,..." → 기본값 위에 덮은 dict. 모르는 이름 · 값은 거부(실기로 가는 입력)."""
+    out = dict(TOGGLES)
+    for item in filter(None, (s.strip() for s in str(text or "").split(","))):
+        key, _, val = item.partition("=")
+        if key not in TOGGLES:
+            raise EpisodeSpecError(f"toggles: 모르는 이름 {key!r} — {list(TOGGLES)}")
+        if key == "tilt":
+            if val not in TILT_CHOICES:
+                raise EpisodeSpecError(f"toggles: tilt 는 {tuple(TILT_CHOICES)} 중 하나 — {val!r}")
+            out[key] = val
+        elif key in POLICY_CHOICES:
+            if val not in POLICY_CHOICES[key]:
+                raise EpisodeSpecError(f"toggles: {key} 는 {POLICY_CHOICES[key]} 중 하나 — {val!r}")
+            out[key] = val
+        elif key == "rate_scale":
+            try:
+                out[key] = float(val)
+            except ValueError:
+                raise EpisodeSpecError(f"toggles: rate_scale 은 수 — {val!r}") from None
+            if out[key] not in RATE_SCALES:
+                raise EpisodeSpecError(f"toggles: rate_scale 은 {RATE_SCALES} 중 하나 — {val!r}")
+        elif val in ("0", "1"):
+            out[key] = val == "1"
+        else:
+            raise EpisodeSpecError(f"toggles: {key} 는 0 또는 1 — {val!r}")
+    return out
+
+
+def format_toggles(t: Mapping) -> str:
+    def one(k):
+        return t[k] if k in POLICY_CHOICES or k == "tilt" else float(t[k]) if k == "rate_scale" else int(bool(t[k]))
+    # ★11.20 tilt 는 11.20 전 기록(meta.json toggles)에 없다 — 없으면 적지 않는다(= 기본 v12)
+    return ",".join(f"{k}={one(k)}" for k in TOGGLES if k != "tilt" or k in t)
+
+
+def _pick_policy(b: Binding, choice: str, default: str) -> Binding:
+    """팔 하나의 정책 고르기 — 기본이면 yaml 바인딩 그대로. 학생은 기존 학생 에피소드(cocktail_s · place_s)와 같은 꼴."""
+    if choice == default:
+        return b
+    if b.kind == "aglt":                              # 잡기 학생: 홈에서 접근 · 잡기(계약 = approach 정책), 넘김 · FK 보정 없음
+        return replace(b, policy=f"rh56f1/aglt/{b.side}_approach_ap05", student=f"rh56f1/aglt/{b.side}_{choice}",
+                       approach_grasp=None, handoff=None, cup_obs_offset_base_m=None)
+    if choice.endswith("_student_place"):             # 놓기 학생: 계약은 yaml 정책 그대로
+        return replace(b, student=f"rh56f1/place/{choice}")
+    return replace(b, policy=f"rh56f1/place/{choice}")
+
+
+def apply_policy_picks(ep: Episode, t: Mapping) -> Episode:
+    """grasp_r · grasp_l · place_r · place_l 고르기를 입힌 새 에피소드(콘솔이 이것으로 단계 명령을 다시 만든다)."""
+    roles = {"grasp_r": "rh_aglt_r", "grasp_l": "rh_aglt_l", "place_r": "rh_place_r", "place_l": "rh_place_l"}
+    policies = dict(ep.policies)
+    for key, role in roles.items():
+        if t[key] != TOGGLES[key]:
+            if role not in policies:
+                raise EpisodeSpecError(f"{ep.name}: {key} 를 바꿀 {role} 바인딩이 없다")
+            policies[role] = _pick_policy(policies[role], t[key], TOGGLES[key])
+    return replace(ep, policies=policies)
+
+
+def apply_toggles(ep: Episode, t: Mapping) -> Episode:
+    """토글을 입힌 새 에피소드 — place(tin_json) 의 tin_subtract_offset · tilt 궤적 rate_scale · 자산(tilt). tilt_comp 는 실행기가
+    ep.toggles 를 본다(궤적 policy.yaml 값보다 우선). 원본은 바꾸지 않는다."""
+    tso = bool(t["tin_subtract_offset"])
+    if tso and not any(b.kind == "place" and b.attach_source == "tin_json" for b in ep.policies.values()):
+        raise EpisodeSpecError(f"{ep.name}: tin_subtract_offset 토글은 attach_source tin_json 놓기가 있어야")
+    ep = apply_policy_picks(ep, t)
+    policies = {k: (replace(b, tin_subtract_offset=tso) if b.kind == "place" and b.attach_source == "tin_json" else b)
+                for k, b in ep.policies.items()}
+    # ★11.20 tilt 자산 고르기 — 기본(v12)이면 yaml 자산 그대로, 아니면 고른 자산으로(rate_scale 은 위와 같이 토글 값)
+    tilt = t.get("tilt", TOGGLES["tilt"])            # 11.20 전 기록 · 직접 만든 dict 에는 없다 = 기본
+    if tilt not in TILT_CHOICES:
+        raise EpisodeSpecError(f"{ep.name}: tilt 는 {tuple(TILT_CHOICES)} 중 하나 — {tilt!r}")
+    asset = TILT_CHOICES[tilt] if tilt != TOGGLES["tilt"] else None
+    if asset is not None and not (TRAJ_ASSETS / asset / "policy.yaml").is_file():
+        raise EpisodeSpecError(f"{ep.name}: tilt={tilt} 자산 {asset}/policy.yaml 이 없다")
+    trajs = {k: (replace(tr, rate_scale=float(t["rate_scale"]), **({"asset": asset} if asset else {})) if tr.kind == "tilt" else tr)
+             for k, tr in ep.trajectories.items()}
+    return replace(ep, policies=policies, trajectories=trajs, toggles=dict(t))
 
 
 def validate(ep: Episode) -> None:
@@ -598,10 +738,13 @@ def validate(ep: Episode) -> None:
         sides = [ep.policies[j.role].side for j in n.jobs if j.role in ep.policies]
         if n.lane:
             errs += _lane_item_errors(ep, n, sides)
+        elif n.sync:
+            errs.append(f"{n.id}: sync 는 lanes 줄의 carry 궤적 항목에만")
         if n.type == "lanes" and any(k in HAND_KEYS for k in n.expect):   # ★11.08 리뷰 — 손 칸은 줄 항목이 바꾼다
             errs.append(f"{n.id}: lanes 노드 expect 는 자세 · 플래그만 — 손 칸 {[k for k in n.expect if k in HAND_KEYS]} 은 줄 항목 expect 로")
         if n.type == "parallel_policy" and len(set(sides)) != len(sides):
             errs.append(f"{n.id}: 같은 팔 정책을 동시에 돌릴 수 없다 {sides}")
+    errs += _sync_errors(ep)
     errs += _placed_later_errors(ep)
     if errs:
         raise EpisodeSpecError(f"{ep.path}: " + " · ".join(errs))
@@ -618,6 +761,27 @@ def _lane_item_errors(ep: Episode, n: Node, sides: list) -> list[str]:
         errs.append(f"{n.id}: 줄 항목 expect {bad} — 그 팔 손 칸 · 플래그만(자세는 lanes 노드 expect)")
     if n.checkpoint is not None:
         errs.append(f"{n.id}: 줄 항목은 checkpoint 를 받지 않는다(줄 실패는 되돌아가지 않고 정지)")
+    return errs
+
+
+def _sync_errors(ep: Episode) -> list[str]:
+    """★11.18 sync — 한 lanes 노드 안에서 키 하나, 줄마다 carry 궤적 항목 하나, 두 궤적은 자산 · 배속 · 컵 조건이 같다
+    (실행기가 두 궤적을 양팔 carry 하나로 합친다 · 키가 둘이면 두 줄이 서로 기다리며 멈출 수 있다)."""
+    errs, groups = [], {}
+    for n in ep.nodes:
+        if n.sync and n.lane:
+            groups.setdefault(n.sync, []).append(n)
+    for key, items in groups.items():
+        ids = [n.id for n in items]
+        trajs = [ep.trajectories.get(n.name) for n in items]
+        if sorted(n.lane for n in items) != ["left", "right"]:
+            errs.append(f"sync {key}: right 줄 · left 줄 항목 하나씩 — {ids}")
+        if len({n.group for n in items}) != 1 or sum(1 for k, v in groups.items() if v[0].group == items[0].group) != 1:
+            errs.append(f"sync {key}: 한 lanes 노드 안에서 sync 키는 하나 — {ids}")
+        if any(n.type != "trajectory" or t is None or t.kind != "carry" for n, t in zip(items, trajs)):
+            errs.append(f"sync {key}: carry 궤적 항목만 — {ids}")
+        elif len({(t.asset, t.rate_scale, t.cups) for t in trajs}) != 1:
+            errs.append(f"sync {key}: 두 carry 의 asset · rate_scale · cups 가 같아야 한 시각표로 재생한다 — {ids}")
     return errs
 
 

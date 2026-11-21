@@ -23,7 +23,7 @@
     python3 scripts/calib/table_cad_extrinsics.py                                   # 라이브 3장 평균 · 보고만
     python3 scripts/calib/table_cad_extrinsics.py --npz /tmp/rgbd.npz --png /tmp/overlay.png
     python3 scripts/calib/table_cad_extrinsics.py --init config/global_camera_extrinsics_arm4090.yaml \
-        --write --head-config config/head_home_rh56f1.yaml                      # arm4090(머리 자세도 기록)
+        --write --head-config config/head_home_rh56f1_h2048.yaml                      # arm4090(머리 자세도 기록)
 
 라이브 캡처는 카메라 노드(scripts/vision/camera_up.sh, 도메인 config/ros_domain.env · localhost)가 떠 있어야 한다. 로봇은 움직이지 않는다.
 """
@@ -436,7 +436,7 @@ def main(argv=None) -> int:
     ap.add_argument("--max-spread-mm", type=float, default=5.0, help="장끼리 카메라 위치 차이 상한(--write 거부)")
     ap.add_argument("--max-res-px", type=float, default=8.0, help="재투영 평균 상한(--write 거부)")
     ap.add_argument("--head-config", type=Path, default=None,
-                    help="머리 설정(head_home_rh56f1.yaml) — 주면 찍을 때의 머리 자세(틱)를 읽어 --write 때 head_pose 에 적는다")
+                    help="머리 설정(head_home_rh56f1_h2048.yaml) — 주면 찍을 때의 머리 자세(틱)를 읽어 --write 때 head_pose 에 적는다")
     args = ap.parse_args(argv)
     out_path = args.out or args.init
     if args.write and args.head_config is None and "\nhead_pose:" in Path(out_path).read_text():

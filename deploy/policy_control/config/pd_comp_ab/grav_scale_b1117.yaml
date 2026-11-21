@@ -1,0 +1,13 @@
+# 11.17 관절별 중력 배율 A/B(실기). B = 정지 구간 적합(logs/runs/261117/s2r_track/analysis/grav_scale, arm4090) 의 권고값.
+# 반대 검토: 방향 확인 = 오른 j5 · 양팔 j7 / 크기 미확정 = 왼 j2 · j3 / 사전 규칙으로 못 정함 = 왼 j7. 1.0 은 바꾸지 않은 관절.
+# 기준 payload = pd_rh56f1_exec.yaml 0.27848 kg(적합 M0 와 같음). pd 는 팔별 scale 매핑을 받는다(pd_gravity._SIDED_FIELDS).
+order: ABAB
+conditions:
+  A:
+    note: 기본(scale 전부 1.0)
+  B:
+    note: 관절별 중력 배율(왼 j2 1.24 · j3 1.10 · j7 0.87 / 오른 j5 0.73 · j7 0.88)
+    pd:
+      gravity.scale:
+        left:  [1.0, 1.24, 1.10, 1.0, 1.0, 1.0, 0.87]
+        right: [1.0, 1.0, 1.0, 1.0, 0.73, 1.0, 0.88]

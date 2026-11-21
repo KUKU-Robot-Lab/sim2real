@@ -1,0 +1,22 @@
+# tilt_comp_ab.py 기본 조건 = 11.17 tilt_comp A/B 와 같은 결과(pd 다시 띄우기 없음, --tilt-comp 는 tilt 재생에만).
+# 새 조건 파일은 이 파일을 복사해 쓴다. 키:
+#   pd:          실험 시작 때 떠 있던 pd yaml 의 점 경로 → 값(예 gravity.payload.left · tilt_comp.left.ki · stationary_compensation.integral_enabled).
+#                없는 키 · 길이 다른 목록은 거부, 결과 yaml 은 pd 엄격 로더(load_pd_config)로 검사. 있으면 그 조건 사이클 앞에서 pd 를 다시 띄운다.
+#                tilt_comp.left.payload 는 --payload-kg(토픽)가 정하므로 여기서 못 바꾼다.
+#   replay_args: 재생(replay_to_pd)에 붙일 인자.
+#   replay_on:   그 인자를 붙일 재생 구간 — 기본 all(home · tilt_start · tilt · back · rest 전부). 적분기류는 all 이 기본이다.
+#                여기서는 예전 실험과 같게 tilt 에만.
+# 예(값은 실측으로 정할 것 — 아래는 형식만):
+#   order: ABC
+#   conditions:
+#     A: {note: 보상 없음}
+#     B: {note: 중력 모델 수정, pd: {gravity.payload.left: [<kg>, <x>, <y>, <z>]}}
+#     C: {note: B + 작은 정지 적분기, pd: {gravity.payload.left: [...], tilt_comp.left.ki: [...]}, replay_args: [--tilt-comp]}
+order: AB
+conditions:
+  A:
+    note: tilt_comp 끔
+  B:
+    note: tilt_comp 켬(tilt 재생에만)
+    replay_args: [--tilt-comp]
+    replay_on: [tilt]

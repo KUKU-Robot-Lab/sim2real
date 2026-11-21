@@ -1,0 +1,36 @@
+# RH56F1 양팔 tilt — traj_v12_240 묶음 복사 + ref/params_240.json 의 params 만 v14 CMA 로 바꾼 판(11.20 tilt_lab, 사용자 "최근 CMA-ES 궤적으로 real 영상").
+# params = server tilt_rl/v14_rcg04/out/cma_m_r1l1/best/eval.json(md5 24bbf47c…) — 11.18 v14_rcg04 군집별 CMA 중 r1l1(관절 여유 큰 쪽).
+#   sim 8 파지 20/20 in · spill 0 · clr_sim 23.7~25.4 mm · ik 0.8~0.9 mm · thmax 120.1°(v12 141.3°) · 정본 V12 와 비교는 아래 계획기 검사.
+# setup_240.npz · tin_fixed_1107.json · asset_meta · start_pose · holders · hdgp 핀 · tilt_comp 는 v12 그대로(v12 머리말 참고).
+# ★11.20 사용자: v12 는 실기 세팅에 맞춰 일부러 재튜닝한 것이고 v14 는 그걸 감안해 만든 궤적 — v12 전용 보정·제한을 넣지 말고 sim 과 최대한 같게.
+#   aim_offset_base_m(v12 조준 보정) 없음 · mouth_xy_max_mm null(입구 중심 맞춤 8 mm 는 v10~v12 설계 기준, v14 는 sim 에서 비켜 조준 ≈36.5 mm — 값만 기록).
+name: tilt/traj_v14r1l1_240
+kind: tilt_traj
+objects: {right: source240_real, left: shaker_c_real}
+start_pose: deploy/policy_control/config/homes/rh56f1_pour_start.yaml   # md5 99bdbe88… = sim inputs 와 같음
+pre_s: 0.5                   # 실측 → 궤적 첫 knot 관절 min-jerk(sim --start capture --pre_s 0.5)
+rate_scale: 1.0              # sim 과 같은 빠르기(knot 1/30 s → 60 Hz 선형 보간)
+start_gap_rad: 0.05          # 계획한 실측 ↔ 재생 직전 실측 최대 간극(replay_to_pd --max-start-gap)
+table:
+  from: config/head_extrinsics.yaml   # table_top_z 0.2037(sim 0.205)
+holders:
+  default: config/cup_holder_poses_5090_v1.yaml   # sim 과 같은 옛 배치(86d3f8c9…). 10.27 새 배치 재스캔 뒤 --holders 로 새 파일
+hdgp:
+  commit: e62ae529           # 핀을 만든 hdgp(server). laptop 작업 트리 md5 같음 확인(10.26)
+  md5:
+    source/openarm/openarm/agnostic/modules/tilt_traj/__init__.py: 13fe9614b896dd51be03007635e3355e
+    source/openarm/openarm/agnostic/modules/tilt_traj/plan.py: 30d90081e1c4aa83147c27f4485328f5
+    source/openarm/openarm/agnostic/modules/tilt_traj/traj.py: 35f77477d604021ae96b29208fae0415
+    source/openarm/openarm/agnostic/modules/tilt_traj/clearance.py: 451cd8bc132dff0a328d901ad3cb724a
+    source/openarm/openarm/agnostic/modules/tilt_traj/fast_ik.py: 873bab5bf280406291c850654d570372
+    source/openarm/openarm/agnostic/modules/ready_carry/__init__.py: 6a921e20ba3ea5fa3c943e175a39bf3d
+    source/openarm/openarm/agnostic/modules/ready_carry/chain.py: e93981f98a8e74bada451eb3b0a59568
+    source/openarm/openarm/agnostic/modules/ready_carry/posture.py: b89b1e8f943d59dd0df901111adfb048
+    assets/robot/openarm_rh56f1_bi_rl/openarm_rh56f1_bi_rl.urdf: f338d043ce3481f72e37ec4c79e20d43
+ref:
+  asset_meta.json: aa897f540a17560c9441080ad20680b2
+  params_240.json: dba4bbf58068ef26ee3fd381198e4078   # v14 cma_m_r1l1(v12 327794d7…)
+  setup_240.npz: fbd956978a60f526498b0c28f8020827   # v12: T_in_r · T_in_l 실측 평균(v10·v11 fd9e2af3…)
+# ★11.16 사용자: tilt 재생 동안 pd tilt_comp(왼팔 셰이커 payload + j4 적분) 켬. pd yaml 에 tilt_comp 블록이 있어야 실제로 동작.
+tilt_comp: true
+mouth_xy_max_mm: null      # 검사 안 함(값만 check.json 에 남김) — plan_tilt_traj.mouth_xy_limit

@@ -23,7 +23,7 @@ MATCH_S = 0.020
 # 표본 간격 한도는 정렬 한도와 따로 둔다 — 120 Hz pd 가 한 틱 늦으면 20 ms 를 넘는다(11.09 실측 20.1 ms)
 GAP_S = 0.050
 # 2026-11-08 static-friction block (experiment doc "2026-11-08 실기 대기 목록").
-FRICTION_STAGES = ("F1", "F2", "F3", "F4")
+FRICTION_STAGES = ("F1", "F2", "F3", "F4", "F5")
 
 
 def arm_joint_names(side="right"):
@@ -149,6 +149,14 @@ def validate_stage(stage, kp, kd, base_kp, base_kd, compensation):
         and np.allclose(c.integral_limit[:4], 1.0)
     ):
         raise ValueError("F2 needs static friction + integral with a 1.0 N·m j1~j4 limit")
+    # ★11.10 F5: motion friction feed-forward on the commanded velocity only.
+    if stage == "F5" and not (
+        c.friction_enabled
+        and c.friction_velocity == "target"
+        and not (c.gravity_enabled or c.integral_enabled or c.static_enabled)
+        and not any(c.fo)
+    ):
+        raise ValueError("F5 needs friction on target velocity only (no gravity/integral/fs/fo)")
     if stage in ("F3", "F4") and c.enabled:
         raise ValueError(f"{stage} measures uncompensated error: compensation OFF")
     # F2 sweeps the j1~j4 rate up to 2x the initial 0.2 N·m/s budget (user, 11.08).

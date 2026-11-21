@@ -1,0 +1,9 @@
+# 시험 조건(fake 확인용 · 실기 값 아님): B 는 중력 ff 의 j5~j7 배율을 0.80 으로. gravity.scale 은 pd yaml 에 하나(양팔 같은 목록)라
+# 왼 · 오른 pd 를 둘 다 이 yaml 로 다시 띄운다. 재생 인자는 없다(replay_on 기본 all).
+order: ABAB
+conditions:
+  A:
+    note: 기본(떠 있던 pd yaml 그대로)
+  B:
+    note: 중력 ff j5~j7 × 0.80(양팔)
+    pd: {gravity.scale: [1.0, 1.0, 1.0, 1.0, 0.8, 0.8, 0.8]}

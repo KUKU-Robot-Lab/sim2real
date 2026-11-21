@@ -105,7 +105,7 @@ def _objects_yaml_names(repo: Path) -> set[str]:
 
 def add_object(repo: Path, cad: Path, *, name: str, colors: list[str], origin_above_bottom: float | None,
                units: str = "auto", yolo_class: int = DEFAULT_CLASS, symmetric: bool = True, flip: bool = False,
-               dry_run: bool = False) -> list[str]:
+               dry_run: bool = False, grasp_axis: str = "") -> list[str]:
     """메쉬 + objects.d/<name>.yaml(색마다 <name>_<색>, 묶음 <name>). 같은 이름을 다시 하면 파일을 갈아 끼운다.
     색이 하나면 묶음 · 파일 · 메쉬 이름도 <name>_<색>(11.10 사용자: 한 물체 = 한 이름 — 묶음 컨테이너는 물체 하나만 live 추적)."""
     repo = Path(repo)
@@ -138,6 +138,8 @@ def add_object(repo: Path, cad: Path, *, name: str, colors: list[str], origin_ab
         if symmetric:
             entry["symmetry_axis"] = [0.0, 0.0, 1.0]
             entry["symmetry_flip"] = bool(flip)
+        if grasp_axis:   # ★11.19 박스: 손바닥이 마주 볼 면 법선(CAD) — yaw 를 남기고 plan_reach 가 그 방향으로 들어간다
+            entry["grasp_axis"] = {"x": [1.0, 0.0, 0.0], "y": [0.0, 1.0, 0.0]}[grasp_axis]
         objs[n] = entry
     _write_dropin(repo, name, {"source_cad": Path(cad).name, "origin_above_bottom_m": round(oz, 6), "colors": colors}, objs)
     return names
@@ -283,9 +285,10 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--class", dest="yolo_class", type=int, default=DEFAULT_CLASS)
     a.add_argument("--no-symmetric", action="store_true", help="축대칭이 아닌 물체(손잡이 · 클램프)")
     a.add_argument("--flip", action="store_true", help="위아래도 같은 원통(FP++ 가 뒤집어 잡는다)")
+    a.add_argument("--grasp-axis", choices=("x", "y"), default="", help="박스: 손바닥이 마주 볼 면 법선(CAD 축) — yaw 를 남긴다")
     c = sub.add_parser("calib", help="카메라로 색(hue) 재기 — 로봇 PC, 물체를 왼쪽부터 --colors 순서로")
     c.add_argument("name")
-    c.add_argument("--camera-extrinsics", type=Path, default=_ROOT / "config" / "global_camera_extrinsics_arm4090.yaml")
+    c.add_argument("--camera-extrinsics", type=Path, default=_ROOT / "config" / "global_camera_extrinsics_arm4090_m1117.yaml")
     t = sub.add_parser("activate", help="정책이 볼 물체 + 미션 다시 생성(팔마다 다른 묶음 가능)")
     t.add_argument("group", nargs="?", default=None, help="(옛 형식 · 무시해도 된다) 묶음 — 팔 물체에서 푼다")
     t.add_argument("--right", required=True)
@@ -294,7 +297,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "add":
         names = add_object(_ROOT, args.cad, name=args.name, colors=[x.strip() for x in args.colors.split(",") if x.strip()],
                            origin_above_bottom=args.origin_above_bottom, units=args.units, yolo_class=args.yolo_class,
-                           symmetric=not args.no_symmetric, flip=args.flip)
+                           symmetric=not args.no_symmetric, flip=args.flip, grasp_axis=args.grasp_axis)
         g = names[0] if len(names) == 1 else args.name
         print(f"[fpp_object] 등록: {', '.join(names)} · 묶음 {g} · {MESH_DIR}/{g}.obj · {DROPIN}/{g}.yaml")
         print("  다음: (로봇 PC, 물체를 왼쪽부터 놓고) calib → activate → 커밋 · push · pull")

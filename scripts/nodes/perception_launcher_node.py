@@ -123,6 +123,8 @@ def main() -> None:
     ap.add_argument("--first-round-s", type=float, default=FIRST_ROUND_S,
                     help="묶음 FP++ 컨테이너 하나의 첫 회차를 기다리는 상한(s) — 넘기면 경고하고 다음 묶음을 띄운다(11.03)")
     args = ap.parse_args()
+    from head_view_feedback import require_fresh_live   # ★11.17 리뷰: 오래된 · 다른 base 의 live 로 FP++ 를 띄우지 않는다
+    require_fresh_live(args.camera_extrinsics)
     reg = {"now": load_registry()}       # 10.09 명령마다 다시 읽는다 — fpp_object.py add 로 물체를 더해도 런처를 다시 띄우지 않는다
 
     def group_of(name: str) -> str | None:

@@ -1007,7 +1007,7 @@ function renderExperiments(s) {
   $("xp").hidden = !X;
   if (!X) return;
   const [it, key, side] = xpPick(s, X);
-  const groups = [["grasp", "파지 · 들기", "한 팔"], ["tilt", "tilt", "두 팔"]];
+  const groups = [["grasp", "파지 · 들기", "한 팔"], ["cap", "cap", "오른팔 · 깊이 학생"], ["act", "ACT", "두 팔 · 모방학습"]];   // ★11.19 tilt 칸 제거 · cap_e2e · act_tilt 추가
   put("xp-list", (X.error ? `<p class="reasons bad">${esc(X.error)}</p>` : "") + groups.map(([g, title, sub]) => {
     const rows = (X.items || []).filter((i) => i.group === g).map((i) => {
       const on = !!it && i.id === it.id;
@@ -1016,7 +1016,7 @@ function renderExperiments(s) {
         return `<span class="xp-dot ${xpTone(st)}" title="${esc(`${sideName(k)} · ${xpWord(st)}${st.reasons.length && !st.ok ? ` — ${st.reasons[0]}` : ""}`)}">${esc(SIDE_SHORT[k] || "R+L")}</span>`;
       }).join("");
       return `<button class="xp-item${on ? " on" : ""}" data-act="xp-pick" data-arg="${esc(i.id)}" aria-pressed="${on}">
-        <span class="xp-key">${esc(i.key)}</span><span class="xp-sum">${esc(i.summary)}</span><span class="xp-dots">${dots}</span></button>`;
+        <span class="xp-key">${esc(i.key)}</span><span class="xp-sum">${i.label && i.label !== i.key ? `<b>${esc(i.label)}</b> · ` : ""}${esc(i.summary)}</span><span class="xp-dots">${dots}</span></button>`;
     }).join("");
     return rows ? `<div class="xp-group"><h2>${esc(title)}<small>${esc(sub)}</small></h2>${rows}</div>` : "";
   }).join(""));
@@ -1035,8 +1035,59 @@ function xpMain(s, X, it, key, side) {
   const ready = st.live ? `<div class="xp-ready live">⟳ 실행 중 — 진행 · 확인 · 정지는 아래 <b>지금 에피소드</b></div>`
     : st.ok ? `<div class="xp-ready ok">✓ 실행할 수 있다</div>`
     : `<div class="xp-ready bad"><b>✕ 지금 실행할 수 없다</b><ul>${st.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div>`;
+  if (it.act) return head + xpAct(s, it.act, st);    // 준비 상자 대신 버튼마다 이유(dry run 은 실행 게이트와 따로 열린다)
   return head + xpObjects(s, side, key) + (side.error ? `<p class="reasons bad">${esc(side.error)}</p>` : "") + xpRail(X, side, st.runner) + open
     + xpFacts(s, it, side) + ready + xpGo(s, it, key, side, st);
+}
+
+// ★11.19 act_tilt 카드(deploy 세션 요청) — [dry run](로봇 안 움직임) · [실행](실기 승인 뒤 --execute) · 체크포인트 · --max-vel · 마지막 실행 로그.
+// 설정은 승인 창 명령에 그대로 보인다(actions.act_tilt_argv 가 바꾼다 · 범위 밖은 서버가 400). 입력칸은 change 때만 저장(타이핑 중 다시 그리지 않게).
+let actDraft = {};
+const actItem = () => ((S?.session?.experiments?.items) || []).find((i) => i.act);
+function actPick(A) {
+  const ckpt = A.ckpts.includes(actDraft.ckpt) ? actDraft.ckpt : A.ckpts[0];
+  const text = actDraft.vel ?? String(A.default_vel), v = Number(text);
+  const ok = text.trim() !== "" && Number.isFinite(v) && v > A.max_vel[0] && v <= A.max_vel[1];
+  return { ckpt, text, vel: v, ok };
+}
+const ckptName = (c) => c.replace(/^0+/, "").replace(/000$/, "k");
+const actNum = (v, d = 2) => (v === null || v === undefined || v === "" ? "—" : Number.isFinite(Number(v)) ? Number(v).toFixed(d) : String(v));
+function xpAct(s, A, st) {
+  const p = actPick(A), dry = xpState(s, { action: A.dry, problems: [] });
+  const busy = st.live || dry.live, real = s.profile && s.profile.domain_class === "real";
+  const go = (id, x, cls, label, note) => {
+    const why = [...(p.ok ? [] : [`max-vel 은 (${A.max_vel[0]}, ${A.max_vel[1]}] rad/s`]), ...(busy ? ["act_tilt 가 이미 실행 중"] : []), ...x.reasons];
+    const can = x.ok && p.ok && !busy;
+    return `<div class="act-go"><button class="btn ${cls}" data-act="act-tilt" data-arg="${esc(id)}" ${can ? "" : "disabled"} title="${esc(why.join(" · "))}">${label}</button>
+      <small class="hint">${esc(note)}</small>${can || !why.length ? "" : `<small class="reasons bad">${esc(why[0])}</small>`}${actionState(x.a || {})}</div>`;
+  };
+  const seg = `<div class="seg" role="group" aria-label="체크포인트">${A.ckpts.map((c) =>
+    `<button class="seg-b${c === p.ckpt ? " on" : ""}" data-act="act-ckpt" data-arg="${esc(c)}" aria-pressed="${c === p.ckpt}">${esc(ckptName(c))}</button>`).join("")}</div>`;
+  return `<section class="act-card" aria-label="ACT tilt 설정">
+    <div class="act-row"><span class="act-k">체크포인트</span>${seg}</div>
+    <div class="act-row"><label class="act-k" for="act-vel">--max-vel</label><input id="act-vel" type="number" step="0.05" min="${A.max_vel[0]}" max="${A.max_vel[1]}"
+      data-act-vel value="${esc(p.text)}" aria-invalid="${!p.ok}"${p.ok ? "" : ` class="bad"`}><span class="hint">rad/s · (${A.max_vel[0]}, ${A.max_vel[1]}] · 기본 ${A.default_vel}</span></div>
+    <div class="act-row act-btns">${go(A.dry, dry, "btn-primary", "▶ dry run", "발행 없음 · 로봇 안 움직임")}${go(A.run, st, real ? "btn-real" : "btn-primary", "▶ 실행",
+      real ? "실기 — 양팔 pd TRACKING · 승인 뒤 --execute" : "fake — 승인 뒤 --execute")}</div>
+    ${busy ? `<div class="xp-ready live">⟳ act_tilt 실행 중 — 정지는 아래 <b>지금 에피소드</b> · 작업 목록</div>` : ""}
+    ${actLast(A.last)}</section>`;
+}
+function actLast(L) {
+  const title = `<h4 class="act-h">마지막 실행</h4>`;
+  if (!L) return `${title}<p class="hint">실행 기록 없음 (act_tilt_runs 폴더가 비었다)</p>`;
+  const where = `<dt>폴더</dt><dd class="mono">${esc(L.path)}${L.count > 1 ? ` <span class="hint">(총 ${esc(L.count)}회)</span>` : ""}</dd>`;
+  // ★11.19 실행은 정상 · abort 모두 같은 셸에서 목을 head_home 으로 되돌린다 — 정지 버튼으로 셸째 끊겼거나 복귀가 실패했을 때만 남는 경우
+  const neck = `<p class="hint act-neck">목 복귀 확인 — 머리가 head_home 자세가 아니면(정지 버튼으로 끊었거나 복귀 실패) head_home 을 따로 돌린다</p>`;
+  if (L.missing) return `${title}<p class="reasons bad">${esc(L.run)} — summary.json 없음: 브리지가 끝까지 돌지 못했다${L.error ? ` · ${esc(L.error)}` : ""}</p>${neck}<dl class="kv">${where}</dl>`;
+  const ok = L.result === "ok", lat = L.latency_ms;
+  return `${title}${ok ? "" : neck}<dl class="kv act-kv">
+    <dt>결과</dt><dd><span class="badge ${ok ? "ok" : "bad"}">${esc(L.result ?? "—")}</span>${L.error ? ` <span class="reasons bad">${esc(L.error)}</span>` : ""}</dd>
+    <dt>스텝</dt><dd>${esc(L.steps ?? "—")} · 발행 ${esc(L.published ?? "—")} · ${actNum(L.seconds, 1)} s</dd>
+    <dt>지연</dt><dd>${lat ? `p50 ${actNum(lat.p50, 1)} · p95 ${actNum(lat.p95, 1)} · max ${actNum(lat.max, 1)} ms` : "—"}</dd>
+    <dt>목표−측정</dt><dd>최대 ${actNum(L.max_target_minus_measured_rad, 3)} rad${L.max_head_target_minus_measured_deg != null
+      ? ` · 목 ${actNum(L.max_head_target_minus_measured_deg, 1)}° <span class="hint">(기록만)</span>` : ""}</dd>
+    <dt>입력 나이</dt><dd>영상 ${actNum(L.max_image_age_s, 3)} · 상태 ${actNum(L.max_state_age_s, 3)} s (최대)</dd>
+    <dt>max-vel</dt><dd>${actNum(L.max_vel)} rad/s</dd>${where}</dl>`;
 }
 
 // ★11.09 사용자 "경로 F 안에서 버튼으로 컵종류와 색깔을 선택하고, Perception Refresh를 바로 … 반복 실험" — 컵 줄 · 색 줄 · 인지 다시 찍기.
@@ -1113,7 +1164,7 @@ function xpPolicy(p, id) {
       <span class="spacer"></span><button class="btn btn-sm btn-ghost" data-act="xp-pol" data-arg="${esc(id)}">닫기</button></header>
     ${p.summary ? `<p>${esc(p.summary)}</p>` : ""}${p.eval ? `<p class="xp-eval"><b>sim 근거</b>${esc(p.eval)}</p>` : ""}
     <dl class="kv"><dt>체크포인트</dt><dd class="mono">${esc(p.checkpoint || "—")}</dd><dt>계약</dt><dd class="mono">${esc(p.contract || "—")}</dd>
-      <dt>카드</dt><dd class="mono">${esc(p.path)}/policy.yaml</dd></dl>
+      <dt>카드</dt><dd class="mono">${esc(p.path)}/${esc(p.card || "policy.yaml")}</dd></dl>
     ${(p.issues || []).length ? `<ul class="reasons bad">${p.issues.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>`;
 }
 
@@ -1125,6 +1176,7 @@ function xpFacts(s, it, side) {
   }).join("");
   const conf = side.confirms ? `확인 노드 ${side.confirms} 개 — 연속 실행도 거기서 멈춘다([다음] 으로 승인)` : "확인 노드 없음 — 끝까지 돈다(멈추려면 ■ 정지)";
   const route = side.action ? `관리 작업 <code>${esc(side.action)}</code>` : `미션 단계 <code>${esc(side.stage)}</code>`;
+  if (side.actions) return `<dl class="xp-facts"><dt>실행</dt><dd>미션 단계 ${side.actions.map((x) => `<code>${esc(x)}</code>`).join(" → ")} — 구간 넘김은 학생 노드(stage/next)</dd></dl>`;
   return `<dl class="xp-facts"><dt>컵</dt><dd>${cupHtml || "—"}</dd>${it.when ? `<dt>언제</dt><dd>${esc(it.when)}</dd>` : ""}<dt>확인</dt><dd>${esc(conf)}</dd>
     <dt>실행</dt><dd>${route} · 실행기 <code>${esc(side.runner)}</code> · <code>config/episodes/${esc(side.episode)}.yaml</code></dd></dl>`;
 }
@@ -1132,6 +1184,12 @@ function xpFacts(s, it, side) {
 function xpGo(s, it, key, side, st) {
   const real = s.profile.domain_class === "real", can = holding(), clean = !(side.problems || []).length;
   const name = `${it.label} ${sideName(key)}`;
+  if (side.actions) {   // ★11.19 cap_e2e — 단계 넷을 순서대로(각각 승인 창)
+    const acts = side.actions.map((id) => (S.actions || []).find((a) => a.id === id) || { id, enabled: false, reasons: ["이 미션에 실행 작업이 없다"] })
+      .map((a) => (clean ? a : { ...a, enabled: false, reasons: [...(side.problems || []), ...(a.reasons || [])] }));   // 학생 묶음 없으면 실기 버튼 잠금
+    return `<div class="xp-go xp-steps">${acts.map(actionButton).join("")}
+      <span class="hint">${can ? "순서대로: cap_now → cap_student_right → (구간마다) cap_next_right → cap_end_right" : "먼저 조작 권한을 잡을 것"}</span></div>`;
+  }
   if (st.kind === "action") {
     const a = st.a, ok = can && !!a && a.enabled && clean;
     return `<div class="xp-go"><button class="btn ${real ? "btn-real" : "btn-primary"} xp-run" data-act="action-prepare" data-arg="${esc(side.action)}" ${ok ? "" : "disabled"}>▶ ${esc(name)} 실행</button>
@@ -1466,6 +1524,10 @@ const evSeen = new Set();       // 이미 폼을 채운 끝난 실행(실행기 
 let evRounds = null, evDate = "", evLoading = false, evStagesKey = null, evTypesKey = null;
 
 const evEpisodes = (s) => (s && s.eval && s.eval.episodes) || [];
+// ★11.11 기록 폼 목록 = 서버 EVAL_EPISODES 전부(record) — policy 탭에서 돈 grasp_s · place_m 회차도 적는다. 탭 카드는 episodes 만
+const evRecord = (s) => (s && s.eval && (s.eval.record || []).length ? s.eval.record : evEpisodes(s));
+let evRecSel = "";
+const evRecPick = (s) => evRecord(s).find((e) => e.name === evRecSel) || evPick(s);
 const evRunnerOf = (s, name) => (s.episode_runners || []).find((r) => r.episode === name && !r.stale) || null;
 function evPick(s) {
   const eps = evEpisodes(s);
@@ -1488,16 +1550,16 @@ function evSyncInputs(force = false) {
 function evPrefill(s) {
   for (const r of s.episode_runners || []) {
     const result = EV_DONE[r.phase];
-    if (!result || !evEpisodes(s).some((e) => e.name === r.episode)) continue;
+    if (!result || !evRecord(s).some((e) => e.name === r.episode)) continue;
     const key = `${r.runner}|${r.episode_id}|${r.phase}`;
     if (evSeen.has(key)) continue;
     evSeen.add(key);
-    const ep = evEpisodes(s).find((e) => e.name === r.episode);
+    const ep = evRecord(s).find((e) => e.name === r.episode);
     const stages = ep ? ep.stages || [] : [];
     const nodes = (r.flow && r.flow.nodes) || [], last = r.last || {};
     const at = stages.includes(last.node) ? last.node : (nodes[Number(r.index)] || {}).id || "";
     const code = String(last.code || "");
-    evSel = r.episode;
+    evSel = evRecSel = r.episode;
     Object.assign(evForm, {
       result, note: "", from: `${r.episode} · ${r.episode_id || "—"} · ${r.phase}`,
       fail_stage: result !== "성공" && stages.includes(at) ? at : "",
@@ -1510,18 +1572,19 @@ function evPrefill(s) {
 
 function evCard(s, e, on) {
   const r = evRunnerOf(s, e.name);
-  const [tone, word] = e.error ? ["bad", "파일 오류"] : !e.has_stage ? ["warn", "미션 단계 없음"]
+  const [tone, word] = e.pending ? ["mute", "준비 중"] : e.error ? ["bad", "파일 오류"] : !e.has_stage ? ["warn", "미션 단계 없음"]
     : r ? [r.busy || r.phase === "RUNNING" ? "live" : EP_TONE[r.phase] || "", r.busy ? "실행 중" : r.phase] : ["mute", "노드 없음"];
   const pol = (label, id) => `<span class="ev-pol"><small>${label}</small><b>${esc(shortPolicy(id) || "—")}</b><code>${esc(id || "—")}</code></span>`;
   const holders = (e.holders || []).map((h) => `<span>${esc(h.object)} → ${esc(h.holder)}</span>`).join("");
   return `<button type="button" class="ev-card${on ? " on" : ""}" role="radio" aria-checked="${on}" data-act="ev-pick" data-arg="${esc(e.name)}">
     <span class="ev-card-top"><b class="ev-name">${esc(e.name)}</b>${e.version != null ? `<small>v${esc(e.version)}</small>` : ""}<span class="badge ${tone}">${esc(word)}</span></span>
     ${pol("오른손 놓기", e.policy_r)}${pol("왼손 놓기", e.policy_l)}
-    <span class="ev-holders"><small>홀더</small><span class="ev-hl">${holders || "—"}</span></span>${e.error ? `<span class="ev-err">${esc(e.error)}</span>` : ""}</button>`;
+    <span class="ev-holders"><small>홀더</small><span class="ev-hl">${holders || "—"}</span></span>${e.error ? `<span class="ev-err">${esc(e.error)}</span>` : ""}${e.pending ? `<span class="hint">${esc(e.pending)}</span>` : ""}</button>`;
 }
 
 // 시작 버튼이 할 일 — 서버가 준 것(단계 can_run · reasons · 실행기 phase)만으로 정한다
 function evPlan(s, ep, r, row) {
+  if (ep.pending) return { why: [ep.pending] };   // ★11.20 준비 중 칸(cocktail_rrl) — 시작 없음
   if (ep.error) return { why: [ep.error] };
   if (!ep.has_stage || !row) return { why: [`미션에 ${ep.stage} 단계가 없다 — 미션을 다시 만들어야 한다`] };
   if (r) {
@@ -1534,6 +1597,77 @@ function evPlan(s, ep, r, row) {
   const ok = !other && !!(row.can_run || (row.touches_real && row.can_approve));
   return { act: "ev-start-stage", ok, sub: "1/2 노드 띄우기 · 다음 [시작] = 연속 실행",
            why: ok ? [] : [...(other ? [`${other.episode} 가 실행 중이다 — 정지 뒤에`] : []), ...(row.reasons || [])] };
+}
+
+// ★11.16 사용자: 실험 카드를 늘리지 않고 cocktail_1c_n07b 카드에 토글 4 개 — 기본값 · 검증 정본은 서버
+//   episode_spec.TOGGLES · eval_log.TOGGLE_EPISODES. [시작](단계 실행) 때 보내고, 실행기가 떠 있는 동안 그 값이 회차마다 쓰인다
+const EV_TOGGLE_EPISODES = ["cocktail_1c_n07b", "cocktail_e2e"];
+// ★11.20 사용자 "cocktail_e2e 에서는 tilt 에서 v12 또는 v14 고를 수 있고" — e2e 는 tilt 자산만(서버 eval_log.TOGGLE_KEYS). 나머지는 yaml 그대로
+const EV_TOGGLE_KEYS = { cocktail_e2e: ["tilt"] };
+const evKeysOf = (name) => EV_TOGGLE_KEYS[name] || null;
+// ★11.17 사용자 "핸드 설정은 핸드끼리" — 묶음별 한 줄 + 실험 순서 프리셋(1~7). 키·값은 서버 TOGGLES 그대로
+const EV_TOGGLE_GROUPS = [
+  ["① 정책", [
+    ["grasp_r", "오른손 잡기", [["rcg04", "rcg04"], ["student1105mA", "학생 1105mA"]]],
+    ["grasp_l", "왼손 잡기", [["rcg04", "rcg04"], ["student1105mA", "학생 1105mA"]]],
+    ["place_r", "오른손 놓기", [["right_n07", "n07"], ["right_n10_e4000", "n10 e4000"], ["right_student_place", "학생"]]],
+    ["place_l", "왼손 놓기", [["left_n09_e3800", "n09 e3800"], ["left_student_place", "학생"]]],
+  ]],
+  ["② 손 설정 (켬 = real 전용 설정 · 끔 = sim 과 같음)", [
+    ["hand_unfreeze_on_grasp", "쥐면 손 풀기", [[true, "켬"], [false, "끔"]]],
+    ["thumb_support_g", "엄지 받침 80 g", [[true, "켬"], [false, "끔"]]],
+    ["thumb_open_floor", "엄지 벌림 하한 0.06", [[true, "켬"], [false, "끔"]]],
+  ]],
+  ["③ 놓기 컵 위치", [
+    ["tin_subtract_offset", "T_in − t", [[false, "끔"], [true, "켬"]]],
+  ]],
+  ["④ tilt", [
+    ["tilt", "궤적", [["v12", "v12 (실기 재튜닝)"], ["v14", "v14 (CMA r1l1)"]]],
+    ["tilt_comp", "왼팔 무게 보상", [[false, "끔"], [true, "켬"]]],
+    ["rate_scale", "재생 속도", [[1.0, "1.0"], [0.5, "0.5 (느리게)"]]],
+  ]],
+];
+const EV_TOGGLES = EV_TOGGLE_GROUPS.flatMap(([, items]) => items);
+const EV_HAND_KEYS = ["hand_unfreeze_on_grasp", "thumb_support_g", "thumb_open_floor"];
+const evToggles = Object.fromEntries(EV_TOGGLES.map(([k, , opts]) => [k, opts[0][0]]));
+// 실험 순서(11.17 실행 목록) — 각 단계는 앞 단계에서 한 칸만 바뀐다
+const _evBase = { ...evToggles };
+const _hOff = { hand_unfreeze_on_grasp: false, thumb_support_g: false, thumb_open_floor: false };
+const EV_PRESETS = [
+  ["1 기준", { ..._evBase }],
+  ["2 손=sim", { ..._evBase, ..._hOff }],
+  ["3 +T_in−t", { ..._evBase, ..._hOff, tin_subtract_offset: true }],
+  ["4 +tilt 보상", { ..._evBase, ..._hOff, tin_subtract_offset: true, tilt_comp: true }],
+  ["5 +tilt 느리게", { ..._evBase, ..._hOff, tin_subtract_offset: true, tilt_comp: true, rate_scale: 0.5 }],
+  ["6 놓기 n10", { ..._evBase, ..._hOff, tin_subtract_offset: true, tilt_comp: true, place_r: "right_n10_e4000" }],
+  ["7 학생", { ..._evBase, ..._hOff, tin_subtract_offset: true, tilt_comp: true, grasp_r: "student1105mA",
+               grasp_l: "student1105mA", place_r: "right_student_place", place_l: "left_student_place" }],
+];
+function evPresetNow() {
+  const i = EV_PRESETS.findIndex(([, v]) => EV_TOGGLES.every(([k]) => v[k] === evToggles[k]));
+  return i < 0 ? "직접 조합" : EV_PRESETS[i][0];
+}
+function evToggleHtml(ep, locked) {
+  if (!EV_TOGGLE_EPISODES.includes(ep.name)) return "";
+  const dis = locked ? "disabled" : "";
+  const btn = (k, v, w) => `<button type="button" class="btn btn-sm" role="radio" aria-checked="${evToggles[k] === v}" data-act="ev-toggle" data-arg="${esc(k)}=${esc(String(v))}" ${dis}>${esc(w)}</button>`;
+  const keys = evKeysOf(ep.name);
+  if (keys) {                                  // ★11.20 일부만 받는 카드(e2e = tilt 궤적) — 프리셋 없이 그 줄만
+    const items = EV_TOGGLES.filter(([k]) => keys.includes(k));
+    return `<div class="ev-toggles" role="group" aria-label="실험 토글"><div class="ev-grp"><b>tilt</b>${items.map(([k, label, opts]) =>
+      `<span class="ev-tg"><small>${esc(label)}</small>${opts.map(([v, w]) => btn(k, v, w)).join("")}</span>`).join("")}<small class="hint">나머지 설정은 yaml · 자산 그대로</small></div>${locked ? `<p class="hint">실행기가 떠 있다 — 바꾸려면 단계를 다시 시작</p>` : ""}</div>`;
+  }
+  const now = evPresetNow();
+  const presets = `<div class="ev-grp ev-presets"><b>실험 순서</b>${EV_PRESETS.map(([n], i) =>
+    `<button type="button" class="btn btn-sm" role="radio" aria-checked="${n === now}" data-act="ev-preset" data-arg="${i}" ${dis}>${esc(n)}</button>`).join("")}<small class="hint">지금: ${esc(now)}</small></div>`;
+  const handAll = (v) => EV_HAND_KEYS.every((k) => evToggles[k] === v);
+  const groups = EV_TOGGLE_GROUPS.map(([title, items]) => {
+    const extra = items.some(([k]) => k === EV_HAND_KEYS[0])
+      ? `<span class="ev-tg"><small>3개 한꺼번에</small><button type="button" class="btn btn-sm" role="radio" aria-checked="${handAll(true)}" data-act="ev-hand-all" data-arg="true" ${dis}>모두 켬</button><button type="button" class="btn btn-sm" role="radio" aria-checked="${handAll(false)}" data-act="ev-hand-all" data-arg="false" ${dis}>모두 끔</button></span>` : "";
+    return `<div class="ev-grp"><b>${esc(title)}</b>${extra}${items.map(([k, label, opts]) =>
+      `<span class="ev-tg"><small>${esc(label)}</small>${opts.map(([v, w]) => btn(k, v, w)).join("")}</span>`).join("")}</div>`;
+  }).join("");
+  return `<div class="ev-toggles" role="group" aria-label="실험 토글">${presets}${groups}${locked ? `<p class="hint">실행기가 떠 있다 — 바꾸려면 단계를 다시 시작</p>` : ""}</div>`;
 }
 
 function evRunHtml(s, ep) {
@@ -1561,7 +1695,7 @@ function evRunHtml(s, ep) {
       <div class="actions"><button class="btn btn-primary btn-sm" data-act="ack" data-arg="${esc(row.id)}:${st.index}:1" ${can ? "" : "disabled"}>확인했고 정상이다 → 다음</button>
       <button class="btn btn-sm" data-act="ack" data-arg="${esc(row.id)}:${st.index}:0" ${can ? "" : "disabled"}>정상이 아니다 → 중단</button></div></div>`;
   }
-  return `<div class="ev-ctl">${startBtn}${nextBtn}${resetBtn}${stopBtn}</div>${ackBox}${why}${lease}${evStatus(s, r)}`;
+  return `${evToggleHtml(ep, !!r)}<div class="ev-ctl">${startBtn}${nextBtn}${resetBtn}${stopBtn}</div>${ackBox}${why}${lease}${evStatus(s, r)}`;
 }
 
 // 지금 단계 · 진행 — 에피소드 실행기 상태(policy 탭 '지금 에피소드' 와 같은 값) + 미션 진행 묶음(control 탭 #gb 와 같은 값)
@@ -1583,7 +1717,16 @@ function evStatus(s, r) {
     <ol class="ev-steps">${steps}</ol>${conf}${last}${gb}</div>`;
 }
 
-function evRenderForm(ep) {
+function evRenderForm(ep, list = []) {
+  const sel = $("ev-episode");
+  if (sel) {
+    const names = list.map((e) => e.name).join(",");
+    if (sel.dataset.names !== names) {
+      sel.dataset.names = names;
+      sel.innerHTML = list.map((e) => `<option value="${esc(e.name)}">${esc(e.name)}</option>`).join("");
+    }
+    if (ep && !evFocused("ev-episode") && sel.value !== ep.name) sel.value = ep.name;
+  }
   const key = ep ? `${ep.name}|${(ep.stages || []).join(",")}` : "";
   if (key !== evStagesKey && $("ev-fail-stage")) {
     evStagesKey = key;
@@ -1612,8 +1755,8 @@ function evRenderRounds() {
     ${stages ? `<span class="ev-sep">실패 단계</span>${stages}` : ""}${eps.length && Object.keys(sm.by_episode || {}).length > 1 ? `<span class="ev-sep">에피소드</span>${eps}` : ""}`);
   const rows = (R.rows || []).slice().reverse().map((r) => `<tr><td class="num">${esc(r.round)}</td><td class="mono">${esc(r.time)}</td><td>${esc(r.episode)}</td>
     <td title="${esc(r.policy_r)}">${esc(shortPolicy(r.policy_r))}</td><td title="${esc(r.policy_l)}">${esc(shortPolicy(r.policy_l))}</td>
-    <td><span class="badge ${EV_TONE[r.result] || ""}">${esc(r.result)}</span></td><td>${esc(r.fail_stage || "—")}</td><td>${esc(r.fail_type)}</td><td class="ev-td-note">${esc(r.note)}</td></tr>`).join("");
-  put("ev-table", rows ? `<table class="tilt-tbl ev-tbl"><thead><tr><th>round</th><th>time</th><th>episode</th><th>policy_r</th><th>policy_l</th><th>result</th><th>fail_stage</th><th>fail_type</th><th>note</th></tr></thead><tbody>${rows}</tbody></table>
+    <td><span class="badge ${EV_TONE[r.result] || ""}">${esc(r.result)}</span></td><td>${esc(r.fail_stage || "—")}</td><td>${esc(r.fail_type)}</td><td class="ev-td-note">${esc(r.note)}</td><td class="mono">${esc(r.toggles || "")}</td></tr>`).join("");
+  put("ev-table", rows ? `<table class="tilt-tbl ev-tbl"><thead><tr><th>round</th><th>time</th><th>episode</th><th>policy_r</th><th>policy_l</th><th>result</th><th>fail_stage</th><th>fail_type</th><th>note</th><th>toggles</th></tr></thead><tbody>${rows}</tbody></table>
       <p class="hint">파일 <code>${esc(R.file)}</code></p>`
     : `<p class="hint">아직 기록이 없다 · 파일 <code>${esc(R.file || "")}</code></p>`);
   const types = (R.fail_types || []).join("\n");
@@ -1633,7 +1776,7 @@ function renderEval(s) {
   put("ev-cards", (X.error ? `<p class="reasons bad">${esc(X.error)}</p>` : "")
     + (eps.length ? eps.map((e) => evCard(s, e, !!ep && e.name === ep.name)).join("") : `<p class="hint">평가 에피소드 파일(config/episodes)이 없다.</p>`));
   put("ev-run", evRunHtml(s, ep));
-  evRenderForm(ep);
+  evRenderForm(evRecPick(s), evRecord(s));
   evRenderRounds();
   if (!evRounds && !evLoading) evLoad(evDate);
 }
@@ -1652,11 +1795,28 @@ async function evLoad(date = "") {
 
 Object.assign(acts, {
   "ev-pick"(name) {
-    evSel = name;
+    evSel = evRecSel = name;
     try { localStorage.setItem(EV_KEY, name); } catch { /* 이 화면에서는 유지된다 */ }
     if (S && S.session) renderEval(S.session);
   },
-  "ev-start-stage"(name) { return prepareAction("stage", { stage: `episode_${name}` }); },
+  "ev-start-stage"(name) {
+    const keys = evKeysOf(name);
+    const toggles = keys ? Object.fromEntries(keys.map((k) => [k, evToggles[k]])) : { ...evToggles };
+    return prepareAction("stage", { stage: `episode_${name}`, ...(EV_TOGGLE_EPISODES.includes(name) ? { toggles } : {}) });
+  },
+  "ev-toggle"(arg) {
+    const [k, v] = arg.split("=");
+    evToggles[k] = k === "rate_scale" ? Number(v) : (v === "true" || v === "false") ? v === "true" : v;
+    if (S && S.session) renderEval(S.session);
+  },
+  "ev-preset"(i) {
+    Object.assign(evToggles, EV_PRESETS[Number(i)][1]);
+    if (S && S.session) renderEval(S.session);
+  },
+  "ev-hand-all"(v) {
+    for (const k of EV_HAND_KEYS) evToggles[k] = v === "true";
+    if (S && S.session) renderEval(S.session);
+  },
   "ev-start-run"(name) {
     const r = S && S.session ? evRunnerOf(S.session, name) : null;
     if (!r) return toast("이 에피소드 실행기가 없다 — 다시 [시작]");
@@ -1675,7 +1835,7 @@ Object.assign(acts, {
     if (S && S.session) renderEval(S.session);
   },
   async "ev-save"() {
-    const ep = S && S.session ? evPick(S.session) : null;
+    const ep = S && S.session ? evRecPick(S.session) : null;
     if (!ep || !evForm.result) return toast("결과를 고를 것");
     const body = { episode: ep.name, result: evForm.result, fail_stage: evForm.result === "성공" ? "" : evForm.fail_stage,
                    fail_type: evForm.fail_type, note: evForm.note };
@@ -1696,6 +1856,7 @@ document.addEventListener("input", (e) => {
 document.addEventListener("change", (e) => {
   const id = e.target && e.target.id;
   if (id === "ev-fail-stage") evForm.fail_stage = e.target.value;
+  if (id === "ev-episode") { evRecSel = e.target.value; if (S && S.session) renderEval(S.session); }
   if (id === "ev-date") { evDate = e.target.value && evRounds && e.target.value === evRounds.today ? "" : e.target.value; evLoad(evDate); }
 });
 document.addEventListener("submit", (e) => {
@@ -1971,8 +2132,8 @@ function headModule(h, action) {
 function renderWorkspace() {
   const w = S.workspace || {};
   const actions = S.actions || [];
-  put("common-controls", actions.filter(a => a.group === "control").map(actionButton).join(""));
-  for (const group of ["setting", "control"]) put(group + "-actions", actions.filter(a => a.group === group).map(actionButton).join(""));
+  put("common-controls", actions.filter(a => a.group === "control" && !a.id.startsWith("place_fixed_") && !a.id.startsWith("cap_")).map(actionButton).join(""));   // ★11.19 place fixed 는 튜닝 탭에서만 · cap_* 은 policy 탭 cap_e2e 에서만
+  for (const group of ["setting", "control"]) put(group + "-actions", actions.filter(a => a.group === group && !a.id.startsWith("place_fixed_") && !a.id.startsWith("cap_")).map(actionButton).join(""));
   // ★10.21 제어 모듈 에피소드(ctl_*)는 policy 탭 실험 목록이 실행한다 — 여기서 따로 버튼을 늘어놓지 않는다
   put("management", managementStatus(S.management, "setting"));
   put("management-control", managementStatus(S.management, "control"));
@@ -2016,6 +2177,14 @@ Object.assign(acts, {
   tab: selectTab,
   "video-retry"() { $("fpp-video").removeAttribute("src"); $("fpp-video").src = "/api/video"; $("video-status").textContent = "영상 다시 연결 중"; $("video-retry").hidden = true; },
   "action-prepare": prepareAction,
+  "act-ckpt"(c) { actDraft = { ...actDraft, ckpt: c }; render(); },
+  "act-tilt"(id) {                                  // ★11.19 고른 ckpt · max_vel 로 승인 창을 연다(범위 밖이면 버튼이 막혀 있다)
+    const A = actItem() && actItem().act;
+    if (!A) return;
+    const p = actPick(A);
+    if (!p.ok) return toast("max-vel 범위 밖", [`(${A.max_vel[0]}, ${A.max_vel[1]}] rad/s`]);
+    return prepareAction(id, { ckpt: p.ckpt, max_vel: p.vel });
+  },
   async "action-execute"() {
     if (!pendingConfirmation || executingConfirmation) return;
     const confirmation_id = pendingConfirmation;
@@ -2078,6 +2247,7 @@ document.addEventListener("click", (e) => {
   if (fn) Promise.resolve(fn(b.dataset.arg)).catch(() => {});
 });
 document.addEventListener("change", (e) => {
+  if (e.target.matches && e.target.matches("[data-act-vel]")) { actDraft = { ...actDraft, vel: e.target.value }; render(); return; }
   const side = e.target.dataset && e.target.dataset.pick;
   if (side) { pick.policies[side] = e.target.value; render(); }
 });
