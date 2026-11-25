@@ -80,16 +80,25 @@ start)
   HAND=""
   # 10.08 명령(위치 angle_set · 어드민턴스 angle_target)과 어드민턴스가 연 칸 수 · 손가락 모드도 — 어드민턴스 정책 쥠 분석
   # 11.04 손끝 영점(tip_bias · tip_zero_status 는 transient_local — 기록 시작 전에 잡은 마지막 bias 도 bag 첫머리에 들어온다)
-  for s in ${HAND_SIDES:-right left}; do for t in angle_actual force_actual current_actual touch_data joint_states tip_forces \
-      tip_forces_zeroed tip_bias tip_zero_status joint_forces joint_forces_zeroed ecat_status angle_set angle_target admittance_offset finger_mode; do
-    HAND="$HAND /hand_$s/$t"; done; done
+  HAND_T="angle_actual force_actual current_actual touch_data joint_states tip_forces tip_forces_zeroed tip_bias tip_zero_status
+    joint_forces joint_forces_zeroed ecat_status angle_set angle_target admittance_offset finger_mode"
+  PD_T="diagnostics contact contact_guard"
+  # ★11.22 사용자 '녹화량 줄이기'(general_lab 과 맞춤): SLIM=1(에피소드 미션) — 손은 중복 토픽(촉각 원자료 touch_data · 힘 원값
+  #   force_actual · 전류 · 관절 힘 joint_forces*)을 빼고, pd 는 diagnostics(JSON 약 3.7 KB · 116 Hz, pd bag 의 약 77%)를 뺀다.
+  #   diagnostics 를 읽는 도구(stationary_tracking · tilt_comp_ab_report)는 에피소드 bag 을 보지 않는다
+  if [ "${RH56F1_RECORD_SLIM:-0}" = 1 ]; then
+    HAND_T="angle_actual joint_states tip_forces tip_forces_zeroed tip_bias tip_zero_status ecat_status angle_set angle_target
+      admittance_offset finger_mode"
+    PD_T="contact contact_guard"
+  fi
+  for s in ${HAND_SIDES:-right left}; do for t in $HAND_T; do HAND="$HAND /hand_$s/$t"; done; done
   # ★11.10 사용자: stationary_recorder(Python JSONL, 코어 1.3개 · 4.5 GB) 대신 — 그것만 갖던 PD 쪽 토픽을 따로 bag 에 싣는다.
   # arm bag 에 섞지 않는다(10.03: 한 sqlite3 에 몰면 /joint_states 가 빠진다). 팔 명령 = PD 가 실제로 보낸 토크 · 위치 · 속도.
   # ★11.15 s2r:vision: 에피소드 중 목 자세(외부 파라미터 · 처짐표 대조용)
   PD="/arm_zero_calibration/events /head/joint_states /pd_state_broadcaster/joint_states /pd_temp_broadcaster/dynamic_joint_states /policy_control/episode /policy_control/estop"
   for s in ${HAND_SIDES:-right left}; do
     for c in effort position velocity; do PD="$PD /${s}_forward_${c}_controller/commands"; done
-    for t in diagnostics contact contact_guard; do PD="$PD /policy_control/pd_$s/$t"; done; done
+    for t in $PD_T; do PD="$PD /policy_control/pd_$s/$t"; done; done
   # ★11.10 사용자: 칵테일 에피소드 정책 입력 · 출력(잡기 ns <팔> · 놓기 ns <팔>_place, pour_fj_node.py) + 보낸 명령 · 정책 상태(opened · squeeze)
   #   — 미션이 EXTRA(arm bag)로 이미 주는 토픽은 빼서 두 번 싣지 않는다
   POL="/policy_control/joint_target"

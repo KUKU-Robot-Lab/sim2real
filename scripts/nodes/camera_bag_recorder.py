@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import json
 import struct
 import sys
 import threading
@@ -68,12 +69,50 @@ def encode_image(topic: str, encoding: str, height: int, width: int, step: int, 
     return f"{encoding}; jpeg compressed bgr8", jpg.tobytes()
 
 
+#: runner 상태가 이 값이면 그 회는 끝났다(episode_runner SUCCESS · FAILURE · STOPPED)
+_ENDED = ("SUCCESS", "FAILURE", "STOPPED")
+
+
+class EpisodeGate:
+    """★11.21 사용자: 에피소드 영상은 scene 진입부터 done(끝)까지만 — runner 상태 JSON(/policy_control/status/<runner>, 0.5 s)으로 연다.
+
+    열기: 이 회의 runs 에 시작 노드가 생겼다(에피소드에 그 노드가 없으면 첫 노드). 끝난 회의 상태(지난 SUCCESS 등)로는 열지 않는다.
+    끝: 연 뒤 상태가 _ENDED 이거나 episode_id 가 바뀌었다([새 에피소드]). 한 번 끝나면 다시 열지 않는다(기록기도 끝낸다).
+    상태는 0.5 s 마다 오므로 시작 · 끝이 그만큼 늦을 수 있다. 두 PC 시계를 비교하지 않으려고 받은 때 연다."""
+
+    def __init__(self, start_node: str) -> None:
+        self.start_node = start_node
+        self.open = False
+        self.finished = False
+        self.episode_id: str | None = None
+
+    def update(self, data: str) -> None:
+        if self.finished:
+            return
+        try:
+            s = json.loads(data)
+            status, eid, runs = s.get("status"), s.get("episode_id"), s.get("runs") or {}
+            ids = [n.get("id") for n in s.get("nodes") or []]
+        except (ValueError, AttributeError):
+            return
+        if self.open:
+            if status in _ENDED or eid != self.episode_id:
+                self.open, self.finished = False, True
+            return
+        started = self.start_node in runs if self.start_node in ids else bool(runs)
+        if started and status not in _ENDED:
+            self.open, self.episode_id = True, eid
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("-o", "--out", type=Path, required=True, help="bag 폴더(없어야 한다 — rosbag2 가 만든다)")
     ap.add_argument("--hz", type=float, default=10.0, help="토픽마다 남길 최대 빈도")
     ap.add_argument("--encode-raw", action="store_true",
                     help="…/compressed · …/compressedDepth 는 원본을 구독해 이 프로세스에서 압축한다(드라이버 압축 안 함)")
+    ap.add_argument("--gate", default="",
+                    help="에피소드 runner 상태 토픽(/policy_control/status/<runner>) — 주면 --gate-start 노드 진입부터 그 회가 끝날 때까지만 쓰고 스스로 끝난다")
+    ap.add_argument("--gate-start", default="scene", help="--gate 기록을 여는 노드 id(에피소드에 없으면 첫 노드)")
     ap.add_argument("topics", nargs="+")
     args = ap.parse_args(argv)
     if args.hz <= 0:
@@ -98,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     jobs: collections.deque = collections.deque(maxlen=2)   # 밀리면 가장 오래된 작업이 빠진다
     wake, stop = threading.Event(), threading.Event()
     dropped = [0]                       # 압축이 밀려 버린 프레임 수
+    ep_gate = EpisodeGate(args.gate_start) if args.gate else None
 
     def write(topic: str, data: bytes, t: int) -> None:
         with lock:
@@ -108,6 +148,8 @@ def main(argv: list[str] | None = None) -> int:
         gate = RateGate(args.hz)
 
         def cb(data: bytes) -> None:
+            if ep_gate is not None and not ep_gate.open:      # 에피소드 구간 밖 — 솎기 전에 버린다
+                return
             t = node.get_clock().now().nanoseconds
             if not gate.take(t * 1e-9):
                 return
@@ -163,11 +205,25 @@ def main(argv: list[str] | None = None) -> int:
                              durability=qos_profile_sensor_data.durability)
         worker = threading.Thread(target=encoder, name="camera_bag_encode", daemon=True)
         worker.start()
+    if ep_gate is not None:
+        from std_msgs.msg import String
+
+        def on_status(m) -> None:
+            was = ep_gate.open
+            ep_gate.update(m.data)
+            if ep_gate.open and not was:
+                print(f"[camera_bag] 에피소드 {ep_gate.episode_id} {args.gate_start} 진입 — 기록 시작", flush=True)
+            elif ep_gate.finished:
+                print(f"[camera_bag] 에피소드 {ep_gate.episode_id} 끝 — 기록 마무리", flush=True)
+
+        node.create_subscription(String, args.gate, on_status, QoSProfile(depth=10))
     discover()
     node.create_timer(1.0, discover)
-    print(f"[camera_bag] 기록 시작 → {args.out} · {args.hz:g} Hz · 토픽 {len(wanted)}개", flush=True)
+    print(f"[camera_bag] 기록 시작 → {args.out} · {args.hz:g} Hz · 토픽 {len(wanted)}개"
+          + (f" · {args.gate} 의 {args.gate_start} 진입부터 그 회 끝까지" if ep_gate else ""), flush=True)
     try:
-        rclpy.spin(node)
+        while rclpy.ok() and not (ep_gate is not None and ep_gate.finished):
+            rclpy.spin_once(node, timeout_sec=0.2)
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
