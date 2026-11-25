@@ -1,0 +1,46 @@
+# 생성됨 — scripts/ops/fpp_object.py (묶음 'cardboard_box_orange'). add 로 다시 만들고 calib 로 색을 잰다. 손으로 고치지 않는다.
+meta:
+  source_cad: cardboard_box.obj
+  origin_above_bottom_m: 0.065
+  colors:
+  - orange
+objects:
+  cardboard_box_orange:
+    real: orange cardboard_box_orange — cardboard_box.obj 에서 등록(fpp_object.py add)
+    fpp:
+      mesh_path: assets/s2r_meshes/cardboard_box_orange.obj
+      mesh_scale_to_meters: 1.0
+      cup_class_id: 41
+      detection_pick: confidence
+      yolo_confidence: 0.05
+      group: cardboard_box_orange
+      color: orange
+    cad_to_body:
+      position:
+      - 0.0
+      - 0.0
+      - 0.0
+      orientation_wxyz:
+      - 1.0
+      - 0.0
+      - 0.0
+      - 0.0
+    sim:
+      usd: ''
+      origin_above_bottom_m: 0.065
+    aabb:
+    - - -0.0205
+      - -0.0415
+      - -0.065
+    - - 0.0205
+      - 0.0415
+      - 0.054
+    symmetry_axis:
+    - 0.0
+    - 0.0
+    - 1.0
+    symmetry_flip: true
+    grasp_axis:
+    - 1.0
+    - 0.0
+    - 0.0

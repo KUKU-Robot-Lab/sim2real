@@ -27,25 +27,36 @@ def test_act_tilt_stages_are_registered_with_dry_run_never_touching_real(kind):
 
 def test_real_act_tilt_publishes_only_with_execute_after_a_manual_check():
     run = _run("control")["run"]
-    dry, = run["act_tilt_dry"]
+    dry_start, dry = run["act_tilt_dry"]
     assert not dry.get("execute_args") and "--execute" not in dry["argv"]
-    check, go = run["act_tilt"]
+    check, start, go = run["act_tilt"]
     assert check.get("manual") is True
     assert go["execute_args"] == ["--execute"] and go["argv"] == dry["argv"]
-    assert go["argv"][3:] == ["act_tilt", A.ACT_TILT_CKPTS[0], "--max-vel", "1.0"]
+    # ★11.20 브리지 전에 오른팔만 ACT 시작 자세로 — dry 는 계획 · 검사만, 실행 카드는 이동(tilt_now --execute). 걸리면 rc≠0 → 브리지 건너뜀
+    assert start["argv"] == dry_start["argv"] and start["execute_args"] == ["--execute"] and not dry_start.get("execute_args")
+    i = start["argv"].index("--sides")
+    assert start["argv"][1].endswith("tilt_now.py") and start["argv"][i + 1] == "right"
+    assert (REPO / start["argv"][start["argv"].index("--goal-poses") + 1]).is_file()
+    assert go["argv"][3:] == ["act_tilt", A.ACT_TILT_CKPTS[0], "--max-vel", "1.0", "--temporal-ensemble", "0.1"]
     # ★11.19 act: 브리지는 목을 되돌리지 않는다 — 같은 셸에서 abort 여도 head_home 과 같은 명령으로 되돌린다(--execute 일 때만)
     head_home, = [c for c in run["head_home"] if c.get("execute_args")]
     script = go["argv"][2]
     assert " ".join(f'"{a}"' for a in head_home["argv"]) + " --execute" in script
     assert "exec " not in script and script.rstrip().endswith("exit $rc")
-    fake, = [c for c in _run("fake")["run"]["act_tilt"] if c.get("execute_args")]
-    assert "head_move.py" not in " ".join(fake["argv"])        # fake 는 머리가 없다
+    # ★11.20 사용자 "카메라만큼은 동일해야" — 같은 자세의 head 로 목도(tilt_now 가 팔 도착 뒤 head_move --pan/--tilt, 실행 때만)
+    head_argv = start["argv"][start["argv"].index("--head-argv") + 1].split()
+    assert head_argv == [f"'{a}'" if "{" in a else a for a in head_home["argv"][:4]] and head_argv[1].endswith("head_move.py'")
+    fake = _run("fake")["run"]
+    assert "head_move.py" not in " ".join(fake["act_tilt"][-1]["argv"])        # fake 는 머리가 없다
+    assert "--head-argv" not in fake["act_tilt"][1]["argv"]
 
 
 def test_card_parameters_swap_ckpt_and_max_vel_only_in_the_bridge_command():
-    argv = tuple(_run("control")["run"]["act_tilt"][1]["argv"]) + ("--execute",)
+    argv = tuple(_run("control")["run"]["act_tilt"][2]["argv"]) + ("--execute",)
+    start = tuple(_run("control")["run"]["act_tilt"][1]["argv"]) + ("--execute",)
+    assert A.act_tilt_argv(start, {"ckpt": "010000", "max_vel": 0.3}) == start   # 이동 명령은 카드 설정과 무관
     out = A.act_tilt_argv(argv, {"ckpt": "010000", "max_vel": 0.3})
-    assert out[:3] == argv[:3] and out[3:] == ("act_tilt", "010000", "--max-vel", "0.3", "--execute")
+    assert out[:3] == argv[:3] and out[3:] == ("act_tilt", "010000", "--max-vel", "0.3", "--temporal-ensemble", "0.1", "--execute")
     assert A.act_tilt_argv(("bash", "-lc", "true"), {"ckpt": "010000"}) == ("bash", "-lc", "true")
     assert A.act_tilt_argv(argv, {}) == argv
 

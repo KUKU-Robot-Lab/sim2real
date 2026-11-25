@@ -417,6 +417,8 @@ def test_prune_vertices_skips_corners_only_when_whole_path_passes():
 class _OrderChk:
     """상태 없는 check 는 전부 통과, 순서 기반 check_path 는 '먼저 y ≥ 0.5 로 든 뒤에만 x > 0.5' 를 요구(탈출 흉내)."""
     lenient = True
+    escape0: dict = {}
+    escape_radius = P.ESCAPE_RADIUS
 
     def check(self, q):
         return SimpleNamespace(ok=True)
@@ -454,6 +456,37 @@ def test_lift_prefix_vertices_survive_pruning(monkeypatch):
     assert len(out) == keep + 1 and (out[-1] == goal).all()
     bare = P.prune_vertices(_OrderChk(), longer, 0.01)
     assert not any((v == path[1]).all() for v in bare)               # keep 없이 줄이면 들기 꼭짓점이 사라진다
+
+
+def _escape_chk(depth_at):
+    """진짜 Checker 판정에 가짜 세계 한 쌍: 홀더-손바닥 여유가 q[1](들기)에 따라 depth_at(q1) — 시작 −2 cm(탈출 쌍)."""
+    pair = ("cup_holder_0", "l_hl_palm_2")
+    chk = P.Checker.__new__(P.Checker)
+    chk.w = SimpleNamespace(is_world=lambda b: b.startswith("cup_holder"))
+    chk.margin, chk.chain, chk.lenient, chk.n_checks = 0.02, set(), True, 0
+    chk.start, chk.escape_radius = np.zeros(2), P.ESCAPE_RADIUS
+    chk.raw = lambda q: {pair: depth_at(float(q[1]))}
+    chk._escape_measure = lambda k, dist: dist
+    chk.escape0 = {pair: depth_at(0.0)}
+    return chk
+
+
+def test_lift_merged_path_uses_lift_escape_rule_and_refuses_deeper_penetration(monkeypatch):
+    """★11.20 rehome_left_3: 들기 중 관절 변화가 1 rad 를 넘은 뒤에도 손바닥이 홀더 안이면 합친 경로 검사가
+    ESCAPE_RADIUS 규칙으로 떨어뜨렸다. lift 는 들기 단계와 같은 규칙(escape_radius inf)으로 보고, 더 파고들면 거부."""
+    lift = np.c_[np.zeros(17), np.linspace(0.0, 1.6, 17)]               # 1.6 rad 곧게 들기, 1.4 rad 넘어서야 풀린다
+    monkeypatch.setattr(P, "lift_prefix", lambda *a, **k: lift)
+    args = SimpleNamespace(step=0.01, inset=0.0, rrt_iters=1, rrt_edge_step=0.05)
+    goal = np.array([1.0, 1.6])
+    flat = lambda s: -0.02 if s <= 1.2 else -0.02 + 0.2 * (s - 1.2)
+    chk = _escape_chk(flat)
+    out = P.plan_lift_then(chk, "left", goal, None, None, None, args)
+    assert out is not None and (out[0][-1] == goal).all()
+    assert chk.escape_radius == P.ESCAPE_RADIUS                           # RRT 로 넘어가기 전 원래 값
+    deeper = lambda s: flat(s) - (0.02 if 0.5 <= s <= 0.7 else 0.0)        # 탈출 중 2 cm 더 파고듦(> ESCAPE_TOL 1 cm)
+    chk = _escape_chk(deeper)
+    assert P.plan_lift_then(chk, "left", goal, None, None, None, args) is None
+    assert chk.escape_radius == P.ESCAPE_RADIUS
 
 
 def test_main_passes_lift_keep_to_finish():

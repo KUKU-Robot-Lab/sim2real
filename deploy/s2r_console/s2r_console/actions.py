@@ -39,7 +39,7 @@ SHARED_BY_POLICIES = frozenset({'head', 'perception'})
 # ★11.19 ACT tilt(모방학습 붓기) — 미션 argv 는 [bash, -lc, <스크립트>, act_tilt, <ckpt>, --max-vel, <v>] (make_rh56f1_missions.py).
 #   카드가 고른 체크포인트 · 속도 상한만 바꾼다 — 목록 밖 체크포인트 · 브리지 범위 (0, 1.5] 밖 속도는 거부.
 ACT_TILT = ('act_tilt_dry', 'act_tilt')
-ACT_TILT_CKPTS = ('050000', '010000')
+ACT_TILT_CKPTS = ('010000', '050000')
 ACT_TILT_MAX_VEL = (0.0, 1.5)
 
 
@@ -343,7 +343,7 @@ class ActionManager:
             return frozenset({'head', 'perception'})
         if action_id == 'perception_refresh':      # locate moves the neck; FPP needs it still
             return frozenset({'perception', 'head'})
-        if action_id in ('policy_stop', 'tilt_now', 'tilt_pour', 'cap_now'):
+        if action_id in ('policy_stop', 'tilt_now', 'tilt_now_lr', 'tilt_pour', 'cap_now'):
             return frozenset(ARMS)
         if action_id in ACT_TILT:                  # ★11.19 정책 입력이 머리 카메라 — 붓는 동안 목이 움직이면 안 된다
             return frozenset({*ARMS, 'head'})
@@ -401,6 +401,8 @@ class ActionManager:
             specs['head_sweep'] = (known['head_sweep'].title, 'control', ('head_sweep',))
         if 'tilt_now' in known:                       # ★10.19 사용자: tilt 초기 자세(세팅 자세)로 — rehome 처럼(두 팔, 한 팔씩)
             specs['tilt_now'] = ('tilt 시작 자세(세팅 자세)로 — 두 팔', 'control', ('tilt_now',))
+        if 'tilt_now_lr' in known:                    # ★11.20 사용자: act_tilt 반복 — ep 뒤 왼팔 → 오른팔 한 팔씩
+            specs['tilt_now_lr'] = ('tilt 시작 자세(세팅 자세)로 — 왼팔 → 오른팔', 'control', ('tilt_now_lr',))
         if 'tilt_pour' in known:                      # ★10.19 사용자: 세팅 자세에서 바로 tilt(컵을 쥔 채, 두 팔)
             specs['tilt_pour'] = ('tilt 붓기 — 지금 자세에서 바로(두 팔)', 'control', ('tilt_pour',))
         for name in ACT_TILT:                         # ★11.19 ACT 정책 붓기(dry run · 실행) — 카드 UI 는 s2r:setting
@@ -495,7 +497,7 @@ class ActionManager:
         if (group == 'control' and action_id not in ('perception_refresh', 'head_control', 'policy_stop', 'cap_end_right')) or group == 'policy':
             if group == 'policy':
                 sides = [control_side(action_id) if action_id.startswith(CONTROL_PREFIX) else self._card(s, action_id)['side']]
-            elif action_id in ('tilt_now', 'tilt_pour', 'cap_now', *ACT_TILT) or action_id.startswith('cap_student_'):
+            elif action_id in ('tilt_now', 'tilt_now_lr', 'tilt_pour', 'cap_now', *ACT_TILT) or action_id.startswith('cap_student_'):
                 sides = list(ARMS)
             elif action_id == 'head_sweep':          # 오른손을 카메라 앞에 두고 pd 가 붙들고 있어야 한다
                 sides = ['right']

@@ -12,7 +12,7 @@ episode: {name: cocktail_e2e, version: 1}   # v1(11.02): 1b v5 + 놓기 정책 r
 objects:
   SRC_BLUE: {topic: /objects/source240_blue/pose}
   # ★10.28 순서 B — 처음부터 탁자에 있다. ★10.29 구멍 옆 v1 상자만 받는다 · FP++ 는 분홍만 든 묶음 source240_pink(cocktail_1 머리말)
-  SRC_PINK: {topic: /objects/source240_pink/pose, region: {x: [0.26, 0.305], y: [-0.365, -0.330]}}   # ★11.04 사용자 "허용 범위를 높여 둠" — +x 5 mm · +y 1 cm(손으로 놓으면 +x·+y 모서리 0~4 mm 밖에서 scene 거부). −x(손목) · −y(불가 자세)는 그대로
+  SRC_PINK: {topic: /objects/source240_pink/pose}   # ★11.20 사용자 "이제는 그냥 없어도 될것같은 조건" — region(x 0.26~0.305 · y −0.365~−0.330) 검사 뺌. 옛 주석: ★11.04 사용자 "허용 범위를 높여 둠" — +x 5 mm · +y 1 cm(손으로 놓으면 +x·+y 모서리 0~4 mm 밖에서 scene 거부). −x(손목) · −y(불가 자세)는 그대로
   SHAKER: {topic: /objects/shaker_c_orange/pose}
 holders: {HOLDER_0: 0, HOLDER_1: 1, HOLDER_2: 2}
 holder_poses: config/cup_holder_poses_5090_v1.yaml
@@ -24,8 +24,12 @@ policies:
   # ★11.18 사용자 "place는 x를 조금만 덜 이송시키면 될것 같고?" — holder_offset_base_m(이송 · 정책 목표 홀더만 base 로 옮김)은 0 그대로.
   #   11.18 실패 두 번(053826 · 054416 place_blue) 놓기 시작 때 정책이 본 컵 − 홀더 1 = x −2.9~+4.5 mm · y +7~10 mm 로 x 과이송이 아니었다
   #   (손이 홀더 위 약 93 mm 에서 첫 틱부터 열기 시작). 근거가 생기면 예: [-0.010, 0.0, 0.0]
-  rh_place_r: {policy: rh56f1/place/right_n10_e4000, kind: place, side: right, attach_source: tin_json, holder_offset_base_m: [0.0, 0.0, 0.0]}
-  rh_place_l: {policy: rh56f1/place/left_n09_e3800, kind: place, side: left, attach_source: tin_json}   # ★11.08 사용자 "왼손도 미리 넣어둬" — 붙인 자세 = tilt 직전 실측 T_in_l(셰이커, 실패면 tin_fallback T_in_l)
+  # ★11.20 사용자 place 이송 끝 FP++ 재측정·보정(1·2번) — tin_refresh_at_carry_end(이송 끝 멈춤 + settle 1 s 뒤 정지 창에서 T_in 다시 잼) ·
+  #   carry_fpp_xy_tol_m 0.003(새 T_in 컵 xy ↔ 목표 홀더 xy 가 3 mm 넘으면 ReadyCarry 1회 더). 왼손 먼저 켰고 같은 날 오른손도 같게 켬
+  rh_place_r: {policy: rh56f1/place/right_n10_e4000, kind: place, side: right, attach_source: tin_json, tin_refresh_at_carry_end: true,
+               carry_fpp_xy_tol_m: 0.003, holder_offset_base_m: [0.0, 0.0, 0.0]}
+  rh_place_l: {policy: rh56f1/place/left_n09_e3800, kind: place, side: left, attach_source: tin_json, tin_refresh_at_carry_end: true,
+               carry_fpp_xy_tol_m: 0.003}   # ★11.08 사용자 "왼손도 미리 넣어둬" — 붙인 자세 = tilt 직전 실측 T_in_l(셰이커, 실패면 tin_fallback T_in_l)
 trajectories:
   go_home: {kind: rehome, sides: [right, left]}
   go_home_r: {kind: rehome, sides: [right]}                         # 왼손은 shaker 를 든 채

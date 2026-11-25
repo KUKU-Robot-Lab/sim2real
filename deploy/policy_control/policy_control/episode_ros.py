@@ -119,6 +119,9 @@ SEAT_DZ_CYL60 = HOLDER_FLOOR_Z + 0.085
 #: ★11.11 래치 전 손 폄 종료(opened_before_latch)는 손이 0.15 rad 만 열려도 끝난다 — 쥔 채 홀더에 깊이 든 컵(sim: 앉은 높이 +55 mm,
 #   접촉력 28~35 N)을 성공으로 보면 다음 rehome 이 컵을 끌고 나간다. 이 outcome 만 앉음 z 허용을 30 → 15 mm 로 좁힌다.
 PLACE_OPEN_Z_TOL_M = 0.015
+#: ★11.20 놓은 컵 FP++ 축 기울기 참고 문턱 — signals cup_tilt_deg 기록만 하고 cup_in_holder 판정에는 쓰지 않음(FP++ 축 오류 때문, 11.20).
+#   실기 11.20: 서 있는 오렌지 shaker 를 FP++ 가 127.8° 로 내는 일이 잦다. 기록값을 이 문턱과 비교해 보는 데만 쓴다.
+PLACE_TILT_MAX_DEG = 12.0
 HAND_OPEN_WAIT_S = 3.0            # 손 펴기 — RH56F1 전 행정 약 1 s(벤더 speedSet 기본) + 여유. 그 안에 실측이 펴져야 한다
 HAND_OPEN_TOL_RAD = 0.15          # 펴짐 = 엄지 굽힘 · 네 손가락이 0(편 끝)에서 이 안(엄지 회전은 보지 않는다). pd 홈 손 경로 검사와 같은 값
                                   # (pd 는 손 목표를 한계 안쪽 0.05 로 물린다 — fake 실측 0.07~0.09 에서 섰다)
@@ -227,6 +230,8 @@ def job_params(ep: Episode, p, tin: Mapping | None = None) -> dict:
         out["tin_subtract_offset"] = bool(on and b.tin_subtract_offset)   # job 마다 넣어 앞 job 값이 남지 않게
         hoff = None if b is None else b.holder_offset_base_m
         out["holder_offset_base_m"] = [float(v) for v in (hoff or (0.0, 0.0, 0.0))]   # ★11.18 job 마다 · 실수 배열
+        out["tin_refresh_at_carry_end"] = bool(on and b.tin_refresh_at_carry_end)        # ★11.20 job 마다(앞 job 값이 남지 않게)
+        out["carry_fpp_xy_tol_m"] = float(b.carry_fpp_xy_tol_m) if on else 0.0
     # ★11.08 들기 가드 — 오른손 잡기(aglt) job 이면 에피소드와 상관없이 늘 넣는다(끄는 job 은 0 · nan 을 명시).
     #   노드는 reset 에서 읽자마자 끔으로 되돌리므로 값은 그 job 한 번만 쓰인다
     if p.kind == "aglt" and p.side == "right":
@@ -457,6 +462,19 @@ def at_home(frames: list, side: str, home: list[float] | None, tol_rad: float = 
 def cup_in_holder(cup_pos, holder_pos, seat_dz: float, xy_tol: float = 0.035, z_tol: float = 0.03) -> bool:
     c, h = np.asarray(cup_pos, float), np.asarray(holder_pos, float)
     return bool(np.linalg.norm(c[:2] - h[:2]) < xy_tol and abs(c[2] - (h[2] + seat_dz)) < z_tol)
+
+
+def place_tilt_deg(frames, after: float) -> float | None:
+    """놓기 판정 창(수신 시각 ≥ after) FP++ 프레임 (pos, quat wxyz, t) 의 컵 축 ↔ base z 각(°) 중앙값.
+    비유한 · 노름 0 쿼터니언은 거르고, 남은 프레임이 3개 미만이면 None(기록 안 함)."""
+    q = np.array([f[1] for f in frames if f[2] >= after and f[1] is not None], float).reshape(-1, 4)
+    n = np.linalg.norm(q, axis=1)
+    ok = np.isfinite(q).all(axis=1) & np.isfinite(n) & (n > 1e-9)
+    if ok.sum() < 3:
+        return None
+    q = q[ok] / n[ok, None]
+    cz = 1.0 - 2.0 * (q[:, 1] ** 2 + q[:, 2] ** 2)          # 회전 행렬 R[2, 2]
+    return float(np.median(np.degrees(np.arccos(np.clip(cz, -1.0, 1.0)))))
 
 
 def write_run_meta(run_dir: Path, ep: Episode, robot: str) -> None:
@@ -1040,7 +1058,8 @@ class RosExecutor:
             # ★11.04 놓은 자리 = FP++ live(stop + 1.0 s 뒤 프레임) 와 손을 연 순간의 묶은 컵(손바닥 FK ⊗ 묶음, latch_cup).
             #   …/pose(cups 때 찍은 테이블 자리)는 쓰지 않는다. live 는 쥔 컵을 놓치면 엉뚱한 값을 내므로(131817) 둘 중 하나라도
             #   홀더 안이면 들어간 것, 둘 다 밖일 때만 실패. 둘 다 없으면 판정 보류(None).
-            pos = self._fresh_object(p.source_object, after=time.monotonic() + PLACE_JUDGE_WAIT_S, store=self._live)
+            after = time.monotonic() + PLACE_JUDGE_WAIT_S
+            pos = self._fresh_object(p.source_object, after=after, store=self._live)
             fk = pl.get("latch_cup")
             if hold is not None:
                 votes = {}
@@ -1053,6 +1072,11 @@ class RosExecutor:
                 if votes:
                     sig["cup_in_holder"] = any(votes.values())
                     sig["cup_in_holder_by"] = votes
+                    # ★11.20 FP++ 컵 기울기는 기록만 — FP++ 축 오류(서 있는 shaker 127.8°) 때문에 판정에 쓰지 않음(11.20)
+                    with self._lock:
+                        tilt = place_tilt_deg(list(self._live.get(p.source_object, ())), after) if pos is not None else None
+                    if tilt is not None:
+                        sig["cup_tilt_deg"] = round(tilt, 1)
             if p.source_object:
                 self._place_seen[p.source_object] = p.holder_id
             return sig

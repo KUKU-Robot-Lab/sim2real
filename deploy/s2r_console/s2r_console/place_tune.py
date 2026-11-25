@@ -127,7 +127,7 @@ def take(action_id: str, parameters: dict, console=None) -> dict:
 
 def executed(action_id: str, parameters: dict) -> None:
     """actions.execute 가 부른다: tune jog 가 아닌 하강 · 놓기 · tilt_now · 저장 · 마저 놓기를 실행하면 jog 를 끈다(기준이 바뀐다)."""
-    if (action_id == "tilt_now" or action_id.startswith("place_fixed_")) and (parameters or {}).get("tune") != "jog":
+    if (action_id in ("tilt_now", "tilt_now_lr") or action_id.startswith("place_fixed_")) and (parameters or {}).get("tune") != "jog":
         disarm()
 
 

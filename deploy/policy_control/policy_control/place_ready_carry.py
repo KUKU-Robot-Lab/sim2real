@@ -184,6 +184,7 @@ class ReadyCarry:
         self.moving = False                 # Mover 가 도는 중(on 이면서 moving 아니면 멈춤 확인 중)
         self.still_n = self.still_t = 0
         self.still = ""                     # "" · "ok" · "timeout" · "track"(명령 − 실측 이탈로 실패)
+        self.hold_n = 0                     # ★11.20 hold() 로 남은 정지 창 틱(0 = 없음)
         self.track_n = 0
         self.track_dev_max = float("nan")   # 이송 중 max|q_cmd − q| 최대(NaN 이 한 번이라도 오면 NaN) — 실기 로그로 문턱 재검토
         self.plan: dict = {}
@@ -219,6 +220,7 @@ class ReadyCarry:
         self.still_n = self.still_t = self.track_n = 0
         self.track_dev_max = 0.0
         self.still = ""
+        self.hold_n = 0
         self.q_ref, self.sag_ticks, self.sag_max = None, 0, np.zeros(len(arm_q))
         self.q_hist.clear()
         self.qd_est = float("inf")
@@ -309,15 +311,26 @@ class ReadyCarry:
                 a_arm = np.clip(dq_s / self.scale, -1.0, 1.0)   # 디코더: q* += k_arm·arm_ema·a
                 self.sag_ticks += 1
                 self.sag_max = np.maximum(self.sag_max, np.abs(off + dq_s))
-            still = qd < STILL_QD_RAD_S and dev < SAG_DONE_RAD   # NaN 이면 False(멈춤 아님)
-            self.still_n = self.still_n + 1 if still else 0
-            if self.still_n >= STILL_TICKS:
-                self.on, self.still = False, "ok"
-            elif self.still_t >= STILL_MAX_TICKS:
-                self.on, self.still = False, "timeout"
+            if self.hold_n > 0:                        # ★11.20 정지 창 — 멈춤 판정(still)은 이송 끝 값 그대로, 틱만 센다
+                self.hold_n -= 1
+                self.on = self.hold_n > 0
+            else:
+                still = qd < STILL_QD_RAD_S and dev < SAG_DONE_RAD   # NaN 이면 False(멈춤 아님)
+                self.still_n = self.still_n + 1 if still else 0
+                if self.still_n >= STILL_TICKS:
+                    self.on, self.still = False, "ok"
+                elif self.still_t >= STILL_MAX_TICKS:
+                    self.on, self.still = False, "timeout"
         if not self.on:
             self.err, self.axis_deg = self._meas_err(q)
         return np.concatenate([a_arm, self.hand_action])
+
+    def hold(self, ticks: int) -> None:
+        """★11.20 이송이 끝난 뒤 정지 창(rh_place_node tin_refresh_at_carry_end) — 멈춤 확인 단계로 다시 들어가 ticks 틱 동안
+        q_ref 를 붙든다. 처짐 보정 · 이탈 가드는 이송 끝과 같고, 끝나면 on False(실측 오차 · start_ok 를 다시 잰다)."""
+        if self.on or self.q_ref is None or self.still == "track" or int(ticks) < 1:
+            raise ReadyCarryError(f"정지 창을 열 수 없다(on {self.on} · q_ref {self.q_ref is not None} · still {self.still!r} · ticks {ticks})")
+        self.on, self.hold_n = True, int(ticks)
 
     def _meas_err(self, q) -> tuple[float, float]:
         """실측 q 의 컵 원점 · 축 오차(앵커 기준) — Mover last_err 와 같은 식."""

@@ -27,7 +27,10 @@ GRASP = (("F", "grasp_f", "경로 F"),
 #: ★11.09 사용자 "경로 F 안에서 버튼으로 컵종류와 색깔을 선택 … 왼손,오른손 모두" — (FP++ 물체, 컵, 색). 순서 = 버튼 순서.
 #:   생성기 make_rh56f1_missions.F_OBJECTS 와 같다(시험이 맞춘다). 팔 기본 물체는 grasp_f_<팔>, 나머지는 grasp_f_<물체>_<팔>
 F_OBJECTS = (("source240_blue", "source240", "파랑"), ("source240_orange", "source240", "주황"), ("source240_pink", "source240", "분홍"),
-             ("source200_orange", "source200", "주황"), ("source200_pink", "source200", "분홍"), ("shaker_c_orange", "shaker", "주황"))
+             ("source200_orange", "source200", "주황"), ("source200_pink", "source200", "분홍"), ("shaker_c_orange", "shaker", "주황"),
+             ("powerade_blue", "powerade", "파랑"),          # ★11.18 파워에이드 600 ml(정책 물체 source240_real)
+             ("jeju_juice_green", "jeju_juice", "초록"),     # ★11.19 감귤주스(각진 병 · 정책 물체 source240_real)
+             ("cardboard_box_orange", "cardboard_box", "갈색"))  # ★11.20 골판지 박스(41 x 83 x 119 mm · 주황 hue 구간, 커피박스 대체)
 F_DEFAULT = {"right": "source240_blue", "left": "shaker_c_orange"}
 
 
@@ -232,10 +235,10 @@ def _cap_e2e(repo: Path, stage_ids: frozenset) -> dict | None:
 # ★11.19 act_tilt(ACT 정책 붓기) 카드 — dry run · 실행 두 작업(actions.ACT_TILT)과 카드 설정(ckpt · max_vel).
 #   값 목록 · 범위는 actions.ACT_TILT_CKPTS · ACT_TILT_MAX_VEL 과 같아야 한다(테스트가 확인). 마지막 실행 로그는 캐시하지 않는다.
 ACT_TILT_ITEM = ("act_tilt_dry", "act_tilt")
-ACT_TILT_CKPTS = ("050000", "010000")
+ACT_TILT_CKPTS = ("010000", "050000")
 ACT_TILT_MAX_VEL = (0.0, 1.5)
 ACT_TILT_DEFAULT_VEL = 1.0                     # ★11.19 사용자: act 권장 1.0 (미션 argv 기본과 같게)
-ACT_TILT_RUNS = Path(os.environ.get("ACT_TILT_RUNS", Path.home() / "rl_ws/motion_acq/il/_work/act_tilt_runs"))
+ACT_TILT_RUNS = Path(os.environ.get("ACT_TILT_RUNS", Path.home() / "rl_ws/ril/_work/act_tilt_runs"))
 _ACT_KEYS = ("result", "error", "steps", "published", "seconds", "latency_ms", "max_target_minus_measured_rad",
              "max_image_age_s", "max_state_age_s", "max_vel",
              "max_head_target_minus_measured_deg")    # ★11.19 목 포함(16차원) run 만 — 기록만 하고 abort 는 안 한다

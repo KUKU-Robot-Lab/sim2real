@@ -111,7 +111,9 @@ _TOOLS = ("aglt_goal.py",
           # ★10.09 영상 · FP++ 실시간 좌표 기록(localhost DDS) — 그림에 상자를 두지 않는다
           "vision_recorder.py",
           # ★11.16 체인 에피소드 머리 컬러 bag — 카메라 PC 에서 ssh 로 도는 기록기(노드 아님)
-          "camera_bag_recorder.py")
+          "camera_bag_recorder.py",
+          # ★11.22 에피소드 bag 을 회 구간(앞 5 s ~ 끝 30 s)만 남기는 문지기 — 상태 토픽만 듣고 기록기를 끈다(연결 상자 아님)
+          "bag_gate.py")
 
 
 @dataclass(frozen=True)
@@ -736,9 +738,13 @@ _REMOTE_NODES = ("cup_holder_pose_node.py",)
 
 def _remote_tool(u: UnitCmd) -> bool:
     """★10.13 인지 PC(vision-3090)에서 ssh 로 도는 도구(영상 기록 등) · 그 PC 안에서 끝나는 노드 — 이 PC 의 노드가 아니므로 그리지 않는다."""
-    if not u.argv or Path(str(u.argv[0])).name != "ssh":
+    argv = [str(a) for a in u.argv]
+    # ★11.25 실패해도 단계를 살려 두는 `bash -c "ssh … ; 대기"` 감싸기(make_rh56f1_missions._best_effort) — 안의 ssh 를 본다
+    if argv[:2] == ["bash", "-c"] and len(argv) > 2 and argv[2].startswith("ssh "):
+        argv = argv[2].split()
+    if not argv or Path(argv[0]).name != "ssh":
         return False
-    remote = " ".join(str(a) for a in u.argv[1:])
+    remote = " ".join(argv[1:])
     return any(tool in remote for tool in (*_TOOLS, *_REMOTE_NODES))
 
 

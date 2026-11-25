@@ -205,6 +205,26 @@ def test_carry_follows_the_command_not_the_measured_arm_then_waits_until_still()
 
 
 @pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_hold_window_keeps_the_arm_and_still_then_ends():
+    """★11.20 tin_refresh 정지 창 — 이송 끝 뒤 hold(n) 은 n 틱 동안 이송 상태(정책 안 돎)로 q_ref 를 붙들고, still 은 이송 끝 값."""
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup("right_n10_e4000")
+    ch.rc_chain = (RC, mch)
+    ch.reset(meas(q), holder=holder, held=(q, hand), attach=att)
+    while ch.carrying:
+        ch.step(meas(ch.dec.state["arm"].arm_target.copy()))
+    rc, n0 = ch.rcarry, pol.n
+    assert rc.still == "ok" and rc.start_ok
+    rc.hold(5)
+    for _ in range(5):
+        assert ch.carrying
+        _, a, _ = ch.step(meas(ch.dec.state["arm"].arm_target.copy()))
+        assert np.allclose(a[:7], 0.0, atol=1e-9)
+    assert not ch.carrying and rc.still == "ok" and rc.start_ok and pol.n == n0
+    with pytest.raises(RCY.ReadyCarryError):
+        rc.hold(0)
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
 @pytest.mark.parametrize("off,fails", [(0.03, False), (0.15, True)])
 def test_carry_aborts_when_the_arm_stays_off_the_command(off, fails):
     """★11.11 이탈 가드: held(디코더 시작 명령)와 실측이 off 만큼 어긋난 채 이송 — TRACK_ABORT_RAD 넘으면
@@ -433,3 +453,24 @@ def test_bank_pick_lands_the_end_pose_near_the_place_start_bank():
     dq, pl, d = out["new"]
     assert dq < 0.03 and pl["bank_dq"] == pytest.approx(dq, abs=1e-3) and d["bank_dq"] == pl["bank_dq"]
     assert pl["anchor_err_mm"] < 3.0 and pl["anchor_err_deg"] < 3.0 and pl["T_steps"] <= cfg.max_steps
+
+
+@pytest.mark.skipif(NO_HDGP, reason="hdgp 없음")
+def test_start_err_with_matches_carry_end_err_and_restores_T_to():
+    """★11.20 tin_refresh 의 새 rel 시작 문턱 = 이송 끝 rc.err · axis_deg 와 같은 식(rel 그대로면 같은 값) · rc.T_to 는 그대로."""
+    N = pytest.importorskip("policy_control.rh_place_node")
+    c, RC, mch, pol, est, ch, hand, q, att, holder, meas = _setup()
+    ch.rc_chain = (RC, mch)
+    ch.reset(meas(q), holder=holder, held=(q, hand), attach=att)
+    for _ in range(c.ready_carry["max_steps"] + 200):
+        ch.step(meas(q))
+        if not ch.carrying:
+            break
+        q = ch.dec.state["arm"].arm_target.copy()
+    rc, m = ch.rcarry, meas(q)["arm"]
+    T_to = rc.T_to
+    err, ax = N.start_err_with(rc, q, *ch.cup_from_palm(m.palm_pos, m.palm_R))
+    assert rc.T_to is T_to and err == pytest.approx(rc.err, abs=5e-4) and ax == pytest.approx(rc.axis_deg, abs=0.1)
+    moved = (ch.rel[0] + np.array([0.0, 0.0, 0.04]), ch.rel[1])                  # 새 rel 이 컵을 4 cm 위로 → 문턱 밖
+    err2, _ = N.start_err_with(rc, q, *N._cup_with(m.palm_pos, m.palm_R, moved))
+    assert err2 > RCY.START_ERR_MAX_M

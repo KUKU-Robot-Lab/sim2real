@@ -75,12 +75,12 @@ def fresh_index(hs: np.ndarray, X: np.ndarray, sel: np.ndarray) -> np.ndarray:
 
 def measure(t: np.ndarray, hs: np.ndarray, X: np.ndarray, arm_t: np.ndarray, arm_q: np.ndarray,
             fk: Callable[[np.ndarray], np.ndarray], t0: float, t1: float, *, z_off: float = 0.0,
-            min_fresh: int = MIN_FRESH, near_m: float = NEAR_M) -> dict:
+            min_fresh: int = MIN_FRESH, near_m: float = NEAR_M, hs_min: float = -np.inf) -> dict:
     """t · hs · X(N×7 pos+quat wxyz) = FP++ 수신 시각 · header stamp · 자세, arm_t · arm_q(M×7) = 팔 수신 시각 · 관절,
-    fk(q7) → 4×4 손바닥(base). 창 [t0, t1]. 결과 dict — ok 면 T_in(4×4)."""
+    fk(q7) → 4×4 손바닥(base). 창 [t0, t1](수신 시각) · stamp ≥ hs_min(영상 시각, 기본 제한 없음). 결과 dict — ok 면 T_in(4×4)."""
     t, hs, X = np.asarray(t, float), np.asarray(hs, float), np.asarray(X, float)
     arm_t, arm_q = np.asarray(arm_t, float), np.asarray(arm_q, float)
-    sel = np.where((t >= t0) & (t <= t1))[0]
+    sel = np.where((t >= t0) & (t <= t1) & (hs >= hs_min))[0]
     fresh = fresh_index(hs, X, sel)
     late = 0
     if len(arm_t) >= 2:                      # 팔 표본이 FP++ 끝보다 조금 앞서면 끝값 유지(interp), ARM_HOLD_S 넘게 늦은 프레임만 버린다
@@ -204,10 +204,16 @@ def load_tin(path: str | Path, side: str) -> tuple[np.ndarray, np.ndarray, dict]
     p, q = np.asarray(d.get("pos_m"), float).reshape(3), np.asarray(d.get("quat_wxyz"), float).reshape(4)
     if not (np.all(np.isfinite(p)) and np.all(np.isfinite(q))) or abs(np.linalg.norm(q) - 1) > 1e-3 or np.linalg.norm(p) > NEAR_M_SIDE.get(side, NEAR_M):
         raise TinError(f"{path}: T_in 값이 이상하다 pos {p.tolist()} quat {q.tolist()}")
-    q = q / np.linalg.norm(q)
-    # 기록 틀 = 원점 + off·컵 z(measure 의 C[:3, 3] += z_off·C[:3, 2]) → place 는 원점 틀: T_in · Trans(0, 0, -off). z_off 필드가 없는 옛 파일은 Z_OFF.
-    off = float(d.get("z_off", Z_OFF.get(side, 0.0)))
-    return p - off * quat_to_R(q)[:, 2], q, {**d, "z_off_applied": off}
+    off = float(d.get("z_off", Z_OFF.get(side, 0.0)))   # z_off 필드가 없는 옛 파일은 Z_OFF
+    p, q = to_origin(p, q, off)
+    return p, q, {**d, "z_off_applied": off}
+
+
+def to_origin(p, q, off: float) -> tuple[np.ndarray, np.ndarray]:
+    """기록 틀(원점 + off·컵 z, measure 의 C[:3, 3] += z_off·C[:3, 2]) → place 원점 틀 T_in · Trans(0, 0, -off) — (rel_p, 정규화 wxyz).
+    load_tin 과 ★11.20 place 이송 끝 재측정(rh_place_node)이 같이 쓴다."""
+    q = np.asarray(q, float) / np.linalg.norm(q)
+    return np.asarray(p, float).reshape(3) - off * quat_to_R(q)[:, 2], q
 
 
 def palm_fk(side: str, asset: str = ROBOT_ASSET) -> Callable[[np.ndarray], np.ndarray]:

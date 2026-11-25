@@ -94,6 +94,19 @@ IN_CUP_CLEAR_M = 0.003
 #: shaker(35.4 mm)는 15.7 mm 에서 깊숙이 쥐고 들었다(오른손 source240 · 왼손 shaker, 10.20 03:25). 그 깊이를 모든 컵에 쓴다 —
 #: 더 멀면 손바닥 → 컵 축 수평 방향으로 그만큼 더 들어간다(가까우면 그대로).
 GRASP_PALM_GAP_M = 0.016
+#: ★11.20 박스(grasp_axis) 쥔 자리 깊이 — 손바닥(센서점) ↔ 마주 보는 면 거리. 박스는 deepen(들어가기만) 대신 이 거리에 바로 둔다.
+#: 손바닥 법선을 면 법선에 맞춘 뒤(PALM_NORMAL_B) 41 x 83 박스 오른손 건식 계획: 0 이면 가운데 손가락 첫 마디 2 mm 파고듦,
+#: 0.01 부터 통과 → FP++ 오차 몫 5 mm 를 더해 0.015.
+BOX_PALM_GAP_M = 0.015
+#: ★11.20 손바닥 법선(palm_sensor 몸 좌표, 얇은 판 geom 의 두께 축). tilt 기준 쥔 자리에서 컵은 손바닥 정면이 아니라 엄지 · 검지
+#: 사이 쪽(수평으로 약 ±60°)에 있다 — 박스는 컵 방향이 아니라 이 법선을 면 법선에 맞춘다.
+PALM_NORMAL_B = (0.0, 0.0, 1.0)
+#: ★11.20 박스 옆 자리 — 엄지 끝 ↔ 박스 옆면 수평 거리. 박스 중심은 엄지 끝에서 손가락 쪽으로 (옆 반폭 + 이 값).
+BOX_THUMB_CLEAR_M = 0.01
+#: ★11.20 사용자 "엄지가 허공을 쥐게 되네 더 밑에가서 잡거나 살짝 비스듬히" — 박스 쥔 자리 손바닥 높이 내림[m] · 손 수평 돌림[deg]
+#: (돌림 + = 위에서 봐서 반시계, 손바닥 법선이 면 법선에서 그만큼 돈다)
+BOX_DROP_M = 0.0
+BOX_YAW_DEG = 0.0
 LINE_ITERS = 12
 HAND_CONTRACT = "config/hand/rh56f1_{side}_hand.json"   # ★10.20 1-B 손 계약 고정본(옛 접근 정책 rg3wc 계약 그대로)
 READY_CFG = "deploy/policy_control/config/ready_approach/rh56f1.yaml"
@@ -141,10 +154,17 @@ def minjerk(n: int) -> np.ndarray:
     return 10 * s ** 3 - 15 * s ** 4 + 6 * s ** 5
 
 
-def cup_surface_dist(points: np.ndarray, cup_xy, z_lo: float, z_hi: float, radius: float) -> np.ndarray:
-    """점 (…,3) → 선 원기둥 컵(축 +z, 바닥 z_lo · 입구 z_hi) 겉면까지 거리(안이면 음수)."""
+def cup_surface_dist(points: np.ndarray, cup_xy, z_lo: float, z_hi: float, radius: float, box=None) -> np.ndarray:
+    """점 (…,3) → 선 원기둥 컵(축 +z, 바닥 z_lo · 입구 z_hi) 겉면까지 거리(안이면 음수).
+    box = (yaw, hx, hy) 면 원기둥 대신 선 박스(★11.20 grasp_axis — 박스 x 축 방위 yaw, 반폭 hx · hy)."""
     pts = np.asarray(points, float)
-    r = np.linalg.norm(pts[..., :2] - np.asarray(cup_xy, float)[:2], axis=-1) - radius
+    d = pts[..., :2] - np.asarray(cup_xy, float)[:2]
+    if box is None:
+        r = np.linalg.norm(d, axis=-1) - radius
+    else:
+        c, s = math.cos(box[0]), math.sin(box[0])
+        q = np.stack([np.abs(c * d[..., 0] + s * d[..., 1]) - box[1], np.abs(-s * d[..., 0] + c * d[..., 1]) - box[2]], -1)
+        r = np.linalg.norm(np.maximum(q, 0.0), axis=-1) + np.minimum(q.max(-1), 0.0)
     z = pts[..., 2]
     dz = np.maximum(z_lo - z, z - z_hi)
     out = np.where(dz <= 0, r, np.sqrt(np.maximum(r, 0.0) ** 2 + dz ** 2))
@@ -404,9 +424,9 @@ def time_joint(path: np.ndarray) -> np.ndarray:
 class Judge:
     """경로 한 토막의 검사(충돌 · 관절 여유 · 속도 · 실측 탁자 높이) — 같은 기준을 이송 · 들어가기에 쓴다."""
 
-    def __init__(self, ch, rw, hand, tz: float, cup: np.ndarray, z_lo: float, z_hi: float, radius: float):
+    def __init__(self, ch, rw, hand, tz: float, cup: np.ndarray, z_lo: float, z_hi: float, radius: float, box=None):
         self.ch, self.rw, self.hand, self.tz = ch, rw, hand, tz
-        self.cup, self.z_lo, self.z_hi, self.radius = cup, z_lo, z_hi, radius
+        self.cup, self.z_lo, self.z_hi, self.radius, self.box = cup, z_lo, z_hi, radius, box
 
     def __call__(self, path: np.ndarray, cup_margin_m: float, pt_cup_clear_m: float) -> dict:
         path = np.asarray(path, float)
@@ -417,7 +437,7 @@ class Judge:
              "margin_min_deg": round(float(mj.min()), 2), "margin_min_joint": int(mj.argmin()) + 1,
              "hand_table_mm": round(float(pts[..., 2].min() - self.tz) * 1000, 1),
              "arm_table_mm": round(float(arm_points(self.ch, path[::2])[..., 2].min() - self.tz) * 1000, 1),
-             "cup_clear_mm": round(float(cup_surface_dist(pts, self.cup, self.z_lo, self.z_hi, self.radius).min()) * 1000, 1),
+             "cup_clear_mm": round(float(cup_surface_dist(pts, self.cup, self.z_lo, self.z_hi, self.radius, self.box).min()) * 1000, 1),
              "vmax_rad_s": round(float(np.abs(np.diff(path, axis=0)).max()) * RATE_HZ, 3) if len(path) > 1 else 0.0}
         c["fails"] = [x for x in (
             None if c["collision"]["ok"] else "충돌 " + json.dumps(c["collision"].get("worst"), ensure_ascii=False),
@@ -492,12 +512,26 @@ def _plan(side: str, cup_fpp, cup_quat, obj: str, q: dict, hdgp: Path, *, asset:
         return False, meta, None
     if abs(z_lo - tz) > 0.03:
         meta["problems"].append(f"컵 바닥 z {z_lo:.3f} 이 탁자 {tz:.3f} 에서 {abs(z_lo - tz) * 100:.1f} cm — FP++ 자세 확인")
-    rw = ReachWorld(side, hdgp, q_now, q[other], {"x": float(cup_fpp[0]), "y": float(cup_fpp[1]), "z_lo": float(z_lo),
-                                                  "z_hi": float(z_hi), "radius": radius}, extra=obstacles)
+    box, face_r, side_half = None, radius, radius
+    world_cup = {"x": float(cup_fpp[0]), "y": float(cup_fpp[1]), "z_lo": float(z_lo), "z_hi": float(z_hi), "radius": radius}
+    if spec.grasp_axis is not None and cup_quat is not None:   # ★11.20 박스: 충돌 · 손 점 검사를 돌아간 박스로(원기둥은 옆이 넓고 모서리가 좁다)
+        w_, x_, y_, z_ = (float(v) for v in cup_quat)
+        bx = Rotation.from_quat([x_, y_, z_, w_]).apply([1.0, 0.0, 0.0])
+        yaw = math.atan2(bx[1], bx[0])
+        # ponytail: aabb 가 원점 중심이라고 본다(커피박스 ±). 치우친 메시면 중심 오프셋을 더할 것
+        hx, hy = (float(max(abs(spec.aabb[0][i]), abs(spec.aabb[1][i]))) for i in (0, 1))
+        box = (yaw, hx, hy)
+        cq = spec.cad_to_body_quat
+        ga = Rotation.from_quat([cq[1], cq[2], cq[3], cq[0]]).inv().apply(np.asarray(spec.grasp_axis, float))
+        face_r, side_half = (hx, hy) if abs(ga[0]) >= abs(ga[1]) else (hy, hx)   # 손바닥이 마주 보는 면까지 · 옆면까지 거리
+        world_cup.update(half=[hx, hy, (z_hi - z_lo) / 2], quat=[math.cos(yaw / 2), 0.0, 0.0, math.sin(yaw / 2)])
+        meta["box"] = {"yaw_deg": round(math.degrees(yaw), 1), "half_mm": [round(hx * 1000, 1), round(hy * 1000, 1)],
+                       "face_r_mm": round(face_r * 1000, 1)}
+    rw = ReachWorld(side, hdgp, q_now, q[other], world_cup, extra=obstacles)
     start = rw.chk.check(q_now)
     meta["start_collision"] = {"ok": bool(start.ok), "worst": None if start.ok else
                                {"pair": rw_pair(start.worst_pair), "dist_mm": round(float(start.worst_dist) * 1000, 1)}}
-    judge = Judge(ch, rw, hand, tz, cup_fpp, z_lo, z_hi, radius)
+    judge = Judge(ch, rw, hand, tz, cup_fpp, z_lo, z_hi, radius, box)
     lap("world")
 
     # 사전 파지 방위 후보: aglt_new 회귀식 그대로부터 ±10 · 20 · 30°. 후보마다
@@ -512,15 +546,19 @@ def _plan(side: str, cup_fpp, cup_quat, obj: str, q: dict, hdgp: Path, *, asset:
             raise ReachError(f"{obj}: grasp_axis 물체는 --quat(FP++ 자세)가 있어야 면 방향을 안다")
         cq = spec.cad_to_body_quat
         axis_b = Rotation.from_quat([cq[1], cq[2], cq[3], cq[0]]).inv().apply(np.asarray(spec.grasp_axis, float))
-        phi_f, dd = face_azimuth(cup_quat, axis_b, phi0)
+        R0, p0, _ = palm_targets(T_to, cup, 0.0)          # 컵 방향(φ 바깥 반대) ↔ 손바닥 법선 수평 각 δ — T_to 로 정해진 상수
+        n0, e0 = R0 @ np.asarray(PALM_NORMAL_B, float), cup[:2] - p0[:2]
+        delta = math.remainder(math.atan2(n0[1], n0[0]) - math.atan2(e0[1], e0[0]), 2 * math.pi)
+        phi_f, dd = face_azimuth(cup_quat, axis_b, phi0 + delta)   # 면 바깥 법선 φ_f — 손바닥 법선이 그 반대를 보려면 φ = φ_f − δ
         meta["face"] = {"phi_reg_deg": round(math.degrees(phi0), 1), "phi_face_deg": round(math.degrees(phi_f), 1),
-                        "diff_deg": round(dd, 1), "tol_deg": FACE_TOL_DEG}
+                        "palm_delta_deg": round(math.degrees(delta), 1), "diff_deg": round(dd, 1), "tol_deg": FACE_TOL_DEG}
         if abs(dd) > FACE_TOL_DEG:
             meta["problems"].append(f"박스 면이 손이 들어갈 방향에서 {abs(dd):.0f}° 돌아가 있다(허용 {FACE_TOL_DEG:.0f}°) — "
                                     f"위에서 봐서 {'시계' if dd > 0 else '반시계'} 방향으로 {abs(dd):.0f}° 돌려 놓을 것")
             meta["ok"] = False
             return False, meta, None
-        phi0, offsets = phi_f, (0,)
+        phi0, offsets = phi_f - delta + math.radians(BOX_YAW_DEG), (0,)
+        face_out = np.array([math.cos(phi_f), math.sin(phi_f)])
     gen = torch.Generator().manual_seed(0)
     tries, chosen = [], None
     for h, off in ((h, off) for h in PRE_H_M for off in offsets):
@@ -588,17 +626,35 @@ def _plan(side: str, cup_fpp, cup_quat, obj: str, q: dict, hdgp: Path, *, asset:
             chosen = (h, off, appr, aj, ainfo, methods[-1]["method"], appr[-1:], {"ok": True, "skipped": "stop pregrasp"})
             continue
         R_g, p_g, az_g, rot_g = grasp_target(ch, q_pre, T_to, cup)
-        p_g, deeper = deepen(p_g, cup, radius)
+        if box is None:
+            p_g, deeper = deepen(p_g, cup, radius)
+        else:   # ★11.20 박스: 손바닥을 면 법선 위, 면에서 BOX_PALM_GAP_M 에 바로(음수 deeper = 물러남) — 옆은 아래에서 맞춘다
+            deeper = float(np.dot(p_g[:2] - cup[:2], face_out)) - (face_r + BOX_PALM_GAP_M)
+            p_g = p_g.copy()
+            p_g[:2] = cup[:2] + face_out * (face_r + BOX_PALM_GAP_M)
+            p_g[2] -= BOX_DROP_M
         path_in, dinfo = line_path(P, ch, q_pre, p_g, R_g, DEEP_SPEED_M_S, DEEP_ROT_DEG_S, DEEP_QD_RAD_S)
+        shift = 0.0
+        if box is not None:   # ★11.20 박스: 엄지는 한 옆면 곁(BOX_THUMB_CLEAR_M), 손바닥은 앞면, 손가락은 다른 옆면 쪽으로 옆을 맞춘다
+            u = np.array([-face_out[1], face_out[0]])
+            lat = (hand(path_in[-1:])[0][:, :2] - cup[:2]) @ u
+            ti = next(i for i, n in enumerate(hand.names) if "thumb" in n)
+            fi = [i for i, n in enumerate(hand.names) if i not in (0, ti)]
+            dirn = math.copysign(1.0, float(lat[fi].mean() - lat[ti]))
+            shift = -float(lat[ti]) - dirn * (side_half + BOX_THUMB_CLEAR_M)
+            p_g = p_g.copy()
+            p_g[:2] += u * shift
+            path_in, dinfo = line_path(P, ch, q_pre, p_g, R_g, DEEP_SPEED_M_S, DEEP_ROT_DEG_S, DEEP_QD_RAD_S)
         dinfo.update(grasp_azimuth_deg=round(az_g, 1), rot_deg=round(rot_g, 1), deeper_mm=round(deeper * 1000, 1),
-                     palm_gap_mm=round((float(np.linalg.norm(cup[:2] - p_g[:2])) - radius) * 1000, 1))
+                     palm_gap_mm=round(((float(np.dot(p_g[:2] - cup[:2], face_out)) if box is not None else float(np.linalg.norm(cup[:2] - p_g[:2]))) - face_r) * 1000, 1),
+                     lateral_shift_mm=round(shift * 1000, 1))
         dj = judge(path_in, DEEP_CUP_MARGIN_M, IN_CUP_CLEAR_M)
         dinfo.update({k: v for k, v in dj.items() if k not in ("ok", "fails")}, in_cup_clear_mm=dj["cup_clear_mm"],
                      in_hand_table_mm=dj["hand_table_mm"])
         dfails = dj["fails"] + ([] if dinfo["line_ok"] else ["들어가기 직선 · 방향을 못 따라감"]) + \
             ([] if rot_g <= DEEP_ROT_MAX_DEG else [f"방향 바꿈 {rot_g:.1f}° > {DEEP_ROT_MAX_DEG:.0f}°"])
         dinfo["ok"], dinfo["fails"] = not dfails, dfails
-        tr["deep_in"] = {k: dinfo[k] for k in ("ok", "fails", "dist_mm", "rot_deg", "T_s", "margin_min_deg", "deeper_mm", "palm_gap_mm")}
+        tr["deep_in"] = {k: dinfo[k] for k in ("ok", "fails", "dist_mm", "rot_deg", "T_s", "margin_min_deg", "deeper_mm", "palm_gap_mm", "lateral_shift_mm")}
         lap("deep_in")
         if dfails:
             tr["why"] = "들어가기 — " + "; ".join(dfails)

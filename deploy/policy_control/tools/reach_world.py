@@ -84,9 +84,10 @@ class ReachChecker(PH.Checker):
                 pts.append(m.mesh_vert[a:a + n] @ d.geom_xmat[g].reshape(3, 3).T + d.geom_xpos[g])
         return np.vstack(pts) if pts else None
 
-    def _box_dist(self, v: np.ndarray, box: str) -> float:
-        b = next(x for x in self.w.table_boxes if x["name"] == box)
-        lo, hi = np.asarray(b["lo"], float), np.asarray(b["hi"], float)
+    def _box_dist(self, v: np.ndarray, box: str, lo=None, hi=None) -> float:
+        if lo is None:
+            b = next(x for x in self.w.table_boxes if x["name"] == box)
+            lo, hi = np.asarray(b["lo"], float), np.asarray(b["hi"], float)
         out = np.maximum(lo - v, 0.0) + np.maximum(v - hi, 0.0)
         d_out = np.linalg.norm(np.maximum(lo - v, 0.0) + np.maximum(v - hi, 0.0), axis=1)
         inside = ~np.any(out > 0, axis=1)
@@ -99,7 +100,7 @@ class ReachChecker(PH.Checker):
         import mujoco
         m = self.w.model
         g = int(np.nonzero(m.geom_bodyid == m.body(name).id)[0][0])
-        if m.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX:     # 11.20 cup_* 상자(홀더 몸체 --holders): 상자 틀에서 잰다
+        if m.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX:     # 11.20 상자 — 홀더 몸체(--holders) · 돌아간 박스 물체(grasp_axis). size 는 반폭이라 원기둥으로 읽으면 안 된다
             w = (v - self.w.data.geom_xpos[g]) @ self.w.data.geom_xmat[g].reshape(3, 3)
             return _mesh_box_gap(w, m.geom_size[g][:3])
         c, (r, hh) = self.w.data.geom_xpos[g], m.geom_size[g][:2]
@@ -117,7 +118,8 @@ class ReachWorld:
         objs = ()
         if cup is not None:
             objs = ({"name": "cup", "center": ((cup["x"], cup["y"], (cup["z_lo"] + cup["z_hi"]) / 2)),
-                     "radius": cup["radius"], "half_height": (cup["z_hi"] - cup["z_lo"]) / 2},)
+                     "radius": cup["radius"], "half_height": (cup["z_hi"] - cup["z_lo"]) / 2,
+                     **{k: cup[k] for k in ("half", "quat") if k in cup}},)   # ★11.20 박스면 원기둥 대신 돌아간 박스
         objs = objs + tuple(extra)   # 11.20 옆 물체 원기둥(이름 cup_*, plan_reach --holders · --table-cups)
         self.world = W.build_world(W.WorldSpec(urdf=Path(hdgp) / URDF_REL, env_yaml=ENV_YAML, side=side,
                                                detect_margin=0.08, objects=objs))

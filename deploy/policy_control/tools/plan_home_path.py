@@ -523,7 +523,9 @@ def plan_lift_then(chk: Checker, side: str, goal, lo, hi, rng, args) -> tuple[np
     q_e = lift[-1]
     chk.lenient = False
     try:
-        if not chk.check(q_e).ok:
+        v_e = chk.check(q_e)
+        # 들기 끝에서 탈출 쌍이 모두 풀려 있어야 합친 경로 검사(escape_radius inf)가 들기 뒤 구간을 엄격히 본다
+        if not v_e.ok or any(v_e.dists.get(k, np.inf) < chk.required(k) + ESCAPE_EXIT_EXTRA for k in chk.escape0):
             return None
         if chk.check_path(np.stack([q_e, goal]), args.step)["ok"]:
             rest = np.stack([q_e, goal])
@@ -536,10 +538,14 @@ def plan_lift_then(chk: Checker, side: str, goal, lo, hi, rng, args) -> tuple[np
     finally:
         chk.lenient = True
     thin = np.vstack([lift[:-1][::LIFT_KEEP_EVERY], lift[-1:]])
-    for pre in (thin, lift):                       # 솎은 꼭짓점이 검사를 못 넘으면 전부 쓴다
-        path = np.vstack([pre, np.asarray(rest)[1:]])
-        if chk.check_path(path, args.step)["ok"]:
-            return path, len(pre)
+    radius0, chk.escape_radius = chk.escape_radius, np.inf   # 들기 단계와 같은 탈출 규칙(관절 1 rad 제한 없음)
+    try:
+        for pre in (thin, lift):                       # 솎은 꼭짓점이 검사를 못 넘으면 전부 쓴다
+            path = np.vstack([pre, np.asarray(rest)[1:]])
+            if chk.check_path(path, args.step)["ok"]:
+                return path, len(pre)
+    finally:
+        chk.escape_radius = radius0
     print("[lift] 합친 경로 조밀·순서 검사 실패")
     return None
 
@@ -988,6 +994,7 @@ def main(argv=None) -> int:
             raise SystemExit("[plan] j1·j4 구조 경로를 찾지 못했다(격자 전부 실패) — --via rrt 를 쓰거나 세계를 다시 볼 것")
     elif (lifted := plan_lift_then(chk, args.side, goal, lo, hi, rng, args)) is not None:
         method, (path, keep) = "lift", lifted
+        chk.escape_radius = np.inf     # lift 경로는 줄이기·최종·프레임 검사도 들기 단계와 같은 탈출 규칙으로 본다
     else:
         method, path = "rrt", None
 
@@ -1028,6 +1035,8 @@ def main(argv=None) -> int:
     done = finish(path, method, keep) if path is not None else None
     if done is None and args.via == "j1j4":
         raise SystemExit("[plan] j1·j4 구조 경로가 검사에서 떨어졌다 — --via rrt 를 쓰거나 세계를 다시 볼 것")
+    if done is None:
+        chk.escape_radius = args.escape_radius     # RRT 는 원래 탈출 영역(관절 L-inf)으로
     attempt = 0
     while done is None and attempt < args.rrt_restarts and time.time() - t0 < args.time_budget:
         attempt += 1

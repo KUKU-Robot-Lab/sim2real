@@ -66,13 +66,20 @@ def _lift_guard(j, world) -> tuple | None:
     return (g, h, float(xy[0]), float(xy[1]))
 
 
+# ★11.20 place tin_refresh_at_carry_end — 노드는 이송 · 정지 창 · 보정 이송이 끝난 틱부터 정책 시계를 센다. 실행기 대기에만 더한다:
+#   정지 창 2회 × round((settle 상한 rh_place_node TIN_REFRESH_SETTLE_MAX_S 2.0 + tin_live.FPP_LATENCY_S 0.6 + TIN_REFRESH_WINDOW_S 0.6)
+#   · 60 Hz) = 192 틱 = 3.2 s → 6.4 s(기본 settle 1.0 s 면 실제 2 × 2.2 = 4.4 s — 노드 파라미터 tin_refresh_settle_s 를 상한까지 올려도 넘지 않게)
+#   + 보정 이송 상한 = 노드 이송 시간 초과 식 (ready_carry max_steps 600 + Mover settle_steps 30 + STILL_MAX_TICKS 150) / 60 Hz
+#     + READY_CARRY_SLACK_S 2.0 = 15.0 s(계획 rc.start 약 0.06 s 포함 여유). place 계약 max_steps 는 지금 모두 600(n06 · n07 · n09 · n10).
+TIN_REFRESH_EXTRA_S = 2 * (2.0 + 1.2) + (600 + 30 + 150) / 60.0 + 2.0
+
 def _node_max_s(b) -> float:
     """정책 노드 한 번의 시간 한도 — 미션 생성기와 같은 식(approach_grasp.episode_s · ★11.05 학생 = sim 평가 에피소드 길이)."""
     if getattr(b, "student", None) and b.kind == "aglt":     # 놓기 학생(11.08)은 놓기 노드 한도 그대로
         from policy_control.student_chain import bundle_limits
         return bundle_limits(b.student)[1]
     if getattr(b, "approach_grasp", None) is None:
-        return 15.0
+        return 15.0 + (TIN_REFRESH_EXTRA_S if getattr(b, "tin_refresh_at_carry_end", False) else 0.0)
     from policy_control.approach_grasp import episode_s     # 무거운 의존은 경로 C 에서만
     return episode_s(b.approach_grasp)
 

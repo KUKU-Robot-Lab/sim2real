@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -167,7 +168,9 @@ def test_every_execute_flag_is_one_the_tool_takes():
                 if not spec.execute_args:
                     continue
                 # ★10.30 arm_v2: ssh 로 감싼 명령은 도구 경로가 한 원소 안의 낱말(저 PC 의 저장소 상대 경로)이다 — 같은 저장소라 여기서 읽는다
-                tool = next(t.strip('"') for a in spec.argv for t in a.split() if t.strip('"').endswith(".py"))
+                # ★11.20 act_tilt: 셸 안에 기록기(ssh) · 브리지 · head_move 가 같이 있다 — 브리지가 --execute 를 받는다
+                tool = next((t.strip('"') for a in spec.argv for t in a.split() if t.strip('"').endswith("act_tilt_bridge.py")), None) \
+                    or next(t.strip('"') for a in spec.argv for t in a.split() if t.strip('"').endswith(".py"))
                 if tool.startswith("$HOME/"):   # ★11.19 act_tilt: 다른 저장소(motion_acq) 도구 — 이 PC 에 있을 때만 읽는다
                     path = Path.home() / tool[len("$HOME/"):]
                     if not path.is_file():
@@ -512,7 +515,14 @@ def test_the_real_episode_stage_records_what_the_release_threshold_needs():
                   "/policy_control/joint_target", f"/objects/{ACTIVE_SIDES['right']}/pose", "/objects/cup_holder_1/pose"):
         assert topic in line
     # 10.09 이름마다 따로 — 이 에피소드 기록만 끝낸다(양팔 동시 단계가 서로 끄지 않게)
-    assert any(list(c.argv[-2:]) == ["stop", "episode_pick_place_right"] and "rh56f1_record.sh" in " ".join(c.argv) for c in cmds)
+    # ★11.22 끝은 bag_gate 의 회 끝 + 30 s 마무리 · 앞 자르기를 기다린 뒤 stop
+    assert any("rh56f1_record.sh stop episode_pick_place_right" in " ".join(c.argv)
+               and "bag_gate.py wait --name episode_pick_place_right" in " ".join(c.argv) for c in cmds)
+    # ★11.22 녹화량 줄이기: 에피소드 기록은 SLIM, 회 구간 문지기가 같은 시작 명령으로 다시 열 수 있다
+    gate = next(c for c in cmds if "bag_gate.py" in " ".join(c.argv) and "watch" in c.argv)
+    assert gate.background and "RH56F1_RECORD_SLIM=1" in line
+    assert gate.argv[gate.argv.index("--gate") + 1] == "/policy_control/status/episode_runner_right"
+    assert gate.argv[gate.argv.index("--start-cmd") + 1] == start.argv[-1]
     assert not any("rh56f1_record.sh" in " ".join(c.argv) for c in _cmds(FAKE, FAKE_BOOK, "episode_pick_place_right"))
 
 
@@ -647,11 +657,18 @@ def test_chain_episodes_bag_the_head_camera_on_the_camera_pc_and_stop_it():
     shut = {k for c in REAL_RAW["run"]["shutdown"] for k in c.get("stop") or []}
     for sid, cmds in REAL_RAW["run"].items():
         recs = [i for i, c in enumerate(cmds) if "camera_bag_recorder.py" in " ".join(c.get("argv") or [])]
-        if sid.removeprefix("episode_") not in GEN.CHAIN_VIDEO_EPISODES:
-            assert not recs, sid
+        if sid in ("act_tilt", "act_tilt_dry"):   # ★11.20 브리지와 같은 셸에서 띄우고 끝나면 kill — 정지 단계 없음
+            assert len(recs) == 1 and "kill $B; " in cmds[recs[0]]["argv"][2], sid
+            continue
+        if sid.removeprefix("episode_") not in GEN.CHAIN_VIDEO_EPISODES or sid.removeprefix("episode_") in GEN.CHAIN_CAMERA_BAG_OFF:
+            assert not recs, sid   # ★11.25 사용자 "일단 없어도 되게" — cocktail_e2e 는 카메라 bag 을 띄우지 않는다
             continue
         assert len(recs) == 1, sid
         argv = cmds[recs[0]]["argv"]
+        # ★11.25 사용자 "영상이 안 남더라도 앞으론 문제없이": 로컬 셸이 ssh 를 감싸 끝나도(rc 2 · 255) 정지 신호까지 남는다
+        assert argv[:2] == ["bash", "-c"] and argv[2].endswith("trap 'exit 0' HUP TERM INT; while :; do sleep 1; done"), sid
+        toks = shlex.split(argv[2])
+        argv = toks[:toks.index(";")]
         assert argv[:2] == ["ssh", "-tt"] and GEN.PERCEPTION_HOST in argv and cmds[recs[0]]["background"]
         sh = argv[-1]
         assert "--encode-raw --hz 5 " in sh and " ".join(GEN.CHAIN_CAMERA_BAG_TOPICS) in sh   # 원본 구독 · 기록기 압축

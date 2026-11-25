@@ -25,7 +25,8 @@ EPISODES = Path(__file__).resolve().parents[2] / "config" / "episodes"
 BLUE_LIVE = "/objects/source240_blue/live_pose"
 PINK_LIVE = "/objects/source240_pink/live_pose"
 NO_TIN = {"attach_source": "", "tin_json": "", "tin_subtract_offset": False,
-          "holder_offset_base_m": [0.0, 0.0, 0.0]}    # ★11.18 홀더 옮김도 job 마다 · ★11.07 place job 마다 늘 넣는다(빈 값 = 계약 그대로)
+          "holder_offset_base_m": [0.0, 0.0, 0.0],    # ★11.20 이송 끝 재측정 · 보정도 job 마다(끔)
+          "tin_refresh_at_carry_end": False, "carry_fpp_xy_tol_m": 0.0}    # ★11.18 홀더 옮김도 job 마다 · ★11.07 place job 마다 늘 넣는다(빈 값 = 계약 그대로)
 
 
 def _lg_off(params: dict) -> dict:

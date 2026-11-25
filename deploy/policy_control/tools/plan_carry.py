@@ -153,12 +153,14 @@ def roll(RC, ch, q0: torch.Tensor, qg: torch.Tensor, T_to: torch.Tensor) -> tupl
     return torch.stack(rows), info
 
 
-def plan(asset: Path, out: Path, q: dict, hdgp: Path, sides: tuple = tuple(ARMS), empty: tuple = ()) -> tuple[bool, dict]:
+def plan(asset: Path, out: Path, q: dict, hdgp: Path, sides: tuple = tuple(ARMS), empty: tuple = (),
+         goal: dict | None = None) -> tuple[bool, dict]:
     cfg = H.load_policy(asset)
     H.verify(hdgp, cfg["hdgp"]["md5"])
     H.verify_refs(asset, cfg.get("ref") or {})
     RC = H.load_ready_carry(hdgp)
     pose = yaml.safe_load((SIM2REAL / cfg["start_pose"]).read_text(encoding="utf-8"))
+    pose = {**pose, **(goal or {})}            # ★11.20 --goal-json: 끝 자세만 바꾼다(ACT 시작 자세) — 검사는 그대로
     ref = dict(np.load(asset / "ref" / "single734_t120.npz", allow_pickle=False))
     tz = table_z(cfg)
     paths, checks, chains, T_tos = {}, {}, {}, {}
@@ -199,6 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--sides", default="right,left", help="right · left · right,left(한 팔씩이면 하나)")
     ap.add_argument("--empty", default="", help="빈손 팔(right · left) — 그 손에는 가상 컵을 붙이지 않고 컵 간격 검사를 건너뛴다")
+    ap.add_argument("--goal-json", default="", help='{"right": [7]} — 끝 자세(없으면 자산 start_pose). 계획하는 팔마다 7 개')
     a = ap.parse_args(argv)
     empty = tuple(x.strip() for x in a.empty.split(",") if x.strip())
     if any(x not in ARMS for x in empty):
@@ -209,8 +212,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"✗ --sides {a.sides!r} — right · left 중")
         return 1
     sides = tuple(x for x in ARMS if x in sides)                 # 열 순서는 언제나 우 → 좌
+    goal = json.loads(Path(a.goal_json).read_text(encoding="utf-8")) if a.goal_json else None
+    if goal is not None and any(len(goal.get(s) or ()) != 7 for s in sides):
+        print(f"✗ --goal-json {a.goal_json} — {', '.join(sides)} 마다 관절 7 개")
+        return 1
     try:
-        ok, meta = plan(a.asset, a.out, current_q(a.q_json), H.hdgp_dir(), sides, empty)
+        ok, meta = plan(a.asset, a.out, current_q(a.q_json), H.hdgp_dir(), sides, empty, goal)
     except H.PinError as exc:
         print(f"✗ {exc}")
         return 3

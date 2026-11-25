@@ -289,18 +289,19 @@ def test_a_refused_cap_next_does_not_hold_the_arms(console, tiny_repo, monkeypat
     assert v["outcome"] == "FAILED" and not [c for c in calls if c[0] == "pd/hold"], calls
 
 
-def test_tilt_now_goes_to_the_setting_pose_like_rehome(console, tiny_repo, monkeypatch):
+@pytest.mark.parametrize("sid", ["tilt_now", "tilt_now_lr"])   # ★11.20 tilt_now_lr = 순서만 왼팔 → 오른팔, 게이트는 같다
+def test_tilt_now_goes_to_the_setting_pose_like_rehome(console, tiny_repo, monkeypatch, sid):
     """세팅 자세로 가는 것 — rehome 처럼 pd 가 IDLE 이어도 된다(그 자리에서 engage), 두 팔을 다 쓴다."""
-    m = setup_actions(console, tiny_repo, {"tilt_now": [{"argv": ["true"], "manual": True}, {"argv": ["true"]}]})
+    m = setup_actions(console, tiny_repo, {sid: [{"argv": ["true"], "manual": True}, {"argv": ["true"]}]})
     _obs(monkeypatch, console, right="IDLE", left="IDLE")
-    item = next(a for a in m.catalog() if a["id"] == "tilt_now")
+    item = next(a for a in m.catalog() if a["id"] == sid)
     assert item["group"] == "control" and item["enabled"], item["reasons"]
     assert "세팅 자세" in item["title"]
-    assert m._resources(console.session, "tilt_now", "control", {}) == frozenset({"right", "left"})
+    assert m._resources(console.session, sid, "control", {}) == frozenset({"right", "left"})
     _obs(monkeypatch, console, left="HOLD")
-    assert not m.describe("tilt_now")["enabled"]
+    assert not m.describe(sid)["enabled"]
     _obs(monkeypatch, console, left="IDLE")
-    m.execute("tilt_now", operator="test")
+    m.execute(sid, operator="test")
     assert _wait(m)["outcome"] == "DONE"
 
 
@@ -327,9 +328,12 @@ def test_rh56f1_mission_runs_one_arm_episodes_on_their_own_runner():
         f"python3 {{repo}}/deploy/policy_control/tools/episode_ctl.py --side {s} --only pd_engage --skip-engaged --hold-s 2"
         for s in ("right", "left")]
     assert "tilt_now.py" in " ".join(now[3]["argv"]) and now[3]["execute_args"] == ["--execute"]
+    lr = m["run"]["tilt_now_lr"]                                     # ★11.20 같은 모양, 순서만 왼팔 → 오른팔
+    assert lr[0].get("manual") and [c["argv"][3] for c in lr[1:3]] == ["left", "right"]
+    assert lr[3]["argv"][-2:] == ["--sides", "left,right"] and lr[3]["execute_args"] == ["--execute"]
     pour = m["run"]["tilt_pour"]
     assert pour[0].get("manual") and "tilt_pour.py" in " ".join(pour[1]["argv"]) and pour[1]["execute_args"] == ["--execute"]
-    for sid in ("tilt_now", "tilt_pour"):
+    for sid in ("tilt_now", "tilt_now_lr", "tilt_pour"):
         stage = next(s for s in m["stages"] if s["id"] == sid)
         assert stage["lane"] == "both" and set(stage["needs"]) == {"pd_arm_right", "pd_arm_left"}
 

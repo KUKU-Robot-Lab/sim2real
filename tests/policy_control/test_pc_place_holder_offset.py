@@ -67,7 +67,8 @@ def test_node_moves_only_the_policy_holder(monkeypatch):
     N = pytest.importorskip("policy_control.rh_place_node")
     node = N.PlaceNode.__new__(N.PlaceNode)
     params = {"object": "", "joint_free_g": 0.0, "release_open_min_rad": 0.5, "tin_subtract_offset": False,
-              "holder_offset_base_m": [-0.01, 0, 0], "allow_measured_start": False}
+              "holder_offset_base_m": [-0.01, 0, 0], "allow_measured_start": False,
+              "tin_refresh_at_carry_end": False, "carry_fpp_xy_tol_m": 0.0, "tin_refresh_settle_s": 1.0}
     node.get_parameter = lambda n: SimpleNamespace(value=params[n])
     got = {}
     node.chain = SimpleNamespace(rel=[np.zeros(3)], rcarry=None, attach_info={},

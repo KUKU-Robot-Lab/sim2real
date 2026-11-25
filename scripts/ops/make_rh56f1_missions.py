@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import os
 import shlex
 import sys
@@ -75,17 +76,31 @@ PLACE_HOLDER = {"right": 1, "left": 1}
 FAKE_HOLDER_Y = {0: 0.153, 1: -0.002, 2: -0.161}
 #: ★11.09 경로 F 물체 고르기 — 색을 잰(hue_measured) FP++ 물체 → 정책 물체 one-hot(ap05 · rcg04 학습 3종). 순서 = 화면 순서
 F_OBJECTS = {"source240_blue": "source240_real", "source240_orange": "source240_real", "source240_pink": "source240_real",
-             "source200_orange": "source200_real", "source200_pink": "source200_real", "shaker_c_orange": "shaker_c_real"}
+             "source200_orange": "source200_real", "source200_pink": "source200_real", "shaker_c_orange": "shaker_c_real",
+             # ★11.18 사용자 "파워에이드 600ml … 인스파이어핸드가 잡게" — 시판 병(지름 6.5 · 허리 5.3 · 높이 22 cm, bottle_mesh.py).
+             #   정책 물체는 지름이 가장 가까운 source240_real(6.0 cm) — 병 전용 학습은 없다
+             "powerade_blue": "source240_real",
+             # ★11.19 사용자 "감귤주스도 콘솔에" — 11.12 개인 클론(bumsu/grasp-novel-objects)에서 등록한 5.8 cm 각 · 높이 18 cm 상자
+             "jeju_juice_green": "source240_real",
+             # ★11.20 골판지 박스 41 x 83 x 119 mm(갈색 · hue 가 주황 구간, 11.19 커피박스 대체). 정책은 원기둥만 안다 — 정책 물체는
+             # 반지름이 큰 shaker(35.4 mm · 높이 13 cm)로 손이 박스에 덜 부딪히게. 사람이 41 mm 두께가 엄지 ↔ 손가락 사이에 오게 놓는다.
+             "cardboard_box_orange": "shaker_c_real"}
 #: 팔마다 grasp_f_<팔>.yaml(손으로 쓴 원본)이 찍는 물체 — 이 물체는 원본 그대로 쓰고 변형 파일을 만들지 않는다
 F_DEFAULT = {"right": "source240_blue", "left": "shaker_c_orange"}
 #: ★11.19 사용자 "박스여서 … x축(80.5면의 수직방향)으로 손이 정렬" — ap05 는 방위를 못 정하므로 이 물체는 plan_reach(사전 파지,
 #:   박스 grasp_axis 면 방위) → rcg04(arm_start ready). 값 = 사전 파지 고리 반지름 = rcg04 계약 source240_real 반지름.
-F_REACH: dict = {}
+#:   ★11.20 지금은 비었다 — 커피박스는 F_SCRIPTED 로 옮겼다(rcg04 로 다시 해 보려면 여기 넣는다).
+F_REACH: dict[str, float] = {}
+#: ★11.20 사용자 "박스형상은 처음이여서 기존 원기둥 정책으로는 거의 못 잡을 수도" → "2번해보자" — 정책 없이 grasp_b 흐름:
+#:   plan_reach 쥔 자리(박스 면 방위 · 면에서 5 cm · BOX_PALM_GAP_M) → [확인] 닫기(접촉에서 멈춤) → 10 cm 들기 · 3 s.
+F_SCRIPTED: tuple[str, ...] = ()   # ★11.20 커피박스를 빼며 비웠다(엄지가 박스에 못 닿음 — 경로 F 정책으로 간다)
 F_VARIANT_HEAD = "# 이 파일은 scripts/ops/make_rh56f1_missions.py 가 grasp_f_{side}.yaml 에서 물체만 바꿔 만든다 — 손으로 고치지 말 것(--check).\n"
 
 
 def f_variant_text(side: str, obj: str) -> str:
     """★11.09 grasp_f_<팔>.yaml 에서 물체(CUP 토픽 · policy_object)와 이름만 바꾼 경로 F."""
+    if obj in F_SCRIPTED:
+        return f_scripted_text(side, obj)
     src = (REPO / "config" / "episodes" / f"grasp_f_{side}.yaml").read_text(encoding="utf-8")
     base = F_DEFAULT[side]
     pairs = [(f"episode: {{name: grasp_f_{side},", f"episode: {{name: grasp_f_{obj}_{side},"),
@@ -110,6 +125,26 @@ def f_variant_text(side: str, obj: str) -> str:
     return (F_VARIANT_HEAD.format(side=side) + (f"# 경로 F — {side} 손 {obj}(정책 물체 {F_OBJECTS[obj]}). 접근만 ap05 대신 plan_reach 사전 파지(박스 면 방위) → rcg04.\n"
              if obj in F_REACH else f"# 경로 F — {side} 손 {obj}(정책 물체 {F_OBJECTS[obj]}). 정책 · 값 · 흐름은 grasp_f_{side} 와 같다.\n") +
             "episode:" + body)
+
+
+def f_scripted_text(side: str, obj: str) -> str:
+    """★11.20 grasp_b_<팔>.yaml(정책 없는 1-B)에서 물체 · 이름 · 닫기 확인 문구만 바꾼 경로 F 버튼용 에피소드."""
+    src = (REPO / "config" / "episodes" / f"grasp_b_{side}.yaml").read_text(encoding="utf-8")
+    body = "episode:" + src.split("\nepisode:", 1)[1]
+    hand = "오른손" if side == "right" else "왼손"
+    pairs = [(f"episode: {{name: grasp_b_{side},", f"episode: {{name: grasp_f_{obj}_{side},"),
+             (f"CUP: {{topic: /objects/{F_DEFAULT[side]}/pose}}", f"CUP: {{topic: /objects/{obj}/pose}}")]
+    for old, new in pairs:
+        if body.count(old) != 1:
+            raise ValueError(f"grasp_b_{side}.yaml: {old!r} 가 한 번이 아니다 — {obj} 변형을 만들 수 없다")
+        body = body.replace(old, new)
+    body, n = re.subn(r'(id: confirm_close, type: confirm, text: )"[^"]*"',
+                      lambda m: m.group(1) + f'"{hand}이 {obj} 앞에 섰다 — 엄지 끝과 네 손가락 끝이 박스 양옆에 있고 사람 손이 근처에 없는가. '
+                      '확인하면 닫는다(닫은 뒤 10 cm 들기 · 3 s 유지는 자동)"', body)
+    if n != 1:
+        raise ValueError(f"grasp_b_{side}.yaml: 닫기 확인 문구가 한 번이 아니다")
+    return (f"# 이 파일은 scripts/ops/make_rh56f1_missions.py 가 grasp_b_{side}.yaml 에서 물체만 바꿔 만든다 — 손으로 고치지 말 것(--check).\n"
+            f"# 경로 F 버튼 — {side} 손 {obj}. 정책 없음(★11.20 F_SCRIPTED): 박스 면 방위로 쥔 자리 → [확인] 닫기 → 10 cm 들기 · 3 s.\n" + body)
 
 
 #: ★11.11 사용자 "놓기 학생(place_m) 시험에서 컵 색과 홀더를 콘솔 카드에서 고르게" — 경로 F 물체 버튼과 같은 방식.
@@ -256,10 +291,12 @@ PLACE_FIXED = (("blue", "right"), ("pink", "right"), ("shaker", "left"))
 #   argv 의 체크포인트 · --max-vel 은 기본값 — 콘솔 카드가 고르면 actions.py 가 바꾼다(ACT_TILT_CKPTS 밖 · 범위 밖이면 거부).
 # ★11.19 act 세션: 목 포함 16차원 run(팔 14 + head_pan · head_tilt). md5 050000 4c7656ad… · 010000 2c2d4df3…
 #   브리지(motion_acq a98208f~)가 dataset 이름으로 16차원을 알아보고 --execute 때만 /head/target_stream 발행.
-#   --max-head-vel(기본 60 deg/s) · --max-head-start-gap(기본 10 deg) 은 브리지 기본값을 쓴다. 이전 14차원 run: …_v3090_1119_1512
-ACT_TILT_RUN = "$HOME/rl_ws/il_runs/act_train_tilt_35seg_head_1119b_val3_1119_2154"
-ACT_TILT_CKPTS = ("050000", "010000")
+#   --max-head-vel(기본 60 deg/s) · --max-head-start-gap(기본 30 deg, motion_acq ecba4b0) 은 브리지 기본값을 쓴다. 이전 14차원 run: …_v3090_1119_1512
+ACT_TILT_RUN = "$HOME/rl_ws/ril/runs/act_train_tilt_35seg_head_1119b_val3_1119_2154"
+ACT_TILT_CKPTS = ("010000", "050000")
+ACT_TILT_TEMPORAL_ENSEMBLE = "0.1"   # ★11.20 act 확정(motion_acq 35ac30d, sim 64 env x 시드 3): 목표 변화 최대 2.2°/스텝 · 흘림 1.07(없이 10.2)
 ACT_TILT_MAX_VEL = "1.0"                              # rad/s — 허용 (0, 1.5]. 11.19 사용자: act 세션 권장 1.0(0.5 면 시연 속도 p90 0.57 이라 클립 15프레임 연속 abort 가능)
+ACT_TILT_START_POSES = "config/act_tilt_start_poses_demo.yaml"   # ★11.20 act 세션 산출(읽기만) — 시연 첫 프레임 오른팔 자세
 PLACE_FIXED_UNTIL = {"descend": "하강까지(손 쥔 채 멈춤)", "all": "끝까지(놓기 → 들기)"}
 #: 인지 PC 의 노드 로그 — 저 PC 셸에서 그날 날짜로 푼다(logs/runs/<YYMMDD>/perception, scripts/run_paths.py 와 같은 틀)
 PERC_LOG = "logs/runs/$(date +%y%m%d)/perception"
@@ -270,6 +307,13 @@ REPORT_VIDEO_HZ = {"grasp_b_right": 15.0, "grasp_b_left": 15.0}
 #   5 Hz: q95 1280x720 약 276 KB(11.04) → 약 1.4 MB/s · 분당 약 80 MB, 압축 한 장 약 2.4 ms(11.16 합성 이미지, 코어 한 개의 1.2 %)
 CHAIN_VIDEO_EPISODES = ("cocktail_e2e", "cocktail_1c_e1000", "cocktail_1c_n07b", "pick_place_f_right", "pick_place_f_left")
 CHAIN_VIDEO_HZ = 5.0
+#: ★11.25 사용자 "일단 없어도 되게"(cocktail_e2e): 이 에피소드들은 머리 카메라 bag 을 잠시 뺀다. 4090 의 camera_bag_recorder.py(c49f551)에
+#   --gate 가 없어 기록기가 바로 끝나고 → runner 가 백그라운드 단계 실패로 보고 칵테일 노드를 띄우지 않았다. 4090 에 --gate 판을 올린 뒤 비운다.
+#   ★11.25 4090 에 --gate 판(e197c49f)을 올려 비웠다. 기록기가 또 바로 끝나도 _best_effort 로 에피소드는 계속 선다.
+CHAIN_CAMERA_BAG_OFF: set = set()
+#: ★11.22 사용자 '녹화량 줄이기'(general_lab 과 맞춤): 에피소드 팔 · 손 · pd bag 을 회 구간만 — 첫 노드 시작 앞 · 끝 뒤 여유(초).
+#   뒤 30 s = 손을 편 뒤 홈 복귀 중 컵이 앉는 +8~20 s 와 실패 뒤 상태(general_lab 놓기 진단). scripts/nodes/bag_gate.py
+BAG_PRE_S, BAG_POST_S = 5.0, 30.0
 #: ★11.18 사용자 "경로 F 를 실행할 때 foundation 마커가 표시되는 화면을 같이 녹화 … 4090 바탕화면 foundation pose camera 폴더 ·
 #   이름 = 잡는 컵 + 날짜 + 시작 시각(src240_blue_261118_15:36)" — 경로 F 도 같은 기록기로 남기고 camera_bbox.mp4 를 바탕화면에 복사한다.
 #   {에피소드: 파일 이름 머리}. F_OBJECTS 에서 뽑으므로 물체(파워에이드 · 감귤주스 등)를 F_OBJECTS 에 더하면 영상도 따라온다.
@@ -875,6 +919,12 @@ def _stages(kind: str) -> list[dict]:
                "needs_why": "pd 가 떠 있어야 경로를 재생한다(IDLE 이면 지금 자리에서 engage)",
                "title": "tilt 시작 자세(세팅 자세)로 — 두 팔 한 팔씩(오른팔 → 왼팔): 실측에서 계획 · 검사(걸리면 그 팔부터 움직이지 "
                         "않음) → 재생. 손은 그대로(rehome 처럼)"})
+    # ★11.20 사용자: "act_tilt 반복 실험을 하려면 ep 끝난 이후에 tilt now 동작으로 왼팔->오른팔 한 개씩 이동" — tilt_now 와 같고 순서만 반대.
+    st.append({"id": "tilt_now_lr", "group": "policy", "lane": "both", "skippable": True, "touches_real": real,
+               "needs": ["pd_arm_right", "pd_arm_left"],
+               "needs_why": "pd 가 떠 있어야 경로를 재생한다(IDLE 이면 지금 자리에서 engage)",
+               "title": "tilt 시작 자세(세팅 자세)로 — 두 팔 한 팔씩(왼팔 → 오른팔): 실측에서 계획 · 검사(걸리면 그 팔부터 움직이지 "
+                        "않음) → 재생. 손은 그대로(act_tilt 반복용)"})
     # ★10.19 사용자: "내가 미리 세팅 자세를 만들어 둘 테니 그 상태에서 바로 틸팅" — 컵을 쥔 채라 engage 하지 않는다(TRACKING 이어야).
     st.append({"id": "tilt_pour", "group": "policy", "lane": "both", "skippable": True, "touches_real": real,
                "needs": ["pd_arm_right", "pd_arm_left"],
@@ -1276,6 +1326,16 @@ def _run(kind: str) -> dict:
              "기록 logs/runs/<날짜>/tilt/<시각>_setting",
              ["python3", f"{PC}/tools/tilt_now.py"], execute_args=["--execute"]),
     ]
+    run["tilt_now_lr"] = [
+        _cmd("★두 팔 주변과 경로(테이블 앞 · 몸통 앞 · 두 팔 사이)가 비었는가. 왼팔 → 오른팔 순서로 tilt 시작 자세(세팅 자세)로 간다 "
+             "— 손은 그대로" if real else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
+        *(_cmd(f"[{s}] pd 가 IDLE 이면 지금 자리에서 engage — 이미 붙들고 있으면(TRACKING) 건너뜀",
+               ["python3", f"{PC}/tools/episode_ctl.py", "--side", s, "--only", "pd_engage", "--skip-engaged", "--hold-s", "2"],
+               execute_args=["--execute", "--approve", "pd_engage"]) for s in ("left", "right")),
+        _cmd("tilt 시작 자세로 — 왼팔 → 오른팔, 팔마다 계획 · 검사(plan_carry, 걸리면 그 팔부터 움직이지 않음) → 재생(replay_to_pd) · "
+             "기록 logs/runs/<날짜>/tilt/<시각>_setting",
+             ["python3", f"{PC}/tools/tilt_now.py", "--sides", "left,right"], execute_args=["--execute"]),
+    ]
     run["tilt_pour"] = [
         _cmd("★두 팔이 세팅 자세(붓기 시작 자세)에서 컵을 쥐고 있는가 — 오른손 병(입구 위) · 왼손 shaker · 두 팔 주변과 붓는 길"
              "(테이블 위 · 몸통 앞)이 비었는가. 지금 자세에서 계획 · 검사하고 통과하면 재생한 뒤 시작 자세로 돌아온다" if real
@@ -1284,26 +1344,48 @@ def _run(kind: str) -> dict:
              + (" · bag tilt_pour" if real else ""),
              ["python3", f"{PC}/tools/tilt_pour.py", *([] if real else ["--no-record"])], execute_args=["--execute"]),
     ]
-    # $1 = 체크포인트(ACT_TILT_CKPTS) — actions.py 가 카드 선택으로 바꾼다. 실행 기록: motion_acq il/_work/act_tilt_runs/<시각>/summary.json
+    # $1 = 체크포인트(ACT_TILT_CKPTS) — actions.py 가 카드 선택으로 바꾼다. 실행 기록: ~/rl_ws/ril/_work/act_tilt_runs/<시각>/summary.json
     # ★11.19 act: 정책이 목(pan · tilt)도 움직이고 브리지는 목을 되돌리지 않는다(정본 = head_home). abort(시작 차이 · 속도 ·
     # 추종 오차 · 지연)면 브리지가 0 이 아닌 값으로 끝나 runner 가 다음 명령을 건너뛰므로, 목 복귀는 같은 셸 안에서
     # 브리지 종료 코드와 상관없이 --execute 일 때만 하고 브리지 종료 코드를 그대로 돌려준다(dry run 은 목을 안 움직인다).
     # 중괄호는 쓰지 않는다 — argv 의 {…} 는 미션 자리표시자로 치환된다.
+    # ★11.20 경로 F 끝 오른팔은 시연 분포 밖(브리지 첫 목표 0.692 rad 거부, act_tilt_runs/20261120_131331) — 브리지 전에
+    # 오른팔만 시연 시작 자세(act 세션 export_start_poses.py 산출, 34 개)로. 이동 수단은 tilt_now(plan_carry → replay_to_pd) 그대로.
+    # ★11.20 사용자 "카메라만큼은 동일해야" — 팔이 도착하면 tilt_now 가 같은 자세의 head(인코더 deg = head_move --pan/--tilt 단위)로
+    #   목도 옮긴다(--execute 일 때만, 실패면 rc≠0 → 브리지 건너뜀). fake 는 머리가 없다.
+    act_start = ["python3", f"{PC}/tools/tilt_now.py", "--sides", "right", "--goal-poses", ACT_TILT_START_POSES,
+                 *(["--head-argv", shlex.join(HEAD_CHECK_ARGV[:4])] if real else [])]
     head_back = " ".join(f'"{a}"' for a in HEAD_HOME_ARGV)
-    act = ["bash", "-lc", f'c="{ACT_TILT_RUN}/checkpoints/$1/pretrained_model"; shift; '
-                          'python3 "$HOME/rl_ws/motion_acq/il/act_tilt_bridge.py" --ckpt "$c" "$@"; rc=$?; '
+    # ★11.20 사용자: act_tilt 에도 머리 카메라 bag(경로 F 와 같은 _chain_camera_bag, 이름 act_tilt). 브리지와 같은 셸에서 띄우고
+    #   브리지가 끝나면(정상 · abort 모두) kill — 따로 배경 단계로 두면 abort(rc≠0) 때 runner 가 정지 단계를 건너뛰어 기록이 안 끝난다.
+    #   ssh 를 끊으면 저쪽 trap 이 기록기를 마무리하고 camera.mp4 를 만든다(콘솔 정지와 같은 경로). dry run 도 기록한다.
+    cam_on = real and REMOTE_PERCEPTION
+    cam = (shlex.join(_chain_camera_bag("act_tilt")["argv"]) + " & B=$!; ") if cam_on else ""
+    cam_note = (f" · 머리 카메라 bag({PERCEPTION_HOST} logs/runs/<날짜>/bags/<시각>_act_tilt/camera, "
+                "브리지가 끝나면 정상 · abort 모두 끊고 camera.mp4)")
+    act = ["bash", "-lc", f'c="{ACT_TILT_RUN}/checkpoints/$1/pretrained_model"; shift; {cam}'
+                          'python3 "$HOME/rl_ws/ril/act_tilt_bridge.py" --ckpt "$c" "$@"; rc=$?; '
+                          + ('kill $B; ' if cam else '') +
                           'case " $* " in *" --execute "*) echo "[act_tilt] 브리지 종료 $rc — 목을 head_home 자세로"; '
                           f'{head_back} --execute; h=$?; [ $rc -eq 0 ] && rc=$h;; esac; exit $rc',
-           "act_tilt", ACT_TILT_CKPTS[0], "--max-vel", ACT_TILT_MAX_VEL] if real else ["bash", "-lc", "true"]   # fake: 브리지 없음
+           "act_tilt", ACT_TILT_CKPTS[0], "--max-vel", ACT_TILT_MAX_VEL,
+           "--temporal-ensemble", ACT_TILT_TEMPORAL_ENSEMBLE] if real else ["bash", "-lc", "true"]   # fake: 브리지 없음
     run["act_tilt_dry"] = [
-        _cmd("ACT tilt dry run — 추론만(발행 없음) · 기록 ~/rl_ws/motion_acq/il/_work/act_tilt_runs/<시각>/", act),
+        _cmd("오른팔 → ACT 시작 자세 — 계획 · 검사만(이동 없음) · 시연 시작 자세 중 무작위 하나"
+             + (" · 목 목표(시연 head)는 출력만" if real else "") + " · 걸리면 브리지 안 띄움", act_start),
+        _cmd("ACT tilt dry run — 추론만(발행 없음) · 기록 ~/rl_ws/ril/_work/act_tilt_runs/<시각>/"
+             + (cam_note if cam_on else ""), act),
     ]
     run["act_tilt"] = [
-        _cmd("★두 팔이 tilt 시작 자세(tilt_now 뒤)에서 컵을 쥐고 있는가 — 오른손 병 · 왼손 shaker · 붓는 길(테이블 위 · 몸통 앞)이 "
-             "비었는가 · 머리를 움직이지 않았는가(정책 입력이 머리 카메라). 비상 정지 손이 닿는가" if real
+        _cmd("★두 손이 컵을 쥐고 있는가(오른팔은 다음 단계에서 시연 시작 자세로 움직이고 왼팔은 그대로) — 오른손 병 · 왼손 shaker · 붓는 길(테이블 위 · 몸통 앞)이 "
+             "비었는가 · 목이 시연 머리 자세로 돌아도 부딪칠 것이 없는가(다음 단계가 목을 옮긴다). 비상 정지 손이 닿는가" if real
              else "fake — 확인만", ["bash", "-lc", "true"], manual=True),
-        _cmd("ACT tilt 붓기 — 두 팔 정책 목표 발행 → 끝에 두 팔 episode stop · 기록 ~/rl_ws/motion_acq/il/_work/act_tilt_runs/<시각>/"
-             + (" → 정상 · abort 모두 목을 head_home 자세로(다음 FP++ · 놓기 좌표는 이 자세 기준)" if real else ""),
+        _cmd("오른팔만 ACT 시작 자세로(왼팔 · 두 손 그대로) — 시연 시작 자세 중 무작위 하나 · plan_carry 계획 · 검사 → "
+             "replay_to_pd" + (" → 목을 같은 자세의 시연 head 로(head_move)" if real else "")
+             + " · 걸리거나 도착 못 하면 브리지 안 띄움", act_start, execute_args=["--execute"]),
+        _cmd("ACT tilt 붓기 — 두 팔 정책 목표 발행 → 끝에 두 팔 episode stop · 기록 ~/rl_ws/ril/_work/act_tilt_runs/<시각>/"
+             + (" → 정상 · abort 모두 목을 head_home 자세로(다음 FP++ · 놓기 좌표는 이 자세 기준)" if real else "")
+             + (cam_note if cam_on else ""),
              act, execute_args=["--execute"]),
     ]
     for cup, s in PLACE_FIXED:
@@ -1813,21 +1895,31 @@ def _episode_run(name: str, real: bool, ep=None) -> list:
         #   학생 노드가 어차피 랜으로 받는 토픽이다. 원본 영상(CAMERA_BAG_TOPICS)은 랜을 건너므로 싣지 않는다
         cam_rec = not REMOTE_PERCEPTION or name in STUDENT_EPISODES
         cam = f"CAMERA='{' '.join(cam_topics)}' CAMERA_HZ={cam_hz:g} " if cam_rec else ""
+        # ★11.22 사용자 '녹화량 줄이기'(general_lab 과 맞춤): 에피소드 bag 은 SLIM(손 중복 토픽 · pd diagnostics 뺌), 회 구간만 남긴다 —
+        #   bag_gate 가 회 끝 + 30 s 에 끄고 첫 노드 시작 5 s 앞을 잘라낸다(Humble 기록기는 일시정지가 없다)
+        rec_start = (f"{hands}{cam}RH56F1_RECORD_SLIM=1 EXTRA='{' '.join(extra)}' "
+                     f"bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh start episode_{name}")
         cmds.append(_cmd("기록 시작 — 팔 · 손 bag(rh56f1_record.sh) + 정책 · 실행기 상태 · 컵 · 홀더"
                          + ("" if not cam_rec else
                             f" + 머리 카메라 bag camera({cam_hz:g} Hz{', 학생 입력만 · 압축 없음' if name in STUDENT_EPISODES else ''})"),
-                         ["bash", "-lc", f"{hands}{cam}EXTRA='{' '.join(extra)}' bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh "
-                                         f"start episode_{name}"]))
+                         ["bash", "-lc", rec_start]))
+        # 문지기는 실행기 바로 뒤에 띄운다(앞 노드 순번 그대로). 실행기가 0.5 s 마다 상태를 내므로 늦게 떠도 첫 메시지에서 회를 연다
+        gate_cmd = _cmd(f"bag 구간 — 회 시작 {BAG_PRE_S:g} s 전 ~ 끝 {BAG_POST_S:g} s 뒤만 남김(bag_gate)",
+                        ["{repo}/.venv/bin/python", "{repo}/scripts/nodes/bag_gate.py", "watch", "--gate", f"/policy_control/status/{runner}",
+                         "--name", f"episode_{name}", "--pre", f"{BAG_PRE_S:g}", "--post", f"{BAG_POST_S:g}",
+                         "--start-cmd", rec_start], background=True)
         cmds.append(_cpu_record(f"episode_{name}"))
         if VISION_RECORD and name in REPORT_VIDEO_HZ:   # ★10.19 보고서 사진 · 영상 — 카메라 PC 에서 따로(tools/episode_media.py 가 묶는다)
             cmds.append(_vision_record(f"episode_{name}", [real_object(o["topic"]) for o in ep.objects.values()],
                                        REPORT_VIDEO_HZ[name]))
-        elif REMOTE_PERCEPTION and name in CHAIN_VIDEO_EPISODES:   # 정지는 아래 '에피소드 노드들 정지'(background)
-            cmds.append(_chain_camera_bag(f"episode_{name}"))
+        elif REMOTE_PERCEPTION and name in CHAIN_VIDEO_EPISODES and name not in CHAIN_CAMERA_BAG_OFF:   # 정지는 아래 '에피소드 노드들 정지'(background)
+            cmds.append(_chain_camera_bag(f"episode_{name}", gate=f"/policy_control/status/{runner}"))
     cmds.append(_cmd(f"에피소드 실행기 {runner} — {name} · 승인은 상황판(노드마다 이름 · 연속 실행은 episode:{name})",
                      ["{repo}/.venv/bin/python", f"{PC}/policy_control/episode_runner_node.py", "--ros-args",
                       *(["-r", f"__node:={runner}"] if runner != "episode_runner" else []),
                       "-p", f"episode:=config/episodes/{name}.yaml", "-p", "robot:=rh56f1"], background=True))
+    if real:
+        cmds.append(gate_cmd)
     cmds.append(_cmd("★에피소드 진행 — 상황판 에피소드 패널의 [다음](구분 실행) · [연속 실행]. 성공 · 정지로 끝나면 확인 "
                      "(이상하면 '에피소드 실행기 정지' · 정지 바)", ["bash", "-lc", "true"], manual=True))
     bg = [i for i, c in enumerate(cmds) if c.get("background")]
@@ -1836,8 +1928,10 @@ def _episode_run(name: str, real: bool, ep=None) -> list:
         cmds.extend(_place_student_tail())
     if real:
         cam_rec = not REMOTE_PERCEPTION or name in STUDENT_EPISODES
-        cmds.append(_cmd("기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손" + (" · 카메라" if cam_rec else "") + ")",
-                         ["bash", "{repo}/deploy/policy_control/tools/rh56f1_record.sh", "stop", f"episode_{name}"]))
+        cmds.append(_cmd("기록 끝 — 이 에피소드의 bag 마무리(SIGINT, 팔 · 손" + (" · 카메라" if cam_rec else "")
+                         + f") — bag_gate 의 끝 + {BAG_POST_S:g} s · 앞 자르기를 기다린 뒤",
+                         ["bash", "-lc", f"python3 {{repo}}/scripts/nodes/bag_gate.py wait --name episode_{name}; "
+                                         f"bash {{repo}}/deploy/policy_control/tools/rh56f1_record.sh stop episode_{name}"]))
         if VISION_RECORD and name in REPORT_VIDEO_HZ:   # ★10.19 보고서 사진 · 영상 — 이 단계에서 돈 회마다(아직 안 만든 것)
             cmds.append(_cmd(f"보고서 영상 · 장면 사진 — 카메라 영상({PERCEPTION_HOST}) + 노드 시각 → logs/runs/<날짜>/report_media/<회>"
                              "(video.mp4 · 시작 · 다가간 뒤 · 쥔 뒤 · 들어 올린 뒤 · sheet.jpg)",
@@ -1877,14 +1971,16 @@ def _record_start(name: str, sides: list, topics: list, objs: list | None = None
             *([_vision_record(name, objs or [])] if VISION_RECORD else [])]
 
 
-def _chain_camera_bag(name: str) -> dict:
+def _chain_camera_bag(name: str, gate: str = "") -> dict:
     """★11.16 카메라 PC 에서 머리 컬러 영상 bag(★11.17 + 정렬 깊이 · camera_info, camera_bag_recorder --encode-raw). 원본을 구독해 솎은 프레임만 이 기록기가 압축한다 —
     드라이버 압축(…/compressed 구독)은 30 Hz 전부를 인코딩해 FP++ 가 받는 원본 발행을 40 → 54 ms 로 밀었다(11.05).
     nice 19 · ionice best-effort 최하(idle 은 디스크가 바쁘면 쓰기를 굶겨 프레임을 버린다). 코어는 묶지 않는다 — FP++ cpuset 밖은
     실시간 예약(cpu_plan reserved, 우리 노드가 비켜 가는 코어)과 정책 코어뿐이라 둘 다 기록기 자리가 아니다(11.16 리뷰).
     setsid: ssh 가 끊길 때 tty HUP 이 기록기에 바로 가지 않게 떼고, trap 이 TERM 을 보내 마무리(metadata.yaml)하게 한다.
     bag 은 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera(이 PC 의 팔 · 손 bag 과 같은 이름 틀), 로그 {PERC_LOG}/camera_bag_<이름>.log.
-    기록기가 끝나면 같은 셸이 camera_bag_to_mp4.py 로 옆에 camera.mp4 를 만든다(nice 19 · ionice idle, 11.18)."""
+    기록기가 끝나면 같은 셸이 camera_bag_to_mp4.py 로 옆에 camera.mp4 를 만든다(nice 19 · ionice idle, 11.18).
+    ★11.21 사용자 "scene 부터 done 까지만": gate(runner 상태 토픽)를 주면 기록기가 scene 진입부터 그 회 끝(SUCCESS · FAILURE · STOPPED ·
+    새 에피소드)까지만 쓰고 스스로 끝난다 — 전에는 runner 보다 먼저 떠서 '에피소드 노드들 정지' 까지 앞뒤 대기를 다 담았다."""
     assert REMOTE_PERCEPTION, "카메라가 이 PC 면 rh56f1_record.sh 의 CAMERA 묶음이 이미 싣는다"
     cup = FPP_VIDEO_CUP.get(name.removeprefix("episode_"))
     # ★11.18 경로 F: 상자 영상을 바탕화면에 <컵>_<날짜>_<시작 시:분>.mp4 로(같은 분에 또 돌리면 :초 를 붙여 덮어쓰지 않는다).
@@ -1895,7 +1991,7 @@ def _chain_camera_bag(name: str) -> dict:
     rec = (("" if cup is None else "T=$(date +%y%m%d_%H:%M); S=$(date +%S); ") +
            f"O=logs/runs/$(date +%y%m%d)/bags/$(date +%H%M%S)_{name}; mkdir -p {PERC_LOG} $O; "
            f"setsid nice -n 19 ionice -c2 -n7 python3 scripts/nodes/camera_bag_recorder.py --encode-raw "
-           f"--hz {CHAIN_VIDEO_HZ:g} -o $O/camera {' '.join(CHAIN_CAMERA_BAG_TOPICS)} > {PERC_LOG}/camera_bag_{name}.log 2>&1 & P=$!; "
+           f"--hz {CHAIN_VIDEO_HZ:g}{f' --gate {gate} --gate-start scene' if gate else ''} -o $O/camera {' '.join(CHAIN_CAMERA_BAG_TOPICS)} > {PERC_LOG}/camera_bag_{name}.log 2>&1 & P=$!; "
            # ★11.18 set +e: common.sh 의 set -e 아래서는 신호로 끊긴 wait(129)가 셸을 끝내 아래 변환이 한 번도 안 돌았다
            #   (콘솔 정지 = ssh 끊김 → HUP. 11.18 12:26 · 14:12~14:21 회차에 camera.mp4 없음, sleep 대역으로 재현 · 확인)
            "set +e; trap 'kill -TERM $P; wait $P' HUP TERM INT; wait $P; "
@@ -1904,7 +2000,17 @@ def _chain_camera_bag(name: str) -> dict:
            f"setsid -w nice -n 19 ionice -c3 python3 scripts/analysis/camera_bag_to_mp4.py $O/camera "
            f">> {PERC_LOG}/camera_bag_{name}.log 2>&1 || true" + desk)
     return _cmd(f"머리 카메라 컬러 · 정렬 깊이 bag({PERCEPTION_HOST}, {CHAIN_VIDEO_HZ:g} Hz · 기록기가 압축 · nice 19) "
-                "→ 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4", _on_perception_pc(rec), background=True)
+                "→ 저 PC 의 logs/runs/<날짜>/bags/<시각>_<이름>/camera, 끝나면 camera.mp4 (실패해도 에피소드는 계속)",
+                _best_effort(_on_perception_pc(rec), f"camera bag {name}"), background=True)
+
+
+def _best_effort(argv: list, label: str) -> list:
+    """★11.25 사용자 "영상이 안 남더라도 앞으론 문제없이 되야": 배경 명령이 바로 끝나면(저 PC 기록기가 옛 버전이라 --gate 를 모름 rc 2,
+    ssh 끊김 255, gate 로 회가 끝나 스스로 끝남) 콘솔이 '뜨자마자 끝났다' 로 단계를 실패시켜 에피소드가 서지 않았다(11.25 4090 c49f551).
+    로컬 셸이 그 명령을 돌리고 끝나도 정지 신호까지 남아 있는다 — 콘솔 정지(killpg)는 그룹째라 ssh 도 함께 받아 저쪽 trap 마무리는 그대로다."""
+    return ["bash", "-c",
+            shlex.join(argv) + f" ; echo \"[{label}] 끝남 rc=$? — 영상 없이 계속\"; "
+            "trap 'exit 0' HUP TERM INT; while :; do sleep 1; done"]
 
 
 def _vision_record(name: str, objs: list, hz: float = 5.0) -> dict:

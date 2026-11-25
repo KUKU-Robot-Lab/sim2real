@@ -863,6 +863,49 @@ def test_place_judge_uses_live_or_the_bound_cup_never_the_table_snapshot():
     assert "cup_in_holder" not in judge(None, None)               # 판정 보류
 
 
+def test_place_judge_records_tilt_but_does_not_use_it():
+    """★11.20 FP++ 축 오류(서 있는 shaker 127.8°) 때문에 기울기는 판정에 쓰지 않는다 — 30° 기울어도 cup_in_holder 는 표대로,
+    cup_tilt_deg 만 기록. 판정 창(after) 전 프레임은 보지 않는다."""
+    import threading
+    import time
+    import numpy as np
+    from types import SimpleNamespace
+    from policy_control.episode_ros import PLACE_TILT_MAX_DEG, SEAT_DZ_CYL60, RosExecutor
+    hold = (0.38, -0.06, 0.235)
+    seat = (0.38, -0.06, 0.235 + SEAT_DZ_CYL60)
+
+    def quat(deg):
+        a = np.radians(deg) / 2
+        return (float(np.cos(a)), float(np.sin(a)), 0.0, 0.0)
+
+    def judge(old_deg, new_deg):
+        t = time.monotonic() + 100.0                             # 판정 창(지금 + PLACE_JUDGE_WAIT_S) 뒤 프레임
+        live = [(seat, quat(old_deg), 0.0)] * 5 + [(seat, quat(new_deg), t)] * 5
+        me = SimpleNamespace(holders={1: (hold, 0.0)}, _place_seen={}, _live={"SRC": live}, _lock=threading.Lock(),
+                             _fresh_object=lambda name, after=None, store=None, wait_s=2.0: seat)
+        p = SimpleNamespace(kind="place", source_object="SRC", holder_id=1)
+        return RosExecutor._signals_of(me, p, {"place": {"phase": "done", "latch_cup": list(seat)}})
+
+    s = judge(30.0, 3.0)                                          # 판정 창 전(이송 중) 기울기는 안 본다
+    assert s["cup_in_holder"] is True and s["cup_tilt_deg"] == pytest.approx(3.0, abs=0.1)
+    s = judge(0.0, 30.0)
+    assert s["cup_in_holder"] is True and s["cup_in_holder_by"] == {"live": True, "fk": True} and s["cup_tilt_deg"] > PLACE_TILT_MAX_DEG
+
+
+def test_place_tilt_deg_drops_nonfinite_quats():
+    """NaN · 노름 0 쿼터니언은 거르고 남은 프레임으로 중앙값 — 3개 미만이면 None. 기록값에 NaN 이 들어가지 않는다."""
+    import math
+    import numpy as np
+    from policy_control.episode_ros import place_tilt_deg
+    up, nan, zero = (1.0, 0.0, 0.0, 0.0), (float("nan"),) * 4, (0.0, 0.0, 0.0, 0.0)
+    a = np.radians(10.0) / 2
+    tilt10 = (float(np.cos(a)), float(np.sin(a)), 0.0, 0.0)
+    pos = (0.0, 0.0, 0.0)
+    v = place_tilt_deg([(pos, q, 1.0) for q in (up, nan, tilt10, zero, tilt10, None)], 0.0)
+    assert v is not None and math.isfinite(v) and v == pytest.approx(10.0, abs=0.1)
+    assert place_tilt_deg([(pos, q, 1.0) for q in (up, nan, zero, nan, up)], 0.0) is None
+
+
 def test_place_ended_by_open_fingers_before_latch_is_judged_by_the_holder_only():
     """★11.11 래치 전 손 폄 종료(opened_before_latch)는 손이 비었는지 노드가 모른다 — hand_empty None, 판정은 cup_in_holder
     (sim 1111b f8a2ec8: 컵이 홀더에 들어갔는데 hand_empty False 로 PLACE_FAILED)."""

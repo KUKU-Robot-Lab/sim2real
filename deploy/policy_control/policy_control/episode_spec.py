@@ -120,6 +120,10 @@ class Binding:
     tin_subtract_offset: bool = False
     #: ★11.18 place 만 — 이송 · 정책 목표 홀더를 base 로 옮기는 양(m, 3). None = 0(노드 holder_offset_base_m, 학생 노드는 안 씀)
     holder_offset_base_m: tuple | None = None
+    #: ★11.20 place tin_json 만 — 이송 끝 FP++ T_in 재측정(노드 tin_refresh_at_carry_end) · 그 뒤 컵−홀더 xy 보정 이송 문턱
+    #:   (노드 carry_fpp_xy_tol_m, 0 = 끔, 재측정을 켤 때만). 기본 끔
+    tin_refresh_at_carry_end: bool = False
+    carry_fpp_xy_tol_m: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -141,7 +145,7 @@ class Job:
 JOB_KEYS = ("name", "source_object", "target_object", "target_holder", "policy_object", "holder_tol_m", "lift_guard")
 LIFT_GUARD_KEYS = ("object", "guard_mm", "hstop_m")
 BINDING_KEYS = ("policy", "kind", "side", "approach_grasp", "handoff", "cup_obs_offset_base_m", "student", "attach_source", "tin_subtract_offset",
-                "holder_offset_base_m")
+                "holder_offset_base_m", "tin_refresh_at_carry_end", "carry_fpp_xy_tol_m")
 
 
 @dataclass(frozen=True)
@@ -443,10 +447,16 @@ def parse(raw: Mapping, *, path: str = "") -> Episode:
                 hoff = tuple(float(v) for v in holder_offset_of(hoff))
             except RhPlaceError as exc:
                 raise EpisodeSpecError(f"policies.{role}: {exc}") from exc
+        trf, xtol = b.get("tin_refresh_at_carry_end", False), b.get("carry_fpp_xy_tol_m", 0.0)
+        if not isinstance(trf, bool) or (trf and attach != "tin_json"):
+            raise EpisodeSpecError(f"policies.{role}: tin_refresh_at_carry_end 는 attach_source tin_json 과 쓰는 bool")
+        if (isinstance(xtol, bool) or not isinstance(xtol, (int, float)) or not 0.0 <= float(xtol) <= 0.05
+                or (xtol and not trf)):
+            raise EpisodeSpecError(f"policies.{role}: carry_fpp_xy_tol_m 는 0~0.05 m, tin_refresh_at_carry_end 와 같이")
         pols[str(role)] = Binding(role=str(role), kind=str(b["kind"]), side=str(b["side"]), policy=b.get("policy"),
                                   approach_grasp=ag, handoff=handoff, cup_obs_offset_base_m=off, student=student,
                                   attach_source=attach, tin_subtract_offset=tso,
-                                  holder_offset_base_m=hoff)
+                                  holder_offset_base_m=hoff, tin_refresh_at_carry_end=trf, carry_fpp_xy_tol_m=float(xtol))
     trajs = {}
     for name, t in (raw.get("trajectories") or {}).items():
         if t.get("kind") not in TRAJ_KINDS:

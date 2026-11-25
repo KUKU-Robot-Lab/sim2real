@@ -23,6 +23,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import random
+import shlex
 import sys
 from pathlib import Path
 
@@ -67,6 +70,39 @@ def fail_summary(out: Path) -> str:
     return " · ".join(bad)
 
 
+def pick_goal(path: Path, sides: list[str], pose_id: str = "", seed: int | None = None,
+              palm_range: tuple[float, float] | None = None) -> dict:
+    """★11.20 ACT 시작 자세 목록(poses: [{id, ep, right: [7], head, offline_gap_rad}]) 에서 하나 — id 가 없으면 무작위.
+    계획하는 팔마다 관절 7 개가 있어야 한다(없으면 ValueError). 거부 판단은 plan_carry 검사가 한다(offline_gap_rad 는 기록만)."""
+    poses = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("poses") or []
+    ok = [p for p in poses if isinstance(p, dict) and all(len(p.get(s) or ()) == 7 for s in sides)]
+    if not ok or len(ok) != len(poses):
+        raise ValueError(f"{path}: 자세 {len(poses)} 개 중 {', '.join(sides)} 관절 7 개인 것 {len(ok)} 개")
+    if pose_id:
+        hit = [p for p in ok if str(p.get("id")) == pose_id]
+        if not hit:
+            raise ValueError(f"{path}: id {pose_id} 없음")
+        return hit[0]
+    if palm_range is not None:
+        if not any("palm_tilt_deg" in p for p in ok):
+            print(f"[tilt_now] 경고: {path} 에 palm_tilt_deg 없음 — 손바닥 기울기 필터 안 함", flush=True)
+        else:   # 필드가 있는 파일에서 값 없는 행은 확인할 수 없으니 뺀다
+            lo, hi = palm_range
+            ok = [p for p in ok if isinstance(p.get("palm_tilt_deg"), (int, float)) and lo <= p["palm_tilt_deg"] <= hi]
+            print(f"[tilt_now] 손바닥 기울기 {lo:g}~{hi:g}° 안 {len(ok)}/{len(poses)} 개에서 고른다", flush=True)
+            if not ok:
+                raise ValueError(f"{path}: palm_tilt_deg {lo:g}~{hi:g}° 안 자세 없음")
+    return random.Random(seed).choice(ok)
+
+
+def head_goal(picked: dict) -> tuple[float, float]:
+    """고른 자세의 head [pan, tilt] — motion_acq 인코더 deg(/head/target_stream 규약) = head_move --pan/--tilt 와 같은 단위 · 부호."""
+    h = picked.get("head")
+    if not isinstance(h, (list, tuple)) or len(h) != 2 or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in h):
+        raise ValueError(f"id {picked.get('id')}: head [pan, tilt] 없음 · 잘못됨: {h!r}")
+    return float(h[0]), float(h[1])
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("--asset", type=Path, default=ASSET)
@@ -74,6 +110,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--sides", default="right,left", help="한 팔씩 이 순서로(right · left · right,left)")
     ap.add_argument("--rate-scale", type=float, default=1.0)
     ap.add_argument("--empty", default="", help="빈손 팔 — plan_carry --empty 로 넘긴다(그 손에 가상 컵을 붙이지 않음)")
+    ap.add_argument("--goal-poses", type=Path, default=None,
+                    help="끝 자세 목록 yaml(ACT 시작 자세, 상대 경로는 sim2real 기준) — 없으면 자산 start_pose")
+    ap.add_argument("--pose-id", default="", help="--goal-poses 에서 고를 id(없으면 무작위)")
+    ap.add_argument("--seed", type=int, default=None, help="무작위 선택 시드(재현용)")
+    ap.add_argument("--palm-tilt", default="61,92",
+                    help="무작위 선택에 넣을 palm_tilt_deg 범위 lo,hi(파일에 필드가 없으면 필터 안 함) · off = 끔")
+    ap.add_argument("--head-argv", default="",
+                    help="목 이동 명령 앞부분(head_move.py …, 셸 따옴표 규칙) — 주면 팔 도착 뒤 고른 자세의 head 로 목을 옮긴다(--pan · --tilt 를 붙임)")
     ap.add_argument("--execute", action="store_true")
     a = ap.parse_args(argv)
     sides = [x.strip() for x in a.sides.split(",") if x.strip()]
@@ -86,14 +130,38 @@ def main(argv: list[str] | None = None) -> int:
     cfg = yaml.safe_load((a.asset / "policy.yaml").read_text(encoding="utf-8")) or {}
     gap = float(cfg.get("start_gap_rad", 0.05))
     goal = yaml.safe_load((SIM2REAL / cfg["start_pose"]).read_text(encoding="utf-8"))
-    out = fresh_dir(a.out_root, f"setting_{asset_tag(a.asset)}")
-    write_meta(out, tool="tilt_now", asset=str(a.asset), sides=list(sides), execute=a.execute)
+    picked = head = None
+    if a.head_argv and a.goal_poses is None:
+        print("✗ --head-argv 는 --goal-poses 와 같이")
+        return 1
+    if a.goal_poses is not None:
+        try:
+            palm = None if a.palm_tilt == "off" else tuple(float(v) for v in a.palm_tilt.split(","))
+            if palm is not None and (len(palm) != 2 or not palm[0] < palm[1]):
+                raise ValueError(f"--palm-tilt {a.palm_tilt!r} — lo,hi 또는 off")
+            picked = pick_goal(a.goal_poses if a.goal_poses.is_absolute() else SIM2REAL / a.goal_poses, sides, a.pose_id, a.seed, palm)
+            if a.head_argv:   # 카메라는 시연과 같아야 한다(11.20 사용자) — head 가 없으면 팔도 움직이지 않는다
+                head = head_goal(picked)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            print(f"✗ --goal-poses {exc}")
+            return 1
+        goal = {**goal, **{s: [float(v) for v in picked[s]] for s in sides}}
+        print(f"[tilt_now] 끝 자세 = {a.goal_poses} id {picked.get('id')} (ep {picked.get('ep')} · "
+              f"offline_gap_rad {picked.get('offline_gap_rad')} 기록만)", flush=True)
+    out = fresh_dir(a.out_root, f"setting_{asset_tag(a.asset)}" + ("_goal" if picked else ""))
+    write_meta(out, tool="tilt_now", asset=str(a.asset), sides=list(sides), execute=a.execute,
+               goal_poses=str(a.goal_poses or ""), goal_pose=picked, head_goal_deg=head)
     q = None if a.execute else current_q()            # 계획만: 앞 팔은 끝 자세에 갔다고 보고 다음 팔을 계획한다
     for k, side in enumerate(sides):
         o = out / f"carry_{side}"
         argv_plan = [sys.executable, str(TOOLS / "plan_carry.py"), "--asset", str(a.asset), "--out", str(o), "--sides", side]
         if a.empty:
             argv_plan += ["--empty", a.empty]
+        if picked:
+            out.mkdir(parents=True, exist_ok=True)
+            gj = out / f"goal_{side}.json"
+            gj.write_text(json.dumps({side: goal[side]}))
+            argv_plan += ["--goal-json", str(gj)]
         if q is not None:
             if k > 0:
                 for done in sides[:k]:
@@ -117,6 +185,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[tilt_now] {side} 재생 실패 rc {rc} · {o}", flush=True)
             return rc
         print(f"[tilt_now] {side} 세팅 자세 도착 · {o}", flush=True)
+    if head is not None:
+        head_cmd = shlex.split(a.head_argv) + ["--pan", repr(head[0]), "--tilt", repr(head[1])]
+        if not a.execute:
+            print(f"[tilt_now] 목(계획만) pan {head[0]:+.1f} · tilt {head[1]:+.1f} 인코더 deg — {shlex.join(head_cmd)} --execute", flush=True)
+        else:
+            rc = run(head_cmd + ["--execute"])
+            if rc != 0:
+                print(f"[tilt_now] 목 이동 실패 rc {rc} — 팔은 시작 자세에 있다 · 브리지를 띄우지 않는다", flush=True)
+                return rc
+            print(f"[tilt_now] 목 도착 pan {head[0]:+.1f} · tilt {head[1]:+.1f}", flush=True)
     print(f"[tilt_now] {'계획만 — --execute 로 재생' if not a.execute else '두 팔 세팅 자세 끝'} · {out}", flush=True)
     return 0
 
